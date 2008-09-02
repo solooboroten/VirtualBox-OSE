@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: REMInternal.h 8223 2008-04-21 12:30:34Z vboxsync $ */
 /** @file
  * REM - Internal header file.
  */

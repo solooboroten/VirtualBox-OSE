@@ -22,9 +22,9 @@
 *    This code is using nuts and bolts from throughout etherboot.
 *    It is a fresh implementation according to the DNS RFC, #1035
 *    
-*    $Revision$
-*    $Author$
-*    $Date$
+*    $Revision: 1 $
+*    $Author: vboxsync $
+*    $Date: $
 *
 *    REVISION HISTORY:
 *    ================

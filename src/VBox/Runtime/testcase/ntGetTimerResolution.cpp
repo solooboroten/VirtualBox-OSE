@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: ntGetTimerResolution.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
 /** @file
  * IPRT - Win32 (NT) testcase for getting the timer resolution.
  */

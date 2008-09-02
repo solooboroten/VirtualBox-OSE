@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tstTime-4.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
 /** @file
  * IPRT Testcase - Simple RTTime vs. RTTimeSystem test.
  */

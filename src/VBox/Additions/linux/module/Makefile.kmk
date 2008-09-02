@@ -1,4 +1,4 @@
-# $Id$
+# $Id: Makefile.kmk 8447 2008-04-29 09:06:16Z vboxsync $
 ## @file
 # Sub-Makefile for the VirtualBox Linux Guest Additions Kernel Module.
 #

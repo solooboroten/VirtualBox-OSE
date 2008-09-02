@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: SUPDrv-os2.cpp 8170 2008-04-18 17:52:25Z vboxsync $ */
 /** @file
  * VBoxDrv - OS/2 specifics.
  */

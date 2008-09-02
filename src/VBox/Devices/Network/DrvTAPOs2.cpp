@@ -1,4 +1,4 @@
-/** $Id$ */
+/** $Id: DrvTAPOs2.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
 /** @file
  * VBox network devices: OS/2 TAP network transport driver.
  */

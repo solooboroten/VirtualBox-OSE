@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: config.h 8168 2008-04-18 16:58:27Z vboxsync $ */
 /** @file
  * Sun config - Maintained by hand
  */

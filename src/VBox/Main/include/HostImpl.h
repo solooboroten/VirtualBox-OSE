@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: HostImpl.h 8484 2008-04-30 00:12:33Z vboxsync $ */
 /** @file
  * Implemenation of IHost.
  */

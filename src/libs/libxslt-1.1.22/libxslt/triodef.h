@@ -1,6 +1,6 @@
 /*************************************************************************
  *
- * $Id$
+ * $Id: triodef.h 7296 2008-03-05 10:43:38Z vboxsync $
  *
  * Copyright (C) 2001 Bjorn Reese <breese@users.sourceforge.net>
  *

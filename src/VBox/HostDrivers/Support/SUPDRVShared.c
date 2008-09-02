@@ -1,4 +1,4 @@
-/* $Revision$ */
+/* $Revision: 8155 $ */
 /** @file
  * VirtualBox Support Driver - Shared code.
  */
