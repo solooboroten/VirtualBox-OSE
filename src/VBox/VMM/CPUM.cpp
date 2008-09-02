@@ -1,4 +1,4 @@
-/* $Id: CPUM.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: CPUM.cpp 31398 2008-05-29 14:39:54Z frank $ */
 /** @file
  * CPUM - CPU Monitor(/Manager)
  */
@@ -1044,8 +1044,7 @@ const char *getL2CacheAss(unsigned u)
         case 3:  return "res3  ";
         case 4:  return "4 way ";
         case 5:  return "res5  ";
-        case 6:  return "8 way ";
-        case 7:  return "res7  ";
+        case 6:  return "8 way ";                                    case 7:  return "res7  ";
         case 8:  return "16 way";
         case 9:  return "res9  ";
         case 10: return "res10 ";
@@ -1092,7 +1091,7 @@ static DECLCALLBACK(void) cpumR3CpuIdInfo(PVM pVM, PCDBGFINFOHLP pHlp, const cha
     pHlp->pfnPrintf(pHlp,
                     "         RAW Standard CPUIDs\n"
                     "     Function  eax      ebx      ecx      edx\n");
-    for (unsigned i = 0; i < ELEMENTS(pVM->cpum.s.aGuestCpuIdStd); i++)
+    for (unsigned i = 0; i < RT_ELEMENTS(pVM->cpum.s.aGuestCpuIdStd); i++)
     {
         Guest = pVM->cpum.s.aGuestCpuIdStd[i];
         ASMCpuId_Idx_ECX(i, 0, &Host.eax, &Host.ebx, &Host.ecx, &Host.edx);
@@ -1120,6 +1119,9 @@ static DECLCALLBACK(void) cpumR3CpuIdInfo(PVM pVM, PCDBGFINFOHLP pHlp, const cha
     /*
      * Get Features.
      */
+    bool const fIntel = ASMIsIntelCpuEx(pVM->cpum.s.aGuestCpuIdStd[0].ebx,
+                                        pVM->cpum.s.aGuestCpuIdStd[0].ecx,
+                                        pVM->cpum.s.aGuestCpuIdStd[0].edx);
     if (cStdMax >= 1 && iVerbosity)
     {
         Guest = pVM->cpum.s.aGuestCpuIdStd[1];
@@ -1133,9 +1135,9 @@ static DECLCALLBACK(void) cpumR3CpuIdInfo(PVM pVM, PCDBGFINFOHLP pHlp, const cha
                         "Logical CPUs:                    %d\n"
                         "CLFLUSH Size:                    %d\n"
                         "Brand ID:                        %#04x\n",
-                        (uEAX >> 8) & 0xf, (uEAX >> 20) & 0x7f, ((uEAX >> 8) & 0xf) + (((uEAX >> 8) & 0xf) == 0xf ? (uEAX >> 20) & 0x7f : 0),
-                        (uEAX >> 4) & 0xf, (uEAX >> 16) & 0x0f, ((uEAX >> 4) & 0xf) | (((uEAX >> 4) & 0xf) == 0xf ? (uEAX >> 16) & 0x0f : 0),
-                        (uEAX >> 0) & 0xf,
+                        (uEAX >> 8) & 0xf, (uEAX >> 20) & 0x7f, ASMGetCpuFamily(uEAX),
+                        (uEAX >> 4) & 0xf, (uEAX >> 16) & 0x0f, ASMGetCpuModel(uEAX, fIntel),
+                        ASMGetCpuStepping(uEAX),
                         (Guest.ebx >> 24) & 0xff,
                         (Guest.ebx >> 16) & 0xff,
                         (Guest.ebx >>  8) & 0xff,
@@ -1307,9 +1309,9 @@ static DECLCALLBACK(void) cpumR3CpuIdInfo(PVM pVM, PCDBGFINFOHLP pHlp, const cha
                         "Model:                           %d  \tExtended: %d \tEffectiv: %d\n"
                         "Stepping:                        %d\n"
                         "Brand ID:                        %#05x\n",
-                        (uEAX >> 8) & 0xf, (uEAX >> 20) & 0x7f, ((uEAX >> 8) & 0xf) + (((uEAX >> 8) & 0xf) == 0xf ? (uEAX >> 20) & 0x7f : 0),
-                        (uEAX >> 4) & 0xf, (uEAX >> 16) & 0x0f, ((uEAX >> 4) & 0xf) | (((uEAX >> 4) & 0xf) == 0xf ? (uEAX >> 16) & 0x0f : 0),
-                        (uEAX >> 0) & 0xf,
+                        (uEAX >> 8) & 0xf, (uEAX >> 20) & 0x7f, ASMGetCpuFamily(uEAX),
+                        (uEAX >> 4) & 0xf, (uEAX >> 16) & 0x0f, ASMGetCpuModel(uEAX, fIntel),
+                        ASMGetCpuStepping(uEAX),
                         Guest.ebx & 0xfff);
 
         if (iVerbosity == 1)
@@ -1362,6 +1364,8 @@ static DECLCALLBACK(void) cpumR3CpuIdInfo(PVM pVM, PCDBGFINFOHLP pHlp, const cha
             if (uECX & RT_BIT(7))   pHlp->pfnPrintf(pHlp, " MISALNSSE");
             if (uECX & RT_BIT(8))   pHlp->pfnPrintf(pHlp, " 3DNOWPRF");
             if (uECX & RT_BIT(9))   pHlp->pfnPrintf(pHlp, " OSVW");
+            if (uECX & RT_BIT(10))  pHlp->pfnPrintf(pHlp, " IBS");
+            if (uECX & RT_BIT(11))  pHlp->pfnPrintf(pHlp, " SSE5");
             if (uECX & RT_BIT(12))  pHlp->pfnPrintf(pHlp, " SKINIT");
             if (uECX & RT_BIT(13))  pHlp->pfnPrintf(pHlp, " WDT");
             for (unsigned iBit = 5; iBit < 32; iBit++)
@@ -1402,8 +1406,8 @@ static DECLCALLBACK(void) cpumR3CpuIdInfo(PVM pVM, PCDBGFINFOHLP pHlp, const cha
             pHlp->pfnPrintf(pHlp, "MMX - Intel MMX Technology             = %d (%d)\n",  !!(uEdxGst & RT_BIT(23)),  !!(uEdxHst & RT_BIT(23)));
             pHlp->pfnPrintf(pHlp, "FXSR - FXSAVE and FXRSTOR Instructions = %d (%d)\n",  !!(uEdxGst & RT_BIT(24)),  !!(uEdxHst & RT_BIT(24)));
             pHlp->pfnPrintf(pHlp, "25 - AMD fast FXSAVE and FXRSTOR Instr.= %d (%d)\n",  !!(uEdxGst & RT_BIT(25)),  !!(uEdxHst & RT_BIT(25)));
-            pHlp->pfnPrintf(pHlp, "26 - Reserved                          = %d (%d)\n",  !!(uEdxGst & RT_BIT(26)),  !!(uEdxHst & RT_BIT(26)));
-            pHlp->pfnPrintf(pHlp, "27 - Reserved                          = %d (%d)\n",  !!(uEdxGst & RT_BIT(27)),  !!(uEdxHst & RT_BIT(27)));
+            pHlp->pfnPrintf(pHlp, "26 - 1 GB large page support           = %d (%d)\n",  !!(uEdxGst & RT_BIT(26)),  !!(uEdxHst & RT_BIT(26)));
+            pHlp->pfnPrintf(pHlp, "27 - RDTSCP instruction                = %d (%d)\n",  !!(uEdxGst & RT_BIT(27)),  !!(uEdxHst & RT_BIT(27)));
             pHlp->pfnPrintf(pHlp, "28 - Reserved                          = %d (%d)\n",  !!(uEdxGst & RT_BIT(28)),  !!(uEdxHst & RT_BIT(28)));
             pHlp->pfnPrintf(pHlp, "29 - AMD Long Mode                     = %d (%d)\n",  !!(uEdxGst & RT_BIT(29)),  !!(uEdxHst & RT_BIT(29)));
             pHlp->pfnPrintf(pHlp, "30 - AMD Extensions to 3DNow           = %d (%d)\n",  !!(uEdxGst & RT_BIT(30)),  !!(uEdxHst & RT_BIT(30)));
@@ -1421,7 +1425,8 @@ static DECLCALLBACK(void) cpumR3CpuIdInfo(PVM pVM, PCDBGFINFOHLP pHlp, const cha
             pHlp->pfnPrintf(pHlp, "Misaligned SSE mode                    = %d (%d)\n",  !!(uEcxGst & RT_BIT( 7)),  !!(uEcxHst & RT_BIT( 7)));
             pHlp->pfnPrintf(pHlp, "PREFETCH and PREFETCHW instruction     = %d (%d)\n",  !!(uEcxGst & RT_BIT( 8)),  !!(uEcxHst & RT_BIT( 8)));
             pHlp->pfnPrintf(pHlp, "OS visible workaround                  = %d (%d)\n",  !!(uEcxGst & RT_BIT( 9)),  !!(uEcxHst & RT_BIT( 9)));
-            pHlp->pfnPrintf(pHlp, "11:10 - Reserved                       = %#x (%#x)\n",  (uEcxGst >> 10) & 3,    (uEcxHst >> 10) & 3);
+            pHlp->pfnPrintf(pHlp, "Instruction based sampling             = %d (%d)\n",  !!(uEcxGst & RT_BIT(10)),  !!(uEcxHst & RT_BIT(10)));
+            pHlp->pfnPrintf(pHlp, "SSE5 support                           = %d (%d)\n",  !!(uEcxGst & RT_BIT(11)),  !!(uEcxHst & RT_BIT(11)));
             pHlp->pfnPrintf(pHlp, "SKINIT, STGI, and DEV support          = %d (%d)\n",  !!(uEcxGst & RT_BIT(12)),  !!(uEcxHst & RT_BIT(12)));
             pHlp->pfnPrintf(pHlp, "Watchdog timer support.                = %d (%d)\n",  !!(uEcxGst & RT_BIT(13)),  !!(uEcxHst & RT_BIT(13)));
             pHlp->pfnPrintf(pHlp, "31:14 - Reserved                       = %#x (%#x)\n",   uEcxGst >> 14,          uEcxHst >> 14);
@@ -1678,7 +1683,7 @@ typedef struct CPUMDISASSTATE
  * @param   uDisCpu     Pointer to the disassembler cpu state.
  *                      In this context it's always pointer to the Core of a DBGFDISASSTATE.
  */
-static DECLCALLBACK(int) cpumR3DisasInstrRead(RTHCUINTPTR PtrSrc, uint8_t *pu8Dst, uint32_t cbRead, void *uDisCpu)
+static DECLCALLBACK(int) cpumR3DisasInstrRead(RTUINTPTR PtrSrc, uint8_t *pu8Dst, uint32_t cbRead, void *uDisCpu)
 {
     PDISCPUSTATE pCpu = (PDISCPUSTATE)uDisCpu;
     PCPUMDISASSTATE pState = (PCPUMDISASSTATE)pCpu->apvUserData[0];
@@ -1816,7 +1821,7 @@ CPUMR3DECL(int) CPUMR3DisasmInstrCPU(PVM pVM, PCPUMCTX pCtx, RTGCPTR GCPtrPC, PD
     pCpu->apvUserData[0]  = &State;
 
     uint32_t cbInstr;
-#ifdef LOG_ENABLED
+#ifndef LOG_ENABLED
     rc = DISInstr(pCpu, GCPtrPC, 0, &cbInstr, NULL);
     if (VBOX_SUCCESS(rc))
     {

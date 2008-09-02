@@ -1,4 +1,4 @@
-/* $Id: PGMAllPool.cpp 8454 2008-04-29 11:31:44Z vboxsync $ */
+/* $Id: PGMAllPool.cpp 31085 2008-05-21 10:17:41Z sandervl $ */
 /** @file
  * PGM Shadow Page Pool.
  */
@@ -907,6 +907,9 @@ DECLINLINE(void) pgmPoolHashRemove(PPGMPOOL pPool, PPGMPOOLPAGE pPage)
  */
 static int pgmPoolCacheFreeOne(PPGMPOOL pPool, uint16_t iUser)
 {
+#ifndef IN_GC
+    const PVM pVM = pPool->CTXSUFF(pVM);
+#endif
     Assert(pPool->iAgeHead != pPool->iAgeTail); /* We shouldn't be here if there < 2 cached entries! */
     STAM_COUNTER_INC(&pPool->StatCacheFreeUpOne);
 
@@ -1031,6 +1034,9 @@ static bool pgmPoolCacheReusedByKind(PGMPOOLKIND enmKind1, PGMPOOLKIND enmKind2)
  */
 static int pgmPoolCacheAlloc(PPGMPOOL pPool, RTGCPHYS GCPhys, PGMPOOLKIND enmKind, uint16_t iUser, uint16_t iUserTable, PPPGMPOOLPAGE ppPage)
 {
+#ifndef IN_GC
+    const PVM pVM = pPool->CTXSUFF(pVM);
+#endif
     /*
      * Look up the GCPhys in the hash.
      */
@@ -1704,7 +1710,9 @@ void pgmPoolClearAll(PVM pVM)
         }
     }
 
+#ifndef DEBUG_michael
     AssertMsg(cModifiedPages == pPool->cModifiedPages, ("%d != %d\n", cModifiedPages, pPool->cModifiedPages));
+#endif
     pPool->iModifiedHead = NIL_PGMPOOL_IDX;
     pPool->cModifiedPages = 0;
 

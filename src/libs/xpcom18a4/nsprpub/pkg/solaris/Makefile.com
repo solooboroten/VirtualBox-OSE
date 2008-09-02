@@ -2,7 +2,7 @@
 # Copyright 2002 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-#ident	"$Id: Makefile.com 1  vboxsync $"
+#ident	"$Id: Makefile.com 16040 2006-12-01 13:25:05Z klaus $"
 #
 
 MACH = $(shell mach)

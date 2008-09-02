@@ -31,6 +31,8 @@ if [ -z "$2" ]; then
     # Try obtain a physical NIC that is currently active
     phys_nic=`/usr/sbin/dladm show-dev | /usr/bin/awk 'NF==7 && $3=="up" { print $1 }'`
     if [ -z "$phys_nic" ]; then
+        # Try obtain a physical NIC that is currently active
+        phys_nic=`/usr/sbin/dladm show-dev | /usr/bin/awk 'NF==4 && $2=="up" { print $1 }'`
         # Failed to get a currently active NIC, get the first available NIC.
         phys_nic=`/usr/sbin/dladm show-link | /usr/bin/nawk '/legacy/ {next} {print $1; exit}'`
         if [ -z "$phys_nic" ]; then
@@ -41,7 +43,7 @@ if [ -z "$2" ]; then
     fi
 
     # To use a specific physical NIC, replace $phys_nic with the name of the NIC.
-    vnic_name=`/usr/lib/vna $phys_nic $mac`
+    vnic_name="vnic"`/usr/lib/vna $phys_nic $mac`
     if [ $? != 0 ]; then
         exit 1
     fi

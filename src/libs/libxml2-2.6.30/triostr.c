@@ -1,6 +1,6 @@
 /*************************************************************************
  *
- * $Id: triostr.c 6076 2007-12-14 19:23:03Z vboxsync $
+ * $Id: triostr.c 26769 2007-12-14 19:23:03Z dmik $
  *
  * Copyright (C) 2001 Bjorn Reese and Daniel Stenberg.
  *
@@ -101,7 +101,7 @@ struct _trio_string_t
  */
 
 #if !defined(TRIO_MINIMAL)
-static TRIO_CONST char rcsid[] = "@(#)$Id: triostr.c 6076 2007-12-14 19:23:03Z vboxsync $";
+static TRIO_CONST char rcsid[] = "@(#)$Id: triostr.c 26769 2007-12-14 19:23:03Z dmik $";
 #endif
 
 /*************************************************************************

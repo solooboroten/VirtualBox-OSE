@@ -33,6 +33,7 @@ BEGINCODE
 
 align 16
 BEGINPROC   TestProc
+      mov   word [edi], 0123ah
       movzx eax,byte  [edx]
       movzx eax,word  [edx]
 ;      mov dword es:[ebx + 1234h], 0789h
@@ -69,6 +70,11 @@ ENDPROC   TestProc
 BITS 64
 align 16
 BEGINPROC TestProc64
+      ;incorrectly assembled by yasm; REX.W should not be added!
+      ;test rax, dword 0cc90cc90h
+      mov rax, dword 0cc90cc90h
+      mov rax, qword 0ffffcc90cc90h
+
       movzx rax,byte  [edx]
       movzx rax,word  [edx]
       movzx rax,byte  [rdx]
@@ -90,6 +96,7 @@ BEGINPROC TestProc64
 
       movss xmm0, xmm14
       movsd xmm6, xmm1
+
       ret
 ENDPROC   TestProc64
 %endif

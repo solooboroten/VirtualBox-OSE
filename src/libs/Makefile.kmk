@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8155 2008-04-18 15:16:47Z vboxsync $
+# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
 ## @file
 # Top-level makefile for the external libraries.
 #
@@ -20,10 +20,10 @@
 #
 
 DEPTH = ../..
-include $(PATH_KBUILD)/header.kmk
+include $(KBUILD_PATH)/header.kmk
 
 
-subdirs := liblzf-1.51 $(subdirs.$(BUILD_TARGET))
+subdirs := liblzf-1.51 $(subdirs.$(KBUILD_TARGET))
 ifdef IPRT_WITH_KSTUFF
  subdirs += kStuff
 endif
@@ -56,7 +56,7 @@ ifdef VBOX_WITH_MAIN
  endif
  # FFmpeg for test videos
  ifdef VBOX_WITH_FFMPEG
-  ifeq ($(BUILD_TARGET),darwin)
+  ifeq ($(KBUILD_TARGET),darwin)
    subdirs += ffmpeg-20060710
   endif
  endif
@@ -71,4 +71,4 @@ SUBDIRS_OTHERS         = $(filter xpcom18a4,$(subdirs))
 SUBDIRS_CLEAN          = $(subdirs)
 SUBDIRS_NOTHING        = $(subdirs)
 
-include $(PATH_KBUILD)/footer.kmk
+include $(KBUILD_PATH)/footer.kmk

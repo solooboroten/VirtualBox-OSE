@@ -1,4 +1,4 @@
-/* $Id: HWVMXR0.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: HWVMXR0.cpp 31336 2008-05-28 07:44:21Z sandervl $ */
 /** @file
  * HWACCM VMX - Host Context Ring 0.
  */
@@ -62,12 +62,12 @@ static void VMXR0CheckError(PVM pVM, int rc)
  * Sets up and activates VT-x on the current CPU
  *
  * @returns VBox status code.
- * @param   idCpu           The identifier for the CPU the function is called on.
+ * @param   pCpu            CPU info struct
  * @param   pVM             The VM to operate on.
  * @param   pvPageCpu       Pointer to the global cpu page
  * @param   pPageCpuPhys    Physical address of the global cpu page
  */
-HWACCMR0DECL(int) VMXR0EnableCpu(RTCPUID idCpu, PVM pVM, void *pvPageCpu, RTHCPHYS pPageCpuPhys)
+HWACCMR0DECL(int) VMXR0EnableCpu(PHWACCM_CPUINFO pCpu, PVM pVM, void *pvPageCpu, RTHCPHYS pPageCpuPhys)
 {
     AssertReturn(pPageCpuPhys, VERR_INVALID_PARAMETER);
     AssertReturn(pVM, VERR_INVALID_PARAMETER);
@@ -77,7 +77,7 @@ HWACCMR0DECL(int) VMXR0EnableCpu(RTCPUID idCpu, PVM pVM, void *pvPageCpu, RTHCPH
     Assert(pVM->hwaccm.s.vmx.fSupported);
 
 #ifdef LOG_ENABLED
-    SUPR0Printf("VMXR0EnableCpu cpu %d page (%x) %x\n", idCpu, pvPageCpu, (uint32_t)pPageCpuPhys);
+    SUPR0Printf("VMXR0EnableCpu cpu %d page (%x) %x\n", pCpu->idCpu, pvPageCpu, (uint32_t)pPageCpuPhys);
 #endif
     /* Set revision dword at the beginning of the VMXON structure. */
     *(uint32_t *)pvPageCpu = MSR_IA32_VMX_BASIC_INFO_VMCS_ID(pVM->hwaccm.s.vmx.msr.vmx_basic_info);
@@ -104,11 +104,11 @@ HWACCMR0DECL(int) VMXR0EnableCpu(RTCPUID idCpu, PVM pVM, void *pvPageCpu, RTHCPH
  * Deactivates VT-x on the current CPU
  *
  * @returns VBox status code.
- * @param   idCpu           The identifier for the CPU the function is called on.
+ * @param   pCpu            CPU info struct
  * @param   pvPageCpu       Pointer to the global cpu page
  * @param   pPageCpuPhys    Physical address of the global cpu page
  */
-HWACCMR0DECL(int) VMXR0DisableCpu(RTCPUID idCpu, void *pvPageCpu, RTHCPHYS pPageCpuPhys)
+HWACCMR0DECL(int) VMXR0DisableCpu(PHWACCM_CPUINFO pCpu, void *pvPageCpu, RTHCPHYS pPageCpuPhys)
 {
     AssertReturn(pPageCpuPhys, VERR_INVALID_PARAMETER);
     AssertReturn(pvPageCpu, VERR_INVALID_PARAMETER);
@@ -120,7 +120,7 @@ HWACCMR0DECL(int) VMXR0DisableCpu(RTCPUID idCpu, void *pvPageCpu, RTHCPHYS pPage
     ASMSetCR4(ASMGetCR4() & ~X86_CR4_VMXE);
 
 #ifdef LOG_ENABLED
-    SUPR0Printf("VMXR0DisableCpu cpu %d\n", idCpu);
+    SUPR0Printf("VMXR0DisableCpu cpu %d\n", pCpu->idCpu);
 #endif
     return VINF_SUCCESS;
 }
@@ -511,7 +511,8 @@ static int VMXR0CheckPendingInterrupt(PVM pVM, CPUMCTX *pCtx)
         uint8_t     u8Vector;
         int         rc;
         TRPMEVENT   enmType;
-        RTGCUINTPTR intInfo, errCode;
+        RTGCUINTPTR intInfo;
+        RTGCUINT    errCode;
 
         /* If a new event is pending, then dispatch it now. */
         rc = TRPMQueryTrapAll(pVM, &u8Vector, &enmType, &errCode, 0);
@@ -947,12 +948,14 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
         pVM->hwaccm.s.vmx.proc_ctls &= ~VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_RDTSC_EXIT;
         rc = VMXWriteVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, pVM->hwaccm.s.vmx.proc_ctls);
         AssertRC(rc);
+        STAM_COUNTER_INC(&pVM->hwaccm.s.StatTSCOffset);
     }
     else
     {
         pVM->hwaccm.s.vmx.proc_ctls |= VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_RDTSC_EXIT;
         rc = VMXWriteVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, pVM->hwaccm.s.vmx.proc_ctls);
         AssertRC(rc);
+        STAM_COUNTER_INC(&pVM->hwaccm.s.StatTSCIntercept);
     }
 
     /* Done. */
@@ -962,15 +965,16 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
 }
 
 /**
- * Runs guest code in a VMX VM.
+ * Runs guest code in a VT-x VM.
  *
  * @note NEVER EVER turn on interrupts here. Due to our illegal entry into the kernel, it might mess things up. (XP kernel traps have been frequently observed)
  *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  * @param   pCtx        Guest context
+ * @param   pCpu        CPU info struct
  */
-HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx)
+HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx, PHWACCM_CPUINFO pCpu)
 {
     int         rc = VINF_SUCCESS;
     RTCCUINTREG val, valShadow;
@@ -983,6 +987,8 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx)
 
     Log2(("\nE"));
 
+    AssertReturn(pCpu->fVMXConfigured, VERR_EM_INTERNAL_ERROR);
+
     STAM_PROFILE_ADV_START(&pVM->hwaccm.s.StatEntry, x);
 
 #ifdef VBOX_STRICT
@@ -992,14 +998,11 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx)
 
     /* allowed zero */
     if ((val & (pVM->hwaccm.s.vmx.msr.vmx_pin_ctls & 0xFFFFFFFF)) != (pVM->hwaccm.s.vmx.msr.vmx_pin_ctls & 0xFFFFFFFF))
-    {
         Log(("Invalid VMX_VMCS_CTRL_PIN_EXEC_CONTROLS: zero\n"));
-    }
+
     /* allowed one */
     if ((val & ~(pVM->hwaccm.s.vmx.msr.vmx_pin_ctls >> 32ULL)) != 0)
-    {
         Log(("Invalid VMX_VMCS_CTRL_PIN_EXEC_CONTROLS: one\n"));
-    }
 
     rc = VMXReadVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, &val);
     AssertRC(rc);
@@ -1007,14 +1010,11 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx)
 
     /* allowed zero */
     if ((val & (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls & 0xFFFFFFFF)) != (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls & 0xFFFFFFFF))
-    {
         Log(("Invalid VMX_VMCS_CTRL_PROC_EXEC_CONTROLS: zero\n"));
-    }
+
     /* allowed one */
     if ((val & ~(pVM->hwaccm.s.vmx.msr.vmx_proc_ctls >> 32ULL)) != 0)
-    {
         Log(("Invalid VMX_VMCS_CTRL_PROC_EXEC_CONTROLS: one\n"));
-    }
 
     rc = VMXReadVMCS(VMX_VMCS_CTRL_ENTRY_CONTROLS, &val);
     AssertRC(rc);
@@ -1022,14 +1022,11 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx)
 
     /* allowed zero */
     if ((val & (pVM->hwaccm.s.vmx.msr.vmx_entry & 0xFFFFFFFF)) != (pVM->hwaccm.s.vmx.msr.vmx_entry & 0xFFFFFFFF))
-    {
         Log(("Invalid VMX_VMCS_CTRL_ENTRY_CONTROLS: zero\n"));
-    }
+
     /* allowed one */
     if ((val & ~(pVM->hwaccm.s.vmx.msr.vmx_entry >> 32ULL)) != 0)
-    {
         Log(("Invalid VMX_VMCS_CTRL_ENTRY_CONTROLS: one\n"));
-    }
 
     rc = VMXReadVMCS(VMX_VMCS_CTRL_EXIT_CONTROLS, &val);
     AssertRC(rc);
@@ -1037,14 +1034,11 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx)
 
     /* allowed zero */
     if ((val & (pVM->hwaccm.s.vmx.msr.vmx_exit & 0xFFFFFFFF)) != (pVM->hwaccm.s.vmx.msr.vmx_exit & 0xFFFFFFFF))
-    {
         Log(("Invalid VMX_VMCS_CTRL_EXIT_CONTROLS: zero\n"));
-    }
+
     /* allowed one */
     if ((val & ~(pVM->hwaccm.s.vmx.msr.vmx_exit >> 32ULL)) != 0)
-    {
         Log(("Invalid VMX_VMCS_CTRL_EXIT_CONTROLS: one\n"));
-    }
 #endif
 
 #if 0
@@ -1927,7 +1921,8 @@ ResumeExecution:
 
     case VMX_EXIT_HLT:                  /* 12 Guest software attempted to execute HLT. */
         /** Check if external interrupts are pending; if so, don't switch back. */
-        if (VM_FF_ISPENDING(pVM, (VM_FF_INTERRUPT_APIC|VM_FF_INTERRUPT_PIC)))
+        if (    pCtx->eflags.Bits.u1IF
+            &&  VM_FF_ISPENDING(pVM, (VM_FF_INTERRUPT_APIC|VM_FF_INTERRUPT_PIC)))
         {
             pCtx->eip++;    /* skip hlt */
             goto ResumeExecution;

@@ -621,14 +621,6 @@ Version %1</source>
         <translation>Монтирај слику &apos;додатака госта&apos;</translation>
     </message>
     <message>
-        <source>&amp;Statistics...</source>
-        <translation>&amp;Статистике...</translation>
-    </message>
-    <message>
-        <source>&amp;Command line...</source>
-        <translation>&amp;Командна линије...</translation>
-    </message>
-    <message>
         <source>&amp;VirtualBox Web Site...</source>
         <translation>Сајт &amp;VirtualBox-а...</translation>
     </message>
@@ -906,6 +898,21 @@ Version %1</source>
     <message>
         <source>Show Session Information Dialog</source>
         <translation>Покажи информације сесије</translation>
+    </message>
+    <message>
+        <source>&amp;Statistics...</source>
+        <comment>debug action</comment>
+        <translation>&amp;Статистике...</translation>
+    </message>
+    <message>
+        <source>&amp;Command Line...</source>
+        <comment>debug action</comment>
+        <translation>&amp;Командна линије...</translation>
+    </message>
+    <message>
+        <source>&amp;Logging...</source>
+        <comment>debug action</comment>
+        <translation>Журнал...</translation>
     </message>
 </context>
 <context>
@@ -1851,7 +1858,7 @@ Version %1</source>
     </message>
     <message>
         <source>Port %1</source>
-        <comment>StorageBusDevice</comment>
+        <comment>StorageBusChannel</comment>
         <translation>Порт %1</translation>
     </message>
     <message>
@@ -3084,10 +3091,6 @@ step and attach hard disks later using the VM Settings dialog.&lt;/p&gt;</source
         <translation>Неуспешна промена путања снимка машине &lt;b&gt;%1&lt;b&gt; на &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Could not enter seamless mode due to insufficient guest video memory.&lt;/p&gt;&lt;p&gt;You should configure the VM to have at least &lt;b&gt;%1&lt;/b&gt; of video memory.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Не може да се користи интегрисан мод пошто нема довољно видео меморије за госта.&lt;/p&gt;&lt;p&gt;Требате да поставите да машина има макар &lt;b&gt;%1&lt;/b&gt; видео меморије.&lt;/p&gt;</translation>
-    </message>
-    <message>
         <source>&lt;p&gt;Failed to remove the shared folder &lt;b&gt;%1&lt;/b&gt; (pointing to &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) from the virtual machine &lt;b&gt;%3&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Please close all programs in the guest OS that may be using this shared folder and try again.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Неуспешно скидање дељене фасцикле &lt;b&gt;%1&lt;/b&gt; (усмеравање на &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) из машине &lt;b&gt;%3&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Молимо да затворите сва програма из госта и да покушате поново.&lt;/p&gt;</translation>
     </message>
@@ -3316,6 +3319,14 @@ step and attach hard disks later using the VM Settings dialog.&lt;/p&gt;</source
         <source>Select</source>
         <comment>hard disk</comment>
         <translation>Одабери</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Could not enter seamless mode due to insufficient guest video memory.&lt;/p&gt;&lt;p&gt;You should configure the virtual machine to have at least &lt;b&gt;%1&lt;/b&gt; of video memory.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;Не може да се користи интегрисан мод пошто нема довољно видео меморије за госта.&lt;/p&gt;&lt;p&gt;Требате да поставите да машина има макар &lt;b&gt;%1&lt;/b&gt; видео меморије.&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Could not switch the guest display to fullscreen mode due to insufficient guest video memory.&lt;/p&gt;&lt;p&gt;You should configure the virtual machine to have at least &lt;b&gt;%1&lt;/b&gt; of video memory.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;Ignore&lt;/b&gt; to switch to fullscreen mode anyway or press &lt;b&gt;Cancel&lt;/b&gt; to cancel the operation.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;Не може да се пребаци дисплез на пун екран због недовољне видео меморије.&lt;/p&gt;&lt;p&gt;Подесите да виртуелна машина има макар &lt;b&gt;%1&lt;/b&gt; видео меморије.&lt;/p&gt;&lt;p&gt;Стиснути &lt;b&gt;Игнориши&lt;/b&gt; за ипак пребацивање на пуни мод или стиснути &lt;b&gt;Поништи&lt;/b&gt; за поништавање рада.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -4326,28 +4337,12 @@ value.&lt;/qt&gt;</source>
         <translation>Примљено</translation>
     </message>
     <message>
-        <source>Enabled</source>
-        <translation>Упаљено</translation>
-    </message>
-    <message>
-        <source>Disabled</source>
-        <translation>Угашено</translation>
-    </message>
-    <message>
         <source>Runtime Attributes</source>
         <translation>Атрибути рада</translation>
     </message>
     <message>
         <source>Screen Resolution</source>
         <translation>Резолуција екрана</translation>
-    </message>
-    <message>
-        <source>Hardware Virtualization</source>
-        <translation>Виртуализација хардвера</translation>
-    </message>
-    <message>
-        <source>IDE Hard Disk Statistics</source>
-        <translation>Статситике IDE хард диска</translation>
     </message>
     <message>
         <source>CD/DVD-ROM Statistics</source>
@@ -4358,44 +4353,39 @@ value.&lt;/qt&gt;</source>
         <translation>Статистике мрежног адаптера</translation>
     </message>
     <message>
-        <source>Adapter 1</source>
-        <translation>Адаптер 1</translation>
+        <source>Version %1.%2</source>
+        <comment>guest additions</comment>
+        <translation>Верзија %1.%2</translation>
     </message>
     <message>
-        <source>Adapter 2</source>
-        <translation>Адаптер 2</translation>
+        <source>Not Detected</source>
+        <comment>guest additions</comment>
+        <translation>Ненађено</translation>
     </message>
     <message>
-        <source>Adapter 3</source>
-        <translation>Адаптер 3</translation>
+        <source>Not Detected</source>
+        <comment>guest os type</comment>
+        <translation>Ненађено</translation>
     </message>
     <message>
-        <source>Adapter 4</source>
-        <translation>Адаптер 4</translation>
+        <source>Guest Additions</source>
+        <translation>Додатци госта</translation>
     </message>
     <message>
-        <source>Not attached</source>
-        <translation>Није прикључено</translation>
+        <source>Guest OS Type</source>
+        <translation>Тип ОС госта</translation>
     </message>
     <message>
-        <source>Hard Disks Statistics</source>
-        <translation>Статистике тврдих дискова</translation>
+        <source>Hard Disk Statistics</source>
+        <translation>Статистике хард диска</translation>
     </message>
     <message>
-        <source>Primary Master</source>
-        <translation>Примарни мастер</translation>
+        <source>No Hard Disks</source>
+        <translation>Без хард диска</translation>
     </message>
     <message>
-        <source>Primary Slave</source>
-        <translation>Примарни роб</translation>
-    </message>
-    <message>
-        <source>Secondary Master</source>
-        <translation>Секундарни мастер</translation>
-    </message>
-    <message>
-        <source>Secondary Slave</source>
-        <translation>Секундарни роб</translation>
+        <source>No Network Adapters</source>
+        <translation>Без мрежних адаптера</translation>
     </message>
 </context>
 <context>

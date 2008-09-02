@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8315 2008-04-23 07:25:46Z vboxsync $
+# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
 ## @file
 # VBox Etherboot Network boot ROM makefile.
 #
@@ -20,7 +20,7 @@
 #
 
 DEPTH = ../../../../../
-include $(PATH_KBUILD)/header.kmk
+include $(KBUILD_PATH)/header.kmk
 
 BLDPROGS  = nrv2b makerom
 LIBRARIES = NetBiosBin
@@ -96,7 +96,7 @@ NetBiosBin_INCS     = ../..
 NetBiosBin_SOURCES  = $(PATH_TARGET)/NetBiosBin.c
 
 
-include $(PATH_KBUILD)/footer.kmk
+include $(KBUILD_PATH)/footer.kmk
 
 #
 # Rule for making the bios
@@ -161,7 +161,7 @@ START=  $(PATH_TARGET)/start32.o $(PATH_TARGET)/bios.o \
         $(PATH_TARGET)/callbacks.o $(PATH_TARGET)/pxe_callbacks.o
 
 # Linker scripts.
-ifeq ($(BUILD_TARGET),win)
+ifeq ($(KBUILD_TARGET),win)
 LDSCRIPT = arch/i386/core/etherboot-pe.lds
 PLDSCRIPT = arch/i386/core/etherboot.prefix-pe.lds
 PREFULDSCRIPT = arch/i386/core/prefixudata-pe.lds
@@ -294,7 +294,7 @@ $(PATH_TARGET)/pcnet32.rom.prf: $(PCIENTRY) $(PCNET32_RUNTIME) $(PREFIXOBJS) $(P
 # are not up to compiling Etherboot (the linker messes up big time, shifting
 # the final binary to 0xffc00000 and filling out relocations incorrectly
 # (first occurrence is the call to prelocate in the pciprefix.o file).
-ifeq ($(filter-out darwin.x86 darwin.amd64 os2.x86 solaris.x86 solaris.amd64 win.x86 win.amd64 linux.amd64,$(BUILD_TARGET).$(BUILD_TARGET_ARCH)),)
+ifeq ($(filter-out darwin.x86 darwin.amd64 os2.x86 solaris.x86 solaris.amd64 win.x86 win.amd64 linux.amd64,$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)),)
 $(PATH_TARGET)/pcnet32.zrom: pcnet32.zrom | $(call DIRDEP,$(PATH_TARGET))
 	$(CP) -f $< $@
 else

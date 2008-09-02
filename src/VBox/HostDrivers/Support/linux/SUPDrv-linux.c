@@ -1385,7 +1385,7 @@ void  VBOXCALL  supdrvOSGipSuspend(PSUPDRVDEVEXT pDevExt)
  * Get the current CPU count.
  * @returns Number of cpus.
  */
-unsigned VBOXCALL supdrvOSGetCPUCount(void)
+unsigned VBOXCALL supdrvOSGetCPUCount(PSUPDRVDEVEXT pDevExt)
 {
 #ifdef CONFIG_SMP
 # if defined(num_present_cpus) && !defined(VBOX_REDHAT_KABI)
@@ -1404,7 +1404,7 @@ unsigned VBOXCALL supdrvOSGetCPUCount(void)
  * Force async tsc mode.
  * @todo add a module argument for this.
  */
-bool VBOXCALL  supdrvOSGetForcedAsyncTscMode(void)
+bool VBOXCALL  supdrvOSGetForcedAsyncTscMode(PSUPDRVDEVEXT pDevExt)
 {
     return force_async_tsc != 0;
 }

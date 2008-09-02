@@ -1,4 +1,4 @@
-; $Id: HWACCMR0A.asm 8155 2008-04-18 15:16:47Z vboxsync $
+; $Id: HWACCMR0A.asm 31299 2008-05-27 13:56:46Z bird $
 ;; @file
 ; VMXM - R0 vmx helpers
 ;
@@ -44,6 +44,8 @@
  %endmacro
 %endif
 
+;; This is too risky wrt. stability, performance and correctness.
+;%define VBOX_WITH_DR6_EXPERIMENT 1
 
 ;; @def MYPUSHAD
 ; Macro generating an equivalent to pushad
@@ -104,7 +106,16 @@
     push    %1
     mov     %2, ds
     push    %1
+
+    ; Special case for FS; Windows and Linux either don't use it or restore it when leaving kernel mode, Solaris OTOH doesn't and we must save it.
+    push    rcx
+    mov     ecx, MSR_K8_FS_BASE
+    rdmsr
+    pop     rcx
+    push    rdx
+    push    rax
     push    fs
+
     ; Special case for GS; OSes typically use swapgs to reset the hidden base register for GS on entry into the kernel. The same happens on exit
     push    rcx
     mov     ecx, MSR_K8_GS_BASE
@@ -124,9 +135,16 @@
     mov     ecx, MSR_K8_GS_BASE
     wrmsr
     pop     rcx
-    ; Now it's safe to step again
 
     pop     fs
+    pop     rax
+    pop     rdx
+    push    rcx
+    mov     ecx, MSR_K8_FS_BASE
+    wrmsr
+    pop     rcx
+    ; Now it's safe to step again
+
     pop     %1
     mov     ds, %2
     pop     %1
@@ -227,6 +245,12 @@ BEGINPROC VMXStartVM
     sub     xSP, xS*2
     sidt    [xSP]
 
+%ifdef VBOX_WITH_DR6_EXPERIMENT
+    ; Restore DR6 - experiment, not safe!
+    mov     xBX, [xSI + CPUMCTX.dr6]
+    mov     dr6, xBX
+%endif
+
     ; Restore CR2
     mov     ebx, [xSI + CPUMCTX.cr2]
     mov     cr2, xBX
@@ -273,6 +297,12 @@ ALIGNCODE(16)
     mov     dword [ss:xDI + CPUMCTX.edi], eax
 %else
     pop     dword [ss:xDI + CPUMCTX.edi]        ; the guest edi we pushed above
+%endif
+
+%ifdef VBOX_WITH_DR6_EXPERIMENT
+    ; Save DR6 - experiment, not safe!
+    mov     xAX, dr6
+    mov     [ss:xDI + CPUMCTX.dr6], xAX
 %endif
 
     pop     xAX         ; saved LDTR
@@ -406,6 +436,12 @@ BEGINPROC VMXResumeVM
     sub     xSP, xS*2
     sidt    [xSP]
 
+%ifdef VBOX_WITH_DR6_EXPERIMENT
+    ; Restore DR6 - experiment, not safe!
+    mov     xBX, [xSI + CPUMCTX.dr6]
+    mov     dr6, xBX
+%endif
+
     ; Restore CR2
     mov     xBX, [xSI + CPUMCTX.cr2]
     mov     cr2, xBX
@@ -452,6 +488,12 @@ ALIGNCODE(16)
     mov     dword [ss:xDI + CPUMCTX.edi], eax
 %else
     pop     dword [ss:xDI + CPUMCTX.edi]        ; the guest edi we pushed above
+%endif
+
+%ifdef VBOX_WITH_DR6_EXPERIMENT
+    ; Save DR6 - experiment, not safe!
+    mov     xAX, dr6
+    mov     [ss:xDI + CPUMCTX.dr6], xAX
 %endif
 
     pop     xAX          ; saved LDTR
@@ -707,6 +749,7 @@ BEGINPROC SVMVMRun
 %endif
     push    xBP
     mov     xBP, xSP
+    pushf
 
     ;/* Manual save and restore:
     ; * - General purpose registers except RIP, RSP, RAX
@@ -782,6 +825,7 @@ BEGINPROC SVMVMRun
 
     mov     eax, VINF_SUCCESS
 
+    popf
     pop     xBP
 %ifdef RT_ARCH_AMD64
     add     xSP, 4*xS

@@ -1,4 +1,4 @@
-/* $Id: semmutex-posix.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
+/* $Id: semmutex-posix.cpp 30582 2008-05-07 12:16:29Z bird $ */
 /** @file
  * IPRT - Mutex Semaphore, POSIX.
  */
@@ -34,8 +34,10 @@
 #include <iprt/semaphore.h>
 #include <iprt/assert.h>
 #include <iprt/alloc.h>
+#include <iprt/thread.h>
 #include <iprt/asm.h>
 #include <iprt/err.h>
+#include "internal/strict.h"
 
 #include <errno.h>
 #include <pthread.h>
@@ -66,7 +68,7 @@ struct RTSEMMUTEXINTERNAL
  * @returns false if invalid.
  * @param   pIntMutexSem    Pointer to the mutex semaphore to validate.
  */
-inline bool rtsemMutexValid(struct RTSEMMUTEXINTERNAL *pIntMutexSem)
+DECLINLINE(bool) rtsemMutexValid(struct RTSEMMUTEXINTERNAL *pIntMutexSem)
 {
     if ((uintptr_t)pIntMutexSem < 0x10000)
         return false;
@@ -223,6 +225,11 @@ RTDECL(int)  RTSemMutexRequest(RTSEMMUTEX MutexSem, unsigned cMillies)
      */
     pIntMutexSem->Owner = Self;
     ASMAtomicXchgU32(&pIntMutexSem->cNesting, 1);
+#ifdef RTSEMMUTEX_STRICT
+    RTTHREAD Thread = RTThreadSelf();
+    if (Thread != NIL_RTTHREAD)
+        RTThreadWriteLockInc(Thread);
+#endif
 
     return VINF_SUCCESS;
 }
@@ -271,6 +278,11 @@ RTDECL(int)  RTSemMutexRelease(RTSEMMUTEX MutexSem)
     /*
      * Clear the state. (cNesting == 1)
      */
+#ifdef RTSEMMUTEX_STRICT
+    RTTHREAD Thread = RTThreadSelf();
+    if (Thread != NIL_RTTHREAD)
+        RTThreadWriteLockDec(Thread);
+#endif
     pIntMutexSem->Owner    = (pthread_t)-1;
     ASMAtomicXchgU32(&pIntMutexSem->cNesting, 0);
 

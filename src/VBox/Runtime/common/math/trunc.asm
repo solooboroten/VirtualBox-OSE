@@ -1,4 +1,4 @@
-; $Id: trunc.asm 8256 2008-04-21 20:53:28Z vboxsync $
+; $Id: trunc.asm 29999 2008-04-21 20:53:28Z frank $
 ;; @file
 ; IPRT - No-CRT trunc - AMD64 & X86.
 ;

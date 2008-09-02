@@ -1,4 +1,4 @@
-/* $Id: VMMR0.cpp 8514 2008-04-30 15:35:21Z vboxsync $ */
+/* $Id: VMMR0.cpp 31032 2008-05-20 14:51:33Z bird $ */
 /** @file
  * VMM - Host Context Ring 0.
  */
@@ -426,6 +426,9 @@ static void vmmR0RecordRC(PVM pVM, int rc)
                     break;
                 case VMMCALLHOST_VM_SET_RUNTIME_ERROR:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatGCRetVMSetRuntimeError);
+                    break;
+                case VMMCALLHOST_VM_R0_HYPER_ASSERTION:
+                    STAM_COUNTER_INC(&pVM->vmm.s.StatGCRetHyperAssertion);
                     break;
                 default:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatGCRetCallHost);
@@ -1083,42 +1086,41 @@ DECLEXPORT(bool) RTCALL RTAssertDoBreakpoint(void)
 
 
 
-# undef LOG_GROUP
-# define LOG_GROUP LOG_GROUP_EM
-
 /**
- * Override this so we can push
+ * Override this so we can push it up to ring-3.
  *
  * @param   pszExpr     Expression. Can be NULL.
  * @param   uLine       Location line number.
  * @param   pszFile     Location file name.
  * @param   pszFunction Location function name.
- * @remark  This API exists in HC Ring-3 and GC.
  */
 DECLEXPORT(void) RTCALL AssertMsg1(const char *pszExpr, unsigned uLine, const char *pszFile, const char *pszFunction)
 {
+#ifndef DEBUG_sandervl
     SUPR0Printf("\n!!R0-Assertion Failed!!\n"
                 "Expression: %s\n"
                 "Location  : %s(%d) %s\n",
                 pszExpr, pszFile, uLine, pszFunction);
-
-    LogRel(("\n!!R0-Assertion Failed!!\n"
-            "Expression: %s\n"
-            "Location  : %s(%d) %s\n",
-            pszExpr, pszFile, uLine, pszFunction));
+#endif
+    LogAlways(("\n!!R0-Assertion Failed!!\n"
+               "Expression: %s\n"
+               "Location  : %s(%d) %s\n",
+               pszExpr, pszFile, uLine, pszFunction));
 }
 
 
 /**
- * Callback for RTLogFormatV which writes to the com port.
+ * Callback for RTLogFormatV which writes to the ring-3 log port.
  * See PFNLOGOUTPUT() for details.
  */
 static DECLCALLBACK(size_t) rtLogOutput(void *pv, const char *pachChars, size_t cbChars)
 {
     for (size_t i = 0; i < cbChars; i++)
     {
-        LogRel(("%c", pachChars[i])); /** @todo this isn't any release logging in ring-0 from what I can tell... */
+#ifndef DEBUG_sandervl
         SUPR0Printf("%c", pachChars[i]);
+#endif
+        LogAlways(("%c", pachChars[i]));
     }
 
     return cbChars;
@@ -1127,7 +1129,7 @@ static DECLCALLBACK(size_t) rtLogOutput(void *pv, const char *pachChars, size_t 
 
 DECLEXPORT(void) RTCALL AssertMsg2(const char *pszFormat, ...)
 {
-    PRTLOGGER pLog = RTLogDefaultInstance();
+    PRTLOGGER pLog = RTLogDefaultInstance(); /** @todo we want this for release as well! */
     if (pLog)
     {
         va_list args;

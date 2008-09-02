@@ -1,4 +1,4 @@
-/* $Id: VBoxDev.cpp 8430 2008-04-28 16:06:30Z vboxsync $ */
+/* $Id: VBoxDev.cpp 31070 2008-05-21 08:24:45Z sunlover $ */
 /** @file
  * VMMDev - Guest <-> VMM/Host communication device.
  */
@@ -858,18 +858,19 @@ static DECLCALLBACK(int) vmmdevRequestHandler(PPDMDEVINS pDevIns, void *pvUser, 
             else
             {
                 VMMDevDisplayChangeRequest *displayChangeRequest = (VMMDevDisplayChangeRequest*)pRequestHeader;
-                /* just pass on the information */
-                Log(("VMMDev: returning display change request xres = %d, yres = %d, bpp = %d\n",
-                     pData->displayChangeRequest.xres, pData->displayChangeRequest.yres, pData->displayChangeRequest.bpp));
-                displayChangeRequest->xres = pData->displayChangeRequest.xres;
-                displayChangeRequest->yres = pData->displayChangeRequest.yres;
-                displayChangeRequest->bpp  = pData->displayChangeRequest.bpp;
 
                 if (displayChangeRequest->eventAck == VMMDEV_EVENT_DISPLAY_CHANGE_REQUEST)
                 {
-                    /* Remember which resolution the client has queried. */
+                    /* Remember which resolution the client has queried, subsequent reads will return the same values. */
                     pData->lastReadDisplayChangeRequest = pData->displayChangeRequest;
                 }
+
+                /* just pass on the information */
+                Log(("VMMDev: returning display change request xres = %d, yres = %d, bpp = %d\n",
+                     pData->displayChangeRequest.xres, pData->displayChangeRequest.yres, pData->displayChangeRequest.bpp));
+                displayChangeRequest->xres = pData->lastReadDisplayChangeRequest.xres;
+                displayChangeRequest->yres = pData->lastReadDisplayChangeRequest.yres;
+                displayChangeRequest->bpp  = pData->lastReadDisplayChangeRequest.bpp;
 
                 pRequestHeader->rc = VINF_SUCCESS;
             }
@@ -885,19 +886,20 @@ static DECLCALLBACK(int) vmmdevRequestHandler(PPDMDEVINS pDevIns, void *pvUser, 
             else
             {
                 VMMDevDisplayChangeRequest2 *displayChangeRequest = (VMMDevDisplayChangeRequest2*)pRequestHeader;
-                /* just pass on the information */
-                Log(("VMMDev: returning display change request xres = %d, yres = %d, bpp = %d at %d\n",
-                     pData->displayChangeRequest.xres, pData->displayChangeRequest.yres, pData->displayChangeRequest.bpp, pData->displayChangeRequest.display));
-                displayChangeRequest->xres    = pData->displayChangeRequest.xres;
-                displayChangeRequest->yres    = pData->displayChangeRequest.yres;
-                displayChangeRequest->bpp     = pData->displayChangeRequest.bpp;
-                displayChangeRequest->display = pData->displayChangeRequest.display;
 
                 if (displayChangeRequest->eventAck == VMMDEV_EVENT_DISPLAY_CHANGE_REQUEST)
                 {
-                    /* Remember which resolution the client has queried. */
+                    /* Remember which resolution the client has queried, subsequent reads will return the same values. */
                     pData->lastReadDisplayChangeRequest = pData->displayChangeRequest;
                 }
+
+                /* just pass on the information */
+                Log(("VMMDev: returning display change request xres = %d, yres = %d, bpp = %d at %d\n",
+                     pData->displayChangeRequest.xres, pData->displayChangeRequest.yres, pData->displayChangeRequest.bpp, pData->displayChangeRequest.display));
+                displayChangeRequest->xres    = pData->lastReadDisplayChangeRequest.xres;
+                displayChangeRequest->yres    = pData->lastReadDisplayChangeRequest.yres;
+                displayChangeRequest->bpp     = pData->lastReadDisplayChangeRequest.bpp;
+                displayChangeRequest->display = pData->lastReadDisplayChangeRequest.display;
 
                 pRequestHeader->rc = VINF_SUCCESS;
             }
@@ -1994,10 +1996,12 @@ static DECLCALLBACK(int) vmmdevSaveState(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHand
  */
 static DECLCALLBACK(int) vmmdevLoadState(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, uint32_t u32Version)
 {
+    /** @todo The code load code is assuming we're always loaded into a fresh VM. */
     VMMDevState *pData = PDMINS2DATA(pDevIns, VMMDevState*);
     if (   SSM_VERSION_MAJOR_CHANGED(u32Version, VMMDEV_SSM_VERSION)
         || (SSM_VERSION_MINOR(u32Version) < 6))
         return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
+
     SSMR3GetU32(pSSMHandle, &pData->hypervisorSize);
     SSMR3GetU32(pSSMHandle, &pData->mouseCapabilities);
     SSMR3GetU32(pSSMHandle, &pData->mouseXAbs);
@@ -2295,6 +2299,7 @@ static DECLCALLBACK(int) vmmdevConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
 static DECLCALLBACK(void) vmmdevReset(PPDMDEVINS pDevIns)
 {
     VMMDevState *pData = PDMINS2DATA(pDevIns, VMMDevState*);
+
     /*
      * Reset the mouse integration feature bit
      */
@@ -2326,9 +2331,16 @@ static DECLCALLBACK(void) vmmdevReset(PPDMDEVINS pDevIns)
     memset(pData->credentialsJudge.szDomain, '\0', VMMDEV_CREDENTIALS_STRLEN);
 
     /* Reset means that additions will report again. */
+    const bool fVersionChanged = pData->fu32AdditionsOk
+                              || pData->guestInfo.additionsVersion
+                              || pData->guestInfo.osType != VBOXOSTYPE_Unknown;
+    if (fVersionChanged)
+        Log(("vmmdevReset: fu32AdditionsOk=%d additionsVersion=%x osType=%#x\n",
+             pData->fu32AdditionsOk, pData->guestInfo.additionsVersion, pData->guestInfo.osType));
     pData->fu32AdditionsOk = false;
     memset (&pData->guestInfo, 0, sizeof (pData->guestInfo));
 
+    /* clear pending display change request. */
     memset (&pData->lastReadDisplayChangeRequest, 0, sizeof (pData->lastReadDisplayChangeRequest));
 
     /* disable seamless mode */
@@ -2340,7 +2352,8 @@ static DECLCALLBACK(void) vmmdevReset(PPDMDEVINS pDevIns)
     /* disabled statistics updating */
     pData->u32LastStatIntervalSize = 0;
 
-    /* Clear the event variables.
+    /*
+     * Clear the event variables.
      *
      *   Note: The pData->u32HostEventFlags is not cleared.
      *         It is designed that way so host events do not
@@ -2350,10 +2363,20 @@ static DECLCALLBACK(void) vmmdevReset(PPDMDEVINS pDevIns)
     pData->u32NewGuestFilterMask = 0;
     pData->fNewGuestFilterMask   = 0;
 
-    /* This is the default, as Windows and OS/2 guests take this for granted. */
+    /* This is the default, as Windows and OS/2 guests take this for granted. (Actually, neither does...) */
     /** @todo change this when we next bump the interface version */
-    pData->guestCaps = VMMDEV_GUEST_SUPPORTS_GRAPHICS;
-    pData->pDrv->pfnUpdateGuestCapabilities(pData->pDrv, pData->guestCaps);
+    const bool fCapsChanged = pData->guestCaps != VMMDEV_GUEST_SUPPORTS_GRAPHICS;
+    if (fCapsChanged)
+        Log(("vmmdevReset: fCapsChanged=%#x -> %#x\n", pData->guestCaps, VMMDEV_GUEST_SUPPORTS_GRAPHICS));
+    pData->guestCaps = VMMDEV_GUEST_SUPPORTS_GRAPHICS; /** @todo r=bird: why? I cannot see this being done at construction?*/
+
+    /*
+     * Call the update functions as required.
+     */
+    if (fVersionChanged)
+        pData->pDrv->pfnUpdateGuestVersion(pData->pDrv, &pData->guestInfo);
+    if (fCapsChanged)
+        pData->pDrv->pfnUpdateGuestCapabilities(pData->pDrv, pData->guestCaps);
 }
 
 

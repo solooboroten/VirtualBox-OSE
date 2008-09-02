@@ -23,7 +23,7 @@
 #include "version-generated.h"
 
 /* #define IRQ_DEBUG */
-// #define IOCTL_DEBUG
+/* #define IOCTL_DEBUG */
 #ifdef IOCTL_DEBUG
 # define IOCTL_ENTRY(name, arg) \
 do { \
@@ -342,6 +342,31 @@ static int vboxadd_hgcm_connect(struct file *filp, unsigned long userspace_info)
 }
 
 /**
+ * IOCTL handler.  Disconnect a specific HGCM connection.
+ *
+ * @returns 0 on success, or a Linux kernel errno value
+ * @param  filp           the file structure with which the application opened the driver
+ * @param  userspace_info userspace pointer to the hgcm connection information
+ *                        (VBoxGuestHGCMConnectInfo structure)
+ * @retval userspace_info userspace pointer to the hgcm connection information
+ */
+static int vboxadd_hgcm_disconnect(struct file *filp, unsigned long userspace_info)
+{
+        VBoxGuestHGCMDisconnectInfo info;
+        if (0 != copy_from_user ((void *)&info, (void *)userspace_info, sizeof (info))) {
+                LogRelFunc (("IOCTL_VBOXGUEST_HGCM_DISCONNECT: can not get info\n"));
+                return -EFAULT;
+        }
+        LogRelFunc(("client ID %u\n", info.u32ClientID));
+        vboxadd_cmc_call(vboxDev, IOCTL_VBOXGUEST_HGCM_DISCONNECT, &info);
+        if (copy_to_user ((void *)userspace_info, (void *)&info, sizeof(info))) {
+                LogRelFunc (("IOCTL_VBOXGUEST_HGCM_DISCONNECT: failed to return the connection structure\n"));
+                return -EFAULT;
+        }
+        return 0;
+}
+
+/**
  * IOCtl handler.  Control the interrupt filter mask to specify which VMMDev interrupts
  * we know how to handle.
  *
@@ -531,6 +556,11 @@ static int vboxadd_ioctl(struct inode *inode, struct file *filp,
                     rc = vboxadd_hgcm_connect(filp, arg);
                     IOCTL_EXIT("IOCTL_VBOXGUEST_HGCM_CONNECT", arg);
                     break;
+            case IOCTL_VBOXGUEST_HGCM_DISCONNECT:
+                    IOCTL_ENTRY("IOCTL_VBOXGUEST_HGCM_DISCONNECT", arg);
+                    vboxadd_hgcm_disconnect(filp, arg);
+                    IOCTL_EXIT("IOCTL_VBOXGUEST_HGCM_DISCONNECT", arg);
+                    break;
             case VBOXGUEST_IOCTL_CTL_FILTER_MASK:
             {
                     VBoxGuestFilterMaskInfo info;
@@ -645,6 +675,7 @@ static irqreturn_t vboxadd_irq_handler(int irq, void *dev_id, struct pt_regs *re
 #ifdef IRQ_DEBUG
     else
     {
+        /* we might be attached to a shared interrupt together with another device. */
         Log(("vboxadd IRQ_DEBUG: stale IRQ mem=%p events=%d devevents=%#x\n",
              vboxDev->pVMMDevMemory,
              vboxDev->pVMMDevMemory->V.V1_04.fHaveEvents,
@@ -785,10 +816,11 @@ static void free_resources(void)
 {
     if (vboxDev)
     {
+        /* at first detach from IRQ! */
+        if (vboxDev->irq)
+            free_irq(vboxDev->irq, vboxDev);
         if (vboxDev->hypervisorStart)
-        {
             vboxadd_free_hypervisor();
-        }
         if (vboxDev->irqAckRequest)
         {
             VbglGRFree(&vboxDev->irqAckRequest->header);
@@ -798,8 +830,6 @@ static void free_resources(void)
             iounmap(vboxDev->pVMMDevMemory);
         if (vboxDev->vmmdevmem)
             release_mem_region(vboxDev->vmmdevmem, vboxDev->vmmdevmem_size);
-        if (vboxDev->irq)
-            free_irq(vboxDev->irq, vboxDev);
         kfree(vboxDev);
         vboxDev = NULL;
     }

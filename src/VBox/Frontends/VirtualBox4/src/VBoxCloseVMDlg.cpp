@@ -20,24 +20,28 @@
  * additional information or have any questions.
  */
 
-#include <VBoxCloseVMDlg.h>
-#include <VBoxProblemReporter.h>
+#include "VBoxCloseVMDlg.h"
+#include "VBoxProblemReporter.h"
 
 /* Qt includes */
 #include <QPushButton>
 
 VBoxCloseVMDlg::VBoxCloseVMDlg (QWidget *aParent)
-    : QIDialog (aParent, Qt::Sheet)
+    : QIWithRetranslateUI2<QIDialog> (aParent, Qt::Sheet)
 {
     /* Apply UI decorations */
-    setupUi (this);
+    Ui::VBoxCloseVMDlg::setupUi (this);
 
-    /* Help is toggled with F1 */
-    mButtonBox->button (QDialogButtonBox::Help)->setShortcut (QKeySequence (tr ("F1"))); 
     /* Set fixed size */
     setSizePolicy (QSizePolicy::Fixed, QSizePolicy::Fixed);
 
     connect (mButtonBox, SIGNAL (helpRequested()),
              &vboxProblem(), SLOT (showHelpHelpDialog()));
+}
+
+void VBoxCloseVMDlg::retranslateUi()
+{
+    /* Translate uic generated strings */
+    Ui::VBoxCloseVMDlg::retranslateUi (this);
 }
 

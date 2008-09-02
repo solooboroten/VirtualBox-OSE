@@ -1,4 +1,4 @@
-/** $Id: VBoxSFInit.cpp 3655 2007-07-16 18:47:26Z vboxsync $ */
+/** $Id: VBoxSFInit.cpp 22498 2007-06-30 23:18:48Z bird $ */
 /** @file
  * VBoxSF - OS/2 Shared Folders, Initialization.
  */

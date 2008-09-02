@@ -56,8 +56,11 @@ echo 'i pkginfo=./vbox.pkginfo' > prototype
 echo 'i postinstall=./postinstall.sh' >> prototype
 echo 'i preremove=./preremove.sh' >> prototype
 echo 'i space=./vbox.space' >> prototype
+if test -f "./vbox.copyright"; then
+    echo 'i copyright=./vbox.copyright' >> prototype
+fi
 echo 'e sed /etc/devlink.tab ? ? ?' >> prototype
-find . -print | $VBOX_GGREP -v -E 'prototype|makepackage.sh|vbox.pkginfo|postinstall.sh|preremove.sh|ReadMe.txt|vbox.space' | pkgproto >> prototype
+find . -print | $VBOX_GGREP -v -E 'prototype|makepackage.sh|vbox.pkginfo|postinstall.sh|preremove.sh|ReadMe.txt|vbox.space|vbox.copyright' | pkgproto >> prototype
 
 # don't grok for the sed class files
 $VBOX_AWK 'NF == 6 && $2 == "none" { $5 = "root"; $6 = "bin" } { print }' prototype > prototype2
@@ -65,12 +68,17 @@ $VBOX_AWK 'NF == 6 && $2 == "none" { $3 = "opt/VirtualBox/"$3"="$3 } { print }' 
 
 # install the kernel module to the right place.
 if test "$3" = "x86"; then
-    $VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/vboxdrv=vboxdrv" { $3 = "platform/i86pc/kernel/drv/vboxdrv=vboxdrv" } { print }' prototype > prototype2
+    $VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/vboxdrv=vboxdrv" { $3 = "platform/i86pc/kernel/drv/vboxdrv=vboxdrv"; $6 = "sys" } { print }' prototype > prototype2
 else
-    $VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/vboxdrv=vboxdrv" { $3 = "platform/i86pc/kernel/drv/amd64/vboxdrv=vboxdrv" } { print }' prototype > prototype2
+    $VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/vboxdrv=vboxdrv" { $3 = "platform/i86pc/kernel/drv/amd64/vboxdrv=vboxdrv"; $6 = "sys" } { print }' prototype > prototype2
 fi
 
 $VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/vboxdrv.conf=vboxdrv.conf" { $3 = "platform/i86pc/kernel/drv/vboxdrv.conf=vboxdrv.conf" } { print }' prototype2 > prototype
+
+# desktop links and icons
+$VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/virtualbox.desktop=virtualbox.desktop" { $3 = "usr/share/applications/virtualbox.desktop=virtualbox.desktop" } { print }' prototype > prototype2
+$VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/VBox.png=VBox.png" { $3 = "usr/share/pixmaps/VBox.png=VBox.png" } { print }' prototype2 > prototype
+
 
 rm prototype2
 
@@ -83,7 +91,12 @@ pkgmk -p $VBOXPKG_TIMESTAMP -o -r .
 # translate into package datastream
 pkgtrans -s -o /var/spool/pkg "`pwd`/$VBOX_PKGFILE" "$VBOX_PKGNAME"
 
-$VBOX_GTAR zcvf "$VBOX_ARCHIVE" "$VBOX_PKGFILE" autoresponse ReadMe.txt
+# $4 if exist would contain the path to the VBI package to include in the .tar.gz
+if test -f "$4"; then
+    $VBOX_GTAR zcvf "$VBOX_ARCHIVE" "$VBOX_PKGFILE" $4 autoresponse ReadMe.txt
+else
+    $VBOX_GTAR zcvf "$VBOX_ARCHIVE" "$VBOX_PKGFILE" autoresponse ReadMe.txt
+fi
 
 echo "## Packaging and transfer completed successfully!"
 rm -rf "/var/spool/pkg/$VBOX_PKGNAME"

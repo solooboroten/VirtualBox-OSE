@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8155 2008-04-18 15:16:47Z vboxsync $
+# $Id: Makefile.kmk 31085 2008-05-21 10:17:41Z sandervl $
 ## @file
 # Top-level makefile for the VMM.
 #
@@ -20,7 +20,7 @@
 #
 
 DEPTH = ../../..
-include	$(PATH_KBUILD)/subheader.kmk
+include	$(KBUILD_PATH)/subheader.kmk
 
 ## @todo get rid of these.
 # Enable the PDM lock.
@@ -64,6 +64,7 @@ VMMR3_SOURCES   = \
 	DBGFInfo.cpp \
 	DBGFLog.cpp \
 	DBGFMem.cpp \
+	DBGFOS.cpp \
 	DBGFStack.cpp \
 	DBGFSym.cpp \
 	EM.cpp \
@@ -100,6 +101,7 @@ VMMR3_SOURCES   = \
 	HWACCM.cpp \
 	VMMAll/CPUMAllRegs.cpp \
 	VMMAll/DBGFAll.cpp \
+	VMMAll/HWACCMAll.cpp \
 	VMMAll/IOMAll.cpp \
 	VMMAll/IOMAllMMIO.cpp \
 	VMMAll/MMAll.cpp \
@@ -200,7 +202,7 @@ VBoxVMM_LDFLAGS.linux = -Wl,--no-undefined
 VBoxVMM_LDFLAGS.darwin = -install_name @executable_path/VBoxVMM.dylib
 VBoxVMM_LDFLAGS.solaris = -mimpure-text
 ifdef VBOX_WITH_PDM_ASYNC_COMPLETION
- ifeq ($(BUILD_PLATFORM), linux)
+ ifeq ($(KBUILD_HOST), linux)
 VBoxVMM_LIBS += aio
  endif
 endif
@@ -388,6 +390,7 @@ VMMR0_SOURCES   = \
 	VMMAll/DBGFAll.cpp \
 	VMMAll/EMAll.cpp \
 	VMMAll/EMAllA.asm \
+	VMMAll/HWACCMAll.cpp \
 	VMMAll/IOMAll.cpp \
 	VMMAll/IOMAllMMIO.cpp \
 	VMMAll/MMAll.cpp \
@@ -429,7 +432,7 @@ VMMR0_LIBS += \
 endif
 
 
-include	$(PATH_KBUILD)/subfooter.kmk
+include	$(KBUILD_PATH)/subfooter.kmk
 
 
 # Alias the PGM templates to the object in which they are defined.
@@ -439,4 +442,5 @@ PGMAllBth.o   PGMAllGst.o   PGMAllShw.o \
 PGMAllBth.obj PGMAllGst.obj PGMAllShw.obj: PGMAll.o
 PGMGCBth.o   PGMGCGst.o   PGMGCShw.o \
 PGMGCBth.obj PGMGCGst.obj PGMGCShw.obj: PGMGC.o
+PGMPhysRWTmpl.o PGMPhysRWTmpl.obj: PGMPhys.o
 

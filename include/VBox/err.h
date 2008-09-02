@@ -238,6 +238,10 @@
 #define VINF_DBGF_BP_ALREADY_EXIST          1207
 /** The byte string was not found. */
 #define VERR_DBGF_MEM_NOT_FOUND             (-1208)
+/** The OS was not detected. */
+#define VERR_DBGF_OS_NOT_DETCTED            (-1209)
+/** The OS was not detected. */
+#define VINF_DBGF_OS_NOT_DETCTED            1209
 /** @} */
 
 
@@ -395,6 +399,14 @@
 #define VINF_PGM_SYNCPAGE_MODIFIED_PDE      1625
 /** Physical range crosses dynamic ram chunk boundary; translation to HC ptr not safe. */
 #define VERR_PGM_GCPHYS_RANGE_CROSSES_BOUNDARY  (-1626)
+/** Conflict between the core memory and the intermediate paging context, try again.
+ * There are some very special conditions applying to the intermediate paging context
+ * (used during the world switches), and some times we continuously run into these
+ * when asking the host kernel for memory during VM init. Let us know if you run into
+ * this and we'll adjust the code so it tries harder to avoid it.
+ */
+#define VERR_PGM_INTERMEDIATE_PAGING_CONFLICT   (-1627)
+
 /** @} */
 
 

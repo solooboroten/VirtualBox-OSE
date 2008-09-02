@@ -24,6 +24,7 @@
 #define __VBoxConsoleWnd_h__
 
 #include "COMDefs.h"
+#include "QIWithRetranslateUI.h"
 
 /* Qt includes */
 #include <QMainWindow>
@@ -53,9 +54,9 @@ class QIStateIndicator;
 class VBoxUSBMenu;
 class VBoxSwitchMenu;
 
-class VBoxConsoleWnd : public QMainWindow
+class VBoxConsoleWnd : public QIWithRetranslateUI2<QMainWindow>
 {
-    Q_OBJECT
+    Q_OBJECT;
 
 public:
 
@@ -95,6 +96,9 @@ protected:
 #if defined(Q_WS_X11)
     bool x11Event (XEvent *event);
 #endif
+
+    void retranslateUi();
+
 #ifdef VBOX_WITH_DEBUGGER_GUI
     bool dbgCreated();
     void dbgDestroy();
@@ -119,8 +123,6 @@ private:
         SharedFolderStuff           = 0x200,
         AllStuff                    = 0xFFFF,
     };
-
-    void languageChange();
 
     void updateAppearanceOf (int element);
 
@@ -187,10 +189,8 @@ private slots:
     void dbgShowStatistics();
     void dbgShowCommandLine();
 
-    void onEnterFullscreen();
     void onExitFullscreen();
-    void exitFullscreen();
-    void exitSeamless();
+    void unlockActionsSwitch();
 
     void switchToFullscreen (bool aOn, bool aSeamless);
     void setViewInSeamlessMode (const QRect &aTargetRect);
@@ -269,20 +269,6 @@ private:
 #endif
     QMenu *mHelpMenu;
 
-    // Menu identifiers
-    enum {
-        vmMenuId = 1,
-        devicesMenuId,
-        devicesMountFloppyMenuId,
-        devicesMountDVDMenuId,
-        devicesUSBMenuId,
-        devicesNetworkMenuId,
-#ifdef VBOX_WITH_DEBUGGER_GUI
-        dbgMenuId,
-#endif
-        helpMenuId,
-    };
-
     QSpacerItem *mShiftingSpacerLeft;
     QSpacerItem *mShiftingSpacerTop;
     QSpacerItem *mShiftingSpacerRight;
@@ -328,6 +314,7 @@ private:
     bool mIsSeamless : 1;
     bool mIsSeamlessSupported : 1;
     bool mIsGraphicsSupported : 1;
+    bool mIsWaitingModeResize : 1;
     bool was_max : 1;
     QObjectList hidden_children;
     int console_style;
@@ -359,13 +346,17 @@ private:
 
 
 class VBoxSharedFoldersSettings;
-class VBoxSFDialog : public QDialog
+class VBoxSFDialog : public QIWithRetranslateUI<QDialog>
 {
-    Q_OBJECT
+    Q_OBJECT;
 
 public:
 
     VBoxSFDialog (QWidget*, CSession&);
+
+protected:
+
+    void retranslateUi();
 
 protected slots:
 

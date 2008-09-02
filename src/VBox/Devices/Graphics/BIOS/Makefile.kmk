@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8448 2008-04-29 09:19:58Z vboxsync $
+# $Id: Makefile.kmk 31423 2008-05-30 08:56:12Z mt221433 $
 ## @file
 # VGA BIOS Sub-Makefile
 #
@@ -21,7 +21,7 @@
 
 DEPTH ?= ../../../../..
 SUB_DEPTH = ../..
-include	$(PATH_KBUILD)/subheader.kmk
+include	$(KBUILD_PATH)/subheader.kmk
 
 VBOX_PATH_DEVICES_SRC = $(PATH_SUB_ROOT)
 
@@ -43,6 +43,8 @@ VgaBiosBin_DEFS     = IN_VBOXDD2
 VgaBiosBin_INCS     = $(VBOX_PATH_DEVICES_SRC)
 VgaBiosBin_SOURCES  = $(PATH_TARGET)/VgaBiosBin.c
 VgaBiosBin_CLEAN    = \
+	$(PATH_TARGET)/vbetables.h \
+	\
 	$(PATH_TARGET)/_vgabios_.c \
 	$(PATH_TARGET)/vgabios0.s \
 	$(PATH_TARGET)/vgabios1.s \
@@ -75,9 +77,9 @@ $(PATH_TARGET)/vbetables.h: $(MAKEFILE_CURRENT) $(TARGET_vbetables-gen)
 	$(QUIET)$(REDIRECT) -wo $@ -- $(TARGET_vbetables-gen)
 
 # 2. precompile
-$(PATH_TARGET)/_vgabios_.c: $(addprefix $(PATH_SUB_CURRENT)/,vgabios.c vgabios.h vbe.h vgatables.h vgafonts.h vbe.c clext.c) $(PATH_TARGET)/vbetables.h
+$(PATH_TARGET)/_vgabios_.c: $(addprefix $(PATH_SUB_CURRENT)/,vgabios.c vgabios.h vbe.h vgatables.h vgafonts.h vbe.c clext.c) $(PATH_TARGET)/vbetables.h $(VBOX_VERSION_STAMP)
 	$(call MSG_TOOL,cpp,VgaBiosBin,$<,$@)
-	$(QUIET)$(TOOL_$(VBOX_GCC_TOOL)_CC) -E -P -DVBOX -DVBOX_VERSION_STRING=\"$(VBOX_VERSION_STRING)\" -DVBE -DVGABIOS_DATE="''" $(addprefix -D,$(DEFS) $(DEFS.$(BUILD_TYPE))) -o $@ $<
+	$(QUIET)$(TOOL_$(VBOX_GCC_TOOL)_CC) -E -P -DVBOX -DVBOX_VERSION_STRING=\"$(VBOX_VERSION_STRING)\" -DVBE -DVGABIOS_DATE="''" $(addprefix -D,$(DEFS) $(DEFS.$(KBUILD_TYPE))) -o $@ $<
 
 # 3. compile - tempfile clashes, so make sure it's built in solitude.
 .NOTPARALLEL: $(PATH_TARGET)/vgabios0.s
@@ -122,5 +124,5 @@ $(PATH_TARGET)/VgaDefBiosLogo.c: $(PATH_SUB_CURRENT)/$(VBOX_LOGO_FILE) $(VBOX_BI
 	$(QUIET)$(VBOX_BIN2C) VgaDefBiosLogo $< $@
 
 
-include	$(PATH_KBUILD)/subfooter.kmk
+include	$(KBUILD_PATH)/subfooter.kmk
 

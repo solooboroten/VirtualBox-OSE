@@ -296,7 +296,7 @@ typedef struct VM
      * @param   Ctx         The guest core context.
      * @remark  Assume interrupts disabled.
      */
-    RTGCPTR             pfnVMMGCGuestToHostAsmGuestCtx/*(int32_t eax, CPUMCTXCORE Ctx)*/;
+    RTGCPTR32           pfnVMMGCGuestToHostAsmGuestCtx/*(int32_t eax, CPUMCTXCORE Ctx)*/;
 
     /**
      * Assembly switch entry point for returning to host context.
@@ -311,7 +311,7 @@ typedef struct VM
      * @param   ecx         Pointer to the  hypervisor core context, register.
      * @remark  Assume interrupts disabled.
      */
-    RTGCPTR             pfnVMMGCGuestToHostAsmHyperCtx/*(int32_t eax, PCPUMCTXCORE ecx)*/;
+    RTGCPTR32           pfnVMMGCGuestToHostAsmHyperCtx/*(int32_t eax, PCPUMCTXCORE ecx)*/;
 
     /**
      * Assembly switch entry point for returning to host context.
@@ -323,7 +323,7 @@ typedef struct VM
      * @param   eax         The return code, register.
      * @remark  Assume interrupts disabled.
      */
-    RTGCPTR             pfnVMMGCGuestToHostAsm/*(int32_t eax)*/;
+    RTGCPTR32           pfnVMMGCGuestToHostAsm/*(int32_t eax)*/;
     /** @} */
 
 
@@ -521,7 +521,7 @@ typedef struct VM
 #ifdef ___DBGFInternal_h
         struct DBGF s;
 #endif
-        char        padding[HC_ARCH_BITS == 32 ? 1888 : 1920];      /* multiple of 32 */
+        char        padding[HC_ARCH_BITS == 32 ? 1920 : 1952];      /* multiple of 32 */
     } dbgf;
 
     /** SSM part. */

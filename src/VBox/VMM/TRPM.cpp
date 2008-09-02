@@ -1,4 +1,4 @@
-/* $Id: TRPM.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: TRPM.cpp 31281 2008-05-27 09:21:03Z sandervl $ */
 /** @file
  * TRPM - The Trap Monitor
  */
@@ -551,7 +551,7 @@ TRPMR3DECL(void) TRPMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
      * would make init order impossible if we should assert the presence of these
      * exports in TRPMR3Init().
      */
-    RTGCPTR aGCPtrs[TRPM_HANDLER_MAX] = {0};
+    RTGCPTR32 aGCPtrs[TRPM_HANDLER_MAX] = {0};
     int rc;
     rc = PDMR3GetSymbolGC(pVM, VMMGC_MAIN_MODULE_NAME, "TRPMGCHandlerInterupt", &aGCPtrs[TRPM_HANDLER_INT]);
     AssertReleaseMsgRC(rc, ("Couldn't find TRPMGCHandlerInterupt in VMMGC.gc!\n"));
@@ -1050,7 +1050,7 @@ static DECLCALLBACK(int) trpmGuestIDTWriteHandler(PVM pVM, RTGCPTR GCPtr, void *
 TRPMR3DECL(int) trpmR3ClearPassThroughHandler(PVM pVM, unsigned iTrap)
 {
     /** @todo cleanup trpmR3ClearPassThroughHandler()! */
-    RTGCPTR aGCPtrs[TRPM_HANDLER_MAX];
+    RTGCPTR32 aGCPtrs[TRPM_HANDLER_MAX];
     int rc;
 
     memset(aGCPtrs, 0, sizeof(aGCPtrs));
@@ -1384,7 +1384,7 @@ TRPMR3DECL(int) TRPMR3InjectEvent(PVM pVM, TRPMEVENT enmEvent)
                 EMR3CheckRawForcedActions(pVM);
 
                 /* There's a handler -> let's execute it in raw mode */
-                rc = TRPMForwardTrap(pVM, CPUMCTX2CORE(pCtx), u8Interrupt, 0, TRPM_TRAP_NO_ERRORCODE, enmEvent);
+                rc = TRPMForwardTrap(pVM, CPUMCTX2CORE(pCtx), u8Interrupt, 0, TRPM_TRAP_NO_ERRORCODE, enmEvent, -1);
                 if (rc == VINF_SUCCESS /* Don't use VBOX_SUCCESS */)
                 {
                     Assert(!VM_FF_ISPENDING(pVM, VM_FF_SELM_SYNC_GDT | VM_FF_SELM_SYNC_LDT | VM_FF_TRPM_SYNC_IDT | VM_FF_SELM_SYNC_TSS));

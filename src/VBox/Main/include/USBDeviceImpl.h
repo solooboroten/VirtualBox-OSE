@@ -1,6 +1,5 @@
 /** @file
- *
- * VirtualBox COM class implementation
+ * Header file for the OUSBDevice (IUSBDevice) class, VBoxC.
  */
 
 /*
@@ -24,6 +23,7 @@
 
 #include "VirtualBoxBase.h"
 #include "Collection.h"
+#include "Logging.h"
 
 
 /**
@@ -127,9 +127,11 @@ COM_DECL_READONLY_ENUM_AND_COLLECTION_EX_BEGIN (ComObjPtr <OUSBDevice>, IUSBDevi
         }
 
         if (!found)
-            return setError (E_INVALIDARG, OUSBDeviceCollection::tr (
+        {
+            return setErrorNoLog (E_INVALIDARG, OUSBDeviceCollection::tr (
                 "Could not find a USB device with UUID {%s}"),
                 idToFind.toString().raw());
+        }
 
         return found.queryInterfaceTo (aDevice);
     }
@@ -154,7 +156,7 @@ COM_DECL_READONLY_ENUM_AND_COLLECTION_EX_BEGIN (ComObjPtr <OUSBDevice>, IUSBDevi
         }
 
         if (!found)
-            return setError (E_INVALIDARG, OUSBDeviceCollection::tr (
+            return setErrorNoLog (E_INVALIDARG, OUSBDeviceCollection::tr (
                 "Could not find a USB device with address '%ls'"),
                 aAddress);
 

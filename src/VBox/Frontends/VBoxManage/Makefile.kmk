@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8230 2008-04-21 14:13:27Z vboxsync $
+# $Id: Makefile.kmk 31069 2008-05-21 07:56:16Z aleksey $
 ## @file
 # Sub-Makefile for VBoxManage (the cli frontend).
 #
@@ -22,7 +22,7 @@
 
 DEPTH ?= ../../../..
 SUB_DEPTH = ..
-include $(PATH_KBUILD)/subheader.kmk
+include $(KBUILD_PATH)/subheader.kmk
 
 PROGRAMS += VBoxManage
 VBoxManage_TEMPLATE    = VBOXMAINCLIENTEXE
@@ -31,6 +31,7 @@ VBoxManage_DEFS       += $(if $(VBOX_WITH_VRDP),VBOX_VRDP,) \
                          $(if $(VBOX_WITH_PULSE),VBOX_WITH_PULSE,) \
                          $(if $(VBOX_WITH_E1000),VBOX_WITH_E1000,) \
                          $(if $(VBOX_WITH_AHCI),VBOX_WITH_AHCI,)
+VBoxManage_DEFS.win    = _WIN32_WINNT=0x0500
 VBoxManage_SOURCES     = \
 	VBoxManage.cpp \
 	VBoxInternalManage.cpp \
@@ -41,5 +42,5 @@ VBoxManage_LIBS       += $(LIB_DDU)
 VBoxManageSVN.cpp_DEFS = VBOX_SVN_REV=$(VBOX_SVN_REV)
 VBoxManageSVN.cpp_DEPS = $(VBOX_SVN_REV_KMK)
 
-include $(PATH_KBUILD)/subfooter.kmk
+include $(KBUILD_PATH)/subfooter.kmk
 

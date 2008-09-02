@@ -23,9 +23,9 @@
 *    Anselm Martin Hoffmeister's previous proto_tftm.c multicast work
 *    Eric Biederman's proto_slam.c
 *
-*    $Revision: 1 $
-*    $Author: vboxsync $
-*    $Date: $
+*    $Revision: 16040 $
+*    $Author: klaus $
+*    $Date: 2006-12-01 14:25:05 +0100 (Fri, 01 Dec 2006) $
 *
 *    REVISION HISTORY:
 *    ================

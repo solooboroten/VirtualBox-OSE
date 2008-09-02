@@ -1,4 +1,4 @@
-/** $Id: VBoxGuestR3LibDaemonize.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/** $Id: VBoxGuestR3LibDaemonize.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, daemonize a process.
  */

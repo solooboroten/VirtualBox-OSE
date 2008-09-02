@@ -1,4 +1,4 @@
-/* $Id: VMMInternal.h 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: VMMInternal.h 31281 2008-05-27 09:21:03Z sandervl $ */
 /** @file
  * VMM - Internal header file.
  */
@@ -160,11 +160,11 @@ typedef struct VMM
      * At present this only means the context switcher code. */
     RTR0PTR                     pvHCCoreCodeR0;
     /** Pointer to core code guest context mapping. */
-    RTGCPTR                     pvGCCoreCode;
+    RTGCPTR32                   pvGCCoreCode;
 #ifdef VBOX_WITH_NMI
     /** The guest context address of the APIC (host) mapping. */
-    RTGCPTR                     GCPtrApicBase;
-    RTGCPTR                     pGCPadding0; /**< Alignment padding */
+    RTGCPTR32                   GCPtrApicBase;
+    RTGCPTR32                   pGCPadding0; /**< Alignment padding */
 #endif
     /** The current switcher.
      * This will be set before the VMM is fully initialized. */
@@ -179,12 +179,12 @@ typedef struct VMM
     /** Guest to host switcher entry point. */
     GCPTRTYPE(PFNVMMSWITCHERGC) pfnGCGuestToHost;
     /** Call Trampoline. See vmmGCCallTrampoline(). */
-    RTGCPTR                     pfnGCCallTrampoline;
+    RTGCPTR32                   pfnGCCallTrampoline;
 
     /** Resume Guest Execution. See CPUMGCResumeGuest(). */
-    RTGCPTR                     pfnCPUMGCResumeGuest;
+    RTGCPTR32                   pfnCPUMGCResumeGuest;
     /** Resume Guest Execution in V86 mode. See CPUMGCResumeGuestV86(). */
-    RTGCPTR                     pfnCPUMGCResumeGuestV86;
+    RTGCPTR32                   pfnCPUMGCResumeGuestV86;
     /** The last GC return code. */
     RTINT                       iLastGCRc;
 #if HC_ARCH_BITS == 64 && GC_ARCH_BITS == 32
@@ -297,6 +297,7 @@ typedef struct VMM
     STAMCOUNTER                 StatGCRetPendingRequest;
     STAMCOUNTER                 StatGCRetPGMGrowRAM;
     STAMCOUNTER                 StatGCRetPDMLock;
+    STAMCOUNTER                 StatGCRetHyperAssertion;
     STAMCOUNTER                 StatGCRetLogFlush;
     STAMCOUNTER                 StatGCRetPDMQueueFlush;
     STAMCOUNTER                 StatGCRetPGMPoolGrow;

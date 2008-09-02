@@ -1,4 +1,4 @@
-/** $Id: clipboard.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/** $Id: clipboard.cpp 31246 2008-05-26 13:35:06Z mt221433 $ */
 /** @file
  * Guest Additions - X11 Shared Clipboard.
  */
@@ -92,6 +92,8 @@ typedef struct
 
     /** X11 atom refering to the clipboard: CLIPBOARD */
     Atom atomClipboard;
+    /** X11 atom refering to the selection: PRIMARY */
+    Atom atomPrimary;
     /** X11 atom refering to the clipboard: TARGETS */
     Atom atomTargets;
     /** X11 atom refering to the clipboard: MULTIPLE */
@@ -174,55 +176,54 @@ static int vboxClipboardSendData(uint32_t u32Format, void *pv, uint32_t cb)
  *
  * @returns VBox result code
  * @param   u32Format The format of the data being requested
- * @retval  ppv       On success, this will point to a buffer to be freed with RTMemFree
- *                    containing the data read if pcb > 0.
- * @retval  pcb       On success, this contains the number of bytes of data returned
+ * @retval  ppv       On success and if pcb > 0, this will point to a buffer
+ *                    to be freed with RTMemFree containing the data read.
+ * @retval  pcb       On success, this contains the number of bytes of data
+ *                    returned
  */
 static int vboxClipboardReadHostData(uint32_t u32Format, void **ppv, uint32_t *pcb)
 {
-    int rc;
+    int rc = VINF_SUCCESS;
     uint32_t cb = 1024;
     void *pv = RTMemAlloc(cb);
+
+    *ppv = 0;
     LogFlowFunc(("u32Format=%u\n", u32Format));
     if (RT_UNLIKELY(!pv))
-    {
-        LogFlowFunc(("rc=VERR_NO_MEMORY\n"));
-        return VERR_NO_MEMORY;
-    }
-    rc = VbglR3ClipboardReadData(g_ctx.client, u32Format, pv, cb, pcb);
+        rc = VERR_NO_MEMORY;
     if (RT_SUCCESS(rc))
-    {
+        rc = VbglR3ClipboardReadData(g_ctx.client, u32Format, pv, cb, pcb);
+    if (RT_SUCCESS(rc) && (rc != VINF_BUFFER_OVERFLOW))
         *ppv = pv;
-        return rc;
-    }
-    RTMemFree(pv);
+    /* A return value of VINF_BUFFER_OVERFLOW tells us to try again with a
+     * larger buffer.  The size of the buffer needed is placed in *pcb.
+     * So we start all over again. */
     if (rc == VINF_BUFFER_OVERFLOW)
     {
-        /* Supplied buffer of 1024 bytes was not big enough. Try again. */
         cb = *pcb;
-        pv = RTMemAlloc(cb);
-        rc = VbglR3ClipboardReadData(g_ctx.client, u32Format, pv, cb, pcb);
-        if (RT_SUCCESS(rc))
-        {
-            *ppv = pv;
-            return rc;
-        }
-
         RTMemFree(pv);
-        *ppv = 0;
-        *pcb = 0;
-        if (rc == VINF_BUFFER_OVERFLOW)
-        {
-            /* The buffer was to small again.  Perhaps the clipboard contents changed half-way through
-             * the operation.  Since I can't say whether or not this is actually an error, we will just
-             * return size 0.
-             */
-            return VINF_SUCCESS;
-        }
+        pv = RTMemAlloc(cb);
+        if (RT_UNLIKELY(!pv))
+            rc = VERR_NO_MEMORY;
+        if (RT_SUCCESS(rc))
+            rc = VbglR3ClipboardReadData(g_ctx.client, u32Format, pv, cb, pcb);
+        if (RT_SUCCESS(rc) && (rc != VINF_BUFFER_OVERFLOW))
+            *ppv = pv;
     }
-    /* Other errors. */
-    *ppv = 0;
-    *pcb = 0;
+    /* Catch other errors. This also catches the case in which the buffer was
+     * too small a second time, possibly because the clipboard contents
+     * changed half-way through the operation.  Since we can't say whether or
+     * not this is actually an error, we just return size 0.
+     */
+    if (RT_FAILURE(rc) || (VINF_BUFFER_OVERFLOW == rc))
+    {
+        *pcb = 0;
+        if (pv != NULL)
+            RTMemFree(pv);
+    }
+    LogFlowFunc(("returning %Rrc\n", rc));
+    if (RT_SUCCESS(rc))
+        LogFlow(("    *pcb=%d\n", *pcb));
     return rc;
 }
 
@@ -1126,7 +1127,9 @@ static Boolean vboxClipboardConvertProc(Widget, Atom *atomSelection, Atom *atomT
     int rc;
 
     LogFlowFunc(("\n"));
-    if (*atomSelection != g_ctx.atomClipboard)
+    if (   (*atomSelection != g_ctx.atomClipboard)
+        && (*atomSelection != g_ctx.atomPrimary)
+       )
     {
         LogFlowFunc(("rc = false\n"));
         return false;
@@ -1216,6 +1219,8 @@ void vboxClipboardFormatAnnounce (uint32_t u32Formats)
         g_ctx.notifyHost = true;
         g_ctx.eOwner = GUEST;
     }
+    XtOwnSelection(g_ctx.widget, g_ctx.atomPrimary, CurrentTime, vboxClipboardConvertProc,
+                   NULL, 0);
     LogFlowFunc(("returning\n"));
 }
 
@@ -1429,6 +1434,7 @@ static int vboxClipboardCreateWindow(void)
 
     /* Get hold of the atoms which we need */
     g_ctx.atomClipboard = XInternAtom(XtDisplay(g_ctx.widget), "CLIPBOARD", false /* only_if_exists */);
+    g_ctx.atomPrimary   = XInternAtom(XtDisplay(g_ctx.widget), "PRIMARY",   false);
     g_ctx.atomTargets   = XInternAtom(XtDisplay(g_ctx.widget), "TARGETS",   false);
     g_ctx.atomMultiple  = XInternAtom(XtDisplay(g_ctx.widget), "MULTIPLE",  false);
     g_ctx.atomTimestamp = XInternAtom(XtDisplay(g_ctx.widget), "TIMESTAMP", false);

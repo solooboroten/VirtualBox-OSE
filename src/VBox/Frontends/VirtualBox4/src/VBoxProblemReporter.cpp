@@ -512,8 +512,8 @@ cannotCopyFile (const QString &aSrc, const QString &aDst, int aVRC)
         err.truncate (err.length() - 1);
 
     message (mainWindowShown(), VBoxProblemReporter::Error,
-        tr ("Failed to copy file <b><nobr>%1<nobr></b> to "
-             "<b><nobr>%2<nobr></b> (%3).")
+        tr ("Failed to copy file <b><nobr>%1</nobr></b> to "
+             "<b><nobr>%2</nobr></b> (%3).")
              .arg (aSrc, aDst, err));
 }
 
@@ -611,12 +611,11 @@ void VBoxProblemReporter::cannotSetSystemProperties (const CSystemProperties &pr
 
 void VBoxProblemReporter::cannotAccessUSB (const COMBase &obj)
 {
-    /* if there is no error info available, it should mean that
-     * IMachine::GetUSBController(), IHost::GetUSBDevices() etc. just returned
-     * E_NOTIMPL, as for the OSE version. Don't show the error message in this
-     * case since it's normal. */
+    /* If IMachine::GetUSBController(), IHost::GetUSBDevices() etc. return
+     * E_NOTIMPL, it means the USB support is intentionally missing
+     * (as in the OSE version). Don't show the error message in this case. */
     COMResult res (obj);
-    if (res.rc() == E_NOTIMPL && !res.errorInfo().isBasicAvailable())
+    if (res.rc() == E_NOTIMPL)
         return;
 
     message (mainWindowShown(), res.isWarning() ? Warning : Error,
@@ -675,15 +674,18 @@ void VBoxProblemReporter::cannotSaveMachineSettings (const CMachine &machine,
 }
 
 /**
- *  @param  strict  if |true| then show the message even if there is no basic
- *                  error info available
+ * @param  strict  If |false|, this method will silently return if the COM
+ *                 result code is E_NOTIMPL.
  */
 void VBoxProblemReporter::cannotLoadMachineSettings (const CMachine &machine,
                                                      bool strict /* = true */,
                                                      QWidget *parent /* = 0 */)
 {
+    /* If COM result code is E_NOTIMPL, it means the requested object or
+     * function is intentionally missing (as in the OSE version). Don't show
+     * the error message in this case. */
     COMResult res (machine);
-    if (!strict && !res.errorInfo().isBasicAvailable())
+    if (!strict && res.rc() == E_NOTIMPL)
         return;
 
     message (parent ? parent : mainWindowShown(), Error,
@@ -940,17 +942,35 @@ void VBoxProblemReporter::cannotFindMachineByName (const CVirtualBox &vbox,
     );
 }
 
-void VBoxProblemReporter::cannotEnterSeamlessMode (ULONG aWidth,
-                                                   ULONG aHeight,
-                                                   ULONG aBpp,
+void VBoxProblemReporter::cannotEnterSeamlessMode (ULONG /* aWidth */,
+                                                   ULONG /* aHeight */,
+                                                   ULONG /* aBpp */,
                                                    ULONG64 aMinVRAM)
 {
     message (&vboxGlobal().consoleWnd(), Error,
              tr ("<p>Could not enter seamless mode due to insufficient guest "
-                 "video memory.</p>"
-                 "<p>You should configure the VM to have at least <b>%1</b> "
-                 "of video memory.</p>")
+                  "video memory.</p>"
+                  "<p>You should configure the virtual machine to have at "
+                  "least <b>%1</b> of video memory.</p>")
              .arg (VBoxGlobal::formatSize (aMinVRAM)));
+}
+
+int VBoxProblemReporter::cannotEnterFullscreenMode (ULONG /* aWidth */,
+                                                    ULONG /* aHeight */,
+                                                    ULONG /* aBpp */,
+                                                    ULONG64 aMinVRAM)
+{
+    return message (&vboxGlobal().consoleWnd(), Warning,
+             tr ("<p>Could not switch the guest display to fullscreen mode due "
+                 "to insufficient guest video memory.</p>"
+                 "<p>You should configure the virtual machine to have at "
+                 "least <b>%1</b> of video memory.</p>"
+                 "<p>Press <b>Ignore</b> to switch to fullscreen mode anyway "
+                 "or press <b>Cancel</b> to cancel the operation.</p>")
+             .arg (VBoxGlobal::formatSize (aMinVRAM)),
+             0, /* aAutoConfirmId */
+             QIMessageBox::Ignore | QIMessageBox::Default,
+             QIMessageBox::Cancel | QIMessageBox::Escape);
 }
 
 bool VBoxProblemReporter::confirmMachineDeletion (const CMachine &machine)

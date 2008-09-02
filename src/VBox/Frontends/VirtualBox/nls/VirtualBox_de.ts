@@ -617,14 +617,6 @@ Version %1</translation>
         <translation>Medium mit Gasterweiterungen einbinden</translation>
     </message>
     <message>
-        <source>&amp;Statistics...</source>
-        <translation>&amp;Statistiken...</translation>
-    </message>
-    <message>
-        <source>&amp;Command line...</source>
-        <translation>&amp;Kommandozeile...</translation>
-    </message>
-    <message>
         <source>&amp;VirtualBox Web Site...</source>
         <translation>Webseite von &amp;VirtualBox...</translation>
     </message>
@@ -738,7 +730,7 @@ Version %1</translation>
     </message>
     <message>
         <source>&amp;Network Adapters</source>
-        <translation>&amp;Netzwerk-Adapter</translation>
+        <translation>&amp;Netzwerkadapter</translation>
     </message>
     <message>
         <source>Adapter %1</source>
@@ -757,11 +749,11 @@ Version %1</translation>
     </message>
     <message>
         <source>Disconnect the cable from the selected virtual network adapter</source>
-        <translation>Trennt das virtuelle Kabel vom ausgewählten Netzwerk-Adapter</translation>
+        <translation>Trennt das virtuelle Kabel vom ausgewählten Netzwerkadapter</translation>
     </message>
     <message>
         <source>Connect the cable to the selected virtual network adapter</source>
-        <translation>Verbindet das Kabel mit dem ausgewählten Netzwerk-Adapter</translation>
+        <translation>Verbindet das Kabel mit dem ausgewählten Netzwerkadapter</translation>
     </message>
     <message>
         <source>Seam&amp;less Mode</source>
@@ -906,6 +898,21 @@ Version %1</translation>
     <message>
         <source>Sun xVM VirtualBox</source>
         <translation></translation>
+    </message>
+    <message>
+        <source>&amp;Statistics...</source>
+        <comment>debug action</comment>
+        <translation>&amp;Statistiken...</translation>
+    </message>
+    <message>
+        <source>&amp;Command Line...</source>
+        <comment>debug action</comment>
+        <translation>&amp;Kommandozeile...</translation>
+    </message>
+    <message>
+        <source>&amp;Logging...</source>
+        <comment>debug action</comment>
+        <translation>&amp;Logging...</translation>
     </message>
 </context>
 <context>
@@ -1295,22 +1302,22 @@ Version %1</translation>
     <message>
         <source>Enabled</source>
         <comment>details report (ACPI)</comment>
-        <translation>Aktiviert</translation>
+        <translation>aktiviert</translation>
     </message>
     <message>
         <source>Disabled</source>
         <comment>details report (ACPI)</comment>
-        <translation>Deaktiviert</translation>
+        <translation>deaktiviert</translation>
     </message>
     <message>
         <source>Enabled</source>
         <comment>details report (IO APIC)</comment>
-        <translation>Aktiviert</translation>
+        <translation>aktiviert</translation>
     </message>
     <message>
         <source>Disabled</source>
         <comment>details report (IO APIC)</comment>
-        <translation>Deaktiviert</translation>
+        <translation>deaktiviert</translation>
     </message>
     <message>
         <source>Not mounted</source>
@@ -1360,7 +1367,7 @@ Version %1</translation>
     <message>
         <source>Disabled</source>
         <comment>details report (audio)</comment>
-        <translation>Deaktiviert</translation>
+        <translation>deaktiviert</translation>
     </message>
     <message>
         <source>Audio</source>
@@ -1375,7 +1382,7 @@ Version %1</translation>
     <message>
         <source>Disabled</source>
         <comment>details report (network)</comment>
-        <translation>Deaktiviert</translation>
+        <translation>deaktiviert</translation>
     </message>
     <message>
         <source>Network</source>
@@ -1395,7 +1402,7 @@ Version %1</translation>
     <message>
         <source>Disabled</source>
         <comment>details report (USB)</comment>
-        <translation>Deaktiviert</translation>
+        <translation>deaktiviert</translation>
     </message>
     <message>
         <source>VRDP Server Port</source>
@@ -1410,7 +1417,7 @@ Version %1</translation>
     <message>
         <source>Disabled</source>
         <comment>details report (VRDP)</comment>
-        <translation>Deaktiviert</translation>
+        <translation>deaktiviert</translation>
     </message>
     <message>
         <source>Remote Display</source>
@@ -1604,7 +1611,7 @@ Version %1</translation>
     <message>
         <source>Not attached</source>
         <comment>NetworkAttachmentType</comment>
-        <translation>Nicht angeschlossen</translation>
+        <translation>nicht angeschlossen</translation>
     </message>
     <message>
         <source>NAT</source>
@@ -1664,7 +1671,7 @@ Version %1</translation>
     <message>
         <source>Disabled</source>
         <comment>ClipboardType</comment>
-        <translation>Deaktiviert</translation>
+        <translation>deaktiviert</translation>
     </message>
     <message>
         <source>Host To Guest</source>
@@ -1697,7 +1704,7 @@ Version %1</translation>
     <message>
         <source>Disabled</source>
         <comment>details report (serial ports)</comment>
-        <translation>Deaktiviert</translation>
+        <translation>deaktiviert</translation>
     </message>
     <message>
         <source>Serial Ports</source>
@@ -1722,7 +1729,7 @@ Version %1</translation>
     <message>
         <source>None</source>
         <comment>details report (shared folders)</comment>
-        <translation>Keine</translation>
+        <translation>keine</translation>
     </message>
     <message>
         <source>Shared Folders</source>
@@ -1737,7 +1744,7 @@ Version %1</translation>
     <message>
         <source>Disconnected</source>
         <comment>PortMode</comment>
-        <translation>Nicht verbunden</translation>
+        <translation>nicht verbunden</translation>
     </message>
     <message>
         <source>Host Pipe</source>
@@ -1767,12 +1774,12 @@ Version %1</translation>
     <message>
         <source>Enabled</source>
         <comment>details report (VT-x/AMD-V)</comment>
-        <translation>Aktiviert</translation>
+        <translation>aktiviert</translation>
     </message>
     <message>
         <source>Disabled</source>
         <comment>details report (VT-x/AMD-V)</comment>
-        <translation>Deaktiviert</translation>
+        <translation>deaktiviert</translation>
     </message>
     <message>
         <source>Controller</source>
@@ -1787,7 +1794,7 @@ Version %1</translation>
     <message>
         <source>Disabled</source>
         <comment>details report (parallel ports)</comment>
-        <translation>Deaktiviert</translation>
+        <translation>deaktiviert</translation>
     </message>
     <message>
         <source>Parallel Ports</source>
@@ -1832,12 +1839,12 @@ Version %1</translation>
     <message>
         <source>Enabled</source>
         <comment>details report (PAE/NX)</comment>
-        <translation>Aktiviert</translation>
+        <translation>aktiviert</translation>
     </message>
     <message>
         <source>Disabled</source>
         <comment>details report (PAE/NX)</comment>
-        <translation>Deaktiviert</translation>
+        <translation>deaktiviert</translation>
     </message>
     <message>
         <source>USB</source>
@@ -1881,7 +1888,7 @@ Version %1</translation>
     </message>
     <message>
         <source>Port %1</source>
-        <comment>StorageBusDevice</comment>
+        <comment>StorageBusChannel</comment>
         <translation>Port %1</translation>
     </message>
     <message>
@@ -2186,7 +2193,7 @@ to the system default language.&lt;/qt&gt;
     </message>
     <message>
         <source>Enable &amp;VT-x/AMD-V</source>
-        <translation>Aktiviert &amp;VT-x/AMD-V</translation>
+        <translation>&amp;VT-x/AMD-V aktivieren</translation>
     </message>
     <message>
         <source>Defines whether virtual machines should try to make use of the host CPU&apos;s hardware virtualization extensions such as Intel VT-x and AMD-V by default or not.</source>
@@ -2586,7 +2593,7 @@ system you plan to install onto the virtual machine.&lt;/p&gt;
 &lt;p&gt;The name of the virtual machine usually indicates its software and hardware configuration.
 It will be used by all VirtualBox components to identify your virtual machine.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Geben Sie einen Namen für die neue virtuelle Maschine ein und wählen Sie den Typ des Gast-Betriebssystems, das Sie installieren wollen.&lt;/p&gt;
-&lt;p&gt;Der Name der virtuellen Maschine gibt üblicherweise einen Anhaltspunkt über die Software und die Konfiguration der Hardware. Er wird von allen VirtualBox-Produkten benutzt, um die VM eindeutig zu identifizieren.&lt;/p&gt;</translation>
+&lt;p&gt;Der Name der virtuellen Maschine gibt üblicherweise einen Anhaltspunkt über die Software und die Konfiguration der virtuellen Hardware. Er wird von allen VirtualBox-Produkten benutzt, um die VM eindeutig zu identifizieren.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>N&amp;ame</source>
@@ -3015,10 +3022,6 @@ step and attach hard disks later using the VM Settings dialog.&lt;/p&gt;</source
         <translation>Der Ordner für Sicherungspunkte der virtuellen Maschine &lt;b&gt;%1&lt;/b&gt; konnte nicht nach &lt;nobr&gt;%2&lt;/b&gt;&lt;/nobr&gt; geändert werden.</translation>
     </message>
     <message>
-        <source>&lt;p&gt;Could not enter seamless mode due to insufficient guest video memory.&lt;/p&gt;&lt;p&gt;You should configure the VM to have at least &lt;b&gt;%1&lt;/b&gt; of video memory.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Der nahtlose Modus konnte nicht aktiviert werden, weil dem Gast zu wenig Video-RAM zugewiesen wurde.&lt;/p&gt;&lt;p&gt;Sie sollten die VM so konfigurieren, dass ihr zumindest &lt;b&gt;%1&lt;/b&gt; Video-RAM zur Verfügung steht.&lt;/p&gt;</translation>
-    </message>
-    <message>
         <source>&lt;p&gt;Failed to remove the shared folder &lt;b&gt;%1&lt;/b&gt; (pointing to &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) from the virtual machine &lt;b&gt;%3&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Please close all programs in the guest OS that may be using this shared folder and try again.&lt;/p&gt;</source>
         <translation>Der gemeinsame Ordner &lt;b&gt;%1&lt;/b&gt; (mit Verweis auf &lt;nobr&gt;&lt;b&gt;%2&lt;/b&gt;&lt;/nobr&gt;) konnte nicht aus der virtuellen Maschine &lt;b&gt;%3&lt;/b&gt; entfernt werden.&lt;/p&gt;&lt;p&gt;Bitte schließen Sie alle Programme im Gast, die diesen gemeinsamen Ordner benutzen, und versuchen Sie die Aktion erneut.&lt;/p&gt;</translation>
     </message>
@@ -3247,6 +3250,14 @@ step and attach hard disks later using the VM Settings dialog.&lt;/p&gt;</source
         <source>Select</source>
         <comment>hard disk</comment>
         <translation>Auswählen</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Could not enter seamless mode due to insufficient guest video memory.&lt;/p&gt;&lt;p&gt;You should configure the virtual machine to have at least &lt;b&gt;%1&lt;/b&gt; of video memory.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;Der nahtlose Modus konnte nicht aktiviert werden, weil dem Gast zu wenig Video-RAM zugewiesen wurde.&lt;/p&gt;&lt;p&gt;Sie sollten der VM mindestens &lt;b&gt;%1&lt;/b&gt; Video-RAM zur Verfügung stellen.&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;p&gt;Could not switch the guest display to fullscreen mode due to insufficient guest video memory.&lt;/p&gt;&lt;p&gt;You should configure the virtual machine to have at least &lt;b&gt;%1&lt;/b&gt; of video memory.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;Ignore&lt;/b&gt; to switch to fullscreen mode anyway or press &lt;b&gt;Cancel&lt;/b&gt; to cancel the operation.&lt;/p&gt;</source>
+        <translation>&lt;p&gt;Der Vollbbildmodus konnte nicht aktiviert werden, weil dem Gast zu wenig Video-RAM zugewiesen wurde.&lt;/p&gt;&lt;p&gt;Sie sollten die VM so konfigurieren, dass ihr zumindest &lt;b&gt;%1&lt;/b&gt; Video-RAM zur Verfügung steht.&lt;/p&gt;&lt;p&gt;Drücken Sie &lt;b&gt;Ignorieren&lt;/b&gt; um dennoch in den Vollbildmodus zu wechseln oder betätigen Sie &lt;b&gt;Abbrechen&lt;/b&gt; um dies nicht zu tun.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -4232,14 +4243,6 @@ value.&lt;/qt&gt;</source>
         <translation>Daten empfangen</translation>
     </message>
     <message>
-        <source>Enabled</source>
-        <translation>Aktiviert</translation>
-    </message>
-    <message>
-        <source>Disabled</source>
-        <translation>Deaktiviert</translation>
-    </message>
-    <message>
         <source>Runtime Attributes</source>
         <translation>Laufzeit-Attribute</translation>
     </message>
@@ -4248,60 +4251,47 @@ value.&lt;/qt&gt;</source>
         <translation>Auflösung</translation>
     </message>
     <message>
-        <source>Hardware Virtualization</source>
-        <translation>Hardware-Virtualisierung</translation>
-    </message>
-    <message>
-        <source>IDE Hard Disk Statistics</source>
-        <translation>IDE-Festplatten</translation>
-    </message>
-    <message>
-        <source>Primary Master</source>
-        <translation>Primärer Master</translation>
-    </message>
-    <message>
-        <source>Primary Slave</source>
-        <translation>Primärer Slave</translation>
-    </message>
-    <message>
-        <source>Secondary Slave</source>
-        <translation>Sekundärer Slave</translation>
-    </message>
-    <message>
         <source>CD/DVD-ROM Statistics</source>
         <translation>CD/DVD-ROM</translation>
     </message>
     <message>
         <source>Network Adapter Statistics</source>
-        <translation>Netzwerk-Adapter</translation>
+        <translation>Netzwerkadapter</translation>
     </message>
     <message>
-        <source>Adapter 1</source>
-        <translation>Adapter 1</translation>
+        <source>Version %1.%2</source>
+        <comment>guest additions</comment>
+        <translation>Version %1.%2</translation>
     </message>
     <message>
-        <source>Adapter 2</source>
-        <translation>Adapter 2</translation>
+        <source>Not Detected</source>
+        <comment>guest additions</comment>
+        <translation>nicht erkannt</translation>
     </message>
     <message>
-        <source>Adapter 3</source>
-        <translation>Adapter 3</translation>
+        <source>Not Detected</source>
+        <comment>guest os type</comment>
+        <translation>nicht erkannt</translation>
     </message>
     <message>
-        <source>Adapter 4</source>
-        <translation>Adapter 4</translation>
+        <source>Guest Additions</source>
+        <translation>Gast-Erweiterungen</translation>
     </message>
     <message>
-        <source>Not attached</source>
-        <translation>Nicht angeschlossen</translation>
+        <source>Guest OS Type</source>
+        <translation>Gast-Betriebssystem</translation>
     </message>
     <message>
-        <source>Hard Disks Statistics</source>
+        <source>Hard Disk Statistics</source>
         <translation>Festplatten</translation>
     </message>
     <message>
-        <source>Secondary Master</source>
-        <translation>Sekundärer Master</translation>
+        <source>No Hard Disks</source>
+        <translation>Keine Festplatten</translation>
+    </message>
+    <message>
+        <source>No Network Adapters</source>
+        <translation>Keine Netzwerkadapter</translation>
     </message>
 </context>
 <context>
@@ -4412,7 +4402,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>&amp;Enable Network Adapter</source>
-        <translation>Netzwerk-Adapter &amp;aktivieren</translation>
+        <translation>Netzwerkadapter &amp;aktivieren</translation>
     </message>
     <message>
         <source>Generates a new random MAC address.</source>
@@ -4428,11 +4418,11 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>When checked, plugs this virtual network adapter into the virtual machine.</source>
-        <translation>Aktiviert den virtuellen Netzwerk-Adapter für die virtuelle Maschine.</translation>
+        <translation>Aktiviert den virtuellen Netzwerkadapter für die virtuelle Maschine.</translation>
     </message>
     <message>
         <source>Controls the way how this virtual adapter is attached to the real network of the Host OS.</source>
-        <translation>Legt fest, wie dieser virtuelle Netzwerk-Adapter an das physische Netzwerk des Host-BS angeschlossen ist.</translation>
+        <translation>Legt fest, wie dieser virtuelle Netzwerkadapter an das physische Netzwerk des Host-BS angeschlossen ist.</translation>
     </message>
     <message>
         <source>Indicates whether the virtual network cable is plugged in on machine startup or not.</source>
@@ -4538,7 +4528,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>&amp;Enable Serial Port</source>
-        <translation>&amp;Aktiviere serielle Schnittstelle</translation>
+        <translation>&amp;Serielle Schnittstelle aktivieren</translation>
     </message>
     <message>
         <source>When checked, enables the given serial port of the virtual machine.</source>
@@ -5045,7 +5035,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
     <message>
         <source>&lt;p&gt;Do you want to remove the selected host network interface &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note:&lt;/b&gt; This interface may be in use by one or more network adapters of this or another VM. After it is removed, these adapters will no longer work until you correct their settings by either choosing a different interface name or a different adapter attachment type.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Möchten Sie das ausgewählte Hostinterface &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;löschen?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;&lt;b&gt;Beachten Sie:&lt;/b&gt; Dieses Interface wird möglicherweise von virtuellen Netzwerk-Adaptern anderer VMs benutzt. Nachdem es gelöscht wurde, funktionieren diese Adapter nichts mehr, bis deren Einstellungen entsprechend angepasst wurden.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Möchten Sie das ausgewählte Hostinterface &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;löschen?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;&lt;b&gt;Beachten Sie:&lt;/b&gt; Dieses Interface wird möglicherweise von virtuellen Netzwerkadaptern anderer VMs benutzt. Nachdem es gelöscht wurde, funktionieren diese Adapter nichts mehr, bis deren Einstellungen entsprechend angepasst wurden.&lt;/p&gt;</translation>
     </message>
     <message>
         <source> Serial Ports </source>
@@ -5234,7 +5224,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
     <message>
         <source>Enable USB &amp;2.0 Controller</source>
-        <translation>Aktiviert den USB&amp;2.0-Controller</translation>
+        <translation>USB-&amp;2.0-Controller aktivieren</translation>
     </message>
     <message>
         <source>

@@ -1,4 +1,4 @@
-/* $Id: initterm-r0drv-nt.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
+/* $Id: initterm-r0drv-nt.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
 /** @file
  * IPRT - Initialization & Termination, R0 Driver, NT.
  */

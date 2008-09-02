@@ -17,19 +17,14 @@
 # additional information or have any questions.
 #
 
-echo "Sun xVM VirtualBox - postinstall script"
-sync
-
 currentzone=`zonename`
 if test "$currentzone" = "global"; then
-    echo "This script will setup and load the VirtualBox kernel module..."
-    # vboxdrv.sh would've been installed, we just need to call it.
+    echo "Configuring VirtualBox kernel module..."
     /opt/VirtualBox/vboxdrv.sh restart silentunload
 fi
 
 # create links
 echo "Creating links..."
-#/usr/sbin/installf -c none $PKGINST /dev/vboxdrv=../devices/pseudo/vboxdrv@0:vboxdrv s
 if test -f /opt/VirtualBox/VirtualBox; then
     /usr/sbin/installf -c none $PKGINST /usr/bin/VirtualBox=/opt/VirtualBox/VBox.sh s
     # Qt links
@@ -53,8 +48,14 @@ rm -rf /opt/VirtualBox/etc
 
 /usr/sbin/installf -f $PKGINST
 
+# We need to touch the desktop link inorder to add it to the menu right away
+if test -f /usr/share/applications/virtualbox.desktop; then
+    touch /usr/share/applications/virtualbox.desktop
+fi
+
+# create /dev link for vboxdrv (only possible from global zone)
 if test "$currentzone" = "global"; then
-    /usr/sbin/devlinks
+    /usr/sbin/devfsadm -i vboxdrv
 fi
 
 echo "Done."

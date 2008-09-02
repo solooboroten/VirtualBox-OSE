@@ -1,4 +1,4 @@
-/* $Id: VMM.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: VMM.cpp 31281 2008-05-27 09:21:03Z sandervl $ */
 /** @file
  * VMM - The Virtual Machine Monitor Core.
  */
@@ -245,7 +245,7 @@ static int vmmR3InitCoreCode(PVM pVM)
     if (pVM->vmm.s.pvHCCoreCodeR3)
     {
         rc = PGMR3MapIntermediate(pVM, pVM->vmm.s.pvHCCoreCodeR0, pVM->vmm.s.HCPhysCoreCode, cbCoreCode);
-        if (rc == VERR_PGM_MAPPINGS_FIX_CONFLICT)
+        if (rc == VERR_PGM_INTERMEDIATE_PAGING_CONFLICT)
         {
             /* try more allocations. */
             struct
@@ -254,7 +254,7 @@ static int vmmR3InitCoreCode(PVM pVM)
                 void    *pvR3;
                 RTHCPHYS HCPhys;
                 RTUINT   cb;
-            } aBadTries[16];
+            } aBadTries[128];
             unsigned i = 0;
             do
             {
@@ -268,8 +268,8 @@ static int vmmR3InitCoreCode(PVM pVM)
                 if (!pVM->vmm.s.pvHCCoreCodeR3)
                     break;
                 rc = PGMR3MapIntermediate(pVM, pVM->vmm.s.pvHCCoreCodeR0, pVM->vmm.s.HCPhysCoreCode, cbCoreCode);
-            } while (   rc == VERR_PGM_MAPPINGS_FIX_CONFLICT
-                     && i < ELEMENTS(aBadTries) - 1);
+            } while (   rc == VERR_PGM_INTERMEDIATE_PAGING_CONFLICT
+                     && i < RT_ELEMENTS(aBadTries) - 1);
 
             /* cleanup */
             if (VBOX_FAILURE(rc))
@@ -305,9 +305,11 @@ static int vmmR3InitCoreCode(PVM pVM)
         /*
          * Map the code into the GC address space.
          */
-        rc = MMR3HyperMapHCPhys(pVM, pVM->vmm.s.pvHCCoreCodeR3, pVM->vmm.s.HCPhysCoreCode, cbCoreCode, "Core Code", &pVM->vmm.s.pvGCCoreCode);
+        RTGCPTR GCPtr;
+        rc = MMR3HyperMapHCPhys(pVM, pVM->vmm.s.pvHCCoreCodeR3, pVM->vmm.s.HCPhysCoreCode, cbCoreCode, "Core Code", &GCPtr);
         if (VBOX_SUCCESS(rc))
         {
+            pVM->vmm.s.pvGCCoreCode = GCPtr;
             MMR3HyperReserve(pVM, PAGE_SIZE, "fence", NULL);
             LogRel(("CoreCode: R3=%VHv R0=%VHv GC=%VGv Phys=%VHp cb=%#x\n",
                     pVM->vmm.s.pvHCCoreCodeR3, pVM->vmm.s.pvHCCoreCodeR0, pVM->vmm.s.pvGCCoreCode, pVM->vmm.s.HCPhysCoreCode, pVM->vmm.s.cbCoreCode));
@@ -533,6 +535,7 @@ VMMR3DECL(int) VMMR3Init(PVM pVM)
                     STAM_REG(pVM, &pVM->vmm.s.StatGCRetRemReplay,           STAMTYPE_COUNTER, "/VMM/GCRet/CallHost/REMReplay",  STAMUNIT_OCCURENCES, "Number of VINF_VMM_CALL_HOST returns.");
                     STAM_REG(pVM, &pVM->vmm.s.StatGCRetVMSetError,          STAMTYPE_COUNTER, "/VMM/GCRet/CallHost/VMSetError", STAMUNIT_OCCURENCES, "Number of VINF_VMM_CALL_HOST returns.");
                     STAM_REG(pVM, &pVM->vmm.s.StatGCRetPGMLock,             STAMTYPE_COUNTER, "/VMM/GCRet/CallHost/PGMLock",    STAMUNIT_OCCURENCES, "Number of VINF_VMM_CALL_HOST returns.");
+                    STAM_REG(pVM, &pVM->vmm.s.StatGCRetHyperAssertion,      STAMTYPE_COUNTER, "/VMM/GCRet/CallHost/HyperAssert", STAMUNIT_OCCURENCES, "Number of VINF_VMM_CALL_HOST returns.");
                     STAM_REG(pVM, &pVM->vmm.s.StatGCRetPATMDuplicateFn,     STAMTYPE_COUNTER, "/VMM/GCRet/PATMDuplicateFn",     STAMUNIT_OCCURENCES, "Number of VINF_PATM_DUPLICATE_FUNCTION returns.");
                     STAM_REG(pVM, &pVM->vmm.s.StatGCRetPGMChangeMode,       STAMTYPE_COUNTER, "/VMM/GCRet/PGMChangeMode",       STAMUNIT_OCCURENCES, "Number of VINF_PGM_CHANGE_MODE returns.");
                     STAM_REG(pVM, &pVM->vmm.s.StatGCRetEmulHlt,             STAMTYPE_COUNTER, "/VMM/GCRet/EmulHlt",             STAMUNIT_OCCURENCES, "Number of VINF_EM_RAW_EMULATE_INSTR_HLT returns.");
@@ -675,7 +678,7 @@ VMMR3DECL(int) VMMR3InitGC(PVM pVM)
      *      -# setup stackframe and EIP to use the trampoline.
      *      -# do a generic hypervisor call.
      */
-    RTGCPTR GCPtrEP;
+    RTGCPTR32 GCPtrEP;
     int rc = PDMR3GetSymbolGC(pVM, VMMGC_MAIN_MODULE_NAME, "VMMGCEntry", &GCPtrEP);
     if (VBOX_SUCCESS(rc))
     {
@@ -864,7 +867,7 @@ VMMR3DECL(int)  VMMR3UpdateLoggers(PVM pVM)
      * Simply clone the logger instance (for GC).
      */
     int rc = VINF_SUCCESS;
-    RTGCPTR GCPtrLoggerFlush = 0;
+    RTGCPTR32 GCPtrLoggerFlush = 0;
 
     if (pVM->vmm.s.pLoggerHC
 #ifdef VBOX_WITH_GC_AND_R0_RELEASE_LOG
@@ -878,7 +881,7 @@ VMMR3DECL(int)  VMMR3UpdateLoggers(PVM pVM)
 
     if (pVM->vmm.s.pLoggerHC)
     {
-        RTGCPTR GCPtrLoggerWrapper = 0;
+        RTGCPTR32 GCPtrLoggerWrapper = 0;
         rc = PDMR3GetSymbolGC(pVM, VMMGC_MAIN_MODULE_NAME, "vmmGCLoggerWrapper", &GCPtrLoggerWrapper);
         AssertReleaseMsgRC(rc, ("vmmGCLoggerWrapper not found! rc=%Vra\n", rc));
         pVM->vmm.s.pLoggerGC = MMHyperHC2GC(pVM, pVM->vmm.s.pLoggerHC);
@@ -890,7 +893,7 @@ VMMR3DECL(int)  VMMR3UpdateLoggers(PVM pVM)
 #ifdef VBOX_WITH_GC_AND_R0_RELEASE_LOG
     if (pVM->vmm.s.pRelLoggerHC)
     {
-        RTGCPTR GCPtrLoggerWrapper = 0;
+        RTGCPTR32 GCPtrLoggerWrapper = 0;
         rc = PDMR3GetSymbolGC(pVM, VMMGC_MAIN_MODULE_NAME, "vmmGCRelLoggerWrapper", &GCPtrLoggerWrapper);
         AssertReleaseMsgRC(rc, ("vmmGCRelLoggerWrapper not found! rc=%Vra\n", rc));
         pVM->vmm.s.pRelLoggerGC = MMHyperHC2GC(pVM, pVM->vmm.s.pRelLoggerHC);
@@ -1565,7 +1568,7 @@ DECLCALLBACK(void) vmmR3SwitcherAMD64ToPAE_Relocate(PVM pVM, PVMMSWITCHERDEF pSw
  */
 VMMR3DECL(const char *) VMMR3GetGCAssertMsg1(PVM pVM)
 {
-    RTGCPTR GCPtr;
+    RTGCPTR32 GCPtr;
     int rc = PDMR3GetSymbolGC(pVM, NULL, "g_szRTAssertMsg1", &GCPtr);
     if (VBOX_SUCCESS(rc))
         return (const char *)MMHyperGC2HC(pVM, GCPtr);
@@ -1581,7 +1584,7 @@ VMMR3DECL(const char *) VMMR3GetGCAssertMsg1(PVM pVM)
  */
 VMMR3DECL(const char *) VMMR3GetGCAssertMsg2(PVM pVM)
 {
-    RTGCPTR GCPtr;
+    RTGCPTR32 GCPtr;
     int rc = PDMR3GetSymbolGC(pVM, NULL, "g_szRTAssertMsg2", &GCPtr);
     if (VBOX_SUCCESS(rc))
         return (const char *)MMHyperGC2HC(pVM, GCPtr);

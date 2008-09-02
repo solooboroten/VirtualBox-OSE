@@ -1,4 +1,4 @@
-; $Id: EMAllA.asm 8225 2008-04-21 13:35:52Z vboxsync $
+; $Id: EMAllA.asm 29951 2008-04-21 13:35:52Z sandervl $
 ;; @file
 ; EM Assembly Routines.
 ;

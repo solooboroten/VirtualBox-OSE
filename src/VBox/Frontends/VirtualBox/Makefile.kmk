@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8467 2008-04-29 15:09:52Z vboxsync $
+# $Id: Makefile.kmk 31210 2008-05-25 00:54:35Z bird $
 ## @file
 # Makefile for the VirtualBox Qt GUI.
 #
@@ -40,7 +40,7 @@ VBOX_WITH_REGISTRATION := 1
 VBOX_WITH_REGISTRATION_REQUEST := 1
 
 DEPTH = ../../../..
-include $(PATH_KBUILD)/header.kmk
+include $(KBUILD_PATH)/header.kmk
 
 
 #
@@ -84,13 +84,13 @@ endif
 # The targets.
 #
 PROGRAMS = VirtualBox
-ifeq ($(filter-out freebsd linux openbsd netbsd solaris,$(BUILD_TARGET)),) # X11
+ifeq ($(filter-out freebsd linux openbsd netbsd solaris,$(KBUILD_TARGET)),) # X11
 DLLS = VBoxKeyboard
 OTHERS = $(PATH_BIN)/vboxkeyboard.tar.gz
 endif
 INSTALLS = VirtualBox.nls
 
-ifeq ($(BUILD_TARGET),os2)
+ifeq ($(KBUILD_TARGET),os2)
  DLLS += VBoxHlp
  ifneq ($(strip $(VBOX_DLL_QT)),)
   INSTALLS += qt.dll
@@ -154,12 +154,12 @@ $(PATH_BIN)/vboxkeyboard.tar.gz: $(VBoxKeyboard_TARSOURCES) $(PATH_TARGET)/$(SOU
 #
 VirtualBox_TEMPLATE = VBOXQTGUIEXE
 VirtualBox_SDKS.win = WINPSDK DXSDK
-#ifeq ($(filter-out freebsd linux netbsd openbsd os2 solaris,$(BUILD_TARGET)),) - later
-ifeq ($(filter-out freebsd linux netbsd openbsd os2,$(BUILD_TARGET)),) # X11 + os2
+#ifeq ($(filter-out freebsd linux netbsd openbsd os2 solaris,$(KBUILD_TARGET)),) - later
+ifeq ($(filter-out freebsd linux netbsd openbsd os2,$(KBUILD_TARGET)),) # X11 + os2
 VirtualBox_SDKS += LIBSDL
 endif
 
-ifeq ($(BUILD_TARGET),darwin)
+ifeq ($(KBUILD_TARGET),darwin)
 # For the launch trick we need different inode numbers.
 VirtualBox_INST = $(INST_BIN)VirtualBox $(INST_BIN)VirtualBoxVM
 
@@ -172,7 +172,7 @@ VirtualBox_INST = $(INST_BIN)VirtualBox $(INST_BIN)VirtualBoxVM
 endif
 
 ifndef VBOX_OSE
-ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(BUILD_TARGET)),) # linux only, yea, right.
+ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),) # linux only, yea, right.
 # Note: I'm doing this right here because the GUI will _not_ run
 #       without that file which might be annoying for developers!
 $(VBOX_LICENSE_BIN): $(VBOX_LICENSE_SRC)
@@ -212,7 +212,7 @@ VirtualBox_QT_MOCHDRS = \
 
 # Sources containing local definitions of classes that use the Q_OBJECT macro
 VirtualBox_QT_MOCSRCS = src/VBoxSelectorWnd.cpp
-ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(BUILD_TARGET)),) # X11
+ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),) # X11
 VirtualBox_QT_MOCSRCS += src/VBoxGlobal.cpp
 endif
 ifdef VBOX_WITH_XPCOM
@@ -276,21 +276,14 @@ VirtualBox_SOURCES = \
 	src/HappyHttp.cpp \
 	src/VBoxNetworkFramework.cpp
 
-ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(BUILD_TARGET)),) # X11
+ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),) # X11
 VirtualBox_SOURCES += \
 	src/linux/XKeyboard-new.cpp
 endif
 
-ifdef VBOX_OSE
 VirtualBox_SOURCES.win += \
-	src/win32/VirtualBox_OSE.rc
-else
-VirtualBox_SOURCES.win += \
-	src/win32/VirtualBox.rc
-endif
-
-VirtualBox_SOURCES.win += \
-	src/VBoxFBDDRAW.cpp
+	src/VBoxFBDDRAW.cpp \
+	$(PATH_TARGET)/VirtualBox.rc
 
 VirtualBox_SOURCES.darwin = \
 	src/darwin/DarwinKeyboard.cpp \
@@ -311,7 +304,7 @@ endif
 # OSE version is always necessary for lupdate/lrelease
 VirtualBox_QT_UISRCS += ui/VBoxAboutDlg.ui
 
-ifneq ($(BUILD_TARGET),win)
+ifneq ($(KBUILD_TARGET),win)
 src/HappyHttp.cpp_CXXFLAGS += -fexceptions
 src/VBoxDownloaderWgt.cpp_CXXFLAGS += -fexceptions
 src/VBoxNetworkFramework.cpp_CXXFLAGS += -fexceptions
@@ -342,7 +335,7 @@ VirtualBox_DEFS.win.amd64 = VBOX_WITHOUT_QHTTP
 ifdef VBOX_WITH_ICHAT_THEATER
  VirtualBox_DEFS.darwin += VBOX_WITH_ICHAT_THEATER
 endif
-ifneq ($(BUILD_TYPE),release)
+ifneq ($(KBUILD_TYPE),release)
  # non-release builds has some extra features.
  VirtualBox_DEFS.win     += VBOX_GUI_USE_DDRAW
  VirtualBox_DEFS.linux   += VBOX_GUI_USE_QIMAGE
@@ -359,6 +352,9 @@ endif
 ifdef VBOX_WITH_PULSE
  VirtualBox_DEFS         += VBOX_WITH_PULSE
 endif
+ifdef VBOX_WITH_E1000
+ VirtualBox_DEFS         += VBOX_WITH_E1000
+endif
 ifdef VBOX_OSE
  VirtualBox_DEFS         += VBOX_OSE
 endif
@@ -373,7 +369,7 @@ VirtualBox_INCS           = \
 	$(PATH_VirtualBox)/include \
 
 
-ifeq ($(BUILD_TYPE),release)
+ifeq ($(KBUILD_TYPE),release)
  VirtualBox_LDFLAGS.win  += /SUBSYSTEM:windows
 else
  VirtualBox_LDFLAGS.linux+= -rdynamic # for backtrace_symbols()
@@ -393,13 +389,13 @@ VirtualBox_LIBS.win       = \
 	$(PATH_SDK_DXSDK_LIB)/ddraw.lib \
 	$(PATH_SDK_DXSDK_LIB)/dxguid.lib
 VirtualBox_LIBS.os2      += $(PATH_DLL)/VBoxHlp$(VBOX_SUFF_DLL)
-ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(BUILD_TARGET)),) # X11
+ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),) # X11
 VirtualBox_LIBS          += $(PATH_DLL)/VBoxKeyboard$(VBOX_SUFF_DLL)
 endif
 
 
 ifdef VBOX_WITH_DEBUGGER_GUI ## @todo make this dynamically loadable and ship with release builds too.
- ifeq ($(BUILD_TARGET),win)
+ ifeq ($(KBUILD_TARGET),win)
   VirtualBox_LIBS        += $(PATH_LIB)/VBoxDbg$(VBOX_SUFF_LIB)
  else
   VirtualBox_LIBS        += $(PATH_DLL)/VBoxDbg$(VBOX_SUFF_DLL)
@@ -413,11 +409,23 @@ XIDLFILE            = ../../Main/idl/VirtualBox.xidl
 
 
 # generated files we need to clean manually
-OTHER_CLEAN           = \
+OTHER_CLEAN        += \
 	$(VirtualBox_GENSRCS) \
 	$(VirtualBox_GENHDRS) \
 	$(WRAPPERSFILE) \
 	$(PATH_BIN)/vboxkeyboard.tar.gz
+
+
+#
+# On Windows we'll have to generate/edit the resource file.
+# The IDI_ICON1 name is Qt specific.
+#
+$(PATH_TARGET)/VirtualBox.rc: Makefile.kmk $(VBOX_WINDOWS_ICON_FILE) | $$(call DIRDEP,$$(@D))
+	$(RM) -f $@
+	$(APPEND) $@ 'IDI_ICON1 ICON "$(subst /,\\,$(VBOX_WINDOWS_ICON_FILE))"'
+	$(CAT) $@
+
+OTHER_CLEAN.win += $(PATH_TARGET)/VirtualBox.rc
 
 
 #
@@ -428,14 +436,8 @@ VirtualBox.app_INST = $(INST_VIRTUALBOX)Contents/
 VirtualBox.app_MODE = 644
 VirtualBox.app_SOURCES = \
 	src/darwin/PkgInfo \
-	$(PATH_TARGET)/Info.plist
-ifdef VBOX_OSE
-VirtualBox.app_SOURCES += \
-	images/OSE/VirtualBox.icns=>Resources/virtualbox.icns
-else
-VirtualBox.app_SOURCES += \
-	images/NonOSE/VirtualBox.icns=>Resources/virtualbox.icns
-endif
+	$(PATH_TARGET)/Info.plist \
+	$(VBOX_MACOSX_ICON_FILE)=>Resources/virtualbox.icns
 
 $(PATH_TARGET)/Info.plist: src/darwin/Info.plist $(VBOX_VERSION_MK) | $(call DIRDEP,$(PATH_TARGET))
 	$(call MSG_GENERATE,VirtualBox.app,$<,$@)
@@ -452,14 +454,8 @@ VirtualBoxVM.app_INST = $(VirtualBox.app_INST)Resources/VirtualBoxVM.app/Content
 VirtualBoxVM.app_MODE = 644
 VirtualBoxVM.app_SOURCES = \
 	src/darwin/VM-PkgInfo=>PkgInfo \
-	$(PATH_TARGET)/VM-Info.plist=>Info.plist
-ifdef VBOX_OSE
-VirtualBoxVM.app_SOURCES += \
-	images/OSE/VirtualBox.icns=>Resources/virtualbox.icns
-else
-VirtualBoxVM.app_SOURCES += \
-	images/NonOSE/VirtualBox.icns=>Resources/virtualbox.icns
-endif
+	$(PATH_TARGET)/VM-Info.plist=>Info.plist \
+	$(VBOX_MACOSX_ICON_FILE)=>Resources/virtualbox.icns
 VirtualBoxVM.app_SYMLINKS = \
 	MacOS=>../../../MacOS/
 
@@ -501,7 +497,7 @@ endif
 
 # Commit the magic.
 # (note: before custom rules that make usage of generated variables!).
-include $(PATH_KBUILD)/footer.kmk
+include $(KBUILD_PATH)/footer.kmk
 
 
 

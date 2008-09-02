@@ -1,4 +1,4 @@
-/* $Id: critsect-generic.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
+/* $Id: critsect-generic.cpp 30593 2008-05-07 14:58:05Z bird $ */
 /** @file
  * IPRT - Critical Section, Generic.
  */
@@ -38,17 +38,8 @@
 #include <iprt/asm.h>
 #include <iprt/err.h>
 #include "internal/thread.h"
+#include "internal/strict.h"
 
-/** @def RTCRITSECT_STRICT
- * Define this to enable deadlock detection.
- *
- * @remark  This won't work safely on L4 since we have to traverse the AVL tree
- *          in order to get the RT thread structure there and this tree is
- *          protected by a critsect atm.
- */
-#if !defined(RTCRITSECT_STRICT) && defined(RT_STRICT) && !defined(RT_OS_L4)
-# define RTCRITSECT_STRICT
-#endif
 
 /* in strict mode we're redefining this, so undefine it now for the implementation. */
 #undef RTCritSectEnter
@@ -352,6 +343,7 @@ RTDECL(int) RTCritSectEnterDebug(PRTCRITSECT pCritSect, const char *pszFile, uns
     pCritSect->Strict.u32EnterLine = uLine;
     pCritSect->Strict.uEnterId     = uId;
     ASMAtomicXchgSize(&pCritSect->Strict.ThreadOwner, (RTUINTPTR)ThreadSelf); /* screw gcc and its pedantic warnings. */
+    RTThreadWriteLockInc(ThreadSelf);
 #endif
 
     return VINF_SUCCESS;
@@ -388,6 +380,8 @@ RTDECL(int) RTCritSectLeave(PRTCRITSECT pCritSect)
          * Decrement waiters, if >= 0 then we have to wake one of them up.
          */
 #ifdef RTCRITSECT_STRICT
+        if (pCritSect->Strict.ThreadOwner != NIL_RTTHREAD) /* May happen for PDMCritSects when entering GC/R0. */
+            RTThreadWriteLockDec(pCritSect->Strict.ThreadOwner);
         ASMAtomicXchgSize(&pCritSect->Strict.ThreadOwner, NIL_RTTHREAD);
 #endif
         ASMAtomicXchgSize(&pCritSect->NativeThreadOwner, NIL_RTNATIVETHREAD);

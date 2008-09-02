@@ -156,7 +156,7 @@ bool VBoxConsoleView::macEventFilter (EventRef inEvent, void *inUserData)
     UInt32 eventKind = ::GetEventKind (inEvent);
 
     /* For debugging events */
-    /* 
+    /*
     if (!(eventKind == kEventWindowActivated ||
           eventClass == 0x63757465))
         ::DarwinDebugPrintEvent ("view: ", inEvent);
@@ -628,7 +628,8 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     , mIsHostkeyAlone (false)
     , mIgnoreMainwndResize (true)
     , mAutoresizeGuest (false)
-    , mIsAdditionsActive (false)
+    , mDoResize (false)
+    , mGuestSupportsGraphics (false)
     , mNumLock (false)
     , mScrollLock (false)
     , mCapsLock (false)
@@ -645,6 +646,7 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     , mDarwinKeyModifiers (0)
     , mVirtualBoxLogo (NULL)
 #endif
+    , mDesktopGeo (DesktopGeo_Invalid)
 {
     Assert (!mConsole.isNull() &&
             !mConsole.GetDisplay().isNull() &&
@@ -681,10 +683,6 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     resize_hint_timer = new QTimer (this);
     connect (resize_hint_timer, SIGNAL (timeout()),
              this, SLOT (doResizeHint()));
-
-    mToggleFSModeTimer = new QTimer (this);
-    connect (mToggleFSModeTimer, SIGNAL (timeout()),
-             this, SIGNAL (resizeHintDone()));
 
     /* setup rendering */
 
@@ -766,9 +764,21 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     /* Remember the desktop geometry and register for geometry change
        events for telling the guest about video modes we like. */
 
-    doResizeDesktop(0);
-    connect (QApplication::desktop(), SIGNAL(workAreaResized(int)),
-             this, SLOT(doResizeDesktop(int)));
+    QString desktopGeometry = vboxGlobal().settings()
+                                  .publicProperty ("GUI/MaxGuestResolution");
+    if ((desktopGeometry == QString::null) ||
+        (desktopGeometry == "auto"))
+        setDesktopGeometry (DesktopGeo_Automatic, 0, 0);
+    else if (desktopGeometry == "any")
+        setDesktopGeometry (DesktopGeo_Any, 0, 0);
+    else
+    {
+        int width = desktopGeometry.section (',', 0, 0).toInt();
+        int height = desktopGeometry.section (',', 1, 1).toInt();
+        setDesktopGeometry (DesktopGeo_Fixed, width, height);
+    }
+    connect (QApplication::desktop(), SIGNAL (resized (int)),
+             this, SLOT (doResizeDesktop (int)));
 
 #if defined (VBOX_GUI_DEBUG) && defined (VBOX_GUI_FRAMEBUF_STAT)
     VMCPUTimer::calibrate (200);
@@ -987,7 +997,7 @@ void VBoxConsoleView::setAutoresizeGuest (bool on)
 
         maybeRestrictMinimumSize();
 
-        if (mIsAdditionsActive && mAutoresizeGuest)
+        if (mGuestSupportsGraphics && mAutoresizeGuest)
             doResizeHint();
     }
 }
@@ -1055,9 +1065,6 @@ bool VBoxConsoleView::event (QEvent *e)
                 VBoxResizeEvent *re = (VBoxResizeEvent *) e;
                 LogFlow (("VBoxDefs::ResizeEventType: %d x %d x %d bpp\n",
                           re->width(), re->height(), re->bitsPerPixel()));
-
-                if (mToggleFSModeTimer->isActive())
-                    mToggleFSModeTimer->stop();
 
                 /* do frame buffer dependent resize */
                 mFrameBuf->resizeEvent (re);
@@ -1193,7 +1200,7 @@ bool VBoxConsoleView::event (QEvent *e)
                 GuestAdditionsEvent *ge = (GuestAdditionsEvent *) e;
                 LogFlowFunc (("AdditionsStateChangeEventType\n"));
 
-                mIsAdditionsActive = ge->additionActive();
+                mGuestSupportsGraphics = ge->supportsGraphics();
 
                 maybeRestrictMinimumSize();
 
@@ -1547,8 +1554,11 @@ bool VBoxConsoleView::eventFilter (QObject *watched, QEvent *e)
 #endif /* defined (Q_WS_MAC) */
             case QEvent::Resize:
             {
+                /* Set the "guest needs to resize" hint.  This hint is acted upon
+                 * when (and only when) the autoresize property is "true". */
+                mDoResize = mGuestSupportsGraphics || mMainWnd->isTrueFullscreen();
                 if (!mIgnoreMainwndResize &&
-                    mIsAdditionsActive && mAutoresizeGuest)
+                    mGuestSupportsGraphics && mAutoresizeGuest)
                     resize_hint_timer->start (300, TRUE);
                 break;
             }
@@ -2235,31 +2245,51 @@ void VBoxConsoleView::fixModifierState (LONG *codes, uint *count)
 /**
  *  Called on enter/exit seamless/fullscreen mode.
  */
-void VBoxConsoleView::toggleFSMode()
+void VBoxConsoleView::toggleFSMode (const QSize &aSize)
 {
-    if (mIsAdditionsActive && mAutoresizeGuest)
+    if ((mGuestSupportsGraphics && mAutoresizeGuest) ||
+        mMainWnd->isTrueFullscreen())
     {
-        QSize newSize = QSize();
-        if (mMainWnd->isTrueFullscreen() || mMainWnd->isTrueSeamless())
+        QSize newSize;
+        if (aSize.isValid())
         {
-            mNormalSize = frameSize();
+            mNormalSize = aSize;
             newSize = maximumSize();
         }
         else
             newSize = mNormalSize;
         doResizeHint (newSize);
     }
-    mToggleFSModeTimer->start (2000, true);
 }
 
 /**
- * Get the current desktop geometry for the console view widget
+ * Get the current available desktop geometry for the console/framebuffer
  *
- * @returns the geometry
+ * @returns the geometry.  An empty rectangle means unrestricted.
  */
-QRect VBoxConsoleView::getDesktopGeometry()
+QRect VBoxConsoleView::desktopGeometry()
 {
-    return mDesktopGeometry;
+    QRect rc;
+    switch (mDesktopGeo)
+    {
+        case DesktopGeo_Fixed:
+        case DesktopGeo_Automatic:
+            rc = QRect (0, 0,
+                        RT_MAX (mDesktopGeometry.width(), mLastSizeHint.width()),
+                        RT_MAX (mDesktopGeometry.height(), mLastSizeHint.height()));
+            break;
+        case DesktopGeo_Any:
+            rc = QRect (0, 0, 0, 0);
+            break;
+        default:
+            AssertMsgFailed (("Bad geometry type %d\n", mDesktopGeo));
+    }
+    return rc;
+}
+
+bool VBoxConsoleView::isAutoresizeGuestActive()
+{
+    return mGuestSupportsGraphics && mAutoresizeGuest;
 }
 
 /**
@@ -2461,7 +2491,15 @@ bool VBoxConsoleView::keyEvent (int aKey, uint8_t aScan, int aFlags,
                         {
                             captureKbd (!captured, false);
                             if (!(mMouseAbsolute && mMouseIntegration))
+                            {
+#ifdef Q_WS_X11
+                                /* make sure that pending FocusOut events from the
+                                 * previous message box are handled, otherwise the
+                                 * mouse is immediately ungrabbed. */
+                                qApp->processEvents();
+#endif
                                 captureMouse (mKbdCaptured);
+                            }
                         }
                     }
                 }
@@ -2807,6 +2845,12 @@ bool VBoxConsoleView::mouseEvent (int aType, const QPoint &aPos,
 
                     if (ok)
                     {
+#ifdef Q_WS_X11
+                        /* make sure that pending FocusOut events from the
+                         * previous message box are handled, otherwise the
+                         * mouse is immediately ungrabbed again */
+                        qApp->processEvents();
+#endif
                         captureKbd (true);
                         captureMouse (true);
                     }
@@ -3504,7 +3548,7 @@ void VBoxConsoleView::dimImage (QImage &img)
 
 void VBoxConsoleView::doResizeHint (const QSize &aToSize)
 {
-    if (mIsAdditionsActive && mAutoresizeGuest)
+    if (mGuestSupportsGraphics && mAutoresizeGuest)
     {
         /* If this slot is invoked directly then use the passed size
          * otherwise get the available size for the guest display.
@@ -3513,48 +3557,99 @@ void VBoxConsoleView::doResizeHint (const QSize &aToSize)
         QSize sz (aToSize.isValid() ? aToSize : mMainWnd->centralWidget()->size());
         if (!aToSize.isValid())
             sz -= QSize (frameWidth() * 2, frameWidth() * 2);
-        LogFlowFunc (("Will suggest %d x %d\n", sz.width(), sz.height()));
+        /* We only actually send the hint if
+         * 1) the autoresize property is set to true and
+         * 2) either an explicit new size was given (e.g. if the request
+         *    was triggered directly by a console resize event) or if no
+         *    explicit size was specified but a resize is flagged as being
+         *    needed (e.g. the autoresize was just enabled and the console
+         *    was resized while it was disabled). */
+        if (mAutoresizeGuest &&
+            (aToSize.isValid() || mDoResize))
+        {
+            LogFlowFunc (("Will suggest %d x %d\n", sz.width(), sz.height()));
 
-        /* Increase the desktop geometry if needed */
-        setDesktopGeometry(sz.width(), sz.height());
+            /* Increase the maximum allowed size to the new size if needed */
+            setDesktopGeoHint (sz.width(), sz.height());
 
-        mConsole.GetDisplay().SetVideoModeHint (sz.width(), sz.height(), 0, 0);
+            mConsole.GetDisplay().SetVideoModeHint (sz.width(), sz.height(), 0, 0);
+        }
     }
 }
 
 void VBoxConsoleView::doResizeDesktop (int)
 {
-    setDesktopGeometry(0, 0);
+    /* If the desktop geometry is set automatically, this will update it. */
+    setDesktopGeometry (DesktopGeo_Unchanged, 0, 0);
 }
 
 /**
- * Set the maximum size allowed for the guest desktop to the available area
- * minus 100 pixels each way, or to the specified minimum width and height,
- * whichever is greater.
+ * Set the maximum size allowed for the guest desktop.  This can either be
+ * a fixed maximum size, or a lower bound on the maximum.  In the second case,
+ * the maximum will be set to the available desktop area minus 100 pixels each
+ * way, or to the specified lower bound, whichever is greater.
  *
- * @param minWidth   The width that the guest screen should at least be
- *                   allowed to increase to
- * @param minHeight  The height that the guest screen should at least be
- *                   allowed to increase to
+ * @param aWidth  The maximum width for the guest screen (fixed geometry) or a
+ *                lower bound for the maximum
+ * @param aHeight The maximum height for the guest screen (fixed geometry)
+ *                or a lower bound for the maximum
  */
-void VBoxConsoleView::setDesktopGeometry(int minWidth, int minHeight)
+void VBoxConsoleView::setDesktopGeoHint (int aWidth, int aHeight)
 {
-    LogFlowThisFunc(("minWidth=%d, minHeight=%d\n", minWidth, minHeight));
-    QRect desktopGeometry = QApplication::desktop()->screenGeometry (this);
-    int width = desktopGeometry.width();
-    if (width - 100 < minWidth)
-        width = minWidth;
-    else
-        width = width - 100;
-    int height = desktopGeometry.height();
-    if (height - 100 < minHeight)
-        height = minHeight;
-    else
-        height = height - 100;
-    LogFlowThisFunc(("Setting %d, %d\n", width, height));
-    mDesktopGeometry = QRect(0, 0, width, height);
+    LogFlowThisFunc (("aWidth=%d, aHeight=%d\n", aWidth, aHeight));
+    mLastSizeHint = QRect (0, 0, aWidth, aHeight);
 }
 
+/**
+ * Set initial desktop geometry restrictions on the guest framebuffer.  These
+ * determine the maximum size the guest framebuffer can take on.  Note that
+ * a hint from the host will always override these restrictions.
+ *
+ * @param aGeo    Values: fixed - the guest has a fixed maximum framebuffer
+ *                        size automatic - we recalculate the maximum size
+ *                        ourselves any - any size is allowed
+ * @param aWidth  The maximum width for the guest screen or zero for no change
+ *                (only used for fixed geometry)
+ * @param aHeight The maximum height for the guest screen or zero for no change
+ *                (only used for fixed geometry)
+ */
+void VBoxConsoleView::setDesktopGeometry (DesktopGeo aGeo, int aWidth, int aHeight)
+{
+    LogFlowThisFunc (("aGeo=%s, aWidth=%d, aHeight=%d\n",
+                      (aGeo == DesktopGeo_Fixed ? "Fixed" :
+                       aGeo == DesktopGeo_Automatic ? "Automatic" :
+                       aGeo == DesktopGeo_Any ? "Any" :
+                       aGeo == DesktopGeo_Unchanged ? "Unchanged" : "Invalid"),
+                      aWidth, aHeight));
+    Assert ((aGeo != DesktopGeo_Unchanged) || (mDesktopGeo != DesktopGeo_Invalid));
+    if (DesktopGeo_Unchanged == aGeo)
+        aGeo = mDesktopGeo;
+    switch (aGeo)
+    {
+        case DesktopGeo_Fixed:
+            mDesktopGeo = DesktopGeo_Fixed;
+            if (aWidth != 0 && aHeight != 0)
+                mDesktopGeometry = QRect (0, 0, aWidth, aHeight);
+            setDesktopGeoHint (0, 0);
+            break;
+        case DesktopGeo_Automatic:
+        {
+            mDesktopGeo = DesktopGeo_Automatic;
+            QRect desktop = QApplication::desktop()->screenGeometry (this);
+            mDesktopGeometry = QRect (0, 0, desktop.width() - 100, desktop.height() - 100);
+            LogFlowThisFunc (("Setting %d, %d\n", desktop.width() - 100, desktop.height() - 100));
+            setDesktopGeoHint (0, 0);
+            break;
+        }
+        case DesktopGeo_Any:
+            mDesktopGeo = DesktopGeo_Any;
+            mDesktopGeometry = QRect (0, 0, 0, 0);
+            break;
+        default:
+            AssertMsgFailed(("Invalid desktop geometry type %d\n", aGeo));
+            mDesktopGeo = DesktopGeo_Invalid;
+    }
+}
 
 /**
  *  Sets the the minimum size restriction depending on the auto-resize feature
@@ -3571,7 +3666,7 @@ void VBoxConsoleView::maybeRestrictMinimumSize()
 {
     if (mode == VBoxDefs::SDLMode)
     {
-        if (!mIsAdditionsActive || !mAutoresizeGuest)
+        if (!mGuestSupportsGraphics || !mAutoresizeGuest)
             setMinimumSize (sizeHint());
         else
             setMinimumSize (0, 0);

@@ -1,7 +1,9 @@
+/* $Id: USBProxyServiceLinux.cpp 30444 2008-05-02 17:02:10Z bird $ */
 /** @file
- *
  * VBox frontends: Basic Frontend (BFE):
  * Implementation of USBProxyServiceLinux class
+ *
+ * WARNING: This file needs to be resynced and is currently disabled.
  */
 
 /*

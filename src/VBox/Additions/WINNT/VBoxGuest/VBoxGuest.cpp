@@ -342,27 +342,25 @@ NTSTATUS VBoxGuestClose(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 DECLVBGL(void) VBoxHGCMCallback (VMMDevHGCMRequestHeader *pHeader, void *pvData, uint32_t u32Data)
 {
     PVBOXGUESTDEVEXT pDevExt = (PVBOXGUESTDEVEXT)pvData;
-    PLARGE_INTEGER pTimeout;
 
     dprintf(("VBoxHGCMCallback\n"));
         
     /* Possible problem with request completion right between the fu32Flags check and KeWaitForSingleObject 
      * call; introduce a timeout to make sure we don't wait indefinitely.
      */
-    pTimeout = (PLARGE_INTEGER)VbglPhysHeapAlloc(sizeof(LARGE_INTEGER));
-    Assert(pTimeout);
-    if (!pTimeout)
-        return;
-        
-    pTimeout->QuadPart  = 250;
-    pTimeout->QuadPart *= -10000;     /* relative in 100ns units */
-
 
     while ((pHeader->fu32Flags & VBOX_HGCM_REQ_DONE) == 0)
     {
-        /* Specifying UserMode so killing the user process will abort the wait. */ 
+        /* Specifying UserMode so killing the user process will abort the wait.
+         * @todo Since VbglGRCancel is not yet implemented, the wait itself must
+         *       be not interruptible. The wait can be interrupted only when the
+         *       calling process is being killed.
+         *       When alertable is TRUE, the wait sometimes ends with STATUS_USER_APC.
+         */ 
         NTSTATUS rc = KeWaitForSingleObject (&pDevExt->keventNotification, Executive,
-                                             UserMode, TRUE, pTimeout
+                                             UserMode,
+                                             FALSE, /* Not Alertable */
+                                             &pDevExt->HGCMWaitTimeout
                                             );
         dprintf(("VBoxHGCMCallback: Wait returned %d fu32Flags=%x\n", rc, pHeader->fu32Flags));
 
@@ -377,7 +375,6 @@ DECLVBGL(void) VBoxHGCMCallback (VMMDevHGCMRequestHeader *pHeader, void *pvData,
 
         dprintf(("VBoxHGCMCallback: fu32Flags = %08X\n", pHeader->fu32Flags));
     }
-    VbglPhysHeapFree(pTimeout);    
     return;
 }
 

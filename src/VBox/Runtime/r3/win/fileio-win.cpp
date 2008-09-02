@@ -1,4 +1,4 @@
-/* $Id: fileio-win.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
+/* $Id: fileio-win.cpp 30968 2008-05-19 11:34:46Z frank $ */
 /** @file
  * IPRT - File I/O, native implementation for the Windows host platform.
  */
@@ -125,6 +125,28 @@ DECLINLINE(bool) IsBeyondLimit(RTFILE File, uint64_t offSeek, unsigned uMethod)
     }
 
     return fIsBeyondLimit;
+}
+
+
+RTR3DECL(int) RTFileFromNative(PRTFILE pFile, RTHCINTPTR uNative)
+{
+    HANDLE h = (HANDLE)uNative;
+    if (    h == INVALID_HANDLE_VALUE
+        ||  (RTFILE)uNative != uNative)
+    {
+        AssertMsgFailed(("%p\n", uNative));
+        *pFile = NIL_RTFILE;
+        return VERR_INVALID_HANDLE;
+    }
+    *pFile = (RTFILE)h;
+    return VINF_SUCCESS;
+}
+
+
+RTR3DECL(RTHCINTPTR) RTFileToNative(RTFILE File)
+{
+    AssertReturn(File != NIL_RTFILE, (RTHCINTPTR)INVALID_HANDLE_VALUE);
+    return (RTHCINTPTR)File;
 }
 
 
@@ -470,6 +492,18 @@ RTR3DECL(int)  RTFileGetSize(RTFILE File, uint64_t *pcbSize)
 
     /* error exit */
     return RTErrConvertFromWin32(GetLastError());
+}
+
+
+RTR3DECL(int) RTFileGetMaxSizeEx(RTFILE File, PRTFOFF pcbMax)
+{
+    /** @todo r=bird:
+     * We might have to make this code OS specific...
+     * In the worse case, we'll have to try GetVolumeInformationByHandle on vista and fall
+     * back on NtQueryVolumeInformationFile(,,,, FileFsAttributeInformation) else where, and
+     * check for known file system names. (For LAN shares we'll have to figure out the remote
+     * file system.) */
+    return VERR_NOT_IMPLEMENTED;
 }
 
 

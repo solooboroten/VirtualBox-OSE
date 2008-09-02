@@ -260,9 +260,31 @@ void VBoxMediaComboBox::appendItem (const QString &aName,
                                     const QString &aTip,
                                     QPixmap       *aPixmap)
 {
-    aPixmap ? insertItem (*aPixmap, aName) : insertItem (aName);
-    mUuidList << aId;
-    mTipList  << aTip;
+    int currentIndex = currentItem();
+
+    int insertPosition = -1;
+    for (int i = 0; i < count(); ++ i)
+        /* Searching for the first real (non-null) vdi item
+           which have name greater than the item to be inserted.
+           This is necessary for sorting items alphabetically. */
+        if (text (i).localeAwareCompare (aName) > 0 &&
+            !getId (i).isNull())
+        {
+            insertPosition = i;
+            break;
+        }
+
+    insertPosition == -1 ? mUuidList.append (aId) :
+        mUuidList.insert (mUuidList.at (insertPosition), aId);
+
+    insertPosition == -1 ? mTipList.append (aId) :
+        mTipList.insert (mTipList.at (insertPosition), aTip);
+
+    aPixmap ? insertItem (*aPixmap, aName, insertPosition) :
+              insertItem (aName, insertPosition);
+
+    if (insertPosition != -1 && currentIndex >= insertPosition)
+        QComboBox::setCurrentItem (currentIndex + 1);
 }
 
 void VBoxMediaComboBox::replaceItem (int            aNumber,

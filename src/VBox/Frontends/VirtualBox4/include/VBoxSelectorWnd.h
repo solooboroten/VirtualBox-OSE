@@ -25,6 +25,7 @@
 
 #include "COMDefs.h"
 
+#include "QIWithRetranslateUI.h"
 #include "VBoxGlobal.h"
 
 /* Qt includes */
@@ -43,9 +44,9 @@ class QListView;
 class QEvent;
 class QUuid;
 
-class VBoxSelectorWnd: public QMainWindow
+class VBoxSelectorWnd: public QIWithRetranslateUI2<QMainWindow>
 {
-    Q_OBJECT
+    Q_OBJECT;
 
 public:
 
@@ -84,11 +85,7 @@ protected:
     /* events */
     bool event (QEvent *e);
 
-protected slots:
-
-private:
-
-    void languageChange();
+    void retranslateUi();
 
 private slots:
 

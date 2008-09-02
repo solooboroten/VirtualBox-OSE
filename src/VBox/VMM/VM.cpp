@@ -1,4 +1,4 @@
-/* $Id: VM.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: VM.cpp 30793 2008-05-13 17:43:23Z bird $ */
 /** @file
  * VM - Virtual Machine
  */
@@ -240,7 +240,7 @@ VMR3DECL(int)   VMR3Create(PFNVMATERROR pfnVMAtError, void *pvUserVM, PFNCFGMCON
 
                 default:
                     pszError = N_("Unknown error creating VM");
-                    NoDmik(AssertMsgFailed(("Add error message for rc=%d (%Vrc)\n", rc, rc)));
+                    NOT_DMIK(AssertMsgFailed(("Add error message for rc=%d (%Vrc)\n", rc, rc)));
                     break;
             }
             vmR3SetErrorU(pUVM, rc, RT_SRC_POS, pszError, rc);
@@ -388,7 +388,13 @@ static int vmR3CreateU(PUVM pUVM, PFNCFGMCONSTRUCTOR pfnCFGMConstructor, void *p
      */
     rc = PDMR3LdrLoadVMMR0U(pUVM);
     if (RT_FAILURE(rc))
+    {
+        /** @todo we need a cleaner solution for this (VERR_VMX_IN_VMX_ROOT_MODE).
+          * bird: what about moving the message down here? Main picks the first message, right? */
+        if (rc == VERR_VMX_IN_VMX_ROOT_MODE)
+            return rc;  /* proper error message set later on */
         return vmR3SetErrorU(pUVM, rc, RT_SRC_POS, N_("Failed to load VMMR0.r0"));
+    }
 
     /*
      * Request GVMM to create a new VM for us.
@@ -2250,7 +2256,21 @@ VMR3DECL(const char *) VMR3GetStateName(VMSTATE enmState)
  */
 void vmR3SetState(PVM pVM, VMSTATE enmStateNew)
 {
+    /*
+     * Validate state machine transitions before doing the actual change.
+     */
     VMSTATE enmStateOld = pVM->enmVMState;
+    switch (enmStateOld)
+    {
+        case VMSTATE_OFF:
+            Assert(enmStateNew != VMSTATE_GURU_MEDITATION);
+            break;
+
+        default:
+            /** @todo full validation. */
+            break;
+    }
+
     pVM->enmVMState = enmStateNew;
     LogRel(("Changing the VM state from '%s' to '%s'.\n", VMR3GetStateName(enmStateOld),  VMR3GetStateName(enmStateNew)));
 

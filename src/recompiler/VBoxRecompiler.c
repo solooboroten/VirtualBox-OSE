@@ -1,4 +1,4 @@
-/* $Id: VBoxRecompiler.c 8217 2008-04-21 11:33:22Z vboxsync $ */
+/* $Id: VBoxRecompiler.c 31273 2008-05-27 08:06:46Z sandervl $ */
 /** @file
  * VBox Recompiler - QEMU.
  */
@@ -58,7 +58,7 @@
 extern void cpu_x86_update_cr3(CPUX86State *env, target_ulong new_cr3);
 extern void cpu_x86_update_cr0(CPUX86State *env, uint32_t new_cr0);
 extern void cpu_x86_update_cr4(CPUX86State *env, uint32_t new_cr4);
-extern void tlb_flush_page(CPUX86State *env, uint32_t addr);
+extern void tlb_flush_page(CPUX86State *env, target_ulong addr);
 extern void tlb_flush(CPUState *env, int flush_global);
 extern void sync_seg(CPUX86State *env1, int seg_reg, int selector);
 extern void sync_ldtr(CPUX86State *env1, int selector);
@@ -725,7 +725,7 @@ REMR3DECL(int) REMR3BreakpointClear(PVM pVM, RTGCUINTPTR Address)
  */
 REMR3DECL(int) REMR3EmulateInstruction(PVM pVM)
 {
-    Log2(("REMR3EmulateInstruction: (cs:eip=%04x:%08x)\n", pVM->rem.s.pCtx->cs, pVM->rem.s.pCtx->eip));
+    Log2(("REMR3EmulateInstruction: (cs:eip=%04x:%08x)\n", CPUMGetGuestCS(pVM), CPUMGetGuestEIP(pVM)));
 
     /*
      * Sync the state and enable single instruction / single stepping.
@@ -964,25 +964,6 @@ REMR3DECL(int) REMR3Run(PVM pVM)
 {
     Log2(("REMR3Run: (cs:eip=%04x:%08x)\n", pVM->rem.s.Env.segs[R_CS].selector, pVM->rem.s.Env.eip));
     Assert(pVM->rem.s.fInREM);
-////Keyboard / tb stuff:
-//if (    pVM->rem.s.Env.segs[R_CS].selector == 0xf000
-//    &&  pVM->rem.s.Env.eip >= 0xe860
-//    &&  pVM->rem.s.Env.eip <= 0xe880)
-//    pVM->rem.s.Env.state |= CPU_EMULATE_SINGLE_STEP;
-////A20:
-//if (    pVM->rem.s.Env.segs[R_CS].selector == 0x9020
-//    &&  pVM->rem.s.Env.eip >= 0x970
-//    &&  pVM->rem.s.Env.eip <= 0x9a0)
-//    pVM->rem.s.Env.state |= CPU_EMULATE_SINGLE_STEP;
-////Speaker (port 61h)
-//if (    pVM->rem.s.Env.segs[R_CS].selector == 0x0010
-//    &&  (    (pVM->rem.s.Env.eip >= 0x90278c10 && pVM->rem.s.Env.eip <= 0x90278c30)
-//         ||  (pVM->rem.s.Env.eip >= 0x9010e250 && pVM->rem.s.Env.eip <= 0x9010e260)
-//        )
-//    )
-//    pVM->rem.s.Env.state |= CPU_EMULATE_SINGLE_STEP;
-//DBGFR3InfoLog(pVM, "timers", NULL);
-
 
     int rc = cpu_exec(&pVM->rem.s.Env);
     switch (rc)
@@ -1902,7 +1883,7 @@ REMR3DECL(int) REMR3State(PVM pVM)
     pVM->rem.s.Env.fmask        = pCtx->msrSFMASK;
     pVM->rem.s.Env.kernelgsbase = pCtx->msrKERNELGSBASE;
 #endif
-    /* Note that FS_BASE & GS_BASE are already synced; QEmu keeps them in the hidden selector registers. 
+    /* Note that FS_BASE & GS_BASE are already synced; QEmu keeps them in the hidden selector registers.
      * So we basically assume the hidden registers are in sync with these MSRs (vt-x & amd-v). Correct??
      */
 
@@ -2932,7 +2913,7 @@ uint8_t remR3PhysReadU8(RTGCPHYS SrcGCPhys)
     uint8_t val;
     STAM_PROFILE_ADV_START(&gStatMemRead, a);
     VBOX_CHECK_ADDR(SrcGCPhys);
-    val = PGMR3PhysReadByte(cpu_single_env->pVM, SrcGCPhys);
+    val = PGMR3PhysReadU8(cpu_single_env->pVM, SrcGCPhys);
     STAM_PROFILE_ADV_STOP(&gStatMemRead, a);
     return val;
 }
@@ -2948,7 +2929,7 @@ int8_t remR3PhysReadS8(RTGCPHYS SrcGCPhys)
     int8_t val;
     STAM_PROFILE_ADV_START(&gStatMemRead, a);
     VBOX_CHECK_ADDR(SrcGCPhys);
-    val = PGMR3PhysReadByte(cpu_single_env->pVM, SrcGCPhys);
+    val = PGMR3PhysReadU8(cpu_single_env->pVM, SrcGCPhys);
     STAM_PROFILE_ADV_STOP(&gStatMemRead, a);
     return val;
 }
@@ -2964,7 +2945,7 @@ uint16_t remR3PhysReadU16(RTGCPHYS SrcGCPhys)
     uint16_t val;
     STAM_PROFILE_ADV_START(&gStatMemRead, a);
     VBOX_CHECK_ADDR(SrcGCPhys);
-    val = PGMR3PhysReadWord(cpu_single_env->pVM, SrcGCPhys);
+    val = PGMR3PhysReadU16(cpu_single_env->pVM, SrcGCPhys);
     STAM_PROFILE_ADV_STOP(&gStatMemRead, a);
     return val;
 }
@@ -2980,7 +2961,7 @@ int16_t remR3PhysReadS16(RTGCPHYS SrcGCPhys)
     uint16_t val;
     STAM_PROFILE_ADV_START(&gStatMemRead, a);
     VBOX_CHECK_ADDR(SrcGCPhys);
-    val = PGMR3PhysReadWord(cpu_single_env->pVM, SrcGCPhys);
+    val = PGMR3PhysReadU16(cpu_single_env->pVM, SrcGCPhys);
     STAM_PROFILE_ADV_STOP(&gStatMemRead, a);
     return val;
 }
@@ -2996,7 +2977,7 @@ uint32_t remR3PhysReadU32(RTGCPHYS SrcGCPhys)
     uint32_t val;
     STAM_PROFILE_ADV_START(&gStatMemRead, a);
     VBOX_CHECK_ADDR(SrcGCPhys);
-    val = PGMR3PhysReadDword(cpu_single_env->pVM, SrcGCPhys);
+    val = PGMR3PhysReadU32(cpu_single_env->pVM, SrcGCPhys);
     STAM_PROFILE_ADV_STOP(&gStatMemRead, a);
     return val;
 }
@@ -3012,7 +2993,7 @@ int32_t remR3PhysReadS32(RTGCPHYS SrcGCPhys)
     int32_t val;
     STAM_PROFILE_ADV_START(&gStatMemRead, a);
     VBOX_CHECK_ADDR(SrcGCPhys);
-    val = PGMR3PhysReadDword(cpu_single_env->pVM, SrcGCPhys);
+    val = PGMR3PhysReadU32(cpu_single_env->pVM, SrcGCPhys);
     STAM_PROFILE_ADV_STOP(&gStatMemRead, a);
     return val;
 }
@@ -3028,8 +3009,7 @@ uint64_t remR3PhysReadU64(RTGCPHYS SrcGCPhys)
     uint64_t val;
     STAM_PROFILE_ADV_START(&gStatMemRead, a);
     VBOX_CHECK_ADDR(SrcGCPhys);
-    val =            PGMR3PhysReadDword(cpu_single_env->pVM, SrcGCPhys)
-        | ((uint64_t)PGMR3PhysReadDword(cpu_single_env->pVM, SrcGCPhys + 4) << 32); /** @todo fix me! */
+    val = PGMR3PhysReadU64(cpu_single_env->pVM, SrcGCPhys);
     STAM_PROFILE_ADV_STOP(&gStatMemRead, a);
     return val;
 }
@@ -3061,7 +3041,7 @@ void remR3PhysWriteU8(RTGCPHYS DstGCPhys, uint8_t val)
 {
     STAM_PROFILE_ADV_START(&gStatMemWrite, a);
     VBOX_CHECK_ADDR(DstGCPhys);
-    PGMR3PhysWriteByte(cpu_single_env->pVM, DstGCPhys, val);
+    PGMR3PhysWriteU8(cpu_single_env->pVM, DstGCPhys, val);
     STAM_PROFILE_ADV_STOP(&gStatMemWrite, a);
 }
 
@@ -3076,7 +3056,7 @@ void remR3PhysWriteU16(RTGCPHYS DstGCPhys, uint16_t val)
 {
     STAM_PROFILE_ADV_START(&gStatMemWrite, a);
     VBOX_CHECK_ADDR(DstGCPhys);
-    PGMR3PhysWriteWord(cpu_single_env->pVM, DstGCPhys, val);
+    PGMR3PhysWriteU16(cpu_single_env->pVM, DstGCPhys, val);
     STAM_PROFILE_ADV_STOP(&gStatMemWrite, a);
 }
 
@@ -3091,7 +3071,7 @@ void remR3PhysWriteU32(RTGCPHYS DstGCPhys, uint32_t val)
 {
     STAM_PROFILE_ADV_START(&gStatMemWrite, a);
     VBOX_CHECK_ADDR(DstGCPhys);
-    PGMR3PhysWriteDword(cpu_single_env->pVM, DstGCPhys, val);
+    PGMR3PhysWriteU32(cpu_single_env->pVM, DstGCPhys, val);
     STAM_PROFILE_ADV_STOP(&gStatMemWrite, a);
 }
 
@@ -3106,8 +3086,7 @@ void remR3PhysWriteU64(RTGCPHYS DstGCPhys, uint64_t val)
 {
     STAM_PROFILE_ADV_START(&gStatMemWrite, a);
     VBOX_CHECK_ADDR(DstGCPhys);
-    PGMR3PhysWriteDword(cpu_single_env->pVM, DstGCPhys, (uint32_t)val); /** @todo add U64 interface. */
-    PGMR3PhysWriteDword(cpu_single_env->pVM, DstGCPhys + 4, val >> 32);
+    PGMR3PhysWriteU64(cpu_single_env->pVM, DstGCPhys, val);
     STAM_PROFILE_ADV_STOP(&gStatMemWrite, a);
 }
 
@@ -3685,12 +3664,11 @@ REMR3DECL(void) REMR3NotifyInterruptSet(PVM pVM)
  * Notification about the interrupt FF being set.
  *
  * @param   pVM             VM Handle.
- * @thread  The emulation thread.
+ * @thread  Any.
  */
 REMR3DECL(void) REMR3NotifyInterruptClear(PVM pVM)
 {
     LogFlow(("REMR3NotifyInterruptClear:\n"));
-    VM_ASSERT_EMT(pVM);
     if (pVM->rem.s.fInREM)
         cpu_reset_interrupt(cpu_single_env, CPU_INTERRUPT_HARD);
 }

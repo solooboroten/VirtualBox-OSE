@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8155 2008-04-18 15:16:47Z vboxsync $
+# $Id: Makefile.kmk 30760 2008-05-12 02:16:15Z bird $
 ## @file
 # Sub-Makefile for the Shared Clipboard Host Service.
 #
@@ -21,7 +21,7 @@
 
 DEPTH ?= ../../../..
 SUB_DEPTH = ..
-include $(PATH_KBUILD)/subheader.kmk
+include $(KBUILD_PATH)/subheader.kmk
 
 #
 # The shared folder service DLL.
@@ -35,12 +35,12 @@ VBoxSharedClipboard_INCS.win  = \
 VBoxSharedClipboard_SOURCES = \
 	service.cpp
 VBoxSharedClipboard_SOURCES.win = \
-	win32.cpp
+	VBoxClipboard-win.cpp
 VBoxSharedClipboard_SOURCES.darwin = \
 	darwin.cpp \
 	clipboard-helper.cpp \
 	darwin-pasteboard.cpp
-if1of ($(BUILD_TARGET),linux solaris) ## @todo X11
+if1of ($(KBUILD_TARGET),linux solaris) ## @todo X11
  ifndef VBOX_HEADLESS
   VBoxSharedClipboard_SOURCES += \
   	clipboard-helper.cpp \
@@ -55,7 +55,7 @@ VBoxSharedClipboard_LIBS = \
 	$(LIB_VMM) \
 	$(LIB_RUNTIME) \
 	$(LIB_REM)
-if1of ($(BUILD_TARGET),linux solaris)
+if1of ($(KBUILD_TARGET),linux solaris)
  ifndef VBOX_HEADLESS
   VBoxSharedClipboard_LIBPATH = \
 	$(VBOX_LIBPATH_X11)
@@ -67,5 +67,5 @@ endif
 
 VBoxSharedClipboard_LDFLAGS.darwin =  -framework ApplicationServices
 
-include $(PATH_KBUILD)/subfooter.kmk
+include $(KBUILD_PATH)/subfooter.kmk
 

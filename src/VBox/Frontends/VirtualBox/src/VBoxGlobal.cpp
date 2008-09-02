@@ -745,8 +745,8 @@ VBoxGlobal::VBoxGlobal()
     , sessionStates (KSessionState_COUNT)
     , deviceTypes (KDeviceType_COUNT)
     , storageBuses (KStorageBus_COUNT)
-    , storageBusDevices (3)
-    , storageBusChannels (2)
+    , storageBusDevices (2)
+    , storageBusChannels (3)
     , diskTypes (KHardDiskType_COUNT)
     , diskStorageTypes (KHardDiskStorageType_COUNT)
     , vrdpAuthTypes (KVRDPAuthType_COUNT)
@@ -974,7 +974,7 @@ QString VBoxGlobal::vmGuestOSTypeDescription (const QString &aId) const
  */
 QString VBoxGlobal::toString (KStorageBus aBus, LONG aChannel) const
 {
-    Assert (storageBusChannels.count() == 2);
+    Assert (storageBusChannels.count() == 3);
     QString channel;
 
     switch (aBus)
@@ -987,17 +987,15 @@ QString VBoxGlobal::toString (KStorageBus aBus, LONG aChannel) const
                 break;
             }
 
-            AssertMsgFailedBreakVoid (("Invalid channel %d\n", aChannel));
+            AssertMsgFailedBreak (("Invalid channel %d\n", aChannel));
         }
         case KStorageBus_SATA:
         {
-            AssertMsgBreakVoid (aChannel == 0, ("Invalid channel %d\n", aChannel));
-
-            /* null string since the SATA channel is alwayz zero so far */
+            channel = storageBusChannels [2].arg (aChannel);
             break;
         }
         default:
-            AssertFailedBreakVoid();
+            AssertFailedBreak();
     }
 
     return channel;
@@ -1018,20 +1016,26 @@ LONG VBoxGlobal::toStorageChannel (KStorageBus aBus, const QString &aChannel) co
             QStringVector::const_iterator it =
                 qFind (storageBusChannels.begin(), storageBusChannels.end(),
                        aChannel);
-            AssertMsgBreakVoid (it != storageBusChannels.end(),
-                                ("No value for {%s}\n", aChannel.latin1()));
+            AssertMsgBreak (it != storageBusChannels.end(),
+                            ("No value for {%s}\n", aChannel.latin1()));
             channel = (LONG) (it - storageBusChannels.begin());
             break;
         }
         case KStorageBus_SATA:
         {
-            AssertMsgBreakVoid (aChannel.isEmpty(),
-                                ("Invalid channel {%s}\n", aChannel.latin1()));
-            /* always zero so far for SATA */
+            /// @todo use regexp to properly extract the %1 text
+            QString tpl = storageBusChannels [2].arg ("");
+            if (aChannel.startsWith (tpl))
+            {
+                channel = aChannel.right (aChannel.length() - tpl.length()).toLong();
+                break;
+            }
+
+            AssertMsgFailedBreak (("Invalid channel {%s}\n", aChannel.latin1()));
             break;
         }
         default:
-            AssertFailedBreakVoid();
+            AssertFailedBreak();
     }
 
     return channel;
@@ -1046,7 +1050,7 @@ QString VBoxGlobal::toString (KStorageBus aBus, LONG aChannel, LONG aDevice) con
 {
     NOREF (aChannel);
 
-    Assert (storageBusDevices.count() == 3);
+    Assert (storageBusDevices.count() == 2);
     QString device;
 
     switch (aBus)
@@ -1059,15 +1063,16 @@ QString VBoxGlobal::toString (KStorageBus aBus, LONG aChannel, LONG aDevice) con
                 break;
             }
 
-            AssertMsgFailedBreakVoid (("Invalid device %d\n", aDevice));
+            AssertMsgFailedBreak (("Invalid device %d\n", aDevice));
         }
         case KStorageBus_SATA:
         {
-            device = storageBusDevices [2].arg (aDevice);
+            AssertMsgBreak (aDevice == 0, ("Invalid device %d\n", aDevice));
+            /* always zero so far for SATA */
             break;
         }
         default:
-            AssertFailedBreakVoid();
+            AssertFailedBreak();
     }
 
     return device;
@@ -1099,18 +1104,12 @@ LONG VBoxGlobal::toStorageDevice (KStorageBus aBus, LONG aChannel,
         }
         case KStorageBus_SATA:
         {
-            /// @todo use regexp to properly extract the %1 text
-            QString tpl = storageBusDevices [2].arg ("");
-            if (aDevice.startsWith (tpl))
-            {
-                device = aDevice.right (aDevice.length() - tpl.length()).toLong();
-                break;
-            }
-
-            AssertMsgFailedBreakVoid (("Invalid device {%s}\n", aDevice.latin1()));
+            AssertMsgBreak(aDevice.isEmpty(), ("Invalid device {%s}\n", aDevice.latin1()));
+            /* always zero for SATA so far. */
+            break;
         }
         default:
-            AssertFailedBreakVoid();
+            AssertFailedBreak();
     }
 
     return device;
@@ -1138,21 +1137,21 @@ QString VBoxGlobal::toFullString (KStorageBus aBus, LONG aChannel,
         }
         case KStorageBus_SATA:
         {
-            /* we only have one SATA channel so far which is always zero */
+            /* we only have one SATA device so far which is always zero */
             device = QString ("%1 %2")
                 .arg (vboxGlobal().toString (aBus))
-                .arg (vboxGlobal().toString (aBus, aChannel, aDevice));
+                .arg (vboxGlobal().toString (aBus, aChannel));
             break;
         }
         default:
-            AssertFailedBreakVoid();
+            AssertFailedBreak();
     }
 
     return device;
 }
 
 /**
- *  Returns the list of all device types (VurtialBox::DeviceType COM enum).
+ *  Returns the list of all device types (VirtualBox::DeviceType COM enum).
  */
 QStringList VBoxGlobal::deviceTypeStrings() const
 {
@@ -2452,16 +2451,17 @@ void VBoxGlobal::languageChange()
     storageBuses [KStorageBus_SATA] =
         tr ("SATA", "StorageBus");
 
-    Assert (storageBusChannels.count() == 2);
+    Assert (storageBusChannels.count() == 3);
     storageBusChannels [0] =
         tr ("Primary", "StorageBusChannel");
     storageBusChannels [1] =
         tr ("Secondary", "StorageBusChannel");
+    storageBusChannels [2] =
+        tr ("Port %1", "StorageBusChannel");
 
-    Assert (storageBusDevices.count() == 3);
+    Assert (storageBusDevices.count() == 2);
     storageBusDevices [0] = tr ("Master", "StorageBusDevice");
     storageBusDevices [1] = tr ("Slave", "StorageBusDevice");
-    storageBusDevices [2] = tr ("Port %1", "StorageBusDevice");
 
     diskTypes [KHardDiskType_Normal] =
         tr ("Normal", "DiskType");
@@ -3091,7 +3091,7 @@ Q_UINT64 VBoxGlobal::parseSize (const QString &aText)
         if (denom == 1)
             return intg;
 
-        Q_UINT64 hund = hundS.rightJustify (2, '0').toULongLong();
+        Q_UINT64 hund = hundS.leftJustify (2, '0').toULongLong();
         hund = hund * denom / 100;
         intg = intg * denom + hund;
         return intg;
@@ -4089,40 +4089,41 @@ void VBoxGlobal::init()
     /* fill in OS type icon dictionary */
     static const char *kOSTypeIcons [][2] =
     {
-        {"unknown",   "os_unknown.png"},
-        {"dos",       "os_dos.png"},
-        {"win31",     "os_win31.png"},
-        {"win95",     "os_win95.png"},
-        {"win98",     "os_win98.png"},
-        {"winme",     "os_winme.png"},
-        {"winnt4",    "os_winnt4.png"},
-        {"win2k",     "os_win2k.png"},
-        {"winxp",     "os_winxp.png"},
-        {"win2k3",    "os_win2k3.png"},
-        {"winvista",  "os_winvista.png"},
-        {"win2k8",    "os_win2k8.png"},
-        {"os2warp3",  "os_os2warp3.png"},
-        {"os2warp4",  "os_os2warp4.png"},
-        {"os2warp45", "os_os2warp45.png"},
-        {"ecs",       "os_ecs.png"},
-        {"linux22",   "os_linux22.png"},
-        {"linux24",   "os_linux24.png"},
-        {"linux26",   "os_linux26.png"},
-        {"archlinux", "os_archlinux.png"},
-        {"debian",    "os_debian.png"},
-        {"opensuse",  "os_opensuse.png"},
-        {"fedoracore","os_fedoracore.png"},
-        {"gentoo",    "os_gentoo.png"},
-        {"mandriva",  "os_mandriva.png"},
-        {"redhat",    "os_redhat.png"},
-        {"ubuntu",    "os_ubuntu.png"},
-        {"xandros",   "os_xandros.png"},
-        {"freebsd",   "os_freebsd.png"},
-        {"openbsd",   "os_openbsd.png"},
-        {"netbsd",    "os_netbsd.png"},
-        {"netware",   "os_netware.png"},
-        {"solaris",   "os_solaris.png"},
-        {"l4",        "os_l4.png"},
+        {"unknown",     "os_unknown.png"},
+        {"dos",         "os_dos.png"},
+        {"win31",       "os_win31.png"},
+        {"win95",       "os_win95.png"},
+        {"win98",       "os_win98.png"},
+        {"winme",       "os_winme.png"},
+        {"winnt4",      "os_winnt4.png"},
+        {"win2k",       "os_win2k.png"},
+        {"winxp",       "os_winxp.png"},
+        {"win2k3",      "os_win2k3.png"},
+        {"winvista",    "os_winvista.png"},
+        {"win2k8",      "os_win2k8.png"},
+        {"os2warp3",    "os_os2warp3.png"},
+        {"os2warp4",    "os_os2warp4.png"},
+        {"os2warp45",   "os_os2warp45.png"},
+        {"ecs",         "os_ecs.png"},
+        {"linux22",     "os_linux22.png"},
+        {"linux24",     "os_linux24.png"},
+        {"linux26",     "os_linux26.png"},
+        {"archlinux",   "os_archlinux.png"},
+        {"debian",      "os_debian.png"},
+        {"opensolaris", "os_opensolaris.png"},
+        {"opensuse",    "os_opensuse.png"},
+        {"fedoracore"  ,"os_fedoracore.png"},
+        {"gentoo",      "os_gentoo.png"},
+        {"mandriva",    "os_mandriva.png"},
+        {"redhat",      "os_redhat.png"},
+        {"ubuntu",      "os_ubuntu.png"},
+        {"xandros",     "os_xandros.png"},
+        {"freebsd",     "os_freebsd.png"},
+        {"openbsd",     "os_openbsd.png"},
+        {"netbsd",      "os_netbsd.png"},
+        {"netware",     "os_netware.png"},
+        {"solaris",     "os_solaris.png"},
+        {"l4",          "os_l4.png"},
     };
     vm_os_type_icons.setAutoDelete (true); /* takes ownership of elements */
     for (uint n = 0; n < SIZEOF_ARRAY (kOSTypeIcons); n ++)

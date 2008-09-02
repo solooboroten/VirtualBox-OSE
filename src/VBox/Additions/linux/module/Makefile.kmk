@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8447 2008-04-29 09:06:16Z vboxsync $
+# $Id: Makefile.kmk 31423 2008-05-30 08:56:12Z mt221433 $
 ## @file
 # Sub-Makefile for the VirtualBox Linux Guest Additions Kernel Module.
 #
@@ -21,7 +21,7 @@
 
 DEPTH ?= ../../../../..
 SUB_DEPTH = ../..
-include	$(PATH_KBUILD)/subheader.kmk
+include	$(KBUILD_PATH)/subheader.kmk
 
 INSTALLS += vboxmod-mod vboxmod-sh
 OTHERS.linux += \
@@ -37,13 +37,16 @@ endif
 include $(PATH_SUB_CURRENT)/files_vboxadd
 
 $(VBOX_PATH_ADDITIONS)/src/vboxadd/build_in_tmp: \
-	$(PATH_ROOT)/src/VBox/HostDrivers/Support/linux/build_in_tmp \
-	| $(call DIRDEP,$(VBOX_PATH_ADDITIONS)/src/vboxadd)
+		$(PATH_ROOT)/src/VBox/HostDrivers/Support/linux/build_in_tmp \
+		$(VBOX_VERSION_STAMP) \
+		| $(call DIRDEP,$(VBOX_PATH_ADDITIONS)/src/vboxadd)
 	$(call MSG_TOOL,Creating,,$@)
 	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g; s;_MODULE_;vboxadd;g" < $< > $@
 	$(QUIET)chmod 0755 $@
 
-$(VBOX_PATH_ADDITIONS)/src/vboxadd/dkms.conf: $(PATH_SUB_CURRENT)/dkms.conf
+$(VBOX_PATH_ADDITIONS)/src/vboxadd/dkms.conf: \
+		$(PATH_SUB_CURRENT)/dkms.conf \
+		$(VBOX_VERSION_STAMP)
 	$(call MSG_TOOL,Creating,,$@)
 	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g" < $< > $@
 
@@ -69,5 +72,5 @@ vboxadd_LIBS     = \
 	$(VBOX_LIB_VBGL_R0BASE) \
 	$(VBOX_LIB_IPRT_GUEST_R0)
 
-include	$(PATH_KBUILD)/subfooter.kmk
+include	$(KBUILD_PATH)/subfooter.kmk
 

@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp 8484 2008-04-30 00:12:33Z vboxsync $ */
+/* $Id: MachineImpl.cpp 30699 2008-05-09 14:51:58Z bird $ */
 /** @file
  * Implementation of IMachine in VBoxSVC.
  */
@@ -1652,7 +1652,50 @@ STDMETHODIMP Machine::AttachHardDisk (INPTR GUIDPARAM aId,
 {
     Guid id = aId;
 
-    if (id.isEmpty() || aBus == StorageBus_Null)
+    if (id.isEmpty())
+        return E_INVALIDARG;
+
+    if (aBus == StorageBus_SATA)
+    {
+        /* The device property is not used for SATA yet. Thus it is always zero. */
+        if (aDevice != 0)
+            return setError (E_INVALIDARG,
+                tr ("Invalid device number: %l (must be always 0)"),
+                    aDevice);
+
+        /*
+         * We suport 30 ports.
+         * @todo: r=aeichner make max port count a system property.
+         */
+        if ((aChannel < 0) || (aChannel >= 30))
+            return setError (E_INVALIDARG,
+                tr ("Invalid channel number: %l (must be in range [%lu, %lu])"),
+                    aChannel, 0, 29);
+    }
+    else if (aBus == StorageBus_IDE)
+    {
+        /* Validate input for IDE drives. */
+        if (aChannel == 0)
+        {
+            if ((aDevice < 0) || (aDevice > 1))
+                return setError (E_INVALIDARG,
+                    tr ("Invalid device number: %l (must be in range [%lu, %lu])"),
+                        aDevice, 0, 1);
+        }
+        else if (aChannel == 1)
+        {
+            /* The first device is assigned to the CD/DVD drive. */
+            if (aDevice != 1)
+                return setError (E_INVALIDARG,
+                    tr ("Invalid device number: %l (must be %lu)"),
+                        aDevice, 1);
+        }
+        else
+            return setError (E_INVALIDARG,
+                tr ("Invalid channel number: %l (must be in range [%lu, %lu])"),
+                    aChannel, 0, 1);
+    }
+    else
         return E_INVALIDARG;
 
     AutoCaller autoCaller (this);
@@ -3144,10 +3187,10 @@ HRESULT Machine::openRemoteSession (IInternalSessionControl *aControl,
         {
             /* clone the current environment */
             int vrc2 = RTEnvClone (&env, RTENV_DEFAULT);
-            AssertRCBreak (vrc2, vrc = vrc2);
+            AssertRCBreakStmt (vrc2, vrc = vrc2);
 
             newEnvStr = RTStrDup(Utf8Str (aEnvironment));
-            AssertPtrBreak (newEnvStr, vrc = vrc2);
+            AssertPtrBreakStmt (newEnvStr, vrc = vrc2);
 
             /* put new variables to the environment
              * (ignore empty variable names here since RTEnv API
@@ -3177,7 +3220,7 @@ HRESULT Machine::openRemoteSession (IInternalSessionControl *aControl,
             if (VBOX_SUCCESS (vrc2) && *var)
                 vrc2 = RTEnvPutEx (env, var);
 
-            AssertRCBreak (vrc2, vrc = vrc2);
+            AssertRCBreakStmt (vrc2, vrc = vrc2);
         }
         while (0);
 
@@ -4404,7 +4447,7 @@ HRESULT Machine::loadHardware (const settings::Key &aNode)
             /* slot number (required) */
             /* slot unicity is guaranteed by XML Schema */
             uint32_t slot = (*it).value <uint32_t> ("slot");
-            AssertBreakVoid (slot < ELEMENTS (mNetworkAdapters));
+            AssertBreak (slot < ELEMENTS (mNetworkAdapters));
 
             rc = mNetworkAdapters [slot]->loadSettings (*it);
             CheckComRCReturnRC (rc);
@@ -4424,7 +4467,7 @@ HRESULT Machine::loadHardware (const settings::Key &aNode)
             /* slot number (required) */
             /* slot unicity is guaranteed by XML Schema */
             uint32_t slot = (*it).value <uint32_t> ("slot");
-            AssertBreakVoid (slot < ELEMENTS (mSerialPorts));
+            AssertBreak (slot < ELEMENTS (mSerialPorts));
 
             rc = mSerialPorts [slot]->loadSettings (*it);
             CheckComRCReturnRC (rc);
@@ -4444,7 +4487,7 @@ HRESULT Machine::loadHardware (const settings::Key &aNode)
             /* slot number (required) */
             /* slot unicity is guaranteed by XML Schema */
             uint32_t slot = (*it).value <uint32_t> ("slot");
-            AssertBreakVoid (slot < ELEMENTS (mSerialPorts));
+            AssertBreak (slot < ELEMENTS (mSerialPorts));
 
             rc = mParallelPorts [slot]->loadSettings (*it);
             CheckComRCReturnRC (rc);
@@ -4687,7 +4730,7 @@ HRESULT Machine::findSnapshotNode (Snapshot *aSnapshot, settings::Key &aMachineN
             continue;
 
         /* the next uuid is not found, no need to continue... */
-        AssertFailedBreakVoid();
+        AssertFailedBreak();
     }
 
     // we must always succesfully find the node
@@ -7416,7 +7459,9 @@ void SessionMachine::uninit (Uninit::Reason aReason)
         AssertComRC (rc);
         NOREF (rc);
 
-        mParent->host()->detachAllUSBDevices (this, true /* aDone */, true /* aAbnormal */);
+        USBProxyService *service = mParent->host()->usbProxyService();
+        if (service)
+            service->detachAllDevicesFromVM (this, true /* aDone */, true /* aAbnormal */);
     }
 #endif /* VBOX_WITH_USB */
 
@@ -7618,8 +7663,13 @@ STDMETHODIMP SessionMachine::CaptureUSBDevice (INPTR GUIDPARAM aId)
     AssertComRCReturnRC (autoCaller.rc());
 
 #ifdef VBOX_WITH_USB
-    /* if cautureUSBDevice() fails, it must have set extended error info */
-    return mParent->host()->captureUSBDevice (this, aId);
+    /* if captureDeviceForVM() fails, it must have set extended error info */
+    MultiResult rc = mParent->host()->checkUSBProxyService();
+    CheckComRCReturnRC (rc);
+
+    USBProxyService *service = mParent->host()->usbProxyService();
+    AssertReturn (service, E_FAIL);
+    return service->captureDeviceForVM (this, aId);
 #else
     return E_FAIL;
 #endif
@@ -7636,7 +7686,9 @@ STDMETHODIMP SessionMachine::DetachUSBDevice (INPTR GUIDPARAM aId, BOOL aDone)
     AssertComRCReturn (autoCaller.rc(), autoCaller.rc());
 
 #ifdef VBOX_WITH_USB
-    return mParent->host()->detachUSBDevice (this, aId, aDone);
+    USBProxyService *service = mParent->host()->usbProxyService();
+    AssertReturn (service, E_FAIL);
+    return service->detachDeviceFromVM (this, aId, !!aDone);
 #else
     return E_FAIL;
 #endif
@@ -7662,7 +7714,9 @@ STDMETHODIMP SessionMachine::AutoCaptureUSBDevices()
     AssertComRC (rc);
     NOREF (rc);
 
-    return mParent->host()->autoCaptureUSBDevices (this);
+    USBProxyService *service = mParent->host()->usbProxyService();
+    AssertReturn (service, E_FAIL);
+    return service->autoCaptureDevicesForVM (this);
 #else
     return S_OK;
 #endif
@@ -7690,7 +7744,9 @@ STDMETHODIMP SessionMachine::DetachAllUSBDevices(BOOL aDone)
     AssertComRC (rc);
     NOREF (rc);
 
-    return mParent->host()->detachAllUSBDevices (this, aDone, false /* aAbnormal */);
+    USBProxyService *service = mParent->host()->usbProxyService();
+    AssertReturn (service, E_FAIL);
+    return service->detachAllDevicesFromVM (this, !!aDone, false /* aAbnormal */);
 #else
     return S_OK;
 #endif
@@ -8625,14 +8681,21 @@ bool SessionMachine::hasMatchingUSBFilter (const ComObjPtr <HostUSBDevice> &aDev
     AutoReadLock alock (this);
 
 #ifdef VBOX_WITH_USB
-    return mUSBController->hasMatchingFilter (aDevice, aMaskedIfs);
-#else
-    return false;
+    switch (mData->mMachineState)
+    {
+        case MachineState_Starting:
+        case MachineState_Restoring:
+        case MachineState_Paused:
+        case MachineState_Running:
+            return mUSBController->hasMatchingFilter (aDevice, aMaskedIfs);
+        default: break;
+    }
 #endif
+    return false;
 }
 
 /**
- *  @note Locks this object for reading.
+ *  @note The calls shall hold no locks. Will temporarily lock this object for reading.
  */
 HRESULT SessionMachine::onUSBDeviceAttach (IUSBDevice *aDevice,
                                            IVirtualBoxErrorInfo *aError,
@@ -8657,11 +8720,15 @@ HRESULT SessionMachine::onUSBDeviceAttach (IUSBDevice *aDevice,
     if (!directControl)
         return E_FAIL;
 
+    /* No locks should be held at this point. */
+    AssertMsg (RTThreadGetWriteLockCount (RTThreadSelf()) == 0, ("%d\n", RTThreadGetWriteLockCount (RTThreadSelf())));
+    AssertMsg (RTThreadGetReadLockCount (RTThreadSelf()) == 0, ("%d\n", RTThreadGetReadLockCount (RTThreadSelf())));
+
     return directControl->OnUSBDeviceAttach (aDevice, aError, aMaskedIfs);
 }
 
 /**
- *  @note Locks this object for reading.
+ *  @note The calls shall hold no locks. Will temporarily lock this object for reading.
  */
 HRESULT SessionMachine::onUSBDeviceDetach (INPTR GUIDPARAM aId,
                                            IVirtualBoxErrorInfo *aError)
@@ -8684,6 +8751,10 @@ HRESULT SessionMachine::onUSBDeviceDetach (INPTR GUIDPARAM aId,
      * expected by the caller */
     if (!directControl)
         return E_FAIL;
+
+    /* No locks should be held at this point. */
+    AssertMsg (RTThreadGetWriteLockCount (RTThreadSelf()) == 0, ("%d\n", RTThreadGetWriteLockCount (RTThreadSelf())));
+    AssertMsg (RTThreadGetReadLockCount (RTThreadSelf()) == 0, ("%d\n", RTThreadGetReadLockCount (RTThreadSelf())));
 
     return directControl->OnUSBDeviceDetach (aId, aError);
 }

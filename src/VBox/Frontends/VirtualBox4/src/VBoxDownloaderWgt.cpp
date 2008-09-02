@@ -126,7 +126,7 @@ void OnComplete (const happyhttp::Response*, void *aUserdata)
 
 VBoxDownloaderWgt::VBoxDownloaderWgt (QStatusBar *aStatusBar, QAction *aAction,
                                       const QString &aUrl, const QString &aTarget)
-    : QWidget ()
+    : QIWithRetranslateUI<QWidget> ()
     , mUrl (aUrl), mTarget (aTarget)
     , mStatusBar (aStatusBar), mAction (aAction)
     , mProgressBar (0), mCancelButton (0)
@@ -166,14 +166,14 @@ VBoxDownloaderWgt::VBoxDownloaderWgt (QStatusBar *aStatusBar, QAction *aAction,
     /* Prepare the connection */
     mConn->setcallbacks (OnBegin, OnData, OnComplete, this);
 
-    languageChange();
+    retranslateUi();
     mStatusBar->addWidget (this, 1);
 
     /* Try to get the required file for the information */
     getFile();
 }
 
-void VBoxDownloaderWgt::languageChange()
+void VBoxDownloaderWgt::retranslateUi()
 {
     mCancelButton->setText (tr ("Cancel"));
     /// @todo the below title should be parametrized
@@ -264,7 +264,7 @@ bool VBoxDownloaderWgt::event (QEvent *aEvent)
                 }
                 else
                 {
-                    vboxProblem().message (mStatusBar->topLevelWidget(),
+                    vboxProblem().message (mStatusBar->window(),
                         VBoxProblemReporter::Error,
                         tr ("<p>Failed to save the downloaded file as "
                             "<nobr><b>%1</b>.</nobr></p>")

@@ -262,6 +262,8 @@ typedef enum PGMMODE
     PGMMODE_AMD64,
     /** 64-bit AMD paging (long mode) with NX enabled. */
     PGMMODE_AMD64_NX,
+    /** Nested paging mode (shadow only; guest physical to host physical). */
+    PGMMODE_NESTED,
     /** The max number of modes */
     PGMMODE_MAX,
     /** 32bit hackishness. */
@@ -305,6 +307,7 @@ typedef enum PGMROMPROT
 
 
 PGMDECL(uint32_t) PGMGetHyperCR3(PVM pVM);
+PGMDECL(uint32_t) PGMGetNestedCR3(PVM pVM, PGMMODE enmShadowMode);
 PGMDECL(uint32_t) PGMGetHyper32BitCR3(PVM pVM);
 PGMDECL(uint32_t) PGMGetHyperPaeCR3(PVM pVM);
 PGMDECL(uint32_t) PGMGetHyperAmd64CR3(PVM pVM);
@@ -324,11 +327,13 @@ PGMDECL(int)    PGMMapModifyPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFl
 PGMDECL(int)    PGMShwGetPage(PVM pVM, RTGCPTR GCPtr, uint64_t *pfFlags, PRTHCPHYS pHCPhys);
 PGMDECL(int)    PGMShwSetPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags);
 PGMDECL(int)    PGMShwModifyPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask);
+PGMDECL(int)    PGMShwGetLongModePDPtr(PVM pVM, RTGCUINTPTR64 GCPtr, PX86PDPAE *ppPD);
 PGMDECL(int)    PGMGstGetPage(PVM pVM, RTGCPTR GCPtr, uint64_t *pfFlags, PRTGCPHYS pGCPhys);
 PGMDECL(bool)   PGMGstIsPagePresent(PVM pVM, RTGCPTR GCPtr);
 PGMDECL(int)    PGMGstSetPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags);
 PGMDECL(int)    PGMGstModifyPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask);
 PGMDECL(int)    PGMFlushTLB(PVM pVM, uint64_t cr3, bool fGlobal);
+PGMDECL(int)    PGMUpdateCR3(PVM pVM, uint64_t cr3);
 PGMDECL(int)    PGMSyncCR3(PVM pVM, uint64_t cr0, uint64_t cr3, uint64_t cr4, bool fGlobal);
 PGMDECL(int)    PGMChangeMode(PVM pVM, uint64_t cr0, uint64_t cr4, uint64_t efer);
 PGMDECL(PGMMODE) PGMGetGuestMode(PVM pVM);
@@ -449,6 +454,7 @@ PGMGCDECL(int)  PGMGCInvalidatePage(PVM pVM, RTGCPTR GCPtrPage);
  * @{
  */
 PGMR0DECL(int)  PGMR0PhysAllocateHandyPages(PVM pVM);
+PGMR0DECL(int)  PGMR0Trap0eHandlerNestedPaging(PVM pVM, PGMMODE enmShwPagingMode, RTGCUINT uErr, PCPUMCTXCORE pRegFrame, RTGCPHYS pvFault);
 /** @} */
 #endif /* IN_RING0 */
 
@@ -467,6 +473,8 @@ PGMR3DECL(void) PGMR3Reset(PVM pVM);
 PGMR3DECL(int)  PGMR3Term(PVM pVM);
 PDMR3DECL(int)  PGMR3LockCall(PVM pVM);
 PGMR3DECL(int)  PGMR3ChangeShwPDMappings(PVM pVM, bool fEnable);
+PGMR3DECL(int)  PGMR3ChangeMode(PVM pVM, PGMMODE enmGuestMode);
+
 #ifndef VBOX_WITH_NEW_PHYS_CODE
 PGMR3DECL(int)  PGM3PhysGrowRange(PVM pVM, PCRTGCPHYS GCPhys);
 #endif /* !VBOX_WITH_NEW_PHYS_CODE */
@@ -530,13 +538,14 @@ PGMR3DECL(int)  PGMR3DumpHierarchyHC(PVM pVM, uint64_t cr3, uint64_t cr4, bool f
 #endif
 PGMR3DECL(int)  PGMR3DumpHierarchyGC(PVM pVM, uint64_t cr3, uint64_t cr4, RTGCPHYS PhysSearch);
 
-/** @todo r=bird: s/Byte/U8/ s/Word/U16/ s/Dword/U32/ to match other functions names and returned types. */
-PGMR3DECL(uint8_t) PGMR3PhysReadByte(PVM pVM, RTGCPHYS GCPhys);
-PGMR3DECL(uint16_t) PGMR3PhysReadWord(PVM pVM, RTGCPHYS GCPhys);
-PGMR3DECL(uint32_t) PGMR3PhysReadDword(PVM pVM, RTGCPHYS GCPhys);
-PGMR3DECL(void) PGMR3PhysWriteByte(PVM pVM, RTGCPHYS GCPhys, uint8_t val);
-PGMR3DECL(void) PGMR3PhysWriteWord(PVM pVM, RTGCPHYS GCPhys, uint16_t val);
-PGMR3DECL(void) PGMR3PhysWriteDword(PVM pVM, RTGCPHYS GCPhys, uint32_t val);
+PGMR3DECL(uint8_t) PGMR3PhysReadU8(PVM pVM, RTGCPHYS GCPhys);
+PGMR3DECL(uint16_t) PGMR3PhysReadU16(PVM pVM, RTGCPHYS GCPhys);
+PGMR3DECL(uint32_t) PGMR3PhysReadU32(PVM pVM, RTGCPHYS GCPhys);
+PGMR3DECL(uint64_t) PGMR3PhysReadU64(PVM pVM, RTGCPHYS GCPhys);
+PGMR3DECL(void) PGMR3PhysWriteU8(PVM pVM, RTGCPHYS GCPhys, uint8_t Value);
+PGMR3DECL(void) PGMR3PhysWriteU16(PVM pVM, RTGCPHYS GCPhys, uint16_t Value);
+PGMR3DECL(void) PGMR3PhysWriteU32(PVM pVM, RTGCPHYS GCPhys, uint32_t Value);
+PGMR3DECL(void) PGMR3PhysWriteU64(PVM pVM, RTGCPHYS GCPhys, uint64_t Value);
 PDMR3DECL(int)  PGMR3PhysChunkMap(PVM pVM, uint32_t idChunk);
 PGMR3DECL(void) PGMR3PhysChunkInvalidateTLB(PVM pVM);
 PDMR3DECL(int)  PGMR3PhysAllocateHandyPages(PVM pVM);

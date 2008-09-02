@@ -65,6 +65,49 @@ __BEGIN_DECLS
  */
 #define HWACCMIsEnabled(a)    (a->fHWACCMEnabled)
 
+/**
+ * Invalidates a guest page
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ * @param   GCVirt      Page to invalidate
+ */
+HWACCMDECL(int) HWACCMInvalidatePage(PVM pVM, RTGCPTR GCVirt);
+
+#ifndef IN_GC
+/**
+ * Flushes the guest TLB
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ */
+HWACCMDECL(int) HWACCMFlushTLB(PVM pVM);
+
+/**
+ * Invalidates a guest page by physical address
+ *
+ * NOTE: Assumes the current instruction references this physical page though a virtual address!!
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ * @param   GCPhys      Page to invalidate
+ */
+HWACCMDECL(int) HWACCMInvalidatePhysPage(PVM pVM, RTGCPHYS GCPhys);
+
+/**
+ * Checks if nested paging is enabled
+ *
+ * @returns boolean
+ * @param   pVM         The VM to operate on.
+ */
+HWACCMDECL(bool) HWACCMIsNestedPagingActive(PVM pVM);
+
+#else
+/* Nop in GC */
+#define HWACCMFlushTLB(pVM)                     do { } while (0)
+#define HWACCMIsNestedPagingActive(pVM)         false
+#endif
+
 #ifdef IN_RING0
 /** @defgroup grp_hwaccm_r0    The VM Hardware Manager API
  * @ingroup grp_hwaccm
@@ -256,6 +299,22 @@ HWACCMR0DECL(int) HWACCMR0Enter(PVM pVM);
  */
 HWACCMR0DECL(int) HWACCMR0Leave(PVM pVM);
 
+/**
+ * Invalidates a guest page
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ * @param   GCVirt      Page to invalidate
+ */
+HWACCMR0DECL(int) HWACCMR0InvalidatePage(PVM pVM, RTGCPTR GCVirt);
+
+/**
+ * Flushes the guest TLB
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ */
+HWACCMR0DECL(int) HWACCMR0FlushTLB(PVM pVM);
 
 /** @} */
 #endif

@@ -1,4 +1,4 @@
-/* $Id: bin2c.c 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: bin2c.c 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * PC-BIOS - Binary 2 C Structure Converter.
  */

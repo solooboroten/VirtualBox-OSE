@@ -1,7 +1,6 @@
+/* $Id: SrvIntNetR0.cpp 31324 2008-05-27 23:14:15Z bird $ */
 /** @file
- *
- * VBox network devices:
- * Internal networking, ring 0
+ * Internal networking - The ring 0 service.
  */
 
 /*
@@ -993,11 +992,14 @@ static DECLCALLBACK(void) INTNETIfDestruct(void *pvObj, void *pvUser1, void *pvU
         {
             PINTNETIF pPrev = pNetwork->pIFs;
             while (pPrev)
+            {
                 if (pPrev->pNext == pIf)
                 {
                     pPrev->pNext = pIf->pNext;
                     break;
                 }
+                pPrev = pPrev->pNext;
+            }
             Assert(pPrev);
         }
         RTSemFastMutexRelease(pNetwork->FastMutex);

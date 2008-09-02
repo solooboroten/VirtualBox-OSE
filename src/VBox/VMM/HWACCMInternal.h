@@ -1,4 +1,4 @@
-/* $Id: HWACCMInternal.h 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: HWACCMInternal.h 31239 2008-05-26 11:21:13Z sandervl $ */
 /** @file
  * HWACCM - Internal header file.
  */
@@ -30,6 +30,8 @@
 #include <VBox/hwaccm.h>
 #include <VBox/pgm.h>
 #include <iprt/memobj.h>
+#include <iprt/cpuset.h>
+#include <iprt/mp.h>
 
 __BEGIN_DECLS
 
@@ -136,6 +138,9 @@ typedef struct HWACCM
     /** Set when hardware acceleration is allowed. */
     bool                        fAllowed;
 
+    /** Set if nested paging is enabled. */
+    bool                        fNestedPaging;
+
     /** HWACCM_CHANGED_* flags. */
     uint32_t                    fContextUseFlags;
 
@@ -203,12 +208,20 @@ typedef struct HWACCM
     {
         /** Set by the ring-0 driver to indicate SVM is supported by the CPU. */
         bool                        fSupported;
-
         /** Set when we've enabled SVM. */
         bool                        fEnabled;
-
         /** Set if we don't have to flush the TLB on VM entry. */
         bool                        fResumeVM;
+        /** Set if erratum 170 affects the AMD cpu. */
+        bool                        fAlwaysFlushTLB;
+        /** Set if we need to flush the TLB during the world switch. */
+        bool                        fForceTLBFlush;
+
+        /* Id of the last cpu we were executing code on (NIL_RTCPUID for the first time) */
+        RTCPUID                     idLastCpu;
+
+        /* TLB flush count */
+        uint32_t                    cTLBFlushes;
 
         /** R0 memory object for the VM control block (VMCB). */
         RTR0MEMOBJ                  pMemObjVMCB;
@@ -243,6 +256,9 @@ typedef struct HWACCM
 
         /** Maximum ASID allowed. */
         uint32_t                    u32MaxASID;
+
+        /** SVM feature bits from cpuid 0x8000000a */
+        uint32_t                    u32Features;
     } svm;
 
     struct
@@ -303,15 +319,42 @@ typedef struct HWACCM
     STAMCOUNTER             StatIntReinject;
     STAMCOUNTER             StatPendingHostIrq;
 
+    STAMCOUNTER             StatFlushPageManual;
+    STAMCOUNTER             StatFlushPhysPageManual;
+    STAMCOUNTER             StatFlushTLBManual;
+    STAMCOUNTER             StatFlushPageInvlpg;
+    STAMCOUNTER             StatFlushTLBWorldSwitch;
+    STAMCOUNTER             StatNoFlushTLBWorldSwitch;
+    STAMCOUNTER             StatFlushTLBCRxChange;
+    STAMCOUNTER             StatFlushASID;
+
     STAMCOUNTER             StatSwitchGuestIrq;
     STAMCOUNTER             StatSwitchToR3;
 
+    STAMCOUNTER             StatTSCOffset;
+    STAMCOUNTER             StatTSCIntercept;
+
+    STAMCOUNTER             StatExitReasonNPF;
     R3PTRTYPE(PSTAMCOUNTER) pStatExitReason;
     R0PTRTYPE(PSTAMCOUNTER) pStatExitReasonR0;
 } HWACCM;
 /** Pointer to HWACCM VM instance data. */
 typedef HWACCM *PHWACCM;
 
+typedef struct
+{
+    RTCPUID     idCpu;
+
+    RTR0MEMOBJ  pMemObj;
+    /* Current ASID (AMD-V only) */
+    uint32_t    uCurrentASID;
+    /* TLB flush count */
+    uint32_t    cTLBFlushes;
+
+    bool        fVMXConfigured;
+    bool        fSVMConfigured;
+} HWACCM_CPUINFO;
+typedef HWACCM_CPUINFO *PHWACCM_CPUINFO;
 
 #ifdef IN_RING0
 

@@ -40,6 +40,16 @@
  * @{
  */
 
+/** @name SVM features for cpuid 0x8000000a
+ * @{
+ */
+#define AMD_CPUID_SVM_FEATURE_EDX_NESTED_PAGING             RT_BIT(0)
+#define AMD_CPUID_SVM_FEATURE_EDX_LBR_VIRT                  RT_BIT(1)
+#define AMD_CPUID_SVM_FEATURE_EDX_SVM_LOCK                  RT_BIT(2)
+#define AMD_CPUID_SVM_FEATURE_EDX_NRIP_SAVE                 RT_BIT(3)
+#define AMD_CPUID_SVM_FEATURE_EDX_SSE_3_5_DISABLE           RT_BIT(9)
+/** @} */
+
 
 /** @name SVM Basic Exit Reasons.
  * @{
@@ -230,8 +240,14 @@
 /** ICEBP instruction. */
 #define SVM_EXIT_ICEBP                  0x88
 /** WBINVD instruction. */
-#define SVM_INVD                        0x89
-/** Nested paging: host-level page fault occurred (EXITINFO1 contains fault errorcode; EXITINFO2 contains the guest physical address causing the fault.). */
+#define SVM_EXIT_WBINVD                 0x89
+/** MONITOR instruction. */
+#define SVM_EXIT_MONITOR                0x8A
+/** MWAIT instruction uncond. */
+#define SVM_EXIT_MWAIT_UNCOND           0x8B
+/** MWAIT instruction when armed. */
+#define SVM_EXIT_MWAIT_ARMED            0x8C
+/** Nested paging: host-level page fault occurred (EXITINFO1 contains fault errorcode; EXITINFO2 contains the guest physical address causing the fault). */
 #define SVM_EXIT_NPF                    0x400
 
 /** @} */
@@ -330,6 +346,12 @@
 #define SVM_CTRL2_INTERCEPT_ICEBP             RT_BIT(8)
 /* 9 Intercept WBINVD instruction */
 #define SVM_CTRL2_INTERCEPT_WBINVD            RT_BIT(9)
+/* 10 Intercept MONITOR instruction */
+#define SVM_CTRL2_INTERCEPT_MONITOR           RT_BIT(10)
+/* 11 Intercept MWAIT instruction unconditionally */
+#define SVM_CTRL2_INTERCEPT_MWAIT_UNCOND      RT_BIT(11)
+/* 12 Intercept MWAIT instruction when armed */
+#define SVM_CTRL2_INTERCEPT_MWAIT_ARMED       RT_BIT(12)
 /** @} */
 
 /** @name SVM_VMCB.ctrl.u64NestedPaging
@@ -476,6 +498,19 @@ typedef union
 } SVM_IOIO_EXIT;
 #pragma pack()
 
+/**
+ * SVM nested paging structure
+ */
+#pragma pack(1)
+typedef union
+{
+    struct
+    {
+        uint32_t    u1NestedPaging : 1;             /* enabled/disabled */
+    } n;
+    uint64_t    au64[1];
+} SVM_NPCTRL;
+#pragma pack()
 
 /**
  * SVM VM Control Block. (VMCB)
@@ -523,13 +558,13 @@ typedef struct _SVM_VMCB
         /** Offset 0x88 - Exit Interrupt info. */
         SVM_EVENT   ExitIntInfo;
         /** Offset 0x90 - Nested Paging. */
-        uint64_t    u64NestedPaging;
+        SVM_NPCTRL  NestedPaging;
         /** Offset 0x98-0xA7 - Reserved. */
         uint8_t     u8Reserved2[0xA8-0x98];
         /** Offset 0xA8 - Event injection. */
         SVM_EVENT   EventInject;
         /** Offset 0xB0 - Host CR3 for nested paging. */
-        uint64_t    u64HostCR3;
+        uint64_t    u64NestedPagingCR3;
         /** Offset 0xB8 - LBR Virtualization. */
         uint64_t    u64LBRVirt;
     } ctrl;
@@ -649,6 +684,30 @@ DECLASM(int) SVMVMRun(RTHCPHYS pVMCBHostPhys, RTHCPHYS pVMCBPhys, PCPUMCTX pCtx)
  * @param   u32ASID         Tagged TLB id.
  */
 DECLASM(void) SVMInvlpgA(RTGCPTR pPageGC, uint32_t u32ASID);
+
+#ifdef IN_RING0
+
+/**
+ * Invalidates a guest page
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ * @param   GCVirt      Page to invalidate
+ */
+HWACCMR0DECL(int) SVMR0InvalidatePage(PVM pVM, RTGCPTR GCVirt);
+
+/**
+ * Invalidates a guest page by physical address
+ *
+ * NOTE: Assumes the current instruction references this physical page though a virtual address!!
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ * @param   GCPhys      Page to invalidate
+ */
+HWACCMR0DECL(int) SVMR0InvalidatePhysPage(PVM pVM, RTGCPHYS GCPhys);
+
+#endif /* IN_RING0 */
 
 /** @} */
 

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8155 2008-04-18 15:16:47Z vboxsync $
+# $Id: Makefile.kmk 31065 2008-05-21 00:53:53Z bird $
 ## @file
 # Sub-Makefile for the Devices testcases.
 #
@@ -21,18 +21,23 @@
 
 DEPTH ?= ../../../..
 SUB_DEPTH = ..
-include	$(PATH_KBUILD)/subheader.kmk
+include	$(KBUILD_PATH)/subheader.kmk
 
 #
 # We setup one 'other' target for executing the structure & alignment
 # validation testcases. Perhaps a bit hackish, but extremely useful.
 #
-ifeq ($(BUILD_TARGET),$(BUILD_PLATFORM))
- ifeq ($(filter-out x86.x86 amd64.amd64 x86.amd64, $(BUILD_TARGET_ARCH).$(BUILD_PLATFORM_ARCH)),)
+ifeq ($(KBUILD_TARGET),$(KBUILD_HOST))
+ ifeq ($(filter-out x86.x86 amd64.amd64 x86.amd64, $(KBUILD_TARGET_ARCH).$(KBUILD_HOST_ARCH)),)
   OTHERS += \
 	$(PATH_TARGET)/tstDeviceStructSize.run
  endif
 endif
+
+# The normal testing pass.
+TESTING += \
+	$(PATH_TARGET)/tstDeviceStructSize.run
+
 
 #
 # Globals
@@ -109,5 +114,5 @@ $(PATH_TARGET)/tstDeviceStructSize.run: $$(INSTARGET_tstDeviceStructSize)
 run-struct-tests: $(PATH_TARGET)/tstDeviceStructSize.run
 
 
-include	$(PATH_KBUILD)/subfooter.kmk
+include	$(KBUILD_PATH)/subfooter.kmk
 

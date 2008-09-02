@@ -25,8 +25,8 @@
 # Provides:       vboxadd-timesync
 # Required-Start: vboxadd
 # Required-Stop:  vboxadd
-# Default-Start:  3 5
-# Default-Stop:
+# Default-Start:  2 3 4 5
+# Default-Stop:   0 1 6
 # Description:    VirtualBox Additions timesync
 ### END INIT INFO
 
@@ -145,7 +145,7 @@ test -x "$binary" || {
 }
 
 vboxaddrunning() {
-    lsmod | grep -q vboxadd[^_-]
+    lsmod | grep -q "vboxadd[^_-]"
 }
 
 start() {

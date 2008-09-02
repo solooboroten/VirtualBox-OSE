@@ -1,4 +1,4 @@
-/* $Id: PDMDevice.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: PDMDevice.cpp 31281 2008-05-27 09:21:03Z sandervl $ */
 /** @file
  * PDM - Pluggable Device and Driver Manager, Device parts.
  */
@@ -941,7 +941,7 @@ int pdmR3DevInit(PVM pVM)
         rc = pDevIns->pDevReg->pfnConstruct(pDevIns, pDevIns->iInstance, pDevIns->pCfgHandle);
         if (VBOX_FAILURE(rc))
         {
-            NoDmik(AssertMsgFailed(("Failed to construct '%s'/%d! %Vra\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, rc)));
+            NOT_DMIK(AssertMsgFailed(("Failed to construct '%s'/%d! %Vra\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, rc)));
             /* because we're damn lazy right now, we'll say that the destructor will be called even if the constructor fails. */
             return rc;
         }
@@ -1260,25 +1260,25 @@ static DECLCALLBACK(int) pdmR3DevHlp_IOPortRegisterGC(PPDMDEVINS pDevIns, RTIOPO
     if (    pDevIns->pDevReg->szGCMod[0]
         &&  (pDevIns->pDevReg->fFlags & PDM_DEVREG_FLAGS_GC))
     {
-        RTGCPTR GCPtrIn = 0;
+        RTGCPTR32 GCPtrIn = 0;
         if (pszIn)
         {
             rc = PDMR3GetSymbolGCLazy(pDevIns->Internal.s.pVMHC, pDevIns->pDevReg->szGCMod, pszIn, &GCPtrIn);
             AssertMsgRC(rc, ("Failed to resolve %s.%s (pszIn)\n", pDevIns->pDevReg->szGCMod, pszIn));
         }
-        RTGCPTR GCPtrOut = 0;
+        RTGCPTR32 GCPtrOut = 0;
         if (pszOut && VBOX_SUCCESS(rc))
         {
             rc = PDMR3GetSymbolGCLazy(pDevIns->Internal.s.pVMHC, pDevIns->pDevReg->szGCMod, pszOut, &GCPtrOut);
             AssertMsgRC(rc, ("Failed to resolve %s.%s (pszOut)\n", pDevIns->pDevReg->szGCMod, pszOut));
         }
-        RTGCPTR GCPtrInStr = 0;
+        RTGCPTR32 GCPtrInStr = 0;
         if (pszInStr && VBOX_SUCCESS(rc))
         {
             rc = PDMR3GetSymbolGCLazy(pDevIns->Internal.s.pVMHC, pDevIns->pDevReg->szGCMod, pszInStr, &GCPtrInStr);
             AssertMsgRC(rc, ("Failed to resolve %s.%s (pszInStr)\n", pDevIns->pDevReg->szGCMod, pszInStr));
         }
-        RTGCPTR GCPtrOutStr = 0;
+        RTGCPTR32 GCPtrOutStr = 0;
         if (pszOutStr && VBOX_SUCCESS(rc))
         {
             rc = PDMR3GetSymbolGCLazy(pDevIns->Internal.s.pVMHC, pDevIns->pDevReg->szGCMod, pszOutStr, &GCPtrOutStr);
@@ -1405,14 +1405,14 @@ static DECLCALLBACK(int) pdmR3DevHlp_MMIORegisterGC(PPDMDEVINS pDevIns, RTGCPHYS
     if (    pDevIns->pDevReg->szGCMod[0]
         &&  (pDevIns->pDevReg->fFlags & PDM_DEVREG_FLAGS_GC))
     {
-        RTGCPTR GCPtrWrite = 0;
+        RTGCPTR32 GCPtrWrite = 0;
         if (pszWrite)
             rc = PDMR3GetSymbolGCLazy(pDevIns->Internal.s.pVMHC, pDevIns->pDevReg->szGCMod, pszWrite, &GCPtrWrite);
-        RTGCPTR GCPtrRead = 0;
+        RTGCPTR32 GCPtrRead = 0;
         int rc2 = VINF_SUCCESS;
         if (pszRead)
             rc2 = PDMR3GetSymbolGCLazy(pDevIns->Internal.s.pVMHC, pDevIns->pDevReg->szGCMod, pszRead, &GCPtrRead);
-        RTGCPTR GCPtrFill = 0;
+        RTGCPTR32 GCPtrFill = 0;
         int rc3 = VINF_SUCCESS;
         if (pszFill)
             rc3 = PDMR3GetSymbolGCLazy(pDevIns->Internal.s.pVMHC, pDevIns->pDevReg->szGCMod, pszFill, &GCPtrFill);
@@ -4143,7 +4143,7 @@ static DECLCALLBACK(PCPDMPICHLPGC) pdmR3PicHlp_GetGCHelpers(PPDMDEVINS pDevIns)
 {
     PDMDEV_ASSERT_DEVINS(pDevIns);
     VM_ASSERT_EMT(pDevIns->Internal.s.pVMHC);
-    RTGCPTR pGCHelpers = 0;
+    RTGCPTR32 pGCHelpers = 0;
     int rc = PDMR3GetSymbolGC(pDevIns->Internal.s.pVMHC, NULL, "g_pdmGCPicHlp", &pGCHelpers);
     AssertReleaseRC(rc);
     AssertRelease(pGCHelpers);
@@ -4229,7 +4229,7 @@ static DECLCALLBACK(PCPDMAPICHLPGC) pdmR3ApicHlp_GetGCHelpers(PPDMDEVINS pDevIns
 {
     PDMDEV_ASSERT_DEVINS(pDevIns);
     VM_ASSERT_EMT(pDevIns->Internal.s.pVMHC);
-    RTGCPTR pGCHelpers = 0;
+    RTGCPTR32 pGCHelpers = 0;
     int rc = PDMR3GetSymbolGC(pDevIns->Internal.s.pVMHC, NULL, "g_pdmGCApicHlp", &pGCHelpers);
     AssertReleaseRC(rc);
     AssertRelease(pGCHelpers);
@@ -4293,7 +4293,7 @@ static DECLCALLBACK(PCPDMIOAPICHLPGC) pdmR3IoApicHlp_GetGCHelpers(PPDMDEVINS pDe
 {
     PDMDEV_ASSERT_DEVINS(pDevIns);
     VM_ASSERT_EMT(pDevIns->Internal.s.pVMHC);
-    RTGCPTR pGCHelpers = 0;
+    RTGCPTR32 pGCHelpers = 0;
     int rc = PDMR3GetSymbolGC(pDevIns->Internal.s.pVMHC, NULL, "g_pdmGCIoApicHlp", &pGCHelpers);
     AssertReleaseRC(rc);
     AssertRelease(pGCHelpers);
@@ -4376,7 +4376,7 @@ static DECLCALLBACK(PCPDMPCIHLPGC) pdmR3PciHlp_GetGCHelpers(PPDMDEVINS pDevIns)
 {
     PDMDEV_ASSERT_DEVINS(pDevIns);
     VM_ASSERT_EMT(pDevIns->Internal.s.pVMHC);
-    RTGCPTR pGCHelpers = 0;
+    RTGCPTR32 pGCHelpers = 0;
     int rc = PDMR3GetSymbolGC(pDevIns->Internal.s.pVMHC, NULL, "g_pdmGCPciHlp", &pGCHelpers);
     AssertReleaseRC(rc);
     AssertRelease(pGCHelpers);

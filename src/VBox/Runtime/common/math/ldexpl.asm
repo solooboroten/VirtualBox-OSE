@@ -1,4 +1,4 @@
-; $Id: ldexpl.asm 8256 2008-04-21 20:53:28Z vboxsync $
+; $Id: ldexpl.asm 29999 2008-04-21 20:53:28Z frank $
 ;; @file
 ; IPRT - No-CRT ldexpl - AMD64 & X86.
 ;

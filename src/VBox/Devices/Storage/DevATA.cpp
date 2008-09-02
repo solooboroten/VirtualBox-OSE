@@ -5275,21 +5275,11 @@ static DECLCALLBACK(int) ataDestruct(PPDMDEVINS pDevIns)
      */
     if (ataWaitForAllAsyncIOIsIdle(pDevIns, 20000))
     {
-        uint64_t    u64Start = RTTimeMilliTS();
-        int rc2 = VINF_SUCCESS;
         for (unsigned i = 0; i < RT_ELEMENTS(pData->aCts); i++)
         {
-            /* Wait for at most 5 seconds, and if that is elapsed for 100msec
-             * per remaining thread. Just to be on the safe side. */
-            int64_t cMsElapsed = RTTimeMilliTS() - u64Start;
-            rc = RTThreadWait(pData->aCts[i].AsyncIOThread,
-                              RT_MAX(5000 - cMsElapsed, 100),
-                              NULL);
-            if (VBOX_FAILURE(rc) && rc != VERR_INVALID_HANDLE)
-                rc2 = rc;
+            rc = RTThreadWait(pData->aCts[i].AsyncIOThread, 30000 /* 30 s*/, NULL);
+            AssertMsg(VBOX_SUCCESS(rc) || rc == VERR_INVALID_HANDLE, ("rc=%Rrc i=%d\n", rc, i));
         }
-        AssertMsgRC(rc2, ("Some of the async I/O threads are still running! (%RU64 ms)\n",
-                          RTTimeMilliTS() - u64Start));
     }
     else
         AssertMsgFailed(("Async I/O is still busy!\n"));

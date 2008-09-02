@@ -1,4 +1,4 @@
-/* $Revision: 8155 $ */
+/* $Revision: 30849 $ */
 /** @file
  * VirtualBox Support Driver - Internal header.
  */
@@ -708,6 +708,10 @@ typedef struct SUPDRVDEVEXT
     PMDL                    pGipMdl;
     /** GIP timer interval (ms). */
     ULONG                   ulGipTimerInterval;
+    /** Flag to force async GIP timer mode. */
+    BOOLEAN                 fForceAsyncTsc;
+    /** Current CPU affinity mask. */
+    KAFFINITY               uAffinityMask;
 #endif
 #ifdef RT_OS_LINUX
     /** The last jiffies. */
@@ -757,8 +761,8 @@ int  VBOXCALL   supdrvOSGipMap(PSUPDRVDEVEXT pDevExt, PSUPGLOBALINFOPAGE *ppGip)
 int  VBOXCALL   supdrvOSGipUnmap(PSUPDRVDEVEXT pDevExt, PSUPGLOBALINFOPAGE pGip);
 void  VBOXCALL  supdrvOSGipResume(PSUPDRVDEVEXT pDevExt);
 void  VBOXCALL  supdrvOSGipSuspend(PSUPDRVDEVEXT pDevExt);
-unsigned VBOXCALL supdrvOSGetCPUCount(void);
-bool VBOXCALL   supdrvOSGetForcedAsyncTscMode(void);
+unsigned VBOXCALL supdrvOSGetCPUCount(PSUPDRVDEVEXT pDevExt);
+bool VBOXCALL   supdrvOSGetForcedAsyncTscMode(PSUPDRVDEVEXT pDevExt);
 #endif
 
 

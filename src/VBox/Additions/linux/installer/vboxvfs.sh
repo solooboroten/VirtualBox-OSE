@@ -25,8 +25,8 @@
 # Provides:       vboxvfs
 # Required-Start: vboxadd
 # Required-Stop:
-# Default-Start:  3 5
-# Default-Stop:
+# Default-Start:  2 3 4 5
+# Default-Stop:   0 1 6
 # Description:    VirtualBox Linux Additions VFS kernel module
 ### END INIT INFO
 
@@ -124,7 +124,7 @@ fail() {
 }
 
 running() {
-    lsmod | grep -q $modname[^_-]
+    lsmod | grep -q "$modname[^_-]"
 }
 
 start() {
@@ -140,16 +140,23 @@ start() {
             fail "modprobe $modname failed"
         }
     }
+    # Mount all shared folders from /etc/fstab. Normally this is done by some
+    # other startup script but this requires the vboxdrv kernel module loaded.
+    mount -a -t vboxsf
     succ_msg
     return 0
 }
 
 stop() {
     begin "Stopping VirtualBox Additions shared folder support ";
-    if running; then
-        rmmod $modname || fail "Cannot unload module $modname"
+    if umount -a -t vboxsf 2>/dev/null; then
+        if running; then
+            rmmod $modname 2>/dev/null || fail "Cannot unload module $modname"
+        fi
+        succ_msg
+    else
+        fail "Cannot unmount vboxsf folders"
     fi
-    succ_msg
     return 0
 }
 

@@ -52,15 +52,27 @@
 #ifdef RT_OS_WINDOWS
 #include <windows.h>
 #include <winioctl.h>
-#elif RT_OS_LINUX
+#elif defined(RT_OS_LINUX) || defined(RT_OS_DARWIN) || defined(RT_OS_SOLARIS)
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
+#endif
+#ifdef RT_OS_LINUX
+#include <sys/utsname.h>
 #include <linux/hdreg.h>
 #include <linux/fs.h>
-#endif /* !RT_OS_WINDOWS && !RT_OS_LINUX */
+#endif /* RT_OS_LINUX */
+#ifdef RT_OS_DARWIN
+#include <sys/disk.h>
+#endif /* RT_OS_DARWIN */
+#ifdef RT_OS_SOLARIS
+#include <stropts.h>
+#include <sys/dkio.h>
+#include <sys/vtoc.h>
+#endif /* RT_OS_SOLARIS */
 
 using namespace com;
 
@@ -145,7 +157,7 @@ void printUsageInternal(USAGECATEGORY u64Cmd)
                 "       parameter -mbr can be used to specify an alternative MBR to be used\n"
                 "       (the partitioning information in the MBR file is ignored).\n"
                 "       The diskname is on Linux e.g. /dev/sda, and on Windows e.g.\n"
-                "       \\\\.\\PhysicalDisk0).\n"
+                "       \\\\.\\PhysicalDrive0).\n"
                 "       On Linux host the parameter -relative causes a VMDK file to be created\n"
                 "       which refers to individual partitions instead to the entire disk.\n"
                 "       Optionally the created image can be immediately registered.\n"
@@ -153,6 +165,11 @@ void printUsageInternal(USAGECATEGORY u64Cmd)
                 "         VBoxManage internalcommands listpartitions\n"
                 "\n"
                 : "",
+             (u64Cmd & USAGE_RENAMEVMDK) ?
+                 "  renamevmdk -from <filename> -to <filename>\n"
+                 "       Renames an existing VMDK image, including the base file and all its extents.\n"
+                 "\n"
+                 : "",
 #ifdef RT_OS_WINDOWS
             (u64Cmd & USAGE_MODINSTALL) ?
                 "  modinstall\n"
@@ -775,10 +792,16 @@ HRESULT CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox,
 
     uint64_t cbSize = 0;
 #ifdef RT_OS_WINDOWS
+    /* Windows NT has no IOCTL_DISK_GET_LENGTH_INFORMATION ioctl. This was
+     * added to Windows XP, so we have to use the available info from DriveGeo.
+     * Note that we cannot simply use IOCTL_DISK_GET_DRIVE_GEOMETRY as it
+     * yields a slightly different result than IOCTL_DISK_GET_LENGTH_INFO.
+     * We call IOCTL_DISK_GET_DRIVE_GEOMETRY first as we need to check the media
+     * type anyway, and if IOCTL_DISK_GET_LENGTH_INFORMATION is supported
+     * we will later override cbSize.
+     */
     DISK_GEOMETRY DriveGeo;
     DWORD cbDriveGeo;
-    /* Windows NT has no IOCTL_DISK_GET_LENGTH_INFORMATION ioctl. This was
-     * added to Windows XP, so use the available info from DriveGeo. */
     if (DeviceIoControl((HANDLE)RawFile,
                         IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0,
                         &DriveGeo, sizeof(DriveGeo), &cbDriveGeo, NULL))
@@ -792,6 +815,16 @@ HRESULT CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox,
         }
         else
             return VERR_MEDIA_NOT_RECOGNIZED;
+
+        GET_LENGTH_INFORMATION DiskLenInfo;
+        DWORD junk;
+        if (DeviceIoControl((HANDLE)RawFile,
+                            IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
+                            &DiskLenInfo, sizeof(DiskLenInfo), &junk, (LPOVERLAPPED)NULL))
+        {
+            /* IOCTL_DISK_GET_LENGTH_INFO is supported -- override cbSize. */
+            cbSize = DiskLenInfo.Length.QuadPart;
+        }
     }
     else
         rc = RTErrConvertFromWin32(GetLastError());
@@ -799,21 +832,70 @@ HRESULT CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox,
     struct stat DevStat;
     if (!fstat(RawFile, &DevStat) && S_ISBLK(DevStat.st_mode))
     {
-        /** @todo add a BLKGETSIZE64 ioctl here, as it eliminates the 2 TByte
-         * limit. But be careful, Linux 2.4.18 is the first revision with
-         * working BLKGETSIZE64, and in 2.5.x it's pretty random. 2.6.0 works. */
-        long cBlocks;
-        if (!ioctl(RawFile, BLKGETSIZE, &cBlocks))
-            cbSize = (uint64_t)cBlocks * 512;
+#ifdef BLKGETSIZE64
+        /* BLKGETSIZE64 is broken up to 2.4.17 and in many 2.5.x. In 2.6.0
+         * it works without problems. */
+        struct utsname utsname;
+        if (    uname(&utsname) == 0
+            &&  (   (strncmp(utsname.release, "2.5.", 4) == 0 && atoi(&utsname.release[4]) >= 18)
+                 || (strncmp(utsname.release, "2.", 2) == 0 && atoi(&utsname.release[2]) >= 6)))
+        {
+            uint64_t cbBlk;
+            if (!ioctl(RawFile, BLKGETSIZE64, &cbBlk))
+                cbSize = cbBlk;
+        }
+#endif /* BLKGETSIZE64 */
+        if (!cbSize)
+        {
+            long cBlocks;
+            if (!ioctl(RawFile, BLKGETSIZE, &cBlocks))
+                cbSize = (uint64_t)cBlocks << 9;
+            else
+                return RTErrConvertFromErrno(errno);
+        }
+    }
+    else
+    {
+        RTPrintf("File '%s' is no block device\n", rawdisk.raw());
+        return VERR_INVALID_PARAMETER;
+    }
+#elif defined(RT_OS_DARWIN)
+    struct stat DevStat;
+    if (!fstat(RawFile, &DevStat) && S_ISBLK(DevStat.st_mode))
+    {
+        uint64_t cBlocks;
+        uint32_t cbBlock;
+        if (!ioctl(RawFile, DKIOCGETBLOCKCOUNT, &cBlocks))
+        {
+            if (!ioctl(RawFile, DKIOCGETBLOCKSIZE, &cbBlock))
+                cbSize = cBlocks * cbBlock;
+            else
+                return RTErrConvertFromErrno(errno);
+        }
         else
             return RTErrConvertFromErrno(errno);
     }
     else
     {
-        RTPrintf("File '%s' is no disk\n", rawdisk.raw());
+        RTPrintf("File '%s' is no block device\n", rawdisk.raw());
         return VERR_INVALID_PARAMETER;
     }
-#else /* !RT_OS_WINDOWS && !RT_OS_LINUX */
+#elif defined(RT_OS_SOLARIS)
+    struct stat DevStat;
+    if (!fstat(RawFile, &DevStat) && S_ISBLK(DevStat.st_mode))
+    {
+        struct dk_minfo mediainfo;
+        if (!ioctl(RawFile, DKIOCGMEDIAINFO, &mediainfo))
+            cbSize = mediainfo.dki_capacity * mediainfo.dki_lbsize;
+        else
+            return RTErrConvertFromErrno(errno);
+    }
+    else
+    {
+        RTPrintf("File '%s' is no block device\n", rawdisk.raw());
+        return VERR_INVALID_PARAMETER;
+    }
+#else /* all unrecognized OSes */
     /* Hopefully this works on all other hosts. If it doesn't, it'll just fail
      * creating the VMDK, so no real harm done. */
     vrc = RTFileGetSize(RawFile, &cbSize);
@@ -822,7 +904,7 @@ HRESULT CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox,
         RTPrintf("Error getting the size of the raw disk: %Vrc\n", vrc);
         return vrc;
     }
-#endif /* !RT_OS_WINDOWS && !RT_OS_LINUX */
+#endif
 
     PVBOXHDD pDisk = NULL;
     VBOXHDDRAW RawDescriptor;
@@ -1053,6 +1135,70 @@ HRESULT CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox,
     return SUCCEEDED(rc) ? 0 : 1;
 }
 
+HRESULT CmdRenameVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox, ComPtr<ISession> aSession)
+{
+    Bstr src;
+    Bstr dst;
+    /* Parse the arguments. */
+    for (int i = 0; i < argc; i++)
+    {
+        if (strcmp(argv[i], "-from") == 0)
+        {
+            if (argc <= i + 1)
+            {
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            }
+            i++;
+            src = argv[i];
+        }
+        else if (strcmp(argv[i], "-to") == 0)
+        {
+            if (argc <= i + 1)
+            {
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            }
+            i++;
+            dst = argv[i];
+        }
+        else
+        {
+            return errorSyntax(USAGE_RENAMEVMDK, "Invalid parameter '%s'", Utf8Str(argv[i]).raw());
+        }
+    }
+
+    if (src.isEmpty())
+        return errorSyntax(USAGE_RENAMEVMDK, "Mandatory parameter -from missing");
+    if (dst.isEmpty())
+        return errorSyntax(USAGE_RENAMEVMDK, "Mandatory parameter -to missing");
+
+    PVBOXHDD pDisk = NULL;
+
+    int vrc = VDCreate(handleVDError, NULL, &pDisk);
+    if (VBOX_FAILURE(vrc))
+    {
+        RTPrintf("Error while creating the virtual disk container: %Vrc\n", vrc);
+        return vrc;
+    }
+    else
+    {
+        vrc = VDOpen(pDisk, "VMDK", Utf8Str(src).raw(), VD_OPEN_FLAGS_NORMAL);
+        if (VBOX_FAILURE(vrc))
+        {
+            RTPrintf("Error while opening the source image: %Vrc\n", vrc);
+        }
+        else
+        {
+            vrc = VDCopy(pDisk, 0, pDisk, "VMDK", Utf8Str(dst).raw(), true, 0, NULL, NULL);
+            if (VBOX_FAILURE(vrc))
+            {
+                RTPrintf("Error while renaming the image: %Vrc\n", vrc);
+            }
+        }
+    }
+    VDCloseAll(pDisk);
+    return vrc;
+}
+
 /**
  * Unloads the neccessary driver.
  *
@@ -1113,6 +1259,8 @@ int handleInternalCommands(int argc, char *argv[],
         return CmdListPartitions(argc - 1, &argv[1], aVirtualBox, aSession);
     if (!strcmp(pszCmd, "createrawvmdk"))
         return CmdCreateRawVMDK(argc - 1, &argv[1], aVirtualBox, aSession);
+    if (!strcmp(pszCmd, "renamevmdk"))
+        return CmdRenameVMDK(argc - 1, &argv[1], aVirtualBox, aSession);
 
     if (!strcmp(pszCmd, "modinstall"))
         return CmdModInstall();

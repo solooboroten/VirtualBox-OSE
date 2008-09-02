@@ -1,4 +1,4 @@
-/* $Id: tstDBGCStubs.cpp 8160 2008-04-18 16:15:42Z vboxsync $ */
+/* $Id: tstDBGCStubs.cpp 30828 2008-05-14 20:44:19Z bird $ */
 /** @file
  * DBGC Testcase - Command Parser, VMM Stub Functions.
  */
@@ -158,8 +158,9 @@ PGMR3DECL(int) PGMR3DbgHCPtr2HCPhys(PVM pVM, RTHCPTR HCPtr, PRTHCPHYS pHCPhys)
 
 
 #include <VBox/dbgf.h>
-DBGFR3DECL(void) DBGFR3AddrFromFlat(PVM pVM, PDBGFADDRESS pAddress, RTGCUINTPTR FlatPtr)
+DBGFR3DECL(PDBGFADDRESS) DBGFR3AddrFromFlat(PVM pVM, PDBGFADDRESS pAddress, RTGCUINTPTR FlatPtr)
 {
+    return NULL;
 }
 
 DBGFR3DECL(int) DBGFR3AddrFromSelOff(PVM pVM, PDBGFADDRESS pAddress, RTSEL Sel, RTUINTPTR off)
@@ -281,6 +282,30 @@ DBGFR3DECL(int) DBGFR3MemScan(PVM pVM, PCDBGFADDRESS pAddress, RTGCUINTPTR cbRan
 {
     return VERR_INTERNAL_ERROR;
 }
+DBGFR3DECL(int) DBGFR3MemRead(PVM pVM, PCDBGFADDRESS pAddress, void *pvBuf, size_t cbRead)
+{
+    return VERR_INTERNAL_ERROR;
+}
+DBGFR3DECL(int) DBGFR3MemReadString(PVM pVM, PCDBGFADDRESS pAddress, char *pszBuf, size_t cchBuf)
+{
+    return VERR_INTERNAL_ERROR;
+}
 DBGFR3DECL(void) DBGFR3AddrFromPhys(PVM pVM, PDBGFADDRESS pAddress, RTGCPHYS PhysAddr)
 {
+}
+DBGFR3DECL(int) DBGFR3OSRegister(PVM pVM, PCDBGFOSREG pReg)
+{
+    return VERR_INTERNAL_ERROR;
+}
+DBGFR3DECL(int) DBGFR3OSDetect(PVM pVM, char *pszName, size_t cchName)
+{
+    return VERR_INTERNAL_ERROR;
+}
+DBGFR3DECL(int) DBGFR3OSQueryNameAndVersion(PVM pVM, char *pszName, size_t cchName, char *pszVersion, size_t cchVersion)
+{
+    return VERR_INTERNAL_ERROR;
+}
+DBGFR3DECL(int) DBGFR3SymbolAdd(PVM pVM, RTGCUINTPTR ModuleAddress, RTGCUINTPTR SymbolAddress, RTUINT cbSymbol, const char *pszSymbol)
+{
+    return VERR_INTERNAL_ERROR;
 }

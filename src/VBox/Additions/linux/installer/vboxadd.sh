@@ -25,8 +25,8 @@
 # Provides:       vboxadd
 # Required-Start:
 # Required-Stop:
-# Default-Start:  3 5
-# Default-Stop:
+# Default-Start:  2 3 4 5
+# Default-Stop:   0 1 6
 # Description:    VirtualBox Linux Additions kernel module
 ### END INIT INFO
 
@@ -127,7 +127,7 @@ fail() {
 }
 
 running() {
-    lsmod | grep -q $modname[^_-]
+    lsmod | grep -q "$modname[^_-]"
 }
 
 start() {
@@ -137,7 +137,7 @@ start() {
             fail "Cannot remove $dev"
         }
 
-        modprobe $modname || {
+        modprobe $modname >/dev/null 2>&1 || {
             fail "modprobe $modname failed"
         }
 
@@ -154,12 +154,12 @@ start() {
             fi
         fi
         test -z "$maj" && {
-            rmmod $modname
+            rmmod $modname 2>/dev/null
             fail "Cannot locate the VirtualBox device"
         }
 
         mknod -m 0664 $dev c $maj $min || {
-            rmmod $modname
+            rmmod $modname 2>/dev/null
             fail "Cannot create device $dev with major $maj and minor $min"
         }
     fi
@@ -176,7 +176,7 @@ start() {
 stop() {
     begin "Stopping VirtualBox Additions ";
     if running; then
-        rmmod $modname || fail "Cannot unload module $modname"
+        rmmod $modname 2>/dev/null || fail "Cannot unload module $modname"
         rm -f $dev || fail "Cannot unlink $dev"
     fi
     succ_msg

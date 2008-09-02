@@ -53,16 +53,14 @@
  *  Two-page widget stack to represent VM details: one page for normal details
  *  and another one for inaccessibility errors.
  */
-class VBoxVMDetailsView : public QStackedWidget
+class VBoxVMDetailsView : public QIWithRetranslateUI<QStackedWidget>
 {
-    Q_OBJECT
+    Q_OBJECT;
 
 public:
 
     VBoxVMDetailsView (QWidget *aParent,
                        QAction *aRefreshAction = NULL);
-
-    void languageChange();
 
     void setDetailsText (const QString &aText)
     {
@@ -86,6 +84,10 @@ public:
 signals:
 
     void linkClicked (const QString &aURL);
+
+protected:
+
+    void retranslateUi();
 
 private slots:
 
@@ -115,7 +117,7 @@ private:
 
 VBoxVMDetailsView::VBoxVMDetailsView (QWidget *aParent,
                                       QAction *aRefreshAction /* = NULL */)
-    : QStackedWidget (aParent)
+    : QIWithRetranslateUI<QStackedWidget> (aParent)
     , mErrBox (NULL), mErrLabel (NULL), mErrText (NULL)
     , mRefreshButton (NULL)
     , mRefreshAction (aRefreshAction)
@@ -179,10 +181,10 @@ void VBoxVMDetailsView::createErrPage()
 
     addWidget (mErrBox);
 
-    languageChange();
+    retranslateUi();
 }
 
-void VBoxVMDetailsView::languageChange()
+void VBoxVMDetailsView::retranslateUi()
 {
     if (mErrLabel)
         mErrLabel->setText (tr (
@@ -209,9 +211,9 @@ void VBoxVMDetailsView::languageChange()
 /**
  *  Comments page widget to represent VM comments.
  */
-class VBoxVMDescriptionPage : public QWidget
+class VBoxVMDescriptionPage : public QIWithRetranslateUI<QWidget>
 {
-    Q_OBJECT
+    Q_OBJECT;
 
 public:
 
@@ -220,8 +222,11 @@ public:
 
     void setMachineItem (VBoxVMItem *aItem);
 
-    void languageChange();
     void updateState();
+
+protected:
+
+    void retranslateUi();
 
 private slots:
 
@@ -238,7 +243,7 @@ private:
 };
 
 VBoxVMDescriptionPage::VBoxVMDescriptionPage (VBoxSelectorWnd *aParent)
-    : QWidget (aParent)
+    : QIWithRetranslateUI<QWidget> (aParent)
     , mItem (NULL), mParent (aParent)
     , mBtnEdit (0), mBrowser (0), mLabel (0)
 {
@@ -288,7 +293,7 @@ VBoxVMDescriptionPage::VBoxVMDescriptionPage (VBoxSelectorWnd *aParent)
                                            QSizePolicy::Minimum));
 
     /* apply language settings */
-    languageChange();
+    retranslateUi();
 
     updateState();
 }
@@ -320,7 +325,7 @@ void VBoxVMDescriptionPage::setMachineItem (VBoxVMItem *aItem)
     updateState();
 }
 
-void VBoxVMDescriptionPage::languageChange()
+void VBoxVMDescriptionPage::retranslateUi()
 {
     mLabel->setText (tr ("No description. Press the Edit button below to add it."));
 
@@ -355,7 +360,7 @@ void VBoxVMDescriptionPage::updateState()
 
 void VBoxVMDescriptionPage::goToSettings()
 {
-    mParent->vmSettings ("#general", "teDescription");
+    mParent->vmSettings ("#general", "mTeDescription");
 }
 
 // VBoxSelectorWnd class
@@ -381,7 +386,7 @@ void VBoxVMDescriptionPage::goToSettings()
 VBoxSelectorWnd::
 VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
                  Qt::WFlags aFlags)
-    : QMainWindow (aParent, aFlags)
+    : QIWithRetranslateUI2<QMainWindow> (aParent, aFlags)
     , doneInaccessibleWarningOnce (false)
 {
     if (aSelf)
@@ -483,7 +488,7 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
 
     /* VM list view */
     mVMListView = new VBoxVMListView();
-    mVMModel = new VBoxVMModel();
+    mVMModel = new VBoxVMModel(mVMListView);
     mVMListView->setModel (mVMModel);
 
     leftVLayout->addWidget (mVMListView);
@@ -586,7 +591,7 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
     mHelpMenu->addSeparator();
     mHelpMenu->addAction (helpResetMessagesAction);
 
-    languageChange();
+    retranslateUi();
 
     /* restore the position of the window */
     {
@@ -621,6 +626,8 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
         }
     }
 
+    /* Update the list */
+    refreshVMList();
     /* Reset to the first item */
     mVMListView->selectItemByRow (0);
     /* restore the position of vm selector */
@@ -715,6 +722,8 @@ VBoxSelectorWnd::~VBoxSelectorWnd()
             QString::null;
         vbox.SetExtraData (VBoxDefs::GUI_LastVMSelected, curVMId);
     }
+    /* Delete the items from our model */
+    mVMModel->clear();
 }
 
 //
@@ -756,7 +765,7 @@ void VBoxSelectorWnd::fileExit()
 
 void VBoxSelectorWnd::vmNew()
 {
-    VBoxNewVMWzd wzd;
+    VBoxNewVMWzd wzd (this);
     if (wzd.exec() == QDialog::Accepted)
     {
         CMachine m = wzd.machine();
@@ -802,9 +811,8 @@ void VBoxSelectorWnd::vmSettings (const QString &aCategory, const QString &aCont
     CMachine m = session.GetMachine();
     AssertMsgReturn (!m.isNull(), ("Machine must not be null"), (void) 0);
 
-    VBoxVMSettingsDlg dlg (this, "VBoxVMSettingsDlg");
+    VBoxVMSettingsDlg dlg (this, aCategory, aControl);
     dlg.getFromMachine (m);
-    dlg.setup (aCategory, aControl);
 
     if (dlg.exec() == QDialog::Accepted)
     {
@@ -882,9 +890,9 @@ void VBoxSelectorWnd::vmDelete()
                 /* delete machine settings */
                 machine.DeleteSettings();
                 /* remove the item shortly: cmachine it refers to is no longer valid! */
-#warning "port me: check this"
                 int row = mVMModel->rowById (item->id());
                 mVMModel->removeItem (item);
+                delete item;
                 mVMListView->ensureSomeRowSelected (row);
             }
             if (!vbox.isOk() || !machine.isOk())
@@ -1056,7 +1064,13 @@ void VBoxSelectorWnd::vmShowLogs()
 
 void VBoxSelectorWnd::refreshVMList()
 {
-    mVMModel->refresh();
+    CVirtualBox vbox = vboxGlobal().virtualBox();
+    CMachineVector vec = vbox.GetMachines2();
+    for (CMachineVector::ConstIterator m = vec.begin();
+         m != vec.end(); ++ m)
+        mVMModel->addItem (new VBoxVMItem (*m));
+    mVMModel->sort();
+
     vmListViewCurrentChanged();
 }
 
@@ -1105,11 +1119,6 @@ bool VBoxSelectorWnd::event (QEvent *e)
                 normal_pos = pos();
             break;
         }
-        case QEvent::LanguageChange:
-        {
-            languageChange();
-            break;
-        }
 
         default:
             break;
@@ -1118,14 +1127,11 @@ bool VBoxSelectorWnd::event (QEvent *e)
     return QMainWindow::event (e);
 }
 
-// Private members
-/////////////////////////////////////////////////////////////////////////////
-
 /**
  *  Sets the strings of the subwidgets using the current
  *  language.
  */
-void VBoxSelectorWnd::languageChange()
+void VBoxSelectorWnd::retranslateUi()
 {
 #ifdef VBOX_OSE
     setWindowTitle (tr ("VirtualBox OSE"));
@@ -1220,10 +1226,11 @@ void VBoxSelectorWnd::languageChange()
     mFileMenu->setTitle (tr("&File"));
     mVMMenu->setTitle (tr ("&Machine"));
     mHelpMenu->setTitle (tr ("&Help"));
-
-    vmDetailsView->languageChange();
-    vmDescriptionPage->languageChange();
 }
+
+
+// Private members
+/////////////////////////////////////////////////////////////////////////////
 
 //
 // Private slots
@@ -1480,6 +1487,7 @@ void VBoxSelectorWnd::machineRegistered (const VBoxMachineRegisteredEvent &e)
         {
             int row = mVMModel->rowById (item->id());
             mVMModel->removeItem (item);
+            delete item;
             mVMListView->ensureSomeRowSelected (row);
         }
 

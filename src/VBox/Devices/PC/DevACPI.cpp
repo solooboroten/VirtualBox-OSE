@@ -1,4 +1,4 @@
-/* $Id: DevACPI.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: DevACPI.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * Advanced Configuration and Power Interface (ACPI) Device.
  */

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8155 2008-04-18 15:16:47Z vboxsync $
+# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
 ## @file
 # Sub-Makefile for the VBox Additions XFree86 and X.org mouse drivers.
 #
@@ -21,13 +21,13 @@
 
 DEPTH ?= ../../../../..
 SUB_DEPTH = ../..
-include	$(PATH_KBUILD)/subheader.kmk
+include	$(KBUILD_PATH)/subheader.kmk
 
 
 #
 # vboxmouse_drv
 #
-if1of ($(BUILD_TARGET),linux l4)
+if1of ($(KBUILD_TARGET),linux l4)
  SYSMODS += vboxmouse_drv
  vboxmouse_drv_TEMPLATE = VBOXGUESTR3XF86MOD
  vboxmouse_drv_DEFS.linux = linux
@@ -64,7 +64,7 @@ DLLS += vboxmouse_drv_70
 vboxmouse_drv_70_TEMPLATE = VBOXGUESTR3XORGMOD
 vboxmouse_drv_70_DEFS = \
 	XFree86Server IN_MODULE XFree86Module XFree86LOADER XINPUT XORG_7X
-ifeq ($(BUILD_TARGET),solaris) # don't use .solaris or anything here.
+ifeq ($(KBUILD_TARGET),solaris) # don't use .solaris or anything here.
  vboxmouse_drv_70_DEFS += _XPG6 __EXTENSIONS__
 endif
 vboxmouse_drv_70_INCS := \
@@ -112,5 +112,5 @@ vboxmouse_drv_14_SOURCES = \
 	VBoxUtils.c
 
 
-include	$(PATH_KBUILD)/subfooter.kmk
+include	$(KBUILD_PATH)/subfooter.kmk
 

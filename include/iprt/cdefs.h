@@ -166,7 +166,7 @@
 #endif
 
 /** @def HC_ARCH_BITS
- * Defines the host architechture bit count.
+ * Defines the host architecture bit count.
  */
 #if !defined(HC_ARCH_BITS) || defined(DOXYGEN_RUNNING)
 # ifndef IN_GC
@@ -177,7 +177,7 @@
 #endif
 
 /** @def R3_ARCH_BITS
- * Defines the host ring-3 architechture bit count.
+ * Defines the host ring-3 architecture bit count.
  */
 #if !defined(R3_ARCH_BITS) || defined(DOXYGEN_RUNNING)
 # ifdef IN_RING3
@@ -188,7 +188,7 @@
 #endif
 
 /** @def R0_ARCH_BITS
- * Defines the host ring-0 architechture bit count.
+ * Defines the host ring-0 architecture bit count.
  */
 #if !defined(R0_ARCH_BITS) || defined(DOXYGEN_RUNNING)
 # ifdef IN_RING0
@@ -199,7 +199,7 @@
 #endif
 
 /** @def GC_ARCH_BITS
- * Defines the guest architechture bit count.
+ * Defines the guest architecture bit count.
  */
 #if !defined(GC_ARCH_BITS) || defined(DOXYGEN_RUNNING)
 # ifdef IN_GC
@@ -242,7 +242,7 @@
  *
  * @param   GCType  The GC type.
  */
-#define GCPTRTYPE(GCType)       CTXTYPE(GCType, RTGCPTR, RTGCPTR)
+#define GCPTRTYPE(GCType)       CTXTYPE(GCType, RTGCPTR32, RTGCPTR32)
 
 /** @def R3R0PTRTYPE
  * Declare a pointer which is used in HC, is explicitely valid in ring 3 and 0,
@@ -534,7 +534,7 @@
 #ifdef IN_GC
 # define DECLGCCALLBACKMEMBER(type, name, args)  type (RTCALL * name) args
 #else
-# define DECLGCCALLBACKMEMBER(type, name, args)  RTGCPTR name
+# define DECLGCCALLBACKMEMBER(type, name, args)  RTGCPTR32 name
 #endif
 
 /** @def DECLR0CALLBACKMEMBER
@@ -966,8 +966,6 @@
                   | (uint32_t)((uint8_t)(b2)) << 16 \
                   | (uint16_t)((uint8_t)(b1)) << 8 \
                   |            (uint8_t)(b0) )
-/** @todo remove this after uses in VUSBUrb.cpp has been corrected. */
-#define MAKE_U32_FROM_U8(b0,b1,b2,b3) RT_MAKE_U32_FROM_U8(b0,b1,b2,b3)
 
 /** @def RT_MAKE_U16
  * Constructs a uint32_t value from two uint16_t values.
@@ -1206,11 +1204,11 @@
 #endif
 
 
-/** @def VALID_PHYS32_PTR
+/** @def VALID_PHYS32
  * 32 bits physical address validation macro.
- * @param   ptr
+ * @param   Phys          The RTGCPHYS address.
  */
-#define VALID_PHYS32_PTR(ptr)     ( (RTGCPHYS64)(ptr) < _4G )
+#define VALID_PHYS32(Phys)  ( (uint64_t)(Phys) < (uint64_t)_4G )
 
 /** @def N_
  * The \#define N_ is used mark a string for translation. This is usable in

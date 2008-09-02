@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxBase.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: VirtualBoxBase.cpp 30647 2008-05-08 13:43:21Z bird $ */
 
 /** @file
  *
@@ -34,6 +34,7 @@
 #include "Logging.h"
 
 #include <iprt/semaphore.h>
+#include <iprt/asm.h>
 
 // VirtualBoxBaseNEXT_base methods
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,9 +66,18 @@ VirtualBoxBaseNEXT_base::~VirtualBoxBaseNEXT_base()
 // util::Lockable interface
 RWLockHandle *VirtualBoxBaseNEXT_base::lockHandle() const
 {
-    /* lasy initialization */
-    if (!mObjectLock)
-        mObjectLock = new RWLockHandle;
+    /* lazy initialization */
+    if (RT_UNLIKELY(!mObjectLock))
+    {
+        AssertCompile (sizeof (RWLockHandle *) == sizeof (void *));
+        RWLockHandle *objLock = new RWLockHandle;
+        if (!ASMAtomicCmpXchgPtr ((void * volatile *) &mObjectLock, objLock, NULL))
+        {
+            delete objLock;
+            objLock = (RWLockHandle *) ASMAtomicReadPtr ((void * volatile *) &mObjectLock);
+        }
+        return objLock;
+    }
     return mObjectLock;
 }
 
@@ -598,15 +608,16 @@ VirtualBoxSupportErrorInfoImplBase::MultiResult::~MultiResult()
 HRESULT VirtualBoxSupportErrorInfoImplBase::setErrorInternal (
     HRESULT aResultCode, const GUID &aIID,
     const Bstr &aComponent, const Bstr &aText,
-    bool aWarning)
+    bool aWarning, bool aLogIt)
 {
     /* whether multi-error mode is turned on */
     bool preserve = ((uintptr_t) RTTlsGet (MultiResult::sCounter)) > 0;
 
-    LogRel (("ERROR [COM]: aRC=%#08x aIID={%Vuuid} aComponent={%ls} aText={%ls} "
-             "aWarning=%RTbool, preserve=%RTbool\n",
-             aResultCode, &aIID, aComponent.raw(), aText.raw(), aWarning,
-             preserve));
+    if (aLogIt)
+        LogRel (("ERROR [COM]: aRC=%Rhrc (%#08x) aIID={%RTuuid} aComponent={%ls} aText={%ls} "
+                 "aWarning=%RTbool, preserve=%RTbool\n",
+                 aResultCode, aResultCode, &aIID, aComponent.raw(), aText.raw(), aWarning,
+                 preserve));
 
     /* these are mandatory, others -- not */
     AssertReturn ((!aWarning && FAILED (aResultCode)) ||
@@ -1140,7 +1151,7 @@ template<> com::Guid FromString <com::Guid> (const char *aValue)
     RTUUID uuid;
     int vrc = RTUuidFromStr (&uuid, buf);
     if (RT_FAILURE (vrc))
-        throw ENoConversion (FmtStr ("'%s' is not Guid (%Vrc)", aValue, vrc));
+        throw ENoConversion (FmtStr ("'%s' is not Guid (%Rrc)", aValue, vrc));
 
     return com::Guid (uuid);
 }

@@ -291,43 +291,45 @@ struct RTLOGGER
 typedef enum RTLOGFLAGS
 {
     /** The logger instance is disabled for normal output. */
-    RTLOGFLAGS_DISABLED         = 0x00000001,
+    RTLOGFLAGS_DISABLED             = 0x00000001,
     /** The logger instance is using buffered output. */
-    RTLOGFLAGS_BUFFERED         = 0x00000002,
+    RTLOGFLAGS_BUFFERED             = 0x00000002,
     /** The logger instance expands LF to CR/LF. */
-    RTLOGFLAGS_USECRLF          = 0x00000010,
+    RTLOGFLAGS_USECRLF              = 0x00000010,
     /** Show relative timestamps with PREFIX_TSC and PREFIX_TS */
-    RTLOGFLAGS_REL_TS           = 0x00000020,
+    RTLOGFLAGS_REL_TS               = 0x00000020,
     /** Show decimal timestamps with PREFIX_TSC and PREFIX_TS */
-    RTLOGFLAGS_DECIMAL_TS       = 0x00000040,
-    /** New lines should be reprefixed with the CPU id (ApicID on intel/amd). */
-    RTLOGFLAGS_PREFIX_CPUID     = 0x00010000,
+    RTLOGFLAGS_DECIMAL_TS           = 0x00000040,
+    /** New lines should be prefixed with the write and read lock counts. */
+    RTLOGFLAGS_PREFIX_LOCK_COUNTS   = 0x00008000,
+    /** New lines should be prefixed with the CPU id (ApicID on intel/amd). */
+    RTLOGFLAGS_PREFIX_CPUID         = 0x00010000,
     /** New lines should be prefixed with the native process id. */
-    RTLOGFLAGS_PREFIX_PID       = 0x00020000,
+    RTLOGFLAGS_PREFIX_PID           = 0x00020000,
     /** New lines should be prefixed with group flag number causing the output. */
-    RTLOGFLAGS_PREFIX_FLAG_NO   = 0x00040000,
+    RTLOGFLAGS_PREFIX_FLAG_NO       = 0x00040000,
     /** New lines should be prefixed with group flag name causing the output. */
-    RTLOGFLAGS_PREFIX_FLAG      = 0x00080000,
+    RTLOGFLAGS_PREFIX_FLAG          = 0x00080000,
     /** New lines should be prefixed with group number. */
-    RTLOGFLAGS_PREFIX_GROUP_NO  = 0x00100000,
+    RTLOGFLAGS_PREFIX_GROUP_NO      = 0x00100000,
     /** New lines should be prefixed with group name. */
-    RTLOGFLAGS_PREFIX_GROUP     = 0x00200000,
+    RTLOGFLAGS_PREFIX_GROUP         = 0x00200000,
     /** New lines should be prefixed with the native thread id. */
-    RTLOGFLAGS_PREFIX_TID       = 0x00400000,
+    RTLOGFLAGS_PREFIX_TID           = 0x00400000,
     /** New lines should be prefixed with thread name. */
-    RTLOGFLAGS_PREFIX_THREAD    = 0x00800000,
+    RTLOGFLAGS_PREFIX_THREAD        = 0x00800000,
     /** New lines should be prefixed with formatted timestamp since program start. */
-    RTLOGFLAGS_PREFIX_TIME_PROG = 0x04000000,
+    RTLOGFLAGS_PREFIX_TIME_PROG     = 0x04000000,
     /** New lines should be prefixed with formatted timestamp (UCT). */
-    RTLOGFLAGS_PREFIX_TIME      = 0x08000000,
+    RTLOGFLAGS_PREFIX_TIME          = 0x08000000,
     /** New lines should be prefixed with milliseconds since program start. */
-    RTLOGFLAGS_PREFIX_MS_PROG   = 0x10000000,
+    RTLOGFLAGS_PREFIX_MS_PROG       = 0x10000000,
     /** New lines should be prefixed with timestamp. */
-    RTLOGFLAGS_PREFIX_TSC       = 0x20000000,
+    RTLOGFLAGS_PREFIX_TSC           = 0x20000000,
     /** New lines should be prefixed with timestamp. */
-    RTLOGFLAGS_PREFIX_TS        = 0x40000000,
+    RTLOGFLAGS_PREFIX_TS            = 0x40000000,
     /** The prefix mask. */
-    RTLOGFLAGS_PREFIX_MASK      = 0x7cff0000
+    RTLOGFLAGS_PREFIX_MASK          = 0x7cff8000
 } RTLOGFLAGS;
 
 /**
@@ -413,14 +415,27 @@ RTDECL(void) RTLogPrintfEx(void *pvInstance, unsigned fFlags, unsigned iGroup, c
 #endif
 
 
+/** @def LOG_USE_C99
+ * Governs the use of variadic macros.
+ */
+#ifndef LOG_USE_C99
+# if defined(RT_ARCH_AMD64)
+#  define LOG_USE_C99
+# endif
+#endif
+
+
 /** @def LogIt
  * Write to specific logger if group enabled.
  */
 #ifdef LOG_ENABLED
-# if defined(RT_ARCH_AMD64) || defined(LOG_USE_C99)
-#  define _LogRemoveParentheseis(...)               __VA_ARGS__
-#  define _LogIt(pvInst, fFlags, iGroup, ...)       RTLogLoggerEx((PRTLOGGER)pvInst, fFlags, iGroup, __VA_ARGS__)
-#  define LogIt(pvInst, fFlags, iGroup, fmtargs)    _LogIt(pvInst, fFlags, iGroup, _LogRemoveParentheseis fmtargs)
+# if defined(LOG_USE_C99)
+#  define _LogRemoveParentheseis(...)                   __VA_ARGS__
+#  define _LogIt(pvInst, fFlags, iGroup, ...)           RTLogLoggerEx((PRTLOGGER)pvInst, fFlags, iGroup, __VA_ARGS__)
+#  define LogIt(pvInst, fFlags, iGroup, fmtargs)        _LogIt(pvInst, fFlags, iGroup, _LogRemoveParentheseis fmtargs)
+#  define _LogItAlways(pvInst, fFlags, iGroup, ...)     RTLogLoggerEx((PRTLOGGER)pvInst, fFlags, ~0U, __VA_ARGS__)
+#  define LogItAlways(pvInst, fFlags, iGroup, fmtargs)  _LogItAlways(pvInst, fFlags, iGroup, _LogRemoveParentheseis fmtargs)
+        /** @todo invent a flag or something for skipping the group check so we can pass iGroup. LogItAlways. */
 # else
 #  define LogIt(pvInst, fFlags, iGroup, fmtargs) \
     do \
@@ -433,11 +448,29 @@ RTDECL(void) RTLogPrintfEx(void *pvInstance, unsigned fFlags, unsigned iGroup, c
                 LogIt_pLogger->pfnLogger fmtargs; \
         } \
     } while (0)
+#  define LogItAlways(pvInst, fFlags, iGroup, fmtargs) \
+    do \
+    { \
+        register PRTLOGGER LogIt_pLogger = (PRTLOGGER)(pvInst) ? (PRTLOGGER)(pvInst) : RTLogDefaultInstance(); \
+        if (LogIt_pLogger) \
+            LogIt_pLogger->pfnLogger fmtargs; \
+    } while (0)
 # endif
 #else
-# define LogIt(pvInst, fFlags, iGroup, fmtargs) do { } while (0)
+# define LogIt(pvInst, fFlags, iGroup, fmtargs)         do { } while (0)
+# define LogItAlways(pvInst, fFlags, iGroup, fmtargs)   do { } while (0)
+# if defined(LOG_USE_C99)
+#  define _LogRemoveParentheseis(...)                   __VA_ARGS__
+#  define _LogIt(pvInst, fFlags, iGroup, ...)           do { } while (0)
+#  define _LogItAlways(pvInst, fFlags, iGroup, ...)     do { } while (0)
+# endif
 #endif
 
+
+/** @def Log
+ * Level 1 logging that works regardless of the group settings.
+ */
+#define LogAlways(a)    LogItAlways(LOG_INSTANCE, RTLOGGRPFLAGS_LEVEL_1, LOG_GROUP, a)
 
 /** @def Log
  * Level 1 logging.
@@ -528,12 +561,16 @@ RTDECL(void) RTLogPrintfEx(void *pvInstance, unsigned fFlags, unsigned iGroup, c
 
 /** @def LogWarning
  * The same as Log(), but prepents a <tt>"WARNING! "</tt> string to the message.
- * @param m    custom log message in format <tt>("string\n" [, args])</tt>
- * @todo use a Log macro with a variable argument list (requires MSVC8) to
- * join two separate Log* calls and make this op atomic
+ *
+ * @param   a   Custom log message in format <tt>("string\n" [, args])</tt>.
  */
-#define LogWarning(m) \
-    do { Log(("WARNING! ")); Log(m); } while (0)
+#if defined(LOG_USE_C99)
+# define LogWarning(a) \
+    _LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_LEVEL_1, LOG_GROUP, "WARNING! %M", _LogRemoveParentheseis a )
+#else
+# define LogWarning(a) \
+    do { Log(("WARNING! ")); Log(a); } while (0)
+#endif
 
 /** @def LogTrace
  * Macro to trace the execution flow: logs the file name, line number and
@@ -545,99 +582,132 @@ RTDECL(void) RTLogPrintfEx(void *pvInstance, unsigned fFlags, unsigned iGroup, c
 
 /** @def LogTraceMsg
  * The same as LogTrace but logs a custom log message right after the trace line.
- * @param m    custom log message in format <tt>("string\n" [, args])</tt>
- * @todo use a Log macro with a variable argument list (requires MSVC8) to
- * join two separate Log* calls and make this op atomic
+ *
+ * @param   a   Custom log message in format <tt>("string\n" [, args])</tt>.
  */
-#define LogTraceMsg(m) \
-    do {  LogTrace(); LogFlow(m); } while (0)
+#ifdef LOG_USE_C99
+# define LogTraceMsg(a) \
+    _LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_FLOW, LOG_GROUP, ">>>>> %s (%d): %M" LOG_FN_FMT, __FILE__, __LINE__, __PRETTY_FUNCTION__, _LogRemoveParentheseis a )
+#else
+# define LogTraceMsg(a) \
+    do {  LogFlow((">>>>> %s (%d): " LOG_FN_FMT, __FILE__, __LINE__, __PRETTY_FUNCTION__)); LogFlow(a); } while (0)
+#endif
 
 /** @def LogFunc
  * Level 1 logging inside C/C++ functions.
- * Prepends the given log message with the function name followed by a semicolon
- * and space.
- * @param m    log message in format <tt>("string\n" [, args])</tt>
- * @todo use a Log macro with a variable argument list (requires MSVC8) to
- * join two separate Log* calls and make this op atomic
+ *
+ * Prepends the given log message with the function name followed by a
+ * semicolon and space.
+ *
+ * @param   a   Log message in format <tt>("string\n" [, args])</tt>.
  */
-#define LogFunc(m) \
-    do { Log((LOG_FN_FMT ": ", __PRETTY_FUNCTION__)); Log(m); } while (0)
+#ifdef LOG_USE_C99
+# define LogFunc(a) \
+    _LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_LEVEL_1, LOG_GROUP, LOG_FN_FMT ": %M", __PRETTY_FUNCTION__, _LogRemoveParentheseis a )
+#else
+# define LogFunc(a) \
+    do { Log((LOG_FN_FMT ": ", __PRETTY_FUNCTION__)); Log(a); } while (0)
+#endif
 
 /** @def LogThisFunc
  * The same as LogFunc but for class functions (methods): the resulting log
- * line is additionally perpended with a hex value of |this| pointer.
- * @param m    log message in format <tt>("string\n" [, args])</tt>
- * @todo use a Log macro with a variable argument list (requires MSVC8) to
- * join two separate Log* calls and make this op atomic
+ * line is additionally prepended with a hex value of |this| pointer.
+ *
+ * @param   a   Log message in format <tt>("string\n" [, args])</tt>.
  */
-#define LogThisFunc(m) \
-    do { Log(("{%p} " LOG_FN_FMT ": ", this, __PRETTY_FUNCTION__)); Log(m); } while (0)
+#ifdef LOG_USE_C99
+# define LogThisFunc(a) \
+    _LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_LEVEL_1, LOG_GROUP, "{%p} " LOG_FN_FMT ": %M", this, __PRETTY_FUNCTION__, _LogRemoveParentheseis a )
+#else
+# define LogThisFunc(a) \
+    do { Log(("{%p} " LOG_FN_FMT ": ", this, __PRETTY_FUNCTION__)); Log(a); } while (0)
+#endif
 
 /** @def LogFlowFunc
  * Macro to log the execution flow inside C/C++ functions.
- * Prepends the given log message with the function name followed by a semicolon
- * and space.
- * @param m    log message in format <tt>("string\n" [, args])</tt>
- * @todo use a Log macro with a variable argument list (requires MSVC8) to
- * join two separate Log* calls and make this op atomic
+ *
+ * Prepends the given log message with the function name followed by
+ * a semicolon and space.
+ *
+ * @param   a   Log message in format <tt>("string\n" [, args])</tt>.
  */
-#define LogFlowFunc(m) \
-    do { LogFlow((LOG_FN_FMT ": ", __PRETTY_FUNCTION__)); LogFlow(m); } while (0)
+#ifdef LOG_USE_C99
+# define LogFlowFunc(a) \
+    _LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_FLOW, LOG_GROUP, LOG_FN_FMT ": %M", __PRETTY_FUNCTION__, _LogRemoveParentheseis a )
+#else
+# define LogFlowFunc(a) \
+    do { LogFlow((LOG_FN_FMT ": ", __PRETTY_FUNCTION__)); LogFlow(a); } while (0)
+#endif
 
 /** @def LogWarningFunc
  * The same as LogWarning(), but prepents the log message with the function name.
- * @param m    log message in format <tt>("string\n" [, args])</tt>
- * @todo use a Log macro with a variable argument list (requires MSVC8) to
- * join two separate Log* calls and make this op atomic
+ *
+ * @param   a   Log message in format <tt>("string\n" [, args])</tt>.
  */
-#define LogWarningFunc(m) \
-    do { Log((LOG_FN_FMT ": WARNING! ", __PRETTY_FUNCTION__)); Log(m); } while (0)
+#ifdef LOG_USE_C99
+# define LogWarningFunc(a) \
+    _LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_LEVEL_1, LOG_GROUP, LOG_FN_FMT ": WARNING! %M", __PRETTY_FUNCTION__, _LogRemoveParentheseis a )
+#else
+# define LogWarningFunc(a) \
+    do { Log((LOG_FN_FMT ": WARNING! ", __PRETTY_FUNCTION__)); Log(a); } while (0)
+#endif
 
 /** @def LogFlowThisFunc
  * The same as LogFlowFunc but for class functions (methods): the resulting log
- * line is additionally perpended with a hex value of |this| pointer.
- * @param m    log message in format <tt>("string\n" [, args])</tt>
- * @todo use a Log macro with a variable argument list (requires MSVC8) to
- * join two separate Log* calls and make this op atomic
+ * line is additionally prepended with a hex value of |this| pointer.
+ *
+ * @param   a   Log message in format <tt>("string\n" [, args])</tt>.
  */
-#define LogFlowThisFunc(m) \
-    do { LogFlow(("{%p} " LOG_FN_FMT ": ", this, __PRETTY_FUNCTION__)); LogFlow(m); } while (0)
+#ifdef LOG_USE_C99
+# define LogFlowThisFunc(a) \
+    _LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_FLOW, LOG_GROUP, "{%p} " LOG_FN_FMT ": %M", this, __PRETTY_FUNCTION__, _LogRemoveParentheseis a )
+#else
+# define LogFlowThisFunc(a) \
+    do { LogFlow(("{%p} " LOG_FN_FMT ": ", this, __PRETTY_FUNCTION__)); LogFlow(a); } while (0)
+#endif
 
 /** @def LogWarningThisFunc
  * The same as LogWarningFunc() but for class functions (methods): the resulting
- * log line is additionally perpended with a hex value of |this| pointer.
- * @param m    log message in format <tt>("string\n" [, args])</tt>
- * @todo use a Log macro with a variable argument list (requires MSVC8) to
- * join two separate Log* calls and make this op atomic
+ * log line is additionally prepended with a hex value of |this| pointer.
+ *
+ * @param   a   Log message in format <tt>("string\n" [, args])</tt>.
  */
-#define LogWarningThisFunc(m) \
-    do { Log(("{%p} " LOG_FN_FMT ": WARNING! ", this, __PRETTY_FUNCTION__)); Log(m); } while (0)
+#ifdef LOG_USE_C99
+# define LogWarningThisFunc(a) \
+    _LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_LEVEL_1, LOG_GROUP, "{%p} " LOG_FN_FMT ": WARNING! %M", this, __PRETTY_FUNCTION__, _LogRemoveParentheseis a )
+#else
+# define LogWarningThisFunc(a) \
+    do { Log(("{%p} " LOG_FN_FMT ": WARNING! ", this, __PRETTY_FUNCTION__)); Log(a); } while (0)
+#endif
 
-/** Shortcut to |LogFlowFunc ("ENTER\n")|, marks the beginnig of the function */
+/** Shortcut to |LogFlowFunc ("ENTER\n")|, marks the beginnig of the function. */
 #define LogFlowFuncEnter()      LogFlowFunc(("ENTER\n"))
 
-/** Shortcut to |LogFlowFunc ("LEAVE\n")|, marks the end of the function */
+/** Shortcut to |LogFlowFunc ("LEAVE\n")|, marks the end of the function. */
 #define LogFlowFuncLeave()      LogFlowFunc(("LEAVE\n"))
 
-/** Shortcut to |LogFlowThisFunc ("ENTER\n")|, marks the beginnig of the function */
+/** Shortcut to |LogFlowThisFunc ("ENTER\n")|, marks the beginnig of the function. */
 #define LogFlowThisFuncEnter()  LogFlowThisFunc(("ENTER\n"))
 
-/** Shortcut to |LogFlowThisFunc ("LEAVE\n")|, marks the end of the function */
+/** Shortcut to |LogFlowThisFunc ("LEAVE\n")|, marks the end of the function. */
 #define LogFlowThisFuncLeave()  LogFlowThisFunc(("LEAVE\n"))
 
 /** @def LogObjRefCnt
  * Helper macro to print the current reference count of the given COM object
  * to the log file.
- * @param obj  object in question (must be a pointer to an IUnknown subclass
- *             or simply define COM-style AddRef() and Release() methods)
+ *
+ * @param pObj  Pointer to the object in question (must be a pointer to an
+ *              IUnknown subclass or simply define COM-style AddRef() and
+ *              Release() methods)
+ *
  * @note Use it only for temporary debugging. It leaves dummy code even if
  *       logging is disabled.
  */
-#define LogObjRefCnt(obj) \
+#define LogObjRefCnt(pObj) \
     do { \
-        int refc = (obj)->AddRef(); -- refc; \
-        LogFlow((#obj "{%p}.refCnt=%d\n", (obj), refc)); \
-        (obj)->Release(); \
+        int refc = (pObj)->AddRef(); \
+        LogFlow((#pObj "{%p}.refCnt=%d\n", (pObj), refc - 1)); \
+        (pObj)->Release(); \
     } while (0)
 
 
@@ -720,7 +790,7 @@ RTDECL(void) RTLogPrintfEx(void *pvInstance, unsigned fFlags, unsigned iGroup, c
 /** @def LogIt
  * Write to specific logger if group enabled.
  */
-#if defined(RT_ARCH_AMD64) || defined(LOG_USE_C99)
+#if defined(LOG_USE_C99)
 # define _LogRelRemoveParentheseis(...)                __VA_ARGS__
 #  define _LogRelIt(pvInst, fFlags, iGroup, ...)       RTLogLoggerEx((PRTLOGGER)pvInst, fFlags, iGroup, __VA_ARGS__)
 #  define LogRelIt(pvInst, fFlags, iGroup, fmtargs) \
@@ -791,7 +861,7 @@ RTDECL(void) RTLogPrintfEx(void *pvInstance, unsigned fFlags, unsigned iGroup, c
 
 /** @def LogRelThisFunc
  * The same as LogRelFunc but for class functions (methods): the resulting log
- * line is additionally perpended with a hex value of |this| pointer.
+ * line is additionally prepended with a hex value of |this| pointer.
  */
 #define LogRelThisFunc(a) \
     do { LogRel(("{%p} " LOG_FN_FMT ": ", this, __PRETTY_FUNCTION__)); LogRel(a); } while (0)

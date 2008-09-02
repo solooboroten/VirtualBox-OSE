@@ -146,6 +146,10 @@ typedef struct _VBOXRec
     DGAModePtr pDGAMode;
     int nDGAMode;
     CloseScreenProcPtr CloseScreen;
+    /** Default X server procedure for enabling and disabling framebuffer access */
+    xf86EnableDisableFBAccessProc *EnableDisableFBAccess;
+    /** Is access to the framebuffer currently allowed? */
+    Bool accessEnabled;
     OptionInfoPtr Options;
     IOADDRESS ioBase;
     VMMDevReqMousePointer *reqp;
@@ -153,7 +157,11 @@ typedef struct _VBOXRec
     size_t pointerHeaderSize;
     size_t pointerSize;
     Bool pointerOffscreen;
+    Bool usingHWCursor;
     Bool useDevice;
+    /** Are we currently switched to a virtual terminal?  If so, it is not
+     * safe to touch the hardware. */
+    Bool vtSwitch;
     Bool useVbva;
     VMMDevMemory *pVMMDevMemory;
     VBVAMEMORY *pVbvaMemory;
@@ -163,6 +171,7 @@ extern Bool vbox_init(int scrnIndex, VBOXPtr pVBox);
 extern Bool vbox_cursor_init (ScreenPtr pScreen);
 extern Bool vbox_open (ScrnInfoPtr pScrn, ScreenPtr pScreen, VBOXPtr pVBox);
 extern void vbox_close (ScrnInfoPtr pScrn, VBOXPtr pVBox);
+extern Bool vbox_device_available(VBOXPtr pVBox);
 
 extern Bool vboxEnableVbva(ScrnInfoPtr pScrn);
 extern Bool vboxDisableVbva(ScrnInfoPtr pScrn);

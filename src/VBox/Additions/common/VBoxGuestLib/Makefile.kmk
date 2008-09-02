@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8155 2008-04-18 15:16:47Z vboxsync $
+# $Id: Makefile.kmk 31158 2008-05-23 06:48:50Z frank $
 ## @file
 # Sub-Makefile for the common guest addition code library.
 #
@@ -21,19 +21,19 @@
 
 DEPTH ?= ../../../../..
 SUB_DEPTH = ../..
-include	$(PATH_KBUILD)/subheader.kmk
+include	$(KBUILD_PATH)/subheader.kmk
 
 #
 # Target config.
 #
-ifn1of ($(BUILD_TARGET),l4 linux win)
+ifn1of ($(KBUILD_TARGET),l4 linux win)
  LIBRARIES += \
 	VBoxGuestR0Lib \
 	VBoxGuestR0LibBase
  LIBRARIES += \
 	VBoxGuestR3Lib \
 	VBoxGuestR3LibShared
- if1of ($(BUILD_TARGET),freebsd linux netbsd openbsd)
+ if1of ($(KBUILD_TARGET),freebsd linux netbsd openbsd)
   LIBRARIES += \
   	VBoxGuestR3LibXFree86
  endif
@@ -57,11 +57,16 @@ else
   	VBoxGuestR3Lib \
 	VBoxGuestR3LibShared \
   	VBoxGuestR3LibXFree86
+ else ifdef VBOX_WITH_X11_ADDITIONS
+   LIBRARIES += \
+  	VBoxGuestR3Lib \
+	VBoxGuestR3LibShared \
+  	VBoxGuestR3LibXFree86
  endif
 endif
 
 ifndef VBOX_WITH_ADDITION_DRIVERS
- if1of ($(BUILD_TARGET), linux l4) # All drivers are optional, can skip RuntimeGuestR0.
+ if1of ($(KBUILD_TARGET), linux l4) # All drivers are optional, can skip RuntimeGuestR0.
   LIBRARIES := $(filter-out VBoxGuestR0Lib VBoxGuestR0LibBase, $(LIBRARIES))
  endif
 endif
@@ -172,5 +177,5 @@ VBoxGuestLibBase_DEFS.win   = $(VBoxGuestLib_DEFS.win)
 #VBoxGuestLibBase_DEFS      += LOG_ENABLED
 
 
-include	$(PATH_KBUILD)/subfooter.kmk
+include	$(KBUILD_PATH)/subfooter.kmk
 

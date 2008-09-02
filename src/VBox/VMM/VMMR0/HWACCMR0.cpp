@@ -1,4 +1,4 @@
-/* $Id: HWACCMR0.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: HWACCMR0.cpp 31085 2008-05-21 10:17:41Z sandervl $ */
 /** @file
  * HWACCM - Host Context Ring 0.
  */
@@ -56,14 +56,10 @@ static              int   hwaccmr0CheckCpuRcArray(int *paRc, unsigned cErrorCode
 /*******************************************************************************
 *   Local Variables                                                            *
 *******************************************************************************/
+
 static struct
 {
-    struct
-    {
-        RTR0MEMOBJ  pMemObj;
-        bool        fVMXConfigured;
-        bool        fSVMConfigured;
-    } aCpuInfo[RTCPUSET_MAX_CPUS];
+    HWACCM_CPUINFO aCpuInfo[RTCPUSET_MAX_CPUS];
 
     struct
     {
@@ -102,6 +98,9 @@ static struct
 
         /** Maximum ASID allowed. */
         uint32_t                    u32MaxASID;
+
+        /** SVM feature bits from cpuid 0x8000000a */
+        uint32_t                    u32Features;
     } svm;
     /** Saved error from detection */
     int32_t         lLastError;
@@ -181,6 +180,10 @@ HWACCMR0DECL(int) HWACCMR0Init()
                     if (   (HWACCMR0Globals.vmx.msr.feature_ctrl & (MSR_IA32_FEATURE_CONTROL_VMXON|MSR_IA32_FEATURE_CONTROL_LOCK))
                                                                 == (MSR_IA32_FEATURE_CONTROL_VMXON|MSR_IA32_FEATURE_CONTROL_LOCK))
                     {
+                        RTR0MEMOBJ pScatchMemObj;
+                        void      *pvScatchPage;
+                        RTHCPHYS   pScatchPagePhys;
+
                         HWACCMR0Globals.vmx.fSupported          = true;
                         HWACCMR0Globals.vmx.msr.vmx_basic_info  = ASMRdMsr(MSR_IA32_VMX_BASIC_INFO);
                         HWACCMR0Globals.vmx.msr.vmx_pin_ctls    = ASMRdMsr(MSR_IA32_VMX_PINBASED_CTLS);
@@ -194,11 +197,6 @@ HWACCMR0DECL(int) HWACCMR0Init()
                         HWACCMR0Globals.vmx.msr.vmx_cr4_fixed1  = ASMRdMsr(MSR_IA32_VMX_CR4_FIXED1);
                         HWACCMR0Globals.vmx.msr.vmx_vmcs_enum   = ASMRdMsr(MSR_IA32_VMX_VMCS_ENUM);
                         HWACCMR0Globals.vmx.hostCR4             = ASMGetCR4();
-
-#if HC_ARCH_BITS == 64
-                        RTR0MEMOBJ pScatchMemObj;
-                        void      *pvScatchPage;
-                        RTHCPHYS   pScatchPagePhys;
 
                         rc = RTR0MemObjAllocCont(&pScatchMemObj, 1 << PAGE_SHIFT, true /* executable R0 mapping */);
                         if (RT_FAILURE(rc))
@@ -231,7 +229,7 @@ HWACCMR0DECL(int) HWACCMR0Init()
                         {
                             /* KVM leaves the CPU in VMX root mode. Not only is this not allowed, it will crash the host when we enter raw mode, because
                              * (a) clearing X86_CR4_VMXE in CR4 causes a #GP    (we no longer modify this bit)
-                             * (b) turning off paging causes a #GP              (unavoidable when switching from long to 32 bits mode)
+                             * (b) turning off paging causes a #GP              (unavoidable when switching from long to 32 bits mode or 32 bits to PAE)
                              *
                              * They should fix their code, but until they do we simply refuse to run.
                              */
@@ -246,7 +244,8 @@ HWACCMR0DECL(int) HWACCMR0Init()
                         ASMSetFlags(fFlags);
 
                         RTR0MemObjFree(pScatchMemObj, false);
-#endif
+                        if (VBOX_FAILURE(HWACCMR0Globals.lLastError))
+                            return HWACCMR0Globals.lLastError ;
                     }
                     else
                     {
@@ -294,7 +293,7 @@ HWACCMR0DECL(int) HWACCMR0Init()
                 if (VBOX_SUCCESS(rc))
                 {
                     /* Query AMD features. */
-                    ASMCpuId(0x8000000A, &HWACCMR0Globals.svm.u32Rev, &HWACCMR0Globals.svm.u32MaxASID, &u32Dummy, &u32Dummy);
+                    ASMCpuId(0x8000000A, &HWACCMR0Globals.svm.u32Rev, &HWACCMR0Globals.svm.u32MaxASID, &u32Dummy, &HWACCMR0Globals.svm.u32Features);
 
                     HWACCMR0Globals.svm.fSupported = true;
                 }
@@ -511,14 +510,17 @@ HWACCMR0DECL(int) HWACCMR0EnableAllCpus(PVM pVM, HWACCMSTATE enmNewHwAccmState)
  */
 static DECLCALLBACK(void) HWACCMR0EnableCPU(RTCPUID idCpu, void *pvUser1, void *pvUser2)
 {
-    PVM      pVM = (PVM)pvUser1;
-    int     *paRc = (int *)pvUser2;
-    void    *pvPageCpu;
-    RTHCPHYS pPageCpuPhys;
+    PVM             pVM = (PVM)pvUser1;
+    int            *paRc = (int *)pvUser2;
+    void           *pvPageCpu;
+    RTHCPHYS        pPageCpuPhys;
+    PHWACCM_CPUINFO pCpu = &HWACCMR0Globals.aCpuInfo[idCpu];
 
     Assert(pVM);
     Assert(idCpu == (RTCPUID)RTMpCpuIdToSetIndex(idCpu)); /// @todo fix idCpu == index assumption (rainy day)
     Assert(idCpu < RT_ELEMENTS(HWACCMR0Globals.aCpuInfo));
+
+    pCpu->idCpu = idCpu;
 
     /* Should never happen */
     if (!HWACCMR0Globals.aCpuInfo[idCpu].pMemObj)
@@ -532,7 +534,7 @@ static DECLCALLBACK(void) HWACCMR0EnableCPU(RTCPUID idCpu, void *pvUser1, void *
 
     if (pVM->hwaccm.s.vmx.fSupported)
     {
-        paRc[idCpu] = VMXR0EnableCpu(idCpu, pVM, pvPageCpu, pPageCpuPhys);
+        paRc[idCpu] = VMXR0EnableCpu(pCpu, pVM, pvPageCpu, pPageCpuPhys);
         AssertRC(paRc[idCpu]);
         if (VBOX_SUCCESS(paRc[idCpu]))
             HWACCMR0Globals.aCpuInfo[idCpu].fVMXConfigured = true;
@@ -540,7 +542,7 @@ static DECLCALLBACK(void) HWACCMR0EnableCPU(RTCPUID idCpu, void *pvUser1, void *
     else
     if (pVM->hwaccm.s.svm.fSupported)
     {
-        paRc[idCpu] = SVMR0EnableCpu(idCpu, pVM, pvPageCpu, pPageCpuPhys);
+        paRc[idCpu] = SVMR0EnableCpu(pCpu, pVM, pvPageCpu, pPageCpuPhys);
         AssertRC(paRc[idCpu]);
         if (VBOX_SUCCESS(paRc[idCpu]))
             HWACCMR0Globals.aCpuInfo[idCpu].fSVMConfigured = true;
@@ -573,14 +575,14 @@ static DECLCALLBACK(void) HWACCMR0DisableCPU(RTCPUID idCpu, void *pvUser1, void 
 
     if (HWACCMR0Globals.aCpuInfo[idCpu].fVMXConfigured)
     {
-        paRc[idCpu] = VMXR0DisableCpu(idCpu, pvPageCpu, pPageCpuPhys);
+        paRc[idCpu] = VMXR0DisableCpu(&HWACCMR0Globals.aCpuInfo[idCpu], pvPageCpu, pPageCpuPhys);
         AssertRC(paRc[idCpu]);
         HWACCMR0Globals.aCpuInfo[idCpu].fVMXConfigured = false;
     }
     else
     if (HWACCMR0Globals.aCpuInfo[idCpu].fSVMConfigured)
     {
-        paRc[idCpu] = SVMR0DisableCpu(idCpu, pvPageCpu, pPageCpuPhys);
+        paRc[idCpu] = SVMR0DisableCpu(&HWACCMR0Globals.aCpuInfo[idCpu], pvPageCpu, pPageCpuPhys);
         AssertRC(paRc[idCpu]);
         HWACCMR0Globals.aCpuInfo[idCpu].fSVMConfigured = false;
     }
@@ -625,6 +627,7 @@ HWACCMR0DECL(int) HWACCMR0InitVM(PVM pVM)
     pVM->hwaccm.s.vmx.msr.vmx_vmcs_enum     = HWACCMR0Globals.vmx.msr.vmx_vmcs_enum;
     pVM->hwaccm.s.svm.u32Rev                = HWACCMR0Globals.svm.u32Rev;
     pVM->hwaccm.s.svm.u32MaxASID            = HWACCMR0Globals.svm.u32MaxASID;
+    pVM->hwaccm.s.svm.u32Features           = HWACCMR0Globals.svm.u32Features;
     pVM->hwaccm.s.cpuid.u32AMDFeatureECX    = HWACCMR0Globals.cpuid.u32AMDFeatureECX;
     pVM->hwaccm.s.cpuid.u32AMDFeatureEDX    = HWACCMR0Globals.cpuid.u32AMDFeatureEDX;
     pVM->hwaccm.s.lLastError                = HWACCMR0Globals.lLastError;
@@ -704,6 +707,7 @@ HWACCMR0DECL(int) HWACCMR0Enter(PVM pVM)
 {
     CPUMCTX *pCtx;
     int      rc;
+    RTCPUID  idCpu = RTMpCpuId();
 
     rc = CPUMQueryGuestCtxPtr(pVM, &pCtx);
     if (VBOX_FAILURE(rc))
@@ -729,7 +733,7 @@ HWACCMR0DECL(int) HWACCMR0Enter(PVM pVM)
     else
     {
         Assert(pVM->hwaccm.s.svm.fSupported);
-        rc  = SVMR0Enter(pVM);
+        rc  = SVMR0Enter(pVM, &HWACCMR0Globals.aCpuInfo[idCpu]);
         AssertRC(rc);
         rc |= SVMR0LoadGuestState(pVM, pCtx);
         AssertRC(rc);
@@ -792,6 +796,7 @@ HWACCMR0DECL(int) HWACCMR0RunGuestCode(PVM pVM)
 {
     CPUMCTX *pCtx;
     int      rc;
+    RTCPUID  idCpu = RTMpCpuId();
 
     rc = CPUMQueryGuestCtxPtr(pVM, &pCtx);
     if (VBOX_FAILURE(rc))
@@ -799,12 +804,12 @@ HWACCMR0DECL(int) HWACCMR0RunGuestCode(PVM pVM)
 
     if (pVM->hwaccm.s.vmx.fSupported)
     {
-        return VMXR0RunGuestCode(pVM, pCtx);
+        return VMXR0RunGuestCode(pVM, pCtx, &HWACCMR0Globals.aCpuInfo[idCpu]);
     }
     else
     {
         Assert(pVM->hwaccm.s.svm.fSupported);
-        return SVMR0RunGuestCode(pVM, pCtx);
+        return SVMR0RunGuestCode(pVM, pCtx, &HWACCMR0Globals.aCpuInfo[idCpu]);
     }
 }
 

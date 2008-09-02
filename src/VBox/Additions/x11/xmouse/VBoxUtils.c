@@ -28,12 +28,24 @@
 #include "xf86_ansic.h"
 #include "compiler.h"
 
+/**
+ * Have we ever failed to open the VBox device?  This is an ugly hack
+ * to prevent the driver from being accessed when it is not open, as
+ * I can't see anywhere good to store additional information in the driver
+ * private data.
+ */
+static Bool gDeviceOpenFailed = FALSE;
+
 int VBoxMouseInit(void)
 {
-    int rc = VbglR3Init();
+    int rc;
+    if (gDeviceOpenFailed)
+        return 1;
+    rc = VbglR3Init();
     if (RT_FAILURE(rc))
     {
-        ErrorF("VbglR3Init failed.\n");
+        ErrorF("Failed to open the VirtualBox device, falling back to compatibility mouse mode.\n");
+        gDeviceOpenFailed = TRUE;
         return 1;
     }
 
@@ -42,6 +54,8 @@ int VBoxMouseInit(void)
     {
         ErrorF("Error sending mouse pointer capabilities to VMM! rc = %d (%s)\n",
                errno, strerror(errno));
+        gDeviceOpenFailed = TRUE;
+        VbglR3Term();
         return 1;
     }
     xf86Msg(X_INFO, "VirtualBox mouse pointer integration available.\n");
@@ -49,28 +63,42 @@ int VBoxMouseInit(void)
 }
 
 
-int VBoxMouseQueryPosition(unsigned int *puAbsXPos, unsigned int *puAbsYPos)
+/**
+ * Query the absolute mouse position from the host
+ * @returns VINF_SUCCESS or iprt error if the absolute values could not
+ *          be queried, or the host wished to use relative coordinates
+ * @param   pcx  where to return the pointer X coordinate
+ * @param   pxy  where to return the pointer Y coordinate
+ */
+int VBoxMouseQueryPosition(unsigned int *pcx, unsigned int *pcy)
 {
-    int rc;
-    uint32_t pointerXPos;
-    uint32_t pointerYPos;
+    int rc = VINF_SUCCESS;
+    uint32_t cx, cy, fFeatures;
 
-    AssertPtrReturn(puAbsXPos, VERR_INVALID_PARAMETER);
-    AssertPtrReturn(puAbsYPos, VERR_INVALID_PARAMETER);
-    rc = VbglR3GetMouseStatus(NULL, &pointerXPos, &pointerYPos);
-    if (VBOX_SUCCESS(rc))
+    AssertPtrReturn(pcx, VERR_INVALID_PARAMETER);
+    AssertPtrReturn(pcy, VERR_INVALID_PARAMETER);
+    if (gDeviceOpenFailed)
+        rc = VERR_ACCESS_DENIED;
+    if (RT_SUCCESS(rc))
+        rc = VbglR3GetMouseStatus(&fFeatures, &cx, &cy);
+    else
+        ErrorF("Error querying host mouse position! rc = %d\n", rc);
+    if (   RT_SUCCESS(rc)
+        && !(fFeatures & VBOXGUEST_MOUSE_HOST_CAN_ABSOLUTE))
+        rc = VERR_NOT_SUPPORTED;
+    if (RT_SUCCESS(rc))
     {
-        *puAbsXPos = pointerXPos;
-        *puAbsYPos = pointerYPos;
-        return 0;
+        *pcx = cx;
+        *pcy = cy;
     }
-    ErrorF("Error querying host mouse position! rc = %d\n", rc);
-    return 2;
+    return rc;
 }
 
 
 int VBoxMouseFini(void)
 {
+    if (gDeviceOpenFailed)
+        return VINF_SUCCESS;
     int rc = VbglR3SetMouseStatus(0);
     VbglR3Term();
     return rc;

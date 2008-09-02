@@ -1,5 +1,5 @@
 #ifdef VBOX
-/* $Id: DevAPIC.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: DevAPIC.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * Advanced Programmable Interrupt Controller (APIC) Device and
  * I/O Advanced Programmable Interrupt Controller (IO-APIC) Device.

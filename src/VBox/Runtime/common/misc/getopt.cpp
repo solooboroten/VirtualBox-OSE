@@ -1,4 +1,4 @@
-/* $Id: getopt.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
+/* $Id: getopt.cpp 30985 2008-05-19 17:43:01Z bird $ */
 /** @file
  * IPRT - Command Line Parsing
  */
@@ -54,6 +54,7 @@ RTDECL(int) RTGetOpt(int argc, char **argv, PCRTOPTIONDEF paOptions, size_t cOpt
 
     if (*pszArgThis == '-')
     {
+/** @todo implement '--'. */
         for (size_t i = 0; i < cOptions; i++)
         {
             Assert(!(paOptions[i].fFlags & ~RTGETOPT_VALID_MASK));
@@ -190,11 +191,18 @@ RTDECL(int) RTGetOpt(int argc, char **argv, PCRTOPTIONDEF paOptions, size_t cOpt
                 return paOptions[i].iShort;
             }
         }
+
+
+        return VERR_GETOPT_UNKNOWN_OPTION;
     }
 
+    /*
+     * Not an option.
+     */
+    (*piThis)--;
     /** @todo Sort options and arguments (i.e. stuff that doesn't start with '-'), stop when
      * encountering the first argument. */
 
-    return VERR_GETOPT_UNKNOWN_OPTION;
+    return 0;
 }
 

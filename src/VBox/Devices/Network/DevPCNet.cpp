@@ -1,4 +1,4 @@
-/* $Id: DevPCNet.cpp 8314 2008-04-23 07:20:31Z vboxsync $ */
+/* $Id: DevPCNet.cpp 30539 2008-05-06 10:01:36Z bird $ */
 /** @file
  * AMD PCnet-PCI II / PCnet-FAST III (Am79C970A / Am79C973) Ethernet Controller Emulation.
  */
@@ -599,6 +599,7 @@ AssertCompileSize(RMD, 16);
 #if defined(PCNET_QUEUE_SEND_PACKETS) && defined(IN_RING3)
 static int pcnetSyncTransmit(PCNetState *pData);
 #endif
+static void pcnetPollTimerStart(PCNetState *pData);
 
 /**
  * Load transmit message descriptor
@@ -1532,7 +1533,7 @@ static void pcnetInit(PCNetState *pData)
         if (pcnetRmdLoad(pData, &rmd, PHYSADDR(pData, addr), false))
             cbRxBuffers += 4096-rmd.rmd1.bcnt;
     }
-    
+
     /*
      * Heuristics: The Solaris pcn driver allocates too few RX buffers (128 buffers of a
      * size of 128 bytes are 16KB in summary) leading to frequent RX buffer overflows. In
@@ -1580,6 +1581,7 @@ static void pcnetStart(PCNetState *pData)
     pcnetEnablePrivateIf(pData);
     pData->aCSR[0] &= ~0x0004;       /* clear STOP bit */
     pData->aCSR[0] |=  0x0002;       /* STRT */
+    pcnetPollTimerStart(pData);      /* start timer if it was stopped */
 }
 
 /**
@@ -2531,8 +2533,19 @@ static void pcnetPollRxTx(PCNetState *pData)
 
 
 /**
- * Update the poller timer
- * @thread EMT,
+ * Start the poller timer.
+ * Poll timer interval is fixed to 500Hz. Don't stop it.
+ * @thread EMT, TAP.
+ */
+static void pcnetPollTimerStart(PCNetState *pData)
+{
+    TMTimerSetMillies(pData->CTXSUFF(pTimerPoll), 2);
+}
+
+
+/**
+ * Update the poller timer.
+ * @thread EMT.
  */
 static void pcnetPollTimer(PCNetState *pData)
 {
@@ -2564,7 +2577,13 @@ static void pcnetPollTimer(PCNetState *pData)
 
     pcnetUpdateIrq(pData);
 
-    if (RT_LIKELY(!CSR_STOP(pData) && !CSR_SPND(pData) && !CSR_DPOLL(pData)))
+    /* If the receive thread is waiting for new descriptors, poll TX/RX even if polling
+     * disabled. We wouldn't need to poll for new TX descriptors in that case but it will
+     * not hurt as waiting for RX descriptors should occur very seldom */
+    if (RT_LIKELY(   !CSR_STOP(pData)
+                  && !CSR_SPND(pData)
+                  && (   !CSR_DPOLL(pData)
+                      || pData->fMaybeOutOfSpace)))
     {
         /* We ensure that we poll at least every 2ms (500Hz) but not more often than
          * 5000 times per second. This way we completely prevent the overhead from
@@ -2582,10 +2601,7 @@ static void pcnetPollTimer(PCNetState *pData)
             pcnetPollRxTx(pData);
         }
         if (!TMTimerIsActive(pData->CTXSUFF(pTimerPoll)))
-            /* Poll timer interval is fixed to 500Hz. Don't stop it. */
-            TMTimerSet(pData->CTXSUFF(pTimerPoll),
-                       TMTimerGet(pData->CTXSUFF(pTimerPoll))
-                       + TMTimerFromMilli(pData->CTXSUFF(pTimerPoll), 2));
+            pcnetPollTimerStart(pData);
 #endif
     }
     STAM_PROFILE_ADV_STOP(&pData->StatPollTimer, a);
@@ -4326,6 +4342,12 @@ static DECLCALLBACK(int) pcnetWaitReceiveAvail(PPDMINETWORKPORT pInterface, unsi
             break;
         }
         LogFlow(("pcnetWaitReceiveAvail: waiting cMillies=%u...\n", cMillies));
+        /* Start the poll timer once which will remain active as long fMaybeOutOfSpace
+         * is true -- even if (transmit) polling is disabled (CSR_DPOLL). */
+        rc2 = PDMCritSectEnter(&pData->CritSect, VERR_SEM_BUSY);
+        AssertReleaseRC(rc2);
+        pcnetPollTimerStart(pData);
+        PDMCritSectLeave(&pData->CritSect);
         RTSemEventWait(pData->hEventOutOfRxSpace, cMillies);
     }
     STAM_PROFILE_STOP(&pData->StatRxOverflow, a);

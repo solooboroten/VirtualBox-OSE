@@ -28,6 +28,7 @@
 #include "VBoxProblemReporter.h"
 #include "QIHotKeyEdit.h"
 #include "QIMessageBox.h"
+#include "QIDialogButtonBox.h"
 
 #ifdef VBOX_WITH_REGISTRATION
 #include "VBoxRegistrationDlg.h"
@@ -35,7 +36,6 @@
 
 /* Qt includes */
 #include <QLibraryInfo>
-#include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QToolTip>
 #include <QTranslator>
@@ -46,6 +46,10 @@
 #include <QThread>
 
 #ifdef Q_WS_X11
+#ifndef VBOX_OSE
+# include "VBoxLicenseViewer.h"
+#endif /* VBOX_OSE */
+
 #include <QTextBrowser>
 #include <QScrollBar>
 #include <QX11Info>
@@ -221,7 +225,7 @@ public:
                     if (mIsRegDlgOwner)
                     {
                         if (sVal.isEmpty() ||
-                            sVal == QString ("%1").arg ((long)qApp->mainWidget()->winId()))
+                            sVal == QString ("%1").arg (static_cast<long> (vboxGlobal().mainWindow()->winId())))
                             *allowChange = TRUE;
                         else
                             *allowChange = FALSE;
@@ -271,7 +275,7 @@ public:
                         mIsRegDlgOwner = false;
                         QApplication::postEvent (&mGlobal, new VBoxCanShowRegDlgEvent (true));
                     }
-                    else if (sVal == QString ("%1").arg ((long) qApp->mainWidget()->winId()))
+                    else if (sVal == QString ("%1").arg (static_cast<long> (vboxGlobal().mainWindow()->winId())))
                     {
                         mIsRegDlgOwner = true;
                         QApplication::postEvent (&mGlobal, new VBoxCanShowRegDlgEvent (true));
@@ -279,6 +283,8 @@ public:
                     else
                         QApplication::postEvent (&mGlobal, new VBoxCanShowRegDlgEvent (false));
                 }
+                if (sKey == "GUI/LanguageID")
+                    QApplication::postEvent (&mGlobal, new VBoxChangeGUILanguageEvent (sVal));
 
                 mMutex.lock();
                 mGlobal.gset.setPublicProperty (sKey, sVal);
@@ -542,116 +548,6 @@ private:
 
 #endif /* Q_WS_WIN */
 
-#ifdef Q_WS_X11
-/**
- *  This class is used to show a user license under linux.
- */
-class VBoxLicenseViewer : public QDialog
-{
-    Q_OBJECT
-
-public:
-
-    VBoxLicenseViewer (const QString &aFilePath)
-        : QDialog ()
-        , mFilePath (aFilePath)
-        , mLicenseText (0), mAgreeButton (0), mDisagreeButton (0)
-    {
-        setWindowTitle ("VirtualBox License");
-
-#ifndef Q_WS_WIN
-       /* Application icon. On Win32, it's built-in to the executable. */
-        setWindowIcon (QIcon (":/VirtualBox_48px.png"));
-#endif
-
-        mLicenseText = new QTextBrowser (this);
-        mAgreeButton = new QPushButton (tr ("I &Agree"), this);
-        mDisagreeButton = new QPushButton (tr ("I &Disagree"), this);
-        QDialogButtonBox *dbb = new QDialogButtonBox (this);
-        dbb->addButton (mAgreeButton, QDialogButtonBox::AcceptRole);
-        dbb->addButton (mDisagreeButton, QDialogButtonBox::RejectRole);
-
-        connect (mLicenseText->verticalScrollBar(), SIGNAL (valueChanged (int)),
-                 SLOT (onScrollBarMoving (int)));
-        connect (mAgreeButton, SIGNAL (clicked()), SLOT (accept()));
-        connect (mDisagreeButton, SIGNAL (clicked()), SLOT (reject()));
-
-        QVBoxLayout *mainLayout = new QVBoxLayout (this);
-        mainLayout->setSpacing (10);
-        VBoxGlobal::setLayoutMargin (mainLayout, 10);
-        mainLayout->addWidget (mLicenseText);
-        mainLayout->addWidget (dbb);
-
-        mLicenseText->verticalScrollBar()->installEventFilter (this);
-
-        resize (600, 450);
-    }
-
-public slots:
-
-    int exec()
-    {
-        /* read & show the license file */
-        QFile file (mFilePath);
-        if (file.open (QIODevice::ReadOnly))
-        {
-            mLicenseText->setText (file.readAll());
-            return QDialog::exec();
-        }
-        else
-        {
-            vboxProblem().cannotOpenLicenseFile (this, mFilePath);
-            return QDialog::Rejected;
-        }
-    }
-
-private slots:
-
-    void onScrollBarMoving (int aValue)
-    {
-        if (aValue == mLicenseText->verticalScrollBar()->maximum())
-            unlockButtons();
-    }
-
-    void unlockButtons()
-    {
-        mAgreeButton->setEnabled (true);
-        mDisagreeButton->setEnabled (true);
-    }
-
-private:
-
-    void showEvent (QShowEvent *aEvent)
-    {
-        QDialog::showEvent (aEvent);
-        bool isScrollBarHidden = mLicenseText->verticalScrollBar()->isHidden()
-                                 && !(windowState() & Qt::WindowMinimized);
-        mAgreeButton->setEnabled (isScrollBarHidden);
-        mDisagreeButton->setEnabled (isScrollBarHidden);
-    }
-
-    bool eventFilter (QObject *aObject, QEvent *aEvent)
-    {
-        switch (aEvent->type())
-        {
-            case QEvent::Hide:
-                if (aObject == mLicenseText->verticalScrollBar())
-                    /* Doesn't work on wm's like ion3 where the window starts
-                     * maximized: isActiveWindow() */
-                    unlockButtons();
-            default:
-                break;
-        }
-        return QDialog::eventFilter (aObject, aEvent);
-    }
-
-    QString       mFilePath;
-    QTextBrowser *mLicenseText;
-    QPushButton  *mAgreeButton;
-    QPushButton  *mDisagreeButton;
-};
-#endif
-
 
 // VBoxGlobal
 ////////////////////////////////////////////////////////////////////////////////
@@ -740,7 +636,7 @@ VBoxGlobal::VBoxGlobal()
     , sessionStates (KSessionState_COUNT)
     , deviceTypes (KDeviceType_COUNT)
     , storageBuses (KStorageBus_COUNT)
-    , storageBusDevices (3)
+    , storageBusDevices (2)
     , storageBusChannels (3)
     , diskTypes (KHardDiskType_COUNT)
     , diskStorageTypes (KHardDiskStorageType_COUNT)
@@ -969,50 +865,191 @@ QString VBoxGlobal::vmGuestOSTypeDescription (const QString &aId) const
     return QString::null;
 }
 
-QString VBoxGlobal::toString (KStorageBus t, LONG c, LONG d) const
-{
-    Assert (storageBusDevices.count() == 3);
-    QString dev;
-
-    NOREF(c);
-    switch (t)
-    {
-        case KStorageBus_IDE:
-        {
-            if (d == 0 || d == 1)
-            {
-                dev = storageBusDevices [d];
-                break;
-            }
-        }
-        default:
-            dev = storageBusDevices [2].arg (d);
-    }
-    return dev;
-}
-
-QString VBoxGlobal::toString (KStorageBus t, LONG c) const
+/**
+ * Returns a string representation of the given channel number on the given
+ * storage bus. Complementary to #toStorageChannel (KStorageBus, const
+ * QString &) const.
+ */
+QString VBoxGlobal::toString (KStorageBus aBus, LONG aChannel) const
 {
     Assert (storageBusChannels.count() == 3);
-    QString dev;
-    switch (t)
+    QString channel;
+
+    switch (aBus)
     {
         case KStorageBus_IDE:
         {
-            if (c == 0 || c == 1)
+            if (aChannel == 0 || aChannel == 1)
             {
-                dev = storageBusChannels [c];
+                channel = storageBusChannels [aChannel];
                 break;
             }
+
+            AssertMsgFailedBreak (("Invalid channel %d\n", aChannel));
+        }
+        case KStorageBus_SATA:
+        {
+            channel = storageBusChannels [2].arg (aChannel);
+            break;
         }
         default:
-            dev = storageBusChannels [2].arg (c);
+            AssertFailedBreak();
     }
-    return dev;
+
+    return channel;
 }
 
 /**
- *  Returns the list of all device types (VurtialBox::DeviceType COM enum).
+ * Returns a channel number on the given storage bus corresponding to the given
+ * string representation. Complementary to #toString (KStorageBus, LONG) const.
+ */
+LONG VBoxGlobal::toStorageChannel (KStorageBus aBus, const QString &aChannel) const
+{
+    LONG channel = 0;
+
+    switch (aBus)
+    {
+        case KStorageBus_IDE:
+        {
+            QStringVector::const_iterator it =
+                qFind (storageBusChannels.begin(), storageBusChannels.end(),
+                       aChannel);
+            AssertMsgBreak (it != storageBusChannels.end(),
+                            ("No value for {%s}\n", aChannel.toLatin1().constData()));
+            channel = (LONG) (it - storageBusChannels.begin());
+            break;
+        }
+        case KStorageBus_SATA:
+        {
+            /// @todo use regexp to properly extract the %1 text
+            QString tpl = storageBusChannels [2].arg ("");
+            if (aChannel.startsWith (tpl))
+            {
+                channel = aChannel.right (aChannel.length() - tpl.length()).toLong();
+                break;
+            }
+
+            AssertMsgFailedBreak (("Invalid channel {%s}\n", aChannel.toLatin1().constData()));
+            break;
+        }
+        default:
+            AssertFailedBreak();
+    }
+
+    return channel;
+}
+
+/**
+ * Returns a string representation of the given device number of the given
+ * channel on the given storage bus. Complementary to #toStorageDevice
+ * (KStorageBus, LONG, const QString &) const.
+ */
+QString VBoxGlobal::toString (KStorageBus aBus, LONG aChannel, LONG aDevice) const
+{
+    NOREF (aChannel);
+
+    Assert (storageBusDevices.count() == 2);
+    QString device;
+
+    switch (aBus)
+    {
+        case KStorageBus_IDE:
+        {
+            if (aDevice == 0 || aDevice == 1)
+            {
+                device = storageBusDevices [aDevice];
+                break;
+            }
+
+            AssertMsgFailedBreak (("Invalid device %d\n", aDevice));
+        }
+        case KStorageBus_SATA:
+        {
+            AssertMsgBreak (aDevice == 0, ("Invalid device %d\n", aDevice));
+            /* always zero so far for SATA */
+            break;
+        }
+        default:
+            AssertFailedBreak();
+    }
+
+    return device;
+}
+
+/**
+ * Returns a device number of the given channel on the given storage bus
+ * corresponding to the given string representation. Complementary to #toString
+ * (KStorageBus, LONG, LONG) const.
+ */
+LONG VBoxGlobal::toStorageDevice (KStorageBus aBus, LONG aChannel,
+                                  const QString &aDevice) const
+{
+    NOREF (aChannel);
+
+    LONG device = 0;
+
+    switch (aBus)
+    {
+        case KStorageBus_IDE:
+        {
+            QStringVector::const_iterator it =
+                qFind (storageBusDevices.begin(), storageBusDevices.end(),
+                       aDevice);
+            AssertMsg (it != storageBusDevices.end(),
+                       ("No value for {%s}", aDevice.toLatin1().constData()));
+            device = (LONG) (it - storageBusDevices.begin());
+            break;
+        }
+        case KStorageBus_SATA:
+        {
+            AssertMsgBreak(aDevice.isEmpty(), ("Invalid device {%s}\n", aDevice.toLatin1().constData()));
+            /* always zero for SATA so far. */
+            break;
+        }
+        default:
+            AssertFailedBreak();
+    }
+
+    return device;
+}
+
+/**
+ * Returns a full string representation of the given device of the given channel
+ * on the given storage bus. Complementary to #toStorageParams (KStorageBus,
+ * LONG, LONG) const.
+ */
+QString VBoxGlobal::toFullString (KStorageBus aBus, LONG aChannel,
+                                  LONG aDevice) const
+{
+    QString device;
+
+    switch (aBus)
+    {
+        case KStorageBus_IDE:
+        {
+            device = QString ("%1 %2 %3")
+                .arg (vboxGlobal().toString (aBus))
+                .arg (vboxGlobal().toString (aBus, aChannel))
+                .arg (vboxGlobal().toString (aBus, aChannel, aDevice));
+            break;
+        }
+        case KStorageBus_SATA:
+        {
+            /* we only have one SATA device so far which is always zero */
+            device = QString ("%1 %2")
+                .arg (vboxGlobal().toString (aBus))
+                .arg (vboxGlobal().toString (aBus, aChannel));
+            break;
+        }
+        default:
+            AssertFailedBreak();
+    }
+
+    return device;
+}
+
+/**
+ *  Returns the list of all device types (VirtualBox::DeviceType COM enum).
  */
 QStringList VBoxGlobal::deviceTypeStrings() const
 {
@@ -1313,7 +1350,7 @@ QString VBoxGlobal::detailsReport (const CMachine &m, bool isNewVM,
                                    bool withLinks, bool aDoRefresh)
 {
     static const char *sTableTpl =
-        "<table border=0 cellspacing=2 cellpadding=2>%1</table>";
+        "<table border=0 cellspacing=2 cellpadding=0>%1</table>";
     static const char *sSectionHrefTpl =
         "<tr><td rowspan=%1 align=left><img src='%2'></td>"
             "<td colspan=2><b><a href='%3'><nobr>%4</nobr></a></b></td></tr>"
@@ -1360,16 +1397,17 @@ QString VBoxGlobal::detailsReport (const CMachine &m, bool isNewVM,
             + QString (sSectionItemTpl).arg (tr ("Boot Order", "details report"), "%5")
             + QString (sSectionItemTpl).arg (tr ("ACPI", "details report"), "%6")
             + QString (sSectionItemTpl).arg (tr ("IO APIC", "details report"), "%7")
-            + QString (sSectionItemTpl).arg (tr ("VT-x/AMD-V", "details report"), "%8");
+            + QString (sSectionItemTpl).arg (tr ("VT-x/AMD-V", "details report"), "%8")
+            + QString (sSectionItemTpl).arg (tr ("PAE/NX", "details report"), "%9");
 
         sGeneralFullHrefTpl = QString (sSectionHrefTpl)
-            .arg (2 + 8) /* rows */
+            .arg (2 + 9) /* rows */
             .arg (":/machine_16px.png", /* icon */
                   "#general", /* link */
                   tr ("General", "details report"), /* title */
                   generalItems); /* items */
         sGeneralFullBoldTpl = QString (sSectionBoldTpl)
-            .arg (2 + 8) /* rows */
+            .arg (2 + 9) /* rows */
             .arg (":/machine_16px.png", /* icon */
                   "#general", /* link */
                   tr ("General", "details report"), /* title */
@@ -1399,11 +1437,11 @@ QString VBoxGlobal::detailsReport (const CMachine &m, bool isNewVM,
                 if (hd.isOk())
                 {
                     QString src = root.GetLocation();
+                    KStorageBus bus = hda.GetBus();
+                    LONG channel = hda.GetChannel();
+                    LONG device = hda.GetDevice();
                     hardDisks += QString (sSectionItemTpl)
-                        .arg (QString ("%1 %2")
-                              .arg (toString (hda.GetBus(), hda.GetChannel()))
-                              .arg (toString (hda.GetBus(), hda.GetChannel(),
-                                              hda.GetDevice())))
+                        .arg (toFullString (bus, channel, device))
                         .arg (QString ("%1 [<nobr>%2</nobr>]")
                               .arg (prepareFileNameForHTML (src))
                               .arg (details (hd, isNewVM /* predict */, aDoRefresh)));
@@ -1486,6 +1524,11 @@ QString VBoxGlobal::detailsReport (const CMachine &m, bool isNewVM,
                        tr ("Enabled", "details report (VT-x/AMD-V)") :
                        tr ("Disabled", "details report (VT-x/AMD-V)");
 
+        /* PAE/NX */
+        QString pae = m.GetPAEEnabled()
+            ? tr ("Enabled", "details report (PAE/NX)")
+            : tr ("Disabled", "details report (PAE/NX)");
+
         /* General + Hard Disks */
         detailsReport
             = generalFullTpl
@@ -1497,6 +1540,7 @@ QString VBoxGlobal::detailsReport (const CMachine &m, bool isNewVM,
                 .arg (acpi)
                 .arg (ioapic)
                 .arg (virt)
+                .arg (pae)
             + hardDisks;
 
         QString item;
@@ -1805,7 +1849,7 @@ QString VBoxGlobal::detailsReport (const CMachine &m, bool isNewVM,
     return QString (sTableTpl). arg (detailsReport);
 }
 
-#ifdef Q_WS_X11
+#if defined(Q_WS_X11) && !defined(VBOX_OSE)
 bool VBoxGlobal::showVirtualBoxLicense()
 {
     /* get the apps doc path */
@@ -1851,7 +1895,7 @@ bool VBoxGlobal::showVirtualBoxLicense()
         virtualBox().SetExtraData (VBoxDefs::GUI_LicenseKey, latestVersion);
     return result;
 }
-#endif
+#endif /* defined(Q_WS_X11) && !defined(VBOX_OSE) */
 
 /**
  * Checks if any of the settings files were auto-converted and informs the user
@@ -2272,7 +2316,7 @@ QString VBoxGlobal::languageTranslators() const
  *  Changes the language of all global string constants according to the
  *  currently installed translations tables.
  */
-void VBoxGlobal::languageChange()
+void VBoxGlobal::retranslateUi()
 {
     machineStates [KMachineState_PoweredOff] =  tr ("Powered Off", "MachineState");
     machineStates [KMachineState_Saved] =       tr ("Saved", "MachineState");
@@ -2310,12 +2354,11 @@ void VBoxGlobal::languageChange()
     storageBusChannels [1] =
         tr ("Secondary", "StorageBusChannel");
     storageBusChannels [2] =
-        tr ("Channel&nbsp;%1", "StorageBusChannel");
+        tr ("Port %1", "StorageBusChannel");
 
-    Assert (storageBusDevices.count() == 3);
+    Assert (storageBusDevices.count() == 2);
     storageBusDevices [0] = tr ("Master", "StorageBusDevice");
     storageBusDevices [1] = tr ("Slave", "StorageBusDevice");
-    storageBusDevices [2] = tr ("Device&nbsp;%1", "StorageBusDevice");
 
     diskTypes [KHardDiskType_Normal] =
         tr ("Normal", "DiskType");
@@ -2430,7 +2473,7 @@ void VBoxGlobal::languageChange()
      * human readable key names, we keep a table of them, which must be
      * updated when the language is changed. */
 #warning port me
-    QIHotKeyEdit::languageChange_qt3();
+    QIHotKeyEdit::retranslateUi();
 #endif
 }
 
@@ -2668,13 +2711,13 @@ QIcon VBoxGlobal::iconSet (const char *aNormal,
 {
     QIcon iconSet;
 
-    iconSet.addFile (aNormal, QSize(), 
+    iconSet.addFile (aNormal, QSize(),
                      QIcon::Normal);
     if (aDisabled != NULL)
-        iconSet.addFile (aDisabled, QSize(), 
+        iconSet.addFile (aDisabled, QSize(),
                          QIcon::Disabled);
     if (aActive != NULL)
-        iconSet.addFile (aActive, QSize(), 
+        iconSet.addFile (aActive, QSize(),
                          QIcon::Active);
     return iconSet;
 }
@@ -2796,7 +2839,7 @@ void VBoxGlobal::centerWidget (QWidget *aWidget, QWidget *aRelative,
     QWidget *w = aRelative;
     if (w)
     {
-        w = w->topLevelWidget();
+        w = w->window();
         deskGeo = QApplication::desktop()->availableGeometry (w);
         parentGeo = w->frameGeometry();
         /* On X11/Gnome, geo/frameGeo.x() and y() are always 0 for top level
@@ -2936,7 +2979,7 @@ Q_UINT64 VBoxGlobal::parseSize (const QString &aText)
         if (denom == 1)
             return intg;
 
-        Q_UINT64 hund = hundS.rightJustified (2, '0').toULongLong();
+        Q_UINT64 hund = hundS.leftJustified (2, '0').toULongLong();
         hund = hund * denom / 100;
         intg = intg * denom + hund;
         return intg;
@@ -3188,7 +3231,7 @@ QString VBoxGlobal::getExistingDirectory (const QString &aDir,
         {
             QString result;
 
-            QWidget *topParent = mParent ? mParent->topLevelWidget() : qApp->mainWidget();
+            QWidget *topParent = mParent ? mParent->window() : vboxGlobal()->mainWindow();
             QString title = mCaption.isNull() ? tr ("Select a directory") : mCaption;
 
             TCHAR path[MAX_PATH];
@@ -3337,7 +3380,7 @@ QString VBoxGlobal::getOpenFileName (const QString &aStartWith,
 
             QString title = mCaption.isNull() ? tr ("Select a file") : mCaption;
 
-            QWidget *topParent = mParent ? mParent->topLevelWidget() : qApp->mainWidget();
+            QWidget *topParent = mParent ? mParent->window() : vboxGlobal()->mainWindow();
             QString winFilters = winFilter (mFilters);
             AssertCompile (sizeof (TCHAR) == sizeof (QChar));
             TCHAR buf [1024];
@@ -3403,7 +3446,7 @@ QString VBoxGlobal::getOpenFileName (const QString &aStartWith,
     QFileDialog::Options o;
     if (!aResolveSymlinks)
         o |= QFileDialog::DontResolveSymlinks;
-    return QFileDialog::getOpenFileName (aParent, aCaption, aStartWith, 
+    return QFileDialog::getOpenFileName (aParent, aCaption, aStartWith,
                                          aFilters, aSelectedFilter, o);
 #endif
 }
@@ -3620,8 +3663,8 @@ QWidget *VBoxGlobal::findWidget (QWidget *aParent, const char *aName,
         QWidget* w = NULL;
         foreach(w, list)
         {
-            if ((!aName || strcmp (w->name(), aName) == 0) &&
-                (!aClassName || strcmp (w->className(), aClassName) == 0))
+            if ((!aName || strcmp (w->objectName().toAscii().constData(), aName) == 0) &&
+                (!aClassName || strcmp (w->metaObject()->className(), aClassName) == 0))
                 break;
             if (aRecursive)
             {
@@ -3633,14 +3676,16 @@ QWidget *VBoxGlobal::findWidget (QWidget *aParent, const char *aName,
         return w;
     }
 
-    QObjectList list = aParent->queryList (aName, aClassName, false, true);
-    QObject *obj = NULL;
-    foreach(obj, list)
+    /* Find the first children of aParent with the appropriate properties.
+     * Please note that this call is recursivly. */
+    QList<QWidget *> list = qFindChildren<QWidget *> (aParent, aName);
+    QWidget *child = NULL;
+    foreach(child, list)
     {
-        if (obj->isWidgetType())
+        if (!aClassName || strcmp (child->metaObject()->className(), aClassName) == 0)
             break;
     }
-    return (QWidget *) obj;
+    return child;
 }
 
 // Public slots
@@ -3764,7 +3809,7 @@ void VBoxGlobal::showRegistrationDialog (bool aForce)
          * that attempts to set it will win, the rest will get a failure from
          * the SetExtraData() call. */
         mVBox.SetExtraData (VBoxDefs::GUI_RegistrationDlgWinID,
-            QString ("%1").arg ((long) qApp->mainWidget()->winId()));
+            QString ("%1").arg (static_cast<long> (mMainWindow->winId())));
 
         if (mVBox.isOk())
         {
@@ -3861,6 +3906,11 @@ bool VBoxGlobal::event (QEvent *e)
             emit canShowRegDlg (((VBoxCanShowRegDlgEvent *) e)->mCanShow);
             return true;
         }
+        case VBoxDefs::ChangeGUILanguageEventType:
+        {
+            loadLanguage (static_cast<VBoxChangeGUILanguageEvent*> (e)->mLangId);
+            return true;
+        }
 
         default:
             break;
@@ -3883,7 +3933,7 @@ bool VBoxGlobal::eventFilter (QObject *aObject, QEvent *aEvent)
         {
             /* call this only once per every language change (see
              * QApplication::installTranslator() for details) */
-            languageChange();
+            retranslateUi();
         }
     }
 
@@ -3933,40 +3983,41 @@ void VBoxGlobal::init()
     /* fill in OS type icon dictionary */
     static const char *kOSTypeIcons [][2] =
     {
-        {"unknown",   ":/os_unknown.png"},
-        {"dos",       ":/os_dos.png"},
-        {"win31",     ":/os_win31.png"},
-        {"win95",     ":/os_win95.png"},
-        {"win98",     ":/os_win98.png"},
-        {"winme",     ":/os_winme.png"},
-        {"winnt4",    ":/os_winnt4.png"},
-        {"win2k",     ":/os_win2k.png"},
-        {"winxp",     ":/os_winxp.png"},
-        {"win2k3",    ":/os_win2k3.png"},
-        {"winvista",  ":/os_winvista.png"},
-        {"win2k8",    ":/os_win2k8.png"},
-        {"os2warp3",  ":/os_os2warp3.png"},
-        {"os2warp4",  ":/os_os2warp4.png"},
-        {"os2warp45", ":/os_os2warp45.png"},
-        {"ecs",       ":/os_ecs.png"},
-        {"linux22",   ":/os_linux22.png"},
-        {"linux24",   ":/os_linux24.png"},
-        {"linux26",   ":/os_linux26.png"},
-        {"archlinux", ":/os_archlinux.png"},
-        {"debian",    ":/os_debian.png"},
-        {"opensuse",  ":/os_opensuse.png"},
-        {"fedoracore",":/os_fedoracore.png"},
-        {"gentoo",    ":/os_gentoo.png"},
-        {"mandriva",  ":/os_mandriva.png"},
-        {"redhat",    ":/os_redhat.png"},
-        {"ubuntu",    ":/os_ubuntu.png"},
-        {"xandros",   ":/os_xandros.png"},
-        {"freebsd",   ":/os_freebsd.png"},
-        {"openbsd",   ":/os_openbsd.png"},
-        {"netbsd",    ":/os_netbsd.png"},
-        {"netware",   ":/os_netware.png"},
-        {"solaris",   ":/os_solaris.png"},
-        {"l4",        ":/os_l4.png"},
+        {"unknown",     ":/os_unknown.png"},
+        {"dos",         ":/os_dos.png"},
+        {"win31",       ":/os_win31.png"},
+        {"win95",       ":/os_win95.png"},
+        {"win98",       ":/os_win98.png"},
+        {"winme",       ":/os_winme.png"},
+        {"winnt4",      ":/os_winnt4.png"},
+        {"win2k",       ":/os_win2k.png"},
+        {"winxp",       ":/os_winxp.png"},
+        {"win2k3",      ":/os_win2k3.png"},
+        {"winvista",    ":/os_winvista.png"},
+        {"win2k8",      ":/os_win2k8.png"},
+        {"os2warp3",    ":/os_os2warp3.png"},
+        {"os2warp4",    ":/os_os2warp4.png"},
+        {"os2warp45",   ":/os_os2warp45.png"},
+        {"ecs",         ":/os_ecs.png"},
+        {"linux22",     ":/os_linux22.png"},
+        {"linux24",     ":/os_linux24.png"},
+        {"linux26",     ":/os_linux26.png"},
+        {"archlinux",   ":/os_archlinux.png"},
+        {"debian",      ":/os_debian.png"},
+        {"opensolaris", ":/os_opensolaris.png"},
+        {"opensuse",    ":/os_opensuse.png"},
+        {"fedoracore",  ":/os_fedoracore.png"},
+        {"gentoo",      ":/os_gentoo.png"},
+        {"mandriva",    ":/os_mandriva.png"},
+        {"redhat",      ":/os_redhat.png"},
+        {"ubuntu",      ":/os_ubuntu.png"},
+        {"xandros",     ":/os_xandros.png"},
+        {"freebsd",     ":/os_freebsd.png"},
+        {"openbsd",     ":/os_openbsd.png"},
+        {"netbsd",      ":/os_netbsd.png"},
+        {"netware",     ":/os_netware.png"},
+        {"solaris",     ":/os_solaris.png"},
+        {"l4",          ":/os_l4.png"},
     };
     for (uint n = 0; n < SIZEOF_ARRAY (kOSTypeIcons); n ++)
     {
@@ -4019,14 +4070,6 @@ void VBoxGlobal::init()
     vm_state_color.insert (KMachineState_Restoring,      new QColor(Qt::green));
     vm_state_color.insert (KMachineState_Discarding,     new QColor(Qt::green));
 
-    /* Redefine default large and small icon sizes. In particular, it is
-     * necessary to consider both 32px and 22px icon sizes as Large when we
-     * explicitly define them as Large (seems to be a bug in
-     * QToolButton::sizeHint()). */
-#warning port me
-//    QIcon::setIconSize (QIcon::Small, QSize (16, 16));
-//    QIcon::setIconSize (QIcon::Large, QSize (22, 22));
-
     qApp->installEventFilter (this);
 
     /* create default non-null global settings */
@@ -4045,7 +4088,7 @@ void VBoxGlobal::init()
     if (!languageId.isNull())
         loadLanguage (languageId);
 
-    languageChange();
+    retranslateUi();
 
     /* process command line */
 
@@ -4258,7 +4301,7 @@ void VBoxUSBMenu::processAboutToShow()
 bool VBoxUSBMenu::event(QEvent *aEvent)
 {
     /* We provide dynamic tooltips for the usb devices */
-    if (aEvent->type() == QEvent::ToolTip) 
+    if (aEvent->type() == QEvent::ToolTip)
     {
         QHelpEvent *helpEvent = static_cast<QHelpEvent *> (aEvent);
         QAction *action = actionAt (helpEvent->pos());

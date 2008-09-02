@@ -1,4 +1,4 @@
-; $Id: VBoxSFA.asm 4377 2007-08-27 08:45:40Z vboxsync $
+; $Id: VBoxSFA.asm 23926 2007-08-27 08:45:40Z achimha $
 ;; @file
 ; VBoxSF - OS/2 Shared Folders, all assembly code (16 -> 32 thunking mostly).
 ;

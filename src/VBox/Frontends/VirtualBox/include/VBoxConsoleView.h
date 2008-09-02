@@ -97,11 +97,13 @@ public:
 
     void fixModifierState (LONG *codes, uint *count);
 
-    void toggleFSMode();
+    void toggleFSMode (const QSize &aSize = QSize());
 
     void setIgnoreMainwndResize (bool aYes) { mIgnoreMainwndResize = aYes; }
 
-    QRect getDesktopGeometry();
+    QRect desktopGeometry();
+
+    bool isAutoresizeGuestActive();
 
 signals:
 
@@ -196,7 +198,14 @@ private slots:
 
 private:
 
-    void setDesktopGeometry(int minWidth, int minHeight);
+    enum DesktopGeo
+    {
+        DesktopGeo_Invalid = 0, DesktopGeo_Fixed,
+        DesktopGeo_Automatic, DesktopGeo_Any, DesktopGeo_Unchanged
+    };
+
+    void setDesktopGeometry (DesktopGeo aGeo, int aWidth, int aHeight);
+    void setDesktopGeoHint (int aWidth, int aHeight);
     void maybeRestrictMinimumSize();
 
     VBoxConsoleWnd *mMainWnd;
@@ -230,7 +239,14 @@ private:
     bool mIgnoreMainwndResize : 1;
     bool mAutoresizeGuest : 1;
 
-    bool mIsAdditionsActive : 1;
+    /** 
+     * This flag indicates whether the last console resize should trigger
+     * a size hint to the guest.  This is important particularly when
+     * enabling the autoresize feature to know whether to send a hint.
+     */
+    bool mDoResize : 1;
+
+    bool mGuestSupportsGraphics : 1;
 
     bool mNumLock : 1;
     bool mScrollLock : 1;
@@ -239,7 +255,6 @@ private:
     long muCapsLockAdaptionCnt;
 
     QTimer *resize_hint_timer;
-    QTimer *mToggleFSModeTimer;
 
     VBoxDefs::RenderMode mode;
 
@@ -283,7 +298,9 @@ private:
 #if defined(Q_WS_MAC)
     CGImageRef mVirtualBoxLogo;
 #endif
+    DesktopGeo mDesktopGeo;
     QRect mDesktopGeometry;
+    QRect mLastSizeHint;
 };
 
 #endif // __VBoxConsoleView_h__

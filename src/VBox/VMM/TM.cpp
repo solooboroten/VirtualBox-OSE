@@ -1,4 +1,4 @@
-/* $Id: TM.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: TM.cpp 31281 2008-05-27 09:21:03Z sandervl $ */
 /** @file
  * TM - Timeout Manager.
  */
@@ -212,12 +212,14 @@ TMR3DECL(int) TMR3Init(PVM pVM)
     rc = SUPGipGetPhys(&HCPhysGIP);
     AssertMsgRCReturn(rc, ("Failed to get GIP physical address!\n"), rc);
 
-    rc = MMR3HyperMapHCPhys(pVM, pVM->tm.s.pvGIPR3, HCPhysGIP, PAGE_SIZE, "GIP", &pVM->tm.s.pvGIPGC);
+    RTGCPTR GCPtr;
+    rc = MMR3HyperMapHCPhys(pVM, pVM->tm.s.pvGIPR3, HCPhysGIP, PAGE_SIZE, "GIP", &GCPtr);
     if (VBOX_FAILURE(rc))
     {
         AssertMsgFailed(("Failed to map GIP into GC, rc=%Vrc!\n", rc));
         return rc;
     }
+    pVM->tm.s.pvGIPGC = GCPtr;
     LogFlow(("TMR3Init: HCPhysGIP=%RHp at %VGv\n", HCPhysGIP, pVM->tm.s.pvGIPGC));
     MMR3HyperReserve(pVM, PAGE_SIZE, "fence", NULL);
 
@@ -539,7 +541,7 @@ TMR3DECL(int) TMR3Init(PVM pVM)
  *
  * @returns true if it has, false if it hasn't.
  *
- * @remark  This test doesn't bother with very old CPUs that doesn't do power
+ * @remark  This test doesn't bother with very old CPUs that don't do power
  *          management or any other stuff that might influence the TSC rate.
  *          This isn't currently relevant.
  */
@@ -564,8 +566,11 @@ static bool tmR3HasFixedTSC(void)
             ASMCpuId(0x80000000, &uEAX, &uEBX, &uECX, &uEDX);
             if (uEAX >= 0x80000007)
             {
+                PSUPGLOBALINFOPAGE pGip = g_pSUPGlobalInfoPage;
+
                 ASMCpuId(0x80000007, &uEAX, &uEBX, &uECX, &uEDX);
-                if (uEDX & RT_BIT(8) /* TscInvariant */)
+                if (   (uEDX & RT_BIT(8)) /* TscInvariant */
+                    && pGip->u32Mode == SUPGIPMODE_SYNC_TSC /* no fixed tsc if the gip timer is in async mode */)
                     return true;
             }
         }

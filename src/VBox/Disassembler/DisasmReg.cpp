@@ -473,7 +473,7 @@ DISDECL(int) DISQueryParamVal(PCPUMCTXCORE pCtx, PDISCPUSTATE pCpu, POP_PARAMETE
 {
     memset(pParamVal, 0, sizeof(*pParamVal));
 
-    if (pParam->flags & (USE_BASE|USE_INDEX|USE_DISPLACEMENT32|USE_DISPLACEMENT16|USE_DISPLACEMENT8|USE_RIPDISPLACEMENT32))
+    if (DIS_IS_EFFECTIVE_ADDR(pParam->flags))
     {
         // Effective address
         pParamVal->type = PARMTYPE_ADDRESS;
@@ -629,7 +629,7 @@ DISDECL(int) DISQueryParamVal(PCPUMCTXCORE pCtx, PDISCPUSTATE pCpu, POP_PARAMETE
             pParamVal->flags |= PARAM_VAL16;
             pParamVal->size   = sizeof(uint16_t);
             pParamVal->val.val16 = (uint16_t)pParam->parval;
-            Assert(pParamVal->size == pParam->size || ((pParam->size == 1) && (pParam->flags & USE_IMMEDIATE16_SX8)) );
+            AssertMsg(pParamVal->size == pParam->size || ((pParam->size == 1) && (pParam->flags & USE_IMMEDIATE16_SX8)), ("pParamVal->size %d vs %d EIP=%VGv\n", pParamVal->size, pParam->size, pCtx->eip) );
         }
         else
         if (pParam->flags & (USE_IMMEDIATE32|USE_IMMEDIATE32_REL|USE_IMMEDIATE_ADDR_0_32|USE_IMMEDIATE32_SX8))
@@ -640,7 +640,7 @@ DISDECL(int) DISQueryParamVal(PCPUMCTXCORE pCtx, PDISCPUSTATE pCpu, POP_PARAMETE
             Assert(pParamVal->size == pParam->size || ((pParam->size == 1) && (pParam->flags & USE_IMMEDIATE32_SX8)) );
         }
         else
-        if (pParam->flags & (USE_IMMEDIATE64))
+        if (pParam->flags & (USE_IMMEDIATE64 | USE_IMMEDIATE64_REL))
         {
             pParamVal->flags |= PARAM_VAL64;
             pParamVal->size   = sizeof(uint64_t);

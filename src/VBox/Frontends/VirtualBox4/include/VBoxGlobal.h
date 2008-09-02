@@ -138,6 +138,17 @@ public:
     const bool mCanShow;
 };
 
+class VBoxChangeGUILanguageEvent : public QEvent
+{
+public:
+    VBoxChangeGUILanguageEvent (QString aLangId)
+        : QEvent ((QEvent::Type) VBoxDefs::ChangeGUILanguageEventType)
+        , mLangId (aLangId)
+        {}
+
+    const QString mLangId;
+};
+
 // VBoxGlobal
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -164,6 +175,11 @@ public:
 
     VBoxSelectorWnd &selectorWnd();
     VBoxConsoleWnd &consoleWnd();
+
+    /* main window handle storage */
+    void setMainWindow (QWidget *aMainWindow) { mMainWindow = aMainWindow; }
+    QWidget *mainWindow() const { return mMainWindow; }
+
 
     bool isVMConsoleProcess() const { return !vmUuid.isNull(); }
     QUuid managedVMUuid() const { return vmUuid; }
@@ -210,14 +226,35 @@ public:
         return sessionStates.value (s);
     }
 
-    QString toString (KStorageBus t) const
+    /**
+     * Returns a string representation of the given KStorageBus enum value.
+     * Complementary to #toStorageBusType (const QString &) const.
+     */
+    QString toString (KStorageBus aBus) const
     {
-        AssertMsg (!storageBuses.value (t).isNull(), ("No text for %d", t));
-        return storageBuses.value (t);
+        AssertMsg (!storageBuses.value (aBus).isNull(), ("No text for %d", aBus));
+        return storageBuses [aBus];
     }
 
-    QString toString (KStorageBus t, LONG c) const;
-    QString toString (KStorageBus t, LONG c, LONG d) const;
+    /**
+     * Returns a KStorageBus enum value corresponding to the given string
+     * representation. Complementary to #toString (KStorageBus) const.
+     */
+    KStorageBus toStorageBusType (const QString &aBus) const
+    {
+        QStringVector::const_iterator it =
+            qFind (storageBuses.begin(), storageBuses.end(), aBus);
+        AssertMsg (it != storageBuses.end(), ("No value for {%s}", aBus.toLatin1().constData()));
+        return KStorageBus (it - storageBuses.begin());
+    }
+
+    QString toString (KStorageBus aBus, LONG aChannel) const;
+    LONG toStorageChannel (KStorageBus aBus, const QString &aChannel) const;
+
+    QString toString (KStorageBus aBus, LONG aChannel, LONG aDevice) const;
+    LONG toStorageDevice (KStorageBus aBus, LONG aChannel, const QString &aDevice) const;
+
+    QString toFullString (KStorageBus aBus, LONG aChannel, LONG aDevice) const;
 
     QString toString (KHardDiskType t) const
     {
@@ -421,7 +458,7 @@ public:
 
     /* VirtualBox helpers */
 
-#ifdef Q_WS_X11
+#if defined(Q_WS_X11) && !defined(VBOX_OSE)
     bool showVirtualBoxLicense();
 #endif
 
@@ -461,7 +498,7 @@ public:
     QString languageCountryEnglish() const;
     QString languageTranslators() const;
 
-    void languageChange();
+    void retranslateUi();
 
     /** @internal made public for internal purposes */
     void cleanup();
@@ -601,6 +638,7 @@ private:
 
     VBoxSelectorWnd *mSelectorWnd;
     VBoxConsoleWnd *mConsoleWnd;
+    QWidget* mMainWindow;
 
 #ifdef VBOX_WITH_REGISTRATION
     VBoxRegistrationDlg *mRegDlg;

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8467 2008-04-29 15:09:52Z vboxsync $
+# $Id: Makefile.kmk 31318 2008-05-27 16:29:34Z dsen $
 ## @file
 # Makefile for the VirtualBox Qt GUI.
 #
@@ -38,7 +38,7 @@ VBOX_WITH_REGISTRATION := 1
 VBOX_WITH_REGISTRATION_REQUEST := 1
 
 DEPTH = ../../../..
-include $(PATH_KBUILD)/header.kmk
+include $(KBUILD_PATH)/header.kmk
 
 # Disable the debugger for now, this is another story.
 VBOX_WITH_DEBUGGER_GUI :=
@@ -69,7 +69,7 @@ VBOX_PATH_QT4_SHARE    ?= $(VBOX_PATH_QT4)
 VBOX_MODULE_QT4     = QtCore QtGui QtNetwork Qt3Support
 VBOX_DEFS_QT4       = QT_CORE_LIB QT_GUI_LIB QT_NETWORK_LIB QT_QT3SUPPORT_LIB
 
-ifeq ($(BUILD_TARGET),darwin)
+ifeq ($(KBUILD_TARGET),darwin)
  VBOX_MODULE_QT4    += QtSql QtXml
  VBOX_DEFS_QT4       = QT_SQL_LIB QT_XML_LIB
  VBOX_INCS_QT4       = $(foreach mod, $(VBOX_MODULE_QT4), $(join $(join /Library/Frameworks/, $(mod)), .framework/Headers))
@@ -84,7 +84,7 @@ endif
 
 # Warn about all what you know about porting qt3->qt4.
 # Disable this if you like to see something on your screen.
-#VBOX_DEFS_QT4 += QT3_SUPPORT_WARNINGS
+VBOX_DEFS_QT4 += QT3_SUPPORT_WARNINGS
 # Some default defs
 VBOX_DEFS_QT4 += QT3_SUPPORT QT_SHARED HAVE_CONFIG_H QT_NO_DEBUG
 
@@ -108,7 +108,7 @@ TEMPLATE_VBOXQT4GUIEXE_INCS = \
 	$(VBOX_PATH_SDK)/include \
     $(VBOX_INCS_QT4)
 
-ifeq ($(BUILD_TARGET),win)
+ifeq ($(KBUILD_TARGET),win)
  # drag in library configuration (we need QMAKE_PRL_DEFINES)
  ifneq ($(LIB_QT_PRL),)
   include $(LIB_QT_PRL)
@@ -169,7 +169,7 @@ else # the gcc guys:
 	$(LIB_REM) \
 	$(LIB_VMM)
 
- ifeq ($(BUILD_TARGET_ARCH),amd64)
+ ifeq ($(KBUILD_TARGET_ARCH),amd64)
   TEMPLATE_VBOXQT4GUIEXE_LIBPATH = \
 	$(VBOX_PATH_QT4_LIB64) $(VBOX_PATH_QT4_LIB)
  else
@@ -177,16 +177,16 @@ else # the gcc guys:
 	$(VBOX_PATH_QT4_LIB)
  endif
 
- ifeq ($(BUILD_TARGET),linux)
+ ifeq ($(KBUILD_TARGET),linux)
   TEMPLATE_VBOXQT4GUIEXE_LDFLAGS += $(VBOX_LD_as_needed)
   TEMPLATE_VBOXQT4GUIEXE_LIBS += \
     $(VBOX_XCURSOR_LIBS)
- else ifeq ($(BUILD_TARGET),darwin)
+ else ifeq ($(KBUILD_TARGET),darwin)
   TEMPLATE_VBOXQT4GUIEXE_LDFLAGS += $(foreach mod, $(VBOX_MODULE_QT4), -framework $(mod)) \
   	-framework Carbon -framework QuickTime -bind_at_load
   TEMPLATE_VBOXQT4GUIEXE_LIBS +=
   TEMPLATE_VBOXQT4GUIEXE_LIBPATH +=
- else ifeq ($(BUILD_TARGET),os2)
+ else ifeq ($(KBUILD_TARGET),os2)
   # drag in library configuration (we need QMAKE_PRL_DEFINES)
   ifneq ($(LIB_QT_PRL),)
    include $(LIB_QT_PRL)
@@ -205,7 +205,7 @@ else # the gcc guys:
 	$(LIB_PTHREAD)
   TEMPLATE_VBOXQT4GUIEXE_LIBPATH += \
 	$(VBOX_LIBPATH_X11)
-  ifeq ($(BUILD_TARGET),freebsd)
+  ifeq ($(KBUILD_TARGET),freebsd)
    TEMPLATE_VBOXQT4GUIEXE_INCS += \
 	/usr/include \
 	/usr/X11R6/include \
@@ -233,11 +233,11 @@ endif
 TEMPLATE_VBOXQT4GUI = VBox Qt GUI Components
 TEMPLATE_VBOXQT4GUI_EXTENDS = VBOXQTGUIEXE
 TEMPLATE_VBOXQT4GUI_LIBS = $(filter-out $(QTMAIN),$(TEMPLATE_VBOXQT4GUIEXE_LIBS))
-ifeq ($(BUILD_TARGET),darwin)
+ifeq ($(KBUILD_TARGET),darwin)
  TEMPLATE_VBOXQT4GUI_LDFLAGS = $(filter-out -framework Carbon -framework QuickTime -bind_at_load,$(TEMPLATE_VBOXQT4GUIEXE_LDFLAGS))
 endif
-ifeq ($(filter-out solaris.x86 %.amd64,$(BUILD_TARGET).$(BUILD_TARGET_ARCH)),)
- ifneq ($(BUILD_TARGET),win)
+ifeq ($(filter-out solaris.x86 %.amd64,$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)),)
+ ifneq ($(KBUILD_TARGET),win)
   TEMPLATE_VBOXQT4GUI_DEFS     = PIC $(TEMPLATE_VBOXQT4GUIEXE_DEFS)
   TEMPLATE_VBOXQT4GUI_CFLAGS   = -fPIC $(TEMPLATE_VBOXQT4GUIEXE_CFLAGS)
   TEMPLATE_VBOXQT4GUI_CXXFLAGS = -fPIC $(TEMPLATE_VBOXQT4GUIEXE_CXXFLAGS)
@@ -290,18 +290,38 @@ VirtualBox_QT_UISRCS4 += ui/VBoxSnapshotsWgt.ui
 VirtualBox_QT_UISRCS3 := $(filter-out ui/VBoxVMLogViewer.ui,$(VirtualBox_QT_UISRCS3))
 VirtualBox_QT_UISRCS4 += ui/VBoxVMLogViewer.ui
 
+VirtualBox_QT_UISRCS3 := $(filter-out ui/VBoxVMSettingsGeneral.ui,$(VirtualBox_QT_UISRCS3))
+VirtualBox_QT_UISRCS4 += ui/VBoxVMSettingsGeneral.ui
+
+VirtualBox_QT_UISRCS3 := $(filter-out ui/VBoxVMSettingsCD.ui,$(VirtualBox_QT_UISRCS3))
+VirtualBox_QT_UISRCS4 += ui/VBoxVMSettingsCD.ui
+
+VirtualBox_QT_UISRCS3 := $(filter-out ui/VBoxVMSettingsFD.ui,$(VirtualBox_QT_UISRCS3))
+VirtualBox_QT_UISRCS4 += ui/VBoxVMSettingsFD.ui
+
+VirtualBox_QT_UISRCS3 := $(filter-out ui/VBoxVMSettingsAudio.ui,$(VirtualBox_QT_UISRCS3))
+VirtualBox_QT_UISRCS4 += ui/VBoxVMSettingsAudio.ui
+
+VirtualBox_QT_UISRCS3 := $(filter-out ui/VBoxVMSettingsSerial.ui,$(VirtualBox_QT_UISRCS3))
+VirtualBox_QT_UISRCS4 += ui/VBoxVMSettingsSerial.ui
+
+VirtualBox_QT_UISRCS3 := $(filter-out ui/VBoxVMSettingsParallel.ui,$(VirtualBox_QT_UISRCS3))
+VirtualBox_QT_UISRCS4 += ui/VBoxVMSettingsParallel.ui
+
+VirtualBox_QT_UISRCS3 := $(filter-out ui/VBoxVMSettingsDlg.ui,$(VirtualBox_QT_UISRCS3))
+VirtualBox_QT_UISRCS4 += ui/VBoxVMSettingsDlg.ui
 
 #
 # The targets.
 #
 PROGRAMS = VirtualBox
-ifeq ($(filter-out freebsd linux openbsd netbsd solaris,$(BUILD_TARGET)),) # X11
+ifeq ($(filter-out freebsd linux openbsd netbsd solaris,$(KBUILD_TARGET)),) # X11
 DLLS = VBoxKeyboard4
 OTHERS = $(PATH_BIN)/vboxkeyboard4.tar.gz
 endif
 INSTALLS = VirtualBox.nls
 
-ifeq ($(BUILD_TARGET),os2)
+ifeq ($(KBUILD_TARGET),os2)
  DLLS += VBoxHlp
  ifneq ($(strip $(VBOX_DLL_QT)),)
   INSTALLS += qt.dll
@@ -366,12 +386,12 @@ $(PATH_BIN)/vboxkeyboard4.tar.gz: $(VBoxKeyboard4_TARSOURCES) $(PATH_TARGET)/$(S
 VirtualBox_TEMPLATE = VBOXQT4GUIEXE
 VirtualBox_NAME     = VirtualBox4
 VirtualBox_SDKS.win = WINPSDK DXSDK
-#ifeq ($(filter-out freebsd linux netbsd openbsd os2 solaris,$(BUILD_TARGET)),) - later
-ifeq ($(filter-out freebsd linux netbsd openbsd os2,$(BUILD_TARGET)),) # X11 + os2
+#ifeq ($(filter-out freebsd linux netbsd openbsd os2 solaris,$(KBUILD_TARGET)),) - later
+ifeq ($(filter-out freebsd linux netbsd openbsd os2,$(KBUILD_TARGET)),) # X11 + os2
 VirtualBox_SDKS += LIBSDL
 endif
 
-ifeq ($(BUILD_TARGET),darwin)
+ifeq ($(KBUILD_TARGET),darwin)
 # For the launch trick we need different inode numbers.
 VirtualBox_INST = $(INST_BIN)VirtualBox4 $(INST_BIN)VirtualBoxVM4
 
@@ -384,7 +404,7 @@ VirtualBox_INST = $(INST_BIN)VirtualBox4 $(INST_BIN)VirtualBoxVM4
 endif
 
 ifndef VBOX_OSE
-ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(BUILD_TARGET)),) # linux only, yea, right.
+ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),) # linux only, yea, right.
 # Note: I'm doing this right here because the GUI will _not_ run
 #       without that file which might be annoying for developers!
 $(VBOX_LICENSE_BIN): $(VBOX_LICENSE_SRC)
@@ -412,6 +432,7 @@ VirtualBox_QT_MOCHDRS = \
 	include/QIRichLabel.h \
 	include/QIAbstractWizard.h \
 	include/QIAbstractDialog.h \
+	include/QIListView.h \
 	include/VBoxGlobalSettings.h \
 	include/VBoxUtils.h \
 	include/VBoxGlobal.h \
@@ -434,22 +455,24 @@ VirtualBox_QT_MOCHDRS = \
 	include/VBoxVMInformationDlg.h \
 	include/VBoxTakeSnapshotDlg.h \
 	include/VBoxSnapshotsWgt.h \
-	include/VBoxVMLogViewer.h
+	include/VBoxVMLogViewer.h \
+	include/VBoxVMSettingsUtils.h \
+	include/VBoxVMSettingsGeneral.h \
+	include/VBoxVMSettingsCD.h \
+	include/VBoxVMSettingsFD.h \
+	include/VBoxVMSettingsAudio.h \
+	include/VBoxVMSettingsSerial.h \
+	include/VBoxVMSettingsParallel.h \
+	include/VBoxVMSettingsDlg.h
 
 # Sources containing local definitions of classes that use the Q_OBJECT macro
 VirtualBox_QT_MOCSRCS = src/VBoxSelectorWnd.cpp
-ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(BUILD_TARGET)),) # X11
+ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),) # X11
 VirtualBox_QT_MOCSRCS += src/VBoxGlobal.cpp
 endif
 ifdef VBOX_WITH_XPCOM
 VirtualBox_QT_MOCSRCS += src/COMDefs.cpp
 endif
-
-# UI headers (ui.h) containing local definitions of classes that use the Q_OBJECT macro
-VirtualBox_QT_MOCUIHDRS = \
-	ui/VBoxVMSettingsDlg.ui.h \
-	ui/VBoxVMLogViewer.ui.h
-
 
 # All generated sources. Note: this list MUST be in sync with Qt source
 # generation rules defined somewhere below!
@@ -460,7 +483,6 @@ VirtualBox_GENSRCS = \
 # All generated headers. Note: this list MUST be in sync with Qt source
 # generation rules defined somewhere below!
 VirtualBox_GENHDRS = \
-	$(foreach mocui,$(notdir $(basename $(VirtualBox_QT_MOCUIHDRS))), $(PATH_VirtualBox)/moc/$(mocui).moc) \
 	$(foreach moc,$(notdir $(basename $(VirtualBox_QT_MOCSRCS))), $(PATH_VirtualBox)/moc/$(moc).moc) \
 	$(foreach ui,$(notdir $(basename $(VirtualBox_QT_UISRCS3))), $(PATH_VirtualBox)/ui/$(ui).h) \
 	$(foreach ui,$(notdir $(basename $(VirtualBox_QT_UISRCS4))), $(PATH_VirtualBox)/ui/$(ui).gen.h)
@@ -489,6 +511,9 @@ VirtualBox_SOURCES = \
 	src/QIAbstractWizard.cpp \
 	src/QIAbstractDialog.cpp \
 	src/QIDialog.cpp \
+	src/QIDialogButtonBox.cpp \
+	src/QIListView.cpp \
+	src/QILineEdit.cpp \
 	src/VBoxDefs.cpp \
 	src/VBoxGlobalSettings.cpp \
 	src/VBoxGlobal.cpp \
@@ -513,18 +538,29 @@ VirtualBox_SOURCES = \
 	src/VBoxVMInformationDlg.cpp \
 	src/VBoxTakeSnapshotDlg.cpp \
 	src/VBoxSnapshotsWgt.cpp \
-	src/VBoxVMLogViewer.cpp
+	src/VBoxVMLogViewer.cpp \
+	src/VBoxVMSettingsGeneral.cpp \
+	src/VBoxVMSettingsCD.cpp \
+	src/VBoxVMSettingsFD.cpp \
+	src/VBoxVMSettingsAudio.cpp \
+	src/VBoxVMSettingsSerial.cpp \
+	src/VBoxVMSettingsParallel.cpp \
+	src/VBoxVMSettingsDlg.cpp
 
-ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(BUILD_TARGET)),) # X11
+ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),) # X11
+ifndef VBOX_OSE
+VirtualBox_QT_MOCHDRS += \
+	include/VBoxLicenseViewer.h
+VirtualBox_SOURCES += \
+	src/VBoxLicenseViewer.cpp
+endif
 VirtualBox_SOURCES += \
 	src/linux/XKeyboard-new.cpp
 endif
 
 VirtualBox_SOURCES.win += \
-	src/win32/VirtualBox.rc
-
-VirtualBox_SOURCES.win += \
-	src/VBoxFBDDRAW.cpp
+	src/VBoxFBDDRAW.cpp \
+	$(PATH_TARGET)/VirtualBox4.rc
 
 VirtualBox_SOURCES.darwin = \
 	src/darwin/DarwinKeyboard.cpp \
@@ -538,7 +574,7 @@ ifdef VBOX_WITH_ICHAT_THEATER
 	 src/darwin/VBoxIChatTheaterWrapper.m
 endif
 
-ifneq ($(BUILD_TARGET),win)
+ifneq ($(KBUILD_TARGET),win)
 src/HappyHttp.cpp_CXXFLAGS += -fexceptions
 src/VBoxDownloaderWgt.cpp_CXXFLAGS += -fexceptions
 src/VBoxNetworkFramework.cpp_CXXFLAGS += -fexceptions
@@ -569,7 +605,7 @@ VirtualBox_DEFS.win.amd64 = VBOX_WITHOUT_QHTTP
 ifdef VBOX_WITH_ICHAT_THEATER
  VirtualBox_DEFS.darwin += VBOX_WITH_ICHAT_THEATER
 endif
-ifneq ($(BUILD_TYPE),release)
+ifneq ($(KBUILD_TYPE),release)
  # non-release builds has some extra features.
  VirtualBox_DEFS.win     += VBOX_GUI_USE_DDRAW
  VirtualBox_DEFS.linux   += VBOX_GUI_USE_QIMAGE
@@ -586,6 +622,9 @@ endif
 ifdef VBOX_WITH_PULSE
  VirtualBox_DEFS         += VBOX_WITH_PULSE
 endif
+ifdef VBOX_WITH_E1000
+ VirtualBox_DEFS         += VBOX_WITH_E1000
+endif
 ifdef VBOX_OSE
  VirtualBox_DEFS         += VBOX_OSE
 endif
@@ -600,7 +639,7 @@ VirtualBox_INCS           = \
 	$(PATH_VirtualBox)/include \
 
 
-ifeq ($(BUILD_TYPE),release)
+ifeq ($(KBUILD_TYPE),release)
  VirtualBox_LDFLAGS.win  += /SUBSYSTEM:windows
 else
  VirtualBox_LDFLAGS.linux+= -rdynamic # for backtrace_symbols()
@@ -620,13 +659,13 @@ VirtualBox_LIBS.win       = \
 	$(PATH_SDK_DXSDK_LIB)/ddraw.lib \
 	$(PATH_SDK_DXSDK_LIB)/dxguid.lib
 VirtualBox_LIBS.os2      += $(PATH_DLL)/VBoxHlp$(VBOX_SUFF_DLL)
-ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(BUILD_TARGET)),) # X11
+ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),) # X11
 VirtualBox_LIBS          += $(PATH_DLL)/VBoxKeyboard4$(VBOX_SUFF_DLL)
 endif
 
 
 ifdef VBOX_WITH_DEBUGGER_GUI ## @todo make this dynamically loadable and ship with release builds too.
- ifeq ($(BUILD_TARGET),win)
+ ifeq ($(KBUILD_TARGET),win)
   VirtualBox_LIBS        += $(PATH_LIB)/VBoxDbg$(VBOX_SUFF_LIB)
  else
   VirtualBox_LIBS        += $(PATH_DLL)/VBoxDbg$(VBOX_SUFF_DLL)
@@ -646,6 +685,17 @@ OTHER_CLEAN           = \
 	$(WRAPPERSFILE) \
 	$(PATH_BIN)/vboxkeyboard.tar.gz
 
+#
+# On Windows we'll have to generate/edit the resource file.
+# The IDI_ICON1 name is Qt specific.
+#
+$(PATH_TARGET)/VirtualBox4.rc: Makefile.kmk $(VBOX_WINDOWS_ICON_FILE) | $$(call DIRDEP,$$(@D))
+	$(RM) -f $@
+	$(APPEND) $@ 'IDI_ICON1 ICON "$(subst /,\\,$(VBOX_WINDOWS_ICON_FILE))"'
+	$(CAT) $@
+
+OTHER_CLEAN.win += $(PATH_TARGET)/VirtualBox4.rc
+
 
 #
 # On Mac OS X (darwin) we need to install icon resources and compusory bundle contents.
@@ -655,14 +705,8 @@ VirtualBox.app_INST = $(INST_VIRTUALBOX)Contents/
 VirtualBox.app_MODE = 644
 VirtualBox.app_SOURCES = \
 	src/darwin/PkgInfo \
-	$(PATH_TARGET)/Info.plist
-ifdef VBOX_OSE
-VirtualBox.app_SOURCES += \
-	images/OSE/VirtualBox.icns=>Resources/virtualbox.icns
-else
-VirtualBox.app_SOURCES += \
-	images/NonOSE/VirtualBox.icns=>Resources/virtualbox.icns
-endif
+	$(PATH_TARGET)/Info.plist \
+	$(VBOX_MACOSX_ICON_FILE)=>Resources/virtualbox.icns
 
 $(PATH_TARGET)/Info.plist: src/darwin/Info.plist $(VBOX_VERSION_MK) | $(call DIRDEP,$(PATH_TARGET))
 	$(call MSG_GENERATE,VirtualBox.app,$<,$@)
@@ -679,14 +723,8 @@ VirtualBoxVM.app_INST = $(VirtualBox.app_INST)Resources/VirtualBoxVM.app/Content
 VirtualBoxVM.app_MODE = 644
 VirtualBoxVM.app_SOURCES = \
 	src/darwin/VM-PkgInfo=>PkgInfo \
-	$(PATH_TARGET)/VM-Info.plist=>Info.plist
-ifdef VBOX_OSE
-VirtualBoxVM.app_SOURCES += \
-	images/OSE/VirtualBox.icns=>Resources/virtualbox.icns
-else
-VirtualBoxVM.app_SOURCES += \
-	images/NonOSE/VirtualBox.icns=>Resources/virtualbox.icns
-endif
+	$(PATH_TARGET)/VM-Info.plist=>Info.plist \
+	$(VBOX_MACOSX_ICON_FILE)=>Resources/virtualbox.icns
 VirtualBoxVM.app_SYMLINKS = \
 	MacOS=>../../../MacOS/
 
@@ -745,7 +783,7 @@ VirtualBox_QT_UISRCS4 += ui/VBoxAboutDlg.ui
 
 # Commit the magic.
 # (note: before custom rules that make usage of generated variables!).
-include $(PATH_KBUILD)/footer.kmk
+include $(KBUILD_PATH)/footer.kmk
 
 
 #

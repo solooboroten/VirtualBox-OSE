@@ -1,4 +1,4 @@
-/* $Id: VBoxREMWrapper.cpp 8217 2008-04-21 11:33:22Z vboxsync $ */
+/* $Id: VBoxREMWrapper.cpp 30835 2008-05-15 01:36:29Z bird $ */
 /** @file
  *
  * VBoxREM Win64 DLL Wrapper.
@@ -643,7 +643,7 @@ static const REMPARMDESC g_aArgsPDMIsaSetIrq[] =
     { REMPARMDESC_FLAGS_INT,        sizeof(uint8_t), NULL },
     { REMPARMDESC_FLAGS_INT,        sizeof(uint8_t), NULL }
 };
-static const REMPARMDESC g_aArgsPGMGetGuestMode[] = 
+static const REMPARMDESC g_aArgsPGMGetGuestMode[] =
 {
     { REMPARMDESC_FLAGS_INT,        sizeof(PVM), NULL },
 };
@@ -935,6 +935,10 @@ static const REMPARMDESC g_aArgsRTStrPrintfV[] =
     { REMPARMDESC_FLAGS_INT,        sizeof(const char *), NULL },
     { REMPARMDESC_FLAGS_VALIST,     0 }
 };
+static const REMPARMDESC g_aArgsThread[] =
+{
+    { REMPARMDESC_FLAGS_INT,        sizeof(RTTHREAD), NULL }
+};
 
 
 /* CRT args */
@@ -1012,6 +1016,8 @@ static REMFNDESC g_aVMMImports[] =
     { "CPUMGetGuestEIP",                        (void *)(uintptr_t)&CPUMGetGuestEIP,                &g_aArgsVM[0],                              ELEMENTS(g_aArgsVM),                                REMFNDESC_FLAGS_RET_INT,    sizeof(uint32_t),   NULL },
     { "CPUMGetGuestESI",                        (void *)(uintptr_t)&CPUMGetGuestESI,                &g_aArgsVM[0],                              ELEMENTS(g_aArgsVM),                                REMFNDESC_FLAGS_RET_INT,    sizeof(uint32_t),   NULL },
     { "CPUMGetGuestESP",                        (void *)(uintptr_t)&CPUMGetGuestESP,                &g_aArgsVM[0],                              ELEMENTS(g_aArgsVM),                                REMFNDESC_FLAGS_RET_INT,    sizeof(uint32_t),   NULL },
+    { "CPUMGetGuestCS",                         (void *)(uintptr_t)&CPUMGetGuestCS,                 &g_aArgsVM[0],                              ELEMENTS(g_aArgsVM),                                REMFNDESC_FLAGS_RET_INT,    sizeof(RTSEL),      NULL },
+    { "CPUMGetGuestSS",                         (void *)(uintptr_t)&CPUMGetGuestSS,                 &g_aArgsVM[0],                              ELEMENTS(g_aArgsVM),                                REMFNDESC_FLAGS_RET_INT,    sizeof(RTSEL),      NULL },
     { "CPUMQueryGuestCtxPtr",                   (void *)(uintptr_t)&CPUMQueryGuestCtxPtr,           &g_aArgsCPUMQueryGuestCtxPtr[0],            ELEMENTS(g_aArgsCPUMQueryGuestCtxPtr),              REMFNDESC_FLAGS_RET_INT,    sizeof(int),        NULL },
     { "CSAMR3MonitorPage",                      (void *)(uintptr_t)&CSAMR3MonitorPage,              &g_aArgsCSAMR3MonitorPage[0],               ELEMENTS(g_aArgsCSAMR3MonitorPage),                 REMFNDESC_FLAGS_RET_INT,    sizeof(int),        NULL },
     { "CSAMR3UnmonitorPage",                    (void *)(uintptr_t)&CSAMR3UnmonitorPage,            &g_aArgsCSAMR3UnmonitorPage[0],             ELEMENTS(g_aArgsCSAMR3UnmonitorPage),               REMFNDESC_FLAGS_RET_INT,    sizeof(int),        NULL },
@@ -1060,12 +1066,14 @@ static REMFNDESC g_aVMMImports[] =
     { "PGMPhysWrite",                           (void *)(uintptr_t)&PGMPhysWrite,                   &g_aArgsPGMPhysWrite[0],                    ELEMENTS(g_aArgsPGMPhysWrite),                      REMFNDESC_FLAGS_RET_VOID,   0,                  NULL },
     { "PGMChangeMode",                          (void *)(uintptr_t)&PGMChangeMode,                  &g_aArgsPGMChangeMode[0],                   ELEMENTS(g_aArgsPGMChangeMode),                     REMFNDESC_FLAGS_RET_INT,    sizeof(int),        NULL },
     { "PGMFlushTLB",                            (void *)(uintptr_t)&PGMFlushTLB,                    &g_aArgsPGMFlushTLB[0],                     ELEMENTS(g_aArgsPGMFlushTLB),                       REMFNDESC_FLAGS_RET_INT,    sizeof(int),        NULL },
-    { "PGMR3PhysReadByte",                      (void *)(uintptr_t)&PGMR3PhysReadByte,              &g_aArgsPGMR3PhysReadUxx[0],                ELEMENTS(g_aArgsPGMR3PhysReadUxx),                  REMFNDESC_FLAGS_RET_INT,    sizeof(uint8_t),    NULL },
-    { "PGMR3PhysReadDword",                     (void *)(uintptr_t)&PGMR3PhysReadDword,             &g_aArgsPGMR3PhysReadUxx[0],                ELEMENTS(g_aArgsPGMR3PhysReadUxx),                  REMFNDESC_FLAGS_RET_INT,    sizeof(uint32_t),   NULL },
-    { "PGMR3PhysReadWord",                      (void *)(uintptr_t)&PGMR3PhysReadWord,              &g_aArgsPGMR3PhysReadUxx[0],                ELEMENTS(g_aArgsPGMR3PhysReadUxx),                  REMFNDESC_FLAGS_RET_INT,    sizeof(uint16_t),   NULL },
-    { "PGMR3PhysWriteByte",                     (void *)(uintptr_t)&PGMR3PhysWriteByte,             &g_aArgsPGMR3PhysWriteU8[0],                ELEMENTS(g_aArgsPGMR3PhysWriteU8),                  REMFNDESC_FLAGS_RET_VOID,   0,                  NULL },
-    { "PGMR3PhysWriteDword",                    (void *)(uintptr_t)&PGMR3PhysWriteDword,            &g_aArgsPGMR3PhysWriteU32[0],               ELEMENTS(g_aArgsPGMR3PhysWriteU32),                 REMFNDESC_FLAGS_RET_VOID,   0,                  NULL },
-    { "PGMR3PhysWriteWord",                     (void *)(uintptr_t)&PGMR3PhysWriteWord,             &g_aArgsPGMR3PhysWriteU16[0],               ELEMENTS(g_aArgsPGMR3PhysWriteU16),                 REMFNDESC_FLAGS_RET_VOID,   0,                  NULL },
+    { "PGMR3PhysReadU8",                        (void *)(uintptr_t)&PGMR3PhysReadU8,                &g_aArgsPGMR3PhysReadUxx[0],                ELEMENTS(g_aArgsPGMR3PhysReadUxx),                  REMFNDESC_FLAGS_RET_INT,    sizeof(uint8_t),    NULL },
+    { "PGMR3PhysReadU16",                       (void *)(uintptr_t)&PGMR3PhysReadU16,               &g_aArgsPGMR3PhysReadUxx[0],                ELEMENTS(g_aArgsPGMR3PhysReadUxx),                  REMFNDESC_FLAGS_RET_INT,    sizeof(uint16_t),   NULL },
+    { "PGMR3PhysReadU32",                       (void *)(uintptr_t)&PGMR3PhysReadU32,               &g_aArgsPGMR3PhysReadUxx[0],                ELEMENTS(g_aArgsPGMR3PhysReadUxx),                  REMFNDESC_FLAGS_RET_INT,    sizeof(uint32_t),   NULL },
+    { "PGMR3PhysReadU64",                       (void *)(uintptr_t)&PGMR3PhysReadU64,               &g_aArgsPGMR3PhysReadUxx[0],                ELEMENTS(g_aArgsPGMR3PhysReadUxx),                  REMFNDESC_FLAGS_RET_INT,    sizeof(uint64_t),   NULL },
+    { "PGMR3PhysWriteU8",                       (void *)(uintptr_t)&PGMR3PhysWriteU8,               &g_aArgsPGMR3PhysWriteU8[0],                ELEMENTS(g_aArgsPGMR3PhysWriteU8),                  REMFNDESC_FLAGS_RET_VOID,   0,                  NULL },
+    { "PGMR3PhysWriteU16",                      (void *)(uintptr_t)&PGMR3PhysWriteU16,              &g_aArgsPGMR3PhysWriteU16[0],               ELEMENTS(g_aArgsPGMR3PhysWriteU16),                 REMFNDESC_FLAGS_RET_VOID,   0,                  NULL },
+    { "PGMR3PhysWriteU32",                      (void *)(uintptr_t)&PGMR3PhysWriteU32,              &g_aArgsPGMR3PhysWriteU32[0],               ELEMENTS(g_aArgsPGMR3PhysWriteU32),                 REMFNDESC_FLAGS_RET_VOID,   0,                  NULL },
+    { "PGMR3PhysWriteU64",                      (void *)(uintptr_t)&PGMR3PhysWriteU64,              &g_aArgsPGMR3PhysWriteU64[0],               ELEMENTS(g_aArgsPGMR3PhysWriteU32),                 REMFNDESC_FLAGS_RET_VOID,   0,                  NULL },
     { "SSMR3GetGCPtr",                          (void *)(uintptr_t)&SSMR3GetGCPtr,                  &g_aArgsSSMR3GetGCPtr[0],                   ELEMENTS(g_aArgsSSMR3GetGCPtr),                     REMFNDESC_FLAGS_RET_INT,    sizeof(int),        NULL },
     { "SSMR3GetMem",                            (void *)(uintptr_t)&SSMR3GetMem,                    &g_aArgsSSMR3GetMem[0],                     ELEMENTS(g_aArgsSSMR3GetMem),                       REMFNDESC_FLAGS_RET_INT,    sizeof(int),        NULL },
     { "SSMR3GetU32",                            (void *)(uintptr_t)&SSMR3GetU32,                    &g_aArgsSSMR3GetU32[0],                     ELEMENTS(g_aArgsSSMR3GetU32),                       REMFNDESC_FLAGS_RET_INT,    sizeof(int),        NULL },
@@ -1122,7 +1130,9 @@ static REMFNDESC g_aRTImports[] =
     { "RTMemProtect",                           (void *)(uintptr_t)&RTMemProtect,                   &g_aArgsRTMemProtect[0],                    ELEMENTS(g_aArgsRTMemProtect),                      REMFNDESC_FLAGS_RET_INT,    sizeof(int),        NULL },
     { "RTStrPrintf",                            (void *)(uintptr_t)&RTStrPrintf,                    &g_aArgsRTStrPrintf[0],                     ELEMENTS(g_aArgsRTStrPrintf),                       REMFNDESC_FLAGS_RET_INT | REMFNDESC_FLAGS_ELLIPSIS, sizeof(size_t), NULL },
     { "RTStrPrintfV",                           (void *)(uintptr_t)&RTStrPrintfV,                   &g_aArgsRTStrPrintfV[0],                    ELEMENTS(g_aArgsRTStrPrintfV),                      REMFNDESC_FLAGS_RET_INT | REMFNDESC_FLAGS_VALIST, sizeof(size_t), NULL },
+    { "RTThreadSelf",                           (void *)(uintptr_t)&RTThreadSelf,                   NULL,                                       0,                                                  REMFNDESC_FLAGS_RET_INT,    sizeof(RTTHREAD),    NULL },
     { "RTThreadNativeSelf",                     (void *)(uintptr_t)&RTThreadNativeSelf,             NULL,                                       0,                                                  REMFNDESC_FLAGS_RET_INT, sizeof(RTNATIVETHREAD), NULL },
+    { "RTThreadGetWriteLockCount",              (void *)(uintptr_t)&RTThreadGetWriteLockCount,      &g_aArgsThread[0],                          0,                                                  REMFNDESC_FLAGS_RET_INT,    sizeof(int32_t),    NULL },
 };
 
 

@@ -1,4 +1,4 @@
-/** $Id: tstInt.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/** $Id: tstInt.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * Testcase: Test the interrupt gate feature of the support library.
  */

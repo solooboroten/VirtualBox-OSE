@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-win.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: SUPDrv-win.cpp 30959 2008-05-19 09:45:02Z sandervl $ */
 /** @file
  * VirtualBox Support Driver - Windows NT specific parts.
  */
@@ -119,14 +119,21 @@ ULONG _stdcall DriverEntry(PDRIVER_OBJECT pDrvObj, PUNICODE_STRING pRegPath)
         rc = IoCreateSymbolicLink(&DosName, &DevName);
         if (NT_SUCCESS(rc))
         {
+            uint64_t  u64DiffCores;
+
             /*
              * Initialize the device extension.
              */
             PSUPDRVDEVEXT pDevExt = (PSUPDRVDEVEXT)pDevObj->DeviceExtension;
             memset(pDevExt, 0, sizeof(*pDevExt));
+
             int vrc = supdrvInitDevExt(pDevExt);
             if (!vrc)
             {
+                /* Make sure the tsc is consistent across cpus/cores. */
+                pDevExt->fForceAsyncTsc = supdrvDetermineAsyncTsc(&u64DiffCores);
+                dprintf(("supdrvDetermineAsyncTsc: fAsync=%d u64DiffCores=%u.\n", pDevExt->fForceAsyncTsc, (uint32_t)u64DiffCores));
+
                 /*
                  * Inititalize the GIP.
                  */
@@ -507,6 +514,10 @@ static NTSTATUS VBoxDrvNtGipInit(PSUPDRVDEVEXT pDevExt)
                 ULONG ulClockFreq = 10000000 / ulClockInterval;
                 pDevExt->ulGipTimerInterval = ulClockInterval / 10000; /* ms */
 
+                /* Note: We need to register a callback handler for added cpus (only available in win2k8: KeRegisterProcessorChangeCallback) */
+                /* Note: We are not allowed to call KeQueryActiveProcessors at DPC_LEVEL, so we now assume cpu affinity mask does NOT change. */
+                pDevExt->uAffinityMask = KeQueryActiveProcessors();
+
                 /*
                  * Call common initialization routine.
                  */
@@ -618,9 +629,7 @@ static void _stdcall VBoxDrvNtGipTimer(IN PKDPC pDpc, IN PVOID pvUser, IN PVOID 
         {
             KIRQL oldIrql;
 
-            /* KeQueryActiveProcessors must be executed at IRQL < DISPATCH_LEVEL */
-            Assert(KeGetCurrentIrql() < DISPATCH_LEVEL);
-            KAFFINITY Mask = KeQueryActiveProcessors();
+            KAFFINITY Mask = pDevExt->uAffinityMask;
 
             /* Raise the IRQL to DISPATCH_LEVEL so we can't be rescheduled to another cpu */
             KeRaiseIrql(DISPATCH_LEVEL, &oldIrql);
@@ -748,10 +757,12 @@ void  VBOXCALL  supdrvOSGipSuspend(PSUPDRVDEVEXT pDevExt)
 /**
  * Get the current CPU count.
  * @returns Number of cpus.
+ *
+ * @param   pDevExt     Instance data.
  */
-unsigned VBOXCALL supdrvOSGetCPUCount(void)
+unsigned VBOXCALL supdrvOSGetCPUCount(PSUPDRVDEVEXT pDevExt)
 {
-    KAFFINITY Mask = KeQueryActiveProcessors();
+    KAFFINITY Mask = pDevExt->uAffinityMask;
     unsigned cCpus = 0;
     unsigned iBit;
     for (iBit = 0; iBit < sizeof(Mask) * 8; iBit++)
@@ -766,9 +777,9 @@ unsigned VBOXCALL supdrvOSGetCPUCount(void)
 /**
  * Force async tsc mode (stub).
  */
-bool VBOXCALL  supdrvOSGetForcedAsyncTscMode(void)
+bool VBOXCALL  supdrvOSGetForcedAsyncTscMode(PSUPDRVDEVEXT pDevExt)
 {
-    return false;
+    return pDevExt->fForceAsyncTsc != 0;
 }
 
 

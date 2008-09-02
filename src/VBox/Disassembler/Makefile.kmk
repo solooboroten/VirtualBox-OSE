@@ -1,6 +1,6 @@
-# $Id: Makefile.kmk 8299 2008-04-22 15:17:50Z vboxsync $
+# $Id: Makefile.kmk 31001 2008-05-20 00:52:26Z bird $
 ## @file
-# Makefile for the VBox Disassembler.
+# Sub-Makefile for the VBox Disassembler.
 #
 
 #
@@ -19,49 +19,78 @@
 # additional information or have any questions.
 #
 
-DEPTH = ../../..
-include $(PATH_KBUILD)/header.kmk
+DEPTH ?= ../../..
+SUB_DEPTH = .
+include $(KBUILD_PATH)/subheader.kmk
 
-
-PROGRAMS                = tstDisasmCore tstDisasm
-LIBRARIES               = DisasmR3 DisasmCoreR3 DisasmGC DisasmR0
-
-DisasmR3_TEMPLATE       = VBOXR3
-ifeq ($(BUILD_TARGET),win)
-DisasmR3_CXXFLAGS      += -EHa
-else
- ifneq ($(BUILD_TARGET),l4)
-DisasmR3_CXXFLAGS      += -fexceptions
- endif
+# include the sub-makefile first.
+ifdef VBOX_WITH_TESTCASES
+ include $(PATH_SUB_CURRENT)/testcase/Makefile.kmk
 endif
-DisasmR3_SOURCES        = Disasm.cpp DisasmCore.cpp DisasmReg.cpp DisasmTables.cpp DisasmTablesX64.cpp
+
+
+LIBRARIES              += DisasmR3
+DisasmR3_TEMPLATE       = VBOXR3
 DisasmR3_DEFS           = IN_DIS_R3
+ifeq ($(KBUILD_TARGET),win)
+DisasmR3_CXXFLAGS      += -EHa
+else ifneq ($(KBUILD_TARGET),l4)
+DisasmR3_CXXFLAGS      += -fexceptions
+endif
+DisasmR3_SOURCES        = \
+	Disasm.cpp \
+	DisasmCore.cpp \
+	DisasmReg.cpp \
+	DisasmTables.cpp \
+	DisasmTablesX64.cpp
 
+LIBRARIES              += DisasmCoreR3
 DisasmCoreR3_TEMPLATE   = VBOXR3
-DisasmCoreR3_SOURCES    = DisasmCore.cpp DisasmReg.cpp DisasmTables.cpp DisasmTablesX64.cpp
 DisasmCoreR3_DEFS       = IN_DIS_R3 DIS_CORE_ONLY
+DisasmCoreR3_SOURCES    = \
+	DisasmCore.cpp \
+	DisasmReg.cpp \
+	DisasmTables.cpp \
+	DisasmTablesX64.cpp
 
+LIBRARIES              += DisasmGC
 DisasmGC_TEMPLATE       = VBOXGC
-DisasmGC_SOURCES        = DisasmCore.cpp DisasmReg.cpp DisasmTables.cpp DisasmTablesX64.cpp
 DisasmGC_DEFS           = IN_DIS_GC IN_RT_GC DIS_CORE_ONLY
+DisasmGC_SOURCES        = \
+	DisasmCore.cpp \
+	DisasmReg.cpp \
+	DisasmTables.cpp \
+	DisasmTablesX64.cpp
 
+LIBRARIES              += DisasmR0
 DisasmR0_TEMPLATE       = VBOXR0
-DisasmR0_SOURCES        = DisasmCore.cpp DisasmReg.cpp DisasmTables.cpp DisasmTablesX64.cpp
 DisasmR0_DEFS           = IN_DIS_R0 IN_RT_R0 DIS_CORE_ONLY
+DisasmR0_SOURCES        = \
+	DisasmCore.cpp \
+	DisasmReg.cpp \
+	DisasmTables.cpp \
+	DisasmTablesX64.cpp
 
-tstDisasm_TEMPLATE      = VBOXR3TSTEXE
-tstDisasm_SOURCES       = DisasmTest.cpp DisasmTestA.asm
-tstDisasm_DEFS          = IN_DIS_R3
-tstDisasm_LIBS          = \
-	$(PATH_LIB)/DisasmR3$(VBOX_SUFF_LIB) \
-	$(LIB_RUNTIME)
 
-tstDisasmCore_TEMPLATE  = VBOXR3TSTEXE
-tstDisasmCore_SOURCES   = DisasmTestCore.cpp
-tstDisasmCore_DEFS      = IN_DIS_R3 DIS_CORE_ONLY
-tstDisasmCore_LIBS      = \
-	$(PATH_LIB)/DisasmCoreR3$(VBOX_SUFF_LIB) \
-	$(LIB_RUNTIME)
+ifdef VBOX_WITH_TESTCASES
+ # testcase that hasn't been moved yet.
+ PROGRAMS              += tstDisasm
+ tstDisasm_TEMPLATE     = VBOXR3TSTEXE
+ tstDisasm_DEFS         = IN_DIS_R3
+ tstDisasm_SOURCES      = DisasmTest.cpp DisasmTestA.asm
+ tstDisasm_LIBS         = \
+ 	$(PATH_LIB)/DisasmR3$(VBOX_SUFF_LIB) \
+ 	$(LIB_RUNTIME)
 
-include $(PATH_KBUILD)/footer.kmk
+ PROGRAMS              += tstDisasmCore
+ tstDisasmCore_TEMPLATE = VBOXR3TSTEXE
+ tstDisasmCore_DEFS     = IN_DIS_R3 DIS_CORE_ONLY
+ tstDisasmCore_SOURCES  = DisasmTestCore.cpp
+ tstDisasmCore_LIBS     = \
+ 	$(PATH_LIB)/DisasmCoreR3$(VBOX_SUFF_LIB) \
+ 	$(LIB_RUNTIME)
+endif # VBOX_WITH_TESTCASES
+
+
+include $(KBUILD_PATH)/subfooter.kmk
 

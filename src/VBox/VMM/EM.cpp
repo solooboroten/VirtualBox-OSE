@@ -1,4 +1,4 @@
-/* $Id: EM.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: EM.cpp 31169 2008-05-23 11:35:22Z sandervl $ */
 /** @file
  * EM - Execution Monitor/Manager.
  */
@@ -208,6 +208,10 @@ EMR3DECL(int) EMR3Init(PVM pVM)
     STAM_REG_USED(pVM, &pStats->StatHCCmpXchg8b,            STAMTYPE_COUNTER, "/EM/HC/Interpret/Success/CmpXchg8b",   STAMUNIT_OCCURENCES,  "The number of times CMPXCHG8B was successfully interpreted.");
     STAM_REG_USED(pVM, &pStats->StatGCXAdd,                 STAMTYPE_COUNTER, "/EM/GC/Interpret/Success/XAdd",      STAMUNIT_OCCURENCES,    "The number of times XADD was successfully interpreted.");
     STAM_REG_USED(pVM, &pStats->StatHCXAdd,                 STAMTYPE_COUNTER, "/EM/HC/Interpret/Success/XAdd",      STAMUNIT_OCCURENCES,    "The number of times XADD was successfully interpreted.");
+    STAM_REG_USED(pVM, &pStats->StatHCRdmsr,                STAMTYPE_COUNTER, "/EM/HC/Interpret/Success/Rdmsr",      STAMUNIT_OCCURENCES,   "The number of times RDMSR was not interpreted.");
+    STAM_REG_USED(pVM, &pStats->StatGCRdmsr,                STAMTYPE_COUNTER, "/EM/GC/Interpret/Success/Rdmsr",      STAMUNIT_OCCURENCES,   "The number of times RDMSR was not interpreted.");
+    STAM_REG_USED(pVM, &pStats->StatHCWrmsr,                STAMTYPE_COUNTER, "/EM/HC/Interpret/Success/Wrmsr",      STAMUNIT_OCCURENCES,   "The number of times WRMSR was not interpreted.");
+    STAM_REG_USED(pVM, &pStats->StatGCWrmsr,                STAMTYPE_COUNTER, "/EM/GC/Interpret/Success/Wrmsr",      STAMUNIT_OCCURENCES,   "The number of times WRMSR was not interpreted.");
 
     STAM_REG(pVM, &pStats->StatGCInterpretFailed,           STAMTYPE_COUNTER, "/EM/GC/Interpret/Failed",            STAMUNIT_OCCURENCES,    "The number of times an instruction was not interpreted.");
     STAM_REG(pVM, &pStats->StatHCInterpretFailed,           STAMTYPE_COUNTER, "/EM/HC/Interpret/Failed",            STAMUNIT_OCCURENCES,    "The number of times an instruction was not interpreted.");
@@ -250,6 +254,10 @@ EMR3DECL(int) EMR3Init(PVM pVM)
     STAM_REG_USED(pVM, &pStats->StatHCFailedMWait,          STAMTYPE_COUNTER, "/EM/HC/Interpret/Failed/MWait",      STAMUNIT_OCCURENCES,    "The number of times MONITOR was not interpreted.");
     STAM_REG_USED(pVM, &pStats->StatGCFailedRdtsc,          STAMTYPE_COUNTER, "/EM/GC/Interpret/Failed/Rdtsc",      STAMUNIT_OCCURENCES,    "The number of times RDTSC was not interpreted.");
     STAM_REG_USED(pVM, &pStats->StatHCFailedRdtsc,          STAMTYPE_COUNTER, "/EM/HC/Interpret/Failed/Rdtsc",      STAMUNIT_OCCURENCES,    "The number of times RDTSC was not interpreted.");
+    STAM_REG_USED(pVM, &pStats->StatGCFailedRdmsr,          STAMTYPE_COUNTER, "/EM/GC/Interpret/Failed/Rdmsr",      STAMUNIT_OCCURENCES,    "The number of times RDMSR was not interpreted.");
+    STAM_REG_USED(pVM, &pStats->StatHCFailedRdmsr,          STAMTYPE_COUNTER, "/EM/HC/Interpret/Failed/Rdmsr",      STAMUNIT_OCCURENCES,    "The number of times RDMSR was not interpreted.");
+    STAM_REG_USED(pVM, &pStats->StatGCFailedWrmsr,          STAMTYPE_COUNTER, "/EM/GC/Interpret/Failed/Wrmsr",      STAMUNIT_OCCURENCES,    "The number of times WRMSR was not interpreted.");
+    STAM_REG_USED(pVM, &pStats->StatHCFailedWrmsr,          STAMTYPE_COUNTER, "/EM/HC/Interpret/Failed/Wrmsr",      STAMUNIT_OCCURENCES,    "The number of times WRMSR was not interpreted.");
 
     STAM_REG_USED(pVM, &pStats->StatGCFailedMisc,           STAMTYPE_COUNTER, "/EM/GC/Interpret/Failed/Misc",       STAMUNIT_OCCURENCES,    "The number of times some misc instruction was encountered.");
     STAM_REG_USED(pVM, &pStats->StatHCFailedMisc,           STAMTYPE_COUNTER, "/EM/HC/Interpret/Failed/Misc",       STAMUNIT_OCCURENCES,    "The number of times some misc instruction was encountered.");
@@ -609,6 +617,10 @@ static int emR3Debug(PVM pVM, int rc)
             /*
              * Guru meditation.
              */
+            case VERR_REM_TOO_MANY_TRAPS: /** @todo Make a guru mediation event! */
+                rc = DBGFR3EventSrc(pVM, DBGFEVENT_DEV_STOP, "VERR_REM_TOO_MANY_TRAPS", 0, NULL, NULL);
+                break;
+
             default: /** @todo don't use default for guru, but make special errors code! */
                 rc = DBGFR3Event(pVM, DBGFEVENT_FATAL_ERROR);
                 break;
@@ -812,7 +824,7 @@ static int emR3RemExecute(PVM pVM, bool *pfFFDone)
                  * Anything which is not known to us means an internal error
                  * and the termination of the VM!
                  */
-                AssertMsgFailed(("Unknown GC return code: %Vra\n", rc));
+                AssertMsg(rc == VERR_REM_TOO_MANY_TRAPS, ("Unknown GC return code: %Vra\n", rc));
                 break;
             }
         }
@@ -2051,7 +2063,7 @@ DECLINLINE(int) emR3RawHandleRC(PVM pVM, PCPUMCTX pCtx, int rc)
                         /* Must check pending forced actions as our IDT or GDT might be out of sync */
                         EMR3CheckRawForcedActions(pVM);
 
-                        rc = TRPMForwardTrap(pVM, CPUMCTX2CORE(pCtx), u8Interrupt, uErrorCode, enmError, TRPM_TRAP);
+                        rc = TRPMForwardTrap(pVM, CPUMCTX2CORE(pCtx), u8Interrupt, uErrorCode, enmError, TRPM_TRAP, -1);
                         if (rc == VINF_SUCCESS /* Don't use VBOX_SUCCESS */)
                         {
                             TRPMResetTrap(pVM);
@@ -2174,6 +2186,7 @@ DECLINLINE(int) emR3RawHandleRC(PVM pVM, PCPUMCTX pCtx, int rc)
         case VERR_REM_FLUSHED_PAGES_OVERFLOW:
             Assert((pCtx->ss & X86_SEL_RPL) != 1);
             REMR3ReplayInvalidatedPages(pVM);
+            rc = VINF_SUCCESS;
             break;
 
         /*

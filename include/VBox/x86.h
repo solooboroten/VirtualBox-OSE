@@ -259,7 +259,7 @@ typedef struct X86CPUIDFEATEDX
     unsigned    u1MCE : 1;
     /** Bit 8 - CX8 - CMPXCHG8B instruction. */
     unsigned    u1CX8 : 1;
-    /** Bit 9 - APIC - APIC On-Chick. */
+    /** Bit 9 - APIC - APIC On-Chip. */
     unsigned    u1APIC : 1;
     /** Bit 10 - Reserved. */
     unsigned    u1Reserved1 : 1;
@@ -697,6 +697,10 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 /** @name Machine Specific Registers
  * @{
  */
+#ifndef MSR_IA32_APICBASE /* qemu cpu.h klugde */
+#define MSR_IA32_APICBASE                   0x1b
+#endif
+
 /** CPU Feature control. */
 #define MSR_IA32_FEATURE_CONTROL            0x3A
 #define MSR_IA32_FEATURE_CONTROL_LOCK       RT_BIT(0)
@@ -717,7 +721,7 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #endif
 
 /* Page Attribute Table. */
-#define IA32_CR_PAT                         0x277
+#define MSR_IA32_CR_PAT                     0x277
 
 /** Basic VMX information. */
 #define MSR_IA32_VMX_BASIC_INFO             0x480
@@ -1436,6 +1440,35 @@ typedef struct X86PDPEBITS
 {
     /** Flags whether(=1) or not the page is present. */
     uint32_t    u1Present : 1;
+    /** Chunk of reserved bits. */
+    uint32_t    u2Reserved : 2;
+    /** Write Thru flag. If PAT enabled, bit 0 of the index. */
+    uint32_t    u1WriteThru : 1;
+    /** Cache disabled flag. If PAT enabled, bit 1 of the index. */
+    uint32_t    u1CacheDisable : 1;
+    /** Chunk of reserved bits. */
+    uint32_t    u4Reserved : 4;
+    /** Available for use to system software. */
+    uint32_t    u3Available : 3;
+    /** Physical Page number of the next level - Low Part. Don't use! */
+    uint32_t    u20PageNoLow : 20;
+    /** Physical Page number of the next level - High Part. Don't use! */
+    uint32_t    u20PageNoHigh : 20;
+    /** MBZ bits */
+    uint32_t    u12Reserved : 12;
+} X86PDPEBITS;
+/** Pointer to a page directory pointer table entry. */
+typedef X86PDPEBITS *PX86PTPEBITS;
+/** Pointer to a const page directory pointer table entry. */
+typedef const X86PDPEBITS *PCX86PTPEBITS;
+
+/**
+ * Page directory pointer table entry. AMD64 version
+ */
+typedef struct X86PDPEAMD64BITS
+{
+    /** Flags whether(=1) or not the page is present. */
+    uint32_t    u1Present : 1;
     /** Read(=0) / Write(=1) flag. */
     uint32_t    u1Write : 1;
     /** User(=1) / Supervisor (=0) flag. */
@@ -1459,11 +1492,11 @@ typedef struct X86PDPEBITS
     uint32_t    u11Reserved : 11;
     /** No Execute flag. */
     uint32_t    u1NoExecute : 1;
-} X86PDPEBITS;
+} X86PDPEAMD64BITS;
 /** Pointer to a page directory pointer table entry. */
-typedef X86PDPEBITS *PX86PTPEBITS;
+typedef X86PDPEAMD64BITS *PX86PDPEAMD64BITS;
 /** Pointer to a const page directory pointer table entry. */
-typedef const X86PDPEBITS *PCX86PTPEBITS;
+typedef const X86PDPEBITS *PCX86PDPEAMD64BITS;
 
 /**
  * Page directory pointer table entry.
@@ -1472,6 +1505,8 @@ typedef union X86PDPE
 {
     /** Normal view. */
     X86PDPEBITS     n;
+    /** AMD64 view. */
+    X86PDPEAMD64BITS lm;
     /** Unsigned integer view. */
     X86PGPAEUINT    u;
     /** 8 bit unsigned integer view. */

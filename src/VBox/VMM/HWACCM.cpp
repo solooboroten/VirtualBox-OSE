@@ -1,4 +1,4 @@
-/* $Id: HWACCM.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: HWACCM.cpp 31239 2008-05-26 11:21:13Z sandervl $ */
 /** @file
  * HWACCM - Intel/AMD VM Hardware Support Manager
  */
@@ -46,6 +46,8 @@
 #include <iprt/string.h>
 #include <iprt/thread.h>
 
+/* Uncomment to enable experimental nested paging. */
+//#define VBOX_WITH_NESTED_PAGING
 
 /*******************************************************************************
 *   Internal Functions                                                         *
@@ -101,6 +103,7 @@ HWACCMR3DECL(int) HWACCMR3Init(PVM pVM)
     pVM->hwaccm.s.svm.fEnabled   = false;
 
     pVM->hwaccm.s.fActive        = false;
+    pVM->hwaccm.s.fNestedPaging  = false;
 
     /* On first entry we'll sync everything. */
     pVM->hwaccm.s.fContextUseFlags = HWACCM_CHANGED_ALL;
@@ -149,6 +152,18 @@ HWACCMR3DECL(int) HWACCMR3Init(PVM pVM)
     STAM_REG(pVM, &pVM->hwaccm.s.StatIntReinject,   STAMTYPE_COUNTER, "/HWACCM/Irq/Reinject",           STAMUNIT_OCCURENCES,    "Nr of occurances");
     STAM_REG(pVM, &pVM->hwaccm.s.StatPendingHostIrq,STAMTYPE_COUNTER, "/HWACCM/Irq/PendingOnHost",      STAMUNIT_OCCURENCES,    "Nr of occurances");
 
+    STAM_REG(pVM, &pVM->hwaccm.s.StatFlushPageManual,       STAMTYPE_COUNTER, "/HWACCM/Flush/Page/Virt/Manual", STAMUNIT_OCCURENCES,    "Nr of occurances");
+    STAM_REG(pVM, &pVM->hwaccm.s.StatFlushPhysPageManual,   STAMTYPE_COUNTER, "/HWACCM/Flush/Page/Phys/Manual", STAMUNIT_OCCURENCES,    "Nr of occurances");
+    STAM_REG(pVM, &pVM->hwaccm.s.StatFlushTLBManual,        STAMTYPE_COUNTER, "/HWACCM/Flush/TLB/Manual",  STAMUNIT_OCCURENCES,    "Nr of occurances");
+    STAM_REG(pVM, &pVM->hwaccm.s.StatFlushTLBCRxChange,     STAMTYPE_COUNTER, "/HWACCM/Flush/TLB/CRx",     STAMUNIT_OCCURENCES,    "Nr of occurances");
+    STAM_REG(pVM, &pVM->hwaccm.s.StatFlushPageInvlpg,       STAMTYPE_COUNTER, "/HWACCM/Flush/Page/Invlpg", STAMUNIT_OCCURENCES,    "Nr of occurances");
+    STAM_REG(pVM, &pVM->hwaccm.s.StatFlushTLBWorldSwitch,   STAMTYPE_COUNTER, "/HWACCM/Flush/TLB/Switch",  STAMUNIT_OCCURENCES,    "Nr of occurances");
+    STAM_REG(pVM, &pVM->hwaccm.s.StatNoFlushTLBWorldSwitch, STAMTYPE_COUNTER, "/HWACCM/Flush/TLB/Skipped", STAMUNIT_OCCURENCES,    "Nr of occurances");
+    STAM_REG(pVM, &pVM->hwaccm.s.StatFlushASID,             STAMTYPE_COUNTER, "/HWACCM/Flush/TLB/ASID",    STAMUNIT_OCCURENCES,    "Nr of occurances");
+
+    STAM_REG(pVM, &pVM->hwaccm.s.StatTSCOffset,             STAMTYPE_COUNTER, "/HWACCM/TSC/Offset",        STAMUNIT_OCCURENCES,    "Nr of occurances");
+    STAM_REG(pVM, &pVM->hwaccm.s.StatTSCIntercept,          STAMTYPE_COUNTER, "/HWACCM/TSC/Intercept",     STAMUNIT_OCCURENCES,    "Nr of occurances");
+
     pVM->hwaccm.s.pStatExitReason = 0;
 
 #ifdef VBOX_WITH_STATISTICS
@@ -163,6 +178,8 @@ HWACCMR3DECL(int) HWACCMR3Init(PVM pVM)
             int rc = STAMR3Register(pVM, &pVM->hwaccm.s.pStatExitReason[i], STAMTYPE_COUNTER, STAMVISIBILITY_USED, szName, STAMUNIT_OCCURENCES, "Exit reason");
             AssertRC(rc);
         }
+        int rc = STAMR3Register(pVM, &pVM->hwaccm.s.StatExitReasonNPF, STAMTYPE_COUNTER, STAMVISIBILITY_USED, "/HWACCM/Exit/Reason/#NPF", STAMUNIT_OCCURENCES, "Exit reason");
+        AssertRC(rc);
     }
     pVM->hwaccm.s.pStatExitReasonR0 = MMHyperR3ToR0(pVM, pVM->hwaccm.s.pStatExitReason);
     Assert(pVM->hwaccm.s.pStatExitReasonR0);
@@ -205,6 +222,12 @@ static void hwaccmr3DisableRawMode(PVM pVM)
 
     /* Disable the switcher */
     VMMR3DisableSwitcher(pVM);
+
+    if (pVM->hwaccm.s.fNestedPaging)
+    {
+        /* Reinit the paging mode to force the new shadow mode. */
+        PGMR3ChangeMode(pVM, PGMMODE_REAL);
+    }
 }
 
 /**
@@ -403,10 +426,10 @@ HWACCMR3DECL(int) HWACCMR3InitFinalizeR0(PVM pVM)
             AssertRC(rc);
             if (rc == VINF_SUCCESS)
             {
-                hwaccmr3DisableRawMode(pVM);
-
                 pVM->fHWACCMEnabled = true;
                 pVM->hwaccm.s.vmx.fEnabled = true;
+                hwaccmr3DisableRawMode(pVM);
+
                 CPUMSetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_SEP);
                 LogRel(("HWACCM: VMX enabled!\n"));
             }
@@ -425,26 +448,70 @@ HWACCMR3DECL(int) HWACCMR3InitFinalizeR0(PVM pVM)
 
         if (pVM->hwaccm.s.fInitialized == false)
         {
+            /* Erratum 170 which requires a forced TLB flush for each world switch:
+             * See http://www.amd.com/us-en/assets/content_type/white_papers_and_tech_docs/33610.pdf
+             *
+             * All BH-G1/2 and DH-G1/2 models include a fix:
+             * Athlon X2:   0x6b 1/2
+             *              0x68 1/2
+             * Athlon 64:   0x7f 1
+             *              0x6f 2
+             * Sempron:     0x7f 1/2
+             *              0x6f 2
+             *              0x6c 2
+             *              0x7c 2
+             * Turion 64:   0x68 2
+             *
+             */
+            uint32_t u32Dummy;
+            uint32_t u32Version, u32Family, u32Model, u32Stepping, u32BaseFamily;
+            ASMCpuId(1, &u32Version, &u32Dummy, &u32Dummy, &u32Dummy);
+            u32BaseFamily= (u32Version >> 8) & 0xf;
+            u32Family    = u32BaseFamily + (u32BaseFamily == 0xf ? ((u32Version >> 20) & 0x7f) : 0);
+            u32Model     = ((u32Version >> 4) & 0xf);
+            u32Model     = u32Model | ((u32BaseFamily == 0xf ? (u32Version >> 16) & 0x0f : 0) << 4);
+            u32Stepping  = u32Version & 0xf;
+            if (    u32Family == 0xf
+                &&  !((u32Model == 0x68 || u32Model == 0x6b || u32Model == 0x7f) &&  u32Stepping >= 1)
+                &&  !((u32Model == 0x6f || u32Model == 0x6c || u32Model == 0x7c) &&  u32Stepping >= 2))
+            {
+                LogRel(("HWACMM: AMD cpu with erratum 170 family %x model %x stepping %x\n", u32Family, u32Model, u32Stepping));
+            }
+
             LogRel(("HWACMM: cpuid 0x80000001.u32AMDFeatureECX = %VX32\n", pVM->hwaccm.s.cpuid.u32AMDFeatureECX));
             LogRel(("HWACMM: cpuid 0x80000001.u32AMDFeatureEDX = %VX32\n", pVM->hwaccm.s.cpuid.u32AMDFeatureEDX));
             LogRel(("HWACCM: SVM revision                      = %X\n", pVM->hwaccm.s.svm.u32Rev));
             LogRel(("HWACCM: SVM max ASID                      = %d\n", pVM->hwaccm.s.svm.u32MaxASID));
+            LogRel(("HWACCM: SVM features                      = %X\n", pVM->hwaccm.s.svm.u32Features));
+
+            if (pVM->hwaccm.s.svm.u32Features & AMD_CPUID_SVM_FEATURE_EDX_NESTED_PAGING)
+                LogRel(("HWACCM:    AMD_CPUID_SVM_FEATURE_EDX_NESTED_PAGING\n"));
+            if (pVM->hwaccm.s.svm.u32Features & AMD_CPUID_SVM_FEATURE_EDX_LBR_VIRT)
+                LogRel(("HWACCM:    AMD_CPUID_SVM_FEATURE_EDX_LBR_VIRT\n"));
+            if (pVM->hwaccm.s.svm.u32Features & AMD_CPUID_SVM_FEATURE_EDX_SVM_LOCK)
+                LogRel(("HWACCM:    AMD_CPUID_SVM_FEATURE_EDX_SVM_LOCK\n"));
+            if (pVM->hwaccm.s.svm.u32Features & AMD_CPUID_SVM_FEATURE_EDX_NRIP_SAVE)
+                LogRel(("HWACCM:    AMD_CPUID_SVM_FEATURE_EDX_NRIP_SAVE\n"));
+            if (pVM->hwaccm.s.svm.u32Features & AMD_CPUID_SVM_FEATURE_EDX_SSE_3_5_DISABLE)
+                LogRel(("HWACCM:    AMD_CPUID_SVM_FEATURE_EDX_SSE_3_5_DISABLE\n"));
 
             /* Only try once. */
             pVM->hwaccm.s.fInitialized = true;
+
+#ifdef VBOX_WITH_NESTED_PAGING
+            if (pVM->hwaccm.s.svm.u32Features & AMD_CPUID_SVM_FEATURE_EDX_NESTED_PAGING)
+                pVM->hwaccm.s.fNestedPaging = true;
+#endif
 
             rc = SUPCallVMMR0Ex(pVM->pVMR0, VMMR0_DO_HWACC_SETUP_VM, 0, NULL);
             AssertRC(rc);
             if (rc == VINF_SUCCESS)
             {
-                hwaccmr3DisableRawMode(pVM);
-                CPUMSetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_SEP);
-#if 0 /* not yet */
-                CPUMSetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_PAE);
-#endif
-
                 pVM->fHWACCMEnabled = true;
                 pVM->hwaccm.s.svm.fEnabled = true;
+
+                hwaccmr3DisableRawMode(pVM);
+                CPUMSetGuestCpuIdFeature(pVM, CPUMCPUIDFEATURE_SEP);
             }
             else
             {

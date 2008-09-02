@@ -2010,7 +2010,6 @@ STDMETHODIMP Console::DetachUSBDevice (INPTR GUIDPARAM aId, IUSBDevice **aDevice
             tr ("USB device with UUID {%Vuuid} is not attached to this machine"),
             Guid (aId).raw());
 
-# if defined(RT_OS_DARWIN) || defined(NEW_HOSTUSBDEVICE_STATE)
     /*
      * Inform the USB device and USB proxy about what's cooking.
      */
@@ -2019,14 +2018,6 @@ STDMETHODIMP Console::DetachUSBDevice (INPTR GUIDPARAM aId, IUSBDevice **aDevice
     if (FAILED (rc2))
         return rc2;
     alock.enter();
-#  ifndef NEW_HOSTUSBDEVICE_STATE
-    for (it = mUSBDevices.begin(); it != mUSBDevices.end(); ++ it)
-        if ((*it)->id() == aId)
-            break;
-    if (it == mUSBDevices.end())
-        return S_OK;
-#  endif
-# endif
 
     /* Request the PDM to detach the USB device. */
     HRESULT rc = detachUSBDevice (it);
@@ -2886,7 +2877,7 @@ DECLCALLBACK(int) Console::changeDrive (Console *pThis, const char *pszDevice, u
                 }
 
                 pIMount = (PPDMIMOUNT) pBase->pfnQueryInterface (pBase, PDMINTERFACE_MOUNT);
-                AssertBreak (pIMount, rc = VERR_INVALID_POINTER);
+                AssertBreakStmt (pIMount, rc = VERR_INVALID_POINTER);
 
                 /*
                  * Unmount the media.
@@ -5020,6 +5011,7 @@ Console::usbDetachCallback (Console *that, USBDeviceList::iterator *aIt, PCRTUUI
     LogFlowFunc (("that={%p}\n", that));
 
     AssertReturn (that && aUuid, VERR_INVALID_PARAMETER);
+    ComObjPtr <OUSBDevice> device = **aIt;
 
     /*
      * If that was a remote device, release the backend pointer.
@@ -5044,10 +5036,10 @@ Console::usbDetachCallback (Console *that, USBDeviceList::iterator *aIt, PCRTUUI
 
         /* Remove the device from the collection */
         that->mUSBDevices.erase (*aIt);
-        LogFlowFunc (("Detached device {%Vuuid}\n", (**aIt)->id().raw()));
+        LogFlowFunc (("Detached device {%Vuuid}\n", device->id().raw()));
 
         /* notify callbacks */
-        that->onUSBDeviceStateChange (**aIt, false /* aAttached */, NULL);
+        that->onUSBDeviceStateChange (device, false /* aAttached */, NULL);
     }
 
     LogFlowFunc (("vrc=%Vrc\n", vrc));
@@ -5625,7 +5617,7 @@ HRESULT Console::captureUSBDevices (PVM pVM)
  */
 void Console::detachAllUSBDevices (bool aDone)
 {
-    LogFlowThisFunc (("\n"));
+    LogFlowThisFunc (("aDone=%RTbool\n", aDone));
 
     /* sanity check */
     AssertReturnVoid (isWriteLockOnCurrentThread());
@@ -6102,7 +6094,7 @@ DECLCALLBACK (int) Console::powerUpThread (RTTHREAD Thread, void *pvUser)
         /* The progress object will fetch the current error info */
         task->mProgress->notifyComplete (hrc);
 
-        LogRel (("Power up failed (vrc=%Vrc, hrc=0x%08X)\n", vrc, hrc));
+        LogRel (("Power up failed (vrc=%Vrc, hrc=%Rhrc (%#08X))\n", vrc, hrc, hrc));
     }
 
 #if defined(RT_OS_WINDOWS)
@@ -6136,7 +6128,7 @@ static DECLCALLBACK(int) reconfigureVDI(PVM pVM, IHardDiskAttachment *hda, HRESU
 #define STR_CONV()  do { rc = RTUtf16ToUtf8(str, &psz); RC_CHECK(); } while (0)
 #define STR_FREE()  do { if (str) { SysFreeString(str); str = NULL; } if (psz) { RTStrFree(psz); psz = NULL; } } while (0)
 #define RC_CHECK()  do { if (VBOX_FAILURE(rc)) { AssertMsgFailed(("rc=%Vrc\n", rc)); STR_FREE(); return rc; } } while (0)
-#define H() do { if (FAILED(hrc)) { AssertMsgFailed(("hrc=%#x\n", hrc)); STR_FREE(); *phrc = hrc; return VERR_GENERAL_FAILURE; } } while (0)
+#define H() do { if (FAILED(hrc)) { AssertMsgFailed(("hrc=%Rhrc (%#x)\n", hrc, hrc)); STR_FREE(); *phrc = hrc; return VERR_GENERAL_FAILURE; } } while (0)
 
     /*
      * Figure out which IDE device this is.

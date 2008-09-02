@@ -1,4 +1,4 @@
-/* $Id: SATAControllerImpl.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: SATAControllerImpl.cpp 30524 2008-05-05 16:02:31Z aeichner $ */
 
 /** @file
  *
@@ -235,6 +235,12 @@ STDMETHODIMP SATAController::COMSETTER(PortCount) (ULONG aPortCount)
 {
     LogFlowThisFunc (("aPortCount=%u\n", aPortCount));
 
+    /* We support a maximum of 30 channels. */
+    if ((aPortCount < 1) || (aPortCount > 30))
+        return setError (E_INVALIDARG,
+            tr ("Invalid port count: %lu (must be in range [%lu, %lu])"),
+                aPortCount, 1, 30);
+
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 
@@ -292,6 +298,11 @@ STDMETHODIMP SATAController::GetIDEEmulationPort(LONG DevicePosition, LONG *aPor
 
 STDMETHODIMP SATAController::SetIDEEmulationPort(LONG DevicePosition, LONG aPortNumber)
 {
+    if ((aPortNumber < 0) || (aPortNumber >= 30))
+        return setError (E_INVALIDARG,
+            tr ("Invalid port number: %l (must be in range [%lu, %lu])"),
+                aPortNumber, 0, 29);
+
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 

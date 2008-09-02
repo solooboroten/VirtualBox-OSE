@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8155 2008-04-18 15:16:47Z vboxsync $
+# $Id: Makefile.kmk 31066 2008-05-21 00:55:09Z bird $
 ## @file
 # Sub-Makefile for the Shared Folders Host Service testcases.
 #
@@ -21,7 +21,7 @@
 
 DEPTH ?= ../../../../..
 SUB_DEPTH = ../..
-include $(PATH_KBUILD)/subheader.kmk
+include $(KBUILD_PATH)/subheader.kmk
 
 PROGRAMS += tstShflSizes
 tstShflSizes_TEMPLATE = VBOXR3TSTEXE
@@ -42,17 +42,20 @@ tstShflCase_LIBS     = $(LIB_RUNTIME)
 
 endif # VBOX_WITH_TESTCASES
 
-ifeq ($(BUILD_TARGET),$(BUILD_PLATFORM))
- ifeq ($(filter-out x86.x86 amd64.amd64 x86.amd64, $(BUILD_TARGET_ARCH).$(BUILD_PLATFORM_ARCH)),)
+ifeq ($(KBUILD_TARGET),$(KBUILD_HOST))
+ ifeq ($(filter-out x86.x86 amd64.amd64 x86.amd64, $(KBUILD_TARGET_ARCH).$(KBUILD_HOST_ARCH)),)
    OTHERS += \
     $(PATH_TARGET)/tstShflSizes.run
  endif
 endif
 
+TESTING += \
+    $(PATH_TARGET)/tstShflSizes.run
+
 OTHER_CLEAN += \
 	$(PATH_TARGET)/tstShflSizes.run
 
-include $(PATH_KBUILD)/subfooter.kmk
+include $(KBUILD_PATH)/subfooter.kmk
 
 $(PATH_TARGET)/tstShflSizes.run: $(INSTARGET_tstShflSizes)
 	$(QUIET)$(RM) -f $@

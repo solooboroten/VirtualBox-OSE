@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8155 2008-04-18 15:16:47Z vboxsync $
+# $Id: Makefile.kmk 30827 2008-05-14 19:49:42Z bird $
 ## @file
 # Makefile for the VBox debugger.
 #
@@ -20,7 +20,7 @@
 #
 
 DEPTH = ../../..
-include $(PATH_KBUILD)/header.kmk
+include $(KBUILD_PATH)/header.kmk
 
 #
 # The targets.
@@ -55,7 +55,9 @@ Debugger_SOURCES   = \
 	DBGCCommands.cpp \
 	DBGCEmulateCodeView.cpp \
 	DBGCOps.cpp \
-	DBGCTcp.cpp
+	DBGCTcp.cpp \
+	DBGPlugInSolaris.cpp \
+	DBGPlugInCommonELF.cpp
 
 
 #
@@ -132,7 +134,7 @@ tstVBoxDbg_SOURCES      = testcase/tstVBoxDbg.cpp
 tstVBoxDbg_LIBS         = \
 	$(LIB_VMM) \
 	$(LIB_RUNTIME)
-ifeq ($(BUILD_TARGET),win)
+ifeq ($(KBUILD_TARGET),win)
 tstVBoxDbg_LIBS        += \
 	$(PATH_LIB)/VBoxDbg.lib
 else
@@ -149,7 +151,7 @@ dbghelp_SOURCES.x86 = win32/dbghelp.dll
 dbghelp_SOURCES.amd64 = win64/dbghelp.dll
 
 
-include $(PATH_KBUILD)/footer.kmk
+include $(KBUILD_PATH)/footer.kmk
 
 
 #

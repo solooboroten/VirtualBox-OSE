@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 8469 2008-04-29 15:18:34Z vboxsync $
+# $Id: Makefile.kmk 31342 2008-05-28 08:44:35Z frank $
 ## @file
 # Makefile for the Linux installer.
 #
@@ -20,9 +20,9 @@
 #
 
 DEPTH = ../../../..
-include $(PATH_KBUILD)/header.kmk
+include $(KBUILD_PATH)/header.kmk
 
-ifneq ($(BUILD_PLATFORM),linux)
+ifneq ($(KBUILD_HOST),linux)
 $(error "The Linux installer can only be built on Linux!") # yeah, right.
 endif
 
@@ -88,7 +88,7 @@ LINUXSTRIPOBJ = \
 	VBoxDDR0.r0 \
 	VMMGC.gc \
 	VMMR0.r0
-ifeq ($(BUILD_TARGET_ARCH),amd64)
+ifeq ($(KBUILD_TARGET_ARCH),amd64)
 LINUXSTRIPOBJ += \
 	VBoxREM2.rel
 endif
@@ -173,7 +173,7 @@ DBGPATH        := usr/lib/debug/opt/VirtualBox-$(VBOX_VERSION_STRING)
 OTHER_CLEAN += $(addprefix $(PATH_TARGET)/archive/,$(LINUXARCHFILES)) \
 	       $(addprefix $(PATH_TARGET)/archive-dbg/$(DBGPATH)/,$(LINUXSTRIPBIN))
 
-include $(PATH_KBUILD)/footer.kmk
+include $(KBUILD_PATH)/footer.kmk
 
 $(PATH_BIN)/VirtualBox.run: \
 		$(PATH_TARGET)/install/VirtualBox.tar.bz2 \
@@ -187,7 +187,7 @@ $(PATH_BIN)/VirtualBox.run: \
 	$(call MSG_TOOL,makeself,,$@)
 	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g" \
 		-e "s;_BUILD_;$(shell date);g" \
-		-e "s;_ARCH_;${BUILD_TARGET_ARCH};g" \
+		-e "s;_ARCH_;${KBUILD_TARGET_ARCH};g" \
 		< install.sh > $(PATH_TARGET)/install/install.sh
 	$(QUIET)chmod 0744 $(PATH_TARGET)/install/install.sh
 	$(QUIET)$(INSTALL) -m 0755 routines.sh $(PATH_TARGET)/install
@@ -206,7 +206,7 @@ $(PATH_BIN)/VirtualBox-dbg.tar.bz2: \
 		$(addprefix $(DBGPATH)/,$(LINUXSTRIPBIN))
 
 $(PATH_TARGET)/vboxdrv.sh: vboxdrv.sh.in
-	$(QUIET)$(SED_EXT) -e "s|%NOLSB%|yes|g" $< > $@
+	$(QUIET)$(SED_EXT) -e "s|%NOLSB%|yes|g; s|%PACKAGE%|virtualbox|g" $< > $@
 
 $(PATH_TARGET)/vboxnet.sh: vboxnet.sh.in
 	$(QUIET)$(SED_EXT) -e "s|%NOLSB%|yes|g" $< > $@

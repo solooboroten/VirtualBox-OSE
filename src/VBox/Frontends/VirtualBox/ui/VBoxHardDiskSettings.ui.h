@@ -134,8 +134,8 @@ private:
         mSATAList.clear();
 
         for (int i = 0; i < mSataPortsCount; ++ i)
-            mSATAList << HDSlot (vboxGlobal().toFullString (KStorageBus_SATA, 0, i),
-                                 KStorageBus_SATA, 0, i);
+            mSATAList << HDSlot (vboxGlobal().toFullString (KStorageBus_SATA, i, 0),
+                                 KStorageBus_SATA, i, 0);
 
         emit listChanged();
     }
@@ -666,8 +666,8 @@ void VBoxHardDiskSettings::putBackToMachine()
     while (item)
     {
         if (item->bus() == KStorageBus_SATA)
-            maxSATAPort = maxSATAPort < item->device() ?
-                          item->device() : maxSATAPort;
+            maxSATAPort = maxSATAPort < (item->channel()+1) ?
+                          (item->channel()+1) : maxSATAPort;
         mMachine.AttachHardDisk (item->getId(),
             item->bus(), item->channel(), item->device());
         if (!mMachine.isOk())
