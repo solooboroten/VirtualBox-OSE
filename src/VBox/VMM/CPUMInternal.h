@@ -1,4 +1,4 @@
-/* $Id: CPUMInternal.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: CPUMInternal.h 33647 2008-07-24 10:05:07Z sandervl $ */
 /** @file
  * CPUM - Internal header file.
  */
@@ -73,6 +73,8 @@
 #define CPUM_USE_DEBUG_REGS_HOST        RT_BIT(4)
 /** Enabled use of debug registers in guest context. */
 #define CPUM_USE_DEBUG_REGS             RT_BIT(5)
+/** The XMM state was manually restored. (AMD only) */
+#define CPUM_MANUAL_XMM_RESTORE         RT_BIT(6)
 /** @} */
 
 /* Sanity check. */
@@ -319,6 +321,14 @@ typedef struct CPUM
         /** ecx part */
         X86CPUIDFEATECX     ecx;
     }   CPUFeatures;
+    /** Host extended CPU features. */
+    struct
+    {
+        /** edx part */
+        uint32_t     edx;
+        /** ecx part */
+        uint32_t     ecx;
+    }   CPUFeaturesExt;
 
     /** CR4 mask */
     struct
@@ -354,8 +364,16 @@ typedef struct CPUM
 
 __BEGIN_DECLS
 
-DECLASM(int) CPUMHandleLazyFPUAsm(PCPUM pCPUM);
-DECLASM(int) CPUMRestoreHostFPUStateAsm(PCPUM pCPUM);
+DECLASM(int)      CPUMHandleLazyFPUAsm(PCPUM pCPUM);
+DECLASM(int)      CPUMRestoreHostFPUStateAsm(PCPUM pCPUM);
+DECLASM(void)     CPUMLoadFPUAsm(PCPUMCTX pCtx);
+DECLASM(void)     CPUMSaveFPUAsm(PCPUMCTX pCtx);
+DECLASM(void)     CPUMLoadXMMAsm(PCPUMCTX pCtx);
+DECLASM(void)     CPUMSaveXMMAsm(PCPUMCTX pCtx);
+DECLASM(void)     CPUMSetFCW(uint16_t u16FCW);
+DECLASM(uint16_t) CPUMGetFCW();
+DECLASM(void)     CPUMSetMXCSR(uint32_t u32MXCSR);
+DECLASM(uint32_t) CPUMGetMXCSR();
 
 __END_DECLS
 

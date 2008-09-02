@@ -1,4 +1,4 @@
-/* $Id: dir-posix.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: dir-posix.cpp 31849 2008-06-10 08:25:24Z frank $ */
 /** @file
  * IPRT - Directory manipulation, POSIX.
  */
@@ -142,7 +142,8 @@ int rtOpenDirNative(PRTDIR pDir, char *pszPathBuf)
              * Init data.
              */
             pDir->fDataUnread = false;
-            memset(&pDir->Data, 0, sizeof(pDir->Data)); /* not strictly necessary */
+            memset(&pDir->Data, 0, RT_OFFSETOF(RTDIR, Data.d_name)); /* not strictly necessary */
+            memset(&pDir->Data.d_name[0], 0, pDir->cbMaxName);
         }
         else
             rc = RTErrConvertFromErrno(errno);

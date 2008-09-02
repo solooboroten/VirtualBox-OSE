@@ -1,4 +1,4 @@
-/* $Id: HWACCMInternal.h 31239 2008-05-26 11:21:13Z sandervl $ */
+/* $Id: HWACCMInternal.h 33647 2008-07-24 10:05:07Z sandervl $ */
 /** @file
  * HWACCM - Internal header file.
  */
@@ -104,10 +104,10 @@ __BEGIN_DECLS
  *  Currently #NM and #PF only
  */
 #ifdef VBOX_STRICT
-#define HWACCM_VMX_TRAP_MASK                RT_BIT(0) | RT_BIT(7) | RT_BIT(14) | RT_BIT(6) | RT_BIT(11) | RT_BIT(12) | RT_BIT(13) | RT_BIT(16)
+#define HWACCM_VMX_TRAP_MASK                RT_BIT(X86_XCPT_DE) | RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF) | RT_BIT(X86_XCPT_UD) | RT_BIT(X86_XCPT_NP) | RT_BIT(X86_XCPT_SS) | RT_BIT(X86_XCPT_GP) | RT_BIT(X86_XCPT_MF)
 #define HWACCM_SVM_TRAP_MASK                HWACCM_VMX_TRAP_MASK
 #else
-#define HWACCM_VMX_TRAP_MASK                RT_BIT(7) | RT_BIT(14)
+#define HWACCM_VMX_TRAP_MASK                RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF)
 #define HWACCM_SVM_TRAP_MASK                HWACCM_VMX_TRAP_MASK
 #endif
 /** @} */
@@ -119,6 +119,35 @@ __BEGIN_DECLS
 /** HWACCM SSM version
  */
 #define HWACCM_SSM_VERSION                  3
+
+/* Per-cpu information. */
+typedef struct
+{
+    RTCPUID     idCpu;
+
+    RTR0MEMOBJ  pMemObj;
+    /* Current ASID (AMD-V only) */
+    uint32_t    uCurrentASID;
+    /* TLB flush count */
+    uint32_t    cTLBFlushes;
+
+    /* Set the first time a cpu is used to make sure we start with a clean TLB. */
+    bool        fFlushTLB;
+
+    bool        fConfigured;
+} HWACCM_CPUINFO;
+typedef HWACCM_CPUINFO *PHWACCM_CPUINFO;
+
+/* VT-x capability qword. */
+typedef union
+{
+    struct
+    {
+        uint32_t        disallowed0;
+        uint32_t        allowed1;
+    } n;
+    uint64_t            u;
+} VMX_CAPABILITY;
 
 /**
  * HWACCM VM Instance data.
@@ -141,12 +170,17 @@ typedef struct HWACCM
     /** Set if nested paging is enabled. */
     bool                        fNestedPaging;
 
+    /** Set if nested paging is allowed. */
+    bool                        fAllowNestedPaging;
+
     /** HWACCM_CHANGED_* flags. */
     uint32_t                    fContextUseFlags;
 
     /** Old style FPU reporting trap mask override performed (optimization) */
     uint32_t                    fFPUOldStyleOverride;
 
+    /** And mask for copying register contents. */
+    uint64_t                    u64RegisterMask;
     struct
     {
         /** Set by the ring-0 driver to indicate VMX is supported by the CPU. */
@@ -172,6 +206,16 @@ typedef struct HWACCM
         /** Virtual address of the TSS page used for real mode emulation. */
         R0PTRTYPE(PVBOXTSS)         pRealModeTSS;
 
+        /** R0 memory object for the virtual APIC mmio cache. */
+        RTR0MEMOBJ                  pMemObjAPIC;
+        /** Physical address of the virtual APIC mmio cache. */
+        RTHCPHYS                    pAPICPhys;
+        /** Virtual address of the virtual APIC mmio cache. */
+        R0PTRTYPE(uint8_t *)        pAPIC;
+
+        /** Ring 0 handlers for VT-x. */
+        DECLR0CALLBACKMEMBER(int, pfnStartVM,(RTHCUINT fResume, PCPUMCTX pCtx));
+
         /** Host CR4 value (set by ring-0 VMX init) */
         uint64_t                    hostCR4;
 
@@ -188,16 +232,18 @@ typedef struct HWACCM
         {
             uint64_t                feature_ctrl;
             uint64_t                vmx_basic_info;
-            uint64_t                vmx_pin_ctls;
-            uint64_t                vmx_proc_ctls;
-            uint64_t                vmx_exit;
-            uint64_t                vmx_entry;
+            VMX_CAPABILITY          vmx_pin_ctls;
+            VMX_CAPABILITY          vmx_proc_ctls;
+            VMX_CAPABILITY          vmx_proc_ctls2;
+            VMX_CAPABILITY          vmx_exit;
+            VMX_CAPABILITY          vmx_entry;
             uint64_t                vmx_misc;
             uint64_t                vmx_cr0_fixed0;
             uint64_t                vmx_cr0_fixed1;
             uint64_t                vmx_cr4_fixed0;
             uint64_t                vmx_cr4_fixed1;
             uint64_t                vmx_vmcs_enum;
+            uint64_t                vmx_eptcaps;
         } msr;
 
         /* Last instruction error */
@@ -250,6 +296,9 @@ typedef struct HWACCM
         RTHCPHYS                    pMSRBitmapPhys;
         /** Virtual address of the MSR bitmap. */
         R0PTRTYPE(void *)           pMSRBitmap;
+
+        /** Ring 0 handlers for VT-x. */
+        DECLR0CALLBACKMEMBER(int, pfnVMRun,(RTHCPHYS pVMCBHostPhys, RTHCPHYS pVMCBPhys, PCPUMCTX pCtx));
 
         /** SVM revision. */
         uint32_t                    u32Rev;
@@ -341,30 +390,36 @@ typedef struct HWACCM
 /** Pointer to HWACCM VM instance data. */
 typedef HWACCM *PHWACCM;
 
-typedef struct
-{
-    RTCPUID     idCpu;
-
-    RTR0MEMOBJ  pMemObj;
-    /* Current ASID (AMD-V only) */
-    uint32_t    uCurrentASID;
-    /* TLB flush count */
-    uint32_t    cTLBFlushes;
-
-    bool        fVMXConfigured;
-    bool        fSVMConfigured;
-} HWACCM_CPUINFO;
-typedef HWACCM_CPUINFO *PHWACCM_CPUINFO;
-
 #ifdef IN_RING0
 
+/**
+ * Returns the cpu structure for the current cpu.
+ * Keep in mind that there is no guarantee it will stay the same (long jumps to ring 3!!!).
+ *
+ * @returns cpu structure pointer
+ * @param   pVM         The VM to operate on.
+ */
+HWACCMR0DECL(PHWACCM_CPUINFO) HWACCMR0GetCurrentCpu();
+
 #ifdef VBOX_STRICT
-HWACCMR0DECL(void) HWACCMDumpRegs(PCPUMCTX pCtx);
+HWACCMR0DECL(void) HWACCMDumpRegs(PVM pVM, PCPUMCTX pCtx);
 HWACCMR0DECL(void) HWACCMR0DumpDescriptor(PX86DESCHC  Desc, RTSEL Sel, const char *pszMsg);
 #else
-#define HWACCMDumpRegs(a)                   do { } while (0)
+#define HWACCMDumpRegs(a, b)                do { } while (0)
 #define HWACCMR0DumpDescriptor(a, b, c)     do { } while (0)
 #endif
+
+/* Dummy callback handlers. */
+HWACCMR0DECL(int) HWACCMR0DummyEnter(PVM pVM, PHWACCM_CPUINFO pCpu);
+HWACCMR0DECL(int) HWACCMR0DummyLeave(PVM pVM);
+HWACCMR0DECL(int) HWACCMR0DummyEnableCpu(PHWACCM_CPUINFO pCpu, PVM pVM, void *pvPageCpu, RTHCPHYS pPageCpuPhys);
+HWACCMR0DECL(int) HWACCMR0DummyDisableCpu(PHWACCM_CPUINFO pCpu, void *pvPageCpu, RTHCPHYS pPageCpuPhys);
+HWACCMR0DECL(int) HWACCMR0DummyInitVM(PVM pVM);
+HWACCMR0DECL(int) HWACCMR0DummyTermVM(PVM pVM);
+HWACCMR0DECL(int) HWACCMR0DummySetupVM(PVM pVM);
+HWACCMR0DECL(int) HWACCMR0DummyRunGuestCode(PVM pVM, CPUMCTX *pCtx);
+HWACCMR0DECL(int) HWACCMR0DummySaveHostState(PVM pVM);
+HWACCMR0DECL(int) HWACCMR0DummyLoadGuestState(PVM pVM, CPUMCTX *pCtx);
 
 #endif
 

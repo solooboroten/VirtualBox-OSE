@@ -161,6 +161,7 @@ typedef enum
     VMMDevReq_HGCMConnect                = 60,
     VMMDevReq_HGCMDisconnect             = 61,
     VMMDevReq_HGCMCall                   = 62,
+    VMMDevReq_HGCMCancel                 = 64,
 #endif
     VMMDevReq_VideoAccelEnable           = 70,
     VMMDevReq_VideoAccelFlush            = 71,
@@ -697,6 +698,15 @@ typedef struct
 #define VMMDEV_HGCM_CALL_PARMS(a) ((HGCMFunctionParameter *)((char *)a + sizeof (VMMDevHGCMCall)))
 
 #define VBOX_HGCM_MAX_PARMS 32
+
+/* The Cancel request is issued using the same physical memory address
+ * as was used for the corresponding initial HGCMCall.
+ */
+typedef struct
+{
+    /* request header */
+    VMMDevHGCMRequestHeader header;
+} VMMDevHGCMCancel;
 
 #endif /* VBOX_HGCM */
 
@@ -1271,7 +1281,9 @@ DECLINLINE(size_t) vmmdevGetRequestSize(VMMDevRequestType requestType)
             return sizeof(VMMDevHGCMDisconnect);
         case VMMDevReq_HGCMCall:
             return sizeof(VMMDevHGCMCall);
-#endif
+        case VMMDevReq_HGCMCancel:
+            return sizeof(VMMDevHGCMCancel);
+#endif /* VBOX_HGCM */
         case VMMDevReq_VideoAccelEnable:
             return sizeof(VMMDevVideoAccelEnable);
         case VMMDevReq_VideoAccelFlush:

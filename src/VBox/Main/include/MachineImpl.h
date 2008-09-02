@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: MachineImpl.h 33126 2008-07-10 08:03:19Z mt221433 $ */
 
 /** @file
  *

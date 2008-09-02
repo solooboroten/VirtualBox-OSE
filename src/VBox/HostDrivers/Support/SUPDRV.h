@@ -1,4 +1,4 @@
-/* $Revision: 30849 $ */
+/* $Revision: 33794 $ */
 /** @file
  * VirtualBox Support Driver - Internal header.
  */
@@ -96,6 +96,11 @@
 #   include <linux/string.h>
 #   include <linux/spinlock.h>
 #   include <linux/slab.h>
+#   if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
+#       include <linux/semaphore.h>
+#   else /* older kernels */
+#       include <asm/semaphore.h>
+#   endif /* older kernels */
 #   include <asm/semaphore.h>
 #   include <linux/timer.h>
 
@@ -671,7 +676,7 @@ typedef struct SUPDRVDEVEXT
     /** VMMR0EntryInt() pointer. */
     DECLR0CALLBACKMEMBER(int, pfnVMMR0EntryInt, (PVM pVM, unsigned uOperation, void *pvArg));
     /** VMMR0EntryFast() pointer. */
-    DECLR0CALLBACKMEMBER(int, pfnVMMR0EntryFast, (PVM pVM, unsigned uOperation));
+    DECLR0CALLBACKMEMBER(void, pfnVMMR0EntryFast, (PVM pVM, unsigned uOperation));
     /** VMMR0EntryEx() pointer. */
     DECLR0CALLBACKMEMBER(int, pfnVMMR0EntryEx, (PVM pVM, unsigned uOperation, PSUPVMMR0REQHDR pReq, uint64_t u64Arg));
 

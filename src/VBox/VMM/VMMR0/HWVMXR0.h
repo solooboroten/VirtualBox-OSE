@@ -1,4 +1,4 @@
-/* $Id: HWVMXR0.h 30910 2008-05-16 09:59:07Z sandervl $ */
+/* $Id: HWVMXR0.h 33647 2008-07-24 10:05:07Z sandervl $ */
 /** @file
  * HWACCM VT-x - Internal header file.
  */
@@ -46,8 +46,9 @@ __BEGIN_DECLS
  *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
+ * @param   pCpu        CPU info struct
  */
-HWACCMR0DECL(int) VMXR0Enter(PVM pVM);
+HWACCMR0DECL(int) VMXR0Enter(PVM pVMm, PHWACCM_CPUINFO pCpu);
 
 /**
  * Leaves the VT-x session
@@ -130,9 +131,8 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx);
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  * @param   pCtx        Guest context
- * @param   pCpu        CPU info struct
  */
-HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx, PHWACCM_CPUINFO pCpu);
+HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx);
 
 
 #define VMX_WRITE_SELREG(REG, reg) \
@@ -159,6 +159,35 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx, PHWACCM_CPUINFO pCpu
         VMXReadVMCS(VMX_VMCS_GUEST_##REG##_ACCESS_RIGHTS, &val);     \
         pCtx->reg##Hid.Attr.u    = val;
 
+#define VMX_LOG_SELREG(REG, szSelReg) \
+        VMXReadVMCS(VMX_VMCS_GUEST_FIELD_##REG,           &val);     \
+        Log(("%s Selector     %x\n", szSelReg, val));                \
+        VMXReadVMCS(VMX_VMCS_GUEST_##REG##_LIMIT,         &val);     \
+        Log(("%s Limit        %x\n", szSelReg, val));                \
+        VMXReadVMCS(VMX_VMCS_GUEST_##REG##_BASE,          &val);     \
+        Log(("%s Base         %RX64\n", szSelReg, val));             \
+        VMXReadVMCS(VMX_VMCS_GUEST_##REG##_ACCESS_RIGHTS, &val);     \
+        Log(("%s Attributes   %x\n", szSelReg, val));
+
+
+
+/**
+ * Prepares for and executes VMLAUNCH (32 bits guest mode)
+ *
+ * @returns VBox status code
+ * @param   fResume     vmlauch/vmresume
+ * @param   pCtx        Guest context
+ */
+DECLASM(int) VMXR0StartVM32(RTHCUINT fResume, PCPUMCTX pCtx);
+
+/**
+ * Prepares for and executes VMLAUNCH (64 bits guest mode)
+ *
+ * @returns VBox status code
+ * @param   fResume     vmlauch/vmresume
+ * @param   pCtx        Guest context
+ */
+DECLASM(int) VMXR0StartVM64(RTHCUINT fResume, PCPUMCTX pCtx);
 
 #endif /* IN_RING0 */
 

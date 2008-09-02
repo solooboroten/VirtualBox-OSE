@@ -1,4 +1,4 @@
-/* $Id: mp-r0drv-linux.c 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: mp-r0drv-linux.c 33730 2008-07-28 09:31:09Z klaus $ */
 /** @file
  * IPRT - Multiprocessor, Ring-0 Driver, Linux.
  */
@@ -194,7 +194,9 @@ RTDECL(int) RTMpOnAll(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2)
     Args.idCpu = NIL_RTCPUID;
     Args.cHits = 0;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
+    rc = on_each_cpu(rtmpLinuxWrapper, &Args, 1 /* wait */);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
     rc = on_each_cpu(rtmpLinuxWrapper, &Args, 0 /* retry */, 1 /* wait */);
 
 #else /* older kernels */
@@ -226,13 +228,17 @@ RTDECL(int) RTMpOnOthers(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2)
     Args.idCpu = NIL_RTCPUID;
     Args.cHits = 0;
 
-# ifdef preempt_disable
+#ifdef preempt_disable
     preempt_disable();
-# endif
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
+    rc = smp_call_function(rtmpLinuxWrapper, &Args, 1 /* wait */);
+#else /* older kernels */
     rc = smp_call_function(rtmpLinuxWrapper, &Args, 0 /* retry */, 1 /* wait */);
-# ifdef preempt_enable
+#endif /* older kernels */
+#ifdef preempt_enable
     preempt_enable();
-# endif
+#endif
 
     Assert(rc == 0); NOREF(rc);
     return VINF_SUCCESS;
@@ -281,11 +287,13 @@ RTDECL(int) RTMpOnSpecific(RTCPUID idCpu, PFNRTMPWORKER pfnWorker, void *pvUser1
     {
         if (RTMpIsCpuOnline(idCpu))
         {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 19)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
+            rc = smp_call_function_single(idCpu, rtmpLinuxWrapper, &Args, 1 /* wait */);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 19)
             rc = smp_call_function_single(idCpu, rtmpLinuxWrapper, &Args, 0 /* retry */, 1 /* wait */);
-#else
+#else /* older kernels */
             rc = smp_call_function(rtmpOnSpecificLinuxWrapper, &Args, 0 /* retry */, 1 /* wait */);
-#endif
+#endif /* older kernels */
             Assert(rc == 0);
             rc = Args.cHits ? VINF_SUCCESS : VERR_CPU_OFFLINE;
         }

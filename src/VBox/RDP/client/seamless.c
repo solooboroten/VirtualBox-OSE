@@ -1,18 +1,19 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
    Seamless Windows support
-   Copyright (C) Peter Astrand <astrand@cendio.se> 2005-2006
-   
+   Copyright 2005-2007 Peter Astrand <astrand@cendio.se> for Cendio AB
+   Copyright 2007 Pierre Ossman <ossman@cendio.se> for Cendio AB
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
@@ -22,17 +23,16 @@
 #include <stdarg.h>
 #include <assert.h>
 
-/* #define WITH_DEBUG_SEAMLESS */
-
 #ifdef WITH_DEBUG_SEAMLESS
 #define DEBUG_SEAMLESS(args) printf args;
 #else
 #define DEBUG_SEAMLESS(args)
 #endif
 
-extern BOOL g_seamless_rdp;
+extern RD_BOOL g_seamless_rdp;
 static VCHANNEL *seamless_channel;
 static unsigned int seamless_serial;
+static char icon_buf[1024];
 
 static char *
 seamless_get_token(char **s)
@@ -58,7 +58,7 @@ seamless_get_token(char **s)
 }
 
 
-static BOOL
+static RD_BOOL
 seamless_process_line(const char *line, void *data)
 {
 	char *p, *l;
@@ -137,7 +137,65 @@ seamless_process_line(const char *line, void *data)
 	}
 	else if (!strcmp("SETICON", tok1))
 	{
-		unimpl("SeamlessRDP SETICON1\n");
+		int chunk, width, height, len;
+		char byte[3];
+
+		if (!tok8)
+			return False;
+
+		id = strtoul(tok3, &endptr, 0);
+		if (*endptr)
+			return False;
+
+		chunk = strtoul(tok4, &endptr, 0);
+		if (*endptr)
+			return False;
+
+		width = strtoul(tok6, &endptr, 0);
+		if (*endptr)
+			return False;
+
+		height = strtoul(tok7, &endptr, 0);
+		if (*endptr)
+			return False;
+
+		byte[2] = '\0';
+		len = 0;
+		while (*tok8 != '\0')
+		{
+			byte[0] = *tok8;
+			tok8++;
+			if (*tok8 == '\0')
+				return False;
+			byte[1] = *tok8;
+			tok8++;
+
+			icon_buf[len] = strtol(byte, NULL, 16);
+			len++;
+		}
+
+		ui_seamless_seticon(id, tok5, width, height, chunk, icon_buf, len);
+	}
+	else if (!strcmp("DELICON", tok1))
+	{
+		int width, height;
+
+		if (!tok6)
+			return False;
+
+		id = strtoul(tok3, &endptr, 0);
+		if (*endptr)
+			return False;
+
+		width = strtoul(tok5, &endptr, 0);
+		if (*endptr)
+			return False;
+
+		height = strtoul(tok6, &endptr, 0);
+		if (*endptr)
+			return False;
+
+		ui_seamless_delicon(id, tok4, width, height);
 	}
 	else if (!strcmp("POSITION", tok1))
 	{
@@ -300,7 +358,7 @@ seamless_process_line(const char *line, void *data)
 }
 
 
-static BOOL
+static RD_BOOL
 seamless_line_handler(const char *line, void *data)
 {
 	if (!seamless_process_line(line, data))
@@ -333,7 +391,7 @@ seamless_process(STREAM s)
 }
 
 
-BOOL
+RD_BOOL
 seamless_init(void)
 {
 	if (!g_seamless_rdp)
@@ -450,4 +508,11 @@ seamless_send_focus(unsigned long id, unsigned long flags)
 		return (unsigned int) -1;
 
 	return seamless_send("FOCUS", "0x%08lx,0x%lx", id, flags);
+}
+
+/* Send client-to-server message to destroy process on the server. */
+unsigned int
+seamless_send_destroy(unsigned long id)
+{
+	return seamless_send("DESTROY", "0x%08lx", id);
 }

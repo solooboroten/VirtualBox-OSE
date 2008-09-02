@@ -1,4 +1,4 @@
-/* $Id: tstStrFormat.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: tstStrFormat.cpp 33750 2008-07-28 13:25:43Z mt221433 $ */
 /** @file
  * IPRT Testcase - String formatting.
  */
@@ -185,16 +185,22 @@ int main()
     CHECK42("%RGi", (RTGCINT)127, "127");
     CHECK42("%RGi", (RTGCINT)-586589, "-586589");
 
-    CHECK42("%RGp", (RTGCPHYS)0x44505045, "44505045");
-    CHECK42("%RGp", ~(RTGCPHYS)0, "ffffffff");
+    CHECK42("%RGp", (RTGCPHYS)0x0000000044505045, "0000000044505045");
+    CHECK42("%RGp", ~(RTGCPHYS)0, "ffffffffffffffff");
 
     CHECK42("%RGu", (RTGCUINT)586589, "586589");
     CHECK42("%RGu", (RTGCUINT)1, "1");
     CHECK42("%RGu", (RTGCUINT)3000000000U, "3000000000");
 
+#if GC_ARCH_BITS == 32
     CHECK42("%RGv", (RTGCUINTPTR)0, "00000000");
     CHECK42("%RGv", ~(RTGCUINTPTR)0, "ffffffff");
     CHECK42("%RGv", (RTGCUINTPTR)0x84342134, "84342134");
+#else
+    CHECK42("%RGv", (RTGCUINTPTR)0, "0000000000000000");
+    CHECK42("%RGv", ~(RTGCUINTPTR)0, "ffffffffffffffff");
+    CHECK42("%RGv", (RTGCUINTPTR)0x84342134, "0000000084342134");
+#endif
 
     CHECK42("%RGx", (RTGCUINT)0x234, "234");
     CHECK42("%RGx", (RTGCUINT)0xffffffff, "ffffffff");

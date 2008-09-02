@@ -14,7 +14,7 @@ a variable argument function like error.
 
 Structure
 ---------
-The core protocol stack should be system-independent (i.e. ANSI C
+The core protocol stack should be system-independent (i.e. ANSI C89
 only) so that it is easy to port. This currently applies to the
 following files:
 
@@ -23,6 +23,23 @@ secure.c mppc.c channels.c
 rdesktop.c
 
 
+Compiler support
+----------------
+
+The source code should be compatible with ANSI C89. One exception is
+the SeamlessRDP ServerEXE and ClientDLL, which should be compatible
+with ANSI C99.
+
+
 RDP resources
 -------------
 http://dev.remotenetworktechnology.com/refdata.htm
+
+
+Checking for out of memory conditions
+-------------------------------------
+Try to handle out of memory conditions gracefully. Use the xmalloc
+routines from rdesktop.c, instead of calling malloc manually. Also,
+remember that several Xlib functions can return NULL. This includes
+XGetImage. Use exit_if_null to verify returned pointers. 
+

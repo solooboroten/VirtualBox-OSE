@@ -1,4 +1,4 @@
-/* $Id: VBoxDev.cpp 31070 2008-05-21 08:24:45Z sunlover $ */
+/* $Id: VBoxDev.cpp 32010 2008-06-13 08:35:20Z sunlover $ */
 /** @file
  * VMMDev - Guest <-> VMM/Host communication device.
  */
@@ -1088,6 +1088,28 @@ static DECLCALLBACK(int) vmmdevRequestHandler(PPDMDEVINS pDevIns, void *pvUser, 
             break;
         }
 #endif /* VBOX_HGCM */
+
+        case VMMDevReq_HGCMCancel:
+        {
+            if (pRequestHeader->size < sizeof(VMMDevHGCMCancel))
+            {
+                AssertMsgFailed(("VMMDevReq_HGCMCancel structure has invalid size!\n"));
+                pRequestHeader->rc = VERR_INVALID_PARAMETER;
+            }
+            else if (!pData->pHGCMDrv)
+            {
+                Log(("VMMDevReq_HGCMCancel HGCM Connector is NULL!\n"));
+                pRequestHeader->rc = VERR_NOT_SUPPORTED;
+            }
+            else
+            {
+                VMMDevHGCMCancel *pHGCMCancel = (VMMDevHGCMCancel *)pRequestHeader;
+
+                Log(("VMMDevReq_VMMDevHGCMCancel\n"));
+                pRequestHeader->rc = vmmdevHGCMCancel (pData, pHGCMCancel, (RTGCPHYS)u32);
+            }
+            break;
+        }
 
         case VMMDevReq_VideoAccelEnable:
         {

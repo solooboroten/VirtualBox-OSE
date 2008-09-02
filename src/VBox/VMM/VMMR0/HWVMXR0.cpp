@@ -1,4 +1,4 @@
-/* $Id: HWVMXR0.cpp 31336 2008-05-28 07:44:21Z sandervl $ */
+/* $Id: HWVMXR0.cpp 33663 2008-07-24 13:40:25Z sandervl $ */
 /** @file
  * HWACCM VMX - Host Context Ring 0.
  */
@@ -138,6 +138,10 @@ HWACCMR0DECL(int) VMXR0InitVM(PVM pVM)
 #ifdef LOG_ENABLED
     SUPR0Printf("VMXR0InitVM %x\n", pVM);
 #endif
+    pVM->hwaccm.s.vmx.pMemObjVMCS = NIL_RTR0MEMOBJ;
+    pVM->hwaccm.s.vmx.pMemObjAPIC = NIL_RTR0MEMOBJ;
+    pVM->hwaccm.s.vmx.pMemObjRealModeTSS = NIL_RTR0MEMOBJ;
+
 
     /* Allocate one page for the VM control structure (VMCS). */
     rc = RTR0MemObjAllocCont(&pVM->hwaccm.s.vmx.pMemObjVMCS, 1 << PAGE_SHIFT, true /* executable R0 mapping */);
@@ -165,6 +169,25 @@ HWACCMR0DECL(int) VMXR0InitVM(PVM pVM)
     /* Bit set to 0 means redirection enabled. */
     memset(pVM->hwaccm.s.vmx.pRealModeTSS->IntRedirBitmap, 0x0, sizeof(pVM->hwaccm.s.vmx.pRealModeTSS->IntRedirBitmap));
 
+    if (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls.n.allowed1 & VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_USE_TPR_SHADOW)
+    {
+        /* Allocate one page for the virtual APIC mmio cache. */
+        rc = RTR0MemObjAllocCont(&pVM->hwaccm.s.vmx.pMemObjAPIC, 1 << PAGE_SHIFT, true /* executable R0 mapping */);
+        AssertRC(rc);
+        if (RT_FAILURE(rc))
+            return rc;
+
+        pVM->hwaccm.s.vmx.pAPIC     = (uint8_t *)RTR0MemObjAddress(pVM->hwaccm.s.vmx.pMemObjAPIC);
+        pVM->hwaccm.s.vmx.pAPICPhys = RTR0MemObjGetPagePhysAddr(pVM->hwaccm.s.vmx.pMemObjAPIC, 0);
+        ASMMemZero32(pVM->hwaccm.s.vmx.pAPIC, PAGE_SIZE);
+    }
+    else
+    {
+        pVM->hwaccm.s.vmx.pMemObjAPIC = 0;
+        pVM->hwaccm.s.vmx.pAPIC       = 0;
+        pVM->hwaccm.s.vmx.pAPICPhys   = 0;
+    }
+
 #ifdef LOG_ENABLED
     SUPR0Printf("VMXR0InitVM %x VMCS=%x (%x) RealModeTSS=%x (%x)\n", pVM, pVM->hwaccm.s.vmx.pVMCS, (uint32_t)pVM->hwaccm.s.vmx.pVMCSPhys, pVM->hwaccm.s.vmx.pRealModeTSS, (uint32_t)pVM->hwaccm.s.vmx.pRealModeTSSPhys);
 #endif
@@ -179,19 +202,26 @@ HWACCMR0DECL(int) VMXR0InitVM(PVM pVM)
  */
 HWACCMR0DECL(int) VMXR0TermVM(PVM pVM)
 {
-    if (pVM->hwaccm.s.vmx.pMemObjVMCS)
+    if (pVM->hwaccm.s.vmx.pMemObjVMCS != NIL_RTR0MEMOBJ)
     {
         RTR0MemObjFree(pVM->hwaccm.s.vmx.pMemObjVMCS, false);
-        pVM->hwaccm.s.vmx.pMemObjVMCS = 0;
+        pVM->hwaccm.s.vmx.pMemObjVMCS = NIL_RTR0MEMOBJ;
         pVM->hwaccm.s.vmx.pVMCS       = 0;
         pVM->hwaccm.s.vmx.pVMCSPhys   = 0;
     }
-    if (pVM->hwaccm.s.vmx.pMemObjRealModeTSS)
+    if (pVM->hwaccm.s.vmx.pMemObjRealModeTSS != NIL_RTR0MEMOBJ)
     {
         RTR0MemObjFree(pVM->hwaccm.s.vmx.pMemObjRealModeTSS, false);
-        pVM->hwaccm.s.vmx.pMemObjRealModeTSS = 0;
+        pVM->hwaccm.s.vmx.pMemObjRealModeTSS = NIL_RTR0MEMOBJ;
         pVM->hwaccm.s.vmx.pRealModeTSS       = 0;
         pVM->hwaccm.s.vmx.pRealModeTSSPhys   = 0;
+    }
+    if (pVM->hwaccm.s.vmx.pMemObjAPIC != NIL_RTR0MEMOBJ)
+    {
+        RTR0MemObjFree(pVM->hwaccm.s.vmx.pMemObjAPIC, false);
+        pVM->hwaccm.s.vmx.pMemObjAPIC = NIL_RTR0MEMOBJ;
+        pVM->hwaccm.s.vmx.pAPIC       = 0;
+        pVM->hwaccm.s.vmx.pAPICPhys   = 0;
     }
     return VINF_SUCCESS;
 }
@@ -227,10 +257,10 @@ HWACCMR0DECL(int) VMXR0SetupVM(PVM pVM)
     /* VMX_VMCS_CTRL_PIN_EXEC_CONTROLS
      * Set required bits to one and zero according to the MSR capabilities.
      */
-    val  = (pVM->hwaccm.s.vmx.msr.vmx_pin_ctls & 0xFFFFFFFF);
+    val  = pVM->hwaccm.s.vmx.msr.vmx_pin_ctls.n.disallowed0;
     /* External and non-maskable interrupts cause VM-exits. */
     val  = val | VMX_VMCS_CTRL_PIN_EXEC_CONTROLS_EXT_INT_EXIT | VMX_VMCS_CTRL_PIN_EXEC_CONTROLS_NMI_EXIT;
-    val &= (pVM->hwaccm.s.vmx.msr.vmx_pin_ctls >> 32ULL);
+    val &= pVM->hwaccm.s.vmx.msr.vmx_pin_ctls.n.allowed1;
 
     rc = VMXWriteVMCS(VMX_VMCS_CTRL_PIN_EXEC_CONTROLS, val);
     AssertRC(rc);
@@ -238,7 +268,7 @@ HWACCMR0DECL(int) VMXR0SetupVM(PVM pVM)
     /* VMX_VMCS_CTRL_PROC_EXEC_CONTROLS
      * Set required bits to one and zero according to the MSR capabilities.
      */
-    val = (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls & 0xFFFFFFFF);
+    val = pVM->hwaccm.s.vmx.msr.vmx_proc_ctls.n.disallowed0;
     /* Program which event cause VM-exits and which features we want to use. */
     val = val | VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_HLT_EXIT
               | VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_TSC_OFFSET
@@ -249,18 +279,20 @@ HWACCMR0DECL(int) VMXR0SetupVM(PVM pVM)
 
     /** @note VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_MWAIT_EXIT might cause a vmlaunch failure with an invalid control fields error. (combined with some other exit reasons) */
 
-    /*
-     if AMD64 guest mode
-         val |=   VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_CR8_LOAD_EXIT
-                | VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_CR8_STORE_EXIT;
-     */
 #if HC_ARCH_BITS == 64
-     val |=   VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_CR8_LOAD_EXIT
-            | VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_CR8_STORE_EXIT;
+    if (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls.n.allowed1 & VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_USE_TPR_SHADOW)
+    {
+        /* CR8 reads from the APIC shadow page; writes cause an exit is they lower the TPR below the threshold */
+        val |= VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_USE_TPR_SHADOW;
+        Assert(pVM->hwaccm.s.vmx.pAPIC);
+    }
+    else
+        /* Exit on CR8 reads & writes in case the TPR shadow feature isn't present. */
+        val |= VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_CR8_STORE_EXIT | VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_CR8_LOAD_EXIT;
 #endif
     /* Mask away the bits that the CPU doesn't support */
     /** @todo make sure they don't conflict with the above requirements. */
-    val &= (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls >> 32ULL);
+    val &= pVM->hwaccm.s.vmx.msr.vmx_proc_ctls.n.allowed1;
     pVM->hwaccm.s.vmx.proc_ctls = val;
 
     rc = VMXWriteVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, val);
@@ -272,32 +304,16 @@ HWACCMR0DECL(int) VMXR0SetupVM(PVM pVM)
     rc = VMXWriteVMCS(VMX_VMCS_CTRL_CR3_TARGET_COUNT, 0);
     AssertRC(rc);
 
-    /* VMX_VMCS_CTRL_ENTRY_CONTROLS
-     * Set required bits to one and zero according to the MSR capabilities.
-     */
-    val  = (pVM->hwaccm.s.vmx.msr.vmx_entry & 0xFFFFFFFF);
-    if (pVM->hwaccm.s.cpuid.u32AMDFeatureEDX & X86_CPUID_AMD_FEATURE_EDX_LONG_MODE)
-    {
-        /** @todo 32 bits guest mode only for now. */
-        /* val |= VMX_VMCS_CTRL_ENTRY_CONTROLS_IA64_MODE; */
-    }
-    /* Mask away the bits that the CPU doesn't support */
-    /** @todo make sure they don't conflict with the above requirements. */
-    val &= (pVM->hwaccm.s.vmx.msr.vmx_entry >> 32ULL);
-    /* else Must be zero when AMD64 is not available. */
-    rc = VMXWriteVMCS(VMX_VMCS_CTRL_ENTRY_CONTROLS, val);
-    AssertRC(rc);
-
     /* VMX_VMCS_CTRL_EXIT_CONTROLS
      * Set required bits to one and zero according to the MSR capabilities.
      */
-    val  = (pVM->hwaccm.s.vmx.msr.vmx_exit & 0xFFFFFFFF);
+    val  = pVM->hwaccm.s.vmx.msr.vmx_exit.n.disallowed0;
 #if HC_ARCH_BITS == 64
     val |= VMX_VMCS_CTRL_EXIT_CONTROLS_HOST_AMD64;
 #else
     /* else Must be zero when AMD64 is not available. */
 #endif
-    val &= (pVM->hwaccm.s.vmx.msr.vmx_exit >> 32ULL);
+    val &= pVM->hwaccm.s.vmx.msr.vmx_exit.n.allowed1;
     /* Don't acknowledge external interrupts on VM-exit. */
     rc = VMXWriteVMCS(VMX_VMCS_CTRL_EXIT_CONTROLS, val);
     AssertRC(rc);
@@ -343,7 +359,7 @@ HWACCMR0DECL(int) VMXR0SetupVM(PVM pVM)
     AssertRC(rc);
 
     /* Clear MSR controls. */
-    if (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls & VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_USE_MSR_BITMAPS)
+    if (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls.n.allowed1 & VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_USE_MSR_BITMAPS)
     {
         /* Optional */
         rc  = VMXWriteVMCS(VMX_VMCS_CTRL_MSR_BITMAP_FULL, 0);
@@ -364,13 +380,14 @@ HWACCMR0DECL(int) VMXR0SetupVM(PVM pVM)
     rc |= VMXWriteVMCS(VMX_VMCS_CTRL_EXIT_MSR_LOAD_COUNT, 0);
     AssertRC(rc);
 
-    if (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls & VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_USE_TPR_SHADOW)
+    if (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls.n.allowed1 & VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_USE_TPR_SHADOW)
     {
+        Assert(pVM->hwaccm.s.vmx.pMemObjAPIC);
         /* Optional */
-        rc  = VMXWriteVMCS(VMX_VMCS_CTRL_TPR_TRESHOLD, 0);
-        rc |= VMXWriteVMCS(VMX_VMCS_CTRL_VAPIC_PAGEADDR_FULL, 0);
+        rc  = VMXWriteVMCS(VMX_VMCS_CTRL_TPR_THRESHOLD, 0);
+        rc |= VMXWriteVMCS(VMX_VMCS_CTRL_VAPIC_PAGEADDR_FULL, pVM->hwaccm.s.vmx.pAPICPhys);
 #if HC_ARCH_BITS == 32
-        rc |= VMXWriteVMCS(VMX_VMCS_CTRL_VAPIC_PAGEADDR_HIGH, 0);
+        rc |= VMXWriteVMCS(VMX_VMCS_CTRL_VAPIC_PAGEADDR_HIGH, pVM->hwaccm.s.vmx.pAPICPhys >> 32);
 #endif
         AssertRC(rc);
     }
@@ -450,7 +467,7 @@ static int VMXR0CheckPendingInterrupt(PVM pVM, CPUMCTX *pCtx)
     /* Dispatch any pending interrupts. (injected before, but a VM exit occurred prematurely) */
     if (pVM->hwaccm.s.Event.fPending)
     {
-        Log(("Reinjecting event %VX64 %08x at %VGv\n", pVM->hwaccm.s.Event.intInfo, pVM->hwaccm.s.Event.errCode, pCtx->eip));
+        Log(("Reinjecting event %VX64 %08x at %VGv cr2=%RX64\n", pVM->hwaccm.s.Event.intInfo, pVM->hwaccm.s.Event.errCode, pCtx->eip, pCtx->cr2));
         STAM_COUNTER_INC(&pVM->hwaccm.s.StatIntReinject);
         rc = VMXR0InjectEvent(pVM, pCtx, pVM->hwaccm.s.Event.intInfo, 0, pVM->hwaccm.s.Event.errCode);
         AssertRC(rc);
@@ -628,9 +645,9 @@ HWACCMR0DECL(int) VMXR0SaveHostState(PVM pVM)
 
         pDesc  = &((PX86DESCHC)gdtr.pGdt)[SelTR >> X86_SEL_SHIFT_HC];
 #if HC_ARCH_BITS == 64
-        trBase = pDesc->Gen.u16BaseLow | (pDesc->Gen.u8BaseHigh1 << 16ULL) | (pDesc->Gen.u8BaseHigh2 << 24ULL) | ((uintptr_t)pDesc->Gen.u32BaseHigh3 << 32ULL);
+        trBase = X86DESC64_BASE(*pDesc);
 #else
-        trBase = pDesc->Gen.u16BaseLow | (pDesc->Gen.u8BaseHigh1 << 16) | (pDesc->Gen.u8BaseHigh2 << 24);
+        trBase = X86DESC_BASE(*pDesc);
 #endif
         rc = VMXWriteVMCS(VMX_VMCS_HOST_TR_BASE, trBase);
         AssertRC(rc);
@@ -671,6 +688,8 @@ HWACCMR0DECL(int) VMXR0SaveHostState(PVM pVM)
 /**
  * Loads the guest state
  *
+ * NOTE: Don't do anything here that can cause a jump back to ring 3!!!!!
+ *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  * @param   pCtx        Guest context
@@ -696,6 +715,7 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
         VMX_WRITE_SELREG(DS, ds);
         AssertRC(rc);
 
+        /* The base values in the hidden fs & gs registers are not in sync with the msrs; they are cut to 32 bits. */
         VMX_WRITE_SELREG(FS, fs);
         AssertRC(rc);
 
@@ -767,15 +787,12 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
     }
 
     /*
-     * Sysenter MSRs
+     * Sysenter MSRs (unconditional)
      */
-    if (pVM->hwaccm.s.fContextUseFlags & HWACCM_CHANGED_GUEST_SYSENTER_MSR)
-    {
-        rc  = VMXWriteVMCS(VMX_VMCS_GUEST_SYSENTER_CS,      pCtx->SysEnter.cs);
-        rc |= VMXWriteVMCS(VMX_VMCS_GUEST_SYSENTER_EIP,     pCtx->SysEnter.eip);
-        rc |= VMXWriteVMCS(VMX_VMCS_GUEST_SYSENTER_ESP,     pCtx->SysEnter.esp);
-        AssertRC(rc);
-    }
+    rc  = VMXWriteVMCS(VMX_VMCS_GUEST_SYSENTER_CS,      pCtx->SysEnter.cs);
+    rc |= VMXWriteVMCS(VMX_VMCS_GUEST_SYSENTER_EIP,     pCtx->SysEnter.eip);
+    rc |= VMXWriteVMCS(VMX_VMCS_GUEST_SYSENTER_ESP,     pCtx->SysEnter.esp);
+    AssertRC(rc);
 
     /* Control registers */
     if (pVM->hwaccm.s.fContextUseFlags & HWACCM_CHANGED_GUEST_CR0)
@@ -790,7 +807,6 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
         }
         else
         {
-            Assert(pVM->hwaccm.s.vmx.fResumeVM == true);
             /** @todo check if we support the old style mess correctly. */
             if (!(val & X86_CR0_NE))
             {
@@ -799,7 +815,7 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
                 /* Also catch floating point exceptions as we need to report them to the guest in a different way. */
                 if (!pVM->hwaccm.s.fFPUOldStyleOverride)
                 {
-                    rc = VMXWriteVMCS(VMX_VMCS_CTRL_EXCEPTION_BITMAP, HWACCM_VMX_TRAP_MASK | RT_BIT(16));
+                    rc = VMXWriteVMCS(VMX_VMCS_CTRL_EXCEPTION_BITMAP, HWACCM_VMX_TRAP_MASK | RT_BIT(X86_XCPT_MF));
                     AssertRC(rc);
                     pVM->hwaccm.s.fFPUOldStyleOverride = true;
                 }
@@ -852,12 +868,15 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
 
         case PGMMODE_AMD64:         /* 64-bit AMD paging (long mode). */
         case PGMMODE_AMD64_NX:      /* 64-bit AMD paging (long mode) with NX enabled. */
+#ifdef VBOX_ENABLE_64_BITS_GUESTS
+            break;
+#else
             AssertFailed();
-            return VERR_PGM_UNSUPPORTED_HOST_PAGING_MODE;
-
+            return VERR_PGM_UNSUPPORTED_SHADOW_PAGING_MODE;
+#endif
         default:                   /* shut up gcc */
             AssertFailed();
-            return VERR_PGM_UNSUPPORTED_HOST_PAGING_MODE;
+            return VERR_PGM_UNSUPPORTED_SHADOW_PAGING_MODE;
         }
         /* Real mode emulation using v86 mode with CR4.VME (interrupt redirection using the int bitmap in the TSS) */
         if (!(pCtx->cr0 & X86_CR0_PROTECTION_ENABLE))
@@ -883,6 +902,7 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
     {
         /* Save our shadow CR3 register. */
         val = PGMGetHyperCR3(pVM);
+        Assert(val);
         rc = VMXWriteVMCS(VMX_VMCS_GUEST_CR3, val);
         AssertRC(rc);
     }
@@ -890,13 +910,9 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
     /* Debug registers. */
     if (pVM->hwaccm.s.fContextUseFlags & HWACCM_CHANGED_GUEST_DEBUG)
     {
-        /** @todo DR0-6 */
-        val  = pCtx->dr7;
+        val  = pCtx->dr7 & 0xffffffff;                                  /* upper 32 bits reserved */
         val &= ~(RT_BIT(11) | RT_BIT(12) | RT_BIT(14) | RT_BIT(15));    /* must be zero */
-        val |= 0x400;                                       /* must be one */
-#ifdef VBOX_STRICT
-        val = 0x400;
-#endif
+        val |= 0x400;                                                   /* must be one */
         rc |= VMXWriteVMCS(VMX_VMCS_GUEST_DR7,              val);
         AssertRC(rc);
 
@@ -905,7 +921,7 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
         rc |= VMXWriteVMCS(VMX_VMCS_GUEST_DEBUGCTL_HIGH,    0);
         AssertRC(rc);
 
-        /** @todo */
+        /** @todo do we really ever need this? */
         rc |= VMXWriteVMCS(VMX_VMCS_GUEST_DEBUG_EXCEPTIONS,         0);
         AssertRC(rc);
     }
@@ -958,6 +974,39 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
         STAM_COUNTER_INC(&pVM->hwaccm.s.StatTSCIntercept);
     }
 
+    /* VMX_VMCS_CTRL_ENTRY_CONTROLS
+     * Set required bits to one and zero according to the MSR capabilities.
+     */
+    val = pVM->hwaccm.s.vmx.msr.vmx_entry.n.disallowed0;
+    /* 64 bits guest mode? */
+    if (pCtx->msrEFER & MSR_K6_EFER_LMA)
+        val |= VMX_VMCS_CTRL_ENTRY_CONTROLS_IA64_MODE;
+    /* else Must be zero when AMD64 is not available. */
+
+    /* Mask away the bits that the CPU doesn't support */
+    val &= pVM->hwaccm.s.vmx.msr.vmx_entry.n.allowed1;
+    rc = VMXWriteVMCS(VMX_VMCS_CTRL_ENTRY_CONTROLS, val);
+    AssertRC(rc);
+
+    /* 64 bits guest mode? */
+    if (pCtx->msrEFER & MSR_K6_EFER_LMA)
+    {
+#if !defined(VBOX_WITH_64_BITS_GUESTS) || HC_ARCH_BITS != 64
+        return VERR_PGM_UNSUPPORTED_SHADOW_PAGING_MODE;
+#else
+        pVM->hwaccm.s.vmx.pfnStartVM  = VMXR0StartVM64;
+#endif
+        /* Unconditionally update these as wrmsr might have changed them. */
+        rc = VMXWriteVMCS(VMX_VMCS_GUEST_FS_BASE, pCtx->fsHid.u32Base);
+        AssertRC(rc);
+        rc = VMXWriteVMCS(VMX_VMCS_GUEST_GS_BASE, pCtx->gsHid.u32Base);
+        AssertRC(rc);
+    }
+    else
+    {
+        pVM->hwaccm.s.vmx.pfnStartVM  = VMXR0StartVM32;
+    }
+
     /* Done. */
     pVM->hwaccm.s.fContextUseFlags &= ~HWACCM_CHANGED_ALL_GUEST;
 
@@ -967,14 +1016,11 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
 /**
  * Runs guest code in a VT-x VM.
  *
- * @note NEVER EVER turn on interrupts here. Due to our illegal entry into the kernel, it might mess things up. (XP kernel traps have been frequently observed)
- *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  * @param   pCtx        Guest context
- * @param   pCpu        CPU info struct
  */
-HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx, PHWACCM_CPUINFO pCpu)
+HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx)
 {
     int         rc = VINF_SUCCESS;
     RTCCUINTREG val, valShadow;
@@ -983,11 +1029,15 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx, PHWACCM_CPUINFO pCpu
     RTGCUINTPTR intInfo = 0; /* shut up buggy gcc 4 */
     RTGCUINTPTR errCode, instrInfo, uInterruptState;
     bool        fGuestStateSynced = false;
+#ifdef VBOX_ENABLE_64_BITS_GUESTS
+    bool        fSyncTPR = false;
+#endif
     unsigned    cResume = 0;
+#ifdef VBOX_STRICT
+    RTCPUID  idCpuCheck;
+#endif
 
     Log2(("\nE"));
-
-    AssertReturn(pCpu->fVMXConfigured, VERR_EM_INTERNAL_ERROR);
 
     STAM_PROFILE_ADV_START(&pVM->hwaccm.s.StatEntry, x);
 
@@ -997,11 +1047,11 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx, PHWACCM_CPUINFO pCpu
     Log2(("VMX_VMCS_CTRL_PIN_EXEC_CONTROLS = %08x\n", val));
 
     /* allowed zero */
-    if ((val & (pVM->hwaccm.s.vmx.msr.vmx_pin_ctls & 0xFFFFFFFF)) != (pVM->hwaccm.s.vmx.msr.vmx_pin_ctls & 0xFFFFFFFF))
+    if ((val & pVM->hwaccm.s.vmx.msr.vmx_pin_ctls.n.disallowed0) != pVM->hwaccm.s.vmx.msr.vmx_pin_ctls.n.disallowed0)
         Log(("Invalid VMX_VMCS_CTRL_PIN_EXEC_CONTROLS: zero\n"));
 
     /* allowed one */
-    if ((val & ~(pVM->hwaccm.s.vmx.msr.vmx_pin_ctls >> 32ULL)) != 0)
+    if ((val & ~pVM->hwaccm.s.vmx.msr.vmx_pin_ctls.n.allowed1) != 0)
         Log(("Invalid VMX_VMCS_CTRL_PIN_EXEC_CONTROLS: one\n"));
 
     rc = VMXReadVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, &val);
@@ -1009,11 +1059,11 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx, PHWACCM_CPUINFO pCpu
     Log2(("VMX_VMCS_CTRL_PROC_EXEC_CONTROLS = %08x\n", val));
 
     /* allowed zero */
-    if ((val & (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls & 0xFFFFFFFF)) != (pVM->hwaccm.s.vmx.msr.vmx_proc_ctls & 0xFFFFFFFF))
+    if ((val & pVM->hwaccm.s.vmx.msr.vmx_proc_ctls.n.disallowed0) != pVM->hwaccm.s.vmx.msr.vmx_proc_ctls.n.disallowed0)
         Log(("Invalid VMX_VMCS_CTRL_PROC_EXEC_CONTROLS: zero\n"));
 
     /* allowed one */
-    if ((val & ~(pVM->hwaccm.s.vmx.msr.vmx_proc_ctls >> 32ULL)) != 0)
+    if ((val & ~pVM->hwaccm.s.vmx.msr.vmx_proc_ctls.n.allowed1) != 0)
         Log(("Invalid VMX_VMCS_CTRL_PROC_EXEC_CONTROLS: one\n"));
 
     rc = VMXReadVMCS(VMX_VMCS_CTRL_ENTRY_CONTROLS, &val);
@@ -1021,11 +1071,11 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx, PHWACCM_CPUINFO pCpu
     Log2(("VMX_VMCS_CTRL_ENTRY_CONTROLS = %08x\n", val));
 
     /* allowed zero */
-    if ((val & (pVM->hwaccm.s.vmx.msr.vmx_entry & 0xFFFFFFFF)) != (pVM->hwaccm.s.vmx.msr.vmx_entry & 0xFFFFFFFF))
+    if ((val & pVM->hwaccm.s.vmx.msr.vmx_entry.n.disallowed0) != pVM->hwaccm.s.vmx.msr.vmx_entry.n.disallowed0)
         Log(("Invalid VMX_VMCS_CTRL_ENTRY_CONTROLS: zero\n"));
 
     /* allowed one */
-    if ((val & ~(pVM->hwaccm.s.vmx.msr.vmx_entry >> 32ULL)) != 0)
+    if ((val & ~pVM->hwaccm.s.vmx.msr.vmx_entry.n.allowed1) != 0)
         Log(("Invalid VMX_VMCS_CTRL_ENTRY_CONTROLS: one\n"));
 
     rc = VMXReadVMCS(VMX_VMCS_CTRL_EXIT_CONTROLS, &val);
@@ -1033,11 +1083,11 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx, PHWACCM_CPUINFO pCpu
     Log2(("VMX_VMCS_CTRL_EXIT_CONTROLS = %08x\n", val));
 
     /* allowed zero */
-    if ((val & (pVM->hwaccm.s.vmx.msr.vmx_exit & 0xFFFFFFFF)) != (pVM->hwaccm.s.vmx.msr.vmx_exit & 0xFFFFFFFF))
+    if ((val & pVM->hwaccm.s.vmx.msr.vmx_exit.n.disallowed0) != pVM->hwaccm.s.vmx.msr.vmx_exit.n.disallowed0)
         Log(("Invalid VMX_VMCS_CTRL_EXIT_CONTROLS: zero\n"));
 
     /* allowed one */
-    if ((val & ~(pVM->hwaccm.s.vmx.msr.vmx_exit >> 32ULL)) != 0)
+    if ((val & ~pVM->hwaccm.s.vmx.msr.vmx_exit.n.allowed1) != 0)
         Log(("Invalid VMX_VMCS_CTRL_EXIT_CONTROLS: one\n"));
 #endif
 
@@ -1117,6 +1167,45 @@ ResumeExecution:
 
     /** @todo check timers?? */
 
+#ifdef VBOX_ENABLE_64_BITS_GUESTS
+    /* TPR caching using CR8 is only available in 64 bits mode */
+    /* Note the 32 bits exception for AMD (X86_CPUID_AMD_FEATURE_ECX_CR8L), but that appears missing in Intel CPUs */
+    /* Note: we can't do this in LoadGuestState as PDMApicGetTPR can jump back to ring 3 (lock)!!!!! */
+    /*
+     * @todo reduce overhead
+     */
+    if (   (pCtx->msrEFER & MSR_K6_EFER_LMA)
+        &&  pVM->hwaccm.s.vmx.pAPIC)
+    {
+        /* TPR caching in CR8 */
+        uint8_t u8TPR;
+        bool    fPending;
+
+        int rc = PDMApicGetTPR(pVM, &u8TPR, &fPending);
+        AssertRC(rc);
+        /* The TPR can be found at offset 0x80 in the APIC mmio page. */
+        pVM->hwaccm.s.vmx.pAPIC[0x80] = u8TPR << 4; /* bits 7-4 contain the task priority */
+
+        /* Two options here:
+         * - external interrupt pending, but masked by the TPR value.
+         *   -> CR8 updates that lower the TPR value to below the current value should cause an exit
+         * - no pending interrupts
+         *   -> We don't need to be explicitely notified. There are enough world switches for detecting pending interrupts.
+         */
+        rc  = VMXWriteVMCS(VMX_VMCS_CTRL_TPR_THRESHOLD, (fPending) ? u8TPR : 0);
+        AssertRC(rc);
+
+        fSyncTPR = !fPending;
+    }
+#endif
+
+    /*
+     * NOTE: DO NOT DO ANYTHING AFTER THIS POINT THAT MIGHT JUMP BACK TO RING 3!
+     *       (until the actual world switch)
+     */
+#ifdef VBOX_STRICT
+    idCpuCheck = RTMpCpuId();
+#endif
     /* Save the host state first. */
     rc  = VMXR0SaveHostState(pVM);
     if (rc != VINF_SUCCESS)
@@ -1154,10 +1243,10 @@ ResumeExecution:
 
     /* All done! Let's start VM execution. */
     STAM_PROFILE_ADV_START(&pVM->hwaccm.s.StatInGC, x);
-    if (pVM->hwaccm.s.vmx.fResumeVM == false)
-        rc = VMXStartVM(pCtx);
-    else
-        rc = VMXResumeVM(pCtx);
+#ifdef VBOX_STRICT
+    Assert(idCpuCheck == RTMpCpuId());
+#endif
+    rc = pVM->hwaccm.s.vmx.pfnStartVM(pVM->hwaccm.s.vmx.fResumeVM, pCtx);
 
     /* In case we execute a goto ResumeExecution later on. */
     pVM->hwaccm.s.vmx.fResumeVM = true;
@@ -1334,6 +1423,17 @@ ResumeExecution:
     exitQualification = val;
     AssertRC(rc);
 
+    /* Let's first sync back eip, esp, and eflags. */
+    rc = VMXReadVMCS(VMX_VMCS_GUEST_RIP,              &val);
+    AssertRC(rc);
+    pCtx->eip               = val;
+    rc = VMXReadVMCS(VMX_VMCS_GUEST_RSP,              &val);
+    AssertRC(rc);
+    pCtx->esp               = val;
+    rc = VMXReadVMCS(VMX_VMCS_GUEST_RFLAGS,           &val);
+    AssertRC(rc);
+    pCtx->eflags.u32        = val;
+
     /* Take care of instruction fusing (sti, mov ss) */
     rc |= VMXReadVMCS(VMX_VMCS_GUEST_INTERRUPTIBILITY_STATE, &val);
     uInterruptState = val;
@@ -1345,17 +1445,6 @@ ResumeExecution:
     }
     else
         VM_FF_CLEAR(pVM, VM_FF_INHIBIT_INTERRUPTS);
-
-    /* Let's first sync back eip, esp, and eflags. */
-    rc = VMXReadVMCS(VMX_VMCS_GUEST_RIP,              &val);
-    AssertRC(rc);
-    pCtx->eip               = val;
-    rc = VMXReadVMCS(VMX_VMCS_GUEST_RSP,              &val);
-    AssertRC(rc);
-    pCtx->esp               = val;
-    rc = VMXReadVMCS(VMX_VMCS_GUEST_RFLAGS,           &val);
-    AssertRC(rc);
-    pCtx->eflags.u32        = val;
 
     /* Real mode emulation using v86 mode with CR4.VME (interrupt redirection using the int bitmap in the TSS) */
     if (!(pCtx->cr0 & X86_CR0_PROTECTION_ENABLE))
@@ -1401,7 +1490,6 @@ ResumeExecution:
     if (    VMX_EXIT_INTERRUPTION_INFO_VALID(pVM->hwaccm.s.Event.intInfo)
         &&  VMX_EXIT_INTERRUPTION_INFO_TYPE(pVM->hwaccm.s.Event.intInfo) != VMX_EXIT_INTERRUPTION_INFO_TYPE_SW)
     {
-        Log(("Pending inject %VX64 at %08x exit=%08x intInfo=%08x exitQualification=%08x\n", pVM->hwaccm.s.Event.intInfo, pCtx->eip, exitReason, intInfo, exitQualification));
         pVM->hwaccm.s.Event.fPending = true;
         /* Error code present? */
         if (VMX_EXIT_INTERRUPTION_INFO_ERROR_CODE_IS_VALID(pVM->hwaccm.s.Event.intInfo))
@@ -1409,14 +1497,18 @@ ResumeExecution:
             rc = VMXReadVMCS(VMX_VMCS_RO_IDT_ERRCODE, &val);
             AssertRC(rc);
             pVM->hwaccm.s.Event.errCode  = val;
+            Log(("Pending inject %VX64 at %VGv exit=%08x intInfo=%08x exitQualification=%08x pending error=%RX64\n", pVM->hwaccm.s.Event.intInfo, pCtx->eip, exitReason, intInfo, exitQualification, val));
         }
         else
+        {
+            Log(("Pending inject %VX64 at %VGv exit=%08x intInfo=%08x exitQualification=%08x\n", pVM->hwaccm.s.Event.intInfo, pCtx->eip, exitReason, intInfo, exitQualification));
             pVM->hwaccm.s.Event.errCode  = 0;
+        }
     }
 
 #ifdef VBOX_STRICT
     if (exitReason == VMX_EXIT_ERR_INVALID_GUEST_STATE)
-        HWACCMDumpRegs(pCtx);
+        HWACCMDumpRegs(pVM, pCtx);
 #endif
 
     Log2(("E%d", exitReason));
@@ -1425,6 +1517,14 @@ ResumeExecution:
     Log2(("Interruption error code %d\n", errCode));
     Log2(("IntInfo = %08x\n", intInfo));
     Log2(("New EIP=%VGv\n", pCtx->eip));
+
+#ifdef VBOX_ENABLE_64_BITS_GUESTS
+    if (fSyncTPR)
+    {
+        rc = PDMApicSetTPR(pVM, pVM->hwaccm.s.vmx.pAPIC[0x80] >> 4);
+        AssertRC(rc);
+    }
+#endif
 
     /* Some cases don't need a complete resync of the guest CPU state; handle them here. */
     switch (exitReason)
@@ -1461,20 +1561,14 @@ ResumeExecution:
             {
             case X86_XCPT_NM:
             {
-                uint32_t oldCR0;
-
                 Log(("#NM fault at %VGv error code %x\n", pCtx->eip, errCode));
 
                 /** @todo don't intercept #NM exceptions anymore when we've activated the guest FPU state. */
-                oldCR0 = ASMGetCR0();
                 /* If we sync the FPU/XMM state on-demand, then we can continue execution as if nothing has happened. */
-                rc = CPUMHandleLazyFPU(pVM);
+                rc = CPUMR0LoadGuestFPU(pVM, pCtx);
                 if (rc == VINF_SUCCESS)
                 {
                     Assert(CPUMIsGuestFPUStateActive(pVM));
-
-                    /* CPUMHandleLazyFPU could have changed CR0; restore it. */
-                    ASMSetCR0(oldCR0);
 
                     STAM_COUNTER_INC(&pVM->hwaccm.s.StatExitShadowNM);
 
@@ -1681,6 +1775,26 @@ ResumeExecution:
         break;
     }
 
+    case VMX_EXIT_RDMSR:                /* 31 RDMSR. Guest software attempted to execute RDMSR. */
+    case VMX_EXIT_WRMSR:                /* 32 WRMSR. Guest software attempted to execute WRMSR. */
+    {
+        uint32_t cbSize;
+
+        /* Note: the intel manual claims there's a REX version of RDMSR that's slightly different, so we play safe by completely disassembling the instruction. */
+        Log2(("VMX: %s\n", (exitReason == VMX_EXIT_RDMSR) ? "rdmsr" : "wrmsr"));
+        rc = EMInterpretInstruction(pVM, CPUMCTX2CORE(pCtx), 0, &cbSize);
+        if (rc == VINF_SUCCESS)
+        {
+            /* EIP has been updated already. */
+
+            /* Only resume if successful. */
+            STAM_PROFILE_ADV_STOP(&pVM->hwaccm.s.StatExit, x);
+            goto ResumeExecution;
+        }
+        AssertMsg(rc == VERR_EM_INTERPRETER, ("EMU: %s failed with %Vrc\n", (exitReason == VMX_EXIT_RDMSR) ? "rdmsr" : "wrmsr", rc));
+        break;
+    }
+
     case VMX_EXIT_CRX_MOVE:             /* 28 Control-register accesses. */
     {
         switch (VMX_EXIT_QUALIFICATION_CRX_ACCESS(exitQualification))
@@ -1705,8 +1819,14 @@ ResumeExecution:
             case 4:
                 pVM->hwaccm.s.fContextUseFlags |= HWACCM_CHANGED_GUEST_CR4;
                 break;
+            case 8:
+                /* CR8 contains the APIC TPR */
+                Assert(!(pVM->hwaccm.s.vmx.msr.vmx_proc_ctls.n.allowed1 & VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_USE_TPR_SHADOW));
+                break;
+
             default:
                 AssertFailed();
+                break;
             }
             /* Check if a sync operation is pending. */
             if (    rc == VINF_SUCCESS /* don't bother if we are going to ring 3 anyway */
@@ -1720,6 +1840,10 @@ ResumeExecution:
         case VMX_EXIT_QUALIFICATION_CRX_ACCESS_READ:
             Log2(("VMX: mov x, crx\n"));
             STAM_COUNTER_INC(&pVM->hwaccm.s.StatExitCRxRead);
+
+            /* CR8 reads only cause an exit when the TPR shadow feature isn't present. */
+            Assert(VMX_EXIT_QUALIFICATION_CRX_REGISTER(exitQualification) != 8 || !(pVM->hwaccm.s.vmx.msr.vmx_proc_ctls.n.allowed1 & VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_USE_TPR_SHADOW));
+
             rc = EMInterpretCRxRead(pVM, CPUMCTX2CORE(pCtx),
                                     VMX_EXIT_QUALIFICATION_CRX_GENREG(exitQualification),
                                     VMX_EXIT_QUALIFICATION_CRX_REGISTER(exitQualification));
@@ -1884,6 +2008,11 @@ ResumeExecution:
         break;
     }
 
+    case VMX_EXIT_TPR:                  /* 43 TPR below threshold. Guest software executed MOV to CR8. */
+        LogFlow(("VMX_EXIT_TPR\n"));
+        /* RIP is already set to the next instruction and the TPR has been synced back. Just resume. */
+        goto ResumeExecution;
+
     default:
         /* The rest is handled after syncing the entire CPU state. */
         break;
@@ -1921,14 +2050,12 @@ ResumeExecution:
 
     case VMX_EXIT_HLT:                  /* 12 Guest software attempted to execute HLT. */
         /** Check if external interrupts are pending; if so, don't switch back. */
+        pCtx->eip++;    /* skip hlt */
         if (    pCtx->eflags.Bits.u1IF
             &&  VM_FF_ISPENDING(pVM, (VM_FF_INTERRUPT_APIC|VM_FF_INTERRUPT_PIC)))
-        {
-            pCtx->eip++;    /* skip hlt */
             goto ResumeExecution;
-        }
 
-        rc = VINF_EM_RAW_EMULATE_INSTR_HLT;
+        rc = VINF_EM_HALT;
         break;
 
     case VMX_EXIT_RSM:                  /* 17 Guest software attempted to execute RSM in SMM. */
@@ -1957,22 +2084,27 @@ ResumeExecution:
     case VMX_EXIT_DRX_MOVE:             /* 29 Debug-register accesses. */
     case VMX_EXIT_PORT_IO:              /* 30 I/O instruction. */
         /* already handled above */
-        AssertMsg(   rc == VINF_PGM_CHANGE_MODE 
-                  || rc == VINF_EM_RAW_INTERRUPT 
-                  || rc == VERR_EM_INTERPRETER 
-                  || rc == VINF_EM_RAW_EMULATE_INSTR 
-                  || rc == VINF_PGM_SYNC_CR3 
-                  || rc == VINF_IOM_HC_IOPORT_READ 
+        AssertMsg(   rc == VINF_PGM_CHANGE_MODE
+                  || rc == VINF_EM_RAW_INTERRUPT
+                  || rc == VERR_EM_INTERPRETER
+                  || rc == VINF_EM_RAW_EMULATE_INSTR
+                  || rc == VINF_PGM_SYNC_CR3
+                  || rc == VINF_IOM_HC_IOPORT_READ
                   || rc == VINF_IOM_HC_IOPORT_WRITE
-                  || rc == VINF_EM_RAW_GUEST_TRAP 
-                  || rc == VINF_TRPM_XCPT_DISPATCHED 
-                  || rc == VINF_EM_RESCHEDULE_REM, 
+                  || rc == VINF_EM_RAW_GUEST_TRAP
+                  || rc == VINF_TRPM_XCPT_DISPATCHED
+                  || rc == VINF_EM_RESCHEDULE_REM,
                   ("rc = %d\n", rc));
         break;
 
-    case VMX_EXIT_RDPMC:                /* 15 Guest software attempted to execute RDPMC. */
+    case VMX_EXIT_TPR:                  /* 43 TPR below threshold. Guest software executed MOV to CR8. */
     case VMX_EXIT_RDMSR:                /* 31 RDMSR. Guest software attempted to execute RDMSR. */
     case VMX_EXIT_WRMSR:                /* 32 WRMSR. Guest software attempted to execute WRMSR. */
+        /* Note: If we decide to emulate them here, then we must sync the MSRs that could have been changed (sysenter, fs/gs base)!!! */
+        rc = VERR_EM_INTERPRETER;
+        break;
+
+    case VMX_EXIT_RDPMC:                /* 15 Guest software attempted to execute RDPMC. */
     case VMX_EXIT_MWAIT:                /* 36 Guest software executed MWAIT. */
     case VMX_EXIT_MONITOR:              /* 39 Guest software attempted to execute MONITOR. */
     case VMX_EXIT_PAUSE:                /* 40 Guest software attempted to execute PAUSE. */
@@ -1983,8 +2115,41 @@ ResumeExecution:
         Assert(rc == VINF_EM_RAW_INTERRUPT);
         break;
 
-    case VMX_EXIT_TPR:                  /* 43 TPR below threshold. Guest software executed MOV to CR8. */
     case VMX_EXIT_ERR_INVALID_GUEST_STATE:  /* 33 VM-entry failure due to invalid guest state. */
+    {
+#ifdef VBOX_STRICT
+        Log(("VMX_EXIT_ERR_INVALID_GUEST_STATE\n"));
+
+        VMXReadVMCS(VMX_VMCS_GUEST_RIP, &val);
+        Log(("Old eip %VGv new %VGv\n", pCtx->eip, (RTGCPTR)val));
+
+        VMXReadVMCS(VMX_VMCS_GUEST_CR0, &val);
+        Log(("VMX_VMCS_GUEST_CR0        %RX64\n", val));
+
+        VMXReadVMCS(VMX_VMCS_GUEST_CR3, &val);
+        Log(("VMX_VMCS_HOST_CR3         %VGp\n", val));
+
+        VMXReadVMCS(VMX_VMCS_GUEST_CR4, &val);
+        Log(("VMX_VMCS_GUEST_CR4        %RX64\n", val));
+
+        VMX_LOG_SELREG(CS, "CS");
+        VMX_LOG_SELREG(DS, "DS");
+        VMX_LOG_SELREG(ES, "ES");
+        VMX_LOG_SELREG(FS, "FS");
+        VMX_LOG_SELREG(GS, "GS");
+        VMX_LOG_SELREG(SS, "SS");
+        VMX_LOG_SELREG(TR, "TR");
+        VMX_LOG_SELREG(LDTR, "LDTR");
+
+        VMXReadVMCS(VMX_VMCS_GUEST_GDTR_BASE, &val);
+        Log(("VMX_VMCS_GUEST_GDTR_BASE    %VGv\n", val));
+        VMXReadVMCS(VMX_VMCS_GUEST_IDTR_BASE, &val);
+        Log(("VMX_VMCS_GUEST_IDTR_BASE    %VGv\n", val));
+#endif /* VBOX_STRICT */
+        rc = VERR_EM_INTERNAL_ERROR;
+        break;
+    }
+
     case VMX_EXIT_ERR_MSR_LOAD:         /* 34 VM-entry failure due to MSR loading. */
     case VMX_EXIT_ERR_MACHINE_CHECK:    /* 41 VM-entry failure due to machine-check. */
     default:
@@ -2054,8 +2219,9 @@ end:
  *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
+ * @param   pCpu        CPU info struct
  */
-HWACCMR0DECL(int) VMXR0Enter(PVM pVM)
+HWACCMR0DECL(int) VMXR0Enter(PVM pVM, PHWACCM_CPUINFO pCpu)
 {
     Assert(pVM->hwaccm.s.vmx.fSupported);
 

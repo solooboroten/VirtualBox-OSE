@@ -1,4 +1,4 @@
-/* $Id: PGMAllBth.h 31133 2008-05-21 21:41:28Z bird $ */
+/* $Id: PGMAllBth.h 33666 2008-07-24 14:24:33Z sandervl $ */
 /** @file
  * VBox - Page Manager, Shadow+Guest Paging Template - All context code.
  *
@@ -1677,13 +1677,6 @@ PGM_BTH_DECL(int, SyncPage)(PVM pVM, GSTPDE PdeSrc, RTGCUINTPTR GCPtrPage, unsig
     PPGMPOOLPAGE    pShwPage = pgmPoolGetPageByHCPhys(pVM, PdeDst.u & SHW_PDE_PG_MASK);
     PSHWPT pPTDst = (PSHWPT)PGMPOOL_PAGE_2_PTR(pVM, pShwPage);
 
-# if PGM_SHW_TYPE == PGM_TYPE_PAE
-    /* Select the right PDE as we're emulating a 4kb page table with 2 shadow page tables. */
-    const unsigned  offPTSrc  = ((GCPtrPage >> SHW_PD_SHIFT) & 1) * 512;
-# else
-    const unsigned  offPTSrc  = 0;
-# endif
-
     Assert(cPages == 1 || !(uErr & X86_TRAP_PF_P));
     if (cPages > 1 && !(uErr & X86_TRAP_PF_P))
     {
@@ -1706,7 +1699,7 @@ PGM_BTH_DECL(int, SyncPage)(PVM pVM, GSTPDE PdeSrc, RTGCUINTPTR GCPtrPage, unsig
             {
                 GSTPTE PteSrc;
 
-                RTGCUINTPTR GCPtrCurPage = ((RTGCUINTPTR)GCPtrPage & ~(RTGCUINTPTR)(GST_PT_MASK << GST_PT_SHIFT)) | ((offPTSrc + iPTDst) << PAGE_SHIFT);
+                RTGCUINTPTR GCPtrCurPage = ((RTGCUINTPTR)GCPtrPage & ~(RTGCUINTPTR)(SHW_PT_MASK << SHW_PT_SHIFT)) | (iPTDst << PAGE_SHIFT);
 
                 /* Fake the page table entry */
                 PteSrc.u = GCPtrCurPage;
@@ -1733,7 +1726,7 @@ PGM_BTH_DECL(int, SyncPage)(PVM pVM, GSTPDE PdeSrc, RTGCUINTPTR GCPtrPage, unsig
     {
         GSTPTE PteSrc;
         const unsigned iPTDst = (GCPtrPage >> SHW_PT_SHIFT) & SHW_PT_MASK;
-        RTGCUINTPTR GCPtrCurPage = ((RTGCUINTPTR)GCPtrPage & ~(RTGCUINTPTR)(GST_PT_MASK << GST_PT_SHIFT)) | ((offPTSrc + iPTDst) << PAGE_SHIFT);
+        RTGCUINTPTR GCPtrCurPage = ((RTGCUINTPTR)GCPtrPage & ~(RTGCUINTPTR)(SHW_PT_MASK << SHW_PT_SHIFT)) | (iPTDst << PAGE_SHIFT);
 
         /* Fake the page table entry */
         PteSrc.u = GCPtrCurPage;

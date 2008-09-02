@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31342 2008-05-28 08:44:35Z frank $
+# $Id: Makefile.kmk 33126 2008-07-10 08:03:19Z mt221433 $
 ## @file
 # Makefile for the Linux installer.
 #
@@ -27,10 +27,10 @@ $(error "The Linux installer can only be built on Linux!") # yeah, right.
 endif
 
 VBOX_NO_LINUX_RUN_INSTALLER ?= $(VBOX_OSE)
+PACKAGE_NAME   = VirtualBox-$(VBOX_VERSION_STRING)-r$(VBOX_SVN_REV).run
 
-PROGRAMS       = VBoxTunctl
 PACKING        = $(if $(VBOX_NO_LINUX_RUN_INSTALLER),,\
-		 $(PATH_BIN)/VirtualBox.run $(PATH_BIN)/VirtualBox-dbg.tar.bz2)
+		 $(PATH_BIN)/$(PACKAGE_NAME) $(PATH_BIN)/VirtualBox-dbg.tar.bz2)
 PACKING       += $(PATH_BIN)/VirtualBox.tar.bz2
 OTHER_CLEAN    = $(addprefix $(PATH_TARGET)/install/,\
 	         install.sh deffiles routines.sh \
@@ -39,9 +39,6 @@ OTHER_CLEAN    = $(addprefix $(PATH_TARGET)/install/,\
 	         $(wildcard $(PATH_TARGET)/VirtualBox-*) \
 		 $(PATH_TARGET)/vboxdrv.sh $(PATH_TARGET)/vboxnet.sh
 INSTALLS       = linux-bin linux-doc
-
-VBoxTunctl_TEMPLATE = VBOXR3EXE
-VBoxTunctl_SOURCES  = tunctl.c
 
 #
 # Linux installs.
@@ -175,7 +172,7 @@ OTHER_CLEAN += $(addprefix $(PATH_TARGET)/archive/,$(LINUXARCHFILES)) \
 
 include $(KBUILD_PATH)/footer.kmk
 
-$(PATH_BIN)/VirtualBox.run: \
+$(PATH_BIN)/$(PACKAGE_NAME): \
 		$(PATH_TARGET)/install/VirtualBox.tar.bz2 \
 		install.sh \
 		$(VBOX_VERSION_STAMP) \
@@ -185,6 +182,7 @@ $(PATH_BIN)/VirtualBox.run: \
 		$(PATH_TARGET)/vboxdrv.sh \
 		$(if $(VBOX_OSE),,$(PATH_ROOT)/doc/License.txt)
 	$(call MSG_TOOL,makeself,,$@)
+	$(QUIET)$(RM) -f $(wildcard $(PATH_BIN)/VirtualBox-*.run)
 	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g" \
 		-e "s;_BUILD_;$(shell date);g" \
 		-e "s;_ARCH_;${KBUILD_TARGET_ARCH};g" \

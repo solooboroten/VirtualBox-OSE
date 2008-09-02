@@ -1,4 +1,4 @@
-/* $Id: tstRunTestcases.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: tstRunTestcases.cpp 33756 2008-07-28 14:43:53Z mt221433 $ */
 /** @file
  * tstRunTescases - Driver program for running VBox testcase (tst* testcase/tst*).
  */
@@ -49,11 +49,16 @@ static const char  *g_apszExclude[] =
 #if 1 // slow stuff
     "testcase/tstFile",
     "testcase/tstAvl",
+    "testcase/tstSemMutex",
+    "testcase/tstVD",
 #endif
     "testcase/tstFileLock",
     "testcase/tstCritSect",
     "testcase/tstCritSectW32",
     "testcase/tstDeadlock",
+    "testcase/tstDisasm-2",
+    "testcase/tstFileAppendWin-1",
+    "testcase/tstGlobalConfig",
     "testcase/tstLdr-2",
     "testcase/tstLdr-3",
     "testcase/tstLdr",
@@ -69,6 +74,7 @@ static const char  *g_apszExclude[] =
     "./tstAnimate",
     "./tstAPI",
     "./tstHeadless",
+    "./tstHeadless2",
     "./tstMicro",
     "./tstMicroGC",
     "./tstVBoxDbg",

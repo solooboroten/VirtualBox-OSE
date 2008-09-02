@@ -493,7 +493,29 @@ DECLINLINE(bool) CPUMIsGuestInPagedProtectedMode(PVM pVM)
 }
 
 /**
- * Tests if the guest is running in paged protected or not.
+ * Tests if the guest is running in long mode or not.
+ *
+ * @returns true if in long mode, otherwise false.
+ * @param   pVM     The VM handle.
+ */
+DECLINLINE(bool) CPUMIsGuestInLongMode(PVM pVM)
+{
+    return (CPUMGetGuestEFER(pVM) & MSR_K6_EFER_LMA) == MSR_K6_EFER_LMA;
+}
+
+/**
+ * Tests if the guest is running in long mode or not.
+ *
+ * @returns true if in long mode, otherwise false.
+ * @param   pCtx    Current CPU context
+ */
+DECLINLINE(bool) CPUMIsGuestInLongModeEx(PCPUMCTX pCtx)
+{
+    return (pCtx->msrEFER & MSR_K6_EFER_LMA) == MSR_K6_EFER_LMA;
+}
+
+/**
+ * Tests if the guest is running in 16 bits paged protected or not.
  *
  * @returns true if in paged protected mode, otherwise false.
  * @param   pVM     The VM handle.
@@ -501,7 +523,7 @@ DECLINLINE(bool) CPUMIsGuestInPagedProtectedMode(PVM pVM)
 CPUMDECL(bool) CPUMIsGuestIn16BitCode(PVM pVM);
 
 /**
- * Tests if the guest is running in paged protected or not.
+ * Tests if the guest is running in 32 bits paged protected or not.
  *
  * @returns true if in paged protected mode, otherwise false.
  * @param   pVM     The VM handle.
@@ -509,12 +531,34 @@ CPUMDECL(bool) CPUMIsGuestIn16BitCode(PVM pVM);
 CPUMDECL(bool) CPUMIsGuestIn32BitCode(PVM pVM);
 
 /**
- * Tests if the guest is running in paged protected or not.
+ * Tests if the guest is running in 64 bits mode or not.
  *
- * @returns true if in paged protected mode, otherwise false.
+ * @returns true if in 64 bits protected mode, otherwise false.
  * @param   pVM     The VM handle.
+ * @param   pCtx    Current CPU context
  */
-CPUMDECL(bool) CPUMIsGuestIn64BitCode(PVM pVM);
+DECLINLINE(bool) CPUMIsGuestIn64BitCode(PVM pVM, PCCPUMCTXCORE pCtx)
+{
+    if (!CPUMIsGuestInLongMode(pVM))
+        return false;
+
+    return pCtx->csHid.Attr.n.u1Long;
+}
+
+/**
+ * Tests if the guest is running in 64 bits mode or not.
+ *
+ * @returns true if in 64 bits protected mode, otherwise false.
+ * @param   pVM     The VM handle.
+ * @param   pCtx    Current CPU context
+ */
+DECLINLINE(bool) CPUMIsGuestIn64BitCodeEx(PCCPUMCTX pCtx)
+{
+    if (!(pCtx->msrEFER & MSR_K6_EFER_LMA))
+        return false;
+
+    return pCtx->csHid.Attr.n.u1Long;
+}
 
 /** @} */
 
@@ -960,6 +1004,24 @@ CPUMGCDECL(void) CPUMGCCallV86Code(PCPUMCTXCORE pRegFrame);
  * @param   pVM         The VM to operate on.
  */
 CPUMR0DECL(int) CPUMR0Init(PVM pVM);
+
+/**
+ * Lazily sync in the FPU/XMM state
+ *
+ * @returns VBox status code.
+ * @param   pVM         VM handle.
+ * @param   pCtx        CPU context
+ */
+CPUMR0DECL(int) CPUMR0LoadGuestFPU(PVM pVM, PCPUMCTX pCtx);
+
+/**
+ * Save guest FPU/XMM state
+ *
+ * @returns VBox status code.
+ * @param   pVM         VM handle.
+ * @param   pCtx        CPU context
+ */
+CPUMR0DECL(int) CPUMR0SaveGuestFPU(PVM pVM, PCPUMCTX pCtx);
 
 /** @} */
 #endif

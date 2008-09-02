@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31318 2008-05-27 16:29:34Z dsen $
+# $Id: Makefile.kmk 32849 2008-07-04 20:05:30Z mt221433 $
 ## @file
 # Makefile for the VirtualBox Qt GUI.
 #
@@ -359,6 +359,7 @@ VBoxKeyboard4_TARSOURCES = \
 	src/linux/keyboard-layouts.h \
 	src/linux/keyboard-list.h \
 	src/linux/keyboard-tables.h \
+	src/linux/keyboard-types.h \
 	src/linux/Makefile
 VBoxKeyboard4_LIBS     = X11
 VBoxKeyboard4_LIBPATH  = $(VBOX_LIBPATH_X11)

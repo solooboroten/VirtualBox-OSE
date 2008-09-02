@@ -1,8 +1,8 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
    Protocol services - Clipboard functions
-   Copyright (C) Erik Forsberg <forsberg@cendio.se> 2003
-   Copyright (C) Matthew Chapman 2003
+   Copyright (C) Erik Forsberg <forsberg@cendio.se> 2003-2007
+   Copyright (C) Matthew Chapman 2003-2007
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -53,12 +53,12 @@
 extern Display *g_display;
 extern Window g_wnd;
 extern Time g_last_gesturetime;
-extern BOOL g_rdpclip;
+extern RD_BOOL g_rdpclip;
 
 /* Mode of operation.
    - Auto: Look at both PRIMARY and CLIPBOARD and use the most recent.
    - Non-auto: Look at just CLIPBOARD. */
-static BOOL auto_mode = True;
+static RD_BOOL auto_mode = True;
 /* Atoms of the two X selections we're dealing with: CLIPBOARD (explicit-copy) and PRIMARY (selection-copy) */
 static Atom clipboard_atom, primary_atom;
 /* Atom of the TARGETS clipboard target */
@@ -92,7 +92,7 @@ static Atom rdesktop_selection_notify_atom;
 /* State variables that indicate if we're currently probing the targets of the
    selection owner. reprobe_selections indicate that the ownership changed in
    the middle of the current probe so it should be restarted. */
-static BOOL probing_selections, reprobe_selections;
+static RD_BOOL probing_selections, reprobe_selections;
 /* Atoms _RDESKTOP_PRIMARY_OWNER and _RDESKTOP_CLIPBOARD_OWNER. Used as properties
    on the root window to indicate which selections that are owned by rdesktop. */
 static Atom rdesktop_primary_owner_atom, rdesktop_clipboard_owner_atom;
@@ -105,7 +105,7 @@ static Atom incr_atom;
    the context to proceed. */
 static XSelectionRequestEvent selection_request;
 /* Denotes we have a pending selection request. */
-static Bool has_selection_request;
+static RD_BOOL has_selection_request;
 /* Stores the clipboard format (CF_TEXT, CF_UNICODETEXT etc.) requested in the last
    CLIPDR_DATA_REQUEST (= the RDP server requesting clipboard data from us).
    When we receive this data from whatever X client offering it, this variable gives us
@@ -117,7 +117,7 @@ static Atom targets[MAX_TARGETS];
 static int num_targets;
 /* Denotes that an rdesktop (not this rdesktop) is owning the selection,
    allowing us to interchange Windows native clipboard data directly. */
-static BOOL rdesktop_is_selection_owner = False;
+static RD_BOOL rdesktop_is_selection_owner = False;
 /* Time when we acquired the selection. */
 static Time acquire_time = 0;
 
@@ -130,8 +130,8 @@ static uint8 *g_clip_buffer = 0;
 /* Denotes the size of g_clip_buffer. */
 static uint32 g_clip_buflen = 0;
 
-/* Translate LF to CR-LF. To do this, we must allocate more memory.
-   The returned string is null-terminated, as required by CF_TEXT.
+/* Translates CR-LF to LF.
+   Changes the string in-place.
    Does not stop on embedded nulls.
    The length is updated. */
 static void
@@ -157,7 +157,7 @@ utf16_lf2crlf(uint8 * data, uint32 * size)
 {
 	uint8 *result;
 	uint16 *inptr, *outptr;
-	Bool swap_endianess;
+	RD_BOOL swap_endianess;
 
 	/* Worst case: Every char is LF */
 	result = xmalloc((*size * 2) + 2);
@@ -170,13 +170,15 @@ utf16_lf2crlf(uint8 * data, uint32 * size)
 	/* Check for a reversed BOM */
 	swap_endianess = (*inptr == 0xfffe);
 
+	uint16 uvalue_previous = 0;	/* Kept so we'll avoid translating CR-LF to CR-CR-LF */
 	while ((uint8 *) inptr < data + *size)
 	{
 		uint16 uvalue = *inptr;
 		if (swap_endianess)
 			uvalue = ((uvalue << 8) & 0xff00) + (uvalue >> 8);
-		if (uvalue == 0x0a)
+		if ((uvalue == 0x0a) && (uvalue_previous != 0x0d))
 			*outptr++ = swap_endianess ? 0x0d00 : 0x0d;
+		uvalue_previous = uvalue;
 		*outptr++ = *inptr++;
 	}
 	*outptr++ = 0;		/* null termination */
@@ -198,10 +200,12 @@ lf2crlf(uint8 * data, uint32 * length)
 	p = data;
 	o = result;
 
+	uint8 previous = '\0';	/* Kept to avoid translating CR-LF to CR-CR-LF */
 	while (p < data + *length)
 	{
-		if (*p == '\x0a')
+		if ((*p == '\x0a') && (previous != '\x0d'))
 			*o++ = '\x0d';
+		previous = *p;
 		*o++ = *p++;
 	}
 	*length = o - result;
@@ -283,7 +287,7 @@ helper_cliprdr_send_empty_response()
 /* Replies with clipboard data to RDP, converting it from the target format
    to the expected RDP format as necessary. Returns true if data was sent.
  */
-static Bool
+static RD_BOOL
 xclip_send_data_with_convert(uint8 * source, size_t source_size, Atom target)
 {
 	DEBUG_CLIPBOARD(("xclip_send_data_with_convert: target=%s, size=%u\n",
@@ -713,7 +717,7 @@ xclip_handle_SelectionNotify(XSelectionEvent * event)
 			rdesktop_is_selection_owner = True;
 			cliprdr_send_native_format_announce(data, nitems);
 		}
-		else if (!xclip_send_data_with_convert(data, nitems, event->target))
+		else if ((!nitems) || (!xclip_send_data_with_convert(data, nitems, event->target)))
 		{
 			goto fail;
 		}
@@ -754,7 +758,7 @@ void
 xclip_handle_SelectionRequest(XSelectionRequestEvent * event)
 {
 	unsigned long nitems, bytes_left;
-	unsigned char *prop_return;
+	unsigned char *prop_return = NULL;
 	int format, res;
 	Atom type;
 
@@ -796,7 +800,7 @@ xclip_handle_SelectionRequest(XSelectionRequestEvent * event)
 						 event->property, 0, 1, True,
 						 XA_INTEGER, &type, &format, &nitems, &bytes_left,
 						 &prop_return);
-			if (res != Success)
+			if (res != Success || (!prop_return))
 			{
 				DEBUG_CLIPBOARD(("Requested native format but didn't specifiy which.\n"));
 				xclip_refuse_selection(event);
@@ -958,7 +962,7 @@ ui_clip_format_announce(uint8 * data, uint32 length)
 void
 ui_clip_handle_data(uint8 * data, uint32 length)
 {
-	BOOL free_data = False;
+	RD_BOOL free_data = False;
 
 	if (length == 0)
 	{
@@ -1006,6 +1010,8 @@ ui_clip_handle_data(uint8 * data, uint32 length)
 			free_data = True;
 			data = (uint8 *) utf8_data;
 			length = utf8_length - utf8_length_remaining;
+			/* translate linebreaks (works just as well on UTF-8) */
+			crlf2lf(data, &length);
 		}
 	}
 	else if (selection_request.target == format_unicode_atom)

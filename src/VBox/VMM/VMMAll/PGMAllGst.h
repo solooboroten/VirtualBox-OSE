@@ -1,4 +1,4 @@
-/* $Id: PGMAllGst.h 30442 2008-05-02 17:00:34Z sandervl $ */
+/* $Id: PGMAllGst.h 33668 2008-07-24 14:25:01Z sandervl $ */
 /** @file
  * VBox - Page Manager, Guest Paging Template - All context code.
  */
@@ -46,9 +46,18 @@
 #undef GST_PDPT_SHIFT
 #undef GST_PDPT_MASK
 
-#if PGM_GST_TYPE == PGM_TYPE_32BIT \
- || PGM_GST_TYPE == PGM_TYPE_REAL \
- || PGM_GST_TYPE == PGM_TYPE_PROT
+#if   PGM_GST_TYPE == PGM_TYPE_REAL \
+   || PGM_GST_TYPE == PGM_TYPE_PROT 
+# define GSTPT                      SHWPT 
+# define PGSTPT                     PSHWPT 
+# define GSTPTE                     SHWPTE 
+# define PGSTPTE                    PSHWPTE 
+# define GSTPD                      SHWPD 
+# define PGSTPD                     PSHWPD 
+# define GSTPDE                     SHWPDE 
+# define PGSTPDE                    PSHWPDE 
+# define GST_PTE_PG_MASK            SHW_PTE_PG_MASK 
+# elif PGM_GST_TYPE == PGM_TYPE_32BIT
 # define GSTPT                      X86PT
 # define PGSTPT                     PX86PT
 # define GSTPTE                     X86PTE

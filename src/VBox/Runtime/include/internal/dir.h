@@ -1,4 +1,4 @@
-/* $Id: dir.h 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: dir.h 31849 2008-06-10 08:25:24Z frank $ */
 /** @file
  * IPRT - Internal Header for RTDir.
  */
@@ -100,6 +100,9 @@ typedef struct RTDIR
 #else /* 'POSIX': */
     /** What opendir() returned. */
     DIR                *pDir;
+    /** The max size of the d_name member.
+     * This includes the 0 terminator of course.*/
+    size_t              cbMaxName;
     /** Find data buffer.
      * fDataUnread indicates valid data. */
     struct dirent       Data;

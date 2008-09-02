@@ -1,8 +1,8 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
    RDP licensing negotiation
-   Copyright (C) Matthew Chapman 1999-2005
-   
+   Copyright (C) Matthew Chapman 1999-2007
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
@@ -12,14 +12,14 @@
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
 #include "rdesktop.h"
-#include <openssl/rc4.h>
+#include "ssl.h"
 
 extern char g_username[64];
 extern char g_hostname[16];
@@ -27,7 +27,7 @@ extern char g_hostname[16];
 static uint8 g_licence_key[16];
 static uint8 g_licence_sign_key[16];
 
-BOOL g_licence_issued = False;
+RD_BOOL g_licence_issued = False;
 
 /* Generate a session key and RC4 keys, given client and server randoms */
 static void
@@ -143,7 +143,7 @@ licence_process_demand(STREAM s)
 	uint8 hwid[LICENCE_HWID_SIZE];
 	uint8 *licence_data;
 	int licence_size;
-	RC4_KEY crypt_key;
+	SSL_RC4 crypt_key;
 
 	/* Retrieve the server random from the incoming packet */
 	in_uint8p(s, server_random, SEC_RANDOM_SIZE);
@@ -161,8 +161,8 @@ licence_process_demand(STREAM s)
 		sec_sign(signature, 16, g_licence_sign_key, 16, hwid, sizeof(hwid));
 
 		/* Now encrypt the HWID */
-		RC4_set_key(&crypt_key, 16, g_licence_key);
-		RC4(&crypt_key, sizeof(hwid), hwid, hwid);
+		ssl_rc4_set_key(&crypt_key, g_licence_key, 16);
+		ssl_rc4_crypt(&crypt_key, hwid, hwid, sizeof(hwid));
 
 		licence_present(null_data, null_data, licence_data, licence_size, hwid, signature);
 		xfree(licence_data);
@@ -201,7 +201,7 @@ licence_send_authresp(uint8 * token, uint8 * crypt_hwid, uint8 * signature)
 }
 
 /* Parse an authentication request packet */
-static BOOL
+static RD_BOOL
 licence_parse_authreq(STREAM s, uint8 ** token, uint8 ** signature)
 {
 	uint16 tokenlen;
@@ -230,15 +230,15 @@ licence_process_authreq(STREAM s)
 	uint8 hwid[LICENCE_HWID_SIZE], crypt_hwid[LICENCE_HWID_SIZE];
 	uint8 sealed_buffer[LICENCE_TOKEN_SIZE + LICENCE_HWID_SIZE];
 	uint8 out_sig[LICENCE_SIGNATURE_SIZE];
-	RC4_KEY crypt_key;
+	SSL_RC4 crypt_key;
 
 	/* Parse incoming packet and save the encrypted token */
 	licence_parse_authreq(s, &in_token, &in_sig);
 	memcpy(out_token, in_token, LICENCE_TOKEN_SIZE);
 
 	/* Decrypt the token. It should read TEST in Unicode. */
-	RC4_set_key(&crypt_key, 16, g_licence_key);
-	RC4(&crypt_key, LICENCE_TOKEN_SIZE, in_token, decrypt_token);
+	ssl_rc4_set_key(&crypt_key, g_licence_key, 16);
+	ssl_rc4_crypt(&crypt_key, in_token, decrypt_token, LICENCE_TOKEN_SIZE);
 
 	/* Generate a signature for a buffer of token and HWID */
 	licence_generate_hwid(hwid);
@@ -247,8 +247,8 @@ licence_process_authreq(STREAM s)
 	sec_sign(out_sig, 16, g_licence_sign_key, 16, sealed_buffer, sizeof(sealed_buffer));
 
 	/* Now encrypt the HWID */
-	RC4_set_key(&crypt_key, 16, g_licence_key);
-	RC4(&crypt_key, LICENCE_HWID_SIZE, hwid, crypt_hwid);
+	ssl_rc4_set_key(&crypt_key, g_licence_key, 16);
+	ssl_rc4_crypt(&crypt_key, hwid, crypt_hwid, LICENCE_HWID_SIZE);
 
 	licence_send_authresp(out_token, crypt_hwid, out_sig);
 }
@@ -257,7 +257,7 @@ licence_process_authreq(STREAM s)
 static void
 licence_process_issue(STREAM s)
 {
-	RC4_KEY crypt_key;
+	SSL_RC4 crypt_key;
 	uint32 length;
 	uint16 check;
 	int i;
@@ -267,8 +267,8 @@ licence_process_issue(STREAM s)
 	if (!s_check_rem(s, length))
 		return;
 
-	RC4_set_key(&crypt_key, 16, g_licence_key);
-	RC4(&crypt_key, length, s->p, s->p);
+	ssl_rc4_set_key(&crypt_key, g_licence_key, 16);
+	ssl_rc4_crypt(&crypt_key, s->p, s->p, length);
 
 	in_uint16(s, check);
 	if (check != 0)

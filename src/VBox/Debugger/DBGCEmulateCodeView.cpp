@@ -1,4 +1,4 @@
-/** $Id: DBGCEmulateCodeView.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/** $Id: DBGCEmulateCodeView.cpp 33647 2008-07-24 10:05:07Z sandervl $ */
 /** @file
  * DBGC - Debugger Console, CodeView / WinDbg Emulation.
  */
@@ -1636,7 +1636,7 @@ static int dbgcCmdDumpDTWorker32(PDBGCCMDHLP pCmdHlp, PCX86DESC pDesc, unsigned 
         rc = pCmdHlp->pfnPrintf(pCmdHlp, NULL, "%04x %s Bas=%08x Lim=%08x DPL=%d %s %s %s %s AVL=%d R=%d%s\n",
                                 iEntry, s_apszTypes[pDesc->Gen.u4Type], u32Base, cbLimit,
                                 pDesc->Gen.u2Dpl, pszPresent, pszAccessed, pszGranularity, pszBig,
-                                pDesc->Gen.u1Available, pDesc->Gen.u1Reserved, pszHyper);
+                                pDesc->Gen.u1Available, pDesc->Gen.u1Long, pszHyper);
     }
     else
     {
@@ -1690,7 +1690,7 @@ static int dbgcCmdDumpDTWorker32(PDBGCCMDHLP pCmdHlp, PCX86DESC pDesc, unsigned 
                 rc = pCmdHlp->pfnPrintf(pCmdHlp, NULL, "%04x %s Bas=%08x Lim=%08x DPL=%d %s %s %s %s AVL=%d R=%d%s\n",
                                         iEntry, s_apszTypes[pDesc->Gen.u4Type], u32Base, cbLimit,
                                         pDesc->Gen.u2Dpl, pszPresent, pszBusy, pszGranularity, pszBig,
-                                        pDesc->Gen.u1Available, pDesc->Gen.u1Reserved | (pDesc->Gen.u1DefBig << 1),
+                                        pDesc->Gen.u1Available, pDesc->Gen.u1Long | (pDesc->Gen.u1DefBig << 1),
                                         pszHyper);
                 break;
             }

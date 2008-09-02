@@ -1,4 +1,4 @@
-/* $Id: VMMR0.cpp 31032 2008-05-20 14:51:33Z bird $ */
+/* $Id: VMMR0.cpp 33465 2008-07-17 15:47:20Z bird $ */
 /** @file
  * VMM - Host Context Ring 0.
  */
@@ -569,12 +569,12 @@ VMMR0DECL(int) VMMR0EntryInt(PVM pVM, VMMR0OPERATION enmOperation, void *pvArg)
 /**
  * The Ring 0 entry point, called by the fast-ioctl path.
  *
- * @returns VBox status code.
  * @param   pVM             The VM to operate on.
+ *                          The return code is stored in pVM->vmm.s.iLastGCRc.
  * @param   enmOperation    Which operation to execute.
  * @remarks Assume called with interrupts _enabled_.
  */
-VMMR0DECL(int) VMMR0EntryFast(PVM pVM, VMMR0OPERATION enmOperation)
+VMMR0DECL(void) VMMR0EntryFast(PVM pVM, VMMR0OPERATION enmOperation)
 {
     switch (enmOperation)
     {
@@ -602,11 +602,13 @@ VMMR0DECL(int) VMMR0EntryFast(PVM pVM, VMMR0OPERATION enmOperation)
                 STAM_COUNTER_INC(&pVM->vmm.s.StatRunGC);
                 vmmR0RecordRC(pVM, rc);
 #endif
-                return rc;
             }
-
-            Assert(!pVM->vmm.s.fSwitcherDisabled);
-            return VERR_NOT_SUPPORTED;
+            else
+            {
+                Assert(!pVM->vmm.s.fSwitcherDisabled);
+                pVM->vmm.s.iLastGCRc = VERR_NOT_SUPPORTED;
+            }
+            break;
         }
 
         /*
@@ -639,21 +641,23 @@ VMMR0DECL(int) VMMR0EntryFast(PVM pVM, VMMR0OPERATION enmOperation)
             vmmR0RecordRC(pVM, rc);
 #endif
             /* No special action required for external interrupts, just return. */
-            return rc;
+            break;
         }
 
         /*
          * For profiling.
          */
         case VMMR0_DO_NOP:
-            return VINF_SUCCESS;
+            pVM->vmm.s.iLastGCRc = VINF_SUCCESS;
+            break;
 
         /*
          * Impossible.
          */
         default:
             AssertMsgFailed(("%#x\n", enmOperation));
-            return VERR_NOT_SUPPORTED;
+            pVM->vmm.s.iLastGCRc = VERR_NOT_SUPPORTED;
+            break;
     }
 }
 
@@ -903,6 +907,7 @@ static int vmmR0EntryExWorker(PVM pVM, VMMR0OPERATION enmOperation, PSUPVMMR0REQ
          * For profiling.
          */
         case VMMR0_DO_NOP:
+        case VMMR0_DO_SLOW_NOP:
             return VINF_SUCCESS;
 
         /*

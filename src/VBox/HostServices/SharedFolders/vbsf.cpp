@@ -1367,7 +1367,7 @@ int vbsfDirList(SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLHANDLE Handle, SHFLS
             break; /* we're done */
     }
     Assert(rc != VINF_SUCCESS || *pcbBuffer > 0);
-
+    
 end:
     if (pDirEntry)
         RTMemFree(pDirEntry);

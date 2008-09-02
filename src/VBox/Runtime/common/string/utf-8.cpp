@@ -1,4 +1,4 @@
-/* $Id: utf-8.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: utf-8.cpp 32611 2008-07-02 13:49:43Z mt221433 $ */
 /** @file
  * IPRT - UTF-8 Decoding.
  */
@@ -286,6 +286,27 @@ RTDECL(int) RTStrUniLenEx(const char *psz, size_t cch, size_t *pcCps)
     if (pcCps)
         *pcCps = RT_SUCCESS(rc) ? cCodePoints : 0;
     return rc;
+}
+
+
+RTDECL(int) RTStrValidateEncoding(const char *psz)
+{
+    return RTStrValidateEncodingEx(psz, RTSTR_MAX, 0);
+}
+
+
+RTDECL(int) RTStrValidateEncodingEx(const char *psz, size_t cch, unsigned fFlags)
+{
+    NOREF(fFlags);
+    size_t cCpsIgnored;
+    return RTStrUniLenEx(psz, cch, &cCpsIgnored);
+}
+
+
+RTDECL(bool) RTStrIsValidEncoding(const char *psz)
+{
+    int rc = RTStrValidateEncodingEx(psz, RTSTR_MAX, 0);
+    return RT_SUCCESS(rc);
 }
 
 

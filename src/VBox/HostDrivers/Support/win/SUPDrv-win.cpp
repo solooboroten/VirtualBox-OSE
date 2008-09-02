@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-win.cpp 30959 2008-05-19 09:45:02Z sandervl $ */
+/* $Id: SUPDrv-win.cpp 33465 2008-07-17 15:47:20Z bird $ */
 /** @file
  * VirtualBox Support Driver - Windows NT specific parts.
  */
@@ -294,33 +294,25 @@ NTSTATUS _stdcall VBoxDrvNtDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
     /*
      * Deal with the two high-speed IOCtl that takes it's arguments from
      * the session and iCmd, and only returns a VBox status code.
+     *
+     * Note: The previous method of returning the rc prior to IOC version
+     *       7.4 has been abandond, we're no longer compatible with that
+     *       interface.
      */
     ULONG ulCmd = pStack->Parameters.DeviceIoControl.IoControlCode;
     if (    ulCmd == SUP_IOCTL_FAST_DO_RAW_RUN
         ||  ulCmd == SUP_IOCTL_FAST_DO_HWACC_RUN
         ||  ulCmd == SUP_IOCTL_FAST_DO_NOP)
     {
-        KIRQL oldIrql;
-        int   rc;
-
-	 	/* Raise the IRQL to DISPATCH_LEVEl to prevent Windows from rescheduling us to another CPU/core. */ 
+        /* Raise the IRQL to DISPATCH_LEVEl to prevent Windows from rescheduling us to another CPU/core. */
         Assert(KeGetCurrentIrql() <= DISPATCH_LEVEL);
-        KeRaiseIrql(DISPATCH_LEVEL, &oldIrql);        
-        rc = supdrvIOCtlFast(ulCmd, pDevExt, pSession);
+        KIRQL oldIrql;
+        KeRaiseIrql(DISPATCH_LEVEL, &oldIrql);
+        int rc = supdrvIOCtlFast(ulCmd, pDevExt, pSession);
         KeLowerIrql(oldIrql);
 
         /* Complete the I/O request. */
-        NTSTATUS rcNt = pIrp->IoStatus.Status = STATUS_SUCCESS;
-        pIrp->IoStatus.Information = sizeof(rc);
-        __try
-        {
-            *(int *)pIrp->UserBuffer = rc;
-        }
-        __except(EXCEPTION_EXECUTE_HANDLER)
-        {
-            rcNt = pIrp->IoStatus.Status = GetExceptionCode();
-            dprintf(("VBoxSupDrvDeviceContorl: Exception Code %#x\n", rcNt));
-        }
+        NTSTATUS rcNt = pIrp->IoStatus.Status = RT_SUCCESS(rc) ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
         IoCompleteRequest(pIrp, IO_NO_INCREMENT);
         return rcNt;
     }

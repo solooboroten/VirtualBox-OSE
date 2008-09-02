@@ -501,6 +501,31 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 /** @} */
 
 
+/** @name CPUID AMD Feature information.
+ * CPUID query with EAX=0x80000007.
+ * @{
+ */
+/** Bit 0 - TS - Temperature Sensor. */
+#define X86_CPUID_AMD_ADVPOWER_EDX_TS        RT_BIT(0)
+/** Bit 1 - FID - Frequency ID Control. */
+#define X86_CPUID_AMD_ADVPOWER_EDX_FID       RT_BIT(1)
+/** Bit 2 - VID - Voltage ID Control. */
+#define X86_CPUID_AMD_ADVPOWER_EDX_VID       RT_BIT(2)
+/** Bit 3 - TTP - THERMTRIP. */
+#define X86_CPUID_AMD_ADVPOWER_EDX_TTP       RT_BIT(3)
+/** Bit 4 - TM - Hardware Thermal Control. */
+#define X86_CPUID_AMD_ADVPOWER_EDX_TM        RT_BIT(4)
+/** Bit 5 - STC - Software Thermal Control. */
+#define X86_CPUID_AMD_ADVPOWER_EDX_STC       RT_BIT(5)
+/** Bit 6 - MC - 100 Mhz Multiplier Control. */
+#define X86_CPUID_AMD_ADVPOWER_EDX_MC        RT_BIT(6)
+/** Bit 7 - HWPSTATE - Hardware P-State Control. */
+#define X86_CPUID_AMD_ADVPOWER_EDX_HWPSTATE  RT_BIT(7)
+/** Bit 8 - TSCINVAR - TSC Invariant. */
+#define X86_CPUID_AMD_ADVPOWER_EDX_TSCINVAR  RT_BIT(8)
+/** @} */
+
+
 /** @name CR0
  * @{ */
 /** Bit 0 - PE - Protection Enabled */
@@ -549,6 +574,8 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define X86_CR3_PAGE_MASK                   (0xfffff000)
 /** Bits  5-31 - - PAE Page directory page number. */
 #define X86_CR3_PAE_PAGE_MASK               (0xffffffe0)
+/** Bits 12-51 - - AMD64 Page directory page number. */
+#define X86_CR3_AMD64_PAGE_MASK             UINT64_C(0x000ffffffffff000)
 /** @} */
 
 
@@ -689,7 +716,7 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define X86_DR7_LEN(iBp, cb)                ( (cb) << ((iBp) * 4 + 18) )
 
 /** Mask used to check if any breakpoints are enabled. */
-#define X86_DR7_ENABLED_MASK                (RT_BIT(0) | RT_BIT(1) | RT_BIT(2) | RT_BIT(3) | RT_BIT(4) | RT_BIT(6) | RT_BIT(7))
+#define X86_DR7_ENABLED_MASK                (RT_BIT(0) | RT_BIT(1) | RT_BIT(2) | RT_BIT(3) | RT_BIT(4) | RT_BIT(5) | RT_BIT(6) | RT_BIT(7))
 
 /** @} */
 
@@ -697,6 +724,10 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 /** @name Machine Specific Registers
  * @{
  */
+
+/** Time Stamp Counter. */
+#define MSR_IA32_TSC                        0x10
+
 #ifndef MSR_IA32_APICBASE /* qemu cpu.h klugde */
 #define MSR_IA32_APICBASE                   0x1b
 #endif
@@ -705,6 +736,9 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define MSR_IA32_FEATURE_CONTROL            0x3A
 #define MSR_IA32_FEATURE_CONTROL_LOCK       RT_BIT(0)
 #define MSR_IA32_FEATURE_CONTROL_VMXON      RT_BIT(2)
+
+/** MTRR Capabilities. */
+#define MSR_IA32_MTRR_CAP                   0xFE
 
 
 #ifndef MSR_IA32_SYSENTER_CS /* qemu cpu.h klugde */
@@ -720,8 +754,18 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define MSR_IA32_SYSENTER_EIP               0x176
 #endif
 
+/** Machine Check Global Capabilities Register. */
+#define MSR_IA32_MCP_CAP                    0x179
+/** Machine Check Global Status Register. */
+#define MSR_IA32_MCP_STATUS                 0x17A
+/** Machine Check Global Control Register. */
+#define MSR_IA32_MCP_CTRL                   0x17B
+
 /* Page Attribute Table. */
 #define MSR_IA32_CR_PAT                     0x277
+
+/** MTRR Default Range. */
+#define MSR_IA32_MTRR_DEF_TYPE              0x2FF
 
 /** Basic VMX information. */
 #define MSR_IA32_VMX_BASIC_INFO             0x480
@@ -745,7 +789,10 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define MSR_IA32_VMX_CR4_FIXED1             0x489
 /** Information for enumerating fields in the VMCS. */
 #define MSR_IA32_VMX_VMCS_ENUM              0x48A
-
+/** Allowed settings for secondary proc-based VM execution controls */
+#define MSR_IA32_VMX_PROCBASED_CTLS2        0x48B
+/** EPT capabilities. */
+#define MSR_IA32_VMX_EPT_CAPS               0x48C
 
 /** K6 EFER - Extended Feature Enable Register. */
 #define MSR_K6_EFER                         0xc0000080
@@ -919,6 +966,8 @@ typedef X86PGPAEUINT *PX86PGPAEUINT;
 /** Bits 12-51 - - PAE - Physical Page number of the next level. */
 #if 1 /* we're using this internally and have to mask of the top 16-bit. */
 #define X86_PTE_PAE_PG_MASK                 ( 0x0000fffffffff000ULL )
+/** @todo Get rid of the above hack; makes code unreadable. */
+#define X86_PTE_PAE_PG_MASK_FULL            ( 0x000ffffffffff000ULL )
 #else
 #define X86_PTE_PAE_PG_MASK                 ( 0x000ffffffffff000ULL )
 #endif
@@ -1108,7 +1157,12 @@ typedef const X86PTPAE *PCX86PTPAE;
 
 /** Bits 12-51 - - PAE - Physical Page number of the next level. */
 #if 1 /* we're using this internally and have to mask of the top 16-bit. */
+/* Note: This is kind of dangerous if the guest uses these bits (legally or illegally);
+ *       we partly or that part into shadow page table entries. Will be corrected
+ *       soon.
+ */
 #define X86_PDE_PAE_PG_MASK                 ( 0x0000fffffffff000ULL )
+#define X86_PDE_PAE_PG_MASK_FULL            ( 0x000ffffffffff000ULL )
 #else
 #define X86_PDE_PAE_PG_MASK                 ( 0x000ffffffffff000ULL )
 #endif
@@ -1427,6 +1481,8 @@ typedef const X86PDPAE *PCX86PDPAE;
 /** Bits 12-51 - - PAE - Physical Page number of the next level. */
 #if 1 /* we're using this internally and have to mask of the top 16-bit. */
 #define X86_PDPE_PG_MASK                    ( 0x0000fffffffff000ULL )
+/** @todo Get rid of the above hack; makes code unreadable. */
+#define X86_PDPE_PG_MASK_FULL               ( 0x000ffffffffff000ULL )
 #else
 #define X86_PDPE_PG_MASK                    ( 0x000ffffffffff000ULL )
 #endif
@@ -1565,6 +1621,7 @@ typedef const X86PDPT *PCX86PDPT;
 /** Bits 12-51 - - PAE - Physical Page number of the next level. */
 #if 1 /* we're using this internally and have to mask of the top 16-bit. */
 #define X86_PML4E_PG_MASK                   ( 0x0000fffffffff000ULL )
+#define X86_PML4E_PG_MASK_FULL              ( 0x000ffffffffff000ULL )
 #else
 #define X86_PML4E_PG_MASK                   ( 0x000ffffffffff000ULL )
 #endif
@@ -1803,8 +1860,8 @@ typedef struct X86DESCGENERIC
     unsigned    u4LimitHigh : 4;
     /** Available for system software. */
     unsigned    u1Available : 1;
-    /** Reserved - 0. */
-    unsigned    u1Reserved : 1;
+    /** 32 bits mode: Reserved - 0, long mode: Long Attribute Bit. */
+    unsigned    u1Long : 1;
     /** This flags meaning depends on the segment type. Try make sense out
      * of the intel manual yourself.  */
     unsigned    u1DefBig : 1;
@@ -1838,8 +1895,8 @@ typedef struct X86DESCATTRBITS
     unsigned    u4LimitHigh : 4;
     /** Available for system software. */
     unsigned    u1Available : 1;
-    /** Reserved - 0. */
-    unsigned    u1Reserved : 1;
+    /** 32 bits mode: Reserved - 0, long mode: Long Attribute Bit. */
+    unsigned    u1Long : 1;
     /** This flags meaning depends on the segment type. Try make sense out
      * of the intel manual yourself.  */
     unsigned    u1DefBig : 1;
@@ -1891,6 +1948,21 @@ typedef X86DESC *PX86DESC;
 /** Pointer to const descriptor table entry. */
 typedef const X86DESC *PCX86DESC;
 
+
+/** @def X86DESC_BASE
+ * Return the base address of a descriptor.
+ */
+#define X86DESC_BASE(desc) \
+        (  ((uint32_t)((desc).Gen.u8BaseHigh2) << 24) \
+         | (           (desc).Gen.u8BaseHigh1  << 16) \
+         | (           (desc).Gen.u16BaseLow        ) )
+
+/** @def X86DESC_LIMIT
+ * Return the limit of a descriptor.
+ */
+#define X86DESC_LIMIT(desc) \
+        (  ((uint32_t)((desc).Gen.u4LimitHigh) << 16) \
+         | (           (desc).Gen.u16LimitLow       ) )
 
 /**
  * 64 bits generic descriptor table entry
@@ -2024,6 +2096,16 @@ typedef X86DESC64   *PX86DESCHC;
 typedef X86DESC     X86DESCHC;
 typedef X86DESC     *PX86DESCHC;
 #endif
+
+/** @def X86DESC_LIMIT
+ * Return the base of a 64-bit descriptor.
+ */
+#define X86DESC64_BASE(desc) \
+        (  ((uint64_t)((desc).Gen.u32BaseHigh3) << 32) \
+         | ((uint32_t)((desc).Gen.u8BaseHigh2)  << 24) \
+         | (           (desc).Gen.u8BaseHigh1   << 16) \
+         | (           (desc).Gen.u16BaseLow         ) )
+
 
 /** @name Selector Descriptor Types.
  * @{

@@ -1,4 +1,4 @@
-; $Id: CPUMInternal.mac 29865 2008-04-18 15:16:47Z umoeller $
+; $Id: CPUMInternal.mac 33647 2008-07-24 10:05:07Z sandervl $
 ;; @file
 ; CPUM - Internal header file.
 ;
@@ -414,6 +414,11 @@ struc CPUM
     ; CPUID eax=1
     .CPUFeatures.edx      resd    1
     .CPUFeatures.ecx      resd    1
+
+    ; CPUID eax=0x80000001
+    .CPUFeaturesExt.edx   resd    1
+    .CPUFeaturesExt.ecx   resd    1
+
     ; CR4 masks
     .CR4.AndMask          resd    1
     .CR4.OrMask           resd    1

@@ -1,4 +1,4 @@
-/* $Id: SELMAll.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: SELMAll.cpp 33647 2008-07-24 10:05:07Z sandervl $ */
 /** @file
  * SELM All contexts.
  */
@@ -532,6 +532,62 @@ SELMDECL(int) SELMValidateAndConvertCSAddr(PVM pVM, X86EFLAGS eflags, RTSEL SelC
     if (!CPUMAreHiddenSelRegsValid(pVM))
         return selmValidateAndConvertCSAddrStd(pVM, SelCPL, SelCS, Addr, ppvFlat, NULL);
     return selmValidateAndConvertCSAddrHidden(pVM, SelCPL, SelCS, pHiddenCSSel, Addr, ppvFlat);
+}
+
+/**
+ * Return the cpu mode corresponding to the (CS) selector
+ *
+ * @returns DISCPUMODE according to the selector type (16, 32 or 64 bits)
+ * @param   pVM     VM Handle.
+ * @param   Sel     The selector.
+ */
+static DISCPUMODE selmGetCpuModeFromSelector(PVM pVM, RTSEL Sel)
+{
+    Assert(!CPUMAreHiddenSelRegsValid(pVM));
+
+    /** @todo validate limit! */
+    VBOXDESC Desc;
+    if (!(Sel & X86_SEL_LDT))
+        Desc = pVM->selm.s.CTXSUFF(paGdt)[Sel >> X86_SEL_SHIFT];
+    else
+    {
+        /** @todo handle LDT page(s) not present! */
+        PVBOXDESC   paLDT = (PVBOXDESC)((char *)pVM->selm.s.CTXMID(,PtrLdt) + pVM->selm.s.offLdtHyper);
+        Desc = paLDT[Sel >> X86_SEL_SHIFT];
+    }
+    return (Desc.Gen.u1DefBig) ? CPUMODE_32BIT : CPUMODE_16BIT;
+}
+
+
+/**
+ * Return the cpu mode corresponding to the (CS) selector
+ *
+ * @returns DISCPUMODE according to the selector type (16, 32 or 64 bits)
+ * @param   pVM        VM Handle.
+ * @param   eflags     Current eflags register
+ * @param   Sel        The selector.
+ * @param   pHiddenSel The hidden selector register.
+ */
+SELMDECL(DISCPUMODE) SELMGetCpuModeFromSelector(PVM pVM, X86EFLAGS eflags, RTSEL Sel, CPUMSELREGHID *pHiddenSel)
+{
+    if (!CPUMAreHiddenSelRegsValid(pVM))
+    {
+        /*
+         * Deal with real & v86 mode first.
+         */
+        if (    CPUMIsGuestInRealMode(pVM)
+            ||  eflags.Bits.u1VM)
+            return CPUMODE_16BIT;
+
+        return selmGetCpuModeFromSelector(pVM, Sel);
+    }
+    if (    CPUMIsGuestInLongMode(pVM)
+        &&  pHiddenSel->Attr.n.u1Long)
+        return CPUMODE_64BIT;
+
+    /* Else compatibility or 32 bits mode. */
+    return (pHiddenSel->Attr.n.u1DefBig) ? CPUMODE_32BIT : CPUMODE_16BIT;
+
 }
 
 

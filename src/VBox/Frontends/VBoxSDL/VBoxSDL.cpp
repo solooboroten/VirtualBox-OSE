@@ -40,6 +40,7 @@ using namespace com;
 # if !defined (VBOX_WITHOUT_XCURSOR)
 #  include <X11/Xcursor/Xcursor.h>
 # endif
+# include <unistd.h>
 #endif
 
 #ifndef RT_OS_DARWIN
@@ -162,6 +163,8 @@ static int gHostKeyMod  = KMOD_RCTRL;
 static int gHostKeySym1 = SDLK_RCTRL;
 static int gHostKeySym2 = SDLK_UNKNOWN;
 #endif
+static const char *gHostKeyDisabledCombinations = "";
+static const char *gpszPidFile;
 static BOOL gfGrabbed = FALSE;
 static BOOL gfGrabOnMouseClick = TRUE;
 static BOOL gfAllowFullscreenToggle = TRUE;
@@ -644,7 +647,8 @@ static void show_usage()
              "  -fixedmode <w> <h> <bpp> Use a fixed SDL video mode with given width, height and bits per pixel\n"
              "  -nofstoggle              Forbid switching to/from fullscreen mode\n"
              "  -noresize                Make the SDL frame non resizable\n"
-             "  -nohostkey               Disable hostkey\n"
+             "  -nohostkey               Disable all hostkey combinations\n"
+             "  -nohostkeys ...          Disable specific hostkey combinations, see below for valid keys\n"
              "  -nograbonclick           Disable mouse/keyboard grabbing on mouse click w/o additions\n"
              "  -detecthostkey           Get the hostkey identifier and modifier state\n"
              "  -hostkey <key> {<key2>} <mod> Set the host key to the values obtained using -detecthostkey\n"
@@ -740,7 +744,7 @@ static void PrintError(const char *pszName, const BSTR pwszDescr, const BSTR pws
  * on the new VT, the VM will be saved with modifier keys stuck. This is
  * annoying enough for introducing this hack.
  */
-void signal_handler(int sig, siginfo_t *info, void *secret)
+void signal_handler_SIGUSR1(int sig, siginfo_t *info, void *secret)
 {
     /* only SIGUSR1 is interesting */
     if (sig == SIGUSR1)
@@ -748,6 +752,19 @@ void signal_handler(int sig, siginfo_t *info, void *secret)
         /* just release the modifiers */
         ResetKeys();
     }
+}
+
+/**
+ * Custom signal handler for catching exit events.
+ */
+void signal_handler_SIGINT(int sig)
+{
+    if (gpszPidFile)
+        RTFileDelete(gpszPidFile);
+    signal(SIGINT, SIG_DFL);
+    signal(SIGQUIT, SIG_DFL);
+    signal(SIGSEGV, SIG_DFL);
+    kill(getpid(), sig);
 }
 #endif /* VBOXSDL_WITH_X11 */
 
@@ -1291,6 +1308,30 @@ int main(int argc, char *argv[])
             gHostKeyMod  = 0;
             gHostKeySym1 = 0;
         }
+        else if (strcmp(argv[curArg], "-nohostkeys") == 0)
+        {
+            if (++curArg >= argc)
+            {
+                RTPrintf("Error: missing a string of disabled hostkey combinations\n");
+                rc = E_FAIL;
+                break;
+            }
+            gHostKeyDisabledCombinations = argv[curArg];
+            unsigned i, cStr = strlen(gHostKeyDisabledCombinations);
+            for (i=0; i<cStr; i++)
+            {
+                if (!strchr("fhnpqrs", gHostKeyDisabledCombinations[i]))
+                {
+                    RTPrintf("Error: <hostkey> + '%c' is not a valid combination\n",
+                            gHostKeyDisabledCombinations[i]);
+                    rc = E_FAIL;
+                    i = cStr;
+                    break;
+                }
+            }
+            if (rc == E_FAIL)
+                break;
+        }
         else if (strcmp(argv[curArg], "-nograbonclick") == 0)
         {
             gfGrabOnMouseClick = FALSE;
@@ -1298,6 +1339,16 @@ int main(int argc, char *argv[])
         else if (strcmp(argv[curArg], "-termacpi") == 0)
         {
             gfACPITerm = TRUE;
+        }
+        else if (strcmp(argv[curArg], "-pidfile") == 0)
+        {
+            if (++curArg >= argc)
+            {
+                RTPrintf("Error: missing file name for -pidfile!\n");
+                rc = E_FAIL;
+                break;
+            }
+            gpszPidFile = argv[curArg];
         }
         else if (strcmp(argv[curArg], "-hda") == 0)
         {
@@ -1875,9 +1926,8 @@ int main(int argc, char *argv[])
         goto leave;
     gpFrameBuffer->AddRef();
     if (fFullscreen)
-    {
         gpFrameBuffer->setFullscreen(true);
-    }
+
 #ifdef VBOX_SECURELABEL
     if (fSecureLabel)
     {
@@ -1924,6 +1974,14 @@ int main(int argc, char *argv[])
         gpFrameBuffer->setSecureLabelColor(secureLabelColorFG, secureLabelColorBG);
         gpFrameBuffer->setSecureLabelText(labelUtf8.raw());
     }
+#endif
+
+#ifdef VBOXSDL_WITH_X11
+    /* NOTE1: We still want Ctrl-C to work, so we undo the SDL redirections.
+     * NOTE2: We have to remove the PidFile if this file exists. */
+    signal(SIGINT,  signal_handler_SIGINT);
+    signal(SIGQUIT, signal_handler_SIGINT);
+    signal(SIGSEGV, signal_handler_SIGINT);
 #endif
 
     // register our framebuffer
@@ -2103,7 +2161,7 @@ int main(int argc, char *argv[])
      */
 #ifdef VBOXSDL_WITH_X11
     struct sigaction sa;
-    sa.sa_sigaction = signal_handler;
+    sa.sa_sigaction = signal_handler_SIGUSR1;
     sigemptyset (&sa.sa_mask);
     sa.sa_flags = SA_RESTART | SA_SIGINFO;
     sigaction (SIGUSR1, &sa, NULL);
@@ -2292,6 +2350,21 @@ int main(int argc, char *argv[])
      * Enable keyboard repeats
      */
     SDL_EnableKeyRepeat(SDL_DEFAULT_REPEAT_DELAY, SDL_DEFAULT_REPEAT_INTERVAL);
+
+    /*
+     * Create PID file.
+     */
+    if (gpszPidFile)
+    {
+        char szBuf[32];
+        const char *pcszLf = "\n";
+        RTFILE PidFile;
+        RTFileOpen(&PidFile, gpszPidFile, RTFILE_O_WRITE | RTFILE_O_CREATE_REPLACE);
+        RTStrFormatNumber(szBuf, RTProcSelf(), 10, 0, 0, 0);
+        RTFileWrite(PidFile, szBuf, strlen(szBuf), NULL);
+        RTFileWrite(PidFile, pcszLf, strlen(pcszLf), NULL);
+        RTFileClose(PidFile);
+    }
 
     /*
      * Main event loop
@@ -2692,6 +2765,9 @@ int main(int argc, char *argv[])
     }
 
 leave:
+    if (gpszPidFile)
+        RTFileDelete(gpszPidFile);
+
     LogFlow(("leaving...\n"));
 #if defined(VBOX_WITH_XPCOM) && !defined(RT_OS_DARWIN) && !defined(RT_OS_OS2)
     /* make sure the XPCOM event queue thread doesn't do anything harmful */
@@ -3529,9 +3605,9 @@ static void ProcessKey(SDL_KeyboardEvent *ev)
         case 0x38|0x100:  /* Right ALT */
         {
             if (ev->type == SDL_KEYUP)
-                gaModifiersState[keycode] = 0;
+                gaModifiersState[keycode & ~0x100] = 0;
             else
-                gaModifiersState[keycode] = 1;
+                gaModifiersState[keycode & ~0x100] = 1;
             break;
         }
 
@@ -4486,27 +4562,28 @@ static int HandleHostKey(const SDL_KeyboardEvent *pEv)
          */
         case SDLK_f:
         {
-            if (gfAllowFullscreenToggle)
-            {
-                /*
-                 * We have to pause/resume the machine during this
-                 * process because there might be a short moment
-                 * without a valid framebuffer
-                 */
-                MachineState_T machineState;
-                gMachine->COMGETTER(State)(&machineState);
-                if (machineState == MachineState_Running)
-                    gConsole->Pause();
-                gpFrameBuffer->setFullscreen(!gpFrameBuffer->getFullscreen());
-                if (machineState == MachineState_Running)
-                    gConsole->Resume();
+            if (   strchr(gHostKeyDisabledCombinations, 'f')
+                || !gfAllowFullscreenToggle)
+                return VERR_NOT_SUPPORTED;
 
-                /*
-                 * We have switched from/to fullscreen, so request a full
-                 * screen repaint, just to be sure.
-                 */
-                gDisplay->InvalidateAndUpdate();
-            }
+            /*
+             * We have to pause/resume the machine during this
+             * process because there might be a short moment
+             * without a valid framebuffer
+             */
+            MachineState_T machineState;
+            gMachine->COMGETTER(State)(&machineState);
+            if (machineState == MachineState_Running)
+                gConsole->Pause();
+            gpFrameBuffer->setFullscreen(!gpFrameBuffer->getFullscreen());
+            if (machineState == MachineState_Running)
+                gConsole->Resume();
+
+            /*
+             * We have switched from/to fullscreen, so request a full
+             * screen repaint, just to be sure.
+             */
+            gDisplay->InvalidateAndUpdate();
             break;
         }
 
@@ -4515,6 +4592,9 @@ static int HandleHostKey(const SDL_KeyboardEvent *pEv)
          */
         case SDLK_p:
         {
+            if (strchr(gHostKeyDisabledCombinations, 'p'))
+                return VERR_NOT_SUPPORTED;
+
             MachineState_T machineState;
             gMachine->COMGETTER(State)(&machineState);
             if (machineState == MachineState_Running)
@@ -4536,6 +4616,9 @@ static int HandleHostKey(const SDL_KeyboardEvent *pEv)
          */
         case SDLK_r:
         {
+            if (strchr(gHostKeyDisabledCombinations, 'r'))
+                return VERR_NOT_SUPPORTED;
+
             ResetVM();
             break;
         }
@@ -4545,8 +4628,10 @@ static int HandleHostKey(const SDL_KeyboardEvent *pEv)
          */
         case SDLK_q:
         {
+            if (strchr(gHostKeyDisabledCombinations, 'q'))
+                return VERR_NOT_SUPPORTED;
+
             return VINF_EM_TERMINATE;
-            break;
         }
 
         /*
@@ -4554,12 +4639,18 @@ static int HandleHostKey(const SDL_KeyboardEvent *pEv)
          */
         case SDLK_s:
         {
+            if (strchr(gHostKeyDisabledCombinations, 's'))
+                return VERR_NOT_SUPPORTED;
+
             SaveState();
             return VINF_EM_TERMINATE;
         }
 
         case SDLK_h:
         {
+            if (strchr(gHostKeyDisabledCombinations, 'h'))
+                return VERR_NOT_SUPPORTED;
+
             if (gConsole)
                 gConsole->PowerButton();
             break;
@@ -4570,6 +4661,9 @@ static int HandleHostKey(const SDL_KeyboardEvent *pEv)
          */
         case SDLK_n:
         {
+            if (strchr(gHostKeyDisabledCombinations, 'n'))
+                return VERR_NOT_SUPPORTED;
+
             RTThreadYield();
             ULONG cSnapshots = 0;
             gMachine->COMGETTER(SnapshotCount)(&cSnapshots);

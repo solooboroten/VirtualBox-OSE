@@ -1,4 +1,4 @@
-/* $Id: CPUMAllRegs.cpp 29870 2008-04-18 16:15:42Z sandervl $ */
+/* $Id: CPUMAllRegs.cpp 32915 2008-07-07 07:46:26Z frank $ */
 /** @file
  * CPUM - CPU Monitor(/Manager) - Gets and Sets.
  */

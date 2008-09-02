@@ -1,4 +1,4 @@
-/* $Id: CPUM.cpp 31398 2008-05-29 14:39:54Z frank $ */
+/* $Id: CPUM.cpp 33647 2008-07-24 10:05:07Z sandervl $ */
 /** @file
  * CPUM - CPU Monitor(/Manager)
  */
@@ -118,6 +118,7 @@ CPUMR3DECL(int) CPUMR3Init(PVM pVM)
         return VERR_UNSUPPORTED_CPU;
     }
     ASMCpuId_ECX_EDX(1, &pVM->cpum.s.CPUFeatures.ecx, &pVM->cpum.s.CPUFeatures.edx);
+    ASMCpuId_ECX_EDX(0x80000001, &pVM->cpum.s.CPUFeaturesExt.ecx, &pVM->cpum.s.CPUFeaturesExt.edx);
 
     /* Setup the CR4 AND and OR masks used in the switcher */
     /* Depends on the presence of FXSAVE(SSE) support on the host CPU */
@@ -558,7 +559,7 @@ CPUMR3DECL(void) CPUMR3Reset(PVM pVM)
     pCtx->fpu.FCW                   = 0x37f;
 
     /* Init PAT MSR */
-    pCtx->msrPAT                    = 0x0007040600070406ULL; /* @todo correct? */
+    pCtx->msrPAT                    = UINT64_C(0x0007040600070406); /** @todo correct? */
 }
 
 

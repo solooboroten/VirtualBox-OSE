@@ -2,8 +2,8 @@
    rdesktop: A Remote Desktop Protocol client.
    User interface services - X keyboard mapping
 
-   Copyright (C) Matthew Chapman 1999-2005
-   Copyright (C) Peter Astrand <peter@cendio.se> 2003
+   Copyright (C) Matthew Chapman 1999-2007
+   Copyright (C) Peter Astrand <astrand@cendio.se> 2003-2007
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -46,17 +46,17 @@ extern int g_keyboard_type;
 extern int g_keyboard_subtype;
 extern int g_keyboard_functionkeys;
 extern int g_win_button_size;
-extern BOOL g_enable_compose;
-extern BOOL g_use_rdp5;
-extern BOOL g_numlock_sync;
+extern RD_BOOL g_enable_compose;
+extern RD_BOOL g_use_rdp5;
+extern RD_BOOL g_numlock_sync;
 
-static BOOL keymap_loaded;
+static RD_BOOL keymap_loaded;
 static key_translation *keymap[KEYMAP_SIZE];
 static int min_keycode;
 static uint16 remote_modifier_state = 0;
 static uint16 saved_remote_modifier_state = 0;
 
-static void update_modifier_state(uint8 scancode, BOOL pressed);
+static void update_modifier_state(uint8 scancode, RD_BOOL pressed);
 
 /* Free key_translation structure, including linked list */
 static void
@@ -159,7 +159,7 @@ add_sequence(char *rest, char *mapname)
 	DEBUG_KBD(("\n"));
 }
 
-BOOL
+RD_BOOL
 xkeymap_from_locale(const char *locale)
 {
 	char *str, *ptr;
@@ -275,7 +275,7 @@ xkeymap_open(const char *filename)
 	return NULL;
 }
 
-static BOOL
+static RD_BOOL
 xkeymap_read(char *mapname)
 {
 	FILE *fp;
@@ -393,7 +393,7 @@ xkeymap_read(char *mapname)
 		scancode = strtol(p, &line_rest, 16);
 
 		/* flags */
-		/* FIXME: Should allow case-insensitive flag names.
+		/* FIXME: Should allow case-insensitive flag names. 
 		   Fix by using lex+yacc... */
 		modifiers = 0;
 		if (strstr(line_rest, "altgr"))
@@ -425,7 +425,7 @@ xkeymap_read(char *mapname)
 
 		if (strstr(line_rest, "addupper"))
 		{
-			/* Automatically add uppercase key, with same modifiers
+			/* Automatically add uppercase key, with same modifiers 
 			   plus shift */
 			for (p = keyname; *p; p++)
 				*p = toupper((int) *p);
@@ -455,7 +455,7 @@ xkeymap_init(void)
 }
 
 static void
-send_winkey(uint32 ev_time, BOOL pressed, BOOL leftkey)
+send_winkey(uint32 ev_time, RD_BOOL pressed, RD_BOOL leftkey)
 {
 	uint8 winkey;
 
@@ -504,8 +504,8 @@ reset_winkey(uint32 ev_time)
 }
 
 /* Handle special key combinations */
-BOOL
-handle_special_keys(uint32 keysym, unsigned int state, uint32 ev_time, BOOL pressed)
+RD_BOOL
+handle_special_keys(uint32 keysym, unsigned int state, uint32 ev_time, RD_BOOL pressed)
 {
 	switch (keysym)
 	{
@@ -707,9 +707,31 @@ xkeymap_translate_key(uint32 keysym, unsigned int keycode, unsigned int state)
 	return tr;
 }
 
+static RD_BOOL
+is_modifier(uint8 scancode)
+{
+	switch (scancode)
+	{
+		case SCANCODE_CHAR_LSHIFT:
+		case SCANCODE_CHAR_RSHIFT:
+		case SCANCODE_CHAR_LCTRL:
+		case SCANCODE_CHAR_RCTRL:
+		case SCANCODE_CHAR_LALT:
+		case SCANCODE_CHAR_RALT:
+		case SCANCODE_CHAR_LWIN:
+		case SCANCODE_CHAR_RWIN:
+		case SCANCODE_CHAR_NUMLOCK:
+			return True;
+		default:
+			break;
+	}
+	return False;
+}
+
+
 void
 xkeymap_send_keys(uint32 keysym, unsigned int keycode, unsigned int state, uint32 ev_time,
-		  BOOL pressed, uint8 nesting)
+		  RD_BOOL pressed, uint8 nesting)
 {
 	key_translation tr, *ptr;
 	tr = xkeymap_translate_key(keysym, keycode, state);
@@ -720,17 +742,10 @@ xkeymap_send_keys(uint32 keysym, unsigned int keycode, unsigned int state, uint3
 		if (tr.scancode == 0)
 			return;
 
-		if (pressed)
-		{
-			save_remote_modifiers(tr.scancode);
-			ensure_remote_modifiers(ev_time, tr);
-			rdp_send_scancode(ev_time, RDP_KEYPRESS, tr.scancode);
-			restore_remote_modifiers(ev_time, tr.scancode);
-		}
-		else
-		{
-			rdp_send_scancode(ev_time, RDP_KEYRELEASE, tr.scancode);
-		}
+		save_remote_modifiers(tr.scancode);
+		ensure_remote_modifiers(ev_time, tr);
+		rdp_send_scancode(ev_time, pressed ? RDP_KEYPRESS : RDP_KEYRELEASE, tr.scancode);
+		restore_remote_modifiers(ev_time, tr.scancode);
 		return;
 	}
 
@@ -788,27 +803,6 @@ get_ksname(uint32 keysym)
 		ksname = "(no name)";
 
 	return ksname;
-}
-
-static BOOL
-is_modifier(uint8 scancode)
-{
-	switch (scancode)
-	{
-		case SCANCODE_CHAR_LSHIFT:
-		case SCANCODE_CHAR_RSHIFT:
-		case SCANCODE_CHAR_LCTRL:
-		case SCANCODE_CHAR_RCTRL:
-		case SCANCODE_CHAR_LALT:
-		case SCANCODE_CHAR_RALT:
-		case SCANCODE_CHAR_LWIN:
-		case SCANCODE_CHAR_RWIN:
-		case SCANCODE_CHAR_NUMLOCK:
-			return True;
-		default:
-			break;
-	}
-	return False;
 }
 
 void
@@ -984,7 +978,7 @@ reset_modifier_keys()
 
 
 static void
-update_modifier_state(uint8 scancode, BOOL pressed)
+update_modifier_state(uint8 scancode, RD_BOOL pressed)
 {
 #ifdef WITH_DEBUG_KBD
 	uint16 old_modifier_state;
@@ -1023,7 +1017,7 @@ update_modifier_state(uint8 scancode, BOOL pressed)
 			   modifier state only on Keypress */
 			if (pressed && !g_numlock_sync)
 			{
-				BOOL newNumLockState;
+				RD_BOOL newNumLockState;
 				newNumLockState =
 					(MASK_HAS_BITS
 					 (remote_modifier_state, MapNumLockMask) == False);

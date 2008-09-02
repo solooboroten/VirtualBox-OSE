@@ -1,4 +1,4 @@
-/* $Id: DevPcBios.cpp 31081 2008-05-21 09:42:46Z frank $ */
+/* $Id: DevPcBios.cpp 33786 2008-07-29 14:45:04Z aeichner $ */
 /** @file
  * PC BIOS Device.
  */
@@ -642,6 +642,10 @@ static DECLCALLBACK(int) pcbiosInitComplete(PPDMDEVINS pDevIns)
      */
     if (pData->pszSataDevice)
     {
+        /* Clear pointers to IDE controller. */
+        for (i = 0; i < ELEMENTS(apHDs); i++)
+            apHDs[i] = NULL;
+
         for (i = 0; i < ELEMENTS(apHDs); i++)
         {
             PPDMIBASE pBase;
@@ -828,7 +832,7 @@ static int pcbiosPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbM
 #define STRCPY(p, s) \
     do { \
         size_t _len = strlen(s) + 1; \
-        size_t _max = (size_t)(pszStr + _len - (char *)pTable) + 1; /* +1 for strtab terminator */ \
+        size_t _max = (size_t)(pszStr + _len - (char *)pTable) + 5; /* +1 for strtab terminator +4 for end-of-table entry */ \
         if (_max > cbMax) \
             return PDMDevHlpVMSetError(pDevIns, VERR_TOO_MUCH_DATA, RT_SRC_POS, \
                     N_("One of the DMI strings is too long. Check all bios/Dmi* configuration entries. At least %zu bytes are needed but there is no space for more than %d bytes"), _max, cbMax); \
@@ -959,6 +963,12 @@ static int pcbiosPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbM
     STRCPY(pszStr, pszDmiSystemFamily);
     *pszStr++                    = '\0';
 
+    /* End-of-table marker - includes padding to account for fixed table size. */
+    PDMIHDR pEndOfTable          = (PDMIHDR)pszStr;
+    pEndOfTable->u8Type          = 0x7f;
+    pEndOfTable->u8Length        = cbMax - ((char *)pszStr - (char *)pTable) - 2;
+    pEndOfTable->u16Handle       = 0xFFFF;
+
     /* If more fields are added here, fix the size check in STRCPY */
 
 #undef STRCPY
@@ -976,7 +986,7 @@ static int pcbiosPlantDMITable(PPDMDEVINS pDevIns, uint8_t *pTable, unsigned cbM
 
     return VINF_SUCCESS;
 }
-AssertCompile(VBOX_DMI_TABLE_ENTR == 2);
+AssertCompile(VBOX_DMI_TABLE_ENTR == 3);
 
 
 /**

@@ -1,7 +1,7 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
    Entrypoint and utility functions
-   Copyright (C) Matthew Chapman 1999-2005
+   Copyright (C) Matthew Chapman 1999-2008
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@
 #include <sys/un.h>		/* sockaddr_un */
 #endif
 
-#include <openssl/md5.h>
+#include "ssl.h"
 
 char g_title[64] = "";
 char g_username[64];
@@ -71,31 +71,31 @@ int g_pos = 0;			/* 0 position unspecified,
 extern int g_tcp_port_rdp;
 int g_server_depth = -1;
 int g_win_button_size = 0;	/* If zero, disable single app mode */
-BOOL g_bitmap_compression = True;
-BOOL g_sendmotion = True;
-BOOL g_bitmap_cache = True;
-BOOL g_bitmap_cache_persist_enable = False;
-BOOL g_bitmap_cache_precache = True;
-BOOL g_encryption = True;
-BOOL packet_encryption = True;
-BOOL g_desktop_save = True;	/* desktop save order */
-BOOL g_polygon_ellipse_orders = True;	/* polygon / ellipse orders */
-BOOL g_fullscreen = False;
-BOOL g_grab_keyboard = True;
-BOOL g_hide_decorations = False;
-BOOL g_use_rdp5 = True;
-BOOL g_rdpclip = True;
-BOOL g_console_session = False;
-BOOL g_numlock_sync = False;
-BOOL lspci_enabled = False;
-BOOL g_owncolmap = False;
-BOOL g_ownbackstore = True;	/* We can't rely on external BackingStore */
-BOOL g_seamless_rdp = False;
+RD_BOOL g_bitmap_compression = True;
+RD_BOOL g_sendmotion = True;
+RD_BOOL g_bitmap_cache = True;
+RD_BOOL g_bitmap_cache_persist_enable = False;
+RD_BOOL g_bitmap_cache_precache = True;
+RD_BOOL g_encryption = True;
+RD_BOOL g_packet_encryption = True;
+RD_BOOL g_desktop_save = True;	/* desktop save order */
+RD_BOOL g_polygon_ellipse_orders = True;	/* polygon / ellipse orders */
+RD_BOOL g_fullscreen = False;
+RD_BOOL g_grab_keyboard = True;
+RD_BOOL g_hide_decorations = False;
+RD_BOOL g_use_rdp5 = True;
+RD_BOOL g_rdpclip = True;
+RD_BOOL g_console_session = False;
+RD_BOOL g_numlock_sync = False;
+RD_BOOL g_lspci_enabled = False;
+RD_BOOL g_owncolmap = False;
+RD_BOOL g_ownbackstore = True;	/* We can't rely on external BackingStore */
+RD_BOOL g_seamless_rdp = False;
 uint32 g_embed_wnd;
 uint32 g_rdp5_performanceflags =
 	RDP5_NO_WALLPAPER | RDP5_NO_FULLWINDOWDRAG | RDP5_NO_MENUANIMATIONS;
 /* Session Directory redirection */
-BOOL g_redirect = False;
+RD_BOOL g_redirect = False;
 char g_redirect_server[64];
 char g_redirect_domain[16];
 char g_redirect_password[64];
@@ -104,11 +104,11 @@ char g_redirect_cookie[128];
 uint32 g_redirect_flags = 0;
 
 #ifdef WITH_RDPSND
-BOOL g_rdpsnd = False;
+RD_BOOL g_rdpsnd = False;
 #endif
 
 #ifdef WITH_RDPUSB
-BOOL g_rdpusb = False;
+RD_BOOL g_rdpusb = False;
 #endif
 
 #ifdef HAVE_ICONV
@@ -131,7 +131,7 @@ static void
 usage(char *program)
 {
 	fprintf(stderr, "rdesktop: A Remote Desktop Protocol client.\n");
-	fprintf(stderr, "Version " VERSION ". Copyright (C) 1999-2005 Matt Chapman.\n");
+	fprintf(stderr, "Version " VERSION ". Copyright (C) 1999-2008 Matthew Chapman.\n");
         fprintf(stderr, "Modified for VirtualBox by Sun Microsystems, Inc.\n");
 	fprintf(stderr, "See http://www.rdesktop.org/ for more information.\n\n");
 
@@ -184,10 +184,16 @@ usage(char *program)
 	fprintf(stderr, "         '-r printer:mydeskjet': enable printer redirection\n");
 	fprintf(stderr,
 		"             or      mydeskjet=\"HP LaserJet IIIP\" to enter server driver as well\n");
-	fprintf(stderr, "         '-r sound:[local|off|remote]': enable sound redirection\n");
+#ifdef WITH_RDPSND
+	fprintf(stderr,
+		"         '-r sound:[local[:driver[:device]]|off|remote]': enable sound redirection\n");
 	fprintf(stderr, "                     remote would leave sound on server\n");
+	fprintf(stderr, "                     available drivers for 'local':\n");
+	rdpsnd_show_help();
+#endif
 #ifdef WITH_RDPUSB
-        fprintf(stderr, "         '-r usb': enable USB redirection\n");
+        fprintf(stderr, 
+                "         '-r usb': enable USB redirection\n");
 #endif
 	fprintf(stderr,
 		"         '-r clipboard:[off|PRIMARYCLIPBOARD|CLIPBOARD]': enable clipboard\n");
@@ -196,6 +202,21 @@ usage(char *program)
 		"                      'PRIMARYCLIPBOARD' looks at both PRIMARY and CLIPBOARD\n");
 	fprintf(stderr, "                      when sending data to server.\n");
 	fprintf(stderr, "                      'CLIPBOARD' looks at only CLIPBOARD.\n");
+#ifdef WITH_SCARD
+	fprintf(stderr, "         '-r scard[:\"Scard Name\"=\"Alias Name[;Vendor Name]\"[,...]]\n");
+	fprintf(stderr, "          example: -r scard:\"eToken PRO 00 00\"=\"AKS ifdh 0\"\n");
+	fprintf(stderr,
+		"                   \"eToken PRO 00 00\" -> Device in Linux/Unix enviroment\n");
+	fprintf(stderr,
+		"                   \"AKS ifdh 0\"       -> Device shown in Windows enviroment \n");
+	fprintf(stderr, "          example: -r scard:\"eToken PRO 00 00\"=\"AKS ifdh 0;AKS\"\n");
+	fprintf(stderr,
+		"                   \"eToken PRO 00 00\" -> Device in Linux/Unix enviroment\n");
+	fprintf(stderr,
+		"                   \"AKS ifdh 0\"       -> Device shown in Windows enviroment \n");
+	fprintf(stderr,
+		"                   \"AKS\"              -> Device vendor name                 \n");
+#endif
 	fprintf(stderr, "   -0: attach to console\n");
 	fprintf(stderr, "   -4: use RDP version 4\n");
 	fprintf(stderr, "   -5: use RDP version 5 (default)\n");
@@ -307,11 +328,11 @@ rdesktop_reset_state(void)
 	rdp_reset_state();
 }
 
-static BOOL
+static RD_BOOL
 read_password(char *password, int size)
 {
 	struct termios tios;
-	BOOL ret = False;
+	RD_BOOL ret = False;
 	int istty = 0;
 	char *p;
 
@@ -401,16 +422,19 @@ main(int argc, char *argv[])
 	char password[64];
 	char shell[256];
 	char directory[256];
-	BOOL prompt_password, deactivated;
+	RD_BOOL prompt_password, deactivated;
 	struct passwd *pw;
 	uint32 flags, ext_disc_reason = 0;
 	char *p;
 	int c;
 	char *locale = NULL;
 	int username_option = 0;
-	BOOL geometry_option = False;
+	RD_BOOL geometry_option = False;
 	int run_count = 0;	/* Session Directory support */
-	BOOL continue_connect = True;	/* Session Directory support */
+	RD_BOOL continue_connect = True;	/* Session Directory support */
+#ifdef WITH_RDPSND
+	char *rdpsnd_optarg = NULL;
+#endif
 
 #ifdef HAVE_LOCALE_H
 	/* Set locale according to environment */
@@ -567,7 +591,7 @@ main(int argc, char *argv[])
 				g_encryption = False;
 				break;
 			case 'E':
-				packet_encryption = False;
+				g_packet_encryption = False;
 				break;
 			case 'm':
 				g_sendmotion = False;
@@ -618,7 +642,8 @@ main(int argc, char *argv[])
 				g_server_depth = strtol(optarg, NULL, 10);
 				if (g_server_depth != 8 &&
 				    g_server_depth != 16 &&
-				    g_server_depth != 15 && g_server_depth != 24)
+				    g_server_depth != 15 && g_server_depth != 24
+				    && g_server_depth != 32)
 				{
 					error("Invalid server colour depth.\n");
 					return 1;
@@ -671,7 +696,12 @@ main(int argc, char *argv[])
 
 							if (str_startswith(optarg, "local"))
 #ifdef WITH_RDPSND
+							{
+								rdpsnd_optarg =
+									next_arg(optarg, ':');
 								g_rdpsnd = True;
+							}
+
 #else
 								warning("Not compiled with sound support\n");
 #endif
@@ -714,7 +744,7 @@ main(int argc, char *argv[])
 				}
 				else if (str_startswith(optarg, "lspci"))
 				{
-					lspci_enabled = True;
+					g_lspci_enabled = True;
 				}
 				else if (str_startswith(optarg, "lptport"))
 				{
@@ -745,9 +775,17 @@ main(int argc, char *argv[])
 					else
 						g_rdpclip = True;
 				}
+				else if (strncmp("scard", optarg, 5) == 0)
+				{
+#ifdef WITH_SCARD
+					scard_enum_devices(&g_num_devices, optarg + 5);
+#else
+					warning("Not compiled with smartcard support\n");
+#endif
+				}
 				else
 				{
-					warning("Unknown -r argument\n\n\tPossible arguments are: comport, disk, lptport, printer, sound, clipboard\n");
+					warning("Unknown -r argument\n\n\tPossible arguments are: comport, disk, lptport, printer, sound, clipboard, scard\n");
 				}
 				break;
 
@@ -892,7 +930,12 @@ main(int argc, char *argv[])
 
 #ifdef WITH_RDPSND
 	if (g_rdpsnd)
-		rdpsnd_init();
+	{
+		if (!rdpsnd_init(rdpsnd_optarg))
+		{
+			warning("Initializing sound-support failed!\n");
+		}
+	}
 #endif
 
 #ifdef WITH_RDPUSB
@@ -900,7 +943,7 @@ main(int argc, char *argv[])
 		rdpusb_init();
 #endif
 
-	if (lspci_enabled)
+        if (g_lspci_enabled)
 		lspci_init();
 
 	rdpdr_init();
@@ -916,9 +959,9 @@ main(int argc, char *argv[])
 			 (server, flags, domain, password, shell, directory, g_redirect_cookie))
 			return 1;
 
-		/* By setting encryption to False here, we have an encrypted login
+		/* By setting encryption to False here, we have an encrypted login 
 		   packet but unencrypted transfer of other packets */
-		if (!packet_encryption)
+		if (!g_packet_encryption)
 			g_encryption = False;
 
 
@@ -995,11 +1038,11 @@ main(int argc, char *argv[])
 
 #ifdef EGD_SOCKET
 /* Read 32 random bytes from PRNGD or EGD socket (based on OpenSSL RAND_egd) */
-static BOOL
+static RD_BOOL
 generate_random_egd(uint8 * buf)
 {
 	struct sockaddr_un addr;
-	BOOL ret = False;
+	RD_BOOL ret = False;
 	int fd;
 
 	fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -1037,7 +1080,7 @@ generate_random(uint8 * random)
 {
 	struct stat st;
 	struct tms tmsbuf;
-	MD5_CTX md5;
+	SSL_MD5 md5;
 	uint32 *r;
 	int fd, n;
 
@@ -1069,11 +1112,11 @@ generate_random(uint8 * random)
 	r[7] = st.st_ctime;
 
 	/* Hash both halves with MD5 to obscure possible patterns */
-	MD5_Init(&md5);
-	MD5_Update(&md5, random, 16);
-	MD5_Final(random, &md5);
-	MD5_Update(&md5, random + 16, 16);
-	MD5_Final(random + 16, &md5);
+	ssl_md5_init(&md5);
+	ssl_md5_update(&md5, random, 16);
+	ssl_md5_final(&md5, random);
+	ssl_md5_update(&md5, random + 16, 16);
+	ssl_md5_final(&md5, random + 16);
 }
 
 /* malloc; exit if out of memory */
@@ -1087,6 +1130,17 @@ xmalloc(int size)
 		exit(1);
 	}
 	return mem;
+}
+
+/* Exit on NULL pointer. Use to verify result from XGetImage etc */
+void
+exit_if_null(void *ptr)
+{
+	if (ptr == NULL)
+	{
+		error("unexpected null pointer. Out of memory?\n");
+		exit(1);
+	}
 }
 
 /* strdup */
@@ -1104,16 +1158,16 @@ xstrdup(const char *s)
 
 /* realloc; exit if out of memory */
 void *
-xrealloc(void *oldmem, int size)
+xrealloc(void *oldmem, size_t size)
 {
 	void *mem;
 
-	if (size < 1)
+	if (size == 0)
 		size = 1;
 	mem = realloc(oldmem, size);
 	if (mem == NULL)
 	{
-		error("xrealloc %d\n", size);
+		error("xrealloc %ld\n", size);
 		exit(1);
 	}
 	return mem;
@@ -1275,7 +1329,7 @@ toupper_str(char *p)
 }
 
 
-BOOL
+RD_BOOL
 str_startswith(const char *s, const char *prefix)
 {
 	return (strncmp(s, prefix, strlen(prefix)) == 0);
@@ -1286,7 +1340,7 @@ str_startswith(const char *s, const char *prefix)
    line. Incomplete lines are saved in the rest variable, which should
    initially point to NULL. When linehandler returns False, stop and
    return False. Otherwise, return True.  */
-BOOL
+RD_BOOL
 str_handle_lines(const char *input, char **rest, str_handle_lines_t linehandler, void *data)
 {
 	char *buf, *p;
@@ -1294,7 +1348,7 @@ str_handle_lines(const char *input, char **rest, str_handle_lines_t linehandler,
 	size_t inputlen;
 	size_t buflen;
 	size_t restlen = 0;
-	BOOL ret = True;
+	RD_BOOL ret = True;
 
 	/* Copy data to buffer */
 	inputlen = strlen(input);
@@ -1342,7 +1396,7 @@ str_handle_lines(const char *input, char **rest, str_handle_lines_t linehandler,
 
 /* Execute the program specified by argv. For each line in
    stdout/stderr output, call linehandler. Returns false on failure. */
-BOOL
+RD_BOOL
 subprocess(char *const argv[], str_handle_lines_t linehandler, void *data)
 {
 	pid_t child;
@@ -1508,7 +1562,7 @@ save_licence(unsigned char *data, int length)
 }
 
 /* Create the bitmap cache directory */
-BOOL
+RD_BOOL
 rd_pstcache_mkdir(void)
 {
 	char *home;
@@ -1585,7 +1639,7 @@ rd_lseek_file(int fd, int offset)
 }
 
 /* do a write lock on a file */
-BOOL
+RD_BOOL
 rd_lock_file(int fd, int start, int len)
 {
 	struct flock lock;

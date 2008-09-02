@@ -1,7 +1,8 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
    User interface services - X Window System
-   Copyright (C) Matthew Chapman 1999-2005
+   Copyright (C) Matthew Chapman 1999-2008
+   Copyright 2007 Pierre Ossman <ossman@cendio.se> for Cendio AB
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +21,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xproto.h>
 #include <unistd.h>
 #include <sys/time.h>
 #include <time.h>
@@ -28,18 +30,15 @@
 #include "rdesktop.h"
 #include "xproto.h"
 
-/* We can't include Xproto.h because of conflicting defines for BOOL */
-#define X_ConfigureWindow              12
-
 extern int g_width;
 extern int g_height;
 extern int g_xpos;
 extern int g_ypos;
 extern int g_pos;
-extern BOOL g_sendmotion;
-extern BOOL g_fullscreen;
-extern BOOL g_grab_keyboard;
-extern BOOL g_hide_decorations;
+extern RD_BOOL g_sendmotion;
+extern RD_BOOL g_fullscreen;
+extern RD_BOOL g_grab_keyboard;
+extern RD_BOOL g_hide_decorations;
 extern char g_title[];
 /* Color depth of the RDP session.
    As of RDP 5.1, it may be 8, 15, 16 or 24. */
@@ -71,23 +70,28 @@ typedef struct _seamless_window
 	unsigned int desktop;
 	struct timeval *position_timer;
 
-	BOOL outstanding_position;
+	RD_BOOL outstanding_position;
 	unsigned int outpos_serial;
 	int outpos_xoffset, outpos_yoffset;
 	int outpos_width, outpos_height;
+
+	unsigned int icon_size;
+	unsigned int icon_offset;
+	char icon_buffer[32 * 32 * 4];
 
 	struct _seamless_window *next;
 } seamless_window;
 static seamless_window *g_seamless_windows = NULL;
 static unsigned long g_seamless_focused = 0;
-static BOOL g_seamless_started = False;	/* Server end is up and running */
-static BOOL g_seamless_active = False;	/* We are currently in seamless mode */
-static BOOL g_seamless_hidden = False;	/* Desktop is hidden on server */
-extern BOOL g_seamless_rdp;
+static RD_BOOL g_seamless_started = False;	/* Server end is up and running */
+static RD_BOOL g_seamless_active = False;	/* We are currently in seamless mode */
+static RD_BOOL g_seamless_hidden = False;	/* Desktop is hidden on server */
+static RD_BOOL g_seamless_broken_restack = False;	/* WM does not properly restack */
+extern RD_BOOL g_seamless_rdp;
 
 extern uint32 g_embed_wnd;
-BOOL g_enable_compose = False;
-BOOL g_Unobscured;		/* used for screenblt */
+RD_BOOL g_enable_compose = False;
+RD_BOOL g_Unobscured;		/* used for screenblt */
 static GC g_gc = NULL;
 static GC g_create_bitmap_gc = NULL;
 static GC g_create_glyph_gc = NULL;
@@ -104,52 +108,53 @@ static int g_bpp;
 static XIM g_IM;
 static XIC g_IC;
 static XModifierKeymap *g_mod_map;
+/* Maps logical (xmodmap -pp) pointing device buttons (0-based) back
+   to physical (1-based) indices. */
+static unsigned char g_pointer_log_to_phys_map[32];
 static Cursor g_current_cursor;
-static HCURSOR g_null_cursor = NULL;
+static RD_HCURSOR g_null_cursor = NULL;
 static Atom g_protocol_atom, g_kill_atom;
 extern Atom g_net_wm_state_atom;
 extern Atom g_net_wm_desktop_atom;
-static BOOL g_focused;
-static BOOL g_mouse_in_wnd;
+static RD_BOOL g_focused;
+static RD_BOOL g_mouse_in_wnd;
 /* Indicates that:
    1) visual has 15, 16 or 24 depth and the same color channel masks
       as its RDP equivalent (implies X server is LE),
    2) host is LE
    This will trigger an optimization whose real value is questionable.
 */
-static BOOL g_compatible_arch;
+static RD_BOOL g_compatible_arch;
 /* Indicates whether RDP's bitmaps and our XImages have the same
    binary format. If so, we can avoid an expensive translation.
    Note that this can be true when g_compatible_arch is false,
    e.g.:
-
+   
      RDP(LE) <-> host(BE) <-> X-Server(LE)
-
+     
    ('host' is the machine running rdesktop; the host simply memcpy's
     so its endianess doesn't matter)
  */
-static BOOL g_no_translate_image = False;
+static RD_BOOL g_no_translate_image = False;
 
 /* endianness */
-static BOOL g_host_be;
-static BOOL g_xserver_be;
+static RD_BOOL g_host_be;
+static RD_BOOL g_xserver_be;
 static int g_red_shift_r, g_blue_shift_r, g_green_shift_r;
 static int g_red_shift_l, g_blue_shift_l, g_green_shift_l;
 
 /* software backing store */
-extern BOOL g_ownbackstore;
+extern RD_BOOL g_ownbackstore;
 static Pixmap g_backstore = 0;
 
 /* Moving in single app mode */
-static BOOL g_moving_wnd;
+static RD_BOOL g_moving_wnd;
 static int g_move_x_offset = 0;
 static int g_move_y_offset = 0;
-static BOOL g_using_full_workarea = False;
+static RD_BOOL g_using_full_workarea = False;
 
 #ifdef WITH_RDPSND
-extern int g_dsp_fd;
-extern BOOL g_dsp_busy;
-extern BOOL g_rdpsnd;
+extern RD_BOOL g_rdpsnd;
 #endif
 
 /* MWM decorations */
@@ -250,7 +255,7 @@ seamless_XDrawLines(Drawable d, XPoint * points, int npoints, int xoffset, int y
 }
 
 /* colour maps */
-extern BOOL g_owncolmap;
+extern RD_BOOL g_owncolmap;
 static Colormap g_xcolmap;
 static uint32 *g_colmap = NULL;
 
@@ -474,7 +479,7 @@ sw_handle_restack(seamless_window * sw)
 
 
 static seamless_group *
-sw_find_group(unsigned long id, BOOL dont_create)
+sw_find_group(unsigned long id, RD_BOOL dont_create)
 {
 	seamless_window *sw;
 	seamless_group *sg;
@@ -523,6 +528,247 @@ mwm_hide_decorations(Window wnd)
 	XChangeProperty(g_display, wnd, hintsatom, hintsatom, 32, PropModeReplace,
 			(unsigned char *) &motif_hints, PROP_MOTIF_WM_HINTS_ELEMENTS);
 
+}
+
+typedef struct _sw_configurenotify_context
+{
+	Window window;
+	unsigned long serial;
+} sw_configurenotify_context;
+
+/* Predicate procedure for sw_wait_configurenotify */
+static Bool
+sw_configurenotify_p(Display * display, XEvent * xevent, XPointer arg)
+{
+	sw_configurenotify_context *context = (sw_configurenotify_context *) arg;
+	if (xevent->xany.type == ConfigureNotify
+	    && xevent->xconfigure.window == context->window
+	    && xevent->xany.serial >= context->serial)
+		return True;
+
+	return False;
+}
+
+/* Wait for a ConfigureNotify, with a equal or larger serial, on the
+   specified window. The event will be removed from the queue. We
+   could use XMaskEvent(StructureNotifyMask), but we would then risk
+   throwing away crucial events like DestroyNotify. 
+
+   After a ConfigureWindow, according to ICCCM section 4.1.5, we
+   should recieve a ConfigureNotify, either a real or synthetic
+   one. This indicates that the configure has been "completed".
+   However, some WMs such as several versions of Metacity fails to
+   send synthetic events. See bug
+   http://bugzilla.gnome.org/show_bug.cgi?id=322840. We need to use a
+   timeout to avoid a hang. Tk uses the same approach. */
+static void
+sw_wait_configurenotify(Window wnd, unsigned long serial)
+{
+	XEvent xevent;
+	sw_configurenotify_context context;
+	struct timeval now;
+	struct timeval nextsecond;
+	RD_BOOL got = False;
+
+	context.window = wnd;
+	context.serial = serial;
+
+	gettimeofday(&nextsecond, NULL);
+	nextsecond.tv_sec += 1;
+
+	do
+	{
+		if (XCheckIfEvent(g_display, &xevent, sw_configurenotify_p, (XPointer) & context))
+		{
+			got = True;
+			break;
+		}
+		usleep(100000);
+		gettimeofday(&now, NULL);
+	}
+	while (timercmp(&now, &nextsecond, <));
+
+	if (!got)
+	{
+		warning("Broken Window Manager: Timeout while waiting for ConfigureNotify\n");
+	}
+}
+
+/* Get the toplevel window, in case of reparenting */
+static Window
+sw_get_toplevel(Window wnd)
+{
+	Window root, parent;
+	Window *child_list;
+	unsigned int num_children;
+
+	while (1)
+	{
+		XQueryTree(g_display, wnd, &root, &parent, &child_list, &num_children);
+		if (root == parent)
+		{
+			break;
+		}
+		else if (!parent)
+		{
+			warning("Internal error: sw_get_toplevel called with root window\n");
+		}
+
+		wnd = parent;
+	}
+
+	return wnd;
+}
+
+
+/* Check if wnd is already behind a window wrt stacking order */
+static RD_BOOL
+sw_window_is_behind(Window wnd, Window behind)
+{
+	Window dummy1, dummy2;
+	Window *child_list;
+	unsigned int num_children;
+	unsigned int i;
+	RD_BOOL found_behind = False;
+	RD_BOOL found_wnd = False;
+
+	wnd = sw_get_toplevel(wnd);
+	behind = sw_get_toplevel(behind);
+
+	XQueryTree(g_display, RootWindowOfScreen(g_screen), &dummy1, &dummy2, &child_list,
+		   &num_children);
+
+	for (i = num_children - 1; i >= 0; i--)
+	{
+		if (child_list[i] == behind)
+		{
+			found_behind = True;
+		}
+		else if (child_list[i] == wnd)
+		{
+			found_wnd = True;
+			break;
+		}
+	}
+
+	if (child_list)
+		XFree(child_list);
+
+	if (!found_wnd)
+	{
+		warning("sw_window_is_behind: Unable to find window 0x%lx\n", wnd);
+
+		if (!found_behind)
+		{
+			warning("sw_window_is_behind: Unable to find behind window 0x%lx\n",
+				behind);
+		}
+	}
+
+	return found_behind;
+}
+
+
+/* Test if the window manager correctly handles window restacking. In
+   particular, we are testing if it's possible to place a window
+   between two other windows. Many WMs such as Metacity can only stack
+   windows on the top or bottom. The window creation should mostly
+   match ui_seamless_create_window. */
+static void
+seamless_restack_test()
+{
+	/* The goal is to have the middle window between top and
+	   bottom.  The middle window is initially at the top,
+	   though. */
+	Window wnds[3];		/* top, middle and bottom */
+	int i;
+	XEvent xevent;
+	XWindowChanges values;
+	unsigned long restack_serial;
+
+	for (i = 0; i < 3; i++)
+	{
+		char name[64];
+		wnds[i] =
+			XCreateSimpleWindow(g_display, RootWindowOfScreen(g_screen), 0, 0, 20, 20,
+					    0, 0, 0);
+		snprintf(name, sizeof(name), "SeamlessRDP restack test - window %d", i);
+		XStoreName(g_display, wnds[i], name);
+		ewmh_set_wm_name(wnds[i], name);
+
+		/* Hide decorations. Often this means that no
+		   reparenting will be done, which makes the restack
+		   easier. Besides, we want to mimic our other
+		   seamless windows as much as possible. We must still
+		   handle the case with reparenting, though. */
+		mwm_hide_decorations(wnds[i]);
+
+		/* Prevent windows from appearing in task bar */
+		XSetTransientForHint(g_display, wnds[i], RootWindowOfScreen(g_screen));
+		ewmh_set_window_popup(wnds[i]);
+
+		/* We need to catch MapNotify/ConfigureNotify */
+		XSelectInput(g_display, wnds[i], StructureNotifyMask);
+	}
+
+	/* Map Windows. Currently, we assume that XMapRaised places
+	   the window on the top of the stack. Should be fairly safe;
+	   the window is configured before it's mapped. */
+	XMapRaised(g_display, wnds[2]);	/* bottom */
+	do
+	{
+		XWindowEvent(g_display, wnds[2], StructureNotifyMask, &xevent);
+	}
+	while (xevent.type != MapNotify);
+	XMapRaised(g_display, wnds[0]);	/* top */
+	do
+	{
+		XWindowEvent(g_display, wnds[0], StructureNotifyMask, &xevent);
+	}
+	while (xevent.type != MapNotify);
+	XMapRaised(g_display, wnds[1]);	/* middle */
+	do
+	{
+		XWindowEvent(g_display, wnds[1], StructureNotifyMask, &xevent);
+	}
+	while (xevent.type != MapNotify);
+
+	/* The stacking order should now be 1 - 0 - 2 */
+	if (!sw_window_is_behind(wnds[0], wnds[1]) || !sw_window_is_behind(wnds[2], wnds[1]))
+	{
+		/* Ok, technically a WM is allowed to stack windows arbitrarily, but... */
+		warning("Broken Window Manager: Unable to test window restacking\n");
+		g_seamless_broken_restack = True;
+		for (i = 0; i < 3; i++)
+			XDestroyWindow(g_display, wnds[i]);
+		return;
+	}
+
+	/* Restack, using XReconfigureWMWindow, which should correctly
+	   handle reparented windows as well as nonreparenting WMs. */
+	values.stack_mode = Below;
+	values.sibling = wnds[0];
+	restack_serial = XNextRequest(g_display);
+	XReconfigureWMWindow(g_display, wnds[1], DefaultScreen(g_display), CWStackMode | CWSibling,
+			     &values);
+	sw_wait_configurenotify(wnds[1], restack_serial);
+
+	/* Now verify that middle is behind top but not behind
+	   bottom */
+	if (!sw_window_is_behind(wnds[1], wnds[0]))
+	{
+		warning("Broken Window Manager: doesn't handle restack (restack request was ignored)\n");
+		g_seamless_broken_restack = True;
+	}
+	else if (sw_window_is_behind(wnds[1], wnds[2]))
+	{
+		warning("Broken Window Manager: doesn't handle restack (window was moved to bottom)\n");
+		g_seamless_broken_restack = True;
+	}
+
+	/* Destroy windows */
+	for (i = 0; i < 3; i++)
+		XDestroyWindow(g_display, wnds[i]);
 }
 
 #define SPLITCOLOUR15(colour, rv) \
@@ -579,6 +825,7 @@ translate_colour(uint32 colour)
 			SPLITCOLOUR16(colour, pc);
 			break;
 		case 24:
+		case 32:
 			SPLITCOLOUR24(colour, pc);
 			break;
 		default:
@@ -1187,6 +1434,13 @@ translate_image(int width, int height, uint8 * data)
 	   is only set for compatible depths, but the RDP depth might've
 	   changed during connection negotiations.
 	 */
+
+	/* todo */
+	if (g_server_depth == 32 && g_depth == 24)
+	{
+		return data;
+	}
+
 	if (g_no_translate_image)
 	{
 		if ((g_depth == 15 && g_server_depth == 15) ||
@@ -1264,7 +1518,29 @@ translate_image(int width, int height, uint8 * data)
 	return out;
 }
 
-BOOL
+static void
+xwin_refresh_pointer_map(void)
+{
+	unsigned char phys_to_log_map[sizeof(g_pointer_log_to_phys_map)];
+	int i, pointer_buttons;
+
+	pointer_buttons = XGetPointerMapping(g_display, phys_to_log_map, sizeof(phys_to_log_map));
+	if (pointer_buttons > sizeof(phys_to_log_map))
+		pointer_buttons = sizeof(phys_to_log_map);
+
+	/* if multiple physical buttons map to the same logical button, then
+	 * use the lower numbered physical one */
+	for (i = pointer_buttons - 1; i >= 0; i--)
+	{
+		/* a user could specify arbitrary values for the logical button
+		 * number, ignore any that are abnormally large */
+		if (phys_to_log_map[i] > sizeof(g_pointer_log_to_phys_map))
+			continue;
+		g_pointer_log_to_phys_map[phys_to_log_map[i] - 1] = i + 1;
+	}
+}
+
+RD_BOOL
 get_key_state(unsigned int state, uint32 keysym)
 {
 	int modifierpos, key, keysymMask = 0;
@@ -1312,7 +1588,7 @@ calculate_mask_weight(uint32 mask)
 	return weight;
 }
 
-static BOOL
+static RD_BOOL
 select_visual(int screen_num)
 {
 	XPixmapFormatValues *pfm;
@@ -1351,7 +1627,7 @@ select_visual(int screen_num)
 		for (i = 0; i < visuals_count; ++i)
 		{
 			XVisualInfo *visual_info = &vmatches[i];
-			BOOL can_translate_to_bpp = False;
+			RD_BOOL can_translate_to_bpp = False;
 			int j;
 
 			/* Try to find a no-translation visual that'll
@@ -1508,22 +1784,42 @@ select_visual(int screen_num)
 }
 
 static XErrorHandler g_old_error_handler;
+static RD_BOOL g_error_expected = False;
+
+/* Check if the X11 window corresponding to a seamless window with
+   specified id exists. */
+RD_BOOL
+sw_window_exists(unsigned long id)
+{
+	seamless_window *sw;
+	char *name;
+	Status sts = 0;
+
+	sw = sw_get_window_by_id(id);
+	if (!sw)
+		return False;
+
+	g_error_expected = True;
+	sts = XFetchName(g_display, sw->wnd, &name);
+	g_error_expected = False;
+	if (sts)
+	{
+		XFree(name);
+	}
+
+	return sts;
+}
 
 static int
 error_handler(Display * dpy, XErrorEvent * eev)
 {
-	if ((eev->error_code == BadMatch) && (eev->request_code == X_ConfigureWindow))
-	{
-		fprintf(stderr, "Got \"BadMatch\" when trying to restack windows.\n");
-		fprintf(stderr,
-			"This is most likely caused by a broken window manager (commonly KWin).\n");
+	if (g_error_expected)
 		return 0;
-	}
 
 	return g_old_error_handler(dpy, eev);
 }
 
-BOOL
+RD_BOOL
 ui_init(void)
 {
 	int screen_num;
@@ -1537,7 +1833,7 @@ ui_init(void)
 
 	{
 		uint16 endianess_test = 1;
-		g_host_be = !(BOOL) (*(uint8 *) (&endianess_test));
+		g_host_be = !(RD_BOOL) (*(uint8 *) (&endianess_test));
 	}
 
 	g_old_error_handler = XSetErrorHandler(error_handler);
@@ -1618,6 +1914,7 @@ ui_init(void)
 	g_width = (g_width + 3) & ~3;
 
 	g_mod_map = XGetModifierMapping(g_display);
+	xwin_refresh_pointer_map();
 
 	xkeymap_init();
 
@@ -1627,7 +1924,9 @@ ui_init(void)
 	xclip_init();
 	ewmh_init();
 	if (g_seamless_rdp)
+	{
 		seamless_init();
+	}
 
 	DEBUG_RDP5(("server bpp %d client bpp %d depth %d\n", g_server_depth, g_bpp, g_depth));
 
@@ -1689,7 +1988,7 @@ get_input_mask(long *input_mask)
 		*input_mask |= LeaveWindowMask;
 }
 
-BOOL
+RD_BOOL
 ui_create_window(void)
 {
 	uint8 null_pointer_mask[1] = { 0x80 };
@@ -1737,6 +2036,7 @@ ui_create_window(void)
 	}
 
 	XStoreName(g_display, g_wnd, g_title);
+	ewmh_set_wm_name(g_wnd, g_title);
 
 	if (g_hide_decorations)
 		mwm_hide_decorations(g_wnd);
@@ -1800,6 +2100,11 @@ ui_create_window(void)
 	/* create invisible 1x1 cursor to be used as null cursor */
 	if (g_null_cursor == NULL)
 		g_null_cursor = ui_create_cursor(0, 0, 1, 1, null_pointer_mask, null_pointer_data);
+
+	if (g_seamless_rdp)
+	{
+		seamless_restack_test();
+	}
 
 	return True;
 }
@@ -1876,10 +2181,16 @@ xwin_toggle_fullscreen(void)
 }
 
 static void
-handle_button_event(XEvent xevent, BOOL down)
+handle_button_event(XEvent xevent, RD_BOOL down)
 {
 	uint16 button, flags = 0;
 	g_last_gesturetime = xevent.xbutton.time;
+	/* Reverse the pointer button mapping, e.g. in the case of
+	   "left-handed mouse mode"; the RDP session expects to
+	   receive physical buttons (true in mstsc as well) and
+	   logical button behavior depends on the remote desktop's own
+	   mouse settings */
+	xevent.xbutton.button = g_pointer_log_to_phys_map[xevent.xbutton.button - 1];
 	button = xkeymap_translate_button(xevent.xbutton.button);
 	if (button == 0)
 		return;
@@ -1992,8 +2303,16 @@ xwin_process_events(void)
 				/* the window manager told us to quit */
 				if ((xevent.xclient.message_type == g_protocol_atom)
 				    && ((Atom) xevent.xclient.data.l[0] == g_kill_atom))
-					/* Quit */
-					return 0;
+				{
+					/* When killing a seamless window, close the window on the
+					   serverside instead of terminating rdesktop */
+					sw = sw_get_window_by_wnd(xevent.xclient.window);
+					if (!sw)
+						/* Otherwise, quit */
+						return 0;
+					/* send seamless destroy process message */
+					seamless_send_destroy(sw->id);
+				}
 				break;
 
 			case KeyPress:
@@ -2094,9 +2413,24 @@ xwin_process_events(void)
 				if (!sw)
 					break;
 
+				/* Menu windows are real X11 windows,
+				   with focus. When such a window is
+				   destroyed, focus is reverted to the
+				   main application window, which
+				   would cause us to send FOCUS. This
+				   breaks window switching in, say,
+				   Seamonkey. We shouldn't need to
+				   send FOCUS: Windows should also
+				   revert focus to some other window
+				   when the menu window is
+				   destroyed. So, we only send FOCUS
+				   if the previous focus window still
+				   exists. */
 				if (sw->id != g_seamless_focused)
 				{
-					seamless_send_focus(sw->id, 0);
+
+					if (sw_window_exists(g_seamless_focused))
+						seamless_send_focus(sw->id, 0);
 					g_seamless_focused = sw->id;
 				}
 				break;
@@ -2177,6 +2511,12 @@ xwin_process_events(void)
 					XFreeModifiermap(g_mod_map);
 					g_mod_map = XGetModifierMapping(g_display);
 				}
+
+				if (xevent.xmapping.request == MappingPointer)
+				{
+					xwin_refresh_pointer_map();
+				}
+
 				break;
 
 				/* clipboard stuff */
@@ -2260,7 +2600,7 @@ ui_select(int rdp_socket)
 	int n;
 	fd_set rfds, wfds;
 	struct timeval tv;
-	BOOL s_timeout = False;
+	RD_BOOL s_timeout = False;
 
 	while (True)
 	{
@@ -2278,21 +2618,17 @@ ui_select(int rdp_socket)
 		FD_SET(rdp_socket, &rfds);
 		FD_SET(g_x_socket, &rfds);
 
+		/* default timeout */
+		tv.tv_sec = 60;
+		tv.tv_usec = 0;
+
 #ifdef WITH_RDPSND
-		/* FIXME: there should be an API for registering fds */
-		if (g_dsp_busy)
-		{
-			FD_SET(g_dsp_fd, &wfds);
-			n = (g_dsp_fd > n) ? g_dsp_fd : n;
-		}
+		rdpsnd_add_fds(&n, &rfds, &wfds, &tv);
 #endif
 
 #ifdef WITH_RDPUSB
 		rdpusb_add_fds (&n, &rfds, &wfds);
 #endif
-		/* default timeout */
-		tv.tv_sec = 60;
-		tv.tv_usec = 0;
 
 		/* add redirection handles */
 		rdpdr_add_fds(&n, &rfds, &wfds, &tv, &s_timeout);
@@ -2306,9 +2642,13 @@ ui_select(int rdp_socket)
 				error("select: %s\n", strerror(errno));
 
 			case 0:
+#ifdef WITH_RDPSND
+				rdpsnd_check_fds(&rfds, &wfds);
+#endif
+
 				/* Abort serial read calls */
 				if (s_timeout)
-					rdpdr_check_fds(&rfds, &wfds, (BOOL) True);
+					rdpdr_check_fds(&rfds, &wfds, (RD_BOOL) True);
 				continue;
 		}
 
@@ -2316,15 +2656,15 @@ ui_select(int rdp_socket)
 		rdpusb_check_fds (&rfds, &wfds);
 #endif
 
-		rdpdr_check_fds(&rfds, &wfds, (BOOL) False);
+#ifdef WITH_RDPSND
+		rdpsnd_check_fds(&rfds, &wfds);
+#endif
+
+		rdpdr_check_fds(&rfds, &wfds, (RD_BOOL) False);
 
 		if (FD_ISSET(rdp_socket, &rfds))
 			return 1;
 
-#ifdef WITH_RDPSND
-		if (g_dsp_busy && FD_ISSET(g_dsp_fd, &wfds))
-			wave_out_play();
-#endif
 	}
 }
 
@@ -2334,7 +2674,7 @@ ui_move_pointer(int x, int y)
 	XWarpPointer(g_display, g_wnd, g_wnd, 0, 0, 0, 0, x, y);
 }
 
-HBITMAP
+RD_HBITMAP
 ui_create_bitmap(int width, int height, uint8 * data)
 {
 	XImage *image;
@@ -2364,7 +2704,7 @@ ui_create_bitmap(int width, int height, uint8 * data)
 	XFree(image);
 	if (tdata != data)
 		xfree(tdata);
-	return (HBITMAP) bitmap;
+	return (RD_HBITMAP) bitmap;
 }
 
 void
@@ -2412,12 +2752,12 @@ ui_paint_bitmap(int x, int y, int cx, int cy, int width, int height, uint8 * dat
 }
 
 void
-ui_destroy_bitmap(HBITMAP bmp)
+ui_destroy_bitmap(RD_HBITMAP bmp)
 {
 	XFreePixmap(g_display, (Pixmap) bmp);
 }
 
-HGLYPH
+RD_HGLYPH
 ui_create_glyph(int width, int height, uint8 * data)
 {
 	XImage *image;
@@ -2439,20 +2779,20 @@ ui_create_glyph(int width, int height, uint8 * data)
 	XPutImage(g_display, bitmap, g_create_glyph_gc, image, 0, 0, 0, 0, width, height);
 
 	XFree(image);
-	return (HGLYPH) bitmap;
+	return (RD_HGLYPH) bitmap;
 }
 
 void
-ui_destroy_glyph(HGLYPH glyph)
+ui_destroy_glyph(RD_HGLYPH glyph)
 {
 	XFreePixmap(g_display, (Pixmap) glyph);
 }
 
-HCURSOR
+RD_HCURSOR
 ui_create_cursor(unsigned int x, unsigned int y, int width, int height,
 		 uint8 * andmask, uint8 * xormask)
 {
-	HGLYPH maskglyph, cursorglyph;
+	RD_HGLYPH maskglyph, cursorglyph;
 	XColor bg, fg;
 	Cursor xcursor;
 	uint8 *cursor, *pcursor;
@@ -2516,11 +2856,11 @@ ui_create_cursor(unsigned int x, unsigned int y, int width, int height,
 	ui_destroy_glyph(cursorglyph);
 	xfree(mask);
 	xfree(cursor);
-	return (HCURSOR) xcursor;
+	return (RD_HCURSOR) xcursor;
 }
 
 void
-ui_set_cursor(HCURSOR cursor)
+ui_set_cursor(RD_HCURSOR cursor)
 {
 	g_current_cursor = (Cursor) cursor;
 	XDefineCursor(g_display, g_wnd, g_current_cursor);
@@ -2528,7 +2868,7 @@ ui_set_cursor(HCURSOR cursor)
 }
 
 void
-ui_destroy_cursor(HCURSOR cursor)
+ui_destroy_cursor(RD_HCURSOR cursor)
 {
 	XFreeCursor(g_display, (Cursor) cursor);
 }
@@ -2546,7 +2886,7 @@ ui_set_null_cursor(void)
 		(xc)->flags = DoRed | DoGreen | DoBlue;
 
 
-HCOLOURMAP
+RD_HCOLOURMAP
 ui_create_colourmap(COLOURMAP * colours)
 {
 	COLOURENTRY *entry;
@@ -2642,12 +2982,12 @@ ui_create_colourmap(COLOURMAP * colours)
 		XStoreColors(g_display, map, xcolours, ncolours);
 
 		xfree(xcolours);
-		return (HCOLOURMAP) map;
+		return (RD_HCOLOURMAP) map;
 	}
 }
 
 void
-ui_destroy_colourmap(HCOLOURMAP map)
+ui_destroy_colourmap(RD_HCOLOURMAP map)
 {
 	if (!g_owncolmap)
 		xfree(map);
@@ -2656,7 +2996,7 @@ ui_destroy_colourmap(HCOLOURMAP map)
 }
 
 void
-ui_set_colourmap(HCOLOURMAP map)
+ui_set_colourmap(RD_HCOLOURMAP map)
 {
 	if (!g_owncolmap)
 	{
@@ -2744,7 +3084,7 @@ ui_patblt(uint8 opcode,
 			FILL_RECTANGLE_BACKSTORE(x, y, cx, cy);
 			XSetFillStyle(g_display, g_gc, FillSolid);
 			XSetTSOrigin(g_display, g_gc, 0, 0);
-			ui_destroy_glyph((HGLYPH) fill);
+			ui_destroy_glyph((RD_HGLYPH) fill);
 			break;
 
 		case 3:	/* Pattern */
@@ -2759,7 +3099,7 @@ ui_patblt(uint8 opcode,
 			FILL_RECTANGLE_BACKSTORE(x, y, cx, cy);
 			XSetFillStyle(g_display, g_gc, FillSolid);
 			XSetTSOrigin(g_display, g_gc, 0, 0);
-			ui_destroy_glyph((HGLYPH) fill);
+			ui_destroy_glyph((RD_HGLYPH) fill);
 			break;
 
 		default:
@@ -2802,7 +3142,7 @@ ui_screenblt(uint8 opcode,
 void
 ui_memblt(uint8 opcode,
 	  /* dest */ int x, int y, int cx, int cy,
-	  /* src */ HBITMAP src, int srcx, int srcy)
+	  /* src */ RD_HBITMAP src, int srcx, int srcy)
 {
 	SET_FUNCTION(opcode);
 	XCopyArea(g_display, (Pixmap) src, g_wnd, g_gc, srcx, srcy, cx, cy, x, y);
@@ -2817,7 +3157,7 @@ ui_memblt(uint8 opcode,
 void
 ui_triblt(uint8 opcode,
 	  /* dest */ int x, int y, int cx, int cy,
-	  /* src */ HBITMAP src, int srcx, int srcy,
+	  /* src */ RD_HBITMAP src, int srcx, int srcy,
 	  /* brush */ BRUSH * brush, int bgcolour, int fgcolour)
 {
 	/* This is potentially difficult to do in general. Until someone
@@ -2875,7 +3215,7 @@ ui_rect(
 void
 ui_polygon(uint8 opcode,
 	   /* mode */ uint8 fillmode,
-	   /* dest */ POINT * point, int npoints,
+	   /* dest */ RD_POINT * point, int npoints,
 	   /* brush */ BRUSH * brush, int bgcolour, int fgcolour)
 {
 	uint8 style, i, ipattern[8];
@@ -2918,7 +3258,7 @@ ui_polygon(uint8 opcode,
 			FILL_POLYGON((XPoint *) point, npoints);
 			XSetFillStyle(g_display, g_gc, FillSolid);
 			XSetTSOrigin(g_display, g_gc, 0, 0);
-			ui_destroy_glyph((HGLYPH) fill);
+			ui_destroy_glyph((RD_HGLYPH) fill);
 			break;
 
 		case 3:	/* Pattern */
@@ -2933,7 +3273,7 @@ ui_polygon(uint8 opcode,
 			FILL_POLYGON((XPoint *) point, npoints);
 			XSetFillStyle(g_display, g_gc, FillSolid);
 			XSetTSOrigin(g_display, g_gc, 0, 0);
-			ui_destroy_glyph((HGLYPH) fill);
+			ui_destroy_glyph((RD_HGLYPH) fill);
 			break;
 
 		default:
@@ -2945,7 +3285,7 @@ ui_polygon(uint8 opcode,
 
 void
 ui_polyline(uint8 opcode,
-	    /* dest */ POINT * points, int npoints,
+	    /* dest */ RD_POINT * points, int npoints,
 	    /* pen */ PEN * pen)
 {
 	/* TODO: set join style */
@@ -2996,7 +3336,7 @@ ui_ellipse(uint8 opcode,
 			DRAW_ELLIPSE(x, y, cx, cy, fillmode);
 			XSetFillStyle(g_display, g_gc, FillSolid);
 			XSetTSOrigin(g_display, g_gc, 0, 0);
-			ui_destroy_glyph((HGLYPH) fill);
+			ui_destroy_glyph((RD_HGLYPH) fill);
 			break;
 
 		case 3:	/* Pattern */
@@ -3011,7 +3351,7 @@ ui_ellipse(uint8 opcode,
 			DRAW_ELLIPSE(x, y, cx, cy, fillmode);
 			XSetFillStyle(g_display, g_gc, FillSolid);
 			XSetTSOrigin(g_display, g_gc, 0, 0);
-			ui_destroy_glyph((HGLYPH) fill);
+			ui_destroy_glyph((RD_HGLYPH) fill);
 			break;
 
 		default:
@@ -3025,7 +3365,7 @@ ui_ellipse(uint8 opcode,
 void
 ui_draw_glyph(int mixmode,
 	      /* dest */ int x, int y, int cx, int cy,
-	      /* src */ HGLYPH glyph, int srcx, int srcy,
+	      /* src */ RD_HGLYPH glyph, int srcx, int srcy,
 	      int bgcolour, int fgcolour)
 {
 	SET_FOREGROUND(fgcolour);
@@ -3210,12 +3550,14 @@ ui_desktop_save(uint32 offset, int x, int y, int cx, int cy)
 	if (g_ownbackstore)
 	{
 		image = XGetImage(g_display, g_backstore, x, y, cx, cy, AllPlanes, ZPixmap);
+		exit_if_null(image);
 	}
 	else
 	{
 		pix = XCreatePixmap(g_display, g_wnd, cx, cy, g_depth);
 		XCopyArea(g_display, g_wnd, pix, g_gc, x, y, cx, cy, 0, 0);
 		image = XGetImage(g_display, pix, 0, 0, cx, cy, AllPlanes, ZPixmap);
+		exit_if_null(image);
 		XFreePixmap(g_display, pix);
 	}
 
@@ -3237,7 +3579,7 @@ ui_desktop_restore(uint32 offset, int x, int y, int cx, int cy)
 		return;
 
 	image = XCreateImage(g_display, g_visual, g_depth, ZPixmap, 0,
-			     (char *) data, cx, cy, g_bpp, 0);
+			     (char *) data, cx, cy, BitmapPad(g_display), cx * g_bpp / 8);
 
 	if (g_ownbackstore)
 	{
@@ -3271,7 +3613,7 @@ ui_end_update(void)
 
 
 void
-ui_seamless_begin(BOOL hidden)
+ui_seamless_begin(RD_BOOL hidden)
 {
 	if (!g_seamless_rdp)
 		return;
@@ -3426,6 +3768,12 @@ ui_seamless_create_window(unsigned long id, unsigned long group, unsigned long p
 		ewmh_set_window_modal(wnd);
 	}
 
+	if (flags & SEAMLESSRDP_CREATE_TOPMOST)
+	{
+		/* Make window always-on-top */
+		ewmh_set_window_above(wnd);
+	}
+
 	/* FIXME: Support for Input Context:s */
 
 	get_input_mask(&input_mask);
@@ -3433,21 +3781,17 @@ ui_seamless_create_window(unsigned long id, unsigned long group, unsigned long p
 
 	XSelectInput(g_display, wnd, input_mask);
 
-	/* handle the WM_DELETE_WINDOW protocol. FIXME: When killing a
-	   seamless window, we could try to close the window on the
-	   serverside, instead of terminating rdesktop */
+	/* handle the WM_DELETE_WINDOW protocol. */
 	XSetWMProtocols(g_display, wnd, &g_kill_atom, 1);
 
 	sw = xmalloc(sizeof(seamless_window));
+
+	memset(sw, 0, sizeof(seamless_window));
+
 	sw->wnd = wnd;
 	sw->id = id;
-	sw->behind = 0;
 	sw->group = sw_find_group(group, False);
 	sw->group->refcnt++;
-	sw->xoffset = 0;
-	sw->yoffset = 0;
-	sw->width = 0;
-	sw->height = 0;
 	sw->state = SEAMLESSRDP_NOTYETMAPPED;
 	sw->desktop = 0;
 	sw->position_timer = xmalloc(sizeof(struct timeval));
@@ -3515,6 +3859,93 @@ ui_seamless_destroy_group(unsigned long id, unsigned long flags)
 
 
 void
+ui_seamless_seticon(unsigned long id, const char *format, int width, int height, int chunk,
+		    const char *data, int chunk_len)
+{
+	seamless_window *sw;
+
+	if (!g_seamless_active)
+		return;
+
+	sw = sw_get_window_by_id(id);
+	if (!sw)
+	{
+		warning("ui_seamless_seticon: No information for window 0x%lx\n", id);
+		return;
+	}
+
+	if (chunk == 0)
+	{
+		if (sw->icon_size)
+			warning("ui_seamless_seticon: New icon started before previous completed\n");
+
+		if (strcmp(format, "RGBA") != 0)
+		{
+			warning("ui_seamless_seticon: Uknown icon format \"%s\"\n", format);
+			return;
+		}
+
+		sw->icon_size = width * height * 4;
+		if (sw->icon_size > 32 * 32 * 4)
+		{
+			warning("ui_seamless_seticon: Icon too large (%d bytes)\n", sw->icon_size);
+			sw->icon_size = 0;
+			return;
+		}
+
+		sw->icon_offset = 0;
+	}
+	else
+	{
+		if (!sw->icon_size)
+			return;
+	}
+
+	if (chunk_len > (sw->icon_size - sw->icon_offset))
+	{
+		warning("ui_seamless_seticon: Too large chunk received (%d bytes > %d bytes)\n",
+			chunk_len, sw->icon_size - sw->icon_offset);
+		sw->icon_size = 0;
+		return;
+	}
+
+	memcpy(sw->icon_buffer + sw->icon_offset, data, chunk_len);
+	sw->icon_offset += chunk_len;
+
+	if (sw->icon_offset == sw->icon_size)
+	{
+		ewmh_set_icon(sw->wnd, width, height, sw->icon_buffer);
+		sw->icon_size = 0;
+	}
+}
+
+
+void
+ui_seamless_delicon(unsigned long id, const char *format, int width, int height)
+{
+	seamless_window *sw;
+
+	if (!g_seamless_active)
+		return;
+
+	sw = sw_get_window_by_id(id);
+	if (!sw)
+	{
+		warning("ui_seamless_seticon: No information for window 0x%lx\n", id);
+		return;
+	}
+
+	if (strcmp(format, "RGBA") != 0)
+	{
+		warning("ui_seamless_seticon: Uknown icon format \"%s\"\n", format);
+		return;
+	}
+
+	ewmh_del_icon(sw->wnd, width, height);
+}
+
+
+void
 ui_seamless_move_window(unsigned long id, int x, int y, int width, int height, unsigned long flags)
 {
 	seamless_window *sw;
@@ -3560,6 +3991,8 @@ void
 ui_seamless_restack_window(unsigned long id, unsigned long behind, unsigned long flags)
 {
 	seamless_window *sw;
+	XWindowChanges values;
+	unsigned long restack_serial;
 
 	if (!g_seamless_active)
 		return;
@@ -3574,27 +4007,40 @@ ui_seamless_restack_window(unsigned long id, unsigned long behind, unsigned long
 	if (behind)
 	{
 		seamless_window *sw_behind;
-		Window wnds[2];
 
 		sw_behind = sw_get_window_by_id(behind);
 		if (!sw_behind)
 		{
-			warning("ui_seamless_restack_window: No information for window 0x%lx\n",
-				behind);
+			warning("ui_seamless_restack_window: No information for behind window 0x%lx\n", behind);
 			return;
 		}
 
-		wnds[1] = sw_behind->wnd;
-		wnds[0] = sw->wnd;
-
-		XRestackWindows(g_display, wnds, 2);
+		if (!g_seamless_broken_restack)
+		{
+			values.stack_mode = Below;
+			values.sibling = sw_behind->wnd;
+			restack_serial = XNextRequest(g_display);
+			XReconfigureWMWindow(g_display, sw->wnd, DefaultScreen(g_display),
+					     CWStackMode | CWSibling, &values);
+			sw_wait_configurenotify(sw->wnd, restack_serial);
+		}
 	}
 	else
 	{
-		XRaiseWindow(g_display, sw->wnd);
+		values.stack_mode = Above;
+		restack_serial = XNextRequest(g_display);
+		XReconfigureWMWindow(g_display, sw->wnd, DefaultScreen(g_display), CWStackMode,
+				     &values);
+		sw_wait_configurenotify(sw->wnd, restack_serial);
 	}
 
 	sw_restack_window(sw, behind);
+
+	if (flags & SEAMLESSRDP_CREATE_TOPMOST)
+	{
+		/* Make window always-on-top */
+		ewmh_set_window_above(sw->wnd);
+	}
 }
 
 

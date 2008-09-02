@@ -1,8 +1,8 @@
 /* -*- c-basic-offset: 8 -*-
  * rdesktop: A Remote Desktop Protocol client.
  * Entrypoint and utility functions
- * Copyright (C) Matthew Chapman 1999-2005
- * Copyright (C) Jeroen Meijer 2003
+ * Copyright (C) Matthew Chapman 1999-2007
+ * Copyright (C) Jeroen Meijer 2003-2007
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@
 #include <string.h>
 #include "rdesktop.h"
 
-static BOOL
+static RD_BOOL
 printercache_mkdir(char *base, char *printer)
 {
 	char *path;
@@ -72,7 +72,7 @@ printercache_mkdir(char *base, char *printer)
 	return True;
 }
 
-static BOOL
+static RD_BOOL
 printercache_unlink_blob(char *printer)
 {
 	char *path;
@@ -109,7 +109,7 @@ printercache_unlink_blob(char *printer)
 }
 
 
-static BOOL
+static RD_BOOL
 printercache_rename_blob(char *printer, char *new_printer)
 {
 	char *printer_path;
@@ -245,8 +245,8 @@ printercache_process(STREAM s)
 
 			/* NOTE - 'driver' doesn't contain driver, it contains the new printer name */
 
-			rdp_in_unistr(s, printer, printer_length);
-			rdp_in_unistr(s, driver, driver_length);
+			rdp_in_unistr(s, printer, sizeof(printer), printer_length);
+			rdp_in_unistr(s, driver, sizeof(driver), driver_length);
 
 			printercache_rename_blob(printer, driver);
 			break;
@@ -254,7 +254,7 @@ printercache_process(STREAM s)
 		case 3:	/* delete item */
 			in_uint8(s, printer_unicode_length);
 			in_uint8s(s, 0x3);	/* padding */
-			printer_length = rdp_in_unistr(s, printer, printer_unicode_length);
+			rdp_in_unistr(s, printer, sizeof(printer), printer_unicode_length);
 			printercache_unlink_blob(printer);
 			break;
 
@@ -264,7 +264,7 @@ printercache_process(STREAM s)
 
 			if (printer_unicode_length < 2 * 255)
 			{
-				rdp_in_unistr(s, printer, printer_unicode_length);
+				rdp_in_unistr(s, printer, sizeof(printer), printer_unicode_length);
 				printercache_save_blob(printer, s->p, blob_length);
 			}
 			break;

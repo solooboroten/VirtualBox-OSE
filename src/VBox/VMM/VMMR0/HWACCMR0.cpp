@@ -1,4 +1,4 @@
-/* $Id: HWACCMR0.cpp 31085 2008-05-21 10:17:41Z sandervl $ */
+/* $Id: HWACCMR0.cpp 33663 2008-07-24 13:40:25Z sandervl $ */
 /** @file
  * HWACCM - Host Context Ring 0.
  */
@@ -61,6 +61,18 @@ static struct
 {
     HWACCM_CPUINFO aCpuInfo[RTCPUSET_MAX_CPUS];
 
+    /** Ring 0 handlers for VT-x and AMD-V. */
+    DECLR0CALLBACKMEMBER(int, pfnEnterSession,(PVM pVM, PHWACCM_CPUINFO pCpu));
+    DECLR0CALLBACKMEMBER(int, pfnLeaveSession,(PVM pVM));
+    DECLR0CALLBACKMEMBER(int, pfnSaveHostState,(PVM pVM));
+    DECLR0CALLBACKMEMBER(int, pfnLoadGuestState,(PVM pVM, CPUMCTX *pCtx));
+    DECLR0CALLBACKMEMBER(int, pfnRunGuestCode,(PVM pVM, CPUMCTX *pCtx));
+    DECLR0CALLBACKMEMBER(int, pfnEnableCpu, (PHWACCM_CPUINFO pCpu, PVM pVM, void *pvPageCpu, RTHCPHYS pPageCpuPhys));
+    DECLR0CALLBACKMEMBER(int, pfnDisableCpu, (PHWACCM_CPUINFO pCpu, void *pvPageCpu, RTHCPHYS pPageCpuPhys));
+    DECLR0CALLBACKMEMBER(int, pfnInitVM, (PVM pVM));
+    DECLR0CALLBACKMEMBER(int, pfnTermVM, (PVM pVM));
+    DECLR0CALLBACKMEMBER(int, pfnSetupVM, (PVM pVM));
+
     struct
     {
         /** Set by the ring-0 driver to indicate VMX is supported by the CPU. */
@@ -74,16 +86,18 @@ static struct
         {
             uint64_t                feature_ctrl;
             uint64_t                vmx_basic_info;
-            uint64_t                vmx_pin_ctls;
-            uint64_t                vmx_proc_ctls;
-            uint64_t                vmx_exit;
-            uint64_t                vmx_entry;
+            VMX_CAPABILITY          vmx_pin_ctls;
+            VMX_CAPABILITY          vmx_proc_ctls;
+            VMX_CAPABILITY          vmx_proc_ctls2;
+            VMX_CAPABILITY          vmx_exit;
+            VMX_CAPABILITY          vmx_entry;
             uint64_t                vmx_misc;
             uint64_t                vmx_cr0_fixed0;
             uint64_t                vmx_cr0_fixed1;
             uint64_t                vmx_cr4_fixed0;
             uint64_t                vmx_cr4_fixed1;
             uint64_t                vmx_vmcs_enum;
+            uint64_t                vmx_eptcaps;
         } msr;
         /* Last instruction error */
         uint32_t                    ulLastInstrError;
@@ -127,6 +141,20 @@ HWACCMR0DECL(int) HWACCMR0Init()
 
     memset(&HWACCMR0Globals, 0, sizeof(HWACCMR0Globals));
     HWACCMR0Globals.enmHwAccmState = HWACCMSTATE_UNINITIALIZED;
+    for (unsigned i = 0; i < RT_ELEMENTS(HWACCMR0Globals.aCpuInfo); i++)
+        HWACCMR0Globals.aCpuInfo[i].pMemObj = NIL_RTR0MEMOBJ;
+
+    /* Fill in all callbacks with placeholders. */
+    HWACCMR0Globals.pfnEnterSession     = HWACCMR0DummyEnter;
+    HWACCMR0Globals.pfnLeaveSession     = HWACCMR0DummyLeave;
+    HWACCMR0Globals.pfnSaveHostState    = HWACCMR0DummySaveHostState;
+    HWACCMR0Globals.pfnLoadGuestState   = HWACCMR0DummyLoadGuestState;
+    HWACCMR0Globals.pfnRunGuestCode     = HWACCMR0DummyRunGuestCode;
+    HWACCMR0Globals.pfnEnableCpu        = HWACCMR0DummyEnableCpu;
+    HWACCMR0Globals.pfnDisableCpu       = HWACCMR0DummyDisableCpu;
+    HWACCMR0Globals.pfnInitVM           = HWACCMR0DummyInitVM;
+    HWACCMR0Globals.pfnTermVM           = HWACCMR0DummyTermVM;
+    HWACCMR0Globals.pfnSetupVM          = HWACCMR0DummySetupVM;
 
 #ifndef VBOX_WITH_HYBIRD_32BIT_KERNEL /* paranoia */
 
@@ -184,18 +212,25 @@ HWACCMR0DECL(int) HWACCMR0Init()
                         void      *pvScatchPage;
                         RTHCPHYS   pScatchPagePhys;
 
-                        HWACCMR0Globals.vmx.fSupported          = true;
                         HWACCMR0Globals.vmx.msr.vmx_basic_info  = ASMRdMsr(MSR_IA32_VMX_BASIC_INFO);
-                        HWACCMR0Globals.vmx.msr.vmx_pin_ctls    = ASMRdMsr(MSR_IA32_VMX_PINBASED_CTLS);
-                        HWACCMR0Globals.vmx.msr.vmx_proc_ctls   = ASMRdMsr(MSR_IA32_VMX_PROCBASED_CTLS);
-                        HWACCMR0Globals.vmx.msr.vmx_exit        = ASMRdMsr(MSR_IA32_VMX_EXIT_CTLS);
-                        HWACCMR0Globals.vmx.msr.vmx_entry       = ASMRdMsr(MSR_IA32_VMX_ENTRY_CTLS);
+                        HWACCMR0Globals.vmx.msr.vmx_pin_ctls.u  = ASMRdMsr(MSR_IA32_VMX_PINBASED_CTLS);
+                        HWACCMR0Globals.vmx.msr.vmx_proc_ctls.u = ASMRdMsr(MSR_IA32_VMX_PROCBASED_CTLS);
+                        HWACCMR0Globals.vmx.msr.vmx_exit.u      = ASMRdMsr(MSR_IA32_VMX_EXIT_CTLS);
+                        HWACCMR0Globals.vmx.msr.vmx_entry.u     = ASMRdMsr(MSR_IA32_VMX_ENTRY_CTLS);
                         HWACCMR0Globals.vmx.msr.vmx_misc        = ASMRdMsr(MSR_IA32_VMX_MISC);
                         HWACCMR0Globals.vmx.msr.vmx_cr0_fixed0  = ASMRdMsr(MSR_IA32_VMX_CR0_FIXED0);
                         HWACCMR0Globals.vmx.msr.vmx_cr0_fixed1  = ASMRdMsr(MSR_IA32_VMX_CR0_FIXED1);
                         HWACCMR0Globals.vmx.msr.vmx_cr4_fixed0  = ASMRdMsr(MSR_IA32_VMX_CR4_FIXED0);
                         HWACCMR0Globals.vmx.msr.vmx_cr4_fixed1  = ASMRdMsr(MSR_IA32_VMX_CR4_FIXED1);
                         HWACCMR0Globals.vmx.msr.vmx_vmcs_enum   = ASMRdMsr(MSR_IA32_VMX_VMCS_ENUM);
+
+                        if (HWACCMR0Globals.vmx.msr.vmx_proc_ctls.n.allowed1 & VMX_VMCS_CTRL_PROC_EXEC_USE_SECONDARY_EXEC_CTRL)
+                        {
+                            HWACCMR0Globals.vmx.msr.vmx_proc_ctls2.u = ASMRdMsr(MSR_IA32_VMX_PROCBASED_CTLS2);
+                            if (HWACCMR0Globals.vmx.msr.vmx_proc_ctls2.n.allowed1 & (VMX_VMCS_CTRL_PROC_EXEC2_EPT|VMX_VMCS_CTRL_PROC_EXEC2_VPID))
+                                HWACCMR0Globals.vmx.msr.vmx_eptcaps = ASMRdMsr(MSR_IA32_VMX_EPT_CAPS);
+                        }
+
                         HWACCMR0Globals.vmx.hostCR4             = ASMGetCR4();
 
                         rc = RTR0MemObjAllocCont(&pScatchMemObj, 1 << PAGE_SHIFT, true /* executable R0 mapping */);
@@ -234,10 +269,12 @@ HWACCMR0DECL(int) HWACCMR0Init()
                              * They should fix their code, but until they do we simply refuse to run.
                              */
                             HWACCMR0Globals.lLastError = VERR_VMX_IN_VMX_ROOT_MODE;
-                            HWACCMR0Globals.vmx.fSupported = false;
                         }
                         else
+                        {
+                            HWACCMR0Globals.vmx.fSupported = true;
                             VMXDisable();
+                        }
 
                         /* Restore CR4 again; don't leave the X86_CR4_VMXE flag set if it wasn't so before (some software could incorrectly think it's in VMX mode) */
                         ASMSetCR4(HWACCMR0Globals.vmx.hostCR4);
@@ -245,7 +282,7 @@ HWACCMR0DECL(int) HWACCMR0Init()
 
                         RTR0MemObjFree(pScatchMemObj, false);
                         if (VBOX_FAILURE(HWACCMR0Globals.lLastError))
-                            return HWACCMR0Globals.lLastError ;
+                            return HWACCMR0Globals.lLastError;
                     }
                     else
                     {
@@ -311,6 +348,34 @@ HWACCMR0DECL(int) HWACCMR0Init()
 
 #endif /* !VBOX_WITH_HYBIRD_32BIT_KERNEL */
 
+    if (HWACCMR0Globals.vmx.fSupported)
+    {
+        HWACCMR0Globals.pfnEnterSession     = VMXR0Enter;
+        HWACCMR0Globals.pfnLeaveSession     = VMXR0Leave;
+        HWACCMR0Globals.pfnSaveHostState    = VMXR0SaveHostState;
+        HWACCMR0Globals.pfnLoadGuestState   = VMXR0LoadGuestState;
+        HWACCMR0Globals.pfnRunGuestCode     = VMXR0RunGuestCode;
+        HWACCMR0Globals.pfnEnableCpu        = VMXR0EnableCpu;
+        HWACCMR0Globals.pfnDisableCpu       = VMXR0DisableCpu;
+        HWACCMR0Globals.pfnInitVM           = VMXR0InitVM;
+        HWACCMR0Globals.pfnTermVM           = VMXR0TermVM;
+        HWACCMR0Globals.pfnSetupVM          = VMXR0SetupVM;
+    }
+    else
+    if (HWACCMR0Globals.svm.fSupported)
+    {
+        HWACCMR0Globals.pfnEnterSession     = SVMR0Enter;
+        HWACCMR0Globals.pfnLeaveSession     = SVMR0Leave;
+        HWACCMR0Globals.pfnSaveHostState    = SVMR0SaveHostState;
+        HWACCMR0Globals.pfnLoadGuestState   = SVMR0LoadGuestState;
+        HWACCMR0Globals.pfnRunGuestCode     = SVMR0RunGuestCode;
+        HWACCMR0Globals.pfnEnableCpu        = SVMR0EnableCpu;
+        HWACCMR0Globals.pfnDisableCpu       = SVMR0DisableCpu;
+        HWACCMR0Globals.pfnInitVM           = SVMR0InitVM;
+        HWACCMR0Globals.pfnTermVM           = SVMR0TermVM;
+        HWACCMR0Globals.pfnSetupVM          = SVMR0SetupVM;
+    }
+
     return VINF_SUCCESS;
 }
 
@@ -361,10 +426,10 @@ HWACCMR0DECL(int) HWACCMR0Term()
     for (unsigned i=0;i<RT_ELEMENTS(HWACCMR0Globals.aCpuInfo);i++)
     {
         AssertMsg(VBOX_SUCCESS(aRc[i]), ("HWACCMR0DisableCPU failed for cpu %d with rc=%d\n", i, aRc[i]));
-        if (HWACCMR0Globals.aCpuInfo[i].pMemObj)
+        if (HWACCMR0Globals.aCpuInfo[i].pMemObj != NIL_RTR0MEMOBJ)
         {
             RTR0MemObjFree(HWACCMR0Globals.aCpuInfo[i].pMemObj, false);
-            HWACCMR0Globals.aCpuInfo[i].pMemObj = NULL;
+            HWACCMR0Globals.aCpuInfo[i].pMemObj = NIL_RTR0MEMOBJ;
         }
     }
     return rc;
@@ -475,7 +540,7 @@ HWACCMR0DECL(int) HWACCMR0EnableAllCpus(PVM pVM, HWACCMSTATE enmNewHwAccmState)
 
                 void *pvR0 = RTR0MemObjAddress(HWACCMR0Globals.aCpuInfo[i].pMemObj);
                 Assert(pvR0);
-                memset(pvR0, 0, PAGE_SIZE);
+                ASMMemZeroPage(pvR0);
 
 #ifdef LOG_ENABLED
                 SUPR0Printf("address %x phys %x\n", pvR0, (uint32_t)RTR0MemObjGetPagePhysAddr(HWACCMR0Globals.aCpuInfo[i].pMemObj, 0));
@@ -520,33 +585,27 @@ static DECLCALLBACK(void) HWACCMR0EnableCPU(RTCPUID idCpu, void *pvUser1, void *
     Assert(idCpu == (RTCPUID)RTMpCpuIdToSetIndex(idCpu)); /// @todo fix idCpu == index assumption (rainy day)
     Assert(idCpu < RT_ELEMENTS(HWACCMR0Globals.aCpuInfo));
 
-    pCpu->idCpu = idCpu;
+    pCpu->idCpu     = idCpu;
+
+    /* Make sure we start with a clean TLB. */
+    pCpu->fFlushTLB = true;
 
     /* Should never happen */
     if (!HWACCMR0Globals.aCpuInfo[idCpu].pMemObj)
     {
         AssertFailed();
+        paRc[idCpu] = VERR_INTERNAL_ERROR;
         return;
     }
 
     pvPageCpu    = RTR0MemObjAddress(HWACCMR0Globals.aCpuInfo[idCpu].pMemObj);
     pPageCpuPhys = RTR0MemObjGetPagePhysAddr(HWACCMR0Globals.aCpuInfo[idCpu].pMemObj, 0);
 
-    if (pVM->hwaccm.s.vmx.fSupported)
-    {
-        paRc[idCpu] = VMXR0EnableCpu(pCpu, pVM, pvPageCpu, pPageCpuPhys);
-        AssertRC(paRc[idCpu]);
-        if (VBOX_SUCCESS(paRc[idCpu]))
-            HWACCMR0Globals.aCpuInfo[idCpu].fVMXConfigured = true;
-    }
-    else
-    if (pVM->hwaccm.s.svm.fSupported)
-    {
-        paRc[idCpu] = SVMR0EnableCpu(pCpu, pVM, pvPageCpu, pPageCpuPhys);
-        AssertRC(paRc[idCpu]);
-        if (VBOX_SUCCESS(paRc[idCpu]))
-            HWACCMR0Globals.aCpuInfo[idCpu].fSVMConfigured = true;
-    }
+    paRc[idCpu]  = HWACCMR0Globals.pfnEnableCpu(pCpu, pVM, pvPageCpu, pPageCpuPhys);
+    AssertRC(paRc[idCpu]);
+    if (VBOX_SUCCESS(paRc[idCpu]))
+        HWACCMR0Globals.aCpuInfo[idCpu].fConfigured = true;
+
     return;
 }
 
@@ -573,19 +632,9 @@ static DECLCALLBACK(void) HWACCMR0DisableCPU(RTCPUID idCpu, void *pvUser1, void 
     pvPageCpu    = RTR0MemObjAddress(HWACCMR0Globals.aCpuInfo[idCpu].pMemObj);
     pPageCpuPhys = RTR0MemObjGetPagePhysAddr(HWACCMR0Globals.aCpuInfo[idCpu].pMemObj, 0);
 
-    if (HWACCMR0Globals.aCpuInfo[idCpu].fVMXConfigured)
-    {
-        paRc[idCpu] = VMXR0DisableCpu(&HWACCMR0Globals.aCpuInfo[idCpu], pvPageCpu, pPageCpuPhys);
-        AssertRC(paRc[idCpu]);
-        HWACCMR0Globals.aCpuInfo[idCpu].fVMXConfigured = false;
-    }
-    else
-    if (HWACCMR0Globals.aCpuInfo[idCpu].fSVMConfigured)
-    {
-        paRc[idCpu] = SVMR0DisableCpu(&HWACCMR0Globals.aCpuInfo[idCpu], pvPageCpu, pPageCpuPhys);
-        AssertRC(paRc[idCpu]);
-        HWACCMR0Globals.aCpuInfo[idCpu].fSVMConfigured = false;
-    }
+    paRc[idCpu] = HWACCMR0Globals.pfnDisableCpu(&HWACCMR0Globals.aCpuInfo[idCpu], pvPageCpu, pPageCpuPhys);
+    AssertRC(paRc[idCpu]);
+    HWACCMR0Globals.aCpuInfo[idCpu].fConfigured = false;
     return;
 }
 
@@ -601,8 +650,6 @@ static DECLCALLBACK(void) HWACCMR0DisableCPU(RTCPUID idCpu, void *pvUser1, void 
  */
 HWACCMR0DECL(int) HWACCMR0InitVM(PVM pVM)
 {
-    int rc = VINF_SUCCESS;
-
     AssertReturn(pVM, VERR_INVALID_PARAMETER);
 
 #ifdef LOG_ENABLED
@@ -617,6 +664,7 @@ HWACCMR0DECL(int) HWACCMR0InitVM(PVM pVM)
     pVM->hwaccm.s.vmx.msr.vmx_basic_info    = HWACCMR0Globals.vmx.msr.vmx_basic_info;
     pVM->hwaccm.s.vmx.msr.vmx_pin_ctls      = HWACCMR0Globals.vmx.msr.vmx_pin_ctls;
     pVM->hwaccm.s.vmx.msr.vmx_proc_ctls     = HWACCMR0Globals.vmx.msr.vmx_proc_ctls;
+    pVM->hwaccm.s.vmx.msr.vmx_proc_ctls2    = HWACCMR0Globals.vmx.msr.vmx_proc_ctls2;
     pVM->hwaccm.s.vmx.msr.vmx_exit          = HWACCMR0Globals.vmx.msr.vmx_exit;
     pVM->hwaccm.s.vmx.msr.vmx_entry         = HWACCMR0Globals.vmx.msr.vmx_entry;
     pVM->hwaccm.s.vmx.msr.vmx_misc          = HWACCMR0Globals.vmx.msr.vmx_misc;
@@ -625,6 +673,7 @@ HWACCMR0DECL(int) HWACCMR0InitVM(PVM pVM)
     pVM->hwaccm.s.vmx.msr.vmx_cr4_fixed0    = HWACCMR0Globals.vmx.msr.vmx_cr4_fixed0;
     pVM->hwaccm.s.vmx.msr.vmx_cr4_fixed1    = HWACCMR0Globals.vmx.msr.vmx_cr4_fixed1;
     pVM->hwaccm.s.vmx.msr.vmx_vmcs_enum     = HWACCMR0Globals.vmx.msr.vmx_vmcs_enum;
+    pVM->hwaccm.s.vmx.msr.vmx_eptcaps       = HWACCMR0Globals.vmx.msr.vmx_eptcaps;
     pVM->hwaccm.s.svm.u32Rev                = HWACCMR0Globals.svm.u32Rev;
     pVM->hwaccm.s.svm.u32MaxASID            = HWACCMR0Globals.svm.u32MaxASID;
     pVM->hwaccm.s.svm.u32Features           = HWACCMR0Globals.svm.u32Features;
@@ -633,13 +682,7 @@ HWACCMR0DECL(int) HWACCMR0InitVM(PVM pVM)
     pVM->hwaccm.s.lLastError                = HWACCMR0Globals.lLastError;
 
     /* Init a VT-x or AMD-V VM. */
-    if (pVM->hwaccm.s.vmx.fSupported)
-        rc = VMXR0InitVM(pVM);
-    else
-    if (pVM->hwaccm.s.svm.fSupported)
-        rc = SVMR0InitVM(pVM);
-
-    return rc;
+    return HWACCMR0Globals.pfnInitVM(pVM);
 }
 
 
@@ -651,8 +694,6 @@ HWACCMR0DECL(int) HWACCMR0InitVM(PVM pVM)
  */
 HWACCMR0DECL(int) HWACCMR0TermVM(PVM pVM)
 {
-    int rc = VINF_SUCCESS;
-
     AssertReturn(pVM, VERR_INVALID_PARAMETER);
 
 #ifdef LOG_ENABLED
@@ -660,13 +701,7 @@ HWACCMR0DECL(int) HWACCMR0TermVM(PVM pVM)
 #endif
 
     /* Terminate a VT-x or AMD-V VM. */
-    if (pVM->hwaccm.s.vmx.fSupported)
-        rc = VMXR0TermVM(pVM);
-    else
-    if (pVM->hwaccm.s.svm.fSupported)
-        rc = SVMR0TermVM(pVM);
-
-    return rc;
+    return HWACCMR0Globals.pfnTermVM(pVM);
 }
 
 
@@ -678,8 +713,6 @@ HWACCMR0DECL(int) HWACCMR0TermVM(PVM pVM)
  */
 HWACCMR0DECL(int) HWACCMR0SetupVM(PVM pVM)
 {
-    int rc = VINF_SUCCESS;
-
     AssertReturn(pVM, VERR_INVALID_PARAMETER);
 
 #ifdef LOG_ENABLED
@@ -687,13 +720,7 @@ HWACCMR0DECL(int) HWACCMR0SetupVM(PVM pVM)
 #endif
 
     /* Setup VT-x or AMD-V. */
-    if (pVM->hwaccm.s.vmx.fSupported)
-        rc = VMXR0SetupVM(pVM);
-    else
-    if (pVM->hwaccm.s.svm.fSupported)
-        rc = SVMR0SetupVM(pVM);
-
-    return rc;
+    return HWACCMR0Globals.pfnSetupVM(pVM);
 }
 
 
@@ -719,29 +746,20 @@ HWACCMR0DECL(int) HWACCMR0Enter(PVM pVM)
     /* Always reload the host context and the guest's CR0 register. (!!!!) */
     pVM->hwaccm.s.fContextUseFlags |= HWACCM_CHANGED_GUEST_CR0 | HWACCM_CHANGED_HOST_CONTEXT;
 
-    if (pVM->hwaccm.s.vmx.fSupported)
-    {
-        rc  = VMXR0Enter(pVM);
-        AssertRC(rc);
-        rc |= VMXR0SaveHostState(pVM);
-        AssertRC(rc);
-        rc |= VMXR0LoadGuestState(pVM, pCtx);
-        AssertRC(rc);
-        if (rc != VINF_SUCCESS)
-            return rc;
-    }
+    /* Setup the register and mask according to the current execution mode. */
+    if (pCtx->msrEFER & MSR_K6_EFER_LMA)
+        pVM->hwaccm.s.u64RegisterMask = UINT64_C(0xFFFFFFFFFFFFFFFF);
     else
-    {
-        Assert(pVM->hwaccm.s.svm.fSupported);
-        rc  = SVMR0Enter(pVM, &HWACCMR0Globals.aCpuInfo[idCpu]);
-        AssertRC(rc);
-        rc |= SVMR0LoadGuestState(pVM, pCtx);
-        AssertRC(rc);
-        if (rc != VINF_SUCCESS)
-            return rc;
+        pVM->hwaccm.s.u64RegisterMask = UINT64_C(0xFFFFFFFF);
 
-    }
-    return VINF_SUCCESS;
+    rc  = HWACCMR0Globals.pfnEnterSession(pVM, &HWACCMR0Globals.aCpuInfo[idCpu]);
+    AssertRC(rc);
+    /* We must save the host context here (VT-x) as we might be rescheduled on a different cpu after a long jump back to ring 3. */
+    rc |= HWACCMR0Globals.pfnSaveHostState(pVM);
+    AssertRC(rc);
+    rc |= HWACCMR0Globals.pfnLoadGuestState(pVM, pCtx);
+    AssertRC(rc);
+    return rc;
 }
 
 
@@ -764,26 +782,16 @@ HWACCMR0DECL(int) HWACCMR0Leave(PVM pVM)
     /*        We must restore the host FPU here to make absolutely sure we don't leave the guest FPU state active
      *        or trash somebody else's FPU state.
      */
-
-    /* Restore host FPU and XMM state if necessary. */
+    /* Save the guest FPU and XMM state if necessary. */
     if (CPUMIsGuestFPUStateActive(pVM))
     {
-        Log2(("CPUMRestoreHostFPUState\n"));
-        /** @note CPUMRestoreHostFPUState keeps the current CR0 intact. */
-        CPUMRestoreHostFPUState(pVM);
+        Log2(("CPUMR0SaveGuestFPU\n"));
+        CPUMR0SaveGuestFPU(pVM, pCtx);
 
         pVM->hwaccm.s.fContextUseFlags |= HWACCM_CHANGED_GUEST_CR0;
     }
 
-    if (pVM->hwaccm.s.vmx.fSupported)
-    {
-        return VMXR0Leave(pVM);
-    }
-    else
-    {
-        Assert(pVM->hwaccm.s.svm.fSupported);
-        return SVMR0Leave(pVM);
-    }
+    return HWACCMR0Globals.pfnLeaveSession(pVM);
 }
 
 /**
@@ -798,32 +806,40 @@ HWACCMR0DECL(int) HWACCMR0RunGuestCode(PVM pVM)
     int      rc;
     RTCPUID  idCpu = RTMpCpuId();
 
+    Assert(!VM_FF_ISPENDING(pVM, VM_FF_PGM_SYNC_CR3 | VM_FF_PGM_SYNC_CR3_NON_GLOBAL));
+    Assert(HWACCMR0Globals.aCpuInfo[idCpu].fConfigured);
+
     rc = CPUMQueryGuestCtxPtr(pVM, &pCtx);
     if (VBOX_FAILURE(rc))
         return rc;
 
-    if (pVM->hwaccm.s.vmx.fSupported)
-    {
-        return VMXR0RunGuestCode(pVM, pCtx, &HWACCMR0Globals.aCpuInfo[idCpu]);
-    }
-    else
-    {
-        Assert(pVM->hwaccm.s.svm.fSupported);
-        return SVMR0RunGuestCode(pVM, pCtx, &HWACCMR0Globals.aCpuInfo[idCpu]);
-    }
+    return HWACCMR0Globals.pfnRunGuestCode(pVM, pCtx);
 }
 
+/**
+ * Returns the cpu structure for the current cpu.
+ * Keep in mind that there is no guarantee it will stay the same (long jumps to ring 3!!!).
+ *
+ * @returns cpu structure pointer
+ * @param   pVM         The VM to operate on.
+ */
+HWACCMR0DECL(PHWACCM_CPUINFO) HWACCMR0GetCurrentCpu()
+{
+    RTCPUID  idCpu = RTMpCpuId();
+
+    return &HWACCMR0Globals.aCpuInfo[idCpu];
+}
 
 #ifdef VBOX_STRICT
 #include <iprt/string.h>
 /**
  * Dumps a descriptor.
  *
- * @param   Desc    Descriptor to dump.
+ * @param   pDesc    Descriptor to dump.
  * @param   Sel     Selector number.
  * @param   pszMsg  Message to prepend the log entry with.
  */
-HWACCMR0DECL(void) HWACCMR0DumpDescriptor(PX86DESCHC Desc, RTSEL Sel, const char *pszMsg)
+HWACCMR0DECL(void) HWACCMR0DumpDescriptor(PX86DESCHC pDesc, RTSEL Sel, const char *pszMsg)
 {
     /*
      * Make variable description string.
@@ -894,23 +910,23 @@ HWACCMR0DECL(void) HWACCMR0DumpDescriptor(PX86DESCHC Desc, RTSEL Sel, const char
     #define ADD_STR(psz, pszAdd) do { strcpy(psz, pszAdd); psz += strlen(pszAdd); } while (0)
     char        szMsg[128];
     char       *psz = &szMsg[0];
-    unsigned    i = Desc->Gen.u1DescType << 4 | Desc->Gen.u4Type;
+    unsigned    i = pDesc->Gen.u1DescType << 4 | pDesc->Gen.u4Type;
     memcpy(psz, aTypes[i].psz, aTypes[i].cch);
     psz += aTypes[i].cch;
 
-    if (Desc->Gen.u1Present)
+    if (pDesc->Gen.u1Present)
         ADD_STR(psz, "Present ");
     else
         ADD_STR(psz, "Not-Present ");
 #if HC_ARCH_BITS == 64
-    if (Desc->Gen.u1Long)
+    if (pDesc->Gen.u1Long)
         ADD_STR(psz, "64-bit ");
     else
         ADD_STR(psz, "Comp   ");
 #else
-    if (Desc->Gen.u1Granularity)
+    if (pDesc->Gen.u1Granularity)
         ADD_STR(psz, "Page ");
-    if (Desc->Gen.u1DefBig)
+    if (pDesc->Gen.u1DefBig)
         ADD_STR(psz, "32-bit ");
     else
         ADD_STR(psz, "16-bit ");
@@ -921,29 +937,30 @@ HWACCMR0DECL(void) HWACCMR0DumpDescriptor(PX86DESCHC Desc, RTSEL Sel, const char
     /*
      * Limit and Base and format the output.
      */
-    uint32_t    u32Limit = Desc->Gen.u4LimitHigh << 16 | Desc->Gen.u16LimitLow;
-    if (Desc->Gen.u1Granularity)
+    uint32_t    u32Limit = X86DESC_LIMIT(*pDesc);
+    if (pDesc->Gen.u1Granularity)
         u32Limit = u32Limit << PAGE_SHIFT | PAGE_OFFSET_MASK;
 
 #if HC_ARCH_BITS == 64
-    uint64_t    u32Base =  ((uintptr_t)Desc->Gen.u32BaseHigh3 << 32ULL) | Desc->Gen.u8BaseHigh2 << 24ULL | Desc->Gen.u8BaseHigh1 << 16ULL | Desc->Gen.u16BaseLow;
+    uint64_t    u32Base =  X86DESC64_BASE(*pDesc);
 
     Log(("%s %04x - %VX64 %VX64 - base=%VX64 limit=%08x dpl=%d %s\n", pszMsg,
-         Sel, Desc->au64[0], Desc->au64[1], u32Base, u32Limit, Desc->Gen.u2Dpl, szMsg));
+         Sel, pDesc->au64[0], pDesc->au64[1], u32Base, u32Limit, pDesc->Gen.u2Dpl, szMsg));
 #else
-    uint32_t    u32Base =  Desc->Gen.u8BaseHigh2 << 24 | Desc->Gen.u8BaseHigh1 << 16 | Desc->Gen.u16BaseLow;
+    uint32_t    u32Base =  X86DESC_BASE(*pDesc);
 
     Log(("%s %04x - %08x %08x - base=%08x limit=%08x dpl=%d %s\n", pszMsg,
-         Sel, Desc->au32[0], Desc->au32[1], u32Base, u32Limit, Desc->Gen.u2Dpl, szMsg));
+         Sel, pDesc->au32[0], pDesc->au32[1], u32Base, u32Limit, pDesc->Gen.u2Dpl, szMsg));
 #endif
 }
 
 /**
  * Formats a full register dump.
  *
+ * @param   pVM         The VM to operate on.
  * @param   pCtx        The context to format.
  */
-HWACCMR0DECL(void) HWACCMDumpRegs(PCPUMCTX pCtx)
+HWACCMR0DECL(void) HWACCMDumpRegs(PVM pVM, PCPUMCTX pCtx)
 {
     /*
      * Format the flags.
@@ -988,35 +1005,92 @@ HWACCMR0DECL(void) HWACCMDumpRegs(PCPUMCTX pCtx)
     /*
      * Format the registers.
      */
-    Log(("eax=%08x ebx=%08x ecx=%08x edx=%08x esi=%08x edi=%08x\n"
-         "eip=%08x esp=%08x ebp=%08x iopl=%d %*s\n"
-         "cs={%04x base=%08x limit=%08x flags=%08x} dr0=%08RX64 dr1=%08RX64\n"
-         "ds={%04x base=%08x limit=%08x flags=%08x} dr2=%08RX64 dr3=%08RX64\n"
-         "es={%04x base=%08x limit=%08x flags=%08x} dr4=%08RX64 dr5=%08RX64\n"
-         "fs={%04x base=%08x limit=%08x flags=%08x} dr6=%08RX64 dr7=%08RX64\n"
-         ,
-         pCtx->eax, pCtx->ebx, pCtx->ecx, pCtx->edx, pCtx->esi, pCtx->edi,
-         pCtx->eip, pCtx->esp, pCtx->ebp, X86_EFL_GET_IOPL(efl), 31, szEFlags,
-         (RTSEL)pCtx->cs, pCtx->csHid.u32Base, pCtx->csHid.u32Limit, pCtx->csHid.Attr.u, pCtx->dr0,  pCtx->dr1,
-         (RTSEL)pCtx->ds, pCtx->dsHid.u32Base, pCtx->dsHid.u32Limit, pCtx->dsHid.Attr.u, pCtx->dr2,  pCtx->dr3,
-         (RTSEL)pCtx->es, pCtx->esHid.u32Base, pCtx->esHid.u32Limit, pCtx->esHid.Attr.u, pCtx->dr4,  pCtx->dr5,
-         (RTSEL)pCtx->fs, pCtx->fsHid.u32Base, pCtx->fsHid.u32Limit, pCtx->fsHid.Attr.u, pCtx->dr6,  pCtx->dr7));
+        Log(("eax=%08x ebx=%08x ecx=%08x edx=%08x esi=%08x edi=%08x\n"
+            "eip=%08x esp=%08x ebp=%08x iopl=%d %*s\n"
+            "cs={%04x base=%08X limit=%08x flags=%08x} dr0=%08RX64 dr1=%08RX64\n"
+            "ds={%04x base=%08X limit=%08x flags=%08x} dr2=%08RX64 dr3=%08RX64\n"
+            "es={%04x base=%08X limit=%08x flags=%08x} dr4=%08RX64 dr5=%08RX64\n"
+            "fs={%04x base=%08X limit=%08x flags=%08x} dr6=%08RX64 dr7=%08RX64\n"
+            "gs={%04x base=%08X limit=%08x flags=%08x} cr0=%08RX64 cr2=%08RX64\n"
+            "ss={%04x base=%08X limit=%08x flags=%08x} cr3=%08RX64 cr4=%08RX64\n"
+            "gdtr=%08X:%04x  idtr=%08X:%04x  eflags=%08x\n"
+            "ldtr={%04x base=%08RX64 limit=%08x flags=%08x}\n"
+            "tr  ={%04x base=%08RX64 limit=%08x flags=%08x}\n"
+            "SysEnter={cs=%04llx eip=%08llx esp=%08llx}\n"
+            ,
+            pCtx->eax, pCtx->ebx, pCtx->ecx, pCtx->edx, pCtx->esi, pCtx->edi,
+            pCtx->eip, pCtx->esp, pCtx->ebp, X86_EFL_GET_IOPL(efl), 31, szEFlags,
+            (RTSEL)pCtx->cs, pCtx->csHid.u32Base, pCtx->csHid.u32Limit, pCtx->csHid.Attr.u, pCtx->dr0,  pCtx->dr1,
+            (RTSEL)pCtx->ds, pCtx->dsHid.u32Base, pCtx->dsHid.u32Limit, pCtx->dsHid.Attr.u, pCtx->dr2,  pCtx->dr3,
+            (RTSEL)pCtx->es, pCtx->esHid.u32Base, pCtx->esHid.u32Limit, pCtx->esHid.Attr.u, pCtx->dr4,  pCtx->dr5,
+            (RTSEL)pCtx->fs, pCtx->fsHid.u32Base, pCtx->fsHid.u32Limit, pCtx->fsHid.Attr.u, pCtx->dr6,  pCtx->dr7,
+            (RTSEL)pCtx->gs, pCtx->gsHid.u32Base, pCtx->gsHid.u32Limit, pCtx->gsHid.Attr.u, pCtx->cr0,  pCtx->cr2,
+            (RTSEL)pCtx->ss, pCtx->ssHid.u32Base, pCtx->ssHid.u32Limit, pCtx->ssHid.Attr.u, pCtx->cr3,  pCtx->cr4,
+            pCtx->gdtr.pGdt, pCtx->gdtr.cbGdt, pCtx->idtr.pIdt, pCtx->idtr.cbIdt, efl,
+            (RTSEL)pCtx->ldtr, pCtx->ldtrHid.u32Base, pCtx->ldtrHid.u32Limit, pCtx->ldtrHid.Attr.u,
+            (RTSEL)pCtx->tr, pCtx->trHid.u32Base, pCtx->trHid.u32Limit, pCtx->trHid.Attr.u,
+            pCtx->SysEnter.cs, pCtx->SysEnter.eip, pCtx->SysEnter.esp));
 
-    Log(("gs={%04x base=%08x limit=%08x flags=%08x} cr0=%08RX64 cr2=%08RX64\n"
-         "ss={%04x base=%08x limit=%08x flags=%08x} cr3=%08RX64 cr4=%08RX64\n"
-         "gdtr=%08x:%04x  idtr=%08x:%04x  eflags=%08x\n"
-         "ldtr={%04x base=%08x limit=%08x flags=%08x}\n"
-         "tr  ={%04x base=%08x limit=%08x flags=%08x}\n"
-         "SysEnter={cs=%04llx eip=%08llx esp=%08llx}\n"
-         "FCW=%04x FSW=%04x FTW=%04x\n",
-         (RTSEL)pCtx->gs, pCtx->gsHid.u32Base, pCtx->gsHid.u32Limit, pCtx->gsHid.Attr.u, pCtx->cr0,  pCtx->cr2,
-         (RTSEL)pCtx->ss, pCtx->ssHid.u32Base, pCtx->ssHid.u32Limit, pCtx->ssHid.Attr.u, pCtx->cr3,  pCtx->cr4,
-         pCtx->gdtr.pGdt, pCtx->gdtr.cbGdt, pCtx->idtr.pIdt, pCtx->idtr.cbIdt, efl,
-         (RTSEL)pCtx->ldtr, pCtx->ldtrHid.u32Base, pCtx->ldtrHid.u32Limit, pCtx->ldtrHid.Attr.u,
-         (RTSEL)pCtx->tr, pCtx->trHid.u32Base, pCtx->trHid.u32Limit, pCtx->trHid.Attr.u,
-         pCtx->SysEnter.cs, pCtx->SysEnter.eip, pCtx->SysEnter.esp,
-         pCtx->fpu.FCW, pCtx->fpu.FSW, pCtx->fpu.FTW));
-
+    Log(("FPU:\n"
+        "FCW=%04x FSW=%04x FTW=%02x\n"
+        "res1=%02x FOP=%04x FPUIP=%08x CS=%04x Rsvrd1=%04x\n"
+        "FPUDP=%04x DS=%04x Rsvrd2=%04x MXCSR=%08x MXCSR_MASK=%08x\n"
+        ,
+        pCtx->fpu.FCW, pCtx->fpu.FSW, pCtx->fpu.FTW,
+        pCtx->fpu.huh1, pCtx->fpu.FOP, pCtx->fpu.FPUIP, pCtx->fpu.CS, pCtx->fpu.Rsvrd1,
+        pCtx->fpu.FPUDP, pCtx->fpu.DS, pCtx->fpu.Rsrvd2,
+        pCtx->fpu.MXCSR, pCtx->fpu.MXCSR_MASK));
 
 }
 #endif
+
+/* Dummy callback handlers. */
+HWACCMR0DECL(int) HWACCMR0DummyEnter(PVM pVM, PHWACCM_CPUINFO pCpu)
+{
+    return VINF_SUCCESS;
+}
+
+HWACCMR0DECL(int) HWACCMR0DummyLeave(PVM pVM)
+{
+    return VINF_SUCCESS;
+}
+
+HWACCMR0DECL(int) HWACCMR0DummyEnableCpu(PHWACCM_CPUINFO pCpu, PVM pVM, void *pvPageCpu, RTHCPHYS pPageCpuPhys)
+{
+    return VINF_SUCCESS;
+}
+
+HWACCMR0DECL(int) HWACCMR0DummyDisableCpu(PHWACCM_CPUINFO pCpu, void *pvPageCpu, RTHCPHYS pPageCpuPhys)
+{
+    return VINF_SUCCESS;
+}
+
+HWACCMR0DECL(int) HWACCMR0DummyInitVM(PVM pVM)
+{
+    return VINF_SUCCESS;
+}
+
+HWACCMR0DECL(int) HWACCMR0DummyTermVM(PVM pVM)
+{
+    return VINF_SUCCESS;
+}
+
+HWACCMR0DECL(int) HWACCMR0DummySetupVM(PVM pVM)
+{
+    return VINF_SUCCESS;
+}
+
+HWACCMR0DECL(int) HWACCMR0DummyRunGuestCode(PVM pVM, CPUMCTX *pCtx)
+{
+    return VINF_SUCCESS;
+}
+
+HWACCMR0DECL(int) HWACCMR0DummySaveHostState(PVM pVM)
+{
+    return VINF_SUCCESS;
+}
+
+HWACCMR0DECL(int) HWACCMR0DummyLoadGuestState(PVM pVM, CPUMCTX *pCtx)
+{
+    return VINF_SUCCESS;
+}

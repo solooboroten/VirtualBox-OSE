@@ -33,6 +33,7 @@
 #include <VBox/cdefs.h>
 #include <VBox/types.h>
 #include <VBox/x86.h>
+#include <VBox/dis.h>
 
 
 __BEGIN_DECLS
@@ -229,6 +230,17 @@ SELMDECL(int) SELMValidateAndConvertCSAddr(PVM pVM, X86EFLAGS eflags, RTSEL SelC
  * @param   pcBits       Where to store the 64-bit/32-bit/16-bit indicator.
  */
 SELMDECL(int) SELMValidateAndConvertCSAddrGCTrap(PVM pVM, X86EFLAGS eflags, RTSEL SelCPL, RTSEL SelCS, RTGCPTR Addr, PRTGCPTR ppvFlat, uint32_t *pcBits);
+
+/**
+ * Return the cpu mode corresponding to the (CS) selector
+ *
+ * @returns DISCPUMODE according to the selector type (16, 32 or 64 bits)
+ * @param   pVM        VM Handle.
+ * @param   eflags     Current eflags register
+ * @param   Sel        The selector.
+ * @param   pHiddenSel The hidden selector register.
+ */
+SELMDECL(DISCPUMODE) SELMGetCpuModeFromSelector(PVM pVM, X86EFLAGS eflags, RTSEL Sel, CPUMSELREGHID *pHiddenSel);
 
 /**
  * Checks if a selector is 32-bit or 16-bit.

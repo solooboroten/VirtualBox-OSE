@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-os2.cpp 29880 2008-04-18 17:52:25Z umoeller $ */
+/* $Id: SUPDrv-os2.cpp 33451 2008-07-17 12:24:33Z sandervl $ */
 /** @file
  * VBoxDrv - OS/2 specifics.
  */
@@ -259,7 +259,7 @@ DECLASM(int) VBoxDrvIOCtlFast(uint16_t sfn, uint8_t iFunction, int32_t *prc)
     /*
      * Dispatch the fast IOCtl.
      */
-    *prc = supdrvIOCtlFast(iFunction, &g_DevExt, pSession);
+    supdrvIOCtlFast(iFunction, &g_DevExt, pSession);
     return 0;
 }
 

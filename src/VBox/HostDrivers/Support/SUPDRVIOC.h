@@ -1,4 +1,4 @@
-/* $Revision: 30925 $ */
+/* $Revision: 33468 $ */
 /** @file
  * VirtualBox Support Driver - IOCtl definitions.
  */
@@ -181,7 +181,8 @@ typedef SUPREQHDR *PSUPREQHDR;
 /** Current interface version.
  * The upper 16-bit is the major version, the the lower the minor version.
  * When incompatible changes are made, the upper major number has to be changed. */
-#define SUPDRVIOC_VERSION                               0x00070002
+#define SUPDRVIOC_VERSION                               0x00080000
+#define SUPDRV_IOC_VERSION                              SUPDRVIOC_VERSION
 
 /** SUP_IOCTL_COOKIE. */
 typedef struct SUPCOOKIE

@@ -1,4 +1,4 @@
-/* $Id: the-linux-kernel.h 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: the-linux-kernel.h 33794 2008-07-29 15:25:05Z klaus $ */
 /** @file
  * IPRT - Include all necessary headers for the Linux kernel.
  */
@@ -65,7 +65,11 @@
 #include <linux/string.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
-#include <asm/semaphore.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
+# include <linux/semaphore.h>
+#else /* older kernels */
+# include <asm/semaphore.h>
+#endif /* older kernels */
 #include <linux/module.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
 # include <linux/moduleparam.h>

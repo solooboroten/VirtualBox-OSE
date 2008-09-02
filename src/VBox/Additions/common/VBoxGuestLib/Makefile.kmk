@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31158 2008-05-23 06:48:50Z frank $
+# $Id: Makefile.kmk 33126 2008-07-10 08:03:19Z mt221433 $
 ## @file
 # Sub-Makefile for the common guest addition code library.
 #

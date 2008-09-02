@@ -1,4 +1,4 @@
-/* $Id: EMAll.cpp 31421 2008-05-30 07:51:17Z sandervl $ */
+/* $Id: EMAll.cpp 33706 2008-07-25 09:58:04Z sandervl $ */
 /** @file
  * EM - Execution Monitor(/Manager) - All contexts
  */
@@ -2184,7 +2184,7 @@ EMDECL(int) EMInterpretWrmsr(PVM pVM, PCPUMCTXCORE pRegFrame)
         break;
 
     case MSR_IA32_SYSENTER_CS:
-        pCtx->SysEnter.cs = val;
+        pCtx->SysEnter.cs = val & 0xffff; /* 16 bits selector */
         break;
 
     case MSR_IA32_SYSENTER_EIP:

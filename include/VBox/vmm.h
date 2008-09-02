@@ -442,6 +442,8 @@ typedef enum VMMR0OPERATION
 
     /** Official call we use for testing Ring-0 APIs. */
     VMMR0_DO_TESTS,
+    /** Official slow iocl NOP that we use for profiling. */
+    VMMR0_DO_SLOW_NOP,
 
     /** The usual 32-bit type blow up. */
     VMMR0_DO_32BIT_HACK = 0x7fffffff
@@ -490,7 +492,7 @@ VMMR0DECL(int) VMMR0EntryInt(PVM pVM, VMMR0OPERATION enmOperation, void *pvArg);
  * @param   enmOperation    Which operation to execute.
  * @remarks Assume called with interrupts _enabled_.
  */
-VMMR0DECL(int) VMMR0EntryFast(PVM pVM, VMMR0OPERATION enmOperation);
+VMMR0DECL(void) VMMR0EntryFast(PVM pVM, VMMR0OPERATION enmOperation);
 
 /**
  * The Ring 0 entry point, called by the support library (SUP).

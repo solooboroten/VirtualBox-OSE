@@ -1,18 +1,18 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
    Protocol services - Multipoint Communications Service
-   Copyright (C) Matthew Chapman 1999-2005
-   
+   Copyright (C) Matthew Chapman 1999-2007
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
@@ -25,7 +25,7 @@ extern VCHANNEL g_channels[];
 extern unsigned int g_num_channels;
 
 /* Parse an ASN.1 BER header */
-static BOOL
+static RD_BOOL
 ber_parse_header(STREAM s, int tagval, int *length)
 {
 	int tag, len;
@@ -36,7 +36,8 @@ ber_parse_header(STREAM s, int tagval, int *length)
 	}
 	else
 	{
-	in_uint8(s, tag)}
+		in_uint8(s, tag);
+	}
 
 	if (tag != tagval)
 	{
@@ -105,7 +106,7 @@ mcs_out_domain_params(STREAM s, int max_channels, int max_users, int max_tokens,
 }
 
 /* Parse a DOMAIN_PARAMS structure (ASN.1 BER) */
-static BOOL
+static RD_BOOL
 mcs_parse_domain_params(STREAM s)
 {
 	int length;
@@ -147,7 +148,7 @@ mcs_send_connect_initial(STREAM mcs_data)
 }
 
 /* Expect a MCS_CONNECT_RESPONSE message (ASN.1 BER) */
-static BOOL
+static RD_BOOL
 mcs_recv_connect_response(STREAM mcs_data)
 {
 	uint8 result;
@@ -221,7 +222,7 @@ mcs_send_aurq(void)
 }
 
 /* Expect a AUcf message (ASN.1 PER) */
-static BOOL
+static RD_BOOL
 mcs_recv_aucf(uint16 * mcs_userid)
 {
 	uint8 opcode, result;
@@ -270,7 +271,7 @@ mcs_send_cjrq(uint16 chanid)
 }
 
 /* Expect a CJcf message (ASN.1 PER) */
-static BOOL
+static RD_BOOL
 mcs_recv_cjcf(void)
 {
 	uint8 opcode, result;
@@ -372,7 +373,7 @@ mcs_recv(uint16 * channel, uint8 * rdpver)
 }
 
 /* Establish a connection up to the MCS layer */
-BOOL
+RD_BOOL
 mcs_connect(char *server, STREAM mcs_data, char *username)
 {
 	unsigned int i;
@@ -413,7 +414,7 @@ mcs_connect(char *server, STREAM mcs_data, char *username)
 }
 
 /* Establish a connection up to the MCS layer */
-BOOL
+RD_BOOL
 mcs_reconnect(char *server, STREAM mcs_data)
 {
 	unsigned int i;

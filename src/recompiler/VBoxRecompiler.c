@@ -1,4 +1,4 @@
-/* $Id: VBoxRecompiler.c 31273 2008-05-27 08:06:46Z sandervl $ */
+/* $Id: VBoxRecompiler.c 33663 2008-07-24 13:40:25Z sandervl $ */
 /** @file
  * VBox Recompiler - QEMU.
  */
@@ -727,6 +727,12 @@ REMR3DECL(int) REMR3EmulateInstruction(PVM pVM)
 {
     Log2(("REMR3EmulateInstruction: (cs:eip=%04x:%08x)\n", CPUMGetGuestCS(pVM), CPUMGetGuestEIP(pVM)));
 
+    /* Make sure this flag is set; we might never execute remR3CanExecuteRaw in the AMD-V case.
+     * CPU_RAW_HWACC makes sure we never execute interrupt handlers in the recompiler.
+     */
+    if (HWACCMIsEnabled(pVM))
+        pVM->rem.s.Env.state |= CPU_RAW_HWACC;
+
     /*
      * Sync the state and enable single instruction / single stepping.
      */
@@ -1125,6 +1131,8 @@ bool remR3CanExecuteRaw(CPUState *env, RTGCPTR eip, unsigned fFlags, int *piExce
         Ctx.ssHid.u32Limit = env->segs[R_SS].limit;
         Ctx.ssHid.Attr.u   = (env->segs[R_SS].flags >> 8) & 0xF0FF;
 
+        Ctx.msrEFER        = env->efer;
+
         /* Hardware accelerated raw-mode:
          *
          * Typically only 32-bits protected mode, with paging enabled, code is allowed here.
@@ -1513,7 +1521,7 @@ int remR3NotifyTrap(CPUState *env, uint32_t uTrap, uint32_t uErrorCode, uint32_t
         STAM_COUNTER_INC(&s_aStatTrap[uTrap]);
     }
 #endif
-    Log(("remR3NotifyTrap: uTrap=%x error=%x next_eip=%VGv eip=%VGv cr2=%08x\n", uTrap, uErrorCode, pvNextEIP, env->eip, env->cr[2]));
+    RTLogPrintf("remR3NotifyTrap: uTrap=%x error=%x next_eip=%VGv eip=%VGv cr2=%08x\n", uTrap, uErrorCode, pvNextEIP, env->eip, env->cr[2]);
     if(   uTrap < 0x20
        && (env->cr[0] & X86_CR0_PE)
        && !(env->eflags & X86_EFL_VM))
