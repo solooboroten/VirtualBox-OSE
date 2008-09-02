@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31464 2008-05-30 21:54:16Z bird $
+# $Id: Makefile.kmk 34773 2008-08-14 15:27:21Z klaus $
 ## @file
 # Top level makefile.
 #
@@ -543,6 +543,7 @@ additions-build: \
 VBOX_ADDITIONS_BUILD.x86 = VBOX_ONLY_ADDITIONS=1 VBOX_WITHOUT_ADDITIONS_ISO=1 \
 	KBUILD_TYPE=$(KBUILD_TYPE) BUILD_TYPE=$(KBUILD_TYPE) \
 	KBUILD_TARGET_ARCH=x86 BUILD_TARGET_ARCH=x86 \
+	VBOX_SVN_REV=$(VBOX_SVN_REV) \
 	all packing
 
 additions-build-win.x86:

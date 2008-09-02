@@ -56,15 +56,17 @@ using namespace com;
 #include <VBox/param.h>
 #include <VBox/log.h>
 #include <VBox/version.h>
-#include <iprt/path.h>
-#include <iprt/string.h>
-#include <iprt/runtime.h>
+
+#include <iprt/alloca.h>
 #include <iprt/assert.h>
+#include <iprt/env.h>
+#include <iprt/ldr.h>
+#include <iprt/path.h>
+#include <iprt/runtime.h>
 #include <iprt/semaphore.h>
+#include <iprt/string.h>
 #include <iprt/stream.h>
 #include <iprt/uuid.h>
-#include <iprt/ldr.h>
-#include <iprt/alloca.h>
 
 #include <signal.h>
 
@@ -148,6 +150,7 @@ static Uint32  StartupTimer(Uint32 interval, void *param);
 static Uint32  ResizeTimer(Uint32 interval, void *param);
 static Uint32  QuitTimer(Uint32 interval, void *param);
 static int     WaitSDLEvent(SDL_Event *event);
+static void    SetFullscreen(bool enable);
 
 
 /*******************************************************************************
@@ -167,6 +170,8 @@ static const char *gHostKeyDisabledCombinations = "";
 static const char *gpszPidFile;
 static BOOL gfGrabbed = FALSE;
 static BOOL gfGrabOnMouseClick = TRUE;
+static BOOL gfFullscreenResize = FALSE;
+static BOOL gfIgnoreNextResize = FALSE;
 static BOOL gfAllowFullscreenToggle = TRUE;
 static BOOL gfAbsoluteMouseHost = FALSE;
 static BOOL gfAbsoluteMouseGuest = FALSE;
@@ -178,6 +183,8 @@ static BOOL gfGuestScrollLockPressed = FALSE;
 static BOOL gfACPITerm = FALSE;
 static int  gcGuestNumLockAdaptions = 2;
 static int  gcGuestCapsLockAdaptions = 2;
+static uint32_t gmGuestNormalXRes;
+static uint32_t gmGuestNormalYRes;
 
 /** modifier keypress status (scancode as index) */
 static uint8_t gaModifiersState[256];
@@ -644,6 +651,7 @@ static void show_usage()
              "  -m <size>                Set temporary memory size in megabytes\n"
              "  -vram <size>             Set temporary size of video memory in megabytes\n"
              "  -fullscreen              Start VM in fullscreen mode\n"
+             "  -fullscreenresize        Resize the guest on fullscreen\n"
              "  -fixedmode <w> <h> <bpp> Use a fixed SDL video mode with given width, height and bits per pixel\n"
              "  -nofstoggle              Forbid switching to/from fullscreen mode\n"
              "  -noresize                Make the SDL frame non resizable\n"
@@ -957,7 +965,7 @@ int main(int argc, char *argv[])
      * to ensure a defined environment and work around the missing KeyPress/KeyRelease
      * events in ProcessKeys().
      */
-    setenv("SDL_DISABLE_LOCK_KEYS", "1", 1);
+    RTEnvSet("SDL_DISABLE_LOCK_KEYS", "1");
 #endif
 
     /*
@@ -1281,6 +1289,13 @@ int main(int argc, char *argv[])
         else if (strcmp(argv[curArg], "-fullscreen") == 0)
         {
             fFullscreen = true;
+        }
+        else if (strcmp(argv[curArg], "-fullscreenresize") == 0)
+        {
+            gfFullscreenResize = true;
+#ifdef VBOXSDL_WITH_X11
+            RTEnvSet("SDL_VIDEO_X11_VIDMODE", "0");
+#endif
         }
         else if (strcmp(argv[curArg], "-fixedmode") == 0)
         {
@@ -1926,7 +1941,7 @@ int main(int argc, char *argv[])
         goto leave;
     gpFrameBuffer->AddRef();
     if (fFullscreen)
-        gpFrameBuffer->setFullscreen(true);
+        SetFullscreen(true);
 
 #ifdef VBOX_SECURELABEL
     if (fSecureLabel)
@@ -2606,6 +2621,11 @@ int main(int argc, char *argv[])
             {
                 if (gDisplay)
                 {
+                    if (gfIgnoreNextResize)
+                    {
+                        gfIgnoreNextResize = FALSE;
+                        break;
+                    }
                     uResizeWidth  = event.resize.w;
 #ifdef VBOX_SECURELABEL
                     if (fSecureLabel)
@@ -4575,7 +4595,7 @@ static int HandleHostKey(const SDL_KeyboardEvent *pEv)
             gMachine->COMGETTER(State)(&machineState);
             if (machineState == MachineState_Running)
                 gConsole->Pause();
-            gpFrameBuffer->setFullscreen(!gpFrameBuffer->getFullscreen());
+            SetFullscreen(!gpFrameBuffer->getFullscreen());
             if (machineState == MachineState_Running)
                 gConsole->Resume();
 
@@ -4867,3 +4887,47 @@ void PushNotifyUpdateEvent(SDL_Event *event)
         RTThreadYield();
 }
 #endif /* VBOXSDL_WITH_X11 */
+
+/**
+ *
+ */
+static void SetFullscreen(bool enable)
+{
+    if (enable == gpFrameBuffer->getFullscreen())
+        return;
+
+    if (!gfFullscreenResize)
+    {
+        /*
+         * The old/default way: SDL will resize the host to fit the guest screen resolution.
+         */
+        gpFrameBuffer->setFullscreen(enable);
+    }
+    else
+    {
+        /*
+         * The alternate way: Switch to fullscreen with the host screen resolution and adapt
+         * the guest screen resolution to the host window geometry.
+         */
+        uint32_t NewWidth = 0, NewHeight = 0;
+        if (enable)
+        {
+            /* switch to fullscreen */
+            gmGuestNormalXRes = gpFrameBuffer->getGuestXRes();
+            gmGuestNormalYRes = gpFrameBuffer->getGuestYRes();
+            gpFrameBuffer->getFullscreenGeometry(&NewWidth, &NewHeight);
+        }
+        else
+        {
+            /* switch back to saved geometry */
+            NewWidth  = gmGuestNormalXRes;
+            NewHeight = gmGuestNormalYRes;
+        }
+        if (NewWidth != 0 && NewHeight != 0)
+        {
+            gpFrameBuffer->setFullscreen(enable);
+            gfIgnoreNextResize = TRUE;
+            gDisplay->SetVideoModeHint(NewWidth, NewHeight, 0, 0);
+        }
+    }
+}

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 34008 2008-08-04 09:22:45Z klaus $
 ## @file
 # Sub-Makefile for the Shared Folders Host Service.
 #
@@ -36,6 +36,10 @@ VBoxSharedFolders_DEFS      = VBOX_HGCM RTSHFL
 VBoxSharedFolders_INCS.win  = \
 	$(PATH_TOOL_$(VBOX_VCC_TOOL)_ATLMFC_INC) \
 	$(VBOX_PATH_SDK)
+
+	
+VBoxSharedFolders_LDFLAGS.darwin = \
+	-framework Carbon
 
 VBoxSharedFolders_SOURCES = \
 	service.cpp \

@@ -2815,12 +2815,19 @@ QIconSet VBoxGlobal::iconSet (const char *aNormal,
 
     iconSet.setPixmap (QPixmap::fromMimeSource (aNormal),
                        QIconSet::Automatic, QIconSet::Normal);
+
+    /* Our Qt3 build uses an old libpng which does not display the disabled
+     * icons correctly. Use the internal Qt algorith, looks a little bit
+     * worse but still acceptable. */
+#if !defined(Q_OS_SOLARIS)
     if (aDisabled)
         iconSet.setPixmap (QPixmap::fromMimeSource (aDisabled),
                            QIconSet::Automatic, QIconSet::Disabled);
     if (aActive)
         iconSet.setPixmap (QPixmap::fromMimeSource (aActive),
                            QIconSet::Automatic, QIconSet::Active);
+#endif
+
     return iconSet;
 }
 
@@ -2839,6 +2846,11 @@ iconSetEx (const char *aNormal, const char *aSmallNormal,
                        QIconSet::Large, QIconSet::Normal);
     iconSet.setPixmap (QPixmap::fromMimeSource (aSmallNormal),
                        QIconSet::Small, QIconSet::Normal);
+
+    /* Our Qt3 build uses an old libpng which does not display the disabled
+     * icons correctly. Use the internal Qt algorith, looks a little bit
+     * worse but still acceptable. */
+#if !defined(Q_OS_SOLARIS)
     if (aSmallDisabled)
     {
         iconSet.setPixmap (QPixmap::fromMimeSource (aDisabled),
@@ -2853,6 +2865,7 @@ iconSetEx (const char *aNormal, const char *aSmallNormal,
         iconSet.setPixmap (QPixmap::fromMimeSource (aSmallActive),
                            QIconSet::Small, QIconSet::Active);
     }
+#endif
 
     return iconSet;
 }

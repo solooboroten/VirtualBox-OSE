@@ -1328,7 +1328,11 @@ void  VBOXCALL  supdrvOSGipResume(PSUPDRVDEVEXT pDevExt)
     else
     {
         vbox_ktimer_start(&g_GipTimer);
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
+        smp_call_function(VBoxDrvLinuxGipResumePerCpu, pDevExt, 1 /* wait */);
+# else
         smp_call_function(VBoxDrvLinuxGipResumePerCpu, pDevExt, 0 /* retry */, 1 /* wait */);
+# endif
     }
 #endif
 }

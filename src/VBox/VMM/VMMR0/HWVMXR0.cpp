@@ -1,4 +1,4 @@
-/* $Id: HWVMXR0.cpp 33663 2008-07-24 13:40:25Z sandervl $ */
+/* $Id: HWVMXR0.cpp 34953 2008-08-19 08:20:28Z sandervl $ */
 /** @file
  * HWACCM VMX - Host Context Ring 0.
  */
@@ -1480,6 +1480,16 @@ ResumeExecution:
     VMX_READ_SELREG(FS, fs);
     VMX_READ_SELREG(GS, gs);
 
+    /*
+     * System MSRs
+     */
+    VMXReadVMCS(VMX_VMCS_GUEST_SYSENTER_CS,      &val);
+    pCtx->SysEnter.cs       = val;
+    VMXReadVMCS(VMX_VMCS_GUEST_SYSENTER_EIP,     &val);
+    pCtx->SysEnter.eip      = val;
+    VMXReadVMCS(VMX_VMCS_GUEST_SYSENTER_ESP,     &val);
+    pCtx->SysEnter.esp      = val;
+
     /** @note NOW IT'S SAFE FOR LOGGING! */
     Log2(("Raw exit reason %08x\n", exitReason));
 
@@ -2174,16 +2184,6 @@ end:
         pCtx->idtr.cbIdt        = val;
         VMXReadVMCS(VMX_VMCS_GUEST_IDTR_BASE,        &val);
         pCtx->idtr.pIdt         = val;
-
-        /*
-         * System MSRs
-         */
-        VMXReadVMCS(VMX_VMCS_GUEST_SYSENTER_CS,      &val);
-        pCtx->SysEnter.cs       = val;
-        VMXReadVMCS(VMX_VMCS_GUEST_SYSENTER_EIP,     &val);
-        pCtx->SysEnter.eip      = val;
-        VMXReadVMCS(VMX_VMCS_GUEST_SYSENTER_ESP,     &val);
-        pCtx->SysEnter.esp      = val;
     }
 
     /* Signal changes for the recompiler. */

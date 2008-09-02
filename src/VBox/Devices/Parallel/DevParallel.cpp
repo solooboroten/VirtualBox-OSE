@@ -1,4 +1,4 @@
-/* $Id: DevParallel.cpp 30712 2008-05-09 19:38:06Z aeichner $ */
+/* $Id: DevParallel.cpp 34358 2008-08-08 17:25:52Z bird $ */
 /** @file
  * VirtualBox Parallel Device Emulation.
  *
@@ -703,6 +703,10 @@ static DECLCALLBACK(int) parallelConstruct(PPDMDEVINS pDevIns,
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to get the \"R0Enabled\" value"));
 
+    /* Alignment is busted, forcibly disable GC and R0 (fixed on the trunk) */
+    pData->fR0Enabled = false;
+    pData->fGCEnabled = false;
+
     /* IBase */
     pData->IBase.pfnQueryInterface = parallelQueryInterface;
 
@@ -740,7 +744,7 @@ static DECLCALLBACK(int) parallelConstruct(PPDMDEVINS pDevIns,
 
     pData->irq = irq_lvl;
     pData->base = io_base;
-    
+
     /* Init parallel state */
     pData->reg_data = 0;
     pData->reg_ecp_ecr = LPT_ECP_ECR_CHIPMODE_COMPAT | LPT_ECP_ECR_FIFO_EMPTY;
@@ -797,7 +801,7 @@ static DECLCALLBACK(int) parallelConstruct(PPDMDEVINS pDevIns,
     rc = PDMDevHlpDriverAttach(pDevIns, 0, &pData->IBase, &pData->pDrvBase, "Parallel Host");
     if (VBOX_SUCCESS(rc))
     {
-        pData->pDrvHostParallelConnector = (PDMIHOSTPARALLELCONNECTOR *)pData->pDrvBase->pfnQueryInterface(pData->pDrvBase, 
+        pData->pDrvHostParallelConnector = (PDMIHOSTPARALLELCONNECTOR *)pData->pDrvBase->pfnQueryInterface(pData->pDrvBase,
                                                                                                            PDMINTERFACE_HOST_PARALLEL_CONNECTOR);
         if (!pData->pDrvHostParallelConnector)
         {

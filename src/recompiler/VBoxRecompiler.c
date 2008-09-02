@@ -1,4 +1,4 @@
-/* $Id: VBoxRecompiler.c 33663 2008-07-24 13:40:25Z sandervl $ */
+/* $Id: VBoxRecompiler.c 34006 2008-08-04 09:06:37Z klaus $ */
 /** @file
  * VBox Recompiler - QEMU.
  */
@@ -1521,7 +1521,7 @@ int remR3NotifyTrap(CPUState *env, uint32_t uTrap, uint32_t uErrorCode, uint32_t
         STAM_COUNTER_INC(&s_aStatTrap[uTrap]);
     }
 #endif
-    RTLogPrintf("remR3NotifyTrap: uTrap=%x error=%x next_eip=%VGv eip=%VGv cr2=%08x\n", uTrap, uErrorCode, pvNextEIP, env->eip, env->cr[2]);
+    Log(("remR3NotifyTrap: uTrap=%x error=%x next_eip=%VGv eip=%VGv cr2=%08x\n", uTrap, uErrorCode, pvNextEIP, env->eip, env->cr[2]));
     if(   uTrap < 0x20
        && (env->cr[0] & X86_CR0_PE)
        && !(env->eflags & X86_EFL_VM))

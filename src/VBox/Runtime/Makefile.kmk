@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31304 2008-05-27 14:09:02Z bird $
+# $Id: Makefile.kmk 34540 2008-08-12 14:28:11Z andy $
 ## @file
 # Sub-Makefile for the IPRT (IPRT).
 #
@@ -275,6 +275,7 @@ RuntimeR3_SOURCES.win = \
 	generic/semsrw-generic.cpp \
 	nt/RTErrConvertFromNtStatus.cpp \
 	r3/posix/env-posix.cpp \
+	r3/win/RTSystemQueryOSInfo-win.cpp \
 	r3/win/alloc-win.cpp \
 	r3/win/dir-win.cpp \
 	r3/win/fileio-win.cpp \
@@ -312,6 +313,7 @@ RuntimeR3_SOURCES.linux = \
 	generic/uuid-generic.cpp \
 	r3/linux/sched-linux.cpp \
 	r3/linux/time-linux.cpp \
+	r3/posix/RTSystemQueryOSInfo-posix.cpp \
 	r3/posix/alloc-posix.cpp \
 	r3/posix/dir-posix.cpp \
 	r3/posix/env-posix.cpp \
@@ -368,6 +370,7 @@ RuntimeR3_SOURCES.os2   = \
 	r3/os2/system-os2.cpp \
 	r3/os2/thread-os2.cpp \
 	r3/os2/time-os2.cpp \
+	r3/posix/RTSystemQueryOSInfo-posix.cpp \
 	r3/posix/alloc-posix.cpp \
 	r3/posix/dir-posix.cpp \
 	r3/posix/env-posix.cpp \
@@ -399,6 +402,7 @@ RuntimeR3_SOURCES.darwin = \
 	r3/darwin/alloc-darwin.cpp \
 	r3/darwin/filelock-darwin.cpp \
 	r3/darwin/time-darwin.cpp \
+	r3/posix/RTSystemQueryOSInfo-posix.cpp \
 	r3/posix/dir-posix.cpp \
 	r3/posix/env-posix.cpp \
 	r3/posix/fileio-posix.cpp \
@@ -431,6 +435,7 @@ RuntimeR3_SOURCES.freebsd = \
 	generic/utf16locale-generic.cpp \
 	generic/uuid-generic.cpp \
 	r3/freebsd/alloc-freebsd.cpp \
+	r3/posix/RTSystemQueryOSInfo-posix.cpp \
 	r3/posix/dir-posix.cpp \
 	r3/posix/env-posix.cpp \
 	r3/posix/fileio-posix.cpp \
@@ -465,6 +470,7 @@ RuntimeR3_SOURCES.solaris = \
 	generic/sched-generic.cpp \
 	generic/utf16locale-generic.cpp \
 	generic/uuid-generic.cpp \
+	r3/posix/RTSystemQueryOSInfo-posix.cpp \
 	r3/posix/dir-posix.cpp \
 	r3/posix/env-posix.cpp \
 	r3/posix/fileio-posix.cpp \
@@ -511,6 +517,7 @@ RuntimeR3L4_SOURCES = \
 	generic/RTDirSetTimes-generic.cpp \
 	generic/RTFileMove-generic.cpp \
 	generic/RTLogWriteDebugger-generic.cpp \
+	generic/RTSystemQueryOSInfo-generic.cpp \
 	generic/RTTimeLocalNow-generic.cpp \
 	generic/sched-generic.cpp \
 	generic/semnoint-generic.cpp \

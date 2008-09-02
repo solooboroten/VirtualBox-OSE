@@ -138,7 +138,7 @@ sf_reg_write (struct file *file, const char *buf, size_t size, loff_t *off)
 
         tmp = kmalloc (CHUNK_SIZE, GFP_KERNEL);
         if (!tmp) {
-                LogRelFunc(("could not allocate bounce buffer memory %d\n", CHUNK_SIZE));
+                LogRelFunc(("could not allocate bounce buffer memory %d bytes\n", CHUNK_SIZE));
                 return -ENOMEM;
         }
 

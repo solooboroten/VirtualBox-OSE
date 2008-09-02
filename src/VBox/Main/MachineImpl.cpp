@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp 33126 2008-07-10 08:03:19Z mt221433 $ */
+/* $Id: MachineImpl.cpp 35084 2008-08-21 08:01:43Z frank $ */
 /** @file
  * Implementation of IMachine in VBoxSVC.
  */
@@ -2542,7 +2542,7 @@ Machine::CreateSharedFolder (INPTR BSTR aName, INPTR BSTR aHostPath, BOOL aWrita
     CheckComRCReturnRC (rc);
 
     if (!accessible)
-        return setError (E_FAIL,
+        return setWarning (E_FAIL,
             tr ("Shared folder host path '%ls' is not accessible"), aHostPath);
 
     mHWData.backup();

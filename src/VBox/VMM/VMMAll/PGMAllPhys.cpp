@@ -1,4 +1,4 @@
-/* $Id: PGMAllPhys.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: PGMAllPhys.cpp 35229 2008-08-23 20:39:09Z frank $ */
 /** @file
  * PGM - Page Manager and Monitor, Physical Memory Addressing.
  */
@@ -2318,10 +2318,10 @@ AssertMsgFailed(("cb=%d cb1=%d cb2=%d GCPtrSrc=%VGv\n", cb, cb1, cb2, GCPtrSrc))
             switch (rc)
             {
                 case VINF_SUCCESS:
-                    memcpy((uint8_t *)pvDst + cb2, pvSrc2, cb2);
+                    memcpy((uint8_t *)pvDst + cb1, pvSrc2, cb2);
                     break;
                 case VERR_PGM_INVALID_GC_PHYSICAL_ADDRESS:
-                    memset((uint8_t *)pvDst + cb2, 0, cb2);
+                    memset((uint8_t *)pvDst + cb1, 0, cb2);
                     break;
                 default:
                     return rc;

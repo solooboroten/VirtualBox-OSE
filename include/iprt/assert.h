@@ -685,8 +685,8 @@ __END_DECLS
     AssertMsg1(pszExpr, iLine, pszFile, pszFunction)
 #else
 # define AssertLogRelMsg1(pszExpr, iLine, pszFile, pszFunction) \
-    LogRel(("AssertLogRel %s(%d): %s\n",\
-            (pszFile), (iLine), (pszFile), (pszFunction), (pszExpr) ))
+    LogRel(("AssertLogRel %s(%d) %s: %s\n",\
+            (pszFile), (iLine), (pszFunction), (pszExpr) ))
 #endif
 
 /** @def AssertLogRelMsg2

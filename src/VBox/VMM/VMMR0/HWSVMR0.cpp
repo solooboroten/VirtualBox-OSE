@@ -1,4 +1,4 @@
-/* $Id: HWSVMR0.cpp 33663 2008-07-24 13:40:25Z sandervl $ */
+/* $Id: HWSVMR0.cpp 34953 2008-08-19 08:20:28Z sandervl $ */
 /** @file
  * HWACCM SVM - Host Context Ring 0.
  */
@@ -196,6 +196,9 @@ HWACCMR0DECL(int) SVMR0InitVM(PVM pVM)
 
     /* Invalidate the last cpu we were running on. */
     pVM->hwaccm.s.svm.idLastCpu = NIL_RTCPUID;
+
+    /* we'll aways increment this the first time (host uses ASID 0) */
+    pVM->hwaccm.s.svm.uCurrentASID = 0;
     return VINF_SUCCESS;
 }
 
@@ -954,7 +957,8 @@ ResumeExecution:
         else
             STAM_COUNTER_INC(&pVM->hwaccm.s.StatFlushASID);
 
-        pVM->hwaccm.s.svm.cTLBFlushes = pCpu->cTLBFlushes;
+        pVM->hwaccm.s.svm.cTLBFlushes  = pCpu->cTLBFlushes;
+        pVM->hwaccm.s.svm.uCurrentASID = pCpu->uCurrentASID;
     }
     else
     {
@@ -962,13 +966,14 @@ ResumeExecution:
 
         /* We never increase uCurrentASID in the fAlwaysFlushTLB (erratum 170) case. */
         if (!pCpu->uCurrentASID)
-            pCpu->uCurrentASID = 1;
+            pVM->hwaccm.s.svm.uCurrentASID = pCpu->uCurrentASID = 1;
 
         pVMCB->ctrl.TLBCtrl.n.u1TLBFlush = pVM->hwaccm.s.svm.fForceTLBFlush;
     }
     AssertMsg(pVM->hwaccm.s.svm.cTLBFlushes == pCpu->cTLBFlushes, ("Flush count mismatch for cpu %d (%x vs %x)\n", pCpu->idCpu, pVM->hwaccm.s.svm.cTLBFlushes, pCpu->cTLBFlushes));
     AssertMsg(pCpu->uCurrentASID >= 1 && pCpu->uCurrentASID < pVM->hwaccm.s.svm.u32MaxASID, ("cpu%d uCurrentASID = %x\n", pCpu->idCpu, pCpu->uCurrentASID));
-    pVMCB->ctrl.TLBCtrl.n.u32ASID = pCpu->uCurrentASID;
+    AssertMsg(pVM->hwaccm.s.svm.uCurrentASID >= 1 && pVM->hwaccm.s.svm.uCurrentASID < pVM->hwaccm.s.svm.u32MaxASID, ("cpu%d VM uCurrentASID = %x\n", pCpu->idCpu, pVM->hwaccm.s.svm.uCurrentASID));
+    pVMCB->ctrl.TLBCtrl.n.u32ASID = pVM->hwaccm.s.svm.uCurrentASID;
 
 #ifdef VBOX_WITH_STATISTICS
     if (pVMCB->ctrl.TLBCtrl.n.u1TLBFlush)
@@ -1155,6 +1160,13 @@ ResumeExecution:
     SVM_READ_SELREG(ES, es);
     SVM_READ_SELREG(FS, fs);
     SVM_READ_SELREG(GS, gs);
+
+    /*
+     * System MSRs
+     */
+    pCtx->SysEnter.cs       = pVMCB->guest.u64SysEnterCS;
+    pCtx->SysEnter.eip      = pVMCB->guest.u64SysEnterEIP;
+    pCtx->SysEnter.esp      = pVMCB->guest.u64SysEnterESP;
 
     /* Note: no reason to sync back the CRx and DRx registers. They can't be changed by the guest. */
     /* Note: only in the nested paging case can CR3 & CR4 be changed by the guest. */
@@ -1880,13 +1892,6 @@ end:
 
         pCtx->idtr.cbIdt        = pVMCB->guest.IDTR.u32Limit;
         pCtx->idtr.pIdt         = pVMCB->guest.IDTR.u64Base;
-
-        /*
-         * System MSRs
-         */
-        pCtx->SysEnter.cs       = pVMCB->guest.u64SysEnterCS;
-        pCtx->SysEnter.eip      = pVMCB->guest.u64SysEnterEIP;
-        pCtx->SysEnter.esp      = pVMCB->guest.u64SysEnterESP;
     }
 
     /* Signal changes for the recompiler. */

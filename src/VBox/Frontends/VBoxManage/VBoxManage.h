@@ -69,6 +69,7 @@
 #define USAGE_MODINSTALL            RT_BIT_64(37)
 #define USAGE_MODUNINSTALL          RT_BIT_64(38)
 #define USAGE_RENAMEVMDK            RT_BIT_64(39)
+#define USAGE_CONVERTTORAW          RT_BIT_64(41)
 #define USAGE_ALL                   (~(uint64_t)0)
 /** @} */
 

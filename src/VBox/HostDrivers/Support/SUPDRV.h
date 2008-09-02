@@ -1,4 +1,4 @@
-/* $Revision: 33794 $ */
+/* $Revision: 34084 $ */
 /** @file
  * VirtualBox Support Driver - Internal header.
  */
@@ -101,7 +101,6 @@
 #   else /* older kernels */
 #       include <asm/semaphore.h>
 #   endif /* older kernels */
-#   include <asm/semaphore.h>
 #   include <linux/timer.h>
 
 #   if 0

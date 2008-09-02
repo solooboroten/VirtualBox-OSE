@@ -1,10 +1,10 @@
 # $Id: Makefile.kmk 34052 2008-08-04 17:27:28Z klaus $
 ## @file
-# Sub-Makefile for the Solaris Shared folder kernel module.
+# Top-level makefile for the external apps.
 #
 
 #
-# Copyright (C) 2008 Sun Microsystems, Inc.
+# Copyright (C) 2006-2007 Sun Microsystems, Inc.
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -19,29 +19,18 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../..
-SUB_DEPTH = ../..
-include	$(KBUILD_PATH)/subheader.kmk
+DEPTH = ../..
+include $(KBUILD_PATH)/header.kmk
 
-ifneq ($(KBUILD_HOST),solaris)
-$(error "The Solaris guest additions can only be built on Solaris!")
+ifdef VBOX_WITH_KCHMVIEWER
+ifneq ($(wildcard kchmviewer-2.6),)
+SUBDIRS.linux = kchmviewer-2.6
+endif
 endif
 
-#
-# vboxvfs - The Shared Folder Driver
-#
-SYSMODS.solaris      += vboxvfs
-vboxvfs_TEMPLATE      = VBOXGUESTR0
-vboxvfs_DEFS          = VBOX_HGCM
-vboxvfs_INCS         := \
-       $(PATH_SUB_CURRENT) \
-       $(PATH_TARGET)
-vboxvfs_SOURCES       = \
-	vboxvfs_vfsops.c \
-	vboxvfs_vnops.c
-vboxvfs_LIBS          = \
-	$(VBOX_LIB_VBGL_R0) \
-	$(VBOX_LIB_IPRT_GUEST_R0)
+ifneq ($(wildcard tunctl),)
+SUBDIRS.linux += tunctl
+endif
 
-include	$(KBUILD_PATH)/subfooter.kmk
+include $(KBUILD_PATH)/rules.kmk
 
