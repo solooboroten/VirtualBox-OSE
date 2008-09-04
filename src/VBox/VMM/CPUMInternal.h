@@ -1,4 +1,4 @@
-/* $Id: CPUMInternal.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: CPUMInternal.h 33404 2008-07-16 09:22:28Z sandervl $ */
 /** @file
  * CPUM - Internal header file.
  */
@@ -73,6 +73,8 @@
 #define CPUM_USE_DEBUG_REGS_HOST        RT_BIT(4)
 /** Enabled use of debug registers in guest context. */
 #define CPUM_USE_DEBUG_REGS             RT_BIT(5)
+/** The XMM state was manually restored. (AMD only) */
+#define CPUM_MANUAL_XMM_RESTORE         RT_BIT(6)
 /** @} */
 
 /* Sanity check. */
@@ -261,7 +263,7 @@ typedef struct CPUM
     /** Offset to the VM structure. */
     RTUINT          offVM;
     /** Pointer to CPU structure in GC. */
-    GCPTRTYPE(struct CPUM *) pCPUMGC;
+    RCPTRTYPE(struct CPUM *) pCPUMGC;
     /** Pointer to CPU structure in HC. */
     R3R0PTRTYPE(struct CPUM *) pCPUMHC;
 
@@ -292,7 +294,7 @@ typedef struct CPUM
     /** Pointer to the current hypervisor core context - R3Ptr. */
     R0PTRTYPE(PCPUMCTXCORE) pHyperCoreR0;
     /** Pointer to the current hypervisor core context - GCPtr. */
-    GCPTRTYPE(PCPUMCTXCORE) pHyperCoreGC;
+    RCPTRTYPE(PCPUMCTXCORE) pHyperCoreGC;
 
     /** Use flags.
      * These flags indicates both what is to be used and what have been used.
@@ -319,6 +321,17 @@ typedef struct CPUM
         /** ecx part */
         X86CPUIDFEATECX     ecx;
     }   CPUFeatures;
+    /** Host extended CPU features. */
+    struct
+    {
+        /** edx part */
+        uint32_t     edx;
+        /** ecx part */
+        uint32_t     ecx;
+    }   CPUFeaturesExt;
+
+    /* CPU manufacturer. */
+    CPUMCPUVENDOR           enmCPUVendor;
 
     /** CR4 mask */
     struct
@@ -332,7 +345,7 @@ typedef struct CPUM
     uint8_t                 abPadding[3 + (HC_ARCH_BITS == 64) * 4];
 
     /** The standard set of CpuId leafs. */
-    CPUMCPUID               aGuestCpuIdStd[5];
+    CPUMCPUID               aGuestCpuIdStd[6];
     /** The extended set of CpuId leafs. */
     CPUMCPUID               aGuestCpuIdExt[10];
     /** The centaur set of CpuId leafs. */
@@ -354,8 +367,16 @@ typedef struct CPUM
 
 __BEGIN_DECLS
 
-DECLASM(int) CPUMHandleLazyFPUAsm(PCPUM pCPUM);
-DECLASM(int) CPUMRestoreHostFPUStateAsm(PCPUM pCPUM);
+DECLASM(int)      CPUMHandleLazyFPUAsm(PCPUM pCPUM);
+DECLASM(int)      CPUMRestoreHostFPUStateAsm(PCPUM pCPUM);
+DECLASM(void)     CPUMLoadFPUAsm(PCPUMCTX pCtx);
+DECLASM(void)     CPUMSaveFPUAsm(PCPUMCTX pCtx);
+DECLASM(void)     CPUMLoadXMMAsm(PCPUMCTX pCtx);
+DECLASM(void)     CPUMSaveXMMAsm(PCPUMCTX pCtx);
+DECLASM(void)     CPUMSetFCW(uint16_t u16FCW);
+DECLASM(uint16_t) CPUMGetFCW();
+DECLASM(void)     CPUMSetMXCSR(uint32_t u32MXCSR);
+DECLASM(uint32_t) CPUMGetMXCSR();
 
 __END_DECLS
 

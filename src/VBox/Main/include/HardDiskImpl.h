@@ -1,4 +1,4 @@
-/* $Id: HardDiskImpl.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: HardDiskImpl.h 34787 2008-08-14 18:23:31Z klaus $ */
 
 /** @file
  *
@@ -538,6 +538,11 @@ private:
 
     PVBOXHDD mContainer;
 
+    PVDINTERFACE     mVDInterfaces;
+
+    VDINTERFACE      mInterfaceError;
+    VDINTERFACEERROR mInterfaceErrorCallbacks;
+
     Utf8Str mLastVDError;
 
     friend class HardDisk;
@@ -649,6 +654,11 @@ private:
     Bstr mFormat;
 
     PVBOXHDD mContainer;
+
+    PVDINTERFACE     mVDInterfaces;
+
+    VDINTERFACE      mInterfaceError;
+    VDINTERFACEERROR mInterfaceErrorCallbacks;
 
     Utf8Str mLastVDError;
 
@@ -762,6 +772,11 @@ private:
     Bstr mFilePathFull;
 
     PVBOXHDD mContainer;
+
+    PVDINTERFACE     mVDInterfaces;
+
+    VDINTERFACE      mInterfaceError;
+    VDINTERFACEERROR mInterfaceErrorCallbacks;
 
     Utf8Str mLastVDError;
 

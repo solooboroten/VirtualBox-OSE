@@ -43,6 +43,13 @@ using namespace com;
 
 #define printf RTPrintf
 
+
+// forward declarations
+///////////////////////////////////////////////////////////////////////////////
+
+void queryMetrics (ComPtr <IPerformanceCollector> collector,
+                   ComSafeArrayIn (IUnknown *, objects));
+
 // funcs
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -198,7 +205,7 @@ int main(int argc, char *argv[])
      * Initialize the VBox runtime without loading
      * the support driver.
      */
-    RTR3Init(false);
+    RTR3Init();
 
     HRESULT rc;
 
@@ -918,6 +925,80 @@ int main(int argc, char *argv[])
     printf ("\n");
 #endif
 
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+    do {
+        // Get collector
+        ComPtr <IPerformanceCollector> collector;
+        CHECK_ERROR_BREAK (virtualBox,
+                           COMGETTER(PerformanceCollector) (collector.asOutParam()));
+
+
+        // Fill base metrics array
+        Bstr baseMetricNames[] = { L"CPU/Load,RAM/Usage" };
+        com::SafeArray<BSTR> baseMetrics (1);
+        baseMetricNames[0].cloneTo (&baseMetrics [0]);
+
+        // Get host
+        ComPtr <IHost> host;
+        CHECK_ERROR_BREAK (virtualBox, COMGETTER(Host) (host.asOutParam()));
+
+        // Get machine
+        ComPtr <IMachine> machine;
+        Bstr name = argc > 1 ? argv [1] : "dsl";
+        printf ("Getting a machine object named '%ls'...\n", name.raw());
+        CHECK_RC_BREAK (virtualBox->FindMachine (name, machine.asOutParam()));
+
+        // Open session
+        Guid guid;
+        CHECK_RC_BREAK (machine->COMGETTER(Id) (guid.asOutParam()));
+        printf ("Opening a remote session for this machine...\n");
+        ComPtr <IProgress> progress;
+        CHECK_RC_BREAK (virtualBox->OpenRemoteSession (session, guid, Bstr("vrdp"),
+                                                       NULL, progress.asOutParam()));
+        printf ("Waiting for the session to open...\n");
+        CHECK_RC_BREAK (progress->WaitForCompletion (-1));
+        ComPtr <IMachine> sessionMachine;
+        printf ("Getting sessioned machine object...\n");
+        CHECK_RC_BREAK (session->COMGETTER(Machine) (sessionMachine.asOutParam()));
+
+        // Setup base metrics
+        // Note that one needs to set up metrics after a session is open for a machine.
+        com::SafeIfaceArray<IUnknown> objects(2);
+        host.queryInterfaceTo(&objects[0]);
+        machine.queryInterfaceTo(&objects[1]);
+        CHECK_ERROR_BREAK (collector, SetupMetrics(ComSafeArrayAsInParam(baseMetrics),
+                                                   ComSafeArrayAsInParam(objects), 1u, 10u) );
+
+        // Get console
+        ComPtr <IConsole> console;
+        printf ("Getting console object...\n");
+        CHECK_RC_BREAK (session->COMGETTER(Console) (console.asOutParam()));
+
+        RTThreadSleep(5000); // Sleep for 5 seconds
+
+        printf("Metrics collected with DSL machine running: --------------------\n");
+        queryMetrics(collector, ComSafeArrayAsInParam(objects));
+
+        // Pause
+        //printf ("Press enter to pause the VM execution in the remote session...");
+        //getchar();
+        CHECK_RC (console->Pause());
+
+        RTThreadSleep(5000); // Sleep for 5 seconds
+
+        printf("Metrics collected with DSL machine paused: ---------------------\n");
+        queryMetrics(collector, ComSafeArrayAsInParam(objects));
+
+        // Power off
+        printf ("Press enter to power off VM...");
+        getchar();
+        CHECK_RC (console->PowerDown());
+        printf ("Press enter to close this session...");
+        getchar();
+        session->Close();
+    } while (false);
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
     printf ("Press enter to release Session and VirtualBox instances...");
     getchar();
 
@@ -935,3 +1016,55 @@ int main(int argc, char *argv[])
 
     return rc;
 }
+
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+void queryMetrics (ComPtr <IPerformanceCollector> collector,
+                   ComSafeArrayIn (IUnknown *, objects))
+{
+    HRESULT rc;
+
+    //Bstr metricNames[] = { L"CPU/Load/User:avg,CPU/Load/System:avg,CPU/Load/Idle:avg,RAM/Usage/Total,RAM/Usage/Used:avg" };
+    Bstr metricNames[] = { L"*" };
+    com::SafeArray<BSTR> metrics (1);
+    metricNames[0].cloneTo (&metrics [0]);
+    com::SafeArray<BSTR>          retNames;
+    com::SafeIfaceArray<IUnknown> retObjects;
+    com::SafeArray<ULONG>         retIndices;
+    com::SafeArray<ULONG>         retLengths;
+    com::SafeArray<LONG>          retData;
+    CHECK_ERROR (collector, QueryMetricsData(ComSafeArrayAsInParam(metrics),
+                                             ComSafeArrayInArg(objects),
+                                             ComSafeArrayAsOutParam(retNames),
+                                             ComSafeArrayAsOutParam(retObjects),
+                                             ComSafeArrayAsOutParam(retIndices),
+                                             ComSafeArrayAsOutParam(retLengths),
+                                             ComSafeArrayAsOutParam(retData)) );
+    for (unsigned i = 0; i < retNames.size(); i++)
+    {
+        // Get info for the metric
+        com::SafeArray<BSTR> nameOfMetric(1);
+        Bstr tmpName(retNames[i]);
+        tmpName.detachTo (&nameOfMetric[0]);
+        com::SafeIfaceArray<IUnknown> anObject(1);
+        ComPtr<IUnknown> tmpObject(retObjects[i]);
+        tmpObject.queryInterfaceTo(&anObject[0]);
+        com::SafeIfaceArray <IPerformanceMetric> metricInfo;
+        CHECK_RC_BREAK (collector->GetMetrics( ComSafeArrayAsInParam(nameOfMetric),
+                                               ComSafeArrayAsInParam(anObject),
+                                               ComSafeArrayAsOutParam(metricInfo) ));
+        BSTR metricUnitBSTR;
+        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(Unit) (&metricUnitBSTR));
+        Bstr metricUnit(metricUnitBSTR);
+        Bstr metricName(retNames[i]);
+        LONG minVal, maxVal;
+        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MinimumValue) (&minVal));
+        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MaximumValue) (&maxVal));
+        printf("obj(%p) %ls (min=%lu max=%lu)", anObject[0], metricName.raw(), minVal, maxVal);
+        for (unsigned j = 0; j < retLengths[i]; j++)
+        {
+            printf(", %d %ls", retData[retIndices[i] + j] / (strcmp((const char *)metricUnit.raw(), "%")?1:1000), metricUnit.raw());
+        }
+        printf("\n");
+    }
+}
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */

@@ -1,4 +1,4 @@
-/** $Id: VDICore.h 29880 2008-04-18 17:52:25Z umoeller $ */
+/** $Id: VDICore.h 34825 2008-08-15 14:33:02Z klaus $ */
 /** @file
  * Virtual Disk Image (VDI), Core Code Header (internal).
  */
@@ -309,6 +309,22 @@ DECLINLINE(VDIIMAGETYPE) getImageType(PVDIHEADER ph)
     return (VDIIMAGETYPE)0;
 }
 
+#ifdef VBOX_VDICORE_VD
+DECLINLINE(unsigned) getImageFlags(PVDIHEADER ph)
+{
+    switch (GET_MAJOR_HEADER_VERSION(ph))
+    {
+        case 0:
+            /* VDI image flag conversion to VD image flags. */
+            return ph->u.v0.fFlags << 8;
+        case 1:
+            /* VDI image flag conversion to VD image flags. */
+            return ph->u.v1.fFlags << 8;
+    }
+    AssertFailed();
+    return 0;
+}
+#else /* !VBOX_VDICORE_VD */
 DECLINLINE(unsigned) getImageFlags(PVDIHEADER ph)
 {
     switch (GET_MAJOR_HEADER_VERSION(ph))
@@ -319,6 +335,7 @@ DECLINLINE(unsigned) getImageFlags(PVDIHEADER ph)
     AssertFailed();
     return 0;
 }
+#endif /* !VBOX_VDICORE_VD */
 
 DECLINLINE(char *) getImageComment(PVDIHEADER ph)
 {
@@ -561,10 +578,12 @@ typedef struct VDIIMAGEDESC
     const char             *pszFilename;
     /** Physical geometry of this image (never actually stored). */
     PDMMEDIAGEOMETRY        PCHSGeometry;
-    /** Error callback. */
-    PFNVDERROR              pfnError;
-    /** Opaque data for error callback. */
-    void                   *pvErrorUser;
+    /** Pointer to the per-disk VD interface list. */
+    PVDINTERFACE            pVDIfsDisk;
+    /** Error interface. */
+    PVDINTERFACE            pInterfaceError;
+    /** Error interface callback table. */
+    PVDINTERFACEERROR       pInterfaceErrorCallbacks;
 #endif /* VBOX_VDICORE_VD */
 } VDIIMAGEDESC, *PVDIIMAGEDESC;
 

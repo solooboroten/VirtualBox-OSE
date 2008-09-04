@@ -1,4 +1,4 @@
-/* $Id: TRPM.cpp 31281 2008-05-27 09:21:03Z sandervl $ */
+/* $Id: TRPM.cpp 35599 2008-08-29 08:51:20Z sandervl $ */
 /** @file
  * TRPM - The Trap Monitor
  */
@@ -430,15 +430,15 @@ TRPMR3DECL(int) TRPMR3Init(PVM pVM)
     AssertRelease(!(RT_OFFSETOF(VM, trpm.s) & 31));
     AssertRelease(!(RT_OFFSETOF(VM, trpm.s.aIdt) & 15));
     AssertRelease(sizeof(pVM->trpm.s) <= sizeof(pVM->trpm.padding));
-    AssertRelease(ELEMENTS(pVM->trpm.s.aGuestTrapHandler) == sizeof(pVM->trpm.s.au32IdtPatched)*8);
+    AssertRelease(RT_ELEMENTS(pVM->trpm.s.aGuestTrapHandler) == sizeof(pVM->trpm.s.au32IdtPatched)*8);
 
     /*
      * Initialize members.
      */
     pVM->trpm.s.offVM              = RT_OFFSETOF(VM, trpm);
     pVM->trpm.s.uActiveVector      = ~0;
-    pVM->trpm.s.GuestIdtr.pIdt     = ~0;
-    pVM->trpm.s.GCPtrIdt           = ~0;
+    pVM->trpm.s.GuestIdtr.pIdt     = RTRCPTR_MAX;
+    pVM->trpm.s.GCPtrIdt           = RTRCPTR_MAX;
     pVM->trpm.s.fDisableMonitoring = false;
     pVM->trpm.s.fSafeToDropGuestIDTMonitoring = false;
 
@@ -507,7 +507,7 @@ TRPMR3DECL(int) TRPMR3Init(PVM pVM)
 #ifdef VBOX_WITH_STATISTICS
     rc = MMHyperAlloc(pVM, sizeof(STAMCOUNTER) * 255, 8, MM_TAG_STAM, (void **)&pVM->trpm.s.paStatForwardedIRQR3);
     AssertRCReturn(rc, rc);
-    pVM->trpm.s.paStatForwardedIRQGC = MMHyperR3ToGC(pVM, pVM->trpm.s.paStatForwardedIRQR3);
+    pVM->trpm.s.paStatForwardedIRQGC = MMHyperR3ToRC(pVM, pVM->trpm.s.paStatForwardedIRQR3);
     pVM->trpm.s.paStatForwardedIRQR0 = MMHyperR3ToR0(pVM, pVM->trpm.s.paStatForwardedIRQR3);
     for (unsigned i = 0; i < 255; i++)
         STAMR3RegisterF(pVM, &pVM->trpm.s.paStatForwardedIRQR3[i], STAMTYPE_COUNTER, STAMVISIBILITY_USED, STAMUNIT_OCCURENCES, "Forwarded interrupts.",
@@ -572,7 +572,7 @@ TRPMR3DECL(void) TRPMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
      */
     PVBOXIDTE pIdte = &pVM->trpm.s.aIdt[0];
     PVBOXIDTE_GENERIC pIdteTemplate = &g_aIdt[0];
-    for (unsigned i = 0; i < ELEMENTS(pVM->trpm.s.aIdt); i++, pIdte++, pIdteTemplate++)
+    for (unsigned i = 0; i < RT_ELEMENTS(pVM->trpm.s.aIdt); i++, pIdte++, pIdteTemplate++)
     {
         if (    pIdte->Gen.u1Present
             &&  !ASMBitTest(&pVM->trpm.s.au32IdtPatched[0], i)
@@ -617,7 +617,7 @@ TRPMR3DECL(void) TRPMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
     if (!pVM->trpm.s.fDisableMonitoring)
     {
 #ifdef TRPM_TRACK_SHADOW_IDT_CHANGES
-        if (pVM->trpm.s.GCPtrIdt != ~0U)
+        if (pVM->trpm.s.GCPtrIdt != RTRCPTR_MAX)
         {
             rc = PGMHandlerVirtualDeregister(pVM, pVM->trpm.s.GCPtrIdt);
             AssertRC(rc);
@@ -630,7 +630,7 @@ TRPMR3DECL(void) TRPMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
     }
 
     /* Relocate IDT handlers for forwarding guest traps/interrupts. */
-    for (uint32_t iTrap = 0; iTrap < ELEMENTS(pVM->trpm.s.aGuestTrapHandler); iTrap++)
+    for (uint32_t iTrap = 0; iTrap < RT_ELEMENTS(pVM->trpm.s.aGuestTrapHandler); iTrap++)
     {
         if (pVM->trpm.s.aGuestTrapHandler[iTrap] != TRPM_INVALID_HANDLER)
         {
@@ -641,7 +641,7 @@ TRPMR3DECL(void) TRPMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
         if (ASMBitTest(&pVM->trpm.s.au32IdtPatched[0], iTrap))
         {
             PVBOXIDTE   pIdte = &pVM->trpm.s.aIdt[iTrap];
-            RTGCPTR     pHandler = (pIdte->Gen.u16OffsetHigh << 16) | pIdte->Gen.u16OffsetLow;
+            RTGCPTR     pHandler = VBOXIDTE_OFFSET(*pIdte);
 
             Log(("TRPMR3Relocate: *iGate=%2X Handler %VGv -> %VGv\n", iTrap, pHandler, pHandler + offDelta));
             pHandler += offDelta;
@@ -684,14 +684,14 @@ TRPMR3DECL(void) TRPMR3Reset(PVM pVM)
      * Deregister any virtual handlers.
      */
 #ifdef TRPM_TRACK_GUEST_IDT_CHANGES
-    if (pVM->trpm.s.GuestIdtr.pIdt != ~0U)
+    if (pVM->trpm.s.GuestIdtr.pIdt != RTRCPTR_MAX)
     {
         if (!pVM->trpm.s.fSafeToDropGuestIDTMonitoring)
         {
             int rc = PGMHandlerVirtualDeregister(pVM, pVM->trpm.s.GuestIdtr.pIdt);
             AssertRC(rc);
         }
-        pVM->trpm.s.GuestIdtr.pIdt = ~0U;
+        pVM->trpm.s.GuestIdtr.pIdt = RTRCPTR_MAX;
     }
     pVM->trpm.s.GuestIdtr.cbIdt = 0;
 #endif
@@ -747,7 +747,7 @@ static DECLCALLBACK(int) trpmR3Save(PVM pVM, PSSMHANDLE pSSM)
     /*
      * Save any trampoline gates.
      */
-    for (uint32_t iTrap = 0; iTrap < ELEMENTS(pTrpm->aGuestTrapHandler); iTrap++)
+    for (uint32_t iTrap = 0; iTrap < RT_ELEMENTS(pTrpm->aGuestTrapHandler); iTrap++)
     {
         if (pTrpm->aGuestTrapHandler[iTrap])
         {
@@ -778,7 +778,7 @@ static DECLCALLBACK(int) trpmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Versio
      */
     if (u32Version != TRPM_SAVED_STATE_VERSION)
     {
-        Log(("trpmR3Load: Invalid version u32Version=%d!\n", u32Version));
+        AssertMsgFailed(("trpmR3Load: Invalid version u32Version=%d!\n", u32Version));
         return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
     }
 
@@ -846,7 +846,7 @@ static DECLCALLBACK(int) trpmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Versio
             return rc;
         if (iTrap == (uint32_t)~0)
             break;
-        if (    iTrap >= ELEMENTS(pTrpm->aIdt)
+        if (    iTrap >= RT_ELEMENTS(pTrpm->aIdt)
             ||  pTrpm->aGuestTrapHandler[iTrap])
         {
             AssertMsgFailed(("iTrap=%#x\n", iTrap));
@@ -923,7 +923,7 @@ TRPMR3DECL(int) TRPMR3SyncIDT(PVM pVM)
             /*
              * [Re]Register write virtual handler for guest's IDT.
              */
-            if (pVM->trpm.s.GuestIdtr.pIdt != ~0U)
+            if (pVM->trpm.s.GuestIdtr.pIdt != RTRCPTR_MAX)
             {
                 rc = PGMHandlerVirtualDeregister(pVM, pVM->trpm.s.GuestIdtr.pIdt);
                 AssertRCReturn(rc, rc);
@@ -988,24 +988,24 @@ TRPMR3DECL(void) TRPMR3DisableMonitoring(PVM pVM)
      * Deregister any virtual handlers.
      */
 #ifdef TRPM_TRACK_GUEST_IDT_CHANGES
-    if (pVM->trpm.s.GuestIdtr.pIdt != ~0U)
+    if (pVM->trpm.s.GuestIdtr.pIdt != RTRCPTR_MAX)
     {
         if (!pVM->trpm.s.fSafeToDropGuestIDTMonitoring)
         {
             int rc = PGMHandlerVirtualDeregister(pVM, pVM->trpm.s.GuestIdtr.pIdt);
             AssertRC(rc);
         }
-        pVM->trpm.s.GuestIdtr.pIdt = ~0U;
+        pVM->trpm.s.GuestIdtr.pIdt = RTRCPTR_MAX;
     }
     pVM->trpm.s.GuestIdtr.cbIdt = 0;
 #endif
 
 #ifdef TRPM_TRACK_SHADOW_IDT_CHANGES
-    if (pVM->trpm.s.GCPtrIdt != ~0U)
+    if (pVM->trpm.s.GCPtrIdt != RTRCPTR_MAX)
     {
         int rc = PGMHandlerVirtualDeregister(pVM, pVM->trpm.s.GCPtrIdt);
         AssertRC(rc);
-        pVM->trpm.s.GCPtrIdt = ~0U;
+        pVM->trpm.s.GCPtrIdt = RTRCPTR_MAX;
     }
 #endif
 
@@ -1050,7 +1050,7 @@ static DECLCALLBACK(int) trpmGuestIDTWriteHandler(PVM pVM, RTGCPTR GCPtr, void *
 TRPMR3DECL(int) trpmR3ClearPassThroughHandler(PVM pVM, unsigned iTrap)
 {
     /** @todo cleanup trpmR3ClearPassThroughHandler()! */
-    RTGCPTR32 aGCPtrs[TRPM_HANDLER_MAX];
+    RTRCPTR aGCPtrs[TRPM_HANDLER_MAX];
     int rc;
 
     memset(aGCPtrs, 0, sizeof(aGCPtrs));
@@ -1059,7 +1059,7 @@ TRPMR3DECL(int) trpmR3ClearPassThroughHandler(PVM pVM, unsigned iTrap)
     AssertReleaseMsgRC(rc, ("Couldn't find TRPMGCHandlerInterupt in VMMGC.gc!\n"));
 
     if (    iTrap < TRPM_HANDLER_INT_BASE
-        ||  iTrap >= ELEMENTS(pVM->trpm.s.aIdt))
+        ||  iTrap >= RT_ELEMENTS(pVM->trpm.s.aIdt))
     {
         AssertMsg(iTrap < TRPM_HANDLER_INT_BASE, ("Illegal gate number %#x!\n", iTrap));
         return VERR_INVALID_PARAMETER;
@@ -1075,8 +1075,8 @@ TRPMR3DECL(int) trpmR3ClearPassThroughHandler(PVM pVM, unsigned iTrap)
     if (pIdte->Gen.u1Present)
     {
         Assert(pIdteTemplate->u16OffsetLow == TRPM_HANDLER_INT);
-        Assert(sizeof(RTGCPTR) <= sizeof(aGCPtrs[0]));
-        RTGCPTR Offset = (RTGCPTR)aGCPtrs[pIdteTemplate->u16OffsetLow];
+        Assert(sizeof(RTRCPTR) == sizeof(aGCPtrs[0]));
+        RTRCPTR Offset = (RTRCPTR)aGCPtrs[pIdteTemplate->u16OffsetLow];
 
         /*
          * Generic handlers have different entrypoints for each possible
@@ -1106,9 +1106,9 @@ TRPMR3DECL(int) trpmR3ClearPassThroughHandler(PVM pVM, unsigned iTrap)
  * @param   pVM         VM handle.
  * @param   GCPtr       GC address to check.
  */
-TRPMR3DECL(uint32_t) TRPMR3QueryGateByHandler(PVM pVM, RTGCPTR GCPtr)
+TRPMR3DECL(uint32_t) TRPMR3QueryGateByHandler(PVM pVM, RTRCPTR GCPtr)
 {
-    for (uint32_t iTrap = 0; iTrap < ELEMENTS(pVM->trpm.s.aGuestTrapHandler); iTrap++)
+    for (uint32_t iTrap = 0; iTrap < RT_ELEMENTS(pVM->trpm.s.aGuestTrapHandler); iTrap++)
     {
         if (pVM->trpm.s.aGuestTrapHandler[iTrap] == GCPtr)
             return iTrap;
@@ -1117,7 +1117,7 @@ TRPMR3DECL(uint32_t) TRPMR3QueryGateByHandler(PVM pVM, RTGCPTR GCPtr)
         if (ASMBitTest(&pVM->trpm.s.au32IdtPatched[0], iTrap))
         {
             PVBOXIDTE   pIdte = &pVM->trpm.s.aIdt[iTrap];
-            RTGCPTR     pHandler = (pIdte->Gen.u16OffsetHigh << 16) | pIdte->Gen.u16OffsetLow;
+            RTGCPTR     pHandler = VBOXIDTE_OFFSET(*pIdte);
 
             if (pHandler == GCPtr)
                 return iTrap;
@@ -1134,9 +1134,9 @@ TRPMR3DECL(uint32_t) TRPMR3QueryGateByHandler(PVM pVM, RTGCPTR GCPtr)
  * @param   pVM         The VM to operate on.
  * @param   iTrap       Interrupt/trap number.
  */
-TRPMR3DECL(RTGCPTR) TRPMR3GetGuestTrapHandler(PVM pVM, unsigned iTrap)
+TRPMR3DECL(RTRCPTR) TRPMR3GetGuestTrapHandler(PVM pVM, unsigned iTrap)
 {
-    AssertReturn(iTrap < ELEMENTS(pVM->trpm.s.aIdt), TRPM_INVALID_HANDLER);
+    AssertReturn(iTrap < RT_ELEMENTS(pVM->trpm.s.aIdt), TRPM_INVALID_HANDLER);
 
     return pVM->trpm.s.aGuestTrapHandler[iTrap];
 }
@@ -1151,12 +1151,12 @@ TRPMR3DECL(RTGCPTR) TRPMR3GetGuestTrapHandler(PVM pVM, unsigned iTrap)
  * @param   iTrap       Interrupt/trap number.
  * @param   pHandler    GC handler pointer
  */
-TRPMR3DECL(int) TRPMR3SetGuestTrapHandler(PVM pVM, unsigned iTrap, RTGCPTR pHandler)
+TRPMR3DECL(int) TRPMR3SetGuestTrapHandler(PVM pVM, unsigned iTrap, RTRCPTR pHandler)
 {
     /*
      * Validate.
      */
-    if (iTrap >= ELEMENTS(pVM->trpm.s.aIdt))
+    if (iTrap >= RT_ELEMENTS(pVM->trpm.s.aIdt))
     {
         AssertMsg(iTrap < TRPM_HANDLER_INT_BASE, ("Illegal gate number %d!\n", iTrap));
         return VERR_INVALID_PARAMETER;
@@ -1268,7 +1268,7 @@ TRPMR3DECL(int) TRPMR3SetGuestTrapHandler(PVM pVM, unsigned iTrap, RTGCPTR pHand
  * @param   pVM         VM handle.
  * @param   GCPtr       GC address to check.
  */
-TRPMR3DECL(bool) TRPMR3IsGateHandler(PVM pVM, RTGCPTR GCPtr)
+TRPMR3DECL(bool) TRPMR3IsGateHandler(PVM pVM, RTRCPTR GCPtr)
 {
     /*
      * Read IDTR and calc last entry.
@@ -1301,7 +1301,7 @@ TRPMR3DECL(bool) TRPMR3IsGateHandler(PVM pVM, RTGCPTR GCPtr)
             {
                 if (pIDTE->Gen.u1Present)
                 {
-                    RTGCPTR GCPtrHandler = (pIDTE->Gen.u16OffsetHigh << 16) | pIDTE->Gen.u16OffsetLow;
+                    RTRCPTR GCPtrHandler = VBOXIDTE_OFFSET(*pIDTE);
                     if (GCPtr == GCPtrHandler)
                         return true;
                 }

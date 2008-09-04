@@ -22,29 +22,41 @@
 
 
 #include "QIDialog.h"
+#include "VBoxGlobal.h"
 #ifdef Q_WS_MAC
 #include "VBoxUtils.h"
 #endif /* Q_WS_MAC */
 
 QIDialog::QIDialog (QWidget *aParent, Qt::WindowFlags aFlags)
-    : QDialog (aParent, aFlags) 
+    : QDialog (aParent, aFlags)
+    , mPolished (false)
 {
 }
 
 void QIDialog::showEvent (QShowEvent * /* aEvent */)
 {
-#ifdef Q_WS_MAC
     /* Two thinks to do for fixed size dialogs on MacOS X:
-     * 1. make sure the layout is polished and have the right size
-     * 2. disable that _unnecessary_ size grip (Bug in Qt?) */
+     * 1. Make sure the layout is polished and have the right size
+     * 2. Disable that _unnecessary_ size grip (Bug in Qt?) */
     QSizePolicy policy = sizePolicy();
     if ((policy.horizontalPolicy() == QSizePolicy::Fixed &&
          policy.verticalPolicy() == QSizePolicy::Fixed) ||
         windowFlags() == Qt::Sheet)
     {
         adjustSize();
+        setFixedSize (size());
+#ifdef Q_WS_MAC
         ChangeWindowAttributes (::darwinToWindowRef (this), kWindowNoAttributes, kWindowResizableAttribute);
-    }
 #endif /* Q_WS_MAC */
+    }
+
+    /* Polishing border */
+    if (mPolished)
+        return;
+    mPolished = true;
+
+    /* Explicit widget centering relatively to it's parent
+     * if any or desktop if parent is missed. */
+    vboxGlobal().centerWidget (this, parentWidget(), false);
 }
 

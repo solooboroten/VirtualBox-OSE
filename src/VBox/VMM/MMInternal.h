@@ -1,4 +1,4 @@
-/* $Id: MMInternal.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: MMInternal.h 31620 2008-06-04 13:58:42Z frank $ */
 /** @file
  * MM - Internal header file.
  */
@@ -249,9 +249,9 @@ typedef struct MMHYPERHEAP
     /** The HC Ring-3 address of the heap. */
     R3R0PTRTYPE(uint8_t *)  pbHeapHC;
     /** The GC address of the heap. */
-    GCPTRTYPE(uint8_t *)    pbHeapGC;
+    RCPTRTYPE(uint8_t *)    pbHeapGC;
     /** The GC address of the VM. */
-    GCPTRTYPE(PVM)          pVMGC;
+    RCPTRTYPE(PVM)          pVMGC;
     /** The amount of free memory in the heap. */
     uint32_t                cbFree;
     /** Offset of the first free chunk in the heap.
@@ -674,7 +674,10 @@ typedef struct MM
     RTGCPTR                     pvHyperAreaGC;
 
     /** The hypervisor heap (GC Ptr). */
-    GCPTRTYPE(PMMHYPERHEAP)     pHyperHeapGC;
+    RCPTRTYPE(PMMHYPERHEAP)     pHyperHeapGC;
+#if HC_ARCH_BITS == 64 && GC_ARCH_BITS == 64
+    uint32_t                    u32Padding2;
+#endif
     /** The hypervisor heap (HC Ptr). */
     R3R0PTRTYPE(PMMHYPERHEAP)   pHyperHeapHC;
 

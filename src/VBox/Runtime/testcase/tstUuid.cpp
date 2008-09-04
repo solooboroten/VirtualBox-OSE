@@ -1,4 +1,4 @@
-/* $Id: tstUuid.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: tstUuid.cpp 35119 2008-08-21 15:35:28Z bird $ */
 /** @file
  * IPRT Testcase - UUID.
  */
@@ -96,14 +96,83 @@ int main(int argc, char **argv)
     Uuid3.au8[13] = 0xba;
     Uuid3.au8[14] = 0xdc;
     Uuid3.au8[15] = 0xfe;
-    Uuid3.Gen.u16ClockSeq = (Uuid3.Gen.u16ClockSeq & 0x3fff) | 0x8000;
+    Uuid3.Gen.u8ClockSeqHiAndReserved = (Uuid3.Gen.u8ClockSeqHiAndReserved & 0x3f) | 0x80;
     Uuid3.Gen.u16TimeHiAndVersion = (Uuid3.Gen.u16TimeHiAndVersion & 0x0fff) | 0x4000;
-    const char *pszUuid3 = "67452301-ab89-4fcd-10b2-547698badcfe";
+    const char *pszUuid3 = "67452301-ab89-4fcd-90b2-547698badcfe";
     rc = RTUuidToStr(&Uuid3, sz, sizeof(sz)); CHECK_RC();
     CHECK_EXPR(strcmp(sz, pszUuid3) == 0);
     rc = RTUuidFromStr(&Uuid, pszUuid3); CHECK_RC();
     CHECK_EXPR(RTUuidCompare(&Uuid, &Uuid3) == 0);
     CHECK_EXPR(memcmp(&Uuid3, &Uuid, sizeof(Uuid)) == 0);
+
+    /*
+     * checking the clock seq and time hi and version bits...
+     */
+    RTUUID Uuid4Changes;
+    Uuid4Changes.au64[0] = 0;
+    Uuid4Changes.au64[1] = 0;
+
+    RTUUID Uuid4Prev;
+    RTUuidCreate(&Uuid4Prev);
+
+    for (unsigned i = 0; i < 1024; i++)
+    {
+        RTUUID Uuid4;
+        RTUuidCreate(&Uuid4);
+
+        Uuid4Changes.au64[0] |= Uuid4.au64[0] ^ Uuid4Prev.au64[0];
+        Uuid4Changes.au64[1] |= Uuid4.au64[1] ^ Uuid4Prev.au64[1];
+
+#if 0   /** @todo make a bit string/dumper similar to %Rhxs/d. */
+        RTPrintf("tstUuid: %d %d %d %d-%d %d %d %d  %d %d %d %d-%d %d %d %d ; %d %d %d %d-%d %d %d %d  %d %d %d %d-%d %d %d %d\n",
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(0)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(1)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(2)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(3)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(4)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(5)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(6)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(7)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(8)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(9)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(10)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(11)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(12)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(13)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(14)),
+                 !!(Uuid4.Gen.u16ClockSeq & RT_BIT(15)),
+
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(0)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(1)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(2)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(3)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(4)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(5)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(6)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(7)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(8)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(9)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(10)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(11)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(12)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(13)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(14)),
+                 !!(Uuid4.Gen.u16TimeHiAndVersion & RT_BIT(15))
+                 );
+#endif
+        Uuid4Prev = Uuid4;
+    }
+
+    RTUUID Uuid4Fixed;
+    Uuid4Fixed.au64[0] = ~Uuid4Changes.au64[0];
+    Uuid4Fixed.au64[1] = ~Uuid4Changes.au64[1];
+    RTPrintf("tstUuid: fixed bits: %RTuuid (mask)\n", &Uuid4Fixed);
+    RTPrintf("tstUuid:        raw: %.*Rhxs\n", sizeof(Uuid4Fixed), &Uuid4Fixed);
+
+    Uuid4Prev.au64[0] &= Uuid4Fixed.au64[0];
+    Uuid4Prev.au64[1] &= Uuid4Fixed.au64[1];
+    RTPrintf("tstUuid: fixed bits: %RTuuid (value)\n", &Uuid4Prev);
+    RTPrintf("tstUuid:        raw: %.*Rhxs\n", sizeof(Uuid4Prev), &Uuid4Prev);
 
     /*
      * Summary.

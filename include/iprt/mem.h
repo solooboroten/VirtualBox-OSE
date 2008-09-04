@@ -33,17 +33,22 @@
 
 #include <iprt/cdefs.h>
 #include <iprt/types.h>
+#ifdef __cplusplus
+# include <iprt/autores.h>
+#endif
+
 
 #ifdef IN_GC
 # error "There are no RTMem APIs available Guest Context!"
 #endif
 
-__BEGIN_DECLS
 
 /** @defgroup grp_rt_mem    RTMem - Memory Management and Manipulation
  * @ingroup grp_rt
  * @{
  */
+
+__BEGIN_DECLS
 
 /** @def RTMEM_ALIGNMENT
  * The alignment of the memory blocks returned by RTMemAlloc(), RTMemAllocZ(),
@@ -64,7 +69,7 @@ __BEGIN_DECLS
  * @returns NULL on failure.
  * @param   cb      Size in bytes of the memory block to allocated.
  */
-RTDECL(void *)  RTMemTmpAlloc(size_t cb);
+RTDECL(void *)  RTMemTmpAlloc(size_t cb) RT_NO_THROW;
 
 /**
  * Allocates zero'ed temporary memory.
@@ -75,14 +80,14 @@ RTDECL(void *)  RTMemTmpAlloc(size_t cb);
  * @returns NULL on failure.
  * @param   cb      Size in bytes of the memory block to allocated.
  */
-RTDECL(void *)  RTMemTmpAllocZ(size_t cb);
+RTDECL(void *)  RTMemTmpAllocZ(size_t cb) RT_NO_THROW;
 
 /**
  * Free temporary memory.
  *
  * @param   pv      Pointer to memory block.
  */
-RTDECL(void)    RTMemTmpFree(void *pv);
+RTDECL(void)    RTMemTmpFree(void *pv) RT_NO_THROW;
 
 
 /**
@@ -92,7 +97,7 @@ RTDECL(void)    RTMemTmpFree(void *pv);
  * @returns NULL on failure.
  * @param   cb      Size in bytes of the memory block to allocated.
  */
-RTDECL(void *)  RTMemAlloc(size_t cb);
+RTDECL(void *)  RTMemAlloc(size_t cb) RT_NO_THROW;
 
 /**
  * Allocates zero'ed memory.
@@ -105,7 +110,7 @@ RTDECL(void *)  RTMemAlloc(size_t cb);
  * @returns NULL on failure.
  * @param   cb      Size in bytes of the memory block to allocated.
  */
-RTDECL(void *)  RTMemAllocZ(size_t cb);
+RTDECL(void *)  RTMemAllocZ(size_t cb) RT_NO_THROW;
 
 /**
  * Duplicates a chunk of memory into a new heap block.
@@ -115,7 +120,7 @@ RTDECL(void *)  RTMemAllocZ(size_t cb);
  * @param   pvSrc   The memory to duplicate.
  * @param   cb      The amount of memory to duplicate.
  */
-RTDECL(void *) RTMemDup(const void *pvSrc, size_t cb);
+RTDECL(void *) RTMemDup(const void *pvSrc, size_t cb) RT_NO_THROW;
 
 /**
  * Duplicates a chunk of memory into a new heap block with some
@@ -127,7 +132,7 @@ RTDECL(void *) RTMemDup(const void *pvSrc, size_t cb);
  * @param   cbSrc   The amount of memory to duplicate.
  * @param   cbExtra The amount of extra memory to allocate and zero.
  */
-RTDECL(void *) RTMemDupEx(const void *pvSrc, size_t cbSrc, size_t cbExtra);
+RTDECL(void *) RTMemDupEx(const void *pvSrc, size_t cbSrc, size_t cbExtra) RT_NO_THROW;
 
 /**
  * Reallocates memory.
@@ -137,14 +142,14 @@ RTDECL(void *) RTMemDupEx(const void *pvSrc, size_t cbSrc, size_t cbExtra);
  * @param   pvOld   The memory block to reallocate.
  * @param   cbNew   The new block size (in bytes).
  */
-RTDECL(void *)  RTMemRealloc(void *pvOld, size_t cbNew);
+RTDECL(void *)  RTMemRealloc(void *pvOld, size_t cbNew) RT_NO_THROW;
 
 /**
  * Free memory related to an virtual machine
  *
  * @param   pv      Pointer to memory block.
  */
-RTDECL(void)    RTMemFree(void *pv);
+RTDECL(void)    RTMemFree(void *pv) RT_NO_THROW;
 
 /**
  * Allocates memory which may contain code.
@@ -153,14 +158,14 @@ RTDECL(void)    RTMemFree(void *pv);
  * @returns NULL on failure.
  * @param   cb      Size in bytes of the memory block to allocate.
  */
-RTDECL(void *)    RTMemExecAlloc(size_t cb);
+RTDECL(void *)    RTMemExecAlloc(size_t cb) RT_NO_THROW;
 
 /**
  * Free executable/read/write memory allocated by RTMemExecAlloc().
  *
  * @param   pv      Pointer to memory block.
  */
-RTDECL(void)      RTMemExecFree(void *pv);
+RTDECL(void)      RTMemExecFree(void *pv) RT_NO_THROW;
 
 #if defined(IN_RING0) && defined(RT_ARCH_AMD64) && defined(RT_OS_LINUX)
 /**
@@ -178,7 +183,7 @@ RTDECL(void)      RTMemExecFree(void *pv);
  * @param   pvMemory    Pointer to the memory block.
  * @param   cb          The size of the memory block.
  */
-RTR0DECL(int) RTR0MemExecDonate(void *pvMemory, size_t cb);
+RTR0DECL(int) RTR0MemExecDonate(void *pvMemory, size_t cb) RT_NO_THROW;
 #endif /* R0+AMD64+LINUX */
 
 /**
@@ -188,7 +193,7 @@ RTR0DECL(int) RTR0MemExecDonate(void *pvMemory, size_t cb);
  * @returns NULL if we're out of memory.
  * @param   cb  Size of the memory block. Will be rounded up to page size.
  */
-RTDECL(void *) RTMemPageAlloc(size_t cb);
+RTDECL(void *) RTMemPageAlloc(size_t cb) RT_NO_THROW;
 
 /**
  * Allocate zero'ed page aligned memory.
@@ -197,7 +202,7 @@ RTDECL(void *) RTMemPageAlloc(size_t cb);
  * @returns NULL if we're out of memory.
  * @param   cb  Size of the memory block. Will be rounded up to page size.
  */
-RTDECL(void *) RTMemPageAllocZ(size_t cb);
+RTDECL(void *) RTMemPageAllocZ(size_t cb) RT_NO_THROW;
 
 /**
  * Free a memory block allocated with RTMemPageAlloc() or RTMemPageAllocZ().
@@ -205,7 +210,7 @@ RTDECL(void *) RTMemPageAllocZ(size_t cb);
  * @param   pv      Pointer to the block as it was returned by the allocation function.
  *                  NULL will be ignored.
  */
-RTDECL(void) RTMemPageFree(void *pv);
+RTDECL(void) RTMemPageFree(void *pv) RT_NO_THROW;
 
 /** Page level protection flags for RTMemProtect().
  * @{
@@ -228,7 +233,7 @@ RTDECL(void) RTMemPageFree(void *pv);
  * @param   cb          Size of the region. Will be rounded up to the nearest page boundary.
  * @param   fProtect    The new protection, a combination of the RTMEM_PROT_* defines.
  */
-RTDECL(int) RTMemProtect(void *pv, size_t cb, unsigned fProtect);
+RTDECL(int) RTMemProtect(void *pv, size_t cb, unsigned fProtect) RT_NO_THROW;
 
 
 #ifdef IN_RING0
@@ -242,7 +247,7 @@ RTDECL(int) RTMemProtect(void *pv, size_t cb, unsigned fProtect);
  * @param   cb      The allocation size in bytes. This is always
  *                  rounded up to PAGE_SIZE.
  */
-RTR0DECL(void *) RTMemContAlloc(PRTCCPHYS pPhys, size_t cb);
+RTR0DECL(void *) RTMemContAlloc(PRTCCPHYS pPhys, size_t cb) RT_NO_THROW;
 
 /**
  * Frees memory allocated ysing RTMemContAlloc().
@@ -250,7 +255,7 @@ RTR0DECL(void *) RTMemContAlloc(PRTCCPHYS pPhys, size_t cb);
  * @param   pv      Pointer to return from RTMemContAlloc().
  * @param   cb      The cb parameter passed to RTMemContAlloc().
  */
-RTR0DECL(void) RTMemContFree(void *pv, size_t cb);
+RTR0DECL(void) RTMemContFree(void *pv, size_t cb) RT_NO_THROW;
 
 #endif
 
@@ -266,7 +271,7 @@ RTR0DECL(void) RTMemContFree(void *pv, size_t cb);
  * @returns NULL on failure.
  * @param   cb      Size in bytes of the memory block to allocate.
  */
-RTDECL(void *)  RTMemEfTmpAlloc(size_t cb);
+RTDECL(void *)  RTMemEfTmpAlloc(size_t cb) RT_NO_THROW;
 
 /**
  * Same as RTMemTmpAllocZ() except that it's fenced.
@@ -275,14 +280,14 @@ RTDECL(void *)  RTMemEfTmpAlloc(size_t cb);
  * @returns NULL on failure.
  * @param   cb      Size in bytes of the memory block to allocate.
  */
-RTDECL(void *)  RTMemEfTmpAllocZ(size_t cb);
+RTDECL(void *)  RTMemEfTmpAllocZ(size_t cb) RT_NO_THROW;
 
 /**
  * Same as RTMemTmpFree() except that it's for fenced memory.
  *
  * @param   pv      Pointer to memory block.
  */
-RTDECL(void)    RTMemEfTmpFree(void *pv);
+RTDECL(void)    RTMemEfTmpFree(void *pv) RT_NO_THROW;
 
 /**
  * Same as RTMemAlloc() except that it's fenced.
@@ -291,7 +296,7 @@ RTDECL(void)    RTMemEfTmpFree(void *pv);
  * @returns NULL on failure.
  * @param   cb      Size in bytes of the memory block to allocate.
  */
-RTDECL(void *)  RTMemEfAlloc(size_t cb);
+RTDECL(void *)  RTMemEfAlloc(size_t cb) RT_NO_THROW;
 
 /**
  * Same as RTMemAllocZ() except that it's fenced.
@@ -300,7 +305,7 @@ RTDECL(void *)  RTMemEfAlloc(size_t cb);
  * @returns NULL on failure.
  * @param   cb      Size in bytes of the memory block to allocate.
  */
-RTDECL(void *)  RTMemEfAllocZ(size_t cb);
+RTDECL(void *)  RTMemEfAllocZ(size_t cb) RT_NO_THROW;
 
 /**
  * Same as RTMemRealloc() except that it's fenced.
@@ -310,14 +315,14 @@ RTDECL(void *)  RTMemEfAllocZ(size_t cb);
  * @param   pvOld   The memory block to reallocate.
  * @param   cbNew   The new block size (in bytes).
  */
-RTDECL(void *)  RTMemEfRealloc(void *pvOld, size_t cbNew);
+RTDECL(void *)  RTMemEfRealloc(void *pvOld, size_t cbNew) RT_NO_THROW;
 
 /**
  * Free memory allocated by any of the RTMemEf* allocators.
  *
  * @param   pv      Pointer to memory block.
  */
-RTDECL(void)    RTMemEfFree(void *pv);
+RTDECL(void)    RTMemEfFree(void *pv) RT_NO_THROW;
 
 /**
  * Same as RTMemDup() except that it's fenced.
@@ -327,7 +332,7 @@ RTDECL(void)    RTMemEfFree(void *pv);
  * @param   pvSrc   The memory to duplicate.
  * @param   cb      The amount of memory to duplicate.
  */
-RTDECL(void *) RTMemEfDup(const void *pvSrc, size_t cb);
+RTDECL(void *) RTMemEfDup(const void *pvSrc, size_t cb) RT_NO_THROW;
 
 /**
  * Same as RTMemEfDupEx except that it's fenced.
@@ -338,7 +343,7 @@ RTDECL(void *) RTMemEfDup(const void *pvSrc, size_t cb);
  * @param   cbSrc   The amount of memory to duplicate.
  * @param   cbExtra The amount of extra memory to allocate and zero.
  */
-RTDECL(void *) RTMemEfDupEx(const void *pvSrc, size_t cbSrc, size_t cbExtra);
+RTDECL(void *) RTMemEfDupEx(const void *pvSrc, size_t cbSrc, size_t cbExtra) RT_NO_THROW;
 
 /** @def RTMEM_WRAP_TO_EF_APIS
  * Define RTMEM_WRAP_TO_EF_APIS to wrap RTMem APIs to RTMemEf APIs.
@@ -360,9 +365,238 @@ RTDECL(void *) RTMemEfDupEx(const void *pvSrc, size_t cbSrc, size_t cbExtra);
 
 /** @} */
 
+__END_DECLS
+
+
+#ifdef __cplusplus
+
+/**
+ * Template function wrapping RTMemFree to get the correct Destruct
+ * signature for RTAutoRes.
+ *
+ * We can't use a more complex template here, because the g++ on RHEL 3
+ * chokes on it with an internal compiler error.
+ *
+ * @param   T           The data type that's being managed.
+ * @param   aMem        Pointer to the memory that should be free.
+ */
+template <class T>
+inline void RTMemAutoDestructor(T *aMem) RT_NO_THROW
+{
+    RTMemFree(aMem);
+}
+
+
+/**
+ * RTMemAutoPtr allocator which uses RTMemTmpAlloc().
+ *
+ * @returns Allocated memory on success, NULL on failure.
+ * @param   pvOld       What to reallocate, shall always be NULL.
+ * @param   cbNew       The amount of memory to allocate (in bytes).
+ */
+inline void *RTMemTmpAutoAllocator(void *pvOld, size_t cbNew) RT_NO_THROW
+{
+    AssertReturn(!pvOld, NULL);
+    return RTMemTmpAlloc(cbNew);
+}
+
+
+/**
+ * Template function wrapping RTMemTmpFree to get the correct Destruct
+ * signature for RTAutoRes.
+ *
+ * We can't use a more complex template here, because the g++ on RHEL 3
+ * chokes on it with an internal compiler error.
+ *
+ * @param   T           The data type that's being managed.
+ * @param   aMem        Pointer to the memory that should be free.
+ */
+template <class T>
+inline void RTMemTmpAutoDestructor(T *aMem) RT_NO_THROW
+{
+    RTMemTmpFree(aMem);
+}
+
+
+/**
+ * Template function wrapping RTMemEfFree to get the correct Destruct
+ * signature for RTAutoRes.
+ *
+ * We can't use a more complex template here, because the g++ on RHEL 3
+ * chokes on it with an internal compiler error.
+ *
+ * @param   T           The data type that's being managed.
+ * @param   aMem        Pointer to the memory that should be free.
+ */
+template <class T>
+inline void RTMemEfAutoFree(T *aMem) RT_NO_THROW
+{
+    RTMemEfFree(aMem);
+}
+
+
+/**
+ * Template function wrapping NULL to get the correct NilRes signature
+ * for RTAutoRes.
+ *
+ * @param   T           The data type that's being managed.
+ * @returns NULL with the right type.
+ */
+template <class T>
+inline T * RTMemAutoNil(void) RT_NO_THROW
+{
+    return (T *)(NULL);
+}
+
+
+/**
+ * An auto pointer-type template class for managing memory allocating
+ * via C APIs like RTMem (the default).
+ *
+ * The main purpose of this class is to automatically free memory that
+ * isn't explicitly used (release()'ed) when the object goes out of scope.
+ *
+ * As an additional service it can also make the allocations and
+ * reallocations for you if you like, but it can also take of memory
+ * you hand it.
+ *
+ * @param   T           The data type to manage allocations for.
+ * @param   Destruct    The function to be used to free the resource.
+ *                      This will default to RTMemFree.
+ * @param   Allocator   The function to be used to allocate or reallocate
+ *                      the managed memory.
+ *                      This is standard realloc() like stuff, so it's possible
+ *                      to support simple allocation without actually having
+ *                      to support reallocating memory if that's a problem.
+ *                      This will default to RTMemRealloc.
+ */
+template <class T, void Destruct(T *) = RTMemAutoDestructor<T>, void *Allocator(void *, size_t) = RTMemRealloc >
+class RTMemAutoPtr
+    : public RTAutoRes<T *, Destruct, RTMemAutoNil<T> >
+{
+public:
+    /**
+     * Constructor.
+     *
+     * @param   aPtr    Memory pointer to manage. Defaults to NULL.
+     */
+    RTMemAutoPtr(T *aPtr = NULL)
+        : RTAutoRes<T *, Destruct, RTMemAutoNil<T> >(aPtr)
+    {
+    }
+
+    /**
+     * Constructor that allocates memory.
+     *
+     * @param   a_cElements The number of elements (of the data type) to allocate.
+     * @param   a_fZeroed   Whether the memory should be memset with zeros after
+     *                      the allocation. Defaults to false.
+     */
+    RTMemAutoPtr(size_t a_cElements, bool a_fZeroed = false)
+        : RTAutoRes<T *, Destruct, RTMemAutoNil<T> >((T *)Allocator(NULL, a_cElements * sizeof(T)))
+    {
+        if (a_fZeroed && RT_LIKELY(this->get() != NULL))
+            memset(this->get(), '\0', a_cElements * sizeof(T));
+    }
+
+    /**
+     * Free current memory and start managing aPtr.
+     *
+     * @param   aPtr    Memory pointer to manage.
+     */
+    RTMemAutoPtr &operator=(T *aPtr)
+    {
+        this->RTAutoRes<T *, Destruct, RTMemAutoNil<T> >::operator=(aPtr);
+        return *this;
+    }
+
+    /**
+     * Dereference with * operator.
+     */
+    T &operator*()
+    {
+         return *this->get();
+    }
+
+    /**
+     * Dereference with -> operator.
+     */
+    T *operator->()
+    {
+        return this->get();
+    }
+
+    /**
+     * Accessed with the subscript operator ([]).
+     *
+     * @returns Reference to the element.
+     * @param   a_i     The element to access.
+     */
+    T &operator[](size_t a_i)
+    {
+        return this->get()[a_i];
+    }
+
+    /**
+     * Allocates memory and start manage it.
+     *
+     * Any previously managed memory will be freed before making
+     * the new allocation.
+     *
+     * @returns Success indicator.
+     * @retval  true if the new allocation succeeds.
+     * @retval  false on failure, no memory is associated with the object.
+     *
+     * @param   a_cElements The number of elements (of the data type) to allocate.
+     *                      This defaults to 1.
+     * @param   a_fZeroed   Whether the memory should be memset with zeros after
+     *                      the allocation. Defaults to false.
+     */
+    bool alloc(size_t a_cElements = 1, bool a_fZeroed = false)
+    {
+        this->reset(NULL);
+        T *pNewMem = (T *)Allocator(NULL, a_cElements * sizeof(T));
+        if (a_fZeroed && RT_LIKELY(pNewMem != NULL))
+            memset(pNewMem, '\0', a_cElements * sizeof(T));
+        this->reset(pNewMem);
+        return pNewMem != NULL;
+    }
+
+    /**
+     * Reallocate or allocates the memory resource.
+     *
+     * Free the old value if allocation fails.
+     *
+     * The content of any additional memory that was allocated is
+     * undefined when using the default allocator.
+     *
+     * @returns Success indicator.
+     * @retval  true if the new allocation succeeds.
+     * @retval  false on failure, no memory is associated with the object.
+     *
+     * @param   cElements   The new number of elements (of the data type) to allocate.
+     *                      The size of the allocation is the number of elements times
+     *                      the size of the data type - this is currently what's passed
+     *                      down to the Allocator.
+     *                      This defaults to 1.
+     */
+    bool realloc(size_t a_cElements = 1)
+    {
+        T *aNewValue = (T *)Allocator(this->get(), a_cElements * sizeof(T));
+        if (RT_LIKELY(aNewValue != NULL))
+            this->release();
+        /* We want this both if aNewValue is non-NULL and if it is NULL. */
+        this->reset(aNewValue);
+        return aNewValue != NULL;
+    }
+};
+
+
+#endif /* __cplusplus */
+
+
 /** @} */
 
-__END_DECLS
 
 #endif
 

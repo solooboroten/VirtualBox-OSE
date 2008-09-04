@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31129 2008-05-21 20:41:45Z klaus $
+# $Id: Makefile.kmk 35818 2008-09-01 16:12:24Z frank $
 ## @file
 # Sub-Makefile for the Windows NT++ Guest Additions.
 #
@@ -18,8 +18,12 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
 SUB_DEPTH = ..
+DEPTH    ?= ../../../..
+endif
 include $(KBUILD_PATH)/subheader.kmk
 
 # Include Sub-Makefiles.
@@ -29,17 +33,16 @@ include $(PATH_SUB_CURRENT)/MouseFilter/Makefile.kmk
 include $(PATH_SUB_CURRENT)/VBoxGuest/Makefile.kmk
 include $(PATH_SUB_CURRENT)/VBoxTray/Makefile.kmk
 include $(PATH_SUB_CURRENT)/VBoxGINA/Makefile.kmk
-include $(PATH_SUB_CURRENT)/VBoxControl/Makefile.kmk
 include $(PATH_SUB_CURRENT)/VBoxHook/Makefile.kmk
-ifndef VBOX_OSE
 include $(PATH_SUB_CURRENT)/VBoxService/Makefile.kmk
-include $(PATH_SUB_CURRENT)/Network/Makefile.kmk
+ifndef VBOX_OSE
+ include $(PATH_SUB_CURRENT)/Network/Makefile.kmk
 endif
 ifdef VBOX_WITH_WIN32_ADDITIONS_SHAREDFOLDERS
-include $(PATH_SUB_CURRENT)/SharedFolders/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/SharedFolders/Makefile.kmk
 endif
 ifneq ($(wildcard $(PATH_SUB_CURRENT)/Installer),)
-include $(PATH_SUB_CURRENT)/Installer/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/Installer/Makefile.kmk
 endif
 
 #
@@ -49,22 +52,23 @@ endif
 INSTALLS += VBoxGuest-inf
 VBoxGuest-inf_INST = $(INST_ADDITIONS)
 VBoxGuest-inf_MODE = a+r,u+w
-ifndef VBOX_SIGN_ADDITIONS
-VBoxGuest-inf_SOURCES = VBoxGuest/VBoxGuest.inf
-else
 VBoxGuest-inf_SOURCES = \
-	$(PATH_TARGET)/VBoxGuestCat.dir/VBoxGuest.inf \
+	$(PATH_TARGET)/VBoxGuestCat.dir/VBoxGuest.inf
+ifdef VBOX_SIGN_ADDITIONS
+VBoxGuest-inf_SOURCES += \
 	$(PATH_TARGET)/VBoxGuestCat.dir/VBoxGuest.cat \
 	$(PATH_TARGET)/VBoxGuestCat.dir/VBoxGuest.sys \
 	$(PATH_TARGET)/VBoxGuestCat.dir/VBoxControl.exe \
 	$(PATH_TARGET)/VBoxGuestCat.dir/VBoxTray.exe \
 	$(PATH_TARGET)/VBoxGuestCat.dir/VBCoInst.dll
+endif # signing
 VBoxGuest-inf_CLEAN = $(VBoxGuest-inf_SOURCES)
-VBoxGuest-inf_BLDDIRS = $(PATH_TARGET)/VBoxGuestCat.dir
+VBoxGuest-inf_BLDDIRS = \
+	$(PATH_TARGET)/VBoxGuestCat.dir
 
 $(PATH_TARGET)/VBoxGuestCat.dir/VBoxGuest.inf: $(PATH_SUB_CURRENT)/VBoxGuest/VBoxGuest.inf $(MAKEFILE_CURRENT) | $$(call DIRDEP,$$(@D))
 	$(call MSG_GENERATE,VBoxGuest-inf,$@,$<)
-	$(call VBOX_EDIT_INF32_FN,$<,$@)
+	$(call VBOX_EDIT_INF_FN,$<,$@)
 
 $(PATH_TARGET)/VBoxGuestCat.dir/VBoxGuest.sys:   $$(TARGET_VBoxGuest) | $$(call DIRDEP,$$(@D))
 	$(INSTALL) -m 644 $< $(@D)
@@ -72,7 +76,7 @@ $(PATH_TARGET)/VBoxGuestCat.dir/VBoxGuest.sys:   $$(TARGET_VBoxGuest) | $$(call 
 $(PATH_TARGET)/VBoxGuestCat.dir/VBoxControl.exe: $$(TARGET_VBoxControl) | $$(call DIRDEP,$$(@D))
 	$(INSTALL) -m 755 $< $(@D)
 
-$(PATH_TARGET)/VBoxGuestCat.dir/VBoxTray.exe: $$(TARGET_VBoxTray) | $$(call DIRDEP,$$(@D))
+$(PATH_TARGET)/VBoxGuestCat.dir/VBoxTray.exe:    $$(TARGET_VBoxTray) | $$(call DIRDEP,$$(@D))
 	$(INSTALL) -m 755 $< $(@D)
 
 $(PATH_TARGET)/VBoxGuestCat.dir/VBCoInst.dll:    $$(TARGET_VBCoInst) | $$(call DIRDEP,$$(@D))
@@ -85,9 +89,7 @@ $(PATH_TARGET)/VBoxGuestCat.dir/VBoxGuest.cat: \
 		$(PATH_TARGET)/VBoxGuestCat.dir/VBoxTray.exe \
 		$(PATH_TARGET)/VBoxGuestCat.dir/VBCoInst.dll
 	$(call MSG_TOOL,Inf2Cat,VBoxGuest-inf,$@,$<)
-	$(call VBOX_MAKE_CAT32_FN, $(@D),$@)
-
-endif # signing
+	$(call VBOX_MAKE_CAT_FN, $(@D),$@)
 
 include $(KBUILD_PATH)/subfooter.kmk
 

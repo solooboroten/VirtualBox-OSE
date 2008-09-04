@@ -1,4 +1,4 @@
-/* $Id: PGMBth.h 31107 2008-05-21 14:49:54Z sandervl $ */
+/* $Id: PGMBth.h 33607 2008-07-23 09:02:58Z sandervl $ */
 /** @file
  * VBox - Page Manager / Monitor, Shadow+Guest Paging Template.
  */
@@ -60,14 +60,14 @@ PGM_BTH_DECL(int, InitData)(PVM pVM, PPGMMODEDATA pModeData, bool fResolveGCAndR
     pModeData->pfnR3BthPrefetchPage      = PGM_BTH_NAME(PrefetchPage);
     pModeData->pfnR3BthVerifyAccessSyncPage = PGM_BTH_NAME(VerifyAccessSyncPage);
 #ifdef VBOX_STRICT
-    PGM_BTH_PFN(AssertCR3, pVM)         = PGM_BTH_NAME(AssertCR3);
+    pModeData->pfnR3BthAssertCR3         = PGM_BTH_NAME(AssertCR3);
 #endif
 
     if (fResolveGCAndR0)
     {
         int rc;
 
-#if PGM_SHW_TYPE != PGM_TYPE_AMD64 && PGM_SHW_TYPE != PGM_TYPE_NESTED /* No AMD64 for traditional virtualization, only VT-x and AMD-V. */
+#if PGM_SHW_TYPE != PGM_TYPE_AMD64 && PGM_SHW_TYPE != PGM_TYPE_NESTED && PGM_SHW_TYPE != PGM_TYPE_EPT /* No AMD64 for traditional virtualization, only VT-x and AMD-V. */
         /* GC */
         rc = PDMR3GetSymbolGC(pVM, NULL, PGM_BTH_NAME_GC_STR(Trap0eHandler),  &pModeData->pfnGCBthTrap0eHandler);
         AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_BTH_NAME_GC_STR(Trap0eHandler),  rc), rc);

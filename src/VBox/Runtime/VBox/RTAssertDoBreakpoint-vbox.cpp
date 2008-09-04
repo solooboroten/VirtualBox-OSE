@@ -1,4 +1,4 @@
-/* $Id: RTAssertDoBreakpoint-vbox.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: RTAssertDoBreakpoint-vbox.cpp 35388 2008-08-26 17:17:10Z bird $ */
 /** @file
  * IPRT - Assertions, generic RTAssertDoBreakpoint.
  */
@@ -39,17 +39,19 @@
 /** @def VBOX_RTASSERT_WITH_GDB
  * Enables the 'gdb' VBOX_ASSERT option.
  */
-#if defined(DOXYGEN_RUNNING)
+#if defined(DOXYGEN_RUNNING) \
  || (   !defined(VBOX_RTASSERT_WITH_GDB) \
      && !defined(IN_GUEST) \
-     && (!defined(RT_OS_OS2) && !defined(RT_OS_WINDOWS)))
-# define VBOX_ASSERT_WITH_GDB
+     && !defined(RT_OS_OS2) \
+     && !defined(RT_OS_WINDOWS))
+# define VBOX_RTASSERT_WITH_GDB
 #endif
 
-#ifdef VBOX_ASSERT_WITH_GDB
+#ifdef VBOX_RTASSERT_WITH_GDB
 # include <iprt/process.h>
 # include <iprt/path.h>
 # include <iprt/thread.h>
+# include <iprt/asm.h>
 #endif
 
 
@@ -68,41 +70,59 @@ RTDECL(bool)    RTAssertDoBreakpoint(void)
     if (!strcmp(psz, "breakpoint"))
         return true;
 
-#ifdef VBOX_ASSERT_WITH_GDB
+#ifdef VBOX_RTASSERT_WITH_GDB
     /* 'gdb' - means try launch a gdb session in xterm. */
     if (!strcmp(psz, "gdb"))
     {
-        /* Our PID. */
-        char szPid[32];
-        RTStrPrintf(szPid, sizeof(szPid), "%d", RTProcSelf());
+        /* Did we already fire up gdb? If so, just hit the breakpoint. */
+        static bool volatile s_fAlreadyLaunchedGdb = false;
+        if (ASMAtomicUoReadBool(&s_fAlreadyLaunchedGdb))
+            return true;
 
         /* Try find a suitable terminal program. */
-        const char *pszTerm = "/usr/bin/xterm"; /** @todo make this configurable */
-        if (!RTPathExists(pszTerm))
+        const char *pszTerm = RTEnvGet("VBOX_ASSERT_TERM");
+        if (    !pszTerm 
+            ||  !RTPathExists(pszTerm))
         {
-            pszTerm = "/usr/X11R6/bin/xterm";
+            pszTerm = "/usr/bin/gnome-terminal";
             if (!RTPathExists(pszTerm))
             {
-                pszTerm = "/usr/bin/gnome-terminal";
+                pszTerm = "/usr/X11R6/bin/xterm";
                 if (!RTPathExists(pszTerm))
-                    return true;
+                {
+                    pszTerm ="/usr/bin/xterm"; 
+                    if (!RTPathExists(pszTerm))
+                        return true;
+                }
             }
         }
 
+        /* And find gdb. */
+        const char *pszGdb = RTEnvGet("VBOX_ASSERT_GDB");
+        if (    !pszGdb 
+            ||  !RTPathExists(pszGdb))
+        {
+            pszGdb = "/usr/bin/gdb";
+            if (!RTPathExists(pszGdb))
+                pszGdb = "gdb";
+        }
+
         /* Try spawn the process. */
-        const char * apszArgs[] =
+        char szCmd[512];
+        RTStrPrintf(szCmd, sizeof(szCmd), "%s program %d", pszGdb, RTProcSelf());
+        const char *apszArgs[] =
         {
             pszTerm,
             "-e",
-            "/usr/bin/gdb",
-            "program",
-            szPid,
+            szCmd,
             NULL
         };
         RTPROCESS Process;
         int rc = RTProcCreate(apszArgs[0], &apszArgs[0], RTENV_DEFAULT, 0, &Process);
         if (RT_FAILURE(rc))
             return false;
+
+        ASMAtomicWriteBool(&s_fAlreadyLaunchedGdb, true);
 
         /* Wait for gdb to attach. */
         RTThreadSleep(15000);

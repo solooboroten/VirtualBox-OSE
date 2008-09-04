@@ -9,7 +9,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2008 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -30,10 +30,10 @@
 /** @defgroup   grp_QT_COM  Qt-COM Support Layer
  * @{
  *
- * The Qt-COM support layer provides a set of defintions and smart classes for
+ * The Qt-COM support layer provides a set of definitions and smart classes for
  * writing simple, clean and platform-independent code to access COM/XPCOM
  * components through exposed COM interfaces. This layer is based on the
- * COM/XPCOM Abstarction Layer library (the VBoxCOM glue library defined in
+ * COM/XPCOM Abstraction Layer library (the VBoxCOM glue library defined in
  * include/VBox/com and implemented in src/VBox/Main/glue).
  *
  * ...
@@ -41,24 +41,24 @@
  * @defgroup   grp_QT_COM_arrays    Arrays
  * @{
  *
- * COM/XPCOM arrays are mapped to QValueVector objects. QValueVector templates
- * declared with a type that corresponds to the COM type of elements in the
- * array using normal Qt-COM type mapping rules. Here is a code example that
- * demonstrates how to call interface methods that take and return arrays (this
- * example is based on examples given in @ref grp_COM_arrays):
+ * COM/XPCOM arrays are mapped to QVector objects. QVector templates declared
+ * with a type that corresponds to the COM type of elements in the array using
+ * normal Qt-COM type mapping rules. Here is a code example that demonstrates
+ * how to call interface methods that take and return arrays (this example is
+ * based on examples given in @ref grp_COM_arrays):
  * @code
 
     CSomething component;
 
     // ...
 
-    QValueVector <LONG> in (3);
+    QVector <LONG> in (3);
     in [0] = -1;
     in [1] = -2;
     in [2] = -3;
 
-    QValueVector <LONG> out;
-    QValueVector <LONG> ret;
+    QVector <LONG> out;
+    QVector <LONG> ret;
 
     ret = component.TestArrays (in, out);
 
@@ -79,10 +79,10 @@
 
 #undef ASSERT
 
-#include <qglobal.h>
-#include <qstring.h>
-#include <quuid.h>
-#include <q3valuevector.h>
+/* Qt includes */
+#include <QString>
+#include <QUuid>
+#include <QVector>
 
 #include <iprt/memory> // for auto_copy_ptr
 
@@ -228,25 +228,25 @@ public:
     /* Arrays of arbitrary types */
 
     template <typename QT, typename CT>
-    static void ToSafeArray (const Q3ValueVector <QT> &aVec, com::SafeArray <CT> &aArr)
+    static void ToSafeArray (const QVector <QT> &aVec, com::SafeArray <CT> &aArr)
     {
         AssertMsgFailedReturnVoid (("No conversion!\n"));
     }
 
     template <typename CT, typename QT>
-    static void FromSafeArray (const com::SafeArray <CT> &aArr, Q3ValueVector <QT> &aVec)
+    static void FromSafeArray (const com::SafeArray <CT> &aArr, QVector <QT> &aVec)
     {
         AssertMsgFailedReturnVoid (("No conversion!\n"));
     }
 
     template <typename QT, typename CT>
-    static void ToSafeArray (const Q3ValueVector <QT *> &aVec, com::SafeArray <CT *> &aArr)
+    static void ToSafeArray (const QVector <QT *> &aVec, com::SafeArray <CT *> &aArr)
     {
         AssertMsgFailedReturnVoid (("No conversion!\n"));
     }
 
     template <typename CT, typename QT>
-    static void FromSafeArray (const com::SafeArray <CT *> &aArr, Q3ValueVector <QT *> &aVec)
+    static void FromSafeArray (const com::SafeArray <CT *> &aArr, QVector <QT *> &aVec)
     {
         AssertMsgFailedReturnVoid (("No conversion!\n"));
     }
@@ -254,31 +254,27 @@ public:
     /* Arrays of equal types */
 
     template <typename T>
-    static void ToSafeArray (const Q3ValueVector <T> &aVec, com::SafeArray <T> &aArr)
+    static void ToSafeArray (const QVector <T> &aVec, com::SafeArray <T> &aArr)
     {
         aArr.reset (aVec.size());
-        size_t i = 0;
-        for (typename Q3ValueVector <T>::const_iterator it = aVec.begin();
-             it != aVec.end(); ++ it, ++ i)
-            aArr [i] = *it;
+        for (int i = 0; i < aVec.size(); ++i)
+            aArr [i] = aVec.at (i);
     }
 
     template <typename T>
-    static void FromSafeArray (const com::SafeArray <T> &aArr, Q3ValueVector <T> &aVec)
+    static void FromSafeArray (const com::SafeArray <T> &aArr, QVector <T> &aVec)
     {
-        aVec = Q3ValueVector <T> (aArr.size());
-        size_t i = 0;
-        for (typename Q3ValueVector <T>::iterator it = aVec.begin();
-             it != aVec.end(); ++ it, ++ i)
-            *it = aArr [i];
+        aVec.resize (static_cast<int> (aArr.size()));
+        for (int i = 0; i < aVec.size(); ++i)
+            aVec [i] = aArr [i];
     }
 
     /* Arrays of strings */
 
-    static void ToSafeArray (const Q3ValueVector <QString> &aVec,
+    static void ToSafeArray (const QVector <QString> &aVec,
                              com::SafeArray <BSTR> &aArr);
     static void FromSafeArray (const com::SafeArray <BSTR> &aArr,
-                               Q3ValueVector <QString> &aVec);
+                               QVector <QString> &aVec);
 
     /* Arrays of interface pointers. Note: we need a separate pair of names
      * only because the MSVC8 template matching algorithm is poor and tries to
@@ -290,15 +286,13 @@ public:
      * charm. */
 
     template <class CI, class I>
-    static void ToSafeIfaceArray (const Q3ValueVector <CI> &aVec,
+    static void ToSafeIfaceArray (const QVector <CI> &aVec,
                                   com::SafeIfaceArray <I> &aArr)
     {
-        aArr.reset (aVec.size());
-        size_t i = 0;
-        for (typename Q3ValueVector <CI>::const_iterator it = aVec.begin();
-             it != aVec.end(); ++ it, ++ i)
+        aArr.reset (static_cast<int> (aVec.size()));
+        for (int i = 0; i < aVec.size(); ++i)
         {
-            aArr [i] = (*it).iface();
+            aArr [i] = aVec.at (i).iface();
             if (aArr [i])
                 aArr [i]->AddRef();
         }
@@ -306,13 +300,11 @@ public:
 
     template <class I, class CI>
     static void FromSafeIfaceArray (const com::SafeIfaceArray <I> &aArr,
-                                    Q3ValueVector <CI> &aVec)
+                                    QVector <CI> &aVec)
     {
-        aVec = Q3ValueVector <CI> (aArr.size());
-        size_t i = 0;
-        for (typename Q3ValueVector <CI>::iterator it = aVec.begin();
-             it != aVec.end(); ++ it, ++ i)
-            (*it).attach (aArr [i]);
+        aVec.resize (static_cast<int> (aArr.size()));
+        for (int i = 0; i < aVec.size(); ++i)
+            aVec [i].attach (aArr [i]);
     }
 
 protected:
@@ -329,7 +321,8 @@ protected:
     {
     public:
 
-        BSTRIn (const QString &s) : bstr (SysAllocString ((const OLECHAR *) s.utf16())) {}
+        BSTRIn (const QString &s) : bstr (SysAllocString ((const OLECHAR *)
+            (s.isNull() ? 0 : s.utf16()))) {}
 
         ~BSTRIn()
         {
@@ -524,19 +517,19 @@ public:
     bool isNull() const { return mErrInfo.isNull(); }
 
     /**
-     * Returns @c true if the result code repesents success (with or without
+     * Returns @c true if the result code represents success (with or without
      * warnings).
      */
     bool isOk() const { return SUCCEEDED (mRC); }
 
     /**
-     * Returns @c true if the result code represends success with one or more
+     * Returns @c true if the result code represents success with one or more
      * warnings.
      */
     bool isWarning() const { return SUCCEEDED_WARNING (mRC); }
 
     /**
-     * Returns @c true if the result code represends success with no warnings.
+     * Returns @c true if the result code represents success with no warnings.
      */
     bool isReallyOk() const { return mRC == S_OK; }
 
@@ -646,19 +639,19 @@ public:
     bool isNull() const { return mIface == NULL; }
 
     /**
-     * Returns @c true if the result code repesents success (with or without
+     * Returns @c true if the result code represents success (with or without
      * warnings).
      */
     bool isOk() const { return !isNull() && SUCCEEDED (B::mRC); }
 
     /**
-     * Returns @c true if the result code represends success with one or more
+     * Returns @c true if the result code represents success with one or more
      * warnings.
      */
     bool isWarning() const { return !isNull() && SUCCEEDED_WARNING (B::mRC); }
 
     /**
-     * Returns @c true if the result code represends success with no warnings.
+     * Returns @c true if the result code represents success with no warnings.
      */
     bool isReallyOk() const { return !isNull() && B::mRC == S_OK; }
 

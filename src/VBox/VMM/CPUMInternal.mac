@@ -1,4 +1,4 @@
-; $Id: CPUMInternal.mac 29865 2008-04-18 15:16:47Z umoeller $
+; $Id: CPUMInternal.mac 33404 2008-07-16 09:22:28Z sandervl $
 ;; @file
 ; CPUM - Internal header file.
 ;
@@ -49,9 +49,9 @@
 %endif
 
 struc CPUM
-    .offVM          resd    1
-    .pCPUMGC        RTGCPTR_RES  1          ; Guest Context pointer
-    .pCPUMHC        RTHCPTR_RES  1          ; Host Context pointer
+    .offVM          resd           1
+    .pCPUMGC        RTGCPTR32_RES  1          ; Guest Context pointer
+    .pCPUMHC        RTHCPTR_RES    1          ; Host Context pointer
 
 
     ;
@@ -180,10 +180,10 @@ struc CPUM
     .Hyper.ebx            resq    1
     .Hyper.edx            resq    1
     .Hyper.ecx            resq    1
-    .Hyper.esp            resd    1
+    .Hyper.esp            resq    1
+    .Hyper.lss_esp        resd    1
     .Hyper.ss             resw    1
     .Hyper.ssPadding      resw    1
-    .Hyper.rsp            resq    1
     .Hyper.gs             resw    1
     .Hyper.gsPadding      resw    1
     .Hyper.fs             resw    1
@@ -205,27 +205,27 @@ struc CPUM
     .Hyper.r14            resq    1
     .Hyper.r15            resq    1
 
-    .Hyper.esHid.u32Base      resd    1
+    .Hyper.esHid.u64Base      resq    1
     .Hyper.esHid.u32Limit     resd    1
     .Hyper.esHid.Attr         resd    1
 
-    .Hyper.csHid.u32Base      resd    1
+    .Hyper.csHid.u64Base      resq    1
     .Hyper.csHid.u32Limit     resd    1
     .Hyper.csHid.Attr         resd    1
 
-    .Hyper.ssHid.u32Base      resd    1
+    .Hyper.ssHid.u64Base      resq    1
     .Hyper.ssHid.u32Limit     resd    1
     .Hyper.ssHid.Attr         resd    1
 
-    .Hyper.dsHid.u32Base      resd    1
+    .Hyper.dsHid.u64Base      resq    1
     .Hyper.dsHid.u32Limit     resd    1
     .Hyper.dsHid.Attr         resd    1
 
-    .Hyper.fsHid.u32Base      resd    1
+    .Hyper.fsHid.u64Base      resq    1
     .Hyper.fsHid.u32Limit     resd    1
     .Hyper.fsHid.Attr         resd    1
 
-    .Hyper.gsHid.u32Base      resd    1
+    .Hyper.gsHid.u64Base      resq    1
     .Hyper.gsHid.u32Limit     resd    1
     .Hyper.gsHid.Attr         resd    1
 
@@ -233,7 +233,6 @@ struc CPUM
     .Hyper.cr2            resq    1
     .Hyper.cr3            resq    1
     .Hyper.cr4            resq    1
-    .Hyper.cr8            resq    1
 
     .Hyper.dr0            resq    1
     .Hyper.dr1            resq    1
@@ -244,12 +243,10 @@ struc CPUM
     .Hyper.dr6            resq    1
     .Hyper.dr7            resq    1
 
-    .Hyper.gdtr           resb    6           ; GDT limit + linear address
+    .Hyper.gdtr           resb    10          ; GDT limit + linear address
     .Hyper.gdtrPadding    resw    1
-    .Hyper.gdtrPadding64  resd    1
-    .Hyper.idtr           resb    6           ; IDT limit + linear address
+    .Hyper.idtr           resb    10          ; IDT limit + linear address
     .Hyper.idtrPadding    resw    1
-    .Hyper.idtrPadding64  resd    1
     .Hyper.ldtr           resw    1
     .Hyper.ldtrPadding    resw    1
     .Hyper.tr             resw    1
@@ -265,20 +262,18 @@ struc CPUM
     .Hyper.msrLSTAR           resb    8
     .Hyper.msrCSTAR           resb    8
     .Hyper.msrSFMASK          resb    8
-    .Hyper.msrFSBASE          resb    8
-    .Hyper.msrGSBASE          resb    8
     .Hyper.msrKERNELGSBASE    resb    8
 
-    .Hyper.ldtrHid.u32Base    resd    1
+    .Hyper.ldtrHid.u64Base    resq    1
     .Hyper.ldtrHid.u32Limit   resd    1
     .Hyper.ldtrHid.Attr       resd    1
 
-    .Hyper.trHid.u32Base      resd    1
+    .Hyper.trHid.u64Base      resq    1
     .Hyper.trHid.u32Limit     resd    1
     .Hyper.trHid.Attr         resd    1
 
     ; padding
-    .Hyper.padding            resd    2
+;;;;    .Hyper.padding            resd    6
 
 
 
@@ -296,10 +291,10 @@ struc CPUM
     .Guest.ebx            resq    1
     .Guest.edx            resq    1
     .Guest.ecx            resq    1
-    .Guest.esp            resd    1
+    .Guest.esp            resq    1
+    .Guest.lss_esp        resd    1
     .Guest.ss             resw    1
     .Guest.ssPadding      resw    1
-    .Guest.rsp            resq    1
     .Guest.gs             resw    1
     .Guest.gsPadding      resw    1
     .Guest.fs             resw    1
@@ -321,27 +316,27 @@ struc CPUM
     .Guest.r14            resq    1
     .Guest.r15            resq    1
 
-    .Guest.esHid.u32Base      resd    1
+    .Guest.esHid.u64Base      resq    1
     .Guest.esHid.u32Limit     resd    1
     .Guest.esHid.Attr         resd    1
 
-    .Guest.csHid.u32Base      resd    1
+    .Guest.csHid.u64Base      resq    1
     .Guest.csHid.u32Limit     resd    1
     .Guest.csHid.Attr         resd    1
 
-    .Guest.ssHid.u32Base      resd    1
+    .Guest.ssHid.u64Base      resq    1
     .Guest.ssHid.u32Limit     resd    1
     .Guest.ssHid.Attr         resd    1
 
-    .Guest.dsHid.u32Base      resd    1
+    .Guest.dsHid.u64Base      resq    1
     .Guest.dsHid.u32Limit     resd    1
     .Guest.dsHid.Attr         resd    1
 
-    .Guest.fsHid.u32Base      resd    1
+    .Guest.fsHid.u64Base      resq    1
     .Guest.fsHid.u32Limit     resd    1
     .Guest.fsHid.Attr         resd    1
 
-    .Guest.gsHid.u32Base      resd    1
+    .Guest.gsHid.u64Base      resq    1
     .Guest.gsHid.u32Limit     resd    1
     .Guest.gsHid.Attr         resd    1
 
@@ -349,7 +344,6 @@ struc CPUM
     .Guest.cr2            resq    1
     .Guest.cr3            resq    1
     .Guest.cr4            resq    1
-    .Guest.cr8            resq    1
 
     .Guest.dr0            resq    1
     .Guest.dr1            resq    1
@@ -360,12 +354,10 @@ struc CPUM
     .Guest.dr6            resq    1
     .Guest.dr7            resq    1
 
-    .Guest.gdtr           resb    6           ; GDT limit + linear address
+    .Guest.gdtr           resb    10          ; GDT limit + linear address
     .Guest.gdtrPadding    resw    1
-    .Guest.gdtrPadding64  resd    1
-    .Guest.idtr           resb    6           ; IDT limit + linear address
+    .Guest.idtr           resb    10          ; IDT limit + linear address
     .Guest.idtrPadding    resw    1
-    .Guest.idtrPadding64  resd    1
     .Guest.ldtr           resw    1
     .Guest.ldtrPadding    resw    1
     .Guest.tr             resw    1
@@ -381,20 +373,18 @@ struc CPUM
     .Guest.msrLSTAR           resb    8
     .Guest.msrCSTAR           resb    8
     .Guest.msrSFMASK          resb    8
-    .Guest.msrFSBASE          resb    8
-    .Guest.msrGSBASE          resb    8
     .Guest.msrKERNELGSBASE    resb    8
 
-    .Guest.ldtrHid.u32Base    resd    1
+    .Guest.ldtrHid.u64Base    resq    1
     .Guest.ldtrHid.u32Limit   resd    1
     .Guest.ldtrHid.Attr       resd    1
 
-    .Guest.trHid.u32Base      resd    1
+    .Guest.trHid.u64Base      resq    1
     .Guest.trHid.u32Limit     resd    1
     .Guest.trHid.Attr         resd    1
 
     ; padding
-    .Guest.padding            resd    2
+;;;;    .Guest.padding            resd    6
 
 
 
@@ -403,9 +393,9 @@ struc CPUM
     ;
     alignb 32
     ; hypervisor core context.
-    .pHyperCoreR3         RTR3PTR_RES 1
-    .pHyperCoreR0         RTR0PTR_RES 1
-    .pHyperCoreGC         RTGCPTR_RES 1
+    .pHyperCoreR3         RTR3PTR_RES   1
+    .pHyperCoreR0         RTR0PTR_RES   1
+    .pHyperCoreGC         RTGCPTR32_RES 1
     ;...
     .fUseFlags            resd    1
     .fChanged             resd    1
@@ -414,6 +404,13 @@ struc CPUM
     ; CPUID eax=1
     .CPUFeatures.edx      resd    1
     .CPUFeatures.ecx      resd    1
+
+    ; CPUID eax=0x80000001
+    .CPUFeaturesExt.edx   resd    1
+    .CPUFeaturesExt.ecx   resd    1
+
+    .enmCPUVendor         resd    1
+
     ; CR4 masks
     .CR4.AndMask          resd    1
     .CR4.OrMask           resd    1
@@ -426,7 +423,7 @@ struc CPUM
 %endif
 
     ; CPUID leafs
-    .aGuestCpuIdStd       resb    16*5
+    .aGuestCpuIdStd       resb    16*6
     .aGuestCpuIdExt       resb    16*10
     .aGuestCpuIdCentaur   resb    16*4
     .GuestCpuIdDef        resb    16

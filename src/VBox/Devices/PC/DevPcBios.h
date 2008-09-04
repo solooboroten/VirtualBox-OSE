@@ -1,6 +1,6 @@
-/* $Id: DevPcBios.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: DevPcBios.h 34333 2008-08-08 14:14:56Z bird $ */
 /** @file
- * PC BIOS Device Header.
+ * DevPcBios - PC BIOS Device, header shared with the BIOS code.
  */
 
 /*
@@ -22,13 +22,34 @@
 #ifndef DEV_PCBIOS_H
 #define DEV_PCBIOS_H
 
-#define VBOX_DMI_TABLE_ENTR          2
-#define VBOX_DMI_TABLE_SIZE          0x100 /* XXX make this variable */
+/** @def VBOX_DMI_TABLE_BASE */
 #define VBOX_DMI_TABLE_BASE          0xe1000
-#define VBOX_DMI_TABLE_VER           0x23
+#define VBOX_DMI_TABLE_VER           0x25
+#define VBOX_DMI_TABLE_ENTR          3
+#define VBOX_DMI_TABLE_SIZE          0x100
 
+
+/** @def MPS_TABLE_BASE
+ *
+ * Must be located in the same page as the DMI table.
+ */
 #define VBOX_MPS_TABLE_BASE          0xe1100
 
+#define VBOX_SMBIOS_MAJOR_VER        2
+#define VBOX_SMBIOS_MINOR_VER        5
+#define VBOX_SMBIOS_MAXSS            0xff   /* Not very accurate */
+
+
+/** @def VBOX_VMI_TABLE_BASE
+ *
+ * Must be located between 0xC0000 and 0xDEFFF, otherwise it will not be
+ * recognized as regular BIOS.
+ */
+#define VBOX_VMI_BIOS_BASE           0xdf000
+
+
+/** @def VBOX_LANBOOT_SEG
+ */
 #define VBOX_LANBOOT_SEG             0xe200
 
 #endif

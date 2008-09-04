@@ -1,5 +1,4 @@
 <ui version="4.0" >
- <class>VBoxVMInformationDlg</class>
  <comment>
  VBox frontends: Qt4 GUI ("VirtualBox"):
 
@@ -17,6 +16,7 @@
  Clara, CA 95054 USA or visit http://www.sun.com if you need
  additional information or have any questions.
  </comment>
+ <class>VBoxVMInformationDlg</class>
  <widget class="QMainWindow" name="VBoxVMInformationDlg" >
   <property name="geometry" >
    <rect>
@@ -60,7 +60,7 @@
          <number>0</number>
         </property>
         <item>
-         <widget class="QTextEdit" name="mDetailsText" >
+         <widget class="QRichTextEdit" name="mDetailsText" >
           <property name="frameShape" >
            <enum>QFrame::NoFrame</enum>
           </property>
@@ -95,7 +95,7 @@
          <number>0</number>
         </property>
         <item>
-         <widget class="QTextEdit" name="mStatisticText" >
+         <widget class="QRichTextEdit" name="mStatisticText" >
           <property name="frameShape" >
            <enum>QFrame::NoFrame</enum>
           </property>
@@ -120,13 +120,17 @@
     </item>
    </layout>
   </widget>
-  <widget class="QStatusBar" name="statusbar" />
  </widget>
  <customwidgets>
   <customwidget>
    <class>QIDialogButtonBox</class>
    <extends>QDialogButtonBox</extends>
    <header>QIDialogButtonBox.h</header>
+  </customwidget>
+  <customwidget>
+   <class>QRichTextEdit</class>
+   <extends>QTextEdit</extends>
+   <header>VBoxUtils.h</header>
   </customwidget>
  </customwidgets>
  <resources>

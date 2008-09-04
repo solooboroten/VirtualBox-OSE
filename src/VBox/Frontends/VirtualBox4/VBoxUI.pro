@@ -24,24 +24,37 @@
 TEMPLATE	= app
 LANGUAGE	= C++
 
-FORMS	= ui/VBoxDiskImageManagerDlg.ui \
-	ui/VBoxVMNetworkSettings.ui \
-	ui/VBoxVMSettingsSerial.ui \
-	ui/VBoxVMSettingsParallel.ui \
-	ui/VBoxUSBFilterSettings.ui \
-	ui/VBoxSharedFoldersSettings.ui \
-	ui/VBoxNewVMWzd.ui \
-	ui/VBoxCloseVMDlg.ui \
-	ui/VBoxTakeSnapshotDlg.ui \
-	ui/VBoxVMSettingsDlg.ui \
-	ui/VBoxSnapshotDetailsDlg.ui \
-	ui/VBoxGlobalSettingsDlg.ui \
-	ui/VBoxNewHDWzd.ui \
-	ui/VBoxSnapshotsWgt.ui \
-	ui/VBoxVMFirstRunWzd.ui \
-	ui/VBoxVMLogViewer.ui \
-	ui/VBoxRegistrationDlg.ui \
-	ui/VBoxVMInformationDlg.ui
+FORMS = \
+    ui/VBoxCloseVMDlg.ui \
+    ui/VBoxDiskImageManagerDlg.ui \
+    ui/VBoxSettingsDialog.ui \
+    ui/VBoxNewHDWzd.ui \
+    ui/VBoxNewVMWzd.ui \
+    ui/VBoxRegistrationDlg.ui \
+    ui/VBoxUpdateDlg.ui \
+    ui/VBoxSnapshotDetailsDlg.ui \
+    ui/VBoxSnapshotsWgt.ui \
+    ui/VBoxTakeSnapshotDlg.ui \
+    ui/VBoxVMFirstRunWzd.ui \
+    ui/VBoxVMInformationDlg.ui \
+    ui/VBoxVMLogViewer.ui \
+    ui/VBoxVMSettingsAudio.ui \
+    ui/VBoxVMSettingsCD.ui \
+    ui/VBoxVMSettingsFD.ui \
+    ui/VBoxVMSettingsGeneral.ui \
+    ui/VBoxVMSettingsHD.ui \
+    ui/VBoxVMSettingsNetwork.ui \
+    ui/VBoxVMSettingsParallel.ui \
+    ui/VBoxVMSettingsSF.ui \
+    ui/VBoxVMSettingsSFDetails.ui \
+    ui/VBoxVMSettingsSerial.ui \
+    ui/VBoxVMSettingsUSB.ui \
+    ui/VBoxVMSettingsUSBFilterDetails.ui \
+    ui/VBoxVMSettingsVRDP.ui \
+    ui/VBoxGLSettingsGeneral.ui \
+    ui/VBoxGLSettingsInput.ui \
+    ui/VBoxGLSettingsUpdate.ui \
+    ui/VBoxGLSettingsLanguage.ui
 
 TRANSLATIONS = \
 	nls/VirtualBox_tr.ts \

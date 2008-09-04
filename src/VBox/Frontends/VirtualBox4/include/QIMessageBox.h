@@ -30,7 +30,7 @@
 #include <QCheckBox>
 #include <QTextEdit>
 
-class QIRichLabel;
+class QILabel;
 class QLabel;
 class QPushButton;
 class QSpacerItem;
@@ -83,6 +83,8 @@ public:
     bool isDetailsShown() const { return mDetailsVBox->isVisible(); }
     void setDetailsShown (bool aShown);
 
+    QPixmap standardPixmap (QIMessageBox::Icon aIcon);
+
 private:
 
     QPushButton *createButton (int aButton);
@@ -103,7 +105,7 @@ private:
 
     int mButton0, mButton1, mButton2, mButtonEsc;
     QLabel *mIconLabel;
-    QIRichLabel *mTextLabel;
+    QILabel *mTextLabel;
     QPushButton *mButton0PB, *mButton1PB, *mButton2PB;
     QCheckBox *mFlagCB, *mFlagCB_Main, *mFlagCB_Details;
     QWidget *mDetailsVBox;
@@ -113,3 +115,4 @@ private:
 };
 
 #endif
+

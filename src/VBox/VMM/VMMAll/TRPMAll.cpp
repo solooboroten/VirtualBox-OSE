@@ -1,4 +1,4 @@
-/* $Id: TRPMAll.cpp 31068 2008-05-21 07:47:09Z frank $ */
+/* $Id: TRPMAll.cpp 35811 2008-09-01 15:49:30Z sandervl $ */
 /** @file
  * TRPM - Trap Monitor - Any Context.
  */
@@ -370,7 +370,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
     if (pRegFrame->eflags.Bits.u1VM)
         Log(("TRPMForwardTrap-VM: eip=%04X:%04X iGate=%d\n", pRegFrame->cs, pRegFrame->eip, iGate));
     else
-        Log(("TRPMForwardTrap: eip=%04X:%VGv iGate=%d\n", pRegFrame->cs, pRegFrame->eip, iGate));
+        Log(("TRPMForwardTrap: eip=%04X:%VRv iGate=%d\n", pRegFrame->cs, pRegFrame->eip, iGate));
 
     switch (iGate) {
     case 14:
@@ -379,7 +379,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
             int rc;
             RTGCPTR pCallerGC;
 #ifdef IN_GC
-            rc = MMGCRamRead(pVM, &pCallerGC, (RTGCPTR)pRegFrame->esp, sizeof(pCallerGC));
+            rc = MMGCRamRead(pVM, &pCallerGC, (void *)pRegFrame->esp, sizeof(pCallerGC));
 #else
             rc = PGMPhysReadGCPtr(pVM, &pCallerGC, (RTGCPTR)pRegFrame->esp, sizeof(pCallerGC));
 #endif
@@ -421,7 +421,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
 #ifndef VBOX_RAW_V86
         && !(eflags.Bits.u1VM) /** @todo implement when needed (illegal for same privilege level transfers). */
 #endif
-        && !PATMIsPatchGCAddr(pVM, (RTGCPTR)pRegFrame->eip)
+        && !PATMIsPatchGCAddr(pVM, (RTRCPTR)pRegFrame->eip)
        )
     {
         uint16_t    cbIDT;
@@ -448,7 +448,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
          */
         pIDTEntry = (RTGCPTR)((RTGCUINTPTR)GCPtrIDT + sizeof(VBOXIDTE) * iGate);
 #ifdef IN_GC
-        rc = MMGCRamRead(pVM, &GuestIdte, pIDTEntry, sizeof(GuestIdte));
+        rc = MMGCRamRead(pVM, &GuestIdte, (void *)pIDTEntry, sizeof(GuestIdte));
 #else
         rc = PGMPhysReadGCPtr(pVM, &GuestIdte, pIDTEntry, sizeof(GuestIdte));
 #endif
@@ -463,7 +463,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                 goto failure;
             }
 #ifdef IN_GC
-            rc = MMGCRamRead(pVM, &GuestIdte, pIDTEntry, sizeof(GuestIdte));
+            rc = MMGCRamRead(pVM, &GuestIdte, (void *)pIDTEntry, sizeof(GuestIdte));
 #else
             rc = PGMPhysReadGCPtr(pVM, &GuestIdte, pIDTEntry, sizeof(GuestIdte));
 #endif
@@ -476,10 +476,10 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
             &&  (enmType == TRPM_TRAP || enmType == TRPM_HARDWARE_INT || cpl <= GuestIdte.Gen.u2DPL)  /* CPL <= DPL if software int */
            )
         {
-            RTGCPTR   pHandler, dummy;
-            GCPTRTYPE(uint32_t *) pTrapStackGC;
+            RTGCPTR pHandler, dummy;
+            RTGCPTR pTrapStackGC;
 
-            pHandler = (RTGCPTR)((GuestIdte.Gen.u16OffsetHigh << 16) | GuestIdte.Gen.u16OffsetLow);
+            pHandler = (RTGCPTR)VBOXIDTE_OFFSET(GuestIdte);
 
             /* Note: SELMValidateAndConvertCSAddr checks for code type, memory type, selector validity. */
             /** @todo dpl <= cpl else GPF */
@@ -497,7 +497,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                 uint32_t dpl;
                 uint32_t ss_r0;
                 uint32_t esp_r0;
-                VBOXDESC Desc;
+                X86DESC  Desc;
                 RTGCPTR  pGdtEntry;
 
                 CPUMGetGuestGDTR(pVM, &gdtr);
@@ -506,9 +506,9 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                 if (!gdtr.pGdt)
                     goto failure;
 
-                pGdtEntry = (RTGCPTR)(uintptr_t)&((VBOXDESC *)gdtr.pGdt)[GuestIdte.Gen.u16SegSel >> X86_SEL_SHIFT]; /// @todo fix this
+                pGdtEntry = (RTGCPTR)(uintptr_t)&((X86DESC *)gdtr.pGdt)[GuestIdte.Gen.u16SegSel >> X86_SEL_SHIFT]; /// @todo fix this
 #ifdef IN_GC
-                rc = MMGCRamRead(pVM, &Desc, pGdtEntry, sizeof(Desc));
+                rc = MMGCRamRead(pVM, &Desc, (void *)pGdtEntry, sizeof(Desc));
 #else
                 rc = PGMPhysReadGCPtr(pVM, &Desc, pGdtEntry, sizeof(Desc));
 #endif
@@ -523,7 +523,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                         goto failure;
                     }
 #ifdef IN_GC
-                    rc = MMGCRamRead(pVM, &Desc, pGdtEntry, sizeof(Desc));
+                    rc = MMGCRamRead(pVM, &Desc, (void *)pGdtEntry, sizeof(Desc));
 #else
                     rc = PGMPhysReadGCPtr(pVM, &Desc, pGdtEntry, sizeof(Desc));
 #endif
@@ -554,10 +554,10 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                     if (   !esp_r0
                         || !ss_r0
                         || (ss_r0 & X86_SEL_RPL) != ((dpl == 0) ? 1 : dpl)
-                        || SELMToFlatEx(pVM, fakeflags, ss_r0, (RTGCPTR)esp_r0, NULL, SELMTOFLAT_FLAGS_CPL1, (PRTGCPTR)&pTrapStackGC, NULL) != VINF_SUCCESS
+                        || SELMToFlatBySelEx(pVM, fakeflags, ss_r0, (RTGCPTR)esp_r0, NULL, SELMTOFLAT_FLAGS_CPL1, (PRTGCPTR)&pTrapStackGC, NULL) != VINF_SUCCESS
                        )
                     {
-                        Log(("Invalid ring 0 stack %04X:%VGv\n", ss_r0, esp_r0));
+                        Log(("Invalid ring 0 stack %04X:%VRv\n", ss_r0, esp_r0));
                         goto failure;
                     }
                 }
@@ -568,9 +568,9 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                     esp_r0 = pRegFrame->esp;
 
                     if (    eflags.Bits.u1VM    /* illegal */
-                        ||  SELMToFlatEx(pVM, fakeflags, ss_r0, (RTGCPTR)esp_r0, NULL, SELMTOFLAT_FLAGS_CPL1, (PRTGCPTR)&pTrapStackGC, NULL) != VINF_SUCCESS)
+                        ||  SELMToFlatBySelEx(pVM, fakeflags, ss_r0, (RTGCPTR)esp_r0, NULL, SELMTOFLAT_FLAGS_CPL1, (PRTGCPTR)&pTrapStackGC, NULL) != VINF_SUCCESS)
                     {
-                        AssertMsgFailed(("Invalid stack %04X:%VGv??? (VM=%d)\n", ss_r0, esp_r0, eflags.Bits.u1VM));
+                        AssertMsgFailed(("Invalid stack %04X:%VRv??? (VM=%d)\n", ss_r0, esp_r0, eflags.Bits.u1VM));
                         goto failure;
                     }
                 }
@@ -587,7 +587,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                 Assert(eflags.Bits.u1VM || (pRegFrame->ss & X86_SEL_RPL) != 0);
                 /* Check maximum amount we need (10 when executing in V86 mode) */
                 rc = PGMVerifyAccess(pVM, (RTGCUINTPTR)pTrapStackGC - 10*sizeof(uint32_t), 10 * sizeof(uint32_t), X86_PTE_RW);
-                pTrapStack = pTrapStackGC;
+                pTrapStack = (uint32_t *)pTrapStackGC;
 #else
                 Assert(eflags.Bits.u1VM || (pRegFrame->ss & X86_SEL_RPL) == 0 || (pRegFrame->ss & X86_SEL_RPL) == 3);
                 /* Check maximum amount we need (10 when executing in V86 mode) */
@@ -606,7 +606,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                     /** if eflags.Bits.u1VM then push gs, fs, ds, es */
                     if (eflags.Bits.u1VM)
                     {
-                        Log(("TRAP%02X: (VM) Handler %04X:%08X Stack %04X:%08X RPL=%d CR2=%08X\n", iGate, GuestIdte.Gen.u16SegSel, pHandler, ss_r0, esp_r0, (pRegFrame->ss & X86_SEL_RPL), pVM->trpm.s.uActiveCR2));
+                        Log(("TRAP%02X: (VM) Handler %04X:%VGv Stack %04X:%08X RPL=%d CR2=%08X\n", iGate, GuestIdte.Gen.u16SegSel, pHandler, ss_r0, esp_r0, (pRegFrame->ss & X86_SEL_RPL), pVM->trpm.s.uActiveCR2));
                         pTrapStack[--idx] = pRegFrame->gs;
                         pTrapStack[--idx] = pRegFrame->fs;
                         pTrapStack[--idx] = pRegFrame->ds;
@@ -616,7 +616,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                         pRegFrame->ds = pRegFrame->es = pRegFrame->fs = pRegFrame->gs = 0;
                     }
                     else
-                        Log(("TRAP%02X: Handler %04X:%08X Stack %04X:%08X RPL=%d CR2=%08X\n", iGate, GuestIdte.Gen.u16SegSel, pHandler, ss_r0, esp_r0, (pRegFrame->ss & X86_SEL_RPL), pVM->trpm.s.uActiveCR2));
+                        Log(("TRAP%02X: Handler %04X:%VGv Stack %04X:%08X RPL=%d CR2=%08X\n", iGate, GuestIdte.Gen.u16SegSel, pHandler, ss_r0, esp_r0, (pRegFrame->ss & X86_SEL_RPL), pVM->trpm.s.uActiveCR2));
 
                     if (!fConforming && dpl < cpl)
                     {
@@ -658,7 +658,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                     eflags.u32 &= ~(X86_EFL_TF | X86_EFL_VM | X86_EFL_RF | X86_EFL_NT);
 #ifdef DEBUG
                     for (int j=idx;j<0;j++)
-                        Log4(("Stack %VGv pos %02d: %08x\n", &pTrapStack[j], j, pTrapStack[j]));
+                        Log4(("Stack %VRv pos %02d: %08x\n", &pTrapStack[j], j, pTrapStack[j]));
 
                     Log4(("eax=%08x ebx=%08x ecx=%08x edx=%08x esi=%08x edi=%08x\n"
                           "eip=%08x esp=%08x ebp=%08x iopl=%d\n"
@@ -669,7 +669,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                           (RTSEL)pRegFrame->fs, (RTSEL)pRegFrame->gs, eflags.u32));
 #endif
 
-                    Log(("PATM Handler %VGv Adjusted stack %08X new EFLAGS=%08X idx=%d dpl=%d cpl=%d\n", pVM->trpm.s.aGuestTrapHandler[iGate], esp_r0, eflags.u32, idx, dpl, cpl));
+                    Log(("PATM Handler %VRv Adjusted stack %08X new EFLAGS=%08X idx=%d dpl=%d cpl=%d\n", pVM->trpm.s.aGuestTrapHandler[iGate], esp_r0, eflags.u32, idx, dpl, cpl));
 
                     /* Make sure the internal guest context structure is up-to-date. */
                     CPUMSetGuestCR2(pVM, pVM->trpm.s.uActiveCR2);
@@ -693,7 +693,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
                     if (iOrgTrap >= 0 && iOrgTrap < (int)RT_ELEMENTS(pVM->trpm.s.aStatGCTraps))
                         STAM_PROFILE_ADV_STOP(&pVM->trpm.s.aStatGCTraps[iOrgTrap], o);
 
-                    CPUMGCCallGuestTrapHandler(pRegFrame, GuestIdte.Gen.u16SegSel | 1, pVM->trpm.s.aGuestTrapHandler[iGate], eflags.u32, ss_r0, (RTGCPTR)esp_r0);
+                    CPUMGCCallGuestTrapHandler(pRegFrame, GuestIdte.Gen.u16SegSel | 1, pVM->trpm.s.aGuestTrapHandler[iGate], eflags.u32, ss_r0, (RTRCPTR)esp_r0);
                     /* does not return */
 #else
                     /* Turn off interrupts for interrupt gates. */
@@ -727,7 +727,7 @@ TRPMDECL(int) TRPMForwardTrap(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t iGate, u
         if (pVM->trpm.s.aGuestTrapHandler[iGate] == TRPM_INVALID_HANDLER)
             STAM_COUNTER_INC(&pVM->trpm.s.StatForwardFailNoHandler);
         else
-        if (PATMIsPatchGCAddr(pVM, (RTGCPTR)pRegFrame->eip))
+        if (PATMIsPatchGCAddr(pVM, (RTRCPTR)pRegFrame->eip))
             STAM_COUNTER_INC(&pVM->trpm.s.StatForwardFailPatchAddr);
 #endif
     }
@@ -834,7 +834,7 @@ TRPMDECL(int) trpmClearGuestTrapHandler(PVM pVM, unsigned iTrap)
     /*
      * Validate.
      */
-    if (iTrap >= ELEMENTS(pVM->trpm.s.aIdt))
+    if (iTrap >= RT_ELEMENTS(pVM->trpm.s.aIdt))
     {
         AssertMsg(iTrap < TRPM_HANDLER_INT_BASE, ("Illegal gate number %d!\n", iTrap));
         return VERR_INVALID_PARAMETER;

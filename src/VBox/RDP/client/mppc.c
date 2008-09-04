@@ -1,7 +1,7 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
    Protocol services - RDP decompression
-   Copyright (C) Matthew Chapman 1999-2005
+   Copyright (C) Matthew Chapman 1999-2007
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,6 +17,15 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
+
+/*
+ * Sun GPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the General Public License version 2 (GPLv2) at this time for any software where
+ * a choice of GPL license versions is made available with the language indicating
+ * that GPLv2 or any later version may be used, or where a choice of which version
+ * of the GPL is applied is otherwise unspecified.
+ */
 
 #include <stdio.h>
 #include <string.h>
@@ -63,7 +72,7 @@ mppc_expand(uint8 * data, uint32 clen, uint8 ctype, uint32 * roff, uint32 * rlen
 	int next_offset, match_off;
 	int match_len;
 	int old_offset, match_bits;
-	BOOL big = ctype & RDP_MPPC_BIG ? True : False;
+	RD_BOOL big = ctype & RDP_MPPC_BIG ? True : False;
 
 	uint8 *dict = g_mppc_dict.hist;
 

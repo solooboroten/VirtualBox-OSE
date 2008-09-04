@@ -41,6 +41,7 @@ using namespace com;
 #include <iprt/stream.h>
 #include <iprt/ldr.h>
 #include <iprt/getopt.h>
+#include <iprt/env.h>
 
 #ifdef VBOX_FFMPEG
 #include <cstdlib>
@@ -337,6 +338,8 @@ static void show_usage()
     RTPrintf("Usage:\n"
              "   -s, -startvm, --startvm <name|uuid>   Start given VM (required argument)\n"
 #ifdef VBOX_WITH_VRDP
+             "   -v, -vrdp, --vrdp on|off|config       Enable (default) or disable the VRDP\n"
+             "                                         server or don't change the setting\n"
              "   -p, -vrdpport, --vrdpport <port>      Port number the VRDP server will bind\n"
              "                                         to\n"
              "   -a, -vrdpaddress, --vrdpaddress <ip>  Interface IP the VRDP will bind to \n"
@@ -402,11 +405,12 @@ static void parse_environ(unsigned long *pulFrameWidth, unsigned long *pulFrameH
 /**
  *  Entry point.
  */
-int main (int argc, char **argv)
+extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
 {
 #ifdef VBOX_WITH_VRDP
     ULONG vrdpPort = ~0U;
     const char *vrdpAddress = NULL;
+    const char *vrdpEnabled = NULL;
 #endif
     unsigned fRawR0 = ~0U;
     unsigned fRawR3 = ~0U;
@@ -421,8 +425,10 @@ int main (int argc, char **argv)
     const char *pszFileNameParam = "VBox-%d.vob";
 #endif /* VBOX_FFMPEG */
 
-    // initialize VBox Runtime
-    RTR3Init(true, ~(size_t)0);
+    /* Make sure that DISPLAY is unset, so that X11 bits do not get initialised
+     * on X11-using OSes. */
+    /** @todo this should really be taken care of in Main. */
+    RTEnvUnset("DISPLAY");
 
     LogFlow (("VBoxHeadless STARTED.\n"));
     RTPrintf ("VirtualBox Headless Interface %s\n"
@@ -449,7 +455,7 @@ int main (int argc, char **argv)
         OPT_NO_PATM,
         OPT_CSAM,
         OPT_NO_CSAM,
-        OPT_COMMENT
+        OPT_COMMENT,
     };
 
     static const RTOPTIONDEF g_aOptions[] =
@@ -459,8 +465,10 @@ int main (int argc, char **argv)
 #ifdef VBOX_WITH_VRDP
         { "-vrdpport", 'p', RTGETOPT_REQ_UINT32 },
         { "--vrdpport", 'p', RTGETOPT_REQ_UINT32 },
-        { "-vrdaddress", 'a', RTGETOPT_REQ_STRING },
-        { "--vrdaddress", 'a', RTGETOPT_REQ_STRING },
+        { "-vrdpaddress", 'a', RTGETOPT_REQ_STRING },
+        { "--vrdpaddress", 'a', RTGETOPT_REQ_STRING },
+        { "-vrdp", 'v', RTGETOPT_REQ_STRING },
+        { "--vrdp", 'v', RTGETOPT_REQ_STRING },
 #endif /* VBOX_WITH_VRDP defined */
         { "-rawr0", OPT_RAW_R0, 0 },
         { "--rawr0", OPT_RAW_R0, 0 },
@@ -515,6 +523,9 @@ int main (int argc, char **argv)
                 break;
             case 'a':
                 vrdpAddress = ValueUnion.psz;
+                break;
+            case 'v':
+                vrdpEnabled = ValueUnion.psz;
                 break;
 #endif /* VBOX_WITH_VRDP defined */
             case OPT_RAW_R0:
@@ -803,31 +814,63 @@ int main (int argc, char **argv)
         }
 
 #ifdef VBOX_WITH_VRDP
-        Log (("VBoxHeadless: Enabling VRDP server...\n"));
-
+        /* default is to enable the RDP server (backward compatibility) */
+        BOOL fVRDPEnable = true;
+        BOOL fVRDPEnabled;
         ComPtr <IVRDPServer> vrdpServer;
         CHECK_ERROR_BREAK(machine, COMGETTER (VRDPServer) (vrdpServer.asOutParam()));
-
-        /* set VRDP port if requested by the user */
-        if (vrdpPort != ~0U)
-            CHECK_ERROR_BREAK(vrdpServer, COMSETTER(Port)(vrdpPort));
-        else
-            CHECK_ERROR_BREAK(vrdpServer, COMGETTER(Port)(&vrdpPort));
-        /* set VRDP address if requested by the user */
-        if (vrdpAddress != NULL)
-            CHECK_ERROR_BREAK(vrdpServer, COMSETTER(NetAddress)(Bstr(vrdpAddress)));
-
-        /* enable VRDP server (only if currently disabled) */
-        BOOL fVRDPEnabled;
         CHECK_ERROR_BREAK(vrdpServer, COMGETTER(Enabled) (&fVRDPEnabled));
-        if (!fVRDPEnabled)
+
+        if (vrdpEnabled != NULL)
         {
-            CHECK_ERROR_BREAK(vrdpServer, COMSETTER(Enabled) (TRUE));
+            /* -vrdp on|off|config */
+            if (!strcmp(vrdpEnabled, "off") || !strcmp(vrdpEnabled, "disable"))
+                fVRDPEnable = false;
+            else if (!strcmp(vrdpEnabled, "config"))
+            {
+                if (!fVRDPEnabled)
+                    fVRDPEnable = false;
+            }
+            else if (strcmp(vrdpEnabled, "on") && strcmp(vrdpEnabled, "enable"))
+            {
+                RTPrintf("-vrdp requires an argument (on|off|config)\n");
+                break;
+            }
+        }
+
+        if (fVRDPEnable)
+        {
+            Log (("VBoxHeadless: Enabling VRDP server...\n"));
+
+            /* set VRDP port if requested by the user */
+            if (vrdpPort != ~0U)
+                CHECK_ERROR_BREAK(vrdpServer, COMSETTER(Port)(vrdpPort));
+            else
+                CHECK_ERROR_BREAK(vrdpServer, COMGETTER(Port)(&vrdpPort));
+            /* set VRDP address if requested by the user */
+            if (vrdpAddress != NULL)
+            {
+                CHECK_ERROR_BREAK(vrdpServer, COMSETTER(NetAddress)(Bstr(vrdpAddress)));
+            }
+            /* enable VRDP server (only if currently disabled) */
+            if (!fVRDPEnabled)
+            {
+                CHECK_ERROR_BREAK(vrdpServer, COMSETTER(Enabled) (TRUE));
+            }
+        }
+        else
+        {
+            /* disable VRDP server (only if currently enabled */
+            if (fVRDPEnabled)
+            {
+                CHECK_ERROR_BREAK(vrdpServer, COMSETTER(Enabled) (FALSE));
+            }
         }
 #endif
         Log (("VBoxHeadless: Powering up the machine...\n"));
 #ifdef VBOX_WITH_VRDP
-        RTPrintf("Listening on port %d\n", !vrdpPort ? VRDP_DEFAULT_PORT : vrdpPort);
+        if (fVRDPEnable)
+            RTPrintf("Listening on port %d\n", !vrdpPort ? VRDP_DEFAULT_PORT : vrdpPort);
 #endif
 
         ComPtr <IProgress> progress;
@@ -891,4 +934,17 @@ int main (int argc, char **argv)
 
     return rc;
 }
+
+
+#ifndef VBOX_WITH_HARDENING
+/**
+ * Main entry point.
+ */
+int main (int argc, char **argv, char **envp)
+{
+    // initialize VBox Runtime
+    RTR3InitAndSUPLib();
+    return TrustedMain (argc, argv, envp);
+}
+#endif /* !VBOX_WITH_HARDENING */
 

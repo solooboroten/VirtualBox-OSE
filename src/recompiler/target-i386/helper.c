@@ -17,6 +17,15 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+
+/*
+ * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
 #ifdef VBOX
 # include <VBox/err.h>
 #endif
@@ -1339,7 +1348,7 @@ void do_interrupt(int intno, int is_int, int error_code,
         }
     }
     if (env->cr[0] & CR0_PE_MASK) {
-#if TARGET_X86_64
+#ifdef TARGET_X86_64
         if (env->hflags & HF_LMA_MASK) {
             do_interrupt64(intno, is_int, error_code, next_eip, is_hw);
         } else
@@ -4449,7 +4458,7 @@ int emulate_single_instr(CPUX86State *env1)
     int csize;
     void (*gen_func)(void);
     uint8_t *tc_ptr;
-    uint32_t old_eip;
+    target_ulong old_eip;
 
     /* ensures env is loaded in ebp! */
     CPUX86State *savedenv = env;
@@ -4589,7 +4598,7 @@ int emulate_single_instr(CPUX86State *env1)
      */
     if (env->hflags & HF_INHIBIT_IRQ_MASK)
     {
-        Log(("REM: Emulating next instruction due to instruction fusing (HF_INHIBIT_IRQ_MASK)\n"));
+        Log(("REM: Emulating next instruction due to instruction fusing (HF_INHIBIT_IRQ_MASK) at %VGv\n", env->eip));
         env->hflags &= ~HF_INHIBIT_IRQ_MASK;
         emulate_single_instr(env);
     }

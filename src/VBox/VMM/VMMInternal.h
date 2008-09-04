@@ -1,4 +1,4 @@
-/* $Id: VMMInternal.h 31281 2008-05-27 09:21:03Z sandervl $ */
+/* $Id: VMMInternal.h 34951 2008-08-19 08:11:20Z sandervl $ */
 /** @file
  * VMM - Internal header file.
  */
@@ -87,7 +87,7 @@ typedef struct VMMR0LOGGER
 #if HC_ARCH_BITS == 32
     uint32_t                    u32Alignment;
 #endif
-    /** The ring-0 logger instance. This extends beyon the size.*/
+    /** The ring-0 logger instance. This extends beyond the size.*/
     RTLOGGER                    Logger;
 } VMMR0LOGGER, *PVMMR0LOGGER;
 
@@ -177,7 +177,7 @@ typedef struct VMM
     /** Host to guest switcher entry point. */
     R0PTRTYPE(PFNVMMSWITCHERHC) pfnR0HostToGuest;
     /** Guest to host switcher entry point. */
-    GCPTRTYPE(PFNVMMSWITCHERGC) pfnGCGuestToHost;
+    RCPTRTYPE(PFNVMMSWITCHERGC) pfnGCGuestToHost;
     /** Call Trampoline. See vmmGCCallTrampoline(). */
     RTGCPTR32                   pfnGCCallTrampoline;
 
@@ -187,7 +187,7 @@ typedef struct VMM
     RTGCPTR32                   pfnCPUMGCResumeGuestV86;
     /** The last GC return code. */
     RTINT                       iLastGCRc;
-#if HC_ARCH_BITS == 64 && GC_ARCH_BITS == 32
+#if HC_ARCH_BITS == 64
     uint32_t                    u32Padding0; /**< Alignment padding. */
 #endif
 
@@ -196,18 +196,18 @@ typedef struct VMM
      * and always writable in GC. */
     R3PTRTYPE(uint8_t *)        pbHCStack;
     /** Pointer to the bottom of the stack - needed for doing relocations. */
-    GCPTRTYPE(uint8_t *)        pbGCStack;
+    RCPTRTYPE(uint8_t *)        pbGCStack;
     /** Pointer to the bottom of the stack - needed for doing relocations. */
-    GCPTRTYPE(uint8_t *)        pbGCStackBottom;
+    RCPTRTYPE(uint8_t *)        pbGCStackBottom;
 
     /** Pointer to the GC logger instance - GC Ptr.
      * This is NULL if logging is disabled. */
-    GCPTRTYPE(PRTLOGGERGC)      pLoggerGC;
+    RCPTRTYPE(PRTLOGGERRC)      pLoggerGC;
     /** Size of the allocated logger instance (pLoggerGC/pLoggerHC). */
     RTUINT                      cbLoggerGC;
     /** Pointer to the GC logger instance - HC Ptr.
      * This is NULL if logging is disabled. */
-    R3PTRTYPE(PRTLOGGERGC)      pLoggerHC;
+    R3PTRTYPE(PRTLOGGERRC)      pLoggerHC;
 
     /** Pointer to the R0 logger instance.
      * This is NULL if logging is disabled. */
@@ -215,12 +215,12 @@ typedef struct VMM
 
 #ifdef VBOX_WITH_GC_AND_R0_RELEASE_LOG
     /** Pointer to the GC release logger instance - GC Ptr. */
-    GCPTRTYPE(PRTLOGGERGC)      pRelLoggerGC;
+    RCPTRTYPE(PRTLOGGERRC)      pRelLoggerGC;
     /** Size of the allocated release logger instance (pRelLoggerGC/pRelLoggerHC).
      * This may differ from cbLoggerGC. */
     RTUINT                      cbRelLoggerGC;
     /** Pointer to the GC release logger instance - HC Ptr. */
-    R3PTRTYPE(PRTLOGGERGC)      pRelLoggerHC;
+    R3PTRTYPE(PRTLOGGERRC)      pRelLoggerHC;
 #endif /* VBOX_WITH_GC_AND_R0_RELEASE_LOG */
 
     /** Global VM critical section. */
@@ -472,7 +472,7 @@ VMMGCDECL(void) vmmGCRelLoggerWrapper(const char *pszFormat, ...);
  * @param   pLogger     The logger instance to flush.
  * @remark  This function must be exported!
  */
-VMMGCDECL(int) vmmGCLoggerFlush(PRTLOGGERGC pLogger);
+VMMGCDECL(int) vmmGCLoggerFlush(PRTLOGGERRC pLogger);
 
 /** @name Trap testcases and related labels.
  * @{ */

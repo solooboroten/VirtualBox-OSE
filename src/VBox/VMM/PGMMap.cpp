@@ -1,4 +1,4 @@
-/* $Id: PGMMap.cpp 30448 2008-05-02 17:48:42Z bird $ */
+/* $Id: PGMMap.cpp 35904 2008-09-02 16:40:12Z sandervl $ */
 /** @file
  * PGM - Page Manager, Guest Context Mappings.
  */
@@ -163,7 +163,7 @@ PGMR3DECL(int) PGMR3MapPT(PVM pVM, RTGCPTR GCPtr, uint32_t cb, PFNPGMRELOCATE pf
          * 32-bit.
          */
         pNew->aPTs[i].pPTR3    = (PX86PT)pbPTs;
-        pNew->aPTs[i].pPTGC    = MMHyperR3ToGC(pVM, pNew->aPTs[i].pPTR3);
+        pNew->aPTs[i].pPTGC    = MMHyperR3ToRC(pVM, pNew->aPTs[i].pPTR3);
         pNew->aPTs[i].pPTR0    = MMHyperR3ToR0(pVM, pNew->aPTs[i].pPTR3);
         pNew->aPTs[i].HCPhysPT = MMR3HyperHCVirt2HCPhys(pVM, pNew->aPTs[i].pPTR3);
         pbPTs += PAGE_SIZE;
@@ -176,7 +176,7 @@ PGMR3DECL(int) PGMR3MapPT(PVM pVM, RTGCPTR GCPtr, uint32_t cb, PFNPGMRELOCATE pf
         pNew->aPTs[i].HCPhysPaePT0 = MMR3HyperHCVirt2HCPhys(pVM, pbPTs);
         pNew->aPTs[i].HCPhysPaePT1 = MMR3HyperHCVirt2HCPhys(pVM, pbPTs + PAGE_SIZE);
         pNew->aPTs[i].paPaePTsR3 = (PX86PTPAE)pbPTs;
-        pNew->aPTs[i].paPaePTsGC = MMHyperR3ToGC(pVM, pbPTs);
+        pNew->aPTs[i].paPaePTsGC = MMHyperR3ToRC(pVM, pbPTs);
         pNew->aPTs[i].paPaePTsR0 = MMHyperR3ToR0(pVM, pbPTs);
         pbPTs += PAGE_SIZE * 2;
         Log4(("PGMR3MapPT: i=%d: paPaePTsHC=%p paPaePTsGC=%p HCPhysPaePT0=%RHp HCPhysPaePT1=%RHp\n",
@@ -188,18 +188,18 @@ PGMR3DECL(int) PGMR3MapPT(PVM pVM, RTGCPTR GCPtr, uint32_t cb, PFNPGMRELOCATE pf
      * Insert the new mapping.
      */
     pNew->pNextR3 = pCur;
-    pNew->pNextGC = pCur ? MMHyperR3ToGC(pVM, pCur) : 0;
+    pNew->pNextGC = pCur ? MMHyperR3ToRC(pVM, pCur) : 0;
     pNew->pNextR0 = pCur ? MMHyperR3ToR0(pVM, pCur) : 0;
     if (pPrev)
     {
         pPrev->pNextR3 = pNew;
-        pPrev->pNextGC = MMHyperR3ToGC(pVM, pNew);
+        pPrev->pNextGC = MMHyperR3ToRC(pVM, pNew);
         pPrev->pNextR0 = MMHyperR3ToR0(pVM, pNew);
     }
     else
     {
         pVM->pgm.s.pMappingsR3 = pNew;
-        pVM->pgm.s.pMappingsGC = MMHyperR3ToGC(pVM, pNew);
+        pVM->pgm.s.pMappingsGC = MMHyperR3ToRC(pVM, pNew);
         pVM->pgm.s.pMappingsR0 = MMHyperR3ToR0(pVM, pNew);
     }
 
@@ -302,6 +302,11 @@ PGMR3DECL(int) PGMR3MappingsSize(PVM pVM, uint32_t *pcb)
 PGMR3DECL(int) PGMR3MappingsFix(PVM pVM, RTGCPTR GCPtrBase, uint32_t cb)
 {
     Log(("PGMR3MappingsFix: GCPtrBase=%#x cb=%#x\n", GCPtrBase, cb));
+
+    /* Ignore the additions mapping fix call in VT-x/AMD-V. */
+    if (    pVM->pgm.s.fMappingsFixed
+        &&  HWACCMR3IsActive(pVM))
+        return VINF_SUCCESS;
 
     /*
      * This is all or nothing at all. So, a tiny bit of paranoia first.
@@ -434,6 +439,11 @@ PGMR3DECL(int) PGMR3MappingsFix(PVM pVM, RTGCPTR GCPtrBase, uint32_t cb)
 PGMR3DECL(int) PGMR3MappingsUnfix(PVM pVM)
 {
     Log(("PGMR3MappingsUnfix: fMappingsFixed=%d\n", pVM->pgm.s.fMappingsFixed));
+
+    /* Refuse in VT-x/AMD-V mode. */
+    if (HWACCMR3IsActive(pVM))
+        return VINF_SUCCESS;
+
     pVM->pgm.s.fMappingsFixed    = false;
     pVM->pgm.s.GCPtrMappingFixed = 0;
     pVM->pgm.s.cbMappingFixed    = 0;
@@ -449,7 +459,11 @@ PGMR3DECL(int) PGMR3MappingsUnfix(PVM pVM)
 #ifdef PGMPOOL_WITH_MONITORING
     pgmPoolFlushAll(pVM);
 #endif
-    int rc = PGM_GST_PFN(MonitorCR3, pVM)(pVM, pVM->pgm.s.GCPhysCR3);
+    /* Remap CR3 as we have just flushed the CR3 shadow PML4 in case we're in long mode. */
+    int rc = PGM_GST_PFN(MapCR3, pVM)(pVM, pVM->pgm.s.GCPhysCR3);
+    AssertRC(rc);
+
+    rc = PGM_GST_PFN(MonitorCR3, pVM)(pVM, pVM->pgm.s.GCPhysCR3);
     AssertRC(rc);
 
     return VINF_SUCCESS;
@@ -724,7 +738,7 @@ static void pgmR3MapSetPDEs(PVM pVM, PPGMMAPPING pMap, unsigned iNewPDE)
     if (!pgmMapAreMappingsEnabled(&pVM->pgm.s))
         return;
 
-    Assert(PGMGetGuestMode(pVM) <= PGMMODE_PAE);
+    Assert(PGMGetGuestMode(pVM) <= PGMMODE_PAE_NX);
 
     /*
      * Init the page tables and insert them into the page directories.
@@ -781,8 +795,8 @@ static void pgmR3MapSetPDEs(PVM pVM, PPGMMAPPING pMap, unsigned iNewPDE)
  */
 void pgmR3MapRelocate(PVM pVM, PPGMMAPPING pMapping, RTGCPTR GCPtrOldMapping, RTGCPTR GCPtrNewMapping)
 {
-    int iPDOld = GCPtrOldMapping >> X86_PD_SHIFT;
-    int iPDNew = GCPtrNewMapping >> X86_PD_SHIFT;
+    unsigned iPDOld = GCPtrOldMapping >> X86_PD_SHIFT;
+    unsigned iPDNew = GCPtrNewMapping >> X86_PD_SHIFT;
 
     Log(("PGM: Relocating %s from %VGv to %VGv\n", pMapping->pszDesc, GCPtrOldMapping, GCPtrNewMapping));
     Assert(((unsigned)iPDOld << X86_PD_SHIFT) == pMapping->GCPtr);
@@ -846,7 +860,7 @@ void pgmR3MapRelocate(PVM pVM, PPGMMAPPING pMapping, RTGCPTR GCPtrOldMapping, RT
             pMapping->pNextGC = pPrev->pNextGC;
             pMapping->pNextR0 = pPrev->pNextR0;
             pPrev->pNextR3 = pMapping;
-            pPrev->pNextGC = MMHyperR3ToGC(pVM, pMapping);
+            pPrev->pNextGC = MMHyperR3ToRC(pVM, pMapping);
             pPrev->pNextR0 = MMHyperR3ToR0(pVM, pMapping);
         }
         else
@@ -854,7 +868,7 @@ void pgmR3MapRelocate(PVM pVM, PPGMMAPPING pMapping, RTGCPTR GCPtrOldMapping, RT
             pMapping->pNextGC = pVM->pgm.s.pMappingsGC;
             pMapping->pNextR0 = pVM->pgm.s.pMappingsR0;
             pVM->pgm.s.pMappingsR3 = pMapping;
-            pVM->pgm.s.pMappingsGC = MMHyperR3ToGC(pVM, pMapping);
+            pVM->pgm.s.pMappingsGC = MMHyperR3ToRC(pVM, pMapping);
             pVM->pgm.s.pMappingsR0 = MMHyperR3ToR0(pVM, pMapping);
         }
     }
@@ -893,7 +907,7 @@ int pgmR3SyncPTResolveConflict(PVM pVM, PPGMMAPPING pMapping, PX86PD pPDSrc, RTG
      * address space since that will break our GCPtrEnd assumptions.
      */
     const unsigned  cPTs = pMapping->cPTs;
-    unsigned        iPDNew = ELEMENTS(pPDSrc->a) - cPTs; /* (+ 1 - 1) */
+    unsigned        iPDNew = RT_ELEMENTS(pPDSrc->a) - cPTs; /* (+ 1 - 1) */
     while (iPDNew-- > 0)
     {
         if (pPDSrc->a[iPDNew].n.u1Present)
@@ -962,7 +976,7 @@ int pgmR3SyncPTResolveConflictPAE(PVM pVM, PPGMMAPPING pMapping, RTGCPTR GCPtrOl
          * address space since that will break our GCPtrEnd assumptions.
          */
         const unsigned  cPTs = pMapping->cb >> X86_PD_PAE_SHIFT;
-        unsigned        iPDNew = ELEMENTS(pPDSrc->a) - cPTs; /* (+ 1 - 1) */
+        unsigned        iPDNew = RT_ELEMENTS(pPDSrc->a) - cPTs; /* (+ 1 - 1) */
 
         while (iPDNew-- > 0)
         {
@@ -1029,7 +1043,7 @@ PGMR3DECL(bool) PGMR3MapHasConflicts(PVM pVM, uint64_t cr3, bool fRawR0) /** @to
     if (pVM->pgm.s.fMappingsFixed)
         return false;
 
-    Assert(PGMGetGuestMode(pVM) <= PGMMODE_PAE);
+    Assert(PGMGetGuestMode(pVM) <= PGMMODE_PAE_NX);
 
     /*
      * Iterate mappings.
@@ -1061,7 +1075,8 @@ PGMR3DECL(bool) PGMR3MapHasConflicts(PVM pVM, uint64_t cr3, bool fRawR0) /** @to
         }
     }
     else
-    if (PGMGetGuestMode(pVM) == PGMMODE_PAE)
+    if (   PGMGetGuestMode(pVM) == PGMMODE_PAE
+        || PGMGetGuestMode(pVM) == PGMMODE_PAE_NX)
     {
         for (PPGMMAPPING pCur = pVM->pgm.s.pMappingsR3; pCur; pCur = pCur->pNextR3)
         {
@@ -1149,7 +1164,7 @@ PGMR3DECL(int) PGMR3MapRead(PVM pVM, void *pvDst, RTGCPTR GCPtrSrc, size_t cb)
 
             unsigned iPT  = off >> X86_PD_SHIFT;
             unsigned iPTE = (off >> PAGE_SHIFT) & X86_PT_MASK;
-            while (cb > 0 && iPTE < ELEMENTS(CTXALLSUFF(pCur->aPTs[iPT].pPT)->a))
+            while (cb > 0 && iPTE < RT_ELEMENTS(CTXALLSUFF(pCur->aPTs[iPT].pPT)->a))
             {
                 if (!CTXALLSUFF(pCur->aPTs[iPT].paPaePTs)[iPTE / 512].a[iPTE % 512].n.u1Present)
                     return VERR_PAGE_NOT_PRESENT;

@@ -1,5 +1,5 @@
+/* $Id: VBoxDbgBase.cpp 31470 2008-05-31 14:53:24Z bird $ */
 /** @file
- *
  * VBox Debugger GUI - Base class.
  */
 
@@ -29,7 +29,7 @@
 
 
 
-VBoxDbgBase::VBoxDbgBase(PVM pVM) : m_pVM(pVM)
+VBoxDbgBase::VBoxDbgBase(PVM pVM) : m_pVM(pVM), m_hGUIThread(RTThreadNativeSelf())
 {
     /*
      * Register

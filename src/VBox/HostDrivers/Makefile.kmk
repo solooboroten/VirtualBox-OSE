@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35814 2008-09-01 16:07:27Z frank $
 ## @file
 # Top-level makefile for the VBox Host drivers.
 #
@@ -19,17 +19,29 @@
 # additional information or have any questions.
 #
 
-DEPTH = ../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../..
+else
+DEPTH     = ../../..
+endif
 include $(KBUILD_PATH)/subheader.kmk
 
 # Include sub-makefiles.
 include $(PATH_SUB_CURRENT)/Support/Makefile.kmk
-ifeq ($(KBUILD_TARGET),win)
- include $(PATH_SUB_CURRENT)/VBoxTAP/Makefile.kmk
-endif
-ifdef VBOX_WITH_USB
- include $(PATH_SUB_CURRENT)/VBoxUSB/Makefile.kmk
-endif
+
+ifndef VBOX_ONLY_DOCS
+ ifeq ($(KBUILD_TARGET),win)
+  include $(PATH_SUB_CURRENT)/VBoxTAP/Makefile.kmk
+ endif
+ ifdef VBOX_WITH_USB
+  include $(PATH_SUB_CURRENT)/VBoxUSB/Makefile.kmk
+ endif
+ if1of ($(KBUILD_TARGET), darwin solaris win)
+  ifdef VBOX_WITH_NETFLT
+   include $(PATH_SUB_CURRENT)/VBoxNetFlt/Makefile.kmk
+  endif
+ endif
+endif # !VBOX_ONLY_DOCS
 
 # Let kBuild generate the rules.
 include $(KBUILD_PATH)/subfooter.kmk

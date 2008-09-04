@@ -52,17 +52,6 @@ __BEGIN_DECLS
 #define PGM_DYNAMIC_CHUNK_BASE_MASK     (~(RTGCPHYS)PGM_DYNAMIC_CHUNK_OFFSET_MASK)
 
 
-/** Page flags used for PGMHyperSetPageFlags
- * @deprecated
- * @{ */
-#define PGMPAGE_READ                1
-#define PGMPAGE_WRITE               2
-#define PGMPAGE_USER                4
-#define PGMPAGE_SYSTEM              8
-#define PGMPAGE_NOTPRESENT          16
-/** @} */
-
-
 /**
  * FNPGMRELOCATE callback mode.
  */
@@ -264,6 +253,8 @@ typedef enum PGMMODE
     PGMMODE_AMD64_NX,
     /** Nested paging mode (shadow only; guest physical to host physical). */
     PGMMODE_NESTED,
+    /** Extended paging (Intel) mode. */
+    PGMMODE_EPT,
     /** The max number of modes */
     PGMMODE_MAX,
     /** 32bit hackishness. */
@@ -306,16 +297,16 @@ typedef enum PGMROMPROT
       || (enmProt) == PGMROMPROT_READ_ROM_WRITE_RAM )
 
 
-PGMDECL(uint32_t) PGMGetHyperCR3(PVM pVM);
-PGMDECL(uint32_t) PGMGetNestedCR3(PVM pVM, PGMMODE enmShadowMode);
-PGMDECL(uint32_t) PGMGetHyper32BitCR3(PVM pVM);
-PGMDECL(uint32_t) PGMGetHyperPaeCR3(PVM pVM);
-PGMDECL(uint32_t) PGMGetHyperAmd64CR3(PVM pVM);
-PGMDECL(uint32_t) PGMGetInterHCCR3(PVM pVM);
-PGMDECL(uint32_t) PGMGetInterGCCR3(PVM pVM);
-PGMDECL(uint32_t) PGMGetInter32BitCR3(PVM pVM);
-PGMDECL(uint32_t) PGMGetInterPaeCR3(PVM pVM);
-PGMDECL(uint32_t) PGMGetInterAmd64CR3(PVM pVM);
+PGMDECL(RTHCPHYS) PGMGetHyperCR3(PVM pVM);
+PGMDECL(RTHCPHYS) PGMGetNestedCR3(PVM pVM, PGMMODE enmShadowMode);
+PGMDECL(RTHCPHYS) PGMGetHyper32BitCR3(PVM pVM);
+PGMDECL(RTHCPHYS) PGMGetHyperPaeCR3(PVM pVM);
+PGMDECL(RTHCPHYS) PGMGetHyperAmd64CR3(PVM pVM);
+PGMDECL(RTHCPHYS) PGMGetInterHCCR3(PVM pVM);
+PGMDECL(RTHCPHYS) PGMGetInterGCCR3(PVM pVM);
+PGMDECL(RTHCPHYS) PGMGetInter32BitCR3(PVM pVM);
+PGMDECL(RTHCPHYS) PGMGetInterPaeCR3(PVM pVM);
+PGMDECL(RTHCPHYS) PGMGetInterAmd64CR3(PVM pVM);
 PGMDECL(int)    PGMTrap0eHandler(PVM pVM, RTGCUINT uErr, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault);
 PGMDECL(int)    PGMPrefetchPage(PVM pVM, RTGCPTR GCPtrPage);
 PGMDECL(int)    PGMVerifyAccess(PVM pVM, RTGCUINTPTR Addr, uint32_t cbSize, uint32_t fAccess);
@@ -327,7 +318,10 @@ PGMDECL(int)    PGMMapModifyPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFl
 PGMDECL(int)    PGMShwGetPage(PVM pVM, RTGCPTR GCPtr, uint64_t *pfFlags, PRTHCPHYS pHCPhys);
 PGMDECL(int)    PGMShwSetPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags);
 PGMDECL(int)    PGMShwModifyPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask);
-PGMDECL(int)    PGMShwGetLongModePDPtr(PVM pVM, RTGCUINTPTR64 GCPtr, PX86PDPAE *ppPD);
+PGMDECL(int)    PGMShwSyncLongModePDPtr(PVM pVM, RTGCUINTPTR64 GCPtr, PX86PML4E pGstPml4e, PX86PDPE pGstPdpe, PX86PDPAE *ppPD);
+PGMDECL(int)    PGMShwGetLongModePDPtr(PVM pVM, RTGCUINTPTR64 GCPtr, PX86PDPT *ppPdpt, PX86PDPAE *ppPD);
+PGMDECL(int)    PGMShwSyncPAEPDPtr(PVM pVM, RTGCUINTPTR GCPtr, PX86PDPE pGstPdpe, PX86PDPAE *ppPD);
+PGMDECL(int)    PGMShwGetPAEPDPtr(PVM pVM, RTGCUINTPTR GCPtr, PX86PDPT *ppPdpt, PX86PDPAE *ppPD);
 PGMDECL(int)    PGMGstGetPage(PVM pVM, RTGCPTR GCPtr, uint64_t *pfFlags, PRTGCPHYS pGCPhys);
 PGMDECL(bool)   PGMGstIsPagePresent(PVM pVM, RTGCPTR GCPtr);
 PGMDECL(int)    PGMGstSetPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags);
@@ -343,14 +337,14 @@ PGMDECL(const char *) PGMGetModeName(PGMMODE enmMode);
 PGMDECL(int)    PGMHandlerPhysicalRegisterEx(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS GCPhysLast,
                                              R3PTRTYPE(PFNPGMR3PHYSHANDLER) pfnHandlerR3, RTR3PTR pvUserR3,
                                              R0PTRTYPE(PFNPGMR0PHYSHANDLER) pfnHandlerR0, RTR0PTR pvUserR0,
-                                             GCPTRTYPE(PFNPGMGCPHYSHANDLER) pfnHandlerGC, RTGCPTR pvUserGC,
+                                             RCPTRTYPE(PFNPGMGCPHYSHANDLER) pfnHandlerGC, RCPTRTYPE(void *) pvUserGC,
                                              R3PTRTYPE(const char *) pszDesc);
 PGMDECL(int)    PGMHandlerPhysicalModify(PVM pVM, RTGCPHYS GCPhysCurrent, RTGCPHYS GCPhys, RTGCPHYS GCPhysLast);
 PGMDECL(int)    PGMHandlerPhysicalDeregister(PVM pVM, RTGCPHYS GCPhys);
 PGMDECL(int)    PGMHandlerPhysicalChangeCallbacks(PVM pVM, RTGCPHYS GCPhys,
                                                   R3PTRTYPE(PFNPGMR3PHYSHANDLER) pfnHandlerR3, RTR3PTR pvUserR3,
                                                   R0PTRTYPE(PFNPGMR0PHYSHANDLER) pfnHandlerR0, RTR0PTR pvUserR0,
-                                                  GCPTRTYPE(PFNPGMGCPHYSHANDLER) pfnHandlerGC, RTGCPTR pvUserGC,
+                                                  RCPTRTYPE(PFNPGMGCPHYSHANDLER) pfnHandlerGC, RCPTRTYPE(void *) pvUserGC,
                                                   R3PTRTYPE(const char *) pszDesc);
 PGMDECL(int)    PGMHandlerPhysicalSplit(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCPhysSplit);
 PGMDECL(int)    PGMHandlerPhysicalJoin(PVM pVM, RTGCPHYS GCPhys1, RTGCPHYS GCPhys2);
@@ -482,7 +476,7 @@ PGMR3DECL(int)  PGMR3PhysRegisterRam(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS cb, cons
 PDMR3DECL(int)  PGMR3PhysMMIORegister(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS cb,
                                       R3PTRTYPE(PFNPGMR3PHYSHANDLER) pfnHandlerR3, RTR3PTR pvUserR3,
                                       R0PTRTYPE(PFNPGMR0PHYSHANDLER) pfnHandlerR0, RTR0PTR pvUserR0,
-                                      GCPTRTYPE(PFNPGMGCPHYSHANDLER) pfnHandlerGC, RTGCPTR pvUserGC,
+                                      RCPTRTYPE(PFNPGMGCPHYSHANDLER) pfnHandlerGC, RTGCPTR pvUserGC,
                                       R3PTRTYPE(const char *) pszDesc);
 PDMR3DECL(int)  PGMR3PhysMMIODeregister(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS cb);
 PDMR3DECL(int)  PGMR3PhysMMIO2Register(PVM pVM, PPDMDEVINS pDevIns, uint32_t iRegion, RTGCPHYS cb, uint32_t fFlags, void **ppv, const char *pszDesc);

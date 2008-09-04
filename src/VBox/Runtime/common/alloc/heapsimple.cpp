@@ -1,4 +1,4 @@
-/* $Id: heapsimple.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: heapsimple.cpp 35066 2008-08-20 14:46:29Z frank $ */
 /** @file
  * IPRT - A Simple Heap.
  */
@@ -43,6 +43,12 @@
 
 #include "internal/magics.h"
 
+#if defined(IN_GUEST_R0) && defined(RT_OS_LINUX) && defined(IN_MODULE)
+#include "the-linux-kernel.h"
+EXPORT_SYMBOL(RTHeapSimpleAlloc);
+EXPORT_SYMBOL(RTHeapSimpleInit);
+EXPORT_SYMBOL(RTHeapSimpleFree);
+#endif
 
 /*******************************************************************************
 *   Structures and Typedefs                                                    *

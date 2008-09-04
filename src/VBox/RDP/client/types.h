@@ -1,8 +1,8 @@
 /*
    rdesktop: A Remote Desktop Protocol client.
    Common data types
-   Copyright (C) Matthew Chapman 1999-2005
-   
+   Copyright (C) Matthew Chapman 1999-2007
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
@@ -12,13 +12,22 @@
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
-typedef int BOOL;
+/*
+ * Sun GPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the General Public License version 2 (GPLv2) at this time for any software where
+ * a choice of GPL license versions is made available with the language indicating
+ * that GPLv2 or any later version may be used, or where a choice of which version
+ * of the GPL is applied is otherwise unspecified.
+ */
+
+typedef int RD_BOOL;
 
 #ifndef True
 #define True  (1)
@@ -32,16 +41,16 @@ typedef signed short sint16;
 typedef unsigned int uint32;
 typedef signed int sint32;
 
-typedef void *HBITMAP;
-typedef void *HGLYPH;
-typedef void *HCOLOURMAP;
-typedef void *HCURSOR;
+typedef void *RD_HBITMAP;
+typedef void *RD_HGLYPH;
+typedef void *RD_HCOLOURMAP;
+typedef void *RD_HCURSOR;
 
-typedef struct _POINT
+typedef struct _RD_POINT
 {
 	sint16 x, y;
 }
-POINT;
+RD_POINT;
 
 typedef struct _COLOURENTRY
 {
@@ -95,7 +104,7 @@ typedef struct _FONTGLYPH
 	sint16 baseline;
 	uint16 width;
 	uint16 height;
-	HBITMAP pixmap;
+	RD_HBITMAP pixmap;
 
 }
 FONTGLYPH;
@@ -145,7 +154,7 @@ CELLHEADER;
 #define MAX_CBSIZE 256
 
 /* RDPSND */
-typedef struct
+typedef struct _RD_WAVEFORMATEX
 {
 	uint16 wFormatTag;
 	uint16 nChannels;
@@ -155,7 +164,7 @@ typedef struct
 	uint16 wBitsPerSample;
 	uint16 cbSize;
 	uint8 cb[MAX_CBSIZE];
-} WAVEFORMATEX;
+} RD_WAVEFORMATEX;
 
 typedef struct _RDPCOMP
 {
@@ -166,20 +175,20 @@ typedef struct _RDPCOMP
 RDPCOMP;
 
 /* RDPDR */
-typedef uint32 NTSTATUS;
-typedef uint32 NTHANDLE;
+typedef uint32 RD_NTSTATUS;
+typedef uint32 RD_NTHANDLE;
 
 typedef struct _DEVICE_FNS
 {
-	NTSTATUS(*create) (uint32 device, uint32 desired_access, uint32 share_mode,
-			   uint32 create_disposition, uint32 flags_and_attributes, char *filename,
-			   NTHANDLE * handle);
-	NTSTATUS(*close) (NTHANDLE handle);
-	NTSTATUS(*read) (NTHANDLE handle, uint8 * data, uint32 length, uint32 offset,
-			 uint32 * result);
-	NTSTATUS(*write) (NTHANDLE handle, uint8 * data, uint32 length, uint32 offset,
-			  uint32 * result);
-	NTSTATUS(*device_control) (NTHANDLE handle, uint32 request, STREAM in, STREAM out);
+	RD_NTSTATUS(*create) (uint32 device, uint32 desired_access, uint32 share_mode,
+			      uint32 create_disposition, uint32 flags_and_attributes,
+			      char *filename, RD_NTHANDLE * handle);
+	RD_NTSTATUS(*close) (RD_NTHANDLE handle);
+	RD_NTSTATUS(*read) (RD_NTHANDLE handle, uint8 * data, uint32 length, uint32 offset,
+			    uint32 * result);
+	RD_NTSTATUS(*write) (RD_NTHANDLE handle, uint8 * data, uint32 length, uint32 offset,
+			     uint32 * result);
+	RD_NTSTATUS(*device_control) (RD_NTHANDLE handle, uint32 request, STREAM in, STREAM out);
 }
 DEVICE_FNS;
 
@@ -187,7 +196,7 @@ DEVICE_FNS;
 typedef struct rdpdr_device_info
 {
 	uint32 device_type;
-	NTHANDLE handle;
+	RD_NTHANDLE handle;
 	char name[8];
 	char *local_path;
 	void *pdevice_data;
@@ -235,7 +244,7 @@ typedef struct rdpdr_printer_info
 	char *driver, *printer;
 	uint32 bloblen;
 	uint8 *blob;
-	BOOL default_printer;
+	RD_BOOL default_printer;
 }
 PRINTER;
 
@@ -259,10 +268,10 @@ typedef struct fileinfo
 	DIR *pdir;
 	struct dirent *pdirent;
 	char pattern[PATH_MAX];
-	BOOL delete_on_close;
+	RD_BOOL delete_on_close;
 	NOTIFY notify;
 	uint32 info_class;
 }
 FILEINFO;
 
-typedef BOOL(*str_handle_lines_t) (const char *line, void *data);
+typedef RD_BOOL(*str_handle_lines_t) (const char *line, void *data);

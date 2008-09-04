@@ -1,4 +1,4 @@
-/** $Id: timer-generic.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/** $Id: timer-generic.cpp 31696 2008-06-05 18:08:17Z bird $ */
 /** @file
  * IPRT - Timers, Generic.
  */
@@ -71,10 +71,10 @@ typedef struct RTTIMER
     RTSEMEVENT              Event;
     /** The timer interval. 0 if one-shot. */
     uint64_t                u64NanoInterval;
-    /** The start of the current run.
+    /** The start of the current run (ns).
      * This is used to calculate when the timer ought to fire the next time. */
     uint64_t volatile       u64StartTS;
-    /** The start of the current run.
+    /** The start of the current run (ns).
      * This is used to calculate when the timer ought to fire the next time. */
     uint64_t volatile       u64NextTS;
     /** The current tick number (since u64StartTS). */
@@ -91,6 +91,12 @@ static DECLCALLBACK(int) rtTimerThread(RTTHREAD Thread, void *pvUser);
 RTDECL(int) RTTimerCreateEx(PRTTIMER *ppTimer, uint64_t u64NanoInterval, unsigned fFlags, PFNRTTIMER pfnTimer, void *pvUser)
 {
     *ppTimer = NULL;
+
+    /*
+     * We don't support the fancy MP features.
+     */
+    if (fFlags & RTTIMER_FLAGS_CPU_SPECIFIC)
+        return VERR_NOT_SUPPORTED;
 
     /*
      * Allocate and initialize the timer handle.
@@ -242,7 +248,7 @@ static DECLCALLBACK(int) rtTimerThread(RTTHREAD Thread, void *pvUser)
             if (u64NanoTS >= pTimer->u64NextTS)
             {
                 pTimer->iTick++;
-                pTimer->pfnTimer(pTimer, pTimer->pvUser);
+                pTimer->pfnTimer(pTimer, pTimer->pvUser, pTimer->iTick);
 
                 /* status changed? */
                 if (pTimer->fSuspended || pTimer->fDestroyed)
@@ -262,7 +268,7 @@ static DECLCALLBACK(int) rtTimerThread(RTTHREAD Thread, void *pvUser)
                     pTimer->u64NextTS = u64NanoTS + 1;
 #else
                     pTimer->u64NextTS = u64NanoTS + RTTimerGetSystemGranularity() / 2;
-#endif 
+#endif
             }
 
             /* block. */

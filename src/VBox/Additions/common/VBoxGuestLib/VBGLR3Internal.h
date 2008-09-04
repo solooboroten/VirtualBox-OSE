@@ -1,4 +1,4 @@
-/* $Id: VBGLR3Internal.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: VBGLR3Internal.h 33575 2008-07-22 08:12:42Z mt221433 $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 support library for the guest additions, Internal header.
  */
@@ -22,6 +22,9 @@
 #ifndef ___VBGLR3Internal_h
 #define ___VBGLR3Internal_h
 
+#if defined(RT_OS_WINDOWS)
+# include <Windows.h>
+#endif
 #include <VBox/VBoxGuest.h>
 
 __BEGIN_DECLS
@@ -52,11 +55,29 @@ DECLINLINE(int) VbglHGCMParmUInt32Get(HGCMFunctionParameter *pParm, uint32_t *pu
 }
 
 
+DECLINLINE(void) VbglHGCMParmUInt64Set(HGCMFunctionParameter *pParm, uint64_t u64)
+{
+    pParm->type      = VMMDevHGCMParmType_64bit;
+    pParm->u.value64 = u64;
+}
+
+
+DECLINLINE(int) VbglHGCMParmUInt64Get(HGCMFunctionParameter *pParm, uint64_t *pu64)
+{
+    if (pParm->type == VMMDevHGCMParmType_64bit)
+    {
+        *pu64 = pParm->u.value64;
+        return VINF_SUCCESS;
+    }
+    return VERR_INVALID_PARAMETER;
+}
+
+
 DECLINLINE(void) VbglHGCMParmPtrSet(HGCMFunctionParameter *pParm, void *pv, uint32_t cb)
 {
     pParm->type                    = VMMDevHGCMParmType_LinAddr;
     pParm->u.Pointer.size          = cb;
-    pParm->u.Pointer.u.linearAddr  = (vmmDevHypPtr)pv;
+    pParm->u.Pointer.u.linearAddr  = (uintptr_t)pv;
 }
 
 __END_DECLS

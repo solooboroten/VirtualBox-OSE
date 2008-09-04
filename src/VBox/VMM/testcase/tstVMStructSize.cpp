@@ -1,4 +1,4 @@
-/* $Id: tstVMStructSize.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: tstVMStructSize.cpp 35059 2008-08-20 14:12:18Z sandervl $ */
 /** @file
  * tstVMStructSize - testcase for check structure sizes/alignment
  *                   and to verify that HC and GC uses the same
@@ -105,10 +105,11 @@ int main()
     CHECK_SIZE(uint8_t, 8/8);
     CHECK_SIZE(int8_t, 8/8);
 
-    CHECK_SIZE(VBOXDESC, 8);
+    CHECK_SIZE(X86DESC, 8);
+    CHECK_SIZE(X86DESC64, 16);
     CHECK_SIZE(VBOXIDTE, 8);
-    CHECK_SIZE(VBOXIDTR, 6);
-    CHECK_SIZE(VBOXGDTR, 6);
+    CHECK_SIZE(VBOXIDTR, 10);
+    CHECK_SIZE(VBOXGDTR, 10);
     CHECK_SIZE(VBOXTSS, 136);
     CHECK_SIZE(X86FXSTATE, 512);
     CHECK_SIZE(RTUUID, 16);
@@ -190,6 +191,20 @@ int main()
     CHECK_CPUMCTXCORE(fs);
     CHECK_CPUMCTXCORE(gs);
     CHECK_CPUMCTXCORE(ss);
+    CHECK_CPUMCTXCORE(r8);
+    CHECK_CPUMCTXCORE(r9);
+    CHECK_CPUMCTXCORE(r10);
+    CHECK_CPUMCTXCORE(r11);
+    CHECK_CPUMCTXCORE(r12);
+    CHECK_CPUMCTXCORE(r13);
+    CHECK_CPUMCTXCORE(r14);
+    CHECK_CPUMCTXCORE(r15);
+    CHECK_CPUMCTXCORE(esHid);
+    CHECK_CPUMCTXCORE(csHid);
+    CHECK_CPUMCTXCORE(ssHid);
+    CHECK_CPUMCTXCORE(dsHid);
+    CHECK_CPUMCTXCORE(fsHid);
+    CHECK_CPUMCTXCORE(gsHid);
 
 #if HC_ARCH_BITS == 32
     /* CPUMHOSTCTX - lss pair */

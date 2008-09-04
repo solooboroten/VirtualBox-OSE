@@ -36,6 +36,7 @@
 #include <iprt/critsect.h>
 #include <VBox/param.h>
 
+#include "Pcap.h"
 #include "Builtins.h"
 
 
@@ -51,8 +52,12 @@ typedef struct DRVNETSNIFFER
     PDMINETWORKCONNECTOR    INetworkConnector;
     /** The network interface. */
     PDMINETWORKPORT         INetworkPort;
+    /** The network config interface. */
+    PDMINETWORKCONFIG       INetworkConfig;
     /** The port we're attached to. */
     PPDMINETWORKPORT        pPort;
+    /** The config port interface we're attached to. */
+    PPDMINETWORKCONFIG      pConfig;
     /** The connector that's attached to us. */
     PPDMINETWORKCONNECTOR   pConnector;
     /** The filename. */
@@ -61,6 +66,8 @@ typedef struct DRVNETSNIFFER
     RTFILE                  File;
     /** The lock serializing the file access. */
     RTCRITSECT              Lock;
+    /** The NanoTS delta we pass to the pcap writers. */
+    uint64_t                StartNanoTS;
     /** Pointer to the driver instance. */
     PPDMDRVINS              pDrvIns;
 
@@ -72,38 +79,9 @@ typedef struct DRVNETSNIFFER
 /** Converts a pointer to NAT::INetworkPort to a PDRVNETSNIFFER. */
 #define PDMINETWORKPORT_2_DRVNETSNIFFER(pInterface)         ( (PDRVNETSNIFFER)((uintptr_t)pInterface - RT_OFFSETOF(DRVNETSNIFFER, INetworkPort)) )
 
+/** Converts a pointer to NAT::INetworkConfig to a PDRVNETSNIFFER. */
+#define PDMINETWORKCONFIG_2_DRVNETSNIFFER(pInterface)       ( (PDRVNETSNIFFER)((uintptr_t)pInterface - RT_OFFSETOF(DRVNETSNIFFER, INetworkConfig)) )
 
-/* "libpcap" magic */
-#define PCAP_MAGIC  0xa1b2c3d4
-
-/* "libpcap" file header (minus magic number). */
-struct pcap_hdr
-{
-    uint16_t    version_major;  /* major version number                         = 2 */
-    uint16_t    version_minor;  /* minor version number                         = 4 */
-    int32_t     thiszone;       /* GMT to local correction                      = 0 */
-    uint32_t    sigfigs;        /* accuracy of timestamps                       = 0 */
-    uint32_t    snaplen;        /* max length of captured packets, in octets    = 0xffff */
-    uint32_t    network;        /* data link type                               = 01 */
-};
-
-/* "libpcap" record header. */
-struct pcaprec_hdr
-{
-    uint32_t    ts_sec;         /* timestamp seconds */
-    uint32_t    ts_usec;        /* timestamp microseconds */
-    uint32_t    incl_len;       /* number of octets of packet saved in file */
-    uint32_t    orig_len;       /* actual length of packet */
-};
-
-struct pcaprec_hdr_init
-{
-    uint32_t        u32Magic;
-    struct pcap_hdr pcap;
-#ifdef LOG_ENABLED
-    pcaprec_hdr     rec;
-#endif
-};
 
 
 /**
@@ -117,32 +95,25 @@ struct pcaprec_hdr_init
  */
 static DECLCALLBACK(int) drvNetSnifferSend(PPDMINETWORKCONNECTOR pInterface, const void *pvBuf, size_t cb)
 {
-    PDRVNETSNIFFER pData = PDMINETWORKCONNECTOR_2_DRVNETSNIFFER(pInterface);
+    PDRVNETSNIFFER pThis = PDMINETWORKCONNECTOR_2_DRVNETSNIFFER(pInterface);
 
     /* output to sniffer */
-    struct pcaprec_hdr  Hdr;
-    uint64_t u64TS = RTTimeProgramNanoTS();
-    Hdr.ts_sec = (uint32_t)(u64TS / 1000000000);
-    Hdr.ts_usec = (uint32_t)((u64TS / 1000) % 1000000);
-    Hdr.incl_len = cb;
-    Hdr.orig_len = cb;
-    RTCritSectEnter(&pData->Lock);
-    RTFileWrite(pData->File, &Hdr, sizeof(Hdr), NULL);
-    RTFileWrite(pData->File, pvBuf, cb, NULL);
-    RTCritSectLeave(&pData->Lock);
+    RTCritSectEnter(&pThis->Lock);
+    PcapFileFrame(pThis->File, pThis->StartNanoTS, pvBuf, cb, cb);
+    RTCritSectLeave(&pThis->Lock);
 
     /* pass down */
-    if (pData->pConnector)
+    if (pThis->pConnector)
     {
-        int rc = pData->pConnector->pfnSend(pData->pConnector, pvBuf, cb);
+        int rc = pThis->pConnector->pfnSend(pThis->pConnector, pvBuf, cb);
 #if 0
-        RTCritSectEnter(&pData->Lock);
+        RTCritSectEnter(&pThis->Lock);
         u64TS = RTTimeProgramNanoTS();
         Hdr.ts_sec = (uint32_t)(u64TS / 1000000000);
         Hdr.ts_usec = (uint32_t)((u64TS / 1000) % 1000000);
         Hdr.incl_len = 0;
-        RTFileWrite(pData->File, &Hdr, sizeof(Hdr), NULL);
-        RTCritSectLeave(&pData->Lock);
+        RTFileWrite(pThis->File, &Hdr, sizeof(Hdr), NULL);
+        RTCritSectLeave(&pThis->Lock);
 #endif
         return rc;
     }
@@ -163,9 +134,9 @@ static DECLCALLBACK(int) drvNetSnifferSend(PPDMINETWORKCONNECTOR pInterface, con
 static DECLCALLBACK(void) drvNetSnifferSetPromiscuousMode(PPDMINETWORKCONNECTOR pInterface, bool fPromiscuous)
 {
     LogFlow(("drvNetSnifferSetPromiscuousMode: fPromiscuous=%d\n", fPromiscuous));
-    PDRVNETSNIFFER pData = PDMINETWORKCONNECTOR_2_DRVNETSNIFFER(pInterface);
-    if (pData->pConnector)
-        pData->pConnector->pfnSetPromiscuousMode(pData->pConnector, fPromiscuous);
+    PDRVNETSNIFFER pThis = PDMINETWORKCONNECTOR_2_DRVNETSNIFFER(pInterface);
+    if (pThis->pConnector)
+        pThis->pConnector->pfnSetPromiscuousMode(pThis->pConnector, fPromiscuous);
 }
 
 
@@ -179,9 +150,9 @@ static DECLCALLBACK(void) drvNetSnifferSetPromiscuousMode(PPDMINETWORKCONNECTOR 
 static DECLCALLBACK(void) drvNetSnifferNotifyLinkChanged(PPDMINETWORKCONNECTOR pInterface, PDMNETWORKLINKSTATE enmLinkState)
 {
     LogFlow(("drvNetSnifferNotifyLinkChanged: enmLinkState=%d\n", enmLinkState));
-    PDRVNETSNIFFER pData = PDMINETWORKCONNECTOR_2_DRVNETSNIFFER(pInterface);
-    if (pData->pConnector)
-        pData->pConnector->pfnNotifyLinkChanged(pData->pConnector, enmLinkState);
+    PDRVNETSNIFFER pThis = PDMINETWORKCONNECTOR_2_DRVNETSNIFFER(pInterface);
+    if (pThis->pConnector)
+        pThis->pConnector->pfnNotifyLinkChanged(pThis->pConnector, enmLinkState);
 }
 
 
@@ -195,8 +166,8 @@ static DECLCALLBACK(void) drvNetSnifferNotifyLinkChanged(PPDMINETWORKCONNECTOR p
  */
 static DECLCALLBACK(int) drvNetSnifferWaitReceiveAvail(PPDMINETWORKPORT pInterface, unsigned cMillies)
 {
-    PDRVNETSNIFFER pData = PDMINETWORKPORT_2_DRVNETSNIFFER(pInterface);
-    return pData->pPort->pfnWaitReceiveAvail(pData->pPort, cMillies);
+    PDRVNETSNIFFER pThis = PDMINETWORKPORT_2_DRVNETSNIFFER(pInterface);
+    return pThis->pPort->pfnWaitReceiveAvail(pThis->pPort, cMillies);
 }
 
 
@@ -211,33 +182,69 @@ static DECLCALLBACK(int) drvNetSnifferWaitReceiveAvail(PPDMINETWORKPORT pInterfa
  */
 static DECLCALLBACK(int) drvNetSnifferReceive(PPDMINETWORKPORT pInterface, const void *pvBuf, size_t cb)
 {
-    PDRVNETSNIFFER pData = PDMINETWORKPORT_2_DRVNETSNIFFER(pInterface);
+    PDRVNETSNIFFER pThis = PDMINETWORKPORT_2_DRVNETSNIFFER(pInterface);
 
     /* output to sniffer */
-    struct pcaprec_hdr  Hdr;
-    uint64_t u64TS = RTTimeProgramNanoTS();
-    Hdr.ts_sec = (uint32_t)(u64TS / 1000000000);
-    Hdr.ts_usec = (uint32_t)((u64TS / 1000) % 1000000);
-    Hdr.incl_len = cb;
-    Hdr.orig_len = cb;
-    RTCritSectEnter(&pData->Lock);
-    RTFileWrite(pData->File, &Hdr, sizeof(Hdr), NULL);
-    RTFileWrite(pData->File, pvBuf, cb, NULL);
-    RTCritSectLeave(&pData->Lock);
+    RTCritSectEnter(&pThis->Lock);
+    PcapFileFrame(pThis->File, pThis->StartNanoTS, pvBuf, cb, cb);
+    RTCritSectLeave(&pThis->Lock);
 
     /* pass up */
-    int rc = pData->pPort->pfnReceive(pData->pPort, pvBuf, cb);
+    int rc = pThis->pPort->pfnReceive(pThis->pPort, pvBuf, cb);
 #if 0
-    RTCritSectEnter(&pData->Lock);
+    RTCritSectEnter(&pThis->Lock);
     u64TS = RTTimeProgramNanoTS();
     Hdr.ts_sec = (uint32_t)(u64TS / 1000000000);
     Hdr.ts_usec = (uint32_t)((u64TS / 1000) % 1000000);
     Hdr.incl_len = 0;
-    RTFileWrite(pData->File, &Hdr, sizeof(Hdr), NULL);
-    RTCritSectLeave(&pData->Lock);
+    RTFileWrite(pThis->File, &Hdr, sizeof(Hdr), NULL);
+    RTCritSectLeave(&pThis->Lock);
 #endif
     return rc;
 }
+
+
+/**
+ * Gets the current Media Access Control (MAC) address.
+ *
+ * @returns VBox status code.
+ * @param   pInterface      Pointer to the interface structure containing the called function pointer.
+ * @param   pMac            Where to store the MAC address.
+ * @thread  EMT
+ */
+static DECLCALLBACK(int) drvNetSnifferGetMac(PPDMINETWORKCONFIG pInterface, PRTMAC pMac)
+{
+    PDRVNETSNIFFER pThis = PDMINETWORKCONFIG_2_DRVNETSNIFFER(pInterface);
+    return pThis->pConfig->pfnGetMac(pThis->pConfig, pMac);
+}
+
+/**
+ * Gets the new link state.
+ *
+ * @returns The current link state.
+ * @param   pInterface      Pointer to the interface structure containing the called function pointer.
+ * @thread  EMT
+ */
+static DECLCALLBACK(PDMNETWORKLINKSTATE) drvNetSnifferGetLinkState(PPDMINETWORKCONFIG pInterface)
+{
+    PDRVNETSNIFFER pThis = PDMINETWORKCONFIG_2_DRVNETSNIFFER(pInterface);
+    return pThis->pConfig->pfnGetLinkState(pThis->pConfig);
+}
+
+/**
+ * Sets the new link state.
+ *
+ * @returns VBox status code.
+ * @param   pInterface      Pointer to the interface structure containing the called function pointer.
+ * @param   enmState        The new link state
+ * @thread  EMT
+ */
+static DECLCALLBACK(int) drvNetSnifferSetLinkState(PPDMINETWORKCONFIG pInterface, PDMNETWORKLINKSTATE enmState)
+{
+    PDRVNETSNIFFER pThis = PDMINETWORKCONFIG_2_DRVNETSNIFFER(pInterface);
+    return pThis->pConfig->pfnSetLinkState(pThis->pConfig, enmState);
+}
+
 
 /**
  * Queries an interface to the driver.
@@ -251,15 +258,17 @@ static DECLCALLBACK(int) drvNetSnifferReceive(PPDMINETWORKPORT pInterface, const
 static DECLCALLBACK(void *) drvNetSnifferQueryInterface(PPDMIBASE pInterface, PDMINTERFACE enmInterface)
 {
     PPDMDRVINS pDrvIns = PDMIBASE_2_PDMDRV(pInterface);
-    PDRVNETSNIFFER pData = PDMINS2DATA(pDrvIns, PDRVNETSNIFFER);
+    PDRVNETSNIFFER pThis = PDMINS_2_DATA(pDrvIns, PDRVNETSNIFFER);
     switch (enmInterface)
     {
         case PDMINTERFACE_BASE:
             return &pDrvIns->IBase;
         case PDMINTERFACE_NETWORK_CONNECTOR:
-            return &pData->INetworkConnector;
+            return &pThis->INetworkConnector;
         case PDMINTERFACE_NETWORK_PORT:
-            return &pData->INetworkPort;
+            return &pThis->INetworkPort;
+        case PDMINTERFACE_NETWORK_CONFIG:
+            return &pThis->INetworkConfig;
         default:
             return NULL;
     }
@@ -276,15 +285,15 @@ static DECLCALLBACK(void *) drvNetSnifferQueryInterface(PPDMIBASE pInterface, PD
  */
 static DECLCALLBACK(void) drvNetSnifferDestruct(PPDMDRVINS pDrvIns)
 {
-    PDRVNETSNIFFER pData = PDMINS2DATA(pDrvIns, PDRVNETSNIFFER);
+    PDRVNETSNIFFER pThis = PDMINS_2_DATA(pDrvIns, PDRVNETSNIFFER);
 
-    if (RTCritSectIsInitialized(&pData->Lock))
-        RTCritSectDelete(&pData->Lock);
+    if (RTCritSectIsInitialized(&pThis->Lock))
+        RTCritSectDelete(&pThis->Lock);
 
-    if (pData->File != NIL_RTFILE)
+    if (pThis->File != NIL_RTFILE)
     {
-        RTFileClose(pData->File);
-        pData->File = NIL_RTFILE;
+        RTFileClose(pThis->File);
+        pThis->File = NIL_RTFILE;
     }
 }
 
@@ -301,7 +310,7 @@ static DECLCALLBACK(void) drvNetSnifferDestruct(PPDMDRVINS pDrvIns)
  */
 static DECLCALLBACK(int) drvNetSnifferConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
 {
-    PDRVNETSNIFFER pData = PDMINS2DATA(pDrvIns, PDRVNETSNIFFER);
+    PDRVNETSNIFFER pThis = PDMINS_2_DATA(pDrvIns, PDRVNETSNIFFER);
     LogFlow(("drvNetSnifferConstruct:\n"));
 
     /*
@@ -313,37 +322,52 @@ static DECLCALLBACK(int) drvNetSnifferConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
     /*
      * Init the static parts.
      */
-    pData->pDrvIns                      = pDrvIns;
-    pData->File                         = NIL_RTFILE;
+    pThis->pDrvIns                      = pDrvIns;
+    pThis->File                         = NIL_RTFILE;
+    pThis->StartNanoTS                  = /*RTTimeProgramNanoTS() - */ RTTimeNanoTS();
     /* IBase */
     pDrvIns->IBase.pfnQueryInterface    = drvNetSnifferQueryInterface;
     /* INetworkConnector */
-    pData->INetworkConnector.pfnSend                = drvNetSnifferSend;
-    pData->INetworkConnector.pfnSetPromiscuousMode  = drvNetSnifferSetPromiscuousMode;
-    pData->INetworkConnector.pfnNotifyLinkChanged   = drvNetSnifferNotifyLinkChanged;
+    pThis->INetworkConnector.pfnSend                = drvNetSnifferSend;
+    pThis->INetworkConnector.pfnSetPromiscuousMode  = drvNetSnifferSetPromiscuousMode;
+    pThis->INetworkConnector.pfnNotifyLinkChanged   = drvNetSnifferNotifyLinkChanged;
     /* INetworkPort */
-    pData->INetworkPort.pfnWaitReceiveAvail         = drvNetSnifferWaitReceiveAvail;
-    pData->INetworkPort.pfnReceive                  = drvNetSnifferReceive;
+    pThis->INetworkPort.pfnWaitReceiveAvail         = drvNetSnifferWaitReceiveAvail;
+    pThis->INetworkPort.pfnReceive                  = drvNetSnifferReceive;
+    /* INetworkConfig */
+    pThis->INetworkConfig.pfnGetMac                 = drvNetSnifferGetMac;
+    pThis->INetworkConfig.pfnGetLinkState           = drvNetSnifferGetLinkState;
+    pThis->INetworkConfig.pfnSetLinkState           = drvNetSnifferSetLinkState;
 
     /*
      * Get the filename.
      */
-    int rc = CFGMR3QueryString(pCfgHandle, "File", pData->szFilename, sizeof(pData->szFilename));
+    int rc = CFGMR3QueryString(pCfgHandle, "File", pThis->szFilename, sizeof(pThis->szFilename));
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        RTStrPrintf(pData->szFilename, sizeof(pData->szFilename), "./VBox-%x.pcap", RTProcSelf());
-    else if (VBOX_FAILURE(rc))
+        RTStrPrintf(pThis->szFilename, sizeof(pThis->szFilename), "./VBox-%x.pcap", RTProcSelf());
+    else if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Failed to query \"File\", rc=%Vrc.\n", rc));
+        AssertMsgFailed(("Failed to query \"File\", rc=%Rrc.\n", rc));
         return rc;
     }
 
     /*
      * Query the network port interface.
      */
-    pData->pPort = (PPDMINETWORKPORT)pDrvIns->pUpBase->pfnQueryInterface(pDrvIns->pUpBase, PDMINTERFACE_NETWORK_PORT);
-    if (!pData->pPort)
+    pThis->pPort = (PPDMINETWORKPORT)pDrvIns->pUpBase->pfnQueryInterface(pDrvIns->pUpBase, PDMINTERFACE_NETWORK_PORT);
+    if (!pThis->pPort)
     {
         AssertMsgFailed(("Configuration error: the above device/driver didn't export the network port interface!\n"));
+        return VERR_PDM_MISSING_INTERFACE_ABOVE;
+    }
+
+    /*
+     * Query the network config interface.
+     */
+    pThis->pConfig = (PPDMINETWORKCONFIG)pDrvIns->pUpBase->pfnQueryInterface(pDrvIns->pUpBase, PDMINTERFACE_NETWORK_CONFIG);
+    if (!pThis->pConfig)
+    {
+        AssertMsgFailed(("Configuration error: the above device/driver didn't export the network config interface!\n"));
         return VERR_PDM_MISSING_INTERFACE_ABOVE;
     }
 
@@ -353,11 +377,11 @@ static DECLCALLBACK(int) drvNetSnifferConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
     PPDMIBASE   pBaseDown;
     rc = pDrvIns->pDrvHlp->pfnAttach(pDrvIns, &pBaseDown);
     if (rc == VERR_PDM_NO_ATTACHED_DRIVER)
-        pData->pConnector = NULL;
-    else if (VBOX_SUCCESS(rc))
+        pThis->pConnector = NULL;
+    else if (RT_SUCCESS(rc))
     {
-        pData->pConnector = (PPDMINETWORKCONNECTOR)pBaseDown->pfnQueryInterface(pBaseDown, PDMINTERFACE_NETWORK_CONNECTOR);
-        if (!pData->pConnector)
+        pThis->pConnector = (PPDMINETWORKCONNECTOR)pBaseDown->pfnQueryInterface(pBaseDown, PDMINTERFACE_NETWORK_CONNECTOR);
+        if (!pThis->pConnector)
         {
             AssertMsgFailed(("Configuration error: the driver below didn't export the network connector interface!\n"));
             return VERR_PDM_MISSING_INTERFACE_BELOW;
@@ -365,47 +389,32 @@ static DECLCALLBACK(int) drvNetSnifferConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
     }
     else
     {
-        AssertMsgFailed(("Failed to attach to driver below! rc=%Vrc\n", rc));
+        AssertMsgFailed(("Failed to attach to driver below! rc=%Rrc\n", rc));
         return rc;
     }
 
     /*
      * Create the lock.
      */
-    rc = RTCritSectInit(&pData->Lock);
-    if (VBOX_FAILURE(rc))
+    rc = RTCritSectInit(&pThis->Lock);
+    if (RT_FAILURE(rc))
         return rc;
 
     /*
      * Open output file / pipe.
      */
-    rc = RTFileOpen(&pData->File, pData->szFilename,
+    rc = RTFileOpen(&pThis->File, pThis->szFilename,
                     RTFILE_O_WRITE | RTFILE_O_CREATE_REPLACE | RTFILE_O_DENY_WRITE);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Failed to create file '%s' for writing. rc=%Vrc\n", pData->szFilename, rc));
+        AssertMsgFailed(("Failed to create file '%s' for writing. rc=%Rrc\n", pThis->szFilename, rc));
         return rc;
     }
 
     /*
      * Write pcap header.
      */
-#ifdef LOG_ENABLED
-    pcaprec_hdr_init Hdr = 
-    { 
-        PCAP_MAGIC, 
-        { 2, 4, 0, 0, 0xffff, 1 }, 
-        { 0, 1, 0, 60} 
-    }; /* force ethereal to start at 0.000000. */
-#else
-    pcaprec_hdr_init Hdr =
-    {
-        PCAP_MAGIC,
-        { 2, 4, 0, 0, 0xffff, 1 } 
-    }; /* this is just to make it happy, not to be correct. */
-#endif
-
-    RTFileWrite(pData->File, &Hdr, sizeof(Hdr), NULL);
+    PcapFileHdr(pThis->File, pThis->StartNanoTS);
 
     return VINF_SUCCESS;
 }

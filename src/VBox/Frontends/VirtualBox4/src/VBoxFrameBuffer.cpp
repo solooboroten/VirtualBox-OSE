@@ -315,28 +315,23 @@ STDMETHODIMP VBoxQImageFrameBuffer::NotifyUpdate (ULONG aX, ULONG aY,
                                                   ULONG aW, ULONG aH,
                                                   BOOL *aFinished)
 {
-#if !defined (Q_WS_WIN) && !defined (Q_WS_PM)
-    /* we're not on the GUI thread and update() isn't thread safe in Qt 3.3.x
-       on the Mac (4.2.x is), on Linux (didn't check Qt 4.x there) and
-       probably on other non-DOS platforms, so post the event instead. */
+    /* We're not on the GUI thread and update() isn't thread safe in
+     * Qt 4.3.x on the Win, Qt 3.3.x on the Mac (4.2.x is),
+     * on Linux (didn't check Qt 4.x there) and probably on other
+     * non-DOS platforms, so post the event instead. */
     QApplication::postEvent (mView,
                              new VBoxRepaintEvent (aX, aY, aW, aH));
-#else
-    /* we're not on the GUI thread, so update() instead of repaint()! */
-    mView->viewport()->update (aX - mView->contentsX(),
-                               aY - mView->contentsY(),
-                               aW, aH);
-#endif
-    /* the update has been finished, return TRUE */
+
+    /* The update has been finished, return TRUE */
     *aFinished = TRUE;
     return S_OK;
 }
 
 void VBoxQImageFrameBuffer::paintEvent (QPaintEvent *pe)
 {
-    const QRect &r = pe->rect().intersect (mView->viewport()->rect());
+    const QRect &r = pe->rect().intersected (mView->viewport()->rect());
 
-    /*  some outdated rectangle during processing VBoxResizeEvent */
+    /* Some outdated rectangle during processing VBoxResizeEvent */
     if (r.isEmpty())
         return;
 
@@ -348,37 +343,25 @@ void VBoxQImageFrameBuffer::paintEvent (QPaintEvent *pe)
 
     FRAMEBUF_DEBUG_START (xxx);
 
-    /* In Qt4 there is not bitblt anymore. So 
-     * we create a qpainter object and paint on 
-     * that. Todo: Do some performance test. */
-#warning port me: do it faster?
     QPainter painter (mView->viewport());
-    painter.drawImage (r.x(), r.y(), mImg, 
-                       r.x() + mView->contentsX(),
-                       r.y() + mView->contentsY(),
-                       r.width(), r.height());
-//    if (r.width() < mWdt * 2 / 3)
-//    {
-//        /* this method is faster for narrow updates */
-//        mPM.convertFromImage (mImg.copy (r.x() + mView->contentsX(),
-//                                         r.y() + mView->contentsY(),
-//                                         r.width(), r.height()));
-//        ::bitBlt (mView->viewport(), r.x(), r.y(),
-//                  &mPM, 0, 0,
-//                  r.width(), r.height(),
-//                  Qt::CopyROP, TRUE);
-//    }
-//    else
-//    {
-//        /* this method is faster for wide updates */
-//        mPM.convertFromImage (QImage (mImg.scanLine (r.y() + mView->contentsY()),
-//                                      mImg.width(), r.height(), mImg.depth(),
-//                                      0, 0, QImage::LittleEndian));
-//        ::bitBlt (mView->viewport(), r.x(), r.y(),
-//                  &mPM, r.x() + mView->contentsX(), 0,
-//                  r.width(), r.height(),
-//                  Qt::CopyROP, TRUE);
-//    }
+
+    if (r.width() < mWdt * 2 / 3)
+    {
+        /* This method is faster for narrow updates */
+        mPM = QPixmap::fromImage (mImg.copy (r.x() + mView->contentsX(),
+                                             r.y() + mView->contentsY(),
+                                             r.width(), r.height()));
+        painter.drawPixmap (r.x(), r.y(), mPM);
+    }
+    else
+    {
+        /* This method is faster for wide updates */
+        mPM = QPixmap::fromImage (QImage (mImg.scanLine (r.y() + mView->contentsY()),
+                                  mImg.width(), r.height(), mImg.bytesPerLine(),
+                                  QImage::Format_RGB32));
+        painter.drawPixmap (r.x(), r.y(), mPM,
+                            r.x() + mView->contentsX(), 0, 0, 0);
+    }
 
     FRAMEBUF_DEBUG_STOP (xxx, r.width(), r.height());
 }
@@ -475,6 +458,8 @@ void VBoxQImageFrameBuffer::resizeEvent (VBoxResizeEvent *re)
 
 #if defined (VBOX_GUI_USE_SDL)
 
+#include "VBoxX11Helper.h"
+
 /** @class VBoxSDLFrameBuffer
  *
  *  The VBoxSDLFrameBuffer class is a class that implements the IFrameBuffer
@@ -488,6 +473,7 @@ VBoxSDLFrameBuffer::VBoxSDLFrameBuffer (VBoxConsoleView *aView) :
     mPixelFormat = FramebufferPixelFormat_FOURCC_RGB;
     mSurfVRAM = NULL;
 
+    X11ScreenSaverSettingsInit();
     resizeEvent (new VBoxResizeEvent (FramebufferPixelFormat_Opaque,
                                       NULL, 0, 0, 640, 480));
 }
@@ -499,7 +485,9 @@ VBoxSDLFrameBuffer::~VBoxSDLFrameBuffer()
         SDL_FreeSurface (mSurfVRAM);
         mSurfVRAM = NULL;
     }
+    X11ScreenSaverSettingsSave();
     SDL_QuitSubSystem (SDL_INIT_VIDEO);
+    X11ScreenSaverSettingsRestore();
 }
 
 /** @note This method is called on EMT from under this object's lock */
@@ -565,7 +553,9 @@ void VBoxSDLFrameBuffer::resizeEvent (VBoxResizeEvent *re)
     }
     if (mScreen)
     {
+        X11ScreenSaverSettingsSave();
         SDL_QuitSubSystem (SDL_INIT_VIDEO);
+        X11ScreenSaverSettingsRestore();
         mScreen = NULL;
     }
 
@@ -579,7 +569,9 @@ void VBoxSDLFrameBuffer::resizeEvent (VBoxResizeEvent *re)
     /* Note: SDL_WINDOWID must be decimal (not hex) to work on Win32 */
     sprintf (sdlHack, "SDL_WINDOWID=%lu", mView->viewport()->winId());
     putenv (sdlHack);
+    X11ScreenSaverSettingsSave();
     int rc = SDL_InitSubSystem (SDL_INIT_VIDEO | SDL_INIT_NOPARACHUTE);
+    X11ScreenSaverSettingsRestore();
     AssertMsg (rc == 0, ("SDL initialization failed: %s\n", SDL_GetError()));
     NOREF(rc);
 

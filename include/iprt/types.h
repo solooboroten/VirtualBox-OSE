@@ -706,17 +706,25 @@ typedef const RTR0UINTREG  *PCRTR0UINTREG;
  */
 
 /** Natural signed integer in the GC. */
+#if GC_ARCH_BITS == 32
 typedef int32_t         RTGCINT;
+#elif GC_ARCH_BITS == 64
+typedef int64_t         RTGCINT;
+#endif
 /** Pointer to natural signed interger in GC. */
 typedef RTGCINT        *PRTGCINT;
 /** Pointer to const natural signed interger in GC. */
 typedef const RTGCINT  *PCRTGCINT;
 
-/** Natural signed uninteger in the GC. */
+/** Natural unsigned integer in the GC. */
+#if GC_ARCH_BITS == 32
 typedef uint32_t        RTGCUINT;
-/** Pointer to natural unsigned interger in GC. */
+#elif GC_ARCH_BITS == 64
+typedef uint64_t        RTGCUINT;
+#endif
+/** Pointer to natural unsigned integer in GC. */
 typedef RTGCUINT       *PRTGCUINT;
-/** Pointer to const natural unsigned interger in GC. */
+/** Pointer to const natural unsigned integer in GC. */
 typedef const RTGCUINT *PCRTGCUINT;
 
 /** Signed integer which can contain a GC pointer. */
@@ -724,8 +732,6 @@ typedef const RTGCUINT *PCRTGCUINT;
 typedef int32_t         RTGCINTPTR;
 #elif GC_ARCH_BITS == 64
 typedef int64_t         RTGCINTPTR;
-#else
-#  error Unsupported GC_ARCH_BITS value.
 #endif
 /** Pointer to signed interger which can contain a GC pointer. */
 typedef RTGCINTPTR     *PRTGCINTPTR;
@@ -807,11 +813,7 @@ typedef const RTGCPHYS64 *PCRTGCPHYS64;
  * Keep in mind that this type is an unsigned integer in
  * HC and void pointer in GC.
  */
-#ifdef IN_GC
-typedef void           *RTGCPTR32;
-#else
 typedef RTGCUINTPTR32   RTGCPTR32;
-#endif
 /** Pointer to a guest context pointer. */
 typedef RTGCPTR32      *PRTGCPTR32;
 /** Pointer to a const guest context pointer. */
@@ -862,10 +864,22 @@ typedef PCRTGCPTR32    PCRTGCPTR;
 #endif
 
 /** Unsigned integer register in the guest context. */
+typedef uint32_t              RTGCUINTREG32;
+/** Pointer to an unsigned integer register in the guest context. */
+typedef RTGCUINTREG32        *PRTGCUINTREG32;
+/** Pointer to a const unsigned integer register in the guest context. */
+typedef const RTGCUINTREG32  *PCRTGCUINTREG32;
+
+typedef uint64_t              RTGCUINTREG64;
+/** Pointer to an unsigned integer register in the guest context. */
+typedef RTGCUINTREG64        *PRTGCUINTREG64;
+/** Pointer to a const unsigned integer register in the guest context. */
+typedef const RTGCUINTREG64  *PCRTGCUINTREG64;
+
 #if GC_ARCH_BITS == 64
-typedef uint64_t            RTGCUINTREG;
+typedef RTGCUINTREG64       RTGCUINTREG;
 #elif GC_ARCH_BITS == 32
-typedef uint32_t            RTGCUINTREG;
+typedef RTGCUINTREG32       RTGCUINTREG;
 #else
 # error "Unsupported GC_ARCH_BITS!"
 #endif
@@ -873,6 +887,39 @@ typedef uint32_t            RTGCUINTREG;
 typedef RTGCUINTREG        *PRTGCUINTREG;
 /** Pointer to a const unsigned integer register in the guest context. */
 typedef const RTGCUINTREG  *PCRTGCUINTREG;
+
+/** @} */
+
+/** @defgroup grp_rt_types_rc  Raw mode Context Basic Types
+ * @ingroup grp_rt_types
+ * @{
+ */
+
+/** Raw mode context pointer; a 32 bits guest context pointer
+ * Keep in mind that this type is an unsigned integer in
+ * HC and void pointer in GC.
+ */
+#ifdef IN_GC
+typedef void *          RTRCPTR;
+#else
+typedef uint32_t        RTRCPTR;
+#endif
+/** Pointer to a raw mode context pointer. */
+typedef RTRCPTR        *PRTRCPTR;
+/** Pointer to a const raw mode context pointer. */
+typedef const RTRCPTR  *PCRTRCPTR;
+/** @def NIL_RTGCPTR
+ * NIL RC pointer.
+ */
+#define NIL_RTRCPTR    ((RTRCPTR)0)
+
+/** @def RTRCPTR_MAX
+ * The maximum value a RTRCPTR can have. Mostly used as INVALID value.
+ */
+#define RTRCPTR_MAX    ((RTRCPTR)~0)
+
+typedef int32_t       RTRCINTPTR;
+typedef uint32_t      RTRCUINTPTR;
 
 /** @} */
 
@@ -903,25 +950,36 @@ typedef const RTCCPHYS *PCRTCCPHYS;
 # define NIL_RTCCPHYS   NIL_RTHCPHYS
 #endif
 
+/** Unsigned integer register in the current 32 bits context. */
+typedef uint32_t              RTCCUINTREG32;
+/** Pointer to an unsigned integer register in the current context. */
+typedef RTCCUINTREG32        *PRTCCUINTREG32;
+/** Pointer to a const unsigned integer register in the current context. */
+typedef const RTCCUINTREG32  *PCRTCCUINTREG32;
+
+/** Unsigned integer register in the current 64 bits context. */
+typedef uint64_t              RTCCUINTREG64;
+/** Pointer to an unsigned integer register in the current context. */
+typedef RTCCUINTREG64        *PRTCCUINTREG64;
+/** Pointer to a const unsigned integer register in the current context. */
+typedef const RTCCUINTREG64  *PCRTCCUINTREG64;
+
 /** Unsigned integer register in the current context. */
 #if ARCH_BITS == 32
-typedef uint32_t            RTCCUINTREG;
+typedef RTCCUINTREG32         RTCCUINTREG;
+/** Pointer to an unsigned integer register in the current context. */
+typedef PRTCCUINTREG32        PRTCCUINTREG;
+/** Pointer to a const unsigned integer register in the current context. */
+typedef PCRTCCUINTREG32       PCRTCCUINTREG;
 #elif ARCH_BITS == 64
-typedef uint64_t            RTCCUINTREG;
+typedef RTCCUINTREG64         RTCCUINTREG;
+/** Pointer to an unsigned integer register in the current context. */
+typedef PRTCCUINTREG64      PRTCCUINTREG;
+/** Pointer to a const unsigned integer register in the current context. */
+typedef PCRTCCUINTREG64     PCRTCCUINTREG;
 #else
 # error "Unsupported ARCH_BITS!"
 #endif
-/** Pointer to an unsigned integer register in the current context. */
-typedef RTCCUINTREG        *PRTCCUINTREG;
-/** Pointer to a const unsigned integer register in the current context. */
-typedef const RTCCUINTREG  *PCRTCCUINTREG;
-
-/** @deprecated */
-typedef RTCCUINTREG         RTUINTREG;
-/** @deprecated */
-typedef RTCCUINTREG        *PRTUINTREG;
-/** @deprecated */
-typedef const RTCCUINTREG  *PCRTUINTREG;
 
 /** @} */
 
@@ -1072,9 +1130,37 @@ typedef RTCPUSET                                   *PRTCPUSET;
 /** Pointer to a const CPU set. */
 typedef RTCPUSET const                             *PCRTCPUSET;
 
+/** A handle table handle. */
+typedef struct RTHANDLETABLEINT                    *RTHANDLETABLE;
+/** A pointer to a handle table handle. */
+typedef RTHANDLETABLE                              *PRTHANDLETABLE;
+/** @def NIL_RTHANDLETABLE
+ * NIL handle table handle. */
+#define NIL_RTHANDLETABLE                           ((RTHANDLETABLE)0)
+
+/** A handle to a low resolution timer. */
+typedef struct RTTIMERLRINT                        *RTTIMERLR;
+/** A pointer to a low resolution timer handle. */
+typedef RTTIMERLR                                  *PRTTIMERLR;
+/** @def NIL_RTTIMERLR
+ * NIL low resolution timer handle value. */
+#define NIL_RTTIMERLR                               ((RTTIMERLR)0)
+
+/** Handle to a random number generator. */
+typedef struct RTRANDINT                           *RTRAND;
+/** Pointer to a random number generator handle. */
+typedef RTRAND                                     *PRTRAND;
+/** NIL random number genrator handle value. */
+#define NIL_RTRAND                                  ((RTRAND)0)
+
 
 /**
  * UUID data type.
+ *
+ * @note IPRT defines that the first three integers in the @c Gen struct
+ * interpretation are in little endian representation. This is different to
+ * many other UUID implementation, and requires conversion if you need to
+ * achieve consistent results.
  */
 typedef union RTUUID
 {
@@ -1086,17 +1172,16 @@ typedef union RTUUID
     uint32_t    au32[4];
     /** 64-bit view. */
     uint64_t    au64[2];
-    /** The way the UUID is declared by the ext2 guys. */
+    /** The way the UUID is declared by the DCE specification. */
     struct
     {
         uint32_t    u32TimeLow;
         uint16_t    u16TimeMid;
         uint16_t    u16TimeHiAndVersion;
-        uint16_t    u16ClockSeq;
+        uint8_t     u8ClockSeqHiAndReserved;
+        uint8_t     u8ClockSeqLow;
         uint8_t     au8Node[6];
     } Gen;
-    /** @deprecated */
-    unsigned char aUuid[16];
 } RTUUID;
 /** Pointer to UUID data. */
 typedef RTUUID *PRTUUID;
@@ -1177,6 +1262,28 @@ typedef struct RTRECT
 typedef RTRECT *PRTRECT;
 /** Pointer to a const rectangle. */
 typedef const RTRECT *PCRTRECT;
+
+
+/**
+ * Ethernet MAC address.
+ *
+ * The first 24 bits make up the Organisationally Unique Identifier (OUI),
+ * where the first bit (little endian) indicates multicast (set) / unicast,
+ * and the second bit indicates locally (set) / global administered. If all
+ * bits are set, it's a broadcast.
+ */
+typedef union RTMAC
+{
+    /** @todo add a bitfield view of this stuff. */
+    /** 8-bit view. */
+    uint8_t     au8[6];
+    /** 16-bit view. */
+    uint16_t    au16[3];
+} RTMAC;
+/** Pointer to a MAC address. */
+typedef RTMAC *PRTMAC;
+/** Pointer to a readonly MAC address. */
+typedef const RTMAC *PCRTMAC;
 
 /** @} */
 

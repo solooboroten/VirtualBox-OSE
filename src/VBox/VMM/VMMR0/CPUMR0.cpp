@@ -1,4 +1,4 @@
-/* $Id: CPUMR0.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: CPUMR0.cpp 33673 2008-07-24 16:21:42Z sandervl $ */
 /** @file
  * CPUM - Host Context Ring 0.
  */
@@ -108,3 +108,165 @@ CPUMR0DECL(int) CPUMR0Init(PVM pVM)
 }
 
 
+/**
+ * Lazily sync in the FPU/XMM state
+ *
+ * @returns VBox status code.
+ * @param   pVM         VM handle.
+ * @param   pCtx        CPU context
+ */
+CPUMR0DECL(int) CPUMR0LoadGuestFPU(PVM pVM, PCPUMCTX pCtx)
+{
+    Assert(pVM->cpum.s.CPUFeatures.edx.u1FXSR);
+    Assert(ASMGetCR4() & X86_CR4_OSFSXR);
+
+    /* If the FPU state has already been loaded, then it's a guest trap. */
+    if (pVM->cpum.s.fUseFlags & CPUM_USED_FPU)
+    {
+        Assert(    ((pCtx->cr0 & (X86_CR0_MP | X86_CR0_EM | X86_CR0_TS)) == (X86_CR0_MP | X86_CR0_EM | X86_CR0_TS))
+               ||  ((pCtx->cr0 & (X86_CR0_MP | X86_CR0_EM | X86_CR0_TS)) == (X86_CR0_MP | X86_CR0_TS)));
+        return VINF_EM_RAW_GUEST_TRAP;
+    }
+
+    /*
+     * There are two basic actions:
+     *   1. Save host fpu and restore guest fpu.
+     *   2. Generate guest trap.
+     *
+     * When entering the hypervisor we'll always enable MP (for proper wait
+     * trapping) and TS (for intercepting all fpu/mmx/sse stuff). The EM flag
+     * is taken from the guest OS in order to get proper SSE handling.
+     *
+     *
+     * Actions taken depending on the guest CR0 flags:
+     *
+     *   3    2    1
+     *  TS | EM | MP | FPUInstr | WAIT :: VMM Action
+     * ------------------------------------------------------------------------
+     *   0 |  0 |  0 | Exec     | Exec :: Clear TS & MP, Save HC, Load GC.
+     *   0 |  0 |  1 | Exec     | Exec :: Clear TS, Save HC, Load GC.
+     *   0 |  1 |  0 | #NM      | Exec :: Clear TS & MP, Save HC, Load GC.
+     *   0 |  1 |  1 | #NM      | Exec :: Clear TS, Save HC, Load GC.
+     *   1 |  0 |  0 | #NM      | Exec :: Clear MP, Save HC, Load GC. (EM is already cleared.)
+     *   1 |  0 |  1 | #NM      | #NM  :: Go to guest taking trap there.
+     *   1 |  1 |  0 | #NM      | Exec :: Clear MP, Save HC, Load GC. (EM is already set.)
+     *   1 |  1 |  1 | #NM      | #NM  :: Go to guest taking trap there.
+     */
+
+    switch(pCtx->cr0 & (X86_CR0_MP | X86_CR0_EM | X86_CR0_TS))
+    {
+    case X86_CR0_MP | X86_CR0_TS:
+    case X86_CR0_MP | X86_CR0_EM | X86_CR0_TS:
+        return VINF_EM_RAW_GUEST_TRAP;
+
+    default:
+        break;
+    }
+
+#ifndef CPUM_CAN_HANDLE_NM_TRAPS_IN_KERNEL_MODE
+    uint64_t oldMsrEFERHost;
+ 	uint32_t oldCR0 = ASMGetCR0(); 
+
+    /* Clear MSR_K6_EFER_FFXSR or else we'll be unable to save/restore the XMM state with fxsave/fxrstor. */
+    if (pVM->cpum.s.CPUFeaturesExt.edx & X86_CPUID_AMD_FEATURE_EDX_FFXSR)
+    {
+        /* @todo Do we really need to read this every time?? The host could change this on the fly though. */
+        oldMsrEFERHost = ASMRdMsr(MSR_K6_EFER);
+
+        if (oldMsrEFERHost & MSR_K6_EFER_FFXSR)
+        {
+            ASMWrMsr(MSR_K6_EFER, oldMsrEFERHost & ~MSR_K6_EFER_FFXSR);
+            pVM->cpum.s.fUseFlags |= CPUM_MANUAL_XMM_RESTORE;
+        }
+    }
+
+    /* If we sync the FPU/XMM state on-demand, then we can continue execution as if nothing has happened. */ 
+    int rc = CPUMHandleLazyFPU(pVM);
+    AssertRC(rc);
+    Assert(CPUMIsGuestFPUStateActive(pVM)); 
+
+    /* Restore EFER MSR */
+    if (pVM->cpum.s.fUseFlags & CPUM_MANUAL_XMM_RESTORE)
+        ASMWrMsr(MSR_K6_EFER, oldMsrEFERHost);
+
+ 	/* CPUMHandleLazyFPU could have changed CR0; restore it. */ 
+    ASMSetCR0(oldCR0); 
+#else
+    /* Save the FPU control word and MXCSR, so we can restore the properly afterwards. 
+     * We don't want the guest to be able to trigger floating point/SSE exceptions on the host.
+     */
+    pVM->cpum.s.Host.fpu.FCW = CPUMGetFCW();
+    if (pVM->cpum.s.CPUFeatures.edx.u1SSE)
+        pVM->cpum.s.Host.fpu.MXCSR = CPUMGetMXCSR();
+
+    CPUMLoadFPUAsm(pCtx);
+
+    /* The MSR_K6_EFER_FFXSR feature is AMD only so far, but check the cpuid just in case Intel adds it in the future.
+     *
+     * MSR_K6_EFER_FFXSR changes the behaviour of fxsave and fxrstore: the XMM state isn't saved/restored
+     */
+    if (pVM->cpum.s.CPUFeaturesExt.edx & X86_CPUID_AMD_FEATURE_EDX_FFXSR)
+    {
+        /* @todo Do we really need to read this every time?? The host could change this on the fly though. */
+        uint64_t msrEFERHost = ASMRdMsr(MSR_K6_EFER);
+
+        if (msrEFERHost & MSR_K6_EFER_FFXSR)
+        {
+            /* fxrstor doesn't restore the XMM state! */
+            CPUMLoadXMMAsm(pCtx);
+            pVM->cpum.s.fUseFlags |= CPUM_MANUAL_XMM_RESTORE;
+        }
+    }
+#endif
+
+    pVM->cpum.s.fUseFlags |= CPUM_USED_FPU;
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Save guest FPU/XMM state
+ *
+ * @returns VBox status code.
+ * @param   pVM         VM handle.
+ * @param   pCtx        CPU context
+ */
+CPUMR0DECL(int) CPUMR0SaveGuestFPU(PVM pVM, PCPUMCTX pCtx)
+{
+    Assert(pVM->cpum.s.CPUFeatures.edx.u1FXSR);
+    Assert(ASMGetCR4() & X86_CR4_OSFSXR);
+    AssertReturn((pVM->cpum.s.fUseFlags & CPUM_USED_FPU), VINF_SUCCESS);
+
+#ifndef CPUM_CAN_HANDLE_NM_TRAPS_IN_KERNEL_MODE
+    uint64_t oldMsrEFERHost;
+
+    /* Clear MSR_K6_EFER_FFXSR or else we'll be unable to save/restore the XMM state with fxsave/fxrstor. */
+    if (pVM->cpum.s.fUseFlags & CPUM_MANUAL_XMM_RESTORE)
+    {
+        oldMsrEFERHost = ASMRdMsr(MSR_K6_EFER);
+        ASMWrMsr(MSR_K6_EFER, oldMsrEFERHost & ~MSR_K6_EFER_FFXSR);
+    }
+    CPUMRestoreHostFPUState(pVM);
+
+    /* Restore EFER MSR */
+    if (pVM->cpum.s.fUseFlags & CPUM_MANUAL_XMM_RESTORE)
+        ASMWrMsr(MSR_K6_EFER, oldMsrEFERHost | MSR_K6_EFER_FFXSR);
+
+#else
+    CPUMSaveFPUAsm(pCtx);
+    if (pVM->cpum.s.fUseFlags & CPUM_MANUAL_XMM_RESTORE)
+    {
+        /* fxsave doesn't save the XMM state! */
+        CPUMSaveXMMAsm(pCtx);
+    }
+    /* Restore the original FPU control word and MXCSR. 
+     * We don't want the guest to be able to trigger floating point/SSE exceptions on the host.
+     */
+    CPUMSetFCW(pVM->cpum.s.Host.fpu.FCW);
+    if (pVM->cpum.s.CPUFeatures.edx.u1SSE)
+        CPUMSetMXCSR(pVM->cpum.s.Host.fpu.MXCSR);
+#endif
+
+    pVM->cpum.s.fUseFlags &= ~(CPUM_USED_FPU|CPUM_MANUAL_XMM_RESTORE);
+    return VINF_SUCCESS;
+}

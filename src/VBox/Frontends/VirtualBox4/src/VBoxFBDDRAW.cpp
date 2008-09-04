@@ -235,7 +235,8 @@ STDMETHODIMP VBoxDDRAWFrameBuffer::NotifyUpdate (ULONG aX, ULONG aY,
 
     if (mSynchronousUpdates)
     {
-        mView->updateContents (aX, aY, aW, aH);
+//#warning check me!
+        mView->viewport()->update (aX, aY, aW, aH);
     }
     else
     {
@@ -279,7 +280,8 @@ void VBoxDDRAWFrameBuffer::resizeEvent (VBoxResizeEvent *re)
 
     getWindowPosition();
 
-    mView->setBackgroundMode (Qt::NoBackground);
+//#warning: port me
+//    mView->setBackgroundMode (Qt::NoBackground);
 }
 
 void VBoxDDRAWFrameBuffer::moveEvent (QMoveEvent *me)

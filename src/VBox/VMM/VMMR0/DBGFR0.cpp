@@ -1,4 +1,4 @@
-/* $Id: DBGFR0.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: DBGFR0.cpp 34406 2008-08-08 23:31:54Z bird $ */
 /** @file
  * DBGF - Debugger Facility, R0 part.
  */
@@ -44,7 +44,7 @@
  * @param   pRegFrame   Pointer to the register frame for the trap.
  * @param   uDr6        The DR6 register value.
  */
-DBGFR0DECL(int) DBGFR0Trap01Handler(PVM pVM, PCPUMCTXCORE pRegFrame, RTUINTREG uDr6)
+DBGFR0DECL(int) DBGFR0Trap01Handler(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCUINTREG uDr6)
 {
     /** @todo Intel docs say that X86_DR6_BS has the highest priority... */
     /*
@@ -53,7 +53,7 @@ DBGFR0DECL(int) DBGFR0Trap01Handler(PVM pVM, PCPUMCTXCORE pRegFrame, RTUINTREG u
     if (uDr6 & (X86_DR6_B0 | X86_DR6_B1 | X86_DR6_B2 | X86_DR6_B3))
     {
         Assert(X86_DR6_B0 == 1 && X86_DR6_B1 == 2 && X86_DR6_B2 == 4 && X86_DR6_B3 == 8);
-        for (unsigned iBp = 0; iBp < ELEMENTS(pVM->dbgf.s.aHwBreakpoints); iBp++)
+        for (unsigned iBp = 0; iBp < RT_ELEMENTS(pVM->dbgf.s.aHwBreakpoints); iBp++)
         {
             if (    (uDr6 & RT_BIT(iBp))
                 &&  pVM->dbgf.s.aHwBreakpoints[iBp].enmType == DBGFBPTYPE_REG)
@@ -112,11 +112,11 @@ DBGFR0DECL(int) DBGFR0Trap03Handler(PVM pVM, PCPUMCTXCORE pRegFrame)
     {
         RTGCPTR pPc;
         int rc = SELMValidateAndConvertCSAddr(pVM, pRegFrame->eflags, pRegFrame->ss, pRegFrame->cs, &pRegFrame->csHid,
-                                              (RTGCPTR)((RTGCUINTPTR)pRegFrame->eip - 1),                                              
+                                              (RTGCPTR)((RTGCUINTPTR)pRegFrame->eip - 1),
                                               &pPc);
         AssertRCReturn(rc, rc);
 
-        for (unsigned iBp = 0; iBp < ELEMENTS(pVM->dbgf.s.aBreakpoints); iBp++)
+        for (unsigned iBp = 0; iBp < RT_ELEMENTS(pVM->dbgf.s.aBreakpoints); iBp++)
         {
             if (    pVM->dbgf.s.aBreakpoints[iBp].GCPtr == (RTGCUINTPTR)pPc
                 &&  pVM->dbgf.s.aBreakpoints[iBp].enmType == DBGFBPTYPE_INT3)

@@ -1,4 +1,4 @@
-/** $Id: DrvHostSerial.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/** $Id: DrvHostSerial.cpp 34855 2008-08-17 21:24:30Z aeichner $ */
 /** @file
  * VBox stream I/O devices: Host serial driver
  *
@@ -47,6 +47,8 @@
 # include <unistd.h>
 # include <sys/poll.h>
 # include <sys/ioctl.h>
+# include <pthread.h>
+# include <sys/signal.h>
 
 /*
  * TIOCM_LOOP is not defined in the above header files for some reason but in asm/termios.h.
@@ -145,13 +147,13 @@ typedef struct DRVHOSTSERIAL
 static DECLCALLBACK(void *) drvHostSerialQueryInterface(PPDMIBASE pInterface, PDMINTERFACE enmInterface)
 {
     PPDMDRVINS  pDrvIns = PDMIBASE_2_PDMDRV(pInterface);
-    PDRVHOSTSERIAL    pData = PDMINS2DATA(pDrvIns, PDRVHOSTSERIAL);
+    PDRVHOSTSERIAL    pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTSERIAL);
     switch (enmInterface)
     {
         case PDMINTERFACE_BASE:
             return &pDrvIns->IBase;
         case PDMINTERFACE_CHAR:
-            return &pData->IChar;
+            return &pThis->IChar;
         default:
             return NULL;
     }
@@ -163,28 +165,28 @@ static DECLCALLBACK(void *) drvHostSerialQueryInterface(PPDMIBASE pInterface, PD
 /** @copydoc PDMICHAR::pfnWrite */
 static DECLCALLBACK(int) drvHostSerialWrite(PPDMICHAR pInterface, const void *pvBuf, size_t cbWrite)
 {
-    PDRVHOSTSERIAL pData = PDMICHAR_2_DRVHOSTSERIAL(pInterface);
+    PDRVHOSTSERIAL pThis = PDMICHAR_2_DRVHOSTSERIAL(pInterface);
     const uint8_t *pbBuffer = (const uint8_t *)pvBuf;
 
     LogFlow(("%s: pvBuf=%#p cbWrite=%d\n", __FUNCTION__, pvBuf, cbWrite));
 
     for (uint32_t i=0;i<cbWrite;i++)
     {
-        uint32_t idx = pData->iSendQueueHead;
+        uint32_t idx = pThis->iSendQueueHead;
 
-        pData->aSendQueue[idx] = pbBuffer[i];
+        pThis->aSendQueue[idx] = pbBuffer[i];
         idx = (idx + 1) & CHAR_MAX_SEND_QUEUE_MASK;
 
-        STAM_COUNTER_INC(&pData->StatBytesWritten);
-        ASMAtomicXchgU32(&pData->iSendQueueHead, idx);
+        STAM_COUNTER_INC(&pThis->StatBytesWritten);
+        ASMAtomicXchgU32(&pThis->iSendQueueHead, idx);
     }
-    RTSemEventSignal(pData->SendSem);
+    RTSemEventSignal(pThis->SendSem);
     return VINF_SUCCESS;
 }
 
 static DECLCALLBACK(int) drvHostSerialSetParameters(PPDMICHAR pInterface, unsigned Bps, char chParity, unsigned cDataBits, unsigned cStopBits)
 {
-    PDRVHOSTSERIAL pData = PDMICHAR_2_DRVHOSTSERIAL(pInterface);
+    PDRVHOSTSERIAL pThis = PDMICHAR_2_DRVHOSTSERIAL(pInterface);
 #ifdef RT_OS_LINUX
     struct termios *termiosSetup;
     int baud_rate;
@@ -299,7 +301,7 @@ static DECLCALLBACK(int) drvHostSerialSetParameters(PPDMICHAR pInterface, unsign
     /* set serial port to raw input */
     termiosSetup->c_lflag = ~(ICANON | ECHO | ECHOE | ISIG);
 
-    tcsetattr(pData->DeviceFile, TCSANOW, termiosSetup);
+    tcsetattr(pThis->DeviceFile, TCSANOW, termiosSetup);
     RTMemTmpFree(termiosSetup);
 #elif defined(RT_OS_WINDOWS)
     comSetup = (LPDCB)RTMemTmpAllocZ(sizeof(DCB));
@@ -395,7 +397,7 @@ static DECLCALLBACK(int) drvHostSerialSetParameters(PPDMICHAR pInterface, unsign
     comSetup->EofChar = 0;
     comSetup->EvtChar = 0;
 
-    SetCommState(pData->hDeviceFile, comSetup);
+    SetCommState(pThis->hDeviceFile, comSetup);
     RTMemTmpFree(comSetup);
 #endif /* RT_OS_WINDOWS */
 
@@ -413,42 +415,42 @@ static DECLCALLBACK(int) drvHostSerialSetParameters(PPDMICHAR pInterface, unsign
  */
 static DECLCALLBACK(int) drvHostSerialSendThread(PPDMDRVINS pDrvIns, PPDMTHREAD pThread)
 {
-    PDRVHOSTSERIAL pData = PDMINS2DATA(pDrvIns, PDRVHOSTSERIAL);
+    PDRVHOSTSERIAL pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTSERIAL);
 
     if (pThread->enmState == PDMTHREADSTATE_INITIALIZING)
         return VINF_SUCCESS;
 
 #ifdef RT_OS_WINDOWS
     HANDLE haWait[2];
-    haWait[0] = pData->hEventSend;
-    haWait[1] = pData->hHaltEventSem;
+    haWait[0] = pThis->hEventSend;
+    haWait[1] = pThis->hHaltEventSem;
 #endif
 
     while (pThread->enmState == PDMTHREADSTATE_RUNNING)
     {
-        int rc = RTSemEventWait(pData->SendSem, RT_INDEFINITE_WAIT);
-        if (VBOX_FAILURE(rc))
+        int rc = RTSemEventWait(pThis->SendSem, RT_INDEFINITE_WAIT);
+        if (RT_FAILURE(rc))
             break;
 
         /*
          * Write the character to the host device.
          */
         while (   pThread->enmState == PDMTHREADSTATE_RUNNING
-               && pData->iSendQueueTail != pData->iSendQueueHead)
+               && pThis->iSendQueueTail != pThis->iSendQueueHead)
         {
             unsigned cbProcessed = 1;
 
 #if defined(RT_OS_LINUX)
 
-            rc = RTFileWrite(pData->DeviceFile, &pData->aSendQueue[pData->iSendQueueTail], cbProcessed, NULL);
+            rc = RTFileWrite(pThis->DeviceFile, &pThis->aSendQueue[pThis->iSendQueueTail], cbProcessed, NULL);
 
 #elif defined(RT_OS_WINDOWS)
 
             DWORD cbBytesWritten;
-            memset(&pData->overlappedSend, 0, sizeof(pData->overlappedSend));
-            pData->overlappedSend.hEvent = pData->hEventSend;
+            memset(&pThis->overlappedSend, 0, sizeof(pThis->overlappedSend));
+            pThis->overlappedSend.hEvent = pThis->hEventSend;
 
-            if (!WriteFile(pData->hDeviceFile, &pData->aSendQueue[pData->iSendQueueTail], cbProcessed, &cbBytesWritten, &pData->overlappedSend))
+            if (!WriteFile(pThis->hDeviceFile, &pThis->aSendQueue[pThis->iSendQueueTail], cbProcessed, &cbBytesWritten, &pThis->overlappedSend))
             {
                 DWORD dwRet = GetLastError();
                 if (dwRet == ERROR_IO_PENDING)
@@ -466,15 +468,15 @@ static DECLCALLBACK(int) drvHostSerialSendThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
 
 #endif
 
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
             {
                 Assert(cbProcessed);
-                pData->iSendQueueTail++;
-                pData->iSendQueueTail &= CHAR_MAX_SEND_QUEUE_MASK;
+                pThis->iSendQueueTail++;
+                pThis->iSendQueueTail &= CHAR_MAX_SEND_QUEUE_MASK;
             }
-            else if (VBOX_FAILURE(rc))
+            else if (RT_FAILURE(rc))
             {
-                LogRel(("HostSerial#%d: Serial Write failed with %Vrc; terminating send thread\n", pDrvIns->iInstance, rc));
+                LogRel(("HostSerial#%d: Serial Write failed with %Rrc; terminating send thread\n", pDrvIns->iInstance, rc));
                 return VINF_SUCCESS;
             }
         }
@@ -492,15 +494,15 @@ static DECLCALLBACK(int) drvHostSerialSendThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
  */
 static DECLCALLBACK(int) drvHostSerialWakeupSendThread(PPDMDRVINS pDrvIns, PPDMTHREAD pThread)
 {
-    PDRVHOSTSERIAL pData = PDMINS2DATA(pDrvIns, PDRVHOSTSERIAL);
+    PDRVHOSTSERIAL pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTSERIAL);
     int rc;
 
-    rc = RTSemEventSignal(pData->SendSem);
+    rc = RTSemEventSignal(pThis->SendSem);
     if (RT_FAILURE(rc))
         return rc;
 
 #ifdef RT_OS_WINDOWS
-    if (!SetEvent(pData->hHaltEventSem))
+    if (!SetEvent(pThis->hHaltEventSem))
         return RTErrConvertFromWin32(GetLastError());
 #endif
 
@@ -521,7 +523,7 @@ static DECLCALLBACK(int) drvHostSerialWakeupSendThread(PPDMDRVINS pDrvIns, PPDMT
  */
 static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD pThread)
 {
-    PDRVHOSTSERIAL pData = PDMINS2DATA(pDrvIns, PDRVHOSTSERIAL);
+    PDRVHOSTSERIAL pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTSERIAL);
     uint8_t abBuffer[256];
     uint8_t *pbBuffer = NULL;
     size_t cbRemaining = 0; /* start by reading host data */
@@ -532,8 +534,8 @@ static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
 
 #ifdef RT_OS_WINDOWS
     HANDLE haWait[2];
-    haWait[0] = pData->hEventRecv;
-    haWait[1] = pData->hHaltEventSem;
+    haWait[0] = pThis->hEventRecv;
+    haWait[1] = pThis->hHaltEventSem;
 #endif
 
     while (pThread->enmState == PDMTHREADSTATE_RUNNING)
@@ -546,13 +548,13 @@ static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
 
             size_t cbRead;
             struct pollfd aFDs[2];
-            aFDs[0].fd      = pData->DeviceFile;
+            aFDs[0].fd      = pThis->DeviceFile;
             aFDs[0].events  = POLLIN;
             aFDs[0].revents = 0;
-            aFDs[1].fd      = pData->WakeupPipeR;
+            aFDs[1].fd      = pThis->WakeupPipeR;
             aFDs[1].events  = POLLIN | POLLERR | POLLHUP;
             aFDs[1].revents = 0;
-            rc = poll(aFDs, ELEMENTS(aFDs), -1);
+            rc = poll(aFDs, RT_ELEMENTS(aFDs), -1);
             if (rc < 0)
             {
                 /* poll failed for whatever reason */
@@ -568,13 +570,13 @@ static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
                 /* notification to terminate -- drain the pipe */
                 char ch;
                 size_t cbRead;
-                RTFileRead(pData->WakeupPipeR, &ch, 1, &cbRead);
+                RTFileRead(pThis->WakeupPipeR, &ch, 1, &cbRead);
                 continue;
             }
-            rc = RTFileRead(pData->DeviceFile, abBuffer, sizeof(abBuffer), &cbRead);
-            if (VBOX_FAILURE(rc))
+            rc = RTFileRead(pThis->DeviceFile, abBuffer, sizeof(abBuffer), &cbRead);
+            if (RT_FAILURE(rc))
             {
-                LogRel(("HostSerial#%d: Read failed with %Vrc, terminating the worker thread.\n", pDrvIns->iInstance, rc));
+                LogRel(("HostSerial#%d: Read failed with %Rrc, terminating the worker thread.\n", pDrvIns->iInstance, rc));
                 break;
             }
             cbRemaining = cbRead;
@@ -584,10 +586,10 @@ static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
             DWORD dwEventMask = 0;
             DWORD dwNumberOfBytesTransferred;
 
-            memset(&pData->overlappedRecv, 0, sizeof(pData->overlappedRecv));
-            pData->overlappedRecv.hEvent = pData->hEventRecv;
+            memset(&pThis->overlappedRecv, 0, sizeof(pThis->overlappedRecv));
+            pThis->overlappedRecv.hEvent = pThis->hEventRecv;
 
-            if (!WaitCommEvent(pData->hDeviceFile, &dwEventMask, &pData->overlappedRecv))
+            if (!WaitCommEvent(pThis->hDeviceFile, &dwEventMask, &pThis->overlappedRecv))
             {
                 DWORD dwRet = GetLastError();
                 if (dwRet == ERROR_IO_PENDING)
@@ -601,7 +603,7 @@ static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
                 }
                 else
                 {
-                    LogRel(("HostSerial#%d: Wait failed with error %Vrc; terminating the worker thread.\n", pDrvIns->iInstance, RTErrConvertFromWin32(dwRet)));
+                    LogRel(("HostSerial#%d: Wait failed with error %Rrc; terminating the worker thread.\n", pDrvIns->iInstance, RTErrConvertFromWin32(dwRet)));
                     break;
                 }
             }
@@ -612,9 +614,9 @@ static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
             /* Check the event */
             if (dwEventMask & EV_RXCHAR)
             {
-                if (!ReadFile(pData->hDeviceFile, abBuffer, sizeof(abBuffer), &dwNumberOfBytesTransferred, &pData->overlappedRecv))
+                if (!ReadFile(pThis->hDeviceFile, abBuffer, sizeof(abBuffer), &dwNumberOfBytesTransferred, &pThis->overlappedRecv))
                 {
-                    LogRel(("HostSerial#%d: Read failed with error %Vrc; terminating the worker thread.\n", pDrvIns->iInstance, RTErrConvertFromWin32(GetLastError())));
+                    LogRel(("HostSerial#%d: Read failed with error %Rrc; terminating the worker thread.\n", pDrvIns->iInstance, RTErrConvertFromWin32(GetLastError())));
                     break;
                 }
                 cbRemaining = dwNumberOfBytesTransferred;
@@ -626,7 +628,7 @@ static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
                 uint32_t uNewStatusLinesState = 0;
 
                 /* Get the new state */
-                if (GetCommModemStatus(pData->hDeviceFile, &dwNewStatusLinesState))
+                if (GetCommModemStatus(pThis->hDeviceFile, &dwNewStatusLinesState))
                 {
                     if (dwNewStatusLinesState & MS_RLSD_ON)
                         uNewStatusLinesState |= PDM_ICHAR_STATUS_LINES_DCD;
@@ -636,17 +638,17 @@ static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
                         uNewStatusLinesState |= PDM_ICHAR_STATUS_LINES_DSR;
                     if (dwNewStatusLinesState & MS_CTS_ON)
                         uNewStatusLinesState |= PDM_ICHAR_STATUS_LINES_CTS;
-                    rc = pData->pDrvCharPort->pfnNotifyStatusLinesChanged(pData->pDrvCharPort, uNewStatusLinesState);
-                    if (VBOX_FAILURE(rc))
+                    rc = pThis->pDrvCharPort->pfnNotifyStatusLinesChanged(pThis->pDrvCharPort, uNewStatusLinesState);
+                    if (RT_FAILURE(rc))
                     {
                         /* Notifying device failed, continue but log it */
-                        LogRel(("HostSerial#%d: Notifying device failed with error %Vrc; continuing.\n", pDrvIns->iInstance, rc));
+                        LogRel(("HostSerial#%d: Notifying device failed with error %Rrc; continuing.\n", pDrvIns->iInstance, rc));
                     }
                 }
                 else
                 {
                     /* Getting new state failed, continue but log it */
-                    LogRel(("HostSerial#%d: Getting status lines state failed with error %Vrc; continuing.\n", pDrvIns->iInstance, RTErrConvertFromWin32(GetLastError())));
+                    LogRel(("HostSerial#%d: Getting status lines state failed with error %Rrc; continuing.\n", pDrvIns->iInstance, RTErrConvertFromWin32(GetLastError())));
                 }
             }
 #endif
@@ -658,13 +660,13 @@ static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
         {
             /* Send data to the guest. */
             size_t cbProcessed = cbRemaining;
-            rc = pData->pDrvCharPort->pfnNotifyRead(pData->pDrvCharPort, pbBuffer, &cbProcessed);
-            if (VBOX_SUCCESS(rc))
+            rc = pThis->pDrvCharPort->pfnNotifyRead(pThis->pDrvCharPort, pbBuffer, &cbProcessed);
+            if (RT_SUCCESS(rc))
             {
                 Assert(cbProcessed); Assert(cbProcessed <= cbRemaining);
                 pbBuffer += cbProcessed;
                 cbRemaining -= cbProcessed;
-                STAM_COUNTER_ADD(&pData->StatBytesRead, cbProcessed);
+                STAM_COUNTER_ADD(&pThis->StatBytesRead, cbProcessed);
             }
             else if (rc == VERR_TIMEOUT)
             {
@@ -674,7 +676,7 @@ static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
             }
             else
             {
-                LogRel(("HostSerial#%d: NotifyRead failed with %Vrc, terminating the worker thread.\n", pDrvIns->iInstance, rc));
+                LogRel(("HostSerial#%d: NotifyRead failed with %Rrc, terminating the worker thread.\n", pDrvIns->iInstance, rc));
                 break;
             }
         }
@@ -692,11 +694,11 @@ static DECLCALLBACK(int) drvHostSerialRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD 
  */
 static DECLCALLBACK(int) drvHostSerialWakeupRecvThread(PPDMDRVINS pDrvIns, PPDMTHREAD pThread)
 {
-    PDRVHOSTSERIAL pData = PDMINS2DATA(pDrvIns, PDRVHOSTSERIAL);
+    PDRVHOSTSERIAL pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTSERIAL);
 #ifdef RT_OS_LINUX
-    return RTFileWrite(pData->WakeupPipeW, "", 1, NULL);
+    return RTFileWrite(pThis->WakeupPipeW, "", 1, NULL);
 #elif defined(RT_OS_WINDOWS)
-    if (!SetEvent(pData->hHaltEventSem))
+    if (!SetEvent(pThis->hHaltEventSem))
         return RTErrConvertFromWin32(GetLastError());
     return VINF_SUCCESS;
 #else
@@ -719,7 +721,7 @@ static DECLCALLBACK(int) drvHostSerialWakeupRecvThread(PPDMDRVINS pDrvIns, PPDMT
  */
 static DECLCALLBACK(int) drvHostSerialMonitorThread(PPDMDRVINS pDrvIns, PPDMTHREAD pThread)
 {
-    PDRVHOSTSERIAL pData = PDMINS2DATA(pDrvIns, PDRVHOSTSERIAL);
+    PDRVHOSTSERIAL pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTSERIAL);
     int rc = VINF_SUCCESS;
     unsigned uStatusLinesToCheck = 0;
 
@@ -736,19 +738,19 @@ static DECLCALLBACK(int) drvHostSerialMonitorThread(PPDMDRVINS pDrvIns, PPDMTHRE
         /*
          * Wait for status line change.
          */
-        rc = ioctl(pData->DeviceFile, TIOCMIWAIT, &uStatusLinesToCheck);
+        rc = ioctl(pThis->DeviceFile, TIOCMIWAIT, &uStatusLinesToCheck);
         if (pThread->enmState != PDMTHREADSTATE_RUNNING)
             break;
         if (rc < 0)
         {
 ioctl_error:
             PDMDrvHlpVMSetRuntimeError(pDrvIns, false, "DrvHostSerialFail",
-                                       N_("Ioctl failed for serial host device '%s' (%Vrc). The device will not work properly"),
-                                       pData->pszDevicePath, RTErrConvertFromErrno(errno));
+                                       N_("Ioctl failed for serial host device '%s' (%Rrc). The device will not work properly"),
+                                       pThis->pszDevicePath, RTErrConvertFromErrno(errno));
             break;
         }
 
-        rc = ioctl(pData->DeviceFile, TIOCMGET, &statusLines);
+        rc = ioctl(pThis->DeviceFile, TIOCMGET, &statusLines);
         if (rc < 0)
             goto ioctl_error;
 
@@ -760,10 +762,16 @@ ioctl_error:
             newStatusLine |= PDM_ICHAR_STATUS_LINES_DSR;
         if (statusLines & TIOCM_CTS)
             newStatusLine |= PDM_ICHAR_STATUS_LINES_CTS;
-        rc = pData->pDrvCharPort->pfnNotifyStatusLinesChanged(pData->pDrvCharPort, newStatusLine);
+        rc = pThis->pDrvCharPort->pfnNotifyStatusLinesChanged(pThis->pDrvCharPort, newStatusLine);
     }
 
     return VINF_SUCCESS;
+}
+
+static void drvHostSerialSignalHandler(int iSignal)
+{
+    /* Do nothing. */
+    return;
 }
 
 /**
@@ -777,35 +785,111 @@ ioctl_error:
  */
 static DECLCALLBACK(int) drvHostSerialWakeupMonitorThread(PPDMDRVINS pDrvIns, PPDMTHREAD pThread)
 {
-    PDRVHOSTSERIAL pData = PDMINS2DATA(pDrvIns, PDRVHOSTSERIAL);
-    int rc;
+    PDRVHOSTSERIAL pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTSERIAL);
+    int rc = VINF_SUCCESS;
+#if 0
+     unsigned int uSerialLineFlags;
+     unsigned int uSerialLineStatus;
+     unsigned int uIoctl;
+#endif
 
     /*
      * Linux is a bit difficult as the thread is sleeping in an ioctl call.
      * So there is no way to have a wakeup pipe.
-     * Thatswhy we set the serial device into loopback mode and change one of the
-     * modem control bits.
-     * This should make the ioctl call return.
+     *
+     * 1. Thatswhy we set the serial device into loopback mode and change one of the
+     *    modem control bits.
+     *    This should make the ioctl call return.
+     *
+     * 2. We still got reports about long shutdown times. It may bepossible
+     *    that the loopback mode is not implemented on all devices.
+     *    The next possible solution is to close the device file to make the ioctl
+     *    return with EBADF and be able to suspend the thread.
+     *
+     * 3. The second approach doesn't work too, the ioctl doesn't return.
+     *    But it seems that the ioctl is interruptible (return code in errno is EINTR).
+     *    We get the native thread id of the PDM thread and send a signal with pthread_kill().
      */
-    rc = ioctl(pData->DeviceFile, TIOCMBIS, TIOCM_LOOP);
+
+#if 0 /* Disabled because it does not work for all. */
+    /* Get current status of control lines. */
+    rc = ioctl(pThis->DeviceFile, TIOCMGET, &uSerialLineStatus);
     if (rc < 0)
         goto ioctl_error;
 
-    rc = ioctl(pData->DeviceFile, TIOCMBIS, TIOCM_RTS);
+    uSerialLineFlags = TIOCM_LOOP;
+    rc = ioctl(pThis->DeviceFile, TIOCMBIS, &uSerialLineFlags);
+    if (rc < 0)
+        goto ioctl_error;
+
+    /*
+     * Change current level on the RTS pin to make the ioctl call return in the
+     * monitor thread.
+     */
+    uIoctl = (uSerialLineStatus & TIOCM_CTS) ? TIOCMBIC : TIOCMBIS;
+    uSerialLineFlags = TIOCM_RTS;
+
+    rc = ioctl(pThis->DeviceFile, uIoctl, &uSerialLineFlags);
+    if (rc < 0)
+        goto ioctl_error;
+
+    /* Change RTS back to the previous level. */
+    uIoctl = (uIoctl == TIOCMBIC) ? TIOCMBIS : TIOCMBIC;
+
+    rc = ioctl(pThis->DeviceFile, uIoctl, &uSerialLineFlags);
     if (rc < 0)
         goto ioctl_error;
 
     /*
      * Set serial device into normal state.
      */
-    rc = ioctl(pData->DeviceFile, TIOCMBIC, TIOCM_LOOP);
+    uSerialLineFlags = TIOCM_LOOP;
+    rc = ioctl(pThis->DeviceFile, TIOCMBIC, &uSerialLineFlags);
     if (rc >= 0)
         return VINF_SUCCESS;
 
 ioctl_error:
     PDMDrvHlpVMSetRuntimeError(pDrvIns, false, "DrvHostSerialFail",
-                                N_("Ioctl failed for serial host device '%s' (%Vrc). The device will not work properly"),
-                                pData->pszDevicePath, RTErrConvertFromErrno(errno));
+                                N_("Ioctl failed for serial host device '%s' (%Rrc). The device will not work properly"),
+                                pThis->pszDevicePath, RTErrConvertFromErrno(errno));
+#endif
+
+#if 0
+    /* Close file to make ioctl return. */
+    RTFileClose(pData->DeviceFile);
+    /* Open again to make use after suspend possible again. */
+    rc = RTFileOpen(&pData->DeviceFile, pData->pszDevicePath, RTFILE_O_OPEN | RTFILE_O_READWRITE);
+    AssertMsg(RT_SUCCESS(rc), ("Opening device file again failed rc=%Vrc\n", rc));
+
+    if (RT_FAILURE(rc))
+        PDMDrvHlpVMSetRuntimeError(pDrvIns, false, "DrvHostSerialFail",
+                                    N_("Opening failed for serial host device '%s' (%Vrc). The device will not work"),
+                                    pData->pszDevicePath, rc);
+#endif
+
+    pthread_t        ThreadId = (pthread_t)RTThreadGetNative(pThread->Thread);
+    struct sigaction SigactionThread;
+    struct sigaction SigactionThreadOld;
+
+    memset(&SigactionThread, 0, sizeof(struct sigaction));
+    sigemptyset(&SigactionThread.sa_mask);
+    SigactionThread.sa_flags = 0;
+    SigactionThread.sa_handler = drvHostSerialSignalHandler;
+    rc = sigaction(SIGUSR2, &SigactionThread, &SigactionThreadOld);
+    if (rc < 0)
+        PDMDrvHlpVMSetRuntimeError(pDrvIns, false, "DrvHostSerialFail",
+                                    N_("Suspending serial monitor thread failed for serial device '%s' (%Vrc). The shutdown may take extremly long."),
+                                    pThis->pszDevicePath, RTErrConvertFromErrno(errno));
+
+    rc = pthread_kill(ThreadId, SIGUSR2);
+    if (rc < 0)
+        PDMDrvHlpVMSetRuntimeError(pDrvIns, false, "DrvHostSerialFail",
+                                    N_("Suspending serial monitor thread failed for serial device '%s' (%Vrc). The shutdown may take extremly long."),
+                                    pThis->pszDevicePath, RTErrConvertFromErrno(rc));
+
+    /* Restore old action handler. */
+    sigaction(SIGUSR2, &SigactionThreadOld, NULL);
+
     return VINF_SUCCESS;
 }
 #endif /* RT_OS_LINUX */
@@ -820,7 +904,7 @@ ioctl_error:
  */
 static DECLCALLBACK(int) drvHostSerialSetModemLines(PPDMICHAR pInterface, bool RequestToSend, bool DataTerminalReady)
 {
-    PDRVHOSTSERIAL pData = PDMICHAR_2_DRVHOSTSERIAL(pInterface);
+    PDRVHOSTSERIAL pThis = PDMICHAR_2_DRVHOSTSERIAL(pInterface);
 
 #ifdef RT_OS_LINUX
     int modemStateSet = 0;
@@ -837,20 +921,20 @@ static DECLCALLBACK(int) drvHostSerialSetModemLines(PPDMICHAR pInterface, bool R
         modemStateClear |= TIOCM_DTR;
 
     if (modemStateSet)
-        ioctl(pData->DeviceFile, TIOCMBIS, &modemStateSet);
+        ioctl(pThis->DeviceFile, TIOCMBIS, &modemStateSet);
 
     if (modemStateClear)
-        ioctl(pData->DeviceFile, TIOCMBIC, &modemStateClear);
+        ioctl(pThis->DeviceFile, TIOCMBIC, &modemStateClear);
 #elif defined(RT_OS_WINDOWS)
     if (RequestToSend)
-        EscapeCommFunction(pData->hDeviceFile, SETRTS);
+        EscapeCommFunction(pThis->hDeviceFile, SETRTS);
     else
-        EscapeCommFunction(pData->hDeviceFile, CLRRTS);
+        EscapeCommFunction(pThis->hDeviceFile, CLRRTS);
 
     if (DataTerminalReady)
-        EscapeCommFunction(pData->hDeviceFile, SETDTR);
+        EscapeCommFunction(pThis->hDeviceFile, SETDTR);
     else
-        EscapeCommFunction(pData->hDeviceFile, CLRDTR);
+        EscapeCommFunction(pThis->hDeviceFile, CLRDTR);
 #endif
 
     return VINF_SUCCESS;
@@ -872,32 +956,32 @@ static DECLCALLBACK(int) drvHostSerialSetModemLines(PPDMICHAR pInterface, bool R
  */
 static DECLCALLBACK(int) drvHostSerialConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
 {
-    PDRVHOSTSERIAL pData = PDMINS2DATA(pDrvIns, PDRVHOSTSERIAL);
+    PDRVHOSTSERIAL pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTSERIAL);
     LogFlow(("%s: iInstance=%d\n", __FUNCTION__, pDrvIns->iInstance));
 
     /*
      * Init basic data members and interfaces.
      */
 #ifdef RT_OS_LINUX
-    pData->DeviceFile  = NIL_RTFILE;
-    pData->WakeupPipeR = NIL_RTFILE;
-    pData->WakeupPipeW = NIL_RTFILE;
+    pThis->DeviceFile  = NIL_RTFILE;
+    pThis->WakeupPipeR = NIL_RTFILE;
+    pThis->WakeupPipeW = NIL_RTFILE;
 #endif
     /* IBase. */
     pDrvIns->IBase.pfnQueryInterface        = drvHostSerialQueryInterface;
     /* IChar. */
-    pData->IChar.pfnWrite                   = drvHostSerialWrite;
-    pData->IChar.pfnSetParameters           = drvHostSerialSetParameters;
-    pData->IChar.pfnSetModemLines           = drvHostSerialSetModemLines;
+    pThis->IChar.pfnWrite                   = drvHostSerialWrite;
+    pThis->IChar.pfnSetParameters           = drvHostSerialSetParameters;
+    pThis->IChar.pfnSetModemLines           = drvHostSerialSetModemLines;
 
     /*
      * Query configuration.
      */
     /* Device */
-    int rc = CFGMR3QueryStringAlloc(pCfgHandle, "DevicePath", &pData->pszDevicePath);
-    if (VBOX_FAILURE(rc))
+    int rc = CFGMR3QueryStringAlloc(pCfgHandle, "DevicePath", &pThis->pszDevicePath);
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Configuration error: query for \"DevicePath\" string returned %Vra.\n", rc));
+        AssertMsgFailed(("Configuration error: query for \"DevicePath\" string returned %Rra.\n", rc));
         return rc;
     }
 
@@ -906,16 +990,16 @@ static DECLCALLBACK(int) drvHostSerialConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
      */
 #ifdef RT_OS_WINDOWS
 
-    pData->hHaltEventSem = CreateEvent(NULL, FALSE, FALSE, NULL);
-    AssertReturn(pData->hHaltEventSem != NULL, VERR_NO_MEMORY);
+    pThis->hHaltEventSem = CreateEvent(NULL, FALSE, FALSE, NULL);
+    AssertReturn(pThis->hHaltEventSem != NULL, VERR_NO_MEMORY);
 
-    pData->hEventRecv = CreateEvent(NULL, FALSE, FALSE, NULL);
-    AssertReturn(pData->hEventRecv != NULL, VERR_NO_MEMORY);
+    pThis->hEventRecv = CreateEvent(NULL, FALSE, FALSE, NULL);
+    AssertReturn(pThis->hEventRecv != NULL, VERR_NO_MEMORY);
 
-    pData->hEventSend = CreateEvent(NULL, FALSE, FALSE, NULL);
-    AssertReturn(pData->hEventSend != NULL, VERR_NO_MEMORY);
+    pThis->hEventSend = CreateEvent(NULL, FALSE, FALSE, NULL);
+    AssertReturn(pThis->hEventSend != NULL, VERR_NO_MEMORY);
 
-    HANDLE hFile = CreateFile(pData->pszDevicePath,
+    HANDLE hFile = CreateFile(pThis->pszDevicePath,
                               GENERIC_READ | GENERIC_WRITE,
                               0, // must be opened with exclusive access
                               NULL, // no SECURITY_ATTRIBUTES structure
@@ -926,7 +1010,7 @@ static DECLCALLBACK(int) drvHostSerialConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
         rc = RTErrConvertFromWin32(GetLastError());
     else
     {
-        pData->hDeviceFile = hFile;
+        pThis->hDeviceFile = hFile;
         /* for overlapped read */
         if (!SetCommMask(hFile, EV_RXCHAR | EV_CTS | EV_DSR | EV_RING | EV_RLSD))
         {
@@ -938,13 +1022,13 @@ static DECLCALLBACK(int) drvHostSerialConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
 
 #else
 
-    rc = RTFileOpen(&pData->DeviceFile, pData->pszDevicePath, RTFILE_O_OPEN | RTFILE_O_READWRITE);
+    rc = RTFileOpen(&pThis->DeviceFile, pThis->pszDevicePath, RTFILE_O_OPEN | RTFILE_O_READWRITE);
 
 #endif
 
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Could not open host device %s, rc=%Vrc\n", pData->pszDevicePath, rc));
+        AssertMsgFailed(("Could not open host device %s, rc=%Rrc\n", pThis->pszDevicePath, rc));
         switch (rc)
         {
             case VERR_ACCESS_DENIED:
@@ -958,18 +1042,18 @@ static DECLCALLBACK(int) drvHostSerialConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
                                            N_("Cannot open host device '%s' for read/write access. Check the permissions "
                                               "of that device"),
 #endif
-                                           pData->pszDevicePath, pData->pszDevicePath);
+                                           pThis->pszDevicePath, pThis->pszDevicePath);
            default:
                 return PDMDrvHlpVMSetError(pDrvIns, rc, RT_SRC_POS,
                                            N_("Failed to open host device '%s'"),
-                                           pData->pszDevicePath);
+                                           pThis->pszDevicePath);
         }
     }
 
     /* Set to non blocking I/O */
 #ifdef RT_OS_LINUX
 
-    fcntl(pData->DeviceFile, F_SETFL, O_NONBLOCK);
+    fcntl(pThis->DeviceFile, F_SETFL, O_NONBLOCK);
     int aFDs[2];
     if (pipe(aFDs) != 0)
     {
@@ -977,8 +1061,8 @@ static DECLCALLBACK(int) drvHostSerialConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
         AssertRC(rc);
         return rc;
     }
-    pData->WakeupPipeR = aFDs[0];
-    pData->WakeupPipeW = aFDs[1];
+    pThis->WakeupPipeR = aFDs[0];
+    pThis->WakeupPipeW = aFDs[1];
 
 #elif defined(RT_OS_WINDOWS)
 
@@ -991,37 +1075,37 @@ static DECLCALLBACK(int) drvHostSerialConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
     comTimeout.WriteTotalTimeoutMultiplier = 0;
     comTimeout.WriteTotalTimeoutConstant   = 0;
 
-    SetCommTimeouts(pData->hDeviceFile, &comTimeout);
+    SetCommTimeouts(pThis->hDeviceFile, &comTimeout);
 
 #endif
 
     /*
      * Get the ICharPort interface of the above driver/device.
      */
-    pData->pDrvCharPort = (PPDMICHARPORT)pDrvIns->pUpBase->pfnQueryInterface(pDrvIns->pUpBase, PDMINTERFACE_CHAR_PORT);
-    if (!pData->pDrvCharPort)
+    pThis->pDrvCharPort = (PPDMICHARPORT)pDrvIns->pUpBase->pfnQueryInterface(pDrvIns->pUpBase, PDMINTERFACE_CHAR_PORT);
+    if (!pThis->pDrvCharPort)
         return PDMDrvHlpVMSetError(pDrvIns, VERR_PDM_MISSING_INTERFACE_ABOVE, RT_SRC_POS, N_("HostSerial#%d has no char port interface above"), pDrvIns->iInstance);
 
-    rc = PDMDrvHlpPDMThreadCreate(pDrvIns, &pData->pRecvThread, pData, drvHostSerialRecvThread, drvHostSerialWakeupRecvThread, 0, RTTHREADTYPE_IO, "SerRecv");
-    if (VBOX_FAILURE(rc))
+    rc = PDMDrvHlpPDMThreadCreate(pDrvIns, &pThis->pRecvThread, pThis, drvHostSerialRecvThread, drvHostSerialWakeupRecvThread, 0, RTTHREADTYPE_IO, "SerRecv");
+    if (RT_FAILURE(rc))
         return PDMDrvHlpVMSetError(pDrvIns, rc, RT_SRC_POS, N_("HostSerial#%d cannot create receive thread"), pDrvIns->iInstance);
 
-    rc = RTSemEventCreate(&pData->SendSem);
+    rc = RTSemEventCreate(&pThis->SendSem);
     AssertRC(rc);
 
-    rc = PDMDrvHlpPDMThreadCreate(pDrvIns, &pData->pSendThread, pData, drvHostSerialSendThread, drvHostSerialWakeupSendThread, 0, RTTHREADTYPE_IO, "SerSend");
-    if (VBOX_FAILURE(rc))
+    rc = PDMDrvHlpPDMThreadCreate(pDrvIns, &pThis->pSendThread, pThis, drvHostSerialSendThread, drvHostSerialWakeupSendThread, 0, RTTHREADTYPE_IO, "SerSend");
+    if (RT_FAILURE(rc))
         return PDMDrvHlpVMSetError(pDrvIns, rc, RT_SRC_POS, N_("HostSerial#%d cannot create send thread"), pDrvIns->iInstance);
 
 #if defined(RT_OS_LINUX)
     /* Linux needs a separate thread which monitors the status lines. */
-    rc = PDMDrvHlpPDMThreadCreate(pDrvIns, &pData->pMonitorThread, pData, drvHostSerialMonitorThread, drvHostSerialWakeupMonitorThread, 0, RTTHREADTYPE_IO, "SerMon");
-    if (VBOX_FAILURE(rc))
+    rc = PDMDrvHlpPDMThreadCreate(pDrvIns, &pThis->pMonitorThread, pThis, drvHostSerialMonitorThread, drvHostSerialWakeupMonitorThread, 0, RTTHREADTYPE_IO, "SerMon");
+    if (RT_FAILURE(rc))
         return PDMDrvHlpVMSetError(pDrvIns, rc, RT_SRC_POS, N_("HostSerial#%d cannot create monitor thread"), pDrvIns->iInstance);
 #endif
 
-    PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatBytesWritten,    STAMTYPE_COUNTER, STAMVISIBILITY_USED, STAMUNIT_BYTES, "Nr of bytes written",         "/Devices/HostSerial%d/Written", pDrvIns->iInstance);
-    PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatBytesRead,       STAMTYPE_COUNTER, STAMVISIBILITY_USED, STAMUNIT_BYTES, "Nr of bytes read",            "/Devices/HostSerial%d/Read", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->StatBytesWritten,    STAMTYPE_COUNTER, STAMVISIBILITY_USED, STAMUNIT_BYTES, "Nr of bytes written",         "/Devices/HostSerial%d/Written", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->StatBytesRead,       STAMTYPE_COUNTER, STAMVISIBILITY_USED, STAMUNIT_BYTES, "Nr of bytes read",            "/Devices/HostSerial%d/Read", pDrvIns->iInstance);
 
     return VINF_SUCCESS;
 }
@@ -1037,43 +1121,43 @@ static DECLCALLBACK(int) drvHostSerialConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
  */
 static DECLCALLBACK(void) drvHostSerialDestruct(PPDMDRVINS pDrvIns)
 {
-    PDRVHOSTSERIAL pData = PDMINS2DATA(pDrvIns, PDRVHOSTSERIAL);
+    PDRVHOSTSERIAL pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTSERIAL);
 
     LogFlow(("%s: iInstance=%d\n", __FUNCTION__, pDrvIns->iInstance));
 
     /* Empty the send queue */
-    pData->iSendQueueTail = pData->iSendQueueHead = 0;
+    pThis->iSendQueueTail = pThis->iSendQueueHead = 0;
 
-    RTSemEventDestroy(pData->SendSem);
-    pData->SendSem = NIL_RTSEMEVENT;
+    RTSemEventDestroy(pThis->SendSem);
+    pThis->SendSem = NIL_RTSEMEVENT;
 
 #if defined(RT_OS_LINUX)
 
-    if (pData->WakeupPipeW != NIL_RTFILE)
+    if (pThis->WakeupPipeW != NIL_RTFILE)
     {
-        int rc = RTFileClose(pData->WakeupPipeW);
+        int rc = RTFileClose(pThis->WakeupPipeW);
         AssertRC(rc);
-        pData->WakeupPipeW = NIL_RTFILE;
+        pThis->WakeupPipeW = NIL_RTFILE;
     }
-    if (pData->WakeupPipeR != NIL_RTFILE)
+    if (pThis->WakeupPipeR != NIL_RTFILE)
     {
-        int rc = RTFileClose(pData->WakeupPipeR);
+        int rc = RTFileClose(pThis->WakeupPipeR);
         AssertRC(rc);
-        pData->WakeupPipeR = NIL_RTFILE;
+        pThis->WakeupPipeR = NIL_RTFILE;
     }
-    if (pData->DeviceFile != NIL_RTFILE)
+    if (pThis->DeviceFile != NIL_RTFILE)
     {
-        int rc = RTFileClose(pData->DeviceFile);
+        int rc = RTFileClose(pThis->DeviceFile);
         AssertRC(rc);
-        pData->DeviceFile = NIL_RTFILE;
+        pThis->DeviceFile = NIL_RTFILE;
     }
 
 #elif defined(RT_OS_WINDOWS)
 
-    CloseHandle(pData->hEventRecv);
-    CloseHandle(pData->hEventSend);
-    CancelIo(pData->hDeviceFile);
-    CloseHandle(pData->hDeviceFile);
+    CloseHandle(pThis->hEventRecv);
+    CloseHandle(pThis->hEventSend);
+    CancelIo(pThis->hDeviceFile);
+    CloseHandle(pThis->hDeviceFile);
 
 #endif
 }

@@ -21,6 +21,15 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+/*
+ * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
+
 #ifndef __H_KEYBOARD
 #define __H_KEYBOARD
 
@@ -34,10 +43,10 @@
 # define CCALL
 #endif
 #ifdef VBOX_HAVE_VISIBILITY_HIDDEN
-extern CCALL __attribute__((visibility("default"))) int X11DRV_InitKeyboard(Display *dpy);
+extern CCALL __attribute__((visibility("default"))) unsigned X11DRV_InitKeyboard(Display *dpy, unsigned *byLayoutOK, unsigned *byTypeOK);
 extern CCALL __attribute__((visibility("default"))) unsigned X11DRV_KeyEvent(KeyCode code);
 #else
-extern CCALL int X11DRV_InitKeyboard(Display *dpy);
+extern CCALL unsigned X11DRV_InitKeyboard(Display *dpy, unsigned *byLayoutOK, unsigned *byTypeOK);
 extern CCALL unsigned X11DRV_KeyEvent(KeyCode code);
 #endif
 

@@ -1,4 +1,4 @@
-/* $Id: PGMAllGst.h 30442 2008-05-02 17:00:34Z sandervl $ */
+/* $Id: PGMAllGst.h 35446 2008-08-27 16:27:13Z sandervl $ */
 /** @file
  * VBox - Page Manager, Guest Paging Template - All context code.
  */
@@ -45,10 +45,21 @@
 #undef GST_PDPE_ENTRIES
 #undef GST_PDPT_SHIFT
 #undef GST_PDPT_MASK
+#undef GST_PDPE_PG_MASK
+#undef GST_GET_PDE_BIG_PG_GCPHYS
 
-#if PGM_GST_TYPE == PGM_TYPE_32BIT \
- || PGM_GST_TYPE == PGM_TYPE_REAL \
+#if PGM_GST_TYPE == PGM_TYPE_REAL \
  || PGM_GST_TYPE == PGM_TYPE_PROT
+# define GSTPT                      SHWPT
+# define PGSTPT                     PSHWPT
+# define GSTPTE                     SHWPTE
+# define PGSTPTE                    PSHWPTE
+# define GSTPD                      SHWPD
+# define PGSTPD                     PSHWPD
+# define GSTPDE                     SHWPDE
+# define PGSTPDE                    PSHWPDE
+# define GST_PTE_PG_MASK            SHW_PTE_PG_MASK
+#elif PGM_GST_TYPE == PGM_TYPE_32BIT
 # define GSTPT                      X86PT
 # define PGSTPT                     PX86PT
 # define GSTPTE                     X86PTE
@@ -61,6 +72,7 @@
 # define GST_BIG_PAGE_OFFSET_MASK   X86_PAGE_4M_OFFSET_MASK
 # define GST_PDE_PG_MASK            X86_PDE_PG_MASK
 # define GST_PDE_BIG_PG_MASK        X86_PDE4M_PG_MASK
+# define GST_GET_PDE_BIG_PG_GCPHYS(PdeGst)  pgmGstGet4MBPhysPage(&pVM->pgm.s, PdeGst)
 # define GST_PD_SHIFT               X86_PD_SHIFT
 # define GST_PD_MASK                X86_PD_MASK
 # define GST_TOTAL_PD_ENTRIES       X86_PG_ENTRIES
@@ -80,25 +92,30 @@
 # define PGSTPDE                    PX86PDEPAE
 # define GST_BIG_PAGE_SIZE          X86_PAGE_2M_SIZE
 # define GST_BIG_PAGE_OFFSET_MASK   X86_PAGE_2M_OFFSET_MASK
-# define GST_PDE_PG_MASK            X86_PDE_PAE_PG_MASK
+# define GST_PDE_PG_MASK            X86_PDE_PAE_PG_MASK_FULL
 # define GST_PDE_BIG_PG_MASK        X86_PDE2M_PAE_PG_MASK
+# define GST_GET_PDE_BIG_PG_GCPHYS(PdeGst)  (PdeGst.u & GST_PDE_BIG_PG_MASK)
 # define GST_PD_SHIFT               X86_PD_PAE_SHIFT
 # define GST_PD_MASK                X86_PD_PAE_MASK
 # if PGM_GST_TYPE == PGM_TYPE_PAE
 #  define GST_TOTAL_PD_ENTRIES      (X86_PG_PAE_ENTRIES * X86_PG_PAE_PDPE_ENTRIES)
 #  define GST_PDPE_ENTRIES          X86_PG_PAE_PDPE_ENTRIES
+#  define GST_PDPE_PG_MASK          X86_PDPE_PG_MASK_FULL
 #  define GST_PDPT_SHIFT            X86_PDPT_SHIFT
 #  define GST_PDPT_MASK             X86_PDPT_MASK_PAE
+#  define GST_PTE_PG_MASK           X86_PTE_PAE_PG_MASK
+#  define GST_CR3_PAGE_MASK         X86_CR3_PAE_PAGE_MASK
 # else
 #  define GST_TOTAL_PD_ENTRIES      (X86_PG_AMD64_ENTRIES * X86_PG_AMD64_PDPE_ENTRIES)
 #  define GST_PDPE_ENTRIES          X86_PG_AMD64_PDPE_ENTRIES
 #  define GST_PDPT_SHIFT            X86_PDPT_SHIFT
+#  define GST_PDPE_PG_MASK          X86_PDPE_PG_MASK_FULL
 #  define GST_PDPT_MASK             X86_PDPT_MASK_AMD64
+#  define GST_PTE_PG_MASK           X86_PTE_PAE_PG_MASK_FULL
+#  define GST_CR3_PAGE_MASK         X86_CR3_AMD64_PAGE_MASK
 # endif
-# define GST_PTE_PG_MASK            X86_PTE_PAE_PG_MASK
 # define GST_PT_SHIFT               X86_PT_PAE_SHIFT
 # define GST_PT_MASK                X86_PT_PAE_MASK
-# define GST_CR3_PAGE_MASK          X86_CR3_PAE_PAGE_MASK
 #endif
 
 
@@ -193,7 +210,10 @@ PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCUINTPTR GCPtr, uint64_t *pfFlags, PRTGCP
         return VERR_PAGE_TABLE_NOT_PRESENT;
 
     if (    !Pde.b.u1Size
-        ||  !(CPUMGetGuestCR4(pVM) & X86_CR4_PSE))
+# if PGM_GST_TYPE != PGM_TYPE_AMD64
+        ||  !(CPUMGetGuestCR4(pVM) & X86_CR4_PSE)
+# endif
+        )
     {
         PGSTPT pPT;
         int rc = PGM_GCPHYS_2_PTR(pVM, Pde.u & GST_PDE_PG_MASK, &pPT);
@@ -241,7 +261,7 @@ PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCUINTPTR GCPtr, uint64_t *pfFlags, PRTGCP
 # endif
         }
         if (pGCPhys)
-            *pGCPhys = (Pde.u & GST_PDE_BIG_PG_MASK) | (GCPtr & (~GST_PDE_BIG_PG_MASK ^ ~GST_PTE_PG_MASK)); /** @todo pse36 */
+            *pGCPhys = GST_GET_PDE_BIG_PG_GCPHYS(Pde) | (GCPtr & (~GST_PDE_BIG_PG_MASK ^ ~GST_PTE_PG_MASK));
     }
     return VINF_SUCCESS;
 #else
@@ -275,9 +295,9 @@ PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fF
         /*
          * Get the PD entry.
          */
-#if PGM_GST_TYPE == PGM_TYPE_32BIT
+# if PGM_GST_TYPE == PGM_TYPE_32BIT
         PX86PDE pPde = &CTXSUFF(pVM->pgm.s.pGuestPD)->a[GCPtr >> X86_PD_SHIFT];
-#elif PGM_GST_TYPE == PGM_TYPE_PAE
+# elif PGM_GST_TYPE == PGM_TYPE_PAE
         /* pgmGstGetPaePDEPtr will return 0 if the PDPTE is marked as not present
          * All the other bits in the PDPTE are only valid in long mode (r/w, u/s, nx)
          */
@@ -285,20 +305,23 @@ PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fF
         Assert(pPde);
         if (!pPde)
             return VERR_PAGE_TABLE_NOT_PRESENT;
-#elif PGM_GST_TYPE == PGM_TYPE_AMD64
+# elif PGM_GST_TYPE == PGM_TYPE_AMD64
         /** @todo Setting the r/w, u/s & nx bits might have no effect depending on the pdpte & pml4 values */
         PX86PDEPAE pPde = pgmGstGetLongModePDEPtr(&pVM->pgm.s, GCPtr);
         Assert(pPde);
         if (!pPde)
             return VERR_PAGE_TABLE_NOT_PRESENT;
-#endif
+# endif
         GSTPDE Pde = *pPde;
         Assert(Pde.n.u1Present);
         if (!Pde.n.u1Present)
             return VERR_PAGE_TABLE_NOT_PRESENT;
 
         if (    !Pde.b.u1Size
-            ||  !(CPUMGetGuestCR4(pVM) & X86_CR4_PSE))
+# if PGM_GST_TYPE != PGM_TYPE_AMD64
+            ||  !(CPUMGetGuestCR4(pVM) & X86_CR4_PSE)
+# endif
+            )
         {
             /*
              * 4KB Page table
@@ -331,7 +354,11 @@ PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fF
             /*
              * 4MB Page table
              */
-            Pde.u = (Pde.u & (fMask | ((fMask & X86_PTE_PAT) << X86_PDE4M_PAT_SHIFT) | GST_PDE_BIG_PG_MASK | X86_PDE4M_PS)) /** @todo pse36 */
+# if PGM_GST_TYPE == PGM_TYPE_32BIT
+            Pde.u = (Pde.u & (fMask | ((fMask & X86_PTE_PAT) << X86_PDE4M_PAT_SHIFT) | GST_PDE_BIG_PG_MASK | X86_PDE4M_PG_HIGH_MASK | X86_PDE4M_PS))
+# else
+            Pde.u = (Pde.u & (fMask | ((fMask & X86_PTE_PAT) << X86_PDE4M_PAT_SHIFT) | GST_PDE_BIG_PG_MASK | X86_PDE4M_PS))
+# endif
                   | (fFlags & ~GST_PTE_PG_MASK)
                   | ((fFlags & X86_PTE_PAT) << X86_PDE4M_PAT_SHIFT);
             *pPde = Pde;
@@ -390,6 +417,9 @@ PGM_GST_DECL(int, GetPDE)(PVM pVM, RTGCUINTPTR GCPtr, PX86PDEPAE pPDE)
 /**
  * Maps the CR3 into HMA in GC and locate it in HC.
  *
+ * Note that a MapCR3 call is usually not followed by an UnmapCR3 call; whenever
+ * CR3 is updated we simply call MapCR3 again.
+ *
  * @returns VBox status, no specials.
  * @param   pVM             VM handle.
  * @param   GCPhysCR3       The physical address in the CR3 register.
@@ -414,14 +444,14 @@ PGM_GST_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
         if (VBOX_SUCCESS(rc))
         {
             PGM_INVL_PG(pVM->pgm.s.GCPtrCR3Mapping);
-#if PGM_GST_TYPE == PGM_TYPE_32BIT
+# if PGM_GST_TYPE == PGM_TYPE_32BIT
             pVM->pgm.s.pGuestPDHC = (R3R0PTRTYPE(PX86PD))HCPtrGuestCR3;
-            pVM->pgm.s.pGuestPDGC = (GCPTRTYPE(PX86PD))pVM->pgm.s.GCPtrCR3Mapping;
+            pVM->pgm.s.pGuestPDGC = (RCPTRTYPE(PX86PD))pVM->pgm.s.GCPtrCR3Mapping;
 
-#elif PGM_GST_TYPE == PGM_TYPE_PAE
+# elif PGM_GST_TYPE == PGM_TYPE_PAE
             unsigned offset = GCPhysCR3 & GST_CR3_PAGE_MASK & PAGE_OFFSET_MASK;
             pVM->pgm.s.pGstPaePDPTHC = (R3R0PTRTYPE(PX86PDPT)) HCPtrGuestCR3;
-            pVM->pgm.s.pGstPaePDPTGC = (GCPTRTYPE(PX86PDPT))   ((GCPTRTYPE(uint8_t *))pVM->pgm.s.GCPtrCR3Mapping + offset);
+            pVM->pgm.s.pGstPaePDPTGC = (RCPTRTYPE(PX86PDPT))   ((RCPTRTYPE(uint8_t *))pVM->pgm.s.GCPtrCR3Mapping + offset);
             Log(("Cached mapping %VGv\n", pVM->pgm.s.pGstPaePDPTGC));
 
             /*
@@ -441,7 +471,7 @@ PGM_GST_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
                         rc = PGMMap(pVM, GCPtr, HCPhys & X86_PTE_PAE_PG_MASK, PAGE_SIZE, 0);
                         AssertRCReturn(rc, rc);
                         pVM->pgm.s.apGstPaePDsHC[i]     = (R3R0PTRTYPE(PX86PDPAE))HCPtr;
-                        pVM->pgm.s.apGstPaePDsGC[i]     = (GCPTRTYPE(PX86PDPAE))GCPtr;
+                        pVM->pgm.s.apGstPaePDsGC[i]     = (RCPTRTYPE(PX86PDPAE))GCPtr;
                         pVM->pgm.s.aGCPhysGstPaePDs[i]  = GCPhys;
                         PGM_INVL_PG(GCPtr);
                         continue;
@@ -454,10 +484,38 @@ PGM_GST_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
                 pVM->pgm.s.aGCPhysGstPaePDs[i]  = NIL_RTGCPHYS;
                 PGM_INVL_PG(GCPtr);
             }
+# elif PGM_GST_TYPE == PGM_TYPE_AMD64
+            PPGMPOOL pPool = pVM->pgm.s.CTXSUFF(pPool);
 
-#else /* PGM_GST_TYPE == PGM_TYPE_AMD64 */
-            rc = VERR_NOT_IMPLEMENTED;
-#endif
+            pVM->pgm.s.pGstPaePML4HC = (R3R0PTRTYPE(PX86PML4))HCPtrGuestCR3;
+
+            if (!HWACCMIsNestedPagingActive(pVM))
+            {
+                if (pVM->pgm.s.pHCShwAmd64CR3)
+                {
+                    /* It might have been freed already by a pool flush (see e.g. PGMR3MappingsUnfix). */
+                    if (pVM->pgm.s.pHCShwAmd64CR3->enmKind != PGMPOOLKIND_FREE)
+                        pgmPoolFreeByPage(pPool, pVM->pgm.s.pHCShwAmd64CR3, PGMPOOL_IDX_AMD64_CR3, pVM->pgm.s.pHCShwAmd64CR3->GCPhys >> PAGE_SHIFT);
+                    pVM->pgm.s.pHCShwAmd64CR3 = 0;
+                    pVM->pgm.s.pHCPaePML4     = 0;
+                    pVM->pgm.s.HCPhysPaePML4  = 0;
+                }
+
+                Assert(!(GCPhysCR3 >> (PAGE_SHIFT + 32)));
+try_again:
+                rc = pgmPoolAlloc(pVM, GCPhysCR3, PGMPOOLKIND_64BIT_PML4_FOR_64BIT_PML4, PGMPOOL_IDX_AMD64_CR3, GCPhysCR3 >> PAGE_SHIFT, &pVM->pgm.s.pHCShwAmd64CR3);
+                if (rc == VERR_PGM_POOL_FLUSHED)
+                {
+                    Log(("MapCR3: Flush pool and try again\n"));
+                    Assert(pVM->pgm.s.fSyncFlags & PGM_SYNC_CLEAR_PGM_POOL);
+                    rc = pgmPoolSyncCR3(pVM);
+                    AssertRC(rc);
+                    goto try_again;
+                }
+                pVM->pgm.s.pHCPaePML4    = (PX86PML4)PGMPOOL_PAGE_2_PTR(pPool->CTXSUFF(pVM), pVM->pgm.s.pHCShwAmd64CR3);
+                pVM->pgm.s.HCPhysPaePML4 = pVM->pgm.s.pHCShwAmd64CR3->Core.Key;
+            }
+# endif
         }
         else
             AssertMsgFailed(("rc=%Vrc GCPhysGuestPD=%VGp\n", rc, GCPhysCR3));
@@ -465,7 +523,7 @@ PGM_GST_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
     else
         AssertMsgFailed(("rc=%Vrc GCPhysGuestPD=%VGp\n", rc, GCPhysCR3));
 
-#else /* prot/real mode stub */
+#else /* prot/real stub */
     int rc = VINF_SUCCESS;
 #endif
     return rc;
@@ -477,13 +535,13 @@ PGM_GST_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
  *
  * @returns VBox status, no specials.
  * @param   pVM             VM handle.
- * @param   GCPhysCR3       The physical address in the CR3 register.
  */
 PGM_GST_DECL(int, UnmapCR3)(PVM pVM)
 {
     LogFlow(("UnmapCR3\n"));
 
     int rc = VINF_SUCCESS;
+
 #if PGM_GST_TYPE == PGM_TYPE_32BIT
     pVM->pgm.s.pGuestPDHC = 0;
     pVM->pgm.s.pGuestPDGC = 0;
@@ -499,8 +557,17 @@ PGM_GST_DECL(int, UnmapCR3)(PVM pVM)
     }
 
 #elif PGM_GST_TYPE == PGM_TYPE_AMD64
-//#error not implemented
-    rc = VERR_NOT_IMPLEMENTED;
+    pVM->pgm.s.pGstPaePML4HC = 0;
+    if (!HWACCMIsNestedPagingActive(pVM))
+    {
+        pVM->pgm.s.pHCPaePML4    = 0;
+        if (pVM->pgm.s.pHCShwAmd64CR3)
+        {
+            PPGMPOOL pPool = pVM->pgm.s.CTXSUFF(pPool);
+            pgmPoolFreeByPage(pPool, pVM->pgm.s.pHCShwAmd64CR3, PGMPOOL_IDX_AMD64_CR3, pVM->pgm.s.pHCShwAmd64CR3->GCPhys >> PAGE_SHIFT);
+            pVM->pgm.s.pHCShwAmd64CR3 = NULL;
+        }
+    }
 
 #else /* prot/real mode stub */
     /* nothing to do */
@@ -612,10 +679,8 @@ PGM_GST_DECL(int, MonitorCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
         }
     }
 
-#elif PGM_GST_TYPE == PGM_TYPE_AMD64
-    AssertFailed();
 #else
-    /* prot/real mode stub */
+    /* prot/real/amd64 mode stub */
 
 #endif
     return rc;
@@ -679,10 +744,8 @@ PGM_GST_DECL(int, UnmonitorCR3)(PVM pVM)
             pVM->pgm.s.aGCPhysGstPaePDsMonitored[i] = NIL_RTGCPHYS;
         }
     }
-#elif PGM_GST_TYPE == PGM_TYPE_AMD64
-    AssertFailed();
 #else
-    /* prot/real mode stub */
+    /* prot/real/amd64 mode stub */
 #endif
     return rc;
 
@@ -734,7 +797,11 @@ static DECLCALLBACK(int) PGM_GST_NAME(VirtHandlerUpdateOne)(PAVLROGCPTRNODECORE 
 #endif
         if (Pde.n.u1Present)
         {
-            if (!Pde.b.u1Size || !(pState->cr4 & X86_CR4_PSE))
+            if (    !Pde.b.u1Size 
+# if PGM_GST_TYPE != PGM_TYPE_AMD64
+                ||  !(pState->cr4 & X86_CR4_PSE)
+# endif
+                )
             {
                 /*
                  * Normal page table.
@@ -856,10 +923,6 @@ PGM_GST_DECL(bool, HandlerVirtualUpdate)(PVM pVM, uint32_t cr4)
 #if PGM_GST_TYPE == PGM_TYPE_32BIT \
  || PGM_GST_TYPE == PGM_TYPE_PAE \
  || PGM_GST_TYPE == PGM_TYPE_AMD64
-
-#if PGM_GST_TYPE == PGM_TYPE_AMD64
-    AssertFailed();
-#endif
 
     /** @todo
      * In theory this is not sufficient: the guest can change a single page in a range with invlpg

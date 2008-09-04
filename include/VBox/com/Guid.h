@@ -1,4 +1,4 @@
-/* $Id: Guid.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: Guid.h 32094 2008-06-16 22:38:49Z bird $ */
 
 /** @file
  * MS COM / XPCOM Abstraction Layer:
@@ -32,6 +32,14 @@
 
 #ifndef ___VBox_com_Guid_h
 #define ___VBox_com_Guid_h
+
+/* Make sure all the stdint.h macros are included - must come first! */
+#ifndef __STDC_LIMIT_MACROS
+# define __STDC_LIMIT_MACROS
+#endif
+#ifndef __STDC_CONSTANT_MACROS
+# define __STDC_CONSTANT_MACROS
+#endif
 
 #if defined (VBOX_WITH_XPCOM)
 #include <nsMemory.h>
@@ -94,7 +102,7 @@ public:
         return Utf8Str (buf);
     }
 
-    bool isEmpty() const { return ::RTUuidIsNull (&uuid) != 0; }
+    bool isEmpty() const { return ::RTUuidIsNull (&uuid); }
     operator bool() const { return !isEmpty(); }
 
     bool operator== (const Guid &that) const { return ::RTUuidCompare (&uuid, &that.uuid) == 0; }
@@ -164,7 +172,7 @@ public:
     /* to directly test GUIDPARAM interface method's parameters */
     static bool isEmpty (const GUID &guid)
     {
-        return ::RTUuidIsNull ((PRTUUID) &guid) != 0;
+        return ::RTUuidIsNull ((PRTUUID) &guid);
     }
 
     /**

@@ -26,6 +26,7 @@
 
 ; This version number should match the version
 ; number given in SOURCES.
+;; @todo: edit this too? what's the above comment about?
    DriverVer=02/19/2007,8.00.00.0005
 
 [Strings]
@@ -80,7 +81,7 @@
    HKR, Ndi\params\MTU,                  Default,   0, "1500"
    HKR, Ndi\params\MTU,                  Optional,  0, "0"
    HKR, Ndi\params\MTU,                  Min,       0, "100"
-   HKR, Ndi\params\MTU,                  Max,       0, "1500"
+   HKR, Ndi\params\MTU,                  Max,       0, "16384"
    HKR, Ndi\params\MTU,                  Step,      0, "1"
    HKR, Ndi\params\MediaStatus,          ParamDesc, 0, "Media Status"
    HKR, Ndi\params\MediaStatus,          Type,      0, "enum"

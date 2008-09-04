@@ -80,6 +80,7 @@
 #define IN_RT_GC
 #define IN_RT_R0
 #define IN_RT_R3
+#define IN_RT_STATIC
 #define RT_STRICT
 #define Breakpoint
 #define RT_NO_DEPRECATED_MACROS
@@ -176,6 +177,17 @@
 # endif
 #endif
 
+/** @def GC_ARCH_BITS
+ * Defines the guest architecture bit count.
+ */
+#if !defined(GC_ARCH_BITS) && !defined(DOXYGEN_RUNNING)
+# ifdef VBOX_WITH_64_BITS_GUESTS
+#  define GC_ARCH_BITS  64
+# else
+#  define GC_ARCH_BITS  32
+# endif
+#endif
+
 /** @def R3_ARCH_BITS
  * Defines the host ring-3 architecture bit count.
  */
@@ -216,7 +228,7 @@
  * @param   GCType  The GC type.
  * @param   R3Type  The R3 type.
  * @param   R0Type  The R0 type.
- * @remark  For pointers used only in one context use GCPTRTYPE(), R3R0PTRTYPE(), R3PTRTYPE() or R0PTRTYPE().
+ * @remark  For pointers used only in one context use RCPTRTYPE(), R3R0PTRTYPE(), R3PTRTYPE() or R0PTRTYPE().
  */
 #ifdef IN_GC
 # define CTXTYPE(GCType, R3Type, R0Type)  GCType
@@ -231,18 +243,18 @@
  *
  * @param   GCType  The GC type.
  * @param   HCType  The HC type.
- * @remark  For pointers used only in one context use GCPTRTYPE(), R3R0PTRTYPE(), R3PTRTYPE() or R0PTRTYPE().
+ * @remark  For pointers used only in one context use RCPTRTYPE(), R3R0PTRTYPE(), R3PTRTYPE() or R0PTRTYPE().
  */
 #define GCTYPE(GCType, HCType)  CTXTYPE(GCType, HCType, HCType)
 
-/** @def GCPTRTYPE
- * Declare a pointer which is used in GC but appears in structure(s) used by
- * both HC and GC. The main purpose is to make sure structures have the same
+/** @def RCPTRTYPE
+ * Declare a pointer which is used in the raw mode context but appears in structure(s) used by
+ * both HC and RC. The main purpose is to make sure structures have the same
  * size when built for different architectures.
  *
- * @param   GCType  The GC type.
+ * @param   RCType  The RC type.
  */
-#define GCPTRTYPE(GCType)       CTXTYPE(GCType, RTGCPTR32, RTGCPTR32)
+#define RCPTRTYPE(RCType)       CTXTYPE(RCType, RTRCPTR, RTRCPTR)
 
 /** @def R3R0PTRTYPE
  * Declare a pointer which is used in HC, is explicitely valid in ring 3 and 0,
@@ -307,6 +319,23 @@
 # define CTXALLSUFF(var)    var##R0
 #else
 # define CTXALLSUFF(var)    var##R3
+#endif
+
+/** @def CTX_SUFF
+ * Adds the suffix of the current context to the passed in
+ * identifier name. The suffix is R3, R0 or RC.
+ *
+ * This is macro should only be used in shared code to avoid a forrest of ifdefs.
+ * @param   var     Identifier name.
+ *
+ * @remark  This will replace CTXALLSUFF and CTXSUFF before long.
+ */
+#ifdef IN_GC
+# define CTX_SUFF(var)      var##RC
+#elif defined(IN_RING0)
+# define CTX_SUFF(var)      var##R0
+#else
+# define CTX_SUFF(var)      var##R3
 #endif
 
 /** @def CTXMID
@@ -382,36 +411,20 @@
 # define R0STRING(pR0String)    ("<R0_STRING>")
 #endif
 
-/** @def GCSTRING
- * A macro which in R3 and R0 will return a dummy string while in GC it will return
+/** @def RCSTRING
+ * A macro which in R3 and R0 will return a dummy string while in RC it will return
  * the parameter.
  *
  * This is typically used to wrap description strings in structures shared
- * between R3, R0 and/or GC. The intention is to avoid the \#ifdef IN_GC mess.
+ * between R3, R0 and/or RC. The intention is to avoid the \#ifdef IN_RC mess.
  *
- * @param   pR0String   The GC string. Only referenced in GC.
+ * @param   pR0String   The RC string. Only referenced in RC.
  * @see R3STRING, R0STRING
  */
 #ifdef IN_GC
-# define GCSTRING(pR0String)    (pGCString)
+# define RCSTRING(pRCString)    (pRCString)
 #else
-# define GCSTRING(pR0String)    ("<GC_STRING>")
-#endif
-
-/** @def HCSTRING
- * Macro which in GC will return a dummy string while in HC will return
- * the parameter.
- *
- * This is typically used to wrap description strings in structures shared
- * between HC and GC. The intention is to avoid the \#ifdef IN_GC kludge.
- *
- * @param   pHCString   The HC string. Only referenced in HC.
- * @deprecated Use R3STRING or R0STRING instead.
- */
-#ifdef IN_GC
-# define HCSTRING(pHCString)    ("<HC_STRING>")
-#else
-# define HCSTRING(pHCString)    (pHCString)
+# define RCSTRING(pRCString)    ("<RC_STRING>")
 #endif
 
 
@@ -426,18 +439,30 @@
 # define RTCALL
 #endif
 
+/** @def RT_NO_THROW
+ * How to express that a function doesn't throw C++ exceptions
+ * and the compiler can thus save itself the bother of trying
+ * to catch any of them. Put this between the closing parenthesis
+ * and the semicolon in function prototypes (and implementation if C++).
+ */
+#if defined(__cplusplus) \
+ && (   (defined(_MSC_VER) && defined(_CPPUNWIND)) \
+     || (defined(__GNUC__) && defined(__EXCEPTIONS)))
+# define RT_NO_THROW    throw()
+#else
+# define RT_NO_THROW
+#endif
+
 /** @def DECLEXPORT
  * How to declare an exported function.
  * @param   type    The return type of the function declaration.
  */
 #if defined(_MSC_VER) || defined(RT_OS_OS2)
 # define DECLEXPORT(type)       __declspec(dllexport) type
+#elif defined(RT_USE_VISIBILITY_DEFAULT)
+# define DECLEXPORT(type)      __attribute__((visibility("default"))) type
 #else
-# ifdef VBOX_HAVE_VISIBILITY_HIDDEN
-#  define DECLEXPORT(type)      __attribute__((visibility("default"))) type
-# else
-#  define DECLEXPORT(type)      type
-# endif
+# define DECLEXPORT(type)      type
 #endif
 
 /** @def DECLIMPORT
@@ -448,6 +473,16 @@
 # define DECLIMPORT(type)       __declspec(dllimport) type
 #else
 # define DECLIMPORT(type)       type
+#endif
+
+/** @def DECLHIDDEN
+ * How to declare a non-exported function or variable.
+ * @param   type    The return type of the function or the data type of the variable.
+ */
+#if defined(RT_OS_OS2) || defined(RT_OS_WINDOWS) || !defined(RT_USE_VISIBILITY_HIDDEN)
+# define DECLHIDDEN(type)       type
+#else
+# define DECLHIDDEN(type)       __attribute__((visibility("hidden"))) type
 #endif
 
 /** @def DECLASM
@@ -525,16 +560,16 @@
 # define DECLR3CALLBACKMEMBER(type, name, args)  RTR3PTR name
 #endif
 
-/** @def DECLGCCALLBACKMEMBER
- * How to declare an call back function pointer member - GC Ptr.
+/** @def DECLRCCALLBACKMEMBER
+ * How to declare an call back function pointer member - RC Ptr.
  * @param   type    The return type of the function declaration.
  * @param   name    The name of the struct/union/class member.
  * @param   args    The argument list enclosed in parentheses.
  */
 #ifdef IN_GC
-# define DECLGCCALLBACKMEMBER(type, name, args)  type (RTCALL * name) args
+# define DECLRCCALLBACKMEMBER(type, name, args)  type (RTCALL * name) args
 #else
-# define DECLGCCALLBACKMEMBER(type, name, args)  RTGCPTR32 name
+# define DECLRCCALLBACKMEMBER(type, name, args)  RTRCPTR name
 #endif
 
 /** @def DECLR0CALLBACKMEMBER
@@ -567,6 +602,13 @@
 #endif
 
 
+/** @def IN_RT_STATIC
+ * Used to inidicate whether we're linking against a static IPRT
+ * or not. The IPRT symbols will be declared as hidden (if
+ * supported). Note that this define has no effect without setting
+ * IN_RT_R0, IN_RT_R3 or IN_RT_GC indicators are set first.
+ */
+
 /** @def IN_RT_R0
  * Used to indicate whether we're inside the same link module as
  * the HC Ring-0 Runtime Library.
@@ -576,7 +618,11 @@
  * @param   type    The return type of the function declaration.
  */
 #ifdef IN_RT_R0
-# define RTR0DECL(type)     DECLEXPORT(type) RTCALL
+# ifdef IN_RT_STATIC
+#  define RTR0DECL(type)    DECLHIDDEN(type) RTCALL
+# else
+#  define RTR0DECL(type)    DECLEXPORT(type) RTCALL
+# endif
 #else
 # define RTR0DECL(type)     DECLIMPORT(type) RTCALL
 #endif
@@ -590,7 +636,11 @@
  * @param   type    The return type of the function declaration.
  */
 #ifdef IN_RT_R3
-# define RTR3DECL(type)     DECLEXPORT(type) RTCALL
+# ifdef IN_RT_STATIC
+#  define RTR3DECL(type)    DECLHIDDEN(type) RTCALL
+# else
+#  define RTR3DECL(type)    DECLEXPORT(type) RTCALL
+# endif
 #else
 # define RTR3DECL(type)     DECLIMPORT(type) RTCALL
 #endif
@@ -604,7 +654,11 @@
  * @param   type    The return type of the function declaration.
  */
 #ifdef IN_RT_GC
-# define RTGCDECL(type)     DECLEXPORT(type) RTCALL
+# ifdef IN_RT_STATIC
+#  define RTGCDECL(type)    DECLHIDDEN(type) RTCALL
+# else
+#  define RTGCDECL(type)    DECLEXPORT(type) RTCALL
+# endif
 #else
 # define RTGCDECL(type)     DECLIMPORT(type) RTCALL
 #endif
@@ -615,7 +669,11 @@
  * @param   type    The return type of the function declaration.
  */
 #if defined(IN_RT_R3) || defined(IN_RT_GC) || defined(IN_RT_R0)
-# define RTDECL(type)       DECLEXPORT(type) RTCALL
+# ifdef IN_RT_STATIC
+#  define RTDECL(type)      DECLHIDDEN(type) RTCALL
+# else
+#  define RTDECL(type)      DECLEXPORT(type) RTCALL
+# endif
 #else
 # define RTDECL(type)       DECLIMPORT(type) RTCALL
 #endif
@@ -626,7 +684,11 @@
  * @param   type    The return type of the function declaration.
  */
 #if defined(IN_RT_R3) || defined(IN_RT_GC) || defined(IN_RT_R0)
-# define RTDATADECL(type)   DECLEXPORT(type)
+# ifdef IN_RT_STATIC
+#  define RTDATADECL(type)  DECLHIDDEN(type)
+# else
+#  define RTDATADECL(type)  DECLEXPORT(type)
+# endif
 #else
 # define RTDATADECL(type)   DECLIMPORT(type)
 #endif
@@ -973,71 +1035,295 @@
 #define RT_MAKE_U16(Lo, Hi) ( (uint16_t)((uint8_t)(Hi)) << 8 | (uint8_t)(Lo) )
 
 
+/** @def RT_BSWAP_U64
+ * Reverses the byte order of an uint64_t value. */
+#if 0
+# define RT_BSWAP_U64(u64)  RT_BSWAP_U64_C(u64)
+#elif defined(__GNUC__)
+/** @todo use __builtin_constant_p? */
+# define RT_BSWAP_U64(u64)  ASMByteSwapU64(u64)
+#else
+# define RT_BSWAP_U64(u64)  ASMByteSwapU64(u64)
+#endif
+
+/** @def RT_BSWAP_U32
+ * Reverses the byte order of an uint32_t value. */
+#if 0
+# define RT_BSWAP_U32(u32)  RT_BSWAP_U32_C(u32)
+#elif defined(__GNUC__)
+/** @todo use __builtin_constant_p? */
+# define RT_BSWAP_U32(u32)  ASMByteSwapU32(u32)
+#else
+# define RT_BSWAP_U32(u32)  ASMByteSwapU32(u32)
+#endif
+
+/** @def RT_BSWAP_U16
+ * Reverses the byte order of an uint16_t value. */
+#if 0
+# define RT_BSWAP_U16(u16)  RT_BSWAP_U16_C(u16)
+#elif defined(__GNUC__)
+/** @todo use __builtin_constant_p? */
+# define RT_BSWAP_U16(u16)  ASMByteSwapU16(u16)
+#else
+# define RT_BSWAP_U16(u16)  ASMByteSwapU16(u16)
+#endif
+
+
+/** @def RT_BSWAP_U64_C
+ * Reverses the byte order of an uint64_t constant. */
+#define RT_BSWAP_U64_C(u64) RT_MAKE_U64(RT_BSWAP_U32_C((u64) >> 32), RT_BSWAP_U32_C((u64) & 0xffffffff))
+
+/** @def RT_BSWAP_U32_C
+ * Reverses the byte order of an uint32_t constant. */
+#define RT_BSWAP_U32_C(u32) (RT_BYTE4(u32) | (RT_BYTE3(u32) << 8) | (RT_BYTE2(u32) << 16) | (RT_BYTE1(u32) << 24))
+
+/** @def RT_BSWAP_U16_C
+ * Reverses the byte order of an uint16_t constant. */
+#define RT_BSWAP_U16_C(u16) (RT_HIBYTE(u16) | (RT_LOBYTE(u16) << 8))
+
+
 /** @def RT_H2LE_U64
- * Converts uint64_t value from host to little endian byte order. */
-#define RT_H2LE_U64(u64) (u64)
+ * Converts an uint64_t value from host to little endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2LE_U64(u64)   RT_BSWAP_U64(u64)
+#else
+# define RT_H2LE_U64(u64)   (u64)
+#endif
+
+/** @def RT_H2LE_U64_C
+ * Converts an uint64_t constant from host to little endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2LE_U64_C(u64) RT_BSWAP_U64_C(u64)
+#else
+# define RT_H2LE_U64_C(u64) (u64)
+#endif
 
 /** @def RT_H2LE_U32
- * Converts uint32_t value from host to little endian byte order. */
-#define RT_H2LE_U32(u32) (u32)
+ * Converts an uint32_t value from host to little endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2LE_U32(u32)   RT_BSWAP_U32(u32)
+#else
+# define RT_H2LE_U32(u32)   (u32)
+#endif
+
+/** @def RT_H2LE_U32_C
+ * Converts an uint32_t constant from host to little endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2LE_U32_C(u32) RT_BSWAP_U32_C(u32)
+#else
+# define RT_H2LE_U32_C(u32) (u32)
+#endif
 
 /** @def RT_H2LE_U16
- * Converts uint16_t value from host to little endian byte order. */
-#define RT_H2LE_U16(u16) (u16)
+ * Converts an uint16_t value from host to little endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2LE_U16(u16)   RT_BSWAP_U16(u16)
+#else
+# define RT_H2LE_U16(u16)   (u16)
+#endif
+
+/** @def RT_H2LE_U16_C
+ * Converts an uint16_t constant from host to little endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2LE_U16_C(u16) RT_BSWAP_U16_C(u16)
+#else
+# define RT_H2LE_U16_C(u16) (u16)
+#endif
+
 
 /** @def RT_LE2H_U64
- * Converts uint64_t value from little endian to host byte order. */
-#define RT_LE2H_U64(u64) (u64)
+ * Converts an uint64_t value from little endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_LE2H_U64(u64)   RT_BSWAP_U64(u64)
+#else
+# define RT_LE2H_U64(u64)   (u64)
+#endif
+
+/** @def RT_LE2H_U64_C
+ * Converts an uint64_t constant from little endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_LE2H_U64_C(u64) RT_BSWAP_U64_C(u64)
+#else
+# define RT_LE2H_U64_C(u64) (u64)
+#endif
 
 /** @def RT_LE2H_U32
- * Converts uint32_t value from little endian to host byte order. */
-#define RT_LE2H_U32(u32) (u32)
+ * Converts an uint32_t value from little endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_LE2H_U32(u32)   RT_BSWAP_U32(u32)
+#else
+# define RT_LE2H_U32(u32)   (u32)
+#endif
+
+/** @def RT_LE2H_U32_C
+ * Converts an uint32_t constant from little endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_LE2H_U32_C(u32) RT_BSWAP_U32_C(u32)
+#else
+# define RT_LE2H_U32_C(u32) (u32)
+#endif
 
 /** @def RT_LE2H_U16
- * Converts uint16_t value from little endian to host byte order. */
-#define RT_LE2H_U16(u16) (u16)
+ * Converts an uint16_t value from little endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_LE2H_U16(u16)   RT_BSWAP_U16(u16)
+#else
+# define RT_LE2H_U16(u16)   (u16)
+#endif
+
+/** @def RT_LE2H_U16_C
+ * Converts an uint16_t constant from little endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_LE2H_U16_C(u16) RT_BSWAP_U16_C(u16)
+#else
+# define RT_LE2H_U16_C(u16) (u16)
+#endif
 
 
 /** @def RT_H2BE_U64
- * Converts uint64_t value from host to big endian byte order. */
-#define RT_H2BE_U64(u64) RT_MAKE_U64(RT_H2BE_U32((u64) >> 32), RT_H2BE_U32((u64) & 0xffffffff))
+ * Converts an uint64_t value from host to big endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2BE_U64(u64)   (u64)
+#else
+# define RT_H2BE_U64(u64)   RT_BSWAP_U64(u64)
+#endif
+
+/** @def RT_H2BE_U64_C
+ * Converts an uint64_t constant from host to big endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2BE_U64_C(u64) (u64)
+#else
+# define RT_H2BE_U64_C(u64) RT_BSWAP_U64_C(u64)
+#endif
 
 /** @def RT_H2BE_U32
- * Converts uint32_t value from host to big endian byte order. */
-#define RT_H2BE_U32(u32) (RT_BYTE4(u32) | (RT_BYTE3(u32) << 8) | (RT_BYTE2(u32) << 16) | (RT_BYTE1(u32) << 24))
+ * Converts an uint32_t value from host to big endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2BE_U32(u32)   (u32)
+#else
+# define RT_H2BE_U32(u32)   RT_BSWAP_U32(u32)
+#endif
+
+/** @def RT_H2BE_U32_C
+ * Converts an uint32_t constant from host to big endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2BE_U32_C(u32) (u32)
+#else
+# define RT_H2BE_U32_C(u32) RT_BSWAP_U32_C(u32)
+#endif
 
 /** @def RT_H2BE_U16
- * Converts uint16_t value from host to big endian byte order. */
-#define RT_H2BE_U16(u16) (RT_HIBYTE(u16) | (RT_LOBYTE(u16) << 8))
+ * Converts an uint16_t value from host to big endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2BE_U16(u16)   (u16)
+#else
+# define RT_H2BE_U16(u16)   RT_BSWAP_U16(u16)
+#endif
+
+/** @def RT_H2BE_U16_C
+ * Converts an uint16_t constant from host to big endian byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_H2BE_U16_C(u16) (u16)
+#else
+# define RT_H2BE_U16_C(u16) RT_BSWAP_U16_C(u16)
+#endif
 
 /** @def RT_BE2H_U64
- * Converts uint64_t value from big endian to host byte order. */
-#define RT_BE2H_U64(u64) RT_MAKE_U64(RT_H2BE_U32((u64) >> 32), RT_H2BE_U32((u64) & 0xffffffff))
+ * Converts an uint64_t value from big endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_BE2H_U64(u64)   (u64)
+#else
+# define RT_BE2H_U64(u64)   RT_BSWAP_U64(u64)
+#endif
+
+/** @def RT_BE2H_U64
+ * Converts an uint64_t constant from big endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_BE2H_U64_C(u64) (u64)
+#else
+# define RT_BE2H_U64_C(u64) RT_BSWAP_U64_C(u64)
+#endif
 
 /** @def RT_BE2H_U32
- * Converts uint32_t value from big endian to host byte order. */
-#define RT_BE2H_U32(u32) (RT_BYTE4(u32) | (RT_BYTE3(u32) << 8) | (RT_BYTE2(u32) << 16) | (RT_BYTE1(u32) << 24))
+ * Converts an uint32_t value from big endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_BE2H_U32(u32)   (u32)
+#else
+# define RT_BE2H_U32(u32)   RT_BSWAP_U32(u32)
+#endif
+
+/** @def RT_BE2H_U32_C
+ * Converts an uint32_t value from big endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_BE2H_U32_C(u32) (u32)
+#else
+# define RT_BE2H_U32_C(u32) RT_BSWAP_U32_C(u32)
+#endif
 
 /** @def RT_BE2H_U16
- * Converts uint16_t value from big endian to host byte order. */
-#define RT_BE2H_U16(u16) (RT_HIBYTE(u16) | (RT_LOBYTE(u16) << 8))
+ * Converts an uint16_t value from big endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_BE2H_U16(u16)   (u16)
+#else
+# define RT_BE2H_U16(u16)   RT_BSWAP_U16(u16)
+#endif
 
+/** @def RT_BE2H_U16_C
+ * Converts an uint16_t constant from big endian to host byte order. */
+#ifdef RT_BIG_ENDIAN
+# define RT_BE2H_U16_C(u16) (u16)
+#else
+# define RT_BE2H_U16_C(u16) RT_BSWAP_U16_C(u16)
+#endif
+
+
+/** @def RT_H2N_U64
+ * Converts an uint64_t value from host to network byte order. */
+#define RT_H2N_U64(u64)     RT_H2BE_U64(u64)
+
+/** @def RT_H2N_U64_C
+ * Converts an uint64_t constant from host to network byte order. */
+#define RT_H2N_U64_C(u64)   RT_H2BE_U64_C(u64)
 
 /** @def RT_H2N_U32
- * Converts uint32_t value from host to network byte order. */
-#define RT_H2N_U32(u32) RT_H2BE_U32(u32)
+ * Converts an uint32_t value from host to network byte order. */
+#define RT_H2N_U32(u32)     RT_H2BE_U32(u32)
+
+/** @def RT_H2N_U32_C
+ * Converts an uint32_t constant from host to network byte order. */
+#define RT_H2N_U32_C(u32)   RT_H2BE_U32_C(u32)
 
 /** @def RT_H2N_U16
- * Converts uint16_t value from host to network byte order. */
-#define RT_H2N_U16(u16) RT_H2BE_U16(u16)
+ * Converts an uint16_t value from host to network byte order. */
+#define RT_H2N_U16(u16)     RT_H2BE_U16(u16)
+
+/** @def RT_H2N_U16_C
+ * Converts an uint16_t constant from host to network byte order. */
+#define RT_H2N_U16_C(u16)   RT_H2BE_U16_C(u16)
+
+/** @def RT_N2H_U64
+ * Converts an uint64_t value from network to host byte order. */
+#define RT_N2H_U64(u64)     RT_BE2H_U64(u64)
+
+/** @def RT_N2H_U64_C
+ * Converts an uint64_t constant from network to host byte order. */
+#define RT_N2H_U64_C(u64)   RT_BE2H_U64_C(u64)
 
 /** @def RT_N2H_U32
- * Converts uint32_t value from network to host byte order. */
-#define RT_N2H_U32(u32) RT_BE2H_U32(u32)
+ * Converts an uint32_t value from network to host byte order. */
+#define RT_N2H_U32(u32)     RT_BE2H_U32(u32)
+
+/** @def RT_N2H_U32_C
+ * Converts an uint32_t constant from network to host byte order. */
+#define RT_N2H_U32_C(u32)   RT_BE2H_U32_C(u32)
 
 /** @def RT_N2H_U16
- * Converts uint16_t value from network to host byte order. */
-#define RT_N2H_U16(u16) RT_BE2H_U16(u16)
+ * Converts an uint16_t value from network to host byte order. */
+#define RT_N2H_U16(u16)     RT_BE2H_U16(u16)
+
+/** @def RT_N2H_U16_C
+ * Converts an uint16_t value from network to host byte order. */
+#define RT_N2H_U16_C(u16)   RT_BE2H_U16_C(u16)
 
 
 /** @def RT_NO_DEPRECATED_MACROS
@@ -1277,12 +1563,10 @@
  */
 #if defined(_MSC_VER) || defined(RT_OS_OS2)
 # define DECLEXPORT_CLASS       __declspec(dllexport)
+#elif defined(RT_USE_VISIBILITY_DEFAULT)
+# define DECLEXPORT_CLASS       __attribute__((visibility("default")))
 #else
-# ifdef VBOX_HAVE_VISIBILITY_HIDDEN
-#  define DECLEXPORT_CLASS      __attribute__((visibility("default")))
-# else
-#  define DECLEXPORT_CLASS
-# endif
+# define DECLEXPORT_CLASS
 #endif
 
 /** @def DECLIMPORT_CLASS
@@ -1295,12 +1579,10 @@
  */
 #if defined(_MSC_VER) || (defined(RT_OS_OS2) && !defined(__IBMC__) && !defined(__IBMCPP__))
 # define DECLIMPORT_CLASS       __declspec(dllimport)
+#elif defined(RT_USE_VISIBILITY_DEFAULT)
+# define DECLIMPORT_CLASS       __attribute__((visibility("default")))
 #else
-# ifdef VBOX_HAVE_VISIBILITY_HIDDEN
-#  define DECLIMPORT_CLASS      __attribute__((visibility("default")))
-# else
-#  define DECLIMPORT_CLASS
-# endif
+# define DECLIMPORT_CLASS
 #endif
 
 /** @def WORKAROUND_MSVC7_ERROR_C2593_FOR_BOOL_OP

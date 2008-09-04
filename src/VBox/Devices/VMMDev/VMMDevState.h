@@ -1,6 +1,6 @@
-/* $Id: VMMDevState.h 30274 2008-04-28 15:03:37Z michael $ */
+/* $Id: VMMDevState.h 35651 2008-08-29 14:09:39Z frank $ */
 /** @file
- * VMMDev - Guest <-> VMM/Host communication device, Internal header.
+ * VMMDev - Guest <-> VMM/Host communication device, internal header.
  */
 
 /*
@@ -19,13 +19,14 @@
  * additional information or have any questions.
  */
 
-#ifndef ___VMMDevState_h___
-#define ___VMMDevState_h___
+#ifndef ___VMMDev_VMMDevState_h
+#define ___VMMDev_VMMDevState_h
 
 #include <VBox/cdefs.h>
 #include <VBox/types.h>
 
-#include <VBox/pdm.h>
+#include <VBox/pdmdev.h>
+#include <VBox/pdmifs.h>
 
 #define TIMESYNC_BACKDOOR
 
@@ -46,22 +47,22 @@ typedef struct VMMDevState
     uint32_t mouseYAbs;
 
     /** Pointer to device instance. */
-    PPDMDEVINS pDevIns;
+    PPDMDEVINSR3 pDevIns;
     /** VMMDev port base interface. */
     PDMIBASE Base;
     /** VMMDev port interface. */
     PDMIVMMDEVPORT Port;
-#ifdef VBOX_HGCM
+#ifdef VBOX_WITH_HGCM
     /** HGCM port interface. */
     PDMIHGCMPORT HGCMPort;
 #endif
     /** Pointer to base interface of the driver. */
-    PPDMIBASE pDrvBase;
+    R3PTRTYPE(PPDMIBASE) pDrvBase;
     /** VMMDev connector interface */
-    PPDMIVMMDEVCONNECTOR pDrv;
-#ifdef VBOX_HGCM
+    R3PTRTYPE(PPDMIVMMDEVCONNECTOR) pDrv;
+#ifdef VBOX_WITH_HGCM
     /** HGCM connector interface */
-    PPDMIHGCMCONNECTOR pHGCMDrv;
+    R3PTRTYPE(PPDMIHGCMCONNECTOR) pHGCMDrv;
 #endif
     /** message buffer for backdoor logging. */
     char szMsg[512];
@@ -84,8 +85,8 @@ typedef struct VMMDevState
     /** Flag whether u32NewGuestFilterMask is valid */
     bool fNewGuestFilterMask;
 
-    /** HC pointer to VMMDev RAM area */
-    VMMDevMemory *pVMMDevRAMHC;
+    /** R3 pointer to VMMDev RAM area */
+    R3PTRTYPE(VMMDevMemory *) pVMMDevRAMR3;
     /** GC physical address of VMMDev RAM area */
     RTGCPHYS32 GCPhysVMMDevRAM;
 
@@ -163,14 +164,14 @@ typedef struct VMMDevState
     /** Don't clear credentials */
     bool fKeepCredentials;
 
-#ifdef VBOX_HGCM
+#ifdef VBOX_WITH_HGCM
     /** List of pending HGCM requests, used for saving the HGCM state. */
-    PVBOXHGCMCMD pHGCMCmdList;
+    R3PTRTYPE(PVBOXHGCMCMD) pHGCMCmdList;
     /** Critical section to protect the list. */
     RTCRITSECT critsectHGCMCmdList;
     /** Whether the HGCM events are already automatically enabled. */
     uint32_t u32HGCMEnabled;
-#endif /* VBOX_HGCM */
+#endif /* VBOX_WITH_HGCM */
 
     /* Shared folders LED */
     struct
@@ -190,5 +191,5 @@ void VMMDevCtlSetGuestFilterMask (VMMDevState *pVMMDevState,
                                   uint32_t u32OrMask,
                                   uint32_t u32NotMask);
 
-#endif /* !___VMMDevState_h___ */
+#endif /* !___VMMDev_VMMDevState_h */
 

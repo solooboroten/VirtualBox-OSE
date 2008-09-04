@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31158 2008-05-23 06:48:50Z frank $
+# $Id: Makefile.kmk 35651 2008-08-29 14:09:39Z frank $
 ## @file
 # Sub-Makefile for the common guest addition code library.
 #
@@ -19,50 +19,26 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../..
+else
+DEPTH    ?= ../../../../..
 SUB_DEPTH = ../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 #
 # Target config.
 #
-ifn1of ($(KBUILD_TARGET),l4 linux win)
- LIBRARIES += \
+LIBRARIES += \
 	VBoxGuestR0Lib \
 	VBoxGuestR0LibBase
- LIBRARIES += \
+LIBRARIES += \
 	VBoxGuestR3Lib \
 	VBoxGuestR3LibShared
- if1of ($(KBUILD_TARGET),freebsd linux netbsd openbsd)
-  LIBRARIES += \
+if1of ($(KBUILD_TARGET), freebsd linux netbsd openbsd)
+ LIBRARIES += \
   	VBoxGuestR3LibXFree86
- endif
-else
- # As we build Windows Additions on Linux as well, we need a
- # separate Linux target for each library so that both platforms
- # are built.
- # NOTE: This is going to be obsoleted before long, everyone is going to
- #       use VBoxGuestR0Lib* and VBoxGuestR3Lib.
- ifdef VBOX_WITH_WIN32_ADDITIONS
-  ifndef VBOX_ADDITIONS_LINUX_ONLY
-   LIBRARIES += \
- 	VBoxGuestLib \
- 	VBoxGuestLibBase
-  endif
- endif
- ifdef VBOX_WITH_LINUX_ADDITIONS
-   LIBRARIES += \
-	VBoxGuestR0Lib \
-	VBoxGuestR0LibBase \
-  	VBoxGuestR3Lib \
-	VBoxGuestR3LibShared \
-  	VBoxGuestR3LibXFree86
- else ifdef VBOX_WITH_X11_ADDITIONS
-   LIBRARIES += \
-  	VBoxGuestR3Lib \
-	VBoxGuestR3LibShared \
-  	VBoxGuestR3LibXFree86
- endif
 endif
 
 ifndef VBOX_WITH_ADDITION_DRIVERS
@@ -76,11 +52,9 @@ endif
 # VBoxGuestR0Lib
 #
 VBoxGuestR0Lib_TEMPLATE     = VBOXGUESTR0LIB
-VBoxGuestR0Lib_DEFS         = VBOX_HGCM
+VBoxGuestR0Lib_DEFS         = VBOX_WITH_HGCM
 VBoxGuestR0Lib_INCS         = \
-	$(PATH_VBoxGuestLib)
-VBoxGuestR0Lib_INCS.win     = \
-	$(PATH_SUB_ROOT)/WINNT/SharedFolders/include
+	$(PATH_VBoxGuestR0Lib)
 VBoxGuestR0Lib_SOURCES      = \
 	GenericRequest.cpp \
 	SysHlp.cpp \
@@ -94,7 +68,7 @@ VBoxGuestR0Lib_SOURCES      = \
 # VBoxGuestR0LibBase
 #
 VBoxGuestR0LibBase_TEMPLATE = VBOXGUESTR0LIB
-VBoxGuestR0LibBase_DEFS     = VBOX_HGCM VBGL_VBOXGUEST
+VBoxGuestR0LibBase_DEFS     = VBOX_WITH_HGCM VBGL_VBOXGUEST
 VBoxGuestR0LibBase_INCS     = $(VBoxGuestR0Lib_INCS)
 VBoxGuestR0LibBase_INCS.win = $(VBoxGuestR0Lib_INCS.win)
 VBoxGuestR0LibBase_SOURCES  = \
@@ -109,17 +83,28 @@ VBoxGuestR0LibBase_SOURCES  = \
 # VBoxGuestR3Lib
 #
 VBoxGuestR3Lib_TEMPLATE    = VBOXGUESTR3LIB
-VBoxGuestR3Lib_DEFS        = VBOX_HGCM
+VBoxGuestR3Lib_DEFS        = \
+	VBOX_WITH_HGCM \
+	$(if $(VBOX_WITH_GUEST_PROPS),VBOX_WITH_GUEST_PROPS,)
 VBoxGuestR3Lib_SOURCES     = \
 	VBoxGuestR3Lib.cpp \
 	VBoxGuestR3LibClipboard.cpp \
 	VBoxGuestR3LibDaemonize.cpp \
 	VBoxGuestR3LibGR.cpp \
+	$(if $(VBOX_WITH_GUEST_PROPS),VBoxGuestR3LibGuestProp.cpp,) \
 	VBoxGuestR3LibMouse.cpp \
 	VBoxGuestR3LibMisc.cpp \
 	VBoxGuestR3LibSeamless.cpp \
 	VBoxGuestR3LibTime.cpp \
 	VBoxGuestR3LibVideo.cpp
+ifeq ($(KBUILD_TARGET),win) ## @todo get rid of this hack (as soon as it's all implemented / #defined).
+ VBoxGuestR3Lib_SOURCES   = \
+	VBoxGuestR3Lib.cpp \
+	VBoxGuestR3LibGR.cpp \
+	$(if $(VBOX_WITH_GUEST_PROPS),VBoxGuestR3LibGuestProp.cpp,) \
+	VBoxGuestR3LibMisc.cpp	
+endif
+
 
 #
 # VBoxGuestR3LibShared - a PIC variant of VBoxGuestR3Lib for linking into .so/.dll/.dylib.
@@ -136,10 +121,13 @@ VBoxGuestR3LibShared_INST    := $(INST_ADDITIONS_LIB)
 # C library is not available.
 #
 VBoxGuestR3LibXFree86_TEMPLATE = VBOXGUESTR3LIB
-VBoxGuestR3LibXFree86_DEFS     = VBOX_HGCM VBOX_VBGLR3_XFREE86
+VBoxGuestR3LibXFree86_DEFS     = \
+	VBOX_WITH_HGCM VBOX_VBGLR3_XFREE86 \
+	$(if $(VBOX_WITH_GUEST_PROPS),VBOX_WITH_GUEST_PROPS,)
 VBoxGuestR3LibXFree86_SOURCES  = \
 	VBoxGuestR3Lib.cpp \
 	VBoxGuestR3LibGR.cpp \
+	$(if $(VBOX_WITH_GUEST_PROPS),VBoxGuestR3LibGuestProp.cpp,) \
 	VBoxGuestR3LibMouse.cpp \
 	VBoxGuestR3LibMisc.cpp \
 	VBoxGuestR3LibVideo.cpp
@@ -148,33 +136,6 @@ VBoxGuestR3LibXFree86_INCS     = \
         $(VBOX_PATH_X11_XFREE_4_2)/programs/Xserver/hw/xfree86/os-support \
         $(VBOX_PATH_X11_XFREE_4_2)/programs/Xserver/include \
         $(VBOX_PATH_X11_XFREE_4_2)/exports/include/X11
-
-
-#
-# VBoxGuestLib (Windows)
-#
-VBoxGuestLib_TEMPLATE    = VBOXW32GUESTR0LIB
-VBoxGuestLib_SDKS.win    = W2K3DDKX86 WIN32SDK
-VBoxGuestLib_SOURCES     = $(VBoxGuestR0Lib_SOURCES)
-VBoxGuestLib_INCS        = \
-	$(PATH_VBoxGuestLib)
-VBoxGuestLib_INCS.win    = \
-	$(PATH_SUB_ROOT)/WINNT/SharedFolders/include
-VBoxGuestLib_DEFS = IN_RING0 IN_RT_R0 VBOX_HGCM LOG_TO_BACKDOOR
-#VBoxGuestLib_DEFS += LOG_ENABLED
-
-
-#
-# VBoxGuestLibBase (Windows)
-#
-VBoxGuestLibBase_TEMPLATE   = VBOXW32GUESTR0LIB
-VBoxGuestLibBase_SDKS.win   = $(VBoxGuestLib_SDKS.win)
-VBoxGuestLibBase_SOURCES    = $(VBoxGuestR0LibBase_SOURCES)
-VBoxGuestLibBase_INCS       = $(VBoxGuestLib_INCS)
-VBoxGuestLibBase_INCS.win   = $(VBoxGuestLib_INCS.win)
-VBoxGuestLibBase_DEFS       = $(VBoxGuestLib_DEFS) VBGL_VBOXGUEST
-VBoxGuestLibBase_DEFS.win   = $(VBoxGuestLib_DEFS.win)
-#VBoxGuestLibBase_DEFS      += LOG_ENABLED
 
 
 include	$(KBUILD_PATH)/subfooter.kmk

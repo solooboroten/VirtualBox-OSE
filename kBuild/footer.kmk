@@ -1,4 +1,4 @@
-# $Id: footer.kmk 1625 2008-05-12 21:42:23Z bird $
+# $Id: footer.kmk 1686 2008-08-11 21:47:33Z bird $
 ## @file
 # kBuild - File included at top of makefile.
 #
@@ -615,6 +615,44 @@ endef # def_inherit
 
 
 #
+# Load global units before doing any inheriting so they can add new properties.
+#
+# This only applies to the guys listed in the global USES since there is
+# no reliable way to deal with things on a target level without first
+# applying templates. So, to avoid having USES mess up all targets,
+# we'll make the global and per-target USES property work differently:
+#     The global USES does not apply to targets, just globally.
+#
+
+## Unit load function.
+# @param loading    The unit name
+define def_unit_load_function
+ifndef UNIT_$(loading)
+ UNIT_$(loading)_KMK_FILE := $(firstword $(foreach path, $(KBUILD_UNIT_PATHS) $(KBUILD_PATH)/units $(KBUILD_DEFAULT_PATHS), $(wildcard $(path)/$(loading).kmk)))
+ ifeq ($(UNIT_$(loading)_KMK_FILE),)
+  $(error kBuild: Cannot find include file for the unit '$(loading)'! Searched: $(KBUILD_UNIT_PATHS) $(KBUILD_PATH)/units $(KBUILD_DEFAULT_PATHS))
+ endif
+ include $(UNIT_$(loading)_KMK_FILE)
+ ifndef UNIT_$(loading)
+  $(warning kBuild: UNIT_$(loading) was not defined by $(UNIT_$(loading)_KMK_FILE)!)
+ endif
+endif
+endef # def_unit_load_function
+
+$(foreach loading, \
+	$(USES.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)) \
+	$(USES.$(KBUILD_TARGET_CPU)) \
+	$(USES.$(KBUILD_TARGET_ARCH)) \
+	$(USES.$(KBUILD_TARGET)) \
+	$(USES.$(KBUILD_HOST).$(KBUILD_HOST_ARCH)) \
+	$(USES.$(KBUILD_HOST_CPU)) \
+	$(USES.$(KBUILD_HOST_ARCH)) \
+	$(USES.$(KBUILD_TARGET)) \
+	$(USES.$(KBUILD_TYPE)) \
+	$(USES),$(evalval def_unit_load_function))
+
+
+#
 # Determin all the templates that is being used and make
 # sure they are present before we try collect keywords.
 #
@@ -1212,21 +1250,6 @@ ifndef SDK_$(loading)
 endif
 endef # def_sdk_load_function
 
-## Unit load function.
-# @param loading    The unit name
-define def_unit_load_function
-ifndef UNIT_$(loading)
- UNIT_$(loading)_KMK_FILE := $(firstword $(foreach path, $(KBUILD_UNIT_PATHS) $(KBUILD_PATH)/units $(KBUILD_DEFAULT_PATHS), $(wildcard $(path)/$(loading).kmk)))
- ifeq ($(UNIT_$(loading)_KMK_FILE),)
-  $(error kBuild: Cannot find include file for the unit '$(loading)'! Searched: $(KBUILD_UNIT_PATHS) $(KBUILD_PATH)/units $(KBUILD_DEFAULT_PATHS))
- endif
- include $(UNIT_$(loading)_KMK_FILE)
- ifndef UNIT_$(loading)
-  $(warning kBuild: UNIT_$(loading) was not defined by $(UNIT_$(loading)_KMK_FILE)!)
- endif
-endif
-endef # def_unit_load_function
-
 
 properties :=
 properties_now_l :=
@@ -1237,11 +1260,11 @@ properties_deferred_r := $(PROPS_ACCUMULATE_R)
 
 src_prefix := TOOL_
 load_function := def_tools_load_function
-$(foreach trg, $(_TOOLS), $(evalval def_inherit))
+$(foreach trg, $(addprefix TOOL_,$(_TOOLS)), $(evalval def_inherit))
 
 src_prefix := SDK_
 load_function := def_sdk_load_function
-$(foreach trg, $(_SDKS) , $(evalval def_inherit))
+$(foreach trg, $(addprefix SDK_,$(_SDKS)), $(evalval def_inherit))
 
 # done inheriting.
 src_prefix :=
@@ -1305,7 +1328,7 @@ local outbase     := $(call TARGET_BASE,$(name),$(target))
 ifndef PATH_$(target)
  PATH_$(target) := $(patsubst %/,%,$(dir $(outbase)))
 else ifneq ($(PATH_$(target)),$(patsubst %/,%,$(dir $(outbase))))
-  $(error kBuild internal error: PATH_$(target)=$(PATH_$(target)) expected $(patsubst %/,%,$(dir $(outbase))))
+ $(error kBuild internal error: PATH_$(target)=$(PATH_$(target)) expected $(patsubst %/,%,$(dir $(outbase))))
 endif
 ifeq ($(tool_prefix),AR) ## @todo fix this mess!
 local suff := $(firstword\
@@ -1356,7 +1379,7 @@ EXTPRE  := HOST
 definst := $(PATH_BIN)
 tool_prefix := LD
 bld_trg_base_var := PLATFORM
-$(foreach target, $(BLDPROGS) $(BLDPROGS.$(KBUILD_HOST)) $(BLDPROGS.$(KBUILD_HOST).$(KBUILD_HOST_ARCH)), \
+$(foreach target, $(_ALL_BLDPROGS), \
 	$(evalval def_pass1_bldprog))
 
 
@@ -1368,7 +1391,7 @@ EXTPRE  :=
 definst := $(PATH_LIB)
 tool_prefix := AR
 bld_trg_base_var := TARGET
-$(foreach target, $(LIBRARIES) $(LIBRARIES.$(KBUILD_TARGET)) $(LIBRARIES.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), \
+$(foreach target, $(_ALL_LIBRARIES), \
 	$(evalval def_pass1_link_common))
 
 
@@ -1380,7 +1403,7 @@ EXTPRE  :=
 definst := $(PATH_DLL)
 tool_prefix := LD
 bld_trg_base_var := TARGET
-$(foreach target, $(DLLS) $(DLLS.$(KBUILD_TARGET)) $(DLLS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), \
+$(foreach target, $(_ALL_DLLS), \
 	$(evalval def_pass1_link_common))
 
 
@@ -1396,7 +1419,7 @@ if1of ($(KBUILD_TARGET), nt os2 win win64 win32)
  definst := $(PATH_LIB)
  tool_prefix := AR
  bld_trg_base_var := TARGET
- $(foreach target, $(IMPORT_LIBS) $(IMPORT_LIBS.$(KBUILD_TARGET)) $(IMPORT_LIBS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), \
+ $(foreach target, $(_ALL_IMPORT_LIBS), \
 	$(evalval def_pass1_link_common))
 else
  EXT     := DLL
@@ -1404,7 +1427,7 @@ else
  definst := $(PATH_DLL)
  tool_prefix := LD
  bld_trg_base_var := TARGET
- $(foreach target, $(IMPORT_LIBS) $(IMPORT_LIBS.$(KBUILD_TARGET)) $(IMPORT_LIBS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), \
+ $(foreach target, $(_ALL_IMPORT_LIBS), \
 	$(evalval def_pass1_link_common))
 endif
 
@@ -1417,7 +1440,7 @@ EXTPRE  :=
 definst := $(PATH_BIN)
 tool_prefix := LD
 bld_trg_base_var := TARGET
-$(foreach target, $(PROGRAMS) $(PROGRAMS.$(KBUILD_TARGET)) $(PROGRAMS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), \
+$(foreach target, $(_ALL_PROGRAMS), \
 	$(evalval def_pass1_link_common))
 
 
@@ -1429,7 +1452,7 @@ EXTPRE  :=
 definst := $(PATH_SYS)
 tool_prefix := LD
 bld_trg_base_var := TARGET
-$(foreach target, $(SYSMODS) $(SYSMODS.$(KBUILD_TARGET)) $(SYSMODS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), \
+$(foreach target, $(_ALL_SYSMODS), \
 	$(evalval def_pass1_link_common))
 
 
@@ -1446,7 +1469,7 @@ local bld_trg_cpu := $(firstword $($(target)_BLD_TRG_CPU)  $(KBUILD_TARGET_CPU))
 TARGET_$(target) := $(PATH_TARGET)/$(target).ins
 # INSTARGET_ later.
 endef
-$(foreach target, $(INSTALLS) $(INSTALLS.$(KBUILD_TARGET)) $(INSTALLS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), \
+$(foreach target, $(_ALL_INSTALLS), \
 	$(evalval def_pass1_install))
 
 ifdef KBUILD_PROFILE_SELF
@@ -1839,7 +1862,7 @@ endef
 # Walk the FETCH target lists.
 bld_trg := $(KBUILD_TARGET)
 bld_trg_arch := $(KBUILD_TARGET_ARCH)
-$(foreach target, $(FETCHES) $(FETCHES.$(KBUILD_TARGET)) $(FETCHES.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), \
+$(foreach target, $(_ALL_FETCHES), \
 	$(evalvalctx def_fetch))
 
 # some aliases.
@@ -1875,7 +1898,7 @@ endif
 #_PATCHES +=
 #endef
 #
-#$(foreach target, $(PATCHES) $(PATCHES.$(KBUILD_TARGET)) $(PATCHES.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), \
+#$(foreach target, $(_ALL_PATCHES), \
 #	$(evalval def_patch))
 #
 
@@ -1901,7 +1924,7 @@ $(outbase).koc +| $(obj) $($(target)_$(source)_OUTPUT_) $($(target)_$(source)_OU
 		$(value _DEP_COMPILE_CMDS) \
 		| \
 		$($(target)_$(source)_DEPORD_) \
-		$$($(target)_INTERMEDIATES)
+		$$$$($(target)_INTERMEDIATES)
 	%$$(call MSG_COMPILE,$(target),$(source),$$@,$(type))
 else
 $(obj) + $($(target)_$(source)_OUTPUT_) +| $($(target)_$(source)_OUTPUT_MAYBE_) : \
@@ -1909,7 +1932,7 @@ $(obj) + $($(target)_$(source)_OUTPUT_) +| $($(target)_$(source)_OUTPUT_MAYBE_) 
 		$(value _DEP_COMPILE_CMDS) \
 		| \
 		$($(target)_$(source)_DEPORD_) \
-		$$($(target)_INTERMEDIATES)
+		$$$$($(target)_INTERMEDIATES)
 	%$$(call MSG_COMPILE,$(target),$(source),$$@,$(type))
 ifdef TOOL_$(tool)_COMPILE_$(type)_DONT_PURGE_OUTPUT
 	$$(QUIET)$$(RM) -f -- $(dep) $(obj) $($(target)_$(source)_OUTPUT_) $($(target)_OUTPUT_MAYBE_)
@@ -1968,7 +1991,7 @@ ifndef NO_LINK_CMDS_DEPS
 	%$$(QUIET2)$$(APPEND) '$(dep)' 'endef'
 endif
 
-$(basename $(notdir $(out))): $(out)
+$(basename $(notdir $(out))):: $(out)
 
 endef
 
@@ -1984,7 +2007,7 @@ $(INSTARGET_$(target)) : $(out) | $(call DIRDEP,$(dir $(INSTARGET_$(target))))
 	$$(QUIET)$$(INSTALL) $$(if $(mode),-m $(mode)) -- $(out) $$@
 
 ifdef KBUILD_DO_AUTO_INSTALL
-$(basename $(notdir $(out))): $(INSTARGET_$(target))
+$(basename $(notdir $(out))):: $(INSTARGET_$(target))
 endif
 endef
 
@@ -2129,10 +2152,8 @@ local name        := $(firstword\
 local outbase     := $(call TARGET_BASE,$(name),$(target))
 ifndef PATH_$(target)
  PATH_$(target)   := $(patsubst %/,%,$(dir $(outbase)))
-else
- ifneq ($(PATH_$(target)),$(patsubst %/,%,$(dir $(outbase))))
-  $(error kBuild internal error: PATH_$(target)=$(PATH_$(target)) expected $(patsubst %/,%,$(dir $(outbase))))
- endif
+else ifneq ($(PATH_$(target)),$(patsubst %/,%,$(dir $(outbase))))
+ $(error kBuild internal error: PATH_$(target)=$(PATH_$(target)) expected $(patsubst %/,%,$(dir $(outbase))))
 endif
 local suff        := $(firstword\
 	$($(target)_LIBSUFF.$(bld_trg).$(bld_trg_arch))\
@@ -2148,6 +2169,15 @@ TARGET_$(target)  := $(out)
 # no local here - must be writable across some foreachs.
 othersrc          :=
 $(target)_OBJS_   :=
+
+# Do units pre source callouts.
+local units       := \
+	$($(target)_USES.$(bld_trg).$(bld_trg_arch))\
+	$($(target)_USES.$(bld_trg_arch))\
+	$($(target)_USES.$(bld_trg))\
+	$($(target)_USES.$(bld_type))\
+	$($(target)_USES)
+$(foreach unit,$(units),$(evalval def_unit_$(unit)_target_pre))
 
 # source -> object
 $(evalval def_target_sources)
@@ -2301,7 +2331,7 @@ definst := $(PATH_LIB)
 typevar := _LIBS
 tool_do := LINK_LIBRARY
 mode := 0644
-$(foreach target, $(LIBRARIES) $(LIBRARIES.$(KBUILD_TARGET)) $(LIBRARIES.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), $(evalval def_lib))
+$(foreach target, $(_ALL_LIBRARIES), $(evalval def_lib))
 
 ifdef KBUILD_PROFILE_SELF
  _KBUILD_TS_NOW := $(nanots )
@@ -2340,10 +2370,8 @@ local name        := $(firstword\
 local outbase     := $(call TARGET_BASE,$(name),$(target))
 ifndef PATH_$(target)
  PATH_$(target)   := $(patsubst %/,%,$(dir $(outbase)))
-else
- ifneq ($(PATH_$(target)),$(patsubst %/,%,$(dir $(outbase))))
-  $(error kBuild internal error: PATH_$(target)=$(PATH_$(target)) expected $(patsubst %/,%,$(dir $(outbase))))
- endif
+else ifneq ($(PATH_$(target)),$(patsubst %/,%,$(dir $(outbase))))
+ $(error kBuild internal error: PATH_$(target)=$(PATH_$(target)) expected $(patsubst %/,%,$(dir $(outbase))))
 endif
 local suff        := $(firstword \
 	$($(target)_$(EXT)SUFF) \
@@ -2356,6 +2384,15 @@ local defpath     := $($(target)_PATH)
 # no local here - must be writable across some foreachs.
 othersrc          :=
 $(target)_OBJS_   :=
+
+# Do units pre source callouts.
+local units       := \
+	$($(target)_USES.$(bld_trg).$(bld_trg_arch))\
+	$($(target)_USES.$(bld_trg_arch))\
+	$($(target)_USES.$(bld_trg))\
+	$($(target)_USES.$(bld_type))\
+	$($(target)_USES)
+$(foreach unit,$(units),$(evalval def_unit_$(unit)_target_pre))
 
 # source -> object
 $(evalval def_target_sources)
@@ -2667,7 +2704,7 @@ definst := $(PATH_BIN)
 typevar := _BLDPROGS
 mode    := 0755
 bld_trg_base_var := PLATFORM
-$(foreach target, $(BLDPROGS) $(BLDPROGS.$(KBUILD_HOST)) $(BLDPROGS.$(KBUILD_HOST).$(KBUILD_HOST_ARCH)), $(evalval def_bldprog))
+$(foreach target, $(_ALL_BLDPROGS), $(evalval def_bldprog))
 
 ifdef KBUILD_PROFILE_SELF
  _KBUILD_TS_NOW := $(nanots )
@@ -2689,7 +2726,7 @@ definst := $(PATH_DLL)
 typevar := _DLLS
 mode    := 0644
 bld_trg_base_var := TARGET
-$(foreach target, $(DLLS) $(DLLS.$(KBUILD_TARGET)) $(DLLS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), $(evalval def_link_common))
+$(foreach target, $(_ALL_DLLS), $(evalval def_link_common))
 
 ifdef KBUILD_PROFILE_SELF
  _KBUILD_TS_NOW := $(nanots )
@@ -2713,12 +2750,12 @@ ifeq ($(filter-out nt os2 win win64 win32,$(KBUILD_TARGET)),)
  EXT     := LIB
  tool_do := LINK_LIBRARY
  definst := $(PATH_LIB)
- $(foreach target, $(IMPORT_LIBS) $(IMPORT_LIBS.$(KBUILD_TARGET)) $(IMPORT_LIBS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), $(evalval def_lib))
+ $(foreach target, $(_ALL_IMPORT_LIBS), $(evalval def_lib))
 else
  EXT     := DLL
  tool_do := LINK_DLL
  definst := $(PATH_DLL)
- $(foreach target, $(IMPORT_LIBS) $(IMPORT_LIBS.$(KBUILD_TARGET)) $(IMPORT_LIBS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), $(evalval def_link_common))
+ $(foreach target, $(_ALL_IMPORT_LIBS), $(evalval def_link_common))
 endif
 
 ifdef KBUILD_PROFILE_SELF
@@ -2741,7 +2778,7 @@ definst := $(PATH_BIN)
 typevar := _PROGRAMS
 mode    := 0755
 bld_trg_base_var := TARGET
-$(foreach target, $(PROGRAMS) $(PROGRAMS.$(KBUILD_TARGET)) $(PROGRAMS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), $(evalval def_link_common))
+$(foreach target, $(_ALL_PROGRAMS), $(evalval def_link_common))
 
 ifdef KBUILD_PROFILE_SELF
  _KBUILD_TS_NOW := $(nanots )
@@ -2763,7 +2800,7 @@ definst := $(PATH_SYS)
 typevar := _SYSMODS
 mode    := 0644
 bld_trg_base_var := TARGET
-$(foreach target, $(SYSMODS) $(SYSMODS.$(KBUILD_TARGET)) $(SYSMODS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), $(evalval def_link_common))
+$(foreach target, $(_ALL_SYSMODS), $(evalval def_link_common))
 
 ifdef KBUILD_PROFILE_SELF
  _KBUILD_TS_NOW := $(nanots )
@@ -3090,7 +3127,7 @@ _DIRS += $($(target)_BLDDIRS) $($(target)_BLDDIRS.$(bld_trg)) $($(target)_BLDDIR
 endef
 
 ## process all install targets
-$(foreach target, $(INSTALLS) $(INSTALLS.$(KBUILD_TARGET)) $(INSTALLS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)), \
+$(foreach target, $(_ALL_INSTALLS), \
 	$(evalvalctx def_install))
 
 ifdef KBUILD_PROFILE_SELF
@@ -3100,11 +3137,16 @@ ifdef KBUILD_PROFILE_SELF
  _KBUILD_TS_PREV := $(_KBUILD_TS_NOW)
 endif
 
+#
+# TESTING
+#
+_TESTING += $(TESTING) $(TESTING.$(KBUILD_TARGET)) $(TESTING.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)) $(TESTING.$(KBUILD_TARGET_ARCH)) $(TESTING.$(KBUILD_TARGET_CPU))
+
 
 #
 # PACKING
 #
-_PACKING += $(PACKING) $(PACKING.$(KBUILD_TARGET)) $(PACKING.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))
+_PACKING += $(PACKING) $(PACKING.$(KBUILD_TARGET)) $(PACKING.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)) $(PACKING.$(KBUILD_TARGET_ARCH)) $(PACKING.$(KBUILD_TARGET_CPU))
 
 
 #
@@ -3160,6 +3202,52 @@ do-clean:
 # PASSES (including directory and makefile walking)
 #
 
+#
+# First, check whether we need to order the passes explicitly or not.
+# This depends on whether we're a leaf makefile or not. A leaf will
+# know all its dependencies, while a recursive one relies on the
+# order sub-directories and other makefiles are executed it.
+#
+
+## Setup a pass and check for optimizations.
+# @param	$(PASS)		Uppercase pass name.
+define def_pass_setup_and_optimize
+
+# The setup. ## @todo This is looks a bit weird...
+ifndef SUBDIRS_$(PASS)
+ SUBDIRS_$(PASS)          := $(SUBDIRS)          $(SUBDIRS.$(KBUILD_TARGET))          $(SUBDIRS.$(KBUILD_TARGET.$(KBUILD_TARGET_ARCH)))
+endif
+ifndef SUBDIRS_AFTER_$(PASS)
+ SUBDIRS_AFTER_$(PASS)    := $(SUBDIRS_AFTER)    $(SUBDIRS_AFTER.$(KBUILD_TARGET))    $(SUBDIRS_AFTER.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))
+endif
+ifndef MAKEFILES_BEFORE_$(PASS)
+ MAKEFILES_BEFORE_$(PASS) := $(MAKEFILES_BEFORE) $(MAKEFILES_BEFORE.$(KBUILD_TARGET)) $(MAKEFILES_BEFORE.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))
+endif
+ifndef MAKEFILES_AFTER_$(PASS)
+ MAKEFILES_AFTER_$(PASS)  := $(MAKEFILES_AFTER)  $(MAKEFILES_AFTER.$(KBUILD_TARGET))  $(MAKEFILES_AFTER.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))
+endif
+
+# The check.
+ifeq ($(_KBUILD_STRICT_PASS_ORDER),nonstrict)
+ ifneq ($(strip \
+          $(SUBDIRS_$(PASS))          $(SUBDIRS_$(PASS).$(KBUILD_TARGET))          $(SUBDIRS_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))           \
+          $(MAKEFILES_BEFORE_$(PASS)) $(MAKEFILES_BEFORE_$(PASS).$(KBUILD_TARGET)) $(MAKEFILES_BEFORE_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))  \
+          $(SUBDIRS_AFTER_$(PASS))    $(SUBDIRS_AFTER_$(PASS).$(KBUILD_TARGET))    $(SUBDIRS_AFTER_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))     \
+          $(MAKEFILES_AFTER_$(PASS))  $(MAKEFILES_AFTER_$(PASS).$(KBUILD_TARGET))  $(MAKEFILES_AFTER_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))   \
+         ),)
+  _KBUILD_STRICT_PASS_ORDER := strict
+ endif
+endif # _KBUILD_STRICT_PASS_ORDER == nonstrict
+endef # def_pass_setup_and_optimize
+
+## PASS: Setup & optimization.
+# Check if we can apply the non-strict pass order optimzation (no SUBDIRS_* and MAKEFILES_*),
+# and set up the pass specific variables as we go along.
+_KBUILD_STRICT_PASS_ORDER := nonstrict
+$(foreach PASS, $(PASSES), $(evalval def_pass_setup_and_optimize))
+#$ (error _KBUILD_STRICT_PASS_ORDER=$(_KBUILD_STRICT_PASS_ORDER))
+
+
 ## Subdir
 # @param	$(pass)		Lowercase pass name.
 # @param	$(PASS)		Uppercase pass name.
@@ -3173,96 +3261,76 @@ endef
 ## Submakefile
 # @param	$(pass)		Lowercase pass name.
 # @param	$(PASS)		Uppercase pass name.
-# @param	$(makefile) Makefile.
+# @param	$(makefile)	Makefile.
 # @param	$(tag)		tag to attach to the rule name.
 define def_pass_makefile
 pass_$(pass)$(tag):: $(dep)
 	+ $$(QUIET)$$(MAKE) -C $(patsubst %/,%,$(dir $(makefile))) -f $(notdir $(makefile)) pass_$(pass)
 endef
 
-## Execute a pass.
+## Execute a pass, strict order.
 # @param	$(pass)		Lowercase pass name.
 # @param	$(PASS)		Uppercase pass name.
-define def_pass_old
-$(eval SUBDIRS_$(PASS)          ?= $(SUBDIRS)          $(SUBDIRS.$(KBUILD_TARGET))           $(SUBDIRS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))          )
-$(eval SUBDIRS_AFTER_$(PASS)    ?= $(SUBDIRS_AFTER)    $(SUBDIRS_AFTER.$(KBUILD_TARGET))     $(SUBDIRS_AFTER.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))    )
-$(eval MAKEFILES_BEFORE_$(PASS) ?= $(MAKEFILES_BEFORE) $(MAKEFILES_BEFORE.$(KBUILD_TARGET))  $(MAKEFILES_BEFORE.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)) )
-$(eval MAKEFILES_AFTER_$(PASS)  ?= $(MAKEFILES_AFTER)  $(MAKEFILES_AFTER.$(KBUILD_TARGET))   $(MAKEFILES_AFTER.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))  )
-
+define def_pass_strict
 $(eval tag:=_before)
 $(eval dep:=)
-$(foreach subdir,$(SUBDIRS_$(PASS))            $(SUBDIRS_$(PASS).$(KBUILD_TARGET))           $(SUBDIRS_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))         ,$(eval $(def_pass_subdir)))
-$(foreach makefile,$(MAKEFILES_BEFORE_$(PASS)) $(MAKEFILES_BEFORE_$(PASS).$(KBUILD_TARGET))  $(MAKEFILES_BEFORE_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)),$(eval $(def_pass_makefile)))
-
-$(eval tag:=_after)
-$(eval dep:=pass_$(pass)_doit)
-$(foreach subdir,$(SUBDIRS_AFTER_$(PASS))      $(SUBDIRS_AFTER_$(PASS).$(KBUILD_TARGET))     $(SUBDIRS_AFTER_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))   ,$(eval $(def_pass_subdir)))
-$(foreach makefile,$(MAKEFILES_AFTER_$(PASS))  $(MAKEFILES_AFTER_$(PASS).$(KBUILD_TARGET))   $(MAKEFILES_AFTER_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)) ,$(eval $(def_pass_makefile)))
-
-.NOTPARALLEL: pass_$(pass)_before pass_$(pass)_after
-.PHONY: pass_$(pass) pass_$(pass)_before pass_$(pass)_doit pass_$(pass)_after
-pass_$(pass)_doit: 	$(PASS_$(PASS)_trgs) $(foreach var,$(PASS_$(PASS)_vars),$(var))
-pass_$(pass)_this:      pass_$(pass)_before
-	+ $$(QUIET)$$(MAKE) -f $$(MAKEFILE) pass_$(pass)_doit
-pass_$(pass)_after::    pass_$(pass)_this
-pass_$(pass):           pass_$(pass)_after
-
-endef
-
-define def_pass
-$(eval SUBDIRS_$(PASS)          ?= $(SUBDIRS)          $(SUBDIRS.$(KBUILD_TARGET))          $(SUBDIRS.$(KBUILD_TARGET.$(KBUILD_TARGET_ARCH)))          )
-$(eval SUBDIRS_AFTER_$(PASS)    ?= $(SUBDIRS_AFTER)    $(SUBDIRS_AFTER.$(KBUILD_TARGET))    $(SUBDIRS_AFTER.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))    )
-$(eval MAKEFILES_BEFORE_$(PASS) ?= $(MAKEFILES_BEFORE) $(MAKEFILES_BEFORE.$(KBUILD_TARGET)) $(MAKEFILES_BEFORE.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)) )
-$(eval MAKEFILES_AFTER_$(PASS)  ?= $(MAKEFILES_AFTER)  $(MAKEFILES_AFTER.$(KBUILD_TARGET))  $(MAKEFILES_AFTER.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))  )
-
-$(eval tag:=_before)
-$(eval dep:=)
-$(foreach subdir,$(SUBDIRS_$(PASS))            $(SUBDIRS_$(PASS).$(KBUILD_TARGET))          $(SUBDIRS_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))         ,$(eval $(def_pass_subdir)))
+$(foreach subdir,  $(SUBDIRS_$(PASS))          $(SUBDIRS_$(PASS).$(KBUILD_TARGET))          $(SUBDIRS_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))         ,$(eval $(def_pass_subdir)))
 $(foreach makefile,$(MAKEFILES_BEFORE_$(PASS)) $(MAKEFILES_BEFORE_$(PASS).$(KBUILD_TARGET)) $(MAKEFILES_BEFORE_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)),$(eval $(def_pass_makefile)))
 
 $(eval tag:=_after)
 $(eval dep:=pass_$(pass)_doit)
-$(foreach subdir,$(SUBDIRS_AFTER_$(PASS))      $(SUBDIRS_AFTER_$(PASS).$(KBUILD_TARGET))    $(SUBDIRS_AFTER_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))   ,$(eval $(def_pass_subdir)))
+$(foreach subdir,  $(SUBDIRS_AFTER_$(PASS))    $(SUBDIRS_AFTER_$(PASS).$(KBUILD_TARGET))    $(SUBDIRS_AFTER_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))   ,$(eval $(def_pass_subdir)))
 $(foreach makefile,$(MAKEFILES_AFTER_$(PASS))  $(MAKEFILES_AFTER_$(PASS).$(KBUILD_TARGET))  $(MAKEFILES_AFTER_$(PASS).$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)) ,$(eval $(def_pass_makefile)))
 
 ifdef KBUILD_SAFE_PARALLEL
 .NOTPARALLEL: pass_$(pass) pass_$(pass)_before pass_$(pass)_after pass_$(pass)_this
 .PHONY:       pass_$(pass) pass_$(pass)_before pass_$(pass)_after pass_$(pass)_this pass_$(pass)_doit
-pass_$(pass)_doit: 	    $(PASS_$(PASS)_trgs) $(foreach var,$(PASS_$(PASS)_vars),$(var))
+pass_$(pass)_doit:      $(PASS_$(PASS)_trgs) $(foreach var,$(PASS_$(PASS)_vars),$(var))
 pass_$(pass)_this:      pass_$(pass)_before
 	+ $$(QUIET)$$(MAKE) -f $$(MAKEFILE) pass_$(pass)_doit
 pass_$(pass)_after::    pass_$(pass)_this
 pass_$(pass):           pass_$(pass)_after
-else
-.NOTPARALLEL: pass_$(pass) pass_$(pass)_before pass_$(pass)_after pass_$(pass)_doit
+else  # !KBUILD_SAFE_PARALLEL
 .PHONY:       pass_$(pass) pass_$(pass)_before pass_$(pass)_after pass_$(pass)_doit
+.NOTPARALLEL: pass_$(pass) pass_$(pass)_before pass_$(pass)_after pass_$(pass)_doit
 pass_$(pass)_doit: pass_$(pass)_before \
 		$(PASS_$(PASS)_trgs) $(foreach var,$(PASS_$(PASS)_vars),$($(var)))
 pass_$(pass): \
 		pass_$(pass)_before \
 		pass_$(pass)_doit \
-        pass_$(pass)_after
-endif
+		pass_$(pass)_after
+endif # !KBUILD_SAFE_PARALLEL
 
 #$ (warning pass=$(pass) PASS=$(PASS): $(PASS_$(PASS)_trgs) $(PASS_$(PASS)_trgs) $(foreach var,$(PASS_$(PASS)_vars),$($(var))))
-endef
+endef # def_pass_strict
 
-# Generate the defined passes.
+## Execute a pass, non-strict pass ordering.
+# @param	$(pass)		Lowercase pass name.
+# @param	$(PASS)		Uppercase pass name.
+define def_pass_nonstrict
+.PHONY:       pass_$(pass) pass_$(pass)_before pass_$(pass)_after pass_$(pass)_doit
+pass_$(pass)_doit: $(PASS_$(PASS)_trgs) $(foreach var,$(PASS_$(PASS)_vars),$($(var)))
+pass_$(pass):	pass_$(pass)_doit
+endef # def_pass_nonstrict
+
+## PASS: rules
+# Generate the rules for the defined passes.
 $(foreach PASS, $(PASSES), \
 	$(eval pass := $(PASS_$(PASS)_pass)) \
-	$(eval $(def_pass)))
+	$(eval $(def_pass_$(_KBUILD_STRICT_PASS_ORDER))))
 
-## Pass order
+
+## Pass order, strict.
 # @param	$(pass)		Current pass name.
 # @param	$(prev_pass)	The previous pass name.
-define def_pass_order
+define def_pass_order_strict
 ifdef KBUILD_SAFE_PARALLEL
+.PHONY:       pass_$(pass)_order
 .NOTPARALLEL: pass_$(pass)_order
-.PHONY: pass_$(pass)_order
 pass_$(pass)_order: $(pass_prev)
 	%$$(call MSG_PASS,$$(if $$(PASS_$(PASS)),$$(PASS_$(PASS)),$(pass)))
 	+ $$(QUIET)$$(MAKE) -f $$(MAKEFILE) pass_$(pass)
-else
+else  # !KBUILD_SAFE_PARALLEL
 .NOTPARALLEL: pass_$(pass)_order pass_$(pass)_banner
 .PHONY:       pass_$(pass)_order pass_$(pass)_banner
 pass_$(pass)_banner:
@@ -3271,16 +3339,30 @@ pass_$(pass)_order: \
 		$(pass_prev) \
 		pass_$(pass)_banner \
 		pass_$(pass)
-endif
+endif # !KBUILD_SAFE_PARALLEL
 $(eval pass_prev := pass_$(pass)_order)
-endef
+endef # def_pass_order_strict
+
+## Pass order, non-strict.
+# @param	$(pass)		Current pass name.
+# @param	$(prev_pass)	The previous pass name.
+define def_pass_order_nonstrict
+.PHONY:       pass_$(pass)_order pass_$(pass)_banner
+pass_$(pass)_banner:
+	%$$(call MSG_PASS,$$(if $$(PASS_$(PASS)),$$(PASS_$(PASS)),$(pass)))
+pass_$(pass)_order: \
+		$(pass_prev) \
+		pass_$(pass)_banner \
+		pass_$(pass)
+$(eval pass_prev := pass_$(pass)_order)
+endef # def_pass_order_nonstrict
 
 ## PASS: order
 # Use dependencies to ensure correct pass order.
 pass_prev :=
 $(foreach PASS,$(DEFAULT_PASSES),\
 	$(eval pass := $(PASS_$(PASS)_pass)) \
-	$(eval $(def_pass_order)))
+	$(eval $(def_pass_order_$(_KBUILD_STRICT_PASS_ORDER))))
 
 ifdef KBUILD_PROFILE_SELF
  _KBUILD_TS_NOW := $(nanots )
@@ -3320,6 +3402,7 @@ installs:  $(_INSTALLS) $(_INSTALLS_DIRS) $(_INSTALLS_FILES)
 #
 # kBuild debugging stuff.
 #
+## @todo this doesn't work. Move to a debug unit and expand it.
 show_targets:
 	@$(foreach target, $(_ALL_TARGETS),\
 	@$(ECHO) "target: $(target)" $(NLTAB)\

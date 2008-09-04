@@ -18,10 +18,10 @@
 
 [Version]
 Signature="$WINDOWS NT$"
-Provider=%Provider%
+Provider=%SUN%
 ClassGUID={4D36E968-E325-11CE-BFC1-08002BE10318}
 Class=Display
-;cat DriverVer = 05/17/2007,1.04.0000
+;edit-DriverVer=08/26/2008,2.00.0000
 ;cat CatalogFile = VBoxVideo.cat
 
 [DestinationDirs]
@@ -30,22 +30,25 @@ VBoxVideo.Miniport = 12 ; drivers
 VBoxVideo.Display  = 11 ; system32
 
 [Manufacturer]
-%Provider%=Model
+;x86   %SUN%=Model
+;amd64 %SUN%=Model, NTamd64.6.0
 
-[Model]
+;x86   [Model]
+;amd64 [Model.NTamd64.6.0]
 %VBoxVideo.SvcDesc% = VBoxVideo, PCI\VEN_80EE&DEV_BEEF
 
 [VBoxVideo]
-CopyFiles=VBoxVideo.Miniport, VBoxVideo.Display
+;amd64 FeatureScore = F8
+CopyFiles = VBoxVideo.Miniport, VBoxVideo.Display
 
 [VBoxVideo.Miniport]
-VBoxVideo.sys
+VBoxVideo.sys,,,0x100
 
 [VBoxVideo.Display]
-VBoxDisp.dll
+VBoxDisp.dll,,,0x00004000  ; COPYFLG_IN_USE_TRY_RENAME
 
 [VBoxVideo.Services]
-AddService=vboxvideo, 0x00000002, vboxvideo_Service_Inst, vboxvideo_EventLog_Inst
+AddService=VBoxVideo, 0x00000002, vboxvideo_Service_Inst, vboxvideo_EventLog_Inst
 
 [vboxvideo_Service_Inst]
 ServiceType=1                   ; SERVICE_KERNEL_DRIVER
@@ -72,7 +75,8 @@ HKR,, VgaCompatible, %REG_DWORD%, 0
 
 [VBoxVideo.OpenGLSoftwareSettings]
 
-[SourceDisksNames]
+;x86   [SourceDisksNames]
+;amd64 [SourceDisksNames.amd64]
 1 = %VBoxVideo.Disk%,,,""
 2 = %VBoxVideo.Disk%,,,""
 
@@ -87,6 +91,6 @@ REG_EXPAND_SZ = 0x00020000
 REG_BINARY = 0x00000001
 REG_DWORD = 0x00010001
 
-Provider = "Sun Microsystems, Inc."
+SUN = "Sun Microsystems, Inc."
 VBoxVideo.Disk = "VirtualBox Video Driver Disk"
 VBoxVideo.SvcDesc = "VirtualBox Graphics Adapter"

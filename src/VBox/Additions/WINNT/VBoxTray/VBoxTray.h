@@ -1,7 +1,6 @@
+/* $Id: VBoxTray.h 33579 2008-07-22 09:00:44Z bird $ */
 /** @file
- *
- * VBoxService - Guest Additions Service
- *
+ * VBoxService - Guest Additions Service, Internal Header.
  */
 
 /*
@@ -19,9 +18,9 @@
  * Clara, CA 95054 USA or visit http://www.sun.com if you need
  * additional information or have any questions.
  */
- 
-#ifndef __VBOXSERVICE__H
-#define __VBOXSERVICE__H
+
+#ifndef ___VBOXTRAY_H
+#define ___VBOXTRAY_H
 
 #include <windows.h>
 #include <tchar.h>
@@ -29,9 +28,12 @@
 #include <stdarg.h>
 #include <process.h>
 
-#include <VBox/VBoxGuest.h>
-#include <VBox/version.h>
+#include <iprt/initterm.h>
+#include <iprt/string.h>
 
+#include <VBox/version.h>
+#include <VBox/VBoxGuest.h>
+#include <VBox/Log.h>
 
 #define WM_VBOX_RESTORED                     0x2005
 #define WM_VBOX_CHECK_VRDP                   0x2006
@@ -57,10 +59,11 @@ typedef struct _VBOXSERVICEINFO
     HANDLE hThread;
     void  *pInstance;
     bool   fStarted;
-        
+
 } VBOXSERVICEINFO;
 
 
 extern HWND  gToolWindow;
 
-#endif /* __VBOXSERVICE__H */
+#endif /* !___VBOXTRAY_H */
+

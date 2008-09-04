@@ -17,6 +17,15 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+
+/*
+ * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -504,7 +513,7 @@ void cpu_x86_update_cr0(CPUX86State *env, uint32_t new_cr0)
     int pe_state;
 
 #if defined(DEBUG_MMU)
-    printf("CR0 update: CR0=0x%08x\n", new_cr0);
+    printf("CR0 update: CR0 %x->0x%08x efer=%x\n", (uint32_t)env->cr[0], new_cr0, env->efer);
 #endif
     if ((new_cr0 & (CR0_PG_MASK | CR0_WP_MASK | CR0_PE_MASK)) !=
         (env->cr[0] & (CR0_PG_MASK | CR0_WP_MASK | CR0_PE_MASK))) {
@@ -559,7 +568,7 @@ void cpu_x86_update_cr3(CPUX86State *env, target_ulong new_cr3)
 void cpu_x86_update_cr4(CPUX86State *env, uint32_t new_cr4)
 {
 #if defined(DEBUG_MMU)
-    printf("CR4 update: CR4=%08x\n", (uint32_t)env->cr[4]);
+    printf("CR4 update: CR4=%08x -> %08x\n", (uint32_t)env->cr[4], (uint32_t)new_cr4);
 #endif
     if ((new_cr4 & (CR4_PGE_MASK | CR4_PAE_MASK | CR4_PSE_MASK)) !=
         (env->cr[4] & (CR4_PGE_MASK | CR4_PAE_MASK | CR4_PSE_MASK))) {

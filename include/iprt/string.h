@@ -139,6 +139,39 @@ RTDECL(char *) RTStrDup(const char *pszString);
 RTDECL(int)  RTStrDupEx(char **ppszString, const char *pszString);
 
 /**
+ * Validates the UTF-8 encoding of the string.
+ *
+ * @returns iprt status code.
+ * @param   psz         The string.
+ */
+RTDECL(int) RTStrValidateEncoding(const char *psz);
+
+/** @name Flags for RTStrValidateEncodingEx
+ */
+/** Check that the string is zero terminated within the given size.
+ * VERR_BUFFER_OVERFLOW will be returned if the check fails. */
+#define RTSTR_VALIDATE_ENCODING_ZERO_TERMINATED     RT_BIT_32(0)
+/** @} */
+
+/**
+ * Validates the UTF-8 encoding of the string.
+ *
+ * @returns iprt status code.
+ * @param   psz         The string.
+ * @param   cch         The max string length. Use RTSTR_MAX to process the entire string.
+ * @param   fFlags      Teserved for future. Pass 0.
+ */
+RTDECL(int) RTStrValidateEncodingEx(const char *psz, size_t cch, uint32_t fFlags);
+
+/**
+ * Checks if the UTF-8 encoding is valid.
+ *
+ * @returns true / false.
+ * @param   psz         The string.
+ */
+RTDECL(bool) RTStrIsValidEncoding(const char *psz);
+
+/**
  * Gets the number of code points the string is made up of, excluding
  * the terminator.
  *
@@ -1120,6 +1153,39 @@ RTDECL(int) RTStrCmp(const char *psz1, const char *psz2);
  * @param   psz2        Second UTF-8 string. Null is allowed.
  */
 RTDECL(int) RTStrICmp(const char *psz1, const char *psz2);
+
+/**
+ * Find the length of a zero-terminated byte string, given
+ * a max string length.
+ *
+ * See also RTStrNLenEx.
+ *
+ * @returns The string length or cbMax. The returned length does not include
+ *          the zero terminator if it was found.
+ *
+ * @param   pszString   The string.
+ * @param   cchMax      The max string length.
+ */
+RTDECL(size_t) RTStrNLen(const char *pszString, size_t cchMax);
+
+/**
+ * Find the length of a zero-terminated byte string, given
+ * a max string length.
+ *
+ * See also RTStrNLen.
+ *
+ * @returns IPRT status code.
+ * @retval  VINF_SUCCESS if the string has a length less than cchMax.
+ * @retval  VERR_BUFFER_OVERFLOW if the end of the string wasn't found
+ *          before cchMax was reached.
+ *
+ * @param   pszString   The string.
+ * @param   cchMax      The max string length.
+ * @param   pcch        Where to store the string length excluding the
+ *                      terminator. This is set to cchMax if the terminator
+ *                      isn't found.
+ */
+RTDECL(int) RTStrNLenEx(const char *pszString, size_t cchMax, size_t *pcch);
 
 /** @} */
 

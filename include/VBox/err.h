@@ -69,6 +69,10 @@
 #define VERR_INVALID_SELECTOR               (-1011)
 /** Invalid requested privilegde level. */
 #define VERR_INVALID_RPL                    (-1012)
+/** PML4 entry not present. */
+#define VERR_PAGE_MAP_LEVEL4_NOT_PRESENT    (-1013)
+/** Page directory pointer not present. */
+#define VERR_PAGE_DIRECTORY_PTR_NOT_PRESENT (-1014)
 /** @} */
 
 
@@ -406,6 +410,8 @@
  * this and we'll adjust the code so it tries harder to avoid it.
  */
 #define VERR_PGM_INTERMEDIATE_PAGING_CONFLICT   (-1627)
+/** The shadow paging mode is not supported yet. */
+#define VERR_PGM_UNSUPPORTED_SHADOW_PAGING_MODE (-1628)
 
 /** @} */
 
@@ -435,9 +441,9 @@
 #define VERR_SSM_INTEGRITY                  (-1810)
 /** The saved state file magic was not recognized. */
 #define VERR_SSM_INTEGRITY_MAGIC            (-1811)
-/** The saved state file magic was not recognized. */
+/** The saved state file version is not supported. */
 #define VERR_SSM_INTEGRITY_VERSION          (-1812)
-/** The saved state file magic was not recognized. */
+/** The saved state file size didn't match the one in the header. */
 #define VERR_SSM_INTEGRITY_SIZE             (-1813)
 /** The CRC of the saved state file did match. */
 #define VERR_SSM_INTEGRITY_CRC              (-1814)
@@ -1042,6 +1048,12 @@
 #define VERR_VDI_BLOCK_FREE                         (-3215)
 /** Configuration value not found. */
 #define VERR_VDI_VALUE_NOT_FOUND                    (-3216)
+/** Configuration value is unknown. This indicates misconfiguration. */
+#define VERR_VDI_UNKNOWN_CFG_VALUES                 (-3217)
+/** Asynchronous I/O request finished. */
+#define VINF_VDI_ASYNC_IO_FINISHED                  3218
+/** Asynchronous I/O is not finished yet. */
+#define VERR_VDI_ASYNC_IO_IN_PROGRESS               (-3219)
 /** @} */
 
 
@@ -1093,6 +1105,83 @@
 /** @} */
 
 
+/** @name Internal Networking Status Codes
+ * @{
+ */
+/** The networking interface to filter was not found. */
+#define VERR_INTNET_FLT_IF_NOT_FOUND                (-3600)
+/** The networking interface to filter was busy (used by someone). */
+#define VERR_INTNET_FLT_IF_BUSY                     (-3601)
+/** Failed to create or connect to a networking interface filter. */
+#define VERR_INTNET_FLT_IF_FAILED                   (-3602)
+/** The network already exists with a different trunk configuration. */
+#define VERR_INTNET_INCOMPATIBLE_TRUNK              (-3603)
+/** The network already exists with a different security profile (restricted / public). */
+#define VERR_INTNET_INCOMPATIBLE_FLAGS              (-3604)
+/** @} */
+
+
+/** @name Support Driver Status Codes
+ * @{
+ */
+/** The component factory was not found. */
+#define VERR_SUPDRV_COMPONENT_NOT_FOUND             (-3700)
+/** The component factories do not support the requested interface. */
+#define VERR_SUPDRV_INTERFACE_NOT_SUPPORTED         (-3701)
+/** @} */
+
+
+/** @name VBox GMM Status Codes
+ * @{
+ */
+/** The GMM is out of pages and needs to be give another chunk of user memory that
+ * it can lock down and borrow pages from. */
+#define VERR_GMM_SEED_ME                            (-3800)
+/** Unable to allocate more pages from the host system. */
+#define VERR_GMM_OUT_OF_MEMORY                      (-3801)
+/** Hit the global allocation limit.
+ * If you know there is still sufficient memory available, try raise the limit. */
+#define VERR_GMM_HIT_GLOBAL_LIMIT                   (-3802)
+/** Hit the a VM account limit. */
+#define VERR_GMM_HIT_VM_ACCOUNT_LIMIT               (-3803)
+/** Attempt to free more memory than what was previously allocated. */
+#define VERR_GMM_ATTEMPT_TO_FREE_TOO_MUCH           (-3804)
+/** Attempted to report too many pages as deflated.  */
+#define VERR_GMM_ATTEMPT_TO_DEFLATE_TOO_MUCH        (-3805)
+/** The page to be freed or updated was not found. */
+#define VERR_GMM_PAGE_NOT_FOUND                     (-3806)
+/** The specified shared page was not actually private. */
+#define VERR_GMM_PAGE_NOT_PRIVATE                   (-3807)
+/** The specified shared page was not actually shared. */
+#define VERR_GMM_PAGE_NOT_SHARED                    (-3808)
+/** The page to be freed was already freed. */
+#define VERR_GMM_PAGE_ALREADY_FREE                  (-3809)
+/** The page to be updated or freed was noted owned by the caller. */
+#define VERR_GMM_NOT_PAGE_OWNER                     (-3810)
+/** The specified chunk was not found. */
+#define VERR_GMM_CHUNK_NOT_FOUND                    (-3811)
+/** The chunk has already been mapped into the process. */
+#define VERR_GMM_CHUNK_ALREADY_MAPPED               (-3812)
+/** The chunk to be unmapped isn't actually mapped into the process. */
+#define VERR_GMM_CHUNK_NOT_MAPPED                   (-3813)
+/** The reservation or reservation update was declined - too many VMs, too
+ * little memory, and/or too low GMM configuration. */
+#define VERR_GMM_MEMORY_RESERVATION_DECLINED        (-3814)
+/** @} */
+
+
+/** @name VBox GVM Status Codes
+ * @{
+ */
+/** The GVM is out of VM handle space. */
+#define VERR_GVM_TOO_MANY_VMS                       (-3900)
+/** The EMT thread was not blocked at the time of the call.  */
+#define VINF_GVM_NOT_BLOCKED                        3901
+/** RTThreadYield was called during a GVMMR0ShcedPoll call. */
+#define VINF_GVM_YIELDED                            3902
+/** @} */
+
+
 /** @name VBox VMX Status Codes
  * @{
  */
@@ -1126,6 +1215,7 @@
 #define VERR_VMX_MSR_LOCKED_OR_DISABLED             (-4013)
 /** @} */
 
+
 /** @name VBox SVM Status Codes
  * @{
  */
@@ -1139,6 +1229,7 @@
 #define VERR_SVM_DISABLED                           (-4053)
 /** @} */
 
+
 /** @name VBox HWACCM Status Codes
  * @{
  */
@@ -1148,77 +1239,30 @@
 #define VERR_HWACCM_NO_CPUID                        (-4101)
 /** @} */
 
-/** @name VBox GMM Status Codes
- * @{
- */
-/** The GMM is out of pages and needs to be give another chunk of user memory that
- * it can lock down and borrow pages from. */
-#define VERR_GMM_SEED_ME                            (-4150)
-/** Unable to allocate more pages from the host system. */
-#define VERR_GMM_OUT_OF_MEMORY                      (-4151)
-/** Hit the global allocation limit.
- * If you know there is still sufficient memory available, try raise the limit. */
-#define VERR_GMM_HIT_GLOBAL_LIMIT                   (-4152)
-/** Hit the a VM account limit. */
-#define VERR_GMM_HIT_VM_ACCOUNT_LIMIT               (-4153)
-/** Attempt to free more memory than what was previously allocated. */
-#define VERR_GMM_ATTEMPT_TO_FREE_TOO_MUCH           (-4154)
-/** Attempted to report too many pages as deflated.  */
-#define VERR_GMM_ATTEMPT_TO_DEFLATE_TOO_MUCH        (-4155)
-/** The page to be freed or updated was not found. */
-#define VERR_GMM_PAGE_NOT_FOUND                     (-4156)
-/** The specified shared page was not actually private. */
-#define VERR_GMM_PAGE_NOT_PRIVATE                   (-4157)
-/** The specified shared page was not actually shared. */
-#define VERR_GMM_PAGE_NOT_SHARED                    (-4158)
-/** The page to be freed was already freed. */
-#define VERR_GMM_PAGE_ALREADY_FREE                  (-4159)
-/** The page to be updated or freed was noted owned by the caller. */
-#define VERR_GMM_NOT_PAGE_OWNER                     (-4160)
-/** The specified chunk was not found. */
-#define VERR_GMM_CHUNK_NOT_FOUND                    (-4161)
-/** The chunk has already been mapped into the process. */
-#define VERR_GMM_CHUNK_ALREADY_MAPPED               (-4162)
-/** The chunk to be unmapped isn't actually mapped into the process. */
-#define VERR_GMM_CHUNK_NOT_MAPPED                   (-4163)
-/** The reservation or reservation update was declined - too many VMs, too
- * little memory, and/or too low GMM configuration. */
-#define VERR_GMM_MEMORY_RESERVATION_DECLINED        (-4164)
-/** @} */
-
-/** @name VBox GVM Status Codes
- * @{
- */
-/** The GVM is out of VM handle space. */
-#define VERR_GVM_TOO_MANY_VMS                       (-4200)
-/** The EMT thread was not blocked at the time of the call.  */
-#define VINF_GVM_NOT_BLOCKED                        4201
-/** RTThreadYield was called during a GVMMR0ShcedPoll call. */
-#define VINF_GVM_YIELDED                            4202
-/** @} */
 
 /** @name VBox Disassembler Status Codes
  * @{
  */
 /** Invalid opcode byte(s) */
-#define VERR_DIS_INVALID_OPCODE                     (-5000)
+#define VERR_DIS_INVALID_OPCODE                     (-4200)
 /** Generic failure during disassembly. */
-#define VERR_DIS_GEN_FAILURE                        (-5001)
+#define VERR_DIS_GEN_FAILURE                        (-4201)
 /** @} */
+
 
 /** @name VBox Webservice Status Codes
  * @{
  */
 /** Authentication failed (ISessionManager::logon()) */
-#define VERR_WEB_NOT_AUTHENTICATED                  (-6000)
+#define VERR_WEB_NOT_AUTHENTICATED                  (-4300)
 /** Invalid format of managed object reference */
-#define VERR_WEB_INVALID_MANAGED_OBJECT_REFERENCE   (-6001)
+#define VERR_WEB_INVALID_MANAGED_OBJECT_REFERENCE   (-4301)
 /** Invalid session ID in managed object reference */
-#define VERR_WEB_INVALID_SESSION_ID                 (-6002)
+#define VERR_WEB_INVALID_SESSION_ID                 (-4302)
 /** Invalid object ID in managed object reference */
-#define VERR_WEB_INVALID_OBJECT_ID                  (-6003)
+#define VERR_WEB_INVALID_OBJECT_ID                  (-4303)
 /** Unsupported interface for managed object reference */
-#define VERR_WEB_UNSUPPORTED_INTERFACE              (-6004)
+#define VERR_WEB_UNSUPPORTED_INTERFACE              (-4304)
 /** @} */
 
 /* SED-END */

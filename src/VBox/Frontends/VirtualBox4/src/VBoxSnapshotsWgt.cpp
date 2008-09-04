@@ -139,7 +139,9 @@ public:
 
     void updateCurrentState (KMachineState aState)
     {
-        AssertReturn (!mMachine.isNull(), (void) 0);
+        if (mMachine.isNull())
+            return;
+
         setIcon (0, vboxGlobal().toIcon (aState));
         mMachineState = aState;
         mTimestamp.setTime_t (mMachine.GetLastStateChange() / 1000);
@@ -264,7 +266,7 @@ VBoxSnapshotsWgt::VBoxSnapshotsWgt (QWidget *aParent)
     /* ToolBar creation */
     VBoxToolBar *toolBar = new VBoxToolBar (this);
     toolBar->setUsesTextLabel (false);
-    toolBar->setUsesBigPixmaps (true);
+    toolBar->setIconSize (QSize (22, 22));
     toolBar->setSizePolicy (QSizePolicy::Fixed, QSizePolicy::Fixed);
 
     toolBar->addAction (mTakeSnapshotAction);
@@ -275,10 +277,6 @@ VBoxSnapshotsWgt::VBoxSnapshotsWgt (QWidget *aParent)
     toolBar->addAction (mShowSnapshotDetailsAction);
 
     ((QVBoxLayout*)layout())->insertWidget (0, toolBar);
-
-#ifdef Q_WS_MAC
-    toolBar->setMacStyle();
-#endif
 
     /* Setup actions */
     mDiscardSnapshotAction->setIcon (VBoxGlobal::iconSetEx (
@@ -311,15 +309,15 @@ VBoxSnapshotsWgt::VBoxSnapshotsWgt (QWidget *aParent)
     connect (mTreeWidget, SIGNAL (itemChanged (QTreeWidgetItem*, int)),
              this, SLOT (onItemChanged (QTreeWidgetItem*, int)));
 
-    connect (mDiscardSnapshotAction, SIGNAL (activated()),
+    connect (mDiscardSnapshotAction, SIGNAL (triggered()),
              this, SLOT (discardSnapshot()));
-    connect (mTakeSnapshotAction, SIGNAL (activated()),
+    connect (mTakeSnapshotAction, SIGNAL (triggered()),
              this, SLOT (takeSnapshot()));
-    connect (mRevertToCurSnapAction, SIGNAL (activated()),
+    connect (mRevertToCurSnapAction, SIGNAL (triggered()),
              this, SLOT (discardCurState()));
-    connect (mDiscardCurSnapAndStateAction, SIGNAL (activated()),
+    connect (mDiscardCurSnapAndStateAction, SIGNAL (triggered()),
              this, SLOT (discardCurSnapAndState()));
-    connect (mShowSnapshotDetailsAction, SIGNAL (activated()),
+    connect (mShowSnapshotDetailsAction, SIGNAL (triggered()),
              this, SLOT (showSnapshotDetails()));
 
     connect (&vboxGlobal(), SIGNAL (machineDataChanged (const VBoxMachineDataChangeEvent&)),
@@ -328,8 +326,10 @@ VBoxSnapshotsWgt::VBoxSnapshotsWgt (QWidget *aParent)
              this, SLOT (machineStateChanged (const VBoxMachineStateChangeEvent&)));
     connect (&vboxGlobal(), SIGNAL (sessionStateChanged (const VBoxSessionStateChangeEvent&)),
              this, SLOT (sessionStateChanged (const VBoxSessionStateChangeEvent&)));
+#if 0
     connect (&vboxGlobal(), SIGNAL (snapshotChanged (const VBoxSnapshotEvent&)),
              this, SLOT (snapshotChanged (const VBoxSnapshotEvent&)));
+#endif
 
     retranslateUi();
 }
@@ -446,8 +446,8 @@ void VBoxSnapshotsWgt::onItemChanged (QTreeWidgetItem *aItem, int)
 
 void VBoxSnapshotsWgt::discardSnapshot()
 {
-    SnapshotWgtItem *item = mTreeWidget->selectedItems().count() ?
-        static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]) : 0;
+    SnapshotWgtItem *item = mTreeWidget->selectedItems().isEmpty() ? 0 :
+        static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]);
     AssertReturn (item, (void) 0);
 
     QUuid snapId = item->snapshotId();
@@ -477,8 +477,8 @@ void VBoxSnapshotsWgt::discardSnapshot()
 
 void VBoxSnapshotsWgt::takeSnapshot()
 {
-    SnapshotWgtItem *item = mTreeWidget->selectedItems().count() ?
-        static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]) : 0;
+    SnapshotWgtItem *item = mTreeWidget->selectedItems().isEmpty() ? 0 :
+        static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]);
     AssertReturn (item, (void) 0);
 
     VBoxTakeSnapshotDlg dlg (this);
@@ -531,8 +531,8 @@ void VBoxSnapshotsWgt::takeSnapshot()
 
 void VBoxSnapshotsWgt::discardCurState()
 {
-    SnapshotWgtItem *item = mTreeWidget->selectedItems().count() ?
-        static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]) : 0;
+    SnapshotWgtItem *item = mTreeWidget->selectedItems().isEmpty() ? 0 :
+        static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]);
     AssertReturn (item, (void) 0);
 
     /* Open a direct session (this call will handle all errors) */
@@ -559,8 +559,8 @@ void VBoxSnapshotsWgt::discardCurState()
 
 void VBoxSnapshotsWgt::discardCurSnapAndState()
 {
-    SnapshotWgtItem *item = mTreeWidget->selectedItems().count() ?
-        static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]) : 0;
+    SnapshotWgtItem *item = mTreeWidget->selectedItems().isEmpty() ? 0 :
+        static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]);
     AssertReturn (item, (void) 0);
 
     /* Open a direct session (this call will handle all errors) */
@@ -587,8 +587,8 @@ void VBoxSnapshotsWgt::discardCurSnapAndState()
 
 void VBoxSnapshotsWgt::showSnapshotDetails()
 {
-    SnapshotWgtItem *item = mTreeWidget->selectedItems().count() ?
-        static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]) : 0;
+    SnapshotWgtItem *item = mTreeWidget->selectedItems().isEmpty() ? 0 :
+        static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]);
     AssertReturn (item, (void) 0);
 
     CSnapshot snap = item->snapshot();
@@ -633,10 +633,11 @@ void VBoxSnapshotsWgt::sessionStateChanged (const VBoxSessionStateChangeEvent &a
         return; /* not interested in other machines */
 
     mSessionState = aE.state;
-    onCurrentChanged (mTreeWidget->selectedItems().count() ?
-                      mTreeWidget->selectedItems() [0] : 0);
+    onCurrentChanged (mTreeWidget->selectedItems().isEmpty() ? 0 :
+                      mTreeWidget->selectedItems() [0]);
 }
 
+#if 0
 void VBoxSnapshotsWgt::snapshotChanged (const VBoxSnapshotEvent &aE)
 {
     SnapshotEditBlocker guardBlock (mEditProtector);
@@ -663,23 +664,35 @@ void VBoxSnapshotsWgt::snapshotChanged (const VBoxSnapshotEvent &aE)
         }
     }
 }
+#endif
 
 void VBoxSnapshotsWgt::retranslateUi()
 {
     /* Translate uic generated strings */
     Ui::VBoxSnapshotsWgt::retranslateUi (this);
 
-    mDiscardSnapshotAction->setText ("&Discard Snapshot");
-    mTakeSnapshotAction->setText ("Take &Snapshot");
-    mRevertToCurSnapAction->setText ("&Revert to Current Snapshot");
-    mDiscardCurSnapAndStateAction->setText ("D&iscard Current Snapshot and State");
-    mShowSnapshotDetailsAction->setText ("S&how Details");
+    mDiscardSnapshotAction->setText (tr ("&Discard Snapshot"));
+    mTakeSnapshotAction->setText (tr ("Take &Snapshot"));
+    mRevertToCurSnapAction->setText (tr ("&Revert to Current Snapshot"));
+    mDiscardCurSnapAndStateAction->setText (tr ("D&iscard Current Snapshot and State"));
+    mShowSnapshotDetailsAction->setText (tr ("S&how Details"));
 
-    mDiscardSnapshotAction->setStatusTip ("Discard the selected snapshot of the virtual machine");
-    mTakeSnapshotAction->setStatusTip ("Take a snapshot of the current virtual machine state");
-    mRevertToCurSnapAction->setStatusTip ("Restore the virtual machine state from the state stored in the current snapshot");
-    mDiscardCurSnapAndStateAction->setStatusTip ("Discard the current snapshot and revert the machine to the state it had before the snapshot was taken");
-    mShowSnapshotDetailsAction->setStatusTip ("Show details of the selected snapshot");
+    mDiscardSnapshotAction->setStatusTip (tr ("Discard the selected snapshot of the virtual machine"));
+    mTakeSnapshotAction->setStatusTip (tr ("Take a snapshot of the current virtual machine state"));
+    mRevertToCurSnapAction->setStatusTip (tr ("Restore the virtual machine state from the state stored in the current snapshot"));
+    mDiscardCurSnapAndStateAction->setStatusTip (tr ("Discard the current snapshot and revert the machine to the state it had before the snapshot was taken"));
+    mShowSnapshotDetailsAction->setStatusTip (tr ("Show details of the selected snapshot"));
+
+    mDiscardSnapshotAction->setToolTip (mDiscardSnapshotAction->text().remove ('&').remove ('.') +
+        QString (" (%1)").arg (mDiscardSnapshotAction->shortcut().toString()));
+    mTakeSnapshotAction->setToolTip (mTakeSnapshotAction->text().remove ('&').remove ('.') +
+        QString (" (%1)").arg (mTakeSnapshotAction->shortcut().toString()));
+    mRevertToCurSnapAction->setToolTip (mRevertToCurSnapAction->text().remove ('&').remove ('.') +
+        QString (" (%1)").arg (mRevertToCurSnapAction->shortcut().toString()));
+    mDiscardCurSnapAndStateAction->setToolTip (mDiscardCurSnapAndStateAction->text().remove ('&').remove ('.') +
+        QString (" (%1)").arg (mDiscardCurSnapAndStateAction->shortcut().toString()));
+    mShowSnapshotDetailsAction->setToolTip (mShowSnapshotDetailsAction->text().remove ('&').remove ('.') +
+        QString (" (%1)").arg (mShowSnapshotDetailsAction->shortcut().toString()));
 }
 
 void VBoxSnapshotsWgt::refreshAll (bool aKeepSelected /* = true */)
@@ -689,8 +702,8 @@ void VBoxSnapshotsWgt::refreshAll (bool aKeepSelected /* = true */)
     QUuid selected, selectedFirstChild;
     if (aKeepSelected)
     {
-        SnapshotWgtItem *cur = mTreeWidget->selectedItems().count() ?
-            static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]) : 0;
+        SnapshotWgtItem *cur = mTreeWidget->selectedItems().isEmpty() ? 0 :
+            static_cast<SnapshotWgtItem*> (mTreeWidget->selectedItems() [0]);
         if (cur)
         {
             selected = cur->snapshotId();

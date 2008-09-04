@@ -1,4 +1,4 @@
-/* $Id: DBGF.cpp 30830 2008-05-14 21:51:07Z bird $ */
+/* $Id: DBGF.cpp 35651 2008-08-29 14:09:39Z frank $ */
 /** @file
  * VMM DBGF - Debugger Facility.
  */
@@ -240,7 +240,7 @@ bool dbgfR3WaitForAttach(PVM pVM, DBGFEVENTTYPE enmEvent)
 
     RTStrmPrintf(g_pStdErr, "DBGF: No debugger attached, waiting 15 seconds for one to attach (event=%d)\n", enmEvent);
     RTStrmFlush(g_pStdErr);
-# ifdef DEBUG_sandervl
+# if defined (DEBUG_sandervl) || defined (DEBUG_frank)
     int cWait = 10;
 # else
     int cWait = 150;
@@ -559,9 +559,9 @@ DBGFR3DECL(int) DBGFR3EventBreakpoint(PVM pVM, DBGFEVENTTYPE enmEvent)
 #else
         PCPUMCTX pCtx;
         CPUMQueryGuestCtxPtr(pVM, &pCtx);
-        uint32_t eip = pCtx->eip + pCtx->csHid.u32Base;
+        RTGCPTR eip = pCtx->rip + pCtx->csHid.u64Base;
 #endif
-        for (iBp = 0; iBp < ELEMENTS(pVM->dbgf.s.aBreakpoints); iBp++)
+        for (iBp = 0; iBp < RT_ELEMENTS(pVM->dbgf.s.aBreakpoints); iBp++)
             if (    pVM->dbgf.s.aBreakpoints[iBp].enmType == DBGFBPTYPE_REM
                 &&  pVM->dbgf.s.aBreakpoints[iBp].GCPtr == eip)
             {

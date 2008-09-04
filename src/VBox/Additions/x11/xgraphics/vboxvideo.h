@@ -63,23 +63,25 @@
 #include "xf86_OSproc.h"
 #include "xf86Resources.h"
 
+#ifndef NO_ANSIC
 /* All drivers need this */
-#include "xf86_ansic.h"
+# include "xf86_ansic.h"
+#endif
 
 #include "compiler.h"
 
+#ifndef PCIACCESS
 /* Drivers for PCI hardware need this */
-#include "xf86PciInfo.h"
+# include "xf86PciInfo.h"
+/* Drivers that need to access the PCI config space directly need this */
+# include "xf86Pci.h"
+#endif
 
 #include "vgaHW.h"
-
-/* Drivers that need to access the PCI config space directly need this */
-#include "xf86Pci.h"
 
 /* VBE/DDC support */
 #include "vbe.h"
 #include "vbeModes.h"
-#include "xf86DDC.h"
 
 /* ShadowFB support */
 #include "shadow.h"
@@ -132,8 +134,13 @@ typedef struct _VBOXRec
     vbeInfoPtr pVbe;
     EntityInfoPtr pEnt;
     VbeInfoBlock *vbeInfo;
+#ifdef PCIACCESS
+    struct pci_device *pciInfo;
+    struct pci_device *vmmDevInfo;
+#else
     pciVideoPtr pciInfo;
     PCITAG pciTag;
+#endif
     CARD16 maxBytesPerScanline;
     unsigned long mapPhys, mapOff;
     int mapSize;	/* video memory */
@@ -181,8 +188,10 @@ extern Bool vboxDisableGraphicsCap(VBOXPtr pVBox);
 
 extern Bool vboxGetDisplayChangeRequest(ScrnInfoPtr pScrn, uint32_t *pcx,
                                         uint32_t *pcy, uint32_t *pcBits,
-                                        uint32_t *piDisplay, VBOXPtr pVBox);
+                                        uint32_t *piDisplay);
 
-extern Bool vboxHostLikesVideoMode(uint32_t cx, uint32_t cy, uint32_t cBits);
+extern Bool vboxHostLikesVideoMode(ScrnInfoPtr pScrn, uint32_t cx, uint32_t cy, uint32_t cBits);
+extern Bool vboxSaveVideoMode(ScrnInfoPtr pScrn, uint32_t cx, uint32_t cy, uint32_t cBits);
+extern Bool vboxRetrieveVideoMode(ScrnInfoPtr pScrn, uint32_t *pcx, uint32_t *pcy, uint32_t *pcBits);
 
 #endif /* _VBOXVIDEO_H_ */

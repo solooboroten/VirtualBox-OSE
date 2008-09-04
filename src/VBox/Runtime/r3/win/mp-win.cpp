@@ -1,4 +1,4 @@
-/* $Id: mp-win.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: mp-win.cpp 31680 2008-06-05 15:22:37Z bird $ */
 /** @file
  * IPRT - Multiprocessor, Windows.
  */
@@ -66,7 +66,7 @@ RTDECL(bool) RTMpIsCpuOnline(RTCPUID idCpu)
 }
 
 
-RTDECL(bool) RTMpDoesCpuExist(RTCPUID idCpu)
+RTDECL(bool) RTMpIsCpuPossible(RTCPUID idCpu)
 {
     RTCPUSET Set;
     return RTCpuSetIsMember(RTMpGetSet(&Set), idCpu);

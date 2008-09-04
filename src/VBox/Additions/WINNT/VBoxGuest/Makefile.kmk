@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35651 2008-08-29 14:09:39Z frank $
 ## @file
 # Sub-Makefile for VBoxGuest (Windows Guest Additions Driver).
 #
@@ -19,66 +19,68 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../..
+else
+DEPTH    ?= ../../../../..
 SUB_DEPTH = ../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 #
 # VBoxGuest
 #
 SYSMODS += VBoxGuest
-VBoxGuest_TEMPLATE    = VBOXW32GUESTR0
-ifdef VBOX_SIGN_ADDITIONS
+VBoxGuest_TEMPLATE    = VBOXGUESTR0
+ifdef VBOX_SIGN_ADDITIONS # (See the parent makefile.)
  VBoxGuest_NOINST     = true
 endif
-VBoxGuest_SDKS        = W2K3DDKX86 WINPSDKINCS
-VBoxGuest_DEFS        = LOG_TO_BACKDOOR VBGL_VBOXGUEST VBOX_HGCM VBOX_REBOOT_ON_UNINSTALL
+VBoxGuest_DEFS        = LOG_TO_BACKDOOR VBGL_VBOXGUEST VBOX_WITH_HGCM VBOX_REBOOT_ON_UNINSTALL
 #VBoxGuest_DEFS       += LOG_ENABLED
 VBoxGuest_INCS        = ../include
-VBoxGuest_LDFLAGS     = -Entry:DriverEntry@8
+VBoxGuest_LDFLAGS.x86   = -Entry:DriverEntry@8
+VBoxGuest_LDFLAGS.amd64 = -Entry:DriverEntry
 VBoxGuest_SOURCES     = \
 	VBoxGuest.cpp \
 	VBoxGuestPnP.cpp \
 	Helper.cpp \
 	VBoxGuest.rc
 VBoxGuest_LIBS        = \
-	$(PATH_SDK_W2K3DDKX86_LIB)/int64.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/win32k.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/ntoskrnl.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/hal.lib \
-	$(PATH_LIB)/additions/VBoxGuestLibBase$(VBOXW32GUEST_SUFF_LIB) \
-	$(PATH_LIB)/additions/RuntimeW32GuestR0$(VBOXW32GUEST_SUFF_LIB)
+	$(PATH_SDK_W2K3DDK_LIB)/ntoskrnl.lib \
+	$(PATH_SDK_W2K3DDK_LIB)/hal.lib \
+	$(VBOX_LIB_VBGL_R0BASE) \
+	$(VBOX_LIB_IPRT_GUEST_R0)
 
 
 #
-# VBoxGuestNT - NT version of the driver.
+# VBoxGuestNT - NT version of the driver (x86 only).
 #
-SYSMODS += VBoxGuestNT
-VBoxGuestNT_TEMPLATE  = VBOXW32GUESTR0
-VBoxGuestNT_SDKS      = W2K3DDKX86 WINPSDKINCS
-VBoxGuestNT_DEFS      = $(VBoxGuest_DEFS) TARGET_NT4
+SYSMODS.x86 += VBoxGuestNT
+ifeq (kBuild,0.1.4) # This doesn't work because of the VBoxGuest_NOINST stuff above. ## @todo kBuild: change the NOINST test from ifdef to ifneq ($(strip $($(target)_NOINST)),)
+VBoxGuestNT_EXTENDS   = VBoxGuest
+else
+VBoxGuestNT_TEMPLATE  = VBOXGUESTR0
 VBoxGuestNT_INCS      = $(VBoxGuest_INCS)
-VBoxGuestNT_LDFLAGS   = $(VBoxGuest_LDFLAGS)
+VBoxGuestNT_LDFLAGS.x86 = $(VBoxGuest_LDFLAGS.x86)
+endif
+VBoxGuestNT_DEFS      = $(VBoxGuest_DEFS) TARGET_NT4
 VBoxGuestNT_SOURCES   = \
 	VBoxGuest.cpp \
 	Helper.cpp \
 	NTLegacy.cpp \
 	VBoxGuest.rc
 VBoxGuestNT_LIBS      = \
-	$(PATH_SDK_W2K3DDKX86_LIB)/exsup.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/int64.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/ntoskrnl.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/hal.lib \
-	$(PATH_LIB)/additions/VBoxGuestLibBase$(VBOXW32GUEST_SUFF_LIB) \
-	$(PATH_LIB)/additions/RuntimeW32NT4GuestR0$(VBOXW32GUEST_SUFF_LIB)
-#	$(PATH_SDK_W2K3DDKX86_LIB)/win32k.lib  - not needed?
-
+	$(PATH_SDK_W2K3DDK_LIB)/exsup.lib \
+	$(PATH_SDK_W2K3DDK_LIB)/ntoskrnl.lib \
+	$(PATH_SDK_W2K3DDK_LIB)/hal.lib \
+	$(VBOX_LIB_VBGL_R0BASE) \
+	$(VBOX_LIB_IPRT_GUEST_R0_NT4)
 
 #
 # VBoxGuestInst - The installer.
 #
 #PROGRAMS += VBoxGuestInst
-VBoxGuestInst_TEMPLATE= VBOXW32GUESTR3
+VBoxGuestInst_TEMPLATE= VBOXGUESTR3EXE
 VBoxGuestInst_SOURCES = VBoxGuestInst.cpp
 
 include	$(KBUILD_PATH)/subfooter.kmk

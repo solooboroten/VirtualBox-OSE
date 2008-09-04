@@ -32,8 +32,9 @@ SETUP_WINE=
 TARGET_MACHINE=""
 TARGET_CPU=""
 WITH_XPCOM=1
+WITH_PYTHON=1
 WITH_LIBIDL=1
-WITH_QT=1
+WITH_QT3=1
 WITH_QT4=1
 WITH_SDL=1
 WITH_SDL_TTF=1
@@ -41,6 +42,7 @@ WITH_X11=1
 WITH_ALSA=1
 WITH_PULSE=1
 WITH_KMODS=1
+WITH_HARDENING=1
 CC="gcc"
 CC_COMPAT=""
 CC32=""
@@ -66,8 +68,11 @@ INCZ=""
 LIBZ="-lz"
 INCPNG=""
 LIBPNG="-lpng"
-QT3DIR="/usr/qt/3 /usr/lib/qt3 /usr/lib/qt-3.3 /usr/share/qt3 /usr/lib64/qt-3.3 /usr/X11R6 /usr/lib/qt"
-QT4DIR="/usr/lib/qt4 /usr/share/qt4 /usr"
+PYTHONDIR="/usr /usr/local"
+QT3DIR="/usr/qt/3 /usr/lib/qt3 /usr/lib/qt-3.3 /usr/share/qt3"
+QT3DIR="$QT3DIR /usr/lib64/qt-3.3 /usr/X11R6 /usr/lib/qt"
+QT4DIR="/usr/lib/qt4 /usr/share/qt4 /usr/lib64/qt4 /usr"
+QT4DIR_PKGCONFIG=1
 QT4UIC3DIR="/usr/bin"
 KBUILDDIR="`cd \`dirname $0\`; pwd`/kBuild"
 DEVDIR="`cd \`dirname $0\`; pwd`/tools"
@@ -141,17 +146,17 @@ cnf_append()
 
 strip_l()
 {
-  echo "$1"|$KBUILD_SED 's|-l\([^ ]\+\)|\1|g; s|-[^l]\([^ ]\+\)||g; s|^ ||; s| *$||g'
+  echo "$1"|$KBUILD_SED 's|-l\([^ ]\+\)|\1|g; s|^-[^l][^ ]*||g; s| -[^l][^ ]*||g; s|^ ||; s| *$||g'
 }
 
 strip_L()
 {
-  echo "$1"|$KBUILD_SED 's|-L\([^ ]\+\)|\1|g; s|-[^L]\([^ ]\+\)||g; s|^ ||; s| *$||g'
+  echo "$1"|$KBUILD_SED 's|-L\([^ ]\+\)|\1|g; s|^-[^L][^ ]*||g; s| -[^L][^ ]*||g; s|^ ||; s| *$||g'
 }
 
 strip_I()
 {
-  echo "$1"|$KBUILD_SED 's|-I\([^ ]\+\)|\1|g; s|-[^I]\([^ ]\+\)||g; s|^ ||; s| *$||g'
+  echo "$1"|$KBUILD_SED 's|-I\([^ ]\+\)|\1|g; s|^-[^I][^ ]*||g; s| -[^I][^ ]*||g; s|^ ||; s| *$||g'
 }
 
 prefix_I()
@@ -172,12 +177,13 @@ which_wrapper()
   if [ "$have_ancient_which" = "yes" ]; then
     retval=`which $* 2>/dev/null`
     echo "$retval"
-    test -n "$retval" -a -e "$retval"
+    test -n "$retval" -a -x "$retval"
     unset retval
   else
     which $* 2> /dev/null
   fi
 }
+
 
 check_avail()
 {
@@ -194,12 +200,14 @@ check_avail()
    fi
 }
 
+
 # Prepare a test
 test_header()
 {
   echo "***** Checking $1 *****" >> $LOG
   $ECHO_N "Checking for $1: "
 }
+
 
 # Compile a test
 test_compile()
@@ -225,6 +233,7 @@ test_compile()
   return 0
 }
 
+
 # Execute a compiled test binary
 test_execute()
 {
@@ -240,6 +249,24 @@ test_execute()
   echo >> $LOG
   return 0
 }
+
+
+# Execute a compiled test binary
+test_execute_path()
+{
+  echo "executing the binary (LD_LIBRARY_PATH=$1)" >> $LOG
+  LD_LIBRARY_PATH=$1 ./.tmp_out > .test_execute.log
+  rc=$?
+  cat .test_execute.log | tee -a $LOG
+  if [ $rc -ne 0 ]; then
+    fail
+    return 1
+  fi
+  echo >> $LOG
+  echo >> $LOG
+  return 0
+}
+
 
 #
 # Check for OS, MACHINE, CPU
@@ -318,6 +345,28 @@ check_environment()
 check_gcc()
 {
   test_header gcc
+  if [ -n "$CC_COMPAT" ]; then
+    if check_avail "$CC_COMPAT" CC_COMPAT really; then
+      cc_compat_ver=`$CC_COMPAT -dumpversion` 2>/dev/null
+      if [ $? -ne 0 ]; then
+        log_failure "cannot execute '$CC_COMPAT -dumpversion'"
+        fail really
+      fi
+      cc_compat_maj=`echo $cc_compat_ver|cut -d. -f1`
+      cc_compat_min=`echo $cc_compat_ver|cut -d. -f2`
+      if [ $cc_compat_maj -lt 3 \
+         -o \( $cc_compat_maj -eq 3 -a $cc_compat_min -lt 2 \) \
+         -o \( $cc_compat_maj -eq 4 -a $cc_compat_min -lt 1 \) \
+         -o \( $cc_compat_maj -eq 4 -a $cc_compat_min -gt 2 \) \
+         -o $cc_compat_maj -gt 4 ]; then
+        log ""
+        log "  ** Version $cc_compat_ver of the compatibility gcc found. Expected gcc 3.x with x>1"
+        log "  ** or gcc 4.x with 0<x<3"
+        fail really
+      fi
+      cnf_append "VBOX_RECOMPILER_OP_GCC" "$CC_COMPAT"
+    fi
+  fi
   if check_avail "$CC" CC really; then
     cc_ver=`$CC -dumpversion` 2>/dev/null
     if [ $? -ne 0 ]; then
@@ -346,26 +395,7 @@ check_gcc()
           log "  ** distributions and call configure with parameter --with-gcc-compat=gcc34."
           fail really
         fi
-        if check_avail "$CC_COMPAT" CC_COMPAT really; then
-          cc_compat_ver=`$CC_COMPAT -dumpversion` 2>/dev/null
-          if [ $? -ne 0 ]; then
-            log_failure "cannot execute '$CC_COMPAT -dumpversion'"
-            fail really
-          fi
-          cc_compat_maj=`echo $cc_compat_ver|cut -d. -f1`
-          cc_compat_min=`echo $cc_compat_ver|cut -d. -f2`
-          if [ $cc_compat_maj -lt 3 \
-               -o \( $cc_compat_maj -eq 3 -a $cc_compat_min -lt 2 \) \
-               -o \( $cc_compat_maj -eq 4 -a $cc_compat_min -lt 1 \) \
-               -o \( $cc_compat_maj -eq 4 -a $cc_compat_min -gt 2 \) \
-               -o $cc_compat_maj -gt 4 ]; then
-            log ""
-            log "  ** Version $cc_compat_ver of the compatibility gcc found. Expected gcc 3.x with x>1"
-            log "  ** or gcc 4.x with 0<x<3"
-            fail really
-          fi
-          cnf_append "VBOX_RECOMPILER_OP_GCC" "$CC_COMPAT"
-        fi
+        log_success "found version $cc_ver + compat version $cc_compat_ver"
       # gcc-4.0 is allowed for Darwin only
       elif [ $cc_maj -lt 3 \
              -o \( $cc_maj -eq 3 -a $cc_min -lt 2 \) \
@@ -434,6 +464,7 @@ check_gcc()
   fi
 }
 
+
 #
 # Check for the bcc compiler, needed for compiling the BIOS
 #
@@ -473,6 +504,7 @@ EOF
   fi
 }
 
+
 #
 # Check for the as86 assembler, needed for compiling the BIOS
 #
@@ -490,6 +522,7 @@ check_as86()
     fi
   fi
 }
+
 
 #
 # Check for yasm, needed to compile assembler files
@@ -517,6 +550,7 @@ check_yasm()
   fi
 }
 
+
 #
 # Check for the iasl ACPI compiler, needed to compile vbox.dsl
 #
@@ -535,6 +569,7 @@ check_iasl()
   fi
 }
 
+
 #
 # Check for xsltproc, needed by Main
 #
@@ -552,6 +587,7 @@ check_xsltproc()
     fi
   fi
 }
+
 
 #
 # Check for mkisofs, needed to build the CDROM image containing the additions
@@ -579,6 +615,7 @@ check_mkisofs()
     fi
   fi
 }
+
 
 #
 # Check for libxml2, needed by VBoxSettings
@@ -659,6 +696,7 @@ EOF
     fi
   fi
 }
+
 
 #
 # Check for libxslt, needed by VBoxSettings. For now we depend on 1.1.17.
@@ -741,6 +779,7 @@ EOF
   fi
 }
 
+
 #
 # Check for libIDL, needed by xpcom
 #
@@ -770,6 +809,7 @@ check_libidl()
   fi
 }
 
+
 #
 # Check for openssl, needed for RDP
 #
@@ -798,6 +838,7 @@ EOF
     fi
   fi
 }
+
 
 #
 # Check for pthread, needed by VBoxSVC, frontends, ...
@@ -833,6 +874,7 @@ EOF
   fi
 }
 
+
 #
 # Check for zlib, needed by VBoxSVC, Runtime, ...
 #
@@ -862,6 +904,7 @@ EOF
     fi
   fi
 }
+
 
 #
 # Check for libpng, needed by kchmviewer
@@ -894,6 +937,7 @@ EOF
     fi
   fi
 }
+
 
 #
 # Check for pam, needed by VRDPAuth
@@ -1019,6 +1063,7 @@ EOF
   fi
 }
 
+
 #
 # Check for the SDL_ttf library, needed by VBoxSDL (secure label)
 #
@@ -1055,6 +1100,7 @@ EOF
   fi
 }
 
+
 #
 # Check for libasound, needed by the ALSA audio backend
 #
@@ -1082,6 +1128,7 @@ EOF
   fi
 }
 
+
 #
 # Check for PulseAudio
 #
@@ -1108,6 +1155,7 @@ EOF
   fi
 }
 
+
 #
 # Check for the Xcursor library, needed by VBoxSDL and VBoxBFE
 #
@@ -1131,6 +1179,7 @@ EOF
     cnf_append "VBOX_XCURSOR_LIBS" "`strip_l "$LIBXCURSOR"`"
   fi
 }
+
 
 #
 # Check for the X libraries (Xext, X11)
@@ -1161,6 +1210,7 @@ EOF
     log_success "found"
   fi
 }
+
 
 #
 # Check for the Qt3 library, needed by VirtualBox
@@ -1226,6 +1276,7 @@ EOF
   fi
 }
 
+
 #
 # Check for the Qt4 library, needed by VirtualBox4
 #
@@ -1233,6 +1284,7 @@ EOF
 #
 check_qt4()
 {
+  foundqt4=
   test_header Qt4
   if [ "$OS" = "darwin" ]; then
     if [ -f "/System/Library/Frameworks/QtCore.framework/QtCore" ]; then
@@ -1244,27 +1296,68 @@ check_qt4()
       foundqt4=1
       INCQT4="$PATH_SDK_QT4/Headers"
       LIBQT4=
-      FLDQT4="-framework QtCore"
+      FLGQT4="-framework QtCore"
     else
-      log_failure "Qt4 framework not found"
+      log_failure "Qt4 framework not found (can be disable using --disable-qt4)"
       fail
     fi
   else
-    if which_wrapper pkg-config > /dev/null; then
-      qt4_ver=`pkg-config QtCore --modversion 2>> $LOG`
-      if [ $? -ne 0 ]; then
-        log_failure "not found"
-  #      fail
+    if [ $QT4DIR_PKGCONFIG -eq 1 ]; then
+      # default is to use pkg-config
+      if which_wrapper pkg-config > /dev/null; then
+        # this braindead path is necessary for mdv2008.1
+        qt4_ver=`\
+            PKG_CONFIG_PATH=/usr/lib/qt4/lib/pkgconfig \
+            pkg-config QtCore --modversion 2>> $LOG`
+        if [ $? -ne 0 ]; then
+          log_failure "not found"
+          fail
+        else
+          FLGQT4=`\
+              PKG_CONFIG_PATH=/usr/lib/qt4/lib/pkgconfig \
+              pkg-config QtCore --cflags`
+          INCQT4=`strip_I "$FLGQT4"`
+          LIBQT4=`\
+              PKG_CONFIG_PATH=/usr/lib/qt4/lib/pkgconfig \
+              PKG_CONFIG_ALLOW_SYSTEM_LIBS=1 \
+              pkg-config QtCore --libs`
+          foundqt4=1
+        fi
       else
-        FLGQT4=`pkg-config QtCore --cflags`
-        INCQT4=`strip_I "$FLGQT4"`
-        LIBQT4=`pkg-config QtCore --libs`
-        foundqt4=1
+        log_failure "pkg-config not found"
+        fail
       fi
     else
-      log_failure "pkg-config not found"
-# not yet
-#     fail
+      # do it the old way (e.g. user has specified QT4DIR)
+      cat > .tmp_src.cc << EOF
+#include <cstdio>
+#include <QtGlobal>
+extern "C" int main(void)
+{
+  printf("found version %s", QT_VERSION_STR);
+#if QT_VERSION >= 0x040300
+  printf(", OK.\n");
+  return 0;
+  printf(", expected version 4.3.0 or higher\n");
+  return 1;
+#endif
+}
+EOF
+      for q in $QT4DIR; do
+        INCQT4="$q/include $q/include/QtCore"
+        FLGQT4="-DQT_SHARED"
+        I_INCQT4=`prefix_I "$INCQT4"`
+        LIBQT4="-L$q/lib -lVBoxQtCore"
+        if test_compile "$LIBQT4 $LIBPTHREAD $I_INCQT4 $FLGQT4" qt4 qt4 nofatal; then
+          foundqt4=2
+          break;
+        fi
+        LIBQT4="-L$q/lib -lQtCore"
+        if test_compile "$LIBQT4 $LIBPTHREAD $I_INCQT4 $FLGQT4" qt4 qt4 nofatal; then
+          foundqt4=1
+          break;
+        fi
+      done
     fi
   fi
   if [ -n "$foundqt4" ]; then
@@ -1274,22 +1367,31 @@ check_qt4()
 extern "C" int main(void)
 {
   printf("found version %s", QT_VERSION_STR);
-#if QT_VERSION >= 0x040200
+#if QT_VERSION >= 0x040300
   printf(", OK.\n");
   return 0;
-  printf(", expected version 4.2.0 or higher\n");
+  printf(", expected version 4.3.0 or higher\n");
   return 1;
 #endif
 }
 EOF
     [ -n "$INCQT4" ] && I_INCQT4=`prefix_I "$INCQT4"`
-    if test_compile "$LIBQT4 $LIBPTHREAD $I_INCQT4 $FLDQT4" qt4 qt4 nofatal; then
-      if test_execute; then
-#        cnf_append "SDK_VBOX_LIBQT4_INCS" "$INCQT4"
-#        cnf_append "SDK_VBOX_LIBQT4_LIBS" "`strip_l "$LIBQT4"`"
-        if [ "$OS" = "darwin" ]; then
-          cnf_append "VBOX_WITH_QT4GUI" "1"
-        else
+    if test_compile "$LIBQT4 $LIBPTHREAD $I_INCQT4 $FLGQT4" qt4 qt4 nofatal; then
+      if test_execute_path "`strip_L "$LIBQT4"`"; then
+        if [ "$OS" != "darwin" ]; then
+          # strip .../QtCore as we add components ourself
+          INCQT4=`echo "$INCQT4"|$KBUILD_SED 's|\([^ ]*\)/QtCore|\1|g; s| $||g'`
+          # store only the first path, remove all other pathes
+          # most likely pkg-config gave us -I/usr/include/qt4 -I/usr/include/qt4/QtCore
+          INCQT4=`echo "$INCQT4"|$KBUILD_SED 's|\([^ ]*\) .*|\1|'`
+          cnf_append "VBOX_PATH_QT4_LIB" "`strip_L "$LIBQT4"`"
+          cnf_append "SDK_QT4_LIBPATH" "`strip_L "$LIBQT4"`"
+          cnf_append "PATH_SDK_QT4_INC" "$INCQT4"
+          # this is not quite right since the qt libpath does not have to be first...
+          cnf_append "PATH_SDK_QT4_LIB" '$'"(firstword `strip_L "$LIBQT4"`)"
+          if [ "$foundqt4" = "2" ]; then
+            cnf_append "VBOX_WITH_QT4_SUN" "1"
+          fi
           test_header "Qt4 devtools"
           for q in $QT4DIR; do
             if which_wrapper "$q/bin/moc" > /dev/null; then
@@ -1300,22 +1402,9 @@ EOF
               else
                 log_success "found version $moc_ver"
                 cnf_append "VBOX_PATH_QT4" "$q"
-                test_header "Qt4 uic3"
-                for r in $q/bin $QT4UIC3DIR; do
-                  if which_wrapper "$r/uic3" > /dev/null; then
-                    uic3_ver=`$r/uic3 -version 2>&1|sed 's+^.*version \(.*\)+\1+'`
-                    if [ $? -ne 0 ]; then
-                      log_failure "not found"
-                      fail
-                    else
-                      log_success "found version $uic3_ver"
-                      cnf_append "VBOX_UIC3" "$r/uic3"
-                      return
-                    fi
-                  fi
-                done
-                log_failure "not found"
-                fail
+                cnf_append "PATH_SDK_QT4" "$q"
+                cnf_append "PATH_TOOL_QT4" "$q"
+                return
               fi
             fi
           done
@@ -1325,6 +1414,9 @@ EOF
       log_failure "not found"
       fail
     fi
+  else
+    log_failure "not found"
+    fail
   fi
 }
 
@@ -1349,6 +1441,7 @@ EOF
     log_success "found"
   fi
 }
+
 
 #
 # Check for Linux sources
@@ -1390,8 +1483,10 @@ EOF
   fi
 }
 
+
 #
 # Check for kchmviewer, needed to display the online help
+# (unused as we ship kchmviewer)
 #
 check_kchmviewer()
 {
@@ -1406,6 +1501,7 @@ check_kchmviewer()
     fi
   fi
 }
+
 
 #
 # Check for the kBuild tools, we don't support GNU make
@@ -1489,6 +1585,63 @@ EOF
   fi
   log_success ""
 }
+
+
+#
+# Check for Python
+#
+check_python()
+{
+  test_header "python support"
+  cat > .tmp_src.cc << EOF
+#include <cstdio>
+#include <Python.h>
+extern "C" int main(void)
+{
+  Py_Initialize();
+  printf("found version %s", PY_VERSION);
+#if PY_VERSION_HEX >= 0x02030000
+  printf(", OK.\n");
+  return 0;
+#else
+  printf(", expected version 2.3 or higher\n");
+  return 1;
+#endif
+}
+EOF
+  found=
+  for p in $PYTHONDIR; do
+    for d in python2.5 python2.4 python2.3; do
+      for b in lib64 lib/64 lib; do
+        echo "compiling the following source file:" >> $LOG
+        cat .tmp_src.cc >> $LOG
+        echo "using the following command line:" >> $LOG
+        echo "$CXX -O -Wall -o .tmp_out .tmp_src.cc -I$p/include/$d $p/$b/lib$d.so" >> $LOG
+        $CXX -O -Wall -o .tmp_out .tmp_src.cc -I$p/include/$d $p/$b/lib$d.so >> $LOG 2>&1
+        if [ $? -eq 0 ]; then
+          found=1
+          break
+        fi
+      done
+      if [ -n "$found" ]; then break; fi
+    done
+    if [ -n "$found" ]; then break; fi
+  done
+  if [ -n "$found" ]; then
+    if test_execute; then
+      cnf_append "VBOX_WITH_PYTHON"     "1"
+      cnf_append "VBOX_PATH_PYTHON_INC" "$p/include/$d"
+      cnf_append "VBOX_LIB_PYTHON"      "$p/$b/lib$d.so"
+    else
+      log_failure "not found"
+      fail
+    fi
+  else
+    log_failure "not found"
+    fail
+  fi
+}
+
 
 #
 # Setup wine
@@ -1594,23 +1747,26 @@ Configuration:
   -h, --help               display this help and exit
   --nofatal                don't abort on errors
   --disable-xpcom          disable XPCOM and related stuff
+  --disable-python         disable python bindings
   --disable-sdl-ttf        disable SDL_ttf detection
   --disable-alsa           disable the ALSA sound backend
   --disable-pulse          disable the PulseAudio backend
   --disable-kmods          don't build Linux kernel modules (host and guest)
+  --disable-hardening      don't be strict about /dev/vboxdrv access
   --build-libxml2          build libxml2 from sources
-  --build-libxslt          build libxslt from sources (not OSE!)
+  --build-libxslt          build libxslt from sources
   --setup-wine             setup a Wine directory and register the hhc hack
 
 Paths:
   --with-gcc=PATH          location of the gcc compiler [$CC]
   --with-g++=PATH          location of the g++ compiler [$CXX]
+  --with-gcc-compat=PATH   location of the gcc compiler for recompiler [$CC]
   --with-kbuild=DIR        kbuild directory [$KBUILDDIR]
   --with-iasl=PATH         location of the iasl compiler [$IASL]
   --with-linux=DIR         Linux kernel source directory [$LINUX]
   --with-mkisofs=PATH      location of mkisofs [$MKISOFS]
   --with-qt-dir=DIR        directory for Qt3 headers/libraries [$QT3DIR]
-  --with-qt4-dir=DIR       directory for Qt4 headers/libraries [$QT4DIR]
+  --with-qt4-dir=DIR       directory for Qt4 headers/libraries [pkgconfig]
 
 Build type:
   -d, --build-debug        build with debugging symbols and assertions
@@ -1634,6 +1790,9 @@ for option in $*; do
     --nofatal)
       nofatal=1
       ;;
+    --env-only)
+      ENV_ONLY=1
+      ;;
     --with-gcc=*)
       CC=`echo $option | cut -d'=' -f2`
       ;;
@@ -1655,6 +1814,7 @@ for option in $*; do
       ;;
     --with-qt4-dir=*)
       QT4DIR=`echo $option | cut -d'=' -f2`
+      QT4DIR_PKGCONFIG=0
       ;;
     --with-iasl=*)
       IASL=`echo $option | cut -d'=' -f2`
@@ -1668,12 +1828,18 @@ for option in $*; do
     --disable-xpcom)
       WITH_XPCOM=0
       ;;
+    --disable-python)
+      WITH_PYTHON=0
+      ;;
     --disable-sdl-ttf)
       WITH_SDL_TTF=0
       ;;
     --disable-qt)
-      WITH_QT=0
+      WITH_QT3=0
       WITH_QT4=0
+      ;;
+    --disable-qt3)
+      WITH_QT3=0
       ;;
     --disable-qt4)
       WITH_QT4=0
@@ -1686,6 +1852,12 @@ for option in $*; do
       ;;
     --disable-kmods)
       WITH_KMODS=0
+      ;;
+    --disable-hardening)
+      WITH_HARDENING=0
+      ;;
+    --enable-hardening)
+      WITH_HARDENING=2
       ;;
     --build-debug|-d)
       BUILD_TYPE=debug
@@ -1704,7 +1876,7 @@ for option in $*; do
       WITH_SDL=0
       WITH_SDL_TTF=0
       WITH_X11=0
-      WITH_QT=0
+      WITH_QT3=0
       WITH_QT4=0
       ;;
     --ose)
@@ -1778,6 +1950,8 @@ fi
 check_environment
 check_kbuild
 
+[ -n "$ENV_ONLY" ] && exit 0
+
 # append the tools directory to the default search path
 echo "$PATH" | grep -q "$DEVDIR_BIN" || PATH="$PATH:$DEVDIR_BIN"
 export PATH
@@ -1808,18 +1982,18 @@ if [ "$OS" = "darwin" ]; then
   # Darwin as we disable the Qt3 here anyway.
   # (Qt3 builds for Intel Macs are usually not threaded or for X11. And they
   #  don't contain our patches, which means the result isn't really usable.)
-  WITH_QT=0
-  # No Qt4 for OSE yet.
-  [ $OSE -ge 1 ] && WITH_QT4=0
+  WITH_QT3=0
   BUILD_LIBXSLT=1
   BUILD_LIBXML2=1
 fi
 
 # emit disable directives corresponding to any --disable-xxx options.
 [ $WITH_XPCOM -eq 0 ]   && cnf_append "VBOX_WITH_MAIN" ""
-[ $WITH_QT -eq 0    ]   && cnf_append "VBOX_WITH_QTGUI" ""
+[ $WITH_QT3 -eq 0   ]   && cnf_append "VBOX_WITH_QTGUI" ""
 [ $WITH_QT4 -eq 0   ]   && cnf_append "VBOX_WITH_QT4GUI" ""
 [ $WITH_SDL_TTF -eq 0 ] && cnf_append "VBOX_WITH_SECURELABEL" ""
+[ $WITH_HARDENING -eq 0 ] && cnf_append "VBOX_WITHOUT_HARDENING" "1"
+[ $WITH_HARDENING -eq 2 ] && cnf_append "VBOX_WITH_HARDENING" "2"
 
 # the tools
 check_gcc
@@ -1843,10 +2017,11 @@ check_gcc
 [ $OSE -eq 0 -a "$OS" = "linux" ] && check_pam
 [ $WITH_SDL -eq 1 ]    && check_sdl
 [ $WITH_SDL_TTF -eq 1 -a $OSE -eq 0 ] && check_sdl_ttf
-[ $WITH_X11 -eq 1    ] && check_x
-[ $WITH_X11 -eq 1    ] && check_xcursor
-[ $WITH_QT -eq 1     ] && check_qt3
-[ $WITH_QT4 -eq 1    ] && check_qt4
+[ $WITH_X11    -eq 1 ] && check_x
+[ $WITH_X11    -eq 1 ] && check_xcursor
+[ $WITH_QT3    -eq 1 ] && check_qt3
+[ $WITH_QT4    -eq 1 ] && check_qt4
+[ $WITH_PYTHON -eq 1 -a "$OS" != "darwin" ] && check_python
 
 # Linux-specific
 if [ "$OS" = "linux" ]; then
@@ -1893,6 +2068,25 @@ if [ "$OS" = "linux" ]; then
     echo ""
     echo "  cd ./out/$OS.$TARGET_MACHINE/$BUILD_TYPE/bin/src"
     echo "  make"
+    echo ""
+fi
+if [ $WITH_HARDENING -gt 0 ]; then
+    echo ""
+    echo "  +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++"
+    echo "  Hardening is enabled which means that the VBox binaries will not run from"
+    echo "  the binary directory. The binaries have to be installed suid root and some"
+    echo "  more prerequisites have to be fulfilled which is normally done by installing"
+    echo "  the final package. For development, the hardening feature can be disabled"
+    echo "  by specifying the --disable-hardening parameter. Please never disable that"
+    echo "  feature for the final distribution!"
+    echo "  +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++"
+    echo ""
+else
+    echo ""
+    echo "  +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++"
+    echo "  Hardening is disabled. Please do NOT build packages for distribution with"
+    echo "  disabled hardening!"
+    echo "  +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++ WARNING +++"
     echo ""
 fi
 echo "Enjoy!"

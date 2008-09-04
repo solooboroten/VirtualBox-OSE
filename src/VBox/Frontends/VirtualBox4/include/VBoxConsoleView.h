@@ -39,7 +39,6 @@
 
 #if defined (Q_WS_MAC)
 # include <Carbon/Carbon.h>
-# include "DarwinCursor.h"
 #endif
 
 class VBoxConsoleWnd;
@@ -142,7 +141,7 @@ protected:
 
 #if defined(Q_WS_WIN32)
     bool winLowKeyboardEvent (UINT msg, const KBDLLHOOKSTRUCT &event);
-    bool winEvent (MSG *msg);
+    bool winEvent (MSG *aMsg, long *aResult);
 #elif defined(Q_WS_PM)
     bool pmEvent (QMSG *aMsg);
 #elif defined(Q_WS_X11)
@@ -166,7 +165,6 @@ private:
     bool keyEvent (int aKey, uint8_t aScan, int aFlags,
                    wchar_t *aUniKey = NULL);
     bool mouseEvent (int aType, const QPoint &aPos, const QPoint &aGlobalPos,
-                     Qt::ButtonState aButton,
                      Qt::MouseButtons aButtons, Qt::KeyboardModifiers aModifiers,
                      int aWheelDelta, Qt::Orientation aWheelDir);
 
@@ -219,11 +217,12 @@ private:
     enum DesktopGeo
     {
         DesktopGeo_Invalid = 0, DesktopGeo_Fixed,
-        DesktopGeo_Automatic, DesktopGeo_Any, DesktopGeo_Unchanged
+        DesktopGeo_Automatic, DesktopGeo_Any
     };
 
     void setDesktopGeometry (DesktopGeo aGeo, int aWidth, int aHeight);
     void setDesktopGeoHint (int aWidth, int aHeight);
+    void calculateDesktopGeometry();
     void maybeRestrictMinimumSize();
 
     VBoxConsoleWnd *mMainWnd;
@@ -242,7 +241,7 @@ private:
     QPoint mLastPos;
     QPoint mCapturedPos;
 
-	bool mDisableAutoCapture : 1;
+    bool mDisableAutoCapture : 1;
 
     enum { IsKeyPressed = 0x01, IsExtKeyPressed = 0x02, IsKbdCaptured = 0x80 };
     uint8_t mPressedKeys [128];
@@ -290,8 +289,6 @@ private:
     /** The current modifier key mask. Used to figure out which modifier
      *  key was pressed when we get a kEventRawKeyModifiersChanged event. */
     UInt32 mDarwinKeyModifiers;
-    /** The darwin cursor handle (see DarwinCursor.h/.cpp). */
-    DARWINCURSOR mDarwinCursor;
 #endif
 
     VBoxFrameBuffer *mFrameBuf;

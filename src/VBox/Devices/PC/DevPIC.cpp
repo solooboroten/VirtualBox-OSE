@@ -1,6 +1,6 @@
-/* $Id: DevPIC.cpp 30981 2008-05-19 15:46:02Z sandervl $ */
+/* $Id: DevPIC.cpp 34377 2008-08-08 22:32:08Z bird $ */
 /** @file
- * Intel 8259 Programmable Interrupt Controller (PIC) Device.
+ * DevPIC - Intel 8259 Programmable Interrupt Controller (PIC) Device.
  */
 
 /*
@@ -26,8 +26,9 @@
 #include <VBox/pdmdev.h>
 #include <VBox/log.h>
 #include <iprt/assert.h>
+#include <iprt/string.h>
 
-#include "vl_vbox.h"
+#include "../Builtins.h"
 
 
 /*******************************************************************************
@@ -37,19 +38,14 @@
  * Acquires the PDM lock. This is a NOP if locking is disabled. */
 /** @def PIC_UNLOCK
  * Releases the PDM lock. This is a NOP if locking is disabled. */
-#ifdef VBOX_WITH_PDM_LOCK
-# define PIC_LOCK(pThis, rc) \
+#define PIC_LOCK(pThis, rc) \
     do { \
-        int rc2 = (pThis)->CTXALLSUFF(pPicHlp)->pfnLock((pThis)->CTXSUFF(pDevIns), rc); \
+        int rc2 = (pThis)->CTX_SUFF(pPicHlp)->pfnLock((pThis)->CTX_SUFF(pDevIns), rc); \
         if (rc2 != VINF_SUCCESS) \
             return rc2; \
     } while (0)
-# define PIC_UNLOCK(pThis) \
-    (pThis)->CTXALLSUFF(pPicHlp)->pfnUnlock((pThis)->CTXSUFF(pDevIns))
-#else /* !VBOX_WITH_PDM_LOCK */
-# define PIC_LOCK(pThis, rc)   do { } while (0)
-# define PIC_UNLOCK(pThis)     do { } while (0)
-#endif /* !VBOX_WITH_PDM_LOCK */
+#define PIC_UNLOCK(pThis) \
+    (pThis)->CTX_SUFF(pPicHlp)->pfnUnlock((pThis)->CTX_SUFF(pDevIns))
 
 
 #ifndef VBOX_DEVICE_STRUCT_TESTCASE
@@ -115,13 +111,13 @@ typedef struct PicState {
     uint8_t init4; /* true if 4 byte init */
     uint8_t elcr; /* PIIX edge/trigger selection*/
     uint8_t elcr_mask;
-    /** Pointer to the device instance, HCPtr. */
-    R3R0PTRTYPE(PPDMDEVINS) pDevInsHC;
-    /** Pointer to the device instance, GCPtr. */
-    GCPTRTYPE(PPDMDEVINS)   pDevInsGC;
-#if HC_ARCH_BITS == 64 && GC_ARCH_BITS != 64
-    RTGCPTR                 Alignment0;
-#endif
+    /** Pointer to the device instance, R3 Ptr. */
+    PPDMDEVINSR3 pDevInsR3;
+    /** Pointer to the device instance, R0 Ptr. */
+    PPDMDEVINSR0 pDevInsR0;
+    /** Pointer to the device instance, RC Ptr. */
+    PPDMDEVINSRC pDevInsRC;
+    RTRCPTR      Alignment0; /**< Structure size alignment. */
 } PicState;
 
 /**
@@ -131,19 +127,18 @@ typedef struct DEVPIC
 {
     /** The two interrupt controllers. */
     PicState                aPics[2];
+    /** Pointer to the device instance - R3 Ptr. */
+    PPDMDEVINSR3            pDevInsR3;
     /** Pointer to the PIC R3 helpers. */
     PCPDMPICHLPR3           pPicHlpR3;
+    /** Pointer to the device instance - R0 Ptr. */
+    PPDMDEVINSR0            pDevInsR0;
     /** Pointer to the PIC R0 helpers. */
     PCPDMPICHLPR0           pPicHlpR0;
-    /** Pointer to the PIC GC helpers. */
-    PCPDMPICHLPGC           pPicHlpGC;
-    /** Pointer to the device instance - GC Ptr. */
-    GCPTRTYPE(PPDMDEVINS)   pDevInsGC;
-    /** Pointer to the device instance - GC Ptr. */
-    R3R0PTRTYPE(PPDMDEVINS) pDevInsHC;
-#if HC_ARCH_BITS == 32
-    uint32_t                Alignmnet0;
-#endif
+    /** Pointer to the device instance - RC Ptr. */
+    PPDMDEVINSRC            pDevInsRC;
+    /** Pointer to the PIC RC helpers. */
+    PCPDMPICHLPRC           pPicHlpRC;
 #ifdef VBOX_WITH_STATISTICS
     STAMCOUNTER             StatSetIrqGC;
     STAMCOUNTER             StatSetIrqHC;
@@ -158,14 +153,14 @@ typedef struct DEVPIC
 #ifdef LOG_ENABLED
 static inline void DumpPICState(PicState *s, const char *szFn)
 {
-    PDEVPIC pData = PDMINS2DATA(CTXSUFF(s->pDevIns), PDEVPIC);
+    PDEVPIC pThis = PDMINS_2_DATA(s->CTX_SUFF(pDevIns), PDEVPIC);
 
     Log2(("%s: pic%d: elcr=%x last_irr=%x irr=%x imr=%x isr=%x irq_base=%x\n",
-        szFn, (&pData->aPics[0] == s) ? 0 : 1,
+        szFn, (&pThis->aPics[0] == s) ? 0 : 1,
           s->elcr, s->last_irr, s->irr, s->imr, s->isr, s->irq_base));
 }
 #else
-# define DumpPICState(pData, szFn) do { } while (0)
+# define DumpPICState(pThis, szFn) do { } while (0)
 #endif
 
 /* set irq level. If an edge is detected, then the IRR is set to 1 */
@@ -217,7 +212,7 @@ static inline int get_priority(PicState *s, int mask)
 /* return the pic wanted interrupt. return -1 if none */
 static int pic_get_irq(PicState *s)
 {
-    PicState *pics = &(PDMINS2DATA(CTXSUFF(s->pDevIns), PDEVPIC))->aPics[0];
+    PicState *pics = &(PDMINS_2_DATA(s->CTX_SUFF(pDevIns), PDEVPIC))->aPics[0];
     int mask, cur_priority, priority;
     Log(("pic_get_irq%d: mask=%x\n", (s == pics) ? 0 : 1, s->irr & ~s->imr));
     DumpPICState(s, "pic_get_irq");
@@ -245,9 +240,9 @@ static int pic_get_irq(PicState *s)
 
 /* raise irq to CPU if necessary. must be called every time the active
    irq may change */
-static int pic_update_irq(PDEVPIC pData)
+static int pic_update_irq(PDEVPIC pThis)
 {
-    PicState *pics = &pData->aPics[0];
+    PicState *pics = &pThis->aPics[0];
     int irq2, irq;
 
     /* first look at slave pic */
@@ -276,22 +271,22 @@ static int pic_update_irq(PDEVPIC pData)
             }
             Log(("pic: cpu_interrupt\n"));
 #endif
-            pData->CTXALLSUFF(pPicHlp)->pfnSetInterruptFF(pData->CTXSUFF(pDevIns));
+            pThis->CTX_SUFF(pPicHlp)->pfnSetInterruptFF(pThis->CTX_SUFF(pDevIns));
         }
         else
         {
-            STAM_COUNTER_INC(&pData->StatClearedActiveIRQ2);
+            STAM_COUNTER_INC(&pThis->StatClearedActiveIRQ2);
             Log(("pic_update_irq: irq 2 is active, but no interrupt is pending on the slave pic!!\n"));
             /* Clear it here, so lower priority interrupts can still be dispatched. */
 
             /* if this was the only pending irq, then we must clear the interrupt ff flag */
-            pData->CTXALLSUFF(pPicHlp)->pfnClearInterruptFF(pData->CTXSUFF(pDevIns));
+            pThis->CTX_SUFF(pPicHlp)->pfnClearInterruptFF(pThis->CTX_SUFF(pDevIns));
 
             /** @note Is this correct? */
             pics[0].irr &= ~(1 << 2);
 
             /* Call ourselves again just in case other interrupts are pending */
-            return pic_update_irq(pData);
+            return pic_update_irq(pThis);
         }
     }
     else
@@ -299,23 +294,23 @@ static int pic_update_irq(PDEVPIC pData)
         Log(("pic_update_irq: no interrupt is pending!!\n"));
 
         /* we must clear the interrupt ff flag */
-        pData->CTXALLSUFF(pPicHlp)->pfnClearInterruptFF(pData->CTXSUFF(pDevIns));
+        pThis->CTX_SUFF(pPicHlp)->pfnClearInterruptFF(pThis->CTX_SUFF(pDevIns));
     }
     return VINF_SUCCESS;
 }
 
 /** @note if an interrupt line state changes from unmasked to masked, then it must be deactivated when currently pending! */
-static void pic_update_imr(PDEVPIC pData, PicState *s, uint8_t val)
+static void pic_update_imr(PDEVPIC pThis, PicState *s, uint8_t val)
 {
     int       irq, intno;
     PicState *pActivePIC;
 
     /* Query the current pending irq, if any. */
-    pActivePIC = &pData->aPics[0];
+    pActivePIC = &pThis->aPics[0];
     intno = irq = pic_get_irq(pActivePIC);
     if (irq == 2)
     {
-        pActivePIC = &pData->aPics[1];
+        pActivePIC = &pThis->aPics[1];
         irq = pic_get_irq(pActivePIC);
         intno = irq + 8;
     }
@@ -328,22 +323,22 @@ static void pic_update_imr(PDEVPIC pData, PicState *s, uint8_t val)
         &&  ((1 << irq) & ~pActivePIC->imr) == 0)
     {
         Log(("pic_update_imr: pic0: elcr=%x last_irr=%x irr=%x imr=%x isr=%x irq_base=%x\n",
-            pData->aPics[0].elcr, pData->aPics[0].last_irr, pData->aPics[0].irr, pData->aPics[0].imr, pData->aPics[0].isr, pData->aPics[0].irq_base));
+            pThis->aPics[0].elcr, pThis->aPics[0].last_irr, pThis->aPics[0].irr, pThis->aPics[0].imr, pThis->aPics[0].isr, pThis->aPics[0].irq_base));
         Log(("pic_update_imr: pic1: elcr=%x last_irr=%x irr=%x imr=%x isr=%x irq_base=%x\n",
-            pData->aPics[1].elcr, pData->aPics[1].last_irr, pData->aPics[1].irr, pData->aPics[1].imr, pData->aPics[1].isr, pData->aPics[1].irq_base));
+            pThis->aPics[1].elcr, pThis->aPics[1].last_irr, pThis->aPics[1].irr, pThis->aPics[1].imr, pThis->aPics[1].isr, pThis->aPics[1].irq_base));
 
         /* Clear pending IRQ 2 on master controller in case of slave interrupt. */
         /** @todo Is this correct? */
         if (intno > 7)
         {
-            pData->aPics[0].irr &= ~(1 << 2);
-            STAM_COUNTER_INC(&pData->StatClearedActiveSlaveIRQ);
+            pThis->aPics[0].irr &= ~(1 << 2);
+            STAM_COUNTER_INC(&pThis->StatClearedActiveSlaveIRQ);
         }
         else
-            STAM_COUNTER_INC(&pData->StatClearedActiveMasterIRQ);
+            STAM_COUNTER_INC(&pThis->StatClearedActiveMasterIRQ);
 
         Log(("pic_update_imr: clear pending interrupt %d\n", intno));
-        pData->CTXALLSUFF(pPicHlp)->pfnClearInterruptFF(pData->CTXSUFF(pDevIns));
+        pThis->CTX_SUFF(pPicHlp)->pfnClearInterruptFF(pThis->CTX_SUFF(pDevIns));
     }
 }
 
@@ -357,22 +352,22 @@ static void pic_update_imr(PDEVPIC pData, PicState *s, uint8_t val)
  */
 PDMBOTHCBDECL(void) picSetIrq(PPDMDEVINS pDevIns, int iIrq, int iLevel)
 {
-    PDEVPIC     pData = PDMINS2DATA(pDevIns, PDEVPIC);
-    Assert(pData->CTXSUFF(pDevIns) == pDevIns);
-    Assert(pData->aPics[0].CTXSUFF(pDevIns) == pDevIns);
-    Assert(pData->aPics[1].CTXSUFF(pDevIns) == pDevIns);
+    PDEVPIC     pThis = PDMINS_2_DATA(pDevIns, PDEVPIC);
+    Assert(pThis->CTX_SUFF(pDevIns) == pDevIns);
+    Assert(pThis->aPics[0].CTX_SUFF(pDevIns) == pDevIns);
+    Assert(pThis->aPics[1].CTX_SUFF(pDevIns) == pDevIns);
     AssertMsg(iIrq < 16, ("iIrq=%d\n", iIrq));
 
     Log(("picSetIrq %d %d\n", iIrq, iLevel));
-    DumpPICState(&pData->aPics[0], "picSetIrq");
-    DumpPICState(&pData->aPics[1], "picSetIrq");
-    STAM_COUNTER_INC(&pData->CTXSUFF(StatSetIrq));
-    pic_set_irq1(&pData->aPics[iIrq >> 3], iIrq & 7, iLevel & PDM_IRQ_LEVEL_HIGH);
-    pic_update_irq(pData);
+    DumpPICState(&pThis->aPics[0], "picSetIrq");
+    DumpPICState(&pThis->aPics[1], "picSetIrq");
+    STAM_COUNTER_INC(&pThis->CTXSUFF(StatSetIrq));
+    pic_set_irq1(&pThis->aPics[iIrq >> 3], iIrq & 7, iLevel & PDM_IRQ_LEVEL_HIGH);
+    pic_update_irq(pThis);
     if ((iLevel & PDM_IRQ_LEVEL_FLIP_FLOP) == PDM_IRQ_LEVEL_FLIP_FLOP)
     {
-        pic_set_irq1(&pData->aPics[iIrq >> 3], iIrq & 7, 0);
-        pic_update_irq(pData);
+        pic_set_irq1(&pThis->aPics[iIrq >> 3], iIrq & 7, 0);
+        pic_update_irq(pThis);
     }
 }
 
@@ -403,24 +398,24 @@ static inline void pic_intack(PicState *s, int irq)
  */
 PDMBOTHCBDECL(int) picGetInterrupt(PPDMDEVINS pDevIns)
 {
-    PDEVPIC     pData = PDMINS2DATA(pDevIns, PDEVPIC);
+    PDEVPIC     pThis = PDMINS_2_DATA(pDevIns, PDEVPIC);
     int         irq;
     int         irq2;
     int         intno;
 
     /* read the irq from the PIC */
-    DumpPICState(&pData->aPics[0], "picGetInterrupt");
-    DumpPICState(&pData->aPics[1], "picGetInterrupt");
+    DumpPICState(&pThis->aPics[0], "picGetInterrupt");
+    DumpPICState(&pThis->aPics[1], "picGetInterrupt");
 
-    irq = pic_get_irq(&pData->aPics[0]);
+    irq = pic_get_irq(&pThis->aPics[0]);
     if (irq >= 0)
     {
-        pic_intack(&pData->aPics[0], irq);
+        pic_intack(&pThis->aPics[0], irq);
         if (irq == 2)
         {
-            irq2 = pic_get_irq(&pData->aPics[1]);
+            irq2 = pic_get_irq(&pThis->aPics[1]);
             if (irq2 >= 0) {
-                pic_intack(&pData->aPics[1], irq2);
+                pic_intack(&pThis->aPics[1], irq2);
             }
             else
             {
@@ -428,13 +423,13 @@ PDMBOTHCBDECL(int) picGetInterrupt(PPDMDEVINS pDevIns)
                 AssertMsgFailed(("picGetInterrupt: spurious IRQ on slave controller\n"));
                 irq2 = 7;
             }
-            intno = pData->aPics[1].irq_base + irq2;
-            Log2(("picGetInterrupt1: %x base=%x irq=%x\n", intno, pData->aPics[1].irq_base, irq2));
+            intno = pThis->aPics[1].irq_base + irq2;
+            Log2(("picGetInterrupt1: %x base=%x irq=%x\n", intno, pThis->aPics[1].irq_base, irq2));
             irq = irq2 + 8;
         }
         else {
-            intno = pData->aPics[0].irq_base + irq;
-            Log2(("picGetInterrupt0: %x base=%x irq=%x\n", intno, pData->aPics[0].irq_base, irq));
+            intno = pThis->aPics[0].irq_base + irq;
+            Log2(("picGetInterrupt0: %x base=%x irq=%x\n", intno, pThis->aPics[0].irq_base, irq));
         }
     }
     else
@@ -442,35 +437,37 @@ PDMBOTHCBDECL(int) picGetInterrupt(PPDMDEVINS pDevIns)
         /* spurious IRQ on host controller (impossible) */
         AssertMsgFailed(("picGetInterrupt: spurious IRQ on master controller\n"));
         irq = 7;
-        intno = pData->aPics[0].irq_base + irq;
+        intno = pThis->aPics[0].irq_base + irq;
     }
-    pic_update_irq(pData);
+    pic_update_irq(pThis);
 
-    Log(("picGetInterrupt: 0x%02x pending 0:%d 1:%d\n", intno, pic_get_irq(&pData->aPics[0]), pic_get_irq(&pData->aPics[1])));
+    Log(("picGetInterrupt: 0x%02x pending 0:%d 1:%d\n", intno, pic_get_irq(&pThis->aPics[0]), pic_get_irq(&pThis->aPics[1])));
 
     return intno;
 }
 
 static void pic_reset(PicState *s)
 {
-    R3R0PTRTYPE(PPDMDEVINS) pDevInsHC = s->pDevInsHC;
-    GCPTRTYPE(PPDMDEVINS) pDevInsGC = s->pDevInsGC;
-    int tmp, tmp2;
+    PPDMDEVINSR3 pDevInsR3 = s->pDevInsR3;
+    PPDMDEVINSR0 pDevInsR0 = s->pDevInsR0;
+    PPDMDEVINSRC pDevInsRC = s->pDevInsRC;
+    int elcr_mask = s->elcr_mask;
+    int elcr = s->elcr;
 
-    tmp = s->elcr_mask;
-    tmp2 = s->elcr;
     memset(s, 0, sizeof(PicState));
-    s->elcr_mask = tmp;
-    s->elcr = tmp2;
-    s->pDevInsHC = pDevInsHC;
-    s->pDevInsGC = pDevInsGC;
+
+    s->elcr = elcr;
+    s->elcr_mask = elcr_mask;
+    s->pDevInsRC = pDevInsRC;
+    s->pDevInsR0 = pDevInsR0;
+    s->pDevInsR3 = pDevInsR3;
 }
 
 
 static int pic_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 {
     PicState *s = (PicState*)opaque;
-    PDEVPIC     pData = PDMINS2DATA(CTXSUFF(s->pDevIns), PDEVPIC);
+    PDEVPIC     pThis = PDMINS_2_DATA(s->CTX_SUFF(pDevIns), PDEVPIC);
     int         rc = VINF_SUCCESS;
     int priority, cmd, irq;
 
@@ -481,7 +478,7 @@ static int pic_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             /* init */
             pic_reset(s);
             /* deassert a pending interrupt */
-            pData->CTXALLSUFF(pPicHlp)->pfnClearInterruptFF(pData->CTXSUFF(pDevIns));
+            pThis->CTX_SUFF(pPicHlp)->pfnClearInterruptFF(pThis->CTX_SUFF(pDevIns));
 
             s->init_state = 1;
             s->init4 = val & 1;
@@ -513,7 +510,7 @@ static int pic_ioport_write(void *opaque, uint32_t addr, uint32_t val)
                     s->isr &= ~(1 << irq);
                     if (cmd == 5)
                         s->priority_add = (irq + 1) & 7;
-                    rc = pic_update_irq(pData);
+                    rc = pic_update_irq(pThis);
                     Assert(rc == VINF_SUCCESS);
                     DumpPICState(s, "eoi");
                 }
@@ -524,7 +521,7 @@ static int pic_ioport_write(void *opaque, uint32_t addr, uint32_t val)
                 irq = val & 7;
                 Log(("pic_write: EOI2 for irq %d\n", irq));
                 s->isr &= ~(1 << irq);
-                rc = pic_update_irq(pData);
+                rc = pic_update_irq(pThis);
                 Assert(rc == VINF_SUCCESS);
                 DumpPICState(s, "eoi2");
                 break;
@@ -533,7 +530,7 @@ static int pic_ioport_write(void *opaque, uint32_t addr, uint32_t val)
             {
                 s->priority_add = (val + 1) & 7;
                 Log(("pic_write: lowest priority %d (highest %d)\n", val & 7, s->priority_add));
-                rc = pic_update_irq(pData);
+                rc = pic_update_irq(pThis);
                 Assert(rc == VINF_SUCCESS);
                 break;
             }
@@ -543,7 +540,7 @@ static int pic_ioport_write(void *opaque, uint32_t addr, uint32_t val)
                 Log(("pic_write: EOI3 for irq %d\n", irq));
                 s->isr &= ~(1 << irq);
                 s->priority_add = (irq + 1) & 7;
-                rc = pic_update_irq(pData);
+                rc = pic_update_irq(pThis);
                 Assert(rc == VINF_SUCCESS);
                 DumpPICState(s, "eoi3");
                 break;
@@ -558,9 +555,9 @@ static int pic_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         case 0:
         {
             /* normal mode */
-            pic_update_imr(pData, s, val);
+            pic_update_imr(pThis, s, val);
 
-            rc = pic_update_irq(pData);
+            rc = pic_update_irq(pThis);
             Assert(rc == VINF_SUCCESS);
             break;
         }
@@ -590,8 +587,8 @@ static int pic_ioport_write(void *opaque, uint32_t addr, uint32_t val)
 
 static uint32_t pic_poll_read (PicState *s, uint32_t addr1)
 {
-    PDEVPIC     pData = PDMINS2DATA(CTXSUFF(s->pDevIns), PDEVPIC);
-    PicState   *pics = &pData->aPics[0];
+    PDEVPIC     pThis = PDMINS_2_DATA(s->CTX_SUFF(pDevIns), PDEVPIC);
+    PicState   *pics = &pThis->aPics[0];
     int ret;
 
     ret = pic_get_irq(s);
@@ -605,10 +602,10 @@ static uint32_t pic_poll_read (PicState *s, uint32_t addr1)
         s->irr &= ~(1 << ret);
         s->isr &= ~(1 << ret);
         if (addr1 >> 7 || ret != 2)
-            pic_update_irq(pData);
+            pic_update_irq(pThis);
     } else {
         ret = 0x07;
-        pic_update_irq(pData);
+        pic_update_irq(pThis);
     }
 
     return ret;
@@ -644,57 +641,7 @@ static uint32_t pic_ioport_read(void *opaque, uint32_t addr1, int *pRC)
 
 
 
-#ifdef IN_RING3
-
-static void pic_save(QEMUFile *f, void *opaque)
-{
-    PicState *s = (PicState*)opaque;
-
-    qemu_put_8s(f, &s->last_irr);
-    qemu_put_8s(f, &s->irr);
-    qemu_put_8s(f, &s->imr);
-    qemu_put_8s(f, &s->isr);
-    qemu_put_8s(f, &s->priority_add);
-    qemu_put_8s(f, &s->irq_base);
-    qemu_put_8s(f, &s->read_reg_select);
-    qemu_put_8s(f, &s->poll);
-    qemu_put_8s(f, &s->special_mask);
-    qemu_put_8s(f, &s->init_state);
-    qemu_put_8s(f, &s->auto_eoi);
-    qemu_put_8s(f, &s->rotate_on_auto_eoi);
-    qemu_put_8s(f, &s->special_fully_nested_mode);
-    qemu_put_8s(f, &s->init4);
-    qemu_put_8s(f, &s->elcr);
-}
-
-static int pic_load(QEMUFile *f, void *opaque, int version_id)
-{
-    PicState *s = (PicState*)opaque;
-
-    if (version_id != 1)
-        return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
-
-    qemu_get_8s(f, &s->last_irr);
-    qemu_get_8s(f, &s->irr);
-    qemu_get_8s(f, &s->imr);
-    qemu_get_8s(f, &s->isr);
-    qemu_get_8s(f, &s->priority_add);
-    qemu_get_8s(f, &s->irq_base);
-    qemu_get_8s(f, &s->read_reg_select);
-    qemu_get_8s(f, &s->poll);
-    qemu_get_8s(f, &s->special_mask);
-    qemu_get_8s(f, &s->init_state);
-    qemu_get_8s(f, &s->auto_eoi);
-    qemu_get_8s(f, &s->rotate_on_auto_eoi);
-    qemu_get_8s(f, &s->special_fully_nested_mode);
-    qemu_get_8s(f, &s->init4);
-    qemu_get_8s(f, &s->elcr);
-    return 0;
-}
-#endif /* IN_RING3 */
-
-
-/* -=-=-=-=-=- wrappers -=-=-=-=-=- */
+/* -=-=-=-=-=- wrappers / stuff -=-=-=-=-=- */
 
 /**
  * Port I/O Handler for IN operations.
@@ -709,16 +656,16 @@ static int pic_load(QEMUFile *f, void *opaque, int version_id)
  */
 PDMBOTHCBDECL(int) picIOPortRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t *pu32, unsigned cb)
 {
-    PDEVPIC     pData = PDMINS2DATA(pDevIns, PDEVPIC);
+    PDEVPIC     pThis = PDMINS_2_DATA(pDevIns, PDEVPIC);
     uint32_t    iPic  = (uint32_t)(uintptr_t)pvUser;
 
     Assert(iPic == 0 || iPic == 1);
     if (cb == 1)
     {
         int rc;
-        PIC_LOCK(pData, VINF_IOM_HC_IOPORT_READ);
-        *pu32 = pic_ioport_read(&pData->aPics[iPic], Port, &rc);
-        PIC_UNLOCK(pData);
+        PIC_LOCK(pThis, VINF_IOM_HC_IOPORT_READ);
+        *pu32 = pic_ioport_read(&pThis->aPics[iPic], Port, &rc);
+        PIC_UNLOCK(pThis);
         return rc;
     }
     return VERR_IOM_IOPORT_UNUSED;
@@ -737,7 +684,7 @@ PDMBOTHCBDECL(int) picIOPortRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port
  */
 PDMBOTHCBDECL(int) picIOPortWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t u32, unsigned cb)
 {
-    PDEVPIC     pData = PDMINS2DATA(pDevIns, PDEVPIC);
+    PDEVPIC     pThis = PDMINS_2_DATA(pDevIns, PDEVPIC);
     uint32_t    iPic  = (uint32_t)(uintptr_t)pvUser;
 
     Assert(iPic == 0 || iPic == 1);
@@ -745,9 +692,9 @@ PDMBOTHCBDECL(int) picIOPortWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Por
     if (cb == 1)
     {
         int rc;
-        PIC_LOCK(pData, VINF_IOM_HC_IOPORT_WRITE);
-        rc = pic_ioport_write(&pData->aPics[iPic], Port, u32);
-        PIC_UNLOCK(pData);
+        PIC_LOCK(pThis, VINF_IOM_HC_IOPORT_WRITE);
+        rc = pic_ioport_write(&pThis->aPics[iPic], Port, u32);
+        PIC_UNLOCK(pThis);
         return rc;
     }
     return VINF_SUCCESS;
@@ -770,9 +717,9 @@ PDMBOTHCBDECL(int) picIOPortElcrRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT 
     if (cb == 1)
     {
         PicState *s = (PicState*)pvUser;
-        PIC_LOCK(PDMINS2DATA(pDevIns, PDEVPIC), VINF_IOM_HC_IOPORT_READ);
+        PIC_LOCK(PDMINS_2_DATA(pDevIns, PDEVPIC), VINF_IOM_HC_IOPORT_READ);
         *pu32 = s->elcr;
-        PIC_UNLOCK(PDMINS2DATA(pDevIns, PDEVPIC));
+        PIC_UNLOCK(PDMINS_2_DATA(pDevIns, PDEVPIC));
         return VINF_SUCCESS;
     }
     return VERR_IOM_IOPORT_UNUSED;
@@ -794,9 +741,9 @@ PDMBOTHCBDECL(int) picIOPortElcrWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT
     if (cb == 1)
     {
         PicState *s = (PicState*)pvUser;
-        PIC_LOCK(PDMINS2DATA(pDevIns, PDEVPIC), VINF_IOM_HC_IOPORT_WRITE);
+        PIC_LOCK(PDMINS_2_DATA(pDevIns, PDEVPIC), VINF_IOM_HC_IOPORT_WRITE);
         s->elcr = u32 & s->elcr_mask;
-        PIC_UNLOCK(PDMINS2DATA(pDevIns, PDEVPIC));
+        PIC_UNLOCK(PDMINS_2_DATA(pDevIns, PDEVPIC));
     }
     return VINF_SUCCESS;
 }
@@ -814,7 +761,7 @@ PDMBOTHCBDECL(int) picIOPortElcrWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT
  */
 static DECLCALLBACK(void) picInfo(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, const char *pszArgs)
 {
-    PDEVPIC pData = PDMINS2DATA(pDevIns, PDEVPIC);
+    PDEVPIC pThis = PDMINS_2_DATA(pDevIns, PDEVPIC);
 
     /*
      * Show info.
@@ -822,22 +769,22 @@ static DECLCALLBACK(void) picInfo(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, const 
     for (int i=0;i<2;i++)
     {
         pHlp->pfnPrintf(pHlp, "PIC%d:\n", i);
-        pHlp->pfnPrintf(pHlp, "  last_irr                  = %02x\n", pData->aPics[i].last_irr);
-        pHlp->pfnPrintf(pHlp, "  irr                       = %02x\n", pData->aPics[i].irr);
-        pHlp->pfnPrintf(pHlp, "  imr                       = %02x\n", pData->aPics[i].imr);
-        pHlp->pfnPrintf(pHlp, "  isr                       = %02x\n", pData->aPics[i].isr);
-        pHlp->pfnPrintf(pHlp, "  priority_add              = %02x\n", pData->aPics[i].priority_add);
-        pHlp->pfnPrintf(pHlp, "  irq_base                  = %02x\n", pData->aPics[i].irq_base);
-        pHlp->pfnPrintf(pHlp, "  read_reg_select           = %02x\n", pData->aPics[i].read_reg_select);
-        pHlp->pfnPrintf(pHlp, "  poll                      = %02x\n", pData->aPics[i].poll);
-        pHlp->pfnPrintf(pHlp, "  special_mask              = %02x\n", pData->aPics[i].special_mask);
-        pHlp->pfnPrintf(pHlp, "  init_state                = %02x\n", pData->aPics[i].init_state);
-        pHlp->pfnPrintf(pHlp, "  auto_eoi                  = %02x\n", pData->aPics[i].auto_eoi);
-        pHlp->pfnPrintf(pHlp, "  rotate_on_auto_eoi        = %02x\n", pData->aPics[i].rotate_on_auto_eoi);
-        pHlp->pfnPrintf(pHlp, "  special_fully_nested_mode = %02x\n", pData->aPics[i].special_fully_nested_mode);
-        pHlp->pfnPrintf(pHlp, "  init4                     = %02x\n", pData->aPics[i].init4);
-        pHlp->pfnPrintf(pHlp, "  elcr                      = %02x\n", pData->aPics[i].elcr);
-        pHlp->pfnPrintf(pHlp, "  elcr_mask                 = %02x\n", pData->aPics[i].elcr_mask);
+        pHlp->pfnPrintf(pHlp, "  last_irr                  = %02x\n", pThis->aPics[i].last_irr);
+        pHlp->pfnPrintf(pHlp, "  irr                       = %02x\n", pThis->aPics[i].irr);
+        pHlp->pfnPrintf(pHlp, "  imr                       = %02x\n", pThis->aPics[i].imr);
+        pHlp->pfnPrintf(pHlp, "  isr                       = %02x\n", pThis->aPics[i].isr);
+        pHlp->pfnPrintf(pHlp, "  priority_add              = %02x\n", pThis->aPics[i].priority_add);
+        pHlp->pfnPrintf(pHlp, "  irq_base                  = %02x\n", pThis->aPics[i].irq_base);
+        pHlp->pfnPrintf(pHlp, "  read_reg_select           = %02x\n", pThis->aPics[i].read_reg_select);
+        pHlp->pfnPrintf(pHlp, "  poll                      = %02x\n", pThis->aPics[i].poll);
+        pHlp->pfnPrintf(pHlp, "  special_mask              = %02x\n", pThis->aPics[i].special_mask);
+        pHlp->pfnPrintf(pHlp, "  init_state                = %02x\n", pThis->aPics[i].init_state);
+        pHlp->pfnPrintf(pHlp, "  auto_eoi                  = %02x\n", pThis->aPics[i].auto_eoi);
+        pHlp->pfnPrintf(pHlp, "  rotate_on_auto_eoi        = %02x\n", pThis->aPics[i].rotate_on_auto_eoi);
+        pHlp->pfnPrintf(pHlp, "  special_fully_nested_mode = %02x\n", pThis->aPics[i].special_fully_nested_mode);
+        pHlp->pfnPrintf(pHlp, "  init4                     = %02x\n", pThis->aPics[i].init4);
+        pHlp->pfnPrintf(pHlp, "  elcr                      = %02x\n", pThis->aPics[i].elcr);
+        pHlp->pfnPrintf(pHlp, "  elcr_mask                 = %02x\n", pThis->aPics[i].elcr_mask);
     }
 }
 #endif /* DEBUG */
@@ -851,9 +798,25 @@ static DECLCALLBACK(void) picInfo(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, const 
  */
 static DECLCALLBACK(int) picSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
 {
-    PDEVPIC     pData = PDMINS2DATA(pDevIns, PDEVPIC);
-    pic_save(pSSMHandle, &pData->aPics[0]);
-    pic_save(pSSMHandle, &pData->aPics[1]);
+    PDEVPIC     pThis = PDMINS_2_DATA(pDevIns, PDEVPIC);
+    for (unsigned i = 0; i < RT_ELEMENTS(pThis->aPics); i++)
+    {
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].last_irr);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].irr);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].imr);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].isr);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].priority_add);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].irq_base);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].read_reg_select);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].poll);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].special_mask);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].init_state);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].auto_eoi);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].rotate_on_auto_eoi);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].special_fully_nested_mode);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].init4);
+        SSMR3PutU8(pSSMHandle, pThis->aPics[i].elcr);
+    }
     return VINF_SUCCESS;
 }
 
@@ -868,11 +831,30 @@ static DECLCALLBACK(int) picSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
  */
 static DECLCALLBACK(int) picLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, uint32_t u32Version)
 {
-    PDEVPIC     pData = PDMINS2DATA(pDevIns, PDEVPIC);
-    int rc = pic_load(pSSMHandle, &pData->aPics[0], u32Version);
-    if (VBOX_SUCCESS(rc))
-        rc = pic_load(pSSMHandle, &pData->aPics[1], u32Version);
-    return rc;
+    PDEVPIC pThis = PDMINS_2_DATA(pDevIns, PDEVPIC);
+
+    if (u32Version != 1)
+        return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
+
+    for (unsigned i = 0; i < RT_ELEMENTS(pThis->aPics); i++)
+    {
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].last_irr);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].irr);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].imr);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].isr);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].priority_add);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].irq_base);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].read_reg_select);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].poll);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].special_mask);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].init_state);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].auto_eoi);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].rotate_on_auto_eoi);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].special_fully_nested_mode);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].init4);
+        SSMR3GetU8(pSSMHandle, &pThis->aPics[i].elcr);
+    }
+    return VINF_SUCCESS;
 }
 
 
@@ -886,17 +868,15 @@ static DECLCALLBACK(int) picLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
  */
 static DECLCALLBACK(void)  picReset(PPDMDEVINS pDevIns)
 {
-    PDEVPIC     pData = PDMINS2DATA(pDevIns, PDEVPIC);
+    PDEVPIC     pThis = PDMINS_2_DATA(pDevIns, PDEVPIC);
     unsigned    i;
     LogFlow(("picReset:\n"));
-#ifdef VBOX_WITH_PDM_LOCK
-    pData->pPicHlpR3->pfnLock(pDevIns, VERR_INTERNAL_ERROR);
-#endif
+    pThis->pPicHlpR3->pfnLock(pDevIns, VERR_INTERNAL_ERROR);
 
-    for (i = 0; i < ELEMENTS(pData->aPics); i++)
-        pic_reset(&pData->aPics[i]);
+    for (i = 0; i < RT_ELEMENTS(pThis->aPics); i++)
+        pic_reset(&pThis->aPics[i]);
 
-    PIC_UNLOCK(pData);
+    PIC_UNLOCK(pThis);
 }
 
 
@@ -905,13 +885,13 @@ static DECLCALLBACK(void)  picReset(PPDMDEVINS pDevIns)
  */
 static DECLCALLBACK(void) picRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
 {
-    PDEVPIC         pData = PDMINS2DATA(pDevIns, PDEVPIC);
+    PDEVPIC         pThis = PDMINS_2_DATA(pDevIns, PDEVPIC);
     unsigned        i;
 
-    pData->pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
-    pData->pPicHlpGC = pData->pPicHlpR3->pfnGetGCHelpers(pDevIns);
-    for (i = 0; i < ELEMENTS(pData->aPics); i++)
-        pData->aPics[i].pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
+    pThis->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
+    pThis->pPicHlpRC = pThis->pPicHlpR3->pfnGetRCHelpers(pDevIns);
+    for (i = 0; i < RT_ELEMENTS(pThis->aPics); i++)
+        pThis->aPics[i].pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
 }
 
 
@@ -920,7 +900,7 @@ static DECLCALLBACK(void) picRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
  */
 static DECLCALLBACK(int)  picConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNODE pCfgHandle)
 {
-    PDEVPIC         pData = PDMINS2DATA(pDevIns, PDEVPIC);
+    PDEVPIC         pThis = PDMINS_2_DATA(pDevIns, PDEVPIC);
     PDMPICREG       PicReg;
     int             rc;
     bool            fGCEnabled;
@@ -930,53 +910,53 @@ static DECLCALLBACK(int)  picConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     /*
      * Validate and read configuration.
      */
-    if (!CFGMR3AreValuesValid(pCfgHandle, "GCEnabled\0R0Enabled\0"))
+    if (!CFGMR3AreValuesValid(pCfgHandle, "GCEnabled\0" "R0Enabled\0"))
         return VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES;
 
-    rc = CFGMR3QueryBool(pCfgHandle, "GCEnabled", &fGCEnabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fGCEnabled = true;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "GCEnabled", &fGCEnabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: failed to read GCEnabled as boolean"));
 
-    rc = CFGMR3QueryBool(pCfgHandle, "R0Enabled", &fR0Enabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fR0Enabled = true;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "R0Enabled", &fR0Enabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: failed to read R0Enabled as boolean"));
 
-    Log(("i8259: fGCEnabled=%d fR0Enabled=%d\n", fGCEnabled, fR0Enabled));
+    Log(("DevPIC: fGCEnabled=%RTbool fR0Enabled=%RTbool\n", fGCEnabled, fR0Enabled));
 
     /*
      * Init the data.
      */
-    Assert(ELEMENTS(pData->aPics) == 2);
-    pData->pDevInsHC = pDevIns;
-    pData->pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
-    pData->aPics[0].elcr_mask = 0xf8;
-    pData->aPics[1].elcr_mask = 0xde;
-    pData->aPics[0].pDevInsHC = pDevIns;
-    pData->aPics[1].pDevInsHC = pDevIns;
-    pData->aPics[0].pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
-    pData->aPics[1].pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
+    Assert(RT_ELEMENTS(pThis->aPics) == 2);
+    pThis->pDevInsR3 = pDevIns;
+    pThis->pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
+    pThis->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
+    pThis->aPics[0].elcr_mask = 0xf8;
+    pThis->aPics[1].elcr_mask = 0xde;
+    pThis->aPics[0].pDevInsR3 = pDevIns;
+    pThis->aPics[1].pDevInsR3 = pDevIns;
+    pThis->aPics[0].pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
+    pThis->aPics[1].pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
+    pThis->aPics[0].pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
+    pThis->aPics[1].pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
 
     /*
-     * Register PIC, I/O ports and save state.
+     * Register us as the PIC with PDM.
      */
     PicReg.u32Version           = PDM_PICREG_VERSION;
-    PicReg.pfnSetIrqHC          = picSetIrq;
-    PicReg.pfnGetInterruptHC    = picGetInterrupt;
+    PicReg.pfnSetIrqR3          = picSetIrq;
+    PicReg.pfnGetInterruptR3    = picGetInterrupt;
+
     if (fGCEnabled)
     {
-        PicReg.pszSetIrqGC          = "picSetIrq";
-        PicReg.pszGetInterruptGC    = "picGetInterrupt";
+        PicReg.pszSetIrqRC          = "picSetIrq";
+        PicReg.pszGetInterruptRC    = "picGetInterrupt";
     }
     else
     {
-        PicReg.pszSetIrqGC          = NULL;
-        PicReg.pszGetInterruptGC    = NULL;
+        PicReg.pszSetIrqRC          = NULL;
+        PicReg.pszGetInterruptRC    = NULL;
     }
 
     if (fR0Enabled)
@@ -991,78 +971,79 @@ static DECLCALLBACK(int)  picConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     }
 
     Assert(pDevIns->pDevHlp->pfnPICRegister);
-    rc = pDevIns->pDevHlp->pfnPICRegister(pDevIns, &PicReg, &pData->pPicHlpR3);
-    if (VBOX_FAILURE(rc))
-    {
-        AssertMsgFailed(("PICRegister -> %Vrc\n", rc));
-        return rc;
-    }
+    rc = pDevIns->pDevHlp->pfnPICRegister(pDevIns, &PicReg, &pThis->pPicHlpR3);
+    AssertLogRelMsgRCReturn(rc, ("PICRegister -> %Rrc\n", rc), rc);
     if (fGCEnabled)
-        pData->pPicHlpGC = pData->pPicHlpR3->pfnGetGCHelpers(pDevIns);
+        pThis->pPicHlpRC = pThis->pPicHlpR3->pfnGetRCHelpers(pDevIns);
+    if (fR0Enabled)
+        pThis->pPicHlpR0 = pThis->pPicHlpR3->pfnGetR0Helpers(pDevIns);
+
+
+    /*
+     * Register I/O ports and save state.
+     */
     rc = PDMDevHlpIOPortRegister(pDevIns,  0x20, 2, (void *)0, picIOPortWrite, picIOPortRead, NULL, NULL, "i8259 PIC #0");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     rc = PDMDevHlpIOPortRegister(pDevIns,  0xa0, 2, (void *)1, picIOPortWrite, picIOPortRead, NULL, NULL, "i8259 PIC #1");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (fGCEnabled)
     {
         rc = PDMDevHlpIOPortRegisterGC(pDevIns,  0x20, 2, 0, "picIOPortWrite", "picIOPortRead", NULL, NULL, "i8259 PIC #0");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
         rc = PDMDevHlpIOPortRegisterGC(pDevIns,  0xa0, 2, 1, "picIOPortWrite", "picIOPortRead", NULL, NULL, "i8259 PIC #1");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
     if (fR0Enabled)
     {
-        pData->pPicHlpR0 = pData->pPicHlpR3->pfnGetR0Helpers(pDevIns);
-
         rc = PDMDevHlpIOPortRegisterR0(pDevIns,  0x20, 2, 0, "picIOPortWrite", "picIOPortRead", NULL, NULL, "i8259 PIC #0");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
         rc = PDMDevHlpIOPortRegisterR0(pDevIns,  0xa0, 2, 1, "picIOPortWrite", "picIOPortRead", NULL, NULL, "i8259 PIC #1");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
-    rc = PDMDevHlpIOPortRegister(pDevIns, 0x4d0, 1, &pData->aPics[0],
+    rc = PDMDevHlpIOPortRegister(pDevIns, 0x4d0, 1, &pThis->aPics[0],
                                  picIOPortElcrWrite, picIOPortElcrRead, NULL, NULL, "i8259 PIC #0 - elcr");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
-    rc = PDMDevHlpIOPortRegister(pDevIns, 0x4d1, 1, &pData->aPics[1],
+    rc = PDMDevHlpIOPortRegister(pDevIns, 0x4d1, 1, &pThis->aPics[1],
                                  picIOPortElcrWrite, picIOPortElcrRead, NULL, NULL, "i8259 PIC #1 - elcr");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (fGCEnabled)
     {
-        RTGCPTR pDataGC = PDMINS2DATA_GCPTR(pDevIns);
-        rc = PDMDevHlpIOPortRegisterGC(pDevIns, 0x4d0, 1, pDataGC + RT_OFFSETOF(DEVPIC, aPics[0]),
+        RTRCPTR pDataRC = PDMINS_2_DATA_RCPTR(pDevIns);
+        rc = PDMDevHlpIOPortRegisterGC(pDevIns, 0x4d0, 1, pDataRC + RT_OFFSETOF(DEVPIC, aPics[0]),
                                        "picIOPortElcrWrite", "picIOPortElcrRead", NULL, NULL, "i8259 PIC #0 - elcr");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
-        rc = PDMDevHlpIOPortRegisterGC(pDevIns, 0x4d1, 1, pDataGC + RT_OFFSETOF(DEVPIC, aPics[1]),
+        rc = PDMDevHlpIOPortRegisterGC(pDevIns, 0x4d1, 1, pDataRC + RT_OFFSETOF(DEVPIC, aPics[1]),
                                        "picIOPortElcrWrite", "picIOPortElcrRead", NULL, NULL, "i8259 PIC #1 - elcr");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
     if (fR0Enabled)
     {
-        RTR0PTR pDataR0 = PDMINS2DATA_R0PTR(pDevIns);
+        RTR0PTR pDataR0 = PDMINS_2_DATA_R0PTR(pDevIns);
         rc = PDMDevHlpIOPortRegisterR0(pDevIns, 0x4d0, 1, pDataR0 + RT_OFFSETOF(DEVPIC, aPics[0]),
                                        "picIOPortElcrWrite", "picIOPortElcrRead", NULL, NULL, "i8259 PIC #0 - elcr");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
         rc = PDMDevHlpIOPortRegisterR0(pDevIns, 0x4d1, 1, pDataR0 + RT_OFFSETOF(DEVPIC, aPics[1]),
                                        "picIOPortElcrWrite", "picIOPortElcrRead", NULL, NULL, "i8259 PIC #1 - elcr");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
-    rc = PDMDevHlpSSMRegister(pDevIns, pDevIns->pDevReg->szDeviceName, iInstance, 1 /* version */, sizeof(*pData),
+    rc = PDMDevHlpSSMRegister(pDevIns, pDevIns->pDevReg->szDeviceName, iInstance, 1 /* version */, sizeof(*pThis),
                               NULL, picSaveExec, NULL,
                               NULL, picLoadExec, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
 
@@ -1082,12 +1063,12 @@ static DECLCALLBACK(int)  picConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     /*
      * Statistics.
      */
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatSetIrqGC, STAMTYPE_COUNTER, "/PDM/PIC/SetIrqGC", STAMUNIT_OCCURENCES, "Number of PIC SetIrq calls in GC.");
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatSetIrqHC, STAMTYPE_COUNTER, "/PDM/PIC/SetIrqHC", STAMUNIT_OCCURENCES, "Number of PIC SetIrq calls in HC.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatSetIrqGC, STAMTYPE_COUNTER, "/PDM/PIC/SetIrqGC", STAMUNIT_OCCURENCES, "Number of PIC SetIrq calls in GC.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatSetIrqHC, STAMTYPE_COUNTER, "/PDM/PIC/SetIrqHC", STAMUNIT_OCCURENCES, "Number of PIC SetIrq calls in HC.");
 
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatClearedActiveIRQ2,       STAMTYPE_COUNTER, "/PDM/PIC/Masked/ActiveIRQ2",   STAMUNIT_OCCURENCES, "Number of cleared irq 2.");
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatClearedActiveMasterIRQ,  STAMTYPE_COUNTER, "/PDM/PIC/Masked/ActiveMaster", STAMUNIT_OCCURENCES, "Number of cleared master irqs.");
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatClearedActiveSlaveIRQ,   STAMTYPE_COUNTER, "/PDM/PIC/Masked/ActiveSlave",  STAMUNIT_OCCURENCES, "Number of cleared slave irqs.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatClearedActiveIRQ2,       STAMTYPE_COUNTER, "/PDM/PIC/Masked/ActiveIRQ2",   STAMUNIT_OCCURENCES, "Number of cleared irq 2.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatClearedActiveMasterIRQ,  STAMTYPE_COUNTER, "/PDM/PIC/Masked/ActiveMaster", STAMUNIT_OCCURENCES, "Number of cleared master irqs.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatClearedActiveSlaveIRQ,   STAMTYPE_COUNTER, "/PDM/PIC/Masked/ActiveSlave",  STAMUNIT_OCCURENCES, "Number of cleared slave irqs.");
 #endif
 
     return VINF_SUCCESS;

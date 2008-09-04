@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 32647 2008-07-03 03:07:18Z bird $
 ## @file
 # Sub-Makefile for the X11 Guest Additions.
 #
@@ -18,12 +18,16 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
 SUB_DEPTH = ..
+DEPTH    ?= ../../../..
+endif
 include $(KBUILD_PATH)/subheader.kmk
 
 # Include sub-makefiles.
-if1of ($(KBUILD_TARGET), freebsd l4 linux solaris)
+if1of ($(KBUILD_TARGET), freebsd linux netbsd openbsd solaris)
  include $(PATH_SUB_CURRENT)/xclient/Makefile.kmk
  include $(PATH_SUB_CURRENT)/xgraphics/Makefile.kmk
  include $(PATH_SUB_CURRENT)/xmouse/Makefile.kmk

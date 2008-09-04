@@ -19,33 +19,37 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../../..
+else
 SUB_DEPTH = ../../..
+DEPTH    ?= ../../../../../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 # Include sub-makefile(s).
 include $(PATH_SUB_CURRENT)/test/Makefile.kmk
 
 DLLS += VBoxOGL
-VBoxOGL_TEMPLATE    = VBOXW32GUESTR3
-VBoxOGL_SDKS        = W2K3DDKX86
-VBoxOGL_DEFS        = VBOX_HGCM _WIN32_WINNT=0x0500 VBOX_OGL_GUEST_SIDE
+VBoxOGL_TEMPLATE    = VBOXGUESTR3EXE
+VBoxOGL_DEFS        = VBOX_WITH_HGCM _WIN32_WINNT=0x0500 VBOX_OGL_GUEST_SIDE
 VBoxOGL_SOURCES     = \
-        dllmain.cpp \
+	dllmain.cpp \
 	drv.cpp \
-        VBoxOGL.cpp \
-        VBoxCmd.cpp \
-        OGLSimpleSync.cpp \
-        OGLSimpleAsync.cpp \
-        OGLComplexSync.cpp \
-        OGLComplexAsync.cpp \
-        glext.cpp \
-        OGLLookup.cpp \
-        MesaGL.cpp \
+	VBoxOGL.cpp \
+	VBoxCmd.cpp \
+	OGLSimpleSync.cpp \
+	OGLSimpleAsync.cpp \
+	OGLComplexSync.cpp \
+	OGLComplexAsync.cpp \
+	glext.cpp \
+	OGLLookup.cpp \
+	MesaGL.cpp \
 	VBoxOGL.rc \
 	VBoxOGL.def
 VBoxOGL_LIBS        = \
-	$(PATH_LIB)/additions/RuntimeW32GuestR3.lib
+	$(VBOX_LIB_IPRT_GUEST_R3) \
+	$(VBOX_LIB_VBGL_R3)
 
 include	$(KBUILD_PATH)/subfooter.kmk
 

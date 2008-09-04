@@ -1,3 +1,4 @@
+/* $Id: helpers.h 33578 2008-07-22 09:00:07Z bird $ */
 /** @file
  * helpers - Guest Additions Service helper functions header
  */
@@ -18,27 +19,18 @@
  * additional information or have any questions.
  */
 
-#ifndef __VBOXSERVICEHELPERS__H
-#define __VBOXSERVICEHELPERS__H
+#ifndef ___VBOXTRAY_HELPERS_H
+#define ___VBOXTRAY_HELPERS_H
 
 // #define DEBUG_DISPLAY_CHANGE
 
-#ifndef DDCLOG
-void SvcDebugOut2(char *String, ...);
-# ifdef DEBUG_DISPLAY_CHANGE
-#  define DDCLOG(a) dprintf(a)
-# else
-#  define DDCLOG(a) do {} while (0)
-# endif /* DEBUG_DISPLAY_CHANGE */
-#endif /* DDCLOG */
-
-#ifdef DEBUG
-void WriteLog(char *String, ...);
-#define dprintf(a) do { WriteLog a; } while (0)
+#ifdef DEBUG_DISPLAY_CHANGE
+#   define DDCLOG(a) Log(a)
 #else
-#define dprintf(a) do {} while (0)
-#endif /* DEBUG */
+#   define DDCLOG(a) do {} while (0)
+#endif /* !DEBUG_DISPLAY_CHANGE */
 
 void resizeRect(RECTL *paRects, unsigned nRects, unsigned iPrimary, unsigned iResized, int NewWidth, int NewHeight);
 
-#endif /* __VBOXSERVICEHELPERS__H */
+#endif /* !___VBOXTRAY_HELPERS_H */
+

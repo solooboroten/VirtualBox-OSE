@@ -1,4 +1,4 @@
-/* $Id: strformat-vbox.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: strformat-vbox.cpp 34729 2008-08-14 08:03:03Z klaus $ */
 /** @file
  * IPRT - VBox String Formatter extensions.
  */
@@ -52,10 +52,11 @@
  *      - \%Vhxs - Takes a pointer to the memory to be displayed as a hex string,
  *        i.e. a series of space separated bytes formatted as two digit hex value.
  *        Use the width to specify the length. Default length is 16 bytes.
- *      - \%VGp  - Guest context physical address.
- *      - \%VGv  - Guest context virtual address.
- *      - \%VHp  - Host context physical address.
- *      - \%VHv  - Host context virtual address.
+ *      - \%VGp   - Guest context physical address.
+ *      - \%VGv   - Guest context virtual address.
+ *      - \%VRv   - 32 bits guest context virtual address.
+ *      - \%VHp   - Host context physical address.
+ *      - \%VHv   - Host context virtual address.
  *      - \%VI[8|16|32|64] - Signed integer value of the specifed bit count.
  *      - \%VU[8|16|32|64] - Unsigned integer value of the specifed bit count.
  *      - \%VX[8|16|32|64] - Hexadecimal integer value of the specifed bit count.
@@ -276,6 +277,35 @@ size_t rtstrFormatVBox(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput, const char *
             }
 
             /*
+             * Raw mode types.
+             */
+            case 'R':
+            {
+                /*
+                 * Raw mode types.
+                 */
+                ch = *(*ppszFormat)++;
+                switch (ch)
+                {
+                    case 'v':   /* Virtual address. */
+                    {
+                        RTRCPTR RCPtr = va_arg(*pArgs, RTRCPTR);
+                        switch (sizeof(RCPtr))
+                        {
+                            case 4: return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0, "%08x", RCPtr);
+                            default: AssertFailed(); return 0;
+                        }
+                    }
+
+                    default:
+                        AssertMsgFailed(("Invalid status code format type '%%VR%c%.10s'!\n", ch, *ppszFormat));
+                        break;
+                }
+                break;
+            }
+
+
+            /*
              * Host types.
              */
             case 'H':
@@ -433,8 +463,8 @@ size_t rtstrFormatVBox(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput, const char *
                                            pUuid->Gen.u32TimeLow,
                                            pUuid->Gen.u16TimeMid,
                                            pUuid->Gen.u16TimeHiAndVersion,
-                                           pUuid->Gen.u16ClockSeq & 0xff,
-                                           pUuid->Gen.u16ClockSeq >> 8,
+                                           pUuid->Gen.u8ClockSeqHiAndReserved,
+                                           pUuid->Gen.u8ClockSeqLow,
                                            pUuid->Gen.au8Node[0],
                                            pUuid->Gen.au8Node[1],
                                            pUuid->Gen.au8Node[2],

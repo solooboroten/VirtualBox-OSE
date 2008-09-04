@@ -1,4 +1,4 @@
-/* $Id: HostImpl.cpp 30750 2008-05-12 01:03:38Z bird $ */
+/* $Id: HostImpl.cpp 35913 2008-09-02 18:07:01Z ramshankar $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */
@@ -19,26 +19,29 @@
  * additional information or have any questions.
  */
 
+#define __STDC_LIMIT_MACROS
+#define __STDC_CONSTANT_MACROS
+
 #ifdef RT_OS_LINUX
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
-#include <fcntl.h>
-#include <mntent.h>
+# include <sys/types.h>
+# include <sys/stat.h>
+# include <unistd.h>
+# include <sys/ioctl.h>
+# include <fcntl.h>
+# include <mntent.h>
 /* bird: This is a hack to work around conflicts between these linux kernel headers
  *       and the GLIBC tcpip headers. They have different declarations of the 4
  *       standard byte order functions. */
-#define _LINUX_BYTEORDER_GENERIC_H
-#include <linux/cdrom.h>
-#ifdef VBOX_USE_LIBHAL
+# define _LINUX_BYTEORDER_GENERIC_H
+# include <linux/cdrom.h>
+# ifdef VBOX_USE_LIBHAL
 // # include <libhal.h>
 // /* These are defined by libhal.h and by VBox header files. */
 // # undef TRUE
 // # undef FALSE
-#include "vbox-libhal.h"
-#endif
-#include <errno.h>
+#  include "vbox-libhal.h"
+# endif
+# include <errno.h>
 #endif /* RT_OS_LINUX */
 
 #ifdef RT_OS_SOLARIS
@@ -48,6 +51,11 @@
 # include <errno.h>
 # include <limits.h>
 # include <stdio.h>
+# include <net/if.h>
+# include <sys/socket.h>
+# include <sys/sockio.h>
+# include <net/if_arp.h>
+# include <net/if.h>
 # include <sys/types.h>
 # include <sys/stat.h>
 # include <sys/cdio.h>
@@ -61,22 +69,23 @@ extern "C" char *getfullrawname(char *);
 #endif /* RT_OS_SOLARIS */
 
 #ifdef RT_OS_WINDOWS
-#define _WIN32_DCOM
-#include <windows.h>
-#include <shellapi.h>
-#define INITGUID
-#include <guiddef.h>
-#include <devguid.h>
-#include <objbase.h>
-#include <setupapi.h>
-#include <shlobj.h>
-#include <cfgmgr32.h>
+# define _WIN32_DCOM
+# include <windows.h>
+# include <shellapi.h>
+# define INITGUID
+# include <guiddef.h>
+# include <devguid.h>
+# include <objbase.h>
+# include <setupapi.h>
+# include <shlobj.h>
+# include <cfgmgr32.h>
 #endif /* RT_OS_WINDOWS */
 
 
 #include "HostImpl.h"
 #include "HostDVDDriveImpl.h"
 #include "HostFloppyDriveImpl.h"
+#include "HostNetworkInterfaceImpl.h"
 #ifdef VBOX_WITH_USB
 # include "HostUSBDeviceImpl.h"
 # include "USBDeviceFilterImpl.h"
@@ -90,19 +99,17 @@ extern "C" char *getfullrawname(char *);
 # include "darwin/iokit.h"
 #endif
 
-#ifdef RT_OS_WINDOWS
-# include "HostNetworkInterfaceImpl.h"
-#endif
 
 #include <VBox/usb.h>
 #include <VBox/err.h>
 #include <iprt/string.h>
-#include <iprt/system.h>
+#include <iprt/mp.h>
 #include <iprt/time.h>
 #include <iprt/param.h>
 #include <iprt/env.h>
 #ifdef RT_OS_SOLARIS
 # include <iprt/path.h>
+# include <iprt/ctype.h>
 #endif
 
 #include <stdio.h>
@@ -129,19 +136,18 @@ void Host::FinalRelease()
 /**
  * Initializes the host object.
  *
- * @returns COM result indicator
- * @param parent handle of our parent object
+ * @param aParent   VirtualBox parent object.
  */
-HRESULT Host::init (VirtualBox *parent)
+HRESULT Host::init (VirtualBox *aParent)
 {
     LogFlowThisFunc (("isReady=%d\n", isReady()));
 
-    ComAssertRet (parent, E_INVALIDARG);
+    ComAssertRet (aParent, E_INVALIDARG);
 
     AutoWriteLock alock (this);
     ComAssertRet (!isReady(), E_UNEXPECTED);
 
-    mParent = parent;
+    mParent = aParent;
 
 #ifdef VBOX_WITH_USB
     /*
@@ -164,6 +170,10 @@ HRESULT Host::init (VirtualBox *parent)
     AssertComRCReturn(hrc, hrc);
 #endif /* VBOX_WITH_USB */
 
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+    registerMetrics (aParent->performanceCollector());
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
     setReady(true);
     return S_OK;
 }
@@ -177,6 +187,10 @@ void Host::uninit()
     LogFlowThisFunc (("isReady=%d\n", isReady()));
 
     AssertReturn (isReady(), (void) 0);
+
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+    unregisterMetrics (mParent->performanceCollector());
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
 #ifdef VBOX_WITH_USB
     /* wait for USB proxy service to terminate before we uninit all USB
@@ -441,7 +455,13 @@ STDMETHODIMP Host::COMGETTER(FloppyDrives) (IHostFloppyDriveCollection **drives)
 }
 
 #ifdef RT_OS_WINDOWS
-
+/**
+ * Windows helper function for Host::COMGETTER(NetworkInterfaces).
+ *
+ * @returns true / false.
+ *
+ * @param   guid        The GUID.
+ */
 static bool IsTAPDevice(const char *guid)
 {
     HKEY hNetcard;
@@ -454,7 +474,7 @@ static bool IsTAPDevice(const char *guid)
     if (status != ERROR_SUCCESS)
         return false;
 
-    while(true)
+    for (;;)
     {
         char szEnumName[256];
         char szNetCfgInstanceId[256];
@@ -469,7 +489,7 @@ static bool IsTAPDevice(const char *guid)
         status = RegOpenKeyExA(hNetcard, szEnumName, 0, KEY_READ, &hNetCardGUID);
         if (status == ERROR_SUCCESS)
         {
-            len = sizeof (szNetCfgInstanceId);
+            len = sizeof(szNetCfgInstanceId);
             status = RegQueryValueExA(hNetCardGUID, "NetCfgInstanceId", NULL, &dwKeyType, (LPBYTE)szNetCfgInstanceId, &len);
             if (status == ERROR_SUCCESS && dwKeyType == REG_SZ)
             {
@@ -486,7 +506,8 @@ static bool IsTAPDevice(const char *guid)
 
                 if (   !strcmp(szNetCfgInstanceId, guid)
                     && !strcmp(szNetProductName, "VirtualBox TAP Adapter")
-                    && (!strcmp(szNetProviderName, "innotek GmbH") || !strcmp(szNetProviderName, "Sun Microsystems, Inc.")))
+                    && (   !strcmp(szNetProviderName, "innotek GmbH")
+                        || !strcmp(szNetProviderName, "Sun Microsystems, Inc.")))
                 {
                     ret = true;
                     RegCloseKey(hNetCardGUID);
@@ -498,9 +519,10 @@ static bool IsTAPDevice(const char *guid)
         ++i;
     }
 
-    RegCloseKey (hNetcard);
+    RegCloseKey(hNetcard);
     return ret;
 }
+#endif /* RT_OS_WINDOWS */
 
 /**
  * Returns a list of host network interfaces.
@@ -510,6 +532,7 @@ static bool IsTAPDevice(const char *guid)
  */
 STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection **networkInterfaces)
 {
+#if defined(RT_OS_WINDOWS) ||  defined(VBOX_WITH_NETFLT) /*|| defined(RT_OS_OS2)*/
     if (!networkInterfaces)
         return E_POINTER;
     AutoWriteLock alock (this);
@@ -517,6 +540,159 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
 
     std::list <ComObjPtr <HostNetworkInterface> > list;
 
+# if defined(RT_OS_DARWIN)
+    PDARWINETHERNIC pEtherNICs = DarwinGetEthernetControllers();
+    while (pEtherNICs)
+    {
+        ComObjPtr<HostNetworkInterface> IfObj;
+        IfObj.createObject();
+        if (SUCCEEDED(IfObj->init(Bstr(pEtherNICs->szName), Guid(pEtherNICs->Uuid))))
+            list.push_back(IfObj);
+
+        /* next, free current */
+        void *pvFree = pEtherNICs;
+        pEtherNICs = pEtherNICs->pNext;
+        RTMemFree(pvFree);
+    }
+
+# elif defined(RT_OS_SOLARIS)
+
+    typedef std::map <std::string, std::string> NICMap;
+    typedef std::pair <std::string, std::string> NICPair;
+    static NICMap SolarisNICMap;
+    if (SolarisNICMap.empty())
+    {
+        SolarisNICMap.insert(NICPair("bge", "Broadcom BCM57xx Gigabit Ethernet"));
+        SolarisNICMap.insert(NICPair("ce", "Cassini Gigabit Ethernet"));
+        SolarisNICMap.insert(NICPair("chxge", "Chelsio Ethernet"));
+        SolarisNICMap.insert(NICPair("dmfe", "Davicom Fast Ethernet"));
+        SolarisNICMap.insert(NICPair("dnet", "DEC 21040/41 21140 Ethernet"));
+        SolarisNICMap.insert(NICPair("e1000", "Intel PRO/1000 Gigabit Ethernet"));
+        SolarisNICMap.insert(NICPair("e1000g", "Intel PRO/1000 Gigabit Ethernet"));
+        SolarisNICMap.insert(NICPair("elx", "3COM EtherLink III Ethernet"));
+        SolarisNICMap.insert(NICPair("elxl", "3COM Ethernet"));
+        SolarisNICMap.insert(NICPair("elxl", "eri Fast Ethernet"));
+        SolarisNICMap.insert(NICPair("ge", "GEM Gigabit Ethernet"));
+        SolarisNICMap.insert(NICPair("hme", "SUNW,hme Fast-Ethernet"));
+        SolarisNICMap.insert(NICPair("ipge", "PCI-E Gigabit Ethernet"));
+        SolarisNICMap.insert(NICPair("iprb", "Intel 82557/58/59 Ethernet"));
+        SolarisNICMap.insert(NICPair("nge", "Nvidia Gigabit Ethernet"));
+        SolarisNICMap.insert(NICPair("pcelx", "3COM EtherLink III PCMCIA Ethernet"));
+        SolarisNICMap.insert(NICPair("pcn", "AMD PCnet Ethernet"));
+        SolarisNICMap.insert(NICPair("qfe", "SUNW,qfe Quad Fast-Ethernet"));
+        SolarisNICMap.insert(NICPair("rge", "Realtek Gigabit Ethernet"));
+        SolarisNICMap.insert(NICPair("rtls", "Realtek 8139 Fast Ethernet"));
+        SolarisNICMap.insert(NICPair("skge", "SksKonnect Gigabit Ethernet"));
+        SolarisNICMap.insert(NICPair("spwr", "SMC EtherPower II 10/100 (9432)   Ethernet"));
+        SolarisNICMap.insert(NICPair("xge", "Neterior Xframe Gigabit Ethernet"));
+        SolarisNICMap.insert(NICPair("xge", "Neterior Xframe 10Gigabit Ethernet"));
+    }
+
+    int Sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_IP);
+    if (Sock > 0)
+    {
+        struct lifnum IfNum;
+        memset(&IfNum, 0, sizeof(IfNum));
+        IfNum.lifn_family = AF_INET;
+        int rc = ioctl(Sock, SIOCGLIFNUM, &IfNum);
+        if (!rc)
+        {
+            struct lifreq Ifaces[24];
+            struct lifconf IfConfig;
+            memset(&IfConfig, 0, sizeof(IfConfig));
+            IfConfig.lifc_family = AF_INET;
+            IfConfig.lifc_len = sizeof(Ifaces);
+            IfConfig.lifc_buf = (caddr_t)&(Ifaces[0]);
+            rc = ioctl(Sock, SIOCGLIFCONF, &IfConfig);
+            if (!rc)
+            {
+                /*
+                 * Ok now we go the interfaces, get the info we need (i.e MAC address).
+                 */
+                for (int i = 0; i < IfNum.lifn_count; i++)
+                {
+                    /*
+                     * Skip loopback interfaces.
+                     */
+                    if (!strncmp(Ifaces[i].lifr_name, "lo", 2))
+                        continue;
+
+                    rc = ioctl(Sock, SIOCGLIFADDR, &(Ifaces[i]));
+                    if (!rc)
+                    {
+                        RTMAC Mac;
+                        struct arpreq ArpReq;
+                        memcpy(&ArpReq.arp_pa, &Ifaces[i].lifr_addr, sizeof(struct sockaddr_in));
+
+                        /*
+                         * We might fail if the interface has not been assigned an IP address.
+                         * That doesn't matter; as long as it's plumbed we can pick it up.
+                         * But, if it has not acquired an IP address we cannot obtain it's MAC
+                         * address this way, so we just use all zeros there.
+                         */
+                        rc = ioctl(Sock, SIOCGARP, &ArpReq);
+                        if (!rc)
+                            memcpy(&Mac, ArpReq.arp_ha.sa_data, sizeof(RTMAC));
+                        else
+                            memset(&Mac, 0, sizeof(Mac));
+
+                        char szNICDesc[LIFNAMSIZ + 256];
+                        char *pszIface = Ifaces[i].lifr_name;
+                        strcpy(szNICDesc, pszIface);
+
+                        /*
+                         * Clip off the instance number from the interface name.
+                         */
+                        int cbInstance = 0;
+                        int cbIface = strlen(pszIface);
+                        char *pszEnd = pszIface + cbIface - 1;
+                        for (int i = 0; i < cbIface - 1; i++)
+                        {
+                            if (!RT_C_IS_DIGIT(*pszEnd))
+                                break;
+                            cbInstance++;
+                            pszEnd--;
+                        }
+
+                        /*
+                         * Try picking up description from our NIC map.
+                         */
+                        char szIfaceName[LIFNAMSIZ + 1];
+                        strncpy(szIfaceName, pszIface, cbIface - cbInstance);
+                        szIfaceName[cbIface - cbInstance] = '\0';
+                        std::string Description = SolarisNICMap[szIfaceName];
+                        if (Description != "")
+                            RTStrPrintf(szNICDesc, sizeof(szNICDesc), "%s - %s", pszIface, Description.c_str());
+                        else
+                            RTStrPrintf(szNICDesc, sizeof(szNICDesc), "%s - Ethernet", pszIface);
+
+                        /*
+                         * Construct UUID with BSD-name of the interface and the MAC address.
+                         */
+                        RTUUID Uuid;
+                        RTUuidClear(&Uuid);
+                        memcpy(&Uuid, pszIface, RT_MIN(strlen(pszIface), sizeof(Uuid)));
+                        Uuid.Gen.u8ClockSeqHiAndReserved = (Uuid.Gen.u8ClockSeqHiAndReserved & 0x3f) | 0x80;
+                        Uuid.Gen.u16TimeHiAndVersion = (Uuid.Gen.u16TimeHiAndVersion & 0x0fff) | 0x4000;
+                        Uuid.Gen.au8Node[0] = Mac.au8[0];
+                        Uuid.Gen.au8Node[1] = Mac.au8[1];
+                        Uuid.Gen.au8Node[2] = Mac.au8[2];
+                        Uuid.Gen.au8Node[3] = Mac.au8[3];
+                        Uuid.Gen.au8Node[4] = Mac.au8[4];
+                        Uuid.Gen.au8Node[5] = Mac.au8[5];
+
+                        ComObjPtr<HostNetworkInterface> IfObj;
+                        IfObj.createObject();
+                        if (SUCCEEDED(IfObj->init(Bstr(szNICDesc), Guid(Uuid))))
+                            list.push_back(IfObj);
+                    }
+                }
+            }
+        }
+        close(Sock);
+    }
+
+# elif defined RT_OS_WINDOWS
     static const char *NetworkKey = "SYSTEM\\CurrentControlSet\\Control\\Network\\"
                                     "{4D36E972-E325-11CE-BFC1-08002BE10318}";
     HKEY hCtrlNet;
@@ -572,14 +748,19 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
         }
     }
     RegCloseKey (hCtrlNet);
+# endif /* RT_OS_WINDOWS */
 
     ComObjPtr <HostNetworkInterfaceCollection> collection;
     collection.createObject();
     collection->init (list);
     collection.queryInterfaceTo (networkInterfaces);
     return S_OK;
+
+#else
+    /* Not implemented / supported on this platform. */
+    return E_NOTIMPL;
+#endif
 }
-#endif /* RT_OS_WINDOWS */
 
 STDMETHODIMP Host::COMGETTER(USBDevices)(IHostUSBDeviceCollection **aUSBDevices)
 {
@@ -641,39 +822,57 @@ STDMETHODIMP Host::COMGETTER(ProcessorCount)(ULONG *count)
         return E_POINTER;
     AutoWriteLock alock (this);
     CHECK_READY();
-    *count = RTSystemProcessorGetCount();
+    *count = RTMpGetCount();
     return S_OK;
 }
 
 /**
- * Returns the (approximate) speed of the host CPU in MHz
+ * Returns the number of online logical processors
  *
  * @returns COM status code
- * @param   speed address of result variable
+ * @param   count address of result variable
  */
-STDMETHODIMP Host::COMGETTER(ProcessorSpeed)(ULONG *speed)
+STDMETHODIMP Host::COMGETTER(ProcessorOnlineCount)(ULONG *count)
+{
+    if (!count)
+        return E_POINTER;
+    AutoWriteLock alock (this);
+    CHECK_READY();
+    *count = RTMpGetOnlineCount();
+    return S_OK;
+}
+
+/**
+ * Returns the (approximate) maximum speed of the given host CPU in MHz
+ *
+ * @returns COM status code
+ * @param   cpu id to get info for.
+ * @param   speed address of result variable, speed is 0 if unknown or cpuId is invalid.
+ */
+STDMETHODIMP Host::GetProcessorSpeed(ULONG aCpuId, ULONG *speed)
 {
     if (!speed)
         return E_POINTER;
     AutoWriteLock alock (this);
     CHECK_READY();
-    /** @todo Add a runtime function for this which uses GIP. */
+    *speed = RTMpGetMaxFrequency(aCpuId);
     return S_OK;
 }
 /**
  * Returns a description string for the host CPU
  *
  * @returns COM status code
- * @param   description address of result variable
+ * @param   cpu id to get info for.
+ * @param   description address of result variable, NULL if known or cpuId is invalid.
  */
-STDMETHODIMP Host::COMGETTER(ProcessorDescription)(BSTR *description)
+STDMETHODIMP Host::GetProcessorDescription(ULONG cpuId, BSTR *description)
 {
     if (!description)
         return E_POINTER;
     AutoWriteLock alock (this);
     CHECK_READY();
     /** @todo */
-    return S_OK;
+    return E_NOTIMPL;
 }
 
 
@@ -690,7 +889,7 @@ STDMETHODIMP Host::COMGETTER(MemorySize)(ULONG *size)
     AutoWriteLock alock (this);
     CHECK_READY();
     /** @todo */
-    return S_OK;
+    return E_NOTIMPL;
 }
 
 /**
@@ -706,7 +905,7 @@ STDMETHODIMP Host::COMGETTER(MemoryAvailable)(ULONG *available)
     AutoWriteLock alock (this);
     CHECK_READY();
     /** @todo */
-    return S_OK;
+    return E_NOTIMPL;
 }
 
 /**
@@ -722,7 +921,7 @@ STDMETHODIMP Host::COMGETTER(OperatingSystem)(BSTR *os)
     AutoWriteLock alock (this);
     CHECK_READY();
     /** @todo */
-    return S_OK;
+    return E_NOTIMPL;
 }
 
 /**
@@ -738,7 +937,7 @@ STDMETHODIMP Host::COMGETTER(OSVersion)(BSTR *version)
     AutoWriteLock alock (this);
     CHECK_READY();
     /** @todo */
-    return S_OK;
+    return E_NOTIMPL;
 }
 
 /**
@@ -2673,4 +2872,103 @@ int Host::networkInterfaceHelperServer (SVCHlpClient *aClient,
 }
 
 #endif /* RT_OS_WINDOWS */
+
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+void Host::registerMetrics (PerformanceCollector *aCollector)
+{
+    pm::MetricFactory *metricFactory = aCollector->getMetricFactory();
+    /* Create sub metrics */
+    pm::SubMetric *cpuLoadUser   = new pm::SubMetric ("CPU/Load/User",
+        "Percentage of processor time spent in user mode.");
+    pm::SubMetric *cpuLoadKernel = new pm::SubMetric ("CPU/Load/Kernel",
+        "Percentage of processor time spent in kernel mode.");
+    pm::SubMetric *cpuLoadIdle   = new pm::SubMetric ("CPU/Load/Idle",
+        "Percentage of processor time spent idling.");
+    pm::SubMetric *cpuMhzSM      = new pm::SubMetric ("CPU/MHz",
+        "Average of current frequency of all processors.");
+    pm::SubMetric *ramUsageTotal = new pm::SubMetric ("RAM/Usage/Total",
+        "Total physical memory installed.");
+    pm::SubMetric *ramUsageUsed  = new pm::SubMetric ("RAM/Usage/Used",
+        "Physical memory currently occupied.");
+    pm::SubMetric *ramUsageFree  = new pm::SubMetric ("RAM/Usage/Free",
+        "Physical memory currently available to applications.");
+    /* Create and register base metrics */
+    IUnknown *objptr;
+    ComObjPtr <Host> tmp = this;
+    tmp.queryInterfaceTo (&objptr);
+    pm::BaseMetric *cpuLoad =
+        metricFactory->createHostCpuLoad (objptr, cpuLoadUser, cpuLoadKernel,
+                                          cpuLoadIdle);
+    aCollector->registerBaseMetric (cpuLoad);
+    pm::BaseMetric *cpuMhz =
+        metricFactory->createHostCpuMHz (objptr, cpuMhzSM);
+    aCollector->registerBaseMetric (cpuMhz);
+    pm::BaseMetric *ramUsage =
+        metricFactory->createHostRamUsage (objptr, ramUsageTotal, ramUsageUsed,
+                                           ramUsageFree);
+    aCollector->registerBaseMetric (ramUsage);
+
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadUser, 0));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadUser,
+                                               new pm::AggregateAvg()));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadUser,
+                                               new pm::AggregateMin()));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadUser,
+                                               new pm::AggregateMax()));
+
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadKernel, 0));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadKernel,
+                                               new pm::AggregateAvg()));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadKernel,
+                                               new pm::AggregateMin()));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadKernel,
+                                               new pm::AggregateMax()));
+
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadIdle, 0));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadIdle,
+                                               new pm::AggregateAvg()));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadIdle,
+                                               new pm::AggregateMin()));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadIdle,
+                                               new pm::AggregateMax()));
+
+    aCollector->registerMetric (new pm::Metric(cpuMhz, cpuMhzSM, 0));
+    aCollector->registerMetric (new pm::Metric(cpuMhz, cpuMhzSM,
+                                               new pm::AggregateAvg()));
+    aCollector->registerMetric (new pm::Metric(cpuMhz, cpuMhzSM,
+                                               new pm::AggregateMin()));
+    aCollector->registerMetric (new pm::Metric(cpuMhz, cpuMhzSM,
+                                               new pm::AggregateMax()));
+
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageTotal, 0));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageTotal,
+                                               new pm::AggregateAvg()));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageTotal,
+                                               new pm::AggregateMin()));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageTotal,
+                                               new pm::AggregateMax()));
+
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageUsed, 0));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageUsed,
+                                               new pm::AggregateAvg()));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageUsed,
+                                               new pm::AggregateMin()));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageUsed,
+                                               new pm::AggregateMax()));
+
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageFree, 0));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageFree,
+                                               new pm::AggregateAvg()));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageFree,
+                                               new pm::AggregateMin()));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageFree,
+                                               new pm::AggregateMax()));
+};
+
+void Host::unregisterMetrics (PerformanceCollector *aCollector)
+{
+    aCollector->unregisterMetricsFor (this);
+    aCollector->unregisterBaseMetricsFor (this);
+};
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
 

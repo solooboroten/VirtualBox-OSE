@@ -1,4 +1,4 @@
-/* $Id: SATAControllerImpl.cpp 30524 2008-05-05 16:02:31Z aeichner $ */
+/* $Id: SATAControllerImpl.cpp 32572 2008-07-01 18:50:28Z frank $ */
 
 /** @file
  *
@@ -56,7 +56,7 @@ void SATAController::FinalRelease()
 /////////////////////////////////////////////////////////////////////////////
 
 /**
- * Initializes the USB controller object.
+ * Initializes the SATA controller object.
  *
  * @returns COM result indicator.
  * @param aParent       Pointer to our parent object.

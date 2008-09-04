@@ -1,4 +1,4 @@
-/* $Id: tstTimer.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: tstTimer.cpp 33814 2008-07-29 18:32:21Z bird $ */
 /** @file
  * IPRT Testcase - Timers.
  */
@@ -48,7 +48,7 @@ static volatile uint64_t gu64Min;
 static volatile uint64_t gu64Max;
 static volatile uint64_t gu64Prev;
 
-static DECLCALLBACK(void) TimerCallback(PRTTIMER pTimer, void *pvUser)
+static DECLCALLBACK(void) TimerCallback(PRTTIMER pTimer, void *pvUser, uint64_t iTick)
 {
     gcTicks++;
 
@@ -139,7 +139,8 @@ int main()
         aTests[i].cLower = (aTests[i].uMilliesWait - aTests[i].uMilliesWait / 10) / aTests[i].uMilliesInterval;
         aTests[i].cUpper = (aTests[i].uMilliesWait + aTests[i].uMilliesWait / 10) / aTests[i].uMilliesInterval;
 
-        RTPrintf("tstTimer: TESTING - %d ms interval, %d ms wait, expects %d-%d ticks.\n",
+        RTPrintf("\n"
+                 "tstTimer: TESTING - %d ms interval, %d ms wait, expects %d-%d ticks.\n",
                  aTests[i].uMilliesInterval, aTests[i].uMilliesWait, aTests[i].cLower, aTests[i].cUpper);
 
         /*
@@ -150,34 +151,47 @@ int main()
         gu64Max = 0;
         gu64Min = UINT64_MAX;
         gu64Prev = 0;
+#ifdef RT_OS_WINDOWS
         rc = RTTimerCreate(&pTimer, aTests[i].uMilliesInterval, TimerCallback, NULL);
+#else
+        rc = RTTimerCreateEx(&pTimer, aTests[i].uMilliesInterval * (uint64_t)1000000, 0, TimerCallback, NULL);
+#endif
         if (RT_FAILURE(rc))
         {
-            RTPrintf("RTTimerCreate(,%d,) -> %d\n", aTests[i].uMilliesInterval, rc);
+            RTPrintf("tstTimer: FAILURE - RTTimerCreateEx(,%u*1M,,,) -> %Rrc\n", aTests[i].uMilliesInterval, rc);
             cErrors++;
             continue;
         }
 
         /*
-         * Active waiting for 2 seconds and then destroy it.
+         * Start the timer and active waiting for the requested test period.
          */
         uint64_t uTSBegin = RTTimeNanoTS();
+#ifndef RT_OS_WINDOWS
+        rc = RTTimerStart(pTimer, 0);
+        if (RT_FAILURE(rc))
+        {
+            RTPrintf("tstTimer: FAILURE - RTTimerStart(,0) -> %Rrc\n", aTests[i].uMilliesInterval, rc);
+            cErrors++;
+        }
+#endif
+
         while (RTTimeNanoTS() - uTSBegin < (uint64_t)aTests[i].uMilliesWait * 1000000)
             /* nothing */;
+
+        /* destroy the timer */
         uint64_t uTSEnd = RTTimeNanoTS();
         uint64_t uTSDiff = uTSEnd - uTSBegin;
-        RTPrintf("uTS=%RI64 (%RU64 - %RU64)\n", uTSDiff, uTSBegin, uTSEnd);
-        if (RT_FAILURE(rc))
-            RTPrintf("warning: RTThreadSleep ended prematurely with %d\n", rc);
         rc = RTTimerDestroy(pTimer);
         if (RT_FAILURE(rc))
         {
             RTPrintf("tstTimer: FAILURE - RTTimerDestroy() -> %d gcTicks=%d\n", rc, gcTicks);
             cErrors++;
-            continue;
         }
+
+        RTPrintf("tstTimer: uTS=%RI64 (%RU64 - %RU64)\n", uTSDiff, uTSBegin, uTSEnd);
         unsigned cTicks = gcTicks;
-        RTThreadSleep(100);
+        RTThreadSleep(aTests[i].uMilliesInterval * 3);
         if (gcTicks != cTicks)
         {
             RTPrintf("tstTimer: FAILURE - RTTimerDestroy() didn't really stop the timer! gcTicks=%d cTicks=%d\n", gcTicks, cTicks);

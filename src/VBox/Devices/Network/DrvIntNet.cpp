@@ -1,7 +1,6 @@
+/* $Id: DrvIntNet.cpp 35689 2008-08-29 21:32:44Z bird $ */
 /** @file
- *
- * VBox network devices:
- * Internal network transport driver
+ * DrvIntNet - Internal network transport driver.
  */
 
 /*
@@ -20,7 +19,6 @@
  * additional information or have any questions.
  */
 
-
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
@@ -38,8 +36,9 @@
 #include <iprt/semaphore.h>
 #include <iprt/string.h>
 #include <iprt/time.h>
+#include <iprt/ctype.h>
 
-#include "Builtins.h"
+#include "../Builtins.h"
 
 
 /*******************************************************************************
@@ -69,6 +68,9 @@ typedef struct DRVINTNET
     PDMINETWORKCONNECTOR    INetworkConnector;
     /** The network interface. */
     PPDMINETWORKPORT        pPort;
+    /** The network config interface.
+     * Can (in theory at least) be NULL. */
+    PPDMINETWORKCONFIG      pConfigIf;
     /** Pointer to the driver instance. */
     PPDMDRVINS              pDrvIns;
     /** Interface handle. */
@@ -84,8 +86,9 @@ typedef struct DRVINTNET
     /** Set if the link is down.
      * When the link is down all incoming packets will be dropped. */
     bool volatile           fLinkDown;
-    /** Set if data transmission should start immediately. */
-    bool                    fActivateEarly;
+    /** Set if data transmission should start immediately and deactivate
+     * as late as possible. */
+    bool                    fActivateEarlyDeactivateLate;
 
 #ifdef VBOX_WITH_STATISTICS
     /** Profiling packet transmit runs. */
@@ -110,6 +113,61 @@ typedef struct DRVINTNET
 
 
 /**
+ * Updates the MAC address on the kernel side.
+ *
+ * @returns VBox status code.
+ * @param   pThis       The driver instance.
+ */
+static int drvIntNetUpdateMacAddress(PDRVINTNET pThis)
+{
+    if (!pThis->pConfigIf)
+        return VINF_SUCCESS;
+
+    INTNETIFSETMACADDRESSREQ SetMacAddressReq;
+    SetMacAddressReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
+    SetMacAddressReq.Hdr.cbReq = sizeof(SetMacAddressReq);
+    SetMacAddressReq.pSession = NIL_RTR0PTR;
+    SetMacAddressReq.hIf = pThis->hIf;
+    int rc = pThis->pConfigIf->pfnGetMac(pThis->pConfigIf, &SetMacAddressReq.Mac);
+    if (RT_SUCCESS(rc))
+        rc = pThis->pDrvIns->pDrvHlp->pfnSUPCallVMMR0Ex(pThis->pDrvIns, VMMR0_DO_INTNET_IF_SET_MAC_ADDRESS,
+                                                        &SetMacAddressReq, sizeof(SetMacAddressReq));
+
+    Log(("drvIntNetUpdateMacAddress: %.*Rhxs rc=%Rrc\n", sizeof(SetMacAddressReq.Mac), &SetMacAddressReq.Mac, rc));
+    return rc;
+}
+
+
+/**
+ * Sets the kernel interface active or inactive.
+ *
+ * Worker for poweron, poweroff, suspend and resume.
+ *
+ * @returns VBox status code.
+ * @param   pThis       The driver instance.
+ * @param   fActive     The new state.
+ */
+static int drvIntNetSetActive(PDRVINTNET pThis, bool fActive)
+{
+    if (!pThis->pConfigIf)
+        return VINF_SUCCESS;
+
+    INTNETIFSETACTIVEREQ SetActiveReq;
+    SetActiveReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
+    SetActiveReq.Hdr.cbReq = sizeof(SetActiveReq);
+    SetActiveReq.pSession = NIL_RTR0PTR;
+    SetActiveReq.hIf = pThis->hIf;
+    SetActiveReq.fActive = fActive;
+    int rc = pThis->pDrvIns->pDrvHlp->pfnSUPCallVMMR0Ex(pThis->pDrvIns, VMMR0_DO_INTNET_IF_SET_ACTIVE,
+                                                        &SetActiveReq, sizeof(SetActiveReq));
+
+    Log(("drvIntNetUpdateMacAddress: fActive=%d rc=%Rrc\n", fActive, rc));
+    AssertRC(rc);
+    return rc;
+}
+
+
+/**
  * Writes a frame packet to the buffer.
  *
  * @returns VBox status code.
@@ -127,7 +185,7 @@ static int drvIntNetRingWriteFrame(PINTNETBUF pBuf, PINTNETRINGBUF pRingBuf, con
     Assert(pBuf);
     Assert(pRingBuf);
     Assert(pvFrame);
-    Assert(cbFrame >= sizeof(PDMMAC) * 2);
+    Assert(cbFrame >= sizeof(RTMAC) * 2);
     uint32_t offWrite = pRingBuf->offWrite;
     Assert(offWrite == RT_ALIGN_32(offWrite, sizeof(INTNETHDR)));
     uint32_t offRead = pRingBuf->offRead;
@@ -236,6 +294,7 @@ static DECLCALLBACK(int) drvIntNetSend(PPDMINETWORKCONNECTOR pInterface, const v
         INTNETIFSENDREQ SendReq;
         SendReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
         SendReq.Hdr.cbReq = sizeof(SendReq);
+        SendReq.pSession = NIL_RTR0PTR;
         SendReq.hIf = pThis->hIf;
         pThis->pDrvIns->pDrvHlp->pfnSUPCallVMMR0Ex(pThis->pDrvIns, VMMR0_DO_INTNET_IF_SEND, &SendReq, sizeof(SendReq));
 
@@ -247,6 +306,7 @@ static DECLCALLBACK(int) drvIntNetSend(PPDMINETWORKCONNECTOR pInterface, const v
         INTNETIFSENDREQ SendReq;
         SendReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
         SendReq.Hdr.cbReq = sizeof(SendReq);
+        SendReq.pSession = NIL_RTR0PTR;
         SendReq.hIf = pThis->hIf;
         rc = pThis->pDrvIns->pDrvHlp->pfnSUPCallVMMR0Ex(pThis->pDrvIns, VMMR0_DO_INTNET_IF_SEND, &SendReq, sizeof(SendReq));
     }
@@ -273,6 +333,7 @@ static DECLCALLBACK(void) drvIntNetSetPromiscuousMode(PPDMINETWORKCONNECTOR pInt
     INTNETIFSETPROMISCUOUSMODEREQ Req;
     Req.Hdr.u32Magic    = SUPVMMR0REQHDR_MAGIC;
     Req.Hdr.cbReq       = sizeof(Req);
+    Req.pSession        = NIL_RTR0PTR;
     Req.hIf             = pThis->hIf;
     Req.fPromiscuous    = fPromiscuous;
     int rc = pThis->pDrvIns->pDrvHlp->pfnSUPCallVMMR0Ex(pThis->pDrvIns, VMMR0_DO_INTNET_IF_SET_PROMISCUOUS_MODE, &Req, sizeof(Req));
@@ -323,7 +384,7 @@ static int drvIntNetAsyncIoWaitForSpace(PDRVINTNET pThis)
     STAM_PROFILE_ADV_STOP(&pThis->StatReceive, a);
     int rc = pThis->pPort->pfnWaitReceiveAvail(pThis->pPort, RT_INDEFINITE_WAIT);
     STAM_PROFILE_ADV_START(&pThis->StatReceive, a);
-    LogFlow(("drvIntNetAsyncIoWaitForSpace: returns %Vrc\n", rc));
+    LogFlow(("drvIntNetAsyncIoWaitForSpace: returns %Rrc\n", rc));
     return rc;
 }
 
@@ -396,10 +457,10 @@ static int drvIntNetAsyncIoRun(PDRVINTNET pThis)
                      * Wait for sufficient space to become available and then retry.
                      */
                     rc = drvIntNetAsyncIoWaitForSpace(pThis);
-                    if (VBOX_FAILURE(rc))
+                    if (RT_FAILURE(rc))
                     {
                         STAM_PROFILE_ADV_STOP(&pThis->StatReceive, a);
-                        LogFlow(("drvIntNetAsyncIoRun: returns %Vrc (wait-for-space)\n", rc));
+                        LogFlow(("drvIntNetAsyncIoRun: returns %Rrc (wait-for-space)\n", rc));
                         return rc;
                     }
                 }
@@ -427,15 +488,16 @@ static int drvIntNetAsyncIoRun(PDRVINTNET pThis)
         INTNETIFWAITREQ WaitReq;
         WaitReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
         WaitReq.Hdr.cbReq    = sizeof(WaitReq);
+        WaitReq.pSession     = NIL_RTR0PTR;
         WaitReq.hIf          = pThis->hIf;
         WaitReq.cMillies     = 30000; /* 30s - don't wait forever, timeout now and then. */
         STAM_PROFILE_ADV_STOP(&pThis->StatReceive, a);
         int rc = pDrvIns->pDrvHlp->pfnSUPCallVMMR0Ex(pDrvIns, VMMR0_DO_INTNET_IF_WAIT, &WaitReq, sizeof(WaitReq));
-        if (    VBOX_FAILURE(rc)
+        if (    RT_FAILURE(rc)
             &&  rc != VERR_TIMEOUT
             &&  rc != VERR_INTERRUPTED)
         {
-            LogFlow(("drvIntNetAsyncIoRun: returns %Vrc\n", rc));
+            LogFlow(("drvIntNetAsyncIoRun: returns %Rrc\n", rc));
             return rc;
         }
         STAM_PROFILE_ADV_START(&pThis->StatReceive, a);
@@ -467,10 +529,10 @@ static DECLCALLBACK(int) drvIntNetAsyncIoThread(RTTHREAD ThreadSelf, void *pvUse
             case ASYNCSTATE_SUSPENDED:
             {
                 int rc = RTSemEventWait(pThis->EventSuspended, 30000);
-                if (    VBOX_FAILURE(rc)
+                if (    RT_FAILURE(rc)
                     &&  rc != VERR_TIMEOUT)
                 {
-                    LogFlow(("drvIntNetAsyncIoThread: returns %Vrc\n", rc));
+                    LogFlow(("drvIntNetAsyncIoThread: returns %Rrc\n", rc));
                     return rc;
                 }
                 break;
@@ -480,9 +542,9 @@ static DECLCALLBACK(int) drvIntNetAsyncIoThread(RTTHREAD ThreadSelf, void *pvUse
             {
                 int rc = drvIntNetAsyncIoRun(pThis);
                 if (    rc != VERR_STATE_CHANGED
-                    &&  VBOX_FAILURE(rc))
+                    &&  RT_FAILURE(rc))
                 {
-                    LogFlow(("drvIntNetAsyncIoThread: returns %Vrc\n", rc));
+                    LogFlow(("drvIntNetAsyncIoThread: returns %Rrc\n", rc));
                     return rc;
                 }
                 break;
@@ -510,7 +572,7 @@ static DECLCALLBACK(int) drvIntNetAsyncIoThread(RTTHREAD ThreadSelf, void *pvUse
 static DECLCALLBACK(void *) drvIntNetQueryInterface(PPDMIBASE pInterface, PDMINTERFACE enmInterface)
 {
     PPDMDRVINS pDrvIns = PDMIBASE_2_PDMDRV(pInterface);
-    PDRVINTNET pThis = PDMINS2DATA(pDrvIns, PDRVINTNET);
+    PDRVINTNET pThis = PDMINS_2_DATA(pDrvIns, PDRVINTNET);
     switch (enmInterface)
     {
         case PDMINTERFACE_BASE:
@@ -531,8 +593,12 @@ static DECLCALLBACK(void *) drvIntNetQueryInterface(PPDMIBASE pInterface, PDMINT
 static DECLCALLBACK(void) drvIntNetPowerOff(PPDMDRVINS pDrvIns)
 {
     LogFlow(("drvIntNetPowerOff\n"));
-    PDRVINTNET pThis = PDMINS2DATA(pDrvIns, PDRVINTNET);
-    ASMAtomicXchgSize(&pThis->enmState, ASYNCSTATE_SUSPENDED);
+    PDRVINTNET pThis = PDMINS_2_DATA(pDrvIns, PDRVINTNET);
+    if (!pThis->fActivateEarlyDeactivateLate)
+    {
+        ASMAtomicXchgSize(&pThis->enmState, ASYNCSTATE_SUSPENDED);
+        drvIntNetSetActive(pThis, false /* fActive */);
+    }
 }
 
 
@@ -544,9 +610,14 @@ static DECLCALLBACK(void) drvIntNetPowerOff(PPDMDRVINS pDrvIns)
 static DECLCALLBACK(void) drvIntNetResume(PPDMDRVINS pDrvIns)
 {
     LogFlow(("drvIntNetPowerResume\n"));
-    PDRVINTNET pThis = PDMINS2DATA(pDrvIns, PDRVINTNET);
-    ASMAtomicXchgSize(&pThis->enmState, ASYNCSTATE_RUNNING);
-    RTSemEventSignal(pThis->EventSuspended);
+    PDRVINTNET pThis = PDMINS_2_DATA(pDrvIns, PDRVINTNET);
+    if (!pThis->fActivateEarlyDeactivateLate)
+    {
+        ASMAtomicXchgSize(&pThis->enmState, ASYNCSTATE_RUNNING);
+        RTSemEventSignal(pThis->EventSuspended);
+        drvIntNetUpdateMacAddress(pThis); /* (could be a state restore) */
+        drvIntNetSetActive(pThis, true /* fActive */);
+    }
 }
 
 
@@ -558,8 +629,12 @@ static DECLCALLBACK(void) drvIntNetResume(PPDMDRVINS pDrvIns)
 static DECLCALLBACK(void) drvIntNetSuspend(PPDMDRVINS pDrvIns)
 {
     LogFlow(("drvIntNetPowerSuspend\n"));
-    PDRVINTNET pThis = PDMINS2DATA(pDrvIns, PDRVINTNET);
-    ASMAtomicXchgSize(&pThis->enmState, ASYNCSTATE_SUSPENDED);
+    PDRVINTNET pThis = PDMINS_2_DATA(pDrvIns, PDRVINTNET);
+    if (!pThis->fActivateEarlyDeactivateLate)
+    {
+        ASMAtomicXchgSize(&pThis->enmState, ASYNCSTATE_SUSPENDED);
+        drvIntNetSetActive(pThis, false /* fActive */);
+    }
 }
 
 
@@ -571,11 +646,13 @@ static DECLCALLBACK(void) drvIntNetSuspend(PPDMDRVINS pDrvIns)
 static DECLCALLBACK(void) drvIntNetPowerOn(PPDMDRVINS pDrvIns)
 {
     LogFlow(("drvIntNetPowerOn\n"));
-    PDRVINTNET pThis = PDMINS2DATA(pDrvIns, PDRVINTNET);
-    if (!pThis->fActivateEarly)
+    PDRVINTNET pThis = PDMINS_2_DATA(pDrvIns, PDRVINTNET);
+    if (!pThis->fActivateEarlyDeactivateLate)
     {
         ASMAtomicXchgSize(&pThis->enmState, ASYNCSTATE_RUNNING);
         RTSemEventSignal(pThis->EventSuspended);
+        drvIntNetUpdateMacAddress(pThis);
+        drvIntNetSetActive(pThis, true /* fActive */);
     }
 }
 
@@ -591,7 +668,7 @@ static DECLCALLBACK(void) drvIntNetPowerOn(PPDMDRVINS pDrvIns)
 static DECLCALLBACK(void) drvIntNetDestruct(PPDMDRVINS pDrvIns)
 {
     LogFlow(("drvIntNetDestruct\n"));
-    PDRVINTNET pThis = PDMINS2DATA(pDrvIns, PDRVINTNET);
+    PDRVINTNET pThis = PDMINS_2_DATA(pDrvIns, PDRVINTNET);
 
     /*
      * Indicate to the thread that it's time to quit.
@@ -609,6 +686,7 @@ static DECLCALLBACK(void) drvIntNetDestruct(PPDMDRVINS pDrvIns)
         INTNETIFCLOSEREQ CloseReq;
         CloseReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
         CloseReq.Hdr.cbReq = sizeof(CloseReq);
+        CloseReq.pSession = NIL_RTR0PTR;
         CloseReq.hIf = pThis->hIf;
         pThis->hIf = INTNET_HANDLE_INVALID;
         int rc = pDrvIns->pDrvHlp->pfnSUPCallVMMR0Ex(pDrvIns, VMMR0_DO_INTNET_IF_CLOSE, &CloseReq, sizeof(CloseReq));
@@ -647,7 +725,7 @@ static DECLCALLBACK(void) drvIntNetDestruct(PPDMDRVINS pDrvIns)
  */
 static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
 {
-    PDRVINTNET pThis = PDMINS2DATA(pDrvIns, PDRVINTNET);
+    PDRVINTNET pThis = PDMINS_2_DATA(pDrvIns, PDRVINTNET);
 
     /*
      * Init the static parts.
@@ -657,7 +735,7 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
     pThis->Thread                       = NIL_RTTHREAD;
     pThis->EventSuspended               = NIL_RTSEMEVENT;
     pThis->enmState                     = ASYNCSTATE_SUSPENDED;
-    pThis->fActivateEarly               = false;
+    pThis->fActivateEarlyDeactivateLate = false;
     /* IBase */
     pDrvIns->IBase.pfnQueryInterface    = drvIntNetQueryInterface;
     /* INetwork */
@@ -668,7 +746,15 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
     /*
      * Validate the config.
      */
-    if (!CFGMR3AreValuesValid(pCfgHandle, "Network\0ReceiveBufferSize\0SendBufferSize\0RestrictAccess\0IsService\0"))
+    if (!CFGMR3AreValuesValid(pCfgHandle,
+                              "Network\0"
+                              "Trunk\0"
+                              "TrunkType\0"
+                              "ReceiveBufferSize\0"
+                              "SendBufferSize\0"
+                              "RestrictAccess\0"
+                              "SharedMacOnWire\0"
+                              "IsService\0"))
         return VERR_PDM_DRVINS_UNKNOWN_CFG_VALUES;
 
     /*
@@ -690,6 +776,7 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
         AssertMsgFailed(("Configuration error: the above device/driver didn't export the network port interface!\n"));
         return VERR_PDM_MISSING_INTERFACE_ABOVE;
     }
+    pThis->pConfigIf = (PPDMINETWORKCONFIG)pDrvIns->pUpBase->pfnQueryInterface(pDrvIns->pUpBase, PDMINTERFACE_NETWORK_CONFIG);
 
     /*
      * Read the configuration.
@@ -698,51 +785,169 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
     memset(&OpenReq, 0, sizeof(OpenReq));
     OpenReq.Hdr.cbReq = sizeof(OpenReq);
     OpenReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
+    OpenReq.pSession = NIL_RTR0PTR;
 
+    /** @cfgm{Network, string}
+     * The name of the internal network to connect to.
+     */
     rc = CFGMR3QueryString(pCfgHandle, "Network", OpenReq.szNetwork, sizeof(OpenReq.szNetwork));
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return PDMDRV_SET_ERROR(pDrvIns, rc,
                                 N_("Configuration error: Failed to get the \"Network\" value"));
     strcpy(pThis->szNetwork, OpenReq.szNetwork);
 
+    /** @cfgm{TrunkType, uint32_t, kIntNetTrunkType_None}
+     * The trunk connection type see INTNETTRUNKTYPE.
+     */
+    uint32_t u32TrunkType;
+    rc = CFGMR3QueryU32(pCfgHandle, "TrunkType", &u32TrunkType);
+    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
+        u32TrunkType = kIntNetTrunkType_None;
+    else if (RT_FAILURE(rc))
+        return PDMDRV_SET_ERROR(pDrvIns, rc,
+                                N_("Configuration error: Failed to get the \"TrunkType\" value"));
+    OpenReq.enmTrunkType = (INTNETTRUNKTYPE)u32TrunkType;
+
+    /** @cfgm{Trunk, string, ""}
+     * The name of the trunk connection.
+     */
+    rc = CFGMR3QueryString(pCfgHandle, "Trunk", OpenReq.szTrunk, sizeof(OpenReq.szTrunk));
+    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
+        OpenReq.szTrunk[0] = '\0';
+    else if (RT_FAILURE(rc))
+        return PDMDRV_SET_ERROR(pDrvIns, rc,
+                                N_("Configuration error: Failed to get the \"Trunk\" value"));
+
+    /** @cfgm{RestrictAccess, boolean, true}
+     * Whether to restrict the access to the network or if it should be public. Everyone on
+     * the computer can connect to a public network. Don't change this.
+     */
+    bool fRestrictAccess;
+    rc = CFGMR3QueryBool(pCfgHandle, "RestrictAccess", &fRestrictAccess);
+    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
+        fRestrictAccess = true;
+    else if (RT_FAILURE(rc))
+        return PDMDRV_SET_ERROR(pDrvIns, rc,
+                                N_("Configuration error: Failed to get the \"RestrictAccess\" value"));
+    OpenReq.fFlags = fRestrictAccess ? 0 : INTNET_OPEN_FLAGS_PUBLIC;
+
+    /** @cfgm{SharedMacOnWire, boolean, false}
+     * Whether to shared the MAC address of the host interface when using the wire. When
+     * attaching to a wireless NIC this option is usally a requirement.
+     */
+    bool fSharedMacOnWire;
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "SharedMacOnWire", &fSharedMacOnWire, false);
+    if (RT_FAILURE(rc))
+        return PDMDRV_SET_ERROR(pDrvIns, rc,
+                                N_("Configuration error: Failed to get the \"SharedMacOnWire\" value"));
+    if (fSharedMacOnWire)
+        OpenReq.fFlags |= INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE;
+
+    /** @cfgm{ReceiveBufferSize, uint32_t, 218 KB}
+     * The size of the receive buffer.
+     */
     rc = CFGMR3QueryU32(pCfgHandle, "ReceiveBufferSize", &OpenReq.cbRecv);
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        OpenReq.cbRecv = _256K;
-    else if (VBOX_FAILURE(rc))
+        OpenReq.cbRecv = 218 * _1K ;
+    else if (RT_FAILURE(rc))
         return PDMDRV_SET_ERROR(pDrvIns, rc,
                                 N_("Configuration error: Failed to get the \"ReceiveBufferSize\" value"));
 
+    /** @cfgm{SendBufferSize, uint32_t, 36 KB}
+     * The size of the send (transmit) buffer.
+     * This should be more than twice the size of the larges frame size because
+     * the ring buffer is very simple and doesn't support splitting up frames
+     * nor inserting padding. So, if this is too close to the frame size the
+     * header will fragment the buffer such that the frame won't fit on either
+     * side of it and the code will get very upset about it all.
+     */
     rc = CFGMR3QueryU32(pCfgHandle, "SendBufferSize", &OpenReq.cbSend);
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        OpenReq.cbSend = _4K;
-    else if (VBOX_FAILURE(rc))
+        OpenReq.cbSend = 36*_1K;
+    else if (RT_FAILURE(rc))
         return PDMDRV_SET_ERROR(pDrvIns, rc,
                                 N_("Configuration error: Failed to get the \"SendBufferSize\" value"));
-    if (OpenReq.cbSend < 16)
+    if (OpenReq.cbSend < 32)
         return PDMDRV_SET_ERROR(pDrvIns, rc,
                                 N_("Configuration error: The \"SendBufferSize\" value is too small"));
-    if (OpenReq.cbSend < 1536*2 + 4)
-        LogRel(("DrvIntNet: Warning! SendBufferSize=%u, Recommended minimum size %u butes.\n", OpenReq.cbSend, 1536*2 + 4));
+    if (OpenReq.cbSend < 16384*2 + 64)
+        LogRel(("DrvIntNet: Warning! SendBufferSize=%u, Recommended minimum size %u butes.\n", OpenReq.cbSend, 16384*2 + 64));
 
-    rc = CFGMR3QueryBool(pCfgHandle, "RestrictAccess", &OpenReq.fRestrictAccess);
+    /** @cfgm{IsService, boolean, true}
+     * This alterns the way the thread is suspended and resumed. When it's being used by
+     * a service such as LWIP/iSCSI it shouldn't suspend immediately like for a NIC.
+     */
+    rc = CFGMR3QueryBool(pCfgHandle, "IsService", &pThis->fActivateEarlyDeactivateLate);
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        OpenReq.fRestrictAccess = true;
-    else if (VBOX_FAILURE(rc))
-        return PDMDRV_SET_ERROR(pDrvIns, rc,
-                                N_("Configuration error: Failed to get the \"RestrictAccess\" value"));
-
-    rc = CFGMR3QueryBool(pCfgHandle, "IsService", &pThis->fActivateEarly);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        pThis->fActivateEarly = false;
-    else if (VBOX_FAILURE(rc))
+        pThis->fActivateEarlyDeactivateLate = false;
+    else if (RT_FAILURE(rc))
         return PDMDRV_SET_ERROR(pDrvIns, rc,
                                 N_("Configuration error: Failed to get the \"IsService\" value"));
+
+    LogRel(("IntNet#%u: szNetwork={%s} enmTrunkType=%d szTrunk={%s} fFlags=%#x cbRecv=%u cbSend=%u\n",
+            pDrvIns->iInstance, OpenReq.szNetwork, OpenReq.enmTrunkType, OpenReq.szTrunk, OpenReq.fFlags,
+            OpenReq.cbRecv, OpenReq.cbSend));
+
+#ifdef RT_OS_DARWIN
+    /* Temporary hack: attach to a network with the name 'if=en0' and you're hitting the wire. */
+    if (    !OpenReq.szTrunk[0]
+        &&   OpenReq.enmTrunkType == kIntNetTrunkType_None
+        &&  !strncmp(pThis->szNetwork, "if=en", sizeof("if=en") - 1)
+        &&  RT_C_IS_DIGIT(pThis->szNetwork[sizeof("if=en") - 1])
+        &&  !pThis->szNetwork[sizeof("if=en")])
+    {
+        OpenReq.enmTrunkType = kIntNetTrunkType_NetFlt;
+        strcpy(OpenReq.szTrunk, &pThis->szNetwork[sizeof("if=") - 1]);
+    }
+    /* Temporary hack: attach to a network with the name 'wif=en0' and you're on the air. */
+    if (    !OpenReq.szTrunk[0]
+        &&   OpenReq.enmTrunkType == kIntNetTrunkType_None
+        &&  !strncmp(pThis->szNetwork, "wif=en", sizeof("wif=en") - 1)
+        &&  RT_C_IS_DIGIT(pThis->szNetwork[sizeof("wif=en") - 1])
+        &&  !pThis->szNetwork[sizeof("wif=en")])
+    {
+        OpenReq.enmTrunkType = kIntNetTrunkType_NetFlt;
+        OpenReq.fFlags |= INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE;
+        strcpy(OpenReq.szTrunk, &pThis->szNetwork[sizeof("wif=") - 1]);
+    }
+
+#elif defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT)
+    /* Temporary hack: attach to a network with the name 'if=en0' and you're hitting the wire. */
+    if (    !OpenReq.szTrunk[0]
+        &&   OpenReq.enmTrunkType == kIntNetTrunkType_None
+        &&  !strncmp(pThis->szNetwork, "if=en", sizeof("if=en") - 1)
+        &&  RT_C_IS_DIGIT(pThis->szNetwork[sizeof("if=en") - 1])
+        &&  !pThis->szNetwork[sizeof("if=en")])
+    {
+        OpenReq.enmTrunkType = kIntNetTrunkType_NetFlt;
+        strcpy(OpenReq.szTrunk, &pThis->szNetwork[sizeof("if=") - 1]);
+    }
+    /* Temporary hack: attach to a network with the name 'wif=en0' and you're on the air. */
+    if (    !OpenReq.szTrunk[0]
+        &&   OpenReq.enmTrunkType == kIntNetTrunkType_None
+        &&  !strncmp(pThis->szNetwork, "wif=en", sizeof("wif=en") - 1)
+        &&  RT_C_IS_DIGIT(pThis->szNetwork[sizeof("wif=en") - 1])
+        &&  !pThis->szNetwork[sizeof("wif=en")])
+    {
+        OpenReq.enmTrunkType = kIntNetTrunkType_NetFlt;
+        OpenReq.fFlags |= INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE;
+        strcpy(OpenReq.szTrunk, &pThis->szNetwork[sizeof("wif=") - 1]);
+    }
+
+    //TODO: temporary hack, remove this
+    if (OpenReq.enmTrunkType == kIntNetTrunkType_None)
+    {
+        OpenReq.enmTrunkType = kIntNetTrunkType_NetFlt;
+        strcpy(OpenReq.szTrunk, &pThis->szNetwork[sizeof("if=") - 1]);
+    }
+
+#endif
 
     /*
      * Create the event semaphores
      */
     rc = RTSemEventCreate(&pThis->EventSuspended);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     /*
@@ -750,7 +955,7 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
      */
     OpenReq.hIf = INTNET_HANDLE_INVALID;
     rc = pDrvIns->pDrvHlp->pfnSUPCallVMMR0Ex(pDrvIns, VMMR0_DO_INTNET_OPEN, &OpenReq, sizeof(OpenReq));
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return PDMDrvHlpVMSetError(pDrvIns, rc, RT_SRC_POS,
                                    N_("Failed to open/create the internal network '%s'"), pThis->szNetwork);
     AssertRelease(OpenReq.hIf != INTNET_HANDLE_INVALID);
@@ -763,10 +968,11 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
     INTNETIFGETRING3BUFFERREQ GetRing3BufferReq;
     GetRing3BufferReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
     GetRing3BufferReq.Hdr.cbReq = sizeof(GetRing3BufferReq);
+    GetRing3BufferReq.pSession = NIL_RTR0PTR;
     GetRing3BufferReq.hIf = pThis->hIf;
     GetRing3BufferReq.pRing3Buf = NULL;
     rc = pDrvIns->pDrvHlp->pfnSUPCallVMMR0Ex(pDrvIns, VMMR0_DO_INTNET_IF_GET_RING3_BUFFER, &GetRing3BufferReq, sizeof(GetRing3BufferReq));
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return PDMDrvHlpVMSetError(pDrvIns, rc, RT_SRC_POS,
                                    N_("Failed to get ring-3 buffer for the newly created interface to '%s'"), pThis->szNetwork);
     AssertRelease(VALID_PTR(GetRing3BufferReq.pRing3Buf));
@@ -774,9 +980,10 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
 
     /*
      * Create the async I/O thread.
+     * Note! Using a PDM thread here doesn't fit with the IsService=true operation.
      */
     rc = RTThreadCreate(&pThis->Thread, drvIntNetAsyncIoThread, pThis, _128K, RTTHREADTYPE_IO, RTTHREADFLAGS_WAITABLE, "INTNET");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         AssertRC(rc);
         return rc;
@@ -808,13 +1015,13 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
     /*
      * Activate data transmission as early as possible
      */
-    if (pThis->fActivateEarly)
+    if (pThis->fActivateEarlyDeactivateLate)
     {
         ASMAtomicXchgSize(&pThis->enmState, ASYNCSTATE_RUNNING);
         RTSemEventSignal(pThis->EventSuspended);
+        drvIntNetUpdateMacAddress(pThis);
+        drvIntNetSetActive(pThis, true /* fActive */);
     }
-
-    LogRel(("IntNet#%u: cbRecv=%u cbSend=%u fRestrictAccess=%d\n", pDrvIns->iInstance, OpenReq.cbRecv, OpenReq.cbSend, OpenReq.fRestrictAccess));
 
     return rc;
 }

@@ -58,14 +58,14 @@
     <name>BootItemsTable</name>
     <message>
         <source>Defines the boot device order. Use checkboxes to the left to enable or disable individual boot devices. Move items up and down to change the device order.</source>
-        <translation> Définis l&apos;ordre des périphériques d&apos;amorçage. Utiliser la case à cocher située à gauche pour activer ou désactiver un périphérique. Déplacer les périphériquer vers le haut ou le bas pour changer leurs ordres.</translation>
+        <translation>Définis l&apos;ordre des périphériques d&apos;amorçage. Utilisez la case à cocher située à gauche pour activer ou désactiver un périphérique. Déplacez les périphériquer vers le haut ou le bas pour changer leurs ordres.</translation>
     </message>
 </context>
 <context>
     <name>QApplication</name>
     <message>
         <source>Executable &lt;b&gt;%1&lt;/b&gt; requires Qt %2.x, found Qt %3.</source>
-        <translation>Le programme &lt;b&gt;%1&lt;/b&gt; nécessite QT%2.x, QT %3 à été trouvé.</translation>
+        <translation>Le programme &lt;b&gt;%1&lt;/b&gt; nécessite QT% 2.x, QT %3 à été trouvé.</translation>
     </message>
     <message>
         <source>Incompatible Qt Library Error</source>
@@ -628,15 +628,15 @@ Version %1</source>
     </message>
     <message>
         <source>Mount a floppy image file</source>
-        <translation>Installer une image sur disquette</translation>
+        <translation>Insérer un fichier image disquette</translation>
     </message>
     <message>
         <source>Unmount F&amp;loppy</source>
-        <translation>&amp;Désinstaller la disquette</translation>
+        <translation type="unfinished">Éjecter la d&amp;isquette</translation>
     </message>
     <message>
         <source>Unmount the currently mounted floppy media</source>
-        <translation>Désinstaller la disquette actuellement installée</translation>
+        <translation>Éjecter la disquette actuellement insérée</translation>
     </message>
     <message>
         <source>&amp;CD/DVD-ROM Image...</source>
@@ -644,15 +644,15 @@ Version %1</source>
     </message>
     <message>
         <source>Mount a CD/DVD-ROM image file</source>
-        <translation>Installer une image CD/DVD-ROM</translation>
+        <translation>Insérer une image CD/DVD-ROM</translation>
     </message>
     <message>
         <source>Unmount C&amp;D/DVD-ROM</source>
-        <translation>Désinstaller C&amp;D/DVD-ROM</translation>
+        <translation>Éjecter le C&amp;D/DVD-ROM</translation>
     </message>
     <message>
         <source>Unmount the currently mounted CD/DVD-ROM media</source>
-        <translation>Désinstaller le médium CD/DVD-ROM actuellement installé</translation>
+        <translation>Éjecter le médium CD/DVD-ROM actuellement inséré</translation>
     </message>
     <message>
         <source>Remote Desktop (RDP) Server</source>
@@ -661,7 +661,7 @@ Version %1</source>
     </message>
     <message>
         <source>Remote Dis&amp;play</source>
-        <translation>Écran à di&amp;stance</translation>
+        <translation>É&amp;cran à distance</translation>
     </message>
     <message>
         <source>Enable or disable remote desktop (RDP) connections to this machine</source>
@@ -673,7 +673,7 @@ Version %1</source>
     </message>
     <message>
         <source>&amp;Shared Folders...</source>
-        <translation>Répertoire&amp;s partagés...</translation>
+        <translation>&amp;Répertoires partagés...</translation>
     </message>
     <message>
         <source>Open the dialog to operate on shared folders</source>
@@ -681,11 +681,11 @@ Version %1</source>
     </message>
     <message>
         <source>&amp;Install Guest Additions...</source>
-        <translation>&amp;Installer les additions client...</translation>
+        <translation>I&amp;nstaller les Additions Client...</translation>
     </message>
     <message>
         <source>Mount the Guest Additions installation image</source>
-        <translation>Installer l&apos;image des additions client</translation>
+        <translation>Insérer le fichier image des Additions Client</translation>
     </message>
     <message>
         <source>&amp;Statistics...</source>
@@ -713,7 +713,7 @@ Version %1</source>
     </message>
     <message>
         <source>&amp;Reset All Warnings</source>
-        <translation>Supp&amp;rimer toutes les avertissements</translation>
+        <translation>&amp;Réinitialiser toutes les avertissements</translation>
     </message>
     <message>
         <source>Cause all suppressed warnings and messages to be shown again</source>
@@ -721,15 +721,15 @@ Version %1</source>
     </message>
     <message>
         <source>Mount &amp;Floppy</source>
-        <translation>Installer une &amp;disquette</translation>
+        <translation>Insérer une &amp;disquette</translation>
     </message>
     <message>
         <source>Mount &amp;CD/DVD-ROM</source>
-        <translation>Installer un &amp;CD/DVD-ROM</translation>
+        <translation>Insérer un &amp;CD/DVD-ROM</translation>
     </message>
     <message>
         <source>&amp;USB Devices</source>
-        <translation>Périphériques &amp;USB</translation>
+        <translation type="unfinished">&amp;Périphériques USB</translation>
     </message>
     <message>
         <source>&amp;VM</source>
@@ -901,12 +901,12 @@ Version %1</source>
     <message>
         <source>Mount the selected physical drive of the host PC</source>
         <comment>Floppy tip</comment>
-        <translation>Installer le lecteur de disquette choisi</translation>
+        <translation>Connecter le lecteur de disquette choisi de la machine hôte</translation>
     </message>
     <message>
         <source>Mount the selected physical drive of the host PC</source>
         <comment>CD/DVD tip</comment>
-        <translation>Installer le lecteur CD/DVD choisi</translation>
+        <translation>Connecter le lecteur CD/DVD choisi de la machine hôte</translation>
     </message>
     <message>
         <source>Disconnect the cable from the selected virtual network adapter</source>
@@ -931,7 +931,7 @@ Version %1</source>
     <message>
         <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of the floppy media:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
         <comment>Floppy tooltip</comment>
-        <translation>&lt;qt&gt;&lt;nobr&gt;Indique l&apos;activité du disque souple :&lt;/nbr&gt;%1&lt;/qt&gt;</translation>
+        <translation>&lt;qt&gt;&lt;nobr&gt;Indique l&apos;activité du média disquette :&lt;/nbr&gt;%1&lt;/qt&gt;</translation>
     </message>
     <message>
         <source>&lt;br&gt;&lt;nobr&gt;&lt;b&gt;Host Drive&lt;/b&gt;: %1&lt;/nobr&gt;</source>
@@ -946,12 +946,12 @@ Version %1</source>
     <message>
         <source>&lt;br&gt;&lt;nobr&gt;&lt;b&gt;No media mounted&lt;/b&gt;&lt;/nobr&gt;</source>
         <comment>Floppy tooltip</comment>
-        <translation>&lt;b&gt;&lt;nobr&gt;&lt;b&gt;Disque souple non attaché&lt;/b&gt;&lt;/nobr&gt;</translation>
+        <translation>&lt;b&gt;&lt;nobr&gt;&lt;b&gt;Disquette non attaché&lt;/b&gt;&lt;/nobr&gt;</translation>
     </message>
     <message>
         <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of the CD/DVD-ROM media:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
         <comment>DVD-ROM tooltip</comment>
-        <translation>&lt;qt&gt;&lt;nobr&gt;Indique l&apos;activité sur le média CD/DVD/ROM : &lt;/nobr&gt;%1&lt;/qt&gt;</translation>
+        <translation>&lt;qt&gt;&lt;nobr&gt;Indique l&apos;activité sur le média CD/DVD-ROM : &lt;/nobr&gt;%1&lt;/qt&gt;</translation>
     </message>
     <message>
         <source>&lt;br&gt;&lt;nobr&gt;&lt;b&gt;Host Drive&lt;/b&gt;: %1&lt;/nobr&gt;</source>
@@ -1157,11 +1157,11 @@ Version %1</source>
     </message>
     <message>
         <source>&amp;Add...</source>
-        <translation>&amp;Ajout...</translation>
+        <translation>&amp;Ajouter...</translation>
     </message>
     <message>
         <source>R&amp;emove</source>
-        <translation>Révoqu&amp;er</translation>
+        <translation>Enlev&amp;er</translation>
     </message>
     <message>
         <source>Re&amp;lease</source>
@@ -1181,7 +1181,7 @@ Version %1</source>
     </message>
     <message>
         <source>Remove</source>
-        <translation>Éliminer</translation>
+        <translation>Enlever</translation>
     </message>
     <message>
         <source>Release</source>
@@ -1327,7 +1327,7 @@ Version %1</source>
     </message>
     <message>
         <source>Select a hard disk image file</source>
-        <translation>Choisir un fichier image de disque dur</translation>
+        <translation>Choisissez un fichier image de disque dur</translation>
     </message>
     <message>
         <source>CD/DVD-ROM images (*.iso)</source>
@@ -1335,7 +1335,7 @@ Version %1</source>
     </message>
     <message>
         <source>Select a CD/DVD-ROM disk image file</source>
-        <translation>Choisir un fichier image  CD/DVD-ROM </translation>
+        <translation>Choisissez un fichier image CD/DVD-ROM </translation>
     </message>
     <message>
         <source>Floppy images (*.img)</source>
@@ -1531,7 +1531,7 @@ Version %1</source>
     <message>
         <source>Not mounted</source>
         <comment>details report (floppy)</comment>
-        <translation>Non installée</translation>
+        <translation>Non insérée</translation>
     </message>
     <message>
         <source>Image</source>
@@ -1551,7 +1551,7 @@ Version %1</source>
     <message>
         <source>Not mounted</source>
         <comment>details report (DVD)</comment>
-        <translation>Non installé</translation>
+        <translation>Non inséré</translation>
     </message>
     <message>
         <source>Image</source>
@@ -1645,72 +1645,72 @@ Version %1</source>
     <message>
         <source>Powered Off</source>
         <comment>MachineState</comment>
-        <translation>Éteint</translation>
+        <translation>éteint</translation>
     </message>
     <message>
         <source>Saved</source>
         <comment>MachineState</comment>
-        <translation>Enregistré</translation>
+        <translation>enregistré</translation>
     </message>
     <message>
         <source>Aborted</source>
         <comment>MachineState</comment>
-        <translation>Avorté</translation>
+        <translation>avorté</translation>
     </message>
     <message>
         <source>Running</source>
         <comment>MachineState</comment>
-        <translation>En fonction</translation>
+        <translation>en fonction</translation>
     </message>
     <message>
         <source>Paused</source>
         <comment>MachineState</comment>
-        <translation>En pause</translation>
+        <translation>en pause</translation>
     </message>
     <message>
         <source>Starting</source>
         <comment>MachineState</comment>
-        <translation>En cours d&apos;amorçage</translation>
+        <translation>en cours d&apos;amorçage</translation>
     </message>
     <message>
         <source>Stopping</source>
         <comment>MachineState</comment>
-        <translation>S&apos;arrête</translation>
+        <translation>s&apos;arrête</translation>
     </message>
     <message>
         <source>Saving</source>
         <comment>MachineState</comment>
-        <translation>En enregistrement</translation>
+        <translation>en enregistrement</translation>
     </message>
     <message>
         <source>Restoring</source>
         <comment>MachineState</comment>
-        <translation>En restauration</translation>
+        <translation>en restauration</translation>
     </message>
     <message>
         <source>Discarding</source>
         <comment>MachineState</comment>
-        <translation>En rejet</translation>
+        <translation>en rejet</translation>
     </message>
     <message>
         <source>Closed</source>
         <comment>SessionState</comment>
-        <translation>Fermée</translation>
+        <translation>fermée</translation>
     </message>
     <message>
         <source>Open</source>
         <comment>SessionState</comment>
-        <translation>Ouvert</translation>
+        <translation>ouvert</translation>
     </message>
     <message>
         <source>Spawning</source>
         <comment>SessionState</comment>
-        <translation>Génération</translation>
+        <translation>génération</translation>
     </message>
     <message>
         <source>Closing</source>
         <comment>SessionState</comment>
-        <translation>Fermeture</translation>
+        <translation>en fermeture</translation>
     </message>
     <message>
         <source>None</source>
@@ -1988,7 +1988,7 @@ Version %1</source>
     <message>
         <source>Host Pipe</source>
         <comment>PortMode</comment>
-        <translation>Tube hôte</translation>
+        <translation>Tuyau hôte</translation>
     </message>
     <message>
         <source>Host Device</source>
@@ -2291,7 +2291,7 @@ default virtual machine folder.</source>
     </message>
     <message>
         <source>&amp;Host Key</source>
-        <translation>Touche &amp;Hôte</translation>
+        <translation>Touche &amp;Hôte (&quot;Host&quot;)</translation>
     </message>
     <message>
         <source>&amp;Auto capture keyboard</source>
@@ -2418,7 +2418,7 @@ Tous les champs correspondent à la valeur du périphérique raccordé `a l&apos
     </message>
     <message>
         <source>Displays the key used as a Host Key in the VM window. Activate the entry field and press a new Host Key. Note that alphanumeric, cursor movement and editing keys cannot be used as a Host Key.</source>
-        <translation>Affiche la touche utilisée comme &lt;i&gt;touche hôte&lt;/i&gt; dans la fenêtre de la machine virtuelle. Activer le champs d&apos;entrée et presser une nouvelle &lt;i&gt;touche hôte&lt;/i&gt;. Noter que les touches d&apos;éditions et de mouvement du curseur ainsi que les touches alphanumériques ne peuvent pas être utilisées.</translation>
+        <translation>Affiche la touche utilisée comme touche hôte (&quot;Host&quot;) dans la fenêtre de la machine virtuelle. Activer le champs d&apos;entrée et presser une nouvelle touche hôte;. Noter que les touches d&apos;éditions et de mouvement du curseur ainsi que les touches alphanumériques ne peuvent pas être utilisées.</translation>
     </message>
     <message>
         <source>New Filter %1</source>
@@ -2592,11 +2592,11 @@ Choisir &lt;i&gt;par défaut&lt;/i&gt; pour réactiver la langue par défaut du 
     </message>
     <message>
         <source>Add Filter From Device</source>
-        <translation>Ajouter un filtre a partir du périphérique</translation>
+        <translation>Ajouter un filtre à partir du périphérique</translation>
     </message>
     <message>
         <source>A&amp;dd Filter From Device</source>
-        <translation>Ajouter un filtre a partir &amp;du périphérique</translation>
+        <translation>Ajouter un filtre à partir &amp;du périphérique</translation>
     </message>
     <message>
         <source>&lt;qt&gt;Adds a new USB filter with all fields set to the
@@ -2848,7 +2848,7 @@ Choisir &lt;i&gt;par défaut&lt;/i&gt; pour réactiver la langue par défaut du 
 &lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard
 and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Cet assistant vous permet de créer une nouvelle image  de disque dur pour votre machine virtuelle.&lt;/p&gt;
-&lt;p&gt;Utilisez le boution &lt;b&gt;Suivant&lt;/b&gt; pour accédé à la page suivante de l&apos;assistant
+&lt;p&gt;Utilisez le boution &lt;b&gt;Suivant&lt;/b&gt; pour accéder à la page suivante de l&apos;assistant
 et le bouton &lt;b&gt;Précédent&lt;/b&gt; pour retourner sur la page précédente.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -2880,7 +2880,7 @@ the same size as the size of the virtual hard disk.&lt;/p&gt;</source>
     </message>
     <message>
         <source>&amp;Fixed-size image</source>
-        <translation>Image à taille &amp;Fixe</translation>
+        <translation>Image à taille &amp;fixe</translation>
     </message>
     <message>
         <source>Alt+F</source>
@@ -2907,26 +2907,26 @@ contiendra l&apos;image du disque dur, ou entrez le nom du fichier dans le champ
     <message>
         <source>&lt;p&gt;Select the size of the virtual hard disk image in megabytes. This size will be reported to the Guest OS
 as the size of the virtual hard disk.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Choisir la taille de l&apos;image virtuelle du disque dur en méga-octets. Cette taille sera rapportée au système d&apos;exploitation client comme taille du disque dur virtuel.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Choisissez la taille de l&apos;image virtuelle du disque dur en méga-octets. Cette taille sera rapportée au système d&apos;exploitation client comme taille du disque dur virtuel.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Image &amp;Size</source>
-        <translation>Image et &amp;Taille</translation>
+        <translation>Image et &amp;taille</translation>
     </message>
     <message>
         <source>Virtual Disk Location and Size</source>
-        <translation>Disque virtuel, Emplacement et taille </translation>
+        <translation>Disque virtuel, emplacement et taille</translation>
     </message>
     <message>
         <source>You are going to create a new virtual hard disk image with the following parameters:</source>
-        <translation>Vous êtes en train der créer un disque dur avec les paramètres suivants :</translation>
+        <translation>Vous êtes en train de créer un disque dur avec les paramètres suivants :</translation>
     </message>
     <message>
         <source>If the above settings are correct, press the &lt;b&gt;Finish&lt;/b&gt; button.
                             Once you press it, a new hard disk image will be created.
                             </source>
-        <translation>Si les paramètres ci dessus sont corrects, actionnez le bouton &lt;b&gt;Terminer&lt;/b&gt;.
-Le nouveau disque dur sera crée.</translation>
+        <translation>Si les paramètres ci-dessus sont corrects, actionnez le bouton &lt;b&gt;Terminer&lt;/b&gt;.
+Le nouveau disque dur sera créé.</translation>
     </message>
     <message>
         <source>Summary</source>
@@ -2958,7 +2958,7 @@ the same size as the size of the virtual hard disk. The creation of a fixed-size
 time depending on the image size and the write performance of your harddisk.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Choisissez le type d&apos;image de disque dur que vous désirez créer.&lt;/p&gt;
 &lt;p&gt;Une &lt;b&gt;image à taille dynamique&lt;/b&gt; est de taille initiale réduite et est agrandie en fonction des besoins (jusqu&apos;à la taille spécifiée)  du système d&apos;exploitation client.&lt;/p&gt;
-&lt;p&gt;Une &lt;b&gt;image à taille fixe&lt;/b&gt; est de taille constante et est gérée dans un fichier dont la taille correspond approximativement à la taille du disque dur virtuel. La création d&apos;une image à taille fixe peu demander beaucoup de temps ce temps dépend de sa taille et de la vitesse d&apos;écriture de vôtre disque dur&lt;/p&gt;</translation>
+&lt;p&gt;Une &lt;b&gt;image à taille fixe&lt;/b&gt; est de taille constante et est gérée dans un fichier dont la taille correspond approximativement à la taille du disque dur virtuel. La création d&apos;une image à taille fixe peut demander beaucoup de temps en fonction de sa taille et de la vitesse d&apos;écriture de vôtre disque dur.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2973,11 +2973,11 @@ a new virtual machine for VirtualBox.&lt;/p&gt;
 &lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go the next page of the wizard
 and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Cet assistant vous guidera pas à pas à travers les étapes nécessaires à la création d&apos;une nouvelle machine virtuelle pour VirtualBox.&lt;/p&gt;
-&lt;p&gt;Utilisez le bouton &lt;b&gt;Suivant&lt;/b&gt; aller à la page suivante et le bouton &lt;b&gt;Précédent&lt;/b&gt; pour retourner sur la page précédente.&lt;/p&gt;</translation>
+&lt;p&gt;Utilisez le bouton &lt;b&gt;Suivant&lt;/b&gt; pour aller à la page suivante et le bouton &lt;b&gt;Précédent&lt;/b&gt; pour retourner sur la page précédente.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Welcome to the New Virtual Machine Wizard!</source>
-        <translation>Bienvenue sur l&apos;assistant Nouvelle machine virtuelle !</translation>
+        <translation>Bienvenue sur l&apos;assistant nouvelle machine virtuelle !</translation>
     </message>
     <message>
         <source>&lt;p&gt;Enter a name for the new virtual machine and select the type of the guest operating
@@ -2986,7 +2986,7 @@ system you plan to install onto the virtual machine.&lt;/p&gt;
 It will be used by all VirtualBox components to identify your virtual machine.&lt;/p&gt;</source>
         <translation>&lt;p&gt;Entrez un nom pour la nouvelle machine virtuelle et choisissez le type du système d&apos;exploitation que vous désirez installer sur cette machine&lt;/p&gt;
 &lt;p&gt;Le nom de la machine virtuelle indique normalement la configuration matériel et logiciel.
-Il est utilisé par tous les produits de VirtualBox pour l&apos;identification de la machine virtuelle.&lt;/p&gt;</translation>
+Il est utilisé par tous les composants de VirtualBox pour l&apos;identification de la machine virtuelle.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>N&amp;ame</source>
@@ -2998,7 +2998,7 @@ Il est utilisé par tous les produits de VirtualBox pour l&apos;identification d
     </message>
     <message>
         <source>VM Name and OS Type</source>
-        <translation>Nom de la machine virtuelle et Type du système d&apos;exploitation</translation>
+        <translation>Nom de la machine virtuelle et type du système d&apos;exploitation</translation>
     </message>
     <message>
         <source>&lt;p&gt;Select the amount of base memory (RAM) in megabytes to be allocated to the virtual machine.&lt;/p&gt;</source>
@@ -3036,7 +3036,7 @@ image from the drop-down list or by pressing the &lt;b&gt;Existing&lt;/b&gt;
 button (to invoke the Virtual Disk Manager dialog).&lt;/p&gt;
 &lt;p&gt;If you need a more complicated hard disk setup, you can also skip this
 step and attach hard disks later using the VM Settings dialog.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Choisi l&apos;image de disque dur utilisé comme disque dur d&apos;amorçage de la machine virtuelle.
+        <translation>&lt;p&gt;Choisissez l&apos;image de disque dur qui sera utilisé comme disque dur d&apos;amorçage de la machine virtuelle.
 Vous pouvez créer une nouvelle image de disque dur en utilisant le bouton &lt;b&gt;Nouveau&lt;/b&gt; ou choisir une image de disque dur existante sur le menu déroulant, ou encore activer le bouton &lt;b&gt;Existant&lt;/b&gt; afin de lancer l&apos;assistant de création de disque dur.&lt;/p&gt;
 &lt;p&gt;Si votre configuration est plus compliquée, vous pouvez sauter cette étape et attacher le disque dur plus tard, en utilisant la boîte de dialogue Préférences VM .&lt;/p&gt;
 </translation>
@@ -3078,8 +3078,8 @@ Vous pouvez créer une nouvelle image de disque dur en utilisant le bouton &lt;b
                             the menu of the main window.
                             &lt;/p&gt;
                             </source>
-        <translation>&lt;p&gt;Activez le bouton &lt;b&gt;Terminer&lt;/b&gt; si la configuration si dessus est correcte.&lt;/p&gt;
-&lt;p&gt;Notez que vous pouvez modifier ces paramètres et ainsi que d&apos;autres en tout temps. Utilisez pour ce faire la
+        <translation>&lt;p&gt;Activez le bouton &lt;b&gt;Terminer&lt;/b&gt; si la configuration ci-dessus est correcte.&lt;/p&gt;
+&lt;p&gt;Notez que vous pouvez modifier ces paramètres et ainsi que d&apos;autres à tout moment. Utilisez pour ce faire la
 boîte de dialogue &lt;b&gt;Préférences&lt;/b&gt; accessible sur le menu de la boîte de dialogue principale.&lt;/p&gt;</translation>
     </message>
     <message>
@@ -3092,7 +3092,7 @@ boîte de dialogue &lt;b&gt;Préférences&lt;/b&gt; accessible sur le menu de la
     </message>
     <message>
         <source>&lt;tr&gt;&lt;td&gt;Name:&lt;/td&gt;&lt;td&gt;%1&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;OS Type:&lt;/td&gt;&lt;td&gt;%2&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Base Memory:&lt;/td&gt;&lt;td&gt;%3&amp;nbsp;MB&lt;/td&gt;&lt;/tr&gt;</source>
-        <translation>&lt;tr&gt;&lt;td&gt;Nom&amp;nbsp;:&lt;/td&gt;&lt;td&gt;%1&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Type du système d&apos;exploitation%nbsp;:&lt;/td&gt;&lt;td&gt;%2&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Mémoire vive de base&amp;nbsp;:&lt;/td&gt;&lt;td&gt;%3&amp;nbsp;Mo&lt;/td&gt;&lt;/tr&gt;</translation>
+        <translation>&lt;tr&gt;&lt;td&gt;Nom&amp;nbsp;:&lt;/td&gt;&lt;td&gt;%1&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Type du système d&apos;exploitation:&lt;/td&gt;&lt;td&gt;%2&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Mémoire vive de base&amp;nbsp;:&lt;/td&gt;&lt;td&gt;%3&amp;nbsp;Mo&lt;/td&gt;&lt;/tr&gt;</translation>
     </message>
     <message>
         <source>&lt;tr&gt;&lt;td&gt;Boot Hard Disk:&lt;/td&gt;&lt;td&gt;%4&lt;/td&gt;&lt;/tr&gt;</source>
@@ -3250,7 +3250,7 @@ boîte de dialogue &lt;b&gt;Préférences&lt;/b&gt; accessible sur le menu de la
     </message>
     <message>
         <source>&lt;p&gt;Releasing this media image will detach it from the following virtual machine(s): &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Continue?&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Libérer cette image détachera celle-ci des machines virtuelle suivantes : &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Continuer ?&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Libérer cette image détachera celle-ci des machines virtuelles suivantes : &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Continuer ?&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;The image file &lt;b&gt;%1&lt;/b&gt; already exists. You cannot create a new virtual hard disk that uses this file, because it can be already used by another virtual hard disk.&lt;/p&gt;&lt;p&gt;Please specify a different image file name.&lt;/p&gt;</source>
@@ -3345,26 +3345,25 @@ boîte de dialogue &lt;b&gt;Préférences&lt;/b&gt; accessible sur le menu de la
     </message>
     <message>
         <source>&lt;p&gt;You have &lt;b&gt;clicked the mouse&lt;/b&gt; inside the Virtual Machine display or pressed the &lt;b&gt;host key&lt;/b&gt;. This will cause the Virtual Machine to &lt;b&gt;capture&lt;/b&gt; the host mouse pointer (only if the mouse pointer integration is not currently supported by the guest OS) and the keyboard, which will make them unavailable to other applications running on your host machine.&lt;/p&gt;&lt;p&gt;You can press the &lt;b&gt;host key&lt;/b&gt; at any time to &lt;b&gt;uncapture&lt;/b&gt; the keyboard and mouse (if it is captured) and return them to normal operation. The currently assigned host key is shown on the status bar at the bottom of the Virtual Machine window, next to the&amp;nbsp;&lt;img src=hostkey_16px.png/&gt;&amp;nbsp;icon. This icon, together with the mouse icon placed nearby, indicate the current keyboard and mouse capture state.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Vous avez cliqué dans l&apos;écran de la machine virtuelle ou bien actionné la &lt;i&gt;touche hôte&lt;/i&gt;. Le pointeur de la souris est &lt;i&gt;capturé&lt;/i&gt; par la machine virtuelle (seulement si les additions du système d&apos;exploitation ne sont pas installées) et de ce fait ne sera pas utilisable par d&apos;autres applications.&lt;/p&gt;
-&lt;p&gt;Vous pouvez actionner la &lt;i&gt;touche hôte&lt;/i&gt; à n&apos;importe quel instant,  ceci libérera le clavier et la souris (s&apos;il sont capturés) et autorisera leur emploi normal. La &lt;i&gt;touche hôte&lt;/i&gt; actuellement paramétrée est affichée dans la barre située das la partie inférieure de la fenêtre de la machine virtuelle, près de l&apos;icône&amp;nbsp;&lt;img src=hostkey_16px.png/&gt;. Cet icône, ainsi que celui de la souris, placé à proximité de ce dernier, indique l&apos;état de capture actuel du clavier et de la souris.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Vous avez cliqué dans l&apos;écran de la machine virtuelle ou bien actionné la &lt;b&gt;touche hôte (&quot;Host&quot;)&lt;/b&gt;. Le pointeur de la souris est &lt;b&gt;capturé&lt;/b&gt; par la machine virtuelle (seulement si les additions du système d&apos;exploitation ne sont pas installées) et de ce fait ne sera pas utilisable par d&apos;autres applications.&lt;/p&gt;
+&lt;p&gt;Vous pouvez actionner la touche hôte à n&apos;importe quel instant,  ceci libérera le clavier et la souris (s&apos;il sont capturés) et autorisera leur emploi normal. La touche hôte actuellement paramétrée est affichée dans la barre située das la partie inférieure de la fenêtre de la machine virtuelle, près de l&apos;icône&amp;nbsp;&lt;img src=hostkey_16px.png/&gt;. Cet icône, ainsi que celui de la souris, placé à proximité de ce dernier, indique l&apos;état de capture actuel du clavier et de la souris.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;You have the &lt;b&gt;Auto capture keyboard&lt;/b&gt; option turned on. This will cause the Virtual Machine to automatically &lt;b&gt;capture&lt;/b&gt; the keyboard every time the VM window is activated and make it unavailable to other applications running on your host machine: when the keyboard is captured, all keystrokes (including system ones like Alt-Tab) will be directed to the VM.&lt;/p&gt;&lt;p&gt;You can press the &lt;b&gt;host key&lt;/b&gt; at any time to &lt;b&gt;uncapture&lt;/b&gt; the keyboard and mouse (if it is captured) and return them to normal operation. The currently assigned host key is shown on the status bar at the bottom of the Virtual Machine window, next to the&amp;nbsp;&lt;img src=hostkey_16px.png/&gt;&amp;nbsp;icon. This icon, together with the mouse icon placed nearby, indicate the current keyboard and mouse capture state.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;L&apos;option de capture automatique du clavier est activée. Ceci entraine la machine virtuelle à &lt;b&gt;capturer&lt;/b&gt; le clavier dès que la l&apos;écran de la machine virtuelle est activée et à rendre le clavier inutilisable par d&apos;autres applications. Si le clavier est capturé toutes les frappes sont dirigées sur la machine virtuelle
-(y compris les combinaisons telles que Alt-Tab).&lt;/p&gt;
-&lt;p&gt;Vous pouvez actionner la &lt;i&gt;touche hôte&lt;/i&gt; à n&apos;importe quel instant,  ceci libérera le clavier et la souris (s&apos;il sont capturés) et autorisera leur emploi normal. La &lt;i&gt;touche hôte&lt;/i&gt; actuellement paramétrée&amp;nbsp;est affichée dans la barre située das la partie inférieure de la fenêtre de la machine virtuelle, prés de l&apos;icône &lt;img src=hostkey_16px.png/&gt;. Cet icône, ainsi que celui de la souris, placé à proximité de ce dernier, indique l&apos;état de capture actuel du clavier et de la souris.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;L&apos;option de capture automatique du clavier est activée. Ceci entraine la machine virtuelle à &lt;b&gt;capturer&lt;/b&gt; le clavier dès que la fenêtre de la machine virtuelle est activée et rendra le clavier indisponible pour d&apos;autres applications. Si le clavier est capturé toutes les appuis de touches sont redirigés vers la machine virtuelle (y compris les combinaisons telles que Alt-Tab).&lt;/p&gt;
+&lt;p&gt;Vous pouvez actionner la &lt;b&gt;touche hôte (&quot;Host&quot;)&lt;/b&gt; à n&apos;importe quel instant. Ceci libérera le clavier et la souris (s&apos;il sont capturés) et permettra leur emploi normal. La touche hôte actuellement paramétrée&amp;nbsp;est affichée dans la barre située das la partie inférieure de la fenêtre de la machine virtuelle, prés de l&apos;icône &lt;img src=hostkey_16px.png/&gt;. Cet icône, ainsi que celui de la souris, placé à proximité de ce dernier, indique l&apos;état de capture actuel du clavier et de la souris.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;The Virtual Machine reports that the guest OS supports &lt;b&gt;mouse pointer integration&lt;/b&gt;. This means that you do not need to &lt;i&gt;capture&lt;/i&gt; the mouse pointer to be able to use it in your guest OS -- all mouse actions you perform when the mouse pointer is over the Virtual Machine&apos;s display are directly sent to the guest OS. If the mouse is currently captured, it will be automatically uncaptured.&lt;/p&gt;&lt;p&gt;The mouse icon on the status bar will look like&amp;nbsp;&lt;img src=mouse_seamless_16px.png/&gt;&amp;nbsp;to inform you that mouse pointer integration is supported by the guest OS and is currently turned on.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note&lt;/b&gt;: Some applications may behave incorrectly in mouse pointer integration mode. You can always disable it for the current session (and enable it again) by selecting the corresponding action from the menu bar.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;La machine virtuelle signale que le système d&apos;exploitation client  soutient  &lt;b&gt;l&apos;intégration du pointeur de souris&lt;/b&gt;.
-Ceci signifie que vous n&apos;avez pas besoin de &lt;i&gt;capturer&lt;/i&gt; le pointeur de souris pour pouvoir l&apos;employer dans votre système d*exploitation client -- toutes les actions de la souris que vous effectuez quand le pointeur de la souris est au-dessus de l&apos;affichage de la machine virtuelle sont traitées par le système d&apos;exploitation client. Si la souris est capturée, elle sera automatiquement libérée.&lt;/p&gt;
-&lt;p&gt;L&apos;icône de souris de la barre se statut predra l&apos;apparence suivante &lt;img src=mouse_seamless_16px.png/&gt;&amp;nbsp;afin de vous signaler quel&apos;intégration est soutenue et active.&lt;/p&gt;
-&lt;p&gt;Quelques applications peuvent fonctionner incorrectement  en mode d&apos;intégration de pointeur de souris. Vous pouvez toujours activer ou désactiver ce mode en  choisissant l&apos;action correspondante à partir de la barre de menu.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;La machine virtuelle signale que le système d&apos;exploitation client supporte &lt;b&gt;l&apos;intégration du pointeur de souris&lt;/b&gt;.
+Ceci signifie que vous n&apos;avez pas besoin de &lt;i&gt;capturer&lt;/i&gt; le pointeur de souris pour pouvoir l&apos;employer dans votre système d&apos;exploitation client -- toutes les actions de la souris que vous effectuez quand le pointeur de la souris est au-dessus de la fenêtre de la machine virtuelle sont traitées par le système d&apos;exploitation client. Si la souris est capturée, elle sera automatiquement libérée.&lt;/p&gt;
+&lt;p&gt;L&apos;icône de souris de la barre se statut predra l&apos;apparence suivante &lt;img src=mouse_seamless_16px.png/&gt;&amp;nbsp;afin de vous signaler que l&apos;intégration est supportée et active.&lt;/p&gt;
+&lt;p&gt;Il est possible que certaines applications fonctionnent incorrectement en mode d&apos;intégration de pointeur de souris. Vous pouvez toujours activer ou désactiver ce mode en choisissant l&apos;action correspondante à partir de la barre de menu.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;The Virtual Machine reports that the guest OS does not support &lt;b&gt;mouse pointer integration&lt;/b&gt; in the current video mode. You need to capture the mouse (by clicking over the VM display or pressing the host key) in order to use the mouse inside the guest OS.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;La machine virtuelle signale que le système d&apos;exploitation client ne soutient pas &lt;i&gt;l&apos;intégration du pointeur de la souris&lt;/i&gt; pour le mode vidéo actuel.
-Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtuelle ou pressez la  &lt;/i&gt;touche hôte&lt;/i&gt;.&lt;/p&gt; </translation>
+        <translation>&lt;p&gt;La machine virtuelle signale que le système d&apos;exploitation client ne supporte pas &lt;b&gt;l&apos;intégration du pointeur de la souris&lt;/b&gt; pour le mode vidéo actuel.
+Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtuelle ou pressez la &lt;b&gt;touche hôte (&quot;Host&quot;)&lt;/b&gt;.&lt;/p&gt; </translation>
     </message>
     <message>
         <source>&lt;p&gt;The Virtual Machine is currently in the &lt;b&gt;Paused&lt;/b&gt; state and therefore does not accept any keyboard or mouse input. If you want to continue to work inside the VM, you need to resume it by selecting the corresponding action from the menu bar.&lt;/p&gt;</source>
@@ -3376,7 +3375,7 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
     <message>
         <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;fullscreen&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;. Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</source>
-        <translation type="obsolete">&lt;p&gt;La machine virtuelle passera en mode &lt;b&gt;plein écran&lt;/b&gt;. Vous pouvez revenir au mode &lt;i&gt;fenêtre&lt;/i&gt; en actionnant &lt;b&gt;%1&lt;/b&gt;. Notez que la &lt;i&gt;touche hôte&lt;/i&gt; est définie comme &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</translation>
+        <translation type="obsolete">&lt;p&gt;La machine virtuelle passera en mode &lt;b&gt;plein écran&lt;/b&gt;. Vous pouvez revenir au mode fenêtre en actionnant &lt;b&gt;%1&lt;/b&gt;. Notez que la &lt;b&gt;touche hôte (&quot;Host&quot;)&lt;/b&gt; est définie comme &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;Cannot run VirtualBox in &lt;i&gt;VM Selector&lt;/i&gt; mode due to local restrictions.&lt;/p&gt;&lt;p&gt;The application will now terminate.&lt;/p&gt;</source>
@@ -3418,7 +3417,7 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
     <message>
         <source>&lt;p&gt;The virtual machine execution may run into an error condition as described below. You may ignore this message, but it is suggested to perform an appropriate action to make sure the described error will not happen.&lt;/p&gt;</source>
-        <translation>Le lancement de la machine virtuelle peu entraîner l&apos;erreur décrite plus bas. Vous pouvez ignorer ce message, mais ils es recommandé d&apos;effectuer les actions appropriées pour que ce défaut n&apos;apparaisse pas.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Le lancement de la machine virtuelle peut entraîner l&apos;erreur décrite plus bas. Vous pouvez ignorer ce message, mais il est recommandé d&apos;effectuer les actions appropriées pour que cette erreur n&apos;apparaisse pas.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Result&amp;nbsp;Code: </source>
@@ -3497,11 +3496,11 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
     <message>
         <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;fullscreen&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;. Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the main menu bar is hidden in fullscreen mode. You can access it by pressing &lt;b&gt;Host+Home&lt;/b&gt;.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;La machine virtuelle passera en mode &lt;b&gt;plein écran&lt;/b&gt;. Vous pouvez revenir au mode &lt;i&gt;fenêtre&lt;/i&gt; en actionnant &lt;b&gt;%1&lt;/b&gt;. Notez que la &lt;i&gt;touche hôte&lt;/i&gt; est définie comme &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Notez que la barre de menu principale n&apos;est pas affichée en mode plein écran. Vous pouvez y accéder &lt;Hôte+Début&lt;/b&gt;.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;La fenêtre de la machine virtuelle passera en mode &lt;b&gt;plein écran&lt;/b&gt;. Vous pouvez revenir au mode fenêtre en actionnant &lt;b&gt;%1&lt;/b&gt;. La &lt;b&gt;touche hôte (&quot;Host&quot;)&lt;/b&gt; est actuellement définie comme &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Notez que la barre de menu principale n&apos;est pas affichée en mode plein écran. Vous pouvez y accéder en actionnant &lt;b&gt;Host+Début&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;The virtual machine window will be now switched to &lt;b&gt;Seamless&lt;/b&gt; mode. You can go back to windowed mode at any time by pressing &lt;b&gt;%1&lt;/b&gt;. Note that the &lt;i&gt;Host&lt;/i&gt; key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Note that the main menu bar is hidden in seamless mode. You can access it by pressing &lt;b&gt;Host+Home&lt;/b&gt;.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;La fenêtre de la machine virtuelle passera en mode &lt;b&gt;affichage intégré dans le bureau&lt;/b&gt;. Vous pouvez revenir au mode &lt;i&gt;fenêtre&lt;/i&gt; en actionnant &lt;b&gt;%1&lt;/b&gt;. Notez que la &lt;i&gt;touche hôte&lt;/i&gt; est définie comme &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Notez que la barre de menu principale n&apos;est pas affichée en mode plein écran. Vous pouvez y accéder &lt;Hôte+Début&lt;/b&gt;.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;La fenêtre de la machine virtuelle passera en mode &lt;b&gt;affichage intégré dans le bureau&lt;/b&gt;. Vous pouvez revenir au mode fenêtre en actionnant &lt;b&gt;%1&lt;/b&gt;. La &lt;b&gt;touche hôte (&quot;Host&quot;)&lt;/b&gt; est actuellement définie comme &lt;b&gt;%2&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Notez que la barre de menu principale n&apos;est pas affichée en mode intégré. Vous pouvez y accéder en actionnant &lt;b&gt;Host+Début&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>&lt;p&gt;The virtual machine window is optimized to work in &lt;b&gt;%1&amp;nbsp;bit&lt;/b&gt; color mode but the color quality of the virtual display is currently set to &lt;b&gt;%2&amp;nbsp;bit&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Please open the display properties dialog of the guest OS and select a &lt;b&gt;%3&amp;nbsp;bit&lt;/b&gt; color mode, if it is available, for best possible performance of the virtual video subsystem.&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note&lt;/b&gt;. Some operating systems, like OS/2, may actually work in 32&amp;nbsp;bit mode but report it as 24&amp;nbsp;bit (16 million colors). You may try to select a different color quality to see if this message disappears or you can simply disable the message now if you are sure the required color quality (%4&amp;nbsp;bit) is not available in the given guest OS.&lt;/p&gt;</source>
@@ -3513,7 +3512,7 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
     <message>
         <source>&lt;p&gt;You didn&apos;t attach a hard disk to the new virtual machine. The machine will not be able to boot unless you attach a hard disk with a guest operating system or some other bootable media to it later using the machine settings dialog or the First Run Wizard.&lt;/p&gt;&lt;p&gt;Do you want to continue?&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Pressez le bouton &lt;b&gt;Terminer&lt;/b&gt; si les données ci-dessus sont correctes. Le média de démarrage choisi sera installé temporairement sur la machine virtuelle et cette dernière commencera l&apos;exècution.&lt;/p&gt;&lt;p&gt;Notez qu&apos;après l&apos;arrêt de la machine virtuelle, le média spécifié sera automatiquement désinstallé et le média de démarrage remis sur le premier disque dur.&lt;/p&gt;&lt;p&gt;Notez que cette fonctionnalité dépend, entre autre,  du logiciel de mise en œuvre et que les actions doivent, éventuellement, être effectuées manuellement (&lt;b&gt;Déinstaller...&lt;/b&gt; dans le menu &lt;b&gt;Périphériques&lt;/b&gt;).&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Vous n&apos;avez pas raccordé une disque dure à la nouvelle machine virtuelle. La machine ne pourra pas démarrer tant que vous ne raccorderez pas une disque dure contenant un système d&apos;exploitation ou un autre média d&apos;amorcage. Vous pouvez faire ceci en utilisant la boite de dialogue Préférances pour cette machine ou bien en utilisant l&apos;assistant du premier lancement.&lt;/p&gt;&lt;p&gt;Voulez vous continuer?&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Failed to find license files in &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;&lt;/nobr&gt;.</source>
@@ -3625,7 +3624,7 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     <message>
         <source>&lt;p&gt;The host key is currently defined as &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</source>
         <comment>additional message box paragraph</comment>
-        <translation>&lt;p&gt;La touche hôte est actuellement &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;La &lt;b&gt;touche hôte (&quot;Host&quot;)&lt;/b&gt; est actuellement &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Capture</source>
@@ -3634,16 +3633,16 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
     <message>
         <source>&lt;p&gt;One or more of the registered virtual hard disks, CD/DVD or floppy media are not currently accessible. As a result, you will not be able to operate virtual machines that use these media until they become accessible later.&lt;/p&gt;&lt;p&gt;Press &lt;b&gt;Check&lt;/b&gt; to open the Virtual Disk Manager window and see what media are inaccessible, or press &lt;b&gt;Ignore&lt;/b&gt; to ignore this message.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Un ou plusieurs des disques durs virtuels, CD/DVD ou disquette affectés ne sont pas accessibles. En conséquence, vous ne pourrez pas utiliser les machines virtuelles qui emploient ces médias jusqu&apos;à ce qu&apos;ils soient accessibles.&lt;/p&gt;&lt;p&gt;Actionnez &lt;b&gt;Tester&lt;/b&gt; pour ouvrir le dialogue de gestion des disques et pour voir quels sont les médias inaccessibles, ou la pressez &lt;b&gt;Ignorer&lt;/b&gt; pour ignorer ce message.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Un ou plusieurs des disques durs virtuels, CD/DVD ou disquettes enregistrés ne sont pas accessibles. Vous ne pourrez pas utiliser les machines virtuelles qui emploient ces médias jusqu&apos;à ce qu&apos;ils soient accessibles.&lt;/p&gt;&lt;p&gt;Actionnez &lt;b&gt;Ouvrir&lt;/b&gt; pour ouvrir le dialogue de gestion des disques et pour voir quels sont les médias inaccessibles, ou la pressez &lt;b&gt;Ignorer&lt;/b&gt; pour ignorer ce message.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Check</source>
         <comment>inaccessible media message box</comment>
-        <translation>Tester</translation>
+        <translation>Ouvrir</translation>
     </message>
     <message>
         <source>&lt;p&gt;The following VirtualBox settings files have been automatically converted to the new settings file format version &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;However, the results of the conversion were not saved back to disk yet. Please press:&lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Save&lt;/b&gt; to save all auto-converted files now (it will not be possible to use these settings files with an older version of VirtualBox in the future);&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backup&lt;/b&gt; to create backup copies of the settings files in the old format before saving them in the new format;&lt;/li&gt;&lt;li&gt;&lt;b&gt;Cancel&lt;/b&gt; to not save the auto-converted settings files now.&lt;li&gt;&lt;/ul&gt;&lt;p&gt;Note that if you select &lt;b&gt;Cancel&lt;/b&gt;, the auto-converted settings files will be implicitly saved in the new format anyway once you change a setting or start a virtual machine, but &lt;b&gt;no&lt;/b&gt; backup copies will be created in this case.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Les fichiers de configuration VirtualBox suivants ont été convertis au nouveau formats des fichiers, version &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Cependant les fichiers convertis non pas encore été enregistrés. Actionnez &lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Enregistrer&lt;/b&gt; afin de les enregistrer maintenant (il n&apos;est pas possible d&apos;utiliser ces fichiers avec une ancienne version de VirtualBox);&lt;/li&gt;&lt;li&gt;&lt;b&gt;   &lt;b&gt;Sauvegarder&lt;/b&gt; afin de générer une copie des fichiers de configuration sous l&apos;ancien format, avant l&apos;enregistrement sous le nouveau format;&lt;/li&gt;&lt;li&gt;&lt;b&gt;Annuler&lt;/b&gt; pour ne pas enregistrer les fichiers convertis automatiquement.&lt;li&gt;&lt;/ul&gt;&lt;p&gt;Notez que si vous choisissez &lt;b&gt;Annuler&lt;/b&gt;, les fichiers convertis automatiquement seront enregistrer de façon implicite si vous modifier des paramètres ou lancer une machine virtuelle, dans ce cas &lt;b&gt;aucune&lt;/b&gt; copie de sauvegarde ne sera créée.&lt;/p&gt;
+        <translation>&lt;p&gt;Les fichiers de configuration VirtualBox suivants ont été convertis au nouveau formats des fichiers, version &lt;b&gt;%1&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Cependant les fichiers convertis n&apos;ont pas encore été enregistrés. Actionnez &lt;/p&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Enregistrer&lt;/b&gt; afin de les enregistrer maintenant (il n&apos;est pas possible d&apos;utiliser ces fichiers avec une ancienne version de VirtualBox);&lt;/li&gt;&lt;li&gt;&lt;b&gt;   &lt;b&gt;Sauvegarder&lt;/b&gt; afin de générer une copie des fichiers de configuration sous l&apos;ancien format, avant l&apos;enregistrement sous le nouveau format;&lt;/li&gt;&lt;li&gt;&lt;b&gt;Annuler&lt;/b&gt; pour ne pas enregistrer les fichiers convertis automatiquement.&lt;li&gt;&lt;/ul&gt;&lt;p&gt;Notez que si vous choisissez &lt;b&gt;Annuler&lt;/b&gt;, les fichiers convertis automatiquement seront enregistrer de façon implicite si vous modifier des paramètres ou lancer une machine virtuelle, dans ce cas &lt;b&gt;aucune&lt;/b&gt; copie de sauvegarde ne sera créée.&lt;/p&gt;
 </translation>
     </message>
     <message>
@@ -3654,7 +3653,7 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     <message>
         <source>&amp;Backup</source>
         <comment>warnAboutAutoConvertedSettings message box</comment>
-        <translation>Sauve&amp;guarder</translation>
+        <translation>Sauve&amp;garder</translation>
     </message>
     <message>
         <source>Cancel</source>
@@ -3673,7 +3672,7 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
     <message>
         <source>&lt;p&gt;Do you really want to reset the virtual machine?&lt;/p&gt;&lt;p&gt;When the machine is reset, unsaved data of all applications running inside it will be lost.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Désirez vous vraiment remettre la machine Virtuelle à zéro ?&lt;/p&gt;&lt;p&gt;Si la machine est remise à zéro, les données no sauvegardées des applications lancée seront perdues.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Désirez vous vraiment remettre la machine Virtuelle à zéro ?&lt;/p&gt;&lt;p&gt;Si la machine est remise à zéro, les données non sauvegardées des applications lancée seront perdues.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Reset</source>
@@ -3773,7 +3772,7 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
     <message>
         <source>&lt;p&gt;Please fill out this registration form to let us know that you use VirtualBox and, optionally, to keep you informed about VirtualBox news and updates.&lt;/p&gt;&lt;p&gt;Enter your full name using Latin characters and your e-mail address to the fields below. Please note that Sun Microsystems will use this information only to gather product usage statistics and to send you VirtualBox newsletters. In particular, Sun Microsystems will never pass your data to third parties. Detailed information about how we use your personal data can be found in the &lt;b&gt;Privacy Policy&lt;/b&gt; section of the VirtualBox Manual or on the &lt;a href=http://www.virtualbox.org/wiki/PrivacyPolicy&gt;Privacy Policy&lt;/a&gt; page of the VirtualBox web-site.&lt;/p&gt;</source>
-        <translation>p&gt; Remplissez, s&apos;il vous plaît, cette forme d&apos;enregistrement pour nous permettre de savoir que vous utilisez VirtualBox et, en option, vous informer sur les nouveautés VirtualBox et les mises à jour. &lt;/p&gt; &lt;p&gt; Entrez dans votre nom complet en utilisant des caractères latins et votre adresse e-mail dans champs ci-dessous. Notez que Sun Microsystems n&apos;utilise ces renseignements qi&apos;à des fins statistiques et vous pour envoyer des circulaires concernants VirtualBox. Particulièrement Sun Microsystems ne transmettra jamais vos données des tierces. Des renseignements détaillés sur l&apos;utilisation de vos informations personnelles peuvent être trouvées dans la section &lt;b&gt;Privacy Policy&lt;/b&gt; du Manuel VirtualBox ou sur le &lt;un href=http: // www.virtualbox.org/wiki/PrivacyPolicy&gt; Privacy Policy &lt;/a&gt; de la page du site Internet VirtualBox. &lt;/p&gt;</translation>
+        <translation>&lt;p&gt; Remplissez, s&apos;il vous plaît, cette forme d&apos;enregistrement pour nous permettre de savoir que vous utilisez VirtualBox et, en option, vous informer sur les nouveautés VirtualBox et les mises à jour. &lt;/p&gt; &lt;p&gt; Entrez dans votre nom complet en utilisant des caractères latins et votre adresse e-mail dans champs ci-dessous. Notez que Sun Microsystems n&apos;utilise ces renseignements qi&apos;à des fins statistiques et vous pour envoyer des circulaires concernants VirtualBox. Particulièrement Sun Microsystems ne transmettra jamais vos données des tierces. Des renseignements détaillés sur l&apos;utilisation de vos informations personnelles peuvent être trouvées dans la section &lt;b&gt;Privacy Policy&lt;/b&gt; du Manuel VirtualBox ou sur le &lt;un href=http: // www.virtualbox.org/wiki/PrivacyPolicy&gt; Privacy Policy &lt;/a&gt; de la page du site Internet VirtualBox. &lt;/p&gt;</translation>
     </message>
     <message>
         <source>Check this box if you do not want to receive mail from Sun Microsystems at the e-mail address specified above.</source>
@@ -3956,7 +3955,7 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
     <message>
         <source>&amp;Reset All Warnings</source>
-        <translation>&amp;Supprimer tous les avertissements</translation>
+        <translation>&amp;Réinitialiser tous les avertissements</translation>
     </message>
     <message>
         <source>Cause all suppressed warnings and messages to be shown again</source>
@@ -4673,7 +4672,7 @@ value.&lt;/qt&gt;</source>
     <message>
         <source>No supported devices connected to the host PC</source>
         <comment>USB device tooltip</comment>
-        <translation>Pas de périphériques soutenus, attachés à l´ordinateur</translation>
+        <translation>Aucun périphérique supporté n&apos;est attaché à l´ordinateur</translation>
     </message>
 </context>
 <context>
@@ -4710,7 +4709,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>&lt;p&gt;You have started a newly created virtual machine for the first time. This wizard will help you to perform the steps necessary for installing an operating system of your choice onto this virtual machine.&lt;/p&gt;&lt;p&gt;Use the &lt;b&gt;Next&lt;/b&gt; button to go to the next page of the wizard and the &lt;b&gt;Back&lt;/b&gt; button to return to the previous page. You can also press &lt;b&gt;Cancel&lt;/b&gt; if you want to cancel execution of this wizard.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Vous avez lancé une nouvelle machine virtuelle pour la première fois. Cet assistant vous aideras à effectuer toutes les opérations nécessaires pour l&apos;installation d&apos;un nouveau système d&apos;exploitation sur cette machine virtuelle.&lt;/p&gt;&lt;p&gt;Utilisez le bouton &lt;b&gt;Suivant&lt;/b&gt; pour choisir la page suivante et le bouton &lt;b&gt;Précédent&lt;/b&gt;pour revenir sur la page précédente. Vous pouvez également utiliser le bouton &lt;b&gt;Annuler&lt;/b&gt; pour interrompre l&apos;exécution de l&apos;assistant.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Vous avez lancé une nouvelle machine virtuelle pour la première fois. Cet assistant vous aidera à effectuer toutes les opérations nécessaires pour l&apos;installation d&apos;un nouveau système d&apos;exploitation sur cette machine virtuelle.&lt;/p&gt;&lt;p&gt;Utilisez le bouton &lt;b&gt;Suivant&lt;/b&gt; pour choisir la page suivante et le bouton &lt;b&gt;Précédent&lt;/b&gt; pour revenir sur la page précédente. Vous pouvez également utiliser le bouton &lt;b&gt;Annuler&lt;/b&gt; pour interrompre l&apos;exécution de l&apos;assistant.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Welcome to the First Run Wizard!</source>
@@ -4726,7 +4725,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>&amp;CD/DVD-ROM Device</source>
-        <translation>Lecteur &amp;CD/DVD-ROM </translation>
+        <translation>&amp;CD/DVD-ROM</translation>
     </message>
     <message>
         <source>Alt+C</source>
@@ -4734,7 +4733,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>&amp;Floppy Device</source>
-        <translation>Lecteur &amp;Disquette</translation>
+        <translation>&amp;Disquette</translation>
     </message>
     <message>
         <source>Alt+F</source>
@@ -4742,7 +4741,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>&lt;p&gt;Select the media which contains the setup program of the operating system you want to install. This media must be bootable, otherwise the setup program will not be able to start.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Choisissez le média contenant le logiciel de mise en œuvre du système d&apos;exploitation que vous désirer installer. Ce média doit permettre le démarage de l&apos;ordinateur.&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Choisissez le média contenant le logiciel d&apos;installation du système d&apos;exploitation que vous désirer utiliser dans la machine virtuelle. Ce média doit permettre le démarage de l&apos;ordinateur.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Media Source</source>
@@ -4750,7 +4749,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>&amp;Host Drive</source>
-        <translation>&amp;Disque dur de l&apos;hôte </translation>
+        <translation>&amp;Lecteur de l&apos;hôte </translation>
     </message>
     <message>
         <source>Alt+H</source>
@@ -4758,7 +4757,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>&amp;Image File</source>
-        <translation>Fichier &amp;Image</translation>
+        <translation>&amp;Fichier Image</translation>
     </message>
     <message>
         <source>Alt+I</source>
@@ -4778,7 +4777,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>&lt;p&gt;If the above is correct, press the &lt;b&gt;Finish&lt;/b&gt; button. Once you press it, the selected media will be temporarily mounted on the virtual machine and the machine will start execution.&lt;/p&gt;&lt;p&gt;Please note that when you close the virtual machine, the specified media will be automatically unmounted and the boot device will be set back to the first hard disk.&lt;/p&gt;&lt;p&gt;Depending on the type of the setup program, you may need to manually unmount (eject) the media after the setup program reboots the virtual machine, to prevent the installation process from starting again. You can do this by selecting the corresponding &lt;b&gt;Unmount...&lt;/b&gt; action in the &lt;b&gt;Devices&lt;/b&gt; menu.&lt;/p&gt;</source>
-        <translation>&lt;p&gt;Pressez le bouton &lt;b&gt;Terminer&lt;/b&gt; si les données ci-dessus sont correctes. Le média de démarrage choisi sera installé temporairement sur la machine virtuelle et cette dernière commencera l&apos;exècution.&lt;/p&gt;&lt;p&gt;Notez qu&apos;après l&apos;arrêt de la machine virtuelle, le média spécifié sera automatiquement déinstallé et le média de démarrage remis sur le premier disque dur.&lt;/p&gt;&lt;p&gt;Notez que cette fonctionnalité dépend, entre autre,  du logiciel de mise en œuvre et que les actions doivent, éventuellement, être effectuées manuellement (&lt;b&gt;Déinstaller...&lt;/b&gt; dans le menu &lt;b&gt;Périphériques&lt;/b&gt;).&lt;/p&gt;</translation>
+        <translation>&lt;p&gt;Pressez le bouton &lt;b&gt;Terminer&lt;/b&gt; si les données ci-dessus sont correctes. Le média de démarrage choisi sera inséré temporairement dans la machine virtuelle et cette dernière commencera l&apos;exécution.&lt;/p&gt;&lt;p&gt;Notez qu&apos;après l&apos;arrêt de la machine virtuelle, le média spécifié sera automatiquement éjecté et le média de démarrage remis sur le premier disque dur.&lt;/p&gt;&lt;p&gt;Selon le logiciel d&apos;installation choisi, vous pourrez éventuellement avoir à éjecter manuellement le média après le réamorçage de la machine virtuelle (&lt;b&gt;Éjecter...&lt;/b&gt; dans le menu &lt;b&gt;Périphériques&lt;/b&gt;) pourque l&apos;installation ne recommence pas du début.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>Summary</source>
@@ -4794,7 +4793,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>Host Drive %1</source>
-        <translation>Disque dur %1</translation>
+        <translation>Lecteur de l&apos;hôte %1</translation>
     </message>
     <message>
         <source>&lt;table&gt;&lt;tr&gt;&lt;td&gt;Type:&lt;/td&gt;&lt;td&gt;%1&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Source:&lt;/td&gt;&lt;td&gt;%2&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</source>
@@ -5198,11 +5197,11 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>Select TAP setup application</source>
-        <translation>Choisir l&apos;application d&apos;installation de l&apos;interface TAP</translation>
+        <translation>Choisir l&apos;application d&apos;initialisation de l&apos;interface TAP</translation>
     </message>
     <message>
         <source>Select TAP terminate application</source>
-        <translation>Choisir l&apos;application de désinstallation de l&apos;interface TAP</translation>
+        <translation>Choisir l&apos;application d&apos;arrêt de l&apos;interface TAP</translation>
     </message>
     <message>
         <source>VirtualBox Host Interface %1</source>
@@ -5210,7 +5209,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>&lt;p&gt;Do you want to remove the selected host network interface &lt;nobr&gt;&lt;b&gt;%1&lt;/b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note:&lt;/b&gt; This interface may be in use by one or more network adapters of this or another VM. After it is removed, these adapters will no longer work until you correct their settings by either choosing a different interface name or a different adapter attachment type.&lt;/p&gt;</source>
-        <translation type="obsolete">&lt;p&gt;Désirez vous enlever l&apos;adaptateur réseau sélectionné &lt;nobr&gt;&lt;b&gt;%1&lt;b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note; cet adaptateur est éventuellement utilisé par cette ou d&apos;autres machines viruelles. Si vous éliminez cet adaptateur, les adapteurs virtuels ne fonctionnerons plus. Vous pouvez corriger le paramétrage des adaptateurs affcetés en conséquence.&lt;/p&gt;</translation>
+        <translation type="obsolete">&lt;p&gt;Désirez vous enlever l&apos;adaptateur réseau sélectionné &lt;nobr&gt;&lt;b&gt;%1&lt;b&gt;?&lt;/nobr&gt;&lt;/p&gt;&lt;p&gt;&lt;b&gt;Note; cet adaptateur est éventuellement utilisé par cette ou d&apos;autres machines virtuelles. Si vous éliminez cet adaptateur, les adapteurs virtuels ne fonctionnerons plus. Vous pouvez corriger le paramétrage des adaptateurs affectés en conséquence.&lt;/p&gt;</translation>
     </message>
     <message>
         <source>When checked, plugs this virtual network adapter into the virtual machine.</source>
@@ -5246,19 +5245,19 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>Displays the command executed to set up the TAP interface.</source>
-        <translation>Affiche la commande lancée pour l&apos;installation de l&apos;interface TAP.</translation>
+        <translation>Affiche la commande lancée pour l&apos;initialisation de l&apos;interface TAP.</translation>
     </message>
     <message>
         <source>Selects the setup application.</source>
-        <translation>Choisissez L&apos;application d&apos;installation.</translation>
+        <translation>Choisissez l&apos;application d&apos;initialisation.</translation>
     </message>
     <message>
         <source>Displays the command executed to terminate the TAP interface.</source>
-        <translation>Affiche la commande lancée pour la désinstallation de l&apos;interface TAP.</translation>
+        <translation>Affiche la commande lancée pour l&apos;arrêt de l&apos;interface TAP.</translation>
     </message>
     <message>
         <source>Selects the terminate application.</source>
-        <translation>Choisi l&apos;application de désinstallation.</translation>
+        <translation>Choisi l&apos;application d&apos;arrêt.</translation>
     </message>
     <message>
         <source>Displays the MAC address of this adapter. It contains exactly 12 characters chosen from {0-9,A-F}. Note that the second character must be an even digit.</source>
@@ -5376,7 +5375,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>&amp;Create Pipe</source>
-        <translation>&amp;Créer un tube</translation>
+        <translation>&amp;Créer un tuyau</translation>
     </message>
     <message>
         <source>Alt+C</source>
@@ -5384,7 +5383,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>If checked, the pipe specified in the &lt;b&gt;Port Path&lt;/b&gt; field will be created by the virtual machine when it starts. Otherwise, the virtual machine will try to use the existing pipe.</source>
-        <translation>Si la case est cochée, le tube spécifié dans le champ  &lt;b&gt;Chemin de l&apos;interface&lt;/b&gt; sera créé lors du lancement de la machine virtuelle, sinon la machine virtuelle tentera d&apos;utiliser le tube existant.</translation>
+        <translation>Si la case est cochée, le tuyau spécifié dans le champ  &lt;b&gt;Chemin de l&apos;interface&lt;/b&gt; sera créé lors du lancement de la machine virtuelle, sinon la machine virtuelle tentera d&apos;utiliser le tuyau existant.</translation>
     </message>
     <message>
         <source>Port &amp;Path</source>
@@ -5392,7 +5391,7 @@ value.&lt;/qt&gt;</source>
     </message>
     <message>
         <source>Displays the path to the serial port&apos;s pipe on the host when the port works in &lt;b&gt;Host Pipe&lt;/b&gt; mode, or the host serial device name when the port works in &lt;b&gt;Host Device&lt;/b&gt; mode.</source>
-        <translation>Affiche le chemin sur l&apos;hôte pour les interfaces série quand l&apos;interface fonctionne en mode &lt;b&gt;Tube hôte&lt;/b&gt; ou le nom du fichier de l&apos;interface série de l&apos;hôte pour le mode &lt;b&gt;Interface hôte&lt;/b&gt;. </translation>
+        <translation>Affiche le chemin sur l&apos;hôte pour les interfaces série quand l&apos;interface fonctionne en mode &lt;b&gt;Tuyau Hôte&lt;/b&gt; ou le nom du fichier de l&apos;interface série de l&apos;hôte pour le mode &lt;b&gt;Interface hôte&lt;/b&gt;. </translation>
     </message>
 </context>
 <context>
@@ -5588,11 +5587,11 @@ The actual default path will be displayed after accepting the changes and openin
         <source>When checked, the virtual machine will support
 the Advanced Configuration and Power Management Interface (ACPI). &lt;b&gt;Note:&lt;/b&gt; don&apos;t disable
 this feature after having installed a Windows guest operating system!</source>
-        <translation type="obsolete">Si cette fonction est cochée, la machine virtuelle soutiendra l&apos;interface avancé de gestion de configuration et de d&apos;alimentation (ACPI). &lt;b&gt;Note : &lt;/b&gt; ne désactivé pas ceci après l&apos;installation d&apos;un système d&apos;exploitation Windows&amp;nbsp;!</translation>
+        <translation type="obsolete">Si cette fonction est cochée, la machine virtuelle supportera l&apos;interface avancée de gestion et de configuration de l&apos;énergie (ACPI). &lt;b&gt;Note : &lt;/b&gt; ne désactivez pas ceci après l&apos;installation d&apos;un système d&apos;exploitation Windows&amp;nbsp;!</translation>
     </message>
     <message>
         <source>Enable IO A&amp;PIC</source>
-        <translation>Activer l&apos; IO A&amp;PIC</translation>
+        <translation>Activer l&apos;IO A&amp;PIC</translation>
     </message>
     <message>
         <source>Alt+P</source>
@@ -5602,7 +5601,7 @@ this feature after having installed a Windows guest operating system!</source>
         <source>When checked, the virtual machine will support
 the Input Output APIC (IO APIC), which may slightly decrease the VM performance. &lt;b&gt;Note:&lt;/b&gt; don&apos;t disable
 this feature after having installed a Windows guest operating system!</source>
-        <translation type="obsolete">Si cette fonction est cochée, la machine virtuelle soutiendra l&apos;entrée-sortie APIC (O/S APIC), qui peut légèrement diminuer la performace de la VM. &lt;b&gt;Note : &lt;/b&gt; ne désactivert pas  ce paramètre après l&apos;installation d&apos;un système d&apos;exploitation Windows&amp;nbsp;!</translation>
+        <translation type="obsolete">Si cette fonction est cochée, la machine virtuelle supportera l&apos;APIC entrée/sortie (IO-APIC), ce qui peut légèrement diminuer la performance de la VM. &lt;b&gt;Note : &lt;/b&gt; ne désactivez pas ce paramètre après l&apos;installation d&apos;un système d&apos;exploitation Windows&amp;nbsp;!</translation>
     </message>
     <message>
         <source>Boo&amp;t Order</source>
@@ -5648,11 +5647,11 @@ pour la créer ou pour attacher un disque dur virtuel.</translation>
     </message>
     <message>
         <source>&amp;Mount Floppy Drive</source>
-        <translation>&amp;Installer la disquette</translation>
+        <translation>&amp;Insérer une disquette</translation>
     </message>
     <message>
         <source>Host Floppy &amp;Drive</source>
-        <translation>&amp;Disquette hôte</translation>
+        <translation>Connecter le &amp;lecteur disquette hôte</translation>
     </message>
     <message>
         <source>Alt+D</source>
@@ -5660,7 +5659,7 @@ pour la créer ou pour attacher un disque dur virtuel.</translation>
     </message>
     <message>
         <source>Mounts the specified host Floppy drive to the virtual Floppy drive.</source>
-        <translation>Installe le lecteur de disquette de l&apos;hôte sur la disquette virtuelle du client.</translation>
+        <translation>Connecte le lecteur de disquette de l&apos;hôte au lecteur virtuelle du client.</translation>
     </message>
     <message>
         <source>Lists host Floppy drives available to mount to
@@ -5673,7 +5672,7 @@ the virtual machine.</source>
     </message>
     <message>
         <source>Mounts the specified Floppy image to the virtual Floppy drive.</source>
-        <translation>Installe l&apos;image disquette sur la disquette virtuelle.</translation>
+        <translation>Insère l&apos;image disquette dans le lecteur virtuelle.</translation>
     </message>
     <message>
         <source>Invokes the Virtual Disk Manager to select
@@ -5682,15 +5681,15 @@ a Floppy image to mount.</source>
     </message>
     <message>
         <source>&amp;Mount CD/DVD Drive</source>
-        <translation>&amp;Installer un lecteur C&amp;D/DVD-ROM</translation>
+        <translation>&amp;Insérer un CD/DVD-ROM</translation>
     </message>
     <message>
         <source>Host CD/DVD &amp;Drive</source>
-        <translation>&amp;Lecteur  CD/DVD hôte</translation>
+        <translation>Connecter le &amp;lecteur CD/DVD hôte</translation>
     </message>
     <message>
         <source>Mounts the specified CD/DVD drive to the virtual CD/DVD drive.</source>
-        <translation>Installe le lecteur CD/DVD sur le lecteur virtuel CD/DVD.</translation>
+        <translation type="unfinished">Connecte le lecteur CD/DVD du hôte au lecteur virtuel.</translation>
     </message>
     <message>
         <source>Lists host CD/DVD drives available to mount to
@@ -5699,11 +5698,11 @@ the virtual machine.</source>
     </message>
     <message>
         <source>&amp;ISO Image File</source>
-        <translation>Fichier image &amp;ISO</translation>
+        <translation>&amp;Fichier image ISO</translation>
     </message>
     <message>
         <source>Mounts the specified CD/DVD image to the virtual CD/DVD drive.</source>
-        <translation>Attache l&apos;image CD/DVD sur le lecteur virtuel DC/DVD.</translation>
+        <translation>Insère l&apos;image CD/DVD dans le lecteur virtuel.</translation>
     </message>
     <message>
         <source>Invokes the Virtual Disk Manager to select
@@ -5889,19 +5888,19 @@ Timeout d&apos;authentification </translation>
     </message>
     <message>
         <source>When checked, mounts the specified media to the CD/DVD drive of the virtual machine. Note that the CD/DVD drive is always connected to the Secondary Master IDE controller of the machine.</source>
-        <translation>Si la case est cochée, le média spécifié sera installé sur le lecteur CD/DVD de la machnine virtuelle. Notez que le lecteur CD/DVD est toujours attaché sur le contrôleur IDE maître secondaire. </translation>
+        <translation>Si la case est cochée, le média spécifié sera insérré dans lecteur CD/DVD de la machine virtuelle. Notez que le lecteur CD/DVD est toujours attaché sur le contrôleur IDE maître secondaire. </translation>
     </message>
     <message>
         <source>Displays the image file to mount to the virtual CD/DVD drive and allows to quickly select a different image.</source>
-        <translation>Affiche le fichier image à installé sur le lecteur virtuel CD/DVD et permet un choix rapide de différentes images.</translation>
+        <translation>Affiche le fichier image à insérer dans le lecteur virtuel CD/DVD et permet un choix rapide de différentes images.</translation>
     </message>
     <message>
         <source>When checked, mounts the specified media to the Floppy drive of the virtual machine.</source>
-        <translation>Si la case est cochée le média spécifié est installé sur la disquette de la machine virtuelle.</translation>
+        <translation>Si la case est cochée le média spécifié sera insérré dans le lecteur de disquette de la machine virtuelle.</translation>
     </message>
     <message>
         <source>Displays the image file to mount to the virtual Floppy drive and allows to quickly select a different image.</source>
-        <translation>Affiche le fichier image à installé sur le lecteur virtuel de disquette et permet un choix rapide de différentes images.</translation>
+        <translation>Affiche le fichier image à insérer dans le lecteur virtuel de disquette et permet un choix rapide de différentes images.</translation>
     </message>
     <message>
         <source>When checked, the virtual PCI audio card is plugged into the virtual machine that uses the specified driver to communicate to the host audio card.</source>
@@ -5992,13 +5991,13 @@ that this feature requires Guest Additions to be installed in the guest OS.
         <source>&lt;qt&gt;When checked, the virtual machine will support
 the Advanced Configuration and Power Management Interface (ACPI). &lt;b&gt;Note:&lt;/b&gt; don&apos;t disable
 this feature after having installed a Windows guest operating system!&lt;/qt&gt;</source>
-        <translation>&lt;qt&gt;Si cette fonction est cochée, la machine virtuelle soutiendra l&apos;interface avancé de gestion de configuration et de d&apos;alimentation (ACPI). &lt;b&gt;Note : &lt;/b&gt; ne désactivé pas ceci après l&apos;installation d&apos;un système d&apos;exploitation Windows&amp;nbsp;!&lt;/qt&gt;</translation>
+        <translation>&lt;qt&gt;Si cette fonction est cochée, la machine virtuelle supportera l&apos;interface avancée de gestion et de configuration de l&apos;énergie (ACPI). &lt;b&gt;Note : &lt;/b&gt; ne désactivé pas ceci après l&apos;installation d&apos;un système d&apos;exploitation Windows&amp;nbsp;!&lt;/qt&gt;</translation>
     </message>
     <message>
         <source>&lt;qt&gt;When checked, the virtual machine will support
 the Input Output APIC (IO APIC), which may slightly decrease the VM performance. &lt;b&gt;Note:&lt;/b&gt; don&apos;t disable
 this feature after having installed a Windows guest operating system!&lt;/qt&gt;</source>
-        <translation>&lt;qt&gt;Si cette fonction est cochée, la machine virtuelle soutiendra l&apos;entrée-sortie APIC (O/S APIC), qui peut légèrement diminuer la performace de la VM. &lt;b&gt;Note : &lt;/b&gt; ne désactivez pas  ce paramètre après l&apos;installation d&apos;un système d&apos;exploitation Windows&amp;nbsp;!&lt;/qt&gt;</translation>
+        <translation>&lt;qt&gt;Si cette fonction est cochée, la machine virtuelle supportera l&apos;APIC entrée/sortie (IO-APIC), qui peut légèrement diminuer la performance de la VM. &lt;b&gt;Note : &lt;/b&gt; ne désactivez pas  ce paramètre après l&apos;installation d&apos;un système d&apos;exploitation Windows&amp;nbsp;!&lt;/qt&gt;</translation>
     </message>
     <message>
         <source>Defines the mode of sharing the clipboard between the guest and the host OS. Note that this feature requires Guest Additions to be installed in the guest OS.</source>
@@ -6022,15 +6021,15 @@ this feature after having installed a Windows guest operating system!&lt;/qt&gt;
     </message>
     <message>
         <source>Lists host Floppy drives available to mount to the virtual machine.</source>
-        <translation>Listes les lecteurs de disquette disponibles pouvant être installé sur la machine virtuelle.</translation>
+        <translation>Affiche les lecteurs de disquette disponibles pouvant être connectés à la machine virtuelle.</translation>
     </message>
     <message>
         <source>Invokes the Virtual Disk Manager to select a Floppy image to mount.</source>
-        <translation>Appelle l&apos; assistant de disque virtuel permettant le choix d&apos;e l&apos;image de disquette à installer. </translation>
+        <translation>Appelle l&apos;assistant de disque virtuel permettant le choix de l&apos;image de disquette à insérer. </translation>
     </message>
     <message>
         <source>Lists host CD/DVD drives available to mount to the virtual machine.</source>
-        <translation>Listes les lecteurs CD/DVD disponibles pouvants être installés sur la machine virtuelle. </translation>
+        <translation>Affiche les lecteurs CD/DVD disponibles pouvants être connectés à la machine virtuelle. </translation>
     </message>
     <message>
         <source>Invokes the Virtual Disk Manager to select a CD/DVD image to mount.</source>
@@ -6136,7 +6135,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
     <message>
         <source>If checked, any change to mounted CD/DVD or Floppy media performed during machine execution will be saved in the settings file in order to preserve the configuration of mounted media between runs.</source>
-        <translation>Si la case est cochée, toutes les modifications (attachement de CD/DVD ou disquette) effectuées lors du fonctionnement de la machine virtuelle seront sauvegardés afin de préservé la dernière configuration.</translation>
+        <translation>Si la case est cochée, toutes les modifications des médias CD/DVD ou disquette effectuées lors du fonctionnement de la machine virtuelle seront sauvegardées afin de préserver la même configuration au lancement suivant de la machine.</translation>
     </message>
     <message>
         <source>O&amp;ther</source>
@@ -6144,7 +6143,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
     <message>
         <source>&amp;Enable Passthrough</source>
-        <translation>Activer le mode dir&amp;ect</translation>
+        <translation>&amp;Activer le mode direct</translation>
     </message>
     <message>
         <source>Alt+E</source>
@@ -6152,7 +6151,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
     <message>
         <source>When checked, allows the guest to send ATAPI commands directly to the host drive which makes it possible to use CD/DVD writers connected to the host inside the VM. Note that writing audio CD inside the VM is not yet supported.</source>
-        <translation>Si la case est cochée, le client pourra envoyer directement des commandes ATAPI sur le disque hôte et de ce faît il est possible d&apos;utiliser des graveurs CD/DVD a partir de la machine virtuelle. Notez que la gravure de CD audio n&apos;est pas possible actuellement.</translation>
+        <translation>Si la case est cochée, le client pourra envoyer directement des commandes ATAPI sur le disque hôte et de ce faît il est possible d&apos;utiliser des graveurs CD/DVD à partir de la machine virtuelle. Notez que la gravure de CD audio n&apos;est pas possible actuellement.</translation>
     </message>
     <message>
         <source>&amp;Server Port </source>
@@ -6196,7 +6195,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
     <message>
         <source>Floppy image file is not selected</source>
-        <translation>Le fichier image de disque souple n&apos;est pas choisi</translation>
+        <translation>Le fichier image de disquette n&apos;est pas choisi</translation>
     </message>
     <message>
         <source>Incorrect host network interface is selected</source>
@@ -6340,11 +6339,11 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
     <message>
         <source>Add Filter From Device</source>
-        <translation>Ajouter un filtre a partir du périphérique</translation>
+        <translation>Ajouter un filtre à partir du périphérique</translation>
     </message>
     <message>
         <source>A&amp;dd Filter From Device</source>
-        <translation>Ajouter un filtre a partir &amp;du périphérique</translation>
+        <translation>Ajouter un filtre à partir &amp;du périphérique</translation>
     </message>
     <message>
         <source>&lt;qt&gt;Adds a new USB filter with all fields set to the

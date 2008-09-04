@@ -1,6 +1,6 @@
-/* $Id: $ */
+/* $Id: DevPCI.cpp 34404 2008-08-08 23:25:08Z bird $ */
 /** @file
- * PCI BUS Device.
+ * DevPCI - PCI BUS Device.
  */
 
 /*
@@ -55,7 +55,7 @@
 #include <iprt/assert.h>
 #include <iprt/string.h>
 
-#include "Builtins.h"
+#include "../Builtins.h"
 
 
 /*******************************************************************************
@@ -65,19 +65,14 @@
  * Acquires the PDM lock. This is a NOP if locking is disabled. */
 /** @def PCI_UNLOCK
  * Releases the PDM lock. This is a NOP if locking is disabled. */
-#ifdef VBOX_WITH_PDM_LOCK
-# define PCI_LOCK(pDevIns, rc) \
+#define PCI_LOCK(pDevIns, rc) \
     do { \
-        int rc2 = PDMINS2DATA(pDevIns, PCIBus *)->CTXALLSUFF(pPciHlp)->pfnLock((pDevIns), rc); \
+        int rc2 = PDMINS_2_DATA(pDevIns, PCIBus *)->CTX_SUFF(pPciHlp)->pfnLock((pDevIns), rc); \
         if (rc2 != VINF_SUCCESS) \
             return rc2; \
     } while (0)
-# define PCI_UNLOCK(pDevIns) \
-    PDMINS2DATA(pDevIns, PCIBus *)->CTXALLSUFF(pPciHlp)->pfnUnlock(pDevIns)
-#else /* !VBOX_WITH_PDM_LOCK */
-# define PCI_LOCK(pThis, rc)   do { } while (0)
-# define PCI_UNLOCK(pThis)     do { } while (0)
-#endif /* !VBOX_WITH_PDM_LOCK */
+#define PCI_UNLOCK(pDevIns) \
+    PDMINS_2_DATA(pDevIns, PCIBus *)->CTX_SUFF(pPciHlp)->pfnUnlock(pDevIns)
 
 
 /*******************************************************************************
@@ -105,7 +100,7 @@ typedef struct PIIX3State
  * @remark
  * These are currently put in the PCIBus structure since we've
  * only got one PCI bus in the current VM configurations. This
- * makes life somewhat simpler in GC.
+ * makes life somewhat simpler in RC.
  */
 typedef struct PCIGLOBALS
 {
@@ -146,17 +141,20 @@ typedef struct PCIBus
     /** Array of PCI devices. */
     R3PTRTYPE(PPCIDEVICE) devices[256];
 
-    /** HC pointer to the device instance. */
-    R3R0PTRTYPE(PPDMDEVINS) pDevInsHC;
+    /** R3 pointer to the device instance. */
+    PPDMDEVINSR3        pDevInsR3;
     /** Pointer to the PCI R3  helpers. */
-    PCPDMPCIHLPR3           pPciHlpR3;
+    PCPDMPCIHLPR3       pPciHlpR3;
 
-    /** GC pointer to the device instance. */
-    PPDMDEVINSGC        pDevInsGC;
-    /** Pointer to the PCI GC helpers. */
-    PCPDMPCIHLPGC       pPciHlpGC;
+    /** R0 pointer to the device instance. */
+    PPDMDEVINSR0        pDevInsR0;
     /** Pointer to the PCI R0 helpers. */
     PCPDMPCIHLPR0       pPciHlpR0;
+
+    /** RC pointer to the device instance. */
+    PPDMDEVINSRC        pDevInsRC;
+    /** Pointer to the PCI RC helpers. */
+    PCPDMPCIHLPRC       pPciHlpRC;
 
     /** The PCI device for the PCI bridge. */
     PCIDEVICE           PciDev;
@@ -172,11 +170,11 @@ typedef PCIBUS PCIBus;
 
 
 /** Converts a bus instance pointer to a device instance pointer. */
-#define PCIBUS2DEVINS(pPciBus)    ((pPciBus)->CTXSUFF(pDevIns))
+#define PCIBUS_2_DEVINS(pPciBus)        ((pPciBus)->CTX_SUFF(pDevIns))
 /** Converts a device instance pointer to a PCIGLOBALS pointer. */
-#define DEVINS2PCIGLOBALS(pDevIns) ((PPCIGLOBALS)(&PDMINS2DATA(pDevIns, PPCIBUS)->Globals))
+#define DEVINS_2_PCIGLOBALS(pDevIns)    ((PPCIGLOBALS)(&PDMINS_2_DATA(pDevIns, PPCIBUS)->Globals))
 /** Converts a bus instance pointer to a PCIGLOBALS pointer. */
-#define PCIBUS2PCIGLOBALS(pPciBus) ((PPCIGLOBALS)(&pPciBus->Globals))
+#define PCIBUS_2_PCIGLOBALS(pPciBus)    ((PPCIGLOBALS)(&pPciBus->Globals))
 
 
 #ifndef VBOX_DEVICE_STRUCT_TESTCASE
@@ -283,9 +281,9 @@ static void pci_update_mappings(PCIDevice *d)
                             AssertRC(rc);
                         }
                     } else {
-                        RTGCPHYS GCPhysBase = r->addr + PCIBUS2PCIGLOBALS(pBus)->pci_mem_base;
+                        RTGCPHYS GCPhysBase = r->addr + PCIBUS_2_PCIGLOBALS(pBus)->pci_mem_base;
                         int rc;
-                        if (pBus->pPciHlpR3->pfnIsMMIO2Base(pBus->pDevInsHC, d->pDevIns, GCPhysBase))
+                        if (pBus->pPciHlpR3->pfnIsMMIO2Base(pBus->pDevInsR3, d->pDevIns, GCPhysBase))
                         {
                             /* unmap it. */
                             rc = r->map_func(d, i, NIL_RTGCPHYS, r->size, (PCIADDRESSSPACE)(r->type));
@@ -300,7 +298,7 @@ static void pci_update_mappings(PCIDevice *d)
                 r->addr = new_addr;
                 if (r->addr != ~0U) {
                     int rc = r->map_func(d, i,
-                                         r->addr + (r->type & PCI_ADDRESS_SPACE_IO ? 0 : PCIBUS2PCIGLOBALS(pBus)->pci_mem_base),
+                                         r->addr + (r->type & PCI_ADDRESS_SPACE_IO ? 0 : PCIBUS_2_PCIGLOBALS(pBus)->pci_mem_base),
                                          r->size, (PCIADDRESSSPACE)(r->type));
                     AssertRC(rc);
                 }
@@ -530,7 +528,7 @@ static void apic_set_irq(PPCIBUS pBus, PCIDevice *pci_dev, int irq_num1, int lev
     if (acpi_irq == -1) {
         int shift, apic_irq, apic_level;
         uint32_t *p;
-        PPCIGLOBALS pGlobals = PCIBUS2PCIGLOBALS(pBus);
+        PPCIGLOBALS pGlobals = PCIBUS_2_PCIGLOBALS(pBus);
         int uIrqIndex = pci_dev->Int.s.iIrq;
         int irq_num = pci_slot_get_apic_pirq(pci_dev, irq_num1);
 
@@ -540,20 +538,20 @@ static void apic_set_irq(PPCIBUS pBus, PCIDevice *pci_dev, int irq_num1, int lev
         apic_irq = irq_num + 0x10;
         apic_level = get_pci_irq_apic_level(pGlobals, irq_num);
         Log3(("apic_set_irq: %s: irq_num1=%d level=%d apic_irq=%d apic_level=%d irq_num1=%d\n",
-              HCSTRING(pci_dev->name), irq_num1, level, apic_irq, apic_level, irq_num));
-        pBus->CTXALLSUFF(pPciHlp)->pfnIoApicSetIrq(CTXSUFF(pBus->pDevIns), apic_irq, apic_level);
+              R3STRING(pci_dev->name), irq_num1, level, apic_irq, apic_level, irq_num));
+        pBus->CTX_SUFF(pPciHlp)->pfnIoApicSetIrq(pBus->CTX_SUFF(pDevIns), apic_irq, apic_level);
 
         if ((level & PDM_IRQ_LEVEL_FLIP_FLOP) == PDM_IRQ_LEVEL_FLIP_FLOP) {
             *p = (*p & ~(1 << shift));
             apic_level = get_pci_irq_apic_level(pGlobals, irq_num);
             Log3(("apic_set_irq: %s: irq_num1=%d level=%d apic_irq=%d apic_level=%d irq_num1=%d (flop)\n",
-                  HCSTRING(pci_dev->name), irq_num1, level, apic_irq, apic_level, irq_num));
-            pBus->CTXALLSUFF(pPciHlp)->pfnIoApicSetIrq(CTXSUFF(pBus->pDevIns), apic_irq, apic_level);
+                  R3STRING(pci_dev->name), irq_num1, level, apic_irq, apic_level, irq_num));
+            pBus->CTX_SUFF(pPciHlp)->pfnIoApicSetIrq(pBus->CTX_SUFF(pDevIns), apic_irq, apic_level);
         }
     } else {
         Log3(("apic_set_irq: %s: irq_num1=%d level=%d acpi_irq=%d\n",
-              HCSTRING(pci_dev->name), irq_num1, level, acpi_irq));
-        pBus->CTXALLSUFF(pPciHlp)->pfnIoApicSetIrq(CTXSUFF(pBus->pDevIns), acpi_irq, level);
+              R3STRING(pci_dev->name), irq_num1, level, acpi_irq));
+        pBus->CTX_SUFF(pPciHlp)->pfnIoApicSetIrq(pBus->CTX_SUFF(pDevIns), acpi_irq, level);
     }
 }
 
@@ -588,8 +586,8 @@ static inline int get_pci_irq_level(PPCIGLOBALS pGlobals, int irq_num)
  */
 PDMBOTHCBDECL(void) pciSetIrq(PPDMDEVINS pDevIns, PPCIDEVICE pPciDev, int iIrq, int iLevel)
 {
-    PPCIBUS     pBus = PDMINS2DATA(pDevIns, PPCIBUS);
-    PPCIGLOBALS pGlobals = PCIBUS2PCIGLOBALS(pBus);
+    PPCIBUS     pBus = PDMINS_2_DATA(pDevIns, PPCIBUS);
+    PPCIGLOBALS pGlobals = PCIBUS_2_PCIGLOBALS(pBus);
     uint8_t    *pbCfg = pBus->PIIX3State.dev.config;
     const bool  fIsAcpiDevice = pPciDev->config[2] == 0x13 && pPciDev->config[3] == 0x71;
     const bool  fIsApicEnabled = pGlobals->fUseIoApic && pbCfg[0xde] == 0xbe && pbCfg[0xad] == 0xef;
@@ -653,8 +651,8 @@ PDMBOTHCBDECL(void) pciSetIrq(PPDMDEVINS pDevIns, PPCIDEVICE pPciDev, int iIrq, 
         pic_level |= pGlobals->acpi_irq_level;
 
     Log3(("piix3_set_irq: %s: iLevel=%d iIrq=%d pic_irq=%d pic_level=%d\n",
-          HCSTRING(pPciDev->name), iLevel, iIrq, pic_irq, pic_level));
-    pBus->CTXALLSUFF(pPciHlp)->pfnIsaSetIrq(CTXSUFF(pBus->pDevIns), pic_irq, pic_level);
+          R3STRING(pPciDev->name), iLevel, iIrq, pic_irq, pic_level));
+    pBus->CTX_SUFF(pPciHlp)->pfnIsaSetIrq(pBus->CTX_SUFF(pDevIns), pic_irq, pic_level);
 
     /** @todo optimize pci irq flip-flop some rainy day. */
     if ((iLevel & PDM_IRQ_LEVEL_FLIP_FLOP) == PDM_IRQ_LEVEL_FLIP_FLOP)
@@ -827,9 +825,9 @@ static void pci_bios_init_device(PCIDevice *d)
 
             if (r->size) {
                 if (r->type & PCI_ADDRESS_SPACE_IO)
-                    paddr = &PCIBUS2PCIGLOBALS(d->Int.s.pBus)->pci_bios_io_addr;
+                    paddr = &PCIBUS_2_PCIGLOBALS(d->Int.s.pBus)->pci_bios_io_addr;
                 else
-                    paddr = &PCIBUS2PCIGLOBALS(d->Int.s.pBus)->pci_bios_mem_addr;
+                    paddr = &PCIBUS_2_PCIGLOBALS(d->Int.s.pBus)->pci_bios_mem_addr;
                 *paddr = (*paddr + r->size - 1) & ~(r->size - 1);
                 pci_set_io_region_addr(d, i, *paddr);
                 *paddr += r->size;
@@ -867,7 +865,7 @@ static DECLCALLBACK(int) pciIOPortAddressWrite(PPDMDEVINS pDevIns, void *pvUser,
     if (cb == 4)
     {
         PCI_LOCK(pDevIns, VINF_IOM_HC_IOPORT_WRITE);
-        pci_addr_writel(PDMINS2DATA(pDevIns, PCIBus *), Port, u32);
+        pci_addr_writel(PDMINS_2_DATA(pDevIns, PCIBus *), Port, u32);
         PCI_UNLOCK(pDevIns);
     }
     /* else: 440FX does "pass through to the bus" for other writes, what ever that means.
@@ -892,7 +890,7 @@ static DECLCALLBACK(int) pciIOPortAddressRead(PPDMDEVINS pDevIns, void *pvUser, 
     if (cb == 4)
     {
         PCI_LOCK(pDevIns, VINF_IOM_HC_IOPORT_READ);
-        *pu32 = pci_addr_readl(PDMINS2DATA(pDevIns, PCIBus *), Port);
+        *pu32 = pci_addr_readl(PDMINS_2_DATA(pDevIns, PCIBus *), Port);
         PCI_UNLOCK(pDevIns);
         Log(("pciIOPortAddressRead: Port=%#x cb=%d -> %#x\n", Port, cb, *pu32));
         return VINF_SUCCESS;
@@ -922,7 +920,7 @@ static DECLCALLBACK(int) pciIOPortDataWrite(PPDMDEVINS pDevIns, void *pvUser, RT
     if (!(Port % cb))
     {
         PCI_LOCK(pDevIns, VINF_IOM_HC_IOPORT_WRITE);
-        pci_data_write(PDMINS2DATA(pDevIns, PCIBus *), Port, u32, cb);
+        pci_data_write(PDMINS_2_DATA(pDevIns, PCIBus *), Port, u32, cb);
         PCI_UNLOCK(pDevIns);
     }
     else
@@ -948,7 +946,7 @@ static DECLCALLBACK(int) pciIOPortDataRead(PPDMDEVINS pDevIns, void *pvUser, RTI
     if (!(Port % cb))
     {
         PCI_LOCK(pDevIns, VINF_IOM_HC_IOPORT_READ);
-        *pu32 = pci_data_read(PDMINS2DATA(pDevIns, PCIBus *), Port, cb);
+        *pu32 = pci_data_read(PDMINS_2_DATA(pDevIns, PCIBus *), Port, cb);
         PCI_UNLOCK(pDevIns);
         Log(("pciIOPortDataRead: Port=%#x cb=%#x -> %#x\n", Port, cb, *pu32));
         return VINF_SUCCESS;
@@ -997,29 +995,29 @@ static DECLCALLBACK(int) pciGenericLoadExec(PPDMDEVINS pDevIns, PPCIDEVICE pPciD
 static DECLCALLBACK(int) pciSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
 {
     uint32_t    i;
-    PPCIBUS     pData = PDMINS2DATA(pDevIns, PPCIBUS);
-    PPCIGLOBALS pGlobals = PCIBUS2PCIGLOBALS(pData);
+    PPCIBUS     pThis = PDMINS_2_DATA(pDevIns, PPCIBUS);
+    PPCIGLOBALS pGlobals = PCIBUS_2_PCIGLOBALS(pThis);
 
     /*
      * Bus state data.
      */
-    SSMR3PutU32(pSSMHandle, pData->uConfigReg);
+    SSMR3PutU32(pSSMHandle, pThis->uConfigReg);
     SSMR3PutBool(pSSMHandle, pGlobals->fUseIoApic);
     SSMR3PutU32(pSSMHandle, ~0);        /* separator */
 
     /*
      * Iterate all the devices.
      */
-    for (i = 0; i < ELEMENTS(pData->devices); i++)
+    for (i = 0; i < RT_ELEMENTS(pThis->devices); i++)
     {
-        PPCIDEVICE pDev = pData->devices[i];
+        PPCIDEVICE pDev = pThis->devices[i];
         if (pDev)
         {
             int rc;
             SSMR3PutU32(pSSMHandle, i);
             SSMR3PutMem(pSSMHandle, pDev->config, sizeof(pDev->config));
             rc = SSMR3PutS32(pSSMHandle, pDev->Int.s.iIrq);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
                 return rc;
         }
     }
@@ -1036,8 +1034,8 @@ static DECLCALLBACK(int) pciSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
  */
 static DECLCALLBACK(int) pciLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, uint32_t u32Version)
 {
-    PPCIBUS     pData = PDMINS2DATA(pDevIns, PPCIBUS);
-    PPCIGLOBALS  pGlobals = PCIBUS2PCIGLOBALS(pData);
+    PPCIBUS     pThis = PDMINS_2_DATA(pDevIns, PPCIBUS);
+    PPCIGLOBALS  pGlobals = PCIBUS_2_PCIGLOBALS(pThis);
     uint32_t    u32;
     uint32_t    i;
     int         rc;
@@ -1054,13 +1052,13 @@ static DECLCALLBACK(int) pciLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
     /*
      * Bus state data.
      */
-    SSMR3GetU32(pSSMHandle, &pData->uConfigReg);
+    SSMR3GetU32(pSSMHandle, &pThis->uConfigReg);
     if (u32Version > 1)
         SSMR3GetBool(pSSMHandle, &pGlobals->fUseIoApic);
 
     /* separator */
     rc = SSMR3GetU32(pSSMHandle, &u32);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (u32 != (uint32_t)~0)
         AssertMsgFailedReturn(("u32=%#x\n", u32), rc);
@@ -1075,11 +1073,11 @@ static DECLCALLBACK(int) pciLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
 
         /* index / terminator */
         rc = SSMR3GetU32(pSSMHandle, &u32);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
         if (u32 == (uint32_t)~0)
             break;
-        if (    u32 >= ELEMENTS(pData->devices)
+        if (    u32 >= RT_ELEMENTS(pThis->devices)
             ||  u32 < i)
         {
             AssertMsgFailed(("u32=%#x i=%#x\n", u32, i));
@@ -1089,10 +1087,10 @@ static DECLCALLBACK(int) pciLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
         /* skip forward to the device checking that no new devices are present. */
         for (; i < u32; i++)
         {
-            if (pData->devices[i])
+            if (pThis->devices[i])
             {
-                LogRel(("New device in slot %#x, %s (vendor=%#06x device=%#06x)\n", i, pData->devices[i]->name,
-                        PCIDevGetVendorId(pData->devices[i]), PCIDevGetDeviceId(pData->devices[i])));
+                LogRel(("New device in slot %#x, %s (vendor=%#06x device=%#06x)\n", i, pThis->devices[i]->name,
+                        PCIDevGetVendorId(pThis->devices[i]), PCIDevGetDeviceId(pThis->devices[i])));
                 if (SSMR3HandleGetAfter(pSSMHandle) != SSMAFTER_DEBUG_IT)
                     AssertFailedReturn(VERR_SSM_LOAD_CONFIG_MISMATCH);
             }
@@ -1101,11 +1099,11 @@ static DECLCALLBACK(int) pciLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
         /* get the data */
         SSMR3GetMem(pSSMHandle, DevTmp.config, sizeof(DevTmp.config));
         rc = SSMR3GetS32(pSSMHandle, &DevTmp.Int.s.iIrq);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
 
         /* check that it's still around. */
-        pDev = pData->devices[i];
+        pDev = pThis->devices[i];
         if (!pDev)
         {
             LogRel(("Device in slot %#x has been removed! vendor=%#06x device=%#06x\n", i,
@@ -1181,14 +1179,14 @@ static void pciRegisterInternal(PPCIBUS pBus, int iDev, PPCIDEVICE pPciDev, cons
  */
 static DECLCALLBACK(int) pciRegister(PPDMDEVINS pDevIns, PPCIDEVICE pPciDev, const char *pszName, int iDev)
 {
-    PPCIBUS     pBus = PDMINS2DATA(pDevIns, PPCIBUS);
+    PPCIBUS     pBus = PDMINS_2_DATA(pDevIns, PPCIBUS);
 
     /*
      * Check input.
      */
     if (    !pszName
         ||  !pPciDev
-        ||  iDev >= (int)ELEMENTS(pBus->devices)
+        ||  iDev >= (int)RT_ELEMENTS(pBus->devices)
         ||  (iDev >= 0 && iDev <= 8))
     {
         AssertMsgFailed(("Invalid argument! pszName=%s pPciDev=%p iDev=%d\n", pszName, pPciDev, iDev));
@@ -1210,7 +1208,7 @@ static DECLCALLBACK(int) pciRegister(PPDMDEVINS pDevIns, PPCIDEVICE pPciDev, con
         else
         {
             Assert(!(pBus->iDevSearch % 8));
-            for (iDev = pBus->iDevSearch; iDev < (int)ELEMENTS(pBus->devices); iDev += 8)
+            for (iDev = pBus->iDevSearch; iDev < (int)RT_ELEMENTS(pBus->devices); iDev += 8)
                 if (    !pBus->devices[iDev]
                     &&  !pBus->devices[iDev + 1]
                     &&  !pBus->devices[iDev + 2]
@@ -1220,7 +1218,7 @@ static DECLCALLBACK(int) pciRegister(PPDMDEVINS pDevIns, PPCIDEVICE pPciDev, con
                     &&  !pBus->devices[iDev + 6]
                     &&  !pBus->devices[iDev + 7])
                     break;
-            if (iDev >= (int)ELEMENTS(pBus->devices))
+            if (iDev >= (int)RT_ELEMENTS(pBus->devices))
             {
                 AssertMsgFailed(("Couldn't find free spot!\n"));
                 return VERR_PDM_TOO_PCI_MANY_DEVICES;
@@ -1262,7 +1260,7 @@ static DECLCALLBACK(int) pciRegister(PPDMDEVINS pDevIns, PPCIDEVICE pPciDev, con
             }
 
             /* Find free slot for the device(s) we're moving and move them. */
-            for (iDevRel = pBus->iDevSearch; iDevRel < (int)ELEMENTS(pBus->devices); iDevRel += 8)
+            for (iDevRel = pBus->iDevSearch; iDevRel < (int)RT_ELEMENTS(pBus->devices); iDevRel += 8)
             {
                 if (    !pBus->devices[iDevRel]
                     &&  !pBus->devices[iDevRel + 1]
@@ -1304,7 +1302,6 @@ static DECLCALLBACK(int) pciRegister(PPDMDEVINS pDevIns, PPCIDEVICE pPciDev, con
 
 static DECLCALLBACK(int) pciIORegionRegister(PPDMDEVINS pDevIns, PPCIDEVICE pPciDev, int iRegion, uint32_t cbRegion, PCIADDRESSSPACE enmType, PFNPCIIOREGIONMAP pfnCallback)
 {
-    PPCIIOREGION pRegion;
 
     /*
      * Validate.
@@ -1325,11 +1322,11 @@ static DECLCALLBACK(int) pciIORegionRegister(PPDMDEVINS pDevIns, PPCIDEVICE pPci
     /*
      * Register the I/O region.
      */
-    pRegion = &pPciDev->Int.s.aIORegions[iRegion];
-    pRegion->addr       = ~0U;
-    pRegion->size       = cbRegion;
-    pRegion->type       = enmType;
-    pRegion->map_func   = pfnCallback;
+    PPCIIOREGION pRegion = &pPciDev->Int.s.aIORegions[iRegion];
+    pRegion->addr        = ~0U;
+    pRegion->size        = cbRegion;
+    pRegion->type        = enmType;
+    pRegion->map_func    = pfnCallback;
     return VINF_SUCCESS;
 }
 
@@ -1361,8 +1358,8 @@ static DECLCALLBACK(int) pciFakePCIBIOS(PPDMDEVINS pDevIns)
     int         rc;
     unsigned    i;
     uint8_t     elcr[2] = {0, 0};
-    PPCIGLOBALS pGlobals = DEVINS2PCIGLOBALS(pDevIns);
-    PPCIBUS     pBus = PDMINS2DATA(pDevIns, PPCIBUS);
+    PPCIGLOBALS pGlobals = DEVINS_2_PCIGLOBALS(pDevIns);
+    PPCIBUS     pBus = PDMINS_2_DATA(pDevIns, PPCIBUS);
     PVM         pVM = PDMDevHlpGetVM(pDevIns);
     Assert(pVM);
 
@@ -1370,7 +1367,7 @@ static DECLCALLBACK(int) pciFakePCIBIOS(PPDMDEVINS pDevIns)
      * Set the start addresses.
      */
     pGlobals->pci_bios_io_addr  = 0xc000;
-    pGlobals->pci_bios_mem_addr = 0xf0000000;
+    pGlobals->pci_bios_mem_addr = UINT32_C(0xf0000000);
 
     /*
      * Activate IRQ mappings.
@@ -1391,13 +1388,13 @@ static DECLCALLBACK(int) pciFakePCIBIOS(PPDMDEVINS pDevIns)
     if (rc != VINF_SUCCESS)
     {
         AssertMsgFailed(("Writing to PIC failed!\n"));
-        return VBOX_SUCCESS(rc) ? VERR_INTERNAL_ERROR : rc;
+        return RT_SUCCESS(rc) ? VERR_INTERNAL_ERROR : rc;
     }
 
     /*
      * Init the devices.
      */
-    for (i = 0; i < ELEMENTS(pBus->devices); i++)
+    for (i = 0; i < RT_ELEMENTS(pBus->devices); i++)
     {
         if (pBus->devices[i])
         {
@@ -1414,9 +1411,9 @@ static DECLCALLBACK(int) pciFakePCIBIOS(PPDMDEVINS pDevIns)
  */
 static DECLCALLBACK(void) pciRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
 {
-    PPCIBUS pBus = PDMINS2DATA(pDevIns, PPCIBUS);
-    pBus->pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
-    pBus->pPciHlpGC = pBus->pPciHlpR3->pfnGetGCHelpers(pDevIns);
+    PPCIBUS pBus = PDMINS_2_DATA(pDevIns, PPCIBUS);
+    pBus->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
+    pBus->pPciHlpRC = pBus->pPciHlpR3->pfnGetRCHelpers(pDevIns);
 }
 
 
@@ -1435,50 +1432,41 @@ static DECLCALLBACK(void) pciRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
  */
 static DECLCALLBACK(int)   pciConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNODE pCfgHandle)
 {
-    PPCIGLOBALS     pGlobals = DEVINS2PCIGLOBALS(pDevIns);
-    PPCIBUS         pBus = PDMINS2DATA(pDevIns, PPCIBUS);
-    PDMPCIBUSREG    PciBusReg;
-    int             rc;
-    bool            fGCEnabled;
-    bool            fR0Enabled;
-    bool            fUseIoApic;
+    int rc;
     Assert(iInstance == 0);
 
     /*
      * Validate and read configuration.
      */
-    if (!CFGMR3AreValuesValid(pCfgHandle, "IOAPIC\0" "GCEnabled\0R0Enabled\0"))
+    if (!CFGMR3AreValuesValid(pCfgHandle, "IOAPIC\0" "GCEnabled\0" "R0Enabled\0"))
         return VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES;
 
     /* query whether we got an IOAPIC */
-    rc = CFGMR3QueryBool(pCfgHandle, "IOAPIC", &fUseIoApic);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fUseIoApic = false;
-    else if (VBOX_FAILURE(rc))
+    bool fUseIoApic;
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "IOAPIC", &fUseIoApic, false);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to query boolean value \"IOAPIC\""));
 
-    /* check if GC code is enabled. */
-    rc = CFGMR3QueryBool(pCfgHandle, "GCEnabled", &fGCEnabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fGCEnabled = true;
-    else if (VBOX_FAILURE(rc))
+    /* check if RC code is enabled. */
+    bool fGCEnabled;
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "GCEnabled", &fGCEnabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to query boolean value \"GCEnabled\""));
-    Log(("PCI: fGCEnabled=%d\n", fGCEnabled));
 
     /* check if R0 code is enabled. */
-    rc = CFGMR3QueryBool(pCfgHandle, "R0Enabled", &fR0Enabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fR0Enabled = true;
-    else if (VBOX_FAILURE(rc))
+    bool fR0Enabled;
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "R0Enabled", &fR0Enabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to query boolean value \"R0Enabled\""));
-    Log(("PCI: fR0Enabled=%d\n", fR0Enabled));
+    Log(("PCI: fUseIoApic=%RTbool fGCEnabled=%RTbool fR0Enabled=%RTbool\n", fUseIoApic, fGCEnabled, fR0Enabled));
 
     /*
      * Init data and register the PCI bus.
      */
+    PPCIGLOBALS pGlobals = DEVINS_2_PCIGLOBALS(pDevIns);
     pGlobals->pci_mem_base        = 0;
     pGlobals->pci_bios_io_addr    = 0xc000;
     pGlobals->pci_bios_mem_addr   = 0xf0000000;
@@ -1486,21 +1474,24 @@ static DECLCALLBACK(int)   pciConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGM
     pGlobals->fUseIoApic          = fUseIoApic;
     memset(&pGlobals->pci_apic_irq_levels, 0, sizeof(pGlobals->pci_apic_irq_levels));
 
-    pBus->pDevInsHC = pDevIns;
-    pBus->pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
+    PPCIBUS pBus = PDMINS_2_DATA(pDevIns, PPCIBUS);
+    pBus->pDevInsR3 = pDevIns;
+    pBus->pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
+    pBus->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
 
+    PDMPCIBUSREG PciBusReg;
     PciBusReg.u32Version              = PDM_PCIBUSREG_VERSION;
-    PciBusReg.pfnRegisterHC           = pciRegister;
-    PciBusReg.pfnIORegionRegisterHC   = pciIORegionRegister;
-    PciBusReg.pfnSetConfigCallbacksHC = pciSetConfigCallbacks;
-    PciBusReg.pfnSetIrqHC             = pciSetIrq;
-    PciBusReg.pfnSaveExecHC           = pciGenericSaveExec;
-    PciBusReg.pfnLoadExecHC           = pciGenericLoadExec;
-    PciBusReg.pfnFakePCIBIOSHC        = pciFakePCIBIOS;
-    PciBusReg.pszSetIrqGC             = fGCEnabled ? "pciSetIrq" : NULL;
+    PciBusReg.pfnRegisterR3           = pciRegister;
+    PciBusReg.pfnIORegionRegisterR3   = pciIORegionRegister;
+    PciBusReg.pfnSetConfigCallbacksR3 = pciSetConfigCallbacks;
+    PciBusReg.pfnSetIrqR3             = pciSetIrq;
+    PciBusReg.pfnSaveExecR3           = pciGenericSaveExec;
+    PciBusReg.pfnLoadExecR3           = pciGenericLoadExec;
+    PciBusReg.pfnFakePCIBIOSR3        = pciFakePCIBIOS;
+    PciBusReg.pszSetIrqRC             = fGCEnabled ? "pciSetIrq" : NULL;
     PciBusReg.pszSetIrqR0             = fR0Enabled ? "pciSetIrq" : NULL;
     rc = pDevIns->pDevHlp->pfnPCIBusRegister(pDevIns, &PciBusReg, &pBus->pPciHlpR3);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Failed to register ourselves as a PCI Bus"));
     if (pBus->pPciHlpR3->u32Version != PDM_PCIHLPR3_VERSION)
@@ -1508,33 +1499,31 @@ static DECLCALLBACK(int)   pciConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGM
                                    N_("PCI helper version mismatch; got %#x expected %#x"),
                                    pBus->pPciHlpR3->u32Version != PDM_PCIHLPR3_VERSION);
 
-    pBus->pPciHlpGC = pBus->pPciHlpR3->pfnGetGCHelpers(pDevIns);
+    pBus->pPciHlpRC = pBus->pPciHlpR3->pfnGetRCHelpers(pDevIns);
     pBus->pPciHlpR0 = pBus->pPciHlpR3->pfnGetR0Helpers(pDevIns);
 
     /*
      * Fill in PCI configs and add them to the bus.
      */
     /* i440FX */
-    pBus->PciDev.config[0x00]         = 0x86; /* vendor_id: Intel */
-    pBus->PciDev.config[0x01]         = 0x80;
-    pBus->PciDev.config[0x02]         = 0x37; /* device_id: */
-    pBus->PciDev.config[0x03]         = 0x12;
-    pBus->PciDev.config[0x08]         = 0x02; /* revision */
-    pBus->PciDev.config[0x0a]         = 0x00; /* class_sub = host2pci */
-    pBus->PciDev.config[0x0b]         = 0x06; /* class_base = PCI_bridge */
-    pBus->PciDev.config[0x0e]         = 0x00; /* header_type */
+    PCIDevSetVendorId(  &pBus->PciDev, 0x8086); /* Intel */
+    PCIDevSetDeviceId(  &pBus->PciDev, 0x1237);
+    PCIDevSetRevisionId(&pBus->PciDev,   0x02);
+    PCIDevSetClassSub(  &pBus->PciDev,   0x00); /* host2pci */
+    PCIDevSetClassBase( &pBus->PciDev,   0x06); /* PCI_bridge */
+    PCIDevSetHeaderType(&pBus->PciDev,   0x00);
+
     pBus->PciDev.pDevIns              = pDevIns;
     pBus->PciDev.Int.s.fRequestedDevFn= true;
     pciRegisterInternal(pBus, 0, &pBus->PciDev, "i440FX");
 
     /* PIIX3 */
-    pBus->PIIX3State.dev.config[0x00] = 0x86; /* vendor:    Intel */
-    pBus->PIIX3State.dev.config[0x01] = 0x80;
-    pBus->PIIX3State.dev.config[0x02] = 0x00; /* device_id: 82371SB PIIX3 PCI-to-ISA bridge (Step A1) */
-    pBus->PIIX3State.dev.config[0x03] = 0x70;
-    pBus->PIIX3State.dev.config[0x0a] = 0x01; /* class_sub = PCI_ISA */
-    pBus->PIIX3State.dev.config[0x0b] = 0x06; /* class_base = PCI_bridge */
-    pBus->PIIX3State.dev.config[0x0e] = 0x80; /* header_type = PCI_multifunction, generic */
+    PCIDevSetVendorId(  &pBus->PIIX3State.dev, 0x8086); /* Intel */
+    PCIDevSetDeviceId(  &pBus->PIIX3State.dev, 0x7000); /* 82371SB PIIX3 PCI-to-ISA bridge (Step A1) */
+    PCIDevSetClassSub(  &pBus->PIIX3State.dev,   0x01); /* PCI_ISA */
+    PCIDevSetClassBase( &pBus->PIIX3State.dev,   0x06); /* PCI_bridge */
+    PCIDevSetHeaderType(&pBus->PIIX3State.dev,   0x80); /* PCI_multifunction, generic */
+
     pBus->PIIX3State.dev.pDevIns      = pDevIns;
     pBus->PciDev.Int.s.fRequestedDevFn= true;
     pciRegisterInternal(pBus, 8, &pBus->PIIX3State.dev, "PIIX3");
@@ -1545,15 +1534,15 @@ static DECLCALLBACK(int)   pciConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGM
     /*
      * Register I/O ports and save state.
      */
-    rc = PDMDevHlpIOPortRegister(pDevIns, 0xcf8, 1, NULL, pciIOPortAddressWrite, pciIOPortAddressRead, NULL, NULL, "i440FX (PCI)");
-    if (VBOX_FAILURE(rc))
+    rc = PDMDevHlpIOPortRegister(pDevIns, 0x0cf8, 1, NULL, pciIOPortAddressWrite, pciIOPortAddressRead, NULL, NULL, "i440FX (PCI)");
+    if (RT_FAILURE(rc))
         return rc;
-    rc = PDMDevHlpIOPortRegister(pDevIns, 0xcfc, 4, NULL, pciIOPortDataWrite, pciIOPortDataRead, NULL, NULL, "i440FX (PCI)");
-    if (VBOX_FAILURE(rc))
+    rc = PDMDevHlpIOPortRegister(pDevIns, 0x0cfc, 4, NULL, pciIOPortDataWrite, pciIOPortDataRead, NULL, NULL, "i440FX (PCI)");
+    if (RT_FAILURE(rc))
         return rc;
     rc = PDMDevHlpSSMRegister(pDevIns, "pci", iInstance, 2, sizeof(*pBus),
                               NULL, pciSaveExec, NULL, NULL, pciLoadExec, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     return VINF_SUCCESS;

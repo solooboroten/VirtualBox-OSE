@@ -1,7 +1,6 @@
+/* $Id: $ */
 /** @file
- *
- * VBox host drivers - Ring-0 support drivers - Darwin host:
- * Darwin implementations for support library
+ * VirtualBox Support Library - Darwin specific parts.
  */
 
 /*
@@ -29,11 +28,19 @@
  * additional information or have any questions.
  */
 
-
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_SUP
+#ifdef IN_SUP_HARDENED_R3
+# undef DEBUG /* Warning: disables RT_STRICT */
+# define LOG_DISABLED
+  /** @todo RTLOGREL_DISABLED */
+# include <iprt/log.h>
+# undef LogRelIt
+# define LogRelIt(pvInst, fFlags, iGroup, fmtargs) do { } while (0)
+#endif
+
 #include <VBox/types.h>
 #include <VBox/sup.h>
 #include <VBox/param.h>
@@ -43,8 +50,8 @@
 #include <iprt/assert.h>
 #include <iprt/err.h>
 #include <iprt/string.h>
-#include "SUPLibInternal.h"
-#include "SUPDRVIOC.h"
+#include "../SUPLibInternal.h"
+#include "../SUPDrvIOC.h"
 
 #include <sys/fcntl.h>
 #include <sys/ioctl.h>
@@ -64,25 +71,63 @@
 #define IOCLASS_NAME    "org_virtualbox_SupDrv"
 
 
-/*******************************************************************************
-*   Global Variables                                                           *
-*******************************************************************************/
-/** Handle to the open device. */
-static int              g_hDevice = -1;
-/** The IOMasterPort. */
-static mach_port_t      g_MasterPort = 0;
-/** The current service connection. */
-static io_connect_t     g_Connection = NULL;
 
-
-int suplibOsInit(size_t cbReserve)
+/**
+ * Opens the BSD device node.
+ *
+ * @returns VBox status code.
+ */
+static int suplibDarwinOpenDevice(PSUPLIBDATA pThis)
 {
     /*
-     * Check if already initialized.
+     * Open the BSD device.
+     * This will connect to the session created when the SupDrvClient was
+     * started, so it has to be done after opening the service (IOC v9.1+).
      */
-    if (g_hDevice >= 0)
-        return VINF_SUCCESS;
+    int hDevice = open(DEVICE_NAME, O_RDWR, 0);
+    if (hDevice < 0)
+    {
+        int rc;
+        switch (errno)
+        {
+            case ENODEV:    rc = VERR_VM_DRIVER_LOAD_ERROR; break;
+            case EPERM:
+            case EACCES:    rc = VERR_VM_DRIVER_NOT_ACCESSIBLE; break;
+            case ENOENT:    rc = VERR_VM_DRIVER_NOT_INSTALLED; break;
+            default:        rc = VERR_VM_DRIVER_OPEN_ERROR; break;
+        }
+        LogRel(("SUP: Failed to open \"%s\", errno=%d, rc=%Vrc\n", DEVICE_NAME, errno, rc));
+        return rc;
+    }
 
+    /*
+     * Mark the file handle close on exec.
+     */
+    if (fcntl(hDevice, F_SETFD, FD_CLOEXEC) != 0)
+    {
+#ifdef IN_SUP_HARDENED_R3
+        int rc = VERR_INTERNAL_ERROR;
+#else
+        int err = errno;
+        int rc = RTErrConvertFromErrno(err);
+        LogRel(("suplibOSInit: setting FD_CLOEXEC failed, errno=%d (%Rrc)\n", err, rc));
+#endif
+        close(hDevice);
+        return rc;
+    }
+
+    pThis->hDevice = hDevice;
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Opens the IOKit service, instantiating org_virtualbox_SupDrvClient.
+ *
+ * @returns VBox status code.
+ */
+static int suplibDarwinOpenService(PSUPLIBDATA pThis)
+{
     /*
      * Open the IOKit client first - The first step is finding the service.
      */
@@ -103,7 +148,7 @@ int suplibOsInit(size_t cbReserve)
 
     /* Create an io_iterator_t for all instances of our drivers class that exist in the IORegistry. */
     io_iterator_t Iterator;
-    kr = IOServiceGetMatchingServices(g_MasterPort, ClassToMatch, &Iterator);
+    kr = IOServiceGetMatchingServices(MasterPort, ClassToMatch, &Iterator);
     if (kr != kIOReturnSuccess)
     {
         LogRel(("IOServiceGetMatchingServices returned %d\n", kr));
@@ -121,83 +166,84 @@ int suplibOsInit(size_t cbReserve)
 
     /*
      * Open the service.
-     * This will cause the user client class in SUPDrv-darwin.cpp to be instantiated.
+     *
+     * This will cause the user client class in SUPDrv-darwin.cpp to be
+     * instantiated and create a session for this process.
      */
-    kr = IOServiceOpen(ServiceObject, mach_task_self(), 0, &g_Connection);
+    io_connect_t Connection = NULL;
+    kr = IOServiceOpen(ServiceObject, mach_task_self(), 0, &Connection);
     IOObjectRelease(ServiceObject);
     if (kr != kIOReturnSuccess)
     {
         LogRel(("SUP: IOServiceOpen returned %d. Driver open failed.\n", kr));
+        pThis->pvConnection = NULL;
         return VERR_VM_DRIVER_OPEN_ERROR;
     }
 
-    /*
-     * Now, try open the BSD device.
-     */
-    g_hDevice = open(DEVICE_NAME, O_RDWR, 0);
-    if (g_hDevice < 0)
-    {
-        int rc;
-        switch (errno)
-        {
-            case ENODEV:    rc = VERR_VM_DRIVER_LOAD_ERROR; break;
-            case EPERM:
-            case EACCES:    rc = VERR_VM_DRIVER_NOT_ACCESSIBLE; break;
-            case ENOENT:    rc = VERR_VM_DRIVER_NOT_INSTALLED; break;
-            default:        rc = VERR_VM_DRIVER_OPEN_ERROR; break;
-        }
-        LogRel(("SUP: Failed to open \"%s\", errno=%d, rc=%Vrc\n", DEVICE_NAME, errno, rc));
-
-        kr = IOServiceClose(g_Connection);
-        if (kr != kIOReturnSuccess)
-            LogRel(("Warning: IOServiceClose(%p) returned %d\n", g_Connection, kr));
-        return rc;
-    }
-
-    /*
-     * Mark the file handle close on exec.
-     */
-    if (fcntl(g_hDevice, F_SETFD, FD_CLOEXEC) != 0)
-    {
-        int rc = errno;
-        LogRel(("suplibOSInit: setting FD_CLOEXEC failed, errno=%d\n", rc));
-        close(g_hDevice);
-        g_hDevice = -1;
-        return RTErrConvertFromErrno(rc);
-    }
-
-    /*
-     * We're done.
-     */
-    NOREF(cbReserve);
+    AssertCompile(sizeof(void *) == sizeof(Connection));
+    pThis->pvConnection = (void *)Connection;
     return VINF_SUCCESS;
 }
 
 
-int suplibOsTerm(void)
+int suplibOsInit(PSUPLIBDATA pThis, bool fPreInited)
 {
     /*
-     * Check if we're initited at all.
+     * Nothing to do if pre-inited.
      */
-    if (g_hDevice >= 0)
+    if (fPreInited)
+        return VINF_SUCCESS;
+
+    /*
+     * Do the job.
+     */
+    int rc = suplibDarwinOpenService(pThis);
+    if (RT_SUCCESS(rc))
     {
-        if (close(g_hDevice))
+        rc = suplibDarwinOpenDevice(pThis);
+        if (RT_FAILURE(rc))
+        {
+            kern_return_t kr = IOServiceClose((io_connect_t)pThis->pvConnection);
+            if (kr != kIOReturnSuccess)
+            {
+                LogRel(("Warning: IOServiceClose(%p) returned %d\n", pThis->pvConnection, kr));
+                AssertFailed();
+            }
+            pThis->pvConnection = NULL;
+        }
+    }
+
+    return rc;
+}
+
+
+#ifndef IN_SUP_HARDENED_R3
+
+int suplibOsTerm(PSUPLIBDATA pThis)
+{
+    /*
+     * Close the connection to the IOService.
+     * This will cause the SUPDRVSESSION to be closed (starting IOC 9.1).
+     */
+    if (pThis->pvConnection)
+    {
+        kern_return_t kr = IOServiceClose((io_connect_t)pThis->pvConnection);
+        if (kr != kIOReturnSuccess)
+        {
+            LogRel(("Warning: IOServiceClose(%p) returned %d\n", pThis->pvConnection, kr));
             AssertFailed();
-        g_hDevice = -1;
+        }
+        pThis->pvConnection = NULL;
     }
 
     /*
-     * Close the connection to the IOService and destroy the connection handle.
+     * Check if we're initited at all.
      */
-    if (g_Connection)
+    if (pThis->hDevice >= 0)
     {
-        kern_return_t kr = IOServiceClose(g_Connection);
-        if (kr != kIOReturnSuccess)
-        {
-            LogRel(("Warning: IOServiceClose(%p) returned %d\n", g_Connection, kr));
+        if (close(pThis->hDevice))
             AssertFailed();
-        }
-        g_Connection = NULL;
+        pThis->hDevice = NIL_RTFILE;
     }
 
     return VINF_SUCCESS;
@@ -216,27 +262,26 @@ int suplibOsUninstall(void)
 }
 
 
-int suplibOsIOCtl(uintptr_t uFunction, void *pvReq, size_t cbReq)
+int suplibOsIOCtl(PSUPLIBDATA pThis, uintptr_t uFunction, void *pvReq, size_t cbReq)
 {
-    AssertMsg(g_hDevice != -1, ("SUPLIB not initiated successfully!\n"));
-
-    if (RT_LIKELY(ioctl(g_hDevice, uFunction, pvReq) >= 0))
+    if (RT_LIKELY(ioctl(pThis->hDevice, uFunction, pvReq) >= 0))
 	return VINF_SUCCESS;
     return RTErrConvertFromErrno(errno);
 }
 
 
-int suplibOsIOCtlFast(uintptr_t uFunction)
+int suplibOsIOCtlFast(PSUPLIBDATA pThis, uintptr_t uFunction)
 {
-    int rc = ioctl(g_hDevice, uFunction, NULL);
+    int rc = ioctl(pThis->hDevice, uFunction, NULL);
     if (rc == -1)
         rc = errno;
     return rc;
 }
 
 
-int suplibOsPageAlloc(size_t cPages, void **ppvPages)
+int suplibOsPageAlloc(PSUPLIBDATA pThis, size_t cPages, void **ppvPages)
 {
+    NOREF(pThis);
     *ppvPages = valloc(cPages << PAGE_SHIFT);
     if (*ppvPages)
     {
@@ -247,9 +292,12 @@ int suplibOsPageAlloc(size_t cPages, void **ppvPages)
 }
 
 
-int suplibOsPageFree(void *pvPages, size_t /* cPages */)
+int suplibOsPageFree(PSUPLIBDATA pThis, void *pvPages, size_t /* cPages */)
 {
+    NOREF(pThis);
     free(pvPages);
     return VINF_SUCCESS;
 }
+
+#endif /* !IN_SUP_HARDENED_R3 */
 

@@ -1,4 +1,4 @@
-/* $Id: REMAll.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: REMAll.cpp 34406 2008-08-08 23:31:54Z bird $ */
 /** @file
  * REM - Recompiled Execution Monitor, all Contexts part.
  */
@@ -45,16 +45,21 @@
  */
 REMDECL(int) REMNotifyInvalidatePage(PVM pVM, RTGCPTR GCPtrPage)
 {
-    if (pVM->rem.s.cInvalidatedPages < ELEMENTS(pVM->rem.s.aGCPtrInvalidatedPages))
+    if (pVM->rem.s.cInvalidatedPages < RT_ELEMENTS(pVM->rem.s.aGCPtrInvalidatedPages))
     {
         /*
          * We sync them back in REMR3State.
          */
         pVM->rem.s.aGCPtrInvalidatedPages[pVM->rem.s.cInvalidatedPages++] = GCPtrPage;
-        return VINF_SUCCESS;
     }
-    /* Note: another option is to signal a TLB flush for the recompiler */
-    return VERR_REM_FLUSHED_PAGES_OVERFLOW;
+    else
+    {
+        /* Tell the recompiler to flush its TLB. */
+        CPUMSetChangedFlags(pVM, CPUM_CHANGED_GLOBAL_TLB_FLUSH);
+        pVM->rem.s.cInvalidatedPages = 0;
+    }
+
+    return VINF_SUCCESS;
 }
 
 
@@ -88,7 +93,7 @@ static void remFlushHandlerNotifications(PVM pVM)
  */
 REMDECL(void) REMNotifyHandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler)
 {
-    if (pVM->rem.s.cHandlerNotifications >= ELEMENTS(pVM->rem.s.aHandlerNotifications))
+    if (pVM->rem.s.cHandlerNotifications >= RT_ELEMENTS(pVM->rem.s.aHandlerNotifications))
         remFlushHandlerNotifications(pVM);
     PREMHANDLERNOTIFICATION pRec = &pVM->rem.s.aHandlerNotifications[pVM->rem.s.cHandlerNotifications++];
     pRec->enmKind = REMHANDLERNOTIFICATIONKIND_PHYSICAL_REGISTER;
@@ -96,6 +101,7 @@ REMDECL(void) REMNotifyHandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmTy
     pRec->u.PhysicalRegister.GCPhys = GCPhys;
     pRec->u.PhysicalRegister.cb = cb;
     pRec->u.PhysicalRegister.fHasHCHandler = fHasHCHandler;
+    VM_FF_SET(pVM, VM_FF_REM_HANDLER_NOTIFY);
 }
 
 
@@ -111,7 +117,7 @@ REMDECL(void) REMNotifyHandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmTy
  */
 REMDECL(void) REMNotifyHandlerPhysicalDeregister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM)
 {
-    if (pVM->rem.s.cHandlerNotifications >= ELEMENTS(pVM->rem.s.aHandlerNotifications))
+    if (pVM->rem.s.cHandlerNotifications >= RT_ELEMENTS(pVM->rem.s.aHandlerNotifications))
         remFlushHandlerNotifications(pVM);
     PREMHANDLERNOTIFICATION pRec = &pVM->rem.s.aHandlerNotifications[pVM->rem.s.cHandlerNotifications++];
     pRec->enmKind = REMHANDLERNOTIFICATIONKIND_PHYSICAL_DEREGISTER;
@@ -120,6 +126,7 @@ REMDECL(void) REMNotifyHandlerPhysicalDeregister(PVM pVM, PGMPHYSHANDLERTYPE enm
     pRec->u.PhysicalDeregister.cb = cb;
     pRec->u.PhysicalDeregister.fHasHCHandler = fHasHCHandler;
     pRec->u.PhysicalDeregister.fRestoreAsRAM = fRestoreAsRAM;
+    VM_FF_SET(pVM, VM_FF_REM_HANDLER_NOTIFY);
 }
 
 
@@ -136,7 +143,7 @@ REMDECL(void) REMNotifyHandlerPhysicalDeregister(PVM pVM, PGMPHYSHANDLERTYPE enm
  */
 REMDECL(void) REMNotifyHandlerPhysicalModify(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhysOld, RTGCPHYS GCPhysNew, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM)
 {
-    if (pVM->rem.s.cHandlerNotifications >= ELEMENTS(pVM->rem.s.aHandlerNotifications))
+    if (pVM->rem.s.cHandlerNotifications >= RT_ELEMENTS(pVM->rem.s.aHandlerNotifications))
         remFlushHandlerNotifications(pVM);
     PREMHANDLERNOTIFICATION pRec = &pVM->rem.s.aHandlerNotifications[pVM->rem.s.cHandlerNotifications++];
     pRec->enmKind = REMHANDLERNOTIFICATIONKIND_PHYSICAL_MODIFY;
@@ -146,5 +153,6 @@ REMDECL(void) REMNotifyHandlerPhysicalModify(PVM pVM, PGMPHYSHANDLERTYPE enmType
     pRec->u.PhysicalModify.cb = cb;
     pRec->u.PhysicalModify.fHasHCHandler = fHasHCHandler;
     pRec->u.PhysicalModify.fRestoreAsRAM = fRestoreAsRAM;
+    VM_FF_SET(pVM, VM_FF_REM_HANDLER_NOTIFY);
 }
 

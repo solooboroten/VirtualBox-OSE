@@ -40,34 +40,37 @@ fi
 #
 $SUDO cp $DIR/vboxdrv $VBOXDRV_DIR/vboxdrv
 $SUDO cp $script_dir/src/VBox/HostDrivers/Support/solaris/vboxdrv.conf $VBOXDRV_CONF_DIR/vboxdrv.conf
-old_id=`/usr/sbin/modinfo | grep vbox | cut -f 1 -d ' ' `
+old_id=`/usr/sbin/modinfo | /usr/xpg4/bin/grep vbox | cut -f 1 -d ' ' `
 if test -n "$old_id"; then
     echo "* unloading $old_id..."
     sync
     sync
     $SUDO /usr/sbin/modunload -i $old_id
-else
-    echo "* If it fails below, run: $SUDO add_drv -m'* 0666 root sys' vboxdrv"
+#else
+#    echo "* If it fails below, run: $SUDO add_drv -m'* 0666 root sys' vboxdrv"
 fi
-if ! grep -q vboxdrv /etc/devlink.tab; then
+$SUDO /usr/sbin/rem_drv vboxdrv || echo "* ignored rem_drv failure..."
+$SUDO /usr/sbin/add_drv vboxdrv
+
+if /usr/xpg4/bin/grep  -q vboxdrv /etc/devlink.tab; then
+    echo "* vboxdrv already present in /etc/devlink.tab"
+else
     echo "* Adding vboxdrv to /etc/devlink.tab"
     $SUDO rm -f /tmp/devlink.tab.vboxdrv
     echo "" > /tmp/devlink.tab.vboxdrv
     echo '# vbox' >> /tmp/devlink.tab.vboxdrv
     echo 'type=ddi_pseudo;name=vboxdrv	\D' >> /tmp/devlink.tab.vboxdrv
     $SUDO /bin/sh -c 'cat /tmp/devlink.tab.vboxdrv >> /etc/devlink.tab'
-else
-    echo "* vboxdrv already present in /etc/devlink.tab"
 fi
 
 echo "* loading vboxdrv..."
 sync
 sync
 $SUDO /usr/sbin/modload $VBOXDRV_DIR/vboxdrv
-/usr/sbin/modinfo | grep vboxdrv
+/usr/sbin/modinfo | /usr/xpg4/bin/grep vboxdrv
 echo "* dmesg:"
 dmesg | tail -20
 if test ! -h /dev/vboxdrv; then
-    $SUDO /usr/sbin/devfsadm -i vboxdrv 
+    $SUDO /usr/sbin/devfsadm -i vboxdrv
 fi
-
+ls -laL /dev/vboxdrv

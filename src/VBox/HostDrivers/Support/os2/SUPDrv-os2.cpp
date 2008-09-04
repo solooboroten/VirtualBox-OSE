@@ -1,6 +1,6 @@
-/* $Id: SUPDrv-os2.cpp 29880 2008-04-18 17:52:25Z umoeller $ */
+/* $Id: SUPDrv-os2.cpp 33462 2008-07-17 15:05:47Z bird $ */
 /** @file
- * VBoxDrv - OS/2 specifics.
+ * VBoxDrv - The VirtualBox Support Driver - OS/2 specifics.
  */
 
 /*
@@ -28,24 +28,24 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
+#define LOG_GROUP LOG_GROUP_SUP_DRV
 #define __STDC_CONSTANT_MACROS
 #define __STDC_LIMIT_MACROS
 
 #include <os2ddk/bsekee.h>
 #undef RT_MAX
 
-#include "SUPDRV.h"
+#include "SUPDrvInternal.h"
 #include <VBox/version.h>
 #include <iprt/initterm.h>
 #include <iprt/string.h>
 #include <iprt/spinlock.h>
 #include <iprt/process.h>
 #include <iprt/assert.h>
-#include <iprt/log.h>
+#include <VBox/log.h>
 #include <iprt/param.h>
 
 
@@ -150,11 +150,9 @@ DECLASM(int) VBoxDrvOpen(uint16_t sfn)
     /*
      * Create a new session.
      */
-    rc = supdrvCreateSession(&g_DevExt, &pSession);
+    rc = supdrvCreateSession(&g_DevExt, true /* fUser */, &pSession);
     if (RT_SUCCESS(rc))
     {
-        pSession->Process = RTProcSelf();
-        pSession->R0Process = RTR0ProcHandleSelf();
         pSession->sfn = sfn;
 
         /*
@@ -230,7 +228,7 @@ DECLASM(int) VBoxDrvClose(uint16_t sfn)
 }
 
 
-DECLASM(int) VBoxDrvIOCtlFast(uint16_t sfn, uint8_t iFunction, int32_t *prc)
+DECLASM(int) VBoxDrvIOCtlFast(uint16_t sfn, uint8_t iFunction)
 {
     /*
      * Find the session.
@@ -259,7 +257,7 @@ DECLASM(int) VBoxDrvIOCtlFast(uint16_t sfn, uint8_t iFunction, int32_t *prc)
     /*
      * Dispatch the fast IOCtl.
      */
-    *prc = supdrvIOCtlFast(iFunction, &g_DevExt, pSession);
+    supdrvIOCtlFast(iFunction, &g_DevExt, pSession);
     return 0;
 }
 

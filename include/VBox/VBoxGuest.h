@@ -32,6 +32,9 @@
 
 #include <iprt/cdefs.h>
 #include <iprt/types.h>
+#ifdef IN_RING3
+# include <iprt/stdarg.h>
+#endif
 #include <VBox/err.h>
 #include <VBox/ostypes.h>
 
@@ -43,9 +46,19 @@
     hypervisor pointers from within guest additions */
 
 /** Hypervisor linear pointer size type */
-typedef RTGCPTR vmmDevHypPtr;
+typedef RTGCPTR32 VMMDEVHYPPTR32;
+typedef RTGCPTR64 VMMDEVHYPPTR64;
 /** Hypervisor physical pointer size type */
-typedef RTGCPHYS32 vmmDevHypPhys;
+typedef RTGCPHYS32 VMMDEVHYPPHYS32;
+typedef RTGCPHYS64 VMMDEVHYPPHYS64;
+
+#if defined(VBOX_WITH_64_BITS_GUESTS) && ARCH_BITS == 64
+# define VMMDEVHYPPTR  VMMDEVHYPPTR64
+# define VMMDEVHYPPHYS VMMDEVHYPPHYS64
+# else
+# define VMMDEVHYPPTR  VMMDEVHYPPTR32
+# define VMMDEVHYPPHYS VMMDEVHYPPHYS32
+#endif
 
 #if defined(RT_OS_LINUX)
 /** The support device name. */
@@ -157,10 +170,16 @@ typedef enum
     VMMDevReq_GetDisplayChangeRequest2   = 54,
     VMMDevReq_ReportGuestCapabilities    = 55,
     VMMDevReq_SetGuestCapabilities       = 56,
-#ifdef VBOX_HGCM
+#ifdef VBOX_WITH_HGCM
     VMMDevReq_HGCMConnect                = 60,
     VMMDevReq_HGCMDisconnect             = 61,
+#ifdef VBOX_WITH_64_BITS_GUESTS
+    VMMDevReq_HGCMCall32                 = 62,
+    VMMDevReq_HGCMCall64                 = 63,
+#else
     VMMDevReq_HGCMCall                   = 62,
+#endif /* VBOX_WITH_64_BITS_GUESTS */
+    VMMDevReq_HGCMCancel                 = 64,
 #endif
     VMMDevReq_VideoAccelEnable           = 70,
     VMMDevReq_VideoAccelFlush            = 71,
@@ -176,6 +195,28 @@ typedef enum
     VMMDevReq_LogString                  = 200,
     VMMDevReq_SizeHack                   = 0x7fffffff
 } VMMDevRequestType;
+
+#ifdef VBOX_WITH_64_BITS_GUESTS
+/*
+ * Constants and structures are redefined for the guest.
+ *
+ * Host code MUST always use either *32 or *64 variant explicitely.
+ * Host source code will use VBOX_HGCM_HOST_CODE define to catch undefined
+ * data types and constants.
+ *
+ * This redefinition means that the new additions builds will use
+ * the *64 or *32 variants depending on the current architecture bit count (ARCH_BITS).
+ */
+# ifndef VBOX_HGCM_HOST_CODE
+#  if ARCH_BITS == 64
+#   define VMMDevReq_HGCMCall VMMDevReq_HGCMCall64
+#  elif ARCH_BITS == 32
+#   define VMMDevReq_HGCMCall VMMDevReq_HGCMCall32
+#  else
+#   error "Unsupported ARCH_BITS"
+#  endif
+# endif /* !VBOX_HGCM_HOST_CODE */
+#endif /* VBOX_WITH_64_BITS_GUESTS */
 
 /** Version of VMMDevRequestHeader structure. */
 #define VMMDEV_REQUEST_HEADER_VERSION (0x10001)
@@ -328,7 +369,8 @@ typedef struct
     /** header */
     VMMDevRequestHeader header;
     /** guest virtual address of proposed hypervisor start */
-    vmmDevHypPtr hypervisorStart;
+    /** TODO: Make this 64-bit compatible */
+    VMMDEVHYPPTR32 hypervisorStart;
     /** hypervisor size in bytes */
     uint32_t hypervisorSize;
 } VMMDevReqHypervisorInfo;
@@ -576,7 +618,7 @@ typedef struct
 
 #pragma pack()
 
-#ifdef VBOX_HGCM
+#ifdef VBOX_WITH_HGCM
 
 /** HGCM flags.
  *  @{
@@ -609,7 +651,7 @@ typedef enum
 
 typedef struct
 {
-    char achName[128];
+    char achName[128]; /**< This is really szName. */
 } HGCMServiceLocationHost;
 
 typedef struct HGCMSERVICELOCATION
@@ -659,6 +701,47 @@ typedef enum
     VMMDevHGCMParmType_SizeHack           = 0x7fffffff
 } HGCMFunctionParameterType;
 
+#ifdef VBOX_WITH_64_BITS_GUESTS
+typedef struct _HGCMFUNCTIONPARAMETER32
+{
+    HGCMFunctionParameterType type;
+    union
+    {
+        uint32_t   value32;
+        uint64_t   value64;
+        struct
+        {
+            uint32_t size;
+
+            union
+            {
+                VMMDEVHYPPHYS32 physAddr;
+                VMMDEVHYPPTR32  linearAddr;
+            } u;
+        } Pointer;
+    } u;
+} HGCMFunctionParameter32;
+
+typedef struct _HGCMFUNCTIONPARAMETER64
+{
+    HGCMFunctionParameterType type;
+    union
+    {
+        uint32_t   value32;
+        uint64_t   value64;
+        struct
+        {
+            uint32_t size;
+
+            union
+            {
+                VMMDEVHYPPHYS64 physAddr;
+                VMMDEVHYPPTR64  linearAddr;
+            } u;
+        } Pointer;
+    } u;
+} HGCMFunctionParameter64;
+#else /* !VBOX_WITH_64_BITS_GUESTS */
 typedef struct _HGCMFUNCTIONPARAMETER
 {
     HGCMFunctionParameterType type;
@@ -672,12 +755,27 @@ typedef struct _HGCMFUNCTIONPARAMETER
 
             union
             {
-                vmmDevHypPhys physAddr;
-                vmmDevHypPtr  linearAddr;
+                VMMDEVHYPPHYS32 physAddr;
+                VMMDEVHYPPTR32  linearAddr;
             } u;
         } Pointer;
     } u;
 } HGCMFunctionParameter;
+#endif /* !VBOX_WITH_64_BITS_GUESTS */
+
+
+#ifdef VBOX_WITH_64_BITS_GUESTS
+/* Redefine the structure type for the guest code. */
+# ifndef VBOX_HGCM_HOST_CODE
+#  if ARCH_BITS == 64
+#    define HGCMFunctionParameter HGCMFunctionParameter64
+#  elif ARCH_BITS == 32
+#    define HGCMFunctionParameter HGCMFunctionParameter32
+#  else
+#   error "Unsupported sizeof (void *)"
+#  endif
+# endif /* !VBOX_HGCM_HOST_CODE */
+#endif /* VBOX_WITH_64_BITS_GUESTS */
 
 typedef struct
 {
@@ -694,11 +792,28 @@ typedef struct
 } VMMDevHGCMCall;
 #pragma pack()
 
-#define VMMDEV_HGCM_CALL_PARMS(a) ((HGCMFunctionParameter *)((char *)a + sizeof (VMMDevHGCMCall)))
+#define VMMDEV_HGCM_CALL_PARMS(a) ((HGCMFunctionParameter *)((uint8_t *)a + sizeof (VMMDevHGCMCall)))
+
+#ifdef VBOX_WITH_64_BITS_GUESTS
+/* Explicit defines for the host code. */
+# ifdef VBOX_HGCM_HOST_CODE
+#  define VMMDEV_HGCM_CALL_PARMS32(a) ((HGCMFunctionParameter32 *)((uint8_t *)a + sizeof (VMMDevHGCMCall)))
+#  define VMMDEV_HGCM_CALL_PARMS64(a) ((HGCMFunctionParameter64 *)((uint8_t *)a + sizeof (VMMDevHGCMCall)))
+# endif /* VBOX_HGCM_HOST_CODE */
+#endif /* VBOX_WITH_64_BITS_GUESTS */
 
 #define VBOX_HGCM_MAX_PARMS 32
 
-#endif /* VBOX_HGCM */
+/* The Cancel request is issued using the same physical memory address
+ * as was used for the corresponding initial HGCMCall.
+ */
+typedef struct
+{
+    /* request header */
+    VMMDevHGCMRequestHeader header;
+} VMMDevHGCMCancel;
+
+#endif /* VBOX_WITH_HGCM */
 
 
 #define VBVA_F_STATUS_ACCEPTED (0x01)
@@ -996,9 +1111,12 @@ typedef const VBGLBIGREQ *PCVBGLBIGREQ;
 
 
 #if defined(RT_OS_WINDOWS)
-  /* legacy encoding. */
+/* @todo Remove IOCTL_CODE later! Integrate it in VBOXGUEST_IOCTL_CODE below. */
+/** @todo r=bird: IOCTL_CODE is supposedly defined in some header included by Windows.h or ntddk.h, which is why it wasn't in the #if 0 earlier. See HostDrivers/Support/SUPDrvIOC.h... */
 # define IOCTL_CODE(DeviceType, Function, Method, Access, DataSize_ignored) \
-    ( ((DeviceType) << 16) | ((Access) << 14) | ((Function) << 2) | (Method))
+  ( ((DeviceType) << 16) | ((Access) << 14) | ((Function) << 2) | (Method))
+# define VBOXGUEST_IOCTL_CODE(Function, Size)   IOCTL_CODE(FILE_DEVICE_UNKNOWN, 2048 + (Function), METHOD_BUFFERED, FILE_WRITE_ACCESS, 0)
+# define VBOXGUEST_IOCTL_STRIP_SIZE(Code)       (Code)
 
 #elif defined(RT_OS_OS2)
   /* No automatic buffering, size not encoded. */
@@ -1034,12 +1152,7 @@ typedef const VBGLBIGREQ *PCVBGLBIGREQ;
 #endif
 
 /** IOCTL to VBoxGuest to query the VMMDev IO port region start. */
-#ifdef VBOXGUEST_IOCTL_CODE
-# define VBOXGUEST_IOCTL_GETVMMDEVPORT  VBOXGUEST_IOCTL_CODE(1, sizeof(VBoxGuestPortInfo))
-# define IOCTL_VBOXGUEST_GETVMMDEVPORT  VBOXGUEST_IOCTL_GETVMMDEVPORT
-#else
-# define IOCTL_VBOXGUEST_GETVMMDEVPORT IOCTL_CODE(FILE_DEVICE_UNKNOWN, 2048, METHOD_BUFFERED, FILE_WRITE_ACCESS, sizeof(VBoxGuestPortInfo))
-#endif
+#define VBOXGUEST_IOCTL_GETVMMDEVPORT   VBOXGUEST_IOCTL_CODE(1, sizeof(VBoxGuestPortInfo))
 
 #pragma pack(4)
 typedef struct _VBoxGuestPortInfo
@@ -1049,21 +1162,12 @@ typedef struct _VBoxGuestPortInfo
 } VBoxGuestPortInfo;
 
 /** IOCTL to VBoxGuest to wait for a VMMDev host notification */
-#ifdef VBOXGUEST_IOCTL_CODE
-# define VBOXGUEST_IOCTL_WAITEVENT      VBOXGUEST_IOCTL_CODE(2, sizeof(VBoxGuestWaitEventInfo))
-# define IOCTL_VBOXGUEST_WAITEVENT      VBOXGUEST_IOCTL_WAITEVENT
-#else
-# define IOCTL_VBOXGUEST_WAITEVENT IOCTL_CODE(FILE_DEVICE_UNKNOWN, 2049, METHOD_BUFFERED, FILE_WRITE_ACCESS, sizeof(VBoxGuestWaitEventInfo))
-#endif
+#define VBOXGUEST_IOCTL_WAITEVENT       VBOXGUEST_IOCTL_CODE(2, sizeof(VBoxGuestWaitEventInfo))
 
 /** IOCTL to VBoxGuest to interrupt (cancel) any pending WAITEVENTs and return.
  * Handled inside the guest additions and not seen by the host at all.
  * @see VBOXGUEST_IOCTL_WAITEVENT */
-#ifdef VBOXGUEST_IOCTL_CODE
-# define VBOXGUEST_IOCTL_CANCEL_ALL_WAITEVENTS    VBOXGUEST_IOCTL_CODE(5, 0)
-#else
-# define VBOXGUEST_IOCTL_CANCEL_ALL_WAITEVENTS    IOCTL_CODE(FILE_DEVICE_UNKNOWN, 2054, METHOD_BUFFERED, FILE_WRITE_ACCESS, 0)
-#endif
+#define VBOXGUEST_IOCTL_CANCEL_ALL_WAITEVENTS       VBOXGUEST_IOCTL_CODE(5, 0)
 
 /**
  * Result codes for VBoxGuestWaitEventInfo::u32Result
@@ -1095,12 +1199,7 @@ typedef struct _VBoxGuestWaitEventInfo
 /** IOCTL to VBoxGuest to perform a VMM request
  * @remark  The data buffer for this IOCtl has an variable size, keep this in mind
  *          on systems where this matters. */
-#ifdef VBOXGUEST_IOCTL_CODE
-# define VBOXGUEST_IOCTL_VMMREQUEST(Size)   VBOXGUEST_IOCTL_CODE(3, (Size))
-# define IOCTL_VBOXGUEST_VMMREQUEST         VBOXGUEST_IOCTL_VMMREQUEST(sizeof(VMMDevRequestHeader))
-#else
-# define IOCTL_VBOXGUEST_VMMREQUEST IOCTL_CODE(FILE_DEVICE_UNKNOWN, 2050, METHOD_BUFFERED, FILE_WRITE_ACCESS, sizeof(VMMDevRequestHeader))
-#endif
+#define VBOXGUEST_IOCTL_VMMREQUEST(Size)            VBOXGUEST_IOCTL_CODE(3, (Size))
 
 /** Input and output buffer layout of the IOCTL_VBOXGUEST_CTL_FILTER_MASK. */
 typedef struct _VBoxGuestFilterMaskInfo
@@ -1111,34 +1210,20 @@ typedef struct _VBoxGuestFilterMaskInfo
 #pragma pack()
 
 /** IOCTL to VBoxGuest to control event filter mask. */
-#ifdef VBOXGUEST_IOCTL_CODE
-# define VBOXGUEST_IOCTL_CTL_FILTER_MASK    VBOXGUEST_IOCTL_CODE(4, sizeof(VBoxGuestFilterMaskInfo))
-# define IOCTL_VBOXGUEST_CTL_FILTER_MASK    VBOXGUEST_IOCTL_CTL_FILTER_MASK
-#else
-# define IOCTL_VBOXGUEST_CTL_FILTER_MASK IOCTL_CODE(FILE_DEVICE_UNKNOWN, 2051, METHOD_BUFFERED, FILE_WRITE_ACCESS, sizeof (VBoxGuestFilterMaskInfo))
-#endif
+#define VBOXGUEST_IOCTL_CTL_FILTER_MASK             VBOXGUEST_IOCTL_CODE(4, sizeof(VBoxGuestFilterMaskInfo))
 
 /** IOCTL to VBoxGuest to check memory ballooning. */
-#ifdef VBOXGUEST_IOCTL_CODE
-# define VBOXGUEST_IOCTL_CTL_CHECK_BALLOON_MASK     VBOXGUEST_IOCTL_CODE(4, 100)
-# define IOCTL_VBOXGUEST_CTL_CHECK_BALLOON          VBOXGUEST_IOCTL_CTL_CHECK_BALLOON_MASK
-#else
-# define IOCTL_VBOXGUEST_CTL_CHECK_BALLOON          IOCTL_CODE(FILE_DEVICE_UNKNOWN, 2052, METHOD_BUFFERED, FILE_WRITE_ACCESS, 0)
-#endif
+#define VBOXGUEST_IOCTL_CTL_CHECK_BALLOON_MASK      VBOXGUEST_IOCTL_CODE(7, 100)
 
 /** IOCTL to VBoxGuest to perform backdoor logging. */
-#ifdef VBOXGUEST_IOCTL_CODE
-# define VBOXGUEST_IOCTL_LOG(Size)          VBOXGUEST_IOCTL_CODE(6, (Size))
-#else
-# define VBOXGUEST_IOCTL_LOG(Size)          IOCTL_CODE(FILE_DEVICE_UNKNOWN, 2055, METHOD_BUFFERED, FILE_WRITE_ACCESS, (Size))
-#endif
+#define VBOXGUEST_IOCTL_LOG(Size)                   VBOXGUEST_IOCTL_CODE(6, (Size))
 
 
-#ifdef VBOX_HGCM
+#ifdef VBOX_WITH_HGCM
 /* These structures are shared between the driver and other binaries,
  * therefore packing must be defined explicitely.
  */
-#pragma pack(1)
+# pragma pack(1)
 typedef struct _VBoxGuestHGCMConnectInfo
 {
     uint32_t result;          /**< OUT */
@@ -1160,27 +1245,16 @@ typedef struct _VBoxGuestHGCMCallInfo
     uint32_t cParms;          /**< IN  How many parms. */
     /* Parameters follow in form HGCMFunctionParameter aParms[cParms] */
 } VBoxGuestHGCMCallInfo;
-#pragma pack()
+# pragma pack()
 
-#ifdef VBOXGUEST_IOCTL_CODE
 # define VBOXGUEST_IOCTL_HGCM_CONNECT       VBOXGUEST_IOCTL_CODE(16, sizeof(VBoxGuestHGCMConnectInfo))
-# define IOCTL_VBOXGUEST_HGCM_CONNECT       VBOXGUEST_IOCTL_HGCM_CONNECT
 # define VBOXGUEST_IOCTL_HGCM_DISCONNECT    VBOXGUEST_IOCTL_CODE(17, sizeof(VBoxGuestHGCMDisconnectInfo))
-# define IOCTL_VBOXGUEST_HGCM_DISCONNECT    VBOXGUEST_IOCTL_HGCM_DISCONNECT
 # define VBOXGUEST_IOCTL_HGCM_CALL(Size)    VBOXGUEST_IOCTL_CODE(18, (Size))
-# define IOCTL_VBOXGUEST_HGCM_CALL          VBOXGUEST_IOCTL_HGCM_CALL(sizeof(VBoxGuestHGCMCallInfo))
 # define VBOXGUEST_IOCTL_CLIPBOARD_CONNECT  VBOXGUEST_IOCTL_CODE(19, sizeof(uint32_t))
-# define IOCTL_VBOXGUEST_CLIPBOARD_CONNECT  VBOXGUEST_IOCTL_CLIPBOARD_CONNECT
-#else
-# define IOCTL_VBOXGUEST_HGCM_CONNECT      IOCTL_CODE(FILE_DEVICE_UNKNOWN, 3072, METHOD_BUFFERED, FILE_WRITE_ACCESS, sizeof(VBoxGuestHGCMConnectInfo))
-# define IOCTL_VBOXGUEST_HGCM_DISCONNECT   IOCTL_CODE(FILE_DEVICE_UNKNOWN, 3073, METHOD_BUFFERED, FILE_WRITE_ACCESS, sizeof(VBoxGuestHGCMDisconnectInfo))
-# define IOCTL_VBOXGUEST_HGCM_CALL         IOCTL_CODE(FILE_DEVICE_UNKNOWN, 3074, METHOD_BUFFERED, FILE_WRITE_ACCESS, sizeof(VBoxGuestHGCMCallInfo))
-# define IOCTL_VBOXGUEST_CLIPBOARD_CONNECT IOCTL_CODE(FILE_DEVICE_UNKNOWN, 3075, METHOD_BUFFERED, FILE_WRITE_ACCESS, sizeof(uint32_t))
-#endif
 
-#define VBOXGUEST_HGCM_CALL_PARMS(a) ((HGCMFunctionParameter *)((uint8_t *)(a) + sizeof (VBoxGuestHGCMCallInfo)))
+# define VBOXGUEST_HGCM_CALL_PARMS(a)       ((HGCMFunctionParameter *)((uint8_t *)(a) + sizeof (VBoxGuestHGCMCallInfo)))
 
-#endif /* VBOX_HGCM */
+#endif /* VBOX_WITH_HGCM */
 
 /*
  * Credentials request flags and structure
@@ -1264,14 +1338,23 @@ DECLINLINE(size_t) vmmdevGetRequestSize(VMMDevRequestType requestType)
             return sizeof(VMMDevReqGuestCapabilities);
         case VMMDevReq_SetGuestCapabilities:
             return sizeof(VMMDevReqGuestCapabilities2);
-#ifdef VBOX_HGCM
+#ifdef VBOX_WITH_HGCM
         case VMMDevReq_HGCMConnect:
             return sizeof(VMMDevHGCMConnect);
         case VMMDevReq_HGCMDisconnect:
             return sizeof(VMMDevHGCMDisconnect);
+#ifdef VBOX_WITH_64_BITS_GUESTS
+        case VMMDevReq_HGCMCall32:
+            return sizeof(VMMDevHGCMCall);
+        case VMMDevReq_HGCMCall64:
+            return sizeof(VMMDevHGCMCall);
+#else
         case VMMDevReq_HGCMCall:
             return sizeof(VMMDevHGCMCall);
-#endif
+#endif /* VBOX_WITH_64_BITS_GUESTS */
+        case VMMDevReq_HGCMCancel:
+            return sizeof(VMMDevHGCMCancel);
+#endif /* VBOX_WITH_HGCM */
         case VMMDevReq_VideoAccelEnable:
             return sizeof(VMMDevVideoAccelEnable);
         case VMMDevReq_VideoAccelFlush:
@@ -1413,7 +1496,7 @@ VBGLR3DECL(int)     VbglR3GetHostTime(PRTTIMESPEC pTime);
 VBGLR3DECL(int)     VbglR3InterruptEventWaits(void);
 VBGLR3DECL(int)     VbglR3WriteLog(const char *pch, size_t cb);
 VBGLR3DECL(int)     VbglR3CtlFilterMask(uint32_t fOr, uint32_t fNot);
-VBGLR3DECL(int)     VbglR3Daemonize(bool fNoChDir, bool fNoClose);
+VBGLR3DECL(int)     VbglR3Daemonize(bool fNoChDir, bool fNoClose, char const *pszPidfile);
 VBGLR3DECL(int)     VbglR3SetGuestCaps(uint32_t fOr, uint32_t fNot);
 
 /** @name Shared clipboard
@@ -1452,7 +1535,30 @@ VBGLR3DECL(int)     VbglR3SetPointerShapeReq(VMMDevReqMousePointer *pReq);
 VBGLR3DECL(int)     VbglR3GetLastDisplayChangeRequest(uint32_t *pcx, uint32_t *pcy, uint32_t *pcBits, uint32_t *piDisplay);
 VBGLR3DECL(int)     VbglR3DisplayChangeWaitEvent(uint32_t *pcx, uint32_t *pcy, uint32_t *pcBits, uint32_t *piDisplay);
 VBGLR3DECL(bool)    VbglR3HostLikesVideoMode(uint32_t cx, uint32_t cy, uint32_t cBits);
+VBGLR3DECL(int)     VbglR3SaveVideoMode(const char *pszName, uint32_t cx, uint32_t cy, uint32_t cBits);
+VBGLR3DECL(int)     VbglR3RetrieveVideoMode(const char *pszName, uint32_t *pcx, uint32_t *pcy, uint32_t *pcBits);
 /** @}  */
+
+#ifdef VBOX_WITH_GUEST_PROPS
+/** @name Guest properties
+ * @{ */
+typedef struct VBGLR3GUESTPROPENUM VBGLR3GUESTPROPENUM, *PVBGLR3GUESTPROPENUM;
+VBGLR3DECL(int)     VbglR3GuestPropConnect(uint32_t *pu32ClientId);
+VBGLR3DECL(int)     VbglR3GuestPropDisconnect(uint32_t u32ClientId);
+VBGLR3DECL(int)     VbglR3GuestPropWrite(uint32_t u32ClientId, const char *pszName, const char *pszValue, const char *pszFlags);
+VBGLR3DECL(int)     VbglR3GuestPropWriteValue(uint32_t u32ClientId, const char *pszName, const char *pszValue);
+VBGLR3DECL(int)     VbglR3GuestPropWriteValueV(uint32_t u32ClientId, const char *pszName, const char *pszValueFormat, va_list va);
+VBGLR3DECL(int)     VbglR3GuestPropWriteValueF(uint32_t u32ClientId, const char *pszName, const char *pszValueFormat, ...);
+VBGLR3DECL(int)     VbglR3GuestPropRead(uint32_t u32ClientId, const char *pszName, void *pvBuf, uint32_t cbBuf, char **ppszValue, uint64_t *pu64Timestamp, char **ppszFlags, uint32_t *pcbBufActual);
+VBGLR3DECL(int)     VbglR3GuestPropReadValue(uint32_t ClientId, const char *pszName, char *pszValue, uint32_t cchValue, uint32_t *pcchValueActual);
+VBGLR3DECL(int)     VbglR3GuestPropReadValueAlloc(uint32_t u32ClientId, const char *pszName, char **ppszValue);
+VBGLR3DECL(void)    VbglR3GuestPropReadValueFree(char *pszValue);
+VBGLR3DECL(int)     VbglR3GuestPropEnumRaw(uint32_t u32ClientId, const char *paszPatterns, char *pcBuf, uint32_t cbBuf, uint32_t *pcbBufActual);
+VBGLR3DECL(int)     VbglR3GuestPropEnum(uint32_t u32ClientId, char **ppaszPatterns, int cPatterns, PVBGLR3GUESTPROPENUM *ppHandle, char **ppszName, char **ppszValue, uint64_t *pu64Timestamp, char **ppszFlags);
+VBGLR3DECL(int)     VbglR3GuestPropEnumNext(PVBGLR3GUESTPROPENUM pHandle, char **ppszName, char **ppszValue, uint64_t *pu64Timestamp, char **ppszFlags);
+VBGLR3DECL(void)    VbglR3GuestPropEnumFree(PVBGLR3GUESTPROPENUM pHandle);
+/** @}  */
+#endif /* VBOX_WITH_GUEST_PROPS defined */
 
 
 __END_DECLS

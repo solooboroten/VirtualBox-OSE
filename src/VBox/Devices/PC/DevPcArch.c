@@ -1,6 +1,6 @@
-/* $Id: DevPcArch.c 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: DevPcArch.c 34385 2008-08-08 22:43:58Z bird $ */
 /** @file
- * PC Architechture Device.
+ * DevPcArch - PC Architechture Device.
  */
 
 /*
@@ -25,14 +25,12 @@
 #define LOG_GROUP LOG_GROUP_DEV_PC_ARCH
 #include <VBox/pdmdev.h>
 #include <VBox/mm.h>
-
 #include <VBox/log.h>
-#include <iprt/assert.h>
 #include <VBox/err.h>
+#include <iprt/assert.h>
+#include <iprt/string.h>
 
-#include <string.h>
-
-#include "Builtins.h"
+#include "../Builtins.h"
 
 
 /*******************************************************************************
@@ -65,7 +63,7 @@ static DECLCALLBACK(int) pcarchIOPortFPURead(PPDMDEVINS pDevIns, void *pvUser, R
 {
     int rc;
     NOREF(pvUser); NOREF(pDevIns); NOREF(pu32);
-    rc = PDMDeviceDBGFStop(pDevIns, PDM_SRC_POS, "Port=%#x cb=%d\n", Port, cb);
+    rc = PDMDeviceDBGFStop(pDevIns, RT_SRC_POS, "Port=%#x cb=%d\n", Port, cb);
     if (rc == VINF_SUCCESS)
         rc = VERR_IOM_IOPORT_UNUSED;
     return rc;
@@ -99,7 +97,7 @@ static DECLCALLBACK(int) pcarchIOPortFPUWrite(PPDMDEVINS pDevIns, void *pvUser, 
 /* This is triggered when booting Knoppix (3.7) */
 #if 0
                 if (!u32)
-                    rc = PDMDeviceDBGFStop(pDevIns, PDM_SRC_POS, "Port=%#x cb=%d u32=%#x\n", Port, cb, u32);
+                    rc = PDMDeviceDBGFStop(pDevIns, RT_SRC_POS, "Port=%#x cb=%d u32=%#x\n", Port, cb, u32);
 #endif
                 /* pDevIns->pDevHlp->pfnPICSetIrq(pDevIns, 13, 0); */
                 break;
@@ -116,14 +114,14 @@ static DECLCALLBACK(int) pcarchIOPortFPUWrite(PPDMDEVINS pDevIns, void *pvUser, 
             case 0xfa:
             case 0xfc:
             default:
-                rc = PDMDeviceDBGFStop(pDevIns, PDM_SRC_POS, "Port=%#x cb=%d u32=%#x\n", Port, cb, u32);
+                rc = PDMDeviceDBGFStop(pDevIns, RT_SRC_POS, "Port=%#x cb=%d u32=%#x\n", Port, cb, u32);
                 break;
         }
         /* this works better, but probably not entirely correct. */
         PDMDevHlpISASetIrq(pDevIns, 13, 0);
     }
     else
-        rc = PDMDeviceDBGFStop(pDevIns, PDM_SRC_POS, "Port=%#x cb=%d u32=%#x\n", Port, cb, u32);
+        rc = PDMDeviceDBGFStop(pDevIns, RT_SRC_POS, "Port=%#x cb=%d u32=%#x\n", Port, cb, u32);
     return rc;
 }
 
@@ -176,7 +174,7 @@ static DECLCALLBACK(int) pcarchIOPortPS2SysControlPortARead(PPDMDEVINS pDevIns, 
         *pu32 = PDMDevHlpA20IsEnabled(pDevIns) << 1;
         return VINF_SUCCESS;
     }
-    return PDMDeviceDBGFStop(pDevIns, PDM_SRC_POS, "Port=%#x cb=%d\n", Port, cb);
+    return PDMDeviceDBGFStop(pDevIns, RT_SRC_POS, "Port=%#x cb=%d\n", Port, cb);
 }
 
 
@@ -209,7 +207,7 @@ static DECLCALLBACK(int) pcarchIOPortPS2SysControlPortAWrite(PPDMDEVINS pDevIns,
         PDMDevHlpA20Set(pDevIns, !!(u32 & 2));
         return VINF_SUCCESS;
     }
-    return PDMDeviceDBGFStop(pDevIns, PDM_SRC_POS, "Port=%#x cb=%d u32=%#x\n", Port, cb, u32);
+    return PDMDeviceDBGFStop(pDevIns, RT_SRC_POS, "Port=%#x cb=%d u32=%#x\n", Port, cb, u32);
 }
 
 
@@ -228,7 +226,7 @@ static DECLCALLBACK(int) pcarchIOPortPS2SysControlPortAWrite(PPDMDEVINS pDevIns,
  */
 static DECLCALLBACK(int)  pcarchConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNODE pCfgHandle)
 {
-    PDEVPCARCH  pData = PDMINS2DATA(pDevIns, PDEVPCARCH);
+    PDEVPCARCH  pThis = PDMINS_2_DATA(pDevIns, PDEVPCARCH);
     int         rc;
     Assert(iInstance == 0);
 
@@ -241,28 +239,29 @@ static DECLCALLBACK(int)  pcarchConstruct(PPDMDEVINS pDevIns, int iInstance, PCF
     /*
      * Init the data.
      */
-    pData->pDevIns = pDevIns;
+    pThis->pDevIns = pDevIns;
 
     /*
      * Register I/O Ports
      */
     rc = PDMDevHlpIOPortRegister(pDevIns, 0xF0, 0x10, NULL, pcarchIOPortFPUWrite, pcarchIOPortFPURead, NULL, NULL, "Math Co-Processor (DOS/OS2 mode)");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     rc = PDMDevHlpIOPortRegister(pDevIns, 0x92, 1, NULL, pcarchIOPortPS2SysControlPortAWrite, pcarchIOPortPS2SysControlPortARead, NULL, NULL, "PS/2 system control port A (A20 and more)");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     /*
      * Reserve ROM/MMIO areas:
      * 1. 0x000a0000-0x000fffff
      * 2. 0xfff80000-0xffffffff
+     * Note: This will be removed before long.
      */
     rc = PDMDevHlpPhysReserve(pDevIns, 0x000a0000, 0x50000, "Low ROM Region");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     rc = PDMDevHlpPhysReserve(pDevIns, 0xfff80000, 0x80000, "High ROM Region");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     return VINF_SUCCESS;

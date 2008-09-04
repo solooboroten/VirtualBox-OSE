@@ -19,6 +19,7 @@
 
 SILENTUNLOAD=""
 MODNAME="vboxdrv"
+FLTMODNAME="vboxflt"
 MODDIR32="/platform/i86pc/kernel/drv"
 MODDIR64=$MODDIR32/amd64
 
@@ -59,6 +60,19 @@ module_loaded()
     return 0
 }
 
+vboxflt_module_loaded()
+{
+    if test -f "/etc/name_to_major"; then
+        loadentry=`cat /etc/name_to_major | grep $FLTMODNAME`
+    else
+        loadentry=`/usr/sbin/modinfo | grep $FLTMODNAME`
+    fi
+    if test -z "$loadentry"; then
+        return 1
+    fi
+    return 0
+}
+
 check_root()
 {
     if test `/usr/xpg4/bin/id -u` -ne 0; then
@@ -71,7 +85,11 @@ start_module()
     if module_loaded; then
         info "VirtualBox kernel module already loaded."
     else
-        /usr/sbin/add_drv -m'* 0666 root sys' $MODNAME
+    	if test -n "_HARDENED_"; then
+            /usr/sbin/add_drv -m'* 0600 root sys' $MODNAME
+        else
+            /usr/sbin/add_drv -m'* 0666 root sys' $MODNAME
+        fi
         if test ! module_loaded; then
             abort "## Failed to load VirtualBox kernel module."
         elif test -c "/devices/pseudo/$MODNAME@0:$MODNAME"; then
@@ -90,14 +108,41 @@ stop_module()
     elif test -z "$SILENTUNLOAD"; then
         info "VirtualBox kernel module not loaded."
     fi
+
+    # check for vbi and force unload it
+    vbi_mod_id=`/usr/sbin/modinfo | grep vbi | cut -f 1 -d ' ' `
+    if test -n "$vbi_mod_id"; then
+        /usr/sbin/modunload -i $vbi_mod_id
+    fi
 }
 
-restart_module()
+start_vboxflt()
 {
-    stop_module
-    sync
-    start_module
-    return 0
+    if vboxflt_module_loaded; then
+        info "VirtualBox NetFilter kernel module already loaded."
+    else
+    	if test -n "_HARDENED_"; then
+            /usr/sbin/add_drv -m'* 0600 root sys' $FLTMODNAME
+        else
+            /usr/sbin/add_drv -m'* 0666 root sys' $FLTMODNAME
+        fi
+        /usr/sbin/modload -p drv/$FLTMODNAME
+        if test ! vboxflt_module_loaded; then
+            abort "## Failed to load VirtualBox NetFilter kernel module."
+        else
+            info "VirtualBox NetFilter kernel module loaded."
+        fi
+    fi
+}
+
+stop_vboxflt()
+{
+    if vboxflt_module_loaded; then
+        /usr/sbin/rem_drv $FLTMODNAME || abort "## Failed to unload VirtualBox NetFilter module."
+        info "VirtualBox NetFilter kernel module unloaded."
+    elif test -z "$SILENTUNLOAD"; then
+        info "VirtualBox NetFilter kernel module not loaded."
+    fi
 }
 
 status_module()
@@ -109,6 +154,18 @@ status_module()
     fi
 }
 
+stop_all_modules()
+{
+    stop_vboxflt
+    stop_module
+}
+
+start_all_modules()
+{
+    start_module
+    start_vboxflt
+}
+
 check_root
 check_if_installed
 
@@ -117,20 +174,29 @@ if test "$2" = "silentunload"; then
 fi
 
 case "$1" in
+stopall)
+    stop_all_modules
+    ;;
+startall)
+    start_all_modules
+    ;;
 start)
     start_module
     ;;
 stop)
     stop_module
     ;;
-restart)
-    restart_module
-    ;;
 status)
     status_module
     ;;
+fltstart)
+    start_vboxflt
+    ;;
+fltstop)
+    stop_vboxflt
+    ;;
 *)
-    echo "Usage: $0 {start|stop|restart|status}"
+    echo "Usage: $0 {start|stop|status|fltstart|fltstop|stopall|startall}"
     exit 1
 esac
 

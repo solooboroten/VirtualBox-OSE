@@ -939,7 +939,7 @@ rdpusb_check_fds(fd_set * rfds, fd_set * wfds)
 	return;
 }
 
-BOOL
+RD_BOOL
 rdpusb_init(void)
 {
 	rdpusb_channel =

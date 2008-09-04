@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31342 2008-05-28 08:44:35Z frank $
+# $Id: Makefile.kmk 35743 2008-08-31 19:50:49Z frank $
 ## @file
 # Makefile for the Linux installer.
 #
@@ -27,11 +27,17 @@ $(error "The Linux installer can only be built on Linux!") # yeah, right.
 endif
 
 VBOX_NO_LINUX_RUN_INSTALLER ?= $(VBOX_OSE)
+PACKAGE_NAME   = VirtualBox-$(VBOX_VERSION_STRING)-r$(VBOX_SVN_REV).run
 
-PROGRAMS       = VBoxTunctl
 PACKING        = $(if $(VBOX_NO_LINUX_RUN_INSTALLER),,\
-		 $(PATH_BIN)/VirtualBox.run $(PATH_BIN)/VirtualBox-dbg.tar.bz2)
+		 $(PATH_BIN)/$(PACKAGE_NAME) $(PATH_BIN)/VirtualBox-dbg.tar.bz2)
 PACKING       += $(PATH_BIN)/VirtualBox.tar.bz2
+
+ifdef VBOX_ONLY_SDK
+SDK_ZIP        = $(PATH_BIN)/VirtualBoxSDK-$(VBOX_VERSION_STRING)-r$(VBOX_SVN_REV).zip
+PACKING        = $(SDK_ZIP)
+endif
+
 OTHER_CLEAN    = $(addprefix $(PATH_TARGET)/install/,\
 	         install.sh deffiles routines.sh \
 	         VBoxAddIF.sh vboxdrv.sh vboxnet.sh \
@@ -39,9 +45,6 @@ OTHER_CLEAN    = $(addprefix $(PATH_TARGET)/install/,\
 	         $(wildcard $(PATH_TARGET)/VirtualBox-*) \
 		 $(PATH_TARGET)/vboxdrv.sh $(PATH_TARGET)/vboxnet.sh
 INSTALLS       = linux-bin linux-doc
-
-VBoxTunctl_TEMPLATE = VBOXR3EXE
-VBoxTunctl_SOURCES  = tunctl.c
 
 #
 # Linux installs.
@@ -66,15 +69,14 @@ LINUXSTRIPBIN = \
 	VBoxManage \
 	VBoxREM.so \
 	VBoxRT.so \
-	$(if $(VBOX_WITH_VBOXSDL),VBoxSDL,) \
+	$(if $(VBOX_WITH_VBOXSDL),VBoxSDL $(if $(VBOX_WITH_HARDENING),VBoxSDL.so),) \
 	VBoxSettings.so \
 	VBoxSVC \
 	VBoxDDU.so \
 	VBoxVMM.so \
 	VBoxXPCOM.so \
 	VBoxXPCOMIPCD \
-	$(if $(VBOX_WITH_QTGUI),VBoxKeyboard.so,) \
-	$(if $(VBOX_WITH_QTGUI),VirtualBox,) \
+	$(if $(VBOX_WITH_PYTHON),VBoxPython.so,) \
 	VBoxTunctl \
 	components/VBoxC.so \
 	components/VBoxSVCM.so \
@@ -96,7 +98,7 @@ endif
 # Do not strip anything of these files
 LINUXNOSTRIP = \
 	$(if $(VBOX_OSE),,LICENSE) \
-	$(if $(VBOX_WITH_QTGUI),\
+	$(if $(VBOX_WITH_QT4GUI),\
 	  $(if $(VBOX_OSE),,License-$(VBOX_LICENSE_VER).html)) \
 	components/VBoxXPCOMBase.xpt \
 	components/VirtualBox_XPCOM.xpt \
@@ -104,13 +106,22 @@ LINUXNOSTRIP = \
 	VBox.sh \
 	VBox.png \
 	VBoxAddIF.sh \
-	$(if $(VBOX_WITH_QTGUI),VirtualBox.desktop,) \
-	$(if $(VBOX_WITH_QTGUI),$(foreach f,\
+	$(if $(VBOX_WITH_QT4GUI),VirtualBox.desktop,) \
+	src
+
+# Qt4 GUI
+ifdef VBOX_WITH_QT4GUI
+  LINUXSTRIPBIN += \
+	VBoxKeyboard.so \
+	VirtualBox \
+	$(if $(VBOX_WITH_HARDENING),VirtualBox.so)
+  LINUXNOSTRIP += \
+	$(if $(VBOX_WITH_QT4_SUN),$(notdir $(wildcard $(PATH_BIN)/libVBox*)),) \
+	$(foreach f,\
 	  $(shell $(CAT_EXT) \
-	    $(PATH_ROOT)/src/VBox/Frontends/VirtualBox/nls/ApprovedLanguages.txt),\
-	  nls/VirtualBox_$(f).qm nls/qt_$(f).qm),) \
-	src \
-	sdk
+	    $(PATH_ROOT)/src/VBox/Frontends/VirtualBox4/nls/ApprovedLanguages.txt),\
+	  nls/VirtualBox_$(f).qm nls/qt_$(f).qm)
+endif
 
 # Guest Additions
 LINUXNOSTRIP += \
@@ -126,21 +137,20 @@ LINUXSTRIPBIN += \
 	VBoxSharedClipboard.so \
 	$(if $(VBOX_WITH_DEBUGGER_GUI),VBoxDbg.so,)
 
+# Shared Info Services
+LINUXSTRIPBIN += \
+	$(if $(VBOX_WITH_GUEST_PROPS),VBoxGuestPropSvc.so)
+
 ifdef VBOX_WITH_DOCS
  LINUXNOSTRIP += \
 	UserManual.pdf
  LINUXSTRIPBIN += \
-	$(if $(VBOX_WITH_QTGUI),kchmviewer,)
+	$(if $(VBOX_WITH_KCHMVIEWER),kchmviewer,)
  ifneq ($(wildcard $(PATH_BIN)/VirtualBox.chm),)
   # our 64-bit tinderboxes are not able to generate VirtualBox.chm so far
   # but for building .deb/.rpm packages we use precompiled binaries.
   LINUXNOSTRIP += \
 	VirtualBox.chm
- endif
- ifneq ($(wildcard $(PATH_BIN)/VirtualBoxAPI.chm),)
- # same applies to VirtualBoxAPI.chm
- LINUXNOSTRIP += \
-	VirtualBoxAPI.chm
  endif
 endif
 ifdef VBOX_WITH_VRDP
@@ -150,7 +160,7 @@ ifdef VBOX_WITH_VRDP
  LINUXNOSTRIP += \
 	rdesktop-vrdp.tar.gz
 
- ifndef VBOX_HEADLESS
+ ifdef VBOX_WITH_VRDP_RDESKTOP
   LINUXNOSTRIP += \
 	rdesktop-vrdp-keymaps
   LINUXSTRIPBIN += \
@@ -159,7 +169,8 @@ ifdef VBOX_WITH_VRDP
 endif
 ifdef VBOX_WITH_HEADLESS
  LINUXSTRIPBIN += \
-	VBoxHeadless
+	VBoxHeadless \
+	$(if $(VBOX_WITH_HARDENING),VBoxHeadless.so)
 endif
 ifdef VBOX_WITH_WEBSERVICES
  LINUXSTRIPBIN += \
@@ -175,7 +186,7 @@ OTHER_CLEAN += $(addprefix $(PATH_TARGET)/archive/,$(LINUXARCHFILES)) \
 
 include $(KBUILD_PATH)/footer.kmk
 
-$(PATH_BIN)/VirtualBox.run: \
+$(PATH_BIN)/$(PACKAGE_NAME): \
 		$(PATH_TARGET)/install/VirtualBox.tar.bz2 \
 		install.sh \
 		$(VBOX_VERSION_STAMP) \
@@ -185,9 +196,12 @@ $(PATH_BIN)/VirtualBox.run: \
 		$(PATH_TARGET)/vboxdrv.sh \
 		$(if $(VBOX_OSE),,$(PATH_ROOT)/doc/License.txt)
 	$(call MSG_TOOL,makeself,,$@)
-	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g" \
-		-e "s;_BUILD_;$(shell date);g" \
-		-e "s;_ARCH_;${KBUILD_TARGET_ARCH};g" \
+	$(QUIET)$(RM) -f $(wildcard $(PATH_BIN)/VirtualBox-*.run)
+	$(QUIET)$(SED) \
+		-e "s;_VERSION_;$(VBOX_VERSION_STRING);g" \
+		-e "s;_BUILD_;$(date-utc );g" \
+		-e "s;_ARCH_;$(KBUILD_TARGET_ARCH);g" \
+		-e "s;_HARDENED_;$(VBOX_WITH_HARDENING);g" \
 		< install.sh > $(PATH_TARGET)/install/install.sh
 	$(QUIET)chmod 0744 $(PATH_TARGET)/install/install.sh
 	$(QUIET)$(INSTALL) -m 0755 routines.sh $(PATH_TARGET)/install
@@ -213,6 +227,7 @@ $(PATH_TARGET)/vboxnet.sh: vboxnet.sh.in
 
 # .tar.bz2 for converting into .run
 $(PATH_TARGET)/install/VirtualBox.tar.bz2: \
+		$(SDK_ZIP) \
 		$(addprefix $(PATH_TARGET)/archive/, $(LINUXARCHFILES)) \
 		Makefile.kmk \
 		$(VBOX_VERSION_STAMP) \
@@ -233,15 +248,26 @@ $(PATH_BIN)/VirtualBox.tar.bz2: \
 	$(QUIET)tar --owner 0 --group 0 -cjRhf $@ -C $(PATH_TARGET) \
 		$(addprefix VirtualBox-$(VBOX_VERSION_STRING)/,$(LINUXARCHFILES))
 
+
+
+ifneq ($(SDK_ZIP),)
+# make separate VirtualBox SDK delivery
+$(SDK_ZIP):    \
+		$(PATH_BIN)/sdk \
+		$(VBOX_VERSION_STAMP)
+	$(call MSG_L1,Making SDK delivery $@)
+	$(QUIET)$(REDIRECT) -C $(PATH_BIN) -- zip -r9 $@ sdk > /dev/null
+endif
+
 $(PATH_TARGET)/VirtualBox-$(VBOX_VERSION_STRING): $(PATH_TARGET)/archive
 	$(call MSG_INST_SYM,$<,$@)
 	$(QUIET)$(MKDIR) -p $(@D)
-	$(QUIET)rm -rf $@
+	$(QUIET)$(RM) -Rf -- $@
 	$(QUIET)$(LN_SYMLINK) $< $@
 
 $(PATH_BIN)/VBoxAddIF.sh: VBoxAddIF.sh $(VBOX_VERSION_STAMP)
 	$(call MSG_GENERATE,,$@,$<)
-	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g" $< > $@
+	$(QUIET)$(SED) -e "s;_VERSION_;$(VBOX_VERSION_STRING);g" $< > $@
 	$(QUIET)chmod 0755 $@
 
 $(PATH_BIN)/VirtualBox.desktop: VirtualBox.desktop $(VBOX_VERSION_STAMP)
@@ -252,33 +278,39 @@ else
 	$(QUIET)$(SED) -e "s+\$$VBOX_DOC_PATH+/opt/VirtualBox-$(VBOX_VERSION_STRING)+" $< > $@
 endif
 
-# Note: The -m <mode> feature of kmk_builtin_install does not work together with fakeroot!
-# Note: $(INSTALL) -s is currently not reliable when used in parallel builds. Fixed in 0.1.1.
-$(foreach f,$(LINUXSTRIPBIN),$(PATH_TARGET)/archive/$(f)): \
+$(addprefix $(PATH_TARGET)/archive/,$(LINUXSTRIPBIN)): \
 		$(PATH_TARGET)/archive/% : $(PATH_BIN)/% \
 		$(if $(VBOX_NO_LINUX_RUN_INSTALLER),,\
 		    $(PATH_TARGET)/archive-dbg/$(DBGPATH)/%) \
-		| $(call DIRDEP,$(PATH_TARGET)/archive)
+		| $$(call DIRDEP,$$(dir $$@))
 	$(call MSG_INST_FILE,$<,$@)
-	$(QUIET)install -D -m 0755 $(if $(VBOX_DO_STRIP),-s,) $< $@
+	$(QUIET)$(INSTALL) -m 0755 $(if $(VBOX_DO_STRIP),-s,) $< $@
 	$(QUIET)$(if $(VBOX_NO_LINUX_RUN_INSTALLER),,objcopy --add-gnu-debuglink=$(subst $(PATH_TARGET)/archive,$(PATH_TARGET)/archive-dbg/$(DBGPATH),$@) $@)
 
-$(foreach f,$(LINUXSTRIPOBJ),$(PATH_TARGET)/archive/$(f)): \
-		$(PATH_TARGET)/archive/% : $(PATH_BIN)/% | $(call DIRDEP,$(PATH_TARGET)/archive)
+$(addprefix $(PATH_TARGET)/archive/,$(LINUXSTRIPOBJ)): \
+		$(PATH_TARGET)/archive/% : $(PATH_BIN)/% \
+		| $$(call DIRDEP,$$(dir $$@))
 	$(call MSG_INST_FILE,$<,$@)
-	$(QUIET)$(if $(VBOX_DO_STRIP),objcopy --strip-unneeded -R .comment $< $@,cp $< $@)
+ifeq ($(VBOX_DO_STRIP),)
+	$(QUIET)$(INSTALL) -m 0644 $< $@
+else # strip to temp file because of umask.
+	$(QUIET)objcopy --strip-unneeded -R .comment $< $@.tmp
+	$(QUIET)$(INSTALL) -m 0644 $@.tmp $@
+	$(QUIET)$(RM) -f -- $@.tmp
+endif
 
-$(foreach f,$(LINUXNOSTRIP),$(PATH_TARGET)/archive/$(f)): \
-		$(PATH_TARGET)/archive/% : $(PATH_BIN)/% | $(call DIRDEP,$(PATH_TARGET)/archive)
+$(addprefix  $(PATH_TARGET)/archive/,$(LINUXNOSTRIP)): \
+		$(PATH_TARGET)/archive/% : $(PATH_BIN)/% \
+		| $$(call DIRDEP,$$(dir $$@))
 	$(call MSG_INST_SYM,$<,$@)
 	$(QUIET)$(RM) -f $@
 	$(QUIET)$(MKDIR) -p $(@D)
 	$(QUIET)$(LN_SYMLINK) $< $@
 
-$(foreach d,archive archive-dbg/$(DBGPATH) archive-dbg/$(DBGPATH)/components install,$(PATH_TARGET)/$(d)/):
+$(foreach d,archive archive/components archive/nls archive/additions archive-dbg/$(DBGPATH) archive-dbg/$(DBGPATH)/components install,$(PATH_TARGET)/$(d)/):
 	$(QUIET)$(MKDIR) -p $@
 
-$(foreach f,$(LINUXSTRIPBIN),$(PATH_TARGET)/archive-dbg/$(DBGPATH)/$(f)): \
+$(addprefix $(PATH_TARGET)/archive-dbg/$(DBGPATH)/,$(LINUXSTRIPBIN)): \
 		$(PATH_TARGET)/archive-dbg/$(DBGPATH)/% : $(PATH_BIN)/% \
 		| $(call DIRDEP,$(PATH_TARGET)/archive-dbg/$(DBGPATH)/components)
 	$(call MSG_TOOL,copydbg,$<,$@)

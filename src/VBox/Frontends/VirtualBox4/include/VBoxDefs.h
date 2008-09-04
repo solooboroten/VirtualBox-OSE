@@ -135,6 +135,7 @@ struct VBoxDefs
         SessionStateChangeEventType,
         SnapshotEventType,
         CanShowRegDlgEventType,
+        CanShowUpdDlgEventType,
         NetworkAdapterChangeEventType,
         USBCtlStateChangeEventType,
         USBDeviceStateChangeEventType,
@@ -150,6 +151,7 @@ struct VBoxDefs
         ShowWindowEventType,
 #endif
         ChangeGUILanguageEventType,
+        AddVDMUrlsEventType
     };
 
     static const char* GUI_LastWindowPosition;
@@ -167,6 +169,8 @@ struct VBoxDefs
 #endif
     static const char* GUI_RegistrationDlgWinID;
     static const char* GUI_RegistrationData;
+    static const char* GUI_UpdateDlgWinID;
+    static const char* GUI_UpdateDate;
     static const char* GUI_LastVMSelected;
     static const char* GUI_InfoDlgState;
 };

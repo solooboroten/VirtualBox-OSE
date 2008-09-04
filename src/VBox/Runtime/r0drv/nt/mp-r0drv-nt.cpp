@@ -1,4 +1,4 @@
-/* $Id: mp-r0drv-nt.cpp 30852 2008-05-15 10:08:40Z sandervl $ */
+/* $Id: mp-r0drv-nt.cpp 31932 2008-06-11 13:05:24Z bird $ */
 /** @file
  * IPRT - Multiprocessor, Ring-0 Driver, NT.
  */
@@ -39,6 +39,7 @@
 #include <iprt/err.h>
 #include <iprt/asm.h>
 #include "r0drv/mp-r0drv.h"
+#include "internal-r0drv-nt.h"
 
 
 /*******************************************************************************
@@ -73,7 +74,7 @@ RTDECL(RTCPUID) RTMpCpuId(void)
 
 RTDECL(int) RTMpCpuIdToSetIndex(RTCPUID idCpu)
 {
-    return idCpu < MAXIMUM_PROCESSORS ? idCpu : -1;
+    return idCpu < MAXIMUM_PROCESSORS ? (int)idCpu : -1;
 }
 
 
@@ -94,34 +95,46 @@ RTDECL(bool) RTMpIsCpuOnline(RTCPUID idCpu)
     if (idCpu >= MAXIMUM_PROCESSORS)
         return false;
 
+#if 0 /* this isn't safe at all IRQLs (great work guys) */
     KAFFINITY Mask = KeQueryActiveProcessors();
     return !!(Mask & RT_BIT_64(idCpu));
+#else
+    return RTCpuSetIsMember(&g_rtMpNtCpuSet, idCpu);
+#endif
 }
 
 
-RTDECL(bool) RTMpDoesCpuExist(RTCPUID idCpu)
+RTDECL(bool) RTMpIsCpuPossible(RTCPUID idCpu)
 {
     /* Cannot easily distinguish between online and offline cpus. */
+    /** @todo online/present cpu stuff must be corrected for proper W2K8 support. */
     return RTMpIsCpuOnline(idCpu);
 }
 
 
 RTDECL(PRTCPUSET) RTMpGetSet(PRTCPUSET pSet)
 {
+    /** @todo online/present cpu stuff must be corrected for proper W2K8 support. */
     return RTMpGetOnlineSet(pSet);
 }
 
 
 RTDECL(RTCPUID) RTMpGetCount(void)
 {
+    /** @todo online/present cpu stuff must be corrected for proper W2K8 support. */
     return RTMpGetOnlineCount();
 }
 
 
 RTDECL(PRTCPUSET) RTMpGetOnlineSet(PRTCPUSET pSet)
 {
+#if 0 /* this isn't safe at all IRQLs (great work guys) */
     KAFFINITY Mask = KeQueryActiveProcessors();
     return RTCpuSetFromU64(pSet, Mask);
+#else
+    *pSet = g_rtMpNtCpuSet;
+    return pSet;
+#endif
 }
 
 
@@ -166,23 +179,15 @@ static int rtMpCall(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2, RT_NT
 
 #if 0
     /* KeFlushQueuedDpcs must be run at IRQL PASSIVE_LEVEL according to MSDN, but the
-     * driver verifier doesn't complain... 
+     * driver verifier doesn't complain...
      */
     AssertMsg(KeGetCurrentIrql() == PASSIVE_LEVEL, ("%d != %d (PASSIVE_LEVEL)\n", KeGetCurrentIrql(), PASSIVE_LEVEL));
 #endif
 
     KAFFINITY Mask = KeQueryActiveProcessors();
 
-    if (    enmCpuid == RT_NT_CPUID_SPECIFIC
-        &&  (   idCpu >= 64
-             || !(Mask & RT_BIT_64(idCpu))))
-        return VERR_CPU_NOT_FOUND;  /* can't distinguish between cpu not present or offline */
-
     /* KeFlushQueuedDpcs is not present in Windows 2000; import it dynamically so we can just fail this call. */
-    UNICODE_STRING  RoutineName;
-    RtlInitUnicodeString(&RoutineName, L"KeFlushQueuedDpcs");
-    VOID (*pfnKeFlushQueuedDpcs)(VOID) = (VOID (*)(VOID))MmGetSystemRoutineAddress(&RoutineName);
-    if (!pfnKeFlushQueuedDpcs)
+    if (!g_pfnrtNtKeFlushQueuedDpcs)
         return VERR_NOT_SUPPORTED;
 
     pArgs = (PRTMPARGS)ExAllocatePoolWithTag(NonPagedPool, MAXIMUM_PROCESSORS*sizeof(KDPC) + sizeof(RTMPARGS), (ULONG)'RTMp');
@@ -201,7 +206,7 @@ static int rtMpCall(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2, RT_NT
     {
         KeInitializeDpc(&paExecCpuDpcs[0], rtmpNtDPCWrapper, pArgs);
         KeSetImportanceDpc(&paExecCpuDpcs[0], HighImportance);
-        KeSetTargetProcessorDpc(&paExecCpuDpcs[0], idCpu);
+        KeSetTargetProcessorDpc(&paExecCpuDpcs[0], (int)idCpu);
     }
     else
     {
@@ -243,32 +248,40 @@ static int rtMpCall(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2, RT_NT
             }
         }
         if (enmCpuid != RT_NT_CPUID_OTHERS)
-        {
             pfnWorker(iSelf, pvUser1, pvUser2);
-        }
     }
 
     KeLowerIrql(oldIrql);
 
     /* Flush all DPCs and wait for completion. (can take long!) */
-    pfnKeFlushQueuedDpcs();
+    /** @todo Consider changing this to an active wait using some atomic inc/dec
+     *  stuff (and check for the current cpu above in the specific case). */
+    g_pfnrtNtKeFlushQueuedDpcs();
 
     ExFreePool(pArgs);
     return VINF_SUCCESS;
 }
+
 
 RTDECL(int) RTMpOnAll(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2)
 {
     return rtMpCall(pfnWorker, pvUser1, pvUser2, RT_NT_CPUID_ALL, 0);
 }
 
+
 RTDECL(int) RTMpOnOthers(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2)
 {
     return rtMpCall(pfnWorker, pvUser1, pvUser2, RT_NT_CPUID_OTHERS, 0);
 }
 
+
 RTDECL(int) RTMpOnSpecific(RTCPUID idCpu, PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2)
 {
+    if (!RTMpIsCpuOnline(idCpu))
+        return !RTMpIsCpuPossible(idCpu)
+              ? VERR_CPU_NOT_FOUND
+              : VERR_CPU_OFFLINE;
+
     return rtMpCall(pfnWorker, pvUser1, pvUser2, RT_NT_CPUID_SPECIFIC, idCpu);
 }
 

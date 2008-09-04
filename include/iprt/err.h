@@ -448,7 +448,7 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_TIMER_ACTIVE                   (-68)
 /** The timer can't be stopped because i's already suspended. */
 #define VERR_TIMER_SUSPENDED                (-69)
-/** The operation was cancelled by the user. */
+/** The operation was cancelled by the user (copy) or another thread (local ipc). */
 #define VERR_CANCELLED                      (-70)
 /** Failed to initialize a memory object.
  * Exactly what this means is OS specific. */
@@ -481,6 +481,8 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_OUT_OF_RESOURCES              (-80)
 /** Generic out of resources warning. */
 #define VWRN_OUT_OF_RESOURCES               80
+/** No more handles available, too many open handles. */
+#define VERR_NO_MORE_HANDLES               (-81)
 /** @} */
 
 
@@ -744,6 +746,8 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_NET_HOST_DOWN                      (-464)
 /** No route to host. */
 #define VERR_NET_HOST_UNREACHABLE               (-465)
+/** Protocol error. */
+#define VERR_NET_PROTOCOL_ERROR                 (-466)
 /** @} */
 
 
@@ -925,6 +929,14 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_GETOPT_REQUIRED_ARGUMENT_MISSING   (-826)
 /** RTGetOpt: command line option has argument with bad format. */
 #define VERR_GETOPT_INVALID_ARGUMENT_FORMAT     (-827)
+/** @} */
+
+/** @name RTCache status codes
+ * @{ */
+/** RTCache: cache is full. */
+#define VERR_CACHE_FULL                         (-850)
+/** RTCache: cache is empty. */
+#define VERR_CACHE_EMPTY                        (-851)
 /** @} */
 
 /* SED-END */

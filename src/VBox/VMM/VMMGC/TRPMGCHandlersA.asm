@@ -1,4 +1,4 @@
-; $Id: TRPMGCHandlersA.asm 29865 2008-04-18 15:16:47Z umoeller $
+; $Id: TRPMGCHandlersA.asm 34950 2008-08-19 07:31:58Z frank $
 ;; @file
 ; TRPM - Guest Context Trap Handlers
 ;
@@ -263,6 +263,10 @@ GenericTrapErrCode:
 
     mov     eax, [esp + 14h + ESPOFF]           ; esp
     mov     [esp + CPUMCTXCORE.esp], eax
+%if GC_ARCH_BITS == 64
+    ; zero out the high dword
+    mov     dword [esp + CPUMCTXCORE.esp + 4], 0
+%endif
     mov     eax, [esp + 18h + ESPOFF]           ; ss
     mov     dword [esp + CPUMCTXCORE.ss], eax
 
@@ -270,6 +274,10 @@ GenericTrapErrCode:
     mov     dword [esp + CPUMCTXCORE.cs], eax
     mov     eax, [esp + 08h + ESPOFF]           ; eip
     mov     [esp + CPUMCTXCORE.eip], eax
+%if GC_ARCH_BITS == 64
+    ; zero out the high dword
+    mov     dword [esp + CPUMCTXCORE.eip + 4], 0
+%endif
     mov     eax, [esp + 10h + ESPOFF]           ; eflags
     mov     [esp + CPUMCTXCORE.eflags], eax
 
@@ -337,6 +345,12 @@ gt_SkipV86Entry:
     mov     dword [eax + TRPM.enmActiveType], TRPM_TRAP
     mov     edx, cr2                       ;; @todo Check how expensive cr2 reads are!
     mov     dword [eax + TRPM.uActiveCR2], edx
+
+%if GC_ARCH_BITS == 64
+    ; zero out the high dword
+    mov     dword [eax + TRPM.uActiveErrorCode + 4], 0
+    mov     dword [eax + TRPM.uActiveCR2 + 4], 0
+%endif
 
     ;
     ; Check if we're in Hypervisor when this happend.
@@ -743,6 +757,10 @@ ti_GenericInterrupt:
 
     mov     eax, [esp + 04h + ESPOFF]           ; eip
     mov     [esp + CPUMCTXCORE.eip], eax
+%if GC_ARCH_BITS == 64
+    ; zero out the high dword
+    mov     dword [esp + CPUMCTXCORE.eip + 4], 0
+%endif
     mov     eax, dword [esp + 08h + ESPOFF]     ; cs
     mov     [esp + CPUMCTXCORE.cs], eax
     mov     eax, [esp + 0ch + ESPOFF]           ; eflags
@@ -750,6 +768,10 @@ ti_GenericInterrupt:
 
     mov     eax, [esp + 10h + ESPOFF]           ; esp
     mov     [esp + CPUMCTXCORE.esp], eax
+%if GC_ARCH_BITS == 64
+    ; zero out the high dword
+    mov     dword [esp + CPUMCTXCORE.esp + 4], 0
+%endif
     mov     eax, dword [esp + 14h + ESPOFF]     ; ss
     mov     [esp + CPUMCTXCORE.ss], eax
 
@@ -807,6 +829,11 @@ ti_SkipV86Entry:
     dec     edx
     mov     [eax + TRPM.uActiveErrorCode], edx
     mov     [eax + TRPM.uActiveCR2], edx
+%if GC_ARCH_BITS == 64
+    ; zero out the high dword
+    mov     dword [eax + TRPM.uActiveErrorCode + 4], 0
+    mov     dword [eax + TRPM.uActiveCR2 + 4], 0
+%endif
 
     ;
     ; Check if we're in Hypervisor when this happend.
@@ -1008,7 +1035,7 @@ BEGINPROC_EXPORTED TRPMGCHandlerTrap08
     mov     ds, eax
     mov     es, eax
 
-    COM_S_PRINT 10,13,'*** Guru Mediation 00000008 - Double Fault! ***',10,13
+    COM_S_PRINT 10,13,'*** Guru Meditation 00000008 - Double Fault! ***',10,13
 
     ;
     ; Disable write protection.
@@ -1037,6 +1064,10 @@ BEGINPROC_EXPORTED TRPMGCHandlerTrap08
 
     mov     eax, [ecx + VBOXTSS.eip]
     mov     [esp + CPUMCTXCORE.eip], eax
+%if GC_ARCH_BITS == 64
+    ; zero out the high dword
+    mov     dword [esp + CPUMCTXCORE.eip + 4], 0
+%endif
     mov     eax, [ecx + VBOXTSS.eflags]
     mov     [esp + CPUMCTXCORE.eflags], eax
 
@@ -1054,6 +1085,10 @@ BEGINPROC_EXPORTED TRPMGCHandlerTrap08
     mov     [esp + CPUMCTXCORE.ss], eax
     mov     eax, [ecx + VBOXTSS.esp]
     mov     [esp + CPUMCTXCORE.esp], eax
+%if GC_ARCH_BITS == 64
+    ; zero out the high dword
+    mov     dword [esp + CPUMCTXCORE.esp + 4], 0
+%endif
     mov     eax, [ecx + VBOXTSS.ecx]
     mov     [esp + CPUMCTXCORE.ecx], eax
     mov     eax, [ecx + VBOXTSS.edx]

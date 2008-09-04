@@ -1,4 +1,4 @@
-/* $Id: PGMAllPhys.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: PGMAllPhys.cpp 35174 2008-08-22 12:15:39Z sandervl $ */
 /** @file
  * PGM - Page Manager and Monitor, Physical Memory Addressing.
  */
@@ -89,7 +89,7 @@ PGMDECL(int) pgmPhysRomWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE p
             DISCPUSTATE Cpu;
             rc = EMInterpretDisasOne(pVM, pRegFrame, &Cpu, &cbOp);
             if (     RT_SUCCESS(rc)
-                &&   Cpu.mode == CPUMODE_32BIT
+                &&   Cpu.mode == CPUMODE_32BIT  /* @todo why does this matter? */
                 &&  !(Cpu.prefix & (PREFIX_REPNE | PREFIX_REP | PREFIX_SEG)))
             {
                 switch (Cpu.opcode)
@@ -97,7 +97,7 @@ PGMDECL(int) pgmPhysRomWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE p
                     /** @todo Find other instructions we can safely skip, possibly
                      * adding this kind of detection to DIS or EM. */
                     case OP_MOV:
-                        pRegFrame->eip += cbOp;
+                        pRegFrame->rip += cbOp;
                         STAM_COUNTER_INC(&pVM->pgm.s.StatGCGuestROMWriteHandled);
                         return VINF_SUCCESS;
                 }
@@ -987,6 +987,8 @@ PGMDECL(int) PGMPhysGCPtr2HCPtrByGstCR3(PVM pVM, RTGCPTR GCPtr, uint64_t cr3, un
     /*
      * PAE or 32-bit?
      */
+    Assert(!CPUMIsGuestInLongMode(pVM));
+
     int rc;
     if (!(fFlags & X86_CR4_PAE))
     {
@@ -999,7 +1001,7 @@ PGMDECL(int) PGMPhysGCPtr2HCPtrByGstCR3(PVM pVM, RTGCPTR GCPtr, uint64_t cr3, un
             {
                 if ((fFlags & X86_CR4_PSE) && Pde.b.u1Size)
                 {   /* (big page) */
-                    rc = PGMPhysGCPhys2HCPtr(pVM, (Pde.u & X86_PDE4M_PG_MASK) | ((RTGCUINTPTR)GCPtr & X86_PAGE_4M_OFFSET_MASK), 1 /* we always stay within one page */, pHCPtr);
+                    rc = PGMPhysGCPhys2HCPtr(pVM, pgmGstGet4MBPhysPage(&pVM->pgm.s, Pde) | ((RTGCUINTPTR)GCPtr & X86_PAGE_4M_OFFSET_MASK), 1 /* we always stay within one page */, pHCPtr);
                 }
                 else
                 {   /* (normal page) */
@@ -1312,7 +1314,7 @@ PGMDECL(void) PGMPhysRead(PVM pVM, RTGCPHYS GCPhys, void *pvBuf, size_t cbRead)
                         default:
 #if 1                   /** @todo r=bird: Can you do this properly please. */
                             /** @todo Try MMIO; quick hack */
-                            if (cbRead <= 4 && IOMMMIORead(pVM, GCPhys, (uint32_t *)pvBuf, cbRead) == VINF_SUCCESS)
+                            if (cbRead <= 8 && IOMMMIORead(pVM, GCPhys, (uint32_t *)pvBuf, cbRead) == VINF_SUCCESS)
                                 goto end;
 #endif
 
@@ -1653,7 +1655,7 @@ PGMDECL(void) PGMPhysWrite(PVM pVM, RTGCPHYS GCPhys, const void *pvBuf, size_t c
                         default:
 #if 1                   /** @todo r=bird: Can you do this properly please. */
                             /** @todo Try MMIO; quick hack */
-                            if (cbWrite <= 4 && IOMMMIOWrite(pVM, GCPhys, *(uint32_t *)pvBuf, cbWrite) == VINF_SUCCESS)
+                            if (cbWrite <= 8 && IOMMMIOWrite(pVM, GCPhys, *(uint32_t *)pvBuf, cbWrite) == VINF_SUCCESS)
                                 goto end;
 #endif
 
@@ -2262,7 +2264,7 @@ PGMDECL(int) PGMPhysInterpretedRead(PVM pVM, PCPUMCTXCORE pCtxCore, void *pvDst,
             switch (rc)
             {
                 case VINF_SUCCESS:
-Log(("PGMPhysInterpretedRead: pvDst=%p pvSrc=%p cb=%d\n", pvDst, (uint8_t *)pvSrc + (GCPtrSrc & PAGE_OFFSET_MASK), cb));
+                    Log(("PGMPhysInterpretedRead: pvDst=%p pvSrc=%p cb=%d\n", pvDst, (uint8_t *)pvSrc + (GCPtrSrc & PAGE_OFFSET_MASK), cb));
                     memcpy(pvDst, (uint8_t *)pvSrc + (GCPtrSrc & PAGE_OFFSET_MASK), cb);
                     break;
                 case VERR_PGM_PHYS_PAGE_RESERVED:
@@ -2298,7 +2300,7 @@ Log(("PGMPhysInterpretedRead: pvDst=%p pvSrc=%p cb=%d\n", pvDst, (uint8_t *)pvSr
         if (VBOX_SUCCESS(rc))
         {
             /** @todo we should check reserved bits ... */
-AssertMsgFailed(("cb=%d cb1=%d cb2=%d GCPtrSrc=%VGv\n", cb, cb1, cb2, GCPtrSrc));
+            AssertMsgFailed(("cb=%d cb1=%d cb2=%d GCPtrSrc=%VGv\n", cb, cb1, cb2, GCPtrSrc));
             void *pvSrc1;
             rc = PGM_GCPHYS_2_PTR(pVM, GCPhys1, &pvSrc1);
             switch (rc)
@@ -2318,10 +2320,10 @@ AssertMsgFailed(("cb=%d cb1=%d cb2=%d GCPtrSrc=%VGv\n", cb, cb1, cb2, GCPtrSrc))
             switch (rc)
             {
                 case VINF_SUCCESS:
-                    memcpy((uint8_t *)pvDst + cb2, pvSrc2, cb2);
+                    memcpy((uint8_t *)pvDst + cb1, pvSrc2, cb2);
                     break;
                 case VERR_PGM_INVALID_GC_PHYSICAL_ADDRESS:
-                    memset((uint8_t *)pvDst + cb2, 0, cb2);
+                    memset((uint8_t *)pvDst + cb1, 0, cb2);
                     break;
                 default:
                     return rc;

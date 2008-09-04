@@ -1,10 +1,10 @@
-/* $Id: magics.h 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: magics.h 35466 2008-08-27 22:21:47Z bird $ */
 /** @file
- * IPRT - Internal Header Defining The Magic Numbers.
+ * IPRT - Internal header defining The Magic Numbers.
  */
 
 /*
- * Copyright (C) 2007 Sun Microsystems, Inc.
+ * Copyright (C) 2007-2008 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -40,14 +40,26 @@
 #define RTDIR_MAGIC                 0x19291112
 /** The value of RTDIR::u32Magic after RTDirClose().  */
 #define RTDIR_MAGIC_DEAD            0x19950829
+/** Magic number for RTHANDLETABLEINT::u32Magic. (Hitomi Kanehara) */
+#define RTHANDLETABLE_MAGIC         0x19830808
 /** Magic number for RTHEAPSIMPLEINTERNAL::u32Magic. (Kyoichi Katayama) */
 #define RTHEAPSIMPLE_MAGIC          0x19590105
 /** The magic value for RTLDRMODINTERNAL::u32Magic. (Alan Moore) */
 #define RTLDRMOD_MAGIC              0x19531118
+/** The magic value for RTLOCALIPCSERVER::u32Magic. (Naoki Yamamoto) */
+#define RTLOCALIPCSERVER_MAGIC      0x19600201
+/** The magic value for RTLOCALIPCSERVER::u32Magic. (Katsuhiro Otomo) */
+#define RTLOCALIPCSESSION_MAGIC     0x19530414
+/** Magic number for RTMEMCACHEINT::u32Magic. (Joseph Weizenbaum) */
+#define RTMEMCACHE_MAGIC            0x19230108
+/** Dead magic number for RTMEMCACHEINT::u32Magic. */
+#define RTMEMCACHE_MAGIC_DEAD       0x20080305
 /** Magic number for heap blocks. (Edgar Allan Poe) */
 #define RTMEMHDR_MAGIC              0x18090119
 /** RTR0MEMOBJ::u32Magic. (Masakazu Katsura) */
 #define RTR0MEMOBJ_MAGIC            0x19611210
+/** RTRANDINT::u32Magic. (Alan Moore) */
+#define RTRANDINT_MAGIC             0x19531118
 /** Magic for the event semaphore structure. (Neil Gaiman) */
 #define RTSEMEVENT_MAGIC            0x19601110
 /** Magic for the multiple release event semaphore structure. (Isaac Asimov) */
@@ -72,7 +84,10 @@
 #define RTTHREADINT_MAGIC_DEAD      0x19360614
 /** Magic number for timer handles. (Jared Mason Diamond) */
 #define RTTIMER_MAGIC               0x19370910
+/** Magic number for timer low resolution handles. (Saki Hiwatari) */
+#define RTTIMERLR_MAGIC             0x19610715
 
 /** @} */
 
 #endif
+

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35651 2008-08-29 14:09:39Z frank $
 ## @file
 # Sub-Makefile for VBoxBFE (a basic frontend which doesn't make use of Main).
 #
@@ -19,21 +19,44 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
+DEPTH    ?= ../../../..
 SUB_DEPTH = ..
+endif
 include $(KBUILD_PATH)/subheader.kmk
 
-PROGRAMS += VBoxBFE
+#
+# Targets.
+#
+ifdef VBOX_WITH_HARDENING
+ ifneq ($(KBUILD_TARGET),darwin) # No hardened VBoxBFE on darwin (.m).
+  PROGRAMS += VBoxBFEHardened
+  DLLS += VBoxBFE
+ endif
+else
+ PROGRAMS += VBoxBFE
+endif
+
+#
+# Hardened VBoxBFE.
+#
+VBoxBFEHardened_TEMPLATE = VBOXR3HARDENEDEXE
+VBoxBFEHardened_SOURCES = VBoxBFEHardened.cpp
+VBoxBFEHardened_NAME = VBoxBFE
+
 
 #
 # VBoxBFE
 #
-VBoxBFE_TEMPLATE = VBOXR3NPEXE
+VBoxBFE_TEMPLATE =
+VBoxBFE_TEMPLATE  := $(if $(VBOX_WITH_HARDENING),VBOXR3NP,VBOXR3NPEXE)
 #ifdef VBOX_WITH_SECURELABEL
 #VBoxBFE_DEFS += VBOX_SECURELABEL
 #endif
 ifdef VBOX_WITH_VRDP
-VBoxBFE_DEFS += VBOX_VRDP
+VBoxBFE_DEFS += VBOX_WITH_VRDP
 endif
 ifneq ($(KBUILD_TARGET).$(VBOX_WITHOUT_COM),win.)
 VBoxBFE_DEFS += VBOXBFE_WITHOUT_COM
@@ -61,7 +84,7 @@ VBoxBFE_SOURCES = \
 	VMControl.cpp
 
 ifdef VBOX_WITH_HGCM
-VBoxBFE_DEFS += VBOX_HGCM
+VBoxBFE_DEFS += VBOX_WITH_HGCM
 VBoxBFE_SOURCES += \
 	HGCM.cpp \
 	HGCMThread.cpp \
@@ -152,7 +175,10 @@ VBoxBFE_SDLConsole.cpp_DEPS = $(PATH_VBoxBFE)/Ico64x01.h
 
 include $(KBUILD_PATH)/subfooter.kmk
 
+ifdef PATH_VBoxBFE
 # Convert the pnm-file to a byte array.
 $(PATH_VBoxBFE)/Ico64x01.h: $(PATH_ROOT)/src/VBox/Frontends/VBoxBFE/ico64x01.pnm $(VBOX_BIN2C) | $(call DIRDEP,$(PATH_VBoxBFE))
 	$(call MSG_TOOL,bin2c,VBoxBFE,$<,$@)
 	$(QUIET)$(VBOX_BIN2C) Ico64x01 $< $@
+endif
+

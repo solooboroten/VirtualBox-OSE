@@ -1,4 +1,4 @@
-/* $Id: PATMA.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: PATMA.h 35791 2008-09-01 13:44:18Z sandervl $ */
 /** @file
  * PATM macros & definitions (identical to PATMA.mac!!)
  */
@@ -79,7 +79,7 @@
 /* PATM stack size (identical in PATMA.mac!!) */
 #define PATM_STACK_SIZE                         (PAGE_SIZE)
 #define PATM_STACK_TOTAL_SIZE                   (2*PATM_STACK_SIZE)
-#define PATM_MAX_STACK                          (PATM_STACK_SIZE/sizeof(RTGCPTR))
+#define PATM_MAX_STACK                          (PATM_STACK_SIZE/sizeof(RTRCPTR))
 
 /* Patch Manager pending actions (in GCSTATE). */
 #define PATM_ACTION_LOOKUP_ADDRESS              1
@@ -132,8 +132,8 @@ typedef struct
     uint32_t     cAddresses;
     struct
     {
-        RTGCPTR      pInstrGC;
-        RTGCUINTPTR  pRelPatchGC; /* relative to patch base */
+        RTRCPTR      pInstrGC;
+        RTRCUINTPTR  pRelPatchGC; /* relative to patch base */
     } Slot[1];
 } PATCHJUMPTABLE, *PPATCHJUMPTABLE;
 

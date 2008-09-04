@@ -1,4 +1,4 @@
-/* $Id: tstRunTestcases.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: tstRunTestcases.cpp 35653 2008-08-29 14:21:03Z bird $ */
 /** @file
  * tstRunTescases - Driver program for running VBox testcase (tst* testcase/tst*).
  */
@@ -49,11 +49,17 @@ static const char  *g_apszExclude[] =
 #if 1 // slow stuff
     "testcase/tstFile",
     "testcase/tstAvl",
+    "testcase/tstSemMutex",
+    "testcase/tstVD",
 #endif
+    "testcase/tstVD-2",
     "testcase/tstFileLock",
     "testcase/tstCritSect",
     "testcase/tstCritSectW32",
     "testcase/tstDeadlock",
+    "testcase/tstDisasm-2",
+    "testcase/tstFileAppendWin-1",
+    "testcase/tstGlobalConfig",
     "testcase/tstLdr-2",
     "testcase/tstLdr-3",
     "testcase/tstLdr",
@@ -69,6 +75,7 @@ static const char  *g_apszExclude[] =
     "./tstAnimate",
     "./tstAPI",
     "./tstHeadless",
+    "./tstHeadless2",
     "./tstMicro",
     "./tstMicroGC",
     "./tstVBoxDbg",
@@ -248,10 +255,24 @@ static void Process(const char *pszFilter, const char *pszDir)
 
 int main(int argc, char **argv)
 {
-    RTR3Init(false, 0);
+    RTR3Init();
 
     if (argc == 1)
     {
+        char szPath[RTPATH_MAX];
+        int rc = RTPathProgram(szPath, sizeof(szPath) - sizeof("/.."));
+        if (RT_FAILURE(rc))
+        {
+            RTPrintf("fatal error: RTPathProgram -> %Rrc\n", rc);
+            return 1;
+        }
+        rc = RTPathSetCurrent(strcat(szPath, "/.."));
+        if (RT_FAILURE(rc))
+        {
+            RTPrintf("fatal error: RTPathSetCurrent -> %Rrc\n", rc);
+            return 1;
+        }
+
         Process("testcase/tst*", "testcase");
         Process("tst*", ".");
     }

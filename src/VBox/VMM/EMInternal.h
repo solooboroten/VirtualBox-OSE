@@ -1,4 +1,4 @@
-/* $Id: EMInternal.h 31169 2008-05-23 11:35:22Z sandervl $ */
+/* $Id: EMInternal.h 34757 2008-08-14 13:46:06Z sandervl $ */
 /** @file
  * EM - Internal header file.
  */
@@ -140,6 +140,8 @@ typedef struct EMSTATS
     STAMCOUNTER             StatHCXAdd;
     STAMCOUNTER             StatGCClts;
     STAMCOUNTER             StatHCClts;
+    STAMCOUNTER             StatGCStosWD;
+    STAMCOUNTER             StatHCStosWD;
     STAMCOUNTER             StatHCRdmsr;
     STAMCOUNTER             StatHCWrmsr;
     STAMCOUNTER             StatGCRdmsr;
@@ -274,6 +276,8 @@ typedef struct EM
     bool                    fTracing;
 #endif
 
+    uint8_t                 u8Padding[GC_ARCH_BITS == 64 ? 6 : 2];
+
     /** Inhibit interrupts for this instruction. Valid only when VM_FF_INHIBIT_INTERRUPTS is set. */
     RTGCUINTPTR             GCPtrInhibitInterrupts;
 
@@ -284,6 +288,9 @@ typedef struct EM
     /** Pointer to the guest CPUM state. (HC Ptr) */
     R3R0PTRTYPE(PCPUMCTX)     pCtx;
 
+#if GC_ARCH_BITS == 64
+    RTGCPTR                   aPadding1;
+#endif
 
     union
     {
@@ -332,9 +339,9 @@ typedef struct EM
     /** More statistics (HC). */
     R3R0PTRTYPE(PEMSTATS)   pStatsHC;
     /** More statistics (GC). */
-    GCPTRTYPE(PEMSTATS)     pStatsGC;
-#if HC_ARCH_BITS != GC_ARCH_BITS && GC_ARCH_BITS == 32
-    RTGCPTR                 padding0;
+    RCPTRTYPE(PEMSTATS)     pStatsGC;
+#if HC_ARCH_BITS == 64
+    RTRCPTR                 padding0;
 #endif
 
     /** Tree for keeping track of cli occurances (debug only). */

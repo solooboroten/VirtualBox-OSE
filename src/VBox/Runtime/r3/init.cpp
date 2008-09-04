@@ -1,4 +1,4 @@
-/* $Id: init.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: init.cpp 35676 2008-08-29 18:02:56Z bird $ */
 /** @file
  * IPRT - Init Ring-3.
  */
@@ -63,12 +63,20 @@
 /*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
-/** Program path.
- * The size is hardcoded, so we'll have to check for overflow when setting it
- * since some hosts might support longer paths.
- * @internal
- */
-char        g_szrtProgramPath[RTPATH_MAX];
+/** The number of calls to RTR3Init. */
+static int32_t volatile g_cUsers = 0;
+/** Whether we're currently initializing the IPRT. */
+static bool volatile    g_fInitializing = false;
+
+/** The process path. 
+ * This is used by RTPathProgram and RTProcGetExecutableName and set by rtProcInitName. */
+char        g_szrtProcExePath[RTPATH_MAX];
+/** The length of g_szrtProcExePath. */
+size_t      g_cchrtProcExePath;
+/** The length of directory path component of g_szrtProcExePath. */
+size_t      g_cchrtProcDir;
+/** The offset of the process name into g_szrtProcExePath. */
+size_t      g_offrtProcName;
 
 /**
  * Program start nanosecond TS.
@@ -96,23 +104,75 @@ RTPROCESS g_ProcessSelf = NIL_RTPROCESS;
 RTPROCPRIORITY g_enmProcessPriority = RTPROCPRIORITY_DEFAULT;
 
 
-/**
- * Initalizes the runtime library.
+
+/** 
+ * Internal worker which initializes or re-initializes the 
+ * program path, name and directory globals.
  *
- * @returns iprt status code.
- *
- * @param   fInitSUPLib     Set if SUPInit() shall be called during init (default).
- *                          Clear if not to call it.
- * @param   cbReserve       The number of bytes of contiguous memory that should be reserved by
- *                          the runtime / support library.
- *                          Set this to 0 if no reservation is required. (default)
- *                          Set this to ~0 if the maximum amount supported by the VM is to be
- *                          attempted reserved, or the maximum available.
- *                          This argument only applies if fInitSUPLib is true and we're in ring-3 HC.
+ * @returns IPRT status code. 
+ * @param   pszProgramPath  The program path, NULL if not specified.
  */
-RTR3DECL(int) RTR3Init(bool fInitSUPLib, size_t cbReserve)
+static int rtR3InitProgramPath(const char *pszProgramPath)
 {
+    /*
+     * We're reserving 32 bytes here for file names as what not.
+     */
+    if (!pszProgramPath)
+    {
+        int rc = rtProcInitExePath(g_szrtProcExePath, sizeof(g_szrtProcExePath) - 32);
+        if (RT_FAILURE(rc))
+            return rc;
+    }
+    else
+    {
+        size_t cch = strlen(pszProgramPath);
+        Assert(cch > 1);
+        AssertMsgReturn(cch < sizeof(g_szrtProcExePath) - 32, ("%zu\n", cch), VERR_BUFFER_OVERFLOW);
+        memcpy(g_szrtProcExePath, pszProgramPath, cch + 1);
+    }
+
+    /*
+     * Parse the name.
+     */
+    ssize_t offName;
+    g_cchrtProcExePath = RTPathParse(g_szrtProcExePath, &g_cchrtProcDir, &offName, NULL);
+    g_offrtProcName = offName;
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Internal initialization worker.
+ *
+ * @returns IPRT status code.
+ * @param   fInitSUPLib     Whether to call SUPR3Init.
+ * @param   pszProgramPath  The program path, NULL if not specified.
+ */
+static int rtR3Init(bool fInitSUPLib, const char *pszProgramPath)
+{
+    int rc = VINF_SUCCESS;
     /* no entry log flow, because prefixes and thread may freak out. */
+
+    /*
+     * Do reference counting, only initialize the first time around.
+     *
+     * We are ASSUMING that nobody will be able to race RTR3Init calls when the
+     * first one, the real init, is running (second assertion).
+     */
+    int32_t cUsers = ASMAtomicIncS32(&g_cUsers);
+    if (cUsers != 1)
+    {
+        AssertMsg(cUsers > 1, ("%d\n", cUsers));
+        Assert(!g_fInitializing);
+#if !defined(IN_GUEST) && !defined(RT_NO_GIP)
+        if (fInitSUPLib)
+            SUPR3Init(NULL);
+#endif
+        if (pszProgramPath)
+            rc = rtR3InitProgramPath(pszProgramPath);
+        return rc;
+    }
+    ASMAtomicWriteBool(&g_fInitializing, true);
 
 #if !defined(IN_GUEST) && !defined(RT_NO_GIP)
 # ifdef VBOX
@@ -137,10 +197,12 @@ RTR3DECL(int) RTR3Init(bool fInitSUPLib, size_t cbReserve)
      * This must be done before everything else or else we'll call into threading
      * without having initialized TLS entries and suchlike.
      */
-    int rc = rtThreadInit();
+    rc = rtThreadInit();
     if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Failed to get executable directory path, rc=%d!\n", rc));
+        AssertMsgFailed(("Failed to initialize threads, rc=%Rrc!\n", rc));
+        ASMAtomicWriteBool(&g_fInitializing, false);
+        ASMAtomicDecS32(&g_cUsers);
         return rc;
     }
 
@@ -151,7 +213,7 @@ RTR3DECL(int) RTR3Init(bool fInitSUPLib, size_t cbReserve)
          * Init GIP first.
          * (The more time for updates before real use, the better.)
          */
-        SUPInit(NULL, cbReserve);
+        SUPR3Init(NULL);
     }
 #endif
 
@@ -161,6 +223,27 @@ RTR3DECL(int) RTR3Init(bool fInitSUPLib, size_t cbReserve)
     g_u64ProgramStartNanoTS = RTTimeNanoTS();
     g_u64ProgramStartMicroTS = g_u64ProgramStartNanoTS / 1000;
     g_u64ProgramStartMilliTS = g_u64ProgramStartNanoTS / 1000000;
+
+    /*
+     * The Process ID.
+     */
+#ifdef _MSC_VER
+    g_ProcessSelf = _getpid(); /* crappy ansi compiler */
+#else
+    g_ProcessSelf = getpid();
+#endif
+
+    /*
+     * The executable path, name and directory.
+     */
+    rc = rtR3InitProgramPath(pszProgramPath);
+    if (RT_FAILURE(rc))
+    {
+        AssertLogRelMsgFailed(("Failed to get executable directory path, rc=%Rrc!\n", rc));
+        ASMAtomicWriteBool(&g_fInitializing, false);
+        ASMAtomicDecS32(&g_cUsers);
+        return rc;
+    }
 
 #if !defined(IN_GUEST) && !defined(RT_NO_GIP)
     /*
@@ -175,34 +258,49 @@ RTR3DECL(int) RTR3Init(bool fInitSUPLib, size_t cbReserve)
 #endif
 
     /*
-     * Get the executable path.
-     *
-     * We're also checking the depth here since we'll be
-     * appending filenames to the executable path. Currently
-     * we assume 16 bytes are what we need.
-     */
-    char szPath[RTPATH_MAX - 16];
-    rc = RTPathProgram(szPath, sizeof(szPath));
-    if (RT_FAILURE(rc))
-    {
-        AssertMsgFailed(("Failed to get executable directory path, rc=%d!\n", rc));
-        return rc;
-    }
-
-    /*
-     * The Process ID.
-     */
-#ifdef _MSC_VER
-    g_ProcessSelf = _getpid(); /* crappy ansi compiler */
-#else
-    g_ProcessSelf = getpid();
-#endif
-
-    /*
-     * More stuff to come.
+     * More stuff to come?
      */
 
     LogFlow(("RTR3Init: returns VINF_SUCCESS\n"));
+    ASMAtomicWriteBool(&g_fInitializing, false);
     return VINF_SUCCESS;
 }
+
+
+RTR3DECL(int) RTR3Init(void)
+{
+    return rtR3Init(false /* fInitSUPLib */, NULL);
+}
+
+
+RTR3DECL(int) RTR3InitEx(uint32_t iVersion, const char *pszProgramPath, bool fInitSUPLib)
+{
+    AssertReturn(iVersion == 0, VERR_NOT_SUPPORTED);
+    return rtR3Init(fInitSUPLib, pszProgramPath);
+}
+
+
+RTR3DECL(int) RTR3InitWithProgramPath(const char *pszProgramPath)
+{
+    return rtR3Init(false /* fInitSUPLib */, pszProgramPath);
+}
+
+
+RTR3DECL(int) RTR3InitAndSUPLib(void)
+{
+    return rtR3Init(true /* fInitSUPLib */, NULL /* pszProgramPath */);
+}
+
+
+RTR3DECL(int) RTR3InitAndSUPLibWithProgramPath(const char *pszProgramPath)
+{
+    return rtR3Init(true /* fInitSUPLib */, pszProgramPath);
+}
+
+
+#if 0 /** @todo implement RTR3Term. */
+RTR3DECL(void) RTR3Term(void)
+{
+}
+#endif
 

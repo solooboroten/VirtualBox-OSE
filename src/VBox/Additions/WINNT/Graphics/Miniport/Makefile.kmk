@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 32647 2008-07-03 03:07:18Z bird $
 ## @file
 # Sub-Makefile for VBoxVideo.
 #
@@ -19,35 +19,44 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../../..
+else
 SUB_DEPTH = ../../..
+DEPTH    ?= ../../../../../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 
-# This has to run on NT4!
+#
+# VBoxVideo
+#
+# Note. This has to run on NT4!
+#       (VBOX_LIB_IPRT_GUEST_R0_NT4 == VBOX_LIB_IPRT_GUEST_R0 on 64-bit)
+#
 SYSMODS += VBoxVideo
-VBoxVideo_TEMPLATE    = VBOXW32GUESTR0
-ifdef VBOX_SIGN_ADDITIONS
+VBoxVideo_TEMPLATE    = VBOXGUESTR0
+ifdef VBOX_SIGN_ADDITIONS # (See the parent makefile.)
  VBoxVideo_NOINST     = true
 endif
-VBoxVideo_SDKS        = W2K3DDKX86 WINPSDKINCS
 VBoxVideo_DEFS        = LOG_TO_BACKDOOR VBOX_WITH_8BPP_MODES
 #VBoxVideo_DEFS        += LOG_ENABLED
 VBoxVideo_INCS        = ../../include
-VBoxVideo_LDFLAGS     = /Entry:DriverEntry@8
+VBoxVideo_LDFLAGS.x86   = /Entry:DriverEntry@8
+VBoxVideo_LDFLAGS.amd64 = /Entry:DriverEntry
 VBoxVideo_SOURCES     = \
 	VBoxVideo.cpp \
 	Helper.cpp \
 	VBoxVideo.def \
 	VBoxVideo.rc
+VBoxVideo_LIBS.x86    = \
+	$(PATH_SDK_W2K3DDK_LIB)/exsup.lib
 VBoxVideo_LIBS        = \
-	$(PATH_SDK_W2K3DDKX86_LIB)/exsup.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/videoprt.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/int64.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/ntoskrnl.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/hal.lib \
-	$(PATH_LIB)/additions/VBoxGuestLib$(VBOXW32GUEST_SUFF_LIB) \
-	$(PATH_LIB)/additions/RuntimeW32NT4GuestR0$(VBOXW32GUEST_SUFF_LIB)
+	$(PATH_SDK_W2K3DDK_LIB)/videoprt.lib \
+	$(PATH_SDK_W2K3DDK_LIB)/ntoskrnl.lib \
+	$(PATH_SDK_W2K3DDK_LIB)/hal.lib \
+	$(VBOX_LIB_VBGL_R0) \
+	$(VBOX_LIB_IPRT_GUEST_R0_NT4)
 
 include	$(KBUILD_PATH)/subfooter.kmk
 

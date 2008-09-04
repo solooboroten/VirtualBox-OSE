@@ -1,5 +1,5 @@
 /** @file
- * IPRT - System.
+ * IPRT - System Information.
  */
 
 /*
@@ -42,18 +42,36 @@ __BEGIN_DECLS
  */
 
 /**
- * Gets the number of logical (not physical) processors in the system.
- *
- * @returns Number of logical processors in the system.
+ * Info level for RTSystemGetOSInfo().
  */
-RTDECL(unsigned) RTSystemProcessorGetCount(void);
+typedef enum RTSYSOSINFO
+{
+    RTSYSOSINFO_INVALID = 0,    /**< The usual invalid entry. */
+    RTSYSOSINFO_PRODUCT,        /**< OS product name. (uname -o) */
+    RTSYSOSINFO_RELEASE,        /**< OS release. (uname -r) */
+    RTSYSOSINFO_VERSION,        /**< OS version, optional. (uname -v) */
+    RTSYSOSINFO_SERVICE_PACK,   /**< Service/fix pack level, optional. */
+    RTSYSOSINFO_END             /**< End of the valid info levels. */
+} RTSYSOSINFO;
+
 
 /**
- * Gets the active logical processor mask.
+ * Queries information about the OS.
  *
- * @returns Active logical processor mask. (bit 0 == logical cpu 0)
+ * @returns IPRT status code.
+ * @retval  VINF_SUCCESS on success.
+ * @retval  VERR_INVALID_PARAMETER if enmInfo is invalid.
+ * @retval  VERR_INVALID_POINTER if pszInfoStr is invalid.
+ * @retval  VERR_BUFFER_OVERFLOW if the buffer is too small. The buffer will
+ *          contain the chopped off result in this case, provided cchInfo isn't 0.
+ * @retval  VERR_NOT_SUPPORTED if the info level isn't implemented. The buffer will
+ *          contain an empty string.
+ *
+ * @param   enmInfo         The OS info level.
+ * @param   pszInfo         Where to store the result.
+ * @param   cchInfo         The size of the output buffer.
  */
-RTDECL(uint64_t) RTSystemProcessorGetActiveMask(void);
+RTDECL(int) RTSystemQueryOSInfo(RTSYSOSINFO enmInfo, char *pszInfo, size_t cchInfo);
 
 
 /** @} */

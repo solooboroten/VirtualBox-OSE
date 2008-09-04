@@ -1627,7 +1627,7 @@ static int AUD_init (PPDMDRVINS pDrvIns, const char *drvname)
 
     rc = pDrvIns->pDrvHlp->pfnTMTimerCreate (pDrvIns, TMCLOCK_VIRTUAL,
                                              audio_timer_helper, "Audio timer", &s->ts);
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
         return rc;
 
     audio_process_options ("AUDIO", audio_options);
@@ -1928,13 +1928,13 @@ static DECLCALLBACK(void *) drvAudioQueryInterface(PPDMIBASE pInterface,
                                                    PDMINTERFACE enmInterface)
 {
     PPDMDRVINS pDrvIns = PDMIBASE_2_PDMDRV(pInterface);
-    PDRVAUDIO  pData = PDMINS2DATA(pDrvIns, PDRVAUDIO);
+    PDRVAUDIO  pThis = PDMINS_2_DATA(pDrvIns, PDRVAUDIO);
     switch (enmInterface)
     {
         case PDMINTERFACE_BASE:
             return &pDrvIns->IBase;
         case PDMINTERFACE_AUDIO_CONNECTOR:
-            return &pData->IAudioConnector;
+            return &pThis->IAudioConnector;
         default:
             return NULL;
     }
@@ -1979,7 +1979,7 @@ static DECLCALLBACK(void) drvAudioDestruct(PPDMDRVINS pDrvIns)
 static DECLCALLBACK(int) drvAudioConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
 {
     int rc;
-    PDRVAUDIO pData = PDMINS2DATA(pDrvIns, PDRVAUDIO);
+    PDRVAUDIO pThis = PDMINS_2_DATA(pDrvIns, PDRVAUDIO);
     char *drvname;
 
     LogFlow(("drvAUDIOConstruct:\n"));
@@ -1992,24 +1992,24 @@ static DECLCALLBACK(int) drvAudioConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHan
     /*
      * Init the static parts.
      */
-    pData->pDrvIns                    = pDrvIns;
+    pThis->pDrvIns                    = pDrvIns;
     /* IBase */
     pDrvIns->IBase.pfnQueryInterface  = drvAudioQueryInterface;
     /* IAudio */
-    /* pData->IAudioConnector.pfn; */
+    /* pThis->IAudioConnector.pfn; */
 
     glob_audio_state.pDrvIns = pDrvIns;
 
     rc = CFGMR3QueryStringAlloc (pCfgHandle, "AudioDriver", &drvname);
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
         return rc;
 
     rc = CFGMR3QueryStringAlloc (pCfgHandle, "StreamName", &audio_streamname);
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
         audio_streamname = NULL;
 
     rc = AUD_init (pDrvIns, drvname);
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
         return rc;
 
     MMR3HeapFree (drvname);

@@ -26,7 +26,7 @@
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
-
+#ifndef VBOX_ONLY_DOCS
 #include <VBox/com/com.h>
 #include <VBox/com/string.h>
 #include <VBox/com/Guid.h>
@@ -41,6 +41,7 @@
 
 #include <vector>
 #include <list>
+#endif /* !VBOX_ONLY_DOCS */
 
 #include <iprt/runtime.h>
 #include <iprt/stream.h>
@@ -60,6 +61,7 @@
 
 #include "VBoxManage.h"
 
+#ifndef VBOX_ONLY_DOCS
 using namespace com;
 
 /* missing XPCOM <-> COM wrappers */
@@ -208,6 +210,7 @@ struct USBFilterCmd
     ComPtr<IMachine> mMachine;
     USBFilter mFilter;
 };
+#endif /* !VBOX_ONLY_DOCS */
 
 // funcs
 ///////////////////////////////////////////////////////////////////////////////
@@ -249,7 +252,7 @@ static void printUsage(USAGECATEGORY u64Cmd)
 #else
     bool fDarwin = false;
 #endif
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     bool fVRDP = true;
 #else
     bool fVRDP = false;
@@ -283,11 +286,9 @@ static void printUsage(USAGECATEGORY u64Cmd)
 
     if (u64Cmd & USAGE_LIST)
     {
-        RTPrintf("VBoxManage list             vms|runningvms|ostypes|hostdvds|hostfloppies|\n");
-        if (fWin)
-            RTPrintf(                         "hostifs|");
-        RTPrintf("                            hdds|dvds|floppies|usbhost|usbfilters|\n"
-                 "                            systemproperties\n"
+        RTPrintf("VBoxManage list             vms|runningvms|ostypes|hostdvds|hostfloppies|\n"
+                 "                            hostifs|hostinfo|hdds|dvds|floppies|\n"
+                 "                            usbhost|usbfilters|systemproperties\n"
                  "\n");
     }
 
@@ -334,6 +335,7 @@ static void printUsage(USAGECATEGORY u64Cmd)
                  "                            [-ioapic on|off]\n"
                  "                            [-pae on|off]\n"
                  "                            [-hwvirtex on|off|default]\n"
+                 "                            [-nestedpaging on|off]\n"
                  "                            [-monitorcount <number>]\n"
                  "                            [-bioslogofadein on|off]\n"
                  "                            [-bioslogofadeout on|off]\n"
@@ -344,6 +346,7 @@ static void printUsage(USAGECATEGORY u64Cmd)
                  "                            [-biospxedebug on|off]\n"
                  "                            [-boot<1-4> none|floppy|dvd|disk|net>]\n"
                  "                            [-hd<a|b|d> none|<uuid>|<filename>]\n"
+                 "                            [-idecontroller PIIX3|PIIX4]\n"
 #ifdef VBOX_WITH_AHCI
                  "                            [-sata on|off]\n"
                  "                            [-sataportcount <1-30>]\n"
@@ -527,8 +530,8 @@ static void printUsage(USAGECATEGORY u64Cmd)
 
     if (u64Cmd & USAGE_CONVERTDD)
     {
-        RTPrintf("VBoxManage convertdd        <filename> <outputfile>\n"
-                 "VBoxManage convertdd        stdin <outputfile> <bytes>\n"
+        RTPrintf("VBoxManage convertdd        [-static] <filename> <outputfile>\n"
+                 "VBoxManage convertdd        [-static] stdin <outputfile> <bytes>\n"
                  "\n");
     }
 
@@ -647,6 +650,29 @@ static void printUsage(USAGECATEGORY u64Cmd)
                  "                            [-pattern <pattern>] [-descriptions]\n"
                  "\n");
     }
+
+#ifdef VBOX_WITH_GUEST_PROPS
+    if (u64Cmd & USAGE_GUESTPROPERTY)
+        usageGuestProperty();
+#endif /* VBOX_WITH_GUEST_PROPS defined */
+
+    if (u64Cmd & USAGE_METRICS)
+    {
+        RTPrintf("VBoxManage metrics          list [*|host|<vmname> [<metric_list>]] (comma-separated)\n\n"
+                 "VBoxManage metrics          setup\n"
+                 "                            [-period <seconds>]\n"
+                 "                            [-samples <count>]\n"
+                 "                            [*|host|<vmname> [<metric_list>]]\n\n"
+                 "VBoxManage metrics          query [*|host|<vmname> [<metric_list>]]\n\n"
+                 "VBoxManage metrics          collect\n"
+                 "                            [-period <seconds>]\n"
+                 "                            [-samples <count>]\n"
+                 "                            [-list]\n"
+                 "                            [-detach]\n"
+                 "                            [*|host|<vmname> [<metric_list>]]\n"
+                 "\n");
+    }
+
 }
 
 /**
@@ -656,10 +682,12 @@ int errorSyntax(USAGECATEGORY u64Cmd, const char *pszFormat, ...)
 {
     va_list args;
     showLogo(); // show logo even if suppressed
+#ifndef VBOX_ONLY_DOCS
     if (g_fInternalMode)
         printUsageInternal(u64Cmd);
     else
         printUsage(u64Cmd);
+#endif /* !VBOX_ONLY_DOCS */
     va_start(args, pszFormat);
     RTPrintf("\n"
              "Syntax error: %N\n", pszFormat, &args);
@@ -679,6 +707,7 @@ int errorArgument(const char *pszFormat, ...)
     return 1;
 }
 
+#ifndef VBOX_ONLY_DOCS
 /**
  * Print out progress on the console
  */
@@ -963,6 +992,12 @@ static HRESULT showVMInfo (ComPtr <IVirtualBox> virtualBox, ComPtr<IMachine> mac
         else
             RTPrintf("Hardw. virt.ext: %s\n", hwVirtExEnabled == TSBool_True ? "on" : "off");
     }
+    BOOL HWVirtExNestedPagingEnabled;
+    machine->COMGETTER(HWVirtExNestedPagingEnabled)(&HWVirtExNestedPagingEnabled);
+    if (details == VMINFO_MACHINEREADABLE)
+        RTPrintf("nestedpaging=\"%s\"\n", HWVirtExNestedPagingEnabled ? "on" : "off");
+    else
+        RTPrintf("Nested Paging:   %s\n", HWVirtExNestedPagingEnabled ? "on" : "off");
 
     MachineState_T machineState;
     const char *pszState = NULL;
@@ -1008,7 +1043,7 @@ static HRESULT showVMInfo (ComPtr <IVirtualBox> virtualBox, ComPtr<IMachine> mac
     RTTIMESPEC timeSpec;
     RTTimeSpecSetMilli(&timeSpec, stateSince);
     char pszTime[30] = {0};
-    RTTimeSpecToString(&timeSpec, pszTime, 30);
+    RTTimeSpecToString(&timeSpec, pszTime, sizeof(pszTime));
     if (details == VMINFO_MACHINEREADABLE)
     {
         RTPrintf("VMState=\"%s\"\n", pszState);
@@ -2649,7 +2684,6 @@ static int handleList(int argc, char *argv[],
             }
         }
     }
-#ifdef RT_OS_WINDOWS
     else
     if (strcmp(argv[0], "hostifs") == 0)
     {
@@ -2671,11 +2705,65 @@ static int handleList(int argc, char *argv[],
                 RTPrintf("Name:        %lS\n", interfaceName.raw());
                 Guid interfaceGuid;
                 networkInterface->COMGETTER(Id)(interfaceGuid.asOutParam());
-                RTPrintf("GUID:        %lS\n\n", Bstr(interfaceGuid.toString()));
+                RTPrintf("GUID:        %lS\n\n", Bstr(interfaceGuid.toString()).raw());
             }
         }
     }
-#endif /* RT_OS_WINDOWS */
+    else
+    if (strcmp(argv[0], "hostinfo") == 0)
+    {
+        ComPtr<IHost> Host;
+        CHECK_ERROR (virtualBox, COMGETTER(Host)(Host.asOutParam()));
+
+        RTPrintf("Host Information:\n\n");
+
+        LONG64 uTCTime = 0;
+        CHECK_ERROR (Host, COMGETTER(UTCTime)(&uTCTime));
+        RTTIMESPEC timeSpec;
+        RTTimeSpecSetMilli(&timeSpec, uTCTime);
+        char pszTime[30] = {0};
+        RTTimeSpecToString(&timeSpec, pszTime, sizeof(pszTime));
+        RTPrintf("Host time: %s\n", pszTime);
+
+        ULONG processorOnlineCount = 0;
+        CHECK_ERROR (Host, COMGETTER(ProcessorOnlineCount)(&processorOnlineCount));
+        RTPrintf("Processor online count: %lu\n", processorOnlineCount);
+        ULONG processorCount = 0;
+        CHECK_ERROR (Host, COMGETTER(ProcessorCount)(&processorCount));
+        RTPrintf("Processor count: %lu\n", processorCount);
+        ULONG processorSpeed = 0;
+        Bstr processorDescription;
+        for (ULONG i = 0; i < processorCount; i++)
+        {
+            CHECK_ERROR (Host, GetProcessorSpeed(i, &processorSpeed));
+            if (processorSpeed)
+                RTPrintf("Processor#%u speed: %lu MHz\n", i, processorSpeed);
+            else
+                RTPrintf("Processor#%u speed: unknown\n", i, processorSpeed);
+    #if 0 /* not yet implemented in Main */
+            CHECK_ERROR (Host, GetProcessorDescription(i, processorDescription.asOutParam()));
+            RTPrintf("Processor#%u description: %lS\n", i, processorDescription.raw());
+    #endif
+        }
+
+    #if 0 /* not yet implemented in Main */
+        ULONG memorySize = 0;
+        CHECK_ERROR (Host, COMGETTER(MemorySize)(&memorySize));
+        RTPrintf("Memory size: %lu MByte\n", memorySize);
+
+        ULONG memoryAvailable = 0;
+        CHECK_ERROR (Host, COMGETTER(MemoryAvailable)(&memoryAvailable));
+        RTPrintf("Memory available: %lu MByte\n", memoryAvailable);
+
+        Bstr operatingSystem;
+        CHECK_ERROR (Host, COMGETTER(OperatingSystem)(operatingSystem.asOutParam()));
+        RTPrintf("Operating system: %lS\n", operatingSystem.raw());
+
+        Bstr oSVersion;
+        CHECK_ERROR (Host, COMGETTER(OSVersion)(oSVersion.asOutParam()));
+        RTPrintf("Operating system version: %lS\n", oSVersion.raw());
+    #endif
+    }
     else
     if (strcmp(argv[0], "hdds") == 0)
     {
@@ -3334,17 +3422,25 @@ static int handleCloneVDI(int argc, char *argv[],
 
 static int handleConvertDDImage(int argc, char *argv[])
 {
-#ifdef RT_OS_LINUX
-    const bool fReadFromStdIn = (argc >= 1) && !strcmp(argv[0], "stdin");
+    int arg = 0;
+    VDIIMAGETYPE enmImgType = VDI_IMAGE_TYPE_NORMAL;
+    if (argc >= 1 && !strcmp(argv[arg], "-static"))
+    {
+        arg++;
+        enmImgType = VDI_IMAGE_TYPE_FIXED;
+    }
+
+#if defined(RT_OS_LINUX) || defined(RT_OS_DARWIN) || defined(RT_OS_SOLARIS)
+    const bool fReadFromStdIn = (argc >= arg + 1) && !strcmp(argv[arg], "stdin");
 #else
     const bool fReadFromStdIn = false;
 #endif
 
-    if ((!fReadFromStdIn && argc != 2) || (fReadFromStdIn && argc != 3))
+    if ((!fReadFromStdIn && argc != arg + 2) || (fReadFromStdIn && argc != arg + 3))
         return errorSyntax(USAGE_CONVERTDD, "Incorrect number of parameters");
 
     RTPrintf("Converting VDI: from DD image file=\"%s\" to file=\"%s\"...\n",
-             argv[0], argv[1]);
+             argv[arg], argv[arg + 1]);
 
     /* open raw image file. */
     RTFILE File;
@@ -3352,32 +3448,32 @@ static int handleConvertDDImage(int argc, char *argv[])
     if (fReadFromStdIn)
         File = 0;
     else
-        rc = RTFileOpen(&File, argv[0], RTFILE_O_OPEN | RTFILE_O_READ | RTFILE_O_DENY_WRITE);
+        rc = RTFileOpen(&File, argv[arg], RTFILE_O_OPEN | RTFILE_O_READ | RTFILE_O_DENY_WRITE);
     if (VBOX_FAILURE(rc))
     {
-        RTPrintf("File=\"%s\" open error: %Rrf\n", argv[0], rc);
+        RTPrintf("File=\"%s\" open error: %Rrf\n", argv[arg], rc);
         return rc;
     }
 
     uint64_t cbFile;
     /* get image size. */
     if (fReadFromStdIn)
-        cbFile = RTStrToUInt64(argv[2]);
+        cbFile = RTStrToUInt64(argv[arg + 2]);
     else
         rc = RTFileGetSize(File, &cbFile);
     if (VBOX_SUCCESS(rc))
     {
-        RTPrintf("Creating fixed image with size %RU64 bytes (%RU64MB)...\n", cbFile, (cbFile + _1M - 1) / _1M);
+        RTPrintf("Creating %s image with size %RU64 bytes (%RU64MB)...\n", (enmImgType == VDI_IMAGE_TYPE_FIXED) ? "fixed" : "dynamic", cbFile, (cbFile + _1M - 1) / _1M);
         char pszComment[256];
-        RTStrPrintf(pszComment, sizeof(pszComment), "Converted image from %s", argv[0]);
-        rc = VDICreateBaseImage(argv[1],
-                                VDI_IMAGE_TYPE_FIXED,
+        RTStrPrintf(pszComment, sizeof(pszComment), "Converted image from %s", argv[arg]);
+        rc = VDICreateBaseImage(argv[arg + 1],
+                                enmImgType,
                                 cbFile,
                                 pszComment, NULL, NULL);
         if (VBOX_SUCCESS(rc))
         {
             PVDIDISK pVdi = VDIDiskCreate();
-            rc = VDIDiskOpenImage(pVdi, argv[1], VDI_OPEN_FLAGS_NORMAL);
+            rc = VDIDiskOpenImage(pVdi, argv[arg + 1], VDI_OPEN_FLAGS_NORMAL);
             if (VBOX_SUCCESS(rc))
             {
                 /* alloc work buffer. */
@@ -3412,7 +3508,7 @@ static int handleConvertDDImage(int argc, char *argv[])
             {
                 /* delete image on error */
                 RTPrintf("Failed (%Vrc)!\n", rc);
-                VDIDeleteImage(argv[1]);
+                VDIDeleteImage(argv[arg + 1]);
             }
         }
         else
@@ -3670,6 +3766,7 @@ static int handleModifyVM(int argc, char *argv[],
     ULONG vramSize = 0;
     char *acpi = NULL;
     char *hwvirtex = NULL;
+    char *nestedpaging = NULL;
     char *pae = NULL;
     char *ioapic = NULL;
     int monitorcount = -1;
@@ -3685,11 +3782,12 @@ static int handleModifyVM(int argc, char *argv[],
     char *hdds[34] = {0};
     char *dvd = NULL;
     char *dvdpassthrough = NULL;
+    char *idecontroller = NULL;
     char *floppy = NULL;
     char *audio = NULL;
     char *audiocontroller = NULL;
     char *clipboard = NULL;
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     char *vrdp = NULL;
     uint16_t vrdpport = UINT16_MAX;
     char *vrdpaddress = NULL;
@@ -3793,6 +3891,13 @@ static int handleModifyVM(int argc, char *argv[],
                 return errorArgument("Missing argument to '%s'", argv[i]);
             i++;
             hwvirtex = argv[i];
+        }
+        else if (strcmp(argv[i], "-nestedpaging") == 0)
+        {
+            if (argc <= i + 1)
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            i++;
+            nestedpaging = argv[i];
         }
         else if (strcmp(argv[i], "-pae") == 0)
         {
@@ -3926,6 +4031,13 @@ static int handleModifyVM(int argc, char *argv[],
                 return errorArgument("Missing argument to '%s'", argv[i]);
             i++;
             dvdpassthrough = argv[i];
+        }
+        else if (strcmp(argv[i], "-idecontroller") == 0)
+        {
+            if (argc <= i + 1)
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            i++;
+            idecontroller = argv[i];
         }
         else if (strcmp(argv[i], "-floppy") == 0)
         {
@@ -4095,7 +4207,7 @@ static int handleModifyVM(int argc, char *argv[],
             macs[n - 1] = argv[i + 1];
             i++;
         }
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
         else if (strcmp(argv[i], "-vrdp") == 0)
         {
             if (argc <= i + 1)
@@ -4134,7 +4246,7 @@ static int handleModifyVM(int argc, char *argv[],
             i++;
             vrdpmulticon = argv[i];
         }
-#endif /* VBOX_VRDP */
+#endif /* VBOX_WITH_VRDP */
         else if (strcmp(argv[i], "-usb") == 0)
         {
             if (argc <= i + 1)
@@ -4409,6 +4521,23 @@ static int handleModifyVM(int argc, char *argv[],
             else
             {
                 errorArgument("Invalid -hwvirtex argument '%s'", hwvirtex);
+                rc = E_FAIL;
+                break;
+            }
+        }
+        if (nestedpaging)
+        {
+            if (strcmp(nestedpaging, "on") == 0)
+            {
+                CHECK_ERROR(machine, COMSETTER(HWVirtExNestedPagingEnabled)(true));
+            }
+            else if (strcmp(nestedpaging, "off") == 0)
+            {
+                CHECK_ERROR(machine, COMSETTER(HWVirtExNestedPagingEnabled)(false));
+            }
+            else
+            {
+                errorArgument("Invalid -nestedpaging argument '%s'", ioapic);
                 rc = E_FAIL;
                 break;
             }
@@ -4735,6 +4864,23 @@ static int handleModifyVM(int argc, char *argv[],
             ASSERT(dvdDrive);
 
             CHECK_ERROR(dvdDrive, COMSETTER(Passthrough)(strcmp(dvdpassthrough, "on") == 0));
+        }
+        if (idecontroller)
+        {
+            if (RTStrICmp(idecontroller, "PIIX3") == 0)
+            {
+                CHECK_ERROR(biosSettings, COMSETTER(IDEControllerType)(IDEControllerType_PIIX3));
+            }
+            else if (RTStrICmp(idecontroller, "PIIX4") == 0)
+            {
+                CHECK_ERROR(biosSettings, COMSETTER(IDEControllerType)(IDEControllerType_PIIX4));
+            }
+            else
+            {
+                errorArgument("Invalid -idecontroller argument '%s'", idecontroller);
+                rc = E_FAIL;
+                break;
+            }
         }
         if (floppy)
         {
@@ -5186,7 +5332,7 @@ static int handleModifyVM(int argc, char *argv[],
         if (FAILED(rc))
             break;
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
         if (vrdp || (vrdpport != UINT16_MAX) || vrdpaddress || vrdpauthtype || vrdpmulticon)
         {
             ComPtr<IVRDPServer> vrdpServer;
@@ -5259,7 +5405,7 @@ static int handleModifyVM(int argc, char *argv[],
                 }
             }
         }
-#endif /* VBOX_VRDP */
+#endif /* VBOX_WITH_VRDP */
 
         /*
          * USB enable/disable
@@ -7261,6 +7407,9 @@ static int handleSharedFolder (int argc, char *argv[],
                 return errorSyntax(USAGE_SHAREDFOLDER_ADD, "Invalid parameter '%s'", Utf8Str(argv[i]).raw());
         }
 
+        if (NULL != strstr(name, " "))
+            return errorSyntax(USAGE_SHAREDFOLDER_ADD, "No spaces allowed in parameter '-name'!");
+
         /* required arguments */
         if (!name || !hostpath)
         {
@@ -7452,6 +7601,509 @@ static int handleVMStatistics(int argc, char *argv[],
     return SUCCEEDED(rc) ? 0 : 1;
 }
 
+static char *toBaseMetricNames(const char *metricList)
+{
+    char *newList = (char*)RTMemAlloc(strlen(metricList) + 1);
+    int cSlashes = 0;
+    bool fSkip = false;
+    const char *src = metricList;
+    char c, *dst = newList;
+    while ((c = *src++))
+        if (c == ':')
+            fSkip = true;
+        else if (c == '/' && ++cSlashes == 2)
+            fSkip = true;
+        else if (c == ',')
+        {
+            fSkip = false;
+            cSlashes = 0;
+            *dst++ = c;
+        }
+        else
+            if (!fSkip)
+                *dst++ = c;
+    *dst = 0;
+    return newList;
+}
+
+static int parseFilterParameters(int argc, char *argv[],
+                                 ComPtr<IVirtualBox> aVirtualBox,
+                                 ComSafeArrayOut(BSTR, outMetrics),
+                                 ComSafeArrayOut(BSTR, outBaseMetrics),
+                                 ComSafeArrayOut(IUnknown *, outObjects))
+{
+    HRESULT rc = S_OK;
+    com::SafeArray<BSTR> retMetrics(1);
+    com::SafeArray<BSTR> retBaseMetrics(1);
+    com::SafeIfaceArray <IUnknown> retObjects;
+
+    Bstr metricNames, baseNames;
+
+    /* Metric list */
+    if (argc > 1)
+    {
+        metricNames = argv[1];
+        char *tmp   = toBaseMetricNames(argv[1]);
+        if (!tmp)
+            return VERR_NO_MEMORY;
+        baseNames   = tmp;
+        RTMemFree(tmp);
+    }
+    else
+    {
+        metricNames = L"*";
+        baseNames = L"*";
+    }
+    metricNames.cloneTo(&retMetrics[0]);
+    baseNames.cloneTo(&retBaseMetrics[0]);
+
+    /* Object name */
+    if (argc > 0 && strcmp(argv[0], "*"))
+    {
+        if (!strcmp(argv[0], "host"))
+        {
+            ComPtr<IHost> host;
+            CHECK_ERROR(aVirtualBox, COMGETTER(Host)(host.asOutParam()));
+            retObjects.reset(1);
+            host.queryInterfaceTo(&retObjects[0]);
+        }
+        else
+        {
+            ComPtr <IMachine> machine;
+            rc = aVirtualBox->FindMachine(Bstr(argv[0]), machine.asOutParam());
+            if (SUCCEEDED (rc))
+            {
+                retObjects.reset(1);
+                machine.queryInterfaceTo(&retObjects[0]);
+            }
+            else
+            {
+                errorArgument("Invalid machine name: '%s'", argv[0]);
+                return rc;
+            }
+        }
+
+    }
+
+    retMetrics.detachTo(ComSafeArrayOutArg(outMetrics));
+    retBaseMetrics.detachTo(ComSafeArrayOutArg(outBaseMetrics));
+    retObjects.detachTo(ComSafeArrayOutArg(outObjects));
+
+    return rc;
+}
+
+static Bstr getObjectName(ComPtr<IVirtualBox> aVirtualBox,
+                                  ComPtr<IUnknown> aObject)
+{
+    HRESULT rc;
+
+    ComPtr<IHost> host = aObject;
+    if (!host.isNull())
+        return Bstr("host");
+
+    ComPtr<IMachine> machine = aObject;
+    if (!machine.isNull())
+    {
+        Bstr name;
+        CHECK_ERROR(machine, COMGETTER(Name)(name.asOutParam()));
+        if (SUCCEEDED(rc))
+            return name;
+    }
+    return Bstr("unknown");
+}
+
+static int countMatchingMetrics(ComPtr<IVirtualBox> aVirtualBox,
+                                ComPtr<IPerformanceCollector> performanceCollector,
+                                ComSafeArrayIn(INPTR BSTR, metrics),
+                                ComSafeArrayIn(IUnknown *, objects),
+                                bool listMatches)
+{
+    HRESULT rc;
+    com::SafeIfaceArray<IPerformanceMetric> metricInfo;
+
+    CHECK_ERROR(performanceCollector,
+        GetMetrics(ComSafeArrayInArg(metrics),
+                   ComSafeArrayInArg(objects),
+                   ComSafeArrayAsOutParam(metricInfo)));
+
+    if (metricInfo.size())
+    {
+        if (listMatches)
+        {
+            ComPtr<IUnknown> object;
+            Bstr metricName;
+            RTPrintf("The following metrics will be collected:\n\n"
+                     "Object     Metric\n"
+                     "---------- --------------------\n");
+            for (size_t i = 0; i < metricInfo.size(); i++)
+            {
+                CHECK_ERROR(metricInfo[i], COMGETTER(Object)(object.asOutParam()));
+                CHECK_ERROR(metricInfo[i], COMGETTER(MetricName)(metricName.asOutParam()));
+                RTPrintf("%-10ls %-20ls\n",
+                    getObjectName(aVirtualBox, object).raw(), metricName.raw());
+            }
+            RTPrintf("\n");
+        }
+    }
+    else
+    {
+        RTPrintf("No metrics match the specified filter!\n");
+    }
+    return metricInfo.size();
+}
+
+/*********************************************************************
+* list                                                               *
+*********************************************************************/
+static int handleMetricsList(int argc, char *argv[],
+                             ComPtr<IVirtualBox> aVirtualBox,
+                             ComPtr<IPerformanceCollector> performanceCollector)
+{
+    HRESULT rc;
+    com::SafeArray<BSTR>          metrics;
+    com::SafeArray<BSTR>          baseMetrics;
+    com::SafeIfaceArray<IUnknown> objects;
+
+    rc = parseFilterParameters(argc - 1, &argv[1], aVirtualBox,
+                               ComSafeArrayAsOutParam(metrics),
+                               ComSafeArrayAsOutParam(baseMetrics),
+                               ComSafeArrayAsOutParam(objects));
+    if (FAILED(rc))
+        return 1;
+
+    com::SafeIfaceArray<IPerformanceMetric> metricInfo;
+
+    CHECK_ERROR(performanceCollector,
+        GetMetrics(ComSafeArrayAsInParam(metrics),
+                   ComSafeArrayAsInParam(objects),
+                   ComSafeArrayAsOutParam(metricInfo)));
+
+    ComPtr<IUnknown> object;
+    Bstr metricName, unit, description;
+    ULONG period, count;
+    LONG minimum, maximum;
+    RTPrintf(
+"Object     Metric               Unit Minimum    Maximum    Period     Count      Description\n"
+"---------- -------------------- ---- ---------- ---------- ---------- ---------- -----------\n");
+    for (size_t i = 0; i < metricInfo.size(); i++)
+    {
+        CHECK_ERROR(metricInfo[i], COMGETTER(Object)(object.asOutParam()));
+        CHECK_ERROR(metricInfo[i], COMGETTER(MetricName)(metricName.asOutParam()));
+        CHECK_ERROR(metricInfo[i], COMGETTER(Period)(&period));
+        CHECK_ERROR(metricInfo[i], COMGETTER(Count)(&count));
+        CHECK_ERROR(metricInfo[i], COMGETTER(MinimumValue)(&minimum));
+        CHECK_ERROR(metricInfo[i], COMGETTER(MaximumValue)(&maximum));
+        CHECK_ERROR(metricInfo[i], COMGETTER(Unit)(unit.asOutParam()));
+        CHECK_ERROR(metricInfo[i], COMGETTER(Description)(description.asOutParam()));
+        RTPrintf("%-10ls %-20ls %-4ls %10d %10d %10u %10u %ls\n",
+            getObjectName(aVirtualBox, object).raw(), metricName.raw(), unit.raw(),
+            minimum, maximum, period, count, description.raw());
+    }
+    
+    return 0;
+}
+
+/*********************************************************************
+* setup                                                              *
+*********************************************************************/
+static int handleMetricsSetup(int argc, char *argv[],
+                              ComPtr<IVirtualBox> aVirtualBox,
+                              ComPtr<IPerformanceCollector> performanceCollector)
+{
+    HRESULT rc;
+    com::SafeArray<BSTR>          metrics;
+    com::SafeArray<BSTR>          baseMetrics;
+    com::SafeIfaceArray<IUnknown> objects;
+    ULONG period = 1, samples = 1;
+    bool listMatches = false;
+    int i;
+
+    for (i = 1; i < argc; i++)
+    {
+        if (strcmp(argv[i], "-period") == 0)
+        {
+            if (argc <= i + 1)
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            char *endptr = NULL;
+            period = strtoul (argv[++i], &endptr, 10);
+            if (!endptr || *endptr || !period)
+                return errorArgument("Invalid value for 'period' parameter: '%s'", argv[i]);
+        }
+        else if (strcmp(argv[i], "-samples") == 0)
+        {
+            if (argc <= i + 1)
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            char *endptr = NULL;
+            samples = strtoul (argv[++i], &endptr, 10);
+            if (!endptr || *endptr)
+                return errorArgument("Invalid value for 'samples' parameter: '%s'", argv[i]);
+        }
+        else
+            break; /* The rest of params should define the filter */
+        /*else if (strcmp(argv[i], "-list") == 0)
+            listMatches = true;*/
+    }
+    
+    rc = parseFilterParameters(argc - i, &argv[i], aVirtualBox,
+                               ComSafeArrayAsOutParam(metrics),
+                               ComSafeArrayAsOutParam(baseMetrics),
+                               ComSafeArrayAsOutParam(objects));
+    if (FAILED(rc))
+        return 1;
+
+/*    if (countMatchingMetrics(aVirtualBox, performanceCollector,
+                             ComSafeArrayAsInParam(metrics),
+                             ComSafeArrayAsInParam(objects),
+                             listMatches) == 0)
+        return 1;*/
+        
+    CHECK_ERROR(performanceCollector,
+        SetupMetrics(ComSafeArrayAsInParam(metrics),
+                     ComSafeArrayAsInParam(objects), period, samples));
+
+    return 0;
+}
+
+/*********************************************************************
+* query                                                              *
+*********************************************************************/
+static int handleMetricsQuery(int argc, char *argv[],
+                              ComPtr<IVirtualBox> aVirtualBox,
+                              ComPtr<IPerformanceCollector> performanceCollector)
+{
+    HRESULT rc;
+    com::SafeArray<BSTR>          metrics;
+    com::SafeArray<BSTR>          baseMetrics;
+    com::SafeIfaceArray<IUnknown> objects;
+
+    rc = parseFilterParameters(argc - 1, &argv[1], aVirtualBox,
+                               ComSafeArrayAsOutParam(metrics),
+                               ComSafeArrayAsOutParam(baseMetrics),
+                               ComSafeArrayAsOutParam(objects));
+    if (FAILED(rc))
+        return 1;
+
+    com::SafeArray<BSTR>          retNames;
+    com::SafeIfaceArray<IUnknown> retObjects;
+    com::SafeArray<ULONG>         retIndices;
+    com::SafeArray<ULONG>         retLengths;
+    com::SafeArray<LONG>          retData;
+    CHECK_ERROR (performanceCollector, QueryMetricsData(ComSafeArrayAsInParam(metrics),
+                                             ComSafeArrayAsInParam(objects),
+                                             ComSafeArrayAsOutParam(retNames),
+                                             ComSafeArrayAsOutParam(retObjects),
+                                             ComSafeArrayAsOutParam(retIndices),
+                                             ComSafeArrayAsOutParam(retLengths),
+                                             ComSafeArrayAsOutParam(retData)) );
+
+    RTPrintf("Object     Metric               Values\n"
+             "---------- -------------------- --------------------------------------------\n");
+    for (unsigned i = 0; i < retNames.size(); i++)
+    {
+        // Get info for the metric
+        com::SafeArray<BSTR> nameOfMetric(1);
+        Bstr tmpName(retNames[i]);
+        tmpName.detachTo (&nameOfMetric[0]);
+        com::SafeIfaceArray<IUnknown> anObject(1);
+        ComPtr<IUnknown> tmpObject(retObjects[i]);
+        tmpObject.queryInterfaceTo(&anObject[0]);
+        com::SafeIfaceArray <IPerformanceMetric> metricInfo;
+        CHECK_RC_BREAK (performanceCollector->GetMetrics( ComSafeArrayAsInParam(nameOfMetric),
+                                               ComSafeArrayAsInParam(anObject),
+                                               ComSafeArrayAsOutParam(metricInfo) ));
+        BSTR metricUnitBSTR;
+        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(Unit) (&metricUnitBSTR));
+        Bstr metricUnit(metricUnitBSTR);
+        Bstr metricName(retNames[i]);
+        LONG minVal, maxVal;
+        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MinimumValue) (&minVal));
+        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MaximumValue) (&maxVal));
+        RTPrintf("%-10ls %-20ls ", getObjectName(aVirtualBox, retObjects[i]).raw(), metricName.raw());
+        const char *separator = "";
+        for (unsigned j = 0; j < retLengths[i]; j++)
+        {
+            if (strcmp((const char *)metricUnit.raw(), "%"))
+                RTPrintf("%s%d %ls", separator, retData[retIndices[i] + j], metricUnit.raw());
+            else
+                RTPrintf("%s%d.%02d%%", separator, retData[retIndices[i] + j] / 1000, retData[retIndices[i] + j] % 100);
+            separator = ", ";
+        }
+        RTPrintf("\n");
+    }
+    
+    return 0;
+}
+
+static void getTimestamp(char *pts, size_t tsSize)
+{
+    *pts = 0;
+    AssertReturnVoid(tsSize >= 13); /* 3+3+3+3+1 */
+    RTTIMESPEC TimeSpec;
+    RTTIME Time;
+    RTTimeExplode(&Time, RTTimeNow(&TimeSpec));
+    pts += RTStrFormatNumber(pts, Time.u8Hour, 10, 2, 0, RTSTR_F_ZEROPAD);
+    *pts++ = ':';
+    pts += RTStrFormatNumber(pts, Time.u8Minute, 10, 2, 0, RTSTR_F_ZEROPAD);
+    *pts++ = ':';
+    pts += RTStrFormatNumber(pts, Time.u8Second, 10, 2, 0, RTSTR_F_ZEROPAD);
+    *pts++ = '.';
+    pts += RTStrFormatNumber(pts, Time.u32Nanosecond / 1000000, 10, 3, 0, RTSTR_F_ZEROPAD);
+    *pts = 0;
+}    
+
+/*********************************************************************
+* collect                                                            *
+*********************************************************************/
+static int handleMetricsCollect(int argc, char *argv[],
+                                ComPtr<IVirtualBox> aVirtualBox,
+                                ComPtr<IPerformanceCollector> performanceCollector)
+{
+    HRESULT rc;
+    com::SafeArray<BSTR>          metrics;
+    com::SafeArray<BSTR>          baseMetrics;
+    com::SafeIfaceArray<IUnknown> objects;
+    ULONG period = 1, samples = 1;
+    bool isDetached = false, listMatches = false;
+    int i;
+    for (i = 1; i < argc; i++)
+    {
+        if (strcmp(argv[i], "-period") == 0)
+        {
+            if (argc <= i + 1)
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            char *endptr = NULL;
+            period = strtoul (argv[++i], &endptr, 10);
+            if (!endptr || *endptr || !period)
+                return errorArgument("Invalid value for 'period' parameter: '%s'", argv[i]);
+        }
+        else if (strcmp(argv[i], "-samples") == 0)
+        {
+            if (argc <= i + 1)
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            char *endptr = NULL;
+            samples = strtoul (argv[++i], &endptr, 10);
+            if (!endptr || *endptr || !samples)
+                return errorArgument("Invalid value for 'samples' parameter: '%s'", argv[i]);
+        }
+        else if (strcmp(argv[i], "-list") == 0)
+            listMatches = true;
+        else if (strcmp(argv[i], "-detach") == 0)
+            isDetached = true;
+        else
+            break; /* The rest of params should define the filter */
+    }
+    
+    rc = parseFilterParameters(argc - i, &argv[i], aVirtualBox,
+                               ComSafeArrayAsOutParam(metrics),
+                               ComSafeArrayAsOutParam(baseMetrics),
+                               ComSafeArrayAsOutParam(objects));
+    if (FAILED(rc))
+        return 1;
+
+
+    if (countMatchingMetrics(aVirtualBox, performanceCollector,
+                             ComSafeArrayAsInParam(metrics),
+                             ComSafeArrayAsInParam(objects),
+                             listMatches) == 0)
+        return 1;
+    
+    CHECK_ERROR(performanceCollector,
+        SetupMetrics(ComSafeArrayAsInParam(baseMetrics),
+                     ComSafeArrayAsInParam(objects), period, samples));
+
+    if (isDetached)
+    {
+        RTPrintf("Warning! The background process holding collected metrics will shutdown\n"
+                 "in few seconds, discarding all collected data and parameters.\n");
+        return 0;
+    }
+    
+    RTPrintf("Time stamp   Object     Metric               Value\n");
+    
+    for (;;)
+    {
+        RTPrintf("------------ ---------- -------------------- --------------------\n");
+        RTThreadSleep(period * 1000); // Sleep for 'period' seconds
+        char ts[15];
+        
+        getTimestamp(ts, sizeof(ts));
+        com::SafeArray<BSTR>          retNames;
+        com::SafeIfaceArray<IUnknown> retObjects;
+        com::SafeArray<ULONG>         retIndices;
+        com::SafeArray<ULONG>         retLengths;
+        com::SafeArray<LONG>          retData;
+        CHECK_ERROR (performanceCollector, QueryMetricsData(ComSafeArrayAsInParam(metrics),
+                                                 ComSafeArrayAsInParam(objects),
+                                                 ComSafeArrayAsOutParam(retNames),
+                                                 ComSafeArrayAsOutParam(retObjects),
+                                                 ComSafeArrayAsOutParam(retIndices),
+                                                 ComSafeArrayAsOutParam(retLengths),
+                                                 ComSafeArrayAsOutParam(retData)) );
+        for (unsigned i = 0; i < retNames.size(); i++)
+        {
+
+            // Get info for the metric
+            com::SafeArray<BSTR> nameOfMetric(1);
+            Bstr tmpName(retNames[i]);
+            tmpName.detachTo (&nameOfMetric[0]);
+            com::SafeIfaceArray<IUnknown> anObject(1);
+            ComPtr<IUnknown> tmpObject(retObjects[i]);
+            tmpObject.queryInterfaceTo(&anObject[0]);
+            com::SafeIfaceArray <IPerformanceMetric> metricInfo;
+            CHECK_RC_BREAK (performanceCollector->GetMetrics( ComSafeArrayAsInParam(nameOfMetric),
+                                                   ComSafeArrayAsInParam(anObject),
+                                                   ComSafeArrayAsOutParam(metricInfo) ));
+            BSTR metricUnitBSTR;
+            CHECK_RC_BREAK (metricInfo[0]->COMGETTER(Unit) (&metricUnitBSTR));
+            Bstr metricUnit(metricUnitBSTR);
+            Bstr metricName(retNames[i]);
+            LONG minVal, maxVal;
+            CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MinimumValue) (&minVal));
+            CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MaximumValue) (&maxVal));
+            RTPrintf("%-12s %-10ls %-20ls ", ts, getObjectName(aVirtualBox, retObjects[i]).raw(), metricName.raw());
+            const char *separator = "";
+            for (unsigned j = 0; j < retLengths[i]; j++)
+            {
+                if (strcmp((const char *)metricUnit.raw(), "%"))
+                    RTPrintf("%s%d %ls", separator, retData[retIndices[i] + j], metricUnit.raw());
+                else
+                    RTPrintf("%s%d.%02d%%", separator, retData[retIndices[i] + j] / 1000, retData[retIndices[i] + j] % 100);
+                separator = ", ";
+            }
+            RTPrintf("\n");
+        }
+    }
+    
+    return 0;
+}
+
+static int handleMetrics(int argc, char *argv[],
+                         ComPtr<IVirtualBox> aVirtualBox, ComPtr<ISession> aSession)
+{
+    int rc;
+
+    /* at least one option: subcommand name */
+    if (argc < 1)
+        return errorSyntax(USAGE_METRICS, "Subcommand missing");
+
+    ComPtr<IPerformanceCollector> performanceCollector;
+    CHECK_ERROR(aVirtualBox, COMGETTER(PerformanceCollector)(performanceCollector.asOutParam()));
+
+    if (!strcmp(argv[0], "list"))
+        rc = handleMetricsList(argc, argv, aVirtualBox, performanceCollector);
+    else if (!strcmp(argv[0], "setup"))
+        rc = handleMetricsSetup(argc, argv, aVirtualBox, performanceCollector);
+    else if (!strcmp(argv[0], "query"))
+        rc = handleMetricsQuery(argc, argv, aVirtualBox, performanceCollector);
+    else if (!strcmp(argv[0], "collect"))
+        rc = handleMetricsCollect(argc, argv, aVirtualBox, performanceCollector);
+    else
+        return errorSyntax(USAGE_METRICS, "Invalid subcommand '%s'", argv[0]);
+
+    return rc;
+}
+#endif /* !VBOX_ONLY_DOCS */
+
 enum ConvertSettings
 {
     ConvertSettings_No      = 0,
@@ -7460,6 +8112,7 @@ enum ConvertSettings
     ConvertSettings_Ignore  = 3,
 };
 
+#ifndef VBOX_ONLY_DOCS
 /**
  * Checks if any of the settings files were auto-converted and informs the
  * user if so.
@@ -7611,6 +8264,7 @@ static bool checkForAutoConvertedSettings (ComPtr<IVirtualBox> virtualBox,
 
     return SUCCEEDED (rc);
 }
+#endif /* !VBOX_ONLY_DOCS */
 
 // main
 ///////////////////////////////////////////////////////////////////////////////
@@ -7621,7 +8275,7 @@ int main(int argc, char *argv[])
      * Before we do anything, init the runtime without loading
      * the support driver.
      */
-    RTR3Init(false);
+    RTR3Init();
 
     bool fShowLogo = true;
     int  iCmd      = 1;
@@ -7691,7 +8345,11 @@ int main(int argc, char *argv[])
     if (fShowLogo)
         showLogo();
 
-    HRESULT rc;
+
+#ifdef VBOX_ONLY_DOCS
+    int rc = 0;
+#else /* !VBOX_ONLY_DOCS */
+    HRESULT rc = 0;
 
     CHECK_RC_RET (com::Initialize());
 
@@ -7786,6 +8444,10 @@ int main(int argc, char *argv[])
         { "usbfilter",        handleUSBFilter },
         { "sharedfolder",     handleSharedFolder },
         { "vmstatistics",     handleVMStatistics },
+#ifdef VBOX_WITH_GUEST_PROPS
+        { "guestproperty",    handleGuestProperty },
+#endif /* VBOX_WITH_GUEST_PROPS defined */
+        { "metrics",          handleMetrics },
         { NULL,               NULL }
     };
 
@@ -7816,6 +8478,7 @@ int main(int argc, char *argv[])
     while (0);
 
     com::Shutdown();
+#endif /* !VBOX_ONLY_DOCS */
 
     /*
      * Free converted argument vector
@@ -7823,5 +8486,5 @@ int main(int argc, char *argv[])
     for (int i = iCmdArg; i < argc; i++)
         RTStrFree(argv[i]);
 
-    return rc;
+    return rc != 0;
 }

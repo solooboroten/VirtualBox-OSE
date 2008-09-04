@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 34747 2008-08-14 12:06:14Z klaus $
 ## @file
 # Sub-Makefile for the storage device & driver testcases.
 #
@@ -19,8 +19,12 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../..
+else
 SUB_DEPTH = ../..
+DEPTH    ?= ../../../../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 #
@@ -54,17 +58,21 @@ ifdef VBOX_WITH_TESTCASES
 endif
 
 #
-# Basic testcase for the VD code.
+# Basic testcases for the VD code.
 #
 ifdef VBOX_WITH_TESTCASES
- PROGRAMS += tstVD
+ PROGRAMS += tstVD tstVD-2
  ifeq ($(KBUILD_TARGET),l4)
   tstVD_TEMPLATE = VBOXLNXHOSTR3EXE
+  tstVD-2_TEMPLATE = VBOXLNXHOSTR3EXE
  else
   tstVD_TEMPLATE = VBOXR3TSTEXE
+  tstVD-2_TEMPLATE = VBOXR3TSTEXE
  endif
  tstVD_LIBS     = $(vditool_LIBS)
+ tstVD-2_LIBS     = $(vditool_LIBS)
  tstVD_SOURCES  = tstVD.cpp
+ tstVD-2_SOURCES  = tstVD-2.cpp
 endif
 
 include	$(KBUILD_PATH)/subfooter.kmk

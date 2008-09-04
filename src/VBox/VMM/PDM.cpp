@@ -1,4 +1,4 @@
-/* $Id: PDM.cpp 30610 2008-05-07 18:13:32Z bird $ */
+/* $Id: PDM.cpp 35599 2008-08-29 08:51:20Z sandervl $ */
 /** @file
  * PDM - Pluggable Device Manager.
  */
@@ -193,10 +193,8 @@ PDMR3DECL(int) PDMR3Init(PVM pVM)
     rc = pdmR3CritSectInit(pVM);
     if (VBOX_SUCCESS(rc))
     {
-#ifdef VBOX_WITH_PDM_LOCK
         rc = PDMR3CritSectInit(pVM, &pVM->pdm.s.CritSect, "PDM");
         if (VBOX_SUCCESS(rc))
-#endif
             rc = pdmR3LdrInitU(pVM->pUVM);
         if (VBOX_SUCCESS(rc))
         {
@@ -266,52 +264,52 @@ PDMR3DECL(void) PDMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
     /*
      * The registered PIC.
      */
-    if (pVM->pdm.s.Pic.pDevInsGC)
+    if (pVM->pdm.s.Pic.pDevInsRC)
     {
-        pVM->pdm.s.Pic.pDevInsGC            += offDelta;
-        pVM->pdm.s.Pic.pfnSetIrqGC          += offDelta;
-        pVM->pdm.s.Pic.pfnGetInterruptGC    += offDelta;
+        pVM->pdm.s.Pic.pDevInsRC            += offDelta;
+        pVM->pdm.s.Pic.pfnSetIrqRC          += offDelta;
+        pVM->pdm.s.Pic.pfnGetInterruptRC    += offDelta;
     }
 
     /*
      * The registered APIC.
      */
-    if (pVM->pdm.s.Apic.pDevInsGC)
+    if (pVM->pdm.s.Apic.pDevInsRC)
     {
-        pVM->pdm.s.Apic.pDevInsGC           += offDelta;
-        pVM->pdm.s.Apic.pfnGetInterruptGC   += offDelta;
-        pVM->pdm.s.Apic.pfnSetBaseGC        += offDelta;
-        pVM->pdm.s.Apic.pfnGetBaseGC        += offDelta;
-        pVM->pdm.s.Apic.pfnSetTPRGC         += offDelta;
-        pVM->pdm.s.Apic.pfnGetTPRGC         += offDelta;
-        pVM->pdm.s.Apic.pfnBusDeliverGC     += offDelta;
+        pVM->pdm.s.Apic.pDevInsRC           += offDelta;
+        pVM->pdm.s.Apic.pfnGetInterruptRC   += offDelta;
+        pVM->pdm.s.Apic.pfnSetBaseRC        += offDelta;
+        pVM->pdm.s.Apic.pfnGetBaseRC        += offDelta;
+        pVM->pdm.s.Apic.pfnSetTPRRC         += offDelta;
+        pVM->pdm.s.Apic.pfnGetTPRRC         += offDelta;
+        pVM->pdm.s.Apic.pfnBusDeliverRC     += offDelta;
     }
 
     /*
      * The registered I/O APIC.
      */
-    if (pVM->pdm.s.IoApic.pDevInsGC)
+    if (pVM->pdm.s.IoApic.pDevInsRC)
     {
-        pVM->pdm.s.IoApic.pDevInsGC         += offDelta;
-        pVM->pdm.s.IoApic.pfnSetIrqGC       += offDelta;
+        pVM->pdm.s.IoApic.pDevInsRC         += offDelta;
+        pVM->pdm.s.IoApic.pfnSetIrqRC       += offDelta;
     }
 
     /*
      * The register PCI Buses.
      */
-    for (unsigned i = 0; i < ELEMENTS(pVM->pdm.s.aPciBuses); i++)
+    for (unsigned i = 0; i < RT_ELEMENTS(pVM->pdm.s.aPciBuses); i++)
     {
-        if (pVM->pdm.s.aPciBuses[i].pDevInsGC)
+        if (pVM->pdm.s.aPciBuses[i].pDevInsRC)
         {
-            pVM->pdm.s.aPciBuses[i].pDevInsGC   += offDelta;
-            pVM->pdm.s.aPciBuses[i].pfnSetIrqGC += offDelta;
+            pVM->pdm.s.aPciBuses[i].pDevInsRC   += offDelta;
+            pVM->pdm.s.aPciBuses[i].pfnSetIrqRC += offDelta;
         }
     }
 
     /*
      * Devices.
      */
-    GCPTRTYPE(PCPDMDEVHLPGC) pDevHlpGC;
+    RCPTRTYPE(PCPDMDEVHLPGC) pDevHlpGC;
     int rc = PDMR3GetSymbolGC(pVM, NULL, "g_pdmGCDevHlp", &pDevHlpGC);
     AssertReleaseMsgRC(rc, ("rc=%Vrc when resolving g_pdmGCDevHlp\n", rc));
     for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextHC)
@@ -319,13 +317,13 @@ PDMR3DECL(void) PDMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
         if (pDevIns->pDevReg->fFlags & PDM_DEVREG_FLAGS_GC)
         {
             pDevIns->pDevHlpGC = pDevHlpGC;
-            pDevIns->pvInstanceDataGC = MMHyperR3ToGC(pVM, pDevIns->pvInstanceDataR3);
+            pDevIns->pvInstanceDataGC = MMHyperR3ToRC(pVM, pDevIns->pvInstanceDataR3);
             pDevIns->pvInstanceDataR0 = MMHyperR3ToR0(pVM, pDevIns->pvInstanceDataR3);
             pDevIns->Internal.s.pVMGC = pVM->pVMGC;
             if (pDevIns->Internal.s.pPciBusHC)
-                pDevIns->Internal.s.pPciBusGC = MMHyperR3ToGC(pVM, pDevIns->Internal.s.pPciBusHC);
+                pDevIns->Internal.s.pPciBusGC = MMHyperR3ToRC(pVM, pDevIns->Internal.s.pPciBusHC);
             if (pDevIns->Internal.s.pPciDeviceHC)
-                pDevIns->Internal.s.pPciDeviceGC = MMHyperR3ToGC(pVM, pDevIns->Internal.s.pPciDeviceHC);
+                pDevIns->Internal.s.pPciDeviceGC = MMHyperR3ToRC(pVM, pDevIns->Internal.s.pPciDeviceHC);
             if (pDevIns->pDevReg->pfnRelocate)
             {
                 LogFlow(("PDMR3Relocate: Relocating device '%s'/%d\n",
@@ -452,12 +450,10 @@ PDMR3DECL(int) PDMR3Term(PVM pVM)
      */
     pdmR3LdrTermU(pVM->pUVM);
 
-#ifdef VBOX_WITH_PDM_LOCK
     /*
      * Destroy the PDM lock.
      */
     PDMR3CritSectDelete(&pVM->pdm.s.CritSect);
-#endif
 
     LogFlow(("PDMR3Term: returns %Vrc\n", VINF_SUCCESS));
     return VINF_SUCCESS;
@@ -571,7 +567,7 @@ static DECLCALLBACK(int) pdmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
      */
     if (u32Version != PDM_SAVED_STATE_VERSION)
     {
-        Log(("pdmR3Load: Invalid version u32Version=%d!\n", u32Version));
+        AssertMsgFailed(("pdmR3Load: Invalid version u32Version=%d!\n", u32Version));
         return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
     }
 
@@ -1188,10 +1184,6 @@ static DECLCALLBACK(void) pdmR3PollerTimer(PVM pVM, PTMTIMER pTimer, void *pvUse
  */
 PDMR3DECL(int) PDMR3LockCall(PVM pVM)
 {
-#ifdef VBOX_WITH_PDM_LOCK
     return PDMR3CritSectEnterEx(&pVM->pdm.s.CritSect, true /* fHostCall */);
-#else
-    return VINF_SUCCESS;
-#endif
 }
 

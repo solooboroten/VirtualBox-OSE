@@ -1,4 +1,4 @@
-/* $Id: tstCFGM.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: tstCFGM.cpp 35653 2008-08-29 14:21:03Z bird $ */
 /** @file
  * Testcase for CFGM.
  */
@@ -42,13 +42,13 @@ int main()
     /*
      * Init runtime.
      */
-    RTR3Init();
+    RTR3InitAndSUPLib();
 
     /*
      * Create empty VM structure and init SSM.
      */
     PVM         pVM;
-    int rc = SUPInit(NULL);
+    int rc = SUPR3Init(NULL);
     if (VBOX_SUCCESS(rc))
         rc = SUPPageAlloc(RT_ALIGN_Z(sizeof(*pVM), PAGE_SIZE) >> PAGE_SHIFT, (void **)&pVM);
     if (VBOX_FAILURE(rc))

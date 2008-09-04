@@ -41,7 +41,10 @@ const void *g_apvVBoxDDDependencies2[] =
 {
     (void *)&g_abPcBiosBinary,
     (void *)&g_abVgaBiosBinary,
-    (void *)&g_abNetBiosBinary
+    (void *)&g_abNetBiosBinary,
+#ifdef VBOX_WITH_VMI
+    (void *)&g_abVmiBiosBinary,
+#endif
 };
 
 
@@ -59,10 +62,10 @@ extern "C" DECLEXPORT(int) VBoxDevicesRegister(PPDMDEVREGCB pCallbacks, uint32_t
     int rc;
 
     rc = pCallbacks->pfnRegister(pCallbacks, &g_DeviceAPIC);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     rc = pCallbacks->pfnRegister(pCallbacks, &g_DeviceIOAPIC);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     return VINF_SUCCESS;

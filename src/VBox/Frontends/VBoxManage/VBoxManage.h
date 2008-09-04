@@ -23,8 +23,10 @@
 #define ___H_VBOXMANAGE
 
 #include <iprt/types.h>
+#ifndef VBOX_ONLY_DOCS
 #include <VBox/com/ptr.h>
 #include <VBox/com/VirtualBox.h>
+#endif /* !VBOX_ONLY_DOCS */
 
 /** @name Syntax diagram category.
  * @{ */
@@ -69,6 +71,11 @@
 #define USAGE_MODINSTALL            RT_BIT_64(37)
 #define USAGE_MODUNINSTALL          RT_BIT_64(38)
 #define USAGE_RENAMEVMDK            RT_BIT_64(39)
+#ifdef VBOX_WITH_GUEST_PROPS
+#define USAGE_GUESTPROPERTY         RT_BIT_64(40)
+#endif  /* VBOX_WITH_GUEST_PROPS defined */
+#define USAGE_CONVERTTORAW          RT_BIT_64(41)
+#define USAGE_METRICS               RT_BIT_64(42)
 #define USAGE_ALL                   (~(uint64_t)0)
 /** @} */
 
@@ -94,8 +101,15 @@ int errorSyntax(USAGECATEGORY u64Cmd, const char *pszFormat, ...);
 int errorArgument(const char *pszFormat, ...);
 
 void printUsageInternal(USAGECATEGORY u64Cmd);
+#ifndef VBOX_ONLY_DOCS
 int handleInternalCommands(int argc, char *argv[],
                            ComPtr <IVirtualBox> aVirtualBox, ComPtr<ISession> aSession);
+#endif /* !VBOX_ONLY_DOCS */
+extern void usageGuestProperty(void);
+#ifndef VBOX_ONLY_DOCS
+extern int handleGuestProperty(int argc, char *argv[],
+                               ComPtr<IVirtualBox> aVirtualBox, ComPtr<ISession> aSession);
+#endif /* !VBOX_ONLY_DOCS */
 unsigned long VBoxSVNRev();
 
 #endif /* !___H_VBOXMANAGE */

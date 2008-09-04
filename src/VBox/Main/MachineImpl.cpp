@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp 30699 2008-05-09 14:51:58Z bird $ */
+/* $Id: MachineImpl.cpp 35999 2008-09-03 15:50:32Z ai221447 $ */
 /** @file
  * Implementation of IMachine in VBoxSVC.
  */
@@ -18,6 +18,14 @@
  * Clara, CA 95054 USA or visit http://www.sun.com if you need
  * additional information or have any questions.
  */
+
+/* Make sure all the stdint.h macros are included - must come first! */
+#ifndef __STDC_LIMIT_MACROS
+# define __STDC_LIMIT_MACROS
+#endif
+#ifndef __STDC_CONSTANT_MACROS
+# define __STDC_CONSTANT_MACROS
+#endif
 
 #if defined(RT_OS_WINDOWS)
 #elif defined(RT_OS_LINUX)
@@ -65,6 +73,10 @@
 
 #include <VBox/err.h>
 #include <VBox/param.h>
+#ifdef VBOX_WITH_GUEST_PROPS
+# include <VBox/HostServices/GuestPropertySvc.h>
+# include <VBox/com/array.h>
+#endif
 
 #include <algorithm>
 
@@ -177,6 +189,7 @@ Machine::HWData::HWData()
     mVRAMSize = 8;
     mMonitorCount = 1;
     mHWVirtExEnabled = TSBool_False;
+    mHWVirtExNestedPagingEnabled = false;
     mPAEEnabled = false;
 
     /* default boot order: floppy - DVD - HDD */
@@ -204,6 +217,7 @@ bool Machine::HWData::operator== (const HWData &that) const
         mVRAMSize != that.mVRAMSize ||
         mMonitorCount != that.mMonitorCount ||
         mHWVirtExEnabled != that.mHWVirtExEnabled ||
+        mHWVirtExNestedPagingEnabled != that.mHWVirtExNestedPagingEnabled ||
         mPAEEnabled != that.mPAEEnabled ||
         mClipboardMode != that.mClipboardMode)
         return false;
@@ -366,7 +380,7 @@ HRESULT Machine::init (VirtualBox *aParent, const BSTR aConfigFile,
     AssertReturn (aParent, E_INVALIDARG);
     AssertReturn (aConfigFile, E_INVALIDARG);
     AssertReturn (aMode != Init_New || (aName != NULL && *aName != '\0'),
-			      E_INVALIDARG);
+                  E_INVALIDARG);
     AssertReturn (aMode != Init_Registered || aId != NULL, E_FAIL);
 
     /* Enclose the state transition NotReady->InInit->Ready */
@@ -1105,6 +1119,40 @@ STDMETHODIMP Machine::COMSETTER(HWVirtExEnabled)(TSBool_T enable)
     return S_OK;
 }
 
+STDMETHODIMP Machine::COMGETTER(HWVirtExNestedPagingEnabled)(BOOL *enabled)
+{
+    if (!enabled)
+        return E_POINTER;
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
+
+    *enabled = mHWData->mHWVirtExNestedPagingEnabled;
+
+    return S_OK;
+}
+
+STDMETHODIMP Machine::COMSETTER(HWVirtExNestedPagingEnabled)(BOOL enable)
+{
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoWriteLock alock (this);
+
+    HRESULT rc = checkStateDependency (MutableStateDep);
+    CheckComRCReturnRC (rc);
+
+    /** @todo check validity! */
+
+    mHWData.backup();
+    mHWData->mHWVirtExNestedPagingEnabled = enable;
+
+    return S_OK;
+}
+
+
 STDMETHODIMP Machine::COMGETTER(PAEEnabled)(BOOL *enabled)
 {
     if (!enabled)
@@ -1226,7 +1274,7 @@ STDMETHODIMP Machine::COMGETTER(HardDiskAttachments) (IHardDiskAttachmentCollect
 
 STDMETHODIMP Machine::COMGETTER(VRDPServer)(IVRDPServer **vrdpServer)
 {
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     if (!vrdpServer)
         return E_POINTER;
 
@@ -2542,7 +2590,7 @@ Machine::CreateSharedFolder (INPTR BSTR aName, INPTR BSTR aHostPath, BOOL aWrita
     CheckComRCReturnRC (rc);
 
     if (!accessible)
-        return setError (E_FAIL,
+        return setWarning (E_FAIL,
             tr ("Shared folder host path '%ls' is not accessible"), aHostPath);
 
     mHWData.backup();
@@ -2640,6 +2688,352 @@ STDMETHODIMP Machine::ShowConsoleWindow (ULONG64 *aWinId)
     BOOL dummy;
     return directControl->OnShowWindow (FALSE /* aCheck */, &dummy, aWinId);
 }
+
+STDMETHODIMP Machine::GetGuestProperty (INPTR BSTR aKey, BSTR *aValue, ULONG64 *aTimestamp, BSTR *aFlags)
+{
+#if !defined (VBOX_WITH_GUEST_PROPS)
+    return E_NOTIMPL;
+#else
+    if (!VALID_PTR (aKey))
+        return E_INVALIDARG;
+    if (!VALID_PTR (aValue))
+        return E_POINTER;
+    if (!VALID_PTR (aTimestamp))
+        return E_POINTER;
+    if (!VALID_PTR (aFlags))
+        return E_POINTER;
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
+
+    using namespace guestProp;
+    HRESULT rc = E_FAIL;
+
+    if (!mHWData->mPropertyServiceActive)
+    {
+        bool found = false;
+        for (HWData::GuestPropertyList::const_iterator it = mHWData->mGuestProperties.begin();
+             (it != mHWData->mGuestProperties.end()) && !found; ++it)
+        {
+            if (it->mName == aKey)
+            {
+                it->mValue.cloneTo(aValue);
+                *aTimestamp = it->mTimestamp;
+                it->mFlags.cloneTo(aFlags);
+                found = true;
+            }
+        }
+        rc = S_OK;
+    }
+    else
+    {
+        ComPtr <IInternalSessionControl> directControl =
+            mData->mSession.mDirectControl;
+
+        /* just be on the safe side when calling another process */
+        alock.unlock();
+
+        rc = directControl->AccessGuestProperty (aKey, NULL, NULL,
+                                                 false /* isSetter */,
+                                                 aValue, aTimestamp, aFlags);
+    }
+    return rc;
+#endif /* else !defined (VBOX_WITH_GUEST_PROPS) */
+}
+
+STDMETHODIMP Machine::GetGuestPropertyValue (INPTR BSTR aKey, BSTR *aValue)
+{
+    ULONG64 dummyTimestamp;
+    BSTR dummyFlags;
+    return GetGuestProperty(aKey, aValue, &dummyTimestamp, &dummyFlags);
+}
+
+STDMETHODIMP Machine::GetGuestPropertyTimestamp (INPTR BSTR aKey, ULONG64 *aTimestamp)
+{
+    BSTR dummyValue;
+    BSTR dummyFlags;
+    return GetGuestProperty(aKey, &dummyValue, aTimestamp, &dummyFlags);
+}
+
+STDMETHODIMP Machine::SetGuestProperty (INPTR BSTR aName, INPTR BSTR aValue, INPTR BSTR aFlags)
+{
+#if !defined (VBOX_WITH_GUEST_PROPS)
+    return E_NOTIMPL;
+#else
+    if (!VALID_PTR (aName))
+        return E_INVALIDARG;
+    if ((aValue != NULL) && !VALID_PTR (aValue))
+        return E_INVALIDARG;
+    if ((aFlags != NULL) && !VALID_PTR (aFlags))
+        return E_INVALIDARG;
+
+    /* For now there are no valid flags, so check this. */
+    if (aFlags != NULL)
+        for (size_t i = 0; aFlags[i] != '\0'; ++i)
+            if (aFlags[i] != ' ')
+                return E_INVALIDARG;
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoWriteLock alock (this);
+
+    HRESULT rc = checkStateDependency (MutableStateDep);
+    CheckComRCReturnRC (rc);
+
+    using namespace guestProp;
+    rc = E_FAIL;
+
+    if (!mHWData->mPropertyServiceActive)
+    {
+        bool found = false;
+        HWData::GuestProperty property;
+        for (HWData::GuestPropertyList::iterator it = mHWData->mGuestProperties.begin();
+             (it != mHWData->mGuestProperties.end()) && !found; ++it)
+            if (it->mName == aName)
+            {
+                property = *it;
+                mHWData.backup();
+                /* The backup() operation invalidates our iterator, so get a
+                 * new one. */
+                for (it = mHWData->mGuestProperties.begin();
+                     it->mName != aName; ++it); 
+                mHWData->mGuestProperties.erase(it);
+                found = true;
+            }
+        if (found)
+        {
+            if (NULL != aValue)
+            {
+                RTTIMESPEC time;
+                property.mValue = aValue;
+                property.mTimestamp = RTTimeSpecGetNano(RTTimeNow(&time));
+                if (aFlags != NULL)
+                    property.mFlags = aFlags;
+                mHWData->mGuestProperties.push_back(property);
+            }
+        }
+        else if (aValue != NULL)
+        {
+            RTTIMESPEC time;
+            mHWData.backup();
+            property.mName = aName;
+            property.mValue = aValue;
+            property.mTimestamp = RTTimeSpecGetNano(RTTimeNow(&time));
+            property.mFlags = (aFlags != NULL ? Bstr(aFlags) : Bstr(""));
+            mHWData->mGuestProperties.push_back(property);
+        }
+        rc = S_OK;
+    }
+    else
+    {
+        ComPtr <IInternalSessionControl> directControl =
+            mData->mSession.mDirectControl;
+
+        /* just be on the safe side when calling another process */
+        alock.leave();
+
+        BSTR dummy = NULL;
+        ULONG64 dummy64;
+        rc = directControl->AccessGuestProperty (aName, aValue, aFlags,
+                                                 true /* isSetter */,
+                                                 &dummy, &dummy64, &dummy);
+    }
+    return rc;
+#endif /* else !defined (VBOX_WITH_GUEST_PROPS) */
+}
+
+STDMETHODIMP Machine::SetGuestPropertyValue (INPTR BSTR aName, INPTR BSTR aValue)
+{
+    return SetGuestProperty(aName, aValue, NULL);
+}
+
+/**
+ * Matches a sample name against a pattern.
+ *
+ * @returns True if matches, false if not.
+ * @param   pszPat      Pattern.
+ * @param   pszName     Name to match against the pattern.
+ * @todo move this into IPRT
+ */
+static bool matchesSinglePattern(const char *pszPat, const char *pszName)
+{
+    /* ASSUMES ASCII */
+    for (;;)
+    {
+        char chPat = *pszPat;
+        switch (chPat)
+        {
+            default:
+                if (*pszName != chPat)
+                    return false;
+                break;
+
+            case '*':
+            {
+                while ((chPat = *++pszPat) == '*' || chPat == '?')
+                    /* nothing */;
+
+                for (;;)
+                {
+                    char ch = *pszName++;
+                    if (    ch == chPat
+                        &&  (   !chPat
+                             || matchesSinglePattern(pszPat + 1, pszName)))
+                        return true;
+                    if (!ch)
+                        return false;
+                }
+                /* won't ever get here */
+                break;
+            }
+
+            case '?':
+                if (!*pszName)
+                    return false;
+                break;
+
+            case '\0':
+                return !*pszName;
+        }
+        pszName++;
+        pszPat++;
+    }
+    return true;
+}
+
+/* Checks to see if the given string matches against one of the patterns in
+ * the list. */
+static bool matchesPattern(const char *paszPatterns, size_t cchPatterns,
+                           const char *pszString)
+{
+    size_t iOffs = 0;
+    /* If the first pattern in the list is empty, treat it as "match all". */
+    bool matched = (cchPatterns > 0) && (0 == *paszPatterns) ? true : false;
+    while ((iOffs < cchPatterns) && !matched)
+    {
+        size_t cchCurrent;
+        if (   RT_SUCCESS(RTStrNLenEx(paszPatterns + iOffs,
+                                      cchPatterns - iOffs, &cchCurrent))
+            && (cchCurrent > 0)
+           )
+        {
+            matched = matchesSinglePattern(paszPatterns + iOffs, pszString);
+            iOffs += cchCurrent + 1;
+        }
+        else
+            iOffs = cchPatterns;
+    }
+    return matched;
+}
+
+STDMETHODIMP Machine::EnumerateGuestProperties (INPTR BSTR aPatterns, ComSafeArrayOut(BSTR, aNames), ComSafeArrayOut(BSTR, aValues), ComSafeArrayOut(ULONG64, aTimestamps), ComSafeArrayOut(BSTR, aFlags))
+{
+#if !defined (VBOX_WITH_GUEST_PROPS)
+    return E_NOTIMPL;
+#else
+    if (!VALID_PTR (aPatterns) && (aPatterns != NULL))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aNames))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aValues))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aTimestamps))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aFlags))
+        return E_POINTER;
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
+
+    using namespace guestProp;
+    HRESULT rc = E_FAIL;
+
+    if (!mHWData->mPropertyServiceActive)
+    {
+
+/*
+ * Set up the pattern parameter, translating the comma-separated list to a
+ * double-terminated zero-separated one.
+ */
+/** @todo skip this conversion. */
+        Utf8Str Utf8PatternsIn = aPatterns;
+        if ((aPatterns != NULL) && Utf8PatternsIn.isNull())
+            return E_OUTOFMEMORY;
+        size_t cchPatterns = Utf8PatternsIn.length();
+        Utf8Str Utf8Patterns(cchPatterns + 2);  /* Double terminator */
+        if (Utf8Patterns.isNull())
+            return E_OUTOFMEMORY;
+        char *pszPatterns = Utf8Patterns.mutableRaw();
+        unsigned iPatterns = 0;
+        for (unsigned i = 0; i < cchPatterns; ++i)
+        {
+            char cIn = Utf8PatternsIn.raw()[i];
+            if ((cIn != ',') && (cIn != ' '))
+                pszPatterns[iPatterns] = cIn;
+            else if (cIn != ' ')
+                pszPatterns[iPatterns] = '\0';
+            if (cIn != ' ')
+                ++iPatterns;
+        }
+        pszPatterns[iPatterns] = '\0';
+        ++iPatterns;
+
+/*
+ * Look for matching patterns and build up a list.
+ */
+        HWData::GuestPropertyList propList;
+        for (HWData::GuestPropertyList::iterator it = mHWData->mGuestProperties.begin();
+             it != mHWData->mGuestProperties.end(); ++it)
+            if (matchesPattern(pszPatterns, iPatterns, Utf8Str(it->mName).raw()))
+                propList.push_back(*it);
+
+/*
+ * And build up the arrays for returning the property information.
+ */
+        size_t cEntries = propList.size();
+        SafeArray <BSTR> names(cEntries);
+        SafeArray <BSTR> values(cEntries);
+        SafeArray <ULONG64> timestamps(cEntries);
+        SafeArray <BSTR> flags(cEntries);
+        size_t iProp = 0;
+        for (HWData::GuestPropertyList::iterator it = propList.begin();
+             it != propList.end(); ++it)
+        {
+             it->mName.cloneTo(&names[iProp]);
+             it->mValue.cloneTo(&values[iProp]);
+             timestamps[iProp] = it->mTimestamp;
+             it->mFlags.cloneTo(&flags[iProp]);
+             ++iProp;
+        }
+        names.detachTo(ComSafeArrayOutArg (aNames));
+        values.detachTo(ComSafeArrayOutArg (aValues));
+        timestamps.detachTo(ComSafeArrayOutArg (aTimestamps));
+        flags.detachTo(ComSafeArrayOutArg (aFlags));
+        rc = S_OK;
+    }
+    else
+    {
+        ComPtr <IInternalSessionControl> directControl =
+            mData->mSession.mDirectControl;
+
+        /* just be on the safe side when calling another process */
+        alock.unlock();
+
+        rc = directControl->EnumerateGuestProperties(aPatterns,
+                                                     ComSafeArrayOutArg(aNames),
+                                                     ComSafeArrayOutArg(aValues),
+                                                     ComSafeArrayOutArg(aTimestamps),
+                                                     ComSafeArrayOutArg(aFlags));
+    }
+    return rc;
+#endif /* else !defined (VBOX_WITH_GUEST_PROPS) */
+}
+
 
 // public methods for internal purposes
 /////////////////////////////////////////////////////////////////////////////
@@ -3002,6 +3396,10 @@ HRESULT Machine::openSession (IInternalSessionControl *aControl)
 
     if (SUCCEEDED (rc))
     {
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+        registerMetrics (mParent->performanceCollector(), this, pid);
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
         /*
          *  Set the session state to Spawning to protect against subsequent
          *  attempts to open a session and to unregister the machine after
@@ -3229,47 +3627,64 @@ HRESULT Machine::openRemoteSession (IInternalSessionControl *aControl,
     }
 
     Bstr type (aType);
+
+    /* Qt4 is default */
+#ifdef VBOX_WITH_QT4GUI
+    if (type == "gui" || type == "GUI/Qt4")
+    {
+# ifdef RT_OS_DARWIN /* Avoid Lanuch Services confusing this with the selector by using a helper app. */
+        const char VirtualBox_exe[] = "../Resources/VirtualBoxVM.app/Contents/MacOS/VirtualBoxVM";
+# else
+        const char VirtualBox_exe[] = "VirtualBox" HOSTSUFF_EXE;
+# endif
+        Assert (sz >= sizeof (VirtualBox_exe));
+        strcpy (cmd, VirtualBox_exe);
+
+        Utf8Str idStr = mData->mUuid.toString();
+# ifdef RT_OS_WINDOWS /** @todo drop this once the RTProcCreate bug has been fixed */
+        const char * args[] = {path, "-startvm", idStr, 0 };
+# else
+        Utf8Str name = mUserData->mName;
+        const char * args[] = {path, "-comment", name, "-startvm", idStr, 0 };
+# endif
+        vrc = RTProcCreate (path, args, env, 0, &pid);
+    }
+#else /* !VBOX_WITH_QT4GUI */
+    if (0)
+        ;
+#endif /* VBOX_WITH_QT4GUI */
+
+    else
+
+    /* Qt3 is used sometimes as well, OS/2 does not have Qt4 at all */
+#ifdef VBOX_WITH_QTGUI
     if (type == "gui" || type == "GUI/Qt3")
     {
-#ifdef RT_OS_DARWIN /* Avoid Lanuch Services confusing this with the selector by using a helper app. */
-        const char VirtualBox_exe[] = "../Resources/VirtualBoxVM.app/Contents/MacOS/VirtualBoxVM";
-#else
-        const char VirtualBox_exe[] = "VirtualBox" HOSTSUFF_EXE;
-#endif
+# ifdef RT_OS_DARWIN /* Avoid Lanuch Services confusing this with the selector by using a helper app. */
+        const char VirtualBox_exe[] = "../Resources/VirtualBoxVM.app/Contents/MacOS/VirtualBoxVM3";
+# else
+        const char VirtualBox_exe[] = "VirtualBox3" HOSTSUFF_EXE;
+# endif
         Assert (sz >= sizeof (VirtualBox_exe));
         strcpy (cmd, VirtualBox_exe);
 
         Utf8Str idStr = mData->mUuid.toString();
-#ifdef RT_OS_WINDOWS /** @todo drop this once the RTProcCreate bug has been fixed */
+# ifdef RT_OS_WINDOWS /** @todo drop this once the RTProcCreate bug has been fixed */
         const char * args[] = {path, "-startvm", idStr, 0 };
-#else
+# else
         Utf8Str name = mUserData->mName;
         const char * args[] = {path, "-comment", name, "-startvm", idStr, 0 };
-#endif
+# endif
         vrc = RTProcCreate (path, args, env, 0, &pid);
     }
-    else
-    if (type == "GUI/Qt4")
-    {
-#ifdef RT_OS_DARWIN /* Avoid Lanuch Services confusing this with the selector by using a helper app. */
-        const char VirtualBox_exe[] = "../Resources/VirtualBoxVM.app/Contents/MacOS/VirtualBoxVM4";
-#else
-        const char VirtualBox_exe[] = "VirtualBox4" HOSTSUFF_EXE;
-#endif
-        Assert (sz >= sizeof (VirtualBox_exe));
-        strcpy (cmd, VirtualBox_exe);
+#else /* !VBOX_WITH_QTGUI */
+    if (0)
+        ;
+#endif /* !VBOX_WITH_QTGUI */
 
-        Utf8Str idStr = mData->mUuid.toString();
-#ifdef RT_OS_WINDOWS /** @todo drop this once the RTProcCreate bug has been fixed */
-        const char * args[] = {path, "-startvm", idStr, 0 };
-#else
-        Utf8Str name = mUserData->mName;
-        const char * args[] = {path, "-comment", name, "-startvm", idStr, 0 };
-#endif
-        vrc = RTProcCreate (path, args, env, 0, &pid);
-    }
     else
-#ifdef VBOX_VRDP
+
+#ifdef VBOX_WITH_VRDP
     if (type == "vrdp")
     {
         const char VBoxVRDP_exe[] = "VBoxHeadless" HOSTSUFF_EXE;
@@ -3277,16 +3692,22 @@ HRESULT Machine::openRemoteSession (IInternalSessionControl *aControl,
         strcpy (cmd, VBoxVRDP_exe);
 
         Utf8Str idStr = mData->mUuid.toString();
-#ifdef RT_OS_WINDOWS
+# ifdef RT_OS_WINDOWS
         const char * args[] = {path, "-startvm", idStr, 0 };
-#else
+# else
         Utf8Str name = mUserData->mName;
         const char * args[] = {path, "-comment", name, "-startvm", idStr, 0 };
-#endif
+# endif
         vrc = RTProcCreate (path, args, env, 0, &pid);
     }
+#else /* !VBOX_WITH_VRDP */
+    if (0)
+        ;
+#endif /* !VBOX_WITH_VRDP */
+
     else
-#endif /* VBOX_VRDP */
+
+#ifdef VBOX_WITH_HEADLESS
     if (type == "capture")
     {
         const char VBoxVRDP_exe[] = "VBoxHeadless" HOSTSUFF_EXE;
@@ -3294,14 +3715,18 @@ HRESULT Machine::openRemoteSession (IInternalSessionControl *aControl,
         strcpy (cmd, VBoxVRDP_exe);
 
         Utf8Str idStr = mData->mUuid.toString();
-#ifdef RT_OS_WINDOWS
+# ifdef RT_OS_WINDOWS
         const char * args[] = {path, "-startvm", idStr, "-capture", 0 };
-#else
+# else
         Utf8Str name = mUserData->mName;
         const char * args[] = {path, "-comment", name, "-startvm", idStr, "-capture", 0 };
-#endif
+# endif
         vrc = RTProcCreate (path, args, env, 0, &pid);
     }
+#else /* !VBOX_WITH_HEADLESS */
+    if (0)
+        ;
+#endif /* !VBOX_WITH_HEADLESS */
     else
     {
         RTEnvDestroy (env);
@@ -3728,7 +4153,7 @@ HRESULT Machine::initDataAndChildObjects()
     unconst (mBIOSSettings).createObject();
     mBIOSSettings->init (this);
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     /* create an associated VRDPServer object (default is disabled) */
     unconst (mVRDPServer).createObject();
     mVRDPServer->init (this);
@@ -3857,7 +4282,7 @@ void Machine::uninitDataAndChildObjects()
         unconst (mDVDDrive).setNull();
     }
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     if (mVRDPServer)
     {
         mVRDPServer->uninit();
@@ -4329,8 +4754,9 @@ HRESULT Machine::loadHardware (const settings::Key &aNode)
     /* CPU node (currently not required) */
     {
         /* default value in case the node is not there */
-        mHWData->mHWVirtExEnabled = TSBool_Default;
-        mHWData->mPAEEnabled      = false;
+        mHWData->mHWVirtExEnabled             = TSBool_Default;
+        mHWData->mHWVirtExNestedPagingEnabled = false;
+        mHWData->mPAEEnabled                  = false;
 
         Key cpuNode = aNode.findKey ("CPU");
         if (!cpuNode.isNull())
@@ -4346,6 +4772,13 @@ HRESULT Machine::loadHardware (const settings::Key &aNode)
                 else
                     mHWData->mHWVirtExEnabled = TSBool_Default;
             }
+            /* HardwareVirtExNestedPaging (optional, default is false) */
+            Key HWVirtExNestedPagingNode = cpuNode.findKey ("HardwareVirtExNestedPaging");
+            if (!HWVirtExNestedPagingNode.isNull())
+            {
+                mHWData->mHWVirtExNestedPagingEnabled = HWVirtExNestedPagingNode.value <bool> ("enabled");
+            }
+
             /* PAE (optional, default is false) */
             Key PAENode = cpuNode.findKey ("PAE");
             if (!PAENode.isNull())
@@ -4405,7 +4838,7 @@ HRESULT Machine::loadHardware (const settings::Key &aNode)
         mHWData->mMonitorCount = displayNode.value <ULONG> ("MonitorCount");
     }
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     /* RemoteDisplay */
     rc = mVRDPServer->loadSettings (aNode);
     CheckComRCReturnRC (rc);
@@ -4547,6 +4980,31 @@ HRESULT Machine::loadHardware (const settings::Key &aNode)
         /* optional, defaults to 0 */
         mHWData->mStatisticsUpdateInterval =
             guestNode.value <ULONG> ("statisticsUpdateInterval");
+    }
+
+    /* Guest properties (optional) */
+    {
+        Key guestPropertiesNode = aNode.findKey ("GuestProperties");
+        if (!guestPropertiesNode.isNull())
+        {
+            Key::List properties = guestPropertiesNode.keys ("GuestProperty");
+            for (Key::List::const_iterator it = properties.begin();
+                 it != properties.end(); ++ it)
+            {
+                /* property name (required) */
+                Bstr name = (*it).stringValue ("name");
+                /* property value (required) */
+                Bstr value = (*it).stringValue ("value");
+                /* property timestamp (optional, defaults to 0) */
+                ULONG64 timestamp = (*it).value<ULONG64> ("timestamp");
+                /* property flags (optional, defaults to empty) */
+                Bstr flags = (*it).stringValue ("flags");
+    
+                HWData::GuestProperty property = { name, value, timestamp, flags };
+                mHWData->mGuestProperties.push_back(property);
+            }
+        }
+        mHWData->mPropertyServiceActive = false;
     }
 
     AssertComRC (rc);
@@ -5712,6 +6170,10 @@ HRESULT Machine::saveHardware (settings::Key &aNode)
         }
         hwVirtExNode.setStringValue ("enabled", value);
 
+        /* Nested paging (optional, default is true) */
+        Key HWVirtExNestedPagingNode = cpuNode.createKey ("HardwareVirtExNestedPaging");
+        HWVirtExNestedPagingNode.setValue <bool> ("enabled", !!mHWData->mHWVirtExNestedPagingEnabled);
+        
         /* PAE (optional, default is false) */
         Key PAENode = cpuNode.createKey ("PAE");
         PAENode.setValue <bool> ("enabled", !!mHWData->mPAEEnabled);
@@ -5761,7 +6223,7 @@ HRESULT Machine::saveHardware (settings::Key &aNode)
         displayNode.setValue <ULONG> ("MonitorCount", mHWData->mMonitorCount);
     }
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     /* VRDP settings (optional) */
     rc = mVRDPServer->saveSettings (aNode);
     CheckComRCReturnRC (rc);
@@ -5890,6 +6352,25 @@ HRESULT Machine::saveHardware (settings::Key &aNode)
                                     mHWData->mMemoryBalloonSize);
         guestNode.setValue <ULONG> ("statisticsUpdateInterval",
                                     mHWData->mStatisticsUpdateInterval);
+    }
+
+    /* Guest properties */
+    {
+        Key guestPropertiesNode = aNode.createKey ("GuestProperties");
+
+        for (HWData::GuestPropertyList::const_iterator it = mHWData->mGuestProperties.begin();
+             it != mHWData->mGuestProperties.end();
+             ++ it)
+        {
+            HWData::GuestProperty property = *it;
+
+            Key propertyNode = guestPropertiesNode.appendKey ("GuestProperty");
+
+            propertyNode.setValue <Bstr> ("name", property.mName);
+            propertyNode.setValue <Bstr> ("value", property.mValue);
+            propertyNode.setValue <ULONG64> ("timestamp", property.mTimestamp);
+            propertyNode.setValue <Bstr> ("flags", property.mFlags);
+        }
     }
 
     AssertComRC (rc);
@@ -6824,7 +7305,7 @@ bool Machine::isModified()
         mUserData.isBackedUp() ||
         mHWData.isBackedUp() ||
         mHDData.isBackedUp() ||
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
         (mVRDPServer && mVRDPServer->isModified()) ||
 #endif
         (mDVDDrive && mDVDDrive->isModified()) ||
@@ -6867,7 +7348,7 @@ bool Machine::isReallyModified (bool aIgnoreUserData /* = false */)
         mHWData.hasActualChanges() ||
         /* ignore mHDData */
         //mHDData.hasActualChanges() ||
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
         (mVRDPServer && mVRDPServer->isReallyModified()) ||
 #endif
         (mDVDDrive && mDVDDrive->isReallyModified()) ||
@@ -6943,7 +7424,7 @@ void Machine::rollback (bool aNotify)
     if (mBIOSSettings)
         mBIOSSettings->rollback();
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     if (mVRDPServer)
         vrdpChanged = mVRDPServer->rollback();
 #endif
@@ -7044,7 +7525,7 @@ HRESULT Machine::commit()
         rc = fixupHardDisks (true /* aCommit */);
 
     mBIOSSettings->commit();
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     mVRDPServer->commit();
 #endif
     mDVDDrive->commit();
@@ -7110,7 +7591,7 @@ void Machine::copyFrom (Machine *aThat)
     }
 
     mBIOSSettings->copyFrom (aThat->mBIOSSettings);
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     mVRDPServer->copyFrom (aThat->mVRDPServer);
 #endif
     mDVDDrive->copyFrom (aThat->mDVDDrive);
@@ -7126,6 +7607,62 @@ void Machine::copyFrom (Machine *aThat)
     for (ULONG slot = 0; slot < ELEMENTS (mParallelPorts); slot ++)
         mParallelPorts [slot]->copyFrom (aThat->mParallelPorts [slot]);
 }
+
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+void Machine::registerMetrics (PerformanceCollector *aCollector, Machine *aMachine, RTPROCESS pid)
+{
+    pm::MetricFactory *metricFactory = aCollector->getMetricFactory();
+    /* Create sub metrics */
+    pm::SubMetric *cpuLoadUser = new pm::SubMetric ("CPU/Load/User",
+        "Percentage of processor time spent in user mode by VM process.");
+    pm::SubMetric *cpuLoadKernel = new pm::SubMetric ("CPU/Load/Kernel",
+        "Percentage of processor time spent in kernel mode by VM process.");
+    pm::SubMetric *ramUsageUsed  = new pm::SubMetric ("RAM/Usage/Used",
+        "Size of resident portion of VM process in memory.");
+    /* Create and register base metrics */
+    IUnknown *objptr;
+
+    ComObjPtr<Machine> tmp = aMachine;
+    tmp.queryInterfaceTo (&objptr);
+    pm::BaseMetric *cpuLoad =
+        metricFactory->createMachineCpuLoad (objptr, pid,
+                                             cpuLoadUser, cpuLoadKernel);
+    aCollector->registerBaseMetric (cpuLoad);
+    pm::BaseMetric *ramUsage =
+        metricFactory->createMachineRamUsage (objptr, pid, ramUsageUsed);
+    aCollector->registerBaseMetric (ramUsage);
+
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadUser, 0));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadUser,
+                                                new pm::AggregateAvg()));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadUser,
+                                                new pm::AggregateMin()));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadUser,
+                                                new pm::AggregateMax()));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadKernel, 0));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadKernel,
+                                                new pm::AggregateAvg()));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadKernel,
+                                                new pm::AggregateMin()));
+    aCollector->registerMetric (new pm::Metric(cpuLoad, cpuLoadKernel,
+                                                new pm::AggregateMax()));
+
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageUsed, 0));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageUsed,
+                                               new pm::AggregateAvg()));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageUsed,
+                                               new pm::AggregateMin()));
+    aCollector->registerMetric (new pm::Metric(ramUsage, ramUsageUsed,
+                                               new pm::AggregateMax()));
+};
+
+void Machine::unregisterMetrics (PerformanceCollector *aCollector, Machine *aMachine)
+{
+    aCollector->unregisterMetricsFor (aMachine);
+    aCollector->unregisterBaseMetricsFor (aMachine);
+};
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
 
 /////////////////////////////////////////////////////////////////////////////
 // SessionMachine class
@@ -7301,7 +7838,7 @@ HRESULT SessionMachine::init (Machine *aMachine)
 
     unconst (mBIOSSettings).createObject();
     mBIOSSettings->init (this, aMachine->mBIOSSettings);
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     /* create another VRDPServer object that will be mutable */
     unconst (mVRDPServer).createObject();
     mVRDPServer->init (this, aMachine->mVRDPServer);
@@ -7412,6 +7949,10 @@ void SessionMachine::uninit (Uninit::Reason aReason)
      * with mPeer (as well as data we modify below). mParent->addProcessToReap()
      * and others need mParent lock. */
     AutoMultiWriteLock2 alock (mParent, this);
+
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+    unregisterMetrics (mParent->performanceCollector(), mPeer);
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
     MachineState_T lastState = mData->mMachineState;
 
@@ -8376,6 +8917,93 @@ STDMETHODIMP SessionMachine::DiscardCurrentSnapshotAndState (
     /* return the new state to the caller */
     *aMachineState = mData->mMachineState;
 
+    return S_OK;
+}
+
+STDMETHODIMP SessionMachine::PullGuestProperties (ComSafeArrayOut(BSTR, aNames), ComSafeArrayOut(BSTR, aValues),
+              ComSafeArrayOut(ULONG64, aTimestamps), ComSafeArrayOut(BSTR, aFlags))
+{
+    LogFlowThisFunc (("\n"));
+
+    AutoCaller autoCaller (this);
+    AssertComRCReturn (autoCaller.rc(), autoCaller.rc());
+
+    AutoReadLock alock (this);
+
+    AssertReturn(!ComSafeArrayOutIsNull (aNames), E_POINTER);
+    AssertReturn(!ComSafeArrayOutIsNull (aValues), E_POINTER);
+    AssertReturn(!ComSafeArrayOutIsNull (aTimestamps), E_POINTER);
+    AssertReturn(!ComSafeArrayOutIsNull (aFlags), E_POINTER);
+
+    size_t cEntries = mHWData->mGuestProperties.size();
+    com::SafeArray <BSTR> names(cEntries);
+    com::SafeArray <BSTR> values(cEntries);
+    com::SafeArray <ULONG64> timestamps(cEntries);
+    com::SafeArray <BSTR> flags(cEntries);
+    unsigned i = 0;
+    for (HWData::GuestPropertyList::iterator it = mHWData->mGuestProperties.begin();
+         it != mHWData->mGuestProperties.end(); ++it)
+    {
+        it->mName.cloneTo(&names[i]);
+        it->mValue.cloneTo(&values[i]);
+        timestamps[i] = it->mTimestamp;
+        it->mFlags.cloneTo(&flags[i]);
+        ++i;
+    }
+    names.detachTo(ComSafeArrayOutArg (aNames));
+    values.detachTo(ComSafeArrayOutArg (aValues));
+    timestamps.detachTo(ComSafeArrayOutArg (aTimestamps));
+    flags.detachTo(ComSafeArrayOutArg (aFlags));
+    mHWData->mPropertyServiceActive = true;
+    return S_OK;
+}
+
+STDMETHODIMP SessionMachine::PushGuestProperties (ComSafeArrayIn(INPTR BSTR, aNames),
+                                                  ComSafeArrayIn(INPTR BSTR, aValues),
+                                                  ComSafeArrayIn(ULONG64, aTimestamps),
+                                                  ComSafeArrayIn(INPTR BSTR, aFlags))
+{
+    LogFlowThisFunc (("\n"));
+    AutoCaller autoCaller (this);
+    AssertComRCReturn (autoCaller.rc(), autoCaller.rc());
+
+    AutoWriteLock alock (this);
+
+    /* Temporarily reset the registered flag, so that our machine state
+     * changes (i.e. mHWData.backup()) succeed.  (isMutable() used in
+     * all setters will return FALSE for a Machine instance if mRegistered
+     * is TRUE).  This is copied from registeredInit(), and may or may not be
+     * the right way to handle this. */
+    mData->mRegistered = FALSE;
+    HRESULT rc = checkStateDependency (MutableStateDep);
+    LogRel(("checkStateDependency (MutableStateDep) returned 0x%x\n", rc));
+    CheckComRCReturnRC (rc);
+
+    // ComAssertRet (mData->mMachineState < MachineState_Running, E_FAIL);
+
+    AssertReturn(!ComSafeArrayInIsNull (aNames), E_POINTER);
+    AssertReturn(!ComSafeArrayInIsNull (aValues), E_POINTER);
+    AssertReturn(!ComSafeArrayInIsNull (aTimestamps), E_POINTER);
+    AssertReturn(!ComSafeArrayInIsNull (aFlags), E_POINTER);
+
+    com::SafeArray <INPTR BSTR> names(ComSafeArrayInArg(aNames));
+    com::SafeArray <INPTR BSTR> values(ComSafeArrayInArg(aValues));
+    com::SafeArray <ULONG64> timestamps(ComSafeArrayInArg(aTimestamps));
+    com::SafeArray <INPTR BSTR> flags(ComSafeArrayInArg(aFlags));
+    DiscardSettings();
+    mHWData.backup();
+    mHWData->mGuestProperties.erase(mHWData->mGuestProperties.begin(),
+                                    mHWData->mGuestProperties.end());
+    for (unsigned i = 0; i < names.size(); ++i)
+    {
+        HWData::GuestProperty property = { names[i], values[i], timestamps[i], flags[i] };
+        mHWData->mGuestProperties.push_back(property);
+    }
+    mHWData->mPropertyServiceActive = false;
+    alock.unlock();
+    SaveSettings();
+    /* Restore the mRegistered flag. */
+    mData->mRegistered = TRUE;
     return S_OK;
 }
 
@@ -9965,7 +10593,7 @@ HRESULT SnapshotMachine::init (SessionMachine *aSessionMachine,
     unconst (mBIOSSettings).createObject();
     mBIOSSettings->initCopy (this, mPeer->mBIOSSettings);
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     unconst (mVRDPServer).createObject();
     mVRDPServer->initCopy (this, mPeer->mVRDPServer);
 #endif
@@ -10067,7 +10695,7 @@ HRESULT SnapshotMachine::init (Machine *aMachine,
     unconst (mBIOSSettings).createObject();
     mBIOSSettings->init (this);
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     unconst (mVRDPServer).createObject();
     mVRDPServer->init (this);
 #endif
@@ -10181,3 +10809,5 @@ HRESULT SnapshotMachine::onSnapshotChange (Snapshot *aSnapshot)
 
     return S_OK;
 }
+
+

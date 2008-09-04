@@ -21,10 +21,14 @@
  */
 
 #include "QIDialogButtonBox.h"
+#include "QIHelpButton.h"
+
+#include <iprt/assert.h>
 
 /* Qt includes */
 #include <QPushButton>
 #include <QEvent>
+#include <QBoxLayout>
 
 QIDialogButtonBox::QIDialogButtonBox (StandardButtons aButtons, Qt::Orientation aOrientation, QWidget *aParent)
    : QIWithRetranslateUI<QDialogButtonBox> (aParent)
@@ -33,6 +37,15 @@ QIDialogButtonBox::QIDialogButtonBox (StandardButtons aButtons, Qt::Orientation 
     setStandardButtons (aButtons);
 
     retranslateUi();
+}
+
+QPushButton *QIDialogButtonBox::button (StandardButton aWhich) const
+{
+    QPushButton *button = QDialogButtonBox::button (aWhich);
+    if (!button &&
+        aWhich == QDialogButtonBox::Help)
+        button = mHelpButton;
+    return button;
 }
 
 QPushButton *QIDialogButtonBox::addButton (const QString &aText, ButtonRole aRole)
@@ -55,13 +68,55 @@ void QIDialogButtonBox::setStandardButtons (StandardButtons aButtons)
     retranslateUi();
 }
 
+void QIDialogButtonBox::addExtraWidget (QWidget* aWidget)
+{
+    QBoxLayout *layout = boxLayout();
+    int index = findEmptySpace (layout);
+    layout->insertWidget (index + 1, aWidget);
+    layout->insertStretch(index + 2);
+}
+
+
+void QIDialogButtonBox::addExtraLayout (QLayout* aLayout)
+{
+    QBoxLayout *layout = boxLayout();
+    int index = findEmptySpace (layout);
+    layout->insertLayout (index + 1, aLayout);
+    layout->insertStretch(index + 2);
+}
+
+QBoxLayout *QIDialogButtonBox::boxLayout() const
+{
+  QBoxLayout *boxlayout = qobject_cast<QBoxLayout*> (layout());
+  AssertMsg (VALID_PTR (boxlayout), ("Layout of the QDialogButtonBox isn't a box layout."));
+  return boxlayout;
+}
+
+int QIDialogButtonBox::findEmptySpace (QBoxLayout *aLayout) const
+{
+  /* Search for the first occurrence of QSpacerItem and return the index.
+   * Please note that this is Qt internal, so it may change at any time. */
+  int i=0;
+  for (; i < aLayout->count(); ++i)
+  {
+      QLayoutItem *item = aLayout->itemAt(i);
+      if (item->spacerItem())
+          break;
+  }
+  return i;
+}
+
 void QIDialogButtonBox::retranslateUi()
 {
-    QPushButton *btn = button (QDialogButtonBox::Help);
+    QPushButton *btn = QDialogButtonBox::button (QDialogButtonBox::Help);
     if (btn)
     {
-        btn->setText (tr ("&Help"));
-        if (btn->shortcut().isEmpty())
-            btn->setShortcut (QKeySequence (tr ("F1"))); 
+        /* Use our very own help button if the user requested for one. */
+        if (!mHelpButton)
+            mHelpButton = new QIHelpButton;
+        mHelpButton->initFrom (btn);
+        removeButton (btn);
+        QDialogButtonBox::addButton (mHelpButton, QDialogButtonBox::HelpRole);
     }
 }
+

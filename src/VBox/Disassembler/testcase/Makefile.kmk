@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31219 2008-05-26 02:27:35Z bird $
+# $Id: Makefile.kmk 32535 2008-07-01 01:05:00Z bird $
 ## @file
 # Sub-Makefile for the VBox Disassembler.
 #
@@ -19,8 +19,12 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
 SUB_DEPTH = ..
+DEPTH    ?= ../../../..
+endif
 include $(KBUILD_PATH)/subheader.kmk
 ifdef VBOX_WITH_TESTCASES
 
@@ -42,6 +46,7 @@ VBOX_DISAS_TESTS_BUILD = \
 	tstAsmPop-1.asm \
 	tstAsmPush-1.asm \
 	tstAsmSignExtend-1.asm \
+	tstAsmRegs-1.asm \
 
 # Tests that only contains invalid/undefined instructions.
 VBOX_DISAS_TESTS_INVALID = \
@@ -53,7 +58,7 @@ VBOX_DISAS_TESTS_INVALID = \
 VBOX_DISAS_TESTS_BINARIES := \
 	tstBinMovzx-1.bin \
 	tstBinFnstsw-1.bin
-ifeq ($(USER),bird)
+ifeq ($(USER)x,bird)
 VBOX_DISAS_TESTS_BINARIES += \
 	tstBin-1.bin \
 	tstBin-2.bin \

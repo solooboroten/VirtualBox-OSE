@@ -44,8 +44,8 @@ int main(int argc, char **argv)
 {
     int cErrors = 0;
     int rc = 0;
-    RTR3Init(true, _1M*168);
-    rc = SUPInit(NULL, _1M*168);
+    RTR3InitAndSUPLib();
+    rc = SUPR3Init(NULL);
     cErrors += rc != 0;
     if (!rc)
     {
@@ -86,7 +86,7 @@ int main(int argc, char **argv)
             RTPrintf("tstPage: SUPTerm failed rc=%d\n", rc);
     }
     else
-        RTPrintf("tstPage: SUPInit failed rc=%d\n", rc);
+        RTPrintf("tstPage: SUPR3Init failed rc=%d\n", rc);
 
     if (!cErrors)
         RTPrintf("tstPage: SUCCESS\n");

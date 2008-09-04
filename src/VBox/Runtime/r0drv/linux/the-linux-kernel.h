@@ -1,4 +1,4 @@
-/* $Id: the-linux-kernel.h 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: the-linux-kernel.h 33785 2008-07-29 14:42:18Z klaus $ */
 /** @file
  * IPRT - Include all necessary headers for the Linux kernel.
  */
@@ -65,7 +65,11 @@
 #include <linux/string.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
-#include <asm/semaphore.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)
+# include <linux/semaphore.h>
+#else /* older kernels */
+# include <asm/semaphore.h>
+#endif /* older kernels */
 #include <linux/module.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
 # include <linux/moduleparam.h>
@@ -76,11 +80,19 @@
 #include <linux/mm.h>
 #include <linux/pagemap.h>
 #include <linux/slab.h>
+#include <linux/time.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 7)
-# include <linux/time.h>
 # include <linux/jiffies.h>
 #endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 16)
+# include <linux/ktime.h>
+# include <linux/hrtimer.h>
+#endif
 #include <linux/wait.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 5, 71)
+# include <linux/cpu.h>
+# include <linux/notifier.h>
+#endif
 /* For the basic additions module */
 #include <linux/pci.h>
 #include <linux/delay.h>
@@ -163,6 +175,11 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
 
 #endif /* < 2.6.7 */
 
+/** @def TICK_NSEC
+ * The time between ticks in nsec */
+#ifndef TICK_NSEC
+# define TICK_NSEC (1000000000UL / HZ)
+#endif
 
 /*
  * This sucks soooo badly on x86! Why don't they export __PAGE_KERNEL_EXEC so PAGE_KERNEL_EXEC would be usable?
@@ -245,6 +262,17 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
 
 #ifndef PAGE_OFFSET_MASK
 # define PAGE_OFFSET_MASK (PAGE_SIZE - 1)
+#endif
+
+/** @def ONE_MSEC_IN_JIFFIES
+ * The number of jiffies that make up 1 millisecond. Must be at least 1! */
+#if HZ <= 1000
+# define ONE_MSEC_IN_JIFFIES       1
+#elif !(HZ % 1000)
+# define ONE_MSEC_IN_JIFFIES       (HZ / 1000)
+#else
+# define ONE_MSEC_IN_JIFFIES       ((HZ + 999) / 1000)
+# error "HZ is not a multiple of 1000, the GIP stuff won't work right!"
 #endif
 
 /*

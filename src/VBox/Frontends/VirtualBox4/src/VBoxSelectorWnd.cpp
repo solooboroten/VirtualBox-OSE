@@ -29,8 +29,7 @@
 #include "VBoxSnapshotsWgt.h"
 #include "VBoxNewVMWzd.h"
 #include "VBoxDiskImageManagerDlg.h"
-#include "VBoxVMSettingsDlg.h"
-#include "VBoxGlobalSettingsDlg.h"
+#include "VBoxSettingsDialogSpecific.h"
 #include "VBoxVMLogViewer.h"
 #include "VBoxGlobal.h"
 
@@ -45,6 +44,7 @@
 #include <QMenuItem>
 #include <QStackedWidget>
 #include <QDesktopWidget>
+#include <QToolButton>
 
 // VBoxVMDetailsView class
 ////////////////////////////////////////////////////////////////////////////////
@@ -93,13 +93,7 @@ private slots:
 
     void gotLinkClicked (const QUrl &aURL)
     {
-#warning is this still necessary?
-        QTextDocument* text = mDetailsText->document();
         emit linkClicked (aURL.toString());
-        /* QTextBrowser will try to get the URL from the mime source factory
-         * and show an empty "page" after a failure. Reset the text to avoid
-         * this. */
-        mDetailsText->setDocument (text);
     }
 
 private:
@@ -132,9 +126,10 @@ VBoxVMDetailsView::VBoxVMDetailsView (QWidget *aParent,
     /* make "transparent" */
     mDetailsText->setFrameShape (QFrame::NoFrame);
     mDetailsText->viewport()->setAutoFillBackground (false);
+    mDetailsText->setOpenLinks (false);
 
     connect (mDetailsText, SIGNAL (anchorClicked (const QUrl &)),
-            this, SLOT (gotLinkClicked (const QUrl &)));
+             this, SLOT (gotLinkClicked (const QUrl &)));
 
     addWidget (mDetailsText);
 }
@@ -173,7 +168,7 @@ void VBoxVMDetailsView::createErrPage()
         hLayout->addWidget (mRefreshButton);
 
         connect (mRefreshButton, SIGNAL (clicked()),
-                 mRefreshAction, SIGNAL (activated()));
+                 mRefreshAction, SIGNAL (triggered()));
     }
 
     vLayout->addItem (new QSpacerItem (0, 0, QSizePolicy::Minimum,
@@ -330,7 +325,7 @@ void VBoxVMDescriptionPage::retranslateUi()
     mLabel->setText (tr ("No description. Press the Edit button below to add it."));
 
     mBtnEdit->setText (tr ("Edit"));
-    mBtnEdit->setShortcut (tr ("Ctrl+E"));
+    mBtnEdit->setShortcut (QKeySequence ("Ctrl+E"));
     mBtnEdit->setToolTip (tr ("Edit (Ctrl+E)"));
     mBtnEdit->adjustSize();
     mBtnEdit->updateGeometry();
@@ -385,7 +380,7 @@ void VBoxVMDescriptionPage::goToSettings()
  */
 VBoxSelectorWnd::
 VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
-                 Qt::WFlags aFlags)
+                 Qt::WindowFlags aFlags /* = Qt::Window */)
     : QIWithRetranslateUI2<QMainWindow> (aParent, aFlags)
     , doneInaccessibleWarningOnce (false)
 {
@@ -442,17 +437,7 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
         ":/vm_show_logs_32px.png", "show_logs_16px.png",
         ":/vm_show_logs_disabled_32px.png", "show_logs_disabled_16px.png"));
 
-    helpContentsAction = new QAction (this);
-    helpContentsAction->setIcon (VBoxGlobal::iconSet (":/help_16px.png"));
-    helpWebAction = new QAction (this);
-    helpWebAction->setIcon (VBoxGlobal::iconSet (":/site_16px.png"));
-    helpRegisterAction = new QAction (this);
-    helpRegisterAction->setIcon (VBoxGlobal::iconSet (":/register_16px.png",
-                                                         ":/register_disabled_16px.png"));
-    helpAboutAction = new QAction (this);
-    helpAboutAction->setIcon (VBoxGlobal::iconSet (":/about_16px.png"));
-    helpResetMessagesAction = new QAction (this);
-    helpResetMessagesAction->setIcon (VBoxGlobal::iconSet (":/reset_16px.png"));
+    mHelpActions.setup (this);
 
     /* subwidgets */
 
@@ -472,12 +457,13 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
     VBoxToolBar *vmTools = new VBoxToolBar (this);
 #if MAC_LEOPARD_STYLE
     /* Enable unified toolbars on Mac OS X. Available on Qt >= 4.3 */
-    setUnifiedTitleAndToolBarOnMac (true);
     addToolBar (vmTools);
+    vmTools->setMacToolbar();
     /* No spacing/margin on the mac */
     VBoxGlobal::setLayoutMargin (centralLayout, 0);
     leftVLayout->setSpacing (0);
     rightVLayout->setSpacing (0);
+    rightVLayout->insertSpacing (0, 10);
 #else /* MAC_LEOPARD_STYLE */
     leftVLayout->addWidget(vmTools);
     centralLayout->setSpacing (9);
@@ -523,9 +509,6 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
 
     /* add actions to the toolbar */
 
-#warning port me
-//    setUsesTextLabel (true);
-//    setUsesBigPixmaps (true);
     vmTools->setIconSize (QSize (32, 32));
     vmTools->setToolButtonStyle (Qt::ToolButtonTextUnderIcon);
     vmTools->setSizePolicy (QSizePolicy::Fixed, QSizePolicy::Preferred);
@@ -537,9 +520,6 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
     vmTools->addSeparator();
     vmTools->addAction (vmStartAction);
     vmTools->addAction (vmDiscardAction);
-#ifdef Q_WS_MAC
-    vmTools->setMacStyle();
-#endif
 
     /* add actions to menubar */
 
@@ -579,26 +559,15 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
     mVMCtxtMenu->addAction (vmShowLogsAction);
 
     mHelpMenu = menuBar()->addMenu (QString::null);
-    mHelpMenu->addAction (helpContentsAction);
-    mHelpMenu->addAction (helpWebAction);
-    mHelpMenu->addSeparator();
-#ifdef VBOX_WITH_REGISTRATION
-    mHelpMenu->addAction (helpRegisterAction);
-    helpRegisterAction->setEnabled (vboxGlobal().virtualBox().
-        GetExtraData (VBoxDefs::GUI_RegistrationDlgWinID).isEmpty());
-#endif
-    mHelpMenu->addAction (helpAboutAction);
-    mHelpMenu->addSeparator();
-    mHelpMenu->addAction (helpResetMessagesAction);
+    mHelpActions.addTo (mHelpMenu);
 
     retranslateUi();
 
-    /* restore the position of the window */
+    /* Restore the position of the window */
     {
         CVirtualBox vbox = vboxGlobal().virtualBox();
         QString winPos = vbox.GetExtraData (VBoxDefs::GUI_LastWindowPosition);
 
-        QRect ar = QApplication::desktop()->availableGeometry (pos());
         bool ok = false, max = false;
         int x = 0, y = 0, w = 0, h = 0;
         x = winPos.section (',', 0, 0).toInt (&ok);
@@ -612,15 +581,29 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
             max = winPos.section (',', 4, 4) == VBoxDefs::GUI_LastWindowPosition_Max;
         if (ok)
         {
-            move (x, y);
-            resize (QSize (w, h).expandedTo (minimumSizeHint())
-                .boundedTo (ar.size()));
+            QRect ar = QApplication::desktop()->availableGeometry (QPoint (x, y));
+
+            /* Do some position checks */
+            if (x < ar.left() || x > ar.right())
+                x = ar.left();
+            if (y < ar.top() || y > ar.bottom())
+                y = ar.top();
+
+            /* Composing normal parameters */
+            normal_size = QSize (w, h).expandedTo (minimumSizeHint())
+                          .boundedTo (ar.size());
+            normal_pos = QPoint (x, y);
+
+            /* Applying normal parameters */
+            resize (normal_size);
+            move (normal_pos);
             if (max)
                 /* maximize if needed */
                 showMaximized();
         }
         else
         {
+            QRect ar = QApplication::desktop()->availableGeometry (this);
             resize (QSize (770, 550).expandedTo (minimumSizeHint())
                 .boundedTo (ar.size()));
         }
@@ -638,34 +621,18 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
         mVMListView->selectItemById (QUuid (prevVMId));
     }
 
-#warning port me
-//    clearWState (WState_Polished);
-
     /* signals and slots connections */
-    connect (fileDiskMgrAction, SIGNAL (activated()), this, SLOT(fileDiskMgr()));
-    connect (fileSettingsAction, SIGNAL (activated()), this, SLOT(fileSettings()));
-    connect (fileExitAction, SIGNAL (activated()), this, SLOT (fileExit()));
-    connect (vmNewAction, SIGNAL (activated()), this, SLOT (vmNew()));
-    connect (vmConfigAction, SIGNAL (activated()), this, SLOT (vmSettings()));
-    connect (vmDeleteAction, SIGNAL (activated()), this, SLOT (vmDelete()));
-    connect (vmStartAction, SIGNAL (activated()), this, SLOT (vmStart()));
-    connect (vmDiscardAction, SIGNAL (activated()), this, SLOT (vmDiscard()));
+    connect (fileDiskMgrAction, SIGNAL (triggered()), this, SLOT(fileDiskMgr()));
+    connect (fileSettingsAction, SIGNAL (triggered()), this, SLOT(fileSettings()));
+    connect (fileExitAction, SIGNAL (triggered()), this, SLOT (fileExit()));
+    connect (vmNewAction, SIGNAL (triggered()), this, SLOT (vmNew()));
+    connect (vmConfigAction, SIGNAL (triggered()), this, SLOT (vmSettings()));
+    connect (vmDeleteAction, SIGNAL (triggered()), this, SLOT (vmDelete()));
+    connect (vmStartAction, SIGNAL (triggered()), this, SLOT (vmStart()));
+    connect (vmDiscardAction, SIGNAL (triggered()), this, SLOT (vmDiscard()));
     connect (vmPauseAction, SIGNAL (toggled (bool)), this, SLOT (vmPause (bool)));
-    connect (vmRefreshAction, SIGNAL (activated()), this, SLOT (vmRefresh()));
-    connect (vmShowLogsAction, SIGNAL (activated()), this, SLOT (vmShowLogs()));
-
-    connect (helpContentsAction, SIGNAL (activated()),
-             &vboxProblem(), SLOT (showHelpHelpDialog()));
-    connect (helpWebAction, SIGNAL (activated()),
-             &vboxProblem(), SLOT (showHelpWebDialog()));
-    connect (helpRegisterAction, SIGNAL (activated()),
-             &vboxGlobal(), SLOT (showRegistrationDialog()));
-    connect (&vboxGlobal(), SIGNAL (canShowRegDlg (bool)),
-             helpRegisterAction, SLOT (setEnabled (bool)));
-    connect (helpAboutAction, SIGNAL (activated()),
-             &vboxProblem(), SLOT (showHelpAboutDialog()));
-    connect (helpResetMessagesAction, SIGNAL (activated()),
-             &vboxProblem(), SLOT (resetSuppressedMessages()));
+    connect (vmRefreshAction, SIGNAL (triggered()), this, SLOT (vmRefresh()));
+    connect (vmShowLogsAction, SIGNAL (triggered()), this, SLOT (vmShowLogs()));
 
     connect (mVMListView, SIGNAL (currentChanged()),
              this, SLOT (vmListViewCurrentChanged()));
@@ -703,10 +670,11 @@ VBoxSelectorWnd::~VBoxSelectorWnd()
 {
     CVirtualBox vbox = vboxGlobal().virtualBox();
 
-    /* save the position of the window */
+    /* Save the position of the window */
     {
         QString winPos = QString ("%1,%2,%3,%4")
-                                 .arg (normal_pos.x()).arg (normal_pos.y())
+                                 .arg (normal_pos.x())
+                                 .arg (normal_pos.y())
                                  .arg (normal_size.width())
                                  .arg (normal_size.height());
         if (isMaximized())
@@ -714,7 +682,8 @@ VBoxSelectorWnd::~VBoxSelectorWnd()
 
         vbox.SetExtraData (VBoxDefs::GUI_LastWindowPosition, winPos);
     }
-    /* save vm selector position */
+
+    /* Save vm selector position */
     {
         VBoxVMItem *item = mVMListView->selectedItem();
         QString curVMId = item ?
@@ -732,7 +701,7 @@ VBoxSelectorWnd::~VBoxSelectorWnd()
 
 void VBoxSelectorWnd::fileDiskMgr()
 {
-    VBoxDiskImageManagerDlg::showModeless();
+    VBoxDiskImageManagerDlg::showModeless (this);
 }
 
 void VBoxSelectorWnd::fileSettings()
@@ -740,26 +709,28 @@ void VBoxSelectorWnd::fileSettings()
     VBoxGlobalSettings settings = vboxGlobal().settings();
     CSystemProperties props = vboxGlobal().virtualBox().GetSystemProperties();
 
-    VBoxGlobalSettingsDlg dlg (this, "VBoxGlobalSettingsDlg");
-    dlg.getFrom (props, settings);
+    VBoxSettingsDialog *dlg = new VBoxGLSettingsDlg (this);
+    dlg->getFrom();
 
-    if (dlg.exec() == QDialog::Accepted)
-    {
-        VBoxGlobalSettings s = settings;
-        dlg.putBackTo (props, s);
-        if (!props.isOk())
-            vboxProblem().cannotSetSystemProperties (props);
-        else
-        {
-            // see whether the user has changed something or not
-            if (!(settings == s))
-                vboxGlobal().setSettings (s);
-        }
-    }
+    if (dlg->exec() == QDialog::Accepted)
+        dlg->putBackTo();
+
+    delete dlg;
 }
 
 void VBoxSelectorWnd::fileExit()
 {
+    /* We have to check if there are any open windows beside this mainwindow
+     * (e.g. VDM) and if so close them. Note that the default behavior is
+     * different to Qt3 where a *mainWidget* exists & if this going to close
+     * all other windows are closed automatically. We do the same below. */
+    foreach (QWidget *widget, QApplication::topLevelWidgets())
+    {
+        if (widget->isVisible() &&
+            widget != this)
+            widget->close();
+    }
+    /* We close this widget last. */
     close();
 }
 
@@ -783,11 +754,6 @@ void VBoxSelectorWnd::vmNew()
 
 /**
  *  Opens the VM settings dialog.
- *
- *  @param  aCategory   Category to select in the settings dialog. See
- *                      VBoxVMSettingsDlg::setup().
- *  @param  aControl    Widget name to select in the settings dialog. See
- *                      VBoxVMSettingsDlg::setup().
  */
 void VBoxSelectorWnd::vmSettings (const QString &aCategory, const QString &aControl)
 {
@@ -811,31 +777,28 @@ void VBoxSelectorWnd::vmSettings (const QString &aCategory, const QString &aCont
     CMachine m = session.GetMachine();
     AssertMsgReturn (!m.isNull(), ("Machine must not be null"), (void) 0);
 
-    VBoxVMSettingsDlg dlg (this, aCategory, aControl);
-    dlg.getFromMachine (m);
+    VBoxSettingsDialog *dlg = new VBoxVMSettingsDlg (this, m, aCategory, aControl);
+    dlg->getFrom();
 
-    if (dlg.exec() == QDialog::Accepted)
+    if (dlg->exec() == QDialog::Accepted)
     {
         QString oldName = m.GetName();
-        COMResult res = dlg.putBackToMachine();
-        if (res.isOk())
+        dlg->putBackTo();
+
+        m.SaveSettings();
+        if (m.isOk())
         {
-            m.SaveSettings();
-            if (m.isOk())
-            {
-                if (oldName.compare (m.GetName()))
-                    mVMModel->sort();
-            }
-            else
-            {
-                vboxProblem().cannotSaveMachineSettings (m);
-            }
+            if (oldName.compare (m.GetName()))
+                mVMModel->sort();
         }
         else
-        {
-            vboxProblem().cannotApplyMachineSettings (m, res);
-        }
+            vboxProblem().cannotSaveMachineSettings (m);
+
+        /* To check use the result in future
+         * vboxProblem().cannotApplyMachineSettings (m, res); */
     }
+
+    delete dlg;
 
     mVMListView->setFocus();
 
@@ -1116,7 +1079,18 @@ bool VBoxSelectorWnd::event (QEvent *e)
         {
             if ((windowState() & (Qt::WindowMaximized | Qt::WindowMinimized |
                                   Qt::WindowFullScreen)) == 0)
-                normal_pos = pos();
+            {
+                /* On X11 systems window remains un-framed before it
+                 * shown and painted for the first time. In this case
+                 * qt returns similar values for window's position either
+                 * including or excluding window's frame. We no need to
+                 * memorize window's position in this case as this is
+                 * not normal situation, so just ignoring such events.
+                 * Do not trust frameGeometry() in this situation. */
+
+                if (!(pos().x() == geometry().x() && pos().y() == geometry().y()))
+                    normal_pos = pos();
+            }
             break;
         }
 
@@ -1147,7 +1121,7 @@ void VBoxSelectorWnd::retranslateUi()
     vmListViewCurrentChanged();
 
     fileDiskMgrAction->setText (tr ("Virtual &Disk Manager..."));
-    fileDiskMgrAction->setShortcut (tr ("Ctrl+D"));
+    fileDiskMgrAction->setShortcut (QKeySequence ("Ctrl+D"));
     fileDiskMgrAction->setStatusTip (tr ("Display the Virtual Disk Manager dialog"));
 
 #ifdef Q_WS_MAC
@@ -1170,20 +1144,24 @@ void VBoxSelectorWnd::retranslateUi()
      */
     fileSettingsAction->setText (tr ("&Preferences...", "global settings"));
 #endif
-    fileSettingsAction->setShortcut (tr ("Ctrl+G"));
+    fileSettingsAction->setShortcut (QKeySequence ("Ctrl+G"));
     fileSettingsAction->setStatusTip (tr ("Display the global settings dialog"));
 
     fileExitAction->setText (tr ("E&xit"));
-    fileExitAction->setShortcut (tr ("Ctrl+Q"));
+    fileExitAction->setShortcut (QKeySequence ("Ctrl+Q"));
     fileExitAction->setStatusTip (tr ("Close application"));
 
     vmNewAction->setText (tr ("&New..."));
-    vmNewAction->setShortcut (tr ("Ctrl+N"));
+    vmNewAction->setShortcut (QKeySequence ("Ctrl+N"));
     vmNewAction->setStatusTip (tr ("Create a new virtual machine"));
+    vmNewAction->setToolTip (vmNewAction->text().remove ('&').remove ('.') +
+        QString (" (%1)").arg (vmNewAction->shortcut().toString()));
 
     vmConfigAction->setText (tr ("&Settings..."));
-    vmConfigAction->setShortcut (tr ("Ctrl+S"));
+    vmConfigAction->setShortcut (QKeySequence ("Ctrl+S"));
     vmConfigAction->setStatusTip (tr ("Configure the selected virtual machine"));
+    vmConfigAction->setToolTip (vmConfigAction->text().remove ('&').remove ('.') +
+        QString (" (%1)").arg (vmConfigAction->shortcut().toString()));
 
     vmDeleteAction->setText (tr ("&Delete"));
     vmDeleteAction->setStatusTip (tr ("Delete the selected virtual machine"));
@@ -1195,33 +1173,16 @@ void VBoxSelectorWnd::retranslateUi()
         tr ("Discard the saved state of the selected virtual machine"));
 
     vmRefreshAction->setText (tr ("&Refresh"));
-    vmRefreshAction->setShortcut (tr ("Ctrl+R"));
+    vmRefreshAction->setShortcut (QKeySequence ("Ctrl+R"));
     vmRefreshAction->setStatusTip (
         tr ("Refresh the accessibility state of the selected virtual machine"));
 
     vmShowLogsAction->setText (tr ("Show &Log..."));
-    vmShowLogsAction->setShortcut (tr ("Ctrl+L"));
+    vmShowLogsAction->setShortcut (QKeySequence ("Ctrl+L"));
     vmShowLogsAction->setStatusTip (
         tr ("Show the log files of the selected virtual machine"));
 
-    helpContentsAction->setText (tr ("&Contents..."));
-    helpContentsAction->setShortcut (tr ("F1"));
-    helpContentsAction->setStatusTip (tr ("Show the online help contents"));
-
-    helpWebAction->setText (tr ("&VirtualBox Web Site..."));
-    helpWebAction->setStatusTip (
-        tr ("Open the browser and go to the VirtualBox product web site"));
-
-    helpRegisterAction->setText (tr ("R&egister VirtualBox..."));
-    helpRegisterAction->setStatusTip (
-        tr ("Open VirtualBox registration form"));
-
-    helpAboutAction->setText (tr ("&About VirtualBox..."));
-    helpAboutAction->setStatusTip (tr ("Show a dialog with product information"));
-
-    helpResetMessagesAction->setText (tr ("&Reset All Warnings"));
-    helpResetMessagesAction->setStatusTip (
-        tr ("Cause all suppressed warnings and messages to be shown again"));
+    mHelpActions.retranslateUi();
 
     mFileMenu->setTitle (tr("&File"));
     mVMMenu->setTitle (tr ("&Machine"));
@@ -1310,7 +1271,7 @@ void VBoxSelectorWnd::vmListViewCurrentChanged (bool aRefreshDetails,
         if (state == KMachineState_Paused)
         {
             vmPauseAction->setText (tr ("R&esume"));
-            vmPauseAction->setShortcut (tr ("Ctrl+P"));
+            vmPauseAction->setShortcut (QKeySequence ("Ctrl+P"));
             vmPauseAction->setStatusTip (
                 tr ("Resume the execution of the virtual machine"));
             vmPauseAction->blockSignals (true);
@@ -1320,7 +1281,7 @@ void VBoxSelectorWnd::vmListViewCurrentChanged (bool aRefreshDetails,
         else
         {
             vmPauseAction->setText (tr ("&Pause"));
-            vmPauseAction->setShortcut (tr ("Ctrl+P"));
+            vmPauseAction->setShortcut (QKeySequence ("Ctrl+P"));
             vmPauseAction->setStatusTip (
                 tr ("Suspend the execution of the virtual machine"));
             vmPauseAction->blockSignals (true);
@@ -1436,7 +1397,7 @@ void VBoxSelectorWnd::mediaEnumFinished (const VBoxMediaList &list)
         {
             /* Show the VDM dialog but don't refresh once more after a
              * just-finished refresh */
-            VBoxDiskImageManagerDlg::showModeless (false /* aRefresh */);
+            VBoxDiskImageManagerDlg::showModeless (this, false /* aRefresh */);
         }
     }
     while (0);

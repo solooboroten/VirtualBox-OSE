@@ -1,6 +1,6 @@
-/** $Id: DevPit-i8254.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/** $Id: DevPit-i8254.cpp 34351 2008-08-08 16:24:48Z bird $ */
 /** @file
- * Intel 8254 Programmable Interval Timer (PIT) And Dummy Speaker Device.
+ * DevPIT-i8254 - Intel 8254 Programmable Interval Timer (PIT) And Dummy Speaker Device.
  */
 
 /*
@@ -44,7 +44,6 @@
  * THE SOFTWARE.
  */
 
-
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
@@ -55,7 +54,8 @@
 #include <iprt/assert.h>
 #include <iprt/asm.h>
 
-#include "Builtins.h"
+#include "../Builtins.h"
+
 
 /*******************************************************************************
 *   Defined Constants And Macros                                               *
@@ -76,19 +76,24 @@
  * If not defined, it will be flipped correctly. */
 //#define FAKE_REFRESH_CLOCK
 
+
 /*******************************************************************************
 *   Structures and Typedefs                                                    *
 *******************************************************************************/
 typedef struct PITChannelState
 {
-    /** Pointer to the instance data - HCPtr. */
-    R3R0PTRTYPE(struct PITState *)  pPitHC;
-    /** The timer - HCPtr. */
-    R3R0PTRTYPE(PTMTIMER)           pTimerHC;
-    /** Pointer to the instance data - GCPtr. */
-    GCPTRTYPE(struct PITState *)    pPitGC;
-    /** The timer - HCPtr. */
-    PTMTIMERGC                      pTimerGC;
+    /** Pointer to the instance data - R3 Ptr. */
+    R3PTRTYPE(struct PITState *)    pPitR3;
+    /** The timer - R3 Ptr. */
+    PTMTIMERR3                      pTimerR3;
+    /** Pointer to the instance data - R0 Ptr. */
+    R0PTRTYPE(struct PITState *)    pPitR0;
+    /** The timer - R0 Ptr. */
+    PTMTIMERR0                      pTimerR0;
+    /** Pointer to the instance data - RC Ptr. */
+    RCPTRTYPE(struct PITState *)    pPitRC;
+    /** The timer - RC Ptr. */
+    PTMTIMERRC                      pTimerRC;
     /** The virtual time stamp at the last reload. (only used in mode 2 for now) */
     uint64_t                        u64ReloadTS;
     /** The actual time of the next tick.
@@ -132,7 +137,7 @@ typedef struct PITState
     uint32_t                Alignment1;
 #endif
     /** Pointer to the device instance. */
-    R3PTRTYPE(PPDMDEVINS)   pDevIns;
+    PPDMDEVINSR3            pDevIns;
 #if HC_ARCH_BITS == 32
     uint32_t                Alignment0;
 #endif
@@ -164,20 +169,14 @@ static int pit_get_count(PITChannelState *s)
 {
     uint64_t d;
     int counter;
-    PTMTIMER pTimer = s->CTXSUFF(pPit)->channels[0].CTXSUFF(pTimer);
+    PTMTIMER pTimer = s->CTX_SUFF(pPit)->channels[0].CTX_SUFF(pTimer);
 
-    if (s->mode == 2) /** @todo Implement proper virtual time and get rid of this hack.. */
+    if (s->mode == 2)
     {
-#if 0
-        d = TMTimerGet(pTimer);
-        d -= s->u64ReloadTS;
-        d = ASMMultU64ByU32DivByU32(d, PIT_FREQ, TMTimerGetFreq(pTimer));
-#else /* variable time because of catch up */
         if (s->u64NextTS == UINT64_MAX)
             return 1; /** @todo check this value. */
         d = TMTimerGet(pTimer);
         d = ASMMultU64ByU32DivByU32(d - s->u64ReloadTS, s->count, s->u64NextTS - s->u64ReloadTS);
-#endif
         if (d >= s->count)
             return 1;
         return s->count - d;
@@ -206,7 +205,7 @@ static int pit_get_count(PITChannelState *s)
 static int pit_get_out1(PITChannelState *s, int64_t current_time)
 {
     uint64_t d;
-    PTMTIMER pTimer = s->CTXSUFF(pPit)->channels[0].CTXSUFF(pTimer);
+    PTMTIMER pTimer = s->CTX_SUFF(pPit)->channels[0].CTX_SUFF(pTimer);
     int out;
 
     d = ASMMultU64ByU32DivByU32(current_time - s->count_load_time, PIT_FREQ, TMTimerGetFreq(pTimer));
@@ -268,7 +267,7 @@ static void pit_latch_count(PITChannelState *s)
 static void pit_set_gate(PITState *pit, int channel, int val)
 {
     PITChannelState *s = &pit->channels[channel];
-    PTMTIMER pTimer = s->CTXSUFF(pPit)->channels[0].CTXSUFF(pTimer);
+    PTMTIMER pTimer = s->CTX_SUFF(pPit)->channels[0].CTX_SUFF(pTimer);
     Assert((val & 1) == val);
 
     switch(s->mode) {
@@ -298,9 +297,9 @@ static void pit_set_gate(PITState *pit, int channel, int val)
     s->gate = val;
 }
 
-static inline void pit_load_count(PITChannelState *s, int val)
+DECLINLINE(void) pit_load_count(PITChannelState *s, int val)
 {
-    PTMTIMER pTimer = s->CTXSUFF(pPit)->channels[0].CTXSUFF(pTimer);
+    PTMTIMER pTimer = s->CTX_SUFF(pPit)->channels[0].CTX_SUFF(pTimer);
     if (val == 0)
         val = 0x10000;
     s->count_load_time = s->u64ReloadTS = TMTimerGet(pTimer);
@@ -308,7 +307,7 @@ static inline void pit_load_count(PITChannelState *s, int val)
     pit_irq_timer_update(s, s->count_load_time);
 
     /* log the new rate (ch 0 only). */
-    if (    s->pTimerHC /* ch 0 */
+    if (    s->pTimerR3 /* ch 0 */
         &&  s->cRelLogEntries++ < 32)
         LogRel(("PIT: mode=%d count=%#x (%u) - %d.%02d Hz (ch=0)\n",
                 s->mode, s->count, s->count, PIT_FREQ / s->count, (PIT_FREQ * 100 / s->count) % 100));
@@ -318,7 +317,7 @@ static inline void pit_load_count(PITChannelState *s, int val)
 static int64_t pit_get_next_transition_time(PITChannelState *s,
                                             uint64_t current_time)
 {
-    PTMTIMER pTimer = s->CTXSUFF(pPit)->channels[0].CTXSUFF(pTimer);
+    PTMTIMER pTimer = s->CTX_SUFF(pPit)->channels[0].CTX_SUFF(pTimer);
     uint64_t d, next_time, base;
     uint32_t period2;
 
@@ -387,15 +386,15 @@ static void pit_irq_timer_update(PITChannelState *s, uint64_t current_time)
     int64_t expire_time;
     int irq_level;
     PPDMDEVINS pDevIns;
-    PTMTIMER pTimer = s->CTXSUFF(pPit)->channels[0].CTXSUFF(pTimer);
+    PTMTIMER pTimer = s->CTX_SUFF(pPit)->channels[0].CTX_SUFF(pTimer);
 
-    if (!s->CTXSUFF(pTimer))
+    if (!s->CTX_SUFF(pTimer))
         return;
     expire_time = pit_get_next_transition_time(s, current_time);
     irq_level = pit_get_out1(s, current_time);
 
     /* We just flip-flop the irq level to save that extra timer call, which isn't generally required (we haven't served it for months). */
-    pDevIns = s->CTXSUFF(pPit)->pDevIns;
+    pDevIns = s->CTX_SUFF(pPit)->pDevIns;
     PDMDevHlpISASetIrq(pDevIns, s->irq, irq_level);
     if (irq_level)
         PDMDevHlpISASetIrq(pDevIns, s->irq, 0);
@@ -404,18 +403,18 @@ static void pit_irq_timer_update(PITChannelState *s, uint64_t current_time)
     if (irq_level)
     {
         s->u64ReloadTS = now;
-        STAM_COUNTER_INC(&s->CTXSUFF(pPit)->StatPITIrq);
+        STAM_COUNTER_INC(&s->CTX_SUFF(pPit)->StatPITIrq);
     }
 
     if (expire_time != -1)
     {
         s->u64NextTS = expire_time;
-        TMTimerSet(s->CTXSUFF(pTimer), s->u64NextTS);
+        TMTimerSet(s->CTX_SUFF(pTimer), s->u64NextTS);
     }
     else
     {
         LogFlow(("PIT: m=%d count=%#4x irq_level=%#x stopped\n", s->mode, s->count, irq_level));
-        TMTimerStop(s->CTXSUFF(pTimer));
+        TMTimerStop(s->CTX_SUFF(pTimer));
         s->u64NextTS = UINT64_MAX;
     }
     s->next_transition_time = expire_time;
@@ -446,7 +445,7 @@ PDMBOTHCBDECL(int) pitIOPortRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port
         return VERR_IOM_IOPORT_UNUSED;
     }
 
-    PITState *pit = PDMINS2DATA(pDevIns, PITState *);
+    PITState *pit = PDMINS_2_DATA(pDevIns, PITState *);
     int ret;
     PITChannelState *s = &pit->channels[Port];
     if (s->status_latched)
@@ -524,7 +523,7 @@ PDMBOTHCBDECL(int) pitIOPortWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Por
     if (cb != 1)
         return VINF_SUCCESS;
 
-    PITState *pit = PDMINS2DATA(pDevIns, PITState *);
+    PITState *pit = PDMINS_2_DATA(pDevIns, PITState *);
     Port &= 3;
     if (Port == 3)
     {
@@ -551,7 +550,7 @@ PDMBOTHCBDECL(int) pitIOPortWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Por
         if (channel == 3)
         {
             /* read-back command */
-            for (channel = 0; channel < ELEMENTS(pit->channels); channel++)
+            for (channel = 0; channel < RT_ELEMENTS(pit->channels); channel++)
             {
                 PITChannelState *s = &pit->channels[channel];
                 if (u32 & (2 << channel)) {
@@ -561,7 +560,7 @@ PDMBOTHCBDECL(int) pitIOPortWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Por
                     {
                         /* status latch */
                         /* XXX: add BCD and null count */
-                        PTMTIMER pTimer = s->CTXSUFF(pPit)->channels[0].CTXSUFF(pTimer);
+                        PTMTIMER pTimer = s->CTX_SUFF(pPit)->channels[0].CTX_SUFF(pTimer);
                         s->status = (pit_get_out1(s, TMTimerGet(pTimer)) << 7)
                             | (s->rw_mode << 4)
                             | (s->mode << 1)
@@ -638,25 +637,25 @@ PDMBOTHCBDECL(int) pitIOPortSpeakerRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPO
     NOREF(pvUser);
     if (cb == 1)
     {
-        PITState *pData = PDMINS2DATA(pDevIns, PITState *);
-        const uint64_t u64Now = TMTimerGet(pData->channels[0].CTXSUFF(pTimer));
-        Assert(TMTimerGetFreq(pData->channels[0].CTXSUFF(pTimer)) == 1000000000); /* lazy bird. */
+        PITState *pThis = PDMINS_2_DATA(pDevIns, PITState *);
+        const uint64_t u64Now = TMTimerGet(pThis->channels[0].CTX_SUFF(pTimer));
+        Assert(TMTimerGetFreq(pThis->channels[0].CTX_SUFF(pTimer)) == 1000000000); /* lazy bird. */
 
         /* bit 6,7 Parity error stuff. */
         /* bit 5 - mirrors timer 2 output condition. */
-        const int fOut = pit_get_out(pData, 2, u64Now);
+        const int fOut = pit_get_out(pThis, 2, u64Now);
         /* bit 4 - toggled every with each (DRAM?) refresh request, every 15.085 µs. */
 #ifdef FAKE_REFRESH_CLOCK
-        pData->dummy_refresh_clock ^= 1;
-        const int fRefresh = pData->dummy_refresh_clock;
+        pThis->dummy_refresh_clock ^= 1;
+        const int fRefresh = pThis->dummy_refresh_clock;
 #else
         const int fRefresh = (u64Now / 15085) & 1;
 #endif
         /* bit 2,3 NMI / parity status stuff. */
         /* bit 1 - speaker data status */
-        const int fSpeakerStatus = pData->speaker_data_on;
+        const int fSpeakerStatus = pThis->speaker_data_on;
         /* bit 0 - timer 2 clock gate to speaker status. */
-        const int fTimer2GateStatus = pit_get_gate(pData, 2);
+        const int fTimer2GateStatus = pit_get_gate(pThis, 2);
 
         *pu32 = fTimer2GateStatus
               | (fSpeakerStatus << 1)
@@ -687,9 +686,9 @@ PDMBOTHCBDECL(int) pitIOPortSpeakerWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOP
     NOREF(pvUser);
     if (cb == 1)
     {
-        PITState *pData = PDMINS2DATA(pDevIns, PITState *);
-        pData->speaker_data_on = (u32 >> 1) & 1;
-        pit_set_gate(pData, 2, u32 & 1);
+        PITState *pThis = PDMINS_2_DATA(pDevIns, PITState *);
+        pThis->speaker_data_on = (u32 >> 1) & 1;
+        pit_set_gate(pThis, 2, u32 & 1);
     }
     Log(("pitIOPortSpeakerWrite: Port=%#x cb=%x u32=%#x\n", Port, cb, u32));
     return VINF_SUCCESS;
@@ -705,12 +704,12 @@ PDMBOTHCBDECL(int) pitIOPortSpeakerWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOP
  */
 static DECLCALLBACK(int) pitSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
 {
-    PITState *pData = PDMINS2DATA(pDevIns, PITState *);
+    PITState *pThis = PDMINS_2_DATA(pDevIns, PITState *);
     unsigned i;
 
-    for (i = 0; i < ELEMENTS(pData->channels); i++)
+    for (i = 0; i < RT_ELEMENTS(pThis->channels); i++)
     {
-        PITChannelState *s = &pData->channels[i];
+        PITChannelState *s = &pThis->channels[i];
         SSMR3PutU32(pSSMHandle, s->count);
         SSMR3PutU16(pSSMHandle, s->latched_count);
         SSMR3PutU8(pSSMHandle, s->count_latched);
@@ -727,13 +726,13 @@ static DECLCALLBACK(int) pitSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
         SSMR3PutU64(pSSMHandle, s->u64NextTS);
         SSMR3PutU64(pSSMHandle, s->u64ReloadTS);
         SSMR3PutS64(pSSMHandle, s->next_transition_time);
-        if (s->CTXSUFF(pTimer))
-            TMR3TimerSave(s->CTXSUFF(pTimer), pSSMHandle);
+        if (s->CTX_SUFF(pTimer))
+            TMR3TimerSave(s->CTX_SUFF(pTimer), pSSMHandle);
     }
 
-    SSMR3PutS32(pSSMHandle, pData->speaker_data_on);
+    SSMR3PutS32(pSSMHandle, pThis->speaker_data_on);
 #ifdef FAKE_REFRESH_CLOCK
-    return SSMR3PutS32(pSSMHandle, pData->dummy_refresh_clock);
+    return SSMR3PutS32(pSSMHandle, pThis->dummy_refresh_clock);
 #else
     return SSMR3PutS32(pSSMHandle, 0);
 #endif
@@ -750,15 +749,15 @@ static DECLCALLBACK(int) pitSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
  */
 static DECLCALLBACK(int) pitLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, uint32_t u32Version)
 {
-    PITState *pData = PDMINS2DATA(pDevIns, PITState *);
+    PITState *pThis = PDMINS_2_DATA(pDevIns, PITState *);
     unsigned i;
 
     if (u32Version != PIT_SAVED_STATE_VERSION)
         return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
 
-    for (i = 0; i < ELEMENTS(pData->channels); i++)
+    for (i = 0; i < RT_ELEMENTS(pThis->channels); i++)
     {
-        PITChannelState *s = &pData->channels[i];
+        PITChannelState *s = &pThis->channels[i];
         SSMR3GetU32(pSSMHandle, &s->count);
         SSMR3GetU16(pSSMHandle, &s->latched_count);
         SSMR3GetU8(pSSMHandle, &s->count_latched);
@@ -775,18 +774,18 @@ static DECLCALLBACK(int) pitLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
         SSMR3GetU64(pSSMHandle, &s->u64NextTS);
         SSMR3GetU64(pSSMHandle, &s->u64ReloadTS);
         SSMR3GetS64(pSSMHandle, &s->next_transition_time);
-        if (s->CTXSUFF(pTimer))
+        if (s->CTX_SUFF(pTimer))
         {
-            TMR3TimerLoad(s->CTXSUFF(pTimer), pSSMHandle);
+            TMR3TimerLoad(s->CTX_SUFF(pTimer), pSSMHandle);
             LogRel(("PIT: mode=%d count=%#x (%u) - %d.%02d Hz (ch=%d) (restore)\n",
                     s->mode, s->count, s->count, PIT_FREQ / s->count, (PIT_FREQ * 100 / s->count) % 100, i));
         }
-        pData->channels[0].cRelLogEntries = 0;
+        pThis->channels[0].cRelLogEntries = 0;
     }
 
-    SSMR3GetS32(pSSMHandle, &pData->speaker_data_on);
+    SSMR3GetS32(pSSMHandle, &pThis->speaker_data_on);
 #ifdef FAKE_REFRESH_CLOCK
-    return SSMR3GetS32(pSSMHandle, &pData->dummy_refresh_clock);
+    return SSMR3GetS32(pSSMHandle, &pThis->dummy_refresh_clock);
 #else
     int32_t u32Dummy;
     return SSMR3GetS32(pSSMHandle, &u32Dummy);
@@ -802,11 +801,11 @@ static DECLCALLBACK(int) pitLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
  */
 static DECLCALLBACK(void) pitTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer)
 {
-    PITState *pData = PDMINS2DATA(pDevIns, PITState *);
-    PITChannelState *s = &pData->channels[0];
-    STAM_PROFILE_ADV_START(&s->CTXSUFF(pPit)->StatPITHandler, a);
+    PITState *pThis = PDMINS_2_DATA(pDevIns, PITState *);
+    PITChannelState *s = &pThis->channels[0];
+    STAM_PROFILE_ADV_START(&s->CTX_SUFF(pPit)->StatPITHandler, a);
     pit_irq_timer_update(s, s->next_transition_time);
-    STAM_PROFILE_ADV_STOP(&s->CTXSUFF(pPit)->StatPITHandler, a);
+    STAM_PROFILE_ADV_STOP(&s->CTX_SUFF(pPit)->StatPITHandler, a);
 }
 
 
@@ -819,16 +818,16 @@ static DECLCALLBACK(void) pitTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer)
  */
 static DECLCALLBACK(void) pitRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
 {
-    PITState *pData = PDMINS2DATA(pDevIns, PITState *);
+    PITState *pThis = PDMINS_2_DATA(pDevIns, PITState *);
     unsigned i;
     LogFlow(("pitRelocate: \n"));
 
-    for (i = 0; i < ELEMENTS(pData->channels); i++)
+    for (i = 0; i < RT_ELEMENTS(pThis->channels); i++)
     {
-        PITChannelState *pCh = &pData->channels[i];
-        if (pCh->pTimerHC)
-            pCh->pTimerGC = TMTimerGCPtr(pCh->pTimerHC);
-        pData->channels[i].pPitGC = PDMINS2DATA_GCPTR(pDevIns);
+        PITChannelState *pCh = &pThis->channels[i];
+        if (pCh->pTimerR3)
+            pCh->pTimerRC = TMTimerRCPtr(pCh->pTimerR3);
+        pThis->channels[i].pPitRC = PDMINS_2_DATA_RCPTR(pDevIns);
     }
 }
 
@@ -843,13 +842,13 @@ static DECLCALLBACK(void) pitInfo(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, const 
  */
 static DECLCALLBACK(void) pitReset(PPDMDEVINS pDevIns)
 {
-    PITState *pData = PDMINS2DATA(pDevIns, PITState *);
+    PITState *pThis = PDMINS_2_DATA(pDevIns, PITState *);
     unsigned i;
     LogFlow(("pitReset: \n"));
 
-    for (i = 0; i < ELEMENTS(pData->channels); i++)
+    for (i = 0; i < RT_ELEMENTS(pThis->channels); i++)
     {
-        PITChannelState *s = &pData->channels[i];
+        PITChannelState *s = &pThis->channels[i];
 
 #if 1 /* Set everything back to virgin state. (might not be strictly correct) */
         s->latched_count = 0;
@@ -879,11 +878,11 @@ static DECLCALLBACK(void) pitReset(PPDMDEVINS pDevIns)
  */
 static DECLCALLBACK(void) pitInfo(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, const char *pszArgs)
 {
-    PITState   *pData = PDMINS2DATA(pDevIns, PITState *);
+    PITState   *pThis = PDMINS_2_DATA(pDevIns, PITState *);
     unsigned    i;
-    for (i = 0; i < ELEMENTS(pData->channels); i++)
+    for (i = 0; i < RT_ELEMENTS(pThis->channels); i++)
     {
-        const PITChannelState *pCh = &pData->channels[i];
+        const PITChannelState *pCh = &pThis->channels[i];
 
         pHlp->pfnPrintf(pHlp,
                         "PIT (i8254) channel %d status: irq=%#x\n"
@@ -904,9 +903,9 @@ static DECLCALLBACK(void) pitInfo(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, const 
     }
 #ifdef FAKE_REFRESH_CLOCK
     pHlp->pfnPrintf(pHlp, "speaker_data_on=%#x dummy_refresh_clock=%#x\n",
-                    pData->speaker_data_on, pData->dummy_refresh_clock);
+                    pThis->speaker_data_on, pThis->dummy_refresh_clock);
 #else
-    pHlp->pfnPrintf(pHlp, "speaker_data_on=%#x\n", pData->speaker_data_on);
+    pHlp->pfnPrintf(pHlp, "speaker_data_on=%#x\n", pThis->speaker_data_on);
 #endif
 }
 
@@ -926,7 +925,7 @@ static DECLCALLBACK(void) pitInfo(PPDMDEVINS pDevIns, PCDBGFINFOHLP pHlp, const 
  */
 static DECLCALLBACK(int)  pitConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNODE pCfgHandle)
 {
-    PITState   *pData = PDMINS2DATA(pDevIns, PITState *);
+    PITState   *pThis = PDMINS_2_DATA(pDevIns, PITState *);
     int         rc;
     uint8_t     u8Irq;
     uint16_t    u16Base;
@@ -939,99 +938,89 @@ static DECLCALLBACK(int)  pitConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     /*
      * Validate configuration.
      */
-    if (!CFGMR3AreValuesValid(pCfgHandle, "Irq\0Base\0Speaker\0GCEnabled\0R0Enabled\0"))
+    if (!CFGMR3AreValuesValid(pCfgHandle, "Irq\0" "Base\0" "Speaker\0" "GCEnabled\0" "R0Enabled\0"))
         return VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES;
 
     /*
      * Init the data.
      */
-    rc = CFGMR3QueryU8(pCfgHandle, "Irq", &u8Irq);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        u8Irq = 0;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryU8Def(pCfgHandle, "Irq", &u8Irq, 0);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Querying \"Irq\" as a uint8_t failed"));
 
-    rc = CFGMR3QueryU16(pCfgHandle, "Base", &u16Base);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        u16Base = 0x40;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryU16Def(pCfgHandle, "Base", &u16Base, 0x40);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Querying \"Base\" as a uint16_t failed"));
 
-    rc = CFGMR3QueryBool(pCfgHandle, "SpeakerEnabled", &fSpeaker);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fSpeaker = true;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "SpeakerEnabled", &fSpeaker, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Querying \"SpeakerEnabled\" as a bool failed"));
 
-    rc = CFGMR3QueryBool(pCfgHandle, "GCEnabled", &fGCEnabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fGCEnabled = true;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "GCEnabled", &fGCEnabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Querying \"GCEnabled\" as a bool failed"));
 
-    rc = CFGMR3QueryBool(pCfgHandle, "R0Enabled", &fR0Enabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fR0Enabled = true;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "R0Enabled", &fR0Enabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: failed to read R0Enabled as boolean"));
 
-    pData->pDevIns = pDevIns;
-    pData->channels[0].irq = u8Irq;
-    for (i = 0; i < ELEMENTS(pData->channels); i++)
+    pThis->pDevIns = pDevIns;
+    pThis->channels[0].irq = u8Irq;
+    for (i = 0; i < RT_ELEMENTS(pThis->channels); i++)
     {
-        pData->channels[i].pPitHC = pData;
-        pData->channels[i].pPitGC = PDMINS2DATA_GCPTR(pDevIns);
+        pThis->channels[i].pPitR3 = pThis;
+        pThis->channels[i].pPitR0 = PDMINS_2_DATA_R0PTR(pDevIns);
+        pThis->channels[i].pPitRC = PDMINS_2_DATA_RCPTR(pDevIns);
     }
 
     /*
      * Create timer, register I/O Ports and save state.
      */
     rc = PDMDevHlpTMTimerCreate(pDevIns, TMCLOCK_VIRTUAL_SYNC, pitTimer, "i8254 Programmable Interval Timer",
-                                &pData->channels[0].CTXSUFF(pTimer));
-    if (VBOX_FAILURE(rc))
-    {
-        AssertMsgFailed(("pfnTMTimerCreate -> %Vrc\n", rc));
+                                &pThis->channels[0].pTimerR3);
+    if (RT_FAILURE(rc))
         return rc;
-    }
+    pThis->channels[0].pTimerRC = TMTimerRCPtr(pThis->channels[0].pTimerR3);
+    pThis->channels[0].pTimerR0 = TMTimerR0Ptr(pThis->channels[0].pTimerR3);
 
     rc = PDMDevHlpIOPortRegister(pDevIns, u16Base, 4, NULL, pitIOPortWrite, pitIOPortRead, NULL, NULL, "i8254 Programmable Interval Timer");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (fGCEnabled)
     {
         rc = PDMDevHlpIOPortRegisterGC(pDevIns, u16Base, 4, 0, "pitIOPortWrite", "pitIOPortRead", NULL, NULL, "i8254 Programmable Interval Timer");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
     if (fR0Enabled)
     {
         rc = PDMDevHlpIOPortRegisterR0(pDevIns, u16Base, 4, 0, "pitIOPortWrite", "pitIOPortRead", NULL, NULL, "i8254 Programmable Interval Timer");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
     if (fSpeaker)
     {
         rc = PDMDevHlpIOPortRegister(pDevIns, 0x61, 1, NULL, pitIOPortSpeakerWrite, pitIOPortSpeakerRead, NULL, NULL, "PC Speaker");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
         if (fGCEnabled)
         {
             rc = PDMDevHlpIOPortRegisterGC(pDevIns, 0x61, 1, 0, NULL, "pitIOPortSpeakerRead", NULL, NULL, "PC Speaker");
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
                 return rc;
         }
     }
 
-    rc = PDMDevHlpSSMRegister(pDevIns, pDevIns->pDevReg->szDeviceName, iInstance, PIT_SAVED_STATE_VERSION, sizeof(*pData),
+    rc = PDMDevHlpSSMRegister(pDevIns, pDevIns->pDevReg->szDeviceName, iInstance, PIT_SAVED_STATE_VERSION, sizeof(*pThis),
                                           NULL, pitSaveExec, NULL,
                                           NULL, pitLoadExec, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     /*
@@ -1042,8 +1031,8 @@ static DECLCALLBACK(int)  pitConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     /*
      * Register statistics and debug info.
      */
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatPITIrq,      STAMTYPE_COUNTER, "/TM/PIT/Irq",      STAMUNIT_OCCURENCES,     "The number of times a timer interrupt was triggered.");
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatPITHandler,  STAMTYPE_PROFILE, "/TM/PIT/Handler",  STAMUNIT_TICKS_PER_CALL, "Profiling timer callback handler.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatPITIrq,      STAMTYPE_COUNTER, "/TM/PIT/Irq",      STAMUNIT_OCCURENCES,     "The number of times a timer interrupt was triggered.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatPITHandler,  STAMTYPE_PROFILE, "/TM/PIT/Handler",  STAMUNIT_TICKS_PER_CALL, "Profiling timer callback handler.");
 
     PDMDevHlpDBGFInfoRegister(pDevIns, "pit", "Display PIT (i8254) status. (no arguments)", pitInfo);
 

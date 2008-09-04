@@ -1,4 +1,4 @@
-/* $Id: HostImpl.h 30749 2008-05-12 00:59:03Z bird $ */
+/* $Id: HostImpl.h 34336 2008-08-08 14:38:28Z klaus $ */
 /** @file
  * Implemenation of IHost.
  */
@@ -36,6 +36,10 @@ class USBProxyService;
 # include "win/svchlp.h"
 #endif
 
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+# include "PerformanceImpl.h"
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
 class VirtualBox;
 class SessionMachine;
 class HostDVDDrive;
@@ -67,7 +71,7 @@ public:
     void FinalRelease();
 
     // public initializer/uninitializer for internal purposes only
-    HRESULT init (VirtualBox *parent);
+    HRESULT init (VirtualBox *aParent);
     void uninit();
 
     // IHost properties
@@ -75,12 +79,11 @@ public:
     STDMETHOD(COMGETTER(FloppyDrives))(IHostFloppyDriveCollection **drives);
     STDMETHOD(COMGETTER(USBDevices))(IHostUSBDeviceCollection **aUSBDevices);
     STDMETHOD(COMGETTER(USBDeviceFilters))(IHostUSBDeviceFilterCollection ** aUSBDeviceFilters);
-#ifdef RT_OS_WINDOWS
     STDMETHOD(COMGETTER(NetworkInterfaces))(IHostNetworkInterfaceCollection **networkInterfaces);
-#endif
     STDMETHOD(COMGETTER(ProcessorCount))(ULONG *count);
-    STDMETHOD(COMGETTER(ProcessorSpeed))(ULONG *speed);
-    STDMETHOD(COMGETTER(ProcessorDescription))(BSTR *description);
+    STDMETHOD(COMGETTER(ProcessorOnlineCount))(ULONG *count);
+    STDMETHOD(GetProcessorSpeed)(ULONG cpuId, ULONG *speed);
+    STDMETHOD(GetProcessorDescription)(ULONG cpuId, BSTR *description);
     STDMETHOD(COMGETTER(MemorySize))(ULONG *size);
     STDMETHOD(COMGETTER(MemoryAvailable))(ULONG *available);
     STDMETHOD(COMGETTER(OperatingSystem))(BSTR *os);
@@ -158,6 +161,11 @@ private:
                                                  void *aUser, int *aVrc);
 #endif
 
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+    void registerMetrics (PerformanceCollector *aCollector);
+    void unregisterMetrics (PerformanceCollector *aCollector);
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
     ComObjPtr <VirtualBox, ComWeakRef> mParent;
 
 #ifdef VBOX_WITH_USB
@@ -166,6 +174,7 @@ private:
     /** Pointer to the USBProxyService object. */
     USBProxyService *mUSBProxyService;
 #endif /* VBOX_WITH_USB */
+
 };
 
 #endif // ____H_HOSTIMPL

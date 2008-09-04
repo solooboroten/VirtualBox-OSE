@@ -146,9 +146,9 @@ VBoxVMItem::~VBoxVMItem()
 // public members
 ////////////////////////////////////////////////////////////////////////////////
 
-QString VBoxVMItem::sessionStateName() const 
-{ 
-    return mAccessible ? vboxGlobal().toString (mState) : VBoxVMListView::tr ("Inaccessible"); 
+QString VBoxVMItem::sessionStateName() const
+{
+    return mAccessible ? vboxGlobal().toString (mState) : VBoxVMListView::tr ("Inaccessible");
 }
 
 QString VBoxVMItem::toolTipText() const
@@ -386,13 +386,13 @@ bool VBoxVMItem::switchTo()
 
 /* VBoxVMModel class */
 
-void VBoxVMModel::addItem (VBoxVMItem *aItem) 
-{ 
+void VBoxVMModel::addItem (VBoxVMItem *aItem)
+{
     Assert (aItem);
     int row = mVMItemList.count();
     emit layoutAboutToBeChanged();
     beginInsertRows (QModelIndex(), row, row);
-    mVMItemList << aItem; 
+    mVMItemList << aItem;
     endInsertRows();
     refreshItem (aItem);
 }
@@ -438,7 +438,7 @@ void VBoxVMModel::itemChanged (VBoxVMItem *aItem)
 
 /**
  *  Clear the item model list. Please note that the items itself are also
- *  deleted. 
+ *  deleted.
  */
 void VBoxVMModel::clear()
 {
@@ -487,9 +487,9 @@ void VBoxVMModel::sort (int /* aColumn */, Qt::SortOrder aOrder /* = Qt::Ascendi
     emit layoutChanged();
 }
 
-int VBoxVMModel::rowCount(const QModelIndex & /* aParent = QModelIndex() */) const 
-{ 
-    return mVMItemList.count(); 
+int VBoxVMModel::rowCount(const QModelIndex & /* aParent = QModelIndex() */) const
+{
+    return mVMItemList.count();
 }
 
 QVariant VBoxVMModel::data(const QModelIndex &aIndex, int aRole) const
@@ -529,10 +529,10 @@ QVariant VBoxVMModel::data(const QModelIndex &aIndex, int aRole) const
         case Qt::AccessibleTextRole:
             {
                 VBoxVMItem *item = mVMItemList.at (aIndex.row());
-                v = QString (VBoxVMListView::tr ("%1 (%2)\n %3", "Accessible string of the list view item")
+                v = QString ("%1 (%2)\n%3")
                              .arg (item->name())
                              .arg (item->snapshotName())
-                             .arg (item->sessionStateName()));
+                             .arg (item->sessionStateName());
                 break;
             }
         case SnapShotDisplayRole:
@@ -573,16 +573,10 @@ QVariant VBoxVMModel::data(const QModelIndex &aIndex, int aRole) const
     return v;
 }
 
-QVariant VBoxVMModel::headerData(int aSection, Qt::Orientation aOrientation,
-                                 int aRole /* = Qt::DisplayRole */) const
+QVariant VBoxVMModel::headerData(int /*aSection*/, Qt::Orientation /*aOrientation*/,
+                                 int /*aRole = Qt::DisplayRole */) const
 {
-    if (aRole != Qt::DisplayRole)
-        return QVariant();
-
-    if (aOrientation == Qt::Horizontal)
-        return QString (VBoxVMListView::tr ("VM", "Horizontal header description"));
-    else
-        return QString ("%1").arg (aSection);
+    return QVariant();
 }
 
 bool VBoxVMModel::VBoxVMItemNameCompareLessThan (VBoxVMItem* aItem1, VBoxVMItem* aItem2)
@@ -655,28 +649,28 @@ void VBoxVMListView::ensureCurrentVisible()
     scrollTo (currentIndex(), QAbstractItemView::EnsureVisible);
 }
 
-void VBoxVMListView::selectionChanged (const QItemSelection &aSelected, const QItemSelection &aDeselected) 
+void VBoxVMListView::selectionChanged (const QItemSelection &aSelected, const QItemSelection &aDeselected)
 {
     QListView::selectionChanged (aSelected, aDeselected);
     selectCurrent();
     ensureCurrentVisible();
-    emit currentChanged(); 
+    emit currentChanged();
 }
 
-void VBoxVMListView::currentChanged (const QModelIndex &aCurrent, const QModelIndex &aPrevious) 
-{ 
+void VBoxVMListView::currentChanged (const QModelIndex &aCurrent, const QModelIndex &aPrevious)
+{
     QListView::currentChanged (aCurrent, aPrevious);
     selectCurrent();
     ensureCurrentVisible();
-    emit currentChanged(); 
-} 
+    emit currentChanged();
+}
 
 void VBoxVMListView::dataChanged (const QModelIndex &aTopLeft, const QModelIndex &aBottomRight)
 {
     QListView::dataChanged (aTopLeft, aBottomRight);
     selectCurrent();
     ensureCurrentVisible();
-    emit currentChanged(); 
+    emit currentChanged();
 }
 
 void VBoxVMListView::mousePressEvent (QMouseEvent *aEvent)
@@ -766,40 +760,46 @@ QSize VBoxVMItemPainter::sizeHint (const QStyleOptionViewItem &aOption,
 void VBoxVMItemPainter::paint (QPainter *aPainter, const QStyleOptionViewItem &aOption,
                                const QModelIndex &aIndex) const
 {
+    QStyleOptionViewItem option (aOption);
+    /* Highlight background if an item is selected in any case.
+     * (Fix for selector in the windows style.) */
+    option.showDecorationSelected = true;
     // Name and decoration
     const QString vmName = aIndex.data(Qt::DisplayRole).toString();
     const QFont nameFont = aIndex.data (Qt::FontRole).value<QFont>();
-    const QPixmap osType = aIndex.data(Qt::DecorationRole).value<QIcon>().pixmap (aOption.decorationSize, iconMode (aOption.state), iconState (aOption.state));
+    const QPixmap osType = aIndex.data(Qt::DecorationRole).value<QIcon>().pixmap (option.decorationSize, iconMode (option.state), iconState (option.state));
 
     const QString shot = aIndex.data(VBoxVMModel::SnapShotDisplayRole).toString();
     const QFont shotFont = aIndex.data (VBoxVMModel::SnapShotFontRole).value<QFont>();
 
     const QString state = aIndex.data(VBoxVMModel::SessionStateDisplayRole).toString();
     const QFont stateFont = aIndex.data (VBoxVMModel::SessionStateFontRole).value<QFont>();
-    const QPixmap stateIcon = aIndex.data(VBoxVMModel::SessionStateDecorationRole).value<QIcon>().pixmap (QSize (16, 16), iconMode (aOption.state), iconState (aOption.state));
+    const QPixmap stateIcon = aIndex.data(VBoxVMModel::SessionStateDecorationRole).value<QIcon>().pixmap (QSize (16, 16), iconMode (option.state), iconState (option.state));
 
     /* Get the sizes for all items */
-    QRect osTypeRT = rect (aOption, aIndex, Qt::DecorationRole);
-    QRect vmNameRT = rect (aOption, aIndex, Qt::DisplayRole);
-    QRect shotRT = rect (aOption, aIndex, VBoxVMModel::SnapShotDisplayRole);
-    QRect stateIconRT = rect (aOption, aIndex, VBoxVMModel::SessionStateDecorationRole);
-    QRect stateRT = rect (aOption, aIndex, VBoxVMModel::SessionStateDisplayRole);
+    QRect osTypeRT = rect (option, aIndex, Qt::DecorationRole);
+    QRect vmNameRT = rect (option, aIndex, Qt::DisplayRole);
+    QRect shotRT = rect (option, aIndex, VBoxVMModel::SnapShotDisplayRole);
+    QRect stateIconRT = rect (option, aIndex, VBoxVMModel::SessionStateDecorationRole);
+    QRect stateRT = rect (option, aIndex, VBoxVMModel::SessionStateDisplayRole);
 
     /* Calculate the positions for all items */
     calcLayout (aIndex, &osTypeRT, &vmNameRT, &shotRT, &stateIconRT, &stateRT);
 
-    /* Get the appropiate pen for the current state */
-    QPalette pal = aOption.palette;
+    /* Get the appropriate pen for the current state */
+    QPalette pal = option.palette;
     QPen pen = pal.color (QPalette::Active, QPalette::Text);
-    if (aOption.state & QStyle::State_Selected)
+    if (option.state & QStyle::State_Selected &&
+        (option.state & QStyle::State_HasFocus ||
+        QApplication::style()->styleHint (QStyle::SH_ItemView_ChangeHighlightOnFocus, &option) == 0))
         pen =  pal.color (QPalette::Active, QPalette::HighlightedText);
     /* Start drawing */
-    drawBackground (aPainter, aOption, aIndex);
+    drawBackground (aPainter, option, aIndex);
     aPainter->save();
     /* Set the current pen */
     aPainter->setPen (pen);
     /* Move the painter to the initial position */
-    aPainter->translate (aOption.rect.x(), aOption.rect.y());
+    aPainter->translate (option.rect.x(), option.rect.y());
     /* os type icon */
     aPainter->drawPixmap (osTypeRT, osType);
     /* vm name */
@@ -820,7 +820,7 @@ void VBoxVMItemPainter::paint (QPainter *aPainter, const QStyleOptionViewItem &a
 //    QRect boundingRect = osTypeRT | vmNameRT | shotRT | stateIconRT | stateRT;
 //    aPainter->drawRect (boundingRect);
     aPainter->restore();
-    drawFocus(aPainter, aOption, aOption.rect);
+    drawFocus(aPainter, option, option.rect);
 }
 
 QRect VBoxVMItemPainter::rect (const QStyleOptionViewItem &aOption,
@@ -875,7 +875,7 @@ void VBoxVMItemPainter::calcLayout (const QModelIndex &aIndex,
 {
     const int nameSpaceWidth = fontMetric (aIndex, Qt::FontRole).width (' ');
     const int stateSpaceWidth = fontMetric (aIndex, VBoxVMModel::SessionStateFontRole).width (' ');
-    /* Really basic layout managment. 
+    /* Really basic layout managment.
      * First layout as usual */
     aOSType->moveTo (mMargin, mMargin);
     aVMName->moveTo (mMargin + aOSType->width() + mSpacing, mMargin);

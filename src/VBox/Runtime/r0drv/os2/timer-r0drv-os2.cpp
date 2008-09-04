@@ -1,4 +1,4 @@
-/* $Id: timer-r0drv-os2.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: timer-r0drv-os2.cpp 31696 2008-06-05 18:08:17Z bird $ */
 /** @file
  * IPRT - Memory Allocation, Ring-0 Driver, OS/2.
  */
@@ -111,6 +111,12 @@ __END_DECLS
 RTDECL(int) RTTimerCreateEx(PRTTIMER *ppTimer, uint64_t u64NanoInterval, unsigned fFlags, PFNRTTIMER pfnTimer, void *pvUser)
 {
     *ppTimer = NULL;
+
+    /*
+     * We don't support the fancy MP features.
+     */
+    if (fFlags & RTTIMER_FLAGS_CPU_SPECIFIC)
+        return VERR_NOT_SUPPORTED;
 
     /*
      * Lazy initialize the spinlock.
@@ -312,6 +318,7 @@ DECLASM(void) rtTimerOs2Tick(void)
             &&  pTimer->u64NextTS <= u64NanoTS)
         {
             pTimer->fDone = true;
+            pTimer->iTick++;
 
             /* calculate the next timeout */
             if (!pTimer->u64NanoInterval)
@@ -327,7 +334,7 @@ DECLASM(void) rtTimerOs2Tick(void)
             PFNRTTIMER  pfnTimer = pTimer->pfnTimer;
             void       *pvUser   = pTimer->pvUser;
             RTSpinlockReleaseNoInts(g_Spinlock, &Tmp);
-            pfnTimer(pTimer, pvUser);
+            pfnTimer(pTimer, pvUser, pTimer->iTick);
 
             RTSpinlockAcquireNoInts(g_Spinlock, &Tmp);
 

@@ -1,4 +1,4 @@
-/* $Id: TRPMInternal.h 31281 2008-05-27 09:21:03Z sandervl $ */
+/* $Id: TRPMInternal.h 31494 2008-06-02 11:30:37Z sandervl $ */
 /** @file
  * TRPM - Internal header file.
  */
@@ -138,8 +138,11 @@ typedef struct TRPM
     bool            fSafeToDropGuestIDTMonitoring;
 
     /** Padding to get the IDTs at a 16 byte alignement. */
+#if GC_ARCH_BITS == 32
     uint8_t         abPadding1[6];
-
+#else
+    uint8_t         abPadding1[14];
+#endif
     /** IDTs. Aligned at 16 byte offset for speed. */
     VBOXIDTE        aIdt[256];
 
@@ -148,10 +151,10 @@ typedef struct TRPM
 
     /** Temporary Hypervisor trap handlers.
      * NULL means default action. */
-    RTGCPTR32       aTmpTrapHandlers[256];
+    RCPTRTYPE(void *) aTmpTrapHandlers[256];
 
     /** GC Pointer to the IDT shadow area (aIdt) placed in Hypervisor memory arena. */
-    RTGCPTR32       GCPtrIdt;
+    RCPTRTYPE(void *) GCPtrIdt;
     /** Current (last) Guest's IDTR. */
     VBOXIDTR        GuestIdtr;
 
@@ -159,7 +162,7 @@ typedef struct TRPM
     uint8_t         au8Padding[2];
 
     /** Checked trap & interrupt handler array */
-    RTGCPTR32       aGuestTrapHandler[256];
+    RCPTRTYPE(void *) aGuestTrapHandler[256];
 
     /** GC: The number of times writes to the Guest IDT were detected. */
     STAMCOUNTER     StatGCWriteGuestIDTFault;
@@ -185,15 +188,15 @@ typedef struct TRPM
     /* R0: Statistics for interrupt handlers (allocated on the hypervisor heap). */
     R0PTRTYPE(PSTAMCOUNTER) paStatForwardedIRQR0;
     /* GC: Statistics for interrupt handlers (allocated on the hypervisor heap). */
-    GCPTRTYPE(PSTAMCOUNTER) paStatForwardedIRQGC;
+    RCPTRTYPE(PSTAMCOUNTER) paStatForwardedIRQGC;
 } TRPM;
 #pragma pack()
 
 /** Pointer to TRPM Data. */
 typedef TRPM *PTRPM;
 
-TRPMGCDECL(int) trpmgcGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, void *pvFault, void *pvRange, uintptr_t offRange);
-TRPMGCDECL(int) trpmgcShadowIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, void *pvFault, void *pvRange, uintptr_t offRange);
+TRPMGCDECL(int) trpmgcGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
+TRPMGCDECL(int) trpmgcShadowIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
 
 /**
  * Clear guest trap/interrupt gate handler

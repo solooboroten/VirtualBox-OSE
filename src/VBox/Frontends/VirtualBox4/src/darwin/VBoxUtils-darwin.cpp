@@ -1,4 +1,4 @@
-/* $Id: VBoxUtils-darwin.cpp 30682 2008-05-09 08:39:56Z poetzsch $ */
+/* $Id: VBoxUtils-darwin.cpp 32997 2008-07-08 12:54:06Z poetzsch $ */
 /** @file
  * Qt GUI - Utility Classes and Functions specific to Darwin.
  */
@@ -31,6 +31,12 @@
 #include <QImage>
 #include <QPixmap>
 #include <QPainter>
+#include <QApplication>
+#include <QToolBar>
+
+#if QT_VERSION < 0x040400
+extern void qt_mac_set_menubar_icons(bool b);
+#endif /* QT_VERSION < 0x040400 */
 
 /**
  * Callback for deleting the QImage object when CGImageCreate is done
@@ -94,6 +100,42 @@ CGImageRef darwinToCGImageRef (const char *aSource)
     QPixmap qpm (QString(":/") + aSource);
     Assert (!qpm.isNull());
     return ::darwinToCGImageRef (&qpm);
+}
+
+void darwinSetShowToolBarButton (QToolBar *aToolBar, bool aShow)
+{
+    QWidget *parent = aToolBar->parentWidget();
+    if (parent)
+    {
+        int err = ChangeWindowAttributes (::darwinToWindowRef (parent), aShow ? kWindowToolbarButtonAttribute:kWindowNoAttributes, 
+                                                                        aShow ? kWindowNoAttributes:kWindowToolbarButtonAttribute);
+        AssertCarbonOSStatus (err);
+    }
+}
+
+void darwinWindowAnimateResize (QWidget *aWidget, const QRect &aTarget)
+{
+    HIRect r = ::darwinToHIRect (aTarget);
+    TransitionWindowWithOptions (::darwinToWindowRef (aWidget), kWindowSlideTransitionEffect, kWindowResizeTransitionAction, &r, false, NULL);
+}
+
+/* Proxy icon creation */
+QPixmap darwinCreateDragPixmap (const QPixmap& aPixmap, const QString &aText)
+{
+    QFontMetrics fm (qApp->font());
+    QRect tbRect = fm.boundingRect (aText);
+    const int h = qMax (aPixmap.height(), fm.ascent() + 1);
+    const int m = 2;
+    QPixmap dragPixmap (aPixmap.width() + tbRect.width() + m, h);
+    dragPixmap.fill (Qt::transparent);
+    QPainter painter (&dragPixmap);
+    painter.drawPixmap (0, qAbs (h - aPixmap.height()) / 2.0, aPixmap);
+    painter.setPen (Qt::white);
+    painter.drawText (QRect (aPixmap.width() + m, 1, tbRect.width(), h - 1), Qt::AlignLeft | Qt::AlignVCenter, aText);
+    painter.setPen (Qt::black);
+    painter.drawText (QRect (aPixmap.width() + m, 0, tbRect.width(), h - 1), Qt::AlignLeft | Qt::AlignVCenter, aText);
+    painter.end();
+    return dragPixmap;
 }
 
 /**
@@ -233,6 +275,17 @@ void darwinUpdateDockPreview (VBoxFrameBuffer *aFrameBuffer, CGImageRef aOverlay
     CGDataProviderRelease (dp);
     CGImageRelease (ir);
     CGColorSpaceRelease (cs);
+}
+
+void darwinDisableIconsInMenus()
+{
+    /* No icons in the menu of a mac application. */
+#if QT_VERSION < 0x040400
+    qt_mac_set_menubar_icons (false);
+#else /* QT_VERSION < 0x040400 */
+    /* Available since Qt 4.4 only */
+    QApplication::instance()->setAttribute (Qt::AA_DontShowIconsInMenus, true);
+#endif /* QT_VERSION >= 0x040400 */
 }
 
 /* Currently not used! */

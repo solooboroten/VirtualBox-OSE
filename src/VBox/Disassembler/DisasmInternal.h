@@ -20,8 +20,8 @@
  * additional information or have any questions.
  */
 
-#ifndef __DisasmInternal_h__
-#define __DisasmInternal_h__
+#ifndef ___DisasmInternal_h___
+#define ___DisasmInternal_h___
 
 #include <VBox/cdefs.h>
 #include <VBox/types.h>
@@ -148,11 +148,12 @@ void disValidateLockSequence(PDISCPUSTATE pCpu);
 /* Disassembler printf */
 void disasmSprintf(char *pszOutput, RTUINTPTR pu8Instruction, PDISCPUSTATE pCpu, POP_PARAMETER pParam1, POP_PARAMETER pParam2, POP_PARAMETER pParam3 = NULL);
 void disasmGetPtrString(PDISCPUSTATE pCpu, PCOPCODE pOp, POP_PARAMETER pParam);
-void disasmModRMReg(PDISCPUSTATE pCpu, PCOPCODE pOp, int idx, POP_PARAMETER pParam, int fRegAddr);
-void disasmModRMReg16(PDISCPUSTATE pCpu, PCOPCODE pOp, int idx, POP_PARAMETER pParam);
-void disasmModRMSReg(PDISCPUSTATE pCpu, PCOPCODE pOp, int idx, POP_PARAMETER pParam);
+void disasmModRMReg(PDISCPUSTATE pCpu, PCOPCODE pOp, unsigned idx, POP_PARAMETER pParam, int fRegAddr);
+void disasmModRMReg16(PDISCPUSTATE pCpu, PCOPCODE pOp, unsigned idx, POP_PARAMETER pParam);
+void disasmModRMSReg(PDISCPUSTATE pCpu, PCOPCODE pOp, unsigned idx, POP_PARAMETER pParam);
 void disasmPrintAbs32(POP_PARAMETER pParam);
 void disasmPrintDisp32(POP_PARAMETER pParam);
+void disasmPrintDisp64(POP_PARAMETER pParam);
 void disasmPrintDisp8(POP_PARAMETER pParam);
 void disasmPrintDisp16(POP_PARAMETER pParam);
 
@@ -170,7 +171,9 @@ uint32_t DISReadDWord(PDISCPUSTATE pCpu, RTUINTPTR pAddress);
 uint64_t DISReadQWord(PDISCPUSTATE pCpu, RTUINTPTR pAddress);
 #endif
 
+size_t disFormatBytes(PCDISCPUSTATE pCpu, char *pszDst, size_t cchDst, uint32_t fFlags);
+
 __END_DECLS
 
-#endif /* !__DisasmInternal_h__ */
+#endif /* !___DisasmInternal_h___ */
 

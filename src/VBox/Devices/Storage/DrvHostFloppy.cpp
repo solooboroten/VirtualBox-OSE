@@ -80,7 +80,7 @@ static DECLCALLBACK(int) drvHostFloppyGetMediaSize(PDRVHOSTBASE pThis, uint64_t 
     if (rc)
     {
         rc = RTErrConvertFromErrno (errno);
-        Log(("DrvHostFloppy: FDFLUSH ioctl(%s) failed, errno=%d rc=%Vrc\n", pThis->pszDevice, errno, rc));
+        Log(("DrvHostFloppy: FDFLUSH ioctl(%s) failed, errno=%d rc=%Rrc\n", pThis->pszDevice, errno, rc));
         return rc;
     }
 
@@ -89,7 +89,7 @@ static DECLCALLBACK(int) drvHostFloppyGetMediaSize(PDRVHOSTBASE pThis, uint64_t 
     if (rc)
     {
         rc = RTErrConvertFromErrno(errno);
-        Log(("DrvHostFloppy: FDGETDRVSTAT ioctl(%s) failed, errno=%d rc=%Vrc\n", pThis->pszDevice, errno, rc));
+        Log(("DrvHostFloppy: FDGETDRVSTAT ioctl(%s) failed, errno=%d rc=%Rrc\n", pThis->pszDevice, errno, rc));
         return rc;
     }
     pThis->fReadOnly = !(DrvStat.flags & FD_DISK_WRITABLE);
@@ -123,7 +123,7 @@ static DECLCALLBACK(int) drvHostFloppyPoll(PDRVHOSTBASE pThis)
         if (pThis->fMediaPresent)
             DRVHostBaseMediaNotPresent(pThis);
         rc = DRVHostBaseMediaPresent(pThis);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
             pThisFloppy->fPrevDiskIn = fDiskIn;
             RTCritSectLeave(&pThis->CritSect);
@@ -148,7 +148,7 @@ static DECLCALLBACK(int) drvHostFloppyPoll(PDRVHOSTBASE pThis)
  */
 static DECLCALLBACK(int) drvHostFloppyConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
 {
-    PDRVHOSTFLOPPY pThis = PDMINS2DATA(pDrvIns, PDRVHOSTFLOPPY);
+    PDRVHOSTFLOPPY pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTFLOPPY);
     LogFlow(("drvHostFloppyConstruct: iInstance=%d\n", pDrvIns->iInstance));
 
     /*
@@ -161,7 +161,7 @@ static DECLCALLBACK(int) drvHostFloppyConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
      * Init instance data.
      */
     int rc = DRVHostBaseInitData(pDrvIns, pCfgHandle, PDMBLOCKTYPE_FLOPPY_1_44);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         /*
          * Override stuff.
@@ -176,7 +176,7 @@ static DECLCALLBACK(int) drvHostFloppyConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
          */
         rc = DRVHostBaseInitFinish(&pThis->Base);
     }
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         if (!pThis->Base.fAttachFailError)
         {
@@ -189,7 +189,7 @@ static DECLCALLBACK(int) drvHostFloppyConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
         pThis->Base.fKeepInstance = false;
     }
 
-    LogFlow(("drvHostFloppyConstruct: returns %Vrc\n", rc));
+    LogFlow(("drvHostFloppyConstruct: returns %Rrc\n", rc));
     return rc;
 }
 

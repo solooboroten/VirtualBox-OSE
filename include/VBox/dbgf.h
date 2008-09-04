@@ -61,7 +61,7 @@ __BEGIN_DECLS
  * @param   pRegFrame   Pointer to the register frame for the trap.
  * @param   uDr6        The DR6 register value.
  */
-DBGFGCDECL(int) DBGFGCTrap01Handler(PVM pVM, PCPUMCTXCORE pRegFrame, RTUINTREG uDr6);
+DBGFGCDECL(int) DBGFGCTrap01Handler(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCUINTREG uDr6);
 
 /**
  * \#BP (Breakpoint) handler.
@@ -95,7 +95,7 @@ DBGFGCDECL(int) DBGFGCTrap03Handler(PVM pVM, PCPUMCTXCORE pRegFrame);
  * @param   pRegFrame   Pointer to the register frame for the trap.
  * @param   uDr6        The DR6 register value.
  */
-DBGFR0DECL(int) DBGFR0Trap01Handler(PVM pVM, PCPUMCTXCORE pRegFrame, RTUINTREG uDr6);
+DBGFR0DECL(int) DBGFR0Trap01Handler(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCUINTREG uDr6);
 
 /**
  * \#BP (Breakpoint) handler.
@@ -594,6 +594,11 @@ typedef struct DBGFBP
 
     /** The breakpoint type. */
     DBGFBPTYPE      enmType;
+
+#if GC_ARCH_BITS == 64
+    uint32_t        u32Padding;
+#endif
+
     /** Union of type specific data. */
     union
     {

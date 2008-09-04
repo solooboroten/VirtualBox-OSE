@@ -24,6 +24,15 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 
+
+/*
+ * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
 // ROM BIOS for use with Bochs/Plex86/QEMU emulation environment
 
 
@@ -11571,9 +11580,25 @@ int08_store_ticks:
 .ascii BIOS_COPYRIGHT_STRING
 
 #ifdef VBOX
-// The DMI header
-.org 0xff40
+// The SMBIOS header
+.org 0xff30
 .align 16
+ db   0x5f, 0x53, 0x4d, 0x5f          ; "_SM_" signature
+ ; calculate Entry Point Structure checksum - note that we already
+ ; know the checksum for the DMI header paragraph is zero
+       db ( - ( 0x5f + 0x53 + 0x4d + 0x5f \
+               + 0x1f \
+               + ((VBOX_SMBIOS_MAJOR_VER    ) & 0xff) + ((VBOX_SMBIOS_MINOR_VER    ) & 0xff) \
+               + ((VBOX_SMBIOS_MAXSS        ) & 0xff) + ((VBOX_SMBIOS_MAXSS   >>  8) & 0xff) \
+          )) & 0xff
+ db 0x1f                              ; EPS length - defined by standard
+ db VBOX_SMBIOS_MAJOR_VER             ; SMBIOS major version
+ db VBOX_SMBIOS_MINOR_VER             ; SMBIOS minor version
+ dw VBOX_SMBIOS_MAXSS                 ; Maximum structure size
+ db 0x00                              ; Entry point revision
+ db 0x00, 0x00, 0x00, 0x00, 0x00
+
+// The DMI header
  db   0x5f, 0x44, 0x4d, 0x49, 0x5f    ; "_DMI_" signature
  ; calculate the DMI header checksum
  db ( - ( 0x5f + 0x44 + 0x4d + 0x49 + 0x5f \

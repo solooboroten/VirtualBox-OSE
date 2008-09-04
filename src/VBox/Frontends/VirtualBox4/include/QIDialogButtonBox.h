@@ -27,6 +27,11 @@
 
 /* Qt includes */
 #include <QDialogButtonBox>
+#include <QPointer>
+
+class QBoxLayout;
+
+class QIHelpButton;
 
 class QIDialogButtonBox: public QIWithRetranslateUI<QDialogButtonBox>
 {
@@ -35,14 +40,26 @@ public:
     QIDialogButtonBox (Qt::Orientation aOrientation, QWidget *aParent = 0) :QIWithRetranslateUI<QDialogButtonBox> (aParent) { setOrientation (aOrientation); }
     QIDialogButtonBox (StandardButtons aButtons, Qt::Orientation aOrientation = Qt::Horizontal, QWidget *aParent = 0);
 
+    QPushButton *button (StandardButton aWhich) const;
+
     QPushButton *addButton (const QString &aText, ButtonRole aRole);
     QPushButton *addButton (StandardButton aButton);
 
     void setStandardButtons (StandardButtons aButtons);
 
+    void addExtraWidget (QWidget *aWidget);
+    void addExtraLayout (QLayout *aLayout);
+
 protected:
 
+    QBoxLayout *boxLayout() const;
+    int findEmptySpace (QBoxLayout *aLayout) const;
+
     void retranslateUi();
+
+private:
+
+    QPointer<QIHelpButton> mHelpButton;
 };
 
 #endif /* __QIDialogButtonBox_h__ */

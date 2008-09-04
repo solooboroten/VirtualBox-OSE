@@ -1,4 +1,4 @@
-/* $Id: CSAMInternal.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: CSAMInternal.h 31559 2008-06-03 09:49:14Z sandervl $ */
 /** @file
  * CSAM - Internal header file.
  */
@@ -67,7 +67,7 @@
 
 typedef struct
 {
-  RTGCPTR           pInstrAfterRetGC[CSAM_MAX_CALLEXIT_RET];
+  RTRCPTR         pInstrAfterRetGC[CSAM_MAX_CALLEXIT_RET];
   uint32_t          cInstrAfterRet;
 } CSAMCALLEXITREC, *PCSAMCALLEXITREC;
 
@@ -75,7 +75,7 @@ typedef struct
 {
     R3PTRTYPE(uint8_t *) pPageLocStartHC;
     R3PTRTYPE(uint8_t *) pPageLocEndHC;
-    GCPTRTYPE(uint8_t *) pGuestLoc;
+    RCPTRTYPE(uint8_t *) pGuestLoc;
     uint32_t             depth;  //call/jump depth
 
     PCSAMCALLEXITREC     pCallExitRec;
@@ -83,7 +83,7 @@ typedef struct
 
 typedef struct
 {
-    RTGCPTR         pPageGC;
+    RTRCPTR       pPageGC;
     RTGCPHYS        GCPhys;
     uint64_t        fFlags;
     uint32_t        uSize;
@@ -102,7 +102,7 @@ typedef struct
 typedef struct
 {
     // GC Patch pointer
-    RTGCPTR         pInstrGC;
+    RTRCPTR       pInstrGC;
 
     // Disassembly state for original instruction
     DISCPUSTATE     cpu;
@@ -154,14 +154,14 @@ typedef struct CSAM
     /* Array to store previously scanned dangerous instructions, so we don't need to
      * switch back to ring 3 each time we encounter them in GC.
      */
-    RTGCPTR             aDangerousInstr[CSAM_MAX_DANGR_INSTR];
+    RTRCPTR           aDangerousInstr[CSAM_MAX_DANGR_INSTR];
     uint32_t            cDangerousInstr;
     uint32_t            iDangerousInstr;
 
-    GCPTRTYPE(RTGCPTR *)  pPDBitmapGC;
-    GCPTRTYPE(RTHCPTR *)  pPDHCBitmapGC;
-    R3PTRTYPE(uint8_t **) pPDBitmapHC;
-    R3PTRTYPE(RTGCPTR  *) pPDGCBitmapHC;
+    RCPTRTYPE(RTRCPTR *)  pPDBitmapGC;
+    RCPTRTYPE(RTHCPTR *)    pPDHCBitmapGC;
+    R3PTRTYPE(uint8_t **)   pPDBitmapHC;
+    R3PTRTYPE(RTRCPTR  *) pPDGCBitmapHC;
 
     /* Temporary storage during load/save state */
     struct
@@ -173,15 +173,15 @@ typedef struct CSAM
 
     /* To keep track of dirty pages */
     uint32_t            cDirtyPages;
-    RTGCPTR             pvDirtyBasePage[CSAM_MAX_DIRTY_PAGES];
-    RTGCPTR             pvDirtyFaultPage[CSAM_MAX_DIRTY_PAGES];
+    RTRCPTR             pvDirtyBasePage[CSAM_MAX_DIRTY_PAGES];
+    RTRCPTR             pvDirtyFaultPage[CSAM_MAX_DIRTY_PAGES];
 
     /* To keep track of possible code pages */
     uint32_t            cPossibleCodePages;
-    RTGCPTR             pvPossibleCodePage[CSAM_MAX_CODE_PAGES_FLUSH];
+    RTRCPTR           pvPossibleCodePage[CSAM_MAX_CODE_PAGES_FLUSH];
 
     /* call addresses reported by the recompiler */
-    RTGCPTR             pvCallInstruction[16];
+    RTRCPTR           pvCallInstruction[16];
     RTUINT              iCallInstruction;
 
     /* Set when scanning has started. */
@@ -242,7 +242,7 @@ typedef struct CSAM
  * @param   pUserData   User pointer
  *
  */
-typedef int (VBOXCALL *PFN_CSAMR3ANALYSE)(PVM pVM, DISCPUSTATE *pCpu, GCPTRTYPE(uint8_t *) pInstrGC, GCPTRTYPE(uint8_t *) pCurInstrGC, PCSAMP2GLOOKUPREC pCacheRec, void *pUserData);
+typedef int (VBOXCALL *PFN_CSAMR3ANALYSE)(PVM pVM, DISCPUSTATE *pCpu, RCPTRTYPE(uint8_t *) pInstrGC, RCPTRTYPE(uint8_t *) pCurInstrGC, PCSAMP2GLOOKUPREC pCacheRec, void *pUserData);
 
 /**
  * Calculate the branch destination
@@ -251,7 +251,7 @@ typedef int (VBOXCALL *PFN_CSAMR3ANALYSE)(PVM pVM, DISCPUSTATE *pCpu, GCPTRTYPE(
  * @param   pCpu            Disassembly state of instruction.
  * @param   pBranchInstrGC  GC pointer of branch instruction
  */
-inline RTGCPTR CSAMResolveBranch(PDISCPUSTATE pCpu, RTGCPTR pBranchInstrGC)
+inline RTRCPTR CSAMResolveBranch(PDISCPUSTATE pCpu, RTRCPTR pBranchInstrGC)
 {
     uint32_t disp;
     if (pCpu->param1.flags & USE_IMMEDIATE8_REL)
@@ -274,7 +274,7 @@ inline RTGCPTR CSAMResolveBranch(PDISCPUSTATE pCpu, RTGCPTR pBranchInstrGC)
         return 0;
     }
 #ifdef IN_GC
-    return (RTGCPTR)((uint8_t *)pBranchInstrGC + pCpu->opsize + disp);
+    return (RTRCPTR)((uint8_t *)pBranchInstrGC + pCpu->opsize + disp);
 #else
     return pBranchInstrGC + pCpu->opsize + disp;
 #endif

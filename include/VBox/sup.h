@@ -311,23 +311,42 @@ SUPR3DECL(int) SUPInstall(void);
 SUPR3DECL(int) SUPUninstall(void);
 
 /**
+ * Secure main.
+ *
+ * This is used for the set-user-ID-on-execute binaries on unixy systems
+ * and when using the open-vboxdrv-via-root-service setup on Windows.
+ *
+ * This function will perform the integrity checks of the VirtualBox
+ * installation, open the support driver, open the root service (later),
+ * and load the DLL corresponding to \a pszProgName and execute its main
+ * function.
+ *
+ * @returns Return code appropriate for main().
+ *
+ * @param   pszProgName     The program name. This will be used to figure out which
+ *                          DLL/SO/DYLIB to load and execute.
+ * @param   fFlags          Flags.
+ * @param   argc            The argument count.
+ * @param   argv            The argument vector.
+ * @param   envp            The environment vector.
+ */
+DECLHIDDEN(int) SUPR3HardenedMain(const char *pszProgName, uint32_t fFlags, int argc, char **argv, char **envp);
+
+/** @name SUPR3SecureMain flags.
+ * @{ */
+/** Don't open the device. (Intended for VirtualBox without -startvm.) */
+#define SUPSECMAIN_FLAGS_DONT_OPEN_DEV      RT_BIT_32(0)
+/** @} */
+
+/**
  * Initializes the support library.
- * Each succesful call to SUPInit() must be countered by a
+ * Each succesful call to SUPR3Init() must be countered by a
  * call to SUPTerm(false).
  *
  * @returns VBox status code.
  * @param   ppSession       Where to store the session handle. Defaults to NULL.
- * @param   cbReserve       The number of bytes of contiguous memory that should be reserved by
- *                          the runtime / support library.
- *                          Set this to 0 if no reservation is required. (default)
- *                          Set this to ~0 if the maximum amount supported by the VM is to be
- *                          attempted reserved, or the maximum available.
  */
-#ifdef __cplusplus
-SUPR3DECL(int) SUPInit(PSUPDRVSESSION *ppSession = NULL, size_t cbReserve = 0);
-#else
-SUPR3DECL(int) SUPInit(PSUPDRVSESSION *ppSession, size_t cbReserve);
-#endif
+SUPR3DECL(int) SUPR3Init(PSUPDRVSESSION *ppSession);
 
 /**
  * Terminates the support library.
@@ -546,7 +565,27 @@ SUPR3DECL(int) SUPLowAlloc(size_t cPages, void **ppvPages, PRTR0PTR ppvPagesR0, 
 SUPR3DECL(int) SUPLowFree(void *pv, size_t cPages);
 
 /**
- * Load a module into R0 HC.
+ * Verifies the integrity of a file, and optionally opens it. 
+ *  
+ * The integrity check is for whether the file is suitable for loading into 
+ * the hypervisor or VM process. The integrity check may include verifying 
+ * the authenticode/elfsign/whatever signature of the file, which can take 
+ * a little while. 
+ * 
+ * @returns VBox status code. On failure it will have printed a LogRel message.
+ * 
+ * @param   pszFilename     The file.
+ * @param   pszWhat         For the LogRel on failure. 
+ * @param   phFile          Where to store the handle to the opened file. This is optional, pass NULL 
+ *                          if the file should not be opened. 
+ */
+SUPR3DECL(int) SUPR3HardenedVerifyFile(const char *pszFilename, const char *pszWhat, PRTFILE phFile);
+
+/**
+ * Load a module into R0 HC. 
+ *  
+ * This will verify the file integrity in a similar manner as 
+ * SUPR3HardenedVerifyFile before loading it.
  *
  * @returns VBox status code.
  * @param   pszFilename     The path to the image file.
@@ -663,6 +702,82 @@ SUPR0DECL(int) SUPR0PageFree(PSUPDRVSESSION pSession, RTR3PTR pvR3);
 SUPR0DECL(int) SUPR0GipMap(PSUPDRVSESSION pSession, PRTR3PTR ppGipR3, PRTHCPHYS pHCPhysGip);
 SUPR0DECL(int) SUPR0GipUnmap(PSUPDRVSESSION pSession);
 SUPR0DECL(int) SUPR0Printf(const char *pszFormat, ...);
+
+
+/**
+ * Support driver component factory.
+ *
+ * Component factories are registered by drivers that provides services
+ * such as the host network interface filtering and access to the host
+ * TCP/IP stack.
+ *
+ * @remark Module dependencies and making sure that a component doesn't
+ *         get unloaded while in use, is the sole responsibility of the
+ *         driver/kext/whatever implementing the component.
+ */
+typedef struct SUPDRVFACTORY
+{
+    /** The (unique) name of the component factory. */
+    char szName[56];
+    /**
+     * Queries a factory interface.
+     *
+     * The factory interface is specific to each component and will be be
+     * found in the header(s) for the component alongside its UUID.
+     *
+     * @returns Pointer to the factory interfaces on success, NULL on failure.
+     *
+     * @param   pSupDrvFactory      Pointer to this structure.
+     * @param   pSession            The SUPDRV session making the query.
+     * @param   pszInterfaceUuid    The UUID of the factory interface.
+     */
+    DECLR0CALLBACKMEMBER(void *, pfnQueryFactoryInterface,(struct SUPDRVFACTORY const *pSupDrvFactory, PSUPDRVSESSION pSession, const char *pszInterfaceUuid));
+} SUPDRVFACTORY;
+/** Pointer to a support driver factory. */
+typedef SUPDRVFACTORY *PSUPDRVFACTORY;
+/** Pointer to a const support driver factory. */
+typedef SUPDRVFACTORY const *PCSUPDRVFACTORY;
+
+SUPR0DECL(int) SUPR0ComponentRegisterFactory(PSUPDRVSESSION pSession, PCSUPDRVFACTORY pFactory);
+SUPR0DECL(int) SUPR0ComponentDeregisterFactory(PSUPDRVSESSION pSession, PCSUPDRVFACTORY pFactory);
+SUPR0DECL(int) SUPR0ComponentQueryFactory(PSUPDRVSESSION pSession, const char *pszName, const char *pszInterfaceUuid, void **ppvFactoryIf);
+
+
+/** @defgroup   grp_sup_r0_idc  The IDC Interface
+ * @ingroup grp_sup_r0
+ * @{
+ */
+
+/** The current SUPDRV IDC version.
+ * This follows the usual high word / low word rules, i.e. high word is the
+ * major number and it signifies incompatible interface changes. */
+#define SUPDRV_IDC_VERSION      UINT32_C(0x00010000)
+
+/**
+ * Inter-Driver Communcation Handle.
+ */
+typedef union SUPDRVIDCHANDLE
+{
+    /** Padding for opaque usage.
+     * Must be greater or equal in size than the private struct. */
+    void *apvPadding[4];
+#ifdef SUPDRVIDCHANDLEPRIVATE_DECLARED
+    /** The private view. */
+    struct SUPDRVIDCHANDLEPRIVATE s;
+#endif
+} SUPDRVIDCHANDLE;
+/** Pointer to a handle. */
+typedef SUPDRVIDCHANDLE *PSUPDRVIDCHANDLE;
+
+SUPR0DECL(int) SUPR0IdcOpen(PSUPDRVIDCHANDLE pHandle, uint32_t uReqVersion, uint32_t uMinVersion,
+                            uint32_t *puSessionVersion, uint32_t *puDriverVersion, uint32_t *puDriverRevision);
+SUPR0DECL(int) SUPR0IdcCall(PSUPDRVIDCHANDLE pHandle, uint32_t iReq, void *pvReq, uint32_t cbReq);
+SUPR0DECL(int) SUPR0IdcClose(PSUPDRVIDCHANDLE pHandle);
+SUPR0DECL(PSUPDRVSESSION) SUPR0IdcGetSession(PSUPDRVIDCHANDLE pHandle);
+SUPR0DECL(int) SUPR0IdcComponentRegisterFactory(PSUPDRVIDCHANDLE pHandle, PCSUPDRVFACTORY pFactory);
+SUPR0DECL(int) SUPR0IdcComponentDeregisterFactory(PSUPDRVIDCHANDLE pHandle, PCSUPDRVFACTORY pFactory);
+
+/** @} */
 
 /** @} */
 #endif

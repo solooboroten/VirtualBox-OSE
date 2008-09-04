@@ -1,4 +1,4 @@
-/* $Id: SSM.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: SSM.cpp 35827 2008-09-01 17:33:18Z sandervl $ */
 /** @file
  * SSM - Saved State Manager.
  */
@@ -131,6 +131,8 @@ typedef struct SSMHANDLE
     /** the amount of % we reserve for the 'done' stage */
     unsigned        uPercentDone;
 
+    /** RTGCPTR size in bytes */
+    unsigned        cbGCPtr;
 } SSMHANDLE;
 
 
@@ -1183,7 +1185,7 @@ static int ssmr3Validate(RTFILE File, PSSMFILEHDR pHdr, size_t *pcbFileHdr)
     }
     if (cbFile != pHdr->cbFile)
     {
-        Log(("SSM: File size mistmatch. hdr.cbFile=%lld actual %lld\n", pHdr->cbFile, cbFile));
+        Log(("SSM: File size mismatch. hdr.cbFile=%lld actual %lld\n", pHdr->cbFile, cbFile));
         return VERR_SSM_INTEGRITY_SIZE;
     }
 
@@ -1432,19 +1434,28 @@ SSMR3DECL(int) SSMR3Load(PVM pVM, const char *pszFilename, SSMAFTER enmAfter, PF
                                     {
                                         case SSMUNITTYPE_DEV:
                                             if (pUnit->u.Dev.pfnLoadExec)
+                                            {
                                                 rc = pUnit->u.Dev.pfnLoadExec(pUnit->u.Dev.pDevIns, &Handle, UnitHdr.u32Version);
+                                                AssertRC(rc);
+                                            }
                                             else
                                                 rc = VERR_SSM_NO_LOAD_EXEC;
                                             break;
                                         case SSMUNITTYPE_DRV:
                                             if (pUnit->u.Drv.pfnLoadExec)
+                                            {
                                                 rc = pUnit->u.Drv.pfnLoadExec(pUnit->u.Drv.pDrvIns, &Handle, UnitHdr.u32Version);
+                                                AssertRC(rc);
+                                            }
                                             else
                                                 rc = VERR_SSM_NO_LOAD_EXEC;
                                             break;
                                         case SSMUNITTYPE_INTERNAL:
                                             if (pUnit->u.Internal.pfnLoadExec)
+                                            {
                                                 rc = pUnit->u.Internal.pfnLoadExec(pVM, &Handle, UnitHdr.u32Version);
+                                                AssertRC(rc);
+                                            }
                                             else
                                                 rc = VERR_SSM_NO_LOAD_EXEC;
                                             break;
@@ -2303,6 +2314,22 @@ SSMR3DECL(int) SSMR3PutGCPtr(PSSMHANDLE pSSM, RTGCPTR GCPtr)
 
 
 /**
+ * Saves an RC virtual address item to the current data unit.
+ *
+ * @returns VBox status.
+ * @param   pSSM            SSM operation handle.
+ * @param   RCPtr           The item to save.
+ */
+SSMR3DECL(int) SSMR3PutRCPtr(PSSMHANDLE pSSM, RTRCPTR RCPtr)
+{
+    if (pSSM->enmOp == SSMSTATE_SAVE_EXEC)
+        return ssmr3Write(pSSM, &RCPtr, sizeof(RCPtr));
+    AssertMsgFailed(("Invalid state %d\n", pSSM->enmOp));
+    return VERR_SSM_INVALID_STATE;
+}
+
+
+/**
  * Saves a GC virtual address (represented as an unsigned integer) item to the current data unit.
  *
  * @returns VBox status.
@@ -2774,8 +2801,20 @@ SSMR3DECL(int) SSMR3GetSInt(PSSMHANDLE pSSM, PRTINT pi)
  */
 SSMR3DECL(int) SSMR3GetGCUInt(PSSMHANDLE pSSM, PRTGCUINT pu)
 {
+    Assert(pSSM->cbGCPtr == sizeof(RTGCPTR32) || pSSM->cbGCPtr == sizeof(RTGCPTR64));
+
     if (pSSM->enmOp == SSMSTATE_LOAD_EXEC || pSSM->enmOp == SSMSTATE_OPEN_READ)
+    {
+        if (sizeof(*pu) != pSSM->cbGCPtr)
+        {
+            uint32_t val;
+            Assert(sizeof(*pu) == sizeof(uint64_t) && pSSM->cbGCPtr == sizeof(uint32_t));
+            int rc = ssmr3Read(pSSM, &val, pSSM->cbGCPtr);
+            *pu = val;
+            return rc;
+        }
         return ssmr3Read(pSSM, pu, sizeof(*pu));
+    }
     AssertMsgFailed(("Invalid state %d\n", pSSM->enmOp));
     return VERR_SSM_INVALID_STATE;
 }
@@ -2790,8 +2829,20 @@ SSMR3DECL(int) SSMR3GetGCUInt(PSSMHANDLE pSSM, PRTGCUINT pu)
  */
 SSMR3DECL(int) SSMR3GetGCSInt(PSSMHANDLE pSSM, PRTGCINT pi)
 {
+    Assert(pSSM->cbGCPtr == sizeof(RTGCPTR32) || pSSM->cbGCPtr == sizeof(RTGCPTR64));
+
     if (pSSM->enmOp == SSMSTATE_LOAD_EXEC || pSSM->enmOp == SSMSTATE_OPEN_READ)
+    {
+        if (sizeof(*pi) != pSSM->cbGCPtr)
+        {
+            int32_t val;
+            Assert(sizeof(*pi) == sizeof(uint64_t) && pSSM->cbGCPtr == sizeof(uint32_t));
+            int rc = ssmr3Read(pSSM, &val, pSSM->cbGCPtr);
+            *pi = val;
+            return rc;
+        }
         return ssmr3Read(pSSM, pi, sizeof(*pi));
+    }
     AssertMsgFailed(("Invalid state %d\n", pSSM->enmOp));
     return VERR_SSM_INVALID_STATE;
 }
@@ -2848,18 +2899,68 @@ SSMR3DECL(int) SSMR3GetGCPhys(PSSMHANDLE pSSM, PRTGCPHYS pGCPhys)
 /**
  * Loads a GC virtual address item from the current data unit.
  *
+ * Note: only applies to:
+ * - SSMR3GetGCPtr 
+ * - SSMR3GetGCUIntPtr
+ * - SSMR3GetGCSInt
+ * - SSMR3GetGCUInt
+ *
+ * Put functions are not affected.
+ *
+ * @returns VBox status.
+ * @param   pSSM            SSM operation handle.
+ * @param   cbGCPtr         Size of RTGCPTR
+ */
+SSMR3DECL(int) SSMR3SetGCPtrSize(PSSMHANDLE pSSM, unsigned cbGCPtr)
+{
+    Assert(cbGCPtr == sizeof(RTGCPTR32) || cbGCPtr == sizeof(RTGCPTR64));
+    Log(("SSMR3SetGCPtrSize %d bytes\n", cbGCPtr));
+    pSSM->cbGCPtr = cbGCPtr;
+    return VINF_SUCCESS;
+}
+
+/**
+ * Loads a GC virtual address item from the current data unit.
+ *
  * @returns VBox status.
  * @param   pSSM            SSM operation handle.
  * @param   pGCPtr          Where to store the GC virtual address.
  */
 SSMR3DECL(int) SSMR3GetGCPtr(PSSMHANDLE pSSM, PRTGCPTR pGCPtr)
 {
+    Assert(pSSM->cbGCPtr == sizeof(RTGCPTR32) || pSSM->cbGCPtr == sizeof(RTGCPTR64));
+
     if (pSSM->enmOp == SSMSTATE_LOAD_EXEC || pSSM->enmOp == SSMSTATE_OPEN_READ)
-        return ssmr3Read(pSSM, pGCPtr, sizeof(*pGCPtr));
+    {
+        if (sizeof(*pGCPtr) != pSSM->cbGCPtr)
+        {
+            RTGCPTR32 val;
+            Assert(sizeof(*pGCPtr) == sizeof(uint64_t) && pSSM->cbGCPtr == sizeof(uint32_t));
+            int rc = ssmr3Read(pSSM, &val, pSSM->cbGCPtr);
+            *pGCPtr = val;
+            return rc;
+        }
+        return ssmr3Read(pSSM, pGCPtr, pSSM->cbGCPtr);
+    }
     AssertMsgFailed(("Invalid state %d\n", pSSM->enmOp));
     return VERR_SSM_INVALID_STATE;
 }
 
+/**
+ * Loads an RC virtual address item from the current data unit.
+ *
+ * @returns VBox status.
+ * @param   pSSM            SSM operation handle.
+ * @param   pRCPtr          Where to store the RC virtual address.
+ */
+SSMR3DECL(int) SSMR3GetRCPtr(PSSMHANDLE pSSM, PRTRCPTR pRCPtr)
+{
+    if (pSSM->enmOp == SSMSTATE_LOAD_EXEC || pSSM->enmOp == SSMSTATE_OPEN_READ)
+        return ssmr3Read(pSSM, pRCPtr, sizeof(*pRCPtr));
+
+    AssertMsgFailed(("Invalid state %d\n", pSSM->enmOp));
+    return VERR_SSM_INVALID_STATE;
+}
 
 /**
  * Loads a GC virtual address (represented as unsigned integer) item from the current data unit.
@@ -2870,8 +2971,20 @@ SSMR3DECL(int) SSMR3GetGCPtr(PSSMHANDLE pSSM, PRTGCPTR pGCPtr)
  */
 SSMR3DECL(int) SSMR3GetGCUIntPtr(PSSMHANDLE pSSM, PRTGCUINTPTR pGCPtr)
 {
+    Assert(pSSM->cbGCPtr == sizeof(RTGCPTR32) || pSSM->cbGCPtr == sizeof(RTGCPTR64));
+
     if (pSSM->enmOp == SSMSTATE_LOAD_EXEC || pSSM->enmOp == SSMSTATE_OPEN_READ)
-        return ssmr3Read(pSSM, pGCPtr, sizeof(*pGCPtr));
+    {
+        if (sizeof(*pGCPtr) != pSSM->cbGCPtr)
+        {
+            RTGCUINTPTR32 val;
+            Assert(sizeof(*pGCPtr) == sizeof(uint64_t) && pSSM->cbGCPtr == sizeof(uint32_t));
+            int rc = ssmr3Read(pSSM, &val, pSSM->cbGCPtr);
+            *pGCPtr = val;
+            return rc;
+        }
+        return ssmr3Read(pSSM, pGCPtr, pSSM->cbGCPtr);
+    }
     AssertMsgFailed(("Invalid state %d\n", pSSM->enmOp));
     return VERR_SSM_INVALID_STATE;
 }

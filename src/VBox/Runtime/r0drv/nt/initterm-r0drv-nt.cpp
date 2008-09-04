@@ -1,4 +1,4 @@
-/* $Id: initterm-r0drv-nt.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: initterm-r0drv-nt.cpp 31918 2008-06-11 12:13:02Z bird $ */
 /** @file
  * IPRT - Initialization & Termination, R0 Driver, NT.
  */
@@ -28,17 +28,54 @@
  * additional information or have any questions.
  */
 
-
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
 #include "the-nt-kernel.h"
 #include <iprt/err.h>
 #include <iprt/assert.h>
+#include <iprt/mp.h>
 #include "internal/initterm.h"
+#include "internal-r0drv-nt.h"
+
+
+/*******************************************************************************
+*   Global Variables                                                           *
+*******************************************************************************/
+/** The Nt CPU set.
+ * KeQueryActiveProcssors() cannot be called at all IRQLs and therefore we'll
+ * have to cache it. Fortunately, Nt doesn't really support taking CPUs offline
+ * or online. It's first with W2K8 that support for CPU hotplugging was added.
+ * Once we start caring about this, we'll simply let the native MP event callback
+ * and update this variable as CPUs comes online. (The code is done already.)
+ */
+RTCPUSET g_rtMpNtCpuSet;
+
+/** ExSetTimerResolution, introduced in W2K. */
+PFNMYEXSETTIMERRESOLUTION g_pfnrtNtExSetTimerResolution;
+/** KeFlushQueuedDpcs, introduced in XP. */
+PFNMYKEFLUSHQUEUEDDPCS g_pfnrtNtKeFlushQueuedDpcs;
+
 
 int rtR0InitNative(void)
 {
+    /*
+     * Init the Nt cpu set.
+     */
+    KAFFINITY ActiveProcessors = KeQueryActiveProcessors();
+    RTCpuSetEmpty(&g_rtMpNtCpuSet);
+    RTCpuSetFromU64(&g_rtMpNtCpuSet, ActiveProcessors);
+
+    /*
+     * Initialize the function pointers.
+     */
+    UNICODE_STRING RoutineName;
+    RtlInitUnicodeString(&RoutineName, L"ExSetTimerResolution");
+    g_pfnrtNtExSetTimerResolution = (PFNMYEXSETTIMERRESOLUTION)MmGetSystemRoutineAddress(&RoutineName);
+
+    RtlInitUnicodeString(&RoutineName, L"KeFlushQueuedDpcs");
+    g_pfnrtNtKeFlushQueuedDpcs = (PFNMYKEFLUSHQUEUEDDPCS)MmGetSystemRoutineAddress(&RoutineName);
+
     return VINF_SUCCESS;
 }
 

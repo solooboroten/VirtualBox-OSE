@@ -1,4 +1,4 @@
-/* $Id: MMHyper.cpp 31281 2008-05-27 09:21:03Z sandervl $ */
+/* $Id: MMHyper.cpp 34155 2008-08-06 00:15:58Z bird $ */
 /** @file
  * MM - Memory Monitor(/Manager) - Hypervisor Memory Area.
  */
@@ -271,8 +271,8 @@ static DECLCALLBACK(bool) mmR3HyperRelocateCallback(PVM pVM, RTGCPTR GCPtrOld, R
             /*
              * Accepted!
              */
-            AssertMsg(GCPtrOld == pVM->mm.s.pvHyperAreaGC, ("GCPtrOld=%#x pVM->mm.s.pvHyperAreaGC=%#x\n", GCPtrOld, pVM->mm.s.pvHyperAreaGC));
-            Log(("Relocating the hypervisor from %#x to %#x\n", GCPtrOld, GCPtrNew));
+            AssertMsg(GCPtrOld == pVM->mm.s.pvHyperAreaGC, ("GCPtrOld=%VGv pVM->mm.s.pvHyperAreaGC=%VGv\n", GCPtrOld, pVM->mm.s.pvHyperAreaGC));
+            Log(("Relocating the hypervisor from %VGv to %VGv\n", GCPtrOld, GCPtrNew));
 
             /* relocate our selves and the VM structure. */
             RTGCINTPTR      offDelta = GCPtrNew - GCPtrOld;
@@ -424,13 +424,13 @@ MMR3DECL(int) MMR3HyperMapGCPhys(PVM pVM, RTGCPHYS GCPhys, size_t cb, const char
  * @param   off         The offset into the region. Will be rounded down to closest page boundrary.
  * @param   cb          The number of bytes to map. Will be rounded up to the closest page boundrary.
  * @param   pszDesc     Mapping description.
- * @param   pGCPtr      Where to store the GC address.
+ * @param   pRCPtr      Where to store the RC address.
  */
 MMR3DECL(int) MMR3HyperMapMMIO2(PVM pVM, PPDMDEVINS pDevIns, uint32_t iRegion, RTGCPHYS off, RTGCPHYS cb,
-                                const char *pszDesc, PRTGCPTR pGCPtr)
+                                const char *pszDesc, PRTRCPTR pRCPtr)
 {
-    LogFlow(("MMR3HyperMapMMIO2: pDevIns=%p iRegion=%#x off=%VGp cb=%VGp pszDesc=%p:{%s} pGCPtr=%p\n",
-             pDevIns, iRegion, off, cb, pszDesc, pszDesc, pGCPtr));
+    LogFlow(("MMR3HyperMapMMIO2: pDevIns=%p iRegion=%#x off=%VGp cb=%VGp pszDesc=%p:{%s} pRCPtr=%p\n",
+             pDevIns, iRegion, off, cb, pszDesc, pszDesc, pRCPtr));
     int rc;
 
     /*
@@ -483,8 +483,12 @@ MMR3DECL(int) MMR3HyperMapMMIO2(PVM pVM, PPDMDEVINS pDevIns, uint32_t iRegion, R
             }
         }
 
-        if (VBOX_SUCCESS(rc) && pGCPtr)
-            *pGCPtr = GCPtr | offPage;
+        if (VBOX_SUCCESS(rc))
+        {
+            GCPtr |= offPage;
+            *pRCPtr = GCPtr;
+            AssertLogRelReturn(*pRCPtr == GCPtr, VERR_INTERNAL_ERROR);
+        }
     }
     return rc;
 }

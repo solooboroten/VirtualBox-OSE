@@ -1,4 +1,4 @@
-/* $Id: TRPMGC.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: TRPMGC.cpp 34406 2008-08-08 23:31:54Z bird $ */
 /** @file
  * TRPM - The Trap Monitor, Guest Context
  */
@@ -59,7 +59,7 @@ TRPMGCDECL(int) TRPMGCSetTempHandler(PVM pVM, unsigned iTrap, PFNTRPMGCTRAPHANDL
     /*
      * Validate input.
      */
-    if (iTrap >= ELEMENTS(pVM->trpm.s.aTmpTrapHandlers))
+    if (iTrap >= RT_ELEMENTS(pVM->trpm.s.aTmpTrapHandlers))
     {
         AssertMsgFailed(("Trap handler iTrap=%u is out of range!\n", iTrap));
         return VERR_INVALID_PARAMETER;
@@ -68,7 +68,7 @@ TRPMGCDECL(int) TRPMGCSetTempHandler(PVM pVM, unsigned iTrap, PFNTRPMGCTRAPHANDL
     /*
      * Install handler.
      */
-    pVM->trpm.s.aTmpTrapHandlers[iTrap] = (RTGCPTR)(RTGCUINTPTR)pfnHandler;
+    pVM->trpm.s.aTmpTrapHandlers[iTrap] = (RTRCPTR)pfnHandler;
     return VINF_SUCCESS;
 }
 
@@ -104,7 +104,7 @@ TRPMGCDECL(void) TRPMGCHyperReturnToHost(PVM pVM, int rc)
  * @param   offRange    The offset of the access into this range.
  *                      (If it's a EIP range this's the EIP, if not it's pvFault.)
  */
-TRPMGCDECL(int) trpmgcGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, void *pvFault, void *pvRange, uintptr_t offRange)
+TRPMGCDECL(int) trpmgcGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
 {
     uint16_t    cbIDT;
     RTGCPTR     GCPtrIDT    = (RTGCPTR)CPUMGetGuestIDTR(pVM, &cbIDT);
@@ -114,12 +114,12 @@ TRPMGCDECL(int) trpmgcGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
     uint32_t    iGate       = ((RTGCUINTPTR)pvFault - (RTGCUINTPTR)GCPtrIDT)/sizeof(VBOXIDTE);
 
     AssertMsg(offRange < (uint32_t)cbIDT+1, ("pvFault=%VGv GCPtrIDT=%VGv-%VGv pvRange=%VGv\n", pvFault, GCPtrIDT, GCPtrIDTEnd, pvRange));
-    Assert(pvRange == GCPtrIDT);
+    Assert((RTGCPTR)(RTRCUINTPTR)pvRange == GCPtrIDT);
 
 #if 0
     /** @note this causes problems in Windows XP as instructions following the update can be dangerous (str eax has been seen) */
     /** @note not going back to ring 3 could make the code scanner miss them. */
-    /* Check if we can handle the write here. */    
+    /* Check if we can handle the write here. */
     if (     iGate != 3                                         /* Gate 3 is handled differently; could do it here as well, but let ring 3 handle this case for now. */
         &&  !ASMBitTest(&pVM->trpm.s.au32IdtPatched[0], iGate)) /* Passthru gates need special attention too. */
     {
@@ -165,9 +165,9 @@ TRPMGCDECL(int) trpmgcGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
  * @param   offRange    The offset of the access into this range.
  *                      (If it's a EIP range this's the EIP, if not it's pvFault.)
  */
-TRPMGCDECL(int) trpmgcShadowIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, void *pvFault, void *pvRange, uintptr_t offRange)
+TRPMGCDECL(int) trpmgcShadowIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
 {
-    LogRel(("FATAL ERROR: trpmgcShadowIDTWriteHandler: eip=%08X pvFault=%08X pvRange=%08X\r\n", pRegFrame->eip, pvFault, pvRange));
+    LogRel(("FATAL ERROR: trpmgcShadowIDTWriteHandler: eip=%08X pvFault=%VGv pvRange=%08X\r\n", pRegFrame->eip, pvFault, pvRange));
 
     /* If we ever get here, then the guest has executed an sidt instruction that we failed to patch. In theory this could be very bad, but
      * there are nasty applications out there that install device drivers that mess with the guest's IDT. In those cases, it's quite ok

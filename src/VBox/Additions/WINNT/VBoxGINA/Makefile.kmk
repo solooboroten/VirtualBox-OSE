@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 33199 2008-07-11 11:17:48Z andy $
 ## @file
 # Sub-Makefile for VBoxGINA.
 #
@@ -19,12 +19,16 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../..
-SUB_DEPTH ?= ../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../..
+else
+DEPTH    ?= ../../../../..
+SUB_DEPTH = ../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 DLLS += VBoxGINA
-VBoxGINA_TEMPLATE = VBOXW32GUESTR3
+VBoxGINA_TEMPLATE = VBOXGUESTR3DLL
 VBoxGINA_DEFS     = UNICODE
 VBoxGINA_SOURCES  = \
 	VBoxGINA.cpp \
@@ -33,7 +37,8 @@ VBoxGINA_SOURCES  = \
 	VBoxGINA.def \
 	VBoxGINA.rc
 VBoxGINA_LIBS     = \
-	$(PATH_LIB)/additions/RuntimeW32GuestR3$(VBOXW32GUEST_SUFF_LIB)
+	$(VBOX_LIB_IPRT_GUEST_R3) \
+	$(VBOX_LIB_VBGL_R3)
 
 include	$(KBUILD_PATH)/subfooter.kmk
 

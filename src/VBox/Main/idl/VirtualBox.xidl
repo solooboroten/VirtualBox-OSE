@@ -37,7 +37,12 @@
  *    (smart Qt-based C++ wrapper classes for COM interfaces
  *     of the Main API)
  *
- * 6. src/VBox/Installer/win32/VirtualBox_TypeLib.xsl =>
+ * 6. src/VBox/Frontends/VirtualBox4/include/COMWrappers.xsl =>
+ *    out/<platform>/obj/src/VBox/Frontends/VirtualBox4/VirtualBox/include/COMWrappers.h
+ *    (smart Qt-based C++ wrapper classes for COM interfaces
+ *     of the Main API)
+ *
+ * 7. src/VBox/Installer/win32/VirtualBox_TypeLib.xsl =>
  *    out/<platform>/obj/src/VBox/Installer/win32/VirtualBox_TypeLib.wxi
  *    (Main API TypeLib block for the WiX installer)
  *
@@ -90,7 +95,7 @@
    name="VirtualBox"
    uuid="46137EEC-703B-4fe5-AFD4-7C9BBBBA0259"
    version="1.3"
-   desc="innotek VirtualBox Type Library"
+   desc="VirtualBox Type Library"
    appUuid="819B4D85-9CEE-493C-B6FC-64FFE759B3C9"
    supportsErrorInfo="yes"
 >
@@ -156,7 +161,7 @@
           not currently being executed (i.e., it is completely out of
           action).
         </note>
-        <note>
+        <note internal="yes">
           For whoever decides to touch this enum: In order to keep the
           aforementioned comparisons valid, this state must immediately
           preceed the Paused state.
@@ -170,9 +175,9 @@
           This value can be used in comparison expressions: all state values
           above it represent unstable states of the running virtual
           machine. Unless explicitly stated otherwise, no machine settings can
-          be altered when it is in one of the unstable sates.
+          be altered when it is in one of the unstable states.
         </note>
-        <note>
+        <note internal="yes">
           For whoever decides to touch this enum: In order to keep the
           aforementioned comparisons valid, this state must immediately
           follow the Running state.
@@ -181,7 +186,7 @@
     </const>
     <const name="Stuck"                 value="6">
       <desc>
-        The execution of the machine has reached the Guru Meditaion
+        The execution of the machine has reached the "Guru Meditation"
         condition. This condition indicates an internal VMM failure which may
         happen as a result of either an unhandled low-level virtual hardware
         exception or one of the recompiler exceptions (such as
@@ -673,7 +678,7 @@
 
   <interface
      name="IVirtualBoxCallback" extends="$unknown"
-     uuid="ee95ffc2-b6c6-4ce8-9e9e-ceadbb5019fe"
+     uuid="5516cc08-fb81-47a6-b184-031e7bbd2997"
      wsmap="suppress"
      >
     <method name="onMachineStateChange">
@@ -766,15 +771,17 @@
         media the specified @a mediaId refers to. Possible
         values are:
 
-        - <link to="DeviceType::HardDisk"/>: the media is a hard disk
+        <ul>
+        <li><link to="DeviceType::HardDisk"/>: the media is a hard disk
         that, if registered, can be obtained using the
-        <link to="IVirtualBox::getHardDisk"/> call.
-        - <link to="DeviceType::DVD"/>: the media is a CD/DVD image
+        <link to="IVirtualBox::getHardDisk"/> call.</li>
+        <li><link to="DeviceType::DVD"/>: the media is a CD/DVD image
         that, if registered, can be obtained using the
-        <link to="IVirtualBox::getDVDImage"/> call.
-        - <link to="DeviceType::Floppy"/>: the media is a Floppy image
+        <link to="IVirtualBox::getDVDImage"/> call.</li>
+        <li><link to="DeviceType::Floppy"/>: the media is a Floppy image
         that, if registered, can be obtained using the
-        <link to="IVirtualBox::getFloppyImage"/> call.
+        <link to="IVirtualBox::getFloppyImage"/> call.</li>
+        </ul>
 
         Note that if this is a deregistration notification,
         there is no way to access the object representing the
@@ -875,11 +882,37 @@
       </param>
     </method>
 
+    <method name="onGuestPropertyChange">
+      <desc>
+        Notification when a guest property has changed.
+      </desc>
+      <param name="machineId" type="uuid" dir="in">
+        <desc>
+          ID of the machine this event relates to.
+        </desc>
+      </param>
+      <param name="name" type="wstring" dir="in">
+        <desc>
+          The name of the property that has changed.
+        </desc>
+      </param>
+      <param name="value" type="wstring" dir="in">
+        <desc>
+          The new property value.
+        </desc>
+      </param>
+      <param name="flags" type="wstring" dir="in">
+        <desc>
+          The new property flags.
+        </desc>
+      </param>
+    </method>
+
   </interface>
 
   <interface
     name="IVirtualBox" extends="$dispatched"
-    uuid="2d3b9ea7-25f5-4f07-a8e1-7dd7e0dcf667"
+    uuid="557a07bc-e6ae-4520-a361-4a8493199137"
     wsmap="managed"
   >
     <desc>
@@ -902,6 +935,16 @@
         A string representing the version number of the product. The
         format is 3 integer numbers divided by dots (e.g. 1.0.1). The
         last number represents the build number and will frequently change.
+      </desc>
+    </attribute>
+
+    <attribute name="packageType" type="wstring" readonly="yes">
+      <desc>
+        A string representing the package type of this product. The
+        format is OS_ARCH_DIST where OS is either WINDOWS, LINUX,
+        SOLARIS, DARWIN. ARCH is either 32BITS or 64BITS. DIST
+        is either GENERIC, UBUNTU_606, UBUNTU_710, or something like
+        this.
       </desc>
     </attribute>
 
@@ -1039,6 +1082,12 @@
           In the current version of the product, global shared folders are not
           implemented and therefore this collection is always empty.
         </note>
+      </desc>
+    </attribute>
+
+    <attribute name="performanceCollector" type="IPerformanceCollector" readonly="yes">
+      <desc>
+        Associated performance collector object.
       </desc>
     </attribute>
 
@@ -1720,8 +1769,26 @@
     </method>
 
     <method name="getGuestOSType">
-      <param name="id" type="wstring" dir="in"/>
-      <param name="type" type="IGuestOSType" dir="return"/>
+      <desc>
+        Returns an object describing the specified guest OS type.
+
+        The requested guest OS type is specified using a string which is a
+        mnemonic identifier of the guest operating system, such as
+        <tt>"win31"</tt> or <tt>"ubuntu"</tt>. The guest OS type ID of a
+        particular virtual machine can be read or set using the
+        <link to="IMachine::OSTypeId"/> attribute.
+
+        The <link to="IVirtualBox::guestOSTypes"/> collection contains all
+        available guest OS type objects. Each object has an
+        <link to="IGuestOSType::id"/> attribute which contains an identifier of
+        the guest OS this object describes.
+      </desc>
+      <param name="id" type="wstring" dir="in">
+        <desc>Guest OS type ID string.</desc>
+      </param>
+      <param name="type" type="IGuestOSType" dir="return">
+        <desc>Guest OS type object.</desc>
+      </param>
     </method>
 
     <method name="createSharedFolder">
@@ -1778,7 +1845,7 @@
       <desc>
         Returns associated global extra data.
 
-        If the reuqested data @a key does not exist, this function will
+        If the requested data @a key does not exist, this function will
         succeed and return @c NULL in the @a value argument.
       </desc>
       <param name="key" type="wstring" dir="in">
@@ -1793,7 +1860,7 @@
       <desc>
         Sets associated global extra data.
 
-        If you pass @c NULL as a key @a vaule, the given @a key will be
+        If you pass @c NULL as a key @a value, the given @a key will be
         deleted.
 
         <note>
@@ -2019,9 +2086,9 @@
         describe properties the caller is interested in. The property mask is
         a string in the following format:
 
-        @code
+        <pre>
         [[group.]subgroup.]name
-        @endcode
+        </pre>
 
         where @c name is the property name and @c group, @c subgroup are zero
         or or more property group specifiers. Each element (group or name) in
@@ -2177,7 +2244,7 @@
 
   <interface
      name="IInternalMachineControl" extends="$unknown"
-     uuid="1063893c-4c38-4304-aee9-73e072c181cc"
+     uuid="de04566a-7125-444b-949e-34e9f3ec3676"
      internal="yes"
      wsmap="suppress"
      >
@@ -2414,20 +2481,77 @@
       </param>
     </method>
 
+    <method name="pullGuestProperties">
+      <desc>
+        Get the list of the guest properties matching a set of patterns along
+        with their values, timestamps and flags and give responsibility for
+        managing properties to the console.
+      </desc>
+      <param name="name" type="wstring" dir="out" safearray="yes">
+        <desc>
+          The names of the properties returned.
+        </desc>
+      </param>
+      <param name="value" type="wstring" dir="out" safearray="yes">
+        <desc>
+          The values of the properties returned.  The array entries match the
+          corresponding entries in the @a name array.
+        </desc>
+      </param>
+      <param name="timestamp" type="unsigned long long" dir="out" safearray="yes">
+        <desc>
+          The timestamps of the properties returned.  The array entries match
+          the corresponding entries in the @a name array.
+        </desc>
+      </param>
+      <param name="flags" type="wstring" dir="out" safearray="yes">
+        <desc>
+          The flags of the properties returned.  The array entries match the
+          corresponding entries in the @a name array.
+        </desc>
+      </param>
+    </method>
+
+    <method name="pushGuestProperties">
+      <desc>
+        Set the list of the guest properties matching a set of patterns along
+        with their values, timestamps and flags and return responsibility for
+        managing properties to IMachine.
+      </desc>
+      <param name="name" type="wstring" dir="in" safearray="yes">
+        <desc>
+          The names of the properties returned.
+        </desc>
+      </param>
+      <param name="value" type="wstring" dir="in" safearray="yes">
+        <desc>
+          The values of the properties returned.  The array entries match the
+          corresponding entries in the @a name array.
+        </desc>
+      </param>
+      <param name="timestamp" type="unsigned long long" dir="in" safearray="yes">
+        <desc>
+          The timestamps of the properties returned.  The array entries match
+          the corresponding entries in the @a name array.
+        </desc>
+      </param>
+      <param name="flags" type="wstring" dir="in" safearray="yes">
+        <desc>
+          The flags of the properties returned.  The array entries match the
+          corresponding entries in the @a name array.
+        </desc>
+      </param>
+    </method>
   </interface>
 
   <interface
      name="IBIOSSettings" extends="$unknown"
      uuid="38b54279-dc35-4f5e-a431-835b867c6b5e"
-     wsmap="struct"
+     wsmap="managed"
      >
     <desc>
         The IBIOSSettings interface represents BIOS settings of the virtual
         machine. This is used only in the <link to="IMachine::BIOSSettings" /> attribute.
-
-        <note>With the COM API, this is an interface like all the others. With the webservice,
-        this is mapped to a structure, so querying the attribute will not return an object,
-        but a complete structure.</note>
     </desc>
     <attribute name="logoFadeIn" type="boolean">
       <desc>Fade in flag for BIOS logo animation.</desc>
@@ -2489,7 +2613,7 @@
 
   <interface
      name="IMachine" extends="$unknown"
-     uuid="f95c0793-7737-49a1-85d9-6da81097173b"
+     uuid="1e509de4-d96c-4f44-8b94-860194f710ac"
      wsmap="managed"
      >
     <desc>
@@ -2709,6 +2833,14 @@
         the host CPU's hardware virtualization extensions such as Intel VT-x
         and AMD-V. Note that in case such extensions are not available,
         they will not be used.
+      </desc>
+    </attribute>
+
+    <attribute name="HWVirtExNestedPagingEnabled" type="boolean" default="false">
+      <desc>
+        This setting determines whether VirtualBox will try to make use of
+        the nested paging extension of Intel VT-x and AMD-V. Note that in case
+        such extensions are not available, they will not be used.
       </desc>
     </attribute>
 
@@ -3462,6 +3594,152 @@
       </param>
     </method>
 
+    <method name="getGuestProperty">
+      <desc>
+        Reads an entry from the machine's guest property store.
+      </desc>
+      <param name="name" type="wstring" dir="in">
+        <desc>
+          The name of the property to read.
+        </desc>
+      </param>
+      <param name="value" type="wstring" dir="out">
+        <desc>
+          The value of the property.  If the property does not exist then this
+          will be empty.
+        </desc>
+      </param>
+      <param name="timestamp" type="unsigned long long" dir="out">
+        <desc>
+          The time at which the property was last modified, as seen by the
+          server process.
+        </desc>
+      </param>
+      <param name="flags" type="wstring" dir="out">
+        <desc>
+          Additional property parameters, passed as a comma-separated list of
+          "name=value" type entries.
+        </desc>
+      </param>
+    </method>
+
+    <method name="getGuestPropertyValue">
+      <desc>
+        Reads a value from the machine's guest property store.
+      </desc>
+      <param name="property" type="wstring" dir="in">
+        <desc>
+          The name of the property to read.
+        </desc>
+      </param>
+      <param name="value" type="wstring" dir="return">
+        <desc>
+          The value of the property.  If the property does not exist then this
+          will be empty.
+        </desc>
+      </param>
+    </method>
+
+    <method name="getGuestPropertyTimestamp">
+      <desc>
+        Reads a property timestamp from the machine's guest property store.
+      </desc>
+      <param name="property" type="wstring" dir="in">
+        <desc>
+          The name of the property to read.
+        </desc>
+      </param>
+      <param name="value" type="unsigned long long" dir="return">
+        <desc>
+          The timestamp.  If the property does not exist then this will be
+          empty.
+        </desc>
+      </param>
+    </method>
+
+    <method name="setGuestProperty">
+      <desc>
+        Sets, changes or deletes an entry in the machine's guest property
+        store.
+      </desc>
+      <param name="property" type="wstring" dir="in">
+        <desc>
+          The name of the property to set, change or delete.
+        </desc>
+      </param>
+      <param name="value" type="wstring" dir="in">
+        <desc>
+          The new value of the property to set, change or delete.  If the
+          property does not yet exist and value is non-empty, it will be
+          created.  If the value is empty, the key will be deleted if it
+          exists.
+        </desc>
+      </param>
+      <param name="flags" type="wstring" dir="in">
+        <desc>
+          Additional property parameters, passed as a comma-separated list of
+          "name=value" type entries.
+        </desc>
+      </param>
+    </method>
+
+    <method name="setGuestPropertyValue">
+      <desc>
+        Sets, changes or deletes a value in the machine's guest property
+        store.  The flags field will be left unchanged or created empty for a
+        new property.
+      </desc>
+      <param name="property" type="wstring" dir="in">
+        <desc>
+          The name of the property to set, change or delete.
+        </desc>
+      </param>
+      <param name="value" type="wstring" dir="in">
+        <desc>
+          The new value of the property to set, change or delete.  If the
+          property does not yet exist and value is non-empty, it will be
+          created.  If value is empty, the property will be deleted if it
+          exists.
+        </desc>
+      </param>
+    </method>
+
+    <method name="enumerateGuestProperties">
+      <desc>
+        Return a list of the guest properties matching a set of patterns along
+        with their values, timestamps and flags.
+      </desc>
+      <param name="patterns" type="wstring" dir="in">
+        <desc>
+          The patterns to match the properties against as a comma-separated
+          string with no spaces.  If this is empty, all properties currently
+          set will be returned.
+        </desc>
+      </param>
+      <param name="name" type="wstring" dir="out" safearray="yes">
+        <desc>
+          The names of the properties returned.
+        </desc>
+      </param>
+      <param name="value" type="wstring" dir="out" safearray="yes">
+        <desc>
+          The values of the properties returned.  The array entries match the
+          corresponding entries in the @a name array.
+        </desc>
+      </param>
+      <param name="timestamp" type="unsigned long long" dir="out" safearray="yes">
+        <desc>
+          The timestamps of the properties returned.  The array entries match
+          the corresponding entries in the @a name array.
+        </desc>
+      </param>
+      <param name="flags" type="wstring" dir="out" safearray="yes">
+        <desc>
+          The flags of the properties returned.  The array entries match the
+          corresponding entries in the @a name array.
+        </desc>
+      </param>
+    </method>
   </interface>
 
   <!--
@@ -3859,10 +4137,6 @@
      <desc>
         Contains information about the remote display (VRDP) capabilities and status.
         This is used in the <link to="IConsole::remoteDisplayInfo" /> attribute.
-
-        <note>With the COM API, this is an interface like all the others. With the webservice,
-        this is mapped to a structure, so querying the attribute will not return an object,
-        but a complete structure.</note>
      </desc>
 
     <attribute name="active" type="boolean" readonly="yes">
@@ -3967,7 +4241,7 @@
       from a session object after the session for the given machine has been
       opened using one of <link to="IVirtualBox::openSession"/>,
       <link to="IVirtualBox::openRemoteSession"/> or
-      <link to="IVirtualBox::openExistingSession"/> methdods.
+      <link to="IVirtualBox::openExistingSession"/> methods.
 
       Methods of the IConsole interface allow the caller to query the current
       virtual machine execution state, pause the machine or power it down, save
@@ -4461,10 +4735,8 @@
       <desc>
 
         This method is equivalent to
-        doing <link to="#discardSnapshot">discardSnapshot</link>
-        (<link
-        to="IMachine::currentSnapshot">currentSnapshot</link>.<link
-        to="ISnapshot::id">id()</link>, ...) followed by
+        doing <link to="IConsole::discardSnapshot">discardSnapshot</link>
+        (currentSnapshot.id(), progress) followed by
         <link to="#discardCurrentState()"/>.
 
         As a result, the machine will be fully restored from the
@@ -4477,8 +4749,8 @@
         machine will be restored from its last snapshot, before discarding
         it. This differs from performing a single
         <link to="#discardSnapshot()"/> call (note that no
-        <link to="#discardCurrentState()"/> will be possible after it) to the
-        effect that the latter will preserve the current state instead of
+        <link to="#discardCurrentState()"/> will be possible after it)
+        to the effect that the latter will preserve the current state instead of
         discarding it.
 
         Unless explicitly mentioned otherwise, all remarks and
@@ -4492,8 +4764,9 @@
         <note>
           If the machine state is <link to="MachineState::Saved">Saved</link>
           prior to this operation, the saved state file will be implicitly
-          discarded (as if <link to="IConsole::discardSavedState()"/> were
-          called).</note>
+          discarded (as if <link to="#discardSavedState()"/> were
+          called).
+        </note>
 
         <note>
           This method is more efficient than calling two above
@@ -4523,7 +4796,6 @@
       </desc>
       <param name="callback" type="IConsoleCallback" dir="in"/>
     </method>
-
   </interface>
 
   <!--
@@ -4655,7 +4927,6 @@
     </method>
   </collection>
 
-<if target="midl">
   <interface
      name="IHostNetworkInterface" extends="$unknown"
      uuid="F4512D7C-B074-4e97-99B8-6D2BD27C3F5A"
@@ -4712,11 +4983,10 @@
       </param>
     </method>
   </collection>
-</if>
 
   <interface
      name="IHost" extends="$unknown"
-     uuid="81729c26-1aec-46f5-b7c0-cc7364738fdb"
+     uuid="489fb370-c227-4d43-9761-ceb28484fd9f"
      wsmap="managed"
      >
     <desc>
@@ -4780,23 +5050,47 @@
       </desc>
     </attribute>
 
-<if target="midl">
     <attribute name="networkInterfaces" type="IHostNetworkInterfaceCollection" readonly="yes">
       <desc>List of host network interfaces currently defined on the host.</desc>
     </attribute>
-</if>
 
     <attribute name="processorCount" type="unsigned long" readonly="yes">
       <desc>Number of (logical) CPUs installed in the host system.</desc>
     </attribute>
 
-    <attribute name="processorSpeed" type="unsigned long" readonly="yes">
-      <desc>(Approximate) speed of the host CPU in Megahertz.</desc>
+    <attribute name="processorOnlineCount" type="unsigned long" readonly="yes">
+      <desc>Number of (logical) CPUs online in the host system.</desc>
     </attribute>
 
-    <attribute name="processorDescription" type="wstring" readonly="yes">
-      <desc>Description string of the host CPU.</desc>
-    </attribute>
+    <method name="getProcessorSpeed">
+      <desc>Query the (approximate) maximum speed of a specified host CPU in Megahertz.</desc>
+      <param name="cpuId" type="unsigned long" dir="in">
+        <desc>
+          Identifier of the CPU.
+        </desc>
+      </param>
+      <param name="speed" type="unsigned long" dir="return">
+        <desc>
+          Speed value. 0 is returned if value is not known or @a cpuId is
+          invalid.
+        </desc>
+      </param>
+    </method>
+
+    <method name="getProcessorDescription">
+      <desc>Query the model string of a specified host CPU.</desc>
+      <param name="cpuId" type="unsigned long" dir="in">
+        <desc>
+          Identifier of the CPU.
+        </desc>
+      </param>
+      <param name="description" type="wstring" dir="return">
+        <desc>
+          Model string. A NULL string is returned if value is not known or
+          @a cpuId is invalid.
+        </desc>
+      </param>
+    </method>
 
     <attribute name="memorySize" type="unsigned long" readonly="yes">
       <desc>Amount of system memory in megabytes installed in the host system.</desc>
@@ -5157,9 +5451,6 @@
      wsmap="struct"
      >
     <desc>
-        <note>With the COM API, this is an interface like all the others. With the webservice,
-        this is mapped to a structure, so querying the attribute will not return an object,
-        but a complete structure.</note>
     </desc>
 
     <attribute name="id" type="wstring" readonly="yes">
@@ -5766,9 +6057,6 @@
      wsmap="struct"
      >
     <desc>
-        <note>With the COM API, this is an interface like all the others. With the webservice,
-        this is mapped to a structure, so querying the attribute will not return an object,
-        but a complete structure.</note>
     </desc>
     <attribute name="hardDisk" type="IHardDisk" readonly="yes">
       <desc>Harddisk object this attachment is about.</desc>
@@ -6104,13 +6392,13 @@
       description for more details).
 
       <note>
-        Because of the possible slowness of the accessibility check,
-        it is not implicitly performed upon the VirtualBox server startup
-        (to prevent the application freeze). In partcular, this means that
-        if you try to read hard disk properties that depend on the
-        accessibility state without first reading the value of the
-        <link to="#accessible"/> attribute and ensuring it's value is
-        <tt>true</tt>, you will get wrong (zero) values.
+        Since checking the accessibility of a hard disk is a potentially
+        very slow operation, it is not performed implicitly when the
+        VirtualBox server process starts up to prevent the application from
+        freezing. In particular, this means that if you try to read hard disk
+        properties that depend on the accessibility state without first
+        reading the value of the <link to="#accessible"/> attribute and
+        ensuring its value is <tt>true</tt>, you will get wrong (zero) values.
       </note>
 
     </desc>
@@ -7418,7 +7706,7 @@
 
   <interface
      name="IKeyboard" extends="$unknown"
-     uuid="FD443EC1-000A-4F5B-9282-D72760A66916"
+     uuid="2d1a531b-4c6e-49cc-8af6-5c857b78b5d7"
      wsmap="managed"
      >
     <desc>
@@ -7435,8 +7723,7 @@
 
     <method name="putScancodes">
       <desc>Sends an array of scancode to the keyboard.</desc>
-      <param name="scancodes" type="long" dir="in" array="count"/>
-      <param name="count" type="unsigned long" dir="in"/>
+      <param name="scancodes" type="long" dir="in" safearray="yes"/>
       <param name="codesStored" type="unsigned long" dir="return"/>
     </method>
 
@@ -8441,17 +8728,18 @@
       <desc>
         Flag whether this serial port acts as a server (creates a new pipe on
         the host) or as a client (uses the existing pipe). This attribute is
-        used only when #hostMode is PortMode::HostPipePort.
+        used only when <link to="#hostMode"/> is PortMode::HostPipe.
       </desc>
     </attribute>
 
     <attribute name="path" type="wstring">
       <desc>
-        Path to the serial port's pipe on the host when #hostMode is
-        PortMode::HostPipePort, or the host serial device name when #hostMode
-        is PortMode::HostDevicePort. In either of the above cases, setting a
-        @c null or an empty string as the attribute's value will result into
-        an error. Otherwise, the value of this property is ignored.
+        Path to the serial port's pipe on the host when <link to="#hostMode"/> is
+        PortMode::HostPipe, or the host serial device name when
+        <link to="#hostMode"/> is PortMode::HostDevice. In either of the above
+        cases, setting a @c  null or an empty string as the attribute's value
+        will result into an error. Otherwise, the value of this property is
+        ignored.
       </desc>
     </attribute>
 
@@ -8524,7 +8812,7 @@
 
   <interface
      name="IMachineDebugger" extends="$unknown"
-     uuid="b3a02721-556a-4481-9d47-052a3f8cff90"
+     uuid="54ebce96-fa7d-4a4d-bc81-a7db41c29637"
      wsmap="suppress"
      >
     <method name="resetStats">
@@ -8587,7 +8875,14 @@
     <attribute name="HWVirtExEnabled" type="boolean" readonly="yes">
       <desc>
         Flag indicating whether the VM is currently making use of CPU hardware
-        virtualization extensions
+        virtualization extensions.
+      </desc>
+    </attribute>
+
+    <attribute name="HWVirtExNestedPagingEnabled" type="boolean" readonly="yes">
+      <desc>
+        Flag indicating whether the VM is currently making use of the nested paging
+        CPU hardware virtualization extension.
       </desc>
     </attribute>
 
@@ -9105,7 +9400,7 @@
         states #Busy and #Available are applicable only to the Linux version of
         the product. This also means that (<link
         to="IConsole::attachUSBDevice()"/>) can only succeed on Win32 if
-        the device state is #USBDeviceHeld.
+        the device state is #Held.
       </note>
 
       <see>IHostUSBDevice, IHostUSBDeviceFilter</see>
@@ -9510,10 +9805,6 @@
       are in different name spaces, so they don't overlap and don't need to
       have unique logical names.
 
-      <note>With the COM API, this is an interface like all the others. With the webservice,
-        this is mapped to a structure, so querying the attribute will not return an object,
-        but a complete structure.</note>
-
       <note>
         Global shared folders are not implemented in the current vesion of the
         product.
@@ -9554,7 +9845,7 @@
 
   <interface
      name="IInternalSessionControl" extends="$unknown"
-     uuid="37838967-2430-4bb1-8acc-1b5b2c383d44"
+     uuid="2581845a-5a9d-45fb-bc3b-2476552dd970"
      internal="yes"
      wsmap="suppress"
      >
@@ -9620,7 +9911,7 @@
 
     <method name="onNetworkAdapterChange">
       <desc>
-        Triggered when settions of a network adapter of the
+        Triggered when settings of a network adapter of the
         associated virtual machine have changed.
       </desc>
       <param name="networkAdapter" type="INetworkAdapter" dir="in"/>
@@ -9705,6 +9996,58 @@
       <param name="check" type="boolean" dir="in"/>
       <param name="canShow" type="boolean" dir="out"/>
       <param name="winId" type="unsigned long long" dir="out"/>
+    </method>
+
+    <method name="accessGuestProperty">
+      <desc>
+        Called by <link to="IMachine::getGuestProperty()"/> and by
+        <link to="IMachine::setGuestProperty()"/> in order to read and
+        modify guest properties.
+      </desc>
+      <param name="name" type="wstring" dir="in"/>
+      <param name="value" type="wstring" dir="in"/>
+      <param name="flags" type="wstring" dir="in"/>
+      <param name="isSetter" type="boolean" dir="in"/>
+      <param name="retValue" type="wstring" dir="out"/>
+      <param name="retTimestamp" type="unsigned long long" dir="out"/>
+      <param name="retFlags" type="wstring" dir="out"/>
+    </method>
+
+    <method name="enumerateGuestProperties">
+      <desc>
+        Return a list of the guest properties matching a set of patterns along
+        with their values, timestamps and flags.
+      </desc>
+      <param name="patterns" type="wstring" dir="in">
+        <desc>
+          The patterns to match the properties against as a comma-separated
+          string.  If this is empty, all properties currently set will be
+          returned.
+        </desc>
+      </param>
+      <param name="key" type="wstring" dir="out" safearray="yes">
+        <desc>
+          The key names of the properties returned.
+        </desc>
+      </param>
+      <param name="value" type="wstring" dir="out" safearray="yes">
+        <desc>
+          The values of the properties returned.  The array entries match the
+          corresponding entries in the @a key array.
+        </desc>
+      </param>
+      <param name="timestamp" type="unsigned long long" dir="out" safearray="yes">
+        <desc>
+          The timestamps of the properties returned.  The array entries match
+          the corresponding entries in the @a key array.
+        </desc>
+      </param>
+      <param name="flags" type="wstring" dir="out" safearray="yes">
+        <desc>
+          The flags of the properties returned.  The array entries match the
+          corresponding entries in the @a key array.
+        </desc>
+      </param>
     </method>
 
   </interface>
@@ -9879,7 +10222,7 @@
      wscpp="hardcoded"
      >
     <desc>
-      Webservice only: Managed object reference.
+      Managed object reference.
 
       Only within the webservice, a managed object reference (which is really
       an opaque number) allows a webservice client to address an object
@@ -9929,7 +10272,7 @@
      wscpp="hardcoded"
      >
     <desc>
-      Webservice only: Websession manager. This provides essential services
+      Websession manager. This provides essential services
       to webservice clients.
     </desc>
     <method name="logon">
@@ -9941,7 +10284,7 @@
       </desc>
       <param name="username" type="wstring" dir="in"/>
       <param name="password" type="wstring" dir="in"/>
-      <param name="return" type="wstring" dir="return"/>
+      <param name="return" type="IVirtualBox" dir="return"/>
     </method>
 
     <method name="getSessionObject">
@@ -9951,8 +10294,8 @@
 
         <see>ISession</see>
       </desc>
-      <param name="refIVirtualBox" type="wstring" dir="in"/>
-      <param name="return" type="wstring" dir="return"/>
+      <param name="refIVirtualBox" type="IVirtualBox" dir="in"/>
+      <param name="return" type="ISession" dir="return"/>
     </method>
 
     <method name="logoff">
@@ -9961,12 +10304,347 @@
         and destroys all resources associated with the session (most importantly, all
         managed objects created in the server while the session was active).
       </desc>
-      <param name="refIVirtualBox" type="wstring" dir="in"/>
+      <param name="refIVirtualBox" type="IVirtualBox" dir="in"/>
     </method>
 
   </interface>
 
 </if>
+
+  <!--
+  // IPerformanceCollector & friends
+  /////////////////////////////////////////////////////////////////////////
+  -->
+
+  <interface
+    name="IPerformanceMetric" extends="$unknown"
+    uuid="2a1a60ae-9345-4019-ad53-d34ba41cbfe9" wsmap="managed"
+  >
+    <desc>
+      The IPerformanceMetric interface represents parameters of the given
+      performance metric.
+    </desc>
+
+    <attribute name="metricName" type="wstring" readonly="yes">
+      <desc>
+        Name of the metric.
+      </desc>
+    </attribute>
+
+    <attribute name="object" type="$unknown" readonly="yes">
+      <desc>
+        Object this metric belongs to.
+      </desc>
+    </attribute>
+
+    <attribute name="description" type="wstring" readonly="yes">
+      <desc>
+        Textual description of the metric.
+      </desc>
+    </attribute>
+
+    <attribute name="period" type="unsigned long" readonly="yes">
+      <desc>
+        Time interval between samples, measured in seconds.
+      </desc>
+    </attribute>
+
+    <attribute name="count" type="unsigned long" readonly="yes">
+      <desc>
+        Number of recent samples retained by the performance collector for this
+        metric.
+
+        When the collected sample count exceeds this number, older samples
+        are discarded.
+      </desc>
+    </attribute>
+
+    <attribute name="unit" type="wstring" readonly="yes">
+      <desc>
+        Unit of measurement.
+      </desc>
+    </attribute>
+
+    <attribute name="minimumValue" type="long" readonly="yes">
+      <desc>
+        Minimum possible value of this metric.
+      </desc>
+    </attribute>
+
+    <attribute name="maximumValue" type="long" readonly="yes">
+      <desc>
+        Maximum possible value of this metric.
+      </desc>
+    </attribute>
+  </interface>
+
+  <interface
+    name="IPerformanceCollector" extends="$unknown"
+    uuid="dcd37e5a-3964-43d1-be30-0f3c7234e347"
+    wsmap="managed"
+  >
+    <desc>
+      The IPerformanceCollector interface represents a service that collects and
+      stores performance metrics data.
+
+      Performance metrics are associated with objects like IHost and
+      IMachine. Each object has a distinct set of performance metrics.
+      The set can be obtained with <link to="IPerformanceCollector::getMetrics"/>.
+
+      Metric data are collected at the specified intervals and are retained
+      internally. The interval and the number of samples retained can be set
+      with <link to="IPerformanceCollector::setMetrics" />.
+
+      Metrics are organized hierarchically, each level separated by slash (/).
+      General scheme for metric name is
+      "Category/Metric[/SubMetric][:aggregation]". For example CPU/Load/User:avg
+      metric name stands for: CPU category, Load metric, User submetric, average
+      aggregate. An aggregate function is computed over all retained data. Valid
+      aggregate functions are:
+
+      <ul>
+      <li>avg -- average</li>
+      <li>min -- minimum</li>
+      <li>max -- maximum</li>
+      </ul>
+
+      "Category/Metric" together form base metric name. A base metric is the
+      smallest unit for which a sampling interval and the number of retained
+      samples can be set. Only base metrics can be enabled and disabled. All
+      sub-metrics are collected when their base metric is collected.
+      Collected values for any set of sub-metrics can be queried with
+      <link to="IPerformanceCollector::queryMetricsData" />.
+
+      The valid names for base metrics are:
+
+      <ul>
+      <li>CPU/Load</li>
+      <li>CPU/MHz</li>
+      <li>RAM/Usage</li>
+      </ul>
+
+      The general sequence for collecting and retrieving the metrics is:
+      <ul>
+        <li>
+          Obtain an instance of IPerfromanceCollector with
+          <link to="IVirtualBox::performanceCollector" />
+        </li>
+        <li>
+          Allocate and populate an array with references to objects the metrics
+          will be collected for. Use references to IHost and IMachine objects.
+        </li>
+        <li>
+          Allocate and populate an array with base metric names the data will be
+          collected for.
+        </li>
+        <li>
+          Call <link to="IPerformanceCollector::setupMetrics" />. From now on the
+          metric data will be collected and stored.
+        </li>
+        <li>
+          Wait for the data to get collected.
+        </li>
+        <li>
+          Allocate and populate an array with references to objects the metric
+          values will be queried for. You can re-use the object array used for
+          setting base metrics.
+        </li>
+        <li>
+          Allocate and populate an array with metric names the data will be
+          collected for. Note that metric names differ from base metric names.
+        </li>
+        <li>
+          Call <link to="IPerformanceCollector::queryMetricsData" />. The data that
+          have been collected so far are returned. Note that the values are still
+          retained internally and data collection continues.
+        </li>
+      </ul>
+    </desc>
+
+    <attribute name="metricNames" type="wstring" readonly="yes" safearray="yes">
+      <desc>
+        Array of unique names of metrics.
+
+        This array represents all metrics supported by the performance
+        collector. Individual objects do not necessarily support all of them.
+        <link to="IPerformanceCollector::getMetrics"/> can be used to get the
+        list of supported metrics for a particular object.
+      </desc>
+    </attribute>
+
+    <method name="getMetrics">
+      <desc>
+        Returns parameters of specified metrics for a set of objects.
+        <note>
+          @c Null metrics array means all metrics. @c Null object array means
+          all existing objects.
+        </note>
+      </desc>
+      <param name="metricNames" type="wstring" dir="in" safearray="yes">
+        <desc>
+          Metric name filter. Currently, only a comma-separated list of metrics
+          is supported.
+        </desc>
+      </param>
+      <param name="objects" type="$unknown" dir="in" safearray="yes">
+        <desc>
+          Set of objects to return metric parameters for.
+        </desc>
+      </param>
+      <param name="metrics" type="IPerformanceMetric" dir="return" safearray="yes">
+        <desc>
+          Array of returned metric parameters.
+        </desc>
+      </param>
+    </method>
+
+    <method name="setupMetrics">
+      <desc>
+        Sets parameters of specified base metrics for a set of objects.
+        <note>
+          @c Null metrics array means all metrics. @c Null object array means
+          all existing objects.
+        </note>
+      </desc>
+      <param name="metricNames" type="wstring" dir="in" safearray="yes">
+        <desc>
+          Metric name filter. Currently, only a comma-separated list of metrics
+          is supported.
+        </desc>
+      </param>
+      <param name="objects" type="$unknown" dir="in" safearray="yes">
+        <desc>
+          Set of objects to setup metric parameters for.
+        </desc>
+      </param>
+      <param name="period" type="unsigned long" dir="in">
+        <desc>
+          Time interval in seconds between two consecutive samples of performace
+          data.
+        </desc>
+      </param>
+      <param name="count" type="unsigned long" dir="in">
+        <desc>
+          Number of samples to retain in performance data history. Older samples
+          get discarded.
+        </desc>
+      </param>
+    </method>
+
+    <method name="enableMetrics">
+      <desc>
+        Turns on collecting specified base metrics.
+        <note>
+          @c Null metrics array means all metrics. @c Null object array means
+          all existing objects.
+        </note>
+      </desc>
+      <param name="metricNames" type="wstring" dir="in" safearray="yes">
+        <desc>
+          Metric name filter. Currently, only a comma-separated list of metrics
+          is supported.
+        </desc>
+      </param>
+      <param name="objects" type="$unknown" dir="in" safearray="yes">
+        <desc>
+          Set of objects to enable metrics for.
+        </desc>
+      </param>
+    </method>
+
+    <method name="disableMetrics">
+      <desc>
+        Turns off collecting specified base metrics.
+        <note>
+          @c Null metrics array means all metrics. @c Null object array means
+          all existing objects.
+        </note>
+      </desc>
+      <param name="metricNames" type="wstring" dir="in" safearray="yes">
+        <desc>
+          Metric name filter. Currently, only a comma-separated list of metrics
+          is supported.
+        </desc>
+      </param>
+      <param name="objects" type="$unknown" dir="in" safearray="yes">
+        <desc>
+          Set of objects to disable metrics for.
+        </desc>
+      </param>
+    </method>
+
+    <method name="queryMetricsData">
+      <desc>
+        Queries collected metrics data for a set of objects.
+
+        The data itself and related metric information are returned in four
+        parallel and one flattened array of arrays. Elements of @c
+        returnMetricNames, @c returnObjects, @c returnDataIndices and @c
+        returnDataLengths with the same index describe one set of values
+        corresponding to a single metric.
+
+        The @a returnData parameter is a flattened array of arrays. Each start
+        and length of a sub-array is indicated by @a returnDataIndices and @a
+        returnDataLengths. The first value for metric <tt>metricNames[i]</tt> is at
+        <tt> returnData[returnIndices[i]]</tt>.
+
+        <note>
+          @c Null metrics array means all applicable metrics. @c Null object
+          array means all existing objects.
+        </note>
+        <note>
+          Data collection continues behind the scenes after call to @c
+          queryMetricsData. The return data can be seen as the snapshot of
+          the current state at the time of @c queryMetricsData call. The
+          internally kept metric values are not cleared by the call. This makes
+          possible querying different subsets of metrics or aggregates with
+          subsequent calls. If periodic querying is needed it is highly
+          suggested to query the values with @c interval*count period to avoid
+          confusion. This way a completely new set of data values will be
+          provided by each query.
+        </note>
+      </desc>
+      <param name="metricNames" type="wstring" dir="in" safearray="yes">
+        <desc>
+          Metric name filter. Currently, only a comma-separated list of metrics
+          is supported.
+        </desc>
+      </param>
+      <param name="objects" type="$unknown" dir="in" safearray="yes">
+        <desc>
+          Set of objects to query metrics for.
+        </desc>
+      </param>
+      <param name="returnMetricNames" type="wstring" dir="out" safearray="yes">
+        <desc>
+          Names of metrics returned in @c returnData.
+        </desc>
+      </param>
+      <param name="returnObjects" type="$unknown" dir="out" safearray="yes">
+        <desc>
+          Objects associated with metrics returned in @c returnData.
+        </desc>
+      </param>
+      <param name="returnDataIndices" type="unsigned long" dir="out" safearray="yes">
+        <desc>
+          Indices of the first elements of value sequences of particular metrics
+          returned in @c returnData.
+        </desc>
+      </param>
+      <param name="returnDataLengths" type="unsigned long" dir="out" safearray="yes">
+        <desc>
+          Lengths of value sequences of particular metrics.
+        </desc>
+      </param>
+      <param name="returnData" type="long" dir="return" safearray="yes">
+        <desc>
+          Flattened array of all metric data containing sequences of values for
+          each metric.
+        </desc>
+      </param>
+    </method>
+
+  </interface>
 
   <module name="VBoxSVC" context="LocalServer">
     <class name="VirtualBox" uuid="B1A7A4F2-47B9-4A1E-82B2-07CCD5323C3F"

@@ -1,4 +1,4 @@
-/* $Id: tstAnimate.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: tstAnimate.cpp 35653 2008-08-29 14:21:03Z bird $ */
 /** @file
  * VBox Animation Testcase / Tool.
  */
@@ -175,7 +175,7 @@ static int scriptCommand(PVM pVM, const char *pszIn, size_t cch)
         };
 
         rc = -1;
-        for (unsigned i = 0; i < ELEMENTS(aVars); i++)
+        for (unsigned i = 0; i < RT_ELEMENTS(aVars); i++)
         {
             if (!strcmp(psz, aVars[i].pszVar))
             {
@@ -577,7 +577,7 @@ static DECLCALLBACK(int) cfgmR3CreateDefault(PVM pVM, void *pvUser)
     rc = CFGMR3InsertInteger(pInst, "PCIFunctionNo",        0);                     UPDATERC();
     rc = CFGMR3InsertNode(pInst,    "Config", &pCfg);                               UPDATERC();
     rc = CFGMR3InsertInteger(pCfg,  "Am79C973",             1);                     UPDATERC();
-    PDMMAC Mac;
+    RTMAC Mac;
     Mac.au16[0] = 0x0080;
     Mac.au16[2] = Mac.au16[1] = 0x8086;
     rc = CFGMR3InsertBytes(pCfg,    "MAC", &Mac, sizeof(Mac));                      UPDATERC();
@@ -618,7 +618,7 @@ int main(int argc, char **argv)
 {
     int rcRet = 1;
     int rc;
-    RTR3Init();
+    RTR3InitAndSUPLib();
 
     /*
      * Parse input.
@@ -816,7 +816,7 @@ int main(int argc, char **argv)
      */
     static const char * const s_apszGroups[] = VBOX_LOGGROUP_NAMES;
     PRTLOGGER pRelLogger;
-    rc = RTLogCreate(&pRelLogger, RTLOGFLAGS_PREFIX_TIME_PROG, "all", "VBOX_RELEASE_LOG", 
+    rc = RTLogCreate(&pRelLogger, RTLOGFLAGS_PREFIX_TIME_PROG, "all", "VBOX_RELEASE_LOG",
                      RT_ELEMENTS(s_apszGroups), s_apszGroups, RTLOGDEST_FILE, "./tstAnimate.log");
     if (VBOX_SUCCESS(rc))
         RTLogRelSetDefaultInstance(pRelLogger);
@@ -856,7 +856,7 @@ int main(int argc, char **argv)
             if (VBOX_SUCCESS(rc))
             {
                 if (fPowerOn)
-                {   
+                {
                     /*
                      * Adjust warpspeed?
                      */

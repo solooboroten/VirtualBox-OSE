@@ -7,7 +7,7 @@
  *  Common definitions
 
      Copyright (C) 2004-2007 Sun Microsystems, Inc.
-    
+
      This file is part of VirtualBox Open Source Edition (OSE), as
      available from http://www.virtualbox.org. This file is free software;
      you can redistribute it and/or modify it under the terms of the GNU
@@ -15,7 +15,7 @@
      Foundation, in version 2 as it comes in the "COPYING" file of the
      VirtualBox OSE distribution. VirtualBox OSE is distributed in the
      hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
-    
+
      Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
      Clara, CA 95054 USA or visit http://www.sun.com if you need
      additional information or have any questions.
@@ -412,6 +412,10 @@
   <xsd:attribute name="enabled" type="TTriStateBoolType" default="default"/>
 </xsd:complexType>
 
+<xsd:complexType name="THWVirtExNestedPagingType">
+  <xsd:attribute name="enabled" type="xsd:boolean" default="false"/>
+</xsd:complexType>
+
 <xsd:complexType name="TPAEType">
   <xsd:attribute name="enabled" type="xsd:boolean" default="false"/>
 </xsd:complexType>
@@ -419,6 +423,7 @@
 <xsd:complexType name="TCPU">
   <xsd:sequence>
     <xsd:element name="HardwareVirtEx" type="THWVirtExType" minOccurs="0"/>
+    <xsd:element name="HardwareVirtExNestedPaging" type="THWVirtExNestedPagingType" minOccurs="0"/>
     <xsd:element name="PAE" type="TPAEType" minOccurs="0"/>
   </xsd:sequence>
 </xsd:complexType>
@@ -681,6 +686,19 @@
   <xsd:attribute name="PortCount"                  type="xsd:unsignedInt" default="30"/>
 </xsd:complexType>
 
+<xsd:complexType name="TGuestProperty">
+  <xsd:attribute name="name"      type="xsd:string"       use="required"/>
+  <xsd:attribute name="value"     type="xsd:string"       use="required"/>
+  <xsd:attribute name="timestamp" type="xsd:unsignedLong" default="0"/>
+  <xsd:attribute name="flags"     type="xsd:string"       default=""/>
+</xsd:complexType>
+
+<xsd:complexType name="TGuestProperties">
+  <xsd:sequence>
+    <xsd:element name="GuestProperty" type="TGuestProperty" minOccurs="0" maxOccurs="unbounded"/>
+  </xsd:sequence>
+</xsd:complexType>
+
 <xsd:complexType name="THardware">
   <xsd:all>
     <xsd:element name="CPU" type="TCPU" minOccurs="0"/>
@@ -725,6 +743,12 @@
     </xsd:element>
     <xsd:element name="Clipboard" type="TClipboard"/>
     <xsd:element name="Guest" type="TGuest"/>
+    <xsd:element name="GuestProperties" type="TGuestProperties" minOccurs="0">
+      <xsd:unique name="THardware-GuestProperties-GuestProperty">
+        <xsd:selector xpath="vb:GuestProperty"/>
+        <xsd:field xpath="@name"/>
+      </xsd:unique>
+    </xsd:element>
   </xsd:all>
 </xsd:complexType>
 

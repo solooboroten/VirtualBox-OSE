@@ -704,7 +704,6 @@ bool VBoxConsoleWnd::openView (const CSession &session)
     {
         QString str = cmachine.GetExtraData (VBoxDefs::GUI_LastWindowPosition);
 
-        QRect ar = QApplication::desktop()->availableGeometry (this);
         bool ok = false, max = false;
         int x = 0, y = 0, w = 0, h = 0;
         x = str.section (',', 0, 0).toInt (&ok);
@@ -718,6 +717,13 @@ bool VBoxConsoleWnd::openView (const CSession &session)
             max = str.section (',', 4, 4) == VBoxDefs::GUI_LastWindowPosition_Max;
         if (ok)
         {
+            QRect ar = QApplication::desktop()->availableGeometry (QPoint (x, y));
+            /* Do some position checks */
+            if (x < ar.left() || x > ar.right())
+                x = ar.left();
+            if (y < ar.top() || y > ar.bottom())
+                y = ar.top();
+
             normal_pos = QPoint (x, y);
             normal_size = QSize (w, h);
 
@@ -1798,8 +1804,9 @@ void VBoxConsoleWnd::updateAppearanceOf (int element)
                                "USB device tooltip");
             QString info;
 
-            bool isUSBEnabled = cmachine.GetUSBController().GetEnabled();
-            if (isUSBEnabled)
+            CUSBController usbctl = cmachine.GetUSBController();
+            if (    !usbctl.isNull()
+                &&  usbctl.GetEnabled())
             {
                 devicesUSBMenu->setEnabled (isRunningOrPaused);
 
@@ -2351,16 +2358,14 @@ void VBoxConsoleWnd::vmTypeCABS()
     {
         CKeyboard keyboard  = console->console().GetKeyboard();
         Assert (!keyboard.isNull());
-        static LONG sSequence[] =
-        {
-            0x1d, // Ctrl down
-            0x38, // Alt down
-            0x0E, // Backspace down
-            0x8E, // Backspace up
-            0xb8, // Alt up
-            0x9d  // Ctrl up
-        };
-        keyboard.PutScancodes (sSequence, ELEMENTS (sSequence));
+        static QValueVector <LONG> sSequence (6);
+        sSequence[0] = 0x1d; // Ctrl down
+        sSequence[1] = 0x38; // Alt down
+        sSequence[2] = 0x0E; // Backspace down
+        sSequence[3] = 0x8E; // Backspace up
+        sSequence[4] = 0xb8; // Alt up
+        sSequence[5] = 0x9d; // Ctrl up
+        keyboard.PutScancodes (sSequence);
         AssertWrapperOk (keyboard);
     }
 #else
@@ -2634,7 +2639,7 @@ void VBoxConsoleWnd::devicesInstallGuestAdditions()
             QDir::convertSeparators (src1), QDir::convertSeparators (src2));
         if (rc == QIMessageBox::Yes)
         {
-            QString url = QString ("http://www.virtualbox.org/download/%1/")
+            QString url = QString ("http://download.virtualbox.org/virtualbox/%1/")
                                    .arg (vbox.GetVersion().remove ("_OSE")) + name;
             QString target = QDir (vboxGlobal().virtualBox().GetHomeFolder())
                                    .absFilePath (name);

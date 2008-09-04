@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestR3LibMisc.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: VBoxGuestR3LibMisc.cpp 33347 2008-07-15 10:01:32Z bird $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, Misc.
  */
@@ -23,6 +23,7 @@
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
+#include <iprt/mem.h>
 #include <VBox/log.h>
 
 #include "VBGLR3Internal.h"
@@ -54,18 +55,46 @@ VBGLR3DECL(int) VbglR3InterruptEventWaits(void)
 VBGLR3DECL(int) VbglR3WriteLog(const char *pch, size_t cb)
 {
     /*
-     * *BSD does not accept more than 4KB per ioctl request,
-     * so, split it up into 2KB chunks.
+     * Quietly skip NULL strings.
+     * (Happens in the RTLogBackdoorPrintf case.)
      */
-#define STEP 2048
+    if (!cb)
+        return VINF_SUCCESS;
+    if (!VALID_PTR(pch))
+        return VERR_INVALID_POINTER;
+
+#ifdef RT_OS_WINDOWS
+    /*
+     * Duplicate the string as it may be read only (a C string).
+     */
+    void *pvTmp = RTMemDup(pch, cb);
+    if (!pvTmp)
+        return VERR_NO_MEMORY;
+    int rc = vbglR3DoIOCtl(VBOXGUEST_IOCTL_LOG(cb), pvTmp, cb);
+    RTMemFree(pvTmp);
+    return rc;
+
+#elif 0 /** @todo Several OSes could take this route (solaris and freebsd for instance). */
+    /*
+     * Handle the entire request in one go.
+     */
+    return vbglR3DoIOCtl(VBOXGUEST_IOCTL_LOG(cb), pvTmp, cb);
+
+#else
+    /*
+     * *BSD does not accept more than 4KB per ioctl request, while
+     * Linux can't express sizes above 8KB, so, split it up into 2KB chunks.
+     */
+# define STEP 2048
     int rc = VINF_SUCCESS;
     for (size_t off = 0; off < cb && RT_SUCCESS(rc); off += STEP)
     {
         size_t cbStep = RT_MIN(cb - off, STEP);
         rc = vbglR3DoIOCtl(VBOXGUEST_IOCTL_LOG(cbStep), (char *)pch + off, cbStep);
     }
-#undef STEP
+# undef STEP
     return rc;
+#endif
 }
 
 
@@ -78,10 +107,17 @@ VBGLR3DECL(int) VbglR3WriteLog(const char *pch, size_t cb)
  */
 VBGLR3DECL(int) VbglR3CtlFilterMask(uint32_t fOr, uint32_t fNot)
 {
+#if defined(RT_OS_WINDOWS)
+    /** @todo Not yet implemented. */
+    return VERR_NOT_SUPPORTED;
+
+#else
+
     VBoxGuestFilterMaskInfo Info;
     Info.u32OrMask = fOr;
     Info.u32NotMask = fNot;
     return vbglR3DoIOCtl(VBOXGUEST_IOCTL_CTL_FILTER_MASK, &Info, sizeof(Info));
+#endif
 }
 
 
@@ -91,6 +127,8 @@ VBGLR3DECL(int) VbglR3CtlFilterMask(uint32_t fOr, uint32_t fNot)
  * @returns IPRT status value
  * @param   fOr     Capabilities which have been added.
  * @param   fNot    Capabilities which have been removed.
+ *
+ * @todo    Move to a different file.
  */
 VBGLR3DECL(int) VbglR3SetGuestCaps(uint32_t fOr, uint32_t fNot)
 {

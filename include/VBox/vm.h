@@ -106,6 +106,9 @@
 /** Force return to Ring-3. */
 #define VM_FF_TO_R3                     RT_BIT_32(28)
 
+/** REM needs to be informed about handler changes. */
+#define VM_FF_REM_HANDLER_NOTIFY        RT_BIT_32(29)
+
 /** Suspend the VM - debug only. */
 #define VM_FF_DEBUG_SUSPEND             RT_BIT_32(31)
 
@@ -124,7 +127,7 @@
 /** Normal priority post-execution actions. */
 #define VM_FF_NORMAL_PRIORITY_POST_MASK (VM_FF_TERMINATE | VM_FF_DBGF | VM_FF_RESET | VM_FF_CSAM_SCAN_PAGE)
 /** Normal priority actions. */
-#define VM_FF_NORMAL_PRIORITY_MASK      (VM_FF_REQUEST | VM_FF_PDM_QUEUES | VM_FF_PDM_DMA)
+#define VM_FF_NORMAL_PRIORITY_MASK      (VM_FF_REQUEST | VM_FF_PDM_QUEUES | VM_FF_PDM_DMA | VM_FF_REM_HANDLER_NOTIFY)
 /** Flags to check before resuming guest execution. */
 #define VM_FF_RESUME_GUEST_MASK         (VM_FF_TO_R3)
 /** All the forced flags. */
@@ -279,7 +282,7 @@ typedef struct VM
     /** Ring-0 Host Context VM Pointer. */
     R0PTRTYPE(struct VM *)      pVMR0;
     /** Guest Context VM Pointer. */
-    GCPTRTYPE(struct VM *)      pVMGC;
+    RCPTRTYPE(struct VM *)      pVMGC;
 
     /** The GVM VM handle. Only the GVM should modify this field. */
     uint32_t                    hSelf;
@@ -395,7 +398,7 @@ typedef struct VM
 #ifdef ___CPUMInternal_h
         struct CPUM s;
 #endif
-        char        padding[4384];      /* multiple of 32 */
+        char        padding[4416];      /* multiple of 32 */
     } cpum;
 
     /** VMM part. */
@@ -422,7 +425,7 @@ typedef struct VM
 #ifdef ___HWACCMInternal_h
         struct HWACCM s;
 #endif
-        char        padding[1024];       /* multiple of 32 */
+        char        padding[1536];       /* multiple of 32 */
     } hwaccm;
 
     /** TRPM part. */
@@ -512,7 +515,7 @@ typedef struct VM
 #ifdef ___TMInternal_h
         struct TM   s;
 #endif
-        char        padding[1312];      /* multiple of 32 */
+        char        padding[1344];      /* multiple of 32 */
     } tm;
 
     /** DBGF part. */
@@ -521,7 +524,7 @@ typedef struct VM
 #ifdef ___DBGFInternal_h
         struct DBGF s;
 #endif
-        char        padding[HC_ARCH_BITS == 32 ? 1920 : 1952];      /* multiple of 32 */
+        char        padding[2368];      /* multiple of 32 */
     } dbgf;
 
     /** SSM part. */
@@ -548,7 +551,11 @@ typedef struct VM
 #ifdef ___REMInternal_h
         struct REM  s;
 #endif
+#if GC_ARCH_BITS == 32
         char        padding[HC_ARCH_BITS == 32 ? 0x6f00 : 0xbf00];    /* multiple of 32 */
+#else
+        char        padding[HC_ARCH_BITS == 32 ? 0x9f00 : 0xdf00];    /* multiple of 32 */
+#endif
     } rem;
 } VM;
 

@@ -1,7 +1,7 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
    Protocol services - RDP layer
-   Copyright (C) Matthew Chapman 1999-2005
+   Copyright (C) Matthew Chapman 1999-2007
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,9 +18,20 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
+/*
+ * Sun GPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the General Public License version 2 (GPLv2) at this time for any software where
+ * a choice of GPL license versions is made available with the language indicating
+ * that GPLv2 or any later version may be used, or where a choice of which version
+ * of the GPL is applied is otherwise unspecified.
+ */
+
 #include <time.h>
+#ifndef _WIN32
 #include <errno.h>
 #include <unistd.h>
+#endif
 #include "rdesktop.h"
 
 #ifdef HAVE_ICONV
@@ -36,20 +47,20 @@
 extern uint16 g_mcs_userid;
 extern char g_username[64];
 extern char g_codepage[16];
-extern BOOL g_bitmap_compression;
-extern BOOL g_orders;
-extern BOOL g_encryption;
-extern BOOL g_desktop_save;
-extern BOOL g_polygon_ellipse_orders;
-extern BOOL g_use_rdp5;
+extern RD_BOOL g_bitmap_compression;
+extern RD_BOOL g_orders;
+extern RD_BOOL g_encryption;
+extern RD_BOOL g_desktop_save;
+extern RD_BOOL g_polygon_ellipse_orders;
+extern RD_BOOL g_use_rdp5;
 extern uint16 g_server_rdp_version;
 extern uint32 g_rdp5_performanceflags;
 extern int g_server_depth;
 extern int g_width;
 extern int g_height;
-extern BOOL g_bitmap_cache;
-extern BOOL g_bitmap_cache_persist_enable;
-extern BOOL g_numlock_sync;
+extern RD_BOOL g_bitmap_cache;
+extern RD_BOOL g_bitmap_cache_persist_enable;
+extern RD_BOOL g_numlock_sync;
 
 uint8 *g_next_packet;
 uint32 g_rdp_shareid;
@@ -57,7 +68,7 @@ uint32 g_rdp_shareid;
 extern RDPCOMP g_mppc_dict;
 
 /* Session Directory support */
-extern BOOL g_redirect;
+extern RD_BOOL g_redirect;
 extern char g_redirect_server[64];
 extern char g_redirect_domain[16];
 extern char g_redirect_password[64];
@@ -71,7 +82,7 @@ static uint32 g_packetno;
 #endif
 
 #ifdef HAVE_ICONV
-static BOOL g_iconv_works = True;
+static RD_BOOL g_iconv_works = True;
 #endif
 
 /* Receive an RDP packet */
@@ -183,8 +194,8 @@ rdp_out_unistr(STREAM s, char *string, int len)
 			size_t i = 1, o = 4;
 			if ((iconv_h = iconv_open(WINDOWS_CODEPAGE, g_codepage)) == (iconv_t) - 1)
 			{
-				warning("rdp_out_unistr: iconv_open[%s -> %s] fail %d\n",
-					g_codepage, WINDOWS_CODEPAGE, (int) iconv_h);
+				warning("rdp_out_unistr: iconv_open[%s -> %s] fail %p\n",
+					g_codepage, WINDOWS_CODEPAGE, iconv_h);
 
 				g_iconv_works = False;
 				rdp_out_unistr(s, string, len);
@@ -241,10 +252,10 @@ rdp_out_unistr(STREAM s, char *string, int len)
  * Returns str_len of string
  */
 int
-rdp_in_unistr(STREAM s, char *string, int uni_len)
+rdp_in_unistr(STREAM s, char *string, int str_size, int in_len)
 {
 #ifdef HAVE_ICONV
-	size_t ibl = uni_len, obl = uni_len;
+	size_t ibl = in_len, obl = str_size - 1;
 	char *pin = (char *) s->p, *pout = string;
 	static iconv_t iconv_h = (iconv_t) - 1;
 
@@ -254,41 +265,60 @@ rdp_in_unistr(STREAM s, char *string, int uni_len)
 		{
 			if ((iconv_h = iconv_open(g_codepage, WINDOWS_CODEPAGE)) == (iconv_t) - 1)
 			{
-				warning("rdp_in_unistr: iconv_open[%s -> %s] fail %d\n",
-					WINDOWS_CODEPAGE, g_codepage, (int) iconv_h);
+				warning("rdp_in_unistr: iconv_open[%s -> %s] fail %p\n",
+					WINDOWS_CODEPAGE, g_codepage, iconv_h);
 
 				g_iconv_works = False;
-				return rdp_in_unistr(s, string, uni_len);
+				return rdp_in_unistr(s, string, str_size, in_len);
 			}
 		}
 
 		if (iconv(iconv_h, (ICONV_CONST char **) &pin, &ibl, &pout, &obl) == (size_t) - 1)
 		{
-			iconv_close(iconv_h);
-			iconv_h = (iconv_t) - 1;
-			warning("rdp_in_unistr: iconv fail, errno %d\n", errno);
+			if (errno == E2BIG)
+			{
+				warning("server sent an unexpectedly long string, truncating\n");
+			}
+			else
+			{
+				iconv_close(iconv_h);
+				iconv_h = (iconv_t) - 1;
+				warning("rdp_in_unistr: iconv fail, errno %d\n", errno);
 
-			g_iconv_works = False;
-			return rdp_in_unistr(s, string, uni_len);
+				g_iconv_works = False;
+				return rdp_in_unistr(s, string, str_size, in_len);
+			}
 		}
 
 		/* we must update the location of the current STREAM for future reads of s->p */
-		s->p += uni_len;
+		s->p += in_len;
 
+		*pout = 0;
 		return pout - string;
 	}
 	else
 #endif
 	{
 		int i = 0;
+		int len = in_len / 2;
+		int rem = 0;
 
-		while (i < uni_len / 2)
+		if (len > str_size - 1)
+		{
+			warning("server sent an unexpectedly long string, truncating\n");
+			len = str_size - 1;
+			rem = in_len - 2 * len;
+		}
+
+		while (i < len)
 		{
 			in_uint8a(s, &string[i++], 1);
 			in_uint8s(s, 1);
 		}
 
-		return i - 1;
+		in_uint8s(s, rem);
+		string[len] = 0;
+		return len;
 	}
 }
 
@@ -436,7 +466,7 @@ rdp_send_logon_info(uint32 flags, char *domain, char *user,
 		out_uint32_le(s, 0xffffffc4);
 		out_uint32_le(s, 0xfffffffe);
 		out_uint32_le(s, g_rdp5_performanceflags);
-		out_uint32(s, 0);
+		out_uint16(s, 0);
 
 
 	}
@@ -996,7 +1026,7 @@ process_colour_pointer_pdu(STREAM s)
 {
 	uint16 x, y, width, height, cache_idx, masklen, datalen;
 	uint8 *mask, *data;
-	HCURSOR cursor;
+	RD_HCURSOR cursor;
 
 	in_uint16_le(s, cache_idx);
 	in_uint16_le(s, x);
@@ -1028,7 +1058,7 @@ process_system_pointer_pdu(STREAM s)
 {
 	uint16 system_pointer_type;
 
-	in_uint16(s, system_pointer_type);
+	in_uint16_le(s, system_pointer_type);
 	switch (system_pointer_type)
 	{
 		case RDP_NULL_POINTER:
@@ -1153,7 +1183,7 @@ process_palette(STREAM s)
 {
 	COLOURENTRY *entry;
 	COLOURMAP map;
-	HCOLOURMAP hmap;
+	RD_HCOLOURMAP hmap;
 	int i;
 
 	in_uint8s(s, 2);	/* pad */
@@ -1223,7 +1253,7 @@ process_disconnect_pdu(STREAM s, uint32 * ext_disc_reason)
 }
 
 /* Process data PDU */
-static BOOL
+static RD_BOOL
 process_data_pdu(STREAM s, uint32 * ext_disc_reason)
 {
 	uint8 data_pdu_type;
@@ -1236,10 +1266,10 @@ process_data_pdu(STREAM s, uint32 * ext_disc_reason)
 	struct stream *ns = &(g_mppc_dict.ns);
 
 	in_uint8s(s, 6);	/* shareid, pad, streamid */
-	in_uint16(s, len);
+	in_uint16_le(s, len);
 	in_uint8(s, data_pdu_type);
 	in_uint8(s, ctype);
-	in_uint16(s, clen);
+	in_uint16_le(s, clen);
 	clen -= 18;
 
 	if (ctype & RDP_MPPC_COMPRESSED)
@@ -1308,7 +1338,7 @@ process_data_pdu(STREAM s, uint32 * ext_disc_reason)
 }
 
 /* Process redirect PDU from Session Directory */
-static BOOL
+static RD_BOOL
 process_redirect_pdu(STREAM s /*, uint32 * ext_disc_reason */ )
 {
 	uint32 len;
@@ -1323,32 +1353,44 @@ process_redirect_pdu(STREAM s /*, uint32 * ext_disc_reason */ )
 	in_uint32_le(s, len);
 
 	/* read ip string */
-	rdp_in_unistr(s, g_redirect_server, len);
+	rdp_in_unistr(s, g_redirect_server, sizeof(g_redirect_server), len);
 
 	/* read length of cookie string */
 	in_uint32_le(s, len);
 
 	/* read cookie string (plain ASCII) */
-	in_uint8a(s, g_redirect_cookie, len);
+	if (len > sizeof(g_redirect_cookie) - 1)
+	{
+		uint32 rem = len - (sizeof(g_redirect_cookie) - 1);
+		len = sizeof(g_redirect_cookie) - 1;
+
+		warning("Unexpectedly large redirection cookie\n");
+		in_uint8a(s, g_redirect_cookie, len);
+		in_uint8s(s, rem);
+	}
+	else
+	{
+		in_uint8a(s, g_redirect_cookie, len);
+	}
 	g_redirect_cookie[len] = 0;
 
 	/* read length of username string */
 	in_uint32_le(s, len);
 
 	/* read username string */
-	rdp_in_unistr(s, g_redirect_username, len);
+	rdp_in_unistr(s, g_redirect_username, sizeof(g_redirect_username), len);
 
 	/* read length of domain string */
 	in_uint32_le(s, len);
 
 	/* read domain string */
-	rdp_in_unistr(s, g_redirect_domain, len);
+	rdp_in_unistr(s, g_redirect_domain, sizeof(g_redirect_domain), len);
 
 	/* read length of password string */
 	in_uint32_le(s, len);
 
 	/* read password string */
-	rdp_in_unistr(s, g_redirect_password, len);
+	rdp_in_unistr(s, g_redirect_password, sizeof(g_redirect_password), len);
 
 	g_redirect = True;
 
@@ -1358,19 +1400,19 @@ process_redirect_pdu(STREAM s /*, uint32 * ext_disc_reason */ )
 /* Process incoming packets */
 /* nevers gets out of here till app is done */
 void
-rdp_main_loop(BOOL * deactivated, uint32 * ext_disc_reason)
+rdp_main_loop(RD_BOOL * deactivated, uint32 * ext_disc_reason)
 {
 	while (rdp_loop(deactivated, ext_disc_reason))
 		;
 }
 
 /* used in uiports and rdp_main_loop, processes the rdp packets waiting */
-BOOL
-rdp_loop(BOOL * deactivated, uint32 * ext_disc_reason)
+RD_BOOL
+rdp_loop(RD_BOOL * deactivated, uint32 * ext_disc_reason)
 {
 	uint8 type;
-	BOOL disc = False;	/* True when a disconnect PDU was received */
-	BOOL cont = True;
+	RD_BOOL disc = False;	/* True when a disconnect PDU was received */
+	RD_BOOL cont = True;
 	STREAM s;
 
 	while (cont)
@@ -1407,7 +1449,7 @@ rdp_loop(BOOL * deactivated, uint32 * ext_disc_reason)
 }
 
 /* Establish a connection up to the RDP layer */
-BOOL
+RD_BOOL
 rdp_connect(char *server, uint32 flags, char *domain, char *password,
 	    char *command, char *directory)
 {
@@ -1419,7 +1461,7 @@ rdp_connect(char *server, uint32 flags, char *domain, char *password,
 }
 
 /* Establish a reconnection up to the RDP layer */
-BOOL
+RD_BOOL
 rdp_reconnect(char *server, uint32 flags, char *domain, char *password,
 	      char *command, char *directory, char *cookie)
 {

@@ -71,6 +71,32 @@
 
 # define SUCCEEDED      NS_SUCCEEDED
 # define FAILED         NS_FAILED
+
+#define ComSafeArrayIn(aType, aArg)         unsigned aArg##Size, aType *aArg
+#define ComSafeArrayInIsNull(aArg)          (aArg == NULL)
+#define ComSafeArrayInArg(aArg)             aArg##Size, aArg
+#define ComSafeArrayAsInParam(aArray)   \
+    (aArray).size(), aArray.raw()
+#else /* !RT_OS_WINDOWS */
+#define ComSafeArrayIn(aType, aArg)     SAFEARRAY **aArg
+#define ComSafeArrayInIsNull(aArg)      (aArg == NULL || *aArg == NULL)
+#define ComSafeArrayInArg(aArg)         aArg
+#define ComSafeArrayAsInParam(aArray)   (SAFEARRAY **)NULL
+
 #endif /* !RT_OS_WINDOWS */
 
+
+
+namespace com
+{
+    template<class T> class SafeArray {
+        T t;
+    public:
+        SafeArray (size_t aSize) {}
+        SafeArray (ComSafeArrayIn (T, aArg)) {}
+        T &operator[] (size_t aIdx) { return t; }
+        size_t size() const { return 0; }
+        T *raw() { return &t; }
+    };
+}
 #endif

@@ -1,4 +1,4 @@
-/* $Id: DBGPlugInSolaris.cpp 30986 2008-05-19 18:26:20Z frank $ */
+/* $Id: DBGPlugInSolaris.cpp 31734 2008-06-06 13:03:50Z bird $ */
 /** @file
  * DBGPlugInSolaris - Debugger and Guest OS Digger Plugin For Solaris.
  */
@@ -412,6 +412,8 @@ static DECLCALLBACK(int)  dbgDiggerSolarisInit(PVM pVM, void *pvData)
     PDBGDIGGERSOLARIS pThis = (PDBGDIGGERSOLARIS)pvData;
     Assert(!pThis->fValid);
     int rc;
+
+/** @todo Use debug_info, build 7x / S10U6. */
 
     /*
      * Find the 'unix' modctl_t structure (aka modules).

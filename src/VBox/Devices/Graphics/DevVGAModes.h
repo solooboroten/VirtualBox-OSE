@@ -1,8 +1,9 @@
+/* $Id: DevVGAModes.h 34157 2008-08-06 00:24:37Z bird $ */
 /** @file
+ * DevVGA - VBox VGA/VESA device, VBE modes.
  *
- * VBox VGA/VESA device:
  * List of static mode information, containing all "supported" VBE
- * modes and their 'settings'
+ * modes and their 'settings'.
  */
 
 /*

@@ -1,4 +1,4 @@
-/* $Id: RTMpGetSet-generic.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: RTMpGetSet-generic.cpp 31680 2008-06-05 15:22:37Z bird $ */
 /** @file
  * IPRT - Multiprocessor, Generic RTMpGetSet.
  */
@@ -44,7 +44,7 @@ RTDECL(PRTCPUSET) RTMpGetSet(PRTCPUSET pSet)
     idCpu = RTMpGetMaxCpuId();
     do
     {
-        if (RTMpDoesCpuExist(idCpu))
+        if (RTMpIsCpuPossible(idCpu))
             RTCpuSetAdd(pSet, idCpu);
     } while (idCpu-- > 0);
     return pSet;

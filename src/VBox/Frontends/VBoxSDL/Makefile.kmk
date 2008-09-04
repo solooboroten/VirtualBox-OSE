@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35651 2008-08-29 14:09:39Z frank $
 ## @file
 # Sub-Makefile for VBoxSDL (a simple frontend based on SDL).
 #
@@ -19,18 +19,41 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
+DEPTH    ?= ../../../..
 SUB_DEPTH = ..
+endif
 include $(KBUILD_PATH)/subheader.kmk
 
-PROGRAMS += VBoxSDL tstSDL
+
+#
+# Targets.
+#
+ifdef VBOX_WITH_HARDENING
+ ifneq ($(KBUILD_TARGET),darwin) # No hardened VBoxSDL on darwin.
+  PROGRAMS += VBoxSDLHardened
+  DLLS += VBoxSDL
+ endif
+else
+ PROGRAMS += VBoxSDL
+endif
+PROGRAMS += tstSDL
+
+
+#
+# Hardened VBoxSDL
+#
+VBoxSDLHardened_TEMPLATE = VBOXR3HARDENEDEXE
+VBoxSDLHardened_SOURCES = VBoxSDLHardened.cpp
+VBoxSDLHardened_NAME = VBoxSDL
 
 
 #
 # VBoxSDL
 #
-
-VBoxSDL_TEMPLATE   = VBOXMAINCLIENTEXE
+VBoxSDL_TEMPLATE  := $(if $(VBOX_WITH_HARDENING),VBOXMAINCLIENTDLL,VBOXMAINCLIENTEXE)
 VBoxSDL_SDKS       = LIBSDL
 VBoxSDL_SOURCES    = \
 	VBoxSDL.cpp \
@@ -53,7 +76,7 @@ ifdef VBOX_WITH_SECURELABEL
  VBoxSDL_DEFS     += VBOX_SECURELABEL
 endif
 ifdef VBOX_WITH_VRDP
- VBoxSDL_DEFS     += VBOX_VRDP
+ VBoxSDL_DEFS     += VBOX_WITH_VRDP
 endif
 VBoxSDL_DEFS.freebsd = VBOXSDL_WITH_X11
 VBoxSDL_DEFS.linux = _GNU_SOURCE VBOXSDL_WITH_X11
@@ -68,7 +91,6 @@ VBoxSDL_DEFS.win.x86 = _WIN32_WINNT=0x0500
 VBoxSDL_DEFS.win.amd64 = _WIN32_WINNT=0x0510
 
 VBoxSDL_INCS = \
-	$(PATH_BIN)/sdk/include \
 	$(PATH_VBoxSDL)
 ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),) # X11
 VBoxSDL_INCS += \
@@ -98,7 +120,7 @@ VBoxSDL_LDFLAGS.darwin = \
 	-framework Foundation -framework AppKit
 
 VBoxSDL_CLEAN = $(PATH_VBoxSDL)/Ico64x01.h
-Framebuffer.cpp_DEPS = $(PATH_VBoxSDL)/Ico64x01.h
+VBoxSDL_INTERMEDIATES = $(PATH_VBoxSDL)/Ico64x01.h
 
 
 #
@@ -152,13 +174,14 @@ tstSDL_CXXFLAGS.linux = \
 include $(KBUILD_PATH)/subfooter.kmk
 
 
+ifdef PATH_VBoxSDL
 # Convert the pnm-file to a byte array.
 $(PATH_VBoxSDL)/Ico64x01.h: $(PATH_ROOT)/src/VBox/Frontends/VBoxSDL/ico64x01.pnm $(VBOX_BIN2C) | $(call DIRDEP,$(PATH_VBoxSDL))
 	$(call MSG_TOOL,bin2c,VBoxSDL,$<,$@)
 	$(QUIET)$(VBOX_BIN2C) Ico64x01 $< $@
 
 # Icon include file.
-$(PATH_VBoxSDL)/VBoxSDL-icon.rc: $(VBOX_WINDOWS_ICON_FILE) Makefile.kmk | $$(call DIRDEP,$$(@D))
+$(PATH_VBoxSDL)/VBoxSDL-icon.rc: $(VBOX_WINDOWS_ICON_FILE) $(VBoxSDL_PATH)/Makefile.kmk | $$(call DIRDEP,$$(@D))
 	$(RM) -f $@
 	$(APPEND) $@ 'IDI_VIRTUALBOX ICON DISCARDABLE "$(subst /,\\,$(VBOX_WINDOWS_ICON_FILE))"'
-
+endif

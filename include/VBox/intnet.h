@@ -121,7 +121,10 @@ typedef struct INTNETBUF
     /** Number of frame bytes sent. */
     STAMCOUNTER     cbStatSend;
 } INTNETBUF;
+/** Pointer to an interface buffer. */
 typedef INTNETBUF *PINTNETBUF;
+/** Pointer to a const interface buffer. */
+typedef INTNETBUF const *PCINTNETBUF;
 
 /** Internal networking interface handle. */
 typedef uint32_t    INTNETIFHANDLE;
@@ -151,7 +154,7 @@ typedef INTNETIFHANDLE *PINTNETIFHANDLE;
 typedef struct INTNETHDR
 {
     /** Header type. This is currently serving as a magic, it
-     * can be extended later to encode special command packets and stuff.. */
+     * can be extended later to encode special command packets and stuff. */
     uint16_t        u16Type;
     /** The size of the frame. */
     uint16_t        cbFrame;
@@ -159,8 +162,12 @@ typedef struct INTNETHDR
      * This is used to keep the frame it self continguous in virtual memory and
      * thereby both simplify reading and   */
     int32_t         offFrame;
-} INTNETHDR, *PINTNETHDR;
+} INTNETHDR;
 #pragma pack()
+/** Pointer to a packet header.*/
+typedef INTNETHDR *PINTNETHDR;
+/** Pointer to a const packet header.*/
+typedef INTNETHDR const *PCINTNETHDR;
 
 /** INTNETHDR::u16Type value for normal frames. */
 #define INTNETHDR_TYPE_FRAME    0x2442
@@ -173,7 +180,7 @@ typedef struct INTNETHDR
  * @param   pHdr        Pointer to the packet header
  * @param   pBuf        The buffer the header is within. Only used in strict builds.
  */
-DECLINLINE(void *) INTNETHdrGetFramePtr(PINTNETHDR pHdr, PINTNETBUF pBuf)
+DECLINLINE(void *) INTNETHdrGetFramePtr(PCINTNETHDR pHdr, PCINTNETBUF pBuf)
 {
     uint8_t *pu8 = (uint8_t *)pHdr + pHdr->offFrame;
 #ifdef VBOX_STRICT
@@ -195,11 +202,11 @@ DECLINLINE(void *) INTNETHdrGetFramePtr(PINTNETHDR pHdr, PINTNETBUF pBuf)
  */
 DECLINLINE(void) INTNETRingSkipFrame(PINTNETBUF pBuf, PINTNETRINGBUF pRingBuf)
 {
+    uint32_t    offRead   = pRingBuf->offRead;
+    PINTNETHDR  pHdr      = (PINTNETHDR)((uint8_t *)pBuf + offRead);
     Assert(pRingBuf->offRead < pBuf->cbBuf);
     Assert(pRingBuf->offRead >= pRingBuf->offStart);
     Assert(pRingBuf->offRead < pRingBuf->offEnd);
-    uint32_t    offRead   = pRingBuf->offRead;
-    PINTNETHDR  pHdr      = (PINTNETHDR)((uint8_t *)pBuf + offRead);
 
     /* skip the frame */
     offRead += pHdr->offFrame + pHdr->cbFrame;
@@ -210,8 +217,455 @@ DECLINLINE(void) INTNETRingSkipFrame(PINTNETBUF pBuf, PINTNETRINGBUF pRingBuf)
     ASMAtomicXchgU32(&pRingBuf->offRead, offRead);
 }
 
+
+/**
+ * Scatter / Gather segment (internal networking).
+ */
+typedef struct INTNETSEG
+{
+    /** The physical address. NIL_RTHCPHYS is not set. */
+    RTHCPHYS        Phys;
+    /** Pointer to the segment data. */
+    void           *pv;
+    /** The segment size. */
+    uint32_t        cb;
+} INTNETSEG;
+/** Pointer to a internal networking packet segment. */
+typedef INTNETSEG *PINTNETSEG;
+/** Pointer to a internal networking packet segment. */
+typedef INTNETSEG const *PCINTNETSEG;
+
+
+/**
+ * Scatter / Gather list (internal networking).
+ *
+ * This is used when communicating with the trunk port.
+ */
+typedef struct INTNETSG
+{
+    /** Owner data, don't touch! */
+    void           *pvOwnerData;
+    /** User data. */
+    void           *pvUserData;
+    /** User data 2 in case anyone needs it. */
+    void           *pvUserData2;
+    /** The total length of the scatter gather list. */
+    uint32_t        cbTotal;
+    /** The number of users (references).
+     * This is used by the SGRelease code to decide when it can be freed. */
+    uint16_t volatile cUsers;
+    /** Flags, see INTNETSG_FLAGS_* */
+    uint16_t volatile fFlags;
+    /** The number of segments allocated. */
+    uint16_t        cSegsAlloc;
+    /** The number of segments actually used. */
+    uint16_t        cSegsUsed;
+    /** Variable sized list of segments. */
+    INTNETSEG       aSegs[1];
+} INTNETSG;
+/** Pointer to a scatter / gather list. */
+typedef INTNETSG *PINTNETSG;
+/** Pointer to a const scatter / gather list. */
+typedef INTNETSG const *PCINTNETSG;
+
+/** @name INTNETSG::fFlags definitions.
+ * @{ */
+/** Set if the SG is free. */
+#define INTNETSG_FLAGS_FREE             RT_BIT_32(1)
+/** Set if the SG is a temporary one that will become invalid upon return.
+ * Try to finish using it before returning, and if that's not possible copy
+ * to other buffers.
+ * When not set, the callee should always free the SG.
+ * Attempts to free it made by the callee will be quietly ignored. */
+#define INTNETSG_FLAGS_TEMP             RT_BIT_32(2)
+/** ARP packet, IPv4 + MAC.
+ * @internal */
+#define INTNETSG_FLAGS_ARP_IPV4         RT_BIT_32(3)
+/** Copied to the temporary buffer.
+ * @internal */
+#define INTNETSG_FLAGS_PKT_CP_IN_TMP    RT_BIT_32(4)
+/** @} */
+
+
+/** @name Direction (packet source or destination)
+ * @{ */
+/** To/From the wire. */
+#define INTNETTRUNKDIR_WIRE             RT_BIT_32(0)
+/** To/From the host. */
+#define INTNETTRUNKDIR_HOST             RT_BIT_32(1)
+/** Mask of valid bits. */
+#define INTNETTRUNKDIR_VALID_MASK       UINT32_C(3)
+/** @} */
+
+
+/** Pointer to the switch side of a trunk port. */
+typedef struct INTNETTRUNKSWPORT *PINTNETTRUNKSWPORT;
+/**
+ * This is the port on the internal network 'switch', i.e.
+ * what the driver is connected to.
+ *
+ * This is only used for the in-kernel trunk connections.
+ */
+typedef struct INTNETTRUNKSWPORT
+{
+    /** Structure version number. (INTNETTRUNKSWPORT_VERSION) */
+    uint32_t u32Version;
+
+    /**
+     * Selects whether outgoing SGs should have their physical address set.
+     *
+     * By enabling physical addresses in the scatter / gather segments it should
+     * be possible to save some unnecessary address translation and memory locking
+     * in the network stack. (Internal networking knows the physical address for
+     * all the INTNETBUF data and that it's locked memory.) There is a negative
+     * side effects though, frames that crosses page boundraries will require
+     * multiple scather / gather segments.
+     *
+     * @returns The old setting.
+     *
+     * @param   pSwitchPort Pointer to this structure.
+     * @param   fEnable     Whether to enable or disable it.
+     *
+     * @remarks Will grab the network semaphore.
+     */
+    DECLR0CALLBACKMEMBER(bool, pfnSetSGPhys,(PINTNETTRUNKSWPORT pSwitchPort, bool fEnable));
+
+    /**
+     * Incoming frame.
+     *
+     * The frame may be modified when the trunk port on the switch is set to share
+     * the mac address of the host when hitting the wire. Currently rames containing
+     * ARP packets are subject to this, later other protocols like NDP/ICMPv6 may
+     * need editing as well when operating in this mode.
+     *
+     * @returns true if we've handled it and it should be dropped.
+     *          false if it should hit the wire.
+     *
+     * @param   pSwitchPort Pointer to this structure.
+     * @param   pSG         The (scatter /) gather structure for the frame.
+     *                      This will only be use during the call, so a temporary one can
+     *                      be used. The Phys member will not be used.
+     * @param   fSrc        Where this frame comes from. Only one bit should be set!
+     *
+     * @remarks Will grab the network semaphore.
+     *
+     * @remarks NAT and TAP will use this interface.
+     *
+     * @todo    Do any of the host require notification before frame modifications? If so,
+     *          we'll add a callback to INTNETTRUNKIFPORT for this (pfnSGModifying) and
+     *          a SG flag.
+     */
+    DECLR0CALLBACKMEMBER(bool, pfnRecv,(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG, uint32_t fSrc));
+
+    /**
+     * Retain a SG.
+     *
+     * @param   pSwitchPort Pointer to this structure.
+     * @param   pSG         Pointer to the (scatter /) gather structure.
+     *
+     * @remarks Will not grab any locks.
+     */
+    DECLR0CALLBACKMEMBER(void, pfnSGRetain,(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG));
+
+    /**
+     * Release a SG.
+     *
+     * This is called by the pfnXmit code when done with a SG. This may safe
+     * be done in an asynchronous manner.
+     *
+     * @param   pSwitchPort Pointer to this structure.
+     * @param   pSG         Pointer to the (scatter /) gather structure.
+     *
+     * @remarks Will grab the network semaphore.
+     */
+    DECLR0CALLBACKMEMBER(void, pfnSGRelease,(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG));
+
+    /** Structure version number. (INTNETTRUNKSWPORT_VERSION) */
+    uint32_t u32VersionEnd;
+} INTNETTRUNKSWPORT;
+
+/** Version number for the INTNETTRUNKIFPORT::u32Version and INTNETTRUNKIFPORT::u32VersionEnd fields. */
+#define INTNETTRUNKSWPORT_VERSION   UINT32_C(0xA2CDf001)
+
+
+/** Pointer to the interface side of a trunk port. */
+typedef struct INTNETTRUNKIFPORT *PINTNETTRUNKIFPORT;
+/**
+ * This is the port on the trunk interface, i.e. the driver
+ * side which the internal network is connected to.
+ *
+ * This is only used for the in-kernel trunk connections.
+ *
+ * @remarks The internal network side is responsible for serializing all calls
+ *          to this interface. This is (assumed) to be implemented using a lock
+ *          that is only ever taken before a call to this interface. The lock
+ *          is referred to as the out-bound trunk port lock.
+ */
+typedef struct INTNETTRUNKIFPORT
+{
+    /** Structure version number. (INTNETTRUNKIFPORT_VERSION) */
+    uint32_t u32Version;
+
+    /**
+     * Retain the object.
+     *
+     * It will normally be called while owning the internal network semaphore.
+     *
+     * @param   pIfPort     Pointer to this structure.
+     *
+     * @remarks The caller may own any locks or none at all, we don't care.
+     */
+    DECLR0CALLBACKMEMBER(void, pfnRetain,(PINTNETTRUNKIFPORT pIfPort));
+
+    /**
+     * Releases the object.
+     *
+     * This must be called for every pfnRetain call.
+     *
+     *
+     * @param   pIfPort     Pointer to this structure.
+     *
+     * @remarks Only the out-bound trunk port lock, unless the caller is certain the
+     *          call is not going to cause destruction (wont happen).
+     */
+    DECLR0CALLBACKMEMBER(void, pfnRelease,(PINTNETTRUNKIFPORT pIfPort));
+
+    /**
+     * Disconnect from the switch and release the object.
+     *
+     * The is the counter action of the
+     * INTNETTRUNKNETFLTFACTORY::pfnCreateAndConnect method.
+     *
+     * @param   pIfPort     Pointer to this structure.
+     *
+     * @remarks Called holding the out-bound trunk port lock.
+     */
+    DECLR0CALLBACKMEMBER(void, pfnDisconnectAndRelease,(PINTNETTRUNKIFPORT pIfPort));
+
+    /**
+     * Changes the active state of the interface.
+     *
+     * The interface is created in the suspended (non-active) state and then activated
+     * when the VM/network is started. It may be suspended and re-activated later
+     * for various reasons. It will finally be suspended again before disconnecting
+     * the interface from the internal network, however, this might be done immediately
+     * before disconnecting and may leave an incoming frame waiting on the internal network
+     * semaphore. So, after the final suspend a pfnWaitForIdle is always called to make sure
+     * the interface is idle before pfnDisconnectAndRelease is called.
+     *
+     * A typical operation to performed by this method is to enable/disable promiscuous
+     * mode on the host network interface. (This is the reason we cannot call this when
+     * owning any semaphores.)
+     *
+     * @returns The previous state.
+     *
+     * @param   pIfPort     Pointer to this structure.
+     * @param   fActive     True if the new state is 'active', false if the new state is 'suspended'.
+     *
+     * @remarks Called holding the out-bound trunk port lock.
+     */
+    DECLR0CALLBACKMEMBER(bool, pfnSetActive,(PINTNETTRUNKIFPORT pIfPort, bool fActive));
+
+    /**
+     * Waits for the interface to become idle.
+     *
+     * This method must be called before disconnecting and releasing the
+     * object in order to prevent racing incoming/outgoing packets and
+     * device enabling/disabling.
+     *
+     * @returns IPRT status code (see RTSemEventWait).
+     * @param   pIfPort     Pointer to this structure.
+     * @param   cMillies    The number of milliseconds to wait. 0 means
+     *                      no waiting at all. Use RT_INDEFINITE_WAIT for
+     *                      an indefinite wait.
+     *
+     * @remarks Called holding the out-bound trunk port lock.
+     */
+    DECLR0CALLBACKMEMBER(int, pfnWaitForIdle,(PINTNETTRUNKIFPORT pIfPort, uint32_t cMillies));
+
+    /**
+     * Gets the MAC address of the host network interface that we're attached to.
+     *
+     * @param   pIfPort     Pointer to this structure.
+     * @param   pMac        Where to store the host MAC address.
+     *
+     * @remarks Called while owning the network and the out-bound trunk port semaphores.
+     */
+    DECLR0CALLBACKMEMBER(void, pfnGetMacAddress,(PINTNETTRUNKIFPORT pIfPort, PRTMAC pMac));
+
+    /**
+     * Tests if the mac address belongs to any of the host NICs
+     * and should take the host route.
+     *
+     * @returns true / false.
+     *
+     * @param   pIfPort     Pointer to this structure.
+     * @param   pMac        Pointer to the mac address.
+     *
+     * @remarks Called while owning the network and the out-bound trunk port semaphores.
+     *
+     * @remarks TAP and NAT will compare with their own MAC address and let all their
+     *          traffic take the host direction.
+     *
+     * @remarks This didn't quiet work out the way it should... perhaps obsolete this
+     *          with pfnGetHostMac?
+     */
+    DECLR0CALLBACKMEMBER(bool, pfnIsHostMac,(PINTNETTRUNKIFPORT pIfPort, PCRTMAC pMac));
+
+    /**
+     * Tests whether the host is operating the interface is promiscuous mode.
+     *
+     * The default behavior of the internal networking 'switch' is to 'autodetect'
+     * promiscuous mode on the trunk port, which is when this method is used.
+     * For security reasons this default may of course be overridden so that the
+     * host cannot sniff at what's going on.
+     *
+     * Note that this differs from operating the trunk port on the switch in
+     * 'promiscuous' mode, because that relates to the bits going to the wire.
+     *
+     * @returns true / false.
+     *
+     * @param   pIfPort     Pointer to this structure.
+     *
+     * @remarks Called while owning the network and the out-bound trunk port semaphores.
+     */
+    DECLR0CALLBACKMEMBER(bool, pfnIsPromiscuous,(PINTNETTRUNKIFPORT pIfPort));
+
+    /**
+     * Transmit a frame.
+     *
+     * @return  VBox status code. Error generally means we'll drop the packet.
+     * @param   pIfPort     Pointer to this structure.
+     * @param   pSG         Pointer to the (scatter /) gather structure for the frame.
+     *                      This may or may not be a temporary buffer. If it's temporary
+     *                      the transmit operation(s) then it's required to make a copy
+     *                      of the frame unless it can be transmitted synchronously.
+     * @param   fDst        The destination mask. At least one bit will be set.
+     *
+     * @remarks Called holding the out-bound trunk port lock.
+     *
+     * @remarks TAP and NAT will use this interface for all their traffic, see pfnIsHostMac.
+     *
+     * @todo
+     */
+    DECLR0CALLBACKMEMBER(int, pfnXmit,(PINTNETTRUNKIFPORT pIfPort, PINTNETSG pSG, uint32_t fDst));
+
+    /** Structure version number. (INTNETTRUNKIFPORT_VERSION) */
+    uint32_t u32VersionEnd;
+} INTNETTRUNKIFPORT;
+
+/** Version number for the INTNETTRUNKIFPORT::u32Version and INTNETTRUNKIFPORT::u32VersionEnd fields. */
+#define INTNETTRUNKIFPORT_VERSION   UINT32_C(0xA2CDe001)
+
+
+/**
+ * The component factory interface for create a network
+ * interface filter (like VBoxNetFlt).
+ */
+typedef struct INTNETTRUNKFACTORY
+{
+    /**
+     * Release this factory.
+     *
+     * SUPR0ComponentQueryFactory (SUPDRVFACTORY::pfnQueryFactoryInterface to be precise)
+     * will retain a reference to the factory and the caller has to call this method to
+     * release it once the pfnCreateAndConnect call(s) has been done.
+     *
+     * @param   pIfFactory          Pointer to this structure.
+     */
+    DECLR0CALLBACKMEMBER(void, pfnRelease,(struct INTNETTRUNKFACTORY *pIfFactory));
+
+    /**
+     * Create an instance for the specfied host interface and connects it
+     * to the internal network trunk port.
+     *
+     * The initial interface active state is false (suspended).
+     *
+     *
+     * @returns VBox status code.
+     * @retval  VINF_SUCCESS and *ppIfPort set on success.
+     * @retval  VERR_INTNET_FLT_IF_NOT_FOUND if the interface was not found.
+     * @retval  VERR_INTNET_FLT_IF_BUSY if the interface is already connected.
+     * @retval  VERR_INTNET_FLT_IF_FAILED if it failed for some other reason.
+     *
+     * @param   pIfFactory          Pointer to this structure.
+     * @param   pszName             The interface name (OS specific).
+     * @param   pSwitchPort         Pointer to the port interface on the switch that
+     *                              this interface is being connected to.
+     * @param   ppIfPort            Where to store the pointer to the interface port
+     *                              on success.
+     *
+     * @remarks Called while owning the network and the out-bound trunk semaphores.
+     */
+    DECLR0CALLBACKMEMBER(int, pfnCreateAndConnect,(struct INTNETTRUNKFACTORY *pIfFactory, const char *pszName,
+                                                   PINTNETTRUNKSWPORT pSwitchPort, PINTNETTRUNKIFPORT *ppIfPort));
+} INTNETTRUNKFACTORY;
+/** Pointer to the trunk factory. */
+typedef INTNETTRUNKFACTORY *PINTNETTRUNKFACTORY;
+
+/** The UUID for the (current) trunk factory. (case sensitive) */
+#define INTNETTRUNKFACTORY_UUID_STR     "ae8fcb95-280c-42f4-a8f1-09f84e3bdab3"
+
+
+/**
+ * The trunk connection type.
+ *
+ * Used by INTNETR0Open and assoicated interfaces.
+ */
+typedef enum INTNETTRUNKTYPE
+{
+    /** Invalid trunk type. */
+    kIntNetTrunkType_Invalid = 0,
+    /** No trunk connection. */
+    kIntNetTrunkType_None,
+    /** We don't care which kind of trunk connection if the network exists,
+     * if it doesn't exist create it without a connection. */
+    kIntNetTrunkType_WhateverNone,
+    /** VirtualBox host network interface filter driver.
+     * The trunk name is the name of the host network interface. */
+    kIntNetTrunkType_NetFlt,
+    /** VirtualBox TAP host driver. */
+    kIntNetTrunkType_NetTap,
+    /** Nat service (ring-0). */
+    kIntNetTrunkType_SrvNat,
+    /** The end of valid types. */
+    kIntNetTrunkType_End,
+    /** The usual 32-bit hack. */
+    kIntNetTrunkType_32bitHack = 0x7fffffff
+} INTNETTRUNKTYPE;
+
+/** @name INTNETR0Open flags.
+ * @{ */
+/** Share the MAC address with the host when sending something to the wire via the trunk.
+ * This is typically used when the trunk is a NetFlt for a wireless interface. */
+#define INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE                    RT_BIT_32(0)
+/** Whether new participants should be subjected to access check or not. */
+#define INTNET_OPEN_FLAGS_PUBLIC                                RT_BIT_32(1)
+/** Ignore any requests for promiscuous mode. */
+#define INTNET_OPEN_FLAGS_IGNORE_PROMISC                        RT_BIT_32(2)
+/** Ignore any requests for promiscuous mode, quietly applied/ignored on open. */
+#define INTNET_OPEN_FLAGS_QUIETLY_IGNORE_PROMISC                RT_BIT_32(3)
+/** Ignore any requests for promiscuous mode on the trunk wire connection. */
+#define INTNET_OPEN_FLAGS_IGNORE_PROMISC_TRUNK_WIRE             RT_BIT_32(4)
+/** Ignore any requests for promiscuous mode on the trunk wire connection, quietly applied/ignored on open. */
+#define INTNET_OPEN_FLAGS_QUIETLY_IGNORE_PROMISC_TRUNK_WIRE     RT_BIT_32(5)
+/** Ignore any requests for promiscuous mode on the trunk host connection. */
+#define INTNET_OPEN_FLAGS_IGNORE_PROMISC_TRUNK_HOST             RT_BIT_32(6)
+/** Ignore any requests for promiscuous mode on the trunk host connection, quietly applied/ignored on open. */
+#define INTNET_OPEN_FLAGS_QUIETLY_IGNORE_PROMISC_TRUNK_HOST     RT_BIT_32(7)
+/** The mask of flags which causes flag incompatibilities. */
+#define INTNET_OPEN_FLAGS_COMPATIBILITY_XOR_MASK                (RT_BIT_32(0) | RT_BIT_32(1) | RT_BIT_32(2) | RT_BIT_32(4) | RT_BIT_32(6))
+/** The mask of flags is always ORed in, even on open. (the quiet stuff) */
+#define INTNET_OPEN_FLAGS_SECURITY_OR_MASK                      (RT_BIT_32(3) | RT_BIT_32(5) | RT_BIT_32(7))
+/** The mask of valid flags. */
+#define INTNET_OPEN_FLAGS_MASK                                  UINT32_C(0x000000ff)
+/** @} */
+
 /** The maximum length of a network name. */
-#define INTNET_MAX_NETWORK_NAME 128
+#define INTNET_MAX_NETWORK_NAME     128
+
+/** The maximum length of a trunk name. */
+#define INTNET_MAX_TRUNK_NAME       64
 
 
 /**
@@ -222,14 +676,22 @@ typedef struct INTNETOPENREQ
 {
     /** The request header. */
     SUPVMMR0REQHDR  Hdr;
+    /** Alternative to passing the taking the session from the VM handle.
+     * Either use this member or use the VM handle, don't do both. */
+    PSUPDRVSESSION  pSession;
     /** The network name. (input) */
     char            szNetwork[INTNET_MAX_NETWORK_NAME];
+    /** What to connect to the trunk port. (input)
+     * This is specific to the trunk type below. */
+    char            szTrunk[INTNET_MAX_TRUNK_NAME];
+    /** The type of trunk link (NAT, Filter, TAP, etc). (input) */
+    INTNETTRUNKTYPE enmTrunkType;
+    /** Flags, see INTNET_OPEN_FLAGS_*. (input) */
+    uint32_t        fFlags;
     /** The size of the send buffer. (input) */
     uint32_t        cbSend;
     /** The size of the receive buffer. (input) */
     uint32_t        cbRecv;
-    /** Whether new participants should be subjected to access check or not. */
-    bool            fRestrictAccess;
     /** The handle to the network interface. (output) */
     INTNETIFHANDLE  hIf;
 } INTNETOPENREQ;
@@ -247,13 +709,16 @@ typedef struct INTNETIFCLOSEREQ
 {
     /** The request header. */
     SUPVMMR0REQHDR  Hdr;
+    /** Alternative to passing the taking the session from the VM handle.
+     * Either use this member or use the VM handle, don't do both. */
+    PSUPDRVSESSION  pSession;
     /** The handle to the network interface. */
     INTNETIFHANDLE  hIf;
 } INTNETIFCLOSEREQ;
 /** Pointer to an INTNETR0IfCloseReq / VMMR0_DO_INTNET_IF_CLOSE request buffer. */
 typedef INTNETIFCLOSEREQ *PINTNETIFCLOSEREQ;
 
-INTNETR0DECL(int) INTNETR0IfCloseReq(PINTNET pIntNet, PINTNETIFCLOSEREQ pReq);
+INTNETR0DECL(int) INTNETR0IfCloseReq(PINTNET pIntNet, PSUPDRVSESSION pSession, PINTNETIFCLOSEREQ pReq);
 
 
 /**
@@ -263,16 +728,19 @@ INTNETR0DECL(int) INTNETR0IfCloseReq(PINTNET pIntNet, PINTNETIFCLOSEREQ pReq);
 typedef struct INTNETIFGETRING3BUFFERREQ
 {
     /** The request header. */
-    SUPVMMR0REQHDR          Hdr;
+    SUPVMMR0REQHDR  Hdr;
+    /** Alternative to passing the taking the session from the VM handle.
+     * Either use this member or use the VM handle, don't do both. */
+    PSUPDRVSESSION  pSession;
     /** Handle to the interface. */
-    INTNETIFHANDLE          hIf;
+    INTNETIFHANDLE  hIf;
     /** The pointer to the ring3 buffer. (output) */
     R3PTRTYPE(PINTNETBUF)   pRing3Buf;
 } INTNETIFGETRING3BUFFERREQ;
 /** Pointer to an INTNETR0IfGetRing3BufferReq / VMMR0_DO_INTNET_IF_GET_RING3_BUFFER request buffer. */
 typedef INTNETIFGETRING3BUFFERREQ *PINTNETIFGETRING3BUFFERREQ;
 
-INTNETR0DECL(int) INTNETR0IfGetRing3BufferReq(PINTNET pIntNet, PINTNETIFGETRING3BUFFERREQ pReq);
+INTNETR0DECL(int) INTNETR0IfGetRing3BufferReq(PINTNET pIntNet, PSUPDRVSESSION pSession, PINTNETIFGETRING3BUFFERREQ pReq);
 
 
 /**
@@ -283,6 +751,9 @@ typedef struct INTNETIFSETPROMISCUOUSMODEREQ
 {
     /** The request header. */
     SUPVMMR0REQHDR  Hdr;
+    /** Alternative to passing the taking the session from the VM handle.
+     * Either use this member or use the VM handle, don't do both. */
+    PSUPDRVSESSION  pSession;
     /** Handle to the interface. */
     INTNETIFHANDLE  hIf;
     /** The new promiscuous mode. */
@@ -291,7 +762,51 @@ typedef struct INTNETIFSETPROMISCUOUSMODEREQ
 /** Pointer to an INTNETR0IfSetPromiscuousModeReq / VMMR0_DO_INTNET_IF_SET_PROMISCUOUS_MODE request buffer. */
 typedef INTNETIFSETPROMISCUOUSMODEREQ *PINTNETIFSETPROMISCUOUSMODEREQ;
 
-INTNETR0DECL(int) INTNETR0IfSetPromiscuousModeReq(PINTNET pIntNet, PINTNETIFSETPROMISCUOUSMODEREQ pReq);
+INTNETR0DECL(int) INTNETR0IfSetPromiscuousModeReq(PINTNET pIntNet, PSUPDRVSESSION pSession, PINTNETIFSETPROMISCUOUSMODEREQ pReq);
+
+
+/**
+ * Request buffer for INTNETR0IfSetMacAddressReq / VMMR0_DO_INTNET_IF_SET_MAC_ADDRESS.
+ * @see INTNETR0IfSetMacAddress.
+ */
+typedef struct INTNETIFSETMACADDRESSREQ
+{
+    /** The request header. */
+    SUPVMMR0REQHDR  Hdr;
+    /** Alternative to passing the taking the session from the VM handle.
+     * Either use this member or use the VM handle, don't do both. */
+    PSUPDRVSESSION  pSession;
+    /** Handle to the interface. */
+    INTNETIFHANDLE  hIf;
+    /** The new MAC address. */
+    RTMAC           Mac;
+} INTNETIFSETMACADDRESSREQ;
+/** Pointer to an INTNETR0IfSetMacAddressReq / VMMR0_DO_INTNET_IF_SET_MAC_ADDRESS request buffer. */
+typedef INTNETIFSETMACADDRESSREQ *PINTNETIFSETMACADDRESSREQ;
+
+INTNETR0DECL(int) INTNETR0IfSetMacAddressReq(PINTNET pIntNet, PSUPDRVSESSION pSession, PINTNETIFSETMACADDRESSREQ pReq);
+
+
+/**
+ * Request buffer for INTNETR0IfSetActiveReq / VMMR0_DO_INTNET_IF_SET_ACTIVE.
+ * @see INTNETR0IfSetActive.
+ */
+typedef struct INTNETIFSETACTIVEREQ
+{
+    /** The request header. */
+    SUPVMMR0REQHDR  Hdr;
+    /** Alternative to passing the taking the session from the VM handle.
+     * Either use this member or use the VM handle, don't do both. */
+    PSUPDRVSESSION  pSession;
+    /** Handle to the interface. */
+    INTNETIFHANDLE  hIf;
+    /** The new state. */
+    bool            fActive;
+} INTNETIFSETACTIVEREQ;
+/** Pointer to an INTNETR0IfSetActiveReq / VMMR0_DO_INTNET_IF_SET_ACTIVE request buffer. */
+typedef INTNETIFSETACTIVEREQ *PINTNETIFSETACTIVEREQ;
+
+INTNETR0DECL(int) INTNETR0IfSetActiveReq(PINTNET pIntNet, PSUPDRVSESSION pSession, PINTNETIFSETACTIVEREQ pReq);
 
 
 /**
@@ -302,13 +817,16 @@ typedef struct INTNETIFSENDREQ
 {
     /** The request header. */
     SUPVMMR0REQHDR  Hdr;
+    /** Alternative to passing the taking the session from the VM handle.
+     * Either use this member or use the VM handle, don't do both. */
+    PSUPDRVSESSION  pSession;
     /** Handle to the interface. */
     INTNETIFHANDLE  hIf;
 } INTNETIFSENDREQ;
 /** Pointer to an INTNETR0IfSend() argument package. */
 typedef INTNETIFSENDREQ *PINTNETIFSENDREQ;
 
-INTNETR0DECL(int) INTNETR0IfSendReq(PINTNET pIntNet, PINTNETIFSENDREQ pReq);
+INTNETR0DECL(int) INTNETR0IfSendReq(PINTNET pIntNet, PSUPDRVSESSION pSession, PINTNETIFSENDREQ pReq);
 
 
 /**
@@ -319,6 +837,9 @@ typedef struct INTNETIFWAITREQ
 {
     /** The request header. */
     SUPVMMR0REQHDR  Hdr;
+    /** Alternative to passing the taking the session from the VM handle.
+     * Either use this member or use the VM handle, don't do both. */
+    PSUPDRVSESSION  pSession;
     /** Handle to the interface. */
     INTNETIFHANDLE  hIf;
     /** The number of milliseconds to wait. */
@@ -327,7 +848,7 @@ typedef struct INTNETIFWAITREQ
 /** Pointer to an INTNETR0IfWaitReq / VMMR0_DO_INTNET_IF_WAIT request buffer. */
 typedef INTNETIFWAITREQ *PINTNETIFWAITREQ;
 
-INTNETR0DECL(int) INTNETR0IfWaitReq(PINTNET pIntNet, PINTNETIFWAITREQ pReq);
+INTNETR0DECL(int) INTNETR0IfWaitReq(PINTNET pIntNet, PSUPDRVSESSION pSession, PINTNETIFWAITREQ pReq);
 
 
 #if defined(IN_RING0) || defined(IN_INTNET_TESTCASE)
@@ -351,18 +872,23 @@ INTNETR0DECL(int) INTNETR0Create(PINTNET *ppIntNet);
 INTNETR0DECL(void) INTNETR0Destroy(PINTNET pIntNet);
 
 /**
- * Opens a network interface and attaches it to the specified network.
+ * Opens a network interface and connects it to the specified network.
  *
  * @returns VBox status code.
  * @param   pIntNet         The internal network instance.
  * @param   pSession        The session handle.
  * @param   pszNetwork      The network name.
+ * @param   enmTrunkType    The trunk type.
+ * @param   pszTrunk        The trunk name. Its meaning is specfic to the type.
+ * @param   fFlags          Flags, see INTNET_OPEN_FLAGS_*.
+ * @param   fRestrictAccess Whether new participants should be subjected to access check or not.
  * @param   cbSend          The send buffer size.
  * @param   cbRecv          The receive buffer size.
- * @param   fRestrictAccess Whether new participants should be subjected to access check or not.
  * @param   phIf            Where to store the handle to the network interface.
  */
-INTNETR0DECL(int) INTNETR0Open(PINTNET pIntNet, PSUPDRVSESSION pSession, const char *pszNetwork, unsigned cbSend, unsigned cbRecv, bool fRestrictAccess, PINTNETIFHANDLE phIf);
+INTNETR0DECL(int) INTNETR0Open(PINTNET pIntNet, PSUPDRVSESSION pSession, const char *pszNetwork,
+                               INTNETTRUNKTYPE enmTrunkType, const char *pszTrunk, uint32_t fFlags,
+                               unsigned cbSend, unsigned cbRecv, PINTNETIFHANDLE phIf);
 
 /**
  * Close an interface.
@@ -370,28 +896,31 @@ INTNETR0DECL(int) INTNETR0Open(PINTNET pIntNet, PSUPDRVSESSION pSession, const c
  * @returns VBox status code.
  * @param   pIntNet     The instance handle.
  * @param   hIf         The interface handle.
+ * @param   pSession        The caller's session.
  */
-INTNETR0DECL(int) INTNETR0IfClose(PINTNET pIntNet, INTNETIFHANDLE hIf);
+INTNETR0DECL(int) INTNETR0IfClose(PINTNET pIntNet, INTNETIFHANDLE hIf, PSUPDRVSESSION pSession);
 
 /**
  * Gets the ring-0 address of the current buffer.
  *
  * @returns VBox status code.
  * @param   pIntNet     The instance data.
- * @param   hIF         The interface handle.
+ * @param   hIf         The interface handle.
+ * @param   pSession        The caller's session.
  * @param   ppRing0Buf  Where to store the address of the ring-3 mapping.
  */
-INTNETR0DECL(int) INTNETR0IfGetRing0Buffer(PINTNET pIntNet, INTNETIFHANDLE hIf, PINTNETBUF *ppRing0Buf);
+INTNETR0DECL(int) INTNETR0IfGetRing0Buffer(PINTNET pIntNet, INTNETIFHANDLE hIf, PSUPDRVSESSION pSession, PINTNETBUF *ppRing0Buf);
 
 /**
  * Maps the default buffer into ring 3.
  *
  * @returns VBox status code.
- * @param   pIntNet     The instance data.
- * @param   hIF         The interface handle.
- * @param   ppRing3Buf  Where to store the address of the ring-3 mapping.
+ * @param   pIntNet         The instance data.
+ * @param   hIf             The interface handle.
+ * @param   pSession        The caller's session.
+ * @param   ppRing3Buf      Where to store the address of the ring-3 mapping.
  */
-INTNETR0DECL(int) INTNETR0IfGetRing3Buffer(PINTNET pIntNet, INTNETIFHANDLE hIf, R3PTRTYPE(PINTNETBUF) *ppRing3Buf);
+INTNETR0DECL(int) INTNETR0IfGetRing3Buffer(PINTNET pIntNet, INTNETIFHANDLE hIf, PSUPDRVSESSION pSession, R3PTRTYPE(PINTNETBUF) *ppRing3Buf);
 
 /**
  * Sets the promiscuous mode property of an interface.
@@ -399,9 +928,12 @@ INTNETR0DECL(int) INTNETR0IfGetRing3Buffer(PINTNET pIntNet, INTNETIFHANDLE hIf, 
  * @returns VBox status code.
  * @param   pIntNet         The instance handle.
  * @param   hIf             The interface handle.
+ * @param   pSession        The caller's session.
  * @param   fPromiscuous    Set if the interface should be in promiscuous mode, clear if not.
  */
-INTNETR0DECL(int) INTNETR0IfSetPromiscuousMode(PINTNET pIntNet, INTNETIFHANDLE hIf, bool fPromiscuous);
+INTNETR0DECL(int) INTNETR0IfSetPromiscuousMode( PINTNET pIntNet, INTNETIFHANDLE hIf, PSUPDRVSESSION pSession, bool fPromiscuous);
+INTNETR0DECL(int) INTNETR0IfSetMacAddress(      PINTNET pIntNet, INTNETIFHANDLE hIf, PSUPDRVSESSION pSession, PCRTMAC pMac);
+INTNETR0DECL(int) INTNETR0IfSetActive(          PINTNET pIntNet, INTNETIFHANDLE hIf, PSUPDRVSESSION pSession, bool fActive);
 
 /**
  * Sends one or more frames.
@@ -413,23 +945,25 @@ INTNETR0DECL(int) INTNETR0IfSetPromiscuousMode(PINTNET pIntNet, INTNETIFHANDLE h
  *
  * @returns VBox status code.
  * @param   pIntNet     The instance data.
- * @param   hIF         The interface handle.
- * @param   pvFrame     Pointer to the frame.
- * @param   cbFrame     Size of the frame.
+ * @param   hIf         The interface handle.
+ * @param   pSession    The caller's session.
+ * @param   pvFrame     Pointer to the frame. Optional, please don't use.
+ * @param   cbFrame     Size of the frame. Optional, please don't use.
  */
-INTNETR0DECL(int) INTNETR0IfSend(PINTNET pIntNet, INTNETIFHANDLE hIf, const void *pvFrame, unsigned cbFrame);
+INTNETR0DECL(int) INTNETR0IfSend(PINTNET pIntNet, INTNETIFHANDLE hIf, PSUPDRVSESSION pSession, const void *pvFrame, unsigned cbFrame);
 
 /**
  * Wait for the interface to get signaled.
  * The interface will be signaled when is put into the receive buffer.
  *
  * @returns VBox status code.
- * @param   pIntNet     The instance handle.
- * @param   hIf         The interface handle.
- * @param   cMillies    Number of milliseconds to wait. RT_INDEFINITE_WAIT should be
- *                      used if indefinite wait is desired.
+ * @param   pIntNet         The instance handle.
+ * @param   hIf             The interface handle.
+ * @param   pSession        The caller's session.
+ * @param   cMillies        Number of milliseconds to wait. RT_INDEFINITE_WAIT should be
+ *                          used if indefinite wait is desired.
  */
-INTNETR0DECL(int) INTNETR0IfWait(PINTNET pIntNet, INTNETIFHANDLE hIf, uint32_t cMillies);
+INTNETR0DECL(int) INTNETR0IfWait(PINTNET pIntNet, INTNETIFHANDLE hIf, PSUPDRVSESSION pSession, uint32_t cMillies);
 
 /** @} */
 #endif /* IN_RING0 */

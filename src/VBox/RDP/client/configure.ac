@@ -1,4 +1,4 @@
-AC_INIT(rdesktop, 1.5.0)
+AC_INIT(rdesktop, 1.6.0)
 
 AC_CONFIG_SRCDIR([rdesktop.c])
 
@@ -12,6 +12,20 @@ AC_LANG_C
 AC_HEADER_STDC
 AC_C_BIGENDIAN([AC_DEFINE(B_ENDIAN)], [AC_DEFINE(L_ENDIAN)])
 AC_PATH_XTRA
+if test "$no_x" = "yes"; then
+    echo
+    echo "ERROR: Could not find X Window System headers/libraries."
+    if test -f /etc/debian_version; then
+       echo "Probably you need to install the libx11-dev package."
+    elif test -f /etc/redhat-release; then
+       echo "Probably you need to install the libX11-devel package."
+    fi
+    echo "To specify paths manually, use the options --x-includes and --x-libraries."
+    echo
+    exit 1
+fi
+    
+AC_PATH_PROG(PKG_CONFIG, pkg-config)
 
 AC_SEARCH_LIBS(socket, socket)
 AC_SEARCH_LIBS(inet_aton, resolv)
@@ -24,6 +38,15 @@ AC_CHECK_HEADER(locale.h, AC_DEFINE(HAVE_LOCALE_H))
 AC_CHECK_HEADER(langinfo.h, AC_DEFINE(HAVE_LANGINFO_H))
 
 AC_CHECK_TOOL(STRIP, strip, :)
+
+dnl Don't depend on pkg-config
+m4_ifdef([PKG_CHECK_MODULES], [], [
+		m4_errprint([warning: pkg-config checks are not available])
+		m4_defun([PKG_CHECK_MODULES], [
+			AC_MSG_WARN([pkg-config not available, cannot check for $2])
+			$4
+		])
+])
 
 rpath=""
 
@@ -56,8 +79,13 @@ AC_ARG_WITH(openssl,
 if test -z "$ssldir"; then
     AC_MSG_RESULT([Not found])
     echo
-    echo "Couldn't find your OpenSSL library installation dir"
-    echo "Use --with-openssl option to fix this problem"
+    echo "ERROR: Could not find OpenSSL headers/libraries."
+    if test -f /etc/debian_version; then
+       echo "Probably you need to install the libssl-dev package."
+    elif test -f /etc/redhat-release; then
+       echo "Probably you need to install the openssl-devel package."
+    fi
+    echo "To specify a path manually, use the --with-openssl option."
     echo
     exit 1
 fi
@@ -77,6 +105,47 @@ LIBS="$LIBS -L$ssldir/lib -lcrypto"
 rpath="$rpath:$ssldir/lib"
              ])
 
+AC_ARG_ENABLE(smartcard, 
+             [  --enable-smartcard	  Enables smart-card support.
+	     ],
+             [ 
+	     	case "$OSTYPE" in
+			darwin*)
+				AC_CHECK_HEADER(PCSC/pcsclite.h, [WITH_SCARD=1], [WITH_SCARD=0])
+				PCSCLITE_CFLAGS=""
+				PCSCLITE_LIBS="-framework PCSC"
+				;;
+			*)
+				if test -n "$PKG_CONFIG"; then
+					PKG_CHECK_MODULES(PCSCLITE, libpcsclite, [WITH_SCARD=1], [WITH_SCARD=0])
+				fi
+				;;
+		esac
+
+		if test x"$WITH_SCARD" = "x1"; then
+			SCARDOBJ="scard.o"
+			CFLAGS="$CFLAGS $PCSCLITE_CFLAGS"
+			LIBS="$LIBS $PCSCLITE_LIBS"
+			AC_DEFINE(WITH_SCARD)
+		fi
+
+		AC_MSG_CHECKING([for old version of PCSC])
+		AC_TRY_LINK([
+			#include <stdlib.h>
+			#ifdef __APPLE__
+			#include <PCSC/wintypes.h>
+			#include <PCSC/winscard.h>
+			#else
+			#include <winscard.h>
+			#endif
+			],
+			[SCardControl(NULL, NULL, 0, NULL, NULL);],
+			[AC_MSG_RESULT(yes) AC_DEFINE(WITH_PCSC120, 1, [old version of PCSC])],
+			[AC_MSG_RESULT(no)]
+		)
+             ])
+
+AC_SUBST(SCARDOBJ)
 
 #
 # Alignment
@@ -150,48 +219,137 @@ AC_ARG_WITH(libvncserver,
 #
 # sound
 #
-AC_ARG_WITH(libao,
-    [  --with-libao=DIR        look for libao at DIR/include, DIR/lib],
-    [
-    CFLAGS="$CFLAGS -I$withval/include"
-    CPPFLAGS="$CPPFLAGS -I$withval/include"
-    LIBS="$LIBS -L$withval/lib"
-    rpath="$rpath:$withval/lib"
-    ]
-)
 
 sound="yes"
 AC_ARG_WITH(sound,
-    [  --with-sound            select sound system ("oss", "sgi", "sun" or "libao") ],
+    [  --with-sound            select sound system ("oss", "sgi", "sun", "alsa" or "libao") ],
     [ 
     sound="$withval" 
     ])
-if test "$sound" = yes; then
-    AC_CHECK_HEADER(ao/ao.h, [sound=libao])
-    AC_CHECK_HEADER(sys/soundcard.h, [sound=oss])
-    AC_CHECK_HEADER(dmedia/audio.h, [sound=sgi])
-    AC_CHECK_HEADER(sys/audioio.h, [sound=sun])
+
+AC_CHECK_HEADER(sys/soundcard.h, [HAVE_OSS=1], [HAVE_OSS=0])
+AC_CHECK_HEADER(dmedia/audio.h, [HAVE_SGI=1], [HAVE_SGI=0])
+AC_CHECK_HEADER(sys/audioio.h, [HAVE_SUN=1], [HAVE_SUN=0])
+
+AC_ARG_ENABLE(static-libsamplerate, 
+    [  --enable-static-libsamplerate link libsamplerate statically], 
+    [static_libsamplerate=yes], 
+    [static_libsamplerate=no])
+
+if test -n "$PKG_CONFIG"; then
+    PKG_CHECK_MODULES(LIBAO, ao, [HAVE_LIBAO=1], [HAVE_LIBAO=0])
+    PKG_CHECK_MODULES(ALSA, alsa, [HAVE_ALSA=1], [HAVE_ALSA=0])
+    PKG_CHECK_MODULES(LIBSAMPLERATE, samplerate, [HAVE_LIBSAMPLERATE=1], [HAVE_LIBSAMPLERATE=0])
+    if test x"$HAVE_LIBSAMPLERATE" = "x1"; then
+        AC_DEFINE(HAVE_LIBSAMPLERATE)
+        if test x"$static_libsamplerate" = "xyes"; then
+            _libsamplerate_libdir=`$PKG_CONFIG --errors-to-stdout --variable=libdir samplerate`
+            LIBSAMPLERATE_LIBS="$_libsamplerate_libdir""/libsamplerate.a"
+        fi
+        LIBSAMPLERATE_LIBS="$LIBSAMPLERATE_LIBS -lm"
+    fi
 fi
-if test "$sound" = no; then
-    break
-elif test "$sound" = oss; then
-    SOUNDOBJ="rdpsnd.o rdpsnd_oss.o"
+
+if test "$sound" != "no"; then
+    SOUNDOBJ="$SOUNDOBJ rdpsnd.o rdpsnd_dsp.o"
+    CFLAGS="$CFLAGS $LIBSAMPLERATE_CFLAGS"
+    LIBS="$LIBS $LIBSAMPLERATE_LIBS"
     AC_DEFINE(WITH_RDPSND)
-elif test "$sound" = sgi; then
-    SOUNDOBJ="rdpsnd.o rdpsnd_sgi.o"
-    LDFLAGS="$LDFLAGS -laudio"
-    AC_DEFINE(WITH_RDPSND)
-elif test "$sound" = sun; then
-    SOUNDOBJ="rdpsnd.o rdpsnd_sun.o"
-    AC_DEFINE(WITH_RDPSND)
-elif test "$sound" = libao; then
-    SOUNDOBJ="rdpsnd.o rdpsnd_libao.o"
-    LDFLAGS="$LDFLAGS -lao"
-    AC_DEFINE(WITH_RDPSND)
-else
-   AC_MSG_WARN([sound support disabled])
-   AC_MSG_WARN([Currently supported systems are Open Sound System (oss), SGI AL (sgi), Sun/BSD (sun) and libao])
 fi
+
+case $sound in
+    yes)
+        if test x"$HAVE_OSS" = "x1"; then
+            SOUNDOBJ="$SOUNDOBJ rdpsnd_oss.o"
+            AC_DEFINE(RDPSND_OSS)
+        fi
+
+        if test x"$HAVE_SGI" = "x1"; then
+            SOUNDOBJ="$SOUNDOBJ rdpsnd_sgi.o"
+            LIBS="$LIBS -laudio"
+            AC_DEFINE(RDPSND_SGI)
+        fi
+
+        if test x"$HAVE_SUN" = "x1"; then
+            SOUNDOBJ="$SOUNDOBJ rdpsnd_sun.o"
+            AC_DEFINE(RDPSND_SUN)
+        fi
+
+        if test x"$HAVE_ALSA" = "x1"; then
+            SOUNDOBJ="$SOUNDOBJ rdpsnd_alsa.o"
+            CFLAGS="$CFLAGS $ALSA_CFLAGS"
+            LIBS="$LIBS $ALSA_LIBS"
+            AC_DEFINE(RDPSND_ALSA)
+        fi
+
+        if test x"$HAVE_LIBAO" = "x1"; then
+            SOUNDOBJ="$SOUNDOBJ rdpsnd_libao.o"
+            CFLAGS="$CFLAGS $LIBAO_CFLAGS"
+            LIBS="$LIBS $LIBAO_LIBS"
+            AC_DEFINE(RDPSND_LIBAO)
+        fi
+
+        ;;
+
+    oss)
+        if test x"$HAVE_OSS" = "x1"; then
+            SOUNDOBJ="$SOUNDOBJ rdpsnd_oss.o"
+            AC_DEFINE(RDPSND_OSS)
+        else
+            AC_MSG_ERROR([Selected sound system is not available.])
+        fi
+        ;;
+
+    sgi)
+        if test x"$HAVE_SGI" = "x1"; then
+            SOUNDOBJ="$SOUNDOBJ rdpsnd_sgi.o"
+            LIBS="$LIBS -laudio"
+            AC_DEFINE(RDPSND_SGI)
+        else
+            AC_MSG_ERROR([Selected sound system is not available.])
+        fi
+        ;;
+
+    sun)
+        if test x"$HAVE_SUN" = "x1"; then
+            SOUNDOBJ="$SOUNDOBJ rdpsnd_sun.o"
+            AC_DEFINE(RDPSND_SUN)
+        else
+            AC_MSG_ERROR([Selected sound system is not available.])
+        fi
+        ;;
+
+    alsa)
+        if test x"$HAVE_ALSA" = "x1"; then
+            SOUNDOBJ="$SOUNDOBJ rdpsnd_alsa.o"
+            CFLAGS="$CFLAGS $ALSA_CFLAGS"
+            LIBS="$LIBS $ALSA_LIBS"
+            AC_DEFINE(RDPSND_ALSA)
+        else
+            AC_MSG_ERROR([Selected sound system is not available.])
+        fi
+        ;;
+
+    libao)
+        if test x"$HAVE_LIBAO" = "x1"; then
+            SOUNDOBJ="$SOUNDOBJ rdpsnd_libao.o"
+            CFLAGS="$CFLAGS $LIBAO_CFLAGS"
+            LIBS="$LIBS $LIBAO_LIBS"
+            AC_DEFINE(RDPSND_LIBAO)
+        else
+            AC_MSG_ERROR([Selected sound system is not available.])
+        fi
+        ;;
+
+    no)
+        ;;
+
+    *)
+        AC_MSG_WARN([sound support disabled])
+        AC_MSG_WARN([Currently supported systems are Open Sound System (oss), SGI AL (sgi), Sun/BSD (sun), ALSA (alsa) and libao])
+        ;;
+esac
+
 AC_SUBST(SOUNDOBJ)
 
 #
@@ -695,6 +853,15 @@ AC_ARG_WITH(debug-clipboard,
 	fi
     ])
 
+AC_ARG_WITH(debug-sound,
+    [  --with-debug-sound  enable debugging of sound code],
+    [
+        if test $withval != "no";
+        then 
+            AC_DEFINE(WITH_DEBUG_SOUND,1)
+	fi
+    ])
+
 AC_ARG_WITH(debug-channel,
     [  --with-debug-channel  enable debugging of virtual channel code],
     [
@@ -704,6 +871,25 @@ AC_ARG_WITH(debug-channel,
 	fi
     ])
 
+AC_ARG_WITH(debug-seamless,
+    [  --with-debug-seamless  enable debugging of SeamlessRDP code],
+    [
+        if test $withval != "no";
+        then 
+            AC_DEFINE(WITH_DEBUG_SEAMLESS,1)
+	fi
+    ])
+
+AC_ARG_WITH(debug-smartcard,
+    [  --with-debug-smartcard  enable debugging of smart-card code],
+    [
+        if test $withval != "no";
+        then
+		if test x"$WITH_SCARD" = "x1"; then
+			AC_DEFINE(WITH_DEBUG_SCARD,1)
+		fi
+	fi
+    ])
 
 #
 # target-specific stuff

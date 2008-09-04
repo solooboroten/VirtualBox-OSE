@@ -142,7 +142,7 @@ const CMachine& VBoxNewVMWzd::machine() const
 
 void VBoxNewVMWzd::retranslateUi()
 {
-   /* Translate uic generated strings */
+    /* Translate uic generated strings */
     Ui::VBoxNewVMWzd::retranslateUi (this);
 
     CGuestOSType type = vboxGlobal().vmGuestOSType (mCbOS->currentIndex());
@@ -150,7 +150,6 @@ void VBoxNewVMWzd::retranslateUi()
     mTextRAMBest->setText (
         tr ("The recommended base memory size is <b>%1</b> MB.")
             .arg (type.GetRecommendedRAM()));
-    mSlRAM->setValue (type.GetRecommendedRAM());
     mTextVDIBest->setText (
         tr ("The recommended size of the boot hard disk is <b>%1</b> MB.")
             .arg (type.GetRecommendedHDD()));
@@ -159,28 +158,32 @@ void VBoxNewVMWzd::retranslateUi()
     const uint MinRAM = sysProps.GetMinGuestRAM();
     const uint MaxRAM = sysProps.GetMaxGuestRAM();
 
-    mTxRAMMin->setText (tr ("<qt>%1&nbsp;MB</qt>").arg (MinRAM));
-    mTxRAMMax->setText (tr ("<qt>%1&nbsp;MB</qt>").arg (MaxRAM));
+    mTxRAMMin->setText (QString ("<qt>%1&nbsp;%2</qt>")
+                        .arg (MinRAM).arg (tr ("MB", "megabytes")));
+    mTxRAMMax->setText (QString ("<qt>%1&nbsp;%2</qt>")
+                        .arg (MaxRAM).arg (tr ("MB", "megabytes")));
 
     QWidget *page = mPageStack->currentWidget();
 
     if (page == mPageSummary)
     {
         /* compose summary */
-        QString summary = QString (tr (
-            "<tr><td><nobr>Name:</nobr></td><td>%1</td></tr>"
-            "<tr><td><nobr>OS Type:</nobr></td><td>%2<</td></tr>"
-            "<tr><td><nobr>Base Memory:</nobr></td><td>%3&nbsp;MB</td></tr>"))
-            .arg (mLeName->text())
-            .arg (vboxGlobal().vmGuestOSType (mCbOS->currentIndex()).GetDescription())
-            .arg (mSlRAM->value());
+        QString summary = QString (
+            "<tr><td><nobr>%1:&nbsp;</nobr></td><td>%2</td></tr>"
+            "<tr><td><nobr>%3:&nbsp;</nobr></td><td>%4</td></tr>"
+            "<tr><td><nobr>%5:&nbsp;</nobr></td><td>%6&nbsp;%7</td></tr>")
+            .arg (tr ("Name", "summary"), mLeName->text())
+            .arg (tr ("OS Type", "summary"),
+                  vboxGlobal().vmGuestOSType (mCbOS->currentIndex()).GetDescription())
+            .arg (tr ("Base Memory", "summary")).arg (mSlRAM->value())
+            .arg (tr ("MB", "megabytes"));
 
         if (mMediaCombo->currentIndex())
-            summary += QString (tr (
-                "<tr><td><nobr>Boot Hard Disk:</nobr></td><td>%4</td></tr>"))
-                .arg (mMediaCombo->currentText());
+            summary += QString (
+                "<tr><td><nobr>%8:&nbsp;</nobr></td><td><nobr>%9</nobr></td></tr>")
+                .arg (tr ("Boot Hard Disk", "summary"), mMediaCombo->currentText());
 
-        mTeSummary->setText ("<table cellspacing=0 cellpadding=2>" + summary + "</table>");
+        mTeSummary->setText ("<table>" + summary + "</table>");
     }
 }
 
@@ -194,10 +197,10 @@ void VBoxNewVMWzd::accept()
 
 void VBoxNewVMWzd::showVDIManager()
 {
-    VBoxDiskImageManagerDlg dlg (this, "VBoxDiskImageManagerDlg", Qt::WType_Dialog | Qt::WShowModal);
+    VBoxDiskImageManagerDlg dlg (this);
     dlg.setup (VBoxDefs::HD, true);
-    QUuid newId = dlg.exec() == VBoxDiskImageManagerDlg::Accepted ?
-        dlg.getSelectedUuid() : mMediaCombo->getId();
+    QUuid newId = dlg.exec() == QDialog::Accepted ?
+        dlg.selectedUuid() : mMediaCombo->getId();
 
     if (uuidHD != newId)
     {
@@ -227,7 +230,7 @@ void VBoxNewVMWzd::showNewVDIWizard()
         uuidHD = chd.GetId();
         /* update media combobox */
         VBoxMedia::Status status =
-            chd.GetAccessible() == TRUE ? VBoxMedia::Ok :
+            chd.GetAccessible() ? VBoxMedia::Ok :
             chd.isOk() ? VBoxMedia::Inaccessible :
             VBoxMedia::Error;
         vboxGlobal().addMedia (VBoxMedia (CUnknown (chd), VBoxDefs::HD, status));
@@ -252,6 +255,7 @@ void VBoxNewVMWzd::cbOSActivated (int aItem)
 {
     CGuestOSType type = vboxGlobal().vmGuestOSType (aItem);
     mPmOS->setPixmap (vboxGlobal().vmGuestOSTypeIcon (type.GetId()));
+    mSlRAM->setValue (type.GetRecommendedRAM());
 }
 
 void VBoxNewVMWzd::currentMediaChanged (int /* aItem */)
@@ -267,8 +271,7 @@ void VBoxNewVMWzd::revalidate (QIWidgetValidator *aWval)
 
     if (aWval == mWvalHDD)
     {
-        if (!chd.isNull() &&
-            mMediaCombo->currentIndex() != mMediaCombo->count() - 1)
+        if (!chd.isNull() && mMediaCombo->getId() != chd.GetId())
             ensureNewHardDiskDeleted();
     }
 
@@ -337,11 +340,13 @@ bool VBoxNewVMWzd::constructMachine()
     /* OS type */
     CGuestOSType type = vboxGlobal().vmGuestOSType (mCbOS->currentIndex());
     AssertMsg (!type.isNull(), ("vmGuestOSType() must return non-null type"));
-    cmachine.SetOSTypeId (type.GetId());
+    QString typeId = type.GetId();
+    cmachine.SetOSTypeId (typeId);
 
-    if (type.GetId() == "os2warp3" ||
-        type.GetId() == "os2warp4" ||
-        type.GetId() == "os2warp45")
+    if (typeId == "os2warp3"  ||
+        typeId == "os2warp4"  ||
+        typeId == "os2warp45" ||
+        typeId == "ecs")
         cmachine.SetHWVirtExEnabled (KTSBool_True);
 
     /* RAM size */
@@ -352,8 +357,8 @@ bool VBoxNewVMWzd::constructMachine()
         CNetworkAdapter cadapter = cmachine.GetNetworkAdapter (0);
 #ifdef VBOX_WITH_E1000
         /* Default to e1k on solaris */
-        if (type.GetId() == "solaris" ||
-            type.GetId() == "opensolaris")
+        if (typeId == "solaris" ||
+            typeId == "opensolaris")
             cadapter.SetAdapterType (KNetworkAdapterType_I82540EM);
 #endif /* VBOX_WITH_E1000 */
         cadapter.SetEnabled (true);

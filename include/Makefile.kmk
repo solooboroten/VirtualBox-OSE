@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35651 2008-08-29 14:09:39Z frank $
 ## @file
 # Some hacks to allow syntax and prerequisite include checking of headers.
 # This makefile doesn't and shouldn't build successfully.
@@ -28,6 +28,7 @@ LIBRARIES = SyntaxVBoxIncludeR3 SyntaxVBoxIncludeR0 SyntaxVBoxIncludeGC
 cpp_hdrs := \
 	VBox/dbggui.h \
 	VBox/settings.h \
+	iprt/autores.h \
 	iprt/cpputils.h \
 	iprt/lock.h
 
@@ -56,19 +57,19 @@ hdrs.gc := $(filter-out \
 	$(hdrs))
 
 SyntaxVBoxIncludeR3_TEMPLATE = VBOXMAINEXE
-SyntaxVBoxIncludeR3_DEFS = VBOX_HGCM
+SyntaxVBoxIncludeR3_DEFS = VBOX_WITH_HGCM
 SyntaxVBoxIncludeR3_SOURCES := \
 	$(addprefix $(PATH_TARGET)/,$(subst .h,-c.c,     $(subst /,_,$(hdrs.r3)))) \
 	$(addprefix $(PATH_TARGET)/,$(subst .h,-cpp.cpp, $(subst /,_,$(hdrs.r3))))
 
 SyntaxVBoxIncludeR0_TEMPLATE = VBOXR0
-SyntaxVBoxIncludeR0_DEFS = VBOX_HGCM
+SyntaxVBoxIncludeR0_DEFS = VBOX_WITH_HGCM
 SyntaxVBoxIncludeR0_SOURCES := \
 	$(addprefix $(PATH_TARGET)/,$(subst .h,-c.c,     $(subst /,_,$(hdrs.r0)))) \
 	$(addprefix $(PATH_TARGET)/,$(subst .h,-cpp.cpp, $(subst /,_,$(hdrs.r0))))
 
 SyntaxVBoxIncludeGC_TEMPLATE = VBOXGC
-SyntaxVBoxIncludeGC_DEFS = VBOX_HGCM
+SyntaxVBoxIncludeGC_DEFS = VBOX_WITH_HGCM
 SyntaxVBoxIncludeGC_SOURCES := \
 	$(addprefix $(PATH_TARGET)/,$(subst .h,-c.c,     $(subst /,_,$(hdrs.gc)))) \
 	$(addprefix $(PATH_TARGET)/,$(subst .h,-cpp.cpp, $(subst /,_,$(hdrs.gc))))

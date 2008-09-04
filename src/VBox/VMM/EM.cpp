@@ -1,4 +1,4 @@
-/* $Id: EM.cpp 31169 2008-05-23 11:35:22Z sandervl $ */
+/* $Id: EM.cpp 36001 2008-09-03 15:53:35Z sandervl $ */
 /** @file
  * EM - Execution Monitor/Manager.
  */
@@ -212,6 +212,8 @@ EMR3DECL(int) EMR3Init(PVM pVM)
     STAM_REG_USED(pVM, &pStats->StatGCRdmsr,                STAMTYPE_COUNTER, "/EM/GC/Interpret/Success/Rdmsr",      STAMUNIT_OCCURENCES,   "The number of times RDMSR was not interpreted.");
     STAM_REG_USED(pVM, &pStats->StatHCWrmsr,                STAMTYPE_COUNTER, "/EM/HC/Interpret/Success/Wrmsr",      STAMUNIT_OCCURENCES,   "The number of times WRMSR was not interpreted.");
     STAM_REG_USED(pVM, &pStats->StatGCWrmsr,                STAMTYPE_COUNTER, "/EM/GC/Interpret/Success/Wrmsr",      STAMUNIT_OCCURENCES,   "The number of times WRMSR was not interpreted.");
+    STAM_REG_USED(pVM, &pStats->StatHCStosWD,               STAMTYPE_COUNTER, "/EM/HC/Interpret/Success/Stoswd",     STAMUNIT_OCCURENCES,   "The number of times STOSWD was not interpreted.");
+    STAM_REG_USED(pVM, &pStats->StatGCStosWD,               STAMTYPE_COUNTER, "/EM/GC/Interpret/Success/Stoswd",     STAMUNIT_OCCURENCES,   "The number of times STOSWD was not interpreted.");
 
     STAM_REG(pVM, &pStats->StatGCInterpretFailed,           STAMTYPE_COUNTER, "/EM/GC/Interpret/Failed",            STAMUNIT_OCCURENCES,    "The number of times an instruction was not interpreted.");
     STAM_REG(pVM, &pStats->StatHCInterpretFailed,           STAMTYPE_COUNTER, "/EM/HC/Interpret/Failed",            STAMUNIT_OCCURENCES,    "The number of times an instruction was not interpreted.");
@@ -420,7 +422,7 @@ static DECLCALLBACK(int) emR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
      */
     if (u32Version != EM_SAVED_STATE_VERSION)
     {
-        Log(("emR3Load: Invalid version u32Version=%d (current %d)!\n", u32Version, EM_SAVED_STATE_VERSION));
+        AssertMsgFailed(("emR3Load: Invalid version u32Version=%d (current %d)!\n", u32Version, EM_SAVED_STATE_VERSION));
         return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
     }
 
@@ -617,7 +619,7 @@ static int emR3Debug(PVM pVM, int rc)
             /*
              * Guru meditation.
              */
-            case VERR_REM_TOO_MANY_TRAPS: /** @todo Make a guru mediation event! */
+            case VERR_REM_TOO_MANY_TRAPS: /** @todo Make a guru meditation event! */
                 rc = DBGFR3EventSrc(pVM, DBGFEVENT_DEV_STOP, "VERR_REM_TOO_MANY_TRAPS", 0, NULL, NULL);
                 break;
 
@@ -1151,7 +1153,7 @@ static int emR3RawExecuteInstructionWorker(PVM pVM, int rcGC)
      */
     if (PATMIsPatchGCAddr(pVM, pCtx->eip))
     {
-        Log(("emR3RawExecuteInstruction: In patch block. eip=%VGv\n", pCtx->eip));
+        Log(("emR3RawExecuteInstruction: In patch block. eip=%VRv\n", pCtx->eip));
 
         RTGCPTR pNewEip;
         rc = PATMR3HandleTrap(pVM, pCtx, pCtx->eip, &pNewEip);
@@ -1218,15 +1220,17 @@ static int emR3RawExecuteInstructionWorker(PVM pVM, int rcGC)
         }
     }
 
-#if 0 /// @todo Sander, this breaks the linux image (panics). So, I'm disabling it for now. (OP_MOV triggers it btw.)
+#if 0
+    /* Try our own instruction emulator before falling back to the recompiler. */
     DISCPUSTATE Cpu;
-    rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->eip, &Cpu, "GEN EMU");
+    rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->rip, &Cpu, "GEN EMU");
     if (VBOX_SUCCESS(rc))
     {
         uint32_t size;
 
         switch (Cpu.pCurInstr->opcode)
         {
+        /* @todo we can do more now */
         case OP_MOV:
         case OP_AND:
         case OP_OR:
@@ -1239,7 +1243,7 @@ static int emR3RawExecuteInstructionWorker(PVM pVM, int rcGC)
             rc = EMInterpretInstructionCPU(pVM, &Cpu, CPUMCTX2CORE(pCtx), 0, &size);
             if (VBOX_SUCCESS(rc))
             {
-                pCtx->eip += Cpu.opsize;
+                pCtx->rip += Cpu.opsize;
                 STAM_PROFILE_STOP(&pVM->em.s.StatMiscEmu, a);
                 return rc;
             }
@@ -1294,7 +1298,7 @@ int emR3RawExecuteIOInstruction(PVM pVM)
      *   as io instructions tend to come in packages of more than one
      */
     DISCPUSTATE Cpu;
-    rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->eip, &Cpu, "IO EMU");
+    rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->rip, &Cpu, "IO EMU");
     if (VBOX_SUCCESS(rc))
     {
         rc = VINF_EM_RAW_EMULATE_INSTR;
@@ -1346,7 +1350,7 @@ int emR3RawExecuteIOInstruction(PVM pVM)
          */
         if (IOM_SUCCESS(rc))
         {
-            pCtx->eip += Cpu.opsize;
+            pCtx->rip += Cpu.opsize;
             STAM_PROFILE_STOP(&pVM->em.s.StatIOEmu, a);
             return rc;
         }
@@ -1410,7 +1414,7 @@ static int emR3RawGuestTrap(PVM pVM)
         &&  !pCtx->eflags.Bits.u1VM)
     {
         Assert(!PATMIsPatchGCAddr(pVM, pCtx->eip));
-        CSAMR3CheckCodeEx(pVM, pCtx->cs, &pCtx->csHid, pCtx->eip);
+        CSAMR3CheckCodeEx(pVM, CPUMCTX2CORE(pCtx), pCtx->eip);
     }
 
     if (u8TrapNo == 6) /* (#UD) Invalid opcode. */
@@ -1418,7 +1422,7 @@ static int emR3RawGuestTrap(PVM pVM)
         DISCPUSTATE cpu;
 
         /* If MONITOR & MWAIT are supported, then interpret them here. */
-        rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->eip, &cpu, "Guest Trap (#UD): ");
+        rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->rip, &cpu, "Guest Trap (#UD): ");
         if (    VBOX_SUCCESS(rc)
             && (cpu.pCurInstr->opcode == OP_MONITOR || cpu.pCurInstr->opcode == OP_MWAIT))
         {
@@ -1434,7 +1438,7 @@ static int emR3RawGuestTrap(PVM pVM)
                 rc = EMInterpretInstructionCPU(pVM, &cpu, CPUMCTX2CORE(pCtx), 0, &size);
                 if (VBOX_SUCCESS(rc))
                 {
-                    pCtx->eip += cpu.opsize;
+                    pCtx->rip += cpu.opsize;
                     return rc;
                 }
                 return emR3RawExecuteInstruction(pVM, "Monitor: ");
@@ -1445,7 +1449,7 @@ static int emR3RawGuestTrap(PVM pVM)
     {
         DISCPUSTATE cpu;
 
-        rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->eip, &cpu, "Guest Trap: ");
+        rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->rip, &cpu, "Guest Trap: ");
         if (VBOX_SUCCESS(rc) && (cpu.pCurInstr->optype & OPTYPE_PORTIO))
         {
             /*
@@ -1499,15 +1503,15 @@ int emR3RawRingSwitch(PVM pVM)
     /*
      * sysenter, syscall & callgate
      */
-    rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->eip, &Cpu, "RSWITCH: ");
+    rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->rip, &Cpu, "RSWITCH: ");
     if (VBOX_SUCCESS(rc))
     {
         if (Cpu.pCurInstr->opcode == OP_SYSENTER)
         {
             if (pCtx->SysEnter.cs != 0)
             {
-                rc = PATMR3InstallPatch(pVM, SELMToFlat(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid, pCtx->eip),
-                                        SELMIsSelector32Bit(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid) ? PATMFL_CODE32 : 0);
+                rc = PATMR3InstallPatch(pVM, SELMToFlat(pVM, DIS_SELREG_CS, CPUMCTX2CORE(pCtx), pCtx->eip),
+                                        (SELMGetCpuModeFromSelector(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid) == CPUMODE_32BIT) ? PATMFL_CODE32 : 0);
                 if (VBOX_SUCCESS(rc))
                 {
                     DBGFR3DisasInstrCurrentLog(pVM, "Patched sysenter instruction");
@@ -1757,8 +1761,8 @@ int emR3RawPrivileged(PVM pVM)
             && !pCtx->eflags.Bits.u1VM
             && !PATMIsPatchGCAddr(pVM, pCtx->eip))
         {
-            int rc = PATMR3InstallPatch(pVM, SELMToFlat(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid, pCtx->eip),
-                                        SELMIsSelector32Bit(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid) ? PATMFL_CODE32 : 0);
+            int rc = PATMR3InstallPatch(pVM, SELMToFlat(pVM, DIS_SELREG_CS, CPUMCTX2CORE(pCtx), pCtx->eip),
+                                        (SELMGetCpuModeFromSelector(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid) == CPUMODE_32BIT) ? PATMFL_CODE32 : 0);
             if (VBOX_SUCCESS(rc))
             {
 #ifdef LOG_ENABLED
@@ -1784,7 +1788,7 @@ int emR3RawPrivileged(PVM pVM)
     DISCPUSTATE Cpu;
     int         rc;
 
-    rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->eip, &Cpu, "PRIV: ");
+    rc = CPUMR3DisasmInstrCPU(pVM, pCtx, pCtx->rip, &Cpu, "PRIV: ");
     if (VBOX_SUCCESS(rc))
     {
 #ifdef VBOX_WITH_STATISTICS
@@ -1799,7 +1803,7 @@ int emR3RawPrivileged(PVM pVM)
                 break;
             case OP_CLI:
                 STAM_COUNTER_INC(&pStats->StatCli);
-                emR3RecordCli(pVM, pCtx->eip);
+                emR3RecordCli(pVM, pCtx->rip);
                 break;
             case OP_STI:
                 STAM_COUNTER_INC(&pStats->StatSti);
@@ -1865,7 +1869,7 @@ int emR3RawPrivileged(PVM pVM)
 #endif
         if (    (pCtx->ss & X86_SEL_RPL) == 0
             &&  !pCtx->eflags.Bits.u1VM
-            &&  SELMIsSelector32Bit(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid))
+            &&  SELMGetCpuModeFromSelector(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid) == CPUMODE_32BIT)
         {
             uint32_t size;
 
@@ -1875,15 +1879,15 @@ int emR3RawPrivileged(PVM pVM)
                 case OP_CLI:
                     pCtx->eflags.u32 &= ~X86_EFL_IF;
                     Assert(Cpu.opsize == 1);
-                    pCtx->eip += Cpu.opsize;
+                    pCtx->rip += Cpu.opsize;
                     STAM_PROFILE_STOP(&pVM->em.s.StatPrivEmu, a);
                     return VINF_EM_RESCHEDULE_REM; /* must go to the recompiler now! */
 
                 case OP_STI:
                     pCtx->eflags.u32 |= X86_EFL_IF;
-                    EMSetInhibitInterruptsPC(pVM, pCtx->eip + Cpu.opsize);
+                    EMSetInhibitInterruptsPC(pVM, pCtx->rip + Cpu.opsize);
                     Assert(Cpu.opsize == 1);
-                    pCtx->eip += Cpu.opsize;
+                    pCtx->rip += Cpu.opsize;
                     STAM_PROFILE_STOP(&pVM->em.s.StatPrivEmu, a);
                     return VINF_SUCCESS;
 
@@ -1923,7 +1927,7 @@ int emR3RawPrivileged(PVM pVM)
                     rc = EMInterpretInstructionCPU(pVM, &Cpu, CPUMCTX2CORE(pCtx), 0, &size);
                     if (VBOX_SUCCESS(rc))
                     {
-                        pCtx->eip += Cpu.opsize;
+                        pCtx->rip += Cpu.opsize;
                         STAM_PROFILE_STOP(&pVM->em.s.StatPrivEmu, a);
 
                         if (    Cpu.pCurInstr->opcode == OP_MOV_CR
@@ -2042,7 +2046,7 @@ DECLINLINE(int) emR3RawHandleRC(PVM pVM, PCPUMCTX pCtx, int rc)
             if (TRPMHasTrap(pVM))
             {
                 uint8_t         u8Interrupt;
-                uint32_t        uErrorCode;
+                RTGCUINT        uErrorCode;
                 TRPMERRORCODE   enmError = TRPM_TRAP_NO_ERRORCODE;
 
                 rc = TRPMQueryTrapAll(pVM, &u8Interrupt, NULL, &uErrorCode, NULL);
@@ -2107,8 +2111,8 @@ DECLINLINE(int) emR3RawHandleRC(PVM pVM, PCPUMCTX pCtx, int rc)
          * Memory mapped I/O access - attempt to patch the instruction
          */
         case VINF_PATM_HC_MMIO_PATCH_READ:
-            rc = PATMR3InstallPatch(pVM, SELMToFlat(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid, pCtx->eip),
-                                    PATMFL_MMIO_ACCESS | (SELMIsSelector32Bit(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid) ? PATMFL_CODE32 : 0));
+            rc = PATMR3InstallPatch(pVM, SELMToFlat(pVM, DIS_SELREG_CS, CPUMCTX2CORE(pCtx), pCtx->eip),
+                                    PATMFL_MMIO_ACCESS | ((SELMGetCpuModeFromSelector(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid) == CPUMODE_32BIT) ? PATMFL_CODE32 : 0));
             if (VBOX_FAILURE(rc))
                 rc = emR3RawExecuteInstruction(pVM, "MMIO");
             break;
@@ -2285,6 +2289,11 @@ DECLINLINE(int) emR3RawHandleRC(PVM pVM, PCPUMCTX pCtx, int rc)
         case VERR_TRPM_PANIC:
             break;
 
+        case VERR_VMX_INVALID_VMCS_FIELD:
+        case VERR_VMX_INVALID_VMCS_PTR:
+        case VERR_VMX_INVALID_VMXON_PTR:
+            HWACCMR3CheckError(pVM, rc);
+            break;
         /*
          * Anything which is not known to us means an internal error
          * and the termination of the VM!
@@ -2369,9 +2378,9 @@ static int emR3RawForcedActions(PVM pVM, PCPUMCTX pCtx)
 
         /* Prefetch pages for EIP and ESP */
         /** @todo This is rather expensive. Should investigate if it really helps at all. */
-        rc = PGMPrefetchPage(pVM, SELMToFlat(pVM, pCtx->eflags, pCtx->cs, &pCtx->csHid, pCtx->eip));
+        rc = PGMPrefetchPage(pVM, SELMToFlat(pVM, DIS_SELREG_CS, CPUMCTX2CORE(pCtx), pCtx->rip));
         if (rc == VINF_SUCCESS)
-            rc = PGMPrefetchPage(pVM, SELMToFlat(pVM, pCtx->eflags, pCtx->ss, &pCtx->ssHid, pCtx->esp));
+            rc = PGMPrefetchPage(pVM, SELMToFlat(pVM, DIS_SELREG_SS, CPUMCTX2CORE(pCtx), pCtx->rsp));
         if (rc != VINF_SUCCESS)
         {
             if (rc != VINF_PGM_SYNC_CR3)
@@ -2478,7 +2487,7 @@ static int emR3RawExecute(PVM pVM, bool *pfFFDone)
             && !PATMIsPatchGCAddr(pVM, pCtx->eip))
         {
             STAM_PROFILE_ADV_SUSPEND(&pVM->em.s.StatRAWEntry, b);
-            CSAMR3CheckCodeEx(pVM, pCtx->cs, &pCtx->csHid, pCtx->eip);
+            CSAMR3CheckCodeEx(pVM, CPUMCTX2CORE(pCtx), pCtx->eip);
             STAM_PROFILE_ADV_RESUME(&pVM->em.s.StatRAWEntry, b);
         }
 
@@ -2545,7 +2554,7 @@ static int emR3RawExecute(PVM pVM, bool *pfFFDone)
 
             default:
                 if (PATMIsPatchGCAddr(pVM, pCtx->eip) && !(pCtx->eflags.u32 & X86_EFL_TF))
-                    LogIt(NULL, 0, LOG_GROUP_PATM, ("Patch code interrupted at %VGv for reason %Vrc\n", CPUMGetGuestEIP(pVM), rc));
+                    LogIt(NULL, 0, LOG_GROUP_PATM, ("Patch code interrupted at %VRv for reason %Vrc\n", (RTRCPTR)CPUMGetGuestEIP(pVM), rc));
                 break;
         }
         /*
@@ -2634,7 +2643,7 @@ static int emR3HwAccExecute(PVM pVM, bool *pfFFDone)
     int      rc = VERR_INTERNAL_ERROR;
     PCPUMCTX pCtx = pVM->em.s.pCtx;
 
-    LogFlow(("emR3HwAccExecute: (cs:eip=%04x:%08x)\n", pCtx->cs, pCtx->eip));
+    LogFlow(("emR3HwAccExecute: (cs:eip=%04x:%VGv)\n", pCtx->cs, pCtx->rip));
     *pfFFDone = false;
 
     STAM_COUNTER_INC(&pVM->em.s.StatHwAccExecuteEntry);
@@ -2667,7 +2676,7 @@ static int emR3HwAccExecute(PVM pVM, bool *pfFFDone)
         rc = TRPMQueryTrapAll(pVM, &u8Vector, 0, 0, 0);
         if (rc == VINF_SUCCESS)
         {
-            Log(("Pending hardware interrupt %d\n", u8Vector));
+            Log(("Pending hardware interrupt=0x%x ) cs:eip=%04X:%VGv\n", u8Vector, pCtx->cs, pCtx->rip));
         }
         /*
          * Log important stuff before entering GC.
@@ -2677,7 +2686,10 @@ static int emR3HwAccExecute(PVM pVM, bool *pfFFDone)
         if (pCtx->eflags.Bits.u1VM)
             Log(("HWV86: %08X IF=%d\n", pCtx->eip, pCtx->eflags.Bits.u1IF));
         else
-            Log(("HWR%d: %08X ESP=%08X IF=%d CR0=%x CR4=%x EFER=%x\n", cpl, pCtx->eip, pCtx->esp, pCtx->eflags.Bits.u1IF, (uint32_t)pCtx->cr0, (uint32_t)pCtx->cr4, (uint32_t)pCtx->msrEFER));
+        if (CPUMIsGuestIn64BitCode(pVM, CPUMCTX2CORE(pCtx)))
+            Log(("HWR%d: %04X:%VGv ESP=%VGv IF=%d CR0=%x CR4=%x EFER=%x\n", cpl, pCtx->cs, pCtx->rip, pCtx->rsp, pCtx->eflags.Bits.u1IF, (uint32_t)pCtx->cr0, (uint32_t)pCtx->cr4, (uint32_t)pCtx->msrEFER));
+        else
+            Log(("HWR%d: %04X:%08X ESP=%08X IF=%d CR0=%x CR4=%x EFER=%x\n", cpl, pCtx->cs, pCtx->eip, pCtx->esp, pCtx->eflags.Bits.u1IF, (uint32_t)pCtx->cr0, (uint32_t)pCtx->cr4, (uint32_t)pCtx->msrEFER));
 #endif
 
         /*
@@ -2979,7 +2991,7 @@ static int emR3ForcedActions(PVM pVM, int rc)
             /** @todo: check for 16 or 32 bits code! (D bit in the code selector) */
             Log(("Forced action VM_FF_CSAM_SCAN_PAGE\n"));
 
-            CSAMR3CheckCodeEx(pVM, pCtx->cs, &pCtx->csHid, pCtx->eip);
+            CSAMR3CheckCodeEx(pVM, CPUMCTX2CORE(pCtx), pCtx->eip);
             VM_FF_CLEAR(pVM, VM_FF_CSAM_SCAN_PAGE);
         }
 
@@ -3020,8 +3032,12 @@ static int emR3ForcedActions(PVM pVM, int rc)
             UPDATE_RC();
         }
 
+        /* Replay the handler notification changes. */
+        if (VM_FF_ISSET(pVM, VM_FF_REM_HANDLER_NOTIFY))
+            REMR3ReplayHandlerNotifications(pVM);
+
         /* check that we got them all  */
-        Assert(!(VM_FF_NORMAL_PRIORITY_MASK & ~(VM_FF_REQUEST | VM_FF_PDM_QUEUES | VM_FF_PDM_DMA)));
+        Assert(!(VM_FF_NORMAL_PRIORITY_MASK & ~(VM_FF_REQUEST | VM_FF_PDM_QUEUES | VM_FF_PDM_DMA | VM_FF_REM_HANDLER_NOTIFY)));
     }
 
     /*
@@ -3049,7 +3065,7 @@ static int emR3ForcedActions(PVM pVM, int rc)
          */
         if (VM_FF_ISSET(pVM, VM_FF_INHIBIT_INTERRUPTS))
         {
-            Log(("VM_FF_EMULATED_STI at %VGv successor %VGv\n", CPUMGetGuestEIP(pVM), EMGetInhibitInterruptsPC(pVM)));
+            Log(("VM_FF_EMULATED_STI at %VGv successor %VGv\n", (RTGCPTR)CPUMGetGuestRIP(pVM), EMGetInhibitInterruptsPC(pVM)));
             if (CPUMGetGuestEIP(pVM) != EMGetInhibitInterruptsPC(pVM))
             {
                 /** @note we intentionally don't clear VM_FF_INHIBIT_INTERRUPTS here if the eip is the same as the inhibited instr address.

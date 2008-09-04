@@ -1,4 +1,4 @@
-/* $Id: CSAMGC.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: CSAMGC.cpp 31506 2008-06-02 13:30:12Z sandervl $ */
 /** @file
  * CSAM - Guest OS Code Scanning and Analysis Manager - Any Context
  */
@@ -65,7 +65,7 @@
 CSAMGCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
 {
     PPATMGCSTATE pPATMGCState;
-    bool         fPatchCode = PATMIsPatchGCAddr(pVM, (RTGCPTR)pRegFrame->eip);
+    bool         fPatchCode = PATMIsPatchGCAddr(pVM, (RTRCPTR)pRegFrame->eip);
     int          rc;
 
     Assert(pVM->csam.s.cDirtyPages < CSAM_MAX_DIRTY_PAGES);
@@ -86,7 +86,7 @@ CSAMGCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
          */
         int rc = PGMShwModifyPage(pVM, pvFault, 1, X86_PTE_RW, ~(uint64_t)X86_PTE_RW);
         AssertMsgRC(rc, ("PGMShwModifyPage -> rc=%Vrc\n", rc));
-        ASMInvalidatePage(pvFault);
+        ASMInvalidatePage((void *)pvFault);
         return VINF_SUCCESS;
     }
 
@@ -102,7 +102,7 @@ CSAMGCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
     /* If user code is modifying one of our monitored pages, then we can safely make it r/w as it's no longer being used for supervisor code. */
     if (cpl != 3)
     {
-        rc = PATMGCHandleWriteToPatchPage(pVM, pRegFrame, (RTGCPTR)((RTGCUINTPTR)pvRange + offRange), 4 /** @todo */);
+        rc = PATMGCHandleWriteToPatchPage(pVM, pRegFrame, (RTRCPTR)((RTRCUINTPTR)pvRange + offRange), 4 /** @todo */);
         if (rc == VINF_SUCCESS)
             return rc;
         if (rc == VINF_EM_RAW_EMULATE_INSTR)
@@ -116,8 +116,8 @@ CSAMGCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
     VM_FF_SET(pVM, VM_FF_CSAM_PENDING_ACTION);
 
     /* Note that pvFault might be a different address in case of aliases. So use pvRange + offset instead!. */
-    pVM->csam.s.pvDirtyBasePage[pVM->csam.s.cDirtyPages] = (RTGCPTR)((RTGCUINTPTR)pvRange + offRange);
-    pVM->csam.s.pvDirtyFaultPage[pVM->csam.s.cDirtyPages] = (RTGCPTR)((RTGCUINTPTR)pvRange + offRange);
+    pVM->csam.s.pvDirtyBasePage[pVM->csam.s.cDirtyPages] = (RTRCPTR)((RTGCUINTPTR)pvRange + offRange);
+    pVM->csam.s.pvDirtyFaultPage[pVM->csam.s.cDirtyPages] = (RTRCPTR)((RTGCUINTPTR)pvRange + offRange);
     if (++pVM->csam.s.cDirtyPages == CSAM_MAX_DIRTY_PAGES)
         return VINF_CSAM_PENDING_ACTION;
 
@@ -127,7 +127,7 @@ CSAMGCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
     Log(("CSAMGCCodePageWriteHandler: enabled r/w for page %VGv\n", pvFault));
     rc = PGMShwModifyPage(pVM, pvFault, 1, X86_PTE_RW, ~(uint64_t)X86_PTE_RW);
     AssertMsgRC(rc, ("PGMShwModifyPage -> rc=%Vrc\n", rc));
-    ASMInvalidatePage(pvFault);
+    ASMInvalidatePage((void *)pvFault);
 
     STAM_COUNTER_INC(&pVM->csam.s.StatCodePageModified);
     return VINF_SUCCESS;

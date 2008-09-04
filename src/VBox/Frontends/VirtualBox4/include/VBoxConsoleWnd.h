@@ -24,14 +24,16 @@
 #define __VBoxConsoleWnd_h__
 
 #include "COMDefs.h"
+
 #include "QIWithRetranslateUI.h"
+
+#include "VBoxProblemReporter.h"
 
 /* Qt includes */
 #include <QMainWindow>
 #include <QMap>
 #include <QColor>
 #include <QDialog>
-
 
 #ifdef VBOX_WITH_DEBUGGER_GUI
 # include <VBox/dbggui.h>
@@ -62,7 +64,7 @@ public:
 
     VBoxConsoleWnd (VBoxConsoleWnd **aSelf,
                      QWidget* aParent = 0,
-                     Qt::WFlags aFlags = Qt::WType_TopLevel);
+                     Qt::WindowFlags aFlags = Qt::Window);
     virtual ~VBoxConsoleWnd();
 
     bool openView (const CSession &session);
@@ -81,6 +83,8 @@ public:
     void installGuestAdditionsFrom (const QString &aSource);
 
     void setMask (const QRegion &aRegion);
+
+    void clearMask();
 
 #ifdef Q_WS_MAC
     CGImageRef dockImageState () const;
@@ -236,11 +240,7 @@ private:
 #endif
 
     // Help actions
-    QAction *helpContentsAction;
-    QAction *helpWebAction;
-    QAction *helpRegisterAction;
-    QAction *helpAboutAction;
-    QAction *helpResetMessagesAction;
+    VBoxHelpActions mHelpActions;
 
     // Machine popup menus
     VBoxSwitchMenu *vmAutoresizeMenu;
@@ -295,11 +295,10 @@ private:
     QMap <QAction *, CHostDVDDrive> hostDVDMap;
     QMap <QAction *, CHostFloppyDrive> hostFloppyMap;
 
-    QPoint normal_pos;
-    QSize normal_size;
+    QRect mNormalGeo;
     QSize prev_min_size;
 
-#ifdef Q_WS_WIN32
+#ifdef Q_WS_WIN
     QRegion mPrevRegion;
 #endif
 
@@ -345,7 +344,7 @@ private:
 };
 
 
-class VBoxSharedFoldersSettings;
+class VBoxVMSettingsSF;
 class VBoxSFDialog : public QIWithRetranslateUI<QDialog>
 {
     Q_OBJECT;
@@ -368,7 +367,7 @@ protected:
 
 private:
 
-    VBoxSharedFoldersSettings *mSettings;
+    VBoxVMSettingsSF *mSettings;
     CSession &mSession;
 };
 

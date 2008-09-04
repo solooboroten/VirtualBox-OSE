@@ -341,6 +341,14 @@ public:
         return S_OK;
     }
 
+    STDMETHOD(OnGuestPropertyChange) (IN_GUIDPARAM /* id */,
+                                      IN_BSTRPARAM /* key */,
+                                      IN_BSTRPARAM /* value */,
+                                      IN_BSTRPARAM /* flags */)
+    {
+        return S_OK;
+    }
+
 private:
 
     void postEvent (QEvent *e)
@@ -1770,7 +1778,7 @@ QString VBoxGlobal::detailsReport (const CMachine &m, bool isNewVM,
 
                     item += QString (sSectionItemTpl)
                         .arg (tr ("Adapter %1", "details report (network)")
-                              .arg (adapter.GetSlot()))
+                              .arg (adapter.GetSlot() + 1))
                         .arg (attType);
                     ++ rows;
                 }
@@ -1812,7 +1820,7 @@ QString VBoxGlobal::detailsReport (const CMachine &m, bool isNewVM,
 
                     item += QString (sSectionItemTpl)
                         .arg (tr ("Port %1", "details report (serial ports)")
-                              .arg (port.GetSlot()))
+                              .arg (port.GetSlot() + 1))
                         .arg (data);
                     ++ rows;
                 }
@@ -1848,7 +1856,7 @@ QString VBoxGlobal::detailsReport (const CMachine &m, bool isNewVM,
 
                     item += QString (sSectionItemTpl)
                         .arg (tr ("Port %1", "details report (parallel ports)")
-                              .arg (port.GetSlot()))
+                              .arg (port.GetSlot() + 1))
                         .arg (data);
                     ++ rows;
                 }
@@ -2626,7 +2634,7 @@ void VBoxGlobal::adoptLabelPixmap (QLabel *aLabel)
     aLabel->setPaletteForegroundColor (QColor (rgbFrame));
 }
 
-extern const char *gVBoxLangSubDir = "/nls";
+extern const char *gVBoxLangSubDir = "/nls3";
 extern const char *gVBoxLangFileBase = "VirtualBox_";
 extern const char *gVBoxLangFileExt = ".qm";
 extern const char *gVBoxLangIDRegExp = "(([a-z]{2})(?:_([A-Z]{2}))?)|(C)";

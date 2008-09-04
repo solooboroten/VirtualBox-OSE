@@ -17,6 +17,15 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+
+/*
+ * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
 #ifndef CPU_I386_H
 #define CPU_I386_H
 
@@ -290,12 +299,40 @@
 
 #define CPUID_EXT_SSE3     (1 << 0)
 #define CPUID_EXT_MONITOR  (1 << 3)
+#define CPUID_EXT_DSCPL    (1 << 4)
+#define CPUID_EXT_VMX      (1 << 5)
+#define CPUID_EXT_SMX      (1 << 6)
+#define CPUID_EXT_EST      (1 << 7)
+#define CPUID_EXT_TM2      (1 << 8)
+#define CPUID_EXT_SSSE3    (1 << 9)
+#define CPUID_EXT_CID      (1 << 10)
 #define CPUID_EXT_CX16     (1 << 13)
+#define CPUID_EXT_XTPR     (1 << 14)
+#define CPUID_EXT_DCA      (1 << 17)
+#define CPUID_EXT_POPCNT   (1 << 22)
 
 #define CPUID_EXT2_SYSCALL (1 << 11)
+#define CPUID_EXT2_MP      (1 << 19)
 #define CPUID_EXT2_NX      (1 << 20)
+#define CPUID_EXT2_MMXEXT  (1 << 22)
 #define CPUID_EXT2_FFXSR   (1 << 25)
+#define CPUID_EXT2_PDPE1GB (1 << 26)
+#define CPUID_EXT2_RDTSCP  (1 << 27)
 #define CPUID_EXT2_LM      (1 << 29)
+#define CPUID_EXT2_3DNOWEXT (1 << 30)
+#define CPUID_EXT2_3DNOW   (1 << 31)
+
+#define CPUID_EXT3_LAHF_LM (1 << 0)
+#define CPUID_EXT3_CMP_LEG (1 << 1)
+#define CPUID_EXT3_SVM     (1 << 2)
+#define CPUID_EXT3_EXTAPIC (1 << 3)
+#define CPUID_EXT3_CR8LEG  (1 << 4)
+#define CPUID_EXT3_ABM     (1 << 5)
+#define CPUID_EXT3_SSE4A   (1 << 6)
+#define CPUID_EXT3_MISALIGNSSE (1 << 7)
+#define CPUID_EXT3_3DNOWPREFETCH (1 << 8)
+#define CPUID_EXT3_OSVW    (1 << 9)
+#define CPUID_EXT3_IBS     (1 << 10)
 
 #define EXCP00_DIVZ	0
 #define EXCP01_SSTP	1
@@ -509,8 +546,8 @@ typedef struct CPUX86State {
 
     /* sysenter registers */
     uint32_t sysenter_cs;
-    uint32_t sysenter_esp;
-    uint32_t sysenter_eip;
+    uint64_t sysenter_esp;
+    uint64_t sysenter_eip;
 #ifdef VBOX
     uint32_t alignment0;
 #endif 
@@ -575,6 +612,7 @@ typedef struct CPUX86State {
     uint32_t cpuid_model[12];
 #endif /* !VBOX */
     uint32_t cpuid_ext2_features;
+    uint32_t cpuid_ext3_features;
 
 #ifndef VBOX
 #ifdef USE_KQEMU
@@ -590,6 +628,111 @@ typedef struct CPUX86State {
 } CPUX86State;
 
 #ifdef VBOX
+
+/* Version 1.6 structure; just for loading the old saved state */
+typedef struct SegmentCache_Ver16 {
+    uint32_t selector;
+    uint32_t base;
+    uint32_t limit;
+    uint32_t flags;
+#ifdef VBOX
+    /** The new selector is saved here when we are unable to sync it before invoking the recompiled code. */
+    uint32_t newselector;
+#endif
+} SegmentCache_Ver16;
+
+#define CPU_NB_REGS_VER16 8
+
+/* Version 1.6 structure; just for loading the old saved state */
+typedef struct CPUX86State_Ver16 {
+#if TARGET_LONG_BITS > HOST_LONG_BITS
+    /* temporaries if we cannot store them in host registers */
+    uint32_t t0, t1, t2;
+#endif
+
+    /* standard registers */
+    uint32_t regs[CPU_NB_REGS_VER16];
+    uint32_t eip;
+    uint32_t eflags; /* eflags register. During CPU emulation, CC
+                        flags and DF are set to zero because they are
+                        stored elsewhere */
+
+    /* emulator internal eflags handling */
+    uint32_t cc_src;
+    uint32_t cc_dst;
+    uint32_t cc_op;
+    int32_t df; /* D flag : 1 if D = 0, -1 if D = 1 */
+    uint32_t hflags; /* hidden flags, see HF_xxx constants */
+
+    /* segments */
+    SegmentCache_Ver16 segs[6]; /* selector values */
+    SegmentCache_Ver16 ldt;
+    SegmentCache_Ver16 tr;
+    SegmentCache_Ver16 gdt; /* only base and limit are used */
+    SegmentCache_Ver16 idt; /* only base and limit are used */
+
+    uint32_t cr[5]; /* NOTE: cr1 is unused */
+    uint32_t a20_mask;
+
+    /* FPU state */
+    unsigned int fpstt; /* top of stack index */
+    unsigned int fpus;
+    unsigned int fpuc;
+    uint8_t fptags[8];   /* 0 = valid, 1 = empty */
+    union {
+#ifdef USE_X86LDOUBLE
+        CPU86_LDouble d __attribute__((aligned(16)));
+#else
+        CPU86_LDouble d;
+#endif
+        MMXReg mmx;
+    } fpregs[8];
+
+    /* emulator internal variables */
+    float_status fp_status;
+#ifdef VBOX
+    uint32_t alignment3[3]; /* force the long double to start a 16 byte line. */
+#endif 
+    CPU86_LDouble ft0;
+#if defined(VBOX) && defined(RT_ARCH_X86) && !defined(RT_OS_DARWIN)
+    uint32_t alignment4; /* long double is 12 byte, pad it to 16. */
+#endif 
+    union {
+	float f;
+        double d;
+	int i32;
+        int64_t i64;
+    } fp_convert;
+    
+    float_status sse_status;
+    uint32_t mxcsr;
+    XMMReg xmm_regs[CPU_NB_REGS_VER16];
+    XMMReg xmm_t0;
+    MMXReg mmx_t0;
+
+    /* sysenter registers */
+    uint32_t sysenter_cs;
+    uint32_t sysenter_esp;
+    uint32_t sysenter_eip;
+#ifdef VBOX
+    uint32_t alignment0;
+#endif 
+    uint64_t efer;
+    uint64_t star;
+
+    uint64_t pat;
+
+    /* temporary data for USE_CODE_COPY mode */
+#ifdef USE_CODE_COPY
+    uint32_t tmp0;
+    uint32_t saved_esp;
+    int native_fp_regs; /* if true, the FPU state is in the native CPU regs */
+#endif
+    
+    /* exception/interrupt handling */
+    jmp_buf jmp_env;
+} CPUX86State_Ver16;
+
 /** CPUX86State state flags 
  * @{ */
 #define CPU_RAW_RING0            0x0002 /* Set after first time RawR0 is executed, never cleared. */

@@ -1,4 +1,4 @@
-/* $Id: tstVMStructGC.cpp 30471 2008-05-05 10:00:33Z sandervl $ */
+/* $Id: tstVMStructGC.cpp 34341 2008-08-08 15:46:17Z bird $ */
 /** @file
  * tstVMMStructGC - Generate structure member and size checks from the GC perspective.
  *
@@ -247,8 +247,8 @@ int main()
     GEN_CHECK_OFF(PDM, aPciBuses[0].pfnFakePCIBIOSR3);
     GEN_CHECK_OFF(PDM, aPciBuses[0].pDevInsR0);
     GEN_CHECK_OFF(PDM, aPciBuses[0].pfnSetIrqR0);
-    GEN_CHECK_OFF(PDM, aPciBuses[0].pDevInsGC);
-    GEN_CHECK_OFF(PDM, aPciBuses[0].pfnSetIrqGC);
+    GEN_CHECK_OFF(PDM, aPciBuses[0].pDevInsRC);
+    GEN_CHECK_OFF(PDM, aPciBuses[0].pfnSetIrqRC);
     GEN_CHECK_OFF(PDM, Pic);
     GEN_CHECK_OFF(PDM, Pic.pDevInsR3);
     GEN_CHECK_OFF(PDM, Pic.pfnSetIrqR3);
@@ -256,9 +256,9 @@ int main()
     GEN_CHECK_OFF(PDM, Pic.pDevInsR0);
     GEN_CHECK_OFF(PDM, Pic.pfnSetIrqR0);
     GEN_CHECK_OFF(PDM, Pic.pfnGetInterruptR0);
-    GEN_CHECK_OFF(PDM, Pic.pDevInsGC);
-    GEN_CHECK_OFF(PDM, Pic.pfnSetIrqGC);
-    GEN_CHECK_OFF(PDM, Pic.pfnGetInterruptGC);
+    GEN_CHECK_OFF(PDM, Pic.pDevInsRC);
+    GEN_CHECK_OFF(PDM, Pic.pfnSetIrqRC);
+    GEN_CHECK_OFF(PDM, Pic.pfnGetInterruptRC);
     GEN_CHECK_OFF(PDM, Apic);
     GEN_CHECK_OFF(PDM, Apic.pDevInsR3);
     GEN_CHECK_OFF(PDM, Apic.pfnGetInterruptR3);
@@ -274,20 +274,20 @@ int main()
     GEN_CHECK_OFF(PDM, Apic.pfnSetTPRR0);
     GEN_CHECK_OFF(PDM, Apic.pfnGetTPRR0);
     GEN_CHECK_OFF(PDM, Apic.pfnBusDeliverR0);
-    GEN_CHECK_OFF(PDM, Apic.pDevInsGC);
-    GEN_CHECK_OFF(PDM, Apic.pfnGetInterruptGC);
-    GEN_CHECK_OFF(PDM, Apic.pfnSetBaseGC);
-    GEN_CHECK_OFF(PDM, Apic.pfnGetBaseGC);
-    GEN_CHECK_OFF(PDM, Apic.pfnSetTPRGC);
-    GEN_CHECK_OFF(PDM, Apic.pfnGetTPRGC);
-    GEN_CHECK_OFF(PDM, Apic.pfnBusDeliverGC);
+    GEN_CHECK_OFF(PDM, Apic.pDevInsRC);
+    GEN_CHECK_OFF(PDM, Apic.pfnGetInterruptRC);
+    GEN_CHECK_OFF(PDM, Apic.pfnSetBaseRC);
+    GEN_CHECK_OFF(PDM, Apic.pfnGetBaseRC);
+    GEN_CHECK_OFF(PDM, Apic.pfnSetTPRRC);
+    GEN_CHECK_OFF(PDM, Apic.pfnGetTPRRC);
+    GEN_CHECK_OFF(PDM, Apic.pfnBusDeliverRC);
     GEN_CHECK_OFF(PDM, IoApic);
     GEN_CHECK_OFF(PDM, IoApic.pDevInsR3);
     GEN_CHECK_OFF(PDM, IoApic.pfnSetIrqR3);
     GEN_CHECK_OFF(PDM, IoApic.pDevInsR0);
     GEN_CHECK_OFF(PDM, IoApic.pfnSetIrqR0);
-    GEN_CHECK_OFF(PDM, IoApic.pDevInsGC);
-    GEN_CHECK_OFF(PDM, IoApic.pfnSetIrqGC);
+    GEN_CHECK_OFF(PDM, IoApic.pDevInsRC);
+    GEN_CHECK_OFF(PDM, IoApic.pfnSetIrqRC);
     GEN_CHECK_OFF(PDM, pDmac);
     GEN_CHECK_OFF(PDM, pRtc);
     GEN_CHECK_OFF(PDM, pUsbHubs);
@@ -305,9 +305,7 @@ int main()
     GEN_CHECK_OFF(PDM, apfnPollers);
     GEN_CHECK_OFF(PDM, aDrvInsPollers);
     GEN_CHECK_OFF(PDM, pTimerPollers);
-#ifdef VBOX_WITH_PDM_LOCK
     GEN_CHECK_OFF(PDM, CritSect);
-#endif
     GEN_CHECK_OFF(PDM, StatQueuedCritSectLeaves);
     GEN_CHECK_SIZE(PDMDEVINSINT);
     GEN_CHECK_OFF(PDMDEVINSINT, pNextHC);
@@ -492,6 +490,9 @@ int main()
     GEN_CHECK_OFF(PGM, cSharedPages);
     GEN_CHECK_OFF(PGM, cZeroPages);
     GEN_CHECK_OFF(PGM, cGuestModeChanges);
+#ifdef VBOX_WITH_STATISTICS
+    GEN_CHECK_OFF(PGM, pStatTrap0eAttributionHC);
+#endif
 
     GEN_CHECK_SIZE(PGMMAPPING);
     GEN_CHECK_OFF(PGMMAPPING, pNextR3);

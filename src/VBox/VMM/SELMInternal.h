@@ -1,4 +1,4 @@
-/* $Id: SELMInternal.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: SELMInternal.h 32586 2008-07-02 09:27:32Z sandervl $ */
 /** @file
  * SELM - Internal header file.
  */
@@ -88,30 +88,33 @@ typedef struct SELM
 
     /** Pointer to the GCs - HC Ptr.
      * This size is governed by SELM_GDT_ELEMENTS. */
-    R3R0PTRTYPE(PVBOXDESC)  paGdtHC;
+    R3R0PTRTYPE(PX86DESC)   paGdtHC;
     /** Pointer to the GCs - GC Ptr.
      * This is not initialized until the first relocation because it's used to
      * check if the shadow GDT virtual handler requires deregistration. */
-    GCPTRTYPE(PVBOXDESC)    paGdtGC;
+    RCPTRTYPE(PX86DESC)     paGdtGC;
     /** Current (last) Guest's GDTR. */
     VBOXGDTR                GuestGdtr;
     /** The current (last) effective Guest GDT size. */
     RTUINT                  cbEffGuestGdtLimit;
 
+    uint32_t                padding0;
+
     /** HC Pointer to the LDT shadow area placed in Hypervisor memory arena. */
     R3PTRTYPE(void *)       HCPtrLdt;
     /** GC Pointer to the LDT shadow area placed in Hypervisor memory arena. */
-    GCPTRTYPE(void *)       GCPtrLdt;
+    RCPTRTYPE(void *)       GCPtrLdt;
+#if GC_ARCH_BITS == 64
+    RTRCPTR                 padding1;
+#endif
     /** GC Pointer to the current Guest's LDT. */
     RTGCPTR                 GCPtrGuestLdt;
     /** Current LDT limit, both Guest and Shadow. */
     RTUINT                  cbLdtLimit;
     /** Current LDT offset relative to pvLdt*. */
     RTUINT                  offLdtHyper;
-
-#if HC_ARCH_BITS == 32
-    /** TSS alignment padding. */
-    RTUINT                  auPadding[2];
+#if HC_ARCH_BITS == 32 && GC_ARCH_BITS == 64
+    uint32_t                padding2[2];
 #endif
     /** TSS. (This is 16 byte aligned!)
       * @todo I/O bitmap & interrupt redirection table? */
@@ -121,7 +124,10 @@ typedef struct SELM
     VBOXTSS                 TssTrap08;
 
     /** GC Pointer to the TSS shadow area (Tss) placed in Hypervisor memory arena. */
-    RTGCPTR                 GCPtrTss;
+    RCPTRTYPE(void *)       GCPtrTss;
+#if GC_ARCH_BITS == 64
+    RTRCPTR                 padding3;
+#endif
     /** GC Pointer to the current Guest's TSS. */
     RTGCPTR                 GCPtrGuestTss;
     /** The size of the guest TSS. */
@@ -171,13 +177,13 @@ typedef struct SELM
 
 __BEGIN_DECLS
 
-SELMGCDECL(int) selmgcGuestGDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, void *pvFault, void *pvRange, uintptr_t offRange);
-SELMGCDECL(int) selmgcGuestLDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, void *pvFault, void *pvRange, uintptr_t offRange);
-SELMGCDECL(int) selmgcGuestTSSWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, void *pvFault, void *pvRange, uintptr_t offRange);
+SELMGCDECL(int) selmgcGuestGDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
+SELMGCDECL(int) selmgcGuestLDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
+SELMGCDECL(int) selmgcGuestTSSWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
 
-SELMGCDECL(int) selmgcShadowGDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, void *pvFault, void *pvRange, uintptr_t offRange);
-SELMGCDECL(int) selmgcShadowLDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, void *pvFault, void *pvRange, uintptr_t offRange);
-SELMGCDECL(int) selmgcShadowTSSWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, void *pvFault, void *pvRange, uintptr_t offRange);
+SELMGCDECL(int) selmgcShadowGDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
+SELMGCDECL(int) selmgcShadowLDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
+SELMGCDECL(int) selmgcShadowTSSWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
 
 __END_DECLS
 

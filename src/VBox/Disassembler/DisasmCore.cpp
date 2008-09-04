@@ -172,25 +172,25 @@ DISDECL(int) DISCoreOne(PDISCPUSTATE pCpu, RTUINTPTR InstructionAddr, unsigned *
     /*
      * Reset instruction settings
      */
-    pCpu->prefix     = PREFIX_NONE;
-    pCpu->prefix_seg = 0;
-    pCpu->lastprefix = 0;
-    pCpu->ModRM.u    = 0;
-    pCpu->SIB.u      = 0;
+    pCpu->prefix        = PREFIX_NONE;
+    pCpu->enmPrefixSeg  = DIS_SELREG_DS;
+    pCpu->lastprefix    = 0;
+    pCpu->ModRM.u       = 0;
+    pCpu->SIB.u         = 0;
     pCpu->param1.parval = 0;
     pCpu->param2.parval = 0;
     pCpu->param3.parval = 0;
     pCpu->param1.szParam[0] = '\0';
     pCpu->param2.szParam[0] = '\0';
     pCpu->param3.szParam[0] = '\0';
-    pCpu->param1.flags = 0;
-    pCpu->param2.flags = 0;
-    pCpu->param3.flags = 0;
-    pCpu->param1.size  = 0;
-    pCpu->param2.size  = 0;
-    pCpu->param3.size  = 0;
-    pCpu->pfnReadBytes = 0;
-    pCpu->uFilter      = OPTYPE_ALL;
+    pCpu->param1.flags  = 0;
+    pCpu->param2.flags  = 0;
+    pCpu->param3.flags  = 0;
+    pCpu->param1.size   = 0;
+    pCpu->param2.size   = 0;
+    pCpu->param3.size   = 0;
+    pCpu->pfnReadBytes  = 0;
+    pCpu->uFilter       = OPTYPE_ALL;
     pCpu->pfnDisasmFnTable = pfnFullDisasm;
 
     return VBOX_SUCCESS(disCoreOne(pCpu, InstructionAddr, pcbInstruction));
@@ -216,15 +216,15 @@ DISDECL(int) DISCoreOneEx(RTUINTPTR InstructionAddr, DISCPUMODE enmCpuMode, PFN_
     /*
      * Reset instruction settings
      */
-    pCpu->prefix     = PREFIX_NONE;
-    pCpu->prefix_seg = 0;
-    pCpu->lastprefix = 0;
-    pCpu->mode       = enmCpuMode;
-    pCpu->ModRM.u    = 0;
-    pCpu->SIB.u      = 0;
-    pCpu->param1.parval = 0;
-    pCpu->param2.parval = 0;
-    pCpu->param3.parval = 0;
+    pCpu->prefix            = PREFIX_NONE;
+    pCpu->enmPrefixSeg      = DIS_SELREG_DS;
+    pCpu->lastprefix        = 0;
+    pCpu->mode              = enmCpuMode;
+    pCpu->ModRM.u           = 0;
+    pCpu->SIB.u             = 0;
+    pCpu->param1.parval     = 0;
+    pCpu->param2.parval     = 0;
+    pCpu->param3.parval     = 0;
     pCpu->param1.szParam[0] = '\0';
     pCpu->param2.szParam[0] = '\0';
     pCpu->param3.szParam[0] = '\0';
@@ -273,105 +273,126 @@ static int disCoreOne(PDISCPUSTATE pCpu, RTUINTPTR InstructionAddr, unsigned *pc
         pCpu->opmode     = pCpu->mode;
     }
 
-    while(1)
+#ifdef IN_RING3
+# ifndef __L4ENV__  /* Unfortunately, we have no exception handling in l4env */
+    try
+# else
+    pCpu->pJumpBuffer = &jumpbuffer;
+    if (setjmp(jumpbuffer) == 0)
+# endif
+#endif
     {
-        uint8_t codebyte = DISReadByte(pCpu, InstructionAddr+iByte);
-        uint8_t opcode   = paOneByteMap[codebyte].opcode;
-
-        /* Hardcoded assumption about OP_* values!! */
-        if (opcode <= OP_LAST_PREFIX)
+        while(1)
         {
-            /* The REX prefix must precede the opcode byte(s). Any other placement is ignored. */
-            if (opcode != OP_REX)
-            {
-                /** Last prefix byte (for SSE2 extension tables); don't include the REX prefix */
-                pCpu->lastprefix = opcode;
-                pCpu->prefix &= ~PREFIX_REX;
-            }
+            uint8_t codebyte = DISReadByte(pCpu, InstructionAddr+iByte);
+            uint8_t opcode   = paOneByteMap[codebyte].opcode;
 
-            switch (opcode)
+            /* Hardcoded assumption about OP_* values!! */
+            if (opcode <= OP_LAST_PREFIX)
             {
-            case OP_INVALID:
-                AssertMsgFailed(("Invalid opcode!!\n"));
-                return VERR_GENERAL_FAILURE; /** @todo better error code. */
-
-            // segment override prefix byte
-            case OP_SEG:
-                pCpu->prefix_seg = paOneByteMap[codebyte].param1 - OP_PARM_REG_SEG_START;
-                /* Segment prefixes for CS, DS, ES and SS are ignored in long mode. */
-                if (   pCpu->mode != CPUMODE_64BIT
-                    || pCpu->prefix_seg >= OP_PARM_REG_FS)
+                /* The REX prefix must precede the opcode byte(s). Any other placement is ignored. */
+                if (opcode != OP_REX)
                 {
-                    pCpu->prefix    |= PREFIX_SEG;
+                    /** Last prefix byte (for SSE2 extension tables); don't include the REX prefix */
+                    pCpu->lastprefix = opcode;
+                    pCpu->prefix &= ~PREFIX_REX;
                 }
-                iByte += sizeof(uint8_t);
-                continue;   //fetch the next byte
 
-            // lock prefix byte
-            case OP_LOCK:
-                pCpu->prefix |= PREFIX_LOCK;
-                iByte       += sizeof(uint8_t);
-                continue;   //fetch the next byte
+                switch (opcode)
+                {
+                case OP_INVALID:
+                    AssertMsgFailed(("Invalid opcode!!\n"));
+                    return VERR_GENERAL_FAILURE; /** @todo better error code. */
 
-            // address size override prefix byte
-            case OP_ADDRSIZE:
-                pCpu->prefix |= PREFIX_ADDRSIZE;
-                if (pCpu->mode == CPUMODE_16BIT)
-                    pCpu->addrmode = CPUMODE_32BIT;
-                else
-                if (pCpu->mode == CPUMODE_32BIT)
-                    pCpu->addrmode = CPUMODE_16BIT;
-                else
-                    pCpu->addrmode = CPUMODE_32BIT;     /* 64 bits */
+                // segment override prefix byte
+                case OP_SEG:
+                    pCpu->enmPrefixSeg = (DIS_SELREG)(paOneByteMap[codebyte].param1 - OP_PARM_REG_SEG_START);
+                    /* Segment prefixes for CS, DS, ES and SS are ignored in long mode. */
+                    if (   pCpu->mode != CPUMODE_64BIT
+                        || pCpu->enmPrefixSeg >= DIS_SELREG_FS)
+                    {
+                        pCpu->prefix    |= PREFIX_SEG;
+                    }
+                    iByte += sizeof(uint8_t);
+                    continue;   //fetch the next byte
 
-                iByte        += sizeof(uint8_t);
-                continue;   //fetch the next byte
+                // lock prefix byte
+                case OP_LOCK:
+                    pCpu->prefix |= PREFIX_LOCK;
+                    iByte       += sizeof(uint8_t);
+                    continue;   //fetch the next byte
 
-            // operand size override prefix byte
-            case OP_OPSIZE:
-                pCpu->prefix |= PREFIX_OPSIZE;
-                if (pCpu->mode == CPUMODE_16BIT)
-                    pCpu->opmode = CPUMODE_32BIT;
-                else
-                    pCpu->opmode = CPUMODE_16BIT;  /* for 32 and 64 bits mode (there is no 32 bits operand size override prefix) */
+                // address size override prefix byte
+                case OP_ADDRSIZE:
+                    pCpu->prefix |= PREFIX_ADDRSIZE;
+                    if (pCpu->mode == CPUMODE_16BIT)
+                        pCpu->addrmode = CPUMODE_32BIT;
+                    else
+                    if (pCpu->mode == CPUMODE_32BIT)
+                        pCpu->addrmode = CPUMODE_16BIT;
+                    else
+                        pCpu->addrmode = CPUMODE_32BIT;     /* 64 bits */
 
-                iByte        += sizeof(uint8_t);
-                continue;   //fetch the next byte
+                    iByte        += sizeof(uint8_t);
+                    continue;   //fetch the next byte
 
-            // rep and repne are not really prefixes, but we'll treat them as such
-            case OP_REPE:
-                pCpu->prefix |= PREFIX_REP;
-                iByte       += sizeof(uint8_t);
-                continue;   //fetch the next byte
+                // operand size override prefix byte
+                case OP_OPSIZE:
+                    pCpu->prefix |= PREFIX_OPSIZE;
+                    if (pCpu->mode == CPUMODE_16BIT)
+                        pCpu->opmode = CPUMODE_32BIT;
+                    else
+                        pCpu->opmode = CPUMODE_16BIT;  /* for 32 and 64 bits mode (there is no 32 bits operand size override prefix) */
 
-            case OP_REPNE:
-                pCpu->prefix |= PREFIX_REPNE;
-                iByte       += sizeof(uint8_t);
-                continue;   //fetch the next byte
+                    iByte        += sizeof(uint8_t);
+                    continue;   //fetch the next byte
 
-            case OP_REX:
-                Assert(pCpu->mode == CPUMODE_64BIT);
-                /* REX prefix byte */
-                pCpu->prefix    |= PREFIX_REX;
-                pCpu->prefix_rex = PREFIX_REX_OP_2_FLAGS(paOneByteMap[codebyte].param1);
-                iByte           += sizeof(uint8_t);
+                // rep and repne are not really prefixes, but we'll treat them as such
+                case OP_REPE:
+                    pCpu->prefix |= PREFIX_REP;
+                    iByte       += sizeof(uint8_t);
+                    continue;   //fetch the next byte
 
-                if (pCpu->prefix_rex & PREFIX_REX_FLAGS_W)
-                    pCpu->opmode = CPUMODE_64BIT;  /* overrides size prefix byte */
-                continue;   //fetch the next byte
+                case OP_REPNE:
+                    pCpu->prefix |= PREFIX_REPNE;
+                    iByte       += sizeof(uint8_t);
+                    continue;   //fetch the next byte
+
+                case OP_REX:
+                    Assert(pCpu->mode == CPUMODE_64BIT);
+                    /* REX prefix byte */
+                    pCpu->prefix    |= PREFIX_REX;
+                    pCpu->prefix_rex = PREFIX_REX_OP_2_FLAGS(paOneByteMap[codebyte].param1);
+                    iByte           += sizeof(uint8_t);
+
+                    if (pCpu->prefix_rex & PREFIX_REX_FLAGS_W)
+                        pCpu->opmode = CPUMODE_64BIT;  /* overrides size prefix byte */
+                    continue;   //fetch the next byte
+                }
             }
+
+            unsigned uIdx = iByte;
+            iByte += sizeof(uint8_t); //first opcode byte
+
+            pCpu->opaddr = InstructionAddr + uIdx;
+            pCpu->opcode = codebyte;
+
+            cbInc = ParseInstruction(InstructionAddr + iByte, &paOneByteMap[pCpu->opcode], pCpu);
+            iByte += cbInc;
+            break;
         }
-
-        unsigned uIdx = iByte;
-        iByte += sizeof(uint8_t); //first opcode byte
-
-        pCpu->opaddr = InstructionAddr + uIdx;
-        pCpu->opcode = codebyte;
-
-        cbInc = ParseInstruction(InstructionAddr + iByte, &paOneByteMap[pCpu->opcode], pCpu);
-        iByte += cbInc;
-        break;
     }
+#ifdef IN_RING3
+# ifndef __L4ENV__
+    catch(...)
+# else
+    else  /* setjmp has returned a non-zero value: an exception occured */
+# endif
+    {
+        pCpu->opsize = 0;
+        return VERR_DIS_GEN_FAILURE;
+    }
+#endif
 
     pCpu->opsize = iByte;
     if (pcbInstruction)
@@ -419,11 +440,11 @@ unsigned ParseInstruction(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, PDISCPUSTATE pC
     if (pCpu->mode == CPUMODE_64BIT)
     {
         if (pOp->optype & OPTYPE_FORCED_64_OP_SIZE)
-            pCpu->opsize = CPUMODE_64BIT;
+            pCpu->opmode = CPUMODE_64BIT;
         else
         if (    (pOp->optype & OPTYPE_DEFAULT_64_OP_SIZE)
             &&  !(pCpu->prefix & PREFIX_OPSIZE))
-            pCpu->opsize = CPUMODE_64BIT;
+            pCpu->opmode = CPUMODE_64BIT;
     }
 
     if (pOp->idxParse1 != IDX_ParseNop)
@@ -493,11 +514,11 @@ unsigned ParseEscFP(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam,
     {
         /* Note: redundant, but just in case this ever changes */
         if (fpop->optype & OPTYPE_FORCED_64_OP_SIZE)
-            pCpu->opsize = CPUMODE_64BIT;
+            pCpu->opmode = CPUMODE_64BIT;
         else
         if (    (fpop->optype & OPTYPE_DEFAULT_64_OP_SIZE)
             &&  !(pCpu->prefix & PREFIX_OPSIZE))
-            pCpu->opsize = CPUMODE_64BIT;
+            pCpu->opmode = CPUMODE_64BIT;
     }
 
     // Little hack to make sure the ModRM byte is included in the returned size
@@ -526,7 +547,9 @@ static const char *szSIBBaseReg[8]    = {"EAX", "ECX", "EDX", "EBX", "ESP", "EBP
 static const char *szSIBIndexReg[8]   = {"EAX", "ECX", "EDX", "EBX", NULL,  "EBP", "ESI", "EDI"};
 static const char *szSIBBaseReg64[16] = {"RAX", "RCX", "RDX", "RBX", "RSP", "RBP", "RSI", "RDI", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"};
 static const char *szSIBIndexReg64[16]= {"RAX", "RCX", "RDX", "RBX", NULL,  "RBP", "RSI", "RDI", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"};
+#if !defined(DIS_CORE_ONLY) && defined(LOG_ENABLED) || defined(_MSC_VER)
 static const char *szSIBScale[4]    = {"", "*2", "*4", "*8"};
+#endif
 //*****************************************************************************
 void UseSIB(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu)
 {
@@ -555,7 +578,7 @@ void UseSIB(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPU
 
     if (ppszSIBIndexReg[index])
     {
-         pParam->flags |= USE_INDEX;
+         pParam->flags |= USE_INDEX | regtype;
          pParam->index.reg_gen = index;
 
          if (scale != 0)
@@ -579,10 +602,20 @@ void UseSIB(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPU
     {
         // [scaled index] + disp32
         disasmAddString(pParam->szParam, &szTemp[0]);
-        pParam->flags |= USE_DISPLACEMENT32;
-        pParam->disp32 = pCpu->disp;
-        disasmAddChar(pParam->szParam, '+');
-        disasmPrintDisp32(pParam);
+        if (pCpu->addrmode == CPUMODE_32BIT)
+        {
+            pParam->flags |= USE_DISPLACEMENT32;
+            pParam->disp32 = pCpu->disp;
+            disasmAddChar(pParam->szParam, '+');
+            disasmPrintDisp32(pParam);
+        }
+        else
+        {   /* sign-extend to 64 bits */
+            pParam->flags |= USE_DISPLACEMENT64;
+            pParam->disp64 = pCpu->disp;
+            disasmAddChar(pParam->szParam, '+');
+            disasmPrintDisp64(pParam);
+        }
     }
     else
     {
@@ -1147,12 +1180,20 @@ unsigned ParseImmByte_SizeOnly(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAME
 //*****************************************************************************
 unsigned ParseImmByteSX(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu)
 {
-    if (pCpu->opmode == CPUMODE_32BIT) /** @todo In AMD64 mode we're ending up with 16-bit parvals now, see the disassembler _output_ for tstAsmSignExtend-1.asm. */
+    if (pCpu->opmode == CPUMODE_32BIT)
     {
         pParam->parval = (uint32_t)(int8_t)DISReadByte(pCpu, lpszCodeBlock);
         pParam->flags |= USE_IMMEDIATE32_SX8;
         pParam->size   = sizeof(uint32_t);
         disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "0%08Xh", (uint32_t)pParam->parval);
+    }
+    else
+    if (pCpu->opmode == CPUMODE_64BIT)
+    {
+        pParam->parval = (uint64_t)(int8_t)DISReadByte(pCpu, lpszCodeBlock);
+        pParam->flags |= USE_IMMEDIATE64_SX8;
+        pParam->size   = sizeof(uint64_t);
+        disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "0%016RX64h", pParam->parval);
     }
     else
     {
@@ -1282,11 +1323,21 @@ unsigned ParseImmZ(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, 
     }
     else
     {
-        pParam->parval = DISReadDWord(pCpu, lpszCodeBlock);
-        pParam->flags |= USE_IMMEDIATE32;
-        pParam->size   = sizeof(uint32_t);
-
-        disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "0%08Xh", (uint32_t)pParam->parval);
+        /* 64 bits op mode means *sign* extend to 64 bits. */
+        if (pCpu->opmode == CPUMODE_64BIT)
+        {
+            pParam->parval = (uint64_t)(int32_t)DISReadDWord(pCpu, lpszCodeBlock);           
+            pParam->flags |= USE_IMMEDIATE64;
+            pParam->size   = sizeof(uint64_t);
+            disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "0%VX64h", pParam->parval);
+        }
+        else
+        {
+            pParam->parval = DISReadDWord(pCpu, lpszCodeBlock);
+            pParam->flags |= USE_IMMEDIATE32;
+            pParam->size   = sizeof(uint32_t);
+            disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "0%08Xh", (uint32_t)pParam->parval);
+        }
         return sizeof(uint32_t);
     }
 }
@@ -1336,12 +1387,13 @@ unsigned ParseImmVRel(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pPara
     else
     if (pCpu->opmode == CPUMODE_64BIT)
     {
-        pParam->parval = DISReadQWord(pCpu, lpszCodeBlock);
+        /* 32 bits relative immediate sign extended to 64 bits. */
+        pParam->parval = (uint64_t)(int32_t)DISReadDWord(pCpu, lpszCodeBlock);
         pParam->flags |= USE_IMMEDIATE64_REL;
         pParam->size   = sizeof(int64_t);
 
         disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), " (0%VX64h)", pParam->parval);
-        return sizeof(int64_t);
+        return sizeof(int32_t);
     }
     else
     {
@@ -1350,7 +1402,7 @@ unsigned ParseImmVRel(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pPara
         pParam->size   = sizeof(int16_t);
 
         disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), " (0%04Xh)", (uint32_t)pParam->parval);
-        return sizeof(uint16_t);
+        return sizeof(int16_t);
     }
 }
 //*****************************************************************************
@@ -1358,12 +1410,10 @@ unsigned ParseImmVRel(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pPara
 //*****************************************************************************
 unsigned ParseImmVRel_SizeOnly(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu)
 {
-    if (pCpu->opmode == CPUMODE_32BIT)
-        return sizeof(int32_t);
-    else
-    if (pCpu->opmode == CPUMODE_64BIT)
-        return sizeof(int64_t);
-    return sizeof(uint16_t);
+    if (pCpu->opmode == CPUMODE_16BIT)
+        return sizeof(int16_t);
+    /* Both 32 & 64 bits mode use 32 bits relative immediates. */
+    return sizeof(int32_t);
 }
 //*****************************************************************************
 //*****************************************************************************
@@ -1526,7 +1576,7 @@ unsigned ParseFixedReg(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pPar
     if (pParam->param <= OP_PARM_REG_SEG_END)
     {
         /* Segment ES..GS registers. */
-        pParam->base.reg_seg = pParam->param - OP_PARM_REG_SEG_START;
+        pParam->base.reg_seg = (DIS_SELREG)(pParam->param - OP_PARM_REG_SEG_START);
         pParam->flags |= USE_REG_SEG;
         pParam->size   = 2;
     }
@@ -2109,10 +2159,9 @@ unsigned ParseGrp16(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam,
 }
 //*****************************************************************************
 #if !defined(DIS_CORE_ONLY) && defined(LOG_ENABLED)
-static const char *szModRMReg8[]      = {"AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH"};
-static const char *szModRMReg8_64[]   = {"AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH", "R8L", "R9L", "R10L", "R11L", "R12L", "R13L", "R14L", "R15L"};
-static const char *szModRMReg16[]     = {"AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI"};
-static const char *szModRMReg32[]     = {"EAX", "ECX", "EDX", "EBX", "ESP", "EBP", "ESI", "EDI"};
+static const char *szModRMReg8[]      = {"AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH", "R8B", "R9B", "R10B", "R11B", "R12B", "R13B", "R14B", "R15B", "SPL", "BPL", "SIL", "DIL"};
+static const char *szModRMReg16[]     = {"AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI", "R8W", "R9W", "R10W", "R11W", "R12W", "R13W", "R14W", "R15W"};
+static const char *szModRMReg32[]     = {"EAX", "ECX", "EDX", "EBX", "ESP", "EBP", "ESI", "EDI", "R8D", "R9D", "R10D", "R11D", "R12D", "R13D", "R14D", "R15D"};
 static const char *szModRMReg64[]     = {"RAX", "RCX", "RDX", "RBX", "RSP", "RBP", "RSI", "RDI", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"};
 static const char *szModRMReg1616[8]  = {"BX+SI", "BX+DI", "BP+SI", "BP+DI", "SI", "DI", "BP", "BX"};
 #endif
@@ -2120,7 +2169,7 @@ static const char *szModRMSegReg[6]   = {"ES", "CS", "SS", "DS", "FS", "GS"};
 static const int   BaseModRMReg16[8]  = { USE_REG_BX, USE_REG_BX, USE_REG_BP, USE_REG_BP, USE_REG_SI, USE_REG_DI, USE_REG_BP, USE_REG_BX};
 static const int   IndexModRMReg16[4] = { USE_REG_SI, USE_REG_DI, USE_REG_SI, USE_REG_DI};
 //*****************************************************************************
-void disasmModRMReg(PDISCPUSTATE pCpu, PCOPCODE pOp, int idx, POP_PARAMETER pParam, int fRegAddr)
+void disasmModRMReg(PDISCPUSTATE pCpu, PCOPCODE pOp, unsigned idx, POP_PARAMETER pParam, int fRegAddr)
 {
     int subtype, type, mod;
 
@@ -2153,24 +2202,34 @@ void disasmModRMReg(PDISCPUSTATE pCpu, PCOPCODE pOp, int idx, POP_PARAMETER pPar
     switch (subtype)
     {
     case OP_PARM_b:
-#if !defined(DIS_CORE_ONLY) && defined(LOG_ENABLED)
-        if (idx > (int)RT_ELEMENTS(szModRMReg8))
-            disasmAddString(pParam->szParam, szModRMReg8_64[idx]);
-        else
-            disasmAddString(pParam->szParam, szModRMReg8[idx]);
-#endif
+        Assert(idx < (pCpu->prefix & PREFIX_REX) ? 16 : 8);
+
+        /* AH, BH, CH & DH map to DIL, SIL, EBL & SPL when a rex prefix is present. */
+        /* Intel® 64 and IA-32 Architectures Software Developer’s Manual: 3.4.1.1 */
+        if (    (pCpu->prefix & PREFIX_REX)
+            &&  idx >= USE_REG_AH 
+            &&  idx <= USE_REG_BH)
+        {
+            idx += (USE_REG_SPL - USE_REG_AH);
+        }
+        disasmAddString(pParam->szParam, szModRMReg8[idx]);
+
         pParam->flags |= USE_REG_GEN8;
         pParam->base.reg_gen = idx;
         break;
 
     case OP_PARM_w:
         disasmAddString(pParam->szParam, szModRMReg16[idx]);
+        Assert(idx < (pCpu->prefix & PREFIX_REX) ? 16 : 8);
+
         pParam->flags |= USE_REG_GEN16;
         pParam->base.reg_gen = idx;
         break;
 
     case OP_PARM_d:
         disasmAddString(pParam->szParam, szModRMReg32[idx]);
+        Assert(idx < (pCpu->prefix & PREFIX_REX) ? 16 : 8);
+
         pParam->flags |= USE_REG_GEN32;
         pParam->base.reg_gen = idx;
         break;
@@ -2193,7 +2252,7 @@ void disasmModRMReg(PDISCPUSTATE pCpu, PCOPCODE pOp, int idx, POP_PARAMETER pPar
 }
 //*****************************************************************************
 //*****************************************************************************
-void disasmModRMReg16(PDISCPUSTATE pCpu, PCOPCODE pOp, int idx, POP_PARAMETER pParam)
+void disasmModRMReg16(PDISCPUSTATE pCpu, PCOPCODE pOp, unsigned idx, POP_PARAMETER pParam)
 {
     disasmAddString(pParam->szParam, szModRMReg1616[idx]);
     pParam->flags |= USE_REG_GEN16;
@@ -2206,23 +2265,23 @@ void disasmModRMReg16(PDISCPUSTATE pCpu, PCOPCODE pOp, int idx, POP_PARAMETER pP
 }
 //*****************************************************************************
 //*****************************************************************************
-void disasmModRMSReg(PDISCPUSTATE pCpu, PCOPCODE pOp, int idx, POP_PARAMETER pParam)
+void disasmModRMSReg(PDISCPUSTATE pCpu, PCOPCODE pOp, unsigned idx, POP_PARAMETER pParam)
 {
 #if 0 //def DEBUG_Sander
-    AssertMsg(idx < (int)ELEMENTS(szModRMSegReg), ("idx=%d\n", idx));
+    AssertMsg(idx < ELEMENTS(szModRMSegReg), ("idx=%d\n", idx));
 #endif
 #ifdef IN_RING3
-    if (idx >= (int)ELEMENTS(szModRMSegReg))
+    if (idx >= ELEMENTS(szModRMSegReg))
     {
         Log(("disasmModRMSReg %d failed!!\n", idx));
         DIS_THROW(ExceptionInvalidParameter);
     }
 #endif
 
-    idx = RT_MIN(idx, (int)ELEMENTS(szModRMSegReg)-1);
+    idx = RT_MIN(idx, ELEMENTS(szModRMSegReg)-1);
     disasmAddString(pParam->szParam, szModRMSegReg[idx]);
     pParam->flags |= USE_REG_SEG;
-    pParam->base.reg_seg = idx;
+    pParam->base.reg_seg = (DIS_SELREG)idx;
 }
 //*****************************************************************************
 //*****************************************************************************
@@ -2235,6 +2294,12 @@ void disasmPrintAbs32(POP_PARAMETER pParam)
 void disasmPrintDisp32(POP_PARAMETER pParam)
 {
     disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "%08Xh", pParam->disp32);
+}
+//*****************************************************************************
+//*****************************************************************************
+void disasmPrintDisp64(POP_PARAMETER pParam)
+{
+    disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "%16RX64h", pParam->disp64);
 }
 //*****************************************************************************
 //*****************************************************************************
@@ -2308,7 +2373,7 @@ void disasmGetPtrString(PDISCPUSTATE pCpu, PCOPCODE pOp, POP_PARAMETER pParam)
         break; //no pointer type specified/necessary
     }
     if (pCpu->prefix & PREFIX_SEG)
-        disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "%s:", szModRMSegReg[pCpu->prefix_seg]);
+        disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "%s:", szModRMSegReg[pCpu->enmPrefixSeg]);
 }
 #ifndef IN_GC
 //*****************************************************************************
@@ -2506,7 +2571,7 @@ void disValidateLockSequence(PDISCPUSTATE pCpu)
         case OP_SUB:
         case OP_XCHG:
         case OP_XOR:
-            if (pCpu->param1.flags & (USE_BASE | USE_INDEX | USE_DISPLACEMENT32 | USE_DISPLACEMENT16 | USE_DISPLACEMENT8 | USE_RIPDISPLACEMENT32))
+            if (pCpu->param1.flags & (USE_BASE | USE_INDEX | USE_DISPLACEMENT64 | USE_DISPLACEMENT32 | USE_DISPLACEMENT16 | USE_DISPLACEMENT8 | USE_RIPDISPLACEMENT32))
                 return;
             break;
 

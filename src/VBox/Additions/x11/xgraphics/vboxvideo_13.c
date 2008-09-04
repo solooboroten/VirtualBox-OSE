@@ -51,7 +51,9 @@
  * Authors: Paulo César Pereira de Andrade <pcpa@conectiva.com.br>
  */
 
-/* #define DEBUG_VIDEO 1 */
+#ifdef DEBUG_michael
+# define DEBUG_VIDEO 1
+#endif
 #ifdef DEBUG_VIDEO
 
 #define TRACE \
@@ -299,6 +301,8 @@ vbox_crtc_mode_set (xf86CrtcPtr crtc, DisplayModePtr mode,
            adjusted_mode->HDisplay, adjusted_mode->VDisplay, x, y);
     VBOXSetMode(crtc->scrn, adjusted_mode);
     VBOXAdjustFrame(crtc->scrn->scrnIndex, x, y, 0);
+    vboxSaveVideoMode(crtc->scrn, adjusted_mode->HDisplay,
+                      adjusted_mode->VDisplay, crtc->scrn->bitsPerPixel);
 }
 
 static void
@@ -344,11 +348,15 @@ vbox_output_dpms (xf86OutputPtr output, int mode)
 static int
 vbox_output_mode_valid (xf86OutputPtr output, DisplayModePtr mode)
 {
+    ScrnInfoPtr pScrn = output->scrn;
     int rc = MODE_OK;
     TRACE3("HDisplay=%d, VDisplay=%d\n", mode->HDisplay, mode->VDisplay);
-    if (   vbox_device_available(VBOXGetRec(output->scrn))
-        && !vboxHostLikesVideoMode(mode->HDisplay, mode->VDisplay,
-                                   output->scrn->bitsPerPixel)
+    /* We always like modes specified by the user in the configuration
+     * file, as doing otherwise is likely to annoy people. */
+    if (   !(mode->type & M_T_USERDEF)
+        && vbox_device_available(VBOXGetRec(pScrn))
+        && !vboxHostLikesVideoMode(pScrn, mode->HDisplay,
+                                   mode->VDisplay, pScrn->bitsPerPixel)
        )
         rc = MODE_BAD;
     TRACE3("returning %s\n", MODE_OK == rc ? "MODE_OK" : "MODE_BAD");
@@ -375,13 +383,17 @@ vbox_output_detect (xf86OutputPtr output)
 
 static void
 vbox_output_add_mode (DisplayModePtr *pModes, const char *pszName, int x, int y,
-                      Bool isPreferred)
+                      Bool isPreferred, Bool isUserDef)
 {
     TRACE3("pszName=%s, x=%d, y=%d\n", pszName, x, y);
     DisplayModePtr pMode = xnfcalloc(1, sizeof(DisplayModeRec));
 
     pMode->status        = MODE_OK;
-    pMode->type          = isPreferred ? M_T_PREFERRED : M_T_BUILTIN;
+    /* We don't ask the host whether it likes user defined modes,
+     * as we assume that the user really wanted that mode. */
+    pMode->type          = isUserDef ? M_T_USERDEF : M_T_BUILTIN;
+    if (isPreferred)
+        pMode->type     |= M_T_PREFERRED;
     /* VBox only supports screen widths which are a multiple of 8 */
     pMode->HDisplay      = (x + 7) & ~7;
     pMode->HSyncStart    = pMode->HDisplay + 2;
@@ -403,8 +415,8 @@ vbox_output_add_mode (DisplayModePtr *pModes, const char *pszName, int x, int y,
 static DisplayModePtr
 vbox_output_get_modes (xf86OutputPtr output)
 {
-    uint32_t x, y, bpp, display;
     bool rc;
+    unsigned i;
     DisplayModePtr pModes = NULL;
     ScrnInfoPtr pScrn = output->scrn;
     VBOXPtr pVBox = VBOXGetRec(pScrn);
@@ -412,14 +424,35 @@ vbox_output_get_modes (xf86OutputPtr output)
     TRACE;
     if (vbox_device_available(pVBox))
     {
-        rc = vboxGetDisplayChangeRequest(pScrn, &x, &y, &bpp, &display, pVBox);
-        /* @todo - check the display number once we support multiple displays. */
+        uint32_t x, y, bpp, display;
+        rc = vboxGetDisplayChangeRequest(pScrn, &x, &y, &bpp, &display);
+        /** @todo - check the display number once we support multiple displays. */
+        /* If we don't find a display request, see if we have a saved hint
+         * from a previous session. */
+        if (rc)
+            TRACE3("Got a display change request for %dx%d\n", x, y);
+        if (!rc || (0 == x) || (0 == y))
+        {
+            rc = vboxRetrieveVideoMode(pScrn, &x, &y, &bpp);
+            if (rc)
+                TRACE3("Retrieved a video mode of %dx%d\n", x, y);
+        }
         if (rc && (0 != x) && (0 != y)) {
             /* We prefer a slightly smaller size to a slightly larger one */
             x -= (x % 8);
-            vbox_output_add_mode(&pModes, NULL, x, y, TRUE);
+            vbox_output_add_mode(&pModes, NULL, x, y, TRUE, FALSE);
         }
     }
+    /* Also report any modes the user may have requested in the xorg.conf
+     * configuration file. */
+    for (i = 0; pScrn->display->modes[i] != NULL; i++)
+    {
+        int x, y;
+        if (2 == sscanf(pScrn->display->modes[i], "%dx%d", &x, &y))
+            vbox_output_add_mode(&pModes, pScrn->display->modes[i], x, y,
+                                 FALSE, TRUE);
+    }
+
     TRACE2;
     return pModes;
 }
@@ -719,7 +752,7 @@ VBOXPreInit(ScrnInfoPtr pScrn, int flags)
         {
             /* We only support 16 and 24 bits depth (i.e. 16 and 32bpp) */
             if (   vboxGetDisplayChangeRequest(pScrn, &cx, &cy, &cBits,
-                                               &iDisplay, pVBox)
+                                               &iDisplay)
                 && (cBits != 16)
                )
                 cBits = 24;
@@ -810,11 +843,11 @@ VBOXPreInit(ScrnInfoPtr pScrn, int flags)
 /**
  * This function hooks into the chain that is called when framebuffer access
  * is allowed or disallowed by a call to EnableDisableFBAccess in the server.
- * In other words, it observes when the server wishes access to the 
+ * In other words, it observes when the server wishes access to the
  * framebuffer to be enabled and when it should be disabled.  We need to know
  * this because we disable access ourselves during mode switches (presumably
  * the server should do this but it doesn't) and want to know whether to
- * restore it or not afterwards. 
+ * restore it or not afterwards.
  */
 static void
 vboxEnableDisableFBAccess(int scrnIndex, Bool enable)

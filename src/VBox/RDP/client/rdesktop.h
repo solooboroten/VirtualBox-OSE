@@ -1,26 +1,42 @@
 /*
    rdesktop: A Remote Desktop Protocol client.
    Master include file
-   Copyright (C) Matthew Chapman 1999-2005
-   
+   Copyright (C) Matthew Chapman 1999-2007
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
+/*
+ * Sun GPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the General Public License version 2 (GPLv2) at this time for any software where
+ * a choice of GPL license versions is made available with the language indicating
+ * that GPLv2 or any later version may be used, or where a choice of which version
+ * of the GPL is applied is otherwise unspecified.
+ */
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#define WINVER 0x0400
+#include <windows.h>
+#include <winsock.h>
+#include <time.h>
+#define DIR int
+#else
 #include <dirent.h>
 #include <sys/time.h>
 #ifdef HAVE_SYS_SELECT_H
@@ -29,13 +45,15 @@
 #include <sys/types.h>
 #include <unistd.h>
 #endif
+#endif
 #include <limits.h>		/* PATH_MAX */
 
-#define VERSION "1.5.0"
+#define VERSION "1.6.0"
 
 #ifdef VBOX
 #undef DEBUG
 #endif
+
 #ifdef WITH_DEBUG
 #define DEBUG(args)	printf args;
 #else
@@ -60,10 +78,22 @@
 #define DEBUG_CLIPBOARD(args)
 #endif
 
+#ifdef WITH_DEBUG_SOUND
+#define DEBUG_SOUND(args) printf args;
+#else
+#define DEBUG_SOUND(args)
+#endif
+
 #ifdef WITH_DEBUG_CHANNEL
 #define DEBUG_CHANNEL(args) printf args;
 #else
 #define DEBUG_CHANNEL(args)
+#endif
+
+#ifdef WITH_DEBUG_SCARD
+#define DEBUG_SCARD(args) printf args;
+#else
+#define DEBUG_SCARD(args)
 #endif
 
 #define STRNCPY(dst,src,n)	{ strncpy(dst,src,n-1); dst[n-1] = 0; }

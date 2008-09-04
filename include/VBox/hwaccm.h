@@ -74,6 +74,14 @@ __BEGIN_DECLS
  */
 HWACCMDECL(int) HWACCMInvalidatePage(PVM pVM, RTGCPTR GCVirt);
 
+/**
+ * Checks if an interrupt event is currently pending. 
+ *
+ * @returns Interrupt event pending state.
+ * @param   pVM         The VM to operate on.
+ */
+HWACCMDECL(bool) HWACCMHasPendingIrq(PVM pVM);
+
 #ifndef IN_GC
 /**
  * Flushes the guest TLB
@@ -101,6 +109,14 @@ HWACCMDECL(int) HWACCMInvalidatePhysPage(PVM pVM, RTGCPHYS GCPhys);
  * @param   pVM         The VM to operate on.
  */
 HWACCMDECL(bool) HWACCMIsNestedPagingActive(PVM pVM);
+
+/**
+ * Return the shadow paging mode for nested paging/ept
+ *
+ * @returns shadow paging mode
+ * @param   pVM         The VM to operate on.
+ */
+HWACCMDECL(PGMMODE) HWACCMGetPagingMode(PVM pVM);
 
 #else
 /* Nop in GC */
@@ -222,6 +238,15 @@ HWACCMR3DECL(void) HWACCMR3Reset(PVM pVM);
 
 
 /**
+ * Check fatal VT-x/AMD-V error and produce some meaningful 
+ * log release message.
+ *
+ * @param   pVM         The VM to operate on.
+ * @param   iStatusCode VBox status code
+ */
+HWACCMR3DECL(void) HWACCMR3CheckError(PVM pVM, int iStatusCode);
+
+/**
  * Checks if we can currently use hardware accelerated raw mode.
  *
  * @returns boolean
@@ -238,6 +263,14 @@ HWACCMR3DECL(bool) HWACCMR3CanExecuteGuest(PVM pVM, PCPUMCTX pCtx);
  * @param   pVM         The VM to operate on.
  */
 HWACCMR3DECL(bool) HWACCMR3IsActive(PVM pVM);
+
+/**
+ * Checks if we are currently using nested paging.
+ *
+ * @returns boolean
+ * @param   pVM         The VM to operate on.
+ */
+HWACCMR3DECL(bool) HWACCMR3IsNestedPagingActive(PVM pVM);
 
 /**
  * Checks hardware accelerated raw mode is allowed.

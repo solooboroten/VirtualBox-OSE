@@ -1,4 +1,4 @@
-/* $Id: DrvHostDVD.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: DrvHostDVD.cpp 34377 2008-08-08 22:32:08Z bird $ */
 /** @file
  * DrvHostDVD - Host DVD block driver.
  */
@@ -24,6 +24,8 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_DRV_HOST_DVD
+#define __STDC_LIMIT_MACROS
+#define __STDC_CONSTANT_MACROS
 #ifdef RT_OS_DARWIN
 # include <mach/mach.h>
 # include <Carbon/Carbon.h>
@@ -159,7 +161,7 @@ static DECLCALLBACK(int) drvHostDvdUnmount(PPDMIMOUNT pInterface, bool fForce)
          RTFILE FileDevice = pThis->FileDevice;
          if (FileDevice == NIL_RTFILE) /* obsolete crap */
              rc = RTFileOpen(&FileDevice, pThis->pszDeviceOpen, RTFILE_O_READ | RTFILE_O_OPEN | RTFILE_O_DENY_NONE);
-         if (VBOX_SUCCESS(rc))
+         if (RT_SUCCESS(rc))
          {
              /* do ioctl */
              DWORD cbReturned;
@@ -196,7 +198,7 @@ static DECLCALLBACK(int) drvHostDvdUnmount(PPDMIMOUNT pInterface, bool fForce)
      }
 
      RTCritSectLeave(&pThis->CritSect);
-     LogFlow(("drvHostDvdUnmount: returns %Vrc\n", rc));
+     LogFlow(("drvHostDvdUnmount: returns %Rrc\n", rc));
      return rc;
 }
 
@@ -262,7 +264,7 @@ static DECLCALLBACK(int) drvHostDvdDoLock(PDRVHOSTBASE pThis, bool fLock)
 
 #endif
 
-    LogFlow(("drvHostDvdDoLock(, fLock=%RTbool): returns %Vrc\n", fLock, rc));
+    LogFlow(("drvHostDvdDoLock(, fLock=%RTbool): returns %Rrc\n", fLock, rc));
     return rc;
 }
 
@@ -309,7 +311,7 @@ DECLCALLBACK(int) drvHostDvdPoll(PDRVHOSTBASE pThis)
     uint8_t abCmd[16] = { SCSI_TEST_UNIT_READY, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
     uint8_t abSense[32];
     int rc2 = DRVHostBaseScsiCmd(pThis, abCmd, 6, PDMBLOCKTXDIR_NONE, NULL, NULL, abSense, sizeof(abSense), 0);
-    if (VBOX_SUCCESS(rc2))
+    if (RT_SUCCESS(rc2))
         fMediaPresent = true;
     else if (   rc2 == VERR_UNRESOLVED_ERROR
              && abSense[2] == 6 /* unit attention */
@@ -469,7 +471,7 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
                 cgc.sense->sense_key = SCSI_SENSE_ILLEGAL_REQUEST;
             *pbStat = cgc.sense->sense_key;
             rc = RTErrConvertFromErrno(errno);
-            Log2(("%s: error status %d, rc=%Vrc\n", __FUNCTION__, cgc.stat, rc));
+            Log2(("%s: error status %d, rc=%Rrc\n", __FUNCTION__, cgc.stat, rc));
         }
     }
     Log2(("%s: after ioctl: cgc.buflen=%d txlen=%d\n", __FUNCTION__, cgc.buflen, *pcbBuf));
@@ -538,7 +540,7 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
         {
             *pbStat = aSense[2] & 0x0f;
             rc = RTErrConvertFromErrno(errno);
-            Log2(("%s: error status. rc=%Vrc\n", __FUNCTION__, rc));
+            Log2(("%s: error status. rc=%Rrc\n", __FUNCTION__, rc));
         }
         else
             *pbStat = 0;
@@ -606,7 +608,7 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
 #else
 # error "Unsupported platform."
 #endif
-    LogFlow(("%s: rc=%Vrc\n", __FUNCTION__, rc));
+    LogFlow(("%s: rc=%Rrc\n", __FUNCTION__, rc));
     return rc;
 }
 
@@ -693,7 +695,7 @@ static int solarisExitRootMode(uid_t *pEffUserID)
  */
 static DECLCALLBACK(int) drvHostDvdConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
 {
-    PDRVHOSTBASE pThis = PDMINS2DATA(pDrvIns, PDRVHOSTBASE);
+    PDRVHOSTBASE pThis = PDMINS_2_DATA(pDrvIns, PDRVHOSTBASE);
     LogFlow(("drvHostDvdConstruct: iInstance=%d\n", pDrvIns->iInstance));
 
     /*
@@ -707,7 +709,7 @@ static DECLCALLBACK(int) drvHostDvdConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgH
      * Init instance data.
      */
     int rc = DRVHostBaseInitData(pDrvIns, pCfgHandle, PDMBLOCKTYPE_DVD);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         /*
          * Override stuff.
@@ -716,14 +718,14 @@ static DECLCALLBACK(int) drvHostDvdConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgH
 #ifndef RT_OS_L4 /* Passthrough is not supported on L4 yet */
         bool fPassthrough;
         rc = CFGMR3QueryBool(pCfgHandle, "Passthrough", &fPassthrough);
-        if (VBOX_SUCCESS(rc) && fPassthrough)
+        if (RT_SUCCESS(rc) && fPassthrough)
         {
             pThis->IBlock.pfnSendCmd = drvHostDvdSendCmd;
             /* Passthrough requires opening the device in R/W mode. */
             pThis->fReadOnlyConfig = false;
 # ifdef VBOX_WITH_SUID_WRAPPER  /* Solaris setuid for Passthrough mode. */
             rc = solarisCheckUserAuth();
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
             {
                 Log(("DVD: solarisCheckUserAuth failed. Permission denied!\n"));
                 return rc;
@@ -749,7 +751,7 @@ static DECLCALLBACK(int) drvHostDvdConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgH
          */
         rc = DRVHostBaseInitFinish(pThis);
     }
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         if (!pThis->fAttachFailError)
         {
@@ -762,7 +764,7 @@ static DECLCALLBACK(int) drvHostDvdConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgH
         pThis->fKeepInstance = false;
     }
 
-    LogFlow(("drvHostDvdConstruct: returns %Vrc\n", rc));
+    LogFlow(("drvHostDvdConstruct: returns %Rrc\n", rc));
     return rc;
 }
 

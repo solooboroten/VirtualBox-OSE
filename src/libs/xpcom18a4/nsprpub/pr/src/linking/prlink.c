@@ -34,6 +34,10 @@
 
 #include "primpl.h"
 
+#ifdef VBOX_WITH_XPCOM_NAMESPACE_CLEANUP
+#define PR_FindLibrary VBoxNsprPR_FindLibrary
+#endif /* VBOX_WITH_XPCOM_NAMESPACE_CLEANUP */
+
 #include <string.h>
 
 #ifdef XP_BEOS
@@ -1064,6 +1068,9 @@ pr_LoadLibraryByPathname(const char *name, PRIntn flags)
 #endif
     if (!h) {
         oserr = _MD_ERRNO();
+#ifdef DEBUG
+        fprintf(stderr, "pr_LoadLibraryByPathname(): Failed to load '%s'\n", name);
+#endif
         PR_DELETE(lm);
         goto unlock;
     }

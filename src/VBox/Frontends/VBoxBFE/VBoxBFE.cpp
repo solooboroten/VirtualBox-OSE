@@ -1,4 +1,4 @@
-/* $Id: VBoxBFE.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: VBoxBFE.cpp 35651 2008-08-29 14:09:39Z frank $ */
 /** @file
  * Basic Frontend (BFE): VBoxBFE main routines.
  *
@@ -45,7 +45,7 @@ using namespace com;
 #ifdef VBOXBFE_WITH_USB
 # include <VBox/vusb.h>
 #endif
-#ifdef VBOX_HGCM
+#ifdef VBOX_WITH_HGCM
 # include <VBox/shflsvc.h>
 #endif
 #include <iprt/alloca.h>
@@ -204,7 +204,7 @@ typedef struct BFENetworkDevice
     }           enmType;    /**< The type of network driver. */
     bool        fSniff;     /**< Set if the network sniffer should be installed. */
     const char *pszSniff;   /**< Output file for the network sniffer. */
-    PDMMAC      Mac;        /**< The mac address for the device. */
+    RTMAC       Mac;        /**< The mac address for the device. */
     const char *pszName;    /**< The device name of a HIF device. The name of the internal network. */
 #ifdef RT_OS_OS2
     bool        fHaveConnectTo; /**< Whether fConnectTo is set. */
@@ -391,7 +391,7 @@ static void show_usage()
 #ifdef RT_OS_LINUX
              "  -tapfd<1-N> <fd>   Use existing TAP device, don't allocate\n"
 #endif
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
              "  -vrdp [port]       Listen for VRDP connections on port (default if not specified)\n"
 #endif
 #ifdef VBOX_SECURELABEL
@@ -414,36 +414,10 @@ static void show_usage()
 
 
 /** entry point */
-int main(int argc, char **argv)
+extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char **envp)
 {
-#ifdef RT_OS_L4
-#ifndef L4API_l4v2onv4
-    /* clear Fiasco kernel trace buffer */
-    fiasco_tbuf_clear();
-#endif
-    /* set the environment.  Must be done before the runtime is
-       initialised.  Yes, it really must. */
-    for (int i = 0; i < argc; i++)
-        if (strcmp(argv[i], "-env") == 0)
-        {
-            if (++i >= argc)
-                return SyntaxError("missing argument to -env (format: var=value)!\n");
-            /* add it to the environment */
-            if (putenv(argv[i]) != 0)
-                return SyntaxError("Error setting environment string %s.\n", argv[i]);
-        }
-#endif /* RT_OS_L4 */
-
-    /*
-     * Before we do *anything*, we initialize the runtime.
-     */
-    int rc = RTR3Init();
-    if (VBOX_FAILURE(rc))
-        return FatalError("RTR3Init failed rc=%Vrc\n", rc);
-
-
     bool fFullscreen = false;
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     int32_t portVRDP = -1;
 #endif
 #ifdef VBOX_SECURELABEL
@@ -454,6 +428,7 @@ int main(int argc, char **argv)
 #ifdef RT_OS_L4
     uint32_t u32MaxVRAM;
 #endif
+    int rc = VINF_SUCCESS;
 
     RTPrintf("VirtualBox Simple SDL GUI built %s %s\n", __DATE__, __TIME__);
 
@@ -737,7 +712,7 @@ int main(int argc, char **argv)
             g_aNetDevs[i].fHaveFd = true;
         }
 #endif /* RT_OS_LINUX */
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
         else if (strcmp(pszArg, "-vrdp") == 0)
         {
             // -vrdp might take a port number (positive).
@@ -751,7 +726,7 @@ int main(int argc, char **argv)
                     return SyntaxError("vrdp port number is out of range: %RI32\n", portVRDP);
             }
         }
-#endif /* VBOX_VRDP */
+#endif /* VBOX_WITH_VRDP */
 #ifdef VBOX_SECURELABEL
         else if (strcmp(pszArg, "-securelabel") == 0)
         {
@@ -1010,6 +985,41 @@ leave:
 }
 
 
+#ifndef VBOX_WITH_HARDENING
+/**
+ * Main entry point.
+ */
+int main(int argc, char **argv)
+{
+# ifdef RT_OS_L4
+# ifndef L4API_l4v2onv4
+    /* clear Fiasco kernel trace buffer */
+    fiasco_tbuf_clear();
+# endif
+    /* set the environment.  Must be done before the runtime is
+       initialised.  Yes, it really must. */
+    for (int i = 0; i < argc; i++)
+        if (strcmp(argv[i], "-env") == 0)
+        {
+            if (++i >= argc)
+                return SyntaxError("missing argument to -env (format: var=value)!\n");
+            /* add it to the environment */
+            if (putenv(argv[i]) != 0)
+                return SyntaxError("Error setting environment string %s.\n", argv[i]);
+        }
+# endif /* RT_OS_L4 */
+
+    /*
+     * Before we do *anything*, we initialize the runtime.
+     */
+    int rc = RTR3Init();
+    if (VBOX_FAILURE(rc))
+        return FatalError("RTR3Init failed rc=%Vrc\n", rc);
+
+    return TrustedMain(argc, argv, NULL);
+}
+#endif /* !VBOX_WITH_HARDENING */
+
 
 /**
  * VM state callback function. Called by the VMM
@@ -1174,7 +1184,7 @@ DECLCALLBACK(int) VMPowerUpThread(RTTHREAD Thread, void *pvUser)
         goto failure;
     }
 
-#ifdef VBOX_HGCM
+#ifdef VBOX_WITH_HGCM
     /*
      * Add shared folders to the VM
      */
@@ -1730,7 +1740,7 @@ static DECLCALLBACK(int) vboxbfeConfigConstructor(PVM pVM, void *pvUser)
                                              !ulInstance ? 3 : ulInstance - 1 + 8); UPDATE_RC();
             rc = CFGMR3InsertInteger(pInst, "PCIFunctionNo",  0);                   UPDATE_RC();
             rc = CFGMR3InsertNode(pInst,    "Config",         &pCfg);               UPDATE_RC();
-            rc = CFGMR3InsertBytes(pCfg,    "MAC",            &g_aNetDevs[ulInstance].Mac, sizeof(PDMMAC));
+            rc = CFGMR3InsertBytes(pCfg,    "MAC",            &g_aNetDevs[ulInstance].Mac, sizeof(RTMAC));
                                                                                     UPDATE_RC();
 
             /*

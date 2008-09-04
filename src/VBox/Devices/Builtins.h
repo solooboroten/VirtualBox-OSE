@@ -1,4 +1,4 @@
-/* $Id: Builtins.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: Builtins.h 35003 2008-08-19 21:07:25Z aeichner $ */
 /** @file
  * Built-in drivers & devices (part 1) header.
  */
@@ -62,6 +62,10 @@ extern const PDMDEVREG g_DeviceParallelPort;
 #ifdef VBOX_WITH_AHCI
 extern const PDMDEVREG g_DeviceAHCI;
 #endif
+#ifdef VBOX_WITH_BUSLOGIC
+extern const PDMDEVREG g_DeviceBusLogic;
+#endif
+
 
 extern const PDMDRVREG g_DrvMouseQueue;
 extern const PDMDRVREG g_DrvKeyboardQueue;
@@ -93,6 +97,10 @@ extern const PDMUSBREG g_UsbDevProxy;
 #ifdef VBOX_WITH_PDM_ASYNC_COMPLETION
 extern const PDMDRVREG g_DrvRawImageAsync;
 extern const PDMDRVREG g_DrvTransportAsync;
+#endif
+
+#ifdef VBOX_WITH_BUSLOGIC
+extern const PDMDRVREG g_DrvSCSI;
 #endif
 
 __END_DECLS

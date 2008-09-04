@@ -1,4 +1,4 @@
-/* $Id: PDMDriver.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: PDMDriver.cpp 34406 2008-08-08 23:31:54Z bird $ */
 /** @file
  * PDM - Pluggable Device and Driver Manager, Driver parts.
  */
@@ -905,7 +905,7 @@ static DECLCALLBACK(int) pdmR3DrvHlp_PDMPollerRegister(PPDMDRVINS pDrvIns, PFNPD
 
     int rc = VINF_SUCCESS;
     PVM pVM = pDrvIns->Internal.s.pVM;
-    if (pVM->pdm.s.cPollers < ELEMENTS(pVM->pdm.s.apfnPollers))
+    if (pVM->pdm.s.cPollers < RT_ELEMENTS(pVM->pdm.s.apfnPollers))
     {
         pVM->pdm.s.apfnPollers[pVM->pdm.s.cPollers] = pfnPoller;
         pVM->pdm.s.aDrvInsPollers[pVM->pdm.s.cPollers] = pDrvIns;
@@ -1107,7 +1107,7 @@ static DECLCALLBACK(int) pdmR3DrvHlp_PDMAsyncCompletionTemplateCreate(PPDMDRVINS
     PDMDRV_ASSERT_DRVINS(pDrvIns);
     VM_ASSERT_EMT(pDrvIns->Internal.s.pVM);
     LogFlow(("pdmR3DrvHlp_PDMAsyncCompletionTemplateCreate: caller='%s'/%d: ppTemplate=%p pfnCompleted=%p pszDesc=%p:{%s}\n",
-             pDrvIns->pDrvReg->szDriverName, pDrvIns->iInstance, ppTemplate, pfnCompleted, pszDesc));
+             pDrvIns->pDrvReg->szDriverName, pDrvIns->iInstance, ppTemplate, pfnCompleted, pszDesc, pszDesc));
 
     int rc = PDMR3AsyncCompletionTemplateCreateDriver(pDrvIns->Internal.s.pVM, pDrvIns, ppTemplate, pfnCompleted, pszDesc);
 

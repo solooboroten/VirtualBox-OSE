@@ -50,15 +50,6 @@
  * @{
  */
 
-/** @deprecated
- * @{ */
-typedef RTHCPHYS    VBOXHCPHYS;
-typedef VBOXHCPHYS *PVBOXHCPHYS;
-#define NILVBOXHCPHYS NIL_RTHCPHYS
-typedef RTHCPTR     VBOXHCPTR;
-typedef VBOXHCPTR  *PVBOXHCPTR;
-/** @} */
-
 /** @} */
 
 
@@ -81,8 +72,8 @@ typedef struct VM              *PVM;
 typedef R0PTRTYPE(struct VM *)  PVMR0;
 /** Pointer to a VM - Ring-3 Ptr. */
 typedef R3PTRTYPE(struct VM *)  PVMR3;
-/** Pointer to a VM - GC Ptr. */
-typedef GCPTRTYPE(struct VM *)  PVMGC;
+/** Pointer to a VM - RC Ptr. */
+typedef RCPTRTYPE(struct VM *)  PVMRC;
 
 /** Pointer to a ring-0 (global) VM structure. */
 typedef R0PTRTYPE(struct GVM *) PGVM;
@@ -137,8 +128,8 @@ typedef PPDMDEVINS *PPPDMDEVINS;
 typedef R3PTRTYPE(PPDMDEVINS) PPDMDEVINSR3;
 /** R0 pointer to a PDM Device Instance. */
 typedef R0PTRTYPE(PPDMDEVINS) PPDMDEVINSR0;
-/** GC pointer to a PDM Device Instance. */
-typedef GCPTRTYPE(PPDMDEVINS) PPDMDEVINSGC;
+/** RC pointer to a PDM Device Instance. */
+typedef RCPTRTYPE(PPDMDEVINS) PPDMDEVINSRC;
 
 /** Pointer to a PDM USB Device Instance. */
 typedef struct PDMUSBINS *PPDMUSBINS;
@@ -165,15 +156,15 @@ typedef R0PTRTYPE(struct TMTIMER *) PTMTIMERR0;
 /** Pointer to a R3 pointer to a timer. */
 typedef PTMTIMERR0 *PPTMTIMERR0;
 
-/** GC pointer to a timer. */
-typedef GCPTRTYPE(struct TMTIMER *) PTMTIMERGC;
-/** Pointer to a GC pointer to a timer. */
-typedef PTMTIMERGC *PPTMTIMERGC;
+/** RC pointer to a timer. */
+typedef RCPTRTYPE(struct TMTIMER *) PTMTIMERRC;
+/** Pointer to a RC pointer to a timer. */
+typedef PTMTIMERRC *PPTMTIMERRC;
 
 /** Pointer to a timer. */
-typedef CTXALLSUFF(PTMTIMER)   PTMTIMER;
+typedef CTX_SUFF(PTMTIMER)     PTMTIMER;
 /** Pointer to a pointer to a timer. */
-typedef CTXALLSUFF(PPTMTIMER)  PPTMTIMER;
+typedef PTMTIMER              *PPTMTIMER;
 
 /** SSM Operation handle. */
 typedef struct SSMHANDLE *PSSMHANDLE;
@@ -380,80 +371,30 @@ typedef struct VBOXIDTR
     /** Size of the IDT. */
     uint16_t    cbIdt;
     /** Address of the IDT. */
-    uint32_t    pIdt;
+    uint64_t     pIdt;
 } VBOXIDTR, *PVBOXIDTR;
 #pragma pack()
+
+#pragma pack(1)
+/** IDTR from version 1.6 */
+typedef struct VBOXIDTR_VER1_6
+{
+    /** Size of the IDT. */
+    uint16_t    cbIdt;
+    /** Address of the IDT. */
+    uint32_t     pIdt;
+} VBOXIDTR_VER1_6, *PVBOXIDTR_VER1_6;
+#pragma pack()
+
 /** @} */
 
 
-/** @defgroup grp_types_desc    Descriptor Table Entry.
- * @ingroup grp_types
- * @{ */
-
-#pragma pack(1)
-/**
- * Memory descriptor.
+/** @def VBOXIDTE_OFFSET
+ * Return the offset of an IDT entry.
  */
-typedef struct VBOXDESCGENERIC
-{
-    /**  0-15 - Limit - Low word. */
-    unsigned    u16LimitLow : 16;
-    /** 16-31 - Base address - lowe word.
-     * Don't try set this to 24 because MSC is doing studing things then. */
-    unsigned    u16BaseLow : 16;
-    /** 32-39 - Base address - first 8 bits of high word. */
-    unsigned    u8BaseHigh1 : 8;
-    /** 40-43 - Segment Type. */
-    unsigned    u4Type : 4;
-    /** 44    - Descriptor Type. System(=0) or code/data selector */
-    unsigned    u1DescType : 1;
-    /** 45-46 - Descriptor Privelege level. */
-    unsigned    u2Dpl : 2;
-    /** 47    - Flags selector present(=1) or not. */
-    unsigned    u1Present : 1;
-    /** 48-51 - Segment limit 16-19. */
-    unsigned    u4LimitHigh : 4;
-    /** 52    - Available for system software. */
-    unsigned    u1Available : 1;
-    /** 53    - Reserved - 0. In long mode this is the 'Long' (L) attribute bit. */
-    unsigned    u1Reserved : 1;
-    /** 54    - This flags meaning depends on the segment type. Try make sense out
-     * of the intel manual yourself.  */
-    unsigned    u1DefBig : 1;
-    /** 55    - Granularity of the limit. If set 4KB granularity is used, if
-     * clear byte. */
-    unsigned    u1Granularity : 1;
-    /** 56-63 - Base address - highest 8 bits. */
-    unsigned    u8BaseHigh2 : 8;
-} VBOXDESCGENERIC;
-#pragma pack()
-/** Pointer to a generic descriptor entry. */
-typedef VBOXDESCGENERIC *PVBOXDESCGENERIC;
-
-#pragma pack(1)
-/**
- * Descriptor table entry.
- */
-typedef union VBOXDESC
-{
-    /** Generic descriptor view. */
-    VBOXDESCGENERIC Gen;
-    /** IDT view. */
-    VBOXIDTE        Idt;
-
-    /** 8 bit unsigned interger view. */
-    uint8_t         au8[8];
-    /** 16 bit unsigned interger view. */
-    uint16_t        au16[4];
-    /** 32 bit unsigned interger view. */
-    uint32_t        au32[2];
-} VBOXDESC;
-#pragma pack()
-/** Pointer to descriptor table entry. */
-typedef VBOXDESC *PVBOXDESC;
-/** Pointer to const descriptor table entry. */
-typedef VBOXDESC const *PCVBOXDESC;
-
+#define VBOXIDTE_OFFSET(desc) \
+        (  ((uint32_t)((desc).Gen.u16OffsetHigh) << 16) \
+         | (           (desc).Gen.u16OffsetLow        ) )
 
 #pragma pack(1)
 /** GDTR */
@@ -462,11 +403,22 @@ typedef struct VBOXGDTR
     /** Size of the GDT. */
     uint16_t    cbGdt;
     /** Address of the GDT. */
-    uint32_t    pGdt;
+    uint64_t    pGdt;
 } VBOXGDTR;
 #pragma pack()
 /** Pointer to GDTR. */
 typedef VBOXGDTR *PVBOXGDTR;
+
+#pragma pack(1)
+/** GDTR from version 1.6 */
+typedef struct VBOXGDTR_VER1_6
+{
+    /** Size of the GDT. */
+    uint16_t    cbGdt;
+    /** Address of the GDT. */
+    uint32_t    pGdt;
+} VBOXGDTR_VER1_6;
+#pragma pack()
 
 /** @} */
 
@@ -552,6 +504,21 @@ typedef VBOXTSS *PVBOXTSS;
 /** Pointer to const task segment. */
 typedef const VBOXTSS *PCVBOXTSS;
 
+
+/**
+ * Data transport buffer (scatter/gather)
+ */
+typedef struct PDMDATASEG
+{
+    /** Length of buffer in entry. */
+    size_t  cbSeg;
+    /** Pointer to the start of the buffer. */
+    void   *pvSeg;
+} PDMDATASEG;
+/** Pointer to a data transport segment. */
+typedef PDMDATASEG *PPDMDATASEG;
+/** Pointer to a const data transport segment. */
+typedef PDMDATASEG const *PCPDMDATASEG;
 
 /** @} */
 

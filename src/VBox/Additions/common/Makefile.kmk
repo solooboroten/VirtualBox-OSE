@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 33575 2008-07-22 08:12:42Z mt221433 $
 ## @file
 # Sub-Makefile for the common addition code.
 #
@@ -19,12 +19,17 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
+DEPTH    ?= ../../../..
 SUB_DEPTH = ..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 # Include sub-makefile.
 include $(PATH_SUB_CURRENT)/VBoxGuestLib/Makefile.kmk
+include $(PATH_SUB_CURRENT)/VBoxControl/Makefile.kmk
 if1of ($(KBUILD_TARGET), freebsd os2 solaris)
 include $(PATH_SUB_CURRENT)/VBoxGuest/Makefile.kmk
 include $(PATH_SUB_CURRENT)/VBoxService/Makefile.kmk

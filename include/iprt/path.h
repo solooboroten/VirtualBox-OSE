@@ -128,6 +128,23 @@ __BEGIN_DECLS
 RTDECL(bool) RTPathExists(const char *pszPath);
 
 /**
+ * Sets the current working directory of the process.
+ *
+ * @returns IPRT status code.
+ * @param   pszPath         The path to the new working directory.
+ */
+RTDECL(int)  RTPathSetCurrent(const char *pszPath);
+
+/**
+ * Gets the current working directory of the process.
+ *
+ * @returns IPRT status code.
+ * @param   pszPath         Where to store the path.
+ * @param   cchPath         The size of the buffer pszPath points to.
+ */
+RTDECL(int)  RTPathGetCurrent(char *pszPath, size_t cchPath);
+
+/**
  * Get the real path (no symlinks, no . or .. components), must exist.
  *
  * @returns iprt status code.
@@ -213,6 +230,28 @@ RTDECL(void) RTPathStripExt(char *pszPath);
  * @param   pszPath     Path to strip.
  */
 RTDECL(void) RTPathStripTrailingSlash(char *pszPath);
+
+/**
+ * Parses a path.
+ * 
+ * It figures the length of the directory component, the offset of 
+ * the file name and the location of the suffix dot.
+ *
+ * @returns The path length.
+ * 
+ * @param   pszPath     Path to find filename in.
+ * @param   pcbDir      Where to put the length of the directory component.
+ *                      If no directory, this will be 0. Optional.
+ * @param   poffName    Where to store the filename offset.
+ *                      If empty string or if it's ending with a slash this
+ *                      will be set to -1. Optional.
+ * @param   poffSuff    Where to store the suffix offset (the last dot).
+ *                      If empty string or if it's ending with a slash this
+ *                      will be set to -1. Optional.
+ * @param   pfFlags     Where to set flags returning more information about 
+ *                      the path. For the future. Optional.
+ */
+RTDECL(size_t) RTPathParse(const char *pszPath, size_t *pcchDir, ssize_t *poffName, ssize_t *poffSuff);
 
 /**
  * Finds the filename in a path.

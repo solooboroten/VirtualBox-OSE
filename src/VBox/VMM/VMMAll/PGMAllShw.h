@@ -1,4 +1,4 @@
-/* $Id: PGMAllShw.h 31131 2008-05-21 21:28:34Z bird $ */
+/* $Id: PGMAllShw.h 34406 2008-08-08 23:31:54Z bird $ */
 /** @file
  * VBox - Page Manager, Shadow Paging Template - All context code.
  */
@@ -39,6 +39,7 @@
 #undef SHW_TOTAL_PD_ENTRIES
 #undef SHW_PDPT_SHIFT
 #undef SHW_PDPT_MASK
+#undef SHW_PDPE_PG_MASK
 #undef SHW_POOL_ROOT_IDX
 
 #if PGM_SHW_TYPE == PGM_TYPE_32BIT
@@ -74,13 +75,15 @@
 # define SHW_PT_SHIFT           X86_PT_PAE_SHIFT
 # define SHW_PT_MASK            X86_PT_PAE_MASK
 #if PGM_SHW_TYPE == PGM_TYPE_AMD64
-# define SHW_PDPT_SHIFT        X86_PDPT_SHIFT
-# define SHW_PDPT_MASK         X86_PDPT_MASK_AMD64
+# define SHW_PDPT_SHIFT         X86_PDPT_SHIFT
+# define SHW_PDPT_MASK          X86_PDPT_MASK_AMD64
+# define SHW_PDPE_PG_MASK       X86_PDPE_PG_MASK
 # define SHW_TOTAL_PD_ENTRIES   (X86_PG_AMD64_ENTRIES*X86_PG_AMD64_PDPE_ENTRIES)
-# define SHW_POOL_ROOT_IDX      PGMPOOL_IDX_PML4
+# define SHW_POOL_ROOT_IDX      PGMPOOL_IDX_PAE_PD      /* do not use! exception is real mode & protected mode without paging. */
 #else /* 32 bits PAE mode */
-# define SHW_PDPT_SHIFT        X86_PDPT_SHIFT
-# define SHW_PDPT_MASK         X86_PDPT_MASK_PAE
+# define SHW_PDPT_SHIFT         X86_PDPT_SHIFT
+# define SHW_PDPT_MASK          X86_PDPT_MASK_PAE
+# define SHW_PDPE_PG_MASK       X86_PDPE_PG_MASK
 # define SHW_TOTAL_PD_ENTRIES   (X86_PG_PAE_ENTRIES*X86_PG_PAE_PDPE_ENTRIES)
 # define SHW_POOL_ROOT_IDX      PGMPOOL_IDX_PAE_PD
 #endif
@@ -299,7 +302,7 @@ PGM_SHW_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fF
             return rc;
 
         unsigned iPTE = (GCPtr >> SHW_PT_SHIFT) & SHW_PT_MASK;
-        while (iPTE < ELEMENTS(pPT->a))
+        while (iPTE < RT_ELEMENTS(pPT->a))
         {
             if (pPT->a[iPTE].n.u1Present)
             {

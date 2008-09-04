@@ -1,4 +1,4 @@
-/* $Id: TMInternal.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: TMInternal.h 31619 2008-06-04 13:51:21Z frank $ */
 /** @file
  * TM - Internal header file.
  */
@@ -181,10 +181,10 @@ typedef struct TMTIMER
     PVMR3                   pVMR3;
     /** Pointer to the VM the timer belongs to - R0 Ptr. */
     PVMR0                   pVMR0;
-    /** Pointer to the VM the timer belongs to - GC Ptr. */
-    PVMGC                   pVMGC;
-#if HC_ARCH_BITS == 64 && GC_ARCH_BITS == 32
-    RTGCPTR                 padding0; /**< pad structure to multiple of 8 bytes. */
+    /** Pointer to the VM the timer belongs to - RC Ptr. */
+    PVMRC                   pVMGC;
+#if HC_ARCH_BITS == 64
+    RTRCPTR                 padding0; /**< pad structure to multiple of 8 bytes. */
 #endif
 } TMTIMER;
 
@@ -346,9 +346,9 @@ typedef struct TM
     /** Pointer to the ring-3 tmVirtualGetRawNanoTS worker function. */
     R0PTRTYPE(PFNTIMENANOTSINTERNAL) pfnVirtualGetRawR0;
     /** Pointer to the ring-3 tmVirtualGetRawNanoTS worker function. */
-    GCPTRTYPE(PFNTIMENANOTSINTERNAL) pfnVirtualGetRawGC;
+    RCPTRTYPE(PFNTIMENANOTSINTERNAL) pfnVirtualGetRawGC;
     /** Alignment. */
-    RTGCPTR                     AlignmentGCPtr;
+    RTGCPTR32                   AlignmentGCPtr;
     /** The guest virtual timer synchronous time when fVirtualSyncTicking is cleared. */
     uint64_t volatile           u64VirtualSync;
     /** The offset of the timer synchronous virtual clock (TMCLOCK_VIRTUAL_SYNC) relative
@@ -392,10 +392,10 @@ typedef struct TM
     /** Timer queues for the different clock types - R0 Ptr */
     R0PTRTYPE(PTMTIMERQUEUE)    paTimerQueuesR0;
     /** Timer queues for the different clock types - GC Ptr */
-    GCPTRTYPE(PTMTIMERQUEUE)    paTimerQueuesGC;
+    RCPTRTYPE(PTMTIMERQUEUE)    paTimerQueuesGC;
 
     /** Pointer to our GC mapping of the GIP. */
-    GCPTRTYPE(void *)           pvGIPGC;
+    RCPTRTYPE(void *)           pvGIPGC;
     /** Pointer to our R3 mapping of the GIP. */
     R3PTRTYPE(void *)           pvGIPR3;
 

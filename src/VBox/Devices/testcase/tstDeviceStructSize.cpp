@@ -1,4 +1,4 @@
-/* $Id: tstDeviceStructSize.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: tstDeviceStructSize.cpp 35141 2008-08-21 21:36:45Z aeichner $ */
 /** @file
  * tstDeviceStructSize - testcase for check structure sizes/alignment
  *                       and to verify that HC and GC uses the same
@@ -29,41 +29,47 @@
 
 #define VBOX_DEVICE_STRUCT_TESTCASE
 #undef LOG_GROUP
-#include "Bus/DevPCI.cpp"
+#include "../Bus/DevPCI.cpp"
 #undef LOG_GROUP
-#include "Graphics/DevVGA.cpp"
+#include "../Graphics/DevVGA.cpp"
 #undef LOG_GROUP
-#include "Input/DevPS2.cpp"
+#include "../Input/DevPS2.cpp"
 #undef LOG_GROUP
-#include "Network/DevPCNet.cpp"
+#include "../Network/DevPCNet.cpp"
 #undef LOG_GROUP
-#include "PC/DevACPI.cpp"
+#include "../PC/DevACPI.cpp"
 #undef LOG_GROUP
-#include "PC/DevPIC.cpp"
+#include "../PC/DevPIC.cpp"
 #undef LOG_GROUP
-#include "PC/DevPit-i8254.cpp"
+#include "../PC/DevPit-i8254.cpp"
 #undef LOG_GROUP
-#include "PC/DevRTC.cpp"
+#include "../PC/DevRTC.cpp"
 #undef LOG_GROUP
-#include "PC/DevAPIC.cpp"
+#include "../PC/DevAPIC.cpp"
 #undef LOG_GROUP
-#include "Storage/DevATA.cpp"
+#include "../Storage/DevATA.cpp"
 #ifdef VBOX_WITH_USB
 # undef LOG_GROUP
-# include "USB/DevOHCI.cpp"
-# include "USB/DevEHCI.cpp"
+# include "../USB/DevOHCI.cpp"
+# include "../USB/DevEHCI.cpp"
 #endif
 #undef LOG_GROUP
-#include "VMMDev/VBoxDev.cpp"
+#include "../VMMDev/VBoxDev.cpp"
 #undef LOG_GROUP
-#include "Serial/DevSerial.cpp"
+#include "../Parallel/DevParallel.cpp"
+#undef LOG_GROUP
+#include "../Serial/DevSerial.cpp"
 #ifdef VBOX_WITH_AHCI
-#undef LOG_GROUP
-#include "Storage/DevAHCI.cpp"
+# undef LOG_GROUP
+# include "../Storage/DevAHCI.cpp"
 #endif
 #ifdef VBOX_WITH_E1000
-#undef LOG_GROUP
-#include "Network/DevE1000.cpp"
+# undef LOG_GROUP
+# include "../Network/DevE1000.cpp"
+#endif
+#ifdef VBOX_WITH_BUSLOGIC
+# undef LOG_GROUP
+# include "../Storage/DevBusLogic.cpp"
 #endif
 
 #include <stdio.h>
@@ -223,6 +229,7 @@ int main()
 #endif
     CHECK_MEMBER_ALIGNMENT(PITState, StatPITIrq, 8);
     CHECK_MEMBER_ALIGNMENT(ATADevState, cTotalSectors, 8);
+    CHECK_MEMBER_ALIGNMENT(ATADevState, StatATADMA, 8);
     CHECK_MEMBER_ALIGNMENT(ATADevState, StatReads, 8);
     CHECK_MEMBER_ALIGNMENT(ATACONTROLLER, StatAsyncOps, 8);
 #ifdef VBOX_WITH_USB

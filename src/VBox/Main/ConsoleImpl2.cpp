@@ -1,4 +1,4 @@
-/** $Id: ConsoleImpl2.cpp 30484 2008-05-05 12:32:51Z bird $ */
+/** $Id: ConsoleImpl2.cpp 35949 2008-09-03 11:45:53Z aeichner $ */
 /** @file
  * VBox Console COM Class implementation
  *
@@ -44,6 +44,12 @@
 #include <VBox/err.h>
 #include <VBox/version.h>
 #include <VBox/HostServices/VBoxClipboardSvc.h>
+#ifdef VBOX_WITH_GUEST_PROPS
+# include <VBox/HostServices/GuestPropertySvc.h>
+# include <VBox/com/defs.h>
+# include <VBox/com/array.h>
+#endif /* VBOX_WITH_GUEST_PROPS */
+#include <VBox/intnet.h>
 
 
 /*
@@ -171,6 +177,11 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     }
 #endif
 
+    /* Nested paging (VT-x/AMD-V) */
+    BOOL fEnableNestedPaging = false;
+    hrc = pMachine->COMGETTER(HWVirtExNestedPagingEnabled)(&fEnableNestedPaging);   H();
+    rc = CFGMR3InsertInteger(pRoot, "EnableNestedPaging", fEnableNestedPaging);     RC_CHECK();
+
     /* Physical Address Extension (PAE) */
     BOOL fEnablePAE = false;
     hrc = pMachine->COMGETTER(PAEEnabled)(&fEnablePAE);                             H();
@@ -235,6 +246,12 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     PCFGMNODE pIdeInst = NULL;      /* /Devices/piix3ide/0/ */
     PCFGMNODE pSataInst = NULL;     /* /Devices/ahci/0/ */
 	PCFGMNODE pBiosCfg = NULL;      /* /Devices/pcbios/0/Config/ */
+#ifdef VBOX_WITH_GUEST_PROPS
+    PCFGMNODE pGuestProps = NULL;   /* /GuestProps */
+    PCFGMNODE pValues = NULL;       /* /GuestProps/Values */
+    PCFGMNODE pTimestamps = NULL;   /* /GuestProps/Timestamps */
+    PCFGMNODE pFlags = NULL;        /* /GuestProps/Flags */
+#endif /* VBOX_WITH_GUEST_PROPS defined */
 
     rc = CFGMR3InsertNode(pRoot, "Devices", &pDevices);                             RC_CHECK();
 
@@ -311,29 +328,6 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     rc = CFGMR3InsertInteger(pTMNode, "UTCOffset", timeOffset * 1000000);           RC_CHECK();
 
     /*
-     * ACPI
-     */
-    BOOL fACPI;
-    hrc = biosSettings->COMGETTER(ACPIEnabled)(&fACPI);                             H();
-    if (fACPI)
-    {
-        rc = CFGMR3InsertNode(pDevices, "acpi", &pDev);                             RC_CHECK();
-        rc = CFGMR3InsertNode(pDev,     "0", &pInst);                               RC_CHECK();
-        rc = CFGMR3InsertInteger(pInst, "Trusted", 1);              /* boolean */   RC_CHECK();
-        rc = CFGMR3InsertNode(pInst,    "Config", &pCfg);                           RC_CHECK();
-        rc = CFGMR3InsertInteger(pCfg,  "RamSize",          cRamMBs * _1M);         RC_CHECK();
-        rc = CFGMR3InsertInteger(pCfg,  "IOAPIC", fIOAPIC);                         RC_CHECK();
-        rc = CFGMR3InsertInteger(pInst, "PCIDeviceNo",          7);                 RC_CHECK();
-        Assert(!afPciDeviceNo[7]);
-        afPciDeviceNo[7] = true;
-        rc = CFGMR3InsertInteger(pInst, "PCIFunctionNo",        0);                 RC_CHECK();
-
-        rc = CFGMR3InsertNode(pInst,    "LUN#0", &pLunL0);                          RC_CHECK();
-        rc = CFGMR3InsertString(pLunL0, "Driver",               "ACPIHost");        RC_CHECK();
-        rc = CFGMR3InsertNode(pLunL0,   "Config", &pCfg);                           RC_CHECK();
-    }
-
-    /*
      * DMA
      */
     rc = CFGMR3InsertNode(pDevices, "8237A", &pDev);                                RC_CHECK();
@@ -384,9 +378,9 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
      */
     ComPtr<IFloppyDrive> floppyDrive;
     hrc = pMachine->COMGETTER(FloppyDrive)(floppyDrive.asOutParam());               H();
-    BOOL fFloppyEnabled;
-    hrc = floppyDrive->COMGETTER(Enabled)(&fFloppyEnabled);                         H();
-    if (fFloppyEnabled)
+    BOOL fFdcEnabled;
+    hrc = floppyDrive->COMGETTER(Enabled)(&fFdcEnabled);                            H();
+    if (fFdcEnabled)
     {
         rc = CFGMR3InsertNode(pDevices, "i82078",    &pDev);                        RC_CHECK();
         rc = CFGMR3InsertNode(pDev,     "0",         &pInst);                       RC_CHECK();
@@ -448,6 +442,30 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                 rc = CFGMR3InsertInteger(pCfg,  "Mountable", 1);             RC_CHECK();
             }
         }
+    }
+
+    /*
+     * ACPI
+     */
+    BOOL fACPI;
+    hrc = biosSettings->COMGETTER(ACPIEnabled)(&fACPI);                             H();
+    if (fACPI)
+    {
+        rc = CFGMR3InsertNode(pDevices, "acpi", &pDev);                             RC_CHECK();
+        rc = CFGMR3InsertNode(pDev,     "0", &pInst);                               RC_CHECK();
+        rc = CFGMR3InsertInteger(pInst, "Trusted", 1);              /* boolean */   RC_CHECK();
+        rc = CFGMR3InsertNode(pInst,    "Config", &pCfg);                           RC_CHECK();
+        rc = CFGMR3InsertInteger(pCfg,  "RamSize",          cRamMBs * _1M);         RC_CHECK();
+        rc = CFGMR3InsertInteger(pCfg,  "IOAPIC", fIOAPIC);                         RC_CHECK();
+        rc = CFGMR3InsertInteger(pCfg,  "FdcEnabled", fFdcEnabled);                 RC_CHECK();
+        rc = CFGMR3InsertInteger(pInst, "PCIDeviceNo",          7);                 RC_CHECK();
+        Assert(!afPciDeviceNo[7]);
+        afPciDeviceNo[7] = true;
+        rc = CFGMR3InsertInteger(pInst, "PCIFunctionNo",        0);                 RC_CHECK();
+
+        rc = CFGMR3InsertNode(pInst,    "LUN#0", &pLunL0);                          RC_CHECK();
+        rc = CFGMR3InsertString(pLunL0, "Driver",               "ACPIHost");        RC_CHECK();
+        rc = CFGMR3InsertNode(pLunL0,   "Config", &pCfg);                           RC_CHECK();
     }
 
     /*
@@ -772,9 +790,6 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                 rc = CFGMR3InsertString(pCfg,   "TargetName",   psz);                       RC_CHECK();
                 STR_FREE();
 
-                // @todo currently there is no Initiator name config.
-                rc = CFGMR3InsertString(pCfg,   "InitiatorName", "iqn.2008-04.com.sun.virtualbox.initiator"); RC_CHECK();
-
                 ULONG64 lun;
                 hrc = iSCSIDisk->COMGETTER(Lun)(&lun);                                      H();
                 rc = CFGMR3InsertInteger(pCfg,   "LUN",         lun);                       RC_CHECK();
@@ -840,6 +855,17 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                 rc = CFGMR3InsertString(pCfg,   "Path",             psz);                   RC_CHECK();
                 STR_FREE();
                 rc = CFGMR3InsertString(pCfg,   "Format",           "VMDK");                RC_CHECK();
+
+#if defined(VBOX_WITH_PDM_ASYNC_COMPLETION)
+                /*
+                 * Create cfgm nodes for async transport driver because VMDK is currently the only
+                 * one which may support async I/O. This has to be made generic based on the capabiliy flags
+                 * when the new HardDisk interface is merged.
+                 */
+                rc = CFGMR3InsertNode(pLunL1, "AttachedDriver", &pLunL2);                   RC_CHECK();
+                rc = CFGMR3InsertString(pLunL2, "Driver",      "TransportAsync");           RC_CHECK();
+                /* The async transport driver has no config options yet. */
+#endif
             }
             else if (hddType == HardDiskStorageType_CustomHardDisk)
             {
@@ -1006,7 +1032,7 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         Utf8Str macAddrUtf8 = macAddr;
         char *macStr = (char*)macAddrUtf8.raw();
         Assert(strlen(macStr) == 12);
-        PDMMAC Mac;
+        RTMAC Mac;
         memset(&Mac, 0, sizeof(Mac));
         char *pMac = (char*)&Mac;
         for (uint32_t i = 0; i < 6; i++)
@@ -1165,6 +1191,77 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                         rc = CFGMR3InsertInteger(pCfg, "FileHandle", pConsole->maTapFD[ulInstance]); RC_CHECK();
 # endif
                     }
+
+#elif defined(VBOX_WITH_NETFLT) && !defined(RT_OS_WINDOWS) /** @todo merge in the windows stuff too */
+                    /* 
+                     * This is the new VBoxNetFlt+IntNet stuff. 
+                     */
+                    if (fSniffer)
+                    {
+                        rc = CFGMR3InsertNode(pLunL0, "AttachedDriver", &pLunL0);   RC_CHECK();
+                    }
+                    else
+                    {
+                        rc = CFGMR3InsertNode(pInst, "LUN#0", &pLunL0);             RC_CHECK();
+                    }
+
+                    Bstr HifName;
+                    hrc = networkAdapter->COMGETTER(HostInterface)(HifName.asOutParam()); H();
+                    Utf8Str HifNameUtf8(HifName);
+                    const char *pszHifName = HifNameUtf8.raw();
+
+# if defined(RT_OS_DARWIN)
+                    /* The name is on the form 'ifX: long name', chop it off at the colon. */
+                    char szTrunk[8];
+                    strncpy(szTrunk, pszHifName, sizeof(szTrunk));
+                    char *pszColon = (char *)memchr(szTrunk, ':', sizeof(szTrunk));
+                    if (!pszColon)
+                    {
+                        hrc = networkAdapter->Detach();                              H();
+                        return VMSetError(pVM, VERR_INTERNAL_ERROR, RT_SRC_POS,
+                                          N_("Malformed host interface networking name '%ls'"),
+                                          HifName.raw());
+                    }
+                    *pszColon = '\0';
+                    const char *pszTrunk = szTrunk;
+
+# elif defined(RT_OS_SOLARIS) 
+                    /* The name is on the form format 'ifX - long name, chop it off at space. */
+                    char szTrunk[8];
+                    strncpy(szTrunk, pszHifName, sizeof(szTrunk));
+                    char *pszSpace = (char *)memchr(szTrunk, ' ', sizeof(szTrunk));
+                    
+                    /*
+                     * Currently don't bother about malformed names here for the sake of people using
+                     * VBoxManage and setting only the NIC name from there. If there is a space we
+                     * chop it off and proceed, otherwise just use whatever we've got.
+                     */
+                    if (pszSpace)
+                        *pszSpace = '\0';
+                    const char *pszTrunk = szTrunk;
+# else 
+#  error "PORTME (VBOX_WITH_NETFLT)"
+# endif
+
+                    rc = CFGMR3InsertString(pLunL0, "Driver", "IntNet");            RC_CHECK();
+                    rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                 RC_CHECK();
+                    rc = CFGMR3InsertString(pCfg, "Trunk", pszTrunk);               RC_CHECK();
+                    rc = CFGMR3InsertInteger(pCfg, "TrunkType", kIntNetTrunkType_NetFlt); RC_CHECK();
+                    char szNetwork[80];
+                    RTStrPrintf(szNetwork, sizeof(szNetwork), "HostInterfaceNetworking-%s\n", pszHifName);
+                    rc = CFGMR3InsertString(pCfg, "Network", szNetwork);            RC_CHECK();
+
+# if defined(RT_OS_DARWIN)
+                    /** @todo Come up with a better deal here. Problem is that IHostNetworkInterface is completely useless here. */
+                    if (    strstr(pszHifName, "Wireless")
+                        ||  strstr(pszHifName, "AirPort" ))
+                    {
+                        rc = CFGMR3InsertInteger(pCfg, "SharedMacOnWire", true);    RC_CHECK();
+                    }
+# else 
+                    /** @todo PORTME: wireless detection */
+# endif
+
 #elif defined(RT_OS_WINDOWS)
                     if (fSniffer)
                     {
@@ -1187,9 +1284,16 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                     }
                     else
                     {
+# ifndef VBOX_WITH_NETFLT
                         rc = CFGMR3InsertString(pLunL0, "Driver", "HostInterface");     RC_CHECK();
                         rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                 RC_CHECK();
                         rc = CFGMR3InsertString(pCfg, "HostInterfaceName", Utf8Str(hostInterfaceName)); RC_CHECK();
+# else
+                        rc = CFGMR3InsertString(pLunL0, "Driver", "IntNet");            RC_CHECK();
+                        rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                 RC_CHECK();
+                        rc = CFGMR3InsertString(pCfg, "Trunk", Utf8Str(hostInterfaceName));                RC_CHECK();
+                        rc = CFGMR3InsertInteger(pCfg, "TrunkType", kIntNetTrunkType_NetFlt); RC_CHECK();
+# endif
                         Guid hostIFGuid;
                         hrc = hostInterface->COMGETTER(Id)(hostIFGuid.asOutParam());    H();
                         char szDriverGUID[256] = {0};
@@ -1638,6 +1742,63 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
             }
         }
     }
+#ifdef VBOX_WITH_GUEST_PROPS
+    /*
+     * Shared information services
+     */
+    {
+        /* Load the service */
+        rc = pConsole->mVMMDev->hgcmLoadService ("VBoxGuestPropSvc", "VBoxGuestPropSvc");
+
+        if (VBOX_FAILURE (rc))
+        {
+            LogRel(("VBoxGuestPropSvc is not available. rc = %Vrc\n", rc));
+            /* That is not a fatal failure. */
+            rc = VINF_SUCCESS;
+        }
+        else
+        {
+            rc = CFGMR3InsertNode(pRoot,       "GuestProps", &pGuestProps);             RC_CHECK();
+            rc = CFGMR3InsertNode(pGuestProps, "Values", &pValues);                     RC_CHECK();
+            rc = CFGMR3InsertNode(pGuestProps, "Timestamps", &pTimestamps);             RC_CHECK();
+            rc = CFGMR3InsertNode(pGuestProps, "Flags", &pFlags);                       RC_CHECK();
+
+            /* Pull over the properties from the server. */
+            SafeArray <BSTR> names;
+            SafeArray <BSTR> values;
+            SafeArray <ULONG64> timestamps;
+            SafeArray <BSTR> flags;
+            hrc = pConsole->mControl->PullGuestProperties(ComSafeArrayAsOutParam(names),
+                                                ComSafeArrayAsOutParam(values),
+                                                ComSafeArrayAsOutParam(timestamps),
+                                                ComSafeArrayAsOutParam(flags));                H();
+            size_t cProps = names.size();
+            for (size_t i = 0; i < cProps; ++i)
+            {
+                rc = CFGMR3InsertString(pValues, Utf8Str(names[i]).raw(), Utf8Str(values[i]).raw()); RC_CHECK();
+                rc = CFGMR3InsertInteger(pTimestamps, Utf8Str(names[i]).raw(), timestamps[i]);           RC_CHECK();
+                rc = CFGMR3InsertString(pFlags, Utf8Str(names[i]).raw(), Utf8Str(flags[i]).raw());   RC_CHECK();
+            }
+
+            /* Setup the service. */
+            VBOXHGCMSVCPARM parms[3];
+
+            parms[0].type = VBOX_HGCM_SVC_PARM_PTR;
+            parms[0].u.pointer.addr = pValues;
+            parms[0].u.pointer.size = sizeof(pValues);  /* We don't actually care. */
+            parms[1].type = VBOX_HGCM_SVC_PARM_PTR;
+            parms[1].u.pointer.addr = pTimestamps;
+            parms[1].u.pointer.size = sizeof(pTimestamps);
+            parms[2].type = VBOX_HGCM_SVC_PARM_PTR;
+            parms[2].u.pointer.addr = pFlags;
+            parms[2].u.pointer.size = sizeof(pFlags);
+
+            pConsole->mVMMDev->hgcmHostCall ("VBoxGuestPropSvc", guestProp::SET_CFGM_NODE, 3, &parms[0]);
+
+            Log(("Set VBoxGuestPropSvc property store\n"));
+        }
+    }
+#endif /* VBOX_WITH_GUEST_PROPS defined */
 
     /*
      * CFGM overlay handling.

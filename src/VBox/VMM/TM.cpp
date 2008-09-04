@@ -1,4 +1,4 @@
-/* $Id: TM.cpp 31281 2008-05-27 09:21:03Z sandervl $ */
+/* $Id: TM.cpp 35599 2008-08-29 08:51:20Z sandervl $ */
 /** @file
  * TM - Timeout Manager.
  */
@@ -133,11 +133,11 @@
 /*******************************************************************************
 *   Internal Functions                                                         *
 *******************************************************************************/
-static bool                 tmR3HasFixedTSC(void);
-static uint64_t             tmR3CalibrateTSC(void);
+static bool                 tmR3HasFixedTSC(PVM pVM);
+static uint64_t             tmR3CalibrateTSC(PVM pVM);
 static DECLCALLBACK(int)    tmR3Save(PVM pVM, PSSMHANDLE pSSM);
 static DECLCALLBACK(int)    tmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version);
-static DECLCALLBACK(void)   tmR3TimerCallback(PRTTIMER pTimer, void *pvUser);
+static DECLCALLBACK(void)   tmR3TimerCallback(PRTTIMER pTimer, void *pvUser, uint64_t iTick);
 static void                 tmR3TimerQueueRun(PVM pVM, PTMTIMERQUEUE pQueue);
 static void                 tmR3TimerQueueRunVirtualSync(PVM pVM);
 static DECLCALLBACK(void)   tmR3TimerInfo(PVM pVM, PCDBGFINFOHLP pHlp, const char *pszArgs);
@@ -251,7 +251,7 @@ TMR3DECL(int) TMR3Init(PVM pVM)
             pVM->tm.s.pfnVirtualGetRawR3 = RTTimeNanoTSLegacyAsync;
     }
 
-    pVM->tm.s.VirtualGetRawDataGC.pu64Prev = MMHyperR3ToGC(pVM, (void *)&pVM->tm.s.u64VirtualRawPrev);
+    pVM->tm.s.VirtualGetRawDataGC.pu64Prev = MMHyperR3ToRC(pVM, (void *)&pVM->tm.s.u64VirtualRawPrev);
     pVM->tm.s.VirtualGetRawDataR0.pu64Prev = MMHyperR3ToR0(pVM, (void *)&pVM->tm.s.u64VirtualRawPrev);
     AssertReturn(pVM->tm.s.VirtualGetRawDataR0.pu64Prev, VERR_INTERNAL_ERROR);
     /* The rest is done in TMR3InitFinalize since it's too early to call PDM. */
@@ -293,7 +293,7 @@ TMR3DECL(int) TMR3Init(PVM pVM)
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
     {
         if (!pVM->tm.s.fTSCUseRealTSC)
-            pVM->tm.s.fMaybeUseOffsettedHostTSC = tmR3HasFixedTSC();
+            pVM->tm.s.fMaybeUseOffsettedHostTSC = tmR3HasFixedTSC(pVM);
         else
             pVM->tm.s.fMaybeUseOffsettedHostTSC = true;
     }
@@ -302,7 +302,7 @@ TMR3DECL(int) TMR3Init(PVM pVM)
     rc = CFGMR3QueryU64(pCfgHandle, "TSCTicksPerSecond", &pVM->tm.s.cTSCTicksPerSecond);
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
     {
-        pVM->tm.s.cTSCTicksPerSecond = tmR3CalibrateTSC();
+        pVM->tm.s.cTSCTicksPerSecond = tmR3CalibrateTSC(pVM);
         if (    !pVM->tm.s.fTSCUseRealTSC
             &&  pVM->tm.s.cTSCTicksPerSecond >= _4G)
         {
@@ -545,16 +545,13 @@ TMR3DECL(int) TMR3Init(PVM pVM)
  *          management or any other stuff that might influence the TSC rate.
  *          This isn't currently relevant.
  */
-static bool tmR3HasFixedTSC(void)
+static bool tmR3HasFixedTSC(PVM pVM)
 {
     if (ASMHasCpuId())
     {
         uint32_t uEAX, uEBX, uECX, uEDX;
-        ASMCpuId(0, &uEAX, &uEBX, &uECX, &uEDX);
-        if (    uEAX >= 1
-            &&  uEBX == X86_CPUID_VENDOR_AMD_EBX
-            &&  uECX == X86_CPUID_VENDOR_AMD_ECX
-            &&  uEDX == X86_CPUID_VENDOR_AMD_EDX)
+
+        if (CPUMGetCPUVendor(pVM) == CPUMCPUVENDOR_AMD)
         {
             /*
              * AuthenticAMD - Check for APM support and that TscInvariant is set.
@@ -569,15 +566,12 @@ static bool tmR3HasFixedTSC(void)
                 PSUPGLOBALINFOPAGE pGip = g_pSUPGlobalInfoPage;
 
                 ASMCpuId(0x80000007, &uEAX, &uEBX, &uECX, &uEDX);
-                if (   (uEDX & RT_BIT(8)) /* TscInvariant */
+                if (   (uEDX & X86_CPUID_AMD_ADVPOWER_EDX_TSCINVAR) /* TscInvariant */
                     && pGip->u32Mode == SUPGIPMODE_SYNC_TSC /* no fixed tsc if the gip timer is in async mode */)
                     return true;
             }
         }
-        else if (    uEAX >= 1
-                 &&  uEBX == X86_CPUID_VENDOR_INTEL_EBX
-                 &&  uECX == X86_CPUID_VENDOR_INTEL_ECX
-                 &&  uEDX == X86_CPUID_VENDOR_INTEL_EDX)
+        else if (CPUMGetCPUVendor(pVM) == CPUMCPUVENDOR_INTEL)
         {
             /*
              * GenuineIntel - Check the model number.
@@ -606,7 +600,7 @@ static bool tmR3HasFixedTSC(void)
  *
  * @returns Number of ticks per second.
  */
-static uint64_t tmR3CalibrateTSC(void)
+static uint64_t tmR3CalibrateTSC(PVM pVM)
 {
     /*
      * Use GIP when available present.
@@ -621,7 +615,7 @@ static uint64_t tmR3CalibrateTSC(void)
             AssertReleaseMsgFailed(("iCpu=%d - the ApicId is too high. send VBox.log and hardware specs!\n", iCpu));
         else
         {
-            if (tmR3HasFixedTSC())
+            if (tmR3HasFixedTSC(pVM))
                 /* Sleep a bit to get a more reliable CpuHz value. */
                 RTThreadSleep(32);
             else
@@ -652,7 +646,7 @@ static uint64_t tmR3CalibrateTSC(void)
     static const unsigned   s_auSleep[5] = { 50, 30, 30, 40, 40 };
     uint64_t                au64Samples[5];
     unsigned                i;
-    for (i = 0; i < ELEMENTS(au64Samples); i++)
+    for (i = 0; i < RT_ELEMENTS(au64Samples); i++)
     {
         unsigned    cMillies;
         int         cTries   = 5;
@@ -679,7 +673,7 @@ static uint64_t tmR3CalibrateTSC(void)
      */
     unsigned iHigh = 0;
     unsigned iLow = 0;
-    for (i = 1; i < ELEMENTS(au64Samples); i++)
+    for (i = 1; i < RT_ELEMENTS(au64Samples); i++)
     {
         if (au64Samples[i] < au64Samples[iLow])
             iLow = i;
@@ -690,9 +684,9 @@ static uint64_t tmR3CalibrateTSC(void)
     au64Samples[iHigh] = 0;
 
     u64Hz = au64Samples[0];
-    for (i = 1; i < ELEMENTS(au64Samples); i++)
+    for (i = 1; i < RT_ELEMENTS(au64Samples); i++)
         u64Hz += au64Samples[i];
-    u64Hz /= ELEMENTS(au64Samples) - 2;
+    u64Hz /= RT_ELEMENTS(au64Samples) - 2;
 
     return u64Hz;
 }
@@ -757,11 +751,11 @@ TMR3DECL(void) TMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
     int rc;
     LogFlow(("TMR3Relocate\n"));
 
-    pVM->tm.s.pvGIPGC = MMHyperR3ToGC(pVM, pVM->tm.s.pvGIPR3);
-    pVM->tm.s.paTimerQueuesGC = MMHyperR3ToGC(pVM, pVM->tm.s.paTimerQueuesR3);
+    pVM->tm.s.pvGIPGC = MMHyperR3ToRC(pVM, pVM->tm.s.pvGIPR3);
+    pVM->tm.s.paTimerQueuesGC = MMHyperR3ToRC(pVM, pVM->tm.s.paTimerQueuesR3);
     pVM->tm.s.paTimerQueuesR0 = MMHyperR3ToR0(pVM, pVM->tm.s.paTimerQueuesR3);
 
-    pVM->tm.s.VirtualGetRawDataGC.pu64Prev = MMHyperR3ToGC(pVM, (void *)&pVM->tm.s.u64VirtualRawPrev);
+    pVM->tm.s.VirtualGetRawDataGC.pu64Prev = MMHyperR3ToRC(pVM, (void *)&pVM->tm.s.u64VirtualRawPrev);
     AssertFatal(pVM->tm.s.VirtualGetRawDataGC.pu64Prev);
     rc = PDMR3GetSymbolGCLazy(pVM, NULL, "tmVirtualNanoTSBad",          &pVM->tm.s.VirtualGetRawDataGC.pfnBad);
     AssertFatalRC(rc);
@@ -940,7 +934,7 @@ static DECLCALLBACK(int) tmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
      */
     if (u32Version != TM_SAVED_STATE_VERSION)
     {
-        Log(("tmR3Load: Invalid version u32Version=%d!\n", u32Version));
+        AssertMsgFailed(("tmR3Load: Invalid version u32Version=%d!\n", u32Version));
         return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
     }
 
@@ -1313,7 +1307,7 @@ DECLINLINE(bool) tmR3AnyExpiredTimers(PVM pVM)
  *          and we wouldn't know the state of the affairs.
  *          So, we'll just raise the timer FF and force any REM execution to exit.
  */
-static DECLCALLBACK(void) tmR3TimerCallback(PRTTIMER pTimer, void *pvUser)
+static DECLCALLBACK(void) tmR3TimerCallback(PRTTIMER pTimer, void *pvUser, uint64_t /*iTick*/)
 {
     PVM pVM = (PVM)pvUser;
     AssertCompile(TMCLOCK_MAX == 4);

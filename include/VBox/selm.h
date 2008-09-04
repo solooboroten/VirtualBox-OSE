@@ -33,6 +33,7 @@
 #include <VBox/cdefs.h>
 #include <VBox/types.h>
 #include <VBox/x86.h>
+#include <VBox/dis.h>
 
 
 __BEGIN_DECLS
@@ -64,7 +65,7 @@ SELMDECL(void) SELMSetTrap8EIP(PVM pVM, uint32_t u32EIP);
  * @param   ss      Ring1 SS register value.
  * @param   esp     Ring1 ESP register value.
  */
-SELMDECL(void) SELMSetRing1Stack(PVM pVM, uint32_t ss, uint32_t esp);
+SELMDECL(void) SELMSetRing1Stack(PVM pVM, uint32_t ss, RTGCPTR32 esp);
 
 /**
  * Gets ss:esp for ring1 in main Hypervisor's TSS.
@@ -74,7 +75,7 @@ SELMDECL(void) SELMSetRing1Stack(PVM pVM, uint32_t ss, uint32_t esp);
  * @param   pSS     Ring1 SS register value.
  * @param   pEsp    Ring1 ESP register value.
  */
-SELMDECL(int) SELMGetRing1Stack(PVM pVM, uint32_t *pSS, uint32_t *pEsp);
+SELMDECL(int) SELMGetRing1Stack(PVM pVM, uint32_t *pSS, PRTGCPTR32 pEsp);
 
 /**
  * Returns Guest TSS pointer
@@ -150,12 +151,26 @@ SELMDECL(int) SELMGetTSSInfo(PVM pVM, PRTGCUINTPTR pGCPtrTss, PRTGCUINTPTR pcbTs
  *
  * @returns Flat address.
  * @param   pVM         VM Handle.
- * @param   eflags      Current eflags
- * @param   Sel         Selector part.
- * @param   pHiddenSel  Hidden selector register
+ * @param   SelReg      Selector register
+ * @param   pCtxCore    CPU context
  * @param   Addr        Address part.
  */
-SELMDECL(RTGCPTR) SELMToFlat(PVM pVM, X86EFLAGS eflags, RTSEL Sel, PCPUMSELREGHID pHiddenSel, RTGCPTR Addr);
+SELMDECL(RTGCPTR) SELMToFlat(PVM pVM, DIS_SELREG SelReg, PCPUMCTXCORE pCtxCore, RTGCPTR Addr);
+
+/**
+ * Converts a GC selector based address to a flat address.
+ *
+ * No limit checks are done. Use the SELMToFlat*() or SELMValidate*() functions
+ * for that.
+ *
+ * Note: obsolete; DO NOT USE!
+ *
+ * @returns Flat address.
+ * @param   pVM     VM Handle.
+ * @param   Sel     Selector part.
+ * @param   Addr    Address part.
+ */
+SELMDECL(RTGCPTR) SELMToFlatBySel(PVM pVM, RTSEL Sel, RTGCPTR Addr);
 
 /** Flags for SELMToFlatEx().
  * @{ */
@@ -184,6 +199,24 @@ SELMDECL(RTGCPTR) SELMToFlat(PVM pVM, X86EFLAGS eflags, RTSEL Sel, PCPUMSELREGHI
  *
  * @returns VBox status
  * @param   pVM         VM Handle.
+ * @param   SelReg      Selector register
+ * @param   pCtxCore    CPU context
+ * @param   Addr        Address part.
+ * @param   fFlags      SELMTOFLAT_FLAGS_*
+ *                      GDT entires are valid.
+ * @param   ppvGC       Where to store the GC flat address.
+ */
+SELMDECL(int) SELMToFlatEx(PVM pVM, DIS_SELREG SelReg, PCCPUMCTXCORE pCtxCore, RTGCPTR Addr, unsigned fFlags, PRTGCPTR ppvGC);
+
+/**
+ * Converts a GC selector based address to a flat address.
+ *
+ * Some basic checking is done, but not all kinds yet.
+ * 
+ * Note: Obsolete: DO NOT USE
+ *
+ * @returns VBox status
+ * @param   pVM         VM Handle.
  * @param   eflags      Current eflags
  * @param   Sel         Selector part.
  * @param   Addr        Address part.
@@ -194,7 +227,7 @@ SELMDECL(RTGCPTR) SELMToFlat(PVM pVM, X86EFLAGS eflags, RTSEL Sel, PCPUMSELREGHI
  * @param   pcb         Where to store the bytes from *ppvGC which can be accessed according to
  *                      the selector. NULL is allowed.
  */
-SELMDECL(int) SELMToFlatEx(PVM pVM, X86EFLAGS eflags, RTSEL Sel, RTGCPTR Addr, PCPUMSELREGHID pHiddenSel, unsigned fFlags, PRTGCPTR ppvGC, uint32_t *pcb);
+SELMDECL(int) SELMToFlatBySelEx(PVM pVM, X86EFLAGS eflags, RTSEL Sel, RTGCPTR Addr, CPUMSELREGHID *pHiddenSel, unsigned fFlags, PRTGCPTR ppvGC, uint32_t *pcb);
 
 /**
  * Validates and converts a GC selector based code address to a flat address.
@@ -231,16 +264,15 @@ SELMDECL(int) SELMValidateAndConvertCSAddr(PVM pVM, X86EFLAGS eflags, RTSEL SelC
 SELMDECL(int) SELMValidateAndConvertCSAddrGCTrap(PVM pVM, X86EFLAGS eflags, RTSEL SelCPL, RTSEL SelCS, RTGCPTR Addr, PRTGCPTR ppvFlat, uint32_t *pcBits);
 
 /**
- * Checks if a selector is 32-bit or 16-bit.
+ * Return the cpu mode corresponding to the (CS) selector
  *
- * @returns True if it is 32-bit.
- * @returns False if it is 16-bit.
+ * @returns DISCPUMODE according to the selector type (16, 32 or 64 bits)
  * @param   pVM        VM Handle.
  * @param   eflags     Current eflags register
  * @param   Sel        The selector.
  * @param   pHiddenSel The hidden selector register.
  */
-SELMDECL(bool) SELMIsSelector32Bit(PVM pVM, X86EFLAGS eflags, RTSEL Sel, PCPUMSELREGHID pHiddenSel);
+SELMDECL(DISCPUMODE) SELMGetCpuModeFromSelector(PVM pVM, X86EFLAGS eflags, RTSEL Sel, CPUMSELREGHID *pHiddenSel);
 
 /**
  * Returns flat address and limit of LDT by LDT selector.
@@ -266,7 +298,11 @@ typedef struct SELMSELINFO
     /** The limit (-1). */
     RTGCUINTPTR     cbLimit;
     /** The raw descriptor. */
-    VBOXDESC        Raw;
+    union
+    {
+        X86DESC     Raw;
+        X86DESC64   Raw64;
+    };
     /** The selector. */
     RTSEL           Sel;
     /** Set if the selector is used by the hypervisor. */
@@ -456,7 +492,7 @@ SELMR3DECL(void) SELMR3DisableMonitoring(PVM pVM);
  * @param   Sel     Selector number.
  * @param   pszMsg  Message to prepend the log entry with.
  */
-SELMR3DECL(void) SELMR3DumpDescriptor(VBOXDESC  Desc, RTSEL Sel, const char *pszMsg);
+SELMR3DECL(void) SELMR3DumpDescriptor(X86DESC  Desc, RTSEL Sel, const char *pszMsg);
 
 /**
  * Dumps the hypervisor GDT.

@@ -1,4 +1,4 @@
-/* $Id: fileio-posix.cpp 30968 2008-05-19 11:34:46Z frank $ */
+/* $Id: fileio-posix.cpp 33353 2008-07-15 11:18:20Z bird $ */
 /** @file
  * IPRT - File I/O, POSIX.
  */
@@ -164,13 +164,18 @@ RTR3DECL(int)  RTFileOpen(PRTFILE pFile, const char *pszFilename, unsigned fOpen
             return VERR_INVALID_PARAMETER;
     }
 
+    /* File mode. */
+    int fMode = (fOpen & RTFILE_O_CREATE_MODE_MASK)
+              ? (fOpen & RTFILE_O_CREATE_MODE_MASK) >> RTFILE_O_CREATE_MODE_SHIFT
+              : RT_FILE_PERMISSION;
+
     /** @todo sharing! */
 
     /*
      * Open/create the file.
      */
 #ifdef RT_DONT_CONVERT_FILENAMES
-    int fh = open(pszFilename, fOpenMode, RT_FILE_PERMISSION);
+    int fh = open(pszFilename, fOpenMode, fMode);
     int iErr = errno;
 #else
     char *pszNativeFilename;
@@ -178,7 +183,7 @@ RTR3DECL(int)  RTFileOpen(PRTFILE pFile, const char *pszFilename, unsigned fOpen
     if (RT_FAILURE(rc))
         return (rc);
 
-    int fh = open(pszNativeFilename, fOpenMode, RT_FILE_PERMISSION);
+    int fh = open(pszNativeFilename, fOpenMode, fMode);
     int iErr = errno;
     rtPathFreeNative(pszNativeFilename);
 #endif

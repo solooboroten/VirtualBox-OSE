@@ -1,7 +1,6 @@
+/* $Id: */
 /** @file
- *
- * VBox Guest/VMM/host communication:
- * HGCM - Host-Guest Communication Manager header
+ * VBoxDev - HGCM - Host-Guest Communication Manager, internal header.
  */
 
 /*
@@ -20,8 +19,8 @@
  * additional information or have any questions.
  */
 
-#ifndef __VMMDevHGCM_h__
-#define __VMMDevHGCM_h__
+#ifndef ___VMMDev_VMMDevHGCM_h
+#define ___VMMDev_VMMDevHGCM_h
 
 #include <VBox/cdefs.h>
 #include <VBox/types.h>
@@ -33,7 +32,8 @@
 __BEGIN_DECLS
 DECLCALLBACK(int) vmmdevHGCMConnect (VMMDevState *pVMMDevState, VMMDevHGCMConnect *pHGCMConnect, RTGCPHYS GCPtr);
 DECLCALLBACK(int) vmmdevHGCMDisconnect (VMMDevState *pVMMDevState, VMMDevHGCMDisconnect *pHGCMDisconnect, RTGCPHYS GCPtr);
-DECLCALLBACK(int) vmmdevHGCMCall (VMMDevState *pVMMDevState, VMMDevHGCMCall *pHGCMCall, RTGCPHYS GCPtr);
+DECLCALLBACK(int) vmmdevHGCMCall (VMMDevState *pVMMDevState, VMMDevHGCMCall *pHGCMCall, RTGCPHYS GCPtr, bool f64Bits);
+DECLCALLBACK(int) vmmdevHGCMCancel (VMMDevState *pVMMDevState, VMMDevHGCMCancel *pHGCMCancel, RTGCPHYS GCPtr);
 
 DECLCALLBACK(void) hgcmCompleted (PPDMIHGCMPORT pInterface, int32_t result, PVBOXHGCMCMD pCmdPtr);
 
@@ -42,4 +42,5 @@ int vmmdevHGCMLoadState(VMMDevState *pVMMDevState, PSSMHANDLE pSSM);
 int vmmdevHGCMLoadStateDone(VMMDevState *pVMMDevState, PSSMHANDLE pSSM);
 __END_DECLS
 
-#endif /* __VMMDevHGCM_h__ */
+#endif /* !___VMMDev_VMMDevHGCM_h */
+

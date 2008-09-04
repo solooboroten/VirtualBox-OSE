@@ -32,6 +32,7 @@
 #include "Helper.h"
 #include <excpt.h>
 #include <VBox/err.h>
+#include <VBox/log.h>
 #include <iprt/assert.h>
 #include <iprt/asm.h>
 #include <stdio.h>
@@ -39,7 +40,7 @@
 #include <VBoxGuestInternal.h>
 
 #ifdef TARGET_NT4
-/* XP DDK #defines ExFreePool to ExFreePoolWithTag. The latter does not exist on NT4, so... 
+/* XP DDK #defines ExFreePool to ExFreePoolWithTag. The latter does not exist on NT4, so...
  * The same for ExAllocatePool.
  */
 #undef ExAllocatePool
@@ -338,14 +339,14 @@ NTSTATUS VBoxGuestClose(PDEVICE_OBJECT pDevObj, PIRP pIrp)
     return STATUS_SUCCESS;
 }
 
-#ifdef VBOX_HGCM
+#ifdef VBOX_WITH_HGCM
 DECLVBGL(void) VBoxHGCMCallback (VMMDevHGCMRequestHeader *pHeader, void *pvData, uint32_t u32Data)
 {
     PVBOXGUESTDEVEXT pDevExt = (PVBOXGUESTDEVEXT)pvData;
 
     dprintf(("VBoxHGCMCallback\n"));
-        
-    /* Possible problem with request completion right between the fu32Flags check and KeWaitForSingleObject 
+
+    /* Possible problem with request completion right between the fu32Flags check and KeWaitForSingleObject
      * call; introduce a timeout to make sure we don't wait indefinitely.
      */
 
@@ -356,7 +357,7 @@ DECLVBGL(void) VBoxHGCMCallback (VMMDevHGCMRequestHeader *pHeader, void *pvData,
          *       be not interruptible. The wait can be interrupted only when the
          *       calling process is being killed.
          *       When alertable is TRUE, the wait sometimes ends with STATUS_USER_APC.
-         */ 
+         */
         NTSTATUS rc = KeWaitForSingleObject (&pDevExt->keventNotification, Executive,
                                              UserMode,
                                              FALSE, /* Not Alertable */
@@ -369,7 +370,7 @@ DECLVBGL(void) VBoxHGCMCallback (VMMDevHGCMRequestHeader *pHeader, void *pvData,
 
         if (rc != STATUS_WAIT_0)
         {
-            dprintf(("VBoxHGCMCallback: The external event was signalled or the wait timed out or terminated.\n"));
+            dprintf(("VBoxHGCMCallback: The external event was signalled or the wait timed out or terminated rc = 0x%08X.\n", rc));
             break;
         }
 
@@ -397,31 +398,11 @@ NTSTATUS vboxHGCMVerifyIOBuffers (PIO_STACK_LOCATION pStack, unsigned cb)
     return STATUS_SUCCESS;
 }
 
-#endif /* VBOX_HGCM */
-
-static bool
-__declspec (naked) __fastcall
-TestAndClearEvent (PVBOXGUESTDEVEXT pDevExt, int iBitOffset)
-{
-    _asm {
-        lock btr PVBOXGUESTDEVEXT[ecx].u32Events, edx;
-        setc al;
-        movzx eax, al;
-        ret;
-    }
-}
+#endif /* VBOX_WITH_HGCM */
 
 static bool IsPowerOfTwo (uint32_t val)
 {
     return (val & (val - 1)) == 0;
-}
-
-static int __declspec (naked) __fastcall GetMsb32 (uint32_t val)
-{
-    _asm {
-        bsf eax, ecx;
-        ret;
-    }
 }
 
 static bool CtlGuestFilterMask (uint32_t u32OrMask, uint32_t u32NotMask)
@@ -520,8 +501,8 @@ static int VBoxGuestSetBalloonSize(PVBOXGUESTDEVEXT pDevExt, uint32_t u32Balloon
                 __try {
                     /* Calls to MmProbeAndLockPages must be enclosed in a try/except block. */
                     MmProbeAndLockPages (pMdl, KernelMode, IoModifyAccess);
-                } 
-                __except(EXCEPTION_EXECUTE_HANDLER) 
+                }
+                __except(EXCEPTION_EXECUTE_HANDLER)
                 {
                     dprintf(("MmProbeAndLockPages failed!\n"));
                     rc = VERR_NO_MEMORY;
@@ -642,7 +623,7 @@ static int VBoxGuestQueryMemoryBalloon(PVBOXGUESTDEVEXT pDevExt, ULONG *pMemBall
 
         if (VBOX_FAILURE(rc) || VBOX_FAILURE(req->header.rc))
         {
-            dprintf(("VBoxGuest::VBoxGuestDeviceControl IOCTL_VBOXGUEST_CTL_CHECK_BALLOON: error issuing request to VMMDev!"
+            dprintf(("VBoxGuest::VBoxGuestDeviceControl VBOXGUEST_IOCTL_CTL_CHECK_BALLOON: error issuing request to VMMDev!"
                      "rc = %d, VMMDev rc = %Vrc\n", rc, req->header.rc));
         }
         else
@@ -721,9 +702,9 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
     switch (pStack->Parameters.DeviceIoControl.IoControlCode)
     {
-        case IOCTL_VBOXGUEST_GETVMMDEVPORT:
+        case VBOXGUEST_IOCTL_GETVMMDEVPORT:
         {
-            dprintf(("VBoxGuest::VBoxGuestDeviceControl: IOCTL_VBOXGUEST_GETVMMDEVPORT\n"));
+            dprintf(("VBoxGuest::VBoxGuestDeviceControl: VBOXGUEST_IOCTL_GETVMMDEVPORT\n"));
 
             if (pStack->Parameters.DeviceIoControl.OutputBufferLength < sizeof (VBoxGuestPortInfo))
             {
@@ -741,13 +722,13 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             break;
         }
 
-        case IOCTL_VBOXGUEST_WAITEVENT:
+        case VBOXGUEST_IOCTL_WAITEVENT:
         {
             /* Need to be extended to support multiple waiters for an event,
              * array of counters for each event, event mask is computed, each
              * time a wait event is arrived.
              */
-            dprintf(("VBoxGuest::VBoxGuestDeviceControl: IOCTL_VBOXGUEST_WAITEVENT\n"));
+            dprintf(("VBoxGuest::VBoxGuestDeviceControl: VBOXGUEST_IOCTL_WAITEVENT\n"));
 
             if (pStack->Parameters.DeviceIoControl.OutputBufferLength < sizeof(VBoxGuestWaitEventInfo))
             {
@@ -774,12 +755,12 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             }
 
             eventInfo->u32EventFlagsOut = 0;
-            int iBitOffset = GetMsb32 (eventInfo->u32EventMaskIn);
+            int iBitOffset = ASMBitFirstSetU32 (eventInfo->u32EventMaskIn) - 1;
             bool fTimeout = (eventInfo->u32TimeoutIn != ~0L);
 
             dprintf (("mask = %d, iBitOffset = %d\n", iBitOffset, eventInfo->u32EventMaskIn));
 
-            /* Possible problem with request completion right between the pending event check and KeWaitForSingleObject 
+            /* Possible problem with request completion right between the pending event check and KeWaitForSingleObject
              * call; introduce a timeout (if none was specified) to make sure we don't wait indefinitely.
              */
             LARGE_INTEGER timeout;
@@ -790,7 +771,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
             for (;;)
             {
-                bool fEventPending = TestAndClearEvent (pDevExt, iBitOffset);
+                bool fEventPending = ASMAtomicBitTestAndClear(&pDevExt->u32Events, iBitOffset);
                 if (fEventPending)
                 {
                     eventInfo->u32EventFlagsOut = 1 << iBitOffset;
@@ -799,7 +780,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
                 rc = KeWaitForSingleObject (&pDevExt->keventNotification, Executive /** @todo UserRequest? */,
                                             KernelMode, TRUE, &timeout);
-                dprintf(("IOCTL_VBOXGUEST_WAITEVENT: Wait returned %d -> event %x\n", rc, eventInfo->u32EventFlagsOut));
+                dprintf(("VBOXGUEST_IOCTL_WAITEVENT: Wait returned %d -> event %x\n", rc, eventInfo->u32EventFlagsOut));
 
                 if (!fTimeout && rc == STATUS_TIMEOUT)
                     continue;
@@ -816,9 +797,9 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             break;
         }
 
-        case IOCTL_VBOXGUEST_VMMREQUEST:
+        case VBOXGUEST_IOCTL_VMMREQUEST(0): /* (The size isn't relevant on NT.)*/
         {
-            dprintf(("VBoxGuest::VBoxGuestDeviceControl: IOCTL_VBOXGUEST_VMMREQUEST\n"));
+            dprintf(("VBoxGuest::VBoxGuestDeviceControl: VBOXGUEST_IOCTL_VMMREQUEST\n"));
 
 #define CHECK_SIZE(s) \
             if (pStack->Parameters.DeviceIoControl.OutputBufferLength < s) \
@@ -859,7 +840,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
                 if (VBOX_FAILURE(rc) || VBOX_FAILURE(req->rc))
                 {
-                    dprintf(("VBoxGuest::VBoxGuestDeviceControl IOCTL_VBOXGUEST_VMMREQUEST: error issuing request to VMMDev!"
+                    dprintf(("VBoxGuest::VBoxGuestDeviceControl VBOXGUEST_IOCTL_VMMREQUEST: Error issuing request to VMMDev! "
                              "rc = %d, VMMDev rc = %Vrc\n", rc, req->rc));
                     Status = STATUS_UNSUCCESSFUL;
                 }
@@ -880,7 +861,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             break;
         }
 
-        case IOCTL_VBOXGUEST_CTL_FILTER_MASK:
+        case VBOXGUEST_IOCTL_CTL_FILTER_MASK:
         {
             VBoxGuestFilterMaskInfo *maskInfo;
 
@@ -901,13 +882,13 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             break;
         }
 
-#ifdef VBOX_HGCM
+#ifdef VBOX_WITH_HGCM
         /* HGCM offers blocking IOCTLSs just like waitevent and actually
          * uses the same waiting code.
          */
-        case IOCTL_VBOXGUEST_HGCM_CONNECT:
+        case VBOXGUEST_IOCTL_HGCM_CONNECT:
         {
-            dprintf(("VBoxGuest::VBoxGuestDeviceControl: IOCTL_VBOXGUEST_HGCM_CONNECT\n"));
+            dprintf(("VBoxGuest::VBoxGuestDeviceControl: VBOXGUEST_IOCTL_HGCM_CONNECT\n"));
 
             if (pStack->Parameters.DeviceIoControl.OutputBufferLength != sizeof(VBoxGuestHGCMConnectInfo))
             {
@@ -940,7 +921,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
             if (VBOX_FAILURE(rc))
             {
-                dprintf(("IOCTL_VBOXGUEST_HGCM_CONNECT: vbox rc = %Vrc\n", rc));
+                dprintf(("VBOXGUEST_IOCTL_HGCM_CONNECT: vbox rc = %Vrc\n", rc));
                 Status = STATUS_UNSUCCESSFUL;
             }
             else
@@ -950,9 +931,9 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
         } break;
 
-        case IOCTL_VBOXGUEST_HGCM_DISCONNECT:
+        case VBOXGUEST_IOCTL_HGCM_DISCONNECT:
         {
-            dprintf(("VBoxGuest::VBoxGuestDeviceControl: IOCTL_VBOXGUEST_HGCM_DISCONNECT\n"));
+            dprintf(("VBoxGuest::VBoxGuestDeviceControl: VBOXGUEST_IOCTL_HGCM_DISCONNECT\n"));
 
             if (pStack->Parameters.DeviceIoControl.OutputBufferLength != sizeof(VBoxGuestHGCMDisconnectInfo))
             {
@@ -981,7 +962,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
             if (VBOX_FAILURE(rc))
             {
-                dprintf(("IOCTL_VBOXGUEST_HGCM_DISCONNECT: vbox rc = %Vrc\n", rc));
+                dprintf(("VBOXGUEST_IOCTL_HGCM_DISCONNECT: vbox rc = %Vrc\n", rc));
                 Status = STATUS_UNSUCCESSFUL;
             }
             else
@@ -991,13 +972,13 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
         } break;
 
-        case IOCTL_VBOXGUEST_HGCM_CALL:
+        case VBOXGUEST_IOCTL_HGCM_CALL(0): /* (The size isn't relevant on NT.) */
         {
-            dprintf(("VBoxGuest::VBoxGuestDeviceControl: IOCTL_VBOXGUEST_HGCM_CALL\n"));
+            dprintf(("VBoxGuest::VBoxGuestDeviceControl: VBOXGUEST_IOCTL_HGCM_CALL\n"));
 
             Status = vboxHGCMVerifyIOBuffers (pStack,
                                               sizeof (VBoxGuestHGCMCallInfo));
-                                              
+
             if (Status != STATUS_SUCCESS)
             {
                 dprintf(("VBoxGuest::VBoxGuestDeviceControl: invalid parameter. Status: %p\n", Status));
@@ -1010,7 +991,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
             if (VBOX_FAILURE(rc))
             {
-                dprintf(("IOCTL_VBOXGUEST_HGCM_CALL: vbox rc = %Vrc\n", rc));
+                dprintf(("VBOXGUEST_IOCTL_HGCM_CALL: vbox rc = %Vrc\n", rc));
                 Status = STATUS_UNSUCCESSFUL;
             }
             else
@@ -1019,10 +1000,10 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             }
 
         } break;
-#endif /* VBOX_HGCM */
+#endif /* VBOX_WITH_HGCM */
 
 #ifdef VBOX_WITH_VRDP_SESSION_HANDLING
-        case IOCTL_VBOXGUEST_ENABLE_VRDP_SESSION:
+        case VBOXGUEST_IOCTL_ENABLE_VRDP_SESSION:
         {
             if (!pDevExt->fVRDPEnabled)
             {
@@ -1035,7 +1016,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             break;
         }
 
-        case IOCTL_VBOXGUEST_DISABLE_VRDP_SESSION:
+        case VBOXGUEST_IOCTL_DISABLE_VRDP_SESSION:
         {
             if (pDevExt->fVRDPEnabled)
             {
@@ -1050,7 +1031,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 #endif
 
 #ifdef VBOX_WITH_MANAGEMENT
-        case IOCTL_VBOXGUEST_CTL_CHECK_BALLOON:
+        case VBOXGUEST_IOCTL_CTL_CHECK_BALLOON_MASK:
         {
             ULONG *pMemBalloonSize = (ULONG *) pBuf;
 
@@ -1065,7 +1046,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             int rc = VBoxGuestQueryMemoryBalloon(pDevExt, pMemBalloonSize);
             if (VBOX_FAILURE(rc))
             {
-                dprintf(("IOCTL_VBOXGUEST_CTL_CHECK_BALLOON: vbox rc = %Vrc\n", rc));
+                dprintf(("VBOXGUEST_IOCTL_CTL_CHECK_BALLOON: vbox rc = %Vrc\n", rc));
                 Status = STATUS_UNSUCCESSFUL;
             }
             else
@@ -1075,6 +1056,16 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             break;
         }
 #endif
+
+        case VBOXGUEST_IOCTL_LOG(0):    /* The size isn't relevant on NT. */
+        {
+            /* Enable this only for debugging:
+            dprintf(("VBoxGuest::VBoxGuestDeviceControl: VBOXGUEST_IOCTL_LOG %.*s\n", (int)pStack->Parameters.DeviceIoControl.InputBufferLength, pBuf));
+             */
+            LogRel(("%.*s", (int)pStack->Parameters.DeviceIoControl.InputBufferLength, pBuf));
+            cbOut = 0;
+            break;
+        }
 
         default:
              Status = STATUS_INVALID_PARAMETER;

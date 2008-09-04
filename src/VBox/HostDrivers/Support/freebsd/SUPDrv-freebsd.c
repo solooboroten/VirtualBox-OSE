@@ -1,6 +1,6 @@
-/* $Id: SUPDrv-freebsd.c 28610 2008-03-04 12:33:43Z sandervl $ */
+/* $Id: SUPDrv-freebsd.c 35466 2008-08-27 22:21:47Z bird $ */
 /** @file
- * VBoxDrv - FreeBSD specifics.
+ * VBoxDrv - The VirtualBox Support Driver - FreeBSD specifics.
  */
 
 /*
@@ -28,10 +28,10 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
+#define LOG_GROUP LOG_GROUP_SUP_DRV
 /* Deal with conflicts first. */
 #include <sys/param.h>
 #undef PVM
@@ -44,14 +44,14 @@
 #include <sys/conf.h>
 #include <sys/uio.h>
 
-#include "SUPDRV.h"
+#include "../SUPDrvInternal.h"
 #include <VBox/version.h>
 #include <iprt/initterm.h>
 #include <iprt/string.h>
 #include <iprt/spinlock.h>
 #include <iprt/process.h>
 #include <iprt/assert.h>
-#include <iprt/log.h>
+#include <VBox/log.h>
 #include <iprt/alloc.h>
 #include <iprt/err.h>
 
@@ -237,12 +237,11 @@ static void VBoxDrvFreeBSDClone(void *pvArg, struct ucred *pCred, char *pszName,
     dprintf(("VBoxDrvFreeBSDClone: clone_create -> %d; iUnit=%d\n", rc, iUnit));
     if (rc)
     {
-        *ppDev = make_dev(&g_VBoxDrvFreeBSDChrDevSW,
-                          unit2minor(iUnit),
-                          UID_ROOT,
-                          GID_WHEEL,
-                          0666,
-                          "vboxdrv%d", iUnit);
+#ifdef VBOX_WITH_HARDENING
+        *ppDev = make_dev(&g_VBoxDrvFreeBSDChrDevSW, unit2minor(iUnit), UID_ROOT, GID_WHEEL, 0600, "vboxdrv%d", iUnit);
+#else
+        *ppDev = make_dev(&g_VBoxDrvFreeBSDChrDevSW, unit2minor(iUnit), UID_ROOT, GID_WHEEL, 0666, "vboxdrv%d", iUnit);
+#endif
         if (*ppDev)
         {
             dev_ref(*ppDev);
@@ -300,13 +299,12 @@ static int VBoxDrvFreeBSDOpen(struct cdev *pDev, int fOpen, struct thread *pTd, 
     /*
      * Create a new session.
      */
-    rc = supdrvCreateSession(&g_VBoxDrvFreeBSDDevExt, &pSession);
+    rc = supdrvCreateSession(&g_VBoxDrvFreeBSDDevExt, true /* fUser */, &pSession);
     if (RT_SUCCESS(rc))
     {
-        pSession->Uid = 0;
-        pSession->Gid = 0;
-        pSession->Process = RTProcSelf();
-        pSession->R0Process = RTR0ProcHandleSelf();
+        /** @todo get (r)uid and (r)gid.
+        pSession->Uid = stuff;
+        pSession->Gid = stuff; */
         if (ASMAtomicCmpXchgPtr(&pDev->si_drv1, pSession, (void *)0x42))
             return 0;
 
@@ -513,6 +511,40 @@ static int VBoxDrvFreeBSDIOCtlSlow(PSUPDRVSESSION pSession, u_long ulCmd, caddr_
 }
 
 
+/**
+ * The SUPDRV IDC entry point.
+ *
+ * @returns VBox status code, see supdrvIDC.
+ * @param   iReq        The request code.
+ * @param   pReq        The request.
+ */
+int VBOXCALL SUPDrvFreeBSDIDC(uint32_t uReq, PSUPDRVIDCREQHDR pReq)
+{
+    PSUPDRVSESSION  pSession;
+
+    /*
+     * Some quick validations.
+     */
+    if (RT_UNLIKELY(!VALID_PTR(pReq)))
+        return VERR_INVALID_POINTER;
+
+    pSession = pReq->pSession;
+    if (pSession)
+    {
+        if (RT_UNLIKELY(!VALID_PTR(pReq->pSession)))
+            return VERR_INVALID_PARAMETER;
+        if (RT_UNLIKELY(pSession->pDevExt != &g_VBoxDrvFreeBSDModule))
+            return VERR_INVALID_PARAMETER;
+    }
+    else if (RT_UNLIKELY(uReq != SUPDRV_IDC_REQ_CONNECT))
+        return VERR_INVALID_PARAMETER;
+
+    /*
+     * Do the job.
+     */
+    return supdrvIDC(uReq, &g_VBoxDrvFreeBSDModule, pSession, pReq);
+}
+
 
 void VBOXCALL   supdrvOSObjInitCreator(PSUPDRVOBJ pObj, PSUPDRVSESSION pSession)
 {
@@ -527,6 +559,12 @@ bool VBOXCALL   supdrvOSObjCanAccess(PSUPDRVOBJ pObj, PSUPDRVSESSION pSession, c
     NOREF(pSession);
     NOREF(pszObjName);
     NOREF(prc);
+    return false;
+}
+
+
+bool VBOXCALL  supdrvOSGetForcedAsyncTscMode(PSUPDRVDEVEXT pDevExt)
+{
     return false;
 }
 

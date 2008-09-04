@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxImpl.h 30749 2008-05-12 00:59:03Z bird $ */
+/* $Id: VirtualBoxImpl.h 33291 2008-07-14 12:23:57Z dmik $ */
 
 /** @file
  *
@@ -35,6 +35,11 @@
 #ifdef RT_OS_WINDOWS
 # include "win/resource.h"
 #endif
+
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+#include "PerformanceImpl.h"
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
 
 class Machine;
 class SessionMachine;
@@ -75,13 +80,13 @@ class ATL_NO_VTABLE VirtualBox :
 
 public:
 
-    VIRTUALBOXBASE_ADD_ERRORINFO_SUPPORT (VirtualBox)
-
     typedef std::list <ComPtr <IVirtualBoxCallback> > CallbackList;
     typedef std::vector <ComPtr <IVirtualBoxCallback> > CallbackVector;
 
     class CallbackEvent;
     friend class CallbackEvent;
+
+    VIRTUALBOXBASE_ADD_ERRORINFO_SUPPORT (VirtualBox)
 
     DECLARE_CLASSFACTORY_SINGLETON(VirtualBox)
 
@@ -111,6 +116,7 @@ public:
 
     /* IVirtualBox properties */
     STDMETHOD(COMGETTER(Version)) (BSTR *aVersion);
+    STDMETHOD(COMGETTER(PackageType)) (BSTR *aPackageType);
     STDMETHOD(COMGETTER(HomeFolder)) (BSTR *aHomeFolder);
     STDMETHOD(COMGETTER(SettingsFilePath)) (BSTR *aSettingsFilePath);
     STDMETHOD(COMGETTER(SettingsFileVersion)) (BSTR *aSettingsFileVersion);
@@ -125,6 +131,7 @@ public:
     STDMETHOD(COMGETTER(ProgressOperations)) (IProgressCollection **aOperations);
     STDMETHOD(COMGETTER(GuestOSTypes)) (IGuestOSTypeCollection **aGuestOSTypes);
     STDMETHOD(COMGETTER(SharedFolders)) (ISharedFolderCollection **aSharedFolders);
+    STDMETHOD(COMGETTER(PerformanceCollector)) (IPerformanceCollector **aPerformanceCollector);
 
     /* IVirtualBox methods */
 
@@ -249,7 +256,13 @@ public:
                               Bstr *aMachineIDs = NULL);
 
     const ComObjPtr <Host> &host() { return mData.mHost; }
-    const ComObjPtr <SystemProperties> &systemProperties() { return mData.mSystemProperties; }
+    const ComObjPtr <SystemProperties> &systemProperties()
+        { return mData.mSystemProperties; }
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+    const ComObjPtr <PerformanceCollector> &performanceCollector()
+        { return mData.mPerformanceCollector; }
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
 
     /** Returns the VirtualBox home directory */
     const Utf8Str &homeDir() { return mData.mHomeDir; }
@@ -382,7 +395,6 @@ private:
 
     HRESULT registerDVDImage (DVDImage *aImage, bool aOnStartUp);
     HRESULT registerFloppyImage (FloppyImage *aImage, bool aOnStartUp);
-    HRESULT registerGuestOSTypes();
 
     HRESULT lockConfig();
     HRESULT unlockConfig();
@@ -413,6 +425,9 @@ private:
         // const objects not requiring locking
         const ComObjPtr <Host> mHost;
         const ComObjPtr <SystemProperties> mSystemProperties;
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+        const ComObjPtr <PerformanceCollector> mPerformanceCollector;
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
         CfgFile mCfgFile;
 
@@ -473,6 +488,7 @@ private:
     RWLockHandle mAsyncEventQLock;
 
     static Bstr sVersion;
+    static Bstr sPackageType;
     static Bstr sSettingsFormatVersion;
 
     static DECLCALLBACK(int) ClientWatcher (RTTHREAD thread, void *pvUser);

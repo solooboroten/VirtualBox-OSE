@@ -1,4 +1,4 @@
-/* $Id: VBoxGuest-solaris.c 31458 2008-05-30 17:21:10Z bird $ */
+/* $Id: VBoxGuest-solaris.c 35249 2008-08-25 08:06:18Z ni81036 $ */
 /** @file
  * VirtualBox Guest Additions Driver for Solaris.
  */

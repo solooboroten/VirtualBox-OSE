@@ -1,4 +1,4 @@
-/* $Id: PGMShw.h 31225 2008-05-26 09:06:33Z sandervl $ */
+/* $Id: PGMShw.h 33607 2008-07-23 09:02:58Z sandervl $ */
 /** @file
  * VBox - Page Manager / Monitor, Shadow Paging Template.
  */
@@ -112,7 +112,7 @@ PGM_SHW_DECL(int, InitData)(PVM pVM, PPGMMODEDATA pModeData, bool fResolveGCAndR
     {
         int rc;
 
-#if PGM_SHW_TYPE != PGM_TYPE_AMD64 && PGM_SHW_TYPE != PGM_TYPE_NESTED /* No AMD64 for traditional virtualization, only VT-x and AMD-V. */
+#if PGM_SHW_TYPE != PGM_TYPE_AMD64 && PGM_SHW_TYPE != PGM_TYPE_NESTED && PGM_SHW_TYPE != PGM_TYPE_EPT /* No AMD64 for traditional virtualization, only VT-x and AMD-V. */
         /* GC */
         rc = PDMR3GetSymbolGC(pVM, NULL, PGM_SHW_NAME_GC_STR(GetPage),  &pModeData->pfnGCShwGetPage);
         AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_SHW_NAME_GC_STR(GetPage),  rc), rc);
@@ -137,10 +137,13 @@ PGM_SHW_DECL(int, InitData)(PVM pVM, PPGMMODEDATA pModeData, bool fResolveGCAndR
  */
 PGM_SHW_DECL(int, Enter)(PVM pVM)
 {
-#if PGM_SHW_MODE == PGM_MODE_AMD64
-    /*
-     * Set the RW, US and A flags for the fixed PDPEs.
-     */
+#if PGM_SHW_TYPE == PGM_TYPE_NESTED
+    Assert(HWACCMIsNestedPagingActive(pVM));
+
+    Log(("Enter nested shadow paging mode: root %VHv phys %VHp\n", pVM->pgm.s.pHCNestedRoot, pVM->pgm.s.HCPhysNestedRoot));
+    /* In non-nested mode we allocate the PML4 page on-demand; in nested mode we just use our fixed nested paging root. */
+    pVM->pgm.s.pHCPaePML4    = (PX86PML4)pVM->pgm.s.pHCNestedRoot;
+    pVM->pgm.s.HCPhysPaePML4 = pVM->pgm.s.HCPhysNestedRoot;
 #endif
     return VINF_SUCCESS;
 }
@@ -168,10 +171,11 @@ PGM_SHW_DECL(int, Relocate)(PVM pVM, RTGCUINTPTR offDelta)
  */
 PGM_SHW_DECL(int, Exit)(PVM pVM)
 {
-#if PGM_SHW_MODE == PGM_MODE_AMD64
-    /*
-     * Clear the RW, US and A flags for the fixed PDPEs.
-     */
+#if PGM_SHW_TYPE == PGM_TYPE_NESTED
+    Assert(HWACCMIsNestedPagingActive(pVM));
+    pVM->pgm.s.pHCPaePML4    = 0;
+    pVM->pgm.s.HCPhysPaePML4 = 0;
+    Log(("Leave nested shadow paging mode\n"));
 #endif
 
     return VINF_SUCCESS;

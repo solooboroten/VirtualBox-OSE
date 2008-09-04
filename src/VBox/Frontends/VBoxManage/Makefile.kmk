@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31069 2008-05-21 07:56:16Z aleksey $
+# $Id: Makefile.kmk 35651 2008-08-29 14:09:39Z frank $
 ## @file
 # Sub-Makefile for VBoxManage (the cli frontend).
 #
@@ -20,23 +20,50 @@
 #
 
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
+DEPTH    ?= ../../../..
 SUB_DEPTH = ..
+endif
 include $(KBUILD_PATH)/subheader.kmk
 
 PROGRAMS += VBoxManage
-VBoxManage_TEMPLATE    = VBOXMAINCLIENTEXE
-VBoxManage_DEFS       += $(if $(VBOX_WITH_VRDP),VBOX_VRDP,) \
+ifdef VBOX_ONLY_DOCS
+ VBoxManage_TEMPLATE   = VBOXR3NPEXE
+ VBoxManage_DEFS      += VBOX_ONLY_DOCS
+ VBoxManage_SOURCES     = \
+	VBoxManage.cpp \
+	VBoxManageSVN.cpp
+ VBoxManage_LIBS      += $(LIB_RUNTIME)
+else # !VBOX_ONLY_DOCS
+ VBoxManage_TEMPLATE   = VBOXMAINCLIENTEXE
+ VBoxManage_DEFS      += $(if $(VBOX_WITH_VRDP),VBOX_WITH_VRDP,) \
                          $(if $(VBOX_WITH_ALSA),VBOX_WITH_ALSA,) \
                          $(if $(VBOX_WITH_PULSE),VBOX_WITH_PULSE,) \
                          $(if $(VBOX_WITH_E1000),VBOX_WITH_E1000,) \
-                         $(if $(VBOX_WITH_AHCI),VBOX_WITH_AHCI,)
-VBoxManage_DEFS.win    = _WIN32_WINNT=0x0500
-VBoxManage_SOURCES     = \
+                         $(if $(VBOX_WITH_AHCI),VBOX_WITH_AHCI,) \
+                         $(if $(VBOX_WITH_GUEST_PROPS),VBOX_WITH_GUEST_PROPS,)
+ VBoxManage_DEFS.win   = _WIN32_WINNT=0x0500
+ VBoxManage_SOURCES     = \
 	VBoxManage.cpp \
 	VBoxInternalManage.cpp \
+	$(if $(VBOX_WITH_GUEST_PROPS),VBoxManageGuestProp.cpp) \
 	VBoxManageSVN.cpp
-VBoxManage_LIBS       += $(LIB_DDU)
+endif # !VBOX_ONLY_DOCS
+ifneq ($(KBUILD_TARGET),win)
+ # Workaround for buggy gcc-4.3 compilers, see
+ #
+ #   http://gcc.gnu.org/bugzilla/show_bug.cgi?id=36474
+ #
+ # Some later revisions of version 4.3.1 are known to work so we assume
+ # that version 4.3.2 or later has this bug definitely fixed.
+ VBoxManage_CXXFLAGS.release += \
+	$(if $(int-lt $(VBOX_GCC_VERSION_CXX),40300)$(int-gt $(VBOX_GCC_VERSION_CXX),40301),,--param max-fields-for-field-sensitive=0)
+endif
+ifndef VBOX_ONLY_DOCS
+ VBoxManage_LIBS      += $(LIB_DDU)
+endif # !VBOX_ONLY_DOCS
 
 # VBoxManageSVN.cpp uses VBOX_SVN_REV.
 VBoxManageSVN.cpp_DEFS = VBOX_SVN_REV=$(VBOX_SVN_REV)

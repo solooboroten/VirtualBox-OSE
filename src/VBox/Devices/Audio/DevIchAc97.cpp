@@ -1,10 +1,10 @@
+/* $Id: DevIchAc97.cpp 34377 2008-08-08 22:32:08Z bird $ */
 /** @file
- *
- * VBox ICH AC97 Audio Controller
+ * DevIchAc97 - VBox ICH AC97 Audio Controller.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2008 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -28,7 +28,7 @@
 #include <iprt/uuid.h>
 #include <iprt/string.h>
 
-#include "Builtins.h"
+#include "../Builtins.h"
 
 extern "C" {
 #include "audio.h"
@@ -79,9 +79,9 @@ enum {
 };
 
 #ifndef VBOX
-#define SOFT_VOLUME
+# define SOFT_VOLUME
 #else
-#undef  SOFT_VOLUME
+# undef  SOFT_VOLUME
 #endif
 #define SR_FIFOE RT_BIT(4)          /* rwc, fifo error */
 #define SR_BCIS  RT_BIT(3)          /* rwc, buffer completion interrupt status */
@@ -200,7 +200,7 @@ typedef struct AC97LinkState
     uint8_t                 silence[128];
     int                     bup_flag;
     /** Pointer to the device instance. */
-    PPDMDEVINS              pDevIns;
+    PPDMDEVINSR3            pDevIns;
     /** Pointer to the connector of the attached audio driver. */
     PPDMIAUDIOCONNECTOR     pDrv;
     /** Pointer to the attached audio driver. */
@@ -227,15 +227,15 @@ typedef struct PCIAC97LinkState
 } PCIAC97LinkState;
 
 #define MKREGS(prefix, start)                   \
-enum {                                          \
-    prefix ## _BDBAR = start,                   \
-    prefix ## _CIV   = start + 4,               \
-    prefix ## _LVI   = start + 5,               \
-    prefix ## _SR    = start + 6,               \
-    prefix ## _PICB  = start + 8,               \
-    prefix ## _PIV   = start + 10,              \
-    prefix ## _CR    = start + 11               \
-}
+    enum {                                      \
+        prefix ## _BDBAR = start,               \
+        prefix ## _CIV   = start + 4,           \
+        prefix ## _LVI   = start + 5,           \
+        prefix ## _SR    = start + 6,           \
+        prefix ## _PICB  = start + 8,           \
+        prefix ## _PIV   = start + 10,          \
+        prefix ## _CR    = start + 11           \
+    }
 
 enum
 {
@@ -281,7 +281,7 @@ static void fetch_bd (AC97LinkState *s, AC97BusMasterRegs *r)
     PDMDevHlpPhysRead (pDevIns, r->bdbar + r->civ * 8, b, sizeof(b));
     r->bd_valid   = 1;
 #if !defined(RT_ARCH_X86) && !defined(RT_ARCH_AMD64)
-#error Please adapt the code (audio buffers are little endian)!
+# error Please adapt the code (audio buffers are little endian)!
 #else
     r->bd.addr    = (*(uint32_t *) &b[0]) & ~3;
     r->bd.ctl_len = (*(uint32_t *) &b[4]);
@@ -416,7 +416,7 @@ static void open_voice (AC97LinkState *s, int index, int freq)
                 s->voice_pi = AUD_open_in (&s->card, s->voice_pi, "ac97.pi",
                                            s, pi_callback, &as);
 #ifdef LOG_VOICES
-                LogRel(("AC97: open PI freq=%d (%s)\n", freq, s->voice_pi ? "ok" : "FAIL"));
+                LogRel (("AC97: open PI freq=%d (%s)\n", freq, s->voice_pi ? "ok" : "FAIL"));
 #endif
                 break;
 
@@ -424,7 +424,7 @@ static void open_voice (AC97LinkState *s, int index, int freq)
                 s->voice_po = AUD_open_out (&s->card, s->voice_po, "ac97.po",
                                             s, po_callback, &as);
 #ifdef LOG_VOICES
-                LogRel(("AC97: open PO freq=%d (%s)\n", freq, s->voice_po ? "ok" : "FAIL"));
+                LogRel (("AC97: open PO freq=%d (%s)\n", freq, s->voice_po ? "ok" : "FAIL"));
 #endif
                 break;
 
@@ -432,7 +432,7 @@ static void open_voice (AC97LinkState *s, int index, int freq)
                 s->voice_mc = AUD_open_in (&s->card, s->voice_mc, "ac97.mc",
                                            s, mc_callback, &as);
 #ifdef LOG_VOICES
-                LogRel(("AC97: open MC freq=%d (%s)\n", freq, s->voice_mc ? "ok" : "FAIL"));
+                LogRel (("AC97: open MC freq=%d (%s)\n", freq, s->voice_mc ? "ok" : "FAIL"));
 #endif
                 break;
         }
@@ -444,7 +444,7 @@ static void open_voice (AC97LinkState *s, int index, int freq)
             case PI_INDEX:
                 AUD_close_in (&s->card, s->voice_pi);
 #ifdef LOG_VOICES
-                LogRel(("AC97: Closing PCM IN\n"));
+                LogRel (("AC97: Closing PCM IN\n"));
 #endif
                 s->voice_pi = NULL;
                 break;
@@ -452,7 +452,7 @@ static void open_voice (AC97LinkState *s, int index, int freq)
             case PO_INDEX:
                 AUD_close_out (&s->card, s->voice_po);
 #ifdef LOG_VOICES
-                LogRel(("AC97: Closing PCM OUT\n"));
+                LogRel (("AC97: Closing PCM OUT\n"));
 #endif
                 s->voice_po = NULL;
                 break;
@@ -460,7 +460,7 @@ static void open_voice (AC97LinkState *s, int index, int freq)
             case MC_INDEX:
                 AUD_close_in (&s->card, s->voice_mc);
 #ifdef LOG_VOICES
-                LogRel(("AC97: Closing MIC IN\n"));
+                LogRel (("AC97: Closing MIC IN\n"));
 #endif
                 s->voice_mc = NULL;
                 break;
@@ -486,6 +486,7 @@ static void reset_voices (AC97LinkState *s, uint8_t active[LAST_INDEX])
 }
 
 #ifdef USE_MIXER
+
 static void set_volume (AC97LinkState *s, int index,
                         audmixerctl_t mt, uint32_t val)
 {
@@ -495,19 +496,18 @@ static void set_volume (AC97LinkState *s, int index,
     rvol = 255 * rvol / VOL_MASK;
     lvol = 255 * lvol / VOL_MASK;
 
-#ifdef SOFT_VOLUME
+# ifdef SOFT_VOLUME
     if (index == AC97_Master_Volume_Mute)
         AUD_set_volume_out (s->voice_po, mute, lvol, rvol);
     else
         AUD_set_volume (mt, &mute, &lvol, &rvol);
-#else
+# else
     AUD_set_volume (mt, &mute, &lvol, &rvol);
-#endif
+# endif
 
     rvol = VOL_MASK - ((VOL_MASK * rvol) / 255);
     lvol = VOL_MASK - ((VOL_MASK * lvol) / 255);
 
-#ifdef VBOX
     /*
      * From AC'97 SoundMax Codec AD1981A: "Because AC '97 defines 6-bit volume registers, to
      * maintain compatibility whenever the D5 or D13 bits are set to `1,' their respective
@@ -520,7 +520,6 @@ static void set_volume (AC97LinkState *s, int index,
         val |= RT_BIT(4) | RT_BIT(3) | RT_BIT(2) | RT_BIT(1) | RT_BIT(0);
     if (val & RT_BIT(13))
         val |= RT_BIT(12) | RT_BIT(11) | RT_BIT(10) | RT_BIT(9) | RT_BIT(8);
-#endif
 
     mixer_store (s, index, val);
 }
@@ -566,7 +565,8 @@ static void record_select (AC97LinkState *s, uint32_t val)
     ls = aud_to_ac97_record_source (als);
     mixer_store (s, AC97_Record_Select, rs | (ls << 8));
 }
-#endif
+
+#endif /* USE_MIXER */
 
 static void mixer_reset (AC97LinkState *s)
 {
@@ -803,7 +803,7 @@ static void transfer_audio (AC97LinkState *s, int index, int elapsed)
                 break;
         }
 
-        Log(("r->picb = %d\n", r->picb));
+        Log (("r->picb = %d\n", r->picb));
 
         if (!r->picb)
         {
@@ -1274,14 +1274,14 @@ static DECLCALLBACK(int) ichac97IOPortNAMWrite (PPDMDEVINS pDevIns, void *pvUser
                 case AC97_Record_Select:
                     record_select (s, u32);
                     break;
-#else
+#else  /* !USE_MIXER */
                 case AC97_Master_Volume_Mute:
                 case AC97_PCM_Out_Volume_Mute:
                 case AC97_Line_In_Volume_Mute:
                 case AC97_Record_Select:
                     mixer_store (s, index, u32);
                     break;
-#endif
+#endif /* !USE_MIXER */
                 case AC97_Vendor_ID1:
                 case AC97_Vendor_ID2:
                     Log (("ac97: Attempt to write vendor ID to %#x\n", u32));
@@ -1389,23 +1389,23 @@ static DECLCALLBACK(int) ichac97IOPortMap (PPCIDEVICE pPciDev, int iRegion,
     int         rc;
     PPDMDEVINS  pDevIns = pPciDev->pDevIns;
     RTIOPORT    Port = (RTIOPORT)GCPhysAddress;
-    PCIAC97LinkState *pData = PCIDEV_2_ICHAC97STATE(pPciDev);
+    PCIAC97LinkState *pThis = PCIDEV_2_ICHAC97STATE(pPciDev);
 
     Assert(enmType == PCI_ADDRESS_SPACE_IO);
     Assert(cb >= 0x20);
 
     if (iRegion == 0)
-        rc = PDMDevHlpIOPortRegister (pDevIns, Port, 256, pData,
+        rc = PDMDevHlpIOPortRegister (pDevIns, Port, 256, pThis,
                                       ichac97IOPortNAMWrite, ichac97IOPortNAMRead,
                                       NULL, NULL, "ICHAC97 NAM");
     else
-        rc = PDMDevHlpIOPortRegister (pDevIns, Port, 64, pData,
+        rc = PDMDevHlpIOPortRegister (pDevIns, Port, 64, pThis,
                                       ichac97IOPortNABMWrite, ichac97IOPortNABMRead,
                                       NULL, NULL, "ICHAC97 NABM");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
-    pData->ac97.IOPortBase[iRegion] = Port;
+    pThis->ac97.IOPortBase[iRegion] = Port;
     return VINF_SUCCESS;
 }
 
@@ -1418,10 +1418,10 @@ static DECLCALLBACK(int) ichac97IOPortMap (PPCIDEVICE pPciDev, int iRegion,
  */
 static DECLCALLBACK(int) ichac97SaveExec (PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
 {
-    PCIAC97LinkState *pData = PDMINS2DATA(pDevIns, PCIAC97LinkState *);
+    PCIAC97LinkState *pThis = PDMINS_2_DATA(pDevIns, PCIAC97LinkState *);
     size_t  i;
     uint8_t active[LAST_INDEX];
-    AC97LinkState *s = &pData->ac97;
+    AC97LinkState *s = &pThis->ac97;
 
     SSMR3PutU32 (pSSMHandle, s->glob_cnt);
     SSMR3PutU32 (pSSMHandle, s->glob_sta);
@@ -1462,10 +1462,10 @@ static DECLCALLBACK(int) ichac97SaveExec (PPDMDEVINS pDevIns, PSSMHANDLE pSSMHan
 static DECLCALLBACK(int) ichac97LoadExec (PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle,
                                           uint32_t u32Version)
 {
-    PCIAC97LinkState *pData = PDMINS2DATA(pDevIns, PCIAC97LinkState *);
+    PCIAC97LinkState *pThis = PDMINS_2_DATA(pDevIns, PCIAC97LinkState *);
     size_t  i;
     uint8_t active[LAST_INDEX];
-    AC97LinkState *s = &pData->ac97;
+    AC97LinkState *s = &pThis->ac97;
 
     if (u32Version != AC97_SSM_VERSION)
     {
@@ -1496,12 +1496,12 @@ static DECLCALLBACK(int) ichac97LoadExec (PPDMDEVINS pDevIns, PSSMHANDLE pSSMHan
 
 #ifdef USE_MIXER
     record_select (s, mixer_load (s, AC97_Record_Select));
-#define V_(a, b) set_volume (s, a, b, mixer_load (s, a))
+# define V_(a, b) set_volume (s, a, b, mixer_load (s, a))
     V_ (AC97_Master_Volume_Mute,  AUD_MIXER_VOLUME);
     V_ (AC97_PCM_Out_Volume_Mute, AUD_MIXER_PCM);
     V_ (AC97_Line_In_Volume_Mute, AUD_MIXER_LINE_IN);
-#undef V_
-#endif
+# undef V_
+#endif /* USE_MIXER */
     reset_voices (s, active);
 
     s->bup_flag = 0;
@@ -1519,23 +1519,23 @@ static DECLCALLBACK(int) ichac97LoadExec (PPDMDEVINS pDevIns, PSSMHANDLE pSSMHan
  * @remark  The original sources didn't install a reset handler, but it seems to
  *          make sense to me so we'll do it.
  */
-static DECLCALLBACK(void)  ac97Reset(PPDMDEVINS pDevIns)
+static DECLCALLBACK(void)  ac97Reset (PPDMDEVINS pDevIns)
 {
-    PCIAC97LinkState *pData = PDMINS2DATA(pDevIns, PCIAC97LinkState *);
+    PCIAC97LinkState *pThis = PDMINS_2_DATA(pDevIns, PCIAC97LinkState *);
 
     /*
      * Reset the device state (will need pDrv later).
      */
-    reset_bm_regs (&pData->ac97, &pData->ac97.bm_regs[0]);
-    reset_bm_regs (&pData->ac97, &pData->ac97.bm_regs[1]);
-    reset_bm_regs (&pData->ac97, &pData->ac97.bm_regs[2]);
+    reset_bm_regs (&pThis->ac97, &pThis->ac97.bm_regs[0]);
+    reset_bm_regs (&pThis->ac97, &pThis->ac97.bm_regs[1]);
+    reset_bm_regs (&pThis->ac97, &pThis->ac97.bm_regs[2]);
 
     /*
      * Reset the mixer too. The Windows XP driver seems to rely on
      * this. At least it wants to read the vendor id before it resets
      * the codec manually.
      */
-    mixer_reset(&pData->ac97);
+    mixer_reset (&pThis->ac97);
 }
 
 /**
@@ -1550,14 +1550,14 @@ static DECLCALLBACK(void)  ac97Reset(PPDMDEVINS pDevIns)
 static DECLCALLBACK(void *) ichac97QueryInterface (struct PDMIBASE *pInterface,
                                                    PDMINTERFACE enmInterface)
 {
-    PCIAC97LinkState *pData =
+    PCIAC97LinkState *pThis =
         (PCIAC97LinkState *)((uintptr_t)pInterface
                              - RT_OFFSETOF(PCIAC97LinkState, ac97.IBase));
-    Assert(&pData->ac97.IBase == pInterface);
+    Assert(&pThis->ac97.IBase == pInterface);
     switch (enmInterface)
     {
         case PDMINTERFACE_BASE:
-            return &pData->ac97.IBase;
+            return &pThis->ac97.IBase;
         default:
             return NULL;
     }
@@ -1584,8 +1584,8 @@ static DECLCALLBACK(void *) ichac97QueryInterface (struct PDMIBASE *pInterface,
 static DECLCALLBACK(int) ichac97Construct (PPDMDEVINS pDevIns, int iInstance,
                                            PCFGMNODE pCfgHandle)
 {
-    PCIAC97LinkState *pData = PDMINS2DATA(pDevIns, PCIAC97LinkState *);
-    AC97LinkState    *s     = &pData->ac97;
+    PCIAC97LinkState *pThis = PDMINS_2_DATA(pDevIns, PCIAC97LinkState *);
+    AC97LinkState    *s     = &pThis->ac97;
     int               rc;
 
     Assert(iInstance == 0);
@@ -1597,69 +1597,48 @@ static DECLCALLBACK(int) ichac97Construct (PPDMDEVINS pDevIns, int iInstance,
     /* IBase */
     s->IBase.pfnQueryInterface  = ichac97QueryInterface;
 
-    /* PCI Device */
-    pData->dev.config[0x00] = 0x86;      /* vid vendor id intel ro */
-    pData->dev.config[0x01] = 0x80;      /* intel */
-
-    pData->dev.config[0x02] = 0x15;      /* did device id 82801 ro */
-    pData->dev.config[0x03] = 0x24;      /* 82801aa */
-
-    pData->dev.config[0x04] = 0x00;      /* pcicmd pci command rw, ro */
-    pData->dev.config[0x05] = 0x00;
-
-    pData->dev.config[0x06] = 0x80;      /* pcists pci status rwc, ro */
-    pData->dev.config[0x07] = 0x02;
-
-    pData->dev.config[0x08] = 0x01;      /* rid revision ro */
-    pData->dev.config[0x09] = 0x00;      /* pi programming interface ro */
-    pData->dev.config[0x0a] = 0x01;      /* scc sub class code ro */
-    pData->dev.config[0x0b] = 0x04;      /* bcc base class code ro */
-    pData->dev.config[0x0e] = 0x00;      /* headtyp header type ro */
-
-    pData->dev.config[0x10] = 0x01;      /* nambar native audio mixer base
-                                          * address rw */
-    pData->dev.config[0x11] = 0x00;
-    pData->dev.config[0x12] = 0x00;
-    pData->dev.config[0x13] = 0x00;
-
-    pData->dev.config[0x14] = 0x01;      /* nabmbar native audio bus mastering
-                                          * base address rw */
-    pData->dev.config[0x15] = 0x00;
-    pData->dev.config[0x16] = 0x00;
-    pData->dev.config[0x17] = 0x00;
-
-    pData->dev.config[0x2c] = 0x86;      /* svid subsystem vendor id rwo */
-    pData->dev.config[0x2d] = 0x80;
-
-    pData->dev.config[0x2e] = 0x00;      /* sid subsystem id rwo */
-    pData->dev.config[0x2f] = 0x00;
-
-    pData->dev.config[0x3c] = 0x00;      /* intr_ln interrupt line rw */
-    pData->dev.config[0x3d] = 0x01;      /* intr_pn interrupt pin ro */
+    /* PCI Device (the assertions will be removed later) */
+    PCIDevSetVendorId           (&pThis->dev, 0x8086); /* 00 ro - intel. */             Assert (pThis->dev.config[0x00] == 0x86); Assert (pThis->dev.config[0x01] == 0x80);
+    PCIDevSetDeviceId           (&pThis->dev, 0x2415); /* 02 ro - 82801 / 82801aa(?). */Assert (pThis->dev.config[0x02] == 0x15); Assert (pThis->dev.config[0x03] == 0x24);
+    PCIDevSetCommand            (&pThis->dev, 0x0000); /* 04 rw,ro - pcicmd. */         Assert (pThis->dev.config[0x04] == 0x00); Assert (pThis->dev.config[0x05] == 0x00);
+    PCIDevSetStatus             (&pThis->dev, 0x0280); /* 06 rwc?,ro? - pcists. */      Assert (pThis->dev.config[0x06] == 0x80); Assert (pThis->dev.config[0x07] == 0x02);
+    PCIDevSetRevisionId         (&pThis->dev, 0x01);   /* 08 ro - rid. */               Assert (pThis->dev.config[0x08] == 0x01);
+    PCIDevSetClassProg          (&pThis->dev, 0x00);   /* 09 ro - pi. */                Assert (pThis->dev.config[0x09] == 0x00);
+    PCIDevSetClassSub           (&pThis->dev, 0x01);   /* 0a ro - scc; 01 == Audio. */  Assert (pThis->dev.config[0x0a] == 0x01);
+    PCIDevSetClassBase          (&pThis->dev, 0x04);   /* 0b ro - bcc; 04 == multimedia. */ Assert (pThis->dev.config[0x0b] == 0x04);
+    PCIDevSetHeaderType         (&pThis->dev, 0x00);   /* 0e ro - headtyp. */           Assert (pThis->dev.config[0x0e] == 0x00);
+    PCIDevSetBaseAddress        (&pThis->dev, 0,       /* 10 rw - nambar - native audio mixer base. */
+                                 true /* fIoSpace */, false /* fPrefetchable */, false /* f64Bit */, 0x00000000); Assert (pThis->dev.config[0x10] == 0x01); Assert (pThis->dev.config[0x11] == 0x00); Assert (pThis->dev.config[0x12] == 0x00); Assert (pThis->dev.config[0x13] == 0x00);
+    PCIDevSetBaseAddress        (&pThis->dev, 1,       /* 14 rw - nabmbar - native audio bus mastering. */
+                                 true /* fIoSpace */, false /* fPrefetchable */, false /* f64Bit */, 0x00000000); Assert (pThis->dev.config[0x14] == 0x01); Assert (pThis->dev.config[0x15] == 0x00); Assert (pThis->dev.config[0x16] == 0x00); Assert (pThis->dev.config[0x17] == 0x00);
+    PCIDevSetSubSystemVendorId  (&pThis->dev, 0x8086); /* 2c ro - intel.) */            Assert (pThis->dev.config[0x2c] == 0x86); Assert (pThis->dev.config[0x2d] == 0x80);
+    PCIDevSetSubSystemId        (&pThis->dev, 0x0000); /* 2e ro. */                     Assert (pThis->dev.config[0x2e] == 0x00); Assert (pThis->dev.config[0x2f] == 0x00);
+    PCIDevSetInterruptLine      (&pThis->dev, 0x00);   /* 3c rw. */                     Assert (pThis->dev.config[0x3c] == 0x00);
+    PCIDevSetInterruptPin       (&pThis->dev, 0x01);   /* 3d ro - INTA#. */             Assert (pThis->dev.config[0x3d] == 0x01);
 
     /*
      * Register the PCI device, it's I/O regions, the timer and the
      * saved state item.
      */
-    rc = PDMDevHlpPCIRegister (pDevIns, &pData->dev);
-    if (VBOX_FAILURE(rc))
+    rc = PDMDevHlpPCIRegister (pDevIns, &pThis->dev);
+    if (RT_FAILURE (rc))
         return rc;
 
     rc = PDMDevHlpPCIIORegionRegister (pDevIns, 0, 256, PCI_ADDRESS_SPACE_IO,
                                        ichac97IOPortMap);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE (rc))
         return rc;
 
     rc = PDMDevHlpPCIIORegionRegister (pDevIns, 1, 64, PCI_ADDRESS_SPACE_IO,
                                        ichac97IOPortMap);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE (rc))
         return rc;
 
     rc = PDMDevHlpSSMRegister (pDevIns, pDevIns->pDevReg->szDeviceName,
-                               iInstance, AC97_SSM_VERSION, sizeof(*pData),
+                               iInstance, AC97_SSM_VERSION, sizeof(*pThis),
                                NULL, ichac97SaveExec, NULL,
                                NULL, ichac97LoadExec, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE (rc))
         return rc;
 
     /*
@@ -1669,24 +1648,24 @@ static DECLCALLBACK(int) ichac97Construct (PPDMDEVINS pDevIns, int iInstance,
                                 &s->pDrvBase, "Audio Driver Port");
     if (rc == VERR_PDM_NO_ATTACHED_DRIVER)
         Log (("ac97: No attached driver!\n"));
-    else if (VBOX_FAILURE(rc))
+    else if (RT_FAILURE (rc))
     {
-        AssertMsgFailed(("Failed to attach AC97 LUN #0! rc=%Vrc\n", rc));
+        AssertMsgFailed (("Failed to attach AC97 LUN #0! rc=%Rrc\n", rc));
         return rc;
     }
 
     AUD_register_card ("ICH0", &s->card);
 
-    ac97Reset(pDevIns);
+    ac97Reset (pDevIns);
 
 #ifndef RT_OS_DARWIN /* coreaudio doesn't supply these. */
     if (!s->voice_pi)
-        LogRel(("AC97: WARNING: Unable to open PCM IN!\n"));
+        LogRel (("AC97: WARNING: Unable to open PCM IN!\n"));
     if (!s->voice_mc)
-        LogRel(("AC97: WARNING: Unable to open PCM MC!\n"));
+        LogRel (("AC97: WARNING: Unable to open PCM MC!\n"));
 #endif
     if (!s->voice_po)
-        LogRel(("AC97: WARNING: Unable to open PCM OUT!\n"));
+        LogRel (("AC97: WARNING: Unable to open PCM OUT!\n"));
 
     if (!s->voice_pi && !s->voice_po && !s->voice_mc)
     {
@@ -1697,11 +1676,11 @@ static DECLCALLBACK(int) ichac97Construct (PPDMDEVINS pDevIns, int iInstance,
         s->voice_po = NULL;
         s->voice_pi = NULL;
         s->voice_mc = NULL;
-        AUD_init_null();
-        ac97Reset(pDevIns);
+        AUD_init_null ();
+        ac97Reset (pDevIns);
 
-        PDMDevHlpVMSetRuntimeError(pDevIns, false, "HostAudioNotResponding",
-             N_("No audio devices could be opened. Selecting the NULL audio backend "
+        PDMDevHlpVMSetRuntimeError (pDevIns, false, "HostAudioNotResponding",
+            N_ ("No audio devices could be opened. Selecting the NULL audio backend "
                 "with the consequence that no sound is audible."));
     }
 #ifndef RT_OS_DARWIN
@@ -1709,26 +1688,15 @@ static DECLCALLBACK(int) ichac97Construct (PPDMDEVINS pDevIns, int iInstance,
     {
         char   szMissingVoices[128];
         size_t len = 0;
-        bool   fComma = false;
         if (!s->voice_pi)
-        {
-            len = RTStrPrintf(szMissingVoices, sizeof(szMissingVoices), "PCM_in");
-            fComma = true;
-        }
+            len = RTStrPrintf (szMissingVoices, sizeof(szMissingVoices), "PCM_in");
         if (!s->voice_po)
-        {
-            len = RTStrPrintf(szMissingVoices + len, sizeof(szMissingVoices)-len, "%sPCM_out",
-                              fComma ? ", " : "");
-            fComma = true;
-        }
+            len += RTStrPrintf (szMissingVoices + len, sizeof(szMissingVoices) - len, len ? ", PCM_out" : "PCM_out");
         if (!s->voice_mc)
-        {
-            len = RTStrPrintf(szMissingVoices + len, sizeof(szMissingVoices)-len, "%sPCM_mic",
-                              fComma ? ", " : "");
-        }
+            len += RTStrPrintf (szMissingVoices + len, sizeof(szMissingVoices) - len, len ? ", PCM_mic" : "PCM_mic");
 
-        PDMDevHlpVMSetRuntimeError(pDevIns, false, "HostAudioNotResponding",
-             N_("Some audio devices (%s) could not be opened. Guest applications generating audio "
+        PDMDevHlpVMSetRuntimeError (pDevIns, false, "HostAudioNotResponding",
+            N_ ("Some audio devices (%s) could not be opened. Guest applications generating audio "
                 "output or depending on audio input may hang. Make sure your host audio device "
                 "is working properly. Check the logfile for error messages of the audio "
                 "subsystem."), szMissingVoices);

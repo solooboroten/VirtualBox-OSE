@@ -1,4 +1,4 @@
-/** $Id: DBGConsole.cpp 30800 2008-05-14 03:03:54Z bird $ */
+/** $Id: DBGConsole.cpp 32220 2008-06-20 09:06:35Z sandervl $ */
 /** @file
  * DBGC - Debugger Console.
  */
@@ -1622,6 +1622,9 @@ int dbgcProcessInput(PDBGC pDbgc, bool fNoExecute)
             &&  pDbgc->fReady)
             rc = pDbgc->CmdHlp.pfnPrintf(&pDbgc->CmdHlp, NULL, "VBoxDbg> ");
     }
+    else
+        /* Received nonsense; just skip it. */
+        pDbgc->iRead = pDbgc->iWrite;
 
     return rc;
 }

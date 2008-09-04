@@ -1,6 +1,6 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35651 2008-08-29 14:09:39Z frank $
 ## @file
-# Makefile for the Cross Platform Guest Addition Services.
+# Sub-Makefile for the Cross Platform Guest Addition Services.
 #
 
 #
@@ -19,8 +19,12 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../..
+else
+DEPTH    ?= ../../../../..
 SUB_DEPTH = ../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 ifeq ($(KBUILD_HOST),os2)
@@ -36,7 +40,7 @@ endif
 #
 VBoxService_TEMPLATE      = VBOXGUESTR3EXE
 VBoxService_DEFS          = VBOXSERVICE_TIMESYNC
-VBoxService_DEFS.os2      = VBOX_HGCM VBOXSERVICE_CLIPBOARD
+VBoxService_DEFS.os2      = VBOX_WITH_HGCM VBOXSERVICE_CLIPBOARD
 VBoxService_SOURCES       = \
 	VBoxService.cpp \
 	VBoxServiceTimeSync.cpp

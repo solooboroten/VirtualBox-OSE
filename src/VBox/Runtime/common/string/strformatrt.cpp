@@ -1,4 +1,4 @@
-/* $Id: strformatrt.cpp 30350 2008-04-29 20:27:58Z bird $ */
+/* $Id: strformatrt.cpp 34729 2008-08-14 08:03:03Z klaus $ */
 /** @file
  * IPRT - IPRT String Formatter Extensions.
  */
@@ -53,7 +53,7 @@
  *      - \%RTnthrd         - Takes a #RTNATIVETHREAD value.
  *      - \%RTproc          - Takes a #RTPROCESS value.
  *      - \%RTptr           - Takes a #RTINTPTR or #RTUINTPTR value (but not void *).
- *      - \%RTreg           - Takes a #RTUINTREG value.
+ *      - \%RTreg           - Takes a #RTCCUINTREG value.
  *      - \%RTsel           - Takes a #RTSEL value.
  *      - \%RTsem           - Takes a #RTSEMEVENT, #RTSEMEVENTMULTI, #RTSEMMUTEX, #RTSEMFASTMUTEX, or #RTSEMRW value.
  *      - \%RTsock          - Takes a #RTSOCKET value.
@@ -76,6 +76,7 @@
  *      - \%RHu             - Takes a #RTHCUINT value.
  *      - \%RHv             - Takes a #RTHCPTR, #RTHCINTPTR or #RTHCUINTPTR value.
  *      - \%RHx             - Takes a #RTHCUINT or #RTHCINT value, formatting it as hex.
+ *      - \%RRv             - Takes a #RTRCPTR, #RTRCINTPTR or #RTRCUINTPTR value.
  *      - \%RCi             - Takes a #RTCCINT value.
  *      - \%RCp             - Takes a #RTCCPHYS value.
  *      - \%RCr             - Takes a #RTCCUINTREG value.
@@ -185,6 +186,7 @@ size_t rtstrFormatRt(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput, const char **p
             case 'T':
             case 'G':
             case 'H':
+            case 'R':
             case 'C':
             case 'I':
             case 'X':
@@ -229,6 +231,7 @@ size_t rtstrFormatRt(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput, const char **p
                     { STRMEM("I32"),     sizeof(int32_t),        10, RTSF_INT,   RTSTR_F_VALSIGNED },
                     { STRMEM("I64"),     sizeof(int64_t),        10, RTSF_INT,   RTSTR_F_VALSIGNED },
                     { STRMEM("I8"),      sizeof(int8_t),         10, RTSF_INT,   RTSTR_F_VALSIGNED },
+                    { STRMEM("Rv"),      sizeof(RTRCPTR),        16, RTSF_INTW,  0 },
                     { STRMEM("Tbool"),   sizeof(bool),           10, RTSF_BOOL,  0 },
                     { STRMEM("Tfile"),   sizeof(RTFILE),         10, RTSF_INT,   0 },
                     { STRMEM("Tfmode"),  sizeof(RTFMODE),        16, RTSF_INTW,  0 },
@@ -244,7 +247,7 @@ size_t rtstrFormatRt(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput, const char **p
                     { STRMEM("Tnthrd"),  sizeof(RTNATIVETHREAD), 16, RTSF_INTW,  0 },
                     { STRMEM("Tproc"),   sizeof(RTPROCESS),      16, RTSF_INTW,  0 },
                     { STRMEM("Tptr"),    sizeof(RTUINTPTR),      16, RTSF_INTW,  0 },
-                    { STRMEM("Treg"),    sizeof(RTUINTREG),      16, RTSF_INTW,  0 },
+                    { STRMEM("Treg"),    sizeof(RTCCUINTREG),    16, RTSF_INTW,  0 },
                     { STRMEM("Tsel"),    sizeof(RTSEL),          16, RTSF_INTW,  0 },
                     { STRMEM("Tsem"),    sizeof(RTSEMEVENT),     16, RTSF_INTW,  0 },
                     { STRMEM("Tsock"),   sizeof(RTSOCKET),       10, RTSF_INT,   0 },
@@ -454,8 +457,8 @@ size_t rtstrFormatRt(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput, const char **p
                                                u.pUuid->Gen.u32TimeLow,
                                                u.pUuid->Gen.u16TimeMid,
                                                u.pUuid->Gen.u16TimeHiAndVersion,
-                                               u.pUuid->Gen.u16ClockSeq & 0xff,
-                                               u.pUuid->Gen.u16ClockSeq >> 8,
+                                               u.pUuid->Gen.u8ClockSeqHiAndReserved,
+                                               u.pUuid->Gen.u8ClockSeqLow,
                                                u.pUuid->Gen.au8Node[0],
                                                u.pUuid->Gen.au8Node[1],
                                                u.pUuid->Gen.au8Node[2],

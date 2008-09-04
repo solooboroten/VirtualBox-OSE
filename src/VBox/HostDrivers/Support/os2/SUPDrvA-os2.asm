@@ -1,4 +1,4 @@
-; $Id: SUPDrvA-os2.asm 19121 2007-03-04 20:58:39Z bird $
+; $Id: SUPDrvA-os2.asm 33462 2008-07-17 15:05:47Z bird $
 ;; @file
 ; VBoxDrv - OS/2 assembly file, the first file in the link.
 ;
@@ -162,7 +162,7 @@ segment DATA16
 %define DevHlp_SAVE_MESSAGE     03dh
 %define DevHlp_PhysToVirt       015h
 
-; Fast IOCtl category, also defined in SUPDRVIOC.h
+; Fast IOCtl category, also defined in SUPDrvIOC.h
 %define SUP_CTL_CATEGORY_FAST   0c1h
 
 
@@ -313,15 +313,9 @@ VBoxDrvEP_GenIOCtl:
 
     ;
     ; Fast IOCtl.
-    ;   DECLASM(int) VBoxDrvIOCtlFast(uint16_t sfn, uint8_t iFunction, uint16_t *pcbParm)
+    ;   DECLASM(int) VBoxDrvIOCtlFast(uint16_t sfn, uint8_t iFunction)
     ;
 VBoxDrvEP_GenIOCtl_Fast:
-    mov     ax, [es:bx + PKTIOCTL.pData + 2]        ; LDT selector to flat address.
-    shr     ax, 3
-    shl     eax, 16
-    mov     ax, [es:bx + PKTIOCTL.pData]
-    push    eax                                     ; 08h - pointer to the rc buffer.
-
     ; function.
     movzx   edx, byte [es:bx + PKTIOCTL.fun]
     push    edx                                     ; 04h
@@ -366,8 +360,7 @@ GLOBALNAME VBoxDrvEP_GenIOCtl_Fast_16
     jnz near VBoxDrvEP_GeneralFailure
 
     ; setup output stuff.
-    mov     edx, esp
-    mov     eax, [ss:edx + 0ch]                     ; output sizes.
+    xor     eax, eax
     mov     [es:bx + PKTIOCTL.cbParm], eax          ; update cbParm and cbData.
     mov     word [es:bx + PKTHDR.status], 00100h    ; done, ok.
 

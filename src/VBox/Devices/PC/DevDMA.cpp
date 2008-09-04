@@ -1,6 +1,6 @@
-/* $Id: DevDMA.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: DevDMA.cpp 34349 2008-08-08 16:15:43Z bird $ */
 /** @file
- * DMA Controller Device.
+ * DevDMA - DMA Controller Device.
  */
 
 /*
@@ -61,7 +61,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "Builtins.h"
+#include "../Builtins.h"
 #include "../vl_vbox.h"
 typedef PFNDMATRANSFERHANDLER DMA_transfer_handler;
 
@@ -91,8 +91,6 @@ typedef PFNDMATRANSFERHANDLER DMA_transfer_handler;
 #endif
 #else /* VBOX */
 
-#ifdef LOG_ENABLED
-#endif
 # ifdef LOG_ENABLED
 #   define DEBUG_DMA
     static void DMA_DPRINTF (const char *fmt, ...)
@@ -108,10 +106,10 @@ typedef PFNDMATRANSFERHANDLER DMA_transfer_handler;
   DECLINLINE(void) DMA_DPRINTF(const char *pszFmt, ...) {}
 # endif
 
-#define dolog DMA_DPRINTF
-#define lwarn DMA_DPRINTF
-#define linfo DMA_DPRINTF
-#define ldebug DMA_DPRINTF
+# define dolog DMA_DPRINTF
+# define lwarn DMA_DPRINTF
+# define linfo DMA_DPRINTF
+# define ldebug DMA_DPRINTF
 
 #endif /* VBOX */
 
@@ -795,7 +793,7 @@ void DMA_init (int high_page_enable)
 #ifdef VBOX
 static bool run_wrapper (PPDMDEVINS pDevIns)
 {
-    DMA_run (PDMINS2DATA (pDevIns, DMAState *));
+    DMA_run (PDMINS_2_DATA (pDevIns, DMAState *));
     return 0;
 }
 
@@ -804,7 +802,7 @@ static void register_channel_wrapper (PPDMDEVINS pDevIns,
                                       PFNDMATRANSFERHANDLER f,
                                       void *opaque)
 {
-    DMAState *s = PDMINS2DATA (pDevIns, DMAState *);
+    DMAState *s = PDMINS_2_DATA (pDevIns, DMAState *);
     DMA_register_channel (s, nchan, f, opaque);
 }
 
@@ -814,7 +812,7 @@ static uint32_t rd_mem_wrapper (PPDMDEVINS pDevIns,
                                 uint32_t pos,
                                 uint32_t len)
 {
-    DMAState *s = PDMINS2DATA (pDevIns, DMAState *);
+    DMAState *s = PDMINS_2_DATA (pDevIns, DMAState *);
     return DMA_read_memory (s, nchan, buf, pos, len);
 }
 
@@ -824,7 +822,7 @@ static uint32_t wr_mem_wrapper (PPDMDEVINS pDevIns,
                                 uint32_t pos,
                                 uint32_t len)
 {
-    DMAState *s = PDMINS2DATA (pDevIns, DMAState *);
+    DMAState *s = PDMINS_2_DATA (pDevIns, DMAState *);
     return DMA_write_memory (s, nchan, buf, pos, len);
 }
 
@@ -832,7 +830,7 @@ static void set_DREQ_wrapper (PPDMDEVINS pDevIns,
                               unsigned nchan,
                               unsigned level)
 {
-    DMAState *s = PDMINS2DATA (pDevIns, DMAState *);
+    DMAState *s = PDMINS_2_DATA (pDevIns, DMAState *);
     if (level) {
         DMA_hold_DREQ (s, nchan);
     }
@@ -843,20 +841,20 @@ static void set_DREQ_wrapper (PPDMDEVINS pDevIns,
 
 static uint8_t get_mode_wrapper (PPDMDEVINS pDevIns, unsigned nchan)
 {
-    DMAState *s = PDMINS2DATA (pDevIns, DMAState *);
+    DMAState *s = PDMINS_2_DATA (pDevIns, DMAState *);
     return DMA_get_channel_mode (s, nchan);
 }
 
 static void DMAReset (PPDMDEVINS pDevIns)
 {
-    DMAState *s = PDMINS2DATA (pDevIns, DMAState *);
+    DMAState *s = PDMINS_2_DATA (pDevIns, DMAState *);
     dma_reset (&s->dma_controllers[0]);
     dma_reset (&s->dma_controllers[1]);
 }
 
 static DECLCALLBACK(int) SaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
 {
-    DMAState *s = PDMINS2DATA (pDevIns, DMAState *);
+    DMAState *s = PDMINS_2_DATA (pDevIns, DMAState *);
     dma_save (pSSMHandle, &s->dma_controllers[0]);
     dma_save (pSSMHandle, &s->dma_controllers[1]);
     return VINF_SUCCESS;
@@ -866,7 +864,7 @@ static DECLCALLBACK(int) LoadExec (PPDMDEVINS pDevIns,
                                    PSSMHANDLE pSSMHandle,
                                    uint32_t u32Version)
 {
-    DMAState *s = PDMINS2DATA (pDevIns, DMAState *);
+    DMAState *s = PDMINS_2_DATA (pDevIns, DMAState *);
 
     if (u32Version != 1) {
         AssertFailed ();
@@ -894,7 +892,7 @@ static DECLCALLBACK(int) DMAConstruct(PPDMDEVINS pDevIns,
                                       int iInstance,
                                       PCFGMNODE pCfgHandle)
 {
-    DMAState *s = PDMINS2DATA (pDevIns, DMAState *);
+    DMAState *s = PDMINS_2_DATA (pDevIns, DMAState *);
     bool high_page_enable = 0;
     PDMDMACREG reg;
     int rc;
@@ -909,7 +907,7 @@ static DECLCALLBACK(int) DMAConstruct(PPDMDEVINS pDevIns,
 
 #if 0
     rc = CFGMR3QueryBool (pCfgHandle, "HighPageEnable", &high_page_enable);
-    if (VBOX_FAILURE (rc)) {
+    if (RT_FAILURE (rc)) {
         return rc;
     }
 #endif
@@ -929,13 +927,13 @@ static DECLCALLBACK(int) DMAConstruct(PPDMDEVINS pDevIns,
 
     Assert(pDevIns->pDevHlp->pfnDMARegister);
     rc = pDevIns->pDevHlp->pfnDMACRegister (pDevIns, &reg, &s->pHlp);
-    if (VBOX_FAILURE (rc)) {
+    if (RT_FAILURE (rc)) {
         return rc;
     }
 
     rc = PDMDevHlpSSMRegister (pDevIns, pDevIns->pDevReg->szDeviceName, iInstance, 1, sizeof (*s),
                                NULL, SaveExec, NULL, NULL, LoadExec, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     return VINF_SUCCESS;

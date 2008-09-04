@@ -26,10 +26,13 @@
 #include "VBoxConsoleWnd.h"
 #ifdef Q_WS_MAC
 # include "QIApplication.h"
+# include "VBoxUtils.h"
 #else
 # define QIApplication QApplication
 #endif
 
+#include <QCleanlooksStyle>
+#include <QPlastiqueStyle>
 #include <qmessagebox.h>
 #include <qlocale.h>
 #include <qtranslator.h>
@@ -120,22 +123,55 @@ static void QtMessageOutput (QtMsgType type, const char *msg)
     }
 }
 
-int main (int argc, char **argv)
+#ifndef Q_WS_WIN
+/**
+ * Show all available command line parameters.
+ */
+static void showHelp()
 {
-    /* Initialize VBox Runtime. Initialize the Suplib+GC as well only if we
-     * are really about to start a VM. Don't do this if we are only starting
-     * the selector window. */
-    bool fInitGC = false;
-    for (int i = 0; i < argc; i++)
-    {
-        if (!::strcmp(argv[i], "-startvm" ))
-        {
-            fInitGC = true;
-            break;
-        }
-    }
-    RTR3Init (fInitGC, ~(size_t)0);
+    QString mode = "", dflt = "";
+#ifdef VBOX_GUI_USE_SDL
+    mode += "sdl";
+#endif
+#ifdef VBOX_GUI_USE_QIMAGE
+    if (!mode.isEmpty())
+        mode += "|";
+    mode += "image";
+#endif
+#ifdef VBOX_GUI_USE_DDRAW
+    if (!mode.isEmpty())
+        mode += "|";
+    mode += "ddraw";
+#endif
+#ifdef VBOX_GUI_USE_QUARTZ2D
+    if (!mode.isEmpty())
+        mode += "|";
+    mode += "quartz2d";
+#endif
+#if defined (Q_WS_MAC) && defined (VBOX_GUI_USE_QUARTZ2D)
+    dflt = "quartz2d";
+#elif (defined (Q_WS_WIN32) || defined (Q_WS_PM)) && defined (VBOX_GUI_USE_QIMAGE)
+    dflt = "image";
+#elif defined (Q_WS_X11) && defined (VBOX_GUI_USE_SDL)
+    dflt = "sdl";
+#else
+    dflt = "image";
+#endif
 
+    RTPrintf("VirtualBox Graphical User Interface\n"
+            "(C) 2005-2008 Sun Microsystems, Inc.\n"
+            "All rights reserved.\n"
+            "\n"
+            "Usage:\n"
+            "  -startvm <vmname|UUID>     start a VM by specifying its UUID or name\n"
+            "  -rmode %-19s select different render mode (default is %s)\n",
+            mode.toLatin1().constData(),
+            dflt.toLatin1().constData());
+}
+#endif
+
+extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
+{
     LogFlowFuncEnter();
 
 #ifdef Q_WS_WIN
@@ -149,6 +185,19 @@ int main (int argc, char **argv)
      * for some unknown reason), see also src/VBox/Main/glue/initterm.cpp. */
     /// @todo find a proper solution that satisfies both OLE and VBox
     HRESULT hrc = COMBase::InitializeCOM();
+#endif
+
+#ifndef Q_WS_WIN
+    int i;
+    for (i=0; i<argc; i++)
+        if (   !strcmp(argv[i], "-h")
+            || !strcmp(argv[i], "-?")
+            || !strcmp(argv[i], "-help")
+            || !strcmp(argv[i], "--help"))
+        {
+            showHelp();
+            return 0;
+        }
 #endif
 
 #if defined(DEBUG) && defined(Q_WS_X11) && defined(RT_OS_LINUX)
@@ -170,6 +219,22 @@ int main (int argc, char **argv)
     {
         QIApplication a (argc, argv);
 
+        /* Qt4.3 version has the QProcess bug which freezing the application
+         * for 30 seconds. This bug is internally used at initialization of
+         * Cleanlooks style. So we have to change this style to another one.
+         * See http://trolltech.com/developer/task-tracker/index_html?id=179200&method=entry
+         * for details. */
+        if (QString (qVersion()).startsWith ("4.3") &&
+            qobject_cast <QCleanlooksStyle*> (QApplication::style()))
+            QApplication::setStyle (new QPlastiqueStyle);
+
+#ifdef Q_WS_X11
+        /* Cause Qt4 has the conflict with fontconfig application as a result
+         * substituting some fonts with non anti-aliased bitmap font we are
+         * reseting all the substitutes here for the current application font. */
+        QFont::removeSubstitution (QApplication::font().family());
+#endif
+
 #ifdef Q_WS_WIN
         /* Drag in the sound drivers and DLLs early to get rid of the delay taking
          * place when the main menu bar (or any action from that menu bar) is
@@ -180,19 +245,9 @@ int main (int argc, char **argv)
         PlaySound (NULL, NULL, 0);
 #endif
 
-#ifndef RT_OS_DARWIN
-        /* some gui qt-styles has it's own different color for buttons
-         * causing tool-buttons and dropped menu displayed in
-         * different annoying color, so fixing palette button's color */
-        QPalette pal = a.palette();
-        pal.setColor (QPalette::Disabled, QColorGroup::Button,
-                      pal.color (QPalette::Disabled, QColorGroup::Background));
-        pal.setColor (QPalette::Active, QColorGroup::Button,
-                      pal.color (QPalette::Active, QColorGroup::Background));
-        pal.setColor (QPalette::Inactive, QColorGroup::Button,
-                      pal.color (QPalette::Inactive, QColorGroup::Background));
-        a.setPalette (pal);
-#endif
+#ifdef Q_WS_MAC
+        ::darwinDisableIconsInMenus();
+#endif /* Q_WS_MAC */
 
 #ifdef Q_WS_X11
         /* version check (major.minor are sensitive, fix number is ignored) */
@@ -269,6 +324,9 @@ int main (int argc, char **argv)
 #ifdef VBOX_WITH_REGISTRATION_REQUEST
                 vboxGlobal().showRegistrationDialog (false /* aForce */);
 #endif
+#ifdef VBOX_WITH_UPDATE_REQUEST
+                vboxGlobal().showUpdateDialog (false /* aForce */);
+#endif
                 vboxGlobal().startEnumeratingMedia();
                 rc = a.exec();
             }
@@ -287,3 +345,30 @@ int main (int argc, char **argv)
 
     return rc;
 }
+
+
+#ifndef VBOX_WITH_HARDENING
+int main (int argc, char **argv, char **envp)
+{
+    /* Initialize VBox Runtime. Initialize the SUPLib as well only if we
+     * are really about to start a VM. Don't do this if we are only starting
+     * the selector window. */
+    bool fInitSUPLib = false;
+    for (int i = 0; i < argc; i++)
+    {
+        if (!::strcmp (argv[i], "-startvm" ))
+        {
+            fInitSUPLib = true;
+            break;
+        }
+    }
+
+    if (!fInitSUPLib)
+        RTR3Init();
+    else
+        RTR3InitAndSUPLib();
+
+    return TrustedMain (argc, argv, envp);
+}
+#endif /* !VBOX_WITH_HARDENING */
+

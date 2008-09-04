@@ -33,6 +33,8 @@
 #include <QHash>
 #include <QPixmap>
 #include <QMenu>
+#include <QStyle>
+#include <QProcess>
 
 class QAction;
 class QLabel;
@@ -138,6 +140,17 @@ public:
     const bool mCanShow;
 };
 
+class VBoxCanShowUpdDlgEvent : public QEvent
+{
+public:
+    VBoxCanShowUpdDlgEvent (bool aCanShow)
+        : QEvent ((QEvent::Type) VBoxDefs::CanShowUpdDlgEventType)
+        , mCanShow (aCanShow)
+        {}
+
+    const bool mCanShow;
+};
+
 class VBoxChangeGUILanguageEvent : public QEvent
 {
 public:
@@ -149,12 +162,48 @@ public:
     const QString mLangId;
 };
 
-// VBoxGlobal
+class Process : public QProcess
+{
+    Q_OBJECT;
+
+public:
+
+    static QByteArray singleShot (const QString &aProcessName,
+                                  int aTimeout = 5000
+                                  /* wait for data maximum 5 seconds */)
+    {
+        /* Why is it really needed is because of Qt4.3 bug with QProcess.
+         * This bug is about QProcess sometimes (~70%) do not receive
+         * notification about process was finished, so this makes
+         * 'bool QProcess::waitForFinished (int)' block the GUI thread and
+         * never dismissed with 'true' result even if process was really
+         * started&finished. So we just waiting for some information
+         * on process output and destroy the process with force. Due to
+         * QProcess::~QProcess() has the same 'waitForFinished (int)' blocker
+         * we have to change process state to QProcess::NotRunning. */
+
+        QByteArray result;
+        Process process;
+        process.start (aProcessName);
+        bool firstShotReady = process.waitForReadyRead (aTimeout);
+        if (firstShotReady)
+            result = process.readAllStandardOutput();
+        process.setProcessState (QProcess::NotRunning);
+        return result;
+    }
+
+protected:
+
+    Process (QWidget *aParent = 0) : QProcess (aParent) {}
+};
+
+// VBoxGlobal class
 ////////////////////////////////////////////////////////////////////////////////
 
 class VBoxSelectorWnd;
 class VBoxConsoleWnd;
 class VBoxRegistrationDlg;
+class VBoxUpdateDlg;
 
 class VBoxGlobal : public QObject
 {
@@ -195,6 +244,7 @@ public:
     /* VBox enum to/from string/icon/color convertors */
 
     QStringList vmGuestOSTypeDescriptions() const;
+    QList<QPixmap> vmGuestOSTypeIcons (int aHorizonalMargin, int aVerticalMargin) const;
     CGuestOSType vmGuestOSType (int aIndex) const;
     int vmGuestOSTypeIndex (const QString &aId) const;
     QPixmap vmGuestOSTypeIcon (const QString &aId) const;
@@ -450,11 +500,14 @@ public:
 
     QString details (const CUSBDevice &aDevice) const;
     QString toolTip (const CUSBDevice &aDevice) const;
+    QString toolTip (const CUSBDeviceFilter &aFilter) const;
 
     QString prepareFileNameForHTML (const QString &fn) const;
 
     QString detailsReport (const CMachine &m, bool isNewVM, bool withLinks,
                            bool aDoRefresh = true);
+
+    QString platformInfo();
 
     /* VirtualBox helpers */
 
@@ -521,6 +574,8 @@ public:
                             const char *aActive = NULL,
                             const char *aSmallActive = NULL);
 
+    static QIcon standardIcon (QStyle::StandardPixmap aStandard, QWidget *aWidget = NULL);
+
     static void setTextLabel (QToolButton *aToolButton, const QString &aTextLabel);
 
     static QRect normalizeGeometry (const QRect &aRect, const QRect &aBoundRect,
@@ -532,8 +587,8 @@ public:
     static QChar decimalSep();
     static QString sizeRegexp();
 
-    static Q_UINT64 parseSize (const QString &);
-    static QString formatSize (Q_UINT64, int aMode = 0);
+    static quint64 parseSize (const QString &);
+    static QString formatSize (quint64, int aMode = 0);
 
     static QString highlight (const QString &aStr, bool aToolTip = false);
 
@@ -553,6 +608,9 @@ public:
     static bool activateWindow (WId aWId, bool aSwitchDesktop = true);
 
     static QString removeAccelMark (const QString &aText);
+
+    static QString insertKeyToActionText (const QString &aText, const QString &aKey);
+    static QString extractKeyFromActionText (const QString &aText);
 
     static QWidget *findWidget (QWidget *aParent, const char *aName,
                                 const char *aClassName = NULL,
@@ -611,12 +669,14 @@ signals:
     void snapshotChanged (const VBoxSnapshotEvent &e);
 
     void canShowRegDlg (bool aCanShow);
+    void canShowUpdDlg (bool aCanShow);
 
 public slots:
 
     bool openURL (const QString &aURL);
 
     void showRegistrationDialog (bool aForce = true);
+    void showUpdateDialog (bool aForce = true);
 
 protected:
 
@@ -643,6 +703,7 @@ private:
 #ifdef VBOX_WITH_REGISTRATION
     VBoxRegistrationDlg *mRegDlg;
 #endif
+    VBoxUpdateDlg *mUpdDlg;
 
     QUuid vmUuid;
 

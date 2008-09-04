@@ -1,4 +1,4 @@
-/* $Id: IOM.cpp 31291 2008-05-27 12:02:05Z sandervl $ */
+/* $Id: IOM.cpp 34393 2008-08-08 22:56:56Z bird $ */
 /** @file
  * IOM - Input / Output Monitor.
  */
@@ -131,6 +131,9 @@ IOMR3DECL(int) IOMR3Init(PVM pVM)
         STAM_REG(pVM, &pVM->iom.s.StatGCInstMov,          STAMTYPE_PROFILE, "/IOM/GC/Inst/MOV",            STAMUNIT_TICKS_PER_CALL, "Profiling of the MOV instruction emulation.");
         STAM_REG(pVM, &pVM->iom.s.StatGCInstCmp,          STAMTYPE_PROFILE, "/IOM/GC/Inst/CMP",            STAMUNIT_TICKS_PER_CALL, "Profiling of the CMP instruction emulation.");
         STAM_REG(pVM, &pVM->iom.s.StatGCInstAnd,          STAMTYPE_PROFILE, "/IOM/GC/Inst/AND",            STAMUNIT_TICKS_PER_CALL, "Profiling of the AND instruction emulation.");
+        STAM_REG(pVM, &pVM->iom.s.StatGCInstOr,           STAMTYPE_PROFILE, "/IOM/GC/Inst/OR",             STAMUNIT_TICKS_PER_CALL, "Profiling of the OR instruction emulation.");
+        STAM_REG(pVM, &pVM->iom.s.StatGCInstXor,          STAMTYPE_PROFILE, "/IOM/GC/Inst/XOR",            STAMUNIT_TICKS_PER_CALL, "Profiling of the XOR instruction emulation.");
+        STAM_REG(pVM, &pVM->iom.s.StatGCInstBt,           STAMTYPE_PROFILE, "/IOM/GC/Inst/BT",             STAMUNIT_TICKS_PER_CALL, "Profiling of the BT instruction emulation.");
         STAM_REG(pVM, &pVM->iom.s.StatGCInstTest,         STAMTYPE_PROFILE, "/IOM/GC/Inst/TEST",           STAMUNIT_TICKS_PER_CALL, "Profiling of the TEST instruction emulation.");
         STAM_REG(pVM, &pVM->iom.s.StatGCInstXchg,         STAMTYPE_PROFILE, "/IOM/GC/Inst/XCHG",           STAMUNIT_TICKS_PER_CALL, "Profiling of the XCHG instruction emulation.");
         STAM_REG(pVM, &pVM->iom.s.StatGCInstStos,         STAMTYPE_PROFILE, "/IOM/GC/Inst/STOS",           STAMUNIT_TICKS_PER_CALL, "Profiling of the STOS instruction emulation.");
@@ -143,6 +146,7 @@ IOMR3DECL(int) IOMR3Init(PVM pVM)
         STAM_REG(pVM, &pVM->iom.s.StatGCMMIO1Byte,        STAMTYPE_COUNTER, "/IOM/GC/MMIO/Access1",        STAMUNIT_OCCURENCES,     "MMIO access by 1 byte counter.");
         STAM_REG(pVM, &pVM->iom.s.StatGCMMIO2Bytes,       STAMTYPE_COUNTER, "/IOM/GC/MMIO/Access2",        STAMUNIT_OCCURENCES,     "MMIO access by 2 bytes counter.");
         STAM_REG(pVM, &pVM->iom.s.StatGCMMIO4Bytes,       STAMTYPE_COUNTER, "/IOM/GC/MMIO/Access4",        STAMUNIT_OCCURENCES,     "MMIO access by 4 bytes counter.");
+        STAM_REG(pVM, &pVM->iom.s.StatGCMMIO8Bytes,       STAMTYPE_COUNTER, "/IOM/GC/MMIO/Access8",        STAMUNIT_OCCURENCES,     "MMIO access by 8 bytes counter.");
         STAM_REG(pVM, &pVM->iom.s.StatGCIOPortHandler,    STAMTYPE_PROFILE, "/IOM/GC/PortIOHandler",       STAMUNIT_TICKS_PER_CALL, "Profiling of the IOMGCPortIOHandler() body, only success calls.");
         STAM_REG(pVM, &pVM->iom.s.StatGCInstIn,           STAMTYPE_COUNTER, "/IOM/GC/Inst/In",             STAMUNIT_OCCURENCES,     "Counter of any IN instructions.");
         STAM_REG(pVM, &pVM->iom.s.StatGCInstOut,          STAMTYPE_COUNTER, "/IOM/GC/Inst/Out",            STAMUNIT_OCCURENCES,     "Counter of any OUT instructions.");
@@ -616,11 +620,11 @@ IOMR3DECL(int) IOMR3IOPortRegisterR3(PVM pVM, PPDMDEVINS pDevIns, RTIOPORT PortS
  * @param   pfnInStrCallback    Pointer to function which is gonna handle string IN operations in GC.
  * @param   pszDesc             Pointer to description string. This must not be freed.
  */
-IOMR3DECL(int)  IOMR3IOPortRegisterGC(PVM pVM, PPDMDEVINS pDevIns, RTIOPORT PortStart, RTUINT cPorts, RTGCPTR pvUser,
-                                      GCPTRTYPE(PFNIOMIOPORTOUT) pfnOutCallback, GCPTRTYPE(PFNIOMIOPORTIN) pfnInCallback,
-                                      GCPTRTYPE(PFNIOMIOPORTOUTSTRING) pfnOutStrCallback, GCPTRTYPE(PFNIOMIOPORTINSTRING) pfnInStrCallback, const char *pszDesc)
+IOMR3DECL(int)  IOMR3IOPortRegisterGC(PVM pVM, PPDMDEVINS pDevIns, RTIOPORT PortStart, RTUINT cPorts, RTRCPTR pvUser,
+                                      RCPTRTYPE(PFNIOMIOPORTOUT) pfnOutCallback, RCPTRTYPE(PFNIOMIOPORTIN) pfnInCallback,
+                                      RCPTRTYPE(PFNIOMIOPORTOUTSTRING) pfnOutStrCallback, RCPTRTYPE(PFNIOMIOPORTINSTRING) pfnInStrCallback, const char *pszDesc)
 {
-    LogFlow(("IOMR3IOPortRegisterGC: pDevIns=%p PortStart=%#x cPorts=%#x pvUser=%VGv pfnOutCallback=%VGv pfnInCallback=%VGv pfnOutStrCallback=%VGv  pfnInStrCallback=%VGv pszDesc=%s\n",
+    LogFlow(("IOMR3IOPortRegisterGC: pDevIns=%p PortStart=%#x cPorts=%#x pvUser=%VRv pfnOutCallback=%VGv pfnInCallback=%VRv pfnOutStrCallback=%VRv  pfnInStrCallback=%VRv pszDesc=%s\n",
              pDevIns, PortStart, cPorts, pvUser, pfnOutCallback, pfnInCallback, pfnOutStrCallback, pfnInStrCallback, pszDesc));
 
     /*
@@ -733,7 +737,7 @@ IOMR3DECL(int)  IOMR3IOPortRegisterR0(PVM pVM, PPDMDEVINS pDevIns, RTIOPORT Port
                                       R0PTRTYPE(PFNIOMIOPORTOUTSTRING) pfnOutStrCallback, R0PTRTYPE(PFNIOMIOPORTINSTRING) pfnInStrCallback,
                                       const char *pszDesc)
 {
-    LogFlow(("IOMR3IOPortRegisterR0: pDevIns=%p PortStart=%#x cPorts=%#x pvUser=%VHv pfnOutCallback=%VGv pfnInCallback=%VGv pfnOutStrCallback=%VGv  pfnInStrCallback=%VGv pszDesc=%s\n",
+    LogFlow(("IOMR3IOPortRegisterR0: pDevIns=%p PortStart=%#x cPorts=%#x pvUser=%VHv pfnOutCallback=%VHv pfnInCallback=%VHv pfnOutStrCallback=%VHv  pfnInStrCallback=%VHv pszDesc=%s\n",
              pDevIns, PortStart, cPorts, pvUser, pfnOutCallback, pfnInCallback, pfnOutStrCallback, pfnInStrCallback, pszDesc));
 
     /*
@@ -1241,7 +1245,7 @@ static DECLCALLBACK(int) iomR3IOPortInfoOneGC(PAVLROIOPORTNODECORE pNode, void *
     PIOMIOPORTRANGEGC pRange = (PIOMIOPORTRANGEGC)pNode;
     PCDBGFINFOHLP pHlp = (PCDBGFINFOHLP)pvUser;
     pHlp->pfnPrintf(pHlp,
-                    "%04x-%04x %VGv %VGv %VGv %VGv %s\n",
+                    "%04x-%04x %VRv %VRv %VRv %VRv %s\n",
                     pRange->Core.Key,
                     pRange->Core.KeyLast,
                     pRange->pDevIns,
@@ -1287,74 +1291,74 @@ static DECLCALLBACK(void) iomR3IOPortInfo(PVM pVM, PCDBGFINFOHLP pHlp, const cha
                     "I/O Port GC ranges (pVM=%p)\n"
                     "Range     %.*s %.*s %.*s %.*s Description\n",
                     pVM,
-                    sizeof(RTGCPTR) * 2,      "pDevIns         ",
-                    sizeof(RTGCPTR) * 2,      "In              ",
-                    sizeof(RTGCPTR) * 2,      "Out             ",
-                    sizeof(RTGCPTR) * 2,      "pvUser          ");
+                    sizeof(RTRCPTR) * 2,      "pDevIns         ",
+                    sizeof(RTRCPTR) * 2,      "In              ",
+                    sizeof(RTRCPTR) * 2,      "Out             ",
+                    sizeof(RTRCPTR) * 2,      "pvUser          ");
     RTAvlroIOPortDoWithAll(&pVM->iom.s.pTreesHC->IOPortTreeGC, true, iomR3IOPortInfoOneGC, (void *)pHlp);
 
     if (pVM->iom.s.pRangeLastReadGC)
     {
         PIOMIOPORTRANGEGC pRange = (PIOMIOPORTRANGEGC)MMHyperGC2HC(pVM, pVM->iom.s.pRangeLastReadGC);
-        pHlp->pfnPrintf(pHlp, "GC Read  Ports: %#04x-%#04x %VGv %s\n",
+        pHlp->pfnPrintf(pHlp, "GC Read  Ports: %#04x-%#04x %VRv %s\n",
                         pRange->Port, pRange->Port + pRange->cPorts, pVM->iom.s.pRangeLastReadGC, pRange->pszDesc);
     }
     if (pVM->iom.s.pStatsLastReadGC)
     {
         PIOMIOPORTSTATS pRange = (PIOMIOPORTSTATS)MMHyperGC2HC(pVM, pVM->iom.s.pStatsLastReadGC);
-        pHlp->pfnPrintf(pHlp, "GC Read  Stats: %#04x %VGv\n",
+        pHlp->pfnPrintf(pHlp, "GC Read  Stats: %#04x %VRv\n",
                         pRange->Core.Key, pVM->iom.s.pStatsLastReadGC);
     }
 
     if (pVM->iom.s.pRangeLastWriteGC)
     {
         PIOMIOPORTRANGEGC pRange = (PIOMIOPORTRANGEGC)MMHyperGC2HC(pVM, pVM->iom.s.pRangeLastWriteGC);
-        pHlp->pfnPrintf(pHlp, "GC Write Ports: %#04x-%#04x %VGv %s\n",
+        pHlp->pfnPrintf(pHlp, "GC Write Ports: %#04x-%#04x %VRv %s\n",
                         pRange->Port, pRange->Port + pRange->cPorts, pVM->iom.s.pRangeLastWriteGC, pRange->pszDesc);
     }
     if (pVM->iom.s.pStatsLastWriteGC)
     {
         PIOMIOPORTSTATS pRange = (PIOMIOPORTSTATS)MMHyperGC2HC(pVM, pVM->iom.s.pStatsLastWriteGC);
-        pHlp->pfnPrintf(pHlp, "GC Write Stats: %#04x %VGv\n",
+        pHlp->pfnPrintf(pHlp, "GC Write Stats: %#04x %VRv\n",
                         pRange->Core.Key, pVM->iom.s.pStatsLastWriteGC);
     }
 
     if (pVM->iom.s.pRangeLastReadR3)
     {
         PIOMIOPORTRANGER3 pRange = pVM->iom.s.pRangeLastReadR3;
-        pHlp->pfnPrintf(pHlp, "HC Read  Ports: %#04x-%#04x %VGv %s\n",
+        pHlp->pfnPrintf(pHlp, "HC Read  Ports: %#04x-%#04x %VHv %s\n",
                         pRange->Port, pRange->Port + pRange->cPorts, pRange, pRange->pszDesc);
     }
     if (pVM->iom.s.pStatsLastReadR3)
     {
         PIOMIOPORTSTATS pRange = pVM->iom.s.pStatsLastReadR3;
-        pHlp->pfnPrintf(pHlp, "HC Read  Stats: %#04x %VGv\n",
+        pHlp->pfnPrintf(pHlp, "HC Read  Stats: %#04x %VHv\n",
                         pRange->Core.Key, pRange);
     }
 
     if (pVM->iom.s.pRangeLastWriteR3)
     {
         PIOMIOPORTRANGER3 pRange = pVM->iom.s.pRangeLastWriteR3;
-        pHlp->pfnPrintf(pHlp, "HC Write Ports: %#04x-%#04x %VGv %s\n",
+        pHlp->pfnPrintf(pHlp, "HC Write Ports: %#04x-%#04x %VHv %s\n",
                         pRange->Port, pRange->Port + pRange->cPorts, pRange, pRange->pszDesc);
     }
     if (pVM->iom.s.pStatsLastWriteR3)
     {
         PIOMIOPORTSTATS pRange = pVM->iom.s.pStatsLastWriteR3;
-        pHlp->pfnPrintf(pHlp, "HC Write Stats: %#04x %VGv\n",
+        pHlp->pfnPrintf(pHlp, "HC Write Stats: %#04x %VHv\n",
                         pRange->Core.Key, pRange);
     }
 
     if (pVM->iom.s.pRangeLastReadR0)
     {
         PIOMIOPORTRANGER0 pRange = (PIOMIOPORTRANGER0)MMHyperR0ToCC(pVM, pVM->iom.s.pRangeLastReadR0);
-        pHlp->pfnPrintf(pHlp, "R0 Read  Ports: %#04x-%#04x %VGv %s\n",
+        pHlp->pfnPrintf(pHlp, "R0 Read  Ports: %#04x-%#04x %VHv %s\n",
                         pRange->Port, pRange->Port + pRange->cPorts, pRange, pRange->pszDesc);
     }
     if (pVM->iom.s.pStatsLastReadR0)
     {
         PIOMIOPORTSTATS pRange = (PIOMIOPORTSTATS)MMHyperR0ToCC(pVM, pVM->iom.s.pStatsLastReadR0);
-        pHlp->pfnPrintf(pHlp, "R0 Read  Stats: %#04x %VGv\n",
+        pHlp->pfnPrintf(pHlp, "R0 Read  Stats: %#04x %VHv\n",
                         pRange->Core.Key, pRange);
     }
 
@@ -1367,7 +1371,7 @@ static DECLCALLBACK(void) iomR3IOPortInfo(PVM pVM, PCDBGFINFOHLP pHlp, const cha
     if (pVM->iom.s.pStatsLastWriteR0)
     {
         PIOMIOPORTSTATS pRange = (PIOMIOPORTSTATS)MMHyperR0ToCC(pVM, pVM->iom.s.pStatsLastWriteR0);
-        pHlp->pfnPrintf(pHlp, "R0 Write Stats: %#04x %VGv\n",
+        pHlp->pfnPrintf(pHlp, "R0 Write Stats: %#04x %VHv\n",
                         pRange->Core.Key, pRange);
     }
 }
@@ -1454,9 +1458,9 @@ IOMR3DECL(int)  IOMR3MMIORegisterR3(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys
          * Try register it with PGM and then insert it into the tree.
          */
         rc = PGMR3PhysMMIORegister(pVM, GCPhysStart, cbRange,
-                                   /*IOMR3MMIOHandler*/ NULL, pRange,
+                                   IOMR3MMIOHandler, pRange,
                                    pVM->iom.s.pfnMMIOHandlerR0, MMHyperR3ToR0(pVM, pRange),
-                                   pVM->iom.s.pfnMMIOHandlerGC, MMHyperR3ToGC(pVM, pRange), pszDesc);
+                                   pVM->iom.s.pfnMMIOHandlerGC, MMHyperR3ToRC(pVM, pRange), pszDesc);
         if (RT_SUCCESS(rc))
         {
             if (RTAvlroGCPhysInsert(&pVM->iom.s.pTreesHC->MMIOTree, &pRange->Core))
@@ -1492,8 +1496,8 @@ IOMR3DECL(int)  IOMR3MMIORegisterR3(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys
  * @param   pfnFillCallback     Pointer to function which is gonna handle Fill/memset operations.
  */
 IOMR3DECL(int)  IOMR3MMIORegisterGC(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhysStart, RTUINT cbRange, RTGCPTR pvUser,
-                                    GCPTRTYPE(PFNIOMMMIOWRITE) pfnWriteCallback, GCPTRTYPE(PFNIOMMMIOREAD) pfnReadCallback,
-                                    GCPTRTYPE(PFNIOMMMIOFILL) pfnFillCallback)
+                                    RCPTRTYPE(PFNIOMMMIOWRITE) pfnWriteCallback, RCPTRTYPE(PFNIOMMMIOREAD) pfnReadCallback,
+                                    RCPTRTYPE(PFNIOMMMIOFILL) pfnFillCallback)
 {
     LogFlow(("IOMR3MMIORegisterGC: pDevIns=%p GCPhysStart=%VGp cbRange=%#x pvUser=%VGv pfnWriteCallback=%#x pfnReadCallback=%#x pfnFillCallback=%#x\n",
              pDevIns, GCPhysStart, cbRange, pvUser, pfnWriteCallback, pfnReadCallback, pfnFillCallback));
@@ -1520,7 +1524,7 @@ IOMR3DECL(int)  IOMR3MMIORegisterGC(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys
     pRange->pfnReadCallbackGC = pfnReadCallback;
     pRange->pfnWriteCallbackGC= pfnWriteCallback;
     pRange->pfnFillCallbackGC = pfnFillCallback;
-    pRange->pDevInsGC         = MMHyperCCToGC(pVM, pDevIns);
+    pRange->pDevInsGC         = MMHyperCCToRC(pVM, pDevIns);
 
     return VINF_SUCCESS;
 }
@@ -1684,7 +1688,7 @@ static DECLCALLBACK(int) iomR3MMIOInfoOne(PAVLROGCPHYSNODECORE pNode, void *pvUs
                     pRange->pfnFillCallbackR0,
                     pRange->pvUserR0);
     pHlp->pfnPrintf(pHlp,
-                    "%*s %VGv %VGv %VGv %VGv %VGv\n",
+                    "%*s %VRv %VRv %VRv %VRv %VRv\n",
                     sizeof(RTGCPHYS) * 2 * 2 + 1, "GC",
                     pRange->pDevInsGC,
                     pRange->pfnReadCallbackGC,

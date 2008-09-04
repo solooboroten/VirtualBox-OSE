@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35687 2008-08-29 20:31:36Z ni81036 $
 ## @file
 # Top-level makefile for the external libraries.
 #
@@ -19,11 +19,77 @@
 # additional information or have any questions.
 #
 
+ifdef VBOX_SINGLE_MAKEFILE
+SUB_DEPTH = ../..
+include $(KBUILD_PATH)/subheader.kmk
+
+#
+# Note! A number of the libs may be detected on the host system by the configure script.
+#       The usual way for testing for this is to see whether the Config.kmk default
+#       include path specific to the lib has been changed.
+#
+
+# Compression libs used by IPRT and <what was it again?>.
+include $(PATH_SUB_CURRENT)/liblzf-1.51/Makefile.kmk
+ifeq ($(SDK_VBOX_ZLIB_INCS),$(PATH_ROOT)/src/libs/zlib-1.2.1)
+ include $(PATH_SUB_CURRENT)/zlib-1.2.1/Makefile.kmk
+endif
+
+# PNG support (for screenshots).
+ifndef VBOX_ONLY_DOCS
+ ifeq ($(SDK_VBOX_LIBPNG_INCS),$(PATH_ROOT)/src/libs/libpng-1.2.8)
+  include $(PATH_SUB_CURRENT)/libpng-1.2.8/Makefile.kmk
+ endif
+endif # !VBOX_ONLY_DOCS
+
+# The kStuff lib used by IPRT and the debugger.
+ifdef IPRT_WITH_KSTUFF
+ include $(PATH_SUB_CURRENT)/kStuff/Makefile.kmk
+endif
+
+# OpenSSL for VRDP.
+ifndef VBOX_ONLY_DOCS
+ ifdef VBOX_WITH_VRDP
+  ifeq ($(SDK_VBOX_OPENSSL_INCS),$(SDK_VBOX_OPENSSL_DEFAULT_INCS))
+   include $(PATH_SUB_CURRENT)/openssl-0.9.8h/Makefile.kmk
+  endif
+ endif #  VBOX_WITH_VRDP
+endif # !VBOX_ONLY_DOCS
+
+
+# Main related things - XML and XSLT, XPCOM.
+ifndef VBOX_ONLY_DOCS
+ ifdef VBOX_WITH_MAIN
+  ifdef VBOX_WITH_XPCOM
+   include $(PATH_SUB_CURRENT)/xpcom18a4/Makefile.kmk
+  endif
+  ifeq ($(SDK_VBOX_LIBXML2_INCS),$(PATH_ROOT)/src/libs/libxml2-2.6.30/include)
+   include $(PATH_SUB_CURRENT)/libxml2-2.6.30/Makefile.kmk
+  endif
+  ifeq ($(SDK_VBOX_LIBXSLT_INCS),$(PATH_ROOT)/src/libs/libxslt-1.1.22)
+   include $(PATH_SUB_CURRENT)/libxslt-1.1.22/Makefile.kmk
+  endif
+
+  # FFmpeg for test videos.
+  ifndef VBOX_OSE
+   ifdef VBOX_WITH_FFMPEG
+    if1of ($(KBUILD_TARGET), darwin)
+     include $(PATH_SUB_CURRENT)/ffmpeg-20060710/Makefile.kmk
+    endif
+   endif
+  endif
+ endif
+endif
+
+include $(KBUILD_PATH)/subfooter.kmk
+
+
+else # !VBOX_SINGLE_MAKEFILE
 DEPTH = ../..
 include $(KBUILD_PATH)/header.kmk
 
-
 subdirs := liblzf-1.51 $(subdirs.$(KBUILD_TARGET))
+
 ifdef IPRT_WITH_KSTUFF
  subdirs += kStuff
 endif
@@ -31,15 +97,21 @@ endif
 # values by the configure script
 #ifndef VBOX_OSE
  ifeq ($(SDK_VBOX_ZLIB_INCS),$(PATH_ROOT)/src/libs/zlib-1.2.1)
-  subdirs += zlib-1.2.1
+   subdirs += zlib-1.2.1
  endif
  ifeq ($(SDK_VBOX_LIBPNG_INCS),$(PATH_ROOT)/src/libs/libpng-1.2.8)
   subdirs += libpng-1.2.8
  endif
 #endif # !VBOX_OSE
 ifdef VBOX_WITH_VRDP
- ifeq ($(SDK_VBOX_OPENSSL_INCS),$(PATH_ROOT)/src/libs/openssl-0.9.7e/include)
-  subdirs += openssl-0.9.7e
+ if1of ($(KBUILD_TARGET), darwin linux solaris win)
+  ifeq ($(SDK_VBOX_OPENSSL_INCS),$(SDK_VBOX_OPENSSL_DEFAULT_INCS))
+   subdirs += openssl-0.9.8h
+  endif
+ else
+  ifeq ($(SDK_VBOX_OPENSSL_INCS),$(PATH_ROOT)/src/libs/openssl-0.9.7e/include)
+   subdirs += openssl-0.9.7e
+  endif
  endif
 endif
 ifdef VBOX_WITH_MAIN
@@ -55,11 +127,21 @@ ifdef VBOX_WITH_MAIN
   subdirs += libxslt-1.1.22
  endif
  # FFmpeg for test videos
- ifdef VBOX_WITH_FFMPEG
-  ifeq ($(KBUILD_TARGET),darwin)
-   subdirs += ffmpeg-20060710
+ ifndef VBOX_OSE
+  ifdef VBOX_WITH_FFMPEG
+   ifeq ($(KBUILD_TARGET),darwin)
+    subdirs += ffmpeg-20060710
+   endif
   endif
  endif
+endif
+
+ifdef VBOX_ONLY_DOCS
+ subdirs := $(filter liblzf-1.51 zlib-1.2.1 kStuff, $(subdirs))
+endif
+
+ifdef VBOX_ONLY_SDK
+ subdirs := $(filter-out liblzf-1.51 zlib-1.2.1 libpng-1.2.8 openssl-0.9.7e openssl-0.9.8h ffmpeg-20060710, $(subdirs))
 endif
 
 # optimized walking
@@ -68,7 +150,10 @@ SUBDIRS_LIBRARIES      = $(subdirs)
 SUBDIRS_BINARIES       = $(filter xpcom18a4,$(subdirs))
 SUBDIRS_DLLS           = $(filter xpcom18a4 ffmpeg-20060710,$(subdirs))
 SUBDIRS_OTHERS         = $(filter xpcom18a4,$(subdirs))
+SUBDIRS_INSTALLS       = $(filter xpcom18a4,$(subdirs))
 SUBDIRS_CLEAN          = $(subdirs)
 SUBDIRS_NOTHING        = $(subdirs)
 
 include $(KBUILD_PATH)/footer.kmk
+endif # !VBOX_SINGLE_MAKEFILE
+

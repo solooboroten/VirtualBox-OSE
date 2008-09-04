@@ -46,8 +46,14 @@ __BEGIN_DECLS
  */
 typedef struct CPUMSELREGHID
 {
-    /** Base register. */
-    uint32_t    u32Base;
+    /** Base register.
+     *
+     *  Long mode remarks:
+     *  - Unused in long mode for CS, DS, ES, SS
+     *  - 32 bits for FS & GS; FS(GS)_BASE msr used for the base address
+     *  - 64 bits for TR & LDTR 
+     */
+    uint64_t    u64Base;
     /** Limit (expanded). */
     uint32_t    u32Limit;
     /** Flags.
@@ -83,56 +89,67 @@ typedef struct CPUMCTXCORE
 {
     union
     {
+        uint16_t        di;
         uint32_t        edi;
         uint64_t        rdi;
     };
     union
     {
+        uint16_t        si;
         uint32_t        esi;
         uint64_t        rsi;
     };
     union
     {
+        uint16_t        bp;
         uint32_t        ebp;
         uint64_t        rbp;
     };
     union
     {
+        uint16_t        ax;
         uint32_t        eax;
         uint64_t        rax;
     };
     union
     {
+        uint16_t        bx;
         uint32_t        ebx;
         uint64_t        rbx;
     };
     union
     {
+        uint16_t        dx;
         uint32_t        edx;
         uint64_t        rdx;
     };
     union
     {
+        uint16_t        cx;
         uint32_t        ecx;
         uint64_t        rcx;
     };
-    /* Note: we rely on the exact layout, because we use lss esp, [] in the switcher */
-    uint32_t        esp;
-    RTSEL           ss;
-    RTSEL           ssPadding;
-    /* Note: no overlap with esp here. */
-    uint64_t        rsp;
+    union
+    {
+        uint16_t        sp;
+        uint32_t        esp;
+        uint64_t        rsp;
+    };
+    /* Note: lss esp, [] in the switcher needs some space, so we reserve it here instead of relying on the exact esp & ss layout as before. */
+    uint32_t            lss_esp;
+    RTSEL               ss;
+    RTSEL               ssPadding;
 
-    RTSEL           gs;
-    RTSEL           gsPadding;
-    RTSEL           fs;
-    RTSEL           fsPadding;
-    RTSEL           es;
-    RTSEL           esPadding;
-    RTSEL           ds;
-    RTSEL           dsPadding;
-    RTSEL           cs;
-    RTSEL           csPadding[3];  /* 3 words to force 8 byte alignment for the remainder */
+    RTSEL               gs;
+    RTSEL               gsPadding;
+    RTSEL               fs;
+    RTSEL               fsPadding;
+    RTSEL               es;
+    RTSEL               esPadding;
+    RTSEL               ds;
+    RTSEL               dsPadding;
+    RTSEL               cs;
+    RTSEL               csPadding[3];  /* 3 words to force 8 byte alignment for the remainder */
 
     union
     {
@@ -141,6 +158,7 @@ typedef struct CPUMCTXCORE
     };
     union
     {
+        uint16_t        ip;
         uint32_t        eip;
         uint64_t        rip;
     };
@@ -173,6 +191,199 @@ typedef struct CPUMCTXCORE
  */
 #pragma pack(1)
 typedef struct CPUMCTX
+{
+    /** FPU state. (16-byte alignment)
+     * @todo This doesn't have to be in X86FXSTATE on CPUs without fxsr - we need a type for the
+     *       actual format or convert it (waste of time).  */
+    X86FXSTATE      fpu;
+
+    /** CPUMCTXCORE Part.
+     * @{ */
+    union
+    {
+        uint16_t        di;
+        uint32_t        edi;
+        uint64_t        rdi;
+    };
+    union
+    {
+        uint16_t        si;
+        uint32_t        esi;
+        uint64_t        rsi;
+    };
+    union
+    {
+        uint16_t        bp;
+        uint32_t        ebp;
+        uint64_t        rbp;
+    };
+    union
+    {
+        uint16_t        ax;
+        uint32_t        eax;
+        uint64_t        rax;
+    };
+    union
+    {
+        uint16_t        bx;
+        uint32_t        ebx;
+        uint64_t        rbx;
+    };
+    union
+    {
+        uint16_t        dx;
+        uint32_t        edx;
+        uint64_t        rdx;
+    };
+    union
+    {
+        uint16_t        cx;
+        uint32_t        ecx;
+        uint64_t        rcx;
+    };
+    union
+    {
+        uint16_t        sp;
+        uint32_t        esp;
+        uint64_t        rsp;
+    };
+    /* Note: lss esp, [] in the switcher needs some space, so we reserve it here instead of relying on the exact esp & ss layout as before (prevented us from using a union with rsp). */
+    uint32_t            lss_esp;
+    RTSEL               ss;
+    RTSEL               ssPadding;
+
+    RTSEL               gs;
+    RTSEL               gsPadding;
+    RTSEL               fs;
+    RTSEL               fsPadding;
+    RTSEL               es;
+    RTSEL               esPadding;
+    RTSEL               ds;
+    RTSEL               dsPadding;
+    RTSEL               cs;
+    RTSEL               csPadding[3];  /* 3 words to force 8 byte alignment for the remainder */
+
+    union
+    {
+        X86EFLAGS       eflags;
+        X86RFLAGS       rflags;
+    };
+    union
+    {
+        uint16_t        ip;
+        uint32_t        eip;
+        uint64_t        rip;
+    };
+
+    uint64_t            r8;
+    uint64_t            r9;
+    uint64_t            r10;
+    uint64_t            r11;
+    uint64_t            r12;
+    uint64_t            r13;
+    uint64_t            r14;
+    uint64_t            r15;
+
+    /** Hidden selector registers.
+     * @{ */
+    CPUMSELREGHID   esHid;
+    CPUMSELREGHID   csHid;
+    CPUMSELREGHID   ssHid;
+    CPUMSELREGHID   dsHid;
+    CPUMSELREGHID   fsHid;
+    CPUMSELREGHID   gsHid;
+    /** @} */
+
+    /** @} */
+
+    /** Control registers.
+     * @{ */
+    uint64_t        cr0;
+    uint64_t        cr2;
+    uint64_t        cr3;
+    uint64_t        cr4;
+    /** @} */
+
+    /** Debug registers.
+     * @{ */
+    uint64_t        dr0;
+    uint64_t        dr1;
+    uint64_t        dr2;
+    uint64_t        dr3;
+    uint64_t        dr4; /**< @todo remove dr4 and dr5. */
+    uint64_t        dr5;
+    uint64_t        dr6;
+    uint64_t        dr7;
+    /* DR8-15 are currently not supported */
+    /** @} */
+
+    /** Global Descriptor Table register. */
+    VBOXGDTR        gdtr;
+    uint16_t        gdtrPadding;
+    /** Interrupt Descriptor Table register. */
+    VBOXIDTR        idtr;
+    uint16_t        idtrPadding;
+    /** The task register.
+     * Only the guest context uses all the members. */
+    RTSEL           ldtr;
+    RTSEL           ldtrPadding;
+    /** The task register.
+     * Only the guest context uses all the members. */
+    RTSEL           tr;
+    RTSEL           trPadding;
+
+    /** The sysenter msr registers.
+     * This member is not used by the hypervisor context. */
+    CPUMSYSENTER    SysEnter;
+
+    /** System MSRs.
+     * @{ */
+    uint64_t        msrEFER;
+    uint64_t        msrSTAR;        /* legacy syscall eip, cs & ss */
+    uint64_t        msrPAT;
+    uint64_t        msrLSTAR;       /* 64 bits mode syscall rip */
+    uint64_t        msrCSTAR;       /* compatibility mode syscall rip */
+    uint64_t        msrSFMASK;      /* syscall flag mask */
+    uint64_t        msrKERNELGSBASE;/* swapgs exchange value */
+    /** @} */
+
+    /** Hidden selector registers.
+     * @{ */
+    CPUMSELREGHID   ldtrHid;
+    CPUMSELREGHID   trHid;
+    /** @} */
+
+    /* padding to get 32byte aligned size */
+////    uint32_t        padding[6];
+} CPUMCTX;
+#pragma pack()
+
+/**
+ * Gets the CPUMCTXCORE part of a CPUMCTX.
+ */
+#define CPUMCTX2CORE(pCtx) ((PCPUMCTXCORE)(void *)&(pCtx)->edi)
+
+
+/**
+ * Selector hidden registers. (version 1.6)
+ */
+typedef struct CPUMSELREGHID_VER1_6
+{
+    /** Base register. */
+    uint32_t    u32Base;
+    /** Limit (expanded). */
+    uint32_t    u32Limit;
+    /** Flags.
+     * This is the high 32-bit word of the descriptor entry.
+     * Only the flags, dpl and type are used. */
+    X86DESCATTR Attr;
+} CPUMSELREGHID_VER1_6;
+
+/**
+ * CPU context. (Version 1.6)
+ */
+#pragma pack(1)
+typedef struct CPUMCTX_VER1_6
 {
     /** FPU state. (16-byte alignment)
      * @todo This doesn't have to be in X86FXSTATE on CPUs without fxsr - we need a type for the
@@ -221,7 +432,7 @@ typedef struct CPUMCTX
     RTSEL           ss;
     RTSEL           ssPadding;
     /* Note: no overlap with esp here. */
-    uint64_t        rsp;
+    uint64_t        rsp_notused;
 
     RTSEL           gs;
     RTSEL           gsPadding;
@@ -256,12 +467,12 @@ typedef struct CPUMCTX
 
     /** Hidden selector registers.
      * @{ */
-    CPUMSELREGHID   esHid;
-    CPUMSELREGHID   csHid;
-    CPUMSELREGHID   ssHid;
-    CPUMSELREGHID   dsHid;
-    CPUMSELREGHID   fsHid;
-    CPUMSELREGHID   gsHid;
+    CPUMSELREGHID_VER1_6   esHid;
+    CPUMSELREGHID_VER1_6   csHid;
+    CPUMSELREGHID_VER1_6   ssHid;
+    CPUMSELREGHID_VER1_6   dsHid;
+    CPUMSELREGHID_VER1_6   fsHid;
+    CPUMSELREGHID_VER1_6   gsHid;
     /** @} */
 
     /** @} */
@@ -289,11 +500,11 @@ typedef struct CPUMCTX
     /** @} */
 
     /** Global Descriptor Table register. */
-    VBOXGDTR        gdtr;
+    VBOXGDTR_VER1_6 gdtr;
     uint16_t        gdtrPadding;
     uint32_t        gdtrPadding64;/** @todo fix this hack */
     /** Interrupt Descriptor Table register. */
-    VBOXIDTR        idtr;
+    VBOXIDTR_VER1_6 idtr;
     uint16_t        idtrPadding;
     uint32_t        idtrPadding64;/** @todo fix this hack */
     /** The task register.
@@ -324,19 +535,14 @@ typedef struct CPUMCTX
 
     /** Hidden selector registers.
      * @{ */
-    CPUMSELREGHID   ldtrHid;
-    CPUMSELREGHID   trHid;
+    CPUMSELREGHID_VER1_6   ldtrHid;
+    CPUMSELREGHID_VER1_6   trHid;
     /** @} */
 
     /* padding to get 32byte aligned size */
     uint32_t        padding[2];
-} CPUMCTX;
+} CPUMCTX_VER1_6;
 #pragma pack()
-
-/**
- * Gets the CPUMCTXCORE part of a CPUMCTX.
- */
-#define CPUMCTX2CORE(pCtx) ((PCPUMCTXCORE)(void *)&(pCtx)->edi)
 
 /**
  * The register set returned by a CPUID operation.
@@ -361,19 +567,43 @@ typedef enum CPUMCPUIDFEATURE
     CPUMCPUIDFEATURE_INVALID = 0,
     /** The APIC feature bit. (Std+Ext) */
     CPUMCPUIDFEATURE_APIC,
-    /** The sysenter/sysexit feature bit. (Std+Ext) */
+    /** The sysenter/sysexit feature bit. (Std) */
     CPUMCPUIDFEATURE_SEP,
+    /** The SYSCALL/SYSEXIT feature bit (64 bits mode only for Intel CPUs). (Ext) */
+    CPUMCPUIDFEATURE_SYSCALL,
     /** The PAE feature bit. (Std+Ext) */
     CPUMCPUIDFEATURE_PAE,
+    /** The NXE feature bit. (Ext) */
+    CPUMCPUIDFEATURE_NXE,
+    /** The LAHF/SAHF feature bit (64 bits mode only). (Ext) */
+    CPUMCPUIDFEATURE_LAHF,
     /** The LONG MODE feature bit. (Ext) */
-    CPUMCPUIDFEATURE_LONG_MODE
+    CPUMCPUIDFEATURE_LONG_MODE,
+    /** The PAT feature bit. (Std+Ext) */
+    CPUMCPUIDFEATURE_PAT,
+    /** 32bit hackishness. */
+    CPUMCPUIDFEATURE_32BIT_HACK = 0x7fffffff
 } CPUMCPUIDFEATURE;
+
+/*
+ * CPU Vendor.
+ */
+typedef enum CPUMCPUVENDOR
+{
+    CPUMCPUVENDOR_INVALID = 0,
+    CPUMCPUVENDOR_INTEL,
+    CPUMCPUVENDOR_AMD,
+    CPUMCPUVENDOR_VIA,
+    CPUMCPUVENDOR_UNKNOWN,
+    /** 32bit hackishness. */
+    CPUMCPUVENDOR_32BIT_HACK = 0x7fffffff
+} CPUMCPUVENDOR;
 
 
 /** @name Guest Register Getters.
  * @{ */
 CPUMDECL(void)      CPUMGetGuestGDTR(PVM pVM, PVBOXGDTR pGDTR);
-CPUMDECL(uint32_t)  CPUMGetGuestIDTR(PVM pVM, uint16_t *pcbLimit);
+CPUMDECL(RTGCPTR)   CPUMGetGuestIDTR(PVM pVM, uint16_t *pcbLimit);
 CPUMDECL(RTSEL)     CPUMGetGuestTR(PVM pVM);
 CPUMDECL(RTSEL)     CPUMGetGuestLDTR(PVM pVM);
 CPUMDECL(uint64_t)  CPUMGetGuestCR0(PVM pVM);
@@ -383,6 +613,7 @@ CPUMDECL(uint64_t)  CPUMGetGuestCR4(PVM pVM);
 CPUMDECL(int)       CPUMGetGuestCRx(PVM pVM, unsigned iReg, uint64_t *pValue);
 CPUMDECL(uint32_t)  CPUMGetGuestEFlags(PVM pVM);
 CPUMDECL(uint32_t)  CPUMGetGuestEIP(PVM pVM);
+CPUMDECL(uint64_t)  CPUMGetGuestRIP(PVM pVM);
 CPUMDECL(uint32_t)  CPUMGetGuestEAX(PVM pVM);
 CPUMDECL(uint32_t)  CPUMGetGuestEBX(PVM pVM);
 CPUMDECL(uint32_t)  CPUMGetGuestECX(PVM pVM);
@@ -397,23 +628,24 @@ CPUMDECL(RTSEL)     CPUMGetGuestES(PVM pVM);
 CPUMDECL(RTSEL)     CPUMGetGuestFS(PVM pVM);
 CPUMDECL(RTSEL)     CPUMGetGuestGS(PVM pVM);
 CPUMDECL(RTSEL)     CPUMGetGuestSS(PVM pVM);
-CPUMDECL(RTUINTREG) CPUMGetGuestDR0(PVM pVM);
-CPUMDECL(RTUINTREG) CPUMGetGuestDR1(PVM pVM);
-CPUMDECL(RTUINTREG) CPUMGetGuestDR2(PVM pVM);
-CPUMDECL(RTUINTREG) CPUMGetGuestDR3(PVM pVM);
-CPUMDECL(RTUINTREG) CPUMGetGuestDR6(PVM pVM);
-CPUMDECL(RTUINTREG) CPUMGetGuestDR7(PVM pVM);
-CPUMDECL(int)       CPUMGetGuestDRx(PVM pVM, uint32_t iReg, uint32_t *pValue);
+CPUMDECL(uint64_t)  CPUMGetGuestDR0(PVM pVM);
+CPUMDECL(uint64_t)  CPUMGetGuestDR1(PVM pVM);
+CPUMDECL(uint64_t)  CPUMGetGuestDR2(PVM pVM);
+CPUMDECL(uint64_t)  CPUMGetGuestDR3(PVM pVM);
+CPUMDECL(uint64_t)  CPUMGetGuestDR6(PVM pVM);
+CPUMDECL(uint64_t)  CPUMGetGuestDR7(PVM pVM);
+CPUMDECL(int)       CPUMGetGuestDRx(PVM pVM, uint32_t iReg, uint64_t *pValue);
 CPUMDECL(void)      CPUMGetGuestCpuId(PVM pVM, uint32_t iLeaf, uint32_t *pEax, uint32_t *pEbx, uint32_t *pEcx, uint32_t *pEdx);
-CPUMDECL(GCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdStdGCPtr(PVM pVM);
-CPUMDECL(GCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdExtGCPtr(PVM pVM);
-CPUMDECL(GCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdCentaurGCPtr(PVM pVM);
-CPUMDECL(GCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdDefGCPtr(PVM pVM);
+CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdStdGCPtr(PVM pVM);
+CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdExtGCPtr(PVM pVM);
+CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdCentaurGCPtr(PVM pVM);
+CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdDefGCPtr(PVM pVM);
 CPUMDECL(uint32_t)  CPUMGetGuestCpuIdStdMax(PVM pVM);
 CPUMDECL(uint32_t)  CPUMGetGuestCpuIdExtMax(PVM pVM);
 CPUMDECL(uint32_t)  CPUMGetGuestCpuIdCentaurMax(PVM pVM);
 CPUMDECL(CPUMSELREGHID *) CPUMGetGuestTRHid(PVM pVM);
 CPUMDECL(uint64_t)  CPUMGetGuestEFER(PVM pVM);
+CPUMDECL(uint64_t)  CPUMGetGuestMsr(PVM pVM, unsigned idMsr);
 /** @} */
 
 /** @name Guest Register Setters.
@@ -426,13 +658,13 @@ CPUMDECL(int)       CPUMSetGuestCR0(PVM pVM, uint64_t cr0);
 CPUMDECL(int)       CPUMSetGuestCR2(PVM pVM, uint64_t cr2);
 CPUMDECL(int)       CPUMSetGuestCR3(PVM pVM, uint64_t cr3);
 CPUMDECL(int)       CPUMSetGuestCR4(PVM pVM, uint64_t cr4);
-CPUMDECL(int)       CPUMSetGuestDR0(PVM pVM, RTGCUINTREG uDr0);
-CPUMDECL(int)       CPUMSetGuestDR1(PVM pVM, RTGCUINTREG uDr1);
-CPUMDECL(int)       CPUMSetGuestDR2(PVM pVM, RTGCUINTREG uDr2);
-CPUMDECL(int)       CPUMSetGuestDR3(PVM pVM, RTGCUINTREG uDr3);
-CPUMDECL(int)       CPUMSetGuestDR6(PVM pVM, RTGCUINTREG uDr6);
-CPUMDECL(int)       CPUMSetGuestDR7(PVM pVM, RTGCUINTREG uDr7);
-CPUMDECL(int)       CPUMSetGuestDRx(PVM pVM, uint32_t iReg, uint32_t Value);
+CPUMDECL(int)       CPUMSetGuestDR0(PVM pVM, uint64_t uDr0);
+CPUMDECL(int)       CPUMSetGuestDR1(PVM pVM, uint64_t uDr1);
+CPUMDECL(int)       CPUMSetGuestDR2(PVM pVM, uint64_t uDr2);
+CPUMDECL(int)       CPUMSetGuestDR3(PVM pVM, uint64_t uDr3);
+CPUMDECL(int)       CPUMSetGuestDR6(PVM pVM, uint64_t uDr6);
+CPUMDECL(int)       CPUMSetGuestDR7(PVM pVM, uint64_t uDr7);
+CPUMDECL(int)       CPUMSetGuestDRx(PVM pVM, uint32_t iReg, uint64_t Value);
 CPUMDECL(int)       CPUMSetGuestEFlags(PVM pVM, uint32_t eflags);
 CPUMDECL(int)       CPUMSetGuestEIP(PVM pVM, uint32_t eip);
 CPUMDECL(int)       CPUMSetGuestEAX(PVM pVM, uint32_t eax);
@@ -493,7 +725,29 @@ DECLINLINE(bool) CPUMIsGuestInPagedProtectedMode(PVM pVM)
 }
 
 /**
- * Tests if the guest is running in paged protected or not.
+ * Tests if the guest is running in long mode or not.
+ *
+ * @returns true if in long mode, otherwise false.
+ * @param   pVM     The VM handle.
+ */
+DECLINLINE(bool) CPUMIsGuestInLongMode(PVM pVM)
+{
+    return (CPUMGetGuestEFER(pVM) & MSR_K6_EFER_LMA) == MSR_K6_EFER_LMA;
+}
+
+/**
+ * Tests if the guest is running in long mode or not.
+ *
+ * @returns true if in long mode, otherwise false.
+ * @param   pCtx    Current CPU context
+ */
+DECLINLINE(bool) CPUMIsGuestInLongModeEx(PCPUMCTX pCtx)
+{
+    return (pCtx->msrEFER & MSR_K6_EFER_LMA) == MSR_K6_EFER_LMA;
+}
+
+/**
+ * Tests if the guest is running in 16 bits paged protected or not.
  *
  * @returns true if in paged protected mode, otherwise false.
  * @param   pVM     The VM handle.
@@ -501,7 +755,7 @@ DECLINLINE(bool) CPUMIsGuestInPagedProtectedMode(PVM pVM)
 CPUMDECL(bool) CPUMIsGuestIn16BitCode(PVM pVM);
 
 /**
- * Tests if the guest is running in paged protected or not.
+ * Tests if the guest is running in 32 bits paged protected or not.
  *
  * @returns true if in paged protected mode, otherwise false.
  * @param   pVM     The VM handle.
@@ -509,12 +763,43 @@ CPUMDECL(bool) CPUMIsGuestIn16BitCode(PVM pVM);
 CPUMDECL(bool) CPUMIsGuestIn32BitCode(PVM pVM);
 
 /**
- * Tests if the guest is running in paged protected or not.
+ * Tests if the guest is running in 64 bits mode or not.
  *
- * @returns true if in paged protected mode, otherwise false.
+ * @returns true if in 64 bits protected mode, otherwise false.
+ * @param   pVM     The VM handle.
+ * @param   pCtx    Current CPU context
+ */
+DECLINLINE(bool) CPUMIsGuestIn64BitCode(PVM pVM, PCCPUMCTXCORE pCtx)
+{
+    if (!CPUMIsGuestInLongMode(pVM))
+        return false;
+
+    return pCtx->csHid.Attr.n.u1Long;
+}
+
+/**
+ * Tests if the guest is running in 64 bits mode or not.
+ *
+ * @returns true if in 64 bits protected mode, otherwise false.
+ * @param   pVM     The VM handle.
+ * @param   pCtx    Current CPU context
+ */
+DECLINLINE(bool) CPUMIsGuestIn64BitCodeEx(PCCPUMCTX pCtx)
+{
+    if (!(pCtx->msrEFER & MSR_K6_EFER_LMA))
+        return false;
+
+    return pCtx->csHid.Attr.n.u1Long;
+}
+
+/**
+ * Gets the CPU vendor 
+ *
+ * @returns CPU vendor
  * @param   pVM     The VM handle.
  */
-CPUMDECL(bool) CPUMIsGuestIn64BitCode(PVM pVM);
+CPUMDECL(CPUMCPUVENDOR) CPUMGetCPUVendor(PVM pVM);
+
 
 /** @} */
 
@@ -547,6 +832,7 @@ CPUMDECL(uint32_t)      CPUMGetHyperEBP(PVM pVM);
 CPUMDECL(uint32_t)      CPUMGetHyperESP(PVM pVM);
 CPUMDECL(uint32_t)      CPUMGetHyperEFlags(PVM pVM);
 CPUMDECL(uint32_t)      CPUMGetHyperEIP(PVM pVM);
+CPUMDECL(uint64_t)      CPUMGetHyperRIP(PVM pVM);
 CPUMDECL(uint32_t)      CPUMGetHyperIDTR(PVM pVM, uint16_t *pcbLimit);
 CPUMDECL(uint32_t)      CPUMGetHyperGDTR(PVM pVM, uint16_t *pcbLimit);
 CPUMDECL(RTSEL)         CPUMGetHyperLDTR(PVM pVM);
@@ -725,6 +1011,7 @@ CPUMDECL(int) CPUMRestoreHostFPUState(PVM pVM);
 #define CPUM_CHANGED_SYSENTER_MSR       RT_BIT(9)
 #define CPUM_CHANGED_HIDDEN_SEL_REGS    RT_BIT(10)
 #define CPUM_CHANGED_CPUID              RT_BIT(11)
+#define CPUM_CHANGED_ALL                (CPUM_CHANGED_FPU_REM|CPUM_CHANGED_CR0|CPUM_CHANGED_CR3|CPUM_CHANGED_CR4|CPUM_CHANGED_GDTR|CPUM_CHANGED_IDTR|CPUM_CHANGED_LDTR|CPUM_CHANGED_TR|CPUM_CHANGED_SYSENTER_MSR|CPUM_CHANGED_HIDDEN_SEL_REGS|CPUM_CHANGED_CPUID)
 /** @} */
 
 /**
@@ -881,7 +1168,7 @@ CPUMR3DECL(void) CPUMR3Reset(PVM pVM);
  * @param   pVM         Handle to the virtual machine.
  * @param   ppCtx       Receives the CPUMCTX GC pointer when successful.
  */
-CPUMR3DECL(int) CPUMR3QueryGuestCtxGCPtr(PVM pVM, GCPTRTYPE(PCPUMCTX) *ppCtx);
+CPUMR3DECL(int) CPUMR3QueryGuestCtxGCPtr(PVM pVM, RCPTRTYPE(PCPUMCTX) *ppCtx);
 
 
 #ifdef DEBUG
@@ -929,7 +1216,7 @@ CPUMR3DECL(int) CPUMR3SetCR4Feature(PVM pVM, RTHCUINTREG fOr, RTHCUINTREG fAnd);
  * This function does not return!
  *
  */
-DECLASM(void) CPUMGCCallGuestTrapHandler(PCPUMCTXCORE pRegFrame, uint32_t selCS, RTGCPTR pHandler, uint32_t eflags, uint32_t selSS, RTGCPTR pEsp);
+DECLASM(void) CPUMGCCallGuestTrapHandler(PCPUMCTXCORE pRegFrame, uint32_t selCS, RTRCPTR pHandler, uint32_t eflags, uint32_t selSS, RTRCPTR pEsp);
 
 /**
  * Performs an iret to V86 code
@@ -960,6 +1247,24 @@ CPUMGCDECL(void) CPUMGCCallV86Code(PCPUMCTXCORE pRegFrame);
  * @param   pVM         The VM to operate on.
  */
 CPUMR0DECL(int) CPUMR0Init(PVM pVM);
+
+/**
+ * Lazily sync in the FPU/XMM state
+ *
+ * @returns VBox status code.
+ * @param   pVM         VM handle.
+ * @param   pCtx        CPU context
+ */
+CPUMR0DECL(int) CPUMR0LoadGuestFPU(PVM pVM, PCPUMCTX pCtx);
+
+/**
+ * Save guest FPU/XMM state
+ *
+ * @returns VBox status code.
+ * @param   pVM         VM handle.
+ * @param   pCtx        CPU context
+ */
+CPUMR0DECL(int) CPUMR0SaveGuestFPU(PVM pVM, PCPUMCTX pCtx);
 
 /** @} */
 #endif

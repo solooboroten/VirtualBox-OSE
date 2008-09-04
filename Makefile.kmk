@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31464 2008-05-30 21:54:16Z bird $
+# $Id: Makefile.kmk 35753 2008-09-01 08:11:47Z klaus $
 ## @file
 # Top level makefile.
 #
@@ -19,16 +19,25 @@
 # additional information or have any questions.
 #
 
-DEPTH = .
-include $(KBUILD_PATH)/header.kmk
+SUB_DEPTH = .
+include $(KBUILD_PATH)/subheader.kmk
 
 ifdef VBOX_WITH_DOCS
  ifndef VBOX_ONLY_ADDITIONS
-  SUBDIRS = doc/manual
+  ifdef VBOX_SINGLE_MAKEFILE
+   include $(PATH_SUB_CURRENT)/doc/manual/Makefile.kmk
+  else
+   SUBDIRS = doc/manual
+  endif
  endif
 endif
-SUBDIRS += src
+ifdef VBOX_SINGLE_MAKEFILE
+ include $(PATH_SUB_CURRENT)/src/Makefile.kmk
+else
+ SUBDIRS += src
+endif
 
+ifndef VBOX_ONLY_DOCS
 ifndef VBOX_ONLY_ADDITIONS
 #
 # Install external binaries (mostly redistributable parts of tools we use).
@@ -37,7 +46,7 @@ ifndef VBOX_ONLY_ADDITIONS
 # To avoid dragging in unnecessary tools and sdks here, we don't use the .win
 # and .linux property suffixes.
 #
-INSTALLS = bin
+INSTALLS += bin
 
 bin_INST = $(INST_BIN)
 
@@ -156,6 +165,41 @@ endif
 
 
 #
+#
+# Install documentation files (at the moment the .chm) from the build server.
+# The $(CP)/$(RM) stuff can be replaced by a simple $(TOUCH) once that has
+# been added to kBuild.
+#
+## @todo need kmk_builtin_touch!
+ifdef VBOX_WITH_DOCS_FROM_BUILD_SERVER
+INSTALLS += buildserver-docs
+buildserver-docs_INST = $(INST_BIN)
+buildserver-docs_MODE = 0644
+buildserver-docs_SOURCES = $(PATH_TARGET)/VirtualBox.chm $(PATH_TARGET)/UserManual.pdf
+buildserver-docs_CLEANS = $(PATH_TARGET)/VBoxDocumentation.zip $(PATH_TARGET)/VBoxDocumentation.zip.tmp $(PATH_TARGET)/VirtualBox.chm $(PATH_TARGET)/UserManual.pdf
+
+## @todo including this directly is a hack, but using the tool variables
+# is simply too tempting. Could all go away once we have plain unzip targets.
+include $(KBUILD_PATH)/tools/ZIP.kmk
+
+# Make this a pattern rule to handle multiple targets correctly.
+$(PATH_TARGET)/VirtualBox.chm $(PATH_TARGET)/UserManua%.pdf: $(PATH_TARGET)/VBoxDocumentation.zip
+	$(call MSG_L1,Unpacking documentation)
+	$(QUIET)$(TOOL_ZIP_UNPACK) $(TOOL_ZIP_UNPACKFLAGS) -o $< -d $(PATH_TARGET)
+
+$(PATH_TARGET)/VBoxDocumentation.zip: $(VBOX_SVN_REV_KMK) $(PATH_DEVTOOLS)/bin/documentation.sh | $(call DIRDEP, $(PATH_TARGET))
+	$(RM) -f $(PATH_TARGET)/VBoxDocumentation.zip $(PATH_TARGET)/VBoxDocumentation.zip.tmp
+#	$(PATH_DEVTOOLS)/bin/documentation.sh --cmd fetch --filename $(PATH_TARGET)/VBoxDocumentation.zip.tmp
+	$(KMK) --affinity 1 -f $(MAKEFILE) buildserver-documentation-affinity-hack
+	$(CP) -f $(PATH_TARGET)/VBoxDocumentation.zip.tmp $(PATH_TARGET)/VBoxDocumentation.zip
+	$(RM) -f $(PATH_TARGET)/VBoxDocumentation.zip.tmp
+
+buildserver-documentation-affinity-hack:
+	$(SHELL) $(PATH_DEVTOOLS)/bin/documentation.sh --cmd fetch --filename $(PATH_TARGET)/VBoxDocumentation.zip.tmp
+endif
+
+
+#
 # Install staged binaries on platforms where we can't cross
 # compile things.
 #
@@ -186,18 +230,27 @@ ifn1of ($(KBUILD_TARGET), l4 linux win)
 endif
 
 endif # !VBOX_ONLY_ADDITIONS
+endif # !VBOX_ONLY_DOCS
 
 
-include $(KBUILD_PATH)/footer.kmk
+include $(KBUILD_PATH)/subfooter.kmk
 
 
 #
 # Generate documentation.
 # (This should be converted into a separate pass or merged with an existing one later.)
 #
-docs: docs.Core
+ifdef VBOX_ONLY_DOCS
+# It may sound a bit odd, but for preparing the documentation package the
+# doxygen documentation isn't needed and increases the build time a lot.
+docs:
+else # !VBOX_ONLY_DOCS
+docs: $(if $(VBOX_WITH_ALL_DOXYGEN_TARGETS),docs.Core)
 	$(KMK) -C src/VBox/Main docs
+ifdef VBOX_WITH_ALL_DOXYGEN_TARGETS
 	$(KMK) -C src/VBox/Runtime docs
+endif
+endif # !VBOX_ONLY_DOCS
 
 docs.Core: $(PATH_TARGET)/docs.Core
 
@@ -210,10 +263,10 @@ docs.Core: $(PATH_TARGET)/docs.Core
 # and GCFGM lists.
 #
 OTHER_CLEAN += \
-	$(PATH_TARGET)/Doxyfile \
-	$(PATH_TARGET)/Doxyfile.dep
+	$(PATH_TARGET)/Doxyfile.Core \
+	$(PATH_TARGET)/Doxyfile.Core.dep
 
-DOXYGEN_INPUT_DIRS = \
+VBOX_CORE_DOXYFILE_INPUT_DIRS = \
 	include/iprt \
 	include/VBox \
 	include/VBox/com \
@@ -228,7 +281,7 @@ DOXYGEN_INPUT_DIRS = \
 	src/VBox/VMM/PATM/VMMAll \
 	src/VBox/VMM/VMMSwitcher \
 	src/VBox/Debugger \
-	src/VBox/Devices/ \
+	src/VBox/Devices \
 	src/VBox/Devices/Audio \
 	src/VBox/Devices/Bus \
 	src/VBox/Devices/Graphics \
@@ -252,7 +305,7 @@ DOXYGEN_INPUT_DIRS = \
 	src/VBox/Devices/VMMDev \
 	src/VBox/Main/include \
 	src/VBox/Main/include/hgcm \
-	src/VBox/Main/ \
+	src/VBox/Main \
 	src/VBox/Main/glue \
 	src/VBox/Main/hgcm \
 	src/VBox/Main/webservice \
@@ -261,10 +314,12 @@ DOXYGEN_INPUT_DIRS = \
 	src/VBox/Main/linux \
 	src/VBox/Main/os2 \
 	src/VBox/Main/solaris \
-	src/VBox/Main/win32 \
-	src/VBox/HostServices/ \
+	src/VBox/Main/win \
+	src/VBox/Main/xpcom \
+	src/VBox/HostServices \
 	src/VBox/HostServices/SharedClipboard \
 	src/VBox/HostServices/SharedFolders \
+	src/VBox/HostServices/SharedInfoServices \
 	src/VBox/HostServices/SharedOpenGL \
 	src/VBox/HostDrivers/Support \
 	src/VBox/HostDrivers/Support/darwin \
@@ -274,12 +329,27 @@ DOXYGEN_INPUT_DIRS = \
 	src/VBox/HostDrivers/Support/os2 \
 	src/VBox/HostDrivers/Support/solaris \
 	src/VBox/HostDrivers/Support/win \
-	src/VBox/HostDrivers/VBoxTAP/ \
+	src/VBox/HostDrivers/VBoxNetFlt \
+	src/VBox/HostDrivers/VBoxNetFlt/darwin \
+	src/VBox/HostDrivers/VBoxNetFlt/linux \
+	src/VBox/HostDrivers/VBoxNetFlt/solaris \
+	src/VBox/HostDrivers/VBoxNetFlt/win \
+	src/VBox/HostDrivers/VBoxNetNat \
+	src/VBox/HostDrivers/VBoxNetNat/darwin \
+	src/VBox/HostDrivers/VBoxNetNat/linux \
+	src/VBox/HostDrivers/VBoxNetNat/solaris \
+	src/VBox/HostDrivers/VBoxNetNat/win \
+	src/VBox/HostDrivers/VBoxNetTap \
+	src/VBox/HostDrivers/VBoxNetTap/darwin \
+	src/VBox/HostDrivers/VBoxNetTap/linux \
+	src/VBox/HostDrivers/VBoxNetTap/solaris \
+	src/VBox/HostDrivers/VBoxNetTap/win \
+	src/VBox/HostDrivers/VBoxTAP \
 	src/VBox/HostDrivers/VBoxTAP/win \
-	src/VBox/HostDrivers/VBoxTAP/darwin \
-	src/VBox/HostDrivers/VBoxUSB/ \
+	src/VBox/HostDrivers/VBoxUSB \
 	src/VBox/HostDrivers/VBoxUSB/darwin \
 	src/VBox/HostDrivers/VBoxUSB/os2 \
+	src/VBox/HostDrivers/VBoxUSB/solaris \
 	src/VBox/HostDrivers/VBoxUSB/win \
 	src/VBox/HostDrivers/VBoxUSB/win/Device \
 	src/VBox/HostDrivers/VBoxUSB/win/Device/amd64 \
@@ -292,7 +362,7 @@ DOXYGEN_INPUT_DIRS = \
 	src/VBox/HostDrivers/VBoxUSB/win/usbd \
 
 # These must come first in order to make things look nice.
-DOXYGEN_INPUT_FIRST =\
+VBOX_CORE_DOXYFILE_INPUT_FIRST =\
 	$(PATH_ROOT)/doc/VBox-doc.c \
 	$(PATH_ROOT)/doc/VBox-CodingGuidelines.cpp \
 	$(PATH_ROOT)/src/VBox/VMM/VMMCodingGuidelines.cpp \
@@ -319,7 +389,7 @@ DOXYGEN_INPUT_FIRST =\
 	$(PATH_ROOT)/include/VBox/hwaccm.h \
 	$(PATH_ROOT)/include/VBox/hwacc_svm.h \
 	$(PATH_ROOT)/include/VBox/hwacc_vmx.h \
-	$(PATH_ROOT)/\
+	\
 	$(PATH_ROOT)/src/VBox/VMM/CFGMInternal.h \
 	$(PATH_ROOT)/src/VBox/VMM/CPUMInternal.h \
 	$(PATH_ROOT)/src/VBox/VMM/DBGFInternal.h \
@@ -339,7 +409,7 @@ DOXYGEN_INPUT_FIRST =\
 	$(PATH_ROOT)/src/VBox/VMM/TRPMInternal.h \
 	$(PATH_ROOT)/src/VBox/VMM/VMInternal.h \
 	$(PATH_ROOT)/src/VBox/VMM/VMMInternal.h \
-	$(PATH_ROOT)/\
+	\
 	$(PATH_ROOT)/include/VBox/vm.h \
 	\
 	$(PATH_ROOT)/include/VBox/sup.h \
@@ -359,58 +429,59 @@ DOXYGEN_INPUT_FIRST =\
 	$(PATH_ROOT)/include/VBox/hgcmsvc.h \
 	$(PATH_ROOT)/include/VBox/usb.h \
 	$(PATH_ROOT)/include/VBox/vusb.h \
-	$(PATH_ROOT)/\
+	\
 	$(PATH_ROOT)/include/VBox/log.h \
 	$(PATH_ROOT)/include/VBox/param.h \
 	$(PATH_ROOT)/include/VBox/version.h
 
-DOXYGEN_INPUT := \
-	$(filter-out %.cpp.h, $(sort $(wildcard $(addsuffix /*.h, $(DOXYGEN_INPUT_DIRS)))) ) \
-	$(foreach dir, $(DOXYGEN_INPUT_DIRS), $(wildcard $(dir)/*.cpp $(dir)/.c $(dir)/.asm))
-DOXYGEN_INPUT := \
-	$(DOXYGEN_INPUT_FIRST) \
-	$(filter-out $(DOXYGEN_INPUT_FIRST), $(DOXYGEN_INPUT))
+VBOX_CORE_DOXYFILE_INPUT := \
+	$(filter-out %.cpp.h, $(sort $(wildcard $(addsuffix /*.h, $(VBOX_CORE_DOXYFILE_INPUT_DIRS)))) ) \
+	$(foreach dir, $(VBOX_CORE_DOXYFILE_INPUT_DIRS), $(wildcard $(dir)/*.cpp $(dir)/*.c $(dir)/.asm))
+VBOX_CORE_DOXYFILE_INPUT := \
+	$(VBOX_CORE_DOXYFILE_INPUT_FIRST) \
+	$(filter-out $(VBOX_CORE_DOXYFILE_INPUT_FIRST), $(VBOX_CORE_DOXYFILE_INPUT))
 
 # And some some additional stuff.
-DOXYGEN_INPUT += \
+VBOX_CORE_DOXYFILE_INPUT += \
 	$(PATH_ROOT)/src/recompiler/VBoxRecompiler.c \
 	$(PATH_ROOT)/src/recompiler/VBoxREMWrapper.cpp
 
 
-DOXYGEN_OUTPUT = $(PATH_OUT)/docs/Core
+VBOX_CORE_DOXYFILE_OUTPUT = $(PATH_OUT)/docs/Core
 
--include $(PATH_TARGET)/Doxyfile.dep
+-include $(PATH_TARGET)/Doxyfile.Core.dep
 
 # Generate the Doxyfile
-$(PATH_TARGET)/Doxyfile: Doxyfile.Core \
-		$(comp-vars DOXYGEN_INPUT,DOXYGEN_INPUT_PREV,FORCE) \
-		$(comp-vars DOXYGEN_OUTPUT,DOXYGEN_OUTPUT_PREV,FORCE) \
+$(PATH_TARGET)/Doxyfile.Core: Doxyfile.Core \
+		$(comp-vars VBOX_CORE_DOXYFILE_INPUT,DOXYGEN_INPUT_PREV,FORCE) \
+		$(comp-vars VBOX_CORE_DOXYFILE_OUTPUT,DOXYGEN_OUTPUT_PREV,FORCE) \
 		| $(call DIRDEP, $(PATH_TARGET))
-	$(RM) -f $@ $@.tmp $(PATH_TARGET)/Doxyfile.dep
+	$(RM) -f $@ $@.tmp $(PATH_TARGET)/Doxyfile.Core.dep
 	$(CP) -f Doxyfile.Core $@.tmp
 	$(APPEND) $@.tmp
-	$(APPEND) $@.tmp "OUTPUT_DIRECTORY = $(DOXYGEN_OUTPUT)"
-	$(APPEND) $@.tmp "WARN_LOGFILE = $(DOXYGEN_OUTPUT)/errors"
+	$(APPEND) $@.tmp "OUTPUT_DIRECTORY = $(VBOX_CORE_DOXYFILE_OUTPUT)"
+	$(APPEND) $@.tmp "WARN_LOGFILE = $(VBOX_CORE_DOXYFILE_OUTPUT)/errors"
 	$(APPEND) $@.tmp "INCLUDE_PATH = $(PATH_ROOT)/include $(PATH_ROOT)/src/VBox/VMM $(PATH_ROOT)/src/VBox/Main/include "
 	$(APPEND) $@.tmp "INCLUDE_FILE_PATTERNS = *.cpp.h"
 	$(APPEND) $@.tmp
-	$(APPEND) $@.tmp "INPUT = $(DOXYGEN_INPUT)"
+	$(APPEND) $@.tmp "INPUT = $(VBOX_CORE_DOXYFILE_INPUT)"
 	$(APPEND) $@.tmp
 	$(APPEND) $@.tmp "PREDEFINED += $(DEFS) $(DEFS.$(KBUILD_TARGET)) $(DEFS.$(KBUILD_TARGET_ARCH)) $(ARCH_BITS_DEFS)"
 	$(APPEND) $@.tmp "PREDEFINED += ARCH_BITS=HC_ARCH_BITS R3_ARCH_BITS=HC_ARCH_BITS R0_ARCH_BITS=HC_ARCH_BITS "
 	$(APPEND) $@.tmp
 	$(MV) -f $@.tmp $@
-	@$(APPEND) $(PATH_TARGET)/Doxyfile.dep "DOXYGEN_OUTPUT_PREV = $(DOXYGEN_OUTPUT)"
-	@$(APPEND) $(PATH_TARGET)/Doxyfile.dep "DOXYGEN_INPUT_PREV = $(DOXYGEN_INPUT)"
+	@$(APPEND) $(PATH_TARGET)/Doxyfile.Core.dep "DOXYGEN_OUTPUT_PREV = $(VBOX_CORE_DOXYFILE_OUTPUT)"
+	@$(APPEND) $(PATH_TARGET)/Doxyfile.Core.dep "DOXYGEN_INPUT_PREV = $(VBOX_CORE_DOXYFILE_INPUT)"
 
 # Create the output directory.
-$(call DIRDEP, $(DOXYGEN_OUTPUT)):
+$(call DIRDEP, $(VBOX_CORE_DOXYFILE_OUTPUT)):
 	$(MKDIR) -p $@
 
 # Do the actual job.
-$(PATH_TARGET)/docs.Core: $(PATH_TARGET)/Doxyfile $(DOXYGEN_INPUT) | $(call DIRDEP, $(DOXYGEN_OUTPUT))
-	$(RM) -f $(wildcard $(DOXYGEN_OUTPUT)/html/*) $(PATH_TARGET)/docs.Core
-	doxygen $(PATH_TARGET)/Doxyfile
+$(PATH_TARGET)/docs.Core: $(PATH_TARGET)/Doxyfile.Core $(VBOX_CORE_DOXYFILE_INPUT) | $(call DIRDEP, $(VBOX_CORE_DOXYFILE_OUTPUT))
+	$(RM) -f $(PATH_TARGET)/docs.Core
+	$(RM) -Rf $(VBOX_CORE_DOXYFILE_OUTPUT)/html/
+	doxygen $(PATH_TARGET)/Doxyfile.Core
 	$(APPEND) $(PATH_TARGET)/docs.Core
 
 
@@ -418,66 +489,70 @@ $(PATH_TARGET)/docs.Core: $(PATH_TARGET)/Doxyfile $(DOXYGEN_INPUT) | $(call DIRD
 # Generate x86.mac and err.mac.
 #
 incs:
-	$(SED) -f include/VBox/err.sed include/VBox/err.h > include/VBox/err.mac
-	echo '%include "iprt/err.mac"' >> include/VBox/err.mac
-	$(SED) -f include/VBox/err.sed include/iprt/err.h > include/iprt/err.mac
-	$(SED) -e '/__VBox_x86_h__/d' -e '/#define/!d' -e 's/#define/%define/' include/VBox/x86.h > include/VBox/x86.mac
+	$(SED) -f include/VBox/err.sed --output include/VBox/err.mac include/VBox/err.h
+	$(APPEND) include/VBox/err.mac '%include "iprt/err.mac"'
+	$(SED) -f include/VBox/err.sed --output include/iprt/err.mac include/iprt/err.h
+	$(SED) \
+		-e '/__VBox_x86_h__/d' \
+		-e '/#define/!d' \
+		-e '/\\$$/d' \
+		-e 's/#define/%define/' \
+		--output include/VBox/x86.mac \
+		include/VBox/x86.h
 
 
 #
 # Generate Visual SlickEdit tagging #defines.
 #
-vslick.h: include/VBox/cdefs.h Makefile
-	echo '// autogenerated' > $@.tmp
-	#echo '#define __BEGIN_DECLS ' >> $@.tmp
-	#echo '#define __END_DECLS ' >> $@.tmp
+vslick.h: include/VBox/cdefs.h include/iprt/cdefs.h $(MAKEFILE)
+	$(RM) -f -- $@ $@.tmp $@.tmp2 $@.tmp3
+	$(APPEND) $@.tmp '// autogenerated'
+	#@$(APPEND) $@.tmp '#define __BEGIN_DECLS '
+	#@$(APPEND) $@.tmp '#define __END_DECLS '
 
-	echo '#define ATL_NO_VTABLE ' >> $@.tmp
-	echo '#define BEGIN_COM_MAP(a) ' >> $@.tmp
-	echo '#define END_COM_MAP(a) ' >> $@.tmp
+	@$(APPEND) $@.tmp '#define ATL_NO_VTABLE '
+	@$(APPEND) $@.tmp '#define BEGIN_COM_MAP(a) '
+	@$(APPEND) $@.tmp '#define END_COM_MAP(a) '
 
-	echo '#define CHECKREADY if(!isReady()) return E_UNEXPECTED; ' >> $@.tmp
-	echo '#define COM_DECL_READONLY_ENUM_AND_COLLECTION(a) ' >> $@.tmp
-	echo '#define COM_INTERFACE_ENTRY(a) ' >> $@.tmp
-	echo '#define COMGETTER(n)                    Get##n ' >> $@.tmp
-	echo '#define COMSETTER(n)                    Set##n ' >> $@.tmp
-	echo '#define ComSafeArrayIn(t,a)             t a[] ' >> $@.tmp
-	echo '#define ComSafeArrayOut(t,a)            t * a[] ' >> $@.tmp
-	echo '#define DECLARE_NOT_AGGREGATABLE(a) ' >> $@.tmp
-	echo '#define DECLARE_PROTECT_FINAL_CONSTRUCT(a) ' >> $@.tmp
-	echo '#define NS_DECL_ISUPPORTS ' >> $@.tmp
-	echo '#define NS_IMETHOD NS_IMETHOD_(nsresult) ' >> $@.tmp
-	echo '#define NS_IMETHOD_(type) type ' >> $@.tmp
-	echo '#define PARSERS_EXPORT ' >> $@.tmp
-	echo '#define SAX_EXPORT ' >> $@.tmp
-	echo '#define STDMETHOD(a) NS_IMETHOD a ' >> $@.tmp
-	echo '#define XERCES_CPP_NAMESPACE_BEGIN ' >> $@.tmp
-	echo '#define XERCES_CPP_NAMESPACE_END ' >> $@.tmp
+	@$(APPEND) $@.tmp '#define CHECKREADY if(!isReady()) return E_UNEXPECTED; '
+	@$(APPEND) $@.tmp '#define COM_DECL_READONLY_ENUM_AND_COLLECTION(a) '
+	@$(APPEND) $@.tmp '#define COM_INTERFACE_ENTRY(a) '
+	@$(APPEND) $@.tmp '#define COMGETTER(n)                    Get##n '
+	@$(APPEND) $@.tmp '#define COMSETTER(n)                    Set##n '
+	@$(APPEND) $@.tmp '#define ComSafeArrayIn(t,a)             t a[] '
+	@$(APPEND) $@.tmp '#define ComSafeArrayOut(t,a)            t * a[] '
+	@$(APPEND) $@.tmp '#define DECLARE_NOT_AGGREGATABLE(a) '
+	@$(APPEND) $@.tmp '#define DECLARE_PROTECT_FINAL_CONSTRUCT(a) '
+	@$(APPEND) $@.tmp '#define NS_DECL_ISUPPORTS '
+	@$(APPEND) $@.tmp '#define NS_IMETHOD NS_IMETHOD_(nsresult) '
+	@$(APPEND) $@.tmp '#define NS_IMETHOD_(type) type '
+	@$(APPEND) $@.tmp '#define PARSERS_EXPORT '
+	@$(APPEND) $@.tmp '#define STDMETHOD(a) NS_IMETHOD a '
 
-	echo '#define CTXAllSUFF(var)                 var##R3 ' >> $@.tmp
-	echo '#define CTXSUFF(var)                    var##HC ' >> $@.tmp
-	echo '#define OTHERCTXSUFF(var)  	      var##GC ' >> $@.tmp
-	echo '#define CTXALLMID(first, last)          first##R3##last ' >> $@.tmp
-	echo '#define CTXMID(first, last)             first##HC##last ' >> $@.tmp
-	echo '#define OTHERCTXMID(first, last)        first##GC##last ' >> $@.tmp
-	echo '#define CTXTYPE(GCType, R3Type, R0Type) R3Type ' >> $@.tmp
-	echo '#define GCPTRTYPE(GCType)               GCType ' >> $@.tmp
-	echo '#define GCTYPE(GCType, HCType)          GCType ' >> $@.tmp
-	echo '#define HCPTRTYPE(HCType)               HCType ' >> $@.tmp
-	echo '#define R3R0PTRTYPE(HCType)             HCType ' >> $@.tmp
-	echo '#define R0PTRTYPE(R3Type)               R3Type ' >> $@.tmp
-	echo '#define R3PTRTYPE(R0Type)               R0Type ' >> $@.tmp
-	echo '#define RT_SRC_POS                      __FILE__, __LINE__, __PRETTY_FUNCTION__ ' >> $@.tmp
-	echo '#define RT_SRC_POS_DECL                 const char *pszFile, unsigned iLine, const char *pszFunction ' >> $@.tmp
-	echo '#define RT_SRC_POS_ARGS                 pszFile, iLine, pszFunction ' >> $@.tmp
-	echo '#define RTCALL' >> $@.tmp
-	echo '#define DECLINLINE(type)                inline type ' >> $@.tmp
+	@$(APPEND) $@.tmp '#define CTX_SUFF(var)                   var##R3 '
+	@$(APPEND) $@.tmp '#define CTXAllSUFF(var)                 var##R3 '
+	@$(APPEND) $@.tmp '#define CTXSUFF(var)                    var##HC '
+	@$(APPEND) $@.tmp '#define OTHERCTXSUFF(var)  	      var##GC '
+	@$(APPEND) $@.tmp '#define CTXALLMID(first, last)          first##R3##last '
+	@$(APPEND) $@.tmp '#define CTXMID(first, last)             first##HC##last '
+	@$(APPEND) $@.tmp '#define OTHERCTXMID(first, last)        first##GC##last '
+	@$(APPEND) $@.tmp '#define CTXTYPE(GCType, R3Type, R0Type) R3Type '
+	@$(APPEND) $@.tmp '#define RCTYPE(RCType, HCType)          RCType '
+	@$(APPEND) $@.tmp '#define GCTYPE(GCType, HCType)          GCType '
+	@$(APPEND) $@.tmp '#define RCPTRTYPE(RCType)               RCType '
+	@$(APPEND) $@.tmp '#define GCPTRTYPE(GCType)               GCType '
+	@$(APPEND) $@.tmp '#define HCPTRTYPE(HCType)               HCType '
+	@$(APPEND) $@.tmp '#define R3R0PTRTYPE(HCType)             HCType '
+	@$(APPEND) $@.tmp '#define R0PTRTYPE(R3Type)               R3Type '
+	@$(APPEND) $@.tmp '#define R3PTRTYPE(R0Type)               R0Type '
+	@$(APPEND) $@.tmp '#define RT_SRC_POS                      __FILE__, __LINE__, __PRETTY_FUNCTION__ '
+	@$(APPEND) $@.tmp '#define RT_SRC_POS_DECL                 const char *pszFile, unsigned iLine, const char *pszFunction '
+	@$(APPEND) $@.tmp '#define RT_SRC_POS_ARGS                 pszFile, iLine, pszFunction '
+	@$(APPEND) $@.tmp '#define RTCALL'
+	@$(APPEND) $@.tmp '#define DECLINLINE(type)                inline type '
 
-	echo '#define PDM_SRC_POS                     __FILE__, __LINE__, __PRETTY_FUNCTION__ ' >> $@.tmp
-	echo '#define PDM_SRC_POS_DECL                const char *pszFile, unsigned iLine, const char *pszFunction ' >> $@.tmp
-	echo '#define PDM_SRC_POS_ARGS                pszFile, iLine, pszFunction ' >> $@.tmp
-	echo '#define PDMDEVINSINT_DECLARED           1' >> $@.tmp
-	echo '#define VBOXCALL' >> $@.tmp
+	@$(APPEND) $@.tmp '#define PDMDEVINSINT_DECLARED           1'
+	@$(APPEND) $@.tmp '#define VBOXCALL'
 
 	$(SED)  -e '/__cdecl/d' \
 		-e '/^ *# *define.*DECL/!d' \
@@ -496,6 +571,7 @@ vslick.h: include/VBox/cdefs.h Makefile
 		-e '/ DECLASM(type) type/d' \
 		-e '/define  *DECL..CALLBACKMEMBER(type[^)]*) *RT/d' \
 		-e '/define  *DECLINLINE(type)/d' \
+		-e '/define RT[DATGRC03]*DECL(type) *DECLHIDDEN(type)/d' \
 		\
 		--append $@.tmp \
 		$(filter-out include/VBox/err.h, $(wildcard include/VBox/*.h)) \
@@ -503,7 +579,11 @@ vslick.h: include/VBox/cdefs.h Makefile
 	$(CAT_EXT) $@.tmp | sort | $(SED_EXT) -e 's/$$/\n/' --output $@.tmp2
 	$(MV) -f $@.tmp2 $@
 	$(RM) -f $@.tmp $@.tmp2 $@.tmp3
-	$(ECHO) "TODO: Merge ./vslick.h with your ~/.slickedit/x.y.z/unxcpp.h file."
+ifeq ($(KBUILD_HOST),win)
+	@$(ECHO) 'TODO: Merge vslick.h with your "$(HOMEDRIVE)$(HOMEPATH)\Documents\My SlickEdit Config\x.y.z\usercpp.h" file.'
+else
+	@$(ECHO) "TODO: Merge ./vslick.h with your ~/.slickedit/x.y.z/unxcpp.h file."
+endif
 
 
 #
@@ -528,61 +608,111 @@ endif
 #
 additions-fetch:
 	+ $(KMK) -C tools fetch
-	+ $(KMK) -C tools fetch KBUILD_TARGET_ARCH=x86 KBUILD_TARGET=linux   BUILD_TARGET_ARCH=x86 BUILD_TARGET=linux
-#	+ $(KMK) -C tools fetch KBUILD_TARGET_ARCH=x86 KBUILD_TARGET=os2     BUILD_TARGET_ARCH=x86 BUILD_TARGET=os2
-	+ $(KMK) -C tools fetch KBUILD_TARGET_ARCH=x86 KBUILD_TARGET=solaris BUILD_TARGET_ARCH=x86 BUILD_TARGET=solaris
-	+ $(KMK) -C tools fetch KBUILD_TARGET_ARCH=x86 KBUILD_TARGET=win     BUILD_TARGET_ARCH=x86 BUILD_TARGET=win
+	+ $(KMK) -C tools fetch KBUILD_TARGET_ARCH=amd64 KBUILD_TARGET=linux   BUILD_TARGET_ARCH=amd64 BUILD_TARGET=linux
+	+ $(KMK) -C tools fetch KBUILD_TARGET_ARCH=x86   KBUILD_TARGET=linux   BUILD_TARGET_ARCH=x86   BUILD_TARGET=linux
+#	+ $(KMK) -C tools fetch KBUILD_TARGET_ARCH=x86   KBUILD_TARGET=os2     BUILD_TARGET_ARCH=x86   BUILD_TARGET=os2
+	+ $(KMK) -C tools fetch KBUILD_TARGET_ARCH=amd64 KBUILD_TARGET=solaris BUILD_TARGET_ARCH=amd64 BUILD_TARGET=solaris
+	+ $(KMK) -C tools fetch KBUILD_TARGET_ARCH=x86   KBUILD_TARGET=solaris BUILD_TARGET_ARCH=x86   BUILD_TARGET=solaris
+	+ $(KMK) -C tools fetch KBUILD_TARGET_ARCH=amd64 KBUILD_TARGET=win     BUILD_TARGET_ARCH=amd64 BUILD_TARGET=win
+	+ $(KMK) -C tools fetch KBUILD_TARGET_ARCH=x86   KBUILD_TARGET=win     BUILD_TARGET_ARCH=x86   BUILD_TARGET=win
 
 
 additions-build: \
+	additions-build-win.amd64 \
 	additions-build-win.x86 \
+	additions-build-solaris.amd64 \
 	additions-build-solaris.x86 \
 	additions-build-os2.x86 \
+	additions-build-linux.amd64 \
 	additions-build-linux.x86
+
+VBOX_ADDITIONS_BUILD.amd64 = VBOX_ONLY_ADDITIONS=1 VBOX_WITHOUT_ADDITIONS_ISO=1 \
+	KBUILD_TYPE=$(KBUILD_TYPE) BUILD_TYPE=$(KBUILD_TYPE) \
+	KBUILD_TARGET_ARCH=amd64 BUILD_TARGET_ARCH=amd64 \
+	VBOX_SVN_REV=$(VBOX_SVN_REV) \
+	all packing
 
 VBOX_ADDITIONS_BUILD.x86 = VBOX_ONLY_ADDITIONS=1 VBOX_WITHOUT_ADDITIONS_ISO=1 \
 	KBUILD_TYPE=$(KBUILD_TYPE) BUILD_TYPE=$(KBUILD_TYPE) \
 	KBUILD_TARGET_ARCH=x86 BUILD_TARGET_ARCH=x86 \
+	VBOX_SVN_REV=$(VBOX_SVN_REV) \
 	all packing
+
+# Oh well, this gets really fancy - ms vc8 doesn't work inside ssh due to some
+# session setup issue. So do this indirectly through psexec. The downside is
+# that there is no direct build feedback. Also I couldn't get the share to
+# work via psexec, so rsync over the result of the build.
+additions-build-win.amd64:
+ifeq ($(KBUILD_TARGET),win)
+	+ $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
+else
+	rsync -av --no-perms --no-owner --no-group --delete --delete-excluded --exclude .svn/ --exclude out/ --exclude tinderclient.log . 192.168.27.5:/cygdrive/c/vbox
+	ssh vbox@192.168.27.5 c:/psexec/psexec.exe \\\\\\\\addvm -u vbox -p $(WIN64PASSWORD) c:\\\\cygwin\\\\bin\\\\bash.exe -c \''PATH=/usr/bin:/bin c:/vbox/tools/env.sh kmk $(VBOX_ADDITIONS_BUILD.amd64) > c:/build.log 2>&1'\'
+	rsync -av --delete 192.168.27.5:/cygdrive/c/vbox/out/win.amd64/ out/win.amd64
+	rsync -a --delete 192.168.27.5:/cygdrive/c/build.log out/win.amd64
+	cat out/win.amd64/build.log
+endif
 
 additions-build-win.x86:
 ifeq ($(KBUILD_TARGET),win)
-	+ $(KMK) VBOX_ADDITIONS_WIN32_ONLY=1 $(VBOX_ADDITIONS_BUILD.x86)
+	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
 else
-	rsync -av --delete --delete-excluded --exclude .svn/ --exclude out/ --exclude tinderclient.log . 192.168.27.5:/cygdrive/c/vbox-1.6
-	ssh vbox@192.168.27.5 " cd /cygdrive/c/vbox-1.6 && PATH_OUT_BASE=Z:/add-1.6/out tools/env.sh kmk VBOX_ADDITIONS_WIN32_ONLY=1 $(VBOX_ADDITIONS_BUILD.x86)"
-#	ssh vbox@192.168.27.5 "cmd.exe /c cd /d z:\\add && set PATH_DEVTOOLS=c:\\vbox\\tools && c:\\vbox\\tools\\env.cmd -KBUILD c:\\vbox\\kBuild && set KMK_DONT_USE_NT_QUERY_INFORMATION_FILE=1 && set USER=vbox && kmk VBOX_ADDITIONS_WIN32_ONLY=1 $(VBOX_ADDITIONS_BUILD.x86)"
+	rsync -av --no-perms --no-owner --no-group --delete --delete-excluded --exclude .svn/ --exclude out/ --exclude tinderclient.log . 192.168.27.5:/cygdrive/c/vbox
+	ssh vbox@192.168.27.5 " cd /cygdrive/c/vbox && PATH_OUT_BASE=Z:/add/out tools/env.sh kmk $(VBOX_ADDITIONS_BUILD.x86)"
+endif
+
+additions-build-solaris.amd64:
+ifeq ($(KBUILD_TARGET),solaris)
+	+ $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
+else
+	ssh vbox@192.168.27.4 " cd /mnt/vbox/add && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.amd64) "
 endif
 
 additions-build-solaris.x86:
 ifeq ($(KBUILD_TARGET),solaris)
 	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
 else
-	ssh vbox@192.168.27.4 " cd /mnt/vbox/add-1.6 && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
+	ssh vbox@192.168.27.4 " cd /mnt/vbox/add && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
 endif
 
 additions-build-os2.x86:
 #ifeq ($(KBUILD_TARGET),os2)
 #	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
 #else
-#	ssh vbox@192.168.27.3 " cd /mnt/vbox/add-1.6 && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
+#	ssh vbox@192.168.27.3 " cd /mnt/vbox/add && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
 #endif
+
+additions-build-linux.amd64:
+ifeq ($(KBUILD_TARGET).$(KBUILD_TARGET_ARCH),linux.amd64)
+	+ $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
+else
+	ssh vbox@192.168.27.12 " cd /mnt/vbox/add && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.amd64) "
+endif
 
 additions-build-linux.x86:
 ifeq ($(KBUILD_TARGET).$(KBUILD_TARGET_ARCH),linux.x86)
-	+ $(KMK) VBOX_ADDITIONS_LINUX_ONLY=1 $(VBOX_ADDITIONS_BUILD.x86)
+	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
 else
-	ssh vbox@192.168.27.2 " cd /mnt/vbox/add-1.6 && ./tools/env.sh --no-wine kmk VBOX_ADDITIONS_LINUX_ONLY=1 $(VBOX_ADDITIONS_BUILD.x86) "
+	ssh vbox@192.168.27.2 " cd /mnt/vbox/add && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
 endif
 
 
 additions-packing:
 	+ $(KMK) VBOX_ONLY_ADDITIONS=1 \
-		VBOX_WITH_ADDITIONS_ISO.win.x86=1 \
+		VBOX_WITH_ADDITIONS_ISO.freebsd.amd64= \
+		VBOX_WITH_ADDITIONS_ISO.freebsd.x86= \
+		VBOX_WITH_ADDITIONS_ISO.linux.amd64=1 \
 		VBOX_WITH_ADDITIONS_ISO.linux.x86=1 \
+		VBOX_WITH_ADDITIONS_ISO.solaris.amd64=1 \
 		VBOX_WITH_ADDITIONS_ISO.solaris.x86=1 \
+		VBOX_WITH_ADDITIONS_ISO.win.amd64=1 \
+		VBOX_WITH_ADDITIONS_ISO.win.x86=1 \
 		-C src/VBox/Additions \
 		$(VBOX_PATH_ADDITIONS)/VBoxGuestAdditions.iso
+
+sdk:
+	+ $(KMK) VBOX_ONLY_SDK=1 VBOX_WITH_PYTHON=1  \
+              pass_bldprogs pass_others pass_installs pass_packing
 
 
 #
@@ -616,3 +746,4 @@ snapshot:
 	    -f $(TARBALLPATH)/$(TARBALLNAME) \
 	    $(TARBALLROOT)
 	$(QUIET)$(RM) $(TARBALLPATH)/$(TARBALLROOT)
+

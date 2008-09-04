@@ -1,4 +1,4 @@
-/* $Id: log.cpp 30602 2008-05-07 15:58:25Z bird $ */
+/* $Id: log.cpp 35694 2008-08-29 23:11:54Z bird $ */
 /** @file
  * Runtime VBox - Logger.
  */
@@ -93,9 +93,9 @@ static DECLCALLBACK(size_t) rtLogOutputPrefixed(void *pv, const char *pachChars,
 *******************************************************************************/
 #ifdef IN_GC
 /** Default logger instance. */
-extern "C" DECLIMPORT(RTLOGGERGC)   g_Logger;
+extern "C" DECLIMPORT(RTLOGGERRC)   g_Logger;
 /** Default relese logger instance. */
-extern "C" DECLIMPORT(RTLOGGERGC)   g_RelLogger;
+extern "C" DECLIMPORT(RTLOGGERRC)   g_RelLogger;
 #else /* !IN_GC */
 /** Default logger instance. */
 static PRTLOGGER                    g_pLogger;
@@ -408,8 +408,24 @@ RTDECL(int) RTLogCreateExV(PRTLOGGER *ppLogger, RTUINT fFlags, const char *pszGr
 #ifdef IN_RING3
             if (pLogger->fDestFlags & RTLOGDEST_FILE)
             {
-                rc = RTFileOpen(&pLogger->File, pLogger->pszFilename,
-                                RTFILE_O_WRITE | RTFILE_O_CREATE_REPLACE | RTFILE_O_DENY_WRITE);
+                if (!(pLogger->fFlags & RTLOGFLAGS_APPEND))
+                    rc = RTFileOpen(&pLogger->File, pLogger->pszFilename,
+                                    RTFILE_O_WRITE | RTFILE_O_CREATE_REPLACE | RTFILE_O_DENY_WRITE);
+                else
+                {
+                    /** @todo RTFILE_O_APPEND. */
+                    rc = RTFileOpen(&pLogger->File, pLogger->pszFilename,
+                                    RTFILE_O_WRITE | RTFILE_O_OPEN_CREATE | RTFILE_O_DENY_WRITE);
+                    if (RT_SUCCESS(rc))
+                    {
+                        rc = RTFileSeek(pLogger->File, 0, RTFILE_SEEK_END, NULL);
+                        if (RT_FAILURE(rc))
+                        {
+                            RTFileClose(pLogger->File);
+                            pLogger->File = NIL_RTFILE;
+                        }
+                    }
+                }
                 if (RT_FAILURE(rc) && pszErrorMsg)
                     RTStrPrintf(pszErrorMsg, cchErrorMsg, "could not open file '%s'", pLogger->pszFilename);
             }
@@ -532,7 +548,7 @@ RTDECL(int) RTLogCreateEx(PRTLOGGER *ppLogger, RTUINT fFlags, const char *pszGro
  * The instance is flushed and all output destinations closed (where applicable).
  *
  * @returns iprt status code.
- * @param   pLogger             The logger instance which close destroyed.
+ * @param   pLogger             The logger instance which close destroyed. NULL is fine.
  */
 RTDECL(int) RTLogDestroy(PRTLOGGER pLogger)
 {
@@ -543,6 +559,8 @@ RTDECL(int) RTLogDestroy(PRTLOGGER pLogger)
     /*
      * Validate input.
      */
+    if (!pLogger)
+        return VINF_SUCCESS;
     AssertReturn(VALID_PTR(pLogger), VERR_INVALID_POINTER);
     AssertReturn(pLogger->u32Magic == RTLOGGER_MAGIC, VERR_INVALID_MAGIC);
 
@@ -584,7 +602,9 @@ RTDECL(int) RTLogDestroy(PRTLOGGER pLogger)
     pLogger->MutexSem = NIL_RTSEMFASTMUTEX;
     if (MutexSem != NIL_RTSEMFASTMUTEX)
     {
-        int rc2 = RTSemFastMutexDestroy(MutexSem);
+        int rc2;
+        RTSemFastMutexRelease(MutexSem);
+        rc2 = RTSemFastMutexDestroy(MutexSem);
         AssertRC(rc2);
         if (RT_FAILURE(rc2) && RT_SUCCESS(rc))
             rc = rc2;
@@ -597,7 +617,7 @@ RTDECL(int) RTLogDestroy(PRTLOGGER pLogger)
 
 
 /**
- * Create a logger instance clone for GC usage.
+ * Create a logger instance clone for RC usage.
  *
  * @returns iprt status code.
  *
@@ -608,8 +628,8 @@ RTDECL(int) RTLogDestroy(PRTLOGGER pLogger)
  * @param   pfnFlushGCPtr       Pointer to flush function (GC Ptr).
  * @param   fFlags              Logger instance flags, a combination of the RTLOGFLAGS_* values.
  */
-RTDECL(int) RTLogCloneGC(PRTLOGGER pLogger, PRTLOGGERGC pLoggerGC, size_t cbLoggerGC,
-                         RTGCPTR pfnLoggerGCPtr, RTGCPTR pfnFlushGCPtr, RTUINT fFlags)
+RTDECL(int) RTLogCloneRC(PRTLOGGER pLogger, PRTLOGGERRC pLoggerGC, size_t cbLoggerGC,
+                         RTRCPTR pfnLoggerGCPtr, RTRCPTR pfnFlushGCPtr, RTUINT fFlags)
 {
     /*
      * Validate input.
@@ -634,7 +654,7 @@ RTDECL(int) RTLogCloneGC(PRTLOGGER pLogger, PRTLOGGERGC pLoggerGC, size_t cbLogg
     pLoggerGC->fPendingPrefix = false;
     pLoggerGC->pfnLogger    = pfnLoggerGCPtr;
     pLoggerGC->pfnFlush     = pfnFlushGCPtr;
-    pLoggerGC->u32Magic     = RTLOGGERGC_MAGIC;
+    pLoggerGC->u32Magic     = RTLOGGERRC_MAGIC;
     pLoggerGC->fFlags       = fFlags | RTLOGFLAGS_DISABLED;
     pLoggerGC->cGroups      = 1;
     pLoggerGC->afGroups[0]  = 0;
@@ -652,9 +672,9 @@ RTDECL(int) RTLogCloneGC(PRTLOGGER pLogger, PRTLOGGERGC pLoggerGC, size_t cbLogg
     /*
      * Check if there's enough space for the groups.
      */
-    if (cbLoggerGC < (size_t)RT_OFFSETOF(RTLOGGERGC, afGroups[pLogger->cGroups]))
+    if (cbLoggerGC < (size_t)RT_OFFSETOF(RTLOGGERRC, afGroups[pLogger->cGroups]))
     {
-        AssertMsgFailed(("%d req=%d cGroups=%d\n", cbLoggerGC, RT_OFFSETOF(RTLOGGERGC, afGroups[pLogger->cGroups]), pLogger->cGroups));
+        AssertMsgFailed(("%d req=%d cGroups=%d\n", cbLoggerGC, RT_OFFSETOF(RTLOGGERRC, afGroups[pLogger->cGroups]), pLogger->cGroups));
         return VERR_INVALID_PARAMETER;
     }
     memcpy(&pLoggerGC->afGroups[0], &pLogger->afGroups[0], pLogger->cGroups * sizeof(pLoggerGC->afGroups[0]));
@@ -686,7 +706,7 @@ RTDECL(int) RTLogCloneGC(PRTLOGGER pLogger, PRTLOGGERGC pLoggerGC, size_t cbLogg
  *                      If NULL the default logger is used.
  * @param   pLoggerGC   The GC logger instance to flush.
  */
-RTDECL(void) RTLogFlushGC(PRTLOGGER pLogger, PRTLOGGERGC pLoggerGC)
+RTDECL(void) RTLogFlushGC(PRTLOGGER pLogger, PRTLOGGERRC pLoggerGC)
 {
     /*
      * Resolve defaults.
@@ -1136,6 +1156,7 @@ static unsigned rtlogGroupFlags(const char *psz)
             { "frank",      RTLOGGRPFLAGS_FRANK },
             { "b",          RTLOGGRPFLAGS_BIRD },
             { "bird",       RTLOGGRPFLAGS_BIRD },
+            { "aleksey",    RTLOGGRPFLAGS_ALEKSEY },
             { "n",          RTLOGGRPFLAGS_NONAME },
             { "noname",     RTLOGGRPFLAGS_NONAME }
         };
@@ -1226,6 +1247,8 @@ RTDECL(int) RTLogFlags(PRTLOGGER pLogger, const char *pszVar)
             { "unbuffered",   sizeof("unbuffered"  ) - 1,   RTLOGFLAGS_BUFFERED,            true  },
             { "usecrlf",      sizeof("usecrlf"     ) - 1,   RTLOGFLAGS_USECRLF,             true },
             { "uself",        sizeof("uself"       ) - 1,   RTLOGFLAGS_USECRLF,             false  },
+            { "append",       sizeof("append"      ) - 1,   RTLOGFLAGS_APPEND,              false  },
+            { "overwrite",    sizeof("overwrite"   ) - 1,   RTLOGFLAGS_APPEND,              true  },
             { "rel",          sizeof("rel"         ) - 1,   RTLOGFLAGS_REL_TS,              false },
             { "abs",          sizeof("abs"         ) - 1,   RTLOGFLAGS_REL_TS,              true  },
             { "dec",          sizeof("dec"         ) - 1,   RTLOGFLAGS_DECIMAL_TS,          false },

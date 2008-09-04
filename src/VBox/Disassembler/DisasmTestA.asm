@@ -70,8 +70,41 @@ ENDPROC   TestProc
 BITS 64
 align 16
 BEGINPROC TestProc64
+      db 48h
+      db 0c7h
+      db 42h
+      db 18h
+      db 20h
+      db 3eh
+      db 23h
+      db 80h
+      call qword [r8+10h]
+      ; test
+      db 48h
+      db 8bh
+      db 44h
+      db 0ah
+      db 0f8h
       ;incorrectly assembled by yasm; REX.W should not be added!
       ;test rax, dword 0cc90cc90h
+      db 8bh
+      db 04h
+      db 8dh
+      db 00h
+      db 00h
+      db 0feh
+      db 0ffh
+      mov   qword [rcx+rdx], 0
+      mov   dword [rcx+rdx], 0
+      and   [r15], rax
+      movzx rcx, sil
+      and   sil, 3
+      movzx ecx, ah
+      and   ah, 3
+
+      sub rcx, 1234h
+      mov rax, qword [0cc90cc90h]
+      mov rax, qword [00c90cc90h]
       mov rax, dword 0cc90cc90h
       mov rax, qword 0ffffcc90cc90h
 

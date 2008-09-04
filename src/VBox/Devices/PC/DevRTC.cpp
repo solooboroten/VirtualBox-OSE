@@ -1,4 +1,4 @@
-/* $Id: DevRTC.cpp 31240 2008-05-26 11:29:13Z bird $ */
+/* $Id: DevRTC.cpp 34386 2008-08-08 22:44:57Z bird $ */
 /** @file
  * Motorola MC146818 RTC/CMOS Device.
  */
@@ -52,8 +52,9 @@
 #include <VBox/log.h>
 #include <iprt/asm.h>
 #include <iprt/assert.h>
+#include <iprt/string.h>
 
-#include "vl_vbox.h"
+#include "../Builtins.h"
 
 struct RTCState;
 typedef struct RTCState RTCState;
@@ -63,10 +64,11 @@ typedef struct RTCState RTCState;
 #define RTC_CRC_HIGH    0x2e
 #define RTC_CRC_LOW     0x2f
 
-#ifndef VBOX_DEVICE_STRUCT_TESTCASE
+
 /*******************************************************************************
 *   Internal Functions                                                         *
 *******************************************************************************/
+#ifndef VBOX_DEVICE_STRUCT_TESTCASE
 __BEGIN_DECLS
 PDMBOTHCBDECL(int) rtcIOPortRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t *pu32, unsigned cb);
 PDMBOTHCBDECL(int) rtcIOPortWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t u32, unsigned cb);
@@ -76,6 +78,10 @@ PDMBOTHCBDECL(void) rtcTimerSecond2(PPDMDEVINS pDevIns, PTMTIMER pTimer);
 __END_DECLS
 #endif /* !VBOX_DEVICE_STRUCT_TESTCASE */
 
+
+/*******************************************************************************
+*   Defined Constants And Macros                                               *
+*******************************************************************************/
 /*#define DEBUG_CMOS*/
 
 #define RTC_SECONDS             0
@@ -103,6 +109,10 @@ __END_DECLS
 #define REG_B_AIE 0x20
 #define REG_B_UIE 0x10
 
+
+/*******************************************************************************
+*   Structures and Typedefs                                                    *
+*******************************************************************************/
 /** @todo Replace struct my_tm with RTTIME. */
 struct my_tm
 {
@@ -123,30 +133,48 @@ struct RTCState {
     uint8_t Alignment0[7];
     struct my_tm current_tm;
     int32_t irq;
+    /** Use UTC or local time initially. */
+    bool fUTC;
     /* periodic timer */
-    GCPTRTYPE(PTMTIMER)   pPeriodicTimerGC;
-    R3R0PTRTYPE(PTMTIMER) pPeriodicTimerHC;
     int64_t next_periodic_time;
     /* second update */
     int64_t next_second_time;
-    R3R0PTRTYPE(PTMTIMER) pSecondTimerHC;
-    GCPTRTYPE(PTMTIMER)   pSecondTimerGC;
-    GCPTRTYPE(PTMTIMER)   pSecondTimer2GC;
-    R3R0PTRTYPE(PTMTIMER) pSecondTimer2HC;
-    /** Pointer to the device instance - HC Ptr. */
-    R3R0PTRTYPE(PPDMDEVINS)    pDevInsHC;
-    /** Pointer to the device instance - GC Ptr. */
-    PPDMDEVINSGC    pDevInsGC;
-    /** Use UTC or local time initially. */
-    bool            fUTC;
+
+    /** Pointer to the device instance - R3 Ptr. */
+    PPDMDEVINSR3 pDevInsR3;
+    /** The periodic timer (rtcTimerPeriodic) - R3 Ptr. */
+    PTMTIMERR3 pPeriodicTimerR3;
+    /** The second timer (rtcTimerSecond) - R3 Ptr. */
+    PTMTIMERR3 pSecondTimerR3;
+    /** The second second timer (rtcTimerSecond2) - R3 Ptr. */
+    PTMTIMERR3 pSecondTimer2R3;
+
+    /** Pointer to the device instance - R0 Ptr. */
+    PPDMDEVINSR0 pDevInsR0;
+    /** The periodic timer (rtcTimerPeriodic) - R0 Ptr. */
+    PTMTIMERR0 pPeriodicTimerR0;
+    /** The second timer (rtcTimerSecond) - R0 Ptr. */
+    PTMTIMERR0 pSecondTimerR0;
+    /** The second second timer (rtcTimerSecond2) - R0 Ptr. */
+    PTMTIMERR0 pSecondTimer2R0;
+
+    /** Pointer to the device instance - RC Ptr. */
+    PPDMDEVINSRC pDevInsRC;
+    /** The periodic timer (rtcTimerPeriodic) - RC Ptr. */
+    PTMTIMERRC pPeriodicTimerRC;
+    /** The second timer (rtcTimerSecond) - RC Ptr. */
+    PTMTIMERRC pSecondTimerRC;
+    /** The second second timer (rtcTimerSecond2) - RC Ptr. */
+    PTMTIMERRC pSecondTimer2RC;
+
     /** The RTC registration structure. */
-    PDMRTCREG       RtcReg;
+    PDMRTCREG RtcReg;
     /** The RTC device helpers. */
-    R3PTRTYPE(PCPDMRTCHLP) pRtcHlpHC;
+    R3PTRTYPE(PCPDMRTCHLP) pRtcHlpR3;
     /** Number of release log entries. Used to prevent flooding. */
-    uint32_t        cRelLogEntries;
+    uint32_t cRelLogEntries;
     /** The current/previous timer period. Used to prevent flooding changes. */
-    int32_t         CurPeriod;
+    int32_t CurPeriod;
 };
 
 #ifndef VBOX_DEVICE_STRUCT_TESTCASE
@@ -167,12 +195,12 @@ static void rtc_timer_update(RTCState *s, int64_t current_time)
         /* period in 32 kHz cycles */
         period = 1 << (period_code - 1);
         /* compute 32 kHz clock */
-        freq = TMTimerGetFreq(s->CTXSUFF(pPeriodicTimer));
+        freq = TMTimerGetFreq(s->CTX_SUFF(pPeriodicTimer));
 
         cur_clock = ASMMultU64ByU32DivByU32(current_time, 32768, freq);
         next_irq_clock = (cur_clock & ~(uint64_t)(period - 1)) + period;
         s->next_periodic_time = ASMMultU64ByU32DivByU32(next_irq_clock, freq, 32768) + 1;
-        TMTimerSet(s->CTXSUFF(pPeriodicTimer), s->next_periodic_time);
+        TMTimerSet(s->CTX_SUFF(pPeriodicTimer), s->next_periodic_time);
 
         if (period != s->CurPeriod)
         {
@@ -181,9 +209,9 @@ static void rtc_timer_update(RTCState *s, int64_t current_time)
             s->CurPeriod = period;
         }
     } else {
-        if (TMTimerIsActive(s->CTXSUFF(pPeriodicTimer)) && s->cRelLogEntries++ < 64)
+        if (TMTimerIsActive(s->CTX_SUFF(pPeriodicTimer)) && s->cRelLogEntries++ < 64)
             LogRel(("RTC: stopped the periodic timer\n"));
-        TMTimerStop(s->CTXSUFF(pPeriodicTimer));
+        TMTimerStop(s->CTX_SUFF(pPeriodicTimer));
     }
 }
 
@@ -193,7 +221,7 @@ static void rtc_periodic_timer(void *opaque)
 
     rtc_timer_update(s, s->next_periodic_time);
     s->cmos_data[RTC_REG_C] |= 0xc0;
-    PDMDevHlpISASetIrq(s->CTXSUFF(pDevIns), s->irq, 1);
+    PDMDevHlpISASetIrq(s->CTX_SUFF(pDevIns), s->irq, 1);
 }
 
 static void cmos_ioport_write(void *opaque, uint32_t addr, uint32_t data)
@@ -227,7 +255,7 @@ static void cmos_ioport_write(void *opaque, uint32_t addr, uint32_t data)
             /* UIP bit is read only */
             s->cmos_data[RTC_REG_A] = (data & ~REG_A_UIP) |
                 (s->cmos_data[RTC_REG_A] & REG_A_UIP);
-            rtc_timer_update(s, TMTimerGet(s->CTXSUFF(pPeriodicTimer)));
+            rtc_timer_update(s, TMTimerGet(s->CTX_SUFF(pPeriodicTimer)));
             break;
         case RTC_REG_B:
             if (data & REG_B_SET) {
@@ -243,7 +271,7 @@ static void cmos_ioport_write(void *opaque, uint32_t addr, uint32_t data)
                 }
             }
             s->cmos_data[RTC_REG_B] = data;
-            rtc_timer_update(s, TMTimerGet(s->CTXSUFF(pPeriodicTimer)));
+            rtc_timer_update(s, TMTimerGet(s->CTX_SUFF(pPeriodicTimer)));
             break;
         case RTC_REG_C:
         case RTC_REG_D:
@@ -372,8 +400,8 @@ static void rtc_update_second(void *opaque)
 
     /* if the oscillator is not in normal operation, we do not update */
     if ((s->cmos_data[RTC_REG_A] & 0x70) != 0x20) {
-        s->next_second_time += TMTimerGetFreq(s->CTXSUFF(pSecondTimer));
-        TMTimerSet(s->CTXSUFF(pSecondTimer), s->next_second_time);
+        s->next_second_time += TMTimerGetFreq(s->CTX_SUFF(pSecondTimer));
+        TMTimerSet(s->CTX_SUFF(pSecondTimer), s->next_second_time);
     } else {
         rtc_next_second(&s->current_tm);
 
@@ -383,8 +411,8 @@ static void rtc_update_second(void *opaque)
         }
 
         /* 244140 ns = 8 / 32768 seconds */
-        uint64_t delay = TMTimerFromNano(s->CTXSUFF(pSecondTimer2), 244140);
-        TMTimerSet(s->CTXSUFF(pSecondTimer2), s->next_second_time + delay);
+        uint64_t delay = TMTimerFromNano(s->CTX_SUFF(pSecondTimer2), 244140);
+        TMTimerSet(s->CTX_SUFF(pSecondTimer2), s->next_second_time + delay);
     }
 }
 
@@ -406,21 +434,21 @@ static void rtc_update_second2(void *opaque)
              from_bcd(s, s->cmos_data[RTC_HOURS_ALARM]) == s->current_tm.tm_hour)) {
 
             s->cmos_data[RTC_REG_C] |= 0xa0;
-            PDMDevHlpISASetIrq(s->CTXSUFF(pDevIns), s->irq, 1);
+            PDMDevHlpISASetIrq(s->CTX_SUFF(pDevIns), s->irq, 1);
         }
     }
 
     /* update ended interrupt */
     if (s->cmos_data[RTC_REG_B] & REG_B_UIE) {
         s->cmos_data[RTC_REG_C] |= 0x90;
-        PDMDevHlpISASetIrq(s->CTXSUFF(pDevIns), s->irq, 1);
+        PDMDevHlpISASetIrq(s->CTX_SUFF(pDevIns), s->irq, 1);
     }
 
     /* clear update in progress bit */
     s->cmos_data[RTC_REG_A] &= ~REG_A_UIP;
 
-    s->next_second_time += TMTimerGetFreq(s->CTXSUFF(pSecondTimer));
-    TMTimerSet(s->CTXSUFF(pSecondTimer), s->next_second_time);
+    s->next_second_time += TMTimerGetFreq(s->CTX_SUFF(pSecondTimer));
+    TMTimerSet(s->CTX_SUFF(pSecondTimer), s->next_second_time);
 }
 
 static uint32_t cmos_ioport_read(void *opaque, uint32_t addr)
@@ -445,7 +473,7 @@ static uint32_t cmos_ioport_read(void *opaque, uint32_t addr)
             break;
         case RTC_REG_C:
             ret = s->cmos_data[s->cmos_index];
-            PDMDevHlpISASetIrq(s->CTXSUFF(pDevIns), s->irq, 0);
+            PDMDevHlpISASetIrq(s->CTX_SUFF(pDevIns), s->irq, 0);
             s->cmos_data[RTC_REG_C] = 0x00;
             break;
         default:
@@ -470,74 +498,9 @@ static void rtc_set_date(RTCState *s, const struct my_tm *tm)
     rtc_copy_date(s);
 }
 
-static void rtc_save(QEMUFile *f, void *opaque)
-{
-    RTCState *s = (RTCState*)opaque;
-
-    qemu_put_buffer(f, s->cmos_data, 128);
-    qemu_put_8s(f, &s->cmos_index);
-
-    qemu_put_be32s(f, &s->current_tm.tm_sec);
-    qemu_put_be32s(f, &s->current_tm.tm_min);
-    qemu_put_be32s(f, &s->current_tm.tm_hour);
-    qemu_put_be32s(f, &s->current_tm.tm_wday);
-    qemu_put_be32s(f, &s->current_tm.tm_mday);
-    qemu_put_be32s(f, &s->current_tm.tm_mon);
-    qemu_put_be32s(f, &s->current_tm.tm_year);
-
-    qemu_put_timer(f, s->CTXSUFF(pPeriodicTimer));
-    qemu_put_be64s(f, &s->next_periodic_time);
-
-    qemu_put_be64s(f, &s->next_second_time);
-    qemu_put_timer(f, s->CTXSUFF(pSecondTimer));
-    qemu_put_timer(f, s->CTXSUFF(pSecondTimer2));
-
-}
-
-static int rtc_load(QEMUFile *f, void *opaque, int version_id)
-{
-    RTCState *s = (RTCState*)opaque;
-
-    if (version_id != 1)
-        return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
-
-    qemu_get_buffer(f, s->cmos_data, 128);
-    qemu_get_8s(f, &s->cmos_index);
-
-    qemu_get_be32s(f, (uint32_t *)&s->current_tm.tm_sec);
-    qemu_get_be32s(f, (uint32_t *)&s->current_tm.tm_min);
-    qemu_get_be32s(f, (uint32_t *)&s->current_tm.tm_hour);
-    qemu_get_be32s(f, (uint32_t *)&s->current_tm.tm_wday);
-    qemu_get_be32s(f, (uint32_t *)&s->current_tm.tm_mday);
-    qemu_get_be32s(f, (uint32_t *)&s->current_tm.tm_mon);
-    qemu_get_be32s(f, (uint32_t *)&s->current_tm.tm_year);
-
-    qemu_get_timer(f, s->CTXSUFF(pPeriodicTimer));
-
-    qemu_get_be64s(f, (uint64_t *)&s->next_periodic_time);
-
-    qemu_get_be64s(f, (uint64_t *)&s->next_second_time);
-    qemu_get_timer(f, s->CTXSUFF(pSecondTimer));
-    qemu_get_timer(f, s->CTXSUFF(pSecondTimer2));
-
-    int period_code = s->cmos_data[RTC_REG_A] & 0x0f;
-    if (    period_code != 0
-        &&  (s->cmos_data[RTC_REG_B] & REG_B_PIE)) {
-        if (period_code <= 2)
-            period_code += 7;
-        int period = 1 << (period_code - 1);
-        LogRel(("RTC: period=%#x (%d) %u Hz (restore)\n", period, period, _32K / period));
-        s->CurPeriod = period;
-    } else {
-        LogRel(("RTC: stopped the periodic timer (restore)\n"));
-        s->CurPeriod = 0;
-    }
-    s->cRelLogEntries = 0;
-    return 0;
-}
 #endif /* IN_RING3 */
 
-/* -=-=-=-=-=- wrappers -=-=-=-=-=- */
+/* -=-=-=-=-=- wrappers / stuff -=-=-=-=-=- */
 
 /**
  * Port I/O Handler for IN operations.
@@ -555,7 +518,7 @@ PDMBOTHCBDECL(int) rtcIOPortRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port
     NOREF(pvUser);
     if (cb == 1)
     {
-        *pu32 = cmos_ioport_read(PDMINS2DATA(pDevIns, RTCState *), Port);
+        *pu32 = cmos_ioport_read(PDMINS_2_DATA(pDevIns, RTCState *), Port);
         return VINF_SUCCESS;
     }
     return VERR_IOM_IOPORT_UNUSED;
@@ -577,7 +540,7 @@ PDMBOTHCBDECL(int) rtcIOPortWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Por
 {
     NOREF(pvUser);
     if (cb == 1)
-        cmos_ioport_write(PDMINS2DATA(pDevIns, RTCState *), Port, u32);
+        cmos_ioport_write(PDMINS_2_DATA(pDevIns, RTCState *), Port, u32);
     return VINF_SUCCESS;
 }
 
@@ -590,7 +553,7 @@ PDMBOTHCBDECL(int) rtcIOPortWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Por
  */
 PDMBOTHCBDECL(void) rtcTimerPeriodic(PPDMDEVINS pDevIns, PTMTIMER pTimer)
 {
-    rtc_periodic_timer(PDMINS2DATA(pDevIns, RTCState *));
+    rtc_periodic_timer(PDMINS_2_DATA(pDevIns, RTCState *));
 }
 
 
@@ -602,7 +565,7 @@ PDMBOTHCBDECL(void) rtcTimerPeriodic(PPDMDEVINS pDevIns, PTMTIMER pTimer)
  */
 PDMBOTHCBDECL(void) rtcTimerSecond(PPDMDEVINS pDevIns, PTMTIMER pTimer)
 {
-    rtc_update_second(PDMINS2DATA(pDevIns, RTCState *));
+    rtc_update_second(PDMINS_2_DATA(pDevIns, RTCState *));
 }
 
 
@@ -614,7 +577,7 @@ PDMBOTHCBDECL(void) rtcTimerSecond(PPDMDEVINS pDevIns, PTMTIMER pTimer)
  */
 PDMBOTHCBDECL(void) rtcTimerSecond2(PPDMDEVINS pDevIns, PTMTIMER pTimer)
 {
-    rtc_update_second2(PDMINS2DATA(pDevIns, RTCState *));
+    rtc_update_second2(PDMINS_2_DATA(pDevIns, RTCState *));
 }
 
 
@@ -628,8 +591,27 @@ PDMBOTHCBDECL(void) rtcTimerSecond2(PPDMDEVINS pDevIns, PTMTIMER pTimer)
  */
 static DECLCALLBACK(int) rtcSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
 {
-    RTCState *pData = PDMINS2DATA(pDevIns, RTCState *);
-    rtc_save(pSSMHandle, pData);
+    RTCState *pThis = PDMINS_2_DATA(pDevIns, RTCState *);
+
+    SSMR3PutMem(pSSMHandle, pThis->cmos_data, 128);
+    SSMR3PutU8(pSSMHandle, pThis->cmos_index);
+
+    SSMR3PutS32(pSSMHandle, pThis->current_tm.tm_sec);
+    SSMR3PutS32(pSSMHandle, pThis->current_tm.tm_min);
+    SSMR3PutS32(pSSMHandle, pThis->current_tm.tm_hour);
+    SSMR3PutS32(pSSMHandle, pThis->current_tm.tm_wday);
+    SSMR3PutS32(pSSMHandle, pThis->current_tm.tm_mday);
+    SSMR3PutS32(pSSMHandle, pThis->current_tm.tm_mon);
+    SSMR3PutS32(pSSMHandle, pThis->current_tm.tm_year);
+
+    TMR3TimerSave(pThis->CTX_SUFF(pPeriodicTimer), pSSMHandle);
+
+    SSMR3PutS64(pSSMHandle, pThis->next_periodic_time);
+
+    SSMR3PutS64(pSSMHandle, pThis->next_second_time);
+    TMR3TimerSave(pThis->CTX_SUFF(pSecondTimer), pSSMHandle);
+    TMR3TimerSave(pThis->CTX_SUFF(pSecondTimer2), pSSMHandle);
+
     return VINF_SUCCESS;
 }
 
@@ -644,8 +626,44 @@ static DECLCALLBACK(int) rtcSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
  */
 static DECLCALLBACK(int) rtcLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, uint32_t u32Version)
 {
-    RTCState *pData = PDMINS2DATA(pDevIns, RTCState *);
-    return rtc_load(pSSMHandle, pData, u32Version);
+    RTCState *pThis = PDMINS_2_DATA(pDevIns, RTCState *);
+
+    if (u32Version != 1)
+        return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
+
+    SSMR3GetMem(pSSMHandle, pThis->cmos_data, 128);
+    SSMR3GetU8(pSSMHandle, &pThis->cmos_index);
+
+    SSMR3GetS32(pSSMHandle, &pThis->current_tm.tm_sec);
+    SSMR3GetS32(pSSMHandle, &pThis->current_tm.tm_min);
+    SSMR3GetS32(pSSMHandle, &pThis->current_tm.tm_hour);
+    SSMR3GetS32(pSSMHandle, &pThis->current_tm.tm_wday);
+    SSMR3GetS32(pSSMHandle, &pThis->current_tm.tm_mday);
+    SSMR3GetS32(pSSMHandle, &pThis->current_tm.tm_mon);
+    SSMR3GetS32(pSSMHandle, &pThis->current_tm.tm_year);
+
+    TMR3TimerLoad(pThis->CTX_SUFF(pPeriodicTimer), pSSMHandle);
+
+    SSMR3GetS64(pSSMHandle, &pThis->next_periodic_time);
+
+    SSMR3GetS64(pSSMHandle, &pThis->next_second_time);
+    TMR3TimerLoad(pThis->CTX_SUFF(pSecondTimer), pSSMHandle);
+    TMR3TimerLoad(pThis->CTX_SUFF(pSecondTimer2), pSSMHandle);
+
+    int period_code = pThis->cmos_data[RTC_REG_A] & 0x0f;
+    if (    period_code != 0
+        &&  (pThis->cmos_data[RTC_REG_B] & REG_B_PIE)) {
+        if (period_code <= 2)
+            period_code += 7;
+        int period = 1 << (period_code - 1);
+        LogRel(("RTC: period=%#x (%d) %u Hz (restore)\n", period, period, _32K / period));
+        pThis->CurPeriod = period;
+    } else {
+        LogRel(("RTC: stopped the periodic timer (restore)\n"));
+        pThis->CurPeriod = 0;
+    }
+    pThis->cRelLogEntries = 0;
+    return VINF_SUCCESS;
 }
 
 
@@ -654,17 +672,17 @@ static DECLCALLBACK(int) rtcLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
 /**
  * Calculate and update the standard CMOS checksum.
  *
- * @param   pData       Pointer to the RTC state data.
+ * @param   pThis       Pointer to the RTC state data.
  */
-static void rtcCalcCRC(RTCState *pData)
+static void rtcCalcCRC(RTCState *pThis)
 {
     uint16_t u16;
     unsigned i;
 
     for (i = RTC_CRC_START, u16 = 0; i <= RTC_CRC_LAST; i++)
-        u16 += pData->cmos_data[i];
-    pData->cmos_data[RTC_CRC_LOW] = u16 & 0xff;
-    pData->cmos_data[RTC_CRC_HIGH] = (u16 >> 8) & 0xff;
+        u16 += pThis->cmos_data[i];
+    pThis->cmos_data[RTC_CRC_LOW] = u16 & 0xff;
+    pThis->cmos_data[RTC_CRC_HIGH] = (u16 >> 8) & 0xff;
 }
 
 
@@ -678,15 +696,15 @@ static void rtcCalcCRC(RTCState *pData)
  */
 static DECLCALLBACK(int) rtcCMOSWrite(PPDMDEVINS pDevIns, unsigned iReg, uint8_t u8Value)
 {
-    RTCState *pData = PDMINS2DATA(pDevIns, RTCState *);
-    if (iReg < ELEMENTS(pData->cmos_data))
+    RTCState *pThis = PDMINS_2_DATA(pDevIns, RTCState *);
+    if (iReg < RT_ELEMENTS(pThis->cmos_data))
     {
-        pData->cmos_data[iReg] = u8Value;
+        pThis->cmos_data[iReg] = u8Value;
 
         /* does it require checksum update? */
         if (    iReg >= RTC_CRC_START
             &&  iReg <= RTC_CRC_LAST)
-            rtcCalcCRC(pData);
+            rtcCalcCRC(pThis);
 
         return VINF_SUCCESS;
     }
@@ -705,10 +723,10 @@ static DECLCALLBACK(int) rtcCMOSWrite(PPDMDEVINS pDevIns, unsigned iReg, uint8_t
  */
 static DECLCALLBACK(int) rtcCMOSRead(PPDMDEVINS pDevIns, unsigned iReg, uint8_t *pu8Value)
 {
-    RTCState   *pData = PDMINS2DATA(pDevIns, RTCState *);
-    if (iReg < ELEMENTS(pData->cmos_data))
+    RTCState   *pThis = PDMINS_2_DATA(pDevIns, RTCState *);
+    if (iReg < RT_ELEMENTS(pThis->cmos_data))
     {
-        *pu8Value = pData->cmos_data[iReg];
+        *pu8Value = pThis->cmos_data[iReg];
         return VINF_SUCCESS;
     }
     AssertMsgFailed(("iReg=%d\n", iReg));
@@ -722,7 +740,7 @@ static DECLCALLBACK(int) rtcCMOSRead(PPDMDEVINS pDevIns, unsigned iReg, uint8_t 
 static DECLCALLBACK(int)  rtcInitComplete(PPDMDEVINS pDevIns)
 {
     /** @todo this should be (re)done at power on if we didn't load a state... */
-    RTCState   *pData = PDMINS2DATA(pDevIns, RTCState *);
+    RTCState   *pThis = PDMINS_2_DATA(pDevIns, RTCState *);
 
     /*
      * Set the CMOS date/time.
@@ -730,7 +748,7 @@ static DECLCALLBACK(int)  rtcInitComplete(PPDMDEVINS pDevIns)
     RTTIMESPEC  Now;
     PDMDevHlpUTCNow(pDevIns, &Now);
     RTTIME Time;
-    if (pData->fUTC)
+    if (pThis->fUTC)
         RTTimeExplode(&Time, &Now);
     else
         RTTimeLocalExplode(&Time, &Now);
@@ -746,18 +764,18 @@ static DECLCALLBACK(int)  rtcInitComplete(PPDMDEVINS pDevIns)
     Tm.tm_min  = Time.u8Minute;
     Tm.tm_sec  = Time.u8Second;
 
-    rtc_set_date(pData, &Tm);
+    rtc_set_date(pThis, &Tm);
 
-    int iYear = to_bcd(pData, (Tm.tm_year / 100) + 19); /* tm_year is 1900 based */
-    rtc_set_memory(pData, 0x32, iYear);                                     /* 32h - Century Byte (BCD value for the century */
-    rtc_set_memory(pData, 0x37, iYear);                                     /* 37h - (IBM PS/2) Date Century Byte */
+    int iYear = to_bcd(pThis, (Tm.tm_year / 100) + 19); /* tm_year is 1900 based */
+    rtc_set_memory(pThis, 0x32, iYear);                                     /* 32h - Century Byte (BCD value for the century */
+    rtc_set_memory(pThis, 0x37, iYear);                                     /* 37h - (IBM PS/2) Date Century Byte */
 
     /*
      * Recalculate the checksum just in case.
      */
-    rtcCalcCRC(pData);
+    rtcCalcCRC(pThis);
 
-    Log(("CMOS: \n%16.128Vhxd\n", pData->cmos_data));
+    Log(("CMOS: \n%16.128Vhxd\n", pThis->cmos_data));
     return VINF_SUCCESS;
 }
 
@@ -769,12 +787,12 @@ static DECLCALLBACK(int)  rtcInitComplete(PPDMDEVINS pDevIns)
  */
 static DECLCALLBACK(void) rtcRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
 {
-    RTCState *pThis = PDMINS2DATA(pDevIns, RTCState *);
+    RTCState *pThis = PDMINS_2_DATA(pDevIns, RTCState *);
 
-    pThis->pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
-    pThis->pPeriodicTimerGC = TMTimerGCPtr(pThis->pPeriodicTimerHC);
-    pThis->pSecondTimerGC   = TMTimerGCPtr(pThis->pSecondTimerHC);
-    pThis->pSecondTimer2GC  = TMTimerGCPtr(pThis->pSecondTimer2HC);
+    pThis->pDevInsRC        = PDMDEVINS_2_RCPTR(pDevIns);
+    pThis->pPeriodicTimerRC = TMTimerRCPtr(pThis->pPeriodicTimerR3);
+    pThis->pSecondTimerRC   = TMTimerRCPtr(pThis->pSecondTimerR3);
+    pThis->pSecondTimer2RC  = TMTimerRCPtr(pThis->pSecondTimer2R3);
 }
 
 
@@ -793,7 +811,7 @@ static DECLCALLBACK(void) rtcRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
  */
 static DECLCALLBACK(int)  rtcConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNODE pCfgHandle)
 {
-    RTCState   *pData = PDMINS2DATA(pDevIns, RTCState *);
+    RTCState   *pThis = PDMINS_2_DATA(pDevIns, RTCState *);
     int         rc;
     uint8_t     u8Irq;
     uint16_t    u16Base;
@@ -804,104 +822,99 @@ static DECLCALLBACK(int)  rtcConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     /*
      * Validate configuration.
      */
-    if (!CFGMR3AreValuesValid(pCfgHandle, "Irq\0Base\0GCEnabled\0fR0Enabled\0"))
+    if (!CFGMR3AreValuesValid(pCfgHandle, "Irq\0" "Base\0" "GCEnabled\0" "R0Enabled\0"))
         return VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES;
 
     /*
      * Init the data.
      */
-    rc = CFGMR3QueryU8(pCfgHandle, "Irq", &u8Irq);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        u8Irq = 8;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryU8Def(pCfgHandle, "Irq", &u8Irq, 8);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Querying \"Irq\" as a uint8_t failed"));
 
-    rc = CFGMR3QueryU16(pCfgHandle, "Base", &u16Base);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        u16Base = 0x70;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryU16Def(pCfgHandle, "Base", &u16Base, 0x70);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Querying \"Base\" as a uint16_t failed"));
 
-    rc = CFGMR3QueryBool(pCfgHandle, "GCEnabled", &fGCEnabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fGCEnabled = true;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "GCEnabled", &fGCEnabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: failed to read GCEnabled as boolean"));
 
-    rc = CFGMR3QueryBool(pCfgHandle, "R0Enabled", &fR0Enabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fR0Enabled = true;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "R0Enabled", &fR0Enabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: failed to read R0Enabled as boolean"));
 
-    Log(("CMOS: fGCEnabled=%d fR0Enabled=%d\n", fGCEnabled, fR0Enabled));
+    Log(("RTC: Irq=%#x Base=%#x fGCEnabled=%RTbool fR0Enabled=%RTbool\n", u8Irq, u16Base, fGCEnabled, fR0Enabled));
 
 
-    pData->pDevInsHC            = pDevIns;
-    pData->irq                  = u8Irq;
-    pData->cmos_data[RTC_REG_A] = 0x26;
-    pData->cmos_data[RTC_REG_B] = 0x02;
-    pData->cmos_data[RTC_REG_C] = 0x00;
-    pData->cmos_data[RTC_REG_D] = 0x80;
-    pData->RtcReg.u32Version    = PDM_RTCREG_VERSION;
-    pData->RtcReg.pfnRead       = rtcCMOSRead;
-    pData->RtcReg.pfnWrite      = rtcCMOSWrite;
+    pThis->pDevInsR3            = pDevIns;
+    pThis->pDevInsR0            = PDMDEVINS_2_R0PTR(pDevIns);
+    pThis->pDevInsRC            = PDMDEVINS_2_RCPTR(pDevIns);
+    pThis->irq                  = u8Irq;
+    pThis->cmos_data[RTC_REG_A] = 0x26;
+    pThis->cmos_data[RTC_REG_B] = 0x02;
+    pThis->cmos_data[RTC_REG_C] = 0x00;
+    pThis->cmos_data[RTC_REG_D] = 0x80;
+    pThis->RtcReg.u32Version    = PDM_RTCREG_VERSION;
+    pThis->RtcReg.pfnRead       = rtcCMOSRead;
+    pThis->RtcReg.pfnWrite      = rtcCMOSWrite;
 
     /*
      * Create timers, arm them, register I/O Ports and save state.
      */
-    rc = PDMDevHlpTMTimerCreate(pDevIns, TMCLOCK_VIRTUAL_SYNC, rtcTimerPeriodic, "MC146818 RTC/CMOS - Periodic", &pData->pPeriodicTimerHC);
-    if (VBOX_FAILURE(rc))
-    {
-        AssertMsgFailed(("pfnTMTimerCreate -> %Vrc\n", rc));
+    rc = PDMDevHlpTMTimerCreate(pDevIns, TMCLOCK_VIRTUAL_SYNC, rtcTimerPeriodic, "MC146818 RTC/CMOS - Periodic", &pThis->pPeriodicTimerR3);
+    if (RT_FAILURE(rc))
         return rc;
-    }
-    rc = PDMDevHlpTMTimerCreate(pDevIns, TMCLOCK_VIRTUAL_SYNC, rtcTimerSecond, "MC146818 RTC/CMOS - Second", &pData->pSecondTimerHC);
-    if (VBOX_FAILURE(rc))
-    {
-        AssertMsgFailed(("pfnTMTimerCreate -> %Vrc\n", rc));
+    pThis->pPeriodicTimerR0 = TMTimerR0Ptr(pThis->pPeriodicTimerR3);
+    pThis->pPeriodicTimerRC = TMTimerRCPtr(pThis->pPeriodicTimerR3);
+
+    rc = PDMDevHlpTMTimerCreate(pDevIns, TMCLOCK_VIRTUAL_SYNC, rtcTimerSecond,   "MC146818 RTC/CMOS - Second", &pThis->pSecondTimerR3);
+    if (RT_FAILURE(rc))
         return rc;
-    }
-    rc = PDMDevHlpTMTimerCreate(pDevIns, TMCLOCK_VIRTUAL_SYNC, rtcTimerSecond2, "MC146818 RTC/CMOS - Second2", &pData->pSecondTimer2HC);
-    if (VBOX_FAILURE(rc))
-    {
-        AssertMsgFailed(("pfnTMTimerCreate -> %Vrc\n", rc));
+    pThis->pSecondTimerR0 = TMTimerR0Ptr(pThis->pSecondTimerR3);
+    pThis->pSecondTimerRC = TMTimerRCPtr(pThis->pSecondTimerR3);
+
+    rc = PDMDevHlpTMTimerCreate(pDevIns, TMCLOCK_VIRTUAL_SYNC, rtcTimerSecond2,  "MC146818 RTC/CMOS - Second2", &pThis->pSecondTimer2R3);
+    if (RT_FAILURE(rc))
         return rc;
-    }
-    pData->next_second_time = TMTimerGet(pData->CTXSUFF(pSecondTimer2)) + (TMTimerGetFreq(pData->CTXSUFF(pSecondTimer2)) * 99) / 100;
-    TMTimerSet(pData->CTXSUFF(pSecondTimer2), pData->next_second_time);
+    pThis->pSecondTimer2R0 = TMTimerR0Ptr(pThis->pSecondTimer2R3);
+    pThis->pSecondTimer2RC = TMTimerRCPtr(pThis->pSecondTimer2R3);
+    pThis->next_second_time = TMTimerGet(pThis->CTX_SUFF(pSecondTimer2)) + (TMTimerGetFreq(pThis->CTX_SUFF(pSecondTimer2)) * 99) / 100;
+    rc = TMTimerSet(pThis->CTX_SUFF(pSecondTimer2), pThis->next_second_time);
+    if (RT_FAILURE(rc))
+        return rc;
 
     rc = PDMDevHlpIOPortRegister(pDevIns, u16Base, 2, NULL, rtcIOPortWrite, rtcIOPortRead, NULL, NULL, "MC146818 RTC/CMOS");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (fGCEnabled)
     {
         rc = PDMDevHlpIOPortRegisterGC(pDevIns, u16Base, 2, 0, "rtcIOPortWrite", "rtcIOPortRead", NULL, NULL, "MC146818 RTC/CMOS");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
     if (fR0Enabled)
     {
         rc = PDMDevHlpIOPortRegisterR0(pDevIns, u16Base, 2, 0, "rtcIOPortWrite", "rtcIOPortRead", NULL, NULL, "MC146818 RTC/CMOS");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
-    rc = PDMDevHlpSSMRegister(pDevIns, pDevIns->pDevReg->szDeviceName, iInstance, 1 /* version */, sizeof(*pData),
+    rc = PDMDevHlpSSMRegister(pDevIns, pDevIns->pDevReg->szDeviceName, iInstance, 1 /* version */, sizeof(*pThis),
                               NULL, rtcSaveExec, NULL,
                               NULL, rtcLoadExec, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     /*
-     * Register ourselves as the RTC with PDM.
+     * Register ourselves as the RTC/CMOS with PDM.
      */
-    rc = pDevIns->pDevHlp->pfnRTCRegister(pDevIns, &pData->RtcReg, &pData->pRtcHlpHC);
-    if (VBOX_FAILURE(rc))
+    rc = pDevIns->pDevHlp->pfnRTCRegister(pDevIns, &pThis->RtcReg, &pThis->pRtcHlpR3);
+    if (RT_FAILURE(rc))
         return rc;
 
     return VINF_SUCCESS;

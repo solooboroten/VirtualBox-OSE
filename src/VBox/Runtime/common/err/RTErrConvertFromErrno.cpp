@@ -1,4 +1,4 @@
-/* $Id: RTErrConvertFromErrno.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: RTErrConvertFromErrno.cpp 32353 2008-06-25 15:20:38Z bird $ */
 /** @file
  * IPRT - Convert errno to iprt status codes.
  */
@@ -38,6 +38,8 @@
 
 #if defined(RT_OS_DARWIN) && defined(KERNEL)
 # include <sys/errno.h>
+#elif defined(RT_OS_LINUX) && defined(__KERNEL__)
+# include <linux/errno.h>
 #else
 # include <errno.h>
 #endif
@@ -266,7 +268,7 @@ RTDECL(int)  RTErrConvertFromErrno(unsigned uNativeCode)
         //case ECOMM		70	/* Communication error on send */
 #endif
 #ifdef EPROTO
-        //case EPROTO		71	/* Protocol error */
+        case EPROTO:            return VERR_NET_PROTOCOL_ERROR;
 #endif
 #ifdef EMULTIHOP
         //case EMULTIHOP	72	/* Multihop attempted */

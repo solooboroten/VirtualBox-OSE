@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31423 2008-05-30 08:56:12Z mt221433 $
+# $Id: Makefile.kmk 35910 2008-09-02 17:20:08Z bird $
 ## @file
 # Sub-Makefile for the support library and the drivers/modules/kexts it uses.
 #
@@ -28,40 +28,50 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
 SUB_DEPTH = ..
+DEPTH    ?= ../../../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 #
 # Targets
 #
-LIBRARIES += SUPR3
-ifeq ($(filter-out pe lx,$(VBOX_LDR_FMT)),)
-LIBRARIES += SUPR0
-endif
-ifdef VBOX_WITH_VBOXDRV
-SYSMODS.darwin  += VBoxDrv
-SYSMODS.freebsd += vboxdrv
-SYSMODS.linux   += vboxdrv
-SYSMODS.win     += VBoxDrv
-SYSMODS.os2     += VBoxDrv
-SYSMODS.solaris += vboxdrv
-OTHERS.linux    += \
-        $(PATH_BIN)/src/build_in_tmp \
-        $(if $(VBOX_OSE),,$(PATH_BIN)/src/dkms.conf)
-endif
+LIBRARIES += SUPR3 SUPR3HardenedStatic
+ifndef VBOX_ONLY_DOCS
+ ifeq ($(filter-out pe lx,$(VBOX_LDR_FMT)),)
+  LIBRARIES += SUPR0
+ endif
+ ifdef VBOX_WITH_SUPSVC
+  PROGRAMS += VBoxSupSvc
+ endif
+ ifdef VBOX_WITH_VBOXDRV
+  LIBRARIES       += SUPR0IdcClient
+  SYSMODS.darwin  += VBoxDrv
+  SYSMODS.freebsd += vboxdrv
+  SYSMODS.linux   += vboxdrv
+  SYSMODS.win     += VBoxDrv
+  SYSMODS.os2     += VBoxDrv
+  SYSMODS.solaris += vboxdrv
+  OTHERS.linux    += \
+  	$(PATH_BIN)/src/build_in_tmp \
+  	$(PATH_BIN)/src/Makefile \
+  	$(if $(VBOX_OSE),,$(PATH_BIN)/src/dkms.conf)
+ endif
+ INSTALLS.linux  += vboxmod-bin vboxmod-sh
 
-INSTALLS.linux = vboxmod-bin vboxmod-sh
+ #
+ # Include sub-makefile(s).
+ #
+ include $(PATH_SUB_CURRENT)/testcase/Makefile.kmk
 
-#
-# Include sub-makefile(s).
-#
-include $(PATH_SUB_CURRENT)/testcase/Makefile.kmk
-
-#
-# Populate FILES_VBOXDRV_NOBIN and FILES_VBOXDRV_BIN
-#
-include $(PATH_SUB_CURRENT)/linux/files_vboxdrv
+ #
+ # Populate FILES_VBOXDRV_NOBIN and FILES_VBOXDRV_BIN
+ #
+ include $(PATH_SUB_CURRENT)/linux/files_vboxdrv
+endif # !VBOX_ONLY_DOCS
 
 vboxmod-bin_INST    = bin/src/
 vboxmod-bin_MODE    = a+r,u+w
@@ -70,50 +80,108 @@ vboxmod-bin_SOURCES = $(subst ",,$(FILES_VBOXDRV_NOBIN)) #"
 vboxmod-sh_INST     = bin/src/
 vboxmod-sh_MODE     = a+rx,u+w
 vboxmod-sh_SOURCES  = $(subst ",,$(FILES_VBOXDRV_BIN)) #"
+vboxmod-sh_CLEAN    = $(PATH_TARGET)/vboxmod-sh-1.dep
 
 # Scripts needed for building the kernel modules
+## @todo generate these else where and move them from OTHERS to vboxmod-bin (which btw installs NOBIN files contrary to its name).
 
 $(PATH_BIN)/src/build_in_tmp: \
 		$(PATH_SUB_CURRENT)/linux/build_in_tmp \
 		$(VBOX_VERSION_STAMP)
 	$(call MSG_TOOL,Creating,,$@)
-	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g; s;_MODULE_;vboxdrv;g" < $< > $@
+	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g; s;_MODULE_;vboxdrv;g" --output $@ $<
 	$(QUIET)chmod 0755 $@
 
 $(PATH_BIN)/src/dkms.conf: \
 		$(PATH_SUB_CURRENT)/linux/dkms.conf \
 		$(VBOX_VERSION_STAMP)
 	$(call MSG_TOOL,Creating,,$@)
-	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g" < $< > $@
+	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g" --output $@ $<
+
+-include $(PATH_TARGET)/vboxmod-1.dep
+$(PATH_BIN)/src/Makefile: \
+		$(PATH_SUB_CURRENT)/linux/Makefile \
+		$$(if $$(eq $$(Support/linux/Makefile_HARDENED),$$(VBOX_WITH_HARDENING)),,FORCE) \
+		| $(call DIRDEP,$(PATH_TARGET))
+	$(call MSG_TOOL,Creating,,$@)
+ifdef VBOX_WITH_HARDENING
+	$(QUIET)$(SED) -e "s;-DVBOX_WITH_HARDENING;;g" --output $@ $<
+else
+	$(QUIET)$(CP) -f $< $@
+endif
+	%$(QUIET2)$(RM) -f -- $(PATH_TARGET)/vboxmod-1.dep
+	%$(QUIET2)$(APPEND) '$(PATH_TARGET)/vboxmod-1.dep' 'Support/linux/Makefile_HARDENED=$(VBOX_WITH_HARDENING)'
+
 
 #
 # The Ring-3 Support Library (this is linked into the IPRT dll, VBoxRT).
 #
 ifneq ($(filter l4%,$(KBUILD_TARGET) $(BUILD_TARGET_SUB)),)
-# L4 has trouble with -pedantic. It also make trouble when inlining is not enabled.
-SUPR3_TEMPLATE      = VBOXR3NP
+ # L4 has trouble with -pedantic. It also make trouble when inlining is not enabled.
+ SUPR3_TEMPLATE     = VBOXR3NP
 else
-SUPR3_TEMPLATE      = VBOXR3
+ SUPR3_TEMPLATE     = VBOXR3
 endif
 SUPR3_DEFS          = IN_SUP_R3 IN_RT_R3
 ifdef VBOX_WITH_IDT_PATCHING
-SUPR3_DEFS         += VBOX_WITH_IDT_PATCHING
+ SUPR3_DEFS        += VBOX_WITH_IDT_PATCHING
+endif
+ifdef VBOX_WITH_SUPSVC
+ SUPR3_DEFS        += VBOX_WITH_SUPSVC
 endif
 SUPR3_INCS         := $(PATH_SUB_CURRENT)
 SUPR3_INCS.l4       = $(L4_INCDIR)
 SUPR3_SOURCES       = \
 	SUPLib.cpp \
+	SUPR3HardenedIPRT.cpp \
+	SUPR3HardenedVerify.cpp \
 	$(KBUILD_TARGET)/SUPLib-$(KBUILD_TARGET).cpp
+
+
+#
+# The static part of the hardened support library (ring-3).
+#
+SUPR3HardenedStatic_TEMPLATE = VBOXR3HARDENEDLIB
+SUPR3HardenedStatic_DEFS     = IN_SUP_HARDENED_R3
+ifdef VBOX_WITH_SUPSVC
+ SUPR3HardenedStatic_DEFS   += VBOX_WITH_SUPSVC
+endif
+SUPR3HardenedStatic_INCS     = .
+SUPR3HardenedStatic_SOURCES  = \
+	SUPR3HardenedMain.cpp \
+	SUPR3HardenedVerify.cpp \
+	$(KBUILD_TARGET)/SUPLib-$(KBUILD_TARGET).cpp
+
+
+#
+# VBoxSupSvc - The system wide service/daemon.
+#
+VBoxSupSvc_TEMPLATE = VBOXR3EXE
+VBoxSupSvc_SOURCES = \
+	SUPSvc.cpp \
+	SUPSvcGlobal.cpp \
+	$(KBUILD_TARGET)/SUPSvc-$(KBUILD_TARGET).cpp
+if1of ($(KBUILD_TARGET), win)
+ VBoxSupSvc_SOURCES += \
+	SUPSvcGrant.cpp
+endif
+ifn1of ($(KBUILD_TARGET), win)
+ VBoxSupSvc_SOURCES += \
+ 	SUPSvcMain-posix.cpp
+endif
+VBoxSupSvc_LIBS = \
+	$(LIB_RUNTIME)
+
 
 #
 # SUPR0 - The Ring-0 Import / Thunk library.
 #
 SUPR0_TEMPLATE      = VBOXR0
 ifeq ($(VBOX_LDR_FMT),pe)
-SUPR0_SOURCES       += SUPR0.def
+ SUPR0_SOURCES     += SUPR0.def
 endif
 ifeq ($(VBOX_LDR_FMT),lx)
-SUPR0_SOURCES       += $(PATH_TARGET)/SUPR0.def
+SUPR0_SOURCES      += $(PATH_TARGET)/SUPR0.def
 $(PATH_TARGET)/SUPR0.def: $(PATH_SUB_CURRENT)/SUPR0.def | $(call DIRDEP,$(PATH_TARGET))
 	$(SED) -e 's/^[ \t][ \t]*\([gA-Z]\)/    _\1/' -e 's/[ \t]DATA[ \t]*/ /' $< > $@.tmp
 	$(MV) -f $@.tmp $@
@@ -121,23 +189,39 @@ endif
 
 
 #
+# SUPR0IdcClient - The Ring-0 IDC client driver library.
+#
+SUPR0IdcClient_TEMPLATE = VBOXR0DRV
+SUPR0IdcClient_DEFS = IN_RT_R0 IN_SUP_R0 IN_SUP_STATIC
+SUPR0IdcClient_SDKS.win = W2K3DDK WINPSDKINCS
+SUPR0IdcClient_SOURCES.$(KBUILD_TARGET) = \
+	$(KBUILD_TARGET)/SUPR0IdcClient-$(KBUILD_TARGET).c
+SUPR0IdcClient_SOURCES = \
+	SUPR0IdcClient.c \
+	SUPR0IdcClientComponent.c \
+	SUPR0IdcClientStubs.c
+
+
+#
 # VBoxDrv.sys - The Windows driver.
 #
+## @todo consoliate all the targets into a single mess.
 ifeq ($(KBUILD_TARGET),win)
 VBoxDrv_TEMPLATE      = VBOXR0DRV
 ifdef VBOX_SIGNING_MODE
  VBoxDrv_NOINST       = true
 endif
-VBoxDrv_DEFS          = IN_RT_R0 IN_SUP_R0 USE_NEW_OS_INTERFACE_FOR_MM
+VBoxDrv_DEFS          = IN_RT_R0 IN_SUP_R0 SUPDRV_WITH_RELEASE_LOGGER
 ifdef VBOX_WITH_IDT_PATCHING
-VBoxDrv_DEFS         += VBOX_WITH_IDT_PATCHING
+ VBoxDrv_DEFS        += VBOX_WITH_IDT_PATCHING
 endif
+#VBoxDrv_DEFS         += SUPDRV_WITH_UNWIND_HACK - post 2.0, need to wrap more APIs and entry functions.
 VBoxDrv_SDKS          = W2K3DDK WINPSDKINCS
 VBoxDrv_INCS         := $(PATH_SUB_CURRENT)
 VBoxDrv_SOURCES       = \
 	win/SUPDrv-win.cpp \
 	win/SUPDrvA-win.asm \
-	SUPDRVShared.c
+	SUPDrv.c
 VBoxDrv_LDFLAGS.x86   = -Entry:DriverEntry@8
 VBoxDrv_LDFLAGS.amd64 = -Entry:DriverEntry
 VBoxDrv_LIBS          = \
@@ -180,9 +264,12 @@ endif # win
 #
 ifeq ($(KBUILD_TARGET),linux)
 vboxdrv_TEMPLATE      = VBOXR0DRV
-vboxdrv_DEFS          = KBUILD_MODNAME=KBUILD_STR\(vboxdrv\) KBUILD_BASENAME=KBUILD_STR\(vboxdrv\) MODULE IN_RT_R0 IN_SUP_R0 CONFIG_VBOXDRV_AS_MISC USE_NEW_OS_INTERFACE_FOR_MM
+vboxdrv_DEFS          = KBUILD_MODNAME=KBUILD_STR\(vboxdrv\) KBUILD_BASENAME=KBUILD_STR\(vboxdrv\) MODULE IN_RT_R0 IN_SUP_R0 CONFIG_VBOXDRV_AS_MISC
 ifdef VBOX_WITH_IDT_PATCHING
 vboxdrv_DEFS         += VBOX_WITH_IDT_PATCHING
+endif
+ifdef VBOX_LINUX_VERSION_2_4
+vboxdrv_DEFS         += EXPORT_SYMTAB
 endif
 vboxdrv_INCS         := \
 	$(PATH_SUB_CURRENT) \
@@ -191,7 +278,7 @@ vboxdrv_LIBS          = $(PATH_LIB)/RuntimeR0Drv$(VBOX_SUFF_LIB)
 vboxdrv_LIBS.debug    = $(vboxdrv_LIBS) $(VBOX_GCC_LIBGCC)
 vboxdrv_SOURCES       = \
 	$(KBUILD_TARGET)/SUPDrv-$(KBUILD_TARGET).c \
-	SUPDRVShared.c
+	SUPDrv.c
 ifndef VBOX_LINUX_VERSION_2_4
 vboxdrv_SOURCES      += \
 	$(KBUILD_TARGET)/SUPDrv-$(KBUILD_TARGET).mod.c
@@ -204,7 +291,7 @@ endif # real linux
 #
 ifeq ($(KBUILD_TARGET),darwin)
 VBoxDrv_TEMPLATE      = VBOXR0DRV
-VBoxDrv_DEFS          = IN_RT_R0 IN_SUP_R0 USE_NEW_OS_INTERFACE
+VBoxDrv_DEFS          = IN_RT_R0 IN_SUP_R0 SUPDRV_WITH_RELEASE_LOGGER VBOX_SVN_REV=$(VBOX_SVN_REV)
 ifdef VBOX_WITH_IDT_PATCHING
 VBoxDrv_DEFS         += VBOX_WITH_IDT_PATCHING
 endif
@@ -214,7 +301,7 @@ VBoxDrv_LIBS          = $(PATH_LIB)/RuntimeR0Drv$(VBOX_SUFF_LIB)
 VBoxDrv_LDFLAGS       = -v -Wl,-whyload -Wl,-v -Wl,-whatsloaded
 VBoxDrv_INST          = $(INST_VBOXDRV)Contents/MacOS/
 VBoxDrv_SOURCES       = \
-	SUPDRVShared.c \
+	SUPDrv.c \
 	$(KBUILD_TARGET)/SUPDrv-$(KBUILD_TARGET).cpp
 
 INSTALLS += VBoxDrv.kext
@@ -247,7 +334,7 @@ endif # darwin
 #
 ifeq ($(KBUILD_TARGET),os2)
 VBoxDrv_TEMPLATE      = VBOXR0DRV
-VBoxDrv_DEFS          = IN_RT_R0 IN_SUP_R0 USE_NEW_OS_INTERFACE
+VBoxDrv_DEFS          = IN_RT_R0 IN_SUP_R0
 VBoxDrv_INCS         := $(PATH_SUB_CURRENT)
 #VBoxDrv_LDFLAGS       = -s -t -v
 VBoxDrv_SOURCES       = \
@@ -263,14 +350,14 @@ VBoxDrv_LIBS          = \
 LIBRARIES += VBoxDrvLib
 VBoxDrvLib_TEMPLATE   = VBOXR0DRV
 VBoxDrvLib_NOINST     = 1
-VBoxDrvLib_DEFS       = IN_RT_R0 IN_SUP_R0 USE_NEW_OS_INTERFACE
+VBoxDrvLib_DEFS       = IN_RT_R0 IN_SUP_R0
 VBoxDrvLib_INCS      := \
 	$(PATH_SUB_CURRENT) \
 	$(PATH_TARGET) \
 	$(PATH_ROOT)/src/VBox/Runtime/include
 VBoxDrvLib_SOURCES    = \
 	os2/SUPDrv-os2.cpp \
-	SUPDRVShared.c
+	SUPDrv.c
 endif
 
 
@@ -279,15 +366,17 @@ endif
 #
 ifeq ($(KBUILD_TARGET),freebsd)
 vboxdrv_TEMPLATE      = VBOXR0DRV
-vboxdrv_DEFS          = IN_RT_R0 IN_SUP_R0 USE_NEW_OS_INTERFACE
+vboxdrv_DEFS          = IN_RT_R0 IN_SUP_R0 SUPDRV_WITH_RELEASE_LOGGER VBOX_SVN_REV=$(VBOX_SVN_REV)
 ifdef VBOX_WITH_IDT_PATCHING
 vboxdrv_DEFS         += VBOX_WITH_IDT_PATCHING
 endif
 vboxdrv_INCS         := $(PATH_SUB_CURRENT)
 vboxdrv_LIBS          = $(PATH_LIB)/RuntimeR0Drv$(VBOX_SUFF_LIB)
-vboxdrv_SOURCES       = \
+vboxdrv_SOURCES      := \
 	$(KBUILD_TARGET)/SUPDrv-$(KBUILD_TARGET).c \
-	SUPDRVShared.c
+	$(PATH_SUB_CURRENT)/$(KBUILD_TARGET)/SUPDrv-$(KBUILD_TARGET).def \
+	SUPDrv.c
+## @todo the SUPDrv-freebsd.def is most probably gonna break it and require build system hacking...
 endif # freebsd
 
 
@@ -296,7 +385,7 @@ endif # freebsd
 #
 ifeq ($(KBUILD_TARGET),solaris)
 vboxdrv_TEMPLATE      = VBOXR0DRV
-vboxdrv_DEFS          = IN_RT_R0 IN_SUP_R0 USE_NEW_OS_INTERFACE
+vboxdrv_DEFS          = IN_RT_R0 IN_SUP_R0
 ifdef VBOX_WITH_IDT_PATCHING
 vboxdrv_DEFS         += VBOX_WITH_IDT_PATCHING
 endif
@@ -304,9 +393,15 @@ vboxdrv_INCS         := $(PATH_SUB_CURRENT)
 vboxdrv_LIBS          = $(PATH_LIB)/RuntimeR0Drv$(VBOX_SUFF_LIB)
 vboxdrv_SOURCES       = \
 	$(KBUILD_TARGET)/SUPDrv-$(KBUILD_TARGET).c \
-	SUPDRVShared.c
+	SUPDrv.c
 endif # solaris
 
 
-include	$(KBUILD_PATH)/subfooter.kmk
+#
+# SUPDrv.c needs the VBOX_SVN_REV.
+#
+SUPDrv.c_DEFS += VBOX_SVN_REV=$(VBOX_SVN_REV)
+
+
+include $(KBUILD_PATH)/subfooter.kmk
 

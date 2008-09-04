@@ -71,29 +71,37 @@ endif
 override MODULE = vboxdrv
 OBJS   = \
 	linux/SUPDrv-linux.o \
-	SUPDRVShared.o \
+	SUPDrv.o \
 	r0drv/alloc-r0drv.o \
 	r0drv/initterm-r0drv.o \
-	r0drv/linux/mp-r0drv-linux.o \
+	r0drv/memobj-r0drv.o \
+	r0drv/mpnotification-r0drv.o \
 	r0drv/linux/alloc-r0drv-linux.o \
 	r0drv/linux/initterm-r0drv-linux.o \
+	r0drv/linux/memobj-r0drv-linux.o \
+	r0drv/linux/mp-r0drv-linux.o \
+	r0drv/linux/mpnotification-r0drv-linux.o \
 	r0drv/linux/process-r0drv-linux.o \
 	r0drv/linux/semevent-r0drv-linux.o \
 	r0drv/linux/semeventmulti-r0drv-linux.o \
 	r0drv/linux/semfastmutex-r0drv-linux.o \
 	r0drv/linux/spinlock-r0drv-linux.o \
-	r0drv/linux/thread-r0drv-linux.o
-ifeq ($(BUILD_TARGET_ARCH),amd64)
-OBJS  += alloc/heapsimple.o
-endif
-ifeq ($(BUILD_TYPE),debug)
-OBJS  += \
-	math/gcc/divdi3.o \
+	r0drv/linux/thread-r0drv-linux.o \
+	r0drv/linux/time-r0drv-linux.o \
+	r0drv/linux/timer-r0drv-linux.o \
+	common/err/RTErrConvertFromErrno.o
+ifeq ($(BUILD_TARGET_ARCH),x86)
+OBJS += math/gcc/divdi3.o \
 	math/gcc/moddi3.o \
-	math/gcc/udivdi3.o \
-	math/gcc/umoddi3.o \
 	math/gcc/qdivrem.o \
-	common/log/log.o \
+	math/gcc/udivdi3.o
+endif
+ifeq ($(BUILD_TARGET_ARCH),amd64)
+OBJS += alloc/heapsimple.o
+endif
+
+ifeq ($(BUILD_TYPE),debug)
+OBJS += common/log/log.o \
 	common/log/logcom.o \
 	common/log/logformat.o \
 	common/string/strformat.o \
@@ -107,7 +115,11 @@ OBJS  += \
 	generic/RTLogWriteUser-generic.o \
 	VBox/log-vbox.o \
 	VBox/strformat-vbox.o
+ifeq ($(BUILD_TARGET_ARCH),x86)
+OBJS += math/gcc/divdi3.o \
+	math/gcc/umoddi3.o
 endif
+endif # debug
 
 ifneq ($(MAKECMDGOALS),clean)
 
@@ -200,7 +212,7 @@ ifndef INCL
  INCL    += $(addprefix -I$(KBUILD_EXTMOD),/ /include /r0drv/linux)
  export INCL
 endif
-KFLAGS   := -D__KERNEL__ -DMODULE -DRT_OS_LINUX -DIN_RING0 -DIN_RT_R0 -DIN_SUP_R0 -DVBOX -DRT_WITH_VBOX
+KFLAGS   := -D__KERNEL__ -DMODULE -DRT_OS_LINUX -DIN_RING0 -DIN_RT_R0 -DIN_SUP_R0 -DVBOX -DRT_WITH_VBOX -DVBOX_WITH_HARDENING
 ifdef VBOX_REDHAT_KABI
  KFLAGS  += -DVBOX_REDHAT_KABI
 endif
@@ -209,32 +221,22 @@ ifndef CONFIG_VBOXDRV_FIXEDMAJOR
 endif
 ifeq ($(BUILD_TARGET_ARCH),amd64)
  KFLAGS  += -DRT_ARCH_AMD64
+ # must be consistent with Config.kmk!
+ KFLAGS  += -DVBOX_WITH_64_BITS_GUESTS
 else
  KFLAGS  += -DRT_ARCH_X86
 endif
 ifeq ($(BUILD_TYPE),debug)
- KFLAGS  += -DDEBUG -DDEBUG_$(USER)
+ KFLAGS  += -DDEBUG -DDEBUG_$(USER) -g
  # IPRT_DEBUG_SEMS indicates thread wrt sems state via the comm field.
  KFLAGS  += -DIPRT_DEBUG_SEMS
 endif
 
-#
-# Use the RTR0MemObj API - testing.
-# If this makes testboxes crash/burn/leak disable it and add a comment to defect #2116.
-#
-KFLAGS += -DUSE_NEW_OS_INTERFACE_FOR_MM
-OBJS += r0drv/memobj-r0drv.o \
-	r0drv/linux/memobj-r0drv-linux.o
-ifeq ($(BUILD_TARGET_ARCH),x86) # Some gcc versions ends up needing __divdi3.
-OBJS += math/gcc/qdivrem.o \
-	math/gcc/divdi3.o
-endif
-
-ifeq ($(KERN_VERSION), 24)
+ifeq ($(KERN_VERSION),24)
 # 2.4
 TOPDIR         = $(KERN_DIR)
 MODULE_EXT    := o
-EXTRA_CFLAGS  := -DVBOX_LINUX_2_4
+EXTRA_CFLAGS  := -DVBOX_LINUX_2_4 -DEXPORT_SYMTAB
 $(MODULE)-objs = $(OBJS)
 else
 # 2.6 and later
@@ -252,7 +254,7 @@ obj-m += $(MODULE).o
 $(MODULE):
 	$(MAKE) KBUILD_VERBOSE=1 -C $(KERN_DIR) SUBDIRS=$(CURDIR) SRCROOT=$(CURDIR) modules
 
-ifeq ($(KERN_VERSION), 24)
+ifeq ($(KERN_VERSION),24)
 #
 # 2.4 Module linking
 #

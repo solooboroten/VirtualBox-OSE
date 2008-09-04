@@ -1,6 +1,9 @@
+/* $Id: tstIntNetR0.cpp 34148 2008-08-05 23:08:37Z bird $ */
 /** @file
+ * Internal networking - Usermode testcase for the kernel mode bits.
  *
- * VBox - Testcase for the Ring-0 part of internal networking.
+ * This is a bit hackish as we're mixing context here, however it is
+ * very useful when making changes to the internal networking service.
  */
 
 /*
@@ -28,6 +31,12 @@
 #include <VBox/cdefs.h>
 #undef INTNETR0DECL
 #define INTNETR0DECL INTNETR3DECL
+#undef DECLR0CALLBACKMEMBER
+#define DECLR0CALLBACKMEMBER(type, name, args) DECLR3CALLBACKMEMBER(type, name, args)
+#include <VBox/types.h>
+typedef void *MYPSUPDRVSESSION;
+#define PSUPDRVSESSION  MYPSUPDRVSESSION
+
 #include <VBox/intnet.h>
 #include <VBox/sup.h>
 #include <VBox/err.h>
@@ -37,6 +46,7 @@
 #include <iprt/thread.h>
 #include <iprt/time.h>
 #include <iprt/asm.h>
+#include <iprt/getopt.h>
 
 
 /*******************************************************************************
@@ -83,6 +93,7 @@ typedef struct OBJREF
     uint32_t volatile cRefs;
 } OBJREF, *POBJREF;
 
+
 /*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
@@ -95,9 +106,9 @@ const PSUPDRVSESSION g_pSession = (PSUPDRVSESSION)0xdeadface;
 /** Testframe 0 */
 struct TESTFRAME
 {
-    uint16_t    au16[6];
-} g_TestFrame0 = { { /* dst:*/ 0xffff, 0xffff, 0xffff, /*src:*/0x8086, 0, 0} },
-  g_TestFrame1 = { { /* dst:*/0, 0, 0,                /*src:*/0x8086, 0, 1} };
+    uint16_t    au16[7];
+} g_TestFrame0 = { { /* dst:*/ 0xffff, 0xffff, 0xffff, /*src:*/0x8086, 0, 0, 0x0800 } },
+  g_TestFrame1 = { { /* dst:*/ 0, 0, 0,                /*src:*/0x8086, 0, 1, 0x0800 } };
 
 
 INTNETR3DECL(void *) SUPR0ObjRegister(PSUPDRVSESSION pSession, SUPDRVOBJTYPE enmType, PFNSUPDRVDESTRUCTOR pfnDestructor, void *pvUser1, void *pvUser2)
@@ -199,7 +210,7 @@ typedef struct ARGS
     PINTNET pIntNet;
     PINTNETBUF pBuf;
     INTNETIFHANDLE hIf;
-    PDMMAC Mac;
+    RTMAC Mac;
     uint64_t u64Start;
     uint64_t u64End;
 } ARGS, *PARGS;
@@ -219,8 +230,8 @@ DECLCALLBACK(int) SendThread(RTTHREAD Thread, void *pvArg)
      * Send 64 MB of data.
      */
     uint8_t abBuf[4096] = {0};
-    PPDMMAC pMacSrc = (PPDMMAC)&abBuf[0];
-    PPDMMAC pMacDst = pMacSrc + 1;
+    PRTMAC pMacSrc = (PRTMAC)&abBuf[0];
+    PRTMAC pMacDst = pMacSrc + 1;
     *pMacSrc = pArgs->Mac;
     *pMacDst = pArgs->Mac;
     pMacDst->au16[2] = pArgs->Mac.au16[2] ? 0 : 1;
@@ -233,11 +244,13 @@ DECLCALLBACK(int) SendThread(RTTHREAD Thread, void *pvArg)
         const unsigned cb = iFrame % 1519 + 12 + sizeof(unsigned);
         *puFrame = iFrame;
 #if 0
-        int rc = INTNETR0IfSend(pArgs->pIntNet, pArgs->hIf, abBuf, cb);
+        int rc = INTNETR0IfSend(pArgs->pIntNet, pArgs->hIf, g_pSession, abBuf, cb);
 #else
-        int rc = INTNETRingWriteFrame(pArgs->pBuf, &pArgs->pBuf->Send, abBuf, cb);
+        INTNETSG Sg;
+        intnetR0SgInitTemp(&Sg, abBuf, cb);
+        int rc = intnetR0RingWriteFrame(pArgs->pBuf, &pArgs->pBuf->Send, &Sg, NULL);
         if (RT_SUCCESS(rc))
-            rc = INTNETR0IfSend(pArgs->pIntNet, pArgs->hIf, NULL, 0);
+            rc = INTNETR0IfSend(pArgs->pIntNet, pArgs->hIf, g_pSession, NULL, 0);
 #endif
         if (VBOX_FAILURE(rc))
         {
@@ -256,7 +269,7 @@ DECLCALLBACK(int) SendThread(RTTHREAD Thread, void *pvArg)
     puFrame[3] = 0xffffdead;
     for (unsigned c = 0; c < 20; c++)
     {
-        int rc = INTNETR0IfSend(pArgs->pIntNet, pArgs->hIf, abBuf, sizeof(PDMMAC) * 2 + sizeof(unsigned) * 4);
+        int rc = INTNETR0IfSend(pArgs->pIntNet, pArgs->hIf, g_pSession, abBuf, sizeof(RTMAC) * 2 + sizeof(unsigned) * 4);
         if (VBOX_FAILURE(rc))
         {
             g_cErrors++;
@@ -288,7 +301,7 @@ DECLCALLBACK(int) ReceiveThread(RTTHREAD Thread, void *pvArg)
         /*
          * Wait for data.
          */
-        int rc = INTNETR0IfWait(pArgs->pIntNet, pArgs->hIf, RT_INDEFINITE_WAIT);
+        int rc = INTNETR0IfWait(pArgs->pIntNet, pArgs->hIf, g_pSession, RT_INDEFINITE_WAIT);
         switch (rc)
         {
             case VERR_INTERRUPTED:
@@ -312,11 +325,11 @@ DECLCALLBACK(int) ReceiveThread(RTTHREAD Thread, void *pvArg)
         while (INTNETRingGetReadable(&pArgs->pBuf->Recv))
         {
             uint8_t abBuf[16384];
-            unsigned cb = INTNETRingReadFrame(pArgs->pBuf, &pArgs->pBuf->Recv, abBuf);
-            unsigned *puFrame = (unsigned *)&abBuf[sizeof(PDMMAC) * 2];
+            unsigned cb = intnetR0RingReadFrame(pArgs->pBuf, &pArgs->pBuf->Recv, abBuf);
+            unsigned *puFrame = (unsigned *)&abBuf[sizeof(RTMAC) * 2];
 
             /* check for termination frame. */
-            if (    cb == sizeof(PDMMAC) * 2 + sizeof(unsigned) * 4
+            if (    cb == sizeof(RTMAC) * 2 + sizeof(unsigned) * 4
                 &&  puFrame[0] == 0xffffdead
                 &&  puFrame[1] == 0xffffdead
                 &&  puFrame[2] == 0xffffdead
@@ -329,8 +342,8 @@ DECLCALLBACK(int) ReceiveThread(RTTHREAD Thread, void *pvArg)
             }
 
             /* validate frame header */
-            PPDMMAC pMacSrc = (PPDMMAC)&abBuf[0];
-            PPDMMAC pMacDst = pMacSrc + 1;
+            PRTMAC pMacSrc = (PRTMAC)&abBuf[0];
+            PRTMAC pMacDst = pMacSrc + 1;
             if (    pMacDst->au16[0] != 0x8086
                 ||  pMacDst->au16[1] != 0
                 ||  pMacDst->au16[2] != pArgs->Mac.au16[2]
@@ -373,14 +386,50 @@ DECLCALLBACK(int) ReceiveThread(RTTHREAD Thread, void *pvArg)
     }
 }
 
-int main()
+int main(int argc, char **argv)
 {
-
     /*
-     * Init runtime and create an INTNET instance.
+     * Init the runtime and parse arguments.
      */
     RTR3Init();
-    RTPrintf("tstIntNetR0: TESTING...\n");
+
+    static RTOPTIONDEF const s_aOptions[] =
+    {
+        { "--recv-buffer",  'r', RTGETOPT_REQ_UINT32 },
+        { "--send-buffer",  's', RTGETOPT_REQ_UINT32 },
+    };
+
+    uint32_t cbRecv = 32 * _1K;
+    uint32_t cbSend = 1536*2;
+
+    int ch;
+    int iArg = 1;
+    RTOPTIONUNION Value;
+    while ((ch = RTGetOpt(argc,argv, &s_aOptions[0], RT_ELEMENTS(s_aOptions), &iArg, &Value)))
+        switch (ch)
+        {
+            case 'r':
+                cbRecv = Value.u32;
+                break;
+
+            case 's':
+                cbSend = Value.u32;
+                break;
+
+            default:
+                RTPrintf("tstIntNetR0: invalid argument: %s\n", Value.psz);
+                return 1;
+        }
+    if (iArg < argc)
+    {
+        RTPrintf("tstIntNetR0: invalid argument: %s\n", argv[iArg]);
+        return 1;
+    }
+
+    /*
+     * Create an INTNET instance.
+     */
+    RTPrintf("tstIntNetR0: TESTING cbSend=%d cbRecv=%d ...\n", cbSend, cbRecv);
     PINTNET pIntNet;
     int rc = INTNETR0Create(&pIntNet);
     if (VBOX_FAILURE(rc))
@@ -393,42 +442,56 @@ int main()
      * Create two interfaces.
      */
     INTNETIFHANDLE hIf0 = INTNET_HANDLE_INVALID;
-    rc = INTNETR0Open(pIntNet, g_pSession, "test", 1536*2 + 4, 0x8000, true, &hIf0);
+    rc = INTNETR0Open(pIntNet, g_pSession, "test", kIntNetTrunkType_None, "", 0, 1536*2 + 4, 0x8000, &hIf0);
     if (VBOX_SUCCESS(rc))
     {
         if (hIf0 != INTNET_HANDLE_INVALID)
         {
             INTNETIFHANDLE hIf1 = INTNET_HANDLE_INVALID;
-            rc = INTNETR0Open(pIntNet, g_pSession, "test", 1536*2 + 4, 0x8000, true, &hIf1);
+            rc = INTNETR0Open(pIntNet, g_pSession, "test", kIntNetTrunkType_None, NULL, 0, 1536*2 + 4, 0x8000, &hIf1);
             if (VBOX_SUCCESS(rc))
             {
                 if (hIf1 != INTNET_HANDLE_INVALID)
                 {
                     PINTNETBUF pBuf0;
-                    rc = INTNETR0IfGetRing0Buffer(pIntNet, hIf0, &pBuf0);
+                    rc = INTNETR0IfGetRing0Buffer(pIntNet, hIf0, g_pSession, &pBuf0);
                     if (VBOX_FAILURE(rc) || !pBuf0)
                     {
                         RTPrintf("tstIntNetR0: INTNETIfGetRing0Buffer failed! pBuf0=%p rc=%Vrc\n", pBuf0, rc);
                         g_cErrors++;
                     }
                     PINTNETBUF pBuf1;
-                    rc = INTNETR0IfGetRing0Buffer(pIntNet, hIf1, &pBuf1);
+                    rc = INTNETR0IfGetRing0Buffer(pIntNet, hIf1, g_pSession, &pBuf1);
                     if (VBOX_FAILURE(rc))
                     {
                         RTPrintf("tstIntNetR0: INTNETIfGetRing0Buffer failed! pBuf1=%p rc=%Vrc\n", pBuf1, rc);
                         g_cErrors++;
                     }
 
+                    rc = INTNETR0IfSetActive(pIntNet, hIf0, g_pSession, true);
+                    if (VBOX_FAILURE(rc))
+                    {
+                        RTPrintf("tstIntNetR0: INTNETR0IfSetActive failed! rc=%Rrc\n", rc);
+                        g_cErrors++;
+                    }
+                    rc = INTNETR0IfSetActive(pIntNet, hIf1, g_pSession, true);
+                    if (VBOX_FAILURE(rc))
+                    {
+                        RTPrintf("tstIntNetR0: INTNETR0IfSetActive failed! rc=%Rrc\n", rc);
+                        g_cErrors++;
+                    }
+
+
                     /*
                      * Test basic waiting.
                      */
-                    rc = INTNETR0IfWait(pIntNet, hIf0, 1);
+                    rc = INTNETR0IfWait(pIntNet, hIf0, g_pSession, 1);
                     if (rc != VERR_TIMEOUT)
                     {
                         RTPrintf("tstIntNetR0: INTNETIfWait returned %Vrc expected VERR_TIMEOUT (hIf0)\n", rc);
                         g_cErrors++;
                     }
-                    rc = INTNETR0IfWait(pIntNet, hIf1, 0);
+                    rc = INTNETR0IfWait(pIntNet, hIf1, g_pSession, 0);
                     if (rc != VERR_TIMEOUT)
                     {
                         RTPrintf("tstIntNetR0: INTNETIfWait returned %Vrc expected VERR_TIMEOUT (hIf1)\n", rc);
@@ -438,16 +501,16 @@ int main()
                     /*
                      * Send and receive.
                      */
-                    rc = INTNETR0IfSend(pIntNet, hIf0, &g_TestFrame0, sizeof(g_TestFrame0));
+                    rc = INTNETR0IfSend(pIntNet, hIf0, g_pSession, &g_TestFrame0, sizeof(g_TestFrame0));
                     if (VBOX_SUCCESS(rc))
                     {
-                        rc = INTNETR0IfWait(pIntNet, hIf0, 1);
+                        rc = INTNETR0IfWait(pIntNet, hIf0, g_pSession, 1);
                         if (rc != VERR_TIMEOUT)
                         {
                             RTPrintf("tstIntNetR0: INTNETIfWait returned %Vrc expected VERR_TIMEOUT (hIf0, 2nd)\n", rc);
                             g_cErrors++;
                         }
-                        rc = INTNETR0IfWait(pIntNet, hIf1, 0);
+                        rc = INTNETR0IfWait(pIntNet, hIf1, g_pSession, 0);
                         if (rc == VINF_SUCCESS)
                         {
                             /* receive it */
@@ -458,7 +521,7 @@ int main()
                                 RTPrintf("tstIntNetR0: %d readable bytes, expected %d!\n", INTNETRingGetReadable(&pBuf1->Recv), cbExpect);
                                 g_cErrors++;
                             }
-                            unsigned cb = INTNETRingReadFrame(pBuf1, &pBuf1->Recv, abBuf);
+                            unsigned cb = intnetR0RingReadFrame(pBuf1, &pBuf1->Recv, abBuf);
                             if (cb != sizeof(g_TestFrame0))
                             {
                                 RTPrintf("tstIntNetR0: read %d frame bytes, expected %d!\n", cb, sizeof(g_TestFrame0));
@@ -476,7 +539,7 @@ int main()
                             /*
                              * Send a packet from If1 just to set its MAC address.
                              */
-                            rc = INTNETR0IfSend(pIntNet, hIf1, &g_TestFrame1, sizeof(g_TestFrame1));
+                            rc = INTNETR0IfSend(pIntNet, hIf1, g_pSession, &g_TestFrame1, sizeof(g_TestFrame1));
                             if (VBOX_FAILURE(rc))
                             {
                                 RTPrintf("tstIntNetR0: INTNETIfSend returned %Vrc! (hIf1)\n", rc);
@@ -486,6 +549,7 @@ int main()
 
                             /*
                              * Start threaded testcase.
+                             * Give it 5 mins to finish.
                              */
                             if (!g_cErrors)
                             {
@@ -519,10 +583,30 @@ int main()
                                 if (VBOX_SUCCESS(rc))
                                 {
                                     int rc2 = VINF_SUCCESS;
-                                    rc = RTThreadWait(ThreadSend0, 30000, &rc2);
-                                    if (    VBOX_SUCCESS(rc)
-                                        &&  VBOX_SUCCESS(rc2))
-                                        rc = RTThreadWait(ThreadSend1, 30000, &rc2);
+                                    rc = RTThreadWait(ThreadSend0, 5*60*1000, &rc2);
+#if 1 /** @todo it looks like I'm subject to some false wakeup calls here (2.6.23-gentoo-r3 amd64). See #3023.*/
+                                    for (int cTries = 100; rc == VERR_TIMEOUT && cTries > 0; cTries--)
+                                    {
+                                        RTThreadSleep(1);
+                                        rc = RTThreadWait(ThreadSend0, 1, &rc2);
+                                    }
+#endif
+                                    AssertRC(rc);
+                                    if (VBOX_SUCCESS(rc))
+                                    {
+                                        ThreadSend0 = NIL_RTTHREAD;
+                                        rc = RTThreadWait(ThreadSend1, 5*60*1000, RT_SUCCESS(rc2) ? &rc2 : NULL);
+#if 1 /** @todo it looks like I'm subject to some false wakeup calls here (2.6.23-gentoo-r3 amd64). See #3023.*/
+                                        for (int cTries = 100; rc == VERR_TIMEOUT && cTries > 0; cTries--)
+                                        {
+                                            RTThreadSleep(1);
+                                            rc = RTThreadWait(ThreadSend1, 1, &rc2);
+                                        }
+#endif
+                                        AssertRC(rc);
+                                        if (RT_SUCCESS(rc))
+                                            ThreadSend1 = NIL_RTTHREAD;
+                                    }
                                     if (    VBOX_SUCCESS(rc)
                                         &&  VBOX_SUCCESS(rc2))
                                     {
@@ -543,7 +627,25 @@ int main()
                                         /*
                                          * Closing time...
                                          */
-                                        rc = INTNETR0IfClose(pIntNet, hIf0);
+                                        rc = RTThreadWait(ThreadRecv0, 5000, &rc2);
+                                        if (RT_SUCCESS(rc))
+                                            ThreadRecv0 = NIL_RTTHREAD;
+                                        if (VBOX_FAILURE(rc) || VBOX_FAILURE(rc2))
+                                        {
+                                            RTPrintf("tstIntNetR0: Failed waiting on receiver thread 0, rc=%Vrc, rc2=%Vrc\n", rc, rc2);
+                                            g_cErrors++;
+                                        }
+
+                                        rc = RTThreadWait(ThreadRecv1, 5000, &rc2);
+                                        if (RT_SUCCESS(rc))
+                                            ThreadRecv1 = NIL_RTTHREAD;
+                                        if (VBOX_FAILURE(rc) || VBOX_FAILURE(rc2))
+                                        {
+                                            RTPrintf("tstIntNetR0: Failed waiting on receiver thread 1, rc=%Vrc, rc2=%Vrc\n", rc, rc2);
+                                            g_cErrors++;
+                                        }
+
+                                        rc = INTNETR0IfClose(pIntNet, hIf0, g_pSession);
                                         if (VBOX_SUCCESS(rc))
                                         {
                                             hIf0 = INTNET_HANDLE_INVALID;
@@ -554,7 +656,8 @@ int main()
                                             RTPrintf("tstIntNetR0: INTNETIfClose failed, rc=%Vrc! (hIf0)\n", rc);
                                             g_cErrors++;
                                         }
-                                        rc = INTNETR0IfClose(pIntNet, hIf1);
+
+                                        rc = INTNETR0IfClose(pIntNet, hIf1, g_pSession);
                                         if (VBOX_SUCCESS(rc))
                                         {
                                             hIf1 = INTNET_HANDLE_INVALID;
@@ -566,19 +669,6 @@ int main()
                                             g_cErrors++;
                                         }
 
-                                        rc = RTThreadWait(ThreadRecv0, 5000, &rc2);
-                                        if (VBOX_FAILURE(rc) || VBOX_FAILURE(rc2))
-                                        {
-                                            RTPrintf("tstIntNetR0: Failed waiting on receiver thread 0, rc=%Vrc, rc2=%Vrc\n", rc, rc2);
-                                            g_cErrors++;
-                                        }
-
-                                        rc = RTThreadWait(ThreadRecv1, 5000, &rc2);
-                                        if (VBOX_FAILURE(rc) || VBOX_FAILURE(rc2))
-                                        {
-                                            RTPrintf("tstIntNetR0: Failed waiting on receiver thread 1, rc=%Vrc, rc2=%Vrc\n", rc, rc2);
-                                            g_cErrors++;
-                                        }
 
                                         /* check if the network still exist... */
                                         if (pIntNet->pNetworks)
@@ -592,6 +682,15 @@ int main()
                                         RTPrintf("tstIntNetR0: Waiting on senders failed, rc=%Vrc, rc2=%Vrc\n", rc, rc2);
                                         g_cErrors++;
                                     }
+
+                                    /*
+                                     * Give them a chance to complete...
+                                     */
+                                    RTThreadWait(ThreadRecv0, 5000, NULL);
+                                    RTThreadWait(ThreadRecv1, 5000, NULL);
+                                    RTThreadWait(ThreadSend0, 5000, NULL);
+                                    RTThreadWait(ThreadSend1, 5000, NULL);
+
                                 }
                                 else
                                 {
@@ -617,12 +716,18 @@ int main()
                     RTPrintf("tstIntNetR0: INTNETOpen returned invalid handle on success! (hIf1)\n");
                     g_cErrors++;
                 }
+
+                if (hIf1 != INTNET_HANDLE_INVALID)
+                    rc = INTNETR0IfClose(pIntNet, hIf1, g_pSession);
             }
             else
             {
                 RTPrintf("tstIntNetR0: INTNETOpen failed for the 2nd interface! rc=%Vrc\n", rc);
                 g_cErrors++;
             }
+
+            if (hIf0 != INTNET_HANDLE_INVALID)
+                rc = INTNETR0IfClose(pIntNet, hIf0, g_pSession);
         }
         else
         {

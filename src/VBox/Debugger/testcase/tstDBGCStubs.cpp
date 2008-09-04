@@ -1,4 +1,4 @@
-/* $Id: tstDBGCStubs.cpp 30828 2008-05-14 20:44:19Z bird $ */
+/* $Id: tstDBGCStubs.cpp 32399 2008-06-26 15:58:05Z frank $ */
 /** @file
  * DBGC Testcase - Command Parser, VMM Stub Functions.
  */
@@ -47,7 +47,12 @@ CPUMDECL(uint32_t) CPUMGetGuestEIP(PVM pVM)
     return 0;
 }
 
-CPUMDECL(uint32_t) CPUMGetGuestIDTR(PVM pVM, uint16_t *pcbLimit)
+CPUMDECL(uint64_t) CPUMGetGuestRIP(PVM pVM)
+{
+    return 0;
+}
+
+CPUMDECL(RTGCPTR) CPUMGetGuestIDTR(PVM pVM, uint16_t *pcbLimit)
 {
     return 0;
 }
@@ -106,7 +111,7 @@ SELMR3DECL(int) SELMR3GetSelectorInfo(PVM pVM, RTSEL Sel, PSELMSELINFO pSelInfo)
 
 #include <VBox/pgm.h>
 
-PGMDECL(uint32_t) PGMGetHyperCR3(PVM pVM)
+PGMDECL(RTHCPHYS) PGMGetHyperCR3(PVM pVM)
 {
     return 0;
 }

@@ -1,4 +1,5 @@
-/* $Id: VirtualBoxImpl.cpp 30937 2008-05-16 14:52:44Z frank $ */
+/* $Id: VirtualBoxImpl.cpp 33291 2008-07-14 12:23:57Z dmik $ */
+
 /** @file
  * Implmentation of IVirtualBox in VBoxSVC.
  */
@@ -20,6 +21,8 @@
  */
 
 #include "VirtualBoxImpl.h"
+
+#include "Global.h"
 #include "MachineImpl.h"
 #include "HardDiskImpl.h"
 #include "DVDImageImpl.h"
@@ -56,8 +59,8 @@
 #include <VBox/param.h>
 #include <VBox/VBoxHDD.h>
 #include <VBox/VBoxHDD-new.h>
-#include <VBox/ostypes.h>
 #include <VBox/version.h>
+#include <package-generated.h>
 
 #include <VBox/com/com.h>
 #include <VBox/com/array.h>
@@ -76,7 +79,7 @@
 // globals
 /////////////////////////////////////////////////////////////////////////////
 
-static const char DefaultGlobalConfig [] =
+static const char gDefaultGlobalConfig [] =
 {
     "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>" RTFILE_LINEFEED
     "<!-- Sun xVM VirtualBox Global Configuration -->" RTFILE_LINEFEED
@@ -93,6 +96,9 @@ static const char DefaultGlobalConfig [] =
 
 // static
 Bstr VirtualBox::sVersion;
+
+// static
+Bstr VirtualBox::sPackageType;
 
 // static
 Bstr VirtualBox::sSettingsFormatVersion;
@@ -144,7 +150,9 @@ HRESULT VirtualBox::init()
 
     if (sVersion.isNull())
         sVersion = VBOX_VERSION_STRING;
-    LogFlowThisFunc (("Version: %ls\n", sVersion.raw()));
+    if (sPackageType.isNull())
+        sPackageType = VBOX_PACKAGE_STRING;
+    LogFlowThisFunc (("Version: %ls, Package: %ls\n", sVersion.raw(), sPackageType.raw()));
 
     if (sSettingsFormatVersion.isNull())
         sSettingsFormatVersion = VBOX_XML_VERSION_FULL;
@@ -187,8 +195,8 @@ HRESULT VirtualBox::init()
                                   RTFILE_O_DENY_WRITE);
             if (VBOX_SUCCESS (vrc))
                 vrc = RTFileWrite (handle,
-                                   (void *) DefaultGlobalConfig,
-                                   sizeof (DefaultGlobalConfig), NULL);
+                                   (void *) gDefaultGlobalConfig,
+                                   sizeof (gDefaultGlobalConfig), NULL);
             if (VBOX_FAILURE (vrc))
             {
                 rc = setError (E_FAIL, tr ("Could not create the default settings file "
@@ -219,6 +227,13 @@ HRESULT VirtualBox::init()
 
             Key global = tree.rootKey().key ("Global");
 
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+            /* create the performance collector object BEFORE host */
+            unconst (mData.mPerformanceCollector).createObject();
+            rc = mData.mPerformanceCollector->init();
+            ComAssertComRCThrowRC (rc);
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
             /* create the host object early, machines will need it */
             unconst (mData.mHost).createObject();
             rc = mData.mHost->init (this);
@@ -236,8 +251,23 @@ HRESULT VirtualBox::init()
             CheckComRCThrowRC (rc);
 
             /* guest OS type objects, needed by machines */
-            rc = registerGuestOSTypes();
-            ComAssertComRCThrowRC (rc);
+            for (size_t i = 0; i < RT_ELEMENTS (Global::sOSTypes); ++ i)
+            {
+                ComObjPtr <GuestOSType> guestOSTypeObj;
+                rc = guestOSTypeObj.createObject();
+                if (SUCCEEDED (rc))
+                {
+                    rc = guestOSTypeObj->init (Global::sOSTypes [i].id,
+                                               Global::sOSTypes [i].description,
+                                               Global::sOSTypes [i].osType,
+                                               Global::sOSTypes [i].recommendedRAM,
+                                               Global::sOSTypes [i].recommendedVRAM,
+                                               Global::sOSTypes [i].recommendedHDD);
+                    if (SUCCEEDED (rc))
+                        mData.mGuestOSTypes.push_back (guestOSTypeObj);
+                }
+                ComAssertComRCThrowRC (rc);
+            }
 
             /* hard disks, needed by machines */
             rc = loadDisks (global);
@@ -352,6 +382,14 @@ void VirtualBox::uninit()
         unconst (mData.mHost).setNull();
     }
 
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+    if (mData.mPerformanceCollector)
+    {
+        mData.mPerformanceCollector->uninit();
+        unconst (mData.mPerformanceCollector).setNull();
+    }
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
     /*
      *  Uninit all other children still referenced by clients
      *  (unregistered machines, hard disks, DVD/floppy images,
@@ -457,6 +495,18 @@ STDMETHODIMP VirtualBox::COMGETTER(Version) (BSTR *aVersion)
     return S_OK;
 }
 
+STDMETHODIMP VirtualBox::COMGETTER(PackageType) (BSTR *aPackageType)
+{
+    if (!aPackageType)
+        return E_INVALIDARG;
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    sPackageType.cloneTo (aPackageType);
+    return S_OK;
+}
+
 STDMETHODIMP VirtualBox::COMGETTER(HomeFolder) (BSTR *aHomeFolder)
 {
     if (!aHomeFolder)
@@ -519,6 +569,7 @@ STDMETHODIMP VirtualBox::COMGETTER(Host) (IHost **aHost)
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 
+    /* mHost is const, no need to lock */
     mData.mHost.queryInterfaceTo (aHost);
     return S_OK;
 }
@@ -532,6 +583,7 @@ VirtualBox::COMGETTER(SystemProperties) (ISystemProperties **aSystemProperties)
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 
+    /* mSystemProperties is const, no need to lock */
     mData.mSystemProperties.queryInterfaceTo (aSystemProperties);
     return S_OK;
 }
@@ -692,6 +744,25 @@ VirtualBox::COMGETTER(SharedFolders) (ISharedFolderCollection **aSharedFolders)
     CheckComRCReturnRC (autoCaller.rc());
 
     return setError (E_NOTIMPL, "Not yet implemented");
+}
+
+STDMETHODIMP
+VirtualBox::COMGETTER(PerformanceCollector) (IPerformanceCollector **aPerformanceCollector)
+{
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+    if (!aPerformanceCollector)
+        return E_POINTER;
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* mPerformanceCollector is const, no need to lock */
+    mData.mPerformanceCollector.queryInterfaceTo (aPerformanceCollector);
+
+    return S_OK;
+#else /* !VBOX_WITH_RESOURCE_USAGE_API */
+    return E_NOTIMPL;
+#endif /* !VBOX_WITH_RESOURCE_USAGE_API */
 }
 
 // IVirtualBox methods
@@ -4457,91 +4528,6 @@ HRESULT VirtualBox::registerFloppyImage (FloppyImage *aImage, bool aOnStartUp)
     /* save global config file if we're supposed to */
     if (!aOnStartUp)
         rc = saveSettings();
-
-    return rc;
-}
-
-/**
- * Helper function to create the guest OS type objects and our collection
- *
- * @returns COM status code
- */
-HRESULT VirtualBox::registerGuestOSTypes()
-{
-    AutoCaller autoCaller (this);
-    AssertComRCReturn (autoCaller.rc(), E_FAIL);
-    AssertReturn (autoCaller.state() == InInit, E_FAIL);
-
-    HRESULT rc = S_OK;
-
-    // this table represents our os type / string mapping
-    static struct
-    {
-        const char    *id;          // utf-8
-        const char    *description; // utf-8
-        const VBOXOSTYPE osType;
-        const uint32_t recommendedRAM;
-        const uint32_t recommendedVRAM;
-        const uint32_t recommendedHDD;
-    } OSTypes [SchemaDefs::OSTypeId_COUNT] =
-    {
-        /// @todo (dmik) get the list of OS types from the XML schema
-        /* NOTE1: we assume that unknown is always the first entry!
-         * NOTE2: please use powers of 2 when specifying the size of harddisks since
-         *        '2GB' looks better than '1.95GB' (= 2000MB) */
-        { SchemaDefs_OSTypeId_unknown,     tr ("Other/Unknown"),  VBOXOSTYPE_Unknown,      64,   4,  2 * _1K },
-        { SchemaDefs_OSTypeId_dos,         "DOS",                 VBOXOSTYPE_DOS,          32,   4,      512 },
-        { SchemaDefs_OSTypeId_win31,       "Windows 3.1",         VBOXOSTYPE_Win31,        32,   4,  1 * _1K },
-        { SchemaDefs_OSTypeId_win95,       "Windows 95",          VBOXOSTYPE_Win95,        64,   4,  2 * _1K },
-        { SchemaDefs_OSTypeId_win98,       "Windows 98",          VBOXOSTYPE_Win98,        64,   4,  2 * _1K },
-        { SchemaDefs_OSTypeId_winme,       "Windows Me",          VBOXOSTYPE_WinMe,        64,   4,  4 * _1K },
-        { SchemaDefs_OSTypeId_winnt4,      "Windows NT 4",        VBOXOSTYPE_WinNT4,      128,   4,  2 * _1K },
-        { SchemaDefs_OSTypeId_win2k,       "Windows 2000",        VBOXOSTYPE_Win2k,       168,  12,  4 * _1K },
-        { SchemaDefs_OSTypeId_winxp,       "Windows XP",          VBOXOSTYPE_WinXP,       192,  12, 10 * _1K },
-        { SchemaDefs_OSTypeId_win2k3,      "Windows Server 2003", VBOXOSTYPE_Win2k3,      256,  12, 20 * _1K },
-        { SchemaDefs_OSTypeId_winvista,    "Windows Vista",       VBOXOSTYPE_WinVista,    512,  12, 20 * _1K },
-        { SchemaDefs_OSTypeId_win2k8,      "Windows Server 2008", VBOXOSTYPE_Win2k8,      256,  12, 20 * _1K },
-        { SchemaDefs_OSTypeId_os2warp3,    "OS/2 Warp 3",         VBOXOSTYPE_OS2Warp3,     48,   4,  1 * _1K },
-        { SchemaDefs_OSTypeId_os2warp4,    "OS/2 Warp 4",         VBOXOSTYPE_OS2Warp4,     64,   4,  2 * _1K },
-        { SchemaDefs_OSTypeId_os2warp45,   "OS/2 Warp 4.5",       VBOXOSTYPE_OS2Warp45,    96,   4,  2 * _1K },
-        { SchemaDefs_OSTypeId_ecs,         "eComStation",         VBOXOSTYPE_ECS,          96,   4,  2 * _1K },
-        { SchemaDefs_OSTypeId_linux22,     "Linux 2.2",           VBOXOSTYPE_Linux22,      64,   4,  2 * _1K },
-        { SchemaDefs_OSTypeId_linux24,     "Linux 2.4",           VBOXOSTYPE_Linux24,     128,   4,  4 * _1K },
-        { SchemaDefs_OSTypeId_linux26,     "Linux 2.6",           VBOXOSTYPE_Linux26,     256,   4,  8 * _1K },
-        { SchemaDefs_OSTypeId_archlinux,   "Arch Linux",          VBOXOSTYPE_ArchLinux,   256,  12,  8 * _1K },
-        { SchemaDefs_OSTypeId_debian,      "Debian",              VBOXOSTYPE_Debian,      256,  12,  8 * _1K },
-        { SchemaDefs_OSTypeId_opensuse,    "openSUSE",            VBOXOSTYPE_OpenSUSE,    256,  12,  8 * _1K },
-        { SchemaDefs_OSTypeId_fedoracore,  "Fedora",              VBOXOSTYPE_FedoraCore,  256,  12,  8 * _1K },
-        { SchemaDefs_OSTypeId_gentoo,      "Gentoo Linux",        VBOXOSTYPE_Gentoo,      256,  12,  8 * _1K },
-        { SchemaDefs_OSTypeId_mandriva,    "Mandriva",            VBOXOSTYPE_Mandriva,    256,  12,  8 * _1K },
-        { SchemaDefs_OSTypeId_redhat,      "Red Hat",             VBOXOSTYPE_RedHat,      256,  12,  8 * _1K },
-        { SchemaDefs_OSTypeId_ubuntu,      "Ubuntu",              VBOXOSTYPE_Ubuntu,      256,  12,  8 * _1K },
-        { SchemaDefs_OSTypeId_xandros,     "Xandros",             VBOXOSTYPE_Xandros,     256,  12,  8 * _1K },
-        { SchemaDefs_OSTypeId_freebsd,     "FreeBSD",             VBOXOSTYPE_FreeBSD,      64,   4,  2 * _1K },
-        { SchemaDefs_OSTypeId_openbsd,     "OpenBSD",             VBOXOSTYPE_OpenBSD,      64,   4,  2 * _1K },
-        { SchemaDefs_OSTypeId_netbsd,      "NetBSD",              VBOXOSTYPE_NetBSD,       64,   4,  2 * _1K },
-        { SchemaDefs_OSTypeId_netware,     "Netware",             VBOXOSTYPE_Netware,     128,   4,  4 * _1K },
-        { SchemaDefs_OSTypeId_solaris,     "Solaris",             VBOXOSTYPE_Solaris,     512,  12, 16 * _1K },
-        { SchemaDefs_OSTypeId_opensolaris, "OpenSolaris",         VBOXOSTYPE_OpenSolaris, 512,  12, 16 * _1K },
-        { SchemaDefs_OSTypeId_l4,          "L4",                  VBOXOSTYPE_L4,           64,   4,  2 * _1K }
-    };
-
-    for (uint32_t i = 0; i < ELEMENTS (OSTypes) && SUCCEEDED (rc); i++)
-    {
-        ComObjPtr <GuestOSType> guestOSTypeObj;
-        rc = guestOSTypeObj.createObject();
-        if (SUCCEEDED (rc))
-        {
-            rc = guestOSTypeObj->init (OSTypes[i].id,
-                                       OSTypes[i].description,
-                                       OSTypes[i].osType,
-                                       OSTypes[i].recommendedRAM,
-                                       OSTypes[i].recommendedVRAM,
-                                       OSTypes[i].recommendedHDD);
-            if (SUCCEEDED (rc))
-                mData.mGuestOSTypes.push_back (guestOSTypeObj);
-        }
-    }
 
     return rc;
 }

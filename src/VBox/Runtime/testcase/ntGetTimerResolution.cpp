@@ -1,4 +1,4 @@
-/* $Id: ntGetTimerResolution.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: ntGetTimerResolution.cpp 32392 2008-06-26 14:41:05Z bird $ */
 /** @file
  * IPRT - Win32 (NT) testcase for getting the timer resolution.
  */
@@ -38,7 +38,7 @@
 
 extern "C" {
 /* from sysinternals. */
-NTSYSAPI LONG NTAPI NtQueryTimerResolution(OUT PULONG MinimumResolution, OUT PULONG MaximumResolution, OUT PULONG CurrentResolution);
+NTSYSAPI LONG NTAPI NtQueryTimerResolution(OUT PULONG MaximumResolution, OUT PULONG MinimumResolution, OUT PULONG CurrentResolution);
 }
 
 
@@ -47,8 +47,8 @@ int main()
     ULONG Min = ~0;
     ULONG Max = ~0;
     ULONG Cur = ~0;
-    NtQueryTimerResolution(&Min, &Max, &Cur);
-    printf("NtQueryTimerResolution -> Min=%lu Max=%lu Cur=%lu (100ns)\n", Min, Max, Cur);
+    NtQueryTimerResolution(&Max, &Min, &Cur);
+    printf("NtQueryTimerResolution -> Max=%08luns Min=%08luns Cur=%08luns\n", Min * 100, Max * 100, Cur * 100);
 
 #if 0
     /* figure out the 100ns relative to the 1970 epoc. */

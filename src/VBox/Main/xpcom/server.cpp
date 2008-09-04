@@ -1,4 +1,4 @@
-/* $Id: server.cpp 30753 2008-05-12 01:12:42Z bird $ */
+/* $Id: server.cpp 35653 2008-08-29 14:21:03Z bird $ */
 /** @file
  * XPCOM server process (VBoxSVC) start point.
  */
@@ -18,6 +18,14 @@
  * Clara, CA 95054 USA or visit http://www.sun.com if you need
  * additional information or have any questions.
  */
+
+/* Make sure all the stdint.h macros are included - must come first! */
+#ifndef __STDC_LIMIT_MACROS
+# define __STDC_LIMIT_MACROS
+#endif
+#ifndef __STDC_CONSTANT_MACROS
+# define __STDC_CONSTANT_MACROS
+#endif
 
 #include <ipcIService.h>
 #include <ipcCID.h>
@@ -93,6 +101,7 @@
 #include <HostImpl.h>
 #include <HostDVDDriveImpl.h>
 #include <HostFloppyDriveImpl.h>
+#include <HostNetworkInterfaceImpl.h>
 #include <GuestOSTypeImpl.h>
 #include <NetworkAdapterImpl.h>
 #include <SerialPortImpl.h>
@@ -142,7 +151,7 @@ NS_DECL_CLASSINFO(FloppyDrive)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(FloppyDrive, IFloppyDrive)
 NS_DECL_CLASSINFO(SharedFolder)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(SharedFolder, ISharedFolder)
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
 NS_DECL_CLASSINFO(VRDPServer)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(VRDPServer, IVRDPServer)
 #endif
@@ -156,6 +165,8 @@ NS_DECL_CLASSINFO(HostDVDDrive)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HostDVDDrive, IHostDVDDrive)
 NS_DECL_CLASSINFO(HostFloppyDrive)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HostFloppyDrive, IHostFloppyDrive)
+NS_DECL_CLASSINFO(HostNetworkInterface)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HostNetworkInterface, IHostNetworkInterface)
 NS_DECL_CLASSINFO(GuestOSType)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(GuestOSType, IGuestOSType)
 NS_DECL_CLASSINFO(NetworkAdapter)
@@ -180,6 +191,12 @@ NS_DECL_CLASSINFO(AudioAdapter)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(AudioAdapter, IAudioAdapter)
 NS_DECL_CLASSINFO(SystemProperties)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(SystemProperties, ISystemProperties)
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+NS_DECL_CLASSINFO(PerformanceCollector)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(PerformanceCollector, IPerformanceCollector)
+NS_DECL_CLASSINFO(PerformanceMetric)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(PerformanceMetric, IPerformanceMetric)
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
 NS_DECL_CLASSINFO(BIOSSettings)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(BIOSSettings, IBIOSSettings)
 
@@ -190,6 +207,7 @@ COM_IMPL_READONLY_ENUM_AND_COLLECTION(HardDiskAttachment)
 COM_IMPL_READONLY_ENUM_AND_COLLECTION(GuestOSType)
 COM_IMPL_READONLY_ENUM_AND_COLLECTION(HostDVDDrive)
 COM_IMPL_READONLY_ENUM_AND_COLLECTION(HostFloppyDrive)
+COM_IMPL_READONLY_ENUM_AND_COLLECTION(HostNetworkInterface)
 COM_IMPL_READONLY_ENUM_AND_COLLECTION(HardDisk)
 COM_IMPL_READONLY_ENUM_AND_COLLECTION(DVDImage)
 COM_IMPL_READONLY_ENUM_AND_COLLECTION(FloppyImage)
@@ -330,9 +348,9 @@ public:
 
                 /* make sure the previous timer (if any) is stopped;
                  * otherwise RTTimerStart() will definitely fail. */
-                RTTimerStop (sTimer);
+                RTTimerLRStop (sTimer);
 
-                int vrc = RTTimerStart (sTimer, uint64_t (VBoxSVC_ShutdownDelay) * 1000000);
+                int vrc = RTTimerLRStart (sTimer, uint64_t (VBoxSVC_ShutdownDelay) * 1000000);
                 AssertRC (vrc);
                 timerStarted = SUCCEEDED (vrc);
             }
@@ -349,7 +367,7 @@ public:
                 {
                     /* Failed to start the timer, post the shutdown event
                      * manually if not on the main thread alreay. */
-                    ShutdownTimer (NULL, NULL);
+                    ShutdownTimer (NULL, NULL, 0);
                 }
                 else
                 {
@@ -426,9 +444,9 @@ public:
         }
     };
 
-    static void ShutdownTimer (PRTTIMER pTimer, void *pvUser)
+    static void ShutdownTimer (RTTIMERLR hTimerLR, void *pvUser, uint64_t /*iTick*/)
     {
-        NOREF (pTimer);
+        NOREF (hTimerLR);
         NOREF (pvUser);
 
         /* A "too late" event is theoretically possible if somebody
@@ -455,7 +473,7 @@ public:
         if (VBOX_FAILURE (RTCritSectInit (&sLock)))
             return NS_ERROR_OUT_OF_MEMORY;
 
-        int vrc = RTTimerCreateEx (&sTimer, 0, 0, ShutdownTimer, NULL);
+        int vrc = RTTimerLRCreateEx (&sTimer, 0, 0, ShutdownTimer, NULL);
         if (VBOX_FAILURE (vrc))
         {
             LogFlowFunc (("Failed to create a timer! (vrc=%Vrc)\n", vrc));
@@ -469,7 +487,7 @@ public:
     {
         LogFlowFunc (("\n"));
 
-        RTTimerDestroy (sTimer);
+        RTTimerLRDestroy (sTimer);
         sTimer = NULL;
 
         RTCritSectDelete (&sLock);
@@ -527,7 +545,7 @@ public:
                 {
                     /* On success, make sure the previous timer is stopped to
                      * cancel a scheduled server termination (if any). */
-                    RTTimerStop (sTimer);
+                    RTTimerLRStop (sTimer);
                 }
             }
             else
@@ -547,7 +565,7 @@ public:
                               "canceling detruction...\n"));
 
                 /* make sure the previous timer is stopped */
-                RTTimerStop (sTimer);
+                RTTimerLRStop (sTimer);
             }
         }
 
@@ -569,13 +587,13 @@ private:
     static VirtualBoxClassFactory *sInstance;
     static RTCRITSECT sLock;
 
-    static PRTTIMER sTimer;
+    static RTTIMERLR sTimer;
 };
 
 VirtualBoxClassFactory *VirtualBoxClassFactory::sInstance = 0;
 RTCRITSECT VirtualBoxClassFactory::sLock = {0};
 
-PRTTIMER VirtualBoxClassFactory::sTimer = NULL;
+RTTIMERLR VirtualBoxClassFactory::sTimer = NIL_RTTIMERLR;
 
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR_WITH_RC
     (VirtualBox, VirtualBoxClassFactory::GetInstance)
@@ -980,7 +998,7 @@ int main (int argc, char **argv)
      * Initialize the VBox runtime without loading
      * the support driver
      */
-    RTR3Init(false);
+    RTR3Init();
 
     nsresult rc;
 

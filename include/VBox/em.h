@@ -77,6 +77,16 @@ typedef enum EMSTATE
     EMSTATE_MAKE_32BIT_HACK = 0x7fffffff
 } EMSTATE;
 
+/*
+ * Callback handlers for instruction emulation functions.
+ */
+typedef DECLCALLBACK(uint32_t) PFN_EMULATE_PARAM2_UINT32(void *pvParam1, uint64_t val2);
+typedef DECLCALLBACK(uint32_t) PFN_EMULATE_PARAM2(void *pvParam1, size_t val2);
+typedef DECLCALLBACK(uint32_t) PFN_EMULATE_PARAM3(void *pvParam1, uint64_t val2, size_t val3);
+typedef DECLCALLBACK(int)      FNEMULATELOCKPARAM2(void *pvParam1, uint64_t val2, RTGCUINTREG32 *pf);
+typedef FNEMULATELOCKPARAM2 *PFNEMULATELOCKPARAM2;
+typedef DECLCALLBACK(int)      FNEMULATELOCKPARAM3(void *pvParam1, uint64_t val2, size_t cb, RTGCUINTREG32 *pf);
+typedef FNEMULATELOCKPARAM3 *PFNEMULATELOCKPARAM3;
 
 /**
  * Get the current execution manager status.
@@ -313,24 +323,24 @@ EMDECL(int) EMInterpretCLTS(PVM pVM);
  */
 EMDECL(int) EMInterpretPortIO(PVM pVM, PCPUMCTXCORE pCtxCore, PDISCPUSTATE pCpu, uint32_t cbOp);
 
-EMDECL(uint32_t) EMEmulateCmp(uint32_t u32Param1, uint32_t u32Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateAnd(uint32_t *pu32Param1, uint32_t u32Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateInc(uint32_t *pu32Param1, size_t cb);
-EMDECL(uint32_t) EMEmulateDec(uint32_t *pu32Param1, size_t cb);
-EMDECL(uint32_t) EMEmulateOr(uint32_t *pu32Param1, uint32_t u32Param2, size_t cb);
-EMDECL(int)      EMEmulateLockOr(RTGCPTR GCPtrParam1, RTGCUINTREG Param2, size_t cbSize, uint32_t *pf);
-EMDECL(uint32_t) EMEmulateXor(uint32_t *pu32Param1, uint32_t u32Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateAdd(uint32_t *pu32Param1, uint32_t u32Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateSub(uint32_t *pu32Param1, uint32_t u32Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateAdcWithCarrySet(uint32_t *pu32Param1, uint32_t u32Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateBtr(uint32_t *pu32Param1, uint32_t u32Param2);
-EMDECL(int)      EMEmulateLockBtr(RTGCPTR GCPtrParam1, RTGCUINTREG Param2, uint32_t *pf);
-EMDECL(uint32_t) EMEmulateBts(uint32_t *pu32Param1, uint32_t u32Param2);
-EMDECL(uint32_t) EMEmulateBtc(uint32_t *pu32Param1, uint32_t u32Param2);
-EMDECL(uint32_t) EMEmulateLockCmpXchg32(RTHCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize);
-EMDECL(uint32_t) EMEmulateCmpXchg32(RTHCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize);
-EMDECL(uint32_t) EMEmulateLockCmpXchg8b(RTHCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
+EMDECL(uint32_t) EMEmulateCmp(uint32_t u32Param1, uint64_t u64Param2, size_t cb);
+EMDECL(uint32_t) EMEmulateAnd(void *pvParam1, uint64_t u64Param2, size_t cb);
+EMDECL(uint32_t) EMEmulateInc(void *pvParam1, size_t cb);
+EMDECL(uint32_t) EMEmulateDec(void *pvParam1, size_t cb);
+EMDECL(uint32_t) EMEmulateOr(void *pvParam1, uint64_t u64Param2, size_t cb);
+EMDECL(int)      EMEmulateLockOr(void *pvParam1, uint64_t u64Param2, size_t cbSize, RTGCUINTREG32 *pf);
+EMDECL(uint32_t) EMEmulateXor(void *pvParam1, uint64_t u64Param2, size_t cb);
+EMDECL(uint32_t) EMEmulateAdd(void *pvParam1, uint64_t u64Param2, size_t cb);
+EMDECL(uint32_t) EMEmulateSub(void *pvParam1, uint64_t u64Param2, size_t cb);
+EMDECL(uint32_t) EMEmulateAdcWithCarrySet(void *pvParam1, uint64_t u64Param2, size_t cb);
+EMDECL(uint32_t) EMEmulateBtr(void *pvParam1, uint64_t u64Param2);
+EMDECL(int)      EMEmulateLockBtr(void *pvParam1, uint64_t u64Param2, RTGCUINTREG32 *pf);
+EMDECL(uint32_t) EMEmulateBts(void *pvParam1, uint64_t u64Param2);
+EMDECL(uint32_t) EMEmulateBtc(void *pvParam1, uint64_t u64Param2);
+EMDECL(uint32_t) EMEmulateCmpXchg(void *pvParam1, uint64_t *pu32Param2, uint64_t u32Param3, size_t cbSize);
+EMDECL(uint32_t) EMEmulateLockCmpXchg(void *pvParam1, uint64_t *pu64Param2, uint64_t u64Param3, size_t cbSize);
 EMDECL(uint32_t) EMEmulateCmpXchg8b32(RTHCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
+EMDECL(uint32_t) EMEmulateLockCmpXchg8b(RTHCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
 EMDECL(int)      EMInterpretRdmsr(PVM pVM, PCPUMCTXCORE pRegFrame);
 EMDECL(int)      EMInterpretWrmsr(PVM pVM, PCPUMCTXCORE pRegFrame);
 
@@ -476,12 +486,12 @@ EMR3DECL(int) EMR3Interpret(PVM pVM);
  */
 EMGCDECL(int) EMGCTrap(PVM pVM, unsigned uTrap, PCPUMCTXCORE pRegFrame);
 
-EMGCDECL(uint32_t) EMGCEmulateLockCmpXchg(RTGCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize, uint32_t *pEflags);
-EMGCDECL(uint32_t) EMGCEmulateCmpXchg(RTGCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize, uint32_t *pEflags);
-EMGCDECL(uint32_t) EMGCEmulateLockCmpXchg8b(RTGCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX, uint32_t *pEflags);
-EMGCDECL(uint32_t) EMGCEmulateCmpXchg8b(RTGCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX, uint32_t *pEflags);
-EMGCDECL(uint32_t) EMGCEmulateLockXAdd(RTGCPTR pu32Param1, uint32_t *pu32Param2, size_t cbSize, uint32_t *pEflags);
-EMGCDECL(uint32_t) EMGCEmulateXAdd(RTGCPTR pu32Param1, uint32_t *pu32Param2, size_t cbSize, uint32_t *pEflags);
+EMGCDECL(uint32_t) EMGCEmulateLockCmpXchg(RTRCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize, uint32_t *pEflags);
+EMGCDECL(uint32_t) EMGCEmulateCmpXchg(RTRCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize, uint32_t *pEflags);
+EMGCDECL(uint32_t) EMGCEmulateLockCmpXchg8b(RTRCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX, uint32_t *pEflags);
+EMGCDECL(uint32_t) EMGCEmulateCmpXchg8b(RTRCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX, uint32_t *pEflags);
+EMGCDECL(uint32_t) EMGCEmulateLockXAdd(RTRCPTR pu32Param1, uint32_t *pu32Param2, size_t cbSize, uint32_t *pEflags);
+EMGCDECL(uint32_t) EMGCEmulateXAdd(RTRCPTR pu32Param1, uint32_t *pu32Param2, size_t cbSize, uint32_t *pEflags);
 
 /** @} */
 #endif

@@ -1,4 +1,4 @@
-/* $Id: CPUMAllRegs.cpp 29870 2008-04-18 16:15:42Z sandervl $ */
+/* $Id: CPUMAllRegs.cpp 35433 2008-08-27 14:52:09Z sandervl $ */
 /** @file
  * CPUM - CPU Monitor(/Manager) - Gets and Sets.
  */
@@ -63,13 +63,13 @@ CPUMDECL(void) CPUMHyperSetCtxCore(PVM pVM, PCPUMCTXCORE pCtxCore)
         pCtxCore = CPUMCTX2CORE(&pVM->cpum.s.Hyper);
         pVM->cpum.s.pHyperCoreR3 = (R3PTRTYPE(PCPUMCTXCORE))VM_R3_ADDR(pVM, pCtxCore);
         pVM->cpum.s.pHyperCoreR0 = (R0PTRTYPE(PCPUMCTXCORE))VM_R0_ADDR(pVM, pCtxCore);
-        pVM->cpum.s.pHyperCoreGC = (GCPTRTYPE(PCPUMCTXCORE))VM_GUEST_ADDR(pVM, pCtxCore);
+        pVM->cpum.s.pHyperCoreGC = (RCPTRTYPE(PCPUMCTXCORE))VM_GUEST_ADDR(pVM, pCtxCore);
     }
     else
     {
         pVM->cpum.s.pHyperCoreR3 = (R3PTRTYPE(PCPUMCTXCORE))MMHyperCCToR3(pVM, pCtxCore);
         pVM->cpum.s.pHyperCoreR0 = (R0PTRTYPE(PCPUMCTXCORE))MMHyperCCToR0(pVM, pCtxCore);
-        pVM->cpum.s.pHyperCoreGC = (GCPTRTYPE(PCPUMCTXCORE))MMHyperCCToGC(pVM, pCtxCore);
+        pVM->cpum.s.pHyperCoreGC = (RCPTRTYPE(PCPUMCTXCORE))MMHyperCCToRC(pVM, pCtxCore);
     }
 }
 
@@ -109,7 +109,6 @@ CPUMDECL(void) CPUMSetHyperGDTR(PVM pVM, uint32_t addr, uint16_t limit)
     pVM->cpum.s.Hyper.gdtr.cbGdt = limit;
     pVM->cpum.s.Hyper.gdtr.pGdt  = addr;
     pVM->cpum.s.Hyper.gdtrPadding = 0;
-    pVM->cpum.s.Hyper.gdtrPadding64 = 0;
 }
 
 CPUMDECL(void) CPUMSetHyperIDTR(PVM pVM, uint32_t addr, uint16_t limit)
@@ -117,7 +116,6 @@ CPUMDECL(void) CPUMSetHyperIDTR(PVM pVM, uint32_t addr, uint16_t limit)
     pVM->cpum.s.Hyper.idtr.cbIdt = limit;
     pVM->cpum.s.Hyper.idtr.pIdt = addr;
     pVM->cpum.s.Hyper.idtrPadding = 0;
-    pVM->cpum.s.Hyper.idtrPadding64 = 0;
 }
 
 CPUMDECL(void) CPUMSetHyperCR3(PVM pVM, uint32_t cr3)
@@ -322,6 +320,11 @@ CPUMDECL(uint32_t) CPUMGetHyperEIP(PVM pVM)
     return pVM->cpum.s.CTXALLSUFF(pHyperCore)->eip;
 }
 
+CPUMDECL(uint64_t) CPUMGetHyperRIP(PVM pVM)
+{
+    return pVM->cpum.s.CTXALLSUFF(pHyperCore)->rip;
+}
+
 CPUMDECL(uint32_t) CPUMGetHyperIDTR(PVM pVM, uint16_t *pcbLimit)
 {
     if (pcbLimit)
@@ -394,8 +397,34 @@ CPUMDECL(void) CPUMSetGuestCtxCore(PVM pVM, PCCPUMCTXCORE pCtxCore)
 {
     /** @todo #1410 requires selectors to be checked. */
 
-    PCPUMCTXCORE pCtxCoreDst CPUMCTX2CORE(&pVM->cpum.s.Guest);
+    PCPUMCTXCORE pCtxCoreDst = CPUMCTX2CORE(&pVM->cpum.s.Guest);
     *pCtxCoreDst = *pCtxCore;
+
+    /* Mask away invalid parts of the cpu context. */
+    if (!CPUMIsGuestInLongMode(pVM))
+    {
+        uint64_t u64Mask = UINT64_C(0xffffffff);
+
+        pCtxCoreDst->rip        &= u64Mask;
+        pCtxCoreDst->rax        &= u64Mask;
+        pCtxCoreDst->rbx        &= u64Mask;
+        pCtxCoreDst->rcx        &= u64Mask;
+        pCtxCoreDst->rdx        &= u64Mask;
+        pCtxCoreDst->rsi        &= u64Mask;
+        pCtxCoreDst->rdi        &= u64Mask;
+        pCtxCoreDst->rbp        &= u64Mask;
+        pCtxCoreDst->rsp        &= u64Mask;
+        pCtxCoreDst->rflags.u   &= u64Mask;
+
+        pCtxCoreDst->r8         = 0;
+        pCtxCoreDst->r9         = 0;
+        pCtxCoreDst->r10        = 0;
+        pCtxCoreDst->r11        = 0;
+        pCtxCoreDst->r12        = 0;
+        pCtxCoreDst->r13        = 0;
+        pCtxCoreDst->r14        = 0;
+        pCtxCoreDst->r15        = 0;
+    }
 }
 
 
@@ -647,7 +676,61 @@ CPUMDECL(void) CPUMSetGuestEFER(PVM pVM, uint64_t val)
     pVM->cpum.s.Guest.msrEFER = val;
 }
 
-CPUMDECL(uint32_t) CPUMGetGuestIDTR(PVM pVM, uint16_t *pcbLimit)
+CPUMDECL(uint64_t)  CPUMGetGuestMsr(PVM pVM, unsigned idMsr)
+{
+    uint64_t val = 0;
+
+    switch (idMsr)
+    {
+    case MSR_IA32_CR_PAT:
+        val = pVM->cpum.s.Guest.msrPAT;
+        break;
+
+    case MSR_IA32_SYSENTER_CS:
+        val = pVM->cpum.s.Guest.SysEnter.cs;
+        break;
+
+    case MSR_IA32_SYSENTER_EIP:
+        val = pVM->cpum.s.Guest.SysEnter.eip;
+        break;
+
+    case MSR_IA32_SYSENTER_ESP:
+        val = pVM->cpum.s.Guest.SysEnter.esp;
+        break;
+
+    case MSR_K6_EFER:
+        val = pVM->cpum.s.Guest.msrEFER;
+        break;
+
+    case MSR_K8_SF_MASK:
+        val = pVM->cpum.s.Guest.msrSFMASK;
+        break;
+
+    case MSR_K6_STAR:
+        val = pVM->cpum.s.Guest.msrSTAR;
+        break;
+
+    case MSR_K8_LSTAR:
+        val = pVM->cpum.s.Guest.msrLSTAR;
+        break;
+
+    case MSR_K8_CSTAR:
+        val = pVM->cpum.s.Guest.msrCSTAR;
+        break;
+
+    case MSR_K8_KERNEL_GS_BASE:
+        val = pVM->cpum.s.Guest.msrKERNELGSBASE;
+        break;
+
+    /* fs & gs base skipped on purpose as the current context might not be up-to-date. */
+    default:
+        AssertFailed();
+        break;
+    }
+    return val;
+}
+
+CPUMDECL(RTGCPTR) CPUMGetGuestIDTR(PVM pVM, uint16_t *pcbLimit)
 {
     if (pcbLimit)
         *pcbLimit = pVM->cpum.s.Guest.idtr.cbIdt;
@@ -724,6 +807,11 @@ CPUMDECL(uint32_t) CPUMGetGuestEIP(PVM pVM)
     return pVM->cpum.s.Guest.eip;
 }
 
+CPUMDECL(uint64_t) CPUMGetGuestRIP(PVM pVM)
+{
+    return pVM->cpum.s.Guest.rip;
+}
+
 CPUMDECL(uint32_t) CPUMGetGuestEAX(PVM pVM)
 {
     return pVM->cpum.s.Guest.eax;
@@ -797,38 +885,38 @@ CPUMDECL(int) CPUMGetGuestCRx(PVM pVM, unsigned iReg, uint64_t *pValue)
     return VINF_SUCCESS;
 }
 
-CPUMDECL(RTUINTREG) CPUMGetGuestDR0(PVM pVM)
+CPUMDECL(uint64_t) CPUMGetGuestDR0(PVM pVM)
 {
     return pVM->cpum.s.Guest.dr0;
 }
 
-CPUMDECL(RTUINTREG) CPUMGetGuestDR1(PVM pVM)
+CPUMDECL(uint64_t) CPUMGetGuestDR1(PVM pVM)
 {
     return pVM->cpum.s.Guest.dr1;
 }
 
-CPUMDECL(RTUINTREG) CPUMGetGuestDR2(PVM pVM)
+CPUMDECL(uint64_t) CPUMGetGuestDR2(PVM pVM)
 {
     return pVM->cpum.s.Guest.dr2;
 }
 
-CPUMDECL(RTUINTREG) CPUMGetGuestDR3(PVM pVM)
+CPUMDECL(uint64_t) CPUMGetGuestDR3(PVM pVM)
 {
     return pVM->cpum.s.Guest.dr3;
 }
 
-CPUMDECL(RTUINTREG) CPUMGetGuestDR6(PVM pVM)
+CPUMDECL(uint64_t) CPUMGetGuestDR6(PVM pVM)
 {
     return pVM->cpum.s.Guest.dr6;
 }
 
-CPUMDECL(RTUINTREG) CPUMGetGuestDR7(PVM pVM)
+CPUMDECL(uint64_t) CPUMGetGuestDR7(PVM pVM)
 {
     return pVM->cpum.s.Guest.dr7;
 }
 
 /** @todo drx should be an array */
-CPUMDECL(int) CPUMGetGuestDRx(PVM pVM, uint32_t iReg, uint32_t *pValue)
+CPUMDECL(int) CPUMGetGuestDRx(PVM pVM, uint32_t iReg, uint64_t *pValue)
 {
     switch (iReg)
     {
@@ -877,7 +965,7 @@ CPUMDECL(uint64_t) CPUMGetGuestEFER(PVM pVM)
 CPUMDECL(void) CPUMGetGuestCpuId(PVM pVM, uint32_t iLeaf, uint32_t *pEax, uint32_t *pEbx, uint32_t *pEcx, uint32_t *pEdx)
 {
     PCCPUMCPUID pCpuId;
-    if (iLeaf < ELEMENTS(pVM->cpum.s.aGuestCpuIdStd))
+    if (iLeaf < RT_ELEMENTS(pVM->cpum.s.aGuestCpuIdStd))
         pCpuId = &pVM->cpum.s.aGuestCpuIdStd[iLeaf];
     else if (iLeaf - UINT32_C(0x80000000) < RT_ELEMENTS(pVM->cpum.s.aGuestCpuIdExt))
         pCpuId = &pVM->cpum.s.aGuestCpuIdExt[iLeaf - UINT32_C(0x80000000)];
@@ -902,9 +990,9 @@ CPUMDECL(void) CPUMGetGuestCpuId(PVM pVM, uint32_t iLeaf, uint32_t *pEax, uint32
  * @param   pVM         The VM handle.
  * @remark  Intended for PATM.
  */
-CPUMDECL(GCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdStdGCPtr(PVM pVM)
+CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdStdGCPtr(PVM pVM)
 {
-    return GCPTRTYPE(PCCPUMCPUID)VM_GUEST_ADDR(pVM, &pVM->cpum.s.aGuestCpuIdStd[0]);
+    return RCPTRTYPE(PCCPUMCPUID)VM_GUEST_ADDR(pVM, &pVM->cpum.s.aGuestCpuIdStd[0]);
 }
 
 /**
@@ -916,9 +1004,9 @@ CPUMDECL(GCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdStdGCPtr(PVM pVM)
  * @param   pVM         The VM handle.
  * @remark  Intended for PATM.
  */
-CPUMDECL(GCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdExtGCPtr(PVM pVM)
+CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdExtGCPtr(PVM pVM)
 {
-    return GCPTRTYPE(PCCPUMCPUID)VM_GUEST_ADDR(pVM, &pVM->cpum.s.aGuestCpuIdExt[0]);
+    return RCPTRTYPE(PCCPUMCPUID)VM_GUEST_ADDR(pVM, &pVM->cpum.s.aGuestCpuIdExt[0]);
 }
 
 /**
@@ -930,9 +1018,9 @@ CPUMDECL(GCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdExtGCPtr(PVM pVM)
  * @param   pVM         The VM handle.
  * @remark  Intended for PATM.
  */
-CPUMDECL(GCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdCentaurGCPtr(PVM pVM)
+CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdCentaurGCPtr(PVM pVM)
 {
-    return GCPTRTYPE(PCCPUMCPUID)VM_GUEST_ADDR(pVM, &pVM->cpum.s.aGuestCpuIdCentaur[0]);
+    return RCPTRTYPE(PCCPUMCPUID)VM_GUEST_ADDR(pVM, &pVM->cpum.s.aGuestCpuIdCentaur[0]);
 }
 
 /**
@@ -942,9 +1030,9 @@ CPUMDECL(GCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdCentaurGCPtr(PVM pVM)
  * @param   pVM         The VM handle.
  * @remark  Intended for PATM.
  */
-CPUMDECL(GCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdDefGCPtr(PVM pVM)
+CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdDefGCPtr(PVM pVM)
 {
-    return GCPTRTYPE(PCCPUMCPUID)VM_GUEST_ADDR(pVM, &pVM->cpum.s.GuestCpuIdDef);
+    return RCPTRTYPE(PCCPUMCPUID)VM_GUEST_ADDR(pVM, &pVM->cpum.s.GuestCpuIdDef);
 }
 
 /**
@@ -1000,13 +1088,13 @@ CPUMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
                 pVM->cpum.s.aGuestCpuIdStd[1].edx |= X86_CPUID_FEATURE_EDX_APIC;
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
-                &&  pVM->cpum.s.aGuestCpuIdExt[1].edx)
+                &&  pVM->cpum.s.enmCPUVendor == CPUMCPUVENDOR_AMD)
                 pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_AMD_FEATURE_EDX_APIC;
-            Log(("CPUMSetGuestCpuIdFeature: Enabled APIC\n"));
+            LogRel(("CPUMSetGuestCpuIdFeature: Enabled APIC\n"));
             break;
 
         /*
-         * Set the sysenter/sysexit bit in both feature masks.
+         * Set the sysenter/sysexit bit in the standard feature mask.
          * Assumes the caller knows what it's doing! (host must support these)
          */
         case CPUMCPUIDFEATURE_SEP:
@@ -1019,10 +1107,25 @@ CPUMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
 
             if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
                 pVM->cpum.s.aGuestCpuIdStd[1].edx |= X86_CPUID_FEATURE_EDX_SEP;
-            if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
-                &&  pVM->cpum.s.aGuestCpuIdExt[1].edx)
-                pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_AMD_FEATURE_EDX_SEP;
-            Log(("CPUMSetGuestCpuIdFeature: Enabled sysenter/exit\n"));
+            LogRel(("CPUMSetGuestCpuIdFeature: Enabled sysenter/exit\n"));
+            break;
+        }
+
+        /*
+         * Set the syscall/sysret bit in the extended feature mask.
+         * Assumes the caller knows what it's doing! (host must support these)
+         */
+        case CPUMCPUIDFEATURE_SYSCALL:
+        {
+            if (    pVM->cpum.s.aGuestCpuIdExt[0].eax < 0x80000001
+                ||  !(ASMCpuId_EDX(0x80000001) & X86_CPUID_AMD_FEATURE_EDX_SEP))
+            {
+                LogRel(("WARNING: Can't turn on SYSCALL/SYSRET when the host doesn't support it!!\n"));
+                return;
+            }
+            /* Valid for both Intel and AMD CPUs, although only in 64 bits mode for Intel. */
+            pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_AMD_FEATURE_EDX_SEP;
+            LogRel(("CPUMSetGuestCpuIdFeature: Enabled syscall/ret\n"));
             break;
         }
 
@@ -1041,9 +1144,9 @@ CPUMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
                 pVM->cpum.s.aGuestCpuIdStd[1].edx |= X86_CPUID_FEATURE_EDX_PAE;
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
-                &&  pVM->cpum.s.aGuestCpuIdExt[1].edx)
+                &&  pVM->cpum.s.enmCPUVendor == CPUMCPUVENDOR_AMD)
                 pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_AMD_FEATURE_EDX_PAE;
-            Log(("CPUMSetGuestCpuIdFeature: Enabled PAE\n"));
+            LogRel(("CPUMSetGuestCpuIdFeature: Enabled PAE\n"));
             break;
         }
 
@@ -1056,14 +1159,57 @@ CPUMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax < 0x80000001
                 ||  !(ASMCpuId_EDX(0x80000001) & X86_CPUID_AMD_FEATURE_EDX_LONG_MODE))
             {
-                AssertMsgFailed(("ERROR: Can't turn on LONG MODE when the host doesn't support it!!\n"));
+                LogRel(("WARNING: Can't turn on LONG MODE when the host doesn't support it!!\n"));
                 return;
             }
 
+            /* Valid for both Intel and AMD. */
+            pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_AMD_FEATURE_EDX_LONG_MODE;
+            LogRel(("CPUMSetGuestCpuIdFeature: Enabled LONG MODE\n"));
+            break;
+        }
+
+        /*
+         * Set the NXE bit in the extended feature mask.
+         * Assumes the caller knows what it's doing! (host must support these)
+         */
+        case CPUMCPUIDFEATURE_NXE:
+        {
+            if (    pVM->cpum.s.aGuestCpuIdExt[0].eax < 0x80000001
+                ||  !(ASMCpuId_EDX(0x80000001) & X86_CPUID_AMD_FEATURE_EDX_NX))
+            {
+                LogRel(("WARNING: Can't turn on NXE when the host doesn't support it!!\n"));
+                return;
+            }
+
+            /* Valid for both Intel and AMD. */
+            pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_AMD_FEATURE_EDX_NX;
+            LogRel(("CPUMSetGuestCpuIdFeature: Enabled NXE\n"));
+            break;
+        }
+
+        case CPUMCPUIDFEATURE_LAHF:
+        {
+            if (    pVM->cpum.s.aGuestCpuIdExt[0].eax < 0x80000001
+                ||  !(ASMCpuId_ECX(0x80000001) & X86_CPUID_AMD_FEATURE_ECX_LAHF_SAHF))
+            {
+                LogRel(("WARNING: Can't turn on LAHF/SAHF when the host doesn't support it!!\n"));
+                return;
+            }
+
+            pVM->cpum.s.aGuestCpuIdExt[1].ecx |= X86_CPUID_AMD_FEATURE_ECX_LAHF_SAHF;
+            LogRel(("CPUMSetGuestCpuIdFeature: Enabled LAHF/SAHF\n"));
+            break;
+        }
+
+        case CPUMCPUIDFEATURE_PAT:
+        {
+            if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
+                pVM->cpum.s.aGuestCpuIdStd[1].edx |= X86_CPUID_FEATURE_EDX_PAT;
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
-                &&  pVM->cpum.s.aGuestCpuIdExt[1].edx)
-                pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_AMD_FEATURE_EDX_LONG_MODE;
-            Log(("CPUMSetGuestCpuIdFeature: Enabled LONG MODE\n"));
+                &&  pVM->cpum.s.enmCPUVendor == CPUMCPUVENDOR_AMD)
+                pVM->cpum.s.aGuestCpuIdExt[1].edx |= X86_CPUID_AMD_FEATURE_EDX_PAT;
+            LogRel(("CPUMClearGuestCpuIdFeature: Enabled PAT\n"));
             break;
         }
 
@@ -1115,7 +1261,8 @@ CPUMDECL(void) CPUMClearGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
         case CPUMCPUIDFEATURE_APIC:
             if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
                 pVM->cpum.s.aGuestCpuIdStd[1].edx &= ~X86_CPUID_FEATURE_EDX_APIC;
-            if (pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001)
+            if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
+                &&  pVM->cpum.s.enmCPUVendor == CPUMCPUVENDOR_AMD)
                 pVM->cpum.s.aGuestCpuIdExt[1].edx &= ~X86_CPUID_AMD_FEATURE_EDX_APIC;
             Log(("CPUMSetGuestCpuIdFeature: Disabled APIC\n"));
             break;
@@ -1125,9 +1272,20 @@ CPUMDECL(void) CPUMClearGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
                 pVM->cpum.s.aGuestCpuIdStd[1].edx &= ~X86_CPUID_FEATURE_EDX_PAE;
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
-                &&  pVM->cpum.s.aGuestCpuIdExt[1].edx)
+                &&  pVM->cpum.s.enmCPUVendor == CPUMCPUVENDOR_AMD)
                 pVM->cpum.s.aGuestCpuIdExt[1].edx &= ~X86_CPUID_AMD_FEATURE_EDX_PAE;
             LogRel(("CPUMClearGuestCpuIdFeature: Disabled PAE!\n"));
+            break;
+        }
+
+        case CPUMCPUIDFEATURE_PAT:
+        {
+            if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
+                pVM->cpum.s.aGuestCpuIdStd[1].edx &= ~X86_CPUID_FEATURE_EDX_PAT;
+            if (    pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
+                &&  pVM->cpum.s.enmCPUVendor == CPUMCPUVENDOR_AMD)
+                pVM->cpum.s.aGuestCpuIdExt[1].edx &= ~X86_CPUID_AMD_FEATURE_EDX_PAT;
+            LogRel(("CPUMClearGuestCpuIdFeature: Disabled PAT!\n"));
             break;
         }
 
@@ -1138,46 +1296,56 @@ CPUMDECL(void) CPUMClearGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
     pVM->cpum.s.fChanged |= CPUM_CHANGED_CPUID;
 }
 
+/**
+ * Gets the CPU vendor
+ *
+ * @returns CPU vendor
+ * @param   pVM     The VM handle.
+ */
+CPUMDECL(CPUMCPUVENDOR) CPUMGetCPUVendor(PVM pVM)
+{
+    return pVM->cpum.s.enmCPUVendor;
+}
 
 
-CPUMDECL(int) CPUMSetGuestDR0(PVM pVM, RTGCUINTREG uDr0)
+CPUMDECL(int) CPUMSetGuestDR0(PVM pVM, uint64_t uDr0)
 {
     pVM->cpum.s.Guest.dr0 = uDr0;
     return CPUMRecalcHyperDRx(pVM);
 }
 
-CPUMDECL(int) CPUMSetGuestDR1(PVM pVM, RTGCUINTREG uDr1)
+CPUMDECL(int) CPUMSetGuestDR1(PVM pVM, uint64_t uDr1)
 {
     pVM->cpum.s.Guest.dr1 = uDr1;
     return CPUMRecalcHyperDRx(pVM);
 }
 
-CPUMDECL(int) CPUMSetGuestDR2(PVM pVM, RTGCUINTREG uDr2)
+CPUMDECL(int) CPUMSetGuestDR2(PVM pVM, uint64_t uDr2)
 {
     pVM->cpum.s.Guest.dr2 = uDr2;
     return CPUMRecalcHyperDRx(pVM);
 }
 
-CPUMDECL(int) CPUMSetGuestDR3(PVM pVM, RTGCUINTREG uDr3)
+CPUMDECL(int) CPUMSetGuestDR3(PVM pVM, uint64_t uDr3)
 {
     pVM->cpum.s.Guest.dr3 = uDr3;
     return CPUMRecalcHyperDRx(pVM);
 }
 
-CPUMDECL(int) CPUMSetGuestDR6(PVM pVM, RTGCUINTREG uDr6)
+CPUMDECL(int) CPUMSetGuestDR6(PVM pVM, uint64_t uDr6)
 {
     pVM->cpum.s.Guest.dr6 = uDr6;
     return CPUMRecalcHyperDRx(pVM);
 }
 
-CPUMDECL(int) CPUMSetGuestDR7(PVM pVM, RTGCUINTREG uDr7)
+CPUMDECL(int) CPUMSetGuestDR7(PVM pVM, uint64_t uDr7)
 {
     pVM->cpum.s.Guest.dr7 = uDr7;
     return CPUMRecalcHyperDRx(pVM);
 }
 
 /** @todo drx should be an array */
-CPUMDECL(int) CPUMSetGuestDRx(PVM pVM, uint32_t iReg, uint32_t Value)
+CPUMDECL(int) CPUMSetGuestDRx(PVM pVM, uint32_t iReg, uint64_t Value)
 {
     switch (iReg)
     {
@@ -1672,11 +1840,24 @@ CPUMDECL(uint32_t) CPUMGetGuestCPL(PVM pVM, PCPUMCTXCORE pCtxCore)
     uint32_t cpl;
 
     if (CPUMAreHiddenSelRegsValid(pVM))
+    {
+        /*
+         * The hidden CS.DPL register is always equal to the CPL, it is
+         * not affected by loading a conforming coding segment.
+         *
+         * This only seems to apply to AMD-V; in the VT-x case we *do* need to look at SS. (ACP2 regression during install after a far call to ring 2)
+         */
         cpl = pCtxCore->ssHid.Attr.n.u2Dpl;
+    }
     else if (RT_LIKELY(pVM->cpum.s.Guest.cr0 & X86_CR0_PE))
     {
         if (RT_LIKELY(!pCtxCore->eflags.Bits.u1VM))
         {
+            /*
+             * The SS RPL is always equal to the CPL, while the CS RPL
+             * isn't necessarily equal if the segment is conforming.
+             * See section 4.11.1 in the AMD manual.
+             */
             cpl = (pCtxCore->ss & X86_SEL_RPL);
 #ifndef IN_RING0
             if (cpl == 1)
@@ -1706,11 +1887,11 @@ CPUMDECL(CPUMMODE) CPUMGetGuestMode(PVM pVM)
     CPUMMODE enmMode;
     if (!(pVM->cpum.s.Guest.cr0 & X86_CR0_PE))
         enmMode = CPUMMODE_REAL;
-    else //GUEST64 if (!(pVM->cpum.s.Guest.efer & MSR_K6_EFER_LMA)
+    else
+    if (!(pVM->cpum.s.Guest.msrEFER & MSR_K6_EFER_LMA))
         enmMode = CPUMMODE_PROTECTED;
-//GUEST64     else
-//GUEST64         enmMode = CPUMMODE_LONG;
+    else
+        enmMode = CPUMMODE_LONG;
 
     return enmMode;
 }
-

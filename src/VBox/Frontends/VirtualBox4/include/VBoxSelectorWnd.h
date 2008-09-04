@@ -26,7 +26,9 @@
 #include "COMDefs.h"
 
 #include "QIWithRetranslateUI.h"
+
 #include "VBoxGlobal.h"
+#include "VBoxProblemReporter.h"
 
 /* Qt includes */
 #include <QMainWindow>
@@ -42,7 +44,6 @@ class VBoxVMItem;
 class QTabWidget;
 class QListView;
 class QEvent;
-class QUuid;
 
 class VBoxSelectorWnd: public QIWithRetranslateUI2<QMainWindow>
 {
@@ -52,10 +53,10 @@ public:
 
     VBoxSelectorWnd (VBoxSelectorWnd **aSelf,
                      QWidget* aParent = 0,
-                     Qt::WFlags aFlags = Qt::WType_TopLevel);
+                     Qt::WindowFlags aFlags = Qt::Window);
     virtual ~VBoxSelectorWnd();
 
-    bool startMachine (const QUuid &id);
+    bool startMachine (const QUuid &aId);
 
 public slots:
 
@@ -82,8 +83,8 @@ public slots:
 
 protected:
 
-    /* events */
-    bool event (QEvent *e);
+    /* Events */
+    bool event (QEvent *aEvent);
 
     void retranslateUi();
 
@@ -105,6 +106,7 @@ private slots:
     void snapshotChanged (const VBoxSnapshotEvent &e);
 
 private:
+
     /* Main menus */
     QMenu *mFileMenu;
     QMenu *mVMMenu;
@@ -113,7 +115,7 @@ private:
     /* VM list context menu */
     QMenu *mVMCtxtMenu;
 
-    /* actions */
+    /* Actions */
     QAction *fileDiskMgrAction;
     QAction *fileSettingsAction;
     QAction *fileExitAction;
@@ -125,11 +127,8 @@ private:
     QAction *vmPauseAction;
     QAction *vmRefreshAction;
     QAction *vmShowLogsAction;
-    QAction *helpContentsAction;
-    QAction *helpWebAction;
-    QAction *helpRegisterAction;
-    QAction *helpAboutAction;
-    QAction *helpResetMessagesAction;
+
+    VBoxHelpActions mHelpActions;
 
     /* The vm list view/model */
     VBoxVMListView *mVMListView;

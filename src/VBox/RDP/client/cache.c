@@ -1,7 +1,7 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
    Cache routines
-   Copyright (C) Matthew Chapman 1999-2005
+   Copyright (C) Matthew Chapman 1999-2007
    Copyright (C) Jeroen Meijer 2005
 
    This program is free software; you can redistribute it and/or modify
@@ -18,6 +18,15 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
+
+/*
+ * Sun GPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the General Public License version 2 (GPLv2) at this time for any software where
+ * a choice of GPL license versions is made available with the language indicating
+ * that GPLv2 or any later version may be used, or where a choice of which version
+ * of the GPL is applied is otherwise unspecified.
+ */
 
 #include "rdesktop.h"
 
@@ -40,13 +49,13 @@ extern int g_pstcache_fd[];
 
 struct bmpcache_entry
 {
-	HBITMAP bitmap;
+	RD_HBITMAP bitmap;
 	sint16 previous;
 	sint16 next;
 };
 
 static struct bmpcache_entry g_bmpcache[3][0xa00];
-static HBITMAP g_volatile_bc[3];
+static RD_HBITMAP g_volatile_bc[3];
 
 static int g_bmpcache_lru[3] = { NOT_SET, NOT_SET, NOT_SET };
 static int g_bmpcache_mru[3] = { NOT_SET, NOT_SET, NOT_SET };
@@ -190,7 +199,7 @@ cache_evict_bitmap(uint8 id)
 }
 
 /* Retrieve a bitmap from the cache */
-HBITMAP
+RD_HBITMAP
 cache_get_bitmap(uint8 id, uint16 idx)
 {
 	if ((id < NUM_ELEMENTS(g_bmpcache)) && (idx < NUM_ELEMENTS(g_bmpcache[0])))
@@ -214,9 +223,9 @@ cache_get_bitmap(uint8 id, uint16 idx)
 
 /* Store a bitmap in the cache */
 void
-cache_put_bitmap(uint8 id, uint16 idx, HBITMAP bitmap)
+cache_put_bitmap(uint8 id, uint16 idx, RD_HBITMAP bitmap)
 {
-	HBITMAP old;
+	RD_HBITMAP old;
 
 	if ((id < NUM_ELEMENTS(g_bmpcache)) && (idx < NUM_ELEMENTS(g_bmpcache[0])))
 	{
@@ -293,7 +302,7 @@ cache_get_font(uint8 font, uint16 character)
 /* Store a glyph in the font cache */
 void
 cache_put_font(uint8 font, uint16 character, uint16 offset,
-	       uint16 baseline, uint16 width, uint16 height, HGLYPH pixmap)
+	       uint16 baseline, uint16 width, uint16 height, RD_HGLYPH pixmap)
 {
 	FONTGLYPH *glyph;
 
@@ -392,13 +401,13 @@ cache_put_desktop(uint32 offset, int cx, int cy, int scanline, int bytes_per_pix
 
 
 /* CURSOR CACHE */
-static HCURSOR g_cursorcache[0x20];
+static RD_HCURSOR g_cursorcache[0x20];
 
 /* Retrieve cursor from cache */
-HCURSOR
+RD_HCURSOR
 cache_get_cursor(uint16 cache_idx)
 {
-	HCURSOR cursor;
+	RD_HCURSOR cursor;
 
 	if (cache_idx < NUM_ELEMENTS(g_cursorcache))
 	{
@@ -413,9 +422,9 @@ cache_get_cursor(uint16 cache_idx)
 
 /* Store cursor in cache */
 void
-cache_put_cursor(uint16 cache_idx, HCURSOR cursor)
+cache_put_cursor(uint16 cache_idx, RD_HCURSOR cursor)
 {
-	HCURSOR old;
+	RD_HCURSOR old;
 
 	if (cache_idx < NUM_ELEMENTS(g_cursorcache))
 	{

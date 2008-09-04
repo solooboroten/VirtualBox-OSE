@@ -66,6 +66,7 @@
 #include <iprt/process.h>
 #include <iprt/ldr.h>
 #include <iprt/cpputils.h>
+#include <iprt/system.h>
 
 #include <VBox/vmapi.h>
 #include <VBox/err.h>
@@ -81,6 +82,10 @@
 #include <VBox/VBoxDev.h>
 
 #include <VBox/HostServices/VBoxClipboardSvc.h>
+#ifdef VBOX_WITH_GUEST_PROPS
+# include <VBox/HostServices/GuestPropertySvc.h>
+# include <VBox/com/array.h>
+#endif
 
 #include <set>
 #include <algorithm>
@@ -279,7 +284,7 @@ HRESULT Console::init (IMachine *aMachine, IInternalMachineControl *aControl)
     rc = mMachine->COMGETTER(State) (&mMachineState);
     AssertComRCReturnRC (rc);
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     rc = mMachine->COMGETTER(VRDPServer) (unconst (mVRDPServer).asOutParam());
     AssertComRCReturnRC (rc);
 #endif
@@ -441,7 +446,7 @@ void Console::uninit()
 
     unconst (mFloppyDrive).setNull();
     unconst (mDVDDrive).setNull();
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     unconst (mVRDPServer).setNull();
 #endif
 
@@ -639,7 +644,7 @@ void Console::VRDPClientConnect (uint32_t u32ClientId)
     AutoCaller autoCaller (this);
     AssertComRCReturnVoid (autoCaller.rc());
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     uint32_t u32Clients = ASMAtomicIncU32(&mcVRDPClients);
 
     if (u32Clients == 1)
@@ -651,7 +656,7 @@ void Console::VRDPClientConnect (uint32_t u32ClientId)
 
     NOREF(u32ClientId);
     mDisplay->VideoAccelVRDP (true);
-#endif /* VBOX_VRDP */
+#endif /* VBOX_WITH_VRDP */
 
     LogFlowFuncLeave();
     return;
@@ -667,7 +672,7 @@ void Console::VRDPClientDisconnect (uint32_t u32ClientId,
 
     AssertReturnVoid (mConsoleVRDPServer);
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     uint32_t u32Clients = ASMAtomicDecU32(&mcVRDPClients);
 
     if (u32Clients == 0)
@@ -678,14 +683,14 @@ void Console::VRDPClientDisconnect (uint32_t u32ClientId,
     }
 
     mDisplay->VideoAccelVRDP (false);
-#endif /* VBOX_VRDP */
+#endif /* VBOX_WITH_VRDP */
 
     if (fu32Intercepted & VRDP_CLIENT_INTERCEPT_USB)
     {
         mConsoleVRDPServer->USBBackendDelete (u32ClientId);
     }
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     if (fu32Intercepted & VRDP_CLIENT_INTERCEPT_CLIPBOARD)
     {
         mConsoleVRDPServer->ClipboardDelete (u32ClientId);
@@ -707,7 +712,7 @@ void Console::VRDPClientDisconnect (uint32_t u32ClientId,
             }
         }
     }
-#endif /* VBOX_VRDP */
+#endif /* VBOX_WITH_VRDP */
 
     Guid uuid;
     HRESULT hrc = mMachine->COMGETTER (Id) (uuid.asOutParam());
@@ -735,7 +740,7 @@ void Console::VRDPInterceptAudio (uint32_t u32ClientId)
                   mAudioSniffer, u32ClientId));
     NOREF(u32ClientId);
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     mcAudioRefs++;
 
     if (mcAudioRefs == 1)
@@ -779,9 +784,9 @@ void Console::VRDPInterceptClipboard (uint32_t u32ClientId)
 
     AssertReturnVoid (mConsoleVRDPServer);
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
     mConsoleVRDPServer->ClipboardCreate (u32ClientId);
-#endif /* VBOX_VRDP */
+#endif /* VBOX_WITH_VRDP */
 
     LogFlowFuncLeave();
     return;
@@ -3530,6 +3535,290 @@ HRESULT Console::onUSBDeviceDetach (INPTR GUIDPARAM aId,
 }
 
 /**
+ * @note Temporarily locks this object for writing.
+ */
+HRESULT Console::getGuestProperty (INPTR BSTR aName, BSTR *aValue,
+                                   ULONG64 *aTimestamp, BSTR *aFlags)
+{
+#if !defined (VBOX_WITH_GUEST_PROPS)
+    return E_NOTIMPL;
+#else
+    if (!VALID_PTR (aName))
+        return E_INVALIDARG;
+    if (!VALID_PTR (aValue))
+        return E_POINTER;
+    if ((aTimestamp != NULL) && !VALID_PTR (aTimestamp))
+        return E_POINTER;
+    if ((aFlags != NULL) && !VALID_PTR (aFlags))
+        return E_POINTER;
+
+    AutoCaller autoCaller (this);
+    AssertComRCReturnRC (autoCaller.rc());
+
+    /* protect mpVM (if not NULL) */
+    AutoVMCallerWeak autoVMCaller (this);
+    CheckComRCReturnRC (autoVMCaller.rc());
+
+    /* Note: validity of mVMMDev which is bound to uninit() is guaranteed by
+     * autoVMCaller, so there is no need to hold a lock of this */
+
+    HRESULT rc = E_UNEXPECTED;
+    using namespace guestProp;
+
+    VBOXHGCMSVCPARM parm[4];
+    Utf8Str Utf8Name = aName;
+    AssertReturn(!Utf8Name.isNull(), E_OUTOFMEMORY);
+    char pszBuffer[MAX_VALUE_LEN + MAX_FLAGS_LEN + 2];
+
+    parm[0].type = VBOX_HGCM_SVC_PARM_PTR;
+    /* To save doing a const cast, we use the mutableRaw() member. */
+    parm[0].u.pointer.addr = Utf8Name.mutableRaw();
+    /* The + 1 is the null terminator */
+    parm[0].u.pointer.size = Utf8Name.length() + 1;
+    parm[1].type = VBOX_HGCM_SVC_PARM_PTR;
+    parm[1].u.pointer.addr = pszBuffer;
+    parm[1].u.pointer.size = sizeof(pszBuffer);
+    int vrc = mVMMDev->hgcmHostCall ("VBoxGuestPropSvc", GET_PROP_HOST,
+                                     4, &parm[0]);
+    /* The returned string should never be able to be greater than our buffer */
+    AssertLogRel (vrc != VERR_BUFFER_OVERFLOW);
+    AssertLogRel (!RT_SUCCESS(vrc) || VBOX_HGCM_SVC_PARM_64BIT == parm[2].type);
+    if (RT_SUCCESS (vrc) || (VERR_NOT_FOUND == vrc))
+    {
+        rc = S_OK;
+        if (vrc != VERR_NOT_FOUND)
+        {
+            size_t iFlags = strlen(pszBuffer) + 1;
+            Utf8Str(pszBuffer).cloneTo (aValue);
+            *aTimestamp = parm[2].u.uint32;
+            Utf8Str(pszBuffer + iFlags).cloneTo (aFlags);
+        }
+        else
+            aValue = NULL;
+    }
+    else
+        rc = setError (E_UNEXPECTED,
+            tr ("Failed to call the VBoxGuestPropSvc service (%Rrc)"), vrc);
+    return rc;
+#endif /* else !defined (VBOX_WITH_GUEST_PROPS) */
+}
+
+/**
+ * @note Temporarily locks this object for writing.
+ */
+HRESULT Console::setGuestProperty (INPTR BSTR aName, INPTR BSTR aValue, INPTR BSTR aFlags)
+{
+#if !defined (VBOX_WITH_GUEST_PROPS)
+    return E_NOTIMPL;
+#else
+    if (!VALID_PTR (aName))
+        return E_INVALIDARG;
+    if ((aValue != NULL) && !VALID_PTR (aValue))
+        return E_INVALIDARG;
+    if ((aFlags != NULL) && !VALID_PTR (aFlags))
+        return E_INVALIDARG;
+
+    AutoCaller autoCaller (this);
+    AssertComRCReturnRC (autoCaller.rc());
+
+    /* protect mpVM (if not NULL) */
+    AutoVMCallerWeak autoVMCaller (this);
+    CheckComRCReturnRC (autoVMCaller.rc());
+
+    /* Note: validity of mVMMDev which is bound to uninit() is guaranteed by
+     * autoVMCaller, so there is no need to hold a lock of this */
+
+    HRESULT rc = E_UNEXPECTED;
+    using namespace guestProp;
+
+    VBOXHGCMSVCPARM parm[3];
+    Utf8Str Utf8Name = aName;
+    int vrc = VINF_SUCCESS;
+
+    parm[0].type = VBOX_HGCM_SVC_PARM_PTR;
+    /* To save doing a const cast, we use the mutableRaw() member. */
+    parm[0].u.pointer.addr = Utf8Name.mutableRaw();
+    /* The + 1 is the null terminator */
+    parm[0].u.pointer.size = Utf8Name.length() + 1;
+    Utf8Str Utf8Value = aValue;
+    if (aValue != NULL)
+    {
+        parm[1].type = VBOX_HGCM_SVC_PARM_PTR;
+        /* To save doing a const cast, we use the mutableRaw() member. */
+        parm[1].u.pointer.addr = Utf8Value.mutableRaw();
+        /* The + 1 is the null terminator */
+        parm[1].u.pointer.size = Utf8Value.length() + 1;
+    }
+    Utf8Str Utf8Flags = aFlags;
+    if (aFlags != NULL)
+    {
+        parm[2].type = VBOX_HGCM_SVC_PARM_PTR;
+        /* To save doing a const cast, we use the mutableRaw() member. */
+        parm[2].u.pointer.addr = Utf8Flags.mutableRaw();
+        /* The + 1 is the null terminator */
+        parm[2].u.pointer.size = Utf8Flags.length() + 1;
+    }
+    if ((aValue != NULL) && (aFlags != NULL))
+        vrc = mVMMDev->hgcmHostCall ("VBoxGuestPropSvc", SET_PROP_HOST,
+                                     3, &parm[0]);
+    else if (aValue != NULL)
+        vrc = mVMMDev->hgcmHostCall ("VBoxGuestPropSvc", SET_PROP_VALUE_HOST,
+                                     2, &parm[0]);
+    else
+        vrc = mVMMDev->hgcmHostCall ("VBoxGuestPropSvc", DEL_PROP_HOST,
+                                     1, &parm[0]);
+    if (RT_SUCCESS (vrc))
+        rc = S_OK;
+    else
+        rc = setError (E_UNEXPECTED,
+            tr ("Failed to call the VBoxGuestPropSvc service (%Rrc)"), vrc);
+    return rc;
+#endif /* else !defined (VBOX_WITH_GUEST_PROPS) */
+}
+
+
+/**
+ * @note Temporarily locks this object for writing.
+ */
+HRESULT Console::enumerateGuestProperties (INPTR BSTR aPatterns,
+                                           ComSafeArrayOut(BSTR, aNames),
+                                           ComSafeArrayOut(BSTR, aValues),
+                                           ComSafeArrayOut(ULONG64, aTimestamps),
+                                           ComSafeArrayOut(BSTR, aFlags))
+{
+#if !defined (VBOX_WITH_GUEST_PROPS)
+    return E_NOTIMPL;
+#else
+    if (!VALID_PTR (aPatterns) && (aPatterns != NULL))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aNames))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aValues))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aTimestamps))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aFlags))
+        return E_POINTER;
+
+    AutoCaller autoCaller (this);
+    AssertComRCReturnRC (autoCaller.rc());
+
+    /* protect mpVM (if not NULL) */
+    AutoVMCallerWeak autoVMCaller (this);
+    CheckComRCReturnRC (autoVMCaller.rc());
+
+    /* Note: validity of mVMMDev which is bound to uninit() is guaranteed by
+     * autoVMCaller, so there is no need to hold a lock of this */
+
+    using namespace guestProp;
+
+    VBOXHGCMSVCPARM parm[3];
+
+    /*
+     * Set up the pattern parameter, translating the comma-separated list to a
+     * double-terminated zero-separated one.
+     */
+    Utf8Str Utf8PatternsIn = aPatterns;
+    if ((aPatterns != NULL) && Utf8PatternsIn.isNull())
+        return E_OUTOFMEMORY;
+    size_t cchPatterns = Utf8PatternsIn.length();
+    Utf8Str Utf8Patterns(cchPatterns + 2);  /* Double terminator */
+    if (Utf8Patterns.isNull())
+        return E_OUTOFMEMORY;
+    char *pszPatterns = Utf8Patterns.mutableRaw();
+    unsigned iPatterns = 0;
+    for (unsigned i = 0; i < cchPatterns; ++i)
+    {
+        char cIn = Utf8PatternsIn.raw()[i];
+        if ((cIn != ',') && (cIn != ' '))
+            pszPatterns[iPatterns] = cIn;
+        else if (cIn != ' ')
+            pszPatterns[iPatterns] = '\0';
+        if (cIn != ' ')
+            ++iPatterns;
+    }
+    pszPatterns[iPatterns] = '\0';
+    parm[0].type = VBOX_HGCM_SVC_PARM_PTR;
+    parm[0].u.pointer.addr = pszPatterns;
+    parm[0].u.pointer.size = iPatterns + 1;
+
+    /*
+     * Now things get slightly complicated.  Due to a race with the guest adding
+     * properties, there is no good way to know how much large a buffer to provide
+     * the service to enumerate into.  We choose a decent starting size and loop a
+     * few times, each time retrying with the size suggested by the service plus
+     * one Kb.
+     */
+    size_t cchBuf = 4096;
+    Utf8Str Utf8Buf;
+    int vrc = VERR_BUFFER_OVERFLOW;
+    for (unsigned i = 0; i < 10 && (VERR_BUFFER_OVERFLOW == vrc); ++i)
+    {
+        Utf8Buf.alloc(cchBuf + 1024);
+        if (Utf8Buf.isNull())
+            return E_OUTOFMEMORY;
+        parm[1].type = VBOX_HGCM_SVC_PARM_PTR;
+        parm[1].u.pointer.addr = Utf8Buf.mutableRaw();
+        parm[1].u.pointer.size = cchBuf + 1024;
+        vrc = mVMMDev->hgcmHostCall ("VBoxGuestPropSvc", ENUM_PROPS_HOST, 3,
+                                     &parm[0]);
+        if (parm[2].type != VBOX_HGCM_SVC_PARM_32BIT)
+            return setError (E_FAIL, tr ("Internal application error"));
+        cchBuf = parm[2].u.uint32;
+    }
+    if (VERR_BUFFER_OVERFLOW == vrc)
+        return setError (E_UNEXPECTED, tr ("Temporary failure due to guest activity, please retry"));
+
+    /*
+     * Finally we have to unpack the data returned by the service into the safe
+     * arrays supplied by the caller.  We start by counting the number of entries.
+     */
+    const char *pszBuf
+        = reinterpret_cast<const char *>(parm[1].u.pointer.addr);
+    unsigned cEntries = 0;
+    /* The list is terminated by a zero-length string at the end of a set
+     * of four strings. */
+    for (size_t i = 0; strlen(pszBuf + i) != 0; )
+    {
+       /* We are counting sets of four strings. */
+       for (unsigned j = 0; j < 4; ++j)
+           i += strlen(pszBuf + i) + 1;
+       ++cEntries;
+    }
+
+    /*
+     * And now we create the COM safe arrays and fill them in.
+     */
+    com::SafeArray <BSTR> names(cEntries);
+    com::SafeArray <BSTR> values(cEntries);
+    com::SafeArray <ULONG64> timestamps(cEntries);
+    com::SafeArray <BSTR> flags(cEntries);
+    size_t iBuf = 0;
+    /* Rely on the service to have formated the data correctly. */
+    for (unsigned i = 0; i < cEntries; ++i)
+    {
+        size_t cchName = strlen(pszBuf + iBuf);
+        Bstr(pszBuf + iBuf).detachTo(&names[i]);
+        iBuf += cchName + 1;
+        size_t cchValue = strlen(pszBuf + iBuf);
+        Bstr(pszBuf + iBuf).detachTo(&values[i]);
+        iBuf += cchValue + 1;
+        size_t cchTimestamp = strlen(pszBuf + iBuf);
+        timestamps[i] = RTStrToUInt64(pszBuf + iBuf);
+        iBuf += cchTimestamp + 1;
+        size_t cchFlags = strlen(pszBuf + iBuf);
+        Bstr(pszBuf + iBuf).detachTo(&flags[i]);
+        iBuf += cchFlags + 1;
+    }
+    names.detachTo(ComSafeArrayOutArg (aNames));
+    values.detachTo(ComSafeArrayOutArg (aValues));
+    timestamps.detachTo(ComSafeArrayOutArg (aTimestamps));
+    flags.detachTo(ComSafeArrayOutArg (aFlags));
+    return S_OK;
+#endif /* else !defined (VBOX_WITH_GUEST_PROPS) */
+}
+
+/**
  *  Gets called by Session::UpdateMachineState()
  *  (IInternalSessionControl::updateMachineState()).
  *
@@ -3957,13 +4246,26 @@ HRESULT Console::consoleInitReleaseLog (const ComPtr <IMachine> aMachine)
     {
         /* some introductory information */
         RTTIMESPEC timeSpec;
-        char nowUct[64];
-        RTTimeSpecToString(RTTimeNow(&timeSpec), nowUct, sizeof(nowUct));
+        char szTmp[256];
+        RTTimeSpecToString(RTTimeNow(&timeSpec), szTmp, sizeof(szTmp));
         RTLogRelLogger(loggerRelease, 0, ~0U,
                        "VirtualBox %s r%d %s (%s %s) release log\n"
                        "Log opened %s\n",
                        VBOX_VERSION_STRING, VBoxSVNRev (), VBOX_BUILD_TARGET,
-                       __DATE__, __TIME__, nowUct);
+                       __DATE__, __TIME__, szTmp);
+
+        vrc = RTSystemQueryOSInfo(RTSYSOSINFO_PRODUCT, szTmp, sizeof(szTmp));
+        if (RT_SUCCESS(vrc) || vrc == VERR_BUFFER_OVERFLOW)
+            RTLogRelLogger(loggerRelease, 0, ~0U, "OS Product: %s\n", szTmp);
+        vrc = RTSystemQueryOSInfo(RTSYSOSINFO_RELEASE, szTmp, sizeof(szTmp));
+        if (RT_SUCCESS(vrc) || vrc == VERR_BUFFER_OVERFLOW)
+            RTLogRelLogger(loggerRelease, 0, ~0U, "OS Release: %s\n", szTmp);
+        vrc = RTSystemQueryOSInfo(RTSYSOSINFO_VERSION, szTmp, sizeof(szTmp));
+        if (RT_SUCCESS(vrc) || vrc == VERR_BUFFER_OVERFLOW)
+            RTLogRelLogger(loggerRelease, 0, ~0U, "OS Version: %s\n", szTmp);
+        vrc = RTSystemQueryOSInfo(RTSYSOSINFO_SERVICE_PACK, szTmp, sizeof(szTmp));
+        if (RT_SUCCESS(vrc) || vrc == VERR_BUFFER_OVERFLOW)
+            RTLogRelLogger(loggerRelease, 0, ~0U, "OS Service Pack: %s\n", szTmp);
 
         /* register this logger as the release logger */
         RTLogRelSetDefaultInstance(loggerRelease);
@@ -4012,6 +4314,7 @@ HRESULT Console::powerDown()
     AssertComRCReturnRC (autoCaller.rc());
 
     AutoWriteLock alock (this);
+    int vrc = VINF_SUCCESS;
 
     /* sanity */
     AssertReturn (mVMDestroying == false, E_FAIL);
@@ -4036,7 +4339,7 @@ HRESULT Console::powerDown()
     }
 
 
-#ifdef VBOX_HGCM
+#ifdef VBOX_WITH_HGCM
     /*
      *  Shutdown HGCM services before stopping the guest, because they might need a cleanup.
      */
@@ -4051,7 +4354,62 @@ HRESULT Console::powerDown()
 
         alock.enter();
     }
-#endif /* VBOX_HGCM */
+# ifdef VBOX_WITH_GUEST_PROPS
+    /* Save all guest property store entries to the machine XML file */
+    PCFGMNODE pValues = CFGMR3GetChild (CFGMR3GetRoot (mpVM), "GuestProps/Values/");
+    PCFGMNODE pTimestamps = CFGMR3GetChild (CFGMR3GetRoot (mpVM), "GuestProps/Timestamps/");
+    PCFGMNODE pFlags = CFGMR3GetChild (CFGMR3GetRoot (mpVM), "GuestProps/Flags/");
+    /* Count the number of entries we have */
+    unsigned cValues = 0;
+    for (PCFGMLEAF pValue = CFGMR3GetFirstValue (pValues); pValue != NULL;
+         pValue = CFGMR3GetNextValue (pValue))
+        ++cValues;
+    /* And pack them into safe arrays */
+    com::SafeArray <BSTR> names(cValues);
+    com::SafeArray <BSTR> values(cValues);
+    com::SafeArray <ULONG64> timestamps(cValues);
+    com::SafeArray <BSTR> flags(cValues);
+    PCFGMLEAF pValue = CFGMR3GetFirstValue (pValues);
+    vrc = VINF_SUCCESS;
+    unsigned iProp = 0;
+    while (pValue != NULL && RT_SUCCESS(vrc))
+    {
+        using namespace guestProp;
+
+        char szPropName[MAX_NAME_LEN + 1];
+        char szPropValue[MAX_VALUE_LEN + 1];
+        char szPropFlags[MAX_FLAGS_LEN + 1];
+        ULONG64 u64Timestamp = 0;  /* default */
+        szPropFlags[0] = '\0';  /* default */
+        vrc = CFGMR3GetValueName (pValue, szPropName, sizeof(szPropName));
+        if (RT_SUCCESS(vrc))
+            vrc = CFGMR3QueryString (pValues, szPropName, szPropValue, sizeof(szPropValue));
+        if (RT_SUCCESS(vrc))
+        {
+            CFGMR3QueryString (pFlags, szPropName, szPropFlags, sizeof(szPropFlags));
+            CFGMR3QueryU64 (pTimestamps, szPropName, &u64Timestamp);
+            Bstr(szPropName).cloneTo(&names[iProp]);
+            Bstr(szPropValue).cloneTo(&values[iProp]);
+            timestamps[iProp] = u64Timestamp;
+            Bstr(szPropFlags).cloneTo(&flags[iProp]);
+            pValue = CFGMR3GetNextValue (pValue);
+            ++iProp;
+            if (iProp >= cValues)
+                vrc = VERR_TOO_MUCH_DATA;
+        }
+    }
+    if (RT_SUCCESS(vrc) || (VERR_TOO_MUCH_DATA == vrc))
+    {
+        /* PushGuestProperties() calls DiscardSettings(), which calls us back */
+        alock.leave();
+        mControl->PushGuestProperties(ComSafeArrayAsInParam (names),
+                                      ComSafeArrayAsInParam (values),
+                                      ComSafeArrayAsInParam (timestamps),
+                                      ComSafeArrayAsInParam (flags));
+        alock.enter();
+    }
+# endif /* VBOX_WITH_GUEST_PROPS defined */
+#endif /* VBOX_WITH_HGCM */
 
     /* First, wait for all mpVM callers to finish their work if necessary */
     if (mVMCallers > 0)
@@ -4085,7 +4443,7 @@ HRESULT Console::powerDown()
                ("Invalid machine state: %d\n", mMachineState));
 
     HRESULT rc = S_OK;
-    int vrc = VINF_SUCCESS;
+    vrc = VINF_SUCCESS;
 
     /*
      *  Power off the VM if not already done that. In case of Stopping, the VM
@@ -5148,20 +5506,30 @@ HRESULT Console::callTapSetupApplication(bool isStatic, RTFILE tapFD, Bstr &tapD
  */
 HRESULT Console::attachToHostInterface(INetworkAdapter *networkAdapter)
 {
+#if !defined(RT_OS_LINUX)
+    /*
+     * Nothing to do here.
+     *
+     * Note, the reason for this method in the first place a memory / fork
+     * bug on linux. All this code belongs in DrvTAP and similar places.
+     */
+    NOREF(networkAdapter);
+    return S_OK;
+
+#else /* RT_OS_LINUX */
     LogFlowThisFunc(("\n"));
     /* sanity check */
     AssertReturn (isWriteLockOnCurrentThread(), E_FAIL);
 
-#ifdef DEBUG
+# ifdef VBOX_STRICT
     /* paranoia */
     NetworkAttachmentType_T attachment;
     networkAdapter->COMGETTER(AttachmentType)(&attachment);
     Assert(attachment == NetworkAttachmentType_HostInterface);
-#endif /* DEBUG */
+# endif /* VBOX_STRICT */
 
     HRESULT rc = S_OK;
 
-#ifdef VBOX_WITH_UNIXY_TAP_NETWORKING
     ULONG slot = 0;
     rc = networkAdapter->COMGETTER(Slot)(&slot);
     AssertComRC(rc);
@@ -5187,15 +5555,10 @@ HRESULT Console::attachToHostInterface(INetworkAdapter *networkAdapter)
         rc = S_OK;
     }
     else
-#endif /* VBOX_WITH_UNIXY_TAP_NETWORKING */
     {
         /*
          * Allocate a host interface device
          */
-#ifdef RT_OS_WINDOWS
-        /* nothing to do */
-        int rcVBox = VINF_SUCCESS;
-#elif defined(RT_OS_LINUX)
         int rcVBox = RTFileOpen(&maTapFD[slot], "/dev/net/tun",
                                 RTFILE_O_READWRITE | RTFILE_O_OPEN | RTFILE_O_DENY_NONE | RTFILE_O_INHERIT);
         if (VBOX_SUCCESS(rcVBox))
@@ -5308,23 +5671,6 @@ HRESULT Console::attachToHostInterface(INetworkAdapter *networkAdapter)
                     break;
             }
         }
-#elif defined(RT_OS_DARWIN)
-        /** @todo Implement tap networking for Darwin. */
-        int rcVBox = VERR_NOT_IMPLEMENTED;
-#elif defined(RT_OS_FREEBSD)
-        /** @todo Implement tap networking for FreeBSD. */
-        int rcVBox = VERR_NOT_IMPLEMENTED;
-#elif defined(RT_OS_OS2)
-        /** @todo Implement tap networking for OS/2. */
-        int rcVBox = VERR_NOT_IMPLEMENTED;
-#elif defined(RT_OS_SOLARIS)
-        /* nothing to do */
-        int rcVBox = VINF_SUCCESS;
-#elif defined(VBOX_WITH_UNIXY_TAP_NETWORKING)
-# error "PORTME: Implement OS specific TAP interface open/creation."
-#else
-# error "Unknown host OS"
-#endif
         /* in case of failure, cleanup. */
         if (VBOX_FAILURE(rcVBox) && SUCCEEDED(rc))
         {
@@ -5334,6 +5680,7 @@ HRESULT Console::attachToHostInterface(INetworkAdapter *networkAdapter)
     }
     LogFlowThisFunc(("rc=%d\n", rc));
     return rc;
+#endif /* RT_OS_LINUX */
 }
 
 /**
@@ -5346,19 +5693,27 @@ HRESULT Console::attachToHostInterface(INetworkAdapter *networkAdapter)
  */
 HRESULT Console::detachFromHostInterface(INetworkAdapter *networkAdapter)
 {
+#if !defined(RT_OS_LINUX)
+
+    /*
+     * Nothing to do here.
+     */
+    NOREF(networkAdapter);
+    return S_OK;
+
+#else /* RT_OS_LINUX */
+
     /* sanity check */
     LogFlowThisFunc(("\n"));
     AssertReturn (isWriteLockOnCurrentThread(), E_FAIL);
 
     HRESULT rc = S_OK;
-#ifdef DEBUG
+# ifdef VBOX_STRICT
     /* paranoia */
     NetworkAttachmentType_T attachment;
     networkAdapter->COMGETTER(AttachmentType)(&attachment);
     Assert(attachment == NetworkAttachmentType_HostInterface);
-#endif /* DEBUG */
-
-#ifdef VBOX_WITH_UNIXY_TAP_NETWORKING
+# endif /* VBOX_STRICT */
 
     ULONG slot = 0;
     rc = networkAdapter->COMGETTER(Slot)(&slot);
@@ -5396,6 +5751,7 @@ HRESULT Console::detachFromHostInterface(INetworkAdapter *networkAdapter)
             char szCommand[4096];
             RTStrPrintf(szCommand, sizeof(szCommand), "%s %d %s", tapTermAppUtf8.raw(),
                         isStatic ? maTapFD[slot] : 0, maTAPDeviceName[slot].raw());
+            /** @todo check for overflow or use RTStrAPrintf! */
 
             /*
              * Create the process and wait for it to complete.
@@ -5430,9 +5786,10 @@ HRESULT Console::detachFromHostInterface(INetworkAdapter *networkAdapter)
         maTapFD[slot] = NIL_RTFILE;
         maTAPDeviceName[slot] = "";
     }
-#endif
     LogFlowThisFunc(("returning %d\n", rc));
     return rc;
+#endif /* RT_OS_LINUX */
+
 }
 
 
@@ -5529,9 +5886,14 @@ Console::setVMErrorCallback (PVM pVM, void *pvUser, int rc, RT_SRC_POS_DECL,
     va_end(va2);
 
     /* For now, this may be called only once. Ignore subsequent calls. */
-    AssertMsgReturnVoid (task->mErrorMsg.isNull(),
-                         ("Cannot set error to '%s': it is already set to '%s'",
-                         errorMsg.raw(), task->mErrorMsg.raw()));
+    if (!task->mErrorMsg.isNull())
+    {
+#if !defined(DEBUG_bird)
+        AssertMsgFailed (("Cannot set error to '%s': it is already set to '%s'",
+                          errorMsg.raw(), task->mErrorMsg.raw()));
+#endif
+        return;
+    }
 
     task->mErrorMsg = errorMsg;
 }
@@ -5850,7 +6212,7 @@ DECLCALLBACK (int) Console::powerUpThread (RTTHREAD Thread, void *pvUser)
 
     do
     {
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
         /* Create the VRDP server. In case of headless operation, this will
          * also create the framebuffer, required at VM creation.
          */
@@ -5889,7 +6251,7 @@ DECLCALLBACK (int) Console::powerUpThread (RTTHREAD Thread, void *pvUser)
             hrc = setError (E_FAIL, errMsg);
             break;
         }
-#endif /* VBOX_VRDP */
+#endif /* VBOX_WITH_VRDP */
 
         /*
          * Create the VM
@@ -5907,10 +6269,10 @@ DECLCALLBACK (int) Console::powerUpThread (RTTHREAD Thread, void *pvUser)
 
         alock.enter();
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
         /* Enable client connections to the server. */
         console->consoleVRDPServer()->EnableConnections ();
-#endif /* VBOX_VRDP */
+#endif /* VBOX_WITH_VRDP */
 
         if (VBOX_SUCCESS (vrc))
         {
@@ -6586,7 +6948,7 @@ DECLCALLBACK(void) Console::drvStatus_UnitChanged(PPDMILEDCONNECTORS pInterface,
 DECLCALLBACK(void *)  Console::drvStatus_QueryInterface(PPDMIBASE pInterface, PDMINTERFACE enmInterface)
 {
     PPDMDRVINS pDrvIns = PDMIBASE_2_PDMDRV(pInterface);
-    PDRVMAINSTATUS pDrv = PDMINS2DATA(pDrvIns, PDRVMAINSTATUS);
+    PDRVMAINSTATUS pDrv = PDMINS_2_DATA(pDrvIns, PDRVMAINSTATUS);
     switch (enmInterface)
     {
         case PDMINTERFACE_BASE:
@@ -6607,7 +6969,7 @@ DECLCALLBACK(void *)  Console::drvStatus_QueryInterface(PPDMIBASE pInterface, PD
  */
 DECLCALLBACK(void) Console::drvStatus_Destruct(PPDMDRVINS pDrvIns)
 {
-    PDRVMAINSTATUS pData = PDMINS2DATA(pDrvIns, PDRVMAINSTATUS);
+    PDRVMAINSTATUS pData = PDMINS_2_DATA(pDrvIns, PDRVMAINSTATUS);
     LogFlowFunc(("iInstance=%d\n", pDrvIns->iInstance));
     if (pData->papLeds)
     {
@@ -6630,7 +6992,7 @@ DECLCALLBACK(void) Console::drvStatus_Destruct(PPDMDRVINS pDrvIns)
  */
 DECLCALLBACK(int) Console::drvStatus_Construct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
 {
-    PDRVMAINSTATUS pData = PDMINS2DATA(pDrvIns, PDRVMAINSTATUS);
+    PDRVMAINSTATUS pData = PDMINS_2_DATA(pDrvIns, PDRVMAINSTATUS);
     LogFlowFunc(("iInstance=%d\n", pDrvIns->iInstance));
 
     /*

@@ -45,34 +45,60 @@ __BEGIN_DECLS
 
 #ifdef IN_RING3
 /**
- * Initalizes the runtime library.
+ * Initializes the runtime library.
  *
  * @returns iprt status code.
- *
- * @param   fInitSUPLib     Set if SUPInit() shall be called during init (default).
- *                          Clear if not to call it.
- * @param   cbReserve       The number of bytes of contiguous memory that should be reserved by
- *                          the runtime / support library.
- *                          Set this to 0 if no reservation is required. (default)
- *                          Set this to ~(size_t)0 if the maximum amount supported by the VM is to be
- *                          attempted reserved, or the maximum available.
- *                          This argument only applies if fInitSUPLib is true and we're in ring-3 HC.
  */
-RTR3DECL(int) RTR3Init(
-#ifdef __cplusplus
-    bool fInitSUPLib = true,
-    size_t cbReserve = 0
-#else
-    bool fInitSUPLib,
-    size_t cbReserve
-#endif
-    );
+RTR3DECL(int) RTR3Init(void);
+
+
+/**
+ * Initializes the runtime library and try initialize SUPLib too.
+ *
+ * @returns IPRT status code.
+ * @param   pszProgramPath      The path to the program file.
+ *
+ * @remarks Failure to initialize SUPLib is ignored.
+ */
+RTR3DECL(int) RTR3InitAndSUPLib(void);
+
+/**
+ * Initializes the runtime library passing it the program path.
+ *
+ * @returns IPRT status code.
+ * @param   pszProgramPath      The path to the program file.
+ */
+RTR3DECL(int) RTR3InitWithProgramPath(const char *pszProgramPath);
+
+/**
+ * Initializes the runtime library passing it the program path,
+ * and try initialize SUPLib too (failures ignored).
+ *
+ * @returns IPRT status code.
+ * @param   pszProgramPath      The path to the program file.
+ *
+ * @remarks Failure to initialize SUPLib is ignored.
+ */
+RTR3DECL(int) RTR3InitAndSUPLibWithProgramPath(const char *pszProgramPath);
+
+/** 
+ * Initializes the runtime library and possibly also SUPLib too.
+ * 
+ * Avoid this interface, it's not considered stable.
+ * 
+ * @returns IPRT status code.
+ * @param   iVersion        The interface version. Must be 0 atm.
+ * @param   pszProgramPath  The program path. Pass NULL if we're to figure it out ourselves.
+ * @param   fInitSUPLib     Whether to initialize the support library or not.
+ */
+RTR3DECL(int) RTR3InitEx(uint32_t iVersion, const char *pszProgramPath, bool fInitSUPLib);
 
 /**
  * Terminates the runtime library.
  */
 RTR3DECL(void) RTR3Term(void);
-#endif
+
+#endif /* IN_RING3 */
 
 
 #ifdef IN_RING0

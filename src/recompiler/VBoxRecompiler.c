@@ -1,4 +1,4 @@
-/* $Id: VBoxRecompiler.c 31273 2008-05-27 08:06:46Z sandervl $ */
+/* $Id: VBoxRecompiler.c 35940 2008-09-03 09:52:16Z sandervl $ */
 /** @file
  * VBox Recompiler - QEMU.
  */
@@ -224,7 +224,9 @@ extern int testmath(void);
 /* Put them here to avoid unused variable warning. */
 AssertCompile(RT_SIZEOFMEMB(VM, rem.padding) >= RT_SIZEOFMEMB(VM, rem.s));
 #if !defined(IPRT_NO_CRT) && (defined(RT_OS_LINUX) || defined(RT_OS_DARWIN) || defined(RT_OS_WINDOWS))
-AssertCompileMemberSize(REM, Env, REM_ENV_SIZE);
+//AssertCompileMemberSize(REM, Env, REM_ENV_SIZE);
+/* Why did this have to be identical?? */
+AssertCompile(RT_SIZEOFMEMB(REM, Env) <= REM_ENV_SIZE);
 #else
 AssertCompile(RT_SIZEOFMEMB(REM, Env) <= REM_ENV_SIZE);
 #endif
@@ -291,7 +293,7 @@ REMR3DECL(int) REMR3Init(PVM pVM)
         return VERR_GENERAL_FAILURE;
     }
     CPUMGetGuestCpuId(pVM,          1, &u32Dummy, &u32Dummy, &pVM->rem.s.Env.cpuid_ext_features, &pVM->rem.s.Env.cpuid_features);
-    CPUMGetGuestCpuId(pVM, 0x80000001, &u32Dummy, &u32Dummy, &u32Dummy, &pVM->rem.s.Env.cpuid_ext2_features);
+    CPUMGetGuestCpuId(pVM, 0x80000001, &u32Dummy, &u32Dummy, &pVM->rem.s.Env.cpuid_ext3_features, &pVM->rem.s.Env.cpuid_ext2_features);
 
     /* allocate code buffer for single instruction emulation. */
     pVM->rem.s.Env.cbCodeBuffer = 4096;
@@ -454,20 +456,10 @@ static DECLCALLBACK(int) remR3Save(PVM pVM, PSSMHANDLE pSSM)
     PREM pRem = &pVM->rem.s;
     Assert(!pRem->fInREM);
     SSMR3PutU32(pSSM,   pRem->Env.hflags);
-    SSMR3PutMem(pSSM,   &pRem->Env, RT_OFFSETOF(CPUState, jmp_env));
     SSMR3PutU32(pSSM,   ~0);            /* separator */
 
     /* Remember if we've entered raw mode (vital for ring 1 checks in e.g. iret emulation). */
     SSMR3PutU32(pSSM, !!(pRem->Env.state & CPU_RAW_RING0));
-
-    /*
-     * Save the REM stuff.
-     */
-    SSMR3PutUInt(pSSM,  pRem->cInvalidatedPages);
-    unsigned i;
-    for (i = 0; i < pRem->cInvalidatedPages; i++)
-        SSMR3PutGCPtr(pSSM, pRem->aGCPtrInvalidatedPages[i]);
-
     SSMR3PutUInt(pSSM, pVM->rem.s.u32PendingInterrupt);
 
     return SSMR3PutU32(pSSM, ~0);       /* terminator */
@@ -491,9 +483,10 @@ static DECLCALLBACK(int) remR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
     /*
      * Validate version.
      */
-    if (u32Version != REM_SAVED_STATE_VERSION)
+    if (    u32Version != REM_SAVED_STATE_VERSION
+        &&  u32Version != REM_SAVED_STATE_VERSION_VER1_6)
     {
-        Log(("remR3Load: Invalid version u32Version=%d!\n", u32Version));
+        AssertMsgFailed(("remR3Load: Invalid version u32Version=%d!\n", u32Version));
         return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
     }
 
@@ -515,7 +508,13 @@ static DECLCALLBACK(int) remR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
     PREM pRem = &pVM->rem.s;
     Assert(!pRem->fInREM);
     SSMR3GetU32(pSSM,   &pRem->Env.hflags);
-    SSMR3GetMem(pSSM,   &pRem->Env, RT_OFFSETOF(CPUState, jmp_env));
+    if (u32Version == REM_SAVED_STATE_VERSION_VER1_6)
+    {
+        /* Redundant REM CPU state has to be loaded, but can be ignored. */
+        CPUX86State_Ver16 temp;
+        SSMR3GetMem(pSSM,   &temp, RT_OFFSETOF(CPUX86State_Ver16, jmp_env));
+    }
+
     uint32_t u32Sep;
     int rc = SSMR3GetU32(pSSM, &u32Sep);            /* separator */
     if (VBOX_FAILURE(rc))
@@ -531,20 +530,23 @@ static DECLCALLBACK(int) remR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
     if (fRawRing0)
         pRem->Env.state |= CPU_RAW_RING0;
 
-    /*
-     * Load the REM stuff.
-     */
-    rc = SSMR3GetUInt(pSSM, &pRem->cInvalidatedPages);
-    if (VBOX_FAILURE(rc))
-        return rc;
-    if (pRem->cInvalidatedPages > ELEMENTS(pRem->aGCPtrInvalidatedPages))
+    if (u32Version == REM_SAVED_STATE_VERSION_VER1_6)
     {
-        AssertMsgFailed(("cInvalidatedPages=%#x\n", pRem->cInvalidatedPages));
-        return VERR_SSM_DATA_UNIT_FORMAT_CHANGED;
+        /*
+         * Load the REM stuff.
+         */
+        rc = SSMR3GetUInt(pSSM, &pRem->cInvalidatedPages);
+        if (VBOX_FAILURE(rc))
+            return rc;
+        if (pRem->cInvalidatedPages > ELEMENTS(pRem->aGCPtrInvalidatedPages))
+        {
+            AssertMsgFailed(("cInvalidatedPages=%#x\n", pRem->cInvalidatedPages));
+            return VERR_SSM_DATA_UNIT_FORMAT_CHANGED;
+        }
+        unsigned i;
+        for (i = 0; i < pRem->cInvalidatedPages; i++)
+            SSMR3GetGCPtr(pSSM, &pRem->aGCPtrInvalidatedPages[i]);
     }
-    unsigned i;
-    for (i = 0; i < pRem->cInvalidatedPages; i++)
-        SSMR3GetGCPtr(pSSM, &pRem->aGCPtrInvalidatedPages[i]);
 
     rc = SSMR3GetUInt(pSSM, &pVM->rem.s.u32PendingInterrupt);
     if (VBOX_FAILURE(rc))
@@ -571,18 +573,15 @@ static DECLCALLBACK(int) remR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
      */
     tlb_flush(&pRem->Env, 1);
 
-#if 0 /** @todo r=bird: this doesn't make sense. WHY? */
-    /*
-     * Clear all lazy flags (only FPU sync for now).
-     */
-    CPUMGetAndClearFPUUsedREM(pVM);
-#endif
-
     /*
      * Stop ignoring ignornable notifications.
      */
     pVM->rem.s.fIgnoreAll = false;
 
+    /*
+     * Sync the whole CPU state when executing code in the recompiler.
+     */
+    CPUMSetChangedFlags(pVM, CPUM_CHANGED_ALL);
     return VINF_SUCCESS;
 }
 
@@ -726,6 +725,12 @@ REMR3DECL(int) REMR3BreakpointClear(PVM pVM, RTGCUINTPTR Address)
 REMR3DECL(int) REMR3EmulateInstruction(PVM pVM)
 {
     Log2(("REMR3EmulateInstruction: (cs:eip=%04x:%08x)\n", CPUMGetGuestCS(pVM), CPUMGetGuestEIP(pVM)));
+
+    /* Make sure this flag is set; we might never execute remR3CanExecuteRaw in the AMD-V case.
+     * CPU_RAW_HWACC makes sure we never execute interrupt handlers in the recompiler.
+     */
+    if (HWACCMIsEnabled(pVM))
+        pVM->rem.s.Env.state |= CPU_RAW_HWACC;
 
     /*
      * Sync the state and enable single instruction / single stepping.
@@ -1106,24 +1111,26 @@ bool remR3CanExecuteRaw(CPUState *env, RTGCPTR eip, unsigned fFlags, int *piExce
         Ctx.cr4            = env->cr[4];
 
         Ctx.tr             = env->tr.selector;
-        Ctx.trHid.u32Base  = (uint32_t)env->tr.base;
+        Ctx.trHid.u64Base  = env->tr.base;
         Ctx.trHid.u32Limit = env->tr.limit;
         Ctx.trHid.Attr.u   = (env->tr.flags >> 8) & 0xF0FF;
 
         Ctx.idtr.cbIdt     = env->idt.limit;
-        Ctx.idtr.pIdt      = (uint32_t)env->idt.base;
+        Ctx.idtr.pIdt      = env->idt.base;
 
         Ctx.eflags.u32     = env->eflags;
 
         Ctx.cs             = env->segs[R_CS].selector;
-        Ctx.csHid.u32Base  = (uint32_t)env->segs[R_CS].base;
+        Ctx.csHid.u64Base  = env->segs[R_CS].base;
         Ctx.csHid.u32Limit = env->segs[R_CS].limit;
         Ctx.csHid.Attr.u   = (env->segs[R_CS].flags >> 8) & 0xF0FF;
 
         Ctx.ss             = env->segs[R_SS].selector;
-        Ctx.ssHid.u32Base  = (uint32_t)env->segs[R_SS].base;
+        Ctx.ssHid.u64Base  = env->segs[R_SS].base;
         Ctx.ssHid.u32Limit = env->segs[R_SS].limit;
         Ctx.ssHid.Attr.u   = (env->segs[R_SS].flags >> 8) & 0xF0FF;
+
+        Ctx.msrEFER        = env->efer;
 
         /* Hardware accelerated raw-mode:
          *
@@ -1333,7 +1340,7 @@ void remR3FlushPage(CPUState *env, RTGCPTR GCPtr)
     int rc = PGMInvalidatePage(pVM, GCPtr);
     if (VBOX_FAILURE(rc))
     {
-        AssertMsgFailed(("remR3FlushPage %x %x %x %d failed!!\n", GCPtr));
+        AssertMsgFailed(("remR3FlushPage %VGv failed with %d!!\n", GCPtr, rc));
         VM_FF_SET(pVM, VM_FF_PGM_SYNC_CR3);
     }
     //RAWEx_ProfileStart(env, STATS_QEMU_TOTAL);
@@ -1435,7 +1442,7 @@ void remR3ChangeCpuMode(CPUState *env)
     Assert(pVM->rem.s.fInREM);
 
     /*
-     * Update the control registers before calling PGMR3ChangeMode()
+     * Update the control registers before calling PGMChangeMode()
      * as it may need to map whatever cr3 is pointing to.
      */
     PCPUMCTX pCtx = (PCPUMCTX)pVM->rem.s.pCtx;
@@ -1446,11 +1453,11 @@ void remR3ChangeCpuMode(CPUState *env)
 #ifdef TARGET_X86_64
     rc = PGMChangeMode(pVM, env->cr[0], env->cr[4], env->efer);
     if (rc != VINF_SUCCESS)
-        cpu_abort(env, "PGMChangeMode(, %08x, %08x, %016llx) -> %Vrc\n", env->cr[0], env->cr[4], env->efer, rc);
+        cpu_abort(env, "PGMChangeMode(, %RX64, %RX64, %RX64) -> %Vrc\n", env->cr[0], env->cr[4], env->efer, rc);
 #else
     rc = PGMChangeMode(pVM, env->cr[0], env->cr[4], 0);
     if (rc != VINF_SUCCESS)
-        cpu_abort(env, "PGMChangeMode(, %08x, %08x, %016llx) -> %Vrc\n", env->cr[0], env->cr[4], 0LL, rc);
+        cpu_abort(env, "PGMChangeMode(, %RX64, %RX64, %RX64) -> %Vrc\n", env->cr[0], env->cr[4], 0LL, rc);
 #endif
 }
 
@@ -1513,7 +1520,7 @@ int remR3NotifyTrap(CPUState *env, uint32_t uTrap, uint32_t uErrorCode, uint32_t
         STAM_COUNTER_INC(&s_aStatTrap[uTrap]);
     }
 #endif
-    Log(("remR3NotifyTrap: uTrap=%x error=%x next_eip=%VGv eip=%VGv cr2=%08x\n", uTrap, uErrorCode, pvNextEIP, env->eip, env->cr[2]));
+    Log(("remR3NotifyTrap: uTrap=%x error=%x next_eip=%VGv eip=%VGv cr2=%VGv\n", uTrap, uErrorCode, pvNextEIP, env->eip, env->cr[2]));
     if(   uTrap < 0x20
        && (env->cr[0] & X86_CR0_PE)
        && !(env->eflags & X86_EFL_VM))
@@ -1596,8 +1603,39 @@ REMR3DECL(int) REMR3State(PVM pVM)
     pVM->rem.s.fInStateSync = true;
 
     /*
-     * Copy the registers which requires no special handling.
+     * Copy the registers which require no special handling.
      */
+#ifdef TARGET_X86_64
+    /* Note that the high dwords of 64 bits registers are undefined in 32 bits mode and are undefined after a mode change. */
+    Assert(R_EAX == 0);
+    pVM->rem.s.Env.regs[R_EAX]  = pCtx->rax;
+    Assert(R_ECX == 1);
+    pVM->rem.s.Env.regs[R_ECX]  = pCtx->rcx;
+    Assert(R_EDX == 2);
+    pVM->rem.s.Env.regs[R_EDX]  = pCtx->rdx;
+    Assert(R_EBX == 3);
+    pVM->rem.s.Env.regs[R_EBX]  = pCtx->rbx;
+    Assert(R_ESP == 4);
+    pVM->rem.s.Env.regs[R_ESP]  = pCtx->rsp;
+    Assert(R_EBP == 5);
+    pVM->rem.s.Env.regs[R_EBP]  = pCtx->rbp;
+    Assert(R_ESI == 6);
+    pVM->rem.s.Env.regs[R_ESI]  = pCtx->rsi;
+    Assert(R_EDI == 7);
+    pVM->rem.s.Env.regs[R_EDI]  = pCtx->rdi;
+    pVM->rem.s.Env.regs[8]      = pCtx->r8;
+    pVM->rem.s.Env.regs[9]      = pCtx->r9;
+    pVM->rem.s.Env.regs[10]     = pCtx->r10;
+    pVM->rem.s.Env.regs[11]     = pCtx->r11;
+    pVM->rem.s.Env.regs[12]     = pCtx->r12;
+    pVM->rem.s.Env.regs[13]     = pCtx->r13;
+    pVM->rem.s.Env.regs[14]     = pCtx->r14;
+    pVM->rem.s.Env.regs[15]     = pCtx->r15;
+
+    pVM->rem.s.Env.eip          = pCtx->rip;
+
+    pVM->rem.s.Env.eflags       = pCtx->rflags.u64;
+#else
     Assert(R_EAX == 0);
     pVM->rem.s.Env.regs[R_EAX]  = pCtx->eax;
     Assert(R_ECX == 1);
@@ -1617,6 +1655,7 @@ REMR3DECL(int) REMR3State(PVM pVM)
     pVM->rem.s.Env.eip          = pCtx->eip;
 
     pVM->rem.s.Env.eflags       = pCtx->eflags.u32;
+#endif
 
     pVM->rem.s.Env.cr[2]        = pCtx->cr2;
 
@@ -1652,10 +1691,33 @@ REMR3DECL(int) REMR3State(PVM pVM)
         pVM->rem.s.cInvalidatedPages = 0;
     }
 
+    /* Replay notification changes? */
+    if (pVM->rem.s.cHandlerNotifications)
+        REMR3ReplayHandlerNotifications(pVM);
+
+    /* Update MSRs; before CRx registers! */
+    pVM->rem.s.Env.efer         = pCtx->msrEFER;
+    pVM->rem.s.Env.star         = pCtx->msrSTAR;
+    pVM->rem.s.Env.pat          = pCtx->msrPAT;
+#ifdef TARGET_X86_64
+    pVM->rem.s.Env.lstar        = pCtx->msrLSTAR;
+    pVM->rem.s.Env.cstar        = pCtx->msrCSTAR;
+    pVM->rem.s.Env.fmask        = pCtx->msrSFMASK;
+    pVM->rem.s.Env.kernelgsbase = pCtx->msrKERNELGSBASE;
+
+    /* Update the internal long mode activate flag according to the new EFER value. */
+    if (pCtx->msrEFER & MSR_K6_EFER_LMA)
+        pVM->rem.s.Env.hflags |= HF_LMA_MASK;
+    else
+        pVM->rem.s.Env.hflags &= ~(HF_LMA_MASK | HF_CS64_MASK);
+#endif
+
+
     /*
      * Registers which are rarely changed and require special handling / order when changed.
      */
     fFlags = CPUMGetAndClearChangedFlagsREM(pVM);
+    LogFlow(("CPUMGetAndClearChangedFlagsREM %x\n", fFlags));
     if (fFlags & (  CPUM_CHANGED_CR4  | CPUM_CHANGED_CR3  | CPUM_CHANGED_CR0
                   | CPUM_CHANGED_GDTR | CPUM_CHANGED_IDTR | CPUM_CHANGED_LDTR | CPUM_CHANGED_TR
                   | CPUM_CHANGED_FPU_REM | CPUM_CHANGED_SYSENTER_MSR | CPUM_CHANGED_CPUID))
@@ -1670,6 +1732,7 @@ REMR3DECL(int) REMR3State(PVM pVM)
             pVM->rem.s.fIgnoreCR3Load = false;
         }
 
+        /* CR4 before CR0! */
         if (fFlags & CPUM_CHANGED_CR4)
         {
             pVM->rem.s.fIgnoreCR3Load = true;
@@ -1719,7 +1782,7 @@ REMR3DECL(int) REMR3State(PVM pVM)
             if (fHiddenSelRegsValid)
             {
                 pVM->rem.s.Env.ldt.selector = pCtx->ldtr;
-                pVM->rem.s.Env.ldt.base     = pCtx->ldtrHid.u32Base;
+                pVM->rem.s.Env.ldt.base     = pCtx->ldtrHid.u64Base;
                 pVM->rem.s.Env.ldt.limit    = pCtx->ldtrHid.u32Limit;
                 pVM->rem.s.Env.ldt.flags    = (pCtx->ldtrHid.Attr.u << 8) & 0xFFFFFF;;
             }
@@ -1732,7 +1795,7 @@ REMR3DECL(int) REMR3State(PVM pVM)
             if (fHiddenSelRegsValid)
             {
                 pVM->rem.s.Env.tr.selector = pCtx->tr;
-                pVM->rem.s.Env.tr.base     = pCtx->trHid.u32Base;
+                pVM->rem.s.Env.tr.base     = pCtx->trHid.u64Base;
                 pVM->rem.s.Env.tr.limit    = pCtx->trHid.u32Limit;
                 pVM->rem.s.Env.tr.flags    = (pCtx->trHid.Attr.u << 8) & 0xFFFFFF;;
             }
@@ -1774,12 +1837,12 @@ REMR3DECL(int) REMR3State(PVM pVM)
         /* Set current CPL */
         cpu_x86_set_cpl(&pVM->rem.s.Env, CPUMGetGuestCPL(pVM, CPUMCTX2CORE(pCtx)));
 
-        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_CS, pCtx->cs, pCtx->csHid.u32Base, pCtx->csHid.u32Limit, (pCtx->csHid.Attr.u << 8) & 0xFFFFFF);
-        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_SS, pCtx->ss, pCtx->ssHid.u32Base, pCtx->ssHid.u32Limit, (pCtx->ssHid.Attr.u << 8) & 0xFFFFFF);
-        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_DS, pCtx->ds, pCtx->dsHid.u32Base, pCtx->dsHid.u32Limit, (pCtx->dsHid.Attr.u << 8) & 0xFFFFFF);
-        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_ES, pCtx->es, pCtx->esHid.u32Base, pCtx->esHid.u32Limit, (pCtx->esHid.Attr.u << 8) & 0xFFFFFF);
-        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_FS, pCtx->fs, pCtx->fsHid.u32Base, pCtx->fsHid.u32Limit, (pCtx->fsHid.Attr.u << 8) & 0xFFFFFF);
-        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_GS, pCtx->gs, pCtx->gsHid.u32Base, pCtx->gsHid.u32Limit, (pCtx->gsHid.Attr.u << 8) & 0xFFFFFF);
+        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_CS, pCtx->cs, pCtx->csHid.u64Base, pCtx->csHid.u32Limit, (pCtx->csHid.Attr.u << 8) & 0xFFFFFF);
+        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_SS, pCtx->ss, pCtx->ssHid.u64Base, pCtx->ssHid.u32Limit, (pCtx->ssHid.Attr.u << 8) & 0xFFFFFF);
+        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_DS, pCtx->ds, pCtx->dsHid.u64Base, pCtx->dsHid.u32Limit, (pCtx->dsHid.Attr.u << 8) & 0xFFFFFF);
+        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_ES, pCtx->es, pCtx->esHid.u64Base, pCtx->esHid.u32Limit, (pCtx->esHid.Attr.u << 8) & 0xFFFFFF);
+        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_FS, pCtx->fs, pCtx->fsHid.u64Base, pCtx->fsHid.u32Limit, (pCtx->fsHid.Attr.u << 8) & 0xFFFFFF);
+        cpu_x86_load_seg_cache(&pVM->rem.s.Env, R_GS, pCtx->gs, pCtx->gsHid.u64Base, pCtx->gsHid.u32Limit, (pCtx->gsHid.Attr.u << 8) & 0xFFFFFF);
     }
     else
     {
@@ -1872,20 +1935,6 @@ REMR3DECL(int) REMR3State(PVM pVM)
         else
             pVM->rem.s.Env.segs[R_GS].newselector = 0;
     }
-
-    /* Update MSRs. */
-    pVM->rem.s.Env.efer         = pCtx->msrEFER;
-    pVM->rem.s.Env.star         = pCtx->msrSTAR;
-    pVM->rem.s.Env.pat          = pCtx->msrPAT;
-#ifdef TARGET_X86_64
-    pVM->rem.s.Env.lstar        = pCtx->msrLSTAR;
-    pVM->rem.s.Env.cstar        = pCtx->msrCSTAR;
-    pVM->rem.s.Env.fmask        = pCtx->msrSFMASK;
-    pVM->rem.s.Env.kernelgsbase = pCtx->msrKERNELGSBASE;
-#endif
-    /* Note that FS_BASE & GS_BASE are already synced; QEmu keeps them in the hidden selector registers.
-     * So we basically assume the hidden registers are in sync with these MSRs (vt-x & amd-v). Correct??
-     */
 
     /*
      * Check for traps.
@@ -2014,6 +2063,27 @@ REMR3DECL(int) REMR3StateBack(PVM pVM)
     restore_raw_fp_state(&pVM->rem.s.Env, (uint8_t *)&pCtx->fpu);
 ////    dprintf2(("FPU state CW=%04X TT=%04X SW=%04X (%04X)\n", env->fpuc, env->fpstt, env->fpus, pVMCtx->fpu.FSW));
 
+#ifdef TARGET_X86_64
+    /* Note that the high dwords of 64 bits registers are undefined in 32 bits mode and are undefined after a mode change. */
+    pCtx->rdi           = pVM->rem.s.Env.regs[R_EDI];
+    pCtx->rsi           = pVM->rem.s.Env.regs[R_ESI];
+    pCtx->rbp           = pVM->rem.s.Env.regs[R_EBP];
+    pCtx->rax           = pVM->rem.s.Env.regs[R_EAX];
+    pCtx->rbx           = pVM->rem.s.Env.regs[R_EBX];
+    pCtx->rdx           = pVM->rem.s.Env.regs[R_EDX];
+    pCtx->rcx           = pVM->rem.s.Env.regs[R_ECX];
+    pCtx->r8            = pVM->rem.s.Env.regs[8];
+    pCtx->r9            = pVM->rem.s.Env.regs[9];
+    pCtx->r10           = pVM->rem.s.Env.regs[10];
+    pCtx->r11           = pVM->rem.s.Env.regs[11];
+    pCtx->r12           = pVM->rem.s.Env.regs[12];
+    pCtx->r13           = pVM->rem.s.Env.regs[13];
+    pCtx->r14           = pVM->rem.s.Env.regs[14];
+    pCtx->r15           = pVM->rem.s.Env.regs[15];
+
+    pCtx->rsp           = pVM->rem.s.Env.regs[R_ESP];
+
+#else
     pCtx->edi           = pVM->rem.s.Env.regs[R_EDI];
     pCtx->esi           = pVM->rem.s.Env.regs[R_ESI];
     pCtx->ebp           = pVM->rem.s.Env.regs[R_EBP];
@@ -2023,6 +2093,8 @@ REMR3DECL(int) REMR3StateBack(PVM pVM)
     pCtx->ecx           = pVM->rem.s.Env.regs[R_ECX];
 
     pCtx->esp           = pVM->rem.s.Env.regs[R_ESP];
+#endif
+
     pCtx->ss            = pVM->rem.s.Env.segs[R_SS].selector;
 
 #ifdef VBOX_WITH_STATISTICS
@@ -2057,8 +2129,13 @@ REMR3DECL(int) REMR3StateBack(PVM pVM)
     pCtx->ds            = pVM->rem.s.Env.segs[R_DS].selector;
     pCtx->cs            = pVM->rem.s.Env.segs[R_CS].selector;
 
+#ifdef TARGET_X86_64
+    pCtx->rip           = pVM->rem.s.Env.eip;
+    pCtx->rflags.u64    = pVM->rem.s.Env.eflags;
+#else
     pCtx->eip           = pVM->rem.s.Env.eip;
     pCtx->eflags.u32    = pVM->rem.s.Env.eflags;
+#endif
 
     pCtx->cr0           = pVM->rem.s.Env.cr[0];
     pCtx->cr2           = pVM->rem.s.Env.cr[2];
@@ -2075,17 +2152,17 @@ REMR3DECL(int) REMR3StateBack(PVM pVM)
     pCtx->dr7           = pVM->rem.s.Env.dr[7];
 
     pCtx->gdtr.cbGdt    = pVM->rem.s.Env.gdt.limit;
-    if (pCtx->gdtr.pGdt != (uint32_t)pVM->rem.s.Env.gdt.base)
+    if (pCtx->gdtr.pGdt != pVM->rem.s.Env.gdt.base)
     {
-        pCtx->gdtr.pGdt     = (uint32_t)pVM->rem.s.Env.gdt.base;
+        pCtx->gdtr.pGdt = pVM->rem.s.Env.gdt.base;
         STAM_COUNTER_INC(&gStatREMGDTChange);
         VM_FF_SET(pVM, VM_FF_SELM_SYNC_GDT);
     }
 
     pCtx->idtr.cbIdt    = pVM->rem.s.Env.idt.limit;
-    if (pCtx->idtr.pIdt != (uint32_t)pVM->rem.s.Env.idt.base)
+    if (pCtx->idtr.pIdt != pVM->rem.s.Env.idt.base)
     {
-        pCtx->idtr.pIdt     = (uint32_t)pVM->rem.s.Env.idt.base;
+        pCtx->idtr.pIdt = pVM->rem.s.Env.idt.base;
         STAM_COUNTER_INC(&gStatREMIDTChange);
         VM_FF_SET(pVM, VM_FF_TRPM_SYNC_IDT);
     }
@@ -2104,36 +2181,36 @@ REMR3DECL(int) REMR3StateBack(PVM pVM)
     }
 
     /** @todo These values could still be out of sync! */
-    pCtx->csHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_CS].base;
+    pCtx->csHid.u64Base    = pVM->rem.s.Env.segs[R_CS].base;
     pCtx->csHid.u32Limit   = pVM->rem.s.Env.segs[R_CS].limit;
     /** @note QEmu saves the 2nd dword of the descriptor; we should store the attribute word only! */
     pCtx->csHid.Attr.u     = (pVM->rem.s.Env.segs[R_CS].flags >> 8) & 0xF0FF;
 
-    pCtx->dsHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_DS].base;
+    pCtx->dsHid.u64Base    = pVM->rem.s.Env.segs[R_DS].base;
     pCtx->dsHid.u32Limit   = pVM->rem.s.Env.segs[R_DS].limit;
     pCtx->dsHid.Attr.u     = (pVM->rem.s.Env.segs[R_DS].flags >> 8) & 0xF0FF;
 
-    pCtx->esHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_ES].base;
+    pCtx->esHid.u64Base    = pVM->rem.s.Env.segs[R_ES].base;
     pCtx->esHid.u32Limit   = pVM->rem.s.Env.segs[R_ES].limit;
     pCtx->esHid.Attr.u     = (pVM->rem.s.Env.segs[R_ES].flags >> 8) & 0xF0FF;
 
-    pCtx->fsHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_FS].base;
+    pCtx->fsHid.u64Base    = pVM->rem.s.Env.segs[R_FS].base;
     pCtx->fsHid.u32Limit   = pVM->rem.s.Env.segs[R_FS].limit;
     pCtx->fsHid.Attr.u     = (pVM->rem.s.Env.segs[R_FS].flags >> 8) & 0xF0FF;
 
-    pCtx->gsHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_GS].base;
+    pCtx->gsHid.u64Base    = pVM->rem.s.Env.segs[R_GS].base;
     pCtx->gsHid.u32Limit   = pVM->rem.s.Env.segs[R_GS].limit;
     pCtx->gsHid.Attr.u     = (pVM->rem.s.Env.segs[R_GS].flags >> 8) & 0xF0FF;
 
-    pCtx->ssHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_SS].base;
+    pCtx->ssHid.u64Base    = pVM->rem.s.Env.segs[R_SS].base;
     pCtx->ssHid.u32Limit   = pVM->rem.s.Env.segs[R_SS].limit;
     pCtx->ssHid.Attr.u     = (pVM->rem.s.Env.segs[R_SS].flags >> 8) & 0xF0FF;
 
-    pCtx->ldtrHid.u32Base  = (uint32_t)pVM->rem.s.Env.ldt.base;
+    pCtx->ldtrHid.u64Base  = pVM->rem.s.Env.ldt.base;
     pCtx->ldtrHid.u32Limit = pVM->rem.s.Env.ldt.limit;
     pCtx->ldtrHid.Attr.u   = (pVM->rem.s.Env.ldt.flags >> 8) & 0xF0FF;
 
-    pCtx->trHid.u32Base    = (uint32_t)pVM->rem.s.Env.tr.base;
+    pCtx->trHid.u64Base    = pVM->rem.s.Env.tr.base;
     pCtx->trHid.u32Limit   = pVM->rem.s.Env.tr.limit;
     pCtx->trHid.Attr.u     = (pVM->rem.s.Env.tr.flags >> 8) & 0xF0FF;
 
@@ -2150,8 +2227,6 @@ REMR3DECL(int) REMR3StateBack(PVM pVM)
     pCtx->msrLSTAR         = pVM->rem.s.Env.lstar;
     pCtx->msrCSTAR         = pVM->rem.s.Env.cstar;
     pCtx->msrSFMASK        = pVM->rem.s.Env.fmask;
-    pCtx->msrFSBASE        = pVM->rem.s.Env.segs[R_FS].base;
-    pCtx->msrGSBASE        = pVM->rem.s.Env.segs[R_GS].base;
     pCtx->msrKERNELGSBASE  = pVM->rem.s.Env.kernelgsbase;
 #endif
 
@@ -2216,6 +2291,25 @@ static void remR3StateUpdate(PVM pVM)
     restore_raw_fp_state(&pVM->rem.s.Env, (uint8_t *)&pCtx->fpu);
 ////    dprintf2(("FPU state CW=%04X TT=%04X SW=%04X (%04X)\n", env->fpuc, env->fpstt, env->fpus, pVMCtx->fpu.FSW));
 
+#ifdef TARGET_X86_64
+    pCtx->rdi           = pVM->rem.s.Env.regs[R_EDI];
+    pCtx->rsi           = pVM->rem.s.Env.regs[R_ESI];
+    pCtx->rbp           = pVM->rem.s.Env.regs[R_EBP];
+    pCtx->rax           = pVM->rem.s.Env.regs[R_EAX];
+    pCtx->rbx           = pVM->rem.s.Env.regs[R_EBX];
+    pCtx->rdx           = pVM->rem.s.Env.regs[R_EDX];
+    pCtx->rcx           = pVM->rem.s.Env.regs[R_ECX];
+    pCtx->r8            = pVM->rem.s.Env.regs[8];
+    pCtx->r9            = pVM->rem.s.Env.regs[9];
+    pCtx->r10           = pVM->rem.s.Env.regs[10];
+    pCtx->r11           = pVM->rem.s.Env.regs[11];
+    pCtx->r12           = pVM->rem.s.Env.regs[12];
+    pCtx->r13           = pVM->rem.s.Env.regs[13];
+    pCtx->r14           = pVM->rem.s.Env.regs[14];
+    pCtx->r15           = pVM->rem.s.Env.regs[15];
+
+    pCtx->rsp           = pVM->rem.s.Env.regs[R_ESP];
+#else
     pCtx->edi           = pVM->rem.s.Env.regs[R_EDI];
     pCtx->esi           = pVM->rem.s.Env.regs[R_ESI];
     pCtx->ebp           = pVM->rem.s.Env.regs[R_EBP];
@@ -2225,6 +2319,8 @@ static void remR3StateUpdate(PVM pVM)
     pCtx->ecx           = pVM->rem.s.Env.regs[R_ECX];
 
     pCtx->esp           = pVM->rem.s.Env.regs[R_ESP];
+#endif
+
     pCtx->ss            = pVM->rem.s.Env.segs[R_SS].selector;
 
     pCtx->gs            = pVM->rem.s.Env.segs[R_GS].selector;
@@ -2233,8 +2329,13 @@ static void remR3StateUpdate(PVM pVM)
     pCtx->ds            = pVM->rem.s.Env.segs[R_DS].selector;
     pCtx->cs            = pVM->rem.s.Env.segs[R_CS].selector;
 
+#ifdef TARGET_X86_64
+    pCtx->rip           = pVM->rem.s.Env.eip;
+    pCtx->rflags.u64    = pVM->rem.s.Env.eflags;
+#else
     pCtx->eip           = pVM->rem.s.Env.eip;
     pCtx->eflags.u32    = pVM->rem.s.Env.eflags;
+#endif
 
     pCtx->cr0           = pVM->rem.s.Env.cr[0];
     pCtx->cr2           = pVM->rem.s.Env.cr[2];
@@ -2280,36 +2381,36 @@ static void remR3StateUpdate(PVM pVM)
     }
 
     /** @todo These values could still be out of sync! */
-    pCtx->csHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_CS].base;
+    pCtx->csHid.u64Base    = pVM->rem.s.Env.segs[R_CS].base;
     pCtx->csHid.u32Limit   = pVM->rem.s.Env.segs[R_CS].limit;
     /** @note QEmu saves the 2nd dword of the descriptor; we should store the attribute word only! */
     pCtx->csHid.Attr.u     = (pVM->rem.s.Env.segs[R_CS].flags >> 8) & 0xFFFF;
 
-    pCtx->dsHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_DS].base;
+    pCtx->dsHid.u64Base    = pVM->rem.s.Env.segs[R_DS].base;
     pCtx->dsHid.u32Limit   = pVM->rem.s.Env.segs[R_DS].limit;
     pCtx->dsHid.Attr.u     = (pVM->rem.s.Env.segs[R_DS].flags >> 8) & 0xFFFF;
 
-    pCtx->esHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_ES].base;
+    pCtx->esHid.u64Base    = pVM->rem.s.Env.segs[R_ES].base;
     pCtx->esHid.u32Limit   = pVM->rem.s.Env.segs[R_ES].limit;
     pCtx->esHid.Attr.u     = (pVM->rem.s.Env.segs[R_ES].flags >> 8) & 0xFFFF;
 
-    pCtx->fsHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_FS].base;
+    pCtx->fsHid.u64Base    = pVM->rem.s.Env.segs[R_FS].base;
     pCtx->fsHid.u32Limit   = pVM->rem.s.Env.segs[R_FS].limit;
     pCtx->fsHid.Attr.u     = (pVM->rem.s.Env.segs[R_FS].flags >> 8) & 0xFFFF;
 
-    pCtx->gsHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_GS].base;
+    pCtx->gsHid.u64Base    = pVM->rem.s.Env.segs[R_GS].base;
     pCtx->gsHid.u32Limit   = pVM->rem.s.Env.segs[R_GS].limit;
     pCtx->gsHid.Attr.u     = (pVM->rem.s.Env.segs[R_GS].flags >> 8) & 0xFFFF;
 
-    pCtx->ssHid.u32Base    = (uint32_t)pVM->rem.s.Env.segs[R_SS].base;
+    pCtx->ssHid.u64Base    = pVM->rem.s.Env.segs[R_SS].base;
     pCtx->ssHid.u32Limit   = pVM->rem.s.Env.segs[R_SS].limit;
     pCtx->ssHid.Attr.u     = (pVM->rem.s.Env.segs[R_SS].flags >> 8) & 0xFFFF;
 
-    pCtx->ldtrHid.u32Base  = (uint32_t)pVM->rem.s.Env.ldt.base;
+    pCtx->ldtrHid.u64Base  = pVM->rem.s.Env.ldt.base;
     pCtx->ldtrHid.u32Limit = pVM->rem.s.Env.ldt.limit;
     pCtx->ldtrHid.Attr.u   = (pVM->rem.s.Env.ldt.flags >> 8) & 0xFFFF;
 
-    pCtx->trHid.u32Base    = (uint32_t)pVM->rem.s.Env.tr.base;
+    pCtx->trHid.u64Base    = pVM->rem.s.Env.tr.base;
     pCtx->trHid.u32Limit   = pVM->rem.s.Env.tr.limit;
     pCtx->trHid.Attr.u     = (pVM->rem.s.Env.tr.flags >> 8) & 0xFFFF;
 
@@ -2317,6 +2418,18 @@ static void remR3StateUpdate(PVM pVM)
     pCtx->SysEnter.cs      = pVM->rem.s.Env.sysenter_cs;
     pCtx->SysEnter.eip     = pVM->rem.s.Env.sysenter_eip;
     pCtx->SysEnter.esp     = pVM->rem.s.Env.sysenter_esp;
+
+    /* System MSRs. */
+    pCtx->msrEFER          = pVM->rem.s.Env.efer;
+    pCtx->msrSTAR          = pVM->rem.s.Env.star;
+    pCtx->msrPAT           = pVM->rem.s.Env.pat;
+#ifdef TARGET_X86_64
+    pCtx->msrLSTAR         = pVM->rem.s.Env.lstar;
+    pCtx->msrCSTAR         = pVM->rem.s.Env.cstar;
+    pCtx->msrSFMASK        = pVM->rem.s.Env.fmask;
+    pCtx->msrKERNELGSBASE  = pVM->rem.s.Env.kernelgsbase;
+#endif
+
 }
 
 
@@ -2355,7 +2468,13 @@ REMR3DECL(void) REMR3A20Set(PVM pVM, bool fEnable)
 {
     LogFlow(("REMR3A20Set: fEnable=%d\n", fEnable));
     VM_ASSERT_EMT(pVM);
+
+    bool fSaved = pVM->rem.s.fIgnoreAll; /* just in case. */
+    pVM->rem.s.fIgnoreAll = fSaved || !pVM->rem.s.fInREM;
+
     cpu_x86_set_a20(&pVM->rem.s.Env, fEnable);
+
+    pVM->rem.s.fIgnoreAll = fSaved;
 }
 
 
@@ -2393,8 +2512,8 @@ REMR3DECL(void) REMR3ReplayInvalidatedPages(PVM pVM)
 
 
 /**
- * Replays the invalidated recorded pages.
- * Called in response to VERR_REM_FLUSHED_PAGES_OVERFLOW from the RAW execution loop.
+ * Replays the handler notification changes
+ * Called in response to VM_FF_REM_HANDLER_NOTIFY from the RAW execution loop.
  *
  * @param   pVM         VM handle.
  */
@@ -2446,6 +2565,7 @@ REMR3DECL(void) REMR3ReplayHandlerNotifications(PVM pVM)
                 break;
         }
     }
+    VM_FF_CLEAR(pVM, VM_FF_REM_HANDLER_NOTIFY);
 }
 
 
@@ -2598,7 +2718,7 @@ void remR3GrowDynRange(unsigned long physaddr)
     int rc;
     PVM pVM = cpu_single_env->pVM;
 
-    Log(("remR3GrowDynRange %VGp\n", physaddr));
+    LogFlow(("remR3GrowDynRange %VGp\n", physaddr));
     const RTGCPHYS GCPhys = physaddr;
     rc = PGM3PhysGrowRange(pVM, &GCPhys);
     if (VBOX_SUCCESS(rc))
@@ -2881,7 +3001,7 @@ target_ulong remR3PhysGetPhysicalAddressCode(CPUState *env, target_ulong addr, C
 
 /** Validate the physical address passed to the read functions.
  * Useful for finding non-guest-ram reads/writes.  */
-#if 1 /* disable if it becomes bothersome... */
+#if 0 //1 /* disable if it becomes bothersome... */
 # define VBOX_CHECK_ADDR(GCPhys) AssertMsg(PGMPhysIsGCPhysValid(cpu_single_env->pVM, (GCPhys)), ("%VGp\n", (GCPhys)))
 #else
 # define VBOX_CHECK_ADDR(GCPhys) do { } while (0)
@@ -3329,7 +3449,7 @@ bool remR3DisasBlock(CPUState *env, int f32BitCode, int nrInstructions, char *ps
     /*
      * Disassemble.
      */
-    RTINTPTR        off = env->eip - (RTINTPTR)pvPC;
+    RTINTPTR        off = env->eip - (RTGCUINTPTR)pvPC;
     DISCPUSTATE     Cpu;
     Cpu.mode = f32BitCode ? CPUMODE_32BIT : CPUMODE_16BIT;
     Cpu.pfnReadBytes = NULL;            /** @todo make cs:eip reader for the disassembler. */
@@ -3371,6 +3491,10 @@ bool remR3DisasInstr(CPUState *env, int f32BitCode, char *pszPrefix)
 {
 #ifdef USE_OLD_DUMP_AND_DISASSEMBLY
     PVM pVM = env->pVM;
+
+    /* Doesn't work in long mode. */
+    if (env->hflags & HF_LMA_MASK)
+        return false; 
 
     /*
      * Determin 16/32 bit mode.
@@ -3421,7 +3545,7 @@ bool remR3DisasInstr(CPUState *env, int f32BitCode, char *pszPrefix)
     /*
      * Disassemble.
      */
-    RTINTPTR        off = env->eip - (RTINTPTR)pvPC;
+    RTINTPTR        off = env->eip - (RTGCUINTPTR)pvPC;
     DISCPUSTATE     Cpu;
     Cpu.mode = f32BitCode ? CPUMODE_32BIT : CPUMODE_16BIT;
     Cpu.pfnReadBytes = NULL;            /** @todo make cs:eip reader for the disassembler. */
@@ -3925,7 +4049,7 @@ void cpu_set_apic_tpr(CPUX86State *env, uint8_t val)
 uint8_t cpu_get_apic_tpr(CPUX86State *env)
 {
     uint8_t u8;
-    int rc = PDMApicGetTPR(env->pVM, &u8);
+    int rc = PDMApicGetTPR(env->pVM, &u8, NULL);
     if (VBOX_SUCCESS(rc))
     {
         LogFlow(("cpu_get_apic_tpr: returns %#x\n", u8));

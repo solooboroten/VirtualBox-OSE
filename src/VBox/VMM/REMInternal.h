@@ -1,4 +1,4 @@
-/* $Id: REMInternal.h 29945 2008-04-21 12:30:34Z sandervl $ */
+/* $Id: REMInternal.h 35643 2008-08-29 12:01:13Z sandervl $ */
 /** @file
  * REM - Internal header file.
  */
@@ -43,7 +43,8 @@
  */
 
 /** The saved state version number. */
-#define REM_SAVED_STATE_VERSION     6
+#define REM_SAVED_STATE_VERSION_VER1_6   6
+#define REM_SAVED_STATE_VERSION          7
 
 
 /** @def REM_MONITOR_CODE_PAGES
@@ -241,7 +242,12 @@ typedef struct REM
     uint32_t                abPadding[HC_ARCH_BITS == 32 ? 0 : 4];
 #endif
 
-#define REM_ENV_SIZE        (HC_ARCH_BITS == 32 ? 0x6440 : 0xb4a0)
+#if GC_ARCH_BITS == 32
+#define REM_ENV_SIZE        (HC_ARCH_BITS == 32 ? 0x6550 : 0xb4a0)
+#else
+#define REM_ENV_SIZE        (HC_ARCH_BITS == 32 ? 0x9440 : 0xd4a0)
+#endif
+
     /** Recompiler CPU state. */
 #ifdef REM_INCLUDE_CPU_H
     CPUX86State             Env;

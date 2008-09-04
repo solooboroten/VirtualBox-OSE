@@ -1,4 +1,4 @@
-/* $Id: PGMPool.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: PGMPool.cpp 34406 2008-08-08 23:31:54Z bird $ */
 /** @file
  * PGM Shadow Page Pool.
  */
@@ -199,7 +199,7 @@ int pgmR3PoolInit(PVM pVM)
     {
         paUsers[i].iNext = i + 1;
         paUsers[i].iUser = NIL_PGMPOOL_IDX;
-        paUsers[i].iUserTable = 0xfffe;
+        paUsers[i].iUserTable = 0xfffffffe;
     }
     paUsers[cMaxUsers - 1].iNext = NIL_PGMPOOL_USER_INDEX;
 #endif
@@ -219,7 +219,7 @@ int pgmR3PoolInit(PVM pVM)
     paPhysExts[cMaxPhysExts - 1].iNext = NIL_PGMPOOL_PHYSEXT_INDEX;
 #endif
 #ifdef PGMPOOL_WITH_CACHE
-    for (unsigned i = 0; i < ELEMENTS(pPool->aiHash); i++)
+    for (unsigned i = 0; i < RT_ELEMENTS(pPool->aiHash); i++)
         pPool->aiHash[i] = NIL_PGMPOOL_IDX;
     pPool->iAgeHead = NIL_PGMPOOL_IDX;
     pPool->iAgeTail = NIL_PGMPOOL_IDX;
@@ -266,12 +266,19 @@ int pgmR3PoolInit(PVM pVM)
     pPool->aPages[PGMPOOL_IDX_PDPT].enmKind   = PGMPOOLKIND_ROOT_PDPT;
     pPool->aPages[PGMPOOL_IDX_PDPT].idx       = PGMPOOL_IDX_PDPT;
 
-    /* The Shadow Page Map Level-4. */
-    pPool->aPages[PGMPOOL_IDX_PML4].Core.Key  = NIL_RTHCPHYS;
-    pPool->aPages[PGMPOOL_IDX_PML4].GCPhys    = NIL_RTGCPHYS;
-    pPool->aPages[PGMPOOL_IDX_PML4].pvPageHC  = pVM->pgm.s.pHCPaePML4;
-    pPool->aPages[PGMPOOL_IDX_PML4].enmKind   = PGMPOOLKIND_ROOT_PML4;
-    pPool->aPages[PGMPOOL_IDX_PML4].idx       = PGMPOOL_IDX_PML4;
+    /* The Shadow AMD64 CR3. */
+    pPool->aPages[PGMPOOL_IDX_AMD64_CR3].Core.Key  = NIL_RTHCPHYS;
+    pPool->aPages[PGMPOOL_IDX_AMD64_CR3].GCPhys    = NIL_RTGCPHYS;
+    pPool->aPages[PGMPOOL_IDX_AMD64_CR3].pvPageHC  = pVM->pgm.s.pHCPaePDPT;     /* not used */
+    pPool->aPages[PGMPOOL_IDX_AMD64_CR3].enmKind   = PGMPOOLKIND_64BIT_PML4_FOR_64BIT_PML4;
+    pPool->aPages[PGMPOOL_IDX_AMD64_CR3].idx       = PGMPOOL_IDX_AMD64_CR3;
+
+    /* The Shadow AMD64 CR3. */
+    pPool->aPages[PGMPOOL_IDX_NESTED_ROOT].Core.Key  = NIL_RTHCPHYS;
+    pPool->aPages[PGMPOOL_IDX_NESTED_ROOT].GCPhys    = NIL_RTGCPHYS;
+    pPool->aPages[PGMPOOL_IDX_NESTED_ROOT].pvPageHC  = pVM->pgm.s.pHCNestedRoot;
+    pPool->aPages[PGMPOOL_IDX_NESTED_ROOT].enmKind   = PGMPOOLKIND_ROOT_NESTED;
+    pPool->aPages[PGMPOOL_IDX_NESTED_ROOT].idx       = PGMPOOL_IDX_NESTED_ROOT;
 
     /*
      * Set common stuff.

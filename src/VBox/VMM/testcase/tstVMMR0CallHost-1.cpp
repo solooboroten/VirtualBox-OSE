@@ -1,4 +1,4 @@
-/* $Id: tstVMMR0CallHost-1.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: tstVMMR0CallHost-1.cpp 35653 2008-08-29 14:21:03Z bird $ */
 /** @file
  * Testcase for the VMMR0JMPBUF operations.
  */
@@ -96,7 +96,7 @@ int main()
     /*
      * Init.
      */
-    RTR3Init(false);
+    RTR3Init();
     RTPrintf("tstVMMR0CallHost-1: Testing...\n");
     g_Jmp.pvSavedStack = (RTR0PTR)&g_Stack[0];
 

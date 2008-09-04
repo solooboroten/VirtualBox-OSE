@@ -1,4 +1,4 @@
-/* $Id: HWACCMAll.cpp 31238 2008-05-26 11:18:34Z sandervl $ */
+/* $Id: HWACCMAll.cpp 34567 2008-08-12 17:51:23Z sandervl $ */
 /** @file
  * HWACCM - All contexts.
  */
@@ -72,6 +72,7 @@ HWACCMDECL(int) HWACCMFlushTLB(PVM pVM)
     /* @todo Intel for nested paging */
     if (pVM->hwaccm.s.svm.fSupported)
     {
+        LogFlow(("HWACCMFlushTLB\n"));
         pVM->hwaccm.s.svm.fForceTLBFlush = true;
         STAM_COUNTER_INC(&pVM->hwaccm.s.StatFlushTLBManual);
     }
@@ -89,6 +90,20 @@ HWACCMDECL(bool) HWACCMIsNestedPagingActive(PVM pVM)
     return HWACCMIsEnabled(pVM) && pVM->hwaccm.s.fNestedPaging;
 }
 
+/**
+ * Return the shadow paging mode for nested paging/ept
+ *
+ * @returns shadow paging mode
+ * @param   pVM         The VM to operate on.
+ */
+HWACCMDECL(PGMMODE) HWACCMGetPagingMode(PVM pVM)
+{
+    Assert(HWACCMIsNestedPagingActive(pVM));
+    if (pVM->hwaccm.s.svm.fSupported)
+        return PGMMODE_NESTED;
+    Assert(pVM->hwaccm.s.vmx.fSupported);
+    return PGMMODE_EPT;
+}
 
 /**
  * Invalidates a guest page by physical address
@@ -115,3 +130,15 @@ HWACCMDECL(int) HWACCMInvalidatePhysPage(PVM pVM, RTGCPHYS GCPhys)
 #endif
     return VINF_SUCCESS;
 }
+
+/**
+ * Checks if an interrupt event is currently pending. 
+ *
+ * @returns Interrupt event pending state.
+ * @param   pVM         The VM to operate on.
+ */
+HWACCMDECL(bool) HWACCMHasPendingIrq(PVM pVM)
+{
+    return pVM->hwaccm.s.Event.fPending;
+}
+

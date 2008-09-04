@@ -1,4 +1,4 @@
-/* $Id: uuid-generic.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: uuid-generic.cpp 34729 2008-08-14 08:03:03Z klaus $ */
 /** @file
  * IPRT - UUID, Generic.
  */
@@ -35,69 +35,30 @@
 #include <iprt/uuid.h>
 #include <iprt/assert.h>
 #include <iprt/err.h>
-#include <iprt/time.h>
-#include <iprt/asm.h>
-#include <iprt/rand.h>
 
 
-/* WARNING: This implementation ASSUMES little endian. */
+/* WARNING: This implementation ASSUMES little endian. Does not work on big endian! */
+
+/* Remember, the time fields in the UUID must be little endian. */
 
 
-/**
- * Generates a new UUID value.
- *
- * @returns iprt status code.
- * @param   pUuid           Where to store generated uuid.
- */
-RTDECL(int)  RTUuidCreate(PRTUUID pUuid)
-{
-    /* validate input. */
-    AssertReturn(pUuid, VERR_INVALID_PARAMETER);
-
-    RTRandBytes(pUuid, sizeof(*pUuid));
-    pUuid->Gen.u16ClockSeq = (pUuid->Gen.u16ClockSeq & 0x3fff) | 0x8000;
-    pUuid->Gen.u16TimeHiAndVersion = (pUuid->Gen.u16TimeHiAndVersion & 0x0fff) | 0x4000;
-
-    return VINF_SUCCESS;
-}
-
-
-/**
- * Makes a null UUID value.
- *
- * @returns iprt status code.
- * @param   pUuid           Where to store generated null uuid.
- */
 RTDECL(int)  RTUuidClear(PRTUUID pUuid)
 {
-    AssertReturn(pUuid, VERR_INVALID_PARAMETER);
+    AssertPtrReturn(pUuid, VERR_INVALID_PARAMETER);
     pUuid->au64[0] = 0;
     pUuid->au64[1] = 0;
     return VINF_SUCCESS;
 }
 
 
-/**
- * Checks if UUID is null.
- *
- * @returns true if UUID is null.
- * @param   pUuid           uuid to check.
- */
-RTDECL(int)  RTUuidIsNull(PCRTUUID pUuid)
+RTDECL(bool)  RTUuidIsNull(PCRTUUID pUuid)
 {
-    AssertReturn(pUuid, VERR_INVALID_PARAMETER);
+    AssertPtrReturn(pUuid, VERR_INVALID_PARAMETER);
     return !pUuid->au64[0]
         && !pUuid->au64[1];
 }
 
 
-/**
- * Compares two UUID values.
- *
- * @returns 0 if eq, < 0 or > 0.
- * @param   pUuid1          First value to compare.
- * @param   pUuid2          Second value to compare.
- */
 RTDECL(int)  RTUuidCompare(PCRTUUID pUuid1, PCRTUUID pUuid2)
 {
     /*
@@ -109,6 +70,8 @@ RTDECL(int)  RTUuidCompare(PCRTUUID pUuid1, PCRTUUID pUuid2)
         return RTUuidIsNull(pUuid2) ? 0 : -1;
     if (!pUuid2)
         return RTUuidIsNull(pUuid1) ? 0 : 1;
+    AssertPtrReturn(pUuid1, -1);
+    AssertPtrReturn(pUuid2, 1);
 
     /*
      * Standard cases.
@@ -119,8 +82,10 @@ RTDECL(int)  RTUuidCompare(PCRTUUID pUuid1, PCRTUUID pUuid2)
         return pUuid1->Gen.u16TimeMid < pUuid2->Gen.u16TimeMid ? -1 : 1;
     if (pUuid1->Gen.u16TimeHiAndVersion != pUuid2->Gen.u16TimeHiAndVersion)
         return pUuid1->Gen.u16TimeHiAndVersion < pUuid2->Gen.u16TimeHiAndVersion ? -1 : 1;
-    if (pUuid1->Gen.u16ClockSeq != pUuid2->Gen.u16ClockSeq)
-        return pUuid1->Gen.u16ClockSeq < pUuid2->Gen.u16ClockSeq ? -1 : 1;
+    if (pUuid1->Gen.u8ClockSeqHiAndReserved != pUuid2->Gen.u8ClockSeqHiAndReserved)
+        return pUuid1->Gen.u8ClockSeqHiAndReserved < pUuid2->Gen.u8ClockSeqHiAndReserved ? -1 : 1;
+    if (pUuid1->Gen.u8ClockSeqLow != pUuid2->Gen.u8ClockSeqLow)
+        return pUuid1->Gen.u8ClockSeqLow < pUuid2->Gen.u8ClockSeqLow ? -1 : 1;
     if (pUuid1->Gen.au8Node[0] != pUuid2->Gen.au8Node[0])
         return pUuid1->Gen.au8Node[0] < pUuid2->Gen.au8Node[0] ? -1 : 1;
     if (pUuid1->Gen.au8Node[1] != pUuid2->Gen.au8Node[1])
@@ -137,19 +102,28 @@ RTDECL(int)  RTUuidCompare(PCRTUUID pUuid1, PCRTUUID pUuid2)
 }
 
 
-/**
- * Converts binary UUID to its string representation.
- *
- * @returns iprt status code.
- * @param   pUuid           Uuid to convert.
- * @param   pszString       Where to store result string.
- * @param   cchString       pszString buffer length, must be >= RTUUID_STR_LENGTH.
- */
-RTDECL(int)  RTUuidToStr(PCRTUUID pUuid, char *pszString, unsigned cchString)
+RTDECL(int)  RTUuidCompareStr(PCRTUUID pUuid1, const char *pszString)
+{
+    /* check params */
+    AssertPtrReturn(pUuid1, -1);
+    AssertPtrReturn(pszString, 1);
+
+    /*
+     * Try convert the string to a UUID and then compare the two.
+     */
+    RTUUID Uuid2;
+    int rc = RTUuidFromStr(&Uuid2, pszString);
+    AssertRCReturn(rc, 1);
+
+    return RTUuidCompare(pUuid1, &Uuid2);
+}
+
+
+RTDECL(int)  RTUuidToStr(PCRTUUID pUuid, char *pszString, size_t cchString)
 {
     /* validate parameters */
-    AssertReturn(pUuid, VERR_INVALID_PARAMETER);
-    AssertReturn(pszString, VERR_INVALID_PARAMETER);
+    AssertPtrReturn(pUuid, VERR_INVALID_PARAMETER);
+    AssertPtrReturn(pszString, VERR_INVALID_PARAMETER);
     AssertReturn(cchString >= RTUUID_STR_LENGTH, VERR_INVALID_PARAMETER);
 
     /*
@@ -189,11 +163,10 @@ RTDECL(int)  RTUuidToStr(PCRTUUID pUuid, char *pszString, unsigned cchString)
     pszString[16] = s_achDigits[(u >>  4) & 0xf];
     pszString[17] = s_achDigits[(u/*>>0*/)& 0xf];
     pszString[18] = '-';
-    u = pUuid->Gen.u16ClockSeq;
-    pszString[19] = s_achDigits[(u >>  4) & 0xf];
-    pszString[20] = s_achDigits[(u/*>>0*/)& 0xf];
-    pszString[21] = s_achDigits[(u >> 12)/*& 0xf*/];
-    pszString[22] = s_achDigits[(u >>  8) & 0xf];
+    pszString[19] = s_achDigits[pUuid->Gen.u8ClockSeqHiAndReserved >> 4];
+    pszString[20] = s_achDigits[pUuid->Gen.u8ClockSeqHiAndReserved & 0xf];
+    pszString[21] = s_achDigits[pUuid->Gen.u8ClockSeqLow >> 4];
+    pszString[22] = s_achDigits[pUuid->Gen.u8ClockSeqLow & 0xf];
     pszString[23] = '-';
     pszString[24] = s_achDigits[pUuid->Gen.au8Node[0] >> 4];
     pszString[25] = s_achDigits[pUuid->Gen.au8Node[0] & 0xf];
@@ -213,13 +186,6 @@ RTDECL(int)  RTUuidToStr(PCRTUUID pUuid, char *pszString, unsigned cchString)
 }
 
 
-/**
- * Converts UUID from its string representation to binary format.
- *
- * @returns iprt status code.
- * @param   pUuid           Where to store result Uuid.
- * @param   pszString       String with UUID text data.
- */
 RTDECL(int)  RTUuidFromStr(PRTUUID pUuid, const char *pszString)
 {
     /* 0xff if not a hex number, otherwise the value. (Assumes UTF-8 encoded strings.) */
@@ -246,8 +212,8 @@ RTDECL(int)  RTUuidFromStr(PRTUUID pUuid, const char *pszString)
     /*
      * Validate parameters.
      */
-    AssertReturn(pUuid, VERR_INVALID_PARAMETER);
-    AssertReturn(pszString, VERR_INVALID_PARAMETER);
+    AssertPtrReturn(pUuid, VERR_INVALID_PARAMETER);
+    AssertPtrReturn(pszString, VERR_INVALID_PARAMETER);
 
 #define MY_CHECK(expr) do { if (RT_UNLIKELY(!(expr))) return VERR_INVALID_UUID_FORMAT; } while (0)
 #define MY_ISXDIGIT(ch) (s_aDigits[(ch) & 0xff] != 0xff)
@@ -312,10 +278,12 @@ RTDECL(int)  RTUuidFromStr(PRTUUID pUuid, const char *pszString)
                           | (uint16_t)MY_TONUM(pszString[15]) << 8
                           | (uint16_t)MY_TONUM(pszString[16]) << 4
                           | (uint16_t)MY_TONUM(pszString[17]);
-    pUuid->Gen.u16ClockSeq =(uint16_t)MY_TONUM(pszString[19]) << 4
-                          | (uint16_t)MY_TONUM(pszString[20])
-                          | (uint16_t)MY_TONUM(pszString[21]) << 12
-                          | (uint16_t)MY_TONUM(pszString[22]) << 8;
+    pUuid->Gen.u8ClockSeqHiAndReserved =
+                            (uint16_t)MY_TONUM(pszString[19]) << 4
+                          | (uint16_t)MY_TONUM(pszString[20]);
+    pUuid->Gen.u8ClockSeqLow =
+                            (uint16_t)MY_TONUM(pszString[21]) << 4
+                          | (uint16_t)MY_TONUM(pszString[22]);
     pUuid->Gen.au8Node[0] = (uint8_t)MY_TONUM(pszString[24]) << 4
                           | (uint8_t)MY_TONUM(pszString[25]);
     pUuid->Gen.au8Node[1] = (uint8_t)MY_TONUM(pszString[26]) << 4

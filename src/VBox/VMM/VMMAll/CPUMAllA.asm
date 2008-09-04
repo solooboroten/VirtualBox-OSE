@@ -1,4 +1,4 @@
-; $Id: CPUMAllA.asm 29865 2008-04-18 15:16:47Z umoeller $
+; $Id: CPUMAllA.asm 33404 2008-07-16 09:22:28Z sandervl $
 ;; @file
 ; CPUM - Guest Context Assembly Routines.
 ;
@@ -244,3 +244,195 @@ gth_fpu_no:
     ret
 ENDPROC   CPUMRestoreHostFPUStateAsm
 
+
+;;
+; Restores the guest's FPU/XMM state
+;
+; @param    pCtx  x86:[esp+4] GCC:rdi MSC:rcx     CPUMCTX pointer
+;
+align 16
+BEGINPROC   CPUMLoadFPUAsm
+%ifdef RT_ARCH_AMD64
+ %ifdef RT_OS_WINDOWS
+    mov     xDX, rcx
+ %else
+    mov     xDX, rdi
+ %endif
+%else
+    mov     xDX, dword [esp + 4]
+%endif
+    fxrstor [xDX + CPUMCTX.fpu]
+    ret
+ENDPROC     CPUMLoadFPUAsm
+
+;;
+; Restores the guest's FPU/XMM state
+;
+; @param    pCtx  x86:[esp+4] GCC:rdi MSC:rcx     CPUMCTX pointer
+;
+align 16
+BEGINPROC   CPUMSaveFPUAsm
+%ifdef RT_ARCH_AMD64
+ %ifdef RT_OS_WINDOWS
+    mov     xDX, rcx
+ %else
+    mov     xDX, rdi
+ %endif
+%else
+    mov     xDX, dword [esp + 4]
+%endif
+    fxsave  [xDX + CPUMCTX.fpu]
+    ret
+ENDPROC CPUMSaveFPUAsm
+
+;;
+; Restores the guest's XMM state
+;
+; @param    pCtx  x86:[esp+4] GCC:rdi MSC:rcx     CPUMCTX pointer
+;
+align 16
+BEGINPROC   CPUMLoadXMMAsm
+%ifdef RT_ARCH_AMD64
+ %ifdef RT_OS_WINDOWS
+    mov     xDX, rcx
+ %else
+    mov     xDX, rdi
+ %endif
+%else
+    mov     xDX, dword [esp + 4]
+%endif
+    movdqa  xmm0, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*0]
+    movdqa  xmm1, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*1]
+    movdqa  xmm2, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*2]
+    movdqa  xmm3, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*3]
+    movdqa  xmm4, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*4]
+    movdqa  xmm5, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*5]
+    movdqa  xmm6, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*6]
+    movdqa  xmm7, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*7]
+    
+%ifdef RT_ARCH_AMD64
+    test qword [xDX + CPUMCTX.msrEFER], MSR_K6_EFER_LMA
+    jz CPUMLoadXMMAsm_done
+    
+    movdqa  xmm8, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*8]
+    movdqa  xmm9, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*9]
+    movdqa  xmm10, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*10]
+    movdqa  xmm11, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*11]
+    movdqa  xmm12, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*12]
+    movdqa  xmm13, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*13]
+    movdqa  xmm14, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*14]
+    movdqa  xmm15, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*15]
+CPUMLoadXMMAsm_done:
+%endif
+
+    ret
+ENDPROC     CPUMLoadXMMAsm
+
+
+;;
+; Restores the guest's XMM state
+;
+; @param    pCtx  x86:[esp+4] GCC:rdi MSC:rcx     CPUMCTX pointer
+;
+align 16
+BEGINPROC   CPUMSaveXMMAsm
+%ifdef RT_ARCH_AMD64
+ %ifdef RT_OS_WINDOWS
+    mov     xDX, rcx
+ %else
+    mov     xDX, rdi
+ %endif
+%else
+    mov     xDX, dword [esp + 4]
+%endif
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*0], xmm0
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*1], xmm1
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*2], xmm2
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*3], xmm3
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*4], xmm4
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*5], xmm5
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*6], xmm6
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*7], xmm7
+    
+%ifdef RT_ARCH_AMD64
+    test qword [xDX + CPUMCTX.msrEFER], MSR_K6_EFER_LMA
+    jz CPUMSaveXMMAsm_done
+
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*8], xmm8
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*9], xmm9
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*10], xmm10
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*11], xmm11
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*12], xmm12
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*13], xmm13
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*14], xmm14
+    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*15], xmm15
+    
+CPUMSaveXMMAsm_done:
+%endif
+    ret
+ENDPROC     CPUMSaveXMMAsm
+
+
+;;
+; Set the FPU control word; clearing exceptions first
+;
+; @param  u16FCW    x86:[esp+4] GCC:rdi MSC:rcx     New FPU control word
+align 16
+BEGINPROC CPUMSetFCW
+%ifdef RT_ARCH_AMD64
+ %ifdef RT_OS_WINDOWS
+    mov     xAX, rcx
+ %else
+    mov     xAX, rdi
+ %endif
+%else
+    mov     xAX, dword [esp + 4]
+%endif
+    fnclex
+    push    xAX
+    fldcw   [xSP]
+    pop     xAX
+    ret
+ENDPROC   CPUMSetFCW
+
+;;
+; Get the FPU control word
+;
+align 16
+BEGINPROC CPUMGetFCW
+    fnstcw  [xSP - 8]
+    mov     ax, word [xSP - 8]
+    ret
+ENDPROC   CPUMGetFCW
+
+
+;;
+; Set the MXCSR; 
+;
+; @param  u32MXCSR    x86:[esp+4] GCC:rdi MSC:rcx     New MXCSR
+align 16
+BEGINPROC CPUMSetMXCSR
+%ifdef RT_ARCH_AMD64
+ %ifdef RT_OS_WINDOWS
+    mov     xAX, rcx
+ %else
+    mov     xAX, rdi
+ %endif
+%else
+    mov     xAX, dword [esp + 4]
+%endif
+    push    xAX
+    ldmxcsr [xSP]
+    pop     xAX
+    ret
+ENDPROC   CPUMSetMXCSR
+
+;;
+; Get the MXCSR
+;
+align 16
+BEGINPROC CPUMGetMXCSR
+    stmxcsr [xSP - 8]
+    mov     eax, dword [xSP - 8]
+    ret
+ENDPROC   CPUMGetMXCSR

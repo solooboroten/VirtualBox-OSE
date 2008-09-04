@@ -21,12 +21,18 @@
 #include <VBox/VBoxGuest.h>
 #include <VBox/VBoxDev.h>
 
-#include <xf86Pci.h>
-#include <Pci.h>
+#ifndef PCIACCESS
+# include <xf86Pci.h>
+# include <Pci.h>
+#endif
 
 #include "xf86.h"
 #define NEED_XF86_TYPES
-#include "xf86_ansic.h"
+#ifdef NO_ANSIC
+# include <string.h>
+#else
+# include "xf86_ansic.h"
+#endif
 #include "compiler.h"
 #include "cursorstr.h"
 
@@ -35,26 +41,46 @@
 #define VBOX_MAX_CURSOR_WIDTH 64
 #define VBOX_MAX_CURSOR_HEIGHT 64
 
-#if 0
-#define DEBUG_X
+/**************************************************************************
+* Debugging functions and macros                                          *
+**************************************************************************/
+
+/* #define DEBUG_POINTER */
+
+#ifdef DEBUG_michael
+# define DEBUG_VIDEO
 #endif
-#ifdef DEBUG_X
-#define TRACE_ENTRY() do \
-    { \
-        ErrorF ("%s\n", __FUNCTION__); \
-    } while(0)
-#define TRACE_LINE() do \
+
+#define BOOL_STR(a) ((a) ? "TRUE" : "FALSE")
+
+#ifdef DEBUG_VIDEO
+# define TRACE_ENTRY() \
+do { \
+    xf86Msg(X_INFO, __PRETTY_FUNCTION__); \
+    xf86Msg(X_INFO, ": entering\n"); \
+} while(0)
+# define TRACE_EXIT() \
+do { \
+    xf86Msg(X_INFO, __PRETTY_FUNCTION__); \
+    xf86Msg(X_INFO, ": leaving\n"); \
+} while(0)
+# define TRACE_LOG(...) \
+do { \
+    xf86Msg(X_INFO, __PRETTY_FUNCTION__); \
+    xf86Msg(X_INFO, __VA_ARGS__); \
+} while(0)
+# define TRACE_LINE() do \
     { \
         ErrorF ("%s: line %d\n", __FUNCTION__, __LINE__); \
     } while(0)
-#define PUT_PIXEL(c) ErrorF ("%c", c)
-#define dolog(...) ErrorF  (__VA_ARGS__)
-#else
-#define PUT_PIXEL(c) do { } while(0)
-#define TRACE_ENTRY() do { } while(0)
-#define TRACE_LINE() do { } while(0)
-#define dolog(...) do { } while(0)
-#endif
+# define PUT_PIXEL(c) ErrorF ("%c", c)
+#else /* DEBUG_VIDEO not defined */
+# define PUT_PIXEL(c) do { } while(0)
+# define TRACE_ENTRY() do { } while(0)
+# define TRACE_EXIT() do { } while(0)
+# define TRACE_LOG(...) do { } while(0)
+# define TRACE_LINE() do { } while(0)
+#endif /* DEBUG_VIDEO not defined */
 
 /** Macro to printf an error message and return from a function */
 #define RETERROR(scrnIndex, RetVal, ...) \
@@ -65,7 +91,7 @@
     } \
     while (0)
 
-#ifdef DEBUG_X
+#ifdef DEBUG_POINTER
 static void
 vbox_show_shape(unsigned short w, unsigned short h, CARD32 bg, unsigned char *image)
 {
@@ -102,6 +128,9 @@ vbox_show_shape(unsigned short w, unsigned short h, CARD32 bg, unsigned char *im
 }
 #endif
 
+/**************************************************************************
+* Helper functions and macros                                             *
+**************************************************************************/
 
 static Bool
 vbox_host_uses_hwcursor(ScrnInfoPtr pScrn)
@@ -122,17 +151,40 @@ vbox_host_uses_hwcursor(ScrnInfoPtr pScrn)
            )
             rc = TRUE;
     }
+    TRACE_LOG("rc=%s\n", BOOL_STR(rc));
     return rc;
 }
 
-
-void
-vbox_close(ScrnInfoPtr pScrn, VBOXPtr pVBox)
+/**
+ * This function checks whether the X server agrees with us about whether
+ * to use a host or a guest-drawn cursor and gives it a nudge if it doesn't.
+ * Disabling and re-enabling framebuffer access was one of the few
+ * reliable (although not particularly nice) methods I could find to
+ * force the server to recheck whether to use a hardware or a software
+ * cursor.
+ */
+static void
+vboxRecheckHWCursor(ScrnInfoPtr pScrn)
 {
-    TRACE_ENTRY();
+    int vrc;
+    uint32_t fFeatures;
+    VBOXPtr pVBox = pScrn->driverPrivate;
 
-    xfree (pVBox->reqp);
-    pVBox->reqp = NULL;
+    TRACE_ENTRY();
+    /* Check whether we are using the hardware cursor or not, and whether this
+       has changed since the last time we checked. */
+    vrc = VbglR3GetMouseStatus(&fFeatures, NULL, NULL);
+    if (!!(fFeatures & VBOXGUEST_MOUSE_HOST_CAN_ABSOLUTE) != pVBox->usingHWCursor)
+    {
+        pVBox->usingHWCursor = !!(fFeatures & VBOXGUEST_MOUSE_HOST_CAN_ABSOLUTE);
+        /* This triggers a cursor image reload */
+        if (pVBox->accessEnabled)
+        {
+            pScrn->EnableDisableFBAccess(pScrn->scrnIndex, FALSE);
+            pScrn->EnableDisableFBAccess(pScrn->scrnIndex, TRUE);
+        }
+    }
+    TRACE_EXIT();
 }
 
 /**
@@ -148,6 +200,20 @@ vbox_close(ScrnInfoPtr pScrn, VBOXPtr pVBox)
         return; \
     } \
     while (0)
+
+/**************************************************************************
+* Main functions                                                          *
+**************************************************************************/
+
+void
+vbox_close(ScrnInfoPtr pScrn, VBOXPtr pVBox)
+{
+    TRACE_ENTRY();
+
+    xfree (pVBox->reqp);
+    pVBox->reqp = NULL;
+    TRACE_EXIT();
+}
 
 /**
  * Callback function called by the X server to tell us about dirty
@@ -175,6 +241,7 @@ vboxHandleDirtyRect(ScrnInfoPtr pScrn, int iRects, BoxPtr aRects)
     int i;
 
     pVBox = pScrn->driverPrivate;
+    TRACE_ENTRY();
     if (pVBox->useVbva == FALSE)
         return;
     pMem = pVBox->pVbvaMemory;
@@ -261,20 +328,47 @@ vboxHandleDirtyRect(ScrnInfoPtr pScrn, int iRects, BoxPtr aRects)
     }
 }
 
+#ifdef PCIACCESS
+/* As of X.org server 1.5, we are using the pciaccess library functions to
+ * access PCI.  This structure describes our VMM device. */
+/** Structure describing the VMM device */
+static const struct pci_id_match vboxVMMDevID =
+{ VMMDEV_VENDORID, VMMDEV_DEVICEID, PCI_MATCH_ANY, PCI_MATCH_ANY,
+  PCI_MATCH_ANY, PCI_MATCH_ANY, 0 };
+#endif
 
 /**
  * Initialise VirtualBox's accelerated video extensions.
- * Note that we assume that the PCI memory is 32bit mapped,
- * as X doesn't seem to support mapping 64bit memory.
  *
  * @returns TRUE on success, FALSE on failure
  */
 static Bool
 vboxInitVbva(int scrnIndex, ScreenPtr pScreen, VBOXPtr pVBox)
 {
+#ifdef PCIACCESS
+    struct pci_device_iterator *devIter = NULL;
+
+    TRACE_ENTRY();
+    pVBox->vmmDevInfo = NULL;
+    devIter = pci_id_match_iterator_create(&vboxVMMDevID);
+    if (devIter)
+    {
+        pVBox->vmmDevInfo = pci_device_next(devIter);
+        pci_iterator_destroy(devIter);
+    }
+    if (pVBox->vmmDevInfo)
+    {
+        pci_device_map_range(pVBox->vmmDevInfo,
+                             pVBox->vmmDevInfo->regions[1].base_addr,
+                             pVBox->vmmDevInfo->regions[1].size,
+                             PCI_DEV_MAP_FLAG_WRITABLE,
+                             (void **)&pVBox->pVMMDevMemory);
+    }
+#else
     PCITAG pciTag;
     ADDRESS pciAddress;
 
+    TRACE_ENTRY();
     /* Locate the device.  It should already have been enabled by
        the kernel driver. */
     pciTag = pciFindFirst((unsigned) VMMDEV_DEVICEID << 16 | VMMDEV_VENDORID,
@@ -298,6 +392,7 @@ vboxInitVbva(int scrnIndex, ScreenPtr pScreen, VBOXPtr pVBox)
        function needed to determine it. */
     pVBox->pVMMDevMemory = xf86MapPciMem(scrnIndex, 0, pciTag, pciAddress,
                                          sizeof(VMMDevMemory));
+#endif
     if (pVBox->pVMMDevMemory == NULL)
     {
         xf86DrvMsg(scrnIndex, X_ERROR,
@@ -324,6 +419,8 @@ vbox_init(int scrnIndex, VBOXPtr pVBox)
 {
     Bool rc = TRUE;
     int vrc;
+
+    TRACE_ENTRY();
     pVBox->useVbva = FALSE;
     vrc = VbglR3Init();
     if (RT_FAILURE(vrc))
@@ -388,6 +485,8 @@ static void
 vbox_vmm_hide_cursor(ScrnInfoPtr pScrn, VBOXPtr pVBox)
 {
     int rc;
+
+    TRACE_ENTRY();
     pVBox->reqp->fFlags = 0;
     rc = VbglR3SetPointerShapeReq(pVBox->reqp);
     if (RT_FAILURE(rc))
@@ -398,6 +497,8 @@ static void
 vbox_vmm_show_cursor(ScrnInfoPtr pScrn, VBOXPtr pVBox)
 {
     int rc;
+
+    TRACE_ENTRY();
     pVBox->reqp->fFlags = VBOX_MOUSE_POINTER_VISIBLE;
     rc = VbglR3SetPointerShapeReq(pVBox->reqp);
     if (RT_FAILURE(rc))
@@ -412,8 +513,8 @@ vbox_vmm_load_cursor_image(ScrnInfoPtr pScrn, VBOXPtr pVBox,
     VMMDevReqMousePointer *reqp;
     reqp = (VMMDevReqMousePointer *)image;
 
-    dolog("w=%d h=%d size=%d\n", reqp->width, reqp->height, reqp->header.size);
-#ifdef DEBUG_X
+    TRACE_LOG("w=%d h=%d size=%d\n", reqp->width, reqp->height, reqp->header.size);
+#ifdef DEBUG_POINTER
     vbox_show_shape(reqp->width, reqp->height, 0, image);
 #endif
 
@@ -433,28 +534,18 @@ vbox_set_cursor_colors(ScrnInfoPtr pScrn, int bg, int fg)
     /* ErrorF("vbox_set_cursor_colors NOT IMPLEMENTED\n"); */
 }
 
+/**
+ * This function is called to set the position of the hardware cursor.
+ * Since we already know the position (exactly where the host pointer is),
+ * we only use this function to poll for whether we need to switch from a
+ * hardware to a software cursor (that is, whether the user has disabled
+ * pointer integration).  Sadly we this doesn't work the other way round,
+ * as the server updates the software cursor itself without calling us.
+ */
 static void
 vbox_set_cursor_position(ScrnInfoPtr pScrn, int x, int y)
 {
-    VBOXPtr pVBox = pScrn->driverPrivate;
-    int vrc;
-    uint32_t fFeatures;
-
-    TRACE_ENTRY();
-    /* Check whether we are using the hardware cursor or not, and whether this
-       has changed since the last time we checked. */
-    vrc = VbglR3GetMouseStatus(&fFeatures, NULL, NULL);
-    if (!!(fFeatures & VBOXGUEST_MOUSE_HOST_CAN_ABSOLUTE) != pVBox->usingHWCursor)
-    {
-        pVBox->usingHWCursor = !!(fFeatures & VBOXGUEST_MOUSE_HOST_CAN_ABSOLUTE);
-        /* This triggers a cursor image reload */
-        if (pVBox->accessEnabled)
-        {
-            pScrn->EnableDisableFBAccess(pScrn->scrnIndex, FALSE);
-            pScrn->EnableDisableFBAccess(pScrn->scrnIndex, TRUE);
-        }
-    }
-    
+    vboxRecheckHWCursor(pScrn);
     /* don't disable the mouse cursor if we go out of our visible area
      * since the mouse cursor is drawn by the host anyway */
 #if 0
@@ -533,6 +624,7 @@ vbox_realize_cursor(xf86CursorInfoPtr infoPtr, CursorPtr pCurs)
     int rc, scrnIndex = infoPtr->pScrn->scrnIndex;
     VMMDevReqMousePointer *reqp;
 
+    TRACE_ENTRY();
     pVBox = infoPtr->pScrn->driverPrivate;
     bitsp = pCurs->bits;
     w = bitsp->width;
@@ -571,9 +663,9 @@ vbox_realize_cursor(xf86CursorInfoPtr infoPtr, CursorPtr pCurs)
     m = p + offsetof(VMMDevReqMousePointer, pointerData);
     cp = (CARD32 *)(m + sizeMask);
 
-    dolog ("w=%d h=%d sm=%d sr=%d p=%d\n",
+    TRACE_LOG ("w=%d h=%d sm=%d sr=%d p=%d\n",
            w, h, (int) sizeMask, (int) sizeRgba, (int) dstPitch);
-    dolog ("m=%p c=%p cp=%p\n", m, c, (void *)cp);
+    TRACE_LOG ("m=%p c=%p cp=%p\n", m, c, (void *)cp);
 
     fc = color_to_byte (pCurs->foreBlue)
       | (color_to_byte (pCurs->foreGreen) << 8)
@@ -641,7 +733,7 @@ vbox_realize_cursor(xf86CursorInfoPtr infoPtr, CursorPtr pCurs)
     reqp->fFlags = VBOX_MOUSE_POINTER_SHAPE;
     reqp->header.size = sizeRequest;
 
-#ifdef DEBUG_X
+#ifdef DEBUG_POINTER
     ErrorF("shape = %p\n", p);
     vbox_show_shape(w, h, bc, c);
 #endif
@@ -656,6 +748,7 @@ vbox_use_hw_cursor_argb(ScreenPtr pScreen, CursorPtr pCurs)
     ScrnInfoPtr pScrn = xf86Screens[pScreen->myNum];
     Bool rc = TRUE;
 
+    TRACE_ENTRY();
     if (!vbox_host_uses_hwcursor(pScrn))
         rc = FALSE;
     if (   rc
@@ -665,6 +758,7 @@ vbox_use_hw_cursor_argb(ScreenPtr pScreen, CursorPtr pCurs)
            )
        )
         rc = FALSE;
+    TRACE_LOG("rc=%s\n", BOOL_STR(rc));
     return rc;
 }
 
@@ -683,6 +777,7 @@ vbox_load_cursor_argb(ScrnInfoPtr pScrn, CursorPtr pCurs)
     CARD8 *p;
     int scrnIndex;
 
+    TRACE_ENTRY();
     pVBox = pScrn->driverPrivate;
     bitsp = pCurs->bits;
     w     = bitsp->width;
@@ -765,6 +860,7 @@ vbox_cursor_init(ScreenPtr pScreen)
     xf86CursorInfoPtr pCurs;
     Bool rc;
 
+    TRACE_ENTRY();
     if (!pVBox->useDevice)
         return FALSE;
     /* Initially assume we are using a hardware cursor, but this is
@@ -814,6 +910,7 @@ vboxEnableVbva(ScrnInfoPtr pScrn)
     int scrnIndex = pScrn->scrnIndex;
     VBOXPtr pVBox = pScrn->driverPrivate;
 
+    TRACE_ENTRY();
     if (pVBox->useVbva != TRUE)
         return FALSE;
     rc = VbglR3VideoAccelEnable(true);
@@ -846,6 +943,7 @@ vboxDisableVbva(ScrnInfoPtr pScrn)
     int scrnIndex = pScrn->scrnIndex;
     VBOXPtr pVBox = pScrn->driverPrivate;
 
+    TRACE_ENTRY();
     if (pVBox->useVbva != TRUE)  /* Ths function should not have been called */
         return FALSE;
     rc = VbglR3VideoAccelEnable(false);
@@ -869,6 +967,7 @@ vboxDisableVbva(ScrnInfoPtr pScrn)
 Bool
 vboxEnableGraphicsCap(VBOXPtr pVBox)
 {
+    TRACE_ENTRY();
     if (!pVBox->useDevice)
         return FALSE;
     return RT_SUCCESS(VbglR3SetGuestCaps(VMMDEV_GUEST_SUPPORTS_GRAPHICS, 0));
@@ -883,6 +982,7 @@ vboxEnableGraphicsCap(VBOXPtr pVBox)
 Bool
 vboxDisableGraphicsCap(VBOXPtr pVBox)
 {
+    TRACE_ENTRY();
     if (!pVBox->useDevice)
         return FALSE;
     return RT_SUCCESS(VbglR3SetGuestCaps(0, VMMDEV_GUEST_SUPPORTS_GRAPHICS));
@@ -901,9 +1001,10 @@ vboxDisableGraphicsCap(VBOXPtr pVBox)
  */
 Bool
 vboxGetDisplayChangeRequest(ScrnInfoPtr pScrn, uint32_t *pcx, uint32_t *pcy,
-                            uint32_t *pcBits, uint32_t *piDisplay,
-                            VBOXPtr pVBox)
+                            uint32_t *pcBits, uint32_t *piDisplay)
 {
+    VBOXPtr pVBox = pScrn->driverPrivate;
+    TRACE_ENTRY();
     if (!pVBox->useDevice)
         return FALSE;
     int rc = VbglR3GetLastDisplayChangeRequest(pcx, pcy, pcBits, piDisplay);
@@ -923,7 +1024,54 @@ vboxGetDisplayChangeRequest(ScrnInfoPtr pScrn, uint32_t *pcx, uint32_t *pcy,
  * @param   cBits  the bpp of the mode being queried
  */
 Bool
-vboxHostLikesVideoMode(uint32_t cx, uint32_t cy, uint32_t cBits)
+vboxHostLikesVideoMode(ScrnInfoPtr pScrn, uint32_t cx, uint32_t cy, uint32_t cBits)
 {
+    VBOXPtr pVBox = pScrn->driverPrivate;
+    TRACE_ENTRY();
+    if (!pVBox->useDevice)
+        return TRUE;  /* If we can't ask the host then we like everything. */
     return VbglR3HostLikesVideoMode(cx, cy, cBits);
+}
+
+/**
+ * Save video mode parameters to the registry.
+ * 
+ * @returns iprt status value
+ * @param   pszName the name to save the mode parameters under
+ * @param   cx      mode width
+ * @param   cy      mode height
+ * @param   cBits   bits per pixel for the mode
+ */
+Bool
+vboxSaveVideoMode(ScrnInfoPtr pScrn, uint32_t cx, uint32_t cy, uint32_t cBits)
+{
+    VBOXPtr pVBox = pScrn->driverPrivate;
+    TRACE_ENTRY();
+    if (!pVBox->useDevice)
+        return FALSE;
+    return RT_SUCCESS(VbglR3SaveVideoMode("SavedMode", cx, cy, cBits));
+}
+
+/**
+ * Retrieve video mode parameters from the registry.
+ * 
+ * @returns iprt status value
+ * @param   pszName the name under which the mode parameters are saved
+ * @param   pcx     where to store the mode width
+ * @param   pcy     where to store the mode height
+ * @param   pcBits  where to store the bits per pixel for the mode
+ */
+Bool
+vboxRetrieveVideoMode(ScrnInfoPtr pScrn, uint32_t *pcx, uint32_t *pcy, uint32_t *pcBits)
+{
+    VBOXPtr pVBox = pScrn->driverPrivate;
+    TRACE_ENTRY();
+    if (!pVBox->useDevice)
+        return FALSE;
+    int rc = VbglR3RetrieveVideoMode("SavedMode", pcx, pcy, pcBits);
+    if (RT_SUCCESS(rc))
+        TRACE_LOG("Retrieved a video mode of %dx%dx%d\n", *pcx, *pcy, *pcBits);
+    else
+        TRACE_LOG("Failed to retrieve video mode, error %d\n", rc);
+    return (RT_SUCCESS(rc));
 }

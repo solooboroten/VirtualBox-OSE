@@ -1,4 +1,4 @@
-/* $Id: mp-r0drv-solaris.c 31282 2008-05-27 09:27:29Z bird $ */
+/* $Id: mp-r0drv-solaris.c 33823 2008-07-29 19:51:36Z bird $ */
 /** @file
  * IPRT - Multiprocessor, Ring-0 Driver, Solaris.
  */
@@ -71,7 +71,7 @@ RTDECL(bool) RTMpIsCpuOnline(RTCPUID idCpu)
 }
 
 
-RTDECL(bool) RTMpDoesCpuExist(RTCPUID idCpu)
+RTDECL(bool) RTMpIsCpuPossible(RTCPUID idCpu)
 {
     return idCpu < vbi_cpu_count();
 }
@@ -85,7 +85,7 @@ RTDECL(PRTCPUSET) RTMpGetSet(PRTCPUSET pSet)
     idCpu = RTMpGetMaxCpuId(); /* it's inclusive */
     do
     {
-        if (RTMpDoesCpuExist(idCpu))
+        if (RTMpIsCpuPossible(idCpu))
             RTCpuSetAdd(pSet, idCpu);
     } while (idCpu-- > 0);
 
@@ -228,7 +228,7 @@ static int rtmpOnSpecificSolarisWrapper(void *uArg, void *uIgnored1, void *uIgno
     PRTMPARGS pArgs = (PRTMPARGS)(uArg);
     RTCPUID idCpu = RTMpCpuId();
 
-    Assert(idCpu != pArgs->idCpu);
+    Assert(idCpu == pArgs->idCpu);
     pArgs->pfnWorker(idCpu, pArgs->pvUser1, pArgs->pvUser2);
     ASMAtomicIncU32(&pArgs->cHits);
 

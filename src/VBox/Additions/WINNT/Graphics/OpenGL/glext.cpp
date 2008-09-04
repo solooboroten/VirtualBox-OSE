@@ -2,7 +2,7 @@
  *
  * VirtualBox Windows NT/2000/XP guest OpenGL ICD
  *
- * OpenGL extensions 
+ * OpenGL extensions
  *
  * References:  http://oss.sgi.com/projects/ogl-sample/registry/
  *              http://icps.u-strasbg.fr/~marchesin/perso/extensions/
@@ -49,7 +49,7 @@ int vboxInitOpenGLExtensions(PVBOX_OGL_THREAD_CTX pCtx)
     parms.name.u.value32                 = GL_EXTENSIONS;
     parms.pString.type                   = VMMDevHGCMParmType_LinAddr;
     parms.pString.u.Pointer.size         = sizeof(szOpenGLExtensions);
-    parms.pString.u.Pointer.u.linearAddr = (vmmDevHypPtr)szOpenGLExtensions;
+    parms.pString.u.Pointer.u.linearAddr = (VMMDEVHYPPTR)szOpenGLExtensions;
 
     rc = vboxHGCMCall(&parms, sizeof (parms));
 

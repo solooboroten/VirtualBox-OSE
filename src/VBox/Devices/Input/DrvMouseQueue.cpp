@@ -86,7 +86,7 @@ typedef struct DRVMOUSEQUEUEITEM
 static DECLCALLBACK(void *)  drvMouseQueueQueryInterface(PPDMIBASE pInterface, PDMINTERFACE enmInterface)
 {
     PPDMDRVINS pDrvIns = PDMIBASE_2_PDMDRV(pInterface);
-    PDRVMOUSEQUEUE pDrv = PDMINS2DATA(pDrvIns, PDRVMOUSEQUEUE);
+    PDRVMOUSEQUEUE pDrv = PDMINS_2_DATA(pDrvIns, PDRVMOUSEQUEUE);
     switch (enmInterface)
     {
         case PDMINTERFACE_BASE:
@@ -151,10 +151,10 @@ static DECLCALLBACK(int) drvMouseQueuePutEvent(PPDMIMOUSEPORT pInterface, int32_
  */
 static DECLCALLBACK(bool) drvMouseQueueConsumer(PPDMDRVINS pDrvIns, PPDMQUEUEITEMCORE pItemCore)
 {
-    PDRVMOUSEQUEUE        pData = PDMINS2DATA(pDrvIns, PDRVMOUSEQUEUE);
+    PDRVMOUSEQUEUE        pThis = PDMINS_2_DATA(pDrvIns, PDRVMOUSEQUEUE);
     PDRVMOUSEQUEUEITEM    pItem = (PDRVMOUSEQUEUEITEM)pItemCore;
-    int rc = pData->pUpPort->pfnPutEvent(pData->pUpPort, pItem->i32DeltaX, pItem->i32DeltaY, pItem->i32DeltaZ, pItem->fButtonStates);
-    return VBOX_SUCCESS(rc);
+    int rc = pThis->pUpPort->pfnPutEvent(pThis->pUpPort, pItem->i32DeltaX, pItem->i32DeltaY, pItem->i32DeltaZ, pItem->fButtonStates);
+    return RT_SUCCESS(rc);
 }
 
 
@@ -168,8 +168,8 @@ static DECLCALLBACK(bool) drvMouseQueueConsumer(PPDMDRVINS pDrvIns, PPDMQUEUEITE
  */
 static DECLCALLBACK(void) drvMouseQueuePowerOn(PPDMDRVINS pDrvIns)
 {
-    PDRVMOUSEQUEUE        pData = PDMINS2DATA(pDrvIns, PDRVMOUSEQUEUE);
-    pData->fInactive = false;
+    PDRVMOUSEQUEUE        pThis = PDMINS_2_DATA(pDrvIns, PDRVMOUSEQUEUE);
+    pThis->fInactive = false;
 }
 
 
@@ -181,7 +181,7 @@ static DECLCALLBACK(void) drvMouseQueuePowerOn(PPDMDRVINS pDrvIns)
  */
 static DECLCALLBACK(void)  drvMouseQueueReset(PPDMDRVINS pDrvIns)
 {
-    //PDRVKBDQUEUE        pData = PDMINS2DATA(pDrvIns, PDRVKBDQUEUE);
+    //PDRVKBDQUEUE        pThis = PDMINS_2_DATA(pDrvIns, PDRVKBDQUEUE);
     /** @todo purge the queue on reset. */
 }
 
@@ -194,8 +194,8 @@ static DECLCALLBACK(void)  drvMouseQueueReset(PPDMDRVINS pDrvIns)
  */
 static DECLCALLBACK(void)  drvMouseQueueSuspend(PPDMDRVINS pDrvIns)
 {
-    PDRVMOUSEQUEUE        pData = PDMINS2DATA(pDrvIns, PDRVMOUSEQUEUE);
-    pData->fInactive = true;
+    PDRVMOUSEQUEUE        pThis = PDMINS_2_DATA(pDrvIns, PDRVMOUSEQUEUE);
+    pThis->fInactive = true;
 }
 
 
@@ -207,8 +207,8 @@ static DECLCALLBACK(void)  drvMouseQueueSuspend(PPDMDRVINS pDrvIns)
  */
 static DECLCALLBACK(void)  drvMouseQueueResume(PPDMDRVINS pDrvIns)
 {
-    PDRVMOUSEQUEUE        pData = PDMINS2DATA(pDrvIns, PDRVMOUSEQUEUE);
-    pData->fInactive = false;
+    PDRVMOUSEQUEUE        pThis = PDMINS_2_DATA(pDrvIns, PDRVMOUSEQUEUE);
+    pThis->fInactive = false;
 }
 
 
@@ -219,8 +219,8 @@ static DECLCALLBACK(void)  drvMouseQueueResume(PPDMDRVINS pDrvIns)
  */
 static DECLCALLBACK(void) drvMouseQueuePowerOff(PPDMDRVINS pDrvIns)
 {
-    PDRVMOUSEQUEUE        pData = PDMINS2DATA(pDrvIns, PDRVMOUSEQUEUE);
-    pData->fInactive = true;
+    PDRVMOUSEQUEUE        pThis = PDMINS_2_DATA(pDrvIns, PDRVMOUSEQUEUE);
+    pThis->fInactive = true;
 }
 
 
@@ -236,7 +236,7 @@ static DECLCALLBACK(void) drvMouseQueuePowerOff(PPDMDRVINS pDrvIns)
  */
 static DECLCALLBACK(int) drvMouseQueueConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
 {
-    PDRVMOUSEQUEUE pDrv = PDMINS2DATA(pDrvIns, PDRVMOUSEQUEUE);
+    PDRVMOUSEQUEUE pDrv = PDMINS_2_DATA(pDrvIns, PDRVMOUSEQUEUE);
     LogFlow(("drvMouseQueueConstruct: iInstance=%d\n", pDrvIns->iInstance));
 
     /*
@@ -269,9 +269,9 @@ static DECLCALLBACK(int) drvMouseQueueConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
      */
     PPDMIBASE pDownBase;
     int rc = pDrvIns->pDrvHlp->pfnAttach(pDrvIns, &pDownBase);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Failed to attach driver below us! rc=%Vra\n", rc));
+        AssertMsgFailed(("Failed to attach driver below us! rc=%Rra\n", rc));
         return rc;
     }
     pDrv->pDownConnector = (PPDMIMOUSECONNECTOR)pDownBase->pfnQueryInterface(pDownBase, PDMINTERFACE_MOUSE_CONNECTOR);
@@ -288,9 +288,9 @@ static DECLCALLBACK(int) drvMouseQueueConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
     rc = CFGMR3QueryU32(pCfgHandle, "Interval", &cMilliesInterval);
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
         cMilliesInterval = 0;
-    else if (VBOX_FAILURE(rc))
+    else if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Configuration error: 32-bit \"Interval\" -> rc=%Vrc\n", rc));
+        AssertMsgFailed(("Configuration error: 32-bit \"Interval\" -> rc=%Rrc\n", rc));
         return rc;
     }
 
@@ -298,16 +298,16 @@ static DECLCALLBACK(int) drvMouseQueueConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
     rc = CFGMR3QueryU32(pCfgHandle, "QueueSize", &cItems);
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
         cItems = 128;
-    else if (VBOX_FAILURE(rc))
+    else if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Configuration error: 32-bit \"QueueSize\" -> rc=%Vrc\n", rc));
+        AssertMsgFailed(("Configuration error: 32-bit \"QueueSize\" -> rc=%Rrc\n", rc));
         return rc;
     }
 
     rc = pDrvIns->pDrvHlp->pfnPDMQueueCreate(pDrvIns, sizeof(DRVMOUSEQUEUEITEM), cItems, cMilliesInterval, drvMouseQueueConsumer, &pDrv->pQueue);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Failed to create driver: cItems=%d cMilliesInterval=%d rc=%Vrc\n", cItems, cMilliesInterval, rc));
+        AssertMsgFailed(("Failed to create driver: cItems=%d cMilliesInterval=%d rc=%Rrc\n", cItems, cMilliesInterval, rc));
         return rc;
     }
 

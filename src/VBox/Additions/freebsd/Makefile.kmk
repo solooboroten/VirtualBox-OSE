@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 32647 2008-07-03 03:07:18Z bird $
 ## @file
 # Sub-Makefile for the FreeBSD guest additions base directory.
 #
@@ -19,8 +19,12 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
 SUB_DEPTH = ..
+DEPTH    ?= ../../../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 ifneq ($(KBUILD_HOST),freebsd)
@@ -57,6 +61,7 @@ $(PATH_BIN)/additions/VBoxFreeBSDAdditions.tbz: \
 		$(PATH_BIN)/additions/vboxguest.ko \
 		$(PATH_BIN)/additions/VBoxClient \
 		$(PATH_BIN)/additions/VBoxService \
+		$(PATH_BIN)/additions/VBoxControl \
 		$(PATH_BIN)/additions/vboxvideo_drv_13.so \
 		$(PATH_BIN)/additions/vboxvideo_drv_14.so \
 		$(PATH_BIN)/additions/vboxvideo_drv_70.so \
@@ -76,6 +81,7 @@ $(PATH_BIN)/additions/VBoxFreeBSDAdditions.tbz: \
 	$(QUIET)$(if $(VBOX_DO_STRIP),strip $(FREEBSDINSTDIR)/vboxguest.ko,)
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/VBoxClient                                                $(FREEBSDINSTDIR)/VBoxClient
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/VBoxService                                               $(FREEBSDINSTDIR)/VBoxService
+	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/VBoxControl                                               $(FREEBSDINSTDIR)/VBoxControl
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxvideo_drv_13.so                                       $(FREEBSDINSTDIR)/vboxvideo_drv_13.so
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxvideo_drv_14.so                                       $(FREEBSDINSTDIR)/vboxvideo_drv_14.so
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxvideo_drv_70.so                                       $(FREEBSDINSTDIR)/vboxvideo_drv_70.so

@@ -1,4 +1,4 @@
-/* $Id: tstInlineAsm.cpp 31331 2008-05-28 07:31:30Z poetzsch $ */
+/* $Id: tstInlineAsm.cpp 34172 2008-08-06 04:20:58Z bird $ */
 /** @file
  * IPRT Testcase - inline assembly.
  */
@@ -182,8 +182,8 @@ void tstASMCpuId(void)
     if (cFunctions >= 1)
     {
         ASMCpuId(1, &s.uEAX, &s.uEBX, &s.uECX, &s.uEDX);
-        RTPrintf("Family:                          %#x \tExtended: %#x \tEffectiv: %#x\n"
-                 "Model:                           %#x \tExtended: %#x \tEffectiv: %#x\n"
+        RTPrintf("Family:                          %#x \tExtended: %#x \tEffective: %#x\n"
+                 "Model:                           %#x \tExtended: %#x \tEffective: %#x\n"
                  "Stepping:                        %d\n"
                  "APIC ID:                         %#04x\n"
                  "Logical CPUs:                    %d\n"
@@ -280,8 +280,8 @@ void tstASMCpuId(void)
     if (cExtFunctions >= 0x80000001)
     {
         ASMCpuId(0x80000001, &s.uEAX, &s.uEBX, &s.uECX, &s.uEDX);
-        RTPrintf("Family:                          %#x \tExtended: %#x \tEffectiv: %#x\n"
-                 "Model:                           %#x \tExtended: %#x \tEffectiv: %#x\n"
+        RTPrintf("Family:                          %#x \tExtended: %#x \tEffective: %#x\n"
+                 "Model:                           %#x \tExtended: %#x \tEffective: %#x\n"
                  "Stepping:                        %d\n"
                  "Brand ID:                        %#05x\n",
                  (s.uEAX >> 8) & 0xf, (s.uEAX >> 20) & 0x7f, ASMGetCpuFamily(s.uEAX),
@@ -1068,13 +1068,93 @@ void tstASMMath(void)
     u64 = ASMMultU64ByU32DivByU32(UINT64_C(0xfffffff8c65d6731), UINT32_C(0x77d7daf8), UINT32_C(0x3b9aca00));
     CHECKVAL(u64, UINT64_C(0x02b8f9a2aa74e3dc), "%#018RX64");
 #endif
+
+    u32 = ASMModU64ByU32RetU32(UINT64_C(0x0ffffff8c65d6731), UINT32_C(0x77d7daf8));
+    CHECKVAL(u32, UINT32_C(0x3B642451), "%#010RX32");
+
+    int32_t i32;
+    i32 = ASMModS64ByS32RetS32(INT64_C(-11), INT32_C(-2));
+    CHECKVAL(i32, INT32_C(-1), "%010RI32");
+    i32 = ASMModS64ByS32RetS32(INT64_C(-11), INT32_C(2));
+    CHECKVAL(i32, INT32_C(-1), "%010RI32");
+    i32 = ASMModS64ByS32RetS32(INT64_C(11), INT32_C(-2));
+    CHECKVAL(i32, INT32_C(1), "%010RI32");
+
+    i32 = ASMModS64ByS32RetS32(INT64_C(92233720368547758), INT32_C(2147483647));
+    CHECKVAL(i32, INT32_C(2104533974), "%010RI32");
+    i32 = ASMModS64ByS32RetS32(INT64_C(-92233720368547758), INT32_C(2147483647));
+    CHECKVAL(i32, INT32_C(-2104533974), "%010RI32");
 }
 
-/*
- * Make this static. We don't want to have this located on the stack.
- */
+
+void tstASMByteSwap(void)
+{
+    RTPrintf("tstInlineASM: TESTING - ASMByteSwap*\n");
+
+    uint64_t u64In  = UINT64_C(0x0011223344556677);
+    uint64_t u64Out = ASMByteSwapU64(u64In);
+    CHECKVAL(u64In, UINT64_C(0x0011223344556677), "%#018RX64");
+    CHECKVAL(u64Out, UINT64_C(0x7766554433221100), "%#018RX64");
+    u64Out = ASMByteSwapU64(u64Out);
+    CHECKVAL(u64Out, u64In, "%#018RX64");
+    u64In  = UINT64_C(0x0123456789abcdef);
+    u64Out = ASMByteSwapU64(u64In);
+    CHECKVAL(u64In, UINT64_C(0x0123456789abcdef), "%#018RX64");
+    CHECKVAL(u64Out, UINT64_C(0xefcdab8967452301), "%#018RX64");
+    u64Out = ASMByteSwapU64(u64Out);
+    CHECKVAL(u64Out, u64In, "%#018RX64");
+    u64In  = 0;
+    u64Out = ASMByteSwapU64(u64In);
+    CHECKVAL(u64Out, u64In, "%#018RX64");
+    u64In  = ~(uint64_t)0;
+    u64Out = ASMByteSwapU64(u64In);
+    CHECKVAL(u64Out, u64In, "%#018RX64");
+
+    uint32_t u32In  = UINT32_C(0x00112233);
+    uint32_t u32Out = ASMByteSwapU32(u32In);
+    CHECKVAL(u32In, UINT32_C(0x00112233), "%#010RX32");
+    CHECKVAL(u32Out, UINT32_C(0x33221100), "%#010RX32");
+    u32Out = ASMByteSwapU32(u32Out);
+    CHECKVAL(u32Out, u32In, "%#010RX32");
+    u32In  = UINT32_C(0x12345678);
+    u32Out = ASMByteSwapU32(u32In);
+    CHECKVAL(u32In, UINT32_C(0x12345678), "%#010RX32");
+    CHECKVAL(u32Out, UINT32_C(0x78563412), "%#010RX32");
+    u32Out = ASMByteSwapU32(u32Out);
+    CHECKVAL(u32Out, u32In, "%#010RX32");
+    u32In  = 0;
+    u32Out = ASMByteSwapU32(u32In);
+    CHECKVAL(u32Out, u32In, "%#010RX32");
+    u32In  = ~(uint32_t)0;
+    u32Out = ASMByteSwapU32(u32In);
+    CHECKVAL(u32Out, u32In, "%#010RX32");
+
+    uint16_t u16In  = UINT16_C(0x0011);
+    uint16_t u16Out = ASMByteSwapU16(u16In);
+    CHECKVAL(u16In, UINT16_C(0x0011), "%#06RX16");
+    CHECKVAL(u16Out, UINT16_C(0x1100), "%#06RX16");
+    u16Out = ASMByteSwapU16(u16Out);
+    CHECKVAL(u16Out, u16In, "%#06RX16");
+    u16In  = UINT16_C(0x1234);
+    u16Out = ASMByteSwapU16(u16In);
+    CHECKVAL(u16In, UINT16_C(0x1234), "%#06RX16");
+    CHECKVAL(u16Out, UINT16_C(0x3412), "%#06RX16");
+    u16Out = ASMByteSwapU16(u16Out);
+    CHECKVAL(u16Out, u16In, "%#06RX16");
+    u16In  = 0;
+    u16Out = ASMByteSwapU16(u16In);
+    CHECKVAL(u16Out, u16In, "%#06RX16");
+    u16In  = ~(uint16_t)0;
+    u16Out = ASMByteSwapU16(u16In);
+    CHECKVAL(u16Out, u16In, "%#06RX16");
+}
+
+
 void tstASMBench(void)
 {
+    /*
+     * Make this static. We don't want to have this located on the stack.
+     */
     static uint8_t  volatile s_u8;
     static int8_t   volatile s_i8;
     static uint16_t volatile s_u16;
@@ -1174,6 +1254,7 @@ int main(int argc, char *argv[])
     tstASMMemZero32();
     tstASMMemFill32();
     tstASMMath();
+    tstASMByteSwap();
 
     tstASMBench();
 

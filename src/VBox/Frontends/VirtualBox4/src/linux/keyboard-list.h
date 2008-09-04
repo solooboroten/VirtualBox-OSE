@@ -25,17 +25,25 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+/*
+ * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
+
 #ifndef ___VBox_keyboard_tables_h
 # error This file must be included from within keyboard-tables.h
 #endif /* ___VBox_keyboard_tables_h */
 
-/* This file contains a list of the keyboard layouts in 
+/* This file contains a list of the keyboard layouts in
    keyboard-layouts.h, along with the name of the layout, for the
    library to run through when it is trying to guess the current
    layout. */
- 
+
  {"U.S. English", &main_key_us},
- {"U.S. English, no 102nd key", &main_key_us_101},
  {"U.S. English, International (with dead keys)", &main_key_us_intl},
  {"U.S. English, Dvorak", &main_key_us_dvorak},
  {"U.S. English, Left handed Dvorak", &main_key_us_dvorak_l},
@@ -140,6 +148,12 @@
  {"Germany, Eliminate dead keys, acute replaced by apostrophe", &main_key_de_nodeadkeys_noacute},
  {"Germany, Dvorak", &main_key_de_dvorak},
  {"Germany, Neostyle", &main_key_de_neo},
+ {"Germany, paragraph", &main_key_de_para},
+ {"Germany, Dead acute, paragraph", &main_key_de_deadacute_para},
+ {"Germany, Dead grave acute, paragraph", &main_key_de_deadgraveacute_para},
+ {"Germany, Eliminate dead keys, paragraph", &main_key_de_nodeadkeys_para},
+ {"Germany, Eliminate dead keys, acute replaced by apostrophe, paragraph", &main_key_de_nodeadkeys_noacute_para},
+ {"Germany, Dvorak, paragraph", &main_key_de_dvorak_para},
  {"Greece", &main_key_gr},
  {"Greece, Eliminate dead keys", &main_key_gr_nodeadkeys},
  {"Greece, Polytonic", &main_key_gr_polytonic},

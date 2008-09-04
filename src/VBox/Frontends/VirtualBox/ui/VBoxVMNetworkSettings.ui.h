@@ -43,12 +43,10 @@ void VBoxVMNetworkSettings::init()
 
     cbNetworkAttachment->insertItem (vboxGlobal().toString (KNetworkAttachmentType_Null));
     cbNetworkAttachment->insertItem (vboxGlobal().toString (KNetworkAttachmentType_NAT));
-#ifndef Q_WS_MAC /* not yet on the Mac */
     cbNetworkAttachment->insertItem (vboxGlobal().toString (KNetworkAttachmentType_HostInterface));
     cbNetworkAttachment->insertItem (vboxGlobal().toString (KNetworkAttachmentType_Internal));
-#endif
 
-#if defined Q_WS_X11
+#if defined Q_WS_X11 && !defined VBOX_WITH_NETFLT
     leTAPDescriptor->setValidator (new QIntValidator (-1, std::numeric_limits <LONG>::max(), this));
 #else
     /* hide unavailable settings (TAP setup and terminate apps) */
@@ -57,7 +55,7 @@ void VBoxVMNetworkSettings::init()
     frmHostInterface_X11->setHidden (true);
 #endif
 
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN || defined VBOX_WITH_NETFLT
     /* disable unused interface name UI */
     grbTAP->setHidden (true);
     /* Make the line editor of the editable combobox read-only to disable
@@ -81,11 +79,6 @@ void VBoxVMNetworkSettings::init()
     /* the TAP file descriptor setting is always invisible -- currently not used
      * (remove the relative code at all? -- just leave for some time...) */
     frmTAPDescriptor->setHidden (true);
-
-#if defined Q_WS_MAC
-    /* no Host Interface Networking on the Mac yet */
-    grbTAP->setHidden (true);
-#endif
 }
 
 VBoxVMNetworkSettings::CheckPageResult
@@ -96,7 +89,7 @@ VBoxVMNetworkSettings::checkPage (const QStringList &aList)
     if (!grbEnabled->isChecked())
         return CheckPage_Ok;
     else
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN || defined VBOX_WITH_NETFLT
     if (type == KNetworkAttachmentType_HostInterface &&
         isInterfaceInvalid (aList, cbHostInterfaceName->currentText()))
         return CheckPage_InvalidInterface;
@@ -114,7 +107,7 @@ VBoxVMNetworkSettings::checkPage (const QStringList &aList)
 void VBoxVMNetworkSettings::loadInterfaceList (const QStringList &aList,
                                                const QString &aNillItem)
 {
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN || defined VBOX_WITH_NETFLT
     /* save current list item name */
     QString currentListItemName = cbHostInterfaceName->currentText();
     /* clear current list */
@@ -167,7 +160,7 @@ void VBoxVMNetworkSettings::getFromAdapter (const CNetworkAdapter &adapter)
 
     chbCableConnected->setChecked (adapter.GetCableConnected());
 
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN || defined VBOX_WITH_NETFLT
     if (!adapter.GetHostInterface().isEmpty())
         cbHostInterfaceName->setCurrentText (adapter.GetHostInterface());
 #else
@@ -175,7 +168,7 @@ void VBoxVMNetworkSettings::getFromAdapter (const CNetworkAdapter &adapter)
 #endif
     cbInternalNetworkName->setCurrentText (adapter.GetInternalNetwork());
 
-#if defined Q_WS_X11
+#if defined Q_WS_X11 && !defined VBOX_WITH_NETFLT
     leTAPDescriptor->setText (QString::number (adapter.GetTAPFileDescriptor()));
     leTAPSetup->setText (adapter.GetTAPSetupApplication());
     leTAPTerminate->setText (adapter.GetTAPTerminateApplication());
@@ -216,14 +209,14 @@ void VBoxVMNetworkSettings::putBackToAdapter()
 
     if (type == KNetworkAttachmentType_HostInterface)
     {
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN || defined VBOX_WITH_NETFLT
         if (!cbHostInterfaceName->currentText().isEmpty())
             cadapter.SetHostInterface (cbHostInterfaceName->currentText());
 #else
         QString iface = leHostInterface->text();
         cadapter.SetHostInterface (iface.isEmpty() ? QString::null : iface);
 #endif
-#if defined Q_WS_X11
+#if defined Q_WS_X11 && !defined VBOX_WITH_NETFLT
         cadapter.SetTAPFileDescriptor (leTAPDescriptor->text().toLong());
         QString setup = leTAPSetup->text();
         cadapter.SetTAPSetupApplication (setup.isEmpty() ? QString::null : setup);
@@ -247,7 +240,7 @@ void VBoxVMNetworkSettings::revalidate()
 
 void VBoxVMNetworkSettings::grbEnabledToggled (bool aOn)
 {
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN || defined VBOX_WITH_NETFLT
     cbNetworkAttachment_activated (cbNetworkAttachment->currentText());
 #else
     NOREF (aOn);
@@ -262,7 +255,7 @@ void VBoxVMNetworkSettings::cbNetworkAttachment_activated (const QString &aStrin
     bool enableIntNet = grbEnabled->isChecked() &&
                         vboxGlobal().toNetworkAttachmentType (aString) ==
                         KNetworkAttachmentType_Internal;
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN || defined VBOX_WITH_NETFLT
     txHostInterface_WIN->setEnabled (enableHostIf);
     cbHostInterfaceName->setEnabled (enableHostIf);
 #else
@@ -275,7 +268,7 @@ void VBoxVMNetworkSettings::cbNetworkAttachment_activated (const QString &aStrin
 bool VBoxVMNetworkSettings::isInterfaceInvalid (const QStringList &aList,
                                                 const QString &aIface)
 {
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN || defined VBOX_WITH_NETFLT
     return aList.find (aIface) == aList.end();
 #else
     NOREF (aList);

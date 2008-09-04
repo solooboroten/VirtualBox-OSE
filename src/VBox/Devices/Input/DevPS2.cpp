@@ -1,8 +1,7 @@
 #ifdef VBOX
+/* $Id: $ */
 /** @file
- *
- * VBox input devices:
- * PS/2 keyboard & mouse controller device
+ * DevPS2 - PS/2 keyboard & mouse controller device.
  */
 
 /*
@@ -47,7 +46,6 @@
  *
  */
 
-
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
@@ -56,7 +54,7 @@
 #include <VBox/pdmdev.h>
 #include <iprt/assert.h>
 
-#include "Builtins.h"
+#include "../Builtins.h"
 
 #define PCKBD_SAVED_STATE_VERSION 2
 
@@ -225,10 +223,12 @@ typedef struct KBDState {
     uint8_t mouse_buttons;
 
 #ifdef VBOX
+    /** Pointer to the device instance - RC. */
+    PPDMDEVINSRC                pDevInsRC;
+    /** Pointer to the device instance - R3 . */
+    PPDMDEVINSR3                pDevInsR3;
     /** Pointer to the device instance. */
-    PPDMDEVINSGC                pDevInsGC;
-    /** Pointer to the device instance. */
-    R3R0PTRTYPE(PPDMDEVINS)     pDevInsHC;
+    PPDMDEVINSR0                pDevInsR0;
     /**
      * Keyboard port - LUN#0.
      */
@@ -314,8 +314,8 @@ static void kbd_update_irq(KBDState *s)
     pic_set_irq(1, irq1_level);
     pic_set_irq(12, irq12_level);
 #else /* VBOX */
-    PDMDevHlpISASetIrq(CTXSUFF(s->pDevIns), 1, irq1_level);
-    PDMDevHlpISASetIrq(CTXSUFF(s->pDevIns), 12, irq12_level);
+    PDMDevHlpISASetIrq(s->CTX_SUFF(pDevIns), 1, irq1_level);
+    PDMDevHlpISASetIrq(s->CTX_SUFF(pDevIns), 12, irq12_level);
 #endif /* VBOX */
 }
 
@@ -453,7 +453,7 @@ static int kbd_write_command(void *opaque, uint32_t addr, uint32_t val)
 # ifndef VBOX
         val = 0x01 | (ioport_get_a20() << 1);
 # else /* VBOX */
-        val = 0x01 | (PDMDevHlpA20IsEnabled(CTXSUFF(s->pDevIns)) << 1);
+        val = 0x01 | (PDMDevHlpA20IsEnabled(s->CTX_SUFF(pDevIns)) << 1);
 # endif /* VBOX */
 #else
         val = 0x01;
@@ -470,10 +470,10 @@ static int kbd_write_command(void *opaque, uint32_t addr, uint32_t val)
         ioport_set_a20(1);
 #else /* VBOX */
 # ifndef IN_RING3
-        if (!PDMDevHlpA20IsEnabled(CTXSUFF(s->pDevIns)))
+        if (!PDMDevHlpA20IsEnabled(s->CTX_SUFF(pDevIns)))
             rc = VINF_IOM_HC_IOPORT_WRITE;
 # else /* IN_RING3 */
-        PDMDevHlpA20Set(CTXSUFF(s->pDevIns), true);
+        PDMDevHlpA20Set(s->CTX_SUFF(pDevIns), true);
 # endif /* IN_RING3 */
 #endif /* VBOX */
         break;
@@ -482,10 +482,10 @@ static int kbd_write_command(void *opaque, uint32_t addr, uint32_t val)
         ioport_set_a20(0);
 #else /* VBOX */
 # ifndef IN_RING3
-        if (PDMDevHlpA20IsEnabled(CTXSUFF(s->pDevIns)))
+        if (PDMDevHlpA20IsEnabled(s->CTX_SUFF(pDevIns)))
             rc = VINF_IOM_HC_IOPORT_WRITE;
 # else /* IN_RING3 */
-        PDMDevHlpA20Set(CTXSUFF(s->pDevIns), false);
+        PDMDevHlpA20Set(s->CTX_SUFF(pDevIns), false);
 # endif /* !IN_RING3 */
 #endif /* VBOX */
         break;
@@ -502,7 +502,7 @@ static int kbd_write_command(void *opaque, uint32_t addr, uint32_t val)
 # ifndef IN_RING3
         rc = VINF_IOM_HC_IOPORT_WRITE;
 # else /* IN_RING3 */
-        rc = PDMDevHlpVMReset(CTXSUFF(s->pDevIns));
+        rc = PDMDevHlpVMReset(s->CTX_SUFF(pDevIns));
 # endif /* !IN_RING3 */
 #endif /* VBOX */
         break;
@@ -598,9 +598,9 @@ static uint32_t kbd_read_data(void *opaque, uint32_t addr)
             pic_set_irq(1, 0);
 #else /* VBOX */
         if (aux)
-            PDMDevHlpISASetIrq(CTXSUFF(s->pDevIns), 12, 0);
+            PDMDevHlpISASetIrq(s->CTX_SUFF(pDevIns), 12, 0);
         else
-            PDMDevHlpISASetIrq(CTXSUFF(s->pDevIns), 1, 0);
+            PDMDevHlpISASetIrq(s->CTX_SUFF(pDevIns), 1, 0);
 #endif /* VBOX */
     }
     /* reassert IRQs if data left */
@@ -1011,10 +1011,10 @@ static int kbd_write_data(void *opaque, uint32_t addr, uint32_t val)
         ioport_set_a20((val >> 1) & 1);
 # else /* VBOX */
 #  ifndef IN_RING3
-        if (PDMDevHlpA20IsEnabled(CTXSUFF(s->pDevIns)) != !!(val & 2))
+        if (PDMDevHlpA20IsEnabled(s->CTX_SUFF(pDevIns)) != !!(val & 2))
             rc = VINF_IOM_HC_IOPORT_WRITE;
 #  else /* IN_RING3 */
-        PDMDevHlpA20Set(CTXSUFF(s->pDevIns), !!(val & 2));
+        PDMDevHlpA20Set(s->CTX_SUFF(pDevIns), !!(val & 2));
 #  endif /* !IN_RING3 */
 # endif /* VBOX */
 #endif
@@ -1025,7 +1025,7 @@ static int kbd_write_data(void *opaque, uint32_t addr, uint32_t val)
 # ifndef IN_RING3
             rc = VINF_IOM_HC_IOPORT_WRITE;
 # else
-            rc = PDMDevHlpVMReset(CTXSUFF(s->pDevIns));
+            rc = PDMDevHlpVMReset(s->CTX_SUFF(pDevIns));
 # endif
 #endif /* VBOX */
         }
@@ -1119,19 +1119,19 @@ static void kbd_save(QEMUFile* f, void* opaque)
      */
     cItems = s->queue.count;
     SSMR3PutU32(f, cItems);
-    for (i = s->queue.rptr; cItems-- > 0; i = (i + 1) % ELEMENTS(s->queue.data))
+    for (i = s->queue.rptr; cItems-- > 0; i = (i + 1) % RT_ELEMENTS(s->queue.data))
         SSMR3PutU8(f, s->queue.data[i]);
     Log(("kbd_save: %d keyboard queue items stored\n", s->queue.count));
 
     cItems = s->mouse_command_queue.count;
     SSMR3PutU32(f, cItems);
-    for (i = s->mouse_command_queue.rptr; cItems-- > 0; i = (i + 1) % ELEMENTS(s->mouse_command_queue.data))
+    for (i = s->mouse_command_queue.rptr; cItems-- > 0; i = (i + 1) % RT_ELEMENTS(s->mouse_command_queue.data))
         SSMR3PutU8(f, s->mouse_command_queue.data[i]);
     Log(("kbd_save: %d mouse command queue items stored\n", s->mouse_command_queue.count));
 
     cItems = s->mouse_event_queue.count;
     SSMR3PutU32(f, cItems);
-    for (i = s->mouse_event_queue.rptr; cItems-- > 0; i = (i + 1) % ELEMENTS(s->mouse_event_queue.data))
+    for (i = s->mouse_event_queue.rptr; cItems-- > 0; i = (i + 1) % RT_ELEMENTS(s->mouse_event_queue.data))
         SSMR3PutU8(f, s->mouse_event_queue.data[i]);
     Log(("kbd_save: %d mouse event queue items stored\n", s->mouse_event_queue.count));
 
@@ -1185,9 +1185,9 @@ static int kbd_load(QEMUFile* f, void* opaque, int version_id)
      * Load the queues
      */
     rc = SSMR3GetU32(f, &u32);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
-    if (u32 > ELEMENTS(s->queue.data))
+    if (u32 > RT_ELEMENTS(s->queue.data))
     {
         AssertMsgFailed(("u32=%#x\n", u32));
         return VERR_SSM_DATA_UNIT_FORMAT_CHANGED;
@@ -1195,17 +1195,17 @@ static int kbd_load(QEMUFile* f, void* opaque, int version_id)
     for (i = 0; i < u32; i++)
     {
         rc = SSMR3GetU8(f, &s->queue.data[i]);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
-    s->queue.wptr = u32 % ELEMENTS(s->queue.data);
+    s->queue.wptr = u32 % RT_ELEMENTS(s->queue.data);
     s->queue.count = u32;
     Log(("kbd_load: %d keyboard queue items loaded\n", u32));
 
     rc = SSMR3GetU32(f, &u32);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
-    if (u32 > ELEMENTS(s->mouse_command_queue.data))
+    if (u32 > RT_ELEMENTS(s->mouse_command_queue.data))
     {
         AssertMsgFailed(("u32=%#x\n", u32));
         return VERR_SSM_DATA_UNIT_FORMAT_CHANGED;
@@ -1213,17 +1213,17 @@ static int kbd_load(QEMUFile* f, void* opaque, int version_id)
     for (i = 0; i < u32; i++)
     {
         rc = SSMR3GetU8(f, &s->mouse_command_queue.data[i]);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
-    s->mouse_command_queue.wptr = u32 % ELEMENTS(s->mouse_command_queue.data);
+    s->mouse_command_queue.wptr = u32 % RT_ELEMENTS(s->mouse_command_queue.data);
     s->mouse_command_queue.count = u32;
     Log(("kbd_load: %d mouse command queue items loaded\n", u32));
 
     rc = SSMR3GetU32(f, &u32);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
-    if (u32 > ELEMENTS(s->mouse_event_queue.data))
+    if (u32 > RT_ELEMENTS(s->mouse_event_queue.data))
     {
         AssertMsgFailed(("u32=%#x\n", u32));
         return VERR_SSM_DATA_UNIT_FORMAT_CHANGED;
@@ -1231,16 +1231,16 @@ static int kbd_load(QEMUFile* f, void* opaque, int version_id)
     for (i = 0; i < u32; i++)
     {
         rc = SSMR3GetU8(f, &s->mouse_event_queue.data[i]);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
-    s->mouse_event_queue.wptr = u32 % ELEMENTS(s->mouse_event_queue.data);
+    s->mouse_event_queue.wptr = u32 % RT_ELEMENTS(s->mouse_event_queue.data);
     s->mouse_event_queue.count = u32;
     Log(("kbd_load: %d mouse event queue items loaded\n", u32));
 
     /* terminator */
     rc = SSMR3GetU32(f, &u32);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (u32 != ~0U)
     {
@@ -1292,7 +1292,7 @@ PDMBOTHCBDECL(int) kbdIOPortDataRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT 
     NOREF(pvUser);
     if (cb == 1)
     {
-        *pu32 = kbd_read_data(PDMINS2DATA(pDevIns, KBDState *), Port);
+        *pu32 = kbd_read_data(PDMINS_2_DATA(pDevIns, KBDState *), Port);
         Log2(("kbdIOPortDataRead: Port=%#x cb=%d *pu32=%#x\n", Port, cb, *pu32));
         return VINF_SUCCESS;
     }
@@ -1317,7 +1317,7 @@ PDMBOTHCBDECL(int) kbdIOPortDataWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT
     NOREF(pvUser);
     if (cb == 1)
     {
-        rc = kbd_write_data(PDMINS2DATA(pDevIns, KBDState *), Port, u32);
+        rc = kbd_write_data(PDMINS_2_DATA(pDevIns, KBDState *), Port, u32);
         Log2(("kbdIOPortDataWrite: Port=%#x cb=%d u32=%#x\n", Port, cb, u32));
     }
     else
@@ -1341,7 +1341,7 @@ PDMBOTHCBDECL(int) kbdIOPortStatusRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPOR
     NOREF(pvUser);
     if (cb == 1)
     {
-        *pu32 = kbd_read_status(PDMINS2DATA(pDevIns, KBDState *), Port);
+        *pu32 = kbd_read_status(PDMINS_2_DATA(pDevIns, KBDState *), Port);
         Log2(("kbdIOPortStatusRead: Port=%#x cb=%d -> *pu32=%#x\n", Port, cb, *pu32));
         return VINF_SUCCESS;
     }
@@ -1365,8 +1365,8 @@ PDMBOTHCBDECL(int) kbdIOPortCommandWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOP
     NOREF(pvUser);
     if (cb == 1)
     {
-        int rc = kbd_write_command(PDMINS2DATA(pDevIns, KBDState *), Port, u32);
-        Log2(("kbdIOPortCommandWrite: Port=%#x cb=%d u32=%#x rc=%Vrc\n", Port, cb, u32, rc));
+        int rc = kbd_write_command(PDMINS_2_DATA(pDevIns, KBDState *), Port, u32);
+        Log2(("kbdIOPortCommandWrite: Port=%#x cb=%d u32=%#x rc=%Rrc\n", Port, cb, u32, rc));
         return rc;
     }
     AssertMsgFailed(("Port=%#x cb=%d\n", Port, cb));
@@ -1384,7 +1384,7 @@ PDMBOTHCBDECL(int) kbdIOPortCommandWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOP
  */
 static DECLCALLBACK(int) kbdSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
 {
-    kbd_save(pSSMHandle, PDMINS2DATA(pDevIns, KBDState *));
+    kbd_save(pSSMHandle, PDMINS_2_DATA(pDevIns, KBDState *));
     return VINF_SUCCESS;
 }
 
@@ -1399,7 +1399,7 @@ static DECLCALLBACK(int) kbdSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
  */
 static DECLCALLBACK(int) kbdLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, uint32_t u32Version)
 {
-    return kbd_load(pSSMHandle, PDMINS2DATA(pDevIns, KBDState *), u32Version);
+    return kbd_load(pSSMHandle, PDMINS_2_DATA(pDevIns, KBDState *), u32Version);
 }
 
 /**
@@ -1410,7 +1410,7 @@ static DECLCALLBACK(int) kbdLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
  */
 static DECLCALLBACK(void)  kbdReset(PPDMDEVINS pDevIns)
 {
-    kbd_reset(PDMINS2DATA(pDevIns, KBDState *));
+    kbd_reset(PDMINS_2_DATA(pDevIns, KBDState *));
 }
 
 
@@ -1426,13 +1426,13 @@ static DECLCALLBACK(void)  kbdReset(PPDMDEVINS pDevIns)
  */
 static DECLCALLBACK(void *)  kbdKeyboardQueryInterface(PPDMIBASE pInterface, PDMINTERFACE enmInterface)
 {
-    KBDState *pData = (KBDState *)((uintptr_t)pInterface -  RT_OFFSETOF(KBDState, Keyboard.Base));
+    KBDState *pThis = (KBDState *)((uintptr_t)pInterface -  RT_OFFSETOF(KBDState, Keyboard.Base));
     switch (enmInterface)
     {
         case PDMINTERFACE_BASE:
-            return &pData->Keyboard.Base;
+            return &pThis->Keyboard.Base;
         case PDMINTERFACE_KEYBOARD_PORT:
-            return &pData->Keyboard.Port;
+            return &pThis->Keyboard.Port;
         default:
             return NULL;
     }
@@ -1453,8 +1453,8 @@ static DECLCALLBACK(void *)  kbdKeyboardQueryInterface(PPDMIBASE pInterface, PDM
  */
 static DECLCALLBACK(int) kbdKeyboardPutEvent(PPDMIKEYBOARDPORT pInterface, uint8_t u8KeyCode)
 {
-    KBDState *pData = IKEYBOARDPORT_2_KBDSTATE(pInterface);
-    pc_kbd_put_keycode(pData, u8KeyCode);
+    KBDState *pThis = IKEYBOARDPORT_2_KBDSTATE(pInterface);
+    pc_kbd_put_keycode(pThis, u8KeyCode);
     return VINF_SUCCESS;
 }
 
@@ -1471,13 +1471,13 @@ static DECLCALLBACK(int) kbdKeyboardPutEvent(PPDMIKEYBOARDPORT pInterface, uint8
  */
 static DECLCALLBACK(void *)  kbdMouseQueryInterface(PPDMIBASE pInterface, PDMINTERFACE enmInterface)
 {
-    KBDState *pData = (KBDState *)((uintptr_t)pInterface -  RT_OFFSETOF(KBDState, Mouse.Base));
+    KBDState *pThis = (KBDState *)((uintptr_t)pInterface -  RT_OFFSETOF(KBDState, Mouse.Base));
     switch (enmInterface)
     {
         case PDMINTERFACE_BASE:
-            return &pData->Mouse.Base;
+            return &pThis->Mouse.Base;
         case PDMINTERFACE_MOUSE_PORT:
-            return &pData->Mouse.Port;
+            return &pThis->Mouse.Port;
         default:
             return NULL;
     }
@@ -1501,8 +1501,8 @@ static DECLCALLBACK(void *)  kbdMouseQueryInterface(PPDMIBASE pInterface, PDMINT
  */
 static DECLCALLBACK(int) kbdMousePutEvent(PPDMIMOUSEPORT pInterface, int32_t i32DeltaX, int32_t i32DeltaY, int32_t i32DeltaZ, uint32_t fButtonStates)
 {
-    KBDState *pData = IMOUSEPORT_2_KBDSTATE(pInterface);
-    pc_kbd_mouse_event(pData, i32DeltaX, i32DeltaY, i32DeltaZ, fButtonStates);
+    KBDState *pThis = IMOUSEPORT_2_KBDSTATE(pInterface);
+    pc_kbd_mouse_event(pThis, i32DeltaX, i32DeltaY, i32DeltaZ, fButtonStates);
     return VINF_SUCCESS;
 }
 
@@ -1528,18 +1528,18 @@ static DECLCALLBACK(int) kbdMousePutEvent(PPDMIMOUSEPORT pInterface, int32_t i32
 static DECLCALLBACK(int)  kbdAttach(PPDMDEVINS pDevIns, unsigned iLUN)
 {
     int         rc;
-    KBDState   *pData = PDMINS2DATA(pDevIns, KBDState *);
+    KBDState   *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
     switch (iLUN)
     {
         /* LUN #0: keyboard */
         case 0:
-            rc = PDMDevHlpDriverAttach(pDevIns, iLUN, &pData->Keyboard.Base, &pData->Keyboard.pDrvBase, "Keyboard Port");
-            if (VBOX_SUCCESS(rc))
+            rc = PDMDevHlpDriverAttach(pDevIns, iLUN, &pThis->Keyboard.Base, &pThis->Keyboard.pDrvBase, "Keyboard Port");
+            if (RT_SUCCESS(rc))
             {
-                pData->Keyboard.pDrv = (PDMIKEYBOARDCONNECTOR*)(pData->Keyboard.pDrvBase->pfnQueryInterface(pData->Keyboard.pDrvBase, PDMINTERFACE_KEYBOARD_CONNECTOR));
-                if (!pData->Keyboard.pDrv)
+                pThis->Keyboard.pDrv = (PDMIKEYBOARDCONNECTOR*)(pThis->Keyboard.pDrvBase->pfnQueryInterface(pThis->Keyboard.pDrvBase, PDMINTERFACE_KEYBOARD_CONNECTOR));
+                if (!pThis->Keyboard.pDrv)
                 {
-                    AssertMsgFailed(("LUN #0 doesn't have a keyboard interface! rc=%Vrc\n", rc));
+                    AssertLogRelMsgFailed(("LUN #0 doesn't have a keyboard interface! rc=%Rrc\n", rc));
                     rc = VERR_PDM_MISSING_INTERFACE;
                 }
             }
@@ -1549,18 +1549,18 @@ static DECLCALLBACK(int)  kbdAttach(PPDMDEVINS pDevIns, unsigned iLUN)
                 rc = VINF_SUCCESS;
             }
             else
-                AssertMsgFailed(("Failed to attach LUN #0! rc=%Vrc\n", rc));
+                AssertLogRelMsgFailed(("Failed to attach LUN #0! rc=%Rrc\n", rc));
             break;
 
         /* LUN #1: aux/mouse */
         case 1:
-            rc = PDMDevHlpDriverAttach(pDevIns, iLUN, &pData->Mouse.Base, &pData->Mouse.pDrvBase, "Aux (Mouse) Port");
-            if (VBOX_SUCCESS(rc))
+            rc = PDMDevHlpDriverAttach(pDevIns, iLUN, &pThis->Mouse.Base, &pThis->Mouse.pDrvBase, "Aux (Mouse) Port");
+            if (RT_SUCCESS(rc))
             {
-                pData->Mouse.pDrv = (PDMIMOUSECONNECTOR*)(pData->Mouse.pDrvBase->pfnQueryInterface(pData->Mouse.pDrvBase, PDMINTERFACE_MOUSE_CONNECTOR));
-                if (!pData->Mouse.pDrv)
+                pThis->Mouse.pDrv = (PDMIMOUSECONNECTOR*)(pThis->Mouse.pDrvBase->pfnQueryInterface(pThis->Mouse.pDrvBase, PDMINTERFACE_MOUSE_CONNECTOR));
+                if (!pThis->Mouse.pDrv)
                 {
-                    AssertMsgFailed(("LUN #1 doesn't have a mouse interface! rc=%Vrc\n", rc));
+                    AssertLogRelMsgFailed(("LUN #1 doesn't have a mouse interface! rc=%Rrc\n", rc));
                     rc = VERR_PDM_MISSING_INTERFACE;
                 }
             }
@@ -1570,7 +1570,7 @@ static DECLCALLBACK(int)  kbdAttach(PPDMDEVINS pDevIns, unsigned iLUN)
                 rc = VINF_SUCCESS;
             }
             else
-                AssertMsgFailed(("Failed to attach LUN #1! rc=%Vrc\n", rc));
+                AssertLogRelMsgFailed(("Failed to attach LUN #1! rc=%Rrc\n", rc));
             break;
 
         default:
@@ -1602,19 +1602,19 @@ static DECLCALLBACK(void)  kbdDetach(PPDMDEVINS pDevIns, unsigned iLUN)
     /*
      * Reset the interfaces and update the controller state.
      */
-    KBDState   *pData = PDMINS2DATA(pDevIns, KBDState *);
+    KBDState   *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
     switch (iLUN)
     {
         /* LUN #0: keyboard */
         case 0:
-            pData->Keyboard.pDrv = NULL;
-            pData->Keyboard.pDrvBase = NULL;
+            pThis->Keyboard.pDrv = NULL;
+            pThis->Keyboard.pDrvBase = NULL;
             break;
 
         /* LUN #1: aux/mouse */
         case 1:
-            pData->Mouse.pDrv = NULL;
-            pData->Mouse.pDrvBase = NULL;
+            pThis->Mouse.pDrv = NULL;
+            pThis->Mouse.pDrvBase = NULL;
             break;
 
         default:
@@ -1629,8 +1629,8 @@ static DECLCALLBACK(void)  kbdDetach(PPDMDEVINS pDevIns, unsigned iLUN)
  */
 static DECLCALLBACK(void) kdbRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
 {
-    KBDState   *pData = PDMINS2DATA(pDevIns, KBDState *);
-    pData->pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
+    KBDState   *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
+    pThis->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
 }
 
 
@@ -1649,7 +1649,7 @@ static DECLCALLBACK(void) kdbRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
  */
 static DECLCALLBACK(int) kbdConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNODE pCfgHandle)
 {
-    KBDState   *pData = PDMINS2DATA(pDevIns, KBDState *);
+    KBDState   *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
     int         rc;
     bool        fGCEnabled;
     bool        fR0Enabled;
@@ -1660,77 +1660,68 @@ static DECLCALLBACK(int) kbdConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNO
      */
     if (!CFGMR3AreValuesValid(pCfgHandle, "GCEnabled\0R0Enabled\0"))
         return VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES;
-    rc = CFGMR3QueryBool(pCfgHandle, "GCEnabled", &fGCEnabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fGCEnabled = true;
-    else if (VBOX_FAILURE(rc))
-    {
-        AssertMsgFailed(("configuration error: failed to read GCEnabled as boolean. rc=%Vrc\n", rc));
-        return rc;
-    }
-    rc = CFGMR3QueryBool(pCfgHandle, "R0Enabled", &fR0Enabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fR0Enabled = true;
-    else if (VBOX_FAILURE(rc))
-    {
-        AssertMsgFailed(("configuration error: failed to read R0Enabled as boolean. rc=%Vrc\n", rc));
-        return rc;
-    }
-    Log(("pckbd: fGCEnabled=%d fR0Enabled=%d\n", fGCEnabled, fR0Enabled));
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "GCEnabled", &fGCEnabled, true);
+    if (RT_FAILURE(rc))
+        return PDMDEV_SET_ERROR(pDevIns, rc, N_("Failed to query \"GCEnabled\" from the config"));
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "R0Enabled", &fR0Enabled, true);
+    if (RT_FAILURE(rc))
+        return PDMDEV_SET_ERROR(pDevIns, rc, N_("Failed to query \"R0Enabled\" from the config"));
+    Log(("pckbd: fGCEnabled=%RTbool fR0Enabled=%RTbool\n", fGCEnabled, fR0Enabled));
 
 
     /*
      * Initialize the interfaces.
      */
-    pData->pDevInsHC = pDevIns;
-    pData->pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
-    pData->Keyboard.Base.pfnQueryInterface  = kbdKeyboardQueryInterface;
-    pData->Keyboard.Port.pfnPutEvent        = kbdKeyboardPutEvent;
+    pThis->pDevInsR3 = pDevIns;
+    pThis->pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
+    pThis->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
+    pThis->Keyboard.Base.pfnQueryInterface  = kbdKeyboardQueryInterface;
+    pThis->Keyboard.Port.pfnPutEvent        = kbdKeyboardPutEvent;
 
-    pData->Mouse.Base.pfnQueryInterface     = kbdMouseQueryInterface;
-    pData->Mouse.Port.pfnPutEvent           = kbdMousePutEvent;
+    pThis->Mouse.Base.pfnQueryInterface     = kbdMouseQueryInterface;
+    pThis->Mouse.Port.pfnPutEvent           = kbdMousePutEvent;
 
     /*
      * Register I/O ports, save state, keyboard event handler and mouse event handlers.
      */
     rc = PDMDevHlpIOPortRegister(pDevIns, 0x60, 1, NULL, kbdIOPortDataWrite,    kbdIOPortDataRead, NULL, NULL,   "PC Keyboard - Data");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     rc = PDMDevHlpIOPortRegister(pDevIns, 0x64, 1, NULL, kbdIOPortCommandWrite, kbdIOPortStatusRead, NULL, NULL, "PC Keyboard - Command / Status");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (fGCEnabled)
     {
         rc = PDMDevHlpIOPortRegisterGC(pDevIns, 0x60, 1, 0, "kbdIOPortDataWrite",    "kbdIOPortDataRead", NULL, NULL,   "PC Keyboard - Data");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
         rc = PDMDevHlpIOPortRegisterGC(pDevIns, 0x64, 1, 0, "kbdIOPortCommandWrite", "kbdIOPortStatusRead", NULL, NULL, "PC Keyboard - Command / Status");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
     if (fR0Enabled)
     {
         rc = pDevIns->pDevHlp->pfnIOPortRegisterR0(pDevIns, 0x60, 1, 0, "kbdIOPortDataWrite",    "kbdIOPortDataRead", NULL, NULL,   "PC Keyboard - Data");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
         rc = pDevIns->pDevHlp->pfnIOPortRegisterR0(pDevIns, 0x64, 1, 0, "kbdIOPortCommandWrite", "kbdIOPortStatusRead", NULL, NULL, "PC Keyboard - Command / Status");
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
-    rc = PDMDevHlpSSMRegister(pDevIns, g_DevicePS2KeyboardMouse.szDeviceName, iInstance, PCKBD_SAVED_STATE_VERSION, sizeof(*pData),
+    rc = PDMDevHlpSSMRegister(pDevIns, g_DevicePS2KeyboardMouse.szDeviceName, iInstance, PCKBD_SAVED_STATE_VERSION, sizeof(*pThis),
                               NULL, kbdSaveExec, NULL,
                               NULL, kbdLoadExec, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     /*
      * Attach to the keyboard and mouse drivers.
      */
     rc = kbdAttach(pDevIns, 0 /* keyboard LUN # */);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     rc = kbdAttach(pDevIns, 1 /* aux/mouse LUN # */);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     /*

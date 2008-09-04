@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31265 2008-05-26 22:26:10Z bird $
+# $Id: Makefile.kmk 34518 2008-08-12 11:25:18Z bird $
 ## @file
 # Sub-Makefile for the IPRT testcases.
 #
@@ -28,8 +28,12 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
 SUB_DEPTH = ..
+DEPTH    ?= ../../../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 ifdef VBOX_WITH_TESTCASES
@@ -45,7 +49,7 @@ TEMPLATE = VBOXR3TSTEXE
 #
 # Target lists
 #
-PROGRAMS = \
+PROGRAMS += \
 	tstAvl \
 	tstBitOperations \
 	tstCidr \
@@ -58,6 +62,7 @@ PROGRAMS = \
 	tstFile \
 	tstFileLock \
 	tstGetOpt \
+	tstHandleTable \
 	tstHeapSimple \
 	tstInlineAsm \
 	tstLdr \
@@ -66,37 +71,44 @@ PROGRAMS = \
 	tstLdr-4 \
 	tstLdrLoad \
 	tstLog \
+	tstMemAutoPtr \
 	tstMove \
+	tstMp-1 \
 	tstNoCrt-1 \
+	tstOnce \
 	tstPath \
 	tstPrfRT \
+	tstRand \
 	tstRTFsQueries \
 	tstStrFormat \
 	tstStrToNum \
+	tstSystemQueryOsInfo \
+	tstThread-1 \
 	tstTime \
 	tstTime-2 \
 	tstTime-3 \
 	tstTime-4 \
 	tstTimer \
+	tstTimerLR \
 	tstTimeSpec \
 	tstTSC \
 	tstUtf8 \
 	tstUuid
 # tstSems
-PROGRAMS.win = \
+PROGRAMS.win += \
 	tstRTProcWait \
 	tstCritSectW32 \
 	tstFileAppendWin-1 \
 	ntGetTimerResolution
-PROGRAMS.linux = \
+PROGRAMS.linux += \
 	tstRTProcWait \
 	tstBitOperationsPIC3 \
 	tstInlineAsmPIC \
 	tstInlineAsmPIC3 \
 	tstSemMutex
-PROGRAMS.l4 = \
+PROGRAMS.l4 += \
 	tstIoCtl
-SYSMODS = \
+SYSMODS += \
 	tstLdrObj \
 	tstLdrObjR0
 if1of ($(VBOX_LDR_FMT)), lx pe)
@@ -146,6 +158,8 @@ tstFileAppendWin-1_SOURCES = tstFileAppendWin-1.cpp
 tstFileLock_SOURCES = tstFileLock.cpp
 
 tstGetOpt_SOURCES = tstGetOpt.cpp
+
+tstHandleTable_SOURCES = tstHandleTable.cpp
 
 tstHeapSimple_SOURCES = tstHeapSimple.cpp
 
@@ -239,7 +253,11 @@ tstLdrLoad_SOURCES = tstLdrLoad.cpp
 
 tstLog_SOURCES = tstLog.cpp
 
+tstMemAutoPtr_SOURCES = tstMemAutoPtr.cpp
+
 tstMove_SOURCES = tstMove.cpp
+
+tstMp-1_SOURCES = tstMp-1.cpp
 
 tstNoCrt-1_DEFS = RT_WITHOUT_NOCRT_WRAPPER_ALIASES
 tstNoCrt-1_SOURCES = \
@@ -251,11 +269,16 @@ tstNoCrt-1_SOURCES = \
 	../common/string/memchr.asm \
 	../common/string/memcmp.asm \
 	../common/string/strchr.asm \
-	../common/string/strcmp.asm
+	../common/string/strcmp.asm \
+	../common/string/strlen.asm
+
+tstOnce_SOURCES = tstOnce.cpp
 
 tstPath_SOURCES = tstPath.cpp
 
 tstPrfRT_SOURCES = tstPrfRT.cpp
+
+tstRand_SOURCES = tstRand.cpp
 
 tstRTFsQueries_SOURCES = tstRTFsQueries.cpp
 
@@ -269,6 +292,10 @@ tstStrFormat_SOURCES = tstStrFormat.cpp
 
 tstStrToNum_SOURCES = tstStrToNum.cpp
 
+tstSystemQueryOsInfo_SOURCES = tstSystemQueryOsInfo.cpp
+
+tstThread-1_SOURCES = tstThread-1.cpp
+
 tstTime_SOURCES = tstTime.cpp
 
 tstTime-2_SOURCES = tstTime-2.cpp
@@ -278,6 +305,8 @@ tstTime-3_SOURCES = tstTime-3.cpp
 tstTime-4_SOURCES = tstTime-4.cpp
 
 tstTimer_SOURCES = tstTimer.cpp
+
+tstTimerLR_SOURCES = tstTimerLR.cpp
 
 tstTimeSpec_SOURCES = tstTimeSpec.cpp
 

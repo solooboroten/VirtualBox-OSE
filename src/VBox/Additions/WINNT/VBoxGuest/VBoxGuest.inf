@@ -22,7 +22,7 @@ Class=System
 ClassGuid={4D36E97D-E325-11CE-BFC1-08002BE10318}
 Provider=%SUN%
 LayoutFile=layout.inf
-DriverVer=08/21/2006,5.00.2072
+;edit-DriverVer=08/26/2008,2.00.0000
 ;cat CatalogFile=VBoxGuest.cat
 
 [SourceDisksNames]
@@ -43,9 +43,11 @@ VBox_CoInstaller_CopyFiles = 11 ; system32
 VBoxTray_CopyFiles = 11 ; system32
 
 [Manufacturer]
-%SUN_MFG% = VBoxGuest
+;x86   %SUN%=VBoxGuest
+;amd64 %SUN%=VBoxGuest, NTamd64
 
-[VBoxGuest]
+;x86   [VBoxGuest]
+;amd64 [VBoxGuest.NTamd64]
 %VBoxGuest.DeviceDesc%=VBoxGuest_Install,PCI\VEN_80ee&DEV_cafe
 
 [VBoxGuest_Install]
@@ -84,7 +86,6 @@ vbcoinst.dll
 HKR,,CoInstallers32,0x00010000,"vbcoinst.dll,VBoxCoInstaller"
 
 [Strings]
-SUN_MFG = "Sun Microsystems, Inc."
 SUN = "Sun Microsystems, Inc."
 VBoxGuest.DeviceDesc = "VirtualBox Device"
 VBoxGuest_svcdesc = "VirtualBox Guest Driver"

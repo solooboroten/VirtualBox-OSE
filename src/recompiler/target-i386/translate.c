@@ -17,6 +17,15 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+
+/*
+ * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -136,6 +145,8 @@ typedef struct DisasContext {
     int rip_offset; /* only used in x86_64, but left for simplicity */
     int cpuid_features;
     int cpuid_ext_features;
+    int cpuid_ext2_features;
+    int cpuid_ext3_features;
 } DisasContext;
 
 static void gen_eob(DisasContext *s);
@@ -5426,7 +5437,7 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         }
         break;
     case 0x9e: /* sahf */
-        if (CODE64(s))
+        if (CODE64(s) && !(s->cpuid_ext3_features & CPUID_EXT3_LAHF_LM))
             goto illegal_op;
         gen_op_mov_TN_reg[OT_BYTE][0][R_AH]();
         if (s->cc_op != CC_OP_DYNAMIC)
@@ -5435,7 +5446,7 @@ static target_ulong disas_insn(DisasContext *s, target_ulong pc_start)
         s->cc_op = CC_OP_EFLAGS;
         break;
     case 0x9f: /* lahf */
-        if (CODE64(s))
+        if (CODE64(s) && !(s->cpuid_ext3_features & CPUID_EXT3_LAHF_LM))
             goto illegal_op;
         if (s->cc_op != CC_OP_DYNAMIC)
             gen_op_set_cc_op(s->cc_op);
@@ -6787,6 +6798,8 @@ static inline int gen_intermediate_code_internal(CPUState *env,
     }
     dc->cpuid_features = env->cpuid_features;
     dc->cpuid_ext_features = env->cpuid_ext_features;
+    dc->cpuid_ext2_features = env->cpuid_ext2_features;
+    dc->cpuid_ext3_features = env->cpuid_ext3_features;
 #ifdef TARGET_X86_64
     dc->lma = (flags >> HF_LMA_SHIFT) & 1;
     dc->code64 = (flags >> HF_CS64_SHIFT) & 1;

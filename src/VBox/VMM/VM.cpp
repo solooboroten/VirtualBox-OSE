@@ -1,4 +1,4 @@
-/* $Id: VM.cpp 30793 2008-05-13 17:43:23Z bird $ */
+/* $Id: VM.cpp 35735 2008-08-31 16:06:43Z bird $ */
 /** @file
  * VM - Virtual Machine
  */
@@ -196,7 +196,7 @@ VMR3DECL(int)   VMR3Create(PFNVMATERROR pfnVMAtError, void *pvUserVM, PFNCFGMCON
         /*
          * Initialize the support library creating the session for this v
          */
-        rc = SUPInit(&pUVM->vm.s.pSession, 0);
+        rc = SUPR3Init(&pUVM->vm.s.pSession);
         if (RT_SUCCESS(rc))
         {
             /*
@@ -240,7 +240,6 @@ VMR3DECL(int)   VMR3Create(PFNVMATERROR pfnVMAtError, void *pvUserVM, PFNCFGMCON
 
                 default:
                     pszError = N_("Unknown error creating VM");
-                    NOT_DMIK(AssertMsgFailed(("Add error message for rc=%d (%Vrc)\n", rc, rc)));
                     break;
             }
             vmR3SetErrorU(pUVM, rc, RT_SRC_POS, pszError, rc);
@@ -269,15 +268,34 @@ VMR3DECL(int)   VMR3Create(PFNVMATERROR pfnVMAtError, void *pvUserVM, PFNCFGMCON
                     pszError = N_("VirtualBox kernel driver cannot be opened");
                     break;
                 case VERR_VM_DRIVER_NOT_ACCESSIBLE:
-#ifdef RT_OS_LINUX
-                    pszError = N_("The VirtualBox kernel driver is not accessible to the current "
-                                  "user. Make sure that the user has write permissions for "
-                                  "/dev/vboxdrv by adding them to the vboxusers groups. You "
-                                  "will need to logout for the change to take effect.");
+#ifdef VBOX_WITH_HARDENING
+                    /* This should only happen if the executable wasn't hardened - bad code/build. */
+                    pszError = N_("VirtualBox kernel driver not accessible, permission problem. "
+                                  "Re-install VirtualBox. If you are building it yourself, you "
+                                  "should make sure it installed correctly and that the setuid "
+                                  "bit is set on the executables calling VMR3Create.");
 #else
-                    pszError = N_("VirtualBox kernel driver not accessible, permission problem");
+                    /* This should only happen when mixing builds or with the usual /dev/vboxdrv access issues. */
+# if defined(RT_OS_DARWIN)
+                    pszError = N_("VirtualBox KEXT is not accessible, permission problem. "
+                                  "If you have built VirtualBox yourself, make sure that you do not "
+                                  "have the vboxdrv KEXT from a different build or installation loaded.");
+# elif defined(RT_OS_LINUX)
+                    pszError = N_("VirtualBox kernel driver is not accessible, permission problem. "
+                                  "If you have built VirtualBox yourself, make sure that you do "
+                                  "not have the vboxdrv kernel module from a different build or "
+                                  "installation loaded. Also, make sure the vboxdrv udev rule gives "
+                                  "you the permission you need to access the device.");
+# elif defined(RT_OS_WINDOWS)
+                    pszError = N_("VirtualBox kernel driver is not accessible, permission problem.");
+# else /* solaris, freebsd, ++. */
+                    pszError = N_("VirtualBox kernel module is not accessible, permission problem. "
+                                  "If you have built VirtualBox yourself, make sure that you do "
+                                  "not have the vboxdrv kernel module from a different install loaded.");
+# endif 
 #endif
                     break;
+                case VERR_INVALID_HANDLE: /** @todo track down and fix this error. */
                 case VERR_VM_DRIVER_NOT_INSTALLED:
 #ifdef RT_OS_LINUX
                     pszError = N_("VirtualBox kernel driver not installed. The vboxdrv kernel module "
@@ -1226,7 +1244,7 @@ static DECLCALLBACK(int) vmR3Load(PVM pVM, const char *pszFilename, PFNVMPROGRES
  * @returns VBox error code on failure.
  * @param   pVM     VM which should be destroyed.
  * @thread      Any thread.
- * @vmstate     Suspended, Running, Guru Mediation, Load Failure
+ * @vmstate     Suspended, Running, Guru Meditation, Load Failure
  * @vmstateto   Off
  */
 VMR3DECL(int)   VMR3PowerOff(PVM pVM)
@@ -2236,7 +2254,7 @@ VMR3DECL(const char *) VMR3GetStateName(VMSTATE enmState)
         case VMSTATE_SAVING:            return "SAVING";
         case VMSTATE_SUSPENDED:         return "SUSPENDED";
         case VMSTATE_RESETTING:         return "RESETTING";
-        case VMSTATE_GURU_MEDITATION:   return "GURU_MEDIATION";
+        case VMSTATE_GURU_MEDITATION:   return "GURU_MEDITATION";
         case VMSTATE_OFF:               return "OFF";
         case VMSTATE_DESTROYING:        return "DESTROYING";
         case VMSTATE_TERMINATED:        return "TERMINATED";

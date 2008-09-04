@@ -1,4 +1,4 @@
-/* $Id: SUPLib.cpp 30926 2008-05-16 12:43:44Z bird $ */
+/* $Id: SUPLib.cpp 35741 2008-08-31 18:08:32Z bird $ */
 /** @file
  * VirtualBox Support Library - Common code.
  */
@@ -63,7 +63,8 @@
 #include <iprt/alloca.h>
 #include <iprt/ldr.h>
 #include <iprt/asm.h>
-#include <iprt/system.h>
+#include <iprt/mp.h>
+#include <iprt/cpuset.h>
 #include <iprt/thread.h>
 #include <iprt/process.h>
 #include <iprt/string.h>
@@ -71,8 +72,7 @@
 #include <iprt/rand.h>
 
 #include "SUPLibInternal.h"
-#include "SUPDRVIOC.h"
-
+#include "SUPDrvIOC.h"
 
 
 /*******************************************************************************
@@ -92,6 +92,23 @@ typedef FNCALLVMMR0 *PFNCALLVMMR0;
 /*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
+/** Init counter. */
+static uint32_t                 g_cInits = 0;
+/** Whether we've been preinitied. */
+static bool                     g_fPreInited = false;
+/** The SUPLib instance data.
+ * Well, at least parts of it, specificly the parts that are being handed over
+ * via the pre-init mechanism from the hardened executable stub.  */
+static SUPLIBDATA               g_supLibData =
+{
+    NIL_RTFILE
+#if   defined(RT_OS_DARWIN)
+    , NULL
+#elif defined(RT_OS_LINUX)
+    , false
+#endif
+};
+
 /** Pointer to the Global Information Page.
  *
  * This pointer is valid as long as SUPLib has a open session. Anyone using
@@ -123,8 +140,6 @@ static PFNCALLVMMR0 g_pfnCallVMMR0;
 #endif
 /** VMMR0 Load Address. */
 static RTR0PTR      g_pvVMMR0 = NIL_RTR0PTR;
-/** Init counter. */
-static unsigned     g_cInits = 0;
 /** PAGE_ALLOC support indicator. */
 static bool         g_fSupportsPageAllocLocked = true;
 /** Fake mode indicator. (~0 at first, 0 or 1 after first test) */
@@ -154,7 +169,48 @@ SUPR3DECL(int) SUPUninstall(void)
 }
 
 
-SUPR3DECL(int) SUPInit(PSUPDRVSESSION *ppSession /* NULL */, size_t cbReserve /* 0 */)
+DECLEXPORT(int) supR3PreInit(PSUPPREINITDATA pPreInitData, uint32_t fFlags)
+{
+    /*
+     * The caller is kind of trustworthy, just perform some basic checks.
+     *
+     * Note! Do not do any fancy stuff here because IPRT has NOT been
+     *       initialized at this point.
+     */
+    if (!VALID_PTR(pPreInitData))
+        return VERR_INVALID_POINTER;
+    if (g_fPreInited || g_cInits > 0)
+        return VERR_WRONG_ORDER;
+
+    if (    pPreInitData->u32Magic != SUPPREINITDATA_MAGIC
+        ||  pPreInitData->u32EndMagic != SUPPREINITDATA_MAGIC)
+        return VERR_INVALID_MAGIC;
+    if (    !(fFlags & SUPSECMAIN_FLAGS_DONT_OPEN_DEV)
+        &&  pPreInitData->Data.hDevice == NIL_RTFILE)
+        return VERR_INVALID_HANDLE;
+    if (    (fFlags & SUPSECMAIN_FLAGS_DONT_OPEN_DEV)
+        &&  pPreInitData->Data.hDevice != NIL_RTFILE)
+        return VERR_INVALID_PARAMETER;
+
+    /*
+     * Hand out the data.
+     */
+    int rc = supR3HardenedRecvPreInitData(pPreInitData);
+    if (RT_FAILURE(rc))
+        return rc;
+
+    /** @todo This may need some small restructuring later, it doesn't quite work with a root service flag... */
+    if (!(fFlags & SUPSECMAIN_FLAGS_DONT_OPEN_DEV))
+    {
+        g_supLibData = pPreInitData->Data;
+        g_fPreInited = true;
+    }
+
+    return VINF_SUCCESS;
+}
+
+
+SUPR3DECL(int) SUPR3Init(PSUPDRVSESSION *ppSession)
 {
     /*
      * Perform some sanity checks.
@@ -193,10 +249,10 @@ SUPR3DECL(int) SUPInit(PSUPDRVSESSION *ppSession /* NULL */, size_t cbReserve /*
     if (RT_UNLIKELY(g_u32FakeMode))
         return supInitFake(ppSession);
 
-    /**
+    /*
      * Open the support driver.
      */
-    int rc = suplibOsInit(cbReserve);
+    int rc = suplibOsInit(&g_supLibData, g_fPreInited);
     if (RT_SUCCESS(rc))
     {
         /*
@@ -211,16 +267,16 @@ SUPR3DECL(int) SUPInit(PSUPDRVSESSION *ppSession /* NULL */, size_t cbReserve /*
         CookieReq.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
         CookieReq.Hdr.rc = VERR_INTERNAL_ERROR;
         strcpy(CookieReq.u.In.szMagic, SUPCOOKIE_MAGIC);
-        CookieReq.u.In.u32ReqVersion = SUPDRVIOC_VERSION;
-        const uint32_t MinVersion = (SUPDRVIOC_VERSION & 0xffff0000) == 0x00070000
-                                  ? 0x00070002 /* need new exports */
-                                  : SUPDRVIOC_VERSION & 0xffff0000;
+        CookieReq.u.In.u32ReqVersion = SUPDRV_IOC_VERSION;
+        const uint32_t MinVersion = /*(SUPDRV_IOC_VERSION & 0xffff0000) == 0x00080000
+                                  ? 0x00080001
+                                  : */ SUPDRV_IOC_VERSION & 0xffff0000;
         CookieReq.u.In.u32MinVersion = MinVersion;
-        rc = suplibOsIOCtl(SUP_IOCTL_COOKIE, &CookieReq, SUP_IOCTL_COOKIE_SIZE);
+        rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_COOKIE, &CookieReq, SUP_IOCTL_COOKIE_SIZE);
         if (    RT_SUCCESS(rc)
             &&  RT_SUCCESS(CookieReq.Hdr.rc))
         {
-            if (    (CookieReq.u.Out.u32SessionVersion & 0xffff0000) == (SUPDRVIOC_VERSION & 0xffff0000)
+            if (    (CookieReq.u.Out.u32SessionVersion & 0xffff0000) == (SUPDRV_IOC_VERSION & 0xffff0000)
                 &&  CookieReq.u.Out.u32SessionVersion >= MinVersion)
             {
                 /*
@@ -235,7 +291,7 @@ SUPR3DECL(int) SUPInit(PSUPDRVSESSION *ppSession /* NULL */, size_t cbReserve /*
                     pFuncsReq->Hdr.cbOut                = SUP_IOCTL_QUERY_FUNCS_SIZE_OUT(CookieReq.u.Out.cFunctions);
                     pFuncsReq->Hdr.fFlags               = SUPREQHDR_FLAGS_DEFAULT;
                     pFuncsReq->Hdr.rc                   = VERR_INTERNAL_ERROR;
-                    rc = suplibOsIOCtl(SUP_IOCTL_QUERY_FUNCS(CookieReq.u.Out.cFunctions), pFuncsReq, SUP_IOCTL_QUERY_FUNCS_SIZE(CookieReq.u.Out.cFunctions));
+                    rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_QUERY_FUNCS(CookieReq.u.Out.cFunctions), pFuncsReq, SUP_IOCTL_QUERY_FUNCS_SIZE(CookieReq.u.Out.cFunctions));
                     if (RT_SUCCESS(rc))
                         rc = pFuncsReq->Hdr.rc;
                     if (RT_SUCCESS(rc))
@@ -263,7 +319,7 @@ SUPR3DECL(int) SUPInit(PSUPDRVSESSION *ppSession /* NULL */, size_t cbReserve /*
                             GipMapReq.u.Out.HCPhysGip = NIL_RTHCPHYS;
                             GipMapReq.u.Out.pGipR0 = NIL_RTR0PTR;
                             GipMapReq.u.Out.pGipR3 = NULL;
-                            rc = suplibOsIOCtl(SUP_IOCTL_GIP_MAP, &GipMapReq, SUP_IOCTL_GIP_MAP_SIZE);
+                            rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_GIP_MAP, &GipMapReq, SUP_IOCTL_GIP_MAP_SIZE);
                             if (RT_SUCCESS(rc))
                                 rc = GipMapReq.Hdr.rc;
                             if (RT_SUCCESS(rc))
@@ -287,7 +343,7 @@ SUPR3DECL(int) SUPInit(PSUPDRVSESSION *ppSession /* NULL */, size_t cbReserve /*
             else
             {
                 LogRel(("Support driver version mismatch: SessionVersion=%#x DriverVersion=%#x ClientVersion=%#x MinVersion=%#x\n",
-                        CookieReq.u.Out.u32SessionVersion, CookieReq.u.Out.u32DriverVersion, SUPDRVIOC_VERSION, MinVersion));
+                        CookieReq.u.Out.u32SessionVersion, CookieReq.u.Out.u32DriverVersion, SUPDRV_IOC_VERSION, MinVersion));
                 rc = VERR_VM_DRIVER_VERSION_MISMATCH;
             }
         }
@@ -297,21 +353,21 @@ SUPR3DECL(int) SUPInit(PSUPDRVSESSION *ppSession /* NULL */, size_t cbReserve /*
             {
                 rc = CookieReq.Hdr.rc;
                 LogRel(("Support driver version mismatch: DriverVersion=%#x ClientVersion=%#x rc=%Rrc\n",
-                        CookieReq.u.Out.u32DriverVersion, SUPDRVIOC_VERSION, rc));
+                        CookieReq.u.Out.u32DriverVersion, SUPDRV_IOC_VERSION, rc));
                 if (rc != VERR_VM_DRIVER_VERSION_MISMATCH)
                     rc = VERR_VM_DRIVER_VERSION_MISMATCH;
             }
             else
             {
                 /* for pre 0x00060000 drivers */
-                LogRel(("Support driver version mismatch: DriverVersion=too-old ClientVersion=%#x\n", SUPDRVIOC_VERSION));
+                LogRel(("Support driver version mismatch: DriverVersion=too-old ClientVersion=%#x\n", SUPDRV_IOC_VERSION));
                 rc = VERR_VM_DRIVER_VERSION_MISMATCH;
             }
         }
 
-        suplibOsTerm();
+        suplibOsTerm(&g_supLibData);
     }
-    AssertMsgFailed(("SUPInit() failed rc=%Vrc\n", rc));
+    AssertMsgFailed(("SUPR3Init() failed rc=%Vrc\n", rc));
     g_cInits--;
 
     return rc;
@@ -326,6 +382,9 @@ static int supInitFake(PSUPDRVSESSION *ppSession)
     static const SUPFUNC s_aFakeFunctions[] =
     {
         /* name                                     function */
+        { "SUPR0ComponentRegisterFactory",          0xefeefffd },
+        { "SUPR0ComponentDeregisterFactory",        0xefeefffe },
+        { "SUPR0ComponentQueryFactory",             0xefeeffff },
         { "SUPR0ObjRegister",                       0xefef0000 },
         { "SUPR0ObjAddRef",                         0xefef0001 },
         { "SUPR0ObjRelease",                        0xefef0002 },
@@ -373,17 +432,21 @@ static int supInitFake(PSUPDRVSESSION *ppSession)
         { "RTSpinlockRelease",                      0xefef002a },
         { "RTSpinlockAcquireNoInts",                0xefef002b },
         { "RTSpinlockReleaseNoInts",                0xefef002c },
-        { "RTThreadNativeSelf",                     0xefef002d },
-        { "RTThreadSleep",                          0xefef002e },
-        { "RTThreadYield",                          0xefef002f },
-        { "RTLogDefaultInstance",                   0xefef0030 },
-        { "RTLogRelDefaultInstance",                0xefef0031 },
-        { "RTLogSetDefaultInstanceThread",          0xefef0032 },
-        { "RTLogLogger",                            0xefef0033 },
-        { "RTLogLoggerEx",                          0xefef0034 },
-        { "RTLogLoggerExV",                         0xefef0035 },
-        { "AssertMsg1",                             0xefef0036 },
-        { "AssertMsg2",                             0xefef0037 },
+        { "RTTimeNanoTS",                           0xefef002d },
+        { "RTTimeMillieTS",                         0xefef002e },
+        { "RTTimeSystemNanoTS",                     0xefef002f },
+        { "RTTimeSystemMillieTS",                   0xefef0030 },
+        { "RTThreadNativeSelf",                     0xefef0031 },
+        { "RTThreadSleep",                          0xefef0032 },
+        { "RTThreadYield",                          0xefef0033 },
+        { "RTLogDefaultInstance",                   0xefef0034 },
+        { "RTLogRelDefaultInstance",                0xefef0035 },
+        { "RTLogSetDefaultInstanceThread",          0xefef0036 },
+        { "RTLogLogger",                            0xefef0037 },
+        { "RTLogLoggerEx",                          0xefef0038 },
+        { "RTLogLoggerExV",                         0xefef0039 },
+        { "AssertMsg1",                             0xefef003a },
+        { "AssertMsg2",                             0xefef003b },
     };
 
     /* fake r0 functions. */
@@ -421,7 +484,7 @@ SUPR3DECL(int) SUPTerm(bool fForced)
     /*
      * Verify state.
      */
-    AssertMsg(g_cInits > 0, ("SUPTerm() is called before SUPInit()!\n"));
+    AssertMsg(g_cInits > 0, ("SUPTerm() is called before SUPR3Init()!\n"));
     if (g_cInits == 0)
         return VERR_WRONG_ORDER;
     if (g_cInits == 1 || fForced)
@@ -441,7 +504,7 @@ SUPR3DECL(int) SUPTerm(bool fForced)
         /*
          * Close the support driver.
          */
-        int rc = suplibOsTerm();
+        int rc = suplibOsTerm(&g_supLibData);
         if (rc)
             return rc;
 
@@ -479,7 +542,7 @@ SUPR3DECL(SUPPAGINGMODE) SUPGetPagingMode(void)
     Req.Hdr.cbOut = SUP_IOCTL_GET_PAGING_MODE_SIZE_OUT;
     Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
     Req.Hdr.rc = VERR_INTERNAL_ERROR;
-    int rc = suplibOsIOCtl(SUP_IOCTL_GET_PAGING_MODE, &Req, SUP_IOCTL_GET_PAGING_MODE_SIZE);
+    int rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_GET_PAGING_MODE, &Req, SUP_IOCTL_GET_PAGING_MODE_SIZE);
     if (    RT_FAILURE(rc)
         ||  RT_FAILURE(Req.Hdr.rc))
     {
@@ -504,11 +567,11 @@ static int supCallVMMR0ExFake(PVMR0 pVMR0, unsigned uOperation, uint64_t u64Arg,
 SUPR3DECL(int) SUPCallVMMR0Fast(PVMR0 pVMR0, unsigned uOperation)
 {
     if (RT_LIKELY(uOperation == SUP_VMMR0_DO_RAW_RUN))
-        return suplibOsIOCtlFast(SUP_IOCTL_FAST_DO_RAW_RUN);
+        return suplibOsIOCtlFast(&g_supLibData, SUP_IOCTL_FAST_DO_RAW_RUN);
     if (RT_LIKELY(uOperation == SUP_VMMR0_DO_HWACC_RUN))
-        return suplibOsIOCtlFast(SUP_IOCTL_FAST_DO_HWACC_RUN);
+        return suplibOsIOCtlFast(&g_supLibData, SUP_IOCTL_FAST_DO_HWACC_RUN);
     if (RT_LIKELY(uOperation == SUP_VMMR0_DO_NOP))
-        return suplibOsIOCtlFast(SUP_IOCTL_FAST_DO_NOP);
+        return suplibOsIOCtlFast(&g_supLibData, SUP_IOCTL_FAST_DO_NOP);
 
     AssertMsgFailed(("%#x\n", uOperation));
     return VERR_INTERNAL_ERROR;
@@ -517,7 +580,6 @@ SUPR3DECL(int) SUPCallVMMR0Fast(PVMR0 pVMR0, unsigned uOperation)
 
 SUPR3DECL(int) SUPCallVMMR0Ex(PVMR0 pVMR0, unsigned uOperation, uint64_t u64Arg, PSUPVMMR0REQHDR pReqHdr)
 {
-#if 0 /* temp hack. */
     /*
      * The following operations don't belong here.
      */
@@ -526,14 +588,6 @@ SUPR3DECL(int) SUPCallVMMR0Ex(PVMR0 pVMR0, unsigned uOperation, uint64_t u64Arg,
                     &&  uOperation != SUP_VMMR0_DO_NOP,
                     ("%#x\n", uOperation),
                     VERR_INTERNAL_ERROR);
-#else
-    if (    (    uOperation == SUP_VMMR0_DO_RAW_RUN
-             ||  uOperation == SUP_VMMR0_DO_HWACC_RUN
-             ||  uOperation == SUP_VMMR0_DO_NOP)
-        &&  !pReqHdr
-        &&  !u64Arg)
-        return (int) SUPCallVMMR0Fast(pVMR0, uOperation);
-#endif
 
     /* fake */
     if (RT_UNLIKELY(g_u32FakeMode))
@@ -553,7 +607,7 @@ SUPR3DECL(int) SUPCallVMMR0Ex(PVMR0 pVMR0, unsigned uOperation, uint64_t u64Arg,
         Req.u.In.pVMR0 = pVMR0;
         Req.u.In.uOperation = uOperation;
         Req.u.In.u64Arg = u64Arg;
-        rc = suplibOsIOCtl(SUP_IOCTL_CALL_VMMR0(0), &Req, SUP_IOCTL_CALL_VMMR0_SIZE(0));
+        rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_CALL_VMMR0(0), &Req, SUP_IOCTL_CALL_VMMR0_SIZE(0));
         if (RT_SUCCESS(rc))
             rc = Req.Hdr.rc;
     }
@@ -574,7 +628,7 @@ SUPR3DECL(int) SUPCallVMMR0Ex(PVMR0 pVMR0, unsigned uOperation, uint64_t u64Arg,
         pReq->u.In.uOperation = uOperation;
         pReq->u.In.u64Arg = u64Arg;
         memcpy(&pReq->abReqPkt[0], pReqHdr, cbReq);
-        rc = suplibOsIOCtl(SUP_IOCTL_CALL_VMMR0(cbReq), pReq, SUP_IOCTL_CALL_VMMR0_SIZE(cbReq));
+        rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_CALL_VMMR0(cbReq), pReq, SUP_IOCTL_CALL_VMMR0_SIZE(cbReq));
         if (RT_SUCCESS(rc))
             rc = pReq->Hdr.rc;
         memcpy(pReqHdr, &pReq->abReqPkt[0], cbReq);
@@ -591,21 +645,14 @@ SUPR3DECL(int) SUPCallVMMR0(PVMR0 pVMR0, unsigned uOperation, void *pvArg)
     return g_pfnCallVMMR0(pVMR0, uOperation, pvArg);
 
 #else
-    if (RT_LIKELY(uOperation == SUP_VMMR0_DO_RAW_RUN))
-    {
-        Assert(!pvArg);
-        return suplibOsIOCtlFast(SUP_IOCTL_FAST_DO_RAW_RUN);
-    }
-    if (RT_LIKELY(uOperation == SUP_VMMR0_DO_HWACC_RUN))
-    {
-        Assert(!pvArg);
-        return suplibOsIOCtlFast(SUP_IOCTL_FAST_DO_HWACC_RUN);
-    }
-    if (RT_LIKELY(uOperation == SUP_VMMR0_DO_NOP))
-    {
-        Assert(!pvArg);
-        return suplibOsIOCtlFast(SUP_IOCTL_FAST_DO_NOP);
-    }
+    /*
+     * The following operations don't belong here.
+     */
+    AssertMsgReturn(    uOperation != SUP_VMMR0_DO_RAW_RUN
+                    &&  uOperation != SUP_VMMR0_DO_HWACC_RUN
+                    &&  uOperation != SUP_VMMR0_DO_NOP,
+                    ("%#x\n", uOperation),
+                    VERR_INTERNAL_ERROR);
     return SUPCallVMMR0Ex(pVMR0, uOperation, (uintptr_t)pvArg, NULL);
 #endif
 }
@@ -624,7 +671,7 @@ SUPR3DECL(int) SUPSetVMForFastIOCtl(PVMR0 pVMR0)
     Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
     Req.Hdr.rc = VERR_INTERNAL_ERROR;
     Req.u.In.pVMR0 = pVMR0;
-    int rc = suplibOsIOCtl(SUP_IOCTL_SET_VM_FOR_FAST, &Req, SUP_IOCTL_SET_VM_FOR_FAST_SIZE);
+    int rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_SET_VM_FOR_FAST, &Req, SUP_IOCTL_SET_VM_FOR_FAST_SIZE);
     if (RT_SUCCESS(rc))
         rc = Req.Hdr.rc;
     return rc;
@@ -650,7 +697,7 @@ SUPR3DECL(int) SUPPageAlloc(size_t cPages, void **ppvPages)
     /*
      * Call OS specific worker.
      */
-    return suplibOsPageAlloc(cPages, ppvPages);
+    return suplibOsPageAlloc(&g_supLibData, cPages, ppvPages);
 #endif
 }
 
@@ -672,7 +719,7 @@ SUPR3DECL(int) SUPPageFree(void *pvPages, size_t cPages)
     /*
      * Call OS specific worker.
      */
-    return suplibOsPageFree(pvPages, cPages);
+    return suplibOsPageFree(&g_supLibData, pvPages, cPages);
 #endif
 }
 
@@ -711,7 +758,7 @@ SUPR3DECL(int) SUPPageLock(void *pvStart, size_t cPages, PSUPPAGE paPages)
         pReq->Hdr.rc = VERR_INTERNAL_ERROR;
         pReq->u.In.pvR3 = pvStart;
         pReq->u.In.cPages = cPages; AssertRelease(pReq->u.In.cPages == cPages);
-        rc = suplibOsIOCtl(SUP_IOCTL_PAGE_LOCK, pReq, SUP_IOCTL_PAGE_LOCK_SIZE(cPages));
+        rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_PAGE_LOCK, pReq, SUP_IOCTL_PAGE_LOCK_SIZE(cPages));
         if (RT_SUCCESS(rc))
             rc = pReq->Hdr.rc;
         if (RT_SUCCESS(rc))
@@ -755,7 +802,7 @@ SUPR3DECL(int) SUPPageUnlock(void *pvStart)
     Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
     Req.Hdr.rc = VERR_INTERNAL_ERROR;
     Req.u.In.pvR3 = pvStart;
-    int rc = suplibOsIOCtl(SUP_IOCTL_PAGE_UNLOCK, &Req, SUP_IOCTL_PAGE_UNLOCK_SIZE);
+    int rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_PAGE_UNLOCK, &Req, SUP_IOCTL_PAGE_UNLOCK_SIZE);
     if (RT_SUCCESS(rc))
         rc = Req.Hdr.rc;
     return rc;
@@ -773,14 +820,14 @@ SUPR3DECL(int) SUPPageAllocLocked(size_t cPages, void **ppvPages)
  */
 static int supPageAllocLockedFallback(size_t cPages, void **ppvPages, PSUPPAGE paPages)
 {
-    int rc = suplibOsPageAlloc(cPages, ppvPages);
+    int rc = suplibOsPageAlloc(&g_supLibData, cPages, ppvPages);
     if (RT_SUCCESS(rc))
     {
         if (!paPages)
             paPages = (PSUPPAGE)alloca(sizeof(paPages[0]) * cPages);
         rc = SUPPageLock(*ppvPages, cPages, paPages);
         if (RT_FAILURE(rc))
-            suplibOsPageFree(*ppvPages, cPages);
+            suplibOsPageFree(&g_supLibData, *ppvPages, cPages);
     }
     return rc;
 }
@@ -829,7 +876,7 @@ SUPR3DECL(int) SUPPageAllocLockedEx(size_t cPages, void **ppvPages, PSUPPAGE paP
         pReq->Hdr.fFlags = SUPREQHDR_FLAGS_MAGIC | SUPREQHDR_FLAGS_EXTRA_OUT;
         pReq->Hdr.rc = VERR_INTERNAL_ERROR;
         pReq->u.In.cPages = cPages; AssertRelease(pReq->u.In.cPages == cPages);
-        rc = suplibOsIOCtl(SUP_IOCTL_PAGE_ALLOC, pReq, SUP_IOCTL_PAGE_ALLOC_SIZE(cPages));
+        rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_PAGE_ALLOC, pReq, SUP_IOCTL_PAGE_ALLOC_SIZE(cPages));
         if (RT_SUCCESS(rc))
         {
             rc = pReq->Hdr.rc;
@@ -888,7 +935,7 @@ SUPR3DECL(int) SUPPageFreeLocked(void *pvPages, size_t cPages)
         Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
         Req.Hdr.rc = VERR_INTERNAL_ERROR;
         Req.u.In.pvR3 = pvPages;
-        rc = suplibOsIOCtl(SUP_IOCTL_PAGE_FREE, &Req, SUP_IOCTL_PAGE_FREE_SIZE);
+        rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_PAGE_FREE, &Req, SUP_IOCTL_PAGE_FREE_SIZE);
         if (RT_SUCCESS(rc))
             rc = Req.Hdr.rc;
     }
@@ -897,7 +944,7 @@ SUPR3DECL(int) SUPPageFreeLocked(void *pvPages, size_t cPages)
         /* fallback */
         rc = SUPPageUnlock(pvPages);
         if (RT_SUCCESS(rc))
-            rc = suplibOsPageFree(pvPages, cPages);
+            rc = suplibOsPageFree(&g_supLibData, pvPages, cPages);
     }
     return rc;
 }
@@ -944,7 +991,7 @@ SUPR3DECL(void *) SUPContAlloc2(size_t cPages, PRTR0PTR pR0Ptr, PRTHCPHYS pHCPhy
     Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
     Req.Hdr.rc = VERR_INTERNAL_ERROR;
     Req.u.In.cPages = cPages;
-    int rc = suplibOsIOCtl(SUP_IOCTL_CONT_ALLOC, &Req, SUP_IOCTL_CONT_ALLOC_SIZE);
+    int rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_CONT_ALLOC, &Req, SUP_IOCTL_CONT_ALLOC_SIZE);
     if (    RT_SUCCESS(rc)
         &&  RT_SUCCESS(Req.Hdr.rc))
     {
@@ -986,7 +1033,7 @@ SUPR3DECL(int) SUPContFree(void *pv, size_t cPages)
     Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
     Req.Hdr.rc = VERR_INTERNAL_ERROR;
     Req.u.In.pvR3 = pv;
-    int rc = suplibOsIOCtl(SUP_IOCTL_CONT_FREE, &Req, SUP_IOCTL_CONT_FREE_SIZE);
+    int rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_CONT_FREE, &Req, SUP_IOCTL_CONT_FREE_SIZE);
     if (RT_SUCCESS(rc))
         rc = Req.Hdr.rc;
     return rc;
@@ -1032,7 +1079,7 @@ SUPR3DECL(int) SUPLowAlloc(size_t cPages, void **ppvPages, PRTR0PTR ppvPagesR0, 
         pReq->Hdr.fFlags = SUPREQHDR_FLAGS_MAGIC | SUPREQHDR_FLAGS_EXTRA_OUT;
         pReq->Hdr.rc = VERR_INTERNAL_ERROR;
         pReq->u.In.cPages = cPages; AssertRelease(pReq->u.In.cPages == cPages);
-        rc = suplibOsIOCtl(SUP_IOCTL_LOW_ALLOC, pReq, SUP_IOCTL_LOW_ALLOC_SIZE(cPages));
+        rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_LOW_ALLOC, pReq, SUP_IOCTL_LOW_ALLOC_SIZE(cPages));
         if (RT_SUCCESS(rc))
             rc = pReq->Hdr.rc;
         if (RT_SUCCESS(rc))
@@ -1086,30 +1133,65 @@ SUPR3DECL(int) SUPLowFree(void *pv, size_t cPages)
     Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
     Req.Hdr.rc = VERR_INTERNAL_ERROR;
     Req.u.In.pvR3 = pv;
-    int rc = suplibOsIOCtl(SUP_IOCTL_LOW_FREE, &Req, SUP_IOCTL_LOW_FREE_SIZE);
+    int rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_LOW_FREE, &Req, SUP_IOCTL_LOW_FREE_SIZE);
     if (RT_SUCCESS(rc))
         rc = Req.Hdr.rc;
     return rc;
 }
 
 
-SUPR3DECL(int) SUPLoadModule(const char *pszFilename, const char *pszModule, void **ppvImageBase)
+SUPR3DECL(int) SUPR3HardenedVerifyFile(const char *pszFilename, const char *pszMsg, PRTFILE phFile)
 {
     /*
-     * Load the module.
-     * If it's VMMR0.r0 we need to install the IDTE.
+     * Quick input validation.
      */
-    int rc = supLoadModule(pszFilename, pszModule, ppvImageBase);
-#ifdef VBOX_WITH_IDT_PATCHING
-    if (    RT_SUCCESS(rc)
-        &&  !strcmp(pszModule, "VMMR0.r0"))
-    {
-        rc = supInstallIDTE();
-        if (RT_FAILURE(rc))
-            SUPFreeModule(*ppvImageBase);
-    }
-#endif /* VBOX_WITH_IDT_PATCHING */
+    AssertPtr(pszFilename);
+    AssertPtr(pszMsg);
+    AssertReturn(!phFile, VERR_NOT_IMPLEMENTED); /** @todo Implement this. The deal is that we make sure the 
+                                                     file is the same we verified after opening it. */
 
+    /*
+     * Only do the actual check in hardened builds.
+     */
+#ifdef VBOX_WITH_HARDENING
+    int rc = supR3HardenedVerifyFile(pszFilename, false /* fFatal */);
+    if (RT_FAILURE(rc))
+        LogRel(("SUPR3HardenedVerifyFile: %s: Verification of \"%s\" failed, rc=%Rrc\n", pszMsg, rc));
+    return rc;
+#else
+    return VINF_SUCCESS;
+#endif
+}
+
+
+SUPR3DECL(int) SUPLoadModule(const char *pszFilename, const char *pszModule, void **ppvImageBase)
+{
+    int rc = VINF_SUCCESS;
+#ifdef VBOX_WITH_HARDENING
+    /*
+     * Check that the module can be trusted.
+     */
+    rc = supR3HardenedVerifyFile(pszFilename, false /* fFatal */);
+#endif
+    if (RT_SUCCESS(rc))
+    {
+        /*
+         * Load the module.
+         * If it's VMMR0.r0 we need to install the IDTE.
+         */
+        rc = supLoadModule(pszFilename, pszModule, ppvImageBase);
+#ifdef VBOX_WITH_IDT_PATCHING
+        if (    RT_SUCCESS(rc)
+            &&  !strcmp(pszModule, "VMMR0.r0"))
+        {
+            rc = supInstallIDTE();
+            if (RT_FAILURE(rc))
+                SUPFreeModule(*ppvImageBase);
+        }
+#endif /* VBOX_WITH_IDT_PATCHING */
+    }
+    else
+        LogRel(("SUPLoadModule: Verification of \"%s\" failed, rc=%Rrc\n", rc)); 
     return rc;
 }
 
@@ -1209,7 +1291,7 @@ static int supInstallIDTE(void)
         return VINF_SUCCESS;
 
     int rc = VINF_SUCCESS;
-    const unsigned  cCpus = RTSystemProcessorGetCount();
+    const RTCPUID cCpus = RTMpGetCount();
     if (cCpus <= 1)
     {
         /* UNI */
@@ -1220,7 +1302,7 @@ static int supInstallIDTE(void)
         Req.Hdr.cbOut = SUP_IOCTL_IDT_INSTALL_SIZE_OUT;
         Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
         Req.Hdr.rc = VERR_INTERNAL_ERROR;
-        rc = suplibOsIOCtl(SUP_IOCTL_IDT_INSTALL, &Req, SUP_IOCTL_IDT_INSTALL_SIZE);
+        rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_IDT_INSTALL, &Req, SUP_IOCTL_IDT_INSTALL_SIZE);
         if (RT_SUCCESS(rc))
             rc = Req.Hdr.rc;
         if (RT_SUCCESS(rc))
@@ -1233,8 +1315,10 @@ static int supInstallIDTE(void)
     {
         /* SMP */
         uint64_t        u64AffMaskSaved = RTThreadGetAffinity();
-        uint64_t        u64AffMaskPatched = RTSystemProcessorGetActiveMask() & u64AffMaskSaved;
+        RTCPUSET        OnlineSet;
+        uint64_t        u64AffMaskPatched = RTCpuSetToU64(RTMpGetOnlineSet(&OnlineSet)) & u64AffMaskSaved;
         unsigned        cCpusPatched = 0;
+        AssertLogRelReturn(cCpus < 64, VERR_INTERNAL_ERROR);
 
         for (int i = 0; i < 64; i++)
         {
@@ -1260,7 +1344,7 @@ static int supInstallIDTE(void)
             Req.Hdr.cbOut = SUP_IOCTL_IDT_INSTALL_SIZE_OUT;
             Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
             Req.Hdr.rc = VERR_INTERNAL_ERROR;
-            rc2 = suplibOsIOCtl(SUP_IOCTL_IDT_INSTALL, &Req, SUP_IOCTL_IDT_INSTALL_SIZE);
+            rc2 = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_IDT_INSTALL, &Req, SUP_IOCTL_IDT_INSTALL_SIZE);
             if (RT_SUCCESS(rc2))
                 rc2 = Req.Hdr.rc;
             if (RT_SUCCESS(rc2))
@@ -1530,7 +1614,7 @@ static int supLoadModule(const char *pszFilename, const char *pszModule, void **
         strcpy(OpenReq.u.In.szName, pszModule);
         if (!g_u32FakeMode)
         {
-            rc = suplibOsIOCtl(SUP_IOCTL_LDR_OPEN, &OpenReq, SUP_IOCTL_LDR_OPEN_SIZE);
+            rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_LDR_OPEN, &OpenReq, SUP_IOCTL_LDR_OPEN_SIZE);
             if (RT_SUCCESS(rc))
                 rc = OpenReq.Hdr.rc;
         }
@@ -1631,7 +1715,7 @@ static int supLoadModule(const char *pszFilename, const char *pszModule, void **
                             pLoadReq->u.In.pvImageBase                = OpenReq.u.Out.pvImageBase;
                             if (!g_u32FakeMode)
                             {
-                                rc = suplibOsIOCtl(SUP_IOCTL_LDR_LOAD, pLoadReq, SUP_IOCTL_LDR_LOAD_SIZE(cbImage));
+                                rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_LDR_LOAD, pLoadReq, SUP_IOCTL_LDR_LOAD_SIZE(cbImage));
                                 if (RT_SUCCESS(rc))
                                     rc = pLoadReq->Hdr.rc;
                             }
@@ -1715,7 +1799,7 @@ SUPR3DECL(int) SUPFreeModule(void *pvImageBase)
         Req.Hdr.cbOut = SUP_IOCTL_IDT_REMOVE_SIZE_OUT;
         Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
         Req.Hdr.rc = VERR_INTERNAL_ERROR;
-        int rc = suplibOsIOCtl(SUP_IOCTL_IDT_REMOVE, &Req, SUP_IOCTL_IDT_REMOVE_SIZE);
+        int rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_IDT_REMOVE, &Req, SUP_IOCTL_IDT_REMOVE_SIZE);
         if (RT_SUCCESS(rc))
             rc = Req.Hdr.rc;
         AssertRC(rc);
@@ -1736,7 +1820,7 @@ SUPR3DECL(int) SUPFreeModule(void *pvImageBase)
     Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
     Req.Hdr.rc = VERR_INTERNAL_ERROR;
     Req.u.In.pvImageBase = (RTR0PTR)pvImageBase;
-    int rc = suplibOsIOCtl(SUP_IOCTL_LDR_FREE, &Req, SUP_IOCTL_LDR_FREE_SIZE);
+    int rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_LDR_FREE, &Req, SUP_IOCTL_LDR_FREE_SIZE);
     if (RT_SUCCESS(rc))
         rc = Req.Hdr.rc;
     if (    RT_SUCCESS(rc)
@@ -1772,7 +1856,7 @@ SUPR3DECL(int) SUPGetSymbolR0(void *pvImageBase, const char *pszSymbol, void **p
     if (cchSymbol >= sizeof(Req.u.In.szSymbol))
         return VERR_SYMBOL_NOT_FOUND;
     memcpy(Req.u.In.szSymbol, pszSymbol, cchSymbol + 1);
-    int rc = suplibOsIOCtl(SUP_IOCTL_LDR_GET_SYMBOL, &Req, SUP_IOCTL_LDR_GET_SYMBOL_SIZE);
+    int rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_LDR_GET_SYMBOL, &Req, SUP_IOCTL_LDR_GET_SYMBOL_SIZE);
     if (RT_SUCCESS(rc))
         rc = Req.Hdr.rc;
     if (RT_SUCCESS(rc))

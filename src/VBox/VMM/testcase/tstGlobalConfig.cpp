@@ -1,4 +1,4 @@
-/* $Id: tstGlobalConfig.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: tstGlobalConfig.cpp 35653 2008-08-29 14:21:03Z bird $ */
 /** @file
  * Ring-3 Management program for the GCFGM mock-up.
  */
@@ -44,7 +44,7 @@ static int Usage(void)
 
 int main(int argc, char **argv)
 {
-    RTR3Init(false, 0);
+    RTR3Init();
 
     /*
      * Parse args, building the request as we do so.
@@ -95,10 +95,10 @@ int main(int argc, char **argv)
      * Open the session, load ring-0 and issue the request.
      */
     PSUPDRVSESSION pSession;
-    int rc = SUPInit(&pSession, 0);
+    int rc = SUPR3Init(&pSession);
     if (RT_FAILURE(rc))
     {
-        RTPrintf("tstGlobalConfig: SUPInit -> %Rrc\n", rc);
+        RTPrintf("tstGlobalConfig: SUPR3Init -> %Rrc\n", rc);
         return 1;
     }
 

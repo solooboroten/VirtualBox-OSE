@@ -97,14 +97,14 @@ void VBoxVMFirstRunWzd::retranslateUi()
         QString source =
             mRbHost->isChecked() ? tr ("Host Drive %1").arg (mCbHost->currentText()) :
             mRbImage->isChecked() ? mCbImage->currentText() : QString::null;
-        QString summary = QString (tr (
-            "<table> cellspacing=0 cellpadding=2"
-            "<tr><td>Type:</td><td>%1</td></tr>"
-            "<tr><td>Source:</td><td>%2</td></tr>"
+        QString summary = QString (
+            "<table>"
+            "<tr><td>%1:&nbsp;</td><td>%2</td></tr>"
+            "<tr><td>%3:&nbsp;</td><td>%4</td></tr>"
             "</table>"
-        ))
-            .arg (type)
-            .arg (source);
+        )
+            .arg (tr ("Type", "summary"), type)
+            .arg (tr ("Source", "summary"), source);
 
         mTeSummary->setText (summary);
     }
@@ -240,15 +240,13 @@ void VBoxVMFirstRunWzd::mediaSourceChanged()
 
 void VBoxVMFirstRunWzd::openVdm()
 {
-    VBoxDiskImageManagerDlg vdm (this, "VBoxDiskImageManagerDlg",
-                                 Qt::WType_Dialog | Qt::WShowModal);
-    QUuid machineId = mMachine.GetId();
+    VBoxDiskImageManagerDlg vdm (this);
     VBoxDefs::DiskType type = mRbCdType->isChecked() ? VBoxDefs::CD :
         mRbFdType->isChecked() ? VBoxDefs::FD : VBoxDefs::InvalidType;
-    vdm.setup (type, true, &machineId);
-    if (vdm.exec() == VBoxDiskImageManagerDlg::Accepted)
+    vdm.setup (type, true, mMachine.GetId());
+    if (vdm.exec() == QDialog::Accepted)
     {
-        mCbImage->setCurrentItem (vdm.getSelectedUuid());
+        mCbImage->setCurrentItem (vdm.selectedUuid());
 
         /* Revalidate updated page */
         mWvalType->revalidate();

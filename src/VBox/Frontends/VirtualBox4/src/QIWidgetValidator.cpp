@@ -107,7 +107,7 @@ QIWidgetValidator::QIWidgetValidator (const QString &aCaption,
 
 /**
  *  Destructs this validator instance.
- *  Before desctruction, the #validityChanged() signal is emitted; the
+ *  Before destruction, the #validityChanged() signal is emitted; the
  *  value of #isValid() is always true at this time.
  */
 QIWidgetValidator::~QIWidgetValidator()
@@ -131,7 +131,7 @@ QIWidgetValidator::~QIWidgetValidator()
  *  false. Disabled children and children without validation
  *  are skipped and don't affect the result.
  *
- *  The method emits the #isValidRequested() signal before callig
+ *  The method emits the #isValidRequested() signal before calling
  *  #isOtherValid(), thus giving someone an opportunity to affect its result by
  *  calling #setOtherValid() from the signal handler. Note that #isOtherValid()
  *  returns true by default, until #setOtherValid( false ) is called.
@@ -196,7 +196,7 @@ bool QIWidgetValidator::isValid() const
  *     validation;
  *
  *  2) connects itself to those that can be validated, in order to emit the
- *     validityChanged() signal to give its receiver an oportunity to do
+ *     validityChanged() signal to give its receiver an opportunity to do
  *     useful actions.
  *
  *  Must be called every time a child widget is added or removed.
@@ -241,7 +241,7 @@ void QIWidgetValidator::rescan()
         }
         else if (QComboBox *cb = qobject_cast<QComboBox *> (wgt))
         {
-            
+
             if (!cb->validator() || !cb->lineEdit())
                 continue;
             /* disconnect to avoid duplicate connections */
@@ -272,12 +272,12 @@ void QIWidgetValidator::rescan()
     }
 }
 
-/** 
+/**
  *  Returns a message that describes the last detected error (invalid or
  *  incomplete input).
  *
  *  This message uses the caption text passed to the constructor as a page
- *  name to refer to. If the caption is NULL, this funciton will return a null
+ *  name to refer to. If the caption is NULL, this function will return a null
  *  string.
  *
  *  Also, if the failed widget has a buddy widget, this buddy widget's text
@@ -298,8 +298,14 @@ QString QIWidgetValidator::warningText() const
     if (mLastInvalid.buddy != NULL)
     {
         if (mLastInvalid.buddy->inherits ("QLabel"))
+        {
+            /* Remove '&' symbol from the buddy field name */
             title = VBoxGlobal::
                 removeAccelMark (((QLabel *) mLastInvalid.buddy)->text());
+
+            /* Remove ':' symbol from the buddy field name */
+            title = title.remove (':');
+        }
     }
 
     QString state;
@@ -329,7 +335,7 @@ QString QIWidgetValidator::warningText() const
 /** @fn QIWidgetValidator::isOtherValid()
  *
  *  Returns the current value of the generic validity flag.
- *  Thie generic validity flag is used by #isValid() to determine
+ *  This generic validity flag is used by #isValid() to determine
  *  the overall validity of the managed widget. This flag is true by default,
  *  until #setOtherValid( false ) is called.
  */

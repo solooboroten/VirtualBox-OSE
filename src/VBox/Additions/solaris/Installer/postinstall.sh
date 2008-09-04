@@ -25,9 +25,18 @@ vboxadditions_path="/opt/VirtualBoxAdditions"
 # vboxguest.sh would've been installed, we just need to call it.
 $vboxadditions_path/vboxguest.sh restart silentunload
 
+# get what ISA the guest is running
+cputype=`isainfo -k`
+isadir=""
+if test "$cputype" = "amd64"; then
+    isadir="amd64"
+fi
+
+
 # suid permissions for timesync
 chmod 04755 $vboxadditions_path/VBoxService
 chmod a+x $vboxadditions_path/VBoxClient
+chmod a+x $vboxadditions_path/VBoxControl
 chmod a+x $vboxadditions_path/VBoxRandR.sh
 
 # create links
@@ -35,6 +44,7 @@ echo "Creating links..."
 /usr/sbin/installf -c none $PKGINST /dev/vboxguest=../devices/pci@0,0/pci80ee,cafe@4:vboxguest s
 /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxClient=$vboxadditions_path/VBoxClient s
 /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxService=$vboxadditions_path/VBoxService s
+/usr/sbin/installf -c none $PKGINST /usr/bin/VBoxControl=$vboxadditions_path/VBoxControl s
 /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxRandR=$vboxadditions_path/VBoxRandR.sh s
 
 # Install Xorg components to the required places
@@ -72,8 +82,8 @@ if test -z "$vboxmouse_src"; then
     retval=2
 else
     echo "Configuring Xorg..."
-    vboxmouse_dest="/usr/X11/lib/modules/input/vboxmouse_drv.so"
-    vboxvideo_dest="/usr/X11/lib/modules/input/vboxvideo_drv.so"
+    vboxmouse_dest="/usr/X11/lib/modules/input/$isadir/vboxmouse_drv.so"
+    vboxvideo_dest="/usr/X11/lib/modules/input/$isadir/vboxvideo_drv.so"
     /usr/sbin/installf -c none $PKGINST "$vboxmouse_dest" f
     /usr/sbin/installf -c none $PKGINST "$vboxvideo_dest" f
     cp "$vboxmouse_src" "$vboxmouse_dest"

@@ -1,4 +1,4 @@
-/* $Id: fs.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: fs.cpp 32152 2008-06-18 11:14:50Z bird $ */
 /** @file
  * IPRT - File System.
  */
@@ -122,19 +122,23 @@ RTFMODE rtFsModeFromUnix(RTFMODE fMode, const char *pszName, unsigned cbName)
 
 
 /**
- * Converts dos-style attributes to Unix attributes.
+ * Normalizes the give mode mask.
+ *
+ * It will create the missing unix or dos mask from the other (one
+ * of them is required by all APIs), and guess the file type if that's
+ * missing.
  *
  * @returns Normalized file mode.
- * @param   fMode       The mode mask containing dos-style attibutes only.
+ * @param   fMode       The mode mask that may contain a partial/incomplete mask.
  * @param   pszName     The filename which this applies to (exe check).
  * @param   cbName      The length of that filename. (optional, set 0)
  */
 RTFMODE rtFsModeNormalize(RTFMODE fMode, const char *pszName, unsigned cbName)
 {
     if (!(fMode & RTFS_UNIX_MASK))
-        rtFsModeFromDos(fMode, pszName, cbName);
+        fMode = rtFsModeFromDos(fMode, pszName, cbName);
     else if (!(fMode & RTFS_DOS_MASK))
-        rtFsModeFromUnix(fMode, pszName, cbName);
+        fMode = rtFsModeFromUnix(fMode, pszName, cbName);
     else if (!(fMode & RTFS_TYPE_MASK))
         fMode |= fMode & RTFS_DOS_DIRECTORY ? RTFS_TYPE_DIRECTORY : RTFS_TYPE_FILE;
     else if (RTFS_IS_DIRECTORY(fMode))

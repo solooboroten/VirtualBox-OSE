@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31423 2008-05-30 08:56:12Z mt221433 $
+# $Id: Makefile.kmk 35651 2008-08-29 14:09:39Z frank $
 ## @file
 # Sub-Makefile for the vboxvfs (linux shared folders module).
 #
@@ -19,8 +19,12 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../..
+else
+DEPTH    ?= ../../../../..
 SUB_DEPTH = ../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 PROGRAMS += mountvboxsf
@@ -63,7 +67,7 @@ vboxvfs_TEMPLATE        = VBOXGUESTR0
 vboxvfs_NOINST          = 1
 vboxvfs_CFLAGS          = -fshort-wchar
 vboxvfs_DEFS            = \
-	MODULE IN_RT_R0 VBOXGUEST VBOX_HGCM \
+	MODULE IN_RT_R0 VBOXGUEST VBOX_WITH_HGCM \
 	KBUILD_MODNAME=KBUILD_STR\(vboxadd\) \
         KBUILD_BASENAME=KBUILD_STR\(vboxadd\)
 vboxvfs_INCS            = \
@@ -100,3 +104,4 @@ mountvboxsf_SOURCES     = \
 
 
 include	$(KBUILD_PATH)/subfooter.kmk
+

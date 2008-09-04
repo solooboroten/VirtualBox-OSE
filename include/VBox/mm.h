@@ -212,14 +212,14 @@ typedef enum MMTAG
  * @{ */
 
 MMDECL(RTR3PTR)     MMHyperR0ToR3(PVM pVM, RTR0PTR R0Ptr);
-MMDECL(RTGCPTR)     MMHyperR0ToGC(PVM pVM, RTR0PTR R0Ptr);
+MMDECL(RTRCPTR)     MMHyperR0ToRC(PVM pVM, RTR0PTR R0Ptr);
 #ifndef IN_RING0
 MMDECL(void *)      MMHyperR0ToCC(PVM pVM, RTR0PTR R0Ptr);
 #endif
 MMDECL(RTR0PTR)     MMHyperR3ToR0(PVM pVM, RTR3PTR R3Ptr);
-MMDECL(RTGCPTR)     MMHyperR3ToGC(PVM pVM, RTR3PTR R3Ptr);
-MMDECL(RTR3PTR)     MMHyperGCToR3(PVM pVM, RTGCPTR GCPtr);
-MMDECL(RTR0PTR)     MMHyperGCToR0(PVM pVM, RTGCPTR GCPtr);
+MMDECL(RTRCPTR)     MMHyperR3ToRC(PVM pVM, RTR3PTR R3Ptr);
+MMDECL(RTR3PTR)     MMHyperRCToR3(PVM pVM, RTRCPTR RCPtr);
+MMDECL(RTR0PTR)     MMHyperRCToR0(PVM pVM, RTRCPTR RCPtr);
 
 #ifndef IN_RING3
 MMDECL(void *)      MMHyperR3ToCC(PVM pVM, RTR3PTR R3Ptr);
@@ -233,12 +233,12 @@ DECLINLINE(void *)  MMHyperR3ToCC(PVM pVM, RTR3PTR R3Ptr)
 
 
 #ifndef IN_GC
-MMDECL(void *)      MMHyperGCToCC(PVM pVM, RTGCPTR GCPtr);
+MMDECL(void *)      MMHyperRCToCC(PVM pVM, RTRCPTR RCPtr);
 #else
-DECLINLINE(void *)  MMHyperGCToCC(PVM pVM, RTGCPTR GCPtr)
+DECLINLINE(void *)  MMHyperRCToCC(PVM pVM, RTRCPTR RCPtr)
 {
     NOREF(pVM);
-    return GCPtr;
+    return (void *)RCPtr;
 }
 #endif
 
@@ -263,12 +263,12 @@ DECLINLINE(RTR0PTR) MMHyperCCToR0(PVM pVM, void *pv)
 #endif
 
 #ifndef IN_GC
-MMDECL(RTGCPTR)     MMHyperCCToGC(PVM pVM, void *pv);
+MMDECL(RTRCPTR)     MMHyperCCToRC(PVM pVM, void *pv);
 #else
-DECLINLINE(RTGCPTR) MMHyperCCToGC(PVM pVM, void *pv)
+DECLINLINE(RTRCPTR) MMHyperCCToRC(PVM pVM, void *pv)
 {
     NOREF(pVM);
-    return pv;
+    return (RTRCPTR)pv;
 }
 #endif
 
@@ -283,18 +283,10 @@ DECLINLINE(RTHCPTR) MMHyper2HC(PVM pVM, uintptr_t Ptr)
 }
 #endif
 
-#ifndef IN_GC
-MMDECL(RTGCPTR)     MMHyper2GC(PVM pVM, uintptr_t Ptr);
-#else
-DECLINLINE(RTGCPTR) MMHyper2GC(PVM pVM, uintptr_t Ptr)
-{
-    NOREF(pVM);
-    return (RTGCPTR)Ptr;
-}
-#endif
+#define MMHyperHC2GC(pVM, R3Ptr) MMHyperR3ToRC((pVM), (R3Ptr)) /**< @deprecated */
+#define MMHyperGC2HC(pVM, RCPtr) MMHyperRCToR3((pVM), (RCPtr)) /**< @deprecated */
 
-MMDECL(RTGCPTR)     MMHyperHC2GC(PVM pVM, RTHCPTR HCPtr);
-MMDECL(RTHCPTR)     MMHyperGC2HC(PVM pVM, RTGCPTR GCPtr);
+
 MMDECL(int)         MMHyperAlloc(PVM pVM, size_t cb, uint32_t uAlignment, MMTAG enmTag, void **ppv);
 MMDECL(int)         MMHyperFree(PVM pVM, void *pv);
 MMDECL(void)        MMHyperHeapCheck(PVM pVM);
@@ -356,7 +348,7 @@ MMR3DECL(int)       MMR3WriteGCVirt(PVM pVM, RTGCPTR GCPtrDst, const void *pvSrc
 MMDECL(int)         MMR3HyperAllocOnceNoRel(PVM pVM, size_t cb, uint32_t uAlignment, MMTAG enmTag, void **ppv);
 MMR3DECL(int)       MMR3HyperMapHCPhys(PVM pVM, void *pvHC, RTHCPHYS HCPhys, size_t cb, const char *pszDesc, PRTGCPTR pGCPtr);
 MMR3DECL(int)       MMR3HyperMapGCPhys(PVM pVM, RTGCPHYS GCPhys, size_t cb, const char *pszDesc, PRTGCPTR pGCPtr);
-MMR3DECL(int)       MMR3HyperMapMMIO2(PVM pVM, PPDMDEVINS pDevIns, uint32_t iRegion, RTGCPHYS off, RTGCPHYS cb, const char *pszDesc, PRTGCPTR pGCPtr);
+MMR3DECL(int)       MMR3HyperMapMMIO2(PVM pVM, PPDMDEVINS pDevIns, uint32_t iRegion, RTGCPHYS off, RTGCPHYS cb, const char *pszDesc, PRTRCPTR pRCPtr);
 MMR3DECL(int)       MMR3HyperMapHCRam(PVM pVM, void *pvHC, size_t cb, bool fFree, const char *pszDesc, PRTGCPTR pGCPtr);
 MMR3DECL(int)       MMR3HyperMapPages(PVM pVM, void *pvR3, RTR0PTR pvR0, size_t cPages, PCSUPPAGE paPages, const char *pszDesc, PRTGCPTR pGCPtr);
 MMR3DECL(int)       MMR3HyperReserve(PVM pVM, unsigned cb, const char *pszDesc, PRTGCPTR pGCPtr);

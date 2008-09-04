@@ -148,7 +148,7 @@ typedef enum RTLOGGROUP
 
 /** Logger structure. */
 #ifdef IN_GC
-typedef struct RTLOGGERGC RTLOGGER;
+typedef struct RTLOGGERRC RTLOGGER;
 #else
 typedef struct RTLOGGER RTLOGGER;
 #endif
@@ -159,11 +159,11 @@ typedef const RTLOGGER *PCRTLOGGER;
 
 
 /** Guest context logger structure. */
-typedef struct RTLOGGERGC RTLOGGERGC;
+typedef struct RTLOGGERRC RTLOGGERRC;
 /** Pointer to guest context logger structure. */
-typedef RTLOGGERGC *PRTLOGGERGC;
+typedef RTLOGGERRC *PRTLOGGERRC;
 /** Pointer to const guest context logger structure. */
-typedef const RTLOGGERGC *PCRTLOGGERGC;
+typedef const RTLOGGERRC *PCRTLOGGERRC;
 
 
 /**
@@ -190,15 +190,15 @@ typedef FNRTLOGFLUSH *PFNRTLOGFLUSH;
  *
  * @param   pLogger     Pointer to the logger instance which is to be flushed.
  */
-typedef DECLCALLBACK(void) FNRTLOGFLUSHGC(PRTLOGGERGC pLogger);
+typedef DECLCALLBACK(void) FNRTLOGFLUSHGC(PRTLOGGERRC pLogger);
 /** Pointer to logger function. */
-typedef GCPTRTYPE(FNRTLOGFLUSHGC *) PFNRTLOGFLUSHGC;
+typedef RCPTRTYPE(FNRTLOGFLUSHGC *) PFNRTLOGFLUSHGC;
 
 
 /**
  * Logger instance structure for GC.
  */
-struct RTLOGGERGC
+struct RTLOGGERRC
 {
     /** Pointer to temporary scratch buffer.
      * This is used to format the log messages. */
@@ -211,10 +211,10 @@ struct RTLOGGERGC
      * This is actually pointer to a wrapper which will push a pointer to the
      * instance pointer onto the stack before jumping to the real logger function.
      * A very unfortunate hack to work around the missing variadic macro support in C++. */
-    GCPTRTYPE(PFNRTLOGGER)  pfnLogger;
+    RCPTRTYPE(PFNRTLOGGER)  pfnLogger;
     /** Pointer to the flush function. */
     PFNRTLOGFLUSHGC         pfnFlush;
-    /** Magic number (RTLOGGERGC_MAGIC). */
+    /** Magic number (RTLOGGERRC_MAGIC). */
     uint32_t                u32Magic;
     /** Logger instance flags - RTLOGFLAGS. */
     RTUINT                  fFlags;
@@ -226,8 +226,8 @@ struct RTLOGGERGC
     RTUINT                  afGroups[1];
 };
 
-/** RTLOGGERGC::u32Magic value. (John Rogers Searle) */
-#define RTLOGGERGC_MAGIC    0x19320731
+/** RTLOGGERRC::u32Magic value. (John Rogers Searle) */
+#define RTLOGGERRC_MAGIC    0x19320731
 
 
 
@@ -296,10 +296,12 @@ typedef enum RTLOGFLAGS
     RTLOGFLAGS_BUFFERED             = 0x00000002,
     /** The logger instance expands LF to CR/LF. */
     RTLOGFLAGS_USECRLF              = 0x00000010,
+    /** Append to the log destination where applicable. */ 
+    RTLOGFLAGS_APPEND               = 0x00000020,
     /** Show relative timestamps with PREFIX_TSC and PREFIX_TS */
-    RTLOGFLAGS_REL_TS               = 0x00000020,
+    RTLOGFLAGS_REL_TS               = 0x00000040,
     /** Show decimal timestamps with PREFIX_TSC and PREFIX_TS */
-    RTLOGFLAGS_DECIMAL_TS           = 0x00000040,
+    RTLOGFLAGS_DECIMAL_TS           = 0x00000080,
     /** New lines should be prefixed with the write and read lock counts. */
     RTLOGFLAGS_PREFIX_LOCK_COUNTS   = 0x00008000,
     /** New lines should be prefixed with the CPU id (ApicID on intel/amd). */
@@ -372,8 +374,10 @@ typedef enum RTLOGGRPFLAGS
     RTLOGGRPFLAGS_FRANK        = 0x00008000,
     /** bird logging. */
     RTLOGGRPFLAGS_BIRD         = 0x00010000,
+    /** aleksey logging. */
+    RTLOGGRPFLAGS_ALEKSEY      = 0x00020000,
     /** NoName logging. */
-    RTLOGGRPFLAGS_NONAME       = 0x00020000
+    RTLOGGRPFLAGS_NONAME       = 0x00040000
 } RTLOGGRPFLAGS;
 
 /**
@@ -552,6 +556,11 @@ RTDECL(void) RTLogPrintfEx(void *pvInstance, unsigned fFlags, unsigned iGroup, c
  * bird logging.
  */
 #define LogBird(a)      LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_BIRD,     LOG_GROUP, a)
+
+/** @def LogAleksey
+ * aleksey logging.
+ */
+#define LogAleksey(a)   LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_ALEKSEY,  LOG_GROUP, a)
 
 /** @def LogNoName
  * NoName logging.
@@ -1146,6 +1155,10 @@ RTDECL(void) RTLogRelPrintfV(const char *pszFormat, va_list args);
 # define LogFlow(a)     LogBackdoorFlow(a)
 # undef LogRel
 # define LogRel(a)      LogRelBackdoor(a)
+# if defined(LOG_USE_C99)
+#  undef _LogIt
+#  define _LogIt(pvInst, fFlags, iGroup, ...)  LogBackdoor((__VA_ARGS__))
+# endif
 #endif
 
 /** @} */
@@ -1298,12 +1311,12 @@ RTDECL(int) RTLogCreateForR0(PRTLOGGER pLogger, size_t cbLogger, PFNRTLOGGER pfn
  * The instance is flushed and all output destinations closed (where applicable).
  *
  * @returns iprt status code.
- * @param   pLogger             The logger instance which close destroyed.
+ * @param   pLogger             The logger instance which close destroyed. NULL is fine.
  */
 RTDECL(int) RTLogDestroy(PRTLOGGER pLogger);
 
 /**
- * Create a logger instance clone for GC usage.
+ * Create a logger instance clone for RC usage.
  *
  * @returns iprt status code.
  *
@@ -1314,8 +1327,8 @@ RTDECL(int) RTLogDestroy(PRTLOGGER pLogger);
  * @param   pfnFlushGCPtr       Pointer to flush function (GC Ptr).
  * @param   fFlags              Logger instance flags, a combination of the RTLOGFLAGS_* values.
  */
-RTDECL(int) RTLogCloneGC(PRTLOGGER pLogger, PRTLOGGERGC pLoggerGC, size_t cbLoggerGC,
-                         RTGCPTR pfnLoggerGCPtr, RTGCPTR pfnFlushGCPtr, RTUINT fFlags);
+RTDECL(int) RTLogCloneRC(PRTLOGGER pLogger, PRTLOGGERRC pLoggerGC, size_t cbLoggerGC,
+                         RTRCPTR pfnLoggerGCPtr, RTRCPTR pfnFlushGCPtr, RTUINT fFlags);
 
 /**
  * Flushes a GC logger instance to a HC logger.
@@ -1325,7 +1338,7 @@ RTDECL(int) RTLogCloneGC(PRTLOGGER pLogger, PRTLOGGERGC pLoggerGC, size_t cbLogg
  *                      If NULL the default logger is used.
  * @param   pLoggerGC   The GC logger instance to flush.
  */
-RTDECL(void) RTLogFlushGC(PRTLOGGER pLogger, PRTLOGGERGC pLoggerGC);
+RTDECL(void) RTLogFlushGC(PRTLOGGER pLogger, PRTLOGGERRC pLoggerGC);
 
 /**
  * Flushes the buffer in one logger instance onto another logger.

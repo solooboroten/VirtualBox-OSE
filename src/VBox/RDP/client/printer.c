@@ -1,6 +1,6 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
-   Copyright (C) Matthew Chapman 1999-2005
+   Copyright (C) Matthew Chapman 1999-2007
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -17,12 +17,21 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
+/*
+ * Sun GPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the General Public License version 2 (GPLv2) at this time for any software where
+ * a choice of GPL license versions is made available with the language indicating
+ * that GPLv2 or any later version may be used, or where a choice of which version
+ * of the GPL is applied is otherwise unspecified.
+ */
+
 #include "rdesktop.h"
 
 extern RDPDR_DEVICE g_rdpdr_device[];
 
 static PRINTER *
-get_printer_data(NTHANDLE handle)
+get_printer_data(RD_NTHANDLE handle)
 {
 	int index;
 
@@ -100,9 +109,9 @@ printer_enum_devices(uint32 * id, char *optarg)
 	return count;
 }
 
-static NTSTATUS
+static RD_NTSTATUS
 printer_create(uint32 device_id, uint32 access, uint32 share_mode, uint32 disposition, uint32 flags,
-	       char *filename, NTHANDLE * handle)
+	       char *filename, RD_NTHANDLE * handle)
 {
 	char cmd[256];
 	PRINTER *pprinter_data;
@@ -122,11 +131,11 @@ printer_create(uint32 device_id, uint32 access, uint32 share_mode, uint32 dispos
 
 	g_rdpdr_device[device_id].handle = fileno(pprinter_data->printer_fp);
 	*handle = g_rdpdr_device[device_id].handle;
-	return STATUS_SUCCESS;
+	return RD_STATUS_SUCCESS;
 }
 
-static NTSTATUS
-printer_close(NTHANDLE handle)
+static RD_NTSTATUS
+printer_close(RD_NTHANDLE handle)
 {
 	int i = get_device_index(handle);
 	if (i >= 0)
@@ -136,11 +145,11 @@ printer_close(NTHANDLE handle)
 			pclose(pprinter_data->printer_fp);
 		g_rdpdr_device[i].handle = 0;
 	}
-	return STATUS_SUCCESS;
+	return RD_STATUS_SUCCESS;
 }
 
-static NTSTATUS
-printer_write(NTHANDLE handle, uint8 * data, uint32 length, uint32 offset, uint32 * result)
+static RD_NTSTATUS
+printer_write(RD_NTHANDLE handle, uint8 * data, uint32 length, uint32 offset, uint32 * result)
 {
 	PRINTER *pprinter_data;
 
@@ -150,9 +159,9 @@ printer_write(NTHANDLE handle, uint8 * data, uint32 length, uint32 offset, uint3
 	if (ferror(pprinter_data->printer_fp))
 	{
 		*result = 0;
-		return STATUS_INVALID_HANDLE;
+		return RD_STATUS_INVALID_HANDLE;
 	}
-	return STATUS_SUCCESS;
+	return RD_STATUS_SUCCESS;
 }
 
 DEVICE_FNS printer_fns = {

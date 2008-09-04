@@ -1,4 +1,4 @@
-/* $Id: tstMicro.cpp 31345 2008-05-28 09:44:03Z sandervl $ */
+/* $Id: tstMicro.cpp 35653 2008-08-29 14:21:03Z bird $ */
 /** @file
  * Micro Testcase, profiling special CPU operations.
  */
@@ -340,7 +340,7 @@ int main(int argc, char **argv)
 {
     int     rcRet = 0;                  /* error count. */
 
-    RTR3Init();
+    RTR3InitAndSUPLib();
 
     /*
      * Create empty VM.

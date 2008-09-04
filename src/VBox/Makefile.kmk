@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35642 2008-08-29 11:59:22Z bird $
 ## @file
 # Top-level makefile for src/VBox.
 #
@@ -19,6 +19,50 @@
 # additional information or have any questions.
 #
 
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../..
+include $(KBUILD_PATH)/subheader.kmk
+
+ifdef VBOX_ONLY_ADDITIONS
+ include $(PATH_SUB_CURRENT)/Runtime/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/Additions/Makefile.kmk
+
+else ifdef VBOX_ONLY_DOCS
+ include $(PATH_SUB_CURRENT)/Runtime/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/HostDrivers/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/Frontends/Makefile.kmk
+
+else ifdef VBOX_ONLY_SDK
+ include $(PATH_SUB_CURRENT)/Main/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/RDP/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/Installer/Makefile.kmk
+
+else
+ ifdef VBOX_WITH_MAIN
+  include $(PATH_SUB_CURRENT)/Main/Makefile.kmk 			# Do this one first because of soap.
+ endif
+ include $(PATH_SUB_CURRENT)/Runtime/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/VMM/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/Devices/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/Disassembler/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/HostDrivers/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/HostServices/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/Debugger/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/Frontends/Makefile.kmk
+ ifdef VBOX_WITH_VRDP
+  include $(PATH_SUB_CURRENT)/RDP/Makefile.kmk
+ endif
+ ifdef VBOX_WITH_ADDITIONS
+  include $(PATH_SUB_CURRENT)/Additions/Makefile.kmk
+ endif
+ ifdef VBOX_WITH_INSTALLER
+  ##@todo include $(PATH_SUB_CURRENT)/Installer/Makefile.kmk 		# Keep this last.
+ endif
+endif # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS
+
+include $(KBUILD_PATH)/subfooter.kmk
+
+else # !VBOX_KBUILD_HACKING
 DEPTH = ../..
 include $(KBUILD_PATH)/header.kmk
 
@@ -27,8 +71,20 @@ ifdef VBOX_ONLY_ADDITIONS
 	Runtime \
 	Additions
 
-else  # !VBOX_ONLY_ADDITIONS
- SUBDIRS_BLDPROGS = Devices
+else ifdef VBOX_ONLY_DOCS
+ SUBDIRS = \
+	Runtime \
+	Frontends \
+	HostDrivers
+
+else ifdef VBOX_ONLY_SDK
+  SUBDIRS =        \
+        Main       \
+        RDP        \
+        Installer
+
+else  # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS
+ SUBDIRS_BLDPROGS = Devices Main
 
  SUBDIRS = \
 	Runtime \
@@ -57,7 +113,8 @@ else  # !VBOX_ONLY_ADDITIONS
  ifdef VBOX_WITH_INSTALLER
   SUBDIRS += Installer
  endif
-endif # !VBOX_ONLY_ADDITIONS
+endif # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS
 
 include $(KBUILD_PATH)/footer.kmk
+endif # !VBOX_KBUILD_HACKING
 

@@ -1,4 +1,4 @@
-; $Id: PAEand32Bit.mac 29865 2008-04-18 15:16:47Z umoeller $
+; $Id: PAEand32Bit.mac 32005 2008-06-12 19:26:45Z frank $
 ;; @file
 ; VMM - World Switchers, template for PAE and 32-Bit.
 ;
@@ -236,7 +236,7 @@ GLOBALNAME IDEnterTarget
     and     edx, ~X86_CR4_PAE
 %endif
     mov     eax, cr0
-    and     eax, ~X86_CR0_PG
+    and     eax, (~X86_CR0_PG) & 0xffffffff ; prevent yasm warning
     mov     cr0, eax
     DEBUG_CHAR('4')
     mov     cr4, edx
@@ -288,9 +288,11 @@ GLOBALNAME FarJmpGCTarget
     mov     gs, eax
     mov     fs, eax
 
-    ; Setup stack
+    ; Setup stack; use the lss_esp, ss pair for lss
     DEBUG_CHAR('3')
-    lss     esp, [edx + CPUM.Hyper.esp]
+    mov     eax, [edx + CPUM.Hyper.esp]
+    mov     [edx + CPUM.Hyper.lss_esp], eax
+    lss     esp, [edx + CPUM.Hyper.lss_esp]
 
     ; Restore TSS selector; must mark it as not busy before using ltr (!)
     DEBUG_CHAR('4')
@@ -756,7 +758,7 @@ GLOBALNAME IDExitTarget
     or      edx, X86_CR4_PAE
 %endif
     mov     eax, cr0
-    and     eax, ~X86_CR0_PG
+    and     eax, (~X86_CR0_PG) & 0xffffffff ; prevent yasm warning
     mov     cr0, eax
     DEBUG_CHAR('2')
     mov     cr4, edx

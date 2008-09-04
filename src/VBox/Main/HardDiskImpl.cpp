@@ -3402,8 +3402,17 @@ HRESULT HVMDKImage::FinalConstruct()
     mSize = 0;
     mActualSize = 0;
 
+    /* Create supported error interface. */
+    mVDInterfaces = NULL;
+    mInterfaceErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
+    mInterfaceErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
+    mInterfaceErrorCallbacks.pfnError     = VDError;
+    int vrc = VDInterfaceAdd(&mInterfaceError, "VMDK_IError", VDINTERFACETYPE_ERROR,
+                             &mInterfaceErrorCallbacks, this, &mVDInterfaces);
+    ComAssertRCRet (vrc, E_FAIL);
+
     /* initialize the container */
-    int vrc = VDCreate (VDError, this, &mContainer);
+    vrc = VDCreate (&mInterfaceError, &mContainer);
     ComAssertRCRet (vrc, E_FAIL);
 
     return S_OK;
@@ -4076,7 +4085,7 @@ HRESULT HVMDKImage::queryInformation (Bstr *aAccessError)
         /// yield a null UUID. It cannot be added to a VMDK opened readonly,
         /// obviously. This of course changes locking behavior, but for now
         /// this is acceptable. A better solution needs to be found later.
-        vrc = VDOpen (mContainer, "VMDK", filePath, VD_OPEN_FLAGS_NORMAL);
+        vrc = VDOpen (mContainer, "VMDK", filePath, VD_OPEN_FLAGS_NORMAL, NULL);
         if (VBOX_FAILURE (vrc))
             break;
 
@@ -4282,6 +4291,15 @@ HRESULT HCustomHardDisk::FinalConstruct()
 
     ComAssertRCRet (rc, E_FAIL);
 
+    /* Create supported error interface. */
+    mVDInterfaces = NULL;
+    mInterfaceErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
+    mInterfaceErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
+    mInterfaceErrorCallbacks.pfnError     = VDError;
+    int vrc = VDInterfaceAdd(&mInterfaceError, "Custom_IError", VDINTERFACETYPE_ERROR,
+                             &mInterfaceErrorCallbacks, this, &mVDInterfaces);
+    ComAssertRCRet (vrc, E_FAIL);
+
     return S_OK;
 }
 
@@ -4343,7 +4361,7 @@ HRESULT HCustomHardDisk::init (VirtualBox *aVirtualBox, HardDisk *aParent,
         mFormat = aCustomNode.stringValue ("format");
 
         /* initialize the container */
-        vrc = VDCreate (VDError, this, &mContainer);
+        vrc = VDCreate (&mInterfaceError, &mContainer);
         if (VBOX_FAILURE (vrc))
         {
             AssertRC (vrc);
@@ -4437,7 +4455,6 @@ HRESULT HCustomHardDisk::init (VirtualBox *aVirtualBox, HardDisk *aParent,
             int vrc = VDGetFormat (Utf8Str (mLocation), &pszFormat);
             if (VBOX_FAILURE(vrc))
             {
-                AssertRC (vrc);
                 rc = setError (E_FAIL,
                     tr ("Cannot recognize the format of the custom "
                         "hard disk '%ls' (%Vrc)"),
@@ -4447,8 +4464,8 @@ HRESULT HCustomHardDisk::init (VirtualBox *aVirtualBox, HardDisk *aParent,
             mFormat = Bstr (pszFormat);
             RTStrFree (pszFormat);
 
-            /* Create the corresponding container. */
-            vrc = VDCreate (VDError, this, &mContainer);
+            /* initialize the container */
+            vrc = VDCreate (&mInterfaceError, &mContainer);
 
             /* the format has been already checked for presence at this point */
             ComAssertRCBreak (vrc, rc = E_FAIL);
@@ -4914,21 +4931,18 @@ HRESULT HCustomHardDisk::queryInformation (Bstr *aAccessError)
     {
         Guid id, parentId;
 
-        vrc = VDOpen (mContainer, Utf8Str (mFormat), location, VD_OPEN_FLAGS_INFO);
+        vrc = VDOpen (mContainer, Utf8Str (mFormat), location, VD_OPEN_FLAGS_INFO, NULL);
         if (VBOX_FAILURE (vrc))
             break;
 
         vrc = VDGetUuid (mContainer, 0, id.ptr());
-        if (VBOX_FAILURE (vrc))
-            break;
-        vrc = VDGetParentUuid (mContainer, 0, parentId.ptr());
-        if (VBOX_FAILURE (vrc))
+        if (VBOX_FAILURE (vrc) && vrc != VERR_NOT_SUPPORTED)
             break;
 
         if (!mId.isEmpty())
         {
             /* check that the actual UUID of the image matches the stored UUID */
-            if (mId != id)
+            if (VBOX_SUCCESS(vrc) && (mId != id))
             {
                 errMsg = Utf8StrFmt (
                     tr ("Actual UUID {%Vuuid} of the hard disk image '%s' doesn't "
@@ -4939,9 +4953,22 @@ HRESULT HCustomHardDisk::queryInformation (Bstr *aAccessError)
         }
         else
         {
-            /* assgn an UUID read from the image file */
-            mId = id;
+            /* assign an UUID read from the image file */
+            if (VBOX_SUCCESS(vrc))
+                mId = id;
+            else
+            {
+                /* Create a UUID on our own. */
+                vrc = RTUuidCreate(mId.ptr());
+                if (VBOX_FAILURE(vrc))
+                    break;
+            }
         }
+
+
+        vrc = VDGetParentUuid (mContainer, 0, parentId.ptr());
+        if (VBOX_FAILURE (vrc))
+            break;
 
         if (mParent)
         {
@@ -5111,8 +5138,17 @@ HRESULT HVHDImage::FinalConstruct()
     mSize = 0;
     mActualSize = 0;
 
+    /* Create supported error interface. */
+    mVDInterfaces = NULL;
+    mInterfaceErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
+    mInterfaceErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
+    mInterfaceErrorCallbacks.pfnError     = VDError;
+    int vrc = VDInterfaceAdd(&mInterfaceError, "VHD_IError", VDINTERFACETYPE_ERROR,
+                             &mInterfaceErrorCallbacks, this, &mVDInterfaces);
+    ComAssertRCRet (vrc, E_FAIL);
+
     /* initialize the container */
-    int vrc = VDCreate (VDError, this, &mContainer);
+    vrc = VDCreate (&mInterfaceError, &mContainer);
     ComAssertRCRet (vrc, E_FAIL);
 
     return S_OK;
@@ -5783,7 +5819,7 @@ HRESULT HVHDImage::queryInformation (Bstr *aAccessError)
         /// yield a null UUID. It cannot be added to a VHD opened readonly,
         /// obviously. This of course changes locking behavior, but for now
         /// this is acceptable. A better solution needs to be found later.
-        vrc = VDOpen (mContainer, "VHD", filePath, VD_OPEN_FLAGS_NORMAL);
+        vrc = VDOpen (mContainer, "VHD", filePath, VD_OPEN_FLAGS_NORMAL, NULL);
         if (VBOX_FAILURE (vrc))
             break;
 

@@ -130,6 +130,8 @@ RTGCPTR VMMGetStackGC(PVM pVM);
 RTHCPTR VMMGetHCStack(PVM pVM);
 
 
+VMMDECL(uint32_t) VMMGetSvnRev(void);
+
 
 #ifdef IN_RING3
 /** @defgroup grp_vmm_r3    The VMM Host Context Ring 3 API
@@ -265,7 +267,7 @@ VMMR3DECL(int) VMMR3HwAccRunGC(PVM pVM);
  * @param   cArgs       The number of arguments in the ....
  * @param   ...         Arguments to the function.
  */
-VMMR3DECL(int) VMMR3CallGC(PVM pVM, RTGCPTR GCPtrEntry, unsigned cArgs, ...);
+VMMR3DECL(int) VMMR3CallGC(PVM pVM, RTRCPTR GCPtrEntry, unsigned cArgs, ...);
 
 /**
  * Calls GC a function.
@@ -275,7 +277,7 @@ VMMR3DECL(int) VMMR3CallGC(PVM pVM, RTGCPTR GCPtrEntry, unsigned cArgs, ...);
  * @param   cArgs       The number of arguments in the ....
  * @param   args        Arguments to the function.
  */
-VMMR3DECL(int) VMMR3CallGCV(PVM pVM, RTGCPTR GCPtrEntry, unsigned cArgs, va_list args);
+VMMR3DECL(int) VMMR3CallGCV(PVM pVM, RTRCPTR GCPtrEntry, unsigned cArgs, va_list args);
 
 /**
  * Resumes executing hypervisor code when interrupted
@@ -367,6 +369,8 @@ typedef enum VMMR0OPERATION
     VMMR0_DO_HWACC_RUN = SUP_VMMR0_DO_HWACC_RUN,
     /** Official NOP that we use for profiling. */
     VMMR0_DO_NOP = SUP_VMMR0_DO_NOP,
+    /** Official slow iocl NOP that we use for profiling. */
+    VMMR0_DO_SLOW_NOP,
 
     /** Ask the GVMM to create a new VM. */
     VMMR0_DO_GVMM_CREATE_VM,
@@ -433,6 +437,10 @@ typedef enum VMMR0OPERATION
     VMMR0_DO_INTNET_IF_GET_RING3_BUFFER,
     /** Call INTNETR0IfSetPromiscuousMode(). */
     VMMR0_DO_INTNET_IF_SET_PROMISCUOUS_MODE,
+    /** Call INTNETR0IfSetMacAddress(). */
+    VMMR0_DO_INTNET_IF_SET_MAC_ADDRESS,
+    /** Call INTNETR0IfSetActive(). */
+    VMMR0_DO_INTNET_IF_SET_ACTIVE,
     /** Call INTNETR0IfSend(). */
     VMMR0_DO_INTNET_IF_SEND,
     /** Call INTNETR0IfWait(). */
@@ -478,7 +486,7 @@ typedef GCFGMVALUEREQ *PGCFGMVALUEREQ;
  * @param   pVM             The VM to operate on.
  * @param   enmOperation    Which operation to execute.
  * @param   pvArg           Argument to the operation.
- * @remarks Assume called with interrupts disabled.
+ * @remarks Assume called with interrupts or preemption disabled.
  */
 VMMR0DECL(int) VMMR0EntryInt(PVM pVM, VMMR0OPERATION enmOperation, void *pvArg);
 
@@ -490,7 +498,7 @@ VMMR0DECL(int) VMMR0EntryInt(PVM pVM, VMMR0OPERATION enmOperation, void *pvArg);
  * @param   enmOperation    Which operation to execute.
  * @remarks Assume called with interrupts _enabled_.
  */
-VMMR0DECL(int) VMMR0EntryFast(PVM pVM, VMMR0OPERATION enmOperation);
+VMMR0DECL(void) VMMR0EntryFast(PVM pVM, VMMR0OPERATION enmOperation);
 
 /**
  * The Ring 0 entry point, called by the support library (SUP).
@@ -500,9 +508,10 @@ VMMR0DECL(int) VMMR0EntryFast(PVM pVM, VMMR0OPERATION enmOperation);
  * @param   enmOperation    Which operation to execute.
  * @param   pReq            This points to a SUPVMMR0REQHDR packet. Optional.
  * @param   u64Arg          Some simple constant argument.
+ * @param   pSession        The session of the caller.
  * @remarks Assume called with interrupts _enabled_.
  */
-VMMR0DECL(int) VMMR0EntryEx(PVM pVM, VMMR0OPERATION enmOperation, PSUPVMMR0REQHDR pReq, uint64_t u64Arg);
+VMMR0DECL(int) VMMR0EntryEx(PVM pVM, VMMR0OPERATION enmOperation, PSUPVMMR0REQHDR pReq, uint64_t u64Arg, PSUPDRVSESSION);
 
 /**
  * Calls the ring-3 host code.

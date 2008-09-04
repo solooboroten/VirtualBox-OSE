@@ -23,12 +23,18 @@
 #ifndef __VBoxToolBar_h__
 #define __VBoxToolBar_h__
 
+
+#ifdef Q_WS_MAC
+ #include "VBoxUtils.h"
+#endif
+
 /* Qt includes */
 #include <QToolBar>
 #include <QMainWindow>
-#ifdef Q_WS_MAC
-//# include "VBoxAquaStyle.h"
-#endif
+
+/* Note: This styles are available on _all_ platforms. */
+#include <QCleanlooksStyle>
+#include <QWindowsStyle>
 
 /**
  *  The VBoxToolBar class is a simple QToolBar reimplementation to disable
@@ -47,22 +53,75 @@ public:
         setMovable (false);
         if (layout())
             layout()->setContentsMargins (0, 0, 0, 0);;
+
+        setContextMenuPolicy (Qt::NoContextMenu);
+
+        /* Remove that ugly frame panel around the toolbar. */
+        /* I'm not sure if we should do this generally on linux for that mass
+         * of KDE styles. But maybe some of them are based on CleanLooks so
+         * they are looking ok also. */
+        QStyle *style = NULL;
+        if (!style)
+            /* Check for cleanlooks style */
+            style = qobject_cast<QCleanlooksStyle*> (QToolBar::style());
+        if (!style)
+            /* Check for windows style */
+            style = qobject_cast<QWindowsStyle*> (QToolBar::style());
+        if (style)
+            setStyleSheet ("QToolBar { border: 0px none black; }");
     }
 
-    /**
-     *  Substitutes for QMainWindow::setUsesBigPixmaps() when QMainWindow is
-     *  not used (otherwise just redirects the call to #mainWindow()).
-     */
-    void setUsesBigPixmaps (bool enable)
+    void setMacToolbar ()
     {
-        QSize size (24, 24);
-        if (!enable)
-            size = QSize (16, 16);
-
+#ifdef Q_WS_MAC
         if (mMainWindow)
-            mMainWindow->setIconSize (size);
-        else
-            setIconSize (size);
+        {
+            mMainWindow->setUnifiedTitleAndToolBarOnMac (true);
+            WindowRef window = ::darwinToWindowRef (this);
+            EventHandlerUPP eventHandler = ::NewEventHandlerUPP (VBoxToolBar::macEventFilter);
+            EventTypeSpec eventTypes[2];
+            eventTypes[0].eventClass = kEventClassMouse;
+            eventTypes[0].eventKind  = kEventMouseDown;
+            eventTypes[1].eventClass = kEventClassMouse;
+            eventTypes[1].eventKind  = kEventMouseUp;
+            InstallWindowEventHandler (window, eventHandler,
+                                       RT_ELEMENTS (eventTypes), eventTypes,
+                                       NULL, NULL);
+        }
+#endif /* Q_WS_MAC */
+    }
+
+#ifdef Q_WS_MAC
+    static pascal OSStatus macEventFilter (EventHandlerCallRef aNextHandler,
+                                           EventRef aEvent, void * /* aUserData */)
+    {
+        UInt32 eclass = GetEventClass (aEvent);
+        if (eclass == kEventClassMouse)
+        {
+            WindowPartCode partCode;
+            GetEventParameter (aEvent, kEventParamWindowPartCode, typeWindowPartCode, NULL, sizeof (WindowPartCode), NULL, &partCode);
+            UInt32 ekind = GetEventKind (aEvent);
+            if (partCode == 15 ||
+                partCode == 4)
+                if(ekind == kEventMouseDown || ekind == kEventMouseUp)
+                {
+                    EventMouseButton button = 0;
+                    GetEventParameter (aEvent, kEventParamMouseButton, typeMouseButton, NULL, sizeof (button), NULL, &button);
+                    if (button != kEventMouseButtonPrimary)
+                        return noErr;
+                }
+        }
+        return CallNextEventHandler (aNextHandler, aEvent);
+    }
+#endif /* Q_WS_MAC */
+
+    void setShowToolBarButton (bool aShow)
+    {
+#ifdef Q_WS_MAC
+        ::darwinSetShowToolBarButton (this, aShow);
+#else  /* Q_WS_MAC */
+        NOREF (aShow);
+#endif /* !Q_WS_MAC */
     }
 
     void setUsesTextLabel (bool enable)
@@ -76,33 +135,6 @@ public:
         else
             setToolButtonStyle (tbs);
     }
-
-#ifdef Q_WS_MAC
-    /**
-     * This is a temporary hack, we'll set the style globally later.
-     */
-#warning port me
-    void setMacStyle()
-    {
-        /* self */
-//        QStyle *qs = &VBoxAquaStyle::instance();
-//        setStyle(qs);
-//
-//        /* the buttons */
-//        QObjectList *list = queryList ("QToolButton");
-//        QObjectListIt it (*list);
-//        QObject *obj;
-//        while ((obj = it.current()) != 0)
-//        {
-//            QToolButton *btn = ::qt_cast <QToolButton *> (obj);
-//            btn->setStyle (&VBoxAquaStyle::instance());
-//            ++ it;
-//        }
-//        delete list;
-
-        /** @todo the separator */
-    }
-#endif
 
 private:
 

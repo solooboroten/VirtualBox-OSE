@@ -1,6 +1,9 @@
 #!/bin/sh
+## @file
 # Sun xVM VirtualBox
 # VirtualBox Solaris package creation script.
+#
+
 #
 # Copyright (C) 2007-2008 Sun Microsystems, Inc.
 #
@@ -19,7 +22,23 @@
 
 #
 # Usage:
-#       makespackage.sh $(PATH_TARGET)/install packagename $(BUILD_TARGET_ARCH)
+#       makespackage.sh [--hardened] $(PATH_TARGET)/install packagename $(KBUILD_TARGET_ARCH) [VBIPackageName]
+
+
+# Parse options.
+HARDENED=""
+while test $# -ge 1;
+do
+    case "$1" in 
+        --hardened)
+            HARDENED=1
+            ;;
+    *)
+        break
+        ;;
+    esac
+    shift
+done
 
 if [ -z "$3" ]; then
     echo "Usage: $0 installdir packagename x86|amd64"
@@ -50,6 +69,14 @@ fi
 # bail out on non-zero exit status
 set -e
 
+# Fixup filelist using awk, the parameters must be in awk syntax
+# params: filename condition action
+filelist_fixup()
+{
+  "$VBOX_AWK" 'NF == 6 && '"$2"' { '"$3"' } { print }' "$1" > "tmp-$1"
+  mv -f "tmp-$1" "$1"
+}
+
 # prepare file list
 cd "$1"
 echo 'i pkginfo=./vbox.pkginfo' > prototype
@@ -60,27 +87,55 @@ if test -f "./vbox.copyright"; then
     echo 'i copyright=./vbox.copyright' >> prototype
 fi
 echo 'e sed /etc/devlink.tab ? ? ?' >> prototype
-find . -print | $VBOX_GGREP -v -E 'prototype|makepackage.sh|vbox.pkginfo|postinstall.sh|preremove.sh|ReadMe.txt|vbox.space|vbox.copyright' | pkgproto >> prototype
+find . -print | $VBOX_GGREP -v -E 'prototype|makepackage.sh|vbox.pkginfo|postinstall.sh|preremove.sh|ReadMe.txt|vbox.space|vbox.copyright|VirtualBoxKern' | pkgproto >> prototype
 
 # don't grok for the sed class files
-$VBOX_AWK 'NF == 6 && $2 == "none" { $5 = "root"; $6 = "bin" } { print }' prototype > prototype2
-$VBOX_AWK 'NF == 6 && $2 == "none" { $3 = "opt/VirtualBox/"$3"="$3 } { print }' prototype2 > prototype
+filelist_fixup prototype '$2 == "none"'                                                                 '$5 = "root"; $6 = "bin"'
+filelist_fixup prototype '$2 == "none"'                                                                 '$3 = "opt/VirtualBox/"$3"="$3'
 
 # install the kernel module to the right place.
 if test "$3" = "x86"; then
-    $VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/vboxdrv=vboxdrv" { $3 = "platform/i86pc/kernel/drv/vboxdrv=vboxdrv"; $6 = "sys" } { print }' prototype > prototype2
+    filelist_fixup prototype '$3 == "opt/VirtualBox/vboxdrv=vboxdrv"'                                   '$3 = "platform/i86pc/kernel/drv/vboxdrv=vboxdrv"; $6 = "sys"'
 else
-    $VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/vboxdrv=vboxdrv" { $3 = "platform/i86pc/kernel/drv/amd64/vboxdrv=vboxdrv"; $6 = "sys" } { print }' prototype > prototype2
+    filelist_fixup prototype '$3 == "opt/VirtualBox/vboxdrv=vboxdrv"'                                   '$3 = "platform/i86pc/kernel/drv/amd64/vboxdrv=vboxdrv"; $6 = "sys"'
 fi
 
-$VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/vboxdrv.conf=vboxdrv.conf" { $3 = "platform/i86pc/kernel/drv/vboxdrv.conf=vboxdrv.conf" } { print }' prototype2 > prototype
+# install vboxflt to the right place.
+if test "$3" = "x86"; then
+    filelist_fixup prototype '$3 == "opt/VirtualBox/vboxflt=vboxflt"'                                   '$3 = "platform/i86pc/kernel/drv/vboxflt=vboxflt"; $6 = "sys"'
+else
+    filelist_fixup prototype '$3 == "opt/VirtualBox/vboxflt=vboxflt"'                                   '$3 = "platform/i86pc/kernel/drv/amd64/vboxflt=vboxflt"; $6 = "sys"'
+fi
+
+filelist_fixup prototype '$3 == "opt/VirtualBox/vboxdrv.conf=vboxdrv.conf"'                             '$3 = "platform/i86pc/kernel/drv/vboxdrv.conf=vboxdrv.conf"'
+
+filelist_fixup prototype '$3 == "opt/VirtualBox/vboxflt.conf=vboxflt.conf"'                             '$3 = "platform/i86pc/kernel/drv/vboxflt.conf=vboxflt.conf"'
+
+# hardening requires some executables to be marked setuid.
+if test -n "$HARDENED"; then
+    $VBOX_AWK 'NF == 6 \
+        && (    $3 == "opt/VirtualBox/VirtualBox=VirtualBox" \
+            ||  $3 == "opt/VirtualBox/VirtualBox3=VirtualBox3" \
+            ||  $3 == "opt/VirtualBox/VBoxHeadless=VBoxHeadless" \
+            ||  $3 == "opt/VirtualBox/VBoxSDL=VBoxSDL" \
+            ||  $3 == "opt/VirtualBox/VBoxBFE=VBoxBFE" \
+            ) \
+       { $4 = "4755" } { print }' prototype > prototype2
+    mv -f prototype2 prototype    
+fi
 
 # desktop links and icons
-$VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/virtualbox.desktop=virtualbox.desktop" { $3 = "usr/share/applications/virtualbox.desktop=virtualbox.desktop" } { print }' prototype > prototype2
-$VBOX_AWK 'NF == 6 && $3 == "opt/VirtualBox/VBox.png=VBox.png" { $3 = "usr/share/pixmaps/VBox.png=VBox.png" } { print }' prototype2 > prototype
+filelist_fixup prototype '$3 == "opt/VirtualBox/virtualbox.desktop=virtualbox.desktop"'                 '$3 = "usr/share/applications/virtualbox.desktop=virtualbox.desktop"'
+filelist_fixup prototype '$3 == "opt/VirtualBox/VBox.png=VBox.png"'                                     '$3 = "usr/share/pixmaps/VBox.png=VBox.png"'
 
+# webservice SMF manifest
+filelist_fixup prototype '$3 == "opt/VirtualBox/virtualbox-webservice.xml=virtualbox-webservice.xml"'   '$3 = "var/svc/manifest/application/virtualbox/webservice.xml=virtualbox-webservice.xml"'
 
-rm prototype2
+# webservice SMF start/stop script
+filelist_fixup prototype '$3 == "opt/VirtualBox/smf-vboxwebsrv.sh=smf-vboxwebsrv.sh"'                   '$3 = "opt/VirtualBox/smf-vboxwebsrv=smf-vboxwebsrv.sh"'
+echo " --- start of prototype  ---" 
+cat prototype
+echo " --- end of prototype --- "
 
 # explicitly set timestamp to shutup warning
 VBOXPKG_TIMESTAMP=vbox`date '+%Y%m%d%H%M%S'`
@@ -93,7 +148,7 @@ pkgtrans -s -o /var/spool/pkg "`pwd`/$VBOX_PKGFILE" "$VBOX_PKGNAME"
 
 # $4 if exist would contain the path to the VBI package to include in the .tar.gz
 if test -f "$4"; then
-    $VBOX_GTAR zcvf "$VBOX_ARCHIVE" "$VBOX_PKGFILE" $4 autoresponse ReadMe.txt
+    $VBOX_GTAR zcvf "$VBOX_ARCHIVE" "$VBOX_PKGFILE" "$4" autoresponse ReadMe.txt
 else
     $VBOX_GTAR zcvf "$VBOX_ARCHIVE" "$VBOX_PKGFILE" autoresponse ReadMe.txt
 fi

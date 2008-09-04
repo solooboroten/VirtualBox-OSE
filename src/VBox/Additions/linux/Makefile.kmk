@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 32647 2008-07-03 03:07:18Z bird $
 ## @file
 # Makefile for the linux guest additions base directory.
 #
@@ -19,16 +19,17 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
 SUB_DEPTH = ..
+DEPTH    ?= ../../../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
-# This can only be built on a real Linux system.
-if1of ($(KBUILD_TARGET),linux l4)
- include $(PATH_SUB_CURRENT)/module/Makefile.kmk
- include $(PATH_SUB_CURRENT)/daemon/Makefile.kmk
- include $(PATH_SUB_CURRENT)/sharedfolders/Makefile.kmk
-endif
+include $(PATH_SUB_CURRENT)/module/Makefile.kmk
+include $(PATH_SUB_CURRENT)/daemon/Makefile.kmk
+include $(PATH_SUB_CURRENT)/sharedfolders/Makefile.kmk
 
 ifndef VBOX_OSE
  PACKING     += $(PATH_BIN)/additions/VBoxLinuxAdditions.run
@@ -38,7 +39,7 @@ ifndef VBOX_OSE
 endif
 
 VBOX_PATH_LINUX_ADDITION_INSTALLER := $(PATH_SUB_CURRENT)/installer
-VBOX_PATH_X11_ADDITION_INSTALLER := $(PATH_ROOT)/src/VBox/Additions/x11/installer
+VBOX_PATH_X11_ADDITION_INSTALLER   := $(PATH_ROOT)/src/VBox/Additions/x11/installer
 
 include	$(KBUILD_PATH)/subfooter.kmk
 
@@ -65,6 +66,7 @@ $(PATH_BIN)/additions/VBoxLinuxAdditions.run: \
 		$(INSTARGET_vboxmod-bin) \
 		$(PATH_BIN)/additions/vboxadd-timesync \
 		$(PATH_BIN)/additions/VBoxClient \
+		$(PATH_BIN)/additions/VBoxControl \
 		$(VBOX_PATH_X11_ADDITION_INSTALLER)/VBoxRandR.sh \
 		$(VBOX_PATH_LINUX_ADDITION_INSTALLER)/vboxadd-timesync.sh \
 		$(VBOX_PATH_X11_ADDITION_INSTALLER)/98vboxadd-xclient \
@@ -85,6 +87,7 @@ $(PATH_BIN)/additions/VBoxLinuxAdditions.run: \
 		$(PATH_BIN)/additions/vboxvideo_drv_71.so \
 		$(PATH_BIN)/additions/vboxvideo_drv_13.so \
 		$(PATH_BIN)/additions/vboxvideo_drv_14.so \
+		$(PATH_BIN)/additions/vboxvideo_drv_15.so \
 		$(VBOX_PATH_LINUX_ADDITION_INSTALLER)/vboxvfs.sh $(PATH_BIN)/additions/mountvboxsf \
 		$(VBOX_SELINUX_CMPLD) \
 		$(wildcard $(PATH_BIN)/additions/src/*) \
@@ -103,6 +106,7 @@ $(PATH_BIN)/additions/VBoxLinuxAdditions.run: \
 	$(QUIET)$(INSTALL) -m 0644 $(VBOX_PATH_LINUX_ADDITION_INSTALLER)/test.c         $(PATH_TARGET)/install/module/test/
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxadd-timesync           $(PATH_TARGET)/install/vboxadd-timesync
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/VBoxClient                 $(PATH_TARGET)/install/VBoxClient
+	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/VBoxControl                $(PATH_TARGET)/install/VBoxControl
 	$(QUIET)$(SED) "s;_VERSION_;$(VBOX_VERSION_STRING);g" $(VBOX_PATH_LINUX_ADDITION_INSTALLER)/install.sh \
 		| $(SED) "s;_BUILD_;$(shell date);g" \
 		| $(SED) "s;_OSE_;$(VBOX_OSE);g" \
@@ -127,6 +131,7 @@ $(PATH_BIN)/additions/VBoxLinuxAdditions.run: \
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxvideo_drv_71.so    $(PATH_TARGET)/install/vboxvideo_drv_71.so
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxvideo_drv_13.so    $(PATH_TARGET)/install/vboxvideo_drv_13.so
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxvideo_drv_14.so    $(PATH_TARGET)/install/vboxvideo_drv_14.so
+	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxvideo_drv_15.so    $(PATH_TARGET)/install/vboxvideo_drv_15.so
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/mountvboxsf            $(PATH_TARGET)/install/mount.vboxsf
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_PATH_LINUX_ADDITION_INSTALLER)/vboxvfs.sh $(PATH_TARGET)/install
 ifdef VBOX_SELINUX_CMPLD

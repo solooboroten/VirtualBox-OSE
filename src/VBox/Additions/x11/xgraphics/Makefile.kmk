@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35116 2008-08-21 15:24:59Z frank $
 ## @file
 # Sub-Makefile for the VBox Linux Additions X.org graphics driver.
 #
@@ -19,19 +19,24 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../..
+else
+DEPTH    ?= ../../../../..
 SUB_DEPTH = ../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 #
 # vboxvideo_drv
 #
-if1of ($(KBUILD_TARGET),linux l4)
+if1of ($(KBUILD_TARGET), linux)
  SYSMODS += vboxvideo_drv
  vboxvideo_drv_TEMPLATE = VBOXGUESTR3XF86MOD
  vboxvideo_drv_DEFS.linux = linux
+ vboxvideo_drv_DEFS.x86 = __i386__
  vboxvideo_drv_DEFS = \
-	__i386__ _POSIX_C_SOURCE=199309L _POSIX_SOURCE _XOPEN_SOURCE \
+	_POSIX_C_SOURCE=199309L _POSIX_SOURCE _XOPEN_SOURCE \
 	_BSD_SOURCE _SVID_SOURCE _GNU_SOURCE SHAPE XINPUT XKB LBX XAPPGROUP \
 	XCSECURITY TOGCUP XF86BIGFONT DPMSExtension PIXPRIV PANORAMIX RENDER \
 	GCCUSESGAS AVOID_GLYPHBLT PIXPRIV SINGLEDEPTH XFreeXDGA XvExtension \
@@ -44,7 +49,8 @@ if1of ($(KBUILD_TARGET),linux l4)
  ifdef ARGB_CURSORS
   vboxvideo_drv_INCS = \
 	$(VBOX_PATH_X11_XFREE_4_3)/include \
-	$(VBOX_PATH_X11_XFREE_4_3)/include/extensions \
+	$(VBOX_PATH_X11_XFREE_4_3)/include/X11 \
+	$(VBOX_PATH_X11_XFREE_4_3)/include/X11/extensions \
 	$(VBOX_PATH_X11_XFREE_4_3)/include/fonts \
 	$(VBOX_PATH_X11_XFREE_4_3)/programs/Xserver/afb \
 	$(VBOX_PATH_X11_XFREE_4_3)/programs/Xserver/include \
@@ -101,7 +107,7 @@ if1of ($(KBUILD_TARGET),linux l4)
  vboxvideo_drv_SOURCES = \
 	vboxvideo_68.c \
 	vboxutils_68.c
-endif   # target linux, l4
+endif   # target linux
 
 
 #
@@ -114,7 +120,7 @@ endif   # target linux, l4
 #
 DLLS += vboxvideo_drv_70
 vboxvideo_drv_70_TEMPLATE = VBOXGUESTR3XORGMOD
-if1of ($(KBUILD_TARGET), l4 linux)
+if1of ($(KBUILD_TARGET), linux)
  vboxvideo_drv_70_CFLAGS += \
 	-Wno-conversion -Wno-unused-parameter $(VBOX_GCC_Wno-variadic-macros) # template?
 endif
@@ -183,4 +189,21 @@ vboxvideo_drv_14_SOURCES  = \
 	vboxutils.c
 
 
+#
+# vboxvideo_drv_15
+#
+DLLS += vboxvideo_drv_15
+vboxvideo_drv_15_TEMPLATE = VBOXGUESTR3XORGMOD
+vboxvideo_drv_15_CFLAGS := $(vboxvideo_drv_70_CFLAGS)
+vboxvideo_drv_15_DEFS := $(vboxvideo_drv_70_DEFS) NO_ANSIC PCIACCESS
+vboxvideo_drv_15_INCS = \
+	$(VBOX_PATH_X11_XORG_1_5) \
+	$(VBOX_PATH_X11_XORG_1_5)/X11 \
+	$(VBOX_PATH_X11_XORG_1_5)/xorg
+vboxvideo_drv_15_SOURCES  = \
+	vboxvideo_15.c \
+	vboxutils.c
+
+
 include	$(KBUILD_PATH)/subfooter.kmk
+

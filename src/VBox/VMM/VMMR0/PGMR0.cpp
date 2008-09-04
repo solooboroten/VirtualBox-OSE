@@ -1,4 +1,4 @@
-/* $Id: PGMR0.cpp 31085 2008-05-21 10:17:41Z sandervl $ */
+/* $Id: PGMR0.cpp 33144 2008-07-10 13:45:02Z frank $ */
 /** @file
  * PGM - Page Manager and Monitor, Ring-0.
  */
@@ -22,6 +22,7 @@
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
+#define LOG_GROUP LOG_GROUP_PGM
 #include <VBox/pgm.h>
 #include "PGMInternal.h"
 #include <VBox/vm.h>
@@ -76,12 +77,12 @@ PGMR0DECL(int) PGMR0Trap0eHandlerNestedPaging(PVM pVM, PGMMODE enmShwPagingMode,
 {
     int rc;
 
-    LogFlow(("PGMTrap0eHandler: uErr=%#x pvFault=%VGp eip=%VGv\n", uErr, pvFault, pRegFrame->eip));
+    LogFlow(("PGMTrap0eHandler: uErr=%#x pvFault=%VGp eip=%VGv\n", uErr, pvFault, pRegFrame->rip));
     STAM_PROFILE_START(&pVM->pgm.s.StatGCTrap0e, a);
     STAM_STATS({ pVM->pgm.s.CTXSUFF(pStatTrap0eAttribution) = NULL; } );
 
     /* AMD uses the host's paging mode; Intel's version is on the todo list */
-    Assert(enmShwPagingMode == PGMMODE_32_BIT || enmShwPagingMode == PGMMODE_PAE || enmShwPagingMode == PGMMODE_AMD64);
+    AssertMsg(enmShwPagingMode == PGMMODE_32_BIT || enmShwPagingMode == PGMMODE_PAE || enmShwPagingMode == PGMMODE_PAE_NX || enmShwPagingMode == PGMMODE_AMD64 || enmShwPagingMode == PGMMODE_AMD64_NX, ("enmShwPagingMode=%d\n", enmShwPagingMode));
 
 #ifdef VBOX_WITH_STATISTICS
     /*
@@ -135,10 +136,16 @@ PGMR0DECL(int) PGMR0Trap0eHandlerNestedPaging(PVM pVM, PGMMODE enmShwPagingMode,
         rc = PGM_BTH_NAME_32BIT_PROT(Trap0eHandler)(pVM, uErr, pRegFrame, pvFault);
         break;
     case PGMMODE_PAE:
+    case PGMMODE_PAE_NX:
         rc = PGM_BTH_NAME_PAE_PROT(Trap0eHandler)(pVM, uErr, pRegFrame, pvFault);
         break;
     case PGMMODE_AMD64:
+    case PGMMODE_AMD64_NX:
         rc = PGM_BTH_NAME_AMD64_PROT(Trap0eHandler)(pVM, uErr, pRegFrame, pvFault);
+        break;
+    default:
+        AssertFailed();
+        rc = VERR_INVALID_PARAMETER;
         break;
     }
     if (rc == VINF_PGM_SYNCPAGE_MODIFIED_PDE)

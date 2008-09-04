@@ -72,6 +72,15 @@ PDMDECL(int) PDMIsaSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level);
 PDMDECL(int) PDMIoApicSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level);
 
 /**
+ * Check if the APIC has a pending interrupt/if a TPR change would active one.
+ *
+ * @returns VINF_SUCCESS or VERR_PDM_NO_APIC_INSTANCE.
+ * @param   pDevIns         Device instance of the APIC.
+ * @param   pfPending       Pending state (out).
+ */
+PDMDECL(int) PDMApicHasPendingIrq(PVM pVM, bool *pfPending);
+
+/**
  * Set the APIC base.
  *
  * @returns VBox status code.
@@ -90,7 +99,7 @@ PDMDECL(int) PDMApicSetBase(PVM pVM, uint64_t u64Base);
 PDMDECL(int) PDMApicGetBase(PVM pVM, uint64_t *pu64Base);
 
 /**
- * Set the TPR (task priority register?).
+ * Set the TPR (task priority register).
  *
  * @returns VBox status code.
  * @param   pVM             VM handle.
@@ -99,13 +108,14 @@ PDMDECL(int) PDMApicGetBase(PVM pVM, uint64_t *pu64Base);
 PDMDECL(int) PDMApicSetTPR(PVM pVM, uint8_t u8TPR);
 
 /**
- * Get the TPR (task priority register?).
+ * Get the TPR (task priority register).
  *
  * @returns The current TPR.
  * @param   pVM             VM handle.
  * @param   pu8TPR          Where to store the TRP.
+ * @param   pfPending       Pending state (out).
  */
-PDMDECL(int) PDMApicGetTPR(PVM pVM, uint8_t *pu8TPR);
+PDMDECL(int) PDMApicGetTPR(PVM pVM, uint8_t *pu8TPR, bool *pfPending);
 
 
 #ifdef IN_RING3

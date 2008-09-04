@@ -1,4 +1,4 @@
-/* $Id: sems-os2.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: sems-os2.cpp 33625 2008-07-23 19:48:51Z bird $ */
 /** @file
  * IPRT - Semaphores, OS/2.
  */
@@ -65,6 +65,9 @@ RTDECL(int)   RTSemEventCreate(PRTSEMEVENT pEventSem)
 
 RTDECL(int)   RTSemEventDestroy(RTSEMEVENT EventSem)
 {
+    if (EventSem == NIL_RTSEMEVENT)     /* don't bitch */
+        return VERR_INVALID_HANDLE;
+
     /*
      * Close semaphore handle.
      */

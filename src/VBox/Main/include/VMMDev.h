@@ -56,6 +56,8 @@ public:
     int hgcmHostCall (const char *pszServiceName, uint32_t u32Function, uint32_t cParms, PVBOXHGCMSVCPARM paParms);
     void hgcmShutdown (void);
 
+    bool hgcmIsActive (void) { return ASMAtomicReadBool(&m_fHGCMActive); }
+
 private:
     static DECLCALLBACK(void *) drvQueryInterface(PPDMIBASE pInterface, PDMINTERFACE enmInterface);
     static DECLCALLBACK(int)    drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle);
@@ -66,6 +68,10 @@ private:
 
     RTSEMEVENT mCredentialsEvent;
     uint32_t mu32CredentialsFlags;
+    
+#ifdef VBOX_WITH_HGCM
+    bool m_fHGCMActive;
+#endif /* VBOX_WITH_HGCM */
 };
 
 #endif // ____H_VMMDEV

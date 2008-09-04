@@ -55,7 +55,7 @@ RTDECL(RTCPUID) RTMpCpuId(void);
 /**
  * Converts a CPU identifier to a CPU set index.
  *
- * This may or may not validate the precense of the CPU.
+ * This may or may not validate the presence of the CPU.
  *
  * @returns The CPU set index on success, -1 on failure.
  * @param   idCpu       The identifier of the CPU.
@@ -65,8 +65,8 @@ RTDECL(int) RTMpCpuIdToSetIndex(RTCPUID idCpu);
 /**
  * Converts a CPU set index to a a CPU identifier.
  *
- * This may or may not validate the precense of the CPU, so, use
- * RTMpDoesCpuExist for that.
+ * This may or may not validate the presence of the CPU, so, use
+ * RTMpIsCpuPossible for that.
  *
  * @returns The corresponding CPU identifier, NIL_RTCPUID on failure.
  * @param   iCpu    The CPU set index.
@@ -84,26 +84,16 @@ RTDECL(RTCPUID) RTMpCpuIdFromSetIndex(int iCpu);
 RTDECL(RTCPUID) RTMpGetMaxCpuId(void);
 
 /**
- * Checks if a CPU is online or not.
+ * Checks if a CPU exists in the system or may possibly be hotplugged later.
  *
  * @returns true/false accordingly.
  * @param   idCpu       The identifier of the CPU.
  */
-RTDECL(bool) RTMpIsCpuOnline(RTCPUID idCpu);
+RTDECL(bool) RTMpIsCpuPossible(RTCPUID idCpu);
 
 /**
- * Checks if a CPU exist or not / validates a CPU id.
- *
- * @returns true/false accordingly.
- * @param   idCpu       The identifier of the CPU.
- */
-RTDECL(bool) RTMpDoesCpuExist(RTCPUID idCpu);
-
-/**
- * Gets set of the CPUs present in the system.
- *
- * This may or may not validate the precense of the CPU, so, use
- * RTMpDoesCpuExist for that.
+ * Gets set of the CPUs present in the system pluss any that may
+ * possibly be hotplugged later.
  *
  * @returns pSet.
  * @param   pSet    Where to put the set.
@@ -111,7 +101,8 @@ RTDECL(bool) RTMpDoesCpuExist(RTCPUID idCpu);
 RTDECL(PRTCPUSET) RTMpGetSet(PRTCPUSET pSet);
 
 /**
- * Get the count of CPUs presetn in the system.
+ * Get the count of CPUs present in the system plus any that may
+ * possibly be hotplugged later.
  *
  * @return The count.
  */
@@ -131,6 +122,37 @@ RTDECL(PRTCPUSET) RTMpGetOnlineSet(PRTCPUSET pSet);
  * @return The count.
  */
 RTDECL(RTCPUID) RTMpGetOnlineCount(void);
+
+/**
+ * Checks if a CPU is online or not.
+ *
+ * @returns true/false accordingly.
+ * @param   idCpu       The identifier of the CPU.
+ */
+RTDECL(bool) RTMpIsCpuOnline(RTCPUID idCpu);
+
+/**
+ * Get the current frequency of a CPU.
+ *
+ * The CPU must be online.
+ *
+ * @returns The frequency as MHz. 0 if the CPU is offline
+ *          or the information is not available.
+ * @param   idCpu       The identifier of the CPU.
+ */
+RTDECL(uint32_t) RTMpGetCurFrequency(RTCPUID idCpu);
+
+
+/**
+ * Get the maximum frequency of a CPU.
+ *
+ * The CPU must be online.
+ *
+ * @returns The frequency as MHz. 0 if the CPU is offline
+ *          or the information is not available.
+ * @param   idCpu       The identifier of the CPU.
+ */
+RTDECL(uint32_t) RTMpGetMaxFrequency(RTCPUID idCpu);
 
 
 #ifdef IN_RING0
@@ -194,6 +216,68 @@ RTDECL(int) RTMpOnOthers(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2);
  * @param   pvUser2         The second user argument for the worker.
  */
 RTDECL(int) RTMpOnSpecific(RTCPUID idCpu, PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2);
+
+
+/**
+ * MP event, see FNRTMPNOTIFICATION.
+ */
+typedef enum RTMPEVENT
+{
+    /** The CPU goes online. */
+    RTMPEVENT_ONLINE = 1,
+    /** The CPU goes offline. */
+    RTMPEVENT_OFFLINE
+} RTMPEVENT;
+
+/**
+ * Notification callback.
+ *
+ * The context this is called in differs a bit from platform to
+ * platform, so be careful while in here.
+ *
+ * @param   idCpu       The CPU this applies to.
+ * @param   enmEvent    The event.
+ * @param   pvUser      The user argument.
+ */
+typedef DECLCALLBACK(void) FNRTMPNOTIFICATION(RTMPEVENT enmEvent, RTCPUID idCpu, void *pvUser);
+/** Pointer to a FNRTMPNOTIFICATION(). */
+typedef FNRTMPNOTIFICATION *PFNRTMPNOTIFICATION;
+
+/**
+ * Registers a notification callback for cpu events.
+ *
+ * On platforms which doesn't do cpu offline/online events this API
+ * will just be a no-op that pretends to work.
+ *
+ * @todo We'll be adding a flag to this soon to indicate whether the callback should be called on all
+ *       CPUs that are currently online while it's being registered. This is to help avoid some race
+ *       conditions (we'll hopefully be able to implement this on linux, solaris/win is no issue).
+ *
+ * @returns IPRT status code.
+ * @retval  VINF_SUCCESS on success.
+ * @retval  VERR_NO_MEMORY if a registration record cannot be allocated.
+ * @retval  VERR_ALREADY_EXISTS if the pfnCallback and pvUser already exist
+ *          in the callback list.
+ *
+ * @param   pfnCallback     The callback.
+ * @param   pvUser          The user argument to the callback function.
+ */
+RTDECL(int) RTMpNotificationRegister(PFNRTMPNOTIFICATION pfnCallback, void *pvUser);
+
+/**
+ * This deregisters a notification callback registered via RTMpNotificationRegister().
+ *
+ * The pfnCallback and pvUser arguments must be identical to the registration call
+ * of we won't find the right entry.
+ *
+ * @returns IPRT status code.
+ * @retval  VINF_SUCCESS on success.
+ * @retval  VERR_NOT_FOUND if no matching entry was found.
+ *
+ * @param   pfnCallback     The callback.
+ * @param   pvUser          The user argument to the callback function.
+ */
+RTDECL(int) RTMpNotificationDeregister(PFNRTMPNOTIFICATION pfnCallback, void *pvUser);
 
 #endif /* IN_RING0 */
 

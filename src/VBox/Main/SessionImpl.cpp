@@ -647,10 +647,91 @@ STDMETHODIMP Session::OnShowWindow (BOOL aCheck, BOOL *aCanShow, ULONG64 *aWinId
     AssertComRCReturn (autoCaller.rc(), autoCaller.rc());
 
     AutoReadLock alock (this);
-    AssertReturn (mState == SessionState_Open &&
-                  mType == SessionType_Direct, E_FAIL);
+
+    AssertReturn (mType == SessionType_Direct, E_FAIL);
+
+    if (mState != SessionState_Open)
+    {
+        /* the call from Machine issued when the session is open can arrive
+         * after the session starts closing or gets closed. Note that when
+         * aCheck is false, we return E_FAIL to indicate that aWinId we return
+         * is not valid */
+        *aCanShow = FALSE;
+        *aWinId = 0;
+        return aCheck ? S_OK : E_FAIL;
+    }
 
     return mConsole->onShowWindow (aCheck, aCanShow, aWinId);
+}
+
+STDMETHODIMP Session::AccessGuestProperty (INPTR BSTR aName, INPTR BSTR aValue, INPTR BSTR aFlags,
+                                           BOOL aIsSetter, BSTR *aRetValue, ULONG64 *aRetTimestamp, BSTR *aRetFlags)
+{
+#ifdef VBOX_WITH_GUEST_PROPS
+    AutoCaller autoCaller (this);
+    AssertComRCReturn (autoCaller.rc(), autoCaller.rc());
+
+    if (mState != SessionState_Open)
+        return setError (E_FAIL,
+            tr ("Machine session is not open (session state: %d)."),
+            mState);
+    AssertReturn (mType == SessionType_Direct, E_UNEXPECTED);
+    if (!VALID_PTR (aName))
+        return E_POINTER;
+    if (!aIsSetter && !VALID_PTR (aRetValue))
+        return E_POINTER;
+    if (!aIsSetter && !VALID_PTR (aRetTimestamp))
+        return E_POINTER;
+    if (!aIsSetter && !VALID_PTR (aRetFlags))
+        return E_POINTER;
+    /* aValue can be NULL for a setter call if the property is to be deleted. */
+    if (aIsSetter && (aValue != NULL) && !VALID_PTR (aValue))
+        return E_INVALIDARG;
+    /* aFlags can be null if it is to be left as is */
+    if (aIsSetter && (aFlags != NULL) && !VALID_PTR (aFlags))
+        return E_INVALIDARG;
+    if (!aIsSetter)
+        return mConsole->getGuestProperty (aName, aRetValue, aRetTimestamp, aRetFlags);
+    else
+        return mConsole->setGuestProperty (aName, aValue, aFlags);
+#else /* VBOX_WITH_GUEST_PROPS not defined */
+    return E_NOTIMPL;
+#endif /* VBOX_WITH_GUEST_PROPS not defined */
+}
+
+STDMETHODIMP Session::EnumerateGuestProperties (INPTR BSTR aPatterns,
+                                                ComSafeArrayOut(BSTR, aNames),
+                                                ComSafeArrayOut(BSTR, aValues),
+                                                ComSafeArrayOut(ULONG64, aTimestamps),
+                                                ComSafeArrayOut(BSTR, aFlags))
+{
+#ifdef VBOX_WITH_GUEST_PROPS
+    AutoCaller autoCaller (this);
+    AssertComRCReturn (autoCaller.rc(), autoCaller.rc());
+
+    if (mState != SessionState_Open)
+        return setError (E_FAIL,
+            tr ("Machine session is not open (session state: %d)."),
+            mState);
+    AssertReturn (mType == SessionType_Direct, E_UNEXPECTED);
+    if (!VALID_PTR (aPatterns) && (aPatterns != NULL))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aNames))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aValues))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aTimestamps))
+        return E_POINTER;
+    if (ComSafeArrayOutIsNull (aFlags))
+        return E_POINTER;
+    return mConsole->enumerateGuestProperties(aPatterns,
+                                              ComSafeArrayOutArg(aNames),
+                                              ComSafeArrayOutArg(aValues),
+                                              ComSafeArrayOutArg(aTimestamps),
+                                              ComSafeArrayOutArg(aFlags));
+#else /* VBOX_WITH_GUEST_PROPS not defined */
+    return E_NOTIMPL;
+#endif /* VBOX_WITH_GUEST_PROPS not defined */
 }
 
 // private methods

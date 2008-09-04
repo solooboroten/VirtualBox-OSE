@@ -1,4 +1,4 @@
-/* $Id: tstMMHyperHeap.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: tstMMHyperHeap.cpp 35604 2008-08-29 09:13:37Z bird $ */
 /** @file
  * MM Hypervisor Heap testcase.
  */
@@ -52,7 +52,7 @@ int main(int argc, char **argv)
     PVM         pVM;
     RTR0PTR     pvR0;
     SUPPAGE     aPages[RT_ALIGN_Z(sizeof(*pVM), PAGE_SIZE) >> PAGE_SHIFT];
-    int rc = SUPInit(NULL);
+    int rc = SUPR3Init(NULL);
     if (VBOX_SUCCESS(rc))
         rc = SUPLowAlloc(RT_ELEMENTS(aPages), (void **)&pVM, &pvR0, &aPages[0]);
     if (VBOX_FAILURE(rc))
@@ -132,7 +132,7 @@ int main(int argc, char **argv)
     static char szFill[] = "01234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     /* allocate */
-    for (i = 0; i < ELEMENTS(aOps); i++)
+    for (i = 0; i < RT_ELEMENTS(aOps); i++)
     {
         rc = MMHyperAlloc(pVM, aOps[i].cb, aOps[i].uAlignment, MM_TAG_VM, &aOps[i].pvAlloc);
         if (VBOX_FAILURE(rc))
@@ -149,7 +149,7 @@ int main(int argc, char **argv)
     }
 
     /* free and allocate the same node again. */
-    for (i = 0; i < ELEMENTS(aOps); i++)
+    for (i = 0; i < RT_ELEMENTS(aOps); i++)
     {
         if (    !aOps[i].pvAlloc
             ||  aOps[i].uAlignment == PAGE_SIZE)
@@ -187,10 +187,10 @@ int main(int argc, char **argv)
 
     /* free it in a specific order. */
     int cFreed = 0;
-    for (i = 0; i < ELEMENTS(aOps); i++)
+    for (i = 0; i < RT_ELEMENTS(aOps); i++)
     {
         unsigned j;
-        for (j = 0; j < ELEMENTS(aOps); j++)
+        for (j = 0; j < RT_ELEMENTS(aOps); j++)
         {
             if (    aOps[j].iFreeOrder != i
                 ||  !aOps[j].pvAlloc)
@@ -211,7 +211,7 @@ int main(int argc, char **argv)
             cFreed++;
         }
     }
-    Assert(cFreed == ELEMENTS(aOps));
+    Assert(cFreed == RT_ELEMENTS(aOps));
     RTPrintf("i=done free=%d\n", MMHyperHeapGetFreeSize(pVM));
 
     /* check that we're back at the right amount of free memory. */

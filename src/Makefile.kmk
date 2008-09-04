@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35639 2008-08-29 11:37:24Z bird $
 ## @file
 # Top-level makefile for the src directory.
 #
@@ -19,33 +19,70 @@
 # additional information or have any questions.
 #
 
+ifdef VBOX_SINGLE_MAKEFILE
+SUB_DEPTH = ..
+include $(KBUILD_PATH)/subheader.kmk
+
+ifdef VBOX_ONLY_ADDITIONS
+ include $(PATH_SUB_CURRENT)/VBox/Makefile.kmk
+
+else ifdef VBOX_ONLY_DOCS
+ include $(PATH_SUB_CURRENT)/bldprogs/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/VBox/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/libs/Makefile.kmk
+
+else ifdef VBOX_ONLY_SDK
+ include $(PATH_SUB_CURRENT)/bldprogs/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/VBox/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/libs/Makefile.kmk
+
+else # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS
+ include $(PATH_SUB_CURRENT)/bldprogs/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/VBox/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/libs/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/recompiler/Makefile.kmk
+ ifneq ($(wildcard $(PATH_SUB_CURRENT)/apps),)
+  include $(PATH_SUB_CURRENT)/apps/Makefile.kmk
+ endif
+ ifdef VBOX_WITH_TESTSUITE
+  include $(PATH_SUB_CURRENT)/tests/Makefile.kmk
+ endif
+ ifdef VBOX_WITH_TESTCASES
+  include $(PATH_SUB_CURRENT)/testcase/Makefile.kmk
+ endif
+endif # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS && !VBOX_ONLY_SDK
+
+include $(KBUILD_PATH)/subfooter.kmk
+
+
+else  # !VBOX_SINGLE_MAKEFILE
 DEPTH  = ..
 include $(KBUILD_PATH)/header.kmk
 
 ifdef VBOX_ONLY_ADDITIONS
  SUBDIRS = VBox
 
-else  # !VBOX_ONLY_ADDITIONS
- # build Runtime first when IPC logging is on because it depends on Runtime
- ifdef VBOX_IPC_RELEASE_LOG
-  SUBDIRS = VBox/Runtime
- else ifneq ($(KBUILD_TYPE),release)
-  SUBDIRS = VBox/Runtime
- else
-  SUBDIRS =
- endif
+else ifdef VBOX_ONLY_DOCS
+ SUBDIRS = VBox/Runtime bldprogs libs VBox
 
- SUBDIRS += bldprogs libs VBox recompiler
+else ifdef VBOX_ONLY_SDK
+ SUBDIRS = bldprogs libs VBox
+
+else  # !VBOX_ONLY_ADDITIONS
+ # Build IPRT first because xpcom (IPC, nspr, python) depends on it.
+ SUBDIRS = VBox/Runtime	bldprogs libs VBox recompiler
  ifneq ($(wildcard apps),)
   SUBDIRS += apps
  endif
  ifdef VBOX_WITH_TESTSUITE
-  SUBDIRS +=  tests
+  SUBDIRS += tests
  endif
  ifdef VBOX_WITH_TESTCASES
-  SUBDIRS +=  testcase
+  SUBDIRS += testcase
  endif
 endif # !VBOX_ONLY_ADDITIONS
 
 include $(KBUILD_PATH)/footer.kmk
+
+endif # !VBOX_SINGLE_MAKEFILE
 

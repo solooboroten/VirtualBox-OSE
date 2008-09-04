@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31345 2008-05-28 09:44:03Z sandervl $
+# $Id: Makefile.kmk 35632 2008-08-29 10:17:27Z ni81036 $
 ## @file
 # Sub-Makefile for the VMM testcases.
 #
@@ -19,8 +19,12 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
 SUB_DEPTH = ..
+DEPTH    ?= ../../../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 #
@@ -39,7 +43,7 @@ ifdef VBOX_WITH_TESTCASES
 endif # VBOX_WITH_TESTCASES
 
 ifdef VBOX_WITH_PDM_ASYNC_COMPLETION
-PROGRAMS += tstPDMAsyncCompletion
+ PROGRAMS  += tstPDMAsyncCompletion
 endif
 
 
@@ -76,7 +80,7 @@ OTHER_CLEAN += \
 #
 # Globals
 #
-VBOX_PATH_VMM_SRC = $(PATH_SUB_ROOT)
+VBOX_PATH_VMM_SRC = $(PATH_ROOT)/src/VBox/VMM
 
 #
 # Targets
@@ -89,24 +93,22 @@ endif
 tstVMStructGC_SOURCES   = tstVMStructGC.cpp
 tstVMStructGC_INCS      = $(VBOX_PATH_VMM_SRC) $(VBOX_PATH_VMM_SRC)/PATM
 
-tstVMStructSize_TEMPLATE= VBOXR3TSTEXE
+tstVMStructSize_TEMPLATE= VBOXR3AUTOTST
 tstVMStructSize_DEFS    = IN_VMM_R3 IN_PDM_R3 IN_CFGM_R3 IN_IOM_R3 IN_VM_R3 IN_CPUM_R3 IN_SELM_R3 IN_PGM_R3 IN_TRPM_R3 IN_MM_R3 IN_PDM_R3 IN_DBGF_R3 IN_PATM_R3 IN_DIS_R3 IN_STAM_R3 IN_VGADEVICE_R3 IN_CSAM_R3 IN_SSM_R3 IN_REM_R3
 ifdef VBOX_WITH_IDT_PATCHING
 tstVMStructSize_DEFS   += VBOX_WITH_IDT_PATCHING
 endif
 tstVMStructSize_INCS    = $(VBOX_PATH_VMM_SRC) $(VBOX_PATH_VMM_SRC)/PATM $(PATH_TARGET)
 tstVMStructSize_SOURCES = tstVMStructSize.cpp
-tstVMStructSize_LIBS.l4 = $(LIB_RUNTIME)
 tstVMStructSize.cpp_DEPS= $(PATH_TARGET)/tstVMStructGC.h
 
-tstAsmStructs_TEMPLATE  = VBOXR3TSTEXE
+tstAsmStructs_TEMPLATE  = VBOXR3AUTOTST
 tstAsmStructs_DEFS      = IN_VMM_R3 IN_PDM_R3 IN_CFGM_R3 IN_IOM_R3 IN_VM_R3 IN_CPUM_R3 IN_SELM_R3 IN_PGM_R3 IN_TRPM_R3 IN_MM_R3 IN_PDM_R3 IN_DBGF_R3 IN_PATM_R3 IN_DIS_R3 IN_STAM_R3 IN_VGADEVICE_R3 IN_CSAM_R3 IN_SSM_R3
 ifdef VBOX_WITH_IDT_PATCHING
 tstAsmStructs_DEFS     += VBOX_WITH_IDT_PATCHING
 endif
 tstAsmStructs_INCS      = $(VBOX_PATH_VMM_SRC) $(PATH_TARGET)
 tstAsmStructs_SOURCES   = tstAsmStructs.cpp
-tstAsmStructs_LIBS.l4   = $(LIB_RUNTIME)
 
 tstAsmStructsGC_TEMPLATE= VBOXGCEXE
 tstAsmStructsGC_DEFS    = IN_VMM_GC IN_PDM_GC IN_CFGM_GC IN_IOM_GC IN_VM_GC IN_CPUM_GC IN_SELM_GC IN_PGM_GC IN_TRPM_GC IN_MM_GC IN_PDM_GC IN_DBGF_GC IN_PATM_GC IN_DIS_GC IN_STAM_GC IN_VGADEVICE_GC IN_CSAM_GC IN_SSM_GC IN_RRM_GC
@@ -202,11 +204,6 @@ endif
 include	$(KBUILD_PATH)/subfooter.kmk
 
 
-ifndef USE_MULTI_TARGET
-# temporary hack.
-.NOTPARALLEL: $(TARGET_tstMicroGC) $(LIB_VMMGC)
-endif
-
 
 #
 # Some handcrafted support targets for tstAsmStructs.
@@ -243,6 +240,7 @@ $(PATH_TARGET)/tstAsmStructsAsm.mac: \
 		$(VBOX_PATH_VMM_SRC)/TRPMInternal.mac \
 		$(VBOX_PATH_VMM_SRC)/VMMInternal.mac \
 		$(VBOX_PATH_VMM_SRC)/testcase/Makefile.kmk \
+		$(PATH_ROOT)/Config.kmk $(LOCALCFG) $(AUTOCFG) \
 		| $(call DIRDEP,$(PATH_TARGET))
 	$(call MSG_GENERATE,tstVMStructSize,$@,$<)
 ifndef DONT_USE_YASM
@@ -307,7 +305,7 @@ $(PATH_TARGET)/tstAsmStructs.run: $$(INSTARGET_tstAsmStructs) $$(INSTARGET_tstAs
 # 1. Manually dump selected structures and members.
 $(PATH_TARGET)/tstVMStructGC.h: $$(INSTARGET_tstVMStructGC)
 	$(call MSG_GENERATE,tstVMStructSize,$@)
-	$(QUIET)$(REDIRECT) -wo $@ -- $(INSTARGET_tstVMStructGC)
+	$(QUIET)$(REDIRECT) -wo $@ -- $^
 
 # 2. run it.
 $(PATH_TARGET)/tstVMStructSize.run: $$(INSTARGET_tstVMStructSize)

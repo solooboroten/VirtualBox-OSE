@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.h 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: MachineImpl.h 35391 2008-08-26 17:40:41Z ai221447 $ */
 
 /** @file
  *
@@ -38,6 +38,9 @@
 #include "ParallelPortImpl.h"
 #include "BIOSSettingsImpl.h"
 #include "SATAControllerImpl.h"
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+#include "PerformanceImpl.h"
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
 // generated header
 #include "SchemaDefs.h"
@@ -163,6 +166,7 @@ public:
 
         ComObjPtr <Snapshot> mFirstSnapshot;
         ComObjPtr <Snapshot> mCurrentSnapshot;
+
     };
 
     /**
@@ -224,6 +228,20 @@ public:
      */
     struct HWData
     {
+        /**
+         * Data structure to hold information about a guest property.
+         */
+        struct GuestProperty {
+            /** Property name */
+            Bstr mName;
+            /** Property value */
+            Bstr mValue;
+            /** Property timestamp */
+            ULONG64 mTimestamp;
+            /** Property flags */
+            Bstr mFlags;
+        };
+
         HWData();
         ~HWData();
 
@@ -235,6 +253,7 @@ public:
         ULONG          mVRAMSize;
         ULONG          mMonitorCount;
         TSBool_T       mHWVirtExEnabled;
+        BOOL           mHWVirtExNestedPagingEnabled;
         BOOL           mPAEEnabled;
 
         DeviceType_T   mBootOrder [SchemaDefs::MaxBootPosition];
@@ -242,6 +261,9 @@ public:
         typedef std::list <ComObjPtr <SharedFolder> > SharedFolderList;
         SharedFolderList mSharedFolders;
         ClipboardMode_T mClipboardMode;
+        typedef std::list <GuestProperty> GuestPropertyList;
+        GuestPropertyList mGuestProperties;
+        BOOL           mPropertyServiceActive;
     };
 
     /**
@@ -464,6 +486,8 @@ public:
     STDMETHOD(COMGETTER(BIOSSettings))(IBIOSSettings **biosSettings);
     STDMETHOD(COMGETTER(HWVirtExEnabled))(TSBool_T *enabled);
     STDMETHOD(COMSETTER(HWVirtExEnabled))(TSBool_T enabled);
+    STDMETHOD(COMGETTER(HWVirtExNestedPagingEnabled))(BOOL *enabled);
+    STDMETHOD(COMSETTER(HWVirtExNestedPagingEnabled))(BOOL enabled);
     STDMETHOD(COMGETTER(PAEEnabled))(BOOL *enabled);
     STDMETHOD(COMSETTER(PAEEnabled))(BOOL enabled);
     STDMETHOD(COMGETTER(SnapshotFolder))(BSTR *aSavedStateFolder);
@@ -515,6 +539,12 @@ public:
     STDMETHOD(RemoveSharedFolder) (INPTR BSTR aName);
     STDMETHOD(CanShowConsoleWindow) (BOOL *aCanShow);
     STDMETHOD(ShowConsoleWindow) (ULONG64 *aWinId);
+    STDMETHOD(GetGuestProperty) (INPTR BSTR aName, BSTR *aValue, ULONG64 *aTimestamp, BSTR *aFlags);
+    STDMETHOD(GetGuestPropertyValue) (INPTR BSTR aName, BSTR *aValue);
+    STDMETHOD(GetGuestPropertyTimestamp) (INPTR BSTR aName, ULONG64 *aTimestamp);
+    STDMETHOD(SetGuestProperty) (INPTR BSTR aName, INPTR BSTR aValue, INPTR BSTR aFlags);
+    STDMETHOD(SetGuestPropertyValue) (INPTR BSTR aName, INPTR BSTR aValue);
+    STDMETHOD(EnumerateGuestProperties) (INPTR BSTR aPattern, ComSafeArrayOut(BSTR, aNames), ComSafeArrayOut(BSTR, aValues), ComSafeArrayOut(ULONG64, aTimestamps), ComSafeArrayOut(BSTR, aFlags));
 
     // public methods only for internal purposes
 
@@ -704,6 +734,11 @@ protected:
     HRESULT commit();
     void copyFrom (Machine *aThat);
 
+#ifdef VBOX_WITH_RESOURCE_USAGE_API
+    void registerMetrics (PerformanceCollector *aCollector, Machine *aMachine, RTPROCESS pid);
+    void unregisterMetrics (PerformanceCollector *aCollector, Machine *aMachine);
+#endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
     const InstanceType mType;
 
     const ComObjPtr <Machine, ComWeakRef> mPeer;
@@ -805,6 +840,10 @@ public:
         IConsole *aInitiator, MachineState_T *aMachineState, IProgress **aProgress);
     STDMETHOD(DiscardCurrentSnapshotAndState) (
         IConsole *aInitiator, MachineState_T *aMachineState, IProgress **aProgress);
+    STDMETHOD(PullGuestProperties) (ComSafeArrayOut(BSTR, aNames), ComSafeArrayOut(BSTR, aValues),
+              ComSafeArrayOut(ULONG64, aTimestamps), ComSafeArrayOut(BSTR, aFlags));
+    STDMETHOD(PushGuestProperties) (ComSafeArrayIn(INPTR BSTR, aNames), ComSafeArrayIn(INPTR BSTR, aValues),
+              ComSafeArrayIn(ULONG64, aTimestamps), ComSafeArrayIn(INPTR BSTR, aFlags));
 
     // public methods only for internal purposes
 

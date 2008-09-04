@@ -94,14 +94,27 @@ static const unsigned g_aReg32Index[] =
     RT_OFFSETOF(CPUMCTXCORE, esp),        /* USE_REG_ESP */
     RT_OFFSETOF(CPUMCTXCORE, ebp),        /* USE_REG_EBP */
     RT_OFFSETOF(CPUMCTXCORE, esi),        /* USE_REG_ESI */
-    RT_OFFSETOF(CPUMCTXCORE, edi)         /* USE_REG_EDI */
+    RT_OFFSETOF(CPUMCTXCORE, edi),        /* USE_REG_EDI */
+    RT_OFFSETOF(CPUMCTXCORE, r8),         /* USE_REG_R8D */
+    RT_OFFSETOF(CPUMCTXCORE, r9),         /* USE_REG_R9D */
+    RT_OFFSETOF(CPUMCTXCORE, r10),        /* USE_REG_R10D */
+    RT_OFFSETOF(CPUMCTXCORE, r11),        /* USE_REG_R11D */
+    RT_OFFSETOF(CPUMCTXCORE, r12),        /* USE_REG_R12D */
+    RT_OFFSETOF(CPUMCTXCORE, r13),        /* USE_REG_R13D */
+    RT_OFFSETOF(CPUMCTXCORE, r14),        /* USE_REG_R14D */
+    RT_OFFSETOF(CPUMCTXCORE, r15)         /* USE_REG_R15D */
 };
 
 /**
  * Macro for accessing 32-bit general purpose registers in CPUMCTXCORE structure.
  */
 #define DIS_READ_REG32(p, idx)       (*(uint32_t *)((char *)(p) + g_aReg32Index[idx]))
-#define DIS_WRITE_REG32(p, idx, val) (*(uint32_t *)((char *)(p) + g_aReg32Index[idx]) = val)
+/* From http://www.cs.cmu.edu/~fp/courses/15213-s06/misc/asm64-handout.pdf:
+ * ``Perhaps unexpectedly, instructions that move or generate 32-bit register
+ *   values also set the upper 32 bits of the register to zero. Consequently
+ *   there is no need for an instruction movzlq.''
+ */
+#define DIS_WRITE_REG32(p, idx, val) (*(uint64_t *)((char *)(p) + g_aReg32Index[idx]) = (uint32_t)val)
 #define DIS_PTR_REG32(p, idx)        ( (uint32_t *)((char *)(p) + g_aReg32Index[idx]))
 
 /**
@@ -117,7 +130,15 @@ static const unsigned g_aReg16Index[] =
     RT_OFFSETOF(CPUMCTXCORE, esp),        /* USE_REG_SP */
     RT_OFFSETOF(CPUMCTXCORE, ebp),        /* USE_REG_BP */
     RT_OFFSETOF(CPUMCTXCORE, esi),        /* USE_REG_SI */
-    RT_OFFSETOF(CPUMCTXCORE, edi)         /* USE_REG_DI */
+    RT_OFFSETOF(CPUMCTXCORE, edi),        /* USE_REG_DI */
+    RT_OFFSETOF(CPUMCTXCORE, r8),         /* USE_REG_R8W */
+    RT_OFFSETOF(CPUMCTXCORE, r9),         /* USE_REG_R9W */
+    RT_OFFSETOF(CPUMCTXCORE, r10),        /* USE_REG_R10W */
+    RT_OFFSETOF(CPUMCTXCORE, r11),        /* USE_REG_R11W */
+    RT_OFFSETOF(CPUMCTXCORE, r12),        /* USE_REG_R12W */
+    RT_OFFSETOF(CPUMCTXCORE, r13),        /* USE_REG_R13W */
+    RT_OFFSETOF(CPUMCTXCORE, r14),        /* USE_REG_R14W */
+    RT_OFFSETOF(CPUMCTXCORE, r15)         /* USE_REG_R15W */
 };
 
 /**
@@ -140,7 +161,19 @@ static const unsigned g_aReg8Index[] =
     RT_OFFSETOF(CPUMCTXCORE, eax) + 1,    /* USE_REG_AH */
     RT_OFFSETOF(CPUMCTXCORE, ecx) + 1,    /* USE_REG_CH */
     RT_OFFSETOF(CPUMCTXCORE, edx) + 1,    /* USE_REG_DH */
-    RT_OFFSETOF(CPUMCTXCORE, ebx) + 1     /* USE_REG_BH */
+    RT_OFFSETOF(CPUMCTXCORE, ebx) + 1,    /* USE_REG_BH */
+    RT_OFFSETOF(CPUMCTXCORE, r8),         /* USE_REG_R8B */
+    RT_OFFSETOF(CPUMCTXCORE, r9),         /* USE_REG_R9B */
+    RT_OFFSETOF(CPUMCTXCORE, r10),        /* USE_REG_R10B*/
+    RT_OFFSETOF(CPUMCTXCORE, r11),        /* USE_REG_R11B */
+    RT_OFFSETOF(CPUMCTXCORE, r12),        /* USE_REG_R12B */
+    RT_OFFSETOF(CPUMCTXCORE, r13),        /* USE_REG_R13B */
+    RT_OFFSETOF(CPUMCTXCORE, r14),        /* USE_REG_R14B */
+    RT_OFFSETOF(CPUMCTXCORE, r15),        /* USE_REG_R15B */
+    RT_OFFSETOF(CPUMCTXCORE, esp),        /* USE_REG_SPL; with REX prefix only */
+    RT_OFFSETOF(CPUMCTXCORE, ebp),        /* USE_REG_BPL; with REX prefix only */
+    RT_OFFSETOF(CPUMCTXCORE, esi),        /* USE_REG_SIL; with REX prefix only */
+    RT_OFFSETOF(CPUMCTXCORE, edi)         /* USE_REG_DIL; with REX prefix only */
 };
 
 /**
@@ -156,22 +189,22 @@ static const unsigned g_aReg8Index[] =
  */
 static const unsigned g_aRegSegIndex[] =
 {
-    RT_OFFSETOF(CPUMCTXCORE, es),         /* USE_REG_ES */
-    RT_OFFSETOF(CPUMCTXCORE, cs),         /* USE_REG_CS */
-    RT_OFFSETOF(CPUMCTXCORE, ss),         /* USE_REG_SS */
-    RT_OFFSETOF(CPUMCTXCORE, ds),         /* USE_REG_DS */
-    RT_OFFSETOF(CPUMCTXCORE, fs),         /* USE_REG_FS */
-    RT_OFFSETOF(CPUMCTXCORE, gs)          /* USE_REG_GS */
+    RT_OFFSETOF(CPUMCTXCORE, es),         /* DIS_SELREG_ES */
+    RT_OFFSETOF(CPUMCTXCORE, cs),         /* DIS_SELREG_CS */
+    RT_OFFSETOF(CPUMCTXCORE, ss),         /* DIS_SELREG_SS */
+    RT_OFFSETOF(CPUMCTXCORE, ds),         /* DIS_SELREG_DS */
+    RT_OFFSETOF(CPUMCTXCORE, fs),         /* DIS_SELREG_FS */
+    RT_OFFSETOF(CPUMCTXCORE, gs)          /* DIS_SELREG_GS */
 };
 
 static const unsigned g_aRegHidSegIndex[] =
 {
-    RT_OFFSETOF(CPUMCTXCORE, esHid),         /* USE_REG_ES */
-    RT_OFFSETOF(CPUMCTXCORE, csHid),         /* USE_REG_CS */
-    RT_OFFSETOF(CPUMCTXCORE, ssHid),         /* USE_REG_SS */
-    RT_OFFSETOF(CPUMCTXCORE, dsHid),         /* USE_REG_DS */
-    RT_OFFSETOF(CPUMCTXCORE, fsHid),         /* USE_REG_FS */
-    RT_OFFSETOF(CPUMCTXCORE, gsHid)          /* USE_REG_GS */
+    RT_OFFSETOF(CPUMCTXCORE, esHid),         /* DIS_SELREG_ES */
+    RT_OFFSETOF(CPUMCTXCORE, csHid),         /* DIS_SELREG_CS */
+    RT_OFFSETOF(CPUMCTXCORE, ssHid),         /* DIS_SELREG_SS */
+    RT_OFFSETOF(CPUMCTXCORE, dsHid),         /* DIS_SELREG_DS */
+    RT_OFFSETOF(CPUMCTXCORE, fsHid),         /* DIS_SELREG_FS */
+    RT_OFFSETOF(CPUMCTXCORE, gsHid)          /* DIS_SELREG_GS */
 };
 
 /**
@@ -187,7 +220,23 @@ DISDECL(int) DISGetParamSize(PDISCPUSTATE pCpu, POP_PARAMETER pParam)
     int subtype = OP_PARM_VSUBTYPE(pParam->param);
 
     if (subtype == OP_PARM_v)
-        subtype = (pCpu->opmode == CPUMODE_32BIT) ? OP_PARM_d : OP_PARM_w;
+    {
+        switch(pCpu->opmode)
+        {
+        case CPUMODE_32BIT:
+            subtype = OP_PARM_d;
+            break;
+        case CPUMODE_64BIT:
+            subtype = OP_PARM_q;
+            break;
+        case CPUMODE_16BIT:
+            subtype = OP_PARM_w;
+            break;
+        default:
+            /* make gcc happy */
+            break;
+        }
+    }
 
     switch(subtype)
     {
@@ -222,12 +271,12 @@ DISDECL(int) DISGetParamSize(PDISCPUSTATE pCpu, POP_PARAMETER pParam)
 }
 //*****************************************************************************
 //*****************************************************************************
-DISDECL(int) DISDetectSegReg(PDISCPUSTATE pCpu, POP_PARAMETER pParam)
+DISDECL(DIS_SELREG) DISDetectSegReg(PDISCPUSTATE pCpu, POP_PARAMETER pParam)
 {
     if (pCpu->prefix & PREFIX_SEG)
     {
         /* Use specified SEG: prefix. */
-        return pCpu->prefix_seg;
+        return pCpu->enmPrefixSeg;
     }
     else
     {
@@ -239,10 +288,10 @@ DISDECL(int) DISDetectSegReg(PDISCPUSTATE pCpu, POP_PARAMETER pParam)
             AssertCompile(USE_REG_ESP == USE_REG_SP);
             AssertCompile(USE_REG_EBP == USE_REG_BP);
             if (pParam->base.reg_gen == USE_REG_ESP || pParam->base.reg_gen == USE_REG_EBP)
-                return USE_REG_SS;
+                return DIS_SELREG_SS;
         }
         /* Default is use DS: for data access. */
-        return USE_REG_DS;
+        return DIS_SELREG_DS;
     }
 }
 //*****************************************************************************
@@ -250,19 +299,19 @@ DISDECL(int) DISDetectSegReg(PDISCPUSTATE pCpu, POP_PARAMETER pParam)
 DISDECL(uint8_t) DISQuerySegPrefixByte(PDISCPUSTATE pCpu)
 {
     Assert(pCpu->prefix & PREFIX_SEG);
-    switch(pCpu->prefix_seg)
+    switch(pCpu->enmPrefixSeg)
     {
-    case USE_REG_ES:
+    case DIS_SELREG_ES:
         return 0x26;
-    case USE_REG_CS:
+    case DIS_SELREG_CS:
         return 0x2E;
-    case USE_REG_SS:
+    case DIS_SELREG_SS:
         return 0x36;
-    case USE_REG_DS:
+    case DIS_SELREG_DS:
         return 0x3E;
-    case USE_REG_FS:
+    case DIS_SELREG_FS:
         return 0x64;
-    case USE_REG_GS:
+    case DIS_SELREG_GS:
         return 0x65;
     default:
         AssertFailed();
@@ -275,7 +324,7 @@ DISDECL(uint8_t) DISQuerySegPrefixByte(PDISCPUSTATE pCpu)
  * Returns the value of the specified 8 bits general purpose register
  *
  */
-DISDECL(int) DISFetchReg8(PCPUMCTXCORE pCtx, unsigned reg8, uint8_t *pVal)
+DISDECL(int) DISFetchReg8(PCCPUMCTXCORE pCtx, unsigned reg8, uint8_t *pVal)
 {
     AssertReturn(reg8 < ELEMENTS(g_aReg8Index), VERR_INVALID_PARAMETER);
 
@@ -287,7 +336,7 @@ DISDECL(int) DISFetchReg8(PCPUMCTXCORE pCtx, unsigned reg8, uint8_t *pVal)
  * Returns the value of the specified 16 bits general purpose register
  *
  */
-DISDECL(int) DISFetchReg16(PCPUMCTXCORE pCtx, unsigned reg16, uint16_t *pVal)
+DISDECL(int) DISFetchReg16(PCCPUMCTXCORE pCtx, unsigned reg16, uint16_t *pVal)
 {
     AssertReturn(reg16 < ELEMENTS(g_aReg16Index), VERR_INVALID_PARAMETER);
 
@@ -299,7 +348,7 @@ DISDECL(int) DISFetchReg16(PCPUMCTXCORE pCtx, unsigned reg16, uint16_t *pVal)
  * Returns the value of the specified 32 bits general purpose register
  *
  */
-DISDECL(int) DISFetchReg32(PCPUMCTXCORE pCtx, unsigned reg32, uint32_t *pVal)
+DISDECL(int) DISFetchReg32(PCCPUMCTXCORE pCtx, unsigned reg32, uint32_t *pVal)
 {
     AssertReturn(reg32 < ELEMENTS(g_aReg32Index), VERR_INVALID_PARAMETER);
 
@@ -311,7 +360,7 @@ DISDECL(int) DISFetchReg32(PCPUMCTXCORE pCtx, unsigned reg32, uint32_t *pVal)
  * Returns the value of the specified 64 bits general purpose register
  *
  */
-DISDECL(int) DISFetchReg64(PCPUMCTXCORE pCtx, unsigned reg64, uint64_t *pVal)
+DISDECL(int) DISFetchReg64(PCCPUMCTXCORE pCtx, unsigned reg64, uint64_t *pVal)
 {
     AssertReturn(reg64 < ELEMENTS(g_aReg64Index), VERR_INVALID_PARAMETER);
 
@@ -371,9 +420,9 @@ DISDECL(int) DISPtrReg64(PCPUMCTXCORE pCtx, unsigned reg64, uint64_t **ppReg)
  * Returns the value of the specified segment register
  *
  */
-DISDECL(int) DISFetchRegSeg(PCPUMCTXCORE pCtx, unsigned sel, RTSEL *pVal)
+DISDECL(int) DISFetchRegSeg(PCCPUMCTXCORE pCtx, DIS_SELREG sel, RTSEL *pVal)
 {
-    AssertReturn(sel < ELEMENTS(g_aRegSegIndex), VERR_INVALID_PARAMETER);
+    AssertReturn((unsigned)sel < ELEMENTS(g_aRegSegIndex), VERR_INVALID_PARAMETER);
 
     AssertCompile(sizeof(uint16_t) == sizeof(RTSEL));
     *pVal = DIS_READ_REGSEG(pCtx, sel);
@@ -384,9 +433,9 @@ DISDECL(int) DISFetchRegSeg(PCPUMCTXCORE pCtx, unsigned sel, RTSEL *pVal)
  * Returns the value of the specified segment register including a pointer to the hidden register in the supplied cpu context
  *
  */
-DISDECL(int) DISFetchRegSegEx(PCPUMCTXCORE pCtx, unsigned sel, RTSEL *pVal, CPUMSELREGHID **ppSelHidReg)
+DISDECL(int) DISFetchRegSegEx(PCCPUMCTXCORE pCtx, DIS_SELREG sel, RTSEL *pVal, CPUMSELREGHID **ppSelHidReg)
 {
-    AssertReturn(sel < ELEMENTS(g_aRegSegIndex), VERR_INVALID_PARAMETER);
+    AssertReturn((unsigned)sel < ELEMENTS(g_aRegSegIndex), VERR_INVALID_PARAMETER);
 
     AssertCompile(sizeof(uint16_t) == sizeof(RTSEL));
     *pVal = DIS_READ_REGSEG(pCtx, sel);
@@ -446,9 +495,9 @@ DISDECL(int) DISWriteReg8(PCPUMCTXCORE pRegFrame, unsigned reg8, uint8_t val8)
  * Updates the specified segment register
  *
  */
-DISDECL(int) DISWriteRegSeg(PCPUMCTXCORE pCtx, unsigned sel, RTSEL val)
+DISDECL(int) DISWriteRegSeg(PCPUMCTXCORE pCtx, DIS_SELREG sel, RTSEL val)
 {
-    AssertReturn(sel < ELEMENTS(g_aRegSegIndex), VERR_INVALID_PARAMETER);
+    AssertReturn((unsigned)sel < ELEMENTS(g_aRegSegIndex), VERR_INVALID_PARAMETER);
 
     AssertCompile(sizeof(uint16_t) == sizeof(RTSEL));
     DIS_WRITE_REGSEG(pCtx, sel, val);
@@ -504,7 +553,8 @@ DISDECL(int) DISQueryParamVal(PCPUMCTXCORE pCtx, PDISCPUSTATE pCpu, POP_PARAMETE
                 pParamVal->flags |= PARAM_VAL64;
                 if (VBOX_FAILURE(DISFetchReg64(pCtx, pParam->base.reg_gen, &pParamVal->val.val64))) return VERR_INVALID_PARAMETER;
             }
-            else {
+            else 
+            {
                 AssertFailed();
                 return VERR_INVALID_PARAMETER;
             }
@@ -512,21 +562,54 @@ DISDECL(int) DISQueryParamVal(PCPUMCTXCORE pCtx, PDISCPUSTATE pCpu, POP_PARAMETE
         // Note that scale implies index (SIB byte)
         if (pParam->flags & USE_INDEX)
         {
-            uint32_t val32;
+            if (pParam->flags & USE_REG_GEN16)
+            {
+                uint16_t val16;
 
-            pParamVal->flags |= PARAM_VAL32;
-            if (VBOX_FAILURE(DISFetchReg32(pCtx, pParam->index.reg_gen, &val32))) return VERR_INVALID_PARAMETER;
+                pParamVal->flags |= PARAM_VAL16;
+                if (VBOX_FAILURE(DISFetchReg16(pCtx, pParam->index.reg_gen, &val16))) return VERR_INVALID_PARAMETER;
+                
+                Assert(!(pParam->flags & USE_SCALE));   /* shouldn't be possible in 16 bits mode */
+                
+                pParamVal->val.val16 += val16;
+            }
+            else
+            if (pParam->flags & USE_REG_GEN32)
+            {
+                uint32_t val32;
 
-            if (pParam->flags & USE_SCALE)
-                val32 *= pParam->scale;
+                pParamVal->flags |= PARAM_VAL32;
+                if (VBOX_FAILURE(DISFetchReg32(pCtx, pParam->index.reg_gen, &val32))) return VERR_INVALID_PARAMETER;
 
-            pParamVal->val.val32 += val32;
+                if (pParam->flags & USE_SCALE)
+                    val32 *= pParam->scale;
+
+                pParamVal->val.val32 += val32;
+            }
+            else
+            if (pParam->flags & USE_REG_GEN64)
+            {
+                uint64_t val64;
+
+                pParamVal->flags |= PARAM_VAL64;
+                if (VBOX_FAILURE(DISFetchReg64(pCtx, pParam->index.reg_gen, &val64))) return VERR_INVALID_PARAMETER;
+
+                if (pParam->flags & USE_SCALE)
+                    val64 *= pParam->scale;
+
+                pParamVal->val.val64 += val64;
+            }
+            else
+                AssertFailed();
         }
 
         if (pParam->flags & USE_DISPLACEMENT8)
         {
             if (pCpu->mode == CPUMODE_32BIT)
                 pParamVal->val.val32 += (int32_t)pParam->disp8;
+            else
+            if (pCpu->mode == CPUMODE_64BIT)
+                pParamVal->val.val64 += (int64_t)pParam->disp8;
             else
                 pParamVal->val.val16 += (int16_t)pParam->disp8;
         }
@@ -536,6 +619,9 @@ DISDECL(int) DISQueryParamVal(PCPUMCTXCORE pCtx, PDISCPUSTATE pCpu, POP_PARAMETE
             if (pCpu->mode == CPUMODE_32BIT)
                 pParamVal->val.val32 += (int32_t)pParam->disp16;
             else
+            if (pCpu->mode == CPUMODE_64BIT)
+                pParamVal->val.val64 += (int64_t)pParam->disp16;
+            else
                 pParamVal->val.val16 += pParam->disp16;
         }
         else
@@ -544,15 +630,20 @@ DISDECL(int) DISQueryParamVal(PCPUMCTXCORE pCtx, PDISCPUSTATE pCpu, POP_PARAMETE
             if (pCpu->mode == CPUMODE_32BIT)
                 pParamVal->val.val32 += pParam->disp32;
             else
-                AssertFailed();
+                pParamVal->val.val64 += pParam->disp32;
+        }
+        else
+        if (pParam->flags & USE_DISPLACEMENT64)
+        {
+            Assert(pCpu->mode == CPUMODE_64BIT);
+            pParamVal->val.val64 += (int64_t)pParam->disp64;
         }
         else
         if (pParam->flags & USE_RIPDISPLACEMENT32)
         {
-            if (pCpu->mode == CPUMODE_64BIT)
-                pParamVal->val.val64 += pParam->disp32 + pCtx->rip;
-            else
-                AssertFailed();
+            Assert(pCpu->mode == CPUMODE_64BIT);
+            /* Relative to the RIP of the next instruction. */
+            pParamVal->val.val64 += pParam->disp32 + pCtx->rip + pCpu->opsize;
         }
         return VINF_SUCCESS;
     }
@@ -640,12 +731,12 @@ DISDECL(int) DISQueryParamVal(PCPUMCTXCORE pCtx, PDISCPUSTATE pCpu, POP_PARAMETE
             Assert(pParamVal->size == pParam->size || ((pParam->size == 1) && (pParam->flags & USE_IMMEDIATE32_SX8)) );
         }
         else
-        if (pParam->flags & (USE_IMMEDIATE64 | USE_IMMEDIATE64_REL))
+        if (pParam->flags & (USE_IMMEDIATE64 | USE_IMMEDIATE64_REL | USE_IMMEDIATE64_SX8))
         {
             pParamVal->flags |= PARAM_VAL64;
             pParamVal->size   = sizeof(uint64_t);
             pParamVal->val.val64 = pParam->parval;
-            Assert(pParamVal->size == pParam->size);
+            Assert(pParamVal->size == pParam->size || ((pParam->size == 1) && (pParam->flags & USE_IMMEDIATE64_SX8)) );
         }
         else
         if (pParam->flags & (USE_IMMEDIATE_ADDR_16_16))

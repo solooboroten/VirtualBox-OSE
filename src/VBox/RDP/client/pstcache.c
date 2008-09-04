@@ -1,7 +1,7 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
    Persistent Bitmap Cache routines
-   Copyright (C) Jeroen Meijer 2004-2005
+   Copyright (C) Jeroen Meijer 2004-2007
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -18,6 +18,15 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
+/*
+ * Sun GPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the General Public License version 2 (GPLv2) at this time for any software where
+ * a choice of GPL license versions is made available with the language indicating
+ * that GPLv2 or any later version may be used, or where a choice of which version
+ * of the GPL is applied is otherwise unspecified.
+ */
+
 #include "rdesktop.h"
 
 #define MAX_CELL_SIZE		0x1000	/* pixels */
@@ -25,13 +34,13 @@
 #define IS_PERSISTENT(id) (id < 8 && g_pstcache_fd[id] > 0)
 
 extern int g_server_depth;
-extern BOOL g_bitmap_cache;
-extern BOOL g_bitmap_cache_persist_enable;
-extern BOOL g_bitmap_cache_precache;
+extern RD_BOOL g_bitmap_cache;
+extern RD_BOOL g_bitmap_cache_persist_enable;
+extern RD_BOOL g_bitmap_cache_precache;
 
 int g_pstcache_fd[8];
 int g_pstcache_Bpp;
-BOOL g_pstcache_enumerated = False;
+RD_BOOL g_pstcache_enumerated = False;
 uint8 zero_key[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
 
@@ -50,13 +59,13 @@ pstcache_touch_bitmap(uint8 cache_id, uint16 cache_idx, uint32 stamp)
 }
 
 /* Load a bitmap from the persistent cache */
-BOOL
+RD_BOOL
 pstcache_load_bitmap(uint8 cache_id, uint16 cache_idx)
 {
 	uint8 *celldata;
 	int fd;
 	CELLHEADER cellhdr;
-	HBITMAP bitmap;
+	RD_HBITMAP bitmap;
 
 	if (!g_bitmap_cache_persist_enable)
 		return False;
@@ -79,7 +88,7 @@ pstcache_load_bitmap(uint8 cache_id, uint16 cache_idx)
 }
 
 /* Store a bitmap in the persistent cache */
-BOOL
+RD_BOOL
 pstcache_save_bitmap(uint8 cache_id, uint16 cache_idx, uint8 * key,
 		     uint8 width, uint8 height, uint16 length, uint8 * data)
 {
@@ -160,7 +169,7 @@ pstcache_enumerate(uint8 id, HASH_KEY * keylist)
 }
 
 /* initialise the persistent bitmap cache */
-BOOL
+RD_BOOL
 pstcache_init(uint8 cache_id)
 {
 	int fd;

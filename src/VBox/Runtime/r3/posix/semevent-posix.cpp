@@ -1,4 +1,4 @@
-/* $Id: semevent-posix.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: semevent-posix.cpp 33625 2008-07-23 19:48:51Z bird $ */
 /** @file
  * IPRT - Event Semaphore, POSIX.
  */
@@ -166,6 +166,8 @@ RTDECL(int)  RTSemEventDestroy(RTSEMEVENT EventSem)
     /*
      * Validate handle.
      */
+    if (EventSem == NIL_RTSEMEVENT)     /* don't bitch */
+        return VERR_INVALID_HANDLE;
     if (!rtsemEventValid(EventSem))
     {
         AssertMsgFailed(("Invalid handle %p!\n", EventSem));

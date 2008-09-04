@@ -1,4 +1,4 @@
-/* $Id: PGMHandler.cpp 31281 2008-05-27 09:21:03Z sandervl $ */
+/* $Id: PGMHandler.cpp 31440 2008-05-30 14:20:11Z sandervl $ */
 /** @file
  * PGM - Page Manager / Monitor, Access Handlers.
  */
@@ -452,7 +452,7 @@ PGMDECL(int) PGMHandlerVirtualDeregister(PVM pVM, RTGCPTR GCPtr)
     PPGMVIRTHANDLER pCur = (PPGMVIRTHANDLER)RTAvlroGCPtrRemove(&pVM->pgm.s.CTXSUFF(pTrees)->VirtHandlers, GCPtr);
     if (RT_LIKELY(pCur))
     {
-        Log(("PGMHandlerVirtualDeregister: Removing Virtual (%d) Range %#x-%#x %s\n", pCur->enmType,
+        Log(("PGMHandlerVirtualDeregister: Removing Virtual (%d) Range %VGv-%VGv %s\n", pCur->enmType,
              pCur->GCPtr, pCur->GCPtrLast, pCur->pszDesc));
         Assert(pCur->enmType != PGMVIRTHANDLERTYPE_HYPERVISOR);
 
@@ -481,7 +481,7 @@ PGMDECL(int) PGMHandlerVirtualDeregister(PVM pVM, RTGCPTR GCPtr)
             return VERR_INVALID_PARAMETER;
         }
 
-        Log(("PGMHandlerVirtualDeregister: Removing Hyper Virtual (%d) Range %#x-%#x %s\n", pCur->enmType,
+        Log(("PGMHandlerVirtualDeregister: Removing Hyper Virtual (%d) Range %VGv-%VGv %s\n", pCur->enmType,
              pCur->GCPtr, pCur->GCPtrLast, pCur->pszDesc));
         Assert(pCur->enmType == PGMVIRTHANDLERTYPE_HYPERVISOR);
     }
@@ -582,7 +582,7 @@ static DECLCALLBACK(int) pgmR3InfoHandlersPhysicalOne(PAVLROGCPHYSNODECORE pNode
         default:                                pszType = "????"; break;
     }
     pHlp->pfnPrintf(pHlp,
-        "%VGp - %VGp  %VHv  %VHv  %VGv  %VGv  %s  %s\n",
+        "%VGp - %VGp  %VHv  %VHv  %VRv  %VRv  %s  %s\n",
         pCur->Core.Key, pCur->Core.KeyLast, pCur->pfnHandlerR3, pCur->pvUserR3, pCur->pfnHandlerGC, pCur->pvUserGC, pszType, pCur->pszDesc);
 #ifdef VBOX_WITH_STATISTICS
     if (pArgs->fStats)
@@ -614,7 +614,7 @@ static DECLCALLBACK(int) pgmR3InfoHandlersVirtualOne(PAVLROGCPTRNODECORE pNode, 
         case PGMVIRTHANDLERTYPE_HYPERVISOR: pszType = "WriteHyp "; break;
         default:                            pszType = "????"; break;
     }
-    pHlp->pfnPrintf(pHlp, "%08x - %08x  %08x  %08x  %s  %s\n",
+    pHlp->pfnPrintf(pHlp, "%VGv - %VGv  %VHv  %VRv  %s  %s\n",
         pCur->GCPtr, pCur->GCPtrLast, pCur->pfnHandlerHC, pCur->pfnHandlerGC, pszType, pCur->pszDesc);
 #ifdef VBOX_WITH_STATISTICS
     if (pArgs->fStats)

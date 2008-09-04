@@ -1,4 +1,4 @@
-/* $Id: VMMGC.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: VMMGC.cpp 33582 2008-07-22 09:42:40Z bird $ */
 /** @file
  * VMM - Guest Context.
  */
@@ -40,8 +40,8 @@
 *   Global Variables                                                           *
 *******************************************************************************/
 /** Default logger instance. */
-extern "C" DECLIMPORT(RTLOGGERGC)   g_Logger;
-extern "C" DECLIMPORT(RTLOGGERGC)   g_RelLogger;
+extern "C" DECLIMPORT(RTLOGGERRC)   g_Logger;
+extern "C" DECLIMPORT(RTLOGGERRC)   g_RelLogger;
 
 
 /*******************************************************************************
@@ -71,25 +71,25 @@ VMMGCDECL(int) VMMGCEntry(PVM pVM, unsigned uOperation, unsigned uArg, ...)
          */
         case VMMGC_DO_VMMGC_INIT:
         {
-            /* fetch the additional argument(s). */
+            /*
+             * Validate the svn revision (uArg).
+             */
+            if (uArg != VMMGetSvnRev())
+                return VERR_VERSION_MISMATCH;
+
+            /*
+             * Initialize the runtime.
+             * (The program timestamp is found in the elipsis.)
+             */
             va_list va;
             va_start(va, uArg);
             uint64_t u64TS = va_arg(va, uint64_t);
             va_end(va);
-            
-            Log(("VMMGCEntry: VMMGC_DO_VMMGC_INIT - uArg=%#x (version) u64TS=%RX64\n", uArg, u64TS));
-            
-            /* 
-             * Validate the version. 
-             */
-            /** @todo validate version. */
-            
-            /*
-             * Initialize the runtime.
-             */
+
             int rc = RTGCInit(u64TS);
+            Log(("VMMGCEntry: VMMGC_DO_VMMGC_INIT - uArg=%u (svn revision) u64TS=%RX64; rc=%Rrc\n", uArg, u64TS, rc));
             AssertRCReturn(rc, rc);
-            
+
             return VINF_SUCCESS;
         }
 
@@ -126,9 +126,9 @@ VMMGCDECL(int) VMMGCEntry(PVM pVM, unsigned uOperation, unsigned uArg, ...)
          */
         case VMMGC_DO_TESTCASE_INTERRUPT_MASKING:
         {
-            uint64_t u64MaxTicks = (SUPGetCpuHzFromGIP(g_pSUPGlobalInfoPage) != ~(uint64_t)0 
-                                    ? SUPGetCpuHzFromGIP(g_pSUPGlobalInfoPage) 
-                                    : _2G) 
+            uint64_t u64MaxTicks = (SUPGetCpuHzFromGIP(g_pSUPGlobalInfoPage) != ~(uint64_t)0
+                                    ? SUPGetCpuHzFromGIP(g_pSUPGlobalInfoPage)
+                                    : _2G)
                                    / 10000;
             uint64_t u64StartTSC = ASMReadTSC();
             uint64_t u64TicksNow;
@@ -167,7 +167,7 @@ VMMGCDECL(int) VMMGCEntry(PVM pVM, unsigned uOperation, unsigned uArg, ...)
  * @param   pLogger     The logger instance to flush.
  * @remark  This function must be exported!
  */
-VMMGCDECL(int) vmmGCLoggerFlush(PRTLOGGERGC pLogger)
+VMMGCDECL(int) vmmGCLoggerFlush(PRTLOGGERRC pLogger)
 {
     PVM pVM = &g_VM;
     NOREF(pLogger);

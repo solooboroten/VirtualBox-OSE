@@ -1,4 +1,4 @@
-/* $Id: mp-r0drv.h 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: mp-r0drv.h 31917 2008-06-11 12:09:31Z bird $ */
 /** @file
  * IPRT - Multiprocessor, Ring-0 Driver, Internal Header.
  */
@@ -33,6 +33,8 @@
 
 #include <iprt/mp.h>
 
+__BEGIN_DECLS
+
 /**
  * MP callback
  *
@@ -45,7 +47,7 @@ typedef DECLCALLBACK(void) FNMPWORKER(RTCPUID idCpu, void *pvUser1, void *pvUser
 typedef FNMPWORKER *PFNMPWORKER;
 
 /**
- * RTMpOn* argument packet used by the host specific callback 
+ * RTMpOn* argument packet used by the host specific callback
  * wrapper functions.
  */
 typedef struct RTMPARGS
@@ -59,4 +61,16 @@ typedef struct RTMPARGS
 /** Pointer to a RTMpOn* argument packet. */
 typedef RTMPARGS *PRTMPARGS;
 
+/* Called from initterm-r0drv.cpp: */
+int rtR0MpNotificationInit(void);
+void rtR0MpNotificationTerm(void);
+
+/* The following is only relevant when using mpnotifcation-r0drv.cpp: */
+int rtR0MpNotificationNativeInit(void);
+void rtR0MpNotificationNativeTerm(void);
+void rtMpNotificationDoCallbacks(RTMPEVENT enmEvent, RTCPUID idCpu);
+
+__END_DECLS
+
 #endif
+

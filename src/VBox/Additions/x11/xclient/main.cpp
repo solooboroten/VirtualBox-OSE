@@ -24,12 +24,11 @@
 #include <VBox/log.h>
 #include <iprt/initterm.h>
 #include <iprt/path.h>
-
-#include <iostream>
-#include <cstdio>
+#include <iprt/stream.h>
 
 #include <sys/types.h>
 #include <stdlib.h>       /* For exit */
+#include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
 #include <signal.h>
@@ -46,7 +45,7 @@
 # endif
 #endif
 
-#define TRACE printf("%s: %d\n", __PRETTY_FUNCTION__, __LINE__); Log(("%s: %d\n", __PRETTY_FUNCTION__, __LINE__))
+#define TRACE RTPrintf("%s: %d\n", __PRETTY_FUNCTION__, __LINE__); Log(("%s: %d\n", __PRETTY_FUNCTION__, __LINE__))
 
 static int (*gpfnOldIOErrorHandler)(Display *) = NULL;
 
@@ -140,7 +139,7 @@ void vboxClientSignalHandler(int cSignal)
     Log(("VBoxClient: terminated with signal %d\n", cSignal));
     /** Disable seamless mode */
     VbglR3SeamlessSetCap(false);
-    printf(("VBoxClient: terminating...\n"));
+    RTPrintf(("VBoxClient: terminating...\n"));
     /* don't call VbglR3Term() here otherwise the /dev/vboxadd filehandle is closed */
     /* Our pause() call will now return and exit. */
 }
@@ -174,12 +173,12 @@ void vboxClientSetSignalHandlers(void)
  */
 void vboxClientUsage(const char *pcszFileName)
 {
-    /* printf is better for i18n than iostream. */
-    printf("Usage: %s [-d|--nodaemon]\n", pcszFileName);
-    printf("Start the VirtualBox X Window System guest services.\n\n");
-    printf("Options:\n");
-    printf("  -d, --nodaemon   do not lower privileges and continue running as a system\n");
-    printf("                   service\n");
+    RTPrintf("Usage: %s [-d|--nodaemon]\n", pcszFileName);
+    RTPrintf("Start the VirtualBox X Window System guest services.\n\n");
+    RTPrintf("Options:\n");
+    RTPrintf("  -d, --nodaemon   do not lower privileges and continue running as a system\n");
+    RTPrintf("                   service\n");
+    RTPrintf("\n");
     exit(0);
 }
 
@@ -195,6 +194,9 @@ int main(int argc, char *argv[])
     if (NULL == pszFileName)
         pszFileName = "VBoxClient";
 
+    /* Initialise our runtime before all else. */
+    RTR3Init();
+
     /* Parse our option(s) */
     /** @todo Use RTGetOpt() if the arguments become more complex. */
     for (int i = 1; i < argc; ++i)
@@ -208,26 +210,28 @@ int main(int argc, char *argv[])
         }
         else
         {
-            /* printf is better than iostream for i18n. */
-            printf("%s: unrecognized option `%s'\n", pszFileName, argv[i]);
-            printf("Try `%s --help' for more information\n", pszFileName);
+            RTPrintf("%s: unrecognized option `%s'\n", pszFileName, argv[i]);
+            RTPrintf("Try `%s --help' for more information\n", pszFileName);
             exit(1);
         }
     }
     if (fDaemonise)
     {
-        rc = VbglR3Daemonize(false /* fNoChDir */, false /* fNoClose */);
+        rc = VbglR3Daemonize(false /* fNoChDir */, false /* fNoClose */,
+                             NULL);
         if (RT_FAILURE(rc))
         {
-            std::cout << "VBoxClient: failed to daemonize. exiting."<< std::endl;
+            RTPrintf("VBoxClient: failed to daemonize. exiting.\n");
+#ifdef DEBUG
+            RTPrintf("Error %Rrc\n", rc);
+#endif
             return 1;
         }
     }
-    /* Initialise our runtime before all else. */
-    RTR3Init(false);
+    /* Initialise the guest library. */
     if (RT_FAILURE(VbglR3Init()))
     {
-        std::cout << "Failed to connect to the VirtualBox kernel service" << std::endl;
+        RTPrintf("Failed to connect to the VirtualBox kernel service\n");
         return 1;
     }
     if (fDaemonise && RT_FAILURE(vboxClientDropPrivileges()))
@@ -236,7 +240,7 @@ int main(int argc, char *argv[])
     /* Initialise threading in X11 and in Xt. */
     if (!XInitThreads() || !XtToolkitThreadInitialize())
     {
-        LogRel(("VBoxClient: error initialising threads in X11, exiting."));
+        LogRel(("VBoxClient: error initialising threads in X11, exiting.\n"));
         return 1;
     }
     /* Set an X11 error handler, so that we don't die when we get unavoidable errors. */
@@ -252,7 +256,7 @@ int main(int argc, char *argv[])
         rcClipboard = gClipboard.init();
         if (RT_FAILURE(rcClipboard))
         {
-            LogRel(("VBoxClient: vboxClipboardConnect failed with rc = %Rrc\n", rc));
+            LogRel(("VBoxClient: vboxClipboardConnect failed with rc = %Rrc\n", rcClipboard));
         }
 #endif  /* VBOX_X11_CLIPBOARD defined */
 #ifdef DYNAMIC_RESIZE

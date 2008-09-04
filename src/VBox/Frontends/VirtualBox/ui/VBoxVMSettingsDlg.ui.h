@@ -662,9 +662,14 @@ void VBoxVMSettingsDlg::init()
 
     /* Network Page */
 
-#ifndef Q_WS_WIN
+#if !defined(Q_WS_WIN) && !defined(VBOX_WITH_NETFLT)
     gbInterfaceList->setHidden (true);
 #endif
+#ifdef VBOX_WITH_NETFLT
+    pbHostAdd->setHidden (true);
+    pbHostRemove->setHidden (true);
+#endif
+
     /* setup tab widget */
     mNoInterfaces = tr ("<No suitable interfaces>");
     /* setup iconsets */
@@ -972,7 +977,7 @@ void VBoxVMSettingsDlg::updateShortcuts()
 
 void VBoxVMSettingsDlg::loadInterfacesList()
 {
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN || defined VBOX_WITH_NETFLT
     /* clear inner list */
     mInterfaceList.clear();
     /* load current inner list */
@@ -1029,7 +1034,7 @@ void VBoxVMSettingsDlg::loadNetworksList()
 
 void VBoxVMSettingsDlg::hostInterfaceAdd()
 {
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN && !defined VBOX_WITH_NETFLT
 
     /* allow the started helper process to make itself the foreground window */
     AllowSetForegroundWindow (ASFW_ANY);
@@ -1087,7 +1092,7 @@ void VBoxVMSettingsDlg::hostInterfaceAdd()
 
 void VBoxVMSettingsDlg::hostInterfaceRemove()
 {
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN && !defined VBOX_WITH_NETFLT
 
     /* allow the started helper process to make itself the foreground window */
     AllowSetForegroundWindow (ASFW_ANY);
@@ -1148,7 +1153,7 @@ void VBoxVMSettingsDlg::hostInterfaceRemove()
 void VBoxVMSettingsDlg::networkPageUpdate (QWidget *aWidget)
 {
     if (!aWidget) return;
-#if defined Q_WS_WIN
+#if defined Q_WS_WIN || defined VBOX_WITH_NETFLT
     VBoxVMNetworkSettings *set = static_cast<VBoxVMNetworkSettings*> (aWidget);
     set->loadInterfaceList (mInterfaceList, mNoInterfaces);
     set->revalidate();
@@ -2144,7 +2149,7 @@ void VBoxVMSettingsDlg::addNetworkAdapter (const CNetworkAdapter &aAdapter)
     page->loadNetworksList (mNetworksList);
     page->getFromAdapter (aAdapter);
     QString pageTitle = QString (tr ("Adapter %1", "network"))
-                                 .arg (aAdapter.GetSlot());
+                                 .arg (QString ("&%1").arg (aAdapter.GetSlot() + 1));
     tbwNetwork->addTab (page, pageTitle);
 
     /* fix the tab order so that main dialog's buttons are always the last */
@@ -2174,14 +2179,16 @@ void VBoxVMSettingsDlg::addNetworkAdapter (const CNetworkAdapter &aAdapter)
     page->setValidator (wval);
     page->revalidate();
 
-#ifdef Q_WS_WIN
+#if defined Q_WS_WIN || defined VBOX_WITH_NETFLT
 
     /* fix focus order (make sure the Host Interface list UI goes after the
      * last network adapter UI item) */
 
     setTabOrder (page->chbCableConnected, lbHostInterface);
+# if defined Q_OS_WIN
     setTabOrder (lbHostInterface, pbHostAdd);
     setTabOrder (pbHostAdd, pbHostRemove);
+# endif
 
 #endif
 }
@@ -2220,7 +2227,7 @@ void VBoxVMSettingsDlg::addSerialPort (const CSerialPort &aPort)
     VBoxVMSerialPortSettings *page = new VBoxVMSerialPortSettings();
     page->getFromPort (aPort);
     QString pageTitle = QString (tr ("Port %1", "serial ports"))
-                                 .arg (aPort.GetSlot());
+                                 .arg (QString ("&%1").arg (aPort.GetSlot() + 1));
     tbwSerialPorts->addTab (page, pageTitle);
 
     /* fix the tab order so that main dialog's buttons are always the last */
@@ -2254,7 +2261,7 @@ void VBoxVMSettingsDlg::addParallelPort (const CParallelPort &aPort)
     VBoxVMParallelPortSettings *page = new VBoxVMParallelPortSettings();
     page->getFromPort (aPort);
     QString pageTitle = QString (tr ("Port %1", "parallel ports"))
-                                 .arg (aPort.GetSlot());
+                                 .arg (QString ("&%1").arg (aPort.GetSlot() + 1));
     tbwParallelPorts->addTab (page, pageTitle);
 
     /* fix the tab order so that main dialog's buttons are always the last */

@@ -1,4 +1,4 @@
-/** $Id: clipboard.cpp 31246 2008-05-26 13:35:06Z mt221433 $ */
+/** $Id: clipboard.cpp 35344 2008-08-26 09:49:28Z frank $ */
 /** @file
  * Guest Additions - X11 Shared Clipboard.
  */
@@ -1380,12 +1380,12 @@ int vboxClipboardConnect(void)
     rc = VbglR3ClipboardConnect(&g_ctx.client);
     if (VBOX_FAILURE(rc))
     {
-        LogRel(("Error connecting to host. rc=%Vrc", rc));
+        LogRel(("Error connecting to host. rc=%Vrc\n", rc));
         return rc;
     }
     if (!g_ctx.client)
     {
-        LogRel(("Invalid client ID of 0"));
+        LogRel(("Invalid client ID of 0\n"));
         return VERR_NOT_SUPPORTED;
     }
     g_ctx.eOwner = HOST;

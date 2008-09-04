@@ -1,4 +1,4 @@
-/* $Id: PDMAllCritSect.cpp 30610 2008-05-07 18:13:32Z bird $ */
+/* $Id: PDMAllCritSect.cpp 32777 2008-07-04 08:11:04Z sandervl $ */
 /** @file
  * PDM Critical Sections
  */
@@ -90,7 +90,7 @@ PDMDECL(int) PDMCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy)
     /*
      * Failed.
      */
-    LogFlow(("pcnetLock: locked => HC (%Vrc)\n", rcBusy));
+    LogFlow(("PDMCritSectEnter: locked => HC (%Vrc)\n", rcBusy));
     STAM_COUNTER_INC(&pCritSect->s.StatContentionR0GCLock);
     return rcBusy;
 #endif

@@ -17,6 +17,15 @@
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+
+/*
+ * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
+ * a choice of LGPL license versions is made available with the language indicating
+ * that LGPLv2 or any later version may be used, or where a choice of which version
+ * of the LGPL is applied is otherwise unspecified.
+ */
 #include "config.h"
 #include "exec.h"
 #include "disas.h"
@@ -487,7 +496,7 @@ int cpu_exec(CPUState *env1)
                 {
                     if(!(env->state & CPU_EMULATE_SINGLE_STEP))
                     {
-                        Log(("EMR0: %08X ESP=%08X IF=%d TF=%d CPL=%d\n", env->eip, ESP, (env->eflags & IF_MASK) ? 1 : 0, (env->eflags & TF_MASK) ? 1 : 0, (env->hflags >> HF_CPL_SHIFT) & 3));
+                        Log(("EMR0: %VGv ESP=%VGv IF=%d TF=%d CPL=%d\n", env->eip, ESP, (env->eflags & IF_MASK) ? 1 : 0, (env->eflags & TF_MASK) ? 1 : 0, (env->hflags >> HF_CPL_SHIFT) & 3));
                     }
                 }
                 else
@@ -501,13 +510,14 @@ int cpu_exec(CPUState *env1)
                         }
                         else
                         {
-                            Log(("EMR3: %08X ESP=%08X IF=%d TF=%d CPL=%d IOPL=%d CR0=%08X\n", env->eip, ESP, (env->eflags & IF_MASK) ? 1 : 0, (env->eflags & TF_MASK) ? 1 : 0, (env->hflags >> HF_CPL_SHIFT) & 3, ((env->eflags >> IOPL_SHIFT) & 3), env->cr[0]));
+                            Log(("EMR3: %VGv ESP=%VGv IF=%d TF=%d CPL=%d IOPL=%d CR0=%08X\n", env->eip, ESP, (env->eflags & IF_MASK) ? 1 : 0, (env->eflags & TF_MASK) ? 1 : 0, (env->hflags >> HF_CPL_SHIFT) & 3, ((env->eflags >> IOPL_SHIFT) & 3), env->cr[0]));
                         }
                     }
                 }
                 else
                 {
-                    Log(("EMRM: %04X:%08X SS:ESP=%04X:%08X IF=%d TF=%d CPL=%d PE=%d PG=%d\n", env->segs[R_CS].selector, env->eip, env->segs[R_SS].selector, ESP, (env->eflags & IF_MASK) ? 1 : 0, (env->eflags & TF_MASK) ? 1 : 0, (env->hflags >> HF_CPL_SHIFT) & 3, env->cr[0] & X86_CR0_PE, env->cr[0] & X86_CR0_PG));
+                    /* Seriously slows down realmode booting. */
+                    LogFlow(("EMRM: %04X:%RGr SS:ESP=%04X:%RGr IF=%d TF=%d CPL=%d PE=%d PG=%d\n", env->segs[R_CS].selector, env->eip, env->segs[R_SS].selector, ESP, (env->eflags & IF_MASK) ? 1 : 0, (env->eflags & TF_MASK) ? 1 : 0, (env->hflags >> HF_CPL_SHIFT) & 3, env->cr[0] & X86_CR0_PE, env->cr[0] & X86_CR0_PG));
                 }
 #endif /* !DEBUG_bird */
                 if(env->state & CPU_EMULATE_SINGLE_STEP)

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35318 2008-08-25 22:17:46Z bird $
 ## @file
 # Sub-Makefile for the Windows guest graphics driver.
 #
@@ -19,8 +19,12 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../..
+else
+DEPTH    ?= ../../../../..
 SUB_DEPTH = ../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 # Include sub-makefiles.
@@ -36,20 +40,21 @@ include $(PATH_SUB_CURRENT)/OpenGL/Makefile.kmk
 INSTALLS += VBoxVideo-inf
 VBoxVideo-inf_INST = $(INST_ADDITIONS)
 VBoxVideo-inf_MODE = a+r,u+w
-ifndef VBOX_SIGN_ADDITIONS
-VBoxVideo-inf_SOURCES = Miniport/VBoxVideo.inf
-else
 VBoxVideo-inf_SOURCES = \
-	$(PATH_TARGET)/VBoxVideoCat.dir/VBoxVideo.inf \
+	$(PATH_TARGET)/VBoxVideoCat.dir/VBoxVideo.inf
+ifdef VBOX_SIGN_ADDITIONS
+VBoxVideo-inf_SOURCES += \
 	$(PATH_TARGET)/VBoxVideoCat.dir/VBoxVideo.sys \
 	$(PATH_TARGET)/VBoxVideoCat.dir/VBoxDisp.dll \
 	$(PATH_TARGET)/VBoxVideoCat.dir/VBoxVideo.cat
+endif # signing
 VBoxVideo-inf_CLEAN = $(VBoxVideo-inf_SOURCES)
-VBoxVideo-inf_BLDDIRS = $(PATH_TARGET)/VBoxVideoCat.dir
+VBoxVideo-inf_BLDDIRS = \
+	$(PATH_TARGET)/VBoxVideoCat.dir
 
 $(PATH_TARGET)/VBoxVideoCat.dir/VBoxVideo.inf: $(PATH_SUB_CURRENT)/Miniport/VBoxVideo.inf $(MAKEFILE_CURRENT) | $$(call DIRDEP,$$(@D))
 	$(call MSG_GENERATE,VBoxVideo-inf,$@,$<)
-	$(call VBOX_EDIT_INF32_FN,$<,$@)
+	$(call VBOX_EDIT_INF_FN,$<,$@)
 
 $(PATH_TARGET)/VBoxVideoCat.dir/VBoxVideo.sys: $$(TARGET_VBoxVideo) | $$(call DIRDEP,$$(@D))
 	$(INSTALL) -m 644 $< $(@D)
@@ -62,9 +67,7 @@ $(PATH_TARGET)/VBoxVideoCat.dir/VBoxVideo.cat: \
 		$(PATH_TARGET)/VBoxVideoCat.dir/VBoxVideo.sys \
 		$(PATH_TARGET)/VBoxVideoCat.dir/VBoxDisp.dll
 	$(call MSG_TOOL,Inf2Cat,VBoxVideo-inf,$@,$<)
-	$(call VBOX_MAKE_CAT32_FN, $(@D),$@)
-
-endif # signing
+	$(call VBOX_MAKE_CAT_FN, $(@D),$@)
 
 include	$(KBUILD_PATH)/subfooter.kmk
 

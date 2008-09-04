@@ -1,4 +1,4 @@
-/* $Id: IOMInternal.h 29963 2008-04-21 14:29:54Z sandervl $ */
+/* $Id: IOMInternal.h 34397 2008-08-08 23:04:29Z bird $ */
 /** @file
  * IOM - Internal header file.
  */
@@ -77,16 +77,17 @@ typedef struct IOMMMIORANGE
     R0PTRTYPE(PFNIOMMMIOFILL)   pfnFillCallbackR0;
 
     /** Pointer to user argument. */
-    RTGCPTR                     pvUserGC;
+    RCPTRTYPE(void *)           pvUserGC;
     /** Pointer to device instance. */
-    PPDMDEVINSGC                pDevInsGC;
+    PPDMDEVINSRC                pDevInsGC;
     /** Pointer to write callback function. */
-    GCPTRTYPE(PFNIOMMMIOWRITE)  pfnWriteCallbackGC;
+    RCPTRTYPE(PFNIOMMMIOWRITE)  pfnWriteCallbackGC;
     /** Pointer to read callback function. */
-    GCPTRTYPE(PFNIOMMMIOREAD)   pfnReadCallbackGC;
+    RCPTRTYPE(PFNIOMMMIOREAD)   pfnReadCallbackGC;
     /** Pointer to fill (memset) callback function. */
-    GCPTRTYPE(PFNIOMMMIOFILL)   pfnFillCallbackGC;
-    RTGCPTR                     GCPtrAlignment; /**< Alignment padding */
+    RCPTRTYPE(PFNIOMMMIOFILL)   pfnFillCallbackGC;
+    /** Alignment padding. */
+    RTRCPTR                     GCPtrAlignment;
 
     /** Description / Name. For easing debugging. */
     R3PTRTYPE(const char *)     pszDesc;
@@ -149,7 +150,7 @@ typedef struct IOMIOPORTRANGER3
 {
     /** Avl node core with Port as Key and Port + cPorts - 1 as KeyLast. */
     AVLROIOPORTNODECORE         Core;
-#if HC_ARCH_BITS == 64 && GC_ARCH_BITS == 32 && !defined(RT_OS_WINDOWS)
+#if HC_ARCH_BITS == 64 && !defined(RT_OS_WINDOWS)
     uint32_t                    u32Alignment; /**< The sizeof(Core) differs. */
 #endif
     /** Start I/O port address. */
@@ -181,7 +182,7 @@ typedef struct IOMIOPORTRANGER0
 {
     /** Avl node core with Port as Key and Port + cPorts - 1 as KeyLast. */
     AVLROIOPORTNODECORE         Core;
-#if HC_ARCH_BITS == 64 && GC_ARCH_BITS == 32 && !defined(RT_OS_WINDOWS)
+#if HC_ARCH_BITS == 64 && !defined(RT_OS_WINDOWS)
     uint32_t                    u32Alignment; /**< The sizeof(Core) differs. */
 #endif
     /** Start I/O port address. */
@@ -218,19 +219,19 @@ typedef struct IOMIOPORTRANGEGC
     /** Size of the range. */
     uint16_t                    cPorts;
     /** Pointer to user argument. */
-    RTGCPTR                     pvUser;
+    RCPTRTYPE(void *)           pvUser;
     /** Pointer to the associated device instance. */
-    GCPTRTYPE(PPDMDEVINS)       pDevIns;
+    RCPTRTYPE(PPDMDEVINS)       pDevIns;
     /** Pointer to OUT callback function. */
-    GCPTRTYPE(PFNIOMIOPORTOUT)  pfnOutCallback;
+    RCPTRTYPE(PFNIOMIOPORTOUT)  pfnOutCallback;
     /** Pointer to IN callback function. */
-    GCPTRTYPE(PFNIOMIOPORTIN)   pfnInCallback;
+    RCPTRTYPE(PFNIOMIOPORTIN)   pfnInCallback;
     /** Pointer to string OUT callback function. */
-    GCPTRTYPE(PFNIOMIOPORTOUTSTRING) pfnOutStrCallback;
+    RCPTRTYPE(PFNIOMIOPORTOUTSTRING) pfnOutStrCallback;
     /** Pointer to string IN callback function. */
-    GCPTRTYPE(PFNIOMIOPORTINSTRING) pfnInStrCallback;
-#if HC_ARCH_BITS == 64 && GC_ARCH_BITS == 32
-    RTGCPTR                     GCPtrAlignment; /**< pszDesc is 8 byte aligned. */
+    RCPTRTYPE(PFNIOMIOPORTINSTRING) pfnInStrCallback;
+#if HC_ARCH_BITS == 64
+    RTRCPTR                     GCPtrAlignment; /**< pszDesc is 8 byte aligned. */
 #endif
     /** Description / Name. For easing debugging. */
     R3PTRTYPE(const char *)     pszDesc;
@@ -249,7 +250,7 @@ typedef struct IOMIOPORTSTATS
 {
     /** Avl node core with the port as Key. */
     AVLOIOPORTNODECORE          Core;
-#if HC_ARCH_BITS == 64 && GC_ARCH_BITS == 32 && !defined(RT_OS_WINDOWS)
+#if HC_ARCH_BITS == 64 && !defined(RT_OS_WINDOWS)
     uint32_t                    u32Alignment; /**< The sizeof(Core) differs. */
 #endif
     /** Number of INs to this port from R3. */
@@ -332,14 +333,17 @@ typedef struct IOM
     RTINT                           offVM;
 
     /** Pointer to the trees - GC ptr. */
-    GCPTRTYPE(PIOMTREES)            pTreesGC;
+    RCPTRTYPE(PIOMTREES)            pTreesGC;
     /** Pointer to the trees - HC ptr. */
     R3R0PTRTYPE(PIOMTREES)          pTreesHC;
 
     /** The ring-0 address of IOMMMIOHandler. */
     R0PTRTYPE(PFNPGMR0PHYSHANDLER)  pfnMMIOHandlerR0;
     /** The GC address of IOMMMIOHandler. */
-    GCPTRTYPE(PFNPGMGCPHYSHANDLER)  pfnMMIOHandlerGC;
+    RCPTRTYPE(PFNPGMGCPHYSHANDLER)  pfnMMIOHandlerGC;
+#if GC_ARCH_BITS == 64
+    RTRCPTR                         padding;
+#endif
     RTGCPTR                         Alignment;
 
     /** @name Caching of I/O Port and MMIO ranges and statistics.
@@ -359,12 +363,12 @@ typedef struct IOM
     R0PTRTYPE(PIOMMMIORANGE)        pMMIORangeLastR0;
     R0PTRTYPE(PIOMMMIOSTATS)        pMMIOStatsLastR0;
 
-    GCPTRTYPE(PIOMIOPORTRANGEGC)    pRangeLastReadGC;
-    GCPTRTYPE(PIOMIOPORTRANGEGC)    pRangeLastWriteGC;
-    GCPTRTYPE(PIOMIOPORTSTATS)      pStatsLastReadGC;
-    GCPTRTYPE(PIOMIOPORTSTATS)      pStatsLastWriteGC;
-    GCPTRTYPE(PIOMMMIORANGE)        pMMIORangeLastGC;
-    GCPTRTYPE(PIOMMMIOSTATS)        pMMIOStatsLastGC;
+    RCPTRTYPE(PIOMIOPORTRANGEGC)    pRangeLastReadGC;
+    RCPTRTYPE(PIOMIOPORTRANGEGC)    pRangeLastWriteGC;
+    RCPTRTYPE(PIOMIOPORTSTATS)      pStatsLastReadGC;
+    RCPTRTYPE(PIOMIOPORTSTATS)      pStatsLastWriteGC;
+    RCPTRTYPE(PIOMMMIORANGE)        pMMIORangeLastGC;
+    RCPTRTYPE(PIOMMMIOSTATS)        pMMIOStatsLastGC;
     /** @} */
 
     /** @name I/O Port statistics.
@@ -385,6 +389,9 @@ typedef struct IOM
     STAMPROFILE             StatGCInstMov;
     STAMPROFILE             StatGCInstCmp;
     STAMPROFILE             StatGCInstAnd;
+    STAMPROFILE             StatGCInstOr;
+    STAMPROFILE             StatGCInstXor;
+    STAMPROFILE             StatGCInstBt;
     STAMPROFILE             StatGCInstTest;
     STAMPROFILE             StatGCInstXchg;
     STAMPROFILE             StatGCInstStos;
@@ -398,6 +405,7 @@ typedef struct IOM
     STAMCOUNTER             StatGCMMIO1Byte;
     STAMCOUNTER             StatGCMMIO2Bytes;
     STAMCOUNTER             StatGCMMIO4Bytes;
+    STAMCOUNTER             StatGCMMIO8Bytes;
 
     RTUINT                  cMovsMaxBytes;
     RTUINT                  cStosMaxBytes;
@@ -427,7 +435,24 @@ PIOMMMIOSTATS iomR3MMIOStatsCreate(PVM pVM, RTGCPHYS GCPhys, const char *pszDesc
  * @param   GCPhysFault The GC physical address corresponding to pvFault.
  * @param   pvUser      Pointer to the MMIO range entry.
  */
-IOMDECL(int) IOMMMIOHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, void *pvFault, RTGCPHYS GCPhysFault, void *pvUser);
+IOMDECL(int) IOMMMIOHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPHYS GCPhysFault, void *pvUser);
+
+#ifdef IN_RING3
+/**
+ * \#PF Handler callback for MMIO ranges.
+ *
+ * @returns VINF_SUCCESS if the handler have carried out the operation.
+ * @returns VINF_PGM_HANDLER_DO_DEFAULT if the caller should carry out the access operation.
+ * @param   pVM             VM Handle.
+ * @param   GCPhys          The physical address the guest is writing to.
+ * @param   pvPhys          The HC mapping of that address.
+ * @param   pvBuf           What the guest is reading/writing.
+ * @param   cbBuf           How much it's reading/writing.
+ * @param   enmAccessType   The access type.
+ * @param   pvUser      Pointer to the MMIO range entry.
+ */
+DECLCALLBACK(int) IOMR3MMIOHandler(PVM pVM, RTGCPHYS GCPhys, void *pvPhys, void *pvBuf, size_t cbBuf, PGMACCESSTYPE enmAccessType, void *pvUser);
+#endif
 
 /**
  * Gets the I/O port range for the specified I/O port in the current context.
@@ -514,8 +539,8 @@ DECLINLINE(PIOMMMIOSTATS) iomMMIOGetStats(PIOM pIOM, RTGCPHYS GCPhys, PIOMMMIORA
 #endif
 
 /* Disassembly helpers used in IOMAll.cpp & IOMAllMMIO.cpp */
-bool iomGetRegImmData(PDISCPUSTATE pCpu, PCOP_PARAMETER pParam, PCPUMCTXCORE pRegFrame, uint32_t *pu32Data, unsigned *pcbSize);
-bool iomSaveDataToReg(PDISCPUSTATE pCpu, PCOP_PARAMETER pParam, PCPUMCTXCORE pRegFrame, unsigned u32Data);
+bool iomGetRegImmData(PDISCPUSTATE pCpu, PCOP_PARAMETER pParam, PCPUMCTXCORE pRegFrame, uint64_t *pu64Data, unsigned *pcbSize);
+bool iomSaveDataToReg(PDISCPUSTATE pCpu, PCOP_PARAMETER pParam, PCPUMCTXCORE pRegFrame, uint64_t u32Data);
 
 __END_DECLS
 

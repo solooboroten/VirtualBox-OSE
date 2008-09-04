@@ -785,7 +785,7 @@ int Display::VideoAccelEnable (bool fEnable, VBVAMEMORY *pVbvaMemory)
     return rc;
 }
 
-#ifdef VBOX_VRDP
+#ifdef VBOX_WITH_VRDP
 /* Called always by one VRDP server thread. Can be thread-unsafe.
  */
 void Display::VideoAccelVRDP (bool fEnable)
@@ -833,7 +833,7 @@ void Display::VideoAccelVRDP (bool fEnable)
         Assert (mfVideoAccelVRDP == true);
     }
 }
-#endif /* VBOX_VRDP */
+#endif /* VBOX_WITH_VRDP */
 
 static bool vbvaVerifyRingBuffer (VBVAMEMORY *pVbvaMemory)
 {
@@ -1334,7 +1334,7 @@ STDMETHODIMP Display::SetupInternalFramebuffer (ULONG depth)
         /* send request to the EMT thread */
         PVMREQ pReq = NULL;
         int vrc = VMR3ReqCall (pVM, &pReq, RT_INDEFINITE_WAIT,
-                               (PFNRT) changeFramebuffer, 3,
+                               (PFNRT) changeFramebuffer, 4,
                                this, static_cast <IFramebuffer *> (frameBuf),
                                true /* aInternal */, VBOX_VIDEO_PRIMARY_SCREEN);
         if (VBOX_SUCCESS (vrc))
@@ -1415,7 +1415,7 @@ STDMETHODIMP Display::RegisterExternalFramebuffer (IFramebuffer *frameBuf)
         /* send request to the EMT thread */
         PVMREQ pReq = NULL;
         int vrc = VMR3ReqCall (pVM, &pReq, RT_INDEFINITE_WAIT,
-                               (PFNRT) changeFramebuffer, 3,
+                               (PFNRT) changeFramebuffer, 4,
                                this, frameBuf, false /* aInternal */, VBOX_VIDEO_PRIMARY_SCREEN);
         if (VBOX_SUCCESS (vrc))
             vrc = pReq->iStatus;
@@ -1454,7 +1454,7 @@ STDMETHODIMP Display::SetFramebuffer (ULONG aScreenId, IFramebuffer *aFramebuffe
         /* send request to the EMT thread */
         PVMREQ pReq = NULL;
         int vrc = VMR3ReqCall (pVM, &pReq, RT_INDEFINITE_WAIT,
-                               (PFNRT) changeFramebuffer, 3,
+                               (PFNRT) changeFramebuffer, 4,
                                this, aFramebuffer, false /* aInternal */, aScreenId);
         if (VBOX_SUCCESS (vrc))
             vrc = pReq->iStatus;
@@ -2366,7 +2366,7 @@ DECLCALLBACK(void) Display::displayProcessDisplayDataCallback(PPDMIDISPLAYCONNEC
 DECLCALLBACK(void *)  Display::drvQueryInterface(PPDMIBASE pInterface, PDMINTERFACE enmInterface)
 {
     PPDMDRVINS pDrvIns = PDMIBASE_2_PDMDRV(pInterface);
-    PDRVMAINDISPLAY pDrv = PDMINS2DATA(pDrvIns, PDRVMAINDISPLAY);
+    PDRVMAINDISPLAY pDrv = PDMINS_2_DATA(pDrvIns, PDRVMAINDISPLAY);
     switch (enmInterface)
     {
         case PDMINTERFACE_BASE:
@@ -2387,7 +2387,7 @@ DECLCALLBACK(void *)  Display::drvQueryInterface(PPDMIBASE pInterface, PDMINTERF
  */
 DECLCALLBACK(void) Display::drvDestruct(PPDMDRVINS pDrvIns)
 {
-    PDRVMAINDISPLAY pData = PDMINS2DATA(pDrvIns, PDRVMAINDISPLAY);
+    PDRVMAINDISPLAY pData = PDMINS_2_DATA(pDrvIns, PDRVMAINDISPLAY);
     LogFlowFunc (("iInstance=%d\n", pDrvIns->iInstance));
     if (pData->pDisplay)
     {
@@ -2415,7 +2415,7 @@ DECLCALLBACK(void) Display::drvDestruct(PPDMDRVINS pDrvIns)
  */
 DECLCALLBACK(int) Display::drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
 {
-    PDRVMAINDISPLAY pData = PDMINS2DATA(pDrvIns, PDRVMAINDISPLAY);
+    PDRVMAINDISPLAY pData = PDMINS_2_DATA(pDrvIns, PDRVMAINDISPLAY);
     LogFlowFunc (("iInstance=%d\n", pDrvIns->iInstance));
 
     /*

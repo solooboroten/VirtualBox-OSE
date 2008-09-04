@@ -1,6 +1,6 @@
-/* $Id: SUPDrv-win.cpp 30959 2008-05-19 09:45:02Z sandervl $ */
+/* $Id: SUPDrv-win.cpp 35645 2008-08-29 12:47:44Z ms227370 $ */
 /** @file
- * VirtualBox Support Driver - Windows NT specific parts.
+ * VBoxDrv - The VirtualBox Support Driver - Windows NT specifics.
  */
 
 /*
@@ -28,15 +28,16 @@
  * additional information or have any questions.
  */
 
-
-
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
-#include "SUPDRV.h"
+#define LOG_GROUP LOG_GROUP_SUP_DRV
+#include "../SUPDrvInternal.h"
 #include <excpt.h>
 #include <iprt/assert.h>
 #include <iprt/process.h>
+#include <iprt/initterm.h>
+#include <VBox/log.h>
 
 
 /*******************************************************************************
@@ -75,12 +76,9 @@ static NTSTATUS _stdcall   VBoxDrvNtCreate(PDEVICE_OBJECT pDevObj, PIRP pIrp);
 static NTSTATUS _stdcall   VBoxDrvNtClose(PDEVICE_OBJECT pDevObj, PIRP pIrp);
 static NTSTATUS _stdcall   VBoxDrvNtDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp);
 static int                 VBoxDrvNtDeviceControlSlow(PSUPDRVDEVEXT pDevExt, PSUPDRVSESSION pSession, PIRP pIrp, PIO_STACK_LOCATION pStack);
+static NTSTATUS _stdcall   VBoxDrvNtInternalDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp);
 static NTSTATUS _stdcall   VBoxDrvNtNotSupportedStub(PDEVICE_OBJECT pDevObj, PIRP pIrp);
 static NTSTATUS            VBoxDrvNtErr2NtStatus(int rc);
-static NTSTATUS            VBoxDrvNtGipInit(PSUPDRVDEVEXT pDevExt);
-static void                VBoxDrvNtGipTerm(PSUPDRVDEVEXT pDevExt);
-static void     _stdcall   VBoxDrvNtGipTimer(IN PKDPC pDpc, IN PVOID pvUser, IN PVOID SystemArgument1, IN PVOID SystemArgument2);
-static void     _stdcall   VBoxDrvNtGipPerCpuDpc(IN PKDPC pDpc, IN PVOID pvUser, IN PVOID SystemArgument1, IN PVOID SystemArgument2);
 
 
 /*******************************************************************************
@@ -119,51 +117,46 @@ ULONG _stdcall DriverEntry(PDRIVER_OBJECT pDrvObj, PUNICODE_STRING pRegPath)
         rc = IoCreateSymbolicLink(&DosName, &DevName);
         if (NT_SUCCESS(rc))
         {
-            uint64_t  u64DiffCores;
-
-            /*
-             * Initialize the device extension.
-             */
-            PSUPDRVDEVEXT pDevExt = (PSUPDRVDEVEXT)pDevObj->DeviceExtension;
-            memset(pDevExt, 0, sizeof(*pDevExt));
-
-            int vrc = supdrvInitDevExt(pDevExt);
-            if (!vrc)
+            int vrc = RTR0Init(0);
+            if (RT_SUCCESS(rc))
             {
-                /* Make sure the tsc is consistent across cpus/cores. */
-                pDevExt->fForceAsyncTsc = supdrvDetermineAsyncTsc(&u64DiffCores);
-                dprintf(("supdrvDetermineAsyncTsc: fAsync=%d u64DiffCores=%u.\n", pDevExt->fForceAsyncTsc, (uint32_t)u64DiffCores));
-
                 /*
-                 * Inititalize the GIP.
+                 * Initialize the device extension.
                  */
-                rc = VBoxDrvNtGipInit(pDevExt);
-                if (NT_SUCCESS(rc))
+                PSUPDRVDEVEXT pDevExt = (PSUPDRVDEVEXT)pDevObj->DeviceExtension;
+                memset(pDevExt, 0, sizeof(*pDevExt));
+
+                vrc = supdrvInitDevExt(pDevExt);
+                if (!vrc)
                 {
                     /*
                      * Setup the driver entry points in pDrvObj.
                      */
-                    pDrvObj->DriverUnload                           = VBoxDrvNtUnload;
-                    pDrvObj->MajorFunction[IRP_MJ_CREATE]           = VBoxDrvNtCreate;
-                    pDrvObj->MajorFunction[IRP_MJ_CLOSE]            = VBoxDrvNtClose;
-                    pDrvObj->MajorFunction[IRP_MJ_DEVICE_CONTROL]   = VBoxDrvNtDeviceControl;
-                    pDrvObj->MajorFunction[IRP_MJ_READ]             = VBoxDrvNtNotSupportedStub;
-                    pDrvObj->MajorFunction[IRP_MJ_WRITE]            = VBoxDrvNtNotSupportedStub;
+                    pDrvObj->DriverUnload                                   = VBoxDrvNtUnload;
+                    pDrvObj->MajorFunction[IRP_MJ_CREATE]                   = VBoxDrvNtCreate;
+                    pDrvObj->MajorFunction[IRP_MJ_CLOSE]                    = VBoxDrvNtClose;
+                    pDrvObj->MajorFunction[IRP_MJ_DEVICE_CONTROL]           = VBoxDrvNtDeviceControl;
+//#if 0 /** @todo test IDC on windows. */
+                    pDrvObj->MajorFunction[IRP_MJ_INTERNAL_DEVICE_CONTROL]  = VBoxDrvNtInternalDeviceControl;
+//#endif
+                    pDrvObj->MajorFunction[IRP_MJ_READ]                     = VBoxDrvNtNotSupportedStub;
+                    pDrvObj->MajorFunction[IRP_MJ_WRITE]                    = VBoxDrvNtNotSupportedStub;
                     /* more? */
                     dprintf(("VBoxDrv::DriverEntry   returning STATUS_SUCCESS\n"));
                     return STATUS_SUCCESS;
                 }
-                dprintf(("VBoxDrvNtGipInit failed with rc=%#x!\n", rc));
 
-                supdrvDeleteDevExt(pDevExt);
+                dprintf(("supdrvInitDevExit failed with vrc=%d!\n", vrc));
+                rc = VBoxDrvNtErr2NtStatus(vrc);
+
+                IoDeleteSymbolicLink(&DosName);
+                RTR0Term();
             }
             else
             {
-                dprintf(("supdrvInitDevExit failed with vrc=%d!\n", vrc));
+                dprintf(("RTR0Init failed with vrc=%d!\n", vrc));
                 rc = VBoxDrvNtErr2NtStatus(vrc);
             }
-
-            IoDeleteSymbolicLink(&DosName);
         }
         else
             dprintf(("IoCreateSymbolicLink failed with rc=%#x!\n", rc));
@@ -202,8 +195,8 @@ void _stdcall VBoxDrvNtUnload(PDRIVER_OBJECT pDrvObj)
     /*
      * Terminate the GIP page and delete the device extension.
      */
-    VBoxDrvNtGipTerm(pDevExt);
     supdrvDeleteDevExt(pDevExt);
+    RTR0Term();
     IoDeleteDevice(pDrvObj->DeviceObject);
 }
 
@@ -238,15 +231,14 @@ NTSTATUS _stdcall VBoxDrvNtCreate(PDEVICE_OBJECT pDevObj, PIRP pIrp)
      */
     pFileObj->FsContext = NULL;
     PSUPDRVSESSION pSession;
-    int rc = supdrvCreateSession(pDevExt, &pSession);
+//#if 0 /** @todo check if this works, consider OBJ_KERNEL_HANDLE too. */
+    bool fUser = pIrp->RequestorMode != KernelMode;
+//#else
+ //   bool fUser = true;
+//#endif
+    int rc = supdrvCreateSession(pDevExt, fUser, &pSession);
     if (!rc)
-    {
-        pSession->Uid       = NIL_RTUID;
-        pSession->Gid       = NIL_RTGID;
-        pSession->Process   = RTProcSelf();
-        pSession->R0Process = RTR0ProcHandleSelf();
         pFileObj->FsContext = pSession;
-    }
 
     NTSTATUS    rcNt = pIrp->IoStatus.Status = VBoxDrvNtErr2NtStatus(rc);
     pIrp->IoStatus.Information  = 0;
@@ -294,33 +286,25 @@ NTSTATUS _stdcall VBoxDrvNtDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
     /*
      * Deal with the two high-speed IOCtl that takes it's arguments from
      * the session and iCmd, and only returns a VBox status code.
+     *
+     * Note: The previous method of returning the rc prior to IOC version
+     *       7.4 has been abandond, we're no longer compatible with that
+     *       interface.
      */
     ULONG ulCmd = pStack->Parameters.DeviceIoControl.IoControlCode;
     if (    ulCmd == SUP_IOCTL_FAST_DO_RAW_RUN
         ||  ulCmd == SUP_IOCTL_FAST_DO_HWACC_RUN
         ||  ulCmd == SUP_IOCTL_FAST_DO_NOP)
     {
-        KIRQL oldIrql;
-        int   rc;
-
-	 	/* Raise the IRQL to DISPATCH_LEVEl to prevent Windows from rescheduling us to another CPU/core. */ 
+        /* Raise the IRQL to DISPATCH_LEVEl to prevent Windows from rescheduling us to another CPU/core. */
         Assert(KeGetCurrentIrql() <= DISPATCH_LEVEL);
-        KeRaiseIrql(DISPATCH_LEVEL, &oldIrql);        
-        rc = supdrvIOCtlFast(ulCmd, pDevExt, pSession);
+        KIRQL oldIrql;
+        KeRaiseIrql(DISPATCH_LEVEL, &oldIrql);
+        int rc = supdrvIOCtlFast(ulCmd, pDevExt, pSession);
         KeLowerIrql(oldIrql);
 
         /* Complete the I/O request. */
-        NTSTATUS rcNt = pIrp->IoStatus.Status = STATUS_SUCCESS;
-        pIrp->IoStatus.Information = sizeof(rc);
-        __try
-        {
-            *(int *)pIrp->UserBuffer = rc;
-        }
-        __except(EXCEPTION_EXECUTE_HANDLER)
-        {
-            rcNt = pIrp->IoStatus.Status = GetExceptionCode();
-            dprintf(("VBoxSupDrvDeviceContorl: Exception Code %#x\n", rcNt));
-        }
+        NTSTATUS rcNt = pIrp->IoStatus.Status = RT_SUCCESS(rc) ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
         IoCompleteRequest(pIrp, IO_NO_INCREMENT);
         return rcNt;
     }
@@ -417,6 +401,84 @@ static int VBoxDrvNtDeviceControlSlow(PSUPDRVDEVEXT pDevExt, PSUPDRVSESSION pSes
 
 
 /**
+ * Internal Device I/O Control entry point, used for IDC.
+ *
+ * @param   pDevObj     Device object.
+ * @param   pIrp        Request packet.
+ */
+NTSTATUS _stdcall VBoxDrvNtInternalDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
+{
+    PSUPDRVDEVEXT       pDevExt = (PSUPDRVDEVEXT)pDevObj->DeviceExtension;
+    PIO_STACK_LOCATION  pStack = IoGetCurrentIrpStackLocation(pIrp);
+    PFILE_OBJECT        pFileObj = pStack ? pStack->FileObject : NULL;
+    PSUPDRVSESSION      pSession = pFileObj ? (PSUPDRVSESSION)pFileObj->FsContext : NULL;
+    NTSTATUS            rcNt;
+    unsigned            cbOut = 0;
+    int                 rc = 0;
+    dprintf2(("VBoxDrvNtInternalDeviceControl(%p,%p): ioctl=%#x pBuf=%p cbIn=%#x cbOut=%#x pSession=%p\n",
+             pDevExt, pIrp, pStack->Parameters.DeviceIoControl.IoControlCode,
+             pIrp->AssociatedIrp.SystemBuffer, pStack->Parameters.DeviceIoControl.InputBufferLength,
+             pStack->Parameters.DeviceIoControl.OutputBufferLength, pSession));
+
+/** @todo IDC on NT: figure when to create the session and that stuff... */
+
+    /* Verify that it's a buffered CTL. */
+    if ((pStack->Parameters.DeviceIoControl.IoControlCode & 0x3) == METHOD_BUFFERED)
+    {
+        /* Verify the pDevExt in the session. */
+        if (    (   !pSession
+                 && pStack->Parameters.DeviceIoControl.IoControlCode == SUPDRV_IDC_REQ_CONNECT)
+            ||  (   VALID_PTR(pSession)
+                 && pSession->pDevExt == pDevExt))
+        {
+            /* Verify that the size in the request header is correct. */
+            PSUPDRVIDCREQHDR pHdr = (PSUPDRVIDCREQHDR)pIrp->AssociatedIrp.SystemBuffer;
+            if (    pStack->Parameters.DeviceIoControl.InputBufferLength >= sizeof(*pHdr)
+                &&  pStack->Parameters.DeviceIoControl.InputBufferLength  == pHdr->cb
+                &&  pStack->Parameters.DeviceIoControl.OutputBufferLength == pHdr->cb)
+            {
+                /*
+                 * Do the job.
+                 */
+                rc = supdrvIDC(pStack->Parameters.DeviceIoControl.IoControlCode, pDevExt, pSession, pHdr);
+                if (!rc)
+                {
+                    rcNt = STATUS_SUCCESS;
+                    cbOut = pHdr->cb;
+                }
+                else
+                    rcNt = STATUS_INVALID_PARAMETER;
+                dprintf2(("VBoxDrvNtInternalDeviceControl: returns %#x/rc=%#x\n", rcNt, rc));
+            }
+            else
+            {
+                dprintf(("VBoxDrvNtInternalDeviceControl: Mismatching sizes (%#x) - Hdr=%#lx Irp=%#lx/%#lx!\n",
+                         pStack->Parameters.DeviceIoControl.IoControlCode,
+                         pStack->Parameters.DeviceIoControl.InputBufferLength >= sizeof(*pHdr) ? pHdr->cb : 0,
+                         pStack->Parameters.DeviceIoControl.InputBufferLength,
+                         pStack->Parameters.DeviceIoControl.OutputBufferLength));
+                rcNt = STATUS_INVALID_PARAMETER;
+            }
+        }
+        else
+            rcNt = STATUS_NOT_SUPPORTED;
+    }
+    else
+    {
+        dprintf(("VBoxDrvNtInternalDeviceControl: not buffered request (%#x) - not supported\n",
+                 pStack->Parameters.DeviceIoControl.IoControlCode));
+        rcNt = STATUS_NOT_SUPPORTED;
+    }
+
+    /* complete the request. */
+    pIrp->IoStatus.Status = rcNt;
+    pIrp->IoStatus.Information = cbOut;
+    IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+    return rcNt;
+}
+
+
+/**
  * Stub function for functions we don't implemented.
  *
  * @returns STATUS_NOT_SUPPORTED
@@ -466,320 +528,13 @@ bool VBOXCALL   supdrvOSObjCanAccess(PSUPDRVOBJ pObj, PSUPDRVSESSION pSession, c
     return false;
 }
 
-/**
- * Gets the monotone timestamp (nano seconds).
- * @returns NanoTS.
- */
-static inline uint64_t supdrvOSMonotime(void)
-{
-    return (uint64_t)KeQueryInterruptTime() * 100;
-}
-
-
-/**
- * Initializes the GIP.
- *
- * @returns NT status code.
- * @param   pDevExt     Instance data. GIP stuff may be updated.
- */
-static NTSTATUS VBoxDrvNtGipInit(PSUPDRVDEVEXT pDevExt)
-{
-    dprintf2(("VBoxSupDrvTermGip:\n"));
-
-    /*
-     * Try allocate the memory.
-     * Make sure it's below 4GB for 32-bit GC support
-     */
-    NTSTATUS rc;
-    PHYSICAL_ADDRESS Phys;
-    Phys.HighPart = 0;
-    Phys.LowPart = ~0;
-    PSUPGLOBALINFOPAGE pGip = (PSUPGLOBALINFOPAGE)MmAllocateContiguousMemory(PAGE_SIZE, Phys);
-    if (pGip)
-    {
-        if (!((uintptr_t)pGip & (PAGE_SIZE - 1)))
-        {
-            pDevExt->pGipMdl = IoAllocateMdl(pGip, PAGE_SIZE, FALSE, FALSE, NULL);
-            if (pDevExt->pGipMdl)
-            {
-                MmBuildMdlForNonPagedPool(pDevExt->pGipMdl);
-
-                /*
-                 * Figure the timer interval and frequency.
-                 * It turns out trying 1023Hz doesn't work. So, we'll set the max Hz at 128 for now.
-                 */
-                ExSetTimerResolution(156250, TRUE);
-                ULONG ulClockIntervalActual = ExSetTimerResolution(0, FALSE);
-                ULONG ulClockInterval = RT_MAX(ulClockIntervalActual, 78125); /* 1/128 */
-                ULONG ulClockFreq = 10000000 / ulClockInterval;
-                pDevExt->ulGipTimerInterval = ulClockInterval / 10000; /* ms */
-
-                /* Note: We need to register a callback handler for added cpus (only available in win2k8: KeRegisterProcessorChangeCallback) */
-                /* Note: We are not allowed to call KeQueryActiveProcessors at DPC_LEVEL, so we now assume cpu affinity mask does NOT change. */
-                pDevExt->uAffinityMask = KeQueryActiveProcessors();
-
-                /*
-                 * Call common initialization routine.
-                 */
-                Phys = MmGetPhysicalAddress(pGip); /* could perhaps use the Mdl, not that it looks much better */
-                supdrvGipInit(pDevExt, pGip, (RTHCPHYS)Phys.QuadPart, supdrvOSMonotime(), ulClockFreq);
-
-                /*
-                 * Initialize the timer.
-                 */
-                KeInitializeTimerEx(&pDevExt->GipTimer, SynchronizationTimer);
-                KeInitializeDpc(&pDevExt->GipDpc, VBoxDrvNtGipTimer, pDevExt);
-
-                /*
-                 * Initialize the DPCs we're using to update the per-cpu GIP data.
-                 */
-                for (unsigned i = 0; i < RT_ELEMENTS(pDevExt->aGipCpuDpcs); i++)
-                {
-                    KeInitializeDpc(&pDevExt->aGipCpuDpcs[i], VBoxDrvNtGipPerCpuDpc, pGip);
-                    KeSetImportanceDpc(&pDevExt->aGipCpuDpcs[i], HighImportance);
-                    KeSetTargetProcessorDpc(&pDevExt->aGipCpuDpcs[i], i);
-                }
-
-                dprintf(("VBoxDrvNtGipInit: ulClockFreq=%ld ulClockInterval=%ld ulClockIntervalActual=%ld Phys=%x%08x\n",
-                         ulClockFreq, ulClockInterval, ulClockIntervalActual, Phys.HighPart, Phys.LowPart));
-                return STATUS_SUCCESS;
-            }
-
-            dprintf(("VBoxSupDrvInitGip: IoAllocateMdl failed for %p/PAGE_SIZE\n", pGip));
-            rc = STATUS_NO_MEMORY;
-        }
-        else
-        {
-            dprintf(("VBoxSupDrvInitGip: GIP memory is not page aligned! pGip=%p\n", pGip));
-            rc = STATUS_INVALID_ADDRESS;
-        }
-        MmFreeContiguousMemory(pGip);
-    }
-    else
-    {
-        dprintf(("VBoxSupDrvInitGip: no cont memory.\n"));
-        rc = STATUS_NO_MEMORY;
-    }
-    return rc;
-}
-
-
-/**
- * Terminates the GIP.
- *
- * @returns negative errno.
- * @param   pDevExt     Instance data. GIP stuff may be updated.
- */
-static void VBoxDrvNtGipTerm(PSUPDRVDEVEXT pDevExt)
-{
-    dprintf(("VBoxSupDrvTermGip:\n"));
-    PSUPGLOBALINFOPAGE pGip;
-
-    /*
-     * Cancel the timer and wait on DPCs if it was still pending.
-     */
-    if (KeCancelTimer(&pDevExt->GipTimer))
-    {
-        UNICODE_STRING  RoutineName;
-        RtlInitUnicodeString(&RoutineName, L"KeFlushQueuedDpcs");
-        VOID (*pfnKeFlushQueuedDpcs)(VOID) = (VOID (*)(VOID))MmGetSystemRoutineAddress(&RoutineName);
-        if (pfnKeFlushQueuedDpcs)
-        {
-            /* KeFlushQueuedDpcs must be run at IRQL PASSIVE_LEVEL */
-            AssertMsg(KeGetCurrentIrql() == PASSIVE_LEVEL, ("%d != %d (PASSIVE_LEVEL)\n", KeGetCurrentIrql(), PASSIVE_LEVEL));
-            pfnKeFlushQueuedDpcs();
-        }
-    }
-
-    /*
-     * Uninitialize the content.
-     */
-    pGip = pDevExt->pGip;
-    pDevExt->pGip = NULL;
-    if (pGip)
-    {
-        supdrvGipTerm(pGip);
-
-        /*
-         * Free the page.
-         */
-        if (pDevExt->pGipMdl)
-        {
-            IoFreeMdl(pDevExt->pGipMdl);
-            pDevExt->pGipMdl = NULL;
-        }
-        MmFreeContiguousMemory(pGip);
-    }
-}
-
-
-/**
- * Timer callback function.
- * The pvUser parameter is the pDevExt pointer.
- */
-static void _stdcall VBoxDrvNtGipTimer(IN PKDPC pDpc, IN PVOID pvUser, IN PVOID SystemArgument1, IN PVOID SystemArgument2)
-{
-    PSUPDRVDEVEXT pDevExt = (PSUPDRVDEVEXT)pvUser;
-    PSUPGLOBALINFOPAGE pGip = pDevExt->pGip;
-    if (pGip)
-    {
-        if (pGip->u32Mode != SUPGIPMODE_ASYNC_TSC)
-            supdrvGipUpdate(pGip, supdrvOSMonotime());
-        else
-        {
-            KIRQL oldIrql;
-
-            KAFFINITY Mask = pDevExt->uAffinityMask;
-
-            /* Raise the IRQL to DISPATCH_LEVEL so we can't be rescheduled to another cpu */
-            KeRaiseIrql(DISPATCH_LEVEL, &oldIrql);
-
-            /*
-             * We cannot do other than assume a 1:1 relationship between the
-             * affinity mask and the process despite the warnings in the docs.
-             * If someone knows a better way to get this done, please let bird know.
-             */
-            unsigned iSelf = KeGetCurrentProcessorNumber();
-
-            for (unsigned i = 0; i < RT_ELEMENTS(pDevExt->aGipCpuDpcs); i++)
-            {
-                if (    i != iSelf
-                    &&  (Mask & RT_BIT_64(i)))
-                    KeInsertQueueDpc(&pDevExt->aGipCpuDpcs[i], 0, 0);
-            }
-
-            /* Run the normal update. */
-            supdrvGipUpdate(pGip, supdrvOSMonotime());
-
-            KeLowerIrql(oldIrql);
-        }
-    }
-}
-
-
-/**
- * Per cpu callback callback function.
- * The pvUser parameter is the pGip pointer.
- */
-static void _stdcall VBoxDrvNtGipPerCpuDpc(IN PKDPC pDpc, IN PVOID pvUser, IN PVOID SystemArgument1, IN PVOID SystemArgument2)
-{
-    PSUPGLOBALINFOPAGE pGip = (PSUPGLOBALINFOPAGE)pvUser;
-    supdrvGipUpdatePerCpu(pGip, supdrvOSMonotime(), ASMGetApicId());
-}
-
-
-/**
- * Maps the GIP into user space.
- *
- * @returns negative errno.
- * @param   pDevExt     Instance data.
- */
-int VBOXCALL supdrvOSGipMap(PSUPDRVDEVEXT pDevExt, PSUPGLOBALINFOPAGE *ppGip)
-{
-    dprintf2(("supdrvOSGipMap: ppGip=%p (pDevExt->pGipMdl=%p)\n", ppGip, pDevExt->pGipMdl));
-
-    /*
-     * Map into user space.
-     */
-    int rc = 0;
-    void *pv = NULL;
-    __try
-    {
-        *ppGip = (PSUPGLOBALINFOPAGE)MmMapLockedPagesSpecifyCache(pDevExt->pGipMdl, UserMode, MmCached, NULL, FALSE, NormalPagePriority);
-    }
-    __except(EXCEPTION_EXECUTE_HANDLER)
-    {
-        NTSTATUS rcNt = GetExceptionCode();
-        dprintf(("supdrvOsGipMap: Exception Code %#x\n", rcNt));
-        rc = SUPDRV_ERR_LOCK_FAILED;
-    }
-
-    dprintf2(("supdrvOSGipMap: returns %d, *ppGip=%p\n", rc, *ppGip));
-    return 0;
-}
-
-
-/**
- * Maps the GIP into user space.
- *
- * @returns negative errno.
- * @param   pDevExt     Instance data.
- */
-int VBOXCALL supdrvOSGipUnmap(PSUPDRVDEVEXT pDevExt, PSUPGLOBALINFOPAGE pGip)
-{
-    dprintf2(("supdrvOSGipUnmap: pGip=%p (pGipMdl=%p)\n", pGip, pDevExt->pGipMdl));
-
-    int rc = 0;
-    __try
-    {
-        MmUnmapLockedPages((void *)pGip, pDevExt->pGipMdl);
-    }
-    __except(EXCEPTION_EXECUTE_HANDLER)
-    {
-        NTSTATUS rcNt = GetExceptionCode();
-        dprintf(("supdrvOSGipUnmap: Exception Code %#x\n", rcNt));
-        rc = SUPDRV_ERR_GENERAL_FAILURE;
-    }
-    dprintf2(("supdrvOSGipUnmap: returns %d\n", rc));
-    return rc;
-}
-
-
-/**
- * Resumes the GIP updating.
- *
- * @param   pDevExt     Instance data.
- */
-void  VBOXCALL  supdrvOSGipResume(PSUPDRVDEVEXT pDevExt)
-{
-    dprintf2(("supdrvOSGipResume:\n"));
-    LARGE_INTEGER DueTime;
-    DueTime.QuadPart = -10000; /* 1ms, relative */
-    KeSetTimerEx(&pDevExt->GipTimer, DueTime, pDevExt->ulGipTimerInterval, &pDevExt->GipDpc);
-}
-
-
-/**
- * Suspends the GIP updating.
- *
- * @param   pDevExt     Instance data.
- */
-void  VBOXCALL  supdrvOSGipSuspend(PSUPDRVDEVEXT pDevExt)
-{
-    dprintf2(("supdrvOSGipSuspend:\n"));
-    KeCancelTimer(&pDevExt->GipTimer);
-#ifdef RT_ARCH_AMD64
-    ExSetTimerResolution(0, FALSE);
-#endif
-}
-
-
-/**
- * Get the current CPU count.
- * @returns Number of cpus.
- *
- * @param   pDevExt     Instance data.
- */
-unsigned VBOXCALL supdrvOSGetCPUCount(PSUPDRVDEVEXT pDevExt)
-{
-    KAFFINITY Mask = pDevExt->uAffinityMask;
-    unsigned cCpus = 0;
-    unsigned iBit;
-    for (iBit = 0; iBit < sizeof(Mask) * 8; iBit++)
-        if (Mask & RT_BIT_64(iBit))
-            cCpus++;
-    if (cCpus == 0) /* paranoia */
-        cCpus = 1;
-    return cCpus;
-}
-
 
 /**
  * Force async tsc mode (stub).
  */
 bool VBOXCALL  supdrvOSGetForcedAsyncTscMode(PSUPDRVDEVEXT pDevExt)
 {
-    return pDevExt->fForceAsyncTsc != 0;
+    return false;
 }
 
 
@@ -809,7 +564,8 @@ static NTSTATUS     VBoxDrvNtErr2NtStatus(int rc)
 }
 
 
-/** Runtime assert implementation for Native Win32 Ring-0. */
+
+/** @todo move this to IPRT */
 RTDECL(void) AssertMsg1(const char *pszExpr, unsigned uLine, const char *pszFile, const char *pszFunction)
 {
     DbgPrint("\n!!Assertion Failed!!\n"
@@ -818,6 +574,7 @@ RTDECL(void) AssertMsg1(const char *pszExpr, unsigned uLine, const char *pszFile
              pszExpr, pszFile, uLine, pszFunction);
 }
 
+/** @todo use the nocrt stuff? */
 int VBOXCALL mymemcmp(const void *pv1, const void *pv2, size_t cb)
 {
     const uint8_t *pb1 = (const uint8_t *)pv1;

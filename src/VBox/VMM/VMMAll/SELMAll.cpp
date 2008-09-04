@@ -1,4 +1,4 @@
-/* $Id: SELMAll.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: SELMAll.cpp 32715 2008-07-03 19:29:37Z frank $ */
 /** @file
  * SELM All contexts.
  */
@@ -48,30 +48,28 @@
  * @param   pVM     VM Handle.
  * @param   Sel     Selector part.
  * @param   Addr    Address part.
+ * @remarks Don't use when in long mode.
  */
-static RTGCPTR selmToFlat(PVM pVM, RTSEL Sel, RTGCPTR Addr)
+SELMDECL(RTGCPTR) SELMToFlatBySel(PVM pVM, RTSEL Sel, RTGCPTR Addr)
 {
-    Assert(!CPUMAreHiddenSelRegsValid(pVM));
+    Assert(!CPUMIsGuestInLongMode(pVM));    /* DON'T USE! */
 
     /** @todo check the limit. */
-    VBOXDESC    Desc;
+    X86DESC    Desc;
     if (!(Sel & X86_SEL_LDT))
         Desc = pVM->selm.s.CTXSUFF(paGdt)[Sel >> X86_SEL_SHIFT];
     else
     {
         /** @todo handle LDT pages not present! */
-        #ifdef IN_GC
-        PVBOXDESC    paLDT = (PVBOXDESC)((char *)pVM->selm.s.GCPtrLdt + pVM->selm.s.offLdtHyper);
-        #else
-        PVBOXDESC    paLDT = (PVBOXDESC)((char *)pVM->selm.s.HCPtrLdt + pVM->selm.s.offLdtHyper);
-        #endif
+#ifdef IN_GC
+        PX86DESC    paLDT = (PX86DESC)((char *)pVM->selm.s.GCPtrLdt + pVM->selm.s.offLdtHyper);
+#else
+        PX86DESC    paLDT = (PX86DESC)((char *)pVM->selm.s.HCPtrLdt + pVM->selm.s.offLdtHyper);
+#endif
         Desc = paLDT[Sel >> X86_SEL_SHIFT];
     }
 
-    return (RTGCPTR)( (RTGCUINTPTR)Addr
-                       + (   (Desc.Gen.u8BaseHigh2 << 24)
-                          |  (Desc.Gen.u8BaseHigh1 << 16)
-                          |   Desc.Gen.u16BaseLow));
+    return (RTGCPTR)((RTGCUINTPTR)Addr + X86DESC_BASE(Desc));
 }
 
 
@@ -83,25 +81,28 @@ static RTGCPTR selmToFlat(PVM pVM, RTSEL Sel, RTGCPTR Addr)
  *
  * @returns Flat address.
  * @param   pVM         VM Handle.
- * @param   eflags      Current eflags
- * @param   Sel         Selector part.
- * @param   pHiddenSel  Hidden selector register
+ * @param   SelReg      Selector register
+ * @param   pCtxCore    CPU context
  * @param   Addr        Address part.
  */
-SELMDECL(RTGCPTR) SELMToFlat(PVM pVM, X86EFLAGS eflags, RTSEL Sel, CPUMSELREGHID *pHiddenSel, RTGCPTR Addr)
+SELMDECL(RTGCPTR) SELMToFlat(PVM pVM, DIS_SELREG SelReg, PCPUMCTXCORE pCtxCore, RTGCPTR Addr)
 {
-    Assert(pHiddenSel || !CPUMAreHiddenSelRegsValid(pVM));
+    PCPUMSELREGHID pHiddenSel;
+    RTSEL          Sel;
+    int            rc;
 
-   /*
-    * Deal with real & v86 mode first.
-    */
+    rc = DISFetchRegSegEx(pCtxCore, SelReg, &Sel, &pHiddenSel); AssertRC(rc);
+
+    /*
+     * Deal with real & v86 mode first.
+     */
     if (    CPUMIsGuestInRealMode(pVM)
-        ||  eflags.Bits.u1VM)
+        ||  pCtxCore->eflags.Bits.u1VM)
     {
         RTGCUINTPTR uFlat = (RTGCUINTPTR)Addr & 0xffff;
 
         if (CPUMAreHiddenSelRegsValid(pVM))
-            uFlat += pHiddenSel->u32Base;
+            uFlat += pHiddenSel->u64Base;
         else
             uFlat += ((RTGCUINTPTR)Sel << 4);
         return (RTGCPTR)uFlat;
@@ -109,11 +110,326 @@ SELMDECL(RTGCPTR) SELMToFlat(PVM pVM, X86EFLAGS eflags, RTSEL Sel, CPUMSELREGHID
 
     /** @todo when we're in 16 bits mode, we should cut off the address as well.. */
     if (!CPUMAreHiddenSelRegsValid(pVM))
-        return selmToFlat(pVM, Sel, Addr);
-    return (RTGCPTR)(pHiddenSel->u32Base + (RTGCUINTPTR)Addr);
+        return SELMToFlatBySel(pVM, Sel, Addr);
+
+    /* 64 bits mode: CS, DS, ES and SS are treated as if each segment base is 0 (Intel® 64 and IA-32 Architectures Software Developer's Manual: 3.4.2.1). */
+    if (    CPUMIsGuestInLongMode(pVM)
+        &&  pCtxCore->csHid.Attr.n.u1Long)
+    {
+        switch (SelReg)
+        {
+        case DIS_SELREG_FS:
+        case DIS_SELREG_GS:
+            return (RTGCPTR)(pHiddenSel->u64Base + Addr);
+
+        default:
+            return Addr;    /* base 0 */
+        }
+    }
+    return (RTGCPTR)(pHiddenSel->u64Base + (RTGCUINTPTR)Addr);
 }
 
 
+/**
+ * Converts a GC selector based address to a flat address.
+ *
+ * Some basic checking is done, but not all kinds yet.
+ *
+ * @returns VBox status
+ * @param   pVM         VM Handle.
+ * @param   SelReg      Selector register
+ * @param   pCtxCore    CPU context
+ * @param   Addr        Address part.
+ * @param   fFlags      SELMTOFLAT_FLAGS_*
+ *                      GDT entires are valid.
+ * @param   ppvGC       Where to store the GC flat address.
+ */
+SELMDECL(int) SELMToFlatEx(PVM pVM, DIS_SELREG SelReg, PCCPUMCTXCORE pCtxCore, RTGCPTR Addr, unsigned fFlags, PRTGCPTR ppvGC)
+{
+    PCPUMSELREGHID pHiddenSel;
+    RTSEL          Sel;
+    int            rc;
+
+    rc = DISFetchRegSegEx(pCtxCore, SelReg, &Sel, &pHiddenSel); AssertRC(rc);
+
+    /*
+     * Deal with real & v86 mode first.
+     */
+    if (    CPUMIsGuestInRealMode(pVM)
+        ||  pCtxCore->eflags.Bits.u1VM)
+    {
+        RTGCUINTPTR uFlat = (RTGCUINTPTR)Addr & 0xffff;
+        if (ppvGC)
+        {
+            if (    pHiddenSel
+                &&  CPUMAreHiddenSelRegsValid(pVM))
+                *ppvGC = (RTGCPTR)(pHiddenSel->u64Base + uFlat);
+            else
+                *ppvGC = (RTGCPTR)(((RTGCUINTPTR)Sel << 4) + uFlat);
+        }
+        return VINF_SUCCESS;
+    }
+
+
+    uint32_t    u32Limit;
+    RTGCPTR     pvFlat;
+    uint32_t    u1Present, u1DescType, u1Granularity, u4Type;
+
+    /** @todo when we're in 16 bits mode, we should cut off the address as well.. */
+#ifndef IN_GC
+    if (    pHiddenSel
+        &&  CPUMAreHiddenSelRegsValid(pVM))
+    {
+        bool fCheckLimit = true;
+
+        u1Present     = pHiddenSel->Attr.n.u1Present;
+        u1Granularity = pHiddenSel->Attr.n.u1Granularity;
+        u1DescType    = pHiddenSel->Attr.n.u1DescType;
+        u4Type        = pHiddenSel->Attr.n.u4Type;
+
+        u32Limit      = pHiddenSel->u32Limit;
+
+        /* 64 bits mode: CS, DS, ES and SS are treated as if each segment base is 0 (Intel® 64 and IA-32 Architectures Software Developer's Manual: 3.4.2.1). */
+        if (    CPUMIsGuestInLongMode(pVM)
+            &&  pCtxCore->csHid.Attr.n.u1Long)
+        {
+            fCheckLimit = false;
+            switch (SelReg)
+            {
+            case DIS_SELREG_FS:
+            case DIS_SELREG_GS:
+                pvFlat = (pHiddenSel->u64Base + Addr);
+                break;
+
+            default:
+                pvFlat = Addr;
+                break;
+            }
+        }
+        else
+            pvFlat = (RTGCPTR)(pHiddenSel->u64Base + (RTGCUINTPTR)Addr);
+
+        /*
+        * Check if present.
+        */
+        if (u1Present)
+        {
+            /*
+            * Type check.
+            */
+            switch (u4Type)
+            {
+
+                /** Read only selector type. */
+                case X86_SEL_TYPE_RO:
+                case X86_SEL_TYPE_RO_ACC:
+                case X86_SEL_TYPE_RW:
+                case X86_SEL_TYPE_RW_ACC:
+                case X86_SEL_TYPE_EO:
+                case X86_SEL_TYPE_EO_ACC:
+                case X86_SEL_TYPE_ER:
+                case X86_SEL_TYPE_ER_ACC:
+                    if (!(fFlags & SELMTOFLAT_FLAGS_NO_PL))
+                    {
+                        /** @todo fix this mess */
+                    }
+                    /* check limit. */
+                    if (fCheckLimit && (RTGCUINTPTR)Addr > u32Limit)
+                        return VERR_OUT_OF_SELECTOR_BOUNDS;
+                    /* ok */
+                    if (ppvGC)
+                        *ppvGC = pvFlat;
+                    return VINF_SUCCESS;
+
+                case X86_SEL_TYPE_EO_CONF:
+                case X86_SEL_TYPE_EO_CONF_ACC:
+                case X86_SEL_TYPE_ER_CONF:
+                case X86_SEL_TYPE_ER_CONF_ACC:
+                    if (!(fFlags & SELMTOFLAT_FLAGS_NO_PL))
+                    {
+                        /** @todo fix this mess */
+                    }
+                    /* check limit. */
+                    if (fCheckLimit && (RTGCUINTPTR)Addr > u32Limit)
+                        return VERR_OUT_OF_SELECTOR_BOUNDS;
+                    /* ok */
+                    if (ppvGC)
+                        *ppvGC = pvFlat;
+                    return VINF_SUCCESS;
+
+                case X86_SEL_TYPE_RO_DOWN:
+                case X86_SEL_TYPE_RO_DOWN_ACC:
+                case X86_SEL_TYPE_RW_DOWN:
+                case X86_SEL_TYPE_RW_DOWN_ACC:
+                    if (!(fFlags & SELMTOFLAT_FLAGS_NO_PL))
+                    {
+                        /** @todo fix this mess */
+                    }
+                    /* check limit. */
+                    if (fCheckLimit)
+                    {
+                        if (!u1Granularity && (RTGCUINTPTR)Addr > (RTGCUINTPTR)0xffff)
+                            return VERR_OUT_OF_SELECTOR_BOUNDS;
+                        if ((RTGCUINTPTR)Addr <= u32Limit)
+                            return VERR_OUT_OF_SELECTOR_BOUNDS;
+                    }
+                    /* ok */
+                    if (ppvGC)
+                        *ppvGC = pvFlat;
+                    return VINF_SUCCESS;
+
+                default:
+                    return VERR_INVALID_SELECTOR;
+
+            }
+        }
+    }
+# ifndef IN_RING0
+    else
+# endif
+#endif /* !IN_GC */
+#ifndef IN_RING0
+    {
+        X86DESC Desc;
+
+        if (!(Sel & X86_SEL_LDT))
+        {
+            if (   !(fFlags & SELMTOFLAT_FLAGS_HYPER)
+                && (unsigned)(Sel & X86_SEL_MASK) >= pVM->selm.s.GuestGdtr.cbGdt)
+                return VERR_INVALID_SELECTOR;
+            Desc = pVM->selm.s.CTXSUFF(paGdt)[Sel >> X86_SEL_SHIFT];
+        }
+        else
+        {
+            if ((unsigned)(Sel & X86_SEL_MASK) >= pVM->selm.s.cbLdtLimit)
+                return VERR_INVALID_SELECTOR;
+
+            /** @todo handle LDT page(s) not present! */
+#ifdef IN_GC
+            PX86DESC    paLDT = (PX86DESC)((char *)pVM->selm.s.GCPtrLdt + pVM->selm.s.offLdtHyper);
+#else
+            PX86DESC    paLDT = (PX86DESC)((char *)pVM->selm.s.HCPtrLdt + pVM->selm.s.offLdtHyper);
+#endif
+            Desc = paLDT[Sel >> X86_SEL_SHIFT];
+        }
+
+        /* calc limit. */
+        u32Limit = X86DESC_LIMIT(Desc);
+        if (Desc.Gen.u1Granularity)
+            u32Limit = (u32Limit << PAGE_SHIFT) | PAGE_OFFSET_MASK;
+
+        /* calc address assuming straight stuff. */
+        pvFlat = (RTGCPTR)((RTGCUINTPTR)Addr + X86DESC_BASE(Desc));
+
+        u1Present     = Desc.Gen.u1Present;
+        u1Granularity = Desc.Gen.u1Granularity;
+        u1DescType    = Desc.Gen.u1DescType;
+        u4Type        = Desc.Gen.u4Type;
+
+        /*
+        * Check if present.
+        */
+        if (u1Present)
+        {
+            /*
+            * Type check.
+            */
+#define BOTH(a, b) ((a << 16) | b)
+            switch (BOTH(u1DescType, u4Type))
+            {
+
+                /** Read only selector type. */
+                case BOTH(1,X86_SEL_TYPE_RO):
+                case BOTH(1,X86_SEL_TYPE_RO_ACC):
+                case BOTH(1,X86_SEL_TYPE_RW):
+                case BOTH(1,X86_SEL_TYPE_RW_ACC):
+                case BOTH(1,X86_SEL_TYPE_EO):
+                case BOTH(1,X86_SEL_TYPE_EO_ACC):
+                case BOTH(1,X86_SEL_TYPE_ER):
+                case BOTH(1,X86_SEL_TYPE_ER_ACC):
+                    if (!(fFlags & SELMTOFLAT_FLAGS_NO_PL))
+                    {
+                        /** @todo fix this mess */
+                    }
+                    /* check limit. */
+                    if ((RTGCUINTPTR)Addr > u32Limit)
+                        return VERR_OUT_OF_SELECTOR_BOUNDS;
+                    /* ok */
+                    if (ppvGC)
+                        *ppvGC = pvFlat;
+                    return VINF_SUCCESS;
+
+                case BOTH(1,X86_SEL_TYPE_EO_CONF):
+                case BOTH(1,X86_SEL_TYPE_EO_CONF_ACC):
+                case BOTH(1,X86_SEL_TYPE_ER_CONF):
+                case BOTH(1,X86_SEL_TYPE_ER_CONF_ACC):
+                    if (!(fFlags & SELMTOFLAT_FLAGS_NO_PL))
+                    {
+                        /** @todo fix this mess */
+                    }
+                    /* check limit. */
+                    if ((RTGCUINTPTR)Addr > u32Limit)
+                        return VERR_OUT_OF_SELECTOR_BOUNDS;
+                    /* ok */
+                    if (ppvGC)
+                        *ppvGC = pvFlat;
+                    return VINF_SUCCESS;
+
+                case BOTH(1,X86_SEL_TYPE_RO_DOWN):
+                case BOTH(1,X86_SEL_TYPE_RO_DOWN_ACC):
+                case BOTH(1,X86_SEL_TYPE_RW_DOWN):
+                case BOTH(1,X86_SEL_TYPE_RW_DOWN_ACC):
+                    if (!(fFlags & SELMTOFLAT_FLAGS_NO_PL))
+                    {
+                        /** @todo fix this mess */
+                    }
+                    /* check limit. */
+                    if (!u1Granularity && (RTGCUINTPTR)Addr > (RTGCUINTPTR)0xffff)
+                        return VERR_OUT_OF_SELECTOR_BOUNDS;
+                    if ((RTGCUINTPTR)Addr <= u32Limit)
+                        return VERR_OUT_OF_SELECTOR_BOUNDS;
+
+                    /* ok */
+                    if (ppvGC)
+                        *ppvGC = pvFlat;
+                    return VINF_SUCCESS;
+
+                case BOTH(0,X86_SEL_TYPE_SYS_286_TSS_AVAIL):
+                case BOTH(0,X86_SEL_TYPE_SYS_LDT):
+                case BOTH(0,X86_SEL_TYPE_SYS_286_TSS_BUSY):
+                case BOTH(0,X86_SEL_TYPE_SYS_286_CALL_GATE):
+                case BOTH(0,X86_SEL_TYPE_SYS_TASK_GATE):
+                case BOTH(0,X86_SEL_TYPE_SYS_286_INT_GATE):
+                case BOTH(0,X86_SEL_TYPE_SYS_286_TRAP_GATE):
+                case BOTH(0,X86_SEL_TYPE_SYS_386_TSS_AVAIL):
+                case BOTH(0,X86_SEL_TYPE_SYS_386_TSS_BUSY):
+                case BOTH(0,X86_SEL_TYPE_SYS_386_CALL_GATE):
+                case BOTH(0,X86_SEL_TYPE_SYS_386_INT_GATE):
+                case BOTH(0,X86_SEL_TYPE_SYS_386_TRAP_GATE):
+                    if (!(fFlags & SELMTOFLAT_FLAGS_NO_PL))
+                    {
+                        /** @todo fix this mess */
+                    }
+                    /* check limit. */
+                    if ((RTGCUINTPTR)Addr > u32Limit)
+                        return VERR_OUT_OF_SELECTOR_BOUNDS;
+                    /* ok */
+                    if (ppvGC)
+                        *ppvGC = pvFlat;
+                    return VINF_SUCCESS;
+
+                default:
+                    return VERR_INVALID_SELECTOR;
+
+            }
+#undef BOTH
+        }
+    }
+#endif /* !IN_RING0 */
+    return VERR_SELECTOR_NOT_PRESENT;
+}
+
+#ifndef IN_RING0
 /**
  * Converts a GC selector based address to a flat address.
  *
@@ -130,9 +446,12 @@ SELMDECL(RTGCPTR) SELMToFlat(PVM pVM, X86EFLAGS eflags, RTSEL Sel, CPUMSELREGHID
  * @param   ppvGC       Where to store the GC flat address.
  * @param   pcb         Where to store the bytes from *ppvGC which can be accessed according to
  *                      the selector. NULL is allowed.
+ * @remarks Don't use when in long mode.
  */
-SELMDECL(int) SELMToFlatEx(PVM pVM, X86EFLAGS eflags, RTSEL Sel, RTGCPTR Addr, CPUMSELREGHID *pHiddenSel, unsigned fFlags, PRTGCPTR ppvGC, uint32_t *pcb)
+SELMDECL(int) SELMToFlatBySelEx(PVM pVM, X86EFLAGS eflags, RTSEL Sel, RTGCPTR Addr, CPUMSELREGHID *pHiddenSel, unsigned fFlags, PRTGCPTR ppvGC, uint32_t *pcb)
 {
+    Assert(!CPUMIsGuestInLongMode(pVM));    /* DON'T USE! */
+
     /*
      * Deal with real & v86 mode first.
      */
@@ -144,7 +463,7 @@ SELMDECL(int) SELMToFlatEx(PVM pVM, X86EFLAGS eflags, RTSEL Sel, RTGCPTR Addr, C
         {
             if (    pHiddenSel
                 &&  CPUMAreHiddenSelRegsValid(pVM))
-                *ppvGC = (RTGCPTR)(pHiddenSel->u32Base + uFlat);
+                *ppvGC = (RTGCPTR)(pHiddenSel->u64Base + uFlat);
             else
                 *ppvGC = (RTGCPTR)(((RTGCUINTPTR)Sel << 4) + uFlat);
         }
@@ -168,11 +487,11 @@ SELMDECL(int) SELMToFlatEx(PVM pVM, X86EFLAGS eflags, RTSEL Sel, RTGCPTR Addr, C
         u4Type        = pHiddenSel->Attr.n.u4Type;
 
         u32Limit      = pHiddenSel->u32Limit;
-        pvFlat        = (RTGCPTR)(pHiddenSel->u32Base + (RTGCUINTPTR)Addr);
+        pvFlat        = (RTGCPTR)(pHiddenSel->u64Base + (RTGCUINTPTR)Addr);
     }
     else
     {
-        VBOXDESC Desc;
+        X86DESC Desc;
 
         if (!(Sel & X86_SEL_LDT))
         {
@@ -188,24 +507,20 @@ SELMDECL(int) SELMToFlatEx(PVM pVM, X86EFLAGS eflags, RTSEL Sel, RTGCPTR Addr, C
 
             /** @todo handle LDT page(s) not present! */
 #ifdef IN_GC
-            PVBOXDESC    paLDT = (PVBOXDESC)((char *)pVM->selm.s.GCPtrLdt + pVM->selm.s.offLdtHyper);
+            PX86DESC    paLDT = (PX86DESC)((char *)pVM->selm.s.GCPtrLdt + pVM->selm.s.offLdtHyper);
 #else
-            PVBOXDESC    paLDT = (PVBOXDESC)((char *)pVM->selm.s.HCPtrLdt + pVM->selm.s.offLdtHyper);
+            PX86DESC    paLDT = (PX86DESC)((char *)pVM->selm.s.HCPtrLdt + pVM->selm.s.offLdtHyper);
 #endif
             Desc = paLDT[Sel >> X86_SEL_SHIFT];
         }
 
         /* calc limit. */
-        u32Limit = Desc.Gen.u4LimitHigh << 16 | Desc.Gen.u16LimitLow;
+        u32Limit = X86DESC_LIMIT(Desc);
         if (Desc.Gen.u1Granularity)
             u32Limit = (u32Limit << PAGE_SHIFT) | PAGE_OFFSET_MASK;
 
         /* calc address assuming straight stuff. */
-        pvFlat = (RTGCPTR)(  (RTGCUINTPTR)Addr
-                           + (   (Desc.Gen.u8BaseHigh2 << 24)
-                              |  (Desc.Gen.u8BaseHigh1 << 16)
-                              |   Desc.Gen.u16BaseLow )
-                             );
+        pvFlat = (RTGCPTR)((RTGCUINTPTR)Addr + X86DESC_BASE(Desc));
 
         u1Present     = Desc.Gen.u1Present;
         u1Granularity = Desc.Gen.u1Granularity;
@@ -321,7 +636,7 @@ SELMDECL(int) SELMToFlatEx(PVM pVM, X86EFLAGS eflags, RTSEL Sel, RTGCPTR Addr, C
     }
     return VERR_SELECTOR_NOT_PRESENT;
 }
-
+#endif /* !IN_RING0 */
 
 /**
  * Validates and converts a GC selector based code address to a flat
@@ -340,7 +655,7 @@ DECLINLINE(int) selmValidateAndConvertCSAddrRealMode(PVM pVM, RTSEL SelCS, PCPUM
     if (!pHidCS || !CPUMAreHiddenSelRegsValid(pVM))
         uFlat += ((RTGCUINTPTR)SelCS << 4);
     else
-        uFlat += pHidCS->u32Base;
+        uFlat += pHidCS->u64Base;
     *ppvFlat = (RTGCPTR)uFlat;
     return VINF_SUCCESS;
 }
@@ -364,16 +679,16 @@ DECLINLINE(int) selmValidateAndConvertCSAddrStd(PVM pVM, RTSEL SelCPL, RTSEL Sel
     Assert(!CPUMAreHiddenSelRegsValid(pVM));
 
     /** @todo validate limit! */
-    VBOXDESC    Desc;
+    X86DESC    Desc;
     if (!(SelCS & X86_SEL_LDT))
         Desc = pVM->selm.s.CTXSUFF(paGdt)[SelCS >> X86_SEL_SHIFT];
     else
     {
         /** @todo handle LDT page(s) not present! */
 #ifdef IN_GC
-        PVBOXDESC    paLDT = (PVBOXDESC)((char *)pVM->selm.s.GCPtrLdt + pVM->selm.s.offLdtHyper);
+        PX86DESC    paLDT = (PX86DESC)((char *)pVM->selm.s.GCPtrLdt + pVM->selm.s.offLdtHyper);
 #else
-        PVBOXDESC    paLDT = (PVBOXDESC)((char *)pVM->selm.s.HCPtrLdt + pVM->selm.s.offLdtHyper);
+        PX86DESC    paLDT = (PX86DESC)((char *)pVM->selm.s.HCPtrLdt + pVM->selm.s.offLdtHyper);
 #endif
         Desc = paLDT[SelCS >> X86_SEL_SHIFT];
     }
@@ -401,16 +716,12 @@ DECLINLINE(int) selmValidateAndConvertCSAddrStd(PVM pVM, RTSEL SelCPL, RTSEL Sel
                 /*
                  * Limit check.
                  */
-                uint32_t    u32Limit = Desc.Gen.u4LimitHigh << 16 | Desc.Gen.u16LimitLow;
+                uint32_t    u32Limit = X86DESC_LIMIT(Desc);
                 if (Desc.Gen.u1Granularity)
                     u32Limit = (u32Limit << PAGE_SHIFT) | PAGE_OFFSET_MASK;
                 if ((RTGCUINTPTR)Addr <= u32Limit)
                 {
-                    *ppvFlat = (RTGCPTR)(  (RTGCUINTPTR)Addr
-                                           + (   (Desc.Gen.u8BaseHigh2 << 24)
-                                              |  (Desc.Gen.u8BaseHigh1 << 16)
-                                              |   Desc.Gen.u16BaseLow)
-                                             );
+                    *ppvFlat = (RTGCPTR)((RTGCUINTPTR)Addr + X86DESC_BASE(Desc));
                     if (pcBits)
                         *pcBits = Desc.Gen.u1DefBig ? 32 : 16; /** @todo GUEST64 */
                     return VINF_SUCCESS;
@@ -436,7 +747,6 @@ DECLINLINE(int) selmValidateAndConvertCSAddrStd(PVM pVM, RTSEL SelCPL, RTSEL Sel
  * @param   SelCS   Selector part.
  * @param   Addr    Address part.
  * @param   ppvFlat Where to store the flat address.
- * @param   pcBits  Where to store the segment bitness (16/32/64). Optional.
  */
 DECLINLINE(int) selmValidateAndConvertCSAddrHidden(PVM pVM, RTSEL SelCPL, RTSEL SelCS, PCPUMSELREGHID pHidCS, RTGCPTR Addr, PRTGCPTR ppvFlat)
 {
@@ -460,18 +770,27 @@ DECLINLINE(int) selmValidateAndConvertCSAddrHidden(PVM pVM, RTSEL SelCPL, RTSEL 
                 :   uLevel >= pHidCS->Attr.n.u2Dpl /* hope I got this right now... */
                     )
             {
+                /* 64 bits mode: CS, DS, ES and SS are treated as if each segment base is 0 (Intel® 64 and IA-32 Architectures Software Developer's Manual: 3.4.2.1). */
+                if (    CPUMIsGuestInLongMode(pVM)
+                    &&  pHidCS->Attr.n.u1Long)
+                {
+                    *ppvFlat = Addr;
+                    return VINF_SUCCESS;
+                }
+
                 /*
-                 * Limit check. Note that the limit in the hidden register is the 
+                 * Limit check. Note that the limit in the hidden register is the
                  * final value. The granularity bit was included in its calculation.
                  */
-                uint32_t    u32Limit = pHidCS->u32Limit;
+                uint32_t u32Limit = pHidCS->u32Limit;
                 if ((RTGCUINTPTR)Addr <= u32Limit)
                 {
-                    *ppvFlat = (RTGCPTR)(  (RTGCUINTPTR)Addr + pHidCS->u32Base );
+                    *ppvFlat = (RTGCPTR)(  (RTGCUINTPTR)Addr + pHidCS->u64Base );
                     return VINF_SUCCESS;
                 }
                 return VERR_OUT_OF_SELECTOR_BOUNDS;
             }
+            Log(("Invalid RPL Attr.n.u4Type=%x cpl=%x dpl=%x\n", pHidCS->Attr.n.u4Type, uLevel, pHidCS->Attr.n.u2Dpl));
             return VERR_INVALID_RPL;
         }
         return VERR_NOT_CODE_SELECTOR;
@@ -536,42 +855,40 @@ SELMDECL(int) SELMValidateAndConvertCSAddr(PVM pVM, X86EFLAGS eflags, RTSEL SelC
 
 
 /**
- * Checks if a selector is 32-bit or 16-bit.
+ * Return the cpu mode corresponding to the (CS) selector
  *
- * @returns True if it is 32-bit.
- * @returns False if it is 16-bit.
+ * @returns DISCPUMODE according to the selector type (16, 32 or 64 bits)
  * @param   pVM     VM Handle.
  * @param   Sel     The selector.
  */
-static bool selmIsSelector32Bit(PVM pVM, RTSEL Sel)
+static DISCPUMODE selmGetCpuModeFromSelector(PVM pVM, RTSEL Sel)
 {
     Assert(!CPUMAreHiddenSelRegsValid(pVM));
 
     /** @todo validate limit! */
-    VBOXDESC Desc;
+    X86DESC Desc;
     if (!(Sel & X86_SEL_LDT))
         Desc = pVM->selm.s.CTXSUFF(paGdt)[Sel >> X86_SEL_SHIFT];
     else
     {
         /** @todo handle LDT page(s) not present! */
-        PVBOXDESC   paLDT = (PVBOXDESC)((char *)pVM->selm.s.CTXMID(,PtrLdt) + pVM->selm.s.offLdtHyper);
+        PX86DESC   paLDT = (PX86DESC)((char *)pVM->selm.s.CTXMID(,PtrLdt) + pVM->selm.s.offLdtHyper);
         Desc = paLDT[Sel >> X86_SEL_SHIFT];
     }
-    return Desc.Gen.u1DefBig;
+    return (Desc.Gen.u1DefBig) ? CPUMODE_32BIT : CPUMODE_16BIT;
 }
 
 
 /**
- * Checks if a selector is 32-bit or 16-bit.
+ * Return the cpu mode corresponding to the (CS) selector
  *
- * @returns True if it is 32-bit.
- * @returns False if it is 16-bit.
+ * @returns DISCPUMODE according to the selector type (16, 32 or 64 bits)
  * @param   pVM        VM Handle.
  * @param   eflags     Current eflags register
  * @param   Sel        The selector.
  * @param   pHiddenSel The hidden selector register.
  */
-SELMDECL(bool) SELMIsSelector32Bit(PVM pVM, X86EFLAGS eflags, RTSEL Sel, CPUMSELREGHID *pHiddenSel)
+SELMDECL(DISCPUMODE) SELMGetCpuModeFromSelector(PVM pVM, X86EFLAGS eflags, RTSEL Sel, CPUMSELREGHID *pHiddenSel)
 {
     if (!CPUMAreHiddenSelRegsValid(pVM))
     {
@@ -580,13 +897,18 @@ SELMDECL(bool) SELMIsSelector32Bit(PVM pVM, X86EFLAGS eflags, RTSEL Sel, CPUMSEL
          */
         if (    CPUMIsGuestInRealMode(pVM)
             ||  eflags.Bits.u1VM)
-            return false;
+            return CPUMODE_16BIT;
 
-        return selmIsSelector32Bit(pVM, Sel);
+        return selmGetCpuModeFromSelector(pVM, Sel);
     }
-    return pHiddenSel->Attr.n.u1DefBig;
-}
+    if (    CPUMIsGuestInLongMode(pVM)
+        &&  pHiddenSel->Attr.n.u1Long)
+        return CPUMODE_64BIT;
 
+    /* Else compatibility or 32 bits mode. */
+    return (pHiddenSel->Attr.n.u1DefBig) ? CPUMODE_32BIT : CPUMODE_16BIT;
+
+}
 
 /**
  * Returns Hypervisor's Trap 08 (\#DF) selector.
@@ -619,13 +941,13 @@ SELMDECL(void) SELMSetTrap8EIP(PVM pVM, uint32_t u32EIP)
  * @param   ss      Ring1 SS register value.
  * @param   esp     Ring1 ESP register value.
  */
-SELMDECL(void) SELMSetRing1Stack(PVM pVM, uint32_t ss, uint32_t esp)
+SELMDECL(void) SELMSetRing1Stack(PVM pVM, uint32_t ss, RTGCPTR32 esp)
 {
     pVM->selm.s.Tss.ss1  = ss;
-    pVM->selm.s.Tss.esp1 = esp;
+    pVM->selm.s.Tss.esp1 = (uint32_t)esp;
 }
 
-
+#ifndef IN_RING0
 /**
  * Gets ss:esp for ring1 in main Hypervisor's TSS.
  *
@@ -634,11 +956,11 @@ SELMDECL(void) SELMSetRing1Stack(PVM pVM, uint32_t ss, uint32_t esp)
  * @param   pSS     Ring1 SS register value.
  * @param   pEsp    Ring1 ESP register value.
  */
-SELMDECL(int) SELMGetRing1Stack(PVM pVM, uint32_t *pSS, uint32_t *pEsp)
+SELMDECL(int) SELMGetRing1Stack(PVM pVM, uint32_t *pSS, PRTGCPTR32 pEsp)
 {
     if (pVM->selm.s.fSyncTSSRing0Stack)
     {
-        GCPTRTYPE(uint8_t *) GCPtrTss = (GCPTRTYPE(uint8_t *))pVM->selm.s.GCPtrGuestTss;
+        RTGCPTR GCPtrTss = pVM->selm.s.GCPtrGuestTss;
         int     rc;
         VBOXTSS tss;
 
@@ -648,10 +970,10 @@ SELMDECL(int) SELMGetRing1Stack(PVM pVM, uint32_t *pSS, uint32_t *pEsp)
         bool    fTriedAlready = false;
 
 l_tryagain:
-        rc  = MMGCRamRead(pVM, &tss.ss0,  GCPtrTss + RT_OFFSETOF(VBOXTSS, ss0), sizeof(tss.ss0));
-        rc |= MMGCRamRead(pVM, &tss.esp0, GCPtrTss + RT_OFFSETOF(VBOXTSS, esp0), sizeof(tss.esp0));
+        rc  = MMGCRamRead(pVM, &tss.ss0,  (RCPTRTYPE(void *))(GCPtrTss + RT_OFFSETOF(VBOXTSS, ss0)), sizeof(tss.ss0));
+        rc |= MMGCRamRead(pVM, &tss.esp0, (RCPTRTYPE(void *))(GCPtrTss + RT_OFFSETOF(VBOXTSS, esp0)), sizeof(tss.esp0));
   #ifdef DEBUG
-        rc |= MMGCRamRead(pVM, &tss.offIoBitmap, GCPtrTss + RT_OFFSETOF(VBOXTSS, offIoBitmap), sizeof(tss.offIoBitmap));
+        rc |= MMGCRamRead(pVM, &tss.offIoBitmap, (RCPTRTYPE(void *))(GCPtrTss + RT_OFFSETOF(VBOXTSS, offIoBitmap)), sizeof(tss.offIoBitmap));
   #endif
 
         if (VBOX_FAILURE(rc))
@@ -661,7 +983,7 @@ l_tryagain:
                 /* Shadow page might be out of sync. Sync and try again */
                 /** @todo might cross page boundary */
                 fTriedAlready = true;
-                rc = PGMPrefetchPage(pVM, GCPtrTss);
+                rc = PGMPrefetchPage(pVM, (RTGCPTR)GCPtrTss);
                 if (rc != VINF_SUCCESS)
                     return rc;
                 goto l_tryagain;
@@ -691,16 +1013,16 @@ l_tryagain:
         Log(("offIoBitmap=%#x\n", tss.offIoBitmap));
 #endif
         /* Update our TSS structure for the guest's ring 1 stack */
-        SELMSetRing1Stack(pVM, tss.ss0 | 1, tss.esp0);
+        SELMSetRing1Stack(pVM, tss.ss0 | 1, (RTGCPTR32)tss.esp0);
         pVM->selm.s.fSyncTSSRing0Stack = false;
     }
 
     *pSS  = pVM->selm.s.Tss.ss1;
-    *pEsp = pVM->selm.s.Tss.esp1;
+    *pEsp = (RTGCPTR32)pVM->selm.s.Tss.esp1;
 
     return VINF_SUCCESS;
 }
-
+#endif
 
 /**
  * Returns Guest TSS pointer
@@ -819,7 +1141,7 @@ SELMDECL(RTGCPTR) SELMGetHyperGDT(PVM pVM)
      * called before the first relocation and have to work correctly
      * without having dependencies on the relocation order.
      */
-    return MMHyperHC2GC(pVM, pVM->selm.s.paGdtHC);
+    return (RTGCPTR)MMHyperHC2GC(pVM, pVM->selm.s.paGdtHC);
 }
 #endif /* IN_RING0 */
 
@@ -860,7 +1182,7 @@ SELMDECL(int) SELMGetTSSInfo(PVM pVM, PRTGCUINTPTR pGCPtrTss, PRTGCUINTPTR pcbTs
 
         pHiddenTRReg = CPUMGetGuestTRHid(pVM);
 
-        *pGCPtrTss = pHiddenTRReg->u32Base;
+        *pGCPtrTss = pHiddenTRReg->u64Base;
         *pcbTss    = pHiddenTRReg->u32Limit;
 
         if (pfCanHaveIOBitmap)

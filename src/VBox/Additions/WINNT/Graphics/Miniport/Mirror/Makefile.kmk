@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35318 2008-08-25 22:17:46Z bird $
 ## @file
 # Sub-Makefile for the VirtualBox Windows guest mirror video driver.
 #
@@ -19,26 +19,30 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../../../..
-SUB_DEPTH = ../../../../
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../../../..
+else
+SUB_DEPTH = ../../../..
+DEPTH    ?= ../../../../../../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 SYSMODS += vrdpvd
-vrdpvd_TEMPLATE    = VBOXW32GUESTR0
-vrdpvd_SDKS        = W2K3DDKX86
-vrdpvd_SYSSUFF     = .sys
+vrdpvd_TEMPLATE    = VBOXGUESTR0
 #vrdpvd_DEFS       += LOG_TO_BACKDOOR LOG_ENABLED
-vrdpvd_LDFLAGS     = /Entry:DriverEntry@8
+vrdpvd_LDFLAGS.x86   = /Entry:DriverEntry@8
+vrdpvd_LDFLAGS.amd64 = /Entry:DriverEntry
 vrdpvd_SOURCES     = \
 	vrdpvd.c \
 	helpers.c \
 	vrdpvd.rc
 vrdpvd_LIBS        = \
-	$(PATH_SDK_W2K3DDKX86_LIB)/videoprt.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/int64.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/ntoskrnl.lib \
-	$(PATH_SDK_W2K3DDKX86_LIB)/hal.lib \
-	$(PATH_LIB)/additions/RuntimeW32GuestR0$(VBOXW32GUEST_SUFF_LIB)
+	$(PATH_SDK_W2K3DDK_LIB)/videoprt.lib \
+	$(PATH_SDK_W2K3DDK_LIB)/ntoskrnl.lib \
+	$(PATH_SDK_W2K3DDK_LIB)/hal.lib \
+	$(VBOX_LIB_IPRT_GUEST_R0)
+
+$(error Fix inf editing and dirver signing)
 
 include	$(KBUILD_PATH)/subfooter.kmk
 

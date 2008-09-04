@@ -32,6 +32,7 @@
 
 #include <iprt/types.h>
 #include <iprt/mp.h> /* RTMpCpuIdToSetIndex */
+#include <iprt/asm.h>
 
 
 __BEGIN_DECLS
@@ -75,52 +76,84 @@ DECLINLINE(PRTCPUSET) RTCpuSetFill(PRTCPUSET pSet)
 
 
 /**
- * Adds a CPU given by it's identifier to the set.
+ * Adds a CPU given by its identifier to the set.
  *
  * @returns 0 on success, -1 if idCpu isn't valid.
  * @param   pSet    Pointer to the set.
  * @param   idCpu   The identifier of the CPU to add.
+ * @remarks The modification is atomic.
  */
 DECLINLINE(int) RTCpuSetAdd(PRTCPUSET pSet, RTCPUID idCpu)
 {
     int iCpu = RTMpCpuIdToSetIndex(idCpu);
     if (RT_UNLIKELY(iCpu < 0))
         return -1;
-    *pSet |= RT_BIT_64(iCpu);
+    ASMAtomicBitSet(pSet, iCpu);
     return 0;
 }
 
 
 /**
- * Removes a CPU given by it's identifier from the set.
+ * Removes a CPU given by its identifier from the set.
  *
  * @returns 0 on success, -1 if idCpu isn't valid.
  * @param   pSet    Pointer to the set.
  * @param   idCpu   The identifier of the CPU to delete.
+ * @remarks The modification is atomic.
  */
 DECLINLINE(int) RTCpuSetDel(PRTCPUSET pSet, RTCPUID idCpu)
 {
     int iCpu = RTMpCpuIdToSetIndex(idCpu);
     if (RT_UNLIKELY(iCpu < 0))
         return -1;
-    *pSet &= ~RT_BIT_64(iCpu);
+    ASMAtomicBitClear(pSet, iCpu);
     return 0;
 }
 
 
 /**
- * Checks if a CPU given by it's identifier is a member of the set.
+ * Checks if a CPU given by its identifier is a member of the set.
  *
  * @returns true / false accordingly.
  * @param   pSet    Pointer to the set.
  * @param   idCpu   The identifier of the CPU to look for.
+ * @remarks The test is atomic.
  */
 DECLINLINE(bool) RTCpuSetIsMember(PCRTCPUSET pSet, RTCPUID idCpu)
 {
     int iCpu = RTMpCpuIdToSetIndex(idCpu);
     if (RT_UNLIKELY(iCpu < 0))
         return false;
-    return !!(*pSet & RT_BIT_64(iCpu));
+    return ASMBitTest((volatile void *)pSet, iCpu);
+}
+
+
+/**
+ * Checks if a CPU given by its index is a member of the set.
+ *
+ * @returns true / false accordingly.
+ * @param   pSet    Pointer to the set.
+ * @param   iCpu    The index of the CPU in the set.
+ * @remarks The test is atomic.
+ */
+DECLINLINE(bool) RTCpuSetIsMemberByIndex(PCRTCPUSET pSet, int iCpu)
+{
+    if (RT_UNLIKELY((unsigned)iCpu >= RTCPUSET_MAX_CPUS))
+        return false;
+    return ASMBitTest((volatile void *)pSet, iCpu);
+}
+
+
+/**
+ * Checks if the two sets match or not.
+ *
+ * @returns true / false accordingly.
+ * @param   pSet1       The first set.
+ * @param   pSet2       The second set.
+ */
+DECLINLINE(bool) RTCpuSetIsEqual(PCRTCPUSET pSet1, PCRTCPUSET pSet2)
+{
+    return *pSet1 == *pSet2;
 }
 
 
@@ -155,14 +188,31 @@ DECLINLINE(PRTCPUSET) RTCpuSetFromU64(PRTCPUSET pSet, uint64_t fMask)
  * @returns CPU count.
  * @param   pSet    Pointer to the set.
  */
-DECLINLINE(RTCPUID) RTCpuSetCount(PRTCPUSET pSet)
+DECLINLINE(int) RTCpuSetCount(PCRTCPUSET pSet)
 {
-    RTCPUID cCpus = 0;
+    int     cCpus = 0;
     RTCPUID iCpu = 64;
     while (iCpu-- > 0)
         if (*pSet & RT_BIT_64(iCpu))
             cCpus++;
     return cCpus;
+}
+
+
+/**
+ * Get the highest set index.
+ *
+ * @returns The higest set index, -1 if all bits are clear.
+ * @param   pSet    Pointer to the set.
+ */
+DECLINLINE(int) RTCpuLastIndex(PCRTCPUSET pSet)
+{
+    /* There are more efficient ways to do this in asm.h... */
+    int iCpu = RTCPUSET_MAX_CPUS;
+    while (iCpu-- > 0)
+        if (*pSet & RT_BIT_64(iCpu))
+            return iCpu;
+    return iCpu;
 }
 
 

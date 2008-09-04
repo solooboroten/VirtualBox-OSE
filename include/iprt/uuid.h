@@ -43,6 +43,14 @@ __BEGIN_DECLS
 /**
  * Generates new UUID value.
  *
+ * @note IPRT uses little endian byte ordering in the UUID integer fields. If
+ * you want to pass IPRT UUIDs in binary representation to other UUID libraries
+ * and expect to get exactly the same string representation as in IPRT, you
+ * need to convert the first three integer fields (one 32 bit value, two 16 bit
+ * values) separately to big endian (also called network byte order).
+ *
+ * @sa RTUUID::Gen
+ *
  * @returns iprt status code.
  * @param   pUuid           Where to store generated uuid.
  */
@@ -62,29 +70,68 @@ RTDECL(int)  RTUuidClear(PRTUUID pUuid);
  * @returns true if UUID is null.
  * @param   pUuid           uuid to check.
  */
-RTDECL(int)  RTUuidIsNull(PCRTUUID pUuid);
+RTDECL(bool)  RTUuidIsNull(PCRTUUID pUuid);
 
 /**
  * Compares two UUID values.
  *
  * @returns 0 if eq, < 0 or > 0.
- * @param   pUuid1          First value to compare.
- * @param   pUuid2          Second value to compare.
+ * @param   pUuid1          First value to compare. NULL is treated like if RTUuidIsNull() return true.
+ * @param   pUuid2          Second value to compare. NULL is treated like if RTUuidIsNull() return true.
  */
 RTDECL(int)  RTUuidCompare(PCRTUUID pUuid1, PCRTUUID pUuid2);
 
 /**
+ * Compares a UUID value with a UUID string.
+ *
+ * @note IPRT uses little endian byte ordering in the UUID integer fields. If
+ * you want to pass IPRT UUIDs in binary representation to other UUID libraries
+ * and expect to get exactly the same string representation as in IPRT, you
+ * need to convert the first three integer fields (one 32 bit value, two 16 bit
+ * values) separately to big endian (also called network byte order).
+ * Correspondingly, if you want to get the right result with UUIDs which are in
+ * big endian format, you need to convert them before using this function.
+ *
+ * @sa RTUUID::Gen
+ *
+ * @returns 0 if eq, < 0 or > 0.
+ * @param   pUuid1          First value to compare. NULL is not allowed.
+ * @param   pszString2      The 2nd UUID in string form. NULL of malformed string is not permitted.
+ */
+RTDECL(int)  RTUuidCompareStr(PCRTUUID pUuid1, const char *pszString);
+
+/**
  * Converts binary UUID to its string representation.
+ *
+ * @note IPRT uses little endian byte ordering in the UUID integer fields. If
+ * you want to pass IPRT UUIDs in binary representation to other UUID libraries
+ * and expect to get exactly the same string representation as in IPRT, you
+ * need to convert the first three integer fields (one 32 bit value, two 16 bit
+ * values) separately to big endian (also called network byte order).
+ * Correspondingly, if you want to get the right result with UUIDs which are in
+ * big endian format, you need to convert them before using this function.
+ *
+ * @sa RTUUID::Gen
  *
  * @returns iprt status code.
  * @param   pUuid           Uuid to convert.
  * @param   pszString       Where to store result string.
  * @param   cchString       pszString buffer length, must be >= RTUUID_STR_LENGTH.
  */
-RTDECL(int)  RTUuidToStr(PCRTUUID pUuid, char *pszString, unsigned cchString);
+RTDECL(int)  RTUuidToStr(PCRTUUID pUuid, char *pszString, size_t cchString);
 
 /**
  * Converts UUID from its string representation to binary format.
+ *
+ * @note IPRT uses little endian byte ordering in the UUID integer fields. If
+ * you want to pass IPRT UUIDs in binary representation to other UUID libraries
+ * and expect to get exactly the same string representation as in IPRT, you
+ * need to convert the first three integer fields (one 32 bit value, two 16 bit
+ * values) separately to big endian (also called network byte order).
+ * Correspondingly, if you want to get the right result with UUIDs which are in
+ * big endian format, you need to convert them before using this function.
+ *
+ * @sa RTUUID::Gen
  *
  * @returns iprt status code.
  * @param   pUuid           Where to store result Uuid.

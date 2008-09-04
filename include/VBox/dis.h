@@ -165,10 +165,11 @@ typedef enum
 #define USE_POINTER_ES_BASED            RT_BIT_64(32)
 #define USE_IMMEDIATE16_SX8             RT_BIT_64(33)
 #define USE_IMMEDIATE32_SX8             RT_BIT_64(34)
+#define USE_IMMEDIATE64_SX8             RT_BIT_64(36)
 
-#define USE_IMMEDIATE                   (USE_IMMEDIATE8|USE_IMMEDIATE16|USE_IMMEDIATE32|USE_IMMEDIATE64|USE_IMMEDIATE8_REL|USE_IMMEDIATE16_REL|USE_IMMEDIATE32_REL|USE_IMMEDIATE64_REL|USE_IMMEDIATE_ADDR_0_32|USE_IMMEDIATE_ADDR_16_32|USE_IMMEDIATE_ADDR_0_16|USE_IMMEDIATE_ADDR_16_16|USE_IMMEDIATE16_SX8|USE_IMMEDIATE32_SX8)
+#define USE_IMMEDIATE                   (USE_IMMEDIATE8|USE_IMMEDIATE16|USE_IMMEDIATE32|USE_IMMEDIATE64|USE_IMMEDIATE8_REL|USE_IMMEDIATE16_REL|USE_IMMEDIATE32_REL|USE_IMMEDIATE64_REL|USE_IMMEDIATE_ADDR_0_32|USE_IMMEDIATE_ADDR_16_32|USE_IMMEDIATE_ADDR_0_16|USE_IMMEDIATE_ADDR_16_16|USE_IMMEDIATE16_SX8|USE_IMMEDIATE32_SX8|USE_IMMEDIATE64_SX8)
 
-#define DIS_IS_EFFECTIVE_ADDR(flags)    !!((flags) & (USE_BASE|USE_INDEX|USE_DISPLACEMENT32|USE_DISPLACEMENT16|USE_DISPLACEMENT8|USE_RIPDISPLACEMENT32))
+#define DIS_IS_EFFECTIVE_ADDR(flags)    !!((flags) & (USE_BASE|USE_INDEX|USE_DISPLACEMENT32|USE_DISPLACEMENT64|USE_DISPLACEMENT16|USE_DISPLACEMENT8|USE_RIPDISPLACEMENT32))
 /** @} */
 
 /** index in {"RAX", "RCX", "RDX", "RBX", "RSP", "RBP", "RSI", "RDI", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15"}
@@ -192,7 +193,7 @@ typedef enum
 #define USE_REG_R15                     15
 /** @} */
 
-/** index in {"EAX", "ECX", "EDX", "EBX", "ESP", "EBP", "ESI", "EDI"}
+/** index in {"EAX", "ECX", "EDX", "EBX", "ESP", "EBP", "ESI", "EDI", "R8D", "R9D", "R10D", "R11D", "R12D", "R13D", "R14D", "R15D"}
  * @{
  */
 #define USE_REG_EAX                     0
@@ -203,8 +204,17 @@ typedef enum
 #define USE_REG_EBP                     5
 #define USE_REG_ESI                     6
 #define USE_REG_EDI                     7
+#define USE_REG_R8D                     8
+#define USE_REG_R9D                     9
+#define USE_REG_R10D                    10
+#define USE_REG_R11D                    11
+#define USE_REG_R12D                    12
+#define USE_REG_R13D                    13
+#define USE_REG_R14D                    14
+#define USE_REG_R15D                    15
+
 /** @} */
-/** index in {"AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI"}
+/** index in {"AX", "CX", "DX", "BX", "SP", "BP", "SI", "DI", "R8W", "R9W", "R10W", "R11W", "R12W", "R13W", "R14W", "R15W"}
  * @{
  */
 #define USE_REG_AX                      0
@@ -215,9 +225,17 @@ typedef enum
 #define USE_REG_BP                      5
 #define USE_REG_SI                      6
 #define USE_REG_DI                      7
+#define USE_REG_R8W                     8
+#define USE_REG_R9W                     9
+#define USE_REG_R10W                    10
+#define USE_REG_R11W                    11
+#define USE_REG_R12W                    12
+#define USE_REG_R13W                    13
+#define USE_REG_R14W                    14
+#define USE_REG_R15W                    15
 /** @} */
 
-/** index in {"AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH"}
+/** index in {"AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH", "R8B", "R9B", "R10B", "R11B", "R12B", "R13B", "R14B", "R15B", "SPL", "BPL", "SIL", "DIL"}
  * @{
  */
 #define USE_REG_AL                      0
@@ -228,17 +246,35 @@ typedef enum
 #define USE_REG_CH                      5
 #define USE_REG_DH                      6
 #define USE_REG_BH                      7
+#define USE_REG_R8B                     8
+#define USE_REG_R9B                     9
+#define USE_REG_R10B                    10
+#define USE_REG_R11B                    11
+#define USE_REG_R12B                    12
+#define USE_REG_R13B                    13
+#define USE_REG_R14B                    14
+#define USE_REG_R15B                    15
+#define USE_REG_SPL                     16
+#define USE_REG_BPL                     17
+#define USE_REG_SIL                     18
+#define USE_REG_DIL                     19
+
 /** @} */
 
 /** index in {ES, CS, SS, DS, FS, GS}
  * @{
  */
-#define USE_REG_ES                      0
-#define USE_REG_CS                      1
-#define USE_REG_SS                      2
-#define USE_REG_DS                      3
-#define USE_REG_FS                      4
-#define USE_REG_GS                      5
+typedef enum
+{
+    DIS_SELREG_ES = 0,
+    DIS_SELREG_CS = 1,
+    DIS_SELREG_SS = 2,
+    DIS_SELREG_DS = 3,
+    DIS_SELREG_FS = 4,
+    DIS_SELREG_GS = 5,
+    /** The usual 32-bit paranoia. */
+    DIS_SEGREG_32BIT_HACK = 0x7fffffff
+} DIS_SELREG;
 /** @} */
 
 #define USE_REG_FP0                     0
@@ -255,6 +291,7 @@ typedef enum
 #define USE_REG_CR2                     2
 #define USE_REG_CR3                     3
 #define USE_REG_CR4                     4
+#define USE_REG_CR8                     8
 
 #define USE_REG_DR0                     0
 #define USE_REG_DR1                     1
@@ -334,9 +371,12 @@ typedef enum
  */
 typedef struct _OP_PARAMETER
 {
+    /** @todo switch param and parval and move disp64 and flags up here with the other 64-bit vars to get more natural alignment and save space. */
     int             param;
     uint64_t        parval;
+#ifndef DIS_SEPARATE_FORMATTER
     char            szParam[32];
+#endif
 
     int32_t         disp8, disp16, disp32;
     uint32_t        size;
@@ -354,7 +394,7 @@ typedef struct _OP_PARAMETER
         /** XMM0 - XMM7 */
         uint32_t    reg_xmm;
         /** {ES, CS, SS, DS, FS, GS} */
-        uint32_t    reg_seg;
+        DIS_SELREG  reg_seg;
         /** TR0-TR7 (?) */
         uint32_t    reg_test;
         /** CR0-CR4 */
@@ -383,7 +423,7 @@ typedef struct _OPCODE *POPCODE;
 /** Pointer to const opcode. */
 typedef const struct _OPCODE *PCOPCODE;
 
-typedef DECLCALLBACK(int) FN_DIS_READBYTES(RTUINTPTR pSrc, uint8_t *pDest, uint32_t size, void *pvUserdata);
+typedef DECLCALLBACK(int) FN_DIS_READBYTES(RTUINTPTR pSrc, uint8_t *pDest, unsigned size, void *pvUserdata);
 typedef FN_DIS_READBYTES *PFN_DIS_READBYTES;
 
 /* forward decl */
@@ -404,7 +444,7 @@ typedef struct _DISCPUSTATE
     /* Per instruction prefix settings */
     uint32_t        prefix;
     /** segment prefix value. */
-    uint32_t        prefix_seg;
+    DIS_SELREG      enmPrefixSeg;
     /** rex prefix value (64 bits only */
     uint32_t        prefix_rex;
     /** addressing mode (16 or 32 bits). (CPUMODE_*) */
@@ -473,6 +513,9 @@ typedef struct _DISCPUSTATE
     jmp_buf *pJumpBuffer;
 #endif /* __L4ENV__ */
 } DISCPUSTATE;
+
+/** Pointer to a const disassembler CPU state. */
+typedef DISCPUSTATE const *PCDISCPUSTATE;
 
 /** Opcode. */
 #pragma pack(4)
@@ -579,9 +622,9 @@ DISDECL(int) DISCoreOne(PDISCPUSTATE pCpu, RTUINTPTR InstructionAddr, unsigned *
 DISDECL(int) DISCoreOneEx(RTUINTPTR InstructionAddr, DISCPUMODE enmCpuMode, PFN_DIS_READBYTES pfnReadBytes, void *pvUser,
                           PDISCPUSTATE pCpu, unsigned *pcbInstruction);
 
-DISDECL(int) DISGetParamSize(PDISCPUSTATE pCpu, POP_PARAMETER pParam);
-DISDECL(int) DISDetectSegReg(PDISCPUSTATE pCpu, POP_PARAMETER pParam);
-DISDECL(uint8_t) DISQuerySegPrefixByte(PDISCPUSTATE pCpu);
+DISDECL(int)        DISGetParamSize(PDISCPUSTATE pCpu, POP_PARAMETER pParam);
+DISDECL(DIS_SELREG) DISDetectSegReg(PDISCPUSTATE pCpu, POP_PARAMETER pParam);
+DISDECL(uint8_t)    DISQuerySegPrefixByte(PDISCPUSTATE pCpu);
 
 /**
  * Returns the value of the parameter in pParam
@@ -600,21 +643,120 @@ DISDECL(uint8_t) DISQuerySegPrefixByte(PDISCPUSTATE pCpu);
 DISDECL(int) DISQueryParamVal(PCPUMCTXCORE pCtx, PDISCPUSTATE pCpu, POP_PARAMETER pParam, POP_PARAMVAL pParamVal, PARAM_TYPE parmtype);
 DISDECL(int) DISQueryParamRegPtr(PCPUMCTXCORE pCtx, PDISCPUSTATE pCpu, POP_PARAMETER pParam, void **ppReg, size_t *pcbSize);
 
-DISDECL(int) DISFetchReg8(PCPUMCTXCORE pCtx, unsigned reg8, uint8_t *pVal);
-DISDECL(int) DISFetchReg16(PCPUMCTXCORE pCtx, unsigned reg16, uint16_t *pVal);
-DISDECL(int) DISFetchReg32(PCPUMCTXCORE pCtx, unsigned reg32, uint32_t *pVal);
-DISDECL(int) DISFetchReg64(PCPUMCTXCORE pCtx, unsigned reg64, uint64_t *pVal);
-DISDECL(int) DISFetchRegSeg(PCPUMCTXCORE pCtx, unsigned sel, RTSEL *pVal);
-DISDECL(int) DISFetchRegSegEx(PCPUMCTXCORE pCtx, unsigned sel, RTSEL *pVal, PCPUMSELREGHID *ppSelHidReg);
+DISDECL(int) DISFetchReg8(PCCPUMCTXCORE pCtx, unsigned reg8, uint8_t *pVal);
+DISDECL(int) DISFetchReg16(PCCPUMCTXCORE pCtx, unsigned reg16, uint16_t *pVal);
+DISDECL(int) DISFetchReg32(PCCPUMCTXCORE pCtx, unsigned reg32, uint32_t *pVal);
+DISDECL(int) DISFetchReg64(PCCPUMCTXCORE pCtx, unsigned reg64, uint64_t *pVal);
+DISDECL(int) DISFetchRegSeg(PCCPUMCTXCORE pCtx, DIS_SELREG sel, RTSEL *pVal);
+DISDECL(int) DISFetchRegSegEx(PCCPUMCTXCORE pCtx, DIS_SELREG sel, RTSEL *pVal, PCPUMSELREGHID *ppSelHidReg);
 DISDECL(int) DISWriteReg8(PCPUMCTXCORE pRegFrame, unsigned reg8, uint8_t val8);
 DISDECL(int) DISWriteReg16(PCPUMCTXCORE pRegFrame, unsigned reg32, uint16_t val16);
 DISDECL(int) DISWriteReg32(PCPUMCTXCORE pRegFrame, unsigned reg32, uint32_t val32);
 DISDECL(int) DISWriteReg64(PCPUMCTXCORE pRegFrame, unsigned reg64, uint64_t val64);
-DISDECL(int) DISWriteRegSeg(PCPUMCTXCORE pCtx, unsigned sel, RTSEL val);
+DISDECL(int) DISWriteRegSeg(PCPUMCTXCORE pCtx, DIS_SELREG sel, RTSEL val);
 DISDECL(int) DISPtrReg8(PCPUMCTXCORE pCtx, unsigned reg8, uint8_t **ppReg);
 DISDECL(int) DISPtrReg16(PCPUMCTXCORE pCtx, unsigned reg16, uint16_t **ppReg);
 DISDECL(int) DISPtrReg32(PCPUMCTXCORE pCtx, unsigned reg32, uint32_t **ppReg);
 DISDECL(int) DISPtrReg64(PCPUMCTXCORE pCtx, unsigned reg64, uint64_t **ppReg);
+
+
+/**
+ * Try resolve an address into a symbol name.
+ *
+ * For use with DISFormatYasmEx(), DISFormatMasmEx() and DISFormatGasEx().
+ *
+ * @returns VBox status code.
+ * @retval  VINF_SUCCESS on success, pszBuf contains the full symbol name.
+ * @retval  VINF_BUFFER_OVERFLOW if pszBuf is too small the symbol name. The
+ *          content of pszBuf is truncated and zero terminated.
+ * @retval  VERR_SYMBOL_NOT_FOUND if no matching symbol was found for the address.
+ *
+ * @param   pCpu        Pointer to the disassembler CPU state.
+ * @param   u32Sel      The selector value. Use DIS_FMT_SEL_IS_REG, DIS_FMT_SEL_GET_VALUE,
+ *                      DIS_FMT_SEL_GET_REG to access this.
+ * @param   uAddress    The segment address.
+ * @param   pszBuf      Where to store the symbol name
+ * @param   cchBuf      The size of the buffer.
+ * @param   poff        If not a perfect match, then this is where the offset from the return
+ *                      symbol to the specified address is returned.
+ * @param   pvUser      The user argument.
+ */
+typedef DECLCALLBACK(int) FNDISGETSYMBOL(PCDISCPUSTATE pCpu, uint32_t u32Sel, RTUINTPTR uAddress, char *pszBuf, size_t cchBuf, RTINTPTR *poff, void *pvUser);
+/** Pointer to a FNDISGETSYMBOL(). */
+typedef FNDISGETSYMBOL *PFNDISGETSYMBOL;
+
+/**
+ * Checks if the FNDISGETSYMBOL argument u32Sel is a register or not.
+ */
+#define DIS_FMT_SEL_IS_REG(u32Sel)          ( !!((u32Sel) & RT_BIT(31)) )
+
+/**
+ * Extracts the selector value from the FNDISGETSYMBOL argument u32Sel.
+ * @returns Selector value.
+ */
+#define DIS_FMT_SEL_GET_VALUE(u32Sel)       ( (RTSEL)(u32Sel) )
+
+/**
+ * Extracts the register number from the FNDISGETSYMBOL argument u32Sel.
+ * @returns USE_REG_CS, USE_REG_SS, USE_REG_DS, USE_REG_ES, USE_REG_FS or USE_REG_FS.
+ */
+#define DIS_FMT_SEL_GET_REG(u32Sel)         ( ((u32Sel) >> 16) & 0xf )
+
+/** @internal */
+#define DIS_FMT_SEL_FROM_REG(uReg)          ( ((uReg) << 16) | RT_BIT(31) | 0xffff )
+/** @internal */
+#define DIS_FMT_SEL_FROM_VALUE(Sel)         ( (Sel) & 0xffff )
+
+
+/** @name Flags for use with DISFormatYasmEx(), DISFormatMasmEx() and DISFormatGasEx().
+ * @{
+ */
+/** Put the address to the right. */
+#define DIS_FMT_FLAGS_ADDR_RIGHT            RT_BIT_32(0)
+/** Put the address to the left. */
+#define DIS_FMT_FLAGS_ADDR_LEFT             RT_BIT_32(1)
+/** Put the address in comments.
+ * For some assemblers this implies placing it to the right. */
+#define DIS_FMT_FLAGS_ADDR_COMMENT          RT_BIT_32(2)
+/** Put the instruction bytes to the right of the disassembly. */
+#define DIS_FMT_FLAGS_BYTES_RIGHT           RT_BIT_32(3)
+/** Put the instruction bytes to the left of the disassembly. */
+#define DIS_FMT_FLAGS_BYTES_LEFT            RT_BIT_32(4)
+/** Put the instruction bytes in comments.
+ * For some assemblers this implies placing the bytes to the right. */
+#define DIS_FMT_FLAGS_BYTES_COMMENT         RT_BIT_32(5)
+/** Put the bytes in square brackets. */
+#define DIS_FMT_FLAGS_BYTES_BRACKETS        RT_BIT_32(6)
+/** Put spaces between the bytes. */
+#define DIS_FMT_FLAGS_BYTES_SPACED          RT_BIT_32(7)
+/** Display the relative +/- offset of branch instructions that uses relative addresses,
+ * and put the target address in parenthesis. */
+#define DIS_FMT_FLAGS_RELATIVE_BRANCH       RT_BIT_32(8)
+/** Strict assembly. The assembly should, when ever possible, make the
+ * assembler reproduce the exact same binary. (Refers to the yasm
+ * strict keyword.) */
+#define DIS_FMT_FLAGS_STRICT                RT_BIT_32(9)
+/** Checks if the given flags are a valid combination. */
+#define DIS_FMT_FLAGS_IS_VALID(fFlags) \
+    (   !((fFlags) & ~UINT32_C(0x000003ff)) \
+     && ((fFlags) & (DIS_FMT_FLAGS_ADDR_RIGHT  | DIS_FMT_FLAGS_ADDR_LEFT))  != (DIS_FMT_FLAGS_ADDR_RIGHT  | DIS_FMT_FLAGS_ADDR_LEFT) \
+     && (   !((fFlags) & DIS_FMT_FLAGS_ADDR_COMMENT) \
+         || (fFlags & (DIS_FMT_FLAGS_ADDR_RIGHT | DIS_FMT_FLAGS_ADDR_LEFT)) ) \
+     && ((fFlags) & (DIS_FMT_FLAGS_BYTES_RIGHT | DIS_FMT_FLAGS_BYTES_LEFT)) != (DIS_FMT_FLAGS_BYTES_RIGHT | DIS_FMT_FLAGS_BYTES_LEFT) \
+     && (   !((fFlags) & (DIS_FMT_FLAGS_BYTES_COMMENT | DIS_FMT_FLAGS_BYTES_BRACKETS)) \
+         || (fFlags & (DIS_FMT_FLAGS_BYTES_RIGHT | DIS_FMT_FLAGS_BYTES_LEFT)) ) \
+    )
+/** @} */
+
+DISDECL(size_t) DISFormatYasm(  PCDISCPUSTATE pCpu, char *pszBuf, size_t cchBuf);
+DISDECL(size_t) DISFormatYasmEx(PCDISCPUSTATE pCpu, char *pszBuf, size_t cchBuf, uint32_t fFlags, PFNDISGETSYMBOL pfnGetSymbol, void *pvUser);
+DISDECL(size_t) DISFormatMasm(  PCDISCPUSTATE pCpu, char *pszBuf, size_t cchBuf);
+DISDECL(size_t) DISFormatMasmEx(PCDISCPUSTATE pCpu, char *pszBuf, size_t cchBuf, uint32_t fFlags, PFNDISGETSYMBOL pfnGetSymbol, void *pvUser);
+DISDECL(size_t) DISFormatGas(   PCDISCPUSTATE pCpu, char *pszBuf, size_t cchBuf);
+DISDECL(size_t) DISFormatGasEx( PCDISCPUSTATE pCpu, char *pszBuf, size_t cchBuf, uint32_t fFlags, PFNDISGETSYMBOL pfnGetSymbol, void *pvUser);
+
+/** @todo DISAnnotate(PCDISCPUSTATE pCpu, char *pszBuf, size_t cchBuf, register reader, memory reader); */
+
 
 __END_DECLS
 

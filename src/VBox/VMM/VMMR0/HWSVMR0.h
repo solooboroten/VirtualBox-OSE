@@ -1,4 +1,4 @@
-/* $Id: HWSVMR0.h 31085 2008-05-21 10:17:41Z sandervl $ */
+/* $Id: HWSVMR0.h 33181 2008-07-11 09:31:15Z sandervl $ */
 /** @file
  * HWACCM AMD-V - Internal header file.
  */
@@ -112,10 +112,17 @@ HWACCMR0DECL(int) SVMR0SetupVM(PVM pVM);
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  * @param   pCtx        Guest context
- * @param   pCpu        CPU info struct
  */
-HWACCMR0DECL(int) SVMR0RunGuestCode(PVM pVM, CPUMCTX *pCtx, PHWACCM_CPUINFO pCpu);
+HWACCMR0DECL(int) SVMR0RunGuestCode(PVM pVM, CPUMCTX *pCtx);
 
+
+/**
+ * Save the host state
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ */
+HWACCMR0DECL(int) SVMR0SaveHostState(PVM pVM);
 
 /**
  * Loads the guest state
@@ -134,13 +141,13 @@ HWACCMR0DECL(int) SVMR0LoadGuestState(PVM pVM, CPUMCTX *pCtx);
 #define SVM_WRITE_SELREG(REG, reg)                                      \
         pVMCB->guest.REG.u16Sel   = pCtx->reg;                          \
         pVMCB->guest.REG.u32Limit = pCtx->reg##Hid.u32Limit;            \
-        pVMCB->guest.REG.u64Base  = pCtx->reg##Hid.u32Base;             \
+        pVMCB->guest.REG.u64Base  = pCtx->reg##Hid.u64Base;             \
         pVMCB->guest.REG.u16Attr  = SVM_HIDSEGATTR_VMX2SVM(pCtx->reg##Hid.Attr.u);
 
 #define SVM_READ_SELREG(REG, reg)                                       \
         pCtx->reg                = pVMCB->guest.REG.u16Sel;             \
         pCtx->reg##Hid.u32Limit  = pVMCB->guest.REG.u32Limit;           \
-        pCtx->reg##Hid.u32Base   = pVMCB->guest.REG.u64Base;            \
+        pCtx->reg##Hid.u64Base   = pVMCB->guest.REG.u64Base;            \
         pCtx->reg##Hid.Attr.u    = SVM_HIDSEGATTR_SVM2VMX(pVMCB->guest.REG.u16Attr);
 
 #endif /* IN_RING0 */

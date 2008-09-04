@@ -1,6 +1,6 @@
-/* $Id: DevACPI.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: DevACPI.cpp 34382 2008-08-08 22:38:40Z bird $ */
 /** @file
- * Advanced Configuration and Power Interface (ACPI) Device.
+ * DevACPI - Advanced Configuration and Power Interface (ACPI) Device.
  */
 
 /*
@@ -20,20 +20,19 @@
  */
 
 #define LOG_GROUP LOG_GROUP_DEV_ACPI
-
 #include <VBox/pdmdev.h>
 #include <VBox/log.h>
 #include <iprt/assert.h>
 #include <iprt/asm.h>
 #ifdef IN_RING3
-#include <iprt/alloc.h>
-#include <iprt/string.h>
+# include <iprt/alloc.h>
+# include <iprt/string.h>
 #endif /* IN_RING3 */
 
-#include "Builtins.h"
+#include "../Builtins.h"
 
-#ifdef  LOG_ENABLED
-#define DEBUG_ACPI
+#ifdef LOG_ENABLED
+# define DEBUG_ACPI
 #endif
 
 /* the compiled DSL */
@@ -66,6 +65,7 @@
 #define SYSI_INDEX      0x00004048
 #define SYSI_DATA       0x0000404c
 #define ACPI_RESET_BLK  0x00004050
+#define FDC_STATUS      0x00004054
 
 /* PM1x status register bits */
 #define TMR_STS         RT_BIT(0)
@@ -160,8 +160,9 @@ struct ACPIState
     uint16_t            pm1a_ctl;
     uint16_t            Alignment0;
     int64_t             pm_timer_initial;
-    R3R0PTRTYPE(PTMTIMER) tsHC;
-    GCPTRTYPE(PTMTIMER)   tsGC;
+    PTMTIMERR3          tsR3;
+    PTMTIMERR0          tsR0;
+    PTMTIMERRC          tsRC;
 
     uint32_t            gpe0_en;
     uint32_t            gpe0_sts;
@@ -184,6 +185,7 @@ struct ACPIState
      *  acpiBatIndexWrite() for handling this. */
     uint8_t             u8IndexShift;
     uint8_t             u8UseIOApic;
+    uint8_t             u8UseFdc;
     bool                fPowerButtonHandled;
 
     /** ACPI port base interface. */
@@ -423,6 +425,7 @@ IO_WRITE_PROTO (acpiPM1aCtlWrite);
 IO_WRITE_PROTO (acpiSmiWrite);
 IO_WRITE_PROTO (acpiBatIndexWrite);
 IO_READ_PROTO  (acpiBatDataRead);
+IO_READ_PROTO  (acpiFdcStatusRead);
 IO_READ_PROTO  (acpiSysInfoDataRead);
 IO_WRITE_PROTO (acpiSysInfoDataWrite);
 IO_READ_PROTO  (acpiGpe0EnRead);
@@ -605,7 +608,7 @@ static int acpiSetupXSDT (ACPIState *s, RTGCPHYS32 addr, unsigned int nb_entries
     for (unsigned int i = 0; i < nb_entries; ++i)
     {
         xsdt->u64Entry[i] = RT_H2LE_U64((uint64_t)addrs[i]);
-        Log(("Setup XSDT: [%d] = %VX64\n", i, xsdt->u64Entry[i]));
+        Log(("Setup XSDT: [%d] = %RX64\n", i, xsdt->u64Entry[i]));
     }
     xsdt->header.u8Checksum = acpiChecksum ((uint8_t*)xsdt, size);
     acpiPhyscpy (s, addr, xsdt, size);
@@ -728,8 +731,8 @@ static void update_gpe0 (ACPIState *s, uint32_t sts, uint32_t en)
 static int acpiPowerDown (ACPIState *s)
 {
     int rc = PDMDevHlpVMPowerOff(s->pDevIns);
-    if (VBOX_FAILURE (rc))
-        AssertMsgFailed (("Could not power down the VM. rc = %Vrc\n", rc));
+    if (RT_FAILURE (rc))
+        AssertMsgFailed (("Could not power down the VM. rc = %Rrc\n", rc));
     return rc;
 }
 
@@ -901,15 +904,15 @@ static void acpiPMTimerReset (ACPIState *s)
 {
     uint64_t interval, freq;
 
-    freq = TMTimerGetFreq (s->CTXSUFF(ts));
+    freq = TMTimerGetFreq (s->CTX_SUFF(ts));
     interval = ASMMultU64ByU32DivByU32 (0xffffffff, freq, PM_TMR_FREQ);
     Log (("interval = %RU64\n", interval));
-    TMTimerSet (s->CTXSUFF(ts), TMTimerGet (s->CTXSUFF(ts)) + interval);
+    TMTimerSet (s->CTX_SUFF(ts), TMTimerGet (s->CTX_SUFF(ts)) + interval);
 }
 
 static DECLCALLBACK(void) acpiTimer (PPDMDEVINS pDevIns, PTMTIMER pTimer)
 {
-    ACPIState *s = PDMINS2DATA (pDevIns, ACPIState *);
+    ACPIState *s = PDMINS_2_DATA (pDevIns, ACPIState *);
 
     Log (("acpi: pm timer sts %#x (%d), en %#x (%d)\n",
           s->pm1a_sts, (s->pm1a_sts & TMR_STS) != 0,
@@ -1073,6 +1076,26 @@ IO_READ_PROTO (acpiBatDataRead)
                     AssertMsgFailed (("Invalid battery index %d\n", s->uBatteryIndex));
                     break;
             }
+            break;
+        default:
+            return VERR_IOM_IOPORT_UNUSED;
+    }
+    return VINF_SUCCESS;
+}
+
+IO_READ_PROTO (acpiFdcStatusRead)
+{
+    ACPIState *s = (ACPIState *)pvUser;
+
+    switch (cb)
+    {
+        case 4:
+            *pu32 = s->u8UseFdc
+                ?   STA_DEVICE_PRESENT_MASK                 /* present */
+                  | STA_DEVICE_ENABLED_MASK                 /* enabled and decodes its resources */
+                  | STA_DEVICE_SHOW_IN_UI_MASK              /* should be shown in UI */
+                  | STA_DEVICE_FUNCTIONING_PROPERLY_MASK    /* functioning properly */
+                : 0;                                        /* device not present */
             break;
         default:
             return VERR_IOM_IOPORT_UNUSED;
@@ -1254,11 +1277,11 @@ IO_READ_PROTO (acpiPMTmrRead)
 {
     if (cb == 4)
     {
-        ACPIState *s = PDMINS2DATA (pDevIns, ACPIState *);
-        int64_t now = TMTimerGet (s->CTXSUFF(ts));
+        ACPIState *s = PDMINS_2_DATA (pDevIns, ACPIState *);
+        int64_t now = TMTimerGet (s->CTX_SUFF(ts));
         int64_t elapsed = now - s->pm_timer_initial;
 
-        *pu32 = ASMMultU64ByU32DivByU32 (elapsed, PM_TMR_FREQ, TMTimerGetFreq (s->CTXSUFF(ts)));
+        *pu32 = ASMMultU64ByU32DivByU32 (elapsed, PM_TMR_FREQ, TMTimerGetFreq (s->CTX_SUFF(ts)));
         Log (("acpi: acpiPMTmrRead -> %#x\n", *pu32));
         return VINF_SUCCESS;
     }
@@ -1408,21 +1431,21 @@ static const SSMFIELD g_AcpiSavedStateFields[] =
 
 static DECLCALLBACK(int) acpi_save_state (PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
 {
-    ACPIState *s = PDMINS2DATA (pDevIns, ACPIState *);
+    ACPIState *s = PDMINS_2_DATA (pDevIns, ACPIState *);
     return SSMR3PutStruct (pSSMHandle, s, &g_AcpiSavedStateFields[0]);
 }
 
 static DECLCALLBACK(int) acpi_load_state (PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle,
                                           uint32_t u32Version)
 {
-    ACPIState *s = PDMINS2DATA (pDevIns, ACPIState *);
+    ACPIState *s = PDMINS_2_DATA (pDevIns, ACPIState *);
     int rc;
 
     if (u32Version != 4)
         return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
 
     rc = SSMR3GetStruct (pSSMHandle, s, &g_AcpiSavedStateFields[0]);
-    if (VBOX_SUCCESS (rc))
+    if (RT_SUCCESS (rc))
     {
         acpiFetchBatteryStatus (s);
         acpiFetchBatteryInfo (s);
@@ -1442,13 +1465,13 @@ static DECLCALLBACK(int) acpi_load_state (PPDMDEVINS pDevIns, PSSMHANDLE pSSMHan
  */
 static DECLCALLBACK(void *) acpiQueryInterface(PPDMIBASE pInterface, PDMINTERFACE enmInterface)
 {
-    ACPIState *pData = (ACPIState*)((uintptr_t)pInterface - RT_OFFSETOF(ACPIState, IBase));
+    ACPIState *pThis = (ACPIState*)((uintptr_t)pInterface - RT_OFFSETOF(ACPIState, IBase));
     switch (enmInterface)
     {
         case PDMINTERFACE_BASE:
-            return &pData->IBase;
+            return &pThis->IBase;
         case PDMINTERFACE_ACPI_PORT:
-            return &pData->IACPIPort;
+            return &pThis->IACPIPort;
         default:
             return NULL;
     }
@@ -1475,7 +1498,7 @@ static int acpiPlantTables (ACPIState *s)
     xsdt_tbl_len += cAddr*8;  /* each entry: 64 bits phys. address. */
 
     rc = CFGMR3QueryU64 (s->pDevIns->pCfgHandle, "RamSize", &s->u64RamSize);
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
         return PDMDEV_SET_ERROR(s->pDevIns, rc,
                                 N_("Configuration error: Querying "
                                    "\"RamSize\" as integer failed"));
@@ -1522,7 +1545,7 @@ static int acpiPlantTables (ACPIState *s)
     }
 
     rc = acpiSetupRSDT (s, rsdt_addr + addend, cAddr, rsdt_addrs);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     return acpiSetupXSDT (s, xsdt_addr + addend, cAddr, rsdt_addrs);
 }
@@ -1543,14 +1566,14 @@ static int acpiPlantTables (ACPIState *s)
 static DECLCALLBACK(int) acpiConstruct (PPDMDEVINS pDevIns, int iInstance, PCFGMNODE pCfgHandle)
 {
     int rc;
-    ACPIState *s = PDMINS2DATA (pDevIns, ACPIState *);
+    ACPIState *s = PDMINS_2_DATA (pDevIns, ACPIState *);
     uint32_t rsdp_addr;
     PCIDevice *dev;
     bool fGCEnabled;
     bool fR0Enabled;
 
     /* Validate and read the configuration. */
-    if (!CFGMR3AreValuesValid (pCfgHandle, "RamSize\0IOAPIC\0GCEnabled\0R0Enabled\0"))
+    if (!CFGMR3AreValuesValid (pCfgHandle, "RamSize\0IOAPIC\0GCEnabled\0R0Enabled\0FdcEnabled\0"))
         return PDMDEV_SET_ERROR(pDevIns, VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES,
                                 N_("Configuration error: Invalid config key for ACPI device"));
 
@@ -1560,21 +1583,29 @@ static DECLCALLBACK(int) acpiConstruct (PPDMDEVINS pDevIns, int iInstance, PCFGM
     rc = CFGMR3QueryU8 (pCfgHandle, "IOAPIC", &s->u8UseIOApic);
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
         s->u8UseIOApic = 1;
-    else if (VBOX_FAILURE (rc))
+    else if (RT_FAILURE (rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to read \"IOAPIC\""));
+
+    /* query whether we are supposed to present an FDC controller */
+    rc = CFGMR3QueryU8 (pCfgHandle, "FdcEnabled", &s->u8UseFdc);
+    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
+        s->u8UseFdc = 1;
+    else if (RT_FAILURE (rc))
+        return PDMDEV_SET_ERROR(pDevIns, rc,
+                                N_("Configuration error: Failed to read \"FdcEnabled\""));
 
     rc = CFGMR3QueryBool (pCfgHandle, "GCEnabled", &fGCEnabled);
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
         fGCEnabled = true;
-    else if (VBOX_FAILURE (rc))
+    else if (RT_FAILURE (rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to read \"GCEnabled\""));
 
     rc = CFGMR3QueryBool(pCfgHandle, "R0Enabled", &fR0Enabled);
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
         fR0Enabled = true;
-    else if (VBOX_FAILURE(rc))
+    else if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("configuration error: failed to read R0Enabled as boolean"));
 
@@ -1585,18 +1616,18 @@ static DECLCALLBACK(int) acpiConstruct (PPDMDEVINS pDevIns, int iInstance, PCFGM
                                 N_("Can not find space for RSDP. ACPI is disabled"));
 
     rc = acpiPlantTables (s);
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
         return rc;
 
     rc = PDMDevHlpROMRegister (pDevIns, rsdp_addr, 0x1000, s->au8RSDPPage, false /* fShadow */, "ACPI RSDP");
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
         return rc;
 
 #define R(addr, cnt, writer, reader, description) \
     do {                                                                     \
         rc = PDMDevHlpIOPortRegister (pDevIns, addr, cnt, s, writer, reader, \
                                       NULL, NULL, description);              \
-        if (VBOX_FAILURE (rc))                                               \
+        if (RT_FAILURE (rc))                                               \
             return rc;                                                       \
     } while (0)
 #define L (GPE0_BLK_LEN / 2)
@@ -1614,6 +1645,7 @@ static DECLCALLBACK(int) acpiConstruct (PPDMDEVINS pDevIns, int iInstance, PCFGM
     R (BAT_DATA,       1, NULL,                  acpiBatDataRead,     "ACPI Battery status data");
     R (SYSI_INDEX,     1, acpiSysInfoIndexWrite, NULL,                "ACPI system info index");
     R (SYSI_DATA,      1, acpiSysInfoDataWrite,  acpiSysInfoDataRead, "ACPI system info data");
+    R (FDC_STATUS,     1, NULL,                  acpiFdcStatusRead,   "ACPI FDC status index");
     R (GPE0_BLK + L,   L, acpiGpe0EnWrite,       acpiGpe0EnRead,      "ACPI GPE0 Enable");
     R (GPE0_BLK,       L, acpiGpe0StsWrite,      acpiGpe0StsRead,     "ACPI GPE0 Status");
     R (ACPI_RESET_BLK, 1, acpiResetWrite,        NULL,                "ACPI Reset");
@@ -1636,15 +1668,16 @@ static DECLCALLBACK(int) acpiConstruct (PPDMDEVINS pDevIns, int iInstance, PCFGM
         AssertRCReturn(rc, rc);
     }
 
-    rc = PDMDevHlpTMTimerCreate (pDevIns, TMCLOCK_VIRTUAL_SYNC, acpiTimer, "ACPI Timer", &s->tsHC);
-    if (VBOX_FAILURE(rc))
+    rc = PDMDevHlpTMTimerCreate (pDevIns, TMCLOCK_VIRTUAL_SYNC, acpiTimer, "ACPI Timer", &s->tsR3);
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("pfnTMTimerCreate -> %Vrc\n", rc));
+        AssertMsgFailed(("pfnTMTimerCreate -> %Rrc\n", rc));
         return rc;
     }
 
-    s->tsGC = TMTimerGCPtr (s->tsHC);
-    s->pm_timer_initial = TMTimerGet (s->tsHC);
+    s->tsR0 = TMTimerR0Ptr (s->tsR3);
+    s->tsRC = TMTimerRCPtr (s->tsR3);
+    s->pm_timer_initial = TMTimerGet (s->tsR3);
     acpiPMTimerReset (s);
 
     dev = &s->dev;
@@ -1677,12 +1710,12 @@ static DECLCALLBACK(int) acpiConstruct (PPDMDEVINS pDevIns, int iInstance, PCFGM
     dev->config[0x3c] = SCI_INT;
 
     rc = PDMDevHlpPCIRegister (pDevIns, dev);
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
         return rc;
 
     rc = PDMDevHlpSSMRegister (pDevIns, pDevIns->pDevReg->szDeviceName, iInstance, 4, sizeof(*s),
                                NULL, acpi_save_state, NULL, NULL, acpi_load_state,  NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     /*
@@ -1699,7 +1732,7 @@ static DECLCALLBACK(int) acpiConstruct (PPDMDEVINS pDevIns, int iInstance, PCFGM
     * Get the corresponding connector interface
     */
    rc = PDMDevHlpDriverAttach (pDevIns, 0, &s->IBase, &s->pDrvBase, "ACPI Driver Port");
-   if (VBOX_SUCCESS (rc))
+   if (RT_SUCCESS (rc))
    {
        s->pDrv = (PPDMIACPICONNECTOR)s->pDrvBase->pfnQueryInterface (s->pDrvBase,
                                                                      PDMINTERFACE_ACPI_CONNECTOR);
@@ -1725,18 +1758,18 @@ static DECLCALLBACK(int) acpiConstruct (PPDMDEVINS pDevIns, int iInstance, PCFGM
  */
 static DECLCALLBACK(void) acpiRelocate (PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
 {
-    ACPIState *s = PDMINS2DATA (pDevIns, ACPIState *);
-    s->tsGC = TMTimerGCPtr (s->tsHC);
+    ACPIState *s = PDMINS_2_DATA (pDevIns, ACPIState *);
+    s->tsRC = TMTimerRCPtr (s->CTX_SUFF(ts));
 }
 
 static DECLCALLBACK(void) acpiReset (PPDMDEVINS pDevIns)
 {
-    ACPIState *s = PDMINS2DATA (pDevIns, ACPIState *);
+    ACPIState *s = PDMINS_2_DATA (pDevIns, ACPIState *);
 
     s->pm1a_en           = 0;
     s->pm1a_sts          = 0;
     s->pm1a_ctl          = 0;
-    s->pm_timer_initial  = TMTimerGet (s->CTXSUFF(ts));
+    s->pm_timer_initial  = TMTimerGet (s->CTX_SUFF(ts));
     acpiPMTimerReset(s);
     s->uBatteryIndex     = 0;
     s->uSystemInfoIndex  = 0;

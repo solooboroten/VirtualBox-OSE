@@ -1,5 +1,5 @@
 #ifdef VBOX
-/* $Id: DevAPIC.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: DevAPIC.cpp 34377 2008-08-08 22:32:08Z bird $ */
 /** @file
  * Advanced Programmable Interrupt Controller (APIC) Device and
  * I/O Advanced Programmable Interrupt Controller (IO-APIC) Device.
@@ -61,28 +61,21 @@
  * Acquires the PDM lock. This is a NOP if locking is disabled. */
 /** @def IOAPIC_UNLOCK
  * Releases the PDM lock. This is a NOP if locking is disabled. */
-#ifdef VBOX_WITH_PDM_LOCK
-# define APIC_LOCK(pThis, rc) \
+#define APIC_LOCK(pThis, rc) \
     do { \
-        int rc2 = (pThis)->CTXALLSUFF(pApicHlp)->pfnLock((pThis)->CTXSUFF(pDevIns), rc); \
+        int rc2 = (pThis)->CTX_SUFF(pApicHlp)->pfnLock((pThis)->CTX_SUFF(pDevIns), rc); \
         if (rc2 != VINF_SUCCESS) \
             return rc2; \
     } while (0)
-# define APIC_UNLOCK(pThis) \
-    (pThis)->CTXALLSUFF(pApicHlp)->pfnUnlock((pThis)->CTXSUFF(pDevIns))
-# define IOAPIC_LOCK(pThis, rc) \
+#define APIC_UNLOCK(pThis) \
+    (pThis)->CTX_SUFF(pApicHlp)->pfnUnlock((pThis)->CTX_SUFF(pDevIns))
+#define IOAPIC_LOCK(pThis, rc) \
     do { \
-        int rc2 = (pThis)->CTXALLSUFF(pIoApicHlp)->pfnLock((pThis)->CTXSUFF(pDevIns), rc); \
+        int rc2 = (pThis)->CTX_SUFF(pIoApicHlp)->pfnLock((pThis)->CTX_SUFF(pDevIns), rc); \
         if (rc2 != VINF_SUCCESS) \
             return rc2; \
     } while (0)
-# define IOAPIC_UNLOCK(pThis) (pThis)->CTXALLSUFF(pIoApicHlp)->pfnUnlock((pThis)->CTXSUFF(pDevIns))
-#else /* !VBOX_WITH_PDM_LOCK */
-# define APIC_LOCK(pThis, rc)   do { } while (0)
-# define APIC_UNLOCK(pThis)     do { } while (0)
-# define IOAPIC_LOCK(pThis, rc) do { } while (0)
-# define IOAPIC_UNLOCK(pThis)   do { } while (0)
-#endif /* !VBOX_WITH_PDM_LOCK */
+#define IOAPIC_UNLOCK(pThis) (pThis)->CTX_SUFF(pIoApicHlp)->pfnUnlock((pThis)->CTX_SUFF(pDevIns))
 
 
 #endif /* VBOX */
@@ -189,21 +182,26 @@ typedef struct APICState {
 
     struct APICState *next_apic;
 #else /* VBOX */
-    /** HC pointer to the device instance. */
-    R3R0PTRTYPE(PPDMDEVINS) pDevInsHC;
-    /** Pointer to the APIC HC helpers. */
-    PCPDMAPICHLPR3          pApicHlpR3;
-    /** The APIC timer - HC Ptr. */
-    R3R0PTRTYPE(PTMTIMER)   pTimerHC;
-    /** Pointer to the APIC R0 helpers. */
-    PCPDMAPICHLPR0          pApicHlpR0;
+    /** The device instance - R3 Ptr. */
+    PPDMDEVINSR3    pDevInsR3;
+    /** The APIC helpers - R3 Ptr. */
+    PCPDMAPICHLPR3  pApicHlpR3;
+    /** The APIC timer - R3 Ptr. */
+    PTMTIMERR3      pTimerR3;
 
-    /** GC pointer to the device instance. */
-    PPDMDEVINSGC    pDevInsGC;
-    /** Pointer to the APIC GC helpers. */
-    PCPDMAPICHLPGC  pApicHlpGC;
-    /** The APIC timer - GC Ptr. */
-    PTMTIMERGC      pTimerGC;
+    /** The device instance - R0 Ptr. */
+    PPDMDEVINSR0    pDevInsR0;
+    /** The APIC helpers - R0 Ptr. */
+    PCPDMAPICHLPR0  pApicHlpR0;
+    /** The APIC timer - R0 Ptr. */
+    PTMTIMERR0      pTimerR0;
+
+    /** The device instance - RC Ptr. */
+    PPDMDEVINSRC    pDevInsRC;
+    /** The APIC helpers - RC Ptr. */
+    PCPDMAPICHLPRC  pApicHlpRC;
+    /** The APIC timer - RC Ptr. */
+    PTMTIMERRC      pTimerRC;
 
     /** Number of attempts made to optimize TPR accesses. */
     uint32_t        ulTPRPatchAttempts;
@@ -226,21 +224,21 @@ struct IOAPICState {
     uint64_t ioredtbl[IOAPIC_NUM_PINS];
 
 #ifdef VBOX
-    /** HC pointer to the device instance. */
-    R3R0PTRTYPE(PPDMDEVINS) pDevInsHC;
-    /** Pointer to the IOAPIC R3 helpers. */
+    /** The device instance - R3 Ptr. */
+    PPDMDEVINSR3            pDevInsR3;
+    /** The IOAPIC helpers - R3 Ptr. */
     PCPDMIOAPICHLPR3        pIoApicHlpR3;
 
-    /** GC pointer to the device instance. */
-    PPDMDEVINSGC            pDevInsGC;
-    /** Pointer to the IOAPIC GC helpers. */
-    PCPDMIOAPICHLPGC        pIoApicHlpGC;
-
-    /** Pointer to the IOAPIC R0 helpers. */
+    /** The device instance - R0 Ptr. */
+    PPDMDEVINSR0            pDevInsR0;
+    /** The IOAPIC helpers - R0 Ptr. */
     PCPDMIOAPICHLPR0        pIoApicHlpR0;
-# if HC_ARCH_BITS == 32
-    uint32_t                Alignment0;
-# endif
+
+    /** The device instance - RC Ptr. */
+    PPDMDEVINSRC            pDevInsRC;
+    /** The IOAPIC helpers - RC Ptr. */
+    PCPDMIOAPICHLPRC        pIoApicHlpRC;
+
 # ifdef VBOX_WITH_STATISTICS
     STAMCOUNTER StatMMIOReadGC;
     STAMCOUNTER StatMMIOReadHC;
@@ -273,6 +271,7 @@ __BEGIN_DECLS
 PDMBOTHCBDECL(int)  apicMMIORead(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhysAddr, void *pv, unsigned cb);
 PDMBOTHCBDECL(int)  apicMMIOWrite(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhysAddr, void *pv, unsigned cb);
 PDMBOTHCBDECL(int)  apicGetInterrupt(PPDMDEVINS pDevIns);
+PDMBOTHCBDECL(bool) apicHasPendingIrq(PPDMDEVINS pDevIns);
 PDMBOTHCBDECL(void) apicSetBase(PPDMDEVINS pDevIns, uint64_t val);
 PDMBOTHCBDECL(uint64_t) apicGetBase(PPDMDEVINS pDevIns);
 PDMBOTHCBDECL(void) apicSetTPR(PPDMDEVINS pDevIns, uint8_t val);
@@ -301,6 +300,7 @@ static void apic_bus_deliver(APICState *s, uint32_t deliver_bitmask, uint8_t del
 {
 #endif /* VBOX */
 
+    LogFlow(("apic_bus_deliver mask=%x mode=%x vector=%x polarity=%x trigger_mode=%x\n", deliver_bitmask, delivery_mode, vector_num, polarity, trigger_mode));
     switch (delivery_mode) {
         case APIC_DM_LOWPRI:
         case APIC_DM_FIXED:
@@ -363,7 +363,7 @@ void cpu_set_apic_base(CPUState *env, uint64_t val)
 #else /* VBOX */
 PDMBOTHCBDECL(void) apicSetBase(PPDMDEVINS pDevIns, uint64_t val)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
     Log(("cpu_set_apic_base: %016RX64\n", val));
 
     /** @todo If this change is valid immediately, then we should change the MMIO registration! */
@@ -375,8 +375,8 @@ PDMBOTHCBDECL(void) apicSetBase(PPDMDEVINS pDevIns, uint64_t val)
         s->spurious_vec &= ~APIC_SV_ENABLE;
 
         /* Clear any pending APIC interrupt action flag. */
-        s->CTXALLSUFF(pApicHlp)->pfnClearInterruptFF(s->CTXSUFF(pDevIns));
-        s->CTXALLSUFF(pApicHlp)->pfnChangeFeature(pDevIns, false);
+        s->CTX_SUFF(pApicHlp)->pfnClearInterruptFF(s->CTX_SUFF(pDevIns));
+        s->CTX_SUFF(pApicHlp)->pfnChangeFeature(pDevIns, false);
     }
 }
 #endif  /* VBOX */
@@ -445,22 +445,22 @@ static inline void reset_bit(uint32_t *tab, int index)
 
 PDMBOTHCBDECL(uint64_t) apicGetBase(PPDMDEVINS pDevIns)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
     Log(("apicGetBase: %016llx\n", (uint64_t)s->apicbase));
     return s->apicbase;
 }
 
 PDMBOTHCBDECL(void) apicSetTPR(PPDMDEVINS pDevIns, uint8_t val)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
     LogFlow(("apicSetTPR: val=%#x (trp %#x -> %#x)\n", val, s->tpr, (val & 0x0f) << 4));
     apic_update_tpr(s, (val & 0x0f) << 4);
 }
 
 PDMBOTHCBDECL(uint8_t) apicGetTPR(PPDMDEVINS pDevIns)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
-    LogFlow(("apicGetTPR: returns %#x\n", s->tpr >> 4));
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
+    Log2(("apicGetTPR: returns %#x\n", s->tpr >> 4));
     return s->tpr >> 4;
 }
 
@@ -472,7 +472,7 @@ PDMBOTHCBDECL(void) apicBusDeliverCallback(PPDMDEVINS pDevIns, uint8_t u8Dest, u
                                            uint8_t u8DeliveryMode, uint8_t iVector, uint8_t u8Polarity,
                                            uint8_t u8TriggerMode)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
     LogFlow(("apicBusDeliverCallback: s=%p pDevIns=%p u8Dest=%#x u8DestMode=%#x u8DeliveryMode=%#x iVector=%#x u8Polarity=%#x u8TriggerMode=%#x\n",
              s, pDevIns, u8Dest, u8DestMode, u8DeliveryMode, iVector, u8Polarity, u8TriggerMode));
     apic_bus_deliver(s, apic_get_delivery_bitmask(s, u8Dest, u8DestMode),
@@ -513,6 +513,16 @@ static int apic_get_ppr(APICState *s)
     return ppr;
 }
 
+static int apic_get_ppr_zero_tpr(APICState *s)
+{
+    int isrv;
+
+    isrv = get_highest_priority_int(s->isr);
+    if (isrv < 0)
+        isrv = 0;
+    return isrv;
+}
+
 static int apic_get_arb_pri(APICState *s)
 {
     /* XXX: arbitration */
@@ -527,7 +537,7 @@ static bool apic_update_irq(APICState *s)
 #ifdef VBOX
     {
         /* Clear any pending APIC interrupt action flag. */
-        s->CTXALLSUFF(pApicHlp)->pfnClearInterruptFF(s->CTXSUFF(pDevIns));
+        s->CTX_SUFF(pApicHlp)->pfnClearInterruptFF(s->CTX_SUFF(pDevIns));
         return false;
     }
 #else
@@ -542,12 +552,33 @@ static bool apic_update_irq(APICState *s)
 #ifndef VBOX
     cpu_interrupt(s->cpu_env, CPU_INTERRUPT_HARD);
 #else
-    s->CTXALLSUFF(pApicHlp)->pfnSetInterruptFF(s->CTXSUFF(pDevIns));
+    s->CTX_SUFF(pApicHlp)->pfnSetInterruptFF(s->CTX_SUFF(pDevIns));
     return true;
 #endif
 }
 
 #ifdef VBOX
+
+/* Check if the APIC has a pending interrupt/if a TPR change would active one. */
+PDMBOTHCBDECL(bool) apicHasPendingIrq(PPDMDEVINS pDevIns)
+{
+    int irrv, ppr;
+
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
+    if (!s)
+        return false;
+
+    irrv = get_highest_priority_int(s->irr);
+    if (irrv < 0)
+        return false;
+
+    ppr = apic_get_ppr_zero_tpr(s);
+    if (ppr && (irrv & 0xf0) <= (ppr & 0xf0))
+        return false;
+
+    return true;
+}
+
 static void apic_update_tpr(APICState *s, uint32_t val)
 {
     bool fIrqIsActive = false;
@@ -562,13 +593,14 @@ static void apic_update_tpr(APICState *s, uint32_t val)
     {
         Log(("apic_update_tpr: deactivate interrupt that was masked by the TPR update (%x)\n", val));
         STAM_COUNTER_INC(&s->StatClearedActiveIrq);
-        s->CTXALLSUFF(pApicHlp)->pfnClearInterruptFF(s->CTXSUFF(pDevIns));
+        s->CTX_SUFF(pApicHlp)->pfnClearInterruptFF(s->CTX_SUFF(pDevIns));
     }
 }
 #endif
 
 static void apic_set_irq(APICState *s, int vector_num, int trigger_mode)
 {
+    LogFlow(("apic_set_irq vector=%x, trigger_mode=%x\n", vector_num, trigger_mode));
     set_bit(s->irr, vector_num);
     if (trigger_mode)
         set_bit(s->tmr, vector_num);
@@ -584,6 +616,7 @@ static void apic_eoi(APICState *s)
     if (isrv < 0)
         return;
     reset_bit(s->isr, isrv);
+    LogFlow(("apic_eoi isrv=%x\n", isrv));
     /* XXX: send the EOI packet to the APIC bus to allow the I/O APIC to
             set the remote IRR bit for level triggered interrupts. */
     apic_update_irq(s);
@@ -657,6 +690,7 @@ static void apic_deliver(APICState *s, uint8_t dest, uint8_t dest_mode,
     APICState *apic_iter;
 #endif /* !VBOX */
 
+    LogFlow(("apic_deliver dest=%x dest_mode=%x delivery_mode=%x vector_num=%x polarity=%x trigger_mode=%x\n", dest, dest_mode, delivery_mode, vector_num, polarity, trigger_mode));
     switch (delivery_mode) {
         case APIC_DM_LOWPRI:
             /* XXX: serch for focus processor, arbitration */
@@ -732,7 +766,7 @@ int apic_get_interrupt(CPUState *env)
 #else /* VBOX */
 PDMBOTHCBDECL(int) apicGetInterrupt(PPDMDEVINS pDevIns)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
 #endif /* VBOX */
     int intno;
 
@@ -772,7 +806,7 @@ static uint32_t apic_get_current_count(APICState *s)
     d = (qemu_get_clock(vm_clock) - s->initial_count_load_time) >>
         s->count_shift;
 #else /* VBOX */
-    d = (TMTimerGet(s->CTXSUFF(pTimer)) - s->initial_count_load_time) >>
+    d = (TMTimerGet(s->CTX_SUFF(pTimer)) - s->initial_count_load_time) >>
         s->count_shift;
 #endif /* VBOX */
     if (s->lvt[APIC_LVT_TIMER] & APIC_LVT_TIMER_PERIODIC) {
@@ -805,7 +839,7 @@ static void apic_timer_update(APICState *s, int64_t current_time)
 #ifndef VBOX
         qemu_mod_timer(s->timer, next_time);
 #else
-        TMTimerSet(s->CTXSUFF(pTimer), next_time);
+        TMTimerSet(s->CTX_SUFF(pTimer), next_time);
 #endif
         s->next_time = next_time;
     } else {
@@ -813,7 +847,7 @@ static void apic_timer_update(APICState *s, int64_t current_time)
 #ifndef VBOX
         qemu_del_timer(s->timer);
 #else
-        TMTimerStop(s->CTXSUFF(pTimer));
+        TMTimerStop(s->CTX_SUFF(pTimer));
 #endif
     }
 }
@@ -826,13 +860,12 @@ static void apic_timer(void *opaque)
 #else /* VBOX */
 static DECLCALLBACK(void) apicTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
-# ifdef VBOX_WITH_PDM_LOCK
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
     s->pApicHlpR3->pfnLock(pDevIns, VERR_INTERNAL_ERROR);
-# endif
 #endif /* VBOX */
 
     if (!(s->lvt[APIC_LVT_TIMER] & APIC_LVT_MASKED)) {
+        LogFlow(("apic_timer: trigger irq\n"));
         apic_set_irq(s, s->lvt[APIC_LVT_TIMER] & 0xff, APIC_TRIGGER_EDGE);
     }
     apic_timer_update(s, s->next_time);
@@ -1068,7 +1101,7 @@ static int apic_mem_writel(APICState *s, target_phys_addr_t addr, uint32_t val)
 #ifndef VBOX
                 apic_timer_update(s, qemu_get_clock(vm_clock));
 #else /* VBOX */
-                apic_timer_update(s, TMTimerGet(s->CTXSUFF(pTimer)));
+                apic_timer_update(s, TMTimerGet(s->CTX_SUFF(pTimer)));
 #endif /* VBOX*/
         }
         break;
@@ -1077,7 +1110,7 @@ static int apic_mem_writel(APICState *s, target_phys_addr_t addr, uint32_t val)
 #ifndef VBOX
         s->initial_count_load_time = qemu_get_clock(vm_clock);
 #else /* VBOX */
-        s->initial_count_load_time = TMTimerGet(s->CTXSUFF(pTimer));
+        s->initial_count_load_time = TMTimerGet(s->CTX_SUFF(pTimer));
 #endif /* VBOX*/
         apic_timer_update(s, s->initial_count_load_time);
         break;
@@ -1181,7 +1214,7 @@ static void apic_reset(void *opaque)
 {
     APICState *s = (APICState*)opaque;
 #ifdef VBOX
-    TMTimerStop(s->CTXSUFF(pTimer));
+    TMTimerStop(s->CTX_SUFF(pTimer));
 
     /* malc, I've removed the initing duplicated in apic_init_ipi(). This
      * arb_id was left over.. */
@@ -1189,7 +1222,7 @@ static void apic_reset(void *opaque)
 
     /* Reset should re-enable the APIC. */
     s->apicbase = 0xfee00000 | MSR_IA32_APICBASE_BSP | MSR_IA32_APICBASE_ENABLE;
-    s->pApicHlpR3->pfnChangeFeature(s->pDevInsHC, true);
+    s->pApicHlpR3->pfnChangeFeature(s->pDevInsR3, true);
 
 #endif /* VBOX */
     apic_init_ipi(s);
@@ -1285,13 +1318,13 @@ static void ioapic_service(IOAPICState *s)
                 apic_bus_deliver(apic_get_delivery_bitmask(dest, dest_mode),
                                  delivery_mode, vector, polarity, trig_mode);
 #else /* VBOX */
-                s->CTXALLSUFF(pIoApicHlp)->pfnApicBusDeliver(s->CTXSUFF(pDevIns),
-                                                             dest,
-                                                             dest_mode,
-                                                             delivery_mode,
-                                                             vector,
-                                                             polarity,
-                                                             trig_mode);
+                s->CTX_SUFF(pIoApicHlp)->pfnApicBusDeliver(s->CTX_SUFF(pDevIns),
+                                                           dest,
+                                                           dest_mode,
+                                                           delivery_mode,
+                                                           vector,
+                                                           polarity,
+                                                           trig_mode);
 #endif /* VBOX */
             }
         }
@@ -1438,7 +1471,7 @@ static void ioapic_reset(void *opaque)
 {
     IOAPICState *s = (IOAPICState*)opaque;
 #ifdef VBOX
-    PPDMDEVINSR3        pDevIns    = s->pDevInsHC;
+    PPDMDEVINSR3        pDevIns    = s->pDevInsR3;
     PCPDMIOAPICHLPR3    pIoApicHlp = s->pIoApicHlpR3;
 #endif
     int i;
@@ -1450,13 +1483,14 @@ static void ioapic_reset(void *opaque)
 #ifdef VBOX
     if (pDevIns)
     {
-        s->pDevInsHC = pDevIns;
-        s->pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
+        s->pDevInsR3 = pDevIns;
+        s->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
+        s->pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
     }
     if (pIoApicHlp)
     {
         s->pIoApicHlpR3 = pIoApicHlp;
-        s->pIoApicHlpGC = s->pIoApicHlpR3->pfnGetGCHelpers(pDevIns);
+        s->pIoApicHlpRC = s->pIoApicHlpR3->pfnGetRCHelpers(pDevIns);
         s->pIoApicHlpR0 = s->pIoApicHlpR3->pfnGetR0Helpers(pDevIns);
     }
 #endif
@@ -1506,7 +1540,7 @@ IOAPICState *ioapic_init(void)
 
 PDMBOTHCBDECL(int) apicMMIORead(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhysAddr, void *pv, unsigned cb)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
 
     STAM_COUNTER_INC(&CTXSUFF(s->StatMMIORead));
     switch (cb)
@@ -1552,7 +1586,7 @@ PDMBOTHCBDECL(int) apicMMIORead(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhy
 
 PDMBOTHCBDECL(int) apicMMIOWrite(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhysAddr, void *pv, unsigned cb)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
 
     STAM_COUNTER_INC(&CTXSUFF(s->StatMMIOWrite));
     switch (cb)
@@ -1585,9 +1619,9 @@ PDMBOTHCBDECL(int) apicMMIOWrite(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPh
  */
 static DECLCALLBACK(int) apicSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
     apic_save(pSSMHandle, s);
-    return TMR3TimerSave(s->CTXSUFF(pTimer), pSSMHandle);
+    return TMR3TimerSave(s->CTX_SUFF(pTimer), pSSMHandle);
 }
 
 /**
@@ -1595,12 +1629,12 @@ static DECLCALLBACK(int) apicSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
  */
 static DECLCALLBACK(int) apicLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, uint32_t u32Version)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
     if (apic_load(pSSMHandle, s, u32Version)) {
         AssertFailed();
         return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
     }
-    return TMR3TimerLoad(s->CTXSUFF(pTimer), pSSMHandle);
+    return TMR3TimerLoad(s->CTX_SUFF(pTimer), pSSMHandle);
 }
 
 /**
@@ -1608,10 +1642,8 @@ static DECLCALLBACK(int) apicLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle,
  */
 static DECLCALLBACK(void) apicReset(PPDMDEVINS pDevIns)
 {
-    APICState *s = PDMINS2DATA(pDevIns, APICState *);
-#ifdef VBOX_WITH_PDM_LOCK
+    APICState *s = PDMINS_2_DATA(pDevIns, APICState *);
     s->pApicHlpR3->pfnLock(pDevIns, VERR_INTERNAL_ERROR);
-#endif
     apic_reset(s);
     /* Clear any pending APIC interrupt action flag. */
     s->pApicHlpR3->pfnClearInterruptFF(pDevIns);
@@ -1623,10 +1655,10 @@ static DECLCALLBACK(void) apicReset(PPDMDEVINS pDevIns)
  */
 static DECLCALLBACK(void) apicRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
 {
-    APICState *pData = PDMINS2DATA(pDevIns, APICState *);
-    pData->pDevInsGC  = PDMDEVINS_2_GCPTR(pDevIns);
-    pData->pApicHlpGC = pData->pApicHlpR3->pfnGetGCHelpers(pDevIns);
-    pData->pTimerGC   = TMTimerGCPtr(pData->CTXSUFF(pTimer));
+    APICState *pThis = PDMINS_2_DATA(pDevIns, APICState *);
+    pThis->pDevInsRC  = PDMDEVINS_2_RCPTR(pDevIns);
+    pThis->pApicHlpRC = pThis->pApicHlpR3->pfnGetRCHelpers(pDevIns);
+    pThis->pTimerRC   = TMTimerRCPtr(pThis->CTX_SUFF(pTimer));
 }
 
 /**
@@ -1634,7 +1666,7 @@ static DECLCALLBACK(void) apicRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
  */
 static DECLCALLBACK(int) apicConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNODE pCfgHandle)
 {
-    APICState      *pData = PDMINS2DATA(pDevIns, APICState *);
+    APICState      *pThis = PDMINS_2_DATA(pDevIns, APICState *);
     PDMAPICREG      ApicReg;
     int             rc;
     int             i;
@@ -1646,69 +1678,67 @@ static DECLCALLBACK(int) apicConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     /*
      * Validate configuration.
      */
-    if (!CFGMR3AreValuesValid(pCfgHandle, "IOAPIC\0GCEnabled\0R0Enabled\0"))
+    if (!CFGMR3AreValuesValid(pCfgHandle, "IOAPIC\0" "GCEnabled\0" "R0Enabled\0"))
         return VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES;
 
-    rc = CFGMR3QueryBool (pCfgHandle, "IOAPIC", &fIOAPIC);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fIOAPIC = true;
-    else if (VBOX_FAILURE (rc))
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "IOAPIC", &fIOAPIC, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to read \"IOAPIC\""));
 
-    rc = CFGMR3QueryBool(pCfgHandle, "GCEnabled", &fGCEnabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fGCEnabled = true;
-    else
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "GCEnabled", &fGCEnabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to query boolean value \"GCEnabled\""));
-    Log(("APIC: fGCEnabled=%d\n", fGCEnabled));
 
-    rc = CFGMR3QueryBool(pCfgHandle, "R0Enabled", &fR0Enabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fR0Enabled = true;
-    else
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "R0Enabled", &fR0Enabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to query boolean value \"R0Enabled\""));
-    Log(("APIC: fR0Enabled=%d\n", fR0Enabled));
+    Log(("APIC: fR0Enabled=%RTbool fGCEnabled=%RTbool fIOAPIC=%RTbool\n", fR0Enabled, fGCEnabled, fIOAPIC));
 
     /*
      * Init the data.
      */
-    pData->pDevInsHC = pDevIns;
-    pData->pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
-    pData->apicbase  = 0xfee00000 | MSR_IA32_APICBASE_BSP | MSR_IA32_APICBASE_ENABLE;
+    pThis->pDevInsR3 = pDevIns;
+    pThis->pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
+    pThis->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
+    pThis->apicbase  = UINT32_C(0xfee00000) | MSR_IA32_APICBASE_BSP | MSR_IA32_APICBASE_ENABLE;
     for (i = 0; i < APIC_LVT_NB; i++)
-        pData->lvt[i] = 1 << 16; /* mask LVT */
-    pData->spurious_vec = 0xff;
+        pThis->lvt[i] = 1 << 16; /* mask LVT */
+    pThis->spurious_vec = 0xff;
 
     /*
      * Register the APIC.
      */
-    ApicReg.u32Version          = PDM_APICREG_VERSION;
-    ApicReg.pfnGetInterruptHC   = apicGetInterrupt;
-    ApicReg.pfnSetBaseHC        = apicSetBase;
-    ApicReg.pfnGetBaseHC        = apicGetBase;
-    ApicReg.pfnSetTPRHC         = apicSetTPR;
-    ApicReg.pfnGetTPRHC         = apicGetTPR;
-    ApicReg.pfnBusDeliverHC     = apicBusDeliverCallback;
+    ApicReg.u32Version              = PDM_APICREG_VERSION;
+    ApicReg.pfnGetInterruptR3       = apicGetInterrupt;
+    ApicReg.pfnHasPendingIrqR3      = apicHasPendingIrq;
+    ApicReg.pfnSetBaseR3            = apicSetBase;
+    ApicReg.pfnGetBaseR3            = apicGetBase;
+    ApicReg.pfnSetTPRR3             = apicSetTPR;
+    ApicReg.pfnGetTPRR3             = apicGetTPR;
+    ApicReg.pfnBusDeliverR3         = apicBusDeliverCallback;
     if (fGCEnabled) {
-        ApicReg.pszGetInterruptGC   = "apicGetInterrupt";
-        ApicReg.pszSetBaseGC        = "apicSetBase";
-        ApicReg.pszGetBaseGC        = "apicGetBase";
-        ApicReg.pszSetTPRGC         = "apicSetTPR";
-        ApicReg.pszGetTPRGC         = "apicGetTPR";
-        ApicReg.pszBusDeliverGC     = "apicBusDeliverCallback";
+        ApicReg.pszGetInterruptRC   = "apicGetInterrupt";
+        ApicReg.pszHasPendingIrqRC  = "apicHasPendingIrq";
+        ApicReg.pszSetBaseRC        = "apicSetBase";
+        ApicReg.pszGetBaseRC        = "apicGetBase";
+        ApicReg.pszSetTPRRC         = "apicSetTPR";
+        ApicReg.pszGetTPRRC         = "apicGetTPR";
+        ApicReg.pszBusDeliverRC     = "apicBusDeliverCallback";
     } else {
-        ApicReg.pszGetInterruptGC   = NULL;
-        ApicReg.pszSetBaseGC        = NULL;
-        ApicReg.pszGetBaseGC        = NULL;
-        ApicReg.pszSetTPRGC         = NULL;
-        ApicReg.pszGetTPRGC         = NULL;
-        ApicReg.pszBusDeliverGC     = NULL;
+        ApicReg.pszGetInterruptRC   = NULL;
+        ApicReg.pszHasPendingIrqRC  = NULL;
+        ApicReg.pszSetBaseRC        = NULL;
+        ApicReg.pszGetBaseRC        = NULL;
+        ApicReg.pszSetTPRRC         = NULL;
+        ApicReg.pszGetTPRRC         = NULL;
+        ApicReg.pszBusDeliverRC     = NULL;
     }
     if (fR0Enabled) {
         ApicReg.pszGetInterruptR0   = "apicGetInterrupt";
+        ApicReg.pszHasPendingIrqR0  = "apicHasPendingIrq";
         ApicReg.pszSetBaseR0        = "apicSetBase";
         ApicReg.pszGetBaseR0        = "apicGetBase";
         ApicReg.pszSetTPRR0         = "apicSetTPR";
@@ -1716,6 +1746,7 @@ static DECLCALLBACK(int) apicConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
         ApicReg.pszBusDeliverR0     = "apicBusDeliverCallback";
     } else {
         ApicReg.pszGetInterruptR0   = NULL;
+        ApicReg.pszHasPendingIrqR0  = NULL;
         ApicReg.pszSetBaseR0        = NULL;
         ApicReg.pszGetBaseR0        = NULL;
         ApicReg.pszSetTPRR0         = NULL;
@@ -1724,13 +1755,12 @@ static DECLCALLBACK(int) apicConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     }
 
     Assert(pDevIns->pDevHlp->pfnAPICRegister);
-    rc = pDevIns->pDevHlp->pfnAPICRegister(pDevIns, &ApicReg, &pData->pApicHlpR3);
-    if (VBOX_FAILURE(rc))
+    rc = pDevIns->pDevHlp->pfnAPICRegister(pDevIns, &ApicReg, &pThis->pApicHlpR3);
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("APICRegister -> %Vrc\n", rc));
+        AssertLogRelMsgFailed(("APICRegister -> %Rrc\n", rc));
         return rc;
     }
-    pData->pApicHlpGC = pData->pApicHlpR3->pfnGetGCHelpers(pDevIns);
 
     /*
      * The the CPUID feature bit.
@@ -1748,31 +1778,33 @@ static DECLCALLBACK(int) apicConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
                 && u32Edx == X86_CPUID_VENDOR_AMD_EDX   /* AuthenticAMD */))
         {
             LogRel(("Activating Local APIC\n"));
-            pData->pApicHlpR3->pfnChangeFeature(pDevIns, true);
+            pThis->pApicHlpR3->pfnChangeFeature(pDevIns, true);
         }
     }
 
     /*
      * Register the MMIO range.
      */
-    rc = PDMDevHlpMMIORegister(pDevIns, pData->apicbase & ~0xfff, 0x1000, pData,
+    rc = PDMDevHlpMMIORegister(pDevIns, pThis->apicbase & ~0xfff, 0x1000, pThis,
                                apicMMIOWrite, apicMMIORead, NULL, "APIC Memory");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     if (fGCEnabled) {
-        rc = PDMDevHlpMMIORegisterGC(pDevIns, pData->apicbase & ~0xfff, 0x1000, 0,
+        pThis->pApicHlpRC = pThis->pApicHlpR3->pfnGetRCHelpers(pDevIns);
+
+        rc = PDMDevHlpMMIORegisterGC(pDevIns, pThis->apicbase & ~0xfff, 0x1000, 0,
                                      "apicMMIOWrite", "apicMMIORead", NULL);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
     if (fR0Enabled) {
-        pData->pApicHlpR0 = pData->pApicHlpR3->pfnGetR0Helpers(pDevIns);
+        pThis->pApicHlpR0 = pThis->pApicHlpR3->pfnGetR0Helpers(pDevIns);
 
-        rc = PDMDevHlpMMIORegisterR0(pDevIns, pData->apicbase & ~0xfff, 0x1000, 0,
+        rc = PDMDevHlpMMIORegisterR0(pDevIns, pThis->apicbase & ~0xfff, 0x1000, 0,
                                      "apicMMIOWrite", "apicMMIORead", NULL);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
@@ -1780,28 +1812,29 @@ static DECLCALLBACK(int) apicConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
      * Create the APIC timer.
      */
     rc = PDMDevHlpTMTimerCreate(pDevIns, TMCLOCK_VIRTUAL_SYNC, apicTimer,
-                                "APIC Timer", &pData->CTXSUFF(pTimer));
-    if (VBOX_FAILURE(rc))
+                                "APIC Timer", &pThis->CTX_SUFF(pTimer));
+    if (RT_FAILURE(rc))
         return rc;
-    pData->pTimerGC = TMTimerGCPtr(pData->CTXSUFF(pTimer));
+    pThis->pTimerR0 = TMTimerR0Ptr(pThis->CTX_SUFF(pTimer));
+    pThis->pTimerRC = TMTimerRCPtr(pThis->CTX_SUFF(pTimer));
 
     /*
      * Saved state.
      */
     rc = PDMDevHlpSSMRegister(pDevIns, pDevIns->pDevReg->szDeviceName, iInstance, 1 /* version */,
-                              sizeof(*pData), NULL, apicSaveExec, NULL, NULL, apicLoadExec, NULL);
-    if (VBOX_FAILURE(rc))
+                              sizeof(*pThis), NULL, apicSaveExec, NULL, NULL, apicLoadExec, NULL);
+    if (RT_FAILURE(rc))
         return rc;
 
 #ifdef VBOX_WITH_STATISTICS
     /*
      * Statistics.
      */
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatMMIOReadGC,     STAMTYPE_COUNTER,  "/PDM/APIC/MMIOReadGC",   STAMUNIT_OCCURENCES, "Number of APIC MMIO reads in GC.");
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatMMIOReadHC,     STAMTYPE_COUNTER,  "/PDM/APIC/MMIOReadHC",   STAMUNIT_OCCURENCES, "Number of APIC MMIO reads in HC.");
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatMMIOWriteGC,    STAMTYPE_COUNTER,  "/PDM/APIC/MMIOWriteGC",  STAMUNIT_OCCURENCES, "Number of APIC MMIO writes in GC.");
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatMMIOWriteHC,    STAMTYPE_COUNTER,  "/PDM/APIC/MMIOWriteHC",  STAMUNIT_OCCURENCES, "Number of APIC MMIO writes in HC.");
-    PDMDevHlpSTAMRegister(pDevIns, &pData->StatClearedActiveIrq, STAMTYPE_COUNTER,  "/PDM/APIC/Masked/ActiveIRQ",  STAMUNIT_OCCURENCES, "Number of cleared irqs.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatMMIOReadGC,     STAMTYPE_COUNTER,  "/PDM/APIC/MMIOReadGC",   STAMUNIT_OCCURENCES, "Number of APIC MMIO reads in GC.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatMMIOReadHC,     STAMTYPE_COUNTER,  "/PDM/APIC/MMIOReadHC",   STAMUNIT_OCCURENCES, "Number of APIC MMIO reads in HC.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatMMIOWriteGC,    STAMTYPE_COUNTER,  "/PDM/APIC/MMIOWriteGC",  STAMUNIT_OCCURENCES, "Number of APIC MMIO writes in GC.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatMMIOWriteHC,    STAMTYPE_COUNTER,  "/PDM/APIC/MMIOWriteHC",  STAMUNIT_OCCURENCES, "Number of APIC MMIO writes in HC.");
+    PDMDevHlpSTAMRegister(pDevIns, &pThis->StatClearedActiveIrq, STAMTYPE_COUNTER,  "/PDM/APIC/Masked/ActiveIRQ",  STAMUNIT_OCCURENCES, "Number of cleared irqs.");
 #endif
 
     return VINF_SUCCESS;
@@ -1864,7 +1897,7 @@ const PDMDEVREG g_DeviceAPIC =
 
 PDMBOTHCBDECL(int) ioapicMMIORead(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhysAddr, void *pv, unsigned cb)
 {
-    IOAPICState *s = PDMINS2DATA(pDevIns, IOAPICState *);
+    IOAPICState *s = PDMINS_2_DATA(pDevIns, IOAPICState *);
     IOAPIC_LOCK(s, VINF_IOM_HC_MMIO_READ);
 
     STAM_COUNTER_INC(&CTXSUFF(s->StatMMIORead));
@@ -1893,7 +1926,7 @@ PDMBOTHCBDECL(int) ioapicMMIORead(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCP
 
 PDMBOTHCBDECL(int) ioapicMMIOWrite(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhysAddr, void *pv, unsigned cb)
 {
-    IOAPICState *s = PDMINS2DATA(pDevIns, IOAPICState *);
+    IOAPICState *s = PDMINS_2_DATA(pDevIns, IOAPICState *);
 
     STAM_COUNTER_INC(&CTXSUFF(s->StatMMIOWrite));
     switch (cb)
@@ -1915,7 +1948,7 @@ PDMBOTHCBDECL(int) ioapicMMIOWrite(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GC
 
 PDMBOTHCBDECL(void) ioapicSetIrq(PPDMDEVINS pDevIns, int iIrq, int iLevel)
 {
-    IOAPICState *pThis = PDMINS2DATA(pDevIns, IOAPICState *);
+    IOAPICState *pThis = PDMINS_2_DATA(pDevIns, IOAPICState *);
     STAM_COUNTER_INC(&pThis->CTXSUFF(StatSetIrq));
     LogFlow(("ioapicSetIrq: iIrq=%d iLevel=%d\n", iIrq, iLevel));
     ioapic_set_irq(pThis, iIrq, iLevel);
@@ -1929,7 +1962,7 @@ PDMBOTHCBDECL(void) ioapicSetIrq(PPDMDEVINS pDevIns, int iIrq, int iLevel)
  */
 static DECLCALLBACK(int) ioapicSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
 {
-    IOAPICState *s = PDMINS2DATA(pDevIns, IOAPICState *);
+    IOAPICState *s = PDMINS_2_DATA(pDevIns, IOAPICState *);
     ioapic_save(pSSMHandle, s);
     return VINF_SUCCESS;
 }
@@ -1939,7 +1972,7 @@ static DECLCALLBACK(int) ioapicSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandl
  */
 static DECLCALLBACK(int) ioapicLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, uint32_t u32Version)
 {
-    IOAPICState *s = PDMINS2DATA(pDevIns, IOAPICState *);
+    IOAPICState *s = PDMINS_2_DATA(pDevIns, IOAPICState *);
 
     if (ioapic_load(pSSMHandle, s, u32Version)) {
         AssertFailed();
@@ -1954,10 +1987,8 @@ static DECLCALLBACK(int) ioapicLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandl
  */
 static DECLCALLBACK(void) ioapicReset(PPDMDEVINS pDevIns)
 {
-    IOAPICState *s = PDMINS2DATA(pDevIns, IOAPICState *);
-#ifdef VBOX_WITH_PDM_LOCK
+    IOAPICState *s = PDMINS_2_DATA(pDevIns, IOAPICState *);
     s->pIoApicHlpR3->pfnLock(pDevIns, VERR_INTERNAL_ERROR);
-#endif
     ioapic_reset(s);
     IOAPIC_UNLOCK(s);
 }
@@ -1967,9 +1998,9 @@ static DECLCALLBACK(void) ioapicReset(PPDMDEVINS pDevIns)
  */
 static DECLCALLBACK(void) ioapicRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
 {
-    IOAPICState *s = PDMINS2DATA(pDevIns, IOAPICState *);
-    s->pDevInsGC    = PDMDEVINS_2_GCPTR(pDevIns);
-    s->pIoApicHlpGC = s->pIoApicHlpR3->pfnGetGCHelpers(pDevIns);
+    IOAPICState *s = PDMINS_2_DATA(pDevIns, IOAPICState *);
+    s->pDevInsRC    = PDMDEVINS_2_RCPTR(pDevIns);
+    s->pIoApicHlpRC = s->pIoApicHlpR3->pfnGetRCHelpers(pDevIns);
 }
 
 /**
@@ -1977,7 +2008,7 @@ static DECLCALLBACK(void) ioapicRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta
  */
 static DECLCALLBACK(int) ioapicConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMNODE pCfgHandle)
 {
-    IOAPICState *s = PDMINS2DATA(pDevIns, IOAPICState *);
+    IOAPICState *s = PDMINS_2_DATA(pDevIns, IOAPICState *);
     PDMIOAPICREG IoApicReg;
     bool         fGCEnabled;
     bool         fR0Enabled;
@@ -1988,30 +2019,26 @@ static DECLCALLBACK(int) ioapicConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
     /*
      * Validate and read the configuration.
      */
-    if (!CFGMR3AreValuesValid(pCfgHandle, "GCEnabled\0R0Enabled\0"))
+    if (!CFGMR3AreValuesValid(pCfgHandle, "GCEnabled\0" "R0Enabled\0"))
         return VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES;
 
-    rc = CFGMR3QueryBool(pCfgHandle, "GCEnabled", &fGCEnabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fGCEnabled = true;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "GCEnabled", &fGCEnabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to query boolean value \"GCEnabled\""));
-    Log(("IOAPIC: fGCEnabled=%d\n", fGCEnabled));
 
-    rc = CFGMR3QueryBool(pCfgHandle, "R0Enabled", &fR0Enabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fR0Enabled = true;
-    else if (VBOX_FAILURE(rc))
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "R0Enabled", &fR0Enabled, true);
+    if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to query boolean value \"R0Enabled\""));
-    Log(("IOAPIC: fR0Enabled=%d\n", fR0Enabled));
+    Log(("IOAPIC: fR0Enabled=%RTbool fGCEnabled=%RTbool\n", fR0Enabled, fGCEnabled));
 
     /*
      * Initialize the state data.
      */
-    s->pDevInsHC = pDevIns;
-    s->pDevInsGC = PDMDEVINS_2_GCPTR(pDevIns);
+    s->pDevInsR3 = pDevIns;
+    s->pDevInsR0 = PDMDEVINS_2_R0PTR(pDevIns);
+    s->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
     ioapic_reset(s);
     s->id = 0;
 
@@ -2019,29 +2046,30 @@ static DECLCALLBACK(int) ioapicConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
      * Register the IOAPIC and get helpers.
      */
     IoApicReg.u32Version  = PDM_IOAPICREG_VERSION;
-    IoApicReg.pfnSetIrqHC = ioapicSetIrq;
-    IoApicReg.pszSetIrqGC = fGCEnabled ? "ioapicSetIrq" : NULL;
+    IoApicReg.pfnSetIrqR3 = ioapicSetIrq;
+    IoApicReg.pszSetIrqRC = fGCEnabled ? "ioapicSetIrq" : NULL;
     IoApicReg.pszSetIrqR0 = fR0Enabled ? "ioapicSetIrq" : NULL;
     rc = pDevIns->pDevHlp->pfnIOAPICRegister(pDevIns, &IoApicReg, &s->pIoApicHlpR3);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("IOAPICRegister -> %Vrc\n", rc));
+        AssertMsgFailed(("IOAPICRegister -> %Rrc\n", rc));
         return rc;
     }
-    s->pIoApicHlpGC = s->pIoApicHlpR3->pfnGetGCHelpers(pDevIns);
 
     /*
      * Register MMIO callbacks and saved state.
      */
     rc = PDMDevHlpMMIORegister(pDevIns, 0xfec00000, 0x1000, s,
                                ioapicMMIOWrite, ioapicMMIORead, NULL, "I/O APIC Memory");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     if (fGCEnabled) {
+        s->pIoApicHlpRC = s->pIoApicHlpR3->pfnGetRCHelpers(pDevIns);
+
         rc = PDMDevHlpMMIORegisterGC(pDevIns, 0xfec00000, 0x1000, 0,
                                      "ioapicMMIOWrite", "ioapicMMIORead", NULL);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
@@ -2050,13 +2078,13 @@ static DECLCALLBACK(int) ioapicConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
 
         rc = PDMDevHlpMMIORegisterR0(pDevIns, 0xfec00000, 0x1000, 0,
                                      "ioapicMMIOWrite", "ioapicMMIORead", NULL);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
     rc = PDMDevHlpSSMRegister(pDevIns, pDevIns->pDevReg->szDeviceName, iInstance, 1 /* version */,
                               sizeof(*s), NULL, ioapicSaveExec, NULL, NULL, ioapicLoadExec, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
 #ifdef VBOX_WITH_STATISTICS

@@ -1,5 +1,5 @@
+/* $Id: VBoxDbgStats.cpp 31470 2008-05-31 14:53:24Z bird $ */
 /** @file
- *
  * VBox Debugger GUI - Statistics.
  */
 

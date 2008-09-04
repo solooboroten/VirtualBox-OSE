@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 30740 2008-05-11 18:39:30Z bird $
+# $Id: Makefile.kmk 35116 2008-08-21 15:24:59Z frank $
 ## @file
 # Sub-Makefile for the VBox Additions XFree86 and X.org mouse drivers.
 #
@@ -19,20 +19,25 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../../..
+else
+DEPTH    ?= ../../../../..
 SUB_DEPTH = ../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 
 #
 # vboxmouse_drv
 #
-if1of ($(KBUILD_TARGET),linux l4)
+if1of ($(KBUILD_TARGET), linux)
  SYSMODS += vboxmouse_drv
  vboxmouse_drv_TEMPLATE = VBOXGUESTR3XF86MOD
  vboxmouse_drv_DEFS.linux = linux
+ vboxmouse_drv_DEFS.x86 += __i386__
  vboxmouse_drv_DEFS += \
-	__i386__ _POSIX_C_SOURCE=199309L _POSIX_SOURCE _XOPEN_SOURCE \
+        _POSIX_C_SOURCE=199309L _POSIX_SOURCE _XOPEN_SOURCE \
 	_BSD_SOURCE _SVID_SOURCE _GNU_SOURCE SHAPE XINPUT XKB LBX XAPPGROUP \
 	XCSECURITY TOGCUP XF86BIGFONT DPMSExtension PIXPRIV PANORAMIX RENDER \
 	GCCUSESGAS AVOID_GLYPHBLT PIXPRIV SINGLEDEPTH XFreeXDGA XvExtension \
@@ -40,6 +45,7 @@ if1of ($(KBUILD_TARGET),linux l4)
 	BUILDDEBUG X_BYTE_ORDER=X_LITTLE_ENDIAN DNDEBUG FUNCPROTO=15 NARROWPROTO \
 	IN_MODULE XFree86Module PNP_MOUSE
  vboxmouse_drv_INCS := \
+	$(VBOX_PATH_X11_XFREE_4_2)/exports/include \
 	$(VBOX_PATH_X11_XFREE_4_2)/exports/include/X11 \
 	$(VBOX_PATH_X11_XFREE_4_2)/include \
 	$(VBOX_PATH_X11_XFREE_4_2)/include/extensions \
@@ -100,7 +106,7 @@ vboxmouse_drv_71_SOURCES = \
 #
 DLLS += vboxmouse_drv_14
 vboxmouse_drv_14_TEMPLATE = VBOXGUESTR3XORGMOD
-vboxmouse_drv_14_DEFS := $(vboxmouse_drv_70_DEFS)
+vboxmouse_drv_14_DEFS := $(vboxmouse_drv_70_DEFS) NO_ANSIC
 vboxmouse_drv_14_INCS := \
 	$(VBOX_PATH_X11_XORG_1_4) \
 	$(VBOX_PATH_X11_XORG_1_4)/X11 \

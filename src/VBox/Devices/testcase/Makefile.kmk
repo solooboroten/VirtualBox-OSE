@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 31065 2008-05-21 00:53:53Z bird $
+# $Id: Makefile.kmk 35632 2008-08-29 10:17:27Z ni81036 $
 ## @file
 # Sub-Makefile for the Devices testcases.
 #
@@ -19,8 +19,12 @@
 # additional information or have any questions.
 #
 
-DEPTH ?= ../../../..
+ifdef VBOX_KBUILD_HACKING
+SUB_DEPTH = ../../../..
+else
 SUB_DEPTH = ..
+DEPTH    ?= ../../../..
+endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 #
@@ -42,7 +46,7 @@ TESTING += \
 #
 # Globals
 #
-VBOX_PATH_DEVICES_SRC = $(PATH_SUB_ROOT)
+VBOX_PATH_DEVICES_SRC ?= $(PATH_ROOT)/src/VBox/Devices
 
 #
 # The testcase generator.
@@ -59,6 +63,9 @@ endif
 ifdef VBOX_WITH_E1000
 tstDeviceStructSizeGC_DEFS     += VBOX_WITH_E1000
 endif
+ifdef VBOX_WITH_BUSLOGIC
+tstDeviceStructSizeGC_DEFS     += VBOX_WITH_BUSLOGIC
+endif
 tstDeviceStructSizeGC_SOURCES   = tstDeviceStructSizeGC.cpp
 tstDeviceStructSizeGC_INCS      = \
 	$(VBOX_PATH_DEVICES_SRC) \
@@ -69,7 +76,7 @@ tstDeviceStructSizeGC_INCS      = \
 # The testcase it self.
 #
 PROGRAMS += tstDeviceStructSize
-tstDeviceStructSize_TEMPLATE = VBOXR3EXE
+tstDeviceStructSize_TEMPLATE = VBOXR3AUTOTST
 tstDeviceStructSize_DEFS     =
 ifdef VBOX_WITH_USB
 tstDeviceStructSize_DEFS    += VBOX_WITH_USB IN_USB_GC
@@ -80,12 +87,14 @@ endif
 ifdef VBOX_WITH_E1000
 tstDeviceStructSize_DEFS     += VBOX_WITH_E1000
 endif
+ifdef VBOX_WITH_BUSLOGIC
+tstDeviceStructSize_DEFS     += VBOX_WITH_BUSLOGIC
+endif
 tstDeviceStructSize_INCS     = \
 	$(VBOX_PATH_DEVICES_SRC) \
 	$(VBOX_PATH_DEVICES_SRC)/Bus \
 	$(PATH_TARGET)
 tstDeviceStructSize_SOURCES  = tstDeviceStructSize.cpp
-tstDeviceStructSize_LIBS.l4  = $(LIB_RUNTIME)
 tstDeviceStructSize_CLEAN    = \
 	$(PATH_TARGET)/tstDeviceStructSizeGC.h \
 	$(PATH_TARGET)/tstDeviceStructSizeGC.run
@@ -102,7 +111,7 @@ tstDeviceStructSize.cpp_DEPS = $(PATH_TARGET)/tstDeviceStructSizeGC.h
 # 1&2. Manually dump selected structures and members.
 $(PATH_TARGET)/tstDeviceStructSizeGC.h: $$(INSTARGET_tstDeviceStructSizeGC)
 	$(call MSG_GENERATE,,$@)
-	$(QUIET)$(REDIRECT) -wo $@ -- $(INSTARGET_tstDeviceStructSizeGC)
+	$(QUIET)$(REDIRECT) -wo $@ -- $^
 
 # 3. run it.
 $(PATH_TARGET)/tstDeviceStructSize.run: $$(INSTARGET_tstDeviceStructSize)

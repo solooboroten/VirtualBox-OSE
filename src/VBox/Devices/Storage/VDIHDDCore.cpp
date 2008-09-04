@@ -38,6 +38,17 @@
 #define VDI_IMAGE_DEFAULT_BLOCK_SIZE _1M
 
 /*******************************************************************************
+*   Static Variables                                                           *
+*******************************************************************************/
+
+/** NULL-terminated array of supported file extensions. */
+static const char *const s_apszVdiFileExtensions[] =
+{
+    "vdi",
+    NULL
+};
+
+/*******************************************************************************
 *   Internal Functions                                                         *
 *******************************************************************************/
 static unsigned getPowerOfTwo(unsigned uNumber);
@@ -62,9 +73,10 @@ DECLINLINE(int) vdiError(PVDIIMAGEDESC pImage, int rc, RT_SRC_POS_DECL,
 {
     va_list va;
     va_start(va, pszFormat);
-    if (pImage->pfnError)
-        pImage->pfnError(pImage->pvErrorUser, rc, RT_SRC_POS_ARGS,
-                         pszFormat, va);
+    if (pImage->pInterfaceError && pImage->pInterfaceErrorCallbacks)
+        pImage->pInterfaceErrorCallbacks->pfnError(pImage->pInterfaceError->pvUser,
+                                                   rc, RT_SRC_POS_ARGS,
+                                                   pszFormat, va);
     va_end(va);
     return rc;
 }
@@ -127,7 +139,7 @@ static void vdiInitHeader(PVDIHEADER pHeader, VDIMAGETYPE enmType,
     pHeader->u.v1.u32Type = (uint32_t)(  enmType == VD_IMAGE_TYPE_NORMAL
                                        ? VDI_IMAGE_TYPE_NORMAL
                                        : VDI_IMAGE_TYPE_DIFF);
-    pHeader->u.v1.fFlags = uImageFlags;
+    pHeader->u.v1.fFlags = (uImageFlags & VD_VDI_IMAGE_FLAGS_ZERO_EXPAND) ? 1 : 0;
 #ifdef VBOX_STRICT
     char achZero[VDI_IMAGE_COMMENT_SIZE] = {0};
     Assert(!memcmp(pHeader->u.v1.szComment, achZero, VDI_IMAGE_COMMENT_SIZE));
@@ -314,7 +326,7 @@ static int vdiCreateImage(PVDIIMAGEDESC pImage, VDIMAGETYPE enmType,
                           uint64_t cbSize, unsigned uImageFlags,
                           const char *pszComment,
                           PCPDMMEDIAGEOMETRY pPCHSGeometry,
-                          PCPDMMEDIAGEOMETRY pLCHSGeometry,
+                          PCPDMMEDIAGEOMETRY pLCHSGeometry, PCRTUUID pUuid,
                           PFNVMPROGRESS pfnProgress, void *pvUser,
                           unsigned uPercentStart, unsigned uPercentSpan)
 {
@@ -333,6 +345,10 @@ static int vdiCreateImage(PVDIIMAGEDESC pImage, VDIMAGETYPE enmType,
     }
     Assert(VALID_PTR(pPCHSGeometry));
     Assert(VALID_PTR(pLCHSGeometry));
+
+    pImage->pInterfaceError = VDInterfaceGet(pImage->pVDIfsDisk, VDINTERFACETYPE_ERROR);
+    if (pImage->pInterfaceError)
+        pImage->pInterfaceErrorCallbacks = VDGetInterfaceError(pImage->pInterfaceError);
 
     vdiInitPreHeader(&pImage->PreHeader);
     vdiInitHeader(&pImage->Header, enmType, uImageFlags, pszComment, cbSize, VDI_IMAGE_DEFAULT_BLOCK_SIZE, 0);
@@ -372,7 +388,7 @@ static int vdiCreateImage(PVDIIMAGEDESC pImage, VDIMAGETYPE enmType,
     /* Create image file. */
     rc = RTFileOpen(&File, pImage->pszFilename,
                     RTFILE_O_READWRITE | RTFILE_O_CREATE | RTFILE_O_DENY_ALL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: cannot create image '%s'"), pImage->pszFilename);
         goto out;
@@ -388,7 +404,7 @@ static int vdiCreateImage(PVDIIMAGEDESC pImage, VDIMAGETYPE enmType,
          * sufficient space available. */
         RTFOFF cbFree = 0;
         rc = RTFsQuerySizes(pImage->pszFilename, NULL, &cbFree, NULL, NULL);
-        if (VBOX_SUCCESS(rc) /* ignore errors */ && ((uint64_t)cbFree < cbTotal))
+        if (RT_SUCCESS(rc) /* ignore errors */ && ((uint64_t)cbFree < cbTotal))
         {
             rc = vdiError(pImage, VERR_DISK_FULL, RT_SRC_POS, N_("VDI: disk would overflow creating image '%s'"), pImage->pszFilename);
             goto out;
@@ -408,18 +424,21 @@ static int vdiCreateImage(PVDIIMAGEDESC pImage, VDIMAGETYPE enmType,
         /* Set file size to hold header and blocks array. */
         rc = RTFileSetSize(pImage->File, pImage->offStartData);
     }
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: setting image size failed for '%s'"), pImage->pszFilename);
         goto out;
     }
+
+    /* Use specified image uuid */
+    *getImageCreationUUID(&pImage->Header) = *pUuid;
 
     /* Generate image last-modify uuid */
     RTUuidCreate(getImageModificationUUID(&pImage->Header));
 
     /* Write pre-header. */
     rc = RTFileWriteAt(File, 0, &pImage->PreHeader, sizeof(pImage->PreHeader), NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: writing pre-header failed for '%s'"), pImage->pszFilename);
         goto out;
@@ -427,7 +446,7 @@ static int vdiCreateImage(PVDIIMAGEDESC pImage, VDIMAGETYPE enmType,
 
     /* Write header. */
     rc = RTFileWriteAt(File, sizeof(pImage->PreHeader), &pImage->Header.u.v1plus, sizeof(pImage->Header.u.v1plus), NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: writing header failed for '%s'"), pImage->pszFilename);
         goto out;
@@ -437,7 +456,7 @@ static int vdiCreateImage(PVDIIMAGEDESC pImage, VDIMAGETYPE enmType,
                        pImage->paBlocks,
                        getImageBlocks(&pImage->Header) * sizeof(VDIIMAGEBLOCKPOINTER),
                        NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: writing block pointers failed for '%s'"), pImage->pszFilename);
         goto out;
@@ -470,7 +489,7 @@ static int vdiCreateImage(PVDIIMAGEDESC pImage, VDIMAGETYPE enmType,
 
             rc = RTFileWriteAt(File, pImage->offStartData + uOff,
                                pvBuf, cbChunk, NULL);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
             {
                 rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: writing block failed for '%s'"), pImage->pszFilename);
                 goto out;
@@ -483,7 +502,7 @@ static int vdiCreateImage(PVDIIMAGEDESC pImage, VDIMAGETYPE enmType,
                 rc = pfnProgress(NULL /* WARNING! pVM=NULL  */,
                                  uPercentStart + uOff * uPercentSpan / cbFill,
                                  pvUser);
-                if (VBOX_FAILURE(rc))
+                if (RT_FAILURE(rc))
                     goto out;
             }
         }
@@ -491,11 +510,11 @@ static int vdiCreateImage(PVDIIMAGEDESC pImage, VDIMAGETYPE enmType,
     }
 
 out:
-    if (VBOX_SUCCESS(rc) && pfnProgress)
+    if (RT_SUCCESS(rc) && pfnProgress)
         pfnProgress(NULL /* WARNING! pVM=NULL  */,
                     uPercentStart + uPercentSpan, pvUser);
 
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         vdiFreeImage(pImage, rc != VERR_ALREADY_EXISTS);
     return rc;
 }
@@ -508,7 +527,14 @@ static int vdiOpenImage(PVDIIMAGEDESC pImage, unsigned uOpenFlags)
     int rc;
     RTFILE File;
 
+    if (uOpenFlags & VD_OPEN_FLAGS_ASYNC_IO)
+        return VERR_NOT_SUPPORTED;
+
     pImage->uOpenFlags = uOpenFlags;
+
+    pImage->pInterfaceError = VDInterfaceGet(pImage->pVDIfsDisk, VDINTERFACETYPE_ERROR);
+    if (pImage->pInterfaceError)
+        pImage->pInterfaceErrorCallbacks = VDGetInterfaceError(pImage->pInterfaceError);
 
     /*
      * Open the image.
@@ -517,7 +543,7 @@ static int vdiOpenImage(PVDIIMAGEDESC pImage, unsigned uOpenFlags)
                     uOpenFlags & VD_OPEN_FLAGS_READONLY
                      ? RTFILE_O_READ      | RTFILE_O_OPEN | RTFILE_O_DENY_NONE
                      : RTFILE_O_READWRITE | RTFILE_O_OPEN | RTFILE_O_DENY_NONE);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         /* Do NOT signal an appropriate error here, as the VD layer has the
          * choice of retrying the open if it failed. */
@@ -528,13 +554,13 @@ static int vdiOpenImage(PVDIIMAGEDESC pImage, unsigned uOpenFlags)
     /* Read pre-header. */
     rc = RTFileReadAt(File, 0, &pImage->PreHeader, sizeof(pImage->PreHeader),
                       NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: error reading pre-header in '%s'"), pImage->pszFilename);
         goto out;
     }
     rc = vdiValidatePreHeader(&pImage->PreHeader);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: invalid pre-header in '%s'"), pImage->pszFilename);
         goto out;
@@ -548,7 +574,7 @@ static int vdiOpenImage(PVDIIMAGEDESC pImage, unsigned uOpenFlags)
             rc = RTFileReadAt(File, sizeof(pImage->PreHeader),
                               &pImage->Header.u.v0, sizeof(pImage->Header.u.v0),
                               NULL);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
             {
                 rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: error reading v0 header in '%s'"), pImage->pszFilename);
                 goto out;
@@ -558,7 +584,7 @@ static int vdiOpenImage(PVDIIMAGEDESC pImage, unsigned uOpenFlags)
             rc = RTFileReadAt(File, sizeof(pImage->PreHeader),
                               &pImage->Header.u.v1, sizeof(pImage->Header.u.v1),
                               NULL);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
             {
                 rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: error reading v1 header in '%s'"), pImage->pszFilename);
                 goto out;
@@ -581,7 +607,7 @@ static int vdiOpenImage(PVDIIMAGEDESC pImage, unsigned uOpenFlags)
             {
                 /* Read the actual VDI 1.1+ header completely. */
                 rc = RTFileReadAt(File, sizeof(pImage->PreHeader), &pImage->Header.u.v1plus, sizeof(pImage->Header.u.v1plus), NULL);
-                if (VBOX_FAILURE(rc))
+                if (RT_FAILURE(rc))
                 {
                     rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: error reading v1.1+ header in '%s'"), pImage->pszFilename);
                     goto out;
@@ -594,7 +620,7 @@ static int vdiOpenImage(PVDIIMAGEDESC pImage, unsigned uOpenFlags)
     }
 
     rc = vdiValidateHeader(&pImage->Header);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         rc = vdiError(pImage, VERR_VDI_UNSUPPORTED_VERSION, RT_SRC_POS, N_("VDI: invalid header in '%s'"), pImage->pszFilename);
         goto out;
@@ -617,7 +643,7 @@ static int vdiOpenImage(PVDIIMAGEDESC pImage, unsigned uOpenFlags)
                       NULL);
 
 out:
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         vdiFreeImage(pImage, false);
     return rc;
 }
@@ -643,7 +669,7 @@ static int vdiUpdateHeader(PVDIIMAGEDESC pImage)
             rc = VERR_VDI_UNSUPPORTED_VERSION;
             break;
     }
-    AssertMsgRC(rc, ("vdiUpdateHeader failed, filename=\"%s\" rc=%Vrc\n", pImage->pszFilename, rc));
+    AssertMsgRC(rc, ("vdiUpdateHeader failed, filename=\"%s\" rc=%Rrc\n", pImage->pszFilename, rc));
     return rc;
 }
 
@@ -654,7 +680,7 @@ static int vdiUpdateBlockInfo(PVDIIMAGEDESC pImage, unsigned uBlock)
 {
     /* Update image header. */
     int rc = vdiUpdateHeader(pImage);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         /* write only one block pointer. */
         rc = RTFileWriteAt(pImage->File,
@@ -662,7 +688,7 @@ static int vdiUpdateBlockInfo(PVDIIMAGEDESC pImage, unsigned uBlock)
                            &pImage->paBlocks[uBlock],
                            sizeof(VDIIMAGEBLOCKPOINTER),
                            NULL);
-        AssertMsgRC(rc, ("vdiUpdateBlockInfo failed to update block=%u, filename=\"%s\", rc=%Vrc\n",
+        AssertMsgRC(rc, ("vdiUpdateBlockInfo failed to update block=%u, filename=\"%s\", rc=%Rrc\n",
                          uBlock, pImage->pszFilename, rc));
     }
     return rc;
@@ -677,7 +703,7 @@ static void vdiFlushImage(PVDIIMAGEDESC pImage)
     {
         /* Save header. */
         int rc = vdiUpdateHeader(pImage);
-        AssertMsgRC(rc, ("vdiUpdateHeader() failed, filename=\"%s\", rc=%Vrc\n",
+        AssertMsgRC(rc, ("vdiUpdateHeader() failed, filename=\"%s\", rc=%Rrc\n",
                          pImage->pszFilename, rc));
         RTFileFlush(pImage->File);
     }
@@ -730,23 +756,22 @@ static int vdiCheckIfValid(const char *pszFilename)
     pImage->pszFilename = pszFilename;
     pImage->File = NIL_RTFILE;
     pImage->paBlocks = NULL;
-    pImage->pfnError = NULL;
-    pImage->pvErrorUser = NULL;
+    pImage->pVDIfsDisk = NULL;
 
     rc = vdiOpenImage(pImage, VD_OPEN_FLAGS_INFO | VD_OPEN_FLAGS_READONLY);
     vdiFreeImage(pImage, false);
 
 out:
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
 /** @copydoc VBOXHDDBACKEND::pfnOpen */
 static int vdiOpen(const char *pszFilename, unsigned uOpenFlags,
-                   PFNVDERROR pfnError, void *pvErrorUser,
+                   PVDINTERFACE pVDIfsDisk, PVDINTERFACE pVDIfsImage,
                    void **ppBackendData)
 {
-    LogFlowFunc(("pszFilename=\"%s\" uOpenFlags=%#x ppBackendData=%#p\n", pszFilename, uOpenFlags, ppBackendData));
+    LogFlowFunc(("pszFilename=\"%s\" uOpenFlags=%#x pVDIfsDisk=%#p pVDIfsImage=%#p ppBackendData=%#p\n", pszFilename, uOpenFlags, pVDIfsDisk, pVDIfsImage, ppBackendData));
     int rc;
     PVDIIMAGEDESC pImage;
 
@@ -774,15 +799,14 @@ static int vdiOpen(const char *pszFilename, unsigned uOpenFlags,
     pImage->pszFilename = pszFilename;
     pImage->File = NIL_RTFILE;
     pImage->paBlocks = NULL;
-    pImage->pfnError = pfnError;
-    pImage->pvErrorUser = pvErrorUser;
+    pImage->pVDIfsDisk = pVDIfsDisk;
 
     rc = vdiOpenImage(pImage, uOpenFlags);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
         *ppBackendData = pImage;
 
 out:
-    LogFlowFunc(("returns %Vrc (pBackendData=%#p)\n", rc, *ppBackendData));
+    LogFlowFunc(("returns %Rrc (pBackendData=%#p)\n", rc, *ppBackendData));
     return rc;
 }
 
@@ -791,15 +815,27 @@ static int vdiCreate(const char *pszFilename, VDIMAGETYPE enmType,
                      uint64_t cbSize, unsigned uImageFlags,
                      const char *pszComment,
                      PCPDMMEDIAGEOMETRY pPCHSGeometry,
-                     PCPDMMEDIAGEOMETRY pLCHSGeometry,
-                     unsigned uOpenFlags, PFNVMPROGRESS pfnProgress,
-                     void *pvUser, unsigned uPercentStart,
-                     unsigned uPercentSpan, PFNVDERROR pfnError,
-                     void *pvErrorUser, void **ppBackendData)
+                     PCPDMMEDIAGEOMETRY pLCHSGeometry, PCRTUUID pUuid,
+                     unsigned uOpenFlags, unsigned uPercentStart,
+                     unsigned uPercentSpan, PVDINTERFACE pVDIfsDisk,
+                     PVDINTERFACE pVDIfsImage, PVDINTERFACE pVDIfsOperation,
+                     void **ppBackendData)
 {
-    LogFlowFunc(("pszFilename=\"%s\" enmType=%d cbSize=%llu uImageFlags=%#x pszComment=\"%s\" pPCHSGeometry=%#p pLCHSGeometry=%#p uOpenFlags=%#x pfnProgress=%#p pvUser=%#p uPercentStart=%u uPercentSpan=%u pfnError=%#p pvErrorUser=%#p ppBackendData=%#p", pszFilename, enmType, cbSize, uImageFlags, pszComment, pPCHSGeometry, pLCHSGeometry, uOpenFlags, pfnProgress, pvUser, uPercentStart, uPercentSpan, pfnError, pvErrorUser, ppBackendData));
+    LogFlowFunc(("pszFilename=\"%s\" enmType=%d cbSize=%llu uImageFlags=%#x pszComment=\"%s\" pPCHSGeometry=%#p pLCHSGeometry=%#p Uuid=%RTuuid uOpenFlags=%#x uPercentStart=%u uPercentSpan=%u pVDIfsDisk=%#p pVDIfsImage=%#p pVDIfsOperation=%#p ppBackendData=%#p", pszFilename, enmType, cbSize, uImageFlags, pszComment, pPCHSGeometry, pLCHSGeometry, pUuid, uOpenFlags, uPercentStart, uPercentSpan, pVDIfsDisk, pVDIfsImage, pVDIfsOperation, ppBackendData));
     int rc;
     PVDIIMAGEDESC pImage;
+
+    PFNVMPROGRESS pfnProgress = NULL;
+    void *pvUser = NULL;
+    PVDINTERFACE pIfProgress = VDInterfaceGet(pVDIfsOperation,
+                                              VDINTERFACETYPE_PROGRESS);
+    PVDINTERFACEPROGRESS pCbProgress = NULL;
+    if (pIfProgress)
+    {
+        pCbProgress = VDGetInterfaceProgress(pIfProgress);
+        pfnProgress = pCbProgress->pfnProgress;
+        pvUser = pIfProgress->pvUser;
+    }
 
     /* Check open flags. All valid flags are supported. */
     if (uOpenFlags & ~VD_OPEN_FLAGS_MASK)
@@ -811,7 +847,8 @@ static int vdiCreate(const char *pszFilename, VDIMAGETYPE enmType,
     /* Check remaining arguments. */
     if (   !VALID_PTR(pszFilename)
         || !*pszFilename
-        || (enmType != VD_IMAGE_TYPE_NORMAL && enmType != VD_IMAGE_TYPE_FIXED)
+        || (enmType != VD_IMAGE_TYPE_NORMAL && enmType != VD_IMAGE_TYPE_FIXED
+            && enmType != VD_IMAGE_TYPE_DIFF)
         || cbSize < VDI_IMAGE_DEFAULT_BLOCK_SIZE
         || !VALID_PTR(pPCHSGeometry)
         || !VALID_PTR(pLCHSGeometry))
@@ -829,13 +866,12 @@ static int vdiCreate(const char *pszFilename, VDIMAGETYPE enmType,
     pImage->pszFilename = pszFilename;
     pImage->File = NIL_RTFILE;
     pImage->paBlocks = NULL;
-    pImage->pfnError = pfnError;
-    pImage->pvErrorUser = pvErrorUser;
+    pImage->pVDIfsDisk = pVDIfsDisk;
 
     rc = vdiCreateImage(pImage, enmType, cbSize, uImageFlags, pszComment,
-                        pPCHSGeometry, pLCHSGeometry,
+                        pPCHSGeometry, pLCHSGeometry, pUuid,
                         pfnProgress, pvUser, uPercentStart, uPercentSpan);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         /* So far the image is opened in read/write mode. Make sure the
          * image is opened in read-only mode if the caller requested that. */
@@ -843,14 +879,14 @@ static int vdiCreate(const char *pszFilename, VDIMAGETYPE enmType,
         {
             vdiFreeImage(pImage, false);
             rc = vdiOpenImage(pImage, uOpenFlags);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
                 goto out;
         }
         *ppBackendData = pImage;
     }
 
 out:
-    LogFlowFunc(("returns %Vrc (pBackendData=%#p)\n", rc, *ppBackendData));
+    LogFlowFunc(("returns %Rrc (pBackendData=%#p)\n", rc, *ppBackendData));
     return rc;
 }
 
@@ -876,11 +912,11 @@ static int vdiRename(void *pBackendData, const char *pszFilename)
 
     /* Rename the file. */
     rc = RTFileMove(pImage->pszFilename, pszFilename, 0);
-    if (VBOX_FAILURE(rc))
-    {   
+    if (RT_FAILURE(rc))
+    {
         /* The move failed, try to reopen the original image. */
         int rc2 = vdiOpenImage(pImage, pImage->uOpenFlags);
-        if (VBOX_FAILURE(rc2))
+        if (RT_FAILURE(rc2))
             rc = rc2;
 
         goto out;
@@ -891,11 +927,11 @@ static int vdiRename(void *pBackendData, const char *pszFilename)
 
     /* Open the new image. */
     rc = vdiOpenImage(pImage, pImage->uOpenFlags);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         goto out;
 
 out:
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -911,7 +947,7 @@ static int vdiClose(void *pBackendData, bool fDelete)
     if (pImage)
         vdiFreeImage(pImage, fDelete);
 
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -960,11 +996,11 @@ static int vdiRead(void *pBackendData, uint64_t uOffset, void *pvBuf,
         rc = RTFileReadAt(pImage->File, u64Offset, pvBuf, cbToRead, NULL);
     }
 
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
         *pcbActuallyRead = cbToRead;
 
 out:
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1036,13 +1072,13 @@ static int vdiWrite(void *pBackendData, uint64_t uOffset, const void *pvBuf,
             uint64_t u64Offset = (uint64_t)cBlocksAllocated * pImage->cbTotalBlockData
                                + (pImage->offStartData + pImage->offStartBlockData);
             rc = RTFileWriteAt(pImage->File, u64Offset, pvBuf, cbToWrite, NULL);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
                 goto out;
             pImage->paBlocks[uBlock] = cBlocksAllocated;
             setImageBlocksAllocated(&pImage->Header, cBlocksAllocated + 1);
 
             rc = vdiUpdateBlockInfo(pImage, uBlock);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
                 goto out;
 
             *pcbPreRead = 0;
@@ -1064,9 +1100,11 @@ static int vdiWrite(void *pBackendData, uint64_t uOffset, const void *pvBuf,
                            + (pImage->offStartData + pImage->offStartBlockData + offWrite);
         rc = RTFileWriteAt(pImage->File, u64Offset, pvBuf, cbToWrite, NULL);
     }
+    if (pcbWriteProcess)
+        *pcbWriteProcess = cbToWrite;
 
 out:
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1077,8 +1115,10 @@ static int vdiFlush(void *pBackendData)
     PVDIIMAGEDESC pImage = (PVDIIMAGEDESC)pBackendData;
     int rc = VINF_SUCCESS;
 
+    Assert(pImage);
+
     vdiFlushImage(pImage);
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1117,7 +1157,7 @@ static int vdiGetImageType(void *pBackendData, PVDIMAGETYPE penmImageType)
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc enmImageType=%u\n", rc, *penmImageType));
+    LogFlowFunc(("returns %Rrc enmImageType=%u\n", rc, *penmImageType));
     return rc;
 }
 
@@ -1154,7 +1194,7 @@ static uint64_t vdiGetFileSize(void *pBackendData)
         if (pImage->File != NIL_RTFILE)
         {
             int rc = RTFileGetSize(pImage->File, &cbFile);
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
                 cb += cbFile;
         }
     }
@@ -1186,7 +1226,7 @@ static int vdiGetPCHSGeometry(void *pBackendData,
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc (PCHS=%u/%u/%u)\n", rc, pPCHSGeometry->cCylinders, pPCHSGeometry->cHeads, pPCHSGeometry->cSectors));
+    LogFlowFunc(("returns %Rrc (PCHS=%u/%u/%u)\n", rc, pPCHSGeometry->cCylinders, pPCHSGeometry->cHeads, pPCHSGeometry->cSectors));
     return rc;
 }
 
@@ -1215,7 +1255,7 @@ static int vdiSetPCHSGeometry(void *pBackendData,
         rc = VERR_VDI_NOT_OPENED;
 
 out:
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1251,7 +1291,7 @@ static int vdiGetLCHSGeometry(void *pBackendData,
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc (LCHS=%u/%u/%u)\n", rc, pLCHSGeometry->cCylinders, pLCHSGeometry->cHeads, pLCHSGeometry->cSectors));
+    LogFlowFunc(("returns %Rrc (LCHS=%u/%u/%u)\n", rc, pLCHSGeometry->cCylinders, pLCHSGeometry->cHeads, pLCHSGeometry->cSectors));
     return rc;
 }
 
@@ -1291,7 +1331,7 @@ static int vdiSetLCHSGeometry(void *pBackendData,
         rc = VERR_VDI_NOT_OPENED;
 
 out:
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1305,7 +1345,7 @@ static unsigned vdiGetImageFlags(void *pBackendData)
     Assert(VALID_PTR(pImage));
 
     if (pImage)
-        uImageFlags = getImageFlags(&pImage->Header);
+        uImageFlags = pImage->uImageFlags;
     else
         uImageFlags = 0;
 
@@ -1353,7 +1393,7 @@ static int vdiSetOpenFlags(void *pBackendData, unsigned uOpenFlags)
     rc = vdiOpenImage(pImage, uOpenFlags);
 
 out:
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1382,7 +1422,7 @@ static int vdiGetComment(void *pBackendData, char *pszComment,
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc comment=\"%s\"\n", rc, pszComment));
+    LogFlowFunc(("returns %Rrc comment=\"%s\"\n", rc, pszComment));
     return rc;
 }
 
@@ -1430,7 +1470,7 @@ static int vdiSetComment(void *pBackendData, const char *pszComment)
         rc = VERR_VDI_NOT_OPENED;
 
 out:
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1451,14 +1491,14 @@ static int vdiGetUuid(void *pBackendData, PRTUUID pUuid)
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc (%Vuuid)\n", rc, pUuid));
+    LogFlowFunc(("returns %Rrc (%RTuuid)\n", rc, pUuid));
     return rc;
 }
 
 /** @copydoc VBOXHDDBACKEND::pfnSetUuid */
 static int vdiSetUuid(void *pBackendData, PCRTUUID pUuid)
 {
-    LogFlowFunc(("pBackendData=%#p Uuid=%Vuuid\n", pBackendData, pUuid));
+    LogFlowFunc(("pBackendData=%#p Uuid=%RTuuid\n", pBackendData, pUuid));
     PVDIIMAGEDESC pImage = (PVDIIMAGEDESC)pBackendData;
     int rc = VINF_SUCCESS;
 
@@ -1485,7 +1525,7 @@ static int vdiSetUuid(void *pBackendData, PCRTUUID pUuid)
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1506,14 +1546,14 @@ static int vdiGetModificationUuid(void *pBackendData, PRTUUID pUuid)
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc (%Vuuid)\n", rc, pUuid));
+    LogFlowFunc(("returns %Rrc (%RTuuid)\n", rc, pUuid));
     return rc;
 }
 
 /** @copydoc VBOXHDDBACKEND::pfnSetModificationUuid */
 static int vdiSetModificationUuid(void *pBackendData, PCRTUUID pUuid)
 {
-    LogFlowFunc(("pBackendData=%#p Uuid=%Vuuid\n", pBackendData, pUuid));
+    LogFlowFunc(("pBackendData=%#p Uuid=%RTuuid\n", pBackendData, pUuid));
     PVDIIMAGEDESC pImage = (PVDIIMAGEDESC)pBackendData;
     int rc = VINF_SUCCESS;
 
@@ -1540,7 +1580,7 @@ static int vdiSetModificationUuid(void *pBackendData, PCRTUUID pUuid)
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1561,14 +1601,14 @@ static int vdiGetParentUuid(void *pBackendData, PRTUUID pUuid)
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc (%Vuuid)\n", rc, pUuid));
+    LogFlowFunc(("returns %Rrc (%RTuuid)\n", rc, pUuid));
     return rc;
 }
 
 /** @copydoc VBOXHDDBACKEND::pfnSetParentUuid */
 static int vdiSetParentUuid(void *pBackendData, PCRTUUID pUuid)
 {
-    LogFlowFunc(("pBackendData=%#p Uuid=%Vuuid\n", pBackendData, pUuid));
+    LogFlowFunc(("pBackendData=%#p Uuid=%RTuuid\n", pBackendData, pUuid));
     PVDIIMAGEDESC pImage = (PVDIIMAGEDESC)pBackendData;
     int rc = VINF_SUCCESS;
 
@@ -1595,7 +1635,7 @@ static int vdiSetParentUuid(void *pBackendData, PCRTUUID pUuid)
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1616,14 +1656,14 @@ static int vdiGetParentModificationUuid(void *pBackendData, PRTUUID pUuid)
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc (%Vuuid)\n", rc, pUuid));
+    LogFlowFunc(("returns %Rrc (%RTuuid)\n", rc, pUuid));
     return rc;
 }
 
 /** @copydoc VBOXHDDBACKEND::pfnSetParentModificationUuid */
 static int vdiSetParentModificationUuid(void *pBackendData, PCRTUUID pUuid)
 {
-    LogFlowFunc(("pBackendData=%#p Uuid=%Vuuid\n", pBackendData, pUuid));
+    LogFlowFunc(("pBackendData=%#p Uuid=%RTuuid\n", pBackendData, pUuid));
     PVDIIMAGEDESC pImage = (PVDIIMAGEDESC)pBackendData;
     int rc = VINF_SUCCESS;
 
@@ -1647,7 +1687,7 @@ static int vdiSetParentModificationUuid(void *pBackendData, PCRTUUID pUuid)
     else
         rc = VERR_VDI_NOT_OPENED;
 
-    LogFlowFunc(("returns %Vrc\n", rc));
+    LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1678,11 +1718,11 @@ static void vdiDump(void *pBackendData)
     if (pg)
         RTLogPrintf("Header: Geometry: C/H/S=%u/%u/%u cbSector=%u\n",
                     pg->cCylinders, pg->cHeads, pg->cSectors, pg->cbSector);
-    RTLogPrintf("Header: uuidCreation={%Vuuid}\n", getImageCreationUUID(&pImage->Header));
-    RTLogPrintf("Header: uuidModification={%Vuuid}\n", getImageModificationUUID(&pImage->Header));
-    RTLogPrintf("Header: uuidParent={%Vuuid}\n", getImageParentUUID(&pImage->Header));
+    RTLogPrintf("Header: uuidCreation={%RTuuid}\n", getImageCreationUUID(&pImage->Header));
+    RTLogPrintf("Header: uuidModification={%RTuuid}\n", getImageModificationUUID(&pImage->Header));
+    RTLogPrintf("Header: uuidParent={%RTuuid}\n", getImageParentUUID(&pImage->Header));
     if (GET_MAJOR_HEADER_VERSION(&pImage->Header) >= 1)
-        RTLogPrintf("Header: uuidParentModification={%Vuuid}\n", getImageParentModificationUUID(&pImage->Header));
+        RTLogPrintf("Header: uuidParentModification={%RTuuid}\n", getImageParentModificationUUID(&pImage->Header));
     RTLogPrintf("Image:  fFlags=%08X offStartBlocks=%u offStartData=%u\n",
                 pImage->uImageFlags, pImage->offStartBlocks, pImage->offStartData);
     RTLogPrintf("Image:  uBlockMask=%08X cbTotalBlockData=%u uShiftOffset2Index=%u offStartBlockData=%u\n",
@@ -1713,6 +1753,63 @@ static void vdiDump(void *pBackendData)
     }
 }
 
+static int vdiGetTimeStamp(void *pvBackendData, PRTTIMESPEC pTimeStamp)
+{
+    int rc = VERR_NOT_IMPLEMENTED;
+    LogFlow(("%s: returned %Rrc\n", __FUNCTION__, rc));
+    return rc;
+}
+
+static int vdiGetParentTimeStamp(void *pvBackendData, PRTTIMESPEC pTimeStamp)
+{
+    int rc = VERR_NOT_IMPLEMENTED;
+    LogFlow(("%s: returned %Rrc\n", __FUNCTION__, rc));
+    return rc;
+}
+
+static int vdiSetParentTimeStamp(void *pvBackendData, PCRTTIMESPEC pTimeStamp)
+{
+    int rc = VERR_NOT_IMPLEMENTED;
+    LogFlow(("%s: returned %Rrc\n", __FUNCTION__, rc));
+    return rc;
+}
+
+static int vdiGetParentFilename(void *pvBackendData, char **ppszParentFilename)
+{
+    int rc = VERR_NOT_IMPLEMENTED;
+    LogFlow(("%s: returned %Rrc\n", __FUNCTION__, rc));
+    return rc;
+}
+
+static int vdiSetParentFilename(void *pvBackendData, const char *pszParentFilename)
+{
+    int rc = VERR_NOT_IMPLEMENTED;
+    LogFlow(("%s: returned %Rrc\n", __FUNCTION__, rc));
+    return rc;
+}
+
+static bool vdiIsAsyncIOSupported(void *pvBackendData)
+{
+    return false;
+}
+
+static int vdiAsyncRead(void *pvBackendData, uint64_t uOffset, size_t cbRead,
+                        PPDMDATASEG paSeg, unsigned cSeg, void *pvUser)
+{
+    int rc = VERR_NOT_IMPLEMENTED;
+    LogFlowFunc(("returns %Rrc\n", rc));
+    return rc;
+}
+
+static int vdiAsyncWrite(void *pvBackendData, uint64_t uOffset, size_t cbWrite,
+                         PPDMDATASEG paSeg, unsigned cSeg, void *pvUser)
+{
+    int rc = VERR_NOT_IMPLEMENTED;
+    LogFlowFunc(("returns %Rrc\n", rc));
+    return rc;
+}
+
+
 VBOXHDDBACKEND g_VDIBackend =
 {
     /* pszBackendName */
@@ -1721,7 +1818,11 @@ VBOXHDDBACKEND g_VDIBackend =
     sizeof(VBOXHDDBACKEND),
     /* uBackendCaps */
       VD_CAP_UUID | VD_CAP_CREATE_FIXED | VD_CAP_CREATE_DYNAMIC
-    | VD_CAP_CREATE_SPLIT_2G | VD_CAP_DIFF,
+    | VD_CAP_CREATE_SPLIT_2G | VD_CAP_DIFF | VD_CAP_FILE,
+    /* papszFileExtensions */
+    s_apszVdiFileExtensions,
+    /* paConfigInfo */
+    NULL,
     /* pfnCheckIfValid */
     vdiCheckIfValid,
     /* pfnOpen */
@@ -1781,6 +1882,22 @@ VBOXHDDBACKEND g_VDIBackend =
     /* pfnSetParentModificationUuid */
     vdiSetParentModificationUuid,
     /* pfnDump */
-    vdiDump
+    vdiDump,
+    /* pfnGetTimeStamp */
+    vdiGetTimeStamp,
+    /* pfnGetParentTimeStamp */
+    vdiGetParentTimeStamp,
+    /* pfnSetParentTimeStamp */
+    vdiSetParentTimeStamp,
+    /* pfnGetParentFilename */
+    vdiGetParentFilename,
+    /* pfnSetParentFilename */
+    vdiSetParentFilename,
+    /* pfnIsAsyncIOSupported */
+    vdiIsAsyncIOSupported,
+    /* pfnAsyncRead */
+    vdiAsyncRead,
+    /* pfnAsyncWrite */
+    vdiAsyncWrite
 };
 

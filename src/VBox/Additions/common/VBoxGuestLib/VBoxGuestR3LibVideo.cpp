@@ -27,9 +27,11 @@
 #include <iprt/mem.h>
 #include <iprt/assert.h>
 #include <VBox/log.h>
+#include <VBox/HostServices/GuestPropertySvc.h>  /* For Save and RetrieveVideoMode */
 
 #include "VBGLR3Internal.h"
 
+#define VIDEO_PROP_PREFIX "/VirtualBox/GuestAdd/Vbgl/Video/"
 
 /**
  * Enable or disable video acceleration.
@@ -226,8 +228,113 @@ VBGLR3DECL(bool) VbglR3HostLikesVideoMode(uint32_t cx, uint32_t cy, uint32_t cBi
     rc = vbglR3GRPerform(&req.header);
     if (RT_SUCCESS(rc) && RT_SUCCESS(req.header.rc))
         fRc = req.fSupported;
-    else
-        LogRelFunc(("error querying video mode supported status from VMMDev."
-                    "rc = %Vrc, VMMDev rc = %Vrc\n", rc, req.header.rc));
     return fRc;
+}
+
+/**
+ * Save video mode parameters to the registry.
+ *
+ * @returns iprt status value
+ * @param   pszName the name to save the mode parameters under
+ * @param   cx      mode width
+ * @param   cy      mode height
+ * @param   cBits   bits per pixel for the mode
+ */
+VBGLR3DECL(int) VbglR3SaveVideoMode(const char *pszName, uint32_t cx, uint32_t cy, uint32_t cBits)
+{
+#ifdef VBOX_WITH_GUEST_PROPS
+    using namespace guestProp;
+
+    char szModeName[MAX_NAME_LEN + 1];
+    char szModeParms[MAX_VALUE_LEN + 1];
+    uint32_t u32ClientId = 0;
+    RTStrPrintf(szModeName, sizeof(szModeName), VIDEO_PROP_PREFIX"%s", pszName);
+    RTStrPrintf(szModeParms, sizeof(szModeParms), "%dx%dx%d", cx, cy, cBits);
+    int rc = VbglR3GuestPropConnect(&u32ClientId);
+    if (RT_SUCCESS(rc))
+        rc = VbglR3GuestPropWriteValue(u32ClientId, szModeName, szModeParms);
+    if (u32ClientId != 0)
+        VbglR3GuestPropDisconnect(u32ClientId);  /* Return value ignored, because what can we do anyway? */
+    return rc;
+#else /* VBOX_WITH_GUEST_PROPS not defined */
+    return VERR_NOT_IMPLEMENTED;
+#endif /* VBOX_WITH_GUEST_PROPS not defined */
+}
+
+
+/**
+ * Retrieve video mode parameters from the guest property store.
+ *
+ * @returns iprt status value
+ * @param   pszName the name under which the mode parameters are saved
+ * @param   pcx     where to store the mode width
+ * @param   pcy     where to store the mode height
+ * @param   pcBits  where to store the bits per pixel for the mode
+ */
+VBGLR3DECL(int) VbglR3RetrieveVideoMode(const char *pszName, uint32_t *pcx, uint32_t *pcy, uint32_t *pcBits)
+{
+#ifdef VBOX_WITH_GUEST_PROPS
+    using namespace guestProp;
+
+/*
+ * First we retreive the video mode which is saved as a string in the
+ * guest property store.
+ */
+    /* The buffer for VbglR3GuestPropReadValue.  If this is too small then
+     * something is wrong with the data stored in the property. */
+    char szModeParms[1024];
+    uint32_t u32ClientId = 0;
+    uint32_t cx, cy, cBits;
+
+    int rc = VbglR3GuestPropConnect(&u32ClientId);
+    if (RT_SUCCESS(rc))
+    {
+        char szModeName[MAX_NAME_LEN + 1];
+        RTStrPrintf(szModeName, sizeof(szModeName), VIDEO_PROP_PREFIX"%s", pszName);
+        /** @todo add a VbglR3GuestPropReadValueF/FV that does the RTStrPrintf for you. */
+        rc = VbglR3GuestPropReadValue(u32ClientId, szModeName, szModeParms,
+                                      sizeof(szModeParms), NULL);
+    }
+
+/*
+ * Now we convert the string returned to numeric values.
+ */
+    char *pszNext;
+    if (RT_SUCCESS(rc))
+        /* Extract the width from the string */
+        rc = RTStrToUInt32Ex(szModeParms, &pszNext, 10, &cx);
+    if ((rc != VWRN_TRAILING_CHARS) || (*pszNext != 'x'))
+        rc = VERR_PARSE_ERROR;
+    if (RT_SUCCESS(rc))
+    {
+        /* Extract the height from the string */
+        ++pszNext;
+        rc = RTStrToUInt32Ex(pszNext, &pszNext, 10, &cy);
+    }
+    if ((rc != VWRN_TRAILING_CHARS) || (*pszNext != 'x'))
+        rc = VERR_PARSE_ERROR;
+    if (RT_SUCCESS(rc))
+    {
+        /* Extract the bpp from the string */
+        ++pszNext;
+        rc = RTStrToUInt32Full(pszNext, 10, &cBits);
+    }
+    if (rc != VINF_SUCCESS)
+        rc = VERR_PARSE_ERROR;
+
+/*
+ * And clean up and return the values if we successfully obtained them.
+ */
+    if (u32ClientId != 0)
+        VbglR3GuestPropDisconnect(u32ClientId);  /* Return value ignored, because what can we do anyway? */
+    if (RT_SUCCESS(rc))
+    {
+        *pcx = cx;
+        *pcy = cy;
+        *pcBits = cBits;
+    }
+    return rc;
+#else /* VBOX_WITH_GUEST_PROPS not defined */
+    return VERR_NOT_IMPLEMENTED;
+#endif /* VBOX_WITH_GUEST_PROPS not defined */
 }

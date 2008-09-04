@@ -1,4 +1,4 @@
-/* $Id: PDMAll.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: PDMAll.cpp 34341 2008-08-08 15:46:17Z bird $ */
 /** @file
  * PDM Critical Sections
  */
@@ -52,9 +52,9 @@ PDMDECL(int) PDMGetInterrupt(PVM pVM, uint8_t *pu8Interrupt)
     if (VM_FF_ISSET(pVM, VM_FF_INTERRUPT_APIC))
     {
         VM_FF_CLEAR(pVM, VM_FF_INTERRUPT_APIC);
-        Assert(pVM->pdm.s.Apic.CTXALLSUFF(pDevIns));
-        Assert(pVM->pdm.s.Apic.CTXALLSUFF(pfnGetInterrupt));
-        int i = pVM->pdm.s.Apic.CTXALLSUFF(pfnGetInterrupt)(pVM->pdm.s.Apic.CTXALLSUFF(pDevIns));
+        Assert(pVM->pdm.s.Apic.CTX_SUFF(pDevIns));
+        Assert(pVM->pdm.s.Apic.CTX_SUFF(pfnGetInterrupt));
+        int i = pVM->pdm.s.Apic.CTX_SUFF(pfnGetInterrupt)(pVM->pdm.s.Apic.CTX_SUFF(pDevIns));
         AssertMsg(i <= 255 && i >= 0, ("i=%d\n", i));
         if (i >= 0)
         {
@@ -70,9 +70,9 @@ PDMDECL(int) PDMGetInterrupt(PVM pVM, uint8_t *pu8Interrupt)
     if (VM_FF_ISSET(pVM, VM_FF_INTERRUPT_PIC))
     {
         VM_FF_CLEAR(pVM, VM_FF_INTERRUPT_PIC);
-        Assert(pVM->pdm.s.Pic.CTXALLSUFF(pDevIns));
-        Assert(pVM->pdm.s.Pic.CTXALLSUFF(pfnGetInterrupt));
-        int i = pVM->pdm.s.Pic.CTXALLSUFF(pfnGetInterrupt)(pVM->pdm.s.Pic.CTXALLSUFF(pDevIns));
+        Assert(pVM->pdm.s.Pic.CTX_SUFF(pDevIns));
+        Assert(pVM->pdm.s.Pic.CTX_SUFF(pfnGetInterrupt));
+        int i = pVM->pdm.s.Pic.CTX_SUFF(pfnGetInterrupt)(pVM->pdm.s.Pic.CTX_SUFF(pDevIns));
         AssertMsg(i <= 255 && i >= 0, ("i=%d\n", i));
         if (i >= 0)
         {
@@ -82,10 +82,8 @@ PDMDECL(int) PDMGetInterrupt(PVM pVM, uint8_t *pu8Interrupt)
         }
     }
 
-#ifndef VBOX_WITH_PDM_LOCK /** @todo Figure out exactly why we can get here without anything being set. (REM) */
-    /* Shouldn't get here! Noone should call us without cause. */
-    Assert(VM_FF_ISPENDING(pVM, VM_FF_INTERRUPT_APIC | VM_FF_INTERRUPT_PIC));
-#endif
+    /** @todo Figure out exactly why we can get here without anything being set. (REM) */
+
     pdmUnlock(pVM);
     return VERR_NO_DATA;
 }
@@ -104,17 +102,17 @@ PDMDECL(int) PDMIsaSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level)
     pdmLock(pVM);
 
     int rc = VERR_PDM_NO_PIC_INSTANCE;
-    if (pVM->pdm.s.Pic.CTXALLSUFF(pDevIns))
+    if (pVM->pdm.s.Pic.CTX_SUFF(pDevIns))
     {
-        Assert(pVM->pdm.s.Pic.CTXALLSUFF(pfnSetIrq));
-        pVM->pdm.s.Pic.CTXALLSUFF(pfnSetIrq)(pVM->pdm.s.Pic.CTXALLSUFF(pDevIns), u8Irq, u8Level);
+        Assert(pVM->pdm.s.Pic.CTX_SUFF(pfnSetIrq));
+        pVM->pdm.s.Pic.CTX_SUFF(pfnSetIrq)(pVM->pdm.s.Pic.CTX_SUFF(pDevIns), u8Irq, u8Level);
         rc = VINF_SUCCESS;
     }
 
-    if (pVM->pdm.s.IoApic.CTXALLSUFF(pDevIns))
+    if (pVM->pdm.s.IoApic.CTX_SUFF(pDevIns))
     {
-        Assert(pVM->pdm.s.IoApic.CTXALLSUFF(pfnSetIrq));
-        pVM->pdm.s.IoApic.CTXALLSUFF(pfnSetIrq)(pVM->pdm.s.IoApic.CTXALLSUFF(pDevIns), u8Irq, u8Level);
+        Assert(pVM->pdm.s.IoApic.CTX_SUFF(pfnSetIrq));
+        pVM->pdm.s.IoApic.CTX_SUFF(pfnSetIrq)(pVM->pdm.s.IoApic.CTX_SUFF(pDevIns), u8Irq, u8Level);
         rc = VINF_SUCCESS;
     }
 
@@ -133,11 +131,11 @@ PDMDECL(int) PDMIsaSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level)
  */
 PDMDECL(int) PDMIoApicSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level)
 {
-    if (pVM->pdm.s.IoApic.CTXALLSUFF(pDevIns))
+    if (pVM->pdm.s.IoApic.CTX_SUFF(pDevIns))
     {
-        Assert(pVM->pdm.s.IoApic.CTXALLSUFF(pfnSetIrq));
+        Assert(pVM->pdm.s.IoApic.CTX_SUFF(pfnSetIrq));
         pdmLock(pVM);
-        pVM->pdm.s.IoApic.CTXALLSUFF(pfnSetIrq)(pVM->pdm.s.IoApic.CTXALLSUFF(pDevIns), u8Irq, u8Level);
+        pVM->pdm.s.IoApic.CTX_SUFF(pfnSetIrq)(pVM->pdm.s.IoApic.CTX_SUFF(pDevIns), u8Irq, u8Level);
         pdmUnlock(pVM);
         return VINF_SUCCESS;
     }
@@ -154,11 +152,11 @@ PDMDECL(int) PDMIoApicSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level)
  */
 PDMDECL(int) PDMApicSetBase(PVM pVM, uint64_t u64Base)
 {
-    if (pVM->pdm.s.Apic.CTXALLSUFF(pDevIns))
+    if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
     {
-        Assert(pVM->pdm.s.Apic.CTXALLSUFF(pfnSetBase));
+        Assert(pVM->pdm.s.Apic.CTX_SUFF(pfnSetBase));
         pdmLock(pVM);
-        pVM->pdm.s.Apic.CTXALLSUFF(pfnSetBase)(pVM->pdm.s.Apic.CTXALLSUFF(pDevIns), u64Base);
+        pVM->pdm.s.Apic.CTX_SUFF(pfnSetBase)(pVM->pdm.s.Apic.CTX_SUFF(pDevIns), u64Base);
         pdmUnlock(pVM);
         return VINF_SUCCESS;
     }
@@ -175,15 +173,36 @@ PDMDECL(int) PDMApicSetBase(PVM pVM, uint64_t u64Base)
  */
 PDMDECL(int) PDMApicGetBase(PVM pVM, uint64_t *pu64Base)
 {
-    if (pVM->pdm.s.Apic.CTXALLSUFF(pDevIns))
+    if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
     {
-        Assert(pVM->pdm.s.Apic.CTXALLSUFF(pfnGetBase));
+        Assert(pVM->pdm.s.Apic.CTX_SUFF(pfnGetBase));
         pdmLock(pVM);
-        *pu64Base = pVM->pdm.s.Apic.CTXALLSUFF(pfnGetBase)(pVM->pdm.s.Apic.CTXALLSUFF(pDevIns));
+        *pu64Base = pVM->pdm.s.Apic.CTX_SUFF(pfnGetBase)(pVM->pdm.s.Apic.CTX_SUFF(pDevIns));
         pdmUnlock(pVM);
         return VINF_SUCCESS;
     }
     *pu64Base = 0;
+    return VERR_PDM_NO_APIC_INSTANCE;
+}
+
+
+/**
+ * Check if the APIC has a pending interrupt/if a TPR change would active one.
+ *
+ * @returns VINF_SUCCESS or VERR_PDM_NO_APIC_INSTANCE.
+ * @param   pDevIns         Device instance of the APIC.
+ * @param   pfPending       Pending state (out).
+ */
+PDMDECL(int) PDMApicHasPendingIrq(PVM pVM, bool *pfPending)
+{
+    if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
+    {
+        Assert(pVM->pdm.s.Apic.CTX_SUFF(pfnSetTPR));
+        pdmLock(pVM);
+        *pfPending = pVM->pdm.s.Apic.CTX_SUFF(pfnHasPendingIrq)(pVM->pdm.s.Apic.CTX_SUFF(pDevIns));
+        pdmUnlock(pVM);
+        return VINF_SUCCESS;
+    }
     return VERR_PDM_NO_APIC_INSTANCE;
 }
 
@@ -197,11 +216,11 @@ PDMDECL(int) PDMApicGetBase(PVM pVM, uint64_t *pu64Base)
  */
 PDMDECL(int) PDMApicSetTPR(PVM pVM, uint8_t u8TPR)
 {
-    if (pVM->pdm.s.Apic.CTXALLSUFF(pDevIns))
+    if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
     {
-        Assert(pVM->pdm.s.Apic.CTXALLSUFF(pfnSetTPR));
+        Assert(pVM->pdm.s.Apic.CTX_SUFF(pfnSetTPR));
         pdmLock(pVM);
-        pVM->pdm.s.Apic.CTXALLSUFF(pfnSetTPR)(pVM->pdm.s.Apic.CTXALLSUFF(pDevIns), u8TPR);
+        pVM->pdm.s.Apic.CTX_SUFF(pfnSetTPR)(pVM->pdm.s.Apic.CTX_SUFF(pDevIns), u8TPR);
         pdmUnlock(pVM);
         return VINF_SUCCESS;
     }
@@ -210,19 +229,22 @@ PDMDECL(int) PDMApicSetTPR(PVM pVM, uint8_t u8TPR)
 
 
 /**
- * Get the TPR (task priority register?).
+ * Get the TPR (task priority register).
  *
  * @returns The current TPR.
  * @param   pVM             VM handle.
  * @param   pu8TPR          Where to store the TRP.
- */
-PDMDECL(int) PDMApicGetTPR(PVM pVM, uint8_t *pu8TPR)
+ * @param   pfPending       Pending interrupt state (out).
+*/
+PDMDECL(int) PDMApicGetTPR(PVM pVM, uint8_t *pu8TPR, bool *pfPending)
 {
-    if (pVM->pdm.s.Apic.CTXALLSUFF(pDevIns))
+    if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
     {
-        Assert(pVM->pdm.s.Apic.CTXALLSUFF(pfnGetTPR));
+        Assert(pVM->pdm.s.Apic.CTX_SUFF(pfnGetTPR));
         pdmLock(pVM);
-        *pu8TPR = pVM->pdm.s.Apic.CTXALLSUFF(pfnGetTPR)(pVM->pdm.s.Apic.CTXALLSUFF(pDevIns));
+        *pu8TPR = pVM->pdm.s.Apic.CTX_SUFF(pfnGetTPR)(pVM->pdm.s.Apic.CTX_SUFF(pDevIns));
+        if (pfPending)
+            *pfPending = pVM->pdm.s.Apic.CTX_SUFF(pfnHasPendingIrq)(pVM->pdm.s.Apic.CTX_SUFF(pDevIns));
         pdmUnlock(pVM);
         return VINF_SUCCESS;
     }
@@ -231,7 +253,6 @@ PDMDECL(int) PDMApicGetTPR(PVM pVM, uint8_t *pu8TPR)
 }
 
 
-#ifdef VBOX_WITH_PDM_LOCK
 /**
  * Locks PDM.
  * This might call back to Ring-3 in order to deal with lock contention in GC and R3.
@@ -248,9 +269,9 @@ void pdmLock(PVM pVM)
     {
 # ifdef IN_GC
         rc = VMMGCCallHost(pVM, VMMCALLHOST_PDM_LOCK, 0);
-#else
+# else
         rc = VMMR0CallHost(pVM, VMMCALLHOST_PDM_LOCK, 0);
-#endif
+# endif
     }
 #endif
     AssertRC(rc);
@@ -280,5 +301,4 @@ void pdmUnlock(PVM pVM)
 {
     PDMCritSectLeave(&pVM->pdm.s.CritSect);
 }
-#endif /* VBOX_WITH_PDM_LOCK */
 

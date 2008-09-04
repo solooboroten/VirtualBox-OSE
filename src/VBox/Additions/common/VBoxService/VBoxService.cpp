@@ -1,4 +1,4 @@
-/** $Id: VBoxService.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/** $Id: VBoxService.cpp 35653 2008-08-29 14:21:03Z bird $ */
 /** @file
  * VBoxService - Guest Additions Service Skeleton.
  */
@@ -229,7 +229,7 @@ int main(int argc, char **argv)
     /*
      * Init globals and such.
      */
-    RTR3Init(false, 0);
+    RTR3Init();
     g_pszProgName = RTPathFilename(argv[0]);
     for (unsigned j = 0; j < RT_ELEMENTS(g_aServices); j++)
     {
@@ -373,7 +373,7 @@ int main(int argc, char **argv)
     if (fDaemonize && !fDaemonzied)
     {
         VBoxServiceVerbose(1, "Daemonizing...\n");
-        rc = VbglR3Daemonize(false /* fNoChDir */, false /* fNoClose */);
+        rc = VbglR3Daemonize(false /* fNoChDir */, false /* fNoClose */, NULL);
         if (RT_FAILURE(rc))
             return VBoxServiceError("daemon failed: %Rrc\n", rc);
         /* in-child */

@@ -28,13 +28,36 @@ fi
 mac=$1
 # Create the VNIC if required
 if [ -z "$2" ]; then
-    # Try obtain a physical NIC that is currently active
-    phys_nic=`/usr/sbin/dladm show-dev | /usr/bin/awk 'NF==7 && $3=="up" { print $1 }'`
+    # snv <= 82 is to handled differently (dladm format changes at 83+)
+    snv_str=`uname -v`
+    snv_num=${snv_str##*[a-z][_]}
+
+    # Try obtain one that's currently active (82 dladm show-link doesn't indicate status; just use show-dev atm)
+    if [ $snv_num -le 82 ]; then
+        phys_nic=`/usr/sbin/dladm show-dev -p | /usr/bin/awk 'NF==4 && $2=="link=up" { print $1 }'`
+    elif [ $snv_num -le 95 ]; then
+        phys_field=`/usr/sbin/dladm show-link -p | /usr/bin/awk 'NF==5 && $4=="STATE=\"up\"" { print $1 }'`
+        eval $phys_field
+        phys_nic="$LINK"
+    else
+        phys_field=`/usr/sbin/dladm show-link -p -o link,state | /usr/bin/awk 'BEGIN{FS=":"} /up/ {print $1}'`
+        eval $phys_field
+        phys_nic="$LINK"
+    fi
+
     if [ -z "$phys_nic" ]; then
-        # Try obtain a physical NIC that is currently active
-        phys_nic=`/usr/sbin/dladm show-dev | /usr/bin/awk 'NF==4 && $2=="up" { print $1 }'`
-        # Failed to get a currently active NIC, get the first available NIC.
-        phys_nic=`/usr/sbin/dladm show-link | /usr/bin/nawk '/legacy/ {next} {print $1; exit}'`
+        # Failed to get a currently active NIC, get the first available link.
+        if [ $snv_num -le 82 ]; then
+            phys_nic=`/usr/sbin/dladm show-link -p | /usr/bin/nawk '/legacy/ {next} {print $1; exit}'`
+        elif [ $snv_num -le 95 ]; then
+            phys_field=`/usr/sbin/dladm show-link -p | /usr/bin/awk 'NF==5 && $2=="CLASS=\"phys\"" { print $1 }'`
+            eval $phys_field
+            phys_nic="$LINK"
+        else
+            phys_field=`/usr/sbin/dladm show-link -p -o link,class | /usr/bin/awk 'BEGIN{FS=":"} /up/ {print $1}'`
+            eval $phys_field
+            phys_nic="$LINK"            
+        fi
         if [ -z "$phys_nic" ]; then
             # Failed to get any NICs!
             echo "Failed to get a physical NIC to bind to."
@@ -43,10 +66,21 @@ if [ -z "$2" ]; then
     fi
 
     # To use a specific physical NIC, replace $phys_nic with the name of the NIC.
-    vnic_name="vnic"`/usr/lib/vna $phys_nic $mac`
+    vnic_name=`/usr/lib/vna $phys_nic $mac`
     if [ $? != 0 ]; then
+        echo "vna failed to bind VNIC."
         exit 1
     fi
+
+    # The vna utility can return the id/name depending on the distro
+    case "$vnic_name" in
+        vnic[0-9]*)
+            vnic_name="$vnic_name"
+            ;;
+        *)
+            vnic_name="vnic$vnic_name"
+            ;;
+    esac
 else
     vnic_name=$2
 fi

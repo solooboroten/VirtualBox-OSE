@@ -456,8 +456,12 @@ STDMETHODIMP MachineDebugger::COMGETTER(LogEnabled)(BOOL *aEnabled)
         return E_POINTER;
     AutoWriteLock alock(this);
     CHECK_READY();
+#ifdef LOG_ENABLED
     PRTLOGGER pLogInstance = RTLogDefaultInstance();
     *aEnabled = pLogInstance && !(pLogInstance->fFlags & RTLOGFLAGS_DISABLED);
+#else
+    *aEnabled = false;
+#endif
     return S_OK;
 }
 
@@ -492,11 +496,13 @@ STDMETHODIMP MachineDebugger::COMSETTER(LogEnabled)(BOOL aEnabled)
     Console::SafeVMPtr pVM (mParent);
     CheckComRCReturnRC (pVM.rc());
 
+#ifdef LOG_ENABLED
     int vrc = DBGFR3LogModifyFlags(pVM, aEnabled ? "enabled" : "disabled");
     if (VBOX_FAILURE(vrc))
     {
         /** @todo handle error code. */
     }
+#endif
     return S_OK;
 }
 
@@ -517,6 +523,28 @@ STDMETHODIMP MachineDebugger::COMGETTER(HWVirtExEnabled)(BOOL *enabled)
     Console::SafeVMPtrQuiet pVM (mParent);
     if (pVM.isOk())
         *enabled = HWACCMIsEnabled(pVM.raw());
+    else
+        *enabled = false;
+    return S_OK;
+}
+
+/**
+ * Returns the current nested paging flag.
+ *
+ * @returns COM status code
+ * @param   enabled address of result variable
+ */
+STDMETHODIMP MachineDebugger::COMGETTER(HWVirtExNestedPagingEnabled)(BOOL *enabled)
+{
+    if (!enabled)
+        return E_POINTER;
+
+    AutoWriteLock alock (this);
+    CHECK_READY();
+
+    Console::SafeVMPtrQuiet pVM (mParent);
+    if (pVM.isOk())
+        *enabled = HWACCMR3IsNestedPagingActive(pVM.raw());
     else
         *enabled = false;
     return S_OK;

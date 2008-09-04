@@ -1,9 +1,9 @@
 /* -*- c-basic-offset: 8 -*-
    rdesktop: A Remote Desktop Protocol client.
    Sound Channel Process Functions - libao-driver
-   Copyright (C) Matthew Chapman 2003
+   Copyright (C) Matthew Chapman 2003-2007
    Copyright (C) GuoJunBo guojunbo@ict.ac.cn 2003
-   Copyright (C) Michael Gernoth mike@zerfleddert.de 2005
+   Copyright (C) Michael Gernoth mike@zerfleddert.de 2005-2007
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,47 +20,72 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
+/*
+ * Sun GPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * the General Public License version 2 (GPLv2) at this time for any software where
+ * a choice of GPL license versions is made available with the language indicating
+ * that GPLv2 or any later version may be used, or where a choice of which version
+ * of the GPL is applied is otherwise unspecified.
+ */
+
 #include "rdesktop.h"
+#include "rdpsnd.h"
+#include "rdpsnd_dsp.h"
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <ao/ao.h>
 #include <sys/time.h>
 
-#define MAX_QUEUE	10
-#define WAVEOUTBUF	16
+#define WAVEOUTLEN	16
 
-int g_dsp_fd;
-BOOL g_dsp_busy = False;
 static ao_device *o_device = NULL;
 static int default_driver;
-static int samplerate;
-static int audiochannels;
-static BOOL reopened;
-static short samplewidth;
+static RD_BOOL reopened;
+static char *libao_device = NULL;
 
-static struct audio_packet
+void libao_play(void);
+
+void
+libao_add_fds(int *n, fd_set * rfds, fd_set * wfds, struct timeval *tv)
 {
-	struct stream s;
-	uint16 tick;
-	uint8 index;
-} packet_queue[MAX_QUEUE];
-static unsigned int queue_hi, queue_lo;
+	/* We need to be called rather often... */
+	if (o_device != NULL && !rdpsnd_queue_empty())
+		FD_SET(0, wfds);
+}
 
-BOOL
-wave_out_open(void)
+void
+libao_check_fds(fd_set * rfds, fd_set * wfds)
+{
+	if (o_device == NULL)
+		return;
+
+	if (!rdpsnd_queue_empty())
+		libao_play();
+}
+
+RD_BOOL
+libao_open(void)
 {
 	ao_sample_format format;
 
 	ao_initialize();
-	default_driver = ao_default_driver_id();
+
+	if (libao_device)
+	{
+		default_driver = ao_driver_id(libao_device);
+	}
+	else
+	{
+		default_driver = ao_default_driver_id();
+	}
 
 	format.bits = 16;
 	format.channels = 2;
-	audiochannels = 2;
 	format.rate = 44100;
-	samplerate = 44100;
-	format.byte_format = AO_FMT_LITTLE;
+	format.byte_format = AO_FMT_NATIVE;
+
 
 	o_device = ao_open_live(default_driver, &format, NULL);
 	if (o_device == NULL)
@@ -68,61 +93,37 @@ wave_out_open(void)
 		return False;
 	}
 
-	g_dsp_fd = 0;
-	queue_lo = queue_hi = 0;
-
 	reopened = True;
 
 	return True;
 }
 
 void
-wave_out_close(void)
+libao_close(void)
 {
 	/* Ack all remaining packets */
-	while (queue_lo != queue_hi)
+	while (!rdpsnd_queue_empty())
 	{
-		rdpsnd_send_completion(packet_queue[queue_lo].tick, packet_queue[queue_lo].index);
-		free(packet_queue[queue_lo].s.data);
-		queue_lo = (queue_lo + 1) % MAX_QUEUE;
+		rdpsnd_queue_next(0);
 	}
 
 	if (o_device != NULL)
 		ao_close(o_device);
 
+	o_device = NULL;
+
 	ao_shutdown();
 }
 
-BOOL
-wave_out_format_supported(WAVEFORMATEX * pwfx)
-{
-	if (pwfx->wFormatTag != WAVE_FORMAT_PCM)
-		return False;
-	if ((pwfx->nChannels != 1) && (pwfx->nChannels != 2))
-		return False;
-	if ((pwfx->wBitsPerSample != 8) && (pwfx->wBitsPerSample != 16))
-		return False;
-	/* The only common denominator between libao output drivers is a sample-rate of
-	   44100, we need to upsample 22050 to it */
-	if ((pwfx->nSamplesPerSec != 44100) && (pwfx->nSamplesPerSec != 22050))
-		return False;
-
-	return True;
-}
-
-BOOL
-wave_out_set_format(WAVEFORMATEX * pwfx)
+RD_BOOL
+libao_set_format(RD_WAVEFORMATEX * pwfx)
 {
 	ao_sample_format format;
 
 	format.bits = pwfx->wBitsPerSample;
 	format.channels = pwfx->nChannels;
-	audiochannels = pwfx->nChannels;
 	format.rate = 44100;
-	samplerate = pwfx->nSamplesPerSec;
-	format.byte_format = AO_FMT_LITTLE;
-
-	samplewidth = pwfx->wBitsPerSample / 8;
+	format.byte_format = AO_FMT_NATIVE;
 
 	if (o_device != NULL)
 		ao_close(o_device);
@@ -133,50 +134,22 @@ wave_out_set_format(WAVEFORMATEX * pwfx)
 		return False;
 	}
 
+	if (rdpsnd_dsp_resample_set(44100, pwfx->wBitsPerSample, pwfx->nChannels) == False)
+	{
+		return False;
+	}
+
 	reopened = True;
 
 	return True;
 }
 
 void
-wave_out_volume(uint16 left, uint16 right)
-{
-	warning("volume changes not supported with libao-output\n");
-}
-
-void
-wave_out_write(STREAM s, uint16 tick, uint8 index)
-{
-	struct audio_packet *packet = &packet_queue[queue_hi];
-	unsigned int next_hi = (queue_hi + 1) % MAX_QUEUE;
-
-	if (next_hi == queue_lo)
-	{
-		error("No space to queue audio packet\n");
-		return;
-	}
-
-	queue_hi = next_hi;
-
-	packet->s = *s;
-	packet->tick = tick;
-	packet->index = index;
-	packet->s.p += 4;
-
-	/* we steal the data buffer from s, give it a new one */
-	s->data = malloc(s->size);
-
-	if (!g_dsp_busy)
-		wave_out_play();
-}
-
-void
-wave_out_play(void)
+libao_play(void)
 {
 	struct audio_packet *packet;
 	STREAM out;
-	char outbuf[WAVEOUTBUF];
-	int offset, len, i;
+	int len;
 	static long prev_s, prev_us;
 	unsigned int duration;
 	struct timeval tv;
@@ -190,57 +163,18 @@ wave_out_play(void)
 		prev_us = tv.tv_usec;
 	}
 
-	if (queue_lo == queue_hi)
-	{
-		g_dsp_busy = 0;
+	/* We shouldn't be called if the queue is empty, but still */
+	if (rdpsnd_queue_empty())
 		return;
-	}
 
-	packet = &packet_queue[queue_lo];
+	packet = rdpsnd_queue_current_packet();
 	out = &packet->s;
 
-	if (((queue_lo + 1) % MAX_QUEUE) != queue_hi)
-	{
-		next_tick = packet_queue[(queue_lo + 1) % MAX_QUEUE].tick;
-	}
-	else
-	{
-		next_tick = (packet->tick + 65535) % 65536;
-	}
+	next_tick = rdpsnd_queue_next_tick();
 
-	len = 0;
-
-	if (samplerate == 22050)
-	{
-		/* Resample to 44100 */
-		for (i = 0; (i < ((WAVEOUTBUF / 4) * (3 - samplewidth))) && (out->p < out->end);
-		     i++)
-		{
-			/* On a stereo-channel we must make sure that left and right
-			   does not get mixed up, so we need to expand the sample-
-			   data with channels in mind: 1234 -> 12123434
-			   If we have a mono-channel, we can expand the data by simply
-			   doubling the sample-data: 1234 -> 11223344 */
-			if (audiochannels == 2)
-				offset = ((i * 2) - (i & 1)) * samplewidth;
-			else
-				offset = (i * 2) * samplewidth;
-
-			memcpy(&outbuf[offset], out->p, samplewidth);
-			memcpy(&outbuf[audiochannels * samplewidth + offset], out->p, samplewidth);
-
-			out->p += samplewidth;
-			len += 2 * samplewidth;
-		}
-	}
-	else
-	{
-		len = (WAVEOUTBUF > (out->end - out->p)) ? (out->end - out->p) : WAVEOUTBUF;
-		memcpy(outbuf, out->p, len);
-		out->p += len;
-	}
-
-	ao_play(o_device, outbuf, len);
+	len = (WAVEOUTLEN > (out->end - out->p)) ? (out->end - out->p) : WAVEOUTLEN;
+	ao_play(o_device, (char *) out->p, len);
+	out->p += len;
 
 	gettimeofday(&tv, NULL);
 
@@ -251,6 +185,8 @@ wave_out_play(void)
 
 	if ((out->p == out->end) || duration > next_tick - packet->tick + 500)
 	{
+		unsigned int delay_us;
+
 		prev_s = tv.tv_sec;
 		prev_us = tv.tv_usec;
 
@@ -261,13 +197,38 @@ wave_out_play(void)
 			       (packet->tick + duration) % 65536, next_tick % 65536));
 		}
 
-		/* Until all drivers are using the windows sound-ticks, we need to
-		   substract the 50 ticks added later by rdpsnd.c */
-		rdpsnd_send_completion(((packet->tick + duration) % 65536) - 50, packet->index);
-		free(out->data);
-		queue_lo = (queue_lo + 1) % MAX_QUEUE;
+		delay_us = ((out->size / 4) * (1000000 / 44100));
+
+		rdpsnd_queue_next(delay_us);
+	}
+}
+
+struct audio_driver *
+libao_register(char *options)
+{
+	static struct audio_driver libao_driver;
+
+	memset(&libao_driver, 0, sizeof(libao_driver));
+
+	libao_driver.name = "libao";
+	libao_driver.description = "libao output driver, default device: system dependent";
+
+	libao_driver.add_fds = libao_add_fds;
+	libao_driver.check_fds = libao_check_fds;
+
+	libao_driver.wave_out_open = libao_open;
+	libao_driver.wave_out_close = libao_close;
+	libao_driver.wave_out_format_supported = rdpsnd_dsp_resample_supported;
+	libao_driver.wave_out_set_format = libao_set_format;
+	libao_driver.wave_out_volume = rdpsnd_dsp_softvol_set;
+
+	libao_driver.need_byteswap_on_be = 1;
+	libao_driver.need_resampling = 1;
+
+	if (options)
+	{
+		libao_device = xstrdup(options);
 	}
 
-	g_dsp_busy = 1;
-	return;
+	return &libao_driver;
 }
