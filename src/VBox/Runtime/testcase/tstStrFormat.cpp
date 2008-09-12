@@ -1,4 +1,4 @@
-/* $Id: tstStrFormat.cpp 34645 2008-08-13 10:14:09Z aleksey $ */
+/* $Id: tstStrFormat.cpp 11381 2008-08-13 10:14:09Z vboxsync $ */
 /** @file
  * IPRT Testcase - String formatting.
  */

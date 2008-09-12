@@ -1,4 +1,4 @@
-/* $Revision: 35910 $ */
+/* $Revision: 12293 $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Common code.
  */
@@ -114,134 +114,6 @@
 # define VBOX_SVN_REV 0
 #endif
 
-
-/*******************************************************************************
-*   Global Variables                                                           *
-*******************************************************************************/
-/**
- * Array of the R0 SUP API.
- */
-static SUPFUNC g_aFunctions[] =
-{
-    /* name                                     function */
-    { "SUPR0ComponentRegisterFactory",          (void *)SUPR0ComponentRegisterFactory },
-    { "SUPR0ComponentDeregisterFactory",        (void *)SUPR0ComponentDeregisterFactory },
-    { "SUPR0ComponentQueryFactory",             (void *)SUPR0ComponentQueryFactory },
-    { "SUPR0ObjRegister",                       (void *)SUPR0ObjRegister },
-    { "SUPR0ObjAddRef",                         (void *)SUPR0ObjAddRef },
-    { "SUPR0ObjRelease",                        (void *)SUPR0ObjRelease },
-    { "SUPR0ObjVerifyAccess",                   (void *)SUPR0ObjVerifyAccess },
-    { "SUPR0LockMem",                           (void *)SUPR0LockMem },
-    { "SUPR0UnlockMem",                         (void *)SUPR0UnlockMem },
-    { "SUPR0ContAlloc",                         (void *)SUPR0ContAlloc },
-    { "SUPR0ContFree",                          (void *)SUPR0ContFree },
-    { "SUPR0LowAlloc",                          (void *)SUPR0LowAlloc },
-    { "SUPR0LowFree",                           (void *)SUPR0LowFree },
-    { "SUPR0MemAlloc",                          (void *)SUPR0MemAlloc },
-    { "SUPR0MemGetPhys",                        (void *)SUPR0MemGetPhys },
-    { "SUPR0MemFree",                           (void *)SUPR0MemFree },
-    { "SUPR0PageAlloc",                         (void *)SUPR0PageAlloc },
-    { "SUPR0PageFree",                          (void *)SUPR0PageFree },
-    { "SUPR0Printf",                            (void *)SUPR0Printf },
-    { "RTMemAlloc",                             (void *)RTMemAlloc },
-    { "RTMemAllocZ",                            (void *)RTMemAllocZ },
-    { "RTMemFree",                              (void *)RTMemFree },
-    /*{ "RTMemDup",                               (void *)RTMemDup },*/
-    { "RTMemRealloc",                           (void *)RTMemRealloc },
-    { "RTR0MemObjAllocLow",                     (void *)RTR0MemObjAllocLow },
-    { "RTR0MemObjAllocPage",                    (void *)RTR0MemObjAllocPage },
-    { "RTR0MemObjAllocPhys",                    (void *)RTR0MemObjAllocPhys },
-    { "RTR0MemObjAllocPhysNC",                  (void *)RTR0MemObjAllocPhysNC },
-    { "RTR0MemObjAllocCont",                    (void *)RTR0MemObjAllocCont },
-    { "RTR0MemObjLockUser",                     (void *)RTR0MemObjLockUser },
-    { "RTR0MemObjMapKernel",                    (void *)RTR0MemObjMapKernel },
-    { "RTR0MemObjMapUser",                      (void *)RTR0MemObjMapUser },
-    { "RTR0MemObjAddress",                      (void *)RTR0MemObjAddress },
-    { "RTR0MemObjAddressR3",                    (void *)RTR0MemObjAddressR3 },
-    { "RTR0MemObjSize",                         (void *)RTR0MemObjSize },
-    { "RTR0MemObjIsMapping",                    (void *)RTR0MemObjIsMapping },
-    { "RTR0MemObjGetPagePhysAddr",              (void *)RTR0MemObjGetPagePhysAddr },
-    { "RTR0MemObjFree",                         (void *)RTR0MemObjFree },
-/* These don't work yet on linux - use fast mutexes!
-    { "RTSemMutexCreate",                       (void *)RTSemMutexCreate },
-    { "RTSemMutexRequest",                      (void *)RTSemMutexRequest },
-    { "RTSemMutexRelease",                      (void *)RTSemMutexRelease },
-    { "RTSemMutexDestroy",                      (void *)RTSemMutexDestroy },
-*/
-    { "RTProcSelf",                             (void *)RTProcSelf },
-    { "RTR0ProcHandleSelf",                     (void *)RTR0ProcHandleSelf },
-    { "RTSemFastMutexCreate",                   (void *)RTSemFastMutexCreate },
-    { "RTSemFastMutexDestroy",                  (void *)RTSemFastMutexDestroy },
-    { "RTSemFastMutexRequest",                  (void *)RTSemFastMutexRequest },
-    { "RTSemFastMutexRelease",                  (void *)RTSemFastMutexRelease },
-    { "RTSemEventCreate",                       (void *)RTSemEventCreate },
-    { "RTSemEventSignal",                       (void *)RTSemEventSignal },
-    { "RTSemEventWait",                         (void *)RTSemEventWait },
-    { "RTSemEventWaitNoResume",                 (void *)RTSemEventWaitNoResume },
-    { "RTSemEventDestroy",                      (void *)RTSemEventDestroy },
-    { "RTSemEventMultiCreate",                  (void *)RTSemEventMultiCreate },
-    { "RTSemEventMultiSignal",                  (void *)RTSemEventMultiSignal },
-    { "RTSemEventMultiReset",                   (void *)RTSemEventMultiReset },
-    { "RTSemEventMultiWait",                    (void *)RTSemEventMultiWait },
-#ifdef SUPDRV_WITH_UNWIND_HACK
-    { "RTSemEventMultiWaitNoResume",            (void *)supdrvNtWrapRTSemEventMultiWaitNoResume },
-#else
-    { "RTSemEventMultiWaitNoResume",            (void *)RTSemEventMultiWaitNoResume },
-#endif
-    { "RTSemEventMultiDestroy",                 (void *)RTSemEventMultiDestroy },
-    { "RTSpinlockCreate",                       (void *)RTSpinlockCreate },
-    { "RTSpinlockDestroy",                      (void *)RTSpinlockDestroy },
-    { "RTSpinlockAcquire",                      (void *)RTSpinlockAcquire },
-    { "RTSpinlockRelease",                      (void *)RTSpinlockRelease },
-    { "RTSpinlockAcquireNoInts",                (void *)RTSpinlockAcquireNoInts },
-    { "RTSpinlockReleaseNoInts",                (void *)RTSpinlockReleaseNoInts },
-    { "RTTimeNanoTS",                           (void *)RTTimeNanoTS },
-    { "RTTimeMillieTS",                         (void *)RTTimeMilliTS },
-    { "RTTimeSystemNanoTS",                     (void *)RTTimeSystemNanoTS },
-    { "RTTimeSystemMillieTS",                   (void *)RTTimeSystemMilliTS },
-    { "RTThreadNativeSelf",                     (void *)RTThreadNativeSelf },
-    { "RTThreadSleep",                          (void *)RTThreadSleep },
-    { "RTThreadYield",                          (void *)RTThreadYield },
-#if 0 /* Thread APIs, Part 2. */
-    { "RTThreadSelf",                           (void *)RTThreadSelf },
-    { "RTThreadCreate",                         (void *)RTThreadCreate },
-    { "RTThreadGetNative",                      (void *)RTThreadGetNative },
-    { "RTThreadWait",                           (void *)RTThreadWait },
-    { "RTThreadWaitNoResume",                   (void *)RTThreadWaitNoResume },
-    { "RTThreadGetName",                        (void *)RTThreadGetName },
-    { "RTThreadSelfName",                       (void *)RTThreadSelfName },
-    { "RTThreadGetType",                        (void *)RTThreadGetType },
-    { "RTThreadUserSignal",                     (void *)RTThreadUserSignal },
-    { "RTThreadUserReset",                      (void *)RTThreadUserReset },
-    { "RTThreadUserWait",                       (void *)RTThreadUserWait },
-    { "RTThreadUserWaitNoResume",               (void *)RTThreadUserWaitNoResume },
-#endif
-    { "RTLogDefaultInstance",                   (void *)RTLogDefaultInstance },
-    { "RTMpCpuId",                              (void *)RTMpCpuId },
-    { "RTMpCpuIdFromSetIndex",                  (void *)RTMpCpuIdFromSetIndex },
-    { "RTMpCpuIdToSetIndex",                    (void *)RTMpCpuIdToSetIndex },
-    { "RTMpIsCpuPossible",                      (void *)RTMpIsCpuPossible },
-    { "RTMpGetCount",                           (void *)RTMpGetCount },
-    { "RTMpGetMaxCpuId",                        (void *)RTMpGetMaxCpuId },
-    { "RTMpGetOnlineCount",                     (void *)RTMpGetOnlineCount },
-    { "RTMpGetOnlineSet",                       (void *)RTMpGetOnlineSet },
-    { "RTMpGetSet",                             (void *)RTMpGetSet },
-    { "RTMpIsCpuOnline",                        (void *)RTMpIsCpuOnline },
-    { "RTMpOnAll",                              (void *)RTMpOnAll },
-    { "RTMpOnOthers",                           (void *)RTMpOnOthers },
-    { "RTMpOnSpecific",                         (void *)RTMpOnSpecific },
-    { "RTLogRelDefaultInstance",                (void *)RTLogRelDefaultInstance },
-    { "RTLogSetDefaultInstanceThread",          (void *)RTLogSetDefaultInstanceThread },
-    { "RTLogLogger",                            (void *)RTLogLogger },
-    { "RTLogLoggerEx",                          (void *)RTLogLoggerEx },
-    { "RTLogLoggerExV",                         (void *)RTLogLoggerExV },
-    { "RTLogPrintf",                            (void *)RTLogPrintf },
-    { "RTLogPrintfV",                           (void *)RTLogPrintfV },
-    { "AssertMsg1",                             (void *)AssertMsg1 },
-    { "AssertMsg2",                             (void *)AssertMsg2 },
-};
-
-
 /*******************************************************************************
 *   Internal Functions                                                         *
 *******************************************************************************/
@@ -274,6 +146,247 @@ static void     supdrvGipDestroy(PSUPDRVDEVEXT pDevExt);
 static DECLCALLBACK(void) supdrvGipSyncTimer(PRTTIMER pTimer, void *pvUser, uint64_t iTick);
 static DECLCALLBACK(void) supdrvGipAsyncTimer(PRTTIMER pTimer, void *pvUser, uint64_t iTick);
 static DECLCALLBACK(void) supdrvGipMpEvent(RTMPEVENT enmEvent, RTCPUID idCpu, void *pvUser);
+
+#ifdef SUPDRV_WITH_UNWIND_HACK
+DECLASM(int)    supdrvNtWrapVMMR0EntryEx(PFNRT pfnVMMR0EntryEx, PVM pVM, unsigned uOperation, PSUPVMMR0REQHDR pReq, uint64_t u64Arg, PSUPDRVSESSION pSession);
+DECLASM(int)    supdrvNtWrapVMMR0EntryFast(PFNRT pfnVMMR0EntryFast, PVM pVM, unsigned uOperation);
+DECLASM(void)   supdrvNtWrapObjDestructor(PFNRT pfnDestruction, void *pvObj, void *pvUser1, void *pvUser2);
+DECLASM(void *) supdrvNtWrapQueryFactoryInterface(PFNRT pfnQueryFactoryInterface, struct SUPDRVFACTORY const *pSupDrvFactory, PSUPDRVSESSION pSession, const char *pszInterfaceUuid);
+DECLASM(int)    supdrvNtWrapModuleInit(PFNRT pfnModuleInit);
+DECLASM(void)   supdrvNtWrapModuleTerm(PFNRT pfnModuleTerm);
+
+DECLASM(int)    UNWIND_WRAP(SUPR0ComponentRegisterFactory)(PSUPDRVSESSION pSession, PCSUPDRVFACTORY pFactory);
+DECLASM(int)    UNWIND_WRAP(SUPR0ComponentDeregisterFactory)(PSUPDRVSESSION pSession, PCSUPDRVFACTORY pFactory);
+DECLASM(int)    UNWIND_WRAP(SUPR0ComponentQueryFactory)(PSUPDRVSESSION pSession, const char *pszName, const char *pszInterfaceUuid, void **ppvFactoryIf);
+DECLASM(void *) UNWIND_WRAP(SUPR0ObjRegister)(PSUPDRVSESSION pSession, SUPDRVOBJTYPE enmType, PFNSUPDRVDESTRUCTOR pfnDestructor, void *pvUser1, void *pvUser2);
+DECLASM(int)    UNWIND_WRAP(SUPR0ObjAddRef)(void *pvObj, PSUPDRVSESSION pSession);
+DECLASM(int)    UNWIND_WRAP(SUPR0ObjRelease)(void *pvObj, PSUPDRVSESSION pSession);
+DECLASM(int)    UNWIND_WRAP(SUPR0ObjVerifyAccess)(void *pvObj, PSUPDRVSESSION pSession, const char *pszObjName);
+DECLASM(int)    UNWIND_WRAP(SUPR0LockMem)(PSUPDRVSESSION pSession, RTR3PTR pvR3, uint32_t cPages, PRTHCPHYS paPages);
+DECLASM(int)    UNWIND_WRAP(SUPR0UnlockMem)(PSUPDRVSESSION pSession, RTR3PTR pvR3);
+DECLASM(int)    UNWIND_WRAP(SUPR0ContAlloc)(PSUPDRVSESSION pSession, uint32_t cPages, PRTR0PTR ppvR0, PRTR3PTR ppvR3, PRTHCPHYS pHCPhys);
+DECLASM(int)    UNWIND_WRAP(SUPR0ContFree)(PSUPDRVSESSION pSession, RTHCUINTPTR uPtr);
+DECLASM(int)    UNWIND_WRAP(SUPR0LowAlloc)(PSUPDRVSESSION pSession, uint32_t cPages, PRTR0PTR ppvR0, PRTR3PTR ppvR3, PRTHCPHYS paPages);
+DECLASM(int)    UNWIND_WRAP(SUPR0LowFree)(PSUPDRVSESSION pSession, RTHCUINTPTR uPtr);
+DECLASM(int)    UNWIND_WRAP(SUPR0MemAlloc)(PSUPDRVSESSION pSession, uint32_t cb, PRTR0PTR ppvR0, PRTR3PTR ppvR3);
+DECLASM(int)    UNWIND_WRAP(SUPR0MemGetPhys)(PSUPDRVSESSION pSession, RTHCUINTPTR uPtr, PSUPPAGE paPages);
+DECLASM(int)    UNWIND_WRAP(SUPR0MemFree)(PSUPDRVSESSION pSession, RTHCUINTPTR uPtr);
+DECLASM(int)    UNWIND_WRAP(SUPR0PageAlloc)(PSUPDRVSESSION pSession, uint32_t cPages, PRTR3PTR ppvR3, PRTHCPHYS paPages);
+DECLASM(int)    UNWIND_WRAP(SUPR0PageFree)(PSUPDRVSESSION pSession, RTR3PTR pvR3);
+//DECLASM(int)    UNWIND_WRAP(SUPR0Printf)(const char *pszFormat, ...);
+DECLASM(void *) UNWIND_WRAP(RTMemAlloc)(size_t cb) RT_NO_THROW;
+DECLASM(void *) UNWIND_WRAP(RTMemAllocZ)(size_t cb) RT_NO_THROW;
+DECLASM(void)   UNWIND_WRAP(RTMemFree)(void *pv) RT_NO_THROW;
+DECLASM(void *) UNWIND_WRAP(RTMemDup)(const void *pvSrc, size_t cb) RT_NO_THROW;
+DECLASM(void *) UNWIND_WRAP(RTMemDupEx)(const void *pvSrc, size_t cbSrc, size_t cbExtra) RT_NO_THROW;
+DECLASM(void *) UNWIND_WRAP(RTMemRealloc)(void *pvOld, size_t cbNew) RT_NO_THROW;
+DECLASM(int)    UNWIND_WRAP(RTR0MemObjAllocLow)(PRTR0MEMOBJ pMemObj, size_t cb, bool fExecutable);
+DECLASM(int)    UNWIND_WRAP(RTR0MemObjAllocPage)(PRTR0MEMOBJ pMemObj, size_t cb, bool fExecutable);
+DECLASM(int)    UNWIND_WRAP(RTR0MemObjAllocPhys)(PRTR0MEMOBJ pMemObj, size_t cb, RTHCPHYS PhysHighest);
+DECLASM(int)    UNWIND_WRAP(RTR0MemObjAllocPhysNC)(PRTR0MEMOBJ pMemObj, size_t cb, RTHCPHYS PhysHighest);
+DECLASM(int)    UNWIND_WRAP(RTR0MemObjAllocCont)(PRTR0MEMOBJ pMemObj, size_t cb, bool fExecutable);
+DECLASM(int)    UNWIND_WRAP(RTR0MemObjLockUser)(PRTR0MEMOBJ pMemObj, RTR3PTR R3Ptr, size_t cb, RTR0PROCESS R0Process);
+DECLASM(int)    UNWIND_WRAP(RTR0MemObjMapKernel)(PRTR0MEMOBJ pMemObj, RTR0MEMOBJ MemObjToMap, void *pvFixed, size_t uAlignment, unsigned fProt);
+DECLASM(int)    UNWIND_WRAP(RTR0MemObjMapUser)(PRTR0MEMOBJ pMemObj, RTR0MEMOBJ MemObjToMap, RTR3PTR R3PtrFixed, size_t uAlignment, unsigned fProt, RTR0PROCESS R0Process);
+/*DECLASM(void *) UNWIND_WRAP(RTR0MemObjAddress)(RTR0MEMOBJ MemObj); - not necessary */
+/*DECLASM(RTR3PTR) UNWIND_WRAP(RTR0MemObjAddressR3)(RTR0MEMOBJ MemObj); - not necessary */
+/*DECLASM(size_t) UNWIND_WRAP(RTR0MemObjSize)(RTR0MEMOBJ MemObj); - not necessary */
+/*DECLASM(bool)   UNWIND_WRAP(RTR0MemObjIsMapping)(RTR0MEMOBJ MemObj); - not necessary */
+/*DECLASM(RTHCPHYS) UNWIND_WRAP(RTR0MemObjGetPagePhysAddr)(RTR0MEMOBJ MemObj, size_t iPage); - not necessary */
+DECLASM(int)    UNWIND_WRAP(RTR0MemObjFree)(RTR0MEMOBJ MemObj, bool fFreeMappings);
+/* RTProcSelf             - not necessary */
+/* RTR0ProcHandleSelf     - not necessary */
+DECLASM(int)    UNWIND_WRAP(RTSemFastMutexCreate)(PRTSEMFASTMUTEX pMutexSem);
+DECLASM(int)    UNWIND_WRAP(RTSemFastMutexDestroy)(RTSEMFASTMUTEX MutexSem);
+DECLASM(int)    UNWIND_WRAP(RTSemFastMutexRequest)(RTSEMFASTMUTEX MutexSem);
+DECLASM(int)    UNWIND_WRAP(RTSemFastMutexRelease)(RTSEMFASTMUTEX MutexSem);
+DECLASM(int)    UNWIND_WRAP(RTSemEventCreate)(PRTSEMEVENT pEventSem);
+DECLASM(int)    UNWIND_WRAP(RTSemEventSignal)(RTSEMEVENT EventSem);
+DECLASM(int)    UNWIND_WRAP(RTSemEventWait)(RTSEMEVENT EventSem, unsigned cMillies);
+DECLASM(int)    UNWIND_WRAP(RTSemEventWaitNoResume)(RTSEMEVENT EventSem, unsigned cMillies);
+DECLASM(int)    UNWIND_WRAP(RTSemEventDestroy)(RTSEMEVENT EventSem);
+DECLASM(int)    UNWIND_WRAP(RTSemEventMultiCreate)(PRTSEMEVENTMULTI pEventMultiSem);
+DECLASM(int)    UNWIND_WRAP(RTSemEventMultiSignal)(RTSEMEVENTMULTI EventMultiSem);
+DECLASM(int)    UNWIND_WRAP(RTSemEventMultiReset)(RTSEMEVENTMULTI EventMultiSem);
+DECLASM(int)    UNWIND_WRAP(RTSemEventMultiWait)(RTSEMEVENTMULTI EventMultiSem, unsigned cMillies);
+DECLASM(int)    UNWIND_WRAP(RTSemEventMultiWaitNoResume)(RTSEMEVENTMULTI EventMultiSem, unsigned cMillies);
+DECLASM(int)    UNWIND_WRAP(RTSemEventMultiDestroy)(RTSEMEVENTMULTI EventMultiSem);
+DECLASM(int)    UNWIND_WRAP(RTSpinlockCreate)(PRTSPINLOCK pSpinlock);
+DECLASM(int)    UNWIND_WRAP(RTSpinlockDestroy)(RTSPINLOCK Spinlock);
+DECLASM(void)   UNWIND_WRAP(RTSpinlockAcquire)(RTSPINLOCK Spinlock, PRTSPINLOCKTMP pTmp);
+DECLASM(void)   UNWIND_WRAP(RTSpinlockRelease)(RTSPINLOCK Spinlock, PRTSPINLOCKTMP pTmp);
+DECLASM(void)   UNWIND_WRAP(RTSpinlockAcquireNoInts)(RTSPINLOCK Spinlock, PRTSPINLOCKTMP pTmp);
+DECLASM(void)   UNWIND_WRAP(RTSpinlockReleaseNoInts)(RTSPINLOCK Spinlock, PRTSPINLOCKTMP pTmp);
+/* RTTimeNanoTS           - not necessary */
+/* RTTimeMilliTS          - not necessary */
+/* RTTimeSystemNanoTS     - not necessary */
+/* RTTimeSystemMilliTS    - not necessary */
+/* RTThreadNativeSelf     - not necessary */
+DECLASM(int)    UNWIND_WRAP(RTThreadSleep)(unsigned cMillies);
+DECLASM(bool)   UNWIND_WRAP(RTThreadYield)(void);
+#if 0
+/* RTThreadSelf           - not necessary */
+DECLASM(int)    UNWIND_WRAP(RTThreadCreate)(PRTTHREAD pThread, PFNRTTHREAD pfnThread, void *pvUser, size_t cbStack,
+                                            RTTHREADTYPE enmType, unsigned fFlags, const char *pszName);
+DECLASM(RTNATIVETHREAD) UNWIND_WRAP(RTThreadGetNative)(RTTHREAD Thread);
+DECLASM(int)    UNWIND_WRAP(RTThreadWait)(RTTHREAD Thread, unsigned cMillies, int *prc);
+DECLASM(int)    UNWIND_WRAP(RTThreadWaitNoResume)(RTTHREAD Thread, unsigned cMillies, int *prc);
+DECLASM(const char *) UNWIND_WRAP(RTThreadGetName)(RTTHREAD Thread);
+DECLASM(const char *) UNWIND_WRAP(RTThreadSelfName)(void);
+DECLASM(RTTHREADTYPE) UNWIND_WRAP(RTThreadGetType)(RTTHREAD Thread);
+DECLASM(int)    UNWIND_WRAP(RTThreadUserSignal)(RTTHREAD Thread);
+DECLASM(int)    UNWIND_WRAP(RTThreadUserReset)(RTTHREAD Thread);
+DECLASM(int)    UNWIND_WRAP(RTThreadUserWait)(RTTHREAD Thread, unsigned cMillies);
+DECLASM(int)    UNWIND_WRAP(RTThreadUserWaitNoResume)(RTTHREAD Thread, unsigned cMillies);
+#endif
+/* RTLogDefaultInstance   - a bit of a gamble, but we do not want the overhead! */
+/* RTMpCpuId              - not necessary */
+/* RTMpCpuIdFromSetIndex  - not necessary */
+/* RTMpCpuIdToSetIndex    - not necessary */
+/* RTMpIsCpuPossible      - not necessary */
+/* RTMpGetCount           - not necessary */
+/* RTMpGetMaxCpuId        - not necessary */
+/* RTMpGetOnlineCount     - not necessary */
+/* RTMpGetOnlineSet       - not necessary */
+/* RTMpGetSet             - not necessary */
+/* RTMpIsCpuOnline        - not necessary */
+DECLASM(int)   UNWIND_WRAP(RTMpOnAll)(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2);
+DECLASM(int)   UNWIND_WRAP(RTMpOnOthers)(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2);
+DECLASM(int)   UNWIND_WRAP(RTMpOnSpecific)(RTCPUID idCpu, PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2);
+/* RTLogRelDefaultInstance - not necessary. */
+DECLASM(int)   UNWIND_WRAP(RTLogSetDefaultInstanceThread)(PRTLOGGER pLogger, uintptr_t uKey);
+/* RTLogLogger            - can't wrap this buster.  */
+/* RTLogLoggerEx          - can't wrap this buster. */
+DECLASM(void)  UNWIND_WRAP(RTLogLoggerExV)(PRTLOGGER pLogger, unsigned fFlags, unsigned iGroup, const char *pszFormat, va_list args);
+/* RTLogPrintf            - can't wrap this buster. */  /** @todo provide va_list log wrappers in RuntimeR0. */
+DECLASM(void)  UNWIND_WRAP(RTLogPrintfV)(const char *pszFormat, va_list args);
+DECLASM(void)  UNWIND_WRAP(AssertMsg1)(const char *pszExpr, unsigned uLine, const char *pszFile, const char *pszFunction);
+/* AssertMsg2             - can't wrap this buster. */
+#endif /* SUPDRV_WITH_UNWIND_HACK */
+
+
+/*******************************************************************************
+*   Global Variables                                                           *
+*******************************************************************************/
+/**
+ * Array of the R0 SUP API.
+ */
+static SUPFUNC g_aFunctions[] =
+{
+    /* name                                     function */
+    { "SUPR0ComponentRegisterFactory",          (void *)UNWIND_WRAP(SUPR0ComponentRegisterFactory) },
+    { "SUPR0ComponentDeregisterFactory",        (void *)UNWIND_WRAP(SUPR0ComponentDeregisterFactory) },
+    { "SUPR0ComponentQueryFactory",             (void *)UNWIND_WRAP(SUPR0ComponentQueryFactory) },
+    { "SUPR0ObjRegister",                       (void *)UNWIND_WRAP(SUPR0ObjRegister) },
+    { "SUPR0ObjAddRef",                         (void *)UNWIND_WRAP(SUPR0ObjAddRef) },
+    { "SUPR0ObjRelease",                        (void *)UNWIND_WRAP(SUPR0ObjRelease) },
+    { "SUPR0ObjVerifyAccess",                   (void *)UNWIND_WRAP(SUPR0ObjVerifyAccess) },
+    { "SUPR0LockMem",                           (void *)UNWIND_WRAP(SUPR0LockMem) },
+    { "SUPR0UnlockMem",                         (void *)UNWIND_WRAP(SUPR0UnlockMem) },
+    { "SUPR0ContAlloc",                         (void *)UNWIND_WRAP(SUPR0ContAlloc) },
+    { "SUPR0ContFree",                          (void *)UNWIND_WRAP(SUPR0ContFree) },
+    { "SUPR0LowAlloc",                          (void *)UNWIND_WRAP(SUPR0LowAlloc) },
+    { "SUPR0LowFree",                           (void *)UNWIND_WRAP(SUPR0LowFree) },
+    { "SUPR0MemAlloc",                          (void *)UNWIND_WRAP(SUPR0MemAlloc) },
+    { "SUPR0MemGetPhys",                        (void *)UNWIND_WRAP(SUPR0MemGetPhys) },
+    { "SUPR0MemFree",                           (void *)UNWIND_WRAP(SUPR0MemFree) },
+    { "SUPR0PageAlloc",                         (void *)UNWIND_WRAP(SUPR0PageAlloc) },
+    { "SUPR0PageFree",                          (void *)UNWIND_WRAP(SUPR0PageFree) },
+    { "SUPR0Printf",                            (void *)SUPR0Printf }, /** @todo needs wrapping? */
+    { "RTMemAlloc",                             (void *)UNWIND_WRAP(RTMemAlloc) },
+    { "RTMemAllocZ",                            (void *)UNWIND_WRAP(RTMemAllocZ) },
+    { "RTMemFree",                              (void *)UNWIND_WRAP(RTMemFree) },
+    /*{ "RTMemDup",                               (void *)UNWIND_WRAP(RTMemDup) },
+    { "RTMemDupEx",                             (void *)UNWIND_WRAP(RTMemDupEx) },*/
+    { "RTMemRealloc",                           (void *)UNWIND_WRAP(RTMemRealloc) },
+    { "RTR0MemObjAllocLow",                     (void *)UNWIND_WRAP(RTR0MemObjAllocLow) },
+    { "RTR0MemObjAllocPage",                    (void *)UNWIND_WRAP(RTR0MemObjAllocPage) },
+    { "RTR0MemObjAllocPhys",                    (void *)UNWIND_WRAP(RTR0MemObjAllocPhys) },
+    { "RTR0MemObjAllocPhysNC",                  (void *)UNWIND_WRAP(RTR0MemObjAllocPhysNC) },
+    { "RTR0MemObjAllocCont",                    (void *)UNWIND_WRAP(RTR0MemObjAllocCont) },
+    { "RTR0MemObjLockUser",                     (void *)UNWIND_WRAP(RTR0MemObjLockUser) },
+    { "RTR0MemObjMapKernel",                    (void *)UNWIND_WRAP(RTR0MemObjMapKernel) },
+    { "RTR0MemObjMapUser",                      (void *)UNWIND_WRAP(RTR0MemObjMapUser) },
+    { "RTR0MemObjAddress",                      (void *)RTR0MemObjAddress },
+    { "RTR0MemObjAddressR3",                    (void *)RTR0MemObjAddressR3 },
+    { "RTR0MemObjSize",                         (void *)RTR0MemObjSize },
+    { "RTR0MemObjIsMapping",                    (void *)RTR0MemObjIsMapping },
+    { "RTR0MemObjGetPagePhysAddr",              (void *)RTR0MemObjGetPagePhysAddr },
+    { "RTR0MemObjFree",                         (void *)UNWIND_WRAP(RTR0MemObjFree) },
+/* These don't work yet on linux - use fast mutexes!
+    { "RTSemMutexCreate",                       (void *)RTSemMutexCreate },
+    { "RTSemMutexRequest",                      (void *)RTSemMutexRequest },
+    { "RTSemMutexRelease",                      (void *)RTSemMutexRelease },
+    { "RTSemMutexDestroy",                      (void *)RTSemMutexDestroy },
+*/
+    { "RTProcSelf",                             (void *)RTProcSelf },
+    { "RTR0ProcHandleSelf",                     (void *)RTR0ProcHandleSelf },
+    { "RTSemFastMutexCreate",                   (void *)UNWIND_WRAP(RTSemFastMutexCreate) },
+    { "RTSemFastMutexDestroy",                  (void *)UNWIND_WRAP(RTSemFastMutexDestroy) },
+    { "RTSemFastMutexRequest",                  (void *)UNWIND_WRAP(RTSemFastMutexRequest) },
+    { "RTSemFastMutexRelease",                  (void *)UNWIND_WRAP(RTSemFastMutexRelease) },
+    { "RTSemEventCreate",                       (void *)UNWIND_WRAP(RTSemEventCreate) },
+    { "RTSemEventSignal",                       (void *)UNWIND_WRAP(RTSemEventSignal) },
+    { "RTSemEventWait",                         (void *)UNWIND_WRAP(RTSemEventWait) },
+    { "RTSemEventWaitNoResume",                 (void *)UNWIND_WRAP(RTSemEventWaitNoResume) },
+    { "RTSemEventDestroy",                      (void *)UNWIND_WRAP(RTSemEventDestroy) },
+    { "RTSemEventMultiCreate",                  (void *)UNWIND_WRAP(RTSemEventMultiCreate) },
+    { "RTSemEventMultiSignal",                  (void *)UNWIND_WRAP(RTSemEventMultiSignal) },
+    { "RTSemEventMultiReset",                   (void *)UNWIND_WRAP(RTSemEventMultiReset) },
+    { "RTSemEventMultiWait",                    (void *)UNWIND_WRAP(RTSemEventMultiWait) },
+    { "RTSemEventMultiWaitNoResume",            (void *)UNWIND_WRAP(RTSemEventMultiWaitNoResume) },
+    { "RTSemEventMultiDestroy",                 (void *)UNWIND_WRAP(RTSemEventMultiDestroy) },
+    { "RTSpinlockCreate",                       (void *)UNWIND_WRAP(RTSpinlockCreate) },
+    { "RTSpinlockDestroy",                      (void *)UNWIND_WRAP(RTSpinlockDestroy) },
+    { "RTSpinlockAcquire",                      (void *)UNWIND_WRAP(RTSpinlockAcquire) },
+    { "RTSpinlockRelease",                      (void *)UNWIND_WRAP(RTSpinlockRelease) },
+    { "RTSpinlockAcquireNoInts",                (void *)UNWIND_WRAP(RTSpinlockAcquireNoInts) },
+    { "RTSpinlockReleaseNoInts",                (void *)UNWIND_WRAP(RTSpinlockReleaseNoInts) },
+    { "RTTimeNanoTS",                           (void *)RTTimeNanoTS },
+    { "RTTimeMillieTS",                         (void *)RTTimeMilliTS },
+    { "RTTimeSystemNanoTS",                     (void *)RTTimeSystemNanoTS },
+    { "RTTimeSystemMillieTS",                   (void *)RTTimeSystemMilliTS },
+    { "RTThreadNativeSelf",                     (void *)RTThreadNativeSelf },
+    { "RTThreadSleep",                          (void *)UNWIND_WRAP(RTThreadSleep) },
+    { "RTThreadYield",                          (void *)UNWIND_WRAP(RTThreadYield) },
+#if 0 /* Thread APIs, Part 2. */
+    { "RTThreadSelf",                           (void *)UNWIND_WRAP(RTThreadSelf) },
+    { "RTThreadCreate",                         (void *)UNWIND_WRAP(RTThreadCreate) }, /** @todo need to wrap the callback */
+    { "RTThreadGetNative",                      (void *)UNWIND_WRAP(RTThreadGetNative) },
+    { "RTThreadWait",                           (void *)UNWIND_WRAP(RTThreadWait) },
+    { "RTThreadWaitNoResume",                   (void *)UNWIND_WRAP(RTThreadWaitNoResume) },
+    { "RTThreadGetName",                        (void *)UNWIND_WRAP(RTThreadGetName) },
+    { "RTThreadSelfName",                       (void *)UNWIND_WRAP(RTThreadSelfName) },
+    { "RTThreadGetType",                        (void *)UNWIND_WRAP(RTThreadGetType) },
+    { "RTThreadUserSignal",                     (void *)UNWIND_WRAP(RTThreadUserSignal) },
+    { "RTThreadUserReset",                      (void *)UNWIND_WRAP(RTThreadUserReset) },
+    { "RTThreadUserWait",                       (void *)UNWIND_WRAP(RTThreadUserWait) },
+    { "RTThreadUserWaitNoResume",               (void *)UNWIND_WRAP(RTThreadUserWaitNoResume) },
+#endif
+    { "RTLogDefaultInstance",                   (void *)RTLogDefaultInstance },
+    { "RTMpCpuId",                              (void *)RTMpCpuId },
+    { "RTMpCpuIdFromSetIndex",                  (void *)RTMpCpuIdFromSetIndex },
+    { "RTMpCpuIdToSetIndex",                    (void *)RTMpCpuIdToSetIndex },
+    { "RTMpIsCpuPossible",                      (void *)RTMpIsCpuPossible },
+    { "RTMpGetCount",                           (void *)RTMpGetCount },
+    { "RTMpGetMaxCpuId",                        (void *)RTMpGetMaxCpuId },
+    { "RTMpGetOnlineCount",                     (void *)RTMpGetOnlineCount },
+    { "RTMpGetOnlineSet",                       (void *)RTMpGetOnlineSet },
+    { "RTMpGetSet",                             (void *)RTMpGetSet },
+    { "RTMpIsCpuOnline",                        (void *)RTMpIsCpuOnline },
+    { "RTMpOnAll",                              (void *)UNWIND_WRAP(RTMpOnAll) },
+    { "RTMpOnOthers",                           (void *)UNWIND_WRAP(RTMpOnOthers) },
+    { "RTMpOnSpecific",                         (void *)UNWIND_WRAP(RTMpOnSpecific) },
+    { "RTLogRelDefaultInstance",                (void *)RTLogRelDefaultInstance },
+    { "RTLogSetDefaultInstanceThread",          (void *)UNWIND_WRAP(RTLogSetDefaultInstanceThread) },
+    { "RTLogLogger",                            (void *)RTLogLogger }, /** @todo remove this */
+    { "RTLogLoggerEx",                          (void *)RTLogLoggerEx }, /** @todo remove this */
+    { "RTLogLoggerExV",                         (void *)UNWIND_WRAP(RTLogLoggerExV) },
+    { "RTLogPrintf",                            (void *)RTLogPrintf }, /** @todo remove this */
+    { "RTLogPrintfV",                           (void *)UNWIND_WRAP(RTLogPrintfV) },
+    { "AssertMsg1",                             (void *)UNWIND_WRAP(AssertMsg1) },
+    { "AssertMsg2",                             (void *)AssertMsg2 }, /** @todo replace this by RTAssertMsg2V */
+};
 
 
 /**
@@ -365,6 +478,8 @@ void VBOXCALL supdrvDeleteDevExt(PSUPDRVDEVEXT pDevExt)
     pDevExt->mtxLdr = NIL_RTSEMFASTMUTEX;
     RTSpinlockDestroy(pDevExt->Spinlock);
     pDevExt->Spinlock = NIL_RTSPINLOCK;
+    RTSemFastMutexDestroy(pDevExt->mtxComponentFactory);
+    pDevExt->mtxComponentFactory = NIL_RTSEMFASTMUTEX;
 
     /*
      * Free lists.
@@ -568,7 +683,11 @@ void VBOXCALL supdrvCleanupSession(PSUPDRVDEVEXT pDevExt, PSUPDRVSESSION pSessio
                 Log(("supdrvCleanupSession: destroying %p/%d (%p/%p) cpid=%RTproc pid=%RTproc dtor=%p\n",
                      pObj, pObj->enmType, pObj->pvUser1, pObj->pvUser2, pObj->CreatorProcess, RTProcSelf(), pObj->pfnDestructor));
                 if (pObj->pfnDestructor)
+#ifdef SUPDRV_WITH_UNWIND_HACK
+                    supdrvNtWrapObjDestructor((PFNRT)pObj->pfnDestructor, pObj, pObj->pvUser1, pObj->pvUser2);
+#else
                     pObj->pfnDestructor(pObj, pObj->pvUser1, pObj->pvUser2);
+#endif
                 RTMemFree(pObj);
             }
 
@@ -728,13 +847,25 @@ int VBOXCALL supdrvIOCtlFast(uintptr_t uIOCtl, PSUPDRVDEVEXT pDevExt, PSUPDRVSES
         switch (uIOCtl)
         {
             case SUP_IOCTL_FAST_DO_RAW_RUN:
+#ifdef SUPDRV_WITH_UNWIND_HACK
+                supdrvNtWrapVMMR0EntryFast((PFNRT)pDevExt->pfnVMMR0EntryFast, pSession->pVM, SUP_VMMR0_DO_RAW_RUN);
+#else
                 pDevExt->pfnVMMR0EntryFast(pSession->pVM, SUP_VMMR0_DO_RAW_RUN);
+#endif
                 break;
             case SUP_IOCTL_FAST_DO_HWACC_RUN:
+#ifdef SUPDRV_WITH_UNWIND_HACK
+                supdrvNtWrapVMMR0EntryFast((PFNRT)pDevExt->pfnVMMR0EntryFast, pSession->pVM, SUP_VMMR0_DO_HWACC_RUN);
+#else
                 pDevExt->pfnVMMR0EntryFast(pSession->pVM, SUP_VMMR0_DO_HWACC_RUN);
+#endif
                 break;
             case SUP_IOCTL_FAST_DO_NOP:
+#ifdef SUPDRV_WITH_UNWIND_HACK
+                supdrvNtWrapVMMR0EntryFast((PFNRT)pDevExt->pfnVMMR0EntryFast, pSession->pVM, SUP_VMMR0_DO_NOP);
+#else
                 pDevExt->pfnVMMR0EntryFast(pSession->pVM, SUP_VMMR0_DO_NOP);
+#endif
                 break;
             default:
                 return VERR_INTERNAL_ERROR;
@@ -1708,7 +1839,11 @@ SUPR0DECL(int) SUPR0ObjRelease(void *pvObj, PSUPDRVSESSION pSession)
         Log(("SUPR0ObjRelease: destroying %p/%d (%p/%p) cpid=%RTproc pid=%RTproc dtor=%p\n",
              pObj, pObj->enmType, pObj->pvUser1, pObj->pvUser2, pObj->CreatorProcess, RTProcSelf(), pObj->pfnDestructor));
         if (pObj->pfnDestructor)
+#ifdef SUPDRV_WITH_UNWIND_HACK
+            supdrvNtWrapObjDestructor((PFNRT)pObj->pfnDestructor, pObj, pObj->pvUser1, pObj->pvUser2);
+#else
             pObj->pfnDestructor(pObj, pObj->pvUser1, pObj->pvUser2);
+#endif
         RTMemFree(pObj);
     }
 
@@ -2126,8 +2261,8 @@ SUPR0DECL(int) SUPR0MemGetPhys(PSUPDRVSESSION pSession, RTHCUINTPTR uPtr, PSUPPA
                         )
                    )
                 {
-                    const unsigned cPages = RTR0MemObjSize(pBundle->aMem[i].MemObj) >> PAGE_SHIFT;
-                    unsigned iPage;
+                    const size_t cPages = RTR0MemObjSize(pBundle->aMem[i].MemObj) >> PAGE_SHIFT;
+                    size_t iPage;
                     for (iPage = 0; iPage < cPages; iPage++)
                     {
                         paPages[iPage].Phys = RTR0MemObjGetPagePhysAddr(pBundle->aMem[i].MemObj, iPage);
@@ -2303,8 +2438,9 @@ static int supdrvPageGetPhys(PSUPDRVSESSION pSession, RTR3PTR pvR3, uint32_t cPa
                     &&  pBundle->aMem[i].MapObjR3 != NIL_RTR0MEMOBJ
                     &&  RTR0MemObjAddressR3(pBundle->aMem[i].MapObjR3) == pvR3)
                 {
-                    uint32_t iPage = RTR0MemObjSize(pBundle->aMem[i].MemObj) >> PAGE_SHIFT;
-                    cPages = RT_MIN(iPage, cPages);
+                    uint32_t iPage;
+                    size_t cMaxPages = RTR0MemObjSize(pBundle->aMem[i].MemObj) >> PAGE_SHIFT;
+                    cPages = (uint32_t)RT_MIN(cMaxPages, cPages);
                     for (iPage = 0; iPage < cPages; iPage++)
                         paPages[iPage] = RTR0MemObjGetPagePhysAddr(pBundle->aMem[i].MemObj, iPage);
                     RTSpinlockRelease(pSession->Spinlock, &SpinlockTmp);
@@ -2680,7 +2816,11 @@ SUPR0DECL(int) SUPR0ComponentQueryFactory(PSUPDRVSESSION pSession, const char *p
             if (    pCur->cchName == cchName
                 &&  !memcmp(pCur->pFactory->szName, pszName, cchName))
             {
+#ifdef SUPDRV_WITH_UNWIND_HACK
+                void *pvFactory = supdrvNtWrapQueryFactoryInterface((PFNRT)pCur->pFactory->pfnQueryFactoryInterface, pCur->pFactory, pSession, pszInterfaceUuid);
+#else
                 void *pvFactory = pCur->pFactory->pfnQueryFactoryInterface(pCur->pFactory, pSession, pszInterfaceUuid);
+#endif
                 if (pvFactory)
                 {
                     *ppvFactoryIf = pvFactory;
@@ -3557,6 +3697,10 @@ static int supdrvIOCtl_LdrOpen(PSUPDRVDEVEXT pDevExt, PSUPDRVSESSION pSession, P
     pReq->u.Out.pvImageBase = pImage->pvImage;
     pReq->u.Out.fNeedsLoading = true;
     RTSemFastMutexRelease(pDevExt->mtxLdr);
+
+#if defined(RT_OS_WINDOWS) && defined(DEBUG)
+    SUPR0Printf("VBoxDrv: windbg> .reload /f %s=%#p\n", pImage->szName, pImage->pvImage);
+#endif
     return VINF_SUCCESS;
 }
 
@@ -3691,7 +3835,11 @@ static int supdrvIOCtl_LdrLoad(PSUPDRVDEVEXT pDevExt, PSUPDRVSESSION pSession, P
     if (RT_SUCCESS(rc) && pImage->pfnModuleInit)
     {
         Log(("supdrvIOCtl_LdrLoad: calling pfnModuleInit=%p\n", pImage->pfnModuleInit));
+#ifdef SUPDRV_WITH_UNWIND_HACK
+        rc = supdrvNtWrapModuleInit((PFNRT)pImage->pfnModuleInit);
+#else
         rc = pImage->pfnModuleInit();
+#endif
         if (rc && pDevExt->pvVMMR0 == pImage->pvImage)
             supdrvLdrUnsetR0EP(pDevExt);
     }
@@ -4161,7 +4309,11 @@ static void supdrvLdrFree(PSUPDRVDEVEXT pDevExt, PSUPDRVLDRIMAGE pImage)
         &&  pImage->uState == SUP_IOCTL_LDR_LOAD)
     {
         LogFlow(("supdrvIOCtl_LdrLoad: calling pfnModuleTerm=%p\n", pImage->pfnModuleTerm));
+#ifdef SUPDRV_WITH_UNWIND_HACK
+        supdrvNtWrapModuleTerm(pImage->pfnModuleTerm);
+#else
         pImage->pfnModuleTerm();
+#endif
     }
 
     /* free the image */

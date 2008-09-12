@@ -1,4 +1,4 @@
-# $Id: header.kmk 1664 2008-06-30 21:10:43Z bird $
+# $Id: header.kmk 1777 2008-09-09 21:21:46Z bird $
 ## @file
 # kBuild - File included at top of a makefile.
 #
@@ -55,8 +55,8 @@ ifneq ($(KBUILD_VERSION_MAJOR).$(KBUILD_VERSION_MINOR),0.1)
   $(warning kBuild: kmk minor version mismatch! Expected '1' but found '$(KBUILD_VERSION_MINOR)'!)
  endif
 else
- ifneq ($(int-ge $(KBUILD_VERSION_PATCH),3),1)
-  $(warning kBuild: kmk version mismatch! Expected 0.1.3 or later. Actual version is $(KBUILD_VERSION_MAJOR).$(KBUILD_VERSION_MINOR).$(KBUILD_VERSION_PATCH).)
+ ifneq ($(int-ge $(KBUILD_VERSION_PATCH),4),1)
+  $(warning kBuild: kmk version mismatch! Expected 0.1.4 or later. Actual version is $(KBUILD_VERSION_MAJOR).$(KBUILD_VERSION_MINOR).$(KBUILD_VERSION_PATCH).)
  endif
 endif
 
@@ -64,7 +64,7 @@ endif
 # The revision in which this file was last modified.
 # This can be useful when using development versions of kBuild.
 #
-KMK_REVISION := $(patsubst %:,,  $Rev: 1664 $  )
+KMK_REVISION := $(patsubst %:,,  $Rev: 1777 $  )
 
 
 #
@@ -378,9 +378,9 @@ ifndef PATH_OUT_BASE
 endif
 ifndef PATH_OUT
  ifdef BUILD_TARGET_SUB # (BUILD_TARGET_SUB is not currently recognized by kBuild in any other places - obsolete)
-  PATH_OUT          := $(PATH_OUT_BASE)/$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH).$(BUILD_TARGET_SUB)/$(KBUILD_TYPE)
+  PATH_OUT           = $(PATH_OUT_BASE)/$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH).$(BUILD_TARGET_SUB)/$(KBUILD_TYPE)
  else
-  PATH_OUT          := $(PATH_OUT_BASE)/$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)/$(KBUILD_TYPE)
+  PATH_OUT           = $(PATH_OUT_BASE)/$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)/$(KBUILD_TYPE)
  endif
 endif # !define PATH_OUT
 PATH_OBJCACHE        = $(PATH_OUT_BASE)/kObjCache
@@ -533,6 +533,9 @@ APPEND      := kmk_builtin_append
 CAT_EXT     := $(KBUILD_BIN_PATH)/kmk_cat$(HOSTSUFF_EXE)
 CAT         := kmk_builtin_cat
 
+CHMOD_EXT   := $(KBUILD_BIN_PATH)/kmk_chmod$(HOSTSUFF_EXE)
+CHMOD       := kmk_builtin_chmod
+
 CMP_EXT     := $(KBUILD_BIN_PATH)/kmk_cmp$(HOSTSUFF_EXE)
 CMP         := kmk_builtin_cmp
 
@@ -541,6 +544,9 @@ CP          := kmk_builtin_cp
 
 ECHO_EXT    := $(KBUILD_BIN_PATH)/kmk_echo$(HOSTSUFF_EXE)
 ECHO        := kmk_builtin_echo
+
+EXPR_EXT    := $(KBUILD_BIN_PATH)/kmk_expr$(HOSTSUFF_EXE)
+EXPR        := kmk_builtin_expr
 
 INSTALL_EXT := $(KBUILD_BIN_PATH)/kmk_install$(HOSTSUFF_EXE)
 INSTALL     := kmk_builtin_install
@@ -720,7 +726,7 @@ PROPS_DEFERRED := INSTFUN INSTALLER PRE_CMDS POST_CMDS NAME SONAME
 # A Config.kmk file can add it's own properties to this list and kBuild
 # will do the necessary inheritance from templates to targets.
 PROPS_ACCUMULATE_R := \
-	DEPS ORDERDEPS DEFS \
+	DEPS LNK_DEPS ORDERDEPS LNK_ORDERDEPS DEFS \
 	ARFLAGS \
 	CFLAGS CDEFS \
 	CXXFLAGS CXXDEFS \
@@ -733,7 +739,7 @@ PROPS_ACCUMULATE_R := \
 ## PROPS_ACCUMULATE_R_LNK
 # Subset of PROPS_ACCUMULATE_R which applies to all linkable targets.
 PROPS_ACCUMULATE_R_LNK := \
-	DEPS ORDERDEPS DEFS \
+	DEPS LNK_DEPS ORDERDEPS LNK_ORDERDEPS DEFS \
 	CFLAGS CDEFS \
 	CXXFLAGS CXXDEFS \
 	OBJCFLAGS OBJCDEFS \
@@ -1020,6 +1026,7 @@ endif
 # This prevents some trouble when users override the defaults for these
 # variables and uses relative paths or paths with incorrect case.
 #
+PATH_OUT_BASE := $(abspath $(PATH_OUT_BASE))
 PATH_OUT    := $(abspath $(PATH_OUT))
 PATH_OBJ    := $(abspath $(PATH_OBJ))
 PATH_TARGET := $(abspath $(PATH_TARGET))
@@ -1203,4 +1210,5 @@ endif
 # end-of-file-content
 __header_kmk__ := 1
 endif # __header_kmk__
+
 

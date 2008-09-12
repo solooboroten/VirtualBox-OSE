@@ -1,4 +1,4 @@
-/* $Id: PGMInternal.h 35088 2008-08-21 09:07:51Z sandervl $ */
+/* $Id: PGMInternal.h 11525 2008-08-21 09:07:51Z vboxsync $ */
 /** @file
  * PGM - Internal header file.
  */

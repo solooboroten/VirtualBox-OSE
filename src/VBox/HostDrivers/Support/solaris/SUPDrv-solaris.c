@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-solaris.c 35864 2008-09-02 10:00:59Z ramshankar $ */
+/* $Id: SUPDrv-solaris.c 12414 2008-09-12 08:01:40Z vboxsync $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Solaris specifics.
  */
@@ -78,7 +78,7 @@ static int VBoxDrvSolarisOpen(dev_t *pDev, int fFlag, int fType, cred_t *pCred);
 static int VBoxDrvSolarisClose(dev_t Dev, int fFlag, int fType, cred_t *pCred);
 static int VBoxDrvSolarisRead(dev_t Dev, struct uio *pUio, cred_t *pCred);
 static int VBoxDrvSolarisWrite(dev_t Dev, struct uio *pUio, cred_t *pCred);
-static int VBoxDrvSolarisIOCtl (dev_t Dev, int Cmd, intptr_t pArgs, int mode, cred_t *pCred, int *pVal);
+static int VBoxDrvSolarisIOCtl(dev_t Dev, int Cmd, intptr_t pArgs, int mode, cred_t *pCred, int *pVal);
 
 static int VBoxDrvSolarisAttach(dev_info_t *pDip, ddi_attach_cmd_t Cmd);
 static int VBoxDrvSolarisDetach(dev_info_t *pDip, ddi_detach_cmd_t Cmd);
@@ -320,7 +320,7 @@ static int VBoxDrvSolarisAttach(dev_info_t *pDip, ddi_attach_cmd_t enmCmd)
              */
 #ifdef VBOX_WITH_HARDENING
             rc = ddi_create_priv_minor_node(pDip, DEVICE_NAME, S_IFCHR, instance, DDI_PSEUDO,
-                                            0, "all", "all", 0600);
+                                            0, NULL, NULL, 0600);
 #else
             rc = ddi_create_priv_minor_node(pDip, DEVICE_NAME, S_IFCHR, instance, DDI_PSEUDO,
                                             0, "none", "none", 0666);

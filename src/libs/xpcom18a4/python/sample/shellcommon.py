@@ -85,6 +85,8 @@ def startVm(mgr,vb,mach,type):
     completed = progress.completed
     rc = progress.resultCode
     print "Completed:", completed, "rc:",rc
+    if rc == 0:
+        vb.performanceCollector.setupMetrics(['*'], [mach], 10, 15)
     session.close()
 
 def getMachines(ctx):
@@ -96,23 +98,15 @@ def asState(var):
     else:
         return 'off'
 
-def guestStats(ctx,guest):
-    stats = {
-        'Guest statistics for sample': ctx['ifaces'].GuestStatisticType.SampleNumber,
-        'CPU Load Idle': ctx['ifaces'].GuestStatisticType.CPULoad_Idle,
-        'CPU Load User': ctx['ifaces'].GuestStatisticType.CPULoad_User,
-        'CPU Load Kernel': ctx['ifaces'].GuestStatisticType.CPULoad_Kernel,
-        'Threads': ctx['ifaces'].GuestStatisticType.Threads,
-        'Processes': ctx['ifaces'].GuestStatisticType.Processes,
-        'Handles': ctx['ifaces'].GuestStatisticType.Handles,
-        }
-    for (k,v) in stats.items(): 
-        try:
-            val = guest.getStatistic(0, v)
-            print "'%s' = '%s'" %(k,str(v))
-        except:
-            print "Cannot get value for '%s'"  %(k)
-            pass
+def guestStats(ctx,mach):
+    collector = ctx['vb'].performanceCollector
+    (vals, names, objs, idxs, lens) = collector.queryMetricsData(["*"], [mach])
+    for i in range(0,len(names)):
+        valsStr = '[ '
+        for j in range(0, lens[i]):
+            valsStr += str(vals[idxs[i]])+' '
+        valsStr += ']'
+        print names[i],valsStr
 
 def cmdExistingVm(ctx,mach,cmd):
     mgr=ctx['mgr']
@@ -130,14 +124,15 @@ def cmdExistingVm(ctx,mach,cmd):
         print "Session to '%s' in wrong state: %s" %(mach.name, session.state)
         return
     # unfortunately IGuest is suppressed, thus WebServices knows not about it
-    if ctx['remote'] and cmd == 'stats':
+    # this is an example how to handle local only functionality
+    if ctx['remote'] and cmd == 'stats2':
         print 'Trying to use local only functionality, ignored'
         return        
     console=session.console
     ops={'pause' :     lambda: console.pause(),
          'resume':     lambda: console.resume(),
          'powerdown':  lambda: console.powerDown(),
-         'stats':      lambda: guestStats(ctx, console.guest),
+         'stats':      lambda: guestStats(ctx, mach),
          }
     ops[cmd]()
     session.close()
@@ -263,7 +258,6 @@ def setvarCmd(ctx, args):
     expr = 'mach.'+args[2]+' = '+args[3]
     print "Executing",expr
     try:
-        #mach.BIOSSettings.IOAPICEnabled = True
         exec expr
     except Exception, e:
         print 'failed: ',e
@@ -296,8 +290,12 @@ def hostCmd(ctx, args):
    collector = ctx['vb'].performanceCollector
   
    (vals, names, objs, idxs, lens) = collector.queryMetricsData(["*"], [host])
-   for i in range(0,len(vals)):
-      print "for name:",names[i]," val:",vals[i]
+   for i in range(0,len(names)):
+       valsStr = '[ '
+       for j in range(0, lens[i]):
+           valsStr += str(vals[idxs[i]])+' '
+       valsStr += ']'
+       print names[i],valsStr
 
    return 0
 
@@ -337,10 +335,15 @@ def runCommand(ctx, cmd):
 
 
 def interpret(ctx):
-    print "Running VirtualBox version %s" %(ctx['vb'].version)
+    vbox = ctx['vb']
+    print "Running VirtualBox version %s" %(vbox.version)
 
     autoCompletion(commands, ctx)
 
+    # to allow to print actual host information, we collect info for
+    # last 150 secs maximum, (sample every 10 secs and keep up to 15 samples)
+    vbox.performanceCollector.setupMetrics(['*'], [vbox.host], 10, 15)
+   
     while True:
         try:
             cmd = raw_input("vbox> ")
@@ -356,3 +359,4 @@ def interpret(ctx):
             if g_verbose:
                 traceback.print_exc()
 
+    vbox.performanceCollector.disableMetrics(['*'], [vbox.host])

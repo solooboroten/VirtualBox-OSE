@@ -1,4 +1,4 @@
-/* $Id: RTMpGetMaxCpuId-generic.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: RTMpGetMaxCpuId-generic.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, Generic RTMpGetMaxCpuId.
  */

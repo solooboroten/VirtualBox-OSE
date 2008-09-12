@@ -1,4 +1,4 @@
-/* $Id: ldrNative.cpp 35740 2008-08-31 18:01:06Z bird $ */
+/* $Id: ldrNative.cpp 11888 2008-08-31 18:01:06Z vboxsync $ */
 /** @file
  * IPRT - Binary Image Loader, Native interface.
  */

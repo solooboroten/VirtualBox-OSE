@@ -1,4 +1,4 @@
-# $Id: qt4.kmk 1689 2008-08-26 18:42:40Z bird $
+# $Id: qt4.kmk 1774 2008-09-08 15:43:37Z bird $
 ## @file
 # Qt 4 unit.
 #
@@ -39,6 +39,8 @@ PROPS_SINGLE += RCCTOOL
 PROPS_ACCUMULATE_R += RCCFLAGS QT_MODULES
 
 
+## @todo use pkg-config?
+
 #
 # The QT4 SDK.
 #
@@ -50,6 +52,11 @@ PROPS_ACCUMULATE_R += RCCFLAGS QT_MODULES
 SDK_QT4 = Qt4
 
 # SDK Specific Properties
+#       PATH_SDK_QT4	       - The general Qt4 root directory.
+#       PATH_SDK_QT4_INC       - The include directory.
+#       PATH_SDK_QT4_LIB.amd64 - The lib directory for AMD64.
+#       PATH_SDK_QT4_LIB.x86   - The lib directory for X86.
+#       PATH_SDK_QT4_LIB       - The lib directory for KBUILD_TARGET.
 ifndef PATH_SDK_QT4
  PATH_SDK_QT4 := $(firstword $(rsort $(wildcard $(PATH_DEVTOOLS_TRG)/qt/v4*)))
  ifeq ($(PATH_SDK_QT4),)
@@ -59,13 +66,42 @@ ifndef PATH_SDK_QT4
     PATH_SDK_QT4 := $(patsubst %/Frameworks/QtCore.framework/Versions/4,%,$(firstword $(wildcard /Library/Frameworks/QtCore.framework/Versions/4)))
    else ifeq ($(KBUILD_TARGET),win)
     # No idea here yet...
+   else ifeq ($(KBUILD_TARGET),ose)
+    # No port...
    else
     # The Unices. Includes and esp. libs are tricky, so override the PATH_SDK_QT4_LIB* stuff if it doesn't work.
-    PATH_SDK_QT4 := $(patsubst %/bin/qt3to4,%,$(firstword $(wildcard /usr/bin/qt3to4 /usr/local/bin/qt3to4 /usr/qt/4/bin/qt3to4 /usr/share/qt4/bin/qt3to4)))
+    # Try find the general root of thing by looking for the qt3to4 program, if not found, then look for rcc.
+    PATH_SDK_QT4 := $(patsubst %/bin/qt3to4,%,$(firstword $(wildcard \
+	/usr/bin/qt3to4 \
+    	/usr/local/bin/qt3to4 \
+	/usr/qt/4/bin/qt3to4 \
+	/usr/share/qt4/bin/qt3to4 \
+    	)))
+    ifeq ($(PATH_SDK_QT4),)
+     PATH_SDK_QT4 := $(patsubst %/bin/rcc,%,$(firstword $(wildcard \
+     	/usr/bin/rcc \
+	/usr/local/bin/rcc \
+     	/usr/qt/4/bin/rcc \
+     	/usr/share/qt4/bin/rcc \
+	)))
+    endif
     ifneq ($(PATH_SDK_QT4),)
+     export PATH_SDK_QT4
+
+     # Locate the include files.
      ifeq ($(PATH_SDK_QT4_INC),)
-      PATH_SDK_QT4_INC := $(patsubst %/QtCore/qglobal.h,%,$(firstword $(wildcard $(PATH_SDK_QT4)/include/QtCore/qglobal.h $(PATH_SDK_QT4)/include/qt4/QtCore/qglobal.h /usr/include/qt4/QtCore/qtglobal.h)))
+      PATH_SDK_QT4_INC := $(patsubst %/QtCore/qglobal.h,%,$(firstword $(wildcard \
+	$(PATH_SDK_QT4)/include/QtCore/qglobal.h \
+	$(PATH_SDK_QT4)/include/qt4/QtCore/qglobal.h \
+	/usr/include/qt4/QtCore/qtglobal.h \
+	/usr/local/include/qt4/QtCore/qtglobal.h \
+	)))
+      ifneq ($(PATH_SDK_QT4_INC),)
+       export PATH_SDK_QT4_INC
+      endif
      endif
+
+     # Now for the libraries (mostly for helping out finding the KBUILD_TARGET libs).
      ifeq ($(PATH_SDK_QT4_LIB.x86),)
       PATH_SDK_QT4_LIB.x86   := $(patsubst %/libQtCore$(SUFF_DLL),%,$(firstword $(wildcard \
 	$(PATH_SDK_QT4)/lib32/libQtCore$(SUFF_DLL) \
@@ -77,6 +113,9 @@ ifndef PATH_SDK_QT4
 	$(PATH_SDK_QT4)/lib/libQtCore$(SUFF_DLL) \
 	$(PATH_SDK_QT4)/lib/qt4/libQtCore$(SUFF_DLL) \
 	)))
+      ifneq ($(PATH_SDK_QT4_LIB.x86),)
+       export PATH_SDK_QT4_LIB.x86
+      endif
      endif
      ifeq ($(PATH_SDK_QT4_LIB.amd64),)
       PATH_SDK_QT4_LIB.amd64 := $(patsubst %/libQtCore$(SUFF_DLL),%,$(firstword $(wildcard \
@@ -92,20 +131,29 @@ ifndef PATH_SDK_QT4
 	$(PATH_SDK_QT4)/lib/libQtCore$(SUFF_DLL) \
 	$(PATH_SDK_QT4)/lib/qt4/libQtCore$(SUFF_DLL) \
 	)))
+      ifneq ($(PATH_SDK_QT4_LIB.amd64),)
+       export PATH_SDK_QT4_LIB.amd64
+      endif
      endif
+
+     # And finally, the library path for KBUILD_TARGET.
      ifeq ($(PATH_SDK_QT4_LIB),)
       PATH_SDK_QT4_LIB := $(PATH_SDK_QT4_LIB.$(KBUILD_TARGET))
       ifeq ($(PATH_SDK_QT4_LIB),)
        PATH_SDK_QT4_LIB := $(patsubst %/libQtCore$(SUFF_DLL),%,$(firstword $(wildcard \
-	$(PATH_SDK_QT4)/lib/libQtCore$(SUFF_DLL) \
-	$(PATH_SDK_QT4)/lib/qt4/libQtCore$(SUFF_DLL) \
-	/usr/lib/libQtCore$(SUFF_DLL) \
-	/usr/lib/qt4/libQtCore$(SUFF_DLL) \
-	/usr/local/lib/libQtCore$(SUFF_DLL) \
-	/usr/local/lib/qt4/libQtCore$(SUFF_DLL) \
-	)))
+       	$(PATH_SDK_QT4)/lib/libQtCore$(SUFF_DLL) \
+       	$(PATH_SDK_QT4)/lib/qt4/libQtCore$(SUFF_DLL) \
+       	/usr/lib/libQtCore$(SUFF_DLL) \
+       	/usr/lib/qt4/libQtCore$(SUFF_DLL) \
+       	/usr/local/lib/libQtCore$(SUFF_DLL) \
+       	/usr/local/lib/qt4/libQtCore$(SUFF_DLL) \
+       	)))
+      endif
+      ifneq ($(PATH_SDK_QT4_LIB),)
+       export PATH_SDK_QT4_LIB
       endif
      endif
+
     endif
    endif # Unices
   endif
@@ -148,30 +196,101 @@ endif
 TOOL_QT4 = Qt4
 
 # Tool Specific Properties
-ifndef PATH_TOOL_QT4
- PATH_TOOL_QT4 := $(firstword $(rsort $(wildcard $(PATH_DEVTOOLS_BLD)/qt/v4*)))
- ifeq ($(PATH_TOOL_QT4),)
-  PATH_TOOL_QT4 := $(patsubst %/bin/qt3to4,%,$(firstword $(wildcard /usr/lib/qt4/bin/qt3to4 /usr/qt/4/bin/qt3to4 /usr/share/qt4/bin/qt3to4 /usr/local/bin/qt3to4 /usr/bin/qt3to4)))
+#       PATH_TOOL_QT4     - Obsolete.
+#       PATH_TOOL_QT4_BIN - The
+#       TOOL_QT4_BIN_SUFF -
+if !defined(PATH_TOOL_QT4_BIN) && defined(PATH_TOOL_QT4)
+ PATH_TOOL_QT4_BIN := $(PATH_TOOL_QT4)/bin
+endif
+ifndef PATH_TOOL_QT4_BIN
+ PATH_TOOL_QT4_BIN := $(firstword $(rsort $(wildcard $(PATH_DEVTOOLS_BLD)/qt/v4*/bin)))
+ ifeq ($(PATH_TOOL_QT4_BIN),)
+  ifdef TOOL_QT4_BIN_SUFF
+   TOOL_QT4_BIN_SUFF := $(TOOL_QT4_BIN_SUFF)
+  endif
+  # Try looking for moc-qt4 / moc-$(suffix) first.
+  ifneq ($(TOOL_QT4_BIN_SUFF),)
+   PATH_TOOL_QT4_BIN := $(patsubst %/moc$(TOOL_QT4_BIN_SUFF),%,$(firstword $(wildcard \
+	 /usr/lib/qt4/bin/moc$(TOOL_QT4_BIN_SUFF) \
+	 /usr/qt/4/bin/moc$(TOOL_QT4_BIN_SUFF) \
+	 /usr/share/qt4/bin/moc$(TOOL_QT4_BIN_SUFF) \
+	 /usr/local/bin/moc$(TOOL_QT4_BIN_SUFF) \
+	 /usr/bin/moc$(TOOL_QT4_BIN_SUFF) \
+	 )))
+  else
+   PATH_TOOL_QT4_BIN := $(patsubst %/moc-qt4,%,$(firstword $(wildcard \
+	/usr/lib/qt4/bin/moc-qt4 \
+	/usr/qt/4/bin/moc-qt4 \
+	/usr/share/qt4/bin/moc-qt4 \
+	/usr/local/bin/moc-qt4 \
+	/usr/bin/moc-qt4 \
+	)))
+   ifneq ($(PATH_TOOL_QT4_BIN),)
+    TOOL_QT4_BIN_SUFF := -qt4
+   else
+    # If no luck, try looking for moc in the qt4 specific locations.
+    PATH_TOOL_QT4_BIN := $(patsubst %/moc,%,$(firstword $(wildcard \
+	/usr/lib/qt4/bin/moc \
+	/usr/qt/4/bin/moc \
+	/usr/share/qt4/bin/moc \
+	)))
+   endif
+  endif
+  # If still no go, try looking for qt3to4 and rcc.
+  ifeq ($(PATH_TOOL_QT4_BIN),)
+   PATH_TOOL_QT4_BIN := $(patsubst %/qt3to4,%,$(firstword $(wildcard \
+	/usr/lib/qt4/bin/qt3to4 \
+	/usr/qt/4/bin/qt3to4 \
+	/usr/share/qt4/bin/qt3to4 \
+	/usr/local/bin/qt3to4 \
+	/usr/bin/qt3to4 \
+	)))
+  endif
+  ifeq ($(PATH_TOOL_QT4_BIN),)
+   PATH_TOOL_QT4_BIN := $(patsubst %/rcc$(TOOL_QT4_BIN_SUFF),%,$(firstword $(wildcard \
+	/usr/lib/qt4/bin/rcc$(TOOL_QT4_BIN_SUFF) \
+	/usr/qt/4/bin/rcc$(TOOL_QT4_BIN_SUFF) \
+	/usr/share/qt4/bin/rcc$(TOOL_QT4_BIN_SUFF) \
+	/usr/local/bin/rcc$(TOOL_QT4_BIN_SUFF) \
+	/usr/bin/rcc$(TOOL_QT4_BIN_SUFF) \
+	)))
+  endif
+  if "$(PATH_TOOL_QT4_BIN)" == "" && "$(TOOL_QT4_BIN_SUFF)" != ""
+   PATH_TOOL_QT4_BIN := $(patsubst %/rcc,%,$(firstword $(wildcard \
+	/usr/lib/qt4/bin/rcc \
+	/usr/qt/4/bin/rcc \
+	/usr/share/qt4/bin/rcc \
+	/usr/local/bin/rcc \
+	/usr/bin/rcc \
+	)))
+  endif
+  ifneq ($(PATH_TOOL_QT4_BIN),)
+   export PATH_TOOL_QT4_BIN
+  endif
  endif
  # If not found, we'll enter the 'pathless' mode.
 else
  # Resolve any fancy stuff once and for all.
- PATH_TOOL_QT4 := $(PATH_TOOL_QT4)
+ PATH_TOOL_QT4_BIN := $(PATH_TOOL_QT4_BIN)
 endif
-ifneq ($(PATH_TOOL_QT4),)
- PATH_TOOL_QT4_BIN  ?= $(PATH_TOOL_QT4)/bin
- TOOL_QT4_MOC       ?= $(PATH_TOOL_QT4_BIN)/moc$(HOST_SUFF_EXE)
- TOOL_QT4_UIC       ?= $(PATH_TOOL_QT4_BIN)/uic$(HOST_SUFF_EXE)
- TOOL_QT4_RCC       ?= $(PATH_TOOL_QT4_BIN)/rcc$(HOST_SUFF_EXE)
- TOOL_QT4_LRC       ?= $(PATH_TOOL_QT4_BIN)/lrelease$(HOST_SUFF_EXE)
- TOOL_QT4_LUPDATE   ?= $(PATH_TOOL_QT4_BIN)/lupdate$(HOST_SUFF_EXE)
+ifneq ($(PATH_TOOL_QT4_BIN),)
+ TOOL_QT4_MOC       ?= $(PATH_TOOL_QT4_BIN)/moc$(TOOL_QT4_BIN_SUFF)$(HOST_SUFF_EXE)
+ TOOL_QT4_UIC       ?= $(PATH_TOOL_QT4_BIN)/uic$(TOOL_QT4_BIN_SUFF)$(HOST_SUFF_EXE)
+ ifndef TOOL_QT4_RCC
+  TOOL_QT4_RCC      := $(PATH_TOOL_QT4_BIN)/rcc$(HOST_SUFF_EXE)
+  ifeq ($(wildcard $(TOOL_QT4_RCC)),)
+   TOOL_QT4_RCC     := $(PATH_TOOL_QT4_BIN)/rcc$(TOOL_QT4_BIN_SUFF)$(HOST_SUFF_EXE)
+  endif
+ endif
+ TOOL_QT4_LRC       ?= $(PATH_TOOL_QT4_BIN)/lrelease$(TOOL_QT4_BIN_SUFF)$(HOST_SUFF_EXE)
+ TOOL_QT4_LUPDATE   ?= $(PATH_TOOL_QT4_BIN)/lupdate$(TOOL_QT4_BIN_SUFF)$(HOST_SUFF_EXE)
 else
  # Pathless, relies on the environment.
- TOOL_QT4_MOC       ?= moc$(HOST_SUFF_EXE)
- TOOL_QT4_UIC       ?= uic$(HOST_SUFF_EXE)
+ TOOL_QT4_MOC       ?= moc$(TOOL_QT4_BIN_SUFF)$(HOST_SUFF_EXE)
+ TOOL_QT4_UIC       ?= uic$(TOOL_QT4_BIN_SUFF)$(HOST_SUFF_EXE)
  TOOL_QT4_RCC       ?= rcc$(HOST_SUFF_EXE)
- TOOL_QT4_LRC       ?= lrelease$(HOST_SUFF_EXE)
- TOOL_QT4_LUPDATE   ?= lupdate$(HOST_SUFF_EXE)
+ TOOL_QT4_LRC       ?= lrelease$(TOOL_QT4_BIN_SUFF)$(HOST_SUFF_EXE)
+ TOOL_QT4_LUPDATE   ?= lupdate$(TOOL_QT4_BIN_SUFF)$(HOST_SUFF_EXE)
 endif
 
 # General Properties used by kBuild and/or units/qt.kmk
@@ -382,8 +501,9 @@ local orderdeps := $(call DIRDEP,$(dir $(outbase))) $(kb-src-prop ORDERDEPS,dumm
 
 # default path + source dep.
 ifneq ($(defpath),)
-local deps      := $(abspathex $(deps) $(source),$($(target)_PATH))
-local incs      := $(abspathex $(incs),$($(target)_PATH))
+local source    := $(abspathex $(source),$(defpath))
+local deps      := $(abspathex $(deps),$(defpath)) $(source)
+local incs      := $(abspathex $(incs),$(defpath))
 else
 local deps      += $(source)
 endif
@@ -468,8 +588,9 @@ local orderdeps := $(call DIRDEP,$(dir $(outbase))) $(kb-src-prop ORDERDEPS,dumm
 
 # default path + source dep.
 ifneq ($(defpath),)
-local deps      := $(abspathex $(deps) $(source),$($(target)_PATH))
-local incs      := $(abspathex $(incs),$($(target)_PATH))
+local source    := $(abspathex $(source),$(defpath))
+local deps      := $(abspathex $(deps),$(defpath)) $(source)
+local incs      := $(abspathex $(incs),$(defpath))
 else
 local deps      += $(source)
 endif
@@ -553,8 +674,9 @@ local orderdeps := $(call DIRDEP,$(dir $(outbase))) $(kb-src-prop ORDERDEPS,dumm
 
 # default path + source dep.
 ifneq ($(defpath),)
-local deps      := $(abspathex $(deps) $(source),$($(target)_PATH))
-local incs      := $(abspathex $(incs),$($(target)_PATH))
+local source    := $(abspathex $(source),$(defpath))
+local deps      := $(abspathex $(deps),$(defpath)) $(source)
+local incs      := $(abspathex $(incs),$(defpath))
 else
 local deps      += $(source)
 endif
@@ -646,8 +768,9 @@ local orderdeps := $(call DIRDEP,$(dir $(outbase))) $(kb-src-prop ORDERDEPS,dumm
 
 # default path + source dep.
 ifneq ($(defpath),)
-local deps      := $(abspathex $(deps) $(source),$($(target)_PATH))
-local incs      := $(abspathex $(incs),$($(target)_PATH))
+local source    := $(abspathex $(source),$(defpath))
+local deps      := $(abspathex $(deps),$(defpath)) $(source)
+local incs      := $(abspathex $(incs),$(defpath))
 else
 local deps      += $(source)
 endif
@@ -734,8 +857,9 @@ local orderdeps := $(call DIRDEP,$(dir $(outbase))) $(kb-src-prop ORDERDEPS,dumm
 
 # default path + source dep.
 ifneq ($(defpath),)
-local deps      := $(abspathex $(deps) $(source),$($(target)_PATH))
-local incs      := $(abspathex $(incs),$($(target)_PATH))
+local source    := $(abspathex $(source),$(defpath))
+local deps      := $(abspathex $(deps),$(defpath)) $(source)
+local incs      := $(abspathex $(incs),$(defpath))
 else
 local deps      += $(source)
 endif
@@ -798,18 +922,18 @@ endif
 
 # Deal with QT_MODULES and QT_PREFIX.
 local qt_modules := \
-	$($(target)_QT_MODULES.$(_bld_trg)) \
- 	$($(target)_QT_MODULES.$(_bld_trg_arch)) \
- 	$($(target)_QT_MODULES.$(_bld_trg).$(_bld_trg_arch)) \
- 	$($(target)_QT_MODULES.$(_bld_trg_cpu)) \
- 	$($(target)_QT_MODULES.$(_bld_type)) \
+	$($(target)_QT_MODULES.$(bld_trg)) \
+ 	$($(target)_QT_MODULES.$(bld_trg_arch)) \
+ 	$($(target)_QT_MODULES.$(bld_trg).$(bld_trg_arch)) \
+ 	$($(target)_QT_MODULES.$(bld_trg_cpu)) \
+ 	$($(target)_QT_MODULES.$(bld_type)) \
  	$($(target)_QT_MODULES)
 local qt_prefix := $(firstword \
-	$($(target)_QT_PREFIX.$(_bld_trg)) \
- 	$($(target)_QT_PREFIX.$(_bld_trg_arch)) \
- 	$($(target)_QT_PREFIX.$(_bld_trg).$(_bld_trg_arch)) \
- 	$($(target)_QT_PREFIX.$(_bld_trg_cpu)) \
- 	$($(target)_QT_PREFIX.$(_bld_type)) \
+	$($(target)_QT_PREFIX.$(bld_trg)) \
+ 	$($(target)_QT_PREFIX.$(bld_trg_arch)) \
+ 	$($(target)_QT_PREFIX.$(bld_trg).$(bld_trg_arch)) \
+ 	$($(target)_QT_PREFIX.$(bld_trg_cpu)) \
+ 	$($(target)_QT_PREFIX.$(bld_type)) \
  	$($(target)_QT_PREFIX))
 ifeq ($(bld_trg),darwin)
  # Adding -F to CXXFLAGS is necessary to make #include <QtCore/qstring.h> stuff work...
@@ -834,11 +958,11 @@ $(eval $(target)_DEFS      += $(foreach module,$(toupper $(qt_modules)), QT_$(mo
 # Tip: Use target_QT_MOCSRCS = $(NO_SUCH_VARIABLE) to avoid this.
 ifndef $(target)_QT_MOCSRCS
  $(foreach source, $(filter %.cxx %.CXX %.cpp %.CPP %.cc %.CC,\
- 	$($(target)_SOURCES.$(_bld_trg)) \
- 	$($(target)_SOURCES.$(_bld_trg_arch)) \
- 	$($(target)_SOURCES.$(_bld_trg).$(_bld_trg_arch)) \
- 	$($(target)_SOURCES.$(_bld_trg_cpu)) \
- 	$($(target)_SOURCES.$(_bld_type)) \
+ 	$($(target)_SOURCES.$(bld_trg)) \
+ 	$($(target)_SOURCES.$(bld_trg_arch)) \
+ 	$($(target)_SOURCES.$(bld_trg).$(bld_trg_arch)) \
+ 	$($(target)_SOURCES.$(bld_trg_cpu)) \
+ 	$($(target)_SOURCES.$(bld_type)) \
  	$($(target)_SOURCES) \
  	), $(evalval def_unit_qt4_target_pre_cpp_source))
 endif
@@ -860,32 +984,32 @@ $(eval $(target)_INCS    += $(qtmocdir) $(qtuicdir))
 
 # Deal with QT_MOCSRCS.
 $(foreach source, \
-	$($(target)_QT_MOCSRCS.$(_bld_trg)) \
- 	$($(target)_QT_MOCSRCS.$(_bld_trg_arch)) \
- 	$($(target)_QT_MOCSRCS.$(_bld_trg).$(_bld_trg_arch)) \
- 	$($(target)_QT_MOCSRCS.$(_bld_trg_cpu)) \
- 	$($(target)_QT_MOCSRCS.$(_bld_type)) \
+	$($(target)_QT_MOCSRCS.$(bld_trg)) \
+ 	$($(target)_QT_MOCSRCS.$(bld_trg_arch)) \
+ 	$($(target)_QT_MOCSRCS.$(bld_trg).$(bld_trg_arch)) \
+ 	$($(target)_QT_MOCSRCS.$(bld_trg_cpu)) \
+ 	$($(target)_QT_MOCSRCS.$(bld_type)) \
  	$($(target)_QT_MOCSRCS) \
 	, $(evalvalctx def_unit_qt4_target_pre_handle_moc_src))
 
 # Deal with QT_MOCHDRS.
 $(foreach source, \
-	$($(target)_QT_MOCHDRS.$(_bld_trg)) \
- 	$($(target)_QT_MOCHDRS.$(_bld_trg_arch)) \
- 	$($(target)_QT_MOCHDRS.$(_bld_trg).$(_bld_trg_arch)) \
- 	$($(target)_QT_MOCHDRS.$(_bld_trg_cpu)) \
- 	$($(target)_QT_MOCHDRS.$(_bld_type)) \
+	$($(target)_QT_MOCHDRS.$(bld_trg)) \
+ 	$($(target)_QT_MOCHDRS.$(bld_trg_arch)) \
+ 	$($(target)_QT_MOCHDRS.$(bld_trg).$(bld_trg_arch)) \
+ 	$($(target)_QT_MOCHDRS.$(bld_trg_cpu)) \
+ 	$($(target)_QT_MOCHDRS.$(bld_type)) \
  	$($(target)_QT_MOCHDRS) \
 	, $(evalvalctx def_unit_qt4_target_pre_handle_moc_hdr))
 
 # Deal with QT_TRANSLATIONS.
 # ASSUMES (_ALL_)INSTALLS is processed after the targets using this unit.
 local translations := \
-	$($(target)_QT_TRANSLATIONS.$(_bld_trg)) \
- 	$($(target)_QT_TRANSLATIONS.$(_bld_trg_arch)) \
- 	$($(target)_QT_TRANSLATIONS.$(_bld_trg).$(_bld_trg_arch)) \
- 	$($(target)_QT_TRANSLATIONS.$(_bld_trg_cpu)) \
- 	$($(target)_QT_TRANSLATIONS.$(_bld_type)) \
+	$($(target)_QT_TRANSLATIONS.$(bld_trg)) \
+ 	$($(target)_QT_TRANSLATIONS.$(bld_trg_arch)) \
+ 	$($(target)_QT_TRANSLATIONS.$(bld_trg).$(bld_trg_arch)) \
+ 	$($(target)_QT_TRANSLATIONS.$(bld_trg_cpu)) \
+ 	$($(target)_QT_TRANSLATIONS.$(bld_type)) \
  	$($(target)_QT_TRANSLATIONS)
 ifneq ($(strip $(translations)),)
  local expr := _ALL_INSTALLS += $(target)-inst-nls
@@ -904,4 +1028,24 @@ ifneq ($(strip $(translations)),)
 endif
 
 endef # def_unit_qt4_target_pre
+
+
+#
+# Rule for debugging.
+#
+unit-qt4-show-vars:
+	@$(ECHO) 'The Qt4 SDK variables:'
+	@$(ECHO) '  PATH_SDK_QT4           = "$(PATH_SDK_QT4)"'
+	@$(ECHO) '  PATH_SDK_QT4_INC       = "$(PATH_SDK_QT4_INC)"'
+	@$(ECHO) '  PATH_SDK_QT4_LIB       = "$(PATH_SDK_QT4_LIB)"'
+	@$(ECHO) '  PATH_SDK_QT4_LIB.amd64 = "$(PATH_SDK_QT4_LIB.amd64)"'
+	@$(ECHO) '  PATH_SDK_QT4_LIB.x86   = "$(PATH_SDK_QT4_LIB.x86)"'
+	@$(ECHO) 'The Qt4 TOOL variables:'
+	@$(ECHO) '  PATH_TOOL_QT4_BIN      = "$(PATH_TOOL_QT4_BIN)"'
+	@$(ECHO) '  TOOL_QT4_BIN_SUFF      = "$(TOOL_QT4_BIN_SUFF)"'
+	@$(ECHO) '  TOOL_QT4_MOC           = "$(TOOL_QT4_MOC)"'
+	@$(ECHO) '  TOOL_QT4_UIC           = "$(TOOL_QT4_UIC)"'
+	@$(ECHO) '  TOOL_QT4_RCC           = "$(TOOL_QT4_RCC)"'
+	@$(ECHO) '  TOOL_QT4_LRC           = "$(TOOL_QT4_LRC)"'
+	@$(ECHO) '  TOOL_QT4_LUPDATE       = "$(TOOL_QT4_LUPDATE)"'
 

@@ -1,4 +1,4 @@
-/** $Id: tstInt.cpp 35604 2008-08-29 09:13:37Z bird $ */
+/** $Id: tstInt.cpp 11794 2008-08-29 09:13:37Z vboxsync $ */
 /** @file
  * Testcase: Test the interrupt gate feature of the support library.
  */

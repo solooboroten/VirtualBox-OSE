@@ -1,5 +1,5 @@
 #!/sbin/sh
-# $Id: smf-vboxwebsrv.sh 35044 2008-08-20 11:46:39Z klaus $
+# $Id: smf-vboxwebsrv.sh 11510 2008-08-20 11:46:39Z vboxsync $
 
 # Copyright (C) 2008 Sun Microsystems, Inc.
 #

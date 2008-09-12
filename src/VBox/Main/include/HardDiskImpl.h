@@ -1,4 +1,4 @@
-/* $Id: HardDiskImpl.h 34787 2008-08-14 18:23:31Z klaus $ */
+/* $Id: HardDiskImpl.h 11435 2008-08-14 18:23:31Z vboxsync $ */
 
 /** @file
  *

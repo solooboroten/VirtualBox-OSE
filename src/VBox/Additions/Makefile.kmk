@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 35275 2008-08-25 13:59:22Z sandervl $
+# $Id: Makefile.kmk 12337 2008-09-10 09:20:22Z vboxsync $
 ## @file
 # Top-level makefile for the VirtualBox Guest Additions.
 #
@@ -19,7 +19,7 @@
 # additional information or have any questions.
 #
 
-ifdef VBOX_KBUILD_HACKING
+ifdef VBOX_SINGLE_MAKEFILE
 SUB_DEPTH = ../../..
 else
 SUB_DEPTH = .
@@ -136,7 +136,6 @@ ifdef VBOX_WITH_ADDITIONS_ISO.linux.x86
  	VBoxLinuxAdditions-x86.run=$(VBOX_PATH_ADDITIONS.linux.x86)/VBoxLinuxAdditions.run
 endif
 
-
 ifdef VBOX_WITH_ADDITIONS_ISO.solaris.amd64
  VBOX_PATH_ADDITIONS.solaris.amd64 = $(PATH_OUT_BASE)/solaris.amd64/$(KBUILD_TYPE)/bin/additions
  GUESTADDITIONS_FILESPEC.solaris.amd64 = \
@@ -144,11 +143,17 @@ ifdef VBOX_WITH_ADDITIONS_ISO.solaris.amd64
 endif
 ifdef VBOX_WITH_ADDITIONS_ISO.solaris.x86
  VBOX_PATH_ADDITIONS.solaris.x86 = $(PATH_OUT_BASE)/solaris.x86/$(KBUILD_TYPE)/bin/additions
-## @todo 64-bit additions: rename this package, update docs (?) and tests (?).
  GUESTADDITIONS_FILESPEC.solaris.x86 = \
  	VBoxSolarisAdditions-x86.pkg=$(VBOX_PATH_ADDITIONS.solaris.x86)/VBoxSolarisAdditions.pkg
 endif
-
+ifdef VBOX_WITH_COMBINED_SOLARIS_GUEST_PACKAGE
+ # Build combined 32bit and 64bit solaris additions, not just a single arch.
+ # This assumes that the 32bit build directory contains the combined additions
+ # for 32bit and 64bit solaris. This just modifies variables set above.
+ GUESTADDITIONS_FILESPEC.solaris.x86 = \
+ 	VBoxSolarisAdditions.pkg=$(VBOX_PATH_ADDITIONS.solaris.x86)/VBoxSolarisAdditions.pkg
+ GUESTADDITIONS_FILESPEC.solaris.amd64 =
+endif
 
 ifdef VBOX_WITH_ADDITIONS_ISO.win.amd64
  VBOX_PATH_ADDITIONS.win.amd64 = $(PATH_OUT_BASE)/win.amd64/$(KBUILD_TYPE)/bin/additions

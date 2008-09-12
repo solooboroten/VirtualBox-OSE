@@ -1,4 +1,4 @@
-/* $Id: VBoxVMInfoOS.h 35885 2008-09-02 13:09:44Z umoeller $ */
+/* $Id: VBoxVMInfoOS.h 11982 2008-09-02 13:09:44Z vboxsync $ */
 /** @file
  * VBoxVMInfoOS - Guest OS information for the host.
  */

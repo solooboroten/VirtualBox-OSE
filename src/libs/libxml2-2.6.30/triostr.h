@@ -1,6 +1,6 @@
 /*************************************************************************
  *
- * $Id: triostr.h 26769 2007-12-14 19:23:03Z dmik $
+ * $Id: triostr.h 6076 2007-12-14 19:23:03Z vboxsync $
  *
  * Copyright (C) 2001 Bjorn Reese and Daniel Stenberg.
  *

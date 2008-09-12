@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-win.cpp 35645 2008-08-29 12:47:44Z ms227370 $ */
+/* $Id: SUPDrv-win.cpp 12161 2008-09-05 23:25:33Z vboxsync $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Windows NT specifics.
  */
@@ -565,15 +565,6 @@ static NTSTATUS     VBoxDrvNtErr2NtStatus(int rc)
 
 
 
-/** @todo move this to IPRT */
-RTDECL(void) AssertMsg1(const char *pszExpr, unsigned uLine, const char *pszFile, const char *pszFunction)
-{
-    DbgPrint("\n!!Assertion Failed!!\n"
-             "Expression: %s\n"
-             "Location  : %s(%d) %s\n",
-             pszExpr, pszFile, uLine, pszFunction);
-}
-
 /** @todo use the nocrt stuff? */
 int VBOXCALL mymemcmp(const void *pv1, const void *pv2, size_t cb)
 {
@@ -585,3 +576,25 @@ int VBOXCALL mymemcmp(const void *pv1, const void *pv2, size_t cb)
     return 0;
 }
 
+
+#if 0 /* See alternative in SUPDrvA-win.asm */
+/**
+ * Alternative version of SUPR0Printf for Windows.
+ *
+ * @returns 0.
+ * @param   pszFormat   The format string.
+ */
+SUPR0DECL(int) SUPR0Printf(const char *pszFormat, ...)
+{
+    va_list va;
+    char    szMsg[512];
+
+    va_start(va, pszFormat);
+    size_t cch = RTStrPrintfV(szMsg, sizeof(szMsg) - 1, pszFormat, va);
+    szMsg[sizeof(szMsg) - 1] = '\0';
+    va_end(va);
+
+    RTLogWriteDebugger(szMsg, cch);
+    return 0;
+}
+#endif

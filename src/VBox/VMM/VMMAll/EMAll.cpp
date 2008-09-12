@@ -1,4 +1,4 @@
-/* $Id: EMAll.cpp 35541 2008-08-28 14:28:50Z sandervl $ */
+/* $Id: EMAll.cpp 12307 2008-09-09 15:57:02Z vboxsync $ */
 /** @file
  * EM - Execution Monitor(/Manager) - All contexts
  */
@@ -68,6 +68,16 @@ EMDECL(EMSTATE) EMGetState(PVM pVM)
     return pVM->em.s.enmState;
 }
 
+/**
+ * Flushes the REM translation blocks the next time we execute code there.
+ *
+ * @param   pVM         The VM handle.
+ */
+EMDECL(void) EMFlushREMTBs(PVM pVM)
+{
+    Log(("EMFlushREMTBs\n"));
+    pVM->em.s.fREMFlushTBs = true;
+}
 
 #ifndef IN_GC
 /**
@@ -2198,6 +2208,7 @@ EMDECL(int) EMInterpretDRxWrite(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRe
 
     if (VBOX_SUCCESS(rc))
     {
+        /* @todo: we don't fail if illegal bits are set/cleared for e.g. dr7 */
         rc = CPUMSetGuestDRx(pVM, DestRegDrx, val);
         if (VBOX_SUCCESS(rc))
             return rc;

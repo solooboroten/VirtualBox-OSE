@@ -5,7 +5,7 @@
  *
  * Initial version by Michael Brown <mbrown@fensystems.co.uk>, January 2004.
  *
- * $Id: callbacks.h 16040 2006-12-01 13:25:05Z klaus $
+ * $Id: callbacks.h 1  vboxsync $
  */
 
 #ifndef CALLBACKS_H

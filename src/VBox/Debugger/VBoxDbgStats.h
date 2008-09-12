@@ -1,4 +1,4 @@
-/* $Id: VBoxDbgStats.h 31470 2008-05-31 14:53:24Z bird $ */
+/* $Id: VBoxDbgStats.h 12183 2008-09-07 02:35:53Z vboxsync $ */
 /** @file
  * VBox Debugger GUI - Statistics.
  */
@@ -25,11 +25,21 @@
 
 #include "VBoxDbgBase.h"
 
-#include <qlistview.h>
-#include <qvbox.h>
-#include <qtimer.h>
-#include <qcombobox.h>
-#include <qpopupmenu.h>
+#ifdef VBOXDBG_USE_QT4
+# include <QTreeWidget>
+# include <QTimer>
+# include <QComboBox>
+# include <QMenu>
+  typedef QMenu QPopupMenu;
+  typedef QTreeWidget QListView;
+  typedef QTreeWidgetItem QListViewItem;
+#else
+# include <qlistview.h>
+# include <qvbox.h>
+# include <qtimer.h>
+# include <qcombobox.h>
+# include <qpopupmenu.h>
+#endif 
 
 class VBoxDbgStats;
 
@@ -98,6 +108,9 @@ public:
         return m_pParent;
     }
 
+#ifdef VBOXDBG_USE_QT4
+    ///virtual bool operator<(const QTreeWidgetItem &other) const;
+#else
     /**
      * Get sort key.
      *
@@ -109,6 +122,7 @@ public:
     {
         return QListViewItem::key(iColumn, fAscending);
     }
+#endif 
 
     /**
      * Logs the tree starting at this item to one of the default logs.
@@ -128,6 +142,17 @@ public:
      */
     void copyTreeToClipboard(void) const;
 
+#ifdef VBOXDBG_USE_QT4
+    void setVisible(bool fVisible)
+    {
+        setHidden(!fVisible);
+    }
+
+    bool isVisible()
+    {
+        return !isHidden();
+    }
+#endif 
 
 protected:
     /** The name of this item. */
@@ -237,7 +262,7 @@ protected:
  */
 class VBoxDbgStatsView : public QListView, public VBoxDbgBase
 {
-    Q_OBJECT
+    Q_OBJECT;
 
 public:
     /**
@@ -245,10 +270,8 @@ public:
      *
      * @param   pVM         The VM which STAM data is being viewed.
      * @param   pParent     Parent widget.
-     * @param   pszName     Widget name.
-     * @param   f           Widget flags.
      */
-    VBoxDbgStatsView(PVM pVM, VBoxDbgStats *pParent = NULL, const char *pszName = NULL, WFlags f = 0);
+    VBoxDbgStatsView(PVM pVM, VBoxDbgStats *pParent = NULL);
 
     /** Destructor. */
     virtual ~VBoxDbgStatsView();
@@ -269,6 +292,7 @@ public:
      */
     void reset(const QString &rPatStr);
 
+#ifndef VBOXDBG_USE_QT4
     /**
      * Expand all items in the view.
      */
@@ -278,6 +302,7 @@ public:
      * Collaps all items in the view.
      */
     void collapsAll();
+#endif /* QT3 */
 
 private:
     /**
@@ -353,9 +378,15 @@ protected:
  * a entry field for the selection pattern, a refresh interval
  * spinbutton, and the tree view with the statistics.
  */
-class VBoxDbgStats : public QVBox, public VBoxDbgBase
+class VBoxDbgStats : 
+#ifdef VBOXDBG_USE_QT4
+    public QWidget, 
+#else
+    public QVBox, 
+#endif 
+    public VBoxDbgBase
 {
-    Q_OBJECT
+    Q_OBJECT;
 
 public:
     /**
@@ -365,10 +396,8 @@ public:
      * @param   pszPat          Initial selection pattern. NULL means everything. (See STAM for details.)
      * @param   uRefreshRate    The refresh rate. 0 means not to refresh and is the default.
      * @param   pParent         Parent widget.
-     * @param   pszName         Widget name.
-     * @param   f               Widget flags.
      */
-    VBoxDbgStats(PVM pVM, const char *pszPat = NULL, unsigned uRefreshRate= 0, QWidget *pParent = NULL, const char *pszName = NULL, WFlags f = 0);
+    VBoxDbgStats(PVM pVM, const char *pszPat = NULL, unsigned uRefreshRate= 0, QWidget *pParent = NULL);
 
     /** Destructor. */
     virtual ~VBoxDbgStats();

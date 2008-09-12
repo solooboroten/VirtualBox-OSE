@@ -1,4 +1,4 @@
-/* $Id: string.h 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: string.h 8245 2008-04-21 17:24:28Z vboxsync $ */
 /** @file
  * IPRT - wrapper for the linux kernel asm/string.h.
  */

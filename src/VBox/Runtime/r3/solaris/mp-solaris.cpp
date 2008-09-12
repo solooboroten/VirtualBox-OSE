@@ -1,4 +1,4 @@
-/* $Id: mp-solaris.cpp 35453 2008-08-27 18:16:22Z aleksey $ */
+/* $Id: mp-solaris.cpp 12108 2008-09-04 20:17:24Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, Solaris.
  */
@@ -223,6 +223,13 @@ RTDECL(bool) RTMpIsCpuOnline(RTCPUID idCpu)
 }
 
 
+RTDECL(bool) RTMpIsCpuPresent(RTCPUID idCpu)
+{
+    int iStatus = p_online(idCpu, P_STATUS);
+    return iStatus != -1;
+}
+
+
 RTDECL(RTCPUID) RTMpGetCount(void)
 {
     /*
@@ -262,5 +269,34 @@ RTDECL(PRTCPUSET) RTMpGetOnlineSet(PRTCPUSET pSet)
         if (RTMpIsCpuOnline(idCpu))
             RTCpuSetAdd(pSet, idCpu);
     return pSet;
+}
+
+
+RTDECL(PRTCPUSET) RTMpGetPresentSet(PRTCPUSET pSet)
+{
+#ifdef RT_STRICT
+    long cCpusPresent = 0;
+#endif
+    RTCpuSetEmpty(pSet);
+    RTCPUID cCpus = RTMpGetCount();
+    for (RTCPUID idCpu = 0; idCpu < cCpus; idCpu++)
+        if (RTMpIsCpuPresent(idCpu))
+        {
+            RTCpuSetAdd(pSet, idCpu);
+#ifdef RT_STRICT
+            cCpusPresent++;
+#endif
+        }
+    Assert(cCpusPresent == RTMpGetPresentCount());
+    return pSet;
+}
+
+
+RTDECL(RTCPUID) RTMpGetPresentCount(void)
+{
+    /*
+     * Solaris has sysconf.
+     */
+    return sysconf(_SC_NPROCESSORS_CONF);
 }
 

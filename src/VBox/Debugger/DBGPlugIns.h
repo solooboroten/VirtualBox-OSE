@@ -1,4 +1,4 @@
-/* $Id: DBGPlugIns.h 30800 2008-05-14 03:03:54Z bird $ */
+/* $Id: DBGPlugIns.h 8800 2008-05-14 03:03:54Z vboxsync $ */
 /** @file
  * DBGPlugIns - Debugger Plug-Ins.
  *

@@ -1,4 +1,4 @@
-/* $Id: mp-win.cpp 31680 2008-06-05 15:22:37Z bird $ */
+/* $Id: mp-win.cpp 9429 2008-06-05 15:22:37Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, Windows.
  */

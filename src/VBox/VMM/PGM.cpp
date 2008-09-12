@@ -1,4 +1,4 @@
-/* $Id: PGM.cpp 35905 2008-09-02 16:43:50Z sandervl $ */
+/* $Id: PGM.cpp 12417 2008-09-12 11:45:24Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor. (Mixing stuff here, not good?)
  */
@@ -3179,6 +3179,8 @@ PGMR3DECL(int) PGMR3ChangeMode(PVM pVM, PGMMODE enmGuestMode)
         }
 
     }
+    else
+        LogFlow(("PGMR3ChangeMode: Shadow mode remains: %s\n",  PGMGetModeName(pVM->pgm.s.enmShadowMode)));
 
     /* guest */
     if (PGM_GST_PFN(Exit, pVM))
@@ -3236,6 +3238,22 @@ PGMR3DECL(int) PGMR3ChangeMode(PVM pVM, PGMMODE enmGuestMode)
             pVM->pgm.s.enmShadowMode = PGMMODE_INVALID;
             return rc;
         }
+    }
+
+    /* We must flush the PGM pool cache if the guest mode changes; we don't always
+     * switch shadow paging mode (e.g. protected->32-bit) and shouldn't reuse
+     * the shadow page tables.
+     *
+     * That only applies when switching between paging and non-paging modes. 
+     *
+     * @todo A20 setting
+     */
+    if (   pVM->pgm.s.CTXSUFF(pPool)
+        && !HWACCMIsNestedPagingActive(pVM)
+        && PGMMODE_WITH_PAGING(pVM->pgm.s.enmGuestMode) != PGMMODE_WITH_PAGING(enmGuestMode))
+    {
+        Log(("PGMR3ChangeMode: changing guest paging mode -> flush pgm pool cache!\n"));
+        pgmPoolFlushAll(pVM);
     }
 
     /*
@@ -3339,7 +3357,7 @@ PGMR3DECL(int) PGMR3ChangeMode(PVM pVM, PGMMODE enmGuestMode)
                 AssertRC(rc);
 
                 VMSetRuntimeError(pVM, true, "PAEmode",
-                                  N_("The guest is trying to switch to the PAE mode which is currently disabled by default in VirtualBox. Experimental PAE support can be enabled using the -pae option with VBoxManage."));
+                                  N_("The guest is trying to switch to the PAE mode which is currently disabled by default in VirtualBox. Experimental PAE support can be enabled using the -pae option with VBoxManage"));
                 /* we must return TRUE here otherwise the recompiler will assert */
                 return VINF_SUCCESS;
             }

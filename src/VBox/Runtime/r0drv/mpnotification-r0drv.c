@@ -1,4 +1,4 @@
-/* $Id: mpnotification-r0drv.c 35885 2008-09-02 13:09:44Z umoeller $ */
+/* $Id: mpnotification-r0drv.c 12292 2008-09-09 13:16:16Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, Ring-0 Driver, Event Notifications.
  */
@@ -329,8 +329,7 @@ void rtR0MpNotificationTerm(void)
                 RTMemFree(pFree);
             }
 
-            RTSpinlockDestroy(g_hRTMpNotifySpinLock);
-            g_hRTMpNotifySpinLock = NULL;
+            RTSpinlockDestroy(hSpinlock);
         }
     }
 }

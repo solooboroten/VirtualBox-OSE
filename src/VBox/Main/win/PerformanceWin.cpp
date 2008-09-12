@@ -1,4 +1,4 @@
-/* $Id: PerformanceWin.cpp 34921 2008-08-18 14:52:12Z aleksey $ */
+/* $Id: PerformanceWin.cpp 12418 2008-09-12 11:47:28Z vboxsync $ */
 
 /** @file
  *
@@ -28,6 +28,8 @@ extern "C" {
 #include <iprt/err.h>
 #include <iprt/mp.h>
 
+#include <map>
+
 #include "Logging.h"
 #include "Performance.h"
 
@@ -39,6 +41,7 @@ public:
     CollectorWin();
     ~CollectorWin();
 
+    virtual int preCollect(const CollectorHints& hints);
     virtual int getHostCpuLoad(ULONG *user, ULONG *kernel, ULONG *idle);
     virtual int getHostCpuMHz(ULONG *mhz);
     virtual int getHostMemoryUsage(ULONG *total, ULONG *used, ULONG *available);
@@ -68,12 +71,23 @@ private:
     long               mProcessCpuLoadKernelHandle;
     long               mProcessCpuLoadTimestampHandle;
     long               mProcessMemoryUsedHandle;
+
+    struct VMProcessStats
+    {
+        uint64_t cpuUser;
+        uint64_t cpuKernel;
+        uint64_t cpuTotal;
+        uint64_t ramUsed;
+    };
+
+    typedef std::map<RTPROCESS, VMProcessStats> VMProcessMap;
+
+    VMProcessMap       mProcessStats;
 };
 
-MetricFactoryWin::MetricFactoryWin()
+CollectorHAL *createHAL()
 {
-    mHAL = new CollectorWin();
-    Assert(mHAL);
+    return new CollectorWin();
 }
 
 CollectorWin::CollectorWin() : mRefresher(0), mNameSpace(0), mEnumProcessor(0), mEnumProcess(0)
@@ -84,7 +98,7 @@ CollectorWin::CollectorWin() : mRefresher(0), mNameSpace(0), mEnumProcessor(0), 
     BSTR                    bstrNameSpace = NULL;
 
     if (SUCCEEDED (hr = CoCreateInstance(
-        CLSID_WbemLocator, 
+        CLSID_WbemLocator,
         NULL,
         CLSCTX_INPROC_SERVER,
         IID_IWbemLocator,
@@ -117,7 +131,7 @@ CollectorWin::CollectorWin() : mRefresher(0), mNameSpace(0), mEnumProcessor(0), 
         CLSID_WbemRefresher,
         NULL,
         CLSCTX_INPROC_SERVER,
-        IID_IWbemRefresher, 
+        IID_IWbemRefresher,
         (void**) &mRefresher)))
     {
         if (SUCCEEDED (hr = mRefresher->QueryInterface(
@@ -126,19 +140,19 @@ CollectorWin::CollectorWin() : mRefresher(0), mNameSpace(0), mEnumProcessor(0), 
         {
             // Add an enumerator to the refresher.
             if (SUCCEEDED (hr = pConfig->AddEnum(
-                mNameSpace, 
-                L"Win32_PerfRawData_PerfOS_Processor", 
-                0, 
-                NULL, 
-                &mEnumProcessor, 
+                mNameSpace,
+                L"Win32_PerfRawData_PerfOS_Processor",
+                0,
+                NULL,
+                &mEnumProcessor,
                 &mEnumProcessorID)))
             {
                 hr = pConfig->AddEnum(
                     mNameSpace,
-                    L"Win32_PerfRawData_PerfProc_Process", 
-                    0, 
-                    NULL, 
-                    &mEnumProcess, 
+                    L"Win32_PerfRawData_PerfProc_Process",
+                    0,
+                    NULL,
+                    &mEnumProcess,
                     &mEnumProcessID);
             }
             pConfig->Release();
@@ -224,44 +238,124 @@ long CollectorWin::getPropertyHandle(IWbemObjectAccess *objAccess, LPCWSTR name)
 
 int CollectorWin::getObjects(IWbemHiPerfEnum *mEnum, IWbemObjectAccess ***objArray, DWORD *numReturned)
 {
-    HRESULT hr;
-    DWORD   dwNumObjects = 0;
-
+    /*
+     * Get the number of objects.
+     * Note that the caller ASSUMES that at least one object is returned, so fail if there are none.
+     */
     *objArray    = NULL;
     *numReturned = 0;
-    hr = mEnum->GetObjects(0L, dwNumObjects, *objArray, numReturned);
-
-    // If the buffer was not big enough,
-    // allocate a bigger buffer and retry.
-    if (hr == WBEM_E_BUFFER_TOO_SMALL 
-        && *numReturned > dwNumObjects)
+    HRESULT hr = mEnum->GetObjects(0L, 0, *objArray, numReturned);
+    if (hr != WBEM_E_BUFFER_TOO_SMALL)
     {
-        *objArray = new IWbemObjectAccess*[*numReturned];
-        if (NULL == *objArray)
-        {
-            Log (("Could not allocate enumerator access objects\n"));
-            return VERR_NO_MEMORY;
-        }
-
-        SecureZeroMemory(*objArray,
-            *numReturned*sizeof(IWbemObjectAccess*));
-        dwNumObjects = *numReturned;
-
-        if (FAILED (hr = mEnum->GetObjects(0L, 
-            dwNumObjects, *objArray, numReturned)))
-        {
-            delete [] objArray;
-            Log (("Failed to get objects from enumerator. HR = %x\n", hr));
-            return VERR_INTERNAL_ERROR;
-        }
+        Log (("Failed to get the object count from the enumerator. HR = %x *numReturned=%d\n", hr, *numReturned));
+        return VERR_INTERNAL_ERROR;
     }
-    else if (FAILED (hr))
+
+    /*
+     * Allocate an array with the right lenght and get the actual objects.
+     */
+    DWORD cObjects = *numReturned;
+    *objArray = new IWbemObjectAccess*[cObjects];
+    if (!*objArray)
     {
-        Log (("Failed to get objects from enumerator. HR = %x\n", hr));
+        Log (("Could not allocate enumerator access objects\n"));
+        return VERR_NO_MEMORY;
+    }
+    SecureZeroMemory(*objArray, cObjects * sizeof(IWbemObjectAccess*));
+    hr = mEnum->GetObjects(0L, cObjects, *objArray, numReturned);
+    if (FAILED(hr) || *numReturned == 0)
+    {
+        delete [] *objArray;
+        *objArray = NULL;
+        Log (("Failed to get the objects from the enumerator. HR = %x *numReturned=%d cObjects=%d\n", hr, *numReturned, cObjects));
         return VERR_INTERNAL_ERROR;
     }
 
     return VINF_SUCCESS;
+}
+
+int CollectorWin::preCollect(const CollectorHints& hints)
+{
+
+    std::vector<RTPROCESS> processes;
+    hints.getProcesses(processes);
+
+    HRESULT hr;
+    IWbemObjectAccess       **apEnumAccess = NULL;
+    DWORD                   dwNumReturned = 0;
+
+    LogFlowThisFuncEnter();
+
+    if (FAILED (hr = mRefresher->Refresh(0L)))
+    {
+        Log (("Refresher failed. HR = %x\n", hr));
+        return VERR_INTERNAL_ERROR;
+    }
+
+    int rc = getObjects(mEnumProcess, &apEnumAccess, &dwNumReturned);
+    if (RT_FAILURE(rc))
+        return rc;
+
+    rc = VERR_NOT_FOUND;
+
+    for (unsigned i = 0; i < dwNumReturned; i++)
+    {
+        DWORD dwIDProcess;
+
+        if (FAILED (hr = apEnumAccess[i]->ReadDWORD(
+            mProcessPIDHandle,
+            &dwIDProcess)))
+        {
+            Log (("Failed to read 'IDProcess' property. HR = %x\n", hr));
+            return VERR_INTERNAL_ERROR;
+        }
+        LogFlowThisFunc (("Matching process %x against the list of machines...\n", dwIDProcess));
+        if (std::find(processes.begin(), processes.end(), dwIDProcess) != processes.end())
+        {
+            VMProcessStats vmStats;
+
+            LogFlowThisFunc (("Match found.\n"));
+            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
+                mProcessCpuLoadUserHandle,
+                &vmStats.cpuUser)))
+            {
+                Log (("Failed to read 'PercentUserTime' property. HR = %x\n", hr));
+                    return VERR_INTERNAL_ERROR;
+            }
+            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
+                mProcessCpuLoadKernelHandle,
+                &vmStats.cpuKernel)))
+            {
+                Log (("Failed to read 'PercentPrivilegedTime' property. HR = %x\n", hr));
+                    return VERR_INTERNAL_ERROR;
+            }
+            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
+                mProcessCpuLoadTimestampHandle,
+                &vmStats.cpuTotal)))
+            {
+                Log (("Failed to read 'Timestamp_Sys100NS' property. HR = %x\n", hr));
+                    return VERR_INTERNAL_ERROR;
+            }
+            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
+                mProcessMemoryUsedHandle,
+                &vmStats.ramUsed)))
+            {
+                Log (("Failed to read 'WorkingSet' property. HR = %x\n", hr));
+                    return VERR_INTERNAL_ERROR;
+            }
+
+            mProcessStats[dwIDProcess] = vmStats;
+            LogFlowThisFunc(("process=%x user=%lu kernel=%lu total=%lu\n", dwIDProcess, vmStats.cpuUser, vmStats.cpuKernel, vmStats.cpuTotal));
+            rc = VINF_SUCCESS;
+        }
+        apEnumAccess[i]->Release();
+        apEnumAccess[i] = NULL;
+    }
+    delete [] apEnumAccess;
+
+    LogFlowThisFuncLeave();
+
+    return rc;
 }
 
 int CollectorWin::getHostCpuLoad(ULONG *user, ULONG *kernel, ULONG *idle)
@@ -276,12 +370,6 @@ int CollectorWin::getRawHostCpuLoad(uint64_t *user, uint64_t *kernel, uint64_t *
     DWORD                   dwNumReturned = 0;
 
     LogFlowThisFuncEnter();
-
-    if (FAILED (hr = mRefresher->Refresh(0L)))
-    {
-        Log (("Refresher failed. HR = %x\n", hr));
-        return VERR_INTERNAL_ERROR;
-    }
 
     int rc = getObjects(mEnumProcessor, &apEnumAccess, &dwNumReturned);
     if (RT_FAILURE(rc))
@@ -373,7 +461,7 @@ int CollectorWin::getHostCpuMHz(ULONG *mhz)
 int CollectorWin::getHostMemoryUsage(ULONG *total, ULONG *used, ULONG *available)
 {
     MEMORYSTATUSEX mstat;
-    
+
     mstat.dwLength = sizeof(mstat);
     if (GlobalMemoryStatusEx(&mstat))
     {
@@ -394,127 +482,30 @@ int CollectorWin::getProcessCpuLoad(RTPROCESS process, ULONG *user, ULONG *kerne
 
 int CollectorWin::getRawProcessCpuLoad(RTPROCESS process, uint64_t *user, uint64_t *kernel, uint64_t *total)
 {
-    HRESULT hr;
-    IWbemObjectAccess       **apEnumAccess = NULL;
-    DWORD                   dwNumReturned = 0;
+    VMProcessMap::const_iterator it = mProcessStats.find(process);
 
-    LogFlowThisFuncEnter();
-
-    if (FAILED (hr = mRefresher->Refresh(0L)))
+    if (it == mProcessStats.end())
     {
-        Log (("Refresher failed. HR = %x\n", hr));
+        Log (("No stats pre-collected for process %x\n", process));
         return VERR_INTERNAL_ERROR;
     }
-
-    int rc = getObjects(mEnumProcess, &apEnumAccess, &dwNumReturned);
-    if (RT_FAILURE(rc))
-        return rc;
-
-    rc = VERR_NOT_FOUND;
-
-    for (unsigned i = 0; i < dwNumReturned; i++)
-    {
-        DWORD dwIDProcess;
-
-        if (FAILED (hr = apEnumAccess[i]->ReadDWORD(
-            mProcessPIDHandle,
-            &dwIDProcess)))
-        {
-            Log (("Failed to read 'IDProcess' property. HR = %x\n", hr));
-            return VERR_INTERNAL_ERROR;
-        }
-        LogFlowThisFunc (("Matching machine process %x against %x...\n", process, dwIDProcess));
-        if (dwIDProcess == process)
-        {
-            LogFlowThisFunc (("Match found.\n"));
-            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
-                mProcessCpuLoadUserHandle,
-                user)))
-            {
-            Log (("Failed to read 'PercentUserTime' property. HR = %x\n", hr));
-                return VERR_INTERNAL_ERROR;
-            }
-            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
-                mProcessCpuLoadKernelHandle,
-                kernel)))
-            {
-            Log (("Failed to read 'PercentPrivilegedTime' property. HR = %x\n", hr));
-                return VERR_INTERNAL_ERROR;
-            }
-            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
-                mProcessCpuLoadTimestampHandle,
-                total)))
-            {
-            Log (("Failed to read 'Timestamp_Sys100NS' property. HR = %x\n", hr));
-                return VERR_INTERNAL_ERROR;
-            }
-            rc = VINF_SUCCESS;
-        }
-        apEnumAccess[i]->Release();
-        apEnumAccess[i] = NULL;
-    }
-    delete [] apEnumAccess;
-
-    LogFlowThisFunc(("user=%lu kernel=%lu total=%lu\n", *user, *kernel, *total));
-    LogFlowThisFuncLeave();
-
-    return rc;
+    *user   = it->second.cpuUser;
+    *kernel = it->second.cpuKernel;
+    *total  = it->second.cpuTotal;
+    return VINF_SUCCESS;
 }
 
 int CollectorWin::getProcessMemoryUsage(RTPROCESS process, ULONG *used)
 {
-    HRESULT hr;
-    IWbemObjectAccess       **apEnumAccess = NULL;
-    DWORD                   dwNumReturned = 0;
+    VMProcessMap::const_iterator it = mProcessStats.find(process);
 
-    LogFlowThisFuncEnter();
-
-    if (FAILED (hr = mRefresher->Refresh(0L)))
+    if (it == mProcessStats.end())
     {
-        Log (("Refresher failed. HR = %x\n", hr));
+        Log (("No stats pre-collected for process %x\n", process));
         return VERR_INTERNAL_ERROR;
     }
-
-    int rc = getObjects(mEnumProcess, &apEnumAccess, &dwNumReturned);
-    if (RT_FAILURE(rc))
-        return rc;
-
-    rc = VERR_NOT_FOUND;
-
-    for (unsigned i = 0; i < dwNumReturned; i++)
-    {
-        DWORD dwIDProcess;
-
-        if (FAILED (hr = apEnumAccess[i]->ReadDWORD(
-            mProcessPIDHandle,
-            &dwIDProcess)))
-        {
-            Log (("Failed to read 'IDProcess' property. HR = %x\n", hr));
-            return VERR_INTERNAL_ERROR;
-        }
-        if (dwIDProcess == process)
-        {
-            uint64_t u64used = 0;
-
-            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
-                mProcessMemoryUsedHandle,
-                &u64used)))
-            {
-            Log (("Failed to read 'WorkingSet' property. HR = %x\n", hr));
-                return VERR_INTERNAL_ERROR;
-            }
-            *used = (ULONG)(u64used / 1024);
-            rc = VINF_SUCCESS;
-        }
-        apEnumAccess[i]->Release();
-        apEnumAccess[i] = NULL;
-    }
-    delete [] apEnumAccess;
-
-    LogFlowThisFunc(("used=%lu\n", *used));
-    LogFlowThisFuncLeave();
-
-    return rc;
+    *used = (ULONG)(it->second.ramUsed / 1024);
+    return VINF_SUCCESS;
 }
 
 }

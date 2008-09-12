@@ -89,9 +89,12 @@ void VBoxVMSettingsSerial::putBackToPort()
     mPort.SetEnabled (mGbSerial->isChecked());
     mPort.SetIRQ (mLeIRQ->text().toULong (NULL, 0));
     mPort.SetIOBase (mLeIOPort->text().toULong (NULL, 0));
-    mPort.SetHostMode (vboxGlobal().toPortMode (mCbMode->currentText()));
     mPort.SetServer (mCbPipe->isChecked());
     mPort.SetPath (QDir::convertSeparators (mLePath->text()));
+    /* This *must* be last. The host mode will be changed to disconnected if
+     * some of the necessary settings above will not meet the requirements for
+     * the selected mode. */
+    mPort.SetHostMode (vboxGlobal().toPortMode (mCbMode->currentText()));
 }
 
 void VBoxVMSettingsSerial::setValidator (QIWidgetValidator *aVal)

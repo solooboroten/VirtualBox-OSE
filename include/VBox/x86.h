@@ -624,6 +624,8 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define X86_DR6_BS                          RT_BIT(14)
 /** Bit 15 - BT - Task switch. (TSS T bit.) */
 #define X86_DR6_BT                          RT_BIT(15)
+/** Value of DR6 after powerup/reset. */
+#define X86_DR6_INIT_VAL                    UINT64_C(0xFFFF0FF0)
 /** @} */
 
 

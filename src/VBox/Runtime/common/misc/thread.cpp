@@ -1,4 +1,4 @@
-/* $Id: thread.cpp 35230 2008-08-23 23:25:03Z bird $ */
+/* $Id: thread.cpp 11596 2008-08-23 23:25:03Z vboxsync $ */
 /** @file
  * IPRT - Threads, common routines.
  */

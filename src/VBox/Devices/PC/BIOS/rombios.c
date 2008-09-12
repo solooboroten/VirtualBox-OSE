@@ -4547,26 +4547,31 @@ BX_DEBUG_INT15("returning cf = %u, ah = %02x\n", (unsigned)GET_CF(), (unsigned)r
 #endif
 
 
-void set_e820_range(ES, DI, start, end, type)
+void set_e820_range(ES, DI, start, end, extra_start, extra_end, type)
      Bit16u ES;
      Bit16u DI;
      Bit32u start;
      Bit32u end;
+     Bit8u  extra_start;
+     Bit8u  extra_end;
      Bit16u type;
 {
     write_word(ES, DI, start);
     write_word(ES, DI+2, start >> 16);
-    write_word(ES, DI+4, 0x00);
+    write_word(ES, DI+4, 0x00); /** @todo r=bird: why write it twice? */
+    write_word(ES, DI+4, extra_start);
     write_word(ES, DI+6, 0x00);
 
     end -= start;
+    extra_end -= extra_start;
     write_word(ES, DI+8, end);
     write_word(ES, DI+10, end >> 16);
 #ifdef VBOX
     if (end == 0)
         write_word(ES, DI+12, 0x0001);
     else
-        write_word(ES, DI+12, 0x0000);
+        /** @todo XXX: nike - is it really correct? see QEMU BIOS patch */
+        write_word(ES, DI+12, extra_end);
 #else /* !VBOX */
     write_word(ES, DI+12, 0x0000);
 #endif /* !VBOX */
@@ -4582,7 +4587,13 @@ int15_function32(regs, ES, DS, FLAGS)
   Bit16u ES, DS, FLAGS;
 {
   Bit32u  extended_memory_size=0; // 64bits long
+#if VBOX_WITH_SMP_GUESTS
+  Bit32u  extra_lowbits_memory_size=0;
+#endif
   Bit16u  CX,DX;
+#if VBOX_WITH_SMP_GUESTS
+  Bit8u   extra_highbits_memory_size=0;
+#endif
 
 BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
 
@@ -4656,11 +4667,20 @@ ASM_END
                     extended_memory_size *= 1024;
                 }
 
+#if VBOX_WITH_SMP_GUESTS /* bird: later (btw. this ain't making sense complixity wise, unless its a AMI/AWARD/PHOENIX interface) */
+                extra_lowbits_memory_size = inb_cmos(0x61);
+                extra_lowbits_memory_size <<= 8;
+                extra_lowbits_memory_size |= inb_cmos(0x62);
+                extra_lowbits_memory_size *= 64;
+                extra_lowbits_memory_size *= 1024;
+                extra_highbits_memory_size = inb_cmos(0x63);
+#endif
+
                 switch(regs.u.r16.bx)
                 {
                     case 0:
                         set_e820_range(ES, regs.u.r16.di,
-                                       0x0000000L, 0x0009fc00L, 1);
+                                       0x0000000L, 0x0009fc00L, 0, 0, 1);
                         regs.u.r32.ebx = 1;
                         regs.u.r32.eax = 0x534D4150;
                         regs.u.r32.ecx = 0x14;
@@ -4669,7 +4689,7 @@ ASM_END
                         break;
                     case 1:
                         set_e820_range(ES, regs.u.r16.di,
-                                       0x0009fc00L, 0x000a0000L, 2);
+                                       0x0009fc00L, 0x000a0000L, 0, 0, 2);
                         regs.u.r32.ebx = 2;
                         regs.u.r32.eax = 0x534D4150;
                         regs.u.r32.ecx = 0x14;
@@ -4687,10 +4707,10 @@ ASM_END
                          * a single reserved range from 0xd0000 to 0xffffff.
                          * A 128K area starting from 0xd0000 works. */
                         set_e820_range(ES, regs.u.r16.di,
-                                       0x000f0000L, 0x00100000L, 2);
+                                       0x000f0000L, 0x00100000L, 0, 0, 2);
 #else /* !VBOX */
                         set_e820_range(ES, regs.u.r16.di,
-                                       0x000e8000L, 0x00100000L, 2);
+                                       0x000e8000L, 0x00100000L, 0, 0, 2);
 #endif /* !VBOX */
                         regs.u.r32.ebx = 3;
                         regs.u.r32.eax = 0x534D4150;
@@ -4701,7 +4721,7 @@ ASM_END
                     case 3:
                         set_e820_range(ES, regs.u.r16.di,
                                        0x00100000L,
-                                       extended_memory_size - ACPI_DATA_SIZE, 1);
+                                       extended_memory_size - ACPI_DATA_SIZE, 0, 0, 1);
                         regs.u.r32.ebx = 4;
                         regs.u.r32.eax = 0x534D4150;
                         regs.u.r32.ecx = 0x14;
@@ -4711,7 +4731,7 @@ ASM_END
                     case 4:
                         set_e820_range(ES, regs.u.r16.di,
                                        extended_memory_size - ACPI_DATA_SIZE,
-                                       extended_memory_size, 3); // ACPI RAM
+                                       extended_memory_size, 0, 0, 3); // ACPI RAM
                         regs.u.r32.ebx = 5;
                         regs.u.r32.eax = 0x534D4150;
                         regs.u.r32.ecx = 0x14;
@@ -4721,12 +4741,29 @@ ASM_END
                     case 5:
                         /* 256KB BIOS area at the end of 4 GB */
                         set_e820_range(ES, regs.u.r16.di,
-                                       0xfffc0000L, 0x00000000L, 2);
+                                       0xfffc0000L, 0x00000000L, 0, 0, 2);
+#if VBOX_WITH_SMP_GUESTS
+                        if (extra_highbits_memory_size || extra_lowbits_memory_size)
+                            regs.u.r32.ebx = 6;
+                        else
+#endif
+                            regs.u.r32.ebx = 0;
+                        regs.u.r32.eax = 0x534D4150;
+                        regs.u.r32.ecx = 0x14;
+                        CLEAR_CF();
+                        return;
+#if VBOX_WITH_SMP_GUESTS
+                    case 6:
+                        /* Mapping of memory above 4 GB */
+                        set_e820_range(ES, regs.u.r16.di,
+                                       0x00000000L, extra_lowbits_memory_size,
+                                       1, extra_highbits_memory_size + 1, 1);
                         regs.u.r32.ebx = 0;
                         regs.u.r32.eax = 0x534D4150;
                         regs.u.r32.ecx = 0x14;
                         CLEAR_CF();
                         return;
+#endif
                     default:  /* AX=E820, DX=534D4150, BX unrecognized */
                         goto int15_unimplemented;
                         break;
@@ -8294,8 +8331,8 @@ ASM_END
   // have a 55AAh signature. UNIX boot floppies typically have no such
   // signature. In general, it is impossible to tell a valid bootsector
   // from an invalid one.
-  // NB: It is somewhat common for failed OS installs to have the 
-  // 0x55AA signature and a valid partition table but zeros in the 
+  // NB: It is somewhat common for failed OS installs to have the
+  // 0x55AA signature and a valid partition table but zeros in the
   // rest of the boot sector. We do a quick check by comparing the first
   // two words of boot sector; if identical, the boot sector is
   // extremely unlikely to be valid.

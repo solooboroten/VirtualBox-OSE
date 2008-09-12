@@ -1,4 +1,4 @@
-/* $Id: tstCompiler.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
+/* $Id: tstCompiler.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
 /** @file
  * Testing how the compiler deals with various things.
  *

@@ -1,4 +1,4 @@
-/* $Id: mp-os2.cpp 31680 2008-06-05 15:22:37Z bird $ */
+/* $Id: mp-os2.cpp 9429 2008-06-05 15:22:37Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, OS/2.
  */

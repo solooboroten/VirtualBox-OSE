@@ -1,4 +1,4 @@
-/** $Id: VBoxServiceClipboard-os2.cpp 30496 2008-05-05 13:56:33Z bird $ */
+/** $Id: VBoxServiceClipboard-os2.cpp 8580 2008-05-05 13:56:33Z vboxsync $ */
 /** @file
  * VBoxService - Guest Additions Clipboard Service, OS/2.
  */

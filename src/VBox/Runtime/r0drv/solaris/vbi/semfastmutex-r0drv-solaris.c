@@ -1,4 +1,4 @@
-/* $Id: semfastmutex-r0drv-solaris.c 31282 2008-05-27 09:27:29Z bird $ */
+/* $Id: semfastmutex-r0drv-solaris.c 9149 2008-05-27 09:27:29Z vboxsync $ */
 /** @file
  * IPRT - Fast Mutex Semaphores, Ring-0 Driver, Solaris.
  */

@@ -1,4 +1,4 @@
-/* $Id: HWACCMInternal.h 35994 2008-09-03 15:37:33Z sandervl $ */
+/* $Id: HWACCMInternal.h 12162 2008-09-05 23:28:27Z vboxsync $ */
 /** @file
  * HWACCM - Internal header file.
  */
@@ -32,6 +32,8 @@
 #include <iprt/memobj.h>
 #include <iprt/cpuset.h>
 #include <iprt/mp.h>
+
+////#define VBOX_WITH_HWACCM_DEBUG_REGISTER_SUPPORT
 
 #if HC_ARCH_BITS == 64
 /* Enable 64 bits guest support. */
@@ -109,11 +111,11 @@ __BEGIN_DECLS
  *  Currently #NM and #PF only
  */
 #ifdef VBOX_STRICT
-#define HWACCM_VMX_TRAP_MASK                RT_BIT(X86_XCPT_DE) | RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF) | RT_BIT(X86_XCPT_UD) | RT_BIT(X86_XCPT_NP) | RT_BIT(X86_XCPT_SS) | RT_BIT(X86_XCPT_GP) | RT_BIT(X86_XCPT_MF)
+#define HWACCM_VMX_TRAP_MASK                RT_BIT(X86_XCPT_DE) | RT_BIT(X86_XCPT_DB) | RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF) | RT_BIT(X86_XCPT_UD) | RT_BIT(X86_XCPT_NP) | RT_BIT(X86_XCPT_SS) | RT_BIT(X86_XCPT_GP) | RT_BIT(X86_XCPT_MF)
 #define HWACCM_SVM_TRAP_MASK                HWACCM_VMX_TRAP_MASK
 #else
-#define HWACCM_VMX_TRAP_MASK                RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF)
-#define HWACCM_SVM_TRAP_MASK                HWACCM_VMX_TRAP_MASK
+#define HWACCM_VMX_TRAP_MASK                RT_BIT(X86_XCPT_DB) | RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF)
+#define HWACCM_SVM_TRAP_MASK                RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF)
 #endif
 /** @} */
 
@@ -375,6 +377,26 @@ typedef struct HWACCM
     /** Currenty shadow paging mode. */
     PGMMODE                 enmShadowMode;
 
+
+#ifdef VBOX_WITH_HWACCM_DEBUG_REGISTER_SUPPORT
+    struct
+    {
+        /* Saved host debug registers. */
+        uint64_t                dr0, dr1, dr2, dr3, dr6, dr7;
+        bool                    fHostDR7Saved;
+        bool                    fHostDebugRegsSaved;
+    } savedhoststate;
+#endif
+
+#ifdef VBOX_STRICT
+    /** The CPU ID of the CPU currently owning the VMCS. Set in
+     * HWACCMR0Enter and cleared in HWACCMR0Leave. */
+    RTCPUID                 idEnteredCpu;
+# if HC_ARCH_BITS == 32
+    RTCPUID                 Alignment0;
+# endif
+#endif
+
     STAMPROFILEADV          StatEntry;
     STAMPROFILEADV          StatExit;
     STAMPROFILEADV          StatInGC;
@@ -390,6 +412,7 @@ typedef struct HWACCM
     STAMCOUNTER             StatExitGuestNP;
     STAMCOUNTER             StatExitGuestGP;
     STAMCOUNTER             StatExitGuestDE;
+    STAMCOUNTER             StatExitGuestDB;
     STAMCOUNTER             StatExitGuestMF;
     STAMCOUNTER             StatExitInvpg;
     STAMCOUNTER             StatExitInvd;

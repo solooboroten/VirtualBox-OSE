@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 35786 2008-09-01 12:54:21Z bird $
+# $Id: Makefile.kmk 12247 2008-09-09 01:13:58Z vboxsync $
 ## @file
 # Sub-Makefile for the IPRT (IPRT).
 #
@@ -28,12 +28,7 @@
 # additional information or have any questions.
 #
 
-ifdef VBOX_KBUILD_HACKING
 SUB_DEPTH = ../../..
-else
-SUB_DEPTH = .
-DEPTH    ?= ../../..
-endif
 include $(KBUILD_PATH)/subheader.kmk
 
 ifdef VBOX_ONLY_ADDITIONS
@@ -80,14 +75,17 @@ else # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS
  endif # VBOX_WITH_ADDITIONS
  LIBRARIES.l4 += RuntimeR3L4 RuntimeLnxHostR3
  DLLS += VBoxRT
- OTHER_CLEAN += \
-	$(PATH_TARGET)/errmsgdata.h \
-	$(PATH_TARGET)/errmsgcomdata.h \
-	$(PATH_TARGET)/Doxyfile.iprt \
-	$(PATH_TARGET)/Doxyfile.iprt.dep \
-	$(PATH_TARGET)/docs.iprt
-
 endif
+
+# Where the generated stuff goes.
+IPRT_OUT_DIR := $(PATH_TARGET)/Runtime
+BLDDIRS += $(IPRT_OUT_DIR)
+OTHER_CLEAN += \
+	$(IPRT_OUT_DIR)/errmsgdata.h \
+	$(IPRT_OUT_DIR)/errmsgcomdata.h \
+	$(IPRT_OUT_DIR)/Doxyfile.iprt \
+	$(IPRT_OUT_DIR)/Doxyfile.iprt.dep \
+	$(IPRT_OUT_DIR)/docs.iprt
 
 
 #
@@ -186,6 +184,9 @@ RuntimeR3_SOURCES       = \
 	common/ldr/ldrNative.cpp \
 	common/ldr/ldrPE.cpp \
 	common/log/log.cpp \
+	common/log/logellipsis.cpp \
+	common/log/logrel.cpp \
+	common/log/logrelellipsis.cpp \
 	common/log/logcom.cpp \
 	common/log/logformat.cpp \
 	common/misc/assert.cpp \
@@ -294,6 +295,7 @@ RuntimeR3_SOURCES.win = \
 	generic/RTMpGetMaxFrequency-generic.cpp \
 	generic/RTRandAdvCreateSystemFaster-generic.cpp \
 	generic/RTRandAdvCreateSystemTruer-generic.cpp \
+	generic/mppresent-generic.cpp \
 	generic/semnoint-generic.cpp \
 	generic/semsrw-generic.cpp \
 	nt/RTErrConvertFromNtStatus.cpp \
@@ -335,6 +337,7 @@ RuntimeR3_SOURCES.linux = \
 	generic/RTTimeLocalNow-generic.cpp \
 	generic/RTTimerCreate-generic.cpp \
 	generic/RTUuidCreate-generic.cpp \
+	generic/mppresent-generic.cpp \
 	generic/utf16locale-generic.cpp \
 	generic/uuid-generic.cpp \
 	r3/linux/mp-linux.cpp \
@@ -385,6 +388,7 @@ RuntimeR3_SOURCES.os2   = \
 	generic/RTTimeLocalNow-generic.cpp \
 	generic/RTTimerCreate-generic.cpp \
 	generic/RTUuidCreate-generic.cpp \
+	generic/mppresent-generic.cpp \
 	generic/semnoint-generic.cpp \
 	generic/semsrw-generic.cpp \
 	generic/timer-generic.cpp \
@@ -426,6 +430,7 @@ RuntimeR3_SOURCES.darwin = \
 	generic/RTTimeLocalNow-generic.cpp \
 	generic/RTTimerCreate-generic.cpp \
 	generic/RTUuidCreate-generic.cpp \
+	generic/mppresent-generic.cpp \
 	generic/sched-generic.cpp \
 	generic/timer-generic.cpp \
 	generic/utf16locale-generic.cpp \
@@ -463,6 +468,7 @@ RuntimeR3_SOURCES.freebsd = \
 	generic/RTTimeLocalNow-generic.cpp \
 	generic/RTTimerCreate-generic.cpp \
 	generic/RTUuidCreate-generic.cpp \
+	generic/mppresent-generic.cpp \
 	generic/sched-generic.cpp \
 	generic/utf16locale-generic.cpp \
 	generic/uuid-generic.cpp \
@@ -555,6 +561,7 @@ RuntimeR3L4_SOURCES = \
 	generic/RTSystemQueryOSInfo-generic.cpp \
 	generic/RTTimeLocalNow-generic.cpp \
 	generic/RTUuidCreate-generic.cpp \
+	generic/mppresent-generic.cpp \
 	generic/sched-generic.cpp \
 	generic/semnoint-generic.cpp \
 	generic/semsrw-generic.cpp \
@@ -691,7 +698,7 @@ ifeq ($(KBUILD_TARGET)$(VBOX_WITH_HARDENING),darwin)
 VBoxRT_INST                    = $(INST_DLL) $(INST_TESTCASE)
 endif
 VBoxRT_DEFS                    = $(RuntimeR3_DEFS) IN_SUP_R3 IN_SUP_R3
-VBoxRT_DEFS.$(KBUILD_TYPE)      = $(RuntimeR3_DEFS.$(KBUILD_TYPE))
+VBoxRT_DEFS.$(KBUILD_TYPE)     = $(RuntimeR3_DEFS.$(KBUILD_TYPE))
 VBoxRT_SOURCES                 = \
 	VBox/VBoxRTDeps.cpp \
 	$(RuntimeR3_SOURCES)
@@ -701,7 +708,7 @@ VBoxRT_SOURCES.win            += r3/win/dllmain-win.cpp
 VBoxRT_SOURCES.win.x86        += r3/win/VBoxRT-win32.def
 VBoxRT_SOURCES.win.amd64      += r3/win/VBoxRT-win64.def
 VBoxRT_INCS                    = $(RuntimeR3_INCS)
-VBoxRT_INCS.$(KBUILD_TARGET)    = $(RuntimeR3_INCS.$(KBUILD_TARGET))
+VBoxRT_INCS.$(KBUILD_TARGET)   = $(RuntimeR3_INCS.$(KBUILD_TARGET))
 VBoxRT_INCS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH) = $(RuntimeR3_INCS.$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH))
 VBoxRT_LIBS                    = \
 	$(PATH_LIB)/SUPR3$(VBOX_SUFF_LIB) \
@@ -827,6 +834,8 @@ RuntimeR0_SOURCES       = \
 	common/checksum/crc64.cpp \
 	common/checksum/md5.cpp \
 	common/checksum/ipv4.cpp \
+	common/log/logellipsis.cpp \
+	common/log/logrelellipsis.cpp \
 	common/log/logcom.cpp \
 	common/log/logformat.cpp \
 	common/misc/assert.cpp \
@@ -928,11 +937,15 @@ ifdef VBOX_WITH_SOLARIS_VBI
 endif
 
 RuntimeR0Drv_SOURCES    = \
+	common/alloc/alloc.cpp \
 	common/checksum/crc32.cpp \
 	common/checksum/crc64.cpp \
 	common/checksum/md5.cpp \
 	common/checksum/ipv4.cpp \
 	common/log/log.cpp \
+	common/log/logellipsis.cpp \
+	common/log/logrel.cpp \
+	common/log/logrelellipsis.cpp \
 	common/log/logcom.cpp \
 	common/log/logformat.cpp \
 	common/misc/assert.cpp \
@@ -961,6 +974,7 @@ RuntimeR0Drv_SOURCES.linux = \
 	common/err/RTErrConvertToErrno.cpp \
 	generic/RTAssertDoBreakpoint-generic.cpp \
 	generic/RTLogWriteStdOut-stub-generic.cpp \
+	generic/mppresent-generic.cpp \
 	r0drv/linux/alloc-r0drv-linux.c \
 	r0drv/linux/initterm-r0drv-linux.c \
 	r0drv/linux/memobj-r0drv-linux.c \
@@ -991,6 +1005,7 @@ RuntimeR0Drv_SOURCES.win = \
 	common/string/strpbrk.cpp \
 	generic/RTAssertDoBreakpoint-generic.cpp \
 	generic/RTLogWriteStdOut-stub-generic.cpp \
+	generic/mppresent-generic.cpp \
 	nt/RTErrConvertFromNtStatus.cpp \
 	r0drv/memobj-r0drv.cpp \
 	r0drv/mpnotification-r0drv.c \
@@ -1035,6 +1050,7 @@ RuntimeR0Drv_SOURCES.darwin = \
 	generic/RTMpGetSet-generic.cpp \
 	generic/RTMpIsCpuOnline-generic.cpp \
 	generic/RTTimerCreate-generic.cpp \
+	generic/mppresent-generic.cpp \
 	generic/timer-generic.cpp \
 	r0drv/generic/RTMpOn-r0drv-generic.cpp \
 	r0drv/generic/mpnotification-r0drv-generic.cpp \
@@ -1081,6 +1097,7 @@ RuntimeR0Drv_SOURCES.os2 = \
 	generic/RTMpGetSet-generic.cpp \
 	generic/RTMpIsCpuOnline-generic.cpp \
 	generic/RTTimerCreate-generic.cpp \
+	generic/mppresent-generic.cpp \
 	os2/RTErrConvertFromOS2.cpp \
 	os2/sys0.asm \
 	r0drv/memobj-r0drv.cpp \
@@ -1129,6 +1146,7 @@ RuntimeR0Drv_SOURCES.freebsd = \
 	generic/RTMpGetSet-generic.cpp \
 	generic/RTMpIsCpuOnline-generic.cpp \
 	generic/RTTimerCreate-generic.cpp \
+	generic/mppresent-generic.cpp \
 	r0drv/generic/RTMpOn-r0drv-generic.cpp \
 	r0drv/generic/mpnotification-r0drv-generic.cpp \
 	r0drv/freebsd/alloc-r0drv-freebsd.c \
@@ -1153,6 +1171,7 @@ RuntimeR0Drv_SOURCES.solaris = \
 	generic/RTAssertDoBreakpoint-generic.cpp \
 	generic/RTLogWriteStdOut-stub-generic.cpp \
 	generic/RTTimerCreate-generic.cpp \
+	generic/mppresent-generic.cpp \
 	r0drv/memobj-r0drv.cpp \
 	r0drv/mpnotification-r0drv.c
 
@@ -1249,6 +1268,7 @@ RuntimeGuestR0_SOURCES.solaris = \
  	generic/RTMpGetSet-generic.cpp \
  	generic/RTMpIsCpuOnline-generic.cpp \
 	generic/RTLogWriteStdOut-stub-generic.cpp \
+	generic/mppresent-generic.cpp \
 	r0drv/generic/RTMpOn-r0drv-generic.cpp \
 	r0drv/generic/mpnotification-r0drv-generic.cpp \
  	r0drv/solaris/alloc-r0drv-solaris.c \
@@ -1282,6 +1302,9 @@ RuntimeGC_DEFS          = IN_RT_GC RT_WITH_VBOX RT_WITHOUT_NOCRT_WRAPPERS
 RuntimeGC_INCS          = include
 RuntimeGC_SOURCES       = \
 	common/log/log.cpp \
+	common/log/logellipsis.cpp \
+	common/log/logrel.cpp \
+	common/log/logrelellipsis.cpp \
 	common/log/logcom.cpp \
 	common/log/logformat.cpp \
 	common/misc/assert.cpp \
@@ -1370,11 +1393,11 @@ RuntimeEFCPP_SOURCES    = r3/alloc-ef-cpp.cpp
 #
 # errmsg.cpp depends on a generated header.
 #
-common/err/errmsg.cpp_DEPS = $(PATH_TARGET)/errmsgdata.h
-common/err/errmsg.cpp_INCS = $(PATH_TARGET)
+common/err/errmsg.cpp_DEPS = $(IPRT_OUT_DIR)/errmsgdata.h
+common/err/errmsg.cpp_INCS = $(IPRT_OUT_DIR)
 
-win/errmsgwin.cpp_DEPS = $(PATH_TARGET)/errmsgcomdata.h
-win/errmsgwin.cpp_INCS = $(PATH_TARGET)
+win/errmsgwin.cpp_DEPS = $(IPRT_OUT_DIR)/errmsgcomdata.h
+win/errmsgwin.cpp_INCS = $(IPRT_OUT_DIR)
 
 
 #
@@ -1395,20 +1418,20 @@ endif
 #
 # Generate the status code data.
 #
-$(PATH_TARGET)/errmsgdata.h: \
+$(IPRT_OUT_DIR)/errmsgdata.h: \
 		$(VBOX_PATH_RUNTIME_SRC)/common/err/errmsg.sed \
 		$(PATH_ROOT)/include/iprt/err.h \
-		$(PATH_ROOT)/include/VBox/err.h
+		$(PATH_ROOT)/include/VBox/err.h \
+		| $$(dir $$@)
 	$(call MSG_GENERATE,,$@,$(filter %.h,$^))
-	$(QUIET)$(MKDIR) -p $(PATH_TARGET)
 	$(QUIET)$(REDIRECT) -wo $@ -- $(SED) -f $< $(filter %.h,$^)
 
 ## @todo r=bird: rename this to indicate that it's not only COM errors, but all win32/64 errors.
-$(PATH_TARGET)/errmsgcomdata.h: \
+$(IPRT_OUT_DIR)/errmsgcomdata.h: \
 		$(VBOX_PATH_RUNTIME_SRC)/common/err/errmsgcom.sed \
-		$$(PATH_SDK_WINPSDK_INC)/WinError.h
+		$$(PATH_SDK_WINPSDK_INC)/WinError.h \
+		| $$(dir $$@)
 	$(call MSG_GENERATE,,$@,$(filter %.h,$^))
-	$(QUIET)$(MKDIR) -p $(PATH_TARGET)
 	$(QUIET)$(REDIRECT) -wo $@ -- $(SED) -f $< $(filter %.h,$^)
 
 
@@ -1470,16 +1493,16 @@ IPRT_DOXYFILE_INPUT := \
 
 IPRT_DOXYFILE_OUTPUT = $(PATH_OUT)/docs/iprt
 
--include $(PATH_TARGET)/Doxyfile.iprt.dep
+includedep $(IPRT_OUT_DIR)/Doxyfile.iprt.dep
 
 # Generate the Doxyfile
-$(PATH_TARGET)/Doxyfile.iprt: \
+$(IPRT_OUT_DIR)/Doxyfile.iprt: \
 		$(VBOX_PATH_RUNTIME_SRC)/Doxyfile \
 		$(VBOX_PATH_RUNTIME_SRC)/Makefile.kmk \
 		$(comp-vars IPRT_DOXYFILE_INPUT,DOXYGEN_INPUT_PREV,FORCE) \
 		$(comp-vars IPRT_DOXYFILE_OUTPUT,DOXYGEN_OUTPUT_PREV,FORCE) \
-		| $(call DIRDEP, $(PATH_TARGET))
-	$(RM) -f $@ $@.tmp $(PATH_TARGET)/Doxyfile.iprt.dep
+		| $$(dir $$@)
+	$(RM) -f $@ $@.tmp $@.dep
 	$(CP) -f $(VBOX_PATH_RUNTIME_SRC)/Doxyfile $@.tmp
 	$(APPEND) $@.tmp
 	$(APPEND) $@.tmp "OUTPUT_DIRECTORY = $(IPRT_DOXYFILE_OUTPUT)"
@@ -1491,21 +1514,21 @@ $(PATH_TARGET)/Doxyfile.iprt: \
 	$(APPEND) $@.tmp "INPUT = $(IPRT_DOXYFILE_INPUT)"
 	$(APPEND) $@.tmp
 	$(MV) -f $@.tmp $@
-	@$(APPEND) $(PATH_TARGET)/Doxyfile.iprt.dep "DOXYGEN_OUTPUT_PREV = $(IPRT_DOXYFILE_OUTPUT)"
-	@$(APPEND) $(PATH_TARGET)/Doxyfile.iprt.dep "DOXYGEN_INPUT_PREV = $(IPRT_DOXYFILE_INPUT)"
+	@$(APPEND) $@.dep "DOXYGEN_OUTPUT_PREV = $(IPRT_DOXYFILE_OUTPUT)"
+	@$(APPEND) $@.dep "DOXYGEN_INPUT_PREV = $(IPRT_DOXYFILE_INPUT)"
 
 # Create the output directory.
 $(call DIRDEP, $(IPRT_DOXYFILE_OUTPUT)):
 	$(MKDIR) -p $@
 
 # Do the actual job.
-$(PATH_TARGET)/docs.iprt: $(PATH_TARGET)/Doxyfile.iprt $(IPRT_DOXYFILE_INPUT) | $(call DIRDEP, $(IPRT_DOXYFILE_OUTPUT))
-	$(RM) -f $(wildcard $(IPRT_DOXYFILE_OUTPUT)/html/*) $(PATH_TARGET)/docs.iprt
-	doxygen $(PATH_TARGET)/Doxyfile.iprt
-	$(APPEND) $(PATH_TARGET)/docs.iprt
+$(IPRT_OUT_DIR)/docs.iprt: $(IPRT_OUT_DIR)/Doxyfile.iprt $(IPRT_DOXYFILE_INPUT) | $(call DIRDEP, $(IPRT_DOXYFILE_OUTPUT))
+	$(RM) -f $(wildcard $(IPRT_DOXYFILE_OUTPUT)/html/*) $(IPRT_OUT_DIR)/docs.iprt
+	doxygen $(IPRT_OUT_DIR)/Doxyfile.iprt
+	$(APPEND) $(IPRT_OUT_DIR)/docs.iprt
 
 # alias
-docs: $(PATH_TARGET)/docs.iprt
+docs: $(IPRT_OUT_DIR)/docs.iprt
 
 test:
 	@echo test-$(comp-vars IPRT_DOXYFILE_OUTPUT,DOXYGEN_OUTPUT_PREV,FORCE)

@@ -1030,10 +1030,7 @@ void VBoxDiskImageManagerDlg::mediaEnumerated (const VBoxMedia &aMedia,
     mediaUpdated (aMedia);
     Assert (aMedia.status != VBoxMedia::Unknown);
     if (aMedia.status != VBoxMedia::Unknown)
-    {
         mProgressBar->setValue (aIndex + 1);
-        qApp->processEvents();
-    }
 }
 
 void VBoxDiskImageManagerDlg::mediaEnumFinished (const VBoxMediaList &/* aList */)
@@ -1087,11 +1084,22 @@ void VBoxDiskImageManagerDlg::addImage()
     {
         case VBoxDefs::HD:
         {
-            filter = tr ("All hard disk images (*.vdi *.vmdk *.vhd);;"
-                         "Virtual Disk images (*.vdi);;"
-                         "VMDK images (*.vmdk);;"
-                         "VHD images (*.vhd);;"
-                         "All files (*)");
+            QList < QPair<QString, QString> > filterList = vboxGlobal().HDDBackends();
+            QStringList backends;
+            QStringList allPrefix;
+            for (int i = 0; i < filterList.count(); ++i)
+            {
+                QPair <QString, QString> item = filterList.at (i);
+                /* Create one backend filter string */
+                backends << QString ("%1 (%2)").arg (item.first). arg (item.second);
+                /* Save the suffix's for the "All" entry */
+                allPrefix << item.second;
+            }
+            if (!allPrefix.isEmpty())
+                backends.insert (0, tr ("All hard disk images (%1)").arg (allPrefix.join (" ").trimmed()));
+            backends << tr ("All files (*)");
+            filter = backends.join (";;").trimmed();
+
             title = tr ("Select a hard disk image file");
             break;
         }
@@ -1245,6 +1253,7 @@ void VBoxDiskImageManagerDlg::releaseImage()
                     VBoxMedia::Error;
                 vboxGlobal().updateMedia (media);
             }
+            break;
         }
         /* If it is a floppy sub-item: */
         case VBoxDefs::FD:
@@ -1266,6 +1275,7 @@ void VBoxDiskImageManagerDlg::releaseImage()
                     VBoxMedia::Error;
                 vboxGlobal().updateMedia (media);
             }
+            break;
         }
         default:
             AssertMsgFailed (("Selected tree should be equal to one item in VBoxDefs::DiskType.\n"));

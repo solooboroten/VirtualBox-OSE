@@ -1,4 +1,4 @@
-/* $Id: helpers.h 33578 2008-07-22 09:00:07Z bird $ */
+/* $Id: helpers.h 10800 2008-07-22 09:00:07Z vboxsync $ */
 /** @file
  * helpers - Guest Additions Service helper functions header
  */

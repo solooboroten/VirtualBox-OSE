@@ -1,4 +1,4 @@
-/* $Id: VBoxVMInfoAdditions.h 35885 2008-09-02 13:09:44Z umoeller $ */
+/* $Id: VBoxVMInfoAdditions.h 11982 2008-09-02 13:09:44Z vboxsync $ */
 /** @file
  * VBoxVMInfoAdditions - Guest Additions information for the host.
  */

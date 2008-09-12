@@ -1,4 +1,4 @@
-/* $Id: uuid-generic.cpp 34729 2008-08-14 08:03:03Z klaus $ */
+/* $Id: uuid-generic.cpp 11413 2008-08-14 08:03:03Z vboxsync $ */
 /** @file
  * IPRT - UUID, Generic.
  */

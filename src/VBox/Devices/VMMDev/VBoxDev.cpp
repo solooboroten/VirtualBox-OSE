@@ -1,4 +1,4 @@
-/* $Id: VBoxDev.cpp 35651 2008-08-29 14:09:39Z frank $ */
+/* $Id: VBoxDev.cpp 12409 2008-09-11 16:58:17Z vboxsync $ */
 /** @file
  * VMMDev - Guest <-> VMM/Host communication device.
  */
@@ -261,15 +261,16 @@ void VMMDevNotifyGuest (VMMDevState *pVMMDevState, uint32_t u32EventMask)
     PPDMDEVINS pDevIns = VMMDEVSTATE_2_DEVINS(pVMMDevState);
     PVM pVM = PDMDevHlpGetVM(pDevIns);
     int rc;
-    PVMREQ pReq;
 
     Log3(("VMMDevNotifyGuest: u32EventMask = 0x%08X.\n", u32EventMask));
 
-    rc = VMR3ReqCallVoid (pVM, &pReq, RT_INDEFINITE_WAIT,
-                          (PFNRT) vmmdevNotifyGuest_EMT,
-                          2, pVMMDevState, u32EventMask);
-    AssertReleaseRC (rc);
-    VMR3ReqFree (pReq);
+    /* No need to wait for the completion of this request. It is a notification
+     * about something, which has already happened.
+     */
+    rc = VMR3ReqCallEx(pVM, NULL, 0, VMREQFLAGS_NO_WAIT | VMREQFLAGS_VOID,
+                       (PFNRT) vmmdevNotifyGuest_EMT,
+                       2, pVMMDevState, u32EventMask);
+    AssertRC(rc);
 }
 
 /**
@@ -1750,6 +1751,7 @@ static DECLCALLBACK(int) vmmdevSetAbsoluteMouse(PPDMIVMMDEVPORT pInterface, uint
     Log2(("vmmdevSetAbsoluteMouse: settings absolute position to x = %d, y = %d\n", absX, absY));
     pThis->mouseXAbs = absX;
     pThis->mouseYAbs = absY;
+    VMMDevNotifyGuest (pThis, VMMDEV_EVENT_MOUSE_POSITION_CHANGED);
     return VINF_SUCCESS;
 }
 
@@ -2376,6 +2378,9 @@ static DECLCALLBACK(void) vmmdevReset(PPDMDEVINS pDevIns)
 
     /* disabled statistics updating */
     pThis->u32LastStatIntervalSize = 0;
+
+    /* Clear the "HGCM event enabled" flag so the event can be automatically reenabled.  */
+    pThis->u32HGCMEnabled = 0;
 
     /*
      * Clear the event variables.

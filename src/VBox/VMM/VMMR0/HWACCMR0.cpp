@@ -1,4 +1,4 @@
-/* $Id: HWACCMR0.cpp 34406 2008-08-08 23:31:54Z bird $ */
+/* $Id: HWACCMR0.cpp 12225 2008-09-08 12:59:59Z vboxsync $ */
 /** @file
  * HWACCM - Host Context Ring 0.
  */
@@ -680,6 +680,9 @@ HWACCMR0DECL(int) HWACCMR0InitVM(PVM pVM)
     pVM->hwaccm.s.cpuid.u32AMDFeatureECX    = HWACCMR0Globals.cpuid.u32AMDFeatureECX;
     pVM->hwaccm.s.cpuid.u32AMDFeatureEDX    = HWACCMR0Globals.cpuid.u32AMDFeatureEDX;
     pVM->hwaccm.s.lLastError                = HWACCMR0Globals.lLastError;
+#ifdef VBOX_STRICT
+    pVM->hwaccm.s.idEnteredCpu              = NIL_RTCPUID;
+#endif
 
     /* Init a VT-x or AMD-V VM. */
     return HWACCMR0Globals.pfnInitVM(pVM);
@@ -743,6 +746,20 @@ HWACCMR0DECL(int) HWACCMR0Enter(PVM pVM)
     /* Always load the guest's FPU/XMM state on-demand. */
     CPUMDeactivateGuestFPUState(pVM);
 
+#ifdef VBOX_WITH_HWACCM_DEBUG_REGISTER_SUPPORT
+    /*
+     * Check if host debug registers are armed. All context switches set DR7 back to 0x400.
+     */
+    uint64_t u64DR7 = ASMGetDR7();
+    if (u64DR7 & (X86_DR7_ENABLED_MASK | X86_DR7_GD))
+    {
+        pVM->hwaccm.s.savedhoststate.dr7  = u64DR7;
+        pVM->hwaccm.s.savedhoststate.fHostDR7Saved = true;
+    }
+    else
+        pVM->hwaccm.s.savedhoststate.fHostDR7Saved = false;
+#endif
+
     /* Always reload the host context and the guest's CR0 register. (!!!!) */
     pVM->hwaccm.s.fContextUseFlags |= HWACCM_CHANGED_GUEST_CR0 | HWACCM_CHANGED_HOST_CONTEXT;
 
@@ -759,6 +776,15 @@ HWACCMR0DECL(int) HWACCMR0Enter(PVM pVM)
     AssertRC(rc);
     rc |= HWACCMR0Globals.pfnLoadGuestState(pVM, pCtx);
     AssertRC(rc);
+
+#ifdef VBOX_STRICT
+    /* keep track of the CPU owning the VMCS for debugging scheduling weirdness and ring-3 calls. */
+    if (RT_SUCCESS(rc))
+    {
+        AssertMsg(pVM->hwaccm.s.idEnteredCpu == NIL_RTCPUID, ("%d", (int)pVM->hwaccm.s.idEnteredCpu));
+        pVM->hwaccm.s.idEnteredCpu = idCpu;
+    }
+#endif
     return rc;
 }
 
@@ -791,7 +817,36 @@ HWACCMR0DECL(int) HWACCMR0Leave(PVM pVM)
         pVM->hwaccm.s.fContextUseFlags |= HWACCM_CHANGED_GUEST_CR0;
     }
 
-    return HWACCMR0Globals.pfnLeaveSession(pVM);
+#ifdef VBOX_WITH_HWACCM_DEBUG_REGISTER_SUPPORT
+    /* Restore the host debug registers. First dr0-3, then dr6 and only then dr7! */
+    if (pVM->hwaccm.s.savedhoststate.fHostDebugRegsSaved)
+    {
+        ASMSetDR0(pVM->hwaccm.s.savedhoststate.dr0);
+        ASMSetDR1(pVM->hwaccm.s.savedhoststate.dr1);
+        ASMSetDR2(pVM->hwaccm.s.savedhoststate.dr2);
+        ASMSetDR3(pVM->hwaccm.s.savedhoststate.dr3);
+        ASMSetDR6(pVM->hwaccm.s.savedhoststate.dr6);
+        pVM->hwaccm.s.savedhoststate.fHostDebugRegsSaved = false;
+    }
+    if (pVM->hwaccm.s.savedhoststate.fHostDR7Saved)
+    {
+        ASMSetDR7(pVM->hwaccm.s.savedhoststate.dr7);
+        pVM->hwaccm.s.savedhoststate.fHostDR7Saved = false;
+    }
+#endif
+
+    /* Resync the debug register on the next entry. */
+    pVM->hwaccm.s.fContextUseFlags |= HWACCM_CHANGED_GUEST_DEBUG;
+    rc = HWACCMR0Globals.pfnLeaveSession(pVM);
+
+#ifdef VBOX_STRICT
+    /* keep track of the CPU owning the VMCS for debugging scheduling weirdness and ring-3 calls. */
+    RTCPUID idCpu = RTMpCpuId();
+    AssertMsg(pVM->hwaccm.s.idEnteredCpu == idCpu, ("owner is %d, I'm %d", (int)pVM->hwaccm.s.idEnteredCpu, (int)idCpu));
+    pVM->hwaccm.s.idEnteredCpu = NIL_RTCPUID;
+#endif
+
+    return rc;
 }
 
 /**

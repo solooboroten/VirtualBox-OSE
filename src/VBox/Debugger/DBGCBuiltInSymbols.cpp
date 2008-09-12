@@ -1,4 +1,4 @@
-/** $Id: DBGCBuiltInSymbols.cpp 31681 2008-06-05 15:28:07Z sandervl $ */
+/** $Id: DBGCBuiltInSymbols.cpp 9430 2008-06-05 15:28:07Z vboxsync $ */
 /** @file
  * DBGC - Debugger Console, Built-In Symbols.
  */

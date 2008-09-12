@@ -1,4 +1,4 @@
-/* $Id: RTAssertDoBreakpoint-vbox.cpp 35388 2008-08-26 17:17:10Z bird $ */
+/* $Id: RTAssertDoBreakpoint-vbox.cpp 11680 2008-08-26 17:17:10Z vboxsync $ */
 /** @file
  * IPRT - Assertions, generic RTAssertDoBreakpoint.
  */

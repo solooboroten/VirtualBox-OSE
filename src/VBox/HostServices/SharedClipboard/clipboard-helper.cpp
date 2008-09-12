@@ -1,4 +1,4 @@
-/* $Id: clipboard-helper.cpp 30027 2008-04-22 12:28:31Z bird $ */
+/* $Id: clipboard-helper.cpp 8280 2008-04-22 12:28:31Z vboxsync $ */
 /** @file
  * Shared Clipboard: Some helper function for converting between the various eol.
  */

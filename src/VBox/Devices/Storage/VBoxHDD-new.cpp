@@ -1,4 +1,4 @@
-/** $Id: VBoxHDD-new.cpp 35564 2008-08-28 18:34:38Z aeichner $ */
+/** $Id: VBoxHDD-new.cpp 12368 2008-09-10 16:46:04Z vboxsync $ */
 /** @file
  * VBox HDD Container implementation.
  */
@@ -122,9 +122,7 @@ struct VBOXHDD
 extern VBOXHDDBACKEND g_RawBackend;
 extern VBOXHDDBACKEND g_VmdkBackend;
 extern VBOXHDDBACKEND g_VDIBackend;
-#ifndef VBOX_OSE
 extern VBOXHDDBACKEND g_VhdBackend;
-#endif
 #ifdef VBOX_WITH_ISCSI
 extern VBOXHDDBACKEND g_ISCSIBackend;
 #endif
@@ -134,9 +132,7 @@ static PCVBOXHDDBACKEND aBackends[] =
     &g_RawBackend,
     &g_VmdkBackend,
     &g_VDIBackend,
-#ifndef VBOX_OSE
     &g_VhdBackend,
-#endif
 #ifdef VBOX_WITH_ISCSI
     &g_ISCSIBackend,
 #endif
@@ -184,7 +180,7 @@ static int vdFindBackend(const char *pszBackend, PCVBOXHDDBACKEND *ppBackend,
         char szSharedLibPath[RTPATH_MAX];
         char *pszPluginName;
 
-        rc = RTPathSharedLibs(szSharedLibPath, sizeof(szSharedLibPath));
+        rc = RTPathAppPrivateArch(szSharedLibPath, sizeof(szSharedLibPath));
         if (RT_FAILURE(rc))
             return rc;
 
@@ -618,6 +614,9 @@ static int vdWriteHelper(PVBOXHDD pDisk, PVDIMAGE pImage, uint64_t uOffset,
 /**
  * Lists all HDD backends and their capabilities in a caller-provided buffer.
  *
+ * @todo this code contains memory leaks, inconsistent (and probably buggy)
+ * allocation, and it lacks documentation what the caller needs to free.
+ *
  * @returns VBox status code.
  *          VERR_BUFFER_OVERFLOW if not enough space is passed.
  * @param   cEntriesAlloc   Number of list entries available.
@@ -670,7 +669,7 @@ VBOXDDU_DECL(int) VDBackendInfo(unsigned cEntriesAlloc, PVDBACKENDINFO pEntries,
 
         /* Then enumerate plugin backends. */
         char szPath[RTPATH_MAX];
-        rc = RTPathSharedLibs(szPath, sizeof(szPath));
+        rc = RTPathAppPrivateArch(szPath, sizeof(szPath));
         if (RT_FAILURE(rc))
             break;
 
@@ -689,16 +688,16 @@ VBOXDDU_DECL(int) VDBackendInfo(unsigned cEntriesAlloc, PVDBACKENDINFO pEntries,
         if (RT_FAILURE(rc))
             break;
 
-        PRTDIRENTRY pPluginDirEntry = NULL;
+        PRTDIRENTRYEX pPluginDirEntry = NULL;
         unsigned cbPluginDirEntry = sizeof(RTDIRENTRY);
-        pPluginDirEntry = (PRTDIRENTRY)RTMemAllocZ(sizeof(RTDIRENTRY));
+        pPluginDirEntry = (PRTDIRENTRYEX)RTMemAllocZ(sizeof(RTDIRENTRY));
         if (!pPluginDirEntry)
         {
             rc = VERR_NO_MEMORY;
             break;
         }
 
-        while ((rc = RTDirRead(pPluginDir, pPluginDirEntry, &cbPluginDirEntry)) != VERR_NO_MORE_FILES)
+        while ((rc = RTDirReadEx(pPluginDir, pPluginDirEntry, &cbPluginDirEntry, RTFSOBJATTRADD_NOTHING)) != VERR_NO_MORE_FILES)
         {
             RTLDRMOD hPlugin = NIL_RTLDRMOD;
             PFNVBOXHDDFORMATLOAD pfnHDDFormatLoad = NULL;
@@ -709,9 +708,9 @@ VBOXDDU_DECL(int) VDBackendInfo(unsigned cEntriesAlloc, PVDBACKENDINFO pEntries,
             {
                 /* allocate new buffer. */
                 RTMemFree(pPluginDirEntry);
-                pPluginDirEntry = (PRTDIRENTRY)RTMemAllocZ(cbPluginDirEntry);
+                pPluginDirEntry = (PRTDIRENTRYEX)RTMemAllocZ(cbPluginDirEntry);
                 /* Retry. */
-                rc = RTDirRead(pPluginDir, pPluginDirEntry, &cbPluginDirEntry);
+                rc = RTDirReadEx(pPluginDir, pPluginDirEntry, &cbPluginDirEntry, RTFSOBJATTRADD_NOTHING);
                 if (RT_FAILURE(rc))
                     break;
             }
@@ -719,7 +718,7 @@ VBOXDDU_DECL(int) VDBackendInfo(unsigned cEntriesAlloc, PVDBACKENDINFO pEntries,
                 break;
 
             /* We got the new entry. */
-            if (pPluginDirEntry->enmType != RTDIRENTRYTYPE_FILE)
+            if (!RTFS_IS_FILE(pPluginDirEntry->Info.Attr.fMode))
                 continue;
 
             /* Prepend the path to the libraries. */
@@ -755,8 +754,35 @@ VBOXDDU_DECL(int) VDBackendInfo(unsigned cEntriesAlloc, PVDBACKENDINFO pEntries,
                         }
                         pEntries[cEntries].pszBackend = pszName;
                         pEntries[cEntries].uBackendCaps = pBackend->uBackendCaps;
-                        pEntries[cEntries].papszFileExtensions = pBackend->papszFileExtensions;
-                        pEntries[cEntries].paConfigInfo = pBackend->paConfigInfo;
+                        unsigned cExts, iExt;
+                        for (cExts=0; pBackend->papszFileExtensions[cExts]; cExts++)
+                            ;
+                        const char **paExts = (const char **)RTMemAlloc((cExts+1) * sizeof(paExts[0])); /** @todo rainy day: fix leak on error. */
+                        if (!paExts)
+                        {
+                            rc = VERR_NO_MEMORY;
+                            break;
+                        }
+                        for (iExt=0; iExt < cExts; iExt++)
+                        {
+                            paExts[iExt] = (const char*)RTStrDup(pBackend->papszFileExtensions[iExt]);
+                            if (!paExts[iExt])
+                            {
+                                rc = VERR_NO_MEMORY;
+                                break;
+                            }
+                        }
+                        if (RT_FAILURE(rc))
+                            break;
+                        paExts[iExt] = NULL;
+                        pEntries[cEntries].papszFileExtensions = paExts;
+                        if (pBackend->paConfigInfo != NULL)
+                        {
+                            /* copy the whole config field! */
+                            rc = VERR_NOT_IMPLEMENTED;
+                            break;
+                        }
+                        pEntries[cEntries].paConfigInfo = NULL;
                         cEntries++;
                         if (cEntries >= cEntriesAlloc)
                         {
@@ -928,7 +954,7 @@ VBOXDDU_DECL(int) VDGetFormat(const char *pszFilename, char **ppszFormat)
 
         /* Then check if plugin backends support this file format. */
         char szPath[RTPATH_MAX];
-        rc = RTPathSharedLibs(szPath, sizeof(szPath));
+        rc = RTPathAppPrivateArch(szPath, sizeof(szPath));
         if (RT_FAILURE(rc))
             break;
 
@@ -947,16 +973,16 @@ VBOXDDU_DECL(int) VDGetFormat(const char *pszFilename, char **ppszFormat)
         if (RT_FAILURE(rc))
             break;
 
-        PRTDIRENTRY pPluginDirEntry = NULL;
+        PRTDIRENTRYEX pPluginDirEntry = NULL;
         unsigned cbPluginDirEntry = sizeof(RTDIRENTRY);
-        pPluginDirEntry = (PRTDIRENTRY)RTMemAllocZ(sizeof(RTDIRENTRY));
+        pPluginDirEntry = (PRTDIRENTRYEX)RTMemAllocZ(sizeof(RTDIRENTRY));
         if (!pPluginDirEntry)
         {
             rc = VERR_NO_MEMORY;
             break;
         }
 
-        while ((rc = RTDirRead(pPluginDir, pPluginDirEntry, &cbPluginDirEntry)) != VERR_NO_MORE_FILES)
+        while ((rc = RTDirReadEx(pPluginDir, pPluginDirEntry, &cbPluginDirEntry, RTFSOBJATTRADD_NOTHING)) != VERR_NO_MORE_FILES)
         {
             RTLDRMOD hPlugin = NIL_RTLDRMOD;
             PFNVBOXHDDFORMATLOAD pfnHDDFormatLoad = NULL;
@@ -967,9 +993,9 @@ VBOXDDU_DECL(int) VDGetFormat(const char *pszFilename, char **ppszFormat)
             {
                 /* allocate new buffer. */
                 RTMemFree(pPluginDirEntry);
-                pPluginDirEntry = (PRTDIRENTRY)RTMemAllocZ(cbPluginDirEntry);
+                pPluginDirEntry = (PRTDIRENTRYEX)RTMemAllocZ(cbPluginDirEntry);
                 /* Retry. */
-                rc = RTDirRead(pPluginDir, pPluginDirEntry, &cbPluginDirEntry);
+                rc = RTDirReadEx(pPluginDir, pPluginDirEntry, &cbPluginDirEntry, RTFSOBJATTRADD_NOTHING);
                 if (RT_FAILURE(rc))
                     break;
             }
@@ -977,7 +1003,7 @@ VBOXDDU_DECL(int) VDGetFormat(const char *pszFilename, char **ppszFormat)
                 break;
 
             /* We got the new entry. */
-            if (pPluginDirEntry->enmType != RTDIRENTRYTYPE_FILE)
+            if (!RTFS_IS_FILE(pPluginDirEntry->Info.Attr.fMode))
                 continue;
 
             /* Prepend the path to the libraries. */
@@ -1509,7 +1535,7 @@ VBOXDDU_DECL(int) VDCreateBase(PVBOXHDD pDisk, const char *pszBackend,
         }
     }
 
-    if (RT_SUCCESS(rc) && pCbProgress->pfnProgress)
+    if (RT_SUCCESS(rc) && pCbProgress && pCbProgress->pfnProgress)
         pCbProgress->pfnProgress(NULL /* WARNING! pVM=NULL */, 100,
                                  pIfProgress->pvUser);
 
@@ -1704,7 +1730,7 @@ VBOXDDU_DECL(int) VDCreateDiff(PVBOXHDD pDisk, const char *pszBackend,
         }
     }
 
-    if (RT_SUCCESS(rc) && pCbProgress->pfnProgress)
+    if (RT_SUCCESS(rc) && pCbProgress && pCbProgress->pfnProgress)
         pCbProgress->pfnProgress(NULL /* WARNING! pVM=NULL */, 100,
                                  pIfProgress->pvUser);
 
@@ -1830,7 +1856,7 @@ VBOXDDU_DECL(int) VDMerge(PVBOXHDD pDisk, unsigned nImageFrom,
                 uOffset += cbThisRead;
                 cbRemaining -= cbThisRead;
 
-                if (pCbProgress->pfnProgress)
+                if (pCbProgress && pCbProgress->pfnProgress)
                 {
                     rc = pCbProgress->pfnProgress(NULL /* WARNING! pVM=NULL */,
                                                   uOffset * 99 / cbSize,
@@ -1879,7 +1905,7 @@ VBOXDDU_DECL(int) VDMerge(PVBOXHDD pDisk, unsigned nImageFrom,
                 uOffset += cbThisRead;
                 cbRemaining -= cbThisRead;
 
-                if (pCbProgress->pfnProgress)
+                if (pCbProgress && pCbProgress->pfnProgress)
                 {
                     rc = pCbProgress->pfnProgress(NULL /* WARNING! pVM=NULL */,
                                                   uOffset * 99 / cbSize,
@@ -1947,7 +1973,7 @@ VBOXDDU_DECL(int) VDMerge(PVBOXHDD pDisk, unsigned nImageFrom,
     if (pvBuf)
         RTMemTmpFree(pvBuf);
 
-    if (RT_SUCCESS(rc) && pCbProgress->pfnProgress)
+    if (RT_SUCCESS(rc) && pCbProgress && pCbProgress->pfnProgress)
         pCbProgress->pfnProgress(NULL /* WARNING! pVM=NULL */, 100,
                                  pIfProgress->pvUser);
 
@@ -2151,7 +2177,7 @@ movefail:
             uOffset += cbThisRead;
             cbRemaining -= cbThisRead;
 
-            if (pCbProgress->pfnProgress)
+            if (pCbProgress && pCbProgress->pfnProgress)
             {
                 rc = pCbProgress->pfnProgress(NULL /* WARNING! pVM=NULL */,
                                               uOffset * 99 / cbSize,
@@ -2216,7 +2242,7 @@ movefail:
 
     if (RT_SUCCESS(rc))
     {
-        if (pCbProgress->pfnProgress)
+        if (pCbProgress && pCbProgress->pfnProgress)
             pCbProgress->pfnProgress(NULL /* WARNING! pVM=NULL */, 100,
                                      pIfProgress->pvUser);
         if (pDstCbProgress->pfnProgress)

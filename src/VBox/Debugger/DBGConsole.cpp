@@ -1,4 +1,4 @@
-/** $Id: DBGConsole.cpp 32220 2008-06-20 09:06:35Z sandervl $ */
+/** $Id: DBGConsole.cpp 9838 2008-06-20 09:06:35Z vboxsync $ */
 /** @file
  * DBGC - Debugger Console.
  */

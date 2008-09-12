@@ -1,4 +1,4 @@
-/* $Id: HWVMXR0.cpp 36001 2008-09-03 15:53:35Z sandervl $ */
+/* $Id: HWVMXR0.cpp 12350 2008-09-10 12:55:05Z vboxsync $ */
 /** @file
  * HWACCM VMX - Host Context Ring 0.
  */
@@ -965,11 +965,58 @@ HWACCMR0DECL(int) VMXR0LoadGuestState(PVM pVM, CPUMCTX *pCtx)
     /* Debug registers. */
     if (pVM->hwaccm.s.fContextUseFlags & HWACCM_CHANGED_GUEST_DEBUG)
     {
-        val  = pCtx->dr7 & 0xffffffff;                                  /* upper 32 bits reserved */
-        val &= ~(RT_BIT(11) | RT_BIT(12) | RT_BIT(14) | RT_BIT(15));    /* must be zero */
-        val |= 0x400;                                                   /* must be one */
-        rc |= VMXWriteVMCS(VMX_VMCS_GUEST_DR7,              val);
+        pCtx->dr7 &= 0xffffffff;                                              /* upper 32 bits reserved */
+        pCtx->dr7 &= ~(RT_BIT(11) | RT_BIT(12) | RT_BIT(14) | RT_BIT(15));    /* must be zero */
+        pCtx->dr7 |= 0x400;                                                   /* must be one */
+#ifdef VBOX_WITH_HWACCM_DEBUG_REGISTER_SUPPORT
+        rc |= VMXWriteVMCS(VMX_VMCS_GUEST_DR7,  pCtx->dr7);
+#else
+        rc |= VMXWriteVMCS(VMX_VMCS_GUEST_DR7,  0x400);
+#endif
         AssertRC(rc);
+
+#ifdef VBOX_WITH_HWACCM_DEBUG_REGISTER_SUPPORT
+        /* Any guest breakpoints enabled? */
+        if (    (pCtx->dr7 & (X86_DR7_ENABLED_MASK | X86_DR7_GD))
+            &&  !pVM->hwaccm.s.savedhoststate.fHostDebugRegsSaved)
+        {
+            /* Save the host debug register; a bit paranoid if the host has no active breakpoints set in dr7, but we
+             * do not want anything from the guest to leak into the host!
+             */
+            pVM->hwaccm.s.savedhoststate.dr0 = ASMGetDR0();
+            pVM->hwaccm.s.savedhoststate.dr1 = ASMGetDR1();
+            pVM->hwaccm.s.savedhoststate.dr2 = ASMGetDR2();
+            pVM->hwaccm.s.savedhoststate.dr3 = ASMGetDR3();
+            pVM->hwaccm.s.savedhoststate.dr6 = ASMGetDR6();
+            pVM->hwaccm.s.savedhoststate.fHostDebugRegsSaved = true;
+
+            /* Make sure DR7 is harmless or else we could trigger breakpoints when restoring dr0-3 (!) */
+            ASMSetDR7(0x400);
+        }
+
+        if (pCtx->dr7 & (X86_DR7_L0|X86_DR7_G0))
+        {
+            ASMSetDR0(pCtx->dr0);
+            Assert(pVM->hwaccm.s.savedhoststate.fHostDebugRegsSaved);
+        }
+        if (pCtx->dr7 & (X86_DR7_L1|X86_DR7_G1))
+        {
+            ASMSetDR1(pCtx->dr1);
+            Assert(pVM->hwaccm.s.savedhoststate.fHostDebugRegsSaved);
+        }
+        if (pCtx->dr7 & (X86_DR7_L2|X86_DR7_G2))
+        {
+            ASMSetDR2(pCtx->dr2);
+            Assert(pVM->hwaccm.s.savedhoststate.fHostDebugRegsSaved);
+        }
+        if (pCtx->dr7 & (X86_DR7_L3|X86_DR7_G3))
+        {
+            ASMSetDR3(pCtx->dr3);
+            Assert(pVM->hwaccm.s.savedhoststate.fHostDebugRegsSaved);
+        }
+
+        /* No need to sync DR6; all DR6 reads are intercepted. */
+#endif /* VBOX_WITH_HWACCM_DEBUG_REGISTER_SUPPORT */
 
         /* IA32_DEBUGCTL MSR. */
         rc  = VMXWriteVMCS(VMX_VMCS_GUEST_DEBUGCTL_FULL,    0);
@@ -1083,7 +1130,6 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx)
     RTGCUINTPTR exitQualification;
     RTGCUINTPTR intInfo = 0; /* shut up buggy gcc 4 */
     RTGCUINTPTR errCode, instrInfo, uInterruptState;
-    bool        fGuestStateSynced = false;
     bool        fSyncTPR = false;
     unsigned    cResume = 0;
 #ifdef VBOX_STRICT
@@ -1144,22 +1190,13 @@ HWACCMR0DECL(int) VMXR0RunGuestCode(PVM pVM, CPUMCTX *pCtx)
         Log(("Invalid VMX_VMCS_CTRL_EXIT_CONTROLS: one\n"));
 #endif
 
-#if 0
-    /*
-     * Check if debug registers are armed.
-     */
-    uint32_t u32DR7 = ASMGetDR7();
-    if (u32DR7 & X86_DR7_ENABLED_MASK)
-    {
-        pVM->cpum.s.fUseFlags |= CPUM_USE_DEBUG_REGS_HOST;
-    }
-    else
-        pVM->cpum.s.fUseFlags &= ~CPUM_USE_DEBUG_REGS_HOST;
-#endif
-
     /* We can jump to this point to resume execution after determining that a VM-exit is innocent.
      */
 ResumeExecution:
+    AssertMsg(pVM->hwaccm.s.idEnteredCpu == RTMpCpuId(),
+              ("Expected %d, I'm %d; cResume=%d exitReason=%RTreg exitQualification=%RTreg\n",
+               (int)pVM->hwaccm.s.idEnteredCpu, (int)RTMpCpuId(), cResume, exitReason, exitQualification));
+
     /* Safety precaution; looping for too long here can have a very bad effect on the host */
     if (++cResume > HWACCM_MAX_RESUME_LOOPS)
     {
@@ -1272,8 +1309,7 @@ ResumeExecution:
         STAM_PROFILE_ADV_STOP(&pVM->hwaccm.s.StatEntry, x);
         goto end;
     }
-    fGuestStateSynced = true;
-
+    
     /* Non-register state Guest Context */
     /** @todo change me according to cpu state */
     rc = VMXWriteVMCS(VMX_VMCS_GUEST_ACTIVITY_STATE,           VMX_CMS_GUEST_ACTIVITY_ACTIVE);
@@ -1521,9 +1557,6 @@ ResumeExecution:
 
     CPUMSetGuestCR2(pVM, ASMGetCR2());
 
-    VMXReadVMCS(VMX_VMCS_GUEST_DR7,              &val);
-    CPUMSetGuestDR7(pVM, val);
-
     /* Guest CPU context: ES, CS, SS, DS, FS, GS. */
     VMX_READ_SELREG(ES, es);
     VMX_READ_SELREG(SS, ss);
@@ -1541,6 +1574,20 @@ ResumeExecution:
     pCtx->SysEnter.eip      = val;
     VMXReadVMCS(VMX_VMCS_GUEST_SYSENTER_ESP,     &val);
     pCtx->SysEnter.esp      = val;
+
+    /* Misc. registers; must sync everything otherwise we can get out of sync when jumping to ring 3. */
+    VMX_READ_SELREG(LDTR, ldtr);
+    VMX_READ_SELREG(TR, tr);
+
+    VMXReadVMCS(VMX_VMCS_GUEST_GDTR_LIMIT,       &val);
+    pCtx->gdtr.cbGdt        = val;
+    VMXReadVMCS(VMX_VMCS_GUEST_GDTR_BASE,        &val);
+    pCtx->gdtr.pGdt         = val;
+
+    VMXReadVMCS(VMX_VMCS_GUEST_IDTR_LIMIT,       &val);
+    pCtx->idtr.cbIdt        = val;
+    VMXReadVMCS(VMX_VMCS_GUEST_IDTR_BASE,        &val);
+    pCtx->idtr.pIdt         = val;
 
     /** @note NOW IT'S SAFE FOR LOGGING! */
     Log2(("Raw exit reason %08x\n", exitReason));
@@ -1715,10 +1762,49 @@ ResumeExecution:
                 goto ResumeExecution;
             }
 
+            case X86_XCPT_DB:   /* Debug exception. */
+            {
+                /* DR6, DR7.GD and IA32_DEBUGCTL.LBR are not updated yet.
+                 *
+                 * Exit qualification bits:
+                 *  3:0     B0-B3 which breakpoint condition was met
+                 * 12:4     Reserved (0)
+                 * 13       BD - debug register access detected
+                 * 14       BS - single step execution or branch taken
+                 * 63:15    Reserved (0)
+                 */
+
+#ifdef VBOX_WITH_HWACCM_DEBUG_REGISTER_SUPPORT
+                /* Update DR6 here. */
+                pCtx->dr6  = X86_DR6_INIT_VAL;
+                pCtx->dr6 |= (exitQualification & (X86_DR6_B0|X86_DR6_B1|X86_DR6_B2|X86_DR6_B3|X86_DR6_BD|X86_DR6_BS));
+
+                /* X86_DR7_GD will be cleared if drx accesses should be trapped inside the guest. */
+                pCtx->dr7 &= ~X86_DR7_GD;
+
+                /* Paranoia. */
+                pCtx->dr7 &= 0xffffffff;                                              /* upper 32 bits reserved */
+                pCtx->dr7 &= ~(RT_BIT(11) | RT_BIT(12) | RT_BIT(14) | RT_BIT(15));    /* must be zero */
+                pCtx->dr7 |= 0x400;                                                   /* must be one */
+
+                /* Resync DR7 */
+                rc = VMXWriteVMCS(VMX_VMCS_GUEST_DR7, pCtx->dr7);
+                AssertRC(rc);
+#endif /* VBOX_WITH_HWACCM_DEBUG_REGISTER_SUPPORT */
+
+                STAM_COUNTER_INC(&pVM->hwaccm.s.StatExitGuestDB);
+                Log(("Trap %x (debug) at %VGv exit qualification %VX64\n", vector, pCtx->rip, exitQualification));
+                rc = VMXR0InjectEvent(pVM, pCtx, VMX_VMCS_CTRL_ENTRY_IRQ_INFO_FROM_EXIT_INT_INFO(intInfo), cbInstr, errCode);
+                AssertRC(rc);
+
+                STAM_PROFILE_ADV_STOP(&pVM->hwaccm.s.StatExit, x);
+                goto ResumeExecution;
+            }
+
 #ifdef VBOX_STRICT
+            case X86_XCPT_DE:   /* Divide error. */
             case X86_XCPT_GP:   /* General protection failure exception.*/
             case X86_XCPT_UD:   /* Unknown opcode exception. */
-            case X86_XCPT_DE:   /* Debug exception. */
             case X86_XCPT_SS:   /* Stack segment exception. */
             case X86_XCPT_NP:   /* Segment not present exception. */
             {
@@ -1751,14 +1837,14 @@ ResumeExecution:
 #endif
             default:
                 AssertMsgFailed(("Unexpected vm-exit caused by exception %x\n", vector));
-                rc = VERR_EM_INTERNAL_ERROR;
+                rc = VERR_VMX_UNEXPECTED_EXCEPTION;
                 break;
             } /* switch (vector) */
 
             break;
 
         default:
-            rc = VERR_EM_INTERNAL_ERROR;
+            rc = VERR_VMX_UNEXPECTED_INTERRUPTION_EXIT_CODE;
             AssertFailed();
             break;
         }
@@ -1949,6 +2035,7 @@ ResumeExecution:
             rc = EMInterpretDRxWrite(pVM, CPUMCTX2CORE(pCtx),
                                      VMX_EXIT_QUALIFICATION_DRX_REGISTER(exitQualification),
                                      VMX_EXIT_QUALIFICATION_DRX_GENREG(exitQualification));
+            pVM->hwaccm.s.fContextUseFlags |= HWACCM_CHANGED_GUEST_DEBUG;
             Log2(("DR7=%08x\n", pCtx->dr7));
         }
         else
@@ -2207,35 +2294,19 @@ ResumeExecution:
         VMXReadVMCS(VMX_VMCS_GUEST_IDTR_BASE, &val);
         Log(("VMX_VMCS_GUEST_IDTR_BASE    %VGv\n", val));
 #endif /* VBOX_STRICT */
-        rc = VERR_EM_INTERNAL_ERROR;
+        rc = VERR_VMX_INVALID_GUEST_STATE;
         break;
     }
 
     case VMX_EXIT_ERR_MSR_LOAD:         /* 34 VM-entry failure due to MSR loading. */
     case VMX_EXIT_ERR_MACHINE_CHECK:    /* 41 VM-entry failure due to machine-check. */
     default:
-        rc = VERR_EM_INTERNAL_ERROR;
+        rc = VERR_VMX_UNEXPECTED_EXIT_CODE;
         AssertMsgFailed(("Unexpected exit code %d\n", exitReason));                 /* Can't happen. */
         break;
 
     }
 end:
-    if (fGuestStateSynced)
-    {
-        /* Remaining guest CPU context: TR, IDTR, GDTR, LDTR. */
-        VMX_READ_SELREG(LDTR, ldtr);
-        VMX_READ_SELREG(TR, tr);
-
-        VMXReadVMCS(VMX_VMCS_GUEST_GDTR_LIMIT,       &val);
-        pCtx->gdtr.cbGdt        = val;
-        VMXReadVMCS(VMX_VMCS_GUEST_GDTR_BASE,        &val);
-        pCtx->gdtr.pGdt         = val;
-
-        VMXReadVMCS(VMX_VMCS_GUEST_IDTR_LIMIT,       &val);
-        pCtx->idtr.cbIdt        = val;
-        VMXReadVMCS(VMX_VMCS_GUEST_IDTR_BASE,        &val);
-        pCtx->idtr.pIdt         = val;
-    }
 
     /* Signal changes for the recompiler. */
     CPUMSetChangedFlags(pVM, CPUM_CHANGED_SYSENTER_MSR | CPUM_CHANGED_LDTR | CPUM_CHANGED_GDTR | CPUM_CHANGED_IDTR | CPUM_CHANGED_TR | CPUM_CHANGED_HIDDEN_SEL_REGS);

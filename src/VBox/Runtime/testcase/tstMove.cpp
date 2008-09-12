@@ -1,4 +1,4 @@
-/* $Id: tstMove.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: tstMove.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
 /** @file
  * IPRT - RTFileMove & RTDirMove test program.
  */

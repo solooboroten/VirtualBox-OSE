@@ -1,4 +1,4 @@
-/* $Id: tstIntNetR0.cpp 34148 2008-08-05 23:08:37Z bird $ */
+/* $Id: tstIntNetR0.cpp 11157 2008-08-05 23:08:37Z vboxsync $ */
 /** @file
  * Internal networking - Usermode testcase for the kernel mode bits.
  *

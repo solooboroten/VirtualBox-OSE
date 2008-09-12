@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 32647 2008-07-03 03:07:18Z bird $
+# $Id: Makefile.kmk 12333 2008-09-10 09:02:14Z vboxsync $
 ## @file
 # Makefile for the linux guest additions base directory.
 #
@@ -19,7 +19,7 @@
 # additional information or have any questions.
 #
 
-ifdef VBOX_KBUILD_HACKING
+ifdef VBOX_SINGLE_MAKEFILE
 SUB_DEPTH = ../../../..
 else
 SUB_DEPTH = ..
@@ -76,12 +76,14 @@ $(PATH_BIN)/additions/VBoxLinuxAdditions.run: \
 		$(PATH_ROOT)/src/VBox/Installer/linux/routines.sh \
 		$(VBOX_PATH_X11_ADDITION_INSTALLER)/vboxvideo.ids \
 		$(VBOX_PATH_X11_ADDITION_INSTALLER)/x11config.pl \
+		$(VBOX_PATH_X11_ADDITION_INSTALLER)/x11config15.pl \
 		$(VBOX_PATH_LINUX_ADDITION_INSTALLER)/Makefile.test \
 		$(VBOX_PATH_LINUX_ADDITION_INSTALLER)/test.c \
 		$(PATH_BIN)/additions/vboxmouse_drv.o \
 		$(PATH_BIN)/additions/vboxmouse_drv_70.so \
 		$(PATH_BIN)/additions/vboxmouse_drv_71.so \
 		$(PATH_BIN)/additions/vboxmouse_drv_14.so \
+		$(PATH_BIN)/additions/vboxmouse_drv_15.so \
 		$(PATH_BIN)/additions/vboxvideo_drv.o \
 		$(PATH_BIN)/additions/vboxvideo_drv_70.so \
 		$(PATH_BIN)/additions/vboxvideo_drv_71.so \
@@ -107,11 +109,13 @@ $(PATH_BIN)/additions/VBoxLinuxAdditions.run: \
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxadd-timesync           $(PATH_TARGET)/install/vboxadd-timesync
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/VBoxClient                 $(PATH_TARGET)/install/VBoxClient
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/VBoxControl                $(PATH_TARGET)/install/VBoxControl
-	$(QUIET)$(SED) "s;_VERSION_;$(VBOX_VERSION_STRING);g" $(VBOX_PATH_LINUX_ADDITION_INSTALLER)/install.sh \
-		| $(SED) "s;_BUILD_;$(shell date);g" \
-		| $(SED) "s;_OSE_;$(VBOX_OSE);g" \
-		| $(SED) "s;_BUILDTYPE_;$(KBUILD_TYPE);g" \
-		> $(PATH_TARGET)/install/install_.sh
+	$(QUIET)$(SED) \
+	    -e "s;_VERSION_;$(VBOX_VERSION_STRING);g" \
+	    -e "s;_BUILD_;$(shell date);g" \
+	    -e "s;_OSE_;$(VBOX_OSE);g" \
+	    -e "s;_BUILDTYPE_;$(KBUILD_TYPE);g" \
+	    -e "s;_ARCH_;$(KBUILD_TARGET_ARCH);g" \
+	    < $(VBOX_PATH_LINUX_ADDITION_INSTALLER)/install.sh > $(PATH_TARGET)/install/install_.sh
 	$(QUIET)$(INSTALL) -m 0755 $(PATH_TARGET)/install/install_.sh $(PATH_TARGET)/install/install.sh
 	$(QUIET)$(RM) $(PATH_TARGET)/install/install_.sh
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_PATH_X11_ADDITION_INSTALLER)/VBoxRandR.sh          $(PATH_TARGET)/install
@@ -122,10 +126,13 @@ $(PATH_BIN)/additions/VBoxLinuxAdditions.run: \
 	$(QUIET)$(INSTALL) -m 0755 $(PATH_ROOT)/src/VBox/Installer/linux/routines.sh         $(PATH_TARGET)/install
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_PATH_X11_ADDITION_INSTALLER)/vboxvideo.ids         $(PATH_TARGET)/install
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_PATH_X11_ADDITION_INSTALLER)/x11config.pl          $(PATH_TARGET)/install
+	$(QUIET)$(INSTALL) -m 0755 $(VBOX_PATH_X11_ADDITION_INSTALLER)/x11config15.pl        $(PATH_TARGET)/install
+	$(QUIET)$(INSTALL) -m 0644 $(VBOX_PATH_LINUX_ADDITION_INSTALLER)/90-vboxguest.fdi    $(PATH_TARGET)/install
 	$(QUIET)$(BIN_COPY_SYMBOLS) $(PATH_BIN)/additions/vboxmouse_drv.o        $(PATH_TARGET)/install/vboxmouse_drv.o
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxmouse_drv_70.so    $(PATH_TARGET)/install/vboxmouse_drv_70.so
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxmouse_drv_71.so    $(PATH_TARGET)/install/vboxmouse_drv_71.so
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxmouse_drv_14.so    $(PATH_TARGET)/install/vboxmouse_drv_14.so
+	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxmouse_drv_15.so    $(PATH_TARGET)/install/vboxmouse_drv_15.so
 	$(QUIET)$(BIN_COPY_SYMBOLS) $(PATH_BIN)/additions/vboxvideo_drv.o        $(PATH_TARGET)/install/vboxvideo_drv.o
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxvideo_drv_70.so    $(PATH_TARGET)/install/vboxvideo_drv_70.so
 	$(QUIET)$(BIN_COPY) $(PATH_BIN)/additions/vboxvideo_drv_71.so    $(PATH_TARGET)/install/vboxvideo_drv_71.so

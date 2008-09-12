@@ -1,4 +1,4 @@
-/* $Id: HostImpl.cpp 35913 2008-09-02 18:07:01Z ramshankar $ */
+/* $Id: HostImpl.cpp 12400 2008-09-11 10:34:58Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */
@@ -562,6 +562,7 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
     static NICMap SolarisNICMap;
     if (SolarisNICMap.empty())
     {
+        SolarisNICMap.insert(NICPair("aggr", "Link Aggregation Interface"));
         SolarisNICMap.insert(NICPair("bge", "Broadcom BCM57xx Gigabit Ethernet"));
         SolarisNICMap.insert(NICPair("ce", "Cassini Gigabit Ethernet"));
         SolarisNICMap.insert(NICPair("chxge", "Chelsio Ethernet"));
@@ -571,7 +572,7 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
         SolarisNICMap.insert(NICPair("e1000g", "Intel PRO/1000 Gigabit Ethernet"));
         SolarisNICMap.insert(NICPair("elx", "3COM EtherLink III Ethernet"));
         SolarisNICMap.insert(NICPair("elxl", "3COM Ethernet"));
-        SolarisNICMap.insert(NICPair("elxl", "eri Fast Ethernet"));
+        SolarisNICMap.insert(NICPair("eri", "eri Fast Ethernet"));
         SolarisNICMap.insert(NICPair("ge", "GEM Gigabit Ethernet"));
         SolarisNICMap.insert(NICPair("hme", "SUNW,hme Fast-Ethernet"));
         SolarisNICMap.insert(NICPair("ipge", "PCI-E Gigabit Ethernet"));
@@ -583,7 +584,8 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
         SolarisNICMap.insert(NICPair("rge", "Realtek Gigabit Ethernet"));
         SolarisNICMap.insert(NICPair("rtls", "Realtek 8139 Fast Ethernet"));
         SolarisNICMap.insert(NICPair("skge", "SksKonnect Gigabit Ethernet"));
-        SolarisNICMap.insert(NICPair("spwr", "SMC EtherPower II 10/100 (9432)   Ethernet"));
+        SolarisNICMap.insert(NICPair("spwr", "SMC EtherPower II 10/100 (9432) Ethernet"));
+        SolarisNICMap.insert(NICPair("vnic", "Virtual Network Interface Ethernet"));
         SolarisNICMap.insert(NICPair("xge", "Neterior Xframe Gigabit Ethernet"));
         SolarisNICMap.insert(NICPair("xge", "Neterior Xframe 10Gigabit Ethernet"));
     }
@@ -822,7 +824,7 @@ STDMETHODIMP Host::COMGETTER(ProcessorCount)(ULONG *count)
         return E_POINTER;
     AutoWriteLock alock (this);
     CHECK_READY();
-    *count = RTMpGetCount();
+    *count = RTMpGetPresentCount();
     return S_OK;
 }
 
@@ -2876,7 +2878,7 @@ int Host::networkInterfaceHelperServer (SVCHlpClient *aClient,
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
 void Host::registerMetrics (PerformanceCollector *aCollector)
 {
-    pm::MetricFactory *metricFactory = aCollector->getMetricFactory();
+    pm::CollectorHAL *hal = aCollector->getHAL();
     /* Create sub metrics */
     pm::SubMetric *cpuLoadUser   = new pm::SubMetric ("CPU/Load/User",
         "Percentage of processor time spent in user mode.");
@@ -2896,15 +2898,12 @@ void Host::registerMetrics (PerformanceCollector *aCollector)
     IUnknown *objptr;
     ComObjPtr <Host> tmp = this;
     tmp.queryInterfaceTo (&objptr);
-    pm::BaseMetric *cpuLoad =
-        metricFactory->createHostCpuLoad (objptr, cpuLoadUser, cpuLoadKernel,
+    pm::BaseMetric *cpuLoad = new pm::HostCpuLoadRaw (hal, objptr, cpuLoadUser, cpuLoadKernel,
                                           cpuLoadIdle);
     aCollector->registerBaseMetric (cpuLoad);
-    pm::BaseMetric *cpuMhz =
-        metricFactory->createHostCpuMHz (objptr, cpuMhzSM);
+    pm::BaseMetric *cpuMhz = new pm::HostCpuMhz (hal, objptr, cpuMhzSM);
     aCollector->registerBaseMetric (cpuMhz);
-    pm::BaseMetric *ramUsage =
-        metricFactory->createHostRamUsage (objptr, ramUsageTotal, ramUsageUsed,
+    pm::BaseMetric *ramUsage = new pm::HostRamUsage (hal, objptr, ramUsageTotal, ramUsageUsed,
                                            ramUsageFree);
     aCollector->registerBaseMetric (ramUsage);
 

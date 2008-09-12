@@ -1,4 +1,4 @@
-/* $Id: HWACCM.cpp 35994 2008-09-03 15:37:33Z sandervl $ */
+/* $Id: HWACCM.cpp 12121 2008-09-05 09:41:05Z vboxsync $ */
 /** @file
  * HWACCM - Intel/AMD VM Hardware Support Manager
  */
@@ -125,6 +125,7 @@ HWACCMR3DECL(int) HWACCMR3Init(PVM pVM)
     STAM_REG(pVM, &pVM->hwaccm.s.StatExitGuestGP,   STAMTYPE_COUNTER, "/HWACCM/Exit/Trap/Guest/#GP",    STAMUNIT_OCCURENCES,    "Nr of occurances");
     STAM_REG(pVM, &pVM->hwaccm.s.StatExitGuestMF,   STAMTYPE_COUNTER, "/HWACCM/Exit/Trap/Guest/#MF",    STAMUNIT_OCCURENCES,    "Nr of occurances");
     STAM_REG(pVM, &pVM->hwaccm.s.StatExitGuestDE,   STAMTYPE_COUNTER, "/HWACCM/Exit/Trap/Guest/#DE",    STAMUNIT_OCCURENCES,    "Nr of occurances");
+    STAM_REG(pVM, &pVM->hwaccm.s.StatExitGuestDB,   STAMTYPE_COUNTER, "/HWACCM/Exit/Trap/Guest/#DB",    STAMUNIT_OCCURENCES,    "Nr of occurances");
     STAM_REG(pVM, &pVM->hwaccm.s.StatExitInvpg,     STAMTYPE_COUNTER, "/HWACCM/Exit/Instr/Invlpg",      STAMUNIT_OCCURENCES,    "Nr of occurances");
     STAM_REG(pVM, &pVM->hwaccm.s.StatExitInvd,      STAMTYPE_COUNTER, "/HWACCM/Exit/Instr/Invd",        STAMUNIT_OCCURENCES,    "Nr of occurances");
     STAM_REG(pVM, &pVM->hwaccm.s.StatExitCpuid,     STAMTYPE_COUNTER, "/HWACCM/Exit/Instr/Cpuid",       STAMUNIT_OCCURENCES,    "Nr of occurances");
@@ -509,6 +510,11 @@ HWACCMR3DECL(int) HWACCMR3InitFinalizeR0(PVM pVM)
             LogRel(("HWACCM: MSR_IA32_VMX_CR4_FIXED0       = %VX64\n", pVM->hwaccm.s.vmx.msr.vmx_cr4_fixed0));
             LogRel(("HWACCM: MSR_IA32_VMX_CR4_FIXED1       = %VX64\n", pVM->hwaccm.s.vmx.msr.vmx_cr4_fixed1));
             LogRel(("HWACCM: MSR_IA32_VMX_VMCS_ENUM        = %VX64\n", pVM->hwaccm.s.vmx.msr.vmx_vmcs_enum));
+
+            LogRel(("HWACCM: VMCS physaddr                 = %VHp\n", pVM->hwaccm.s.vmx.pVMCSPhys));
+            LogRel(("HWACCM: Real mode TSS physaddr        = %VHp\n", pVM->hwaccm.s.vmx.pRealModeTSSPhys));
+            LogRel(("HWACCM: TPR shadow physaddr           = %VHp\n", pVM->hwaccm.s.vmx.pAPICPhys));
+            LogRel(("HWACCM: MSR bitmap physaddr           = %VHp\n", pVM->hwaccm.s.vmx.pMSRBitmapPhys));
 
             /* Only try once. */
             pVM->hwaccm.s.fInitialized = true;

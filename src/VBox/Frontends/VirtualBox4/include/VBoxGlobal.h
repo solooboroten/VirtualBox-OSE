@@ -236,7 +236,7 @@ public:
     VBoxDefs::RenderMode vmRenderMode() const { return vm_render_mode; }
     const char *vmRenderModeStr() const { return vm_render_mode_str; }
 
-#ifdef VBOX_WITH_DEBUGGER_GUI
+#if defined(VBOX_WITH_DEBUGGER_GUI) && 0
     bool isDebuggerEnabled() const { return dbg_enabled; }
     bool isDebuggerVisibleAtStartup() const { return dbg_visible_at_startup; }
 #endif
@@ -616,6 +616,8 @@ public:
                                 const char *aClassName = NULL,
                                 bool aRecursive = false);
 
+    static QList< QPair<QString, QString> > HDDBackends();
+
     /* Qt 4.2.0 support function */
     static inline void setLayoutMargin (QLayout *aLayout, int aMargin)
     {
@@ -713,7 +715,7 @@ private:
     VBoxDefs::RenderMode vm_render_mode;
     const char * vm_render_mode_str;
 
-#ifdef VBOX_WITH_DEBUGGER_GUI
+#if defined(VBOX_WITH_DEBUGGER_GUI) && 0
     bool dbg_enabled;
     bool dbg_visible_at_startup;
 #endif

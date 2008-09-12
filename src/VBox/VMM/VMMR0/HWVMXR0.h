@@ -1,4 +1,4 @@
-/* $Id: HWVMXR0.h 33181 2008-07-11 09:31:15Z sandervl $ */
+/* $Id: HWVMXR0.h 10502 2008-07-11 09:31:15Z vboxsync $ */
 /** @file
  * HWACCM VT-x - Internal header file.
  */

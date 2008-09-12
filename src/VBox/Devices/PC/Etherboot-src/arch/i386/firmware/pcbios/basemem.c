@@ -7,7 +7,7 @@
  * updating the Free Base Memory Size counter at 40:13h.
  *
  * Michael Brown <mbrown@fensystems.co.uk> (mcb30)
- * $Id: basemem.c 16040 2006-12-01 13:25:05Z klaus $
+ * $Id: basemem.c 1  vboxsync $
  */
 
 #define fbms ( ( uint16_t * ) phys_to_virt ( 0x413 ) )

@@ -632,7 +632,7 @@ typedef struct {
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * $Id: pxe.h 16040 2006-12-01 13:25:05Z klaus $
+ * $Id: pxe.h 1  vboxsync $
  */
 
 /*

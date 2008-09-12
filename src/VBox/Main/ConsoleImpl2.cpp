@@ -1,4 +1,4 @@
-/** $Id: ConsoleImpl2.cpp 35949 2008-09-03 11:45:53Z aeichner $ */
+/** $Id: ConsoleImpl2.cpp 12028 2008-09-03 11:45:53Z vboxsync $ */
 /** @file
  * VBox Console COM Class implementation
  *

@@ -1,4 +1,4 @@
-/* $Id: strformattype.cpp 30388 2008-04-30 11:45:08Z bird $ */
+/* $Id: strformattype.cpp 8504 2008-04-30 11:45:08Z vboxsync $ */
 /** @file
  * IPRT - IPRT String Formatter Extensions, Dynamic Types.
  */

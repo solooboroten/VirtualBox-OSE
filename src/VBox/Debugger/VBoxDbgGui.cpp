@@ -1,4 +1,4 @@
-/* $Id: VBoxDbgGui.cpp 31470 2008-05-31 14:53:24Z bird $ */
+/* $Id: VBoxDbgGui.cpp 12183 2008-09-07 02:35:53Z vboxsync $ */
 /** @file
  * VBox Debugger GUI - The Manager.
  */
@@ -26,8 +26,13 @@
 #include <VBox/err.h>
 
 #include "VBoxDbgGui.h"
-#include <qdesktopwidget.h>
-#include <qapplication.h>
+#ifdef VBOXDBG_USE_QT4
+# include <QDesktopWidget>
+# include <QApplication>
+#else
+# include <qdesktopwidget.h>
+# include <qapplication.h>
+#endif 
 
 
 VBoxDbgGui::VBoxDbgGui() :
@@ -87,11 +92,13 @@ int VBoxDbgGui::init(ISession *pSession)
 VBoxDbgGui::~VBoxDbgGui()
 {
 
+#ifndef VBOXDBG_USE_QT4
     if (m_pDbgStats)
     {
         delete m_pDbgStats;
         m_pDbgStats = NULL;
     }
+#endif
 
     if (m_pDbgConsole)
     {
@@ -131,7 +138,11 @@ int VBoxDbgGui::showStatistics()
 {
     if (!m_pDbgStats)
     {
+#ifdef VBOXDBG_USE_QT4
+        m_pDbgStats = new VBoxDbgStats(m_pVM, "*x*"); /// @todo the QTreeWidget/QTreeView sucks big time. it freezes the app for 30+ seconds. Need to write a new item model I fear. 'ing crap!!!
+#else
         m_pDbgStats = new VBoxDbgStats(m_pVM);
+#endif 
         connect(m_pDbgStats, SIGNAL(destroyed(QObject *)), this, SLOT(notifyChildDestroyed(QObject *)));
         repositionStatistics();
     }

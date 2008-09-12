@@ -1,4 +1,4 @@
-/* $Id: DevPcBios.cpp 35656 2008-08-29 14:29:45Z frank $ */
+/* $Id: DevPcBios.cpp 12311 2008-09-09 16:14:09Z vboxsync $ */
 /** @file
  * PC BIOS Device.
  */
@@ -45,6 +45,9 @@
  * The BIOS uses a CMOS to store configuration data.
  * It is currently used as follows:
  *
+ * @todo Mark which bits are compatible with which BIOSes and
+ *       which are our own definitions.
+ *
  *     Base memory:
  *          0x15
  *          0x16
@@ -86,6 +89,22 @@
  *          0x50 - 0x57
  *     Fourth Sata HDD:
  *          0x58 - 0x5f
+ *     Number of CPUs:
+ *          0x60
+ *     RAM above 4G (in 64M units):
+ *          0x61 - 0x63
+ *
+ * @todo r=bird: Is the 0x61 - 0x63 range defined by AMI,
+ *       PHOENIX or AWARD? If not I'd say 64MB units is a bit
+ *       too big, besides it forces unnecessary math stuff onto
+ *       the BIOS.
+ *       nike: The way how values encoded are defined by Bochs/QEmu BIOS,
+ *       although for them position in CMOS is different:
+ *         0x5b - 0x5c: RAM above 4G
+ *         0x5f: number of CPUs
+ *        Unfortunately for us those positions in our CMOS are already taken 
+ *        by 4th SATA drive configuration. 
+ *         
  */
 
 
@@ -149,6 +168,8 @@ typedef struct DEVPCBIOS
     uint8_t        u8IOAPIC;
     /** PXE debug logging enabled? */
     uint8_t        u8PXEDebug;
+    /** Number of logical CPUs in guest */
+    uint16_t       cCpus;
 } DEVPCBIOS, *PDEVPCBIOS;
 
 #pragma pack(1)
@@ -495,8 +516,53 @@ static DECLCALLBACK(int) pcbiosInitComplete(PPDMDEVINS pDevIns)
     /*
      * Memory sizes.
      */
+#if VBOX_WITH_SMP_GUESTS
+    uint64_t cKBRam = pThis->cbRam / _1K;
+    uint64_t cKBAbove4GB = 0;
+    uint32_t cKBBelow4GB = cKBRam;
+    AssertRelease(cKBBelow4GB == cKBRam);
+    if (cKBRam > UINT32_C(0xe0000000)) /** @todo this limit must be picked up from CFGM and coordinated with MM/PGM! */
+    {
+        cKBAbove4GB = cKBRam - UINT32_C(0xe0000000);
+        cKBBelow4GB = UINT32_C(0xe0000000);
+    }
+    else
+    {
+        cKBAbove4GB = 0;
+        cKBBelow4GB = cKBRam;
+    }
+
     /* base memory. */
-    u32 = pThis->cbRam > 640 ? 640 : (uint32_t)pThis->cbRam / _1K;
+    u32 = cKBBelow4GB > 640 ? 640 : cKBBelow4GB;
+    pcbiosCmosWrite(pDevIns, 0x15, u32 & 0xff);                                 /* 15h - Base Memory in K, Low Byte */
+    pcbiosCmosWrite(pDevIns, 0x16, u32 >> 8);                                   /* 16h - Base Memory in K, High Byte */
+
+    /* Extended memory, up to 65MB */
+    u32 = cKBBelow4GB >= 65 * _1K ? 0xffff : (cKBBelow4GB - _1K);
+    pcbiosCmosWrite(pDevIns, 0x17, u32 & 0xff);                                 /* 17h - Extended Memory in K, Low Byte */
+    pcbiosCmosWrite(pDevIns, 0x18, u32 >> 8);                                   /* 18h - Extended Memory in K, High Byte */
+    pcbiosCmosWrite(pDevIns, 0x30, u32 & 0xff);                                 /* 30h - Extended Memory in K, Low Byte */
+    pcbiosCmosWrite(pDevIns, 0x31, u32 >> 8);                                   /* 31h - Extended Memory in K, High Byte */
+
+    /* Bochs BIOS specific? Anyway, it's the amount of memory above 16MB */
+    if (cKBBelow4GB > 16 * _1K)
+    {
+        u32 = (uint32_t)( (cKBBelow4GB - 16 * _1K) / 64 );
+        u32 = RT_MIN(u32, 0xffff);
+    }
+    else
+        u32 = 0;
+    pcbiosCmosWrite(pDevIns, 0x34, u32 & 0xff);
+    pcbiosCmosWrite(pDevIns, 0x35, u32 >> 8);
+
+    /* RAM above 4G, in 64MB units (needs discussing, see comments and @todos elsewhere). */
+    pcbiosCmosWrite(pDevIns, 0x61, cKBAbove4GB >> 16);
+    pcbiosCmosWrite(pDevIns, 0x62, cKBAbove4GB >> 24);
+    pcbiosCmosWrite(pDevIns, 0x63, cKBAbove4GB >> 32);
+
+#else  /* old code. */
+    /* base memory. */
+    u32 = pThis->cbRam > 640 ? 640 : (uint32_t)pThis->cbRam / _1K; /* <-- this test is wrong, but it doesn't matter since we never assign less than 1MB */
     pcbiosCmosWrite(pDevIns, 0x15, u32 & 0xff);                                 /* 15h - Base Memory in K, Low Byte */
     pcbiosCmosWrite(pDevIns, 0x16, u32 >> 8);                                   /* 16h - Base Memory in K, High Byte */
 
@@ -517,6 +583,12 @@ static DECLCALLBACK(int) pcbiosInitComplete(PPDMDEVINS pDevIns)
         u32 = 0;
     pcbiosCmosWrite(pDevIns, 0x34, u32 & 0xff);
     pcbiosCmosWrite(pDevIns, 0x35, u32 >> 8);
+#endif /* old code */
+
+    /*
+     * Number of CPUs.
+     */
+    pcbiosCmosWrite(pDevIns, 0x60, pThis->cCpus & 0xff);
 
     /*
      * Bochs BIOS specifics - boot device.
@@ -1036,7 +1108,7 @@ static uint8_t pcbiosChecksum(const uint8_t * const au8Data, uint32_t u32Length)
  * @param   pDevIns    The device instance data.
  * @param   addr       physical address in guest memory.
  */
-static void pcbiosPlantMPStable(PPDMDEVINS pDevIns, uint8_t *pTable)
+static void pcbiosPlantMPStable(PPDMDEVINS pDevIns, uint8_t *pTable, uint16_t numCpus)
 {
     /* configuration table */
     PMPSCFGTBLHEADER pCfgTab      = (MPSCFGTBLHEADER*)pTable;
@@ -1046,7 +1118,7 @@ static void pcbiosPlantMPStable(PPDMDEVINS pDevIns, uint8_t *pTable)
     memcpy(pCfgTab->au8ProductId, "VirtualBox  ", 12);
     pCfgTab->u32OemTablePtr        =  0;
     pCfgTab->u16OemTableSize       =  0;
-    pCfgTab->u16EntryCount         =  1 /* Processor */
+    pCfgTab->u16EntryCount         =  numCpus /* Processors */
                                    +  1 /* ISA Bus */
                                    +  1 /* I/O-APIC */
                                    + 16 /* Interrupts */;
@@ -1067,7 +1139,21 @@ static void pcbiosPlantMPStable(PPDMDEVINS pDevIns, uint8_t *pTable)
          * an MP table we have an IOAPIC and therefore a Local APIC. */
         u32FeatureFlags = u32Edx | X86_CPUID_FEATURE_EDX_APIC;
     }
-
+#ifdef VBOX_WITH_SMP_GUESTS
+    PMPSPROCENTRY pProcEntry       = (PMPSPROCENTRY)(pCfgTab+1);
+    for (int i = 0; i<numCpus; i++) 
+    {
+      pProcEntry->u8EntryType        = 0; /* processor entry */
+      pProcEntry->u8LocalApicId      = i;
+      pProcEntry->u8LocalApicVersion = 0x11;
+      pProcEntry->u8CPUFlags         = (i == 0 ? 2 /* bootstrap processor */ : 0 /* application processor */) | 1 /* enabled */;
+      pProcEntry->u32CPUSignature    = u32CPUSignature;
+      pProcEntry->u32CPUFeatureFlags = u32FeatureFlags;
+      pProcEntry->u32Reserved[0]     =
+        pProcEntry->u32Reserved[1]     = 0;
+      pProcEntry++;
+    }
+#else
     /* one processor so far */
     PMPSPROCENTRY pProcEntry       = (PMPSPROCENTRY)(pCfgTab+1);
     pProcEntry->u8EntryType        = 0; /* processor entry */
@@ -1078,6 +1164,7 @@ static void pcbiosPlantMPStable(PPDMDEVINS pDevIns, uint8_t *pTable)
     pProcEntry->u32CPUFeatureFlags = u32FeatureFlags;
     pProcEntry->u32Reserved[0]     =
     pProcEntry->u32Reserved[1]     = 0;
+#endif
 
     /* ISA bus */
     PMPSBUSENTRY pBusEntry         = (PMPSBUSENTRY)(pProcEntry+1);
@@ -1091,8 +1178,9 @@ static void pcbiosPlantMPStable(PPDMDEVINS pDevIns, uint8_t *pTable)
      * MP spec: "The configuration table contains one or more entries for I/O APICs.
      *           ... At least one I/O APIC must be enabled." */
     PMPSIOAPICENTRY pIOAPICEntry   = (PMPSIOAPICENTRY)(pBusEntry+1);
+    uint16_t apicId = numCpus;
     pIOAPICEntry->u8EntryType      = 2; /* I/O-APIC entry */
-    pIOAPICEntry->u8Id             = 1; /* this ID is referenced by the interrupt entries */
+    pIOAPICEntry->u8Id             = apicId; /* this ID is referenced by the interrupt entries */
     pIOAPICEntry->u8Version        = 0x11;
     pIOAPICEntry->u8Flags          = 1 /* enable */;
     pIOAPICEntry->u32Addr          = 0xfec00000;
@@ -1106,7 +1194,7 @@ static void pcbiosPlantMPStable(PPDMDEVINS pDevIns, uint8_t *pTable)
                                            trigger mode = conforms to bus */
         pIrqEntry->u8SrcBusId      = 0; /* ISA bus */
         pIrqEntry->u8SrcBusIrq     = i;
-        pIrqEntry->u8DstIOAPICId   = 1;
+        pIrqEntry->u8DstIOAPICId   = apicId;
         pIrqEntry->u8DstIOAPICInt  = i;
     }
 
@@ -1148,7 +1236,7 @@ static DECLCALLBACK(void) pcbiosReset(PPDMDEVINS pDevIns)
     LogFlow(("pcbiosReset:\n"));
 
     if (pThis->u8IOAPIC)
-        pcbiosPlantMPStable(pDevIns, pThis->au8DMIPage + VBOX_DMI_TABLE_SIZE);
+        pcbiosPlantMPStable(pDevIns, pThis->au8DMIPage + VBOX_DMI_TABLE_SIZE, pThis->cCpus);
 }
 
 
@@ -1277,6 +1365,7 @@ static DECLCALLBACK(int)  pcbiosConstruct(PPDMDEVINS pDevIns, int iInstance, PCF
                               "PXEDebug\0"
                               "UUID\0"
                               "IOAPIC\0"
+                              "NumCPUs\0"
                               "DmiBIOSVendor\0"
                               "DmiBIOSVersion\0"
                               "DmiBIOSReleaseDate\0"
@@ -1300,6 +1389,22 @@ static DECLCALLBACK(int)  pcbiosConstruct(PPDMDEVINS pDevIns, int iInstance, PCF
     if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Querying \"RamSize\" as integer failed"));
+
+    rc = CFGMR3QueryU16Def(pCfgHandle, "NumCPUs", &pThis->cCpus, 1);
+    if (RT_FAILURE(rc))
+        return PDMDEV_SET_ERROR(pDevIns, rc,
+                                N_("Configuration error: Querying \"NumCPUs\" as integer failed"));
+
+#ifdef VBOX_WITH_SMP_GUESTS
+    pThis->cCpus = 2;
+    LogRel(("Running with %d CPUs\n", pThis->cCpus));
+#else
+    if (pThis->cCpus != 1)
+    {
+        LogRel(("WARNING: guest SMP not supported in this build, going UP\n"));
+        pThis->cCpus = 1;
+    }
+#endif
 
     rc = CFGMR3QueryU8Def(pCfgHandle, "IOAPIC", &pThis->u8IOAPIC, 1);
     if (RT_FAILURE (rc))
@@ -1377,7 +1482,7 @@ static DECLCALLBACK(int)  pcbiosConstruct(PPDMDEVINS pDevIns, int iInstance, PCF
     if (RT_FAILURE(rc))
         return rc;
     if (pThis->u8IOAPIC)
-        pcbiosPlantMPStable(pDevIns, pThis->au8DMIPage + VBOX_DMI_TABLE_SIZE);
+        pcbiosPlantMPStable(pDevIns, pThis->au8DMIPage + VBOX_DMI_TABLE_SIZE, pThis->cCpus);
 
     rc = PDMDevHlpROMRegister(pDevIns, VBOX_DMI_TABLE_BASE, _4K, pThis->au8DMIPage, false /* fShadow */, "DMI tables");
     if (RT_FAILURE(rc))

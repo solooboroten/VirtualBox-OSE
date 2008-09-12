@@ -1,4 +1,4 @@
-/* $Id: string.h 31546 2008-06-02 23:10:25Z bird $ */
+/* $Id: string.h 9332 2008-06-02 23:10:25Z vboxsync $ */
 
 /** @file
  * MS COM / XPCOM Abstraction Layer:

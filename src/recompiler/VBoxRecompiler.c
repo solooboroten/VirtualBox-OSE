@@ -1,4 +1,4 @@
-/* $Id: VBoxRecompiler.c 35940 2008-09-03 09:52:16Z sandervl $ */
+/* $Id: VBoxRecompiler.c 12308 2008-09-09 15:59:08Z vboxsync $ */
 /** @file
  * VBox Recompiler - QEMU.
  */
@@ -137,6 +137,7 @@ static STAMCOUNTER    gStatREMLDTRChange;
 static STAMCOUNTER    gStatREMTRChange;
 static STAMCOUNTER    gStatSelOutOfSync[6];
 static STAMCOUNTER    gStatSelOutOfSyncStateBack[6];
+static STAMCOUNTER    gStatFlushTBs;
 #endif
 
 /*
@@ -369,6 +370,7 @@ REMR3DECL(int) REMR3Init(PVM pVM)
     STAM_REG(pVM, &gStatRefuseWP0,          STAMTYPE_COUNTER, "/REM/Refuse/WP0",      STAMUNIT_OCCURENCES,     "Raw mode refused because of WP=0");
     STAM_REG(pVM, &gStatRefuseRing1or2,     STAMTYPE_COUNTER, "/REM/Refuse/Ring1or2", STAMUNIT_OCCURENCES,     "Raw mode refused because of ring 1/2 execution");
     STAM_REG(pVM, &gStatRefuseCanExecute,   STAMTYPE_COUNTER, "/REM/Refuse/CanExecuteRaw", STAMUNIT_OCCURENCES,     "Raw mode refused because of cCanExecuteRaw");
+    STAM_REG(pVM, &gStatFlushTBs,           STAMTYPE_COUNTER, "/REM/FlushTB",         STAMUNIT_OCCURENCES,     "Number of TB flushes");
 
     STAM_REG(pVM, &gStatREMGDTChange,       STAMTYPE_COUNTER, "/REM/Change/GDTBase",   STAMUNIT_OCCURENCES,     "GDT base changes");
     STAM_REG(pVM, &gStatREMLDTRChange,      STAMTYPE_COUNTER, "/REM/Change/LDTR",      STAMUNIT_OCCURENCES,     "LDTR changes");
@@ -735,7 +737,7 @@ REMR3DECL(int) REMR3EmulateInstruction(PVM pVM)
     /*
      * Sync the state and enable single instruction / single stepping.
      */
-    int rc = REMR3State(pVM);
+    int rc = REMR3State(pVM, false /* no need to flush the TBs; we always compile. */);
     if (VBOX_SUCCESS(rc))
     {
         int interrupt_request = pVM->rem.s.Env.interrupt_request;
@@ -1355,6 +1357,7 @@ void remR3FlushPage(CPUState *env, RTGCPTR GCPtr)
  */
 void remR3ProtectCode(CPUState *env, RTGCPTR GCPtr)
 {
+#ifdef VBOX_REM_PROTECT_PAGES_FROM_SMC
     Assert(env->pVM->rem.s.fInREM);
     if (     (env->cr[0] & X86_CR0_PG)                      /* paging must be enabled */
         &&  !(env->state & CPU_EMULATE_SINGLE_INSTR)        /* ignore during single instruction execution */
@@ -1362,6 +1365,7 @@ void remR3ProtectCode(CPUState *env, RTGCPTR GCPtr)
         &&  !(env->eflags & VM_MASK)                        /* no V86 mode */
         &&  !HWACCMIsEnabled(env->pVM))
         CSAMR3MonitorPage(env->pVM, GCPtr, CSAM_TAG_REM);
+#endif
 }
 
 /**
@@ -1373,12 +1377,14 @@ void remR3ProtectCode(CPUState *env, RTGCPTR GCPtr)
 void remR3UnprotectCode(CPUState *env, RTGCPTR GCPtr)
 {
     Assert(env->pVM->rem.s.fInREM);
+#ifdef VBOX_REM_PROTECT_PAGES_FROM_SMC
     if (     (env->cr[0] & X86_CR0_PG)                      /* paging must be enabled */
         &&  !(env->state & CPU_EMULATE_SINGLE_INSTR)        /* ignore during single instruction execution */
         &&   (((env->hflags >> HF_CPL_SHIFT) & 3) == 0)     /* supervisor mode only */
         &&  !(env->eflags & VM_MASK)                        /* no V86 mode */
         &&  !HWACCMIsEnabled(env->pVM))
         CSAMR3UnmonitorPage(env->pVM, GCPtr, CSAM_TAG_REM);
+#endif
 }
 
 
@@ -1586,12 +1592,13 @@ void remR3RecordCall(CPUState *env)
  * @returns VBox status code.
  *
  * @param   pVM         VM Handle.
+ * @param   fFlushTBs   Flush all translation blocks before executing code
  *
  * @remark  The caller has to check for important FFs before calling REMR3Run. REMR3State will
  *          no do this since the majority of the callers don't want any unnecessary of events
  *          pending that would immediatly interrupt execution.
  */
-REMR3DECL(int) REMR3State(PVM pVM)
+REMR3DECL(int)  REMR3State(PVM pVM, bool fFlushTBs)
 {
     Log2(("REMR3State:\n"));
     STAM_PROFILE_START(&pVM->rem.s.StatsState, a);
@@ -1601,6 +1608,12 @@ REMR3DECL(int) REMR3State(PVM pVM)
 
     Assert(!pVM->rem.s.fInREM);
     pVM->rem.s.fInStateSync = true;
+
+    if (fFlushTBs)
+    {
+        STAM_COUNTER_INC(&gStatFlushTBs);
+        tb_flush(&pVM->rem.s.Env);
+    }
 
     /*
      * Copy the registers which require no special handling.
@@ -2584,6 +2597,7 @@ REMR3DECL(int) REMR3NotifyCodePageChanged(PVM pVM, RTGCPTR pvCodePage)
 
     VM_ASSERT_EMT(pVM);
 
+#ifdef VBOX_REM_PROTECT_PAGES_FROM_SMC
     /*
      * Get the physical page address.
      */
@@ -2602,6 +2616,7 @@ REMR3DECL(int) REMR3NotifyCodePageChanged(PVM pVM, RTGCPTR pvCodePage)
 
         tb_invalidate_phys_page_range(PhysGC, PhysGC + PAGE_SIZE - 1, 0);
     }
+#endif
     return VINF_SUCCESS;
 }
 

@@ -1,4 +1,4 @@
-/* $Id: handletable.h 33561 2008-07-21 17:22:32Z bird $ */
+/* $Id: handletable.h 10789 2008-07-21 17:22:32Z vboxsync $ */
 /** @file
  * IPRT - Handle Tables, internal header.
  */

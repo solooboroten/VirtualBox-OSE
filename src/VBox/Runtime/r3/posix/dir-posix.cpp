@@ -1,4 +1,4 @@
-/* $Id: dir-posix.cpp 31573 2008-06-03 15:32:05Z bird $ */
+/* $Id: dir-posix.cpp 9355 2008-06-03 15:32:05Z vboxsync $ */
 /** @file
  * IPRT - Directory manipulation, POSIX.
  */

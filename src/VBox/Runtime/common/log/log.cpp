@@ -1,4 +1,4 @@
-/* $Id: log.cpp 35694 2008-08-29 23:11:54Z bird $ */
+/* $Id: log.cpp 12302 2008-09-09 15:13:07Z vboxsync $ */
 /** @file
  * Runtime VBox - Logger.
  */
@@ -82,7 +82,6 @@ typedef struct RTLOGOUTPUTPREFIXEDARGS
 #ifndef IN_GC
 static unsigned rtlogGroupFlags(const char *psz);
 #endif
-static void rtlogLogger(PRTLOGGER pLogger, unsigned fFlags, unsigned iGroup, const char *pszFormat, va_list args);
 static void rtlogFlush(PRTLOGGER pLogger);
 static DECLCALLBACK(size_t) rtLogOutput(void *pv, const char *pachChars, size_t cbChars);
 static DECLCALLBACK(size_t) rtLogOutputPrefixed(void *pv, const char *pachChars, size_t cbChars);
@@ -94,13 +93,9 @@ static DECLCALLBACK(size_t) rtLogOutputPrefixed(void *pv, const char *pachChars,
 #ifdef IN_GC
 /** Default logger instance. */
 extern "C" DECLIMPORT(RTLOGGERRC)   g_Logger;
-/** Default relese logger instance. */
-extern "C" DECLIMPORT(RTLOGGERRC)   g_RelLogger;
 #else /* !IN_GC */
 /** Default logger instance. */
 static PRTLOGGER                    g_pLogger;
-/** Default release logger instance. */
-static PRTLOGGER                    g_pRelLogger;
 #endif /* !IN_GC */
 #ifdef IN_RING3
 /** The RTThreadGetWriteLockCount() change caused by the logger mutex semaphore. */
@@ -145,7 +140,8 @@ DECLINLINE(int) rtlogLock(PRTLOGGER pLogger)
     if (pLogger->MutexSem != NIL_RTSEMFASTMUTEX)
     {
         int rc = RTSemFastMutexRequest(pLogger->MutexSem);
-        AssertRCReturn(rc, rc);
+        if (RT_FAILURE(rc))
+            return rc;
     }
 #endif
     return VINF_SUCCESS;
@@ -596,7 +592,7 @@ RTDECL(int) RTLogDestroy(PRTLOGGER pLogger)
 #endif
 
     /*
-     * Free the mutex and the instance memory.
+     * Free the mutex, the wrapper and the instance memory.
      */
     MutexSem = pLogger->MutexSem;
     pLogger->MutexSem = NIL_RTSEMFASTMUTEX;
@@ -610,6 +606,11 @@ RTDECL(int) RTLogDestroy(PRTLOGGER pLogger)
             rc = rc2;
     }
 
+    if (pLogger->pfnLogger)
+    {
+        RTMemExecFree(*(void **)&pLogger->pfnLogger);
+        pLogger->pfnLogger = NULL;
+    }
     RTMemFree(pLogger);
 
     return rc;
@@ -933,7 +934,7 @@ RTDECL(void) RTLogFlushToLogger(PRTLOGGER pSrcLogger, PRTLOGGER pDstLogger)
  * @param   cchMask     The length of the mask, including modifiers. The modifiers is why
  *                      we update *ppachMask on match.
  */
-static bool rtlogIsGroupMatching(const char *pszGrp, const char **ppachMask, unsigned cchMask)
+static bool rtlogIsGroupMatching(const char *pszGrp, const char **ppachMask, size_t cchMask)
 {
     const char *pachMask;
 
@@ -1519,60 +1520,6 @@ RTDECL(int) RTLogSetDefaultInstanceThread(PRTLOGGER pLogger, uintptr_t uKey)
 
 
 /**
- * Gets the default release logger instance.
- *
- * @returns Pointer to default release logger instance.
- * @returns NULL if no default release logger instance available.
- */
-RTDECL(PRTLOGGER)   RTLogRelDefaultInstance(void)
-{
-#ifdef IN_GC
-    return &g_RelLogger;
-#else /* !IN_GC */
-    return g_pRelLogger;
-#endif /* !IN_GC */
-}
-
-
-#ifndef IN_GC
-/**
- * Sets the default logger instance.
- *
- * @returns iprt status code.
- * @param   pLogger     The new default release logger instance.
- */
-RTDECL(PRTLOGGER) RTLogRelSetDefaultInstance(PRTLOGGER pLogger)
-{
-    return (PRTLOGGER)ASMAtomicXchgPtr((void * volatile *)&g_pRelLogger, pLogger);
-}
-#endif /* !IN_GC */
-
-
-/**
- * Write to a logger instance.
- *
- * @param   pLogger     Pointer to logger instance.
- * @param   pvCallerRet Ignored.
- * @param   pszFormat   Format string.
- * @param   ...         Format arguments.
- */
-RTDECL(void) RTLogLogger(PRTLOGGER pLogger, void *pvCallerRet, const char *pszFormat, ...)
-{
-    va_list args;
-    va_start(args, pszFormat);
-#if defined(RT_OS_DARWIN) && defined(RT_ARCH_X86) && defined(IN_RING3)
-    /* manually align the stack before doing the call.
-     * We boldly assume that there is a stack frame here! */
-    __asm__ __volatile__("andl $-32, %%esp\t\n" ::: "%esp");
-    RTLogLoggerExV(pLogger, 0, ~0U, pszFormat, args);
-#else
-    RTLogLoggerExV(pLogger, 0, ~0U, pszFormat, args);
-#endif
-    va_end(args);
-}
-
-
-/**
  * Write to a logger instance.
  *
  * @param   pLogger     Pointer to logger instance.
@@ -1597,34 +1544,12 @@ RTDECL(void) RTLogLoggerV(PRTLOGGER pLogger, const char *pszFormat, va_list args
  *                      The value ~0U is reserved for compatability with RTLogLogger[V] and is
  *                      only for internal usage!
  * @param   pszFormat   Format string.
- * @param   ...         Format arguments.
- * @remark  This is a worker function of LogIt.
- */
-RTDECL(void) RTLogLoggerEx(PRTLOGGER pLogger, unsigned fFlags, unsigned iGroup, const char *pszFormat, ...)
-{
-    va_list args;
-    va_start(args, pszFormat);
-    RTLogLoggerExV(pLogger, fFlags, iGroup, pszFormat, args);
-    va_end(args);
-}
-
-
-/**
- * Write to a logger instance.
- *
- * This function will check whether the instance, group and flags makes up a
- * logging kind which is currently enabled before writing anything to the log.
- *
- * @param   pLogger     Pointer to logger instance. If NULL the default logger instance will be attempted.
- * @param   fFlags      The logging flags.
- * @param   iGroup      The group.
- *                      The value ~0U is reserved for compatability with RTLogLogger[V] and is
- *                      only for internal usage!
- * @param   pszFormat   Format string.
  * @param   args        Format arguments.
  */
 RTDECL(void) RTLogLoggerExV(PRTLOGGER pLogger, unsigned fFlags, unsigned iGroup, const char *pszFormat, va_list args)
 {
+    int rc;
+
     /*
      * A NULL logger means default instance.
      */
@@ -1634,77 +1559,6 @@ RTDECL(void) RTLogLoggerExV(PRTLOGGER pLogger, unsigned fFlags, unsigned iGroup,
         if (!pLogger)
             return;
     }
-    rtlogLogger(pLogger, fFlags, iGroup, pszFormat, args);
-}
-
-
-/**
- * Write to a logger instance, defaulting to the release one.
- *
- * This function will check whether the instance, group and flags makes up a
- * logging kind which is currently enabled before writing anything to the log.
- *
- * @param   pLogger     Pointer to logger instance.
- * @param   fFlags      The logging flags.
- * @param   iGroup      The group.
- *                      The value ~0U is reserved for compatability with RTLogLogger[V] and is
- *                      only for internal usage!
- * @param   pszFormat   Format string.
- * @param   ...         Format arguments.
- * @remark  This is a worker function for LogRelIt.
- */
-RTDECL(void) RTLogRelLogger(PRTLOGGER pLogger, unsigned fFlags, unsigned iGroup, const char *pszFormat, ...)
-{
-    va_list args;
-    va_start(args, pszFormat);
-    RTLogRelLoggerV(pLogger, fFlags, iGroup, pszFormat, args);
-    va_end(args);
-}
-
-
-/**
- * Write to a logger instance, defaulting to the release one.
- *
- * This function will check whether the instance, group and flags makes up a
- * logging kind which is currently enabled before writing anything to the log.
- *
- * @param   pLogger     Pointer to logger instance. If NULL the default release instance is attempted.
- * @param   fFlags      The logging flags.
- * @param   iGroup      The group.
- *                      The value ~0U is reserved for compatability with RTLogLogger[V] and is
- *                      only for internal usage!
- * @param   pszFormat   Format string.
- * @param   args        Format arguments.
- */
-RTDECL(void) RTLogRelLoggerV(PRTLOGGER pLogger, unsigned fFlags, unsigned iGroup, const char *pszFormat, va_list args)
-{
-    /*
-     * A NULL logger means default instance.
-     */
-    if (!pLogger)
-    {
-        pLogger = RTLogRelDefaultInstance();
-        if (!pLogger)
-            return;
-    }
-    rtlogLogger(pLogger, fFlags, iGroup, pszFormat, args);
-}
-
-
-/**
- * Worker for the RTLog[Rel]Logger*() functions.
- *
- * @param   pLogger     Pointer to logger instance.
- * @param   fFlags      The logging flags.
- * @param   iGroup      The group.
- *                      The value ~0U is reserved for compatability with RTLogLogger[V] and is
- *                      only for internal usage!
- * @param   pszFormat   Format string.
- * @param   args        Format arguments.
- */
-static void rtlogLogger(PRTLOGGER pLogger, unsigned fFlags, unsigned iGroup, const char *pszFormat, va_list args)
-{
-    int rc;
 
     /*
      * Validate and correct iGroup.
@@ -1757,23 +1611,6 @@ static void rtlogLogger(PRTLOGGER pLogger, unsigned fFlags, unsigned iGroup, con
 
 
 /**
- * printf like function for writing to the default log.
- *
- * @param   pszFormat   Printf like format string.
- * @param   ...         Optional arguments as specified in pszFormat.
- *
- * @remark The API doesn't support formatting of floating point numbers at the moment.
- */
-RTDECL(void) RTLogPrintf(const char *pszFormat, ...)
-{
-    va_list args;
-    va_start(args, pszFormat);
-    RTLogPrintfV(pszFormat, args);
-    va_end(args);
-}
-
-
-/**
  * vprintf like function for writing to the default log.
  *
  * @param   pszFormat   Printf like format string.
@@ -1784,37 +1621,6 @@ RTDECL(void) RTLogPrintf(const char *pszFormat, ...)
 RTDECL(void) RTLogPrintfV(const char *pszFormat, va_list args)
 {
     RTLogLoggerV(NULL, pszFormat, args);
-}
-
-
-/**
- * printf like function for writing to the default release log.
- *
- * @param   pszFormat   Printf like format string.
- * @param   ...         Optional arguments as specified in pszFormat.
- *
- * @remark The API doesn't support formatting of floating point numbers at the moment.
- */
-RTDECL(void) RTLogRelPrintf(const char *pszFormat, ...)
-{
-    va_list args;
-    va_start(args, pszFormat);
-    RTLogRelPrintfV(pszFormat, args);
-    va_end(args);
-}
-
-
-/**
- * vprintf like function for writing to the default release log.
- *
- * @param   pszFormat   Printf like format string.
- * @param   args        Optional arguments as specified in pszFormat.
- *
- * @remark The API doesn't support formatting of floating point numbers at the moment.
- */
-RTDECL(void) RTLogRelPrintfV(const char *pszFormat, va_list args)
-{
-    RTLogRelLoggerV(NULL, 0, ~0U, pszFormat, args);
 }
 
 
