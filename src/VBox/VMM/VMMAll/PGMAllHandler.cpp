@@ -1,4 +1,4 @@
-/* $Id: PGMAllHandler.cpp 11309 2008-08-08 23:25:08Z vboxsync $ */
+/* $Id: PGMAllHandler.cpp $ */
 /** @file
  * PGM - Page Manager / Monitor, Access Handlers.
  */

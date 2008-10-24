@@ -1,4 +1,4 @@
-/* $Id: VBoxDbgStats.h 12183 2008-09-07 02:35:53Z vboxsync $ */
+/* $Id: VBoxDbgStats.h $ */
 /** @file
  * VBox Debugger GUI - Statistics.
  */

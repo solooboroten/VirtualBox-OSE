@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-solaris.c 12414 2008-09-12 08:01:40Z vboxsync $ */
+/* $Id: SUPDrv-solaris.c $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Solaris specifics.
  */

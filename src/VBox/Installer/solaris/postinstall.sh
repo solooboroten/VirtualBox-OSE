@@ -29,13 +29,26 @@ fi
 
 currentzone=`zonename`
 if test "$currentzone" = "global"; then
-    echo "Configuring VirtualBox kernel module..."
-    /opt/VirtualBox/vboxdrv.sh stopall silentunload
-    /opt/VirtualBox/vboxdrv.sh start
+    echo "Configuring VirtualBox kernel modules..."
+    /opt/VirtualBox/vboxdrv.sh stopall silentunload checkarch
+    rc=$?
+    if test "$rc" -eq 0; then
+        /opt/VirtualBox/vboxdrv.sh start
+        rc=$?
+        if test "$rc" -eq 0; then
+            if test -f /platform/i86pc/kernel/drv/vboxflt.conf; then
+                /opt/VirtualBox/vboxdrv.sh fltstart
+                rc=$?            
+            fi
+        fi
+    fi
 
-    echo "Configuring VirtualBox NetFilter kernel module..."
-    if test -f /platform/i86pc/kernel/drv/vboxflt.conf; then
-        /opt/VirtualBox/vboxdrv.sh fltstart
+    # Fail on any errors while unloading previous modules because it makes it very hard to
+    # track problems when older vboxdrv is hanging about in memory and add_drv of the new
+    # one suceeds and it appears as though the new one is being used.
+    if test "$rc" -ne 0; then
+        echo "## Configuration failed. Aborting installation."
+        exit 2
     fi
 fi
 
@@ -54,26 +67,36 @@ if test -f /opt/VirtualBox/VBoxHeadless; then
         /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxVRDP=/opt/VirtualBox/VBox.sh s
     fi
 fi
-if test -f /var/svc/manifest/application/virtualbox/webservice.xml; then
-    /usr/sbin/svccfg import /var/svc/manifest/application/virtualbox/webservice.xml
-    /usr/sbin/svcadm disable -s svc:/application/virtualbox/webservice:default
-fi
-/usr/sbin/removef $PKGINST /opt/VirtualBox/etc/devlink.tab 1>/dev/null
-/usr/sbin/removef $PKGINST /opt/VirtualBox/etc 1>/dev/null
-rm -rf /opt/VirtualBox/etc
-/usr/sbin/removef -f $PKGINST
 
-/usr/sbin/installf -f $PKGINST
-
-# We need to touch the desktop link in order to add it to the menu right away
 if test "$currentzone" = "global"; then
+    if test -f /var/svc/manifest/application/virtualbox/webservice.xml; then
+        /usr/sbin/svccfg import /var/svc/manifest/application/virtualbox/webservice.xml
+        /usr/sbin/svcadm disable -s svc:/application/virtualbox/webservice:default
+    fi
+
+    # add vboxdrv to the devlink.tab
+    sed -e '
+/name=vboxdrv/d' /etc/devlink.tab > /etc/devlink.vbox
+    echo "type=ddi_pseudo;name=vboxdrv	\D" >> /etc/devlink.vbox
+    mv -f /etc/devlink.vbox /etc/devlink.tab
+
+    # create the device link
+    /usr/sbin/devfsadm -i vboxdrv
+    sync
+
+    # We need to touch the desktop link in order to add it to the menu right away
     if test -f "/usr/share/applications/virtualbox.desktop"; then
         touch /usr/share/applications/virtualbox.desktop
     fi
 
-    # create /dev link for vboxdrv (only possible from global zone)
-    /usr/sbin/devfsadm -i vboxdrv
+    # Zone access service
+    if test -f /var/svc/manifest/application/virtualbox/zoneaccess.xml; then
+        /usr/sbin/svccfg import /var/svc/manifest/application/virtualbox/zoneaccess.xml
+        /usr/sbin/svcadm enable -s svc:/application/virtualbox/zoneaccess
+    fi
 fi
+
+/usr/sbin/installf -f $PKGINST
 
 echo "Done."
 

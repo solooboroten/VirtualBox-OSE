@@ -1,4 +1,4 @@
-/* $Id: semeventmulti-posix.cpp 8706 2008-05-08 13:25:41Z vboxsync $ */
+/* $Id: semeventmulti-posix.cpp $ */
 /** @file
  * IPRT - Multiple Release Event Semaphore, POSIX.
  */

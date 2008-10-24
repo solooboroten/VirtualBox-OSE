@@ -1,4 +1,4 @@
-/* $Id: vboxvfs_vfsops.c 11982 2008-09-02 13:09:44Z vboxsync $ */
+/* $Id: vboxvfs_vfsops.c $ */
 /** @file
  * VirtualBox File System Driver for Solaris Guests. VFS operations.
  */

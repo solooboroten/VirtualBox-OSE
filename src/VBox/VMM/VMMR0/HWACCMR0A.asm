@@ -1,4 +1,4 @@
-; $Id: HWACCMR0A.asm 12301 2008-09-09 15:09:41Z vboxsync $
+; $Id: HWACCMR0A.asm $
 ;; @file
 ; VMXM - R0 vmx helpers
 ;
@@ -79,7 +79,7 @@
   ; Only really useful for gs kernel base as that one can be changed behind our back (swapgs)
   %macro LOADHOSTMSREX 2
     mov     rcx, %1
-    rdmsr 
+    rdmsr
     mov     dword [xSI + %2], eax
     mov     dword [xSI + %2 + 4], edx
     pop     rax
@@ -307,8 +307,8 @@ BEGINPROC VMXR0StartVM32
 
     vmresume
     jmp     .vmlaunch_done;      ;/* here if vmresume detected a failure. */
-    
-.vmlauch_lauch:    
+
+.vmlauch_lauch:
     ;/* Restore edi & esi. */
     mov     edi, [xSI + CPUMCTX.edi]
     mov     esi, [xSI + CPUMCTX.esi]
@@ -462,7 +462,7 @@ BEGINPROC VMXR0StartVM64
     MYPUSHSEGS xAX, ax
 
     ; Save the host LSTAR, CSTAR, SFMASK & KERNEL_GSBASE MSRs and restore the guest MSRs
-    ; @todo use the automatic load feature for MSRs
+    ;; @todo use the automatic load feature for MSRs
     LOADGUESTMSR MSR_K8_LSTAR, CPUMCTX.msrLSTAR
 %if 0  ; not supported on Intel CPUs
     LOADGUESTMSR MSR_K8_CSTAR, CPUMCTX.msrCSTAR
@@ -526,8 +526,8 @@ BEGINPROC VMXR0StartVM64
 
     vmresume
     jmp     .vmlaunch64_done;      ;/* here if vmresume detected a failure. */
-    
-.vmlauch64_lauch:    
+
+.vmlauch64_lauch:
     ;/* Restore rdi & rsi. */
     mov     rdi, qword [xSI + CPUMCTX.edi]
     mov     rsi, qword [xSI + CPUMCTX.esi]
@@ -579,7 +579,7 @@ ALIGNCODE(16)
     pop     xSI         ; pCtx (needed in rsi by the macros below)
 
     ; Restore the host LSTAR, CSTAR, SFMASK & KERNEL_GSBASE MSRs
-    ; @todo use the automatic load feature for MSRs
+    ;; @todo use the automatic load feature for MSRs
     LOADHOSTMSREX MSR_K8_KERNEL_GS_BASE, CPUMCTX.msrKERNELGSBASE
     LOADHOSTMSR MSR_K8_SF_MASK
     LOADHOSTMSR MSR_K6_STAR
@@ -615,10 +615,13 @@ ALIGNCODE(16)
     pop     xSI         ; pCtx (needed in rsi by the macros below)
 
     ; Restore the host LSTAR, CSTAR, SFMASK & KERNEL_GSBASE MSRs
-    ; @todo use the automatic load feature for MSRs
+    ;; @todo use the automatic load feature for MSRs
     LOADHOSTMSREX MSR_K8_KERNEL_GS_BASE, CPUMCTX.msrKERNELGSBASE
     LOADHOSTMSR MSR_K8_SF_MASK
+    LOADHOSTMSR MSR_K6_STAR
+%if 0  ; not supported on Intel CPUs
     LOADHOSTMSR MSR_K8_CSTAR
+%endif
     LOADHOSTMSR MSR_K8_LSTAR
 
     ; Restore segment registers
@@ -642,10 +645,13 @@ ALIGNCODE(16)
     pop     xSI         ; pCtx (needed in rsi by the macros below)
 
     ; Restore the host LSTAR, CSTAR, SFMASK & KERNEL_GSBASE MSRs
-    ; @todo use the automatic load feature for MSRs
+    ;; @todo use the automatic load feature for MSRs
     LOADHOSTMSREX MSR_K8_KERNEL_GS_BASE, CPUMCTX.msrKERNELGSBASE
     LOADHOSTMSR MSR_K8_SF_MASK
+    LOADHOSTMSR MSR_K6_STAR
+%if 0  ; not supported on Intel CPUs
     LOADHOSTMSR MSR_K8_CSTAR
+%endif
     LOADHOSTMSR MSR_K8_LSTAR
 
     ; Restore segment registers
@@ -843,6 +849,80 @@ BEGINPROC VMXGetActivateVMCS
     xor     eax, eax
     ret
 ENDPROC VMXGetActivateVMCS
+
+;/**
+; * Invalidate a page using invept
+; @param   enmFlush     msc:ecx  gcc:edi  x86:[esp+04]  Type of flush
+; @param   pDescriptor  msc:edx  gcc:esi  x86:[esp+08]  Descriptor pointer
+; */
+;DECLASM(int) VMXR0InvEPT(VMX_FLUSH enmFlush, uint64_t *pDescriptor);
+BEGINPROC VMXR0InvEPT
+%ifdef RT_ARCH_AMD64
+ %ifdef ASM_CALL64_GCC
+    mov         eax, 0ffffffffh
+    and         rdi, rax
+    xor         rax, rax
+;    invept      rdi, qword [rsi]
+    DB          0x66, 0x0F, 0x38, 0x80, 0x3E
+ %else
+    mov         eax, 0ffffffffh
+    and         rcx, rax
+    xor         rax, rax
+;    invept      rcx, qword [rdx]
+    DB          0x66, 0x0F, 0x38, 0x80, 0xA
+ %endif
+%else
+    mov         eax, [esp + 4]
+    mov         ecx, [esp + 8]
+;    invept      eax, qword [ecx]
+    DB          0x66, 0x0F, 0x38, 0x80, 0x1
+%endif
+    jnc         .valid_vmcs
+    mov         eax, VERR_VMX_INVALID_VMCS_PTR
+    ret
+.valid_vmcs:
+    jnz         .the_end
+    mov         eax, VERR_INVALID_PARAMETER
+.the_end:
+    ret
+ENDPROC VMXR0InvEPT
+
+;/**
+; * Invalidate a page using invvpid
+; @param   enmFlush     msc:ecx  gcc:edi  x86:[esp+04]  Type of flush
+; @param   pDescriptor  msc:edx  gcc:esi  x86:[esp+08]  Descriptor pointer
+; */
+;DECLASM(int) VMXR0InvVPID(VMX_FLUSH enmFlush, uint64_t *pDescriptor);
+BEGINPROC VMXR0InvVPID
+%ifdef RT_ARCH_AMD64
+ %ifdef ASM_CALL64_GCC
+    mov         eax, 0ffffffffh
+    and         rdi, rax
+    xor         rax, rax
+    ;invvpid     rdi, qword [rsi]
+    DB          0x66, 0x0F, 0x38, 0x81, 0x3E
+ %else
+    mov         eax, 0ffffffffh
+    and         rcx, rax
+    xor         rax, rax
+;    invvpid     rcx, qword [rdx]
+    DB          0x66, 0x0F, 0x38, 0x81, 0xA
+ %endif
+%else
+    mov         eax, [esp + 4]
+    mov         ecx, [esp + 8]
+;    invept      eax, qword [ecx]
+    DB          0x66, 0x0F, 0x38, 0x81, 0x1
+%endif
+    jnc         .valid_vmcs
+    mov         eax, VERR_VMX_INVALID_VMCS_PTR
+    ret
+.valid_vmcs:
+    jnz         .the_end
+    mov         eax, VERR_INVALID_PARAMETER
+.the_end:
+    ret
+ENDPROC VMXR0InvVPID
 
 
 ;/**

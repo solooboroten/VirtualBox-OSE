@@ -1,4 +1,4 @@
-/* $Id: tstUuid.cpp 11543 2008-08-21 15:35:28Z vboxsync $ */
+/* $Id: tstUuid.cpp $ */
 /** @file
  * IPRT Testcase - UUID.
  */

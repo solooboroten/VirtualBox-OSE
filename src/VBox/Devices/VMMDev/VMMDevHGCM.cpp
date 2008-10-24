@@ -1,4 +1,4 @@
-/* $Id: VMMDevHGCM.cpp 11628 2008-08-25 16:06:34Z vboxsync $ */
+/* $Id: VMMDevHGCM.cpp $ */
 /** @file
  * VMMDev - HGCM - Host-Guest Communication Manager Device.
  */

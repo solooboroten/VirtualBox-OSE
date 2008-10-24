@@ -1,4 +1,4 @@
-/* $Id: tstTimer.cpp 10948 2008-07-29 18:32:21Z vboxsync $ */
+/* $Id: tstTimer.cpp $ */
 /** @file
  * IPRT Testcase - Timers.
  */

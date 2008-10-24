@@ -20,19 +20,36 @@
 echo "Sun xVM VirtualBox - preremove script"
 echo "This script will unload the VirtualBox kernel module..."
 
-# vboxdrv.sh would've been installed, we just need to call it.
-/opt/VirtualBox/vboxdrv.sh stopall
-
-# remove /dev/vboxdrv
 currentzone=`zonename`
 if test "$currentzone" = "global"; then
-    rm -f /dev/vboxdrv
+    # stop and unregister webservice SMF (if present)
+    webservicefound=`svcs -a | grep "virtualbox/webservice"`
+    if test ! -z "$webservicefound"; then
+        /usr/sbin/svcadm disable -s svc:/application/virtualbox/webservice:default
+        /usr/sbin/svccfg delete svc:/application/virtualbox/webservice:default
+    fi
+
+    # stop and unregister zoneaccess SMF (if present)
+    zoneaccessfound=`svcs -a | grep "virtualbox/zoneaccess"`
+    if test ! -z "$zoneaccessfound"; then
+        /usr/sbin/svcadm disable -s svc:/application/virtualbox/zoneaccess
+        /usr/sbin/svccfg delete svc:/application/virtualbox/zoneaccess
+    fi
+
+    # vboxdrv.sh would've been installed, we just need to call it.
+    /opt/VirtualBox/vboxdrv.sh fltstop alwaysremdrv
+    /opt/VirtualBox/vboxdrv.sh stop alwaysremdrv
+
+    # remove devlink.tab entry for vboxdrv
+    sed -e '
+/name=vboxdrv/d' /etc/devlink.tab > /etc/devlink.vbox
+    mv -f /etc/devlink.vbox /etc/devlink.tab
+
+    # remove the link
+    if test -h "/dev/vboxdrv" || test -f "/dev/vboxdrv"; then
+        rm -f /dev/vboxdrv
+    fi
 fi
-
-# stop and unregister webservice daemon
-/usr/sbin/svcadm disable -s svc:/application/virtualbox/webservice:default
-/usr/sbin/svccfg delete svc:/application/virtualbox/webservice:default
-
 
 echo "Done."
 

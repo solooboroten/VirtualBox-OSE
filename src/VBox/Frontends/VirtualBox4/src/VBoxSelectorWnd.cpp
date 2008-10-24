@@ -389,6 +389,10 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
 
     statusBar();
 
+#if defined (Q_WS_MAC) && (QT_VERSION < 0x040402)
+    qApp->installEventFilter (this);
+#endif /* defined (Q_WS_MAC) && (QT_VERSION < 0x040402) */
+
 #if !(defined (Q_WS_WIN) || defined (Q_WS_MAC))
     /* The application icon. On Win32, it's built-in to the executable. On Mac
      * OS X the icon referenced in info.plist is used. */
@@ -407,37 +411,45 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
     fileExitAction->setIcon (VBoxGlobal::iconSet (":/exit_16px.png"));
 
     vmNewAction = new QAction (this);
-    vmNewAction->setIcon (VBoxGlobal::iconSetEx (
+    vmNewAction->setIcon (VBoxGlobal::iconSetFull (
+        QSize (32, 32), QSize (16, 16),
         ":/vm_new_32px.png", ":/new_16px.png"));
     vmConfigAction = new QAction (this);
-    vmConfigAction->setIcon (VBoxGlobal::iconSetEx (
+    vmConfigAction->setIcon (VBoxGlobal::iconSetFull (
+        QSize (32, 32), QSize (16, 16),
         ":/vm_settings_32px.png", ":/settings_16px.png",
         ":/vm_settings_disabled_32px.png", ":/settings_dis_16px.png"));
     vmDeleteAction = new QAction (this);
-    vmDeleteAction->setIcon (VBoxGlobal::iconSetEx (
+    vmDeleteAction->setIcon (VBoxGlobal::iconSetFull (
+        QSize (32, 32), QSize (16, 16),
         ":/vm_delete_32px.png", ":/delete_16px.png",
         ":/vm_delete_disabled_32px.png", ":/delete_dis_16px.png"));
     vmStartAction = new QAction (this);
-    vmStartAction->setIcon (VBoxGlobal::iconSetEx (
+    vmStartAction->setIcon (VBoxGlobal::iconSetFull (
+        QSize (32, 32), QSize (16, 16),
         ":/vm_start_32px.png", ":/start_16px.png",
         ":/vm_start_disabled_32px.png", ":/start_dis_16px.png"));
     vmDiscardAction = new QAction (this);
-    vmDiscardAction->setIcon (VBoxGlobal::iconSetEx (
+    vmDiscardAction->setIcon (VBoxGlobal::iconSetFull (
+        QSize (32, 32), QSize (16, 16),
         ":/vm_discard_32px.png", ":/discard_16px.png",
         ":/vm_discard_disabled_32px.png", ":/discard_dis_16px.png"));
     vmPauseAction = new QAction (this);
     vmPauseAction->setCheckable (true);
-    vmPauseAction->setIcon (VBoxGlobal::iconSetEx (
-        ":/vm_pause_32px.png", "pause_16px.png",
-        ":/vm_pause_disabled_32px.png", "pause_disabled_16px.png"));
+    vmPauseAction->setIcon (VBoxGlobal::iconSetFull (
+        QSize (32, 32), QSize (16, 16),
+        ":/vm_pause_32px.png", ":/pause_16px.png",
+        ":/vm_pause_disabled_32px.png", ":/pause_disabled_16px.png"));
     vmRefreshAction = new QAction (this);
-    vmRefreshAction->setIcon (VBoxGlobal::iconSetEx (
-        ":/vm_refresh_32px.png", "refresh_16px.png",
-        ":/vm_refresh_disabled_32px.png", "refresh_disabled_16px.png"));
+    vmRefreshAction->setIcon (VBoxGlobal::iconSetFull (
+        QSize (32, 32), QSize (16, 16),
+        ":/refresh_32px.png", ":/refresh_16px.png",
+        ":/refresh_disabled_32px.png", ":/refresh_disabled_16px.png"));
     vmShowLogsAction = new QAction (this);
-    vmShowLogsAction->setIcon (VBoxGlobal::iconSetEx (
-        ":/vm_show_logs_32px.png", "show_logs_16px.png",
-        ":/vm_show_logs_disabled_32px.png", "show_logs_disabled_16px.png"));
+    vmShowLogsAction->setIcon (VBoxGlobal::iconSetFull (
+        QSize (32, 32), QSize (16, 16),
+        ":/vm_show_logs_32px.png", ":/show_logs_16px.png",
+        ":/vm_show_logs_disabled_32px.png", ":/show_logs_disabled_16px.png"));
 
     mHelpActions.setup (this);
 
@@ -1102,6 +1114,33 @@ bool VBoxSelectorWnd::event (QEvent *e)
 
     return QMainWindow::event (e);
 }
+
+#if defined (Q_WS_MAC) && (QT_VERSION < 0x040402)
+bool VBoxSelectorWnd::eventFilter (QObject *aObject, QEvent *aEvent)
+{
+    if (!isActiveWindow())
+        return QIWithRetranslateUI2<QMainWindow>::eventFilter (aObject, aEvent);
+
+    if (qobject_cast<QWidget*> (aObject) &&
+        qobject_cast<QWidget*> (aObject)->window() != this)
+        return QIWithRetranslateUI2<QMainWindow>::eventFilter (aObject, aEvent);
+
+    switch (aEvent->type())
+    {
+        case QEvent::KeyPress:
+            {
+                /* Bug in Qt below 4.4.2. The key events are send to the current
+                 * window even if a menu is shown & has the focus. See
+                 * http://trolltech.com/developer/task-tracker/index_html?method=entry&id=214681. */
+                if (::darwinIsMenuOpen())
+                    return true;
+            }
+        default:
+            break;
+    }
+    return QIWithRetranslateUI2<QMainWindow>::eventFilter (aObject, aEvent);
+}
+#endif /* defined (Q_WS_MAC) && (QT_VERSION < 0x040402) */
 
 /**
  *  Sets the strings of the subwidgets using the current

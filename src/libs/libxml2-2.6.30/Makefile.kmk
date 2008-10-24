@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 12198 2008-09-08 02:45:46Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the libxml2 library.
 #

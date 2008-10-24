@@ -1,4 +1,4 @@
-/* $Id: thread-win.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
+/* $Id: thread-win.cpp $ */
 /** @file
  * IPRT - Threads, Win32.
  */

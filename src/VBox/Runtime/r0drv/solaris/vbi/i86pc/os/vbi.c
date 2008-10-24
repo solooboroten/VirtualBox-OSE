@@ -78,7 +78,7 @@ static void (*p_xc_call)() = (void (*)())xc_call;
 #pragma weak cpuset_only
 
 static struct modlmisc vbi_modlmisc = {
-	&mod_miscops, "Vbox Interfaces Ver 2"
+	&mod_miscops, "VirtualBox Interfaces V3"
 };
 
 static struct modlinkage vbi_modlinkage = {
@@ -821,12 +821,10 @@ vbi_user_map(caddr_t *va, uint_t prot, uint64_t *palist, size_t len)
 	return (error);
 }
 
+
 /*
- * This is revision 2 of the interface. As more functions are added,
- * they should go after this point in the file and the revision level
- * increased.
+ * This is revision 2 of the interface.
  */
-uint_t vbi_revision_level = 2;
 
 struct vbi_cpu_watch {
 	void (*vbi_cpu_func)();
@@ -911,6 +909,7 @@ vbi_stimer_begin(
 	ASSERT(when < INT64_MAX);
 	ASSERT(interval < INT64_MAX);
 	ASSERT(interval + when < INT64_MAX);
+	ASSERT(on_cpu == VBI_ANY_CPU || on_cpu < ncpus);
 
 	t->s_handler.cyh_func = vbi_stimer_func;
 	t->s_handler.cyh_arg = t;
@@ -920,7 +919,7 @@ vbi_stimer_begin(
 	t->s_arg = arg;
 
 	mutex_enter(&cpu_lock);
-	if (on_cpu != VBI_ANY_CPU && !vbi_cpu_online(on_cpu)) {
+	if (on_cpu != VBI_ANY_CPU && !cpu_is_online(cpu[on_cpu])) {
 		t = NULL;
 		goto done;
 	}
@@ -1038,4 +1037,17 @@ vbi_gtimer_end(vbi_gtimer_t *t)
 	mutex_exit(&cpu_lock);
 	kmem_free(t->g_counters, ncpus * sizeof (uint64_t));
 	kmem_free(t, sizeof (*t));
+}
+
+/*
+ * This is revision 3 of the interface. As more functions are added,
+ * they should go after this point in the file and the revision level
+ * increased. Also change vbi_modlmisc at the top of the file.
+ */
+uint_t vbi_revision_level = 3;
+
+int
+vbi_is_preempt_enabled(void)
+{
+	return (curthread->t_preempt == 0);
 }

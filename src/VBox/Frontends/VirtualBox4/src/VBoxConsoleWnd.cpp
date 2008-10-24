@@ -991,6 +991,9 @@ void VBoxConsoleWnd::closeView()
                               vmAutoresizeGuestAction->isChecked() ? "on" : "off");
     }
 
+    /* Make sure all events are delievered */
+    qApp->processEvents();
+
     console->detach();
 
     centralWidget()->layout()->removeWidget (console);
@@ -1302,21 +1305,27 @@ void VBoxConsoleWnd::closeEvent (QCloseEvent *e)
                 else
                 if (dlg.mRbPowerOff->isChecked())
                 {
-                    cconsole.PowerDown();
-                    if (!cconsole.isOk())
+                    CProgress progress = cconsole.PowerDownAsync();
+
+                    if (cconsole.isOk())
                     {
-                        /// @todo (dmik) add an option to close the GUI anyway
-                        //  and handle it
-                        vboxProblem().cannotStopMachine (cconsole);
+                        /* show the power down progress dialog */
+                        vboxProblem()
+                            .showModalProgressDialog (progress, cmachine.GetName(),
+                                                      this, 0);
+                        if (progress.GetResultCode() != 0)
+                            vboxProblem().cannotStopMachine (progress);
+                        else
+                            success = true;
                     }
                     else
+                        vboxProblem().cannotStopMachine (cconsole);
+
+                    if (success)
                     {
-                        /*
-                         *  set success to true even if we fail to discard the
-                         *  current state later -- the console window will be
-                         *  closed anyway
-                         */
-                        success = true;
+                        /* Note: leave success = true even if we fail to
+                         * discard the current state later -- the console window
+                         * will closed anyway */
 
                         /* discard the current state if requested */
                         if (dlg.mCbDiscardCurState->isChecked() &&
@@ -1771,7 +1780,7 @@ void VBoxConsoleWnd::updateAppearanceOf (int element)
             if (adapter.GetEnabled())
                 info += tr ("<br><nobr><b>Adapter %1 (%2)</b>: cable %3</nobr>",
                             "Network adapters tooltip")
-                    .arg (slot)
+                    .arg (slot+1)
                     .arg (vboxGlobal().toString (adapter.GetAttachmentType()))
                     .arg (adapter.GetCableConnected() ?
                           tr ("connected", "Network adapters tooltip") :
@@ -2897,7 +2906,7 @@ void VBoxConsoleWnd::prepareNetworkMenu()
     for (ulong slot = 0; slot < count; ++ slot)
     {
         CNetworkAdapter adapter = csession.GetMachine().GetNetworkAdapter (slot);
-        QAction *action = mDevicesNetworkMenu->addAction (tr ("Adapter %1", "network").arg (slot));
+        QAction *action = mDevicesNetworkMenu->addAction (tr ("Adapter %1", "network").arg (slot+1));
         action->setEnabled (adapter.GetEnabled());
         action->setCheckable (true);
         action->setChecked (adapter.GetEnabled() && adapter.GetCableConnected());

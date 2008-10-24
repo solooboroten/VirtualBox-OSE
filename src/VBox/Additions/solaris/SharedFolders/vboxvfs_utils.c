@@ -1,4 +1,4 @@
-/* $Id: vboxvfs_utils.c 11982 2008-09-02 13:09:44Z vboxsync $ */
+/* $Id: vboxvfs_utils.c $ */
 /** @file
  * VirtualBox File System Driver for Solaris Guests, Utility functions.
  */

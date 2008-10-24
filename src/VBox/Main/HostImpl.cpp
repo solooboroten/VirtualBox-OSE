@@ -1,4 +1,4 @@
-/* $Id: HostImpl.cpp 12400 2008-09-11 10:34:58Z vboxsync $ */
+/* $Id: HostImpl.cpp $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */
@@ -562,6 +562,7 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
     static NICMap SolarisNICMap;
     if (SolarisNICMap.empty())
     {
+        SolarisNICMap.insert(NICPair("afe", "ADMtek Centaur/Comet Fast Ethernet"));
         SolarisNICMap.insert(NICPair("aggr", "Link Aggregation Interface"));
         SolarisNICMap.insert(NICPair("bge", "Broadcom BCM57xx Gigabit Ethernet"));
         SolarisNICMap.insert(NICPair("ce", "Cassini Gigabit Ethernet"));
@@ -577,6 +578,7 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
         SolarisNICMap.insert(NICPair("hme", "SUNW,hme Fast-Ethernet"));
         SolarisNICMap.insert(NICPair("ipge", "PCI-E Gigabit Ethernet"));
         SolarisNICMap.insert(NICPair("iprb", "Intel 82557/58/59 Ethernet"));
+        SolarisNICMap.insert(NICPair("mxfe", "Macronix 98715 Fast Ethernet"));
         SolarisNICMap.insert(NICPair("nge", "Nvidia Gigabit Ethernet"));
         SolarisNICMap.insert(NICPair("pcelx", "3COM EtherLink III PCMCIA Ethernet"));
         SolarisNICMap.insert(NICPair("pcn", "AMD PCnet Ethernet"));

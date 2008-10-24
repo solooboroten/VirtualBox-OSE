@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 12170 2008-09-06 03:58:49Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the Windows guest graphics driver.
 #

@@ -1,4 +1,4 @@
-/* $Id: DevRTC.cpp 11293 2008-08-08 22:44:57Z vboxsync $ */
+/* $Id: DevRTC.cpp $ */
 /** @file
  * Motorola MC146818 RTC/CMOS Device.
  */

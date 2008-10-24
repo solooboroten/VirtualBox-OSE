@@ -512,6 +512,7 @@ public:
     /* VirtualBox helpers */
 
 #if defined(Q_WS_X11) && !defined(VBOX_OSE)
+    double findLicenseFile (const QStringList &aFilesList, QRegExp aPattern, QString &aLicenseFile) const;
     bool showVirtualBoxLicense();
 #endif
 
@@ -564,15 +565,17 @@ public:
 
     static QString languageId();
     static void loadLanguage (const QString &aLangId = QString::null);
+    QString helpFile() const;
 
     static QIcon iconSet (const char *aNormal,
                           const char *aDisabled = NULL,
                           const char *aActive = NULL);
-    static QIcon iconSetEx (const char *aNormal, const char *aSmallNormal,
-                            const char *aDisabled = NULL,
-                            const char *aSmallDisabled = NULL,
-                            const char *aActive = NULL,
-                            const char *aSmallActive = NULL);
+    static QIcon iconSetFull (const QSize &aNormalSize, const QSize &aSmallSize,
+                              const char *aNormal, const char *aSmallNormal,
+                              const char *aDisabled = NULL,
+                              const char *aSmallDisabled = NULL,
+                              const char *aActive = NULL,
+                              const char *aSmallActive = NULL);
 
     static QIcon standardIcon (QStyle::StandardPixmap aStandard, QWidget *aWidget = NULL);
 

@@ -1,4 +1,4 @@
-/* $Id: VBoxRecompiler.c 12308 2008-09-09 15:59:08Z vboxsync $ */
+/* $Id: VBoxRecompiler.c $ */
 /** @file
  * VBox Recompiler - QEMU.
  */
@@ -1864,7 +1864,7 @@ REMR3DECL(int)  REMR3State(PVM pVM, bool fFlushTBs)
         {
             Log2(("REMR3State: SS changed from %04x to %04x!\n", pVM->rem.s.Env.segs[R_SS].selector, pCtx->ss));
 
-            cpu_x86_set_cpl(&pVM->rem.s.Env, (pCtx->eflags.Bits.u1VM) ? 3 : (pCtx->ss & 3));
+            cpu_x86_set_cpl(&pVM->rem.s.Env, CPUMGetGuestCPL(pVM, CPUMCTX2CORE(pCtx)));
             sync_seg(&pVM->rem.s.Env, R_SS, pCtx->ss);
 #ifdef VBOX_WITH_STATISTICS
             if (pVM->rem.s.Env.segs[R_SS].newselector)

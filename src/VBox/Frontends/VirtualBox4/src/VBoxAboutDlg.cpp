@@ -1,6 +1,6 @@
 /** @file
  *
- * VBox frontends: Qt4 GUI ("VirtualBox"):
+ * VBox frontends: Qt GUI ("VirtualBox"):
  * VBoxAboutDlg class implementation
  */
 
@@ -22,40 +22,61 @@
 
 #include "VBoxAboutDlg.h"
 
-VBoxAboutDlg::VBoxAboutDlg (QWidget *aParent, const QString &aVersion)
+/* Qt includes */
+#include <QPainter>
+#include <QEvent>
+
+VBoxAboutDlg::VBoxAboutDlg (QWidget* aParent, const QString &aVersion)
     : QIWithRetranslateUI2 <QDialog> (aParent, Qt::CustomizeWindowHint |
-                                      Qt::WindowTitleHint | Qt::WindowSystemMenuHint)
+                                      Qt::WindowTitleHint | Qt::WindowSystemMenuHint),
+    mVersion (aVersion),
+    mBgImage (":/about.png")
 {
-    /* Apply UI decorations */
-    Ui::VBoxAboutDlg::setupUi (this);
+    retranslateUi();
+}
 
-    setFixedSize (width(), height());
-
-    /* Fill the text background with brush */
-    QPalette palette = mTextContainer->palette();
-    palette.setBrush (QPalette::Window, QBrush (QPixmap (":/about_tile.png")));
-    mTextContainer->setPalette (palette);
-
-    /* Change the text color to white */
-    palette = mAboutLabel->palette();
-    palette.setColor (QPalette::WindowText, Qt::white);
-    mAboutLabel->setPalette (palette);
-
-    /* This is intentionally untranslatable (only Latin-1 here!) */
-    const char *Copyright = "&copy; 2004&mdash;2008 Sun Microsystems, Inc.";
-    QString tpl = mAboutLabel->text();
-    mAboutLabel->setText (tpl.arg (aVersion).arg (Copyright));
+bool VBoxAboutDlg::event (QEvent *aEvent)
+{
+    if (aEvent->type() == QEvent::Polish)
+        setFixedSize (mBgImage.size());
+    return QDialog::event (aEvent);
 }
 
 void VBoxAboutDlg::retranslateUi()
 {
-    /* Translate uic generated strings */
-    Ui::VBoxAboutDlg::retranslateUi (this);
+    setWindowTitle (tr ("VirtualBox - About"));
+    QString aboutText =  tr ("VirtualBox Graphical User Interface");
+    QString versionText = tr ("Version %1");
+#if VBOX_OSE
+    mAboutText = aboutText + " " + versionText.arg (mVersion) + "\n" +
+                 QString ("%1 2004-2008 Sun Microsystems, Inc.").arg (QChar (0xa9));
+#else /* VBOX_OSE */
+    mAboutText = aboutText + "\n" +
+                 versionText.arg (mVersion);
+#endif /* VBOX_OSE */
 }
 
-void VBoxAboutDlg::mouseReleaseEvent (QMouseEvent*)
+void VBoxAboutDlg::paintEvent (QPaintEvent * /* aEvent */)
 {
-    /* Close the dialog on mouse button release */
+    QPainter painter (this);
+    painter.drawPixmap (0, 0, mBgImage);
+    painter.setFont (font());
+#if VBOX_OSE
+    painter.setPen (Qt::white);
+    painter.drawText (QRect (0, 400, 600, 32),
+                      Qt::AlignCenter | Qt::AlignVCenter | Qt::TextWordWrap,
+                      mAboutText);
+#else /* VBOX_OSE */
+    painter.setPen (QColor (153, 154, 158));
+    painter.drawText (QRect (313, 370, 300, 72),
+                      Qt::AlignLeft | Qt::AlignBottom | Qt::TextWordWrap,
+                      mAboutText);
+#endif /* VBOX_OSE */
+}
+
+void VBoxAboutDlg::mouseReleaseEvent (QMouseEvent * /* aEvent */)
+{
+    /* close the dialog on mouse button release */
     accept();
 }
 

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 12175 2008-09-06 05:08:56Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the Linux installer.
 #
@@ -38,12 +38,20 @@ SDK_ZIP        = $(PATH_BIN)/VirtualBoxSDK-$(VBOX_VERSION_STRING)-r$(VBOX_SVN_RE
 PACKING        = $(SDK_ZIP)
 endif
 
-OTHER_CLEAN    = $(addprefix $(PATH_TARGET)/install/,\
-	         install.sh deffiles routines.sh \
-	         VBoxAddIF.sh vboxdrv.sh vboxnet.sh \
-	         VirtualBox.tar.bz2 LICENSE) \
-	         $(wildcard $(PATH_TARGET)/VirtualBox-*) \
-		 $(PATH_TARGET)/vboxdrv.sh $(PATH_TARGET)/vboxnet.sh
+OTHER_CLEAN   += \
+	$(addprefix $(PATH_TARGET)/install/,\
+		install.sh \
+		deffiles \
+		routines.sh \
+		VBoxAddIF.sh \
+		vboxdrv.sh \
+		vboxnet.sh \
+		VirtualBox.tar.bz2 \
+		LICENSE) \
+	$(wildcard $(PATH_TARGET)/VirtualBox-*) \
+	$(addprefix $(PATH_TARGET)/,\
+		vboxdrv.sh \
+		vboxnet.sh)
 INSTALLS       = linux-bin linux-doc
 
 #
@@ -58,7 +66,7 @@ linux-bin_SOURCES = \
 linux-doc_INST = bin/
 linux-doc_MODE = a+r,u+w
 linux-doc_SOURCES = \
-	$(if $(VBOX_OSE),,$(PATH_ROOT)/doc/License.txt=>LICENSE) \
+	$(if $(VBOX_OSE),,$(VBOX_BRAND_LICENSE_TXT)=>LICENSE) \
 	$(PATH_ROOT)/src/VBox/Frontends/VirtualBox/images/$(if $(VBOX_OSE),OSE,NonOSE)/VirtualBox_32px.png=>VBox.png
 
 # Strip these binaries
@@ -98,34 +106,34 @@ endif
 # Do not strip anything of these files
 LINUXNOSTRIP = \
 	$(if $(VBOX_OSE),,LICENSE) \
-	$(if $(VBOX_WITH_QT4GUI),\
-	  $(if $(VBOX_OSE),,License-$(VBOX_LICENSE_VER).html)) \
 	components/VBoxXPCOMBase.xpt \
 	components/VirtualBox_XPCOM.xpt \
         VBoxSysInfo.sh \
 	VBox.sh \
 	VBox.png \
 	VBoxAddIF.sh \
-	$(if $(VBOX_WITH_QT4GUI),VirtualBox.desktop,) \
 	src
 
 # Qt4 GUI
 ifdef VBOX_WITH_QT4GUI
+  include $(PATH_ROOT)/src/VBox/Frontends/VirtualBox4/nls/ApprovedLanguages.kmk
   LINUXSTRIPBIN += \
-	VBoxKeyboard.so \
-	VirtualBox \
-	$(if $(VBOX_WITH_HARDENING),VirtualBox.so)
+ 	VBoxKeyboard.so \
+ 	VirtualBox \
+ 	$(if $(VBOX_WITH_HARDENING),VirtualBox.so)
   LINUXNOSTRIP += \
-	$(if $(VBOX_WITH_QT4_SUN),$(notdir $(wildcard $(PATH_BIN)/libVBox*)),) \
-	$(foreach f,\
-	  $(shell $(CAT_EXT) \
-	    $(PATH_ROOT)/src/VBox/Frontends/VirtualBox4/nls/ApprovedLanguages.txt),\
-	  nls/VirtualBox_$(f).qm nls/qt_$(f).qm)
+	VirtualBox.desktop \
+	$(VBOX_LICENSE_FILES) \
+ 	$(if $(VBOX_WITH_QT4_SUN),$(notdir $(wildcard $(PATH_BIN)/libVBox*)),) \
+	$(if $(VBOX_WITH_QT4_SUN),accessible/libqtaccessiblewidgets.so,) \
+ 	$(foreach f,$(VBOX_APPROVED_GUI_LANGUAGES),nls/VirtualBox_$(f).qm nls/qt_$(f).qm)
 endif
 
 # Guest Additions
-LINUXNOSTRIP += \
-	$(if $(VBOX_OSE),,additions/VBoxGuestAdditions.iso)
+ifdef VBOX_WITH_ADDITIONS_PACKING
+ LINUXNOSTRIP += \
+ 	$(if $(VBOX_OSE),,additions/VBoxGuestAdditions.iso)
+endif
 
 # Shared Folders
 LINUXSTRIPBIN += \
@@ -141,17 +149,12 @@ LINUXSTRIPBIN += \
 LINUXSTRIPBIN += \
 	$(if $(VBOX_WITH_GUEST_PROPS),VBoxGuestPropSvc.so)
 
-ifdef VBOX_WITH_DOCS
+ifdef VBOX_WITH_DOCS_PACKING
  LINUXNOSTRIP += \
-	UserManual.pdf
+	VirtualBox.chm UserManual.pdf \
+	$(foreach f,$(VBOX_MANUAL_ADD_LANGUAGES),VirtualBox_$(f).chm UserManual_$(f).pdf)
  LINUXSTRIPBIN += \
 	$(if $(VBOX_WITH_KCHMVIEWER),kchmviewer,)
- ifneq ($(wildcard $(PATH_BIN)/VirtualBox.chm),)
-  # our 64-bit tinderboxes are not able to generate VirtualBox.chm so far
-  # but for building .deb/.rpm packages we use precompiled binaries.
-  LINUXNOSTRIP += \
-	VirtualBox.chm
- endif
 endif
 ifdef VBOX_WITH_VRDP
  LINUXSTRIPBIN += \
@@ -194,7 +197,7 @@ $(PATH_BIN)/$(PACKAGE_NAME): \
 		deffiles \
 		$(PATH_TARGET)/vboxnet.sh \
 		$(PATH_TARGET)/vboxdrv.sh \
-		$(if $(VBOX_OSE),,$(PATH_ROOT)/doc/License.txt)
+		$(if $(VBOX_OSE),,$(VBOX_BRAND_LICENSE_TXT))
 	$(call MSG_TOOL,makeself,,$@)
 	$(QUIET)$(RM) -f $(wildcard $(PATH_BIN)/VirtualBox-*.run)
 	$(QUIET)$(SED) \
@@ -206,7 +209,7 @@ $(PATH_BIN)/$(PACKAGE_NAME): \
 	$(QUIET)chmod 0744 $(PATH_TARGET)/install/install.sh
 	$(QUIET)$(INSTALL) -m 0755 routines.sh $(PATH_TARGET)/install
 	$(QUIET)$(INSTALL) -m 0755 deffiles $(PATH_TARGET)/install
-	$(QUIET)$(if $(VBOX_OSE),,$(INSTALL) -m 0644 $(PATH_ROOT)/doc/License.txt $(PATH_TARGET)/install/LICENSE)
+	$(QUIET)$(if $(VBOX_OSE),,$(INSTALL) -m 0644 $(VBOX_BRAND_LICENSE_TXT) $(PATH_TARGET)/install/LICENSE)
 	$(QUIET)$(INSTALL) -m 0755 $(PATH_TARGET)/vboxnet.sh $(PATH_TARGET)/install
 	$(QUIET)$(INSTALL) -m 0755 $(PATH_TARGET)/vboxdrv.sh $(PATH_TARGET)/install
 	$(QUIET)$(RM) -f $@
@@ -307,7 +310,7 @@ $(addprefix  $(PATH_TARGET)/archive/,$(LINUXNOSTRIP)): \
 	$(QUIET)$(MKDIR) -p $(@D)
 	$(QUIET)$(LN_SYMLINK) $< $@
 
-$(foreach d,archive archive/components archive/nls archive/additions archive-dbg/$(DBGPATH) archive-dbg/$(DBGPATH)/components install,$(PATH_TARGET)/$(d)/):
+$(foreach d,archive archive/components archive/nls $(if $(VBOX_WITH_QT4_SUN),archive/accessible,) archive/additions archive-dbg/$(DBGPATH) archive-dbg/$(DBGPATH)/components install,$(PATH_TARGET)/$(d)/):
 	$(QUIET)$(MKDIR) -p $@
 
 $(addprefix $(PATH_TARGET)/archive-dbg/$(DBGPATH)/,$(LINUXSTRIPBIN)): \

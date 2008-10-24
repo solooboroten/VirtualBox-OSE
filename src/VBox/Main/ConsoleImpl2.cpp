@@ -1,4 +1,4 @@
-/** $Id: ConsoleImpl2.cpp 12028 2008-09-03 11:45:53Z vboxsync $ */
+/** $Id: ConsoleImpl2.cpp $ */
 /** @file
  * VBox Console COM Class implementation
  *
@@ -1226,9 +1226,9 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                     const char *pszTrunk = szTrunk;
 
 # elif defined(RT_OS_SOLARIS) 
-                    /* The name is on the form format 'ifX - long name, chop it off at space. */
-                    char szTrunk[8];
-                    strncpy(szTrunk, pszHifName, sizeof(szTrunk));
+                    /* The name is on the form format 'ifX[:1] - long name, chop it off at space. */
+                    char szTrunk[256];
+                    strlcpy(szTrunk, pszHifName, sizeof(szTrunk));
                     char *pszSpace = (char *)memchr(szTrunk, ' ', sizeof(szTrunk));
                     
                     /*
@@ -1238,6 +1238,12 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                      */
                     if (pszSpace)
                         *pszSpace = '\0';
+
+                    /* Chop it off at the colon (zone naming eg: e1000g:1 we need only the e1000g) */
+                    char *pszColon = (char *)memchr(szTrunk, ':', sizeof(szTrunk));
+                    if (pszColon)
+                        *pszColon = '\0';
+
                     const char *pszTrunk = szTrunk;
 # else 
 #  error "PORTME (VBOX_WITH_NETFLT)"

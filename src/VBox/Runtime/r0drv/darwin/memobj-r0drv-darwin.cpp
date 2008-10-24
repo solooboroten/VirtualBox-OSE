@@ -1,4 +1,4 @@
-/* $Id: memobj-r0drv-darwin.cpp 9063 2008-05-23 08:50:12Z vboxsync $ */
+/* $Id: memobj-r0drv-darwin.cpp $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, Darwin.
  */

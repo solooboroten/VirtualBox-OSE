@@ -1,4 +1,4 @@
-/* $Id: time.cpp 8579 2008-05-05 13:54:26Z vboxsync $ */
+/* $Id: time.cpp $ */
 /** @file
  * IPRT - Time.
  */

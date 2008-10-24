@@ -1,4 +1,4 @@
-/* $Id: DBGPlugInCommonELF.h 8820 2008-05-14 19:49:42Z vboxsync $ */
+/* $Id: DBGPlugInCommonELF.h $ */
 /** @file
  * DBGPlugInCommonELF - Common code for dealing with ELF images, Header.
  */

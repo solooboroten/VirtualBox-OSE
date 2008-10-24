@@ -1,4 +1,4 @@
-/* $Id: mp-linux.cpp 10482 2008-07-10 19:58:41Z vboxsync $ */
+/* $Id: mp-linux.cpp $ */
 /** @file
  * IPRT - Multiprocessor, Linux.
  */

@@ -1,4 +1,4 @@
-/* $Id: TRPMGCHandlers.cpp 12339 2008-09-10 09:45:53Z vboxsync $ */
+/* $Id: TRPMGCHandlers.cpp $ */
 /** @file
  * TRPM - Guest Context Trap Handlers, CPP part
  */

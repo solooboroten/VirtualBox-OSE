@@ -1,4 +1,4 @@
-/* $Id: VBoxVMInfoUser.cpp 11982 2008-09-02 13:09:44Z vboxsync $ */
+/* $Id: VBoxVMInfoUser.cpp $ */
 /** @file
  * VBoxVMInfoUser - User information for the host.
  */
@@ -6,8 +6,17 @@
 /*
  * Copyright (C) 2006-2007 Sun Microsystems, Inc.
  *
- * Sun Microsystems, Inc. confidential
- * All rights reserved
+ * This file is part of VirtualBox Open Source Edition (OSE), as
+ * available from http://www.virtualbox.org. This file is free software;
+ * you can redistribute it and/or modify it under the terms of the GNU
+ * General Public License (GPL) as published by the Free Software
+ * Foundation, in version 2 as it comes in the "COPYING" file of the
+ * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+ * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+ *
+ * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
+ * Clara, CA 95054 USA or visit http://www.sun.com if you need
+ * additional information or have any questions.
  */
 
 #include "VBoxService.h"
@@ -333,6 +342,18 @@ int vboxVMInfoUser(VBOXINFORMATIONCONTEXT* a_pCtx)
     /* Write information to host. */
     vboxVMInfoWriteProp(a_pCtx, "GuestInfo/OS/LoggedInUsersList", (iUserCount > 0) ? szUserList : NULL);
     vboxVMInfoWritePropInt(a_pCtx, "GuestInfo/OS/LoggedInUsers", iUserCount);
+    if (a_pCtx->cUsers != iUserCount || a_pCtx->cUsers == INT32_MAX)
+    {
+        /* Update this property ONLY if there is a real change from no users to
+         * users or vice versa. The only exception is that the initialization
+         * of a_pCtx->cUsers forces an update, but only once. This ensures
+         * consistent property settings even if the VM aborted previously. */
+        if (iUserCount == 0)
+            vboxVMInfoWriteProp(a_pCtx, "GuestInfo/OS/NoLoggedInUsers", "true");
+        else if (a_pCtx->cUsers == 0 || a_pCtx->cUsers == INT32_MAX)
+            vboxVMInfoWriteProp(a_pCtx, "GuestInfo/OS/NoLoggedInUsers", "false");
+    }
+    a_pCtx->cUsers = iUserCount;
 
     return ret;
 }

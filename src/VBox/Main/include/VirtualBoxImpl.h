@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxImpl.h 12284 2008-09-09 10:26:27Z vboxsync $ */
+/* $Id: VirtualBoxImpl.h $ */
 
 /** @file
  *
@@ -82,6 +82,9 @@ public:
 
     typedef std::list <ComPtr <IVirtualBoxCallback> > CallbackList;
     typedef std::vector <ComPtr <IVirtualBoxCallback> > CallbackVector;
+
+    typedef std::vector <ComObjPtr <SessionMachine> > SessionMachineVector;
+    typedef std::vector <ComObjPtr <Machine> > MachineVector;
 
     class CallbackEvent;
     friend class CallbackEvent;
@@ -228,7 +231,6 @@ public:
 
     ComObjPtr <GuestOSType> getUnknownOSType();
 
-    typedef std::vector <ComObjPtr <SessionMachine> > SessionMachineVector;
     void getOpenedMachines (SessionMachineVector &aVector);
 
     bool isMachineIdValid (const Guid &aId)

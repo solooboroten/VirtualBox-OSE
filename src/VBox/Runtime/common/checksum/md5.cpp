@@ -1,4 +1,4 @@
-/* $Id: md5.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: md5.cpp $ */
 /** @file
  * MD5 message digest functions
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFltInternal.h 12008 2008-09-02 20:16:28Z vboxsync $ */
+/* $Id: VBoxNetFltInternal.h $ */
 /** @file
  * VBoxNetFlt - Network Filter Driver (Host), Internal Header.
  */
@@ -6,8 +6,17 @@
 /*
  * Copyright (C) 2008 Sun Microsystems, Inc.
  *
- * Sun Microsystems, Inc. confidential
- * All rights reserved
+ * This file is part of VirtualBox Open Source Edition (OSE), as
+ * available from http://www.virtualbox.org. This file is free software;
+ * you can redistribute it and/or modify it under the terms of the GNU
+ * General Public License (GPL) as published by the Free Software
+ * Foundation, in version 2 as it comes in the "COPYING" file of the
+ * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+ * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+ *
+ * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
+ * Clara, CA 95054 USA or visit http://www.sun.com if you need
+ * additional information or have any questions.
  */
 
 #ifndef ___VBoxNetFltInternal_h___
@@ -153,11 +162,17 @@ typedef struct VBOXNETFLTINS
             /** @name Solaris instance data.
              * @{ */
             /** Pointer to the bound IP stream. */
-            void *pvStream;
+            void volatile *pvIpStream;
             /** Pointer to the bound ARP stream. */
-            void *pvArpStream;
+            void volatile *pvArpStream;
+            /** Pointer to the unbound promiscuous stream. */
+            void volatile *pvPromiscStream;
+            /** Layered device handle to the interface. */
+            ldi_handle_t hIface;
             /** The MAC address of the interface. */
             RTMAC Mac;
+            /** Mutex protection used for loopback. */
+            RTSEMFASTMUTEX hFastMtx;
 # elif defined(RT_OS_WINDOWS)
             /** pointer to the filter driver device context */
             PADAPT volatile pIfAdaptor;
@@ -167,7 +182,7 @@ typedef struct VBOXNETFLTINS
         } s;
 #endif
         /** Padding. */
-        uint8_t abPadding[32];
+        uint8_t abPadding[64];
     } u;
 
     /** The interface name. */

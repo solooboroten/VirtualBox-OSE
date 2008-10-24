@@ -1,4 +1,4 @@
-/* $Id: heapsimple.cpp 11521 2008-08-20 14:46:29Z vboxsync $ */
+/* $Id: heapsimple.cpp $ */
 /** @file
  * IPRT - A Simple Heap.
  */

@@ -1,4 +1,4 @@
-; $Id: CPUMAllA.asm 10687 2008-07-16 09:22:28Z vboxsync $
+; $Id: CPUMAllA.asm $
 ;; @file
 ; CPUM - Guest Context Assembly Routines.
 ;

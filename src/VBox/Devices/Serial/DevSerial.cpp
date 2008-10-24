@@ -1,4 +1,4 @@
-/* $Id: DevSerial.cpp 11284 2008-08-08 22:32:08Z vboxsync $ */
+/* $Id: DevSerial.cpp $ */
 /** @file
  * DevSerial - 16450 UART emulation.
  */

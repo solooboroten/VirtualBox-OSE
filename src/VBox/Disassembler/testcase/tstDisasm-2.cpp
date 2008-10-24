@@ -1,4 +1,4 @@
-/* $Id: tstDisasm-2.cpp 12138 2008-09-05 15:35:34Z vboxsync $ */
+/* $Id: tstDisasm-2.cpp $ */
 /** @file
  * Testcase - Generic Disassembler Tool.
  */

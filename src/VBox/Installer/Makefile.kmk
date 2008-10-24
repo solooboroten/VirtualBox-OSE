@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 12317 2008-09-09 18:14:12Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Install misc stuff and create dist packages.
 #

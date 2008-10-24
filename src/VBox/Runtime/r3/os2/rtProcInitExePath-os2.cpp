@@ -1,4 +1,4 @@
-/* $Id: rtProcInitExePath-os2.cpp 11838 2008-08-29 17:14:02Z vboxsync $ */
+/* $Id: rtProcInitExePath-os2.cpp $ */
 /** @file
  * IPRT - rtProcInitName, OS/2.
  */

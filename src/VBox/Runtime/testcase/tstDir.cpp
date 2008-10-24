@@ -1,4 +1,4 @@
-/* $Id: tstDir.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
+/* $Id: tstDir.cpp $ */
 /** @file
  * IPRT Testcase - Directory listing.
  */

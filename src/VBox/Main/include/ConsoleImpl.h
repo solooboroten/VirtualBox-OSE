@@ -125,6 +125,7 @@ public:
     // IConsole methods
     STDMETHOD(PowerUp) (IProgress **aProgress);
     STDMETHOD(PowerDown)();
+    STDMETHOD(PowerDownAsync) (IProgress **aProgress);
     STDMETHOD(Reset)();
     STDMETHOD(Pause)();
     STDMETHOD(Resume)();
@@ -397,7 +398,7 @@ private:
 
     HRESULT consoleInitReleaseLog (const ComPtr <IMachine> aMachine);
 
-    HRESULT powerDown();
+    HRESULT powerDown (Progress *aProgress = NULL);
 
     HRESULT callTapSetupApplication(bool isStatic, RTFILE tapFD, Bstr &tapDevice,
                                     Bstr &tapSetupApplication);
@@ -514,6 +515,8 @@ private:
     RTSEMEVENT mVMZeroCallersSem;
     /** true when Console has entered the mpVM destruction phase */
     bool mVMDestroying : 1;
+    /** true when power down is initiated by vmstateChangeCallback (EMT) */
+    bool mVMPoweredOff : 1;
 
     /** The current DVD drive state in the VM.
      * This does not have to match the state maintained in the DVD. */

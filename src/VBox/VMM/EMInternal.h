@@ -1,4 +1,4 @@
-/* $Id: EMInternal.h 12305 2008-09-09 15:50:15Z vboxsync $ */
+/* $Id: EMInternal.h $ */
 /** @file
  * EM - Internal header file.
  */

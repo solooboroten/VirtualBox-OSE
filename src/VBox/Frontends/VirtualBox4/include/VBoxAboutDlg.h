@@ -1,6 +1,6 @@
 /** @file
  *
- * VBox frontends: Qt4 GUI ("VirtualBox"):
+ * VBox frontends: Qt GUI ("VirtualBox"):
  * VBoxAboutDlg class declaration
  */
 
@@ -23,26 +23,32 @@
 #ifndef __VBoxAboutDlg_h__
 #define __VBoxAboutDlg_h__
 
-#include "VBoxAboutDlg.gen.h"
 #include "QIWithRetranslateUI.h"
 
-class VBoxAboutDlg : public QIWithRetranslateUI2<QDialog>,
-                     public Ui::VBoxAboutDlg
+/* Qt includes */
+#include <QDialog>
+#include <QPixmap>
+
+class QEvent;
+
+class VBoxAboutDlg: public QIWithRetranslateUI2<QDialog>
 {
     Q_OBJECT;
 
 public:
-
-    VBoxAboutDlg (QWidget *aParent, const QString &aVersion);
+    VBoxAboutDlg (QWidget* aParent, const QString &aVersion);
 
 protected:
+    bool event (QEvent *aEvent);
+    void paintEvent (QPaintEvent *aEvent);
+    void mouseReleaseEvent (QMouseEvent *aEvent);
 
     void retranslateUi();
 
 private:
-
-    void mouseReleaseEvent (QMouseEvent *aEvent);
+    QString mAboutText;
+    QString mVersion;
+    QPixmap mBgImage;
 };
 
-#endif // __VBoxAboutDlg_h__
-
+#endif /* __VBoxAboutDlg_h__ */

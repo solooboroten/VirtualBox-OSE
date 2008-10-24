@@ -1,4 +1,4 @@
-/* $Id: VMMInternal.h 11474 2008-08-19 08:11:20Z vboxsync $ */
+/* $Id: VMMInternal.h $ */
 /** @file
  * VMM - Internal header file.
  */
@@ -250,6 +250,13 @@ typedef struct VMM
     /** The Ring-0 jmp buffer. */
     VMMR0JMPBUF                 CallHostR0JmpBuf;
     /** @} */
+
+    /** Buffer for storing the standard assertion message for a ring-0 assertion.
+     * Used for saving the assertion message text for the release log and guru
+     * meditation dump. */
+    char                        szRing0AssertMsg1[256];
+    /** Buffer for storing the custom message for a ring-0 assertion. */
+    char                        szRing0AssertMsg2[256];
 
     /** Number of VMMR0_DO_RUN_GC calls. */
     STAMCOUNTER                 StatRunGC;

@@ -1,4 +1,4 @@
-/* $Id: fs.cpp 9786 2008-06-18 11:14:50Z vboxsync $ */
+/* $Id: fs.cpp $ */
 /** @file
  * IPRT - File System.
  */

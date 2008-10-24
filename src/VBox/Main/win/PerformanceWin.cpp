@@ -1,4 +1,4 @@
-/* $Id: PerformanceWin.cpp 12418 2008-09-12 11:47:28Z vboxsync $ */
+/* $Id: PerformanceWin.cpp $ */
 
 /** @file
  *
@@ -21,17 +21,33 @@
  * additional information or have any questions.
  */
 
-#include <Wbemidl.h>
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0500
+#else /* !_WIN32_WINNT */
+#if (_WIN32_WINNT < 0x0500)
+#error Win XP or later required!
+#endif /* _WIN32_WINNT < 0x0500 */
+#endif /* !_WIN32_WINNT */
+
+#include <windows.h>
+#include <winternl.h>
+#include <psapi.h>
 extern "C" {
 #include <powrprof.h>
 }
+
 #include <iprt/err.h>
 #include <iprt/mp.h>
+#include <iprt/mem.h>
 
 #include <map>
 
 #include "Logging.h"
 #include "Performance.h"
+
+#ifndef NT_ERROR
+#define NT_ERROR(Status) ((ULONG)(Status) >> 30 == 3)
+#endif
 
 namespace pm {
 
@@ -39,8 +55,7 @@ class CollectorWin : public CollectorHAL
 {
 public:
     CollectorWin();
-    ~CollectorWin();
-
+    virtual ~CollectorWin();
     virtual int preCollect(const CollectorHints& hints);
     virtual int getHostCpuLoad(ULONG *user, ULONG *kernel, ULONG *idle);
     virtual int getHostCpuMHz(ULONG *mhz);
@@ -51,27 +66,6 @@ public:
     virtual int getRawHostCpuLoad(uint64_t *user, uint64_t *kernel, uint64_t *idle);
     virtual int getRawProcessCpuLoad(RTPROCESS process, uint64_t *user, uint64_t *kernel, uint64_t *total);
 private:
-    long        getPropertyHandle(IWbemObjectAccess *objAccess, LPCWSTR name);
-    int         getObjects(IWbemHiPerfEnum *mEnum, IWbemObjectAccess ***objArray, DWORD *numReturned);
-
-    IWbemRefresher     *mRefresher;
-    IWbemServices      *mNameSpace;
-
-    IWbemHiPerfEnum    *mEnumProcessor;
-    long               mEnumProcessorID;
-    long               mHostCpuLoadNameHandle;
-    long               mHostCpuLoadUserHandle;
-    long               mHostCpuLoadKernelHandle;
-    long               mHostCpuLoadIdleHandle;
-
-    IWbemHiPerfEnum    *mEnumProcess;
-    long               mEnumProcessID;
-    long               mProcessPIDHandle;
-    long               mProcessCpuLoadUserHandle;
-    long               mProcessCpuLoadKernelHandle;
-    long               mProcessCpuLoadTimestampHandle;
-    long               mProcessMemoryUsedHandle;
-
     struct VMProcessStats
     {
         uint64_t cpuUser;
@@ -83,6 +77,20 @@ private:
     typedef std::map<RTPROCESS, VMProcessStats> VMProcessMap;
 
     VMProcessMap       mProcessStats;
+
+    typedef BOOL (WINAPI *PFNGST)(
+        LPFILETIME lpIdleTime,
+        LPFILETIME lpKernelTime,
+        LPFILETIME lpUserTime);
+    typedef NTSTATUS (WINAPI *PFNNQSI)(
+        SYSTEM_INFORMATION_CLASS SystemInformationClass,
+        PVOID SystemInformation,
+        ULONG SystemInformationLength,
+        PULONG ReturnLength);
+
+    PFNGST  mpfnGetSystemTimes;
+    PFNNQSI mpfnNtQuerySystemInformation;
+    HMODULE mhNtDll;
 };
 
 CollectorHAL *createHAL()
@@ -90,268 +98,101 @@ CollectorHAL *createHAL()
     return new CollectorWin();
 }
 
-CollectorWin::CollectorWin() : mRefresher(0), mNameSpace(0), mEnumProcessor(0), mEnumProcess(0)
+CollectorWin::CollectorWin() : mhNtDll(0)
 {
-    HRESULT                 hr = S_OK;
-    IWbemConfigureRefresher *pConfig = NULL;
-    IWbemLocator            *pWbemLocator = NULL;
-    BSTR                    bstrNameSpace = NULL;
-
-    if (SUCCEEDED (hr = CoCreateInstance(
-        CLSID_WbemLocator,
-        NULL,
-        CLSCTX_INPROC_SERVER,
-        IID_IWbemLocator,
-        (void**) &pWbemLocator)))
+    mpfnGetSystemTimes = (PFNGST)GetProcAddress(
+        GetModuleHandle(TEXT("kernel32.dll")),
+        "GetSystemTimes");
+    if (!mpfnGetSystemTimes)
     {
-        // Connect to the desired namespace.
-        bstrNameSpace = SysAllocString(L"\\\\.\\root\\cimv2");
-        if (bstrNameSpace)
+        /* Fall back to deprecated NtQuerySystemInformation */
+        if (!(mhNtDll = LoadLibrary(TEXT("ntdll.dll"))))
         {
-            hr = pWbemLocator->ConnectServer(
-                bstrNameSpace,
-                NULL, // User name
-                NULL, // Password
-                NULL, // Locale
-                0L,   // Security flags
-                NULL, // Authority
-                NULL, // Wbem context
-                &mNameSpace);
+            LogRel(("Failed to load NTDLL.DLL with error 0x%x. GetSystemTimes() is"
+                    " not available either. CPU and VM metrics will not be collected.\n",
+                    GetLastError()));
+            mpfnNtQuerySystemInformation = 0;
         }
-        pWbemLocator->Release();
-        SysFreeString(bstrNameSpace);
-    }
-
-    if (FAILED (hr)) {
-        Log (("Failed to get namespace. HR = %x\n", hr));
-        return;
-    }
-
-    if (SUCCEEDED (hr = CoCreateInstance(
-        CLSID_WbemRefresher,
-        NULL,
-        CLSCTX_INPROC_SERVER,
-        IID_IWbemRefresher,
-        (void**) &mRefresher)))
-    {
-        if (SUCCEEDED (hr = mRefresher->QueryInterface(
-            IID_IWbemConfigureRefresher,
-            (void **)&pConfig)))
+        else if (!(mpfnNtQuerySystemInformation = (PFNNQSI)GetProcAddress(mhNtDll,
+            "NtQuerySystemInformation")))
         {
-            // Add an enumerator to the refresher.
-            if (SUCCEEDED (hr = pConfig->AddEnum(
-                mNameSpace,
-                L"Win32_PerfRawData_PerfOS_Processor",
-                0,
-                NULL,
-                &mEnumProcessor,
-                &mEnumProcessorID)))
-            {
-                hr = pConfig->AddEnum(
-                    mNameSpace,
-                    L"Win32_PerfRawData_PerfProc_Process",
-                    0,
-                    NULL,
-                    &mEnumProcess,
-                    &mEnumProcessID);
-            }
-            pConfig->Release();
+            LogRel(("Neither GetSystemTimes() nor NtQuerySystemInformation() is"
+                    " not available. CPU and VM metrics will not be collected.\n"));
+            mpfnNtQuerySystemInformation = 0;
         }
     }
-
-
-    if (FAILED (hr)) {
-        Log (("Failed to add enumerators. HR = %x\n", hr));
-        return;
-    }
-
-    // Retrieve property handles
-
-    if (FAILED (hr = mRefresher->Refresh(0L)))
-    {
-        Log (("Refresher failed. HR = %x\n", hr));
-        return;
-    }
-
-    IWbemObjectAccess       **apEnumAccess = NULL;
-    DWORD                   dwNumReturned = 0;
-
-    if (RT_FAILURE(getObjects(mEnumProcessor, &apEnumAccess, &dwNumReturned)))
-        return;
-
-    mHostCpuLoadNameHandle   = getPropertyHandle(apEnumAccess[0], L"Name");
-    mHostCpuLoadUserHandle   = getPropertyHandle(apEnumAccess[0], L"PercentUserTime");
-    mHostCpuLoadKernelHandle = getPropertyHandle(apEnumAccess[0], L"PercentPrivilegedTime");
-    mHostCpuLoadIdleHandle   = getPropertyHandle(apEnumAccess[0], L"PercentProcessorTime");
-
-    delete [] apEnumAccess;
-
-    if (RT_FAILURE(getObjects(mEnumProcess, &apEnumAccess, &dwNumReturned)))
-        return;
-
-    mProcessPIDHandle              = getPropertyHandle(apEnumAccess[0], L"IDProcess");
-    mProcessCpuLoadUserHandle      = getPropertyHandle(apEnumAccess[0], L"PercentUserTime");
-    mProcessCpuLoadKernelHandle    = getPropertyHandle(apEnumAccess[0], L"PercentPrivilegedTime");
-    mProcessCpuLoadTimestampHandle = getPropertyHandle(apEnumAccess[0], L"Timestamp_Sys100NS");
-    mProcessMemoryUsedHandle       = getPropertyHandle(apEnumAccess[0], L"WorkingSet");
-
-    delete [] apEnumAccess;
 }
 
 CollectorWin::~CollectorWin()
 {
-    if (NULL != mNameSpace)
-    {
-        mNameSpace->Release();
-    }
-    if (NULL != mEnumProcessor)
-    {
-        mEnumProcessor->Release();
-    }
-    if (NULL != mEnumProcess)
-    {
-        mEnumProcess->Release();
-    }
-    if (NULL != mRefresher)
-    {
-        mRefresher->Release();
-    }
+    if (mhNtDll)
+        FreeLibrary(mhNtDll);
 }
 
-long CollectorWin::getPropertyHandle(IWbemObjectAccess *objAccess, LPCWSTR name)
-{
-    HRESULT hr;
-    CIMTYPE tmp;
-    long    handle;
-
-    if (FAILED (hr = objAccess->GetPropertyHandle(
-        name,
-        &tmp,
-        &handle)))
-    {
-        Log (("Failed to get property handle for '%ls'. HR = %x\n", name, hr));
-        return 0;   /// @todo use throw
-    }
-
-    return handle;
-}
-
-int CollectorWin::getObjects(IWbemHiPerfEnum *mEnum, IWbemObjectAccess ***objArray, DWORD *numReturned)
-{
-    /*
-     * Get the number of objects.
-     * Note that the caller ASSUMES that at least one object is returned, so fail if there are none.
-     */
-    *objArray    = NULL;
-    *numReturned = 0;
-    HRESULT hr = mEnum->GetObjects(0L, 0, *objArray, numReturned);
-    if (hr != WBEM_E_BUFFER_TOO_SMALL)
-    {
-        Log (("Failed to get the object count from the enumerator. HR = %x *numReturned=%d\n", hr, *numReturned));
-        return VERR_INTERNAL_ERROR;
-    }
-
-    /*
-     * Allocate an array with the right lenght and get the actual objects.
-     */
-    DWORD cObjects = *numReturned;
-    *objArray = new IWbemObjectAccess*[cObjects];
-    if (!*objArray)
-    {
-        Log (("Could not allocate enumerator access objects\n"));
-        return VERR_NO_MEMORY;
-    }
-    SecureZeroMemory(*objArray, cObjects * sizeof(IWbemObjectAccess*));
-    hr = mEnum->GetObjects(0L, cObjects, *objArray, numReturned);
-    if (FAILED(hr) || *numReturned == 0)
-    {
-        delete [] *objArray;
-        *objArray = NULL;
-        Log (("Failed to get the objects from the enumerator. HR = %x *numReturned=%d cObjects=%d\n", hr, *numReturned, cObjects));
-        return VERR_INTERNAL_ERROR;
-    }
-
-    return VINF_SUCCESS;
-}
+#define FILETTIME_TO_100NS(ft) (((uint64_t)ft.dwHighDateTime << 32) + ft.dwLowDateTime)
 
 int CollectorWin::preCollect(const CollectorHints& hints)
 {
-
-    std::vector<RTPROCESS> processes;
-    hints.getProcesses(processes);
-
-    HRESULT hr;
-    IWbemObjectAccess       **apEnumAccess = NULL;
-    DWORD                   dwNumReturned = 0;
-
     LogFlowThisFuncEnter();
 
-    if (FAILED (hr = mRefresher->Refresh(0L)))
-    {
-        Log (("Refresher failed. HR = %x\n", hr));
-        return VERR_INTERNAL_ERROR;
-    }
-
-    int rc = getObjects(mEnumProcess, &apEnumAccess, &dwNumReturned);
+    uint64_t user, kernel, idle, total;
+    int rc = getRawHostCpuLoad(&user, &kernel, &idle);
     if (RT_FAILURE(rc))
         return rc;
+    total = user + kernel + idle;
 
-    rc = VERR_NOT_FOUND;
+    DWORD dwError;
+    const CollectorHints::ProcessList& processes = hints.getProcessFlags();
+    CollectorHints::ProcessList::const_iterator it;
 
-    for (unsigned i = 0; i < dwNumReturned; i++)
+    mProcessStats.clear();
+
+    for (it = processes.begin(); it != processes.end() && RT_SUCCESS(rc); it++)
     {
-        DWORD dwIDProcess;
+        RTPROCESS process = it->first;
+        HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+                               FALSE, process);
 
-        if (FAILED (hr = apEnumAccess[i]->ReadDWORD(
-            mProcessPIDHandle,
-            &dwIDProcess)))
+        if (!h)
         {
-            Log (("Failed to read 'IDProcess' property. HR = %x\n", hr));
-            return VERR_INTERNAL_ERROR;
+            dwError = GetLastError();
+            Log (("OpenProcess() -> 0x%x\n", dwError));
+            rc = RTErrConvertFromWin32(dwError);
+            break;
         }
-        LogFlowThisFunc (("Matching process %x against the list of machines...\n", dwIDProcess));
-        if (std::find(processes.begin(), processes.end(), dwIDProcess) != processes.end())
+
+        VMProcessStats vmStats;
+        if ((it->second & COLLECT_CPU_LOAD) != 0)
         {
-            VMProcessStats vmStats;
-
-            LogFlowThisFunc (("Match found.\n"));
-            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
-                mProcessCpuLoadUserHandle,
-                &vmStats.cpuUser)))
+            FILETIME ftCreate, ftExit, ftKernel, ftUser;
+            if (!GetProcessTimes(h, &ftCreate, &ftExit, &ftKernel, &ftUser))
             {
-                Log (("Failed to read 'PercentUserTime' property. HR = %x\n", hr));
-                    return VERR_INTERNAL_ERROR;
+                dwError = GetLastError();
+                Log (("GetProcessTimes() -> 0x%x\n", dwError));
+                rc = RTErrConvertFromWin32(dwError);
             }
-            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
-                mProcessCpuLoadKernelHandle,
-                &vmStats.cpuKernel)))
+            else
             {
-                Log (("Failed to read 'PercentPrivilegedTime' property. HR = %x\n", hr));
-                    return VERR_INTERNAL_ERROR;
+                vmStats.cpuKernel = FILETTIME_TO_100NS(ftKernel);
+                vmStats.cpuUser   = FILETTIME_TO_100NS(ftUser);
+                vmStats.cpuTotal  = total;
             }
-            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
-                mProcessCpuLoadTimestampHandle,
-                &vmStats.cpuTotal)))
-            {
-                Log (("Failed to read 'Timestamp_Sys100NS' property. HR = %x\n", hr));
-                    return VERR_INTERNAL_ERROR;
-            }
-            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
-                mProcessMemoryUsedHandle,
-                &vmStats.ramUsed)))
-            {
-                Log (("Failed to read 'WorkingSet' property. HR = %x\n", hr));
-                    return VERR_INTERNAL_ERROR;
-            }
-
-            mProcessStats[dwIDProcess] = vmStats;
-            LogFlowThisFunc(("process=%x user=%lu kernel=%lu total=%lu\n", dwIDProcess, vmStats.cpuUser, vmStats.cpuKernel, vmStats.cpuTotal));
-            rc = VINF_SUCCESS;
         }
-        apEnumAccess[i]->Release();
-        apEnumAccess[i] = NULL;
+        if (RT_SUCCESS(rc) && (it->second & COLLECT_RAM_USAGE) != 0)
+        {
+            PROCESS_MEMORY_COUNTERS pmc;
+            if (!GetProcessMemoryInfo(h, &pmc, sizeof(pmc)))
+            {
+                dwError = GetLastError();
+                Log (("GetProcessMemoryInfo() -> 0x%x\n", dwError));
+                rc = RTErrConvertFromWin32(dwError);
+            }
+            else
+                vmStats.ramUsed = pmc.WorkingSetSize;
+        }
+        CloseHandle(h);
+        mProcessStats[process] = vmStats;
     }
-    delete [] apEnumAccess;
 
     LogFlowThisFuncLeave();
 
@@ -363,66 +204,63 @@ int CollectorWin::getHostCpuLoad(ULONG *user, ULONG *kernel, ULONG *idle)
     return VERR_NOT_IMPLEMENTED;
 }
 
+typedef struct _SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION
+{
+    LARGE_INTEGER IdleTime;
+    LARGE_INTEGER KernelTime;
+    LARGE_INTEGER UserTime;
+    LARGE_INTEGER Reserved1[2];
+    ULONG Reserved2;
+} SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION;
+
 int CollectorWin::getRawHostCpuLoad(uint64_t *user, uint64_t *kernel, uint64_t *idle)
 {
-    HRESULT hr;
-    IWbemObjectAccess       **apEnumAccess = NULL;
-    DWORD                   dwNumReturned = 0;
-
     LogFlowThisFuncEnter();
 
-    int rc = getObjects(mEnumProcessor, &apEnumAccess, &dwNumReturned);
-    if (RT_FAILURE(rc))
-        return rc;
+    FILETIME ftIdle, ftKernel, ftUser;
 
-    for (unsigned i = 0; i < dwNumReturned; i++)
+    if (mpfnGetSystemTimes)
     {
-        long  bytesRead = 0;
-        WCHAR tmpBuf[200];
-
-        if (FAILED (hr = apEnumAccess[i]->ReadPropertyValue(
-            mHostCpuLoadNameHandle,
-            sizeof(tmpBuf),
-            &bytesRead,
-            (byte*)tmpBuf)))
+        if (!mpfnGetSystemTimes(&ftIdle, &ftKernel, &ftUser))
         {
-            Log (("Failed to read 'Name' property. HR = %x\n", hr));
-            return VERR_INTERNAL_ERROR;
+            DWORD dwError = GetLastError();
+            Log (("GetSystemTimes() -> 0x%x\n", dwError));
+            return RTErrConvertFromWin32(dwError);
         }
-        if (wcscmp(tmpBuf, L"_Total") == 0)
-        {
-            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
-                mHostCpuLoadUserHandle,
-                user)))
-            {
-            Log (("Failed to read 'PercentUserTime' property. HR = %x\n", hr));
-                return VERR_INTERNAL_ERROR;
-            }
-            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
-                mHostCpuLoadKernelHandle,
-                kernel)))
-            {
-            Log (("Failed to read 'PercentPrivilegedTime' property. HR = %x\n", hr));
-                return VERR_INTERNAL_ERROR;
-            }
-            if (FAILED (hr = apEnumAccess[i]->ReadQWORD(
-                mHostCpuLoadIdleHandle,
-                idle)))
-            {
-            Log (("Failed to read 'PercentProcessorTime' property. HR = %x\n", hr));
-                return VERR_INTERNAL_ERROR;
-            }
-            rc = VINF_SUCCESS;
-        }
-        apEnumAccess[i]->Release();
-        apEnumAccess[i] = NULL;
+    
+        *user   = FILETTIME_TO_100NS(ftUser);
+        *idle   = FILETTIME_TO_100NS(ftIdle);
+        *kernel = FILETTIME_TO_100NS(ftKernel) - *idle;
     }
-    delete [] apEnumAccess;
+    else
+    {
+        /* GetSystemTimes is not available, fall back to NtQuerySystemInformation */
+        if (!mpfnNtQuerySystemInformation)
+            return VERR_NOT_IMPLEMENTED;
+
+        SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION sppi[MAXIMUM_PROCESSORS];
+        ULONG ulReturned;
+        NTSTATUS status = mpfnNtQuerySystemInformation(
+            SystemProcessorPerformanceInformation, &sppi, sizeof(sppi), &ulReturned);
+        if (NT_ERROR(status))
+        {
+            Log(("NtQuerySystemInformation() -> 0x%x\n", status));
+            return RTErrConvertFromNtStatus(status);
+        }
+        /* Sum up values accross all processors */
+        *user = *kernel = *idle = 0;
+        for (unsigned i = 0; i < ulReturned / sizeof(sppi[0]); ++i)
+        {
+            *idle   += sppi[i].IdleTime.QuadPart;
+            *kernel += sppi[i].KernelTime.QuadPart - sppi[i].IdleTime.QuadPart;
+            *user   += sppi[i].UserTime.QuadPart;
+        }
+    }
 
     LogFlowThisFunc(("user=%lu kernel=%lu idle=%lu\n", *user, *kernel, *idle));
     LogFlowThisFuncLeave();
 
-    return rc;
+    return VINF_SUCCESS;
 }
 
 typedef struct _PROCESSOR_POWER_INFORMATION {
@@ -438,12 +276,17 @@ int CollectorWin::getHostCpuMHz(ULONG *mhz)
 {
     uint64_t uTotalMhz   = 0;
     RTCPUID  nProcessors = RTMpGetCount();
-    PPROCESSOR_POWER_INFORMATION ppi = new PROCESSOR_POWER_INFORMATION[nProcessors];
+    PPROCESSOR_POWER_INFORMATION ppi = (PPROCESSOR_POWER_INFORMATION)RTMemAllocZ(nProcessors * sizeof(PROCESSOR_POWER_INFORMATION));
+
+    if (!ppi)
+        return VERR_NO_MEMORY;
+
     LONG ns = CallNtPowerInformation(ProcessorInformation, NULL, 0, ppi,
         nProcessors * sizeof(PROCESSOR_POWER_INFORMATION));
     if (ns)
     {
         Log(("CallNtPowerInformation() -> %x\n", ns));
+        RTMemFree(ppi);
         return VERR_INTERNAL_ERROR;
     }
 
@@ -452,6 +295,7 @@ int CollectorWin::getHostCpuMHz(ULONG *mhz)
         uTotalMhz += ppi[i].CurrentMhz;
     *mhz = (ULONG)(uTotalMhz / nProcessors);
 
+    RTMemFree(ppi);
     LogFlowThisFunc(("mhz=%u\n", *mhz));
     LogFlowThisFuncLeave();
 

@@ -1,4 +1,4 @@
-/* $Id: VMMAll.cpp 10450 2008-07-09 21:55:45Z vboxsync $ */
+/* $Id: VMMAll.cpp $ */
 /** @file
  * VMM All Contexts.
  */

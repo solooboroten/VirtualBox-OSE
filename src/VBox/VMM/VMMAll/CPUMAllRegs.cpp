@@ -1,4 +1,4 @@
-/* $Id: CPUMAllRegs.cpp 11704 2008-08-27 14:52:09Z vboxsync $ */
+/* $Id: CPUMAllRegs.cpp $ */
 /** @file
  * CPUM - CPU Monitor(/Manager) - Gets and Sets.
  */

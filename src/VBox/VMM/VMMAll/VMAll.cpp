@@ -1,4 +1,4 @@
-/* $Id: VMAll.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: VMAll.cpp $ */
 /** @file
  * VM - Virtual Machine All Contexts.
  */

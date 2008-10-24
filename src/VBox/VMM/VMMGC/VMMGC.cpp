@@ -1,4 +1,4 @@
-/* $Id: VMMGC.cpp 10804 2008-07-22 09:42:40Z vboxsync $ */
+/* $Id: VMMGC.cpp $ */
 /** @file
  * VMM - Guest Context.
  */

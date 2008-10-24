@@ -1,4 +1,4 @@
-/* $Id: assert-r0drv-solaris.c 8245 2008-04-21 17:24:28Z vboxsync $ */
+/* $Id: assert-r0drv-solaris.c $ */
 /** @file
  * IPRT - Assertion Workers, Ring-0 Drivers, Solaris.
  */

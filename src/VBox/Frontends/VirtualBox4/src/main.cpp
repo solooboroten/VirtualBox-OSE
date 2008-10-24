@@ -39,6 +39,13 @@
 
 #include <iprt/runtime.h>
 #include <iprt/stream.h>
+#ifdef VBOX_WITH_HARDENING
+# include <VBox/sup.h>
+#endif
+
+#ifdef RT_OS_LINUX
+# include <unistd.h>
+#endif
 
 #if defined(DEBUG) && defined(Q_WS_X11) && defined(RT_OS_LINUX)
 
@@ -232,7 +239,9 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
         /* Cause Qt4 has the conflict with fontconfig application as a result
          * substituting some fonts with non anti-aliased bitmap font we are
          * reseting all the substitutes here for the current application font. */
+# ifndef Q_OS_SOLARIS
         QFont::removeSubstitution (QApplication::font().family());
+# endif /* Q_OS_SOLARIS */
 #endif
 
 #ifdef Q_WS_WIN
@@ -346,8 +355,8 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
     return rc;
 }
 
-
 #ifndef VBOX_WITH_HARDENING
+
 int main (int argc, char **argv, char **envp)
 {
     /* Initialize VBox Runtime. Initialize the SUPLib as well only if we
@@ -370,5 +379,74 @@ int main (int argc, char **argv, char **envp)
 
     return TrustedMain (argc, argv, envp);
 }
-#endif /* !VBOX_WITH_HARDENING */
+
+#else  /* VBOX_WITH_HARDENING */
+
+/**
+ * Hardened main failed, report the error without any unnecessary fuzz.
+ *
+ * @remarks Do not call IPRT here unless really required, it might not be
+ *          initialized.
+ */
+extern "C" DECLEXPORT(void) TrustedError (const char *pszWhere, SUPINITOP enmWhat, int rc, const char *pszMsgFmt, va_list va)
+{
+    /*
+     * Init the Qt application object. This is a bit hackish as we
+     * don't have the argument vector handy.
+     */
+    int argc = 0;
+    char *argv[2] = { NULL, NULL };
+    QApplication a (argc, &argv[0]);
+
+    /*
+     * Compose and show the error message.
+     */
+    QString msgTitle = QApplication::tr ("VirtualBox - Error In %1").arg (pszWhere);
+
+    char msgBuf[1024];
+    vsprintf (msgBuf, pszMsgFmt, va);
+
+    QString msgText = QApplication::tr (
+            "<html><b>%1 (rc=%2)</b><br/><br/>").arg (msgBuf).arg (rc);
+    switch (enmWhat)
+    {
+        case kSupInitOp_Driver:
+            msgText += QApplication::tr (
+#ifdef RT_OS_LINUX
+            "The VirtualBox Linux kernel driver (vboxdrv) is either not loaded or "
+            "there is a permission problem with /dev/vboxdrv. Re-setup the kernel "
+            "module by executing<br/><br/>"
+            "  <font color=blue>'/etc/init.d/vboxdrv setup'</font><br/><br/>"
+            "as root. Users of Ubuntu or Fedora should install the DKMS package "
+            "at first. This package keeps track of Linux kernel changes and "
+            "recompiles the vboxdrv kernel module if necessary."
+#else
+            "Make sure the kernel module has been loaded successfully."
+#endif
+            );
+            break;
+        case kSupInitOp_IPRT:
+        case kSupInitOp_Integrity:
+        case kSupInitOp_RootCheck:
+            msgText += QApplication::tr ("It may help to reinstall VirtualBox."); /* hope this isn't (C), (TM) or (R) Microsoft support ;-) */
+            break;
+        default:
+            /* no hints here */
+            break;
+    }
+    msgText += "</html>";
+
+#ifdef RT_OS_LINUX
+    sleep(2);
+#endif
+    QMessageBox::critical (
+        0,                      /* parent */
+        msgTitle,               /* title */
+        msgText,                /* text */
+        QMessageBox::Abort,     /* button0 */
+        0);                     /* button1 */
+    qFatal (msgText.toAscii().constData());
+}
+
+#endif /* VBOX_WITH_HARDENING */
 

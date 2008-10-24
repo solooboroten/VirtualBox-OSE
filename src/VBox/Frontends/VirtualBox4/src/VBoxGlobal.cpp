@@ -60,6 +60,7 @@
 
 
 #if defined (Q_WS_MAC)
+#include "VBoxUtils.h"
 #include <Carbon/Carbon.h> // for HIToolbox/InternetConfig
 #endif
 
@@ -2061,6 +2062,23 @@ QString VBoxGlobal::platformInfo()
 }
 
 #if defined(Q_WS_X11) && !defined(VBOX_OSE)
+double VBoxGlobal::findLicenseFile (const QStringList &aFilesList, QRegExp aPattern, QString &aLicenseFile) const
+{
+    double maxVersionNumber = 0;
+    aLicenseFile = "";
+    for (int index = 0; index < aFilesList.count(); ++ index)
+    {
+        aPattern.indexIn (aFilesList [index]);
+        QString version = aPattern.cap (1);
+        if (maxVersionNumber < version.toDouble())
+        {
+            maxVersionNumber = version.toDouble();
+            aLicenseFile = aFilesList [index];
+        }
+    }
+    return maxVersionNumber;
+}
+
 bool VBoxGlobal::showVirtualBoxLicense()
 {
     /* get the apps doc path */
@@ -2073,27 +2091,29 @@ bool VBoxGlobal::showVirtualBoxLicense()
     docDir.setFilter (QDir::Files);
     docDir.setNameFilters (QStringList ("License-*.html"));
 
-    /* get the license files list and search for the latest license */
+    /* Make sure that the language is in two letter code.
+     * Note: if languageId() returns an empty string lang.name() will
+     * return "C" which is an valid language code. */
+    QLocale lang (VBoxGlobal::languageId());
+
     QStringList filesList = docDir.entryList();
-    double maxVersionNumber = 0;
-    for (int index = 0; index < filesList.count(); ++ index)
-    {
-        QRegExp regExp ("License-([\\d\\.]+).html");
-        regExp.indexIn (filesList [index]);
-        QString version = regExp.cap (1);
-        if (maxVersionNumber < version.toDouble())
-            maxVersionNumber = version.toDouble();
-    }
-    if (!maxVersionNumber)
+    QString licenseFile;
+    /* First try to find a localized version of the license file. */
+    double versionNumber = findLicenseFile (filesList, QRegExp (QString ("License-([\\d\\.]+)-%1.html").arg (lang.name())), licenseFile);
+    /* If there wasn't a localized version of the currently selected language,
+     * search for the generic one. */
+    if (versionNumber == 0)
+        versionNumber = findLicenseFile (filesList, QRegExp ("License-([\\d\\.]+).html"), licenseFile);
+    /* Check the version again. */
+    if (!versionNumber)
     {
         vboxProblem().cannotFindLicenseFiles (path);
         return false;
     }
 
     /* compose the latest license file full path */
-    QString latestVersion = QString::number (maxVersionNumber);
-    QString latestFilePath = docDir.absoluteFilePath (
-        QString ("License-%1.html").arg (latestVersion));
+    QString latestVersion = QString::number (versionNumber);
+    QString latestFilePath = docDir.absoluteFilePath (licenseFile);
 
     /* check for the agreed license version */
     QString licenseAgreed = virtualBox().GetExtraData (VBoxDefs::GUI_LicenseKey);
@@ -2211,8 +2231,18 @@ CSession VBoxGlobal::openSession (const QUuid &aId, bool aExisting /* = false */
         return session;
     }
 
-    aExisting ? mVBox.OpenExistingSession (session, aId) :
-                mVBox.OpenSession (session, aId);
+    if (aExisting)
+        mVBox.OpenExistingSession (session, aId);
+    else
+    {
+        mVBox.OpenSession (session, aId);
+        CMachine machine = session.GetMachine ();
+        /* Make sure that the language is in two letter code.
+         * Note: if languageId() returns an empty string lang.name() will
+         * return "C" which is an valid language code. */
+        QLocale lang (VBoxGlobal::languageId());
+        machine.SetGuestPropertyValue ("/VirtualBox/HostInfo/GUI/LanguageID", lang.name());
+    }
 
     if (!mVBox.isOk())
     {
@@ -2914,6 +2944,41 @@ void VBoxGlobal::loadLanguage (const QString &aLangId)
     }
 }
 
+QString VBoxGlobal::helpFile() const
+{
+#if defined (Q_WS_WIN32) || defined (Q_WS_X11)
+    const QString name = "VirtualBox";
+    const QString suffix = "chm";
+#elif defined (Q_WS_MAC)
+    const QString name = "UserManual";
+    const QString suffix = "pdf";
+#endif
+    /* Where are the docs located? */
+    char szDocsPath[RTPATH_MAX];
+    int rc = RTPathAppDocs (szDocsPath, sizeof (szDocsPath));
+    Assert (RT_SUCCESS (rc));
+    /* Make sure that the language is in two letter code.
+     * Note: if languageId() returns an empty string lang.name() will
+     * return "C" which is an valid language code. */
+    QLocale lang (VBoxGlobal::languageId());
+
+    /* Construct the path and the filename */
+    QString manual = QString ("%1/%2_%3.%4").arg (szDocsPath)
+                                            .arg (name)
+                                            .arg (lang.name())
+                                            .arg (suffix);
+    /* Check if a help file with that name exists */
+    QFileInfo fi (manual);
+    if (fi.exists())
+        return manual;
+
+    /* Fall back to the standard */
+    manual = QString ("%1/%2.%4").arg (szDocsPath)
+                                 .arg (name)
+                                 .arg (suffix);
+    return manual;
+}
+
 /* static */
 QIcon VBoxGlobal::iconSet (const char *aNormal,
                            const char *aDisabled /* = NULL */,
@@ -2933,26 +2998,26 @@ QIcon VBoxGlobal::iconSet (const char *aNormal,
 }
 
 /* static */
-QIcon VBoxGlobal::
-iconSetEx (const char *aNormal, const char *aSmallNormal,
-           const char *aDisabled /* = NULL */,
-           const char *aSmallDisabled /* = NULL */,
-           const char *aActive /* = NULL */,
-           const char *aSmallActive /* = NULL */)
+QIcon VBoxGlobal::iconSetFull (const QSize &aNormalSize, const QSize &aSmallSize,
+                               const char *aNormal, const char *aSmallNormal,
+                               const char *aDisabled /* = NULL */,
+                               const char *aSmallDisabled /* = NULL */,
+                               const char *aActive /* = NULL */,
+                               const char *aSmallActive /* = NULL */)
 {
     QIcon iconSet;
 
-    iconSet.addFile (aNormal, QSize(), QIcon::Normal);
-    iconSet.addFile (aSmallNormal, QSize(), QIcon::Normal);
+    iconSet.addFile (aNormal, aNormalSize, QIcon::Normal);
+    iconSet.addFile (aSmallNormal, aSmallSize, QIcon::Normal);
     if (aSmallDisabled != NULL)
     {
-        iconSet.addFile (aDisabled, QSize(), QIcon::Disabled);
-        iconSet.addFile (aSmallDisabled, QSize(), QIcon::Disabled);
+        iconSet.addFile (aDisabled, aNormalSize, QIcon::Disabled);
+        iconSet.addFile (aSmallDisabled, aSmallSize, QIcon::Disabled);
     }
     if (aSmallActive != NULL)
     {
-        iconSet.addFile (aActive, QSize(), QIcon::Active);
-        iconSet.addFile (aSmallActive, QSize(), QIcon::Active);
+        iconSet.addFile (aActive, aNormalSize, QIcon::Active);
+        iconSet.addFile (aSmallActive, aSmallSize, QIcon::Active);
     }
 
     return iconSet;
@@ -3393,7 +3458,11 @@ QString VBoxGlobal::highlight (const QString &aStr, bool aToolTip /* = false */)
 /* static */
 QString VBoxGlobal::systemLanguageId()
 {
-#ifdef Q_OS_UNIX
+#if defined (Q_WS_MAC)
+    /* QLocale return the right id only if the user select the format of the
+     * language also. So we use our own implementation */
+    return ::darwinSystemLanguage();
+#elif defined (Q_OS_UNIX)
     const char *s = RTEnvGet ("LC_ALL");
     if (s == 0)
         s = RTEnvGet ("LC_MESSAGES");

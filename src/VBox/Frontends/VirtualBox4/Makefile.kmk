@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 12397 2008-09-11 09:10:20Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the VirtualBox Qt GUI.
 #
@@ -26,6 +26,7 @@ include $(KBUILD_PATH)/subheader.kmk
 # Globals.
 #
 VBOX_VIRTUALBOX4_SRC := $(PATH_SUB_CURRENT)
+VBOX_VIRTUALBOX4_OUT_DIR := $(PATH_TARGET)/VirtualBox4/misc
 
 VBOX_WITH_REGISTRATION := 1
 
@@ -55,6 +56,12 @@ ifeq ($(filter-out freebsd linux openbsd netbsd solaris,$(KBUILD_TARGET)),) # X1
  CLEAN += $(PATH_BIN)/vboxkeyboard.tar.gz
 endif
 INSTALLS += VirtualBox4.nls
+
+
+#
+# Include the language lists.
+#
+include $(PATH_SUB_CURRENT)/nls/ApprovedLanguages.kmk
 
 
 #
@@ -415,27 +422,15 @@ endif
 VirtualBox4_QT_MODULES = Core Gui
 
 # Import QDesigner UI sources and translations from VBoxUI.pro.
-# Note that the OSE about dialog is always required by lupdate/lrelease.
 ifndef VBOX_WITH_REGISTRATION
  FORMS := $(filter-out ui/VBoxRegistrationDlg.ui,$(FORMS))
 endif
-VirtualBox4_SOURCES := \
-       $(VirtualBox4_SOURCES) \
-       $(FORMS) \
-       ui/VBoxAboutDlg.ui
+$(eval VirtualBox4_SOURCES += $(FORMS)) 
 
-# Resource files with some OSE differences.
+# Resource files with some OSE differences (VirtualBoxBrand.qrc is created further down).
 VirtualBox4_SOURCES += VirtualBox.qrc
-ifdef VBOX_OSE
- VirtualBox4_SOURCES += VirtualBox_OSE.qrc
-else
- VirtualBox4_SOURCES += VirtualBox_NonOSE.qrc
- VirtualBox4_SOURCES += src/VBoxAboutNonOSEDlg.cpp
- VirtualBox4_QT_MOCHDRS += include/VBoxAboutNonOSEDlg.h
-endif
-VirtualBox_OSE.qrc_RCCFLAGS = -name OSE
-VirtualBox_NonOSE.qrc_RCCFLAGS = -name NonOSE
-
+VirtualBox4_SOURCES += $(VBOX_VIRTUALBOX4_OUT_DIR)/VirtualBoxBrand.qrc
+$(VBOX_VIRTUALBOX4_OUT_DIR)/VirtualBoxBrand.qrc_RCCFLAGS = -name BRAND
 
 # Import the translation source from VBoxUI.pro and add the qt_xx_YY counterparts
 VirtualBox4_QT_TRANSLATIONS := $(TRANSLATIONS) \
@@ -478,6 +473,33 @@ $$(PATH_VirtualBox4)/include/COMWrappers.h: \
 	$(call MSG_GENERATE,VirtualBox4,$<,$@)
 	$(QUIET)$(VBOX_XSLTPROC) -o $@ $(VBOX_VIRTUALBOX4_SRC)/include/COMWrappers.xsl $<
 
+#
+# Generate qrc file with branded icons.
+#
+VirtualBox4_BLDDIRS       += $(VBOX_VIRTUALBOX4_OUT_DIR)
+VirtualBox4_CLEAN         += $(VBOX_VIRTUALBOX4_OUT_DIR)/VirtualBoxBrand.qrc
+if "$(KBUILD_HOST)" == "win" ## @todo remove when kBuild ticket #52 has been fixed and deployed.
+ VBOX_DRIVE_HACK := $(firstword $(subst :, ,$(PATH_ROOT))):
+else
+ VBOX_DRIVE_HACK :=
+endif
+$(VBOX_VIRTUALBOX4_OUT_DIR)/VirtualBoxBrand.qrc: \
+		$(VBOX_VIRTUALBOX4_SRC)/VirtualBoxBrand.qrc \
+		| $$(dir $$@)
+	$(call MSG_GENERATE,VirtualBox4,$<,$@)
+	$(QUIET)$(SED) \
+		-e 's;@VBOX_ABOUT_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_ABOUT_PNG));g' \
+		-e 's;@VBOX_ABOUT_16PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_ABOUT_16PX_PNG));g' \
+		-e 's;@VBOX_VBOX_16PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_16PX_PNG));g' \
+		-e 's;@VBOX_VBOX_20PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_20PX_PNG));g' \
+		-e 's;@VBOX_VBOX_32PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_32PX_PNG));g' \
+		-e 's;@VBOX_VBOX_40PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_40PX_PNG));g' \
+		-e 's;@VBOX_VBOX_48PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_48PX_PNG));g' \
+		-e 's;@VBOX_VBOX_64PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_64PX_PNG));g' \
+		-e 's;@VBOX_CUBE_42PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_CUBE_42PX_PNG));g' \
+		--output $@ \
+		$<
+
 # alias for generating the COM Wrappers file.
 testwrappers:: $(VBOX_WRAPPERS_FILE4)
 
@@ -496,6 +518,15 @@ endif # win
 
 
 ifeq ($(KBUILD_TARGET),darwin)
+#
+# Create directories for each approved language or the application
+# menu won't be translated.
+#
+INSTALLS += VirtualBox4.lproj
+VirtualBox4.lproj_INST = $(INST_VIRTUALBOX)Contents/Resources/
+VirtualBox4.lproj_MODE = 755
+VirtualBox4.lproj_DIRS := $(addsuffix .lproj,$(VBOX_APPROVED_GUI_LANGUAGES_ALL))
+
 #
 # On OS X (darwin) we need to install icon resources and compulsory bundle contents.
 # The VirtualBoxVM.app helper is for launching VMs (fixes some issues with the dock).
@@ -523,10 +554,10 @@ VirtualBox4VM.app_INST = $(VirtualBox4.app_INST)Resources/VirtualBoxVM.app/Conte
 VirtualBox4VM.app_MODE = 644
 VirtualBox4VM.app_SOURCES = \
 	src/darwin/VM-PkgInfo=>PkgInfo \
-	$(PATH_VirtualBox4VM.app)/VM-Info.plist=>Info.plist \
-	$(VBOX_MACOSX_ICON_FILE)=>Resources/virtualbox.icns
+	$(PATH_VirtualBox4VM.app)/VM-Info.plist=>Info.plist
 VirtualBox4VM.app_SYMLINKS = \
-	MacOS=>../../../MacOS/
+	MacOS=>../../../MacOS/ \
+	Resources=>../../../Resources/
 
 $$(PATH_VirtualBox4VM.app)/VM-Info.plist: $(PATH_SUB_CURRENT)/src/darwin/VM-Info.plist $(VBOX_VERSION_MK) | $$(@D)/
 	$(call MSG_GENERATE,VirtualBox4VM.app,$<,$@)
@@ -554,23 +585,6 @@ tstDarwinKeyboard4_SOURCES = \
 tstDarwinKeyboard4_LDFLAGS = -framework IOKit -framework Carbon
 tstDarwinKeyboard4_LIBS = \
 	$(LIB_RUNTIME)
-endif
-
-
-#
-# Install the license file. Belongs in the root makefile really.
-#
-# Note: I'm doing this right here because the GUI will _not_ run
-#       without that file which might be annoying for developers!
-#
-ifndef VBOX_OSE
-ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),)
-$(VBOX_LICENSE_BIN): $(VBOX_LICENSE_SRC)
-	$(call MSG_GENERATE,,$@)
-	$(QUIET)$(CP) $< $@
-
-$(PATH_BIN)/VirtualBox: $(VBOX_LICENSE_BIN)
-endif
 endif
 
 
@@ -605,3 +619,4 @@ updatenls:: \
 		-ts \
 		$(filter-out nls/qt_%.ts,$(VirtualBox4_QT_TRANSLATIONS)) \
 		nls/VirtualBox_xx_YY.ts
+

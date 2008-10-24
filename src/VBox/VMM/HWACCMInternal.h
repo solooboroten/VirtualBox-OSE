@@ -1,4 +1,4 @@
-/* $Id: HWACCMInternal.h 12162 2008-09-05 23:28:27Z vboxsync $ */
+/* $Id: HWACCMInternal.h $ */
 /** @file
  * HWACCM - Internal header file.
  */

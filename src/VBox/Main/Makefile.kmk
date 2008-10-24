@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 12284 2008-09-09 10:26:27Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the VBox Main module.
 #
@@ -191,8 +191,7 @@ VBoxSVC_DEFS = \
 	$(if $(VBOX_WITH_E1000),VBOX_WITH_E1000,) \
 	$(if $(VBOX_WITH_AHCI),VBOX_WITH_AHCI,) \
 	$(if $(VBOX_WITHOUT_LINUX_COMPILER_H),VBOX_WITHOUT_LINUX_COMPILER_H,) \
-	$(if $(VBOX_WITH_RESOURCE_USAGE_API),VBOX_WITH_RESOURCE_USAGE_API,) \
-	$(if $(VBOX_WITH_PDM_ASYNC_COMPLETION),VBOX_WITH_PDM_ASYNC_COMPLETION,)
+	$(if $(VBOX_WITH_RESOURCE_USAGE_API),VBOX_WITH_RESOURCE_USAGE_API,)
 
 ifdef VBOX_WITH_USB
  VBoxSVC_DEFS += \
@@ -320,7 +319,7 @@ ifdef VBOX_WITH_RESOURCE_USAGE_API
  VBoxSVC_SOURCES.win     +=     win/PerformanceWin.cpp
  VBoxSVC_LDFLAGS.darwin  += -lproc
  VBoxSVC_LDFLAGS.solaris += -lkstat
- VBoxSVC_LDFLAGS.win     += wbemuuid.lib powrprof.lib
+ VBoxSVC_LDFLAGS.win     += psapi.lib powrprof.lib
 endif
 
 win/VBoxSVC.rc_INCS  = $(PATH_VBoxSVC)
@@ -502,7 +501,9 @@ $$(PATH_VBoxC)/VBoxC.def: $(MAKEFILE_CURRENT)
 	$(APPEND) $@ _VBoxDriversRegister
 endif
 
-ConsoleImpl.cpp_DEFS = VBOX_BUILD_TARGET=\"$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)\"
+ConsoleImpl.cpp_DEFS = \
+	VBOX_BUILD_TARGET=\"$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)\"
+		
 
 Version.cpp_DEFS  = VBOX_SVN_REV=$(VBOX_SVN_REV)
 Version.cpp_DEPS  = $(VBOX_SVN_REV_KMK)

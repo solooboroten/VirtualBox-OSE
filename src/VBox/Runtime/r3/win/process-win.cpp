@@ -1,4 +1,4 @@
-/* $Id: process-win.cpp 11836 2008-08-29 16:52:20Z vboxsync $ */
+/* $Id: process-win.cpp $ */
 /** @file
  * IPRT - Process, Win32.
  */

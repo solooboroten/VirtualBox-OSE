@@ -1,4 +1,4 @@
-/* $Id: PATM.cpp 11929 2008-09-01 15:40:03Z vboxsync $ */
+/* $Id: PATM.cpp $ */
 /** @file
  * PATM - Dynamic Guest OS Patching Manager
  *
@@ -95,6 +95,9 @@ static const DBGCCMD    g_aCmds[] =
     { "patmoff",    0,        0,        NULL,               0,                          NULL,               0,          patmr3CmdOff,       "",                     "Disable patching." },
 };
 #endif
+
+/* Don't want to break saved states, so put it here as a global variable. */
+static unsigned int cIDTHandlersDisabled = 0;
 
 /**
  * Initializes the PATM.
@@ -4962,7 +4965,8 @@ PATMR3DECL(int) PATMR3DisablePatch(PVM pVM, RTRCPTR pInstrGC)
             if (iGate != (uint32_t)~0)
             {
                 TRPMR3SetGuestTrapHandler(pVM, iGate, TRPM_INVALID_HANDLER);
-                LogRel(("PATM: Disabling IDT %x patch handler %VRv\n", iGate, pInstrGC));
+                if (++cIDTHandlersDisabled < 256)
+                    LogRel(("PATM: Disabling IDT %x patch handler %VRv\n", iGate, pInstrGC));
             }
         }
 

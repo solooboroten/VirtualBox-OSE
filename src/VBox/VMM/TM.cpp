@@ -1,4 +1,4 @@
-/* $Id: TM.cpp 11792 2008-08-29 08:51:20Z vboxsync $ */
+/* $Id: TM.cpp $ */
 /** @file
  * TM - Timeout Manager.
  */

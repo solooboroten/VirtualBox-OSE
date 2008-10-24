@@ -1,4 +1,4 @@
-/* $Id: DevATA.cpp 11582 2008-08-22 18:52:24Z vboxsync $ */
+/* $Id: DevATA.cpp $ */
 /** @file
  * VBox storage devices: ATA/ATAPI controller device (disk and cdrom).
  */

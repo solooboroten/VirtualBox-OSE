@@ -1,4 +1,4 @@
-/* $Id: EM.cpp 12305 2008-09-09 15:50:15Z vboxsync $ */
+/* $Id: EM.cpp $ */
 /** @file
  * EM - Execution Monitor/Manager.
  */

@@ -1,4 +1,4 @@
-/* $Id: time.h 8245 2008-04-21 17:24:28Z vboxsync $ */
+/* $Id: time.h $ */
 /** @file
  * IPRT - Internal RTTime header
  */

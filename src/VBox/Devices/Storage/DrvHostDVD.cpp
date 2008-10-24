@@ -1,4 +1,4 @@
-/* $Id: DrvHostDVD.cpp 12125 2008-09-05 11:41:29Z vboxsync $ */
+/* $Id: DrvHostDVD.cpp $ */
 /** @file
  * DrvHostDVD - Host DVD block driver.
  */

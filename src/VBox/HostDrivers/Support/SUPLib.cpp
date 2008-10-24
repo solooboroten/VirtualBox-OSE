@@ -1,4 +1,4 @@
-/* $Id: SUPLib.cpp 11889 2008-08-31 18:08:32Z vboxsync $ */
+/* $Id: SUPLib.cpp $ */
 /** @file
  * VirtualBox Support Library - Common code.
  */

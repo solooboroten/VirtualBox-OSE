@@ -1,4 +1,4 @@
-/* $Id: SrvIntNetR0.cpp 11236 2008-08-08 06:42:45Z vboxsync $ */
+/* $Id: SrvIntNetR0.cpp $ */
 /** @file
  * Internal networking - The ring 0 service.
  */

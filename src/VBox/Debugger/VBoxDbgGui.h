@@ -1,4 +1,4 @@
-/* $Id: VBoxDbgGui.h 12180 2008-09-06 18:31:18Z vboxsync $ */
+/* $Id: VBoxDbgGui.h $ */
 /** @file
  * VBox Debugger GUI - The Manager.
  */

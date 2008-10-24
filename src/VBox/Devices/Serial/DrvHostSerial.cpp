@@ -1,4 +1,4 @@
-/* $Id: DrvHostSerial.cpp 12384 2008-09-10 23:56:43Z vboxsync $ */
+/* $Id: DrvHostSerial.cpp $ */
 /** @file
  * VBox stream I/O devices: Host serial driver
  *

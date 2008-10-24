@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 12387 2008-09-11 01:02:18Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the VirtualBox Qt3 GUI.
 #
@@ -124,21 +124,6 @@ ifeq ($(KBUILD_TARGET),darwin) ## @todo use .darwin when ticket 36 has been fixe
 endif
 
 
-#
-# Note: I'm doing this right here because the GUI will _not_ run
-#       without that file which might be annoying for developers!
-#
-## @todo is is an ugly hack, change into an install target or make the root Makefile do this!
-ifndef VBOX_OSE
- ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),) # linux only, yea, right.
-$(VBOX_LICENSE_BIN): $(VBOX_LICENSE_SRC)
-	$(call MSG_GENERATE,,$@)
-	$(QUIET)$(CP) $< $@
-
-$(PATH_BIN)/VirtualBox3: $(VBOX_LICENSE_BIN)
- endif
-endif
-
 
 #
 # Include Qt project file, we'll use FORMS, TRANSLATIONS and IMAGES
@@ -206,7 +191,7 @@ ifdef VBOX_WITH_ICHAT_THEATER
 endif
 
 # Import translation sources
-VirtualBox3_QT_TRANSLATIONS := $(TRANSLATIONS) \
+VirtualBox_QT_TRANSLATIONS := $(TRANSLATIONS) \
 $(patsubst nls/VirtualBox_%.ts,nls/qt_%.ts, $(filter nls/VirtualBox_%.ts,$(TRANSLATIONS)))
 VirtualBox_LRCFLAGS = -nocompress
 VirtualBox_QT_TRANSLATIONS_INST = $(INST_BIN)nls3/

@@ -1,4 +1,4 @@
-/* $Id: VBoxVMInfo.cpp 11982 2008-09-02 13:09:44Z vboxsync $ */
+/* $Id: VBoxVMInfo.cpp $ */
 /** @file
  * VBoxVMInfo - Virtual machine (guest) information for the host.
  */
@@ -6,8 +6,17 @@
 /*
  * Copyright (C) 2006-2007 Sun Microsystems, Inc.
  *
- * Sun Microsystems, Inc. confidential
- * All rights reserved
+ * This file is part of VirtualBox Open Source Edition (OSE), as
+ * available from http://www.virtualbox.org. This file is free software;
+ * you can redistribute it and/or modify it under the terms of the GNU
+ * General Public License (GPL) as published by the Free Software
+ * Foundation, in version 2 as it comes in the "COPYING" file of the
+ * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+ * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+ *
+ * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
+ * Clara, CA 95054 USA or visit http://www.sun.com if you need
+ * additional information or have any questions.
  */
 
 #include "VBoxService.h"
@@ -22,8 +31,9 @@ static VBOXINFORMATIONCONTEXT gCtx = {0};
 int vboxVMInfoWriteProp(VBOXINFORMATIONCONTEXT* a_pCtx, char *a_pszKey, char *a_pszValue)
 {
     int rc = VINF_SUCCESS;
-    if((!a_pCtx) || (!a_pszKey))
-       return VERR_INVALID_PARAMETER;
+    Assert(a_pCtx);
+    Assert(a_pszKey);
+    /* Not checking for a valid a_pszValue is intentional. */
 
     char szKeyTemp [_MAX_PATH] = {0};
     char *pszValue = NULL;
@@ -58,8 +68,11 @@ cleanup:
     return rc;
 }
 
-int vboxVMInfoWritePropInt(VBOXINFORMATIONCONTEXT* a_pCtx, char *a_pszKey, int a_iValue )
+int vboxVMInfoWritePropInt(VBOXINFORMATIONCONTEXT* a_pCtx, char *a_pszKey, int a_iValue)
 {
+    Assert(a_pCtx);
+    Assert(a_pszKey);
+
     char szBuffer[_MAX_PATH] = {0}; /** @todo r=bird: this is a bit excessive (the size) */
     itoa(a_iValue, szBuffer, 10);
 
@@ -68,10 +81,14 @@ int vboxVMInfoWritePropInt(VBOXINFORMATIONCONTEXT* a_pCtx, char *a_pszKey, int a
 
 int vboxVMInfoInit(const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStartThread)
 {
+    Assert(pEnv);
+    Assert(ppInstance);
+
     Log(("vboxVMInfoThread: Init.\n"));
 
     gCtx.pEnv = pEnv;
     gCtx.fFirstRun = TRUE;
+    gCtx.cUsers = INT32_MAX; /* value which isn't reached in real life. */
 
     int rc = VbglR3GuestPropConnect(&gCtx.iInfoSvcClientID);
     if (!RT_SUCCESS(rc))
@@ -99,8 +116,26 @@ int vboxVMInfoInit(const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStartT
 
 void vboxVMInfoDestroy(const VBOXSERVICEENV *pEnv, void *pInstance)
 {
-    VBOXINFORMATIONCONTEXT *pCtx = (VBOXINFORMATIONCONTEXT *)pInstance;
+    Assert(pEnv);
 
+    VBOXINFORMATIONCONTEXT *pCtx = (VBOXINFORMATIONCONTEXT *)pInstance;
+    Assert(pCtx);
+
+    /* @todo Temporary solution: Zap all values which are not valid anymore when VM goes down (reboot/shutdown).
+     * Needs to be replaced with "temporary properties" later. */
+    char szPropPath [_MAX_PATH+1] = {0};
+    char*pPtr = &szPropPath[0];
+
+    vboxVMInfoWriteProp(pCtx, "GuestInfo/OS/LoggedInUsersList", NULL);
+    vboxVMInfoWritePropInt(pCtx, "GuestInfo/OS/LoggedInUsers", 0);
+    if (pCtx->cUsers != 0)
+        vboxVMInfoWriteProp(pCtx, "GuestInfo/OS/NoLoggedInUsers", "true");
+
+    RTStrPrintf(szPropPath, sizeof(szPropPath), "/VirtualBox/GuestInfo/Net/*");
+    VbglR3GuestPropDelTree(pCtx->iInfoSvcClientID, &pPtr, 1);
+    vboxVMInfoWritePropInt(pCtx, "GuestInfo/Net/Count", 0);
+
+    /* Disconnect from guest properties API. */
     int rc = VbglR3GuestPropDisconnect(pCtx->iInfoSvcClientID);
     if (!RT_SUCCESS(rc))
         LogRel(("vboxVMInfoThread: Failed to disconnect from guest property service! Error: %Rrc\n", rc));
@@ -111,6 +146,8 @@ void vboxVMInfoDestroy(const VBOXSERVICEENV *pEnv, void *pInstance)
 
 unsigned __stdcall vboxVMInfoThread(void *pInstance)
 {
+    Assert(pInstance);
+
     VBOXINFORMATIONCONTEXT *pCtx = (VBOXINFORMATIONCONTEXT *)pInstance;
     bool fTerminate = false;
 

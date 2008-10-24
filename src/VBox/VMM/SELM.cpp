@@ -1,4 +1,4 @@
-/* $Id: SELM.cpp 11792 2008-08-29 08:51:20Z vboxsync $ */
+/* $Id: SELM.cpp $ */
 /** @file
  * SELM - The Selector manager.
  */

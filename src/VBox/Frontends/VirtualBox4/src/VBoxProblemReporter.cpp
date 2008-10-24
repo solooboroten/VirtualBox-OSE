@@ -26,11 +26,7 @@
 #include "VBoxSelectorWnd.h"
 #include "VBoxConsoleWnd.h"
 
-#ifdef VBOX_OSE
-# include "VBoxAboutDlg.h"
-#else
-# include "VBoxAboutNonOSEDlg.h"
-#endif
+#include "VBoxAboutDlg.h"
 
 #include "QIHotKeyEdit.h"
 
@@ -888,6 +884,18 @@ void VBoxProblemReporter::cannotStopMachine (const CConsole &console)
         tr ("Failed to stop the virtual machine <b>%1</b>.")
             .arg (console.GetMachine().GetName()),
         formatErrorInfo (res));
+}
+
+void VBoxProblemReporter::cannotStopMachine (const CProgress &progress)
+{
+    AssertWrapperOk (progress);
+    CConsole console = CProgress (progress).GetInitiator();
+    AssertWrapperOk (console);
+
+    message (mainWindowShown(), Error,
+        tr ("Failed to stop the virtual machine <b>%1</b>.")
+            .arg (console.GetMachine().GetName()),
+        formatErrorInfo (progress.GetErrorInfo()));
 }
 
 void VBoxProblemReporter::cannotDeleteMachine (const CVirtualBox &vbox,
@@ -2246,36 +2254,28 @@ void VBoxProblemReporter::showHelpAboutDialog()
     AssertWrapperOk (vbox);
 
     // this (QWidget*) cast is necessary to work around a gcc-3.2 bug */
-#if VBOX_OSE
     VBoxAboutDlg ((QWidget*)mainWindowShown(), COMVersion).exec();
-#else
-    VBoxAboutNonOSEDlg ((QWidget*)mainWindowShown(), COMVersion).exec();
-#endif
 }
 
 void VBoxProblemReporter::showHelpHelpDialog()
 {
 #ifndef VBOX_OSE
+    QString manual = vboxGlobal().helpFile();
 #if defined (Q_WS_WIN32)
-    QString fullHelpFilePath = qApp->applicationDirPath() + "/VirtualBox.chm";
-
-    HtmlHelp (GetDesktopWindow(), fullHelpFilePath.utf16(),
+    HtmlHelp (GetDesktopWindow(), manual.utf16(),
               HH_DISPLAY_TOPIC, NULL);
 #elif defined (Q_WS_X11)
-    char szDocsPath[RTPATH_MAX];
     char szViewerPath[RTPATH_MAX];
     int rc;
 
-    rc = RTPathAppDocs (szDocsPath, sizeof (szDocsPath));
-    Assert(RT_SUCCESS(rc));
     rc = RTPathAppPrivateArch (szViewerPath, sizeof (szViewerPath));
     Assert(RT_SUCCESS(rc));
 
     QProcess::startDetached (QString(szViewerPath) + "/kchmviewer",
-                             QStringList (QString(szDocsPath) + "/VirtualBox.chm"));
+                             QStringList (manual));
 #elif defined (Q_WS_MAC)
     QProcess::startDetached ("/usr/bin/open",
-                             QStringList (qApp->applicationDirPath() + "/UserManual.pdf"));
+                             QStringList (manual));
 #endif
 #endif /* VBOX_OSE */
 }

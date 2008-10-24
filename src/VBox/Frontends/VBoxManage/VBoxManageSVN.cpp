@@ -1,4 +1,4 @@
-/* $Id: VBoxManageSVN.cpp 8155 2008-04-18 15:16:47Z vboxsync $ */
+/* $Id: VBoxManageSVN.cpp $ */
 /** @file
  * VBox frontends: VBoxManage (command-line interface):
  * SVN revision.

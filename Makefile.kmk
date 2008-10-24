@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 12337 2008-09-10 09:20:22Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Top level makefile.
 #
@@ -40,6 +40,23 @@ endif
 
 ifndef VBOX_ONLY_DOCS
 ifndef VBOX_ONLY_ADDITIONS
+
+ifndef VBOX_OSE
+ #
+ # Install the license (and misc non-executable stuff).
+ #
+ INSTALLS += nobin
+ nobin_INST = $(INST_BIN)
+ nobin_MODE = 0644
+ nobin_SOURCES =
+ ifdef VBOX_LICENSE_FILES
+  nobin_SOURCES += \
+  	$(VBOX_BRAND_LICENSE_HTML)=>License-$(VBOX_LICENSE_VER).html \
+	$(foreach f,$(VBOX_INSTALLER_ADD_LANGUAGES),$(VBOX_BRAND_$(f)_LICENSE_HTML)=>License-$(VBOX_LICENSE_VER)-$(f).html)
+ endif
+endif # !OSE
+
+
 #
 # Install external binaries (mostly redistributable parts of tools we use).
 # This must be done *before* we build the manual.
@@ -143,25 +160,40 @@ endif
 ifdef VBOX_WITH_QT4_SUN
 #
 # Install our Qt DLLs / Shared Objects / Frameworks.
+# Note: The installer fixes the darwin .dylibs when hardening is enabled.
 #
-## @todo move to the root Makefile.kmk, and remove qt4-bin from INSTALLS below.
  INSTALLS += qt4-bin
- qt4-bin_MODE = 644
+ qt4-bin_MODE = 755
  ifeq ($(KBUILD_TARGET),darwin)
-  qt4-bin_INST = $(INST_VIRTUALBOX)Contents/Frameworks/
+  qt4-bin_INST = $(INST_VIRTUALBOX)Contents/
   qt4-bin_SOURCES = \
-	$(VBOX_PATH_QT4)/Frameworks/QtCore.framework/Versions/4/QtCore=>QtCore.framework/Versions/4/QtCore \
-	$(VBOX_PATH_QT4)/Frameworks/QtGui.framework/Versions/4/QtGui=>QtGui.framework/Versions/4/QtGui
+	$(VBOX_PATH_QT4)/Frameworks/QtCore.framework/Versions/4/QtCore=>Frameworks/QtCore.framework/Versions/4/QtCore \
+	$(VBOX_PATH_QT4)/Frameworks/QtGui.framework/Versions/4/QtGui=>Frameworks/QtGui.framework/Versions/4/QtGui \
+	$(PATH_qt4-bin)/libqtaccessiblewidgets.dylib=>MacOS/accessible/libqtaccessiblewidgets.dylib
+  qt4-bin_CLEAN = $(PATH_qt4-bin)/libqtaccessiblewidgets.dylib
+$$(PATH_qt4-bin)/libqtaccessiblewidgets.dylib: $$(VBOX_PATH_QT4)/plugins/accessible/libqtaccessiblewidgets.dylib | $$(dir $$@)
+	$(call MSG_TOOL,install_name_tool,accessible,$<,$@)
+	$(QUIET)$(INSTALL) $< $@
+	$(QUIET)install_name_tool \
+		-change                         QtCore.framework/Versions/4/QtCore \
+		 @executable_path/../Frameworks/QtCore.framework/Versions/4/QtCore \
+		-change                         QtGui.framework/Versions/4/QtGui \
+		 @executable_path/../Frameworks/QtGui.framework/Versions/4/QtGui \
+		$@
+
  else ifeq ($(KBUILD_TARGET),win)
   qt4-bin_INST = $(INST_BIN)
   qt4-bin_SOURCES = \
 	$(VBOX_PATH_QT4_LIB)/VBoxQtCore4.dll \
-	$(VBOX_PATH_QT4_LIB)/VBoxQtGui4.dll
+	$(VBOX_PATH_QT4_LIB)/VBoxQtGui4.dll \
+	$(VBOX_PATH_QT4)/plugins/accessible/qtaccessiblewidgets4.dll=>accessible/qtaccessiblewidgets4.dll
+
  else
   qt4-bin_INST = $(INST_BIN)
   qt4-bin_SOURCES = \
 	$(VBOX_PATH_QT4_LIB)/libVBoxQtCore.so.4 \
-	$(VBOX_PATH_QT4_LIB)/libVBoxQtGui.so.4
+	$(VBOX_PATH_QT4_LIB)/libVBoxQtGui.so.4 \
+	$(VBOX_PATH_QT4)/plugins/accessible/libqtaccessiblewidgets$(SUFF_DLL)=>accessible/libqtaccessiblewidgets$(SUFF_DLL)
  endif
 endif # VBOX_WITH_QT4_SUN
 
@@ -202,15 +234,21 @@ ifdef VBOX_WITH_DOCS_FROM_BUILD_SERVER
 INSTALLS += buildserver-docs
 buildserver-docs_INST = $(INST_BIN)
 buildserver-docs_MODE = 0644
-buildserver-docs_SOURCES = $(PATH_TARGET)/VirtualBox.chm $(PATH_TARGET)/UserManual.pdf
-buildserver-docs_CLEANS = $(PATH_TARGET)/VBoxDocumentation.zip $(PATH_TARGET)/VBoxDocumentation.zip.tmp $(PATH_TARGET)/VirtualBox.chm $(PATH_TARGET)/UserManual.pdf
+buildserver-docs_SOURCES = \
+	$(addprefix $(PATH_TARGET)/, \
+		VirtualBox.chm UserManual.pdf \
+		$(foreach f,$(VBOX_MANUAL_ADD_LANGUAGES),VirtualBox_$(f).chm UserManual_$(f).pdf))
+buildserver-docs_CLEANS = \
+	$(addprefix $(PATH_TARGET)/, \
+		VBoxDocumentation.zip VBoxDocumentation.zip.tmp \
+		VirtualBox.chm UserManual.pdf \
+		$(foreach f,$(VBOX_MANUAL_ADD_LANGUAGES),VirtualBox_$(f).chm UserManual_$(f).pdf))
 
 ## @todo including this directly is a hack, but using the tool variables
 # is simply too tempting. Could all go away once we have plain unzip targets.
 include $(KBUILD_PATH)/tools/ZIP.kmk
 
-# Make this a pattern rule to handle multiple targets correctly.
-$(PATH_TARGET)/VirtualBox.chm $(PATH_TARGET)/UserManua%.pdf: $(PATH_TARGET)/VBoxDocumentation.zip
+$(PATH_TARGET)/VirtualBox.chm + $(PATH_TARGET)/UserManual.pdf $(foreach f,$(VBOX_MANUAL_ADD_LANGUAGES),+ $(PATH_TARGET)/VirtualBox_$(f).chm + $(PATH_TARGET)/UserManual_$(f).pdf) : $(PATH_TARGET)/VBoxDocumentation.zip
 	$(call MSG_L1,Unpacking documentation)
 	$(QUIET)$(TOOL_ZIP_UNPACK) $(TOOL_ZIP_UNPACKFLAGS) -o $< -d $(PATH_TARGET)
 
@@ -667,6 +705,10 @@ VBOX_ADDITIONS_BUILD.x86 = VBOX_ONLY_ADDITIONS=1 VBOX_WITHOUT_ADDITIONS_ISO=1 \
 	VBOX_SVN_REV=$(VBOX_SVN_REV) \
 	all packing
 
+# Automatically determine the additions build subdir name. Used for figuring
+# out directory names inside the additions building VMs.
+VBOX_ADDITIONS_BUILD_SUBDIRNAME := $(lastword $(subst /, ,$(PATH_ROOT)))
+
 # Oh well, this gets really fancy - ms vc8 doesn't work inside ssh due to some
 # session setup issue. So do this indirectly through psexec. The downside is
 # that there is no direct build feedback. Also I couldn't get the share to
@@ -675,26 +717,28 @@ additions-build-win.amd64:
 ifeq ($(KBUILD_TARGET),win)
 	+ $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
 else
-	rsync -av --no-perms --no-owner --no-group --delete --delete-excluded --exclude .svn/ --exclude out/ --exclude tinderclient.log . 192.168.27.5:/cygdrive/c/vbox
-	ssh vbox@192.168.27.5 c:/psexec/psexec.exe \\\\\\\\addvm -u vbox -p $(WIN64PASSWORD) c:\\\\cygwin\\\\bin\\\\bash.exe -c \''PATH=/usr/bin:/bin c:/vbox/tools/env.sh kmk $(VBOX_ADDITIONS_BUILD.amd64) > c:/build.log 2>&1'\'
-	rsync -av --delete 192.168.27.5:/cygdrive/c/vbox/out/win.amd64/ out/win.amd64
-	rsync -a --delete 192.168.27.5:/cygdrive/c/build.log out/win.amd64
-	cat out/win.amd64/build.log
+	rsync -av --no-owner --no-group --delete --delete-excluded --exclude .svn/ --exclude out/ --exclude tinderclient.log . 192.168.27.5:/cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)
+	ssh vbox@192.168.27.5 c:/psexec/psexec.exe \\\\\\\\addvm -u vbox -p $(WIN64PASSWORD) c:\\\\cygwin\\\\bin\\\\bash.exe -c \''PATH=/usr/bin:/bin e:/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)/tools/env.sh kmk $(VBOX_ADDITIONS_BUILD.amd64) > e:/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME).log 2>&1'\'; \
+	rc=$$?; \
+	rsync -av --delete 192.168.27.5:/cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)/out/win.amd64/ out/win.amd64; \
+	rsync -a --delete 192.168.27.5:/cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME).log out/win.amd64/build.log; \
+	cat out/win.amd64/build.log; \
+	exit $$rc
 endif
 
 additions-build-win.x86:
 ifeq ($(KBUILD_TARGET),win)
 	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
 else
-	rsync -av --no-perms --no-owner --no-group --delete --delete-excluded --exclude .svn/ --exclude out/ --exclude tinderclient.log . 192.168.27.5:/cygdrive/c/vbox
-	ssh vbox@192.168.27.5 " cd /cygdrive/c/vbox && PATH_OUT_BASE=Z:/add/out tools/env.sh kmk $(VBOX_ADDITIONS_BUILD.x86)"
+	rsync -av --no-owner --no-group --delete --delete-excluded --exclude .svn/ --exclude out/ --exclude tinderclient.log . 192.168.27.5:/cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)
+	ssh vbox@192.168.27.5 " cd /cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && PATH_OUT_BASE=Z:/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)/out tools/env.sh kmk $(VBOX_ADDITIONS_BUILD.x86)"
 endif
 
 additions-build-solaris.amd64:
 ifeq ($(KBUILD_TARGET),solaris)
 	+ $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
 else
-	ssh vbox@192.168.27.4 " cd /mnt/vbox/add && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.amd64) "
+	ssh vbox@192.168.27.4 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.amd64) "
 endif
 
 # ASSUMES 64-bit is built already. See @todo above.
@@ -702,28 +746,28 @@ additions-build-solaris.x86:
 ifeq ($(KBUILD_TARGET),solaris)
 	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86) VBOX_WITH_COMBINED_SOLARIS_GUEST_PACKAGE=1
 else
-	ssh vbox@192.168.27.4 " cd /mnt/vbox/add && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) VBOX_WITH_COMBINED_SOLARIS_GUEST_PACKAGE=1"
+	ssh vbox@192.168.27.4 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) VBOX_WITH_COMBINED_SOLARIS_GUEST_PACKAGE=1"
 endif
 
 additions-build-os2.x86:
 #ifeq ($(KBUILD_TARGET),os2)
 #	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
 #else
-#	ssh vbox@192.168.27.3 " cd /mnt/vbox/add && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
+#	ssh vbox@192.168.27.3 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
 #endif
 
 additions-build-linux.amd64:
 ifeq ($(KBUILD_TARGET).$(KBUILD_TARGET_ARCH),linux.amd64)
 	+ $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
 else
-	ssh vbox@192.168.27.12 " cd /mnt/vbox/add && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.amd64) "
+	ssh vbox@192.168.27.12 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.amd64) "
 endif
 
 additions-build-linux.x86:
 ifeq ($(KBUILD_TARGET).$(KBUILD_TARGET_ARCH),linux.x86)
 	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
 else
-	ssh vbox@192.168.27.2 " cd /mnt/vbox/add && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
+	ssh vbox@192.168.27.2 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
 endif
 
 

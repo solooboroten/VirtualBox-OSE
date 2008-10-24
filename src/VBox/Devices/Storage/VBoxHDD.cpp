@@ -1,4 +1,4 @@
-/** $Id: VBoxHDD.cpp 11287 2008-08-08 22:35:40Z vboxsync $ */
+/** $Id: VBoxHDD.cpp $ */
 /** @file
  *
  * VBox storage devices:

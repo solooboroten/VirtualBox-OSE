@@ -1,4 +1,4 @@
-/* $Id: DevPCNet.cpp 11538 2008-08-21 15:16:07Z vboxsync $ */
+/* $Id: DevPCNet.cpp $ */
 /** @file
  * DevPCNet - AMD PCnet-PCI II / PCnet-FAST III (Am79C970A / Am79C973) Ethernet Controller Emulation.
  *
@@ -4508,7 +4508,8 @@ static DECLCALLBACK(int) pcnetSetLinkState(PPDMINETWORKCONFIG pInterface, PDMNET
             pThis->Led.Asserted.s.fError = pThis->Led.Actual.s.fError = 1;
         }
         Assert(!PDMCritSectIsOwner(&pThis->CritSect));
-        pThis->pDrv->pfnNotifyLinkChanged(pThis->pDrv, enmState);
+        if (pThis->pDrv)
+            pThis->pDrv->pfnNotifyLinkChanged(pThis->pDrv, enmState);
     }
     return VINF_SUCCESS;
 }

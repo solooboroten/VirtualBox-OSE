@@ -1,4 +1,4 @@
-/* $Id: timer-posix.cpp 11133 2008-08-05 14:08:55Z vboxsync $ */
+/* $Id: timer-posix.cpp $ */
 /** @file
  * IPRT - Timer, POSIX.
  */

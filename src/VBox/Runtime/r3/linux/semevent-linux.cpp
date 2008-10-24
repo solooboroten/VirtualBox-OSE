@@ -1,4 +1,4 @@
-/* $Id: semevent-linux.cpp 10839 2008-07-23 19:48:51Z vboxsync $ */
+/* $Id: semevent-linux.cpp $ */
 /** @file
  * IPRT - Event Semaphore, Linux (2.6.x+).
  */

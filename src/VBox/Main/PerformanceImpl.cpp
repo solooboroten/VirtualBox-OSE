@@ -1,4 +1,4 @@
-/* $Id: PerformanceImpl.cpp 12400 2008-09-11 10:34:58Z vboxsync $ */
+/* $Id: PerformanceImpl.cpp $ */
 
 /** @file
  *
@@ -468,11 +468,14 @@ void PerformanceCollector::samplerCallback()
             toBeCollected.push_back(*it);
         }
 
+    if (toBeCollected.size() == 0)
+        return;
+
     /* Let know the platform specific code what is being collected */
     m.hal->preCollect(hints);
 
     /* Finally, collect the data */
-    std::for_each (m.baseMetrics.begin(), m.baseMetrics.end(),
+    std::for_each (toBeCollected.begin(), toBeCollected.end(),
                    std::mem_fun (&pm::BaseMetric::collect));
     Log4(("{%p} " LOG_FN_FMT ": LEAVE\n", this, __PRETTY_FUNCTION__));
 }

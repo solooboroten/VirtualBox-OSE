@@ -1,4 +1,4 @@
-; $Id: strchr.asm 8256 2008-04-21 20:53:28Z vboxsync $
+; $Id: strchr.asm $
 ;; @file
 ; IPRT - No-CRT strchr - AMD64 & X86.
 ;
