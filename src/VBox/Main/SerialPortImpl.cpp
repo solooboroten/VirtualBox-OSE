@@ -58,7 +58,7 @@ HRESULT SerialPort::init (Machine *aParent, ULONG aSlot)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     /* mPeer is left null */
@@ -92,7 +92,7 @@ HRESULT SerialPort::init (Machine *aParent, SerialPort *aThat)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     unconst (mPeer) = aThat;
@@ -124,7 +124,7 @@ HRESULT SerialPort::initCopy (Machine *aParent, SerialPort *aThat)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     /* mPeer is left null */
@@ -208,7 +208,7 @@ HRESULT SerialPort::loadSettings (const settings::Key &aPortNode)
     else if (strcmp (mode, "Disconnected") == 0)
         mData->mHostMode = PortMode_Disconnected;
     else
-        ComAssertMsgFailedRet (("Invalid port mode '%s'\n", mode), E_FAIL);
+        ComAssertMsgFailedRet (("Invalid port mode '%s'", mode), E_FAIL);
 
     /* pipe/device path (optional, defaults to null) */
     Bstr path = aPortNode.stringValue ("path");
@@ -259,7 +259,7 @@ HRESULT SerialPort::saveSettings (settings::Key &aPortNode)
             mode = "HostDevice";
             break;
         default:
-            ComAssertMsgFailedRet (("Invalid serial port mode: %d\n",
+            ComAssertMsgFailedRet (("Invalid serial port mode: %d",
                                     mData->mHostMode),
                                    E_FAIL);
     }
@@ -358,8 +358,7 @@ void SerialPort::copyFrom (SerialPort *aThat)
 
 STDMETHODIMP SerialPort::COMGETTER(Enabled) (BOOL *aEnabled)
 {
-    if (!aEnabled)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aEnabled);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -400,8 +399,7 @@ STDMETHODIMP SerialPort::COMSETTER(Enabled) (BOOL aEnabled)
 
 STDMETHODIMP SerialPort::COMGETTER(HostMode) (PortMode_T *aHostMode)
 {
-    if (!aHostMode)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aHostMode);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -468,8 +466,7 @@ STDMETHODIMP SerialPort::COMSETTER(HostMode) (PortMode_T aHostMode)
 
 STDMETHODIMP SerialPort::COMGETTER(Slot) (ULONG *aSlot)
 {
-    if (!aSlot)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aSlot);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -483,8 +480,7 @@ STDMETHODIMP SerialPort::COMGETTER(Slot) (ULONG *aSlot)
 
 STDMETHODIMP SerialPort::COMGETTER(IRQ) (ULONG *aIRQ)
 {
-    if (!aIRQ)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aIRQ);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -538,8 +534,7 @@ STDMETHODIMP SerialPort::COMSETTER(IRQ)(ULONG aIRQ)
 
 STDMETHODIMP SerialPort::COMGETTER(IOBase) (ULONG *aIOBase)
 {
-    if (!aIOBase)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aIOBase);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -593,8 +588,7 @@ STDMETHODIMP SerialPort::COMSETTER(IOBase)(ULONG aIOBase)
 
 STDMETHODIMP SerialPort::COMGETTER(Path) (BSTR *aPath)
 {
-    if (!aPath)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aPath);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -609,7 +603,7 @@ STDMETHODIMP SerialPort::COMGETTER(Path) (BSTR *aPath)
 /**
  *  Validates COMSETTER(Path) arguments.
  */
-HRESULT SerialPort::checkSetPath (const BSTR aPath)
+HRESULT SerialPort::checkSetPath (CBSTR aPath)
 {
     AssertReturn (isWriteLockOnCurrentThread(), E_FAIL);
 
@@ -624,7 +618,7 @@ HRESULT SerialPort::checkSetPath (const BSTR aPath)
     return S_OK;
 }
 
-STDMETHODIMP SerialPort::COMSETTER(Path) (INPTR BSTR aPath)
+STDMETHODIMP SerialPort::COMSETTER(Path) (IN_BSTR aPath)
 {
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -634,6 +628,10 @@ STDMETHODIMP SerialPort::COMSETTER(Path) (INPTR BSTR aPath)
     CheckComRCReturnRC (adep.rc());
 
     AutoWriteLock alock (this);
+
+    /* we treat empty as null when e.g. saving to XML, do the same here */
+    if (aPath && *aPath == '\0')
+        aPath = NULL;
 
     if (mData->mPath != aPath)
     {
@@ -654,8 +652,7 @@ STDMETHODIMP SerialPort::COMSETTER(Path) (INPTR BSTR aPath)
 
 STDMETHODIMP SerialPort::COMGETTER(Server) (BOOL *aServer)
 {
-    if (!aServer)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aServer);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -669,8 +666,6 @@ STDMETHODIMP SerialPort::COMGETTER(Server) (BOOL *aServer)
 
 STDMETHODIMP SerialPort::COMSETTER(Server) (BOOL aServer)
 {
-    LogFlowThisFunc (("aServer=%RTbool\n", aServer));
-
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 
@@ -693,3 +688,4 @@ STDMETHODIMP SerialPort::COMSETTER(Server) (BOOL aServer)
 
     return S_OK;
 }
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

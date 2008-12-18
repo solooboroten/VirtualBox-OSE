@@ -66,11 +66,11 @@ void SharedFolder::FinalRelease()
  *  @return          COM result indicator
  */
 HRESULT SharedFolder::init (Machine *aMachine,
-                            const BSTR aName, const BSTR aHostPath, BOOL aWritable)
+                            CBSTR aName, CBSTR aHostPath, BOOL aWritable)
 {
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mMachine) = aMachine;
 
@@ -99,7 +99,7 @@ HRESULT SharedFolder::initCopy (Machine *aMachine, SharedFolder *aThat)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mMachine) = aMachine;
 
@@ -124,11 +124,11 @@ HRESULT SharedFolder::initCopy (Machine *aMachine, SharedFolder *aThat)
  *  @return          COM result indicator
  */
 HRESULT SharedFolder::init (Console *aConsole,
-                            const BSTR aName, const BSTR aHostPath, BOOL aWritable)
+                            CBSTR aName, CBSTR aHostPath, BOOL aWritable)
 {
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mConsole) = aConsole;
 
@@ -152,11 +152,11 @@ HRESULT SharedFolder::init (Console *aConsole,
  *  @return          COM result indicator
  */
 HRESULT SharedFolder::init (VirtualBox *aVirtualBox,
-                            const BSTR aName, const BSTR aHostPath, BOOL aWritable)
+                            CBSTR aName, CBSTR aHostPath, BOOL aWritable)
 {
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mVirtualBox) = aVirtualBox;
 
@@ -176,7 +176,7 @@ HRESULT SharedFolder::init (VirtualBox *aVirtualBox,
  *      Must be called from under the object's lock!
  */
 HRESULT SharedFolder::protectedInit (VirtualBoxBaseWithChildrenNEXT *aParent,
-                                     const BSTR aName, const BSTR aHostPath, BOOL aWritable)
+                                     CBSTR aName, CBSTR aHostPath, BOOL aWritable)
 {
     LogFlowThisFunc (("aName={%ls}, aHostPath={%ls}, aWritable={%d}\n",
                       aName, aHostPath, aWritable));
@@ -186,7 +186,7 @@ HRESULT SharedFolder::protectedInit (VirtualBoxBaseWithChildrenNEXT *aParent,
     Utf8Str hostPath = Utf8Str (aHostPath);
     size_t hostPathLen = hostPath.length();
 
-    /* Remove the trailng slash unless it's a root directory
+    /* Remove the trailing slash unless it's a root directory
      * (otherwise the comparison with the RTPathAbs() result will fail at least
      * on Linux). Note that this isn't really necessary for the shared folder
      * itself, since adding a mapping eventually results into a
@@ -208,9 +208,9 @@ HRESULT SharedFolder::protectedInit (VirtualBoxBaseWithChildrenNEXT *aParent,
     char hostPathFull [RTPATH_MAX];
     int vrc = RTPathAbsEx (NULL, hostPath,
                            hostPathFull, sizeof (hostPathFull));
-    if (VBOX_FAILURE (vrc))
+    if (RT_FAILURE (vrc))
         return setError (E_INVALIDARG,
-            tr ("Invalid shared folder path: '%s' (%Vrc)"), hostPath.raw(), vrc);
+            tr ("Invalid shared folder path: '%s' (%Rrc)"), hostPath.raw(), vrc);
 
     if (RTPathCompare (hostPath, hostPathFull) != 0)
         return setError (E_INVALIDARG,
@@ -256,8 +256,7 @@ void SharedFolder::uninit()
 
 STDMETHODIMP SharedFolder::COMGETTER(Name) (BSTR *aName)
 {
-    if (!aName)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aName);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -270,8 +269,7 @@ STDMETHODIMP SharedFolder::COMGETTER(Name) (BSTR *aName)
 
 STDMETHODIMP SharedFolder::COMGETTER(HostPath) (BSTR *aHostPath)
 {
-    if (!aHostPath)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aHostPath);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -284,8 +282,7 @@ STDMETHODIMP SharedFolder::COMGETTER(HostPath) (BSTR *aHostPath)
 
 STDMETHODIMP SharedFolder::COMGETTER(Accessible) (BOOL *aAccessible)
 {
-    if (!aAccessible)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aAccessible);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -298,7 +295,7 @@ STDMETHODIMP SharedFolder::COMGETTER(Accessible) (BOOL *aAccessible)
     int vrc = RTPathExists(hostPath) ? RTPathReal (hostPath, hostPathFull,
                                                    sizeof (hostPathFull))
                                      : VERR_PATH_NOT_FOUND;
-    if (VBOX_SUCCESS (vrc))
+    if (RT_SUCCESS (vrc))
     {
         *aAccessible = TRUE;
         return S_OK;
@@ -307,9 +304,9 @@ STDMETHODIMP SharedFolder::COMGETTER(Accessible) (BOOL *aAccessible)
     HRESULT rc = S_OK;
     if (vrc != VERR_PATH_NOT_FOUND)
         rc = setError (E_FAIL,
-            tr ("Invalid shared folder path: '%s' (%Vrc)"), hostPath.raw(), vrc);
+            tr ("Invalid shared folder path: '%s' (%Rrc)"), hostPath.raw(), vrc);
 
-    LogWarningThisFunc (("'%s' is not accessible (%Vrc)\n", hostPath.raw(), vrc));
+    LogWarningThisFunc (("'%s' is not accessible (%Rrc)\n", hostPath.raw(), vrc));
 
     *aAccessible = FALSE;
     return S_OK;
@@ -317,10 +314,10 @@ STDMETHODIMP SharedFolder::COMGETTER(Accessible) (BOOL *aAccessible)
 
 STDMETHODIMP SharedFolder::COMGETTER(Writable) (BOOL *aWritable)
 {
-    if (!aWritable)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aWritable);
 
     *aWritable = mData.mWritable;
 
     return S_OK;
 }
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

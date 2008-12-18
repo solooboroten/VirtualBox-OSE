@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxXMLUtil.h $ */
+/* $Id: VirtualBoxXMLUtil.h 14949 2008-12-03 15:17:16Z vboxsync $ */
 
 /** @file
  *
@@ -28,7 +28,7 @@
 #define VBOX_XML_NAMESPACE      "http://www.innotek.de/VirtualBox-settings"
 
 /** VirtualBox XML settings version number substring ("x.y")  */
-#define VBOX_XML_VERSION        "1.3"
+#define VBOX_XML_VERSION        "1.5"
 
 /** VirtualBox XML settings version platform substring */
 #if defined (RT_OS_DARWIN)
@@ -65,3 +65,4 @@
 #define VBOX_XML_SETTINGS_CONVERTER "SettingsConverter.xsl"
 
 #endif /* ____H_VIRTUALBOXXMLUTIL */
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

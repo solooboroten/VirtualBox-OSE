@@ -23,6 +23,27 @@ PATH="$PATH:/opt/gnome/bin"
 PATH="/usr/xpg4/bin:/usr/ucb:$PATH:/usr/local/bin:/usr/sfw/bin:/usr/ccs/bin"
 ORGPATH=$PATH
 
+# Wrapper for ancient /usr/bin/which on darwin that always returns 0
+which_wrapper()
+{
+  if [ -z "$have_ancient_which" ]; then
+    if which /bin/___cErTaINly_a_nOn_eXisTing_fIle___ 2> /dev/null > /dev/null; then
+      have_ancient_which="yes"
+    else
+      have_ancient_which="no"
+    fi
+  fi
+  if [ "$have_ancient_which" = "yes" ]; then
+    retval=`which $* 2>/dev/null`
+    echo "$retval"
+    test -n "$retval" -a -x "$retval"
+    unset retval
+  else
+    which $* 2> /dev/null
+  fi
+}
+
+
 #
 # Defaults
 #
@@ -41,6 +62,7 @@ WITH_SDL_TTF=1
 WITH_X11=1
 WITH_ALSA=1
 WITH_PULSE=1
+WITH_DBUS=1
 WITH_KMODS=1
 WITH_HARDENING=1
 CC="gcc"
@@ -61,6 +83,7 @@ BUILD_LIBXML2=
 BUILD_LIBXSLT=
 LIBCRYPTO="-lcrypto"
 LIBPTHREAD="-lpthread"
+LIBCAP="-lcap"
 LIBX11="-L/usr/X11R6/lib -L/usr/X11R6/lib64 -L/usr/local/lib -lXext -lX11"
 INCX11="/usr/local/include"
 LIBXCURSOR="-lXcursor"
@@ -68,6 +91,7 @@ INCZ=""
 LIBZ="-lz"
 INCPNG=""
 LIBPNG="-lpng"
+PKGCONFIG="`which_wrapper pkg-config`"
 PYTHONDIR="/usr /usr/local"
 QT3DIR="/usr/qt/3 /usr/lib/qt3 /usr/lib/qt-3.3 /usr/share/qt3"
 QT3DIR="$QT3DIR /usr/lib64/qt-3.3 /usr/X11R6 /usr/lib/qt"
@@ -163,27 +187,6 @@ prefix_I()
 {
   echo "$1"|$KBUILD_SED 's|^\/|-I/|g; s| \/| -I/|g'
 }
-
-# Wrapper for ancient /usr/bin/which on darwin that always returns 0
-which_wrapper()
-{
-  if [ -z "$have_ancient_which" ]; then
-    if which /bin/___cErTaINly_a_nOn_eXisTing_fIle___ 2> /dev/null > /dev/null; then
-      have_ancient_which="yes"
-    else
-      have_ancient_which="no"
-    fi
-  fi
-  if [ "$have_ancient_which" = "yes" ]; then
-    retval=`which $* 2>/dev/null`
-    echo "$retval"
-    test -n "$retval" -a -x "$retval"
-    unset retval
-  else
-    which $* 2> /dev/null
-  fi
-}
-
 
 check_avail()
 {
@@ -1566,6 +1569,32 @@ check_compiler_h()
   fi
 }
 
+#
+# Check for libcap.
+# Required to pass CAP_NET_RAW to our binaries to allow to open SOCK_RAW
+# sockets for doing ICMP requests.
+#
+check_libcap()
+{
+  test_header "libcap library"
+  cat > .tmp_src.cc << EOF
+#include <cstdio>
+#include <sys/capability.h>
+
+extern "C" int main(void)
+{
+  char buf[1024];
+  cap_t caps = cap_get_proc();
+  snprintf(buf, sizeof(buf), "Current caps are '%s'\n", cap_to_text(caps, NULL));
+  return 0;
+}
+EOF
+  if test_compile $LIBCAP libcap libcap; then
+    if test_execute; then
+      log_success "found"
+    fi
+  fi
+}
 
 #
 # Check if we are able to build 32-bit applications (needed for the guest additions)
@@ -1619,7 +1648,7 @@ extern "C" int main(void)
 EOF
   found=
   for p in $PYTHONDIR; do
-    for d in python2.5 python2.4 python2.3; do
+    for d in python2.6 python2.5 python2.4 python2.3; do
       for b in lib64 lib/64 lib; do
         echo "compiling the following source file:" >> $LOG
         cat .tmp_src.cc >> $LOG
@@ -1759,6 +1788,7 @@ Configuration:
   --disable-sdl-ttf        disable SDL_ttf detection
   --disable-alsa           disable the ALSA sound backend
   --disable-pulse          disable the PulseAudio backend
+  --disable-dbus           don't use DBus and hal for hardware detection
   --disable-kmods          don't build Linux kernel modules (host and guest)
   --disable-hardening      don't be strict about /dev/vboxdrv access
   --build-libxml2          build libxml2 from sources
@@ -1857,6 +1887,9 @@ for option in $*; do
       ;;
     --disable-pulse)
       WITH_PULSE=0
+      ;;
+    --disable-dbus)
+      WITH_DBUS=0
       ;;
     --disable-kmods)
       WITH_KMODS=0
@@ -2026,6 +2059,9 @@ check_gcc
 [ $WITH_SDL -eq 1 ]    && check_sdl
 [ $WITH_SDL_TTF -eq 1 -a $OSE -eq 0 ] && check_sdl_ttf
 [ $WITH_X11    -eq 1 ] && check_x
+# TODO check for Xmu (X11/Xmu/StdCmap.h)
+# TODO check for mesa-common-dev (GL/glx.h)
+# TODO check for libglu1-mesa-dev (GL/glu.h)
 [ $WITH_X11    -eq 1 ] && check_xcursor
 [ $WITH_QT3    -eq 1 ] && check_qt3
 [ $WITH_QT4    -eq 1 ] && check_qt4
@@ -2051,6 +2087,10 @@ if [ "$OS" = "linux" ]; then
   else
     cnf_append "VBOX_WITH_PULSE" ""
   fi
+  if [ $WITH_DBUS -eq 0 ]; then
+    cnf_append "VBOX_WITH_DBUS" ""
+  fi
+  check_libcap
   check_compiler_h
   [ "$BUILD_MACHINE" = "amd64" ] && check_32bit
 fi
@@ -2074,7 +2114,7 @@ echo ""
 if [ "$OS" = "linux" ]; then
     echo "To compile the kernel module, do:"
     echo ""
-    echo "  cd ./out/$OS.$TARGET_MACHINE/$BUILD_TYPE/bin/src"
+    echo "  cd ./out/$OS.$TARGET_MACHINE/$BUILD_TYPE/bin/src/vboxdrv"
     echo "  make"
     echo ""
 fi

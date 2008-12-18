@@ -1,4 +1,4 @@
-/* $Id: ParallelPortImpl.h $ */
+/* $Id: ParallelPortImpl.h 15051 2008-12-05 17:20:00Z vboxsync $ */
 
 /** @file
  * VirtualBox COM class implementation.
@@ -94,7 +94,7 @@ public:
     STDMETHOD(COMGETTER(IOBase))  (ULONG     *aIOBase);
     STDMETHOD(COMSETTER(IOBase))  (ULONG      aIOBase);
     STDMETHOD(COMGETTER(Path))    (BSTR      *aPath);
-    STDMETHOD(COMSETTER(Path))    (INPTR BSTR aPath);
+    STDMETHOD(COMSETTER(Path))    (IN_BSTR aPath);
 
     // public methods only for internal purposes
 
@@ -115,7 +115,7 @@ public:
 
 private:
 
-    HRESULT checkSetPath (const BSTR aPath);
+    HRESULT checkSetPath (CBSTR aPath);
 
     const ComObjPtr <Machine, ComWeakRef> mParent;
     const ComObjPtr <ParallelPort> mPeer;
@@ -124,3 +124,4 @@ private:
 };
 
 #endif // ____H_FLOPPYDRIVEIMPL
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

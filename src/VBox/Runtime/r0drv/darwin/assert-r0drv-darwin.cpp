@@ -1,4 +1,4 @@
-/* $Id: assert-r0drv-darwin.cpp $ */
+/* $Id: assert-r0drv-darwin.cpp 14500 2008-11-24 02:22:08Z vboxsync $ */
 /** @file
  * IPRT -  Assertion Workers, Ring-0 Drivers, Darwin.
  */
@@ -38,17 +38,27 @@
 #include <iprt/log.h>
 #include <iprt/string.h>
 #include <iprt/stdarg.h>
+#include <iprt/asm.h>
+
 
 /*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
 /** The last assert message, 1st part. */
-RTDATADECL(char) g_szRTAssertMsg1[1024];
+RTDATADECL(char)                    g_szRTAssertMsg1[1024];
 /** The last assert message, 2nd part. */
-RTDATADECL(char) g_szRTAssertMsg2[2048];
+RTDATADECL(char)                    g_szRTAssertMsg2[2048];
+/** The last assert message, expression. */
+RTDATADECL(const char * volatile)   g_pszRTAssertExpr;
+/** The last assert message, file name. */
+RTDATADECL(const char * volatile)   g_pszRTAssertFile;
+/** The last assert message, line number. */
+RTDATADECL(uint32_t volatile)       g_u32RTAssertLine;
+/** The last assert message, function name. */
+RTDATADECL(const char *  volatile)  g_pszRTAssertFunction;
 
 
-RTDECL(void) AssertMsg1(const char *pszExpr, unsigned uLine, const char *pszFile, const char *pszFunction)
+RTDECL(void) RTAssertMsg1(const char *pszExpr, unsigned uLine, const char *pszFile, const char *pszFunction)
 {
 #ifdef IN_GUEST_R0
     RTLogBackdoorPrintf("\n!!Assertion Failed!!\n"
@@ -67,30 +77,38 @@ RTDECL(void) AssertMsg1(const char *pszExpr, unsigned uLine, const char *pszFile
                 "Expression: %s\n"
                 "Location  : %s(%d) %s\n",
                 pszExpr, pszFile, uLine, pszFunction);
+    ASMAtomicUoWritePtr((void * volatile *)&g_pszRTAssertExpr, (void *)pszExpr);
+    ASMAtomicUoWritePtr((void * volatile *)&g_pszRTAssertFile, (void *)pszFile);
+    ASMAtomicUoWritePtr((void * volatile *)&g_pszRTAssertFunction, (void *)pszFunction);
+    ASMAtomicUoWriteU32(&g_u32RTAssertLine, uLine);
 }
 
 
-RTDECL(void) AssertMsg2(const char *pszFormat, ...)
+RTDECL(void) RTAssertMsg2V(const char *pszFormat, va_list va)
 {
-    va_list va;
+    va_list vaCopy;
     char    szMsg[256];
 
 #ifdef IN_GUEST_R0
-    va_start(va, pszFormat);
-    RTLogBackdoorPrintfV(pszFormat, va);
-    va_end(va);
+    va_copy(vaCopy, va);
+    RTLogBackdoorPrintfV(pszFormat, vaCopy);
+    va_end(vaCopy);
 #endif
 
-    va_start(va, pszFormat);
-    RTStrPrintfV(szMsg, sizeof(szMsg) - 1, pszFormat, va);
+    va_copy(vaCopy, va);
+    RTStrPrintfV(szMsg, sizeof(szMsg) - 1, pszFormat, vaCopy);
     szMsg[sizeof(szMsg) - 1] = '\0';
-    va_end(va);
+    va_end(vaCopy);
     printf("%s", szMsg);
 
-    va_start(va, pszFormat);
-    RTStrPrintfV(g_szRTAssertMsg2, sizeof(g_szRTAssertMsg2), pszFormat, va);
-    va_end(va);
+    va_copy(vaCopy, va);
+    RTStrPrintfV(g_szRTAssertMsg2, sizeof(g_szRTAssertMsg2), pszFormat, vaCopy);
+    va_end(vaCopy);
+}
 
+
+RTR0DECL(void) RTR0AssertPanicSystem(void)
+{
     panic("%s%s", g_szRTAssertMsg1, g_szRTAssertMsg2);
 }
 

@@ -211,9 +211,9 @@ DECLCALLBACK(int) AudioSniffer::drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgH
      */
     void *pv;
     rc = CFGMR3QueryPtr(pCfgHandle, "Object", &pv);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Configuration error: No/bad \"Object\" value! rc=%Vrc\n", rc));
+        AssertMsgFailed(("Configuration error: No/bad \"Object\" value! rc=%Rrc\n", rc));
         return rc;
     }
     pData->pAudioSniffer = (AudioSniffer *)pv;        /** @todo Check this cast! */
@@ -259,3 +259,4 @@ const PDMDRVREG AudioSniffer::DrvReg =
     /* pfnDetach */
     NULL
 };
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

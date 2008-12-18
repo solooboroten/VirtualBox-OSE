@@ -1,4 +1,4 @@
-/* $Id: HostImpl.cpp $ */
+/* $Id: HostImpl.cpp 15574 2008-12-16 11:37:26Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */
@@ -23,25 +23,20 @@
 #define __STDC_CONSTANT_MACROS
 
 #ifdef RT_OS_LINUX
-# include <sys/types.h>
-# include <sys/stat.h>
-# include <unistd.h>
+// # include <sys/types.h>
+// # include <sys/stat.h>
+// # include <unistd.h>
 # include <sys/ioctl.h>
-# include <fcntl.h>
-# include <mntent.h>
+// # include <fcntl.h>
+// # include <mntent.h>
 /* bird: This is a hack to work around conflicts between these linux kernel headers
  *       and the GLIBC tcpip headers. They have different declarations of the 4
  *       standard byte order functions. */
-# define _LINUX_BYTEORDER_GENERIC_H
-# include <linux/cdrom.h>
-# ifdef VBOX_USE_LIBHAL
-// # include <libhal.h>
-// /* These are defined by libhal.h and by VBox header files. */
-// # undef TRUE
-// # undef FALSE
-#  include "vbox-libhal.h"
-# endif
+// # define _LINUX_BYTEORDER_GENERIC_H
+// # include <linux/cdrom.h>
 # include <errno.h>
+# include <net/if.h>
+# include <net/if_arp.h>
 #endif /* RT_OS_LINUX */
 
 #ifdef RT_OS_SOLARIS
@@ -51,6 +46,9 @@
 # include <errno.h>
 # include <limits.h>
 # include <stdio.h>
+# ifdef VBOX_SOLARIS_NSL_RESOLVED
+#  include <libdevinfo.h>
+# endif
 # include <net/if.h>
 # include <sys/socket.h>
 # include <sys/sockio.h>
@@ -62,10 +60,12 @@
 # include <sys/dkio.h>
 # include <sys/mnttab.h>
 # include <sys/mntent.h>
+/* Dynamic loading of libhal on Solaris hosts */
 # ifdef VBOX_USE_LIBHAL
 #  include "vbox-libhal.h"
 extern "C" char *getfullrawname(char *);
 # endif
+# include "solaris/DynLoadLibSolaris.h"
 #endif /* RT_OS_SOLARIS */
 
 #ifdef RT_OS_WINDOWS
@@ -79,6 +79,7 @@ extern "C" char *getfullrawname(char *);
 # include <setupapi.h>
 # include <shlobj.h>
 # include <cfgmgr32.h>
+
 #endif /* RT_OS_WINDOWS */
 
 
@@ -101,20 +102,32 @@ extern "C" char *getfullrawname(char *);
 
 
 #include <VBox/usb.h>
+#include <VBox/x86.h>
 #include <VBox/err.h>
+#include <iprt/asm.h>
 #include <iprt/string.h>
 #include <iprt/mp.h>
 #include <iprt/time.h>
 #include <iprt/param.h>
 #include <iprt/env.h>
+#include <iprt/mem.h>
 #ifdef RT_OS_SOLARIS
 # include <iprt/path.h>
 # include <iprt/ctype.h>
 #endif
+#ifdef VBOX_WITH_HOSTNETIF_API
+#include "netif.h"
+#endif
+
+#if defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT)
+# include <VBox/WinNetConfig.h>
+#endif /* #if defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT) */
 
 #include <stdio.h>
 
 #include <algorithm>
+
+
 
 // constructor / destructor
 /////////////////////////////////////////////////////////////////////////////
@@ -145,7 +158,7 @@ HRESULT Host::init (VirtualBox *aParent)
     ComAssertRet (aParent, E_INVALIDARG);
 
     AutoWriteLock alock (this);
-    ComAssertRet (!isReady(), E_UNEXPECTED);
+    ComAssertRet (!isReady(), E_FAIL);
 
     mParent = aParent;
 
@@ -159,7 +172,7 @@ HRESULT Host::init (VirtualBox *aParent)
     mUSBProxyService = new USBProxyServiceLinux (this);
 # elif defined (RT_OS_OS2)
     mUSBProxyService = new USBProxyServiceOs2 (this);
-# elif defined (RT_OS_SOLARIS) && 0
+# elif defined (RT_OS_SOLARIS)
     mUSBProxyService = new USBProxyServiceSolaris (this);
 # elif defined (RT_OS_WINDOWS)
     mUSBProxyService = new USBProxyServiceWindows (this);
@@ -173,6 +186,59 @@ HRESULT Host::init (VirtualBox *aParent)
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
     registerMetrics (aParent->performanceCollector());
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
+
+#if defined (RT_OS_WINDOWS)
+    mHostPowerService = new HostPowerServiceWin (mParent);
+#elif defined (RT_OS_DARWIN)
+    mHostPowerService = new HostPowerServiceDarwin (mParent);
+#else
+    mHostPowerService = new HostPowerService (mParent);
+#endif
+
+    /* Cache the features reported by GetProcessorFeature. */
+    fVTxAMDVSupported = false;
+    fLongModeSupported = false;
+    fPAESupported = false;
+
+    if (ASMHasCpuId())
+    {
+        uint32_t u32FeaturesECX;
+        uint32_t u32Dummy;
+        uint32_t u32FeaturesEDX;
+        uint32_t u32VendorEBX, u32VendorECX, u32VendorEDX, u32AMDFeatureEDX, u32AMDFeatureECX;
+
+        ASMCpuId (0, &u32Dummy, &u32VendorEBX, &u32VendorECX, &u32VendorEDX);
+        ASMCpuId (1, &u32Dummy, &u32Dummy, &u32FeaturesECX, &u32FeaturesEDX);
+        /* Query AMD features. */
+        ASMCpuId (0x80000001, &u32Dummy, &u32Dummy, &u32AMDFeatureECX, &u32AMDFeatureEDX);
+
+        fLongModeSupported = !!(u32AMDFeatureEDX & X86_CPUID_AMD_FEATURE_EDX_LONG_MODE);
+        fPAESupported      = !!(u32FeaturesEDX & X86_CPUID_FEATURE_EDX_PAE);
+
+        if (    u32VendorEBX == X86_CPUID_VENDOR_INTEL_EBX
+            &&  u32VendorECX == X86_CPUID_VENDOR_INTEL_ECX
+            &&  u32VendorEDX == X86_CPUID_VENDOR_INTEL_EDX
+           )
+        {
+            if (    (u32FeaturesECX & X86_CPUID_FEATURE_ECX_VMX)
+                 && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_MSR)
+                 && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_FXSR)
+               )
+                fVTxAMDVSupported = true;
+        }
+        else
+        if (    u32VendorEBX == X86_CPUID_VENDOR_AMD_EBX
+            &&  u32VendorECX == X86_CPUID_VENDOR_AMD_ECX
+            &&  u32VendorEDX == X86_CPUID_VENDOR_AMD_EDX
+           )
+        {
+            if (   (u32AMDFeatureECX & X86_CPUID_AMD_FEATURE_ECX_SVM)
+                && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_MSR)
+                && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_FXSR)
+               )
+                fVTxAMDVSupported = true;
+        }
+    }
 
     setReady(true);
     return S_OK;
@@ -201,6 +267,8 @@ void Host::uninit()
     LogFlowThisFunc (("Done stopping USB proxy service.\n"));
 #endif
 
+    delete mHostPowerService;
+
     /* uninit all USB device filters still referenced by clients */
     uninitDependentChildren();
 
@@ -220,13 +288,13 @@ void Host::uninit()
  * @returns COM status code
  * @param drives address of result pointer
  */
-STDMETHODIMP Host::COMGETTER(DVDDrives) (IHostDVDDriveCollection **drives)
+STDMETHODIMP Host::COMGETTER(DVDDrives) (IHostDVDDriveCollection **aDrives)
 {
-    if (!drives)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aDrives);
     AutoWriteLock alock (this);
     CHECK_READY();
     std::list <ComObjPtr <HostDVDDrive> > list;
+    HRESULT rc = S_OK;
 
 #if defined(RT_OS_WINDOWS)
     int sz = GetLogicalDriveStrings(0, NULL);
@@ -291,52 +359,24 @@ STDMETHODIMP Host::COMGETTER(DVDDrives) (IHostDVDDriveCollection **drives)
     }
 
 #elif defined(RT_OS_LINUX)
-#ifdef VBOX_USE_LIBHAL
-    if (!getDVDInfoFromHal(list)) /* Playing with #defines in this way is nasty, I know. */
-#endif /* USE_LIBHAL defined */
-    // On Linux without hal, the situation is much more complex. We will take a
-    // heuristical approach and also allow the user to specify a list of host
-    // CDROMs using an environment variable.
-    // The general strategy is to try some known device names and see of they
-    // exist. At last, we'll enumerate the /etc/fstab file (luckily there's an
-    // API to parse it) for CDROM devices. Ok, let's start!
-
-    {
-        if (RTEnvGet("VBOX_CDROM"))
+    if (RT_SUCCESS (mHostDrives.updateDVDs()))
+        for (DriveInfoList::const_iterator it = mHostDrives.DVDBegin();
+             SUCCEEDED (rc) && it != mHostDrives.DVDEnd(); ++it)        
         {
-            char *cdromEnv = strdupa(RTEnvGet("VBOX_CDROM"));
-            char *cdromDrive;
-            cdromDrive = strtok(cdromEnv, ":"); /** @todo use strtok_r */
-            while (cdromDrive)
-            {
-                if (validateDevice(cdromDrive, true))
-                {
-                    ComObjPtr <HostDVDDrive> hostDVDDriveObj;
-                    hostDVDDriveObj.createObject();
-                    hostDVDDriveObj->init (Bstr (cdromDrive));
-                    list.push_back (hostDVDDriveObj);
-                }
-                cdromDrive = strtok(NULL, ":");
-            }
+            ComObjPtr<HostDVDDrive> hostDVDDriveObj;
+            Bstr device (it->mDevice.c_str());
+            Bstr udi (it->mUdi.empty() ? NULL : it->mUdi.c_str());
+            Bstr description (it->mDescription.empty() ? NULL : it->mDescription.c_str());
+            if (device.isNull() || (!it->mUdi.empty() && udi.isNull()) ||
+                (!it->mDescription.empty() && description.isNull()))
+                rc = E_OUTOFMEMORY;
+            if (SUCCEEDED (rc))
+                rc = hostDVDDriveObj.createObject();
+            if (SUCCEEDED (rc))
+                rc = hostDVDDriveObj->init (device, udi, description);
+            if (SUCCEEDED (rc))
+                list.push_back(hostDVDDriveObj);
         }
-        else
-        {
-            // this is a good guess usually
-            if (validateDevice("/dev/cdrom", true))
-            {
-                    ComObjPtr <HostDVDDrive> hostDVDDriveObj;
-                    hostDVDDriveObj.createObject();
-                    hostDVDDriveObj->init (Bstr ("/dev/cdrom"));
-                    list.push_back (hostDVDDriveObj);
-            }
-
-            // check the mounted drives
-            parseMountTable((char*)"/etc/mtab", list);
-
-            // check the drives that can be mounted
-            parseMountTable((char*)"/etc/fstab", list);
-        }
-    }
 #elif defined(RT_OS_DARWIN)
     PDARWINDVD cur = DarwinGetDVDDrives();
     while (cur)
@@ -359,8 +399,8 @@ STDMETHODIMP Host::COMGETTER(DVDDrives) (IHostDVDDriveCollection **drives)
     ComObjPtr<HostDVDDriveCollection> collection;
     collection.createObject();
     collection->init (list);
-    collection.queryInterfaceTo(drives);
-    return S_OK;
+    collection.queryInterfaceTo(aDrives);
+    return rc;
 }
 
 /**
@@ -369,14 +409,14 @@ STDMETHODIMP Host::COMGETTER(DVDDrives) (IHostDVDDriveCollection **drives)
  * @returns COM status code
  * @param drives address of result pointer
  */
-STDMETHODIMP Host::COMGETTER(FloppyDrives) (IHostFloppyDriveCollection **drives)
+STDMETHODIMP Host::COMGETTER(FloppyDrives) (IHostFloppyDriveCollection **aDrives)
 {
-    if (!drives)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aDrives);
     AutoWriteLock alock (this);
     CHECK_READY();
 
     std::list <ComObjPtr <HostFloppyDrive> > list;
+    HRESULT rc = S_OK;
 
 #ifdef RT_OS_WINDOWS
     int sz = GetLogicalDriveStrings(0, NULL);
@@ -399,50 +439,24 @@ STDMETHODIMP Host::COMGETTER(FloppyDrives) (IHostFloppyDriveCollection **drives)
     while (*p);
     delete[] hostDrives;
 #elif defined(RT_OS_LINUX)
-#ifdef VBOX_USE_LIBHAL
-    if (!getFloppyInfoFromHal(list)) /* Playing with #defines in this way is nasty, I know. */
-#endif /* USE_LIBHAL defined */
-    // As with the CDROMs, on Linux we have to take a multi-level approach
-    // involving parsing the mount tables. As this is not bulletproof, we'll
-    // give the user the chance to override the detection by an environment
-    // variable and skip the detection.
-
-    {
-        if (RTEnvGet("VBOX_FLOPPY"))
+    if (RT_SUCCESS (mHostDrives.updateFloppies()))
+        for (DriveInfoList::const_iterator it = mHostDrives.FloppyBegin();
+             SUCCEEDED (rc) && it != mHostDrives.FloppyEnd(); ++it)        
         {
-            char *floppyEnv = strdupa(RTEnvGet("VBOX_FLOPPY"));
-            char *floppyDrive;
-            floppyDrive = strtok(floppyEnv, ":");
-            while (floppyDrive)
-            {
-                // check if this is an acceptable device
-                if (validateDevice(floppyDrive, false))
-                {
-                    ComObjPtr <HostFloppyDrive> hostFloppyDriveObj;
-                    hostFloppyDriveObj.createObject();
-                    hostFloppyDriveObj->init (Bstr (floppyDrive));
-                    list.push_back (hostFloppyDriveObj);
-                }
-                floppyDrive = strtok(NULL, ":");
-            }
+            ComObjPtr<HostFloppyDrive> hostFloppyDriveObj;
+            Bstr device (it->mDevice.c_str());
+            Bstr udi (it->mUdi.empty() ? NULL : it->mUdi.c_str());
+            Bstr description (it->mDescription.empty() ? NULL : it->mDescription.c_str());
+            if (device.isNull() || (!it->mUdi.empty() && udi.isNull()) ||
+                (!it->mDescription.empty() && description.isNull()))
+                rc = E_OUTOFMEMORY;
+            if (SUCCEEDED (rc))
+                rc = hostFloppyDriveObj.createObject();
+            if (SUCCEEDED (rc))
+                rc = hostFloppyDriveObj->init (device, udi, description);
+            if (SUCCEEDED (rc))
+                list.push_back(hostFloppyDriveObj);
         }
-        else
-        {
-            // we assume that a floppy is always /dev/fd[x] with x from 0 to 7
-            char devName[10];
-            for (int i = 0; i <= 7; i++)
-            {
-                sprintf(devName, "/dev/fd%d", i);
-                if (validateDevice(devName, false))
-                {
-                    ComObjPtr <HostFloppyDrive> hostFloppyDriveObj;
-                    hostFloppyDriveObj.createObject();
-                    hostFloppyDriveObj->init (Bstr (devName));
-                    list.push_back (hostFloppyDriveObj);
-                }
-            }
-        }
-    }
 #else
     /* PORTME */
 #endif
@@ -450,8 +464,8 @@ STDMETHODIMP Host::COMGETTER(FloppyDrives) (IHostFloppyDriveCollection **drives)
     ComObjPtr<HostFloppyDriveCollection> collection;
     collection.createObject();
     collection->init (list);
-    collection.queryInterfaceTo(drives);
-    return S_OK;
+    collection.queryInterfaceTo(aDrives);
+    return rc;
 }
 
 #ifdef RT_OS_WINDOWS
@@ -506,8 +520,8 @@ static bool IsTAPDevice(const char *guid)
 
                 if (   !strcmp(szNetCfgInstanceId, guid)
                     && !strcmp(szNetProductName, "VirtualBox TAP Adapter")
-                    && (   !strcmp(szNetProviderName, "innotek GmbH")
-                        || !strcmp(szNetProviderName, "Sun Microsystems, Inc.")))
+                    && (   (!strcmp(szNetProviderName, "innotek GmbH"))
+                        || (!strcmp(szNetProviderName, "Sun Microsystems, Inc."))))
                 {
                     ret = true;
                     RegCloseKey(hNetCardGUID);
@@ -524,38 +538,11 @@ static bool IsTAPDevice(const char *guid)
 }
 #endif /* RT_OS_WINDOWS */
 
-/**
- * Returns a list of host network interfaces.
- *
- * @returns COM status code
- * @param drives address of result pointer
- */
-STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection **networkInterfaces)
+#ifdef RT_OS_SOLARIS
+static void vboxSolarisAddHostIface(char *pszIface, int Instance, PCRTMAC pMac, void *pvHostNetworkInterfaceList)
 {
-#if defined(RT_OS_WINDOWS) ||  defined(VBOX_WITH_NETFLT) /*|| defined(RT_OS_OS2)*/
-    if (!networkInterfaces)
-        return E_POINTER;
-    AutoWriteLock alock (this);
-    CHECK_READY();
-
-    std::list <ComObjPtr <HostNetworkInterface> > list;
-
-# if defined(RT_OS_DARWIN)
-    PDARWINETHERNIC pEtherNICs = DarwinGetEthernetControllers();
-    while (pEtherNICs)
-    {
-        ComObjPtr<HostNetworkInterface> IfObj;
-        IfObj.createObject();
-        if (SUCCEEDED(IfObj->init(Bstr(pEtherNICs->szName), Guid(pEtherNICs->Uuid))))
-            list.push_back(IfObj);
-
-        /* next, free current */
-        void *pvFree = pEtherNICs;
-        pEtherNICs = pEtherNICs->pNext;
-        RTMemFree(pvFree);
-    }
-
-# elif defined(RT_OS_SOLARIS)
+    std::list<ComObjPtr <HostNetworkInterface> > *pList = (std::list<ComObjPtr <HostNetworkInterface> > *)pvHostNetworkInterfaceList;
+    Assert(pList);
 
     typedef std::map <std::string, std::string> NICMap;
     typedef std::pair <std::string, std::string> NICPair;
@@ -592,6 +579,239 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
         SolarisNICMap.insert(NICPair("xge", "Neterior Xframe 10Gigabit Ethernet"));
     }
 
+    /*
+     * Try picking up description from our NIC map.
+     */
+    char szNICInstance[128];
+    RTStrPrintf(szNICInstance, sizeof(szNICInstance), "%s%d", pszIface, Instance);
+    char szNICDesc[256];
+    std::string Description = SolarisNICMap[pszIface];
+    if (Description != "")
+        RTStrPrintf(szNICDesc, sizeof(szNICDesc), "%s - %s", szNICInstance, Description.c_str());
+    else
+        RTStrPrintf(szNICDesc, sizeof(szNICDesc), "%s - Ethernet", szNICInstance);
+
+    /*
+     * Construct UUID with interface name and the MAC address if available.
+     */
+    RTUUID Uuid;
+    RTUuidClear(&Uuid);
+    memcpy(&Uuid, szNICInstance, RT_MIN(strlen(szNICInstance), sizeof(Uuid)));
+    Uuid.Gen.u8ClockSeqHiAndReserved = (Uuid.Gen.u8ClockSeqHiAndReserved & 0x3f) | 0x80;
+    Uuid.Gen.u16TimeHiAndVersion = (Uuid.Gen.u16TimeHiAndVersion & 0x0fff) | 0x4000;
+    if (pMac)
+    {
+        Uuid.Gen.au8Node[0] = pMac->au8[0];
+        Uuid.Gen.au8Node[1] = pMac->au8[1];
+        Uuid.Gen.au8Node[2] = pMac->au8[2];
+        Uuid.Gen.au8Node[3] = pMac->au8[3];
+        Uuid.Gen.au8Node[4] = pMac->au8[4];
+        Uuid.Gen.au8Node[5] = pMac->au8[5];
+    }
+
+    ComObjPtr<HostNetworkInterface> IfObj;
+    IfObj.createObject();
+    if (SUCCEEDED(IfObj->init(Bstr(szNICDesc), Guid(Uuid))))
+        pList->push_back(IfObj);
+}
+
+static boolean_t vboxSolarisAddLinkHostIface(const char *pszIface, void *pvHostNetworkInterfaceList)
+{
+    /*
+     * Clip off the zone instance number from the interface name (if any).
+     */
+    char szIfaceName[128];
+    strcpy(szIfaceName, pszIface);
+    char *pszColon = (char *)memchr(szIfaceName, ':', sizeof(szIfaceName));
+    if (pszColon)
+        *pszColon = '\0';
+
+    /*
+     * Get the instance number from the interface name, then clip it off.
+     */
+    int cbInstance = 0;
+    int cbIface = strlen(szIfaceName);
+    const char *pszEnd = pszIface + cbIface - 1;
+    for (int i = 0; i < cbIface - 1; i++)
+    {
+        if (!RT_C_IS_DIGIT(*pszEnd))
+            break;
+        cbInstance++;
+        pszEnd--;
+    }
+
+    int Instance = atoi(pszEnd + 1);
+    strncpy(szIfaceName, pszIface, cbIface - cbInstance);
+    szIfaceName[cbIface - cbInstance] = '\0';
+
+    /*
+     * Add the interface.
+     */
+    vboxSolarisAddHostIface(szIfaceName, Instance, NULL, pvHostNetworkInterfaceList);
+
+    /*
+     * Continue walking...
+     */
+    return _B_FALSE;
+}
+
+static bool vboxSolarisSortNICList(const ComObjPtr <HostNetworkInterface> Iface1, const ComObjPtr <HostNetworkInterface> Iface2)
+{
+    Bstr Iface1Str;
+    (*Iface1).COMGETTER(Name) (Iface1Str.asOutParam());
+
+    Bstr Iface2Str;
+    (*Iface2).COMGETTER(Name) (Iface2Str.asOutParam());
+
+    return Iface1Str < Iface2Str;
+}
+
+static bool vboxSolarisSameNIC(const ComObjPtr <HostNetworkInterface> Iface1, const ComObjPtr <HostNetworkInterface> Iface2)
+{
+    Bstr Iface1Str;
+    (*Iface1).COMGETTER(Name) (Iface1Str.asOutParam());
+
+    Bstr Iface2Str;
+    (*Iface2).COMGETTER(Name) (Iface2Str.asOutParam());
+
+    return (Iface1Str == Iface2Str);
+}
+
+# ifdef VBOX_SOLARIS_NSL_RESOLVED
+static int vboxSolarisAddPhysHostIface(di_node_t Node, di_minor_t Minor, void *pvHostNetworkInterfaceList)
+{
+    /*
+     * Skip aggregations.
+     */
+    if (!strcmp(di_driver_name(Node), "aggr"))
+        return DI_WALK_CONTINUE;
+
+    /*
+     * Skip softmacs.
+     */
+    if (!strcmp(di_driver_name(Node), "softmac"))
+        return DI_WALK_CONTINUE;
+
+    vboxSolarisAddHostIface(di_driver_name(Node), di_instance(Node), NULL, pvHostNetworkInterfaceList);
+    return DI_WALK_CONTINUE;
+}
+# endif /* VBOX_SOLARIS_NSL_RESOLVED */
+
+#endif
+
+#if defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT)
+# define VBOX_APP_NAME L"VirtualBox"
+
+static int vboxNetWinAddComponent(std::list <ComObjPtr <HostNetworkInterface> > * pPist, INetCfgComponent * pncc)
+{
+    LPWSTR              lpszName;
+    GUID                IfGuid;
+    HRESULT hr;
+    int rc = VERR_GENERAL_FAILURE;
+
+    hr = pncc->GetDisplayName( &lpszName );
+    Assert(hr == S_OK);
+    if(hr == S_OK)
+    {
+        size_t cUnicodeName = wcslen(lpszName) + 1;
+        size_t uniLen = (cUnicodeName * 2 + sizeof (OLECHAR) - 1) / sizeof (OLECHAR);
+        Bstr name (uniLen + 1 /* extra zero */);
+        wcscpy((wchar_t *) name.mutableRaw(), lpszName);
+
+        hr = pncc->GetInstanceGuid(&IfGuid);
+        Assert(hr == S_OK);
+        if (hr == S_OK)
+        {
+            /* create a new object and add it to the list */
+            ComObjPtr <HostNetworkInterface> iface;
+            iface.createObject();
+            /* remove the curly bracket at the end */
+            if (SUCCEEDED (iface->init (name, Guid (IfGuid))))
+            {
+                pPist->push_back (iface);
+                rc = VINF_SUCCESS;
+            }
+            else
+            {
+                Assert(0);
+            }
+        }
+        CoTaskMemFree(lpszName);
+    }
+
+    return rc;
+}
+
+#endif /* #if defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT) */
+
+/**
+ * Returns a list of host network interfaces.
+ *
+ * @returns COM status code
+ * @param drives address of result pointer
+ */
+STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (ComSafeArrayOut (IHostNetworkInterface *, aNetworkInterfaces))
+{
+#if defined(RT_OS_WINDOWS) ||  defined(VBOX_WITH_NETFLT) /*|| defined(RT_OS_OS2)*/
+    if (ComSafeArrayOutIsNull (aNetworkInterfaces))
+        return E_POINTER;
+
+    AutoWriteLock alock (this);
+    CHECK_READY();
+
+    std::list <ComObjPtr <HostNetworkInterface> > list;
+
+#ifdef VBOX_WITH_HOSTNETIF_API
+    int rc = NetIfList(list);
+    if (rc)
+    {
+        Log(("Failed to get host network interface list with rc=%Vrc\n", rc));
+    }
+#else
+# if defined(RT_OS_DARWIN)
+    PDARWINETHERNIC pEtherNICs = DarwinGetEthernetControllers();
+    while (pEtherNICs)
+    {
+        ComObjPtr<HostNetworkInterface> IfObj;
+        IfObj.createObject();
+        if (SUCCEEDED(IfObj->init(Bstr(pEtherNICs->szName), Guid(pEtherNICs->Uuid))))
+            list.push_back(IfObj);
+
+        /* next, free current */
+        void *pvFree = pEtherNICs;
+        pEtherNICs = pEtherNICs->pNext;
+        RTMemFree(pvFree);
+    }
+
+# elif defined(RT_OS_SOLARIS)
+
+#  ifdef VBOX_SOLARIS_NSL_RESOLVED
+
+    /*
+     * Use libdevinfo for determining all physical interfaces.
+     */
+    di_node_t Root;
+    Root = di_init("/", DINFOCACHE);
+    if (Root != DI_NODE_NIL)
+    {
+        di_walk_minor(Root, DDI_NT_NET, 0, &list, vboxSolarisAddPhysHostIface);
+        di_fini(Root);
+    }
+
+    /*
+     * Use libdlpi for determining all DLPI interfaces.
+     */
+    if (VBoxSolarisLibDlpiFound())
+        g_pfnLibDlpiWalk(vboxSolarisAddLinkHostIface, &list, 0);
+
+#  endif    /* VBOX_SOLARIS_NSL_RESOLVED */
+
+    /*
+     * This gets only the list of all plumbed logical interfaces.
+     * This is needed for zones which cannot access the device tree
+     * and in this case we just let them use the list of plumbed interfaces
+     * on the zone.
+     */
     int Sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_IP);
     if (Sock > 0)
     {
@@ -610,9 +830,6 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
             rc = ioctl(Sock, SIOCGLIFCONF, &IfConfig);
             if (!rc)
             {
-                /*
-                 * Ok now we go the interfaces, get the info we need (i.e MAC address).
-                 */
                 for (int i = 0; i < IfNum.lifn_count; i++)
                 {
                     /*
@@ -621,6 +838,7 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
                     if (!strncmp(Ifaces[i].lifr_name, "lo", 2))
                         continue;
 
+#if 0
                     rc = ioctl(Sock, SIOCGLIFADDR, &(Ifaces[i]));
                     if (!rc)
                     {
@@ -644,59 +862,26 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
                         char *pszIface = Ifaces[i].lifr_name;
                         strcpy(szNICDesc, pszIface);
 
-                        /*
-                         * Clip off the instance number from the interface name.
-                         */
-                        int cbInstance = 0;
-                        int cbIface = strlen(pszIface);
-                        char *pszEnd = pszIface + cbIface - 1;
-                        for (int i = 0; i < cbIface - 1; i++)
-                        {
-                            if (!RT_C_IS_DIGIT(*pszEnd))
-                                break;
-                            cbInstance++;
-                            pszEnd--;
-                        }
-
-                        /*
-                         * Try picking up description from our NIC map.
-                         */
-                        char szIfaceName[LIFNAMSIZ + 1];
-                        strncpy(szIfaceName, pszIface, cbIface - cbInstance);
-                        szIfaceName[cbIface - cbInstance] = '\0';
-                        std::string Description = SolarisNICMap[szIfaceName];
-                        if (Description != "")
-                            RTStrPrintf(szNICDesc, sizeof(szNICDesc), "%s - %s", pszIface, Description.c_str());
-                        else
-                            RTStrPrintf(szNICDesc, sizeof(szNICDesc), "%s - Ethernet", pszIface);
-
-                        /*
-                         * Construct UUID with BSD-name of the interface and the MAC address.
-                         */
-                        RTUUID Uuid;
-                        RTUuidClear(&Uuid);
-                        memcpy(&Uuid, pszIface, RT_MIN(strlen(pszIface), sizeof(Uuid)));
-                        Uuid.Gen.u8ClockSeqHiAndReserved = (Uuid.Gen.u8ClockSeqHiAndReserved & 0x3f) | 0x80;
-                        Uuid.Gen.u16TimeHiAndVersion = (Uuid.Gen.u16TimeHiAndVersion & 0x0fff) | 0x4000;
-                        Uuid.Gen.au8Node[0] = Mac.au8[0];
-                        Uuid.Gen.au8Node[1] = Mac.au8[1];
-                        Uuid.Gen.au8Node[2] = Mac.au8[2];
-                        Uuid.Gen.au8Node[3] = Mac.au8[3];
-                        Uuid.Gen.au8Node[4] = Mac.au8[4];
-                        Uuid.Gen.au8Node[5] = Mac.au8[5];
-
-                        ComObjPtr<HostNetworkInterface> IfObj;
-                        IfObj.createObject();
-                        if (SUCCEEDED(IfObj->init(Bstr(szNICDesc), Guid(Uuid))))
-                            list.push_back(IfObj);
+                        vboxSolarisAddLinkHostIface(pszIface, &list);
                     }
+#endif
+
+                    char *pszIface = Ifaces[i].lifr_name;
+                    vboxSolarisAddLinkHostIface(pszIface, &list);
                 }
             }
         }
         close(Sock);
     }
 
+    /*
+     * Weed out duplicates caused by dlpi_walk inconsistencies across Nevadas.
+     */
+    list.sort(vboxSolarisSortNICList);
+    list.unique(vboxSolarisSameNIC);
+
 # elif defined RT_OS_WINDOWS
+#  ifndef VBOX_WITH_NETFLT
     static const char *NetworkKey = "SYSTEM\\CurrentControlSet\\Control\\Network\\"
                                     "{4D36E972-E325-11CE-BFC1-08002BE10318}";
     HKEY hCtrlNet;
@@ -736,7 +921,7 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
                                            &dwKeyType, (LPBYTE) name.mutableRaw(), &len);
                 if (status == ERROR_SUCCESS)
                 {
-                    RTLogPrintf("Connection name %ls\n", name.mutableRaw());
+                    LogFunc(("Connection name %ls\n", name.mutableRaw()));
                     /* put a trailing zero, just in case (see MSDN) */
                     name.mutableRaw() [uniLen] = 0;
                     /* create a new object and add it to the list */
@@ -752,25 +937,140 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (IHostNetworkInterfaceCollection
         }
     }
     RegCloseKey (hCtrlNet);
-# endif /* RT_OS_WINDOWS */
+#  else /* #  if defined VBOX_WITH_NETFLT */
+    INetCfg              *pNc;
+    INetCfgComponent     *pMpNcc;
+    INetCfgComponent     *pTcpIpNcc;
+    LPWSTR               lpszApp;
+    HRESULT              hr;
+    IEnumNetCfgBindingPath      *pEnumBp;
+    INetCfgBindingPath          *pBp;
+    IEnumNetCfgBindingInterface *pEnumBi;
+    INetCfgBindingInterface *pBi;
 
-    ComObjPtr <HostNetworkInterfaceCollection> collection;
-    collection.createObject();
-    collection->init (list);
-    collection.queryInterfaceTo (networkInterfaces);
+    /* we are using the INetCfg API for getting the list of miniports */
+    hr = VBoxNetCfgWinQueryINetCfg( FALSE,
+                       VBOX_APP_NAME,
+                       &pNc,
+                       &lpszApp );
+    Assert(hr == S_OK);
+    if(hr == S_OK)
+    {
+#ifdef VBOX_NETFLT_ONDEMAND_BIND
+        /* for the protocol-based approach for now we just get all miniports the MS_TCPIP protocol binds to */
+        hr = pNc->FindComponent(L"MS_TCPIP", &pTcpIpNcc);
+#else
+        /* for the filter-based approach we get all miniports our filter (sun_VBoxNetFlt)is bound to */
+        hr = pNc->FindComponent(L"sun_VBoxNetFlt", &pTcpIpNcc);
+# ifndef VBOX_WITH_HARDENING
+        if(hr != S_OK)
+        {
+            /* TODO: try to install the netflt from here */
+        }
+# endif
+
+#endif
+
+        if(hr == S_OK)
+        {
+            hr = VBoxNetCfgWinGetBindingPathEnum(pTcpIpNcc, EBP_BELOW, &pEnumBp);
+            Assert(hr == S_OK);
+            if ( hr == S_OK )
+            {
+                hr = VBoxNetCfgWinGetFirstBindingPath(pEnumBp, &pBp);
+                Assert(hr == S_OK || hr == S_FALSE);
+                while( hr == S_OK )
+                {
+                    /* S_OK == enabled, S_FALSE == disabled */
+                    if(pBp->IsEnabled() == S_OK)
+                    {
+                        hr = VBoxNetCfgWinGetBindingInterfaceEnum(pBp, &pEnumBi);
+                        Assert(hr == S_OK);
+                        if ( hr == S_OK )
+                        {
+                            hr = VBoxNetCfgWinGetFirstBindingInterface(pEnumBi, &pBi);
+                            Assert(hr == S_OK);
+                            while(hr == S_OK)
+                            {
+                                hr = pBi->GetLowerComponent( &pMpNcc );
+                                Assert(hr == S_OK);
+                                if(hr == S_OK)
+                                {
+                                    vboxNetWinAddComponent(&list, pMpNcc);
+                                    VBoxNetCfgWinReleaseRef( pMpNcc );
+                                }
+                                VBoxNetCfgWinReleaseRef(pBi);
+
+                                hr = VBoxNetCfgWinGetNextBindingInterface(pEnumBi, &pBi);
+                            }
+                            VBoxNetCfgWinReleaseRef(pEnumBi);
+                        }
+                    }
+                    VBoxNetCfgWinReleaseRef(pBp);
+
+                    hr = VBoxNetCfgWinGetNextBindingPath(pEnumBp, &pBp);
+                }
+                VBoxNetCfgWinReleaseRef(pEnumBp);
+            }
+            VBoxNetCfgWinReleaseRef(pTcpIpNcc);
+        }
+        else
+        {
+            LogRel(("failed to get the sun_VBoxNetFlt component, error (0x%x)", hr));
+        }
+
+        VBoxNetCfgWinReleaseINetCfg(pNc, FALSE);
+    }
+#  endif /* #  if defined VBOX_WITH_NETFLT */
+
+
+# elif defined RT_OS_LINUX
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock >= 0)
+    {
+        char pBuffer[2048];
+        struct ifconf ifConf;
+        ifConf.ifc_len = sizeof(pBuffer);
+        ifConf.ifc_buf = pBuffer;
+        if (ioctl(sock, SIOCGIFCONF, &ifConf) >= 0)
+        {
+            for (struct ifreq *pReq = ifConf.ifc_req; (char*)pReq < pBuffer + ifConf.ifc_len; pReq++)
+            {
+                if (ioctl(sock, SIOCGIFHWADDR, pReq) >= 0)
+                {
+                    if (pReq->ifr_hwaddr.sa_family == ARPHRD_ETHER)
+                    {
+                        RTUUID uuid;
+                        Assert(sizeof(uuid) <= sizeof(*pReq));
+                        memcpy(&uuid, pReq, sizeof(uuid));
+
+                        ComObjPtr<HostNetworkInterface> IfObj;
+                        IfObj.createObject();
+                        if (SUCCEEDED(IfObj->init(Bstr(pReq->ifr_name), Guid(uuid))))
+                            list.push_back(IfObj);
+                    }
+                }
+            }
+        }
+        close(sock);
+    }
+# endif /* RT_OS_LINUX */
+#endif
+    SafeIfaceArray <IHostNetworkInterface> networkInterfaces (list);
+    networkInterfaces.detachTo (ComSafeArrayOutArg (aNetworkInterfaces));
+
     return S_OK;
 
 #else
     /* Not implemented / supported on this platform. */
-    return E_NOTIMPL;
+    ReturnComNotImplemented();
 #endif
 }
 
 STDMETHODIMP Host::COMGETTER(USBDevices)(IHostUSBDeviceCollection **aUSBDevices)
 {
 #ifdef VBOX_WITH_USB
-    if (!aUSBDevices)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aUSBDevices);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -783,16 +1083,15 @@ STDMETHODIMP Host::COMGETTER(USBDevices)(IHostUSBDeviceCollection **aUSBDevices)
 #else
     /* Note: The GUI depends on this method returning E_NOTIMPL with no
      * extended error info to indicate that USB is simply not available
-     * (w/o treting it as a failure), for example, as in OSE */
-    return E_NOTIMPL;
+     * (w/o treating it as a failure), for example, as in OSE. */
+    ReturnComNotImplemented();
 #endif
 }
 
 STDMETHODIMP Host::COMGETTER(USBDeviceFilters) (IHostUSBDeviceFilterCollection **aUSBDeviceFilters)
 {
 #ifdef VBOX_WITH_USB
-    if (!aUSBDeviceFilters)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aUSBDeviceFilters);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -809,8 +1108,8 @@ STDMETHODIMP Host::COMGETTER(USBDeviceFilters) (IHostUSBDeviceFilterCollection *
 #else
     /* Note: The GUI depends on this method returning E_NOTIMPL with no
      * extended error info to indicate that USB is simply not available
-     * (w/o treting it as a failure), for example, as in OSE */
-    return E_NOTIMPL;
+     * (w/o treating it as a failure), for example, as in OSE. */
+    ReturnComNotImplemented();
 #endif
 }
 
@@ -820,13 +1119,12 @@ STDMETHODIMP Host::COMGETTER(USBDeviceFilters) (IHostUSBDeviceFilterCollection *
  * @returns COM status code
  * @param   count address of result variable
  */
-STDMETHODIMP Host::COMGETTER(ProcessorCount)(ULONG *count)
+STDMETHODIMP Host::COMGETTER(ProcessorCount)(ULONG *aCount)
 {
-    if (!count)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aCount);
     AutoWriteLock alock (this);
     CHECK_READY();
-    *count = RTMpGetPresentCount();
+    *aCount = RTMpGetPresentCount();
     return S_OK;
 }
 
@@ -836,13 +1134,12 @@ STDMETHODIMP Host::COMGETTER(ProcessorCount)(ULONG *count)
  * @returns COM status code
  * @param   count address of result variable
  */
-STDMETHODIMP Host::COMGETTER(ProcessorOnlineCount)(ULONG *count)
+STDMETHODIMP Host::COMGETTER(ProcessorOnlineCount)(ULONG *aCount)
 {
-    if (!count)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aCount);
     AutoWriteLock alock (this);
     CHECK_READY();
-    *count = RTMpGetOnlineCount();
+    *aCount = RTMpGetOnlineCount();
     return S_OK;
 }
 
@@ -851,15 +1148,14 @@ STDMETHODIMP Host::COMGETTER(ProcessorOnlineCount)(ULONG *count)
  *
  * @returns COM status code
  * @param   cpu id to get info for.
- * @param   speed address of result variable, speed is 0 if unknown or cpuId is invalid.
+ * @param   speed address of result variable, speed is 0 if unknown or aCpuId is invalid.
  */
-STDMETHODIMP Host::GetProcessorSpeed(ULONG aCpuId, ULONG *speed)
+STDMETHODIMP Host::GetProcessorSpeed(ULONG aCpuId, ULONG *aSpeed)
 {
-    if (!speed)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aSpeed);
     AutoWriteLock alock (this);
     CHECK_READY();
-    *speed = RTMpGetMaxFrequency(aCpuId);
+    *aSpeed = RTMpGetMaxFrequency(aCpuId);
     return S_OK;
 }
 /**
@@ -867,18 +1163,49 @@ STDMETHODIMP Host::GetProcessorSpeed(ULONG aCpuId, ULONG *speed)
  *
  * @returns COM status code
  * @param   cpu id to get info for.
- * @param   description address of result variable, NULL if known or cpuId is invalid.
+ * @param   description address of result variable, NULL if known or aCpuId is invalid.
  */
-STDMETHODIMP Host::GetProcessorDescription(ULONG cpuId, BSTR *description)
+STDMETHODIMP Host::GetProcessorDescription(ULONG aCpuId, BSTR *aDescription)
 {
-    if (!description)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aDescription);
     AutoWriteLock alock (this);
     CHECK_READY();
     /** @todo */
-    return E_NOTIMPL;
+    ReturnComNotImplemented();
 }
 
+/**
+ * Returns whether a host processor feature is supported or not
+ *
+ * @returns COM status code
+ * @param   Feature to query.
+ * @param   address of supported bool result variable
+ */
+STDMETHODIMP Host::GetProcessorFeature(ProcessorFeature_T aFeature, BOOL *aSupported)
+{
+    CheckComArgOutPointerValid(aSupported);
+    AutoWriteLock alock (this);
+    CHECK_READY();
+
+    switch (aFeature)
+    {
+    case ProcessorFeature_HWVirtEx:
+        *aSupported = fVTxAMDVSupported;
+        break;
+
+    case ProcessorFeature_PAE:
+        *aSupported = fPAESupported;
+        break;
+
+    case ProcessorFeature_LongMode:
+        *aSupported = fLongModeSupported;
+        break;
+
+    default:
+        ReturnComNotImplemented();
+    }
+    return S_OK;
+}
 
 /**
  * Returns the amount of installed system memory in megabytes
@@ -886,14 +1213,20 @@ STDMETHODIMP Host::GetProcessorDescription(ULONG cpuId, BSTR *description)
  * @returns COM status code
  * @param   size address of result variable
  */
-STDMETHODIMP Host::COMGETTER(MemorySize)(ULONG *size)
+STDMETHODIMP Host::COMGETTER(MemorySize)(ULONG *aSize)
 {
-    if (!size)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aSize);
     AutoWriteLock alock (this);
     CHECK_READY();
-    /** @todo */
-    return E_NOTIMPL;
+    /* @todo This is an ugly hack. There must be a function in IPRT for that. */
+    pm::CollectorHAL *hal = pm::createHAL();
+    if (!hal)
+        return E_FAIL;
+    ULONG tmp;
+    int rc = hal->getHostMemoryUsage(aSize, &tmp, &tmp);
+    *aSize /= 1024;
+    delete hal;
+    return rc;
 }
 
 /**
@@ -902,14 +1235,20 @@ STDMETHODIMP Host::COMGETTER(MemorySize)(ULONG *size)
  * @returns COM status code
  * @param   available address of result variable
  */
-STDMETHODIMP Host::COMGETTER(MemoryAvailable)(ULONG *available)
+STDMETHODIMP Host::COMGETTER(MemoryAvailable)(ULONG *aAvailable)
 {
-    if (!available)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aAvailable);
     AutoWriteLock alock (this);
     CHECK_READY();
-    /** @todo */
-    return E_NOTIMPL;
+    /* @todo This is an ugly hack. There must be a function in IPRT for that. */
+    pm::CollectorHAL *hal = pm::createHAL();
+    if (!hal)
+        return E_FAIL;
+    ULONG tmp;
+    int rc = hal->getHostMemoryUsage(&tmp, &tmp, aAvailable);
+    *aAvailable /= 1024;
+    delete hal;
+    return rc;
 }
 
 /**
@@ -918,14 +1257,13 @@ STDMETHODIMP Host::COMGETTER(MemoryAvailable)(ULONG *available)
  * @returns COM status code
  * @param   os address of result variable
  */
-STDMETHODIMP Host::COMGETTER(OperatingSystem)(BSTR *os)
+STDMETHODIMP Host::COMGETTER(OperatingSystem)(BSTR *aOs)
 {
-    if (!os)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aOs);
     AutoWriteLock alock (this);
     CHECK_READY();
     /** @todo */
-    return E_NOTIMPL;
+    ReturnComNotImplemented();
 }
 
 /**
@@ -934,14 +1272,13 @@ STDMETHODIMP Host::COMGETTER(OperatingSystem)(BSTR *os)
  * @returns COM status code
  * @param   os address of result variable
  */
-STDMETHODIMP Host::COMGETTER(OSVersion)(BSTR *version)
+STDMETHODIMP Host::COMGETTER(OSVersion)(BSTR *aVersion)
 {
-    if (!version)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aVersion);
     AutoWriteLock alock (this);
     CHECK_READY();
     /** @todo */
-    return E_NOTIMPL;
+    ReturnComNotImplemented();
 }
 
 /**
@@ -952,8 +1289,7 @@ STDMETHODIMP Host::COMGETTER(OSVersion)(BSTR *version)
  */
 STDMETHODIMP Host::COMGETTER(UTCTime)(LONG64 *aUTCTime)
 {
-    if (!aUTCTime)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aUTCTime);
     AutoWriteLock alock (this);
     CHECK_READY();
     RTTIMESPEC now;
@@ -1025,16 +1361,13 @@ struct NetworkInterfaceHelperClientData
 };
 
 STDMETHODIMP
-Host::CreateHostNetworkInterface (INPTR BSTR aName,
+Host::CreateHostNetworkInterface (IN_BSTR aName,
                                   IHostNetworkInterface **aHostNetworkInterface,
                                   IProgress **aProgress)
 {
-    if (!aName)
-        return E_INVALIDARG;
-    if (!aHostNetworkInterface)
-        return E_POINTER;
-    if (!aProgress)
-        return E_POINTER;
+    CheckComArgNotNull(aName);
+    CheckComArgOutPointerValid(aHostNetworkInterface);
+    CheckComArgOutPointerValid(aProgress);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -1043,13 +1376,19 @@ Host::CreateHostNetworkInterface (INPTR BSTR aName,
 
     /* first check whether an interface with the given name already exists */
     {
-        ComPtr <IHostNetworkInterfaceCollection> coll;
-        rc = COMGETTER(NetworkInterfaces) (coll.asOutParam());
+        com::SafeIfaceArray <IHostNetworkInterface> hostNetworkInterfaces;
+        rc = COMGETTER(NetworkInterfaces) (ComSafeArrayAsOutParam (hostNetworkInterfaces));
         CheckComRCReturnRC (rc);
-        ComPtr <IHostNetworkInterface> iface;
-        if (SUCCEEDED (coll->FindByName (aName, iface.asOutParam())))
-            return setError (E_FAIL,
-                tr ("Host network interface '%ls' already exists"), aName);
+        for (size_t i = 0; i < hostNetworkInterfaces.size(); ++i)
+        {
+            Bstr name;
+            hostNetworkInterfaces[i]->COMGETTER(Name) (name.asOutParam());
+            if (name == aName)
+            {
+                return setError (E_INVALIDARG,
+                                 tr ("Host network interface '%ls' already exists"), aName);
+            }
+        }
     }
 
     /* create a progress object */
@@ -1091,14 +1430,12 @@ Host::CreateHostNetworkInterface (INPTR BSTR aName,
 }
 
 STDMETHODIMP
-Host::RemoveHostNetworkInterface (INPTR GUIDPARAM aId,
+Host::RemoveHostNetworkInterface (IN_GUID aId,
                                   IHostNetworkInterface **aHostNetworkInterface,
                                   IProgress **aProgress)
 {
-    if (!aHostNetworkInterface)
-        return E_POINTER;
-    if (!aProgress)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aHostNetworkInterface);
+    CheckComArgOutPointerValid(aProgress);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -1107,13 +1444,23 @@ Host::RemoveHostNetworkInterface (INPTR GUIDPARAM aId,
 
     /* first check whether an interface with the given name already exists */
     {
-        ComPtr <IHostNetworkInterfaceCollection> coll;
-        rc = COMGETTER(NetworkInterfaces) (coll.asOutParam());
+        com::SafeIfaceArray <IHostNetworkInterface> hostNetworkInterfaces;
+        rc = COMGETTER(NetworkInterfaces) (ComSafeArrayAsOutParam (hostNetworkInterfaces));
         CheckComRCReturnRC (rc);
         ComPtr <IHostNetworkInterface> iface;
-        if (FAILED (coll->FindById (aId, iface.asOutParam())))
-            return setError (E_FAIL,
-                tr ("Host network interface with UUID {%Vuuid} does not exist"),
+        for (size_t i = 0; i < hostNetworkInterfaces.size(); ++i)
+        {
+            Guid guid;
+            hostNetworkInterfaces[i]->COMGETTER(Id) (guid.asOutParam());
+            if (guid == aId)
+            {
+                iface = hostNetworkInterfaces[i];
+                break;
+            }
+        }
+        if (iface.isNull())
+            return setError (VBOX_E_OBJECT_NOT_FOUND,
+                tr ("Host network interface with UUID {%RTuuid} does not exist"),
                 Guid (aId).raw());
 
         /* return the object to be removed to the caller */
@@ -1154,14 +1501,11 @@ Host::RemoveHostNetworkInterface (INPTR GUIDPARAM aId,
 
 #endif /* RT_OS_WINDOWS */
 
-STDMETHODIMP Host::CreateUSBDeviceFilter (INPTR BSTR aName, IHostUSBDeviceFilter **aFilter)
+STDMETHODIMP Host::CreateUSBDeviceFilter (IN_BSTR aName, IHostUSBDeviceFilter **aFilter)
 {
 #ifdef VBOX_WITH_USB
-    if (!aFilter)
-        return E_POINTER;
-
-    if (!aName || *aName == 0)
-        return E_INVALIDARG;
+    CheckComArgStrNotEmptyOrNull(aName);
+    CheckComArgOutPointerValid(aFilter);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -1176,16 +1520,15 @@ STDMETHODIMP Host::CreateUSBDeviceFilter (INPTR BSTR aName, IHostUSBDeviceFilter
 #else
     /* Note: The GUI depends on this method returning E_NOTIMPL with no
      * extended error info to indicate that USB is simply not available
-     * (w/o treting it as a failure), for example, as in OSE */
-    return E_NOTIMPL;
+     * (w/o treating it as a failure), for example, as in OSE. */
+    ReturnComNotImplemented();
 #endif
 }
 
 STDMETHODIMP Host::InsertUSBDeviceFilter (ULONG aPosition, IHostUSBDeviceFilter *aFilter)
 {
 #ifdef VBOX_WITH_USB
-    if (!aFilter)
-        return E_INVALIDARG;
+    CheckComArgNotNull(aFilter);
 
     /* Note: HostUSBDeviceFilter and USBProxyService also uses this lock. */
     AutoWriteLock alock (this);
@@ -1196,7 +1539,7 @@ STDMETHODIMP Host::InsertUSBDeviceFilter (ULONG aPosition, IHostUSBDeviceFilter 
 
     ComObjPtr <HostUSBDeviceFilter> filter = getDependentChild (aFilter);
     if (!filter)
-        return setError (E_INVALIDARG,
+        return setError (VBOX_E_INVALID_OBJECT_STATE,
             tr ("The given USB device filter is not created within "
                 "this VirtualBox instance"));
 
@@ -1224,16 +1567,15 @@ STDMETHODIMP Host::InsertUSBDeviceFilter (ULONG aPosition, IHostUSBDeviceFilter 
 #else
     /* Note: The GUI depends on this method returning E_NOTIMPL with no
      * extended error info to indicate that USB is simply not available
-     * (w/o treting it as a failure), for example, as in OSE */
-    return E_NOTIMPL;
+     * (w/o treating it as a failure), for example, as in OSE. */
+    ReturnComNotImplemented();
 #endif
 }
 
 STDMETHODIMP Host::RemoveUSBDeviceFilter (ULONG aPosition, IHostUSBDeviceFilter **aFilter)
 {
 #ifdef VBOX_WITH_USB
-    if (!aFilter)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aFilter);
 
     /* Note: HostUSBDeviceFilter and USBProxyService also uses this lock. */
     AutoWriteLock alock (this);
@@ -1279,8 +1621,8 @@ STDMETHODIMP Host::RemoveUSBDeviceFilter (ULONG aPosition, IHostUSBDeviceFilter 
 #else
     /* Note: The GUI depends on this method returning E_NOTIMPL with no
      * extended error info to indicate that USB is simply not available
-     * (w/o treting it as a failure), for example, as in OSE */
-    return E_NOTIMPL;
+     * (w/o treating it as a failure), for example, as in OSE. */
+    ReturnComNotImplemented();
 #endif
 }
 
@@ -1491,8 +1833,9 @@ void Host::getUSBFilters(Host::USBDeviceFilterList *aGlobalFilters, VirtualBox::
 // private methods
 ////////////////////////////////////////////////////////////////////////////////
 
-#if defined(RT_OS_LINUX) || defined(RT_OS_SOLARIS)
-# ifdef VBOX_USE_LIBHAL
+#if defined(RT_OS_SOLARIS) && defined(VBOX_USE_LIBHAL)
+/* Solaris hosts, loading libhal at runtime */
+
 /**
  * Helper function to query the hal subsystem for information about DVD drives attached to the
  * system.
@@ -1804,7 +2147,9 @@ bool Host::getFloppyInfoFromHal(std::list <ComObjPtr <HostFloppyDrive> > &list)
     }
     return halSuccess;
 }
-# endif  /* VBOX_USE_HAL defined */
+#endif  /* RT_OS_SOLARIS and VBOX_USE_HAL */
+
+#if defined(RT_OS_SOLARIS)
 
 /**
  * Helper function to parse the given mount file and add found entries
@@ -1968,7 +2313,7 @@ bool Host::validateDevice(const char *deviceNode, bool isCDROM)
     }
     return retValue;
 }
-#endif // RT_OS_LINUX || RT_OS_SOLARIS
+#endif // RT_OS_SOLARIS
 
 #ifdef VBOX_WITH_USB
 /**
@@ -1995,14 +2340,14 @@ HRESULT Host::checkUSBProxyService()
 
         if (mUSBProxyService->getLastError() == VERR_FILE_NOT_FOUND)
             return setWarning (E_FAIL,
-                tr ("Could not load the Host USB Proxy Service (%Vrc). "
+                tr ("Could not load the Host USB Proxy Service (%Rrc). "
                     "The service might be not installed on the host computer"),
                 mUSBProxyService->getLastError());
         if (mUSBProxyService->getLastError() == VINF_SUCCESS)
             return setWarning (E_FAIL,
                 tr ("The USB Proxy Service has not yet been ported to this host"));
         return setWarning (E_FAIL,
-            tr ("Could not load the Host USB Proxy service (%Vrc)"),
+            tr ("Could not load the Host USB Proxy service (%Rrc)"),
             mUSBProxyService->getLastError());
     }
 
@@ -2401,18 +2746,18 @@ int Host::createNetworkInterface (SVCHlpClient *aClient,
     }
 
     /* return the network connection GUID on success */
-    if (VBOX_SUCCESS (vrc))
+    if (RT_SUCCESS (vrc))
     {
         /* remove the curly bracket at the end */
         pCfgGuidString [_tcslen (pCfgGuidString) - 1] = '\0';
         LogFlowFunc (("Network connection GUID string = {%ls}\n", pCfgGuidString + 1));
 
         aGUID = Guid (Utf8Str (pCfgGuidString + 1));
-        LogFlowFunc (("Network connection GUID = {%Vuuid}\n", aGUID.raw()));
+        LogFlowFunc (("Network connection GUID = {%RTuuid}\n", aGUID.raw()));
         Assert (!aGUID.isEmpty());
     }
 
-    LogFlowFunc (("vrc=%Vrc\n", vrc));
+    LogFlowFunc (("vrc=%Rrc\n", vrc));
     LogFlowFuncLeave();
     return vrc;
 }
@@ -2423,7 +2768,7 @@ int Host::removeNetworkInterface (SVCHlpClient *aClient,
                                   Utf8Str &aErrMsg)
 {
     LogFlowFuncEnter();
-    LogFlowFunc (("Network connection GUID = {%Vuuid}\n", aGUID.raw()));
+    LogFlowFunc (("Network connection GUID = {%RTuuid}\n", aGUID.raw()));
 
     AssertReturn (aClient, VERR_INVALID_POINTER);
     AssertReturn (!aGUID.isEmpty(), VERR_INVALID_PARAMETER);
@@ -2477,7 +2822,7 @@ int Host::removeNetworkInterface (SVCHlpClient *aClient,
         if (hkeyNetwork)
             RegCloseKey (hkeyNetwork);
 
-        if (VBOX_FAILURE (vrc))
+        if (RT_FAILURE (vrc))
             break;
 
         /*
@@ -2619,12 +2964,12 @@ int Host::removeNetworkInterface (SVCHlpClient *aClient,
         if (hDeviceInfo != INVALID_HANDLE_VALUE)
             SetupDiDestroyDeviceInfoList (hDeviceInfo);
 
-        if (VBOX_FAILURE (vrc))
+        if (RT_FAILURE (vrc))
             break;
     }
     while (0);
 
-    LogFlowFunc (("vrc=%Vrc\n", vrc));
+    LogFlowFunc (("vrc=%Rrc\n", vrc));
     LogFlowFuncLeave();
     return vrc;
 }
@@ -2666,9 +3011,9 @@ HRESULT Host::networkInterfaceHelperClient (SVCHlpClient *aClient,
 
             /* write message and parameters */
             vrc = aClient->write (d->msgCode);
-            if (VBOX_FAILURE (vrc)) break;
+            if (RT_FAILURE (vrc)) break;
             vrc = aClient->write (Utf8Str (d->name));
-            if (VBOX_FAILURE (vrc)) break;
+            if (RT_FAILURE (vrc)) break;
 
             /* wait for a reply */
             bool endLoop = false;
@@ -2677,7 +3022,7 @@ HRESULT Host::networkInterfaceHelperClient (SVCHlpClient *aClient,
                 SVCHlpMsg::Code reply = SVCHlpMsg::Null;
 
                 vrc = aClient->read (reply);
-                if (VBOX_FAILURE (vrc)) break;
+                if (RT_FAILURE (vrc)) break;
 
                 switch (reply)
                 {
@@ -2686,9 +3031,9 @@ HRESULT Host::networkInterfaceHelperClient (SVCHlpClient *aClient,
                         /* read the GUID */
                         Guid guid;
                         vrc = aClient->read (guid);
-                        if (VBOX_FAILURE (vrc)) break;
+                        if (RT_FAILURE (vrc)) break;
 
-                        LogFlowFunc (("Network connection GUID = {%Vuuid}\n", guid.raw()));
+                        LogFlowFunc (("Network connection GUID = {%RTuuid}\n", guid.raw()));
 
                         /* initialize the object returned to the caller by
                          * CreateHostNetworkInterface() */
@@ -2701,7 +3046,7 @@ HRESULT Host::networkInterfaceHelperClient (SVCHlpClient *aClient,
                         /* read the error message */
                         Utf8Str errMsg;
                         vrc = aClient->read (errMsg);
-                        if (VBOX_FAILURE (vrc)) break;
+                        if (RT_FAILURE (vrc)) break;
 
                         rc = setError (E_FAIL, errMsg);
                         endLoop = true;
@@ -2723,13 +3068,13 @@ HRESULT Host::networkInterfaceHelperClient (SVCHlpClient *aClient,
         case SVCHlpMsg::RemoveHostNetworkInterface:
         {
             LogFlowFunc (("RemoveHostNetworkInterface:\n"));
-            LogFlowFunc (("Network connection GUID = {%Vuuid}\n", d->guid.raw()));
+            LogFlowFunc (("Network connection GUID = {%RTuuid}\n", d->guid.raw()));
 
             /* write message and parameters */
             vrc = aClient->write (d->msgCode);
-            if (VBOX_FAILURE (vrc)) break;
+            if (RT_FAILURE (vrc)) break;
             vrc = aClient->write (d->guid);
-            if (VBOX_FAILURE (vrc)) break;
+            if (RT_FAILURE (vrc)) break;
 
             /* wait for a reply */
             bool endLoop = false;
@@ -2738,7 +3083,7 @@ HRESULT Host::networkInterfaceHelperClient (SVCHlpClient *aClient,
                 SVCHlpMsg::Code reply = SVCHlpMsg::Null;
 
                 vrc = aClient->read (reply);
-                if (VBOX_FAILURE (vrc)) break;
+                if (RT_FAILURE (vrc)) break;
 
                 switch (reply)
                 {
@@ -2754,7 +3099,7 @@ HRESULT Host::networkInterfaceHelperClient (SVCHlpClient *aClient,
                         /* read the error message */
                         Utf8Str errMsg;
                         vrc = aClient->read (errMsg);
-                        if (VBOX_FAILURE (vrc)) break;
+                        if (RT_FAILURE (vrc)) break;
 
                         rc = setError (E_FAIL, errMsg);
                         endLoop = true;
@@ -2783,7 +3128,7 @@ HRESULT Host::networkInterfaceHelperClient (SVCHlpClient *aClient,
     if (aVrc)
         *aVrc = vrc;
 
-    LogFlowFunc (("rc=0x%08X, vrc=%Vrc\n", rc, vrc));
+    LogFlowFunc (("rc=0x%08X, vrc=%Rrc\n", rc, vrc));
     LogFlowFuncLeave();
     return rc;
 }
@@ -2807,29 +3152,29 @@ int Host::networkInterfaceHelperServer (SVCHlpClient *aClient,
 
             Utf8Str name;
             vrc = aClient->read (name);
-            if (VBOX_FAILURE (vrc)) break;
+            if (RT_FAILURE (vrc)) break;
 
             Guid guid;
             Utf8Str errMsg;
             vrc = createNetworkInterface (aClient, name, guid, errMsg);
 
-            if (VBOX_SUCCESS (vrc))
+            if (RT_SUCCESS (vrc))
             {
                 /* write success followed by GUID */
                 vrc = aClient->write (SVCHlpMsg::CreateHostNetworkInterface_OK);
-                if (VBOX_FAILURE (vrc)) break;
+                if (RT_FAILURE (vrc)) break;
                 vrc = aClient->write (guid);
-                if (VBOX_FAILURE (vrc)) break;
+                if (RT_FAILURE (vrc)) break;
             }
             else
             {
                 /* write failure followed by error message */
                 if (errMsg.isEmpty())
-                    errMsg = Utf8StrFmt ("Unspecified error (%Vrc)", vrc);
+                    errMsg = Utf8StrFmt ("Unspecified error (%Rrc)", vrc);
                 vrc = aClient->write (SVCHlpMsg::Error);
-                if (VBOX_FAILURE (vrc)) break;
+                if (RT_FAILURE (vrc)) break;
                 vrc = aClient->write (errMsg);
-                if (VBOX_FAILURE (vrc)) break;
+                if (RT_FAILURE (vrc)) break;
             }
 
             break;
@@ -2840,26 +3185,26 @@ int Host::networkInterfaceHelperServer (SVCHlpClient *aClient,
 
             Guid guid;
             vrc = aClient->read (guid);
-            if (VBOX_FAILURE (vrc)) break;
+            if (RT_FAILURE (vrc)) break;
 
             Utf8Str errMsg;
             vrc = removeNetworkInterface (aClient, guid, errMsg);
 
-            if (VBOX_SUCCESS (vrc))
+            if (RT_SUCCESS (vrc))
             {
                 /* write parameter-less success */
                 vrc = aClient->write (SVCHlpMsg::OK);
-                if (VBOX_FAILURE (vrc)) break;
+                if (RT_FAILURE (vrc)) break;
             }
             else
             {
                 /* write failure followed by error message */
                 if (errMsg.isEmpty())
-                    errMsg = Utf8StrFmt ("Unspecified error (%Vrc)", vrc);
+                    errMsg = Utf8StrFmt ("Unspecified error (%Rrc)", vrc);
                 vrc = aClient->write (SVCHlpMsg::Error);
-                if (VBOX_FAILURE (vrc)) break;
+                if (RT_FAILURE (vrc)) break;
                 vrc = aClient->write (errMsg);
-                if (VBOX_FAILURE (vrc)) break;
+                if (RT_FAILURE (vrc)) break;
             }
 
             break;
@@ -2870,7 +3215,7 @@ int Host::networkInterfaceHelperServer (SVCHlpClient *aClient,
                 VERR_GENERAL_FAILURE);
     }
 
-    LogFlowFunc (("vrc=%Vrc\n", vrc));
+    LogFlowFunc (("vrc=%Rrc\n", vrc));
     LogFlowFuncLeave();
     return vrc;
 }
@@ -2972,4 +3317,4 @@ void Host::unregisterMetrics (PerformanceCollector *aCollector)
     aCollector->unregisterBaseMetricsFor (this);
 };
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
-
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

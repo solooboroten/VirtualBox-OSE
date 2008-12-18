@@ -1,6 +1,8 @@
-/* $Id: DBGFR0.cpp $ */
+/* $Id: DBGFR0.cpp 14895 2008-12-02 12:01:15Z vboxsync $ */
 /** @file
  * DBGF - Debugger Facility, R0 part.
+ *
+ * Almost identical to DBGFGC.cpp, except for the fInHyper stuff.
  */
 
 /*
@@ -44,7 +46,7 @@
  * @param   pRegFrame   Pointer to the register frame for the trap.
  * @param   uDr6        The DR6 register value.
  */
-DBGFR0DECL(int) DBGFR0Trap01Handler(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCUINTREG uDr6)
+VMMR0DECL(int) DBGFR0Trap01Handler(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCUINTREG uDr6)
 {
     /** @todo Intel docs say that X86_DR6_BS has the highest priority... */
     /*
@@ -84,7 +86,7 @@ DBGFR0DECL(int) DBGFR0Trap01Handler(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCUINTREG
      * Currently we only implement single stepping in the guest,
      * so we'll bitch if this is not a BS event.
      */
-    AssertMsg(uDr6 & X86_DR6_BS, ("hey! we're not doing guest BPs yet! dr6=%RTreg %04x:%08\n",
+    AssertMsg(uDr6 & X86_DR6_BS, ("hey! we're not doing guest BPs yet! dr6=%RTreg %04x:%08x\n",
                                   uDr6, pRegFrame->cs, pRegFrame->eip));
     /** @todo virtualize DRx. */
     LogFlow(("DBGFR0Trap01Handler: guest debug event %RTreg at %04x:%08x!\n", uDr6, pRegFrame->cs, pRegFrame->eip));
@@ -102,7 +104,7 @@ DBGFR0DECL(int) DBGFR0Trap01Handler(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCUINTREG
  * @param   pVM         The VM handle.
  * @param   pRegFrame   Pointer to the register frame for the trap.
  */
-DBGFR0DECL(int) DBGFR0Trap03Handler(PVM pVM, PCPUMCTXCORE pRegFrame)
+VMMR0DECL(int) DBGFR0Trap03Handler(PVM pVM, PCPUMCTXCORE pRegFrame)
 {
     /*
      * Get the trap address and look it up in the breakpoint table.

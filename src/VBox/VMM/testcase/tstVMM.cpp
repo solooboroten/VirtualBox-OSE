@@ -1,4 +1,4 @@
-/* $Id: tstVMM.cpp $ */
+/* $Id: tstVMM.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * VMM Testcase.
  */
@@ -26,10 +26,11 @@
 #include <VBox/vm.h>
 #include <VBox/vmm.h>
 #include <VBox/cpum.h>
+#include <VBox/pdm.h>
 #include <VBox/err.h>
 #include <VBox/log.h>
 #include <iprt/assert.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/semaphore.h>
 #include <iprt/stream.h>
 
@@ -40,6 +41,15 @@
 #define TESTCASE    "tstVMM"
 
 VMMR3DECL(int) VMMDoTest(PVM pVM);
+
+/** PDMR3LdrEnumModules callback, see FNPDMR3ENUM. */
+static DECLCALLBACK(int)
+tstVMMLdrEnum(PVM pVM, const char *pszFilename, const char *pszName, RTUINTPTR ImageBase, size_t cbImage, bool fGC, void *pvUser)
+{
+    NOREF(pVM); NOREF(pszFilename); NOREF(fGC); NOREF(pvUser);
+    RTPrintf("tstVMM: %RTptr %s\n", ImageBase, pszName);
+    return VINF_SUCCESS;
+}
 
 
 int main(int argc, char **argv)
@@ -53,15 +63,19 @@ int main(int argc, char **argv)
      */
     RTPrintf(TESTCASE ": Initializing...\n");
     PVM pVM;
-    int rc = VMR3Create(NULL, NULL, NULL, NULL, &pVM);
-    if (VBOX_SUCCESS(rc))
+    int rc = VMR3Create(1, NULL, NULL, NULL, NULL, &pVM);
+    if (RT_SUCCESS(rc))
     {
+        PDMR3LdrEnumModules(pVM, tstVMMLdrEnum, NULL);
+        RTStrmFlush(g_pStdOut);
+        RTThreadSleep(256);
+
         /*
          * Do testing.
          */
         RTPrintf(TESTCASE ": Testing...\n");
         PVMREQ pReq1 = NULL;
-        rc = VMR3ReqCall(pVM, &pReq1, RT_INDEFINITE_WAIT, (PFNRT)VMMDoTest, 1, pVM);
+        rc = VMR3ReqCall(pVM, VMREQDEST_ANY, &pReq1, RT_INDEFINITE_WAIT, (PFNRT)VMMDoTest, 1, pVM);
         AssertRC(rc);
         VMR3ReqFree(pReq1);
 
@@ -71,7 +85,7 @@ int main(int argc, char **argv)
          * Cleanup.
          */
         rc = VMR3Destroy(pVM);
-        if (!VBOX_SUCCESS(rc))
+        if (!RT_SUCCESS(rc))
         {
             RTPrintf(TESTCASE ": error: failed to destroy vm! rc=%d\n", rc);
             rcRet++;

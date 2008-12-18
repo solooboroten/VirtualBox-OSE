@@ -41,7 +41,7 @@ int vbglLockLinear (void **ppvCtx, void *pv, uint32_t u32Size, bool fWriteAccess
     if (pMdl == NULL)
     {
         rc = VERR_NOT_SUPPORTED;
-        AssertMsgFailed(("IoAllocateMdl %VGv %x failed!!\n", pv, u32Size));
+        AssertMsgFailed(("IoAllocateMdl %p %x failed!!\n", pv, u32Size));
     }
     else
     {
@@ -57,13 +57,17 @@ int vbglLockLinear (void **ppvCtx, void *pv, uint32_t u32Size, bool fWriteAccess
 
             IoFreeMdl (pMdl);
             rc = VERR_INVALID_PARAMETER;
-            AssertMsgFailed(("MmProbeAndLockPages %VGv %x failed!!\n", pv, u32Size));
+            AssertMsgFailed(("MmProbeAndLockPages %p %x failed!!\n", pv, u32Size));
         }
     }
 
-#elif defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD) /** @todo r=bird: I don't think FreeBSD shouldn't go here, solaris and OS/2 doesn't
-                                                      * (ignore linux as it's not using the same ioctl code).
-                                                      * That said, the assumption below might be wrong for in kernel calls... */
+#elif defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD)
+    /** @todo r=bird: I don't think FreeBSD shouldn't go here, solaris and OS/2 doesn't
+      * That said, the assumption below might be wrong for in kernel calls... */
+
+    /** @todo r=frank: Linux: pv is at least in some cases, e.g. with VBoxMapFolder,
+     *  an R0 address -- the memory was allocated with kmalloc(). I don't know
+     *  if this is true in any case. */
     NOREF(ppvCtx);
     NOREF(pv);
     NOREF(u32Size);
@@ -279,7 +283,7 @@ int vbglDriverIOCtl (VBGLDRIVER *pDriver, uint32_t u32Function, void *pvData, ui
     nextStack->Parameters.DeviceIoControl.Type3InputBuffer = pvData;
 
     irp->AssociatedIrp.SystemBuffer = pvData; /* Output buffer. */
-    irp->MdlAddress = NULL;    
+    irp->MdlAddress = NULL;
 
     /* A completion routine is required to signal the Event. */
     IoSetCompletionRoutine (irp, vbglDriverIOCtlCompletion, &Event, TRUE, TRUE, TRUE);

@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-solaris.c $ */
+/* $Id: SUPDrv-solaris.c 13865 2008-11-05 14:14:11Z vboxsync $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Solaris specifics.
  */
@@ -50,6 +50,7 @@
 
 #include "../SUPDrvInternal.h"
 #include <VBox/log.h>
+#include <VBox/version.h>
 #include <iprt/semaphore.h>
 #include <iprt/spinlock.h>
 #include <iprt/mp.h>
@@ -63,10 +64,14 @@
 /*******************************************************************************
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
+/** @todo this quoting macros probably should be moved to a common place.
+  * The indirection is for expanding macros passed to the first macro. */
+#define VBOXSOLQUOTE2(x)                #x
+#define VBOXSOLQUOTE(x)                 VBOXSOLQUOTE2(x)
 /** The module name. */
 #define DEVICE_NAME              "vboxdrv"
 /** The module description as seen in 'modinfo'. */
-#define DEVICE_DESC              "VirtualBox Host Driver"
+#define DEVICE_DESC              "VirtualBox HostDrv"
 /** Maximum number of driver instances. */
 #define DEVICE_MAXINSTANCES      16
 
@@ -137,7 +142,7 @@ static struct dev_ops g_VBoxDrvSolarisDevOps =
 static struct modldrv g_VBoxDrvSolarisModule =
 {
     &mod_driverops,         /* extern from kernel */
-    DEVICE_DESC,
+    DEVICE_DESC " " VBOX_VERSION_STRING "r" VBOXSOLQUOTE(VBOX_SVN_REV),
     &g_VBoxDrvSolarisDevOps
 };
 
@@ -333,7 +338,7 @@ static int VBoxDrvSolarisAttach(dev_info_t *pDip, ddi_attach_cmd_t enmCmd)
                 ddi_report_dev(pDip);
                 return DDI_SUCCESS;
             }
-            
+
             return DDI_FAILURE;
         }
 
@@ -658,7 +663,7 @@ static int VBoxDrvSolarisIOCtl(dev_t Dev, int Cmd, intptr_t pArgs, int Mode, cre
         ||  Cmd == SUP_IOCTL_FAST_DO_HWACC_RUN
         ||  Cmd == SUP_IOCTL_FAST_DO_NOP)
     {
-        *pVal = supdrvIOCtlFast(Cmd, &g_DevExt, pSession);
+        *pVal = supdrvIOCtlFast(Cmd, pArgs, &g_DevExt, pSession);
         return 0;
     }
 

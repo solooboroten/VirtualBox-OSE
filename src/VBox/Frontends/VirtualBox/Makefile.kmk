@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 14728 2008-11-27 18:01:16Z vboxsync $
 ## @file
 # Makefile for the VirtualBox Qt3 GUI.
 #
@@ -63,11 +63,11 @@ ifeq ($(KBUILD_TARGET),os2)
  #
  # Hack for installing the qt.dll when building for OS/2.
  #
- ifneq ($(strip $(VBOX_DLL_QT)),)
+ ifneq ($(strip $(DLL_SDK_QT3_QT)),)
   INSTALLS.os2 += qt.dll
   qt.dll_INST = $(INST_BIN)
   qt.dll_SOURCES += \
-	$(VBOX_DLL_QT)=>$(not-dir $(VBOX_DLL_QT))
+	$(DLL_SDK_QT3_QT)=>$(not-dir $(DLL_SDK_QT3_QT))
  endif
 endif # OS/2
 
@@ -122,7 +122,6 @@ ifeq ($(KBUILD_TARGET),darwin) ## @todo use .darwin when ticket 36 has been fixe
  #VirtualBox3Hardened_INST.darwin = $(INST_BIN)VirtualBox3 $(INST_BIN)VirtualBoxVM3
  VirtualBox3Hardened_INST = $(INST_BIN)VirtualBox3 $(INST_BIN)VirtualBoxVM3
 endif
-
 
 
 #
@@ -328,9 +327,6 @@ endif
 ifdef VBOX_WITH_E1000
  VirtualBox_DEFS         += VBOX_WITH_E1000
 endif
-ifdef VBOX_OSE
- VirtualBox_DEFS         += VBOX_OSE
-endif
 ifdef VBOX_WITH_DEBUGGER_GUI
  VirtualBox_DEFS         += VBOX_WITH_DEBUGGER_GUI_MENU
 endif
@@ -339,6 +335,7 @@ ifdef VBOX_WITH_NETFLT
 endif
 
 VirtualBox_INCS           = \
+	. \
 	./include \
 	$(PATH_VirtualBox)/include
 
@@ -379,17 +376,17 @@ endif
 
 # Some flag hacks (should go away).
 ifneq ($(KBUILD_TARGET),win)
- src/HappyHttp.cpp_CXXFLAGS += -fexceptions
- src/VBoxDownloaderWgt.cpp_CXXFLAGS += -fexceptions
- src/VBoxNetworkFramework.cpp_CXXFLAGS += -fexceptions
+ VirtualBox_src/HappyHttp.cpp_CXXFLAGS += -fexceptions
+ VirtualBox_src/VBoxDownloaderWgt.cpp_CXXFLAGS += -fexceptions
+ VirtualBox_src/VBoxNetworkFramework.cpp_CXXFLAGS += -fexceptions
 endif
-src/HappyHttp.cpp_CXXFLAGS.linux += -O2
+VirtualBox_src/HappyHttp.cpp_CXXFLAGS.linux += -O2
 
 ## @todo how to detect what tool is used?
 ## @todo GCC3 seems to lack -Wno-missing-base-class-initializer, so we use more generic -Wno-extra
 ## @todo r=bird: see VirtualBox4.
 ifdef VBOX_WITH_XPCOM
- src/COMDefs.cpp_CXXFLAGS = $(VBOX_GCC_Wno-extra)
+ VirtualBox_src/COMDefs.cpp_CXXFLAGS = $(VBOX_GCC_Wno-extra)
 endif
 
 #
@@ -399,7 +396,7 @@ VirtualBox_BLDDIRS += $(PATH_VirtualBox)/ui
 VirtualBox_SOURCES += $(PATH_VirtualBox)/ui/vbox_image_collection.cpp
 VirtualBox_CLEAN   += $(PATH_VirtualBox)/ui/vbox_image_collection.cpp $(PATH_VirtualBox)/ui/vbox_image_collection.txt
 
-$$(PATH_VirtualBox)/ui/vbox_image_collection.txt: $(PATH_SUB_CURRENT)/VBoxUI.pro $(VirtualBox_QT_IMAGES) | $$(dir $$@)
+$$(PATH_VirtualBox)/ui/vbox_image_collection.txt: $(PATH_SUB_CURRENT)/VBoxUI.pro $$(VirtualBox_QT_IMAGES) | $$(dir $$@)
 	$(RM) -f $@
 	$(APPEND) -v $@ VirtualBox_QT_IMAGES
 
@@ -423,7 +420,7 @@ $$(PATH_VirtualBox)/include/COMWrappers.h: \
 	$(QUIET)$(VBOX_XSLTPROC) -o $@ $(VBOX_PATH_VIRTUALBOX3_SRC)/include/COMWrappers.xsl $<
 
 # alias for generating the COM Wrappers file.
-testwrappers:: $(PATH_VirtualBox)/include/COMWrappers.h
+testwrappers:: $$(PATH_VirtualBox)/include/COMWrappers.h
 
 
 ifeq ($(KBUILD_TARGET),win)

@@ -1,4 +1,4 @@
-/* $Id: errmsgwin.cpp $ */
+/* $Id: errmsgwin.cpp 14626 2008-11-26 10:01:53Z vboxsync $ */
 /** @file
  * IPRT - Status code messages.
  */
@@ -31,7 +31,7 @@
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
-#include <windows.h>
+#include <Windows.h>
 
 #include <iprt/err.h>
 #include <iprt/asm.h>
@@ -48,6 +48,9 @@
 static const RTWINERRMSG  g_aStatusMsgs[] =
 {
 #include "errmsgcomdata.h"
+#if defined(VBOX) && !defined(IN_GUEST)
+# include "errmsgvboxcomdata.h"
+#endif
     { NULL, NULL, 0 }
 };
 
@@ -85,7 +88,7 @@ RTDECL(PCRTWINERRMSG) RTErrWinGet(long rc)
      * Need to use the temporary stuff.
      */
     int32_t iMsg = (ASMAtomicIncU32(&g_iUnknownMsgs) - 1) % RT_ELEMENTS(g_aUnknownMsgs);
-    RTStrPrintf(&g_aszUnknownStr[iMsg][0], sizeof(g_aszUnknownStr[iMsg]), "Unknown Status 0x%X\n", rc);
+    RTStrPrintf(&g_aszUnknownStr[iMsg][0], sizeof(g_aszUnknownStr[iMsg]), "Unknown Status 0x%X", rc);
     return &g_aUnknownMsgs[iMsg];
 }
 

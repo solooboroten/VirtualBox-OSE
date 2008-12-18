@@ -212,7 +212,7 @@ STDMETHODIMP HostUSB::AttachUSBDevice (HostUSBDevice *hostDevice)
         return setError (E_FAIL, tr ("VM is not powered up"));
     PPDMIBASE pBase;
     int vrc = PDMR3QueryLun (mpVM, "usb-ohci", 0, 0, &pBase);
-    if (VBOX_FAILURE (vrc))
+    if (RT_FAILURE (vrc))
         return setError (E_FAIL, tr ("VM doesn't have a USB controller"));
     /*
      * Make sure that the device is in a captureable state
@@ -241,20 +241,20 @@ STDMETHODIMP HostUSB::AttachUSBDevice (HostUSBDevice *hostDevice)
     BOOL fRemote = FALSE;
     void *pvRemote = NULL;
 
-    LogFlowMember (("Console::AttachUSBDevice: Proxying USB device '%s' %Vuuid...\n", Address.c_str(), &Uuid));
+    LogFlowMember (("Console::AttachUSBDevice: Proxying USB device '%s' %RTuuid...\n", Address.c_str(), &Uuid));
     PVMREQ pReq;
-    vrc = VMR3ReqCall (mpVM, &pReq, RT_INDEFINITE_WAIT,
+    vrc = VMR3ReqCall (mpVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT,
                        (PFNRT)pRhConfig->pfnCreateProxyDevice,
                        5, pRhConfig, &Uuid, fRemote,
                        Address.c_str(), pvRemote);
-    if (VBOX_SUCCESS (vrc))
+    if (RT_SUCCESS (vrc))
         vrc = pReq->iStatus;
     VMR3ReqFree (pReq);
-    if (VBOX_SUCCESS (vrc))
+    if (RT_SUCCESS (vrc))
         hostDevice->setCaptured();
     else
     {
-        Log (("Console::AttachUSBDevice: Failed to create proxy device for '%s' %Vuuid, vrc=%Vrc\n", Address.c_str(),
+        Log (("Console::AttachUSBDevice: Failed to create proxy device for '%s' %RTuuid, vrc=%Rrc\n", Address.c_str(),
         &Uuid, vrc));
         AssertRC (vrc);
     /* michael: I presume this is not needed. */
@@ -269,7 +269,7 @@ STDMETHODIMP HostUSB::AttachUSBDevice (HostUSBDevice *hostDevice)
                 hrc = setError (E_FAIL, tr ("Not permitted to open the USB device, check usbfs options"));
                 break;
             default:
-                hrc = setError (E_FAIL, tr ("Failed to create USB proxy device: %Vrc"), vrc);
+                hrc = setError (E_FAIL, tr ("Failed to create USB proxy device: %Rrc"), vrc);
                 break;
         }
         return hrc;
@@ -294,17 +294,17 @@ STDMETHODIMP HostUSB::DetachUSBDevice (HostUSBDevice *aDevice)
     {
         PPDMIBASE pBase;
         vrc = PDMR3QueryLun (mpVM, "usb-ohci", 0, 0, &pBase);
-        if (VBOX_SUCCESS (vrc))
+        if (RT_SUCCESS (vrc))
         {
             PVUSBIRHCONFIG pRhConfig = (PVUSBIRHCONFIG)pBase->pfnQueryInterface (pBase, PDMINTERFACE_VUSB_RH_CONFIG);
             Assert (pRhConfig);
 
             RTUUID Uuid = aDevice->id();
-            LogFlowMember (("Console::DetachUSBDevice: Detaching USB proxy device %Vuuid...\n", &Uuid));
+            LogFlowMember (("Console::DetachUSBDevice: Detaching USB proxy device %RTuuid...\n", &Uuid));
             PVMREQ pReq;
-            vrc = VMR3ReqCall (mpVM, &pReq, RT_INDEFINITE_WAIT, (PFNRT)pRhConfig->pfnDestroyProxyDevice,
+            vrc = VMR3ReqCall (mpVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, (PFNRT)pRhConfig->pfnDestroyProxyDevice,
                                2, pRhConfig, &Uuid);
-            if (VBOX_SUCCESS (vrc))
+            if (RT_SUCCESS (vrc))
                 vrc = pReq->iStatus;
             VMR3ReqFree (pReq);
         }
@@ -315,8 +315,8 @@ STDMETHODIMP HostUSB::DetachUSBDevice (HostUSBDevice *aDevice)
         Log (("Console::DetachUSBDevice: USB isn't enabled.\n"));
         vrc = VINF_SUCCESS;
     }
-    if (VBOX_SUCCESS (vrc))
+    if (RT_SUCCESS (vrc))
         return S_OK;
-    Log (("Console::AttachUSBDevice: Failed to detach the device from the USB controller, vrc=%Vrc.\n", vrc));
-    return(setError (E_UNEXPECTED, tr ("Failed to destroy the USB proxy device: %Vrc"), vrc));
+    Log (("Console::AttachUSBDevice: Failed to detach the device from the USB controller, vrc=%Rrc.\n", vrc));
+    return(setError (E_UNEXPECTED, tr ("Failed to destroy the USB proxy device: %Rrc"), vrc));
 }

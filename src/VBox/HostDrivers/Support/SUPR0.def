@@ -1,4 +1,4 @@
-; $Id: SUPR0.def $
+; $Id: SUPR0.def 15505 2008-12-15 14:36:30Z vboxsync $
 ;; @file
 ; VirtualBox Support Driver - Built-in exports.
 ;
@@ -31,11 +31,16 @@
 LIBRARY SUPR0.dll
 
 EXPORTS
+    SUPR0AbsIs64bit
+    SUPR0Abs64bitKernelCS
+    SUPR0Abs64bitKernelSS
+    SUPR0Abs64bitKernelDS
     SUPR0ComponentRegisterFactory
     SUPR0ComponentDeregisterFactory
     SUPR0ComponentQueryFactory
     SUPR0ObjRegister
     SUPR0ObjAddRef
+    SUPR0ObjAddRefEx
     SUPR0ObjRelease
     SUPR0ObjVerifyAccess
     SUPR0LockMem
@@ -48,7 +53,8 @@ EXPORTS
     SUPR0MemGetPhys
     SUPR0MemFree
     SUPR0Printf
-    SUPR0ExecuteCallback
+    SUPR0GetPagingMode
+    SUPR0EnableVTx
     RTMemAlloc
     RTMemAllocZ
     RTMemFree
@@ -107,6 +113,8 @@ EXPORTS
     RTMpGetCount
     RTMpCpuIdToSetIndex
     RTMpCpuId
+    RTPowerNotificationRegister
+    RTPowerNotificationDeregister
     RTLogDefaultInstance
     RTLogRelDefaultInstance
     RTLogSetDefaultInstanceThread

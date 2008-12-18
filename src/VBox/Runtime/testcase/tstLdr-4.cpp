@@ -1,4 +1,4 @@
-/* $Id: tstLdr-4.cpp $ */
+/* $Id: tstLdr-4.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * IPRT - Testcase for RTLdrOpen using ldrLdrObjR0.r0.
  */
@@ -34,9 +34,12 @@
 *******************************************************************************/
 #include <iprt/ldr.h>
 #include <iprt/alloc.h>
+#include <iprt/log.h>
 #include <iprt/stream.h>
 #include <iprt/assert.h>
-#include <iprt/runtime.h>
+#include <iprt/param.h>
+#include <iprt/path.h>
+#include <iprt/initterm.h>
 #include <iprt/err.h>
 #include <iprt/string.h>
 
@@ -77,7 +80,7 @@ static DECLCALLBACK(int) testGetImport(RTLDRMOD hLdrMod, const char *pszModule, 
 /**
  * One test iteration with one file.
  *
- * The test is very simple, we load the the file three times
+ * The test is very simple, we load the file three times
  * into two different regions. The first two into each of the
  * regions the for compare usage. The third is loaded into one
  * and then relocated between the two and other locations a few times.
@@ -109,7 +112,7 @@ static int testLdrOne(const char *pszFilename)
     /*
      * Load them.
      */
-    for (i = 0; i < ELEMENTS(aLoads); i++)
+    for (i = 0; i < RT_ELEMENTS(aLoads); i++)
     {
         if (!strncmp(aLoads[i].pszName, "kLdr-", sizeof("kLdr-") - 1))
             rc = RTLdrOpenkLdr(pszFilename, &aLoads[i].hLdrMod);
@@ -157,7 +160,7 @@ static int testLdrOne(const char *pszFilename)
      */
     if (!cErrors)
     {
-        for (i = 0; i < ELEMENTS(aLoads); i += 1)
+        for (i = 0; i < RT_ELEMENTS(aLoads); i += 1)
         {
             /* get the pointer. */
             RTUINTPTR Value;
@@ -187,7 +190,7 @@ static int testLdrOne(const char *pszFilename)
     /*
      * Clean up.
      */
-    for (i = 0; i < ELEMENTS(aLoads); i++)
+    for (i = 0; i < RT_ELEMENTS(aLoads); i++)
     {
         if (aLoads[i].pvBits)
             RTMemFree(aLoads[i].pvBits);

@@ -58,64 +58,56 @@ HRESULT InternalFramebuffer::init(ULONG width, ULONG height, ULONG depth)
 
 STDMETHODIMP InternalFramebuffer::COMGETTER(Address) (BYTE **address)
 {
-    if (!address)
-        return E_POINTER;
+    CheckComArgOutPointerValid(address);
     *address = mData;
     return S_OK;
 }
 
 STDMETHODIMP InternalFramebuffer::COMGETTER(Width) (ULONG *width)
 {
-    if (!width)
-        return E_POINTER;
+    CheckComArgOutPointerValid(width);
     *width = mWidth;
     return S_OK;
 }
 
 STDMETHODIMP InternalFramebuffer::COMGETTER(Height) (ULONG *height)
 {
-    if (!height)
-        return E_POINTER;
+    CheckComArgOutPointerValid(height);
     *height = mHeight;
     return S_OK;
 }
 
 STDMETHODIMP InternalFramebuffer::COMGETTER(BitsPerPixel) (ULONG *bitsPerPixel)
 {
-    if (!bitsPerPixel)
-        return E_POINTER;
+    CheckComArgOutPointerValid(bitsPerPixel);
     *bitsPerPixel = mBitsPerPixel;
     return S_OK;
 }
 
 STDMETHODIMP InternalFramebuffer::COMGETTER(BytesPerLine) (ULONG *bytesPerLine)
 {
-    if (!bytesPerLine)
-        return E_POINTER;
+    CheckComArgOutPointerValid(bytesPerLine);
     *bytesPerLine = mBytesPerLine;
     return S_OK;
 }
 
 STDMETHODIMP InternalFramebuffer::COMGETTER(PixelFormat) (ULONG *pixelFormat)
 {
-    if (!pixelFormat)
-        return E_POINTER;
+    CheckComArgOutPointerValid(pixelFormat);
     *pixelFormat = FramebufferPixelFormat_FOURCC_RGB;
     return S_OK;
 }
 
 STDMETHODIMP InternalFramebuffer::COMGETTER(UsesGuestVRAM) (BOOL *usesGuestVRAM)
 {
-    if (!usesGuestVRAM)
-        return E_POINTER;
+    CheckComArgOutPointerValid(usesGuestVRAM);
     *usesGuestVRAM = FALSE;
     return S_OK;
 }
 
 STDMETHODIMP InternalFramebuffer::COMGETTER(HeightReduction) (ULONG *heightReduction)
 {
-    if (!heightReduction)
-        return E_POINTER;
+    CheckComArgOutPointerValid(heightReduction);
     /* no reduction */
     *heightReduction = 0;
     return S_OK;
@@ -123,13 +115,18 @@ STDMETHODIMP InternalFramebuffer::COMGETTER(HeightReduction) (ULONG *heightReduc
 
 STDMETHODIMP InternalFramebuffer::COMGETTER(Overlay) (IFramebufferOverlay **aOverlay)
 {
-    if (!aOverlay)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aOverlay);
     /* no overlay */
     *aOverlay = 0;
     return S_OK;
 }
 
+STDMETHODIMP InternalFramebuffer::COMGETTER(WinId) (ULONG64 *winId)
+{
+    CheckComArgOutPointerValid(winId);
+    *winId = 0;
+    return S_OK;
+}
 
 // IFramebuffer methods
 /////////////////////////////////////////////////////////////////////////////
@@ -150,8 +147,7 @@ STDMETHODIMP InternalFramebuffer::NotifyUpdate(ULONG x, ULONG y,
                                                ULONG w, ULONG h,
                                                BOOL *finished)
 {
-    if (!finished)
-        return E_POINTER;
+    CheckComArgOutPointerValid(finished);
     // no need for the caller to wait
     *finished = true;
     return S_OK;
@@ -165,8 +161,7 @@ InternalFramebuffer::RequestResize(ULONG iScreenId, ULONG pixelFormat, BYTE *vra
     NOREF (bpp);
     NOREF (bpl);
 
-    if (!finished)
-        return E_POINTER;
+    CheckComArgOutPointerValid(finished);
     // no need for the caller to wait
     *finished = true;
 
@@ -184,8 +179,7 @@ InternalFramebuffer::RequestResize(ULONG iScreenId, ULONG pixelFormat, BYTE *vra
 STDMETHODIMP InternalFramebuffer::OperationSupported(FramebufferAccelerationOperation_T operation,
                                                      BOOL *supported)
 {
-    if (!supported)
-        return E_POINTER;
+    CheckComArgOutPointerValid(supported);
     /* no acceleration please, we're a slow fallback implementation! */
     *supported = false;
     return S_OK;
@@ -194,8 +188,7 @@ STDMETHODIMP InternalFramebuffer::OperationSupported(FramebufferAccelerationOper
 STDMETHODIMP InternalFramebuffer::VideoModeSupported(ULONG width, ULONG height, ULONG bpp,
                                                      BOOL *supported)
 {
-    if (!supported)
-        return E_POINTER;
+    CheckComArgOutPointerValid(supported);
     /* whatever you want! */
     *supported = true;
     return S_OK;
@@ -204,8 +197,7 @@ STDMETHODIMP InternalFramebuffer::VideoModeSupported(ULONG width, ULONG height, 
 STDMETHODIMP InternalFramebuffer::SolidFill(ULONG x, ULONG y, ULONG width, ULONG height,
                                              ULONG color, BOOL *handled)
 {
-    if (!handled)
-        return E_POINTER;
+    CheckComArgOutPointerValid(handled);
     /* eek, what do you expect from us?! */
     *handled = false;
     return S_OK;
@@ -214,8 +206,7 @@ STDMETHODIMP InternalFramebuffer::SolidFill(ULONG x, ULONG y, ULONG width, ULONG
 STDMETHODIMP InternalFramebuffer::CopyScreenBits(ULONG xDst, ULONG yDst, ULONG xSrc, ULONG ySrc,
                                                  ULONG width, ULONG height, BOOL *handled)
 {
-    if (!handled)
-        return E_POINTER;
+    CheckComArgOutPointerValid(handled);
     /* eek, what do you expect from us?! */
     *handled = false;
     return S_OK;
@@ -224,31 +215,30 @@ STDMETHODIMP InternalFramebuffer::CopyScreenBits(ULONG xDst, ULONG yDst, ULONG x
 STDMETHODIMP InternalFramebuffer::GetVisibleRegion(BYTE *aRectangles, ULONG aCount,
                                                    ULONG *aCountCopied)
 {
+    CheckComArgOutPointerValid(aRectangles);
+
     PRTRECT rects = (PRTRECT)aRectangles;
 
-    if (!rects)
-        return E_POINTER;
+    /// @todo
 
-	/// @todo
-
-	NOREF(rects);
-	NOREF(aCount);
-	NOREF(aCountCopied);
+    NOREF(rects);
+    NOREF(aCount);
+    NOREF(aCountCopied);
 
     return S_OK;
 }
 
 STDMETHODIMP InternalFramebuffer::SetVisibleRegion(BYTE *aRectangles, ULONG aCount)
 {
+    CheckComArgOutPointerValid(aRectangles);
+
     PRTRECT rects = (PRTRECT)aRectangles;
 
-    if (!rects)
-        return E_POINTER;
+    /// @todo
 
-	/// @todo
-
-	NOREF(rects);
-	NOREF(aCount);
+    NOREF(rects);
+    NOREF(aCount);
 
     return S_OK;
 }
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

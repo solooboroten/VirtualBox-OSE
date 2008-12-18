@@ -67,20 +67,41 @@
 typedef R0PTRTYPE(struct SUPDRVSESSION *) PSUPDRVSESSION;
 
 /** Pointer to a VM. */
-typedef struct VM              *PVM;
+typedef struct VM                  *PVM;
 /** Pointer to a VM - Ring-0 Ptr. */
-typedef R0PTRTYPE(struct VM *)  PVMR0;
+typedef R0PTRTYPE(struct VM *)      PVMR0;
 /** Pointer to a VM - Ring-3 Ptr. */
-typedef R3PTRTYPE(struct VM *)  PVMR3;
+typedef R3PTRTYPE(struct VM *)      PVMR3;
 /** Pointer to a VM - RC Ptr. */
-typedef RCPTRTYPE(struct VM *)  PVMRC;
+typedef RCPTRTYPE(struct VM *)      PVMRC;
+
+/** Pointer to a virtual CPU structure. */
+typedef struct VMCPU *              PVMCPU;
+/** Pointer to a virtual CPU structure - Ring-3 Ptr. */
+typedef R3PTRTYPE(struct VMCPU *)   PVMCPUR3;
+/** Pointer to a virtual CPU structure - Ring-0 Ptr. */
+typedef R0PTRTYPE(struct VMCPU *)   PVMCPUR0;
+/** Pointer to a virtual CPU structure - RC Ptr. */
+typedef RCPTRTYPE(struct VMCPU *)   PVMCPURC;
 
 /** Pointer to a ring-0 (global) VM structure. */
-typedef R0PTRTYPE(struct GVM *) PGVM;
+typedef R0PTRTYPE(struct GVM *)     PGVM;
 
 /** Pointer to a ring-3 (user mode) VM structure. */
-typedef R3PTRTYPE(struct UVM *) PUVM;
+typedef R3PTRTYPE(struct UVM *)     PUVM;
 
+/** Virtual CPU ID. */
+typedef uint32_t VMCPUID;
+/** Pointer to a virtual CPU ID. */
+typedef VMCPUID *PVMCPUID;
+/** @name Special CPU ID values.
+ * @{ */
+/** All virtual CPUs. */
+#define VMCPUID_ALL         UINT32_C(0xffffffff)
+/** Any virtual CPU, preferrably an idle one.
+ * Intended for scheduling a VM request or some other task. */
+#define VMCPUID_ANY_IDLE    UINT32_C(0xfffffffe)
+/** @} */
 
 /** VM State
  */

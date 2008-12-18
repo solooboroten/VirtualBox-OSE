@@ -1,4 +1,4 @@
-/* $Id: CSAMGC.cpp $ */
+/* $Id: CSAMGC.cpp 14029 2008-11-10 17:27:22Z vboxsync $ */
 /** @file
  * CSAM - Guest OS Code Scanning and Analysis Manager - Any Context
  */
@@ -32,6 +32,7 @@
 #include <VBox/mm.h>
 #include <VBox/sup.h>
 #include <VBox/mm.h>
+#include <VBox/rem.h>
 #include <VBox/param.h>
 #include <iprt/avl.h>
 #include "CSAMInternal.h"
@@ -43,8 +44,6 @@
 #include <VBox/dis.h>
 #include <VBox/disopcode.h>
 #include <iprt/string.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <iprt/asm.h>
 
 /**
@@ -62,7 +61,7 @@
  * @param   offRange    The offset of the access into this range.
  *                      (If it's a EIP range this's the EIP, if not it's pvFault.)
  */
-CSAMGCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
+VMMRCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
 {
     PPATMGCSTATE pPATMGCState;
     bool         fPatchCode = PATMIsPatchGCAddr(pVM, (RTRCPTR)pRegFrame->eip);
@@ -71,16 +70,16 @@ CSAMGCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
     Assert(pVM->csam.s.cDirtyPages < CSAM_MAX_DIRTY_PAGES);
 
     /* Flush the recompilers translation block cache as the guest seems to be modifying instructions. */
-    EMFlushREMTBs(pVM);
+    REMFlushTBs(pVM);
 
     pPATMGCState = PATMQueryGCState(pVM);
     Assert(pPATMGCState);
 
     Assert(pPATMGCState->fPIF || fPatchCode);
     /** When patch code is executing instructions that must complete, then we must *never* interrupt it. */
-    if (!pPATMGCState->fPIF && fPatchCode)        
+    if (!pPATMGCState->fPIF && fPatchCode)
     {
-        Log(("CSAMGCCodePageWriteHandler: fPIF=0 -> stack fault in patch generated code at %VGv!\n", pRegFrame->eip));
+        Log(("CSAMGCCodePageWriteHandler: fPIF=0 -> stack fault in patch generated code at %08RX32!\n", pRegFrame->eip));
         /** @note there are cases when pages previously used for code are now used for stack; patch generated code will fault (pushf))
          *  Just make the page r/w and continue.
          */
@@ -88,19 +87,19 @@ CSAMGCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
          * Make this particular page R/W.
          */
         int rc = PGMShwModifyPage(pVM, pvFault, 1, X86_PTE_RW, ~(uint64_t)X86_PTE_RW);
-        AssertMsgRC(rc, ("PGMShwModifyPage -> rc=%Vrc\n", rc));
+        AssertMsgRC(rc, ("PGMShwModifyPage -> rc=%Rrc\n", rc));
         ASMInvalidatePage((void *)pvFault);
         return VINF_SUCCESS;
     }
 
     uint32_t cpl;
-    
+
     if (pRegFrame->eflags.Bits.u1VM)
         cpl = 3;
     else
         cpl = (pRegFrame->ss & X86_SEL_RPL);
 
-    Log(("CSAMGCCodePageWriteHandler: code page write at %VGv original address %VGv (cpl=%d)\n", pvFault, (RTGCUINTPTR)pvRange + offRange, cpl));
+    Log(("CSAMGCCodePageWriteHandler: code page write at %RGv original address %RGv (cpl=%d)\n", pvFault, (RTGCUINTPTR)pvRange + offRange, cpl));
 
     /* If user code is modifying one of our monitored pages, then we can safely make it r/w as it's no longer being used for supervisor code. */
     if (cpl != 3)
@@ -127,9 +126,9 @@ CSAMGCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
     /*
      * Make this particular page R/W. The VM_FF_CSAM_FLUSH_DIRTY_PAGE handler will reset it to readonly again.
      */
-    Log(("CSAMGCCodePageWriteHandler: enabled r/w for page %VGv\n", pvFault));
+    Log(("CSAMGCCodePageWriteHandler: enabled r/w for page %RGv\n", pvFault));
     rc = PGMShwModifyPage(pVM, pvFault, 1, X86_PTE_RW, ~(uint64_t)X86_PTE_RW);
-    AssertMsgRC(rc, ("PGMShwModifyPage -> rc=%Vrc\n", rc));
+    AssertMsgRC(rc, ("PGMShwModifyPage -> rc=%Rrc\n", rc));
     ASMInvalidatePage((void *)pvFault);
 
     STAM_COUNTER_INC(&pVM->csam.s.StatCodePageModified);

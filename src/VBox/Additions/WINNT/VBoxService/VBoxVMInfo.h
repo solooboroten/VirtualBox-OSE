@@ -1,4 +1,4 @@
-/* $Id: VBoxVMInfo.h $ */
+/* $Id: VBoxVMInfo.h 13462 2008-10-22 06:46:45Z vboxsync $ */
 /** @file
  * VBoxVMInfo - Virtual machine (guest) information for the host.
  */

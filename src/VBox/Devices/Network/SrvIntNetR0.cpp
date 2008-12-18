@@ -1,4 +1,4 @@
-/* $Id: SrvIntNetR0.cpp $ */
+/* $Id: SrvIntNetR0.cpp 15505 2008-12-15 14:36:30Z vboxsync $ */
 /** @file
  * Internal networking - The ring 0 service.
  */
@@ -536,7 +536,7 @@ DECLINLINE(void) intnetR0SgRead(PCINTNETSG pSG, void *pvBuf)
  */
 DECLINLINE(int) intnetR0IfRetain(PINTNETIF pIf, PSUPDRVSESSION pSession)
 {
-    int rc = SUPR0ObjAddRef(pIf->pvObj, pSession);
+    int rc = SUPR0ObjAddRefEx(pIf->pvObj, pSession, true /* fNoBlocking */);
     AssertRCReturn(rc, rc);
     return VINF_SUCCESS;
 }
@@ -1108,6 +1108,14 @@ static void intnetR0NetworkSnoopDhcp(PINTNETNETWORK pNetwork, PCRTNETIPV4 pIpHdr
      */
     switch (MsgType)
     {
+#if 0
+        case RTNET_DHCP_MT_REQUEST:
+            /** @todo Check for valid non-broadcast requests w/ IP for any of the MACs we
+             *        know, and add the IP to the cache. */
+            break;
+#endif
+
+
         /*
          * Lookup the interface by its MAC address and insert the IPv4 address into the cache.
          * Delete the old client address first, just in case it changed in a renewal.
@@ -1948,6 +1956,97 @@ static void intnetR0NetworkEditArpFromWire(PINTNETNETWORK pNetwork, PINTNETSG pS
 
 
 /**
+ * Detects and edits an DHCP packet arriving from the internal net.
+ *
+ * @param   pNetwork        The network the frame is being sent to.
+ * @param   pSG             Pointer to the gather list for the frame.
+ *                          The flags and data content may be updated.
+ * @param   pEthHdr         Pointer to the ethernet header. This may also be
+ *                          updated if it's a unicast...
+ */
+static void intnetR0NetworkEditDhcpFromIntNet(PINTNETNETWORK pNetwork, PINTNETSG pSG, PRTNETETHERHDR pEthHdr)
+{
+    /*
+     * Check the minimum size and get a linear copy of the thing to work on,
+     * using the temporary buffer if necessary.
+     */
+    if (RT_UNLIKELY(pSG->cbTotal < sizeof(RTNETETHERHDR) + RTNETIPV4_MIN_LEN + RTNETUDP_MIN_LEN + RTNETBOOTP_DHCP_MIN_LEN))
+        return;
+    /*
+     * Get a pointer to a linear copy of the full packet, using the
+     * temporary buffer if necessary.
+     */
+    PCRTNETIPV4 pIpHdr = (PCRTNETIPV4)((PCRTNETETHERHDR)pSG->aSegs[0].pv + 1);
+    size_t cbPacket = pSG->cbTotal - sizeof(RTNETETHERHDR);
+    if (pSG->cSegsUsed > 1)
+    {
+        cbPacket = RT_MIN(cbPacket, INTNETNETWORK_TMP_SIZE);
+        Log6(("intnetR0NetworkEditDhcpFromIntNet: Copying IPv4/UDP/DHCP pkt %u\n", cbPacket));
+        if (!intnetR0SgReadPart(pSG, sizeof(RTNETETHERHDR), cbPacket, pNetwork->pbTmp))
+            return;
+        //pSG->fFlags |= INTNETSG_FLAGS_PKT_CP_IN_TMP;
+        pIpHdr = (PCRTNETIPV4)pNetwork->pbTmp;
+    }
+
+    /*
+     * Validate the IP header and find the UDP packet.
+     */
+    if (!RTNetIPv4IsHdrValid(pIpHdr, cbPacket, pSG->cbTotal - sizeof(RTNETETHERHDR)))
+    {
+        Log6(("intnetR0NetworkEditDhcpFromIntNet: bad ip header\n"));
+        return;
+    }
+    size_t cbIpHdr = pIpHdr->ip_hl * 4;
+    if (    pIpHdr->ip_p != RTNETIPV4_PROT_UDP                               /* DHCP is UDP. */
+        ||  cbPacket < cbIpHdr + RTNETUDP_MIN_LEN + RTNETBOOTP_DHCP_MIN_LEN) /* Min DHCP packet len */
+        return;
+
+    size_t cbUdpPkt = cbPacket - cbIpHdr;
+    PCRTNETUDP pUdpHdr = (PCRTNETUDP)((uintptr_t)pIpHdr + cbIpHdr);
+    /* We are only interested in DHCP packets coming from client to server. */
+    if (    RT_BE2H_U16(pUdpHdr->uh_dport) != RTNETIPV4_PORT_BOOTPS
+         || RT_BE2H_U16(pUdpHdr->uh_sport) != RTNETIPV4_PORT_BOOTPC)
+        return;
+
+    /*
+     * Check if the DHCP message is valid and get the type.
+     */
+    if (!RTNetIPv4IsUDPValid(pIpHdr, pUdpHdr, pUdpHdr + 1, cbUdpPkt))
+    {
+        Log6(("intnetR0NetworkEditDhcpFromIntNet: Bad UDP packet\n"));
+        return;
+    }
+    PCRTNETBOOTP pDhcp = (PCRTNETBOOTP)(pUdpHdr + 1);
+    uint8_t MsgType;
+    if (!RTNetIPv4IsDHCPValid(pUdpHdr, pDhcp, cbUdpPkt - sizeof(*pUdpHdr), &MsgType))
+    {
+        Log6(("intnetR0NetworkEditDhcpFromIntNet: Bad DHCP packet\n"));
+        return;
+    }
+
+    switch (MsgType)
+    {
+        case RTNET_DHCP_MT_DISCOVER:
+        case RTNET_DHCP_MT_REQUEST:
+            Log6(("intnetR0NetworkEditDhcpFromIntNet: Setting broadcast flag in DHCP %#x, previously %x\n", MsgType, pDhcp->bp_flags));
+            if (!(pDhcp->bp_flags & RT_H2BE_U16_C(RTNET_DHCP_FLAG_BROADCAST)))
+            {
+                /* Patch flags */
+                uint16_t uFlags = pDhcp->bp_flags | RT_H2BE_U16_C(RTNET_DHCP_FLAG_BROADCAST);
+                intnetR0SgWritePart(pSG, (uint8_t*)&pDhcp->bp_flags - (uint8_t*)pIpHdr + sizeof(RTNETETHERHDR), sizeof(uFlags), &uFlags);
+                /* Patch UDP checksum */
+                uint32_t uChecksum = (uint32_t)~pUdpHdr->uh_sum + RT_H2BE_U16_C(RTNET_DHCP_FLAG_BROADCAST);
+                while (uChecksum >> 16)
+                    uChecksum = (uChecksum >> 16) + (uChecksum & 0xFFFF);
+                uChecksum = ~uChecksum;
+                intnetR0SgWritePart(pSG, (uint8_t*)&pUdpHdr->uh_sum - (uint8_t*)pIpHdr + sizeof(RTNETETHERHDR), sizeof(pUdpHdr->uh_sum), &uChecksum);
+            }
+            break;
+    }
+}
+
+
+/**
  * Sends a broadcast frame.
  *
  * The caller must own the network mutex, might be abandond temporarily.
@@ -1972,6 +2071,16 @@ static bool intnetR0NetworkSendBroadcast(PINTNETNETWORK pNetwork, PINTNETIF pIfS
         &&  (fSrc & INTNETTRUNKDIR_WIRE)
         &&  RT_BE2H_U16(pEthHdr->EtherType) == RTNET_ETHERTYPE_ARP)
         intnetR0NetworkEditArpFromWire(pNetwork, pSG, pEthHdr);
+
+     /*
+     * Check for DHCP packets from the internal net since we'll have to set
+     * broadcast flag in DHCP requests if we're sharing the MAC address with
+     * the host.
+     */
+    if (    (pNetwork->fFlags & INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE)
+        &&  !fSrc
+        &&  RT_BE2H_U16(pEthHdr->EtherType) == RTNET_ETHERTYPE_IPV4)
+        intnetR0NetworkEditDhcpFromIntNet(pNetwork, pSG, pEthHdr);
 
     /*
      * This is a broadcast or multicast address. For the present we treat those
@@ -3300,11 +3409,27 @@ static int intnetR0NetworkCreateIf(PINTNETNETWORK pNetwork, PSUPDRVSESSION pSess
 }
 
 
+#ifdef RT_WITH_W64_UNWIND_HACK
+# if defined(RT_OS_WINDOWS) && defined(RT_ARCH_AMD64)
+#  define INTNET_DECL_CALLBACK(type) DECLASM(DECLHIDDEN(type))
+#  define INTNET_CALLBACK(_n) intnetNtWrap##_n
 
+   /* wrapper callback declarations */
+   INTNET_DECL_CALLBACK(bool) INTNET_CALLBACK(intnetR0TrunkIfPortSetSGPhys)(PINTNETTRUNKSWPORT pSwitchPort, bool fEnable);
+   INTNET_DECL_CALLBACK(bool) INTNET_CALLBACK(intnetR0TrunkIfPortRecv)(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG, uint32_t fSrc);
+   INTNET_DECL_CALLBACK(void) INTNET_CALLBACK(intnetR0TrunkIfPortSGRetain)(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG);
+   INTNET_DECL_CALLBACK(void) INTNET_CALLBACK(intnetR0TrunkIfPortSGRelease)(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG);
 
+# else
+#  error "UNSUPPORTED (RT_WITH_W64_UNWIND_HACK)"
+# endif
+#else
+#  define INTNET_DECL_CALLBACK(_t) static DECLCALLBACK(_t)
+#  define INTNET_CALLBACK(_n) _n
+#endif
 
 /** @copydoc INTNETTRUNKSWPORT::pfnSetSGPhys */
-static DECLCALLBACK(bool) intnetR0TrunkIfPortSetSGPhys(PINTNETTRUNKSWPORT pSwitchPort, bool fEnable)
+INTNET_DECL_CALLBACK(bool) intnetR0TrunkIfPortSetSGPhys(PINTNETTRUNKSWPORT pSwitchPort, bool fEnable)
 {
     PINTNETTRUNKIF pThis = INTNET_SWITCHPORT_2_TRUNKIF(pSwitchPort);
     AssertMsgFailed(("Not implemented because it wasn't required on Darwin\n"));
@@ -3313,7 +3438,7 @@ static DECLCALLBACK(bool) intnetR0TrunkIfPortSetSGPhys(PINTNETTRUNKSWPORT pSwitc
 
 
 /** @copydoc INTNETTRUNKSWPORT::pfnRecv */
-static DECLCALLBACK(bool) intnetR0TrunkIfPortRecv(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG, uint32_t fSrc)
+INTNET_DECL_CALLBACK(bool) intnetR0TrunkIfPortRecv(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG, uint32_t fSrc)
 {
     PINTNETTRUNKIF pThis = INTNET_SWITCHPORT_2_TRUNKIF(pSwitchPort);
     PINTNETNETWORK pNetwork = pThis->pNetwork;
@@ -3344,7 +3469,7 @@ static DECLCALLBACK(bool) intnetR0TrunkIfPortRecv(PINTNETTRUNKSWPORT pSwitchPort
 
 
 /** @copydoc INTNETTRUNKSWPORT::pfnSGRetain */
-static DECLCALLBACK(void) intnetR0TrunkIfPortSGRetain(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG)
+INTNET_DECL_CALLBACK(void) intnetR0TrunkIfPortSGRetain(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG)
 {
     PINTNETTRUNKIF pThis = INTNET_SWITCHPORT_2_TRUNKIF(pSwitchPort);
     PINTNETNETWORK pNetwork = pThis->pNetwork;
@@ -3361,7 +3486,7 @@ static DECLCALLBACK(void) intnetR0TrunkIfPortSGRetain(PINTNETTRUNKSWPORT pSwitch
 
 
 /** @copydoc INTNETTRUNKSWPORT::pfnSGRelease */
-static DECLCALLBACK(void) intnetR0TrunkIfPortSGRelease(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG)
+INTNET_DECL_CALLBACK(void) intnetR0TrunkIfPortSGRelease(PINTNETTRUNKSWPORT pSwitchPort, PINTNETSG pSG)
 {
     PINTNETTRUNKIF pThis = INTNET_SWITCHPORT_2_TRUNKIF(pSwitchPort);
     PINTNETNETWORK pNetwork = pThis->pNetwork;
@@ -3591,10 +3716,10 @@ static int intnetR0NetworkCreateTrunkIf(PINTNETNETWORK pNetwork, PSUPDRVSESSION 
     if (!pTrunkIF)
         return VERR_NO_MEMORY;
     pTrunkIF->SwitchPort.u32Version     = INTNETTRUNKSWPORT_VERSION;
-    pTrunkIF->SwitchPort.pfnSetSGPhys   = intnetR0TrunkIfPortSetSGPhys;
-    pTrunkIF->SwitchPort.pfnRecv        = intnetR0TrunkIfPortRecv;
-    pTrunkIF->SwitchPort.pfnSGRetain    = intnetR0TrunkIfPortSGRetain;
-    pTrunkIF->SwitchPort.pfnSGRelease   = intnetR0TrunkIfPortSGRelease;
+    pTrunkIF->SwitchPort.pfnSetSGPhys   = INTNET_CALLBACK(intnetR0TrunkIfPortSetSGPhys);
+    pTrunkIF->SwitchPort.pfnRecv        = INTNET_CALLBACK(intnetR0TrunkIfPortRecv);
+    pTrunkIF->SwitchPort.pfnSGRetain    = INTNET_CALLBACK(intnetR0TrunkIfPortSGRetain);
+    pTrunkIF->SwitchPort.pfnSGRelease   = INTNET_CALLBACK(intnetR0TrunkIfPortSGRelease);
     pTrunkIF->SwitchPort.u32VersionEnd  = INTNETTRUNKSWPORT_VERSION;
     //pTrunkIF->pIfPort = NULL;
     pTrunkIF->pNetwork = pNetwork;

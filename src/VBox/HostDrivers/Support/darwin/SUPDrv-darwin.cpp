@@ -1,4 +1,4 @@
-/* $Id:  $ */
+/* $Id: $ */
 /** @file
  *
  * VBox host drivers - Ring-0 support drivers - Darwin host:
@@ -53,8 +53,8 @@
 #include <iprt/semaphore.h>
 #include <iprt/process.h>
 #include <iprt/alloc.h>
-#include <iprt/uuid.h>
-#include <iprt/err.h>
+#include <iprt/power.h>
+#include <VBox/err.h>
 #include <VBox/log.h>
 
 #include <mach/kmod.h>
@@ -66,6 +66,13 @@
 #include <sys/proc.h>
 #include <IOKit/IOService.h>
 #include <IOKit/IOUserclient.h>
+#include <IOKit/pwr_mgt/RootDomain.h>
+
+#ifdef VBOX_WITH_HOST_VMX
+__BEGIN_DECLS
+# include <i386/vmx.h>
+__END_DECLS
+#endif
 
 
 /*******************************************************************************
@@ -90,6 +97,8 @@ static int              VBoxDrvDarwinIOCtl(dev_t Dev, u_long iCmd, caddr_t pData
 static int              VBoxDrvDarwinIOCtlSlow(PSUPDRVSESSION pSession, u_long iCmd, caddr_t pData, struct proc *pProcess);
 
 static int              VBoxDrvDarwinErr2DarwinErr(int rc);
+
+static IOReturn         VBoxDrvDarwinSleepHandler(void *pvTarget, void *pvRefCon, UInt32 uMessageType, IOService *pProvider, void *pvMessageArgument, vm_size_t argSize);
 __END_DECLS
 
 
@@ -102,7 +111,7 @@ __END_DECLS
  */
 class org_virtualbox_SupDrv : public IOService
 {
-    OSDeclareDefaultStructors(org_virtualbox_SupDrv)
+    OSDeclareDefaultStructors(org_virtualbox_SupDrv);
 
 public:
     virtual bool init(OSDictionary *pDictionary = 0);
@@ -113,7 +122,7 @@ public:
     virtual bool terminate(IOOptionBits fOptions);
 };
 
-OSDefineMetaClassAndStructors(org_virtualbox_SupDrv, IOService)
+OSDefineMetaClassAndStructors(org_virtualbox_SupDrv, IOService);
 
 
 /**
@@ -123,7 +132,7 @@ OSDefineMetaClassAndStructors(org_virtualbox_SupDrv, IOService)
  */
 class org_virtualbox_SupDrvClient : public IOUserClient
 {
-    OSDeclareDefaultStructors(org_virtualbox_SupDrvClient)
+    OSDeclareDefaultStructors(org_virtualbox_SupDrvClient);
 
 private:
     PSUPDRVSESSION          m_pSession;     /**< The session. */
@@ -141,7 +150,7 @@ public:
     virtual void stop(IOService *pProvider);
 };
 
-OSDefineMetaClassAndStructors(org_virtualbox_SupDrvClient, IOUserClient)
+OSDefineMetaClassAndStructors(org_virtualbox_SupDrvClient, IOUserClient);
 
 
 
@@ -202,18 +211,9 @@ static PSUPDRVSESSION   g_apSessionHashTab[19];
 #define SESSION_HASH(pid)     ((pid) % RT_ELEMENTS(g_apSessionHashTab))
 /** The number of open sessions. */
 static int32_t volatile g_cSessions = 0;
+/** The notifier handle for the sleep callback handler. */
+static IONotifier *g_pSleepNotifier = NULL;
 
-
-/*
- * Drag in the rest of IRPT since we share it with the
- * rest of the kernel modules on darwin.
- */
-PFNRT g_apfnVBoxDrvIPRTDeps[] =
-{
-    (PFNRT)RTUuidCompare,
-    (PFNRT)RTErrConvertFromErrno,
-    NULL
-};
 
 
 /**
@@ -251,7 +251,6 @@ static kern_return_t    VBoxDrvDarwinStart(struct kmod_info *pKModInfo, void *pv
                 g_iMajorDeviceNo = cdevsw_add(-1, &g_DevCW);
                 if (g_iMajorDeviceNo >= 0)
                 {
-                    /** @todo the UID, GID and mode mask should be configurable! This isn't very secure... */
 #ifdef VBOX_WITH_HARDENING
                     g_hDevFsDevice = devfs_make_node(makedev(g_iMajorDeviceNo, 0), DEVFS_CHAR,
                                                      UID_ROOT, GID_WHEEL, 0600, DEVICE_NAME);
@@ -263,6 +262,12 @@ static kern_return_t    VBoxDrvDarwinStart(struct kmod_info *pKModInfo, void *pv
                     {
                         LogRel(("VBoxDrv: version " VBOX_VERSION_STRING " r%d; IOCtl version %#x; IDC version %#x; dev major=%d\n",
                                 VBOX_SVN_REV, SUPDRV_IOC_VERSION, SUPDRV_IDC_VERSION, g_iMajorDeviceNo));
+
+                        /* Register a sleep/wakeup notification callback */
+                        g_pSleepNotifier = registerPrioritySleepWakeInterest(&VBoxDrvDarwinSleepHandler, &g_DevExt, NULL);
+                        if (g_pSleepNotifier == NULL)
+                            LogRel(("VBoxDrv: register for sleep/wakeup events failed\n"));
+
                         return KMOD_RETURN_SUCCESS;
                     }
 
@@ -305,6 +310,12 @@ static kern_return_t    VBoxDrvDarwinStop(struct kmod_info *pKModInfo, void *pvD
     /*
      * Undo the work done during start (in reverse order).
      */
+    if (g_pSleepNotifier)
+    {
+        g_pSleepNotifier->remove();
+        g_pSleepNotifier = NULL;
+    }
+
     devfs_remove(g_hDevFsDevice);
     g_hDevFsDevice = NULL;
 
@@ -452,7 +463,7 @@ static int VBoxDrvDarwinIOCtl(dev_t Dev, u_long iCmd, caddr_t pData, int fFlags,
     if (    iCmd == SUP_IOCTL_FAST_DO_RAW_RUN
         ||  iCmd == SUP_IOCTL_FAST_DO_HWACC_RUN
         ||  iCmd == SUP_IOCTL_FAST_DO_NOP)
-        return supdrvIOCtlFast(iCmd, &g_DevExt, pSession);
+        return supdrvIOCtlFast(iCmd, *(uint32_t *)pData, &g_DevExt, pSession);
     return VBoxDrvDarwinIOCtlSlow(pSession, iCmd, pData, pProcess);
 }
 
@@ -672,8 +683,70 @@ bool VBOXCALL   supdrvOSObjCanAccess(PSUPDRVOBJ pObj, PSUPDRVSESSION pSession, c
     return false;
 }
 
+/**
+ * Callback for blah blah blah.
+ */
+IOReturn VBoxDrvDarwinSleepHandler(void * /* pvTarget */, void *pvRefCon, UInt32 uMessageType, IOService * /* pProvider */, void * /* pvMessageArgument */, vm_size_t /* argSize */)
+{
+    LogFlow(("VBoxDrv: Got sleep/wake notice. Message type was %X\n", (uint)uMessageType));
 
-bool VBOXCALL   supdrvOSGetForcedAsyncTscMode(PSUPDRVDEVEXT pDevExt)
+    if (uMessageType == kIOMessageSystemWillSleep)
+        RTPowerSignalEvent(RTPOWEREVENT_SUSPEND);
+    else if (uMessageType == kIOMessageSystemHasPoweredOn)
+        RTPowerSignalEvent(RTPOWEREVENT_RESUME);
+
+    acknowledgeSleepWakeNotification(pvRefCon);
+
+    return 0;
+}
+
+
+/**
+ * Enables or disables VT-x using kernel functions.
+ *
+ * @returns VBox status code. VERR_NOT_SUPPORTED has a special meaning.
+ * @param   fEnable     Whether to enable or disable.
+ */
+int VBOXCALL supdrvOSEnableVTx(bool fEnable)
+{
+/* Zarking amateurish Apple engineering!
+   host_vmxon is actually buggy and may panic multicore machines. Reason, it
+   uses a simple lock which will disable preemption of the cpu/thread trying
+   to acquire it.  Then it allocate wired memory in the kernel map for each
+   of the cpus in the system. If anyone else tries to mess around in the
+   kernel map on another CPU while this is going on, there is a fair chance
+   that it might cause the host_vmxon thread to block and hence panic since
+   preemption is disabled. Arrrg! */
+#if 0 /*def VBOX_WITH_HOST_VMX*/
+    int rc;
+    if (fEnable)
+    {
+        rc = host_vmxon(false /* exclusive */);
+        if (rc == 0 /* all ok */)
+            rc = VINF_SUCCESS;
+        else if (rc == 1 /* unsupported */)
+            rc = VERR_VMX_NO_VMX;
+        else if (rc == 2 /* exclusive user */)
+            rc = VERR_VMX_IN_VMX_ROOT_MODE;
+        else /* shouldn't happen, but just in case. */
+        {
+            LogRel(("host_vmxon returned %d\n", rc));
+            rc = VERR_UNRESOLVED_ERROR;
+        }
+    }
+    else
+    {
+        host_vmxoff();
+        rc = VINF_SUCCESS;
+    }
+    return rc;
+#else
+    return VERR_NOT_SUPPORTED;
+#endif
+}
+
+
+bool VBOXCALL supdrvOSGetForcedAsyncTscMode(PSUPDRVDEVEXT pDevExt)
 {
     NOREF(pDevExt);
     return false;

@@ -1,4 +1,4 @@
-/* $Id: tstErrUnique.cpp $ */
+/* $Id: tstErrUnique.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * IPRT Testcase - Error Messages.
  */
@@ -35,7 +35,7 @@
 #include <iprt/err.h>
 #include <iprt/string.h>
 #include <iprt/stream.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <VBox/err.h>
 
 
@@ -69,12 +69,12 @@ int main()
     RTR3Init();
     RTPrintf("tstErrUnique: TESTING\n");
 
-    for (uint32_t i = 0; i < ELEMENTS(g_aErrorMessages) - 1; i++)
+    for (uint32_t i = 0; i < RT_ELEMENTS(g_aErrorMessages) - 1; i++)
     {
         if (strIsPermissibleDuplicate(&g_aErrorMessages[i]))
             continue;
 
-        for (uint32_t j = i + 1; j < ELEMENTS(g_aErrorMessages); j++)
+        for (uint32_t j = i + 1; j < RT_ELEMENTS(g_aErrorMessages); j++)
         {
             if (strIsPermissibleDuplicate(&g_aErrorMessages[j]))
                 continue;

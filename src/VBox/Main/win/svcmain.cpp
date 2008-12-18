@@ -23,21 +23,15 @@
 
 #include "VBox/com/defs.h"
 
+#include "VBox/com/VirtualBox.h"
+
+#include "VirtualBoxImpl.h"
+#include "Logging.h"
+
 #include "svchlp.h"
 
 #include <VBox/err.h>
-#include <iprt/runtime.h>
-
-#include "MachineImpl.h"
-#include "HardDiskImpl.h"
-#include "DVDImageImpl.h"
-#include "FloppyImageImpl.h"
-#include "GuestOSTypeImpl.h"
-#include "ProgressImpl.h"
-#include "SystemPropertiesImpl.h"
-#include "VirtualBoxImpl.h"
-
-#include "Logging.h"
+#include <iprt/initterm.h>
 
 #include <atlbase.h>
 #include <atlcom.h>
@@ -248,18 +242,18 @@ extern "C" int WINAPI _tWinMain(HINSTANCE hInstance,
             if (pipeName.isEmpty())
                 vrc = VERR_INVALID_PARAMETER;
 
-            if (VBOX_SUCCESS (vrc))
+            if (RT_SUCCESS (vrc))
             {
                 /* do the helper job */
                 SVCHlpServer server;
                 vrc = server.open (pipeName);
-                if (VBOX_SUCCESS (vrc))
+                if (RT_SUCCESS (vrc))
                     vrc = server.run();
             }
-            if (VBOX_FAILURE (vrc))
+            if (RT_FAILURE (vrc))
             {
                 Utf8Str err = Utf8StrFmt (
-                    "Failed to process Helper request (%Vrc).", vrc);
+                    "Failed to process Helper request (%Rrc).", vrc);
                 Log (("SVCMAIN: %s\n", err.raw()));
             }
 

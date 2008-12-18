@@ -71,7 +71,10 @@ OBJS   = \
 	HGCM.o \
 	VBoxCalls.o \
 	r0drv/alloc-r0drv.o \
+	r0drv/memobj-r0drv.o \
 	r0drv/linux/alloc-r0drv-linux.o \
+	r0drv/linux/memobj-r0drv-linux.o \
+	r0drv/linux/process-r0drv-linux.o \
 	r0drv/linux/semevent-r0drv-linux.o \
 	r0drv/linux/semfastmutex-r0drv-linux.o \
 	divdi3.o \
@@ -244,6 +247,7 @@ install: $(MODULE)
 
 endif # eq($(MAKECMDGOALS),clean)
 
+# important: Don't remove Module.symvers! DKMS does 'make clean' before building ...
 clean:
 	for f in . linux r0drv r0drv/linux; do rm -f $$f/*.o $$f/.*.cmd $$f/.*.flags; done
-	rm -rf .vboxvfs* .tmp_ver* vboxvfs.* Module.symvers Modules.symvers
+	rm -rf .vboxvfs* .tmp_ver* vboxvfs.* Modules.symvers modules.order

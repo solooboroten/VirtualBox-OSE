@@ -1,4 +1,4 @@
-/* $Id: HWSVMR0.h $ */
+/* $Id: HWSVMR0.h 15414 2008-12-13 04:33:30Z vboxsync $ */
 /** @file
  * HWACCM AMD-V - Internal header file.
  */
@@ -19,8 +19,8 @@
  * additional information or have any questions.
  */
 
-#ifndef ___HWSVMR0_h
-#define ___HWSVMR0_h
+#ifndef ___VMMR0_HWSVMR0_h
+#define ___VMMR0_HWSVMR0_h
 
 #include <VBox/cdefs.h>
 #include <VBox/types.h>
@@ -33,7 +33,7 @@
 
 __BEGIN_DECLS
 
-/** @defgroup grp_svm       Internal
+/** @defgroup grp_svm_int  Internal
  * @ingroup grp_svm
  * @internal
  * @{
@@ -46,28 +46,31 @@ __BEGIN_DECLS
  *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
+ * @param   pVCpu       The VMCPU to operate on.
  * @param   pCpu        CPU info struct
  */
-HWACCMR0DECL(int) SVMR0Enter(PVM pVM, PHWACCM_CPUINFO pCpu);
+VMMR0DECL(int) SVMR0Enter(PVM pVM, PVMCPU pVCpu, PHWACCM_CPUINFO pCpu);
 
 /**
  * Leaves the AMD-V session
  *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
+ * @param   pVCpu       The VMCPU to operate on.
+ * @param   pCtx        CPU context
  */
-HWACCMR0DECL(int) SVMR0Leave(PVM pVM);
+VMMR0DECL(int) SVMR0Leave(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
 
 /**
  * Sets up and activates AMD-V on the current CPU
  *
  * @returns VBox status code.
  * @param   pCpu            CPU info struct
- * @param   pVM             The VM to operate on.
+ * @param   pVM             The VM to operate on. (can be NULL after a resume)
  * @param   pvPageCpu       Pointer to the global cpu page
  * @param   pPageCpuPhys    Physical address of the global cpu page
  */
-HWACCMR0DECL(int) SVMR0EnableCpu(PHWACCM_CPUINFO pCpu, PVM pVM, void *pvPageCpu, RTHCPHYS pPageCpuPhys);
+VMMR0DECL(int) SVMR0EnableCpu(PHWACCM_CPUINFO pCpu, PVM pVM, void *pvPageCpu, RTHCPHYS pPageCpuPhys);
 
 /**
  * Deactivates AMD-V on the current CPU
@@ -77,7 +80,7 @@ HWACCMR0DECL(int) SVMR0EnableCpu(PHWACCM_CPUINFO pCpu, PVM pVM, void *pvPageCpu,
  * @param   pvPageCpu       Pointer to the global cpu page
  * @param   pPageCpuPhys    Physical address of the global cpu page
  */
-HWACCMR0DECL(int) SVMR0DisableCpu(PHWACCM_CPUINFO pCpu, void *pvPageCpu, RTHCPHYS pPageCpuPhys);
+VMMR0DECL(int) SVMR0DisableCpu(PHWACCM_CPUINFO pCpu, void *pvPageCpu, RTHCPHYS pPageCpuPhys);
 
 /**
  * Does Ring-0 per VM AMD-V init.
@@ -85,7 +88,7 @@ HWACCMR0DECL(int) SVMR0DisableCpu(PHWACCM_CPUINFO pCpu, void *pvPageCpu, RTHCPHY
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  */
-HWACCMR0DECL(int) SVMR0InitVM(PVM pVM);
+VMMR0DECL(int) SVMR0InitVM(PVM pVM);
 
 /**
  * Does Ring-0 per VM AMD-V termination.
@@ -93,7 +96,7 @@ HWACCMR0DECL(int) SVMR0InitVM(PVM pVM);
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  */
-HWACCMR0DECL(int) SVMR0TermVM(PVM pVM);
+VMMR0DECL(int) SVMR0TermVM(PVM pVM);
 
 /**
  * Sets up AMD-V for the specified VM
@@ -101,19 +104,18 @@ HWACCMR0DECL(int) SVMR0TermVM(PVM pVM);
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  */
-HWACCMR0DECL(int) SVMR0SetupVM(PVM pVM);
+VMMR0DECL(int) SVMR0SetupVM(PVM pVM);
 
 
 /**
  * Runs guest code in an AMD-V VM.
  *
- * @note NEVER EVER turn on interrupts here. Due to our illegal entry into the kernel, it might mess things up. (XP kernel traps have been frequently observed)
- *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
+ * @param   pVCpu       The VMCPU to operate on.
  * @param   pCtx        Guest context
  */
-HWACCMR0DECL(int) SVMR0RunGuestCode(PVM pVM, CPUMCTX *pCtx);
+VMMR0DECL(int) SVMR0RunGuestCode(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
 
 
 /**
@@ -121,34 +123,101 @@ HWACCMR0DECL(int) SVMR0RunGuestCode(PVM pVM, CPUMCTX *pCtx);
  *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
+ * @param   pVCpu       The VMCPU to operate on.
  */
-HWACCMR0DECL(int) SVMR0SaveHostState(PVM pVM);
+VMMR0DECL(int) SVMR0SaveHostState(PVM pVM, PVMCPU pVCpu);
 
 /**
  * Loads the guest state
  *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
+ * @param   pVCpu       The VMCPU to operate on.
  * @param   pCtx        Guest context
  */
-HWACCMR0DECL(int) SVMR0LoadGuestState(PVM pVM, CPUMCTX *pCtx);
+VMMR0DECL(int) SVMR0LoadGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
+
+#if HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+
+/**
+ * Prepares for and executes VMRUN (64 bits guests from a 32 bits hosts).
+ *
+ * @returns VBox status code.
+ * @param   pVMCBHostPhys   Physical address of host VMCB.
+ * @param   pVMCBPhys       Physical address of the VMCB.
+ * @param   pCtx            Guest context.
+ * @param   pVM             The VM to operate on.
+ * @param   pVCpu           The VMCPU to operate on. (not used)
+ */
+DECLASM(int) SVMR0VMSwitcherRun64(RTHCPHYS pVMCBHostPhys, RTHCPHYS pVMCBPhys, PCPUMCTX pCtx, PVM pVM, PVMCPU pVCpu);
+
+/**
+ * Executes the specified handler in 64 mode
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ * @param   pVCpu       The VMCPU to operate on.
+ * @param   pCtx        Guest context
+ * @param   pfnHandler  RC handler
+ * @param   cbParam     Number of parameters
+ * @param   paParam     Array of 32 bits parameters
+ */
+VMMR0DECL(int) SVMR0Execute64BitsHandler(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, RTRCPTR pfnHandler, uint32_t cbParam, uint32_t *paParam);
+
+#endif /* HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL) */
+
+/**
+ * Prepares for and executes VMRUN (32 bits guests).
+ *
+ * @returns VBox status code.
+ * @param   pVMCBHostPhys   Physical address of host VMCB.
+ * @param   pVMCBPhys       Physical address of the VMCB.
+ * @param   pCtx            Guest context.
+ * @param   pVM             The VM to operate on. (not used)
+ * @param   pVCpu           The VMCPU to operate on. (not used)
+ */
+DECLASM(int) SVMR0VMRun(RTHCPHYS pVMCBHostPhys, RTHCPHYS pVMCBPhys, PCPUMCTX pCtx, PVM pVM, PVMCPU pVCpu);
 
 
-/* Convert hidden selector attribute word between VMX and SVM formats. */
+/**
+ * Prepares for and executes VMRUN (64 bits guests).
+ *
+ * @returns VBox status code.
+ * @param   pVMCBHostPhys   Physical address of host VMCB.
+ * @param   pVMCBPhys       Physical address of the VMCB.
+ * @param   pCtx            Guest context.
+ * @param   pVM             The VM to operate on. (not used)
+ * @param   pVCpu           The VMCPU to operate on. (not used)
+ */
+DECLASM(int) SVMR0VMRun64(RTHCPHYS pVMCBHostPhys, RTHCPHYS pVMCBPhys, PCPUMCTX pCtx, PVM pVM, PVMCPU pVCpu);
+
+/**
+ * Executes INVLPGA.
+ *
+ * @param   pPageGC         Virtual page to invalidate.
+ * @param   u32ASID         Tagged TLB id.
+ */
+DECLASM(void) SVMR0InvlpgA(RTGCPTR pPageGC, uint32_t u32ASID);
+
+/** Convert hidden selector attribute word between VMX and SVM formats. */
 #define SVM_HIDSEGATTR_VMX2SVM(a)     (a & 0xFF) | ((a & 0xF000) >> 4)
 #define SVM_HIDSEGATTR_SVM2VMX(a)     (a & 0xFF) | ((a & 0x0F00) << 4)
 
 #define SVM_WRITE_SELREG(REG, reg)                                      \
+{                                                                       \
         pVMCB->guest.REG.u16Sel   = pCtx->reg;                          \
         pVMCB->guest.REG.u32Limit = pCtx->reg##Hid.u32Limit;            \
         pVMCB->guest.REG.u64Base  = pCtx->reg##Hid.u64Base;             \
-        pVMCB->guest.REG.u16Attr  = SVM_HIDSEGATTR_VMX2SVM(pCtx->reg##Hid.Attr.u);
+        pVMCB->guest.REG.u16Attr  = SVM_HIDSEGATTR_VMX2SVM(pCtx->reg##Hid.Attr.u); \
+}
 
 #define SVM_READ_SELREG(REG, reg)                                       \
+{                                                                       \
         pCtx->reg                = pVMCB->guest.REG.u16Sel;             \
         pCtx->reg##Hid.u32Limit  = pVMCB->guest.REG.u32Limit;           \
         pCtx->reg##Hid.u64Base   = pVMCB->guest.REG.u64Base;            \
-        pCtx->reg##Hid.Attr.u    = SVM_HIDSEGATTR_SVM2VMX(pVMCB->guest.REG.u16Attr);
+        pCtx->reg##Hid.Attr.u    = SVM_HIDSEGATTR_SVM2VMX(pVMCB->guest.REG.u16Attr); \
+}
 
 #endif /* IN_RING0 */
 

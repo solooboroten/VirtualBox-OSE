@@ -1,4 +1,4 @@
-/* $Id: MMRamGC.cpp $ */
+/* $Id: MMRamGC.cpp 13816 2008-11-04 22:52:12Z vboxsync $ */
 /** @file
  * MMRamGC - Guest Context Ram access Routines, pair for MMRamGCA.asm.
  */
@@ -72,10 +72,11 @@ DECLASM(void) MMGCRamWrite_Error(void);
  *
  * @param   pVM         VM handle.
  */
-MMGCDECL(void) MMGCRamRegisterTrapHandler(PVM pVM)
+VMMRCDECL(void) MMGCRamRegisterTrapHandler(PVM pVM)
 {
     TRPMGCSetTempHandler(pVM, 0xe, mmGCRamTrap0eHandler);
 }
+
 
 /**
  * Remove MMGCRam Hypervisor page fault handler.
@@ -83,7 +84,7 @@ MMGCDECL(void) MMGCRamRegisterTrapHandler(PVM pVM)
  *
  * @param   pVM         VM handle.
  */
-MMGCDECL(void) MMGCRamDeregisterTrapHandler(PVM pVM)
+VMMRCDECL(void) MMGCRamDeregisterTrapHandler(PVM pVM)
 {
     TRPMGCSetTempHandler(pVM, 0xe, NULL);
 }
@@ -98,7 +99,7 @@ MMGCDECL(void) MMGCRamDeregisterTrapHandler(PVM pVM)
  * @param   pSrc        Pointer to the data to read.
  * @param   cb          Size of data to read, only 1/2/4/8 is valid.
  */
-MMGCDECL(int) MMGCRamRead(PVM pVM, void *pDst, void *pSrc, size_t cb)
+VMMRCDECL(int) MMGCRamRead(PVM pVM, void *pDst, void *pSrc, size_t cb)
 {
     int rc;
 
@@ -107,11 +108,12 @@ MMGCDECL(int) MMGCRamRead(PVM pVM, void *pDst, void *pSrc, size_t cb)
     MMGCRamRegisterTrapHandler(pVM);
     rc = MMGCRamReadNoTrapHandler(pDst, pSrc, cb);
     MMGCRamDeregisterTrapHandler(pVM);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         TRPMRestoreTrap(pVM);
 
     return rc;
 }
+
 
 /**
  * Write data in guest context with #PF control.
@@ -122,16 +124,14 @@ MMGCDECL(int) MMGCRamRead(PVM pVM, void *pDst, void *pSrc, size_t cb)
  * @param   pSrc        Pointer to the data to write.
  * @param   cb          Size of data to write, only 1/2/4 is valid.
  */
-MMGCDECL(int) MMGCRamWrite(PVM pVM, void *pDst, void *pSrc, size_t cb)
+VMMRCDECL(int) MMGCRamWrite(PVM pVM, void *pDst, void *pSrc, size_t cb)
 {
-    int rc;
-
     TRPMSaveTrap(pVM);  /* save the current trap info, because it will get trashed if our access failed. */
 
     MMGCRamRegisterTrapHandler(pVM);
-    rc = MMGCRamWriteNoTrapHandler(pDst, pSrc, cb);
+    int rc = MMGCRamWriteNoTrapHandler(pDst, pSrc, cb);
     MMGCRamDeregisterTrapHandler(pVM);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         TRPMRestoreTrap(pVM);
 
     /*
@@ -157,7 +157,7 @@ DECLCALLBACK(int) mmGCRamTrap0eHandler(PVM pVM, PCPUMCTXCORE pRegFrame)
         &&  (uintptr_t)pRegFrame->eip < (uintptr_t)&MMGCRamReadNoTrapHandler_EndProc)
     {
         /* Must be a read violation. */
-        AssertReturn(!(TRPMGetErrorCode(pVM) & X86_TRAP_PF_RW), VERR_INTERNAL_ERROR); 
+        AssertReturn(!(TRPMGetErrorCode(pVM) & X86_TRAP_PF_RW), VERR_INTERNAL_ERROR);
         pRegFrame->eip = (uintptr_t)&MMGCRamRead_Error;
         return VINF_SUCCESS;
     }
@@ -169,7 +169,7 @@ DECLCALLBACK(int) mmGCRamTrap0eHandler(PVM pVM, PCPUMCTXCORE pRegFrame)
         &&  (uintptr_t)pRegFrame->eip < (uintptr_t)&MMGCRamWriteNoTrapHandler_EndProc)
     {
         /* Must be a write violation. */
-        AssertReturn(TRPMGetErrorCode(pVM) & X86_TRAP_PF_RW, VERR_INTERNAL_ERROR); 
+        AssertReturn(TRPMGetErrorCode(pVM) & X86_TRAP_PF_RW, VERR_INTERNAL_ERROR);
         pRegFrame->eip = (uintptr_t)&MMGCRamWrite_Error;
         return VINF_SUCCESS;
     }
@@ -254,8 +254,8 @@ DECLCALLBACK(int) mmGCRamTrap0eHandler(PVM pVM, PCPUMCTXCORE pRegFrame)
         return VINF_SUCCESS;
     }
 
-    /* 
-     * #PF is not handled - cause guru meditation. 
+    /*
+     * #PF is not handled - cause guru meditation.
      */
     return VERR_INTERNAL_ERROR;
 }

@@ -41,6 +41,11 @@
 
 #if defined (RT_OS_OS2)
 
+#if defined(RT_MAX) && RT_MAX != 22
+# error RT_MAX already defined by <iprt/cdefs.h>! Make sure <VBox/com/defs.h> \
+        is included before it.
+#endif
+
 /* Make sure OS/2 Toolkit headers are pulled in to have BOOL/ULONG/etc. typedefs
  * already defined in order to be able to redefine them using #define. It's
  * also important to do it before iprt/cdefs.h, otherwise we'll lose RT_MAX in
@@ -70,6 +75,7 @@
 #include <objbase.h>
 #ifndef VBOX_COM_NO_ATL
 # include <atlbase.h>
+#include <atlcom.h>
 #endif
 
 #define NS_DECL_ISUPPORTS
@@ -84,18 +90,21 @@
 /** Returns @c true if @a rc represents a warning result code */
 #define SUCCEEDED_WARNING(rc)   (SUCCEEDED (rc) && (rc) != S_OK)
 
-/* input pointer argument to method */
-#define INPTR
+/** Immutable BSTR string */
+typedef const OLECHAR *CBSTR;
 
-/* makes the name of the getter interface function (n must be capitalized) */
+/** Input BSTR argument the interface method declaration. */
+#define IN_BSTR BSTR
+
+/** Input GUID argument the interface method declaration. */
+#define IN_GUID GUID
+/** Output GUID argument the interface method declaration. */
+#define OUT_GUID GUID*
+
+/** Makes the name of the getter interface function (n must be capitalized). */
 #define COMGETTER(n)    get_##n
-/* makes the name of the setter interface function (n must be capitalized) */
+/** Makes the name of the setter interface function (n must be capitalized). */
 #define COMSETTER(n)    put_##n
-
-/* a type for an input GUID parameter in the interface method declaration */
-#define GUIDPARAM           GUID
-/* a type for an output GUID parameter in the interface method declaration */
-#define GUIDPARAMOUT        GUID*
 
 /**
  * Declares an input safearray parameter in the COM method implementation. Also
@@ -119,7 +128,7 @@
  * Expands to @true if the given input safearray parameter is a "null pointer"
  * which makes it impossible to use it for reading safearray data.
  */
-#define ComSafeArrayInIsNull(aArg)      (aArg == NULL || *aArg == NULL)
+#define ComSafeArrayInIsNull(aArg)      ((aArg) == NULL || *(aArg) == NULL)
 
 /**
  * Wraps the given parameter name to generate an expression that is suitable for
@@ -154,7 +163,7 @@
  * Expands to @true if the given output safearray parameter is a "null pointer"
  * which makes it impossible to use it for returning a safearray.
  */
-#define ComSafeArrayOutIsNull(aArg)     (aArg == NULL)
+#define ComSafeArrayOutIsNull(aArg)     ((aArg) == NULL)
 
 /**
  * Wraps the given parameter name to generate an expression that is suitable for
@@ -165,6 +174,42 @@
  *              within the calling function using the ComSafeArrayOut macro.
  */
 #define ComSafeArrayOutArg(aArg)        aArg
+
+/**
+ * Version of ComSafeArrayIn for GUID.
+ * @param aArg Parameter name to wrap.
+ */
+#define ComSafeGUIDArrayIn(aArg)        SAFEARRAY **aArg
+
+/**
+ * Version of ComSafeArrayInIsNull for GUID.
+ * @param aArg Parameter name to wrap.
+ */
+#define ComSafeGUIDArrayInIsNull(aArg)  ComSafeArrayInIsNull (aArg)
+
+/**
+ * Version of ComSafeArrayInArg for GUID.
+ * @param aArg Parameter name to wrap.
+ */
+#define ComSafeGUIDArrayInArg(aArg)     ComSafeArrayInArg (aArg)
+
+/**
+ * Version of ComSafeArrayOut for GUID.
+ * @param aArg Parameter name to wrap.
+ */
+#define ComSafeGUIDArrayOut(aArg)       SAFEARRAY **aArg
+
+/**
+ * Version of ComSafeArrayOutIsNull for GUID.
+ * @param aArg Parameter name to wrap.
+ */
+#define ComSafeGUIDArrayOutIsNull(aArg) ComSafeArrayOutIsNull (aArg)
+
+/**
+ * Version of ComSafeArrayOutArg for GUID.
+ * @param aArg Parameter name to wrap.
+ */
+#define ComSafeGUIDArrayOutArg(aArg)    ComSafeArrayOutArg (aArg)
 
 /**
  *  Returns the const reference to the IID (i.e., |const GUID &|) of the given
@@ -222,41 +267,60 @@
 #define LONG64  PRInt64
 #define ULONG64 PRUint64
 
-#define BSTR    PRUnichar *
-#define LPBSTR  BSTR *
+#define FALSE   PR_FALSE
+#define TRUE    PR_TRUE
+
 #define OLECHAR wchar_t
 
-#define FALSE PR_FALSE
-#define TRUE PR_TRUE
+/* note: typedef to semantically match BSTR on Win32 */
+typedef PRUnichar *BSTR;
+typedef const PRUnichar *CBSTR;
+typedef BSTR *LPBSTR;
 
-/* makes the name of the getter interface function (n must be capitalized) */
+/** Input BSTR argument the interface method declaration. */
+#define IN_BSTR CBSTR
+
+/**
+ * Type to define a raw GUID variable (for members use the com::Guid class
+ * instead).
+ */
+#define GUID        nsID
+/** Input GUID argument the interface method declaration. */
+#define IN_GUID     const nsID &
+/** Output GUID argument the interface method declaration. */
+#define OUT_GUID    nsID **
+
+/** Makes the name of the getter interface function (n must be capitalized). */
 #define COMGETTER(n)    Get##n
-/* makes the name of the setter interface function (n must be capitalized) */
+/** Makes the name of the setter interface function (n must be capitalized). */
 #define COMSETTER(n)    Set##n
-
-/* a type to define a raw GUID variable (better to use the Guid class) */
-#define GUID                nsID
-/* a type for an input GUID parameter in the interface method declaration */
-#define GUIDPARAM           nsID &
-/* a type for an output GUID parameter in the interface method declaration */
-#define GUIDPARAMOUT        nsID **
 
 /* safearray input parameter macros */
 #define ComSafeArrayIn(aType, aArg)         PRUint32 aArg##Size, aType *aArg
-#define ComSafeArrayInIsNull(aArg)          (aArg == NULL)
+#define ComSafeArrayInIsNull(aArg)          ((aArg) == NULL)
 #define ComSafeArrayInArg(aArg)             aArg##Size, aArg
 
 /* safearray output parameter macros */
 #define ComSafeArrayOut(aType, aArg)        PRUint32 *aArg##Size, aType **aArg
-#define ComSafeArrayOutIsNull(aArg)         (aArg == NULL)
+#define ComSafeArrayOutIsNull(aArg)         ((aArg) == NULL)
 #define ComSafeArrayOutArg(aArg)            aArg##Size, aArg
+
+/* safearray input parameter macros for GUID */
+#define ComSafeGUIDArrayIn(aArg)            PRUint32 aArg##Size, const nsID **aArg
+#define ComSafeGUIDArrayInIsNull(aArg)      ComSafeArrayInIsNull (aArg)
+#define ComSafeGUIDArrayInArg(aArg)         ComSafeArrayInArg (aArg)
+
+/* safearray output parameter macros for GUID */
+#define ComSafeGUIDArrayOut(aArg)           PRUint32 *aArg##Size, nsID ***aArg
+#define ComSafeGUIDArrayOutIsNull(aArg)     ComSafeArrayOutIsNull (aArg)
+#define ComSafeGUIDArrayOutArg(aArg)        ComSafeArrayOutArg (aArg)
 
 /* CLSID and IID for compatibility with Win32 */
 typedef nsCID   CLSID;
 typedef nsIID   IID;
 
 /* OLE error codes */
-#define S_OK                NS_OK
+#define S_OK                ((nsresult) NS_OK)
 #define E_UNEXPECTED        NS_ERROR_UNEXPECTED
 #define E_NOTIMPL           NS_ERROR_NOT_IMPLEMENTED
 #define E_OUTOFMEMORY       NS_ERROR_OUT_OF_MEMORY
@@ -289,9 +353,6 @@ template <class Base> class CComObject : public Base
 public:
     virtual ~CComObject() { this->FinalRelease(); }
 };
-
-/* input pointer argument to method */
-#define INPTR const
 
 /* helper functions */
 extern "C"
@@ -402,6 +463,62 @@ namespace com
 {
 
 /**
+ * "First worst" result type.
+ *
+ * Variables of this class are used instead of HRESULT variables when it is
+ * desirable to memorize the "first worst" result code instead of the last
+ * assigned one. In other words, an assignment operation to a variable of this
+ * class will succeed only if the result code to assign has worse severity. The
+ * following table demonstrate this (the first column lists the previous result
+ * code stored in the variable, the first row lists the new result code being
+ * assigned, 'A' means the assignment will take place, '> S_OK' means a warning
+ * result code):
+ *
+ * {{{
+ *             FAILED    > S_OK    S_OK
+ * FAILED        -         -         -
+ * > S_OK        A         -         -
+ * S_OK          A         A         -
+ *
+ * }}}
+ *
+ * On practice, you will need to use a FWResult variable when you call some COM
+ * method B after another COM method A fails and want to return the result code
+ * of A even if B also fails, but want to return the failed result code of B if
+ * A issues a warning or succeeds.
+ */
+class FWResult
+{
+
+public:
+
+    /**
+     * Constructs a new variable. Note that by default this constructor sets the
+     * result code to E_FAIL to make sure a failure is returned to the caller if
+     * the variable is never assigned another value (which is considered as the
+     * improper use of this class).
+     */
+    FWResult (HRESULT aRC = E_FAIL) : mRC (aRC) {}
+
+    FWResult &operator= (HRESULT aRC)
+    {
+        if ((FAILED (aRC) && !FAILED (mRC)) ||
+            (mRC == S_OK && aRC != S_OK))
+            mRC = aRC;
+
+        return *this;
+    }
+
+    operator HRESULT() const { return mRC; }
+
+    HRESULT *operator&() { return &mRC; }
+
+private:
+
+    HRESULT mRC;
+};
+
+/**
  * "Last worst" result type.
  *
  * Variables of this class are used instead of HRESULT variables when it is
@@ -410,7 +527,8 @@ namespace com
  * class will succeed only if the result code to assign has the same or worse
  * severity. The following table demonstrate this (the first column lists the
  * previous result code stored in the variable, the first row lists the new
- * result code being assigned, 'A' means the assignment will take place):
+ * assigned, 'A' means the assignment will take place, '> S_OK' means a warning
+ * result code):
  *
  * {{{
  *             FAILED    > S_OK    S_OK
@@ -419,6 +537,11 @@ namespace com
  * S_OK          A         A         -
  *
  * }}}
+ *
+ * On practice, you will need to use a LWResult variable when you call some COM
+ * method B after COM method A fails and want to return the result code of B
+ * if B also fails, but still want to return the failed result code of A if B
+ * issues a warning or succeeds.
  */
 class LWResult
 {

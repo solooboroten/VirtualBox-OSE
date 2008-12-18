@@ -1,4 +1,4 @@
-/* $Id: DrvIntNet.cpp $ */
+/* $Id: DrvIntNet.cpp 15541 2008-12-15 20:29:08Z vboxsync $ */
 /** @file
  * DrvIntNet - Internal network transport driver.
  */
@@ -40,6 +40,9 @@
 
 #include "../Builtins.h"
 
+#if defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT)
+# include "win/DrvIntNet-win.h"
+#endif
 
 
 /*******************************************************************************
@@ -281,7 +284,7 @@ static DECLCALLBACK(int) drvIntNetSend(PPDMINETWORKCONNECTOR pInterface, const v
              cb, u64Now, u64Now - pThis->u64LastReceiveTS, u64Now - pThis->u64LastTransferTS));
     pThis->u64LastTransferTS = u64Now;
     Log2(("drvIntNetSend: pvBuf=%p cb=%#x\n"
-          "%.*Vhxd\n",
+          "%.*Rhxd\n",
           pvBuf, cb, cb, pvBuf));
 #endif
 
@@ -443,7 +446,7 @@ static int drvIntNetAsyncIoRun(PDRVINTNET pThis)
                              cbFrame, u64Now, u64Now - pThis->u64LastReceiveTS, u64Now - pThis->u64LastTransferTS));
                     pThis->u64LastReceiveTS = u64Now;
                     Log2(("drvIntNetAsyncIoRun: cbFrame=%#x\n"
-                          "%.*Vhxd\n",
+                          "%.*Rhxd\n",
                           cbFrame, cbFrame, INTNETHdrGetFramePtr(pHdr, pBuf)));
 #endif
                     int rc = pThis->pPort->pfnReceive(pThis->pPort, INTNETHdrGetFramePtr(pHdr, pBuf), cbFrame);
@@ -460,9 +463,21 @@ static int drvIntNetAsyncIoRun(PDRVINTNET pThis)
                     rc = drvIntNetAsyncIoWaitForSpace(pThis);
                     if (RT_FAILURE(rc))
                     {
-                        STAM_PROFILE_ADV_STOP(&pThis->StatReceive, a);
-                        LogFlow(("drvIntNetAsyncIoRun: returns %Rrc (wait-for-space)\n", rc));
-                        return rc;
+                        if (rc == VERR_INTERRUPTED)
+                        {
+                            /*
+                             * NIC is going down, likely because the VM is being reset. Skip the frame.
+                             */
+                            AssertMsg(pHdr->u16Type == INTNETHDR_TYPE_FRAME, ("Unknown frame type %RX16! offRead=%#x\n",
+                                                                              pHdr->u16Type, pRingBuf->offRead));
+                            INTNETRingSkipFrame(pBuf, pRingBuf);
+                        }
+                        else
+                        {
+                            STAM_PROFILE_ADV_STOP(&pThis->StatReceive, a);
+                            LogFlow(("drvIntNetAsyncIoRun: returns %Rrc (wait-for-space)\n", rc));
+                            return rc;
+                        }
                     }
                 }
             }
@@ -1010,36 +1025,26 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
     }
 
 #elif defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT)
-    /* Temporary hack: attach to a network with the name 'if=en0' and you're hitting the wire. */
-    if (    !OpenReq.szTrunk[0]
-        &&   OpenReq.enmTrunkType == kIntNetTrunkType_None
-        &&  !strncmp(pThis->szNetwork, "if=en", sizeof("if=en") - 1)
-        &&  RT_C_IS_DIGIT(pThis->szNetwork[sizeof("if=en") - 1])
-        &&  !pThis->szNetwork[sizeof("if=en")])
+    if (OpenReq.enmTrunkType == kIntNetTrunkType_NetFlt)
     {
-        OpenReq.enmTrunkType = kIntNetTrunkType_NetFlt;
-        strcpy(OpenReq.szTrunk, &pThis->szNetwork[sizeof("if=") - 1]);
-    }
-    /* Temporary hack: attach to a network with the name 'wif=en0' and you're on the air. */
-    if (    !OpenReq.szTrunk[0]
-        &&   OpenReq.enmTrunkType == kIntNetTrunkType_None
-        &&  !strncmp(pThis->szNetwork, "wif=en", sizeof("wif=en") - 1)
-        &&  RT_C_IS_DIGIT(pThis->szNetwork[sizeof("wif=en") - 1])
-        &&  !pThis->szNetwork[sizeof("wif=en")])
-    {
-        OpenReq.enmTrunkType = kIntNetTrunkType_NetFlt;
-        OpenReq.fFlags |= INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE;
-        strcpy(OpenReq.szTrunk, &pThis->szNetwork[sizeof("wif=") - 1]);
-    }
+# ifndef VBOX_NETFLT_ONDEMAND_BIND
+        /*
+         * We have a ndis filter driver started on system boot before the VBoxDrv,
+         * tell the filter driver to init VBoxNetFlt functionality.
+         */
+        rc = drvIntNetWinConstruct(pDrvIns, pCfgHandle);
+        AssertLogRelMsgRCReturn(rc, ("drvIntNetWinConstruct failed, rc=%Rrc", rc), rc);
+# endif
 
-    //TODO: temporary hack, remove this
-    if (OpenReq.enmTrunkType == kIntNetTrunkType_None)
-    {
-        OpenReq.enmTrunkType = kIntNetTrunkType_NetFlt;
-        strcpy(OpenReq.szTrunk, &pThis->szNetwork[sizeof("if=") - 1]);
+        /*
+         * <Describe what this does here or/and in the function docs of drvIntNetWinIfGuidToBindName>.
+         */
+        char szBindName[INTNET_MAX_TRUNK_NAME];
+        rc = drvIntNetWinIfGuidToBindName(OpenReq.szTrunk, szBindName, INTNET_MAX_TRUNK_NAME);
+        AssertLogRelMsgRCReturn(rc, ("drvIntNetWinIfGuidToBindName failed, rc=%Rrc", rc), rc);
+        strcpy(OpenReq.szTrunk, szBindName);
     }
-
-#endif
+#endif /* WINDOWS && NETFLT */
 
     /*
      * Create the event semaphores
@@ -1087,27 +1092,15 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
         return rc;
     }
 
-    char szStatName[64];
-    RTStrPrintf(szStatName, sizeof(szStatName), "/Net/IntNet%d/Bytes/Received", pDrvIns->iInstance);
-    pDrvIns->pDrvHlp->pfnSTAMRegister(pDrvIns, &pThis->pBuf->cbStatRecv,        STAMTYPE_COUNTER, szStatName,   STAMUNIT_BYTES,         "Number of received bytes.");
-    RTStrPrintf(szStatName, sizeof(szStatName), "/Net/IntNet%d/Bytes/Sent",     pDrvIns->iInstance);
-    pDrvIns->pDrvHlp->pfnSTAMRegister(pDrvIns, &pThis->pBuf->cbStatSend,        STAMTYPE_COUNTER, szStatName,   STAMUNIT_BYTES,         "Number of sent bytes.");
-    RTStrPrintf(szStatName, sizeof(szStatName), "/Net/IntNet%d/Packets/Received", pDrvIns->iInstance);
-    pDrvIns->pDrvHlp->pfnSTAMRegister(pDrvIns, &pThis->pBuf->cStatRecvs,        STAMTYPE_COUNTER, szStatName,   STAMUNIT_OCCURENCES,    "Number of received packets.");
-    RTStrPrintf(szStatName, sizeof(szStatName), "/Net/IntNet%d/Packets/Sent",   pDrvIns->iInstance);
-    pDrvIns->pDrvHlp->pfnSTAMRegister(pDrvIns, &pThis->pBuf->cStatSends,        STAMTYPE_COUNTER, szStatName,   STAMUNIT_OCCURENCES,    "Number of sent packets.");
-    RTStrPrintf(szStatName, sizeof(szStatName), "/Net/IntNet%d/Packets/Lost",   pDrvIns->iInstance);
-    pDrvIns->pDrvHlp->pfnSTAMRegister(pDrvIns, &pThis->pBuf->cStatLost,         STAMTYPE_COUNTER, szStatName,   STAMUNIT_OCCURENCES,    "Number of lost packets.");
-    RTStrPrintf(szStatName, sizeof(szStatName), "/Net/IntNet%d/YieldOk",        pDrvIns->iInstance);
-    pDrvIns->pDrvHlp->pfnSTAMRegister(pDrvIns, &pThis->pBuf->cStatYieldsOk,     STAMTYPE_COUNTER, szStatName,   STAMUNIT_OCCURENCES,    "Number of times yielding fixed an overflow.");
-    RTStrPrintf(szStatName, sizeof(szStatName), "/Net/IntNet%d/YieldNok",       pDrvIns->iInstance);
-    pDrvIns->pDrvHlp->pfnSTAMRegister(pDrvIns, &pThis->pBuf->cStatYieldsNok,    STAMTYPE_COUNTER, szStatName,   STAMUNIT_OCCURENCES,    "Number of times yielding didn't help fix an overflow.");
-
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->pBuf->cbStatRecv,       STAMTYPE_COUNTER,   STAMVISIBILITY_ALWAYS,  STAMUNIT_BYTES, "Number of received bytes.",    "/Net/IntNet%d/Bytes/Received", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->pBuf->cbStatSend,       STAMTYPE_COUNTER,   STAMVISIBILITY_ALWAYS,  STAMUNIT_BYTES, "Number of sent bytes.",        "/Net/IntNet%d/Bytes/Sent", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->pBuf->cStatRecvs,       STAMTYPE_COUNTER,   STAMVISIBILITY_ALWAYS,  STAMUNIT_BYTES, "Number of received packets.",  "/Net/IntNet%d/Packets/Received", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->pBuf->cStatSends,       STAMTYPE_COUNTER,   STAMVISIBILITY_ALWAYS,  STAMUNIT_BYTES, "Number of sent packets.",      "/Net/IntNet%d/Packets/Sent", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->pBuf->cStatLost,        STAMTYPE_COUNTER,   STAMVISIBILITY_ALWAYS,  STAMUNIT_BYTES, "Number of sent packets.",      "/Net/IntNet%d/Packets/Lost", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->pBuf->cStatYieldsNok,   STAMTYPE_COUNTER,   STAMVISIBILITY_ALWAYS,  STAMUNIT_BYTES, "Number of times yielding didn't help fix an overflow.",  "/Net/IntNet%d/YieldNok", pDrvIns->iInstance);
 #ifdef VBOX_WITH_STATISTICS
-    RTStrPrintf(szStatName, sizeof(szStatName), "/Net/IntNet%d/Receive",        pDrvIns->iInstance);
-    pDrvIns->pDrvHlp->pfnSTAMRegister(pDrvIns, &pThis->StatReceive,             STAMTYPE_PROFILE, szStatName,   STAMUNIT_TICKS_PER_CALL, "Profiling packet receive runs.");
-    RTStrPrintf(szStatName, sizeof(szStatName), "/Net/IntNet%d/Transmit",       pDrvIns->iInstance);
-    pDrvIns->pDrvHlp->pfnSTAMRegister(pDrvIns, &pThis->StatTransmit,            STAMTYPE_PROFILE, szStatName,   STAMUNIT_TICKS_PER_CALL, "Profiling packet transmit runs.");
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->StatReceive,            STAMTYPE_PROFILE,   STAMVISIBILITY_ALWAYS,  STAMUNIT_TICKS_PER_CALL, "Profiling packet receive runs.",  "/Net/IntNet%d/Receive", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->StatTransmit,           STAMTYPE_PROFILE,   STAMVISIBILITY_ALWAYS,  STAMUNIT_TICKS_PER_CALL, "Profiling packet transmit runs.", "/Net/IntNet%d/Transmit", pDrvIns->iInstance);
 #endif
 
     /*

@@ -1,4 +1,4 @@
-/* $Id: tstUtf8.cpp $ */
+/* $Id: tstUtf8.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * IPRT Testcase - UTF-8 and UTF-16 string conversions.
  */
@@ -33,7 +33,7 @@
 *******************************************************************************/
 #include <iprt/string.h>
 #include <iprt/uni.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/uuid.h>
 #include <iprt/time.h>
 #include <iprt/stream.h>
@@ -85,14 +85,14 @@ static void test1(void)
     rc = RTStrToUtf16(s_szBadString1, &pwsz);
     if (rc != VERR_NO_TRANSLATION && rc != VERR_INVALID_UTF8_ENCODING)
     {
-        RTPrintf("tstUtf8: FAILURE - %d: Conversion of first bad UTF-8 string to UTF-16 apparantly succeeded. It shouldn't. rc=%Vrc\n",
+        RTPrintf("tstUtf8: FAILURE - %d: Conversion of first bad UTF-8 string to UTF-16 apparantly succeeded. It shouldn't. rc=%Rrc\n",
                  __LINE__, rc);
         g_cErrors++;
     }
     rc = RTStrToUtf16(s_szBadString2, &pwsz);
     if (rc != VERR_NO_TRANSLATION && rc != VERR_INVALID_UTF8_ENCODING)
     {
-        RTPrintf("tstUtf8: FAILURE - %d: Conversion of second bad UTF-8 strings to UTF-16 apparantly succeeded. It shouldn't. rc=%Vrc\n",
+        RTPrintf("tstUtf8: FAILURE - %d: Conversion of second bad UTF-8 strings to UTF-16 apparantly succeeded. It shouldn't. rc=%Rrc\n",
                  __LINE__, rc);
         g_cErrors++;
     }
@@ -117,7 +117,7 @@ static void test1(void)
                 RTPrintf("tstUtf8: Random UTF-16 -> UTF-8 -> Current -> UTF-8 successful.\n");
             else
             {
-                RTPrintf("tstUtf8: FAILURE - %d: The third part of random UTF-16 -> UTF-8 -> Current -> UTF-8 failed with return value %Vrc.\n",
+                RTPrintf("tstUtf8: FAILURE - %d: The third part of random UTF-16 -> UTF-8 -> Current -> UTF-8 failed with return value %Rrc.\n",
                          __LINE__, rc);
                 g_cErrors++;
             }
@@ -126,14 +126,14 @@ static void test1(void)
             RTPrintf("tstUtf8: The second part of random UTF-16 -> UTF-8 -> Current -> UTF-8 returned VERR_NO_TRANSLATION.  This is probably as it should be.\n");
         else
         {
-            RTPrintf("tstUtf8: FAILURE - %d: The second part of random UTF-16 -> UTF-8 -> Current -> UTF-8 failed with return value %Vrc.\n",
+            RTPrintf("tstUtf8: FAILURE - %d: The second part of random UTF-16 -> UTF-8 -> Current -> UTF-8 failed with return value %Rrc.\n",
                      __LINE__, rc);
             g_cErrors++;
         }
     }
     else
     {
-        RTPrintf("tstUtf8: FAILURE - %d: The first part of random UTF-16 -> UTF-8 -> Current -> UTF-8 failed with return value %Vrc.\n",
+        RTPrintf("tstUtf8: FAILURE - %d: The first part of random UTF-16 -> UTF-8 -> Current -> UTF-8 failed with return value %Rrc.\n",
                  __LINE__, rc);
         g_cErrors++;
     }
@@ -166,14 +166,14 @@ static void test1(void)
         }
         else
         {
-            RTPrintf("tstUtf8: FAILURE - %d: The second part of random UTF-16 -> UTF-8 -> UTF-16 failed with return value %Vrc.\n",
+            RTPrintf("tstUtf8: FAILURE - %d: The second part of random UTF-16 -> UTF-8 -> UTF-16 failed with return value %Rrc.\n",
                      __LINE__, rc);
             g_cErrors++;
         }
     }
     else
     {
-        RTPrintf("tstUtf8: FAILURE - %d: The first part of random UTF-16 -> UTF-8 -> UTF-16 failed with return value %Vrc.\n",
+        RTPrintf("tstUtf8: FAILURE - %d: The first part of random UTF-16 -> UTF-8 -> UTF-16 failed with return value %Rrc.\n",
                  __LINE__, rc);
         g_cErrors++;
     }
@@ -196,7 +196,8 @@ static void test1(void)
         if (rc == 0)
         {
             int i;
-            for (i = 0; pwszRand[i] == pwsz[i] && pwsz[i] != 0; i++);
+            for (i = 0; pwszRand[i] == pwsz[i] && pwsz[i] != 0; i++)
+                ;
             if (pwsz[i] == 0 && i >= 8)
                 RTPrintf("tstUtf8: Random UTF-16 -> fixed length UTF-8 -> UTF-16 successful.\n");
             else
@@ -208,14 +209,14 @@ static void test1(void)
         }
         else
         {
-            RTPrintf("tstUtf8: FAILURE - %d: The second part of random UTF-16 -> fixed length UTF-8 -> UTF-16 failed with return value %Vrc.\n",
+            RTPrintf("tstUtf8: FAILURE - %d: The second part of random UTF-16 -> fixed length UTF-8 -> UTF-16 failed with return value %Rrc.\n",
                      __LINE__, rc);
             g_cErrors++;
         }
     }
     else
     {
-        RTPrintf("tstUtf8: FAILURE - %d: The first part of random UTF-16 -> fixed length UTF-8 -> UTF-16 failed with return value %Vrc.\n",
+        RTPrintf("tstUtf8: FAILURE - %d: The first part of random UTF-16 -> fixed length UTF-8 -> UTF-16 failed with return value %Rrc.\n",
                  __LINE__, rc);
         g_cErrors++;
     }
@@ -238,7 +239,8 @@ static void test1(void)
         if (rc == 0)
         {
             int i;
-            for (i = 0; pwszRand[i] == pwsz2Buf[i] && pwsz2Buf[i] != 0; i++);
+            for (i = 0; pwszRand[i] == pwsz2Buf[i] && pwsz2Buf[i] != 0; i++)
+                ;
             if (pwszRand[i] == 0 && pwsz2Buf[i] == 0)
                 RTPrintf("tstUtf8: Random UTF-16 -> UTF-8 -> fixed length UTF-16 successful.\n");
             else
@@ -250,14 +252,14 @@ static void test1(void)
         }
         else
         {
-            RTPrintf("tstUtf8: FAILURE - %d: The second part of random UTF-16 -> UTF-8 -> fixed length UTF-16 failed with return value %Vrc.\n",
+            RTPrintf("tstUtf8: FAILURE - %d: The second part of random UTF-16 -> UTF-8 -> fixed length UTF-16 failed with return value %Rrc.\n",
                      __LINE__, rc);
             g_cErrors++;
         }
     }
     else
     {
-        RTPrintf("tstUtf8: FAILURE - %d: The first part of random UTF-16 -> UTF-8 -> fixed length UTF-16 failed with return value %Vrc.\n",
+        RTPrintf("tstUtf8: FAILURE - %d: The first part of random UTF-16 -> UTF-8 -> fixed length UTF-16 failed with return value %Rrc.\n",
                  __LINE__, rc);
         g_cErrors++;
     }
@@ -294,14 +296,14 @@ static void test1(void)
             RTPrintf("tstUtf8: Random UTF-16 -> UTF-8 -> fixed length UTF-16 with too short buffer successfully rejected.\n");
         else
         {
-            RTPrintf("tstUtf8: FAILURE - %d: The second part of random UTF-16 -> UTF-8 -> fixed length UTF-16 with too short buffer returned value %Vrc instead of VERR_BUFFER_OVERFLOW.\n",
+            RTPrintf("tstUtf8: FAILURE - %d: The second part of random UTF-16 -> UTF-8 -> fixed length UTF-16 with too short buffer returned value %Rrc instead of VERR_BUFFER_OVERFLOW.\n",
                      __LINE__, rc);
             g_cErrors++;
         }
     }
     else
     {
-        RTPrintf("tstUtf8: FAILURE - %d:The first part of random UTF-16 -> UTF-8 -> fixed length UTF-16 failed with return value %Vrc.\n",
+        RTPrintf("tstUtf8: FAILURE - %d:The first part of random UTF-16 -> UTF-8 -> fixed length UTF-16 failed with return value %Rrc.\n",
                  __LINE__, rc);
         g_cErrors++;
     }
@@ -397,7 +399,7 @@ void InitStrings(void)
     while (uc < 0x110000)
         g_uszAll[i++] = uc++;
     g_uszAll[i++] = 0;
-    Assert(ELEMENTS(g_uszAll) == i);
+    Assert(RT_ELEMENTS(g_uszAll) == i);
 
     /* the utf-16 one */
     i = 0;
@@ -419,7 +421,7 @@ void InitStrings(void)
     }
     //RTPrintf(" %#x=%#x\n", i, uc);
     g_wszAll[i++] = '\0';
-    Assert(ELEMENTS(g_wszAll) == i);
+    Assert(RT_ELEMENTS(g_wszAll) == i);
 
     /*
      * The utf-8 one
@@ -469,7 +471,7 @@ void InitStrings(void)
     }
     //RTPrintf(" %#x=%#x\n", i, uc);
     g_szAll[i++] = '\0';
-    Assert(ELEMENTS(g_szAll) == i);
+    Assert(RT_ELEMENTS(g_szAll) == i);
 }
 
 
@@ -568,12 +570,12 @@ void test2(void)
         }
 
         size_t cCps;
-        rc = RTStrToUniEx(g_szAll, RTSTR_MAX, &paCps, ELEMENTS(g_uszAll), &cCps);
+        rc = RTStrToUniEx(g_szAll, RTSTR_MAX, &paCps, RT_ELEMENTS(g_uszAll), &cCps);
         if (rc == VINF_SUCCESS)
         {
-            if (cCps != ELEMENTS(g_uszAll) - 1)
+            if (cCps != RT_ELEMENTS(g_uszAll) - 1)
             {
-                RTPrintf("tstUtf8: FAILURE - the full #3+: wrong Code Point count %zu, expected %zu\n", cCps, ELEMENTS(g_uszAll) - 1);
+                RTPrintf("tstUtf8: FAILURE - the full #3+: wrong Code Point count %zu, expected %zu\n", cCps, RT_ELEMENTS(g_uszAll) - 1);
                 g_cErrors++;
             }
         }
@@ -802,7 +804,7 @@ void test3(void)
  */
 void TstRTStrXCmp(void)
 {
-    RTPrintf("tstUtf8: TESTING RTStr*Cmp\n");
+    RTPrintf("tstUtf8: TEST 4 - RTStr*Cmp\n");
 #define CHECK_DIFF(expr, op) \
     do \
     { \
@@ -829,6 +831,23 @@ void TstRTStrXCmp(void)
     CHECK_DIFF(RTStrCmp("abcdef", "abcdeF"), > );
 
 
+    CHECK_DIFF(RTStrNCmp(NULL, NULL, RTSTR_MAX), == );
+    CHECK_DIFF(RTStrNCmp(NULL, "", RTSTR_MAX), < );
+    CHECK_DIFF(RTStrNCmp("", NULL, RTSTR_MAX), > );
+    CHECK_DIFF(RTStrNCmp("", "", RTSTR_MAX), == );
+    CHECK_DIFF(RTStrNCmp("abcdef", "abcdef", RTSTR_MAX), == );
+    CHECK_DIFF(RTStrNCmp("abcdef", "abcde", RTSTR_MAX), > );
+    CHECK_DIFF(RTStrNCmp("abcde", "abcdef", RTSTR_MAX), < );
+    CHECK_DIFF(RTStrNCmp("abcdeg", "abcdef", RTSTR_MAX), > );
+    CHECK_DIFF(RTStrNCmp("abcdef", "abcdeg", RTSTR_MAX), < );
+    CHECK_DIFF(RTStrNCmp("abcdeF", "abcdef", RTSTR_MAX), < );
+    CHECK_DIFF(RTStrNCmp("abcdef", "abcdeF", RTSTR_MAX), > );
+
+    CHECK_DIFF(RTStrNCmp("abcdef", "fedcba", 0), ==);
+    CHECK_DIFF(RTStrNCmp("abcdef", "abcdeF", 5), ==);
+    CHECK_DIFF(RTStrNCmp("abcdef", "abcdeF", 6), > );
+
+
     CHECK_DIFF(RTStrICmp(NULL, NULL), == );
     CHECK_DIFF(RTStrICmp(NULL, ""), < );
     CHECK_DIFF(RTStrICmp("", NULL), > );
@@ -839,13 +858,48 @@ void TstRTStrXCmp(void)
     CHECK_DIFF(RTStrICmp("abcdeg", "abcdef"), > );
     CHECK_DIFF(RTStrICmp("abcdef", "abcdeg"), < );
 
-    CHECK_DIFF(RTStrICmp("abcdeF", "abcdef"), == );
+    CHECK_DIFF(RTStrICmp("abcdeF", "abcdef"), ==);
     CHECK_DIFF(RTStrICmp("abcdef", "abcdeF"), ==);
     CHECK_DIFF(RTStrICmp("ABCDEF", "abcdef"), ==);
     CHECK_DIFF(RTStrICmp("abcdef", "ABCDEF"), ==);
     CHECK_DIFF(RTStrICmp("AbCdEf", "aBcDeF"), ==);
     CHECK_DIFF(RTStrICmp("AbCdEg", "aBcDeF"), > );
     CHECK_DIFF(RTStrICmp("AbCdEG", "aBcDef"), > ); /* diff performed on the lower case cp. */
+
+
+
+    CHECK_DIFF(RTStrNICmp(NULL, NULL, RTSTR_MAX), == );
+    CHECK_DIFF(RTStrNICmp(NULL, "", RTSTR_MAX), < );
+    CHECK_DIFF(RTStrNICmp("", NULL, RTSTR_MAX), > );
+    CHECK_DIFF(RTStrNICmp("", "", RTSTR_MAX), == );
+    CHECK_DIFF(RTStrNICmp(NULL, NULL, 0), == );
+    CHECK_DIFF(RTStrNICmp(NULL, "", 0), == );
+    CHECK_DIFF(RTStrNICmp("", NULL, 0), == );
+    CHECK_DIFF(RTStrNICmp("", "", 0), == );
+    CHECK_DIFF(RTStrNICmp("abcdef", "abcdef", RTSTR_MAX), == );
+    CHECK_DIFF(RTStrNICmp("abcdef", "abcde", RTSTR_MAX), > );
+    CHECK_DIFF(RTStrNICmp("abcde", "abcdef", RTSTR_MAX), < );
+    CHECK_DIFF(RTStrNICmp("abcdeg", "abcdef", RTSTR_MAX), > );
+    CHECK_DIFF(RTStrNICmp("abcdef", "abcdeg", RTSTR_MAX), < );
+
+    CHECK_DIFF(RTStrNICmp("abcdeF", "abcdef", RTSTR_MAX), ==);
+    CHECK_DIFF(RTStrNICmp("abcdef", "abcdeF", RTSTR_MAX), ==);
+    CHECK_DIFF(RTStrNICmp("ABCDEF", "abcdef", RTSTR_MAX), ==);
+    CHECK_DIFF(RTStrNICmp("abcdef", "ABCDEF", RTSTR_MAX), ==);
+    CHECK_DIFF(RTStrNICmp("AbCdEf", "aBcDeF", RTSTR_MAX), ==);
+    CHECK_DIFF(RTStrNICmp("AbCdEg", "aBcDeF", RTSTR_MAX), > );
+    CHECK_DIFF(RTStrNICmp("AbCdEG", "aBcDef", RTSTR_MAX), > ); /* diff performed on the lower case cp. */
+
+    CHECK_DIFF(RTStrNICmp("ABCDEF", "fedcba", 0), ==);
+    CHECK_DIFF(RTStrNICmp("AbCdEg", "aBcDeF", 5), ==);
+    CHECK_DIFF(RTStrNICmp("AbCdEf", "aBcDeF", 5), ==);
+    CHECK_DIFF(RTStrNICmp("AbCdE",  "aBcDe", 5), ==);
+    CHECK_DIFF(RTStrNICmp("AbCdE",  "aBcDeF", 5), ==);
+    CHECK_DIFF(RTStrNICmp("AbCdEf", "aBcDe", 5), ==);
+    CHECK_DIFF(RTStrNICmp("AbCdEg", "aBcDeF", 6), > );
+    CHECK_DIFF(RTStrNICmp("AbCdEG", "aBcDef", 6), > ); /* diff performed on the lower case cp. */
+    /* We should continue using byte comparison when we hit the invalid CP.  Will assert in debug builds. */
+    // CHECK_DIFF(RTStrNICmp("AbCd\xff""eg", "aBcD\xff""eF", 6), ==);
 }
 
 
@@ -863,14 +917,14 @@ void Benchmarks(void)
     } s_Buf;
 
     PRTUTF16 pwsz = &s_Buf.wszBuf[0];
-    int rc = RTStrToUtf16Ex(&g_szAll[0], RTSTR_MAX, &pwsz, ELEMENTS(s_Buf.wszBuf), NULL);
+    int rc = RTStrToUtf16Ex(&g_szAll[0], RTSTR_MAX, &pwsz, RT_ELEMENTS(s_Buf.wszBuf), NULL);
     if (RT_SUCCESS(rc))
     {
         int i;
         uint64_t u64Start = RTTimeNanoTS();
         for (i = 0; i < 100; i++)
         {
-            rc = RTStrToUtf16Ex(&g_szAll[0], RTSTR_MAX, &pwsz, ELEMENTS(s_Buf.wszBuf), NULL);
+            rc = RTStrToUtf16Ex(&g_szAll[0], RTSTR_MAX, &pwsz, RT_ELEMENTS(s_Buf.wszBuf), NULL);
             if (RT_FAILURE(rc))
             {
                 RTPrintf("tstUtf8: UTF-8 -> UTF-16 benchmark failed at i=%d, rc=%Rrc\n", i, rc);
@@ -882,14 +936,14 @@ void Benchmarks(void)
     }
 
     char *psz = &s_Buf.szBuf[0];
-    rc = RTUtf16ToUtf8Ex(&g_wszAll[0], RTSTR_MAX, &psz, ELEMENTS(s_Buf.szBuf), NULL);
+    rc = RTUtf16ToUtf8Ex(&g_wszAll[0], RTSTR_MAX, &psz, RT_ELEMENTS(s_Buf.szBuf), NULL);
     if (RT_SUCCESS(rc))
     {
         int i;
         uint64_t u64Start = RTTimeNanoTS();
         for (i = 0; i < 100; i++)
         {
-            rc = RTUtf16ToUtf8Ex(&g_wszAll[0], RTSTR_MAX, &psz, ELEMENTS(s_Buf.szBuf), NULL);
+            rc = RTUtf16ToUtf8Ex(&g_wszAll[0], RTSTR_MAX, &psz, RT_ELEMENTS(s_Buf.szBuf), NULL);
             if (RT_FAILURE(rc))
             {
                 RTPrintf("tstUtf8: UTF-16 -> UTF-8 benchmark failed at i=%d, rc=%Rrc\n", i, rc);

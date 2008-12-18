@@ -1,4 +1,4 @@
-/* $Id: GMMR0.cpp $ */
+/* $Id: GMMR0.cpp 14299 2008-11-18 13:25:40Z vboxsync $ */
 /** @file
  * GMM - Global Memory Manager.
  */
@@ -327,7 +327,7 @@ typedef GMMPAGE *PGMMPAGE;
 #define GMM_PAGE_IS_FREE(pPage)     ( (pPage)->Common.u2State == GMM_PAGE_STATE_FREE )
 
 /** @def GMM_PAGE_PFN_END
- * The end of the the valid guest pfn range, {0..GMM_PAGE_PFN_END-1}.
+ * The end of the valid guest pfn range, {0..GMM_PAGE_PFN_END-1}.
  * @remark Some of the values outside the range has special meaning, see related \#defines.
  */
 #if HC_ARCH_BITS == 64
@@ -2352,8 +2352,8 @@ GMMR0DECL(int) GMMR0BalloonedPages(PVM pVM, uint32_t cBalloonedPages, uint32_t c
         return VERR_NOT_OWNER;
 
     AssertPtrReturn(paPages, VERR_INVALID_PARAMETER);
-    AssertMsgReturn(cBalloonedPages >= 0 && cBalloonedPages < RT_BIT(32 - PAGE_SHIFT), ("%#x\n", cBalloonedPages), VERR_INVALID_PARAMETER);
-    AssertMsgReturn(cPagesToFree >= 0 && cPagesToFree <= cBalloonedPages, ("%#x\n", cPagesToFree), VERR_INVALID_PARAMETER);
+    AssertMsgReturn(cBalloonedPages < RT_BIT(32 - PAGE_SHIFT), ("%#x\n", cBalloonedPages), VERR_INVALID_PARAMETER);
+    AssertMsgReturn(cPagesToFree <= cBalloonedPages, ("%#x\n", cPagesToFree), VERR_INVALID_PARAMETER);
 
     for (unsigned iPage = 0; iPage < cPagesToFree; iPage++)
         AssertMsgReturn(    paPages[iPage].idPage <= GMM_PAGEID_LAST
@@ -2463,7 +2463,7 @@ GMMR0DECL(int) GMMR0DeflatedBalloon(PVM pVM, uint32_t cPages)
     if (pGVM->hEMT != RTThreadNativeSelf())
         return VERR_NOT_OWNER;
 
-    AssertMsgReturn(cPages >= 0 && cPages < RT_BIT(32 - PAGE_SHIFT), ("%#x\n", cPages), VERR_INVALID_PARAMETER);
+    AssertMsgReturn(cPages < RT_BIT(32 - PAGE_SHIFT), ("%#x\n", cPages), VERR_INVALID_PARAMETER);
 
     /*
      * Take the sempahore and do some more validations.

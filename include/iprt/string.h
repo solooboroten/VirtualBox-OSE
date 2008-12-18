@@ -301,12 +301,29 @@ RTDECL(RTUNICP) RTStrGetCpInternal(const char *psz);
 /**
  * Get the unicode code point at the given string position.
  *
- * @returns unicode code point.
- * @returns RTUNICP_INVALID if the encoding is invalid.
+ * @returns iprt status code
+ * @returns VERR_INVALID_UTF8_ENCODING if the encoding is invalid.
  * @param   ppsz        The string.
  * @param   pCp         Where to store the unicode code point.
+ *                      Stores RTUNICP_INVALID if the encoding is invalid.
  */
 RTDECL(int) RTStrGetCpExInternal(const char **ppsz, PRTUNICP pCp);
+
+/**
+ * Get the unicode code point at the given string position for a string of a
+ * given length.
+ *
+ * @returns iprt status code
+ * @retval  VERR_INVALID_UTF8_ENCODING if the encoding is invalid.
+ * @retval  VERR_END_OF_STRING if *pcch is 0. *pCp is set to RTUNICP_INVALID.
+ *
+ * @param   ppsz        The string.
+ * @param   pcch        Pointer to the length of the string.  This will be
+ *                      decremented by the size of the code point.
+ * @param   pCp         Where to store the unicode code point.
+ *                      Stores RTUNICP_INVALID if the encoding is invalid.
+ */
+RTDECL(int) RTStrGetCpNExInternal(const char **ppsz, size_t *pcch, PRTUNICP pCp);
 
 /**
  * Put the unicode code point at the given string position
@@ -369,6 +386,41 @@ DECLINLINE(int) RTStrGetCpEx(const char **ppsz, PRTUNICP pCp)
         return VINF_SUCCESS;
     }
     return RTStrGetCpExInternal(ppsz, pCp);
+}
+
+/**
+ * Get the unicode code point at the given string position for a string of a
+ * given maximum length.
+ *
+ * @returns iprt status code.
+ * @retval  VERR_INVALID_UTF8_ENCODING if the encoding is invalid.
+ * @retval  VERR_END_OF_STRING if *pcch is 0. *pCp is set to RTUNICP_INVALID.
+ *
+ * @param   ppsz        Pointer to the string pointer. This will be updated to
+ *                      point to the char following the current code point.
+ * @param   pcch        Pointer to the maximum string length.  This will be
+ *                      decremented by the size of the code point found.
+ * @param   pCp         Where to store the code point.
+ *                      RTUNICP_INVALID is stored here on failure.
+ *
+ * @remark  We optimize this operation by using an inline function for
+ *          the most frequent and simplest sequence, the rest is
+ *          handled by RTStrGetCpNExInternal().
+ */
+DECLINLINE(int) RTStrGetCpNEx(const char **ppsz, size_t *pcch, PRTUNICP pCp)
+{
+    if (RT_LIKELY(*pcch != 0))
+    {
+        const unsigned char uch = **(const unsigned char **)ppsz;
+        if (!(uch & RT_BIT(7)))
+        {
+            (*ppsz)++;
+            (*pcch)--;
+            *pCp = uch;
+            return VINF_SUCCESS;
+        }
+    }
+    return RTStrGetCpNExInternal(ppsz, pcch, pCp);
 }
 
 /**
@@ -721,6 +773,169 @@ RTDECL(char *) RTStrStripL(const char *psz);
  */
 RTDECL(char *) RTStrStripR(char *psz);
 
+/**
+ * Performs a case sensitive string compare between two UTF-8 strings.
+ *
+ * Encoding errors are ignored by the current implementation. So, the only
+ * difference between this and the CRT strcmp function is the handling of
+ * NULL arguments.
+ *
+ * @returns < 0 if the first string less than the second string.
+ * @returns 0 if the first string identical to the second string.
+ * @returns > 0 if the first string greater than the second string.
+ * @param   psz1        First UTF-8 string. Null is allowed.
+ * @param   psz2        Second UTF-8 string. Null is allowed.
+ */
+RTDECL(int) RTStrCmp(const char *psz1, const char *psz2);
+
+/**
+ * Performs a case sensitive string compare between two UTF-8 strings, given
+ * a maximum string length.
+ *
+ * Encoding errors are ignored by the current implementation. So, the only
+ * difference between this and the CRT strncmp function is the handling of
+ * NULL arguments.
+ *
+ * @returns < 0 if the first string less than the second string.
+ * @returns 0 if the first string identical to the second string.
+ * @returns > 0 if the first string greater than the second string.
+ * @param   psz1        First UTF-8 string. Null is allowed.
+ * @param   psz2        Second UTF-8 string. Null is allowed.
+ * @param   cchMax      The maximum string length
+ */
+RTDECL(int) RTStrNCmp(const char *psz1, const char *psz2, size_t cchMax);
+
+/**
+ * Performs a case insensitive string compare between two UTF-8 strings.
+ *
+ * This is a simplified compare, as only the simplified lower/upper case folding
+ * specified by the unicode specs are used. It does not consider character pairs
+ * as they are used in some languages, just simple upper & lower case compares.
+ *
+ * The result is the difference between the mismatching codepoints after they
+ * both have been lower cased.
+ *
+ * If the string encoding is invalid the function will assert (strict builds)
+ * and use RTStrCmp for the remainder of the string.
+ *
+ * @returns < 0 if the first string less than the second string.
+ * @returns 0 if the first string identical to the second string.
+ * @returns > 0 if the first string greater than the second string.
+ * @param   psz1        First UTF-8 string. Null is allowed.
+ * @param   psz2        Second UTF-8 string. Null is allowed.
+ */
+RTDECL(int) RTStrICmp(const char *psz1, const char *psz2);
+
+/**
+ * Performs a case insensitive string compare between two UTF-8 strings, given a
+ * maximum string length.
+ *
+ * This is a simplified compare, as only the simplified lower/upper case folding
+ * specified by the unicode specs are used. It does not consider character pairs
+ * as they are used in some languages, just simple upper & lower case compares.
+ *
+ * The result is the difference between the mismatching codepoints after they
+ * both have been lower cased.
+ *
+ * If the string encoding is invalid the function will assert (strict builds)
+ * and use RTStrCmp for the remainder of the string.
+ *
+ * @returns < 0 if the first string less than the second string.
+ * @returns 0 if the first string identical to the second string.
+ * @returns > 0 if the first string greater than the second string.
+ * @param   psz1        First UTF-8 string. Null is allowed.
+ * @param   psz2        Second UTF-8 string. Null is allowed.
+ * @param   cchMax      Maximum string length
+ */
+RTDECL(int) RTStrNICmp(const char *psz1, const char *psz2, size_t cchMax);
+
+/**
+ * Find the length of a zero-terminated byte string, given
+ * a max string length.
+ *
+ * See also RTStrNLenEx.
+ *
+ * @returns The string length or cbMax. The returned length does not include
+ *          the zero terminator if it was found.
+ *
+ * @param   pszString   The string.
+ * @param   cchMax      The max string length.
+ */
+RTDECL(size_t) RTStrNLen(const char *pszString, size_t cchMax);
+
+/**
+ * Find the length of a zero-terminated byte string, given
+ * a max string length.
+ *
+ * See also RTStrNLen.
+ *
+ * @returns IPRT status code.
+ * @retval  VINF_SUCCESS if the string has a length less than cchMax.
+ * @retval  VERR_BUFFER_OVERFLOW if the end of the string wasn't found
+ *          before cchMax was reached.
+ *
+ * @param   pszString   The string.
+ * @param   cchMax      The max string length.
+ * @param   pcch        Where to store the string length excluding the
+ *                      terminator. This is set to cchMax if the terminator
+ *                      isn't found.
+ */
+RTDECL(int) RTStrNLenEx(const char *pszString, size_t cchMax, size_t *pcch);
+
+/**
+ * Matches a simple string pattern.
+ *
+ * @returns true if the string matches the pattern, otherwise false.
+ *
+ * @param  pszPattern   The pattern. Special chars are '*' and '?', where the
+ *                      asterisk matches zero or more characters and question
+ *                      mark matches exactly one character.
+ * @param  pszString    The string to match against the pattern.
+ */
+RTDECL(bool) RTStrSimplePatternMatch(const char *pszPattern, const char *pszString);
+
+/**
+ * Matches a simple string pattern, neither which needs to be zero terminated.
+ *
+ * This is identical to RTStrSimplePatternMatch except that you can optionally
+ * specify the length of both the pattern and the string.  The function will
+ * stop when it hits a string terminator or either of the lengths.
+ *
+ * @returns true if the string matches the pattern, otherwise false.
+ *
+ * @param  pszPattern   The pattern. Special chars are '*' and '?', where the
+ *                      asterisk matches zero or more characters and question
+ *                      mark matches exactly one character.
+ * @param  cchPattern   The pattern length. Pass RTSTR_MAX if you don't know the
+ *                      length and wish to stop at the string terminator.
+ * @param  pszString    The string to match against the pattern.
+ * @param  cchString    The string length. Pass RTSTR_MAX if you don't know the
+ *                      length and wish to match up to the string terminator.
+ */
+RTDECL(bool) RTStrSimplePatternNMatch(const char *pszPattern, size_t cchPattern,
+                                      const char *pszString, size_t cchString);
+
+/**
+ * Matches multiple patterns against a string.
+ *
+ * The patterns are separated by the pipe character (|).
+ *
+ * @returns true if the string matches the pattern, otherwise false.
+ *
+ * @param   pszPatterns The patterns.
+ * @param   cchPatterns The lengths of the patterns to use. Pass RTSTR_MAX to
+ *                      stop at the terminator.
+ * @param   pszString   The string to match against the pattern.
+ * @param   cchString   The string length. Pass RTSTR_MAX stop stop at the
+ *                      terminator.
+ * @param   poffPattern Offset into the patterns string of the patttern that
+ *                      matched. If no match, this will be set to RTSTR_MAX.
+ *                      This is optional, NULL is fine.
+ */
+RTDECL(bool) RTStrSimplePatternMultiMatch(const char *pszPatterns, size_t cchPatterns,
+                                          const char *pszString, size_t cchString,
+                                          size_t *poffPattern);
+
 
 /** @defgroup rt_str_conv   String To/From Number Conversions
  * @ingroup grp_rt_str
@@ -741,7 +956,7 @@ RTDECL(char *) RTStrStripR(char *psz);
  * @param   pszValue    Pointer to the string value.
  * @param   ppszNext    Where to store the pointer to the first char following the number. (Optional)
  * @param   uBase       The base of the representation used.
- *                      If the function will look for known prefixes before defaulting to 10.
+ *                      If 0 the function will look for known prefixes before defaulting to 10.
  * @param   pu64        Where to store the converted number. (optional)
  */
 RTDECL(int) RTStrToUInt64Ex(const char *pszValue, char **ppszNext, unsigned uBase, uint64_t *pu64);
@@ -761,7 +976,7 @@ RTDECL(int) RTStrToUInt64Ex(const char *pszValue, char **ppszNext, unsigned uBas
  *
  * @param   pszValue    Pointer to the string value.
  * @param   uBase       The base of the representation used.
- *                      If the function will look for known prefixes before defaulting to 10.
+ *                      If 0 the function will look for known prefixes before defaulting to 10.
  * @param   pu64        Where to store the converted number. (optional)
  */
 RTDECL(int) RTStrToUInt64Full(const char *pszValue, unsigned uBase, uint64_t *pu64);
@@ -811,7 +1026,7 @@ RTDECL(int) RTStrToUInt32Ex(const char *pszValue, char **ppszNext, unsigned uBas
  *
  * @param   pszValue    Pointer to the string value.
  * @param   uBase       The base of the representation used.
- *                      If the function will look for known prefixes before defaulting to 10.
+ *                      If 0 the function will look for known prefixes before defaulting to 10.
  * @param   pu32        Where to store the converted number. (optional)
  */
 RTDECL(int) RTStrToUInt32Full(const char *pszValue, unsigned uBase, uint32_t *pu32);
@@ -861,7 +1076,7 @@ RTDECL(int) RTStrToUInt16Ex(const char *pszValue, char **ppszNext, unsigned uBas
  *
  * @param   pszValue    Pointer to the string value.
  * @param   uBase       The base of the representation used.
- *                      If the function will look for known prefixes before defaulting to 10.
+ *                      If 0 the function will look for known prefixes before defaulting to 10.
  * @param   pu16        Where to store the converted number. (optional)
  */
 RTDECL(int) RTStrToUInt16Full(const char *pszValue, unsigned uBase, uint16_t *pu16);
@@ -911,7 +1126,7 @@ RTDECL(int) RTStrToUInt8Ex(const char *pszValue, char **ppszNext, unsigned uBase
  *
  * @param   pszValue    Pointer to the string value.
  * @param   uBase       The base of the representation used.
- *                      If the function will look for known prefixes before defaulting to 10.
+ *                      If 0 the function will look for known prefixes before defaulting to 10.
  * @param   pu8         Where to store the converted number. (optional)
  */
 RTDECL(int) RTStrToUInt8Full(const char *pszValue, unsigned uBase, uint8_t *pu8);
@@ -959,7 +1174,7 @@ RTDECL(int) RTStrToInt64Ex(const char *pszValue, char **ppszNext, unsigned uBase
  *
  * @param   pszValue    Pointer to the string value.
  * @param   uBase       The base of the representation used.
- *                      If the function will look for known prefixes before defaulting to 10.
+ *                      If 0 the function will look for known prefixes before defaulting to 10.
  * @param   pi64        Where to store the converted number. (optional)
  */
 RTDECL(int) RTStrToInt64Full(const char *pszValue, unsigned uBase, int64_t *pi64);
@@ -1007,7 +1222,7 @@ RTDECL(int) RTStrToInt32Ex(const char *pszValue, char **ppszNext, unsigned uBase
  *
  * @param   pszValue    Pointer to the string value.
  * @param   uBase       The base of the representation used.
- *                      If the function will look for known prefixes before defaulting to 10.
+ *                      If 0 the function will look for known prefixes before defaulting to 10.
  * @param   pi32        Where to store the converted number. (optional)
  */
 RTDECL(int) RTStrToInt32Full(const char *pszValue, unsigned uBase, int32_t *pi32);
@@ -1055,7 +1270,7 @@ RTDECL(int) RTStrToInt16Ex(const char *pszValue, char **ppszNext, unsigned uBase
  *
  * @param   pszValue    Pointer to the string value.
  * @param   uBase       The base of the representation used.
- *                      If the function will look for known prefixes before defaulting to 10.
+ *                      If 0 the function will look for known prefixes before defaulting to 10.
  * @param   pi16        Where to store the converted number. (optional)
  */
 RTDECL(int) RTStrToInt16Full(const char *pszValue, unsigned uBase, int16_t *pi16);
@@ -1103,7 +1318,7 @@ RTDECL(int) RTStrToInt8Ex(const char *pszValue, char **ppszNext, unsigned uBase,
  *
  * @param   pszValue    Pointer to the string value.
  * @param   uBase       The base of the representation used.
- *                      If the function will look for known prefixes before defaulting to 10.
+ *                      If 0 the function will look for known prefixes before defaulting to 10.
  * @param   pi8         Where to store the converted number. (optional)
  */
 RTDECL(int) RTStrToInt8Full(const char *pszValue, unsigned uBase, int8_t *pi8);
@@ -1117,75 +1332,6 @@ RTDECL(int) RTStrToInt8Full(const char *pszValue, unsigned uBase, int8_t *pi8);
  * @param   pszValue    Pointer to the string value.
  */
 RTDECL(int8_t) RTStrToInt8(const char *pszValue);
-
-/**
- * Performs a case sensitive string compare between two UTF-8 strings.
- *
- * Encoding errors are ignored by the current implementation. So, the only
- * difference between this and the CRT strcmp function is the handling of
- * NULL arguments.
- *
- * @returns < 0 if the first string less than the second string.
- * @returns 0 if the first string identical to the second string.
- * @returns > 0 if the first string greater than the second string.
- * @param   psz1        First UTF-8 string. Null is allowed.
- * @param   psz2        Second UTF-8 string. Null is allowed.
- */
-RTDECL(int) RTStrCmp(const char *psz1, const char *psz2);
-
-/**
- * Performs a case insensitive string compare between two UTF-8 strings.
- *
- * This is a simplified compare, as only the simplified lower/upper case folding
- * specified by the unicode specs are used. It does not consider character pairs
- * as they are used in some languages, just simple upper & lower case compares.
- *
- * The result is the difference between the mismatching codepoints after they
- * both have been lower cased.
- *
- * If the string encoding is invalid the function will assert (strict builds)
- * and use RTStrCmp for the remainder of the string.
- *
- * @returns < 0 if the first string less than the second string.
- * @returns 0 if the first string identical to the second string.
- * @returns > 0 if the first string greater than the second string.
- * @param   psz1        First UTF-8 string. Null is allowed.
- * @param   psz2        Second UTF-8 string. Null is allowed.
- */
-RTDECL(int) RTStrICmp(const char *psz1, const char *psz2);
-
-/**
- * Find the length of a zero-terminated byte string, given
- * a max string length.
- *
- * See also RTStrNLenEx.
- *
- * @returns The string length or cbMax. The returned length does not include
- *          the zero terminator if it was found.
- *
- * @param   pszString   The string.
- * @param   cchMax      The max string length.
- */
-RTDECL(size_t) RTStrNLen(const char *pszString, size_t cchMax);
-
-/**
- * Find the length of a zero-terminated byte string, given
- * a max string length.
- *
- * See also RTStrNLen.
- *
- * @returns IPRT status code.
- * @retval  VINF_SUCCESS if the string has a length less than cchMax.
- * @retval  VERR_BUFFER_OVERFLOW if the end of the string wasn't found
- *          before cchMax was reached.
- *
- * @param   pszString   The string.
- * @param   cchMax      The max string length.
- * @param   pcch        Where to store the string length excluding the
- *                      terminator. This is set to cchMax if the terminator
- *                      isn't found.
- */
-RTDECL(int) RTStrNLenEx(const char *pszString, size_t cchMax, size_t *pcch);
 
 /** @} */
 

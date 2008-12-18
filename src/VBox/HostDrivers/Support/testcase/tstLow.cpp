@@ -36,7 +36,7 @@
 #include <VBox/sup.h>
 #include <VBox/param.h>
 #include <VBox/err.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/stream.h>
 
 #include <string.h>
@@ -50,7 +50,7 @@ int main(int argc, char **argv)
     RTPrintf("tstLow: TESTING...\n");
 
     rc = SUPR3Init(NULL);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         /*
          * Allocate a bit of contiguous memory.
@@ -58,13 +58,13 @@ int main(int argc, char **argv)
         SUPPAGE aPages0[128];
         void *pvPages0 = (void *)0x77777777;
         memset(&aPages0[0], 0x8f, sizeof(aPages0));
-        rc = SUPLowAlloc(ELEMENTS(aPages0), &pvPages0, NULL, aPages0);
-        if (VBOX_SUCCESS(rc))
+        rc = SUPLowAlloc(RT_ELEMENTS(aPages0), &pvPages0, NULL, aPages0);
+        if (RT_SUCCESS(rc))
         {
             /* check that the pages are below 4GB and valid. */
-            for (unsigned iPage = 0; iPage < ELEMENTS(aPages0); iPage++)
+            for (unsigned iPage = 0; iPage < RT_ELEMENTS(aPages0); iPage++)
             {
-                RTPrintf("%-4d: Phys=%VHp Reserved=%p\n", iPage, aPages0[iPage].Phys, aPages0[iPage].uReserved);
+                RTPrintf("%-4d: Phys=%RHp Reserved=%p\n", iPage, aPages0[iPage].Phys, aPages0[iPage].uReserved);
                 if (aPages0[iPage].uReserved != 0)
                 {
                     rcRet++;
@@ -74,14 +74,14 @@ int main(int argc, char **argv)
                     ||  (aPages0[iPage].Phys & PAGE_OFFSET_MASK))
                 {
                     rcRet++;
-                    RTPrintf("tstLow: error: aPages0[%d].Phys=%VHp!\n", iPage, aPages0[iPage].Phys);
+                    RTPrintf("tstLow: error: aPages0[%d].Phys=%RHp!\n", iPage, aPages0[iPage].Phys);
                 }
             }
             if (!rcRet)
             {
-                for (unsigned iPage = 0; iPage < ELEMENTS(aPages0); iPage++)
+                for (unsigned iPage = 0; iPage < RT_ELEMENTS(aPages0); iPage++)
                     memset((char *)pvPages0 + iPage * PAGE_SIZE, iPage, PAGE_SIZE);
-                for (unsigned iPage = 0; iPage < ELEMENTS(aPages0); iPage++)
+                for (unsigned iPage = 0; iPage < RT_ELEMENTS(aPages0); iPage++)
                     for (uint8_t *pu8 = (uint8_t *)pvPages0 + iPage * PAGE_SIZE, *pu8End = pu8 + PAGE_SIZE; pu8 < pu8End; pu8++)
                         if (*pu8 != (uint8_t)iPage)
                         {
@@ -90,11 +90,11 @@ int main(int argc, char **argv)
                             rcRet++;
                         }
             }
-            SUPLowFree(pvPages0, ELEMENTS(aPages0));
+            SUPLowFree(pvPages0, RT_ELEMENTS(aPages0));
         }
         else
         {
-            RTPrintf("SUPLowAlloc(%d,,) failed -> rc=%Vrc\n", ELEMENTS(aPages0), rc);
+            RTPrintf("SUPLowAlloc(%d,,) failed -> rc=%Rrc\n", RT_ELEMENTS(aPages0), rc);
             rcRet++;
         }
 
@@ -107,12 +107,12 @@ int main(int argc, char **argv)
             void *pvPages1 = (void *)0x77777777;
             memset(&aPages1[0], 0x8f, sizeof(aPages1));
             rc = SUPLowAlloc(cPages, &pvPages1, NULL, aPages1);
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
             {
                 /* check that the pages are below 4GB and valid. */
                 for (unsigned iPage = 0; iPage < cPages; iPage++)
                 {
-                    RTPrintf("%-4d::%-4d: Phys=%VHp Reserved=%p\n", cPages, iPage, aPages1[iPage].Phys, aPages1[iPage].uReserved);
+                    RTPrintf("%-4d::%-4d: Phys=%RHp Reserved=%p\n", cPages, iPage, aPages1[iPage].Phys, aPages1[iPage].uReserved);
                     if (aPages1[iPage].uReserved != 0)
                     {
                         rcRet++;
@@ -122,7 +122,7 @@ int main(int argc, char **argv)
                         ||  (aPages1[iPage].Phys & PAGE_OFFSET_MASK))
                     {
                         rcRet++;
-                        RTPrintf("tstLow: error: aPages1[%d].Phys=%VHp!\n", iPage, aPages1[iPage].Phys);
+                        RTPrintf("tstLow: error: aPages1[%d].Phys=%RHp!\n", iPage, aPages1[iPage].Phys);
                     }
                 }
                 if (!rcRet)
@@ -142,7 +142,7 @@ int main(int argc, char **argv)
             }
             else
             {
-                RTPrintf("SUPLowAlloc(%d,,) failed -> rc=%Vrc\n", cPages, rc);
+                RTPrintf("SUPLowAlloc(%d,,) failed -> rc=%Rrc\n", cPages, rc);
                 rcRet++;
             }
         }
@@ -150,7 +150,7 @@ int main(int argc, char **argv)
     }
     else
     {
-        RTPrintf("SUPR3Init -> rc=%Vrc\n", rc);
+        RTPrintf("SUPR3Init -> rc=%Rrc\n", rc);
         rcRet++;
     }
 

@@ -137,18 +137,18 @@ STDMETHODIMP MachineDebugger::COMSETTER(RecompileUser)(BOOL enable)
 
     PVMREQ pReq;
     EMRAWMODE rawModeFlag = enable ? EMRAW_RING3_DISABLE : EMRAW_RING3_ENABLE;
-    int rcVBox = VMR3ReqCall(pVM, &pReq, RT_INDEFINITE_WAIT,
+    int rcVBox = VMR3ReqCall(pVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT,
                              (PFNRT)EMR3RawSetMode, 2, pVM, rawModeFlag);
-    if (VBOX_SUCCESS(rcVBox))
+    if (RT_SUCCESS(rcVBox))
     {
         rcVBox = pReq->iStatus;
         VMR3ReqFree(pReq);
     }
 
-    if (VBOX_SUCCESS(rcVBox))
+    if (RT_SUCCESS(rcVBox))
         return S_OK;
 
-    AssertMsgFailed(("Could not set raw mode flags to %d, rcVBox = %Vrc\n",
+    AssertMsgFailed(("Could not set raw mode flags to %d, rcVBox = %Rrc\n",
                      rawModeFlag, rcVBox));
     return E_FAIL;
 }
@@ -197,18 +197,18 @@ STDMETHODIMP MachineDebugger::COMSETTER(RecompileSupervisor)(BOOL enable)
 
     PVMREQ pReq;
     EMRAWMODE rawModeFlag = enable ? EMRAW_RING0_DISABLE : EMRAW_RING0_ENABLE;
-    int rcVBox = VMR3ReqCall(pVM, &pReq, RT_INDEFINITE_WAIT,
+    int rcVBox = VMR3ReqCall(pVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT,
                              (PFNRT)EMR3RawSetMode, 2, pVM, rawModeFlag);
-    if (VBOX_SUCCESS(rcVBox))
+    if (RT_SUCCESS(rcVBox))
     {
         rcVBox = pReq->iStatus;
         VMR3ReqFree(pReq);
     }
 
-    if (VBOX_SUCCESS(rcVBox))
+    if (RT_SUCCESS(rcVBox))
         return S_OK;
 
-    AssertMsgFailed(("Could not set raw mode flags to %d, rcVBox = %Vrc\n",
+    AssertMsgFailed(("Could not set raw mode flags to %d, rcVBox = %Rrc\n",
                      rawModeFlag, rcVBox));
     return E_FAIL;
 }

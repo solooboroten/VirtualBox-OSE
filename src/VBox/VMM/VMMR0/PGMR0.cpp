@@ -1,4 +1,4 @@
-/* $Id: PGMR0.cpp $ */
+/* $Id: PGMR0.cpp 13824 2008-11-05 01:11:24Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor, Ring-0.
  */
@@ -43,6 +43,10 @@ __BEGIN_DECLS
 #include "PGMR0Bth.h"
 #undef PGM_BTH_NAME
 
+#define PGM_BTH_NAME(name)          PGM_BTH_NAME_EPT_PROT(name)
+#include "PGMR0Bth.h"
+#undef PGM_BTH_NAME
+
 __END_DECLS
 
 
@@ -57,7 +61,7 @@ __END_DECLS
  *
  * @remarks Must be called from within the PGM critical section.
  */
-PGMR0DECL(int) PGMR0PhysAllocateHandyPages(PVM pVM)
+VMMR0DECL(int) PGMR0PhysAllocateHandyPages(PVM pVM)
 {
     return VERR_NOT_IMPLEMENTED;
 }
@@ -73,16 +77,16 @@ PGMR0DECL(int) PGMR0PhysAllocateHandyPages(PVM pVM)
  * @param   pRegFrame           Trap register frame.
  * @param   pvFault             The fault address.
  */
-PGMR0DECL(int) PGMR0Trap0eHandlerNestedPaging(PVM pVM, PGMMODE enmShwPagingMode, RTGCUINT uErr, PCPUMCTXCORE pRegFrame, RTGCPHYS pvFault)
+VMMR0DECL(int) PGMR0Trap0eHandlerNestedPaging(PVM pVM, PGMMODE enmShwPagingMode, RTGCUINT uErr, PCPUMCTXCORE pRegFrame, RTGCPHYS pvFault)
 {
     int rc;
 
-    LogFlow(("PGMTrap0eHandler: uErr=%#x pvFault=%VGp eip=%VGv\n", uErr, pvFault, pRegFrame->rip));
-    STAM_PROFILE_START(&pVM->pgm.s.StatGCTrap0e, a);
-    STAM_STATS({ pVM->pgm.s.CTXSUFF(pStatTrap0eAttribution) = NULL; } );
+    LogFlow(("PGMTrap0eHandler: uErr=%#x pvFault=%RGp eip=%RGv\n", uErr, pvFault, (RTGCPTR)pRegFrame->rip));
+    STAM_PROFILE_START(&pVM->pgm.s.StatRZTrap0e, a);
+    STAM_STATS({ pVM->pgm.s.CTX_SUFF(pStatTrap0eAttribution) = NULL; } );
 
-    /* AMD uses the host's paging mode; Intel's version is on the todo list */
-    AssertMsg(enmShwPagingMode == PGMMODE_32_BIT || enmShwPagingMode == PGMMODE_PAE || enmShwPagingMode == PGMMODE_PAE_NX || enmShwPagingMode == PGMMODE_AMD64 || enmShwPagingMode == PGMMODE_AMD64_NX, ("enmShwPagingMode=%d\n", enmShwPagingMode));
+    /* AMD uses the host's paging mode; Intel has a single mode (EPT). */
+    AssertMsg(enmShwPagingMode == PGMMODE_32_BIT || enmShwPagingMode == PGMMODE_PAE || enmShwPagingMode == PGMMODE_PAE_NX || enmShwPagingMode == PGMMODE_AMD64 || enmShwPagingMode == PGMMODE_AMD64_NX || enmShwPagingMode == PGMMODE_EPT, ("enmShwPagingMode=%d\n", enmShwPagingMode));
 
 #ifdef VBOX_WITH_STATISTICS
     /*
@@ -93,41 +97,41 @@ PGMR0DECL(int) PGMR0Trap0eHandlerNestedPaging(PVM pVM, PGMMODE enmShwPagingMode,
         if (!(uErr & X86_TRAP_PF_P))
         {
             if (uErr & X86_TRAP_PF_RW)
-                STAM_COUNTER_INC(&pVM->pgm.s.StatGCTrap0eUSNotPresentWrite);
+                STAM_COUNTER_INC(&pVM->pgm.s.StatRZTrap0eUSNotPresentWrite);
             else
-                STAM_COUNTER_INC(&pVM->pgm.s.StatGCTrap0eUSNotPresentRead);
+                STAM_COUNTER_INC(&pVM->pgm.s.StatRZTrap0eUSNotPresentRead);
         }
         else if (uErr & X86_TRAP_PF_RW)
-            STAM_COUNTER_INC(&pVM->pgm.s.StatGCTrap0eUSWrite);
+            STAM_COUNTER_INC(&pVM->pgm.s.StatRZTrap0eUSWrite);
         else if (uErr & X86_TRAP_PF_RSVD)
-            STAM_COUNTER_INC(&pVM->pgm.s.StatGCTrap0eUSReserved);
+            STAM_COUNTER_INC(&pVM->pgm.s.StatRZTrap0eUSReserved);
         else if (uErr & X86_TRAP_PF_ID)
-            STAM_COUNTER_INC(&pVM->pgm.s.StatGCTrap0eUSNXE);
+            STAM_COUNTER_INC(&pVM->pgm.s.StatRZTrap0eUSNXE);
         else
-            STAM_COUNTER_INC(&pVM->pgm.s.StatGCTrap0eUSRead);
+            STAM_COUNTER_INC(&pVM->pgm.s.StatRZTrap0eUSRead);
     }
     else
     {   /* Supervisor */
         if (!(uErr & X86_TRAP_PF_P))
         {
             if (uErr & X86_TRAP_PF_RW)
-                STAM_COUNTER_INC(&pVM->pgm.s.StatGCTrap0eSVNotPresentWrite);
+                STAM_COUNTER_INC(&pVM->pgm.s.StatRZTrap0eSVNotPresentWrite);
             else
-                STAM_COUNTER_INC(&pVM->pgm.s.StatGCTrap0eSVNotPresentRead);
+                STAM_COUNTER_INC(&pVM->pgm.s.StatRZTrap0eSVNotPresentRead);
         }
         else if (uErr & X86_TRAP_PF_RW)
-            STAM_COUNTER_INC(&pVM->pgm.s.StatGCTrap0eSVWrite);
+            STAM_COUNTER_INC(&pVM->pgm.s.StatRZTrap0eSVWrite);
         else if (uErr & X86_TRAP_PF_ID)
-            STAM_COUNTER_INC(&pVM->pgm.s.StatGCTrap0eSNXE);
+            STAM_COUNTER_INC(&pVM->pgm.s.StatRZTrap0eSNXE);
         else if (uErr & X86_TRAP_PF_RSVD)
-            STAM_COUNTER_INC(&pVM->pgm.s.StatGCTrap0eSVReserved);
+            STAM_COUNTER_INC(&pVM->pgm.s.StatRZTrap0eSVReserved);
     }
 #endif
 
     /*
      * Call the worker.
      *
-     * We pretend the guest is in protected mode without paging, so we can use existing code to build the 
+     * We pretend the guest is in protected mode without paging, so we can use existing code to build the
      * nested page tables.
      */
     switch(enmShwPagingMode)
@@ -143,6 +147,9 @@ PGMR0DECL(int) PGMR0Trap0eHandlerNestedPaging(PVM pVM, PGMMODE enmShwPagingMode,
     case PGMMODE_AMD64_NX:
         rc = PGM_BTH_NAME_AMD64_PROT(Trap0eHandler)(pVM, uErr, pRegFrame, pvFault);
         break;
+    case PGMMODE_EPT:
+        rc = PGM_BTH_NAME_EPT_PROT(Trap0eHandler)(pVM, uErr, pRegFrame, pvFault);
+        break;
     default:
         AssertFailed();
         rc = VERR_INVALID_PARAMETER;
@@ -150,8 +157,9 @@ PGMR0DECL(int) PGMR0Trap0eHandlerNestedPaging(PVM pVM, PGMMODE enmShwPagingMode,
     }
     if (rc == VINF_PGM_SYNCPAGE_MODIFIED_PDE)
         rc = VINF_SUCCESS;
-    STAM_STATS({ if (!pVM->pgm.s.CTXSUFF(pStatTrap0eAttribution))
-                    pVM->pgm.s.CTXSUFF(pStatTrap0eAttribution) = &pVM->pgm.s.StatTrap0eMisc; });
-    STAM_PROFILE_STOP_EX(&pVM->pgm.s.StatGCTrap0e, pVM->pgm.s.CTXSUFF(pStatTrap0eAttribution), a);
+    STAM_STATS({ if (!pVM->pgm.s.CTX_SUFF(pStatTrap0eAttribution))
+                    pVM->pgm.s.CTX_SUFF(pStatTrap0eAttribution) = &pVM->pgm.s.StatRZTrap0eTime2Misc; });
+    STAM_PROFILE_STOP_EX(&pVM->pgm.s.StatRZTrap0e, pVM->pgm.s.CTX_SUFF(pStatTrap0eAttribution), a);
     return rc;
 }
+

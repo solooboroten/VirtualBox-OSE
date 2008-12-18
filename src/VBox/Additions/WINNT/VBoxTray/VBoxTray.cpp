@@ -130,9 +130,9 @@ static int vboxStartServices (VBOXSERVICEENV *pEnv, VBOXSERVICEINFO *pTable)
             rc = pTable->pfnInit (pEnv, &pTable->pInstance, &fStartThread);
         }
 
-        if (VBOX_FAILURE (rc))
+        if (RT_FAILURE (rc))
         {
-            Log(("Failed to initialize rc = %Vrc.\n", rc));
+            Log(("Failed to initialize rc = %Rrc.\n", rc));
         }
         else
         {
@@ -153,7 +153,7 @@ static int vboxStartServices (VBOXSERVICEENV *pEnv, VBOXSERVICEINFO *pTable)
                 }
             }
 
-            if (VBOX_FAILURE (rc))
+            if (RT_FAILURE (rc))
             {
                 Log(("Failed to start the thread.\n"));
 
@@ -368,7 +368,7 @@ void WINAPI VBoxServiceStart(void)
     {
         int rc = vboxStartServices (&svcEnv, vboxServiceTable);
 
-        if (VBOX_FAILURE (rc))
+        if (RT_FAILURE (rc))
         {
             status = ERROR_GEN_FAILURE;
         }

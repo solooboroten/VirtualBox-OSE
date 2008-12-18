@@ -1,4 +1,4 @@
-/* $Id: VBoxManage.cpp $ */
+/* $Id: VBoxManage.cpp 15602 2008-12-16 18:01:38Z vboxsync $ */
 /** @file
  * VBoxManage - VirtualBox's command-line interface.
  */
@@ -33,28 +33,27 @@
 
 #include <VBox/com/VirtualBox.h>
 
-#include <stdlib.h>
-#include <stdarg.h>
-
 #include <vector>
 #include <list>
 #endif /* !VBOX_ONLY_DOCS */
 
-#include <iprt/runtime.h>
+#include <iprt/asm.h>
+#include <iprt/cidr.h>
+#include <iprt/ctype.h>
+#include <iprt/dir.h>
+#include <iprt/env.h>
+#include <VBox/err.h>
+#include <iprt/file.h>
+#include <iprt/initterm.h>
+#include <iprt/param.h>
+#include <iprt/path.h>
 #include <iprt/stream.h>
 #include <iprt/string.h>
-#include <iprt/asm.h>
-#include <iprt/uuid.h>
+#include <iprt/stdarg.h>
 #include <iprt/thread.h>
-#include <iprt/path.h>
-#include <iprt/param.h>
-#include <iprt/dir.h>
-#include <iprt/file.h>
-#include <iprt/env.h>
-#include <iprt/cidr.h>
-#include <VBox/err.h>
+#include <iprt/uuid.h>
 #include <VBox/version.h>
-#include <VBox/VBoxHDD.h>
+#include <VBox/log.h>
 
 #include "VBoxManage.h"
 
@@ -73,8 +72,12 @@ using namespace com;
 #endif
 
 /** command handler type */
-typedef DECLCALLBACK(int) FNHANDLER(int argc, char *argv[], ComPtr<IVirtualBox> aVirtualBox, ComPtr<ISession> aSession);
-typedef FNHANDLER *PFNHANDLER;
+typedef int (*PFNHANDLER)(int argc, char *argv[], ComPtr<IVirtualBox> aVirtualBox, ComPtr<ISession> aSession);
+
+#ifdef USE_XPCOM_QUEUE
+/** A pointer to the event queue, set by main() before calling any handlers. */
+nsCOMPtr<nsIEventQueue> g_pEventQ;
+#endif
 
 /**
  * Quick IUSBDevice implementation for detaching / attaching
@@ -116,7 +119,7 @@ public:
         return S_OK;
     }
 
-    STDMETHOD(COMGETTER(Id))(GUIDPARAMOUT a_pId)                { return E_NOTIMPL; }
+    STDMETHOD(COMGETTER(Id))(OUT_GUID a_pId)                    { return E_NOTIMPL; }
     STDMETHOD(COMGETTER(VendorId))(USHORT *a_pusVendorId)       { *a_pusVendorId    = m_usVendorId;     return S_OK; }
     STDMETHOD(COMGETTER(ProductId))(USHORT *a_pusProductId)     { *a_pusProductId   = m_usProductId;    return S_OK; }
     STDMETHOD(COMGETTER(Revision))(USHORT *a_pusRevision)       { *a_pusRevision    = m_bcdRevision;    return S_OK; }
@@ -200,7 +203,7 @@ struct USBFilterCmd
     USBFilterCmd() : mAction (Invalid), mIndex (0), mGlobal (false) {}
 
     Action mAction;
-    ULONG mIndex;
+    uint32_t mIndex;
     /** flag whether the command target is a global filter */
     bool mGlobal;
     /** machine this command is targeted at (null for global filters) */
@@ -284,7 +287,7 @@ static void printUsage(USAGECATEGORY u64Cmd)
     if (u64Cmd & USAGE_LIST)
     {
         RTPrintf("VBoxManage list             vms|runningvms|ostypes|hostdvds|hostfloppies|\n"
-                 "                            hostifs|hostinfo|hdds|dvds|floppies|\n"
+                 "                            hostifs|hostinfo|hddbackends|hdds|dvds|floppies|\n"
                  "                            usbhost|usbfilters|systemproperties\n"
                  "\n");
     }
@@ -314,6 +317,7 @@ static void printUsage(USAGECATEGORY u64Cmd)
     if (u64Cmd & USAGE_CREATEVM)
     {
         RTPrintf("VBoxManage createvm         -name <name>\n"
+                 "                            [-ostype <ostype>]\n"
                  "                            [-register]\n"
                  "                            [-basefolder <path> | -settingsfile <path>]\n"
                  "                            [-uuid <uuid>]\n"
@@ -326,14 +330,16 @@ static void printUsage(USAGECATEGORY u64Cmd)
         RTPrintf("VBoxManage modifyvm         <uuid|name>\n"
                  "                            [-name <name>]\n"
                  "                            [-ostype <ostype>]\n"
-                 "                            [-memory <memorysize>]\n"
-                 "                            [-vram <vramsize>]\n"
+                 "                            [-memory <memorysize in MB>]\n"
+                 "                            [-vram <vramsize in MB>]\n"
                  "                            [-acpi on|off]\n"
                  "                            [-ioapic on|off]\n"
                  "                            [-pae on|off]\n"
                  "                            [-hwvirtex on|off|default]\n"
                  "                            [-nestedpaging on|off]\n"
+                 "                            [-vtxvpid on|off]\n"
                  "                            [-monitorcount <number>]\n"
+                 "                            [-accelerate3d <on|off>]\n"
                  "                            [-bioslogofadein on|off]\n"
                  "                            [-bioslogofadeout on|off]\n"
                  "                            [-bioslogodisplaytime <msec>]\n"
@@ -374,15 +380,10 @@ static void printUsage(USAGECATEGORY u64Cmd)
                  "                                            client <pipe>|\n"
                  "                                            <devicename>]\n"
 #ifdef VBOX_WITH_MEM_BALLOONING
-                 "                            [-guestmemoryballoon <balloonsize>]\n"
+                 "                            [-guestmemoryballoon <balloonsize in MB>]\n"
 #endif
                  "                            [-gueststatisticsinterval <seconds>]\n"
                  );
-        if (fLinux)
-        {
-            RTPrintf("                            [-tapsetup<1-N> none|<application>]\n"
-                     "                            [-tapterminate<1-N> none|<application>]\n");
-        }
         RTPrintf("                            [-audio none|null");
         if (fWin)
         {
@@ -444,12 +445,17 @@ static void printUsage(USAGECATEGORY u64Cmd)
                  "                            pause|resume|reset|poweroff|savestate|\n"
                  "                            acpipowerbutton|acpisleepbutton|\n"
                  "                            keyboardputscancode <hex> [<hex> ...]|\n"
+                 "                            injectnmi|\n"
                  "                            setlinkstate<1-4> on|off |\n"
                  "                            usbattach <uuid>|<address> |\n"
                  "                            usbdetach <uuid>|<address> |\n"
                  "                            dvdattach none|<uuid>|<filename>|host:<drive> |\n"
-                 "                            floppyattach none|<uuid>|<filename>|host:<drive> |\n"
-                 "                            setvideomodehint <xres> <yres> <bpp> [display]|\n"
+                 "                            floppyattach none|<uuid>|<filename>|host:<drive> |\n");
+        if (fVRDP)
+        {
+            RTPrintf("                            vrdp on|off] |\n");
+        }
+        RTPrintf("                            setvideomodehint <xres> <yres> <bpp> [display]|\n"
                  "                            setcredentials <username> <password> <domain>\n"
                  "                                           [-allowlocallogon <yes|no>]\n"
                  "\n");
@@ -482,27 +488,29 @@ static void printUsage(USAGECATEGORY u64Cmd)
 
     if (u64Cmd & USAGE_REGISTERIMAGE)
     {
-        RTPrintf("VBoxManage registerimage    disk|dvd|floppy <filename>\n"
+        RTPrintf("VBoxManage openmedium       disk|dvd|floppy <filename>\n"
                  "                            [-type normal|immutable|writethrough] (disk only)\n"
                  "\n");
     }
 
     if (u64Cmd & USAGE_UNREGISTERIMAGE)
     {
-        RTPrintf("VBoxManage unregisterimage  disk|dvd|floppy <uuid>|<filename>\n"
+        RTPrintf("VBoxManage closemedium      disk|dvd|floppy <uuid>|<filename>\n"
                  "\n");
     }
 
-    if (u64Cmd & USAGE_SHOWVDIINFO)
+    if (u64Cmd & USAGE_SHOWHDINFO)
     {
-        RTPrintf("VBoxManage showvdiinfo      <uuid>|<filename>\n"
+        RTPrintf("VBoxManage showhdinfo       <uuid>|<filename>\n"
                  "\n");
     }
 
-    if (u64Cmd & USAGE_CREATEVDI)
+    if (u64Cmd & USAGE_CREATEHD)
     {
-        RTPrintf("VBoxManage createvdi        -filename <filename>\n"
+        /// @todo NEWMEDIA add -format to specify the hard disk backend
+        RTPrintf("VBoxManage createhd         -filename <filename>\n"
                  "                            -size <megabytes>\n"
+                 "                            [-format VDI|VMDK|VHD]\n"
                  "                            [-static]\n"
                  "                            [-comment <comment>]\n"
                  "                            [-register]\n"
@@ -510,26 +518,28 @@ static void printUsage(USAGECATEGORY u64Cmd)
                  "\n");
     }
 
-    if (u64Cmd & USAGE_MODIFYVDI)
+    if (u64Cmd & USAGE_MODIFYHD)
     {
-        RTPrintf("VBoxManage modifyvdi        <uuid>|<filename>\n"
-#if 0 /* doesn't currently work */
+        RTPrintf("VBoxManage modifyhd         <uuid>|<filename>\n"
                  "                            settype normal|writethrough|immutable |\n"
-#endif
                  "                            compact\n"
                  "\n");
     }
 
-    if (u64Cmd & USAGE_CLONEVDI)
+    if (u64Cmd & USAGE_CLONEHD)
     {
-        RTPrintf("VBoxManage clonevdi         <uuid>|<filename> <outputfile>\n"
+        RTPrintf("VBoxManage clonehd          <uuid>|<filename> <outputfile>\n"
+                 "                            [-format VDI|VMDK|VHD|RAW|<other>]\n"
+                 "                            [-remember]\n"
                  "\n");
     }
 
-    if (u64Cmd & USAGE_CONVERTDD)
+    if (u64Cmd & USAGE_CONVERTFROMRAW)
     {
-        RTPrintf("VBoxManage convertdd        [-static] <filename> <outputfile>\n"
-                 "VBoxManage convertdd        [-static] stdin <outputfile> <bytes>\n"
+        RTPrintf("VBoxManage convertfromraw   [-static] [-format VDI|VMDK|VHD]\n"
+                 "                            <filename> <outputfile>\n"
+                 "VBoxManage convertfromraw   [-static] [-format VDI|VMDK|VHD]\n"
+                 "                            stdin <outputfile> <bytes>\n"
                  "\n");
     }
 
@@ -543,6 +553,7 @@ static void printUsage(USAGECATEGORY u64Cmd)
                  "                            [-username <username>]\n"
                  "                            [-password <password>]\n"
                  "                            [-comment <comment>]\n"
+                 "                            [-intnet]\n"
                  "\n");
     }
 
@@ -575,7 +586,7 @@ static void printUsage(USAGECATEGORY u64Cmd)
 
     if (u64Cmd & USAGE_SETPROPERTY)
     {
-        RTPrintf("VBoxManage setproperty      vdifolder default|<folder> |\n"
+        RTPrintf("VBoxManage setproperty      hdfolder default|<folder> |\n"
                  "                            machinefolder default|<folder> |\n"
                  "                            vrdpauthlibrary default|<library> |\n"
                  "                            websrvauthlibrary default|null|<library> |\n"
@@ -660,6 +671,7 @@ static void printUsage(USAGECATEGORY u64Cmd)
                  "VBoxManage metrics          setup\n"
                  "                            [-period <seconds>]\n"
                  "                            [-samples <count>]\n"
+                 "                            [-list]\n"
                  "                            [*|host|<vmname> [<metric_list>]]\n\n"
                  "VBoxManage metrics          query [*|host|<vmname> [<metric_list>]]\n\n"
                  "VBoxManage metrics          collect\n"
@@ -709,7 +721,7 @@ int errorArgument(const char *pszFormat, ...)
 /**
  * Print out progress on the console
  */
-static void showProgress(ComPtr<IProgress> progress)
+void showProgress(ComPtr<IProgress> progress)
 {
     BOOL fCompleted;
     LONG currentPercent;
@@ -754,2356 +766,6 @@ static void showProgress(ComPtr<IProgress> progress)
     else
         RTPrintf("\n");
     RTStrmFlush(g_pStdOut);
-}
-
-static void showSnapshots(ComPtr<ISnapshot> rootSnapshot, VMINFO_DETAILS details, const Bstr &prefix = "", int level = 0)
-{
-    /* start with the root */
-    Bstr name;
-    Guid uuid;
-    rootSnapshot->COMGETTER(Name)(name.asOutParam());
-    rootSnapshot->COMGETTER(Id)(uuid.asOutParam());
-    if (details == VMINFO_MACHINEREADABLE)
-    {
-        /* print with hierarchical numbering */
-        RTPrintf("SnapshotName%lS=\"%lS\"\n", prefix.raw(), name.raw());
-        RTPrintf("SnapshotUUID%lS=\"%s\"\n", prefix.raw(), uuid.toString().raw());
-    }
-    else
-    {
-        /* print with indentation */
-        RTPrintf("   %lSName: %lS (UUID: %s)\n", prefix.raw(), name.raw(), uuid.toString().raw());
-    }
-
-    /* get the children */
-    ComPtr<ISnapshotCollection> coll;
-    rootSnapshot->COMGETTER(Children)(coll.asOutParam());
-    if (coll)
-    {
-        ComPtr<ISnapshotEnumerator> enumerator;
-        coll->Enumerate(enumerator.asOutParam());
-        ULONG index = 0;
-        BOOL hasMore = FALSE;
-        while (enumerator->HasMore(&hasMore), hasMore)
-        {
-            ComPtr<ISnapshot> snapshot;
-            enumerator->GetNext(snapshot.asOutParam());
-            if (snapshot)
-            {
-                Bstr newPrefix;
-                if (details == VMINFO_MACHINEREADABLE)
-                    newPrefix = Utf8StrFmt("%lS-%d", prefix.raw(), index + 1);
-                else
-                    newPrefix = Utf8StrFmt("%lS   ", prefix.raw());
-                /* recursive call */
-                showSnapshots(snapshot, details, newPrefix, level + 1);
-            }
-            index++;
-        }
-    }
-}
-
-static void makeTimeStr (char *s, int cb, int64_t millies)
-{
-    RTTIME t;
-    RTTIMESPEC ts;
-
-    RTTimeSpecSetMilli(&ts, millies);
-
-    RTTimeExplode (&t, &ts);
-
-    RTStrPrintf(s, cb, "%04d/%02d/%02d %02d:%02d:%02d UTC",
-                        t.i32Year, t.u8Month, t.u8MonthDay,
-                        t.u8Hour, t.u8Minute, t.u8Second);
-}
-
-static HRESULT showVMInfo (ComPtr <IVirtualBox> virtualBox, ComPtr<IMachine> machine,
-                           ComPtr <IConsole> console = ComPtr <IConsole> (),
-                           VMINFO_DETAILS details = VMINFO_NONE)
-{
-    HRESULT rc;
-
-    /*
-     * The rules for output in -argdump format:
-     * 1) the key part (the [0-9a-zA-Z_]+ string before the '=' delimiter)
-     *    is all lowercase for "VBoxManage modifyvm" parameters. Any
-     *    other values printed are in CamelCase.
-     * 2) strings (anything non-decimal) are printed surrounded by
-     *    double quotes '"'. If the strings themselves contain double
-     *    quotes, these characters are escaped by '\'. Any '\' character
-     *    in the original string is also escaped by '\'.
-     * 3) numbers (containing just [0-9\-]) are written out unchanged.
-     */
-
-    /** @todo the quoting is not yet implemented! */
-
-    BOOL accessible = FALSE;
-    CHECK_ERROR (machine, COMGETTER(Accessible) (&accessible));
-    CheckComRCReturnRC (rc);
-
-    if (!accessible)
-    {
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("name=\"<inaccessible>\"\n");
-        else
-            RTPrintf ("Name:            <inaccessible!>\n");
-        Guid uuid;
-        rc = machine->COMGETTER(Id) (uuid.asOutParam());
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf ("UUID=\"%s\"\n", uuid.toString().raw());
-        else
-            RTPrintf ("UUID:            %s\n", uuid.toString().raw());
-        if (details != VMINFO_MACHINEREADABLE)
-        {
-            Bstr settingsFilePath;
-            rc = machine->COMGETTER(SettingsFilePath) (settingsFilePath.asOutParam());
-            RTPrintf ("Config file:     %lS\n", settingsFilePath.raw());
-            ComPtr<IVirtualBoxErrorInfo> accessError;
-            rc = machine->COMGETTER(AccessError) (accessError.asOutParam());
-            RTPrintf ("Access error details:\n");
-            ErrorInfo ei (accessError);
-            PRINT_ERROR_INFO (ei);
-            RTPrintf ("\n");
-        }
-        return S_OK;
-    }
-
-    Bstr machineName;
-    rc = machine->COMGETTER(Name)(machineName.asOutParam());
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("name=\"%lS\"\n", machineName.raw());
-    else
-        RTPrintf("Name:            %lS\n", machineName.raw());
-
-    Bstr osTypeId;
-    rc = machine->COMGETTER(OSTypeId)(osTypeId.asOutParam());
-    ComPtr<IGuestOSType> osType;
-    rc = virtualBox->GetGuestOSType (osTypeId, osType.asOutParam());
-    Bstr osName;
-    rc = osType->COMGETTER(Description)(osName.asOutParam());
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("ostype=\"%lS\"\n", osTypeId.raw());
-    else
-        RTPrintf("Guest OS:        %lS\n", osName.raw());
-
-    Guid uuid;
-    rc = machine->COMGETTER(Id)(uuid.asOutParam());
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("UUID=\"%s\"\n", uuid.toString().raw());
-    else
-        RTPrintf("UUID:            %s\n", uuid.toString().raw());
-
-    Bstr settingsFilePath;
-    rc = machine->COMGETTER(SettingsFilePath)(settingsFilePath.asOutParam());
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("CfgFile=\"%lS\"\n", settingsFilePath.raw());
-    else
-        RTPrintf("Config file:     %lS\n", settingsFilePath.raw());
-
-    ULONG memorySize;
-    rc = machine->COMGETTER(MemorySize)(&memorySize);
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("memory=%u\n", memorySize);
-    else
-        RTPrintf("Memory size:     %uMB\n", memorySize);
-
-    ULONG vramSize;
-    rc = machine->COMGETTER(VRAMSize)(&vramSize);
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("vram=%u\n", vramSize);
-    else
-        RTPrintf("VRAM size:       %uMB\n", vramSize);
-
-    ComPtr <IBIOSSettings> biosSettings;
-    machine->COMGETTER(BIOSSettings)(biosSettings.asOutParam());
-
-    BIOSBootMenuMode_T bootMenuMode;
-    biosSettings->COMGETTER(BootMenuMode)(&bootMenuMode);
-    const char *pszBootMenu = NULL;
-    switch (bootMenuMode)
-    {
-        case BIOSBootMenuMode_Disabled:
-            pszBootMenu = "disabled";
-            break;
-        case BIOSBootMenuMode_MenuOnly:
-            if (details == VMINFO_MACHINEREADABLE)
-                pszBootMenu = "menuonly";
-            else
-                pszBootMenu = "menu only";
-            break;
-        default:
-            if (details == VMINFO_MACHINEREADABLE)
-                pszBootMenu = "messageandmenu";
-            else
-                pszBootMenu = "message and menu";
-    }
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("bootmenu=\"%s\"\n", pszBootMenu);
-    else
-        RTPrintf("Boot menu mode:  %s\n", pszBootMenu);
-
-    BOOL acpiEnabled;
-    biosSettings->COMGETTER(ACPIEnabled)(&acpiEnabled);
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("acpi=\"%s\"\n", acpiEnabled ? "on" : "off");
-    else
-        RTPrintf("ACPI:            %s\n", acpiEnabled ? "on" : "off");
-
-    BOOL ioapicEnabled;
-    biosSettings->COMGETTER(IOAPICEnabled)(&ioapicEnabled);
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("ioapic=\"%s\"\n", ioapicEnabled ? "on" : "off");
-    else
-        RTPrintf("IOAPIC:          %s\n", ioapicEnabled ? "on" : "off");
-
-    BOOL PAEEnabled;
-    machine->COMGETTER(PAEEnabled)(&PAEEnabled);
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("pae=\"%s\"\n", PAEEnabled ? "on" : "off");
-    else
-        RTPrintf("PAE:             %s\n", PAEEnabled ? "on" : "off");
-
-    LONG64 timeOffset;
-    biosSettings->COMGETTER(TimeOffset)(&timeOffset);
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("biossystemtimeoffset=%lld\n", timeOffset);
-    else
-        RTPrintf("Time offset:     %lld ms\n", timeOffset);
-
-    TSBool_T hwVirtExEnabled;
-    machine->COMGETTER(HWVirtExEnabled)(&hwVirtExEnabled);
-    if (hwVirtExEnabled == TSBool_Default)
-    {
-        BOOL fHWVirtExEnabled;
-        ComPtr<ISystemProperties> systemProperties;
-        virtualBox->COMGETTER(SystemProperties)(systemProperties.asOutParam());
-        systemProperties->COMGETTER(HWVirtExEnabled)(&fHWVirtExEnabled);
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("hwvirtex=\"default\"\n");
-        else
-            RTPrintf("Hardw. virt.ext: Default (%s)\n", fHWVirtExEnabled ? "on" : "off");
-    }
-    else
-    {
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("hwvirtex=\"%s\"\n", hwVirtExEnabled == TSBool_True ? "on" : "off");
-        else
-            RTPrintf("Hardw. virt.ext: %s\n", hwVirtExEnabled == TSBool_True ? "on" : "off");
-    }
-    BOOL HWVirtExNestedPagingEnabled;
-    machine->COMGETTER(HWVirtExNestedPagingEnabled)(&HWVirtExNestedPagingEnabled);
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("nestedpaging=\"%s\"\n", HWVirtExNestedPagingEnabled ? "on" : "off");
-    else
-        RTPrintf("Nested Paging:   %s\n", HWVirtExNestedPagingEnabled ? "on" : "off");
-
-    MachineState_T machineState;
-    const char *pszState = NULL;
-    rc = machine->COMGETTER(State)(&machineState);
-    switch (machineState)
-    {
-        case MachineState_PoweredOff:
-            if (details == VMINFO_MACHINEREADABLE)
-                pszState = "poweroff";
-            else
-                pszState = "powered off";
-            break;
-        case MachineState_Saved:
-            pszState = "saved";
-            break;
-        case MachineState_Aborted:
-            pszState = "aborted";
-            break;
-        case MachineState_Running:
-            pszState = "running";
-            break;
-        case MachineState_Paused:
-            pszState = "paused";
-            break;
-        case MachineState_Starting:
-            pszState = "starting";
-            break;
-        case MachineState_Stopping:
-            pszState = "stopping";
-            break;
-        case MachineState_Saving:
-            pszState = "saving";
-            break;
-        case MachineState_Restoring:
-            pszState = "restoring";
-            break;
-        default:
-            pszState = "unknown";
-            break;
-    }
-    LONG64 stateSince;
-    machine->COMGETTER(LastStateChange)(&stateSince);
-    RTTIMESPEC timeSpec;
-    RTTimeSpecSetMilli(&timeSpec, stateSince);
-    char pszTime[30] = {0};
-    RTTimeSpecToString(&timeSpec, pszTime, sizeof(pszTime));
-    if (details == VMINFO_MACHINEREADABLE)
-    {
-        RTPrintf("VMState=\"%s\"\n", pszState);
-        RTPrintf("VMStateChangeTime=\"%s\"\n", pszTime);
-    }
-    else
-        RTPrintf("State:           %s (since %s)\n", pszState, pszTime);
-
-    ULONG numMonitors;
-    machine->COMGETTER(MonitorCount)(&numMonitors);
-    if (details == VMINFO_MACHINEREADABLE)
-        RTPrintf("monitorcount=%d\n", numMonitors);
-    else
-        RTPrintf("Monitor count:   %d\n", numMonitors);
-
-    ComPtr<IFloppyDrive> floppyDrive;
-    rc = machine->COMGETTER(FloppyDrive)(floppyDrive.asOutParam());
-    if (SUCCEEDED(rc) && floppyDrive)
-    {
-        BOOL fFloppyEnabled;
-        floppyDrive->COMGETTER(Enabled)(&fFloppyEnabled);
-        Utf8Str pszFloppy = "invalid";
-        if (fFloppyEnabled)
-        {
-            DriveState_T floppyState;
-            floppyDrive->COMGETTER(State)(&floppyState);
-            switch (floppyState)
-            {
-                case DriveState_ImageMounted:
-                {
-                    ComPtr<IFloppyImage> floppyImage;
-                    rc = floppyDrive->GetImage(floppyImage.asOutParam());
-                    if (SUCCEEDED(rc) && floppyImage)
-                    {
-                        Bstr imagePath;
-                        floppyImage->COMGETTER(FilePath)(imagePath.asOutParam());
-                        Guid imageGuid;
-                        floppyImage->COMGETTER(Id)(imageGuid.asOutParam());
-                        if (details == VMINFO_MACHINEREADABLE)
-                        {
-                            RTPrintf("FloppyImageUUID=\"%s\"\n", imageGuid.toString().raw());
-                            pszFloppy = Utf8StrFmt("%lS", imagePath.raw());
-                        }
-                        else
-                            pszFloppy = Utf8StrFmt("%lS (UUID: %s)", imagePath.raw(), imageGuid.toString().raw());
-                    }
-                    break;
-                }
-
-                case DriveState_HostDriveCaptured:
-                {
-                    ComPtr<IHostFloppyDrive> hostFloppyDrive;
-                    rc = floppyDrive->GetHostDrive(hostFloppyDrive.asOutParam());
-                    if (SUCCEEDED(rc) && floppyDrive)
-                    {
-                        Bstr driveName;
-                        hostFloppyDrive->COMGETTER(Name)(driveName.asOutParam());
-                        if (details == VMINFO_MACHINEREADABLE)
-                            pszFloppy = Utf8StrFmt("host:%lS", driveName.raw());
-                        else
-                            pszFloppy = Utf8StrFmt("Host drive %lS", driveName.raw());
-                    }
-                    break;
-                }
-
-                case DriveState_NotMounted:
-                {
-                    pszFloppy = "empty";
-                    break;
-                }
-            }
-        }
-        else
-        {
-            pszFloppy = "disabled";
-        }
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("floppy=\"%s\"\n", pszFloppy.raw());
-        else
-            RTPrintf("Floppy:          %s\n", pszFloppy.raw());
-    }
-
-    /*
-     * SATA.
-     */
-    ComPtr<ISATAController> SATACtl;
-    rc = machine->COMGETTER(SATAController)(SATACtl.asOutParam());
-    if (SUCCEEDED(rc))
-    {
-        BOOL fEnabled;
-        rc = SATACtl->COMGETTER(Enabled)(&fEnabled);
-        if (FAILED(rc))
-            fEnabled = false;
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("sata=\"%s\"\n", fEnabled ? "on" : "off");
-        else
-            RTPrintf("SATA:            %s\n", fEnabled ? "enabled" : "disabled");
-    }
-
-    /*
-     * Hard disks
-     */
-    ComPtr<IHardDisk> hardDisk;
-    Bstr filePath;
-    rc = machine->GetHardDisk(StorageBus_IDE, 0, 0, hardDisk.asOutParam());
-    if (SUCCEEDED(rc) && hardDisk)
-    {
-        /// @todo (dmik) we temporarily use the location property to
-        //  determine the image file name. This is subject to change
-        //  when iSCSI disks are here (we should either query a
-        //  storage-specific interface from IHardDisk, or "standardize"
-        //  the location property)
-        hardDisk->COMGETTER(Location)(filePath.asOutParam());
-        hardDisk->COMGETTER(Id)(uuid.asOutParam());
-        if (details == VMINFO_MACHINEREADABLE)
-        {
-            RTPrintf("hda=\"%lS\"\n", filePath.raw());
-            RTPrintf("HdaImageUUID=\"%s\"\n", uuid.toString().raw());
-        }
-        else
-            RTPrintf("Primary master:  %lS (UUID: %s)\n", filePath.raw(), uuid.toString().raw());
-    }
-    else
-    {
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("hda=\"none\"\n");
-    }
-    rc = machine->GetHardDisk(StorageBus_IDE, 0, 1, hardDisk.asOutParam());
-    if (SUCCEEDED(rc) && hardDisk)
-    {
-        /// @todo (dmik) we temporarily use the location property to
-        //  determine the image file name. This is subject to change
-        //  when iSCSI disks are here (we should either query a
-        //  storage-specific interface from IHardDisk, or "standardize"
-        //  the location property)
-        hardDisk->COMGETTER(Location)(filePath.asOutParam());
-        hardDisk->COMGETTER(Id)(uuid.asOutParam());
-        if (details == VMINFO_MACHINEREADABLE)
-        {
-            RTPrintf("hdb=\"%lS\"\n", filePath.raw());
-            RTPrintf("HdbImageUUID=\"%s\"\n", uuid.toString().raw());
-        }
-        else
-            RTPrintf("Primary slave:   %lS (UUID: %s)\n", filePath.raw(), uuid.toString().raw());
-    }
-    else
-    {
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("hdb=\"none\"\n");
-    }
-    rc = machine->GetHardDisk(StorageBus_IDE, 1, 1, hardDisk.asOutParam());
-    if (SUCCEEDED(rc) && hardDisk)
-    {
-        /// @todo (dmik) we temporarily use the location property to
-        //  determine the image file name. This is subject to change
-        //  when iSCSI disks are here (we should either query a
-        //  storage-specific interface from IHardDisk, or "standardize"
-        //  the location property)
-        hardDisk->COMGETTER(Location)(filePath.asOutParam());
-        hardDisk->COMGETTER(Id)(uuid.asOutParam());
-        if (details == VMINFO_MACHINEREADABLE)
-        {
-            RTPrintf("hdd=\"%lS\"\n", filePath.raw());
-            RTPrintf("HddImageUUID=\"%s\"\n", uuid.toString().raw());
-        }
-        else
-            RTPrintf("Secondary slave: %lS (UUID: %s)\n", filePath.raw(), uuid.toString().raw());
-    }
-    else
-    {
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("hdd=\"none\"\n");
-    }
-    ComPtr<IDVDDrive> dvdDrive;
-    rc = machine->COMGETTER(DVDDrive)(dvdDrive.asOutParam());
-    if (SUCCEEDED(rc) && dvdDrive)
-    {
-        ComPtr<IDVDImage> dvdImage;
-        rc = dvdDrive->GetImage(dvdImage.asOutParam());
-        if (SUCCEEDED(rc) && dvdImage)
-        {
-            rc = dvdImage->COMGETTER(FilePath)(filePath.asOutParam());
-            if (SUCCEEDED(rc) && filePath)
-            {
-                rc = dvdImage->COMGETTER(Id)(uuid.asOutParam());
-                if (details == VMINFO_MACHINEREADABLE)
-                {
-                    RTPrintf("dvd=\"%lS\"\n", filePath.raw());
-                    RTPrintf("DvdImageUUID=\"%s\"\n", uuid.toString().raw());
-                }
-                else
-                    RTPrintf("DVD:             %lS (UUID: %s)\n", filePath.raw(), uuid.toString().raw());
-            }
-        }
-        else
-        {
-            ComPtr<IHostDVDDrive> hostDVDDrive;
-            rc = dvdDrive->GetHostDrive(hostDVDDrive.asOutParam());
-            if (SUCCEEDED(rc) && hostDVDDrive)
-            {
-                Bstr name;
-                hostDVDDrive->COMGETTER(Name)(name.asOutParam());
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("dvd=\"host:%lS\"\n", name.raw());
-                else
-                    RTPrintf("DVD:             Host drive %lS", name.raw());
-            }
-            else
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("dvd=\"none\"\n");
-                else
-                    RTPrintf("DVD:             empty");
-            }
-            BOOL fPassthrough;
-            dvdDrive->COMGETTER(Passthrough)(&fPassthrough);
-            if (details == VMINFO_MACHINEREADABLE)
-            {
-                RTPrintf("dvdpassthrough=\"%s\"\n", fPassthrough ? "on" : "off");
-            }
-            else
-            {
-                if (fPassthrough)
-                    RTPrintf(" (passthrough enabled)");
-                RTPrintf("\n");
-            }
-        }
-    }
-
-    /* get the maximum amount of NICS */
-    ComPtr<ISystemProperties> sysProps;
-    virtualBox->COMGETTER(SystemProperties)(sysProps.asOutParam());
-    ULONG maxNICs = 0;
-    sysProps->COMGETTER(NetworkAdapterCount)(&maxNICs);
-    for (ULONG currentNIC = 0; currentNIC < maxNICs; currentNIC++)
-    {
-        ComPtr<INetworkAdapter> nic;
-        rc = machine->GetNetworkAdapter(currentNIC, nic.asOutParam());
-        if (SUCCEEDED(rc) && nic)
-        {
-            BOOL fEnabled;
-            nic->COMGETTER(Enabled)(&fEnabled);
-            if (!fEnabled)
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("nic%d=\"none\"\n", currentNIC + 1);
-                else
-                    RTPrintf("NIC %d:           disabled\n", currentNIC + 1);
-            }
-            else
-            {
-                Bstr strMACAddress;
-                nic->COMGETTER(MACAddress)(strMACAddress.asOutParam());
-                Utf8Str strAttachment;
-                NetworkAttachmentType_T attachment;
-                nic->COMGETTER(AttachmentType)(&attachment);
-                switch (attachment)
-                {
-                    case NetworkAttachmentType_Null:
-                        if (details == VMINFO_MACHINEREADABLE)
-                            strAttachment = "null";
-                        else
-                            strAttachment = "none";
-                        break;
-                    case NetworkAttachmentType_NAT:
-                    {
-                        Bstr strNetwork;
-                        nic->COMGETTER(NATNetwork)(strNetwork.asOutParam());
-                        if (details == VMINFO_MACHINEREADABLE)
-                        {
-                            RTPrintf("natnet%d=\"%lS\"\n", currentNIC + 1, strNetwork.raw());
-                            strAttachment = "nat";
-                        }
-                        else if (!strNetwork.isEmpty())
-                            strAttachment = Utf8StrFmt("NAT (%lS)", strNetwork.raw());
-                        else
-                            strAttachment = "NAT";
-                        break;
-                    }
-                    case NetworkAttachmentType_HostInterface:
-                    {
-                        Bstr strHostIfDev;
-                        nic->COMGETTER(HostInterface)(strHostIfDev.asOutParam());
-                        if (details == VMINFO_MACHINEREADABLE)
-                        {
-                            RTPrintf("hostifdev%d=\"%lS\"\n", currentNIC + 1, strHostIfDev.raw());
-                            strAttachment = "hostif";
-                        }
-                        else
-                            strAttachment = Utf8StrFmt("Host Interface '%lS'", strHostIfDev.raw());
-                        break;
-                    }
-                    case NetworkAttachmentType_Internal:
-                    {
-                        Bstr strNetwork;
-                        nic->COMGETTER(InternalNetwork)(strNetwork.asOutParam());
-                        if (details == VMINFO_MACHINEREADABLE)
-                        {
-                            RTPrintf("intnet%d=\"%lS\"\n", currentNIC + 1, strNetwork.raw());
-                            strAttachment = "intnet";
-                        }
-                        else
-                            strAttachment = Utf8StrFmt("Internal Network '%s'", Utf8Str(strNetwork).raw());
-                        break;
-                    }
-                    default:
-                        strAttachment = "unknown";
-                        break;
-                }
-
-                /* cable connected */
-                BOOL fConnected;
-                nic->COMGETTER(CableConnected)(&fConnected);
-
-                /* trace stuff */
-                BOOL fTraceEnabled;
-                nic->COMGETTER(TraceEnabled)(&fTraceEnabled);
-                Bstr traceFile;
-                nic->COMGETTER(TraceFile)(traceFile.asOutParam());
-
-                /* NIC type */
-                Utf8Str strNICType;
-                NetworkAdapterType_T NICType;
-                nic->COMGETTER(AdapterType)(&NICType);
-                switch (NICType) {
-                case NetworkAdapterType_Am79C970A:
-                    strNICType = "Am79C970A";
-                    break;
-                case NetworkAdapterType_Am79C973:
-                    strNICType = "Am79C973";
-                    break;
-#ifdef VBOX_WITH_E1000
-                case NetworkAdapterType_I82540EM:
-                    strNICType = "82540EM";
-                    break;
-                case NetworkAdapterType_I82543GC:
-                    strNICType = "82543GC";
-                    break;
-#endif
-                default:
-                    strNICType = "unknown";
-                    break;
-                }
-
-                /* reported line speed */
-                ULONG ulLineSpeed;
-                nic->COMGETTER(LineSpeed)(&ulLineSpeed);
-
-                if (details == VMINFO_MACHINEREADABLE)
-                {
-                    RTPrintf("macaddress%d=\"%lS\"\n", currentNIC + 1, strMACAddress.raw());
-                    RTPrintf("cableconnected%d=\"%s\"\n", currentNIC + 1, fConnected ? "on" : "off");
-                    RTPrintf("nic%d=\"%s\"\n", currentNIC + 1, strAttachment.raw());
-                }
-                else
-                    RTPrintf("NIC %d:           MAC: %lS, Attachment: %s, Cable connected: %s, Trace: %s (file: %lS), Type: %s, Reported speed: %d Mbps\n",
-                             currentNIC + 1, strMACAddress.raw(), strAttachment.raw(),
-                             fConnected ? "on" : "off",
-                             fTraceEnabled ? "on" : "off",
-                             traceFile.isEmpty() ? Bstr("none").raw() : traceFile.raw(),
-                             strNICType.raw(),
-                             ulLineSpeed / 1000);
-            }
-        }
-    }
-
-    /* get the maximum amount of UARTs */
-    ULONG maxUARTs = 0;
-    sysProps->COMGETTER(SerialPortCount)(&maxUARTs);
-    for (ULONG currentUART = 0; currentUART < maxUARTs; currentUART++)
-    {
-        ComPtr<ISerialPort> uart;
-        rc = machine->GetSerialPort(currentUART, uart.asOutParam());
-        if (SUCCEEDED(rc) && uart)
-        {
-            BOOL fEnabled;
-            uart->COMGETTER(Enabled)(&fEnabled);
-            if (!fEnabled)
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("uart%d=\"off\"\n", currentUART + 1);
-                else
-                    RTPrintf("UART %d:          disabled\n", currentUART + 1);
-            }
-            else
-            {
-                ULONG ulIRQ, ulIOBase;
-                PortMode_T HostMode;
-                Bstr path;
-                BOOL fServer;
-                uart->COMGETTER(IRQ)(&ulIRQ);
-                uart->COMGETTER(IOBase)(&ulIOBase);
-                uart->COMGETTER(Path)(path.asOutParam());
-                uart->COMGETTER(Server)(&fServer);
-                uart->COMGETTER(HostMode)(&HostMode);
-
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("uart%d=\"%#06x,%d\"\n", currentUART + 1,
-                             ulIOBase, ulIRQ);
-                else
-                    RTPrintf("UART %d:          I/O base: 0x%04x, IRQ: %d",
-                             currentUART + 1, ulIOBase, ulIRQ);
-                switch (HostMode)
-                {
-                    default:
-                    case PortMode_Disconnected:
-                        if (details == VMINFO_MACHINEREADABLE)
-                            RTPrintf("uartmode%d=\"disconnected\"\n", currentUART + 1);
-                        else
-                            RTPrintf(", disconnected\n");
-                        break;
-                    case PortMode_HostPipe:
-                        if (details == VMINFO_MACHINEREADABLE)
-                            RTPrintf("uartmode%d=\"%s,%lS\"\n", currentUART + 1,
-                                     fServer ? "server" : "client", path.raw());
-                        else
-                            RTPrintf(", attached to pipe (%s) '%lS'\n",
-                                     fServer ? "server" : "client", path.raw());
-                        break;
-                    case PortMode_HostDevice:
-                        if (details == VMINFO_MACHINEREADABLE)
-                            RTPrintf("uartmode%d=\"%lS\"\n", currentUART + 1,
-                                     path.raw());
-                        else
-                            RTPrintf(", attached to device '%lS'\n", path.raw());
-                        break;
-                }
-            }
-        }
-    }
-
-    ComPtr<IAudioAdapter> AudioAdapter;
-    rc = machine->COMGETTER(AudioAdapter)(AudioAdapter.asOutParam());
-    if (SUCCEEDED(rc))
-    {
-        const char *pszDrv  = "Unknown";
-        const char *pszCtrl = "Unknown";
-        BOOL fEnabled;
-        rc = AudioAdapter->COMGETTER(Enabled)(&fEnabled);
-        if (SUCCEEDED(rc) && fEnabled)
-        {
-            AudioDriverType_T enmDrvType;
-            rc = AudioAdapter->COMGETTER(AudioDriver)(&enmDrvType);
-            switch (enmDrvType)
-            {
-                case AudioDriverType_Null:
-                    if (details == VMINFO_MACHINEREADABLE)
-                        pszDrv = "null";
-                    else
-                        pszDrv = "Null";
-                    break;
-                case AudioDriverType_WinMM:
-                    if (details == VMINFO_MACHINEREADABLE)
-                        pszDrv = "winmm";
-                    else
-                        pszDrv = "WINMM";
-                    break;
-                case AudioDriverType_DirectSound:
-                    if (details == VMINFO_MACHINEREADABLE)
-                        pszDrv = "dsound";
-                    else
-                        pszDrv = "DSOUND";
-                    break;
-                case AudioDriverType_OSS:
-                    if (details == VMINFO_MACHINEREADABLE)
-                        pszDrv = "oss";
-                    else
-                        pszDrv = "OSS";
-                    break;
-                case AudioDriverType_ALSA:
-                    if (details == VMINFO_MACHINEREADABLE)
-                        pszDrv = "alsa";
-                    else
-                        pszDrv = "ALSA";
-                    break;
-                case AudioDriverType_Pulse:
-                    if (details == VMINFO_MACHINEREADABLE)
-                        pszDrv = "pulse";
-                    else
-                        pszDrv = "PulseAudio";
-                    break;
-                case AudioDriverType_CoreAudio:
-                    if (details == VMINFO_MACHINEREADABLE)
-                        pszDrv = "coreaudio";
-                    else
-                        pszDrv = "CoreAudio";
-                    break;
-                case AudioDriverType_SolAudio:
-                    if (details == VMINFO_MACHINEREADABLE)
-                        pszDrv = "solaudio";
-                    else
-                        pszDrv = "SolAudio";
-                    break;
-                default:
-                    if (details == VMINFO_MACHINEREADABLE)
-                        pszDrv = "unknown";
-                    break;
-            }
-            AudioControllerType_T enmCtrlType;
-            rc = AudioAdapter->COMGETTER(AudioController)(&enmCtrlType);
-            switch (enmCtrlType)
-            {
-                case AudioControllerType_AC97:
-                    if (details == VMINFO_MACHINEREADABLE)
-                        pszCtrl = "ac97";
-                    else
-                        pszCtrl = "AC97";
-                    break;
-                case AudioControllerType_SB16:
-                    if (details == VMINFO_MACHINEREADABLE)
-                        pszCtrl = "sb16";
-                    else
-                        pszCtrl = "SB16";
-                    break;
-            }
-        }
-        else
-            fEnabled = FALSE;
-        if (details == VMINFO_MACHINEREADABLE)
-        {
-            if (fEnabled)
-                RTPrintf("audio=\"%s\"\n", pszDrv);
-            else
-                RTPrintf("audio=\"none\"\n");
-        }
-        else
-            RTPrintf("Audio:           %s (Driver: %s, Controller: %s)\n",
-                    fEnabled ? "enabled" : "disabled", pszDrv, pszCtrl);
-    }
-
-    /* Shared clipboard */
-    {
-        const char *psz = "Unknown";
-        ClipboardMode_T enmMode;
-        rc = machine->COMGETTER(ClipboardMode)(&enmMode);
-        switch (enmMode)
-        {
-            case ClipboardMode_Disabled:
-                if (details == VMINFO_MACHINEREADABLE)
-                    psz = "disabled";
-                else
-                    psz = "disabled";
-                break;
-            case ClipboardMode_HostToGuest:
-                if (details == VMINFO_MACHINEREADABLE)
-                    psz = "hosttoguest";
-                else
-                    psz = "HostToGuest";
-                break;
-            case ClipboardMode_GuestToHost:
-                if (details == VMINFO_MACHINEREADABLE)
-                    psz = "guesttohost";
-                else
-                    psz = "GuestToHost";
-                break;
-            case ClipboardMode_Bidirectional:
-                if (details == VMINFO_MACHINEREADABLE)
-                    psz = "bidirectional";
-                else
-                    psz = "Bidirectional";
-                break;
-            default:
-                if (details == VMINFO_MACHINEREADABLE)
-                    psz = "unknown";
-                break;
-        }
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("clipboard=\"%s\"\n", psz);
-        else
-            RTPrintf("Clipboard Mode:  %s\n", psz);
-    }
-
-    if (console)
-    {
-        ComPtr<IDisplay> display;
-        CHECK_ERROR_RET(console, COMGETTER(Display)(display.asOutParam()), rc);
-        do
-        {
-            ULONG xRes, yRes, bpp;
-            rc = display->COMGETTER(Width)(&xRes);
-            if (rc == E_ACCESSDENIED)
-                break; /* VM not powered up */
-            if (FAILED(rc))
-            {
-                com::ErrorInfo info (display);
-                PRINT_ERROR_INFO (info);
-                return rc;
-            }
-            rc = display->COMGETTER(Height)(&yRes);
-            if (rc == E_ACCESSDENIED)
-                break; /* VM not powered up */
-            if (FAILED(rc))
-            {
-                com::ErrorInfo info (display);
-                PRINT_ERROR_INFO (info);
-                return rc;
-            }
-            rc = display->COMGETTER(BitsPerPixel)(&bpp);
-            if (rc == E_ACCESSDENIED)
-                break; /* VM not powered up */
-            if (FAILED(rc))
-            {
-                com::ErrorInfo info (display);
-                PRINT_ERROR_INFO (info);
-                return rc;
-            }
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("VideoMode=\"%d,%d,%d\"\n", xRes, yRes, bpp);
-            else
-                RTPrintf("Video mode:      %dx%dx%d\n", xRes, yRes, bpp);
-        }
-        while (0);
-    }
-
-    /*
-     * VRDP
-     */
-    ComPtr<IVRDPServer> vrdpServer;
-    rc = machine->COMGETTER(VRDPServer)(vrdpServer.asOutParam());
-    if (SUCCEEDED(rc) && vrdpServer)
-    {
-        BOOL fEnabled = false;
-        vrdpServer->COMGETTER(Enabled)(&fEnabled);
-        if (fEnabled)
-        {
-            ULONG port;
-            vrdpServer->COMGETTER(Port)(&port);
-            Bstr address;
-            vrdpServer->COMGETTER(NetAddress)(address.asOutParam());
-            BOOL fMultiCon;
-            vrdpServer->COMGETTER(AllowMultiConnection)(&fMultiCon);
-            BOOL fReuseCon;
-            vrdpServer->COMGETTER(ReuseSingleConnection)(&fReuseCon);
-            VRDPAuthType_T vrdpAuthType;
-            const char *strAuthType;
-            vrdpServer->COMGETTER(AuthType)(&vrdpAuthType);
-            switch (vrdpAuthType)
-            {
-                case VRDPAuthType_Null:
-                    strAuthType = "null";
-                    break;
-                case VRDPAuthType_External:
-                    strAuthType = "external";
-                    break;
-                case VRDPAuthType_Guest:
-                    strAuthType = "guest";
-                    break;
-                default:
-                    strAuthType = "unknown";
-                    break;
-            }
-            if (details == VMINFO_MACHINEREADABLE)
-            {
-                RTPrintf("vrdp=\"on\"\n");
-                RTPrintf("vrdpport=%d\n", port);
-                RTPrintf("vrdpaddress=\"%lS\"\n", address.raw());
-                RTPrintf("vrdpauthtype=\"%s\"\n", strAuthType);
-                RTPrintf("vrdpmulticon=\"%s\"\n", fMultiCon ? "on" : "off");
-                RTPrintf("vrdpreusecon=\"%s\"\n", fReuseCon ? "on" : "off");
-            }
-            else
-            {
-                if (address.isEmpty())
-                    address = "0.0.0.0";
-                RTPrintf("VRDP:            enabled (Address %lS, Port %d, MultiConn: %s, ReuseSingleConn: %s, Authentication type: %s)\n", address.raw(), port, fMultiCon ? "on" : "off", fReuseCon ? "on" : "off", strAuthType);
-            }
-        }
-        else
-        {
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("vrdp=\"off\"\n");
-            else
-                RTPrintf("VRDP:            disabled\n");
-        }
-    }
-
-    /*
-     * USB.
-     */
-    ComPtr<IUSBController> USBCtl;
-    rc = machine->COMGETTER(USBController)(USBCtl.asOutParam());
-    if (SUCCEEDED(rc))
-    {
-        BOOL fEnabled;
-        rc = USBCtl->COMGETTER(Enabled)(&fEnabled);
-        if (FAILED(rc))
-            fEnabled = false;
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("usb=\"%s\"\n", fEnabled ? "on" : "off");
-        else
-            RTPrintf("USB:             %s\n", fEnabled ? "enabled" : "disabled");
-
-        if (details != VMINFO_MACHINEREADABLE)
-            RTPrintf("\nUSB Device Filters:\n\n");
-
-        ComPtr<IUSBDeviceFilterCollection> Coll;
-        CHECK_ERROR_RET (USBCtl, COMGETTER(DeviceFilters)(Coll.asOutParam()), rc);
-
-        ComPtr<IUSBDeviceFilterEnumerator> Enum;
-        CHECK_ERROR_RET (Coll, Enumerate(Enum.asOutParam()), rc);
-
-        ULONG index = 0;
-        BOOL fMore = FALSE;
-        rc = Enum->HasMore (&fMore);
-        ASSERT_RET (SUCCEEDED (rc), rc);
-
-        if (!fMore)
-        {
-            if (details != VMINFO_MACHINEREADABLE)
-                RTPrintf("<none>\n\n");
-        }
-        else
-        while (fMore)
-        {
-            ComPtr<IUSBDeviceFilter> DevPtr;
-            rc = Enum->GetNext(DevPtr.asOutParam());
-            ASSERT_RET (SUCCEEDED (rc), rc);
-
-            /* Query info. */
-
-            if (details != VMINFO_MACHINEREADABLE)
-                RTPrintf("Index:            %lu\n", index);
-
-            BOOL bActive = FALSE;
-            CHECK_ERROR_RET (DevPtr, COMGETTER (Active) (&bActive), rc);
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("USBFilterActive%d=\"%s\"\n", index + 1, bActive ? "on" : "off");
-            else
-                RTPrintf("Active:           %s\n", bActive ? "yes" : "no");
-
-            Bstr bstr;
-            CHECK_ERROR_RET (DevPtr, COMGETTER (Name) (bstr.asOutParam()), rc);
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("USBFilterName%d=\"%lS\"\n", index + 1, bstr.raw());
-            else
-                RTPrintf("Name:             %lS\n", bstr.raw());
-            CHECK_ERROR_RET (DevPtr, COMGETTER (VendorId) (bstr.asOutParam()), rc);
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("USBFilterVendorId%d=\"%lS\"\n", index + 1, bstr.raw());
-            else
-                RTPrintf("VendorId:         %lS\n", bstr.raw());
-            CHECK_ERROR_RET (DevPtr, COMGETTER (ProductId) (bstr.asOutParam()), rc);
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("USBFilterProductId%d=\"%lS\"\n", index + 1, bstr.raw());
-            else
-                RTPrintf("ProductId:        %lS\n", bstr.raw());
-            CHECK_ERROR_RET (DevPtr, COMGETTER (Revision) (bstr.asOutParam()), rc);
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("USBFilterRevision%d=\"%lS\"\n", index + 1, bstr.raw());
-            else
-                RTPrintf("Revision:         %lS\n", bstr.raw());
-            CHECK_ERROR_RET (DevPtr, COMGETTER (Manufacturer) (bstr.asOutParam()), rc);
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("USBFilterManufacturer%d=\"%lS\"\n", index + 1, bstr.raw());
-            else
-                RTPrintf("Manufacturer:     %lS\n", bstr.raw());
-            CHECK_ERROR_RET (DevPtr, COMGETTER (Product) (bstr.asOutParam()), rc);
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("USBFilterProduct%d=\"%lS\"\n", index + 1, bstr.raw());
-            else
-                RTPrintf("Product:          %lS\n", bstr.raw());
-            CHECK_ERROR_RET (DevPtr, COMGETTER (Remote) (bstr.asOutParam()), rc);
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("USBFilterRemote%d=\"%lS\"\n", index + 1, bstr.raw());
-            else
-                RTPrintf("Remote:           %lS\n", bstr.raw());
-            CHECK_ERROR_RET (DevPtr, COMGETTER (SerialNumber) (bstr.asOutParam()), rc);
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("USBFilterSerialNumber%d=\"%lS\"\n", index + 1, bstr.raw());
-            else
-                RTPrintf("Serial Number:    %lS\n", bstr.raw());
-            if (details != VMINFO_MACHINEREADABLE)
-            {
-                ULONG fMaskedIfs;
-                CHECK_ERROR_RET (DevPtr, COMGETTER (MaskedInterfaces) (&fMaskedIfs), rc);
-                if (fMaskedIfs)
-                    RTPrintf("Masked Interfaces: 0x%08x\n", fMaskedIfs);
-                RTPrintf("\n");
-            }
-
-            rc = Enum->HasMore (&fMore);
-            ASSERT_RET (SUCCEEDED (rc), rc);
-
-            index ++;
-        }
-
-        if (console)
-        {
-            index = 0;
-            /* scope */
-            {
-                if (details != VMINFO_MACHINEREADABLE)
-                    RTPrintf("Available remote USB devices:\n\n");
-
-                ComPtr<IHostUSBDeviceCollection> coll;
-                CHECK_ERROR_RET (console, COMGETTER(RemoteUSBDevices) (coll.asOutParam()), rc);
-
-                ComPtr <IHostUSBDeviceEnumerator> en;
-                CHECK_ERROR_RET (coll, Enumerate (en.asOutParam()), rc);
-
-                BOOL more = FALSE;
-                rc = en->HasMore (&more);
-                ASSERT_RET (SUCCEEDED (rc), rc);
-
-                if (!more)
-                {
-                    if (details != VMINFO_MACHINEREADABLE)
-                        RTPrintf("<none>\n\n");
-                }
-                else
-                while (more)
-                {
-                    ComPtr <IHostUSBDevice> dev;
-                    rc = en->GetNext (dev.asOutParam());
-                    ASSERT_RET (SUCCEEDED (rc), rc);
-
-                    /* Query info. */
-                    Guid id;
-                    CHECK_ERROR_RET (dev, COMGETTER(Id)(id.asOutParam()), rc);
-                    USHORT usVendorId;
-                    CHECK_ERROR_RET (dev, COMGETTER(VendorId)(&usVendorId), rc);
-                    USHORT usProductId;
-                    CHECK_ERROR_RET (dev, COMGETTER(ProductId)(&usProductId), rc);
-                    USHORT bcdRevision;
-                    CHECK_ERROR_RET (dev, COMGETTER(Revision)(&bcdRevision), rc);
-
-                    if (details == VMINFO_MACHINEREADABLE)
-                        RTPrintf("USBRemoteUUID%d=\"%S\"\n"
-                                 "USBRemoteVendorId%d=\"%#06x\"\n"
-                                 "USBRemoteProductId%d=\"%#06x\"\n"
-                                 "USBRemoteRevision%d=\"%#04x%02x\"\n",
-                                 index + 1, id.toString().raw(),
-                                 index + 1, usVendorId,
-                                 index + 1, usProductId,
-                                 index + 1, bcdRevision >> 8, bcdRevision & 0xff);
-                    else
-                        RTPrintf("UUID:               %S\n"
-                                 "VendorId:           0x%04x (%04X)\n"
-                                 "ProductId:          0x%04x (%04X)\n"
-                                 "Revision:           %u.%u (%02u%02u)\n",
-                                 id.toString().raw(),
-                                 usVendorId, usVendorId, usProductId, usProductId,
-                                 bcdRevision >> 8, bcdRevision & 0xff,
-                                 bcdRevision >> 8, bcdRevision & 0xff);
-
-                    /* optional stuff. */
-                    Bstr bstr;
-                    CHECK_ERROR_RET (dev, COMGETTER(Manufacturer)(bstr.asOutParam()), rc);
-                    if (!bstr.isEmpty())
-                    {
-                        if (details == VMINFO_MACHINEREADABLE)
-                            RTPrintf("USBRemoteManufacturer%d=\"%lS\"\n", index + 1, bstr.raw());
-                        else
-                            RTPrintf("Manufacturer:       %lS\n", bstr.raw());
-                    }
-                    CHECK_ERROR_RET (dev, COMGETTER(Product)(bstr.asOutParam()), rc);
-                    if (!bstr.isEmpty())
-                    {
-                        if (details == VMINFO_MACHINEREADABLE)
-                            RTPrintf("USBRemoteProduct%d=\"%lS\"\n", index + 1, bstr.raw());
-                        else
-                            RTPrintf("Product:            %lS\n", bstr.raw());
-                    }
-                    CHECK_ERROR_RET (dev, COMGETTER(SerialNumber)(bstr.asOutParam()), rc);
-                    if (!bstr.isEmpty())
-                    {
-                        if (details == VMINFO_MACHINEREADABLE)
-                            RTPrintf("USBRemoteSerialNumber%d=\"%lS\"\n", index + 1, bstr.raw());
-                        else
-                            RTPrintf("SerialNumber:       %lS\n", bstr.raw());
-                    }
-                    CHECK_ERROR_RET (dev, COMGETTER(Address)(bstr.asOutParam()), rc);
-                    if (!bstr.isEmpty())
-                    {
-                        if (details == VMINFO_MACHINEREADABLE)
-                            RTPrintf("USBRemoteAddress%d=\"%lS\"\n", index + 1, bstr.raw());
-                        else
-                            RTPrintf("Address:            %lS\n", bstr.raw());
-                    }
-
-                    if (details != VMINFO_MACHINEREADABLE)
-                        RTPrintf("\n");
-
-                    rc = en->HasMore (&more);
-                    ASSERT_RET (SUCCEEDED (rc), rc);
-
-                    index ++;
-                }
-            }
-
-            index = 0;
-            /* scope */
-            {
-                if (details != VMINFO_MACHINEREADABLE)
-                    RTPrintf ("Currently Attached USB Devices:\n\n");
-
-                ComPtr <IUSBDeviceCollection> coll;
-                CHECK_ERROR_RET (console, COMGETTER(USBDevices) (coll.asOutParam()), rc);
-
-                ComPtr <IUSBDeviceEnumerator> en;
-                CHECK_ERROR_RET (coll, Enumerate (en.asOutParam()), rc);
-
-                BOOL more = FALSE;
-                rc = en->HasMore (&more);
-                ASSERT_RET (SUCCEEDED (rc), rc);
-
-                if (!more)
-                {
-                    if (details != VMINFO_MACHINEREADABLE)
-                        RTPrintf("<none>\n\n");
-                }
-                else
-                while (more)
-                {
-                    ComPtr <IUSBDevice> dev;
-                    rc = en->GetNext (dev.asOutParam());
-                    ASSERT_RET (SUCCEEDED (rc), rc);
-
-                    /* Query info. */
-                    Guid id;
-                    CHECK_ERROR_RET (dev, COMGETTER(Id)(id.asOutParam()), rc);
-                    USHORT usVendorId;
-                    CHECK_ERROR_RET (dev, COMGETTER(VendorId)(&usVendorId), rc);
-                    USHORT usProductId;
-                    CHECK_ERROR_RET (dev, COMGETTER(ProductId)(&usProductId), rc);
-                    USHORT bcdRevision;
-                    CHECK_ERROR_RET (dev, COMGETTER(Revision)(&bcdRevision), rc);
-
-                    if (details == VMINFO_MACHINEREADABLE)
-                        RTPrintf("USBAttachedUUID%d=\"%S\"\n"
-                                 "USBAttachedVendorId%d=\"%#06x\"\n"
-                                 "USBAttachedProductId%d=\"%#06x\"\n"
-                                 "USBAttachedRevision%d=\"%#04x%02x\"\n",
-                                 index + 1, id.toString().raw(),
-                                 index + 1, usVendorId,
-                                 index + 1, usProductId,
-                                 index + 1, bcdRevision >> 8, bcdRevision & 0xff);
-                    else
-                        RTPrintf("UUID:               %S\n"
-                                 "VendorId:           0x%04x (%04X)\n"
-                                 "ProductId:          0x%04x (%04X)\n"
-                                 "Revision:           %u.%u (%02u%02u)\n",
-                                 id.toString().raw(),
-                                 usVendorId, usVendorId, usProductId, usProductId,
-                                 bcdRevision >> 8, bcdRevision & 0xff,
-                                 bcdRevision >> 8, bcdRevision & 0xff);
-
-                    /* optional stuff. */
-                    Bstr bstr;
-                    CHECK_ERROR_RET (dev, COMGETTER(Manufacturer)(bstr.asOutParam()), rc);
-                    if (!bstr.isEmpty())
-                    {
-                        if (details == VMINFO_MACHINEREADABLE)
-                            RTPrintf("USBAttachedManufacturer%d=\"%lS\"\n", index + 1, bstr.raw());
-                        else
-                            RTPrintf("Manufacturer:       %lS\n", bstr.raw());
-                    }
-                    CHECK_ERROR_RET (dev, COMGETTER(Product)(bstr.asOutParam()), rc);
-                    if (!bstr.isEmpty())
-                    {
-                        if (details == VMINFO_MACHINEREADABLE)
-                            RTPrintf("USBAttachedProduct%d=\"%lS\"\n", index + 1, bstr.raw());
-                        else
-                            RTPrintf("Product:            %lS\n", bstr.raw());
-                    }
-                    CHECK_ERROR_RET (dev, COMGETTER(SerialNumber)(bstr.asOutParam()), rc);
-                    if (!bstr.isEmpty())
-                    {
-                        if (details == VMINFO_MACHINEREADABLE)
-                            RTPrintf("USBAttachedSerialNumber%d=\"%lS\"\n", index + 1, bstr.raw());
-                        else
-                            RTPrintf("SerialNumber:       %lS\n", bstr.raw());
-                    }
-                    CHECK_ERROR_RET (dev, COMGETTER(Address)(bstr.asOutParam()), rc);
-                    if (!bstr.isEmpty())
-                    {
-                        if (details == VMINFO_MACHINEREADABLE)
-                            RTPrintf("USBAttachedAddress%d=\"%lS\"\n", index + 1, bstr.raw());
-                        else
-                            RTPrintf("Address:            %lS\n", bstr.raw());
-                    }
-
-                    if (details != VMINFO_MACHINEREADABLE)
-                        RTPrintf("\n");
-
-                    rc = en->HasMore (&more);
-                    ASSERT_RET (SUCCEEDED (rc), rc);
-
-                    index ++;
-                }
-            }
-        }
-    } /* USB */
-
-    /*
-     * Shared folders
-     */
-    if (details != VMINFO_MACHINEREADABLE)
-        RTPrintf("Shared folders:  ");
-    uint32_t numSharedFolders = 0;
-#if 0 // not yet implemented
-    /* globally shared folders first */
-    {
-        ComPtr<ISharedFolderCollection> sfColl;
-        ComPtr<ISharedFolderEnumerator> sfEnum;
-        CHECK_ERROR_RET(virtualBox, COMGETTER(SharedFolders)(sfColl.asOutParam()), rc);
-        CHECK_ERROR_RET(sfColl, Enumerate(sfEnum.asOutParam()), rc);
-        BOOL fMore;
-        sfEnum->HasMore(&fMore);
-        while (fMore)
-        {
-            ComPtr<ISharedFolder> sf;
-            CHECK_ERROR_RET(sfEnum, GetNext(sf.asOutParam()), rc);
-            Bstr name, hostPath;
-            sf->COMGETTER(Name)(name.asOutParam());
-            sf->COMGETTER(HostPath)(hostPath.asOutParam());
-            RTPrintf("Name: '%lS', Host path: '%lS' (global mapping)\n", name.raw(), hostPath.raw());
-            ++numSharedFolders;
-            CHECK_ERROR_RET(sfEnum, HasMore(&fMore), rc);
-        }
-    }
-#endif
-    /* now VM mappings */
-    {
-        ComPtr<ISharedFolderCollection> sfColl;
-        ComPtr<ISharedFolderEnumerator> sfEnum;
-        CHECK_ERROR_RET(machine, COMGETTER(SharedFolders)(sfColl.asOutParam()), rc);
-        CHECK_ERROR_RET(sfColl, Enumerate(sfEnum.asOutParam()), rc);
-        ULONG index = 0;
-        BOOL fMore;
-        sfEnum->HasMore(&fMore);
-        while (fMore)
-        {
-            ComPtr<ISharedFolder> sf;
-            CHECK_ERROR_RET(sfEnum, GetNext(sf.asOutParam()), rc);
-            Bstr name, hostPath;
-            BOOL writable;
-            sf->COMGETTER(Name)(name.asOutParam());
-            sf->COMGETTER(HostPath)(hostPath.asOutParam());
-            sf->COMGETTER(Writable)(&writable);
-            if (!numSharedFolders && details != VMINFO_MACHINEREADABLE)
-                RTPrintf("\n\n");
-            if (details == VMINFO_MACHINEREADABLE)
-            {
-                RTPrintf("SharedFolderNameMachineMapping%d=\"%lS\"\n", index + 1,
-                         name.raw());
-                RTPrintf("SharedFolderPathMachineMapping%d=\"%lS\"\n", index + 1,
-                         hostPath.raw());
-            }
-            else
-                RTPrintf("Name: '%lS', Host path: '%lS' (machine mapping), %s\n",
-                         name.raw(), hostPath.raw(), writable ? "writable" : "readonly");
-            ++numSharedFolders;
-            CHECK_ERROR_RET(sfEnum, HasMore(&fMore), rc);
-        }
-    }
-    /* transient mappings */
-    if (console)
-    {
-        ComPtr<ISharedFolderCollection> sfColl;
-        ComPtr<ISharedFolderEnumerator> sfEnum;
-        CHECK_ERROR_RET(console, COMGETTER(SharedFolders)(sfColl.asOutParam()), rc);
-        CHECK_ERROR_RET(sfColl, Enumerate(sfEnum.asOutParam()), rc);
-        ULONG index = 0;
-        BOOL fMore;
-        sfEnum->HasMore(&fMore);
-        while (fMore)
-        {
-            ComPtr<ISharedFolder> sf;
-            CHECK_ERROR_RET(sfEnum, GetNext(sf.asOutParam()), rc);
-            Bstr name, hostPath;
-            sf->COMGETTER(Name)(name.asOutParam());
-            sf->COMGETTER(HostPath)(hostPath.asOutParam());
-            if (!numSharedFolders && details != VMINFO_MACHINEREADABLE)
-                RTPrintf("\n\n");
-            if (details == VMINFO_MACHINEREADABLE)
-            {
-                RTPrintf("SharedFolderNameTransientMapping%d=\"%lS\"\n", index + 1,
-                         name.raw());
-                RTPrintf("SharedFolderPathTransientMapping%d=\"%lS\"\n", index + 1,
-                         hostPath.raw());
-            }
-            else
-                RTPrintf("Name: '%lS', Host path: '%lS' (transient mapping)\n", name.raw(), hostPath.raw());
-            ++numSharedFolders;
-            CHECK_ERROR_RET(sfEnum, HasMore(&fMore), rc);
-        }
-    }
-    if (!numSharedFolders && details != VMINFO_MACHINEREADABLE)
-        RTPrintf("<none>\n");
-    if (details != VMINFO_MACHINEREADABLE)
-        RTPrintf("\n");
-
-    if (console)
-    {
-        /*
-         * Live VRDP info.
-         */
-        ComPtr<IRemoteDisplayInfo> remoteDisplayInfo;
-        CHECK_ERROR_RET(console, COMGETTER(RemoteDisplayInfo)(remoteDisplayInfo.asOutParam()), rc);
-        BOOL    Active;
-        ULONG   NumberOfClients;
-        LONG64  BeginTime;
-        LONG64  EndTime;
-        ULONG64 BytesSent;
-        ULONG64 BytesSentTotal;
-        ULONG64 BytesReceived;
-        ULONG64 BytesReceivedTotal;
-        Bstr    User;
-        Bstr    Domain;
-        Bstr    ClientName;
-        Bstr    ClientIP;
-        ULONG   ClientVersion;
-        ULONG   EncryptionStyle;
-
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(Active)             (&Active), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(NumberOfClients)    (&NumberOfClients), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(BeginTime)          (&BeginTime), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(EndTime)            (&EndTime), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(BytesSent)          (&BytesSent), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(BytesSentTotal)     (&BytesSentTotal), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(BytesReceived)      (&BytesReceived), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(BytesReceivedTotal) (&BytesReceivedTotal), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(User)               (User.asOutParam ()), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(Domain)             (Domain.asOutParam ()), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(ClientName)         (ClientName.asOutParam ()), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(ClientIP)           (ClientIP.asOutParam ()), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(ClientVersion)      (&ClientVersion), rc);
-        CHECK_ERROR_RET(remoteDisplayInfo, COMGETTER(EncryptionStyle)    (&EncryptionStyle), rc);
-
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("VRDPActiveConnection=\"%s\"\n", Active ? "on": "off");
-        else
-            RTPrintf("VRDP Connection:    %s\n", Active? "active": "not active");
-
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("VRDPClients=%d\n", NumberOfClients);
-        else
-            RTPrintf("Clients so far:     %d\n", NumberOfClients);
-
-        if (NumberOfClients > 0)
-        {
-            char timestr[128];
-
-            if (Active)
-            {
-                makeTimeStr (timestr, sizeof (timestr), BeginTime);
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("VRDPStartTime=\"%s\"\n", timestr);
-                else
-                    RTPrintf("Start time:         %s\n", timestr);
-            }
-            else
-            {
-                makeTimeStr (timestr, sizeof (timestr), BeginTime);
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("VRDPLastStartTime=\"%s\"\n", timestr);
-                else
-                    RTPrintf("Last started:       %s\n", timestr);
-                makeTimeStr (timestr, sizeof (timestr), EndTime);
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("VRDPLastEndTime=\"%s\"\n", timestr);
-                else
-                    RTPrintf("Last ended:         %s\n", timestr);
-            }
-
-            if (details == VMINFO_MACHINEREADABLE)
-            {
-                RTPrintf("VRDPBytesSent=%llu\n", BytesSent);
-                RTPrintf("VRDPThroughputSend=%llu\n", (BytesSent * 1000) / (EndTime - BeginTime) );
-                RTPrintf("VRDPBytesSentTotal=%llu\n", BytesSentTotal);
-
-                RTPrintf("VRDPBytesReceived=%llu\n", BytesReceived);
-                RTPrintf("VRDPThroughputReceive=%llu\n", (BytesReceived * 1000) / (EndTime - BeginTime) );
-                RTPrintf("VRDPBytesReceivedTotal=%llu\n", BytesReceivedTotal);
-            }
-            else
-            {
-                RTPrintf("Sent:               %llu Bytes\n", BytesSent);
-                RTPrintf("Average speed:      %llu B/s\n", (BytesSent * 1000) / (EndTime - BeginTime) );
-                RTPrintf("Sent total:         %llu Bytes\n", BytesSentTotal);
-
-                RTPrintf("Received:           %llu Bytes\n", BytesReceived);
-                RTPrintf("Speed:              %llu B/s\n", (BytesReceived * 1000) / (EndTime - BeginTime) );
-                RTPrintf("Received total:     %llu Bytes\n", BytesReceivedTotal);
-            }
-
-            if (Active)
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                {
-                    RTPrintf("VRDPUserName=\"%lS\"\n", User.raw());
-                    RTPrintf("VRDPDomain=\"%lS\"\n", Domain.raw());
-                    RTPrintf("VRDPClientName=\"%lS\"\n", ClientName.raw());
-                    RTPrintf("VRDPClientIP=\"%lS\"\n", ClientIP.raw());
-                    RTPrintf("VRDPClientVersion=%d\n",  ClientVersion);
-                    RTPrintf("VRDPEncryption=\"%s\"\n", EncryptionStyle == 0? "RDP4": "RDP5 (X.509)");
-                }
-                else
-                {
-                    RTPrintf("User name:          %lS\n", User.raw());
-                    RTPrintf("Domain:             %lS\n", Domain.raw());
-                    RTPrintf("Client name:        %lS\n", ClientName.raw());
-                    RTPrintf("Client IP:          %lS\n", ClientIP.raw());
-                    RTPrintf("Client version:     %d\n",  ClientVersion);
-                    RTPrintf("Encryption:         %s\n", EncryptionStyle == 0? "RDP4": "RDP5 (X.509)");
-                }
-            }
-        }
-
-        if (details != VMINFO_MACHINEREADABLE)
-            RTPrintf("\n");
-    }
-
-    if (    details == VMINFO_STANDARD
-        ||  details == VMINFO_FULL
-        ||  details == VMINFO_MACHINEREADABLE)
-    {
-        Bstr description;
-        machine->COMGETTER(Description)(description.asOutParam());
-        if (!description.isEmpty())
-        {
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("description=\"%lS\"\n", description.raw());
-            else
-                RTPrintf("Description:\n%lS\n", description.raw());
-        }
-    }
-
-    ULONG guestVal;
-    if (details != VMINFO_MACHINEREADABLE)
-        RTPrintf("Guest:\n\n");
-
-#ifdef VBOX_WITH_MEM_BALLOONING
-    rc = machine->COMGETTER(MemoryBalloonSize)(&guestVal);
-    if (SUCCEEDED(rc))
-    {
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("GuestMemoryBalloon=%d\n", guestVal);
-        else
-            RTPrintf("Configured memory balloon size:      %d MB\n", guestVal);
-    }
-#endif
-    rc = machine->COMGETTER(StatisticsUpdateInterval)(&guestVal);
-    if (SUCCEEDED(rc))
-    {
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("GuestStatisticsUpdateInterval=%d\n", guestVal);
-        else
-        {
-            if (guestVal == 0)
-                RTPrintf("Statistics update:                   disabled\n");
-            else
-                RTPrintf("Statistics update interval:          %d seconds\n", guestVal);
-        }
-    }
-    if (details != VMINFO_MACHINEREADABLE)
-        RTPrintf("\n");
-
-    if (    console
-        &&  (   details == VMINFO_STATISTICS
-             || details == VMINFO_FULL
-             || details == VMINFO_MACHINEREADABLE))
-    {
-        ComPtr <IGuest> guest;
-
-        rc = console->COMGETTER(Guest)(guest.asOutParam());
-        if (SUCCEEDED(rc))
-        {
-            ULONG statVal;
-
-            rc = guest->GetStatistic(0, GuestStatisticType_SampleNumber, &statVal);
-            if (details == VMINFO_MACHINEREADABLE)
-                RTPrintf("StatGuestSample=%d\n", statVal);
-            else
-                RTPrintf("Guest statistics for sample %d:\n\n", statVal);
-
-            rc = guest->GetStatistic(0, GuestStatisticType_CPULoad_Idle, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestLoadIdleCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: CPU Load Idle          %-3d%%\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_CPULoad_Kernel, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestLoadKernelCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: CPU Load Kernel        %-3d%%\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_CPULoad_User, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestLoadUserCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: CPU Load User          %-3d%%\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_Threads, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestThreadsCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Threads                %d\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_Processes, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestProcessesCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Processes              %d\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_Handles, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestHandlesCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Handles                %d\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_MemoryLoad, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestMemoryLoadCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Memory Load            %d%%\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_PhysMemTotal, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestMemoryTotalPhysCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Total physical memory  %-4d MB\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_PhysMemAvailable, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestMemoryFreePhysCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Free physical memory   %-4d MB\n", 0, statVal);
-            }
-
-#ifdef VBOX_WITH_MEM_BALLOONING
-            rc = guest->GetStatistic(0, GuestStatisticType_PhysMemBalloon, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestMemoryBalloonCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Memory balloon size    %-4d MB\n", 0, statVal);
-            }
-#endif
-            rc = guest->GetStatistic(0, GuestStatisticType_MemCommitTotal, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestMemoryCommittedCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Committed memory       %-4d MB\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_MemKernelTotal, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestMemoryTotalKernelCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Total kernel memory    %-4d MB\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_MemKernelPaged, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestMemoryPagedKernelCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Paged kernel memory    %-4d MB\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_MemKernelNonpaged, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestMemoryNonpagedKernelCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Nonpaged kernel memory %-4d MB\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_MemSystemCache, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestSystemCacheSizeCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: System cache size      %-4d MB\n", 0, statVal);
-            }
-
-            rc = guest->GetStatistic(0, GuestStatisticType_PageFileSize, &statVal);
-            if (SUCCEEDED(rc))
-            {
-                if (details == VMINFO_MACHINEREADABLE)
-                    RTPrintf("StatGuestPageFileSizeCPU%d=%d\n", 0, statVal);
-                else
-                    RTPrintf("CPU%d: Page file size         %-4d MB\n", 0, statVal);
-            }
-
-            RTPrintf("\n");
-        }
-        else
-        {
-            if (details != VMINFO_MACHINEREADABLE)
-            {
-                RTPrintf("[!] FAILED calling console->getGuest at line %d!\n", __LINE__);
-                PRINT_RC_MESSAGE(rc);
-            }
-        }
-    }
-
-    /*
-     * snapshots
-     */
-    ComPtr<ISnapshot> snapshot;
-    rc = machine->GetSnapshot(Guid(), snapshot.asOutParam());
-    if (SUCCEEDED(rc) && snapshot)
-    {
-        if (details != VMINFO_MACHINEREADABLE)
-            RTPrintf("Snapshots:\n\n");
-        showSnapshots(snapshot, details);
-    }
-
-    if (details != VMINFO_MACHINEREADABLE)
-        RTPrintf("\n");
-    return S_OK;
-}
-
-static int handleShowVMInfo(int argc, char *argv[],
-                            ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session)
-{
-    HRESULT rc;
-
-    /* at least one option: the UUID or name of the VM */
-    if (argc < 1)
-        return errorSyntax(USAGE_SHOWVMINFO, "Incorrect number of parameters");
-
-    /* try to find the given machine */
-    ComPtr <IMachine> machine;
-    Guid uuid (argv[0]);
-    if (!uuid.isEmpty())
-    {
-        CHECK_ERROR (virtualBox, GetMachine (uuid, machine.asOutParam()));
-    }
-    else
-    {
-        CHECK_ERROR (virtualBox, FindMachine (Bstr(argv[0]), machine.asOutParam()));
-        if (SUCCEEDED (rc))
-            machine->COMGETTER(Id) (uuid.asOutParam());
-    }
-    if (FAILED (rc))
-        return 1;
-
-    /* 2nd option can be -details, -statistics or -argdump */
-    VMINFO_DETAILS details = VMINFO_NONE;
-    bool fDetails = false;
-    bool fStatistics = false;
-    bool fMachinereadable = false;
-    for (int i=1;i<argc;i++)
-    {
-        if (!strcmp(argv[i], "-details"))
-            fDetails = true;
-        else
-        if (!strcmp(argv[i], "-statistics"))
-            fStatistics = true;
-        if (!strcmp(argv[1], "-machinereadable"))
-            fMachinereadable = true;
-    }
-    if (fMachinereadable)
-        details = VMINFO_MACHINEREADABLE;
-    else
-    if (fDetails && fStatistics)
-        details = VMINFO_FULL;
-    else
-    if (fDetails)
-        details = VMINFO_STANDARD;
-    else
-    if (fStatistics)
-        details = VMINFO_STATISTICS;
-
-    ComPtr <IConsole> console;
-
-    /* open an existing session for the VM */
-    rc = virtualBox->OpenExistingSession (session, uuid);
-    if (SUCCEEDED(rc))
-        /* get the session machine */
-        rc = session->COMGETTER(Machine)(machine.asOutParam());
-    if (SUCCEEDED(rc))
-        /* get the session console */
-        rc = session->COMGETTER(Console)(console.asOutParam());
-
-    rc = showVMInfo (virtualBox, machine, console, details);
-
-    if (console)
-        session->Close();
-
-    return SUCCEEDED (rc) ? 0 : 1;
-}
-
-
-static int handleList(int argc, char *argv[],
-                      ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session)
-{
-    HRESULT rc = S_OK;
-
-    /* exactly one option: the object */
-    if (argc != 1)
-        return errorSyntax(USAGE_LIST, "Incorrect number of parameters");
-
-    /* which object? */
-    if (strcmp(argv[0], "vms") == 0)
-    {
-        /*
-         * Get the list of all registered VMs
-         */
-        ComPtr<IMachineCollection> collection;
-        rc = virtualBox->COMGETTER(Machines)(collection.asOutParam());
-        ComPtr<IMachineEnumerator> enumerator;
-        if (SUCCEEDED(rc))
-            rc = collection->Enumerate(enumerator.asOutParam());
-        if (SUCCEEDED(rc))
-        {
-            /*
-             * Iterate through the collection
-             */
-            BOOL hasMore = FALSE;
-            while (enumerator->HasMore(&hasMore), hasMore)
-            {
-                ComPtr<IMachine> machine;
-                rc = enumerator->GetNext(machine.asOutParam());
-                if ((SUCCEEDED(rc)) && machine)
-                {
-                    rc = showVMInfo(virtualBox, machine);
-                }
-            }
-        }
-    }
-    else
-    if (strcmp(argv[0], "runningvms") == 0)
-    {
-        /*
-         * Get the list of all _running_ VMs
-         */
-        ComPtr<IMachineCollection> collection;
-        rc = virtualBox->COMGETTER(Machines)(collection.asOutParam());
-        ComPtr<IMachineEnumerator> enumerator;
-        if (SUCCEEDED(rc))
-            rc = collection->Enumerate(enumerator.asOutParam());
-        if (SUCCEEDED(rc))
-        {
-            /*
-             * Iterate through the collection
-             */
-            BOOL hasMore = FALSE;
-            while (enumerator->HasMore(&hasMore), hasMore)
-            {
-                ComPtr<IMachine> machine;
-                rc = enumerator->GetNext(machine.asOutParam());
-                if ((SUCCEEDED(rc)) && machine)
-                {
-                    MachineState_T machineState;
-                    rc = machine->COMGETTER(State)(&machineState);
-                    if (SUCCEEDED(rc))
-                    {
-                        switch (machineState)
-                        {
-                            case MachineState_Running:
-                            case MachineState_Paused:
-                                {
-                                    Guid uuid;
-                                    rc = machine->COMGETTER(Id) (uuid.asOutParam());
-                                    if (SUCCEEDED(rc))
-                                        RTPrintf ("%s\n", uuid.toString().raw());
-                                    break;
-                                }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    else
-    if (strcmp(argv[0], "ostypes") == 0)
-    {
-        ComPtr<IGuestOSTypeCollection> coll;
-        ComPtr<IGuestOSTypeEnumerator> enumerator;
-        CHECK_ERROR(virtualBox, COMGETTER(GuestOSTypes)(coll.asOutParam()));
-        if (SUCCEEDED(rc) && coll)
-        {
-            CHECK_ERROR(coll, Enumerate(enumerator.asOutParam()));
-            BOOL hasMore;
-            while (SUCCEEDED(enumerator->HasMore(&hasMore)) && hasMore)
-            {
-                ComPtr<IGuestOSType> guestOS;
-                CHECK_RC_BREAK(enumerator->GetNext(guestOS.asOutParam()));
-                Bstr guestId;
-                guestOS->COMGETTER(Id)(guestId.asOutParam());
-                RTPrintf("ID:          %lS\n", guestId.raw());
-                Bstr guestDescription;
-                guestOS->COMGETTER(Description)(guestDescription.asOutParam());
-                RTPrintf("Description: %lS\n\n", guestDescription.raw());
-            }
-        }
-    }
-    else
-    if (strcmp(argv[0], "hostdvds") == 0)
-    {
-        ComPtr<IHost> host;
-        CHECK_ERROR(virtualBox, COMGETTER(Host)(host.asOutParam()));
-        ComPtr<IHostDVDDriveCollection> coll;
-        ComPtr<IHostDVDDriveEnumerator> enumerator;
-        CHECK_ERROR(host, COMGETTER(DVDDrives)(coll.asOutParam()));
-        if (SUCCEEDED(rc) && coll)
-        {
-            CHECK_ERROR(coll, Enumerate(enumerator.asOutParam()));
-            BOOL hasMore;
-            while (SUCCEEDED(enumerator->HasMore(&hasMore)) && hasMore)
-            {
-                ComPtr<IHostDVDDrive> dvdDrive;
-                CHECK_RC_BREAK(enumerator->GetNext(dvdDrive.asOutParam()));
-                Bstr name;
-                dvdDrive->COMGETTER(Name)(name.asOutParam());
-                RTPrintf("Name:        %lS\n\n", name.raw());
-            }
-        }
-    }
-    else
-    if (strcmp(argv[0], "hostfloppies") == 0)
-    {
-        ComPtr<IHost> host;
-        CHECK_ERROR(virtualBox, COMGETTER(Host)(host.asOutParam()));
-        ComPtr<IHostFloppyDriveCollection> coll;
-        ComPtr<IHostFloppyDriveEnumerator> enumerator;
-        CHECK_ERROR(host, COMGETTER(FloppyDrives)(coll.asOutParam()));
-        if (SUCCEEDED(rc) && coll)
-        {
-            CHECK_ERROR(coll, Enumerate(enumerator.asOutParam()));
-            BOOL hasMore;
-            while (SUCCEEDED(enumerator->HasMore(&hasMore)) && hasMore)
-            {
-                ComPtr<IHostFloppyDrive> floppyDrive;
-                CHECK_RC_BREAK(enumerator->GetNext(floppyDrive.asOutParam()));
-                Bstr name;
-                floppyDrive->COMGETTER(Name)(name.asOutParam());
-                RTPrintf("Name:        %lS\n\n", name.raw());
-            }
-        }
-    }
-    else
-    if (strcmp(argv[0], "hostifs") == 0)
-    {
-        ComPtr<IHost> host;
-        CHECK_ERROR(virtualBox, COMGETTER(Host)(host.asOutParam()));
-        ComPtr<IHostNetworkInterfaceCollection> coll;
-        ComPtr<IHostNetworkInterfaceEnumerator> enumerator;
-        CHECK_ERROR(host, COMGETTER(NetworkInterfaces)(coll.asOutParam()));
-        if (SUCCEEDED(rc) && coll)
-        {
-            CHECK_ERROR(coll, Enumerate(enumerator.asOutParam()));
-            BOOL hasMore;
-            while (SUCCEEDED(enumerator->HasMore(&hasMore)) && hasMore)
-            {
-                ComPtr<IHostNetworkInterface> networkInterface;
-                CHECK_RC_BREAK(enumerator->GetNext(networkInterface.asOutParam()));
-                Bstr interfaceName;
-                networkInterface->COMGETTER(Name)(interfaceName.asOutParam());
-                RTPrintf("Name:        %lS\n", interfaceName.raw());
-                Guid interfaceGuid;
-                networkInterface->COMGETTER(Id)(interfaceGuid.asOutParam());
-                RTPrintf("GUID:        %lS\n\n", Bstr(interfaceGuid.toString()).raw());
-            }
-        }
-    }
-    else
-    if (strcmp(argv[0], "hostinfo") == 0)
-    {
-        ComPtr<IHost> Host;
-        CHECK_ERROR (virtualBox, COMGETTER(Host)(Host.asOutParam()));
-
-        RTPrintf("Host Information:\n\n");
-
-        LONG64 uTCTime = 0;
-        CHECK_ERROR (Host, COMGETTER(UTCTime)(&uTCTime));
-        RTTIMESPEC timeSpec;
-        RTTimeSpecSetMilli(&timeSpec, uTCTime);
-        char pszTime[30] = {0};
-        RTTimeSpecToString(&timeSpec, pszTime, sizeof(pszTime));
-        RTPrintf("Host time: %s\n", pszTime);
-
-        ULONG processorOnlineCount = 0;
-        CHECK_ERROR (Host, COMGETTER(ProcessorOnlineCount)(&processorOnlineCount));
-        RTPrintf("Processor online count: %lu\n", processorOnlineCount);
-        ULONG processorCount = 0;
-        CHECK_ERROR (Host, COMGETTER(ProcessorCount)(&processorCount));
-        RTPrintf("Processor count: %lu\n", processorCount);
-        ULONG processorSpeed = 0;
-        Bstr processorDescription;
-        for (ULONG i = 0; i < processorCount; i++)
-        {
-            CHECK_ERROR (Host, GetProcessorSpeed(i, &processorSpeed));
-            if (processorSpeed)
-                RTPrintf("Processor#%u speed: %lu MHz\n", i, processorSpeed);
-            else
-                RTPrintf("Processor#%u speed: unknown\n", i, processorSpeed);
-    #if 0 /* not yet implemented in Main */
-            CHECK_ERROR (Host, GetProcessorDescription(i, processorDescription.asOutParam()));
-            RTPrintf("Processor#%u description: %lS\n", i, processorDescription.raw());
-    #endif
-        }
-
-    #if 0 /* not yet implemented in Main */
-        ULONG memorySize = 0;
-        CHECK_ERROR (Host, COMGETTER(MemorySize)(&memorySize));
-        RTPrintf("Memory size: %lu MByte\n", memorySize);
-
-        ULONG memoryAvailable = 0;
-        CHECK_ERROR (Host, COMGETTER(MemoryAvailable)(&memoryAvailable));
-        RTPrintf("Memory available: %lu MByte\n", memoryAvailable);
-
-        Bstr operatingSystem;
-        CHECK_ERROR (Host, COMGETTER(OperatingSystem)(operatingSystem.asOutParam()));
-        RTPrintf("Operating system: %lS\n", operatingSystem.raw());
-
-        Bstr oSVersion;
-        CHECK_ERROR (Host, COMGETTER(OSVersion)(oSVersion.asOutParam()));
-        RTPrintf("Operating system version: %lS\n", oSVersion.raw());
-    #endif
-    }
-    else
-    if (strcmp(argv[0], "hdds") == 0)
-    {
-        ComPtr<IHardDiskCollection> hddColl;
-        CHECK_ERROR(virtualBox, COMGETTER(HardDisks)(hddColl.asOutParam()));
-        ComPtr<IHardDiskEnumerator> enumerator;
-        CHECK_ERROR(hddColl, Enumerate(enumerator.asOutParam()));
-        BOOL hasMore;
-        while (SUCCEEDED(enumerator->HasMore(&hasMore)) && hasMore)
-        {
-            ComPtr<IHardDisk> hdd;
-            CHECK_RC_BREAK(enumerator->GetNext(hdd.asOutParam()));
-            Guid uuid;
-            hdd->COMGETTER(Id)(uuid.asOutParam());
-            RTPrintf("UUID:         %s\n", uuid.toString().raw());
-            HardDiskStorageType_T storageType;
-            hdd->COMGETTER(StorageType)(&storageType);
-            const char *storageTypeString = "unknown";
-            switch (storageType)
-            {
-                case HardDiskStorageType_VirtualDiskImage:
-                    storageTypeString = "Virtual Disk Image";
-                    break;
-                case HardDiskStorageType_ISCSIHardDisk:
-                    storageTypeString = "iSCSI hard disk";
-                    break;
-            }
-            RTPrintf("Storage type: %s\n", storageTypeString);
-            Bstr filepath;
-            /// @todo (dmik) we temporarily use the location property to
-            //  determine the image file name. This is subject to change
-            //  when iSCSI disks are here (we should either query a
-            //  storage-specific interface from IHardDisk, or "standardize"
-            //  the location property)
-            hdd->COMGETTER(Location)(filepath.asOutParam());
-            RTPrintf("Path:         %lS\n", filepath.raw());
-            BOOL fAccessible;
-            hdd->COMGETTER(AllAccessible)(&fAccessible);
-            RTPrintf("Accessible:   %s\n", fAccessible ? "yes" : "no");
-            Guid machineUUID;
-            hdd->COMGETTER(MachineId)(machineUUID.asOutParam());
-            if (!machineUUID.isEmpty())
-            {
-                ComPtr<IMachine> machine;
-                CHECK_ERROR(virtualBox, GetMachine(machineUUID, machine.asOutParam()));
-                ASSERT(machine);
-                Bstr name;
-                machine->COMGETTER(Name)(name.asOutParam());
-                machine->COMGETTER(Id)(uuid.asOutParam());
-                RTPrintf("Usage:        %lS (UUID: %s)\n", name.raw(), uuid.toString().raw());
-            }
-            RTPrintf("\n");
-        }
-    }
-    else
-    if (strcmp(argv[0], "dvds") == 0)
-    {
-        ComPtr<IDVDImageCollection> dvdColl;
-        CHECK_ERROR(virtualBox, COMGETTER(DVDImages)(dvdColl.asOutParam()));
-        ComPtr<IDVDImageEnumerator> enumerator;
-        CHECK_ERROR(dvdColl, Enumerate(enumerator.asOutParam()));
-        BOOL hasMore;
-        while (SUCCEEDED(enumerator->HasMore(&hasMore)) && hasMore)
-        {
-            ComPtr<IDVDImage> dvdImage;
-            CHECK_RC_BREAK(enumerator->GetNext(dvdImage.asOutParam()));
-            Guid uuid;
-            dvdImage->COMGETTER(Id)(uuid.asOutParam());
-            RTPrintf("UUID:       %s\n", uuid.toString().raw());
-            Bstr filePath;
-            dvdImage->COMGETTER(FilePath)(filePath.asOutParam());
-            RTPrintf("Path:       %lS\n", filePath.raw());
-            BOOL fAccessible;
-            dvdImage->COMGETTER(Accessible)(&fAccessible);
-            RTPrintf("Accessible: %s\n", fAccessible ? "yes" : "no");
-            Bstr machineUUIDs;
-            CHECK_ERROR(virtualBox, GetDVDImageUsage(uuid, ResourceUsage_All, machineUUIDs.asOutParam()));
-            /** @todo usage */
-            RTPrintf("\n");
-        }
-    }
-    else
-    if (strcmp(argv[0], "floppies") == 0)
-    {
-        ComPtr<IFloppyImageCollection> floppyColl;
-        CHECK_ERROR(virtualBox, COMGETTER(FloppyImages)(floppyColl.asOutParam()));
-        ComPtr<IFloppyImageEnumerator> enumerator;
-        CHECK_ERROR(floppyColl, Enumerate(enumerator.asOutParam()));
-        BOOL hasMore;
-        while (SUCCEEDED(enumerator->HasMore(&hasMore)) && hasMore)
-        {
-            ComPtr<IFloppyImage> floppyImage;
-            CHECK_RC_BREAK(enumerator->GetNext(floppyImage.asOutParam()));
-            Guid uuid;
-            floppyImage->COMGETTER(Id)(uuid.asOutParam());
-            RTPrintf("UUID:       %s\n", uuid.toString().raw());
-            Bstr filePath;
-            floppyImage->COMGETTER(FilePath)(filePath.asOutParam());
-            RTPrintf("Path:       %lS\n", filePath.raw());
-            BOOL fAccessible;
-            floppyImage->COMGETTER(Accessible)(&fAccessible);
-            RTPrintf("Accessible: %s\n", fAccessible ? "yes" : "no");
-            Bstr machineUUIDs;
-            CHECK_ERROR(virtualBox, GetFloppyImageUsage(uuid, ResourceUsage_All, machineUUIDs.asOutParam()));
-            /** @todo usage */
-            RTPrintf("\n");
-        }
-    }
-    else
-    if (strcmp(argv[0], "usbhost") == 0)
-    {
-        ComPtr<IHost> Host;
-        CHECK_ERROR_RET (virtualBox, COMGETTER(Host)(Host.asOutParam()), 1);
-
-        ComPtr<IHostUSBDeviceCollection> CollPtr;
-        CHECK_ERROR_RET (Host, COMGETTER(USBDevices)(CollPtr.asOutParam()), 1);
-
-        ComPtr<IHostUSBDeviceEnumerator> EnumPtr;
-        CHECK_ERROR_RET (CollPtr, Enumerate(EnumPtr.asOutParam()), 1);
-
-        RTPrintf("Host USB Devices:\n\n");
-
-        BOOL fMore = FALSE;
-        rc = EnumPtr->HasMore (&fMore);
-        ASSERT_RET (SUCCEEDED (rc), 1);
-
-        if (!fMore)
-        {
-            RTPrintf("<none>\n\n");
-        }
-        else
-        while (fMore)
-        {
-            ComPtr <IHostUSBDevice> dev;
-            rc = EnumPtr->GetNext (dev.asOutParam());
-            ASSERT_RET (SUCCEEDED (rc), 1);
-
-            /* Query info. */
-            Guid id;
-            CHECK_ERROR_RET (dev, COMGETTER(Id)(id.asOutParam()), 1);
-            USHORT usVendorId;
-            CHECK_ERROR_RET (dev, COMGETTER(VendorId)(&usVendorId), 1);
-            USHORT usProductId;
-            CHECK_ERROR_RET (dev, COMGETTER(ProductId)(&usProductId), 1);
-            USHORT bcdRevision;
-            CHECK_ERROR_RET (dev, COMGETTER(Revision)(&bcdRevision), 1);
-
-            RTPrintf("UUID:               %S\n"
-                     "VendorId:           0x%04x (%04X)\n"
-                     "ProductId:          0x%04x (%04X)\n"
-                     "Revision:           %u.%u (%02u%02u)\n",
-                     id.toString().raw(),
-                     usVendorId, usVendorId, usProductId, usProductId,
-                     bcdRevision >> 8, bcdRevision & 0xff,
-                     bcdRevision >> 8, bcdRevision & 0xff);
-
-            /* optional stuff. */
-            Bstr bstr;
-            CHECK_ERROR_RET (dev, COMGETTER(Manufacturer)(bstr.asOutParam()), 1);
-            if (!bstr.isEmpty())
-                RTPrintf("Manufacturer:       %lS\n", bstr.raw());
-            CHECK_ERROR_RET (dev, COMGETTER(Product)(bstr.asOutParam()), 1);
-            if (!bstr.isEmpty())
-                RTPrintf("Product:            %lS\n", bstr.raw());
-            CHECK_ERROR_RET (dev, COMGETTER(SerialNumber)(bstr.asOutParam()), 1);
-            if (!bstr.isEmpty())
-                RTPrintf("SerialNumber:       %lS\n", bstr.raw());
-            CHECK_ERROR_RET (dev, COMGETTER(Address)(bstr.asOutParam()), 1);
-            if (!bstr.isEmpty())
-                RTPrintf("Address:            %lS\n", bstr.raw());
-
-            /* current state  */
-            USBDeviceState_T state;
-            CHECK_ERROR_RET (dev, COMGETTER(State)(&state), 1);
-            const char *pszState = "?";
-            switch (state)
-            {
-                case USBDeviceState_NotSupported:
-                    pszState = "Not supported"; break;
-                case USBDeviceState_Unavailable:
-                    pszState = "Unavailable"; break;
-                case USBDeviceState_Busy:
-                    pszState = "Busy"; break;
-                case USBDeviceState_Available:
-                    pszState = "Available"; break;
-                case USBDeviceState_Held:
-                    pszState = "Held"; break;
-                case USBDeviceState_Captured:
-                    pszState = "Captured"; break;
-                default:
-                    ASSERT (false);
-                    break;
-            }
-            RTPrintf("Current State:      %s\n\n", pszState);
-
-            rc = EnumPtr->HasMore (&fMore);
-            ASSERT_RET (SUCCEEDED (rc), rc);
-        }
-    }
-    else
-    if (strcmp(argv[0], "usbfilters") == 0)
-    {
-        RTPrintf("Global USB Device Filters:\n\n");
-
-        ComPtr <IHost> host;
-        CHECK_ERROR_RET (virtualBox, COMGETTER(Host) (host.asOutParam()), 1);
-
-        ComPtr<IHostUSBDeviceFilterCollection> coll;
-        CHECK_ERROR_RET (host, COMGETTER (USBDeviceFilters)(coll.asOutParam()), 1);
-
-        ComPtr<IHostUSBDeviceFilterEnumerator> en;
-        CHECK_ERROR_RET (coll, Enumerate(en.asOutParam()), 1);
-
-        ULONG index = 0;
-        BOOL more = FALSE;
-        rc = en->HasMore (&more);
-        ASSERT_RET (SUCCEEDED (rc), 1);
-
-        if (!more)
-        {
-            RTPrintf("<none>\n\n");
-        }
-        else
-        while (more)
-        {
-            ComPtr<IHostUSBDeviceFilter> flt;
-            rc = en->GetNext (flt.asOutParam());
-            ASSERT_RET (SUCCEEDED (rc), 1);
-
-            /* Query info. */
-
-            RTPrintf("Index:            %lu\n", index);
-
-            BOOL active = FALSE;
-            CHECK_ERROR_RET (flt, COMGETTER (Active) (&active), 1);
-            RTPrintf("Active:           %s\n", active ? "yes" : "no");
-
-            USBDeviceFilterAction_T action;
-            CHECK_ERROR_RET (flt, COMGETTER (Action) (&action), 1);
-            const char *pszAction = "<invalid>";
-            switch (action)
-            {
-                case USBDeviceFilterAction_Ignore:
-                    pszAction = "Ignore";
-                    break;
-                case USBDeviceFilterAction_Hold:
-                    pszAction = "Hold";
-                    break;
-                default:
-                    break;
-            }
-            RTPrintf("Action:           %s\n", pszAction);
-
-            Bstr bstr;
-            CHECK_ERROR_RET (flt, COMGETTER (Name) (bstr.asOutParam()), 1);
-            RTPrintf("Name:             %lS\n", bstr.raw());
-            CHECK_ERROR_RET (flt, COMGETTER (VendorId) (bstr.asOutParam()), 1);
-            RTPrintf("VendorId:         %lS\n", bstr.raw());
-            CHECK_ERROR_RET (flt, COMGETTER (ProductId) (bstr.asOutParam()), 1);
-            RTPrintf("ProductId:        %lS\n", bstr.raw());
-            CHECK_ERROR_RET (flt, COMGETTER (Revision) (bstr.asOutParam()), 1);
-            RTPrintf("Revision:         %lS\n", bstr.raw());
-            CHECK_ERROR_RET (flt, COMGETTER (Manufacturer) (bstr.asOutParam()), 1);
-            RTPrintf("Manufacturer:     %lS\n", bstr.raw());
-            CHECK_ERROR_RET (flt, COMGETTER (Product) (bstr.asOutParam()), 1);
-            RTPrintf("Product:          %lS\n", bstr.raw());
-            CHECK_ERROR_RET (flt, COMGETTER (SerialNumber) (bstr.asOutParam()), 1);
-            RTPrintf("Serial Number:    %lS\n\n", bstr.raw());
-
-            rc = en->HasMore (&more);
-            ASSERT_RET (SUCCEEDED (rc), 1);
-
-            index ++;
-        }
-    }
-    else if (strcmp(argv[0], "systemproperties") == 0)
-    {
-        ComPtr<ISystemProperties> systemProperties;
-        virtualBox->COMGETTER(SystemProperties)(systemProperties.asOutParam());
-
-        Bstr str;
-        ULONG ulValue;
-        ULONG64 ul64Value;
-        BOOL flag;
-
-        systemProperties->COMGETTER(MinGuestRAM)(&ulValue);
-        RTPrintf("Minimum guest RAM size:      %u Megabytes\n", ulValue);
-        systemProperties->COMGETTER(MaxGuestRAM)(&ulValue);
-        RTPrintf("Maximum guest RAM size:      %u Megabytes\n", ulValue);
-        systemProperties->COMGETTER(MaxGuestVRAM)(&ulValue);
-        RTPrintf("Maximum video RAM size:      %u Megabytes\n", ulValue);
-        systemProperties->COMGETTER(MaxVDISize)(&ul64Value);
-        RTPrintf("Maximum VDI size:            %lu Megabytes\n", ul64Value);
-        systemProperties->COMGETTER(DefaultVDIFolder)(str.asOutParam());
-        RTPrintf("Default VDI folder:          %lS\n", str.raw());
-        systemProperties->COMGETTER(DefaultMachineFolder)(str.asOutParam());
-        RTPrintf("Default machine folder:      %lS\n", str.raw());
-        systemProperties->COMGETTER(RemoteDisplayAuthLibrary)(str.asOutParam());
-        RTPrintf("VRDP authentication library: %lS\n", str.raw());
-        systemProperties->COMGETTER(WebServiceAuthLibrary)(str.asOutParam());
-        RTPrintf("Webservice auth. library:    %lS\n", str.raw());
-        systemProperties->COMGETTER(HWVirtExEnabled)(&flag);
-        RTPrintf("Hardware virt. extensions:   %s\n", flag ? "yes" : "no");
-        systemProperties->COMGETTER(LogHistoryCount)(&ulValue);
-        RTPrintf("Log history count:           %u\n", ulValue);
-
-    }
-    else
-        return errorSyntax(USAGE_LIST, "Invalid parameter '%s'", Utf8Str(argv[0]).raw());
-
-    return SUCCEEDED(rc) ? 0 : 1;
 }
 
 static int handleRegisterVM(int argc, char *argv[],
@@ -3158,527 +820,6 @@ static int handleUnregisterVM(int argc, char *argv[],
     return SUCCEEDED(rc) ? 0 : 1;
 }
 
-static int handleCreateVDI(int argc, char *argv[],
-                           ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session)
-{
-    HRESULT rc;
-    Bstr filename;
-    uint64_t sizeMB = 0;
-    bool fStatic = false;
-    Bstr comment;
-    bool fRegister = false;
-    const char *type = "normal";
-
-    /* let's have a closer look at the arguments */
-    for (int i = 0; i < argc; i++)
-    {
-        if (strcmp(argv[i], "-filename") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            filename = argv[i];
-        }
-        else if (strcmp(argv[i], "-size") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            sizeMB = RTStrToUInt64(argv[i]);
-        }
-        else if (strcmp(argv[i], "-static") == 0)
-        {
-            fStatic = true;
-        }
-        else if (strcmp(argv[i], "-comment") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            comment = argv[i];
-        }
-        else if (strcmp(argv[i], "-register") == 0)
-        {
-            fRegister = true;
-        }
-        else if (strcmp(argv[i], "-type") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            type = argv[i];
-        }
-        else
-            return errorSyntax(USAGE_CREATEVDI, "Invalid parameter '%s'", Utf8Str(argv[i]).raw());
-    }
-    /* check the outcome */
-    if (!filename || (sizeMB == 0))
-        return errorSyntax(USAGE_CREATEVDI, "Parameters -filename and -size are required");
-
-    if (strcmp(type, "normal") && strcmp(type, "writethrough"))
-        return errorArgument("Invalid VDI type '%s' specified", Utf8Str(type).raw());
-
-    ComPtr<IHardDisk> hardDisk;
-    CHECK_ERROR(virtualBox, CreateHardDisk(HardDiskStorageType_VirtualDiskImage, hardDisk.asOutParam()));
-    if (SUCCEEDED(rc) && hardDisk)
-    {
-        CHECK_ERROR(hardDisk,COMSETTER(Description)(comment));
-        ComPtr<IVirtualDiskImage> vdi = hardDisk;
-        CHECK_ERROR(vdi, COMSETTER(FilePath)(filename));
-        ComPtr<IProgress> progress;
-        if (fStatic)
-        {
-            CHECK_ERROR(vdi, CreateFixedImage(sizeMB, progress.asOutParam()));
-        }
-        else
-        {
-            CHECK_ERROR(vdi, CreateDynamicImage(sizeMB, progress.asOutParam()));
-        }
-        if (SUCCEEDED(rc) && progress)
-        {
-            if (fStatic)
-                showProgress(progress);
-            else
-                CHECK_ERROR(progress, WaitForCompletion(-1));
-            if (SUCCEEDED(rc))
-            {
-                progress->COMGETTER(ResultCode)(&rc);
-                if (FAILED(rc))
-                {
-                    com::ProgressErrorInfo info(progress);
-                    if (info.isBasicAvailable())
-                        RTPrintf("Error: failed to create disk image. Error message: %lS\n", info.getText().raw());
-                    else
-                        RTPrintf("Error: failed to create disk image. No error message available!\n");
-                }
-                else
-                {
-                    Guid uuid;
-                    CHECK_ERROR(hardDisk, COMGETTER(Id)(uuid.asOutParam()));
-
-                    if (strcmp(type, "normal") == 0)
-                    {
-                        /* nothing required, default */
-                    }
-                    else if (strcmp(type, "writethrough") == 0)
-                    {
-                        CHECK_ERROR(hardDisk, COMSETTER(Type)(HardDiskType_Writethrough));
-                    }
-
-                    RTPrintf("Disk image created. UUID: %s\n", uuid.toString().raw());
-                }
-            }
-        }
-        if (SUCCEEDED(rc) && fRegister)
-        {
-            CHECK_ERROR(virtualBox, RegisterHardDisk(hardDisk));
-        }
-    }
-    return SUCCEEDED(rc) ? 0 : 1;
-}
-
-static DECLCALLBACK(int) vdiProgressCallback(PVM pVM, unsigned uPercent, void *pvUser)
-{
-    unsigned *pPercent = (unsigned *)pvUser;
-
-    if (*pPercent != uPercent)
-    {
-        *pPercent = uPercent;
-        RTPrintf(".");
-        if ((uPercent % 10) == 0 && uPercent)
-            RTPrintf("%d%%", uPercent);
-        RTStrmFlush(g_pStdOut);
-    }
-
-    return VINF_SUCCESS;
-}
-
-
-static int handleModifyVDI(int argc, char *argv[],
-                           ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session)
-{
-    HRESULT rc;
-
-    /* The uuid/filename and a command */
-    if (argc < 2)
-        return errorSyntax(USAGE_MODIFYVDI, "Incorrect number of parameters");
-
-    ComPtr<IHardDisk> hardDisk;
-    ComPtr<IVirtualDiskImage> vdi;
-    Bstr filepath;
-
-    /* first guess is that it's a UUID */
-    Guid uuid(argv[0]);
-    rc = virtualBox->GetHardDisk(uuid, hardDisk.asOutParam());
-    /* no? then it must be a filename */
-    if (!hardDisk)
-    {
-        filepath = argv[0];
-        CHECK_ERROR(virtualBox, FindVirtualDiskImage(filepath, vdi.asOutParam()));
-        hardDisk = vdi;
-    }
-    else
-    {
-        vdi = hardDisk;
-    }
-
-    /* let's find out which command */
-// doesn't currently work    if (strcmp(argv[1], "settype") == 0)
-    if (0)
-    {
-        /* hard disk must be registered */
-        if (SUCCEEDED(rc) && hardDisk && vdi)
-        {
-            char *type = NULL;
-
-            if (argc <= 2)
-                return errorArgument("Missing argument to for settype");
-
-            type = argv[2];
-
-            HardDiskType_T hddType;
-            CHECK_ERROR(hardDisk, COMGETTER(Type)(&hddType));
-
-            if (strcmp(type, "normal") == 0)
-            {
-                if (hddType != HardDiskType_Normal)
-                    CHECK_ERROR(hardDisk, COMSETTER(Type)(HardDiskType_Normal));
-            }
-            else if (strcmp(type, "writethrough") == 0)
-            {
-                if (hddType != HardDiskType_Writethrough)
-                    CHECK_ERROR(hardDisk, COMSETTER(Type)(HardDiskType_Writethrough));
-
-            }
-            else if (strcmp(type, "immutable") == 0)
-            {
-                if (hddType != HardDiskType_Immutable)
-                    CHECK_ERROR(hardDisk, COMSETTER(Type)(HardDiskType_Immutable));
-            }
-            else
-            {
-                return errorArgument("Invalid VDI type '%s' specified", Utf8Str(type).raw());
-            }
-        }
-        else
-            return errorArgument("Hard disk image not registered");
-    }
-    else if (strcmp(argv[1], "compact") == 0)
-    {
-        ComPtr<IVirtualDiskImage> vdi;
-
-        /* the hard disk image might not be registered */
-        if (!hardDisk)
-        {
-            virtualBox->OpenVirtualDiskImage(Bstr(argv[0]), vdi.asOutParam());
-            if (!vdi)
-                return errorArgument("Hard disk image not found");
-        }
-        else
-            vdi = hardDisk;
-
-        if (!vdi)
-            return errorArgument("Invalid hard disk type. The command only works on VDI files\n");
-
-        Bstr fileName;
-        vdi->COMGETTER(FilePath)(fileName.asOutParam());
-
-        /* close the file */
-        hardDisk = NULL;
-        vdi = NULL;
-
-        unsigned uProcent;
-
-        RTPrintf("Shrinking '%lS': 0%%", fileName.raw());
-        int vrc = VDIShrinkImage(Utf8Str(fileName).raw(), vdiProgressCallback, &uProcent);
-        if (VBOX_FAILURE(vrc))
-        {
-            RTPrintf("Error while shrinking hard disk image: %Vrc\n", vrc);
-            rc = E_FAIL;
-        }
-    }
-    else
-        return errorSyntax(USAGE_MODIFYVDI, "Invalid parameter '%s'", Utf8Str(argv[1]).raw());
-
-    return SUCCEEDED(rc) ? 0 : 1;
-}
-
-static int handleCloneVDI(int argc, char *argv[],
-                          ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session)
-{
-    HRESULT rc;
-
-    /* source VDI and target path */
-    if (argc != 2)
-        return errorSyntax(USAGE_CLONEVDI, "Incorrect number of parameters");
-
-    /* first guess is that it's a UUID */
-    Guid uuid(argv[0]);
-    ComPtr<IHardDisk> hardDisk;
-    rc = virtualBox->GetHardDisk(uuid, hardDisk.asOutParam());
-    if (!hardDisk)
-    {
-        /* not successful? Then it must be a filename */
-        ComPtr<IVirtualDiskImage> vdi;
-        CHECK_ERROR(virtualBox, OpenVirtualDiskImage(Bstr(argv[0]), vdi.asOutParam()));
-        hardDisk = vdi;
-    }
-    if (hardDisk)
-    {
-        ComPtr<IVirtualDiskImage> vdiOut;
-        ComPtr<IProgress> progress;
-        CHECK_ERROR(hardDisk, CloneToImage(Bstr(argv[1]), vdiOut.asOutParam(), progress.asOutParam()));
-        if (SUCCEEDED(rc))
-        {
-            showProgress(progress);
-            progress->COMGETTER(ResultCode)(&rc);
-            if (FAILED(rc))
-            {
-                com::ProgressErrorInfo info(progress);
-                if (info.isBasicAvailable())
-                {
-                    RTPrintf("Error: failed to clone disk image. Error message: %lS\n", info.getText().raw());
-                }
-                else
-                {
-                    RTPrintf("Error: failed to clone disk image. No error message available!\n");
-                }
-            }
-        }
-    }
-    return SUCCEEDED(rc) ? 0 : 1;
-}
-
-static int handleConvertDDImage(int argc, char *argv[])
-{
-    int arg = 0;
-    VDIIMAGETYPE enmImgType = VDI_IMAGE_TYPE_NORMAL;
-    if (argc >= 1 && !strcmp(argv[arg], "-static"))
-    {
-        arg++;
-        enmImgType = VDI_IMAGE_TYPE_FIXED;
-    }
-
-#if defined(RT_OS_LINUX) || defined(RT_OS_DARWIN) || defined(RT_OS_SOLARIS)
-    const bool fReadFromStdIn = (argc >= arg + 1) && !strcmp(argv[arg], "stdin");
-#else
-    const bool fReadFromStdIn = false;
-#endif
-
-    if ((!fReadFromStdIn && argc != arg + 2) || (fReadFromStdIn && argc != arg + 3))
-        return errorSyntax(USAGE_CONVERTDD, "Incorrect number of parameters");
-
-    RTPrintf("Converting VDI: from DD image file=\"%s\" to file=\"%s\"...\n",
-             argv[arg], argv[arg + 1]);
-
-    /* open raw image file. */
-    RTFILE File;
-    int rc = VINF_SUCCESS;
-    if (fReadFromStdIn)
-        File = 0;
-    else
-        rc = RTFileOpen(&File, argv[arg], RTFILE_O_OPEN | RTFILE_O_READ | RTFILE_O_DENY_WRITE);
-    if (VBOX_FAILURE(rc))
-    {
-        RTPrintf("File=\"%s\" open error: %Rrf\n", argv[arg], rc);
-        return rc;
-    }
-
-    uint64_t cbFile;
-    /* get image size. */
-    if (fReadFromStdIn)
-        cbFile = RTStrToUInt64(argv[arg + 2]);
-    else
-        rc = RTFileGetSize(File, &cbFile);
-    if (VBOX_SUCCESS(rc))
-    {
-        RTPrintf("Creating %s image with size %RU64 bytes (%RU64MB)...\n", (enmImgType == VDI_IMAGE_TYPE_FIXED) ? "fixed" : "dynamic", cbFile, (cbFile + _1M - 1) / _1M);
-        char pszComment[256];
-        RTStrPrintf(pszComment, sizeof(pszComment), "Converted image from %s", argv[arg]);
-        rc = VDICreateBaseImage(argv[arg + 1],
-                                enmImgType,
-                                cbFile,
-                                pszComment, NULL, NULL);
-        if (VBOX_SUCCESS(rc))
-        {
-            PVDIDISK pVdi = VDIDiskCreate();
-            rc = VDIDiskOpenImage(pVdi, argv[arg + 1], VDI_OPEN_FLAGS_NORMAL);
-            if (VBOX_SUCCESS(rc))
-            {
-                /* alloc work buffer. */
-                size_t cbBuffer = VDIDiskGetBufferSize(pVdi);
-                void   *pvBuf = RTMemAlloc(cbBuffer);
-                if (pvBuf)
-                {
-                    uint64_t offFile = 0;
-                    while (offFile < cbFile)
-                    {
-                        size_t cbRead = 0;
-                        size_t cbToRead = cbFile - offFile >= (uint64_t) cbBuffer ?
-                            cbBuffer : (size_t) (cbFile - offFile);
-                        rc = RTFileRead(File, pvBuf, cbToRead, &cbRead);
-                        if (VBOX_FAILURE(rc) || !cbRead)
-                            break;
-                        rc = VDIDiskWrite(pVdi, offFile, pvBuf, cbRead);
-                        if (VBOX_FAILURE(rc))
-                            break;
-                        offFile += cbRead;
-                    }
-
-                    RTMemFree(pvBuf);
-                }
-                else
-                    rc = VERR_NO_MEMORY;
-
-                VDIDiskCloseImage(pVdi);
-            }
-
-            if (VBOX_FAILURE(rc))
-            {
-                /* delete image on error */
-                RTPrintf("Failed (%Vrc)!\n", rc);
-                VDIDeleteImage(argv[arg + 1]);
-            }
-        }
-        else
-            RTPrintf("Failed to create output file (%Vrc)!\n", rc);
-    }
-    RTFileClose(File);
-
-    return rc;
-}
-
-static int handleAddiSCSIDisk(int argc, char *argv[],
-                              ComPtr <IVirtualBox> aVirtualBox, ComPtr<ISession> aSession)
-{
-    HRESULT rc;
-    Bstr server;
-    Bstr target;
-    uint16_t port = UINT16_MAX;
-    uint64_t lun = UINT64_MAX;
-    Bstr username;
-    Bstr password;
-    Bstr comment;
-
-    /* at least server and target */
-    if (argc < 4)
-        return errorSyntax(USAGE_ADDISCSIDISK, "Not enough parameters");
-
-    /* let's have a closer look at the arguments */
-    for (int i = 0; i < argc; i++)
-    {
-        if (strcmp(argv[i], "-server") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            server = argv[i];
-        }
-        else if (strcmp(argv[i], "-target") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            target = argv[i];
-        }
-        else if (strcmp(argv[i], "-port") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            port = atoi(argv[i]);
-        }
-        else if (strcmp(argv[i], "-lun") == 0)
-        {
-            /** @todo move the LUN encoding algorithm into IISCSIHardDisk, add decoding */
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            char *pszNext;
-            int rc = RTStrToUInt64Ex(argv[i], &pszNext, 0, &lun);
-            if (VBOX_FAILURE(rc) || *pszNext != '\0' || lun >= 16384)
-                return errorArgument("Invalid LUN number '%s'", argv[i]);
-            if (lun <= 255)
-            {
-                /* Assume bus identifier = 0. */
-                lun = (lun << 48); /* uses peripheral device addressing method */
-            }
-            else
-            {
-                /* Check above already limited the LUN to 14 bits. */
-                lun = (lun << 48) | RT_BIT_64(62); /* uses flat space addressing method */
-            }
-        }
-        else if (strcmp(argv[i], "-encodedlun") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            char *pszNext;
-            int rc = RTStrToUInt64Ex(argv[i], &pszNext, 0, &lun);
-            if (VBOX_FAILURE(rc) || *pszNext != '\0')
-                return errorArgument("Invalid encoded LUN number '%s'", argv[i]);
-        }
-        else if (strcmp(argv[i], "-username") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            username = argv[i];
-        }
-        else if (strcmp(argv[i], "-password") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            password = argv[i];
-        }
-        else if (strcmp(argv[i], "-comment") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            i++;
-            comment = argv[i];
-        }
-        else
-            return errorSyntax(USAGE_ADDISCSIDISK, "Invalid parameter '%s'", Utf8Str(argv[i]).raw());
-    }
-
-    /* check for required options */
-    if (!server || !target)
-        return errorSyntax(USAGE_ADDISCSIDISK, "Parameters -server and -target are required");
-
-    ComPtr<IHardDisk> hardDisk;
-    CHECK_ERROR(aVirtualBox, CreateHardDisk(HardDiskStorageType_ISCSIHardDisk, hardDisk.asOutParam()));
-    if (SUCCEEDED(rc) && hardDisk)
-    {
-        CHECK_ERROR(hardDisk, COMSETTER(Description)(comment));
-        ComPtr<IISCSIHardDisk> iSCSIDisk = hardDisk;
-        CHECK_ERROR(iSCSIDisk, COMSETTER(Server)(server));
-        if (port != UINT16_MAX)
-            CHECK_ERROR(iSCSIDisk, COMSETTER(Port)(port));
-        CHECK_ERROR(iSCSIDisk, COMSETTER(Target)(target));
-        if (lun != UINT64_MAX)
-            CHECK_ERROR(iSCSIDisk, COMSETTER(Lun)(lun));
-        CHECK_ERROR(iSCSIDisk, COMSETTER(UserName)(username));
-        CHECK_ERROR(iSCSIDisk, COMSETTER(Password)(password));
-
-        if (SUCCEEDED(rc))
-        {
-            CHECK_ERROR(aVirtualBox, RegisterHardDisk(hardDisk));
-        }
-
-        if (SUCCEEDED(rc))
-        {
-            Guid guid;
-            CHECK_ERROR(hardDisk, COMGETTER(Id)(guid.asOutParam()));
-            RTPrintf("iSCSI disk created. UUID: %s\n", guid.toString().raw());
-        }
-    }
-
-    return SUCCEEDED(rc) ? 0 : 1;
-}
-
 static int handleCreateVM(int argc, char *argv[],
                           ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session)
 {
@@ -3686,6 +827,7 @@ static int handleCreateVM(int argc, char *argv[],
     Bstr baseFolder;
     Bstr settingsFile;
     Bstr name;
+    Bstr osTypeId;
     RTUUID id;
     bool fRegister = false;
 
@@ -3713,12 +855,19 @@ static int handleCreateVM(int argc, char *argv[],
             i++;
             name = argv[i];
         }
+        else if (strcmp(argv[i], "-ostype") == 0)
+        {
+            if (argc <= i + 1)
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            i++;
+            osTypeId = argv[i];
+        }
         else if (strcmp(argv[i], "-uuid") == 0)
         {
             if (argc <= i + 1)
                 return errorArgument("Missing argument to '%s'", argv[i]);
             i++;
-            if (VBOX_FAILURE(RTUuidFromStr(&id, argv[i])))
+            if (RT_FAILURE(RTUuidFromStr(&id, argv[i])))
                 return errorArgument("Invalid UUID format %s\n", argv[i]);
         }
         else if (strcmp(argv[i], "-register") == 0)
@@ -3740,10 +889,10 @@ static int handleCreateVM(int argc, char *argv[],
 
         if (!settingsFile)
             CHECK_ERROR_BREAK(virtualBox,
-                CreateMachine(baseFolder, name, Guid(id), machine.asOutParam()));
+                CreateMachine(name, osTypeId, baseFolder, Guid(id), machine.asOutParam()));
         else
             CHECK_ERROR_BREAK(virtualBox,
-                CreateLegacyMachine(settingsFile, name, Guid(id), machine.asOutParam()));
+                CreateLegacyMachine(name, osTypeId, settingsFile, Guid(id), machine.asOutParam()));
 
         CHECK_ERROR_BREAK(machine, SaveSettings());
         if (fRegister)
@@ -3776,7 +925,7 @@ static unsigned parseNum(const char *psz, unsigned cMaxNum, const char *name)
     uint32_t u32;
     char *pszNext;
     int rc = RTStrToUInt32Ex(psz, &pszNext, 10, &u32);
-    if (    VBOX_SUCCESS(rc)
+    if (    RT_SUCCESS(rc)
         &&  *pszNext == '\0'
         &&  u32 >= 1
         &&  u32 <= cMaxNum)
@@ -3785,20 +934,27 @@ static unsigned parseNum(const char *psz, unsigned cMaxNum, const char *name)
     return 0;
 }
 
+/** @todo refine this after HDD changes; MSC 8.0/64 has trouble with handleModifyVM.  */
+#if defined(_MSC_VER)
+# pragma optimize("g", off)
+#endif
+
 static int handleModifyVM(int argc, char *argv[],
                           ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session)
 {
     HRESULT rc;
     Bstr name;
     Bstr ostype;
-    ULONG memorySize = 0;
-    ULONG vramSize = 0;
+    uint32_t memorySize = 0;
+    uint32_t vramSize = 0;
     char *acpi = NULL;
     char *hwvirtex = NULL;
     char *nestedpaging = NULL;
+    char *vtxvpid = NULL;
     char *pae = NULL;
     char *ioapic = NULL;
-    int monitorcount = -1;
+    uint32_t monitorcount = ~0;
+    char *accelerate3d = NULL;
     char *bioslogofadein = NULL;
     char *bioslogofadeout = NULL;
     uint32_t bioslogodisplaytime = ~0;
@@ -3861,10 +1017,6 @@ static int handleModifyVM(int argc, char *argv[],
     std::vector <char *> hostifdev (NetworkAdapterCount, 0);
     std::vector <const char *> intnet (NetworkAdapterCount, 0);
     std::vector <const char *> natnet (NetworkAdapterCount, 0);
-#ifdef RT_OS_LINUX
-    std::vector <char *> tapsetup (NetworkAdapterCount, 0);
-    std::vector <char *> tapterm (NetworkAdapterCount, 0);
-#endif
     std::vector <char *> macs (NetworkAdapterCount, 0);
     std::vector <char *> uarts_mode (SerialPortCount, 0);
     std::vector <ULONG>  uarts_base (SerialPortCount, 0);
@@ -3892,14 +1044,14 @@ static int handleModifyVM(int argc, char *argv[],
             if (argc <= i + 1)
                 return errorArgument("Missing argument to '%s'", argv[i]);
             i++;
-            memorySize = atoi(argv[i]);
+            memorySize = RTStrToUInt32(argv[i]);
         }
         else if (strcmp(argv[i], "-vram") == 0)
         {
             if (argc <= i + 1)
                 return errorArgument("Missing argument to '%s'", argv[i]);
             i++;
-            vramSize = atoi(argv[i]);
+            vramSize = RTStrToUInt32(argv[i]);
         }
         else if (strcmp(argv[i], "-acpi") == 0)
         {
@@ -3929,6 +1081,13 @@ static int handleModifyVM(int argc, char *argv[],
             i++;
             nestedpaging = argv[i];
         }
+        else if (strcmp(argv[i], "-vtxvpid") == 0)
+        {
+            if (argc <= i + 1)
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            i++;
+            vtxvpid = argv[i];
+        }
         else if (strcmp(argv[i], "-pae") == 0)
         {
             if (argc <= i + 1)
@@ -3941,7 +1100,14 @@ static int handleModifyVM(int argc, char *argv[],
             if (argc <= i + 1)
                 return errorArgument("Missing argument to '%s'", argv[i]);
             i++;
-            monitorcount = atoi(argv[i]);
+            monitorcount = RTStrToUInt32(argv[i]);
+        }
+        else if (strcmp(argv[i], "-accelerate3d") == 0)
+        {
+            if (argc <= i + 1)
+                return errorArgument("Missing argument to '%s'", argv[i]);
+            i++;
+            accelerate3d = argv[i];
         }
         else if (strcmp(argv[i], "-bioslogofadein") == 0)
         {
@@ -3962,7 +1128,7 @@ static int handleModifyVM(int argc, char *argv[],
             if (argc <= i + 1)
                 return errorArgument("Missing argument to '%s'", argv[i]);
             i++;
-            bioslogodisplaytime = atoi(argv[i]);
+            bioslogodisplaytime = RTStrToUInt32(argv[i]);
         }
         else if (strcmp(argv[i], "-bioslogoimagepath") == 0)
         {
@@ -3994,10 +1160,10 @@ static int handleModifyVM(int argc, char *argv[],
         }
         else if (strncmp(argv[i], "-boot", 5) == 0)
         {
-            ULONG n = 0;
+            uint32_t n = 0;
             if (!argv[i][5])
                 return errorSyntax(USAGE_MODIFYVM, "Missing boot slot number in '%s'", argv[i]);
-            if ((n = strtoul(&argv[i][5], NULL, 10)) < 1)
+            if (VINF_SUCCESS != RTStrToUInt32Full(&argv[i][5], 10, &n))
                 return errorSyntax(USAGE_MODIFYVM, "Invalid boot slot number in '%s'", argv[i]);
             if (argc <= i + 1)
                 return errorArgument("Missing argument to '%s'", argv[i]);
@@ -4205,28 +1371,6 @@ static int handleModifyVM(int argc, char *argv[],
             }
             i++;
         }
-#ifdef RT_OS_LINUX
-        else if (strncmp(argv[i], "-tapsetup", 9) == 0)
-        {
-            unsigned n = parseNum(&argv[i][9], NetworkAdapterCount, "NIC");
-            if (!n)
-                return 1;
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            tapsetup[n - 1] = argv[i + 1];
-            i++;
-        }
-        else if (strncmp(argv[i], "-tapterminate", 13) == 0)
-        {
-            unsigned n = parseNum(&argv[i][13], NetworkAdapterCount, "NIC");
-            if (!n)
-                return 1;
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            tapterm[n - 1] = argv[i + 1];
-            i++;
-        }
-#endif /* RT_OS_LINUX */
         else if (strncmp(argv[i], "-macaddress", 11) == 0)
         {
             unsigned n = parseNum(&argv[i][11], NetworkAdapterCount, "NIC");
@@ -4253,7 +1397,7 @@ static int handleModifyVM(int argc, char *argv[],
             if (strcmp(argv[i], "default") == 0)
                 vrdpport = 0;
             else
-                vrdpport = atoi(argv[i]);
+                vrdpport = RTStrToUInt16(argv[i]);
         }
         else if (strcmp(argv[i], "-vrdpaddress") == 0)
         {
@@ -4579,6 +1723,23 @@ static int handleModifyVM(int argc, char *argv[],
                 break;
             }
         }
+        if (vtxvpid)
+        {
+            if (strcmp(vtxvpid, "on") == 0)
+            {
+                CHECK_ERROR(machine, COMSETTER(HWVirtExVPIDEnabled)(true));
+            }
+            else if (strcmp(vtxvpid, "off") == 0)
+            {
+                CHECK_ERROR(machine, COMSETTER(HWVirtExVPIDEnabled)(false));
+            }
+            else
+            {
+                errorArgument("Invalid -vtxvpid argument '%s'", ioapic);
+                rc = E_FAIL;
+                break;
+            }
+        }
         if (pae)
         {
             if (strcmp(pae, "on") == 0)
@@ -4596,9 +1757,26 @@ static int handleModifyVM(int argc, char *argv[],
                 break;
             }
         }
-        if (monitorcount != -1)
+        if (monitorcount != ~0U)
         {
             CHECK_ERROR(machine, COMSETTER(MonitorCount)(monitorcount));
+        }
+        if (accelerate3d)
+        {
+            if (strcmp(accelerate3d, "on") == 0)
+            {
+                CHECK_ERROR(machine, COMSETTER(Accelerate3DEnabled)(true));
+            }
+            else if (strcmp(accelerate3d, "off") == 0)
+            {
+                CHECK_ERROR(machine, COMSETTER(Accelerate3DEnabled)(false));
+            }
+            else
+            {
+                errorArgument("Invalid -accelerate3d argument '%s'", ioapic);
+                rc = E_FAIL;
+                break;
+            }
         }
         if (bioslogofadein)
         {
@@ -4689,40 +1867,28 @@ static int handleModifyVM(int argc, char *argv[],
         {
             if (strcmp(hdds[0], "none") == 0)
             {
-                machine->DetachHardDisk(StorageBus_IDE, 0, 0);
+                machine->DetachHardDisk2(StorageBus_IDE, 0, 0);
             }
             else
             {
                 /* first guess is that it's a UUID */
                 Guid uuid(hdds[0]);
-                ComPtr<IHardDisk> hardDisk;
-                rc = virtualBox->GetHardDisk(uuid, hardDisk.asOutParam());
+                ComPtr<IHardDisk2> hardDisk;
+                rc = virtualBox->GetHardDisk2(uuid, hardDisk.asOutParam());
                 /* not successful? Then it must be a filename */
                 if (!hardDisk)
                 {
-                    CHECK_ERROR(virtualBox, OpenHardDisk(Bstr(hdds[0]), hardDisk.asOutParam()));
-                    if (SUCCEEDED(rc) && hardDisk)
+                    CHECK_ERROR(virtualBox, FindHardDisk2(Bstr(hdds[0]), hardDisk.asOutParam()));
+                    if (FAILED(rc))
                     {
-                        /* first check if it's already registered */
-                        Guid hddUUID;
-                        hardDisk->COMGETTER(Id)(hddUUID.asOutParam());
-                        ComPtr<IHardDisk> registeredHDD;
-                        rc = virtualBox->GetHardDisk(hddUUID, registeredHDD.asOutParam());
-                        if (SUCCEEDED(rc) && registeredHDD)
-                            hardDisk = registeredHDD;
-                        else
-                        {
-                            /* it has to be registered */
-                            CHECK_ERROR(virtualBox, RegisterHardDisk(hardDisk));
-                            if (FAILED(rc))
-                                break;
-                        }
+                        /* open the new hard disk object */
+                        CHECK_ERROR(virtualBox, OpenHardDisk2(Bstr(hdds[0]), hardDisk.asOutParam()));
                     }
                 }
                 if (hardDisk)
                 {
                     hardDisk->COMGETTER(Id)(uuid.asOutParam());
-                    CHECK_ERROR(machine, AttachHardDisk(uuid, StorageBus_IDE, 0, 0));
+                    CHECK_ERROR(machine, AttachHardDisk2(uuid, StorageBus_IDE, 0, 0));
                 }
                 else
                     rc = E_FAIL;
@@ -4734,40 +1900,28 @@ static int handleModifyVM(int argc, char *argv[],
         {
             if (strcmp(hdds[1], "none") == 0)
             {
-                machine->DetachHardDisk(StorageBus_IDE, 0, 1);
+                machine->DetachHardDisk2(StorageBus_IDE, 0, 1);
             }
             else
             {
                 /* first guess is that it's a UUID */
                 Guid uuid(hdds[1]);
-                ComPtr<IHardDisk> hardDisk;
-                rc = virtualBox->GetHardDisk(uuid, hardDisk.asOutParam());
+                ComPtr<IHardDisk2> hardDisk;
+                rc = virtualBox->GetHardDisk2(uuid, hardDisk.asOutParam());
                 /* not successful? Then it must be a filename */
                 if (!hardDisk)
                 {
-                    CHECK_ERROR(virtualBox, OpenHardDisk(Bstr(hdds[1]), hardDisk.asOutParam()));
-                    if (SUCCEEDED(rc) && hardDisk)
+                    CHECK_ERROR(virtualBox, FindHardDisk2(Bstr(hdds[1]), hardDisk.asOutParam()));
+                    if (FAILED(rc))
                     {
-                        /* first check if it's already registered */
-                        Guid hddUUID;
-                        hardDisk->COMGETTER(Id)(hddUUID.asOutParam());
-                        ComPtr<IHardDisk> registeredHDD;
-                        rc = virtualBox->GetHardDisk(hddUUID, registeredHDD.asOutParam());
-                        if (SUCCEEDED(rc) && registeredHDD)
-                            hardDisk = registeredHDD;
-                        else
-                        {
-                            /* it has to be registered */
-                            CHECK_ERROR(virtualBox, RegisterHardDisk(hardDisk));
-                            if (FAILED(rc))
-                                break;
-                        }
+                        /* open the new hard disk object */
+                        CHECK_ERROR(virtualBox, OpenHardDisk2(Bstr(hdds[1]), hardDisk.asOutParam()));
                     }
                 }
                 if (hardDisk)
                 {
                     hardDisk->COMGETTER(Id)(uuid.asOutParam());
-                    CHECK_ERROR(machine, AttachHardDisk(uuid, StorageBus_IDE, 0, 1));
+                    CHECK_ERROR(machine, AttachHardDisk2(uuid, StorageBus_IDE, 0, 1));
                 }
                 else
                     rc = E_FAIL;
@@ -4779,40 +1933,28 @@ static int handleModifyVM(int argc, char *argv[],
         {
             if (strcmp(hdds[2], "none") == 0)
             {
-                machine->DetachHardDisk(StorageBus_IDE, 1, 1);
+                machine->DetachHardDisk2(StorageBus_IDE, 1, 1);
             }
             else
             {
                 /* first guess is that it's a UUID */
                 Guid uuid(hdds[2]);
-                ComPtr<IHardDisk> hardDisk;
-                rc = virtualBox->GetHardDisk(uuid, hardDisk.asOutParam());
+                ComPtr<IHardDisk2> hardDisk;
+                rc = virtualBox->GetHardDisk2(uuid, hardDisk.asOutParam());
                 /* not successful? Then it must be a filename */
                 if (!hardDisk)
                 {
-                    CHECK_ERROR(virtualBox, OpenHardDisk(Bstr(hdds[2]), hardDisk.asOutParam()));
-                    if (SUCCEEDED(rc) && hardDisk)
+                    CHECK_ERROR(virtualBox, FindHardDisk2(Bstr(hdds[2]), hardDisk.asOutParam()));
+                    if (FAILED(rc))
                     {
-                        /* first check if it's already registered */
-                        Guid hddUUID;
-                        hardDisk->COMGETTER(Id)(hddUUID.asOutParam());
-                        ComPtr<IHardDisk> registeredHDD;
-                        rc = virtualBox->GetHardDisk(hddUUID, registeredHDD.asOutParam());
-                        if (SUCCEEDED(rc) && registeredHDD)
-                            hardDisk = registeredHDD;
-                        else
-                        {
-                            /* it has to be registered */
-                            CHECK_ERROR(virtualBox, RegisterHardDisk(hardDisk));
-                            if (FAILED(rc))
-                                break;
-                        }
+                        /* open the new hard disk object */
+                        CHECK_ERROR(virtualBox, OpenHardDisk2(Bstr(hdds[2]), hardDisk.asOutParam()));
                     }
                 }
                 if (hardDisk)
                 {
                     hardDisk->COMGETTER(Id)(uuid.asOutParam());
-                    CHECK_ERROR(machine, AttachHardDisk(uuid, StorageBus_IDE, 1, 1));
+                    CHECK_ERROR(machine, AttachHardDisk2(uuid, StorageBus_IDE, 1, 1));
                 }
                 else
                     rc = E_FAIL;
@@ -4844,7 +1986,7 @@ static int handleModifyVM(int argc, char *argv[],
                 {
                     /* 2nd try: try with the real name, important on Linux+libhal */
                     char szPathReal[RTPATH_MAX];
-                    if (VBOX_FAILURE(RTPathReal(dvd + 5, szPathReal, sizeof(szPathReal))))
+                    if (RT_FAILURE(RTPathReal(dvd + 5, szPathReal, sizeof(szPathReal))))
                     {
                         errorArgument("Invalid host DVD drive name");
                         rc = E_FAIL;
@@ -4864,24 +2006,17 @@ static int handleModifyVM(int argc, char *argv[],
             {
                 /* first assume it's a UUID */
                 Guid uuid(dvd);
-                ComPtr<IDVDImage> dvdImage;
+                ComPtr<IDVDImage2> dvdImage;
                 rc = virtualBox->GetDVDImage(uuid, dvdImage.asOutParam());
                 if (FAILED(rc) || !dvdImage)
                 {
                     /* must be a filename, check if it's in the collection */
-                    ComPtr<IDVDImageCollection> dvdImages;
-                    virtualBox->COMGETTER(DVDImages)(dvdImages.asOutParam());
-                    rc = dvdImages->FindByPath(Bstr(dvd), dvdImage.asOutParam());
+                    rc = virtualBox->FindDVDImage(Bstr(dvd), dvdImage.asOutParam());
                     /* not registered, do that on the fly */
                     if (!dvdImage)
                     {
                         Guid emptyUUID;
                         CHECK_ERROR(virtualBox, OpenDVDImage(Bstr(dvd), emptyUUID, dvdImage.asOutParam()));
-                        if (SUCCEEDED(rc) && dvdImage)
-                        {
-                            /* time to register the image */
-                            CHECK_ERROR(virtualBox, RegisterDVDImage(dvdImage));
-                        }
                     }
                 }
                 if (!dvdImage)
@@ -4962,18 +2097,17 @@ static int handleModifyVM(int argc, char *argv[],
                 {
                     /* first assume it's a UUID */
                     Guid uuid(floppy);
-                    ComPtr<IFloppyImage> floppyImage;
+                    ComPtr<IFloppyImage2> floppyImage;
                     rc = virtualBox->GetFloppyImage(uuid, floppyImage.asOutParam());
                     if (FAILED(rc) || !floppyImage)
                     {
-                        /* must be a filename */
-                        Guid emptyUUID;
-                        CHECK_ERROR(virtualBox, OpenFloppyImage(Bstr(floppy), emptyUUID, floppyImage.asOutParam()));
-                        if (SUCCEEDED(rc) && floppyImage)
+                        /* must be a filename, check if it's in the collection */
+                        rc = virtualBox->FindFloppyImage(Bstr(floppy), floppyImage.asOutParam());
+                        /* not registered, do that on the fly */
+                        if (!floppyImage)
                         {
-                            /** @todo first iterate through the collection and try to find the image */
-                            /* time to register the image */
-                            CHECK_ERROR(virtualBox, RegisterFloppyImage(floppyImage));
+                            Guid emptyUUID;
+                            CHECK_ERROR(virtualBox, OpenFloppyImage(Bstr(floppy), emptyUUID, floppyImage.asOutParam()));
                         }
                     }
                     if (!floppyImage)
@@ -5198,7 +2332,7 @@ static int handleModifyVM(int argc, char *argv[],
             {
                 uint32_t    u32LineSpeed;
 
-                u32LineSpeed = atoi(nicspeed[n]);
+                u32LineSpeed = RTStrToUInt32(nicspeed[n]);
 
                 if (u32LineSpeed < 1000 || u32LineSpeed > 4000000)
                 {
@@ -5285,36 +2419,6 @@ static int handleModifyVM(int argc, char *argv[],
             {
                 CHECK_ERROR_RET(nic, COMSETTER(NATNetwork)(Bstr(natnet[n])), 1);
             }
-#ifdef RT_OS_LINUX
-            /* the TAP setup application? */
-            if (tapsetup[n])
-            {
-                /* remove it? */
-                if (strcmp(tapsetup[n], "none") == 0)
-                {
-                    CHECK_ERROR_RET(nic, COMSETTER(TAPSetupApplication)(NULL), 1);
-                }
-                else
-                {
-                    CHECK_ERROR_RET(nic, COMSETTER(TAPSetupApplication)(Bstr(tapsetup[n])), 1);
-                }
-            }
-
-            /* the TAP terminate application? */
-            if (tapterm[n])
-            {
-                /* remove it? */
-                if (strcmp(tapterm[n], "none") == 0)
-                {
-                    CHECK_ERROR_RET(nic, COMSETTER(TAPTerminateApplication)(NULL), 1);
-                }
-                else
-                {
-                    CHECK_ERROR_RET(nic, COMSETTER(TAPTerminateApplication)(Bstr(tapterm[n])), 1);
-                }
-            }
-#endif /* RT_OS_LINUX */
-
         }
         if (FAILED(rc))
             break;
@@ -5348,6 +2452,7 @@ static int handleModifyVM(int argc, char *argv[],
                 }
                 else
                 {
+                    CHECK_ERROR_RET(uart, COMSETTER(Path) (Bstr(uarts_path[n])), 1);
                     if (strcmp(uarts_mode[n], "server") == 0)
                     {
                         CHECK_ERROR_RET(uart, COMSETTER(HostMode) (PortMode_HostPipe), 1);
@@ -5362,7 +2467,6 @@ static int handleModifyVM(int argc, char *argv[],
                     {
                         CHECK_ERROR_RET(uart, COMSETTER(HostMode) (PortMode_HostDevice), 1);
                     }
-                    CHECK_ERROR_RET(uart, COMSETTER(Path) (Bstr(uarts_path[n])), 1);
                 }
             }
         }
@@ -5523,40 +2627,28 @@ static int handleModifyVM(int argc, char *argv[],
             {
                 if (strcmp(hdds[i], "none") == 0)
                 {
-                    machine->DetachHardDisk(StorageBus_SATA, i-4, 0);
+                    machine->DetachHardDisk2(StorageBus_SATA, i-4, 0);
                 }
                 else
                 {
                     /* first guess is that it's a UUID */
                     Guid uuid(hdds[i]);
-                    ComPtr<IHardDisk> hardDisk;
-                    rc = virtualBox->GetHardDisk(uuid, hardDisk.asOutParam());
+                    ComPtr<IHardDisk2> hardDisk;
+                    rc = virtualBox->GetHardDisk2(uuid, hardDisk.asOutParam());
                     /* not successful? Then it must be a filename */
                     if (!hardDisk)
                     {
-                        CHECK_ERROR(virtualBox, OpenHardDisk(Bstr(hdds[i]), hardDisk.asOutParam()));
-                        if (SUCCEEDED(rc) && hardDisk)
+                        CHECK_ERROR(virtualBox, FindHardDisk2(Bstr(hdds[i]), hardDisk.asOutParam()));
+                        if (FAILED(rc))
                         {
-                            /* first check if it's already registered */
-                            Guid hddUUID;
-                            hardDisk->COMGETTER(Id)(hddUUID.asOutParam());
-                            ComPtr<IHardDisk> registeredHDD;
-                            rc = virtualBox->GetHardDisk(hddUUID, registeredHDD.asOutParam());
-                            if (SUCCEEDED(rc) && registeredHDD)
-                                hardDisk = registeredHDD;
-                            else
-                            {
-                                /* it has to be registered */
-                                CHECK_ERROR(virtualBox, RegisterHardDisk(hardDisk));
-                                if (FAILED(rc))
-                                    break;
-                            }
+                            /* open the new hard disk object */
+                            CHECK_ERROR(virtualBox, OpenHardDisk2(Bstr(hdds[i]), hardDisk.asOutParam()));
                         }
                     }
                     if (hardDisk)
                     {
                         hardDisk->COMGETTER(Id)(uuid.asOutParam());
-                        CHECK_ERROR(machine, AttachHardDisk(uuid, StorageBus_SATA, i-4, 0));
+                        CHECK_ERROR(machine, AttachHardDisk2(uuid, StorageBus_SATA, i-4, 0));
                     }
                     else
                         rc = E_FAIL;
@@ -5599,6 +2691,11 @@ static int handleModifyVM(int argc, char *argv[],
 
     return SUCCEEDED(rc) ? 0 : 1;
 }
+
+/** @todo refine this after HDD changes; MSC 8.0/64 has trouble with handleModifyVM.  */
+#if defined(_MSC_VER)
+# pragma optimize("", on)
+#endif
 
 static int handleStartVM(int argc, char *argv[],
                          ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session)
@@ -5764,6 +2861,13 @@ static int handleControlVM(int argc, char *argv[],
         {
             CHECK_ERROR_BREAK (console, SleepButton());
         }
+        else if (strcmp(argv[1], "injectnmi") == 0)
+        {
+            /* get the machine debugger. */
+            ComPtr <IMachineDebugger> debugger;
+            CHECK_ERROR_BREAK(console, COMGETTER(Debugger)(debugger.asOutParam()));
+            CHECK_ERROR_BREAK(debugger, InjectNMI());
+        }
         else if (strcmp(argv[1], "keyboardputscancode") == 0)
         {
             ComPtr<IKeyboard> keyboard;
@@ -5784,15 +2888,15 @@ static int handleControlVM(int argc, char *argv[],
             int i;
             for (i = 1 + 1; i < argc && cScancodes < (int)RT_ELEMENTS(alScancodes); i++, cScancodes++)
             {
-                if (   isxdigit (argv[i][0])
-                    && isxdigit (argv[i][1])
+                if (   RT_C_IS_XDIGIT (argv[i][0])
+                    && RT_C_IS_XDIGIT (argv[i][1])
                     && argv[i][2] == 0)
                 {
                     uint8_t u8Scancode;
                     int rc = RTStrToUInt8Ex(argv[i], NULL, 16, &u8Scancode);
                     if (RT_FAILURE (rc))
                     {
-                        RTPrintf("Error: converting '%s' returned %Vrc!\n", argv[i], rc);
+                        RTPrintf("Error: converting '%s' returned %Rrc!\n", argv[i], rc);
                         rc = E_FAIL;
                         break;
                     }
@@ -5868,6 +2972,38 @@ static int handleControlVM(int argc, char *argv[],
                 }
             }
         }
+#ifdef VBOX_WITH_VRDP
+        else if (strcmp(argv[1], "vrdp") == 0)
+        {
+            if (argc <= 1 + 1)
+            {
+                errorArgument("Missing argument to '%s'", argv[1]);
+                rc = E_FAIL;
+                break;
+            }
+            /* get the corresponding VRDP server */
+            ComPtr<IVRDPServer> vrdpServer;
+            sessionMachine->COMGETTER(VRDPServer)(vrdpServer.asOutParam());
+            ASSERT(vrdpServer);
+            if (vrdpServer)
+            {
+                if (strcmp(argv[2], "on") == 0)
+                {
+                    CHECK_ERROR_BREAK (vrdpServer, COMSETTER(Enabled)(TRUE));
+                }
+                else if (strcmp(argv[2], "off") == 0)
+                {
+                    CHECK_ERROR_BREAK (vrdpServer, COMSETTER(Enabled)(FALSE));
+                }
+                else
+                {
+                    errorArgument("Invalid vrdp server state '%s'", Utf8Str(argv[2]).raw());
+                    rc = E_FAIL;
+                    break;
+                }
+            }
+        }
+#endif /* VBOX_WITH_VRDP */
         else if (strcmp (argv[1], "usbattach") == 0 ||
                  strcmp (argv[1], "usbdetach") == 0)
         {
@@ -5920,12 +3056,12 @@ static int handleControlVM(int argc, char *argv[],
                 rc = E_FAIL;
                 break;
             }
-            uint32_t xres = atoi(argv[2]);
-            uint32_t yres = atoi(argv[3]);
-            uint32_t bpp  = atoi(argv[4]);
+            uint32_t xres = RTStrToUInt32(argv[2]);
+            uint32_t yres = RTStrToUInt32(argv[3]);
+            uint32_t bpp  = RTStrToUInt32(argv[4]);
             uint32_t displayIdx = 0;
             if (argc == 6)
-                displayIdx = atoi(argv[5]);
+                displayIdx = RTStrToUInt32(argv[5]);
 
             ComPtr<IDisplay> display;
             CHECK_ERROR_BREAK(console, COMGETTER(Display)(display.asOutParam()));
@@ -5994,24 +3130,17 @@ static int handleControlVM(int argc, char *argv[],
             {
                 /* first assume it's a UUID */
                 Guid uuid(argv[2]);
-                ComPtr<IDVDImage> dvdImage;
+                ComPtr<IDVDImage2> dvdImage;
                 rc = virtualBox->GetDVDImage(uuid, dvdImage.asOutParam());
                 if (FAILED(rc) || !dvdImage)
                 {
                     /* must be a filename, check if it's in the collection */
-                    ComPtr<IDVDImageCollection> dvdImages;
-                    virtualBox->COMGETTER(DVDImages)(dvdImages.asOutParam());
-                    rc = dvdImages->FindByPath(Bstr(argv[2]), dvdImage.asOutParam());
+                    rc = virtualBox->FindDVDImage(Bstr(argv[2]), dvdImage.asOutParam());
                     /* not registered, do that on the fly */
                     if (!dvdImage)
                     {
                         Guid emptyUUID;
                         CHECK_ERROR(virtualBox, OpenDVDImage(Bstr(argv[2]), emptyUUID, dvdImage.asOutParam()));
-                        if (SUCCEEDED(rc) && dvdImage)
-                        {
-                            /* time to register the image */
-                            CHECK_ERROR(virtualBox, RegisterDVDImage(dvdImage));
-                        }
                     }
                 }
                 if (!dvdImage)
@@ -6062,24 +3191,17 @@ static int handleControlVM(int argc, char *argv[],
             {
                 /* first assume it's a UUID */
                 Guid uuid(argv[2]);
-                ComPtr<IFloppyImage> floppyImage;
+                ComPtr<IFloppyImage2> floppyImage;
                 rc = virtualBox->GetFloppyImage(uuid, floppyImage.asOutParam());
                 if (FAILED(rc) || !floppyImage)
                 {
                     /* must be a filename, check if it's in the collection */
-                    ComPtr<IFloppyImageCollection> floppyImages;
-                    virtualBox->COMGETTER(FloppyImages)(floppyImages.asOutParam());
-                    rc = floppyImages->FindByPath(Bstr(argv[2]), floppyImage.asOutParam());
+                    rc = virtualBox->FindFloppyImage(Bstr(argv[2]), floppyImage.asOutParam());
                     /* not registered, do that on the fly */
                     if (!floppyImage)
                     {
                         Guid emptyUUID;
                         CHECK_ERROR(virtualBox, OpenFloppyImage(Bstr(argv[2]), emptyUUID, floppyImage.asOutParam()));
-                        if (SUCCEEDED(rc) && floppyImage)
-                        {
-                            /* time to register the image */
-                            CHECK_ERROR(virtualBox, RegisterFloppyImage(floppyImage));
-                        }
                     }
                 }
                 if (!floppyImage)
@@ -6482,269 +3604,6 @@ static int handleSnapshot(int argc, char *argv[],
     return SUCCEEDED(rc) ? 0 : 1;
 }
 
-static int handleShowVDIInfo(int argc, char *argv[],
-                             ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session)
-{
-    HRESULT rc;
-
-    if (argc != 1)
-        return errorSyntax(USAGE_SHOWVDIINFO, "Incorrect number of parameters");
-
-    ComPtr<IHardDisk> hardDisk;
-    Bstr filepath;
-
-    bool registered = true;
-
-    /* first guess is that it's a UUID */
-    Guid uuid(argv[0]);
-    rc = virtualBox->GetHardDisk(uuid, hardDisk.asOutParam());
-    /* no? then it must be a filename */
-    if (FAILED (rc))
-    {
-        filepath = argv[0];
-        rc = virtualBox->FindHardDisk(filepath, hardDisk.asOutParam());
-        /* no? well, then it's an unregistered image */
-        if (FAILED (rc))
-        {
-            registered = false;
-            CHECK_ERROR(virtualBox, OpenHardDisk(filepath, hardDisk.asOutParam()));
-        }
-    }
-    if (SUCCEEDED(rc) && hardDisk)
-    {
-        /* query a VDI object (will remain null if it's not VDI) */
-        ComPtr<IVirtualDiskImage> vdi = hardDisk;
-
-        hardDisk->COMGETTER(Id)(uuid.asOutParam());
-        RTPrintf("UUID:                 %s\n", uuid.toString().raw());
-
-        RTPrintf("Registered:           %s\n", registered ? "yes" : "no");
-
-        /* check for accessibility */
-        BOOL accessible = FALSE;
-        CHECK_ERROR_RET (hardDisk, COMGETTER(Accessible)(&accessible), 1);
-        RTPrintf("Accessible:           %s\n", accessible ? "yes" : "no");
-
-        if (!accessible)
-        {
-            Bstr err;
-            CHECK_ERROR_RET (hardDisk, COMGETTER(LastAccessError)(err.asOutParam()), 1);
-            RTPrintf("Access Error:         %lS\n", err.raw());
-        }
-
-        Bstr description;
-        hardDisk->COMGETTER(Description)(description.asOutParam());
-        if (description)
-        {
-            RTPrintf("Description:          %lS\n", description.raw());
-        }
-
-        ULONG64 size;
-        hardDisk->COMGETTER(Size)(&size);
-        RTPrintf("Size:                 %llu MBytes\n", size);
-        ULONG64 actualSize;
-        hardDisk->COMGETTER(ActualSize)(&actualSize);
-        RTPrintf("Current size on disk: %llu MBytes\n", actualSize >> 20);
-
-        HardDiskType_T type;
-        hardDisk->COMGETTER(Type)(&type);
-        const char *typeStr = "unknown";
-        switch (type)
-        {
-            case HardDiskType_Normal:
-                typeStr = "standard";
-                break;
-            case HardDiskType_Immutable:
-                typeStr = "immutable";
-                break;
-            case HardDiskType_Writethrough:
-                typeStr = "writethrough";
-                break;
-        }
-        RTPrintf("Type:                 %s\n", typeStr);
-
-        HardDiskStorageType_T storageType;
-        const char *storageTypeStr = "unknown";
-        hardDisk->COMGETTER(StorageType)(&storageType);
-        switch (storageType)
-        {
-            case HardDiskStorageType_VirtualDiskImage:
-                storageTypeStr = "Virtual Disk Image (VDI)";
-                break;
-            case HardDiskStorageType_VMDKImage:
-                storageTypeStr = "VMDK Image";
-                break;
-            case HardDiskStorageType_ISCSIHardDisk:
-                storageTypeStr = "iSCSI target";
-                break;
-            case HardDiskStorageType_VHDImage:
-                storageTypeStr = "VHD Image";
-                break;
-        }
-        RTPrintf("Storage type:         %s\n", storageTypeStr);
-
-        if (registered)
-        {
-            hardDisk->COMGETTER(MachineId)(uuid.asOutParam());
-            RTPrintf("In use by VM:         %s\n", uuid ? uuid.toString().raw() : "<none>");
-        }
-
-        if (vdi)
-        {
-            /* VDI specific information */
-            vdi->COMGETTER(FilePath)(filepath.asOutParam());
-            RTPrintf("Path:                 %lS\n", filepath.raw());
-
-        }
-        else
-        {
-            /* Generic location information */
-            Bstr loc;
-            hardDisk->COMGETTER(Location)(loc.asOutParam());
-            RTPrintf("Location:             %lS\n", loc.raw());
-        }
-    }
-    return SUCCEEDED(rc) ? 0 : 1;
-}
-
-static int handleRegisterImage(int argc, char *argv[],
-                               ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session)
-{
-    HRESULT rc;
-
-    if (argc < 2)
-        return errorSyntax(USAGE_REGISTERIMAGE, "Not enough parameters");
-
-    Bstr filepath(argv[1]);
-
-    if (strcmp(argv[0], "disk") == 0)
-    {
-        const char *type = NULL;
-        /* there can be a type parameter */
-        if ((argc > 2) && (argc != 4))
-            return errorSyntax(USAGE_REGISTERIMAGE, "Incorrect number of parameters");
-        if (argc == 4)
-        {
-            if (strcmp(argv[2], "-type") != 0)
-                return errorSyntax(USAGE_REGISTERIMAGE, "Invalid parameter '%s'", Utf8Str(argv[2]).raw());
-            if (   (strcmp(argv[3], "normal") != 0)
-                && (strcmp(argv[3], "immutable") != 0)
-                && (strcmp(argv[3], "writethrough") != 0))
-                return errorArgument("Invalid VDI type '%s' specified", Utf8Str(argv[3]).raw());
-            type = argv[3];
-        }
-
-        ComPtr<IHardDisk> hardDisk;
-        CHECK_ERROR(virtualBox, OpenHardDisk(filepath, hardDisk.asOutParam()));
-        if (SUCCEEDED(rc) && hardDisk)
-        {
-            /* change the type if requested */
-            if (type)
-            {
-                if (strcmp(type, "normal") == 0)
-                    CHECK_ERROR(hardDisk, COMSETTER(Type)(HardDiskType_Normal));
-                else if (strcmp(type, "immutable") == 0)
-                    CHECK_ERROR(hardDisk, COMSETTER(Type)(HardDiskType_Immutable));
-                else if (strcmp(type, "writethrough") == 0)
-                    CHECK_ERROR(hardDisk, COMSETTER(Type)(HardDiskType_Writethrough));
-            }
-            if (SUCCEEDED(rc))
-                CHECK_ERROR(virtualBox, RegisterHardDisk(hardDisk));
-        }
-    }
-    else if (strcmp(argv[0], "dvd") == 0)
-    {
-        ComPtr<IDVDImage> dvdImage;
-        CHECK_ERROR(virtualBox, OpenDVDImage(filepath, Guid(), dvdImage.asOutParam()));
-        if (SUCCEEDED(rc) && dvdImage)
-        {
-            CHECK_ERROR(virtualBox, RegisterDVDImage(dvdImage));
-        }
-    }
-    else if (strcmp(argv[0], "floppy") == 0)
-    {
-        ComPtr<IFloppyImage> floppyImage;
-        CHECK_ERROR(virtualBox, OpenFloppyImage(filepath, Guid(), floppyImage.asOutParam()));
-        if (SUCCEEDED(rc) && floppyImage)
-        {
-            CHECK_ERROR(virtualBox, RegisterFloppyImage(floppyImage));
-        }
-    }
-    else
-        return errorSyntax(USAGE_REGISTERIMAGE, "Invalid parameter '%s'", Utf8Str(argv[1]).raw());
-
-    return SUCCEEDED(rc) ? 0 : 1;
-}
-
-static int handleUnregisterImage(int argc, char *argv[],
-                                 ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session)
-{
-    HRESULT rc;
-
-    if (argc != 2)
-        return errorSyntax(USAGE_UNREGISTERIMAGE, "Incorrect number of parameters");
-
-    /* first guess is that it's a UUID */
-    Guid uuid(argv[1]);
-
-    if (strcmp(argv[0], "disk") == 0)
-    {
-        ComPtr<IHardDisk> hardDisk;
-        rc = virtualBox->GetHardDisk(uuid, hardDisk.asOutParam());
-        /* not a UUID or not registered? Then it must be a filename */
-        if (!hardDisk)
-        {
-            ComPtr<IVirtualDiskImage> vdi;
-            CHECK_ERROR(virtualBox, FindVirtualDiskImage(Bstr(argv[1]), vdi.asOutParam()));
-            hardDisk = vdi;
-        }
-        if (SUCCEEDED(rc) && hardDisk)
-        {
-            hardDisk->COMGETTER(Id)(uuid.asOutParam());
-            CHECK_ERROR(virtualBox, UnregisterHardDisk(uuid, hardDisk.asOutParam()));
-        }
-    }
-    else
-    if (strcmp(argv[0], "dvd") == 0)
-    {
-        ComPtr<IDVDImage> dvdImage;
-        rc = virtualBox->GetDVDImage(uuid, dvdImage.asOutParam());
-        /* not a UUID or not registered? Then it must be a filename */
-        if (!dvdImage)
-        {
-            ComPtr<IDVDImageCollection> dvdColl;
-            virtualBox->COMGETTER(DVDImages)(dvdColl.asOutParam());
-            CHECK_ERROR(dvdColl, FindByPath(Bstr(argv[1]), dvdImage.asOutParam()));
-        }
-        if (SUCCEEDED(rc) && dvdImage)
-        {
-            dvdImage->COMGETTER(Id)(uuid.asOutParam());
-            CHECK_ERROR(virtualBox, UnregisterDVDImage(uuid, dvdImage.asOutParam()));
-        }
-    }
-    else
-    if (strcmp(argv[0], "floppy") == 0)
-    {
-        ComPtr<IFloppyImage> floppyImage;
-        rc = virtualBox->GetFloppyImage(uuid, floppyImage.asOutParam());
-        /* not a UUID or not registered? Then it must be a filename */
-        if (!floppyImage)
-        {
-            ComPtr<IFloppyImageCollection> floppyColl;
-            virtualBox->COMGETTER(FloppyImages)(floppyColl.asOutParam());
-            CHECK_ERROR(floppyColl, FindByPath(Bstr(argv[1]), floppyImage.asOutParam()));
-        }
-        if (SUCCEEDED(rc) && floppyImage)
-        {
-            floppyImage->COMGETTER(Id)(uuid.asOutParam());
-            CHECK_ERROR(virtualBox, UnregisterFloppyImage(uuid, floppyImage.asOutParam()));
-        }
-    }
-    else
-        return errorSyntax(USAGE_UNREGISTERIMAGE, "Invalid parameter '%s'", Utf8Str(argv[1]).raw());
-
-    return SUCCEEDED(rc) ? 0 : 1;
-}
 
 #ifdef RT_OS_WINDOWS
 static int handleCreateHostIF(int argc, char *argv[],
@@ -6802,9 +3661,25 @@ static int handleRemoveHostIF(int argc, char *argv[],
         if (uuid.isEmpty())
         {
             /* not a valid UUID, search for it */
-            ComPtr<IHostNetworkInterfaceCollection> coll;
-            CHECK_ERROR_BREAK(host, COMGETTER(NetworkInterfaces)(coll.asOutParam()));
-            CHECK_ERROR_BREAK(coll, FindByName(Bstr(argv[0]), hostif.asOutParam()));
+            Bstr strName(argv[0]);
+            com::SafeIfaceArray <IHostNetworkInterface> hostNetworkInterfaces;
+            CHECK_ERROR_BREAK(host, COMGETTER(NetworkInterfaces) (ComSafeArrayAsOutParam (hostNetworkInterfaces)));
+            ComPtr <IHostNetworkInterface> hostif;
+            for (size_t i = 0; i < hostNetworkInterfaces.size(); ++i)
+            {
+                Bstr name;
+                hostNetworkInterfaces[i]->COMGETTER(Name) (name.asOutParam());
+                if (name == strName)
+                {
+                    hostif = hostNetworkInterfaces[i];
+                    break;
+                }
+            }
+            if (hostif.isNull())
+            {
+                rc = E_INVALIDARG;
+                break;
+            }
             CHECK_ERROR_BREAK(hostif, COMGETTER(Id)(uuid.asOutParam()));
         }
 
@@ -6966,13 +3841,13 @@ static int handleSetProperty(int argc, char *argv[],
     ComPtr<ISystemProperties> systemProperties;
     virtualBox->COMGETTER(SystemProperties)(systemProperties.asOutParam());
 
-    if (strcmp(argv[0], "vdifolder") == 0)
+    if (strcmp(argv[0], "hdfolder") == 0)
     {
         /* reset to default? */
         if (strcmp(argv[1], "default") == 0)
-            CHECK_ERROR(systemProperties, COMSETTER(DefaultVDIFolder)(NULL));
+            CHECK_ERROR(systemProperties, COMSETTER(DefaultHardDiskFolder)(NULL));
         else
-            CHECK_ERROR(systemProperties, COMSETTER(DefaultVDIFolder)(Bstr(argv[1])));
+            CHECK_ERROR(systemProperties, COMSETTER(DefaultHardDiskFolder)(Bstr(argv[1])));
     }
     else if (strcmp(argv[0], "machinefolder") == 0)
     {
@@ -7042,9 +3917,7 @@ static int handleUSBFilter (int argc, char *argv[],
         return errorSyntax(USAGE_USBFILTER, "Invalid parameter '%s'", argv[0]);
 
     /* which index? */
-    char *endptr = NULL;
-    cmd.mIndex = strtoul (argv[1], &endptr, 10);
-    if (!endptr || *endptr)
+    if (VINF_SUCCESS !=  RTStrToUInt32Full (argv[1], 10, &cmd.mIndex))
         return errorSyntax(USAGE_USBFILTER, "Invalid index '%s'", argv[1]);
 
     switch (cmd.mAction)
@@ -7633,11 +4506,11 @@ static int handleVMStatistics(int argc, char *argv[],
             if (SUCCEEDED(rc))
             {
                 if (fReset)
-                    CHECK_ERROR(debugger, ResetStats(Bstr(pszPattern).raw()));
+                    CHECK_ERROR(debugger, ResetStats(Bstr(pszPattern)));
                 else
                 {
                     Bstr stats;
-                    CHECK_ERROR(debugger, GetStats(Bstr(pszPattern).raw(), fWithDescriptions, stats.asOutParam()));
+                    CHECK_ERROR(debugger, GetStats(Bstr(pszPattern), fWithDescriptions, stats.asOutParam()));
                     if (SUCCEEDED(rc))
                     {
                         /* if (fFormatted)
@@ -7653,546 +4526,6 @@ static int handleVMStatistics(int argc, char *argv[],
     }
 
     return SUCCEEDED(rc) ? 0 : 1;
-}
-
-static char *toBaseMetricNames(const char *metricList)
-{
-    char *newList = (char*)RTMemAlloc(strlen(metricList) + 1);
-    int cSlashes = 0;
-    bool fSkip = false;
-    const char *src = metricList;
-    char c, *dst = newList;
-    while ((c = *src++))
-        if (c == ':')
-            fSkip = true;
-        else if (c == '/' && ++cSlashes == 2)
-            fSkip = true;
-        else if (c == ',')
-        {
-            fSkip = false;
-            cSlashes = 0;
-            *dst++ = c;
-        }
-        else
-            if (!fSkip)
-                *dst++ = c;
-    *dst = 0;
-    return newList;
-}
-
-static int parseFilterParameters(int argc, char *argv[],
-                                 ComPtr<IVirtualBox> aVirtualBox,
-                                 ComSafeArrayOut(BSTR, outMetrics),
-                                 ComSafeArrayOut(BSTR, outBaseMetrics),
-                                 ComSafeArrayOut(IUnknown *, outObjects))
-{
-    HRESULT rc = S_OK;
-    com::SafeArray<BSTR> retMetrics(1);
-    com::SafeArray<BSTR> retBaseMetrics(1);
-    com::SafeIfaceArray <IUnknown> retObjects;
-
-    Bstr metricNames, baseNames;
-
-    /* Metric list */
-    if (argc > 1)
-    {
-        metricNames = argv[1];
-        char *tmp   = toBaseMetricNames(argv[1]);
-        if (!tmp)
-            return VERR_NO_MEMORY;
-        baseNames   = tmp;
-        RTMemFree(tmp);
-    }
-    else
-    {
-        metricNames = L"*";
-        baseNames = L"*";
-    }
-    metricNames.cloneTo(&retMetrics[0]);
-    baseNames.cloneTo(&retBaseMetrics[0]);
-
-    /* Object name */
-    if (argc > 0 && strcmp(argv[0], "*"))
-    {
-        if (!strcmp(argv[0], "host"))
-        {
-            ComPtr<IHost> host;
-            CHECK_ERROR(aVirtualBox, COMGETTER(Host)(host.asOutParam()));
-            retObjects.reset(1);
-            host.queryInterfaceTo(&retObjects[0]);
-        }
-        else
-        {
-            ComPtr <IMachine> machine;
-            rc = aVirtualBox->FindMachine(Bstr(argv[0]), machine.asOutParam());
-            if (SUCCEEDED (rc))
-            {
-                retObjects.reset(1);
-                machine.queryInterfaceTo(&retObjects[0]);
-            }
-            else
-            {
-                errorArgument("Invalid machine name: '%s'", argv[0]);
-                return rc;
-            }
-        }
-
-    }
-
-    retMetrics.detachTo(ComSafeArrayOutArg(outMetrics));
-    retBaseMetrics.detachTo(ComSafeArrayOutArg(outBaseMetrics));
-    retObjects.detachTo(ComSafeArrayOutArg(outObjects));
-
-    return rc;
-}
-
-static Bstr getObjectName(ComPtr<IVirtualBox> aVirtualBox,
-                                  ComPtr<IUnknown> aObject)
-{
-    HRESULT rc;
-
-    ComPtr<IHost> host = aObject;
-    if (!host.isNull())
-        return Bstr("host");
-
-    ComPtr<IMachine> machine = aObject;
-    if (!machine.isNull())
-    {
-        Bstr name;
-        CHECK_ERROR(machine, COMGETTER(Name)(name.asOutParam()));
-        if (SUCCEEDED(rc))
-            return name;
-    }
-    return Bstr("unknown");
-}
-
-static int countMatchingMetrics(ComPtr<IVirtualBox> aVirtualBox,
-                                ComPtr<IPerformanceCollector> performanceCollector,
-                                ComSafeArrayIn(INPTR BSTR, metrics),
-                                ComSafeArrayIn(IUnknown *, objects),
-                                bool listMatches)
-{
-    HRESULT rc;
-    com::SafeIfaceArray<IPerformanceMetric> metricInfo;
-
-    CHECK_ERROR(performanceCollector,
-        GetMetrics(ComSafeArrayInArg(metrics),
-                   ComSafeArrayInArg(objects),
-                   ComSafeArrayAsOutParam(metricInfo)));
-
-    if (metricInfo.size())
-    {
-        if (listMatches)
-        {
-            ComPtr<IUnknown> object;
-            Bstr metricName;
-            RTPrintf("The following metrics will be collected:\n\n"
-                     "Object     Metric\n"
-                     "---------- --------------------\n");
-            for (size_t i = 0; i < metricInfo.size(); i++)
-            {
-                CHECK_ERROR(metricInfo[i], COMGETTER(Object)(object.asOutParam()));
-                CHECK_ERROR(metricInfo[i], COMGETTER(MetricName)(metricName.asOutParam()));
-                RTPrintf("%-10ls %-20ls\n",
-                    getObjectName(aVirtualBox, object).raw(), metricName.raw());
-            }
-            RTPrintf("\n");
-        }
-    }
-    else
-    {
-        RTPrintf("No metrics match the specified filter!\n");
-    }
-    return metricInfo.size();
-}
-
-/**
- * list                                                               *
- */
-static int handleMetricsList(int argc, char *argv[],
-                             ComPtr<IVirtualBox> aVirtualBox,
-                             ComPtr<IPerformanceCollector> performanceCollector)
-{
-    HRESULT rc;
-    com::SafeArray<BSTR>          metrics;
-    com::SafeArray<BSTR>          baseMetrics;
-    com::SafeIfaceArray<IUnknown> objects;
-
-    rc = parseFilterParameters(argc - 1, &argv[1], aVirtualBox,
-                               ComSafeArrayAsOutParam(metrics),
-                               ComSafeArrayAsOutParam(baseMetrics),
-                               ComSafeArrayAsOutParam(objects));
-    if (FAILED(rc))
-        return 1;
-
-    com::SafeIfaceArray<IPerformanceMetric> metricInfo;
-
-    CHECK_ERROR(performanceCollector,
-        GetMetrics(ComSafeArrayAsInParam(metrics),
-                   ComSafeArrayAsInParam(objects),
-                   ComSafeArrayAsOutParam(metricInfo)));
-
-    ComPtr<IUnknown> object;
-    Bstr metricName, unit, description;
-    ULONG period, count;
-    LONG minimum, maximum;
-    RTPrintf(
-"Object     Metric               Unit Minimum    Maximum    Period     Count      Description\n"
-"---------- -------------------- ---- ---------- ---------- ---------- ---------- -----------\n");
-    for (size_t i = 0; i < metricInfo.size(); i++)
-    {
-        CHECK_ERROR(metricInfo[i], COMGETTER(Object)(object.asOutParam()));
-        CHECK_ERROR(metricInfo[i], COMGETTER(MetricName)(metricName.asOutParam()));
-        CHECK_ERROR(metricInfo[i], COMGETTER(Period)(&period));
-        CHECK_ERROR(metricInfo[i], COMGETTER(Count)(&count));
-        CHECK_ERROR(metricInfo[i], COMGETTER(MinimumValue)(&minimum));
-        CHECK_ERROR(metricInfo[i], COMGETTER(MaximumValue)(&maximum));
-        CHECK_ERROR(metricInfo[i], COMGETTER(Unit)(unit.asOutParam()));
-        CHECK_ERROR(metricInfo[i], COMGETTER(Description)(description.asOutParam()));
-        RTPrintf("%-10ls %-20ls %-4ls %10d %10d %10u %10u %ls\n",
-            getObjectName(aVirtualBox, object).raw(), metricName.raw(), unit.raw(),
-            minimum, maximum, period, count, description.raw());
-    }
-
-    return 0;
-}
-
-/**
- * Metics setup
- */
-static int handleMetricsSetup(int argc, char *argv[],
-                              ComPtr<IVirtualBox> aVirtualBox,
-                              ComPtr<IPerformanceCollector> performanceCollector)
-{
-    HRESULT rc;
-    com::SafeArray<BSTR>          metrics;
-    com::SafeArray<BSTR>          baseMetrics;
-    com::SafeIfaceArray<IUnknown> objects;
-    ULONG period = 1, samples = 1;
-    /*bool listMatches = false;*/
-    int i;
-
-    for (i = 1; i < argc; i++)
-    {
-        if (strcmp(argv[i], "-period") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            char *endptr = NULL;
-            period = strtoul (argv[++i], &endptr, 10);
-            if (!endptr || *endptr || !period)
-                return errorArgument("Invalid value for 'period' parameter: '%s'", argv[i]);
-        }
-        else if (strcmp(argv[i], "-samples") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            char *endptr = NULL;
-            samples = strtoul (argv[++i], &endptr, 10);
-            if (!endptr || *endptr)
-                return errorArgument("Invalid value for 'samples' parameter: '%s'", argv[i]);
-        }
-        else
-            break; /* The rest of params should define the filter */
-        /*else if (strcmp(argv[i], "-list") == 0)
-            listMatches = true;*/
-    }
-
-    rc = parseFilterParameters(argc - i, &argv[i], aVirtualBox,
-                               ComSafeArrayAsOutParam(metrics),
-                               ComSafeArrayAsOutParam(baseMetrics),
-                               ComSafeArrayAsOutParam(objects));
-    if (FAILED(rc))
-        return 1;
-
-/*    if (countMatchingMetrics(aVirtualBox, performanceCollector,
-                             ComSafeArrayAsInParam(metrics),
-                             ComSafeArrayAsInParam(objects),
-                             listMatches) == 0)
-        return 1;*/
-
-    CHECK_ERROR(performanceCollector,
-        SetupMetrics(ComSafeArrayAsInParam(metrics),
-                     ComSafeArrayAsInParam(objects), period, samples));
-
-    return 0;
-}
-
-/**
- * metrics query
- */
-static int handleMetricsQuery(int argc, char *argv[],
-                              ComPtr<IVirtualBox> aVirtualBox,
-                              ComPtr<IPerformanceCollector> performanceCollector)
-{
-    HRESULT rc;
-    com::SafeArray<BSTR>          metrics;
-    com::SafeArray<BSTR>          baseMetrics;
-    com::SafeIfaceArray<IUnknown> objects;
-
-    rc = parseFilterParameters(argc - 1, &argv[1], aVirtualBox,
-                               ComSafeArrayAsOutParam(metrics),
-                               ComSafeArrayAsOutParam(baseMetrics),
-                               ComSafeArrayAsOutParam(objects));
-    if (FAILED(rc))
-        return 1;
-
-    com::SafeArray<BSTR>          retNames;
-    com::SafeIfaceArray<IUnknown> retObjects;
-    com::SafeArray<ULONG>         retIndices;
-    com::SafeArray<ULONG>         retLengths;
-    com::SafeArray<LONG>          retData;
-    CHECK_ERROR (performanceCollector, QueryMetricsData(ComSafeArrayAsInParam(metrics),
-                                             ComSafeArrayAsInParam(objects),
-                                             ComSafeArrayAsOutParam(retNames),
-                                             ComSafeArrayAsOutParam(retObjects),
-                                             ComSafeArrayAsOutParam(retIndices),
-                                             ComSafeArrayAsOutParam(retLengths),
-                                             ComSafeArrayAsOutParam(retData)) );
-
-    RTPrintf("Object     Metric               Values\n"
-             "---------- -------------------- --------------------------------------------\n");
-    for (unsigned i = 0; i < retNames.size(); i++)
-    {
-        // Get info for the metric
-        com::SafeArray<BSTR> nameOfMetric(1);
-        Bstr tmpName(retNames[i]);
-        tmpName.detachTo (&nameOfMetric[0]);
-        com::SafeIfaceArray<IUnknown> anObject(1);
-        ComPtr<IUnknown> tmpObject(retObjects[i]);
-        tmpObject.queryInterfaceTo(&anObject[0]);
-        com::SafeIfaceArray <IPerformanceMetric> metricInfo;
-        CHECK_RC_BREAK (performanceCollector->GetMetrics( ComSafeArrayAsInParam(nameOfMetric),
-                                               ComSafeArrayAsInParam(anObject),
-                                               ComSafeArrayAsOutParam(metricInfo) ));
-        BSTR metricUnitBSTR;
-        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(Unit) (&metricUnitBSTR));
-        Bstr metricUnit(metricUnitBSTR);
-        Bstr metricName(retNames[i]);
-        LONG minVal, maxVal;
-        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MinimumValue) (&minVal));
-        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MaximumValue) (&maxVal));
-        RTPrintf("%-10ls %-20ls ", getObjectName(aVirtualBox, retObjects[i]).raw(), metricName.raw());
-        const char *separator = "";
-        for (unsigned j = 0; j < retLengths[i]; j++)
-        {
-            if (strcmp((const char *)metricUnit.raw(), "%"))
-                RTPrintf("%s%d %ls", separator, retData[retIndices[i] + j], metricUnit.raw());
-            else
-                RTPrintf("%s%d.%02d%%", separator, retData[retIndices[i] + j] / 1000, retData[retIndices[i] + j] % 100);
-            separator = ", ";
-        }
-        RTPrintf("\n");
-    }
-
-    return 0;
-}
-
-static void getTimestamp(char *pts, size_t tsSize)
-{
-    *pts = 0;
-    AssertReturnVoid(tsSize >= 13); /* 3+3+3+3+1 */
-    RTTIMESPEC TimeSpec;
-    RTTIME Time;
-    RTTimeExplode(&Time, RTTimeNow(&TimeSpec));
-    pts += RTStrFormatNumber(pts, Time.u8Hour, 10, 2, 0, RTSTR_F_ZEROPAD);
-    *pts++ = ':';
-    pts += RTStrFormatNumber(pts, Time.u8Minute, 10, 2, 0, RTSTR_F_ZEROPAD);
-    *pts++ = ':';
-    pts += RTStrFormatNumber(pts, Time.u8Second, 10, 2, 0, RTSTR_F_ZEROPAD);
-    *pts++ = '.';
-    pts += RTStrFormatNumber(pts, Time.u32Nanosecond / 1000000, 10, 3, 0, RTSTR_F_ZEROPAD);
-    *pts = 0;
-}
-
-/** Used by the handleMetricsCollect loop. */
-static bool volatile g_fKeepGoing = true;
-
-#ifdef RT_OS_WINDOWS
-/**
- * Handler routine for catching Ctrl-C, Ctrl-Break and closing of
- * the console.
- *
- * @returns true if handled, false if not handled.
- * @param   dwCtrlType      The type of control signal.
- *
- * @remarks This is called on a new thread.
- */
-static BOOL WINAPI ctrlHandler(DWORD dwCtrlType)
-{
-    switch (dwCtrlType)
-    {
-        /* Ctrl-C or Ctrl-Break or Close */
-        case CTRL_C_EVENT:
-        case CTRL_BREAK_EVENT:
-        case CTRL_CLOSE_EVENT:
-            /* Let's shut down gracefully. */
-            ASMAtomicWriteBool(&g_fKeepGoing, FALSE);
-            return TRUE;
-    }
-    /* Don't care about the rest -- let it die a horrible death. */
-    return FALSE;
-}
-#endif /* RT_OS_WINDOWS */
-
-/**
- * collect
- */
-static int handleMetricsCollect(int argc, char *argv[],
-                                ComPtr<IVirtualBox> aVirtualBox,
-                                ComPtr<IPerformanceCollector> performanceCollector)
-{
-    HRESULT rc;
-    com::SafeArray<BSTR>          metrics;
-    com::SafeArray<BSTR>          baseMetrics;
-    com::SafeIfaceArray<IUnknown> objects;
-    ULONG period = 1, samples = 1;
-    bool isDetached = false, listMatches = false;
-    int i;
-    for (i = 1; i < argc; i++)
-    {
-        if (strcmp(argv[i], "-period") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            char *endptr = NULL;
-            period = strtoul (argv[++i], &endptr, 10);
-            if (!endptr || *endptr || !period)
-                return errorArgument("Invalid value for 'period' parameter: '%s'", argv[i]);
-        }
-        else if (strcmp(argv[i], "-samples") == 0)
-        {
-            if (argc <= i + 1)
-                return errorArgument("Missing argument to '%s'", argv[i]);
-            char *endptr = NULL;
-            samples = strtoul (argv[++i], &endptr, 10);
-            if (!endptr || *endptr || !samples)
-                return errorArgument("Invalid value for 'samples' parameter: '%s'", argv[i]);
-        }
-        else if (strcmp(argv[i], "-list") == 0)
-            listMatches = true;
-        else if (strcmp(argv[i], "-detach") == 0)
-            isDetached = true;
-        else
-            break; /* The rest of params should define the filter */
-    }
-
-    rc = parseFilterParameters(argc - i, &argv[i], aVirtualBox,
-                               ComSafeArrayAsOutParam(metrics),
-                               ComSafeArrayAsOutParam(baseMetrics),
-                               ComSafeArrayAsOutParam(objects));
-    if (FAILED(rc))
-        return 1;
-
-
-    if (countMatchingMetrics(aVirtualBox, performanceCollector,
-                             ComSafeArrayAsInParam(metrics),
-                             ComSafeArrayAsInParam(objects),
-                             listMatches) == 0)
-        return 1;
-
-    CHECK_ERROR(performanceCollector,
-        SetupMetrics(ComSafeArrayAsInParam(baseMetrics),
-                     ComSafeArrayAsInParam(objects), period, samples));
-
-    if (isDetached)
-    {
-        RTPrintf("Warning! The background process holding collected metrics will shutdown\n"
-                 "in few seconds, discarding all collected data and parameters.\n");
-        return 0;
-    }
-
-#ifdef RT_OS_WINDOWS
-    SetConsoleCtrlHandler(ctrlHandler, true);
-#endif /* RT_OS_WINDOWS */
-
-    RTPrintf("Time stamp   Object     Metric               Value\n");
-
-    while (g_fKeepGoing)
-    {
-        RTPrintf("------------ ---------- -------------------- --------------------\n");
-        RTThreadSleep(period * 1000); // Sleep for 'period' seconds
-        char ts[15];
-
-        getTimestamp(ts, sizeof(ts));
-        com::SafeArray<BSTR>          retNames;
-        com::SafeIfaceArray<IUnknown> retObjects;
-        com::SafeArray<ULONG>         retIndices;
-        com::SafeArray<ULONG>         retLengths;
-        com::SafeArray<LONG>          retData;
-        CHECK_ERROR (performanceCollector, QueryMetricsData(ComSafeArrayAsInParam(metrics),
-                                                 ComSafeArrayAsInParam(objects),
-                                                 ComSafeArrayAsOutParam(retNames),
-                                                 ComSafeArrayAsOutParam(retObjects),
-                                                 ComSafeArrayAsOutParam(retIndices),
-                                                 ComSafeArrayAsOutParam(retLengths),
-                                                 ComSafeArrayAsOutParam(retData)) );
-        for (unsigned i = 0; i < retNames.size(); i++)
-        {
-
-            // Get info for the metric
-            com::SafeArray<BSTR> nameOfMetric(1);
-            Bstr tmpName(retNames[i]);
-            tmpName.detachTo (&nameOfMetric[0]);
-            com::SafeIfaceArray<IUnknown> anObject(1);
-            ComPtr<IUnknown> tmpObject(retObjects[i]);
-            tmpObject.queryInterfaceTo(&anObject[0]);
-            com::SafeIfaceArray <IPerformanceMetric> metricInfo;
-            CHECK_RC_BREAK (performanceCollector->GetMetrics( ComSafeArrayAsInParam(nameOfMetric),
-                                                   ComSafeArrayAsInParam(anObject),
-                                                   ComSafeArrayAsOutParam(metricInfo) ));
-            BSTR metricUnitBSTR;
-            CHECK_RC_BREAK (metricInfo[0]->COMGETTER(Unit) (&metricUnitBSTR));
-            Bstr metricUnit(metricUnitBSTR);
-            Bstr metricName(retNames[i]);
-            LONG minVal, maxVal;
-            CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MinimumValue) (&minVal));
-            CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MaximumValue) (&maxVal));
-            RTPrintf("%-12s %-10ls %-20ls ", ts, getObjectName(aVirtualBox, retObjects[i]).raw(), metricName.raw());
-            const char *separator = "";
-            for (unsigned j = 0; j < retLengths[i]; j++)
-            {
-                if (strcmp((const char *)metricUnit.raw(), "%"))
-                    RTPrintf("%s%d %ls", separator, retData[retIndices[i] + j], metricUnit.raw());
-                else
-                    RTPrintf("%s%d.%02d%%", separator, retData[retIndices[i] + j] / 1000, retData[retIndices[i] + j] % 100);
-                separator = ", ";
-            }
-            RTPrintf("\n");
-        }
-    }
-
-#ifdef RT_OS_WINDOWS
-    SetConsoleCtrlHandler(ctrlHandler, false);
-#endif /* RT_OS_WINDOWS */
-
-    return 0;
-}
-
-static int handleMetrics(int argc, char *argv[],
-                         ComPtr<IVirtualBox> aVirtualBox, ComPtr<ISession> aSession)
-{
-    int rc;
-
-    /* at least one option: subcommand name */
-    if (argc < 1)
-        return errorSyntax(USAGE_METRICS, "Subcommand missing");
-
-    ComPtr<IPerformanceCollector> performanceCollector;
-    CHECK_ERROR(aVirtualBox, COMGETTER(PerformanceCollector)(performanceCollector.asOutParam()));
-
-    if (!strcmp(argv[0], "list"))
-        rc = handleMetricsList(argc, argv, aVirtualBox, performanceCollector);
-    else if (!strcmp(argv[0], "setup"))
-        rc = handleMetricsSetup(argc, argv, aVirtualBox, performanceCollector);
-    else if (!strcmp(argv[0], "query"))
-        rc = handleMetricsQuery(argc, argv, aVirtualBox, performanceCollector);
-    else if (!strcmp(argv[0], "collect"))
-        rc = handleMetricsCollect(argc, argv, aVirtualBox, performanceCollector);
-    else
-        return errorSyntax(USAGE_METRICS, "Invalid subcommand '%s'", argv[0]);
-
-    return rc;
 }
 #endif /* !VBOX_ONLY_DOCS */
 
@@ -8396,7 +4729,7 @@ int main(int argc, char *argv[])
         {
             /* Print version number, and do nothing else. */
             RTPrintf("%sr%d\n", VBOX_VERSION_STRING, VBoxSVNRev ());
-            exit(0);
+            return 0;
         }
         else if (strcmp(argv[i], "-dumpopts") == 0)
         {
@@ -8462,10 +4795,11 @@ int main(int argc, char *argv[])
     // scopes all the stuff till shutdown
     ////////////////////////////////////////////////////////////////////////////
 
-    /* convertdd: does not need a VirtualBox instantiation) */
-    if (argc >= iCmdArg && (strcmp(argv[iCmd], "convertdd") == 0))
+    /* convertfromraw: does not need a VirtualBox instantiation. */
+    if (argc >= iCmdArg && (   !strcmp(argv[iCmd], "convertfromraw")
+                            || !strcmp(argv[iCmd], "convertdd")))
     {
-        rc = handleConvertDDImage(argc - iCmdArg, argv + iCmdArg);
+        rc = handleConvertFromRaw(argc - iCmdArg, argv + iCmdArg);
         break;
     }
 
@@ -8493,7 +4827,9 @@ int main(int argc, char *argv[])
      * (here it is necessary only to process remaining XPCOM/IPC events
      * after the session is closed) */
 
-    EventQueue eventQ;
+#ifdef USE_XPCOM_QUEUE
+    NS_GetMainEventQ(getter_AddRefs(g_pEventQ));
+#endif
 
     if (!checkForAutoConvertedSettings (virtualBox, session, fConvertSettings))
         break;
@@ -8512,20 +4848,26 @@ int main(int argc, char *argv[])
         { "showvminfo",       handleShowVMInfo },
         { "registervm",       handleRegisterVM },
         { "unregistervm",     handleUnregisterVM },
-        { "createvdi",        handleCreateVDI },
-        { "modifyvdi",        handleModifyVDI },
+        { "createhd",         handleCreateHardDisk },
+        { "createvdi",        handleCreateHardDisk }, /* backward compatiblity */
+        { "modifyhd",         handleModifyHardDisk },
+        { "modifyvdi",        handleModifyHardDisk }, /* backward compatiblity */
+        { "clonehd",          handleCloneHardDisk },
+        { "clonevdi",         handleCloneHardDisk }, /* backward compatiblity */
         { "addiscsidisk",     handleAddiSCSIDisk },
         { "createvm",         handleCreateVM },
         { "modifyvm",         handleModifyVM },
-        { "clonevdi",         handleCloneVDI },
         { "startvm",          handleStartVM },
         { "controlvm",        handleControlVM },
         { "discardstate",     handleDiscardState },
         { "adoptstate",       handleAdoptdState },
         { "snapshot",         handleSnapshot },
-        { "registerimage",    handleRegisterImage },
-        { "unregisterimage",  handleUnregisterImage },
-        { "showvdiinfo",      handleShowVDIInfo },
+        { "openmedium",       handleOpenMedium },
+        { "registerimage",    handleOpenMedium }, /* backward compatiblity */
+        { "closemedium",      handleCloseMedium },
+        { "unregisterimage",  handleCloseMedium }, /* backward compatiblity */
+        { "showhdinfo",       handleShowHardDiskInfo },
+        { "showvdiinfo",      handleShowHardDiskInfo }, /* backward compatiblity */
 #ifdef RT_OS_WINDOWS
         { "createhostif",     handleCreateHostIF },
         { "removehostif",     handleRemoveHostIF },
@@ -8563,6 +4905,10 @@ int main(int argc, char *argv[])
      * Aborted which may have unwanted side effects like killing the saved
      * state file (if the machine was in the Saved state before). */
     session->Close();
+
+#ifdef USE_XPCOM_QUEUE
+    g_pEventQ->ProcessPendingEvents();
+#endif
 
     // end "all-stuff" scope
     ////////////////////////////////////////////////////////////////////////////

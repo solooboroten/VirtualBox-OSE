@@ -408,6 +408,8 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_PROCESS_RUNNING                (-51)
 /** Retry the operation. */
 #define VERR_TRY_AGAIN                      (-52)
+/** Retry the operation. */
+#define VINF_TRY_AGAIN                      52
 /** Generic parse error. */
 #define VERR_PARSE_ERROR                    (-53)
 /** Value out of range. */
@@ -478,11 +480,20 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 /** Generic invalid state warning. */
 #define VWRN_INVALID_STATE                  79
 /** Generic out of resources error. */
-#define VERR_OUT_OF_RESOURCES              (-80)
+#define VERR_OUT_OF_RESOURCES               (-80)
 /** Generic out of resources warning. */
 #define VWRN_OUT_OF_RESOURCES               80
 /** No more handles available, too many open handles. */
-#define VERR_NO_MORE_HANDLES               (-81)
+#define VERR_NO_MORE_HANDLES                (-81)
+/** Preemption is disabled.
+ * The requested operation can only be performed when preemption is enabled. */
+#define VERR_PREEMPT_DISABLED               (-82)
+/** End of string. */
+#define VERR_END_OF_STRING                  (-83)
+/** End of string. */
+#define VINF_END_OF_STRING                  83
+/** A page count is ouf of range. */
+#define VERR_PAGE_COUNT_OUT_OF_RANGE        (-84)
 /** @} */
 
 

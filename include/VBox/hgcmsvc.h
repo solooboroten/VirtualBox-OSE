@@ -33,6 +33,7 @@
 
 #include <VBox/cdefs.h>
 #include <VBox/types.h>
+#include <VBox/err.h>
 
 /** @todo proper comments. */
 
@@ -57,10 +58,12 @@
  * 3.1->3.2 Because pfnRegisterExtension was added
  * 3.2->3.3 Because pfnDisconnectClient helper was added
  * 3.3->4.1 Because the pvService entry and parameter was added
- * 4.1->4.2 Because the VBOX_HGCM_SVC_PARM_CALLBACK paramteter type was added
+ * 4.1->4.2 Because the VBOX_HGCM_SVC_PARM_CALLBACK parameter type was added
+ * 4.2->5.1 Removed the VBOX_HGCM_SVC_PARM_CALLBACK parameter type, as
+ *          this problem is already solved by service extension callbacks
  */
-#define VBOX_HGCM_SVC_VERSION_MAJOR (0x0004)
-#define VBOX_HGCM_SVC_VERSION_MINOR (0x0002)
+#define VBOX_HGCM_SVC_VERSION_MAJOR (0x0005)
+#define VBOX_HGCM_SVC_VERSION_MINOR (0x0001)
 #define VBOX_HGCM_SVC_VERSION ((VBOX_HGCM_SVC_VERSION_MAJOR << 16) + VBOX_HGCM_SVC_VERSION_MINOR)
 
 
@@ -82,18 +85,11 @@ typedef struct _VBOXHGCMSVCHELPERS
 
 typedef VBOXHGCMSVCHELPERS *PVBOXHGCMSVCHELPERS;
 
-/**
- * Callback type for HGCM services which can send notification messages.
- * Intended for use on the host side.
- */
-typedef DECLCALLBACK(void) FNVBOXHGCMCALLBACK(void *pvParm);
-typedef FNVBOXHGCMCALLBACK *PFNVBOXHGCMCALLBACK;
 
-#define VBOX_HGCM_SVC_PARM_INVALID  (0U)
-#define VBOX_HGCM_SVC_PARM_32BIT    (1U)
-#define VBOX_HGCM_SVC_PARM_64BIT    (2U)
-#define VBOX_HGCM_SVC_PARM_PTR      (3U)
-#define VBOX_HGCM_SVC_PARM_CALLBACK (4U)
+#define VBOX_HGCM_SVC_PARM_INVALID (0U)
+#define VBOX_HGCM_SVC_PARM_32BIT (1U)
+#define VBOX_HGCM_SVC_PARM_64BIT (2U)
+#define VBOX_HGCM_SVC_PARM_PTR   (3U)
 
 typedef struct VBOXHGCMSVCPARM
 {
@@ -109,12 +105,80 @@ typedef struct VBOXHGCMSVCPARM
             uint32_t size;
             void *addr;
         } pointer;
-        struct
-        {
-            PFNVBOXHGCMCALLBACK pFunction;
-            void *pvData;
-        } callback;
     } u;
+#ifdef __cplusplus
+    /** Extract a uint32_t value from an HGCM parameter structure */
+    int getUInt32 (uint32_t *u32)
+    {
+        int rc = VINF_SUCCESS;
+        if (type != VBOX_HGCM_SVC_PARM_32BIT)
+            rc = VERR_INVALID_PARAMETER;
+        if (RT_SUCCESS(rc))
+            *u32 = u.uint32;
+        return rc;
+    }
+
+    /** Extract a uint64_t value from an HGCM parameter structure */
+    int getUInt64 (uint64_t *u64)
+    {
+        int rc = VINF_SUCCESS;
+        if (type != VBOX_HGCM_SVC_PARM_64BIT)
+            rc = VERR_INVALID_PARAMETER;
+        if (RT_SUCCESS(rc))
+            *u64 = u.uint64;
+        return rc;
+    }
+
+    /** Extract a pointer value from an HGCM parameter structure */
+    int getPointer (void **ppv, uint32_t *pcb)
+    {
+        if (type == VBOX_HGCM_SVC_PARM_PTR)
+        {
+            *ppv = u.pointer.addr;
+            *pcb = u.pointer.size;
+            return VINF_SUCCESS;
+        }
+
+        return VERR_INVALID_PARAMETER;
+    }
+
+    /** Extract a constant pointer value from an HGCM parameter structure */
+    int getPointer (const void **ppv, uint32_t *pcb)
+    {
+        if (type == VBOX_HGCM_SVC_PARM_PTR)
+        {
+            *ppv = u.pointer.addr;
+            *pcb = u.pointer.size;
+            return VINF_SUCCESS;
+        }
+
+        return VERR_INVALID_PARAMETER;
+    }
+
+    /** Set a uint32_t value to an HGCM parameter structure */
+    void setUInt32(uint32_t u32)
+    {
+        type = VBOX_HGCM_SVC_PARM_32BIT;
+        u.uint32 = u32;
+    }
+
+    /** Set a uint64_t value to an HGCM parameter structure */
+    void setUInt64(uint64_t u64)
+    {
+        type = VBOX_HGCM_SVC_PARM_64BIT;
+        u.uint64 = u64;
+    }
+
+    /** Set a pointer value to an HGCM parameter structure */
+    void setPointer(void *pv, uint32_t cb)
+    {
+        type = VBOX_HGCM_SVC_PARM_PTR;
+        u.pointer.addr = pv;
+        u.pointer.size = cb;
+    }
+
+    VBOXHGCMSVCPARM() : type(VBOX_HGCM_SVC_PARM_INVALID) {}
+#endif
 } VBOXHGCMSVCPARM;
 
 typedef VBOXHGCMSVCPARM *PVBOXHGCMSVCPARM;
@@ -185,7 +249,7 @@ typedef struct _VBOXHGCMSVCFNTABLE
     /** Inform the service about a VM load operation. */
     DECLR3CALLBACKMEMBER(int, pfnLoadState, (void *pvService, uint32_t u32ClientID, void *pvClient, PSSMHANDLE pSSM));
 
-    /** Manage the service extension. */
+    /** Register a service extension callback. */
     DECLR3CALLBACKMEMBER(int, pfnRegisterExtension, (void *pvService, PFNHGCMSVCEXT pfnExtension, void *pvExtension));
 
     /** User/instance data pointer for the service. */

@@ -93,7 +93,7 @@ struct _VBGLPHYSHEAPCHUNK
 {
     uint32_t u32Signature;
 
-    /* Size of the the chunk. Includes the chunk header. */
+    /* Size of the chunk. Includes the chunk header. */
     uint32_t cbSize;
 
     /* Physical address of the chunk */
@@ -174,8 +174,8 @@ DECLINLINE(int) vbglPhysHeapEnter (void)
 {
     int rc = RTSemFastMutexRequest(g_vbgldata.mutexHeap);
 
-    VBGL_PH_ASSERTMsg(VBOX_SUCCESS(rc),
-                     ("Failed to request heap mutex, rc = %Vrc\n", rc));
+    VBGL_PH_ASSERTMsg(RT_SUCCESS(rc),
+                     ("Failed to request heap mutex, rc = %Rrc\n", rc));
 
     return rc;
 }
@@ -392,7 +392,7 @@ DECLVBGL(void *) VbglPhysHeapAlloc (uint32_t cbSize)
     VBGLPHYSHEAPBLOCK *pBlock, *iter;
     int rc = vbglPhysHeapEnter ();
 
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return NULL;
 
     dumpheap ("pre alloc");
@@ -512,7 +512,7 @@ DECLVBGL(void) VbglPhysHeapFree (void *p)
     VBGLPHYSHEAPBLOCK *pNeighbour;
 
     int rc = vbglPhysHeapEnter ();
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return;
 
     dumpheap ("pre free");

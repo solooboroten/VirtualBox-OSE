@@ -1,4 +1,4 @@
-/* $Id: Performance.cpp $ */
+/* $Id: Performance.cpp 15051 2008-12-05 17:20:00Z vboxsync $ */
 
 /** @file
  *
@@ -27,6 +27,8 @@
  * 1) Detection of erroneous metric names
  */
 
+#include "Performance.h"
+
 #include <VBox/com/array.h>
 #include <VBox/com/ptr.h>
 #include <VBox/com/string.h>
@@ -38,7 +40,6 @@
 #include <algorithm>
 
 #include "Logging.h"
-#include "Performance.h"
 
 using namespace pm;
 
@@ -304,6 +305,7 @@ void CircularBuffer::init(ULONG length)
         mData = NULL;
     mWrapped = false;
     mEnd = 0;
+    mSequenceNumber = 0;
 }
 
 ULONG CircularBuffer::length()
@@ -321,6 +323,7 @@ void CircularBuffer::put(ULONG value)
             mEnd = 0;
             mWrapped = true;
         }
+        ++mSequenceNumber;
     }
 }
 
@@ -342,12 +345,13 @@ void SubMetric::query(ULONG *data)
     copyTo(data);
 }
 
-void Metric::query(ULONG **data, ULONG *count)
+void Metric::query(ULONG **data, ULONG *count, ULONG *sequenceNumber)
 {
     ULONG length;
     ULONG *tmpData;
 
     length = mSubMetric->length();
+    *sequenceNumber = mSubMetric->getSequenceNumber() - length;
     if (length)
     {
         tmpData = (ULONG*)RTMemAlloc(sizeof(*tmpData)*length);
@@ -413,12 +417,61 @@ const char * AggregateMax::getName()
     return "max";
 }
 
-Filter::Filter(ComSafeArrayIn(INPTR BSTR, metricNames),
+Filter::Filter(ComSafeArrayIn(IN_BSTR, metricNames),
                ComSafeArrayIn(IUnknown *, objects))
 {
-    com::SafeArray <INPTR BSTR> nameArray(ComSafeArrayInArg(metricNames));
+    /*
+     * Let's work around null/empty safe array mess. I am not sure there is
+     * a way to pass null arrays via webservice, I haven't found one. So I
+     * guess the users will be forced to use empty arrays instead. Constructing
+     * an empty SafeArray is a bit awkward, so what we do in this method is
+     * actually convert null arrays to empty arrays and pass them down to
+     * init() method. If someone knows how to do it better, please be my guest,
+     * fix it.
+     */
+    if (ComSafeArrayInIsNull(metricNames))
+    {
+        com::SafeArray <BSTR> nameArray;
+        if (ComSafeArrayInIsNull(objects))
+        {
+            com::SafeIfaceArray <IUnknown> objectArray;
+            objectArray.reset(0);
+            init(ComSafeArrayAsInParam(nameArray),
+                 ComSafeArrayAsInParam(objectArray));
+        }
+        else
+        {
+            com::SafeIfaceArray <IUnknown> objectArray(ComSafeArrayInArg(objects));
+            init(ComSafeArrayAsInParam(nameArray),
+                 ComSafeArrayAsInParam(objectArray));
+        }
+    }
+    else
+    {
+        com::SafeArray <IN_BSTR> nameArray(ComSafeArrayInArg(metricNames));
+        if (ComSafeArrayInIsNull(objects))
+        {
+            com::SafeIfaceArray <IUnknown> objectArray;
+            objectArray.reset(0);
+            init(ComSafeArrayAsInParam(nameArray),
+                 ComSafeArrayAsInParam(objectArray));
+        }
+        else
+        {
+            com::SafeIfaceArray <IUnknown> objectArray(ComSafeArrayInArg(objects));
+            init(ComSafeArrayAsInParam(nameArray),
+                 ComSafeArrayAsInParam(objectArray));
+        }
+    }
+}
 
-    if (ComSafeArrayInIsNull(objects))
+void Filter::init(ComSafeArrayIn(IN_BSTR, metricNames),
+                  ComSafeArrayIn(IUnknown *, objects))
+{
+    com::SafeArray <IN_BSTR> nameArray(ComSafeArrayInArg(metricNames));
+    com::SafeIfaceArray <IUnknown> objectArray(ComSafeArrayInArg(objects));
+
+    if (!objectArray.size())
     {
         if (nameArray.size())
         {
@@ -430,8 +483,6 @@ Filter::Filter(ComSafeArrayIn(INPTR BSTR, metricNames),
     }
     else
     {
-        com::SafeIfaceArray <IUnknown> objectArray(ComSafeArrayInArg(objects));
-
         for (size_t i = 0; i < objectArray.size(); ++i)
             switch (nameArray.size())
             {
@@ -462,8 +513,17 @@ void Filter::processMetricList(const std::string &name, const ComPtr<IUnknown> o
     mElements.push_back(std::make_pair(object, name.substr(startPos)));
 }
 
-/* The following method was borrowed from VMM/STAM.cpp */
-bool Filter::patternMatch(const char *pszPat, const char *pszName)
+/**
+ * The following method was borrowed from stamR3Match (VMM/STAM.cpp) and
+ * modified to handle the special case of trailing colon in the pattern.
+ *
+ * @returns True if matches, false if not.
+ * @param   pszPat      Pattern.
+ * @param   pszName     Name to match against the pattern.
+ * @param   fSeenColon  Seen colon (':').
+ */
+bool Filter::patternMatch(const char *pszPat, const char *pszName,
+                          bool fSeenColon)
 {
     /* ASSUMES ASCII */
     for (;;)
@@ -481,12 +541,20 @@ bool Filter::patternMatch(const char *pszPat, const char *pszName)
                 while ((chPat = *++pszPat) == '*' || chPat == '?')
                     /* nothing */;
 
+                /* Handle a special case, the mask terminating with a colon. */
+                if (chPat == ':')
+                {
+                    if (!fSeenColon && !pszPat[1])
+                        return !strchr(pszName, ':');
+                    fSeenColon = true;
+                }
+
                 for (;;)
                 {
                     char ch = *pszName++;
                     if (    ch == chPat
                         &&  (   !chPat
-                             || patternMatch(pszPat + 1, pszName)))
+                             || patternMatch(pszPat + 1, pszName, fSeenColon)))
                         return true;
                     if (!ch)
                         return false;
@@ -498,6 +566,15 @@ bool Filter::patternMatch(const char *pszPat, const char *pszName)
             case '?':
                 if (!*pszName)
                     return false;
+                break;
+
+            /* Handle a special case, the mask terminating with a colon. */
+            case ':':
+                if (!fSeenColon && !pszPat[1])
+                    return !*pszName;
+                if (*pszName != ':')
+                    return false;
+                fSeenColon = true;
                 break;
 
             case '\0':
@@ -530,3 +607,4 @@ bool Filter::match(const ComPtr<IUnknown> object, const std::string &name) const
     LogAleksey(("...no matches!\n"));
     return false;
 }
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

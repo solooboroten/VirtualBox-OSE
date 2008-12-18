@@ -1,4 +1,4 @@
-/* $Id: ParallelPortImpl.cpp $ */
+/* $Id: ParallelPortImpl.cpp 15051 2008-12-05 17:20:00Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation
  */
@@ -58,7 +58,7 @@ HRESULT ParallelPort::init (Machine *aParent, ULONG aSlot)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     /* mPeer is left null */
@@ -92,7 +92,7 @@ HRESULT ParallelPort::init (Machine *aParent, ParallelPort *aThat)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     unconst (mPeer) = aThat;
@@ -124,7 +124,7 @@ HRESULT ParallelPort::initCopy (Machine *aParent, ParallelPort *aThat)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     /* mPeer is left null */
@@ -322,8 +322,7 @@ void ParallelPort::copyFrom (ParallelPort *aThat)
 
 STDMETHODIMP ParallelPort::COMGETTER(Enabled) (BOOL *aEnabled)
 {
-    if (!aEnabled)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aEnabled);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -371,8 +370,7 @@ STDMETHODIMP ParallelPort::COMSETTER(Enabled) (BOOL aEnabled)
 
 STDMETHODIMP ParallelPort::COMGETTER(Slot) (ULONG *aSlot)
 {
-    if (!aSlot)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aSlot);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -386,8 +384,7 @@ STDMETHODIMP ParallelPort::COMGETTER(Slot) (ULONG *aSlot)
 
 STDMETHODIMP ParallelPort::COMGETTER(IRQ) (ULONG *aIRQ)
 {
-    if (!aIRQ)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aIRQ);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -441,8 +438,7 @@ STDMETHODIMP ParallelPort::COMSETTER(IRQ)(ULONG aIRQ)
 
 STDMETHODIMP ParallelPort::COMGETTER(IOBase) (ULONG *aIOBase)
 {
-    if (!aIOBase)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aIOBase);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -496,8 +492,7 @@ STDMETHODIMP ParallelPort::COMSETTER(IOBase)(ULONG aIOBase)
 
 STDMETHODIMP ParallelPort::COMGETTER(Path) (BSTR *aPath)
 {
-    if (!aPath)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aPath);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -512,7 +507,7 @@ STDMETHODIMP ParallelPort::COMGETTER(Path) (BSTR *aPath)
 /**
  *  Validates COMSETTER(Path) arguments.
  */
-HRESULT ParallelPort::checkSetPath (const BSTR aPath)
+HRESULT ParallelPort::checkSetPath (CBSTR aPath)
 {
     AssertReturn (isWriteLockOnCurrentThread(), E_FAIL);
 
@@ -526,7 +521,7 @@ HRESULT ParallelPort::checkSetPath (const BSTR aPath)
     return S_OK;
 }
 
-STDMETHODIMP ParallelPort::COMSETTER(Path) (INPTR BSTR aPath)
+STDMETHODIMP ParallelPort::COMSETTER(Path) (IN_BSTR aPath)
 {
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -536,6 +531,10 @@ STDMETHODIMP ParallelPort::COMSETTER(Path) (INPTR BSTR aPath)
     CheckComRCReturnRC (adep.rc());
 
     AutoWriteLock alock (this);
+
+    /* we treat empty as null when e.g. saving to XML, do the same here */
+    if (aPath && *aPath == '\0')
+        aPath = NULL;
 
     if (mData->mPath != aPath)
     {
@@ -553,4 +552,4 @@ STDMETHODIMP ParallelPort::COMSETTER(Path) (INPTR BSTR aPath)
 
     return S_OK;
 }
-
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

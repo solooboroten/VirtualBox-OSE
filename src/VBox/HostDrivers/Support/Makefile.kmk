@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 15589 2008-12-16 14:24:08Z vboxsync $
 ## @file
 # Sub-Makefile for the support library and the drivers/modules/kexts it uses.
 #
@@ -44,18 +44,13 @@ ifndef VBOX_ONLY_DOCS
  endif
  ifdef VBOX_WITH_VBOXDRV
   LIBRARIES       += SUPR0IdcClient
-  SYSMODS.darwin  += VBoxDrv
   SYSMODS.freebsd += vboxdrv
   SYSMODS.linux   += vboxdrv
   SYSMODS.win     += VBoxDrv
   SYSMODS.os2     += VBoxDrv
   SYSMODS.solaris += vboxdrv
  endif
- OTHERS.linux    += \
-  	$(PATH_BIN)/src/build_in_tmp \
-  	$(PATH_BIN)/src/Makefile \
-  	$(if $(VBOX_OSE),,$(PATH_BIN)/src/dkms.conf)
- INSTALLS.linux   += vboxmod-bin vboxmod-sh
+ INSTALLS.linux   += vboxdrv-mod vboxdrv-sh
 
  #
  # Include sub-makefile(s).
@@ -79,9 +74,6 @@ else
  SUPR3_TEMPLATE     = VBOXR3
 endif
 SUPR3_DEFS          = IN_SUP_R3 IN_RT_R3
-ifdef VBOX_WITH_IDT_PATCHING
- SUPR3_DEFS        += VBOX_WITH_IDT_PATCHING
-endif
 ifdef VBOX_WITH_SUPSVC
  SUPR3_DEFS        += VBOX_WITH_SUPSVC
 endif
@@ -169,10 +161,7 @@ ifdef VBOX_SIGNING_MODE
  VBoxDrv_NOINST       = true
 endif
 VBoxDrv_DEFS          = IN_RT_R0 IN_SUP_R0 SUPDRV_WITH_RELEASE_LOGGER
-ifdef VBOX_WITH_IDT_PATCHING
- VBoxDrv_DEFS        += VBOX_WITH_IDT_PATCHING
-endif
-VBoxDrv_DEFS.amd64    = SUPDRV_WITH_UNWIND_HACK
+VBoxDrv_DEFS.amd64    = RT_WITH_W64_UNWIND_HACK
 VBoxDrv_SDKS          = W2K3DDK WINPSDKINCS
 VBoxDrv_INCS         := $(PATH_SUB_CURRENT)
 VBoxDrv_SOURCES       = \
@@ -209,7 +198,7 @@ $(PATH_TARGET)/VBoxDrvCat.dir/VBoxDrv.sys: $$(TARGET_VBoxDrv) | $$(call DIRDEP,$
 
 $(PATH_TARGET)/VBoxDrvCat.dir/VBoxDrv.cat: \
 		$(PATH_TARGET)/VBoxDrvCat.dir/VBoxDrv.inf \
-		$(PATH_TARGET)/VBoxDrvCat.dir/VBoxDrv.cat
+		$(PATH_TARGET)/VBoxDrvCat.dir/VBoxDrv.sys
 	$(call MSG_TOOL,Inf2Cat,VBoxDrv-inf,$@,$<)
 	$(call VBOX_MAKE_CAT_FN, $(@D),$@)
  endif # signing
@@ -217,14 +206,12 @@ endif # win
 
 
 #
-# vboxdrv.ko - The Linux Kernel Module (syntax only).
+# vboxdrv.ko - The Linux Kernel Module (syntax check only).
 #
 ifeq ($(KBUILD_TARGET),linux)
 vboxdrv_TEMPLATE      = VBOXR0DRV
+vboxdrv_NOINST        = true
 vboxdrv_DEFS          = KBUILD_MODNAME=KBUILD_STR\(vboxdrv\) KBUILD_BASENAME=KBUILD_STR\(vboxdrv\) MODULE IN_RT_R0 IN_SUP_R0 CONFIG_VBOXDRV_AS_MISC
-ifdef VBOX_WITH_IDT_PATCHING
-vboxdrv_DEFS         += VBOX_WITH_IDT_PATCHING
-endif
 ifdef VBOX_LINUX_VERSION_2_4
 vboxdrv_DEFS         += EXPORT_SYMTAB
 endif
@@ -245,44 +232,59 @@ endif
 #
 # Targets for installing the linux sources.
 #
-vboxmod-bin_INST    = bin/src/
-vboxmod-bin_MODE    = a+r,u+w
-vboxmod-bin_SOURCES = $(subst ",,$(FILES_VBOXDRV_NOBIN)) #"
+vboxdrv-mod_INST    = bin/src/vboxdrv/
+vboxdrv-mod_MODE    = a+r,u+w
+vboxdrv-mod_SOURCES = $(subst ",,$(FILES_VBOXDRV_NOBIN)) #"
+vboxdrv-mod_SOURCES += \
+	$(if $(VBOX_OSE),,\
+	  $(PATH_vboxdrv-mod)/dkms.conf) \
+	$(PATH_vboxdrv-mod)/Makefile
+vboxdrv-mod_CLEAN   = \
+	$(PATH_vboxdrv-mod)/dkms.conf \
+	$(PATH_vboxdrv-mod)/Makefile
 
-vboxmod-sh_INST     = bin/src/
-vboxmod-sh_MODE     = a+rx,u+w
-vboxmod-sh_SOURCES  = $(subst ",,$(FILES_VBOXDRV_BIN)) #"
-vboxmod-sh_CLEAN    = $(PATH_TARGET)/vboxmod-sh-1.dep
+vboxdrv-sh_INST     = bin/src/vboxdrv
+vboxdrv-sh_MODE     = a+rx,u+w
+vboxdrv-sh_SOURCES  = $(subst ",,$(FILES_VBOXDRV_BIN)) #"
+vboxdrv-sh_SOURCES += \
+	$(PATH_vboxdrv-sh)/build_in_tmp \
+	$(if $(VBOX_OSE),,\
+	  $(PATH_ROOT)/src/VBox/HostDrivers/linux/do_Module.symvers)
+vboxdrv-sh_CLEAN    = \
+	$(PATH_TARGET)/vboxdrv-sh-1.dep \
+	$(PATH_vboxdrv-sh)/build_in_tmp
+
 
 # Scripts needed for building the kernel modules
-## @todo generate these else where and move them from OTHERS to vboxmod-bin (which btw installs NOBIN files contrary to its name).
 
-$(PATH_BIN)/src/build_in_tmp: \
-		$(PATH_SUB_CURRENT)/linux/build_in_tmp \
-		$(VBOX_VERSION_STAMP)
+$$(PATH_vboxdrv-sh)/build_in_tmp: \
+		$(PATH_ROOT)/src/VBox/HostDrivers/linux/build_in_tmp \
+		$(VBOX_VERSION_STAMP) \
+		| $$(dir $$@)
 	$(call MSG_TOOL,Creating,,$@)
 	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g; s;_MODULE_;vboxdrv;g" --output $@ $<
 	$(QUIET)chmod 0755 $@
 
-$(PATH_BIN)/src/dkms.conf: \
+$$(PATH_vboxdrv-mod)/dkms.conf: \
 		$(PATH_SUB_CURRENT)/linux/dkms.conf \
-		$(VBOX_VERSION_STAMP)
+		$(VBOX_VERSION_STAMP) \
+		| $$(dir $$@)
 	$(call MSG_TOOL,Creating,,$@)
 	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g" --output $@ $<
 
-includedep $(PATH_TARGET)/vboxmod-sh-1.dep
-$(PATH_BIN)/src/Makefile: \
+includedep $(PATH_TARGET)/vboxdrv-sh-1.dep
+$$(PATH_vboxdrv-mod)/Makefile: \
 		$(PATH_SUB_CURRENT)/linux/Makefile \
 		$$(if $$(eq $$(Support/linux/Makefile_VBOX_HARDENED),$$(VBOX_WITH_HARDENING)),,FORCE) \
-		| $(PATH_TARGET)/
+		| $$(dir $$@)
 	$(call MSG_TOOL,Creating,,$@)
  ifndef VBOX_WITH_HARDENING
 	$(QUIET)$(SED) -e "s;-DVBOX_WITH_HARDENING;;g" --output $@ $<
  else
 	$(QUIET)$(CP) -f $< $@
  endif
-	%$(QUIET2)$(RM) -f -- $(PATH_TARGET)/vboxmod-sh-1.dep
-	%$(QUIET2)$(APPEND) '$(PATH_TARGET)/vboxmod-sh-1.dep' 'Support/linux/Makefile_VBOX_HARDENED=$(VBOX_WITH_HARDENING)'
+	%$(QUIET2)$(RM) -f -- $(PATH_TARGET)/vboxdrv-sh-1.dep
+	%$(QUIET2)$(APPEND) '$(PATH_TARGET)/vboxdrv-sh-1.dep' 'Support/linux/Makefile_VBOX_HARDENED=$(VBOX_WITH_HARDENING)'
 
 endif # real linux
 
@@ -293,26 +295,47 @@ endif # real linux
 # VBoxDrv.kext - The Darwin Kernel Extension.
 #
 ifeq ($(KBUILD_TARGET),darwin)
-VBoxDrv_TEMPLATE      = VBOXR0DRV
-VBoxDrv_DEFS          = IN_RT_R0 IN_SUP_R0 SUPDRV_WITH_RELEASE_LOGGER VBOX_SVN_REV=$(VBOX_SVN_REV)
-ifdef VBOX_WITH_IDT_PATCHING
-VBoxDrv_DEFS         += VBOX_WITH_IDT_PATCHING
-endif
-VBoxDrv_DEFS         += DEBUG_DARWIN_GIP
-VBoxDrv_INCS         := $(PATH_SUB_CURRENT)
-VBoxDrv_LIBS          = $(PATH_LIB)/RuntimeR0Drv$(VBOX_SUFF_LIB)
-VBoxDrv_LDFLAGS       = -v -Wl,-whyload -Wl,-v -Wl,-whatsloaded
-VBoxDrv_INST          = $(INST_VBOXDRV)Contents/MacOS/
-VBoxDrv_SOURCES       = \
+# The Tiger variant.
+SYSMODS += VBoxDrvTiger
+VBoxDrvTiger_TEMPLATE    = VBOXR0DRV
+VBoxDrvTiger_INST        = $(INST_VBOXDRV_TIGER)Contents/MacOS/
+VBoxDrvTiger_DEFS       := IN_RT_R0 IN_SUP_R0 SUPDRV_WITH_RELEASE_LOGGER VBOX_SVN_REV=$(VBOX_SVN_REV)
+VBoxDrvTiger_DEFS.debug += DEBUG_DARWIN_GIP
+VBoxDrvTiger_INCS        = .
+VBoxDrvTiger_LIBS        = $(PATH_LIB)/RuntimeR0Drv$(VBOX_SUFF_LIB)
+VBoxDrvTiger_LDFLAGS     = -v -Wl,-whyload -Wl,-v -Wl,-whatsloaded
+VBoxDrvTiger_SOURCES     = \
 	SUPDrv.c \
 	$(KBUILD_TARGET)/SUPDrv-$(KBUILD_TARGET).cpp
 
+INSTALLS += VBoxDrvTiger.kext
+VBoxDrvTiger.kext_INST     = $(INST_VBOXDRV_TIGER)Contents/
+VBoxDrvTiger.kext_SOURCES  = $(PATH_VBoxDrvTiger.kext)/Info.plist
+VBoxDrvTiger.kext_CLEAN    = $(PATH_VBoxDrvTiger.kext)/Info.plist
+
+$$(PATH_VBoxDrvTiger.kext)/Info.plist: $(PATH_SUB_CURRENT)/darwin/Info-Tiger.plist $(VBOX_VERSION_MK) | $$(dir $$@)
+	$(call MSG_GENERATE,VBoxDrvTiger,$@,$<)
+	$(xQUIET)$(RM) -f $@
+	$(xQUIET)$(SED) \
+		-e 's/@VBOX_VERSION_STRING@/$(VBOX_VERSION_STRING)/g' \
+		-e 's/@VBOX_VERSION_MAJOR@/$(VBOX_VERSION_MAJOR)/g' \
+		-e 's/@VBOX_VERSION_MINOR@/$(VBOX_VERSION_MINOR)/g' \
+		-e 's/@VBOX_VERSION_BUILD@/$(VBOX_VERSION_BUILD)/g' \
+		--output $@ \
+		$<
+
+# The Leopard variant.
+SYSMODS += VBoxDrv
+VBoxDrv_EXTENDS    = VBoxDrvTiger
+VBoxDrv_EXTENDS_BY = appending
+VBoxDrv_TEMPLATE   = VBOXR0DRVOSX105
+VBoxDrv_INST       = $(INST_VBOXDRV)Contents/MacOS/
+VBoxDrv_DEFS       = VBOX_WITH_HOST_VMX
+
 INSTALLS += VBoxDrv.kext
 VBoxDrv.kext_INST     = $(INST_VBOXDRV)Contents/
-VBoxDrv.kext_SOURCES  = \
-	$(PATH_VBoxDrv.kext)/Info.plist
-VBoxDrv.kext_CLEAN    = \
-	$(PATH_VBoxDrv.kext)/Info.plist
+VBoxDrv.kext_SOURCES  =	$(PATH_VBoxDrv.kext)/Info.plist
+VBoxDrv.kext_CLEAN    =	$(PATH_VBoxDrv.kext)/Info.plist
 
 $$(PATH_VBoxDrv.kext)/Info.plist: $(PATH_SUB_CURRENT)/darwin/Info.plist $(VBOX_VERSION_MK) | $$(dir $$@)
 	$(call MSG_GENERATE,VBoxDrv,$@,$<)
@@ -322,8 +345,10 @@ $$(PATH_VBoxDrv.kext)/Info.plist: $(PATH_SUB_CURRENT)/darwin/Info.plist $(VBOX_V
 		-e 's/@VBOX_VERSION_MAJOR@/$(VBOX_VERSION_MAJOR)/g' \
 		-e 's/@VBOX_VERSION_MINOR@/$(VBOX_VERSION_MINOR)/g' \
 		-e 's/@VBOX_VERSION_BUILD@/$(VBOX_VERSION_BUILD)/g' \
-		$< > $@
+		--output $@ \
+		$<
 
+# Common manual loader script.
 INSTALLS += Scripts
 Scripts_INST     = $(INST_DIST)
 Scripts_SOURCES  = \
@@ -369,9 +394,6 @@ endif
 ifeq ($(KBUILD_TARGET),freebsd)
 vboxdrv_TEMPLATE      = VBOXR0DRV
 vboxdrv_DEFS          = IN_RT_R0 IN_SUP_R0 SUPDRV_WITH_RELEASE_LOGGER VBOX_SVN_REV=$(VBOX_SVN_REV)
-ifdef VBOX_WITH_IDT_PATCHING
-vboxdrv_DEFS         += VBOX_WITH_IDT_PATCHING
-endif
 vboxdrv_INCS         := $(PATH_SUB_CURRENT)
 vboxdrv_LIBS          = $(PATH_LIB)/RuntimeR0Drv$(VBOX_SUFF_LIB)
 vboxdrv_SOURCES      := \
@@ -387,10 +409,12 @@ endif # freebsd
 #
 ifeq ($(KBUILD_TARGET),solaris)
 vboxdrv_TEMPLATE      = VBOXR0DRV
-vboxdrv_DEFS          = IN_RT_R0 IN_SUP_R0
-ifdef VBOX_WITH_IDT_PATCHING
-vboxdrv_DEFS         += VBOX_WITH_IDT_PATCHING
+vboxdrv_DEFS          = IN_RT_R0 IN_SUP_R0 SUPDRV_WITH_RELEASE_LOGGER
+ifdef VBOX_WITH_NETFLT
+ vboxdrv_DEFS        += VBOX_WITH_NETFLT
 endif
+vboxdrv_DEFS         += VBOX_SVN_REV=$(VBOX_SVN_REV)
+vboxdrv_DEPS         += $(VBOX_SVN_REV_KMK)
 vboxdrv_INCS         := $(PATH_SUB_CURRENT)
 vboxdrv_LIBS          = $(PATH_LIB)/RuntimeR0Drv$(VBOX_SUFF_LIB)
 vboxdrv_SOURCES       = \

@@ -1,4 +1,4 @@
-; $Id: memchr.asm $
+; $Id: memchr.asm 14021 2008-11-10 16:31:22Z vboxsync $
 ;; @file
 ; IPRT - No-CRT memchr - AMD64 & X86.
 ;
@@ -36,7 +36,7 @@ BEGINCODE
 ; @param    pv      gcc: rdi  msc: ecx  x86:[esp+4]
 ; @param    ch      gcc: esi  msc: edx  x86:[esp+8]
 ; @param    cb      gcc: rdx  msc: r8   x86:[esp+0ch]
-BEGINPROC RT_NOCRT(memchr)
+RT_NOCRT_BEGINPROC memchr
         cld
 %ifdef RT_ARCH_AMD64
  %ifdef ASM_CALL64_MSC

@@ -1,4 +1,4 @@
-/* $Id: PATMSSM.cpp $ */
+/* $Id: PATMSSM.cpp 14887 2008-12-02 10:15:21Z vboxsync $ */
 /** @file
  * PATMSSM - Dynamic Guest OS Patching Manager; Save and load state
  *
@@ -26,6 +26,7 @@
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_PATM
 #include <VBox/patm.h>
+#include <VBox/hwaccm.h>
 #include <VBox/stam.h>
 #include <VBox/pgm.h>
 #include <VBox/cpum.h>
@@ -359,7 +360,7 @@ DECLCALLBACK(int) patmr3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
         AssertCompile(sizeof(patmInfo.uCurrentPatchIdx) == sizeof(uint32_t));
         rc = SSMR3GetS32(pSSM, &patmInfo.uCurrentPatchIdx);
         AssertRCReturn(rc, rc);
-               
+
         AssertCompile(sizeof(patmInfo.pPatchedInstrGCLowest) == sizeof(RTRCPTR));
         rc = SSMR3GetRCPtr(pSSM, &patmInfo.pPatchedInstrGCLowest);
         AssertRCReturn(rc, rc);
@@ -399,7 +400,7 @@ DECLCALLBACK(int) patmr3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
         AssertCompile(sizeof(patmInfo.savedstate.cPatches) == sizeof(uint32_t));
         rc = SSMR3GetU32(pSSM, &patmInfo.savedstate.cPatches);
         AssertRCReturn(rc, rc);
-        
+
     }
 #endif
 
@@ -435,18 +436,18 @@ DECLCALLBACK(int) patmr3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
 
     Assert(patmInfo.ulCallDepth == 0 && pVM->patm.s.ulCallDepth == 0);
 
-    Log(("pPatchMemGC %VRv vs old %VRv\n", pVM->patm.s.pPatchMemGC, patmInfo.pPatchMemGC));
-    Log(("pGCStateGC  %VRv vs old %VRv\n", pVM->patm.s.pGCStateGC, patmInfo.pGCStateGC));
-    Log(("pGCStackGC  %VRv vs old %VRv\n", pVM->patm.s.pGCStackGC, patmInfo.pGCStackGC));
-    Log(("pCPUMCtxGC  %VRv vs old %VRv\n", pVM->patm.s.pCPUMCtxGC, patmInfo.pCPUMCtxGC));
-    
+    Log(("pPatchMemGC %RRv vs old %RRv\n", pVM->patm.s.pPatchMemGC, patmInfo.pPatchMemGC));
+    Log(("pGCStateGC  %RRv vs old %RRv\n", pVM->patm.s.pGCStateGC, patmInfo.pGCStateGC));
+    Log(("pGCStackGC  %RRv vs old %RRv\n", pVM->patm.s.pGCStackGC, patmInfo.pGCStackGC));
+    Log(("pCPUMCtxGC  %RRv vs old %RRv\n", pVM->patm.s.pCPUMCtxGC, patmInfo.pCPUMCtxGC));
+
 
     /** @note patch statistics are not restored. */
 
     /*
      * Restore patch memory contents
      */
-    Log(("Restore patch memory: new %VRv old %VRv\n", pVM->patm.s.pPatchMemGC, patmInfo.pPatchMemGC));
+    Log(("Restore patch memory: new %RRv old %RRv\n", pVM->patm.s.pPatchMemGC, patmInfo.pPatchMemGC));
     rc = SSMR3GetMem(pSSM, pVM->patm.s.pPatchMemHC, pVM->patm.s.cbPatchMem);
     AssertRCReturn(rc, rc);
 
@@ -552,7 +553,7 @@ DECLCALLBACK(int) patmr3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
         Assert(!(patch.patch.flags & PATMFL_GLOBAL_FUNCTIONS));
 
         rc = MMHyperAlloc(pVM, sizeof(PATMPATCHREC), 0, MM_TAG_PATM_PATCH, (void **)&pPatchRec);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
             AssertMsgFailed(("Out of memory!!!!\n"));
             return VERR_NO_MEMORY;
@@ -564,7 +565,7 @@ DECLCALLBACK(int) patmr3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
         pPatchRec->Core.Key          = patch.Core.Key;
         pPatchRec->CoreOffset.Key    = patch.CoreOffset.Key;
 
-        Log(("Restoring patch %VRv -> %VRv\n", pPatchRec->patch.pPrivInstrGC, patmInfo.pPatchMemGC + pPatchRec->patch.pPatchBlockOffset));
+        Log(("Restoring patch %RRv -> %RRv\n", pPatchRec->patch.pPrivInstrGC, patmInfo.pPatchMemGC + pPatchRec->patch.pPatchBlockOffset));
         bool ret = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTree, &pPatchRec->Core);
         Assert(ret);
         if (pPatchRec->patch.uState != PATCH_REFUSED)
@@ -573,7 +574,7 @@ DECLCALLBACK(int) patmr3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
             {
                 /* We actually generated code for this patch. */
                 ret = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPatchAddr, &pPatchRec->CoreOffset);
-                AssertMsg(ret, ("Inserting patch %VGv offset %VGv failed!!\n", pPatchRec->patch.pPrivInstrGC, pPatchRec->CoreOffset.Key));
+                AssertMsg(ret, ("Inserting patch %RRv offset %08RX32 failed!!\n", pPatchRec->patch.pPrivInstrGC, pPatchRec->CoreOffset.Key));
             }
         }
         /* Set to zero as we don't need it anymore. */
@@ -581,7 +582,7 @@ DECLCALLBACK(int) patmr3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
 
         pPatchRec->patch.pPrivInstrHC   = 0;
         /* The GC virtual ptr is fixed, but we must convert it manually again to HC. */
-        rc = PGMPhysGCPtr2HCPtr(pVM, pPatchRec->patch.pPrivInstrGC, (PRTHCPTR)&pPatchRec->patch.pPrivInstrHC);
+        rc = PGMPhysGCPtr2R3Ptr(pVM, pPatchRec->patch.pPrivInstrGC, (PRTR3PTR)&pPatchRec->patch.pPrivInstrHC);
         /* Can fail due to page or page table not present. */
 
         /*
@@ -669,7 +670,7 @@ DECLCALLBACK(int) patmr3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
 
     /*
      * Correct absolute fixups in the global patch. (helper functions)
-     * Bit of a mess. Uses the new patch record, but restored patch functions. 
+     * Bit of a mess. Uses the new patch record, but restored patch functions.
      */
     PRELOCREC pRec = 0;
     AVLPVKEY  key  = 0;
@@ -704,6 +705,7 @@ DECLCALLBACK(int) patmr3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
     pVM->patm.s.StatEnabled   = patmInfo.StatEnabled;
     pVM->patm.s.StatInstalled = patmInfo.StatInstalled;
 #endif
+
     return VINF_SUCCESS;
 }
 
@@ -730,17 +732,17 @@ static void patmCorrectFixup(PVM pVM, unsigned ulSSMVersion, PATM &patmInfo, PPA
         if (pRec->pSource && !PATMIsPatchGCAddr(pVM, pRec->pSource))
             break;
 
-        if (    *pFixup >= patmInfo.pGCStateGC 
+        if (    *pFixup >= patmInfo.pGCStateGC
             &&  *pFixup <  patmInfo.pGCStateGC + sizeof(PATMGCSTATE))
         {
-            LogFlow(("Changing absolute GCState at %VRv from %VRv to %VRv\n", patmInfo.pPatchMemGC + offset, *pFixup, (*pFixup - patmInfo.pGCStateGC) + pVM->patm.s.pGCStateGC));
+            LogFlow(("Changing absolute GCState at %RRv from %RRv to %RRv\n", patmInfo.pPatchMemGC + offset, *pFixup, (*pFixup - patmInfo.pGCStateGC) + pVM->patm.s.pGCStateGC));
             *pFixup = (*pFixup - patmInfo.pGCStateGC) + pVM->patm.s.pGCStateGC;
         }
         else
-        if (    *pFixup >= patmInfo.pCPUMCtxGC 
+        if (    *pFixup >= patmInfo.pCPUMCtxGC
             &&  *pFixup <  patmInfo.pCPUMCtxGC + sizeof(CPUMCTX))
         {
-            LogFlow(("Changing absolute CPUMCTX at %VRv from %VRv to %VRv\n", patmInfo.pPatchMemGC + offset, *pFixup, (*pFixup - patmInfo.pCPUMCtxGC) + pVM->patm.s.pCPUMCtxGC));
+            LogFlow(("Changing absolute CPUMCTX at %RRv from %RRv to %RRv\n", patmInfo.pPatchMemGC + offset, *pFixup, (*pFixup - patmInfo.pCPUMCtxGC) + pVM->patm.s.pCPUMCtxGC));
 
             /* The CPUMCTX structure has completely changed, so correct the offsets too. */
             if (ulSSMVersion == PATM_SSM_VERSION_VER16)
@@ -752,43 +754,43 @@ static void patmCorrectFixup(PVM pVM, unsigned ulSSMVersion, PATM &patmInfo, PPA
                  * function is not available in older gcc versions, at least not in gcc-3.3 */
                 if (uCPUMOffset == (unsigned)RT_OFFSETOF(CPUMCTX_VER1_6, dr0))
                 {
-                    LogFlow(("Changing dr0 offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr0)));
-                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr0);
+                    LogFlow(("Changing dr[0] offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr[0])));
+                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr[0]);
                 }
                 else if (uCPUMOffset == (unsigned)RT_OFFSETOF(CPUMCTX_VER1_6, dr1))
                 {
-                    LogFlow(("Changing dr1 offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr1)));
-                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr1);
+                    LogFlow(("Changing dr[1] offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr[1])));
+                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr[1]);
                 }
                 else if (uCPUMOffset == (unsigned)RT_OFFSETOF(CPUMCTX_VER1_6, dr2))
                 {
-                    LogFlow(("Changing dr2 offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr2)));
-                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr2);
+                    LogFlow(("Changing dr[2] offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr[2])));
+                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr[2]);
                 }
                 else if (uCPUMOffset == (unsigned)RT_OFFSETOF(CPUMCTX_VER1_6, dr3))
                 {
-                    LogFlow(("Changing dr3 offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr3)));
-                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr3);
+                    LogFlow(("Changing dr[3] offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr[3])));
+                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr[3]);
                 }
                 else if (uCPUMOffset == (unsigned)RT_OFFSETOF(CPUMCTX_VER1_6, dr4))
                 {
-                    LogFlow(("Changing dr4 offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr4)));
-                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr4);
+                    LogFlow(("Changing dr[4] offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr[4])));
+                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr[4]);
                 }
                 else if (uCPUMOffset == (unsigned)RT_OFFSETOF(CPUMCTX_VER1_6, dr5))
                 {
-                    LogFlow(("Changing dr5 offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr5)));
-                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr5);
+                    LogFlow(("Changing dr[5] offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr[5])));
+                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr[5]);
                 }
                 else if (uCPUMOffset == (unsigned)RT_OFFSETOF(CPUMCTX_VER1_6, dr6))
                 {
-                    LogFlow(("Changing dr6 offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr6)));
-                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr6);
+                    LogFlow(("Changing dr[6] offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr[6])));
+                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr[6]);
                 }
                 else if (uCPUMOffset == (unsigned)RT_OFFSETOF(CPUMCTX_VER1_6, dr7))
                 {
-                    LogFlow(("Changing dr7 offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr7)));
-                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr7);
+                    LogFlow(("Changing dr[7] offset from %x to %x\n", uCPUMOffset, RT_OFFSETOF(CPUMCTX, dr[7])));
+                    *pFixup = pVM->patm.s.pCPUMCtxGC + RT_OFFSETOF(CPUMCTX, dr[7]);
                 }
                 else if (uCPUMOffset == (unsigned)RT_OFFSETOF(CPUMCTX_VER1_6, cr0))
                 {
@@ -847,37 +849,37 @@ static void patmCorrectFixup(PVM pVM, unsigned ulSSMVersion, PATM &patmInfo, PPA
                 *pFixup = (*pFixup - patmInfo.pCPUMCtxGC) + pVM->patm.s.pCPUMCtxGC;
         }
         else
-        if (    *pFixup >= patmInfo.pStatsGC 
+        if (    *pFixup >= patmInfo.pStatsGC
             &&  *pFixup <  patmInfo.pStatsGC + PATM_STAT_MEMSIZE)
         {
-            LogFlow(("Changing absolute Stats at %VRv from %VRv to %VRv\n", patmInfo.pPatchMemGC + offset, *pFixup, (*pFixup - patmInfo.pStatsGC) + pVM->patm.s.pStatsGC));
+            LogFlow(("Changing absolute Stats at %RRv from %RRv to %RRv\n", patmInfo.pPatchMemGC + offset, *pFixup, (*pFixup - patmInfo.pStatsGC) + pVM->patm.s.pStatsGC));
             *pFixup = (*pFixup - patmInfo.pStatsGC) + pVM->patm.s.pStatsGC;
         }
         else
-        if (    *pFixup >= patmInfo.pGCStackGC 
+        if (    *pFixup >= patmInfo.pGCStackGC
             &&  *pFixup <  patmInfo.pGCStackGC + PATM_STACK_TOTAL_SIZE)
         {
-            LogFlow(("Changing absolute Stack at %VRv from %VRv to %VRv\n", patmInfo.pPatchMemGC + offset, *pFixup, (*pFixup - patmInfo.pGCStackGC) + pVM->patm.s.pGCStackGC));
+            LogFlow(("Changing absolute Stack at %RRv from %RRv to %RRv\n", patmInfo.pPatchMemGC + offset, *pFixup, (*pFixup - patmInfo.pGCStackGC) + pVM->patm.s.pGCStackGC));
             *pFixup = (*pFixup - patmInfo.pGCStackGC) + pVM->patm.s.pGCStackGC;
         }
         else
-        if (    *pFixup >= patmInfo.pPatchMemGC 
+        if (    *pFixup >= patmInfo.pPatchMemGC
             &&  *pFixup <  patmInfo.pPatchMemGC + patmInfo.cbPatchMem)
         {
-            LogFlow(("Changing absolute PatchMem at %VRv from %VRv to %VRv\n", patmInfo.pPatchMemGC + offset, *pFixup, (*pFixup - patmInfo.pPatchMemGC) + pVM->patm.s.pPatchMemGC));
+            LogFlow(("Changing absolute PatchMem at %RRv from %RRv to %RRv\n", patmInfo.pPatchMemGC + offset, *pFixup, (*pFixup - patmInfo.pPatchMemGC) + pVM->patm.s.pPatchMemGC));
             *pFixup = (*pFixup - patmInfo.pPatchMemGC) + pVM->patm.s.pPatchMemGC;
         }
         else
         /* Note: rather assumptive! */
-        if (    *pFixup >= pVM->pVMGC
-            &&  *pFixup < pVM->pVMGC + 32)
+        if (    *pFixup >= pVM->pVMRC
+            &&  *pFixup < pVM->pVMRC + 32)
         {
-            LogFlow(("Changing fForcedActions fixup from %x to %x\n", *pFixup, pVM->pVMGC + RT_OFFSETOF(VM, fForcedActions)));
-            *pFixup = pVM->pVMGC + RT_OFFSETOF(VM, fForcedActions);
+            LogFlow(("Changing fForcedActions fixup from %x to %x\n", *pFixup, pVM->pVMRC + RT_OFFSETOF(VM, fForcedActions)));
+            *pFixup = pVM->pVMRC + RT_OFFSETOF(VM, fForcedActions);
         }
         else
-        if (    *pFixup >= pVM->pVMGC
-            &&  *pFixup < pVM->pVMGC + 8192)
+        if (    *pFixup >= pVM->pVMRC
+            &&  *pFixup < pVM->pVMRC + 8192)
         {
             static int cCpuidFixup = 0;
 #ifdef LOG_ENABLED
@@ -887,16 +889,16 @@ static void patmCorrectFixup(PVM pVM, unsigned ulSSMVersion, PATM &patmInfo, PPA
             switch(cCpuidFixup & 3)
             {
             case 0:
-                *pFixup = CPUMGetGuestCpuIdDefGCPtr(pVM);
+                *pFixup = CPUMGetGuestCpuIdDefRCPtr(pVM);
                 break;
             case 1:
-                *pFixup = CPUMGetGuestCpuIdStdGCPtr(pVM);
+                *pFixup = CPUMGetGuestCpuIdStdRCPtr(pVM);
                 break;
             case 2:
-                *pFixup = CPUMGetGuestCpuIdExtGCPtr(pVM);
+                *pFixup = CPUMGetGuestCpuIdExtRCPtr(pVM);
                 break;
             case 3:
-                *pFixup = CPUMGetGuestCpuIdCentaurGCPtr(pVM);
+                *pFixup = CPUMGetGuestCpuIdCentaurRCPtr(pVM);
                 break;
             }
             LogFlow(("Changing cpuid fixup %d from %x to %x\n", cCpuidFixup, oldFixup, *pFixup));
@@ -955,15 +957,15 @@ static void patmCorrectFixup(PVM pVM, unsigned ulSSMVersion, PATM &patmInfo, PPA
             /*
              * Read old patch jump and compare it to the one we previously installed
              */
-            int rc = PGMPhysReadGCPtr(pVM, temp, pPatch->pPrivInstrGC, pPatch->cbPatchJump);
-            Assert(VBOX_SUCCESS(rc) || rc == VERR_PAGE_NOT_PRESENT || rc == VERR_PAGE_TABLE_NOT_PRESENT);
+            int rc = PGMPhysSimpleReadGCPtr(pVM, temp, pPatch->pPrivInstrGC, pPatch->cbPatchJump);
+            Assert(RT_SUCCESS(rc) || rc == VERR_PAGE_NOT_PRESENT || rc == VERR_PAGE_TABLE_NOT_PRESENT);
 
             if (rc == VERR_PAGE_NOT_PRESENT || rc == VERR_PAGE_TABLE_NOT_PRESENT)
             {
                 RTRCPTR pPage = pPatch->pPrivInstrGC & PAGE_BASE_GC_MASK;
 
                 rc = PGMR3HandlerVirtualRegister(pVM, PGMVIRTHANDLERTYPE_ALL, pPage, pPage + (PAGE_SIZE - 1) /* inclusive! */, 0, patmVirtPageHandler, "PATMGCMonitorPage", 0, "PATMMonitorPatchJump");
-                Assert(VBOX_SUCCESS(rc) || rc == VERR_PGM_HANDLER_VIRTUAL_CONFLICT);
+                Assert(RT_SUCCESS(rc) || rc == VERR_PGM_HANDLER_VIRTUAL_CONFLICT);
             }
             else
             if (memcmp(temp, oldJump, pPatch->cbPatchJump))
@@ -976,9 +978,9 @@ static void patmCorrectFixup(PVM pVM, unsigned ulSSMVersion, PATM &patmInfo, PPA
                 pPatch->uState = PATCH_DISABLED;
             }
             else
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
             {
-                rc = PGMPhysWriteGCPtrDirty(pVM, pJumpOffGC, &displ, sizeof(displ));
+                rc = PGMPhysSimpleDirtyWriteGCPtr(pVM, pJumpOffGC, &displ, sizeof(displ));
                 AssertRC(rc);
             }
             else
@@ -1005,7 +1007,7 @@ static void patmCorrectFixup(PVM pVM, unsigned ulSSMVersion, PATM &patmInfo, PPA
         *(RTRCUINTPTR *)pRec->pRelocPos = displ;
         pRec->pSource = pSource;
         break;
- 
+
     }
 }
 }

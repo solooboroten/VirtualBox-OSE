@@ -42,52 +42,6 @@
 #include <string.h>
 
 
-/**
- * Global module initialization structure.
- *
- * The constructor and destructor of this structure are used to perform global
- * module initiaizaton and cleanup. Thee must be only one global variable of
- * this structure.
- */
-static
-class Global
-{
-public:
-
-    Global()
-    {
-        /* Check the parser version. The docs say it will kill the app if
-         * there is a serious version mismatch, but I couldn't find it in the
-         * source code (it only prints the error/warning message to the console) so
-         * let's leave it as is for informational purposes. */
-        LIBXML_TEST_VERSION
-
-        /* Init libxml */
-        xmlInitParser();
-
-        /* Save the default entity resolver before someone has replaced it */
-        xml.defaultEntityLoader = xmlGetExternalEntityLoader();
-    }
-
-    ~Global()
-    {
-        /* Shutdown libxml */
-        xmlCleanupParser();
-    }
-
-    struct
-    {
-        xmlExternalEntityLoader defaultEntityLoader;
-
-        /** Used to provide some thread safety missing in libxml2 (see e.g.
-         *  XmlTreeBackend::read()) */
-        RTLockMtx lock;
-    }
-    xml;
-}
-gGlobal;
-
-
 namespace settings
 {
 
@@ -142,7 +96,7 @@ uint64_t FromStringInteger (const char *aValue, bool aSigned,
         case 64:
             break;
         default:
-            throw ENotImplemented (RT_SRC_POS);
+            throw xml::ENotImplemented (RT_SRC_POS);
     }
 
     if (aSigned)
@@ -201,7 +155,7 @@ template<> RTTIMESPEC FromString <RTTIMESPEC> (const char *aValue)
     uint32_t yyyy = 0;
     uint16_t mm = 0, dd = 0, hh = 0, mi = 0, ss = 0;
     char buf [256];
-    if (strlen (aValue) > ELEMENTS (buf) - 1 ||
+    if (strlen (aValue) > RT_ELEMENTS (buf) - 1 ||
         sscanf (aValue, "%d-%hu-%huT%hu:%hu:%hu%s",
                 &yyyy, &mm, &dd, &hh, &mi, &ss, buf) == 7)
     {
@@ -286,7 +240,7 @@ stdx::char_auto_ptr ToStringInteger (uint64_t aValue, unsigned int aBase,
             flags |= RTSTR_F_64BIT;
             break;
         default:
-            throw ENotImplemented (RT_SRC_POS);
+            throw xml::ENotImplemented (RT_SRC_POS);
     }
 
     stdx::char_auto_ptr result (new char [len]);
@@ -294,7 +248,7 @@ stdx::char_auto_ptr ToStringInteger (uint64_t aValue, unsigned int aBase,
     if (RT_SUCCESS (vrc))
         return result;
 
-    throw EIPRTFailure (vrc);
+    throw xml::EIPRTFailure (vrc);
 }
 
 template<> stdx::char_auto_ptr ToString <bool> (const bool &aValue,
@@ -344,207 +298,6 @@ stdx::char_auto_ptr ToString (const char *aData, size_t aLen)
     *dst = '\0';
 
     return result;
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// File Class
-//////////////////////////////////////////////////////////////////////////////
-
-struct File::Data
-{
-    Data()
-        : fileName (NULL), handle (NIL_RTFILE), opened (false) {}
-
-    char *fileName;
-    RTFILE handle;
-    bool opened : 1;
-};
-
-File::File (Mode aMode, const char *aFileName)
-    : m (new Data())
-{
-    m->fileName = RTStrDup (aFileName);
-    if (m->fileName == NULL)
-        throw ENoMemory();
-
-    unsigned flags = 0;
-    switch (aMode)
-    {
-        case Mode_Read:
-            flags = RTFILE_O_READ;
-            break;
-        case Mode_Write:
-            flags = RTFILE_O_WRITE | RTFILE_O_CREATE;
-            break;
-        case Mode_ReadWrite:
-            flags = RTFILE_O_READ | RTFILE_O_WRITE;
-    }
-
-    int vrc = RTFileOpen (&m->handle, aFileName, flags);
-    if (RT_FAILURE (vrc))
-        throw EIPRTFailure (vrc);
-
-    m->opened = true;
-}
-
-File::File (RTFILE aHandle, const char *aFileName /* = NULL */)
-    : m (new Data())
-{
-    if (aHandle == NIL_RTFILE)
-        throw EInvalidArg (RT_SRC_POS);
-
-    m->handle = aHandle;
-
-    if (aFileName)
-    {
-        m->fileName = RTStrDup (aFileName);
-        if (m->fileName == NULL)
-            throw ENoMemory();
-    }
-
-    setPos (0);
-}
-
-File::~File()
-{
-    if (m->opened)
-        RTFileClose (m->handle);
-
-    RTStrFree (m->fileName);
-}
-
-const char *File::uri() const
-{
-    return m->fileName;
-}
-
-uint64_t File::pos() const
-{
-    uint64_t p = 0;
-    int vrc = RTFileSeek (m->handle, 0, RTFILE_SEEK_CURRENT, &p);
-    if (RT_SUCCESS (vrc))
-        return p;
-
-    throw EIPRTFailure (vrc);
-}
-
-void File::setPos (uint64_t aPos)
-{
-    uint64_t p = 0;
-    unsigned method = RTFILE_SEEK_BEGIN;
-    int vrc = VINF_SUCCESS;
-
-    /* check if we overflow int64_t and move to INT64_MAX first */
-    if (((int64_t) aPos) < 0)
-    {
-        vrc = RTFileSeek (m->handle, INT64_MAX, method, &p);
-        aPos -= (uint64_t) INT64_MAX;
-        method = RTFILE_SEEK_CURRENT;
-    }
-    /* seek the rest */
-    if (RT_SUCCESS (vrc))
-        vrc = RTFileSeek (m->handle, (int64_t) aPos, method, &p);
-    if (RT_SUCCESS (vrc))
-        return;
-
-    throw EIPRTFailure (vrc);
-}
-
-int File::read (char *aBuf, int aLen)
-{
-    size_t len = aLen;
-    int vrc = RTFileRead (m->handle, aBuf, len, &len);
-    if (RT_SUCCESS (vrc))
-        return len;
-
-    throw EIPRTFailure (vrc);
-}
-
-int File::write (const char *aBuf, int aLen)
-{
-    size_t len = aLen;
-    int vrc = RTFileWrite (m->handle, aBuf, len, &len);
-    if (RT_SUCCESS (vrc))
-        return len;
-
-    throw EIPRTFailure (vrc);
-
-    return -1 /* failure */;
-}
-
-void File::truncate()
-{
-    int vrc = RTFileSetSize (m->handle, pos());
-    if (RT_SUCCESS (vrc))
-        return;
-
-    throw EIPRTFailure (vrc);
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// MemoryBuf Class
-//////////////////////////////////////////////////////////////////////////////
-
-struct MemoryBuf::Data
-{
-    Data()
-        : buf (NULL), len (0), uri (NULL), pos (0) {}
-
-    const char *buf;
-    size_t len;
-    char *uri;
-
-    size_t pos;
-};
-
-MemoryBuf::MemoryBuf (const char *aBuf, size_t aLen, const char *aURI /* = NULL */)
-    : m (new Data())
-{
-    if (aBuf == NULL)
-        throw EInvalidArg (RT_SRC_POS);
-
-    m->buf = aBuf;
-    m->len = aLen;
-    m->uri = RTStrDup (aURI);
-}
-
-MemoryBuf::~MemoryBuf()
-{
-    RTStrFree (m->uri);
-}
-
-const char *MemoryBuf::uri() const
-{
-    return m->uri;
-}
-
-uint64_t MemoryBuf::pos() const
-{
-    return m->pos;
-}
-
-void MemoryBuf::setPos (uint64_t aPos)
-{
-    size_t pos = (size_t) aPos;
-    if ((uint64_t) pos != aPos)
-        throw EInvalidArg();
-
-    if (pos > m->len)
-        throw EInvalidArg();
-
-    m->pos = pos;
-}
-
-int MemoryBuf::read (char *aBuf, int aLen)
-{
-    if (m->pos >= m->len)
-        return 0 /* nothing to read */;
-
-    size_t len = m->pos + aLen < m->len ? aLen : m->len - m->pos;
-    memcpy (aBuf, m->buf + m->pos, len);
-    m->pos += len;
-
-    return len;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -601,7 +354,7 @@ const char *XmlKeyBackend::name() const
 
 void XmlKeyBackend::setName (const char *aName)
 {
-    throw ENotImplemented (RT_SRC_POS);
+    throw xml::ENotImplemented (RT_SRC_POS);
 }
 
 const char *XmlKeyBackend::value (const char *aName) const
@@ -658,7 +411,7 @@ void XmlKeyBackend::setValue (const char *aName, const char *aValue)
         {
             value = xmlEncodeSpecialChars (mNode->doc, value);
             if (value == NULL)
-                throw ENoMemory();
+                throw xml::ENoMemory();
         }
 
         xmlNodeSetContent (mNode, value);
@@ -684,7 +437,7 @@ void XmlKeyBackend::setValue (const char *aName, const char *aValue)
         {
             int rc = xmlRemoveProp (attr);
             if (rc != 0)
-                throw EInvalidArg (RT_SRC_POS);
+                throw xml::EInvalidArg (RT_SRC_POS);
         }
         return;
     }
@@ -692,7 +445,7 @@ void XmlKeyBackend::setValue (const char *aName, const char *aValue)
     xmlAttrPtr attr = xmlSetProp (mNode, (const xmlChar *) aName,
                                   (const xmlChar *) aValue);
     if (attr == NULL)
-        throw ENoMemory();
+        throw xml::ENoMemory();
 }
 
 Key::List XmlKeyBackend::keys (const char *aName /* = NULL */) const
@@ -745,7 +498,7 @@ Key XmlKeyBackend::appendKey (const char *aName)
 
     xmlNodePtr node = xmlNewChild (mNode, NULL, (const xmlChar *) aName, NULL);
     if (node == NULL)
-        throw ENoMemory();
+        throw xml::ENoMemory();
 
     return Key (new XmlKeyBackend (node));
 }
@@ -763,40 +516,6 @@ void XmlKeyBackend::zap()
 //////////////////////////////////////////////////////////////////////////////
 // XmlTreeBackend Class
 //////////////////////////////////////////////////////////////////////////////
-
-class XmlTreeBackend::XmlError : public XmlTreeBackend::Error
-{
-public:
-
-    XmlError (xmlErrorPtr aErr)
-    {
-        if (!aErr)
-            throw EInvalidArg (RT_SRC_POS);
-
-        char *msg = Format (aErr);
-        setWhat (msg);
-        RTStrFree (msg);
-    }
-
-    /**
-     * Composes a single message for the given error. The caller must free the
-     * returned string using RTStrFree() when no more necessary.
-     */
-    static char *Format (xmlErrorPtr aErr)
-    {
-        const char *msg = aErr->message ? aErr->message : "<none>";
-        size_t msgLen = strlen (msg);
-        /* strip spaces, trailing EOLs and dot-like char */
-        while (msgLen && strchr (" \n.?!", msg [msgLen - 1]))
-            -- msgLen;
-
-        char *finalMsg = NULL;
-        RTStrAPrintf (&finalMsg, "%.*s.\nLocation: '%s', line %d (%d), column %d",
-                      msgLen, msg, aErr->file, aErr->line, aErr->int1, aErr->int2);
-
-        return finalMsg;
-    }
-};
 
 struct XmlTreeBackend::Data
 {
@@ -823,7 +542,7 @@ struct XmlTreeBackend::Data
      */
     struct IOCtxt
     {
-        IOCtxt (Stream *aStream, std::auto_ptr <stdx::exception_trap_base> &aErr)
+        IOCtxt (xml::Stream *aStream, std::auto_ptr <stdx::exception_trap_base> &aErr)
             : stream (aStream), deleteStreamOnClose (false)
             , err (aErr) {}
 
@@ -832,7 +551,7 @@ struct XmlTreeBackend::Data
 
         void resetErr() { err.reset(); }
 
-        Stream *stream;
+        xml::Stream *stream;
         bool deleteStreamOnClose;
 
         std::auto_ptr <stdx::exception_trap_base> &err;
@@ -840,18 +559,18 @@ struct XmlTreeBackend::Data
 
     struct InputCtxt : public IOCtxt
     {
-        InputCtxt (Input *aInput, std::auto_ptr <stdx::exception_trap_base> &aErr)
+        InputCtxt (xml::Input *aInput, std::auto_ptr <stdx::exception_trap_base> &aErr)
             : IOCtxt (aInput, aErr), input (aInput) {}
 
-        Input *input;
+        xml::Input *input;
     };
 
     struct OutputCtxt : public IOCtxt
     {
-        OutputCtxt (Output *aOutput, std::auto_ptr <stdx::exception_trap_base> &aErr)
+        OutputCtxt (xml::Output *aOutput, std::auto_ptr <stdx::exception_trap_base> &aErr)
             : IOCtxt (aOutput, aErr), output (aOutput) {}
 
-        Output *output;
+        xml::Output *output;
     };
 };
 
@@ -861,7 +580,7 @@ XmlTreeBackend::XmlTreeBackend()
     /* create a parser context */
     m->ctxt = xmlNewParserCtxt();
     if (m->ctxt == NULL)
-        throw ENoMemory();
+        throw xml::ENoMemory();
 }
 
 XmlTreeBackend::~XmlTreeBackend()
@@ -900,7 +619,7 @@ const char *XmlTreeBackend::oldVersion() const
 extern "C" xmlGenericErrorFunc xsltGenericError;
 extern "C" void *xsltGenericErrorContext;
 
-void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
+void XmlTreeBackend::rawRead (xml::Input &aInput, const char *aSchema /* = NULL */,
                               int aFlags /* = 0 */)
 {
     /* Reset error variables used to memorize exceptions while inside the
@@ -913,12 +632,10 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
      * time but another choice would be to patch libxml2/libxslt which is
      * unwanted now for several reasons. Search for "thread-safe" to find all
      * unsafe cases. */
-    RTLock alock (gGlobal.xml.lock);
+    xml::GlobalLock global;
+    global.setExternalEntityLoader(ExternalEntityLoader);
 
-    xmlExternalEntityLoader oldEntityLoader = xmlGetExternalEntityLoader();
     sThat = this;
-    xmlSetExternalEntityLoader (ExternalEntityLoader);
-
     xmlDocPtr doc = NULL;
 
     try
@@ -927,7 +644,6 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
          * remove text nodes that contain only blanks. This is important because
          * otherwise xmlSaveDoc() won't be able to do proper indentation on
          * output. */
-
         /* parse the stream */
         /* NOTE: new InputCtxt instance will be deleted when the stream is closed by
          * the libxml2 API (e.g. when calling xmlFreeParserCtxt()) */
@@ -942,7 +658,7 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
             if (m->trappedErr.get() != NULL)
                 m->trappedErr->rethrow();
 
-            throw XmlError (xmlCtxtGetLastError (m->ctxt));
+            throw xml::XmlError(xmlCtxtGetLastError (m->ctxt));
         }
 
         char *oldVersion = NULL;
@@ -964,7 +680,7 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
             {
                 /* parse the XSLT template */
                 {
-                    Input *xsltInput =
+                    xml::Input *xsltInput =
                         m->inputResolver->resolveEntity
                             (m->autoConverter->templateUri(), NULL);
                     /* NOTE: new InputCtxt instance will be deleted when the
@@ -983,7 +699,7 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
                     if (m->trappedErr.get() != NULL)
                         m->trappedErr->rethrow();
 
-                    throw XmlError (xmlCtxtGetLastError (m->ctxt));
+                    throw xml::XmlError(xmlCtxtGetLastError (m->ctxt));
                 }
 
                 /* setup stylesheet compilation and transformation error
@@ -1000,10 +716,10 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
                 if (xslt == NULL)
                 {
                     if (errorStr != NULL)
-                        throw LogicError (errorStr);
+                        throw xml::LogicError (errorStr);
                     /* errorStr is freed in catch(...) below */
 
-                    throw LogicError (RT_SRC_POS);
+                    throw xml::LogicError (RT_SRC_POS);
                 }
 
                 /* repeat transformations until autoConverter is satisfied */
@@ -1011,12 +727,12 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
                 {
                     xmlDocPtr newDoc = xsltApplyStylesheet (xslt, doc, NULL);
                     if (newDoc == NULL && errorStr == NULL)
-                        throw LogicError (RT_SRC_POS);
+                        throw xml::LogicError (RT_SRC_POS);
 
                     if (errorStr != NULL)
                     {
                         xmlFreeDoc (newDoc);
-                        throw Error (errorStr);
+                        throw xml::RuntimeError(errorStr);
                         /* errorStr is freed in catch(...) below */
                     }
 
@@ -1073,7 +789,7 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
 
                 schemaCtxt = xmlSchemaNewParserCtxt (aSchema);
                 if (schemaCtxt == NULL)
-                    throw LogicError (RT_SRC_POS);
+                    throw xml::LogicError (RT_SRC_POS);
 
                 /* set our error handlers */
                 xmlSchemaSetParserErrors (schemaCtxt, ValidityErrorCallback,
@@ -1087,7 +803,7 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
                 {
                     validCtxt = xmlSchemaNewValidCtxt (schema);
                     if (validCtxt == NULL)
-                        throw LogicError (RT_SRC_POS);
+                        throw xml::LogicError (RT_SRC_POS);
 
                     /* instruct to create default attribute's values in the document */
                     if (aFlags & Read_AddDefaults)
@@ -1108,9 +824,9 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
                         m->trappedErr->rethrow();
 
                     if (errorStr == NULL)
-                        throw LogicError (RT_SRC_POS);
+                        throw xml::LogicError (RT_SRC_POS);
 
-                    throw Error (errorStr);
+                    throw xml::RuntimeError(errorStr);
                     /* errorStr is freed in catch(...) below */
                 }
 
@@ -1148,8 +864,6 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
          * the conversion has been performed (transfers ownership) */
         m->oldVersion = oldVersion;
 
-        /* restore the previous entity resolver */
-        xmlSetExternalEntityLoader (oldEntityLoader);
         sThat = NULL;
     }
     catch (...)
@@ -1157,15 +871,13 @@ void XmlTreeBackend::rawRead (Input &aInput, const char *aSchema /* = NULL */,
         if (doc != NULL)
             xmlFreeDoc (doc);
 
-        /* restore the previous entity resolver */
-        xmlSetExternalEntityLoader (oldEntityLoader);
         sThat = NULL;
 
         throw;
     }
 }
 
-void XmlTreeBackend::rawWrite (Output &aOutput)
+void XmlTreeBackend::rawWrite (xml::Output &aOutput)
 {
     /* reset error variables used to memorize exceptions while inside the
      * libxml2 code */
@@ -1187,7 +899,7 @@ void XmlTreeBackend::rawWrite (Output &aOutput)
                                            outputCtxt, NULL,
                                            XML_SAVE_FORMAT);
     if (saveCtxt == NULL)
-        throw LogicError (RT_SRC_POS);
+        throw xml::LogicError (RT_SRC_POS);
 
     long rc = xmlSaveDoc (saveCtxt, m->doc);
     if (rc == -1)
@@ -1198,7 +910,7 @@ void XmlTreeBackend::rawWrite (Output &aOutput)
 
         /* there must be an exception from the Output implementation,
          * otherwise the save operation must always succeed. */
-        throw LogicError (RT_SRC_POS);
+        throw xml::LogicError (RT_SRC_POS);
     }
 
     xmlSaveClose (saveCtxt);
@@ -1237,10 +949,10 @@ int XmlTreeBackend::ReadCallback (void *aCtxt, char *aBuf, int aLen)
     {
         return ctxt->input->read (aBuf, aLen);
     }
-    catch (const EIPRTFailure &err) { ctxt->setErr (err); }
-    catch (const settings::Error &err) { ctxt->setErr (err); }
+    catch (const xml::EIPRTFailure &err) { ctxt->setErr (err); }
+    catch (const xml::Error &err) { ctxt->setErr (err); }
     catch (const std::exception &err) { ctxt->setErr (err); }
-    catch (...) { ctxt->setErr (LogicError (RT_SRC_POS)); }
+    catch (...) { ctxt->setErr (xml::LogicError (RT_SRC_POS)); }
 
     return -1 /* failure */;
 }
@@ -1258,10 +970,10 @@ int XmlTreeBackend::WriteCallback (void *aCtxt, const char *aBuf, int aLen)
     {
         return ctxt->output->write (aBuf, aLen);
     }
-    catch (const EIPRTFailure &err) { ctxt->setErr (err); }
-    catch (const settings::Error &err) { ctxt->setErr (err); }
+    catch (const xml::EIPRTFailure &err) { ctxt->setErr (err); }
+    catch (const xml::Error &err) { ctxt->setErr (err); }
     catch (const std::exception &err) { ctxt->setErr (err); }
-    catch (...) { ctxt->setErr (LogicError (RT_SRC_POS)); }
+    catch (...) { ctxt->setErr (xml::LogicError (RT_SRC_POS)); }
 
     return -1 /* failure */;
 }
@@ -1290,10 +1002,10 @@ int XmlTreeBackend::CloseCallback (void *aCtxt)
 
         return 0 /* success */;
     }
-    catch (const EIPRTFailure &err) { ctxt->setErr (err); }
-    catch (const settings::Error &err) { ctxt->setErr (err); }
+    catch (const xml::EIPRTFailure &err) { ctxt->setErr (err); }
+    catch (const xml::Error &err) { ctxt->setErr (err); }
     catch (const std::exception &err) { ctxt->setErr (err); }
-    catch (...) { ctxt->setErr (LogicError (RT_SRC_POS)); }
+    catch (...) { ctxt->setErr (xml::LogicError (RT_SRC_POS)); }
 
     return -1 /* failure */;
 }
@@ -1360,7 +1072,7 @@ void XmlTreeBackend::StructuredErrorCallback (void *aCtxt, xmlErrorPtr aErr)
 
     char * &str = *(char * *) aCtxt;
 
-    char *newMsg = XmlError::Format (aErr);
+    char *newMsg = xml::XmlError::Format (aErr);
     AssertReturnVoid (newMsg != NULL);
 
     if (str == NULL)
@@ -1391,13 +1103,13 @@ xmlParserInputPtr XmlTreeBackend::ExternalEntityLoader (const char *aURI,
     AssertReturn (sThat != NULL, NULL);
 
     if (sThat->m->inputResolver == NULL)
-        return gGlobal.xml.defaultEntityLoader (aURI, aID, aCtxt);
+        return xml::GlobalLock::callDefaultLoader(aURI, aID, aCtxt);
 
     /* To prevent throwing exceptions while inside libxml2 code, we catch
      * them and forward to our level using a couple of variables. */
     try
     {
-        Input *input = sThat->m->inputResolver->resolveEntity (aURI, aID);
+        xml::Input *input = sThat->m->inputResolver->resolveEntity (aURI, aID);
         if (input == NULL)
             return NULL;
 
@@ -1432,14 +1144,15 @@ xmlParserInputPtr XmlTreeBackend::ExternalEntityLoader (const char *aURI,
         delete input;
         delete ctxt;
 
-        throw ENoMemory();
+        throw xml::ENoMemory();
     }
-    catch (const EIPRTFailure &err) { sThat->m->trappedErr.reset (stdx::new_exception_trap (err)); }
-    catch (const settings::Error &err) { sThat->m->trappedErr.reset (stdx::new_exception_trap (err)); }
+    catch (const xml::EIPRTFailure &err) { sThat->m->trappedErr.reset (stdx::new_exception_trap (err)); }
+    catch (const xml::Error &err) { sThat->m->trappedErr.reset (stdx::new_exception_trap (err)); }
     catch (const std::exception &err) { sThat->m->trappedErr.reset (stdx::new_exception_trap (err)); }
-    catch (...) { sThat->m->trappedErr.reset (stdx::new_exception_trap (LogicError (RT_SRC_POS))); }
+    catch (...) { sThat->m->trappedErr.reset (stdx::new_exception_trap (xml::LogicError (RT_SRC_POS))); }
 
     return NULL;
 }
 
 } /* namespace settings */
+

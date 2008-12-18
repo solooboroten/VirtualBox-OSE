@@ -1,4 +1,4 @@
-/* $Id: SUPLib-os2.cpp $ */
+/* $Id: SUPLib-os2.cpp 13865 2008-11-05 14:14:11Z vboxsync $ */
 /** @file
  * VirtualBox Support Library - OS/2 specific parts.
  */
@@ -99,7 +99,7 @@ int suplibOsInit(PSUPLIBDATA pThis, bool fPreInited)
             case ERROR_PATH_NOT_FOUND:  vrc = VERR_VM_DRIVER_NOT_INSTALLED; break;
             default:                    vrc = VERR_VM_DRIVER_OPEN_ERROR; break;
         }
-        LogRel(("Failed to open \"%s\", rc=%d, vrc=%Vrc\n", DEVICE_NAME, rc, vrc));
+        LogRel(("Failed to open \"%s\", rc=%d, vrc=%Rrc\n", DEVICE_NAME, rc, vrc));
         return vrc;
     }
 
@@ -152,8 +152,9 @@ int suplibOsIOCtl(PSUPLIBDATA pThis, uintptr_t uFunction, void *pvReq, size_t cb
 }
 
 
-int suplibOsIOCtlFast(PSUPLIBDATA pThis, uintptr_t uFunction)
+int suplibOsIOCtlFast(PSUPLIBDATA pThis, uintptr_t uFunction, uintptr_t idCpu)
 {
+    NOREF(idCpu);
     int32_t rcRet = VERR_INTERNAL_ERROR;
     int rc = DosDevIOCtl((HFILE)pThis->hDevice, SUP_CTL_CATEGORY_FAST, uFunction,
                          NULL, 0, NULL,

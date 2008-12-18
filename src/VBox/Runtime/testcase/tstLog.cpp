@@ -1,4 +1,4 @@
-/* $Id: tstLog.cpp $ */
+/* $Id: tstLog.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * IPRT Testcase - Log Formatting.
  */
@@ -32,7 +32,7 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #include <iprt/log.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/err.h>
 
 #include <stdio.h>
@@ -41,47 +41,47 @@ int main()
 {
     RTR3Init();
     printf("tstLog: Requires manual inspection of the log output!\n");
-    RTLogPrintf("%%Vrc %d: %Vrc\n", VERR_INVALID_PARAMETER, VERR_INVALID_PARAMETER);
-    RTLogPrintf("%%Vrs %d: %Vrs\n", VERR_INVALID_PARAMETER, VERR_INVALID_PARAMETER);
-    RTLogPrintf("%%Vrf %d: %Vrf\n", VERR_INVALID_PARAMETER, VERR_INVALID_PARAMETER);
-    RTLogPrintf("%%Vra %d: %Vra\n", VERR_INVALID_PARAMETER, VERR_INVALID_PARAMETER);
+    RTLogPrintf("%%Rrc %d: %Rrc\n", VERR_INVALID_PARAMETER, VERR_INVALID_PARAMETER);
+    RTLogPrintf("%%Rrs %d: %Rrs\n", VERR_INVALID_PARAMETER, VERR_INVALID_PARAMETER);
+    RTLogPrintf("%%Rrf %d: %Rrf\n", VERR_INVALID_PARAMETER, VERR_INVALID_PARAMETER);
+    RTLogPrintf("%%Rra %d: %Rra\n", VERR_INVALID_PARAMETER, VERR_INVALID_PARAMETER);
 
-    RTLogPrintf("%%Vt: %Vt\n");
+    RTLogPrintf("%%Rt: %Rt\n");
 
     static uint8_t au8Hex[256];
     for (unsigned iHex = 0; iHex < sizeof(au8Hex); iHex++)
         au8Hex[iHex] = (uint8_t)iHex;
-    RTLogPrintf("%%Vhxs   : %Vhxs\n", &au8Hex[0]);
-    RTLogPrintf("%%.32Vhxs: %.32Vhxs\n", &au8Hex[0]);
+    RTLogPrintf("%%Rhxs   : %Rhxs\n", &au8Hex[0]);
+    RTLogPrintf("%%.32Rhxs: %.32Rhxs\n", &au8Hex[0]);
 
-    RTLogPrintf("%%Vhxd   :\n%Vhxd\n", &au8Hex[0]);
-    RTLogPrintf("%%.64Vhxd:\n%.64Vhxd\n", &au8Hex[0]);
-    RTLogPrintf("%%.*Vhxd:\n%.*Vhxd\n", 64, &au8Hex[0]);
-    RTLogPrintf("%%32.256Vhxd : \n%32.256Vhxd\n", &au8Hex[0]);
-    RTLogPrintf("%%32.*Vhxd : \n%32.*Vhxd\n", 256, &au8Hex[0]);
-    RTLogPrintf("%%7.32Vhxd : \n%7.32Vhxd\n", &au8Hex[0]);
-    RTLogPrintf("%%7.*Vhxd : \n%7.*Vhxd\n", 32, &au8Hex[0]);
-    RTLogPrintf("%%*.*Vhxd : \n%*.*Vhxd\n", 7, 32, &au8Hex[0]);
+    RTLogPrintf("%%Rhxd   :\n%Rhxd\n", &au8Hex[0]);
+    RTLogPrintf("%%.64Rhxd:\n%.64Rhxd\n", &au8Hex[0]);
+    RTLogPrintf("%%.*Rhxd:\n%.*Rhxd\n", 64, &au8Hex[0]);
+    RTLogPrintf("%%32.256Rhxd : \n%32.256Rhxd\n", &au8Hex[0]);
+    RTLogPrintf("%%32.*Rhxd : \n%32.*Rhxd\n", 256, &au8Hex[0]);
+    RTLogPrintf("%%7.32Rhxd : \n%7.32Rhxd\n", &au8Hex[0]);
+    RTLogPrintf("%%7.*Rhxd : \n%7.*Rhxd\n", 32, &au8Hex[0]);
+    RTLogPrintf("%%*.*Rhxd : \n%*.*Rhxd\n", 7, 32, &au8Hex[0]);
 
-    RTLogPrintf("%%VGp: %VGp\n", (RTGCPHYS)0x87654321);
-    RTLogPrintf("%%VGv: %VGv\n", (RTGCPTR)0x87654321);
-    RTLogPrintf("%%VHp: %VHp\n", (RTGCPHYS)0x87654321);
-    RTLogPrintf("%%VHv: %VHv\n", (RTGCPTR)0x87654321);
+    RTLogPrintf("%%RGp: %RGp\n", (RTGCPHYS)0x87654321);
+    RTLogPrintf("%%RGv: %RGv\n", (RTGCPTR)0x87654321);
+    RTLogPrintf("%%RHp: %RHp\n", (RTGCPHYS)0x87654321);
+    RTLogPrintf("%%RHv: %RHv\n", (RTGCPTR)0x87654321);
 
-    RTLogPrintf("%%VI8 : %VI8\n", (uint8_t)808);
-    RTLogPrintf("%%VI16: %VI16\n", (uint16_t)16016);
-    RTLogPrintf("%%VI32: %VI32\n", _1G);
-    RTLogPrintf("%%VI64: %VI64\n", _1E);
+    RTLogPrintf("%%RI8 : %RI8\n", (uint8_t)808);
+    RTLogPrintf("%%RI16: %RI16\n", (uint16_t)16016);
+    RTLogPrintf("%%RI32: %RI32\n", _1G);
+    RTLogPrintf("%%RI64: %RI64\n", _1E);
 
-    RTLogPrintf("%%VU8 : %VU8\n", (uint8_t)808);
-    RTLogPrintf("%%VU16: %VU16\n", (uint16_t)16016);
-    RTLogPrintf("%%VU32: %VU32\n", _2G32);
-    RTLogPrintf("%%VU64: %VU64\n", _2E);
+    RTLogPrintf("%%RU8 : %RU8\n", (uint8_t)808);
+    RTLogPrintf("%%RU16: %RU16\n", (uint16_t)16016);
+    RTLogPrintf("%%RU32: %RU32\n", _2G32);
+    RTLogPrintf("%%RU64: %RU64\n", _2E);
 
-    RTLogPrintf("%%VX8 : %VX8 %#VX8\n",   (uint8_t)808, (uint8_t)808);
-    RTLogPrintf("%%VX16: %VX16 %#VX16\n", (uint16_t)16016, (uint16_t)16016);
-    RTLogPrintf("%%VX32: %VX32 %#VX32\n", _2G32, _2G32);
-    RTLogPrintf("%%VX64: %VX64 %#VX64\n", _2E, _2E);
+    RTLogPrintf("%%RX8 : %RX8 %#RX8\n",   (uint8_t)808, (uint8_t)808);
+    RTLogPrintf("%%RX16: %RX16 %#RX16\n", (uint16_t)16016, (uint16_t)16016);
+    RTLogPrintf("%%RX32: %RX32 %#RX32\n", _2G32, _2G32);
+    RTLogPrintf("%%RX64: %RX64 %#RX64\n", _2E, _2E);
 
     RTLogFlush(NULL);
 

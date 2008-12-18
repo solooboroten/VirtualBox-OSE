@@ -1,6 +1,6 @@
-/* $Id: DBGFDisas.cpp $ */
+/* $Id: DBGFDisas.cpp 15155 2008-12-09 10:58:24Z vboxsync $ */
 /** @file
- * VMM DBGF - Debugger Facility, Disassembler.
+ * DBGF - Debugger Facility, Disassembler.
  */
 
 /*
@@ -41,11 +41,8 @@
 
 
 /*******************************************************************************
-*   Internal Functions                                                         *
+*   Structures and Typedefs                                                    *
 *******************************************************************************/
-static DECLCALLBACK(int) dbgfR3DisasInstrRead(RTUINTPTR pSrc, uint8_t *pDest, uint32_t size, void *pvUserdata);
-
-
 /**
  * Structure used when disassembling and instructions in DBGF.
  * This is used so the reader function can get the stuff it needs.
@@ -64,8 +61,8 @@ typedef struct
     RTGCUINTPTR     cbSegLimit;
     /** The guest paging mode. */
     PGMMODE         enmMode;
-    /** Pointer to the current page - HC Ptr. */
-    void const     *pvPageHC;
+    /** Pointer to the current page - R3 Ptr. */
+    void const     *pvPageR3;
     /** Pointer to the current page - GC Ptr. */
     RTGCPTR         pvPageGC;
     /** Pointer to the next instruction (relative to GCPtrSegBase). */
@@ -77,6 +74,12 @@ typedef struct
     /** 64 bits mode or not. */
     bool            f64Bits;
 } DBGFDISASSTATE, *PDBGFDISASSTATE;
+
+
+/*******************************************************************************
+*   Internal Functions                                                         *
+*******************************************************************************/
+static DECLCALLBACK(int) dbgfR3DisasInstrRead(RTUINTPTR pSrc, uint8_t *pDest, uint32_t size, void *pvUserdata);
 
 
 
@@ -97,11 +100,10 @@ static int dbgfR3DisasInstrFirst(PVM pVM, PSELMSELINFO pSelInfo, PGMMODE enmMode
     pState->cbSegLimit      = pSelInfo->cbLimit;
     pState->enmMode         = enmMode;
     pState->pvPageGC        = 0;
-    pState->pvPageHC        = NULL;
+    pState->pvPageR3        = NULL;
     pState->pVM             = pVM;
     pState->fLocked         = false;
     pState->f64Bits         = enmMode >= PGMMODE_AMD64 && pSelInfo->Raw.Gen.u1Long;
-    Assert((uintptr_t)GCPtr == GCPtr);
     uint32_t cbInstr;
     int rc = DISCoreOneEx(GCPtr,
                           pState->f64Bits
@@ -113,7 +115,7 @@ static int dbgfR3DisasInstrFirst(PVM pVM, PSELMSELINFO pSelInfo, PGMMODE enmMode
                           &pState->Cpu,
                           &pState->Cpu,
                           &cbInstr);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         pState->GCPtrNext = GCPtr + cbInstr;
         return VINF_SUCCESS;
@@ -140,7 +142,7 @@ static int dbgfR3DisasInstrNext(PDBGFDISASSTATE pState)
 {
     uint32_t cbInstr;
     int rc = DISInstr(&pState->Cpu, (void *)pState->GCPtrNext, 0, &cbInstr, NULL);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         pState->GCPtrNext = GCPtr + cbInstr;
         return VINF_SUCCESS;
@@ -185,7 +187,7 @@ static DECLCALLBACK(int) dbgfR3DisasInstrRead(RTUINTPTR PtrSrc, uint8_t *pu8Dst,
         RTGCUINTPTR GCPtr = PtrSrc + pState->GCPtrSegBase;
 
         /* Need to update the page translation? */
-        if (    !pState->pvPageHC
+        if (    !pState->pvPageR3
             ||  (GCPtr >> PAGE_SHIFT) != (pState->pvPageGC >> PAGE_SHIFT))
         {
             int rc = VINF_SUCCESS;
@@ -194,8 +196,8 @@ static DECLCALLBACK(int) dbgfR3DisasInstrRead(RTUINTPTR PtrSrc, uint8_t *pu8Dst,
             pState->pvPageGC = GCPtr & PAGE_BASE_GC_MASK;
             if (MMHyperIsInsideArea(pState->pVM, pState->pvPageGC))
             {
-                pState->pvPageHC = MMHyperGC2HC(pState->pVM, pState->pvPageGC);
-                if (!pState->pvPageHC)
+                pState->pvPageR3 = MMHyperRCToR3(pState->pVM, (RTRCPTR)pState->pvPageGC);
+                if (!pState->pvPageR3)
                     rc = VERR_INVALID_POINTER;
             }
             else
@@ -204,14 +206,14 @@ static DECLCALLBACK(int) dbgfR3DisasInstrRead(RTUINTPTR PtrSrc, uint8_t *pu8Dst,
                     PGMPhysReleasePageMappingLock(pState->pVM, &pState->PageMapLock);
 
                 if (pState->enmMode <= PGMMODE_PROTECTED)
-                    rc = PGMPhysGCPhys2CCPtrReadOnly(pState->pVM, pState->pvPageGC, &pState->pvPageHC, &pState->PageMapLock);
+                    rc = PGMPhysGCPhys2CCPtrReadOnly(pState->pVM, pState->pvPageGC, &pState->pvPageR3, &pState->PageMapLock);
                 else
-                    rc = PGMPhysGCPtr2CCPtrReadOnly(pState->pVM, pState->pvPageGC, &pState->pvPageHC, &pState->PageMapLock);
+                    rc = PGMPhysGCPtr2CCPtrReadOnly(pState->pVM, pState->pvPageGC, &pState->pvPageR3, &pState->PageMapLock);
                 pState->fLocked = RT_SUCCESS_NP(rc);
             }
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
             {
-                pState->pvPageHC = NULL;
+                pState->pvPageR3 = NULL;
                 return rc;
             }
         }
@@ -232,7 +234,7 @@ static DECLCALLBACK(int) dbgfR3DisasInstrRead(RTUINTPTR PtrSrc, uint8_t *pu8Dst,
             cb = cbRead;
 
         /* read and advance */
-        memcpy(pu8Dst, (char *)pState->pvPageHC + (GCPtr & PAGE_OFFSET_MASK), cb);
+        memcpy(pu8Dst, (char *)pState->pvPageR3 + (GCPtr & PAGE_OFFSET_MASK), cb);
         cbRead -= cb;
         if (!cbRead)
             return VINF_SUCCESS;
@@ -297,7 +299,7 @@ static DECLCALLBACK(int) dbgfR3DisasGetSymbol(PCDISCPUSTATE pCpu, uint32_t u32Se
  * @param       cchOutput       Size of the output buffer.
  * @param       pcbInstr        Where to return the size of the instruction.
  */
-DBGFR3DECL(int) DBGFR3DisasInstrEx(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, unsigned fFlags, char *pszOutput, uint32_t cchOutput, uint32_t *pcbInstr)
+VMMR3DECL(int) DBGFR3DisasInstrEx(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, unsigned fFlags, char *pszOutput, uint32_t cchOutput, uint32_t *pcbInstr)
 {
     /*
      * Get the Sel and GCPtr if fFlags requests that.
@@ -308,7 +310,7 @@ DBGFR3DECL(int) DBGFR3DisasInstrEx(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, unsigned f
     if (fFlags & (DBGF_DISAS_FLAGS_CURRENT_GUEST | DBGF_DISAS_FLAGS_CURRENT_HYPER))
     {
         if (fFlags & DBGF_DISAS_FLAGS_CURRENT_GUEST)
-            pCtxCore = CPUMGetGuestCtxCore(pVM);
+            pCtxCore = CPUMGetGuestCtxCoreEx(pVM, VMMGetCpu(pVM));    /* @todo SMP */
         else
             pCtxCore = CPUMGetHyperCtxCore(pVM);
         Sel        = pCtxCore->cs;
@@ -357,7 +359,7 @@ DBGFR3DECL(int) DBGFR3DisasInstrEx(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, unsigned f
 
         if (CPUMAreHiddenSelRegsValid(pVM))
         {   /* Assume the current CS defines the execution mode. */
-            pCtxCore   = CPUMGetGuestCtxCore(pVM);
+            pCtxCore   = CPUMGetGuestCtxCoreEx(pVM, VMMGetCpu(pVM));  /* @todo SMP */
             pHiddenSel = (CPUMSELREGHID *)&pCtxCore->csHid;
 
             SelInfo.Raw.Gen.u1Present       = pHiddenSel->Attr.n.u1Present;
@@ -398,9 +400,9 @@ DBGFR3DECL(int) DBGFR3DisasInstrEx(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, unsigned f
     else
     {
         rc = SELMR3GetSelectorInfo(pVM, Sel, &SelInfo);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
-            RTStrPrintf(pszOutput, cchOutput, "Sel=%04x -> %Vrc\n", Sel, rc);
+            RTStrPrintf(pszOutput, cchOutput, "Sel=%04x -> %Rrc\n", Sel, rc);
             return rc;
         }
     }
@@ -410,9 +412,9 @@ DBGFR3DECL(int) DBGFR3DisasInstrEx(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, unsigned f
      */
     DBGFDISASSTATE State;
     rc = dbgfR3DisasInstrFirst(pVM, &SelInfo, enmMode, GCPtr, &State);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTStrPrintf(pszOutput, cchOutput, "Disas -> %Vrc\n", rc);
+        RTStrPrintf(pszOutput, cchOutput, "Disas -> %Rrc\n", rc);
         return rc;
     }
 
@@ -437,16 +439,16 @@ DBGFR3DECL(int) DBGFR3DisasInstrEx(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, unsigned f
         else if (Sel == DBGF_SEL_FLAT)
         {
             if (enmMode >= PGMMODE_AMD64)
-                RTStrPrintf(pszOutput, cchOutput, "%VGv  %s", GCPtr, szBuf);
+                RTStrPrintf(pszOutput, cchOutput, "%RGv  %s", GCPtr, szBuf);
             else
-                RTStrPrintf(pszOutput, cchOutput, "%VRv  %s", (RTRCPTR)GCPtr, szBuf);
+                RTStrPrintf(pszOutput, cchOutput, "%08RX32  %s", (uint32_t)GCPtr, szBuf);
         }
         else
         {
             if (enmMode >= PGMMODE_AMD64)
-                RTStrPrintf(pszOutput, cchOutput, "%04x:%VGv  %s", Sel, GCPtr, szBuf);
+                RTStrPrintf(pszOutput, cchOutput, "%04x:%RGv  %s", Sel, GCPtr, szBuf);
             else
-                RTStrPrintf(pszOutput, cchOutput, "%04x:%VRv  %s", Sel, (RTRCPTR)GCPtr, szBuf);
+                RTStrPrintf(pszOutput, cchOutput, "%04x:%08RX32  %s", Sel, (uint32_t)GCPtr, szBuf);
         }
     }
     else
@@ -456,37 +458,37 @@ DBGFR3DECL(int) DBGFR3DisasInstrEx(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, unsigned f
         rc = dbgfR3DisasInstrRead(GCPtr, pau8Bits, cbBits, &State);
         AssertRC(rc);
         if (fFlags & DBGF_DISAS_FLAGS_NO_ADDRESS)
-            RTStrPrintf(pszOutput, cchOutput, "%.*Vhxs%*s %s",
+            RTStrPrintf(pszOutput, cchOutput, "%.*Rhxs%*s %s",
                         cbBits, pau8Bits, cbBits < 8 ? (8 - cbBits) * 3 : 0, "",
                         szBuf);
         else if (fRealModeAddress)
-            RTStrPrintf(pszOutput, cchOutput, "%04x:%04x %.*Vhxs%*s %s",
+            RTStrPrintf(pszOutput, cchOutput, "%04x:%04x %.*Rhxs%*s %s",
                         Sel, (unsigned)GCPtr,
                         cbBits, pau8Bits, cbBits < 8 ? (8 - cbBits) * 3 : 0, "",
                         szBuf);
         else if (Sel == DBGF_SEL_FLAT)
         {
             if (enmMode >= PGMMODE_AMD64)
-                RTStrPrintf(pszOutput, cchOutput, "%VGv %.*Vhxs%*s %s",
+                RTStrPrintf(pszOutput, cchOutput, "%RGv %.*Rhxs%*s %s",
                             GCPtr,
                             cbBits, pau8Bits, cbBits < 8 ? (8 - cbBits) * 3 : 0, "",
                             szBuf);
             else
-                RTStrPrintf(pszOutput, cchOutput, "%VRv %.*Vhxs%*s %s",
-                            (RTRCPTR)GCPtr,
+                RTStrPrintf(pszOutput, cchOutput, "%08RX32 %.*Rhxs%*s %s",
+                            (uint32_t)GCPtr,
                             cbBits, pau8Bits, cbBits < 8 ? (8 - cbBits) * 3 : 0, "",
                             szBuf);
         }
         else
         {
             if (enmMode >= PGMMODE_AMD64)
-                RTStrPrintf(pszOutput, cchOutput, "%04x:%VGv %.*Vhxs%*s %s",
+                RTStrPrintf(pszOutput, cchOutput, "%04x:%RGv %.*Rhxs%*s %s",
                             Sel, GCPtr,
                             cbBits, pau8Bits, cbBits < 8 ? (8 - cbBits) * 3 : 0, "",
                             szBuf);
             else
-                RTStrPrintf(pszOutput, cchOutput, "%04x:%VRv %.*Vhxs%*s %s",
-                            Sel, (RTRCPTR)GCPtr,
+                RTStrPrintf(pszOutput, cchOutput, "%04x:%08RX32 %.*Rhxs%*s %s",
+                            Sel, (uint32_t)GCPtr,
                             cbBits, pau8Bits, cbBits < 8 ? (8 - cbBits) * 3 : 0, "",
                             szBuf);
         }
@@ -512,7 +514,7 @@ DBGFR3DECL(int) DBGFR3DisasInstrEx(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, unsigned f
  * @param       pszOutput       Output buffer.
  * @param       cchOutput        Size of the output buffer.
  */
-DBGFR3DECL(int) DBGFR3DisasInstr(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, char *pszOutput, uint32_t cchOutput)
+VMMR3DECL(int) DBGFR3DisasInstr(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, char *pszOutput, uint32_t cchOutput)
 {
     return DBGFR3DisasInstrEx(pVM, Sel, GCPtr, 0, pszOutput, cchOutput, NULL);
 }
@@ -527,7 +529,7 @@ DBGFR3DECL(int) DBGFR3DisasInstr(PVM pVM, RTSEL Sel, RTGCPTR GCPtr, char *pszOut
  * @param       pszOutput       Output buffer.
  * @param       cchOutput       Size of the output buffer.
  */
-DBGFR3DECL(int) DBGFR3DisasInstrCurrent(PVM pVM, char *pszOutput, uint32_t cchOutput)
+VMMR3DECL(int) DBGFR3DisasInstrCurrent(PVM pVM, char *pszOutput, uint32_t cchOutput)
 {
     return DBGFR3DisasInstrEx(pVM, 0, 0, DBGF_DISAS_FLAGS_CURRENT_GUEST, pszOutput, cchOutput, NULL);
 }
@@ -541,13 +543,13 @@ DBGFR3DECL(int) DBGFR3DisasInstrCurrent(PVM pVM, char *pszOutput, uint32_t cchOu
  * @param       pVM             VM handle.
  * @param       pszPrefix       Short prefix string to the dissassembly string. (optional)
  */
-DBGFR3DECL(int) DBGFR3DisasInstrCurrentLogInternal(PVM pVM, const char *pszPrefix)
+VMMR3DECL(int) DBGFR3DisasInstrCurrentLogInternal(PVM pVM, const char *pszPrefix)
 {
     char szBuf[256];
     szBuf[0] = '\0';
     int rc = DBGFR3DisasInstrCurrent(pVM, &szBuf[0], sizeof(szBuf));
-    if (VBOX_FAILURE(rc))
-        RTStrPrintf(szBuf, sizeof(szBuf), "DBGFR3DisasInstrCurrentLog failed with rc=%Vrc\n", rc);
+    if (RT_FAILURE(rc))
+        RTStrPrintf(szBuf, sizeof(szBuf), "DBGFR3DisasInstrCurrentLog failed with rc=%Rrc\n", rc);
     if (pszPrefix && *pszPrefix)
         RTLogPrintf("%s: %s\n", pszPrefix, szBuf);
     else
@@ -567,13 +569,13 @@ DBGFR3DECL(int) DBGFR3DisasInstrCurrentLogInternal(PVM pVM, const char *pszPrefi
  *                              calculation of the actual instruction address.
  * @param       GCPtr           The code address relative to the base of Sel.
  */
-DBGFR3DECL(int) DBGFR3DisasInstrLogInternal(PVM pVM, RTSEL Sel, RTGCPTR GCPtr)
+VMMR3DECL(int) DBGFR3DisasInstrLogInternal(PVM pVM, RTSEL Sel, RTGCPTR GCPtr)
 {
     char szBuf[256];
     szBuf[0] = '\0';
     int rc = DBGFR3DisasInstr(pVM, Sel, GCPtr, &szBuf[0], sizeof(szBuf));
-    if (VBOX_FAILURE(rc))
-        RTStrPrintf(szBuf, sizeof(szBuf), "DBGFR3DisasInstrLog(, %RTsel, %RGv) failed with rc=%Vrc\n", Sel, GCPtr, rc);
+    if (RT_FAILURE(rc))
+        RTStrPrintf(szBuf, sizeof(szBuf), "DBGFR3DisasInstrLog(, %RTsel, %RGv) failed with rc=%Rrc\n", Sel, GCPtr, rc);
     RTLogPrintf("%s\n", szBuf);
     return rc;
 }

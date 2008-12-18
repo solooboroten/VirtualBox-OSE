@@ -1,4 +1,4 @@
-/* $Id: HostImpl.h $ */
+/* $Id: HostImpl.h 15570 2008-12-16 10:39:34Z vboxsync $ */
 /** @file
  * Implemenation of IHost.
  */
@@ -31,9 +31,14 @@
 #else
 class USBProxyService;
 #endif
+#include "HostPower.h"
 
 #ifdef RT_OS_WINDOWS
 # include "win/svchlp.h"
+#endif
+
+#ifdef RT_OS_LINUX
+# include <HostHardwareLinux.h>
 #endif
 
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
@@ -79,11 +84,12 @@ public:
     STDMETHOD(COMGETTER(FloppyDrives))(IHostFloppyDriveCollection **drives);
     STDMETHOD(COMGETTER(USBDevices))(IHostUSBDeviceCollection **aUSBDevices);
     STDMETHOD(COMGETTER(USBDeviceFilters))(IHostUSBDeviceFilterCollection ** aUSBDeviceFilters);
-    STDMETHOD(COMGETTER(NetworkInterfaces))(IHostNetworkInterfaceCollection **networkInterfaces);
+    STDMETHOD(COMGETTER(NetworkInterfaces))(ComSafeArrayOut (IHostNetworkInterface *, aNetworkInterfaces));
     STDMETHOD(COMGETTER(ProcessorCount))(ULONG *count);
     STDMETHOD(COMGETTER(ProcessorOnlineCount))(ULONG *count);
     STDMETHOD(GetProcessorSpeed)(ULONG cpuId, ULONG *speed);
     STDMETHOD(GetProcessorDescription)(ULONG cpuId, BSTR *description);
+    STDMETHOD(GetProcessorFeature) (ProcessorFeature_T feature, BOOL *supported);
     STDMETHOD(COMGETTER(MemorySize))(ULONG *size);
     STDMETHOD(COMGETTER(MemoryAvailable))(ULONG *available);
     STDMETHOD(COMGETTER(OperatingSystem))(BSTR *os);
@@ -92,14 +98,14 @@ public:
 
     // IHost methods
 #ifdef RT_OS_WINDOWS
-    STDMETHOD(CreateHostNetworkInterface) (INPTR BSTR aName,
+    STDMETHOD(CreateHostNetworkInterface) (IN_BSTR aName,
                                            IHostNetworkInterface **aHostNetworkInterface,
                                            IProgress **aProgress);
-    STDMETHOD(RemoveHostNetworkInterface) (INPTR GUIDPARAM aId,
+    STDMETHOD(RemoveHostNetworkInterface) (IN_GUID aId,
                                            IHostNetworkInterface **aHostNetworkInterface,
                                            IProgress **aProgress);
 #endif
-    STDMETHOD(CreateUSBDeviceFilter) (INPTR BSTR aName, IHostUSBDeviceFilter **aFilter);
+    STDMETHOD(CreateUSBDeviceFilter) (IN_BSTR aName, IHostUSBDeviceFilter **aFilter);
     STDMETHOD(InsertUSBDeviceFilter) (ULONG aPosition, IHostUSBDeviceFilter *aFilter);
     STDMETHOD(RemoveUSBDeviceFilter) (ULONG aPosition, IHostUSBDeviceFilter **aFilter);
 
@@ -129,8 +135,8 @@ public:
 
 private:
 
-#if defined(RT_OS_LINUX) || defined(RT_OS_SOLARIS)
-# ifdef VBOX_USE_LIBHAL
+#if defined(RT_OS_SOLARIS)
+# if defined(VBOX_USE_LIBHAL)
     bool getDVDInfoFromHal(std::list <ComObjPtr <HostDVDDrive> > &list);
     bool getFloppyInfoFromHal(std::list <ComObjPtr <HostFloppyDrive> > &list);
 # endif
@@ -175,6 +181,15 @@ private:
     USBProxyService *mUSBProxyService;
 #endif /* VBOX_WITH_USB */
 
+#ifdef RT_OS_LINUX
+    /** Object with information about host drives */
+    VBoxMainDriveInfo mHostDrives;
+#endif
+    /* Features that can be queried with GetProcessorFeature */
+    BOOL fVTxAMDVSupported, fLongModeSupported, fPAESupported;
+
+    HostPowerService *mHostPowerService;
 };
 
 #endif // ____H_HOSTIMPL
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

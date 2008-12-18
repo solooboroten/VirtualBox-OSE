@@ -1,4 +1,4 @@
-/* $Id: PGMGst.h $ */
+/* $Id: PGMGst.h 14301 2008-11-18 13:31:42Z vboxsync $ */
 /** @file
  * VBox - Page Manager / Monitor, Guest Paging Template.
  */
@@ -67,6 +67,7 @@
 # define GST_PT_SHIFT               X86_PT_SHIFT
 # define GST_PT_MASK                X86_PT_MASK
 # define GST_CR3_PAGE_MASK          X86_CR3_PAGE_MASK
+
 #elif   PGM_GST_TYPE == PGM_TYPE_PAE \
      || PGM_GST_TYPE == PGM_TYPE_AMD64
 # define GSTPT                      X86PTPAE
@@ -105,23 +106,25 @@ __BEGIN_DECLS
 /* r3 */
 PGM_GST_DECL(int, InitData)(PVM pVM, PPGMMODEDATA pModeData, bool fResolveGCAndR0);
 PGM_GST_DECL(int, Enter)(PVM pVM, RTGCPHYS GCPhysCR3);
-PGM_GST_DECL(int, Relocate)(PVM pVM, RTGCUINTPTR offDelta);
+PGM_GST_DECL(int, Relocate)(PVM pVM, RTGCPTR offDelta);
 PGM_GST_DECL(int, Exit)(PVM pVM);
 
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
 static DECLCALLBACK(int) pgmR3Gst32BitWriteHandlerCR3(PVM pVM, RTGCPHYS GCPhys, void *pvPhys, void *pvBuf, size_t cbBuf, PGMACCESSTYPE enmAccessType, void *pvUser);
 static DECLCALLBACK(int) pgmR3GstPAEWriteHandlerCR3(PVM pVM, RTGCPHYS GCPhys, void *pvPhys, void *pvBuf, size_t cbBuf, PGMACCESSTYPE enmAccessType, void *pvUser);
-#if 0
 static DECLCALLBACK(int) pgmR3GstPAEWriteHandlerPD(PVM pVM, RTGCPHYS GCPhys, void *pvPhys, void *pvBuf, size_t cbBuf, PGMACCESSTYPE enmAccessType, void *pvUser);
 #endif
 
 /* all */
-PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCUINTPTR GCPtr, uint64_t *pfFlags, PRTGCPHYS pGCPhys);
-PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask);
-PGM_GST_DECL(int, GetPDE)(PVM pVM, RTGCUINTPTR GCPtr, PX86PDEPAE pPDE);
+PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCPTR GCPtr, uint64_t *pfFlags, PRTGCPHYS pGCPhys);
+PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask);
+PGM_GST_DECL(int, GetPDE)(PVM pVM, RTGCPTR GCPtr, PX86PDEPAE pPDE);
 PGM_GST_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3);
 PGM_GST_DECL(int, UnmapCR3)(PVM pVM);
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
 PGM_GST_DECL(int, MonitorCR3)(PVM pVM, RTGCPHYS GCPhysCR3);
 PGM_GST_DECL(int, UnmonitorCR3)(PVM pVM);
+#endif
 __END_DECLS
 
 
@@ -139,26 +142,30 @@ PGM_GST_DECL(int, InitData)(PVM pVM, PPGMMODEDATA pModeData, bool fResolveGCAndR
     Assert(pModeData->uGstType == PGM_GST_TYPE);
 
     /* Ring-3 */
-    pModeData->pfnR3GstRelocate        = PGM_GST_NAME(Relocate);
-    pModeData->pfnR3GstExit            = PGM_GST_NAME(Exit);
-    pModeData->pfnR3GstGetPDE          = PGM_GST_NAME(GetPDE);
-    pModeData->pfnR3GstGetPage         = PGM_GST_NAME(GetPage);
-    pModeData->pfnR3GstModifyPage      = PGM_GST_NAME(ModifyPage);
-    pModeData->pfnR3GstMapCR3          = PGM_GST_NAME(MapCR3);
-    pModeData->pfnR3GstUnmapCR3        = PGM_GST_NAME(UnmapCR3);
-    pModeData->pfnR3GstMonitorCR3      = PGM_GST_NAME(MonitorCR3);
-    pModeData->pfnR3GstUnmonitorCR3    = PGM_GST_NAME(UnmonitorCR3);
+    pModeData->pfnR3GstRelocate           = PGM_GST_NAME(Relocate);
+    pModeData->pfnR3GstExit               = PGM_GST_NAME(Exit);
+    pModeData->pfnR3GstGetPDE             = PGM_GST_NAME(GetPDE);
+    pModeData->pfnR3GstGetPage            = PGM_GST_NAME(GetPage);
+    pModeData->pfnR3GstModifyPage         = PGM_GST_NAME(ModifyPage);
+    pModeData->pfnR3GstMapCR3             = PGM_GST_NAME(MapCR3);
+    pModeData->pfnR3GstUnmapCR3           = PGM_GST_NAME(UnmapCR3);
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
+    pModeData->pfnR3GstMonitorCR3         = PGM_GST_NAME(MonitorCR3);
+    pModeData->pfnR3GstUnmonitorCR3       = PGM_GST_NAME(UnmonitorCR3);
+#endif
 
-#if PGM_GST_TYPE == PGM_TYPE_32BIT || PGM_GST_TYPE == PGM_TYPE_PAE
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
+# if PGM_GST_TYPE == PGM_TYPE_32BIT || PGM_GST_TYPE == PGM_TYPE_PAE
     pModeData->pfnR3GstWriteHandlerCR3    = PGM_GST_NAME(WriteHandlerCR3);
     pModeData->pszR3GstWriteHandlerCR3    = "Guest CR3 Write access handler";
     pModeData->pfnR3GstPAEWriteHandlerCR3 = PGM_GST_NAME(WriteHandlerCR3);
     pModeData->pszR3GstPAEWriteHandlerCR3 = "Guest CR3 Write access handler (PAE)";
-#else
+# else
     pModeData->pfnR3GstWriteHandlerCR3    = NULL;
     pModeData->pszR3GstWriteHandlerCR3    = NULL;
     pModeData->pfnR3GstPAEWriteHandlerCR3 = NULL;
     pModeData->pszR3GstPAEWriteHandlerCR3 = NULL;
+# endif
 #endif
 
     if (fResolveGCAndR0)
@@ -167,48 +174,56 @@ PGM_GST_DECL(int, InitData)(PVM pVM, PPGMMODEDATA pModeData, bool fResolveGCAndR
 
 #if PGM_SHW_TYPE != PGM_TYPE_AMD64 /* No AMD64 for traditional virtualization, only VT-x and AMD-V. */
         /* GC */
-        rc = PDMR3GetSymbolGC(pVM, NULL, PGM_GST_NAME_GC_STR(GetPage),          &pModeData->pfnGCGstGetPage);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_GC_STR(GetPage),  rc), rc);
-        rc = PDMR3GetSymbolGC(pVM, NULL, PGM_GST_NAME_GC_STR(ModifyPage),       &pModeData->pfnGCGstModifyPage);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_GC_STR(ModifyPage),  rc), rc);
-        rc = PDMR3GetSymbolGC(pVM, NULL, PGM_GST_NAME_GC_STR(GetPDE),           &pModeData->pfnGCGstGetPDE);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_GC_STR(GetPDE), rc), rc);
-        rc = PDMR3GetSymbolGC(pVM, NULL, PGM_GST_NAME_GC_STR(MonitorCR3),       &pModeData->pfnGCGstMonitorCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_GC_STR(MonitorCR3), rc), rc);
-        rc = PDMR3GetSymbolGC(pVM, NULL, PGM_GST_NAME_GC_STR(UnmonitorCR3),     &pModeData->pfnGCGstUnmonitorCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_GC_STR(UnmonitorCR3), rc), rc);
-        rc = PDMR3GetSymbolGC(pVM, NULL, PGM_GST_NAME_GC_STR(MapCR3),           &pModeData->pfnGCGstMapCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_GC_STR(MapCR3), rc), rc);
-        rc = PDMR3GetSymbolGC(pVM, NULL, PGM_GST_NAME_GC_STR(UnmapCR3),         &pModeData->pfnGCGstUnmapCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_GC_STR(UnmapCR3), rc), rc);
-# if PGM_GST_TYPE == PGM_TYPE_32BIT || PGM_GST_TYPE == PGM_TYPE_PAE
-        rc = PDMR3GetSymbolGC(pVM, NULL, PGM_GST_NAME_GC_STR(WriteHandlerCR3),  &pModeData->pfnGCGstWriteHandlerCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_GC_STR(WriteHandlerCR3), rc), rc);
-        rc = PDMR3GetSymbolGC(pVM, NULL, PGM_GST_NAME_GC_STR(WriteHandlerCR3),  &pModeData->pfnGCGstPAEWriteHandlerCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_GC_STR(PAEWriteHandlerCR3), rc), rc);
+        rc = PDMR3LdrGetSymbolRC(pVM, NULL,       PGM_GST_NAME_RC_STR(GetPage),          &pModeData->pfnRCGstGetPage);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_RC_STR(GetPage),  rc), rc);
+        rc = PDMR3LdrGetSymbolRC(pVM, NULL,       PGM_GST_NAME_RC_STR(ModifyPage),       &pModeData->pfnRCGstModifyPage);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_RC_STR(ModifyPage),  rc), rc);
+        rc = PDMR3LdrGetSymbolRC(pVM, NULL,       PGM_GST_NAME_RC_STR(GetPDE),           &pModeData->pfnRCGstGetPDE);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_RC_STR(GetPDE), rc), rc);
+# ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
+        rc = PDMR3LdrGetSymbolRC(pVM, NULL,       PGM_GST_NAME_RC_STR(MonitorCR3),       &pModeData->pfnRCGstMonitorCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_RC_STR(MonitorCR3), rc), rc);
+        rc = PDMR3LdrGetSymbolRC(pVM, NULL,       PGM_GST_NAME_RC_STR(UnmonitorCR3),     &pModeData->pfnRCGstUnmonitorCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_RC_STR(UnmonitorCR3), rc), rc);
+# endif
+        rc = PDMR3LdrGetSymbolRC(pVM, NULL,       PGM_GST_NAME_RC_STR(MapCR3),           &pModeData->pfnRCGstMapCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_RC_STR(MapCR3), rc), rc);
+        rc = PDMR3LdrGetSymbolRC(pVM, NULL,       PGM_GST_NAME_RC_STR(UnmapCR3),         &pModeData->pfnRCGstUnmapCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_RC_STR(UnmapCR3), rc), rc);
+# ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
+#  if PGM_GST_TYPE == PGM_TYPE_32BIT || PGM_GST_TYPE == PGM_TYPE_PAE
+        rc = PDMR3LdrGetSymbolRC(pVM, NULL,       PGM_GST_NAME_RC_STR(WriteHandlerCR3),  &pModeData->pfnRCGstWriteHandlerCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_RC_STR(WriteHandlerCR3), rc), rc);
+        rc = PDMR3LdrGetSymbolRC(pVM, NULL,       PGM_GST_NAME_RC_STR(WriteHandlerCR3),  &pModeData->pfnRCGstPAEWriteHandlerCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_RC_STR(WriteHandlerCR3), rc), rc);
+#  endif
 # endif
 #endif /* Not AMD64 shadow paging. */
 
         /* Ring-0 */
-        rc = PDMR3GetSymbolR0(pVM, NULL, PGM_GST_NAME_R0_STR(GetPage),          &pModeData->pfnR0GstGetPage);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_R0_STR(GetPage),  rc), rc);
-        rc = PDMR3GetSymbolR0(pVM, NULL, PGM_GST_NAME_R0_STR(ModifyPage),       &pModeData->pfnR0GstModifyPage);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_R0_STR(ModifyPage),  rc), rc);
-        rc = PDMR3GetSymbolR0(pVM, NULL, PGM_GST_NAME_R0_STR(GetPDE),           &pModeData->pfnR0GstGetPDE);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_R0_STR(GetPDE), rc), rc);
-        rc = PDMR3GetSymbolR0(pVM, NULL, PGM_GST_NAME_R0_STR(MonitorCR3),       &pModeData->pfnR0GstMonitorCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_R0_STR(MonitorCR3), rc), rc);
-        rc = PDMR3GetSymbolR0(pVM, NULL, PGM_GST_NAME_R0_STR(UnmonitorCR3),     &pModeData->pfnR0GstUnmonitorCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_R0_STR(UnmonitorCR3), rc), rc);
-        rc = PDMR3GetSymbolR0(pVM, NULL, PGM_GST_NAME_R0_STR(MapCR3),           &pModeData->pfnR0GstMapCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_R0_STR(MapCR3), rc), rc);
-        rc = PDMR3GetSymbolR0(pVM, NULL, PGM_GST_NAME_R0_STR(UnmapCR3),         &pModeData->pfnR0GstUnmapCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_R0_STR(UnmapCR3), rc), rc);
-#if PGM_GST_TYPE == PGM_TYPE_32BIT || PGM_GST_TYPE == PGM_TYPE_PAE
-        rc = PDMR3GetSymbolR0(pVM, NULL, PGM_GST_NAME_R0_STR(WriteHandlerCR3),  &pModeData->pfnR0GstWriteHandlerCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_R0_STR(WriteHandlerCR3), rc), rc);
-        rc = PDMR3GetSymbolR0(pVM, NULL, PGM_GST_NAME_R0_STR(WriteHandlerCR3),  &pModeData->pfnR0GstPAEWriteHandlerCR3);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_GST_NAME_R0_STR(PAEWriteHandlerCR3), rc), rc);
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL,       PGM_GST_NAME_R0_STR(GetPage),          &pModeData->pfnR0GstGetPage);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_R0_STR(GetPage),  rc), rc);
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL,       PGM_GST_NAME_R0_STR(ModifyPage),       &pModeData->pfnR0GstModifyPage);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_R0_STR(ModifyPage),  rc), rc);
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL,       PGM_GST_NAME_R0_STR(GetPDE),           &pModeData->pfnR0GstGetPDE);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_R0_STR(GetPDE), rc), rc);
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL,       PGM_GST_NAME_R0_STR(MonitorCR3),       &pModeData->pfnR0GstMonitorCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_R0_STR(MonitorCR3), rc), rc);
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL,       PGM_GST_NAME_R0_STR(UnmonitorCR3),     &pModeData->pfnR0GstUnmonitorCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_R0_STR(UnmonitorCR3), rc), rc);
+#endif
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL,       PGM_GST_NAME_R0_STR(MapCR3),           &pModeData->pfnR0GstMapCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_R0_STR(MapCR3), rc), rc);
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL,       PGM_GST_NAME_R0_STR(UnmapCR3),         &pModeData->pfnR0GstUnmapCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_R0_STR(UnmapCR3), rc), rc);
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
+# if PGM_GST_TYPE == PGM_TYPE_32BIT || PGM_GST_TYPE == PGM_TYPE_PAE
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL,       PGM_GST_NAME_R0_STR(WriteHandlerCR3),  &pModeData->pfnR0GstWriteHandlerCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_R0_STR(WriteHandlerCR3), rc), rc);
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL,       PGM_GST_NAME_R0_STR(WriteHandlerCR3),  &pModeData->pfnR0GstPAEWriteHandlerCR3);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_GST_NAME_R0_STR(WriteHandlerCR3), rc), rc);
+# endif
 #endif
     }
 
@@ -229,8 +244,10 @@ PGM_GST_DECL(int, Enter)(PVM pVM, RTGCPHYS GCPhysCR3)
      * Map and monitor CR3
      */
     int rc = PGM_GST_NAME(MapCR3)(pVM, GCPhysCR3);
-    if (VBOX_SUCCESS(rc) && !pVM->pgm.s.fMappingsFixed)
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
+    if (RT_SUCCESS(rc) && !pVM->pgm.s.fMappingsFixed)
         rc = PGM_GST_NAME(MonitorCR3)(pVM, GCPhysCR3);
+#endif
     return rc;
 }
 
@@ -242,7 +259,7 @@ PGM_GST_DECL(int, Enter)(PVM pVM, RTGCPHYS GCPhysCR3)
  * @param   pVM         The VM handle.
  * @param   offDelta    The reloation offset.
  */
-PGM_GST_DECL(int, Relocate)(PVM pVM, RTGCUINTPTR offDelta)
+PGM_GST_DECL(int, Relocate)(PVM pVM, RTGCPTR offDelta)
 {
     /* nothing special to do here - InitData does the job. */
     return VINF_SUCCESS;
@@ -257,8 +274,12 @@ PGM_GST_DECL(int, Relocate)(PVM pVM, RTGCUINTPTR offDelta)
  */
 PGM_GST_DECL(int, Exit)(PVM pVM)
 {
-    int rc = PGM_GST_NAME(UnmonitorCR3)(pVM);
-    if (VBOX_SUCCESS(rc))
+    int rc;
+
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
+    rc = PGM_GST_NAME(UnmonitorCR3)(pVM);
+    if (RT_SUCCESS(rc))
+#endif
         rc = PGM_GST_NAME(UnmapCR3)(pVM);
     return rc;
 }
@@ -282,7 +303,7 @@ static DECLCALLBACK(int) pgmR3Gst32BitWriteHandlerCR3(PVM pVM, RTGCPHYS GCPhys, 
 {
     AssertMsg(!pVM->pgm.s.fMappingsFixed, ("Shouldn't be registered when mappings are fixed!\n"));
     Assert(enmAccessType == PGMACCESSTYPE_WRITE);
-    Log2(("pgmR3Gst32BitWriteHandlerCR3: ff=%#x GCPhys=%VGp pvPhys=%p cbBuf=%d pvBuf={%.*Vhxs}\n", pVM->fForcedActions, GCPhys, pvPhys, cbBuf, cbBuf, pvBuf));
+    Log2(("pgmR3Gst32BitWriteHandlerCR3: ff=%#x GCPhys=%RGp pvPhys=%p cbBuf=%d pvBuf={%.*Rhxs}\n", pVM->fForcedActions, GCPhys, pvPhys, cbBuf, cbBuf, pvBuf));
 
     /*
      * Do the write operation.
@@ -294,30 +315,30 @@ static DECLCALLBACK(int) pgmR3Gst32BitWriteHandlerCR3(PVM pVM, RTGCPHYS GCPhys, 
         /*
          * Check for conflicts.
          */
-        const RTGCUINTPTR offPD = GCPhys & PAGE_OFFSET_MASK;
-        const unsigned      iPD1 = offPD / sizeof(X86PDE);
-        const unsigned      iPD2 = (offPD + cbBuf - 1) / sizeof(X86PDE);
+        const RTGCPTR   offPD = GCPhys & PAGE_OFFSET_MASK;
+        const unsigned  iPD1  = offPD / sizeof(X86PDE);
+        const unsigned  iPD2  = (unsigned)(offPD + cbBuf - 1) / sizeof(X86PDE);
         Assert(iPD1 - iPD2 <= 1);
-        if (    (   pVM->pgm.s.pGuestPDHC->a[iPD1].n.u1Present
+        if (    (   pVM->pgm.s.pGst32BitPdR3->a[iPD1].n.u1Present
                  && pgmGetMapping(pVM, iPD1 << X86_PD_SHIFT) )
             ||  (   iPD1 != iPD2
-                 && pVM->pgm.s.pGuestPDHC->a[iPD2].n.u1Present
+                 && pVM->pgm.s.pGst32BitPdR3->a[iPD2].n.u1Present
                  && pgmGetMapping(pVM, iPD2 << X86_PD_SHIFT) )
            )
         {
-            Log(("pgmR3Gst32BitWriteHandlerCR3: detected conflict. iPD1=%#x iPD2=%#x GCPhys=%VGp\n", iPD1, iPD2, GCPhys));
-            STAM_COUNTER_INC(&pVM->pgm.s.StatHCGuestPDWriteConflict);
+            Log(("pgmR3Gst32BitWriteHandlerCR3: detected conflict. iPD1=%#x iPD2=%#x GCPhys=%RGp\n", iPD1, iPD2, GCPhys));
+            STAM_COUNTER_INC(&pVM->pgm.s.StatR3GuestPDWriteConflict);
             VM_FF_SET(pVM, VM_FF_PGM_SYNC_CR3);
         }
     }
 
-    STAM_COUNTER_INC(&pVM->pgm.s.StatHCGuestPDWrite);
+    STAM_COUNTER_INC(&pVM->pgm.s.StatR3GuestPDWrite);
     return VINF_SUCCESS;
 }
 #endif /* 32BIT */
 
-
 #if PGM_GST_TYPE == PGM_TYPE_PAE
+
 /**
  * Physical write access handler for the Guest CR3 in PAE mode.
  *
@@ -335,7 +356,7 @@ static DECLCALLBACK(int) pgmR3GstPAEWriteHandlerCR3(PVM pVM, RTGCPHYS GCPhys, vo
 {
     AssertMsg(!pVM->pgm.s.fMappingsFixed, ("Shouldn't be registered when mappings are fixed!\n"));
     Assert(enmAccessType == PGMACCESSTYPE_WRITE);
-    Log2(("pgmR3GstPAEWriteHandlerCR3: ff=%#x GCPhys=%VGp pvPhys=%p cbBuf=%d pvBuf={%.*Vhxs}\n", pVM->fForcedActions, GCPhys, pvPhys, cbBuf, cbBuf, pvBuf));
+    Log2(("pgmR3GstPAEWriteHandlerCR3: ff=%#x GCPhys=%RGp pvPhys=%p cbBuf=%d pvBuf={%.*Rhxs}\n", pVM->fForcedActions, GCPhys, pvPhys, cbBuf, cbBuf, pvBuf));
 
     /*
      * Do the write operation.
@@ -350,11 +371,11 @@ static DECLCALLBACK(int) pgmR3GstPAEWriteHandlerCR3(PVM pVM, RTGCPHYS GCPhys, vo
          */
         for (unsigned i = 0; i < 4; i++)
         {
-            if (    pVM->pgm.s.pGstPaePDPTHC->a[i].n.u1Present
-                &&  (pVM->pgm.s.pGstPaePDPTHC->a[i].u & X86_PDPE_PG_MASK) != pVM->pgm.s.aGCPhysGstPaePDsMonitored[i])
+            if (    pVM->pgm.s.pGstPaePdptR3->a[i].n.u1Present
+                &&  (pVM->pgm.s.pGstPaePdptR3->a[i].u & X86_PDPE_PG_MASK) != pVM->pgm.s.aGCPhysGstPaePDsMonitored[i])
             {
-                Log(("pgmR3GstPAEWriteHandlerCR3: detected updated PDPE; [%d] = %#llx, Old GCPhys=%VGp\n",
-                     i, pVM->pgm.s.pGstPaePDPTHC->a[i].u, pVM->pgm.s.aGCPhysGstPaePDsMonitored[i]));
+                Log(("pgmR3GstPAEWriteHandlerCR3: detected updated PDPE; [%d] = %#llx, Old GCPhys=%RGp\n",
+                     i, pVM->pgm.s.pGstPaePdptR3->a[i].u, pVM->pgm.s.aGCPhysGstPaePDsMonitored[i]));
                 /*
                  * The PD has changed.
                  * We will schedule a monitoring update for the next TLB Flush,
@@ -378,7 +399,7 @@ static DECLCALLBACK(int) pgmR3GstPAEWriteHandlerCR3(PVM pVM, RTGCPHYS GCPhys, vo
         pVM->pgm.s.fSyncFlags |= PGM_SYNC_MONITOR_CR3;
 
 
-    STAM_COUNTER_INC(&pVM->pgm.s.StatHCGuestPDWrite);
+    STAM_COUNTER_INC(&pVM->pgm.s.StatR3GuestPDWrite);
     return VINF_SUCCESS;
 }
 
@@ -400,7 +421,7 @@ static DECLCALLBACK(int) pgmR3GstPAEWriteHandlerPD(PVM pVM, RTGCPHYS GCPhys, voi
 {
     AssertMsg(!pVM->pgm.s.fMappingsFixed, ("Shouldn't be registered when mappings are fixed!\n"));
     Assert(enmAccessType == PGMACCESSTYPE_WRITE);
-    Log2(("pgmR3GstPAEWriteHandlerPD: ff=%#x GCPhys=%VGp pvPhys=%p cbBuf=%d pvBuf={%.*Vhxs}\n", pVM->fForcedActions, GCPhys, pvPhys, cbBuf, cbBuf, pvBuf));
+    Log2(("pgmR3GstPAEWriteHandlerPD: ff=%#x GCPhys=%RGp pvPhys=%p cbBuf=%d pvBuf={%.*Rhxs}\n", pVM->fForcedActions, GCPhys, pvPhys, cbBuf, cbBuf, pvBuf));
 
     /*
      * Do the write operation.
@@ -414,12 +435,12 @@ static DECLCALLBACK(int) pgmR3GstPAEWriteHandlerPD(PVM pVM, RTGCPHYS GCPhys, voi
          */
         unsigned i;
         for (i = 0; i < 4; i++)
-            if (pVM->pgm.s.pGstPaePDPTHC->a[i].u == (GCPhys & X86_PTE_PAE_PG_MASK))
+            if (pVM->pgm.s.pGstPaePdptHC->a[i].u == (GCPhys & X86_PTE_PAE_PG_MASK))
             {
-                PX86PDPAE           pPDSrc = pgmGstGetPaePD(&pVM->pgm.s, i << X86_PDPT_SHIFT);
-                const RTGCUINTPTR   offPD = GCPhys & PAGE_OFFSET_MASK;
-                const unsigned      iPD1 = offPD / sizeof(X86PDEPAE);
-                const unsigned      iPD2 = (offPD + cbBuf - 1) / sizeof(X86PDEPAE);
+                PX86PDPAE       pPDSrc = pgmGstGetPaePD(&pVM->pgm.s, i << X86_PDPT_SHIFT);
+                const RTGCPTR   offPD  = GCPhys & PAGE_OFFSET_MASK;
+                const unsigned  iPD1   = offPD / sizeof(X86PDEPAE);
+                const unsigned  iPD2   = (offPD + cbBuf - 1) / sizeof(X86PDEPAE);
                 Assert(iPD1 - iPD2 <= 1);
                 if (    (   pPDSrc->a[iPD1].n.u1Present
                          && pgmGetMapping(pVM, (i << X86_PDPT_SHIFT) | (iPD1 << X86_PD_PAE_SHIFT)) )
@@ -428,9 +449,9 @@ static DECLCALLBACK(int) pgmR3GstPAEWriteHandlerPD(PVM pVM, RTGCPHYS GCPhys, voi
                          && pgmGetMapping(pVM, (i << X86_PDPT_SHIFT) | (iPD2 << X86_PD_PAE_SHIFT)) )
                    )
                 {
-                    Log(("pgmR3GstPaePD3WriteHandler: detected conflict. i=%d iPD1=%#x iPD2=%#x GCPhys=%VGp\n",
+                    Log(("pgmR3GstPaePD3WriteHandler: detected conflict. i=%d iPD1=%#x iPD2=%#x GCPhys=%RGp\n",
                          i, iPD1, iPD2, GCPhys));
-                    STAM_COUNTER_INC(&pVM->pgm.s.StatHCGuestPDWriteConflict);
+                    STAM_COUNTER_INC(&pVM->pgm.s.StatR3GuestPDWriteConflict);
                     VM_FF_SET(pVM, VM_FF_PGM_SYNC_CR3);
                 }
                 break; /* ASSUMES no duplicate entries... */
@@ -438,9 +459,10 @@ static DECLCALLBACK(int) pgmR3GstPAEWriteHandlerPD(PVM pVM, RTGCPHYS GCPhys, voi
         Assert(i < 4);
     }
 
-    STAM_COUNTER_INC(&pVM->pgm.s.StatHCGuestPDWrite);
+    STAM_COUNTER_INC(&pVM->pgm.s.StatR3GuestPDWrite);
     return VINF_SUCCESS;
 }
 # endif
+
 #endif /* PAE */
 

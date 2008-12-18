@@ -107,6 +107,8 @@ typedef const X86EFLAGSBITS *PCX86EFLAGSBITS;
  */
 typedef union X86EFLAGS
 {
+    /** The plain unsigned view. */
+    uint32_t        u;
     /** The bitfield view. */
     X86EFLAGSBITS   Bits;
     /** The 8-bit view. */
@@ -117,8 +119,6 @@ typedef union X86EFLAGS
     uint32_t        au32[1];
     /** The 32-bit view. */
     uint32_t        u32;
-    /** The plain unsigned view. */
-    uint32_t        u;
 } X86EFLAGS;
 /** Pointer to EFLAGS. */
 typedef X86EFLAGS *PX86EFLAGS;
@@ -130,6 +130,8 @@ typedef const X86EFLAGS *PCX86EFLAGS;
  */
 typedef union X86RFLAGS
 {
+    /** The plain unsigned view. */
+    uint64_t        u;
     /** The bitfield view. */
     X86EFLAGSBITS   Bits;
     /** The 8-bit view. */
@@ -142,8 +144,6 @@ typedef union X86RFLAGS
     uint64_t        au64[1];
     /** The 64-bit view. */
     uint64_t        u64;
-    /** The plain unsigned view. */
-    uint64_t        u;
 } X86RFLAGS;
 /** Pointer to RFLAGS. */
 typedef X86RFLAGS *PX86RFLAGS;
@@ -349,6 +349,8 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define X86_CPUID_FEATURE_ECX_CX16      RT_BIT(13)
 /** ECX Bit 14 - xTPR Update Control. Processor supports changing IA32_MISC_ENABLES[bit 23]. */
 #define X86_CPUID_FEATURE_ECX_TPRUPDATE RT_BIT(14)
+/** ECX Bit 21 - x2APIC support. */
+#define X86_CPUID_FEATURE_ECX_X2APIC    RT_BIT(21)
 /** ECX Bit 23 - POPCOUNT instruction. */
 #define X86_CPUID_FEATURE_ECX_POPCOUNT  RT_BIT(23)
 
@@ -678,23 +680,23 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 /** Calcs the L bit of Nth breakpoint.
  * @param   iBp     The breakpoint number [0..3].
  */
-#define X86_DR7_L(iBp)                      ( 1 << (iBp * 2) )
+#define X86_DR7_L(iBp)                      ( UINT32_C(1) << (iBp * 2) )
 
 /** Calcs the G bit of Nth breakpoint.
  * @param   iBp     The breakpoint number [0..3].
  */
-#define X86_DR7_G(iBp)                      ( 1 << (iBp * 2 + 1) )
+#define X86_DR7_G(iBp)                      ( UINT32_C(1) << (iBp * 2 + 1) )
 
 /** @name Read/Write values.
  * @{ */
 /** Break on instruction fetch only. */
-#define X86_DR7_RW_EO                       0
+#define X86_DR7_RW_EO                       0U
 /** Break on write only. */
-#define X86_DR7_RW_WO                       1
+#define X86_DR7_RW_WO                       1U
 /** Break on I/O read/write. This is only defined if CR4.DE is set. */
-#define X86_DR7_RW_IO                       2
+#define X86_DR7_RW_IO                       2U
 /** Break on read or write (but not instruction fetches). */
-#define X86_DR7_RW_RW                       3
+#define X86_DR7_RW_RW                       3U
 /** @} */
 
 /** Shifts a X86_DR7_RW_* value to its right place.
@@ -705,10 +707,10 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 
 /** @name Length values.
  * @{ */
-#define X86_DR7_LEN_BYTE                    0
-#define X86_DR7_LEN_WORD                    1
-#define X86_DR7_LEN_QWORD                   2 /**< AMD64 long mode only. */
-#define X86_DR7_LEN_DWORD                   3
+#define X86_DR7_LEN_BYTE                    0U
+#define X86_DR7_LEN_WORD                    1U
+#define X86_DR7_LEN_QWORD                   2U /**< AMD64 long mode only. */
+#define X86_DR7_LEN_DWORD                   3U
 /** @} */
 
 /** Shifts a X86_DR7_LEN_* value to its right place.
@@ -717,9 +719,20 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
  */
 #define X86_DR7_LEN(iBp, cb)                ( (cb) << ((iBp) * 4 + 18) )
 
+/** Fetch the breakpoint length bits from the DR7 value.
+ * @param   uDR7    DR7 value
+ * @param   iBp     The breakpoint number [0..3].
+ */
+#define X86_DR7_GET_LEN(uDR7, iBp)          ( ( (uDR7) >> ((iBp) * 4 + 18) ) & 0x3U)
+
 /** Mask used to check if any breakpoints are enabled. */
 #define X86_DR7_ENABLED_MASK                (RT_BIT(0) | RT_BIT(1) | RT_BIT(2) | RT_BIT(3) | RT_BIT(4) | RT_BIT(5) | RT_BIT(6) | RT_BIT(7))
 
+/** Mask used to check if any io breakpoints are set. */
+#define X86_DR7_IO_ENABLED_MASK             (X86_DR7_RW(0, X86_DR7_RW_IO) | X86_DR7_RW(1, X86_DR7_RW_IO) | X86_DR7_RW(2, X86_DR7_RW_IO) | X86_DR7_RW(3, X86_DR7_RW_IO))
+
+/** Value of DR7 after powerup/reset. */
+#define X86_DR7_INIT_VAL                    0x400
 /** @} */
 
 
@@ -806,6 +819,9 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define MSR_IA32_VMX_PROCBASED_CTLS2        0x48B
 /** EPT capabilities. */
 #define MSR_IA32_VMX_EPT_CAPS               0x48C
+/** X2APIC MSR ranges. */
+#define MSR_IA32_APIC_START                 0x800
+#define MSR_IA32_APIC_END                   0x900
 
 /** K6 EFER - Extended Feature Enable Register. */
 #define MSR_K6_EFER                         0xc0000080
@@ -894,6 +910,8 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 typedef uint32_t X86PGUINT;
 /** Pointer to a page table/directory table entry as an unsigned integer. */
 typedef X86PGUINT *PX86PGUINT;
+/** Pointer to an const page table/directory table entry as an unsigned integer. */
+typedef X86PGUINT const *PCX86PGUINT;
 
 /** Number of entries in a 32-bit PT/PD. */
 #define X86_PG_ENTRIES                      1024
@@ -903,6 +921,8 @@ typedef X86PGUINT *PX86PGUINT;
 typedef uint64_t X86PGPAEUINT;
 /** Pointer to a PAE page table/page directory/pdpt/l4/l5 entry as an unsigned integer. */
 typedef X86PGPAEUINT *PX86PGPAEUINT;
+/** Pointer to an const PAE page table/page directory/pdpt/l4/l5 entry as an unsigned integer. */
+typedef X86PGPAEUINT const *PCX86PGPAEUINT;
 
 /** Number of entries in a PAE PT/PD. */
 #define X86_PG_PAE_ENTRIES                  512
@@ -954,23 +974,43 @@ typedef X86PGPAEUINT *PX86PGPAEUINT;
  * @{
  */
 /** Bit 0 -  P  - Present bit. */
-#define X86_PTE_P                           RT_BIT(0)
+#define X86_PTE_BIT_P                       0
 /** Bit 1 - R/W - Read (clear) / Write (set) bit. */
-#define X86_PTE_RW                          RT_BIT(1)
+#define X86_PTE_BIT_RW                      1)
 /** Bit 2 - U/S - User (set) / Supervisor (clear) bit. */
-#define X86_PTE_US                          RT_BIT(2)
+#define X86_PTE_BIT_US                      2
 /** Bit 3 - PWT - Page level write thru bit. */
-#define X86_PTE_PWT                         RT_BIT(3)
+#define X86_PTE_BIT_PWT                     3
 /** Bit 4 - PCD - Page level cache disable bit. */
-#define X86_PTE_PCD                         RT_BIT(4)
+#define X86_PTE_BIT_PCD                     4
 /** Bit 5 -  A  - Access bit. */
-#define X86_PTE_A                           RT_BIT(5)
+#define X86_PTE_BIT_A                       5
 /** Bit 6 -  D  - Dirty bit. */
-#define X86_PTE_D                           RT_BIT(6)
+#define X86_PTE_BIT_D                       6
 /** Bit 7 - PAT - Page Attribute Table index bit. Reserved and 0 if not supported. */
-#define X86_PTE_PAT                         RT_BIT(7)
+#define X86_PTE_BIT_PAT                     7
 /** Bit 8 -  G  - Global flag. */
+#define X86_PTE_BIT_G                       8
+
+/** Bit 0 -  P  - Present bit mask. */
+#define X86_PTE_P                           RT_BIT(0)
+/** Bit 1 - R/W - Read (clear) / Write (set) bit mask. */
+#define X86_PTE_RW                          RT_BIT(1)
+/** Bit 2 - U/S - User (set) / Supervisor (clear) bit mask. */
+#define X86_PTE_US                          RT_BIT(2)
+/** Bit 3 - PWT - Page level write thru bit mask. */
+#define X86_PTE_PWT                         RT_BIT(3)
+/** Bit 4 - PCD - Page level cache disable bit mask. */
+#define X86_PTE_PCD                         RT_BIT(4)
+/** Bit 5 -  A  - Access bit mask. */
+#define X86_PTE_A                           RT_BIT(5)
+/** Bit 6 -  D  - Dirty bit mask. */
+#define X86_PTE_D                           RT_BIT(6)
+/** Bit 7 - PAT - Page Attribute Table index bit mask. Reserved and 0 if not supported. */
+#define X86_PTE_PAT                         RT_BIT(7)
+/** Bit 8 -  G  - Global bit mask. */
 #define X86_PTE_G                           RT_BIT(8)
+
 /** Bits 9-11 - - Available for use to system software. */
 #define X86_PTE_AVL_MASK                    (RT_BIT(9) | RT_BIT(10) | RT_BIT(11))
 /** Bits 12-31 - - Physical Page number of the next level. */
@@ -1027,10 +1067,10 @@ typedef const X86PTEBITS *PCX86PTEBITS;
  */
 typedef union X86PTE
 {
-    /** Bit field view. */
-    X86PTEBITS      n;
     /** Unsigned integer view */
     X86PGUINT       u;
+    /** Bit field view. */
+    X86PTEBITS      n;
     /** 32-bit view. */
     uint32_t        au32[1];
     /** 16-bit view. */
@@ -1090,10 +1130,10 @@ typedef const X86PTEPAEBITS *PCX86PTEPAEBITS;
  */
 typedef union X86PTEPAE
 {
-    /** Bit field view. */
-    X86PTEPAEBITS   n;
     /** Unsigned integer view */
     X86PGPAEUINT    u;
+    /** Bit field view. */
+    X86PTEPAEBITS   n;
     /** 32-bit view. */
     uint32_t        au32[2];
     /** 16-bit view. */
@@ -1395,12 +1435,12 @@ typedef const X86PDE2MPAEBITS *PCX86PDE2MPAEBITS;
  */
 typedef union X86PDE
 {
+    /** Unsigned integer view. */
+    X86PGUINT       u;
     /** Normal view. */
     X86PDEBITS      n;
     /** 4MB view (big). */
     X86PDE4MBITS    b;
-    /** Unsigned integer view. */
-    X86PGUINT       u;
     /** 8 bit unsigned integer view. */
     uint8_t         au8[4];
     /** 16 bit unsigned integer view. */
@@ -1418,12 +1458,12 @@ typedef const X86PDE *PCX86PDE;
  */
 typedef union X86PDEPAE
 {
+    /** Unsigned integer view. */
+    X86PGPAEUINT    u;
     /** Normal view. */
     X86PDEPAEBITS   n;
     /** 2MB page view (big). */
     X86PDE2MPAEBITS b;
-    /** Unsigned integer view. */
-    X86PGPAEUINT    u;
     /** 8 bit unsigned integer view. */
     uint8_t         au8[8];
     /** 16 bit unsigned integer view. */
@@ -1572,12 +1612,12 @@ typedef const X86PDPEBITS *PCX86PDPEAMD64BITS;
  */
 typedef union X86PDPE
 {
+    /** Unsigned integer view. */
+    X86PGPAEUINT    u;
     /** Normal view. */
     X86PDPEBITS     n;
     /** AMD64 view. */
     X86PDPEAMD64BITS lm;
-    /** Unsigned integer view. */
-    X86PGPAEUINT    u;
     /** 8 bit unsigned integer view. */
     uint8_t         au8[8];
     /** 16 bit unsigned integer view. */
@@ -1682,10 +1722,10 @@ typedef const X86PML4EBITS *PCX86PML4EBITS;
  */
 typedef union X86PML4E
 {
-    /** Normal view. */
-    X86PML4EBITS    n;
     /** Unsigned integer view. */
     X86PGPAEUINT    u;
+    /** Normal view. */
+    X86PML4EBITS    n;
     /** 8 bit unsigned integer view. */
     uint8_t         au8[8];
     /** 16 bit unsigned integer view. */
@@ -1922,10 +1962,10 @@ typedef struct X86DESCATTRBITS
 #pragma pack(1)
 typedef union X86DESCATTR
 {
-    /** Normal view. */
-    X86DESCATTRBITS    n;
     /** Unsigned integer view. */
     uint32_t           u;
+    /** Normal view. */
+    X86DESCATTRBITS    n;
 } X86DESCATTR;
 #pragma pack()
 
@@ -2267,6 +2307,8 @@ typedef X86DESC     *PX86DESCHC;
  */
 #define AMD64_SEL_SHIFT     4
 
+/** @def X86_SEL_SHIFT_HC
+ * This is for use with X86DESCHC. */
 #if HC_ARCH_BITS == 64
 #define X86_SEL_SHIFT_HC    AMD64_SEL_SHIFT
 #else

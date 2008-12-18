@@ -340,7 +340,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
 
                     rc = vbsfMappingsQuery (pClient, pMappings, &cMappings);
 
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
                     {
                         /* Update parameters.*/
                         paParms[1].u.uint32 = cMappings;
@@ -385,7 +385,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                     /* Execute the function. */
                     rc = vbsfMappingsQueryName (pClient, root, pString);
 
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
                     {
                         /* Update parameters.*/
                         ; /* none */
@@ -436,7 +436,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
 
                     rc = vbsfCreate (pClient, root, pPath, cbPath, pParms);
 
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
                     {
                         /* Update parameters.*/
                         ; /* none */
@@ -484,7 +484,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
 
                     rc = vbsfClose (pClient, root, Handle);
 
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
                     {
                         /* Update parameters.*/
                         ; /* none */
@@ -547,7 +547,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                     if (pStatusLed)
                         pStatusLed->Actual.s.fReading = 0;
 
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
                     {
                         /* Update parameters.*/
                         paParms[3].u.uint32 = count;
@@ -612,7 +612,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                     if (pStatusLed)
                         pStatusLed->Actual.s.fWriting = 0;
 
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
                     {
                         /* Update parameters.*/
                         paParms[3].u.uint32 = count;
@@ -672,13 +672,27 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                      *       completed, the another thread must call
                      *
                      *           g_pHelpers->pfnCallComplete (callHandle, rc);
+                     *
+                     * The operation is async.
+                     * fAsynchronousProcessing = true;
                      */
 
-                    /* Operation is async. */
-                    fAsynchronousProcessing = true;
+                    /* Here the operation must be posted to another thread. At the moment it is not implemented.
+                     * Until it is implemented, try to perform the operation without waiting.
+                     */
+                    flags &= ~SHFL_LOCK_WAIT;
 
-                    /* Here the operation must be posted to another thread. At the moment it is not implemented. */
-                    rc = VERR_NOT_SUPPORTED;
+                    /* Execute the function. */
+                    if ((flags & SHFL_LOCK_MODE_MASK) == SHFL_LOCK_CANCEL)
+                        rc = vbsfUnlock(pClient, root, Handle, offset, length, flags);
+                    else
+                        rc = vbsfLock(pClient, root, Handle, offset, length, flags);
+
+                    if (VBOX_SUCCESS(rc))
+                    {
+                        /* Update parameters.*/
+                        /* none */
+                    }
                 }
                 else
                 {
@@ -688,7 +702,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                     else
                         rc = vbsfLock(pClient, root, Handle, offset, length, flags);
 
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
                     {
                         /* Update parameters.*/
                         /* none */
@@ -755,7 +769,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                     if (rc == VERR_NO_MORE_FILES && cFiles != 0)
                         rc = VINF_SUCCESS; /* Successfully return these files. */
 
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
                     {
                         /* Update parameters.*/
                         paParms[3].u.uint32 = length;
@@ -800,7 +814,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                 /* Execute the function. */
                 rc = vbsfMapFolder (pClient, pszMapName, delimiter, false,  &root);
 
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
                     /* Update parameters.*/
                     paParms[1].u.uint32 = root;
@@ -843,7 +857,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                 /* Execute the function. */
                 rc = vbsfMapFolder (pClient, pszMapName, delimiter, fCaseSensitive, &root);
 
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
                     /* Update parameters.*/
                     paParms[1].u.uint32 = root;
@@ -879,7 +893,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                 /* Execute the function. */
                 rc = vbsfUnmapFolder (pClient, root);
 
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
                     /* Update parameters.*/
                     /* nothing */
@@ -924,7 +938,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                 else /* SHFL_INFO_GET */
                     rc = vbsfQueryFSInfo (pClient, root, Handle, flags, &length, pBuffer);
 
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
                     /* Update parameters.*/
                     paParms[3].u.uint32 = length;
@@ -973,7 +987,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                     /* Execute the function. */
 
                     rc = vbsfRemove (pClient, root, pPath, cbPath, flags);
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
                     {
                         /* Update parameters.*/
                         ; /* none */
@@ -1021,7 +1035,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                 {
                     /* Execute the function. */
                     rc = vbsfRename (pClient, root, pSrc, pDest, flags);
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
                     {
                         /* Update parameters.*/
                         ; /* none */
@@ -1070,7 +1084,7 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
 
                     rc = vbsfFlush (pClient, root, Handle);
 
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
                     {
                         /* Nothing to do */
                     }
@@ -1092,12 +1106,12 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
         }
     }
 
-    LogFlow(("svcCall: rc = %Vrc\n", rc));
+    LogFlow(("svcCall: rc = %Rrc\n", rc));
 
     if (   !fAsynchronousProcessing
-        || VBOX_FAILURE (rc))
+        || RT_FAILURE (rc))
     {
-        /* Complete the operation if it was unsuccessful or 
+        /* Complete the operation if it was unsuccessful or
          * it was processed synchronously.
          */
         g_pHelpers->pfnCallComplete (callHandle, rc);
@@ -1171,7 +1185,7 @@ static DECLCALLBACK(int) svcHostCall (void *, uint32_t u32Function, uint32_t cPa
                 /* Execute the function. */
                 rc = vbsfMappingsAdd (pFolderName, pMapName, fWritable);
 
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
                     /* Update parameters.*/
                     ; /* none */
@@ -1216,7 +1230,7 @@ static DECLCALLBACK(int) svcHostCall (void *, uint32_t u32Function, uint32_t cPa
                 /* Execute the function. */
                 rc = vbsfMappingsRemove (pString);
 
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
                     /* Update parameters.*/
                     ; /* none */
@@ -1268,7 +1282,7 @@ static DECLCALLBACK(int) svcHostCall (void *, uint32_t u32Function, uint32_t cPa
         break;
     }
 
-    LogFlow(("svcHostCall: rc = %Vrc\n", rc));
+    LogFlow(("svcHostCall: rc = %Rrc\n", rc));
     return rc;
 }
 

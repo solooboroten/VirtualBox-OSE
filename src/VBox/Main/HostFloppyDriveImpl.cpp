@@ -49,15 +49,15 @@ void HostFloppyDrive::FinalRelease()
  *
  * @return COM result indicator.
  */
-HRESULT HostFloppyDrive::init (INPTR BSTR aName,
-                               INPTR BSTR aUdi /* = NULL */,
-                               INPTR BSTR aDescription /* = NULL */)
+HRESULT HostFloppyDrive::init (IN_BSTR aName,
+                               IN_BSTR aUdi /* = NULL */,
+                               IN_BSTR aDescription /* = NULL */)
 {
     ComAssertRet (aName, E_INVALIDARG);
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mName) = aName;
     unconst (mUdi) = aUdi;
@@ -89,8 +89,7 @@ void HostFloppyDrive::uninit()
 
 STDMETHODIMP HostFloppyDrive::COMGETTER(Name) (BSTR *aName)
 {
-    if (!aName)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aName);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -104,8 +103,7 @@ STDMETHODIMP HostFloppyDrive::COMGETTER(Name) (BSTR *aName)
 
 STDMETHODIMP HostFloppyDrive::COMGETTER(Description) (BSTR *aDescription)
 {
-    if (!aDescription)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aDescription);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -119,8 +117,7 @@ STDMETHODIMP HostFloppyDrive::COMGETTER(Description) (BSTR *aDescription)
 
 STDMETHODIMP HostFloppyDrive::COMGETTER(Udi) (BSTR *aUdi)
 {
-    if (!aUdi)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aUdi);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -131,3 +128,4 @@ STDMETHODIMP HostFloppyDrive::COMGETTER(Udi) (BSTR *aUdi)
 
     return S_OK;
 }
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

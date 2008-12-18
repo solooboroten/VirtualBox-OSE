@@ -1,4 +1,4 @@
-/* $Id: string.h $ */
+/* $Id: string.h 15051 2008-12-05 17:20:00Z vboxsync $ */
 
 /** @file
  * MS COM / XPCOM Abstraction Layer:
@@ -75,17 +75,20 @@ class Bstr
 public:
 
     typedef BSTR String;
-    typedef const BSTR ConstString;
+    typedef CBSTR ConstString;
 
     Bstr () : bstr (NULL) {}
 
     Bstr (const Bstr &that) : bstr (NULL) { raw_copy (bstr, that.bstr); }
-    Bstr (const BSTR that) : bstr (NULL) { raw_copy (bstr, that); }
+    Bstr (CBSTR that) : bstr (NULL) { raw_copy (bstr, that); }
+
+#if defined (VBOX_WITH_XPCOM)
     Bstr (const wchar_t *that) : bstr (NULL)
     {
         AssertCompile (sizeof (wchar_t) == sizeof (OLECHAR));
-        raw_copy (bstr, (const BSTR) that);
+        raw_copy (bstr, (CBSTR) that);
     }
+#endif
 
     Bstr (const Utf8Str &that);
     Bstr (const char *that);
@@ -96,7 +99,7 @@ public:
     ~Bstr () { setNull(); }
 
     Bstr &operator = (const Bstr &that) { safe_assign (that.bstr); return *this; }
-    Bstr &operator = (const BSTR that) { safe_assign (that); return *this; }
+    Bstr &operator = (CBSTR that) { safe_assign (that); return *this; }
 
     Bstr &operator = (const Utf8Str &that);
     Bstr &operator = (const char *that);
@@ -139,34 +142,48 @@ public:
         return *this;
     }
 
-    int compare (const BSTR str) const
+    int compare (CBSTR str) const
+    {
+        return ::RTUtf16Cmp ((PRTUTF16) bstr, (PRTUTF16) str);
+    }
+
+    int compare (BSTR str) const
     {
         return ::RTUtf16Cmp ((PRTUTF16) bstr, (PRTUTF16) str);
     }
 
     bool operator == (const Bstr &that) const { return !compare (that.bstr); }
     bool operator != (const Bstr &that) const { return !!compare (that.bstr); }
-    bool operator == (const BSTR that) const { return !compare (that); }
+    bool operator == (CBSTR that) const { return !compare (that); }
+    bool operator == (BSTR that) const { return !compare (that); }
+
+#if defined (VBOX_WITH_XPCOM)
     bool operator != (const wchar_t *that) const
     {
         AssertCompile (sizeof (wchar_t) == sizeof (OLECHAR));
-        return !!compare ((const BSTR) that);
+        return !!compare ((CBSTR) that);
     }
     bool operator == (const wchar_t *that) const
     {
         AssertCompile (sizeof (wchar_t) == sizeof (OLECHAR));
-        return !compare ((const BSTR) that);
+        return !compare ((CBSTR) that);
     }
-    bool operator != (const BSTR that) const { return !!compare (that); }
+#endif
+
+    bool operator != (CBSTR that) const { return !!compare (that); }
+    bool operator != (BSTR that) const { return !!compare (that); }
     bool operator < (const Bstr &that) const { return compare (that.bstr) < 0; }
-    bool operator < (const BSTR that) const { return compare (that) < 0; }
+    bool operator < (CBSTR that) const { return compare (that) < 0; }
+    bool operator < (BSTR that) const { return compare (that) < 0; }
+#if defined (VBOX_WITH_XPCOM)
     bool operator < (const wchar_t *that) const
     {
         AssertCompile (sizeof (wchar_t) == sizeof (OLECHAR));
-        return compare ((const BSTR) that) < 0;
+        return compare ((CBSTR) that) < 0;
     }
+#endif
 
-    int compareIgnoreCase (const BSTR str) const
+    int compareIgnoreCase (CBSTR str) const
     {
         return ::RTUtf16LocaleICmp (bstr, str);
     }
@@ -178,12 +195,21 @@ public:
 
     size_t length() const { return isNull() ? 0 : ::RTUtf16Len ((PRTUTF16) bstr); }
 
-    /** Intended to to pass instances as |BSTR| input parameters to methods. */
-    operator const BSTR () const { return bstr; }
+    /** Intended to to pass instances as |CBSTR| input parameters to methods. */
+    operator CBSTR () const { return bstr; }
 
-    /** The same as operator const BSTR(), but for situations where the compiler
-        cannot typecast implicitly (for example, in printf() argument list). */
-    const BSTR raw() const { return bstr; }
+    /**
+     * Intended to to pass instances as |BSTR| input parameters to methods.
+     * Note that we have to provide this mutable BSTR operator since in MS COM
+     * input BSTR parameters of interface methods are not const.
+     */
+    operator BSTR () { return bstr; }
+
+    /**
+     *  The same as operator CBSTR(), but for situations where the compiler
+     *  cannot typecast implicitly (for example, in printf() argument list).
+     */
+    CBSTR raw() const { return bstr; }
 
     /**
      *  Returns a non-const raw pointer that allows to modify the string directly.
@@ -242,9 +268,9 @@ public:
      */
     static const Bstr Null;
 
-private:
+protected:
 
-    void safe_assign (const BSTR str)
+    void safe_assign (CBSTR str)
     {
         if (bstr != str)
         {
@@ -253,7 +279,7 @@ private:
         }
     }
 
-    inline static void raw_copy (BSTR &ls, const BSTR rs)
+    inline static void raw_copy (BSTR &ls, CBSTR rs)
     {
         if (rs)
             ls = ::SysAllocString ((const OLECHAR *) rs);
@@ -272,18 +298,20 @@ private:
 
     BSTR bstr;
 
-    friend class Utf8Str; // to access our raw_copy()
+    friend class Utf8Str; /* to access our raw_copy() */
 };
 
-// symmetric compare operators
-inline bool operator== (const BSTR l, const Bstr &r) { return r.operator== (l); }
-inline bool operator!= (const BSTR l, const Bstr &r) { return r.operator!= (l); }
+/* symmetric compare operators */
+inline bool operator== (CBSTR l, const Bstr &r) { return r.operator== (l); }
+inline bool operator!= (CBSTR l, const Bstr &r) { return r.operator!= (l); }
+inline bool operator== (BSTR l, const Bstr &r) { return r.operator== (l); }
+inline bool operator!= (BSTR l, const Bstr &r) { return r.operator!= (l); }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
  *  Helper class that represents UTF8 (|char *|) strings. Useful in
- *  conjunction with Bstr to simplify conversions beetween UTF16 (|BSTR|)
+ *  conjunction with Bstr to simplify conversions between UTF16 (|BSTR|)
  *  and UTF8.
  *
  *  This class uses COM/XPCOM-provided memory management routines to allocate
@@ -308,7 +336,7 @@ public:
     Utf8Str (const char *that) : str (NULL) { raw_copy (str, that); }
 
     Utf8Str (const Bstr &that) : str (NULL) { raw_copy (str, that); }
-    Utf8Str (const BSTR that) : str (NULL) { raw_copy (str, that); }
+    Utf8Str (CBSTR that) : str (NULL) { raw_copy (str, that); }
 
     /** Shortcut that calls #alloc(aSize) right after object creation. */
     Utf8Str (size_t aSize) : str (NULL) { alloc(aSize); }
@@ -324,7 +352,7 @@ public:
         raw_copy (str, that);
         return *this;
     }
-    Utf8Str &operator = (const BSTR that)
+    Utf8Str &operator = (CBSTR that)
     {
         setNull();
         raw_copy (str, that);
@@ -478,7 +506,7 @@ public:
      */
     static const Utf8Str Null;
 
-private:
+protected:
 
     void safe_assign (const char *s)
     {
@@ -499,7 +527,7 @@ private:
 #endif
     }
 
-    inline static void raw_copy (char *&ls, const BSTR rs)
+    inline static void raw_copy (char *&ls, CBSTR rs)
     {
         if (rs)
         {
@@ -516,7 +544,7 @@ private:
 
     char *str;
 
-    friend class Bstr; // to access our raw_copy()
+    friend class Bstr; /* to access our raw_copy() */
 };
 
 // symmetric compare operators
@@ -625,6 +653,49 @@ public:
      *  @param args     list of arguments for the format string
      */
     Utf8StrFmtVA (const char *format, va_list args) { init (format, args); }
+};
+
+/**
+ * The BstrFmt class is a shortcut to <tt>Bstr (Utf8StrFmt (...))</tt>.
+ */
+class BstrFmt : public Bstr
+{
+public:
+
+    /**
+     * Constructs a new string given the format string and the list of the
+     * arguments for the format string.
+     *
+     * @param aFormat   printf-like format string (in UTF-8 encoding).
+     * @param ...       List of the arguments for the format string.
+     */
+    explicit BstrFmt (const char *aFormat, ...)
+    {
+        va_list args;
+        va_start (args, aFormat);
+        raw_copy (bstr, Utf8StrFmtVA (aFormat, args));
+        va_end (args);
+    }
+};
+
+/**
+ * The BstrFmtVA class is a shortcut to <tt>Bstr (Utf8StrFmtVA (...))</tt>.
+ */
+class BstrFmtVA : public Bstr
+{
+public:
+
+    /**
+     * Constructs a new string given the format string and the list of the
+     * arguments for the format string.
+     *
+     * @param aFormat   printf-like format string (in UTF-8 encoding).
+     * @param aArgs     List of arguments for the format string
+     */
+    BstrFmtVA (const char *aFormat, va_list aArgs)
+    {
+        raw_copy (bstr, Utf8StrFmtVA (aFormat, aArgs));
+    }
 };
 
 } /* namespace com */

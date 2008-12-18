@@ -45,7 +45,7 @@
 #include <VBox/log.h>
 #include <iprt/path.h>
 #include <iprt/string.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/assert.h>
 #include <iprt/semaphore.h>
 #include <iprt/stream.h>
@@ -200,7 +200,7 @@ CONEVENT SDLConsole::eventWait()
                             enmHKeyState = HKEYSTATE_USED;
                             break;
                         }
-                        if (VBOX_SUCCESS(rc))
+                        if (RT_SUCCESS(rc))
                         {
                             return CONEVENT_QUIT;
                         }
@@ -239,7 +239,7 @@ CONEVENT SDLConsole::eventWait()
                     if (ev->type == SDL_KEYDOWN)
                     {
                         int rc = handleHostKey(&ev->key);
-                        if (VBOX_SUCCESS(rc) && rc != VINF_SUCCESS)
+                        if (RT_SUCCESS(rc) && rc != VINF_SUCCESS)
                         {
                             return CONEVENT_QUIT;
                         }

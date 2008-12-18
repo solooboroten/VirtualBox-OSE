@@ -1,4 +1,4 @@
-/* $Id: dir-win.cpp $ */
+/* $Id: dir-win.cpp 14062 2008-11-10 23:23:05Z vboxsync $ */
 /** @file
  * IPRT - Directory, win32.
  */
@@ -239,7 +239,7 @@ RTDECL(int) RTDirClose(PRTDIR pDir)
 }
 
 
-RTDECL(int) RTDirRead(PRTDIR pDir, PRTDIRENTRY pDirEntry, unsigned *pcbDirEntry)
+RTDECL(int) RTDirRead(PRTDIR pDir, PRTDIRENTRY pDirEntry, size_t *pcbDirEntry)
 {
     /*
      * Validate input.
@@ -254,11 +254,11 @@ RTDECL(int) RTDirRead(PRTDIR pDir, PRTDIRENTRY pDirEntry, unsigned *pcbDirEntry)
         AssertMsgFailed(("Invalid pDirEntry=%p\n", pDirEntry));
         return VERR_INVALID_PARAMETER;
     }
-    unsigned cbDirEntry = sizeof(*pDirEntry);
+    size_t cbDirEntry = sizeof(*pDirEntry);
     if (pcbDirEntry)
     {
         cbDirEntry = *pcbDirEntry;
-        if (cbDirEntry < (unsigned)RT_OFFSETOF(RTDIRENTRY, szName[2]))
+        if (cbDirEntry < RT_UOFFSETOF(RTDIRENTRY, szName[2]))
         {
             AssertMsgFailed(("Invalid *pcbDirEntry=%d (min %d)\n", *pcbDirEntry, RT_OFFSETOF(RTDIRENTRY, szName[2])));
             return VERR_INVALID_PARAMETER;
@@ -324,7 +324,7 @@ RTDECL(int) RTDirRead(PRTDIR pDir, PRTDIRENTRY pDirEntry, unsigned *pcbDirEntry)
      * Setup the returned data.
      */
     pDir->fDataUnread  = false;
-    pDirEntry->INodeId = 0;
+    pDirEntry->INodeId = 0; /** @todo we can use the fileid here if we must (see GetFileInformationByHandle). */
     pDirEntry->enmType = pDir->Data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY
                        ? RTDIRENTRYTYPE_DIRECTORY : RTDIRENTRYTYPE_FILE;
     pDirEntry->cbName  = (uint16_t)cchName;
@@ -335,7 +335,7 @@ RTDECL(int) RTDirRead(PRTDIR pDir, PRTDIRENTRY pDirEntry, unsigned *pcbDirEntry)
 }
 
 
-RTDECL(int) RTDirReadEx(PRTDIR pDir, PRTDIRENTRYEX pDirEntry, unsigned *pcbDirEntry, RTFSOBJATTRADD enmAdditionalAttribs)
+RTDECL(int) RTDirReadEx(PRTDIR pDir, PRTDIRENTRYEX pDirEntry, size_t *pcbDirEntry, RTFSOBJATTRADD enmAdditionalAttribs)
 {
     /*
      * Validate input.
@@ -356,11 +356,11 @@ RTDECL(int) RTDirReadEx(PRTDIR pDir, PRTDIRENTRYEX pDirEntry, unsigned *pcbDirEn
         AssertMsgFailed(("Invalid enmAdditionalAttribs=%p\n", enmAdditionalAttribs));
         return VERR_INVALID_PARAMETER;
     }
-    unsigned cbDirEntry = sizeof(*pDirEntry);
+    size_t cbDirEntry = sizeof(*pDirEntry);
     if (pcbDirEntry)
     {
         cbDirEntry = *pcbDirEntry;
-        if (cbDirEntry < (unsigned)RT_OFFSETOF(RTDIRENTRYEX, szName[2]))
+        if (cbDirEntry < RT_UOFFSETOF(RTDIRENTRYEX, szName[2]))
         {
             AssertMsgFailed(("Invalid *pcbDirEntry=%d (min %d)\n", *pcbDirEntry, RT_OFFSETOF(RTDIRENTRYEX, szName[2])));
             return VERR_INVALID_PARAMETER;
@@ -478,8 +478,8 @@ RTDECL(int) RTDirReadEx(PRTDIR pDir, PRTDIRENTRYEX pDirEntry, unsigned *pcbDirEn
             pDirEntry->Info.Attr.u.Unix.uid             = ~0U;
             pDirEntry->Info.Attr.u.Unix.gid             = ~0U;
             pDirEntry->Info.Attr.u.Unix.cHardlinks      = 1;
-            pDirEntry->Info.Attr.u.Unix.INodeIdDevice   = 0;
-            pDirEntry->Info.Attr.u.Unix.INodeId         = 0;
+            pDirEntry->Info.Attr.u.Unix.INodeIdDevice   = 0; /** @todo Use the volume serial number (see GetFileInformationByHandle). */
+            pDirEntry->Info.Attr.u.Unix.INodeId         = 0; /** @todo Use the fileid (see GetFileInformationByHandle). */
             pDirEntry->Info.Attr.u.Unix.fFlags          = 0;
             pDirEntry->Info.Attr.u.Unix.GenerationId    = 0;
             pDirEntry->Info.Attr.u.Unix.Device          = 0;

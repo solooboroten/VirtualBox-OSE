@@ -1,4 +1,4 @@
-/* $Id: CSAMInternal.h $ */
+/* $Id: CSAMInternal.h 13832 2008-11-05 02:01:12Z vboxsync $ */
 /** @file
  * CSAM - Internal header file.
  */
@@ -28,11 +28,9 @@
 #include <VBox/dis.h>
 #include <VBox/log.h>
 
-#if !defined(IN_CSAM_R3) && !defined(IN_CSAM_R0) && !defined(IN_CSAM_GC)
-# error "Not in CSAM! This is an internal header!"
-#endif
 
-/** Page flags.
+
+/** @name Page flags.
  * These are placed in the three bits available for system programs in
  * the page entries.
  * @{ */
@@ -273,7 +271,7 @@ inline RTRCPTR CSAMResolveBranch(PDISCPUSTATE pCpu, RTRCPTR pBranchInstrGC)
         Log(("We don't support far jumps here!! (%08X)\n", pCpu->param1.flags));
         return 0;
     }
-#ifdef IN_GC
+#ifdef IN_RC
     return (RTRCPTR)((uint8_t *)pBranchInstrGC + pCpu->opsize + disp);
 #else
     return pBranchInstrGC + pCpu->opsize + disp;
@@ -281,7 +279,7 @@ inline RTRCPTR CSAMResolveBranch(PDISCPUSTATE pCpu, RTRCPTR pBranchInstrGC)
 }
 
 __BEGIN_DECLS
-CSAMGCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
+VMMRCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
 __END_DECLS
 
 #endif

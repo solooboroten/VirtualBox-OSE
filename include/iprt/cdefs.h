@@ -76,7 +76,8 @@
 #define RT_ARCH_X86
 #define IN_RING0
 #define IN_RING3
-#define IN_GC
+#define IN_RC
+#define IN_RC
 #define IN_RT_GC
 #define IN_RT_R0
 #define IN_RT_R3
@@ -141,17 +142,17 @@
  * in Ring-3 Host Context.
  */
 
-/** @def IN_GC
+/** @def IN_RC
  * Used to indicate that we're compiling code which is running
- * in Guest Context (implies R0).
+ * in the Raw-mode Context (implies R0).
  */
-#if !defined(IN_RING3) && !defined(IN_RING0) && !defined(IN_GC)
-# error "You must defined which context the compiled code should run in; IN_RING3, IN_RING0 or IN_GC"
+#if !defined(IN_RING3) && !defined(IN_RING0) && !defined(IN_RC) && !defined(IN_RC)
+# error "You must defined which context the compiled code should run in; IN_RING3, IN_RING0 or IN_RC"
 #endif
-#if (defined(IN_RING3) && (defined(IN_RING0) || defined(IN_GC)) ) \
- || (defined(IN_RING0) && (defined(IN_RING3) || defined(IN_GC)) ) \
- || (defined(IN_GC)    && (defined(IN_RING3) || defined(IN_RING0)) )
-# error "Only one of the IN_RING3, IN_RING0, IN_GC defines should be defined."
+#if (defined(IN_RING3) && (defined(IN_RING0) || defined(IN_RC)) ) \
+ || (defined(IN_RING0) && (defined(IN_RING3) || defined(IN_RC)) ) \
+ || (defined(IN_RC)    && (defined(IN_RING3) || defined(IN_RING0)) )
+# error "Only one of the IN_RING3, IN_RING0, IN_RC defines should be defined."
 #endif
 
 
@@ -170,7 +171,7 @@
  * Defines the host architecture bit count.
  */
 #if !defined(HC_ARCH_BITS) || defined(DOXYGEN_RUNNING)
-# ifndef IN_GC
+# ifndef IN_RC
 #  define HC_ARCH_BITS ARCH_BITS
 # else
 #  define HC_ARCH_BITS 32
@@ -214,7 +215,7 @@
  * Defines the guest architecture bit count.
  */
 #if !defined(GC_ARCH_BITS) || defined(DOXYGEN_RUNNING)
-# ifdef IN_GC
+# ifdef IN_RC
 #  define GC_ARCH_BITS ARCH_BITS
 # else
 #  define GC_ARCH_BITS 32
@@ -230,22 +231,13 @@
  * @param   R0Type  The R0 type.
  * @remark  For pointers used only in one context use RCPTRTYPE(), R3R0PTRTYPE(), R3PTRTYPE() or R0PTRTYPE().
  */
-#ifdef IN_GC
+#ifdef IN_RC
 # define CTXTYPE(GCType, R3Type, R0Type)  GCType
 #elif defined(IN_RING3)
 # define CTXTYPE(GCType, R3Type, R0Type)  R3Type
 #else
 # define CTXTYPE(GCType, R3Type, R0Type)  R0Type
 #endif
-
-/** @def GCTYPE
- * Declare a type differently in GC and HC.
- *
- * @param   GCType  The GC type.
- * @param   HCType  The HC type.
- * @remark  For pointers used only in one context use RCPTRTYPE(), R3R0PTRTYPE(), R3PTRTYPE() or R0PTRTYPE().
- */
-#define GCTYPE(GCType, HCType)  CTXTYPE(GCType, HCType, HCType)
 
 /** @def RCPTRTYPE
  * Declare a pointer which is used in the raw mode context but appears in structure(s) used by
@@ -290,6 +282,7 @@
  *
  * This is macro should only be used in shared code to avoid a forrest of ifdefs.
  * @param   var     Identifier name.
+ * @deprecated Use CTX_SUFF. Do NOT use this for new code.
  */
 /** @def OTHERCTXSUFF
  * Adds the suffix of the other context to the passed in
@@ -297,8 +290,9 @@
  *
  * This is macro should only be used in shared code to avoid a forrest of ifdefs.
  * @param   var     Identifier name.
+ * @deprecated Use CTX_SUFF. Do NOT use this for new code.
  */
-#ifdef IN_GC
+#ifdef IN_RC
 # define CTXSUFF(var)       var##GC
 # define OTHERCTXSUFF(var)  var##HC
 #else
@@ -312,8 +306,9 @@
  *
  * This is macro should only be used in shared code to avoid a forrest of ifdefs.
  * @param   var     Identifier name.
+ * @deprecated Use CTX_SUFF. Do NOT use this for new code.
  */
-#ifdef IN_GC
+#ifdef IN_RC
 # define CTXALLSUFF(var)    var##GC
 #elif defined(IN_RING0)
 # define CTXALLSUFF(var)    var##R0
@@ -330,13 +325,30 @@
  *
  * @remark  This will replace CTXALLSUFF and CTXSUFF before long.
  */
-#ifdef IN_GC
+#ifdef IN_RC
 # define CTX_SUFF(var)      var##RC
 #elif defined(IN_RING0)
 # define CTX_SUFF(var)      var##R0
 #else
 # define CTX_SUFF(var)      var##R3
 #endif
+
+/** @def CTX_SUFF_Z
+ * Adds the suffix of the current context to the passed in
+ * identifier name, combining RC and R0 into RZ.
+ * The suffix thus is R3 or RZ.
+ *
+ * This is macro should only be used in shared code to avoid a forrest of ifdefs.
+ * @param   var     Identifier name.
+ *
+ * @remark  This will replace CTXALLSUFF and CTXSUFF before long.
+ */
+#ifdef IN_RING3
+# define CTX_SUFF_Z(var)    var##R3
+#else
+# define CTX_SUFF_Z(var)    var##RZ
+#endif
+
 
 /** @def CTXMID
  * Adds the current context as a middle name of an identifier name
@@ -353,8 +365,9 @@
  * This is macro should only be used in shared code to avoid a forrest of ifdefs.
  * @param   first   First name.
  * @param   last    Surname.
+ * @deprecated use CTX_MID or CTX_MID_Z
  */
-#ifdef IN_GC
+#ifdef IN_RC
 # define CTXMID(first, last)        first##GC##last
 # define OTHERCTXMID(first, last)   first##HC##last
 #else
@@ -363,19 +376,51 @@
 #endif
 
 /** @def CTXALLMID
- * Adds the current context as a middle name of an identifier name
+ * Adds the current context as a middle name of an identifier name.
  * The middle name is R3, R0 or GC.
  *
  * This is macro should only be used in shared code to avoid a forrest of ifdefs.
  * @param   first   First name.
  * @param   last    Surname.
+ * @deprecated use CTX_MID or CTX_MID_Z
  */
-#ifdef IN_GC
+#ifdef IN_RC
 # define CTXALLMID(first, last)     first##GC##last
 #elif defined(IN_RING0)
 # define CTXALLMID(first, last)     first##R0##last
 #else
 # define CTXALLMID(first, last)     first##R3##last
+#endif
+
+/** @def CTX_MID
+ * Adds the current context as a middle name of an identifier name.
+ * The middle name is R3, R0 or RC.
+ *
+ * This is macro should only be used in shared code to avoid a forrest of ifdefs.
+ * @param   first   First name.
+ * @param   last    Surname.
+ */
+#ifdef IN_RC
+# define CTX_MID(first, last)       first##RC##last
+#elif defined(IN_RING0)
+# define CTX_MID(first, last)       first##R0##last
+#else
+# define CTX_MID(first, last)       first##R3##last
+#endif
+
+/** @def CTX_MID_Z
+ * Adds the current context as a middle name of an identifier name, combining RC
+ * and R0 into RZ.
+ * The middle name thus is either R3 or RZ.
+ *
+ * This is macro should only be used in shared code to avoid a forrest of ifdefs.
+ * @param   first   First name.
+ * @param   last    Surname.
+ */
+#ifdef IN_RING3
+# define CTX_MID_Z(first, last)     first##R3##last
+#else
+# define CTX_MID_Z(first, last)     first##RZ##last
 #endif
 
 
@@ -421,7 +466,7 @@
  * @param   pR0String   The RC string. Only referenced in RC.
  * @see R3STRING, R0STRING
  */
-#ifdef IN_GC
+#ifdef IN_RC
 # define RCSTRING(pRCString)    (pRCString)
 #else
 # define RCSTRING(pRCString)    ("<RC_STRING>")
@@ -566,7 +611,7 @@
  * @param   name    The name of the struct/union/class member.
  * @param   args    The argument list enclosed in parentheses.
  */
-#ifdef IN_GC
+#ifdef IN_RC
 # define DECLRCCALLBACKMEMBER(type, name, args)  type (RTCALL * name) args
 #else
 # define DECLRCCALLBACKMEMBER(type, name, args)  RTRCPTR name
@@ -955,12 +1000,20 @@
  */
 #define RT_ABS(Value)           ((Value) >= 0 ? (Value) : -(Value))
 
+/** @def RT_LODWORD
+ * Gets the low dword (=uint32_t) of something. */
+#define RT_LODWORD(a)           ( (uint32_t)(a) )
+
+/** @def RT_HIDWORD
+ * Gets the high dword (=uint32_t) of a 64-bit of something. */
+#define RT_HIDWORD(a)           ( (uint32_t)((a) >> 32) )
+
 /** @def RT_LOWORD
  * Gets the low word (=uint16_t) of something. */
 #define RT_LOWORD(a)            ((a) & 0xffff)
 
 /** @def RT_HIWORD
- * Gets the high word (=uint16_t) of a 32 bit something. */
+ * Gets the high word (=uint16_t) of a 32-bit something. */
 #define RT_HIWORD(a)            ((a) >> 16)
 
 /** @def RT_LOBYTE
@@ -968,7 +1021,7 @@
 #define RT_LOBYTE(a)            ((a) & 0xff)
 
 /** @def RT_HIBYTE
- * Gets the low byte of a 16 bit something. */
+ * Gets the low byte of a 16-bit something. */
 #define RT_HIBYTE(a)            ((a) >> 8)
 
 /** @def RT_BYTE1
@@ -1324,16 +1377,6 @@
 /** @def RT_N2H_U16_C
  * Converts an uint16_t value from network to host byte order. */
 #define RT_N2H_U16_C(u16)   RT_BE2H_U16_C(u16)
-
-
-/** @def RT_NO_DEPRECATED_MACROS
- * Define RT_NO_DEPRECATED_MACROS to not define deprecated macros.
- */
-#ifndef RT_NO_DEPRECATED_MACROS
-/** @copydoc RT_ELEMENTS
- * @deprecated use RT_ELEMENTS. */
-# define ELEMENTS(aArray)               RT_ELEMENTS(aArray)
-#endif
 
 
 /*

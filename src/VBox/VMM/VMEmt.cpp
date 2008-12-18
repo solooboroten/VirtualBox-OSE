@@ -1,4 +1,4 @@
-/* $Id: VMEmt.cpp $ */
+/* $Id: VMEmt.cpp 13858 2008-11-05 13:45:41Z vboxsync $ */
 /** @file
  * VM - Virtual Machine, The Emulation Thread.
  */
@@ -29,6 +29,7 @@
 #include <VBox/em.h>
 #include <VBox/pdmapi.h>
 #include <VBox/rem.h>
+#include <VBox/tm.h>
 #include "VMInternal.h"
 #include <VBox/vm.h>
 #include <VBox/uvm.h>
@@ -43,8 +44,6 @@
 #include <iprt/time.h>
 
 
-
-
 /**
  * The emulation thread.
  *
@@ -54,25 +53,27 @@
  */
 DECLCALLBACK(int) vmR3EmulationThread(RTTHREAD ThreadSelf, void *pvArgs)
 {
-    PUVM pUVM = (PUVM)pvArgs;
+    PUVMCPU pUVMCPU = (PUVMCPU)pvArgs;
+    PUVM    pUVM    = pUVMCPU->pUVM;
+    RTCPUID idCpu   = pUVMCPU->idCpu;
+    int     rc;
+
     AssertReleaseMsg(VALID_PTR(pUVM) && pUVM->u32Magic == UVM_MAGIC,
                      ("Invalid arguments to the emulation thread!\n"));
 
-    /*
-     * Init the native thread member.
-     */
-    pUVM->vm.s.NativeThreadEMT = RTThreadGetNative(ThreadSelf);
+    rc = RTTlsSet(pUVM->vm.s.idxTLS, pUVMCPU);
+    AssertReleaseMsgRCReturn(rc, ("RTTlsSet %x failed with %Rrc\n", pUVM->vm.s.idxTLS, rc), rc);
 
     /*
      * The request loop.
      */
-    int     rc = VINF_SUCCESS;
-    VMSTATE enmBefore = VMSTATE_CREATING;
+    rc = VINF_SUCCESS;
+    volatile VMSTATE enmBefore = VMSTATE_CREATING; /* volatile because of setjmp */
     Log(("vmR3EmulationThread: Emulation thread starting the days work... Thread=%#x pUVM=%p\n", ThreadSelf, pUVM));
     for (;;)
     {
         /* Requested to exit the EMT thread out of sync? (currently only VMR3WaitForResume) */
-        if (setjmp(pUVM->vm.s.emtJumpEnv) != 0)
+        if (setjmp(pUVMCPU->vm.s.emtJumpEnv) != 0)
         {
             rc = VINF_SUCCESS;
             break;
@@ -97,8 +98,8 @@ DECLCALLBACK(int) vmR3EmulationThread(RTTHREAD ThreadSelf, void *pvArgs)
                 /*
                  * Service execute in EMT request.
                  */
-                rc = VMR3ReqProcessU(pUVM);
-                Log(("vmR3EmulationThread: Req rc=%Vrc, VM state %d -> %d\n", rc, enmBefore, pUVM->pVM ? pUVM->pVM->enmVMState : VMSTATE_CREATING));
+                rc = VMR3ReqProcessU(pUVM, VMREQDEST_ANY);
+                Log(("vmR3EmulationThread: Req rc=%Rrc, VM state %d -> %d\n", rc, enmBefore, pUVM->pVM ? pUVM->pVM->enmVMState : VMSTATE_CREATING));
             }
             else
             {
@@ -106,7 +107,7 @@ DECLCALLBACK(int) vmR3EmulationThread(RTTHREAD ThreadSelf, void *pvArgs)
                  * Nothing important is pending, so wait for something.
                  */
                 rc = VMR3WaitU(pUVM);
-                if (VBOX_FAILURE(rc))
+                if (RT_FAILURE(rc))
                     break;
             }
         }
@@ -132,8 +133,8 @@ DECLCALLBACK(int) vmR3EmulationThread(RTTHREAD ThreadSelf, void *pvArgs)
                 /*
                  * Service execute in EMT request.
                  */
-                rc = VMR3ReqProcessU(pUVM);
-                Log(("vmR3EmulationThread: Req rc=%Vrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
+                rc = VMR3ReqProcessU(pUVM, VMREQDEST_ANY);
+                Log(("vmR3EmulationThread: Req rc=%Rrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
             }
             else if (VM_FF_ISSET(pVM, VM_FF_DBGF))
             {
@@ -141,7 +142,7 @@ DECLCALLBACK(int) vmR3EmulationThread(RTTHREAD ThreadSelf, void *pvArgs)
                  * Service the debugger request.
                  */
                 rc = DBGFR3VMMForcedAction(pVM);
-                Log(("vmR3EmulationThread: Dbg rc=%Vrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
+                Log(("vmR3EmulationThread: Dbg rc=%Rrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
             }
             else if (VM_FF_ISSET(pVM, VM_FF_RESET))
             {
@@ -150,7 +151,7 @@ DECLCALLBACK(int) vmR3EmulationThread(RTTHREAD ThreadSelf, void *pvArgs)
                  */
                 rc = VMR3Reset(pVM);
                 VM_FF_CLEAR(pVM, VM_FF_RESET);
-                Log(("vmR3EmulationThread: Reset rc=%Vrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
+                Log(("vmR3EmulationThread: Reset rc=%Rrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
             }
             else
             {
@@ -158,7 +159,7 @@ DECLCALLBACK(int) vmR3EmulationThread(RTTHREAD ThreadSelf, void *pvArgs)
                  * Nothing important is pending, so wait for something.
                  */
                 rc = VMR3WaitU(pUVM);
-                if (VBOX_FAILURE(rc))
+                if (RT_FAILURE(rc))
                     break;
             }
 
@@ -176,14 +177,14 @@ DECLCALLBACK(int) vmR3EmulationThread(RTTHREAD ThreadSelf, void *pvArgs)
          * resume or start the VM, in that case we'll get a change in
          * VM status indicating that we're now running.
          */
-        if (    VBOX_SUCCESS(rc)
+        if (    RT_SUCCESS(rc)
             &&  pUVM->pVM
             &&  enmBefore != pUVM->pVM->enmVMState
             &&  pUVM->pVM->enmVMState == VMSTATE_RUNNING)
         {
             PVM pVM = pUVM->pVM;
-            rc = EMR3ExecuteVM(pVM);
-            Log(("vmR3EmulationThread: EMR3ExecuteVM() -> rc=%Vrc, enmVMState=%d\n", rc, pVM->enmVMState));
+            rc = EMR3ExecuteVM(pVM, idCpu);
+            Log(("vmR3EmulationThread: EMR3ExecuteVM() -> rc=%Rrc, enmVMState=%d\n", rc, pVM->enmVMState));
             if (   EMGetState(pVM) == EMSTATE_GURU_MEDITATION
                 && pVM->enmVMState == VMSTATE_RUNNING)
                 vmR3SetState(pVM, VMSTATE_GURU_MEDITATION);
@@ -195,7 +196,7 @@ DECLCALLBACK(int) vmR3EmulationThread(RTTHREAD ThreadSelf, void *pvArgs)
     /*
      * Exiting.
      */
-    Log(("vmR3EmulationThread: Terminating emulation thread! Thread=%#x pUVM=%p rc=%Vrc enmBefore=%d enmVMState=%d\n",
+    Log(("vmR3EmulationThread: Terminating emulation thread! Thread=%#x pUVM=%p rc=%Rrc enmBefore=%d enmVMState=%d\n",
          ThreadSelf, pUVM, rc, enmBefore, pUVM->pVM ? pUVM->pVM->enmVMState : VMSTATE_TERMINATED));
     if (pUVM->vm.s.fEMTDoesTheCleanup)
     {
@@ -208,8 +209,7 @@ DECLCALLBACK(int) vmR3EmulationThread(RTTHREAD ThreadSelf, void *pvArgs)
     {
         vmR3DestroyFinalBitFromEMT(pUVM);
 
-        /* we don't reset ThreadEMT here because it's used in waiting. */
-        pUVM->vm.s.NativeThreadEMT = NIL_RTNATIVETHREAD;
+        pUVMCPU->vm.s.NativeThreadEMT = NIL_RTNATIVETHREAD;
     }
     Log(("vmR3EmulationThread: EMT is terminated.\n"));
     return rc;
@@ -223,14 +223,19 @@ DECLCALLBACK(int) vmR3EmulationThread(RTTHREAD ThreadSelf, void *pvArgs)
  * @returns VINF_SUCCESS or doesn't return
  * @param   pVM             VM handle.
  */
-VMR3DECL(int) VMR3WaitForResume(PVM pVM)
+VMMR3DECL(int) VMR3WaitForResume(PVM pVM)
 {
     /*
      * The request loop.
      */
+    PUVMCPU pUVMCPU;
     PUVM    pUVM = pVM->pUVM;
     VMSTATE enmBefore;
     int     rc;
+
+    pUVMCPU = (PUVMCPU)RTTlsGet(pUVM->vm.s.idxTLS);
+    AssertReturn(pUVMCPU, VERR_INTERNAL_ERROR);
+
     for (;;)
     {
 
@@ -252,8 +257,8 @@ VMR3DECL(int) VMR3WaitForResume(PVM pVM)
             /*
              * Service execute in EMT request.
              */
-            rc = VMR3ReqProcessU(pUVM);
-            Log(("vmR3EmulationThread: Req rc=%Vrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
+            rc = VMR3ReqProcessU(pUVM, VMREQDEST_ANY);
+            Log(("vmR3EmulationThread: Req rc=%Rrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
         }
         else if (VM_FF_ISSET(pVM, VM_FF_DBGF))
         {
@@ -261,7 +266,7 @@ VMR3DECL(int) VMR3WaitForResume(PVM pVM)
              * Service the debugger request.
              */
             rc = DBGFR3VMMForcedAction(pVM);
-            Log(("vmR3EmulationThread: Dbg rc=%Vrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
+            Log(("vmR3EmulationThread: Dbg rc=%Rrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
         }
         else if (VM_FF_ISSET(pVM, VM_FF_RESET))
         {
@@ -270,7 +275,7 @@ VMR3DECL(int) VMR3WaitForResume(PVM pVM)
              */
             rc = VMR3Reset(pVM);
             VM_FF_CLEAR(pVM, VM_FF_RESET);
-            Log(("vmR3EmulationThread: Reset rc=%Vrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
+            Log(("vmR3EmulationThread: Reset rc=%Rrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
         }
         else
         {
@@ -278,7 +283,7 @@ VMR3DECL(int) VMR3WaitForResume(PVM pVM)
              * Nothing important is pending, so wait for something.
              */
             rc = VMR3WaitU(pUVM);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
                 break;
         }
 
@@ -295,7 +300,7 @@ VMR3DECL(int) VMR3WaitForResume(PVM pVM)
          * resume or start the VM, in that case we'll get a change in
          * VM status indicating that we're now running.
          */
-        if (    VBOX_SUCCESS(rc)
+        if (    RT_SUCCESS(rc)
             &&  enmBefore != pVM->enmVMState
             &&  pVM->enmVMState == VMSTATE_RUNNING)
         {
@@ -306,7 +311,7 @@ VMR3DECL(int) VMR3WaitForResume(PVM pVM)
     } /* forever */
 
     /* Return to the main loop in vmR3EmulationThread, which will clean up for us. */
-    longjmp(pUVM->vm.s.emtJumpEnv, 1);
+    longjmp(pUVMCPU->vm.s.emtJumpEnv, 1);
 }
 
 
@@ -399,14 +404,14 @@ static DECLCALLBACK(int) vmR3HaltOldDoHalt(PUVM pUVM, const uint32_t fMask, uint
                 STAM_REL_PROFILE_STOP(&pUVM->vm.s.StatHaltBlock, a);
             }
             //uint64_t u64Slept = RTTimeNanoTS() - u64Start;
-            //RTLogPrintf(" -> rc=%Vrc in %RU64 ns / %RI64 ns delta\n", rc, u64Slept, u64NanoTS - u64Slept);
+            //RTLogPrintf(" -> rc=%Rrc in %RU64 ns / %RI64 ns delta\n", rc, u64Slept, u64NanoTS - u64Slept);
         }
         if (rc == VERR_TIMEOUT)
             rc = VINF_SUCCESS;
-        else if (VBOX_FAILURE(rc))
+        else if (RT_FAILURE(rc))
         {
             AssertRC(rc != VERR_INTERRUPTED);
-            AssertMsgFailed(("RTSemEventWait->%Vrc\n", rc));
+            AssertMsgFailed(("RTSemEventWait->%Rrc\n", rc));
             ASMAtomicUoWriteBool(&pUVM->vm.s.fTerminateEMT, true);
             VM_FF_SET(pVM, VM_FF_TERMINATE);
             rc = VERR_INTERNAL_ERROR;
@@ -590,10 +595,10 @@ static DECLCALLBACK(int) vmR3HaltMethod1Halt(PUVM pUVM, const uint32_t fMask, ui
             STAM_REL_PROFILE_STOP(&pUVM->vm.s.StatHaltBlock, a);
             if (rc == VERR_TIMEOUT)
                 rc = VINF_SUCCESS;
-            else if (VBOX_FAILURE(rc))
+            else if (RT_FAILURE(rc))
             {
                 AssertRC(rc != VERR_INTERRUPTED);
-                AssertMsgFailed(("RTSemEventWait->%Vrc\n", rc));
+                AssertMsgFailed(("RTSemEventWait->%Rrc\n", rc));
                 ASMAtomicUoWriteBool(&pUVM->vm.s.fTerminateEMT, true);
                 VM_FF_SET(pVM, VM_FF_TERMINATE);
                 rc = VERR_INTERNAL_ERROR;
@@ -698,9 +703,9 @@ static DECLCALLBACK(int) vmR3HaltGlobal1Halt(PUVM pUVM, const uint32_t fMask, ui
             STAM_REL_PROFILE_STOP(&pUVM->vm.s.StatHaltBlock, c);
             if (rc == VERR_INTERRUPTED)
                 rc = VINF_SUCCESS;
-            else if (VBOX_FAILURE(rc))
+            else if (RT_FAILURE(rc))
             {
-                AssertMsgFailed(("VMMR0_DO_GVMM_SCHED_HALT->%Vrc\n", rc));
+                AssertMsgFailed(("VMMR0_DO_GVMM_SCHED_HALT->%Rrc\n", rc));
                 ASMAtomicUoWriteBool(&pUVM->vm.s.fTerminateEMT, true);
                 VM_FF_SET(pVM, VM_FF_TERMINATE);
                 rc = VERR_INTERNAL_ERROR;
@@ -752,9 +757,9 @@ static DECLCALLBACK(int) vmR3HaltGlobal1Wait(PUVM pUVM)
         rc = SUPCallVMMR0Ex(pVM->pVMR0, VMMR0_DO_GVMM_SCHED_HALT, RTTimeNanoTS() + 1000000000 /* +1s */, NULL);
         if (rc == VERR_INTERRUPTED)
             rc = VINF_SUCCESS;
-        else if (VBOX_FAILURE(rc))
+        else if (RT_FAILURE(rc))
         {
-            AssertMsgFailed(("RTSemEventWait->%Vrc\n", rc));
+            AssertMsgFailed(("RTSemEventWait->%Rrc\n", rc));
             ASMAtomicUoWriteBool(&pUVM->vm.s.fTerminateEMT, true);
             VM_FF_SET(pVM, VM_FF_TERMINATE);
             rc = VERR_INTERNAL_ERROR;
@@ -817,9 +822,9 @@ static DECLCALLBACK(int) vmR3BootstrapWait(PUVM pUVM)
         rc = RTSemEventWait(pUVM->vm.s.EventSemWait, 1000);
         if (rc == VERR_TIMEOUT)
             rc = VINF_SUCCESS;
-        else if (VBOX_FAILURE(rc))
+        else if (RT_FAILURE(rc))
         {
-            AssertMsgFailed(("RTSemEventWait->%Vrc\n", rc));
+            AssertMsgFailed(("RTSemEventWait->%Rrc\n", rc));
             ASMAtomicUoWriteBool(&pUVM->vm.s.fTerminateEMT, true);
             if (pUVM->pVM)
                 VM_FF_SET(pUVM->pVM, VM_FF_TERMINATE);
@@ -850,7 +855,6 @@ static DECLCALLBACK(void) vmR3BootstrapNotifyFF(PUVM pUVM, bool fNotifiedREM)
 }
 
 
-
 /**
  * Default VMR3Wait() worker.
  *
@@ -878,9 +882,9 @@ static DECLCALLBACK(int) vmR3DefaultWait(PUVM pUVM)
         rc = RTSemEventWait(pUVM->vm.s.EventSemWait, 1000);
         if (rc == VERR_TIMEOUT)
             rc = VINF_SUCCESS;
-        else if (VBOX_FAILURE(rc))
+        else if (RT_FAILURE(rc))
         {
-            AssertMsgFailed(("RTSemEventWait->%Vrc\n", rc));
+            AssertMsgFailed(("RTSemEventWait->%Rrc\n", rc));
             ASMAtomicUoWriteBool(&pUVM->vm.s.fTerminateEMT, true);
             VM_FF_SET(pVM, VM_FF_TERMINATE);
             rc = VERR_INTERNAL_ERROR;
@@ -950,7 +954,7 @@ static const struct VMHALTMETHODDESC
  * @param   fNotifiedREM    Set if REM have already been notified. If clear the
  *                          generic REMR3NotifyFF() method is called.
  */
-VMR3DECL(void) VMR3NotifyFF(PVM pVM, bool fNotifiedREM)
+VMMR3DECL(void) VMR3NotifyFF(PVM pVM, bool fNotifiedREM)
 {
     LogFlow(("VMR3NotifyFF:\n"));
     PUVM pUVM = pVM->pUVM;
@@ -968,7 +972,7 @@ VMR3DECL(void) VMR3NotifyFF(PVM pVM, bool fNotifiedREM)
  * @param   fNotifiedREM    Set if REM have already been notified. If clear the
  *                          generic REMR3NotifyFF() method is called.
  */
-VMR3DECL(void) VMR3NotifyFFU(PUVM pUVM, bool fNotifiedREM)
+VMMR3DECL(void) VMR3NotifyFFU(PUVM pUVM, bool fNotifiedREM)
 {
     LogFlow(("VMR3NotifyFF:\n"));
     g_aHaltMethods[pUVM->vm.s.iHaltMethod].pfnNotifyFF(pUVM, fNotifiedREM);
@@ -985,7 +989,7 @@ VMR3DECL(void) VMR3NotifyFFU(PUVM pUVM, bool fNotifiedREM)
  * @param   fIgnoreInterrupts   If set the VM_FF_INTERRUPT flags is ignored.
  * @thread  The emulation thread.
  */
-VMR3DECL(int) VMR3WaitHalted(PVM pVM, bool fIgnoreInterrupts)
+VMMR3DECL(int) VMR3WaitHalted(PVM pVM, bool fIgnoreInterrupts)
 {
     LogFlow(("VMR3WaitHalted: fIgnoreInterrupts=%d\n", fIgnoreInterrupts));
 
@@ -1002,9 +1006,11 @@ VMR3DECL(int) VMR3WaitHalted(PVM pVM, bool fIgnoreInterrupts)
     }
 
     /*
-     * The yielder is suspended while we're halting.
+     * The yielder is suspended while we're halting, while TM might have clock(s) running
+     * only at certain times and need to be notified..
      */
     VMMR3YieldSuspend(pVM);
+    TMNotifyStartOfHalt(pVM);
 
     /*
      * Record halt averages for the last second.
@@ -1035,11 +1041,12 @@ VMR3DECL(int) VMR3WaitHalted(PVM pVM, bool fIgnoreInterrupts)
     int rc = g_aHaltMethods[pUVM->vm.s.iHaltMethod].pfnHalt(pUVM, fMask, u64Now);
 
     /*
-     * Resume the yielder.
+     * Notify TM and resume the yielder
      */
+    TMNotifyEndOfHalt(pVM);
     VMMR3YieldResume(pVM);
 
-    LogFlow(("VMR3WaitHalted: returns %Vrc (FF %#x)\n", rc, pVM->fForcedActions));
+    LogFlow(("VMR3WaitHalted: returns %Rrc (FF %#x)\n", rc, pVM->fForcedActions));
     return rc;
 }
 
@@ -1054,7 +1061,7 @@ VMR3DECL(int) VMR3WaitHalted(PVM pVM, bool fIgnoreInterrupts)
  * @param   pUVM            Pointer to the user mode VM structure.
  * @thread  The emulation thread.
  */
-VMR3DECL(int) VMR3WaitU(PUVM pUVM)
+VMMR3DECL(int) VMR3WaitU(PUVM pUVM)
 {
     LogFlow(("VMR3WaitU:\n"));
 
@@ -1074,7 +1081,7 @@ VMR3DECL(int) VMR3WaitU(PUVM pUVM)
      * doesn't have to special case anything).
      */
     int rc = g_aHaltMethods[pUVM->vm.s.iHaltMethod].pfnWait(pUVM);
-    LogFlow(("VMR3WaitU: returns %Vrc (FF %#x)\n", rc, pVM ? pVM->fForcedActions : 0));
+    LogFlow(("VMR3WaitU: returns %Rrc (FF %#x)\n", rc, pVM ? pVM->fForcedActions : 0));
     return rc;
 }
 
@@ -1100,7 +1107,7 @@ int vmR3SetHaltMethodU(PUVM pUVM, VMHALTMETHOD enmHaltMethod)
     {
         uint32_t u32;
         int rc = CFGMR3QueryU32(CFGMR3GetChild(CFGMR3GetRoot(pVM), "VM"), "HaltMethod", &u32);
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
         {
             enmHaltMethod = (VMHALTMETHOD)u32;
             if (enmHaltMethod <= VMHALTMETHOD_INVALID || enmHaltMethod >= VMHALTMETHOD_END)

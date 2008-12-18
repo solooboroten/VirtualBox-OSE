@@ -1,4 +1,4 @@
-/* $Id: DVDDriveImpl.h $ */
+/* $Id: DVDDriveImpl.h 15334 2008-12-11 19:37:55Z vboxsync $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2008 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -26,6 +26,8 @@
 
 #include "VirtualBoxBase.h"
 
+#include "MediumImpl.h"
+
 class Machine;
 
 class ATL_NO_VTABLE DVDDrive :
@@ -38,22 +40,23 @@ public:
 
     struct Data
     {
-        Data() {
-            mDriveState = DriveState_NotMounted;
+        Data()
+        {
+            mState = DriveState_NotMounted;
             mPassthrough = false;
         }
 
         bool operator== (const Data &that) const
         {
             return this == &that ||
-                   (mDriveState == that.mDriveState &&
-                    mDVDImage.equalsTo (that.mDVDImage) &&
+                   (mState == that.mState &&
+                    mImage.equalsTo (that.mImage) &&
                     mHostDrive.equalsTo (that.mHostDrive));
         }
 
-        ComPtr <IDVDImage> mDVDImage;
+        ComObjPtr <DVDImage2> mImage;
         ComPtr <IHostDVDDrive> mHostDrive;
-        DriveState_T mDriveState;
+        DriveState_T mState;
         BOOL mPassthrough;
     };
 
@@ -82,15 +85,15 @@ public:
     void uninit();
 
     // IDVDDrive properties
-    STDMETHOD(COMGETTER(State)) (DriveState_T *aDriveState);
+    STDMETHOD(COMGETTER(State)) (DriveState_T *aState);
     STDMETHOD(COMGETTER(Passthrough)) (BOOL *aPassthrough);
     STDMETHOD(COMSETTER(Passthrough)) (BOOL aPassthrough);
 
     // IDVDDrive methods
-    STDMETHOD(MountImage) (INPTR GUIDPARAM aImageId);
+    STDMETHOD(MountImage) (IN_GUID aImageId);
     STDMETHOD(CaptureHostDrive) (IHostDVDDrive *aHostDVDDrive);
     STDMETHOD(Unmount)();
-    STDMETHOD(GetImage) (IDVDImage **aDVDImage);
+    STDMETHOD(GetImage) (IDVDImage2 **aDVDImage);
     STDMETHOD(GetHostDrive) (IHostDVDDrive **aHostDVDDrive);
 
     // public methods only for internal purposes
@@ -104,6 +107,8 @@ public:
     void commit();
     void copyFrom (DVDDrive *aThat);
 
+    HRESULT unmount();
+
     // public methods for internal purposes only
     // (ensure there is a caller and a read lock before calling them!)
 
@@ -114,8 +119,6 @@ public:
 
 private:
 
-    HRESULT unmount();
-
     const ComObjPtr <Machine, ComWeakRef> mParent;
     const ComObjPtr <DVDDrive> mPeer;
 
@@ -124,3 +127,4 @@ private:
 
 #endif // ____H_DVDDRIVEIMPL
 
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

@@ -1,4 +1,4 @@
-/* $Id: RTMpCpuIdToSetIndex-generic.cpp $ */
+/* $Id: RTMpCpuIdToSetIndex-generic.cpp 13908 2008-11-06 11:53:47Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, Generic RTMpCpuIdToSetIndex.
  */
@@ -37,6 +37,6 @@
 
 RTDECL(int) RTMpCpuIdToSetIndex(RTCPUID idCpu)
 {
-    return idCpu != NIL_RTCPUID ? idCpu : -1;
+    return idCpu != NIL_RTCPUID ? (int) idCpu : -1;
 }
 

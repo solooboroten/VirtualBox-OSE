@@ -56,6 +56,7 @@ public:
     STDMETHOD(COMGETTER(UsesGuestVRAM)) (BOOL *usesGuestVRAM);
     STDMETHOD(COMGETTER(HeightReduction)) (ULONG *heightReduction);
     STDMETHOD(COMGETTER(Overlay)) (IFramebufferOverlay **aOverlay);
+    STDMETHOD(COMGETTER(WinId)) (ULONG64 *winId);
 
     // IFramebuffer methods
     STDMETHOD(Lock)();
@@ -78,6 +79,12 @@ public:
     STDMETHOD(SetVisibleRegion)(BYTE *aRectangles, ULONG aCount);
 
 private:
+    // FIXME: declare these here until VBoxSupportsTranslation base
+    //        is available in this class.
+    static const char *tr (const char *a) { return a; }
+    static HRESULT setError (HRESULT rc, const char *a,
+                             const char *b, void *c) { return rc; }
+
     int mWidth;
     int mHeight;
     int mBitsPerPixel;
@@ -88,3 +95,4 @@ private:
 
 
 #endif // ____H_FRAMEBUFFERIMPL
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

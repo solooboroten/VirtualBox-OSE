@@ -1,4 +1,4 @@
-/* $Id: PerformanceImpl.h $ */
+/* $Id: PerformanceImpl.h 15051 2008-12-05 17:20:00Z vboxsync $ */
 
 /** @file
  *
@@ -67,6 +67,7 @@ public:
 
     // public initializer/uninitializer for internal purposes only
     HRESULT init (pm::Metric *aMetric);
+    HRESULT init (pm::BaseMetric *aMetric);
     void uninit();
 
     // IPerformanceMetric properties
@@ -141,20 +142,29 @@ public:
     STDMETHOD(COMGETTER(MetricNames)) (ComSafeArrayOut (BSTR, metricNames));
 
     // IPerformanceCollector methods
-    STDMETHOD(GetMetrics) (ComSafeArrayIn (INPTR BSTR, metricNames),
+    STDMETHOD(GetMetrics) (ComSafeArrayIn (IN_BSTR, metricNames),
                            ComSafeArrayIn (IUnknown *, objects),
                            ComSafeArrayOut (IPerformanceMetric *, outMetrics));
-    STDMETHOD(SetupMetrics) (ComSafeArrayIn (INPTR BSTR, metricNames),
+    STDMETHOD(SetupMetrics) (ComSafeArrayIn (IN_BSTR, metricNames),
                              ComSafeArrayIn (IUnknown *, objects),
-                             ULONG aPeriod, ULONG aCount);
-    STDMETHOD(EnableMetrics) (ComSafeArrayIn (INPTR BSTR, metricNames),
-                              ComSafeArrayIn (IUnknown *, objects));
-    STDMETHOD(DisableMetrics) (ComSafeArrayIn (INPTR BSTR, metricNames),
-                               ComSafeArrayIn (IUnknown *, objects));
-    STDMETHOD(QueryMetricsData) (ComSafeArrayIn (INPTR BSTR, metricNames),
+                             ULONG aPeriod, ULONG aCount,
+                             ComSafeArrayOut (IPerformanceMetric *,
+                                              outMetrics));
+    STDMETHOD(EnableMetrics) (ComSafeArrayIn (IN_BSTR, metricNames),
+                              ComSafeArrayIn (IUnknown *, objects),
+                              ComSafeArrayOut (IPerformanceMetric *,
+                                               outMetrics));
+    STDMETHOD(DisableMetrics) (ComSafeArrayIn (IN_BSTR, metricNames),
+                               ComSafeArrayIn (IUnknown *, objects),
+                               ComSafeArrayOut (IPerformanceMetric *,
+                                                outMetrics));
+    STDMETHOD(QueryMetricsData) (ComSafeArrayIn (IN_BSTR, metricNames),
                                  ComSafeArrayIn (IUnknown *, objects),
                                  ComSafeArrayOut (BSTR, outMetricNames),
                                  ComSafeArrayOut (IUnknown *, outObjects),
+                                 ComSafeArrayOut (BSTR, outUnits),
+                                 ComSafeArrayOut (ULONG, outScales),
+                                 ComSafeArrayOut (ULONG, outSequenceNumbers),
                                  ComSafeArrayOut (ULONG, outDataIndices),
                                  ComSafeArrayOut (ULONG, outDataLengths),
                                  ComSafeArrayOut (LONG, outData));
@@ -175,6 +185,8 @@ public:
     static const wchar_t *getComponentName() { return L"PerformanceCollector"; }
 
 private:
+    HRESULT toIPerformanceMetric(pm::Metric *src, IPerformanceMetric **dst);
+    HRESULT toIPerformanceMetric(pm::BaseMetric *src, IPerformanceMetric **dst);
 
     static void staticSamplerCallback (RTTIMERLR hTimerLR, void *pvUser, uint64_t iTick);
     void samplerCallback();
@@ -203,3 +215,4 @@ private:
 };
 
 #endif //!____H_PERFORMANCEIMPL
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

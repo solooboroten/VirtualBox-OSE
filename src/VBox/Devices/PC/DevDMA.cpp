@@ -1,4 +1,4 @@
-/* $Id: DevDMA.cpp $ */
+/* $Id: DevDMA.cpp 12978 2008-10-03 23:28:44Z vboxsync $ */
 /** @file
  * DevDMA - DMA Controller Device.
  */
@@ -925,8 +925,8 @@ static DECLCALLBACK(int) DMAConstruct(PPDMDEVINS pDevIns,
     reg.pfnSetDREQ        = set_DREQ_wrapper;
     reg.pfnGetChannelMode = get_mode_wrapper;
 
-    Assert(pDevIns->pDevHlp->pfnDMARegister);
-    rc = pDevIns->pDevHlp->pfnDMACRegister (pDevIns, &reg, &s->pHlp);
+    Assert(pDevIns->pDevHlpR3->pfnDMARegister);
+    rc = pDevIns->pDevHlpR3->pfnDMACRegister (pDevIns, &reg, &s->pHlp);
     if (RT_FAILURE (rc)) {
         return rc;
     }
@@ -948,14 +948,14 @@ const PDMDEVREG g_DeviceDMA =
     PDM_DEVREG_VERSION,
     /* szDeviceName */
     "8237A",
-    /* szGCMod */
+    /* szRCMod */
     "",
     /* szR0Mod */
     "",
     /* pszDescription */
     "DMA Controller Device",
     /* fFlags */
-    PDM_DEVREG_FLAGS_HOST_BITS_DEFAULT | PDM_DEVREG_FLAGS_GUEST_BITS_DEFAULT,
+    PDM_DEVREG_FLAGS_DEFAULT_BITS,
     /* fClass */
     PDM_DEVREG_CLASS_DMA,
     /* cMaxInstances */
@@ -987,6 +987,10 @@ const PDMDEVREG g_DeviceDMA =
     /* pfnInitComplete */
     NULL,
     /* pfnPowerOff */
-    NULL
+    NULL,
+    /* pfnSoftReset */
+    NULL,
+    /* u32VersionEnd */
+    PDM_DEVREG_VERSION
 };
 #endif /* VBOX */

@@ -1,4 +1,4 @@
-; $Id: logl.asm $
+; $Id: logl.asm 8256 2008-04-21 20:53:28Z vboxsync $
 ;; @file
 ; IPRT - No-CRT logl - AMD64 & X86.
 ;

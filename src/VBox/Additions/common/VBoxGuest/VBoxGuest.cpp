@@ -1,4 +1,4 @@
-/** $Id: */
+/* $Id: VBoxGuest.cpp 14462 2008-11-21 14:17:21Z vboxsync $ */
 /** @file
  * VBoxGuest - Guest Additions Driver.
  */
@@ -290,6 +290,7 @@ void VBoxGuestDeleteDevExt(PVBOXGUESTDEVEXT pDevExt)
  */
 
     rc2 = RTSpinlockDestroy(pDevExt->WaitSpinlock); AssertRC(rc2);
+    rc2 = RTSpinlockDestroy(pDevExt->SessionSpinlock); AssertRC(rc2);
 
     VBoxGuestDeleteWaitList(&pDevExt->WaitList);
 #ifdef VBOX_WITH_HGCM
@@ -387,7 +388,7 @@ void VBoxGuestCloseSession(PVBOXGUESTDEVEXT pDevExt, PVBOXGUESTSESSION pSession)
             Info.u32ClientID = pSession->aHGCMClientIds[i];
             pSession->aHGCMClientIds[i] = 0;
             Log(("VBoxGuestCloseSession: disconnecting client id %#RX32\n", Info.u32ClientID));
-            VbglHGCMDisconnect(&Info, VBoxGuestHGCMAsyncWaitCallback, pDevExt, false /* uninterruptible */);
+            VbglHGCMDisconnect(&Info, VBoxGuestHGCMAsyncWaitCallback, pDevExt, RT_INDEFINITE_WAIT);
         }
 #endif
 
@@ -836,21 +837,14 @@ static int VBoxGuestCommonIOCtl_CtlFilterMask(PVBOXGUESTDEVEXT pDevExt, VBoxGues
     return rc;
 }
 
-
 #ifdef VBOX_WITH_HGCM
 
-/**
- * This is a callback for dealing with async waits.
- *
- * It operates in a manner similar to VBoxGuestCommonIOCtl_WaitEvent.
- */
-static DECLCALLBACK(void)
-VBoxGuestHGCMAsyncWaitCallback(VMMDevHGCMRequestHeader *pHdrNonVolatile, void *pvUser, uint32_t u32User)
+AssertCompile(RT_INDEFINITE_WAIT == (uint32_t)RT_INDEFINITE_WAIT); /* assumed by code below */
+
+/** Worker for VBoxGuestHGCMAsyncWaitCallback*. */
+static void VBoxGuestHGCMAsyncWaitCallbackWorker(VMMDevHGCMRequestHeader volatile *pHdr, PVBOXGUESTDEVEXT pDevExt,
+                                                 bool fInterruptible, uint32_t cMillies)
 {
-    VMMDevHGCMRequestHeader volatile *pHdr = (VMMDevHGCMRequestHeader volatile *)pHdrNonVolatile;
-    const bool fInterruptible = (bool)u32User;
-    PVBOXGUESTDEVEXT pDevExt = (PVBOXGUESTDEVEXT)pvUser;
-    Log(("VBoxGuestHGCMAsyncWaitCallback: requestType=%d\n", pHdr->header.requestType));
 
     /*
      * Check to see if the condition was met by the time we got here.
@@ -898,9 +892,9 @@ VBoxGuestHGCMAsyncWaitCallback(VMMDevHGCMRequestHeader *pHdrNonVolatile, void *p
 
     int rc;
     if (fInterruptible)
-        rc = RTSemEventMultiWaitNoResume(pWait->Event, RT_INDEFINITE_WAIT);
+        rc = RTSemEventMultiWaitNoResume(pWait->Event, cMillies);
     else
-        rc = RTSemEventMultiWait(pWait->Event, RT_INDEFINITE_WAIT);
+        rc = RTSemEventMultiWait(pWait->Event, cMillies);
 
     /*
      * This shouldn't ever return failure...
@@ -918,6 +912,39 @@ VBoxGuestHGCMAsyncWaitCallback(VMMDevHGCMRequestHeader *pHdrNonVolatile, void *p
 }
 
 
+/**
+ * This is a callback for dealing with async waits.
+ *
+ * It operates in a manner similar to VBoxGuestCommonIOCtl_WaitEvent.
+ */
+static DECLCALLBACK(void) VBoxGuestHGCMAsyncWaitCallback(VMMDevHGCMRequestHeader *pHdr, void *pvUser, uint32_t u32User)
+{
+    PVBOXGUESTDEVEXT pDevExt = (PVBOXGUESTDEVEXT)pvUser;
+    LogFunc(("requestType=%d\n", pHdr->header.requestType));
+    VBoxGuestHGCMAsyncWaitCallbackWorker((VMMDevHGCMRequestHeader volatile *)pHdr,
+                                         pDevExt,
+                                         false /* fInterruptible */,
+                                         u32User  /* cMillies */);
+}
+
+
+/**
+ * This is a callback for dealing with async waits with a timeout.
+ *
+ * It operates in a manner similar to VBoxGuestCommonIOCtl_WaitEvent.
+ */
+static DECLCALLBACK(void) VBoxGuestHGCMAsyncWaitCallbackInterruptible(VMMDevHGCMRequestHeader *pHdr,
+                                                                      void *pvUser, uint32_t u32User)
+{
+    PVBOXGUESTDEVEXT pDevExt = (PVBOXGUESTDEVEXT)pvUser;
+    LogFunc(("requestType=%d\n", pHdr->header.requestType));
+    VBoxGuestHGCMAsyncWaitCallbackWorker((VMMDevHGCMRequestHeader volatile *)pHdr,
+                                         pDevExt,
+                                         true /* fInterruptible */,
+                                         u32User /* cMillies */ );
+}
+
+
 static int VBoxGuestCommonIOCtl_HGCMConnect(PVBOXGUESTDEVEXT pDevExt, PVBOXGUESTSESSION pSession, VBoxGuestHGCMConnectInfo *pInfo,
                                             size_t *pcbDataReturned)
 {
@@ -930,7 +957,7 @@ static int VBoxGuestCommonIOCtl_HGCMConnect(PVBOXGUESTDEVEXT pDevExt, PVBOXGUEST
          pInfo->Loc.type == VMMDevHGCMLoc_LocalHost || pInfo->Loc.type == VMMDevHGCMLoc_LocalHost_Existing
          ? pInfo->Loc.u.host.achName : "<not local host>"));
 
-    int rc = VbglHGCMConnect(pInfo, VBoxGuestHGCMAsyncWaitCallback, pDevExt, false /* uninterruptible */);
+    int rc = VbglHGCMConnect(pInfo, VBoxGuestHGCMAsyncWaitCallback, pDevExt, RT_INDEFINITE_WAIT);
     if (RT_SUCCESS(rc))
     {
         Log(("VBoxGuestCommonIOCtl: HGCM_CONNECT: u32Client=%RX32 result=%Rrc (rc=%Rrc)\n",
@@ -960,7 +987,7 @@ static int VBoxGuestCommonIOCtl_HGCMConnect(PVBOXGUESTDEVEXT pDevExt, PVBOXGUEST
                 VBoxGuestHGCMDisconnectInfo Info;
                 Info.result = 0;
                 Info.u32ClientID = pInfo->u32ClientID;
-                VbglHGCMDisconnect(&Info, VBoxGuestHGCMAsyncWaitCallback, pDevExt, false /* uninterruptible */);
+                VbglHGCMDisconnect(&Info, VBoxGuestHGCMAsyncWaitCallback, pDevExt, RT_INDEFINITE_WAIT);
                 return VERR_TOO_MANY_OPEN_FILES;
             }
         }
@@ -1002,7 +1029,7 @@ static int VBoxGuestCommonIOCtl_HGCMDisconnect(PVBOXGUESTDEVEXT pDevExt, PVBOXGU
      * to deal with cancelled requests.
      */
     Log(("VBoxGuestCommonIOCtl: HGCM_DISCONNECT: u32Client=%RX32\n", pInfo->u32ClientID));
-    int rc = VbglHGCMDisconnect(pInfo, VBoxGuestHGCMAsyncWaitCallback, pDevExt, false /* uninterruptible */);
+    int rc = VbglHGCMDisconnect(pInfo, VBoxGuestHGCMAsyncWaitCallback, pDevExt, RT_INDEFINITE_WAIT);
     if (RT_SUCCESS(rc))
     {
         Log(("VBoxGuestCommonIOCtl: HGCM_DISCONNECT: result=%Rrc\n", pInfo->result));
@@ -1020,8 +1047,11 @@ static int VBoxGuestCommonIOCtl_HGCMDisconnect(PVBOXGUESTDEVEXT pDevExt, PVBOXGU
 }
 
 
-static int VBoxGuestCommonIOCtl_HGCMCall(PVBOXGUESTDEVEXT pDevExt, PVBOXGUESTSESSION pSession, VBoxGuestHGCMCallInfo *pInfo,
-                                         size_t cbData, size_t *pcbDataReturned)
+static int VBoxGuestCommonIOCtl_HGCMCall(PVBOXGUESTDEVEXT pDevExt,
+                                         PVBOXGUESTSESSION pSession,
+                                         VBoxGuestHGCMCallInfo *pInfo,
+                                         uint32_t cMillies, bool fInterruptible,
+                                         size_t cbExtra, size_t cbData, size_t *pcbDataReturned)
 {
     /*
      * Some more validations.
@@ -1031,7 +1061,7 @@ static int VBoxGuestCommonIOCtl_HGCMCall(PVBOXGUESTDEVEXT pDevExt, PVBOXGUESTSES
         Log(("VBoxGuestCommonIOCtl: HGCM_CALL: cParm=%RX32 is not sane\n", pInfo->cParms));
         return VERR_INVALID_PARAMETER;
     }
-    const size_t cbActual = sizeof(*pInfo) + pInfo->cParms * sizeof(HGCMFunctionParameter);
+    const size_t cbActual = cbExtra + sizeof(*pInfo) + pInfo->cParms * sizeof(HGCMFunctionParameter);
     if (cbData < cbActual)
     {
         Log(("VBoxGuestCommonIOCtl: HGCM_CALL: cbData=%#zx (%zu) required size is %#zx (%zu)\n",
@@ -1065,7 +1095,11 @@ static int VBoxGuestCommonIOCtl_HGCMCall(PVBOXGUESTDEVEXT pDevExt, PVBOXGUESTSES
      * be interruptible (should add a flag for this later I guess).
      */
     Log(("VBoxGuestCommonIOCtl: HGCM_CALL: u32Client=%RX32\n", pInfo->u32ClientID));
-    int rc = VbglHGCMCall(pInfo, VBoxGuestHGCMAsyncWaitCallback, pDevExt, pSession->R0Process != NIL_RTR0PROCESS);
+    int rc;
+    if (fInterruptible)
+        rc = VbglHGCMCall(pInfo, VBoxGuestHGCMAsyncWaitCallbackInterruptible, pDevExt, cMillies);
+    else
+        rc = VbglHGCMCall(pInfo, VBoxGuestHGCMAsyncWaitCallback, pDevExt, cMillies);
     if (RT_SUCCESS(rc))
     {
         Log(("VBoxGuestCommonIOCtl: HGCM_CALL: result=%Rrc\n", pInfo->result));
@@ -1095,7 +1129,7 @@ static int VBoxGuestCommonIOCtl_HGCMClipboardReConnect(PVBOXGUESTDEVEXT pDevExt,
         VBoxGuestHGCMDisconnectInfo Info;
         Info.result = (uint32_t)VERR_WRONG_ORDER;           /** @todo Vitali, why is this member unsigned? */
         Info.u32ClientID = pDevExt->u32ClipboardClientId;
-        rc = VbglHGCMDisconnect(&Info, VBoxGuestHGCMAsyncWaitCallback, pDevExt, 0);
+        rc = VbglHGCMDisconnect(&Info, VBoxGuestHGCMAsyncWaitCallback, pDevExt, RT_INDEFINITE_WAIT);
         if (RT_SUCCESS(rc))
         {
             LogRel(("VBoxGuestCommonIOCtl: CLIPBOARD_CONNECT: failed to disconnect old client. VbglHGCMDisconnect -> rc=%Rrc\n", rc));
@@ -1118,7 +1152,7 @@ static int VBoxGuestCommonIOCtl_HGCMClipboardReConnect(PVBOXGUESTDEVEXT pDevExt,
     Info.u32ClientID = 0;
     Info.result = (uint32_t)VERR_WRONG_ORDER;
 
-    rc = VbglHGCMConnect(&Info,VBoxGuestHGCMAsyncWaitCallback, pDevExt, 0);
+    rc = VbglHGCMConnect(&Info, VBoxGuestHGCMAsyncWaitCallback, pDevExt, RT_INDEFINITE_WAIT);
     if (RT_FAILURE(rc))
     {
         LogRel(("VBoxGuestCommonIOCtl: CLIPBOARD_CONNECT: VbglHGCMConnected -> rc=%Rrc\n", rc));
@@ -1141,7 +1175,6 @@ static int VBoxGuestCommonIOCtl_HGCMClipboardReConnect(PVBOXGUESTDEVEXT pDevExt,
 }
 
 #endif /* VBOX_WITH_HGCM */
-
 
 /**
  * Guest backdoor logging.
@@ -1221,12 +1254,23 @@ int  VBoxGuestCommonIOCtl(unsigned iFunction, PVBOXGUESTDEVEXT pDevExt, PVBOXGUE
     }
 #ifdef VBOX_WITH_HGCM
     /*
-     * This one is tricky and can be done later.
+     * These ones are a bit tricky.
      */
     else if (VBOXGUEST_IOCTL_STRIP_SIZE(iFunction) == VBOXGUEST_IOCTL_STRIP_SIZE(VBOXGUEST_IOCTL_HGCM_CALL(0)))
     {
         CHECKRET_MIN_SIZE("HGCM_CALL", sizeof(VBoxGuestHGCMCallInfo));
-        rc = VBoxGuestCommonIOCtl_HGCMCall(pDevExt, pSession, (VBoxGuestHGCMCallInfo *)pvData, cbData, pcbDataReturned);
+        bool fInterruptible = pSession->R0Process != NIL_RTR0PROCESS;
+        rc = VBoxGuestCommonIOCtl_HGCMCall(pDevExt, pSession, (VBoxGuestHGCMCallInfo *)pvData, RT_INDEFINITE_WAIT,
+                                           fInterruptible,
+                                           0, cbData, pcbDataReturned);
+    }
+    else if (VBOXGUEST_IOCTL_STRIP_SIZE(iFunction) == VBOXGUEST_IOCTL_STRIP_SIZE(VBOXGUEST_IOCTL_HGCM_CALL_TIMED(0)))
+    {
+        CHECKRET_MIN_SIZE("HGCM_CALL_TIMED", sizeof(VBoxGuestHGCMCallInfoTimed));
+        VBoxGuestHGCMCallInfoTimed *pInfo = (VBoxGuestHGCMCallInfoTimed *)pvData;
+        rc = VBoxGuestCommonIOCtl_HGCMCall(pDevExt, pSession, &pInfo->info, pInfo->u32Timeout,
+                                           !!pInfo->fInterruptible || pSession->R0Process != NIL_RTR0PROCESS,
+                                           RT_OFFSETOF(VBoxGuestHGCMCallInfoTimed, info), cbData, pcbDataReturned);
     }
 #endif /* VBOX_WITH_HGCM */
     else if (VBOXGUEST_IOCTL_STRIP_SIZE(iFunction) == VBOXGUEST_IOCTL_STRIP_SIZE(VBOXGUEST_IOCTL_LOG(0)))

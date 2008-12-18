@@ -1,4 +1,4 @@
-/* $Id: Global.h $ */
+/* $Id: Global.h 15064 2008-12-07 15:34:34Z vboxsync $ */
 
 /** @file
  *
@@ -27,9 +27,17 @@
 /* generated header */
 #include "SchemaDefs.h"
 
+/* interface definitions */
+#include "VBox/com/VirtualBox.h"
+
 #include <VBox/ostypes.h>
 
 #include <iprt/types.h>
+
+#define VBOXOSHINT_NONE                 0
+#define VBOXOSHINT_64BIT                RT_BIT(0)
+#define VBOXOSHINT_HWVIRTEX             RT_BIT(1)
+#define VBOXOSHINT_IOAPIC               RT_BIT(2)
 
 /**
  * Contains global static definitions that can be referenced by all COM classes
@@ -42,12 +50,16 @@ public:
     /** Represents OS Type <-> string mappings. */
     struct OSType
     {
-        const char    *id;          /* utf-8 */
-        const char    *description; /* utf-8 */
-        const VBOXOSTYPE osType;
-        const uint32_t recommendedRAM;
-        const uint32_t recommendedVRAM;
-        const uint32_t recommendedHDD;
+        const char                 *familyId;          /* utf-8 */
+        const char                 *familyDescription; /* utf-8 */
+        const char                 *id;          /* utf-8 */
+        const char                 *description; /* utf-8 */
+        const VBOXOSTYPE            osType;
+        const uint32_t              osHint;
+        const uint32_t              recommendedRAM;
+        const uint32_t              recommendedVRAM;
+        const uint32_t              recommendedHDD;
+        const NetworkAdapterType_T  networkAdapterType;
     };
 
     static const OSType sOSTypes [SchemaDefs::OSTypeId_COUNT];
@@ -56,3 +68,4 @@ public:
 };
 
 #endif /* ____H_GLOBAL */
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

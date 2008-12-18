@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 14140 2008-11-12 19:08:56Z vboxsync $
 ## @file
 # Top-level makefile for the VirtualBox Guest Additions.
 #
@@ -19,12 +19,7 @@
 # additional information or have any questions.
 #
 
-ifdef VBOX_SINGLE_MAKEFILE
 SUB_DEPTH = ../../..
-else
-SUB_DEPTH = .
-DEPTH     = ../../..
-endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 #
@@ -110,17 +105,17 @@ ifdef VBOX_WITH_ADDITIONS_ISO.os2.x86
 	32Bit/OS2/VBoxGuest.sys=$(VBOX_PATH_ADDITIONS.os2.x86)/VBoxGuest.sys \
 	32Bit/OS2/VBoxService.exe=$(VBOX_PATH_ADDITIONS.os2.x86)/VBoxService.exe \
 	32Bit/OS2/gengradd.dll=$(VBOX_PATH_ADDITIONS.os2.x86)/gengradd.dll \
-	32Bit/OS2/libc063.dll=./os2/Bin/libc063.dll \
-	32Bit/OS2/readme.txt=./os2/Bin/readme.txt \
+	32Bit/OS2/libc063.dll=$(VBOX_PATH_ADDITIONS_SRC)/os2/Bin/libc063.dll \
+	32Bit/OS2/readme.txt=$(VBOX_PATH_ADDITIONS_SRC)/os2/Bin/readme.txt \
 	32Bit/OS2/vboxmouse.sys=$(VBOX_PATH_ADDITIONS.os2.x86)/vboxmouse.sys
 else ifdef VBOX_WITH_OS2_ADDITIONS_BIN
  GUESTADDITIONS_FILESPEC.os2.x86 = \
-	32Bit/OS2/VBoxGuest.sys=./os2/Bin/VBoxGuest.sys \
-	32Bit/OS2/VBoxService.exe=./os2/Bin/VBoxService.exe \
-	32Bit/OS2/gengradd.dll=./os2/Bin/gengradd.dll \
-	32Bit/OS2/libc063.dll=./os2/Bin/libc063.dll \
-	32Bit/OS2/readme.txt=./os2/Bin/readme.txt \
-	32Bit/OS2/vboxmouse.sys=./os2/Bin/vboxmouse.sys
+	32Bit/OS2/VBoxGuest.sys=$(VBOX_PATH_ADDITIONS_SRC)/os2/Bin/VBoxGuest.sys \
+	32Bit/OS2/VBoxService.exe=$(VBOX_PATH_ADDITIONS_SRC)/os2/Bin/VBoxService.exe \
+	32Bit/OS2/gengradd.dll=$(VBOX_PATH_ADDITIONS_SRC)/os2/Bin/gengradd.dll \
+	32Bit/OS2/libc063.dll=$(VBOX_PATH_ADDITIONS_SRC)/os2/Bin/libc063.dll \
+	32Bit/OS2/readme.txt=$(VBOX_PATH_ADDITIONS_SRC)/os2/Bin/readme.txt \
+	32Bit/OS2/vboxmouse.sys=$(VBOX_PATH_ADDITIONS_SRC)/os2/Bin/vboxmouse.sys
 endif
 
 
@@ -199,12 +194,12 @@ ifdef VBOX_WITH_ADDITIONS_ISO.win.x86
 	32Bit/Windows/Drivers/VBoxVideo/VBoxVideo.inf=$(VBOX_PATH_ADDITIONS.win.x86)/VBoxVideo.inf \
 	32Bit/Windows/Drivers/VBoxVideo/VBoxDisp.dll=$(VBOX_PATH_ADDITIONS.win.x86)/VBoxDisp.dll \
 	32Bit/Windows/Gina/VBoxGINA.dll=$(VBOX_PATH_ADDITIONS.win.x86)/VBoxGINA.dll \
-	32Bit/Windows/3rdParty/AMD_PCnet/netamd.inf=./WINNT/Network/AMD/netamd.inf \
-	32Bit/Windows/3rdParty/AMD_PCnet/pcntpci5.cat=./WINNT/Network/AMD/pcntpci5.cat \
-	32Bit/Windows/3rdParty/AMD_PCnet/PCNTPCI5.sys=./WINNT/Network/AMD/PCNTPCI5.sys \
+	32Bit/Windows/3rdParty/AMD_PCnet/netamd.inf=$(VBOX_PATH_ADDITIONS_SRC)/WINNT/Network/AMD/netamd.inf \
+	32Bit/Windows/3rdParty/AMD_PCnet/pcntpci5.cat=$(VBOX_PATH_ADDITIONS_SRC)/WINNT/Network/AMD/pcntpci5.cat \
+	32Bit/Windows/3rdParty/AMD_PCnet/PCNTPCI5.sys=$(VBOX_PATH_ADDITIONS_SRC)/WINNT/Network/AMD/PCNTPCI5.sys \
 	VBoxWindowsAdditions-x86.exe=$(VBOX_PATH_ADDITIONS.win.x86)/VBoxWindowsAdditions-x86.exe \
 	VBoxWindowsAdditions.exe=$(VBOX_PATH_ADDITIONS.win.x86)/VBoxWindowsAdditions.exe \
-	AUTORUN.INF=./WINNT/Installer/AUTORUN.INF
+	AUTORUN.INF=$(VBOX_PATH_ADDITIONS_SRC)/WINNT/Installer/AUTORUN.INF
  ifdef VBOX_WITH_WIN32_ADDITIONS_SHAREDFOLDERS
   GUESTADDITIONS_FILESPEC.win.x86 += \
 	32Bit/Windows/Drivers/VBoxSF/VBoxSF.sys=$(VBOX_PATH_ADDITIONS.win.x86)/VBoxSF.sys \
@@ -261,5 +256,4 @@ $(VBOX_PATH_ADDITIONS)/VBoxGuestAdditions.iso: \
 additions-iso: $(VBOX_PATH_ADDITIONS)/VBoxGuestAdditions.iso
 
 endif
-
 

@@ -1,4 +1,4 @@
-/* $Id: PerformanceImpl.cpp $ */
+/* $Id: PerformanceImpl.cpp 15051 2008-12-05 17:20:00Z vboxsync $ */
 
 /** @file
  *
@@ -101,7 +101,7 @@ HRESULT PerformanceCollector::init()
 {
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     LogFlowThisFuncEnter();
 
@@ -191,8 +191,30 @@ PerformanceCollector::COMGETTER(MetricNames) (ComSafeArrayOut (BSTR, theMetricNa
 // IPerformanceCollector methods
 ////////////////////////////////////////////////////////////////////////////////
 
+HRESULT PerformanceCollector::toIPerformanceMetric(pm::Metric *src, IPerformanceMetric **dst)
+{
+    ComObjPtr <PerformanceMetric> metric;
+    HRESULT rc = metric.createObject();
+    if (SUCCEEDED (rc))
+        rc = metric->init (src);
+    AssertComRCReturnRC (rc);
+    metric.queryInterfaceTo (dst);
+    return rc;
+}
+
+HRESULT PerformanceCollector::toIPerformanceMetric(pm::BaseMetric *src, IPerformanceMetric **dst)
+{
+    ComObjPtr <PerformanceMetric> metric;
+    HRESULT rc = metric.createObject();
+    if (SUCCEEDED (rc))
+        rc = metric->init (src);
+    AssertComRCReturnRC (rc);
+    metric.queryInterfaceTo (dst);
+    return rc;
+}
+
 STDMETHODIMP
-PerformanceCollector::GetMetrics (ComSafeArrayIn (INPTR BSTR, metricNames),
+PerformanceCollector::GetMetrics (ComSafeArrayIn (IN_BSTR, metricNames),
                                   ComSafeArrayIn (IUnknown *, objects),
                                   ComSafeArrayOut (IPerformanceMetric *, outMetrics))
 {
@@ -234,9 +256,11 @@ PerformanceCollector::GetMetrics (ComSafeArrayIn (INPTR BSTR, metricNames),
 }
 
 STDMETHODIMP
-PerformanceCollector::SetupMetrics (ComSafeArrayIn (INPTR BSTR, metricNames),
+PerformanceCollector::SetupMetrics (ComSafeArrayIn (IN_BSTR, metricNames),
                                     ComSafeArrayIn (IUnknown *, objects),
-                                    ULONG aPeriod, ULONG aCount)
+                                    ULONG aPeriod, ULONG aCount,
+                                    ComSafeArrayOut (IPerformanceMetric *,
+                                                     outMetrics))
 {
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -246,6 +270,8 @@ PerformanceCollector::SetupMetrics (ComSafeArrayIn (INPTR BSTR, metricNames),
 
     AutoWriteLock alock (this);
 
+    HRESULT rc = S_OK;
+    BaseMetricList filteredMetrics;
     BaseMetricList::iterator it;
     for (it = m.baseMetrics.begin(); it != m.baseMetrics.end(); ++it)
         if (filter.match((*it)->getObject(), (*it)->getName()))
@@ -265,14 +291,25 @@ PerformanceCollector::SetupMetrics (ComSafeArrayIn (INPTR BSTR, metricNames),
                           (*it)->getName()));
                 (*it)->enable();
             }
+            filteredMetrics.push_back(*it);
         }
 
-    return S_OK;
+    com::SafeIfaceArray<IPerformanceMetric> retMetrics (filteredMetrics.size());
+    int i = 0;
+    for (it = filteredMetrics.begin();
+         it != filteredMetrics.end() && SUCCEEDED (rc); ++it)
+        rc = toIPerformanceMetric(*it, &retMetrics [i++]);
+    retMetrics.detachTo (ComSafeArrayOutArg(outMetrics));
+
+    LogFlowThisFuncLeave();
+    return rc;
 }
 
 STDMETHODIMP
-PerformanceCollector::EnableMetrics (ComSafeArrayIn (INPTR BSTR, metricNames),
-                                     ComSafeArrayIn (IUnknown *, objects))
+PerformanceCollector::EnableMetrics (ComSafeArrayIn (IN_BSTR, metricNames),
+                                     ComSafeArrayIn (IUnknown *, objects),
+                                     ComSafeArrayOut (IPerformanceMetric *,
+                                                      outMetrics))
 {
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -284,17 +321,32 @@ PerformanceCollector::EnableMetrics (ComSafeArrayIn (INPTR BSTR, metricNames),
                                 /* fiddling with enable bit only, but we */
                                 /* care for those who come next :-). */
 
+    HRESULT rc = S_OK;
+    BaseMetricList filteredMetrics;
     BaseMetricList::iterator it;
     for (it = m.baseMetrics.begin(); it != m.baseMetrics.end(); ++it)
         if (filter.match((*it)->getObject(), (*it)->getName()))
+        {
             (*it)->enable();
+            filteredMetrics.push_back(*it);
+        }
 
-    return S_OK;
+    com::SafeIfaceArray<IPerformanceMetric> retMetrics (filteredMetrics.size());
+    int i = 0;
+    for (it = filteredMetrics.begin();
+         it != filteredMetrics.end() && SUCCEEDED (rc); ++it)
+        rc = toIPerformanceMetric(*it, &retMetrics [i++]);
+    retMetrics.detachTo (ComSafeArrayOutArg(outMetrics));
+
+    LogFlowThisFuncLeave();
+    return rc;
 }
 
 STDMETHODIMP
-PerformanceCollector::DisableMetrics (ComSafeArrayIn (INPTR BSTR, metricNames),
-                                      ComSafeArrayIn (IUnknown *, objects))
+PerformanceCollector::DisableMetrics (ComSafeArrayIn (IN_BSTR, metricNames),
+                                      ComSafeArrayIn (IUnknown *, objects),
+                                      ComSafeArrayOut (IPerformanceMetric *,
+                                                       outMetrics))
 {
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -306,19 +358,35 @@ PerformanceCollector::DisableMetrics (ComSafeArrayIn (INPTR BSTR, metricNames),
                                 /* fiddling with enable bit only, but we */
                                 /* care for those who come next :-). */
 
+    HRESULT rc = S_OK;
+    BaseMetricList filteredMetrics;
     BaseMetricList::iterator it;
     for (it = m.baseMetrics.begin(); it != m.baseMetrics.end(); ++it)
         if (filter.match((*it)->getObject(), (*it)->getName()))
+        {
             (*it)->disable();
+            filteredMetrics.push_back(*it);
+        }
 
-    return S_OK;
+    com::SafeIfaceArray<IPerformanceMetric> retMetrics (filteredMetrics.size());
+    int i = 0;
+    for (it = filteredMetrics.begin();
+         it != filteredMetrics.end() && SUCCEEDED (rc); ++it)
+        rc = toIPerformanceMetric(*it, &retMetrics [i++]);
+    retMetrics.detachTo (ComSafeArrayOutArg(outMetrics));
+
+    LogFlowThisFuncLeave();
+    return rc;
 }
 
 STDMETHODIMP
-PerformanceCollector::QueryMetricsData (ComSafeArrayIn (INPTR BSTR, metricNames),
+PerformanceCollector::QueryMetricsData (ComSafeArrayIn (IN_BSTR, metricNames),
                                         ComSafeArrayIn (IUnknown *, objects),
                                         ComSafeArrayOut (BSTR, outMetricNames),
                                         ComSafeArrayOut (IUnknown *, outObjects),
+                                        ComSafeArrayOut (BSTR, outUnits),
+                                        ComSafeArrayOut (ULONG, outScales),
+                                        ComSafeArrayOut (ULONG, outSequenceNumbers),
                                         ComSafeArrayOut (ULONG, outDataIndices),
                                         ComSafeArrayOut (ULONG, outDataLengths),
                                         ComSafeArrayOut (LONG, outData))
@@ -347,22 +415,28 @@ PerformanceCollector::QueryMetricsData (ComSafeArrayIn (INPTR BSTR, metricNames)
     size_t numberOfMetrics = filteredMetrics.size();
     com::SafeArray <BSTR> retNames (numberOfMetrics);
     com::SafeIfaceArray <IUnknown> retObjects (numberOfMetrics);
+    com::SafeArray <BSTR> retUnits (numberOfMetrics);
+    com::SafeArray <ULONG> retScales (numberOfMetrics);
+    com::SafeArray <ULONG> retSequenceNumbers (numberOfMetrics);
     com::SafeArray <ULONG> retIndices (numberOfMetrics);
     com::SafeArray <ULONG> retLengths (numberOfMetrics);
     com::SafeArray <LONG> retData (flatSize);
 
     for (it = filteredMetrics.begin(); it != filteredMetrics.end(); ++it, ++i)
     {
-        /* @todo Filtering goes here! */
-        ULONG *values, length;
+        ULONG *values, length, sequenceNumber;
         /* @todo We may want to revise the query method to get rid of excessive alloc/memcpy calls. */
-        (*it)->query(&values, &length);
+        (*it)->query(&values, &length, &sequenceNumber);
         LogFlow (("PerformanceCollector::QueryMetricsData() querying metric %s "
                   "returned %d values.\n", (*it)->getName(), length));
         memcpy(retData.raw() + flatIndex, values, length * sizeof(*values));
         Bstr tmp((*it)->getName());
         tmp.detachTo(&retNames[i]);
         (*it)->getObject().queryInterfaceTo (&retObjects[i]);
+        tmp = (*it)->getUnit();
+        tmp.detachTo(&retUnits[i]);
+        retScales[i] = (*it)->getScale();
+        retSequenceNumbers[i] = sequenceNumber;
         retLengths[i] = length;
         retIndices[i] = flatIndex;
         flatIndex += length;
@@ -370,6 +444,9 @@ PerformanceCollector::QueryMetricsData (ComSafeArrayIn (INPTR BSTR, metricNames)
 
     retNames.detachTo (ComSafeArrayOutArg (outMetricNames));
     retObjects.detachTo (ComSafeArrayOutArg (outObjects));
+    retUnits.detachTo (ComSafeArrayOutArg (outUnits));
+    retScales.detachTo (ComSafeArrayOutArg (outScales));
+    retSequenceNumbers.detachTo (ComSafeArrayOutArg (outSequenceNumbers));
     retIndices.detachTo (ComSafeArrayOutArg (outDataIndices));
     retLengths.detachTo (ComSafeArrayOutArg (outDataLengths));
     retData.detachTo (ComSafeArrayOutArg (outData));
@@ -525,6 +602,19 @@ HRESULT PerformanceMetric::init (pm::Metric *aMetric)
     return S_OK;
 }
 
+HRESULT PerformanceMetric::init (pm::BaseMetric *aMetric)
+{
+    m.name        = aMetric->getName();
+    m.object      = aMetric->getObject();
+    m.description = "";
+    m.period      = aMetric->getPeriod();
+    m.count       = aMetric->getLength();
+    m.unit        = aMetric->getUnit();
+    m.min         = aMetric->getMinValue();
+    m.max         = aMetric->getMaxValue();
+    return S_OK;
+}
+
 void PerformanceMetric::uninit()
 {
 }
@@ -579,4 +669,4 @@ STDMETHODIMP PerformanceMetric::COMGETTER(MaximumValue) (LONG *aMaxValue)
     *aMaxValue = m.max;
     return S_OK;
 }
-
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

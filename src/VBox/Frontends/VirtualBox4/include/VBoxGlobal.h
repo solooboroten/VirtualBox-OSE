@@ -35,6 +35,7 @@
 #include <QMenu>
 #include <QStyle>
 #include <QProcess>
+#include <QLinkedList>
 
 class QAction;
 class QLabel;
@@ -43,22 +44,248 @@ class QToolButton;
 // Auxiliary types
 ////////////////////////////////////////////////////////////////////////////////
 
-/** Simple media descriptor type. */
-struct VBoxMedia
+/**
+ * Media descriptor for the GUI.
+ *
+ * Maintains the results of the last state (accessibility) check and precomposes
+ * string parameters such as location, size which can be used in various GUI
+ * controls.
+ *
+ * Many getter methods take the boolean @a aNoDiffs argument. Unless explicitly
+ * stated otherwise, this argument, when set to @c true, will cause the
+ * corresponding property of this object's root medium to be returned instead of
+ * its own one. This is useful when hard disk media is represented in the
+ * user-friendly "don't show diffs" mode. For non-hard disk media, the value of
+ * this argument is irrelevant because the root object for such medium is
+ * the medium itself.
+ *
+ * Note that this class "abuses" the KMediaState_NotCreated state value to
+ * indicate that the accessibility check of the given medium (see
+ * #blockAndQueryState()) has not been done yet and therefore some parameters
+ * such as #size() are meaningless because they can be read only from the
+ * accessible medium. The real KMediaState_NotCreated state is not necessary
+ * because this class is only used with created (existing) media.
+ */
+class VBoxMedium
 {
-    enum Status { Unknown, Ok, Error, Inaccessible };
+public:
 
-    VBoxMedia() : type (VBoxDefs::InvalidType), status (Ok) {}
+    /**
+     * Creates a null medium descriptor which is not associated with any medium.
+     * The state field is set to KMediaState_NotCreated.
+     */
+    VBoxMedium()
+        : mType (VBoxDefs::MediaType_Invalid)
+        , mState (KMediaState_NotCreated)
+        , mIsReadOnly (false), mIsUsedInSnapshots (false)
+        , mParent (NULL) {}
 
-    VBoxMedia (const CUnknown &d, VBoxDefs::DiskType t, Status s)
-        : disk (d), type (t), status (s) {}
+    /**
+     * Creates a media descriptor associated with the given medium.
+     *
+     * The state field remain KMediaState_NotCreated until #blockAndQueryState()
+     * is called. All precomposed strings are filled up by implicitly calling
+     * #refresh(), see the #refresh() details for more info.
+     *
+     * One of the hardDisk, dvdImage, or floppyImage members is assigned from
+     * aMedium according to aType. @a aParent must be always NULL for non-hard
+     * disk media.
+     */
+    VBoxMedium (const CMedium &aMedium, VBoxDefs::MediaType aType,
+                VBoxMedium *aParent = NULL)
+        : mMedium (aMedium), mType (aType)
+        , mState (KMediaState_NotCreated)
+        , mIsReadOnly (false), mIsUsedInSnapshots (false)
+        , mParent (aParent) { init(); }
 
-    CUnknown disk;
-    VBoxDefs::DiskType type;
-    Status status;
+    /**
+     * Similar to the other non-null constructor but sets the media state to
+     * @a aState. Suitable when the media state is known such as right after
+     * creation.
+     */
+    VBoxMedium (const CMedium &aMedium, VBoxDefs::MediaType aType,
+                KMediaState aState)
+        : mMedium (aMedium), mType (aType)
+        , mState (aState)
+        , mIsReadOnly (false), mIsUsedInSnapshots (false)
+        , mParent (NULL) { init(); }
+
+    void blockAndQueryState();
+    void refresh();
+
+    const CMedium &medium() const { return mMedium; };
+
+    VBoxDefs::MediaType type() const { return mType; }
+
+    /**
+     * Media state. In "don't show diffs" mode, this is the worst state (in
+     * terms of inaccessibility) detected on the given hard disk chain.
+     *
+     * @param aNoDiffs  @c true to enable user-friendly "don't show diffs" mode.
+     */
+    KMediaState state (bool aNoDiffs = false) const
+    {
+        unconst (this)->checkNoDiffs (aNoDiffs);
+        return aNoDiffs ? mNoDiffs.state : mState;
+    }
+
+    QString lastAccessError() const { return mLastAccessError; }
+
+    /**
+     * Result of the last blockAndQueryState() call. Will indicate an error and
+     * contain a proper error info if the last state check fails. In "don't show
+     * diffs" mode, this is the worst result (in terms of inaccessibility)
+     * detected on the given hard disk chain.
+     *
+     * @param aNoDiffs  @c true to enable user-friendly "don't show diffs" mode.
+     */
+    const COMResult &result (bool aNoDiffs = false) const
+    {
+        unconst (this)->checkNoDiffs (aNoDiffs);
+        return aNoDiffs ? mNoDiffs.result : mResult;
+    }
+
+    const CHardDisk2 &hardDisk() const { return mHardDisk; }
+    const CDVDImage2 &dvdImage() const { return mDVDImage; }
+    const CFloppyImage2 &floppyImage() const { return mFloppyImage; }
+
+    QUuid id() const { return mId; }
+
+    QString location (bool aNoDiffs = false) const
+        { return aNoDiffs ? root().mLocation : mLocation; }
+    QString name (bool aNoDiffs = false) const
+        { return aNoDiffs ? root().mName : mName; }
+
+    QString size (bool aNoDiffs = false) const
+        { return aNoDiffs ? root().mSize : mSize; }
+
+    QString hardDiskFormat (bool aNoDiffs = false) const
+        { return aNoDiffs ? root().mHardDiskFormat : mHardDiskFormat; }
+    QString hardDiskType (bool aNoDiffs = false) const
+        { return aNoDiffs ? root().mHardDiskType : mHardDiskType; }
+    QString logicalSize (bool aNoDiffs = false) const
+        { return aNoDiffs ? root().mLogicalSize : mLogicalSize; }
+
+    QString usage (bool aNoDiffs = false) const
+    { return aNoDiffs ? root().mUsage : mUsage; }
+
+    /**
+     * Returns @c true if this medium is read-only (either because it is
+     * Immutable or because it has child hard disks). Read-only media can only
+     * be attached indirectly.
+     */
+    bool isReadOnly() const { return mIsReadOnly; }
+
+    /**
+     * Returns @c true if this medium is attached to any VM (in the current
+     * state or in a snapshot) in which case #usage() will contain a string with
+     * comma-sparated VM names (with snapshot names, if any, in parenthesis).
+     */
+    bool isUsed() const { return !mUsage.isNull(); }
+
+    /**
+     * Returns @c true if this medium is attached to any VM in any snapshot.
+     * which case #usage() will contain a string with comma-sparated VM names.
+     */
+    bool isUsedInSnapshots() const { return mIsUsedInSnapshots; }
+
+    /**
+     * Returns @c true if this medium is attached to the given machine in the
+     * current state.
+     */
+    bool isAttachedInCurStateTo (const QUuid &aMachineId) const
+        { return mCurStateMachineIds.indexOf (aMachineId) >= 0; }
+
+    /**
+     * Returns a vector of IDs of all machines this medium is attached
+     * to in their current state (i.e. excluding snapshots).
+     */
+    const QList <QUuid> &curStateMachineIds() const
+        { return mCurStateMachineIds; }
+
+    /**
+     * Returns a parent medium. For non-hard disk media, this is always NULL.
+     */
+    VBoxMedium *parent() const { return mParent; }
+
+    VBoxMedium &root() const;
+
+    QString toolTip(bool aNoDiffs = false, bool aCheckRO = false) const;
+    QPixmap icon (bool aNoDiffs = false, bool aCheckRO = false) const;
+
+    /** Shortcut to <tt>#toolTip (aNoDiffs, true)</tt>. */
+    QString toolTipCheckRO (bool aNoDiffs = false) const
+        { return toolTip (aNoDiffs, true); }
+
+    /** Shortcut to <tt>#icon (aNoDiffs, true)</tt>. */
+    QPixmap iconCheckRO (bool aNoDiffs = false) const
+        { return icon (aNoDiffs, true); }
+
+    QString details (bool aNoDiffs = false, bool aPredictDiff = false,
+                     bool aUseHTML = false) const;
+
+    /** Shortcut to <tt>#details (aNoDiffs, aPredictDiff, true)</tt>. */
+    QString detailsHTML (bool aNoDiffs = false, bool aPredictDiff = false) const
+        { return details (aNoDiffs, aPredictDiff, true); }
+
+    /** Returns @c true if this media descriptor is a null object. */
+    bool isNull() const { return mMedium.isNull(); }
+
+private:
+
+    void init();
+
+    void checkNoDiffs (bool aNoDiffs);
+
+    CMedium mMedium;
+
+    VBoxDefs::MediaType mType;
+
+    KMediaState mState;
+    QString mLastAccessError;
+    COMResult mResult;
+
+    CHardDisk2 mHardDisk;
+    CDVDImage2 mDVDImage;
+    CFloppyImage2 mFloppyImage;
+
+    QUuid mId;
+    QString mLocation;
+    QString mName;
+    QString mSize;
+
+    QString mHardDiskFormat;
+    QString mHardDiskType;
+    QString mLogicalSize;
+
+    QString mUsage;
+    QString mToolTip;
+
+    bool mIsReadOnly        : 1;
+    bool mIsUsedInSnapshots : 1;
+
+    QList <QUuid> mCurStateMachineIds;
+
+    VBoxMedium *mParent;
+
+    /**
+     * Used to override some attributes in the user-friendly "don't show diffs"
+     * mode.
+     */
+    struct NoDiffs
+    {
+        NoDiffs() : isSet (false), state (KMediaState_NotCreated) {}
+
+        bool isSet : 1;
+
+        KMediaState state;
+        COMResult result;
+        QString toolTip;
+    }
+    mNoDiffs;
 };
 
-typedef QList <VBoxMedia> VBoxMediaList;
+typedef QLinkedList <VBoxMedium> VBoxMediaList;
 
 // VirtualBox callback events
 ////////////////////////////////////////////////////////////////////////////////
@@ -162,6 +389,63 @@ public:
     const QString mLangId;
 };
 
+#ifdef VBOX_GUI_WITH_SYSTRAY
+class VBoxMainWindowCountChangeEvent : public QEvent
+{
+public:
+    VBoxMainWindowCountChangeEvent (int aCount)
+        : QEvent ((QEvent::Type) VBoxDefs::MainWindowCountChangeEventType)
+        , mCount (aCount)
+        {}
+
+    const int mCount;
+};
+
+class VBoxCanShowTrayIconEvent : public QEvent
+{
+public:
+    VBoxCanShowTrayIconEvent (bool aCanShow)
+        : QEvent ((QEvent::Type) VBoxDefs::CanShowTrayIconEventType)
+        , mCanShow (aCanShow)
+        {}
+
+    const bool mCanShow;
+};
+
+class VBoxShowTrayIconEvent : public QEvent
+{
+public:
+    VBoxShowTrayIconEvent (bool aShow)
+        : QEvent ((QEvent::Type) VBoxDefs::ShowTrayIconEventType)
+        , mShow (aShow)
+        {}
+
+    const bool mShow;
+};
+
+class VBoxChangeTrayIconEvent : public QEvent
+{
+public:
+    VBoxChangeTrayIconEvent (bool aChanged)
+        : QEvent ((QEvent::Type) VBoxDefs::TrayIconChangeEventType)
+        , mChanged (aChanged)
+        {}
+
+    const bool mChanged;
+};
+#endif
+
+class VBoxChangeDockIconUpdateEvent : public QEvent
+{
+public:
+    VBoxChangeDockIconUpdateEvent (bool aChanged)
+        : QEvent ((QEvent::Type) VBoxDefs::ChangeDockIconUpdateEventType)
+        , mChanged (aChanged)
+        {}
+
+    const bool mChanged;
+};
+
 class Process : public QProcess
 {
     Q_OBJECT;
@@ -211,11 +495,14 @@ class VBoxGlobal : public QObject
 
 public:
 
+    typedef QHash <ulong, QString> QULongStringHash;
+    typedef QHash <long, QString> QLongStringHash;
+
     static VBoxGlobal &instance();
 
     bool isValid() { return mValid; }
 
-    QString versionString() { return verString; }
+    QString versionString() { return mVerString; }
 
     CVirtualBox virtualBox() const { return mVBox; }
 
@@ -229,30 +516,38 @@ public:
     void setMainWindow (QWidget *aMainWindow) { mMainWindow = aMainWindow; }
     QWidget *mainWindow() const { return mMainWindow; }
 
-
     bool isVMConsoleProcess() const { return !vmUuid.isNull(); }
+#ifdef VBOX_GUI_WITH_SYSTRAY
+    bool isTrayMenu() const;
+    void setTrayMenu(bool aIsTrayMenu);
+    void trayIconShowSelector();
+    bool trayIconInstall();
+#endif
     QUuid managedVMUuid() const { return vmUuid; }
 
     VBoxDefs::RenderMode vmRenderMode() const { return vm_render_mode; }
     const char *vmRenderModeStr() const { return vm_render_mode_str; }
 
-#if defined(VBOX_WITH_DEBUGGER_GUI) && 0
-    bool isDebuggerEnabled() const { return dbg_enabled; }
-    bool isDebuggerVisibleAtStartup() const { return dbg_visible_at_startup; }
+#ifdef VBOX_WITH_DEBUGGER_GUI
+    bool isDebuggerEnabled() const { return mDbgEnabled; }
+    bool isDebuggerAutoShowEnabled() const { return mDbgAutoShow; }
+    RTLDRMOD getDebuggerModule() const { return mhVBoxDbg; }
+#else
+    bool isDebuggerAutoShowEnabled() const { return false; }
 #endif
 
     /* VBox enum to/from string/icon/color convertors */
 
-    QStringList vmGuestOSTypeDescriptions() const;
-    QList<QPixmap> vmGuestOSTypeIcons (int aHorizonalMargin, int aVerticalMargin) const;
-    CGuestOSType vmGuestOSType (int aIndex) const;
-    int vmGuestOSTypeIndex (const QString &aId) const;
-    QPixmap vmGuestOSTypeIcon (const QString &aId) const;
-    QString vmGuestOSTypeDescription (const QString &aId) const;
+    QList <CGuestOSType> vmGuestOSFamilyList() const;
+    QList <CGuestOSType> vmGuestOSTypeList (const QString &aFamilyId) const;
+    QPixmap vmGuestOSTypeIcon (const QString &aTypeId) const;
+    CGuestOSType vmGuestOSType (const QString &aTypeId,
+                                const QString &aFamilyId = QString::null) const;
+    QString vmGuestOSTypeDescription (const QString &aTypeId) const;
 
     QPixmap toIcon (KMachineState s) const
     {
-        QPixmap *pm = mStateIcons.value (s);
+        QPixmap *pm = mVMStateIcons.value (s);
         AssertMsg (pm, ("Icon for VM state %d must be defined", s));
         return pm ? *pm : QPixmap();
     }
@@ -260,20 +555,20 @@ public:
     const QColor &toColor (KMachineState s) const
     {
         static const QColor none;
-        AssertMsg (vm_state_color.value (s), ("No color for %d", s));
-        return vm_state_color.value (s) ? *vm_state_color.value(s) : none;
+        AssertMsg (mVMStateColors.value (s), ("No color for %d", s));
+        return mVMStateColors.value (s) ? *mVMStateColors.value (s) : none;
     }
 
     QString toString (KMachineState s) const
     {
-        AssertMsg (!machineStates.value (s).isNull(), ("No text for %d", s));
-        return machineStates.value (s);
+        AssertMsg (!mMachineStates.value (s).isNull(), ("No text for %d", s));
+        return mMachineStates.value (s);
     }
 
     QString toString (KSessionState s) const
     {
-        AssertMsg (!sessionStates.value (s).isNull(), ("No text for %d", s));
-        return sessionStates.value (s);
+        AssertMsg (!mSessionStates.value (s).isNull(), ("No text for %d", s));
+        return mSessionStates.value (s);
     }
 
     /**
@@ -282,8 +577,8 @@ public:
      */
     QString toString (KStorageBus aBus) const
     {
-        AssertMsg (!storageBuses.value (aBus).isNull(), ("No text for %d", aBus));
-        return storageBuses [aBus];
+        AssertMsg (!mStorageBuses.value (aBus).isNull(), ("No text for %d", aBus));
+        return mStorageBuses [aBus];
     }
 
     /**
@@ -292,10 +587,11 @@ public:
      */
     KStorageBus toStorageBusType (const QString &aBus) const
     {
-        QStringVector::const_iterator it =
-            qFind (storageBuses.begin(), storageBuses.end(), aBus);
-        AssertMsg (it != storageBuses.end(), ("No value for {%s}", aBus.toLatin1().constData()));
-        return KStorageBus (it - storageBuses.begin());
+        QULongStringHash::const_iterator it =
+            qFind (mStorageBuses.begin(), mStorageBuses.end(), aBus);
+        AssertMsg (it != mStorageBuses.end(), ("No value for {%s}",
+                                               aBus.toLatin1().constData()));
+        return KStorageBus (it.key());
     }
 
     QString toString (KStorageBus aBus, LONG aChannel) const;
@@ -308,176 +604,180 @@ public:
 
     QString toString (KHardDiskType t) const
     {
-        AssertMsg (!diskTypes.value (t).isNull(), ("No text for %d", t));
-        return diskTypes.value (t);
-    }
-
-    QString toString (KHardDiskStorageType t) const
-    {
-        AssertMsg (!diskStorageTypes.value (t).isNull(), ("No text for %d", t));
-        return diskStorageTypes.value (t);
-    }
-
-    QString toString (KVRDPAuthType t) const
-    {
-        AssertMsg (!vrdpAuthTypes.value (t).isNull(), ("No text for %d", t));
-        return vrdpAuthTypes.value (t);
-    }
-
-    QString toString (KPortMode t) const
-    {
-        AssertMsg (!portModeTypes.value (t).isNull(), ("No text for %d", t));
-        return portModeTypes.value (t);
-    }
-
-    QString toString (KUSBDeviceFilterAction t) const
-    {
-        AssertMsg (!usbFilterActionTypes.value (t).isNull(), ("No text for %d", t));
-        return usbFilterActionTypes.value (t);
-    }
-
-    QString toString (KClipboardMode t) const
-    {
-        AssertMsg (!clipboardTypes.value (t).isNull(), ("No text for %d", t));
-        return clipboardTypes.value (t);
-    }
-
-    KClipboardMode toClipboardModeType (const QString &s) const
-    {
-        QStringVector::const_iterator it =
-            qFind (clipboardTypes.begin(), clipboardTypes.end(), s);
-        AssertMsg (it != clipboardTypes.end(), ("No value for {%s}", s.toLatin1().constData()));
-        return KClipboardMode (it - clipboardTypes.begin());
-    }
-
-    QString toString (KIDEControllerType t) const
-    {
-        AssertMsg (!ideControllerTypes.value (t).isNull(), ("No text for %d", t));
-        return ideControllerTypes.value (t);
-    }
-
-    KIDEControllerType toIDEControllerType (const QString &s) const
-    {
-        QStringVector::const_iterator it =
-            qFind (ideControllerTypes.begin(), ideControllerTypes.end(), s);
-        AssertMsg (it != ideControllerTypes.end(), ("No value for {%s}", s.toLatin1().constData()));
-        return KIDEControllerType (it - ideControllerTypes.begin());
-    }
-
-    KVRDPAuthType toVRDPAuthType (const QString &s) const
-    {
-        QStringVector::const_iterator it =
-            qFind (vrdpAuthTypes.begin(), vrdpAuthTypes.end(), s);
-        AssertMsg (it != vrdpAuthTypes.end(), ("No value for {%s}", s.toLatin1().constData()));
-        return KVRDPAuthType (it - vrdpAuthTypes.begin());
-    }
-
-    KPortMode toPortMode (const QString &s) const
-    {
-        QStringVector::const_iterator it =
-            qFind (portModeTypes.begin(), portModeTypes.end(), s);
-        AssertMsg (it != portModeTypes.end(), ("No value for {%s}", s.toLatin1().constData()));
-        return KPortMode (it - portModeTypes.begin());
-    }
-
-    KUSBDeviceFilterAction toUSBDevFilterAction (const QString &s) const
-    {
-        QStringVector::const_iterator it =
-            qFind (usbFilterActionTypes.begin(), usbFilterActionTypes.end(), s);
-        AssertMsg (it != usbFilterActionTypes.end(), ("No value for {%s}", s.toLatin1().constData()));
-        return KUSBDeviceFilterAction (it - usbFilterActionTypes.begin());
+        AssertMsg (!mDiskTypes.value (t).isNull(), ("No text for %d", t));
+        return mDiskTypes.value (t);
     }
 
     /**
-     *  Similar to toString (KHardDiskType), but returns 'Differencing'
-     *  for normal hard disks that have a parent hard disk.
+     * Similar to toString (KHardDiskType), but returns 'Differencing' for
+     * normal hard disks that have a parent.
      */
-    QString hardDiskTypeString (const CHardDisk &aHD) const
+    QString hardDiskTypeString (const CHardDisk2 &aHD) const
     {
         if (!aHD.GetParent().isNull())
         {
             Assert (aHD.GetType() == KHardDiskType_Normal);
-            return tr ("Differencing", "hard disk");
+            return mDiskTypes_Differencing;
         }
         return toString (aHD.GetType());
     }
 
+    QString toString (KVRDPAuthType t) const
+    {
+        AssertMsg (!mVRDPAuthTypes.value (t).isNull(), ("No text for %d", t));
+        return mVRDPAuthTypes.value (t);
+    }
+
+    QString toString (KPortMode t) const
+    {
+        AssertMsg (!mPortModeTypes.value (t).isNull(), ("No text for %d", t));
+        return mPortModeTypes.value (t);
+    }
+
+    QString toString (KUSBDeviceFilterAction t) const
+    {
+        AssertMsg (!mUSBFilterActionTypes.value (t).isNull(), ("No text for %d", t));
+        return mUSBFilterActionTypes.value (t);
+    }
+
+    QString toString (KClipboardMode t) const
+    {
+        AssertMsg (!mClipboardTypes.value (t).isNull(), ("No text for %d", t));
+        return mClipboardTypes.value (t);
+    }
+
+    KClipboardMode toClipboardModeType (const QString &s) const
+    {
+        QULongStringHash::const_iterator it =
+            qFind (mClipboardTypes.begin(), mClipboardTypes.end(), s);
+        AssertMsg (it != mClipboardTypes.end(), ("No value for {%s}",
+                                                 s.toLatin1().constData()));
+        return KClipboardMode (it.key());
+    }
+
+    QString toString (KIDEControllerType t) const
+    {
+        AssertMsg (!mIDEControllerTypes.value (t).isNull(), ("No text for %d", t));
+        return mIDEControllerTypes.value (t);
+    }
+
+    KIDEControllerType toIDEControllerType (const QString &s) const
+    {
+        QULongStringHash::const_iterator it =
+            qFind (mIDEControllerTypes.begin(), mIDEControllerTypes.end(), s);
+        AssertMsg (it != mIDEControllerTypes.end(), ("No value for {%s}",
+                                                     s.toLatin1().constData()));
+        return KIDEControllerType (it.key());
+    }
+
+    KVRDPAuthType toVRDPAuthType (const QString &s) const
+    {
+        QULongStringHash::const_iterator it =
+            qFind (mVRDPAuthTypes.begin(), mVRDPAuthTypes.end(), s);
+        AssertMsg (it != mVRDPAuthTypes.end(), ("No value for {%s}",
+                                                s.toLatin1().constData()));
+        return KVRDPAuthType (it.key());
+    }
+
+    KPortMode toPortMode (const QString &s) const
+    {
+        QULongStringHash::const_iterator it =
+            qFind (mPortModeTypes.begin(), mPortModeTypes.end(), s);
+        AssertMsg (it != mPortModeTypes.end(), ("No value for {%s}",
+                                                s.toLatin1().constData()));
+        return KPortMode (it.key());
+    }
+
+    KUSBDeviceFilterAction toUSBDevFilterAction (const QString &s) const
+    {
+        QULongStringHash::const_iterator it =
+            qFind (mUSBFilterActionTypes.begin(), mUSBFilterActionTypes.end(), s);
+        AssertMsg (it != mUSBFilterActionTypes.end(), ("No value for {%s}",
+                                                       s.toLatin1().constData()));
+        return KUSBDeviceFilterAction (it.key());
+    }
+
     QString toString (KDeviceType t) const
     {
-        AssertMsg (!deviceTypes.value (t).isNull(), ("No text for %d", t));
-        return deviceTypes.value (t);
+        AssertMsg (!mDeviceTypes.value (t).isNull(), ("No text for %d", t));
+        return mDeviceTypes.value (t);
     }
 
     KDeviceType toDeviceType (const QString &s) const
     {
-        QStringVector::const_iterator it =
-            qFind (deviceTypes.begin(), deviceTypes.end(), s);
-        AssertMsg (it != deviceTypes.end(), ("No value for {%s}", s.toLatin1().constData()));
-        return KDeviceType (it - deviceTypes.begin());
+        QULongStringHash::const_iterator it =
+            qFind (mDeviceTypes.begin(), mDeviceTypes.end(), s);
+        AssertMsg (it != mDeviceTypes.end(), ("No value for {%s}",
+                                              s.toLatin1().constData()));
+        return KDeviceType (it.key());
     }
 
     QStringList deviceTypeStrings() const;
 
     QString toString (KAudioDriverType t) const
     {
-        AssertMsg (!audioDriverTypes.value (t).isNull(), ("No text for %d", t));
-        return audioDriverTypes.value (t);
+        AssertMsg (!mAudioDriverTypes.value (t).isNull(), ("No text for %d", t));
+        return mAudioDriverTypes.value (t);
     }
 
     KAudioDriverType toAudioDriverType (const QString &s) const
     {
-        QStringVector::const_iterator it =
-            qFind (audioDriverTypes.begin(), audioDriverTypes.end(), s);
-        AssertMsg (it != audioDriverTypes.end(), ("No value for {%s}", s.toLatin1().constData()));
-        return KAudioDriverType (it - audioDriverTypes.begin());
+        QULongStringHash::const_iterator it =
+            qFind (mAudioDriverTypes.begin(), mAudioDriverTypes.end(), s);
+        AssertMsg (it != mAudioDriverTypes.end(), ("No value for {%s}",
+                                                   s.toLatin1().constData()));
+        return KAudioDriverType (it.key());
     }
 
     QString toString (KAudioControllerType t) const
     {
-        AssertMsg (!audioControllerTypes.value (t).isNull(), ("No text for %d", t));
-        return audioControllerTypes.value (t);
+        AssertMsg (!mAudioControllerTypes.value (t).isNull(), ("No text for %d", t));
+        return mAudioControllerTypes.value (t);
     }
 
     KAudioControllerType toAudioControllerType (const QString &s) const
     {
-        QStringVector::const_iterator it =
-            qFind (audioControllerTypes.begin(), audioControllerTypes.end(), s);
-        AssertMsg (it != audioControllerTypes.end(), ("No value for {%s}", s.toLatin1().constData()));
-        return KAudioControllerType (it - audioControllerTypes.begin());
+        QULongStringHash::const_iterator it =
+            qFind (mAudioControllerTypes.begin(), mAudioControllerTypes.end(), s);
+        AssertMsg (it != mAudioControllerTypes.end(), ("No value for {%s}",
+                                                       s.toLatin1().constData()));
+        return KAudioControllerType (it.key());
     }
 
     QString toString (KNetworkAdapterType t) const
     {
-        AssertMsg (!networkAdapterTypes.value (t).isNull(), ("No text for %d", t));
-        return networkAdapterTypes.value (t);
+        AssertMsg (!mNetworkAdapterTypes.value (t).isNull(), ("No text for %d", t));
+        return mNetworkAdapterTypes.value (t);
     }
 
     KNetworkAdapterType toNetworkAdapterType (const QString &s) const
     {
-        QStringVector::const_iterator it =
-            qFind (networkAdapterTypes.begin(), networkAdapterTypes.end(), s);
-        AssertMsg (it != networkAdapterTypes.end(), ("No value for {%s}", s.toLatin1().constData()));
-        return KNetworkAdapterType (it - networkAdapterTypes.begin());
+        QULongStringHash::const_iterator it =
+            qFind (mNetworkAdapterTypes.begin(), mNetworkAdapterTypes.end(), s);
+        AssertMsg (it != mNetworkAdapterTypes.end(), ("No value for {%s}",
+                                                      s.toLatin1().constData()));
+        return KNetworkAdapterType (it.key());
     }
 
     QString toString (KNetworkAttachmentType t) const
     {
-        AssertMsg (!networkAttachmentTypes.value (t).isNull(), ("No text for %d", t));
-        return networkAttachmentTypes.value (t);
+        AssertMsg (!mNetworkAttachmentTypes.value (t).isNull(), ("No text for %d", t));
+        return mNetworkAttachmentTypes.value (t);
     }
 
     KNetworkAttachmentType toNetworkAttachmentType (const QString &s) const
     {
-        QStringVector::const_iterator it =
-            qFind (networkAttachmentTypes.begin(), networkAttachmentTypes.end(), s);
-        AssertMsg (it != networkAttachmentTypes.end(), ("No value for {%s}", s.toLatin1().constData()));
-        return KNetworkAttachmentType (it - networkAttachmentTypes.begin());
+        QULongStringHash::const_iterator it =
+            qFind (mNetworkAttachmentTypes.begin(), mNetworkAttachmentTypes.end(), s);
+        AssertMsg (it != mNetworkAttachmentTypes.end(), ("No value for {%s}",
+                                                         s.toLatin1().constData()));
+        return KNetworkAttachmentType (it.key());
     }
 
     QString toString (KUSBDeviceState aState) const
     {
-        AssertMsg (!USBDeviceStates.value (aState).isNull(), ("No text for %d", aState));
-        return USBDeviceStates.value (aState);
+        AssertMsg (!mUSBDeviceStates.value (aState).isNull(), ("No text for %d", aState));
+        return mUSBDeviceStates.value (aState);
     }
 
     QStringList COMPortNames() const;
@@ -493,19 +793,19 @@ public:
         return online ? mOnlineSnapshotIcon : mOfflineSnapshotIcon;
     }
 
+    QPixmap warningIcon() const { return mWarningIcon; }
+    QPixmap errorIcon() const { return mErrorIcon; }
+
     /* details generators */
 
-    QString details (const CHardDisk &aHD, bool aPredict = false,
-                     bool aDoRefresh = true);
+    QString details (const CHardDisk2 &aHD, bool aPredictDiff);
 
     QString details (const CUSBDevice &aDevice) const;
     QString toolTip (const CUSBDevice &aDevice) const;
     QString toolTip (const CUSBDeviceFilter &aFilter) const;
 
-    QString prepareFileNameForHTML (const QString &fn) const;
-
-    QString detailsReport (const CMachine &m, bool isNewVM, bool withLinks,
-                           bool aDoRefresh = true);
+    QString detailsReport (const CMachine &aMachine, bool aIsNewVM,
+                           bool aWithLinks);
 
     QString platformInfo();
 
@@ -516,7 +816,10 @@ public:
     bool showVirtualBoxLicense();
 #endif
 
-    void checkForAutoConvertedSettings();
+    bool checkForAutoConvertedSettings (bool aAfterRefresh = false);
+
+    void checkForAutoConvertedSettingsAfterRefresh()
+    { checkForAutoConvertedSettings (true); }
 
     CSession openSession (const QUuid &aId, bool aExisting = false);
 
@@ -528,21 +831,36 @@ public:
     void startEnumeratingMedia();
 
     /**
-     *  Returns a list of all currently registered media. This list is used
-     *  to globally track the accessiblity state of all media on a dedicated
-     *  thread. This the list is initially empty (before the first enumeration
-     *  process is started using #startEnumeratingMedia()).
+     * Returns a list of all currently registered media. This list is used to
+     * globally track the accessiblity state of all media on a dedicated thread.
+     *
+     * Note that the media list is initially empty (i.e. before the enumeration
+     * process is started for the first time using #startEnumeratingMedia()).
+     * See #startEnumeratingMedia() for more information about how meida are
+     * sorted in the returned list.
      */
-    const VBoxMediaList &currentMediaList() const { return media_list; }
+    const VBoxMediaList &currentMediaList() const { return mMediaList; }
 
     /** Returns true if the media enumeration is in progress. */
-    bool isMediaEnumerationStarted() const { return media_enum_thread != NULL; }
+    bool isMediaEnumerationStarted() const { return mMediaEnumThread != NULL; }
 
-    void addMedia (const VBoxMedia &);
-    void updateMedia (const VBoxMedia &);
-    void removeMedia (VBoxDefs::DiskType, const QUuid &);
+    void addMedium (const VBoxMedium &);
+    void updateMedium (const VBoxMedium &);
+    void removeMedium (VBoxDefs::MediaType, const QUuid &);
 
-    bool findMedia (const CUnknown &, VBoxMedia &) const;
+    bool findMedium (const CMedium &, VBoxMedium &) const;
+
+    /** Compact version of #findMediumTo(). Asserts if not found. */
+    VBoxMedium getMedium (const CMedium &aObj) const
+    {
+        VBoxMedium medium;
+        if (!findMedium (aObj, medium))
+            AssertFailed();
+        return medium;
+    }
+
+    /* Returns the number of current running Fe/Qt4 main windows. */
+    int mainWindowCount();
 
     /* various helpers */
 
@@ -591,7 +909,12 @@ public:
     static QString sizeRegexp();
 
     static quint64 parseSize (const QString &);
-    static QString formatSize (quint64, int aMode = 0);
+    static QString formatSize (quint64 aSize, uint aDecimal = 2,
+                               VBoxDefs::FormatSize aMode = VBoxDefs::FormatSize_Round);
+
+    static quint64 requiredVideoMemory (CMachine *aMachine = 0);
+
+    static QString locationForHTML (const QString &aFileName);
 
     static QString highlight (const QString &aStr, bool aToolTip = false);
 
@@ -602,9 +925,14 @@ public:
                                          bool aDirOnly = TRUE,
                                          bool resolveSymlinks = TRUE);
 
-    static QString getOpenFileName (const QString &, const QString &, QWidget*,
-                                    const QString &, QString *defaultFilter = 0,
-                                    bool resolveSymLinks = true);
+    static QString getOpenFileName (const QString &aStartWith, const QString &aFilters, QWidget *aParent,
+                                    const QString &aCaption, QString *aSelectedFilter = NULL,
+                                    bool aResolveSymLinks = true);
+
+    static QStringList getOpenFileNames (const QString &aStartWith, const QString &aFilters, QWidget *aParent,
+                                         const QString &aCaption, QString *aSelectedFilter = NULL,
+                                         bool aResolveSymLinks = true,
+                                         bool aSingleFile = false);
 
     static QString getFirstExistingDir (const QString &);
 
@@ -615,11 +943,13 @@ public:
     static QString insertKeyToActionText (const QString &aText, const QString &aKey);
     static QString extractKeyFromActionText (const QString &aText);
 
+    static QPixmap joinPixmaps (const QPixmap &aPM1, const QPixmap &aPM2);
+
     static QWidget *findWidget (QWidget *aParent, const char *aName,
                                 const char *aClassName = NULL,
                                 bool aRecursive = false);
 
-    static QList< QPair<QString, QString> > HDDBackends();
+    static QList <QPair <QString, QString> > HDDBackends();
 
     /* Qt 4.2.0 support function */
     static inline void setLayoutMargin (QLayout *aLayout, int aMargin)
@@ -636,35 +966,35 @@ public:
 signals:
 
     /**
-     *  Emitted at the beginning of the enumeration process started
-     *  by #startEnumeratingMedia().
+     * Emitted at the beginning of the enumeration process started by
+     * #startEnumeratingMedia().
      */
-    void mediaEnumStarted();
+    void mediumEnumStarted();
 
     /**
-     *  Emitted when a new media item from the list has updated
-     *  its accessibility state.
+     * Emitted when a new medium item from the list has updated its
+     * accessibility state.
      */
-    void mediaEnumerated (const VBoxMedia &aMedia, int aIndex);
+    void mediumEnumerated (const VBoxMedium &aMedum);
 
     /**
-     *  Emitted at the end of the enumeration process started
-     *  by #startEnumeratingMedia(). The @a aList argument is passed for
-     *  convenience, it is exactly the same as returned by #currentMediaList().
+     * Emitted at the end of the enumeration process started by
+     * #startEnumeratingMedia(). The @a aList argument is passed for
+     * convenience, it is exactly the same as returned by #currentMediaList().
      */
-    void mediaEnumFinished (const VBoxMediaList &aList);
+    void mediumEnumFinished (const VBoxMediaList &aList);
 
     /** Emitted when a new media is added using #addMedia(). */
-    void mediaAdded (const VBoxMedia &);
+    void mediumAdded (const VBoxMedium &);
 
     /** Emitted when the media is updated using #updateMedia(). */
-    void mediaUpdated (const VBoxMedia &);
+    void mediumUpdated (const VBoxMedium &);
 
     /** Emitted when the media is removed using #removeMedia(). */
-    void mediaRemoved (VBoxDefs::DiskType, const QUuid &);
+    void mediumRemoved (VBoxDefs::MediaType, const QUuid &);
 
     /* signals emitted when the VirtualBox callback is called by the server
-     * (not that currently these signals are emitted only when the application
+     * (note that currently these signals are emitted only when the application
      * is the in the VM selector mode) */
 
     void machineStateChanged (const VBoxMachineStateChangeEvent &e);
@@ -672,6 +1002,13 @@ signals:
     void machineRegistered (const VBoxMachineRegisteredEvent &e);
     void sessionStateChanged (const VBoxSessionStateChangeEvent &e);
     void snapshotChanged (const VBoxSnapshotEvent &e);
+#ifdef VBOX_GUI_WITH_SYSTRAY
+    void mainWindowCountChanged (const VBoxMainWindowCountChangeEvent &e);
+    void trayIconCanShow (const VBoxCanShowTrayIconEvent &e);
+    void trayIconShow (const VBoxShowTrayIconEvent &e);
+    void trayIconChanged (const VBoxChangeTrayIconEvent &e);
+#endif
+    void dockIconUpdateChanged (const VBoxChangeDockIconUpdateEvent &e);
 
     void canShowRegDlg (bool aCanShow);
     void canShowUpdDlg (bool aCanShow);
@@ -712,15 +1049,25 @@ private:
 
     QUuid vmUuid;
 
-    QThread *media_enum_thread;
-    VBoxMediaList media_list;
+#ifdef VBOX_GUI_WITH_SYSTRAY
+    bool mIsTrayMenu;           /* Tray icon active/desired? */
+#endif
+    QThread *mMediaEnumThread;
+    VBoxMediaList mMediaList;
 
     VBoxDefs::RenderMode vm_render_mode;
     const char * vm_render_mode_str;
 
-#if defined(VBOX_WITH_DEBUGGER_GUI) && 0
-    bool dbg_enabled;
-    bool dbg_visible_at_startup;
+#ifdef VBOX_WITH_DEBUGGER_GUI
+    /** Whether the debugger should be accessible or not.
+     * Use --dbg, the env.var. VBOX_GUI_DBG_ENABLED, --debug or the env.var.
+     * VBOX_GUI_DBG_AUTO_SHOW to enable. */
+    bool mDbgEnabled;
+    /** Whether to show the debugger automatically with the console.
+     * Use --debug or the env.var. VBOX_GUI_DBG_AUTO_SHOW to enable. */
+    bool mDbgAutoShow;
+    /** VBoxDbg module handle. */
+    RTLDRMOD mhVBoxDbg;
 #endif
 
 #if defined (Q_WS_WIN32)
@@ -729,39 +1076,44 @@ private:
 
     CVirtualBoxCallback callback;
 
-    typedef QVector <QString> QStringVector;
+    QString mVerString;
 
-    QString verString;
+    QList <QString> mFamilyIDs;
+    QList <QList <CGuestOSType> > mTypes;
+    QHash <QString, QPixmap *> mOsTypeIcons;
 
-    QVector <CGuestOSType> vm_os_types;
-    QHash <QString, QPixmap *> vm_os_type_icons;
-    QVector <QColor *> vm_state_color;
+    QHash <ulong, QPixmap *> mVMStateIcons;
+    QHash <ulong, QColor *> mVMStateColors;
 
-    QHash <long int, QPixmap *> mStateIcons;
     QPixmap mOfflineSnapshotIcon, mOnlineSnapshotIcon;
 
-    QStringVector machineStates;
-    QStringVector sessionStates;
-    QStringVector deviceTypes;
-    QStringVector storageBuses;
-    QStringVector storageBusDevices;
-    QStringVector storageBusChannels;
-    QStringVector diskTypes;
-    QStringVector diskStorageTypes;
-    QStringVector vrdpAuthTypes;
-    QStringVector portModeTypes;
-    QStringVector usbFilterActionTypes;
-    QStringVector audioDriverTypes;
-    QStringVector audioControllerTypes;
-    QStringVector networkAdapterTypes;
-    QStringVector networkAttachmentTypes;
-    QStringVector clipboardTypes;
-    QStringVector ideControllerTypes;
-    QStringVector USBDeviceStates;
+    QULongStringHash mMachineStates;
+    QULongStringHash mSessionStates;
+    QULongStringHash mDeviceTypes;
+
+    QULongStringHash mStorageBuses;
+    QLongStringHash mStorageBusChannels;
+    QLongStringHash mStorageBusDevices;
+
+    QULongStringHash mDiskTypes;
+    QString mDiskTypes_Differencing;
+
+    QULongStringHash mVRDPAuthTypes;
+    QULongStringHash mPortModeTypes;
+    QULongStringHash mUSBFilterActionTypes;
+    QULongStringHash mAudioDriverTypes;
+    QULongStringHash mAudioControllerTypes;
+    QULongStringHash mNetworkAdapterTypes;
+    QULongStringHash mNetworkAttachmentTypes;
+    QULongStringHash mClipboardTypes;
+    QULongStringHash mIDEControllerTypes;
+    QULongStringHash mUSBDeviceStates;
 
     QString mUserDefinedPortName;
 
-    mutable bool detailReportTemplatesReady;
+    QPixmap mWarningIcon, mErrorIcon;
+
+    mutable bool mDetailReportTemplatesReady;
 
     friend VBoxGlobal &vboxGlobal();
     friend class VBoxCallback;

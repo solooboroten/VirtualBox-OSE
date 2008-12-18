@@ -1,4 +1,4 @@
-/* $Id: VBoxVMInfo.cpp $ */
+/* $Id: VBoxVMInfo.cpp 14394 2008-11-20 10:42:07Z vboxsync $ */
 /** @file
  * VBoxVMInfo - Virtual machine (guest) information for the host.
  */
@@ -50,14 +50,14 @@ int vboxVMInfoWriteProp(VBOXINFORMATIONCONTEXT* a_pCtx, char *a_pszKey, char *a_
         }
     }
 
-    rc = VbglR3GuestPropWriteValue(a_pCtx->iInfoSvcClientID, szKeyTemp, (a_pszValue == NULL) ? NULL : pszValue);
+    rc = VbglR3GuestPropWriteValue(a_pCtx->iInfoSvcClientID, szKeyTemp, ((a_pszValue == NULL) || (0 == strlen(a_pszValue))) ? NULL : pszValue);
     if (!RT_SUCCESS(rc))
     {
         LogRel(("vboxVMInfoThread: Failed to store the property \"%s\"=\"%s\"! ClientID: %d, Error: %Rrc\n", szKeyTemp, pszValue, a_pCtx->iInfoSvcClientID, rc));
         goto cleanup;
     }
 
-    if (pszValue != NULL)
+    if ((pszValue != NULL) && (strlen(a_pszValue) > 0))
         Log(("vboxVMInfoThread: Property written: %s = %s\n", szKeyTemp, pszValue));
     else
         Log(("vboxVMInfoThread: Property deleted: %s\n", szKeyTemp));
@@ -95,7 +95,7 @@ int vboxVMInfoInit(const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStartT
         LogRel(("vboxVMInfoThread: Failed to connect to the guest property service! Error: %Rrc\n", rc));
     else
     {
-        LogRel(("vboxVMInfoThread: GuestProp ClientID = %d\n", gCtx.iInfoSvcClientID));
+        Log(("vboxVMInfoThread: GuestProp ClientID = %d\n", gCtx.iInfoSvcClientID));
 
         /* Loading dynamic APIs. */
         HMODULE hKernel32 = LoadLibrary(_T("kernel32"));
@@ -121,18 +121,16 @@ void vboxVMInfoDestroy(const VBOXSERVICEENV *pEnv, void *pInstance)
     VBOXINFORMATIONCONTEXT *pCtx = (VBOXINFORMATIONCONTEXT *)pInstance;
     Assert(pCtx);
 
-    /* @todo Temporary solution: Zap all values which are not valid anymore when VM goes down (reboot/shutdown).
+    /** @todo Temporary solution: Zap all values which are not valid anymore when VM goes down (reboot/shutdown).
      * Needs to be replaced with "temporary properties" later. */
-    char szPropPath [_MAX_PATH+1] = {0};
-    char*pPtr = &szPropPath[0];
 
     vboxVMInfoWriteProp(pCtx, "GuestInfo/OS/LoggedInUsersList", NULL);
     vboxVMInfoWritePropInt(pCtx, "GuestInfo/OS/LoggedInUsers", 0);
     if (pCtx->cUsers != 0)
         vboxVMInfoWriteProp(pCtx, "GuestInfo/OS/NoLoggedInUsers", "true");
 
-    RTStrPrintf(szPropPath, sizeof(szPropPath), "/VirtualBox/GuestInfo/Net/*");
-    VbglR3GuestPropDelTree(pCtx->iInfoSvcClientID, &pPtr, 1);
+    const char *apszPat[1] = { "/VirtualBox/GuestInfo/Net/*" };
+    VbglR3GuestPropDelSet(pCtx->iInfoSvcClientID, &apszPat[0], RT_ELEMENTS(apszPat));
     vboxVMInfoWritePropInt(pCtx, "GuestInfo/Net/Count", 0);
 
     /* Disconnect from guest properties API. */

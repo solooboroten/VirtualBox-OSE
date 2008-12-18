@@ -1,4 +1,4 @@
-/* $Id: tstMicro.cpp $ */
+/* $Id: tstMicro.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * Micro Testcase, profiling special CPU operations.
  */
@@ -34,7 +34,7 @@
 
 #include <VBox/log.h>
 #include <iprt/assert.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/stream.h>
 #include <iprt/string.h>
 #include <iprt/semaphore.h>
@@ -85,8 +85,8 @@ static void PrintHeaderInstr(void)
 
 static void PrintResultInstr(PTSTMICRO pTst, TSTMICROTEST enmTest, int rc, uint64_t cMinTicks, uint64_t cAvgTicks, uint64_t cMaxTicks)
 {
-    if (VBOX_FAILURE(rc))
-        RTPrintf(TESTCASE ": %-25s  %10llu  %10llu  %10llu - %Vrc cr2=%x err=%x eip=%x!\n",
+    if (RT_FAILURE(rc))
+        RTPrintf(TESTCASE ": %-25s  %10llu  %10llu  %10llu - %Rrc cr2=%x err=%x eip=%x!\n",
                  GetDescription(enmTest),
                  cMinTicks,
                  cAvgTicks,
@@ -116,8 +116,8 @@ static void PrintHeaderTraps(void)
 
 static void PrintResultTrap(PTSTMICRO pTst, TSTMICROTEST enmTest, int rc)
 {
-    if (VBOX_FAILURE(rc))
-        RTPrintf(TESTCASE ": %-25s  %10llu  %10llu  %10llu  %10llu  %10llu - %Vrc cr2=%x err=%x eip=%x!\n",
+    if (RT_FAILURE(rc))
+        RTPrintf(TESTCASE ": %-25s  %10llu  %10llu  %10llu  %10llu  %10llu - %Rrc cr2=%x err=%x eip=%x!\n",
                  GetDescription(enmTest),
                  pTst->aResults[enmTest].cTotalTicks,
                  pTst->aResults[enmTest].cToRxFirstTicks,
@@ -160,8 +160,8 @@ static void SetupSelectors(PVM pVM)
     /*
      * Find the GDT - This is a HACK :-)
      */
-    RTGCPTR     GCPtr = CPUMGetHyperGDTR(pVM, NULL);
-    PX86DESC    paGDTEs = (PX86DESC)MMHyperGC2HC(pVM, GCPtr);
+    RTRCPTR     RCPtr = CPUMGetHyperGDTR(pVM, NULL);
+    PX86DESC    paGDTEs = (PX86DESC)MMHyperRCToR3(pVM, RCPtr);
 
     for (unsigned i = 0; i <= 3; i++)
     {
@@ -202,31 +202,31 @@ static DECLCALLBACK(int) doit(PVM pVM)
     /*
      * Loading the module and resolve the entry point.
      */
-    int rc = PDMR3LoadGC(pVM, NULL, "tstMicroGC.gc");
-    if (VBOX_FAILURE(rc))
+    int rc = PDMR3LdrLoadRC(pVM, NULL, "tstMicroGC.gc");
+    if (RT_FAILURE(rc))
     {
-        RTPrintf(TESTCASE ": Failed to load tstMicroGC.gc, rc=%Vra\n", rc);
+        RTPrintf(TESTCASE ": Failed to load tstMicroGC.gc, rc=%Rra\n", rc);
         return rc;
     }
-    RTGCPTR32 GCPtrEntry;
-    rc = PDMR3GetSymbolGC(pVM, "tstMicroGC.gc", "tstMicroGC", &GCPtrEntry);
-    if (VBOX_FAILURE(rc))
+    RTRCPTR RCPtrEntry;
+    rc = PDMR3LdrGetSymbolRC(pVM, "tstMicroGC.gc", "tstMicroGC", &RCPtrEntry);
+    if (RT_FAILURE(rc))
     {
-        RTPrintf(TESTCASE ": Failed to resolve the 'tstMicroGC' entry point in tstMicroGC.gc, rc=%Vra\n", rc);
+        RTPrintf(TESTCASE ": Failed to resolve the 'tstMicroGC' entry point in tstMicroGC.gc, rc=%Rra\n", rc);
         return rc;
     }
-    RTGCPTR32 GCPtrStart;
-    rc = PDMR3GetSymbolGC(pVM, "tstMicroGC.gc", "tstMicroGCAsmStart", &GCPtrStart);
-    if (VBOX_FAILURE(rc))
+    RTRCPTR RCPtrStart;
+    rc = PDMR3LdrGetSymbolRC(pVM, "tstMicroGC.gc", "tstMicroGCAsmStart", &RCPtrStart);
+    if (RT_FAILURE(rc))
     {
-        RTPrintf(TESTCASE ": Failed to resolve the 'tstMicroGCAsmStart' entry point in tstMicroGC.gc, rc=%Vra\n", rc);
+        RTPrintf(TESTCASE ": Failed to resolve the 'tstMicroGCAsmStart' entry point in tstMicroGC.gc, rc=%Rra\n", rc);
         return rc;
     }
-    RTGCPTR32 GCPtrEnd;
-    rc = PDMR3GetSymbolGC(pVM, "tstMicroGC.gc", "tstMicroGCAsmEnd", &GCPtrEnd);
-    if (VBOX_FAILURE(rc))
+    RTRCPTR RCPtrEnd;
+    rc = PDMR3LdrGetSymbolRC(pVM, "tstMicroGC.gc", "tstMicroGCAsmEnd", &RCPtrEnd);
+    if (RT_FAILURE(rc))
     {
-        RTPrintf(TESTCASE ": Failed to resolve the 'tstMicroGCAsmEnd' entry point in tstMicroGC.gc, rc=%Vra\n", rc);
+        RTPrintf(TESTCASE ": Failed to resolve the 'tstMicroGCAsmEnd' entry point in tstMicroGC.gc, rc=%Rra\n", rc);
         return rc;
     }
 
@@ -235,27 +235,27 @@ static DECLCALLBACK(int) doit(PVM pVM)
      */
     PTSTMICRO pTst;
     rc = MMHyperAlloc(pVM, RT_ALIGN_Z(sizeof(*pTst), PAGE_SIZE), PAGE_SIZE, MM_TAG_VM, (void **)&pTst);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf(TESTCASE ": Failed to resolve allocate instance memory (%d bytes), rc=%Vra\n", sizeof(*pTst), rc);
+        RTPrintf(TESTCASE ": Failed to resolve allocate instance memory (%d bytes), rc=%Rra\n", sizeof(*pTst), rc);
         return rc;
     }
-    pTst->GCPtr = MMHyperHC2GC(pVM, pTst);
-    pTst->GCPtrStack = MMHyperHC2GC(pVM, &pTst->au8Stack[sizeof(pTst->au8Stack) - 32]);
+    pTst->RCPtr = MMHyperR3ToRC(pVM, pTst);
+    pTst->RCPtrStack = MMHyperR3ToRC(pVM, &pTst->au8Stack[sizeof(pTst->au8Stack) - 32]);
 
     /* the page must be writable from user mode */
-    rc = PGMMapModifyPage(pVM, pTst->GCPtr, sizeof(*pTst), X86_PTE_US | X86_PTE_RW, ~(uint64_t)(X86_PTE_US | X86_PTE_RW));
-    if (VBOX_FAILURE(rc))
+    rc = PGMMapModifyPage(pVM, pTst->RCPtr, sizeof(*pTst), X86_PTE_US | X86_PTE_RW, ~(uint64_t)(X86_PTE_US | X86_PTE_RW));
+    if (RT_FAILURE(rc))
     {
-        RTPrintf(TESTCASE ": PGMMapModifyPage -> rc=%Vra\n", rc);
+        RTPrintf(TESTCASE ": PGMMapModifyPage -> rc=%Rra\n", rc);
         return rc;
     }
 
     /* all the code must be executable from R3. */
-    rc = PGMMapModifyPage(pVM, GCPtrStart, GCPtrEnd - GCPtrStart + PAGE_SIZE, X86_PTE_US, ~(uint64_t)X86_PTE_US);
-    if (VBOX_FAILURE(rc))
+    rc = PGMMapModifyPage(pVM, RCPtrStart, RCPtrEnd - RCPtrStart + PAGE_SIZE, X86_PTE_US, ~(uint64_t)X86_PTE_US);
+    if (RT_FAILURE(rc))
     {
-        RTPrintf(TESTCASE ": PGMMapModifyPage -> rc=%Vra\n", rc);
+        RTPrintf(TESTCASE ": PGMMapModifyPage -> rc=%Rra\n", rc);
         return rc;
     }
     PGMR3DumpHierarchyHC(pVM, PGMGetHyper32BitCR3(pVM), X86_CR4_PSE, false, 4, NULL);
@@ -264,17 +264,17 @@ static DECLCALLBACK(int) doit(PVM pVM)
     /*
      * Disassemble the assembly...
      */
-    RTGCPTR GCPtr = GCPtrStart;
-    while (GCPtr < GCPtrEnd)
+    RTGCPTR GCPtr = RCPtrStart;
+    while (GCPtr < RCPtrEnd)
     {
         size_t  cb = 0;
         char    sz[256];
         int rc = DBGFR3DisasInstrEx(pVM, CPUMGetHyperCS(pVM), GCPtr, 0, sz, sizeof(sz), &cb);
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
             RTLogPrintf("%s\n", sz);
         else
         {
-            RTLogPrintf("%VGv rc=%Vrc\n", GCPtr, rc);
+            RTLogPrintf("%RGv rc=%Rrc\n", GCPtr, rc);
             cb = 1;
         }
         GCPtr += cb;
@@ -297,8 +297,8 @@ static DECLCALLBACK(int) doit(PVM pVM)
         rc = VINF_SUCCESS;
         for (int c = 0; c < 100; c++)
         {
-            int rc2 = VMMR3CallGC(pVM, GCPtrEntry, 2, pTst->GCPtr, enmTest);
-            if (VBOX_SUCCESS(rc2))
+            int rc2 = VMMR3CallRC(pVM, RCPtrEntry, 2, pTst->RCPtr, enmTest);
+            if (RT_SUCCESS(rc2))
             {
                 uint64_t u64 = pTst->aResults[enmTest].cTotalTicks;
                 if (cMin > u64)
@@ -308,7 +308,7 @@ static DECLCALLBACK(int) doit(PVM pVM)
                 cTotal += u64;
                 cSamples++;
             }
-            else if (VBOX_SUCCESS(rc))
+            else if (RT_SUCCESS(rc))
                 rc = rc2;
         }
         uint64_t cAvg = cTotal / (cSamples ? cSamples : 1);
@@ -326,7 +326,7 @@ static DECLCALLBACK(int) doit(PVM pVM)
     for (i = TSTMICROTEST_TRAP_FIRST; i < TSTMICROTEST_MAX; i++)
     {
         TSTMICROTEST enmTest = (TSTMICROTEST)i;
-        rc = VMMR3CallGC(pVM, GCPtrEntry, 2, pTst->GCPtr, enmTest);
+        rc = VMMR3CallRC(pVM, RCPtrEntry, 2, pTst->RCPtr, enmTest);
         PrintResultTrap(pTst, enmTest, rc);
     }
 
@@ -346,14 +346,14 @@ int main(int argc, char **argv)
      * Create empty VM.
      */
     PVM pVM;
-    int rc = VMR3Create(NULL, NULL, NULL, NULL, &pVM);
-    if (VBOX_SUCCESS(rc))
+    int rc = VMR3Create(1, NULL, NULL, NULL, NULL, &pVM);
+    if (RT_SUCCESS(rc))
     {
         /*
          * Do testing.
          */
         PVMREQ pReq1 = NULL;
-        rc = VMR3ReqCallVoid(pVM, &pReq1, RT_INDEFINITE_WAIT, (PFNRT)doit, 1, pVM);
+        rc = VMR3ReqCallVoid(pVM, VMREQDEST_ANY, &pReq1, RT_INDEFINITE_WAIT, (PFNRT)doit, 1, pVM);
         AssertRC(rc);
         VMR3ReqFree(pReq1);
 
@@ -363,7 +363,7 @@ int main(int argc, char **argv)
          * Cleanup.
          */
         rc = VMR3Destroy(pVM);
-        if (!VBOX_SUCCESS(rc))
+        if (!RT_SUCCESS(rc))
         {
             RTPrintf(TESTCASE ": error: failed to destroy vm! rc=%d\n", rc);
             rcRet++;

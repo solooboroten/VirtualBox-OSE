@@ -1,4 +1,4 @@
-/* $Id: SUPR3HardenedMain.cpp $ */
+/* $Id: SUPR3HardenedMain.cpp 15314 2008-12-11 16:47:29Z vboxsync $ */
 /** @file
  * VirtualBox Support Library - Hardened main().
  */
@@ -36,6 +36,8 @@
 # define INCL_ERRORS
 # include <os2.h>
 # include <stdio.h>
+# include <stdlib.h>
+# include <dlfcn.h>
 
 #elif RT_OS_WINDOWS
 # include <Windows.h>
@@ -54,6 +56,12 @@
 # include <sys/time.h>
 # include <stdio.h>
 # include <sys/types.h>
+# if defined(RT_OS_LINUX)
+#  include <sys/capability.h>
+#  include <sys/prctl.h>
+# elif defined(RT_OS_SOLARIS)
+#  include <priv.h>
+# endif
 # include <pwd.h>
 # ifdef RT_OS_DARWIN
 #  include <mach-o/dyld.h>
@@ -85,7 +93,7 @@
  * Decorate a symbol that's resolved dynamically.
  */
 #ifdef RT_OS_OS2
-# define SUP_HARDENED_SYM(sym)  "_" ## sym
+# define SUP_HARDENED_SYM(sym)  "_" sym
 #else
 # define SUP_HARDENED_SYM(sym)  sym
 #endif
@@ -576,6 +584,57 @@ static void supR3HardenedMainOpenDevice(void)
 
 
 #ifdef SUP_HARDENED_SUID
+
+/**
+ * Grabs extra non-root capabilities / privileges that we might require.
+ *
+ * This is currently only used for being able to do ICMP from the NAT engine.
+ *
+ * @note We still have root privileges at the time of this call.
+ */
+static void supR3HardenedMainGrabCapabilites(void)
+{
+# if defined(RT_OS_LINUX)
+    /*
+     * We are about to drop all our privileges. Remove all capabilities but
+     * keep the cap_net_raw capability for ICMP sockets for the NAT stack.
+     */
+    if (!cap_set_proc(cap_from_text("all-eip cap_net_raw+ep")))
+        prctl(PR_SET_KEEPCAPS, /*keep=*/1, 0, 0, 0);
+
+# elif defined(RT_OS_SOLARIS)
+    /*
+     * Add net_icmpaccess privilege to permitted, effective and inheritable privileges
+     * before dropping root privileges.
+     */
+    priv_set_t *pPrivSet = priv_str_to_set("basic", ",", NULL);
+    if (pPrivSet)
+    {
+        priv_addset(pPrivSet, PRIV_NET_ICMPACCESS);
+        int rc = setppriv(PRIV_SET, PRIV_INHERITABLE, pPrivSet);
+        if (!rc)
+        {
+            rc = setppriv(PRIV_SET, PRIV_PERMITTED, pPrivSet);
+            if (!rc)
+            {
+                rc = setppriv(PRIV_SET, PRIV_EFFECTIVE, pPrivSet);
+                if (rc)
+                    supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set effectives privilege set.\n");
+            }
+            else
+                supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set permitted privilege set.\n");
+        }
+        else
+            supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set inheritable privilege set.\n");
+
+        priv_freeset(pPrivSet);
+    }
+    else
+        supR3HardenedError(-1, false, "SUPR3HardenedMain: failed to get basic privilege set.\n");
+
+# endif
+}
+
 /**
  * Drop any root privileges we might be holding.
  */
@@ -628,6 +687,7 @@ static void supR3HardenedMainDropPrivileges(void)
     }
 # endif
 
+
     /* Check that it worked out all right. */
     if (    euid != g_uid
         ||  ruid != g_uid
@@ -638,9 +698,17 @@ static void supR3HardenedMainDropPrivileges(void)
         supR3HardenedFatal("SUPR3HardenedMain: failed to drop root privileges!"
                            " (euid=%d ruid=%d suid=%d  egid=%d rgid=%d sgid=%d; wanted uid=%d and gid=%d)\n",
                            euid, ruid, suid, egid, rgid, sgid, g_uid, g_gid);
-}
-#endif /* SUP_HARDENED_SUID */
 
+# if RT_OS_LINUX
+    /*
+     * Re-enable the cap_net_raw capability which was disabled during setresuid.
+     */
+    /** @todo Warn if that does not work? */
+    cap_set_proc(cap_from_text("cap_net_raw+ep"));
+# endif
+}
+
+#endif /* SUP_HARDENED_SUID */
 
 /**
  * Loads the VBoxRT DLL/SO/DYLIB, hands it the open driver,
@@ -884,6 +952,11 @@ DECLHIDDEN(int) SUPR3HardenedMain(const char *pszProgName, uint32_t fFlags, int 
         //supR3HardenedMainOpenService(&g_SupPreInitData, true /* fFatal */);
 
 #ifdef SUP_HARDENED_SUID
+    /*
+     * Grab additional capabilities / privileges.
+     */
+    supR3HardenedMainGrabCapabilites();
+
     /*
      * Drop any root privileges we might be holding (won't return on failure)
      */

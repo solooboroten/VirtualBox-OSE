@@ -1,4 +1,4 @@
-/* $Id: heapsimple.cpp $ */
+/* $Id: heapsimple.cpp 14318 2008-11-18 16:56:53Z vboxsync $ */
 /** @file
  * IPRT - A Simple Heap.
  */
@@ -33,6 +33,12 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #define LOG_GROUP RTLOGGROUP_DEFAULT
+
+#if defined(IN_GUEST_R0) && defined(RT_OS_LINUX) && defined(IN_MODULE)
+/* should come first to prevent warnings about duplicate definitions of PAGE_* */
+# include "the-linux-kernel.h"
+#endif
+
 #include <iprt/heap.h>
 #include <iprt/assert.h>
 #include <iprt/asm.h>
@@ -43,12 +49,6 @@
 
 #include "internal/magics.h"
 
-#if defined(IN_GUEST_R0) && defined(RT_OS_LINUX) && defined(IN_MODULE)
-#include "the-linux-kernel.h"
-EXPORT_SYMBOL(RTHeapSimpleAlloc);
-EXPORT_SYMBOL(RTHeapSimpleInit);
-EXPORT_SYMBOL(RTHeapSimpleFree);
-#endif
 
 /*******************************************************************************
 *   Structures and Typedefs                                                    *
@@ -62,7 +62,7 @@ typedef struct RTHEAPSIMPLEFREE *PRTHEAPSIMPLEFREE;
 
 /**
  * Structure describing a simple heap block.
- * If this block is allocated, it is followed by the user user data.
+ * If this block is allocated, it is followed by the user data.
  * If this block is free, see RTHEAPSIMPLEFREE.
  */
 typedef struct RTHEAPSIMPLEBLOCK
@@ -328,7 +328,7 @@ RTDECL(int) RTHeapSimpleInit(PRTHEAPSIMPLE pHeap, void *pvMemory, size_t cbMemor
                      - sizeof(RTHEAPSIMPLEBLOCK)
                      - sizeof(RTHEAPSIMPLEINTERNAL);
     pHeapInt->pFreeTail = pHeapInt->pFreeHead = (PRTHEAPSIMPLEFREE)(pHeapInt + 1);
-    for (i = 0; i < ELEMENTS(pHeapInt->auAlignment); i++)
+    for (i = 0; i < RT_ELEMENTS(pHeapInt->auAlignment); i++)
         pHeapInt->auAlignment[i] = ~(size_t)0;
 
     /* Init the single free block. */
@@ -938,3 +938,9 @@ RTDECL(void) RTHeapSimpleDump(RTHEAPSIMPLE Heap, PFNRTHEAPSIMPLEPRINTF pfnPrintf
     pfnPrintf("**** Done dumping Heap %p ****\n", Heap);
 }
 
+
+#if defined(IN_GUEST_R0) && defined(RT_OS_LINUX) && defined(IN_MODULE)
+EXPORT_SYMBOL(RTHeapSimpleAlloc);
+EXPORT_SYMBOL(RTHeapSimpleInit);
+EXPORT_SYMBOL(RTHeapSimpleFree);
+#endif

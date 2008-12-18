@@ -35,14 +35,14 @@
 *******************************************************************************/
 #include <VBox/sup.h>
 #include <VBox/err.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <stdio.h>
 
 int main(int argc, char **argv)
 {
     RTR3Init();
     int rc = SUPInstall();
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         printf("installed successfully\n");
         return 0;

@@ -32,7 +32,7 @@ class Console;
 class ATL_NO_VTABLE Guest :
     public VirtualBoxSupportErrorInfoImpl <Guest, IGuest>,
     public VirtualBoxSupportTranslation <Guest>,
-    public VirtualBoxBase,
+    public VirtualBoxBaseNEXT,
     public IGuest
 {
 public:
@@ -69,8 +69,8 @@ public:
     STDMETHOD(COMSETTER(StatisticsUpdateInterval)) (ULONG aUpdateInterval);
 
     // IGuest methods
-    STDMETHOD(SetCredentials)(INPTR BSTR aUserName, INPTR BSTR aPassword,
-                              INPTR BSTR aDomain, BOOL aAllowInteractiveLogon);
+    STDMETHOD(SetCredentials)(IN_BSTR aUserName, IN_BSTR aPassword,
+                              IN_BSTR aDomain, BOOL aAllowInteractiveLogon);
     STDMETHOD(GetStatistic)(ULONG aCpuId, GuestStatisticType_T aStatistic, ULONG *aStatVal);
 
     // public methods that are not in IDL
@@ -110,3 +110,4 @@ private:
 };
 
 #endif // ____H_GUESTIMPL
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

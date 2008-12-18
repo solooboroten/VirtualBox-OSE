@@ -377,12 +377,12 @@ STDMETHODIMP VMDisplay::InvalidateAndUpdate()
     Assert(pVM);
     /* pdm.h says that this has to be called from the EMT thread */
     PVMREQ pReq;
-    int rcVBox = VMR3ReqCallVoid(pVM, &pReq, RT_INDEFINITE_WAIT,
+    int rcVBox = VMR3ReqCallVoid(pVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT,
                                  (PFNRT)VMDisplay::doInvalidateAndUpdate, 1, mpDrv);
-    if (VBOX_SUCCESS(rcVBox))
+    if (RT_SUCCESS(rcVBox))
         VMR3ReqFree(pReq);
 
-    if (VBOX_FAILURE(rcVBox))
+    if (RT_FAILURE(rcVBox))
         rc = E_FAIL;
 
     LogFlow (("VMDisplay::InvalidateAndUpdate(): END: rc=%08X\n", rc));
@@ -481,8 +481,8 @@ DECLCALLBACK(void) VMDisplay::displayRefreshCallback(PPDMIDISPLAYCONNECTOR pInte
 
 
     /* Contrary to displayUpdateCallback and displayResizeCallback
-     * the framebuffer lock must be taken since the the function
-     * pointed to by pDrv->pUpPort->pfnUpdateDisplay is anaware
+     * the framebuffer lock must be taken since the function
+     * pointed to by pDrv->pUpPort->pfnUpdateDisplay is unaware
      * of any locking issues. */
 
     VMDisplay *pDisplay = pDrv->pDisplay;
@@ -808,7 +808,7 @@ int VMDisplay::VideoAccelEnable (bool fEnable, VBVAMEMORY *pVbvaMemory)
         LogRel(("VBVA: Disabled.\n"));
     }
 
-    LogFlow(("Display::VideoAccelEnable: rc = %Vrc.\n", rc));
+    LogFlow(("Display::VideoAccelEnable: rc = %Rrc.\n", rc));
 
     return rc;
 }
@@ -1257,9 +1257,9 @@ DECLCALLBACK(int) VMDisplay::drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHand
      */
     void *pv;
     rc = CFGMR3QueryPtr(pCfgHandle, "Object", &pv);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Configuration error: No/bad \"Object\" value! rc=%Vrc\n", rc));
+        AssertMsgFailed(("Configuration error: No/bad \"Object\" value! rc=%Rrc\n", rc));
         return rc;
     }
     pData->pDisplay = (VMDisplay *)pv;        /** @todo Check this cast! */

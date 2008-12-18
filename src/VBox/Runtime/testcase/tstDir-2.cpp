@@ -1,4 +1,4 @@
-/* $Id: tstDir-2.cpp $ */
+/* $Id: tstDir-2.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * IPRT Testcase - Directory listing & filtering .
  */
@@ -31,7 +31,7 @@
 #include <iprt/dir.h>
 #include <iprt/stream.h>
 #include <iprt/err.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 
 int main(int argc, char **argv)
 {
@@ -76,7 +76,7 @@ int main(int argc, char **argv)
 
             if (rc != VERR_NO_MORE_FILES)
             {
-                RTPrintf("tstDir: Enumeration failed! rc=%Rrc\n", rc);
+                RTPrintf("tstDir-2: Enumeration failed! rc=%Rrc\n", rc);
                 rcRet = 1;
             }
 
@@ -84,13 +84,13 @@ int main(int argc, char **argv)
             rc = RTDirClose(pDir);
             if (RT_FAILURE(rc))
             {
-                RTPrintf("tstDir: Failed to close dir! rc=%Rrc\n", rc);
+                RTPrintf("tstDir-2: Failed to close dir! rc=%Rrc\n", rc);
                 rcRet = 1;
             }
         }
         else
         {
-            RTPrintf("tstDir: Failed to open '%s', rc=%Rrc\n", argv[i], rc);
+            RTPrintf("tstDir-2: Failed to open '%s', rc=%Rrc\n", argv[i], rc);
             rcRet = 1;
         }
     }

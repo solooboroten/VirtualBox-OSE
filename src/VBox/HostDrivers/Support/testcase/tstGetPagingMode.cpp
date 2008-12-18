@@ -35,7 +35,7 @@
 *******************************************************************************/
 #include <VBox/sup.h>
 #include <VBox/err.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/stream.h>
 
 
@@ -44,7 +44,7 @@ int main(int argc, char **argv)
     int rc;
     RTR3Init();
     rc = SUPR3Init(NULL);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         SUPPAGINGMODE enmMode = SUPGetPagingMode();
         switch (enmMode)
@@ -89,11 +89,11 @@ int main(int argc, char **argv)
         }
 
         int rc2 = SUPTerm();
-        RTPrintf("SUPTerm -> rc=%Vrc\n", rc2);
+        RTPrintf("SUPTerm -> rc=%Rrc\n", rc2);
     }
     else
-        RTPrintf("SUPR3Init -> rc=%Vrc\n", rc);
+        RTPrintf("SUPR3Init -> rc=%Rrc\n", rc);
 
-    return !VBOX_SUCCESS(rc);
+    return !RT_SUCCESS(rc);
 }
 

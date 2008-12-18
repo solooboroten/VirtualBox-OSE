@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFltInternal.h $ */
+/* $Id: VBoxNetFltInternal.h 15527 2008-12-15 18:11:08Z vboxsync $ */
 /** @file
  * VBoxNetFlt - Network Filter Driver (Host), Internal Header.
  */
@@ -157,12 +157,25 @@ typedef struct VBOXNETFLTINS
              * @{ */
             /** Pointer to the device. */
             struct net_device volatile *pDev;
+            /** Whether we've successfully put the interface into to promiscuous mode.
+             * This is for dealing with the ENETDOWN case. */
+            bool volatile fPromiscuousSet;
+            /** Whether device exists and physically attached. */
+            bool volatile fRegistered;
+            /** The MAC address of the interface. */
+            RTMAC Mac;
+            struct notifier_block Notifier;
+            struct packet_type    PacketType;
+            struct sk_buff_head   XmitQueue;
+            struct work_struct    XmitTask;
             /** @} */
 # elif defined(RT_OS_SOLARIS)
             /** @name Solaris instance data.
              * @{ */
-            /** Pointer to the bound IP stream. */
-            void volatile *pvIpStream;
+            /** Pointer to the bound IPv4 stream. */
+            void volatile *pvIp4Stream;
+            /** Pointer to the bound IPv6 stream. */
+            void volatile *pvIp6Stream;
             /** Pointer to the bound ARP stream. */
             void volatile *pvArpStream;
             /** Pointer to the unbound promiscuous stream. */
@@ -173,16 +186,37 @@ typedef struct VBOXNETFLTINS
             RTMAC Mac;
             /** Mutex protection used for loopback. */
             RTSEMFASTMUTEX hFastMtx;
+            /** @} */
 # elif defined(RT_OS_WINDOWS)
-            /** pointer to the filter driver device context */
-            PADAPT volatile pIfAdaptor;
+            /** @name Windows instance data.
+             * @{ */
+//#  ifdef VBOX_NETFLT_ONDEMAND_BIND
+            /** Filter driver device context. */
+            ADAPT IfAdaptor;
+//#  else
+//            /** Pointer to the filter driver device context. */
+//            PADAPT volatile pIfAdaptor;
+//#  endif
+            /** The MAC address of the interface. Caching MAC for performance reasons. */
+            RTMAC Mac;
+            /** @}  */
 # else
 #  error "PORTME"
 # endif
         } s;
 #endif
         /** Padding. */
+#if defined(RT_OS_WINDOWS)
+# if defined(VBOX_NETFLT_ONDEMAND_BIND)
+        uint8_t abPadding[192];
+# else
+        uint8_t abPadding[1024];
+# endif
+#elif defined(RT_OS_LINUX)
+        uint8_t abPadding[320];
+#else
         uint8_t abPadding[64];
+#endif
     } u;
 
     /** The interface name. */
@@ -230,6 +264,14 @@ DECLHIDDEN(PVBOXNETFLTINS) vboxNetFltFindInstance(PVBOXNETFLTGLOBALS pGlobals, c
 DECLHIDDEN(void) vboxNetFltRetain(PVBOXNETFLTINS pThis, bool fBusy);
 DECLHIDDEN(void) vboxNetFltRelease(PVBOXNETFLTINS pThis, bool fBusy);
 
+#ifdef VBOXNETFLT_STATIC_CONFIG
+DECLHIDDEN(int) vboxNetFltSearchCreateInstance(PVBOXNETFLTGLOBALS pGlobals, const char *pszName, PVBOXNETFLTINS *ppInstance, void * pContext);
+DECLHIDDEN(int) vboxNetFltInitGlobalsBase(PVBOXNETFLTGLOBALS pGlobals);
+DECLHIDDEN(int) vboxNetFltInitIdc(PVBOXNETFLTGLOBALS pGlobals);
+DECLHIDDEN(void) vboxNetFltDeleteGlobalsBase(PVBOXNETFLTGLOBALS pGlobals);
+DECLHIDDEN(int) vboxNetFltTryDeleteIdc(PVBOXNETFLTGLOBALS pGlobals);
+#endif
+
 
 /** @name The OS specific interface.
  * @{ */
@@ -262,6 +304,8 @@ DECLHIDDEN(int) vboxNetFltPortOsXmit(PVBOXNETFLTINS pThis, PINTNETSG pSG, uint32
  *
  * If it is, then the internal networking switch will send frames
  * heading for the wire to the host as well.
+ *
+ * @see INTNETTRUNKIFPORT::pfnIsPromiscuous for more details.
  *
  * @returns true / false accordingly.
  * @param   pThis           The instance.
@@ -351,7 +395,11 @@ DECLHIDDEN(void) vboxNetFltOsDeleteInstance(PVBOXNETFLTINS pThis);
  *
  * @remarks Owns no locks.
  */
-DECLHIDDEN(int) vboxNetFltOsInitInstance(PVBOXNETFLTINS pThis);
+DECLHIDDEN(int) vboxNetFltOsInitInstance(PVBOXNETFLTINS pThis
+#ifdef VBOXNETFLT_STATIC_CONFIG
+        , void * pContext
+#endif
+        );
 
 /**
  * This is called to perform structure initializations.

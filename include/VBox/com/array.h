@@ -31,8 +31,6 @@
 #ifndef ___VBox_com_array_h
 #define ___VBox_com_array_h
 
-#include <VBox/com/ptr.h>
-
 /** @defgroup   grp_COM_arrays    COM/XPCOM Arrays
  * @{
  *
@@ -152,10 +150,13 @@
  * However, 'pointer-to-...' types (e.g. 'long *', 'wstring *') are not
  * supported and therefore cannot be used as element types.
  *
- * In order to pass input BSTR array parameters delcared using the
- * ComSafeArrayIn (INPTR BSTR, aParam) macro to the SafeArray<> constructor
- * using the ComSafeArrayInArg() macro, you should use INPTR BSTR as the
- * SafeArray<> template argument, not just BSTR.
+ * Note that for GUID arrays you should use SafeGUIDArray and
+ * SafeConstGUIDArray, customized SafeArray<> specializations.
+ *
+ * Also note that in order to pass input BSTR array parameters declared
+ * using the ComSafeArrayIn (IN_BSTR, aParam) macro to the SafeArray<>
+ * constructor using the ComSafeArrayInArg() macro, you should use IN_BSTR
+ * as the SafeArray<> template argument, not just BSTR.
  *
  * Arrays of interface pointers are also supported but they require to use a
  * special SafeArray implementation, com::SafeIfacePointer, which takes the
@@ -164,10 +165,11 @@
  */
 
 #if defined (VBOX_WITH_XPCOM)
-#include <nsMemory.h>
+# include <nsMemory.h>
 #endif
 
 #include "VBox/com/defs.h"
+#include "VBox/com/ptr.h"
 #include "VBox/com/assert.h"
 
 #include "iprt/cpputils.h"
@@ -177,17 +179,17 @@
 /**
  * Wraps the given com::SafeArray instance to generate an expression that is
  * suitable for passing it to functions that take input safearray parameters
- * declared using the ComSafeArrayIn marco.
+ * declared using the ComSafeArrayIn macro.
  *
  * @param aArray    com::SafeArray instance to pass as an input parameter.
  */
 #define ComSafeArrayAsInParam(aArray)   \
-    (aArray).size(), (aArray).__asInParam_Arr (aArray.raw())
+    (aArray).size(), (aArray).__asInParam_Arr ((aArray).raw())
 
 /**
  * Wraps the given com::SafeArray instance to generate an expression that is
  * suitable for passing it to functions that take output safearray parameters
- * declared using the ComSafeArrayOut marco.
+ * declared using the ComSafeArrayOut macro.
  *
  * @param aArray    com::SafeArray instance to pass as an output parameter.
  */
@@ -213,15 +215,22 @@ namespace com
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Contains various helper constants for SafeArray.
+ * Provides various helpers for SafeArray.
+ *
+ * @param T Type of array elements.
  */
 template <typename T>
 struct SafeArrayTraits
 {
 protected:
 
+    /** Initializes memory for aElem. */
     static void Init (T &aElem) { aElem = 0; }
+
+    /** Initializes memory occupied by aElem. */
     static void Uninit (T &aElem) { aElem = 0; }
+
+    /** Creates a deep copy of aFrom and stores it in aTo. */
     static void Copy (const T &aFrom, T &aTo) { aTo = aFrom; }
 
 public:
@@ -247,6 +256,7 @@ struct SafeArrayTraits <PRUnichar *>
 protected:
 
     static void Init (PRUnichar * &aElem) { aElem = NULL; }
+
     static void Uninit (PRUnichar * &aElem)
     {
         if (aElem)
@@ -299,66 +309,239 @@ public:
     static const PRUnichar **__asInParam_Arr (const PRUnichar **aArr) { return aArr; }
 };
 
+template<>
+struct SafeArrayTraits <nsID *>
+{
+protected:
+
+    static void Init (nsID * &aElem) { aElem = NULL; }
+
+    static void Uninit (nsID * &aElem)
+    {
+        if (aElem)
+        {
+            ::nsMemory::Free (aElem);
+            aElem = NULL;
+        }
+    }
+
+    static void Copy (const nsID * aFrom, nsID * &aTo)
+    {
+        if (aFrom)
+        {
+            aTo = (nsID *) ::nsMemory::Alloc (sizeof (nsID));
+            if (aTo)
+                *aTo = *aFrom;
+        }
+        else
+            aTo = NULL;
+    }
+
+    /* This specification is also reused for SafeConstGUIDArray, so provide a
+     * no-op Init() and Uninit() which are necessary for SafeArray<> but should
+     * be never called in context of SafeConstGUIDArray. */
+
+    static void Init (const nsID * &aElem) { NOREF (aElem); AssertFailed(); }
+    static void Uninit (const nsID * &aElem) { NOREF (aElem); AssertFailed(); }
+
+public:
+
+    /** Magic to workaround strict rules of par. 4.4.4 of the C++ standard. */
+    static const nsID **__asInParam_Arr (nsID **aArr)
+    {
+        return const_cast <const nsID **> (aArr);
+    }
+    static const nsID **__asInParam_Arr (const nsID **aArr) { return aArr; }
+};
+
 #else /* defined (VBOX_WITH_XPCOM) */
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/**
- * Contains various helper constants for SafeArray.
- */
-template <typename T>
-struct SafeArrayTraits
+struct SafeArrayTraitsBase
 {
-    // Arbitrary types are not supported
+protected:
+
+    static SAFEARRAY *CreateSafeArray (VARTYPE aVarType, SAFEARRAYBOUND *aBound)
+    { return SafeArrayCreate (aVarType, 1, aBound); }
 };
 
+/**
+ * Provides various helpers for SafeArray.
+ *
+ * @param T Type of array elements.
+ *
+ * Specializations of this template must provide the following methods:
+ *
+    // Returns the VARTYPE of COM SafeArray elements to be used for T
+    static VARTYPE VarType();
+
+    // Returns the number of VarType() elements necessary for aSize
+    // elements of T
+    static ULONG VarCount (size_t aSize);
+
+    // Returns the number of elements of T that fit into the given number of
+    // VarType() elements (opposite to VarCount (size_t aSize)).
+    static size_t Size (ULONG aVarCount);
+
+    // Creates a deep copy of aFrom and stores it in aTo
+    static void Copy (ULONG aFrom, ULONG &aTo);
+ */
+template <typename T>
+struct SafeArrayTraits : public SafeArrayTraitsBase
+{
+protected:
+
+    // Arbitrary types are treated as passed by value and each value is
+    // represented by a number of VT_Ix type elements where VT_Ix has the
+    // biggest possible bitness necessary to represent T w/o a gap. COM enums
+    // fall into this category.
+
+    static VARTYPE VarType()
+    {
+        if (sizeof (T) % 8 == 0) return VT_I8;
+        if (sizeof (T) % 4 == 0) return VT_I4;
+        if (sizeof (T) % 2 == 0) return VT_I2;
+        return VT_I1;
+    }
+
+    static ULONG VarCount (size_t aSize)
+    {
+        if (sizeof (T) % 8 == 0) return (ULONG) ((sizeof (T) / 8) * aSize);
+        if (sizeof (T) % 4 == 0) return (ULONG) ((sizeof (T) / 4) * aSize);
+        if (sizeof (T) % 2 == 0) return (ULONG) ((sizeof (T) / 2) * aSize);
+        return (ULONG) (sizeof (T) * aSize);
+    }
+
+    static size_t Size (ULONG aVarCount)
+    {
+        if (sizeof (T) % 8 == 0) return (size_t) (aVarCount * 8) / sizeof (T);
+        if (sizeof (T) % 4 == 0) return (size_t) (aVarCount * 4) / sizeof (T);
+        if (sizeof (T) % 2 == 0) return (size_t) (aVarCount * 2) / sizeof (T);
+        return (size_t) aVarCount / sizeof (T);
+    }
+
+    static void Copy (T aFrom, T &aTo) { aTo = aFrom; }
+};
+
+template <typename T>
+struct SafeArrayTraits <T *>
+{
+    // Arbitrary pointer types are not supported
+};
+
+/* Although the generic SafeArrayTraits template would work for all integers,
+ * we specialize it for some of them in order to use the correct VT_ type */
+
 template<>
-struct SafeArrayTraits <LONG>
+struct SafeArrayTraits <LONG> : public SafeArrayTraitsBase
 {
 protected:
 
     static VARTYPE VarType() { return VT_I4; }
+    static ULONG VarCount (size_t aSize) { return (ULONG) aSize; }
+    static size_t Size (ULONG aVarCount) { return (size_t) aVarCount; }
+
     static void Copy (LONG aFrom, LONG &aTo) { aTo = aFrom; }
 };
 
 template<>
-struct SafeArrayTraits <ULONG>
+struct SafeArrayTraits <ULONG> : public SafeArrayTraitsBase
 {
 protected:
 
     static VARTYPE VarType() { return VT_UI4; }
+    static ULONG VarCount (size_t aSize) { return (ULONG) aSize; }
+    static size_t Size (ULONG aVarCount) { return (size_t) aVarCount; }
+
     static void Copy (ULONG aFrom, ULONG &aTo) { aTo = aFrom; }
 };
 
 template<>
-struct SafeArrayTraits <LONG64>
+struct SafeArrayTraits <LONG64> : public SafeArrayTraitsBase
 {
 protected:
 
     static VARTYPE VarType() { return VT_I8; }
+    static ULONG VarCount (size_t aSize) { return (ULONG) aSize; }
+    static size_t Size (ULONG aVarCount) { return (size_t) aVarCount; }
+
     static void Copy (LONG64 aFrom, LONG64 &aTo) { aTo = aFrom; }
 };
 
 template<>
-struct SafeArrayTraits <ULONG64>
+struct SafeArrayTraits <ULONG64> : public SafeArrayTraitsBase
 {
 protected:
 
     static VARTYPE VarType() { return VT_UI8; }
+    static ULONG VarCount (size_t aSize) { return (ULONG) aSize; }
+    static size_t Size (ULONG aVarCount) { return (size_t) aVarCount; }
+
     static void Copy (ULONG64 aFrom, ULONG64 &aTo) { aTo = aFrom; }
 };
 
 template<>
-struct SafeArrayTraits <BSTR>
+struct SafeArrayTraits <BSTR> : public SafeArrayTraitsBase
 {
 protected:
 
     static VARTYPE VarType() { return VT_BSTR; }
+    static ULONG VarCount (size_t aSize) { return (ULONG) aSize; }
+    static size_t Size (ULONG aVarCount) { return (size_t) aVarCount; }
 
     static void Copy (BSTR aFrom, BSTR &aTo)
     {
         aTo = aFrom ? ::SysAllocString ((const OLECHAR *) aFrom) : NULL;
     }
+};
+
+template<>
+struct SafeArrayTraits <GUID> : public SafeArrayTraitsBase
+{
+protected:
+
+    /* Use the 64-bit unsigned integer type for GUID */
+    static VARTYPE VarType() { return VT_UI8; }
+
+    /* GUID is 128 bit, so we need two VT_UI8 */
+    static ULONG VarCount (size_t aSize)
+    {
+        AssertCompileSize (GUID, 16);
+        return (ULONG) (aSize * 2);
+    }
+
+    static size_t Size (ULONG aVarCount) { return (size_t) aVarCount / 2; }
+
+    static void Copy (GUID aFrom, GUID &aTo) { aTo = aFrom; }
+};
+
+/**
+ * Helper for SafeArray::__asOutParam() that automatically updates m.raw after a
+ * non-NULL m.arr assignment.
+ */
+class OutSafeArrayDipper
+{
+    OutSafeArrayDipper (SAFEARRAY **aArr, void **aRaw)
+        : arr (aArr), raw (aRaw) { Assert (*aArr == NULL && *aRaw == NULL); }
+
+    SAFEARRAY **arr;
+    void **raw;
+
+    template <class, class> friend class SafeArray;
+
+public:
+
+    ~OutSafeArrayDipper()
+    {
+        if (*arr != NULL)
+        {
+            HRESULT rc = SafeArrayAccessData (*arr, raw);
+            AssertComRC (rc);
+        }
+    }
+
+    operator SAFEARRAY **() { return arr; }
 };
 
 #endif /* defined (VBOX_WITH_XPCOM) */
@@ -377,7 +560,7 @@ protected:
  * When an instance of this class is destroyed, it automatically frees all
  * resources occupied by individual elements of the array as well as by the
  * array itself. However, when the value of an element is manually changed
- * using #operator[] or by acessing array data through the #raw() pointer, it is
+ * using #operator[] or by accessing array data through the #raw() pointer, it is
  * the caller's responsibility to free resources occupied by the previous
  * element's value.
  *
@@ -387,7 +570,7 @@ protected:
  * intended to be used to store arrays as data members and such -- you should
  * use normal list/vector classes for that.
  *
- * @note The current implementation supports only one-dimentional arrays.
+ * @note The current implementation supports only one-dimensional arrays.
  *
  * @note This class is not thread-safe.
  */
@@ -405,19 +588,18 @@ public:
      * Creates a new array of the given size. All elements of the newly created
      * array initialized with null values.
      *
-     * @param aSize     Initial number of elements in the array. Must be greater
-     *                  than 0.
+     * @param aSize     Initial number of elements in the array.
      *
      * @note If this object remains null after construction it means that there
      *       was not enough memory for creating an array of the requested size.
      *       The constructor will also assert in this case.
      */
-    SafeArray (size_t aSize) { reset (aSize); }
+    SafeArray (size_t aSize) { resize (aSize); }
 
     /**
      * Weakly attaches this instance to the existing array passed in a method
      * parameter declared using the ComSafeArrayIn macro. When using this call,
-     * always wrap the parameter name in the ComSafeArrayOutArg macro call like
+     * always wrap the parameter name in the ComSafeArrayInArg macro call like
      * this:
      * <pre>
      *  SafeArray safeArray (ComSafeArrayInArg (aArg));
@@ -454,32 +636,33 @@ public:
             AssertMsgReturnVoid (vt == VarType(),
                                  ("Expected vartype %d, got %d.\n",
                                   VarType(), vt));
+
+            rc = SafeArrayAccessData (arg, (void HUGEP **) &m.raw);
+            AssertComRCReturnVoid (rc);
         }
 
         m.arr = arg;
         m.isWeak = true;
 
-        AssertReturnVoid (accessRaw() != NULL);
-
 #endif /* defined (VBOX_WITH_XPCOM) */
     }
 
     /**
-     * Creates a deep copy of the goven standard C++ container.
+     * Creates a deep copy of the given standard C++ container.
      *
      * @param aCntr Container object to copy.
      *
      * @param C     Standard C++ container template class (normally deduced from
      *              @c aCntr).
      */
-    template <template <class> class C>
-    SafeArray (const C <T> & aCntr)
+    template <template <typename, typename> class C, class A>
+    SafeArray (const C <T, A> & aCntr)
     {
-        reset (aCntr.size());
+        resize (aCntr.size());
         AssertReturnVoid (!isNull());
 
-        int i = 0;
-        for (typename C <T>::const_iterator it = aCntr.begin();
+        size_t i = 0;
+        for (typename C <T, A>::const_iterator it = aCntr.begin();
              it != aCntr.end(); ++ it, ++ i)
 #if defined (VBOX_WITH_XPCOM)
             Copy (*it, m.arr [i]);
@@ -501,7 +684,7 @@ public:
 
     /**
      * Resets this instance to null and, if this instance is not a weak one,
-     * releases any resources ocuppied by the array data.
+     * releases any resources occupied by the array data.
      *
      * @note This method destroys (cleans up) all elements of the array using
      *       the corresponding cleanup routine for the element type before the
@@ -525,26 +708,108 @@ public:
         return 0;
 #else
         if (m.arr)
-            return m.arr->rgsabound [0].cElements;
+            return Size (m.arr->rgsabound [0].cElements);
         return 0;
 #endif
     }
 
     /**
+     * Appends a copy of the given element at the end of the array.
+     *
+     * The array size is increased by one by this method and the additional
+     * space is allocated as needed.
+     *
+     * This method is handy in cases where you want to assign a copy of the
+     * existing value to the array element, for example:
+     * <tt>Bstr string; array.push_back (string);</tt>. If you create a string
+     * just to put it to the array, you may find #appendedRaw() more useful.
+     *
+     * @param aElement Element to append.
+     *
+     * @return          @c true on success and false if there is not enough
+     *                  memory for resizing.
+     */
+    bool push_back (const T &aElement)
+    {
+        if (!ensureCapacity (size() + 1))
+            return false;
+
+#if defined (VBOX_WITH_XPCOM)
+        Copy (aElement, m.arr [m.size]);
+        ++ m.size;
+#else
+        Copy (aElement, m.raw [size() - 1]);
+#endif
+        return true;
+    }
+
+    /**
+     * Appends an empty element at the end of the array and returns a raw
+     * pointer to it suitable for assigning a raw value (w/o constructing a
+     * copy).
+     *
+     * The array size is increased by one by this method and the additional
+     * space is allocated as needed.
+     *
+     * Note that in case of raw assignment, value ownership (for types with
+     * dynamically allocated data and for interface pointers) is transferred to
+     * the safe array object.
+     *
+     * This method is handy for operations like
+     * <tt>Bstr ("foo").detacTo (array.appendedRaw());</tt>. Don't use it as
+     * l-value (<tt>array.appendedRaw() = SysAllocString (L"tralala");</tt>)
+     * since this doesn't check for a NULL condition; use #resize() and
+     * #setRawAt() instead. If you need to assign a copy of the existing value
+     * instead of transferring the ownership, look at #push_back().
+     *
+     * @return          Raw pointer to the added element or NULL if no memory.
+     */
+    T *appendedRaw()
+    {
+        if (!ensureCapacity (size() + 1))
+            return NULL;
+
+#if defined (VBOX_WITH_XPCOM)
+        Init (m.arr [m.size]);
+        ++ m.size;
+        return &m.arr [m.size - 1];
+#else
+        /* nothing to do here, SafeArrayCreate() has performed element
+         * initialization */
+        return &m.raw [size() - 1];
+#endif
+    }
+
+    /**
      * Resizes the array preserving its contents when possible. If the new size
-     * is bigger than the old size, new elements are initialized with null
-     * values. If the new size is smaller than the old size, the contents of the
-     * array above the new size is lost.
+     * is larget than the old size, new elements are initialized with null
+     * values. If the new size is less than the old size, the contents of the
+     * array beyond the new size is lost.
      *
      * @param aNewSize  New number of elements in the array.
      * @return          @c true on success and false if there is not enough
      *                  memory for resizing.
      */
-    virtual bool resize (size_t aNewSize)
+    bool resize (size_t aNewSize)
     {
-        /// @todo Implement me!
-        NOREF (aNewSize);
-        AssertFailedReturn (false);
+        if (!ensureCapacity (aNewSize))
+            return false;
+
+#if defined (VBOX_WITH_XPCOM)
+
+        if (m.size < aNewSize)
+        {
+            /* initialize the new elements */
+            for (size_t i = m.size; i < aNewSize; ++ i)
+                Init (m.arr [i]);
+        }
+
+        m.size = aNewSize;
+#else
+        /* nothing to do here, SafeArrayCreate() has performed element
+         * initialization */
+#endif
+        return true;
     }
 
     /**
@@ -555,34 +820,10 @@ public:
      * @return          @c true on success and false if there is not enough
      *                  memory for resizing.
      */
-    virtual bool reset (size_t aNewSize)
+    bool reset (size_t aNewSize)
     {
         m.uninit();
-
-#if defined (VBOX_WITH_XPCOM)
-
-        /* Note: for zero-sized arrays, we use the size of 1 because whether
-         * malloc(0) returns a null pointer or not (which is used in isNull())
-         * is implementation-dependent according to the C standard. */
-
-        m.arr = (T *) nsMemory::Alloc (RT_MAX (aNewSize, 1) * sizeof (T));
-        AssertReturn (m.arr != NULL, false);
-
-        m.size = aNewSize;
-
-        for (size_t i = 0; i < m.size; ++ i)
-            Init (m.arr [i]);
-
-#else
-
-        SAFEARRAYBOUND bound = { (ULONG)aNewSize, 0 };
-        m.arr = SafeArrayCreate (VarType(), 1, &bound);
-        AssertReturn (m.arr != NULL, false);
-
-        AssertReturn (accessRaw() != NULL, false);
-
-#endif
-        return true;
+        return resize (aNewSize);
     }
 
     /**
@@ -597,7 +838,7 @@ public:
 #if defined (VBOX_WITH_XPCOM)
         return m.arr;
 #else
-        return accessRaw();
+        return m.raw;
 #endif
     }
 
@@ -609,7 +850,7 @@ public:
 #if defined (VBOX_WITH_XPCOM)
         return m.arr;
 #else
-        return accessRaw();
+        return m.raw;
 #endif
     }
 
@@ -618,7 +859,7 @@ public:
      * safer than #raw(): asserts and returns an invalid reference if this
      * instance is null or if the index is out of bounds.
      *
-     * @note For weak instances, this call will succeed but the beiavior of
+     * @note For weak instances, this call will succeed but the behavior of
      *       changing the contents of an element of the weak array instance is
      *       undefined and may lead to a program crash on some platforms.
      */
@@ -629,8 +870,7 @@ public:
 #if defined (VBOX_WITH_XPCOM)
         return m.arr [aIdx];
 #else
-
-        AssertReturn (accessRaw() != NULL,  *((T *) NULL));
+        AssertReturn (m.raw != NULL,  *((T *) NULL));
         return m.raw [aIdx];
 #endif
     }
@@ -645,7 +885,7 @@ public:
 #if defined (VBOX_WITH_XPCOM)
         return m.arr [aIdx];
 #else
-        AssertReturn (unconst (this)->accessRaw() != NULL,  *((T *) NULL));
+        AssertReturn (m.raw != NULL,  *((T *) NULL));
         return m.raw [aIdx];
 #endif
     }
@@ -677,7 +917,7 @@ public:
     }
 
     /**
-     * Transfers the ownership of this array's data to a method parameter
+     * Transfers the ownership of this array's data to the specified location
      * declared using the ComSafeArrayOut macro and makes this array a null
      * array. When using this call, always wrap the parameter name in the
      * ComSafeArrayOutArg macro call like this:
@@ -685,11 +925,14 @@ public:
      *  safeArray.detachTo (ComSafeArrayOutArg (aArg));
      * </pre>
      *
+     * Detaching the null array is also possible in which case the location will
+     * receive NULL.
+     *
      * @note Since the ownership of the array data is transferred to the
      * caller of the method, he is responsible to free the array data when it is
      * no more necessary.
      *
-     * @param aArg  Output method parameter to detach to.
+     * @param aArg  Location to detach to.
      */
     virtual SafeArray &detachTo (ComSafeArrayOut (T, aArg))
     {
@@ -731,19 +974,20 @@ public:
 
 #if defined (VBOX_WITH_XPCOM)
 
-    /** Internal funciton. Never call it directly. */
+    /** Internal function. Never call it directly. */
     PRUint32 *__asOutParam_Size() { setNull(); return &m.size; }
 
-    /** Internal funciton. Never call it directly. */
+    /** Internal function Never call it directly. */
     T **__asOutParam_Arr() { Assert (isNull()); return &m.arr; }
 
 #else /* defined (VBOX_WITH_XPCOM) */
 
-    /** Internal funciton. Never call it directly. */
+    /** Internal function Never call it directly. */
     SAFEARRAY ** __asInParam() { return &m.arr; }
 
-    /** Internal funciton. Never call it directly. */
-    SAFEARRAY ** __asOutParam() { setNull(); return &m.arr; }
+    /** Internal function Never call it directly. */
+    OutSafeArrayDipper __asOutParam()
+    { setNull(); return OutSafeArrayDipper (&m.arr, (void **) &m.raw); }
 
 #endif /* defined (VBOX_WITH_XPCOM) */
 
@@ -753,28 +997,111 @@ protected:
 
     DECLARE_CLS_COPY_CTOR_ASSIGN_NOOP(SafeArray)
 
-#if defined (VBOX_WITH_XPCOM)
-#else /* defined (VBOX_WITH_XPCOM) */
-
-    /** Requests access to the raw data pointer. */
-    T *accessRaw()
+    /**
+     * Ensures that the array is big enough to contaon aNewSize elements.
+     *
+     * If the new size is greater than the current capacity, a new array is
+     * allocated and elements from the old array are copied over. The  size of
+     * the array doesn't change, only the capacity increases (which is always
+     * greater than the size). Note that the additionally allocated elements are
+     * left uninitialized by this method.
+     *
+     * If the new size is less than the current size, the existing array is
+     * truncated to the specified size and the elements outside the new array
+     * boundary are freed.
+     *
+     * If the new size is the same as the current size, nothing happens.
+     *
+     * @param aNewSize  New size of the array.
+     *
+     * @return @c true on success and @c false if not enough memory.
+     */
+    bool ensureCapacity (size_t aNewSize)
     {
-        if (m.arr && m.raw == NULL)
-        {
-            HRESULT rc = SafeArrayAccessData (m.arr, (void HUGEP **) &m.raw);
-            AssertComRCReturn (rc, NULL);
-        }
-        return m.raw;
-    }
+        AssertReturn (!m.isWeak, false);
 
-#endif /* defined (VBOX_WITH_XPCOM) */
+#if defined (VBOX_WITH_XPCOM)
+
+        /* Note: we distinguish between a null array and an empty (zero
+         * elements) array. Therefore we never use zero in malloc (even if
+         * aNewSize is zero) to make sure we get a non-null pointer. */
+
+        if (m.size == aNewSize && m.arr != NULL)
+            return true;
+
+        /* allocate in 16-byte pieces */
+        size_t newCapacity = RT_MAX ((aNewSize + 15) / 16 * 16, 16);
+
+        if (m.capacity != newCapacity)
+        {
+            T *newArr = (T *) nsMemory::Alloc (RT_MAX (newCapacity, 1) * sizeof (T));
+            AssertReturn (newArr != NULL, false);
+
+            if (m.arr != NULL)
+            {
+                if (m.size > aNewSize)
+                {
+                    /* truncation takes place, uninit exceeding elements and
+                     * shrink the size */
+                    for (size_t i = aNewSize; i < m.size; ++ i)
+                        Uninit (m.arr [i]);
+
+                    m.size = aNewSize;
+                }
+
+                /* copy the old contents */
+                memcpy (newArr, m.arr, m.size * sizeof (T));
+                nsMemory::Free ((void *) m.arr);
+            }
+
+            m.arr = newArr;
+        }
+        else
+        {
+            if (m.size > aNewSize)
+            {
+                /* truncation takes place, uninit exceeding elements and
+                 * shrink the size */
+                for (size_t i = aNewSize; i < m.size; ++ i)
+                    Uninit (m.arr [i]);
+
+                m.size = aNewSize;
+            }
+        }
+
+        m.capacity = newCapacity;
+
+#else
+
+        SAFEARRAYBOUND bound = { VarCount (aNewSize), 0 };
+        HRESULT rc;
+
+        if (m.arr == NULL)
+        {
+            m.arr = CreateSafeArray (VarType(), &bound);
+            AssertReturn (m.arr != NULL, false);
+        }
+        else
+        {
+            SafeArrayUnaccessData (m.arr);
+
+            rc = SafeArrayRedim (m.arr, &bound);
+            AssertComRCReturn (rc == S_OK, false);
+        }
+
+        rc = SafeArrayAccessData (m.arr, (void HUGEP **) &m.raw);
+        AssertComRCReturn (rc, false);
+
+#endif
+        return true;
+    }
 
     struct Data
     {
         Data()
             : isWeak (false)
 #if defined (VBOX_WITH_XPCOM)
-            , size (0), arr (NULL)
+            , capacity (0), size (0), arr (NULL)
 #else
             , arr (NULL), raw (NULL)
 #endif
@@ -794,11 +1121,14 @@ protected:
                         Uninit (arr [i]);
 
                     nsMemory::Free ((void *) arr);
-
-                    isWeak = false;
                 }
+                else
+                    isWeak = false;
+
                 arr = NULL;
             }
+
+            size = capacity = 0;
 
 #else /* defined (VBOX_WITH_XPCOM) */
 
@@ -814,9 +1144,10 @@ protected:
                 {
                     HRESULT rc = SafeArrayDestroy (arr);
                     AssertComRCReturnVoid (rc);
-
-                    isWeak = false;
                 }
+                else
+                    isWeak = false;
+
                 arr = NULL;
             }
 
@@ -826,6 +1157,7 @@ protected:
         bool isWeak : 1;
 
 #if defined (VBOX_WITH_XPCOM)
+        PRUint32 capacity;
         PRUint32 size;
         T *arr;
 #else
@@ -836,6 +1168,152 @@ protected:
 
     Data m;
 };
+
+////////////////////////////////////////////////////////////////////////////////
+
+#if defined (VBOX_WITH_XPCOM)
+
+/**
+ * Version of com::SafeArray for arrays of GUID.
+ *
+ * In MS COM, GUID arrays store GUIDs by value and therefore input arrays are
+ * represented using |GUID *| and out arrays -- using |GUID **|. In XPCOM,
+ * GUID arrays store pointers to nsID so that input arrays are |const nsID **|
+ * and out arrays are |nsID ***|. Due to this difference, it is impossible to
+ * work with arrays of GUID on both platforms by simply using com::SafeArray
+ * <GUID>. This class is intended to provide some level of cross-platform
+ * behavior.
+ *
+ * The basic usage pattern is basically similar to com::SafeArray<> except that
+ * you use ComSafeGUIDArrayIn* and ComSafeGUIDArrayOut* macros instead of
+ * ComSafeArrayIn* and ComSafeArrayOut*. Another important nuance is that the
+ * raw() array type is different (nsID **, or GUID ** on XPCOM and GUID * on MS
+ * COM) so it is recommended to use operator[] instead that always returns a
+ * GUID by value.
+ *
+ * Note that due to const modifiers, you cannot use SafeGUIDArray for input GUID
+ * arrays. Please use SafeConstGUIDArray for this instead.
+ *
+ * Other than mentioned above, the functionality of this class is equivalent to
+ * com::SafeArray<>. See the description of that template and its methods for
+ * more information.
+ *
+ * Output GUID arrays are handled by a separate class, SafeGUIDArrayOut, since
+ * this class cannot handle them because of const modifiers.
+ */
+class SafeGUIDArray : public SafeArray <nsID *>
+{
+public:
+
+    typedef SafeArray <nsID *> Base;
+
+    class nsIDRef
+    {
+    public:
+
+        nsIDRef (nsID * &aVal) : mVal (aVal) {}
+
+        operator const nsID &() const { return mVal ? *mVal : *Empty; }
+        operator nsID() const { return mVal ? *mVal : *Empty; }
+
+        const nsID *operator&() const { return mVal ? mVal : Empty; }
+
+        nsIDRef &operator= (const nsID &aThat)
+        {
+            if (mVal == NULL)
+                Copy (&aThat, mVal);
+            else
+                *mVal = aThat;
+            return *this;
+        }
+
+    private:
+
+        nsID * &mVal;
+
+        static const nsID *Empty;
+
+        friend class SafeGUIDArray;
+    };
+
+    /** See SafeArray<>::SafeArray(). */
+    SafeGUIDArray() {}
+
+    /** See SafeArray<>::SafeArray (size_t). */
+    SafeGUIDArray (size_t aSize) : Base (aSize) {}
+
+    /**
+     * Array access operator that returns an array element by reference. As a
+     * special case, the return value of this operator on XPCOM is a nsID (GUID)
+     * reference, instead of a nsID pointer (the actual SafeArray template
+     * argument), for compatibility with the MS COM version.
+     *
+     * The rest is equivalent to SafeArray<>::operator[].
+     */
+    nsIDRef operator[] (size_t aIdx)
+    {
+        Assert (m.arr != NULL);
+        Assert (aIdx < size());
+        return nsIDRef (m.arr [aIdx]);
+    }
+
+    /**
+    * Const version of #operator[] that returns an array element by value.
+    */
+    const nsID &operator[] (size_t aIdx) const
+    {
+        Assert (m.arr != NULL);
+        Assert (aIdx < size());
+        return m.arr [aIdx] ? *m.arr [aIdx] : *nsIDRef::Empty;
+    }
+};
+
+/**
+ * Version of com::SafeArray for const arrays of GUID.
+ *
+ * This class is used to work with input GUID array parameters in method
+ * implementations. See SafeGUIDArray for more details.
+ */
+class SafeConstGUIDArray : public SafeArray <const nsID *,
+                                            SafeArrayTraits <nsID *> >
+{
+public:
+
+    typedef SafeArray <const nsID *, SafeArrayTraits <nsID *> > Base;
+
+    /** See SafeArray<>::SafeArray(). */
+    SafeConstGUIDArray() {}
+
+    /* See SafeArray<>::SafeArray (ComSafeArrayIn (T, aArg)). */
+    SafeConstGUIDArray (ComSafeGUIDArrayIn (aArg))
+        : Base (ComSafeGUIDArrayInArg (aArg)) {}
+
+    /**
+     * Array access operator that returns an array element by reference. As a
+     * special case, the return value of this operator on XPCOM is nsID (GUID)
+     * instead of nsID *, for compatibility with the MS COM version.
+     *
+     * The rest is equivalent to SafeArray<>::operator[].
+     */
+    const nsID &operator[] (size_t aIdx) const
+    {
+        AssertReturn (m.arr != NULL,  **((const nsID * *) NULL));
+        AssertReturn (aIdx < size(), **((const nsID * *) NULL));
+        return *m.arr [aIdx];
+    }
+
+private:
+
+    /* These are disabled because of const */
+    bool reset (size_t aNewSize) { NOREF (aNewSize); return false; }
+};
+
+#else /* defined (VBOX_WITH_XPCOM) */
+
+typedef SafeArray <GUID> SafeGUIDArray;
+typedef SafeArray <const GUID, SafeArrayTraits <GUID> > SafeConstGUIDArray;
+
+#endif /* defined (VBOX_WITH_XPCOM) */
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -882,6 +1360,8 @@ struct SafeIfaceArrayTraits
 protected:
 
     static VARTYPE VarType() { return VT_UNKNOWN; }
+    static ULONG VarCount (size_t aSize) { return (ULONG) aSize; }
+    static size_t Size (ULONG aVarCount) { return (size_t) aVarCount; }
 
     static void Copy (I * aFrom, I * &aTo)
     {
@@ -892,6 +1372,12 @@ protected:
         }
         else
             aTo = NULL;
+    }
+
+    static SAFEARRAY *CreateSafeArray (VARTYPE aVarType, SAFEARRAYBOUND *aBound)
+    {
+        NOREF (aVarType);
+        return SafeArrayCreateEx (VT_UNKNOWN, 1, aBound, (PVOID) &_ATL_IIDOF (I));
     }
 };
 
@@ -930,7 +1416,7 @@ public:
      *       was not enough memory for creating an array of the requested size.
      *       The constructor will also assert in this case.
      */
-    SafeIfaceArray (size_t aSize) { reset (aSize); }
+    SafeIfaceArray (size_t aSize) { Base::resize (aSize); }
 
     /**
      * Weakly attaches this instance to the existing array passed in a method
@@ -978,12 +1464,13 @@ public:
             AssertMsgReturnVoid (InlineIsEqualGUID (_ATL_IIDOF (I), guid),
                                  ("Expected IID {%Vuuid}, got {%Vuuid}.\n",
                                   &_ATL_IIDOF (I), &guid));
+
+            rc = SafeArrayAccessData (arg, (void HUGEP **) &m.raw);
+            AssertComRCReturnVoid (rc);
         }
 
         m.arr = arg;
         m.isWeak = true;
-
-        AssertReturnVoid (accessRaw() != NULL);
 
 #endif /* defined (VBOX_WITH_XPCOM) */
     }
@@ -1004,7 +1491,7 @@ public:
     {
         typedef C <ComPtr <OI>, A> List;
 
-        reset (aCntr.size());
+        Base::resize (aCntr.size());
         AssertReturnVoid (!Base::isNull());
 
         int i = 0;
@@ -1033,7 +1520,7 @@ public:
     {
         typedef C <ComObjPtr <OI>, A> List;
 
-        reset (aCntr.size());
+        Base::resize (aCntr.size());
         AssertReturnVoid (!Base::isNull());
 
         int i = 0;
@@ -1044,45 +1531,6 @@ public:
 #else
             Copy (*it, Base::m.raw [i]);
 #endif
-    }
-
-    /**
-     * Reinitializes this instance by preallocating space for the given number
-     * of elements. The previous array contents is lost.
-     *
-     * @param aNewSize  New number of elements in the array.
-     * @return          @c true on success and false if there is not enough
-     *                  memory for resizing.
-     */
-    virtual bool reset (size_t aNewSize)
-    {
-        Base::m.uninit();
-
-#if defined (VBOX_WITH_XPCOM)
-
-        /* Note: for zero-sized arrays, we use the size of 1 because whether
-         * malloc(0) returns a null pointer or not (which is used in isNull())
-         * is implementation-dependent according to the C standard. */
-
-        Base::m.arr = (I **) nsMemory::Alloc (RT_MAX (aNewSize, 1) * sizeof (I *));
-        AssertReturn (Base::m.arr != NULL, false);
-
-        Base::m.size = aNewSize;
-
-        for (size_t i = 0; i < Base::m.size; ++ i)
-            Init (Base::m.arr [i]);
-
-#else
-
-        SAFEARRAYBOUND bound = { (ULONG)aNewSize, 0 };
-        m.arr = SafeArrayCreateEx (VT_UNKNOWN, 1, &bound,
-                                   (PVOID) &_ATL_IIDOF (I));
-        AssertReturn (m.arr != NULL, false);
-
-        AssertReturn (accessRaw() != NULL, false);
-
-#endif
-        return true;
     }
 };
 

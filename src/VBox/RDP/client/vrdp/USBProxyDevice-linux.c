@@ -904,7 +904,7 @@ static int usbProxyLinuxReset(PUSBPROXYDEV pProxyDev)
              * So, we're in for a real treat from our excellent OS now...
              */
             rc2 = usb_reset_logical_reconnect(pProxyDev);
-            if (VBOX_FAILURE(rc2))
+            if (RT_FAILURE(rc2))
                 usbProxLinuxUrbUnplugged(pProxyDev);
             if (RT_SUCCESS(rc2))
             {
@@ -916,7 +916,7 @@ static int usbProxyLinuxReset(PUSBPROXYDEV pProxyDev)
         ASMAtomicDecU32(&g_cResetActive);
 # endif /* NO_LOGICAL_RECONNECT */
 
-        Log(("usb-linux: Reset failed, rc=%Vrc errno=%d.\n", RTErrConvertFromErrno(rc), rc));
+        Log(("usb-linux: Reset failed, rc=%Rrc errno=%d.\n", RTErrConvertFromErrno(rc), rc));
         pProxyDev->iActiveCfg = -1;
         return RTErrConvertFromErrno(rc);
     }

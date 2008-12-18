@@ -1,10 +1,12 @@
+/* $Id: ConsoleImpl.h 15051 2008-12-05 17:20:00Z vboxsync $ */
+
 /** @file
  *
  * VBox Console COM Class definition
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2008 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -40,6 +42,9 @@ class VMMDev;
 
 #include <VBox/vrdpapi.h>
 #include <VBox/pdmdrv.h>
+#ifdef VBOX_WITH_GUEST_PROPS
+# include <VBox/HostServices/GuestPropertySvc.h>  /* For the property notification callback */
+#endif
 
 struct VUSBIRHCONFIG;
 typedef struct VUSBIRHCONFIG *PVUSBIRHCONFIG;
@@ -55,7 +60,7 @@ typedef struct VUSBIRHCONFIG *PVUSBIRHCONFIG;
  *  not available (NULL), sets error info and returns returns E_ACCESSDENIED.
  *  The translatable error message is defined in null context.
  *
- *  Intended to used only within Console children (i,e. Keyboard, Mouse,
+ *  Intended to used only within Console children (i.e. Keyboard, Mouse,
  *  Display, etc.).
  *
  *  @param drv  driver pointer to check (compare it with NULL)
@@ -124,6 +129,7 @@ public:
 
     // IConsole methods
     STDMETHOD(PowerUp) (IProgress **aProgress);
+    STDMETHOD(PowerUpPaused) (IProgress **aProgress);
     STDMETHOD(PowerDown)();
     STDMETHOD(PowerDownAsync) (IProgress **aProgress);
     STDMETHOD(Reset)();
@@ -132,18 +138,19 @@ public:
     STDMETHOD(PowerButton)();
     STDMETHOD(SleepButton)();
     STDMETHOD(GetPowerButtonHandled)(BOOL *aHandled);
+    STDMETHOD(GetGuestEnteredACPIMode)(BOOL *aEntered);
     STDMETHOD(SaveState) (IProgress **aProgress);
-    STDMETHOD(AdoptSavedState) (INPTR BSTR aSavedStateFile);
+    STDMETHOD(AdoptSavedState) (IN_BSTR aSavedStateFile);
     STDMETHOD(DiscardSavedState)();
     STDMETHOD(GetDeviceActivity) (DeviceType_T aDeviceType,
                                  DeviceActivity_T *aDeviceActivity);
-    STDMETHOD(AttachUSBDevice) (INPTR GUIDPARAM aId);
-    STDMETHOD(DetachUSBDevice) (INPTR GUIDPARAM aId, IUSBDevice **aDevice);
-    STDMETHOD(CreateSharedFolder) (INPTR BSTR aName, INPTR BSTR aHostPath, BOOL aWritable);
-    STDMETHOD(RemoveSharedFolder) (INPTR BSTR aName);
-    STDMETHOD(TakeSnapshot) (INPTR BSTR aName, INPTR BSTR aDescription,
+    STDMETHOD(AttachUSBDevice) (IN_GUID aId);
+    STDMETHOD(DetachUSBDevice) (IN_GUID aId, IUSBDevice **aDevice);
+    STDMETHOD(CreateSharedFolder) (IN_BSTR aName, IN_BSTR aHostPath, BOOL aWritable);
+    STDMETHOD(RemoveSharedFolder) (IN_BSTR aName);
+    STDMETHOD(TakeSnapshot) (IN_BSTR aName, IN_BSTR aDescription,
                              IProgress **aProgress);
-    STDMETHOD(DiscardSnapshot) (INPTR GUIDPARAM aId, IProgress **aProgress);
+    STDMETHOD(DiscardSnapshot) (IN_GUID aId, IProgress **aProgress);
     STDMETHOD(DiscardCurrentState) (IProgress **aProgress);
     STDMETHOD(DiscardCurrentSnapshotAndState) (IProgress **aProgress);
     STDMETHOD(RegisterCallback) (IConsoleCallback *aCallback);
@@ -156,18 +163,18 @@ public:
      *  called only by the VM execution thread.
      */
 
-    Guest *getGuest() { return mGuest; }
-    Keyboard *getKeyboard() { return mKeyboard; }
-    Mouse *getMouse() { return mMouse; }
-    Display *getDisplay() { return mDisplay; }
-    MachineDebugger *getMachineDebugger() { return mDebugger; }
+    Guest *getGuest() const { return mGuest; }
+    Keyboard *getKeyboard() const { return mKeyboard; }
+    Mouse *getMouse() const { return mMouse; }
+    Display *getDisplay() const { return mDisplay; }
+    MachineDebugger *getMachineDebugger() const { return mDebugger; }
 
-    const ComPtr <IMachine> &machine() { return mMachine; }
+    const ComPtr <IMachine> &machine() const { return mMachine; }
 
     /** Method is called only from ConsoleVRDPServer */
-    IVRDPServer *getVRDPServer() { return mVRDPServer; }
+    IVRDPServer *getVRDPServer() const { return mVRDPServer; }
 
-    ConsoleVRDPServer *consoleVRDPServer() { return mConsoleVRDPServer; }
+    ConsoleVRDPServer *consoleVRDPServer() const { return mConsoleVRDPServer; }
 
     HRESULT updateMachineState (MachineState_T aMachineState);
 
@@ -181,10 +188,10 @@ public:
     HRESULT onUSBControllerChange();
     HRESULT onSharedFolderChange (BOOL aGlobal);
     HRESULT onUSBDeviceAttach (IUSBDevice *aDevice, IVirtualBoxErrorInfo *aError, ULONG aMaskedIfs);
-    HRESULT onUSBDeviceDetach (INPTR GUIDPARAM aId, IVirtualBoxErrorInfo *aError);
-    HRESULT getGuestProperty (INPTR BSTR aKey, BSTR *aValue, ULONG64 *aTimestamp, BSTR *aFlags);
-    HRESULT setGuestProperty (INPTR BSTR aKey, INPTR BSTR aValue, INPTR BSTR aFlags);
-    HRESULT enumerateGuestProperties (INPTR BSTR aPatterns, ComSafeArrayOut(BSTR, aNames), ComSafeArrayOut(BSTR, aValues), ComSafeArrayOut(ULONG64, aTimestamps), ComSafeArrayOut(BSTR, aFlags));
+    HRESULT onUSBDeviceDetach (IN_GUID aId, IVirtualBoxErrorInfo *aError);
+    HRESULT getGuestProperty (IN_BSTR aKey, BSTR *aValue, ULONG64 *aTimestamp, BSTR *aFlags);
+    HRESULT setGuestProperty (IN_BSTR aKey, IN_BSTR aValue, IN_BSTR aFlags);
+    HRESULT enumerateGuestProperties (IN_BSTR aPatterns, ComSafeArrayOut(BSTR, aNames), ComSafeArrayOut(BSTR, aValues), ComSafeArrayOut(ULONG64, aTimestamps), ComSafeArrayOut(BSTR, aFlags));
     VMMDev *getVMMDev() { return mVMMDev; }
     AudioSniffer *getAudioSniffer () { return mAudioSniffer; }
 
@@ -210,14 +217,14 @@ public:
     void onKeyboardLedsChange (bool fNumLock, bool fCapsLock, bool fScrollLock);
     void onUSBDeviceStateChange (IUSBDevice *aDevice, bool aAttached,
                                  IVirtualBoxErrorInfo *aError);
-    void onRuntimeError (BOOL aFatal, INPTR BSTR aErrorID, INPTR BSTR aMessage);
+    void onRuntimeError (BOOL aFatal, IN_BSTR aErrorID, IN_BSTR aMessage);
     HRESULT onShowWindow (BOOL aCheck, BOOL *aCanShow, ULONG64 *aWinId);
 
     static const PDMDRVREG DrvStatusReg;
 
     void reportAuthLibraryError (const char *filename, int rc)
     {
-        setError (E_FAIL, tr("Could not load the external authentication library '%s' (%Vrc)"), filename, rc);
+        setError (E_FAIL, tr("Could not load the external authentication library '%s' (%Rrc)"), filename, rc);
     }
 
     // for VirtualBoxSupportErrorInfoImpl
@@ -357,7 +364,7 @@ public:
 
     /**
      *  A deviation of SaveVMPtr that doesn't set the error info on failure.
-     *  Intenede for pieces of code that don't need to return the VM access
+     *  Intended for pieces of code that don't need to return the VM access
      *  failure to the caller. The usage pattern is:
      *  <code>
      *      Console::SaveVMPtrQuiet pVM (mParent);
@@ -398,6 +405,7 @@ private:
 
     HRESULT consoleInitReleaseLog (const ComPtr <IMachine> aMachine);
 
+    HRESULT powerUp (IProgress **aProgress, bool aPaused);
     HRESULT powerDown (Progress *aProgress = NULL);
 
     HRESULT callTapSetupApplication(bool isStatic, RTFILE tapFD, Bstr &tapDevice,
@@ -412,16 +420,16 @@ private:
         return setMachineState (aMachineState, false /* aUpdateServer */);
     }
 
-    HRESULT findSharedFolder (const BSTR aName,
+    HRESULT findSharedFolder (CBSTR aName,
                               ComObjPtr <SharedFolder> &aSharedFolder,
                               bool aSetError = false);
 
     HRESULT fetchSharedFolders (BOOL aGlobal);
-    bool findOtherSharedFolder (INPTR BSTR aName,
+    bool findOtherSharedFolder (IN_BSTR aName,
                                 SharedFolderDataMap::const_iterator &aIt);
 
-    HRESULT createSharedFolder (INPTR BSTR aName, SharedFolderData aData);
-    HRESULT removeSharedFolder (INPTR BSTR aName);
+    HRESULT createSharedFolder (CBSTR aName, SharedFolderData aData);
+    HRESULT removeSharedFolder (CBSTR aName);
 
     static DECLCALLBACK(int) configConstructor(PVM pVM, void *pvConsole);
     static DECLCALLBACK(void) vmstateChangeCallback(PVM aVM, VMSTATE aState,
@@ -481,6 +489,16 @@ private:
 
     static DECLCALLBACK(void)   saveStateFileExec (PSSMHANDLE pSSM, void *pvUser);
     static DECLCALLBACK(int)    loadStateFileExec (PSSMHANDLE pSSM, void *pvUser, uint32_t u32Version);
+
+#ifdef VBOX_WITH_GUEST_PROPS
+    static DECLCALLBACK(int)    doGuestPropNotification (void *pvExtension, uint32_t,
+                                                         void *pvParms, uint32_t cbParms);
+    HRESULT doEnumerateGuestProperties (CBSTR aPatterns,
+                                        ComSafeArrayOut(BSTR, aNames),
+                                        ComSafeArrayOut(BSTR, aValues),
+                                        ComSafeArrayOut(ULONG64, aTimestamps),
+                                        ComSafeArrayOut(BSTR, aFlags));
+#endif
 
     bool mSavedStateDataLoaded : 1;
 
@@ -589,3 +607,4 @@ private:
 };
 
 #endif // ____H_CONSOLEIMPL
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

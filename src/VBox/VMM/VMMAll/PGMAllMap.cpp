@@ -1,4 +1,4 @@
-/* $Id: PGMAllMap.cpp $ */
+/* $Id: PGMAllMap.cpp 13232 2008-10-13 20:03:48Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor - All context code.
  */
@@ -44,7 +44,7 @@
  * @param   cbPages     Number of bytes to map. Must be page aligned.
  * @param   fFlags      Page flags (X86_PTE_*).
  */
-PGMDECL(int) PGMMap(PVM pVM, RTGCUINTPTR GCPtr, RTHCPHYS HCPhys, uint32_t cbPages, unsigned fFlags)
+VMMDECL(int) PGMMap(PVM pVM, RTGCUINTPTR GCPtr, RTHCPHYS HCPhys, uint32_t cbPages, unsigned fFlags)
 {
     AssertMsg(pVM->pgm.s.offVM, ("Bad init order\n"));
 
@@ -54,7 +54,6 @@ PGMDECL(int) PGMMap(PVM pVM, RTGCUINTPTR GCPtr, RTHCPHYS HCPhys, uint32_t cbPage
     AssertMsg(RT_ALIGN_T(GCPtr, PAGE_SIZE, RTGCUINTPTR) == GCPtr, ("Invalid alignment GCPtr=%#x\n", GCPtr));
     AssertMsg(cbPages > 0 && RT_ALIGN_32(cbPages, PAGE_SIZE) == cbPages, ("Invalid cbPages=%#x\n",  cbPages));
     AssertMsg(!(fFlags & X86_PDE_PG_MASK), ("Invalid flags %#x\n", fFlags));
-    //Assert(HCPhys < _4G); ---  Don't *EVER* try 32-bit shadow mode on a PAE/AMD64 box with memory above 4G !!!
 
     /* hypervisor defaults */
     if (!fFlags)
@@ -63,7 +62,7 @@ PGMDECL(int) PGMMap(PVM pVM, RTGCUINTPTR GCPtr, RTHCPHYS HCPhys, uint32_t cbPage
     /*
      * Find the mapping.
      */
-    PPGMMAPPING pCur = CTXALLSUFF(pVM->pgm.s.pMappings);
+    PPGMMAPPING pCur = pVM->pgm.s.CTX_SUFF(pMappings);
     while (pCur)
     {
         if (GCPtr - pCur->GCPtr < pCur->cb)
@@ -90,10 +89,10 @@ PGMDECL(int) PGMMap(PVM pVM, RTGCUINTPTR GCPtr, RTHCPHYS HCPhys, uint32_t cbPage
                 const unsigned  iPageNo = (off >> PAGE_SHIFT) & X86_PT_MASK;
 
                 /* 32-bit */
-                CTXALLSUFF(pCur->aPTs[iPT].pPT)->a[iPageNo].u = (uint32_t)Pte.u;      /* ASSUMES HCPhys < 4GB and/or that we're never gonna do 32-bit on a PAE host! */
+                pCur->aPTs[iPT].CTX_SUFF(pPT)->a[iPageNo].u = (uint32_t)Pte.u;      /* ASSUMES HCPhys < 4GB and/or that we're never gonna do 32-bit on a PAE host! */
 
                 /* pae */
-                CTXALLSUFF(pCur->aPTs[iPT].paPaePTs)[iPageNo / 512].a[iPageNo % 512].u = Pte.u;
+                pCur->aPTs[iPT].CTX_SUFF(paPaePTs)[iPageNo / 512].a[iPageNo % 512].u = Pte.u;
 
                 /* next */
                 cbPages -= PAGE_SIZE;
@@ -107,7 +106,7 @@ PGMDECL(int) PGMMap(PVM pVM, RTGCUINTPTR GCPtr, RTHCPHYS HCPhys, uint32_t cbPage
         }
 
         /* next */
-        pCur = CTXALLSUFF(pCur->pNext);
+        pCur = pCur->CTX_SUFF(pNext);
     }
 
     AssertMsgFailed(("GCPtr=%#x was not found in any mapping ranges!\n",  GCPtr));
@@ -124,7 +123,7 @@ PGMDECL(int) PGMMap(PVM pVM, RTGCUINTPTR GCPtr, RTHCPHYS HCPhys, uint32_t cbPage
  * @param   cb          Size (in bytes) of the range to apply the modification to.
  * @param   fFlags      Page flags X86_PTE_*, excluding the page mask of course.
  */
-PGMDECL(int) PGMMapSetPage(PVM pVM, RTGCPTR GCPtr, uint64_t cb, uint64_t fFlags)
+VMMDECL(int) PGMMapSetPage(PVM pVM, RTGCPTR GCPtr, uint64_t cb, uint64_t fFlags)
 {
     return PGMMapModifyPage(pVM, GCPtr, cb, fFlags, 0);
 }
@@ -142,21 +141,13 @@ PGMDECL(int) PGMMapSetPage(PVM pVM, RTGCPTR GCPtr, uint64_t cb, uint64_t fFlags)
  * @param   fFlags      The OR  mask - page flags X86_PTE_*, excluding the page mask of course.
  * @param   fMask       The AND mask - page flags X86_PTE_*, excluding the page mask of course.
  */
-PGMDECL(int)  PGMMapModifyPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask)
+VMMDECL(int)  PGMMapModifyPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask)
 {
     /*
      * Validate input.
      */
-    if (fFlags & X86_PTE_PAE_PG_MASK)
-    {
-        AssertMsgFailed(("fFlags=%#x\n", fFlags));
-        return VERR_INVALID_PARAMETER;
-    }
-    if (!cb)
-    {
-        AssertFailed();
-        return VERR_INVALID_PARAMETER;
-    }
+    AssertMsg(!(fFlags & X86_PTE_PAE_PG_MASK), ("fFlags=%#x\n", fFlags));
+    Assert(cb);
 
     /*
      * Align the input.
@@ -168,18 +159,16 @@ PGMDECL(int)  PGMMapModifyPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlag
     /*
      * Find the mapping.
      */
-    PPGMMAPPING pCur = CTXALLSUFF(pVM->pgm.s.pMappings);
+    PPGMMAPPING pCur = pVM->pgm.s.CTX_SUFF(pMappings);
     while (pCur)
     {
         RTGCUINTPTR off = (RTGCUINTPTR)GCPtr - (RTGCUINTPTR)pCur->GCPtr;
         if (off < pCur->cb)
         {
-            if (off + cb > pCur->cb)
-            {
-                AssertMsgFailed(("Invalid page range %#x LB%#x. mapping '%s' %#x to %#x\n",
-                                 GCPtr, cb, pCur->pszDesc, pCur->GCPtr, pCur->GCPtrLast));
-                return VERR_INVALID_PARAMETER;
-            }
+            AssertMsgReturn(off + cb <= pCur->cb,
+                            ("Invalid page range %#x LB%#x. mapping '%s' %#x to %#x\n",
+                             GCPtr, cb, pCur->pszDesc, pCur->GCPtr, pCur->GCPtrLast),
+                            VERR_INVALID_PARAMETER);
 
             /*
              * Perform the requested operation.
@@ -188,15 +177,15 @@ PGMDECL(int)  PGMMapModifyPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlag
             {
                 unsigned iPT  = off >> X86_PD_SHIFT;
                 unsigned iPTE = (off >> PAGE_SHIFT) & X86_PT_MASK;
-                while (cb > 0 && iPTE < RT_ELEMENTS(CTXALLSUFF(pCur->aPTs[iPT].pPT)->a))
+                while (cb > 0 && iPTE < RT_ELEMENTS(pCur->aPTs[iPT].CTX_SUFF(pPT)->a))
                 {
                     /* 32-Bit */
-                    CTXALLSUFF(pCur->aPTs[iPT].pPT)->a[iPTE].u &= fMask | X86_PTE_PG_MASK;
-                    CTXALLSUFF(pCur->aPTs[iPT].pPT)->a[iPTE].u |= fFlags & ~X86_PTE_PG_MASK;
+                    pCur->aPTs[iPT].CTX_SUFF(pPT)->a[iPTE].u &= fMask | X86_PTE_PG_MASK;
+                    pCur->aPTs[iPT].CTX_SUFF(pPT)->a[iPTE].u |= fFlags & ~X86_PTE_PG_MASK;
 
                     /* PAE */
-                    CTXALLSUFF(pCur->aPTs[iPT].paPaePTs)[iPTE / 512].a[iPTE % 512].u &= fMask | X86_PTE_PAE_PG_MASK;
-                    CTXALLSUFF(pCur->aPTs[iPT].paPaePTs)[iPTE / 512].a[iPTE % 512].u |= fFlags & ~X86_PTE_PAE_PG_MASK;
+                    pCur->aPTs[iPT].CTX_SUFF(paPaePTs)[iPTE / 512].a[iPTE % 512].u &= fMask | X86_PTE_PAE_PG_MASK;
+                    pCur->aPTs[iPT].CTX_SUFF(paPaePTs)[iPTE / 512].a[iPTE % 512].u |= fFlags & ~X86_PTE_PAE_PG_MASK;
 
                     /* invalidate tls */
                     PGM_INVL_PG((RTGCUINTPTR)pCur->GCPtr + off);
@@ -211,7 +200,7 @@ PGMDECL(int)  PGMMapModifyPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlag
             return VINF_SUCCESS;
         }
         /* next */
-        pCur = CTXALLSUFF(pCur->pNext);
+        pCur = pCur->CTX_SUFF(pNext);
     }
 
     AssertMsgFailed(("Page range %#x LB%#x not found\n", GCPtr, cb));

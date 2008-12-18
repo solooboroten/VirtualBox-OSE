@@ -30,13 +30,13 @@
 #ifndef ___VBox_dbggui_h
 #define ___VBox_dbggui_h
 
+#include <VBox/types.h>
 #if defined(RT_OS_WINDOWS)
 # include <VirtualBox.h>
 #else
 # include <VirtualBox_XPCOM.h>
 #endif
 
-#include <VBox/types.h>
 
 __BEGIN_DECLS
 
@@ -47,14 +47,70 @@ __BEGIN_DECLS
 /** Pointer to the debugger GUI instance structure. */
 typedef struct DBGGUI *PDBGGUI;
 
+/** Virtual method table for the debugger GUI. */
+typedef struct DBGGUIVT
+{
+    /** The version. (DBGGUIVT_VERSION) */
+    uint32_t u32Version;
+    /** @copydoc DBGGuiDestroy */
+    DECLCALLBACKMEMBER(int,  pfnDestroy)(PDBGGUI pGui);
+    /** @copydoc DBGGuiAdjustRelativePos */
+    DECLCALLBACKMEMBER(void, pfnAdjustRelativePos)(PDBGGUI pGui, int x, int y, unsigned cx, unsigned cy);
+    /** @copydoc DBGGuiShowStatistics */
+    DECLCALLBACKMEMBER(int,  pfnShowStatistics)(PDBGGUI pGui);
+    /** @copydoc DBGGuiShowCommandLine */
+    DECLCALLBACKMEMBER(int,  pfnShowCommandLine)(PDBGGUI pGui);
+    /** @copydoc DBGGuiSetParent */
+    DECLCALLBACKMEMBER(void, pfnSetParent)(PDBGGUI pGui, void *pvParent);
+    /** @copydoc DBGGuiSetMenu */
+    DECLCALLBACKMEMBER(void, pfnSetMenu)(PDBGGUI pGui, void *pvMenu);
+    /** The end version. (DBGGUIVT_VERSION) */
+    uint32_t u32EndVersion;
+} DBGGUIVT;
+/** Pointer to the virtual method table for the debugger GUI. */
+typedef DBGGUIVT const *PCDBGGUIVT;
+/** The u32Version value.
+ * The first byte is the minor version, the 2nd byte is major version number.
+ * The high 16-bit word is a magic.  */
+#define DBGGUIVT_VERSION    UINT32_C(0xbead0100)
+/** Macro for determining whether two versions are compatible or not.
+ * @returns boolean result.
+ * @param   uVer1   The first version number.
+ * @param   uVer2   The second version number.
+ */
+#define DBGGUIVT_ARE_VERSIONS_COMPATIBLE(uVer1, uVer2) \
+    ( ((uVer1) & UINT32_C(0xffffff00)) == ((uVer2) & UINT32_C(0xffffff00)) )
+
+
 /**
  * Creates the debugger GUI.
  *
  * @returns VBox status code.
  * @param   pSession    The VirtualBox session.
  * @param   ppGui       Where to store the pointer to the debugger instance.
+ * @param   ppGuiVT     Where to store the virtual method table pointer.
+ *                      Optional.
  */
-DBGDECL(int) DBGGuiCreate(ISession *pSession, PDBGGUI *ppGui);
+DBGDECL(int) DBGGuiCreate(ISession *pSession, PDBGGUI *ppGui, PCDBGGUIVT *ppGuiVT);
+/** @copydoc DBGGuiCreate. */
+typedef DECLCALLBACK(int) FNDBGGUICREATE(ISession *pSession, PDBGGUI *ppGui, PCDBGGUIVT *ppGuiVT);
+/** Pointer to DBGGuiCreate. */
+typedef FNDBGGUICREATE *PFNDBGGUICREATE;
+
+/**
+ * Creates the debugger GUI given a VM handle.
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM handle.
+ * @param   ppGui       Where to store the pointer to the debugger instance.
+ * @param   ppGuiVT     Where to store the virtual method table pointer.
+ *                      Optional.
+ */
+DBGDECL(int) DBGGuiCreateForVM(PVM pVM, PDBGGUI *ppGui, PCDBGGUIVT *ppGuiVT);
+/** @copydoc DBGGuiCreateForVM. */
+typedef DECLCALLBACK(int) FNDBGGUICREATEFORVM(PVM pVM, PDBGGUI *ppGui, PCDBGGUIVT *ppGuiVT);
+/** Pointer to DBGGuiCreateForVM. */
+typedef FNDBGGUICREATEFORVM *PFNDBGGUICREATEFORVM;
 
 /**
  * Destroys the debugger GUI.
@@ -91,6 +147,27 @@ DBGDECL(int) DBGGuiShowStatistics(PDBGGUI pGui);
  * @param   pGui        The instance returned by DBGGuiCreate().
  */
 DBGDECL(int) DBGGuiShowCommandLine(PDBGGUI pGui);
+
+/**
+ * Sets the parent windows.
+ *
+ * @param   pGui        The instance returned by DBGGuiCreate().
+ * @param   pvParent    Pointer to a QWidget object.
+ *
+ * @remarks This will no affect any existing windows, so call it right after
+ *          creating the thing.
+ */
+DBGDECL(void) DBGGuiSetParent(PDBGGUI pGui, void *pvParent);
+
+/**
+ * Sets the debug menu object.
+ *
+ * @param   pGui        The instance returned by DBGGuiCreate().
+ * @param   pvMenu      Pointer to a QMenu object.
+ *
+ * @remarks Call right after creation or risk losing menu item.
+ */
+DBGDECL(void) DBGGuiSetMenu(PDBGGUI pGui, void *pvMenu);
 
 /** @} */
 

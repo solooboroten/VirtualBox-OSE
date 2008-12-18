@@ -152,7 +152,7 @@ RTDECL(int)  RTPathGetCurrent(char *pszPath, size_t cchPath);
  * @param   pszRealPath     Where to store the real path.
  * @param   cchRealPath     Size of the buffer.
  */
-RTDECL(int) RTPathReal(const char *pszPath, char *pszRealPath, unsigned cchRealPath);
+RTDECL(int) RTPathReal(const char *pszPath, char *pszRealPath, size_t cchRealPath);
 
 /**
  * Same as RTPathReal only the result is RTStrDup()'ed.
@@ -171,7 +171,7 @@ RTDECL(char *) RTPathRealDup(const char *pszPath);
  * @param   pszAbsPath      Where to store the absolute path.
  * @param   cchAbsPath      Size of the buffer.
  */
-RTDECL(int) RTPathAbs(const char *pszPath, char *pszAbsPath, unsigned cchAbsPath);
+RTDECL(int) RTPathAbs(const char *pszPath, char *pszAbsPath, size_t cchAbsPath);
 
 /**
  * Same as RTPathAbs only the result is RTStrDup()'ed.
@@ -195,7 +195,7 @@ RTDECL(char *) RTPathAbsDup(const char *pszPath);
  * @param   pszAbsPath      Where to store the absolute path.
  * @param   cchAbsPath      Size of the buffer.
  */
-RTDECL(int) RTPathAbsEx(const char *pszBase, const char *pszPath, char *pszAbsPath, unsigned cchAbsPath);
+RTDECL(int) RTPathAbsEx(const char *pszBase, const char *pszPath, char *pszAbsPath, size_t cchAbsPath);
 
 /**
  * Same as RTPathAbsEx only the result is RTStrDup()'ed.
@@ -233,12 +233,12 @@ RTDECL(void) RTPathStripTrailingSlash(char *pszPath);
 
 /**
  * Parses a path.
- * 
- * It figures the length of the directory component, the offset of 
+ *
+ * It figures the length of the directory component, the offset of
  * the file name and the location of the suffix dot.
  *
  * @returns The path length.
- * 
+ *
  * @param   pszPath     Path to find filename in.
  * @param   pcbDir      Where to put the length of the directory component.
  *                      If no directory, this will be 0. Optional.
@@ -248,7 +248,7 @@ RTDECL(void) RTPathStripTrailingSlash(char *pszPath);
  * @param   poffSuff    Where to store the suffix offset (the last dot).
  *                      If empty string or if it's ending with a slash this
  *                      will be set to -1. Optional.
- * @param   pfFlags     Where to set flags returning more information about 
+ * @param   pfFlags     Where to set flags returning more information about
  *                      the path. For the future. Optional.
  */
 RTDECL(size_t) RTPathParse(const char *pszPath, size_t *pcchDir, ssize_t *poffName, ssize_t *poffSuff);
@@ -348,7 +348,7 @@ RTDECL(bool) RTPathStartsWith(const char *pszPath, const char *pszParentPath);
  * @param   pszPath     Buffer where to store the path.
  * @param   cchPath     Buffer size in bytes.
  */
-RTDECL(int) RTPathProgram(char *pszPath, unsigned cchPath);
+RTDECL(int) RTPathProgram(char *pszPath, size_t cchPath);
 
 /**
  * Gets the user home directory.
@@ -357,7 +357,7 @@ RTDECL(int) RTPathProgram(char *pszPath, unsigned cchPath);
  * @param   pszPath     Buffer where to store the path.
  * @param   cchPath     Buffer size in bytes.
  */
-RTDECL(int) RTPathUserHome(char *pszPath, unsigned cchPath);
+RTDECL(int) RTPathUserHome(char *pszPath, size_t cchPath);
 
 /**
  * Gets the directory of shared libraries. This is not the same as
@@ -372,7 +372,7 @@ RTDECL(int) RTPathUserHome(char *pszPath, unsigned cchPath);
  * @param   pszPath     Buffer where to store the path.
  * @param   cchPath     Buffer size in bytes.
  */
-RTDECL(int) RTPathSharedLibs(char *pszPath, unsigned cchPath);
+RTDECL(int) RTPathSharedLibs(char *pszPath, size_t cchPath);
 
 /**
  * Gets the directory for architecture-independent application data, for
@@ -386,7 +386,7 @@ RTDECL(int) RTPathSharedLibs(char *pszPath, unsigned cchPath);
  * @param   pszPath     Buffer where to store the path.
  * @param   cchPath     Buffer size in bytes.
  */
-RTDECL(int) RTPathAppPrivateNoArch(char *pszPath, unsigned cchPath);
+RTDECL(int) RTPathAppPrivateNoArch(char *pszPath, size_t cchPath);
 
 /**
  * Gets the directory for architecture-dependent application data, for
@@ -400,7 +400,7 @@ RTDECL(int) RTPathAppPrivateNoArch(char *pszPath, unsigned cchPath);
  * @param   pszPath     Buffer where to store the path.
  * @param   cchPath     Buffer size in bytes.
  */
-RTDECL(int) RTPathAppPrivateArch(char *pszPath, unsigned cchPath);
+RTDECL(int) RTPathAppPrivateArch(char *pszPath, size_t cchPath);
 
 /**
  * Gets the directory for documentation.
@@ -413,7 +413,7 @@ RTDECL(int) RTPathAppPrivateArch(char *pszPath, unsigned cchPath);
  * @param   pszPath     Buffer where to store the path.
  * @param   cchPath     Buffer size in bytes.
  */
-RTDECL(int) RTPathAppDocs(char *pszPath, unsigned cchPath);
+RTDECL(int) RTPathAppDocs(char *pszPath, size_t cchPath);
 
 /**
  * Query information about a file system object.

@@ -1,4 +1,4 @@
-/* $Id: tstPath.cpp $ */
+/* $Id: tstPath.cpp 14324 2008-11-18 19:09:34Z vboxsync $ */
 /** @file
  * IPRT Testcase - Test various path functions.
  */
@@ -35,6 +35,7 @@
 #include <iprt/process.h>
 #include <iprt/initterm.h>
 #include <iprt/stream.h>
+#include <iprt/string.h>
 #include <iprt/err.h>
 #include <iprt/param.h>
 
@@ -77,7 +78,7 @@ int main()
         RTPrintf("tstPath: FAILED - RTProcGetExecutableName\n");
         cErrors++;
     }
-    
+
 
     /*
      * RTPathAbsEx
@@ -119,9 +120,9 @@ int main()
         "\\MustDie",                    "\\from_root/dir/..",
         "\\temp",                       "\\data",
 #endif
-        };
+    };
 
-    for (unsigned i = 0; i < ELEMENTS(aInput); i += 2)
+    for (unsigned i = 0; i < RT_ELEMENTS(aInput); i += 2)
     {
         RTPrintf("tstPath: base={%s}, path={%s}, ", aInput[i], aInput[i + 1]);
         CHECK_RC(RTPathAbsEx(aInput[i], aInput[i + 1], szPath, sizeof(szPath)));
@@ -130,12 +131,48 @@ int main()
     }
 
     /*
+     * RTPathStripFilename
+     */
+    RTPrintf("tstPath: RTPathStripFilename...\n");
+    static const char *apszStripFilenameTests[] =
+    {
+        "/usr/include///",              "/usr/include//",
+        "/usr/include/",                "/usr/include",
+        "/usr/include",                 "/usr",
+        "/usr",                         "/",
+        "usr",                          ".",
+#if defined (RT_OS_OS2) || defined (RT_OS_WINDOWS)
+        "c:/windows",                   "c:/",
+        "c:/",                          "c:/",
+        "D:",                           "D:",
+        "C:\\OS2\\DLLS",                "C:\\OS2",
+#endif
+    };
+    for (unsigned i = 0; i < RT_ELEMENTS(apszStripFilenameTests); i += 2)
+    {
+        const char *pszInput  = apszStripFilenameTests[i];
+        const char *pszExpect = apszStripFilenameTests[i + 1];
+        char szPath[RTPATH_MAX];
+        strcpy(szPath, pszInput);
+        RTPathStripFilename(szPath);
+        if (strcmp(szPath, pszExpect))
+        {
+            RTPrintf("tstPath: RTPathStripFilename failed!\n"
+                     "   input: '%s'\n"
+                     "  output: '%s'\n"
+                     "expected: '%s'\n",
+                     pszInput, szPath, pszExpect);
+            cErrors++;
+        }
+    }
+
+    /*
      * Summary.
      */
     if (!cErrors)
-        RTPrintf("tstTimer: SUCCESS\n");
+        RTPrintf("tstPath: SUCCESS\n");
     else
-        RTPrintf("tstTimer: FAILURE %d errors\n", cErrors);
+        RTPrintf("tstPath: FAILURE %d errors\n", cErrors);
     return !!cErrors;
 }
 

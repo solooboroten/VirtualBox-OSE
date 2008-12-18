@@ -1,4 +1,4 @@
-/* $Id: SUPLib-win.cpp $ */
+/* $Id: SUPLib-win.cpp 13865 2008-11-05 14:14:11Z vboxsync $ */
 /** @file
  * VirtualBox Support Library - Windows NT specific parts.
  */
@@ -182,7 +182,7 @@ static int suplibOsCreateService(void)
     {
         char szDriver[RTPATH_MAX];
         int rc = RTPathProgram(szDriver, sizeof(szDriver) - sizeof("\\VBoxDrv.sys"));
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
         {
             strcat(szDriver, "\\VBoxDrv.sys");
             SC_HANDLE hService = CreateService(hSMgrCreate,
@@ -333,7 +333,7 @@ static int suplibOsUpdateService(void)
         {
             char szDriver[RTPATH_MAX];
             int rc = RTPathProgram(szDriver, sizeof(szDriver) - sizeof("\\VBoxDrv.sys"));
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
             {
                 strcat(szDriver, "\\VBoxDrv.sys");
 
@@ -503,13 +503,13 @@ int suplibOsIOCtl(PSUPLIBDATA pThis, uintptr_t uFunction, void *pvReq, size_t cb
 }
 
 
-int suplibOsIOCtlFast(PSUPLIBDATA pThis, uintptr_t uFunction)
+int suplibOsIOCtlFast(PSUPLIBDATA pThis, uintptr_t uFunction, uintptr_t idCpu)
 {
     /*
      * Issue device I/O control.
      */
     DWORD cbReturned = 0;
-    if (DeviceIoControl((HANDLE)pThis->hDevice, uFunction, NULL, 0, NULL, 0, &cbReturned, NULL))
+    if (DeviceIoControl((HANDLE)pThis->hDevice, uFunction, NULL, 0, (LPVOID)idCpu, 0, &cbReturned, NULL))
         return VINF_SUCCESS;
     return suplibConvertWin32Err(GetLastError());
 }

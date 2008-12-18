@@ -1,4 +1,4 @@
-/* $Id: tstVMStructSize.cpp $ */
+/* $Id: tstVMStructSize.cpp 14411 2008-11-20 13:26:47Z vboxsync $ */
 /** @file
  * tstVMStructSize - testcase for check structure sizes/alignment
  *                   and to verify that HC and GC uses the same
@@ -46,6 +46,9 @@
 #include "SSMInternal.h"
 #include "HWACCMInternal.h"
 #include "PATMInternal.h"
+#ifdef VBOX_WITH_VMI
+# include "PARAVInternal.h"
+#endif
 #include "VMMInternal.h"
 #include "DBGFInternal.h"
 #include "STAMInternal.h"
@@ -159,22 +162,36 @@ int main()
         rc++;
     }
     CHECK_MEMBER_ALIGNMENT(VM, trpm.s.aIdt, 16);
-    CHECK_MEMBER_ALIGNMENT(VM, cpum.s.Host, 32);
-    CHECK_MEMBER_ALIGNMENT(VM, cpum.s.Guest, 32);
-    CHECK_MEMBER_ALIGNMENT(VM, cpum.s.Hyper, 32);
+    CHECK_MEMBER_ALIGNMENT(VM, cpum, 64);
+    CHECK_MEMBER_ALIGNMENT(VM, aCpus[0].cpum.s.Host, 64);
+    CHECK_MEMBER_ALIGNMENT(VM, aCpus[0].cpum.s.Guest, 64);
+    CHECK_MEMBER_ALIGNMENT(VM, aCpus[1].cpum.s.Host, 64);
+    CHECK_MEMBER_ALIGNMENT(VM, aCpus[1].cpum.s.Guest, 64);
+    CHECK_MEMBER_ALIGNMENT(VM, cpum.s.Hyper, 64);
+    CHECK_MEMBER_ALIGNMENT(VM, cpum.s.GuestEntry, 64);
+
     CHECK_MEMBER_ALIGNMENT(VM, vmm.s.CritSectVMLock, 8);
     CHECK_MEMBER_ALIGNMENT(VM, vmm.s.CallHostR0JmpBuf, 8);
-    CHECK_MEMBER_ALIGNMENT(VM, vmm.s.StatRunGC, 8);
+    CHECK_MEMBER_ALIGNMENT(VM, vmm.s.StatRunRC, 8);
     CHECK_MEMBER_ALIGNMENT(VM, StatTotalQemuToGC, 8);
     CHECK_MEMBER_ALIGNMENT(VM, rem.s.StatsInQEMU, 8);
     CHECK_MEMBER_ALIGNMENT(VM, rem.s.Env, 32);
+    CHECK_MEMBER_ALIGNMENT(VM, aCpus, 64);
+
+    /* vmcpu */
+    CHECK_MEMBER_ALIGNMENT(VMCPU, cpum, 64);
+    CHECK_MEMBER_ALIGNMENT(VMCPU, vmm, 32);
+    CHECK_MEMBER_ALIGNMENT(VMCPU, pgm, 32);
+    CHECK_MEMBER_ALIGNMENT(VMCPU, em, 32);
+    CHECK_MEMBER_ALIGNMENT(VMCPU, hwaccm, 32);
+    CHECK_MEMBER_ALIGNMENT(VMCPU, tm, 32);
+    CHECK_SIZE_ALIGNMENT(VMCPU, 32);
 
     /* cpumctx */
     CHECK_MEMBER_ALIGNMENT(CPUMCTX, fpu, 32);
     CHECK_MEMBER_ALIGNMENT(CPUMCTX, edi, 32);
     CHECK_MEMBER_ALIGNMENT(CPUMCTX, idtr, 4);
     CHECK_MEMBER_ALIGNMENT(CPUMCTX, SysEnter, 8);
-    CHECK_SIZE_ALIGNMENT(CPUMCTX, 32);
     CHECK_CPUMCTXCORE(eax);
     CHECK_CPUMCTXCORE(ebx);
     CHECK_CPUMCTXCORE(ecx);
@@ -214,9 +231,12 @@ int main()
         rc++;
     }
 #endif
+    CHECK_SIZE_ALIGNMENT(CPUMCTX, 64);
+    CHECK_SIZE_ALIGNMENT(CPUMHOSTCTX, 64);
+    CHECK_SIZE_ALIGNMENT(CPUMCTXMSR, 64);
 
     /* pdm */
-    CHECK_MEMBER_ALIGNMENT(PDMDEVINS, achInstanceData, 16);
+    CHECK_MEMBER_ALIGNMENT(PDMDEVINS, achInstanceData, 64);
     CHECK_PADDING(PDMDEVINS, Internal);
     CHECK_MEMBER_ALIGNMENT(PDMUSBINS, achInstanceData, 16);
     CHECK_PADDING(PDMUSBINS, Internal);
@@ -224,7 +244,7 @@ int main()
     CHECK_PADDING(PDMDRVINS, Internal);
     CHECK_PADDING2(PDMCRITSECT);
     CHECK_MEMBER_ALIGNMENT(PGMPOOLPAGE, idx, sizeof(uint16_t));
-    CHECK_MEMBER_ALIGNMENT(PGMPOOLPAGE, pvPageHC, sizeof(RTHCPTR));
+    CHECK_MEMBER_ALIGNMENT(PGMPOOLPAGE, pvPageR3, sizeof(RTHCPTR));
     CHECK_MEMBER_ALIGNMENT(PGMPOOLPAGE, GCPhys, sizeof(RTGCPHYS));
     CHECK_SIZE(PGMPAGE, 16);
     CHECK_MEMBER_ALIGNMENT(PGMRAMRANGE, aPages, 16);
@@ -244,6 +264,14 @@ int main()
     PRINT_OFFSET(VM, StatGCToQemu);
 #endif
 
+
+    /* hwaccm - 32-bit gcc won't align uint64_t naturally, so check. */
+    CHECK_MEMBER_ALIGNMENT(HWACCM, u64RegisterMask, 8);
+    CHECK_MEMBER_ALIGNMENT(HWACCM, vmx.hostCR4, 8);
+    CHECK_MEMBER_ALIGNMENT(HWACCM, vmx.msr.feature_ctrl, 8);
+    CHECK_MEMBER_ALIGNMENT(HWACCMCPU, StatEntry, 8);
+    CHECK_MEMBER_ALIGNMENT(HWACCMCPU, vmx.proc_ctls, 8);
+    CHECK_MEMBER_ALIGNMENT(HWACCMCPU, Event.intInfo, 8);
 
 
     /*

@@ -1,4 +1,4 @@
-/* $Id: USBControllerImpl.h $ */
+/* $Id: USBControllerImpl.h 15157 2008-12-09 11:39:21Z vboxsync $ */
 
 /** @file
  *
@@ -101,7 +101,7 @@ public:
     STDMETHOD(COMGETTER(DeviceFilters)) (IUSBDeviceFilterCollection **aDevicesFilters);
 
     // IUSBController methods
-    STDMETHOD(CreateDeviceFilter) (INPTR BSTR aName, IUSBDeviceFilter **aFilter);
+    STDMETHOD(CreateDeviceFilter) (IN_BSTR aName, IUSBDeviceFilter **aFilter);
     STDMETHOD(InsertDeviceFilter) (ULONG aPosition, IUSBDeviceFilter *aFilter);
     STDMETHOD(RemoveDeviceFilter) (ULONG aPosition, IUSBDeviceFilter **aFilter);
 
@@ -115,8 +115,6 @@ public:
     bool rollback();
     void commit();
     void copyFrom (USBController *aThat);
-
-    HRESULT onMachineRegistered (BOOL aRegistered);
 
 #ifdef VBOX_WITH_USB
     HRESULT onDeviceFilterChange (USBDeviceFilter *aFilter,
@@ -171,3 +169,4 @@ private:
 };
 
 #endif //!____H_USBCONTROLLERIMPL
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

@@ -49,7 +49,7 @@
 
 __BEGIN_DECLS
 
-/** @defgroup grp_pdm_driver    Drivers
+/** @defgroup grp_pdm_driver    The PDM Drivers API
  * @ingroup grp_pdm
  * @{
  */
@@ -267,6 +267,8 @@ typedef PDMDRVREG const *PCPDMDRVREG;
 #define PDM_DRVREG_CLASS_CHAR           RT_BIT(13)
 /** Stream driver. */
 #define PDM_DRVREG_CLASS_STREAM         RT_BIT(14)
+/** SCSI driver. */
+#define PDM_DRVREG_CLASS_SCSI           RT_BIT(15)
 /** @} */
 
 
@@ -522,6 +524,7 @@ typedef struct PDMDRVHLP
      * @param   pszDesc         Pointer to description string which must stay around
      *                          until the timer is fully destroyed (i.e. a bit after TMTimerDestroy()).
      * @param   ppTimer         Where to store the timer on success.
+     * @thread  EMT
      */
     DECLR3CALLBACKMEMBER(int, pfnTMTimerCreate,(PPDMDRVINS pDrvIns, TMCLOCK enmClock, PFNTMTIMERDRV pfnCallback, const char *pszDesc, PPTMTIMERR3 ppTimer));
 
@@ -816,6 +819,13 @@ DECLINLINE(int) PDMDrvHlpSSMRegister(PPDMDRVINS pDrvIns, const char *pszName, ui
                                             pfnLoadPrep, pfnLoadExec, pfnLoadDone);
 }
 
+/**
+ * @copydoc PDMDRVHLPR3::pfnTMTimerCreate
+ */
+DECLINLINE(int) PDMDrvHlpTMTimerCreate(PPDMDRVINS pDrvIns, TMCLOCK enmClock, PFNTMTIMERDRV pfnCallback, const char *pszDesc, PPTMTIMERR3 ppTimer)
+{
+    return pDrvIns->pDrvHlp->pfnTMTimerCreate(pDrvIns, enmClock, pfnCallback, pszDesc, ppTimer);
+}
 
 /**
  * @copydoc PDMDRVHLP::pfnSTAMRegister
@@ -918,14 +928,7 @@ typedef struct PDMDRVREGCB
  */
 typedef DECLCALLBACK(int) FNPDMVBOXDRIVERSREGISTER(PCPDMDRVREGCB pCallbacks, uint32_t u32Version);
 
-/**
- * Register external drivers
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- * @param   pfnCallback Driver registration callback
- */
-PDMR3DECL(int) PDMR3RegisterDrivers(PVM pVM, FNPDMVBOXDRIVERSREGISTER pfnCallback);
+VMMR3DECL(int) PDMR3RegisterDrivers(PVM pVM, FNPDMVBOXDRIVERSREGISTER pfnCallback);
 
 /** @} */
 

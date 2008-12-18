@@ -273,16 +273,16 @@ private:
     bool mSupportsGraphics;
 };
 
-/** DVD/FD change event */
-class MediaChangeEvent : public QEvent
+/** DVD/Floppy drive change event */
+class MediaDriveChangeEvent : public QEvent
 {
 public:
-    MediaChangeEvent (VBoxDefs::DiskType aType)
-        : QEvent ((QEvent::Type) VBoxDefs::MediaChangeEventType)
+    MediaDriveChangeEvent (VBoxDefs::MediaType aType)
+        : QEvent ((QEvent::Type) VBoxDefs::MediaDriveChangeEventType)
         , mType (aType) {}
-    VBoxDefs::DiskType diskType() const { return mType; }
+    VBoxDefs::MediaType type() const { return mType; }
 private:
-    VBoxDefs::DiskType mType;
+    VBoxDefs::MediaType mType;
 };
 
 /** Menu activation event */
@@ -467,14 +467,16 @@ public:
     STDMETHOD(OnDVDDriveChange)()
     {
         LogFlowFunc (("DVD Drive changed\n"));
-        QApplication::postEvent (mView, new MediaChangeEvent (VBoxDefs::CD));
+        QApplication::postEvent (mView,
+            new MediaDriveChangeEvent (VBoxDefs::MediaType_DVD));
         return S_OK;
     }
 
     STDMETHOD(OnFloppyDriveChange)()
     {
         LogFlowFunc (("Floppy Drive changed\n"));
-        QApplication::postEvent (mView, new MediaChangeEvent (VBoxDefs::FD));
+        QApplication::postEvent (mView,
+            new MediaDriveChangeEvent (VBoxDefs::MediaType_Floppy));
         return S_OK;
     }
 
@@ -529,7 +531,7 @@ public:
         return S_OK;
     }
 
-    STDMETHOD(OnRuntimeError)(BOOL fatal, IN_BSTRPARAM id, IN_BSTRPARAM message)
+    STDMETHOD(OnRuntimeError)(BOOL fatal, IN_BSTR id, IN_BSTR message)
     {
         QApplication::postEvent (mView,
                                  new RuntimeErrorEvent (!!fatal,
@@ -649,6 +651,7 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     , mIsHostkeyAlone (false)
     , mIgnoreMainwndResize (true)
     , mAutoresizeGuest (false)
+    , mIgnoreFrameBufferResize (false)
     , mDoResize (false)
     , mGuestSupportsGraphics (false)
     , mNumLock (false)
@@ -666,8 +669,10 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
 # endif
     , mDarwinKeyModifiers (0)
     , mVirtualBoxLogo (NULL)
+    , mDockIconEnabled (true)
 #endif
     , mDesktopGeo (DesktopGeo_Invalid)
+    , mPassCAD (false)
 {
     Assert (!mConsole.isNull() &&
             !mConsole.GetDisplay().isNull() &&
@@ -677,6 +682,21 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
 #ifdef Q_WS_MAC
     /* Overlay logo for the dock icon */
     mVirtualBoxLogo = ::darwinToCGImageRef ("VirtualBox_cube_42px.png");
+
+    /* Install the event handler which will proceed external window handling */
+    EventHandlerUPP eventHandler = ::NewEventHandlerUPP (::darwinOverlayWindowHandler);
+    EventTypeSpec eventTypes[] =
+    {
+        { kEventClassVBox, kEventVBoxShowWindow },
+        { kEventClassVBox, kEventVBoxMoveWindow },
+        { kEventClassVBox, kEventVBoxResizeWindow },
+        { kEventClassVBox, kEventVBoxUpdateDock }
+    };
+
+    mDarwinWindowOverlayHandlerRef = NULL;
+    ::InstallApplicationEventHandler (eventHandler, RT_ELEMENTS (eventTypes), &eventTypes[0],
+                                      this, &mDarwinWindowOverlayHandlerRef);
+    ::DisposeEventHandlerUPP (eventHandler);
 #endif
 
     /* No frame around the view */
@@ -811,9 +831,11 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     connect (QApplication::desktop(), SIGNAL (resized (int)),
              this, SLOT (doResizeDesktop (int)));
 
-#if defined (VBOX_GUI_DEBUG) && defined (VBOX_GUI_FRAMEBUF_STAT)
-    VMCPUTimer::calibrate (200);
-#endif
+    QString passCAD = mConsole.GetMachine().GetExtraData (VBoxDefs::GUI_PassCAD);
+    if (!passCAD.isEmpty() &&
+        ((passCAD != "false") || (passCAD != "no"))
+       )
+        mPassCAD = true;
 
 #if defined (Q_WS_WIN)
     gView = this;
@@ -856,6 +878,11 @@ VBoxConsoleView::~VBoxConsoleView()
     mConsole.UnregisterCallback (mCallback);
 
 #ifdef Q_WS_MAC
+    if (mDarwinWindowOverlayHandlerRef)
+    {
+        ::RemoveEventHandler (mDarwinWindowOverlayHandlerRef);
+        mDarwinWindowOverlayHandlerRef = NULL;
+    }
     CGImageRelease (mVirtualBoxLogo);
 #endif
 }
@@ -919,7 +946,7 @@ void VBoxConsoleView::normalizeGeometry (bool adjustPosition /* = false */)
 {
     /* Make no normalizeGeometry in case we are in manual resize
      * mode or main window is maximized */
-    if (mMainWnd->isMaximized() || mMainWnd->isFullScreen())
+    if (mMainWnd->isWindowMaximized() || mMainWnd->isWindowFullScreen())
         return;
 
     QWidget *tlw = window();
@@ -1125,7 +1152,8 @@ bool VBoxConsoleView::event (QEvent *e)
                 maybeRestrictMinimumSize();
 
                 /* resize the guest canvas */
-                resize (re->width(), re->height());
+                if (!mIgnoreFrameBufferResize)
+                    resize (re->width(), re->height());
                 updateSliders();
                 /* Let our toplevel widget calculate its sizeHint properly. */
 #ifdef Q_WS_X11
@@ -1139,7 +1167,8 @@ bool VBoxConsoleView::event (QEvent *e)
                 QCoreApplication::sendPostedEvents (0, QEvent::LayoutRequest);
 #endif /* Q_WS_X11 */
 
-                normalizeGeometry (true /* adjustPosition */);
+                if (!mIgnoreFrameBufferResize)
+                    normalizeGeometry (true /* adjustPosition */);
 
                 /* report to the VM thread that we finished resizing */
                 mConsole.GetDisplay().ResizeCompleted (0);
@@ -1160,6 +1189,18 @@ bool VBoxConsoleView::event (QEvent *e)
                  * automatically.  In fact, we only need this on the first resize,
                  * but it is done every time to keep the code simpler. */
                 calculateDesktopGeometry();
+
+                /* Enable frame-buffer resize watching. */
+                if (mIgnoreFrameBufferResize)
+                {
+                    mIgnoreFrameBufferResize = false;
+                    doResizeHint (mNormalSize);
+                }
+
+#ifdef Q_WS_MAC
+                /* Enable async resizing. */
+                ::darwinEnableAsyncDragForWindow (mMainWnd);
+#endif /* Q_WS_MAC */
 
                 return true;
             }
@@ -1263,12 +1304,12 @@ bool VBoxConsoleView::event (QEvent *e)
                 return true;
             }
 
-            case VBoxDefs::MediaChangeEventType:
+            case VBoxDefs::MediaDriveChangeEventType:
             {
-                MediaChangeEvent *mce = (MediaChangeEvent *) e;
+                MediaDriveChangeEvent *mce = (MediaDriveChangeEvent *) e;
                 LogFlowFunc (("MediaChangeEvent\n"));
 
-                emit mediaChanged (mce->diskType());
+                emit mediaDriveChanged (mce->type());
                 return true;
             }
 
@@ -1621,6 +1662,22 @@ bool VBoxConsoleView::eventFilter (QObject *watched, QEvent *e)
                 if (!mIgnoreMainwndResize &&
                     mGuestSupportsGraphics && mAutoresizeGuest)
                     QTimer::singleShot (300, this, SLOT (doResizeHint()));
+                break;
+            }
+            case QEvent::WindowStateChange:
+            {
+                /* During minimizing and state restoring mMainWnd gets the focus
+                 * which belongs to console view window, so returning it properly. */
+                QWindowStateChangeEvent *ev = static_cast <QWindowStateChangeEvent*> (e);
+                if (ev->oldState() & Qt::WindowMinimized)
+                {
+                    if (QApplication::focusWidget())
+                    {
+                        QApplication::focusWidget()->clearFocus();
+                        qApp->processEvents();
+                    }
+                    QTimer::singleShot (0, this, SLOT (setFocus()));
+                }
                 break;
             }
 
@@ -1991,6 +2048,24 @@ bool VBoxConsoleView::x11Event (XEvent *event)
     if (!scan & 0x7F)
         return true;
 
+    /* Fix for http://www.virtualbox.org/ticket/1296:
+     * when X11 sends events for repeated keys, it always inserts an
+     * XKeyRelease before the XKeyPress.  Since it nearly always
+     * (always?) uses the same time stamp for both, we can spot the
+     * unwanted event and discard it.  Of course, if we do miss one it
+     * isn't fatal for our purposes. */
+    if ((XKeyRelease == event->type) && XPending(event->xkey.display))
+    {
+        XEvent nextEvent;
+
+        XPeekEvent(event->xkey.display, &nextEvent);
+        if ((XKeyPress == nextEvent.type) &&
+            (event->xkey.keycode == nextEvent.xkey.keycode) &&
+            (event->xkey.time == nextEvent.xkey.time))
+            /* Discard it, don't pass it to Qt. */
+            return true;
+    }
+
     KeySym ks = ::XKeycodeToKeysym (event->xkey.display, event->xkey.keycode, 0);
 
     int flags = 0;
@@ -2303,6 +2378,7 @@ void VBoxConsoleView::fixModifierState (LONG *codes, uint *count)
 void VBoxConsoleView::toggleFSMode (const QSize &aSize)
 {
     if ((mGuestSupportsGraphics && mAutoresizeGuest) ||
+        mMainWnd->isTrueSeamless() ||
         mMainWnd->isTrueFullscreen())
     {
         QSize newSize;
@@ -2417,8 +2493,9 @@ bool VBoxConsoleView::keyEvent (int aKey, uint8_t aScan, int aFlags,
                 fixModifierState (codes, &count);
             }
 
-            /* Check if it's C-A-D */
-            if (aScan == 0x53 /* Del */ &&
+            /* Check if it's C-A-D and GUI/PassCAD is not true */
+            if (!mPassCAD &&
+                aScan == 0x53 /* Del */ &&
                 ((mPressedKeys [0x38] & IsKeyPressed) /* Alt */ ||
                  (mPressedKeys [0x38] & IsExtKeyPressed)) &&
                 ((mPressedKeys [0x1d] & IsKeyPressed) /* Ctrl */ ||
@@ -3005,28 +3082,17 @@ void VBoxConsoleView::paintEvent (QPaintEvent *pe)
 #ifdef Q_WS_MAC
         /* Update the dock icon if we are in the running state */
         if (isRunning())
-        {
-# if defined (VBOX_GUI_USE_QUARTZ2D)
-            if (mode == VBoxDefs::Quartz2DMode)
-            {
-                /* If the render mode is Quartz2D we could use the
-                 * CGImageRef of the framebuffer for the dock icon creation.
-                 * This saves some conversion time. */
-                CGImageRef ir =
-                    static_cast <VBoxQuartz2DFrameBuffer *> (mFrameBuf)->imageRef();
-                ::darwinUpdateDockPreview (ir, mVirtualBoxLogo);
-            }
-            else
-# endif
-                ::darwinUpdateDockPreview (mFrameBuf, mVirtualBoxLogo);
-        }
+            updateDockIcon();
 #endif
         return;
     }
 
 #ifdef VBOX_GUI_USE_QUARTZ2D
     if (mode == VBoxDefs::Quartz2DMode && mFrameBuf)
+    {
         mFrameBuf->paintEvent (pe);
+        updateDockIcon();
+    }
     else
 #endif
     {
@@ -3042,9 +3108,7 @@ void VBoxConsoleView::paintEvent (QPaintEvent *pe)
         /* Restore the attribute to its previous state */
         viewport()->setAttribute (Qt::WA_PaintOnScreen, paintOnScreen);
 #ifdef Q_WS_MAC
-        ::darwinUpdateDockPreview (::darwinToCGImageRef (&mPausedShot),
-                                   mVirtualBoxLogo,
-                                   mMainWnd->dockImageState());
+        updateDockIcon();
 #endif
     }
 
@@ -3760,7 +3824,7 @@ void VBoxConsoleView::calculateDesktopGeometry()
 }
 
 /**
- *  Sets the the minimum size restriction depending on the auto-resize feature
+ *  Sets the minimum size restriction depending on the auto-resize feature
  *  state and the current rendering mode.
  *
  *  Currently, the restriction is set only in SDL mode and only when the
@@ -3806,4 +3870,38 @@ void VBoxConsoleView::updateSliders()
     horizontalScrollBar()->setPageStep(p.width());
     verticalScrollBar()->setPageStep(p.height());
 }
+
+void VBoxConsoleView::requestToResize (const QSize &aSize)
+{
+    mIgnoreFrameBufferResize = true;
+    mNormalSize = aSize;
+}
+
+#if defined(Q_WS_MAC)
+void VBoxConsoleView::updateDockIcon()
+{
+    if (mDockIconEnabled)
+    {
+        if (!mPausedShot.isNull())
+            /* Use the pause image as background */
+            ::darwinUpdateDockPreview (mMainWnd, ::darwinToCGImageRef (&mPausedShot), mVirtualBoxLogo, mMainWnd->dockImageState());
+        else
+        {
+# if defined (VBOX_GUI_USE_QUARTZ2D)
+            if (mode == VBoxDefs::Quartz2DMode)
+            {
+                /* If the render mode is Quartz2D we could use the CGImageRef
+                 * of the framebuffer for the dock icon creation. This saves
+                 * some conversion time. */
+                ::darwinUpdateDockPreview (mMainWnd, static_cast <VBoxQuartz2DFrameBuffer *> (mFrameBuf)->imageRef(), mVirtualBoxLogo, mMainWnd->dockImageState());
+            }
+            else
+# endif
+                /* In image mode we have to create the image ref out of the
+                 * framebuffer */
+                ::darwinUpdateDockPreview (mMainWnd, mFrameBuf, mVirtualBoxLogo, mMainWnd->dockImageState());
+        }
+    }
+}
+#endif
 

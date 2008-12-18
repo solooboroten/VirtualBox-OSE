@@ -1,6 +1,6 @@
-/* $Id: MMAll.cpp $ */
+/* $Id: MMAll.cpp 15174 2008-12-09 14:11:35Z vboxsync $ */
 /** @file
- * MM - Memory Monitor(/Manager) - Any Context.
+ * MM - Memory Manager - Any Context.
  */
 
 /*
@@ -25,6 +25,7 @@
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_MM_HYPER
 #include <VBox/mm.h>
+#include <VBox/vmm.h>
 #include "MMInternal.h"
 #include <VBox/vm.h>
 #include <VBox/log.h>
@@ -43,15 +44,15 @@
  */
 DECLINLINE(PMMLOOKUPHYPER) mmHyperLookupR3(PVM pVM, RTR3PTR R3Ptr, uint32_t *poff)
 {
-    /** @todo cache last lookup this stuff ain't cheap! */
-    PMMLOOKUPHYPER  pLookup = (PMMLOOKUPHYPER)((char*)CTXSUFF(pVM->mm.s.pHyperHeap) + pVM->mm.s.offLookupHyper);
+    /** @todo cache last lookup, this stuff ain't cheap! */
+    PMMLOOKUPHYPER  pLookup = (PMMLOOKUPHYPER)((uint8_t *)pVM->mm.s.CTX_SUFF(pHyperHeap) + pVM->mm.s.offLookupHyper);
     for (;;)
     {
         switch (pLookup->enmType)
         {
             case MMLOOKUPHYPERTYPE_LOCKED:
             {
-                const uint32_t off = (RTR3UINTPTR)R3Ptr - (RTR3UINTPTR)pLookup->u.Locked.pvHC;
+                const RTR3UINTPTR off = (RTR3UINTPTR)R3Ptr - (RTR3UINTPTR)pLookup->u.Locked.pvR3;
                 if (off < pLookup->cb)
                 {
                     *poff = off;
@@ -62,7 +63,7 @@ DECLINLINE(PMMLOOKUPHYPER) mmHyperLookupR3(PVM pVM, RTR3PTR R3Ptr, uint32_t *pof
 
             case MMLOOKUPHYPERTYPE_HCPHYS:
             {
-                const uint32_t off = (RTR3UINTPTR)R3Ptr - (RTR3UINTPTR)pLookup->u.HCPhys.pvHC;
+                const RTR3UINTPTR off = (RTR3UINTPTR)R3Ptr - (RTR3UINTPTR)pLookup->u.HCPhys.pvR3;
                 if (off < pLookup->cb)
                 {
                     *poff = off;
@@ -84,10 +85,10 @@ DECLINLINE(PMMLOOKUPHYPER) mmHyperLookupR3(PVM pVM, RTR3PTR R3Ptr, uint32_t *pof
         /* next */
         if (pLookup->offNext ==  (int32_t)NIL_OFFSET)
             break;
-        pLookup = (PMMLOOKUPHYPER)((char *)pLookup + pLookup->offNext);
+        pLookup = (PMMLOOKUPHYPER)((uint8_t *)pLookup + pLookup->offNext);
     }
 
-    AssertMsgFailed(("R3Ptr=%p is not inside the hypervisor memory area!\n", R3Ptr));
+    AssertMsgFailed(("R3Ptr=%RHv is not inside the hypervisor memory area!\n", R3Ptr));
     return NULL;
 }
 
@@ -105,16 +106,52 @@ DECLINLINE(PMMLOOKUPHYPER) mmHyperLookupR0(PVM pVM, RTR0PTR R0Ptr, uint32_t *pof
 {
     AssertCompile(sizeof(RTR0PTR) == sizeof(RTR3PTR));
 
-    /*
-     * Translate Ring-0 VM addresses into Ring-3 VM addresses before feeding it to mmHyperLookupR3.
-     */
-    /** @todo fix this properly; the ring 0 pVM address differs from the R3 one. (#1865) */
-    RTR0UINTPTR offVM = (RTR0UINTPTR)R0Ptr - (RTR0UINTPTR)pVM->pVMR0;
-    RTR3PTR R3Ptr = offVM < sizeof(*pVM)
-                  ? (RTR3PTR)((RTR3UINTPTR)pVM->pVMR3 + offVM)
-                  : (RTR3PTR)R0Ptr;
+    /** @todo cache last lookup, this stuff ain't cheap! */
+    PMMLOOKUPHYPER  pLookup = (PMMLOOKUPHYPER)((uint8_t *)pVM->mm.s.CTX_SUFF(pHyperHeap) + pVM->mm.s.offLookupHyper);
+    for (;;)
+    {
+        switch (pLookup->enmType)
+        {
+            case MMLOOKUPHYPERTYPE_LOCKED:
+            {
+                const RTR0UINTPTR off = (RTR0UINTPTR)R0Ptr - (RTR0UINTPTR)pLookup->u.Locked.pvR0;
+                if (off < pLookup->cb && pLookup->u.Locked.pvR0)
+                {
+                    *poff = off;
+                    return pLookup;
+                }
+                break;
+            }
 
-    return mmHyperLookupR3(pVM, R3Ptr, poff);
+            case MMLOOKUPHYPERTYPE_HCPHYS:
+            {
+                const RTR0UINTPTR off = (RTR0UINTPTR)R0Ptr - (RTR0UINTPTR)pLookup->u.HCPhys.pvR0;
+                if (off < pLookup->cb && pLookup->u.HCPhys.pvR0)
+                {
+                    *poff = off;
+                    return pLookup;
+                }
+                break;
+            }
+
+            case MMLOOKUPHYPERTYPE_GCPHYS:  /* (for now we'll not allow these kind of conversions) */
+            case MMLOOKUPHYPERTYPE_MMIO2:
+            case MMLOOKUPHYPERTYPE_DYNAMIC:
+                break;
+
+            default:
+                AssertMsgFailed(("enmType=%d\n", pLookup->enmType));
+                break;
+        }
+
+        /* next */
+        if (pLookup->offNext ==  (int32_t)NIL_OFFSET)
+            break;
+        pLookup = (PMMLOOKUPHYPER)((uint8_t *)pLookup + pLookup->offNext);
+    }
+
+    AssertMsgFailed(("R0Ptr=%RHv is not inside the hypervisor memory area!\n", R0Ptr));
+    return NULL;
 }
 
 
@@ -131,7 +168,7 @@ DECLINLINE(PMMLOOKUPHYPER) mmHyperLookupRC(PVM pVM, RTRCPTR RCPtr, uint32_t *pof
 {
     /** @todo cache last lookup this stuff ain't cheap! */
     unsigned        offRC = (RTRCUINTPTR)RCPtr - (RTGCUINTPTR)pVM->mm.s.pvHyperAreaGC;
-    PMMLOOKUPHYPER  pLookup = (PMMLOOKUPHYPER)((char*)CTXSUFF(pVM->mm.s.pHyperHeap) + pVM->mm.s.offLookupHyper);
+    PMMLOOKUPHYPER  pLookup = (PMMLOOKUPHYPER)((uint8_t *)pVM->mm.s.CTX_SUFF(pHyperHeap) + pVM->mm.s.offLookupHyper);
     for (;;)
     {
         const uint32_t off = offRC - pLookup->off;
@@ -153,10 +190,10 @@ DECLINLINE(PMMLOOKUPHYPER) mmHyperLookupRC(PVM pVM, RTRCPTR RCPtr, uint32_t *pof
         /* next */
         if (pLookup->offNext == (int32_t)NIL_OFFSET)
             break;
-        pLookup = (PMMLOOKUPHYPER)((char *)pLookup + pLookup->offNext);
+        pLookup = (PMMLOOKUPHYPER)((uint8_t *)pLookup + pLookup->offNext);
     }
 
-    AssertMsgFailed(("GCPtr=%p is not inside the hypervisor memory area!\n", RCPtr));
+    AssertMsgFailed(("RCPtr=%RRv is not inside the hypervisor memory area!\n", RCPtr));
     return NULL;
 }
 
@@ -172,7 +209,7 @@ DECLINLINE(PMMLOOKUPHYPER) mmHyperLookupRC(PVM pVM, RTRCPTR RCPtr, uint32_t *pof
  */
 DECLINLINE(PMMLOOKUPHYPER) mmHyperLookupCC(PVM pVM, void *pv, uint32_t *poff)
 {
-#ifdef IN_GC
+#ifdef IN_RC
     return mmHyperLookupRC(pVM, (RTRCPTR)pv, poff);
 #elif defined(IN_RING0)
     return mmHyperLookupR0(pVM, pv, poff);
@@ -194,9 +231,9 @@ DECLINLINE(RTR3PTR) mmHyperLookupCalcR3(PMMLOOKUPHYPER pLookup, uint32_t off)
     switch (pLookup->enmType)
     {
         case MMLOOKUPHYPERTYPE_LOCKED:
-            return (RTR3PTR)((RTR3UINTPTR)pLookup->u.Locked.pvHC + off);
+            return (RTR3PTR)((RTR3UINTPTR)pLookup->u.Locked.pvR3 + off);
         case MMLOOKUPHYPERTYPE_HCPHYS:
-            return (RTR3PTR)((RTR3UINTPTR)pLookup->u.HCPhys.pvHC + off);
+            return (RTR3PTR)((RTR3UINTPTR)pLookup->u.HCPhys.pvR3 + off);
         default:
             AssertMsgFailed(("enmType=%d\n", pLookup->enmType));
             return NIL_RTR3PTR;
@@ -208,19 +245,30 @@ DECLINLINE(RTR3PTR) mmHyperLookupCalcR3(PMMLOOKUPHYPER pLookup, uint32_t off)
  * Calculate the host context ring-0 address of an offset into the HMA memory chunk.
  *
  * @returns the host context ring-0 address.
+ * @param   pVM         Pointer to the shared VM structure.
  * @param   pLookup     The HMA lookup record.
  * @param   off         The offset into the HMA memory chunk.
  */
-DECLINLINE(RTR0PTR) mmHyperLookupCalcR0(PMMLOOKUPHYPER pLookup, uint32_t off)
+DECLINLINE(RTR0PTR) mmHyperLookupCalcR0(PVM pVM, PMMLOOKUPHYPER pLookup, uint32_t off)
 {
     switch (pLookup->enmType)
     {
         case MMLOOKUPHYPERTYPE_LOCKED:
             if (pLookup->u.Locked.pvR0)
                 return (RTR0PTR)((RTR0UINTPTR)pLookup->u.Locked.pvR0 + off);
-            return (RTR0PTR)((RTR3UINTPTR)pLookup->u.Locked.pvHC + off);
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+            AssertMsg(!VMMIsHwVirtExtForced(pVM), ("%s\n", R3STRING(pLookup->pszDesc)));
+#else
+            AssertMsgFailed(("%s\n", R3STRING(pLookup->pszDesc)));
+#endif
+            return NIL_RTR0PTR;
+
         case MMLOOKUPHYPERTYPE_HCPHYS:
-            return (RTR0PTR)((RTR3UINTPTR)pLookup->u.HCPhys.pvHC + off);
+            if (pLookup->u.HCPhys.pvR0)
+                return (RTR0PTR)((RTR0UINTPTR)pLookup->u.HCPhys.pvR0 + off);
+            AssertMsgFailed(("%s\n", R3STRING(pLookup->pszDesc)));
+            return NIL_RTR0PTR;
+
         default:
             AssertMsgFailed(("enmType=%d\n", pLookup->enmType));
             return NIL_RTR0PTR;
@@ -252,10 +300,10 @@ DECLINLINE(RTRCPTR) mmHyperLookupCalcRC(PVM pVM, PMMLOOKUPHYPER pLookup, uint32_
  */
 DECLINLINE(void *) mmHyperLookupCalcCC(PVM pVM, PMMLOOKUPHYPER pLookup, uint32_t off)
 {
-#ifdef IN_GC
+#ifdef IN_RC
     return (void *)mmHyperLookupCalcRC(pVM, pLookup, off);
 #elif defined(IN_RING0)
-    return mmHyperLookupCalcR0(pLookup, off);
+    return mmHyperLookupCalcR0(pVM, pLookup, off);
 #else
     return mmHyperLookupCalcR3(pLookup, off);
 #endif
@@ -271,7 +319,7 @@ DECLINLINE(void *) mmHyperLookupCalcCC(PVM pVM, PMMLOOKUPHYPER pLookup, uint32_t
  *                      You'll be damned if this is not in the HMA! :-)
  * @thread  The Emulation Thread.
  */
-MMDECL(RTR3PTR) MMHyperR0ToR3(PVM pVM, RTR0PTR R0Ptr)
+VMMDECL(RTR3PTR) MMHyperR0ToR3(PVM pVM, RTR0PTR R0Ptr)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupR0(pVM, R0Ptr, &off);
@@ -290,7 +338,7 @@ MMDECL(RTR3PTR) MMHyperR0ToR3(PVM pVM, RTR0PTR R0Ptr)
  *                      You'll be damned if this is not in the HMA! :-)
  * @thread  The Emulation Thread.
  */
-MMDECL(RTRCPTR) MMHyperR0ToRC(PVM pVM, RTR0PTR R0Ptr)
+VMMDECL(RTRCPTR) MMHyperR0ToRC(PVM pVM, RTR0PTR R0Ptr)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupR0(pVM, R0Ptr, &off);
@@ -310,7 +358,7 @@ MMDECL(RTRCPTR) MMHyperR0ToRC(PVM pVM, RTR0PTR R0Ptr)
  *                      You'll be damned if this is not in the HMA! :-)
  * @thread  The Emulation Thread.
  */
-MMDECL(void *) MMHyperR0ToCC(PVM pVM, RTR0PTR R0Ptr)
+VMMDECL(void *) MMHyperR0ToCC(PVM pVM, RTR0PTR R0Ptr)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupR0(pVM, R0Ptr, &off);
@@ -330,12 +378,12 @@ MMDECL(void *) MMHyperR0ToCC(PVM pVM, RTR0PTR R0Ptr)
  *                      You'll be damned if this is not in the HMA! :-)
  * @thread  The Emulation Thread.
  */
-MMDECL(RTR0PTR) MMHyperR3ToR0(PVM pVM, RTR3PTR R3Ptr)
+VMMDECL(RTR0PTR) MMHyperR3ToR0(PVM pVM, RTR3PTR R3Ptr)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupR3(pVM, R3Ptr, &off);
     if (pLookup)
-        return mmHyperLookupCalcR0(pLookup, off);
+        return mmHyperLookupCalcR0(pVM, pLookup, off);
     AssertMsgFailed(("R3Ptr=%p is not inside the hypervisor memory area!\n", R3Ptr));
     return NIL_RTR0PTR;
 }
@@ -350,7 +398,7 @@ MMDECL(RTR0PTR) MMHyperR3ToR0(PVM pVM, RTR3PTR R3Ptr)
  *                      You'll be damned if this is not in the HMA! :-)
  * @thread  The Emulation Thread.
  */
-MMDECL(RTRCPTR) MMHyperR3ToRC(PVM pVM, RTR3PTR R3Ptr)
+VMMDECL(RTRCPTR) MMHyperR3ToRC(PVM pVM, RTR3PTR R3Ptr)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupR3(pVM, R3Ptr, &off);
@@ -371,7 +419,7 @@ MMDECL(RTRCPTR) MMHyperR3ToRC(PVM pVM, RTR3PTR R3Ptr)
  * @thread  The Emulation Thread.
  */
 #ifndef IN_RING3
-MMDECL(void *) MMHyperR3ToCC(PVM pVM, RTR3PTR R3Ptr)
+VMMDECL(void *) MMHyperR3ToCC(PVM pVM, RTR3PTR R3Ptr)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupR3(pVM, R3Ptr, &off);
@@ -391,7 +439,7 @@ MMDECL(void *) MMHyperR3ToCC(PVM pVM, RTR3PTR R3Ptr)
  *                      You'll be damned if this is not in the HMA! :-)
  * @thread  The Emulation Thread.
  */
-MMDECL(RTR3PTR) MMHyperRCToR3(PVM pVM, RTRCPTR RCPtr)
+VMMDECL(RTR3PTR) MMHyperRCToR3(PVM pVM, RTRCPTR RCPtr)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupRC(pVM, RCPtr, &off);
@@ -410,12 +458,12 @@ MMDECL(RTR3PTR) MMHyperRCToR3(PVM pVM, RTRCPTR RCPtr)
  *                      You'll be damned if this is not in the HMA! :-)
  * @thread  The Emulation Thread.
  */
-MMDECL(RTR0PTR) MMHyperRCToR0(PVM pVM, RTRCPTR RCPtr)
+VMMDECL(RTR0PTR) MMHyperRCToR0(PVM pVM, RTRCPTR RCPtr)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupRC(pVM, RCPtr, &off);
     if (pLookup)
-        return mmHyperLookupCalcR0(pLookup, off);
+        return mmHyperLookupCalcR0(pVM, pLookup, off);
     return NIL_RTR0PTR;
 }
 
@@ -429,8 +477,8 @@ MMDECL(RTR0PTR) MMHyperRCToR0(PVM pVM, RTRCPTR RCPtr)
  *                      You'll be damned if this is not in the HMA! :-)
  * @thread  The Emulation Thread.
  */
-#ifndef IN_GC
-MMDECL(void *) MMHyperRCToCC(PVM pVM, RTRCPTR RCPtr)
+#ifndef IN_RC
+VMMDECL(void *) MMHyperRCToCC(PVM pVM, RTRCPTR RCPtr)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupRC(pVM, RCPtr, &off);
@@ -452,7 +500,7 @@ MMDECL(void *) MMHyperRCToCC(PVM pVM, RTRCPTR RCPtr)
  * @thread  The Emulation Thread.
  */
 #ifndef IN_RING3
-MMDECL(RTR3PTR) MMHyperCCToR3(PVM pVM, void *pv)
+VMMDECL(RTR3PTR) MMHyperCCToR3(PVM pVM, void *pv)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupCC(pVM, pv, &off);
@@ -472,12 +520,12 @@ MMDECL(RTR3PTR) MMHyperCCToR3(PVM pVM, void *pv)
  * @thread  The Emulation Thread.
  */
 #ifndef IN_RING0
-MMDECL(RTR0PTR) MMHyperCCToR0(PVM pVM, void *pv)
+VMMDECL(RTR0PTR) MMHyperCCToR0(PVM pVM, void *pv)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupCC(pVM, pv, &off);
     if (pLookup)
-        return mmHyperLookupCalcR0(pLookup, off);
+        return mmHyperLookupCalcR0(pVM, pLookup, off);
     return NIL_RTR0PTR;
 }
 #endif
@@ -492,8 +540,8 @@ MMDECL(RTR0PTR) MMHyperCCToR0(PVM pVM, void *pv)
  *                      You'll be damned if this is not in the HMA! :-)
  * @thread  The Emulation Thread.
  */
-#ifndef IN_GC
-MMDECL(RTRCPTR) MMHyperCCToRC(PVM pVM, void *pv)
+#ifndef IN_RC
+VMMDECL(RTRCPTR) MMHyperCCToRC(PVM pVM, void *pv)
 {
     uint32_t off;
     PMMLOOKUPHYPER pLookup = mmHyperLookupCC(pVM, pv, &off);

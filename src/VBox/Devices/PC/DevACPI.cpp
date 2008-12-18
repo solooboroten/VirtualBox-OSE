@@ -1,4 +1,4 @@
-/* $Id: DevACPI.cpp $ */
+/* $Id: DevACPI.cpp 14976 2008-12-04 12:50:07Z vboxsync $ */
 /** @file
  * DevACPI - Advanced Configuration and Power Interface (ACPI) Device.
  */
@@ -142,10 +142,6 @@ enum
 #define BAT_TECH_PRIMARY                        1
 #define BAT_TECH_SECONDARY                      2
 
-#define BAT_STATUS_DISCHARGING_MASK             RT_BIT(0)
-#define BAT_STATUS_CHARGING_MASK                RT_BIT(1)
-#define BAT_STATUS_CRITICAL_MASK                RT_BIT(2)
-
 #define STA_DEVICE_PRESENT_MASK                 RT_BIT(0)
 #define STA_DEVICE_ENABLED_MASK                 RT_BIT(1)
 #define STA_DEVICE_SHOW_IN_UI_MASK              RT_BIT(2)
@@ -158,7 +154,8 @@ struct ACPIState
     uint16_t            pm1a_en;
     uint16_t            pm1a_sts;
     uint16_t            pm1a_ctl;
-    uint16_t            Alignment0;
+    /** Number of logical CPUs in guest */
+    uint16_t            cCpus;
     int64_t             pm_timer_initial;
     PTMTIMERR3          tsR3;
     PTMTIMERR0          tsR0;
@@ -187,7 +184,7 @@ struct ACPIState
     uint8_t             u8UseIOApic;
     uint8_t             u8UseFdc;
     bool                fPowerButtonHandled;
-   
+
     /** ACPI port base interface. */
     PDMIBASE            IBase;
     /** ACPI port interface. */
@@ -198,10 +195,6 @@ struct ACPIState
     R3PTRTYPE(PPDMIBASE) pDrvBase;
     /** Pointer to the driver connector interface */
     R3PTRTYPE(PPDMIACPICONNECTOR) pDrv;
-#if 0
-  /** Number of logical CPUs in guest */
-    uint16_t             cCpus;
-#endif
 };
 
 #pragma pack(1)
@@ -401,6 +394,115 @@ struct ACPITBLIOAPIC
 };
 AssertCompileSize(ACPITBLIOAPIC, 12);
 
+#ifdef VBOX_WITH_SMP_GUESTS
+#ifdef IN_RING3 /**@todo r=bird: Move this down to where it's used. */
+
+# define PCAT_COMPAT     0x1                     /**< system has also a dual-8259 setup */
+
+/**
+ * Multiple APIC Description Table.
+ *
+ * This structure looks somewhat convoluted due layout of MADT table in MP case.
+ * There extpected to be multiple LAPIC records for each CPU, thus we cannot
+ * use regular C structure and proxy to raw memory instead.
+ */
+class AcpiTableMADT
+{
+    /**
+     * All actual data stored in dynamically allocated memory pointed by this field.
+     */
+    uint8_t*            pData;
+    /**
+     * Number of CPU entries in this MADT.
+     */
+    uint32_t            cCpus;
+
+ public:
+    /**
+     * Address of ACPI header
+     */
+    inline ACPITBLHEADER* header_addr() const
+    {
+        return (ACPITBLHEADER*)pData;
+    }
+
+    /**
+     * Address of local APIC for each CPU. Note that different CPUs address different LAPICs,
+     * although address is the same for all of them.
+     */
+    inline uint32_t* u32LAPIC_addr() const
+    {
+        return  (uint32_t*)(header_addr() + 1);
+    }
+
+    /**
+     * Address of APIC flags
+     */
+    inline uint32_t* u32Flags_addr() const
+    {
+        return (uint32_t*)(u32LAPIC_addr() + 1);
+    }
+
+    /**
+     * Address of per-CPU LAPIC descriptions
+     */
+    inline ACPITBLLAPIC* LApics_addr() const
+    {
+        return (ACPITBLLAPIC*)(u32Flags_addr() + 1);
+    }
+
+    /**
+     * Address of IO APIC description
+     */
+    inline ACPITBLIOAPIC* IOApic_addr() const
+    {
+        return (ACPITBLIOAPIC*)(LApics_addr() + cCpus);
+    }
+
+    /**
+     * Size of MADT.
+     * Note that this function assumes IOApic to be the last field in structure.
+     */
+    inline uint32_t size() const
+    {
+        return (uint8_t*)(IOApic_addr() + 1)-(uint8_t*)header_addr();
+    }
+
+    /**
+     * Raw data of MADT.
+     */
+    inline const uint8_t* data() const
+    {
+        return pData;
+    }
+
+    /**
+     * Size of MADT for given ACPI config, useful to compute layout.
+     */
+    static uint32_t sizeFor(ACPIState *s)
+    {
+        return AcpiTableMADT(s->cCpus).size();
+    }
+
+    /*
+     * Constructor, only works in Ring 3, doesn't look like a big deal.
+     */
+    AcpiTableMADT(uint16_t cpus)
+    {
+        cCpus = cpus;
+        pData = 0;
+        uint32_t sSize = size();
+        pData = (uint8_t*)RTMemAllocZ(sSize);
+    }
+
+    ~AcpiTableMADT()
+    {
+        RTMemFree(pData);
+    }
+};
+#endif /* IN_RING3 */
+
+#else  /* !VBOX_WITH_SMP_GUESTS */
 /** Multiple APIC Description Table */
 struct ACPITBLMADT
 {
@@ -412,6 +514,7 @@ struct ACPITBLMADT
     ACPITBLIOAPIC       IOApic;
 };
 AssertCompileSize(ACPITBLMADT, 64);
+#endif /* !VBOX_WITH_SMP_GUESTS */
 
 #pragma pack()
 
@@ -643,6 +746,39 @@ static void acpiSetupRSDP (ACPITBLRSDP *rsdp, uint32_t rsdt_addr, uint64_t xsdt_
 /** @note APIC without IO-APIC hangs Windows Vista therefore we setup both */
 static void acpiSetupMADT (ACPIState *s, RTGCPHYS32 addr)
 {
+#ifdef VBOX_WITH_SMP_GUESTS
+    uint16_t cpus = s->cCpus;
+    AcpiTableMADT madt(cpus);
+
+    acpiPrepareHeader(madt.header_addr(), "APIC", madt.size(), 2);
+
+    *madt.u32LAPIC_addr()          = RT_H2LE_U32(0xfee00000);
+    *madt.u32Flags_addr()          = RT_H2LE_U32(PCAT_COMPAT);
+
+    ACPITBLLAPIC* lapic = madt.LApics_addr();
+    for (uint16_t i = 0; i < cpus; i++)
+    {
+        lapic->u8Type      = 0;
+        lapic->u8Length    = sizeof(ACPITBLLAPIC);
+        lapic->u8ProcId    = i;
+        lapic->u8ApicId    = i;
+        lapic->u32Flags    = RT_H2LE_U32(LAPIC_ENABLED);
+        lapic++;
+    }
+
+    ACPITBLIOAPIC* ioapic = madt.IOApic_addr();
+
+    ioapic->u8Type     = 1;
+    ioapic->u8Length   = sizeof(ACPITBLIOAPIC);
+    ioapic->u8IOApicId = cpus;
+    ioapic->u8Reserved = 0;
+    ioapic->u32Address = RT_H2LE_U32(0xfec00000);
+    ioapic->u32GSIB    = RT_H2LE_U32(0);
+
+    madt.header_addr()->u8Checksum = acpiChecksum (madt.data(), madt.size());
+    acpiPhyscpy (s, addr, madt.data(), madt.size());
+
+#else  /* !VBOX_WITH_SMP_GUESTS */
     ACPITBLMADT madt;
 
     /* Don't call this function if u8UseIOApic==false! */
@@ -669,6 +805,7 @@ static void acpiSetupMADT (ACPIState *s, RTGCPHYS32 addr)
 
     madt.header.u8Checksum = acpiChecksum ((uint8_t*)&madt, sizeof(madt));
     acpiPhyscpy (s, addr, &madt, sizeof(madt));
+#endif /* !VBOX_WITH_SMP_GUESTS */
 }
 
 /* SCI IRQ */
@@ -757,10 +894,31 @@ static DECLCALLBACK(int) acpiPowerButtonPress(PPDMIACPIPORT pInterface)
     return VINF_SUCCESS;
 }
 
+/**
+ * Check if the ACPI power button event was handled.
+ *
+ * @returns VBox status code
+ * @param   pInterface      Pointer to the interface structure containing the called function pointer.
+ * @param   pfHandled       Return true if the power button event was handled by the guest.
+ */
 static DECLCALLBACK(int) acpiGetPowerButtonHandled(PPDMIACPIPORT pInterface, bool *pfHandled)
 {
     ACPIState *s = IACPIPORT_2_ACPISTATE(pInterface);
     *pfHandled = s->fPowerButtonHandled;
+    return VINF_SUCCESS;
+}
+
+/**
+ * Check if the Guest entered into G0 (working) or G1 (sleeping).
+ *
+ * @returns VBox status code
+ * @param   pInterface      Pointer to the interface structure containing the called function pointer.
+ * @param   pfEntered       Return true if the guest entered the ACPI mode.
+ */
+static DECLCALLBACK(int) acpiGetGuestEnteredACPIMode(PPDMIACPIPORT pInterface, bool *pfEntered)
+{
+    ACPIState *s = IACPIPORT_2_ACPISTATE(pInterface);
+    *pfEntered = (s->pm1a_ctl & SCI_EN) != 0;
     return VINF_SUCCESS;
 }
 
@@ -1147,7 +1305,12 @@ IO_READ_PROTO (acpiSysInfoDataRead)
                 case SYSTEM_INFO_INDEX_USE_IOAPIC:
                     *pu32 = s->u8UseIOApic;
                     break;
-
+                    
+                /* Solaris 9 tries to read from this index */
+                case SYSTEM_INFO_INDEX_INVALID:
+                    *pu32 = 0;
+                    break;
+                    
                 default:
                     AssertMsgFailed (("Invalid system info index %d\n", s->uSystemInfoIndex));
                     break;
@@ -1511,7 +1674,6 @@ static int acpiPlantTables (ACPIState *s)
         return PDMDEV_SET_ERROR(s->pDevIns, VERR_OUT_OF_RANGE,
                                 N_("Configuration error: Invalid \"RamSize\", maximum allowed "
                                    "value is 4095MB"));
-
     rsdt_addr = 0;
     xsdt_addr = RT_ALIGN_32 (rsdt_addr + rsdt_tbl_len, 16);
     fadt_addr = RT_ALIGN_32 (xsdt_addr + xsdt_tbl_len, 16);
@@ -1519,7 +1681,15 @@ static int acpiPlantTables (ACPIState *s)
     if (s->u8UseIOApic)
     {
         apic_addr = RT_ALIGN_32 (facs_addr + sizeof(ACPITBLFACS), 16);
+#ifdef VBOX_WITH_SMP_GUESTS
+        /**
+         * @todo nike: maybe some refactoring needed to compute tables layout,
+         * but as this code is executed only once it doesn't make sense to optimize much
+         */
+        dsdt_addr = RT_ALIGN_32 (apic_addr + AcpiTableMADT::sizeFor(s), 16);
+#else
         dsdt_addr = RT_ALIGN_32 (apic_addr + sizeof(ACPITBLMADT), 16);
+#endif
     }
     else
     {
@@ -1577,7 +1747,7 @@ static DECLCALLBACK(int) acpiConstruct (PPDMDEVINS pDevIns, int iInstance, PCFGM
     bool fR0Enabled;
 
     /* Validate and read the configuration. */
-    if (!CFGMR3AreValuesValid (pCfgHandle, 
+    if (!CFGMR3AreValuesValid (pCfgHandle,
                                "RamSize\0"
                                "IOAPIC\0"
                                "NumCPUs\0"
@@ -1597,12 +1767,10 @@ static DECLCALLBACK(int) acpiConstruct (PPDMDEVINS pDevIns, int iInstance, PCFGM
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed to read \"IOAPIC\""));
 
-#if 0
     rc = CFGMR3QueryU16Def(pCfgHandle, "NumCPUs", &s->cCpus, 1);
     if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Querying \"NumCPUs\" as integer failed"));
-#endif
 
     /* query whether we are supposed to present an FDC controller */
     rc = CFGMR3QueryU8 (pCfgHandle, "FdcEnabled", &s->u8UseFdc);
@@ -1739,11 +1907,12 @@ static DECLCALLBACK(int) acpiConstruct (PPDMDEVINS pDevIns, int iInstance, PCFGM
      * Interfaces
      */
     /* IBase */
-    s->IBase.pfnQueryInterface            = acpiQueryInterface;
+    s->IBase.pfnQueryInterface              = acpiQueryInterface;
     /* IACPIPort */
-    s->IACPIPort.pfnSleepButtonPress      = acpiSleepButtonPress;
-    s->IACPIPort.pfnPowerButtonPress      = acpiPowerButtonPress;
-    s->IACPIPort.pfnGetPowerButtonHandled = acpiGetPowerButtonHandled;
+    s->IACPIPort.pfnSleepButtonPress        = acpiSleepButtonPress;
+    s->IACPIPort.pfnPowerButtonPress        = acpiPowerButtonPress;
+    s->IACPIPort.pfnGetPowerButtonHandled   = acpiGetPowerButtonHandled;
+    s->IACPIPort.pfnGetGuestEnteredACPIMode = acpiGetGuestEnteredACPIMode;
 
    /*
     * Get the corresponding connector interface
@@ -1806,14 +1975,14 @@ const PDMDEVREG g_DeviceACPI =
     PDM_DEVREG_VERSION,
     /* szDeviceName */
     "acpi",
-    /* szGCMod */
+    /* szRCMod */
     "VBoxDDGC.gc",
     /* szR0Mod */
     "VBoxDDR0.r0",
     /* pszDescription */
     "Advanced Configuration and Power Interface",
     /* fFlags */
-    PDM_DEVREG_FLAGS_HOST_BITS_DEFAULT | PDM_DEVREG_FLAGS_GUEST_BITS_DEFAULT | PDM_DEVREG_FLAGS_GC | PDM_DEVREG_FLAGS_R0,
+    PDM_DEVREG_FLAGS_DEFAULT_BITS | PDM_DEVREG_FLAGS_RC | PDM_DEVREG_FLAGS_R0,
     /* fClass */
     PDM_DEVREG_CLASS_ACPI,
     /* cMaxInstances */
@@ -1841,7 +2010,15 @@ const PDMDEVREG g_DeviceACPI =
     /* pfnDetach */
     NULL,
     /* pfnQueryInterface. */
-    NULL
+    NULL,
+    /* pfnInitComplete */
+    NULL,
+    /* pfnPowerOff */
+    NULL,
+    /* pfnSoftReset */
+    NULL,
+    /* u32VersionEnd */
+    PDM_DEVREG_VERSION
 };
 
 #endif /* IN_RING3 */

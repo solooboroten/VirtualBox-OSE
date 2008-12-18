@@ -1,6 +1,6 @@
-/* $Id: DBGFStack.cpp $ */
+/* $Id: DBGFStack.cpp 13975 2008-11-07 16:33:20Z vboxsync $ */
 /** @file
- * VMM DBGF - Debugger Facility, Call Stack Analyser.
+ * DBGF - Debugger Facility, Call Stack Analyser.
  */
 
 /*
@@ -43,13 +43,13 @@
 DECLINLINE(int) dbgfR3Read(PVM pVM, void *pvBuf, RTGCUINTPTR GCPtr, size_t cb, size_t *pcbRead)
 {
     int rc = MMR3ReadGCVirt(pVM, pvBuf, GCPtr, cb);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         size_t cbRead;
         for (cbRead = 0; cbRead < cb; cbRead++)
         {
             rc = MMR3ReadGCVirt(pVM, (uint8_t *)pvBuf + cbRead, GCPtr + cbRead, 1);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
                 break;
         }
         if (cbRead)
@@ -63,8 +63,6 @@ DECLINLINE(int) dbgfR3Read(PVM pVM, void *pvBuf, RTGCUINTPTR GCPtr, size_t cb, s
 }
 
 
-
-
 /**
  * Internal worker routine.
  *
@@ -75,6 +73,9 @@ DECLINLINE(int) dbgfR3Read(PVM pVM, void *pvBuf, RTGCUINTPTR GCPtr, size_t cb, s
  *      8  parameter 0
  *      4  return address
  *      0  old ebp; current ebp points here
+ *
+ * @todo Add AMD64 support (needs teaming up with the module management for
+ *       unwind tables).
  */
 static int dbgfR3StackWalk(PVM pVM, PDBGFSTACKFRAME pFrame)
 {
@@ -118,7 +119,7 @@ static int dbgfR3StackWalk(PVM pVM, PDBGFSTACKFRAME pFrame)
                         ? pFrame->AddrReturnFrame.FlatPtr
                         : pFrame->AddrFrame.FlatPtr,
                         cbRead, &cbRead);
-    if (    VBOX_FAILURE(rc)
+    if (    RT_FAILURE(rc)
         ||  cbRead < cbRetAddr + cbStackItem)
         pFrame->fFlags |= DBGFSTACKFRAME_FLAGS_LAST;
 
@@ -265,7 +266,7 @@ static DECLCALLBACK(int) dbgfR3StackWalkCtxFull(PVM pVM, PDBGFSTACKFRAME pFrame,
     int rc = VINF_SUCCESS;
     if (!DBGFADDRESS_IS_VALID(&pCur->AddrPC))
         rc = DBGFR3AddrFromSelOff(pVM, &pCur->AddrPC, pCtxCore->cs, pCtxCore->eip);
-    if (VBOX_SUCCESS(rc) /*&& pCur->enmReturnType == DBGFRETURNTYPE_INVALID*/)
+    if (RT_SUCCESS(rc) /*&& pCur->enmReturnType == DBGFRETURNTYPE_INVALID*/)
     {
         switch (pCur->AddrPC.fFlags & DBGFADDRESS_FLAGS_TYPE_MASK)
         {
@@ -276,19 +277,19 @@ static DECLCALLBACK(int) dbgfR3StackWalkCtxFull(PVM pVM, PDBGFSTACKFRAME pFrame,
         }
     }
     uint64_t u64Mask = UINT64_MAX;
-    if (VBOX_SUCCESS(rc) && DBGFADDRESS_IS_FAR16(&pCur->AddrPC) && fGuest)
+    if (RT_SUCCESS(rc) && DBGFADDRESS_IS_FAR16(&pCur->AddrPC) && fGuest)
         u64Mask = UINT16_MAX;
-    if (VBOX_SUCCESS(rc) && !DBGFADDRESS_IS_VALID(&pCur->AddrStack))
+    if (RT_SUCCESS(rc) && !DBGFADDRESS_IS_VALID(&pCur->AddrStack))
         rc = DBGFR3AddrFromSelOff(pVM, &pCur->AddrStack, pCtxCore->ss, pCtxCore->esp & u64Mask);
-    if (VBOX_SUCCESS(rc) && !DBGFADDRESS_IS_VALID(&pCur->AddrFrame))
+    if (RT_SUCCESS(rc) && !DBGFADDRESS_IS_VALID(&pCur->AddrFrame))
         rc = DBGFR3AddrFromSelOff(pVM, &pCur->AddrFrame, pCtxCore->ss, pCtxCore->ebp & u64Mask);
 
     /*
      * The first frame.
      */
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
         rc = dbgfR3StackWalk(pVM, pCur);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         DBGFR3StackWalkEnd(pVM, pCur);
         return rc;
@@ -302,7 +303,7 @@ static DECLCALLBACK(int) dbgfR3StackWalkCtxFull(PVM pVM, PDBGFSTACKFRAME pFrame,
     {
         /* try walk. */
         rc = dbgfR3StackWalk(pVM, &Next);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             break;
 
         /* add the next frame to the chain. */
@@ -349,15 +350,15 @@ static DECLCALLBACK(int) dbgfR3StackWalkCtxFull(PVM pVM, PDBGFSTACKFRAME pFrame,
  *                      On output the structure will contain all the information we were able to
  *                      obtain about the stack frame.
  */
-DBGFR3DECL(int) DBGFR3StackWalkBeginGuest(PVM pVM, PDBGFSTACKFRAME pFrame)
+VMMR3DECL(int) DBGFR3StackWalkBeginGuest(PVM pVM, PDBGFSTACKFRAME pFrame)
 {
     pFrame->pFirst = NULL;
     pFrame->pNext = NULL;
 
     PVMREQ pReq;
-    int rc = VMR3ReqCall(pVM, &pReq, RT_INDEFINITE_WAIT, (PFNRT)dbgfR3StackWalkCtxFull, 4,
-                         pVM, pFrame, CPUMGetGuestCtxCore(pVM), true);
-    if (VBOX_SUCCESS(rc))
+    int rc = VMR3ReqCall(pVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, (PFNRT)dbgfR3StackWalkCtxFull, 4,
+                         pVM, pFrame, CPUMGetGuestCtxCoreEx(pVM, VMMGetCpu(pVM)), true); /* @todo SMP */
+    if (RT_SUCCESS(rc))
         rc = pReq->iStatus;
     VMR3ReqFree(pReq);
 
@@ -380,15 +381,15 @@ DBGFR3DECL(int) DBGFR3StackWalkBeginGuest(PVM pVM, PDBGFSTACKFRAME pFrame)
  *                      On output the structure will contain all the information we were able to
  *                      obtain about the stack frame.
  */
-DBGFR3DECL(int) DBGFR3StackWalkBeginHyper(PVM pVM, PDBGFSTACKFRAME pFrame)
+VMMR3DECL(int) DBGFR3StackWalkBeginHyper(PVM pVM, PDBGFSTACKFRAME pFrame)
 {
     pFrame->pFirst = NULL;
     pFrame->pNext = NULL;
 
     PVMREQ pReq;
-    int rc = VMR3ReqCall(pVM, &pReq, RT_INDEFINITE_WAIT, (PFNRT)dbgfR3StackWalkCtxFull, 4,
+    int rc = VMR3ReqCall(pVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, (PFNRT)dbgfR3StackWalkCtxFull, 4,
                          pVM, pFrame, CPUMGetHyperCtxCore(pVM), 4);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
         rc = pReq->iStatus;
     VMR3ReqFree(pReq);
 
@@ -404,7 +405,7 @@ DBGFR3DECL(int) DBGFR3StackWalkBeginHyper(PVM pVM, PDBGFSTACKFRAME pFrame)
  * @param   pVM         The VM handle.
  * @param   pFrame      Pointer to the current frame on input, content is replaced with the next frame on successful return.
  */
-DBGFR3DECL(int) DBGFR3StackWalkNext(PVM pVM, PDBGFSTACKFRAME pFrame)
+VMMR3DECL(int) DBGFR3StackWalkNext(PVM pVM, PDBGFSTACKFRAME pFrame)
 {
     if (pFrame->pNext)
     {
@@ -424,7 +425,7 @@ DBGFR3DECL(int) DBGFR3StackWalkNext(PVM pVM, PDBGFSTACKFRAME pFrame)
  * @param   pVM         The VM handle.
  * @param   pFrame      The stackframe as returned by the last stack walk call.
  */
-DBGFR3DECL(void) DBGFR3StackWalkEnd(PVM pVM, PDBGFSTACKFRAME pFrame)
+VMMR3DECL(void) DBGFR3StackWalkEnd(PVM pVM, PDBGFSTACKFRAME pFrame)
 {
     if (!pFrame || !pFrame->pFirst)
         return;

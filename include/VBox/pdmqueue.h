@@ -34,7 +34,7 @@
 
 __BEGIN_DECLS
 
-/** @defgroup grp_pdm_queue     Queues
+/** @defgroup grp_pdm_queue     The PDM Queues API
  * @ingroup grp_pdm
  * @{
  */
@@ -50,12 +50,14 @@ typedef struct PDMQUEUEITEMCORE *PPDMQUEUEITEMCORE;
  */
 typedef struct PDMQUEUEITEMCORE
 {
-    /** Pointer to the next item in the pending list - HC Pointer. */
-    R3R0PTRTYPE(PPDMQUEUEITEMCORE)  pNextHC;
-    /** Pointer to the next item in the pending list - GC Pointer. */
-    RCPTRTYPE(PPDMQUEUEITEMCORE)    pNextGC;
+    /** Pointer to the next item in the pending list - R3 Pointer. */
+    R3PTRTYPE(PPDMQUEUEITEMCORE)    pNextR3;
+    /** Pointer to the next item in the pending list - R0 Pointer. */
+    R0PTRTYPE(PPDMQUEUEITEMCORE)    pNextR0;
+    /** Pointer to the next item in the pending list - RC Pointer. */
+    RCPTRTYPE(PPDMQUEUEITEMCORE)    pNextRC;
 #if HC_ARCH_BITS == 64
-    uint32_t                        Alignment0;
+    RTRCPTR                         Alignment0;
 #endif
 } PDMQUEUEITEMCORE;
 
@@ -108,28 +110,26 @@ typedef DECLCALLBACK(bool) FNPDMQUEUEEXT(void *pvUser, PPDMQUEUEITEMCORE pItem);
 /** Pointer to a FNPDMQUEUEEXT(). */
 typedef FNPDMQUEUEEXT *PFNPDMQUEUEEXT;
 
-PDMR3DECL(int)  PDMR3QueueCreateDevice(PVM pVM, PPDMDEVINS pDevIns, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
+VMMR3DECL(int)  PDMR3QueueCreateDevice(PVM pVM, PPDMDEVINS pDevIns, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
                                        PFNPDMQUEUEDEV pfnCallback, bool fGCEnabled, PPDMQUEUE *ppQueue);
-PDMR3DECL(int)  PDMR3QueueCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
+VMMR3DECL(int)  PDMR3QueueCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
                                        PFNPDMQUEUEDRV pfnCallback, PPDMQUEUE *ppQueue);
-PDMR3DECL(int)  PDMR3QueueCreateInternal(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
+VMMR3DECL(int)  PDMR3QueueCreateInternal(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
                                          PFNPDMQUEUEINT pfnCallback, bool fGCEnabled, PPDMQUEUE *ppQueue);
-PDMR3DECL(int)  PDMR3QueueCreateExternal(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
+VMMR3DECL(int)  PDMR3QueueCreateExternal(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
                                          PFNPDMQUEUEEXT pfnCallback, void *pvUser, PPDMQUEUE *ppQueue);
-PDMR3DECL(int)  PDMR3QueueDestroy(PPDMQUEUE pQueue);
-PDMR3DECL(int)  PDMR3QueueDestroyDevice(PVM pVM, PPDMDEVINS pDevIns);
-PDMR3DECL(int)  PDMR3QueueDestroyDriver(PVM pVM, PPDMDRVINS pDrvIns);
-PDMR3DECL(void) PDMR3QueueFlushAll(PVM pVM);
-PDMR3DECL(void) PDMR3QueueFlushWorker(PVM pVM, PPDMQUEUE pQueue);
+VMMR3DECL(int)  PDMR3QueueDestroy(PPDMQUEUE pQueue);
+VMMR3DECL(int)  PDMR3QueueDestroyDevice(PVM pVM, PPDMDEVINS pDevIns);
+VMMR3DECL(int)  PDMR3QueueDestroyDriver(PVM pVM, PPDMDRVINS pDrvIns);
+VMMR3DECL(void) PDMR3QueueFlushAll(PVM pVM);
+VMMR3DECL(void) PDMR3QueueFlushWorker(PVM pVM, PPDMQUEUE pQueue);
 
-PDMDECL(void)                 PDMQueueFlush(PPDMQUEUE pQueue);
-PDMDECL(PPDMQUEUEITEMCORE)    PDMQueueAlloc(PPDMQUEUE pQueue);
-PDMDECL(void)                 PDMQueueInsert(PPDMQUEUE pQueue, PPDMQUEUEITEMCORE pItem);
-PDMDECL(void)                 PDMQueueInsertEx(PPDMQUEUE pQueue, PPDMQUEUEITEMCORE pItem, uint64_t NanoMaxDelay);
-PDMDECL(RCPTRTYPE(PPDMQUEUE)) PDMQueueRCPtr(PPDMQUEUE pQueue);
-/** @todo eliminate PDMQueueGCPtr */
-#define PDMQueueGCPtr(pQueue) PDMQueueRCPtr(pQueue)
-PDMDECL(R0PTRTYPE(PPDMQUEUE)) PDMQueueR0Ptr(PPDMQUEUE pQueue);
+VMMDECL(void)                 PDMQueueFlush(PPDMQUEUE pQueue);
+VMMDECL(PPDMQUEUEITEMCORE)    PDMQueueAlloc(PPDMQUEUE pQueue);
+VMMDECL(void)                 PDMQueueInsert(PPDMQUEUE pQueue, PPDMQUEUEITEMCORE pItem);
+VMMDECL(void)                 PDMQueueInsertEx(PPDMQUEUE pQueue, PPDMQUEUEITEMCORE pItem, uint64_t NanoMaxDelay);
+VMMDECL(RCPTRTYPE(PPDMQUEUE)) PDMQueueRCPtr(PPDMQUEUE pQueue);
+VMMDECL(R0PTRTYPE(PPDMQUEUE)) PDMQueueR0Ptr(PPDMQUEUE pQueue);
 
 /** @} */
 

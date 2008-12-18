@@ -1,4 +1,4 @@
-/* $Id: PerformanceSolaris.cpp $ */
+/* $Id: PerformanceSolaris.cpp 14948 2008-12-03 15:06:30Z vboxsync $ */
 
 /** @file
  *
@@ -89,10 +89,10 @@ int CollectorSolaris::getRawHostCpuLoad(uint64_t *user, uint64_t *kernel, uint64
     uint64_t tmpUser, tmpKernel, tmpIdle;
     int cpus;
     cpu_stat_t cpu_stats;
-    
+
     if (mKC == 0)
         return VERR_INTERNAL_ERROR;
-    
+
     tmpUser = tmpKernel = tmpIdle = cpus = 0;
     for (ksp = mKC->kc_chain; ksp != NULL; ksp = ksp->ks_next) {
         if (strcmp(ksp->ks_module, "cpu_stat") == 0) {
@@ -105,9 +105,9 @@ int CollectorSolaris::getRawHostCpuLoad(uint64_t *user, uint64_t *kernel, uint64
             tmpUser   += cpu_stats.cpu_sysinfo.cpu[CPU_USER];
             tmpKernel += cpu_stats.cpu_sysinfo.cpu[CPU_KERNEL];
             tmpIdle   += cpu_stats.cpu_sysinfo.cpu[CPU_IDLE];
-        }         
+        }
     }
-    
+
     if (cpus == 0)
     {
         Log(("no cpu stats found!\n"));
@@ -130,7 +130,7 @@ int CollectorSolaris::getRawProcessCpuLoad(RTPROCESS process, uint64_t *user, ui
     RTStrAPrintf(&pszName, "/proc/%d/usage", process);
     Log(("Opening %s...\n", pszName));
     int h = open(pszName, O_RDONLY);
-    RTMemFree(pszName);
+    RTStrFree(pszName);
 
     if (h != -1)
     {
@@ -164,7 +164,7 @@ int CollectorSolaris::getHostMemoryUsage(ULONG *total, ULONG *used, ULONG *avail
     int rc = VINF_SUCCESS;
 
     kstat_named_t *kn;
-    
+
     if (mKC == 0 || mSysPages == 0)
         return VERR_INTERNAL_ERROR;
 
@@ -200,7 +200,7 @@ int CollectorSolaris::getProcessMemoryUsage(RTPROCESS process, ULONG *used)
     RTStrAPrintf(&pszName, "/proc/%d/psinfo", process);
     Log(("Opening %s...\n", pszName));
     int h = open(pszName, O_RDONLY);
-    RTMemFree(pszName);
+    RTStrFree(pszName);
 
     if (h != -1)
     {

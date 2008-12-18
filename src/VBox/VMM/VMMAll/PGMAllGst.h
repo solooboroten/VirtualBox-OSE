@@ -1,4 +1,4 @@
-/* $Id: PGMAllGst.h $ */
+/* $Id: PGMAllGst.h 15410 2008-12-13 01:04:17Z vboxsync $ */
 /** @file
  * VBox - Page Manager, Guest Paging Template - All context code.
  */
@@ -59,6 +59,7 @@
 # define GSTPDE                     SHWPDE
 # define PGSTPDE                    PSHWPDE
 # define GST_PTE_PG_MASK            SHW_PTE_PG_MASK
+
 #elif PGM_GST_TYPE == PGM_TYPE_32BIT
 # define GSTPT                      X86PT
 # define PGSTPT                     PX86PT
@@ -80,6 +81,7 @@
 # define GST_PT_SHIFT               X86_PT_SHIFT
 # define GST_PT_MASK                X86_PT_MASK
 # define GST_CR3_PAGE_MASK          X86_CR3_PAGE_MASK
+
 #elif   PGM_GST_TYPE == PGM_TYPE_PAE \
      || PGM_GST_TYPE == PGM_TYPE_AMD64
 # define GSTPT                      X86PTPAE
@@ -123,19 +125,23 @@
 *   Internal Functions                                                         *
 *******************************************************************************/
 __BEGIN_DECLS
-PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCUINTPTR GCPtr, uint64_t *pfFlags, PRTGCPHYS pGCPhys);
-PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask);
-PGM_GST_DECL(int, GetPDE)(PVM pVM, RTGCUINTPTR GCPtr, PX86PDEPAE pPDE);
+PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCPTR GCPtr, uint64_t *pfFlags, PRTGCPHYS pGCPhys);
+PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask);
+PGM_GST_DECL(int, GetPDE)(PVM pVM, RTGCPTR GCPtr, PX86PDEPAE pPDE);
 PGM_GST_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3);
 PGM_GST_DECL(int, UnmapCR3)(PVM pVM);
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
 PGM_GST_DECL(int, MonitorCR3)(PVM pVM, RTGCPHYS GCPhysCR3);
 PGM_GST_DECL(int, UnmonitorCR3)(PVM pVM);
+#endif
 PGM_GST_DECL(bool, HandlerVirtualUpdate)(PVM pVM, uint32_t cr4);
-#ifndef IN_RING3
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
+# ifndef IN_RING3
 PGM_GST_DECL(int, WriteHandlerCR3)(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPHYS GCPhysFault, void *pvUser);
-# if PGM_GST_TYPE == PGM_TYPE_PAE \
+#  if PGM_GST_TYPE == PGM_TYPE_PAE \
   || PGM_GST_TYPE == PGM_TYPE_AMD64
 PGM_GST_DECL(int, PAEWriteHandlerPD)(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPHYS GCPhysFault, void *pvUser);
+#  endif
 # endif
 #endif
 __END_DECLS
@@ -157,7 +163,7 @@ __END_DECLS
  * @param   pGCPhys     Where to store the GC physical address of the page.
  *                      This is page aligned. The fact that the
  */
-PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCUINTPTR GCPtr, uint64_t *pfFlags, PRTGCPHYS pGCPhys)
+PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCPTR GCPtr, uint64_t *pfFlags, PRTGCPHYS pGCPhys)
 {
 #if PGM_GST_TYPE == PGM_TYPE_REAL \
  || PGM_GST_TYPE == PGM_TYPE_PROT
@@ -176,22 +182,20 @@ PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCUINTPTR GCPtr, uint64_t *pfFlags, PRTGCP
      * Get the PDE.
      */
 # if PGM_GST_TYPE == PGM_TYPE_32BIT
-    const X86PDE Pde = CTXSUFF(pVM->pgm.s.pGuestPD)->a[GCPtr >> X86_PD_SHIFT];
+    X86PDE      Pde = pgmGstGet32bitPDE(&pVM->pgm.s, GCPtr);
+
 #elif PGM_GST_TYPE == PGM_TYPE_PAE
-    X86PDEPAE    Pde;
-    bool         fNoExecuteBitValid = !!(CPUMGetGuestEFER(pVM) & MSR_K6_EFER_NXE);
+    /* pgmGstGetPaePDE will return 0 if the PDPTE is marked as not present.
+     * All the other bits in the PDPTE are only valid in long mode (r/w, u/s, nx). */
+    X86PDEPAE   Pde = pgmGstGetPaePDE(&pVM->pgm.s, GCPtr);
+    bool        fNoExecuteBitValid = !!(CPUMGetGuestEFER(pVM) & MSR_K6_EFER_NXE);
 
-    /* pgmGstGetPaePDE will return 0 if the PDPTE is marked as not present
-     * All the other bits in the PDPTE are only valid in long mode (r/w, u/s, nx)
-     */
-    Pde.u = pgmGstGetPaePDE(&pVM->pgm.s, GCPtr);
 #elif PGM_GST_TYPE == PGM_TYPE_AMD64
-    PX86PML4E    pPml4e;
-    X86PDPE      Pdpe;
-    X86PDEPAE    Pde;
-    bool         fNoExecuteBitValid = !!(CPUMGetGuestEFER(pVM) & MSR_K6_EFER_NXE);
+    PX86PML4E   pPml4e;
+    X86PDPE     Pdpe;
+    X86PDEPAE   Pde = pgmGstGetLongModePDEEx(&pVM->pgm.s, GCPtr, &pPml4e, &Pdpe);
+    bool        fNoExecuteBitValid = !!(CPUMGetGuestEFER(pVM) & MSR_K6_EFER_NXE);
 
-    Pde.u = pgmGstGetLongModePDE(&pVM->pgm.s, GCPtr, &pPml4e, &Pdpe);
     Assert(pPml4e);
     if (!(pPml4e->n.u1Present & Pdpe.n.u1Present))
         return VERR_PAGE_TABLE_NOT_PRESENT;
@@ -217,7 +221,7 @@ PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCUINTPTR GCPtr, uint64_t *pfFlags, PRTGCP
     {
         PGSTPT pPT;
         int rc = PGM_GCPHYS_2_PTR(pVM, Pde.u & GST_PDE_PG_MASK, &pPT);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
 
         /*
@@ -236,7 +240,7 @@ PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCUINTPTR GCPtr, uint64_t *pfFlags, PRTGCP
         {
             *pfFlags = (Pte.u & ~GST_PTE_PG_MASK)
                      & ((Pde.u & (X86_PTE_RW | X86_PTE_US)) | ~(uint64_t)(X86_PTE_RW | X86_PTE_US));
-# if PGM_WITH_NX(PGM_GST_TYPE)
+# if PGM_WITH_NX(PGM_GST_TYPE, PGM_GST_TYPE)
             /* The NX bit is determined by a bitwise OR between the PT and PD */
             if (fNoExecuteBitValid)
                 *pfFlags |= (Pte.u & Pde.u & X86_PTE_PAE_NX);
@@ -254,7 +258,7 @@ PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCUINTPTR GCPtr, uint64_t *pfFlags, PRTGCP
         {
             *pfFlags = (Pde.u & ~(GST_PTE_PG_MASK | X86_PTE_PAT))
                      | ((Pde.u & X86_PDE4M_PAT) >> X86_PDE4M_PAT_SHIFT);
-# if PGM_WITH_NX(PGM_GST_TYPE)
+# if PGM_WITH_NX(PGM_GST_TYPE, PGM_GST_TYPE)
             /* The NX bit is determined by a bitwise OR between the PT and PD */
             if (fNoExecuteBitValid)
                 *pfFlags |= (Pde.u & X86_PTE_PAE_NX);
@@ -284,7 +288,7 @@ PGM_GST_DECL(int, GetPage)(PVM pVM, RTGCUINTPTR GCPtr, uint64_t *pfFlags, PRTGCP
  * @param   fFlags      The OR  mask - page flags X86_PTE_*, excluding the page mask of course.
  * @param   fMask       The AND mask - page flags X86_PTE_*.
  */
-PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask)
+PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask)
 {
 #if PGM_GST_TYPE == PGM_TYPE_32BIT \
  || PGM_GST_TYPE == PGM_TYPE_PAE \
@@ -296,7 +300,8 @@ PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fF
          * Get the PD entry.
          */
 # if PGM_GST_TYPE == PGM_TYPE_32BIT
-        PX86PDE pPde = &CTXSUFF(pVM->pgm.s.pGuestPD)->a[GCPtr >> X86_PD_SHIFT];
+        PX86PDE pPde = pgmGstGet32bitPDEPtr(&pVM->pgm.s, GCPtr);
+
 # elif PGM_GST_TYPE == PGM_TYPE_PAE
         /* pgmGstGetPaePDEPtr will return 0 if the PDPTE is marked as not present
          * All the other bits in the PDPTE are only valid in long mode (r/w, u/s, nx)
@@ -330,7 +335,7 @@ PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fF
              */
             PGSTPT pPT;
             int rc = PGM_GCPHYS_2_PTR(pVM, Pde.u & GST_PDE_PG_MASK, &pPT);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
                 return rc;
 
             unsigned iPTE = (GCPtr >> GST_PT_SHIFT) & GST_PT_MASK;
@@ -387,21 +392,18 @@ PGM_GST_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fF
  * @param   GCPtr       Guest context pointer
  * @param   pPDE        Pointer to guest PDE structure
  */
-PGM_GST_DECL(int, GetPDE)(PVM pVM, RTGCUINTPTR GCPtr, PX86PDEPAE pPDE)
+PGM_GST_DECL(int, GetPDE)(PVM pVM, RTGCPTR GCPtr, PX86PDEPAE pPDE)
 {
 #if PGM_GST_TYPE == PGM_TYPE_32BIT \
  || PGM_GST_TYPE == PGM_TYPE_PAE   \
  || PGM_GST_TYPE == PGM_TYPE_AMD64
 
 # if PGM_GST_TYPE == PGM_TYPE_32BIT
-    X86PDE    Pde;
-    Pde   = CTXSUFF(pVM->pgm.s.pGuestPD)->a[GCPtr >> GST_PD_SHIFT];
+    X86PDE    Pde = pgmGstGet32bitPDE(&pVM->pgm.s, GCPtr);
 # elif PGM_GST_TYPE == PGM_TYPE_PAE
-    X86PDEPAE Pde;
-    Pde.u = pgmGstGetPaePDE(&pVM->pgm.s, GCPtr);
+    X86PDEPAE Pde = pgmGstGetPaePDE(&pVM->pgm.s, GCPtr);
 # elif PGM_GST_TYPE == PGM_TYPE_AMD64
-    X86PDEPAE Pde;
-    Pde.u = pgmGstGetLongModePDE(&pVM->pgm.s, GCPtr);
+    X86PDEPAE Pde = pgmGstGetLongModePDE(&pVM->pgm.s, GCPtr);
 # endif
 
     pPDE->u = (X86PGPAEUINT)Pde.u;
@@ -420,7 +422,10 @@ PGM_GST_DECL(int, GetPDE)(PVM pVM, RTGCUINTPTR GCPtr, PX86PDEPAE pPDE)
  * Note that a MapCR3 call is usually not followed by an UnmapCR3 call; whenever
  * CR3 is updated we simply call MapCR3 again.
  *
- * @returns VBox status, no specials.
+ * @returns Strict VBox status code.
+ * @retval  VINF_SUCCESS.
+ * @retval  VINF_PGM_SYNC_CR3 if the shadow page pool overflowed.
+ *
  * @param   pVM             VM handle.
  * @param   GCPhysCR3       The physical address in the CR3 register.
  */
@@ -430,7 +435,7 @@ PGM_GST_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
  || PGM_GST_TYPE == PGM_TYPE_PAE \
  || PGM_GST_TYPE == PGM_TYPE_AMD64
 
-    LogFlow(("MapCR3: %VGp\n", GCPhysCR3));
+    LogFlow(("MapCR3: %RGp\n", GCPhysCR3));
 
     /*
      * Map the page CR3 points at.
@@ -438,90 +443,123 @@ PGM_GST_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
     RTHCPHYS    HCPhysGuestCR3;
     RTHCPTR     HCPtrGuestCR3;
     int rc = pgmRamGCPhys2HCPtrAndHCPhysWithFlags(&pVM->pgm.s, GCPhysCR3 & GST_CR3_PAGE_MASK, &HCPtrGuestCR3, &HCPhysGuestCR3);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
-        rc = PGMMap(pVM, (RTGCUINTPTR)pVM->pgm.s.GCPtrCR3Mapping, HCPhysGuestCR3, PAGE_SIZE, 0);
-        if (VBOX_SUCCESS(rc))
+        rc = PGMMap(pVM, (RTGCPTR)pVM->pgm.s.GCPtrCR3Mapping, HCPhysGuestCR3, PAGE_SIZE, 0);
+        if (RT_SUCCESS(rc))
         {
             PGM_INVL_PG(pVM->pgm.s.GCPtrCR3Mapping);
 # if PGM_GST_TYPE == PGM_TYPE_32BIT
-            pVM->pgm.s.pGuestPDHC = (R3R0PTRTYPE(PX86PD))HCPtrGuestCR3;
-            pVM->pgm.s.pGuestPDGC = (RCPTRTYPE(PX86PD))pVM->pgm.s.GCPtrCR3Mapping;
+            pVM->pgm.s.pGst32BitPdR3 = (R3PTRTYPE(PX86PD))HCPtrGuestCR3;
+#  ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+            pVM->pgm.s.pGst32BitPdR0 = (R0PTRTYPE(PX86PD))HCPtrGuestCR3;
+#  endif
+            pVM->pgm.s.pGst32BitPdRC = (RCPTRTYPE(PX86PD))pVM->pgm.s.GCPtrCR3Mapping;
 
 # elif PGM_GST_TYPE == PGM_TYPE_PAE
-            unsigned offset = GCPhysCR3 & GST_CR3_PAGE_MASK & PAGE_OFFSET_MASK;
-            pVM->pgm.s.pGstPaePDPTHC = (R3R0PTRTYPE(PX86PDPT)) HCPtrGuestCR3;
-            pVM->pgm.s.pGstPaePDPTGC = (RCPTRTYPE(PX86PDPT))   ((RCPTRTYPE(uint8_t *))pVM->pgm.s.GCPtrCR3Mapping + offset);
-            Log(("Cached mapping %VGv\n", pVM->pgm.s.pGstPaePDPTGC));
+            unsigned off = GCPhysCR3 & GST_CR3_PAGE_MASK & PAGE_OFFSET_MASK;
+            pVM->pgm.s.pGstPaePdptR3 = (R3PTRTYPE(PX86PDPT))HCPtrGuestCR3;
+#  ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+            pVM->pgm.s.pGstPaePdptR0 = (R0PTRTYPE(PX86PDPT))HCPtrGuestCR3;
+#  endif
+            pVM->pgm.s.pGstPaePdptRC = (RCPTRTYPE(PX86PDPT))((RCPTRTYPE(uint8_t *))pVM->pgm.s.GCPtrCR3Mapping + off);
+            Log(("Cached mapping %RGv\n", pVM->pgm.s.pGstPaePdptRC));
 
             /*
              * Map the 4 PDs too.
              */
-            RTGCUINTPTR GCPtr = (RTGCUINTPTR)pVM->pgm.s.GCPtrCR3Mapping + PAGE_SIZE;
+            PX86PDPT pGuestPDPT = pgmGstGetPaePDPTPtr(&pVM->pgm.s);
+            RTGCPTR GCPtr = pVM->pgm.s.GCPtrCR3Mapping + PAGE_SIZE;
             for (unsigned i = 0; i < X86_PG_PAE_PDPE_ENTRIES; i++, GCPtr += PAGE_SIZE)
             {
-                if (pVM->pgm.s.CTXSUFF(pGstPaePDPT)->a[i].n.u1Present)
+                if (pGuestPDPT->a[i].n.u1Present)
                 {
                     RTHCPTR     HCPtr;
                     RTHCPHYS    HCPhys;
-                    RTGCPHYS    GCPhys = pVM->pgm.s.CTXSUFF(pGstPaePDPT)->a[i].u & X86_PDPE_PG_MASK;
+                    RTGCPHYS    GCPhys = pGuestPDPT->a[i].u & X86_PDPE_PG_MASK;
                     int rc2 = pgmRamGCPhys2HCPtrAndHCPhysWithFlags(&pVM->pgm.s, GCPhys, &HCPtr, &HCPhys);
-                    if (VBOX_SUCCESS(rc2))
+                    if (RT_SUCCESS(rc2))
                     {
                         rc = PGMMap(pVM, GCPtr, HCPhys & X86_PTE_PAE_PG_MASK, PAGE_SIZE, 0);
                         AssertRCReturn(rc, rc);
-                        pVM->pgm.s.apGstPaePDsHC[i]     = (R3R0PTRTYPE(PX86PDPAE))HCPtr;
-                        pVM->pgm.s.apGstPaePDsGC[i]     = (RCPTRTYPE(PX86PDPAE))GCPtr;
+
+                        pVM->pgm.s.apGstPaePDsR3[i]     = (R3PTRTYPE(PX86PDPAE))HCPtr;
+#  ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+                        pVM->pgm.s.apGstPaePDsR0[i]     = (R0PTRTYPE(PX86PDPAE))HCPtr;
+#  endif
+                        pVM->pgm.s.apGstPaePDsRC[i]     = (RCPTRTYPE(PX86PDPAE))GCPtr;
                         pVM->pgm.s.aGCPhysGstPaePDs[i]  = GCPhys;
-                        PGM_INVL_PG(GCPtr);
+                        PGM_INVL_PG(GCPtr); /** @todo This ends up calling HWACCMInvalidatePage, is that correct? */
                         continue;
                     }
                     AssertMsgFailed(("pgmR3Gst32BitMapCR3: rc2=%d GCPhys=%RGp i=%d\n", rc2, GCPhys, i));
                 }
 
-                pVM->pgm.s.apGstPaePDsHC[i]     = 0;
-                pVM->pgm.s.apGstPaePDsGC[i]     = 0;
+                pVM->pgm.s.apGstPaePDsR3[i]     = 0;
+#  ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+                pVM->pgm.s.apGstPaePDsR0[i]     = 0;
+#  endif
+                pVM->pgm.s.apGstPaePDsRC[i]     = 0;
                 pVM->pgm.s.aGCPhysGstPaePDs[i]  = NIL_RTGCPHYS;
-                PGM_INVL_PG(GCPtr);
+                PGM_INVL_PG(GCPtr); /** @todo this shouldn't be necessary? */
             }
+
 # elif PGM_GST_TYPE == PGM_TYPE_AMD64
-            PPGMPOOL pPool = pVM->pgm.s.CTXSUFF(pPool);
-
-            pVM->pgm.s.pGstPaePML4HC = (R3R0PTRTYPE(PX86PML4))HCPtrGuestCR3;
-
+            pVM->pgm.s.pGstAmd64Pml4R3 = (R3PTRTYPE(PX86PML4))HCPtrGuestCR3;
+#  ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+            pVM->pgm.s.pGstAmd64Pml4R0 = (R0PTRTYPE(PX86PML4))HCPtrGuestCR3;
+#  endif
             if (!HWACCMIsNestedPagingActive(pVM))
             {
-                if (pVM->pgm.s.pHCShwAmd64CR3)
+                /*
+                 * Update the shadow root page as well since that's not fixed.
+                 */
+                /** @todo Move this into PGMAllBth.h. */
+                PPGMPOOL pPool = pVM->pgm.s.CTX_SUFF(pPool);
+                if (pVM->pgm.s.CTX_SUFF(pShwAmd64CR3))
                 {
                     /* It might have been freed already by a pool flush (see e.g. PGMR3MappingsUnfix). */
-                    if (pVM->pgm.s.pHCShwAmd64CR3->enmKind != PGMPOOLKIND_FREE)
-                        pgmPoolFreeByPage(pPool, pVM->pgm.s.pHCShwAmd64CR3, PGMPOOL_IDX_AMD64_CR3, pVM->pgm.s.pHCShwAmd64CR3->GCPhys >> PAGE_SHIFT);
-                    pVM->pgm.s.pHCShwAmd64CR3 = 0;
-                    pVM->pgm.s.pHCPaePML4     = 0;
-                    pVM->pgm.s.HCPhysPaePML4  = 0;
+                    /** @todo Coordinate this better with the pool. */
+                    if (pVM->pgm.s.CTX_SUFF(pShwAmd64CR3)->enmKind != PGMPOOLKIND_FREE)
+                        pgmPoolFreeByPage(pPool, pVM->pgm.s.CTX_SUFF(pShwAmd64CR3), PGMPOOL_IDX_AMD64_CR3, pVM->pgm.s.CTX_SUFF(pShwAmd64CR3)->GCPhys >> PAGE_SHIFT);
+                    pVM->pgm.s.pShwAmd64CR3R3   = 0;
+                    pVM->pgm.s.pShwAmd64CR3R0   = 0;
+                    pVM->pgm.s.pShwPaePml4R3    = 0;
+#  ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+                    pVM->pgm.s.pShwPaePml4R0    = 0;
+#  endif
+                    pVM->pgm.s.HCPhysShwPaePml4 = 0;
                 }
 
                 Assert(!(GCPhysCR3 >> (PAGE_SHIFT + 32)));
-try_again:
-                rc = pgmPoolAlloc(pVM, GCPhysCR3, PGMPOOLKIND_64BIT_PML4_FOR_64BIT_PML4, PGMPOOL_IDX_AMD64_CR3, GCPhysCR3 >> PAGE_SHIFT, &pVM->pgm.s.pHCShwAmd64CR3);
+                rc = pgmPoolAlloc(pVM, GCPhysCR3, PGMPOOLKIND_64BIT_PML4_FOR_64BIT_PML4, PGMPOOL_IDX_AMD64_CR3, GCPhysCR3 >> PAGE_SHIFT, &pVM->pgm.s.CTX_SUFF(pShwAmd64CR3));
                 if (rc == VERR_PGM_POOL_FLUSHED)
                 {
-                    Log(("MapCR3: Flush pool and try again\n"));
-                    Assert(pVM->pgm.s.fSyncFlags & PGM_SYNC_CLEAR_PGM_POOL);
-                    rc = pgmPoolSyncCR3(pVM);
-                    AssertRC(rc);
-                    goto try_again;
+                    Log(("MapCR3: PGM pool flushed -> signal sync cr3\n"));
+                    Assert(VM_FF_ISSET(pVM, VM_FF_PGM_SYNC_CR3));
+                    return VINF_PGM_SYNC_CR3;
                 }
-                pVM->pgm.s.pHCPaePML4    = (PX86PML4)PGMPOOL_PAGE_2_PTR(pPool->CTXSUFF(pVM), pVM->pgm.s.pHCShwAmd64CR3);
-                pVM->pgm.s.HCPhysPaePML4 = pVM->pgm.s.pHCShwAmd64CR3->Core.Key;
+                AssertRCReturn(rc, rc);
+#  ifdef IN_RING0
+                pVM->pgm.s.pShwAmd64CR3R3 = MMHyperCCToR3(pVM, pVM->pgm.s.CTX_SUFF(pShwAmd64CR3));
+#  else
+                pVM->pgm.s.pShwAmd64CR3R0 = MMHyperCCToR0(pVM, pVM->pgm.s.CTX_SUFF(pShwAmd64CR3));
+#  endif
+                pVM->pgm.s.pShwPaePml4R3 = (R3PTRTYPE(PX86PML4))pVM->pgm.s.CTX_SUFF(pShwAmd64CR3)->pvPageR3;
+                Assert(pVM->pgm.s.pShwPaePml4R3);
+#  ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+                pVM->pgm.s.pShwPaePml4R0 = (R0PTRTYPE(PX86PML4))PGMPOOL_PAGE_2_PTR(pPool->CTX_SUFF(pVM), pVM->pgm.s.CTX_SUFF(pShwAmd64CR3));
+#  endif
+                pVM->pgm.s.HCPhysShwPaePml4 = pVM->pgm.s.CTX_SUFF(pShwAmd64CR3)->Core.Key;
+                rc = VINF_SUCCESS; /* clear it - pgmPoolAlloc returns hints. */
             }
 # endif
         }
         else
-            AssertMsgFailed(("rc=%Vrc GCPhysGuestPD=%VGp\n", rc, GCPhysCR3));
+            AssertMsgFailed(("rc=%Rrc GCPhysGuestPD=%RGp\n", rc, GCPhysCR3));
     }
     else
-        AssertMsgFailed(("rc=%Vrc GCPhysGuestPD=%VGp\n", rc, GCPhysCR3));
+        AssertMsgFailed(("rc=%Rrc GCPhysGuestPD=%RGp\n", rc, GCPhysCR3));
 
 #else /* prot/real stub */
     int rc = VINF_SUCCESS;
@@ -543,29 +581,46 @@ PGM_GST_DECL(int, UnmapCR3)(PVM pVM)
     int rc = VINF_SUCCESS;
 
 #if PGM_GST_TYPE == PGM_TYPE_32BIT
-    pVM->pgm.s.pGuestPDHC = 0;
-    pVM->pgm.s.pGuestPDGC = 0;
+    pVM->pgm.s.pGst32BitPdR3 = 0;
+#ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+    pVM->pgm.s.pGst32BitPdR0 = 0;
+#endif
+    pVM->pgm.s.pGst32BitPdRC = 0;
 
 #elif PGM_GST_TYPE == PGM_TYPE_PAE
-    pVM->pgm.s.pGstPaePDPTHC = 0;
-    pVM->pgm.s.pGstPaePDPTGC = 0;
-    for (unsigned i=0; i < X86_PG_PAE_PDPE_ENTRIES; i++)
+    pVM->pgm.s.pGstPaePdptR3 = 0;
+# ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+    pVM->pgm.s.pGstPaePdptR0 = 0;
+# endif
+    pVM->pgm.s.pGstPaePdptRC = 0;
+    for (unsigned i = 0; i < X86_PG_PAE_PDPE_ENTRIES; i++)
     {
-        pVM->pgm.s.apGstPaePDsHC[i]    = 0;
-        pVM->pgm.s.apGstPaePDsGC[i]    = 0;        
+        pVM->pgm.s.apGstPaePDsR3[i]    = 0;
+# ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+        pVM->pgm.s.apGstPaePDsR0[i]    = 0;
+# endif
+        pVM->pgm.s.apGstPaePDsRC[i]    = 0;
         pVM->pgm.s.aGCPhysGstPaePDs[i] = NIL_RTGCPHYS;
     }
 
 #elif PGM_GST_TYPE == PGM_TYPE_AMD64
-    pVM->pgm.s.pGstPaePML4HC = 0;
+    pVM->pgm.s.pGstAmd64Pml4R3 = 0;
+# ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+    pVM->pgm.s.pGstAmd64Pml4R0 = 0;
+# endif
     if (!HWACCMIsNestedPagingActive(pVM))
     {
-        pVM->pgm.s.pHCPaePML4    = 0;
-        if (pVM->pgm.s.pHCShwAmd64CR3)
+        pVM->pgm.s.pShwPaePml4R3 = 0;
+# ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+        pVM->pgm.s.pShwPaePml4R0 = 0;
+# endif
+        pVM->pgm.s.HCPhysShwPaePml4 = 0;
+        if (pVM->pgm.s.CTX_SUFF(pShwAmd64CR3))
         {
-            PPGMPOOL pPool = pVM->pgm.s.CTXSUFF(pPool);
-            pgmPoolFreeByPage(pPool, pVM->pgm.s.pHCShwAmd64CR3, PGMPOOL_IDX_AMD64_CR3, pVM->pgm.s.pHCShwAmd64CR3->GCPhys >> PAGE_SHIFT);
-            pVM->pgm.s.pHCShwAmd64CR3 = NULL;
+            PPGMPOOL pPool = pVM->pgm.s.CTX_SUFF(pPool);
+            pgmPoolFreeByPage(pPool, pVM->pgm.s.CTX_SUFF(pShwAmd64CR3), PGMPOOL_IDX_AMD64_CR3, pVM->pgm.s.CTX_SUFF(pShwAmd64CR3)->GCPhys >> PAGE_SHIFT);
+            pVM->pgm.s.pShwAmd64CR3R3 = 0;
+            pVM->pgm.s.pShwAmd64CR3R0 = 0;
         }
     }
 
@@ -575,6 +630,8 @@ PGM_GST_DECL(int, UnmapCR3)(PVM pVM)
     return rc;
 }
 
+
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
 
 #undef LOG_GROUP
 #define LOG_GROUP LOG_GROUP_PGM_POOL
@@ -610,17 +667,17 @@ PGM_GST_DECL(int, MonitorCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
             rc = PGMHandlerPhysicalRegisterEx(pVM, PGMPHYSHANDLERTYPE_PHYSICAL_WRITE, GCPhysCR3, GCPhysCR3 + cbCR3Stuff - 1,
                                               pVM->pgm.s.pfnR3GstWriteHandlerCR3, 0,
                                               pVM->pgm.s.pfnR0GstWriteHandlerCR3, 0,
-                                              pVM->pgm.s.pfnGCGstWriteHandlerCR3, 0,
+                                              pVM->pgm.s.pfnRCGstWriteHandlerCR3, 0,
                                               pVM->pgm.s.pszR3GstWriteHandlerCR3);
 # else  /* PGMPOOL_WITH_MIXED_PT_CR3 */
-        rc = pgmPoolMonitorMonitorCR3(pVM->pgm.s.CTXSUFF(pPool),
+        rc = pgmPoolMonitorMonitorCR3(pVM->pgm.s.CTX_SUFF(pPool),
                                          pVM->pgm.s.enmShadowMode == PGMMODE_PAE
                                       || pVM->pgm.s.enmShadowMode == PGMMODE_PAE_NX
                                       ? PGMPOOL_IDX_PAE_PD
                                       : PGMPOOL_IDX_PD,
                                       GCPhysCR3);
 # endif /* PGMPOOL_WITH_MIXED_PT_CR3 */
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
             AssertMsgFailed(("PGMHandlerPhysicalModify/PGMR3HandlerPhysicalRegister failed, rc=%Rrc GCPhysGstCR3Monitored=%RGp GCPhysCR3=%RGp\n",
                              rc, pVM->pgm.s.GCPhysGstCR3Monitored, GCPhysCR3));
@@ -639,8 +696,8 @@ PGM_GST_DECL(int, MonitorCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
 # endif
     if (pVM->pgm.s.GCPhysGstCR3Monitored != GCPhysCR3)
     {
-        rc = pgmPoolMonitorMonitorCR3(pVM->pgm.s.CTXSUFF(pPool), PGMPOOL_IDX_PDPT, GCPhysCR3);
-        if (VBOX_FAILURE(rc))
+        rc = pgmPoolMonitorMonitorCR3(pVM->pgm.s.CTX_SUFF(pPool), PGMPOOL_IDX_PDPT, GCPhysCR3);
+        if (RT_FAILURE(rc))
         {
             AssertMsgFailed(("PGMHandlerPhysicalModify/PGMR3HandlerPhysicalRegister failed, rc=%Rrc GCPhysGstCR3Monitored=%RGp GCPhysCR3=%RGp\n",
                              rc, pVM->pgm.s.GCPhysGstCR3Monitored, GCPhysCR3));
@@ -648,22 +705,24 @@ PGM_GST_DECL(int, MonitorCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
         }
         pVM->pgm.s.GCPhysGstCR3Monitored = GCPhysCR3;
     }
+
     /*
      * Do the 4 PDs.
      */
+    PX86PDPT pGuestPDPT = pgmGstGetPaePDPTPtr(&pVM->pgm.s);
     for (unsigned i = 0; i < X86_PG_PAE_PDPE_ENTRIES; i++)
     {
-        if (CTXSUFF(pVM->pgm.s.pGstPaePDPT)->a[i].n.u1Present)
+        if (pGuestPDPT->a[i].n.u1Present)
         {
-            RTGCPHYS GCPhys = CTXSUFF(pVM->pgm.s.pGstPaePDPT)->a[i].u & X86_PDPE_PG_MASK;
+            RTGCPHYS GCPhys = pGuestPDPT->a[i].u & X86_PDPE_PG_MASK;
             if (pVM->pgm.s.aGCPhysGstPaePDsMonitored[i] != GCPhys)
             {
                 Assert(pVM->pgm.s.enmShadowMode == PGMMODE_PAE || pVM->pgm.s.enmShadowMode == PGMMODE_PAE_NX);
 
-                rc = pgmPoolMonitorMonitorCR3(pVM->pgm.s.CTXSUFF(pPool), PGMPOOL_IDX_PAE_PD_0 + i, GCPhys);
+                rc = pgmPoolMonitorMonitorCR3(pVM->pgm.s.CTX_SUFF(pPool), PGMPOOL_IDX_PAE_PD_0 + i, GCPhys);
             }
 
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
             {
                 AssertMsgFailed(("PGMHandlerPhysicalModify/PGMR3HandlerPhysicalRegister failed, rc=%Rrc GCPhysGstCR3Monitored=%RGp GCPhysCR3=%RGp\n",
                                  rc, pVM->pgm.s.aGCPhysGstPaePDsMonitored[i], GCPhys));
@@ -673,7 +732,7 @@ PGM_GST_DECL(int, MonitorCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
         }
         else if (pVM->pgm.s.aGCPhysGstPaePDsMonitored[i] != NIL_RTGCPHYS)
         {
-            rc = pgmPoolMonitorUnmonitorCR3(pVM->pgm.s.CTXSUFF(pPool), PGMPOOL_IDX_PAE_PD_0 + i);
+            rc = pgmPoolMonitorUnmonitorCR3(pVM->pgm.s.CTX_SUFF(pPool), PGMPOOL_IDX_PAE_PD_0 + i);
             AssertRC(rc);
             pVM->pgm.s.aGCPhysGstPaePDsMonitored[i] = NIL_RTGCPHYS;
         }
@@ -709,7 +768,7 @@ PGM_GST_DECL(int, UnmonitorCR3)(PVM pVM)
         rc = PGMHandlerPhysicalDeregister(pVM, pVM->pgm.s.GCPhysGstCR3Monitored);
         AssertRCReturn(rc, rc);
 # else /* PGMPOOL_WITH_MIXED_PT_CR3 */
-        rc = pgmPoolMonitorUnmonitorCR3(pVM->pgm.s.CTXSUFF(pPool),
+        rc = pgmPoolMonitorUnmonitorCR3(pVM->pgm.s.CTX_SUFF(pPool),
                                            pVM->pgm.s.enmShadowMode == PGMMODE_PAE
                                         || pVM->pgm.s.enmShadowMode == PGMMODE_PAE_NX
                                         ? PGMPOOL_IDX_PAE_PD
@@ -727,7 +786,7 @@ PGM_GST_DECL(int, UnmonitorCR3)(PVM pVM)
 
     if (pVM->pgm.s.GCPhysGstCR3Monitored != NIL_RTGCPHYS)
     {
-        rc = pgmPoolMonitorUnmonitorCR3(pVM->pgm.s.CTXSUFF(pPool), PGMPOOL_IDX_PDPT);
+        rc = pgmPoolMonitorUnmonitorCR3(pVM->pgm.s.CTX_SUFF(pPool), PGMPOOL_IDX_PDPT);
         AssertRC(rc);
     }
 
@@ -737,9 +796,9 @@ PGM_GST_DECL(int, UnmonitorCR3)(PVM pVM)
         if (pVM->pgm.s.aGCPhysGstPaePDsMonitored[i] != NIL_RTGCPHYS)
         {
             Assert(pVM->pgm.s.enmShadowMode == PGMMODE_PAE || pVM->pgm.s.enmShadowMode == PGMMODE_PAE_NX);
-            int rc2 = pgmPoolMonitorUnmonitorCR3(pVM->pgm.s.CTXSUFF(pPool), PGMPOOL_IDX_PAE_PD_0 + i);
+            int rc2 = pgmPoolMonitorUnmonitorCR3(pVM->pgm.s.CTX_SUFF(pPool), PGMPOOL_IDX_PAE_PD_0 + i);
             AssertRC(rc2);
-            if (VBOX_FAILURE(rc2))
+            if (RT_FAILURE(rc2))
                 rc = rc2;
             pVM->pgm.s.aGCPhysGstPaePDsMonitored[i] = NIL_RTGCPHYS;
         }
@@ -753,6 +812,8 @@ PGM_GST_DECL(int, UnmonitorCR3)(PVM pVM)
 
 #undef LOG_GROUP
 #define LOG_GROUP LOG_GROUP_PGM
+
+#endif /* VBOX_WITH_PGMPOOL_PAGING_ONLY */
 
 
 #if PGM_GST_TYPE == PGM_TYPE_32BIT \
@@ -772,32 +833,30 @@ static DECLCALLBACK(int) PGM_GST_NAME(VirtHandlerUpdateOne)(PAVLROGCPTRNODECORE 
     Assert(pCur->enmType != PGMVIRTHANDLERTYPE_HYPERVISOR);
 
 #if PGM_GST_TYPE == PGM_TYPE_32BIT
-    PX86PD          pPDSrc = pState->pVM->pgm.s.CTXSUFF(pGuestPD);
+    PX86PD          pPDSrc = pgmGstGet32bitPDPtr(&pState->pVM->pgm.s);
 #endif
 
-    RTGCUINTPTR     GCPtr = (RTUINTPTR)pCur->GCPtr;
+    RTGCPTR         GCPtr = pCur->Core.Key;
 #if PGM_GST_MODE != PGM_MODE_AMD64
     /* skip all stuff above 4GB if not AMD64 mode. */
     if (GCPtr >= _4GB)
         return 0;
 #endif
 
-    unsigned    offPage = GCPtr & PAGE_OFFSET_MASK;
-    unsigned    iPage = 0;
+    unsigned        offPage = GCPtr & PAGE_OFFSET_MASK;
+    unsigned        iPage = 0;
     while (iPage < pCur->cPages)
     {
 #if PGM_GST_TYPE == PGM_TYPE_32BIT
         X86PDE      Pde = pPDSrc->a[GCPtr >> X86_PD_SHIFT];
 #elif PGM_GST_TYPE == PGM_TYPE_PAE
-        X86PDEPAE   Pde;
-        Pde.u = pgmGstGetPaePDE(&pState->pVM->pgm.s, GCPtr);
+        X86PDEPAE   Pde = pgmGstGetPaePDE(&pState->pVM->pgm.s, GCPtr);
 #elif PGM_GST_TYPE == PGM_TYPE_AMD64
-        X86PDEPAE   Pde;
-        Pde.u = pgmGstGetLongModePDE(&pState->pVM->pgm.s, GCPtr);
+        X86PDEPAE   Pde = pgmGstGetLongModePDE(&pState->pVM->pgm.s, GCPtr);
 #endif
         if (Pde.n.u1Present)
         {
-            if (    !Pde.b.u1Size 
+            if (    !Pde.b.u1Size
 # if PGM_GST_TYPE != PGM_TYPE_AMD64
                 ||  !(pState->cr4 & X86_CR4_PSE)
 # endif
@@ -808,7 +867,7 @@ static DECLCALLBACK(int) PGM_GST_NAME(VirtHandlerUpdateOne)(PAVLROGCPTRNODECORE 
                  */
                 PGSTPT pPT;
                 int rc = PGM_GCPHYS_2_PTR(pState->pVM, Pde.u & GST_PDE_PG_MASK, &pPT);
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
                     for (unsigned iPTE = (GCPtr >> GST_PT_SHIFT) & GST_PT_MASK;
                          iPTE < RT_ELEMENTS(pPT->a) && iPage < pCur->cPages;
@@ -826,7 +885,7 @@ static DECLCALLBACK(int) PGM_GST_NAME(VirtHandlerUpdateOne)(PAVLROGCPTRNODECORE 
                                 pgmHandlerVirtualClearPage(&pState->pVM->pgm.s, pCur, iPage);
 #ifdef VBOX_STRICT_PGM_HANDLER_VIRTUAL
                             AssertReleaseMsg(!pCur->aPhysToVirt[iPage].offNextAlias,
-                                             ("{.Core.Key=%VGp, .Core.KeyLast=%VGp, .offVirtHandler=%#RX32, .offNextAlias=%#RX32} GCPhysNew=%VGp\n",
+                                             ("{.Core.Key=%RGp, .Core.KeyLast=%RGp, .offVirtHandler=%#RX32, .offNextAlias=%#RX32} GCPhysNew=%RGp\n",
                                               pCur->aPhysToVirt[iPage].Core.Key, pCur->aPhysToVirt[iPage].Core.KeyLast,
                                               pCur->aPhysToVirt[iPage].offVirtHandler, pCur->aPhysToVirt[iPage].offNextAlias, GCPhysNew));
 #endif
@@ -849,7 +908,7 @@ static DECLCALLBACK(int) PGM_GST_NAME(VirtHandlerUpdateOne)(PAVLROGCPTRNODECORE 
                             pgmHandlerVirtualClearPage(&pState->pVM->pgm.s, pCur, iPage);
 #ifdef VBOX_STRICT_PGM_HANDLER_VIRTUAL
                             AssertReleaseMsg(!pCur->aPhysToVirt[iPage].offNextAlias,
-                                             ("{.Core.Key=%VGp, .Core.KeyLast=%VGp, .offVirtHandler=%#RX32, .offNextAlias=%#RX32}\n",
+                                             ("{.Core.Key=%RGp, .Core.KeyLast=%RGp, .offVirtHandler=%#RX32, .offNextAlias=%#RX32}\n",
                                               pCur->aPhysToVirt[iPage].Core.Key, pCur->aPhysToVirt[iPage].Core.KeyLast,
                                               pCur->aPhysToVirt[iPage].offVirtHandler, pCur->aPhysToVirt[iPage].offNextAlias));
 #endif
@@ -876,7 +935,7 @@ static DECLCALLBACK(int) PGM_GST_NAME(VirtHandlerUpdateOne)(PAVLROGCPTRNODECORE 
                             pgmHandlerVirtualClearPage(&pState->pVM->pgm.s, pCur, iPage);
 #ifdef VBOX_STRICT_PGM_HANDLER_VIRTUAL
                         AssertReleaseMsg(!pCur->aPhysToVirt[iPage].offNextAlias,
-                                         ("{.Core.Key=%VGp, .Core.KeyLast=%VGp, .offVirtHandler=%#RX32, .offNextAlias=%#RX32} GCPhysNew=%VGp\n",
+                                         ("{.Core.Key=%RGp, .Core.KeyLast=%RGp, .offVirtHandler=%#RX32, .offNextAlias=%#RX32} GCPhysNew=%RGp\n",
                                           pCur->aPhysToVirt[iPage].Core.Key, pCur->aPhysToVirt[iPage].Core.KeyLast,
                                           pCur->aPhysToVirt[iPage].offVirtHandler, pCur->aPhysToVirt[iPage].offNextAlias, GCPhysNew));
 #endif
@@ -935,12 +994,12 @@ PGM_GST_DECL(bool, HandlerVirtualUpdate)(PVM pVM, uint32_t cr4)
     PGMHVUSTATE State;
 
     pgmLock(pVM);
-    STAM_PROFILE_START(&pVM->pgm.s.CTXMID(Stat,SyncCR3HandlerVirtualUpdate), a);
+    STAM_PROFILE_START(&pVM->pgm.s.CTX_MID_Z(Stat,SyncCR3HandlerVirtualUpdate), a);
     State.pVM   = pVM;
     State.fTodo = pVM->pgm.s.fSyncFlags;
     State.cr4   = cr4;
-    RTAvlroGCPtrDoWithAll(&pVM->pgm.s.CTXSUFF(pTrees)->VirtHandlers, true, PGM_GST_NAME(VirtHandlerUpdateOne), &State);
-    STAM_PROFILE_STOP(&pVM->pgm.s.CTXMID(Stat,SyncCR3HandlerVirtualUpdate), a);
+    RTAvlroGCPtrDoWithAll(&pVM->pgm.s.CTX_SUFF(pTrees)->VirtHandlers, true, PGM_GST_NAME(VirtHandlerUpdateOne), &State);
+    STAM_PROFILE_STOP(&pVM->pgm.s.CTX_MID_Z(Stat,SyncCR3HandlerVirtualUpdate), a);
 
 
     /*
@@ -948,11 +1007,11 @@ PGM_GST_DECL(bool, HandlerVirtualUpdate)(PVM pVM, uint32_t cr4)
      */
     if (State.fTodo & PGM_SYNC_UPDATE_PAGE_BIT_VIRTUAL)
     {
-        STAM_PROFILE_START(&pVM->pgm.s.CTXMID(Stat,SyncCR3HandlerVirtualReset), b);
+        STAM_PROFILE_START(&pVM->pgm.s.CTX_MID_Z(Stat,SyncCR3HandlerVirtualReset), b);
         Log(("pgmR3VirtualHandlersUpdate: resets bits\n"));
-        RTAvlroGCPtrDoWithAll(&pVM->pgm.s.CTXSUFF(pTrees)->VirtHandlers, true, pgmHandlerVirtualResetOne, pVM);
+        RTAvlroGCPtrDoWithAll(&pVM->pgm.s.CTX_SUFF(pTrees)->VirtHandlers, true, pgmHandlerVirtualResetOne, pVM);
         pVM->pgm.s.fSyncFlags &= ~PGM_SYNC_UPDATE_PAGE_BIT_VIRTUAL;
-        STAM_PROFILE_STOP(&pVM->pgm.s.CTXMID(Stat,SyncCR3HandlerVirtualReset), b);
+        STAM_PROFILE_STOP(&pVM->pgm.s.CTX_MID_Z(Stat,SyncCR3HandlerVirtualReset), b);
     }
     pgmUnlock(pVM);
 
@@ -963,6 +1022,7 @@ PGM_GST_DECL(bool, HandlerVirtualUpdate)(PVM pVM, uint32_t cr4)
 #endif
 }
 
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
 
 #if PGM_GST_TYPE == PGM_TYPE_32BIT && !defined(IN_RING3)
 
@@ -990,28 +1050,28 @@ PGM_GST_DECL(int, WriteHandlerCR3)(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pR
      */
     uint32_t cb;
     int rc = EMInterpretInstruction(pVM, pRegFrame, pvFault, &cb);
-    if (VBOX_SUCCESS(rc) && cb)
+    if (RT_SUCCESS(rc) && cb)
     {
         /*
          * Check if the modified PDEs are present and mappings.
          */
-        const RTGCUINTPTR offPD = GCPhysFault & PAGE_OFFSET_MASK;
-        const unsigned      iPD1  = offPD / sizeof(X86PDE);
-        const unsigned      iPD2  = (offPD + cb - 1) / sizeof(X86PDE);
+        const RTGCPTR   offPD = GCPhysFault & PAGE_OFFSET_MASK;
+        const unsigned  iPD1  = offPD / sizeof(X86PDE);
+        const unsigned  iPD2  = (offPD + cb - 1) / sizeof(X86PDE);
 
         Assert(cb > 0 && cb <= 8);
-        Assert(iPD1 < RT_ELEMENTS(pVM->pgm.s.CTXSUFF(pGuestPD)->a)); /// @todo R3/R0 separation.
-        Assert(iPD2 < RT_ELEMENTS(pVM->pgm.s.CTXSUFF(pGuestPD)->a));
+        Assert(iPD1 < X86_PG_ENTRIES);
+        Assert(iPD2 < X86_PG_ENTRIES);
 
 #ifdef DEBUG
-        Log(("pgmXXGst32BitWriteHandlerCR3: emulated change to PD %#x addr=%VGv\n", iPD1, iPD1 << X86_PD_SHIFT));
+        Log(("pgmXXGst32BitWriteHandlerCR3: emulated change to PD %#x addr=%x\n", iPD1, iPD1 << X86_PD_SHIFT));
         if (iPD1 != iPD2)
-            Log(("pgmXXGst32BitWriteHandlerCR3: emulated change to PD %#x addr=%VGv\n", iPD2, iPD2 << X86_PD_SHIFT));
+            Log(("pgmXXGst32BitWriteHandlerCR3: emulated change to PD %#x addr=%x\n", iPD2, iPD2 << X86_PD_SHIFT));
 #endif
 
         if (!pVM->pgm.s.fMappingsFixed)
         {
-            PX86PD pPDSrc = CTXSUFF(pVM->pgm.s.pGuestPD);
+            PX86PD pPDSrc = pgmGstGet32bitPDPtr(&pVM->pgm.s);
             if (    (   pPDSrc->a[iPD1].n.u1Present
                      && pgmGetMapping(pVM, (RTGCPTR)(iPD1 << X86_PD_SHIFT)) )
                 ||  (   iPD1 != iPD2
@@ -1019,7 +1079,7 @@ PGM_GST_DECL(int, WriteHandlerCR3)(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pR
                      && pgmGetMapping(pVM, (RTGCPTR)(iPD2 << X86_PD_SHIFT)) )
                )
             {
-                STAM_COUNTER_INC(&pVM->pgm.s.StatGCGuestCR3WriteConflict);
+                STAM_COUNTER_INC(&pVM->pgm.s.StatRZGuestCR3WriteConflict);
                 VM_FF_SET(pVM, VM_FF_PGM_SYNC_CR3);
                 if (rc == VINF_SUCCESS)
                     rc = VINF_PGM_SYNC_CR3;
@@ -1028,22 +1088,20 @@ PGM_GST_DECL(int, WriteHandlerCR3)(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pR
             }
         }
 
-        STAM_COUNTER_INC(&pVM->pgm.s.StatGCGuestCR3WriteHandled);
+        STAM_COUNTER_INC(&pVM->pgm.s.StatRZGuestCR3WriteHandled);
     }
     else
     {
-        Assert(VBOX_FAILURE(rc));
+        Assert(RT_FAILURE(rc));
         if (rc == VERR_EM_INTERPRETER)
             rc = VINF_EM_RAW_EMULATE_INSTR_PD_FAULT;
         Log(("pgmXXGst32BitWriteHandlerCR3: returns %Rrc\n", rc));
-        STAM_COUNTER_INC(&pVM->pgm.s.StatGCGuestCR3WriteUnhandled);
+        STAM_COUNTER_INC(&pVM->pgm.s.StatRZGuestCR3WriteUnhandled);
     }
     return rc;
 }
 
 #endif /* PGM_TYPE_32BIT && !IN_RING3 */
-
-
 #if PGM_GST_TYPE == PGM_TYPE_PAE && !defined(IN_RING3)
 
 /**
@@ -1070,17 +1128,18 @@ PGM_GST_DECL(int, WriteHandlerCR3)(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pR
      */
     uint32_t cb;
     int rc = EMInterpretInstruction(pVM, pRegFrame, pvFault, &cb);
-    if (VBOX_SUCCESS(rc) && cb)
+    if (RT_SUCCESS(rc) && cb)
     {
         /*
          * Check if any of the PDs have changed.
          * We'll simply check all of them instead of figuring out which one/two to check.
          */
+        PX86PDPT pGuestPDPT = pgmGstGetPaePDPTPtr(&pVM->pgm.s);
         for (unsigned i = 0; i < X86_PG_PAE_PDPE_ENTRIES; i++)
         {
-            if (    CTXSUFF(pVM->pgm.s.pGstPaePDPT)->a[i].n.u1Present
-                &&  (   CTXSUFF(pVM->pgm.s.pGstPaePDPT)->a[i].u & X86_PDPE_PG_MASK)
-                     != pVM->pgm.s.aGCPhysGstPaePDsMonitored[i])
+            if (    pGuestPDPT->a[i].n.u1Present
+                &&      (pGuestPDPT->a[i].u & X86_PDPE_PG_MASK)
+                    !=  pVM->pgm.s.aGCPhysGstPaePDsMonitored[i])
             {
                 /*
                  * The PDPE has changed.
@@ -1093,17 +1152,17 @@ PGM_GST_DECL(int, WriteHandlerCR3)(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pR
                  * executing.
                  */
                 pVM->pgm.s.fSyncFlags |= PGM_SYNC_MONITOR_CR3;
-                Log(("pgmXXGstPaeWriteHandlerCR3: detected updated PDPE; [%d] = %#llx, Old GCPhys=%VGp\n",
-                     i, CTXSUFF(pVM->pgm.s.pGstPaePDPT)->a[i].u, pVM->pgm.s.aGCPhysGstPaePDsMonitored[i]));
+                Log(("pgmXXGstPaeWriteHandlerCR3: detected updated PDPE; [%d] = %#llx, Old GCPhys=%RGp\n",
+                     i, pGuestPDPT->a[i].u, pVM->pgm.s.aGCPhysGstPaePDsMonitored[i]));
             }
         }
 
-        STAM_COUNTER_INC(&pVM->pgm.s.StatGCGuestCR3WriteHandled);
+        STAM_COUNTER_INC(&pVM->pgm.s.StatRZGuestCR3WriteHandled);
     }
     else
     {
-        Assert(VBOX_FAILURE(rc));
-        STAM_COUNTER_INC(&pVM->pgm.s.StatGCGuestCR3WriteUnhandled);
+        Assert(RT_FAILURE(rc));
+        STAM_COUNTER_INC(&pVM->pgm.s.StatRZGuestCR3WriteUnhandled);
         if (rc == VERR_EM_INTERPRETER)
             rc = VINF_EM_RAW_EMULATE_INSTR_PD_FAULT;
     }
@@ -1136,31 +1195,32 @@ PGM_GST_DECL(int, WriteHandlerPD)(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRe
      */
     uint32_t cb;
     int rc = EMInterpretInstruction(pVM, pRegFrame, pvFault, &cb);
-    if (VBOX_SUCCESS(rc) && cb)
+    if (RT_SUCCESS(rc) && cb)
     {
         /*
          * Figure out which of the 4 PDs this is.
          */
-        RTGCUINTPTR i;
+        RTGCPTR i;
+        PX86PDPT pGuestPDPT = pgmGstGetPaePDPTPtr(&pVM->pgm.s);
         for (i = 0; i < X86_PG_PAE_PDPE_ENTRIES; i++)
-            if (CTXSUFF(pVM->pgm.s.pGstPaePDPT)->a[i].u == (GCPhysFault & X86_PTE_PAE_PG_MASK))
+            if (pGuestPDPT->a[i].u == (GCPhysFault & X86_PTE_PAE_PG_MASK))
             {
-                PX86PDPAE           pPDSrc = pgmGstGetPaePD(&pVM->pgm.s, i << X86_PDPT_SHIFT);
-                const RTGCUINTPTR offPD  = GCPhysFault & PAGE_OFFSET_MASK;
-                const unsigned      iPD1   = offPD / sizeof(X86PDEPAE);
-                const unsigned      iPD2   = (offPD + cb - 1) / sizeof(X86PDEPAE);
+                PX86PDPAE       pPDSrc = pgmGstGetPaePD(&pVM->pgm.s, i << X86_PDPT_SHIFT);
+                const RTGCPTR   offPD  = GCPhysFault & PAGE_OFFSET_MASK;
+                const unsigned  iPD1   = offPD / sizeof(X86PDEPAE);
+                const unsigned  iPD2   = (offPD + cb - 1) / sizeof(X86PDEPAE);
 
                 Assert(cb > 0 && cb <= 8);
                 Assert(iPD1 < X86_PG_PAE_ENTRIES);
                 Assert(iPD2 < X86_PG_PAE_ENTRIES);
 
-#ifdef DEBUG
-                Log(("pgmXXGstPaeWriteHandlerPD: emulated change to i=%d iPD1=%#05x (%VGv)\n",
+# ifdef LOG_ENABLED
+                Log(("pgmXXGstPaeWriteHandlerPD: emulated change to i=%d iPD1=%#05x (%x)\n",
                      i, iPD1, (i << X86_PDPT_SHIFT) | (iPD1 << X86_PD_PAE_SHIFT)));
                 if (iPD1 != iPD2)
-                    Log(("pgmXXGstPaeWriteHandlerPD: emulated change to i=%d iPD2=%#05x (%VGv)\n",
+                    Log(("pgmXXGstPaeWriteHandlerPD: emulated change to i=%d iPD2=%#05x (%x)\n",
                          i, iPD2, (i << X86_PDPT_SHIFT) | (iPD2 << X86_PD_PAE_SHIFT)));
-#endif
+# endif
 
                 if (!pVM->pgm.s.fMappingsFixed)
                 {
@@ -1172,7 +1232,7 @@ PGM_GST_DECL(int, WriteHandlerPD)(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRe
                        )
                     {
                         Log(("pgmXXGstPaeWriteHandlerPD: detected conflict iPD1=%#x iPD2=%#x\n", iPD1, iPD2));
-                        STAM_COUNTER_INC(&pVM->pgm.s.StatGCGuestCR3WriteConflict);
+                        STAM_COUNTER_INC(&pVM->pgm.s.StatRZGuestCR3WriteConflict);
                         VM_FF_SET(pVM, VM_FF_PGM_SYNC_CR3);
                         return VINF_PGM_SYNC_CR3;
                     }
@@ -1181,19 +1241,20 @@ PGM_GST_DECL(int, WriteHandlerPD)(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRe
             }
         Assert(i < 4);
 
-        STAM_COUNTER_INC(&pVM->pgm.s.StatGCGuestCR3WriteHandled);
+        STAM_COUNTER_INC(&pVM->pgm.s.StatRZGuestCR3WriteHandled);
     }
     else
     {
-        Assert(VBOX_FAILURE(rc));
+        Assert(RT_FAILURE(rc));
         if (rc == VERR_EM_INTERPRETER)
             rc = VINF_EM_RAW_EMULATE_INSTR_PD_FAULT;
         else
             Log(("pgmXXGst32BitWriteHandlerCR3: returns %Rrc\n", rc));
-        STAM_COUNTER_INC(&pVM->pgm.s.StatGCGuestCR3WriteUnhandled);
+        STAM_COUNTER_INC(&pVM->pgm.s.StatRZGuestCR3WriteUnhandled);
     }
     return rc;
 }
 
 #endif /* PGM_TYPE_PAE && !IN_RING3 */
 
+#endif /* !VBOX_WITH_PGMPOOL_PAGING_ONLY */

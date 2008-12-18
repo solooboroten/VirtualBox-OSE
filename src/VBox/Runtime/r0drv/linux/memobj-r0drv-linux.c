@@ -1,4 +1,4 @@
-/* $Revision: 30484 $ */
+/* $Revision: 14824 $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, Linux.
  */
@@ -183,7 +183,11 @@ static int rtR0MemObjLinuxAllocPages(PRTR0MEMOBJLNX *ppMemLnx, RTR0MEMOBJTYPE en
     if (    fContiguous
         ||  cb <= PAGE_SIZE * 2)
     {
+#ifdef VBOX_USE_INSERT_PAGE
+        paPages = alloc_pages(fFlagsLnx |  __GFP_COMP, rtR0MemObjLinuxOrder(cb >> PAGE_SHIFT));
+#else
         paPages = alloc_pages(fFlagsLnx, rtR0MemObjLinuxOrder(cb >> PAGE_SHIFT));
+#endif
         if (paPages)
         {
             fContiguous = true;
@@ -552,7 +556,7 @@ int rtR0MemObjNativeAllocCont(PPRTR0MEMOBJINTERNAL ppMem, size_t cb, bool fExecu
         rc = rtR0MemObjLinuxVMap(pMemLnx, fExecutable);
         if (RT_SUCCESS(rc))
         {
-#ifdef RT_STRICT
+#if defined(RT_STRICT) && (defined(RT_ARCH_AMD64) || defined(CONFIG_HIGHMEM64G))
             size_t iPage = pMemLnx->cPages;
             while (iPage-- > 0)
                 Assert(page_to_phys(pMemLnx->apPages[iPage]) < _4G);
@@ -935,13 +939,15 @@ int rtR0MemObjNativeReserveUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3PtrFixed, 
 }
 
 
-int rtR0MemObjNativeMapKernel(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, void *pvFixed, size_t uAlignment, unsigned fProt)
+int rtR0MemObjNativeMapKernel(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, void *pvFixed, size_t uAlignment,
+                              unsigned fProt, size_t offSub, size_t cbSub)
 {
     int rc = VERR_NO_MEMORY;
     PRTR0MEMOBJLNX pMemLnxToMap = (PRTR0MEMOBJLNX)pMemToMap;
     PRTR0MEMOBJLNX pMemLnx;
 
     /* Fail if requested to do something we can't. */
+    AssertMsgReturn(!offSub && !cbSub, ("%#x %#x\n", offSub, cbSub), VERR_NOT_SUPPORTED);
     AssertMsgReturn(pvFixed == (void *)-1, ("%p\n", pvFixed), VERR_NOT_SUPPORTED);
     AssertMsgReturn(uAlignment <= PAGE_SIZE, ("%#x\n", uAlignment), VERR_NOT_SUPPORTED);
 
@@ -1061,7 +1067,10 @@ int rtR0MemObjNativeMapUser(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, RT
                     AssertBreakStmt(vma, rc = VERR_INTERNAL_ERROR);
 #endif
 
-#if   LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 11)
+#if   defined(VBOX_USE_INSERT_PAGE) && LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
+                    rc = vm_insert_page(vma, ulAddrCur, pMemLnxToMap->apPages[iPage]);
+                    vma->vm_flags |= VM_RESERVED; /* This flag helps making 100% sure some bad stuff wont happen (swap, core, ++). */
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 11)
                     rc = remap_pfn_range(vma, ulAddrCur, page_to_pfn(pMemLnxToMap->apPages[iPage]), PAGE_SIZE, fPg);
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0) || defined(HAVE_26_STYLE_REMAP_PAGE_RANGE)
                     rc = remap_page_range(vma, ulAddrCur, page_to_phys(pMemLnxToMap->apPages[iPage]), PAGE_SIZE, fPg);

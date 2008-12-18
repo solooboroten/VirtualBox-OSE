@@ -1,4 +1,4 @@
-/* $Id: semeventmulti-linux.cpp $ */
+/* $Id: semeventmulti-linux.cpp 14468 2008-11-21 15:44:27Z vboxsync $ */
 /** @file
  * IPRT - Multiple Release Event Semaphore, Linux (2.6.x+).
  */
@@ -27,6 +27,25 @@
  * Clara, CA 95054 USA or visit http://www.sun.com if you need
  * additional information or have any questions.
  */
+
+
+#include <features.h>
+#if __GLIBC_PREREQ(2,6)
+
+/*
+ * glibc 2.6 fixed a serious bug in the mutex implementation. We wrote this
+ * linux specific event semaphores code in order to work around the bug. As it
+ * turns out, this code seems to have an unresolved issue (#2599), so we'll
+ * fall back on the pthread based implementation if glibc is known to contain
+ * the bug fix.
+ *
+ * The external refernce to epoll_pwait is a hack which prevents that we link
+ * against glibc < 2.6.
+ */
+#include "../posix/semeventmulti-posix.cpp"
+asm volatile (".global epoll_pwait");
+
+#else /* glibc < 2.6 */
 
 /*******************************************************************************
 *   Header Files                                                               *
@@ -268,3 +287,4 @@ RTDECL(int)  RTSemEventMultiWaitNoResume(RTSEMEVENTMULTI EventMultiSem, unsigned
     return rtSemEventMultiWait(EventMultiSem, cMillies, false);
 }
 
+#endif /* glibc < 2.6 */

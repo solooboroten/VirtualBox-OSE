@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 15478 2008-12-14 23:57:08Z vboxsync $
 ## @file
 # Sub-Makefile for the Devices testcases.
 #
@@ -63,6 +63,12 @@ endif
 ifdef VBOX_WITH_BUSLOGIC
 tstDeviceStructSizeGC_DEFS     += VBOX_WITH_BUSLOGIC
 endif
+ifdef VBOX_WITH_SCSI
+tstDeviceStructSizeGC_DEFS     += VBOX_WITH_SCSI
+endif
+ifdef VBOX_WITH_LSILOGIC
+tstDeviceStructSizeGC_DEFS     += VBOX_WITH_LSILOGIC
+endif
 tstDeviceStructSizeGC_SOURCES   = tstDeviceStructSizeGC.cpp
 tstDeviceStructSizeGC_INCS      = \
 	$(VBOX_PATH_DEVICES_SRC) \
@@ -87,6 +93,9 @@ endif
 ifdef VBOX_WITH_BUSLOGIC
 tstDeviceStructSize_DEFS     += VBOX_WITH_BUSLOGIC
 endif
+ifdef VBOX_WITH_LSILOGIC
+tstDeviceStructSize_DEFS     += VBOX_WITH_LSILOGIC
+endif
 tstDeviceStructSize_INCS     = \
 	$(VBOX_PATH_DEVICES_SRC) \
 	$(VBOX_PATH_DEVICES_SRC)/Bus \
@@ -94,7 +103,7 @@ tstDeviceStructSize_INCS     = \
 tstDeviceStructSize_SOURCES  = tstDeviceStructSize.cpp
 tstDeviceStructSize_CLEAN    = \
 	$(VBOX_DEVICES_TEST_OUT_DIR)/tstDeviceStructSizeGC.h \
-	$(VBOX_DEVICES_TEST_OUT_DIR)/tstDeviceStructSizeGC.run
+	$(VBOX_DEVICES_TEST_OUT_DIR)/tstDeviceStructSize.run
 tstDeviceStructSize.cpp_DEPS = $(VBOX_DEVICES_TEST_OUT_DIR)/tstDeviceStructSizeGC.h
 
 #

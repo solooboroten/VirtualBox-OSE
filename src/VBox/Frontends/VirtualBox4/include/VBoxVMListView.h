@@ -30,10 +30,13 @@
 #include <QAbstractListModel>
 #include <QDateTime>
 
+class VBoxSelectorWnd;
+
 class VBoxVMItem
 {
 public:
-    VBoxVMItem (const CMachine &aM);
+
+    VBoxVMItem (const CMachine &aMachine);
     virtual ~VBoxVMItem();
 
     CMachine machine() const { return mMachine; }
@@ -41,7 +44,7 @@ public:
     QString name() const { return mName; }
     QIcon osIcon() const { return mAccessible ? vboxGlobal().vmGuestOSTypeIcon (mOSTypeId) :QPixmap (":/os_unknown.png"); }
     QUuid id() const { return mId; }
-    
+
     QString sessionStateName() const;
     QIcon sessionStateIcon() const { return mAccessible ? vboxGlobal().toIcon (mState) : QPixmap (":/state_aborted_16px.png"); }
 
@@ -110,6 +113,7 @@ public:
     void clear();
 
     VBoxVMItem *itemById (const QUuid &aId) const;
+    VBoxVMItem *itemByRow (int aRow) const;
     QModelIndex indexById (const QUuid &aId) const;
 
     int rowById (const QUuid &aId) const;;
@@ -152,7 +156,6 @@ public:
 signals:
     void currentChanged();
     void activated();
-    void contextMenuRequested (VBoxVMItem *aItem, const QPoint &aPoint);
 
 protected slots:
     void selectionChanged (const QItemSelection &aSelected, const QItemSelection &aDeselected);
@@ -160,9 +163,8 @@ protected slots:
     void dataChanged (const QModelIndex &aTopLeft, const QModelIndex &aBottomRight);
 
 protected:
-    void mousePressEvent (QMouseEvent *aEvent);
     bool selectCurrent();
-}; 
+};
 
 class VBoxVMItemPainter: public QIItemDelegate
 {
@@ -180,9 +182,9 @@ private:
     inline QFontMetrics fontMetric (const QModelIndex &aIndex, int aRole) const { return QFontMetrics (aIndex.data (aRole).value<QFont>()); }
     inline QIcon::Mode iconMode (QStyle::State aState) const
     {
-        if (!(aState & QStyle::State_Enabled)) 
+        if (!(aState & QStyle::State_Enabled))
             return QIcon::Disabled;
-        if (aState & QStyle::State_Selected) 
+        if (aState & QStyle::State_Selected)
             return QIcon::Selected;
         return QIcon::Normal;
     }

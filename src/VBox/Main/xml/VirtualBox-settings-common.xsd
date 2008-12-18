@@ -6,7 +6,7 @@
  *  Sun xVM VirtualBox Settings Schema
  *  Common definitions
 
-     Copyright (C) 2004-2007 Sun Microsystems, Inc.
+     Copyright (C) 2004-2008 Sun Microsystems, Inc.
 
      This file is part of VirtualBox Open Source Edition (OSE), as
      available from http://www.virtualbox.org. This file is free software;
@@ -32,7 +32,7 @@
 <xsd:annotation>
   <xsd:documentation xml:lang="en">
     Sun xVM VirtualBox Settings Schema (common definitions).
-    Copyright (c) 2004-2007 Sun Microsystems, Inc.
+    Copyright (c) 2004-2008 Sun Microsystems, Inc.
   </xsd:documentation>
 </xsd:annotation>
 
@@ -134,46 +134,68 @@
 
 <xsd:simpleType name="TGuestOSType">
   <xsd:restriction base="xsd:string">
-    <!-- @todo on next format change, rename dos to DOS, win2k3 to Win2003 and
-    so on. Possibly also use prefixes that determine the platform family:
-    Win_31, Win_Vista, Linux_ArchLinux, Unix_FreeBSD and so on. -->
-    <xsd:enumeration value="unknown"/>
-    <xsd:enumeration value="dos"/>
-    <xsd:enumeration value="win31"/>
-    <xsd:enumeration value="win95"/>
-    <xsd:enumeration value="win98"/>
-    <xsd:enumeration value="winme"/>
-    <xsd:enumeration value="winnt4"/>
-    <xsd:enumeration value="win2k"/>
-    <xsd:enumeration value="winxp"/>
-    <xsd:enumeration value="win2k3"/>
-    <xsd:enumeration value="winvista"/>
-    <xsd:enumeration value="win2k8"/>
-    <xsd:enumeration value="os2warp3"/>
-    <xsd:enumeration value="os2warp4"/>
-    <xsd:enumeration value="os2warp45"/>
-    <xsd:enumeration value="ecs"/>
-    <xsd:enumeration value="linux22"/>
-    <xsd:enumeration value="linux24"/>
-    <xsd:enumeration value="linux26"/>
-    <xsd:enumeration value="archlinux"/>
-    <xsd:enumeration value="debian"/>
-    <xsd:enumeration value="opensuse"/>
-    <xsd:enumeration value="fedoracore"/>
-    <xsd:enumeration value="gentoo"/>
-    <xsd:enumeration value="mandriva"/>
-    <xsd:enumeration value="redhat"/>
-    <xsd:enumeration value="ubuntu"/>
-    <xsd:enumeration value="xandros"/>
-    <xsd:enumeration value="freebsd"/>
-    <xsd:enumeration value="openbsd"/>
-    <xsd:enumeration value="netbsd"/>
-    <xsd:enumeration value="netware"/>
-    <xsd:enumeration value="solaris"/>
-    <xsd:enumeration value="opensolaris"/>
-    <xsd:enumeration value="l4"/>
+    <xsd:enumeration value="Other"/>
+    <xsd:enumeration value="DOS"/>
+    <xsd:enumeration value="Netware"/>
+    <xsd:enumeration value="L4"/>
+    <xsd:enumeration value="Windows31"/>
+    <xsd:enumeration value="Windows95"/>
+    <xsd:enumeration value="Windows98"/>
+    <xsd:enumeration value="WindowsMe"/>
+    <xsd:enumeration value="WindowsNT4"/>
+    <xsd:enumeration value="Windows2000"/>
+    <xsd:enumeration value="WindowsXP"/>
+    <xsd:enumeration value="WindowsXP_64"/>
+    <xsd:enumeration value="Windows2003"/>
+    <xsd:enumeration value="Windows2003_64"/>
+    <xsd:enumeration value="WindowsVista"/>
+    <xsd:enumeration value="WindowsVista_64"/>
+    <xsd:enumeration value="Windows2008"/>
+    <xsd:enumeration value="Windows2008_64"/>
+    <xsd:enumeration value="WindowsNT"/>
+    <xsd:enumeration value="OS2Warp3"/>
+    <xsd:enumeration value="OS2Warp4"/>
+    <xsd:enumeration value="OS2Warp45"/>
+    <xsd:enumeration value="OS2eCS"/>
+    <xsd:enumeration value="OS2"/>
+    <xsd:enumeration value="Linux22"/>
+    <xsd:enumeration value="Linux24"/>
+    <xsd:enumeration value="Linux24_64"/>
+    <xsd:enumeration value="Linux26"/>
+    <xsd:enumeration value="Linux26_64"/>
+    <xsd:enumeration value="ArchLinux"/>
+    <xsd:enumeration value="ArchLinux_64"/>
+    <xsd:enumeration value="Debian"/>
+    <xsd:enumeration value="Debian_64"/>
+    <xsd:enumeration value="OpenSUSE"/>
+    <xsd:enumeration value="OpenSUSE_64"/>
+    <xsd:enumeration value="Fedora"/>
+    <xsd:enumeration value="Fedora_64"/>
+    <xsd:enumeration value="Gentoo"/>
+    <xsd:enumeration value="Gentoo_64"/>
+    <xsd:enumeration value="Mandriva"/>
+    <xsd:enumeration value="Mandriva_64"/>
+    <xsd:enumeration value="RedHat"/>
+    <xsd:enumeration value="RedHat_64"/>
+    <xsd:enumeration value="Ubuntu"/>
+    <xsd:enumeration value="Ubuntu_64"/>
+    <xsd:enumeration value="Xandros"/>
+    <xsd:enumeration value="Xandros_64"/>
+    <xsd:enumeration value="Linux"/>
+    <xsd:enumeration value="FreeBSD"/>
+    <xsd:enumeration value="FreeBSD_64"/>
+    <xsd:enumeration value="OpenBSD"/>
+    <xsd:enumeration value="OpenBSD_64"/>
+    <xsd:enumeration value="NetBSD"/>
+    <xsd:enumeration value="NetBSD_64"/>
+    <xsd:enumeration value="Solaris"/>
+    <xsd:enumeration value="Solaris_64"/>
+    <xsd:enumeration value="OpenSolaris"/>
+    <xsd:enumeration value="OpenSolaris_64"/>
+    <xsd:enumeration value="QNX"/>
   </xsd:restriction>
 </xsd:simpleType>
+
 
 <xsd:simpleType name="TVRDPAuthType">
   <xsd:restriction base="xsd:string">
@@ -237,71 +259,44 @@
 /////////////////////////////////////////////////////////////////////////
 -->
 
-<xsd:complexType name="TImage">
-  <xsd:attribute name="src" type="TLocalFile" use="required"/>
-  <xsd:attribute name="uuid" type="TNonNullUUID" use="required"/>
-</xsd:complexType>
-
-<xsd:complexType name="TVirtualDiskImage">
-  <xsd:attribute name="filePath" type="TLocalFile" use="required"/>
-</xsd:complexType>
-
-<xsd:complexType name="TDiffHardDisk">
+<xsd:complexType name="TDiffHardDisk2">
   <xsd:sequence>
-    <xsd:element name="VirtualDiskImage" type="TVirtualDiskImage"/>
-    <xsd:element name="DiffHardDisk" type="TDiffHardDisk" minOccurs="0" maxOccurs="unbounded"/>
+    <xsd:element name="Description" type="xsd:string" minOccurs="0"/>
+    <xsd:element name="Property" minOccurs="0" maxOccurs="unbounded">
+      <xsd:complexType>
+        <xsd:attribute name="name" type="xsd:token" use="required"/>
+        <xsd:attribute name="value" type="xsd:string" use="required"/>
+      </xsd:complexType>
+    </xsd:element>
+    <xsd:element name="HardDisk" type="TDiffHardDisk2" minOccurs="0" maxOccurs="unbounded"/>
   </xsd:sequence>
   <xsd:attribute name="uuid" type="TNonNullUUID" use="required"/>
+  <xsd:attribute name="location" type="TLocalFile" use="required"/>
+  <xsd:attribute name="format" type="TNonEmptyString" use="required"/>
 </xsd:complexType>
 
-<xsd:complexType name="THardDisk">
+<xsd:complexType name="THardDisk2">
+  <xsd:complexContent>
+    <xsd:extension base="TDiffHardDisk2">
+      <xsd:attribute name="type" use="required">
+        <xsd:simpleType>
+          <xsd:restriction base="xsd:string">
+            <xsd:enumeration value="Normal"/>
+            <xsd:enumeration value="Immutable"/>
+            <xsd:enumeration value="Writethrough"/>
+          </xsd:restriction>
+        </xsd:simpleType>
+      </xsd:attribute>
+    </xsd:extension>
+  </xsd:complexContent>
+</xsd:complexType>
+
+<xsd:complexType name="TImage2">
   <xsd:sequence>
-    <xsd:choice>
-      <xsd:element name="VirtualDiskImage" type="TVirtualDiskImage"/>
-      <xsd:element name="ISCSIHardDisk">
-        <xsd:complexType>
-          <xsd:attribute name="server" type="xsd:token" use="required"/>
-          <xsd:attribute name="port" type="xsd:unsignedShort" default="0"/>
-          <xsd:attribute name="target" type="xsd:token" use="required"/>
-          <xsd:attribute name="lun" type="TUInt64Hex" default="0x0"/>
-          <xsd:attribute name="userName" type="xsd:token"/>
-          <xsd:attribute name="password" type="xsd:token"/>
-        </xsd:complexType>
-      </xsd:element>
-      <xsd:element name="VMDKImage">
-        <xsd:complexType>
-          <xsd:attribute name="filePath" type="TLocalFile" use="required"/>
-        </xsd:complexType>
-      </xsd:element>
-      <xsd:element name="PhysicalVolume">
-        <xsd:complexType>
-          <xsd:attribute name="path" type="TLocalFile" use="required"/>
-        </xsd:complexType>
-      </xsd:element>
-      <xsd:element name="CustomHardDisk">
-        <xsd:complexType>
-           <xsd:attribute name="location" type="TLocalFile" use="required"/>
-           <xsd:attribute name="format" type="xsd:string" use="required"/>
-        </xsd:complexType>
-      </xsd:element>
-      <xsd:element name="VHDImage">
-        <xsd:complexType>
-          <xsd:attribute name="filePath" type="TLocalFile" use="required"/>
-        </xsd:complexType>
-      </xsd:element>
-    </xsd:choice>
-    <xsd:element name="DiffHardDisk" type="TDiffHardDisk" minOccurs="0" maxOccurs="unbounded"/>
+    <xsd:element name="Description" type="xsd:string" minOccurs="0"/>
   </xsd:sequence>
   <xsd:attribute name="uuid" type="TNonNullUUID" use="required"/>
-  <xsd:attribute name="type" use="required">
-    <xsd:simpleType>
-      <xsd:restriction base="xsd:string">
-        <xsd:enumeration value="normal"/>
-        <xsd:enumeration value="immutable"/>
-        <xsd:enumeration value="writethrough"/>
-      </xsd:restriction>
-    </xsd:simpleType>
-  </xsd:attribute>
+  <xsd:attribute name="location" type="TLocalFile" use="required"/>
 </xsd:complexType>
 
 <xsd:complexType name="TImageRef">
@@ -335,8 +330,9 @@
 </xsd:complexType>
 
 <xsd:complexType name="TSystemProperties">
-  <xsd:attribute name="defaultVDIFolder" type="TLocalFile"/>
   <xsd:attribute name="defaultMachineFolder" type="TLocalFile"/>
+  <xsd:attribute name="defaultHardDiskFolder" type="TLocalFile"/>
+  <xsd:attribute name="defaultHardDiskFormat" type="TNonEmptyString"/>
   <xsd:attribute name="remoteDisplayAuthLibrary" type="TLocalFile"/>
   <xsd:attribute name="webServiceAuthLibrary" type="TLocalFile"/>
   <xsd:attribute name="HWVirtExEnabled" type="xsd:boolean"/>
@@ -368,27 +364,27 @@
         </xsd:sequence>
       </xsd:complexType>
     </xsd:element>
-    <xsd:element name="DiskRegistry">
+    <xsd:element name="MediaRegistry">
       <xsd:complexType>
         <xsd:all>
           <xsd:element name="HardDisks" minOccurs="0">
             <xsd:complexType>
               <xsd:sequence>
-                <xsd:element name="HardDisk" type="THardDisk" minOccurs="0" maxOccurs="unbounded"/>
+                <xsd:element name="HardDisk" type="THardDisk2" minOccurs="0" maxOccurs="unbounded"/>
               </xsd:sequence>
             </xsd:complexType>
           </xsd:element>
           <xsd:element name="DVDImages" minOccurs="0">
             <xsd:complexType>
               <xsd:sequence>
-                <xsd:element name="Image" type="TImage" minOccurs="0" maxOccurs="unbounded"/>
+                <xsd:element name="Image" type="TImage2" minOccurs="0" maxOccurs="unbounded"/>
               </xsd:sequence>
             </xsd:complexType>
           </xsd:element>
           <xsd:element name="FloppyImages" minOccurs="0">
             <xsd:complexType>
               <xsd:sequence>
-                <xsd:element name="Image" type="TImage" minOccurs="0" maxOccurs="unbounded"/>
+                <xsd:element name="Image" type="TImage2" minOccurs="0" maxOccurs="unbounded"/>
               </xsd:sequence>
             </xsd:complexType>
           </xsd:element>
@@ -416,16 +412,29 @@
   <xsd:attribute name="enabled" type="xsd:boolean" default="false"/>
 </xsd:complexType>
 
+<xsd:complexType name="THWVirtExVPIDType">
+  <xsd:attribute name="enabled" type="xsd:boolean" default="false"/>
+</xsd:complexType>
+
 <xsd:complexType name="TPAEType">
   <xsd:attribute name="enabled" type="xsd:boolean" default="false"/>
 </xsd:complexType>
+
+<xsd:simpleType name="TCPUCount">
+  <xsd:restriction base="xsd:unsignedInt">
+    <xsd:minInclusive value="1"/>
+    <xsd:maxInclusive value="255"/>
+  </xsd:restriction>
+</xsd:simpleType>
 
 <xsd:complexType name="TCPU">
   <xsd:sequence>
     <xsd:element name="HardwareVirtEx" type="THWVirtExType" minOccurs="0"/>
     <xsd:element name="HardwareVirtExNestedPaging" type="THWVirtExNestedPagingType" minOccurs="0"/>
+    <xsd:element name="HardwareVirtExVPID" type="THWVirtExVPIDType" minOccurs="0"/>
     <xsd:element name="PAE" type="TPAEType" minOccurs="0"/>
   </xsd:sequence>
+  <xsd:attribute name="count" type="TCPUCount" default="1"/>
 </xsd:complexType>
 
 <xsd:complexType name="TBoot">
@@ -455,13 +464,14 @@
       </xsd:restriction>
     </xsd:simpleType>
   </xsd:attribute>
-  <xsd:attribute name="MonitorCount" default="1">
+  <xsd:attribute name="monitorCount" default="1">
     <xsd:simpleType>
       <xsd:restriction base="xsd:unsignedInt">
         <xsd:maxInclusive value="8"/>
       </xsd:restriction>
     </xsd:simpleType>
   </xsd:attribute>
+  <xsd:attribute name="accelerate3D" type="xsd:boolean" default="false"/>
 </xsd:complexType>
 
 <xsd:complexType name="TRemoteDisplay">
@@ -581,7 +591,7 @@
     <xsd:simpleType>
       <xsd:restriction base="xsd:unsignedInt">
         <xsd:minInclusive value="0"/>
-        <xsd:maxExclusive value="4"/>
+        <xsd:maxExclusive value="8"/>
       </xsd:restriction>
     </xsd:simpleType>
   </xsd:attribute>
@@ -698,6 +708,7 @@
   <xsd:sequence>
     <xsd:element name="GuestProperty" type="TGuestProperty" minOccurs="0" maxOccurs="unbounded"/>
   </xsd:sequence>
+  <xsd:attribute name="notificationPatterns" type="xsd:string" default=""/>
 </xsd:complexType>
 
 <xsd:complexType name="THardware">
@@ -751,6 +762,7 @@
       </xsd:unique>
     </xsd:element>
   </xsd:all>
+  <xsd:attribute name="version" type="xsd:string" default="2"/>
 </xsd:complexType>
 
 <xsd:complexType name="TMachine">

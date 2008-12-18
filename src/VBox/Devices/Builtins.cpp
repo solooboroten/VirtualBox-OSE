@@ -1,4 +1,4 @@
-/** $Id: Builtins.cpp $ */
+/* $Id: Builtins.cpp 15366 2008-12-12 13:50:32Z vboxsync $ */
 /** @file
  * Built-in drivers & devices (part 1)
  */
@@ -143,6 +143,14 @@ extern "C" DECLEXPORT(int) VBoxDevicesRegister(PPDMDEVREGCB pCallbacks, uint32_t
 #endif
 #ifdef VBOX_WITH_BUSLOGIC
     rc = pCallbacks->pfnRegister(pCallbacks, &g_DeviceBusLogic);
+    if (RT_FAILURE(rc))
+        return rc;
+#endif
+    rc = pCallbacks->pfnRegister(pCallbacks, &g_DevicePCIBridge);
+    if (RT_FAILURE(rc))
+        return rc;
+#ifdef VBOX_WITH_LSILOGIC
+    rc = pCallbacks->pfnRegister(pCallbacks, &g_DeviceLsiLogicSCSI);
     if (VBOX_FAILURE(rc))
         return rc;
 #endif
@@ -172,9 +180,6 @@ extern "C" DECLEXPORT(int) VBoxDriversRegister(PCPDMDRVREGCB pCallbacks, uint32_
     rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvBlock);
     if (RT_FAILURE(rc))
         return rc;
-    rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvVBoxHDD);
-    if (RT_FAILURE(rc))
-        return rc;
     rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvVD);
     if (RT_FAILURE(rc))
         return rc;
@@ -194,14 +199,6 @@ extern "C" DECLEXPORT(int) VBoxDriversRegister(PCPDMDRVREGCB pCallbacks, uint32_
     rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvRawImage);
     if (RT_FAILURE(rc))
         return rc;
-#ifdef VBOX_WITH_ISCSI
-    rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvISCSI);
-    if (RT_FAILURE(rc))
-        return rc;
-    rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvISCSITransportTcp);
-    if (RT_FAILURE(rc))
-        return rc;
-#endif
 #ifndef RT_OS_L4
     rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvNAT);
     if (RT_FAILURE(rc))
@@ -261,9 +258,21 @@ extern "C" DECLEXPORT(int) VBoxDriversRegister(PCPDMDRVREGCB pCallbacks, uint32_
     if (RT_FAILURE(rc))
         return rc;
 #endif
-#ifdef VBOX_WITH_BUSLOGIC
+#ifdef VBOX_WITH_SCSI
     rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvSCSI);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
+        return rc;
+
+#if defined(RT_OS_LINUX)
+    rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvSCSIHost);
+    if (RT_FAILURE(rc))
+        return rc;
+#endif
+#endif
+
+#ifdef VBOX_WITH_FAULT_INJECTION
+    rc = pCallbacks->pfnRegister(pCallbacks, &g_DrvFaultInject);
+    if (RT_FAILURE(rc))
         return rc;
 #endif
 

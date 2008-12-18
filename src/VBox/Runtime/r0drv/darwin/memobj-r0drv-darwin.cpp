@@ -1,4 +1,4 @@
-/* $Id: memobj-r0drv-darwin.cpp $ */
+/* $Id: memobj-r0drv-darwin.cpp 14836 2008-11-30 20:51:20Z vboxsync $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, Darwin.
  */
@@ -43,7 +43,7 @@
 #include <iprt/process.h>
 #include "internal/memobj.h"
 
-#define USE_VM_MAP_WIRE
+/*#define USE_VM_MAP_WIRE - may re-enable later when non-mapped allocations are added. */
 
 
 /*******************************************************************************
@@ -541,7 +541,8 @@ int rtR0MemObjNativeReserveUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3PtrFixed, 
 }
 
 
-int rtR0MemObjNativeMapKernel(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, void *pvFixed, size_t uAlignment, unsigned fProt)
+int rtR0MemObjNativeMapKernel(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, void *pvFixed, size_t uAlignment,
+                              unsigned fProt, size_t offSub, size_t cbSub)
 {
     /*
      * Must have a memory descriptor.
@@ -551,7 +552,8 @@ int rtR0MemObjNativeMapKernel(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, 
     if (pMemToMapDarwin->pMemDesc)
     {
         IOMemoryMap *pMemMap = pMemToMapDarwin->pMemDesc->map(kernel_task, kIOMapAnywhere,
-                                                              kIOMapAnywhere | kIOMapDefaultCache);
+                                                              kIOMapAnywhere | kIOMapDefaultCache,
+                                                              offSub, cbSub);
         if (pMemMap)
         {
             IOVirtualAddress VirtAddr = pMemMap->getVirtualAddress();
@@ -694,7 +696,7 @@ RTHCPHYS rtR0MemObjNativeGetPagePhysAddr(PRTR0MEMOBJINTERNAL pMem, size_t iPage)
         addr64_t Addr = pMemDesc->getPhysicalSegment64(iPage * PAGE_SIZE, NULL);
         AssertMsgReturn(Addr, ("iPage=%u\n", iPage), NIL_RTHCPHYS);
         PhysAddr = Addr;
-        AssertMsgReturn(PhysAddr == Addr, ("PhysAddr=%VHp Addr=%RX64\n", PhysAddr, (uint64_t)Addr), NIL_RTHCPHYS);
+        AssertMsgReturn(PhysAddr == Addr, ("PhysAddr=%RHp Addr=%RX64\n", PhysAddr, (uint64_t)Addr), NIL_RTHCPHYS);
     }
 
     return PhysAddr;

@@ -1,6 +1,6 @@
-/* $Id: PDMAllCritSect.cpp $ */
+/* $Id: PDMAllCritSect.cpp 13898 2008-11-06 09:44:29Z vboxsync $ */
 /** @file
- * PDM Critical Sections
+ * PDM - Critical Sections, All Contexts.
  */
 
 /*
@@ -29,6 +29,7 @@
 #include <VBox/mm.h>
 #include <VBox/vm.h>
 #include <VBox/err.h>
+#include <VBox/hwaccm.h>
 
 #include <VBox/log.h>
 #include <iprt/asm.h>
@@ -49,7 +50,7 @@
  * @param   rcBusy              The status code to return when we're in GC or R0
  *                              and the section is busy.
  */
-PDMDECL(int) PDMCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy)
+VMMDECL(int) PDMCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy)
 {
     Assert(pCritSect->s.Core.cNestings < 8);  /* useful to catch incorrect locking */
 #ifdef IN_RING3
@@ -60,19 +61,21 @@ PDMDECL(int) PDMCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy)
     STAM_STATS({ if (pCritSect->s.Core.cNestings == 1) STAM_PROFILE_ADV_START(&pCritSect->s.StatLocked, l); });
     return rc;
 
-#else
+#else  /* !IN_RING3 */
     AssertMsgReturn(pCritSect->s.Core.u32Magic == RTCRITSECT_MAGIC, ("%RX32\n", pCritSect->s.Core.u32Magic),
                     VERR_SEM_DESTROYED);
-    PVM pVM = pCritSect->s.CTXALLSUFF(pVM);
+    PVM pVM = pCritSect->s.CTX_SUFF(pVM);
     Assert(pVM);
+    PVMCPU pVCpu = VMMGetCpu(pVM);
 
     /*
-     * Try take the lock.
+     * Try to take the lock.
      */
     if (ASMAtomicCmpXchgS32(&pCritSect->s.Core.cLockers, 0, -1))
     {
         pCritSect->s.Core.cNestings = 1;
-        ASMAtomicXchgSize(&pCritSect->s.Core.NativeThreadOwner, pVM->NativeThreadEMT);
+        Assert(pVCpu->hNativeThread);
+        ASMAtomicXchgSize(&pCritSect->s.Core.NativeThreadOwner, pVCpu->hNativeThread);
         STAM_PROFILE_ADV_START(&pCritSect->s.StatLocked, l);
         return VINF_SUCCESS;
     }
@@ -80,7 +83,7 @@ PDMDECL(int) PDMCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy)
     /*
      * Nested?
      */
-    if (pCritSect->s.Core.NativeThreadOwner == pVM->NativeThreadEMT)
+    if (pCritSect->s.Core.NativeThreadOwner == pVCpu->hNativeThread)
     {
         pCritSect->s.Core.cNestings++;
         ASMAtomicIncS32(&pCritSect->s.Core.cLockers);
@@ -90,10 +93,10 @@ PDMDECL(int) PDMCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy)
     /*
      * Failed.
      */
-    LogFlow(("PDMCritSectEnter: locked => HC (%Vrc)\n", rcBusy));
-    STAM_COUNTER_INC(&pCritSect->s.StatContentionR0GCLock);
+    LogFlow(("PDMCritSectEnter: locked => R3 (%Rrc)\n", rcBusy));
+    STAM_COUNTER_INC(&pCritSect->s.StatContentionRZLock);
     return rcBusy;
-#endif
+#endif /* !IN_RING3 */
 }
 
 
@@ -108,7 +111,7 @@ PDMDECL(int) PDMCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy)
  * @param   pCritSect           The PDM critical section to enter.
  * @param   fCallHost           Whether this is a VMMGCCallHost() or VMMR0CallHost() request.
  */
-PDMR3DECL(int) PDMR3CritSectEnterEx(PPDMCRITSECT pCritSect, bool fCallHost)
+VMMR3DECL(int) PDMR3CritSectEnterEx(PPDMCRITSECT pCritSect, bool fCallHost)
 {
     int rc = PDMCritSectEnter(pCritSect, VERR_INTERNAL_ERROR);
     if (    rc == VINF_SUCCESS
@@ -128,7 +131,7 @@ PDMR3DECL(int) PDMR3CritSectEnterEx(PPDMCRITSECT pCritSect, bool fCallHost)
  *
  * @param   pCritSect           The PDM critical section to leave.
  */
-PDMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
+VMMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
 {
 #ifdef IN_RING3
 # ifdef VBOX_WITH_STATISTICS
@@ -156,9 +159,11 @@ PDMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
     Assert(pCritSect->s.Core.u32Magic == RTCRITSECT_MAGIC);
     Assert(pCritSect->s.Core.cNestings > 0);
     Assert(pCritSect->s.Core.cLockers >= 0);
-    PVM pVM = pCritSect->s.CTXALLSUFF(pVM);
+    PVM pVM = pCritSect->s.CTX_SUFF(pVM);
     Assert(pVM);
-    Assert(pCritSect->s.Core.NativeThreadOwner == pVM->NativeThreadEMT);
+    PVMCPU pVCpu = VMMGetCpu(pVM);
+    Assert(pVCpu);
+    AssertMsg(pCritSect->s.Core.NativeThreadOwner == pVCpu->hNativeThread, ("Owner %RX64 emt=%RX64\n", pCritSect->s.Core.NativeThreadOwner, pVCpu->hNativeThread));
 
     /*
      * Deal with nested attempts first.
@@ -182,7 +187,8 @@ PDMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
             return;
 
         /* darn, someone raced in on us. */
-        ASMAtomicXchgSize(&pCritSect->s.Core.NativeThreadOwner, pVM->NativeThreadEMT);
+        Assert(pVCpu->hNativeThread);
+        ASMAtomicXchgSize(&pCritSect->s.Core.NativeThreadOwner, pVCpu->hNativeThread);
         STAM_PROFILE_ADV_START(&pCritSect->s.StatLocked, l);
     }
     pCritSect->s.Core.cNestings = 1;
@@ -197,8 +203,8 @@ PDMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
     VM_FF_SET(pVM, VM_FF_PDM_CRITSECT);
     VM_FF_SET(pVM, VM_FF_TO_R3);
     STAM_COUNTER_INC(&pVM->pdm.s.StatQueuedCritSectLeaves);
-    STAM_COUNTER_INC(&pCritSect->s.StatContentionR0GCUnlock);
-#endif
+    STAM_COUNTER_INC(&pCritSect->s.StatContentionRZUnlock);
+#endif /* !IN_RING3 */
 }
 
 
@@ -209,14 +215,14 @@ PDMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
  * @returns false if not owner.
  * @param   pCritSect   The critical section.
  */
-PDMDECL(bool) PDMCritSectIsOwner(PCPDMCRITSECT pCritSect)
+VMMDECL(bool) PDMCritSectIsOwner(PCPDMCRITSECT pCritSect)
 {
 #ifdef IN_RING3
     return RTCritSectIsOwner(&pCritSect->s.Core);
 #else
-    PVM pVM = pCritSect->s.CTXALLSUFF(pVM);
+    PVM pVM = pCritSect->s.CTX_SUFF(pVM);
     Assert(pVM);
-    return pCritSect->s.Core.NativeThreadOwner == pVM->NativeThreadEMT;
+    return pCritSect->s.Core.NativeThreadOwner == VMMGetCpu(pVM)->hNativeThread;
 #endif
 }
 
@@ -228,7 +234,7 @@ PDMDECL(bool) PDMCritSectIsOwner(PCPDMCRITSECT pCritSect)
  * @returns false if not initialized.
  * @param   pCritSect   The critical section.
  */
-PDMDECL(bool) PDMCritSectIsInitialized(PCPDMCRITSECT pCritSect)
+VMMDECL(bool) PDMCritSectIsInitialized(PCPDMCRITSECT pCritSect)
 {
     return pCritSect->s.Core.u32Magic == RTCRITSECT_MAGIC;
 }

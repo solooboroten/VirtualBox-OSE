@@ -1,4 +1,4 @@
-/* $Id: DevVGA.h $ */
+/* $Id: DevVGA.h 15120 2008-12-08 16:53:53Z vboxsync $ */
 /** @file
  * DevVGA - VBox VGA/VESA device, internal header.
  */
@@ -102,7 +102,7 @@
     uint16_t vbe_regs[VBE_DISPI_INDEX_NB];      \
     uint32_t vbe_start_addr;                    \
     uint32_t vbe_line_offset;                   \
-    uint32_t vbe_bank_mask;
+    uint32_t vbe_bank_max;
 
 #else
 
@@ -260,11 +260,22 @@ typedef struct VGAState {
     /** Indicates if the R0 extensions are enabled or not. */
     bool                        fR0Enabled;
     /** Flag indicating that there are dirty bits. This is used to optimize the handler resetting. */
-    bool                        fHaveDirtyBits;
-    /** Pointer to vgaGCLFBAccessHandler(). */
-    RTRCPTR                     RCPtrLFBHandler;
+    bool                        fHasDirtyBits;
+    /** Flag indicating that the VGA memory in the 0xa0000-0xbffff region has been remapped to allow direct access. */
+    bool                        fRemappedVGA;
+    /** Whether to render the guest VRAM to the framebuffer memory. False only for some LFB modes. */
+    bool                        fRenderVRAM;
+    bool                        padding9[2];
+
+    /** Current refresh timer interval. */
+    uint32_t                    cMilliesRefreshInterval;
+    /** Refresh timer handle - HC. */
+    PTMTIMERR3                  RefreshTimer;
+
     /** Bitmap tracking dirty pages. */
     uint32_t                    au32DirtyBitmap[VGA_VRAM_MAX / PAGE_SIZE / 32];
+    /** Pointer to vgaGCLFBAccessHandler(). */
+    RTRCPTR                     RCPtrLFBHandler;
     /** Pointer to the device instance - RC Ptr. */
     PPDMDEVINSRC                pDevInsRC;
     /** Pointer to the device instance - R3 Ptr. */
@@ -280,21 +291,14 @@ typedef struct VGAState {
     R3PTRTYPE(PPDMIBASE)        pDrvBase;
     /** Pointer to display connector interface of the driver. */
     R3PTRTYPE(PPDMIDISPLAYCONNECTOR) pDrv;
-    /** Refresh timer handle - HC. */
-    PTMTIMERR3                  RefreshTimer;
-    /** Current refresh timer interval. */
-    uint32_t                    cMilliesRefreshInterval;
-
-    /** Whether to render the guest VRAM to the framebuffer memory. False only for some LFB modes. */
-    uint32_t                    fRenderVRAM;
 
     /** The PCI device. */
     PCIDEVICE                   Dev;
 
-    STAMPROFILE                 StatGCMemoryRead;
-    STAMPROFILE                 StatGCMemoryWrite;
-    STAMPROFILE                 StatGCIOPortRead;
-    STAMPROFILE                 StatGCIOPortWrite;
+    STAMPROFILE                 StatRZMemoryRead;
+    STAMPROFILE                 StatR3MemoryRead;
+    STAMPROFILE                 StatRZMemoryWrite;
+    STAMPROFILE                 StatR3MemoryWrite;
 
 #ifdef VBE_BYTEWISE_IO
     /** VBE read/write data/index flags */

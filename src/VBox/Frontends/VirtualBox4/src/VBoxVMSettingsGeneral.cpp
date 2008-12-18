@@ -98,11 +98,6 @@ VBoxVMSettingsGeneral::VBoxVMSettingsGeneral()
                                                    ":/list_movedown_disabled_16px.png"));
 
     /* Setup initial values */
-    mCbOsType->insertItems (0, vboxGlobal().vmGuestOSTypeDescriptions());
-    QList<QPixmap> list = vboxGlobal().vmGuestOSTypeIcons (0, 2);
-    for (int i=0; i < list.count(); ++i)
-        mCbOsType->setItemIcon (i, list.at (i));
-
     mSlRam->setPageStep (calcPageStep (MaxRAM));
     mSlRam->setSingleStep (mSlRam->pageStep() / 4);
     mSlRam->setTickInterval (mSlRam->pageStep());
@@ -154,8 +149,7 @@ void VBoxVMSettingsGeneral::getFrom (const CMachine &aMachine)
     mLeName->setText (aMachine.GetName());
 
     /* OS type */
-    QString typeId = aMachine.GetOSTypeId();
-    mCbOsType->setCurrentIndex (vboxGlobal().vmGuestOSTypeIndex (typeId));
+    mOSTypeSelector->setType (vboxGlobal().vmGuestOSType (aMachine.GetOSTypeId()));
 
     /* RAM size */
     mSlRam->setValue (aMachine.GetMemorySize());
@@ -204,65 +198,22 @@ void VBoxVMSettingsGeneral::getFrom (const CMachine &aMachine)
     /* IO APIC */
     mCbApic->setChecked (biosSettings.GetIOAPICEnabled());
 
-    /*
-     * Check for VT-x and AMD-V capabilities. 
-     * This is a best effort check. A full check requires ring-0 access (msrs).
-     */
-    bool fVTxAMDVSupported = false;
-    bool fPAESupported = false;
-
-    if (ASMHasCpuId())
-    {
-        uint32_t u32FeaturesECX;
-        uint32_t u32Dummy;
-        uint32_t u32FeaturesEDX;
-        uint32_t u32VendorEBX, u32VendorECX, u32VendorEDX, u32AMDFeatureEDX, u32AMDFeatureECX;
-
-        ASMCpuId (0, &u32Dummy, &u32VendorEBX, &u32VendorECX, &u32VendorEDX);
-        ASMCpuId (1, &u32Dummy, &u32Dummy, &u32FeaturesECX, &u32FeaturesEDX);
-        /* Query AMD features. */
-        ASMCpuId (0x80000001, &u32Dummy, &u32Dummy, &u32AMDFeatureECX, &u32AMDFeatureEDX);
-
-        fPAESupported = !!(u32FeaturesEDX & X86_CPUID_FEATURE_EDX_PAE);
-
-        if (    u32VendorEBX == X86_CPUID_VENDOR_INTEL_EBX
-            &&  u32VendorECX == X86_CPUID_VENDOR_INTEL_ECX
-            &&  u32VendorEDX == X86_CPUID_VENDOR_INTEL_EDX
-           )
-        {
-            if (    (u32FeaturesECX & X86_CPUID_FEATURE_ECX_VMX)
-                 && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_MSR)
-                 && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_FXSR)
-               )
-                fVTxAMDVSupported = true;
-        }
-        else
-        if (    u32VendorEBX == X86_CPUID_VENDOR_AMD_EBX
-            &&  u32VendorECX == X86_CPUID_VENDOR_AMD_ECX
-            &&  u32VendorEDX == X86_CPUID_VENDOR_AMD_EDX
-           )
-        {
-            if (   (u32AMDFeatureECX & X86_CPUID_AMD_FEATURE_ECX_SVM)
-                && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_MSR)
-                && (u32FeaturesEDX & X86_CPUID_FEATURE_EDX_FXSR)
-               )
-                fVTxAMDVSupported = true;
-        }
-    }
-#ifdef Q_WS_MAC
-    /* Not currently available on the Mac. */
-    fVTxAMDVSupported = false;
-#endif
-    mCbVirt->setEnabled (fVTxAMDVSupported);
-    
     /* VT-x/AMD-V */
+    bool fVTxAMDVSupported = vboxGlobal().virtualBox().GetHost()
+                             .GetProcessorFeature (KProcessorFeature_HWVirtEx);
+    mCbVirt->setEnabled (fVTxAMDVSupported);
     aMachine.GetHWVirtExEnabled() == KTSBool_True ?
         mCbVirt->setCheckState (Qt::Checked) :
         mCbVirt->setCheckState (Qt::Unchecked);
 
     /* PAE/NX */
+    bool fPAESupported = vboxGlobal().virtualBox().GetHost()
+                         .GetProcessorFeature (KProcessorFeature_PAE);
     mCbPae->setEnabled (fPAESupported);
     mCbPae->setChecked (aMachine.GetPAEEnabled());
+
+    /* 3D Acceleration */
+    mCb3D->setChecked (aMachine.GetAccelerate3DEnabled());
 
     /* Snapshot folder */
     mPsSnapshot->setPath (aMachine.GetSnapshotFolder());
@@ -291,9 +242,8 @@ void VBoxVMSettingsGeneral::putBackTo()
     mMachine.SetName (mLeName->text());
 
     /* OS type */
-    CGuestOSType type = vboxGlobal().vmGuestOSType (mCbOsType->currentIndex());
-    AssertMsg (!type.isNull(), ("vmGuestOSType() must return non-null type"));
-    mMachine.SetOSTypeId (type.GetId());
+    AssertMsg (!mOSTypeSelector->type().isNull(), ("mOSTypeSelector must return non-null type"));
+    mMachine.SetOSTypeId (mOSTypeSelector->type().GetId());
 
     /* RAM size */
     mMachine.SetMemorySize (mSlRam->value());
@@ -338,13 +288,16 @@ void VBoxVMSettingsGeneral::putBackTo()
     /* PAE/NX */
     mMachine.SetPAEEnabled (mCbPae->isChecked());
 
+    /* 3D Acceleration */
+    mMachine.SetAccelerate3DEnabled (mCb3D->isChecked());
+
     /* Saved state folder */
     if (mPsSnapshot->isModified())
     {
         mMachine.SetSnapshotFolder (mPsSnapshot->path());
         if (!mMachine.isOk())
             vboxProblem().cannotSetSnapshotFolder (mMachine,
-                    QDir::convertSeparators (mPsSnapshot->path()));
+                    QDir::toNativeSeparators (mPsSnapshot->path()));
     }
 
     /* Description (set empty to null to avoid an empty <Description> node
@@ -363,13 +316,48 @@ void VBoxVMSettingsGeneral::putBackTo()
                            mCbSaveMounted->isChecked() ? "yes" : "no");
 }
 
+bool VBoxVMSettingsGeneral::revalidate (QString &aWarning, QString & /* aTitle */)
+{
+    ulong fullSize = vboxGlobal().virtualBox().GetHost().GetMemorySize();
+    quint64 needBytes = VBoxGlobal::requiredVideoMemory (&mMachine);
+
+    if (mSlRam->value() + mSlVideo->value() > 0.75 * fullSize)
+    {
+        aWarning = tr (
+            "you have assigned more than <b>75%</b> of your computer's memory "
+            "(<b>%1</b>) to the virtual machine. Not enough memory is left "
+            "for your host operating system. Please select a smaller amount.")
+            .arg (vboxGlobal().formatSize (fullSize * _1M));
+        return false;
+    } else
+    if (mSlRam->value() + mSlVideo->value() > 0.5 * fullSize)
+    {
+        aWarning = tr (
+            "you have assigned more than <b>50%</b> of your computer's memory "
+            "(<b>%1</b>) to the virtual machine. Not enough memory might be "
+            "left for your host operating system. Continue at your own risk.")
+            .arg (vboxGlobal().formatSize (fullSize * _1M));
+        return true;
+    } else
+    if ((quint64) mSlVideo->value() * _1M < needBytes)
+    {
+        aWarning = tr (
+            "you have assigned less than <b>%1</b> for video memory which is "
+            "the minimum amount required to switch the virtual machine to "
+            "fullscreen or seamless mode.")
+            .arg (vboxGlobal().formatSize (needBytes, 0, VBoxDefs::FormatSize_RoundUp));
+        return true;
+    }
+    return true;
+}
+
 void VBoxVMSettingsGeneral::setOrderAfter (QWidget *aWidget)
 {
     /* Setup Tab order */
     setTabOrder (aWidget, mTabGeneral->focusProxy());
     setTabOrder (mTabGeneral->focusProxy(), mLeName);
-    setTabOrder (mLeName, mCbOsType);
-    setTabOrder (mCbOsType, mSlRam);
+    setTabOrder (mLeName, mOSTypeSelector);
+    setTabOrder (mOSTypeSelector, mSlRam);
     setTabOrder (mSlRam, mLeRam);
     setTabOrder (mLeRam, mSlVideo);
     setTabOrder (mSlVideo, mLeVideo);
@@ -381,7 +369,8 @@ void VBoxVMSettingsGeneral::setOrderAfter (QWidget *aWidget)
     setTabOrder (mCbAcpi, mCbApic);
     setTabOrder (mCbApic, mCbVirt);
     setTabOrder (mCbVirt, mCbPae);
-    setTabOrder (mCbPae, mCbClipboard);
+    setTabOrder (mCbPae, mCb3D);
+    setTabOrder (mCb3D, mCbClipboard);
     setTabOrder (mCbClipboard, mCbIDEController);
     setTabOrder (mCbIDEController, mPsSnapshot);
 

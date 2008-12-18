@@ -69,6 +69,7 @@ if test -f /opt/VirtualBox/VBoxHeadless; then
 fi
 
 if test "$currentzone" = "global"; then
+    # Web service
     if test -f /var/svc/manifest/application/virtualbox/webservice.xml; then
         /usr/sbin/svccfg import /var/svc/manifest/application/virtualbox/webservice.xml
         /usr/sbin/svcadm disable -s svc:/application/virtualbox/webservice:default

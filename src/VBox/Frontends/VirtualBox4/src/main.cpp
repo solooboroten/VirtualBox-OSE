@@ -31,13 +31,19 @@
 # define QIApplication QApplication
 #endif
 
+#ifdef Q_WS_X11
+#include <QFontDatabase>
+#endif
+
 #include <QCleanlooksStyle>
 #include <QPlastiqueStyle>
 #include <qmessagebox.h>
 #include <qlocale.h>
 #include <qtranslator.h>
 
-#include <iprt/runtime.h>
+#include <iprt/err.h>
+#include <iprt/initterm.h>
+#include <iprt/process.h>
 #include <iprt/stream.h>
 #ifdef VBOX_WITH_HARDENING
 # include <VBox/sup.h>
@@ -171,7 +177,18 @@ static void showHelp()
             "\n"
             "Usage:\n"
             "  -startvm <vmname|UUID>     start a VM by specifying its UUID or name\n"
-            "  -rmode %-19s select different render mode (default is %s)\n",
+            "  -rmode %-19s select different render mode (default is %s)\n"
+# ifdef VBOX_WITH_DEBUGGER_GUI
+            "  -dbg                       enable the GUI debug menu\n"
+            "  -debug                     like -dbg and show debug windows at VM startup\n"
+            "  -no-debug                  disable the GUI debug menu and debug windows\n"
+            "\n"
+            "The following environment variables are evaluated:\n"
+            "  VBOX_GUI_DBG_ENABLED       enable the GUI debug menu if set\n"
+            "  VBOX_GUI_DBG_AUTO_SHOW     show debug windows at VM startup\n"
+            "  VBOX_GUI_NO_DEBUGGER       disable the GUI debug menu and debug windows\n"
+# endif
+            "\n",
             mode.toLatin1().constData(),
             dflt.toLatin1().constData());
 }
@@ -236,12 +253,38 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
             QApplication::setStyle (new QPlastiqueStyle);
 
 #ifdef Q_WS_X11
+        /* This patch is not used for now on Solaris & OpenSolaris because
+         * there is no anti-aliasing enabled by default, Qt4 to be rebuilt. */
+#ifndef Q_OS_SOLARIS
         /* Cause Qt4 has the conflict with fontconfig application as a result
-         * substituting some fonts with non anti-aliased bitmap font we are
-         * reseting all the substitutes here for the current application font. */
-# ifndef Q_OS_SOLARIS
-        QFont::removeSubstitution (QApplication::font().family());
-# endif /* Q_OS_SOLARIS */
+         * sometimes substituting some fonts with non scaleable-anti-aliased
+         * bitmap font we are reseting substitutes for the current application
+         * font family if it is non scaleable-anti-aliased. */
+        QFontDatabase fontDataBase;
+
+        QString currentFamily (QApplication::font().family());
+        bool isCurrentScaleable = fontDataBase.isScalable (currentFamily);
+
+        /*
+        LogFlowFunc (("Font: Current family is '%s'. It is %s.\n",
+            currentFamily.toLatin1().constData(),
+            isCurrentScaleable ? "scalable" : "not scalable"));
+        QStringList subFamilies (QFont::substitutes (currentFamily));
+        foreach (QString sub, subFamilies)
+        {
+            bool isSubScalable = fontDataBase.isScalable (sub);
+            LogFlowFunc (("Font: Substitute family is '%s'. It is %s.\n",
+                sub.toLatin1().constData(),
+                isSubScalable ? "scalable" : "not scalable"));
+        }
+        */
+
+        QString subFamily (QFont::substitute (currentFamily));
+        bool isSubScaleable = fontDataBase.isScalable (subFamily);
+
+        if (isCurrentScaleable && !isSubScaleable)
+            QFont::removeSubstitution (currentFamily);
+#endif /* Q_OS_SOLARIS */
 #endif
 
 #ifdef Q_WS_WIN
@@ -302,6 +345,12 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
             if (!vboxGlobal().isValid())
                 break;
 
+            /* Note: the settings conversion check must be done before
+             * anything else that can unconditionally overwrite settings files
+             * int he new format (like the license thingy below) */
+            if (!vboxGlobal().checkForAutoConvertedSettings())
+                break;
+
 #ifndef VBOX_OSE
 #ifdef Q_WS_X11
             /* show the user license file */
@@ -310,8 +359,6 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
 #endif
 #endif
 
-            vboxGlobal().checkForAutoConvertedSettings();
-
             VBoxGlobalSettings settings = vboxGlobal().settings();
             /* Process known keys */
             bool noSelector = settings.isFeatureActive ("noSelector");
@@ -319,6 +366,12 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
             if (vboxGlobal().isVMConsoleProcess())
             {
                 vboxGlobal().setMainWindow (&vboxGlobal().consoleWnd());
+#ifdef VBOX_GUI_WITH_SYSTRAY
+                if (vboxGlobal().trayIconInstall())
+                {
+                    /* Nothing to do here yet. */
+                }
+#endif
                 if (vboxGlobal().startMachine (vboxGlobal().managedVMUuid()))
                     rc = a.exec();
             }
@@ -329,15 +382,32 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
             else
             {
                 vboxGlobal().setMainWindow (&vboxGlobal().selectorWnd());
-                vboxGlobal().selectorWnd().show();
+#ifdef VBOX_GUI_WITH_SYSTRAY
+                if (vboxGlobal().trayIconInstall())
+                {
+                    /* Nothing to do here yet. */
+                }
+
+                if (false == vboxGlobal().isTrayMenu())
+                {
+#endif
+                    vboxGlobal().selectorWnd().show();
 #ifdef VBOX_WITH_REGISTRATION_REQUEST
-                vboxGlobal().showRegistrationDialog (false /* aForce */);
+                    vboxGlobal().showRegistrationDialog (false /* aForce */);
 #endif
 #ifdef VBOX_WITH_UPDATE_REQUEST
-                vboxGlobal().showUpdateDialog (false /* aForce */);
+                    vboxGlobal().showUpdateDialog (false /* aForce */);
 #endif
-                vboxGlobal().startEnumeratingMedia();
-                rc = a.exec();
+#ifdef VBOX_GUI_WITH_SYSTRAY
+                }
+
+                do
+                {
+#endif
+                    rc = a.exec();
+#ifdef VBOX_GUI_WITH_SYSTRAY
+                } while (vboxGlobal().isTrayMenu());
+#endif
             }
         }
         while (0);

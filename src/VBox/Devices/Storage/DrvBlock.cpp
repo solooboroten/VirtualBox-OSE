@@ -258,7 +258,7 @@ static DECLCALLBACK(int) drvblockGetUuid(PPDMIBLOCK pInterface, PRTUUID pUuid)
 /** Makes a PDRVBLOCK out of a PPDMIBLOCKASYNC. */
 #define PDMIBLOCKASYNC_2_DRVBLOCK(pInterface)        ( (PDRVBLOCK)((uintptr_t)pInterface - RT_OFFSETOF(DRVBLOCK, IBlockAsync)) )
 
-/** @copydoc PDMIBLOCKASYNC::pfnRead */
+/** @copydoc PDMIBLOCKASYNC::pfnStartRead */
 static DECLCALLBACK(int) drvblockAsyncReadStart(PPDMIBLOCKASYNC pInterface, uint64_t off, PPDMDATASEG pSeg, unsigned cSeg, size_t cbRead, void *pvUser)
 {
     PDRVBLOCK pThis = PDMIBLOCKASYNC_2_DRVBLOCK(pInterface);
@@ -277,7 +277,7 @@ static DECLCALLBACK(int) drvblockAsyncReadStart(PPDMIBLOCKASYNC pInterface, uint
 }
 
 
-/** @copydoc PDMIBLOCKASYNC::pfnWrite */
+/** @copydoc PDMIBLOCKASYNC::pfnStartWrite */
 static DECLCALLBACK(int) drvblockAsyncWriteStart(PPDMIBLOCKASYNC pInterface, uint64_t off, PPDMDATASEG pSeg, unsigned cSeg, size_t cbWrite, void *pvUser)
 {
     PDRVBLOCK pThis = PDMIBLOCKASYNC_2_DRVBLOCK(pInterface);
@@ -871,10 +871,9 @@ static DECLCALLBACK(int) drvblockConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHan
         &&  pThis->enmType != PDMBLOCKTYPE_HARD_DISK)
         return VINF_SUCCESS;
     if (RT_FAILURE(rc))
-    {
-        AssertLogRelMsgFailed(("Failed to attach driver below us! rc=%Rra\n", rc));
-        return rc;
-    }
+        return PDMDrvHlpVMSetError(pDrvIns, rc, RT_SRC_POS,
+                                   N_("Failed to attach driver below us! rc=%Rra\n"), rc);
+
     pThis->pDrvMedia = (PPDMIMEDIA)pBase->pfnQueryInterface(pBase, PDMINTERFACE_MEDIA);
     if (!pThis->pDrvMedia)
         return PDMDRV_SET_ERROR(pDrvIns, VERR_PDM_MISSING_INTERFACE_BELOW,

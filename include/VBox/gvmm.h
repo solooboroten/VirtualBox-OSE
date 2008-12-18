@@ -1,4 +1,4 @@
-/* $Id: gvmm.h $ */
+/* $Id: gvmm.h 14811 2008-11-29 23:48:26Z vboxsync $ */
 /** @file
  * GVMM - The Global VM Manager.
  */
@@ -45,6 +45,9 @@ __BEGIN_DECLS
  * Used to indicate whether we're inside the same link module as the ring 0
  * part of the Global VM Manager or not.
  */
+#ifdef DOXYGEN_RUNNING
+# define IN_GVMM_R0
+#endif
 /** @def GVMMR0DECL
  * Ring 0 VM export or import declaration.
  * @param   type    The return type of the function declaration.
@@ -121,8 +124,10 @@ GVMMR0DECL(void)    GVMMR0Term(void);
 GVMMR0DECL(int)     GVMMR0SetConfig(PSUPDRVSESSION pSession, const char *pszName, uint64_t u64Value);
 GVMMR0DECL(int)     GVMMR0QueryConfig(PSUPDRVSESSION pSession, const char *pszName, uint64_t *pu64Value);
 
-GVMMR0DECL(int)     GVMMR0CreateVM(PSUPDRVSESSION pSession, PVM *ppVM);
+GVMMR0DECL(int)     GVMMR0CreateVM(PSUPDRVSESSION pSession, uint32_t cCPUs, PVM *ppVM);
 GVMMR0DECL(int)     GVMMR0InitVM(PVM pVM);
+GVMMR0DECL(void)    GVMMR0DoneInitVM(PVM pVM);
+GVMMR0DECL(bool)    GVMMR0DoingTermVM(PVM pVM, PGVM pGVM);
 GVMMR0DECL(int)     GVMMR0DestroyVM(PVM pVM);
 GVMMR0DECL(PGVM)    GVMMR0ByHandle(uint32_t hGVM);
 GVMMR0DECL(PGVM)    GVMMR0ByVM(PVM pVM);
@@ -145,6 +150,8 @@ typedef struct GVMMCREATEVMREQ
     SUPVMMR0REQHDR  Hdr;
     /** The support driver session. (IN) */
     PSUPDRVSESSION  pSession;
+    /** Number of virtual CPUs for the new VM. (IN) */
+    uint32_t        cCPUs;
     /** Pointer to the ring-3 mapping of the shared VM structure on return. (OUT) */
     PVMR3           pVMR3;
     /** Pointer to the ring-0 mapping of the shared VM structure on return. (OUT) */

@@ -1,4 +1,4 @@
-/* $Id: VBoxVMInfoAdditions.cpp $ */
+/* $Id: VBoxVMInfoAdditions.cpp 13462 2008-10-22 06:46:45Z vboxsync $ */
 /** @file
  * VBoxVMInfoAdditions - Guest Additions information for the host.
  */

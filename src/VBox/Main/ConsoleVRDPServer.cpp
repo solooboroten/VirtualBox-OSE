@@ -1,10 +1,12 @@
+/* $Id: ConsoleVRDPServer.cpp 15145 2008-12-09 09:56:02Z vboxsync $ */
+
 /** @file
  *
  * VBox Console VRDP Helper class
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2008 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -159,7 +161,7 @@ public:
         return S_OK;
     }
 
-    STDMETHOD(OnRuntimeError)(BOOL fatal, INPTR BSTR id, INPTR BSTR message)
+    STDMETHOD(OnRuntimeError)(BOOL fatal, IN_BSTR id, IN_BSTR message)
     {
         return S_OK;
     }
@@ -416,10 +418,16 @@ static void mousePointerGenerateANDMask (uint8_t *pu8DstAndMask, int cbDstAndMas
     }
 }
 
-STDMETHODIMP VRDPConsoleCallback::OnMousePointerShapeChange (BOOL visible, BOOL alpha, ULONG xHot, ULONG yHot,
-                                                             ULONG width, ULONG height, BYTE *shape)
+STDMETHODIMP VRDPConsoleCallback::OnMousePointerShapeChange (
+    BOOL visible,
+    BOOL alpha,
+    ULONG xHot,
+    ULONG yHot,
+    ULONG width,
+    ULONG height,
+    BYTE *shape)
 {
-    LogSunlover(("VRDPConsoleCallback::OnMousePointerShapeChange: %d, %d, %dx%d, @%d,%d\n", visible, alpha, width, height, xHot, yHot));
+    LogSunlover(("VRDPConsoleCallback::OnMousePointerShapeChange: %d, %d, %lux%lu, @%lu,%lu\n", visible, alpha, width, height, xHot, yHot));
 
     if (m_server)
     {
@@ -1068,7 +1076,7 @@ ConsoleVRDPServer::~ConsoleVRDPServer ()
     }
 
     unsigned i;
-    for (i = 0; i < ELEMENTS(maFramebuffers); i++)
+    for (i = 0; i < RT_ELEMENTS(maFramebuffers); i++)
     {
         if (maFramebuffers[i])
         {
@@ -1103,14 +1111,14 @@ int ConsoleVRDPServer::Launch (void)
         {
             rc = mpfnVRDPCreateServer (&mCallbacks.header, this, (VRDPINTERFACEHDR **)&mpEntryPoints, &mhServer);
 
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
             {
 #ifdef VBOX_WITH_USB
                 remoteUSBThreadStart ();
 #endif /* VBOX_WITH_USB */
             }
             else
-                AssertMsgFailed(("Could not start VRDP server: rc = %Vrc\n", rc));
+                AssertMsgFailed(("Could not start VRDP server: rc = %Rrc\n", rc));
         }
         else
         {
@@ -1256,7 +1264,7 @@ bool ConsoleVRDPServer::isRemoteUSBThreadRunning (void)
 void ConsoleVRDPServer::waitRemoteUSBThreadEvent (unsigned cMillies)
 {
     int rc = RTSemEventWait (mUSBBackends.event, cMillies);
-    Assert (VBOX_SUCCESS(rc) || rc == VERR_TIMEOUT);
+    Assert (RT_SUCCESS(rc) || rc == VERR_TIMEOUT);
     NOREF(rc);
 }
 
@@ -1264,21 +1272,21 @@ void ConsoleVRDPServer::remoteUSBThreadStart (void)
 {
     int rc = RTSemEventCreate (&mUSBBackends.event);
 
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
     {
         AssertFailed ();
         mUSBBackends.event = 0;
     }
 
-    if (VBOX_SUCCESS (rc))
+    if (RT_SUCCESS (rc))
     {
         rc = RTThreadCreate (&mUSBBackends.thread, threadRemoteUSB, this, 65536,
                              RTTHREADTYPE_VRDP_IO, RTTHREADFLAGS_WAITABLE, "remote usb");
     }
 
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
     {
-        LogRel(("Warning: could not start the remote USB thread, rc = %Vrc!!!\n", rc));
+        LogRel(("Warning: could not start the remote USB thread, rc = %Rrc!!!\n", rc));
         mUSBBackends.thread = NIL_RTTHREAD;
     }
     else
@@ -1286,7 +1294,7 @@ void ConsoleVRDPServer::remoteUSBThreadStart (void)
         /* Wait until the thread is ready. */
         rc = RTThreadUserWait (mUSBBackends.thread, 60000);
         AssertRC (rc);
-        Assert (mUSBBackends.fThreadRunning || VBOX_FAILURE (rc));
+        Assert (mUSBBackends.fThreadRunning || RT_FAILURE (rc));
     }
 }
 
@@ -1322,7 +1330,7 @@ VRDPAuthResult ConsoleVRDPServer::Authenticate (const Guid &uuid, VRDPAuthGuestJ
 
     memcpy (rawuuid, ((Guid &)uuid).ptr (), sizeof (rawuuid));
 
-    LogFlow(("ConsoleVRDPServer::Authenticate: uuid = %Vuuid, guestJudgement = %d, pszUser = %s, pszPassword = %s, pszDomain = %s, u32ClientId = %d\n",
+    LogFlow(("ConsoleVRDPServer::Authenticate: uuid = %RTuuid, guestJudgement = %d, pszUser = %s, pszPassword = %s, pszDomain = %s, u32ClientId = %d\n",
              rawuuid, guestJudgement, pszUser, pszPassword, pszDomain, u32ClientId));
 
     /*
@@ -1350,26 +1358,26 @@ VRDPAuthResult ConsoleVRDPServer::Authenticate (const Guid &uuid, VRDPAuthGuestJ
         LogRel(("VRDPAUTH: ConsoleVRDPServer::Authenticate: loading external authentication library '%ls'\n", authLibrary.raw()));
 
         int rc = RTLdrLoad (filename.raw(), &mAuthLibrary);
-        if (VBOX_FAILURE (rc))
-            LogRel(("VRDPAUTH: Failed to load external authentication library. Error code: %Vrc\n", rc));
+        if (RT_FAILURE (rc))
+            LogRel(("VRDPAUTH: Failed to load external authentication library. Error code: %Rrc\n", rc));
 
-        if (VBOX_SUCCESS (rc))
+        if (RT_SUCCESS (rc))
         {
             /* Get the entry point. */
             mpfnAuthEntry2 = NULL;
             int rc2 = RTLdrGetSymbol(mAuthLibrary, "VRDPAuth2", (void**)&mpfnAuthEntry2);
-            if (VBOX_FAILURE (rc2))
+            if (RT_FAILURE (rc2))
             {
-                LogRel(("VRDPAUTH: Could not resolve import '%s'. Error code: %Vrc\n", "VRDPAuth2", rc2));
+                LogRel(("VRDPAUTH: Could not resolve import '%s'. Error code: %Rrc\n", "VRDPAuth2", rc2));
                 rc = rc2;
             }
 
             /* Get the entry point. */
             mpfnAuthEntry = NULL;
             rc2 = RTLdrGetSymbol(mAuthLibrary, "VRDPAuth", (void**)&mpfnAuthEntry);
-            if (VBOX_FAILURE (rc2))
+            if (RT_FAILURE (rc2))
             {
-                LogRel(("VRDPAUTH: Could not resolve import '%s'. Error code: %Vrc\n", "VRDPAuth", rc2));
+                LogRel(("VRDPAUTH: Could not resolve import '%s'. Error code: %Rrc\n", "VRDPAuth", rc2));
                 rc = rc2;
             }
 
@@ -1380,7 +1388,7 @@ VRDPAuthResult ConsoleVRDPServer::Authenticate (const Guid &uuid, VRDPAuthGuestJ
             }
         }
 
-        if (VBOX_FAILURE (rc))
+        if (RT_FAILURE (rc))
         {
             mConsole->reportAuthLibraryError (filename.raw(), rc);
 
@@ -1430,7 +1438,7 @@ void ConsoleVRDPServer::AuthDisconnect (const Guid &uuid, uint32_t u32ClientId)
 
     memcpy (rawuuid, ((Guid &)uuid).ptr (), sizeof (rawuuid));
 
-    LogFlow(("ConsoleVRDPServer::AuthDisconnect: uuid = %Vuuid, u32ClientId = %d\n",
+    LogFlow(("ConsoleVRDPServer::AuthDisconnect: uuid = %RTuuid, u32ClientId = %d\n",
              rawuuid, u32ClientId));
 
     Assert (mAuthLibrary && (mpfnAuthEntry || mpfnAuthEntry2));
@@ -1517,7 +1525,7 @@ DECLCALLBACK(int) ConsoleVRDPServer::ClipboardServiceExtension (void *pvExtensio
     {
         case VBOX_CLIPBOARD_EXT_FN_SET_CALLBACK:
         {
-            pServer->mpfnClipboardCallback = (PFNVRDPCLIPBOARDEXTCALLBACK)pParms->pvData;
+            pServer->mpfnClipboardCallback = pParms->u.pfnCallback;
         } break;
 
         case VBOX_CLIPBOARD_EXT_FN_FORMAT_ANNOUNCE:
@@ -1545,7 +1553,7 @@ DECLCALLBACK(int) ConsoleVRDPServer::ClipboardServiceExtension (void *pvExtensio
                 mpEntryPoints->VRDPClipboard (pServer->mhServer,
                                               VRDP_CLIPBOARD_FUNCTION_DATA_READ,
                                               pParms->u32Format,
-                                              pParms->pvData,
+                                              pParms->u.pvData,
                                               pParms->cbData,
                                               &pParms->cbData);
             }
@@ -1558,7 +1566,7 @@ DECLCALLBACK(int) ConsoleVRDPServer::ClipboardServiceExtension (void *pvExtensio
                 mpEntryPoints->VRDPClipboard (pServer->mhServer,
                                               VRDP_CLIPBOARD_FUNCTION_DATA_WRITE,
                                               pParms->u32Format,
-                                              pParms->pvData,
+                                              pParms->u.pvData,
                                               pParms->cbData,
                                               NULL);
             }
@@ -1576,13 +1584,13 @@ void ConsoleVRDPServer::ClipboardCreate (uint32_t u32ClientId)
 {
     int rc = lockConsoleVRDPServer ();
 
-    if (VBOX_SUCCESS (rc))
+    if (RT_SUCCESS (rc))
     {
         if (mcClipboardRefs == 0)
         {
             rc = HGCMHostRegisterServiceExtension (&mhClipboard, "VBoxSharedClipboard", ClipboardServiceExtension, this);
 
-            if (VBOX_SUCCESS (rc))
+            if (RT_SUCCESS (rc))
             {
                 mcClipboardRefs++;
             }
@@ -1596,7 +1604,7 @@ void ConsoleVRDPServer::ClipboardDelete (uint32_t u32ClientId)
 {
     int rc = lockConsoleVRDPServer ();
 
-    if (VBOX_SUCCESS (rc))
+    if (RT_SUCCESS (rc))
     {
         mcClipboardRefs--;
 
@@ -1627,7 +1635,7 @@ void ConsoleVRDPServer::USBBackendCreate (uint32_t u32ClientId, void **ppvInterc
         /* Append the new instance in the list. */
         int rc = lockConsoleVRDPServer ();
 
-        if (VBOX_SUCCESS (rc))
+        if (RT_SUCCESS (rc))
         {
             pRemoteUSBBackend->pNext = mUSBBackends.pHead;
             if (mUSBBackends.pHead)
@@ -1649,7 +1657,7 @@ void ConsoleVRDPServer::USBBackendCreate (uint32_t u32ClientId, void **ppvInterc
             }
         }
 
-        if (VBOX_FAILURE (rc))
+        if (RT_FAILURE (rc))
         {
             pRemoteUSBBackend->Release ();
         }
@@ -1667,7 +1675,7 @@ void ConsoleVRDPServer::USBBackendDelete (uint32_t u32ClientId)
     /* Find the instance. */
     int rc = lockConsoleVRDPServer ();
 
-    if (VBOX_SUCCESS (rc))
+    if (RT_SUCCESS (rc))
     {
         pRemoteUSBBackend = usbBackendFind (u32ClientId);
 
@@ -1696,7 +1704,7 @@ void *ConsoleVRDPServer::USBBackendRequestPointer (uint32_t u32ClientId, const G
     /* Find the instance. */
     int rc = lockConsoleVRDPServer ();
 
-    if (VBOX_SUCCESS (rc))
+    if (RT_SUCCESS (rc))
     {
         pRemoteUSBBackend = usbBackendFind (u32ClientId);
 
@@ -1736,7 +1744,7 @@ void ConsoleVRDPServer::USBBackendReleasePointer (const Guid *pGuid)
     /* Find the instance. */
     int rc = lockConsoleVRDPServer ();
 
-    if (VBOX_SUCCESS (rc))
+    if (RT_SUCCESS (rc))
     {
         pRemoteUSBBackend = usbBackendFindByUUID (pGuid);
 
@@ -1764,7 +1772,7 @@ RemoteUSBBackend *ConsoleVRDPServer::usbBackendGetNext (RemoteUSBBackend *pRemot
 
     int rc = lockConsoleVRDPServer ();
 
-    if (VBOX_SUCCESS (rc))
+    if (RT_SUCCESS (rc))
     {
         if (pRemoteUSBBackend == NULL)
         {
@@ -1948,9 +1956,9 @@ bool ConsoleVRDPServer::loadVRDPLibrary (void)
 
     if (!mVRDPLibrary)
     {
-        rc = RTLdrLoadAppSharedLib ("VBoxVRDP", &mVRDPLibrary);
+        rc = SUPR3HardenedLdrLoadAppPriv ("VBoxVRDP", &mVRDPLibrary);
 
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
         {
             LogFlow(("VRDPServer::loadLibrary(): successfully loaded VRDP library.\n"));
 
@@ -1969,13 +1977,13 @@ bool ConsoleVRDPServer::loadVRDPLibrary (void)
 
             #undef DEFSYMENTRY
 
-            for (unsigned i = 0; i < ELEMENTS(symbols); i++)
+            for (unsigned i = 0; i < RT_ELEMENTS(symbols); i++)
             {
                 rc = RTLdrGetSymbol(mVRDPLibrary, symbols[i].name, symbols[i].ppfn);
 
                 AssertMsgRC(rc, ("Error resolving VRDP symbol %s\n", symbols[i].name));
 
-                if (VBOX_FAILURE(rc))
+                if (RT_FAILURE(rc))
                 {
                     break;
                 }
@@ -1983,13 +1991,13 @@ bool ConsoleVRDPServer::loadVRDPLibrary (void)
         }
         else
         {
-            LogRel(("VRDPServer::loadLibrary(): failed to load VRDP library! VRDP not available: rc = %Vrc\n", rc));
+            LogRel(("VRDPServer::loadLibrary(): failed to load VRDP library! VRDP not available: rc = %Rrc\n", rc));
             mVRDPLibrary = NULL;
         }
     }
 
     // just to be safe
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
         if (mVRDPLibrary)
         {
@@ -2008,6 +2016,8 @@ bool ConsoleVRDPServer::loadVRDPLibrary (void)
 // constructor / destructor
 /////////////////////////////////////////////////////////////////////////////
 
+DEFINE_EMPTY_CTOR_DTOR (RemoteDisplayInfo)
+
 HRESULT RemoteDisplayInfo::FinalConstruct()
 {
     return S_OK;
@@ -2015,8 +2025,7 @@ HRESULT RemoteDisplayInfo::FinalConstruct()
 
 void RemoteDisplayInfo::FinalRelease()
 {
-    if (isReady())
-        uninit ();
+    uninit ();
 }
 
 // public methods only for internal purposes
@@ -2027,16 +2036,16 @@ void RemoteDisplayInfo::FinalRelease()
  */
 HRESULT RemoteDisplayInfo::init (Console *aParent)
 {
-    LogFlowMember (("RemoteDisplayInfo::init (%p)\n", aParent));
+    LogFlowThisFunc (("aParent=%p\n", aParent));
 
     ComAssertRet (aParent, E_INVALIDARG);
 
-    AutoWriteLock alock (this);
-    ComAssertRet (!isReady(), E_UNEXPECTED);
+    /* Enclose the state transition NotReady->InInit->Ready */
+    AutoInitSpan autoInitSpan (this);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
-    mParent = aParent;
+    unconst (mParent) = aParent;
 
-    setReady (true);
     return S_OK;
 }
 
@@ -2046,14 +2055,14 @@ HRESULT RemoteDisplayInfo::init (Console *aParent)
  */
 void RemoteDisplayInfo::uninit()
 {
-    LogFlowMember (("RemoteDisplayInfo::uninit()\n"));
+    LogFlowThisFunc (("\n"));
 
-    AutoWriteLock alock (this);
-    AssertReturn (isReady(), (void) 0);
+    /* Enclose the state transition Ready->InUninit->NotReady */
+    AutoUninitSpan autoUninitSpan (this);
+    if (autoUninitSpan.uninitDone())
+        return;
 
-    mParent.setNull();
-
-    setReady (false);
+    unconst (mParent).setNull();
 }
 
 // IRemoteDisplayInfo properties
@@ -2065,8 +2074,11 @@ void RemoteDisplayInfo::uninit()
         if (!a##_aName)                                                   \
             return E_POINTER;                                             \
                                                                           \
-        AutoWriteLock alock (this);                                            \
-        CHECK_READY();                                                    \
+        AutoCaller autoCaller (this);                                     \
+        CheckComRCReturnRC (autoCaller.rc());                             \
+                                                                          \
+        /* todo: Not sure if a AutoReadLock would be sufficient. */       \
+        AutoWriteLock alock (this);                                       \
                                                                           \
         uint32_t value;                                                   \
         uint32_t cbOut = 0;                                               \
@@ -2085,8 +2097,11 @@ void RemoteDisplayInfo::uninit()
         if (!a##_aName)                                                   \
             return E_POINTER;                                             \
                                                                           \
-        AutoWriteLock alock (this);                                            \
-        CHECK_READY();                                                    \
+        AutoCaller autoCaller (this);                                     \
+        CheckComRCReturnRC (autoCaller.rc());                             \
+                                                                          \
+        /* todo: Not sure if a AutoReadLock would be sufficient. */       \
+        AutoWriteLock alock (this);                                       \
                                                                           \
         _aType value;                                                     \
         uint32_t cbOut = 0;                                               \
@@ -2105,8 +2120,11 @@ void RemoteDisplayInfo::uninit()
         if (!a##_aName)                                                   \
             return E_POINTER;                                             \
                                                                           \
-        AutoWriteLock alock (this);                                            \
-        CHECK_READY();                                                    \
+        AutoCaller autoCaller (this);                                     \
+        CheckComRCReturnRC (autoCaller.rc());                             \
+                                                                          \
+        /* todo: Not sure if a AutoReadLock would be sufficient. */       \
+        AutoWriteLock alock (this);                                       \
                                                                           \
         uint32_t cbOut = 0;                                               \
                                                                           \
@@ -2159,3 +2177,4 @@ IMPL_GETTER_SCALAR (ULONG,   EncryptionStyle,    VRDP_QI_ENCRYPTION_STYLE);
 
 #undef IMPL_GETTER_BSTR
 #undef IMPL_GETTER_SCALAR
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

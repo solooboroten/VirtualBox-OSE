@@ -33,7 +33,7 @@ ALIASES                = \
 
 # The following is for Global Configuration options.
 ALIASES                += \
-	gcfgm{6}="\xrefitem lst_gcfgm \"GCFGM\" \"Global Configuration Values\" \
+	gcfgm{6}="\xrefitem lst_gcfgm \"Global VM Config: \1\" \"Global Configuration Values\" \
 <b>Name:</b> \1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Unit:</b> \6 <br> \
@@ -42,7 +42,7 @@ ALIASES                += \
 <b>Default:</b> \5 <br> \
 "
 ALIASES                += \
-	gcfgm{5}="\xrefitem lst_gcfgm \"GCFGM\" \"Global Configuration Values\" \
+	gcfgm{5}="\xrefitem lst_gcfgm \"Global VM Config: \1\" \"Global Configuration Values\" \
 <b>Name:</b> \1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Min:</b> \3 <br> \
@@ -50,27 +50,27 @@ ALIASES                += \
 <b>Default:</b> \5 <br> \
 "
 ALIASES                += \
-	gcfgm{4}="\xrefitem lst_gcfgm \"GCFGM\" \"Global Configuration Values\" \
+	gcfgm{4}="\xrefitem lst_gcfgm \"Global VM Config: \1\" \"Global Configuration Values\" \
 <b>Name:</b> \1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Min:</b> \3 <br> \
 <b>Max:</b> \4 <br> \
 "
 ALIASES                += \
-	gcfgm{3}="\xrefitem lst_gcfgm \"GCFGM\" \"Global Configuration Values\" \
+	gcfgm{3}="\xrefitem lst_gcfgm \"Global VM Config: \1\" \"Global Configuration Values\" \
 <b>Name:</b> \1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Default:</b> \3 <br> \
 "
 ALIASES                += \
-	gcfgm{2}="\xrefitem lst_gcfgm \"GCFGM\" \"Global Configuration Values\" \
+	gcfgm{2}="\xrefitem lst_gcfgm \"Global VM Config: \1\" \"Global Configuration Values\" \
 <b>Name:</b> \1 <br> \
 <b>Type:</b> \2 <br> \
 "
 
 # The following is for per-VM Configuration options.
 ALIASES                += \
-	cfgm{6}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	cfgm{6}="\xrefitem lst_cfgm \"VM Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> \1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Unit:</b> \6 <br> \
@@ -79,7 +79,7 @@ ALIASES                += \
 <b>Default:</b> \5 <br> \
 "
 ALIASES                += \
-	cfgm{5}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	cfgm{5}="\xrefitem lst_cfgm \"VM Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> \1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Min:</b> \3 <br> \
@@ -87,27 +87,27 @@ ALIASES                += \
 <b>Default:</b> \5 <br> \
 "
 ALIASES                += \
-	cfgm{4}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	cfgm{4}="\xrefitem lst_cfgm \"VM Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> \1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Min:</b> \3 <br> \
 <b>Max:</b> \4 <br> \
 "
 ALIASES                += \
-	cfgm{3}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	cfgm{3}="\xrefitem lst_cfgm \"VM Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> \1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Default:</b> \3 <br> \
 "
 ALIASES                += \
-	cfgm{2}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	cfgm{2}="\xrefitem lst_cfgm \"VM Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> \1 <br> \
 <b>Type:</b> \2 <br> \
 "
 
 # The following is for device configuration options.
 ALIASES                += \
-	devcfgm{6}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	devcfgm{6}="\xrefitem lst_cfgm \"Device Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [Device Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Unit:</b> \6 <br> \
@@ -116,7 +116,7 @@ ALIASES                += \
 <b>Default:</b> \5 <br> \
 "
 ALIASES                += \
-	devcfgm{5}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	devcfgm{5}="\xrefitem lst_cfgm \"Device Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [Device Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Min:</b> \3 <br> \
@@ -124,27 +124,27 @@ ALIASES                += \
 <b>Default:</b> \5 <br> \
 "
 ALIASES                += \
-	devcfgm{4}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	devcfgm{4}="\xrefitem lst_cfgm \"Device Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [Device Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Min:</b> \3 <br> \
 <b>Max:</b> \4 <br> \
 "
 ALIASES                += \
-	devcfgm{3}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	devcfgm{3}="\xrefitem lst_cfgm \"Device Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [Device Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Default:</b> \3 <br> \
 "
 ALIASES                += \
-	devcfgm{2}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	devcfgm{2}="\xrefitem lst_cfgm \"Device Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [Device Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 "
 
 # The following is for driver configuration options.
 ALIASES                += \
-	drvcfgm{6}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	drvcfgm{6}="\xrefitem lst_cfgm \"Driver Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [Driver Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Unit:</b> \6 <br> \
@@ -153,7 +153,7 @@ ALIASES                += \
 <b>Default:</b> \5 <br> \
 "
 ALIASES                += \
-	drvcfgm{5}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	drvcfgm{5}="\xrefitem lst_cfgm \"Driver Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [Driver Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Min:</b> \3 <br> \
@@ -161,27 +161,27 @@ ALIASES                += \
 <b>Default:</b> \5 <br> \
 "
 ALIASES                += \
-	drvcfgm{4}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	drvcfgm{4}="\xrefitem lst_cfgm \"Driver Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [Driver Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Min:</b> \3 <br> \
 <b>Max:</b> \4 <br> \
 "
 ALIASES                += \
-	drvcfgm{3}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	drvcfgm{3}="\xrefitem lst_cfgm \"Driver Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [Driver Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Default:</b> \3 <br> \
 "
 ALIASES                += \
-	drvcfgm{2}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	drvcfgm{2}="\xrefitem lst_cfgm \"Driver Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [Driver Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 "
 
 # The following is for USB device configuration options.
 ALIASES                += \
-	usbcfgm{6}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	usbcfgm{6}="\xrefitem lst_cfgm \"USB Device Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [USB Device Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Unit:</b> \6 <br> \
@@ -190,7 +190,7 @@ ALIASES                += \
 <b>Default:</b> \5 <br> \
 "
 ALIASES                += \
-	usbcfgm{5}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	usbcfgm{5}="\xrefitem lst_cfgm \"USB Device Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [USB Device Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Min:</b> \3 <br> \
@@ -198,23 +198,47 @@ ALIASES                += \
 <b>Default:</b> \5 <br> \
 "
 ALIASES                += \
-	usbcfgm{4}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	usbcfgm{4}="\xrefitem lst_cfgm \"USB Device Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [USB Device Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Min:</b> \3 <br> \
 <b>Max:</b> \4 <br> \
 "
 ALIASES                += \
-	usbcfgm{3}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	usbcfgm{3}="\xrefitem lst_cfgm \"USB Device Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [USB Device Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 <b>Default:</b> \3 <br> \
 "
 ALIASES                += \
-	usbcfgm{2}="\xrefitem lst_cfgm \"CFGM\" \"VM Configuration Values\" \
+	usbcfgm{2}="\xrefitem lst_cfgm \"USB Device Config: \1\" \"VM Configuration Values\" \
 <b>Name:</b> [USB Device Instance]/\1 <br> \
 <b>Type:</b> \2 <br> \
 "
+
+# bugref - xTracker bug reference, takes one to four bug numbers.
+ALIASES               += bugref{1}="https://xtracker.innotek.de/index.php?bug=\1"
+ALIASES               += bugref{2}="https://xtracker.innotek.de/index.php?bug=\1, \
+https://xtracker.innotek.de/index.php?bug=\2"
+ALIASES               += bugref{3}="https://xtracker.innotek.de/index.php?bug=\1, \
+https://xtracker.innotek.de/index.php?bug=\2, \
+https://xtracker.innotek.de/index.php?bug=\3"
+ALIASES               += bugref{4}="https://xtracker.innotek.de/index.php?bug=\1, \
+https://xtracker.innotek.de/index.php?bug=\2, \
+https://xtracker.innotek.de/index.php?bug=\3, \
+https://xtracker.innotek.de/index.php?bug=\4"
+
+# ticketref - Track ticket reference, takes one to four ticket numbers.
+ALIASES               += ticketref{1}="http://www.virtualbox.org/ticket/\1"
+ALIASES               += ticketref{2}="http://www.virtualbox.org/ticket/\1, \
+http://www.virtualbox.org/ticket/\2"
+ALIASES               += ticketref{3}="http://www.virtualbox.org/ticket/\1, \
+http://www.virtualbox.org/ticket/\2, \
+http://www.virtualbox.org/ticket/\3"
+ALIASES               += ticketref{4}="http://www.virtualbox.org/ticket/\1, \
+http://www.virtualbox.org/ticket/\2, \
+http://www.virtualbox.org/ticket/\3, \
+http://www.virtualbox.org/ticket/\4"
 
 
 OPTIMIZE_OUTPUT_FOR_C  = YES
@@ -262,7 +286,8 @@ FILE_VERSION_FILTER    =
 #---------------------------------------------------------------------------
 QUIET                  = YES
 WARNINGS               = YES
-WARN_IF_UNDOCUMENTED   = YES
+##Later: WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_UNDOCUMENTED   = NO
 WARN_IF_DOC_ERROR      = YES
 WARN_NO_PARAMDOC       = NO
 WARN_FORMAT            = "$file:$line: $text"
@@ -286,7 +311,7 @@ IMAGE_PATH             = \
     doc \
     doc/tg/Networking-diagrams \
     doc/tg/USB-diagrams \
-    doc/tg/iagrams
+    doc/tg/diagrams
 INPUT_FILTER           =
 FILTER_PATTERNS        =
 FILTER_SOURCE_FILES    = NO
@@ -398,16 +423,78 @@ SEARCH_INCLUDES        = YES
 # INCLUDE_PATH           = later
 # INCLUDE_FILE_PATTERNS  = later
 PREDEFINED             =  DOXYGEN_RUNNING __DOXYGEN__ __END_DECLS __BEGIN_DECLS VBOX
-# Fix these:
-# PREDEFINED            += DECLCALLBACK(a)=a
-# PREDEFINED            += COMGETTER(a)=get##a
-# PREDEFINED            += COMSETTER(a)=set##a
+# context hacks.
+PREDEFINED            += RCPTRTYPE(RCType)=RCType
+PREDEFINED            += R3PTRTYPE(R3Type)=R3Type
+PREDEFINED            += R0PTRTYPE(R0Type)=R0Type
+PREDEFINED            += HCPTRTYPE(HCType)=HCType
+PREDEFINED            += R3R0PTRTYPE(R3R0Type)=R3R0Type
+# COM/XPCOM hacks.
+PREDEFINED            += STDMETHODIMP=HRESULT
+PREDEFINED            += "COMGETTER(n)=get_##n"
+PREDEFINED            += "COMSETTER(n)=set_##n"
+# COM hacks from From http://www.stack.nl/~dimitri/doxygen/preprocessing.html
+PREDEFINED          += "DECLARE_INTERFACE(name)=class name" \
+                       "STDMETHOD_(result,name)=virtual result name" \
+                       "PURE= = 0" \
+                       THIS_= \
+                       THIS= \
+                       DECLARE_REGISTRY_RESOURCEID=// \
+                       DECLARE_PROTECT_FINAL_CONSTRUCT=// \
+                       "DECLARE_AGGREGATABLE(Class)= " \
+                       "DECLARE_REGISTRY_RESOURCEID(Id)= " \
+                       DECLARE_MESSAGE_MAP= \
+                       BEGIN_MESSAGE_MAP=/* \
+                       END_MESSAGE_MAP=*/// \
+                       BEGIN_COM_MAP=/* \
+                       END_COM_MAP=*/// \
+                       BEGIN_PROP_MAP=/* \
+                       END_PROP_MAP=*/// \
+                       BEGIN_MSG_MAP=/* \
+                       END_MSG_MAP=*/// \
+                       BEGIN_PROPERTY_MAP=/* \
+                       END_PROPERTY_MAP=*/// \
+                       BEGIN_OBJECT_MAP=/* \
+                       END_OBJECT_MAP()=*/// \
+                       DECLARE_VIEW_STATUS=// \
+                       "STDMETHOD(a)=HRESULT a" \
+                       "ATL_NO_VTABLE= " \
+                       "__declspec(a)= " \
+                       BEGIN_CONNECTION_POINT_MAP=/* \
+                       END_CONNECTION_POINT_MAP=*/// \
+                       "DECLARE_DYNAMIC(class)= " \
+                       "IMPLEMENT_DYNAMIC(class1, class2)= " \
+                       "DECLARE_DYNCREATE(class)= " \
+                       "IMPLEMENT_DYNCREATE(class1, class2)= " \
+                       "IMPLEMENT_SERIAL(class1, class2, class3)= " \
+                       "DECLARE_MESSAGE_MAP()= " \
+                       TRY=try \
+                       "CATCH_ALL(e)= catch(...)" \
+                       END_CATCH_ALL= \
+                       "THROW_LAST()= throw"\
+                       "RUNTIME_CLASS(class)=class" \
+                       "MAKEINTRESOURCE(nId)=nId" \
+                       "IMPLEMENT_REGISTER(v, w, x, y, z)= " \
+                       "ASSERT(x)=assert(x)" \
+                       "ASSERT_VALID(x)=assert(x)" \
+                       "TRACE0(x)=printf(x)" \
+                       "OS_ERR(A,B)={ #A, B }" \
+                       __cplusplus \
+                       "DECLARE_OLECREATE(class)= " \
+                       "BEGIN_DISPATCH_MAP(class1, class2)= " \
+                       "BEGIN_INTERFACE_MAP(class1, class2)= " \
+                       "INTERFACE_PART(class, id, name)= " \
+                       "END_INTERFACE_MAP()=" \
+                       "DISP_FUNCTION(class, name, function, result, id)=" \
+                       "END_DISPATCH_MAP()=" \
+                       "IMPLEMENT_OLECREATE2(class, name, id1, id2, id3, id4,\
+                        id5, id6, id7, id8, id9, id10, id11)="
+
 EXPAND_AS_DEFINED      = \
-    GCTYPE \
-    GCPTRTYPE \
-    HCPTRTYPE \
+    RCPTRTYPE \
     R3PTRTYPE \
     R0PTRTYPE \
+    HCPTRTYPE \
     R3R0PTRTYPE \
     \
     ARCH_BITS \
@@ -423,7 +510,7 @@ EXPAND_AS_DEFINED      = \
     DECLCALLBACK \
     DECLCALLBACKMEMBER \
     DECLHCCALLBACKMEMBER \
-    DECLGCCALLBACKMEMBER \
+    DECLRCCALLBACKMEMBER \
     DECLR3CALLBACKMEMBER \
     DECLR0CALLBACKMEMBER \
     DECLINLINE \
@@ -432,10 +519,11 @@ EXPAND_AS_DEFINED      = \
     CTXMID \
     OTHERCTXMID \
     \
+    INPTR \
     COMSETTER \
     COMGETTER \
-    INPTR \
     STDMETHOD \
+    STDMETHOD_ \
     STDMETHODIMP \
     \
     CFGMDECL \

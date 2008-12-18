@@ -26,7 +26,7 @@
 /* Qt includes */
 #include <QMouseEvent>
 #include <QWidget>
-#include <QTextEdit>
+#include <QTextBrowser>
 
 /**
  *  Simple class that filters out all key presses and releases
@@ -104,6 +104,23 @@ public:
     void setViewportMargins (int aLeft, int aTop, int aRight, int aBottom)
     {
         QTextEdit::setViewportMargins (aLeft, aTop, aRight, aBottom);
+    }
+};
+
+/**
+ *  QTextBrowser reimplementation to feat some extended requirements.
+ */
+class QRichTextBrowser : public QTextBrowser
+{
+    Q_OBJECT;
+
+public:
+
+    QRichTextBrowser (QWidget *aParent) : QTextBrowser (aParent) {}
+
+    void setViewportMargins (int aLeft, int aTop, int aRight, int aBottom)
+    {
+        QTextBrowser::setViewportMargins (aLeft, aTop, aRight, aBottom);
     }
 };
 
@@ -193,14 +210,30 @@ QPixmap darwinCreateDragPixmap (const QPixmap& aPixmap, const QString &aText);
 
 /* Special routines for the dock handling */
 CGImageRef darwinCreateDockBadge (const char *aSource);
-void darwinUpdateDockPreview (CGImageRef aVMImage, CGImageRef aOverlayImage, CGImageRef aStateImage = NULL);
-void darwinUpdateDockPreview (VBoxFrameBuffer *aFrameBuffer, CGImageRef aOverlayImage);
+void darwinUpdateDockPreview (QWidget *aMainWindow, CGImageRef aVMImage, CGImageRef aOverlayImage, CGImageRef aStateImage = NULL);
+void darwinUpdateDockPreview (QWidget *aMainWindow, VBoxFrameBuffer *aFrameBuffer, CGImageRef aOverlayImage, CGImageRef aStateImage = NULL);
 
 /* Icons in the menu of an mac application are unusual. */
 void darwinDisableIconsInMenus();
 
+/* Enable the async resize/move handling on Mac OS X */
+void darwinEnableAsyncDragForWindow (QWidget *aWindow);
+
 /* Experimental region handler for the seamless mode */
 OSStatus darwinRegionHandler (EventHandlerCallRef aInHandlerCallRef, EventRef aInEvent, void *aInUserData);
+
+/* Handler for the OpenGL overlay window stuff & the possible messages. */
+enum
+{
+    /* Event classes */
+    kEventClassVBox        = 'vbox',
+    /* Event kinds */
+    kEventVBoxShowWindow   = 'swin',
+    kEventVBoxMoveWindow   = 'mwin',
+    kEventVBoxResizeWindow = 'rwin',
+    kEventVBoxUpdateDock   = 'udck'
+};
+OSStatus darwinOverlayWindowHandler (EventHandlerCallRef aInHandlerCallRef, EventRef aInEvent, void *aInUserData);
 
 # ifdef DEBUG
 void darwinDebugPrintEvent (const char *aPrefix, EventRef aEvent);

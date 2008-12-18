@@ -163,7 +163,7 @@ Return Value:
         I8xPrint((
             1,
             "I8042PRT-18042MouseInterruptService: reset detected in "
-            "data stream - current state is %d\n", 
+            "data stream - current state is %d\n",
             deviceExtension->MouseExtension.InputState
             ));
 
@@ -534,12 +534,12 @@ Return Value:
 
                 { // open a new scope
                 VMMDevReqMouseStatus *req = deviceExtension->reqIS;
-    
+
                 if (req)
                 {
                     int rc = VbglGRPerform (&req->header);
-                
-                    if (VBOX_SUCCESS(rc) && VBOX_SUCCESS(req->header.rc))
+
+                    if (RT_SUCCESS(rc) && RT_SUCCESS(req->header.rc))
                     {
                         if (req->mouseFeatures & VBOXGUEST_MOUSE_HOST_CAN_ABSOLUTE)
                         {
@@ -552,7 +552,7 @@ Return Value:
                     else
                     {
                         dprintf(("i8042prt: ERROR querying mouse capabilities from VMMDev."
-                                 "rc = %Vrc, VMMDev rc = %Vrc\n", rc, req->header.rc));
+                                 "rc = %Rrc, VMMDev rc = %Rrc\n", rc, req->header.rc));
                     }
                 }
                 } // close scope
@@ -600,12 +600,12 @@ Return Value:
 
                 { // open a new scope
                 VMMDevReqMouseStatus *req = deviceExtension->reqIS;
-    
+
                 if (req)
                 {
                     int rc = VbglGRPerform (&req->header);
-                
-                    if (VBOX_SUCCESS(rc) && VBOX_SUCCESS(req->header.rc))
+
+                    if (RT_SUCCESS(rc) && RT_SUCCESS(req->header.rc))
                     {
                         if (req->mouseFeatures & VBOXGUEST_MOUSE_HOST_CAN_ABSOLUTE)
                         {
@@ -618,7 +618,7 @@ Return Value:
                     else
                     {
                         dprintf(("i8042prt: ERROR querying mouse capabilities from VMMDev."
-                                 "rc = %Vrc, VMMDev rc = %Vrc\n", rc, req->header.rc));
+                                 "rc = %Rrc, VMMDev rc = %Rrc\n", rc, req->header.rc));
                     }
                 }
                 } // close scope
@@ -2058,7 +2058,7 @@ Return Value:
 #if 0 /* bird: unused */
     UCHAR buttonsDelta;
     UCHAR previousButtons;
-#endif 
+#endif
 
     //
     // If the mouse is enabled, add the data to the InputData queue

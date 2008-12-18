@@ -1,7 +1,6 @@
-/* $Id: VBoxManageSVN.cpp $ */
+/* $Id: VBoxManageSVN.cpp 14732 2008-11-27 18:44:11Z vboxsync $ */
 /** @file
- * VBox frontends: VBoxManage (command-line interface):
- * SVN revision.
+ * VBoxManage - VBoxSVNRev(), separate file to speed up the build.
  */
 
 /*
@@ -20,14 +19,16 @@
  * additional information or have any questions.
  */
 
-#include <VBox/version.h>
 #include "VBoxManage.h"
 
+#include <VBox/version.h>
+
 /**
- * Return the SVN revision number. We put this function into a separate file
- * to speed up compilation if the revision number changes. We don't put this
- * function into VBoxSVC to save the overhead of starting the server if only
- * the version number is requested.
+ * Return the SVN revision number.
+ *
+ * We put this function into a separate file to speed up compilation if the
+ * revision number changes. We don't put this function into VBoxSVC to save the
+ * overhead of starting the server if only the version number is requested.
  */
 unsigned long VBoxSVNRev()
 {

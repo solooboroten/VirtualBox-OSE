@@ -1,4 +1,4 @@
-/* $Id: thread.cpp $ */
+/* $Id: thread.cpp 14298 2008-11-18 12:47:26Z vboxsync $ */
 /** @file
  * IPRT - Threads, common routines.
  */
@@ -421,8 +421,10 @@ void rtThreadInsert(PRTTHREADINT pThread, RTNATIVETHREAD NativeThread)
 static void rtThreadRemoveLocked(PRTTHREADINT pThread)
 {
     PRTTHREADINT pThread2 = (PRTTHREADINT)RTAvlPVRemove(&g_ThreadTree, pThread->Core.Key);
+#if !defined(RT_OS_OS2) /** @todo this asserts for threads created by NSPR */
     AssertMsg(pThread2 == pThread, ("%p(%s) != %p (%p/%s)\n", pThread2, pThread2  ? pThread2->szName : "<null>",
                                     pThread, pThread->Core.Key, pThread->szName));
+#endif
     NOREF(pThread2);
 }
 
@@ -621,10 +623,10 @@ int rtThreadMain(PRTTHREADINT pThread, RTNATIVETHREAD NativeThread, const char *
      */
     int rc = rtThreadNativeSetPriority(pThread, pThread->enmType);
 #ifdef IN_RING3
-    AssertMsgRC(rc, ("Failed to set priority of thread %p (%RTnthrd / %s) to enmType=%d enmPriority=%d rc=%Vrc\n",
+    AssertMsgRC(rc, ("Failed to set priority of thread %p (%RTnthrd / %s) to enmType=%d enmPriority=%d rc=%Rrc\n",
                      pThread, NativeThread, pThread->szName, pThread->enmType, g_enmProcessPriority, rc));
 #else
-    AssertMsgRC(rc, ("Failed to set priority of thread %p (%RTnthrd / %s) to enmType=%d rc=%Vrc\n",
+    AssertMsgRC(rc, ("Failed to set priority of thread %p (%RTnthrd / %s) to enmType=%d rc=%Rrc\n",
                      pThread, NativeThread, pThread->szName, pThread->enmType, rc));
 #endif
 
@@ -713,15 +715,15 @@ RTDECL(int) RTThreadCreate(PRTTHREAD pThread, PFNRTTHREAD pfnThread, void *pvUse
     }
     else
         rc = VERR_NO_TMP_MEMORY;
-    LogFlow(("RTThreadCreate: Failed to create thread, rc=%Vrc\n", rc));
+    LogFlow(("RTThreadCreate: Failed to create thread, rc=%Rrc\n", rc));
     AssertReleaseRC(rc);
     return rc;
 }
 
 
 /**
- * Create a new thread. 
- *  
+ * Create a new thread.
+ *
  * Same as RTThreadCreate except the name is given in the RTStrPrintfV form.
  *
  * @returns iprt status code.
@@ -744,8 +746,8 @@ RTDECL(int) RTThreadCreateV(PRTTHREAD pThread, PFNRTTHREAD pfnThread, void *pvUs
 
 
 /**
- * Create a new thread. 
- *  
+ * Create a new thread.
+ *
  * Same as RTThreadCreate except the name is given in the RTStrPrintf form.
  *
  * @returns iprt status code.
@@ -1082,7 +1084,7 @@ RTDECL(int) RTThreadSetType(RTTHREAD Thread, RTTHREADTYPE enmType)
                     ASMAtomicXchgSize(&pThread->enmType, enmType);
                 RT_THREAD_UNLOCK_RW(Tmp);
                 if (RT_FAILURE(rc))
-                    Log(("RTThreadSetType: failed on thread %p (%s), rc=%Vrc!!!\n", Thread, pThread->szName, rc));
+                    Log(("RTThreadSetType: failed on thread %p (%s), rc=%Rrc!!!\n", Thread, pThread->szName, rc));
             }
             else
                 rc = VERR_THREAD_IS_DEAD;
@@ -1233,7 +1235,7 @@ RTDECL(void) RTThreadReadLockDec(RTTHREAD Thread)
 
 
 /**
- * Recalculates scheduling attributes for the the default process
+ * Recalculates scheduling attributes for the default process
  * priority using the specified priority type for the calling thread.
  *
  * The scheduling attributes are targeted at threads and they are protected
@@ -1313,7 +1315,7 @@ int rtThreadDoSetProcPriority(RTPROCPRIORITY enmPriority)
         }
     }
     RT_THREAD_UNLOCK_RW(Tmp);
-    LogFlow(("rtThreadDoSetProcPriority: returns %Vrc\n", rc));
+    LogFlow(("rtThreadDoSetProcPriority: returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1381,7 +1383,7 @@ static void rtThreadDeadlock(PRTTHREADINT pThread, PRTTHREADINT pCur, RTTHREADST
          */
         if (iEntry && pCur == pThread)
             break;
-        for (unsigned i = 0; i < ELEMENTS(apSeenThreads); i++)
+        for (unsigned i = 0; i < RT_ELEMENTS(apSeenThreads); i++)
             if (apSeenThreads[i] == pCur)
             {
                 AssertMsg2(" Cycle!\n");
@@ -1392,7 +1394,7 @@ static void rtThreadDeadlock(PRTTHREADINT pThread, PRTTHREADINT pCur, RTTHREADST
         /*
          * Advance to the next thread.
          */
-        iSeenThread = (iSeenThread + 1) % ELEMENTS(apSeenThreads);
+        iSeenThread = (iSeenThread + 1) % RT_ELEMENTS(apSeenThreads);
         apSeenThreads[iSeenThread] = pCur;
         pCur = pNext;
     }

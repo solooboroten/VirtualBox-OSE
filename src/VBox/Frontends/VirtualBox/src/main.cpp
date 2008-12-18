@@ -34,11 +34,12 @@
 #include <qlocale.h>
 #include <qtranslator.h>
 
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/stream.h>
 
 #if defined(DEBUG) && defined(Q_WS_X11) && defined(RT_OS_LINUX)
 
+#include <stdlib.h>
 #include <signal.h>
 #include <execinfo.h>
 
@@ -217,6 +218,12 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
             if (!vboxGlobal().isValid())
                 break;
 
+            /* Note: the settings conversion check must be done before
+             * anything else that can unconditionally overwrite settings files
+             * int he new format (like the license thingy below) */
+            if (!vboxGlobal().checkForAutoConvertedSettings())
+                break;
+
 #ifndef VBOX_OSE
 #ifdef Q_WS_X11
             /* show the user license file */
@@ -224,8 +231,6 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
                 break;
 #endif
 #endif
-
-            vboxGlobal().checkForAutoConvertedSettings();
 
             VBoxGlobalSettings settings = vboxGlobal().settings();
             /* Process known keys */
@@ -243,12 +248,14 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
             }
             else
             {
+                /* pre-populate the media list before showing the main widget */
+                vboxGlobal().startEnumeratingMedia();
+
                 a.setMainWidget (&vboxGlobal().selectorWnd());
                 vboxGlobal().selectorWnd().show();
 #ifdef VBOX_WITH_REGISTRATION_REQUEST
                 vboxGlobal().showRegistrationDialog (false /* aForce */);
 #endif
-                vboxGlobal().startEnumeratingMedia();
                 rc = a.exec();
             }
         }

@@ -1,4 +1,4 @@
-/* $Id: VBoxUtils-darwin.cpp $ */
+/* $Id: VBoxUtils-darwin.cpp 15586 2008-12-16 14:03:43Z vboxsync $ */
 /** @file
  * Qt GUI - Utility Classes and Functions specific to Darwin.
  */
@@ -23,6 +23,7 @@
 
 #include "VBoxUtils.h"
 #include "VBoxFrameBuffer.h"
+#include "VBoxConsoleView.h"
 
 #include <iprt/assert.h>
 #include <iprt/mem.h>
@@ -33,6 +34,8 @@
 #include <QPainter>
 #include <QApplication>
 #include <QToolBar>
+#include <QMainWindow>
+#include <QStatusBar>
 
 #if QT_VERSION < 0x040400
 extern void qt_mac_set_menubar_icons(bool b);
@@ -167,6 +170,15 @@ CGImageRef darwinCreateDockBadge (const char *aSource)
     return ::darwinToCGImageRef (&transImage);
 }
 
+/* Import private function to capture the window content of any given window. */
+CG_EXTERN_C_BEGIN
+typedef int CGSWindowID;
+typedef void *CGSConnectionID;
+CG_EXTERN CGSWindowID GetNativeWindowFromWindowRef(WindowRef ref);
+CG_EXTERN CGSConnectionID CGSMainConnectionID(void);
+CG_EXTERN void CGContextCopyWindowCaptureContentsToRect(CGContextRef c, CGRect dstRect, CGSConnectionID connection, CGSWindowID window, int zero);
+CG_EXTERN_C_END
+
 /**
  * Updates the dock preview image.
  *
@@ -176,7 +188,7 @@ CGImageRef darwinCreateDockBadge (const char *aSource)
  * @param   aOverlayImage   an optional icon overlay image to add at the bottom right of the icon
  * @param   aStateImage   an optional state overlay image to add at the center of the icon
  */
-void darwinUpdateDockPreview (CGImageRef aVMImage, CGImageRef aOverlayImage, CGImageRef aStateImage /*= NULL*/)
+void darwinUpdateDockPreview (QWidget *aMainWindow, CGImageRef aVMImage, CGImageRef aOverlayImage, CGImageRef aStateImage /*= NULL*/)
 {
     Assert (aVMImage);
 
@@ -225,6 +237,46 @@ void darwinUpdateDockPreview (CGImageRef aVMImage, CGImageRef aOverlayImage, CGI
     /* vm content */
     iconRect = CGRectInset (iconRect, 1, 1);
     CGContextDrawImage (context, iconRect, aVMImage);
+    /* Process the content of any external OpenGL windows. */
+    WindowRef w = darwinToWindowRef (aMainWindow);
+    WindowGroupRef g = GetWindowGroup (w);
+    WindowGroupContentOptions wgco = kWindowGroupContentsReturnWindows | kWindowGroupContentsRecurse | kWindowGroupContentsVisible;
+    ItemCount c = CountWindowGroupContents (g, wgco);
+    float a1 = iconRect.size.width / static_cast <float> (CGImageGetWidth (aVMImage));
+    float a2 = iconRect.size.height / static_cast <float> (CGImageGetHeight (aVMImage));
+    HIViewRef mainView = HIViewGetRoot (w);
+    Rect tmpR;
+    GetWindowBounds (w, kWindowContentRgn, &tmpR);
+    HIRect mainRect = CGRectMake (tmpR.left, tmpR.top, tmpR.right-tmpR.left, tmpR.bottom-tmpR.top);
+    for (ItemCount i = 0; i <= c; ++i)
+    {
+        WindowRef wc;
+        OSStatus status = GetIndexedWindow (g, i, wgco, &wc);
+        if (status == noErr &&
+            wc != w)
+        {
+            WindowClass winClass;
+            status = GetWindowClass (wc, &winClass);
+            if (status == noErr &&
+                winClass == kOverlayWindowClass)
+            {
+                Rect tmpR1;
+                GetWindowBounds (wc, kWindowContentRgn, &tmpR1);
+                HIRect rect;
+                rect.size.width = (tmpR1.right-tmpR1.left) * a1;
+                rect.size.height = (tmpR1.bottom-tmpR1.top) * a2;
+                rect.origin.x = iconRect.origin.x + (tmpR1.left - mainRect.origin.x) * a1;
+                rect.origin.y = targetHeight - (iconRect.origin.y + (tmpR1.top - mainRect.origin.y) * a2) - rect.size.height;
+                /* This is a big, bad hack. The following functions aren't
+                 * documented nor official supported by apple. But its the only way
+                 * to capture the OpenGL content of a window without fiddling
+                 * around with gPixelRead or something like that. */
+                CGSWindowID wid = GetNativeWindowFromWindowRef(wc);
+                CGContextCopyWindowCaptureContentsToRect(context, rect, CGSMainConnectionID(), wid, 0);
+            }
+        }
+    }
+
     /* the state image at center */
     if (aStateImage)
     {
@@ -259,7 +311,7 @@ void darwinUpdateDockPreview (CGImageRef aVMImage, CGImageRef aOverlayImage, CGI
  * @param   aFrameBuffer    The guest frame buffer.
  * @param   aOverlayImage   an optional icon overlay image to add at the bottom right of the icon
  */
-void darwinUpdateDockPreview (VBoxFrameBuffer *aFrameBuffer, CGImageRef aOverlayImage)
+void darwinUpdateDockPreview (QWidget *aMainWindow, VBoxFrameBuffer *aFrameBuffer, CGImageRef aOverlayImage, CGImageRef aStateImage /*= NULL*/)
 {
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     Assert (cs);
@@ -270,7 +322,7 @@ void darwinUpdateDockPreview (VBoxFrameBuffer *aFrameBuffer, CGImageRef aOverlay
                                    kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Host, dp, 0, false,
                                    kCGRenderingIntentDefault);
     /* Update the dock preview icon */
-    ::darwinUpdateDockPreview (ir, aOverlayImage);
+    ::darwinUpdateDockPreview (aMainWindow, ir, aOverlayImage, aStateImage);
     /* Release the temp data and image */
     CGDataProviderRelease (dp);
     CGImageRelease (ir);
@@ -314,6 +366,26 @@ void darwinDisableIconsInMenus()
     /* Available since Qt 4.4 only */
     QApplication::instance()->setAttribute (Qt::AA_DontShowIconsInMenus, true);
 #endif /* QT_VERSION >= 0x040400 */
+}
+
+
+void darwinEnableAsyncDragForWindow (QWidget *aWindow)
+{
+    /* Disabled for now, cause we didn't get any move events anymore. */
+//    WindowAttributes waGet;
+//    WindowAttributes waSet = kWindowAsyncDragAttribute | kWindowLiveResizeAttribute;
+//    GetWindowAttributes (::darwinToWindowRef (aWindow), &waGet);
+//    if ((waGet & kWindowResizableAttribute) != kWindowResizableAttribute)
+//        waSet |= kWindowResizableAttribute;
+//    ChangeWindowAttributes (::darwinToWindowRef (aWindow), waSet, kWindowNoAttributes);
+    /* Not working yet : */
+//    ReshapeCustomWindow(::darwinToWindowRef (aWindow));
+//    QMainWindow *mw = qobject_cast<QMainWindow *> (aWindow);
+//    if (mw)
+//    {
+//        aWindow->setAttribute (Qt::WA_MacOpaqueSizeGrip, false);
+//        mw->statusBar()->setSizeGripEnabled (true);
+//    }
 }
 
 /* Currently not used! */
@@ -373,7 +445,75 @@ OSStatus darwinRegionHandler (EventHandlerCallRef aInHandlerCallRef, EventRef aI
     return status;
 }
 
-/* Event debugging stuff. Borrowed from the Knuts Qt patch. */
+OSStatus darwinOverlayWindowHandler (EventHandlerCallRef aInHandlerCallRef, EventRef aInEvent, void *aInUserData)
+{
+    if (!aInUserData)
+        return ::CallNextEventHandler (aInHandlerCallRef, aInEvent);
+
+    UInt32 eventClass = ::GetEventClass (aInEvent);
+    UInt32 eventKind = ::GetEventKind (aInEvent);
+    /* For debugging events */
+    /*
+    if (!(eventClass == 'cute'))
+        ::darwinDebugPrintEvent ("view: ", aInEvent);
+    */
+    VBoxConsoleView *view = static_cast<VBoxConsoleView *> (aInUserData);
+
+    if (eventClass == kEventClassVBox)
+    {
+        if (eventKind == kEventVBoxShowWindow)
+        {
+//            printf ("ShowWindow requested\n");
+            WindowRef w;
+            if (GetEventParameter (aInEvent, kEventParamWindowRef, typeWindowRef, NULL, sizeof (w), NULL, &w) != noErr)
+                return noErr;
+            ShowWindow (w);
+            SelectWindow (w);
+            return noErr;
+        }
+        if (eventKind == kEventVBoxMoveWindow)
+        {
+//            printf ("MoveWindow requested\n");
+            WindowPtr w;
+            if (GetEventParameter (aInEvent, kEventParamWindowRef, typeWindowRef, NULL, sizeof (w), NULL, &w) != noErr)
+                return noErr;
+            HIPoint p;
+            if (GetEventParameter (aInEvent, kEventParamOrigin, typeHIPoint, NULL, sizeof (p), NULL, &p) != noErr)
+                return noErr;
+            ChangeWindowGroupAttributes (GetWindowGroup (w), 0, kWindowGroupAttrMoveTogether);
+            QPoint p1 = view->mapToGlobal (QPoint (p.x, p.y));
+            MoveWindow (w, p1.x(), p1.y(), true);
+            ChangeWindowGroupAttributes (GetWindowGroup (w), kWindowGroupAttrMoveTogether, 0);
+            return noErr;
+        }
+        if (eventKind == kEventVBoxResizeWindow)
+        {
+//            printf ("ResizeWindow requested\n");
+            WindowPtr w;
+            if (GetEventParameter (aInEvent, kEventParamWindowRef, typeWindowRef, NULL, sizeof (w), NULL, &w) != noErr)
+                return noErr;
+            HISize s;
+            if (GetEventParameter (aInEvent, kEventParamDimensions, typeHISize, NULL, sizeof (s), NULL, &s) != noErr)
+                return noErr;
+            ChangeWindowGroupAttributes (GetWindowGroup (w), 0, kWindowGroupAttrMoveTogether);
+            SizeWindow (w, s.width, s.height, true);
+            ChangeWindowGroupAttributes (GetWindowGroup (w), kWindowGroupAttrMoveTogether, 0);
+            return noErr;
+        }
+        if (eventKind == kEventVBoxUpdateDock)
+        {
+//            printf ("UpdateDock requested\n");
+            view->updateDockIcon();
+            return noErr;
+        }
+    }
+
+    return ::CallNextEventHandler (aInHandlerCallRef, aInEvent);
+}
+
+
+
+/* Event debugging stuff. Borrowed from Knuts Qt patch. */
 #ifdef DEBUG
 
 # define MY_CASE(a) case a: return #a

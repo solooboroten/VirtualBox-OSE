@@ -37,7 +37,7 @@
 
 __BEGIN_DECLS
 
-/** @defgroup grp_rt_mp RTCpuSet - CPU Set
+/** @defgroup grp_rt_cpuset RTCpuSet - CPU Set
  * @ingroup grp_rt
  * @{
  */
@@ -105,6 +105,23 @@ DECLINLINE(int) RTCpuSetDel(PRTCPUSET pSet, RTCPUID idCpu)
 {
     int iCpu = RTMpCpuIdToSetIndex(idCpu);
     if (RT_UNLIKELY(iCpu < 0))
+        return -1;
+    ASMAtomicBitClear(pSet, iCpu);
+    return 0;
+}
+
+
+/**
+ * Removes a CPU given by its index from the set.
+ *
+ * @returns 0 on success, -1 if idCpu isn't valid.
+ * @param   pSet    Pointer to the set.
+ * @param   iCpu    The index of the CPU to delete.
+ * @remarks The modification is atomic.
+ */
+DECLINLINE(int) RTCpuSetDelByIndex(PRTCPUSET pSet, int iCpu)
+{
+    if (RT_UNLIKELY((unsigned)iCpu >= RTCPUSET_MAX_CPUS))
         return -1;
     ASMAtomicBitClear(pSet, iCpu);
     return 0;

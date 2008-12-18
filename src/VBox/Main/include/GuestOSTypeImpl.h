@@ -24,6 +24,7 @@
 
 #include "VirtualBoxBase.h"
 #include "Collection.h"
+#include "Global.h"
 
 #include <VBox/ostypes.h>
 
@@ -35,7 +36,7 @@ class ATL_NO_VTABLE GuestOSType :
 {
 public:
 
-    VIRTUALBOXBASE_ADD_ERRORINFO_SUPPORT (DVDImage)
+    VIRTUALBOXBASE_ADD_ERRORINFO_SUPPORT (GuestOSType)
 
     DECLARE_NOT_AGGREGATABLE(GuestOSType)
 
@@ -54,34 +55,52 @@ public:
     void FinalRelease();
 
     // public initializer/uninitializer for internal purposes only
-    HRESULT init (const char *aId, const char *aDescription, VBOXOSTYPE aOSType,
-                  uint32_t aRAMSize, uint32_t aVRAMSize, uint32_t aHDDSize);
+    HRESULT init (const char *aFamilyId, const char *aFamilyDescription,
+                  const char *aId, const char *aDescription,
+                  VBOXOSTYPE aOSType, uint32_t aOSHint,
+                  uint32_t aRAMSize, uint32_t aVRAMSize, uint32_t aHDDSize,
+                  NetworkAdapterType_T aNetworkAdapterType);
     void uninit();
 
     // IGuestOSType properties
+    STDMETHOD(COMGETTER(FamilyId)) (BSTR *aFamilyId);
+    STDMETHOD(COMGETTER(FamilyDescription)) (BSTR *aFamilyDescription);
     STDMETHOD(COMGETTER(Id)) (BSTR *aId);
     STDMETHOD(COMGETTER(Description)) (BSTR *aDescription);
+    STDMETHOD(COMGETTER(Is64Bit)) (BOOL *aIs64Bit);
+    STDMETHOD(COMGETTER(RecommendedIOAPIC)) (BOOL *aRecommendedIOAPIC);
+    STDMETHOD(COMGETTER(RecommendedVirtEx)) (BOOL *aRecommendedVirtEx);
     STDMETHOD(COMGETTER(RecommendedRAM)) (ULONG *aRAMSize);
     STDMETHOD(COMGETTER(RecommendedVRAM)) (ULONG *aVRAMSize);
     STDMETHOD(COMGETTER(RecommendedHDD)) (ULONG *aHDDSize);
+    STDMETHOD(COMGETTER(AdapterType)) (NetworkAdapterType_T *aNetworkAdapterType);
 
     // public methods only for internal purposes
     const Bstr &id() const { return mID; }
+    bool is64Bit() const { return !!(mOSHint & VBOXOSHINT_64BIT); }
+    bool recommendedIOAPIC() const { return !!(mOSHint & VBOXOSHINT_IOAPIC); }
+    bool recommendedVirtEx() const { return !!(mOSHint & VBOXOSHINT_HWVIRTEX); }
+    NetworkAdapterType_T networkAdapterType() const { return mNetworkAdapterType; }
 
     // for VirtualBoxSupportErrorInfoImpl
     static const wchar_t *getComponentName() { return L"GuestOSType"; }
 
 private:
 
+    const Bstr mFamilyID;
+    const Bstr mFamilyDescription;
     const Bstr mID;
     const Bstr mDescription;
     const VBOXOSTYPE mOSType;
+    const uint32_t mOSHint;
     const uint32_t mRAMSize;
     const uint32_t mVRAMSize;
     const uint32_t mHDDSize;
     const uint32_t mMonitorCount;
+    const NetworkAdapterType_T mNetworkAdapterType;
 };
 
 COM_DECL_READONLY_ENUM_AND_COLLECTION (GuestOSType)
 
 #endif // ____H_GUESTOSTYPEIMPL
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

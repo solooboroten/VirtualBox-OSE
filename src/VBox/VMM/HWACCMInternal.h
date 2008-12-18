@@ -1,4 +1,4 @@
-/* $Id: HWACCMInternal.h $ */
+/* $Id: HWACCMInternal.h 15588 2008-12-16 14:20:54Z vboxsync $ */
 /** @file
  * HWACCM - Internal header file.
  */
@@ -29,16 +29,20 @@
 #include <VBox/dis.h>
 #include <VBox/hwaccm.h>
 #include <VBox/pgm.h>
+#include <VBox/cpum.h>
 #include <iprt/memobj.h>
 #include <iprt/cpuset.h>
 #include <iprt/mp.h>
 
-////#define VBOX_WITH_HWACCM_DEBUG_REGISTER_SUPPORT
-
-#if HC_ARCH_BITS == 64
+#if HC_ARCH_BITS == 64 || defined(VBOX_WITH_HYBRID_32BIT_KERNEL) || defined (VBOX_WITH_64_BITS_GUESTS)
 /* Enable 64 bits guest support. */
 # define VBOX_ENABLE_64_BITS_GUESTS
 #endif
+
+#define VMX_USE_CACHED_VMCS_ACCESSES
+#define HWACCM_VMX_EMULATE_REALMODE
+#define HWACCM_VTX_WITH_EPT
+#define HWACCM_VTX_WITH_VPID
 
 __BEGIN_DECLS
 
@@ -49,13 +53,6 @@ __BEGIN_DECLS
  * @{
  */
 
-
-/**
- * Converts a HWACCM pointer into a VM pointer.
- * @returns Pointer to the VM structure the EM is part of.
- * @param   pHWACCM   Pointer to HWACCM instance data.
- */
-#define HWACCM2VM(pHWACCM)  ( (PVM)((char*)pHWACCM - pHWACCM->offVM) )
 
 /** Maximum number of exit reason statistics counters. */
 #define MAX_EXITREASON_STAT        0x100
@@ -111,37 +108,51 @@ __BEGIN_DECLS
  *  Currently #NM and #PF only
  */
 #ifdef VBOX_STRICT
-#define HWACCM_VMX_TRAP_MASK                RT_BIT(X86_XCPT_DE) | RT_BIT(X86_XCPT_DB) | RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF) | RT_BIT(X86_XCPT_UD) | RT_BIT(X86_XCPT_NP) | RT_BIT(X86_XCPT_SS) | RT_BIT(X86_XCPT_GP) | RT_BIT(X86_XCPT_MF)
+#define HWACCM_VMX_TRAP_MASK                RT_BIT(X86_XCPT_DE) | RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF) | RT_BIT(X86_XCPT_UD) | RT_BIT(X86_XCPT_NP) | RT_BIT(X86_XCPT_SS) | RT_BIT(X86_XCPT_GP) | RT_BIT(X86_XCPT_MF)
 #define HWACCM_SVM_TRAP_MASK                HWACCM_VMX_TRAP_MASK
 #else
-#define HWACCM_VMX_TRAP_MASK                RT_BIT(X86_XCPT_DB) | RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF)
+#define HWACCM_VMX_TRAP_MASK                RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF)
 #define HWACCM_SVM_TRAP_MASK                RT_BIT(X86_XCPT_NM) | RT_BIT(X86_XCPT_PF)
 #endif
+/* All exceptions have to be intercept in emulated real-mode (minues NM & PF as they are always intercepted. */
+#define HWACCM_VMX_TRAP_MASK_REALMODE       RT_BIT(X86_XCPT_DE) | RT_BIT(X86_XCPT_DB) | RT_BIT(X86_XCPT_NMI) | RT_BIT(X86_XCPT_BP) | RT_BIT(X86_XCPT_OF) | RT_BIT(X86_XCPT_BR) | RT_BIT(X86_XCPT_UD) | RT_BIT(X86_XCPT_DF) | RT_BIT(X86_XCPT_CO_SEG_OVERRUN) | RT_BIT(X86_XCPT_TS) | RT_BIT(X86_XCPT_NP) | RT_BIT(X86_XCPT_SS) | RT_BIT(X86_XCPT_GP) | RT_BIT(X86_XCPT_MF) | RT_BIT(X86_XCPT_AC) | RT_BIT(X86_XCPT_MC) | RT_BIT(X86_XCPT_XF)
 /** @} */
 
 
 /** Maxium resume loops allowed in ring 0 (safety precaution) */
 #define HWACCM_MAX_RESUME_LOOPS             1024
 
+/** Size for the EPT identity page table (1024 4 MB pages to cover the entire address space). */
+#define HWACCM_EPT_IDENTITY_PG_TABLE_SIZE   PAGE_SIZE
+/** Size of the TSS structure + 2 pages for the IO bitmap + end byte. */
+#define HWACCM_VTX_TSS_SIZE                 (sizeof(VBOXTSS) + 2*PAGE_SIZE + 1)
+/** Total guest mapped memory needed. */
+#define HWACCM_VTX_TOTAL_DEVHEAP_MEM        (HWACCM_EPT_IDENTITY_PG_TABLE_SIZE + HWACCM_VTX_TSS_SIZE)
+
 /** HWACCM SSM version
  */
-#define HWACCM_SSM_VERSION                  3
+#define HWACCM_SSM_VERSION                  4
+#define HWACCM_SSM_VERSION_2_0_X            3
 
-/* Per-cpu information. */
+/* Per-cpu information. (host) */
 typedef struct
 {
-    RTCPUID     idCpu;
+    RTCPUID             idCpu;
 
-    RTR0MEMOBJ  pMemObj;
-    /* Current ASID (AMD-V only) */
-    uint32_t    uCurrentASID;
+    RTR0MEMOBJ          pMemObj;
+    /* Current ASID (AMD-V)/VPID (Intel) */
+    uint32_t            uCurrentASID;
     /* TLB flush count */
-    uint32_t    cTLBFlushes;
+    uint32_t            cTLBFlushes;
 
     /* Set the first time a cpu is used to make sure we start with a clean TLB. */
-    bool        fFlushTLB;
+    bool                fFlushTLB;
 
-    bool        fConfigured;
+    /** Configured for VT-x or AMD-V. */
+    bool                fConfigured;
+
+    /** In use by our code. (for power suspend) */
+    volatile bool       fInUse;
 } HWACCM_CPUINFO;
 typedef HWACCM_CPUINFO *PHWACCM_CPUINFO;
 
@@ -157,17 +168,24 @@ typedef union
 } VMX_CAPABILITY;
 
 /**
+ * Switcher function, HC to RC.
+ *
+ * @param   pVM         The VM handle.
+ * @returns Return code indicating the action to take.
+ */
+typedef DECLASMTYPE(int) FNHWACCMSWITCHERHC(PVM pVM);
+/** Pointer to switcher function. */
+typedef FNHWACCMSWITCHERHC *PFNHWACCMSWITCHERHC;
+
+/**
  * HWACCM VM Instance data.
  * Changes to this must checked against the padding of the cfgm union in VM!
  */
 typedef struct HWACCM
 {
-    /** Offset to the VM structure.
-     * See HWACCM2VM(). */
-    RTUINT                      offVM;
-
     /** Set when we've initialized VMX or SVM. */
     bool                        fInitialized;
+
     /** Set when we're using VMX/SVN at that moment. */
     bool                        fActive;
 
@@ -180,14 +198,48 @@ typedef struct HWACCM
     /** Set if nested paging is allowed. */
     bool                        fAllowNestedPaging;
 
-    /** HWACCM_CHANGED_* flags. */
-    uint32_t                    fContextUseFlags;
+    /** Set if we're supposed to inject an NMI. */
+    bool                        fInjectNMI;
 
-    /** Old style FPU reporting trap mask override performed (optimization) */
-    uint32_t                    fFPUOldStyleOverride;
+    /** Set if we can support 64-bit guests or not. */
+    bool                        fAllow64BitGuests;
+
+    /** Explicit alignment padding to make 32-bit gcc align u64RegisterMask
+     *  naturally. */
+    bool                        padding[1];
 
     /** And mask for copying register contents. */
     uint64_t                    u64RegisterMask;
+
+    /** Maximum ASID allowed. */
+    RTUINT                      uMaxASID;
+
+#if HC_ARCH_BITS == 32 && defined(VBOX_ENABLE_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+    /** 32 to 64 bits switcher entrypoint. */
+    R0PTRTYPE(PFNHWACCMSWITCHERHC) pfnHost32ToGuest64R0;
+
+    /* AMD-V 64 bits vmrun handler */
+    RTRCPTR                     pfnSVMGCVMRun64;
+
+    /* VT-x 64 bits vmlaunch handler */
+    RTRCPTR                     pfnVMXGCStartVM64;
+
+    /* RC handler to setup the 64 bits FPU state. */
+    RTRCPTR                     pfnSaveGuestFPU64;
+
+    /* RC handler to setup the 64 bits debug state. */
+    RTRCPTR                     pfnSaveGuestDebug64;
+
+# ifdef DEBUG
+    /* Test handler */
+    RTRCPTR                     pfnTest64;
+
+    RTRCPTR                     uAlignment[1];
+# endif
+#elif defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+    uint32_t                    u32Alignment[1];
+#endif
+
     struct
     {
         /** Set by the ring-0 driver to indicate VMX is supported by the CPU. */
@@ -196,22 +248,17 @@ typedef struct HWACCM
         /** Set when we've enabled VMX. */
         bool                        fEnabled;
 
-        /** Set if we can use VMXResume to execute guest code. */
-        bool                        fResumeVM;
+        /** Set if VPID is supported. */
+        bool                        fVPID;
 
-        /** R0 memory object for the VM control structure (VMCS). */
-        RTR0MEMOBJ                  pMemObjVMCS;
-        /** Physical address of the VM control structure (VMCS). */
-        RTHCPHYS                    pVMCSPhys;
-        /** Virtual address of the VM control structure (VMCS). */
-        R0PTRTYPE(void *)           pVMCS;
+        /** Set if VT-x VPID is allowed. */
+        bool                        fAllowVPID;
 
-        /** R0 memory object for the TSS page used for real mode emulation. */
-        RTR0MEMOBJ                  pMemObjRealModeTSS;
-        /** Physical address of the TSS page used for real mode emulation. */
-        RTHCPHYS                    pRealModeTSSPhys;
         /** Virtual address of the TSS page used for real mode emulation. */
-        R0PTRTYPE(PVBOXTSS)         pRealModeTSS;
+        R3PTRTYPE(PVBOXTSS)         pRealModeTSS;
+
+        /** Virtual address of the identity page table used for real mode and protected mode without paging emulation in EPT mode. */
+        R3PTRTYPE(PX86PD)           pNonPagingModeEPTPageTable;
 
         /** R0 memory object for the virtual APIC mmio cache. */
         RTR0MEMOBJ                  pMemObjAPIC;
@@ -249,18 +296,10 @@ typedef struct HWACCM
         R0PTRTYPE(uint8_t *)        pMSRExitLoad;
 
         /** Ring 0 handlers for VT-x. */
-        DECLR0CALLBACKMEMBER(int, pfnStartVM,(RTHCUINT fResume, PCPUMCTX pCtx));
+        DECLR0CALLBACKMEMBER(void, pfnSetupTaggedTLB, (PVM pVM, PVMCPU pVCpu));
 
         /** Host CR4 value (set by ring-0 VMX init) */
         uint64_t                    hostCR4;
-
-        /** Current VMX_VMCS_CTRL_PROC_EXEC_CONTROLS. */
-        uint64_t                    proc_ctls;
-
-        /** Current CR0 mask. */
-        uint64_t                    cr0_mask;
-        /** Current CR4 mask. */
-        uint64_t                    cr4_mask;
 
         /** VMX MSR values */
         struct
@@ -281,14 +320,9 @@ typedef struct HWACCM
             uint64_t                vmx_eptcaps;
         } msr;
 
-        /* Last instruction error */
-        uint32_t                    ulLastInstrError;
-
-        struct
-        {
-            uint64_t                u64VMCSPhys;
-            uint32_t                ulVMCSRevision;
-        } lasterror;
+        /** Flush types for invept & invvpid; they depend on capabilities. */
+        VMX_FLUSH                   enmFlushPage;
+        VMX_FLUSH                   enmFlushContext;
     } vmx;
 
     struct
@@ -297,28 +331,11 @@ typedef struct HWACCM
         bool                        fSupported;
         /** Set when we've enabled SVM. */
         bool                        fEnabled;
-        /** Set if we don't have to flush the TLB on VM entry. */
-        bool                        fResumeVM;
         /** Set if erratum 170 affects the AMD cpu. */
         bool                        fAlwaysFlushTLB;
-        /** Set if we need to flush the TLB during the world switch. */
-        bool                        fForceTLBFlush;
-
-        /* Id of the last cpu we were executing code on (NIL_RTCPUID for the first time) */
-        RTCPUID                     idLastCpu;
-
-        /* TLB flush count */
-        uint32_t                    cTLBFlushes;
-
-        /* Current ASID in use by the VM */
-        uint32_t                    uCurrentASID;
-
-        /** R0 memory object for the VM control block (VMCB). */
-        RTR0MEMOBJ                  pMemObjVMCB;
-        /** Physical address of the VM control block (VMCB). */
-        RTHCPHYS                    pVMCBPhys;
-        /** Virtual address of the VM control block (VMCB). */
-        R0PTRTYPE(void *)           pVMCB;
+        /** Explicit alignment padding to make 32-bit gcc align u64RegisterMask
+         *  naturally. */
+        bool                        padding[1];
 
         /** R0 memory object for the host VM control block (VMCB). */
         RTR0MEMOBJ                  pMemObjVMCBHost;
@@ -341,14 +358,8 @@ typedef struct HWACCM
         /** Virtual address of the MSR bitmap. */
         R0PTRTYPE(void *)           pMSRBitmap;
 
-        /** Ring 0 handlers for VT-x. */
-        DECLR0CALLBACKMEMBER(int, pfnVMRun,(RTHCPHYS pVMCBHostPhys, RTHCPHYS pVMCBPhys, PCPUMCTX pCtx));
-
         /** SVM revision. */
         uint32_t                    u32Rev;
-
-        /** Maximum ASID allowed. */
-        uint32_t                    u32MaxASID;
 
         /** SVM feature bits from cpuid 0x8000000a */
         uint32_t                    u32Features;
@@ -360,7 +371,163 @@ typedef struct HWACCM
         uint32_t                    u32AMDFeatureEDX;
     } cpuid;
 
-    /* Event injection state. */
+    /** Saved error from detection */
+    int32_t                 lLastError;
+
+    /** HWACCMR0Init was run */
+    bool                    fHWACCMR0Init;
+} HWACCM;
+/** Pointer to HWACCM VM instance data. */
+typedef HWACCM *PHWACCM;
+
+/* Maximum number of cached entries. */
+#define VMCSCACHE_MAX_ENTRY                             128
+
+/* Structure for storing read and write VMCS actions. */
+typedef struct VMCSCACHE
+{
+    /* Magic marker for searching in crash dumps. */
+    uint8_t         aMagic[16];
+    /* CR2 is saved here for EPT syncing. */
+    uint64_t        cr2;
+    struct
+    {
+        uint32_t    cValidEntries;
+        uint32_t    uAlignment;
+        uint32_t    aField[VMCSCACHE_MAX_ENTRY];
+        uint64_t    aFieldVal[VMCSCACHE_MAX_ENTRY];
+    } Write;
+    struct
+    {
+        uint32_t    cValidEntries;
+        uint32_t    uAlignment;
+        uint32_t    aField[VMCSCACHE_MAX_ENTRY];
+        uint64_t    aFieldVal[VMCSCACHE_MAX_ENTRY];
+    } Read;
+#ifdef DEBUG
+    struct
+    {
+        RTHCPHYS    pPageCpuPhys;
+        RTHCPHYS    pVMCSPhys;
+        RTGCPTR     pCache;
+        RTGCPTR     pCtx;
+    } TestIn;
+    struct
+    {
+        RTHCPHYS    pVMCSPhys;
+        RTGCPTR     pCache;
+        RTGCPTR     pCtx;
+        uint64_t    eflags;
+    } TestOut;
+    struct
+    {
+        uint64_t    param1;
+        uint64_t    param2;
+        uint64_t    param3;
+        uint64_t    param4;
+    } ScratchPad;
+#endif
+} VMCSCACHE;
+/** Pointer to VMCSCACHE. */
+typedef VMCSCACHE *PVMCSCACHE;
+
+/**
+ * HWACCM VMCPU Instance data.
+ */
+typedef struct HWACCMCPU
+{
+    /** Old style FPU reporting trap mask override performed (optimization) */
+    bool                        fFPUOldStyleOverride;
+
+    /** Set if we don't have to flush the TLB on VM entry. */
+    bool                        fResumeVM;
+
+    /** Set if we need to flush the TLB during the world switch. */
+    bool                        fForceTLBFlush;
+
+    /** Explicit alignment padding to make 32-bit gcc align u64RegisterMask
+     *  naturally. */
+    bool                        padding[1];
+
+    /** HWACCM_CHANGED_* flags. */
+    RTUINT                      fContextUseFlags;
+
+    /* Id of the last cpu we were executing code on (NIL_RTCPUID for the first time) */
+    RTCPUID                     idLastCpu;
+
+    /* TLB flush count */
+    RTUINT                      cTLBFlushes;
+
+    /* Current ASID in use by the VM */
+    RTUINT                      uCurrentASID;
+
+    struct
+    {
+        /** R0 memory object for the VM control structure (VMCS). */
+        RTR0MEMOBJ                  pMemObjVMCS;
+        /** Physical address of the VM control structure (VMCS). */
+        RTHCPHYS                    pVMCSPhys;
+        /** Virtual address of the VM control structure (VMCS). */
+        R0PTRTYPE(void *)           pVMCS;
+
+        /** Ring 0 handlers for VT-x. */
+        DECLR0CALLBACKMEMBER(int,  pfnStartVM,(RTHCUINT fResume, PCPUMCTX pCtx, PVMCSCACHE pCache, PVM pVM, PVMCPU pVCpu));
+
+        /** Current VMX_VMCS_CTRL_PROC_EXEC_CONTROLS. */
+        uint64_t                    proc_ctls;
+
+        /** Current CR0 mask. */
+        uint64_t                    cr0_mask;
+        /** Current CR4 mask. */
+        uint64_t                    cr4_mask;
+
+        /** Current EPTP. */
+        RTHCPHYS                    GCPhysEPTP;
+
+        /** VMCS cache. */
+        VMCSCACHE                   VMCSCache;
+
+        /** Real-mode emulation state. */
+        struct
+        {
+            X86EFLAGS                   eflags;
+            uint32_t                    fValid;
+        } RealMode;
+
+        struct
+        {
+            uint64_t                u64VMCSPhys;
+            uint32_t                ulVMCSRevision;
+            uint32_t                ulInstrError;
+            uint32_t                ulExitReason;
+            RTCPUID                 idEnteredCpu;
+            RTCPUID                 idCurrentCpu;
+            uint32_t                padding;
+        } lasterror;
+
+        /** The last seen guest paging mode (by VT-x). */
+        PGMMODE                     enmLastSeenGuestMode;
+        /** Current guest paging mode (as seen by HWACCMR3PagingModeChanged). */
+        PGMMODE                     enmCurrGuestMode;
+        /** Previous guest paging mode (as seen by HWACCMR3PagingModeChanged). */
+        PGMMODE                     enmPrevGuestMode;
+    } vmx;
+
+    struct
+    {
+        /** R0 memory object for the VM control block (VMCB). */
+        RTR0MEMOBJ                  pMemObjVMCB;
+        /** Physical address of the VM control block (VMCB). */
+        RTHCPHYS                    pVMCBPhys;
+        /** Virtual address of the VM control block (VMCB). */
+        R0PTRTYPE(void *)           pVMCB;
+
+        /** Ring 0 handlers for VT-x. */
+        DECLR0CALLBACKMEMBER(int, pfnVMRun,(RTHCPHYS pVMCBHostPhys, RTHCPHYS pVMCBPhys, PCPUMCTX pCtx, PVM pVM, PVMCPU pVCpu));
+
+    } svm;
+
+    /** Event injection state. */
     struct
     {
         uint32_t                    fPending;
@@ -368,37 +535,21 @@ typedef struct HWACCM
         uint64_t                    intInfo;
     } Event;
 
-    /** Saved error from detection */
-    int32_t                 lLastError;
-
-    /** HWACCMR0Init was run */
-    bool                    fHWACCMR0Init;
-
     /** Currenty shadow paging mode. */
     PGMMODE                 enmShadowMode;
 
-
-#ifdef VBOX_WITH_HWACCM_DEBUG_REGISTER_SUPPORT
-    struct
-    {
-        /* Saved host debug registers. */
-        uint64_t                dr0, dr1, dr2, dr3, dr6, dr7;
-        bool                    fHostDR7Saved;
-        bool                    fHostDebugRegsSaved;
-    } savedhoststate;
-#endif
-
-#ifdef VBOX_STRICT
     /** The CPU ID of the CPU currently owning the VMCS. Set in
      * HWACCMR0Enter and cleared in HWACCMR0Leave. */
     RTCPUID                 idEnteredCpu;
-# if HC_ARCH_BITS == 32
-    RTCPUID                 Alignment0;
-# endif
-#endif
 
     STAMPROFILEADV          StatEntry;
-    STAMPROFILEADV          StatExit;
+    STAMPROFILEADV          StatExit1;
+    STAMPROFILEADV          StatExit2;
+#if 1 /* temporary for tracking down darwin issues. */
+    STAMPROFILEADV          StatExit2Sub1;
+    STAMPROFILEADV          StatExit2Sub2;
+    STAMPROFILEADV          StatExit2Sub3;
+#endif
     STAMPROFILEADV          StatInGC;
 
     STAMCOUNTER             StatIntInject;
@@ -418,8 +569,8 @@ typedef struct HWACCM
     STAMCOUNTER             StatExitInvd;
     STAMCOUNTER             StatExitCpuid;
     STAMCOUNTER             StatExitRdtsc;
-    STAMCOUNTER             StatExitCRxWrite;
-    STAMCOUNTER             StatExitCRxRead;
+    STAMCOUNTER             StatExitCRxWrite[8];
+    STAMCOUNTER             StatExitCRxRead[8];
     STAMCOUNTER             StatExitDRxWrite;
     STAMCOUNTER             StatExitDRxRead;
     STAMCOUNTER             StatExitCLTS;
@@ -441,6 +592,7 @@ typedef struct HWACCM
     STAMCOUNTER             StatNoFlushTLBWorldSwitch;
     STAMCOUNTER             StatFlushTLBCRxChange;
     STAMCOUNTER             StatFlushASID;
+    STAMCOUNTER             StatFlushTLBInvlpga;
 
     STAMCOUNTER             StatSwitchGuestIrq;
     STAMCOUNTER             StatSwitchToR3;
@@ -449,44 +601,61 @@ typedef struct HWACCM
     STAMCOUNTER             StatTSCIntercept;
 
     STAMCOUNTER             StatExitReasonNPF;
-    R3PTRTYPE(PSTAMCOUNTER) pStatExitReason;
-    R0PTRTYPE(PSTAMCOUNTER) pStatExitReasonR0;
-} HWACCM;
+    STAMCOUNTER             StatDRxArmed;
+    STAMCOUNTER             StatDRxContextSwitch;
+    STAMCOUNTER             StatDRxIOCheck;
+
+
+    R3PTRTYPE(PSTAMCOUNTER) paStatExitReason;
+    R0PTRTYPE(PSTAMCOUNTER) paStatExitReasonR0;
+} HWACCMCPU;
 /** Pointer to HWACCM VM instance data. */
-typedef HWACCM *PHWACCM;
+typedef HWACCMCPU *PHWACCMCPU;
+
 
 #ifdef IN_RING0
 
-/**
- * Returns the cpu structure for the current cpu.
- * Keep in mind that there is no guarantee it will stay the same (long jumps to ring 3!!!).
- *
- * @returns cpu structure pointer
- * @param   pVM         The VM to operate on.
- */
-HWACCMR0DECL(PHWACCM_CPUINFO) HWACCMR0GetCurrentCpu();
+VMMR0DECL(PHWACCM_CPUINFO) HWACCMR0GetCurrentCpu();
+VMMR0DECL(PHWACCM_CPUINFO) HWACCMR0GetCurrentCpuEx(RTCPUID idCpu);
+
 
 #ifdef VBOX_STRICT
-HWACCMR0DECL(void) HWACCMDumpRegs(PVM pVM, PCPUMCTX pCtx);
-HWACCMR0DECL(void) HWACCMR0DumpDescriptor(PX86DESCHC  Desc, RTSEL Sel, const char *pszMsg);
+VMMR0DECL(void) HWACCMDumpRegs(PVM pVM, PCPUMCTX pCtx);
+VMMR0DECL(void) HWACCMR0DumpDescriptor(PX86DESCHC  Desc, RTSEL Sel, const char *pszMsg);
 #else
 #define HWACCMDumpRegs(a, b)                do { } while (0)
 #define HWACCMR0DumpDescriptor(a, b, c)     do { } while (0)
 #endif
 
 /* Dummy callback handlers. */
-HWACCMR0DECL(int) HWACCMR0DummyEnter(PVM pVM, PHWACCM_CPUINFO pCpu);
-HWACCMR0DECL(int) HWACCMR0DummyLeave(PVM pVM);
-HWACCMR0DECL(int) HWACCMR0DummyEnableCpu(PHWACCM_CPUINFO pCpu, PVM pVM, void *pvPageCpu, RTHCPHYS pPageCpuPhys);
-HWACCMR0DECL(int) HWACCMR0DummyDisableCpu(PHWACCM_CPUINFO pCpu, void *pvPageCpu, RTHCPHYS pPageCpuPhys);
-HWACCMR0DECL(int) HWACCMR0DummyInitVM(PVM pVM);
-HWACCMR0DECL(int) HWACCMR0DummyTermVM(PVM pVM);
-HWACCMR0DECL(int) HWACCMR0DummySetupVM(PVM pVM);
-HWACCMR0DECL(int) HWACCMR0DummyRunGuestCode(PVM pVM, CPUMCTX *pCtx);
-HWACCMR0DECL(int) HWACCMR0DummySaveHostState(PVM pVM);
-HWACCMR0DECL(int) HWACCMR0DummyLoadGuestState(PVM pVM, CPUMCTX *pCtx);
+VMMR0DECL(int) HWACCMR0DummyEnter(PVM pVM, PVMCPU pVCpu, PHWACCM_CPUINFO pCpu);
+VMMR0DECL(int) HWACCMR0DummyLeave(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
+VMMR0DECL(int) HWACCMR0DummyEnableCpu(PHWACCM_CPUINFO pCpu, PVM pVM, void *pvPageCpu, RTHCPHYS pPageCpuPhys);
+VMMR0DECL(int) HWACCMR0DummyDisableCpu(PHWACCM_CPUINFO pCpu, void *pvPageCpu, RTHCPHYS pPageCpuPhys);
+VMMR0DECL(int) HWACCMR0DummyInitVM(PVM pVM);
+VMMR0DECL(int) HWACCMR0DummyTermVM(PVM pVM);
+VMMR0DECL(int) HWACCMR0DummySetupVM(PVM pVM);
+VMMR0DECL(int) HWACCMR0DummyRunGuestCode(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
+VMMR0DECL(int) HWACCMR0DummySaveHostState(PVM pVM, PVMCPU pVCpu);
+VMMR0DECL(int) HWACCMR0DummyLoadGuestState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
 
-#endif
+
+# ifdef VBOX_WITH_HYBRID_32BIT_KERNEL
+/**
+ * Gets 64-bit GDTR and IDTR on darwin.
+ * @param  pGdtr        Where to store the 64-bit GDTR.
+ * @param  pIdtr        Where to store the 64-bit IDTR.
+ */
+DECLASM(void) hwaccmR0Get64bitGDTRandIDTR(PX86XDTR64 pGdtr, PX86XDTR64 pIdtr);
+
+/**
+ * Gets 64-bit CR3 on darwin.
+ * @returns CR3
+ */
+DECLASM(uint64_t) hwaccmR0Get64bitCR3(void);
+# endif
+
+#endif /* IN_RING0 */
 
 /** @} */
 

@@ -1,10 +1,12 @@
+/* $Id: SystemPropertiesImpl.cpp 15051 2008-12-05 17:20:00Z vboxsync $ */
+
 /** @file
  *
  * VirtualBox COM class implementation
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2008 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -38,6 +40,8 @@
 // constructor / destructor
 /////////////////////////////////////////////////////////////////////////////
 
+DEFINE_EMPTY_CTOR_DTOR (SystemProperties)
+
 HRESULT SystemProperties::FinalConstruct()
 {
     return S_OK;
@@ -45,8 +49,7 @@ HRESULT SystemProperties::FinalConstruct()
 
 void SystemProperties::FinalRelease()
 {
-    if (isReady())
-        uninit ();
+    uninit ();
 }
 
 // public methods only for internal purposes
@@ -59,24 +62,59 @@ void SystemProperties::FinalRelease()
  */
 HRESULT SystemProperties::init (VirtualBox *aParent)
 {
-    LogFlowMember (("SystemProperties::init()\n"));
+    LogFlowThisFunc (("aParent=%p\n", aParent));
 
     ComAssertRet (aParent, E_FAIL);
 
-    AutoWriteLock alock (this);
-    ComAssertRet (!isReady(), E_UNEXPECTED);
+    /* Enclose the state transition NotReady->InInit->Ready */
+    AutoInitSpan autoInitSpan (this);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
-    mParent = aParent;
+    unconst (mParent) = aParent;
 
-    setDefaultVDIFolder (NULL);
     setDefaultMachineFolder (NULL);
+    setDefaultHardDiskFolder (NULL);
+    setDefaultHardDiskFormat (NULL);
+
     setRemoteDisplayAuthLibrary (NULL);
 
     mHWVirtExEnabled = false;
     mLogHistoryCount = 3;
 
-    setReady(true);
-    return S_OK;
+    HRESULT rc = S_OK;
+
+    /* Fetch info of all available hd backends. */
+
+    /// @todo NEWMEDIA VDBackendInfo needs to be improved to let us enumerate
+    /// any number of backends
+
+    /// @todo We currently leak memory because it's not actually clear what to
+    /// free in structures returned by VDBackendInfo. Must be fixed ASAP!
+
+    VDBACKENDINFO aVDInfo [100];
+    unsigned cEntries;
+    int vrc = VDBackendInfo (RT_ELEMENTS (aVDInfo), aVDInfo, &cEntries);
+    AssertRC (vrc);
+    if (RT_SUCCESS (vrc))
+    {
+        for (unsigned i = 0; i < cEntries; ++ i)
+        {
+            ComObjPtr <HardDiskFormat> hdf;
+            rc = hdf.createObject();
+            CheckComRCBreakRC (rc);
+
+            rc = hdf->init (&aVDInfo [i]);
+            CheckComRCBreakRC (rc);
+
+            mHardDiskFormats.push_back (hdf);
+        }
+    }
+
+    /* Confirm a successful initialization */
+    if (SUCCEEDED (rc))
+        autoInitSpan.setSucceeded();
+
+    return rc;
 }
 
 /**
@@ -85,12 +123,14 @@ HRESULT SystemProperties::init (VirtualBox *aParent)
  */
 void SystemProperties::uninit()
 {
-    LogFlowMember (("SystemProperties::uninit()\n"));
+    LogFlowThisFunc (("\n"));
 
-    AutoWriteLock alock (this);
-    AssertReturn (isReady(), (void) 0);
+    /* Enclose the state transition Ready->InUninit->NotReady */
+    AutoUninitSpan autoUninitSpan (this);
+    if (autoUninitSpan.uninitDone())
+        return;
 
-    setReady (false);
+    unconst (mParent).setNull();
 }
 
 // ISystemProperties properties
@@ -101,9 +141,11 @@ STDMETHODIMP SystemProperties::COMGETTER(MinGuestRAM)(ULONG *minRAM)
 {
     if (!minRAM)
         return E_POINTER;
-    AutoWriteLock alock (this);
-    CHECK_READY();
 
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* no need to lock, this is const */
     *minRAM = SchemaDefs::MinGuestRAM;
 
     return S_OK;
@@ -113,9 +155,11 @@ STDMETHODIMP SystemProperties::COMGETTER(MaxGuestRAM)(ULONG *maxRAM)
 {
     if (!maxRAM)
         return E_POINTER;
-    AutoWriteLock alock (this);
-    CHECK_READY();
 
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* no need to lock, this is const */
     *maxRAM = SchemaDefs::MaxGuestRAM;
 
     return S_OK;
@@ -125,9 +169,11 @@ STDMETHODIMP SystemProperties::COMGETTER(MinGuestVRAM)(ULONG *minVRAM)
 {
     if (!minVRAM)
         return E_POINTER;
-    AutoWriteLock alock (this);
-    CHECK_READY();
 
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* no need to lock, this is const */
     *minVRAM = SchemaDefs::MinGuestVRAM;
 
     return S_OK;
@@ -137,9 +183,11 @@ STDMETHODIMP SystemProperties::COMGETTER(MaxGuestVRAM)(ULONG *maxVRAM)
 {
     if (!maxVRAM)
         return E_POINTER;
-    AutoWriteLock alock (this);
-    CHECK_READY();
 
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* no need to lock, this is const */
     *maxVRAM = SchemaDefs::MaxGuestVRAM;
 
     return S_OK;
@@ -149,9 +197,11 @@ STDMETHODIMP SystemProperties::COMGETTER(MaxGuestMonitors)(ULONG *maxMonitors)
 {
     if (!maxMonitors)
         return E_POINTER;
-    AutoWriteLock alock (this);
-    CHECK_READY();
 
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* no need to lock, this is const */
     *maxMonitors = SchemaDefs::MaxGuestMonitors;
 
     return S_OK;
@@ -161,8 +211,9 @@ STDMETHODIMP SystemProperties::COMGETTER(MaxVDISize)(ULONG64 *maxVDISize)
 {
     if (!maxVDISize)
         return E_POINTER;
-    AutoWriteLock alock (this);
-    CHECK_READY();
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
 
     /** The BIOS supports currently 32 bit LBA numbers (implementing the full
      * 48 bit range is in theory trivial, but the crappy compiler makes things
@@ -173,6 +224,7 @@ STDMETHODIMP SystemProperties::COMGETTER(MaxVDISize)(ULONG64 *maxVDISize)
      * example iSCSI is also currently limited to 32 bit LBA), so the
      * theoretical maximum disk size is 128 PiByte. The user interface cannot
      * cope with this in a reasonable way yet. */
+    /* no need to lock, this is const */
     *maxVDISize = 2048 * 1024 - 1;
 
     return S_OK;
@@ -182,9 +234,11 @@ STDMETHODIMP SystemProperties::COMGETTER(NetworkAdapterCount)(ULONG *count)
 {
     if (!count)
         return E_POINTER;
-    AutoWriteLock alock (this);
-    CHECK_READY();
 
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* no need to lock, this is const */
     *count = SchemaDefs::NetworkAdapterCount;
 
     return S_OK;
@@ -194,9 +248,11 @@ STDMETHODIMP SystemProperties::COMGETTER(SerialPortCount)(ULONG *count)
 {
     if (!count)
         return E_POINTER;
-    AutoWriteLock alock (this);
-    CHECK_READY();
 
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* no need to lock, this is const */
     *count = SchemaDefs::SerialPortCount;
 
     return S_OK;
@@ -206,9 +262,11 @@ STDMETHODIMP SystemProperties::COMGETTER(ParallelPortCount)(ULONG *count)
 {
     if (!count)
         return E_POINTER;
-    AutoWriteLock alock (this);
-    CHECK_READY();
 
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* no need to lock, this is const */
     *count = SchemaDefs::ParallelPortCount;
 
     return S_OK;
@@ -216,118 +274,177 @@ STDMETHODIMP SystemProperties::COMGETTER(ParallelPortCount)(ULONG *count)
 
 STDMETHODIMP SystemProperties::COMGETTER(MaxBootPosition)(ULONG *aMaxBootPosition)
 {
-    if (!aMaxBootPosition)
-        return E_POINTER;
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    CheckComArgOutPointerValid(aMaxBootPosition);
 
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* no need to lock, this is const */
     *aMaxBootPosition = SchemaDefs::MaxBootPosition;
 
     return S_OK;
 }
 
-STDMETHODIMP SystemProperties::COMGETTER(DefaultVDIFolder) (BSTR *aDefaultVDIFolder)
-{
-    if (!aDefaultVDIFolder)
-        return E_POINTER;
-
-    AutoWriteLock alock (this);
-    CHECK_READY();
-
-    mDefaultVDIFolderFull.cloneTo (aDefaultVDIFolder);
-
-    return S_OK;
-}
-
-STDMETHODIMP SystemProperties::COMSETTER(DefaultVDIFolder) (INPTR BSTR aDefaultVDIFolder)
-{
-    AutoWriteLock alock (this);
-    CHECK_READY();
-
-    HRESULT rc = setDefaultVDIFolder (aDefaultVDIFolder);
-    if (FAILED (rc))
-        return rc;
-
-    alock.unlock();
-    return mParent->saveSettings();
-}
-
 STDMETHODIMP SystemProperties::COMGETTER(DefaultMachineFolder) (BSTR *aDefaultMachineFolder)
 {
-    if (!aDefaultMachineFolder)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aDefaultMachineFolder);
 
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
 
     mDefaultMachineFolderFull.cloneTo (aDefaultMachineFolder);
 
     return S_OK;
 }
 
-STDMETHODIMP SystemProperties::COMSETTER(DefaultMachineFolder) (INPTR BSTR aDefaultMachineFolder)
+STDMETHODIMP SystemProperties::COMSETTER(DefaultMachineFolder) (IN_BSTR aDefaultMachineFolder)
 {
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* VirtualBox::saveSettings() needs a write lock */
+    AutoMultiWriteLock2 alock (mParent, this);
 
     HRESULT rc = setDefaultMachineFolder (aDefaultMachineFolder);
-    if (FAILED (rc))
-        return rc;
+    if (SUCCEEDED (rc))
+        rc = mParent->saveSettings();
 
-    alock.unlock();
-    return mParent->saveSettings();
+    return rc;
+}
+
+STDMETHODIMP SystemProperties::COMGETTER(DefaultHardDiskFolder) (BSTR *aDefaultHardDiskFolder)
+{
+    CheckComArgOutPointerValid(aDefaultHardDiskFolder);
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
+
+    mDefaultHardDiskFolderFull.cloneTo (aDefaultHardDiskFolder);
+
+    return S_OK;
+}
+
+STDMETHODIMP SystemProperties::COMSETTER(DefaultHardDiskFolder) (IN_BSTR aDefaultHardDiskFolder)
+{
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* VirtualBox::saveSettings() needs a write lock */
+    AutoMultiWriteLock2 alock (mParent, this);
+
+    HRESULT rc = setDefaultHardDiskFolder (aDefaultHardDiskFolder);
+    if (SUCCEEDED (rc))
+        rc = mParent->saveSettings();
+
+    return rc;
+}
+
+STDMETHODIMP SystemProperties::
+COMGETTER(HardDiskFormats) (ComSafeArrayOut (IHardDiskFormat *, aHardDiskFormats))
+{
+    if (ComSafeArrayOutIsNull (aHardDiskFormats))
+        return E_POINTER;
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
+
+    SafeIfaceArray <IHardDiskFormat> hardDiskFormats (mHardDiskFormats);
+    hardDiskFormats.detachTo (ComSafeArrayOutArg (aHardDiskFormats));
+
+    return S_OK;
+}
+
+STDMETHODIMP SystemProperties::COMGETTER(DefaultHardDiskFormat) (BSTR *aDefaultHardDiskFormat)
+{
+    CheckComArgOutPointerValid(aDefaultHardDiskFormat);
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
+
+    mDefaultHardDiskFormat.cloneTo (aDefaultHardDiskFormat);
+
+    return S_OK;
+}
+
+STDMETHODIMP SystemProperties::COMSETTER(DefaultHardDiskFormat) (IN_BSTR aDefaultHardDiskFormat)
+{
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* VirtualBox::saveSettings() needs a write lock */
+    AutoMultiWriteLock2 alock (mParent, this);
+
+    HRESULT rc = setDefaultHardDiskFormat (aDefaultHardDiskFormat);
+    if (SUCCEEDED (rc))
+        rc = mParent->saveSettings();
+
+    return rc;
 }
 
 STDMETHODIMP SystemProperties::COMGETTER(RemoteDisplayAuthLibrary) (BSTR *aRemoteDisplayAuthLibrary)
 {
-    if (!aRemoteDisplayAuthLibrary)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aRemoteDisplayAuthLibrary);
 
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
 
     mRemoteDisplayAuthLibrary.cloneTo (aRemoteDisplayAuthLibrary);
 
     return S_OK;
 }
 
-STDMETHODIMP SystemProperties::COMSETTER(RemoteDisplayAuthLibrary) (INPTR BSTR aRemoteDisplayAuthLibrary)
+STDMETHODIMP SystemProperties::COMSETTER(RemoteDisplayAuthLibrary) (IN_BSTR aRemoteDisplayAuthLibrary)
 {
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* VirtualBox::saveSettings() needs a write lock */
+    AutoMultiWriteLock2 alock (mParent, this);
 
     HRESULT rc = setRemoteDisplayAuthLibrary (aRemoteDisplayAuthLibrary);
-    if (FAILED (rc))
-        return rc;
+    if (SUCCEEDED (rc))
+        rc = mParent->saveSettings();
 
-    alock.unlock();
-    return mParent->saveSettings();
+    return rc;
 }
 
 STDMETHODIMP SystemProperties::COMGETTER(WebServiceAuthLibrary) (BSTR *aWebServiceAuthLibrary)
 {
-    if (!aWebServiceAuthLibrary)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aWebServiceAuthLibrary);
 
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
 
     mWebServiceAuthLibrary.cloneTo (aWebServiceAuthLibrary);
 
     return S_OK;
 }
 
-STDMETHODIMP SystemProperties::COMSETTER(WebServiceAuthLibrary) (INPTR BSTR aWebServiceAuthLibrary)
+STDMETHODIMP SystemProperties::COMSETTER(WebServiceAuthLibrary) (IN_BSTR aWebServiceAuthLibrary)
 {
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* VirtualBox::saveSettings() needs a write lock */
+    AutoMultiWriteLock2 alock (mParent, this);
 
     HRESULT rc = setWebServiceAuthLibrary (aWebServiceAuthLibrary);
-    if (FAILED (rc))
-        return rc;
+    if (SUCCEEDED (rc))
+        rc = mParent->saveSettings();
 
-    alock.unlock();
-    return mParent->saveSettings();
+    return rc;
 }
 
 STDMETHODIMP SystemProperties::COMGETTER(HWVirtExEnabled) (BOOL *enabled)
@@ -335,8 +452,10 @@ STDMETHODIMP SystemProperties::COMGETTER(HWVirtExEnabled) (BOOL *enabled)
     if (!enabled)
         return E_POINTER;
 
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
 
     *enabled = mHWVirtExEnabled;
 
@@ -345,13 +464,17 @@ STDMETHODIMP SystemProperties::COMGETTER(HWVirtExEnabled) (BOOL *enabled)
 
 STDMETHODIMP SystemProperties::COMSETTER(HWVirtExEnabled) (BOOL enabled)
 {
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* VirtualBox::saveSettings() needs a write lock */
+    AutoMultiWriteLock2 alock (mParent, this);
 
     mHWVirtExEnabled = enabled;
 
-    alock.unlock();
-    return mParent->saveSettings();
+    HRESULT rc = mParent->saveSettings();
+
+    return rc;
 }
 
 STDMETHODIMP SystemProperties::COMGETTER(LogHistoryCount) (ULONG *count)
@@ -359,8 +482,10 @@ STDMETHODIMP SystemProperties::COMGETTER(LogHistoryCount) (ULONG *count)
     if (!count)
         return E_POINTER;
 
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
 
     *count = mLogHistoryCount;
 
@@ -369,13 +494,17 @@ STDMETHODIMP SystemProperties::COMGETTER(LogHistoryCount) (ULONG *count)
 
 STDMETHODIMP SystemProperties::COMSETTER(LogHistoryCount) (ULONG count)
 {
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* VirtualBox::saveSettings() needs a write lock */
+    AutoMultiWriteLock2 alock (mParent, this);
 
     mLogHistoryCount = count;
 
-    alock.unlock();
-    return mParent->saveSettings();
+    HRESULT rc = mParent->saveSettings();
+
+    return rc;
 }
 
 // public methods only for internal purposes
@@ -385,8 +514,10 @@ HRESULT SystemProperties::loadSettings (const settings::Key &aGlobal)
 {
     using namespace settings;
 
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
     AutoWriteLock alock (this);
-    CHECK_READY();
 
     AssertReturn (!aGlobal.isNull(), E_FAIL);
 
@@ -396,12 +527,16 @@ HRESULT SystemProperties::loadSettings (const settings::Key &aGlobal)
 
     Bstr bstr;
 
-    bstr = properties.stringValue ("defaultVDIFolder");
-    rc = setDefaultVDIFolder (bstr);
-    CheckComRCReturnRC (rc);
-
     bstr = properties.stringValue ("defaultMachineFolder");
     rc = setDefaultMachineFolder (bstr);
+    CheckComRCReturnRC (rc);
+
+    bstr = properties.stringValue ("defaultHardDiskFolder");
+    rc = setDefaultHardDiskFolder (bstr);
+    CheckComRCReturnRC (rc);
+
+    bstr = properties.stringValue ("defaultHardDiskFormat");
+    rc = setDefaultHardDiskFormat (bstr);
     CheckComRCReturnRC (rc);
 
     bstr = properties.stringValue ("remoteDisplayAuthLibrary");
@@ -424,8 +559,10 @@ HRESULT SystemProperties::saveSettings (settings::Key &aGlobal)
 {
     using namespace settings;
 
-    AutoWriteLock alock (this);
-    CHECK_READY();
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
 
     ComAssertRet (!aGlobal.isNull(), E_FAIL);
 
@@ -436,11 +573,14 @@ HRESULT SystemProperties::saveSettings (settings::Key &aGlobal)
     /* then, recreate it */
     properties = aGlobal.createKey ("SystemProperties");
 
-    if (mDefaultVDIFolder)
-        properties.setValue <Bstr> ("defaultVDIFolder", mDefaultVDIFolder);
-
     if (mDefaultMachineFolder)
         properties.setValue <Bstr> ("defaultMachineFolder", mDefaultMachineFolder);
+
+    if (mDefaultHardDiskFolder)
+        properties.setValue <Bstr> ("defaultHardDiskFolder", mDefaultHardDiskFolder);
+
+    if (mDefaultHardDiskFormat)
+        properties.setValue <Bstr> ("defaultHardDiskFormat", mDefaultHardDiskFormat);
 
     if (mRemoteDisplayAuthLibrary)
         properties.setValue <Bstr> ("remoteDisplayAuthLibrary", mRemoteDisplayAuthLibrary);
@@ -455,32 +595,42 @@ HRESULT SystemProperties::saveSettings (settings::Key &aGlobal)
     return S_OK;
 }
 
+/**
+ * Rerurns a hard disk format object corresponding to the given format
+ * identifier or null if no such format.
+ *
+ * @param aFormat   Format identifier.
+ *
+ * @return ComObjPtr<HardDiskFormat>
+ */
+ComObjPtr <HardDiskFormat> SystemProperties::hardDiskFormat (CBSTR aFormat)
+{
+    ComObjPtr <HardDiskFormat> format;
+
+    AutoCaller autoCaller (this);
+    AssertComRCReturn (autoCaller.rc(), format);
+
+    AutoReadLock alock (this);
+
+    for (HardDiskFormatList::const_iterator it = mHardDiskFormats.begin();
+         it != mHardDiskFormats.end(); ++ it)
+    {
+        /* HardDiskFormat is all const, no need to lock */
+
+        if ((*it)->id() == aFormat)
+        {
+            format = *it;
+            break;
+        }
+    }
+
+    return format;
+}
+
 // private methods
 /////////////////////////////////////////////////////////////////////////////
 
-HRESULT SystemProperties::setDefaultVDIFolder (const BSTR aPath)
-{
-    Utf8Str path;
-    if (aPath && *aPath)
-        path = aPath;
-    else
-        path = "VDI";
-
-    // get the full file name
-    char folder [RTPATH_MAX];
-    int vrc = RTPathAbsEx (mParent->homeDir(), path, folder, sizeof (folder));
-    if (VBOX_FAILURE (vrc))
-        return setError (E_FAIL,
-            tr ("Cannot set the default VDI folder to '%ls' (%Vrc)"),
-            path.raw(), vrc);
-
-    mDefaultVDIFolder = path;
-    mDefaultVDIFolderFull = folder;
-
-    return S_OK;
-}
-
-HRESULT SystemProperties::setDefaultMachineFolder (const BSTR aPath)
+HRESULT SystemProperties::setDefaultMachineFolder (CBSTR aPath)
 {
     Utf8Str path;
     if (aPath && *aPath)
@@ -488,12 +638,12 @@ HRESULT SystemProperties::setDefaultMachineFolder (const BSTR aPath)
     else
         path = "Machines";
 
-    // get the full file name
-    char folder [RTPATH_MAX];
-    int vrc = RTPathAbsEx (mParent->homeDir(), path, folder, sizeof (folder));
-    if (VBOX_FAILURE (vrc))
+    /* get the full file name */
+    Utf8Str folder;
+    int vrc = mParent->calculateFullPath (path, folder);
+    if (RT_FAILURE (vrc))
         return setError (E_FAIL,
-            tr ("Cannot set the default machines folder to '%ls' (%Vrc)"),
+            tr ("Invalid default machine folder '%ls' (%Rrc)"),
             path.raw(), vrc);
 
     mDefaultMachineFolder = path;
@@ -502,28 +652,55 @@ HRESULT SystemProperties::setDefaultMachineFolder (const BSTR aPath)
     return S_OK;
 }
 
-HRESULT SystemProperties::setRemoteDisplayAuthLibrary (const BSTR aPath)
+HRESULT SystemProperties::setDefaultHardDiskFolder (CBSTR aPath)
 {
     Utf8Str path;
     if (aPath && *aPath)
         path = aPath;
     else
-        path = "VRDPAuth";
+        path = "HardDisks";
 
-    mRemoteDisplayAuthLibrary = path;
+    /* get the full file name */
+    Utf8Str folder;
+    int vrc = mParent->calculateFullPath (path, folder);
+    if (RT_FAILURE (vrc))
+        return setError (E_FAIL,
+            tr ("Invalid default hard disk folder '%ls' (%Rrc)"),
+            path.raw(), vrc);
+
+    mDefaultHardDiskFolder = path;
+    mDefaultHardDiskFolderFull = folder;
 
     return S_OK;
 }
 
-HRESULT SystemProperties::setWebServiceAuthLibrary (const BSTR aPath)
+HRESULT SystemProperties::setDefaultHardDiskFormat (CBSTR aFormat)
 {
-    Utf8Str path;
-    if (aPath && *aPath)
-        path = aPath;
+    if (aFormat && *aFormat)
+        mDefaultHardDiskFormat = aFormat;
     else
-        path = "VRDPAuth";
-
-    mWebServiceAuthLibrary = path;
+        mDefaultHardDiskFormat = "VDI";
 
     return S_OK;
 }
+
+HRESULT SystemProperties::setRemoteDisplayAuthLibrary (CBSTR aPath)
+{
+    if (aPath && *aPath)
+        mRemoteDisplayAuthLibrary = aPath;
+    else
+        mRemoteDisplayAuthLibrary = "VRDPAuth";
+
+    return S_OK;
+}
+
+HRESULT SystemProperties::setWebServiceAuthLibrary (CBSTR aPath)
+{
+    if (aPath && *aPath)
+        mWebServiceAuthLibrary = aPath;
+    else
+        mWebServiceAuthLibrary = "VRDPAuth";
+
+    return S_OK;
+}
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

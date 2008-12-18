@@ -153,9 +153,11 @@
  *  note
 -->
 <xsl:template match="desc/note">
-  <xsl:text>&#x0A;@note </xsl:text>
-  <xsl:apply-templates/>
-  <xsl:text>&#x0A;</xsl:text>
+  <xsl:if test="not(@internal='yes')">
+    <xsl:text>&#x0A;@note </xsl:text>
+    <xsl:apply-templates/>
+    <xsl:text>&#x0A;</xsl:text>
+  </xsl:if>
 </xsl:template>
 
 <!--
@@ -167,14 +169,76 @@
   <xsl:text>&#x0A;</xsl:text>
 </xsl:template>
 
+
+<!--
+ *  common comment prologue (handles group IDs)
+-->
+<xsl:template match="desc" mode="begin">
+  <xsl:param name="id" select="@group | preceding::descGroup[1]/@id"/>
+  <xsl:text>/**&#x0A;</xsl:text>
+  <xsl:if test="$id">
+    <xsl:value-of select="concat(' @ingroup ',$id,'&#x0A;')"/>
+  </xsl:if>
+</xsl:template>
+
+<!--
+ *  common brief comment prologue (handles group IDs)
+-->
+<xsl:template match="desc" mode="begin_brief">
+  <xsl:param name="id" select="@group | preceding::descGroup[1]/@id"/>
+  <xsl:text>/**&#x0A;</xsl:text>
+  <xsl:if test="$id">
+    <xsl:value-of select="concat(' @ingroup ',$id,'&#x0A;')"/>
+  </xsl:if>
+  <xsl:text> @brief&#x0A;</xsl:text>
+</xsl:template>
+
+<!--
+ *  common middle part of the comment block
+-->
+<xsl:template match="desc" mode="middle">
+  <xsl:apply-templates select="text() | *[not(self::note or self::see)]"/>
+  <xsl:apply-templates select="note"/>
+  <xsl:apply-templates select="see"/>
+</xsl:template>
+
+<!--
+ *  result part of the comment block
+-->
+<xsl:template match="desc" mode="results">
+  <xsl:if test="result">
+    <xsl:text>
+      @par Expected result codes:
+    </xsl:text>
+      <table>
+    <xsl:for-each select="result">
+      <tr>
+        <xsl:choose>
+          <xsl:when test="ancestor::library/result[@name=current()/@name]">
+            <td><xsl:value-of select=
+                  "concat('@link ::',@name,' ',@name,' @endlink')"/></td>
+          </xsl:when>
+          <xsl:otherwise>
+            <td><xsl:value-of select="@name"/></td>
+          </xsl:otherwise>
+        </xsl:choose>
+        <td>
+          <xsl:apply-templates select="text() | *[not(self::note or self::see or
+                                                  self::result)]"/>
+        </td>
+      </tr>
+    </xsl:for-each>
+      </table>
+  </xsl:if>
+</xsl:template>
+
+
 <!--
  *  comment for interfaces
 -->
 <xsl:template match="interface/desc">
-  <xsl:text>/**&#x0A;</xsl:text>
-  <xsl:apply-templates select="text() | *[not(self::note or self::see)]"/>
-  <xsl:apply-templates select="note"/>
-  <xsl:apply-templates select="see"/>
+  <xsl:apply-templates select="." mode="begin"/>
+  <xsl:apply-templates select="." mode="middle"/>
 @par Interface ID:
 <tt>{<xsl:call-template name="uppercase">
     <xsl:with-param name="str" select="../@uuid"/>
@@ -186,8 +250,9 @@
  *  comment for attributes
 -->
 <xsl:template match="attribute/desc">
-  <xsl:text>/**&#x0A;</xsl:text>
-  <xsl:apply-templates select="text() | *[not(self::note or self::see)]"/>
+  <xsl:apply-templates select="." mode="begin"/>
+  <xsl:apply-templates select="text() | *[not(self::note or self::see or self::result)]"/>
+  <xsl:apply-templates select="." mode="results"/>
   <xsl:apply-templates select="note"/>
   <xsl:if test="../@mod='ptr'">
     <xsl:text>
@@ -205,17 +270,18 @@ owns the object will most likely fail or crash your application.
  *  comment for methods
 -->
 <xsl:template match="method/desc">
-  <xsl:text>/**&#x0A;</xsl:text>
-  <xsl:apply-templates select="text() | *[not(self::note or self::see)]"/>
+  <xsl:apply-templates select="." mode="begin"/>
+  <xsl:apply-templates select="text() | *[not(self::note or self::see or self::result)]"/>
   <xsl:for-each select="../param">
     <xsl:apply-templates select="desc"/>
   </xsl:for-each>
+  <xsl:apply-templates select="." mode="results"/>
   <xsl:apply-templates select="note"/>
   <xsl:apply-templates select="../param/desc/note"/>
   <xsl:if test="../param/@mod='ptr'">
     <xsl:text>
 
-@warning This method is non-scriptable. In particluar, this also means that an
+@warning This method is non-scriptable. In particular, this also means that an
 attempt to call it from a process other than the process that has created and
 owns the object will most likely fail or crash your application.
 </xsl:text>
@@ -236,13 +302,11 @@ owns the object will most likely fail or crash your application.
 </xsl:template>
 
 <!--
- *  comment for interfaces
+ *  comment for enums
 -->
 <xsl:template match="enum/desc">
-  <xsl:text>/**&#x0A;</xsl:text>
-  <xsl:apply-templates select="text() | *[not(self::note or self::see)]"/>
-  <xsl:apply-templates select="note"/>
-  <xsl:apply-templates select="see"/>
+  <xsl:apply-templates select="." mode="begin"/>
+  <xsl:apply-templates select="." mode="middle"/>
 @par Interface ID:
 <tt>{<xsl:call-template name="uppercase">
     <xsl:with-param name="str" select="../@uuid"/>
@@ -254,12 +318,24 @@ owns the object will most likely fail or crash your application.
  *  comment for enum values
 -->
 <xsl:template match="enum/const/desc">
-  <xsl:text>/** @brief </xsl:text>
-  <xsl:apply-templates select="text() | *[not(self::note or self::see)]"/>
-  <xsl:apply-templates select="note"/>
-  <xsl:apply-templates select="see"/>
+  <xsl:apply-templates select="." mode="begin_brief"/>
+  <xsl:apply-templates select="." mode="middle"/>
   <xsl:text>&#x0A;*/&#x0A;</xsl:text>
 </xsl:template>
+
+<!--
+ *  comment for result codes
+-->
+<xsl:template match="result/desc">
+  <xsl:apply-templates select="." mode="begin_brief"/>
+  <xsl:apply-templates select="." mode="middle"/>
+  <xsl:text>&#x0A;*/&#x0A;</xsl:text>
+</xsl:template>
+
+<!--
+ *  ignore descGroups by default (processed in /idl)
+-->
+<xsl:template match="descGroup"/>
 
 <!--
 //  templates
@@ -274,7 +350,7 @@ owns the object will most likely fail or crash your application.
 /*
  *  DO NOT EDIT! This is a generated file.
  *
- *  Doxygen IDL definition for VirualBox Main API (COM interfaces)
+ *  Doxygen IDL definition for VirtualBox Main API (COM interfaces)
  *  generated from XIDL (XML interface definition).
  *
  *  Source    : src/VBox/Main/idl/VirtualBox.xidl
@@ -287,46 +363,23 @@ owns the object will most likely fail or crash your application.
  *  DO NOT USE THIS HEADER IN ANY OTHER WAY!
  */
 
-/** @mainpage
- *
- *  Welcome to the <b>VirtualBox Main documentation.</b> This describes the
- *  so-called VirtualBox "Main API", which comprises all public COM interfaces
- *  and components provided by the VirtualBox server and by the VirtualBox client
- *  library.
- *
- *  VirtualBox employs a client-server design, meaning that whenever any part of
- *  VirtualBox is running -- be it the Qt GUI, the VBoxManage command-line
- *  interface or any virtual machine --, a background server process named
- *  VBoxSVC runs in the background. This allows multiple processes to cooperate
- *  without conflicts. Some of the COM objects described by this Main documentation
- *  "live" in that server process, others "live" in the local client process. In
- *  any case, processes that use the Main API are using inter-process communication
- *  to communicate with these objects, but the details of this are hidden by the COM API.
- *
- *  On Windows platforms, the VirtualBox Main API uses Microsoft COM, a native COM
- *  implementation. On all other platforms, Mozilla XPCOM, an open-source COM
- *  implementation, is used.
- *
- *  All the parts that a typical VirtualBox user interacts with (the Qt GUI,
- *  the VBoxManage command-line interface and the VBoxVRDP server) are technically
- *  front-ends to the Main API and only use the interfaces that are documented
- *  in this Main API documentation. This ensures that, with any given release
- *  version of VirtualBox, all capabilities of the product that could be useful
- *  to an external client program are always exposed by way of this API.
- *
- *  The complete API is described in a source IDL file, called VirtualBox.idl.
- *  This contains all public interfaces exposed by the Main API. Two interfaces
- *  are of supreme importance and will be needed in order for any front-end program
- *  to do anything useful: these are IVirtualBox and ISession. It is recommended
- *  to read the documentation of these interfaces first.
- *
- *  @note VirtualBox.idl is automatically generated from a generic internal file
- *  to define all interfaces in a platform-independent way for documentation
- *  purposes. This generated file is not a syntactically valid IDL file and
- *  <i>must not</i> be used for programming.
- */
-  <xsl:text>&#x0A;</xsl:text>
-  <xsl:apply-templates/>
+  <!-- general description -->
+  <xsl:text>/** @mainpage &#x0A;</xsl:text>
+  <xsl:apply-templates select="desc" mode="middle"/>
+  <xsl:text>&#x0A;*/&#x0A;</xsl:text>
+
+  <!-- group (module) definitions -->
+  <xsl:for-each select="//descGroup">
+    <xsl:if test="@id and (@title or desc)">
+      <xsl:value-of select="concat('/** @defgroup ',@id,' ',@title)"/>
+      <xsl:apply-templates select="desc" mode="middle"/>
+      <xsl:text>&#x0A;*/&#x0A;</xsl:text>
+    </xsl:if>
+  </xsl:for-each>
+
+  <!-- everything else -->
+  <xsl:apply-templates select="*[not(self::desc)]"/>
+
 </xsl:template>
 
 
@@ -362,10 +415,27 @@ owns the object will most likely fail or crash your application.
  *  libraries
 -->
 <xsl:template match="library">
+  <!-- result codes -->
+  <xsl:for-each select="result">
+    <xsl:apply-templates select="."/>
+  </xsl:for-each>
   <!-- all enums go first -->
   <xsl:apply-templates select="enum | if/enum"/>
-  <!-- everything else but enums -->
-  <xsl:apply-templates select="*[not(self::enum) and not(self::if[enum])]"/>
+  <!-- everything else but result codes and enums -->
+  <xsl:apply-templates select="*[not(self::result or self::enum) and
+                                 not(self::if[result] or self::if[enum])]"/>
+</xsl:template>
+
+
+<!--
+ *  result codes
+-->
+<xsl:template match="result">
+  <xsl:apply-templates select="@if" mode="begin"/>
+  <xsl:apply-templates select="desc"/>
+  <xsl:value-of select="concat('const HRESULT ',@name,' = ',@value,';')"/>
+  <xsl:text>&#x0A;</xsl:text>
+  <xsl:apply-templates select="@if" mode="end"/>
 </xsl:template>
 
 
@@ -520,6 +590,8 @@ owns the object will most likely fail or crash your application.
   <xsl:for-each select="const">
     <xsl:apply-templates select="desc"/>
     <xsl:text>    </xsl:text>
+    <xsl:value-of select="../@name"/>
+    <xsl:text>_</xsl:text>
     <xsl:value-of select="@name"/> = <xsl:value-of select="@value"/>
     <xsl:text>,&#x0A;</xsl:text>
   </xsl:for-each>
@@ -604,7 +676,7 @@ owns the object will most likely fail or crash your application.
           <xsl:choose>
             <!-- standard types -->
             <!--xsl:when test=".='result'">??</xsl:when-->
-            <xsl:when test=".='boolean'">booeanPtr</xsl:when>
+            <xsl:when test=".='boolean'">booleanPtr</xsl:when>
             <xsl:when test=".='octet'">octetPtr</xsl:when>
             <xsl:when test=".='short'">shortPtr</xsl:when>
             <xsl:when test=".='unsigned short'">ushortPtr</xsl:when>
@@ -631,7 +703,7 @@ owns the object will most likely fail or crash your application.
           <xsl:message terminate="yes">
             <xsl:value-of select="concat(../../../@name,'::',../../@name,'::',../@name,': ')"/>
             <xsl:value-of select="concat('value &quot;',../@mod,'&quot; ')"/>
-            <xsl:text>of attibute 'mod' is invalid!</xsl:text>
+            <xsl:text>of attribute 'mod' is invalid!</xsl:text>
           </xsl:message>
         </xsl:otherwise>
       </xsl:choose>

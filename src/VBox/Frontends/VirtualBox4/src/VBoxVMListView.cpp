@@ -22,6 +22,7 @@
 
 #include "VBoxVMListView.h"
 #include "VBoxProblemReporter.h"
+#include "VBoxSelectorWnd.h"
 
 /* Qt includes */
 #include <QPainter>
@@ -133,8 +134,8 @@ static WId FindWindowIdFromPid (ULONG aPid)
 
 #endif
 
-VBoxVMItem::VBoxVMItem (const CMachine &aM)
-    : mMachine (aM)
+VBoxVMItem::VBoxVMItem (const CMachine &aMachine)
+    : mMachine (aMachine)
 {
     recache();
 }
@@ -148,7 +149,8 @@ VBoxVMItem::~VBoxVMItem()
 
 QString VBoxVMItem::sessionStateName() const
 {
-    return mAccessible ? vboxGlobal().toString (mState) : VBoxVMListView::tr ("Inaccessible");
+    return mAccessible ? vboxGlobal().toString (mState) :
+           VBoxVMListView::tr ("Inaccessible");
 }
 
 QString VBoxVMItem::toolTipText() const
@@ -198,6 +200,7 @@ bool VBoxVMItem::recache()
     if (mAccessible)
     {
         QString name = mMachine.GetName();
+
         CSnapshot snp = mMachine.GetCurrentSnapshot();
         mSnapshotName = snp.isNull() ? QString::null : snp.GetName();
         needsResort = name != mName;
@@ -456,6 +459,11 @@ VBoxVMItem *VBoxVMModel::itemById (const QUuid &aId) const
     return NULL;
 }
 
+VBoxVMItem *VBoxVMModel::itemByRow (int aRow) const
+{
+    return mVMItemList.at (aRow);
+}
+
 QModelIndex VBoxVMModel::indexById (const QUuid &aId) const
 {
     int row = rowById (aId);
@@ -487,12 +495,12 @@ void VBoxVMModel::sort (int /* aColumn */, Qt::SortOrder aOrder /* = Qt::Ascendi
     emit layoutChanged();
 }
 
-int VBoxVMModel::rowCount(const QModelIndex & /* aParent = QModelIndex() */) const
+int VBoxVMModel::rowCount (const QModelIndex & /* aParent = QModelIndex() */) const
 {
     return mVMItemList.count();
 }
 
-QVariant VBoxVMModel::data(const QModelIndex &aIndex, int aRole) const
+QVariant VBoxVMModel::data (const QModelIndex &aIndex, int aRole) const
 {
     if (!aIndex.isValid())
         return QVariant();
@@ -504,77 +512,77 @@ QVariant VBoxVMModel::data(const QModelIndex &aIndex, int aRole) const
     switch (aRole)
     {
         case Qt::DisplayRole:
-            {
-                v = mVMItemList.at (aIndex.row())->name();
-                break;
-            }
+        {
+            v = mVMItemList.at (aIndex.row())->name();
+            break;
+        }
         case Qt::DecorationRole:
-            {
-                v = mVMItemList.at (aIndex.row())->osIcon();
-                break;
-            }
+        {
+            v = mVMItemList.at (aIndex.row())->osIcon();
+            break;
+        }
         case Qt::ToolTipRole:
-            {
-                v = mVMItemList.at (aIndex.row())->toolTipText();
-                break;
-            }
+        {
+            v = mVMItemList.at (aIndex.row())->toolTipText();
+            break;
+        }
         case Qt::FontRole:
-            {
-                QFont f = qApp->font();
-                f.setPointSize (f.pointSize() + 1);
-                f.setWeight (QFont::Bold);
-                v = f;
-                break;
-            }
+        {
+            QFont f = qApp->font();
+            f.setPointSize (f.pointSize() + 1);
+            f.setWeight (QFont::Bold);
+            v = f;
+            break;
+        }
         case Qt::AccessibleTextRole:
-            {
-                VBoxVMItem *item = mVMItemList.at (aIndex.row());
-                v = QString ("%1 (%2)\n%3")
-                             .arg (item->name())
-                             .arg (item->snapshotName())
-                             .arg (item->sessionStateName());
-                break;
-            }
+        {
+            VBoxVMItem *item = mVMItemList.at (aIndex.row());
+            v = QString ("%1 (%2)\n%3")
+                         .arg (item->name())
+                         .arg (item->snapshotName())
+                         .arg (item->sessionStateName());
+            break;
+        }
         case SnapShotDisplayRole:
-            {
-                v = mVMItemList.at (aIndex.row())->snapshotName();
-                break;
-            }
+        {
+            v = mVMItemList.at (aIndex.row())->snapshotName();
+            break;
+        }
         case SnapShotFontRole:
-            {
-                QFont f = qApp->font();
-                v = f;
-                break;
-            }
+        {
+            QFont f = qApp->font();
+            v = f;
+            break;
+        }
         case SessionStateDisplayRole:
-            {
-                v = mVMItemList.at (aIndex.row())->sessionStateName();
-                break;
-            }
+        {
+            v = mVMItemList.at (aIndex.row())->sessionStateName();
+            break;
+        }
         case SessionStateDecorationRole:
-            {
-                v = mVMItemList.at (aIndex.row())->sessionStateIcon();
-                break;
-            }
+        {
+            v = mVMItemList.at (aIndex.row())->sessionStateIcon();
+            break;
+        }
         case SessionStateFontRole:
-            {
-                QFont f = qApp->font();
-                f.setPointSize (f.pointSize());
-                if (mVMItemList.at (aIndex.row())->sessionState() != KSessionState_Closed)
-                    f.setItalic (true);
-                v = f;
-                break;
-            }
+        {
+            QFont f = qApp->font();
+            f.setPointSize (f.pointSize());
+            if (mVMItemList.at (aIndex.row())->sessionState() != KSessionState_Closed)
+                f.setItalic (true);
+            v = f;
+            break;
+        }
         case VBoxVMItemPtrRole:
-            {
-                v = qVariantFromValue (mVMItemList.at (aIndex.row()));
-            }
+        {
+            v = qVariantFromValue (mVMItemList.at (aIndex.row()));
+        }
     }
     return v;
 }
 
-QVariant VBoxVMModel::headerData(int /*aSection*/, Qt::Orientation /*aOrientation*/,
-                                 int /*aRole = Qt::DisplayRole */) const
+QVariant VBoxVMModel::headerData (int /*aSection*/, Qt::Orientation /*aOrientation*/,
+                                  int /*aRole = Qt::DisplayRole */) const
 {
     return QVariant();
 }
@@ -599,13 +607,15 @@ VBoxVMListView::VBoxVMListView (QWidget *aParent /* = 0 */)
     :QIListView (aParent)
 {
     /* Create & set our delegation class */
-    VBoxVMItemPainter *delegate = new VBoxVMItemPainter(this);
-    setItemDelegate(delegate);
+    VBoxVMItemPainter *delegate = new VBoxVMItemPainter (this);
+    setItemDelegate (delegate);
     /* Default icon size */
     setIconSize (QSize (32, 32));
     /* Publish the activation of items */
     connect (this, SIGNAL (activated (const QModelIndex &)),
-             this, SIGNAL (activated ()));
+             this, SIGNAL (activated()));
+    /* Use the correct policy for the context menu */
+    setContextMenuPolicy (Qt::CustomContextMenu);
 }
 
 void VBoxVMListView::selectItemByRow (int row)
@@ -615,7 +625,7 @@ void VBoxVMListView::selectItemByRow (int row)
 
 void VBoxVMListView::selectItemById (const QUuid &aID)
 {
-    if (VBoxVMModel *m = qobject_cast<VBoxVMModel*> (model()))
+    if (VBoxVMModel *m = qobject_cast <VBoxVMModel*> (model()))
     {
         QModelIndex i = m->indexById (aID);
         if (i.isValid())
@@ -626,7 +636,7 @@ void VBoxVMListView::selectItemById (const QUuid &aID)
 void VBoxVMListView::ensureSomeRowSelected (int aRowHint)
 {
     VBoxVMItem *item = selectedItem();
-    if(!item)
+    if (!item)
     {
         aRowHint = qBound (0, aRowHint, model()->rowCount() - 1);
         selectItemByRow (aRowHint);
@@ -641,7 +651,7 @@ VBoxVMItem * VBoxVMListView::selectedItem() const
     QModelIndexList indexes = selectedIndexes();
     if (indexes.isEmpty())
         return NULL;
-    return model()->data (indexes.first(), VBoxVMModel::VBoxVMItemPtrRole).value<VBoxVMItem *>();
+    return model()->data (indexes.first(), VBoxVMModel::VBoxVMItemPtrRole).value <VBoxVMItem *>();
 }
 
 void VBoxVMListView::ensureCurrentVisible()
@@ -671,22 +681,6 @@ void VBoxVMListView::dataChanged (const QModelIndex &aTopLeft, const QModelIndex
     selectCurrent();
     ensureCurrentVisible();
     emit currentChanged();
-}
-
-void VBoxVMListView::mousePressEvent (QMouseEvent *aEvent)
-{
-    /* First process event, in the case the user select a new item */
-    QListView::mousePressEvent (aEvent);
-    if (aEvent->button() == Qt::RightButton)
-    {
-        /* Send a context menu request if necessary */
-        const QModelIndex &index = indexAt (aEvent->pos());
-        if (index.isValid())
-        {
-            VBoxVMItem *item = model()->data (index, VBoxVMModel::VBoxVMItemPtrRole).value<VBoxVMItem *>();
-            emit contextMenuRequested (item, aEvent->globalPos());
-        }
-    }
 }
 
 bool VBoxVMListView::selectCurrent()

@@ -1,4 +1,4 @@
-/* $Id: the-linux-kernel.h $ */
+/* $Id: the-linux-kernel.h 12360 2008-09-10 15:02:01Z vboxsync $ */
 /** @file
  * IPRT - Include all necessary headers for the Linux kernel.
  */

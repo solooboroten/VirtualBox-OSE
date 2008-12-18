@@ -30,7 +30,7 @@
 #ifndef ___VBox_pdmins_h
 #define ___VBox_pdmins_h
 
-/** @defgroup grp_pdm_ins       Common Instance Macros
+/** @defgroup grp_pdm_ins       Common PDM Instance Macros
  * @ingroup grp_pdm
  * @{
  */
@@ -38,7 +38,7 @@
 /** @def PDMBOTHCBDECL
  * Macro for declaring a callback which is static in HC and exported in GC.
  */
-#if defined(IN_GC) || defined(IN_RING0)
+#if defined(IN_RC) || defined(IN_RING0)
 # define PDMBOTHCBDECL(type)    DECLEXPORT(type)
 #else
 # define PDMBOTHCBDECL(type)    static type
@@ -49,17 +49,17 @@
  */
 #define PDMINS_2_DATA(pIns, type)   ( (type)(void *)&(pIns)->achInstanceData[0] )
 
-/** @def PDMINS2DATA_RCPTR
+/** @def PDMINS_2_DATA_RCPTR
  * Converts a PDM Device, USB Device, or Driver instance pointer to a RC pointer to the instance data.
  */
-#define PDMINS_2_DATA_RCPTR(pIns)   ( (pIns)->pvInstanceDataGC )
+#define PDMINS_2_DATA_RCPTR(pIns)   ( (pIns)->pvInstanceDataRC )
 
-/** @def PDMINS2DATA_R3PTR
+/** @def PDMINS_2_DATA_R3PTR
  * Converts a PDM Device, USB Device, or Driver instance pointer to a HC pointer to the instance data.
  */
 #define PDMINS_2_DATA_R3PTR(pIns)   ( (pIns)->pvInstanceDataR3 )
 
-/** @def PDMINS2DATA_R0PTR
+/** @def PDMINS_2_DATA_R0PTR
  * Converts a PDM Device, USB Device, or Driver instance pointer to a R0 pointer to the instance data.
  */
 #define PDMINS_2_DATA_R0PTR(pIns)   ( (pIns)->pvInstanceDataR0 )

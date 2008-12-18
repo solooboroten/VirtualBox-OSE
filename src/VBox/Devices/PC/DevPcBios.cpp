@@ -1,4 +1,4 @@
-/* $Id: DevPcBios.cpp $ */
+/* $Id: DevPcBios.cpp 15366 2008-12-12 13:50:32Z vboxsync $ */
 /** @file
  * PC BIOS Device.
  */
@@ -45,54 +45,56 @@
  * The BIOS uses a CMOS to store configuration data.
  * It is currently used as follows:
  *
+ * @verbatim
+    Base memory:
+         0x15
+         0x16
+    Extended memory:
+         0x17
+         0x18
+         0x30
+         0x31
+    Amount of memory above 16M:
+         0x34
+         0x35
+    Boot device (BOCHS bios specific):
+         0x3d
+         0x38
+         0x3c
+    PXE debug:
+         0x3f
+    Floppy drive type:
+         0x10
+    Equipment byte:
+         0x14
+    First HDD:
+         0x19
+         0x1e - 0x25
+    Second HDD:
+         0x1a
+         0x26 - 0x2d
+    Third HDD:
+         0x67 - 0x6e
+    Fourth HDD:
+         0x70 - 0x77
+    Extended:
+         0x12
+    First Sata HDD:
+         0x40 - 0x47
+    Second Sata HDD:
+         0x48 - 0x4f
+    Third Sata HDD:
+         0x50 - 0x57
+    Fourth Sata HDD:
+         0x58 - 0x5f
+    Number of CPUs:
+         0x60
+    RAM above 4G (in 64M units):
+         0x61 - 0x63
+@endverbatim
+ *
  * @todo Mark which bits are compatible with which BIOSes and
  *       which are our own definitions.
- *
- *     Base memory:
- *          0x15
- *          0x16
- *     Extended memory:
- *          0x17
- *          0x18
- *          0x30
- *          0x31
- *     Amount of memory above 16M:
- *          0x34
- *          0x35
- *     Boot device (BOCHS bios specific):
- *          0x3d
- *          0x38
- *          0x3c
- *     PXE debug:
- *          0x3f
- *     Floppy drive type:
- *          0x10
- *     Equipment byte:
- *          0x14
- *     First HDD:
- *          0x19
- *          0x1e - 0x25
- *     Second HDD:
- *          0x1a
- *          0x26 - 0x2d
- *     Third HDD:
- *          0x67 - 0x6e
- *     Fourth HDD:
- *          0x70 - 0x77
- *     Extended:
- *          0x12
- *     First Sata HDD:
- *          0x40 - 0x47
- *     Second Sata HDD:
- *          0x48 - 0x4f
- *     Third Sata HDD:
- *          0x50 - 0x57
- *     Fourth Sata HDD:
- *          0x58 - 0x5f
- *     Number of CPUs:
- *          0x60
- *     RAM above 4G (in 64M units):
- *          0x61 - 0x63
  *
  * @todo r=bird: Is the 0x61 - 0x63 range defined by AMI,
  *       PHOENIX or AWARD? If not I'd say 64MB units is a bit
@@ -102,9 +104,9 @@
  *       although for them position in CMOS is different:
  *         0x5b - 0x5c: RAM above 4G
  *         0x5f: number of CPUs
- *        Unfortunately for us those positions in our CMOS are already taken 
- *        by 4th SATA drive configuration. 
- *         
+ *        Unfortunately for us those positions in our CMOS are already taken
+ *        by 4th SATA drive configuration.
+ *
  */
 
 
@@ -455,9 +457,14 @@ static int setLogicalDiskGeometry(PPDMIBASE pBase, PPDMIBLOCKBIOS pHardDisk, PPD
 
         }
         rc = pHardDisk->pfnSetLCHSGeometry(pHardDisk, &LCHSGeometry);
-        if (rc == VERR_VDI_IMAGE_READ_ONLY)
+        if (rc == VERR_VD_IMAGE_READ_ONLY)
         {
-            LogRel(("DevPcBios: ATA failed to update LCHS geometry\n"));
+            LogRel(("DevPcBios: ATA failed to update LCHS geometry, read only\n"));
+            rc = VINF_SUCCESS;
+        }
+        else if (rc == VERR_PDM_GEOMETRY_NOT_SET)
+        {
+            LogRel(("DevPcBios: ATA failed to update LCHS geometry, backend refused\n"));
             rc = VINF_SUCCESS;
         }
     }
@@ -516,7 +523,7 @@ static DECLCALLBACK(int) pcbiosInitComplete(PPDMDEVINS pDevIns)
     /*
      * Memory sizes.
      */
-#if VBOX_WITH_SMP_GUESTS
+#ifdef VBOX_WITH_MORE_THAN_4GB
     uint64_t cKBRam = pThis->cbRam / _1K;
     uint64_t cKBAbove4GB = 0;
     uint32_t cKBBelow4GB = cKBRam;
@@ -1141,7 +1148,7 @@ static void pcbiosPlantMPStable(PPDMDEVINS pDevIns, uint8_t *pTable, uint16_t nu
     }
 #ifdef VBOX_WITH_SMP_GUESTS
     PMPSPROCENTRY pProcEntry       = (PMPSPROCENTRY)(pCfgTab+1);
-    for (int i = 0; i<numCpus; i++) 
+    for (int i = 0; i<numCpus; i++)
     {
       pProcEntry->u8EntryType        = 0; /* processor entry */
       pProcEntry->u8LocalApicId      = i;
@@ -1396,9 +1403,9 @@ static DECLCALLBACK(int)  pcbiosConstruct(PPDMDEVINS pDevIns, int iInstance, PCF
                                 N_("Configuration error: Querying \"NumCPUs\" as integer failed"));
 
 #ifdef VBOX_WITH_SMP_GUESTS
-    pThis->cCpus = 2;
-    LogRel(("Running with %d CPUs\n", pThis->cCpus));
+    LogRel(("[SMP] BIOS with %d CPUs\n", pThis->cCpus));
 #else
+    /* @todo: move this check up in configuration chain */
     if (pThis->cCpus != 1)
     {
         LogRel(("WARNING: guest SMP not supported in this build, going UP\n"));
@@ -1754,7 +1761,7 @@ const PDMDEVREG g_DevicePcBios =
     PDM_DEVREG_VERSION,
     /* szDeviceName */
     "pcbios",
-    /* szGCMod */
+    /* szRCMod */
     "",
     /* szR0Mod */
     "",
@@ -1791,6 +1798,12 @@ const PDMDEVREG g_DevicePcBios =
     /* pfnQueryInterface. */
     NULL,
     /* pfnInitComplete. */
-    pcbiosInitComplete
+    pcbiosInitComplete,
+    /* pfnPowerOff */
+    NULL,
+    /* pfnSoftReset */
+    NULL,
+    /* u32VersionEnd */
+    PDM_DEVREG_VERSION
 };
 

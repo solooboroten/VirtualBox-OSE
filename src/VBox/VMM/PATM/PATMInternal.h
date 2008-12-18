@@ -1,4 +1,4 @@
-/* $Id: PATMInternal.h $ */
+/* $Id: PATMInternal.h 13832 2008-11-05 02:01:12Z vboxsync $ */
 /** @file
  * PATM - Internal header file.
  */
@@ -32,9 +32,6 @@
 #include <iprt/param.h>
 #include <VBox/log.h>
 
-#if !defined(IN_PATM_R3) && !defined(IN_PATM_R0) && !defined(IN_PATM_GC)
-# error "Not in PATM! This is an internal header!"
-#endif
 
 
 #ifdef PATM_WITH_NEW_SSM
@@ -78,6 +75,7 @@
 #define PATMFL_MUST_INSTALL_PATCHJMP        RT_BIT_64(31) /** Need to patch guest code in order to activate patch. */
 #define PATMFL_INT3_REPLACEMENT_BLOCK       RT_BIT_64(32) /** int 3 replacement block */
 #define PATMFL_EXTERNAL_JUMP_INSIDE         RT_BIT_64(33) /** A trampoline patch was created that jumps to an instruction in the patch block */
+#define PATMFL_CODE_REFERENCED              RT_BIT_64(34) /** patch block referenced (called, jumped to) by another patch. */
 
 #define SIZEOF_NEARJUMP8                   2 //opcode byte + 1 byte relative offset
 #define SIZEOF_NEARJUMP16                  3 //opcode byte + 2 byte relative offset
@@ -637,7 +635,7 @@ R3PTRTYPE(uint8_t *) PATMGCVirtToHCVirt(PVM pVM, PPATCHINFO pPatch, RCPTRTYPE(ui
  * @param   pInstrGC    Guest context point to the instruction
  *
  */
-PATMDECL(PPATMPATCHREC) PATMQueryFunctionPatch(PVM pVM, RTRCPTR pInstrGC);
+VMMDECL(PPATMPATCHREC) PATMQueryFunctionPatch(PVM pVM, RTRCPTR pInstrGC);
 
 
 /**
@@ -666,7 +664,7 @@ void patmEmptyTreeU32(PVM pVM, PPAVLU32NODECORE ppTree);
  * @param   opcode      DIS instruction opcode
  * @param   fPatchFlags Patch flags
  */
-PATMDECL(const char *) patmGetInstructionString(uint32_t opcode, uint32_t fPatchFlags);
+VMMDECL(const char *) patmGetInstructionString(uint32_t opcode, uint32_t fPatchFlags);
 
 
 /**
@@ -682,7 +680,7 @@ PATMDECL(const char *) patmGetInstructionString(uint32_t opcode, uint32_t fPatch
 int patmReadBytes(RTUINTPTR pSrc, uint8_t *pDest, unsigned size, void *pvUserdata);
 
 
-#ifndef IN_GC
+#ifndef IN_RC
 
 #define PATMREAD_RAWCODE        1  /* read code as-is */
 #define PATMREAD_ORGCODE        2  /* read original guest opcode bytes; not the patched bytes */
@@ -712,9 +710,9 @@ inline bool PATMR3DISInstr(PVM pVM, PPATCHINFO pPatch, DISCPUSTATE *pCpu, RTRCPT
     disinfo.fReadFlags = fReadFlags;
     (pCpu)->pfnReadBytes  = patmReadBytes;
     (pCpu)->apvUserData[0] = &disinfo;
-    return VBOX_SUCCESS(DISInstr(pCpu, InstrGC, 0, pOpsize, pszOutput));
+    return RT_SUCCESS(DISInstr(pCpu, InstrGC, 0, pOpsize, pszOutput));
 }
-#endif /* !IN_GC */
+#endif /* !IN_RC */
 
 __BEGIN_DECLS
 /**
@@ -729,7 +727,7 @@ __BEGIN_DECLS
  * @param   offRange    The offset of the access into this range.
  *                      (If it's a EIP range this's the EIP, if not it's pvFault.)
  */
-PATMGCDECL(int) PATMGCMonitorPage(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
+VMMRCDECL(int) PATMGCMonitorPage(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange);
 
 /**
  * Find patch for privileged instruction at specified location
@@ -756,7 +754,7 @@ PPATCHINFO PATMFindActivePatchByEntrypoint(PVM pVM, RTRCPTR pInstrGC, bool fIncl
  * @note    returns failure if patching is not allowed or possible
  *
  */
-PATMR3DECL(int) PATMR3PatchBlock(PVM pVM, RTRCPTR pInstrGC, R3PTRTYPE(uint8_t *) pInstrHC,
+VMMR3DECL(int) PATMR3PatchBlock(PVM pVM, RTRCPTR pInstrGC, R3PTRTYPE(uint8_t *) pInstrHC,
                                  uint32_t uOpcode, uint32_t uOpSize, PPATMPATCHREC pPatchRec);
 
 
@@ -773,7 +771,7 @@ PATMR3DECL(int) PATMR3PatchBlock(PVM pVM, RTRCPTR pInstrGC, R3PTRTYPE(uint8_t *)
  * @note    returns failure if patching is not allowed or possible
  *
  */
-PATMR3DECL(int) PATMR3PatchInstrInt3(PVM pVM, RTRCPTR pInstrGC, R3PTRTYPE(uint8_t *) pInstrHC, DISCPUSTATE *pCpu, PPATCHINFO pPatch);
+VMMR3DECL(int) PATMR3PatchInstrInt3(PVM pVM, RTRCPTR pInstrGC, R3PTRTYPE(uint8_t *) pInstrHC, DISCPUSTATE *pCpu, PPATCHINFO pPatch);
 
 /**
  * Mark patch as dirty
@@ -785,7 +783,7 @@ PATMR3DECL(int) PATMR3PatchInstrInt3(PVM pVM, RTRCPTR pInstrGC, R3PTRTYPE(uint8_
  * @note    returns failure if patching is not allowed or possible
  *
  */
-PATMR3DECL(int) PATMR3MarkDirtyPatch(PVM pVM, PPATCHINFO pPatch);
+VMMR3DECL(int) PATMR3MarkDirtyPatch(PVM pVM, PPATCHINFO pPatch);
 
 /**
  * Calculate the branch destination
@@ -816,7 +814,7 @@ inline RTRCPTR PATMResolveBranch(PDISCPUSTATE pCpu, RTRCPTR pBranchInstrGC)
         Log(("We don't support far jumps here!! (%08X)\n", pCpu->param1.flags));
         return 0;
     }
-#ifdef IN_GC
+#ifdef IN_RC
     return (RTRCPTR)((uint8_t *)pBranchInstrGC + pCpu->opsize + disp);
 #else
     return pBranchInstrGC + pCpu->opsize + disp;

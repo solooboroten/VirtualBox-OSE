@@ -102,32 +102,32 @@
 #define VINF_EM_DBG_HYPER_ASSERTION         1103
 /** Indicating that the VM should be suspended for debugging because
  * the developer wants to inspect the VM state. */
-#define VINF_EM_DBG_STOP                    1104
+#define VINF_EM_DBG_STOP                    1105
 /** Indicating success single stepping and that EM should report that
  * event to the debugger. */
-#define VINF_EM_DBG_STEPPED                 1105
+#define VINF_EM_DBG_STEPPED                 1106
 /** Indicating that a breakpoint was hit and that EM should notify the debugger
  * and in the event there is no debugger fail fatally. */
-#define VINF_EM_DBG_BREAKPOINT              1106
+#define VINF_EM_DBG_BREAKPOINT              1107
 /** Indicating that EM should single step an instruction.
  * The instruction is stepped in the current execution mode (RAW/REM). */
-#define VINF_EM_DBG_STEP                    1107
+#define VINF_EM_DBG_STEP                    1108
 /** Indicating that the VM is being turned off and that the EM should
  * exit to the VM awaiting the destruction request. */
-#define VINF_EM_OFF                         1108
+#define VINF_EM_OFF                         1109
 /** Indicating that the VM has been reset and that scheduling goes
  * back to startup defaults. */
-#define VINF_EM_RESET                       1109
+#define VINF_EM_RESET                       1110
 /** Indicating that the VM has been suspended and that the the thread
  * should wait for request telling it what to do next. */
-#define VINF_EM_SUSPEND                     1110
+#define VINF_EM_SUSPEND                     1111
 /** Indicating that the VM has executed a halt instruction and that
  * the emulation thread should wait for an interrupt before resuming
  * execution. */
-#define VINF_EM_HALT                        1111
+#define VINF_EM_HALT                        1112
 /** Indicating that the VM has been resumed and that the thread should
  * start executing. */
-#define VINF_EM_RESUME                      1112
+#define VINF_EM_RESUME                      1113
 /** Indicating that we've got an out-of-memory condition and that we need
  * to take the appropriate actions to deal with this.
  * @remarks It might seem odd at first that this has lower priority than VINF_EM_HALT,
@@ -135,80 +135,82 @@
  *          vital to correctly operating the VM. Also, they can't normally occur together
  *          with an out-of-memory condition, and even if that should happen the condition
  *          will be rediscovered before executing any more code. */
-#define VINF_EM_NO_MEMORY                   1113
+#define VINF_EM_NO_MEMORY                   1114
 /** The fatal variant of VINF_EM_NO_MEMORY. */
-#define VERR_EM_NO_MEMORY                   (-1113)
+#define VERR_EM_NO_MEMORY                   (-1114)
 /** Indicating that a rescheduling to recompiled execution.
  * Typically caused by raw-mode executing code which is difficult/slow
  * to virtualize rawly.
  * @remarks Important to have a higher priority (lower number) than the other rescheduling status codes. */
-#define VINF_EM_RESCHEDULE_REM              1114
+#define VINF_EM_RESCHEDULE_REM              1115
 /** Indicating that a rescheduling to vmx-mode execution.
  * Typically caused by REM detecting that hardware-accelerated raw-mode execution is possible. */
-#define VINF_EM_RESCHEDULE_HWACC            1115
+#define VINF_EM_RESCHEDULE_HWACC            1116
 /** Indicating that a rescheduling to raw-mode execution.
  * Typically caused by REM detecting that raw-mode execution is possible.
  * @remarks Important to have a higher priority (lower number) than VINF_EM_RESCHEDULE. */
-#define VINF_EM_RESCHEDULE_RAW              1116
+#define VINF_EM_RESCHEDULE_RAW              1117
 /** Indicating that a rescheduling now is required. Typically caused by
  * interrupts having changed the EIP. */
-#define VINF_EM_RESCHEDULE                  1117
+#define VINF_EM_RESCHEDULE                  1118
+/** PARAV call */
+#define VINF_EM_RESCHEDULE_PARAV            1119
 /** Last scheduling related status code. (inclusive) */
-#define VINF_EM_LAST                        1117
+#define VINF_EM_LAST                        1119
 
 /** Reason for leaving GC: Guest trap which couldn't be handled in GC.
  * The trap is generally forwared to the REM and executed there. */
-#define VINF_EM_RAW_GUEST_TRAP              1120
+#define VINF_EM_RAW_GUEST_TRAP              1121
 /** Reason for leaving GC: Interrupted by external interrupt.
  * The interrupt needed to be handled by the host OS. */
-#define VINF_EM_RAW_INTERRUPT               1121
+#define VINF_EM_RAW_INTERRUPT               1122
 /** Reason for leaving GC: Interrupted by external interrupt while in hypervisor code.
  * The interrupt needed to be handled by the host OS and hypervisor execution must be
  * resumed. VM state is not complete at this point. */
-#define VINF_EM_RAW_INTERRUPT_HYPER         1122
+#define VINF_EM_RAW_INTERRUPT_HYPER         1123
 /** Reason for leaving GC: A Ring switch was attempted.
  * Normal cause of action is to execute this in REM. */
-#define VINF_EM_RAW_RING_SWITCH             1123
+#define VINF_EM_RAW_RING_SWITCH             1124
 /** Reason for leaving GC: A Ring switch was attempted using software interrupt.
  * Normal cause of action is to execute this in REM. */
-#define VINF_EM_RAW_RING_SWITCH_INT         1124
+#define VINF_EM_RAW_RING_SWITCH_INT         1125
 /** Reason for leaving GC: A privileged instruction was attempted executed.
  * Normal cause of action is to execute this in REM. */
-#define VINF_EM_RAW_EXCEPTION_PRIVILEGED    1125
+#define VINF_EM_RAW_EXCEPTION_PRIVILEGED    1126
 
 /** Reason for leaving GC: Emulate instruction. */
-#define VINF_EM_RAW_EMULATE_INSTR           1126
+#define VINF_EM_RAW_EMULATE_INSTR           1127
 /** Reason for leaving GC: Unhandled TSS write.
  * Recompiler gets control. */
-#define VINF_EM_RAW_EMULATE_INSTR_TSS_FAULT 1127
+#define VINF_EM_RAW_EMULATE_INSTR_TSS_FAULT 1128
 /** Reason for leaving GC: Unhandled LDT write.
  * Recompiler gets control. */
-#define VINF_EM_RAW_EMULATE_INSTR_LDT_FAULT 1128
+#define VINF_EM_RAW_EMULATE_INSTR_LDT_FAULT 1129
 /** Reason for leaving GC: Unhandled IDT write.
  * Recompiler gets control. */
-#define VINF_EM_RAW_EMULATE_INSTR_IDT_FAULT 1129
+#define VINF_EM_RAW_EMULATE_INSTR_IDT_FAULT 1130
 /** Reason for leaving GC: Unhandled GDT write.
  * Recompiler gets control. */
-#define VINF_EM_RAW_EMULATE_INSTR_GDT_FAULT 1130
+#define VINF_EM_RAW_EMULATE_INSTR_GDT_FAULT 1131
 /** Reason for leaving GC: Unhandled Page Directory write.
  * Recompiler gets control. */
-#define VINF_EM_RAW_EMULATE_INSTR_PD_FAULT  1131
+#define VINF_EM_RAW_EMULATE_INSTR_PD_FAULT  1132
 /** Reason for leaving GC: jump inside generated patch jump.
  * Fatal error. */
-#define VERR_EM_RAW_PATCH_CONFLICT          (-1132)
+#define VERR_EM_RAW_PATCH_CONFLICT          (-1133)
 /** Reason for leaving GC: Hlt instruction.
  * Recompiler gets control. */
-#define VINF_EM_RAW_EMULATE_INSTR_HLT       1133
+#define VINF_EM_RAW_EMULATE_INSTR_HLT       1134
 /** Reason for leaving GC: Ring-3 operation pending. */
-#define VINF_EM_RAW_TO_R3                   1134
+#define VINF_EM_RAW_TO_R3                   1135
 /** Reason for leaving GC: Timer pending. */
-#define VINF_EM_RAW_TIMER_PENDING           1135
+#define VINF_EM_RAW_TIMER_PENDING           1136
 /** Reason for leaving GC: Interrupt pending (guest). */
-#define VINF_EM_RAW_INTERRUPT_PENDING       1136
+#define VINF_EM_RAW_INTERRUPT_PENDING       1137
 /** Reason for leaving GC: Encountered a stale selector. */
-#define VINF_EM_RAW_STALE_SELECTOR          1137
+#define VINF_EM_RAW_STALE_SELECTOR          1138
 /** Reason for leaving GC: The IRET resuming guest code trapped. */
-#define VINF_EM_RAW_IRET_TRAP               1138
+#define VINF_EM_RAW_IRET_TRAP               1139
 /** The interpreter was unable to deal with the instruction at hand. */
 #define VERR_EM_INTERPRETER                 (-1148)
 /** Internal EM error caused by an unknown warning or informational status code. */
@@ -412,6 +414,20 @@
 #define VERR_PGM_INTERMEDIATE_PAGING_CONFLICT   (-1627)
 /** The shadow paging mode is not supported yet. */
 #define VERR_PGM_UNSUPPORTED_SHADOW_PAGING_MODE (-1628)
+/** The dynamic mapping cache for physical memory failed. */
+#define VERR_PGM_DYNMAP_FAILED                  (-1629)
+/** The auto usage cache for the dynamic mapping set is full. */
+#define VERR_PGM_DYNMAP_FULL_SET                (-1630)
+/** The initialization of the dynamic mapping cache failed. */
+#define VERR_PGM_DYNMAP_SETUP_ERROR             (-1631)
+/** The expanding of the dynamic mapping cache failed. */
+#define VERR_PGM_DYNMAP_EXPAND_ERROR            (-1632)
+/** The page is unassigned (akin to VERR_PGM_INVALID_GC_PHYSICAL_ADDRESS). */
+#define VERR_PGM_PHYS_TLB_UNASSIGNED            (-1633)
+/** Catch any access and route it thru PGM. */
+#define VERR_PGM_PHYS_TLB_CATCH_ALL             (-1634)
+/** Catch write access and route it thru PGM. */
+#define VINF_PGM_PHYS_TLB_CATCH_WRITE           1635
 
 /** @} */
 
@@ -432,61 +448,69 @@
  * @{
  */
 /** The specified data unit already exist. */
-#define VERR_SSM_UNIT_EXISTS                (-1800)
+#define VERR_SSM_UNIT_EXISTS                    (-1800)
 /** The specified data unit wasn't found. */
-#define VERR_SSM_UNIT_NOT_FOUND             (-1801)
+#define VERR_SSM_UNIT_NOT_FOUND                 (-1801)
 /** The specified data unit wasn't owned by caller. */
-#define VERR_SSM_UNIT_NOT_OWNER             (-1802)
+#define VERR_SSM_UNIT_NOT_OWNER                 (-1802)
 /** General saved state file integrity error. */
-#define VERR_SSM_INTEGRITY                  (-1810)
+#define VERR_SSM_INTEGRITY                      (-1810)
 /** The saved state file magic was not recognized. */
-#define VERR_SSM_INTEGRITY_MAGIC            (-1811)
+#define VERR_SSM_INTEGRITY_MAGIC                (-1811)
 /** The saved state file version is not supported. */
-#define VERR_SSM_INTEGRITY_VERSION          (-1812)
+#define VERR_SSM_INTEGRITY_VERSION              (-1812)
 /** The saved state file size didn't match the one in the header. */
-#define VERR_SSM_INTEGRITY_SIZE             (-1813)
+#define VERR_SSM_INTEGRITY_SIZE                 (-1813)
 /** The CRC of the saved state file did match. */
-#define VERR_SSM_INTEGRITY_CRC              (-1814)
+#define VERR_SSM_INTEGRITY_CRC                  (-1814)
 /** The current virtual machine id didn't match the virtual machine id. */
-#define VERR_SMM_INTEGRITY_MACHINE          (-1815)
+#define VERR_SMM_INTEGRITY_MACHINE              (-1815)
 /** Invalid unit magic (internal data tag). */
-#define VERR_SSM_INTEGRITY_UNIT_MAGIC       (-1816)
+#define VERR_SSM_INTEGRITY_UNIT_MAGIC           (-1816)
 /** The file contained a data unit which no-one wants. */
-#define VERR_SSM_INTEGRITY_UNIT_NOT_FOUND   (-1817)
+#define VERR_SSM_INTEGRITY_UNIT_NOT_FOUND       (-1817)
+/** Incorrect type sizes in the header. */
+#define VERR_SSM_INTEGRITY_SIZES                (-1818)
+/** Incorrect version numbers in the header. */
+#define VERR_SSM_INTEGRITY_VBOX_VERSION         (-1819)
 /** A data unit in the saved state file was defined but didn't any
  * routine for processing it. */
-#define VERR_SSM_NO_LOAD_EXEC               (-1818)
+#define VERR_SSM_NO_LOAD_EXEC                   (-1820)
 /** A restore routine attempted to load more data then the unit contained. */
-#define VERR_SSM_LOADED_TOO_MUCH            (-1819)
+#define VERR_SSM_LOADED_TOO_MUCH                (-1821)
 /** Not in the correct state for the attempted operation. */
-#define VERR_SSM_INVALID_STATE              (-1820)
+#define VERR_SSM_INVALID_STATE                  (-1822)
 
 /** Unsupported data unit version.
  * A SSM user returns this if it doesn't know the u32Version. */
-#define VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION  (-1821)
+#define VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION  (-1823)
 /** The format of a data unit has changed.
  * A SSM user returns this if it's not able to read the format for
  * other reasons than u32Version. */
-#define VERR_SSM_DATA_UNIT_FORMAT_CHANGED       (-1822)
+#define VERR_SSM_DATA_UNIT_FORMAT_CHANGED       (-1824)
 /** The CPUID instruction returns different information when loading than when saved.
  * Normally caused by hardware changes on the host, but could also be caused by
  * changes in the BIOS setup. */
-#define VERR_SSM_LOAD_CPUID_MISMATCH            (-1823)
+#define VERR_SSM_LOAD_CPUID_MISMATCH            (-1825)
 /** The RAM size differes between the saved state and the VM config. */
-#define VERR_SSM_LOAD_MEMORY_SIZE_MISMATCH      (-1824)
+#define VERR_SSM_LOAD_MEMORY_SIZE_MISMATCH      (-1826)
 /** The state doesn't match the VM configuration in one or another way.
  * (There are certain PCI reconfiguration which the OS could potentially
  * do which can cause this problem. Check this out when it happens.) */
-#define VERR_SSM_LOAD_CONFIG_MISMATCH           (-1825)
+#define VERR_SSM_LOAD_CONFIG_MISMATCH           (-1827)
 /** The virtual clock freqency differs too much.
  * The clock source for the virtual time isn't reliable or the code have changed. */
-#define VERR_SSM_VIRTUAL_CLOCK_HZ               (-1826)
+#define VERR_SSM_VIRTUAL_CLOCK_HZ               (-1828)
 /** A timeout occured while waiting for async IDE operations to finish. */
-#define VERR_SSM_IDE_ASYNC_TIMEOUT              (-1827)
+#define VERR_SSM_IDE_ASYNC_TIMEOUT              (-1829)
 /** One of the structure magics was wrong. */
-#define VERR_SSM_STRUCTURE_MAGIC                (-1828)
+#define VERR_SSM_STRUCTURE_MAGIC                (-1830)
 /** The data in the saved state doesn't confirm to expectations. */
-#define VERR_SSM_UNEXPECTED_DATA                (-1829)
+#define VERR_SSM_UNEXPECTED_DATA                (-1831)
+/** Trying to read a 64-bit guest physical address into a 32-bit variable. */
+#define VERR_SSM_GCPHYS_OVERFLOW                (-1832)
+/** Trying to read a 64-bit guest virtual address into a 32-bit variable. */
+#define VERR_SSM_GCPTR_OVERFLOW                 (-1833)
 /** @} */
 
 
@@ -759,6 +783,8 @@
  */
 /** Reason for leaving GC: Calling host function. */
 #define VINF_VMM_CALL_HOST                  2700
+/** Reason for leaving R0: Hit a ring-0 assertion on EMT. */
+#define VERR_VMM_RING0_ASSERTION            (-2701)
 /** @} */
 
 
@@ -1011,49 +1037,65 @@
 /** @} */
 
 
-/** @name VBox HDD Container (VDI) Status Codes
+/** @name VBox HDD Container (VD) Status Codes
  * @{
  */
-/** Invalid image file header. */
-#define VERR_VDI_INVALID_HEADER                     (-3200)
-/** Invalid image file header: invalid signature. */
-#define VERR_VDI_INVALID_SIGNATURE                  (-3201)
-/** Invalid image file header: invalid version. */
-#define VERR_VDI_UNSUPPORTED_VERSION                (-3202)
 /** Invalid image type. */
-#define VERR_VDI_INVALID_TYPE                       (-3203)
-/** Invalid image flags. */
-#define VERR_VDI_INVALID_FLAGS                      (-3204)
+#define VERR_VD_INVALID_TYPE                        (-3200)
 /** Operation can't be done in current HDD container state. */
-#define VERR_VDI_INVALID_STATE                      (-3205)
-/** Differencing image can't be used with current base image. */
-#define VERR_VDI_WRONG_DIFF_IMAGE                   (-3206)
-/** Two or more images of one HDD has different versions. */
-#define VERR_VDI_IMAGES_VERSION_MISMATCH            (-3207)
-/** Differencing and parent images can't be used together due to UUID. */
-#define VERR_VDI_IMAGES_UUID_MISMATCH               (-3208)
-/** No differencing images to commit. */
-#define VERR_VDI_NO_DIFF_IMAGES                     (-3209)
-/** Virtual HDD is not opened. */
-#define VERR_VDI_NOT_OPENED                         (-3210)
-/** Requested image is not opened. */
-#define VERR_VDI_IMAGE_NOT_FOUND                    (-3211)
-/** Image is read-only. */
-#define VERR_VDI_IMAGE_READ_ONLY                    (-3212)
-/** Comment string is too long. */
-#define VERR_VDI_COMMENT_TOO_LONG                   (-3213)
-/** Geometry hasn't been set. */
-#define VERR_VDI_GEOMETRY_NOT_SET                   (-3214)
-/** No data for this block in image. */
-#define VERR_VDI_BLOCK_FREE                         (-3215)
+#define VERR_VD_INVALID_STATE                       (-3201)
 /** Configuration value not found. */
-#define VERR_VDI_VALUE_NOT_FOUND                    (-3216)
-/** Configuration value is unknown. This indicates misconfiguration. */
-#define VERR_VDI_UNKNOWN_CFG_VALUES                 (-3217)
+#define VERR_VD_VALUE_NOT_FOUND                     (-3202)
+/** Virtual HDD is not opened. */
+#define VERR_VD_NOT_OPENED                          (-3203)
+/** Requested image is not opened. */
+#define VERR_VD_IMAGE_NOT_FOUND                     (-3204)
+/** Image is read-only. */
+#define VERR_VD_IMAGE_READ_ONLY                     (-3205)
+/** Geometry hasn't been set. */
+#define VERR_VD_GEOMETRY_NOT_SET                    (-3206)
+/** No data for this block in image. */
+#define VERR_VD_BLOCK_FREE                          (-3207)
+/** Differencing and parent images can't be used together due to UUID. */
+#define VERR_VD_UUID_MISMATCH                       (-3208)
 /** Asynchronous I/O request finished. */
-#define VINF_VDI_ASYNC_IO_FINISHED                  3218
+#define VINF_VD_ASYNC_IO_FINISHED                   3209
 /** Asynchronous I/O is not finished yet. */
-#define VERR_VDI_ASYNC_IO_IN_PROGRESS               (-3219)
+#define VERR_VD_ASYNC_IO_IN_PROGRESS                (-3210)
+/** Generic: Invalid image file header. Use this for plugins. */
+#define VERR_VD_GEN_INVALID_HEADER                  (-3220)
+/** VDI: Invalid image file header. */
+#define VERR_VD_VDI_INVALID_HEADER                  (-3230)
+/** VDI: Invalid image file header: invalid signature. */
+#define VERR_VD_VDI_INVALID_SIGNATURE               (-3231)
+/** VDI: Invalid image file header: invalid version. */
+#define VERR_VD_VDI_UNSUPPORTED_VERSION             (-3232)
+/** Comment string is too long. */
+#define VERR_VD_VDI_COMMENT_TOO_LONG                (-3233)
+/** VMDK: Invalid image file header. */
+#define VERR_VD_VMDK_INVALID_HEADER                 (-3240)
+/** VMDK: Invalid image file header: invalid version. */
+#define VERR_VD_VMDK_UNSUPPORTED_VERSION            (-3241)
+/** VMDK: Image property not found. */
+#define VERR_VD_VMDK_VALUE_NOT_FOUND                (-3242)
+/** VMDK: Operation can't be done in current image state. */
+#define VERR_VD_VMDK_INVALID_STATE                  (-3243)
+/** iSCSI: Invalid header, i.e. dummy for validity check. */
+#define VERR_VD_ISCSI_INVALID_HEADER                (-3250)
+/** iSCSI: Configuration value is unknown. This indicates misconfiguration. */
+#define VERR_VD_ISCSI_UNKNOWN_CFG_VALUES            (-3251)
+/** iSCSI: Interface is unknown. This indicates misconfiguration. */
+#define VERR_VD_ISCSI_UNKNOWN_INTERFACE             (-3252)
+/** iSCSI: Operation can't be done in current image state. */
+#define VERR_VD_ISCSI_INVALID_STATE                 (-3253)
+/** iSCSI: Invalid device type (not a disk). */
+#define VERR_VD_ISCSI_INVALID_TYPE                  (-3254)
+/** VHD: Invalid image file header. */
+#define VERR_VD_VHD_INVALID_HEADER                  (-3260)
+/** Raw: Invalid image file header. */
+#define VERR_VD_RAW_INVALID_HEADER                  (-3270)
+/** Raw: Invalid image file type. */
+#define VERR_VD_RAW_INVALID_TYPE                    (-3271)
 /** @} */
 
 
@@ -1128,6 +1170,8 @@
 #define VERR_SUPDRV_COMPONENT_NOT_FOUND             (-3700)
 /** The component factories do not support the requested interface. */
 #define VERR_SUPDRV_INTERFACE_NOT_SUPPORTED         (-3701)
+/** The service module was not found. */
+#define VERR_SUPDRV_SERVICE_NOT_FOUND               (-3702)
 /** @} */
 
 
@@ -1245,6 +1289,10 @@
 #define VERR_HWACCM_UNKNOWN_CPU                     (-4100)
 /** No CPUID support. */
 #define VERR_HWACCM_NO_CPUID                        (-4101)
+/** Host is about to go into suspend mode. */
+#define VERR_HWACCM_SUSPEND_PENDING                 (-4102)
+/** Conflicting CFGM values. */
+#define VERR_HWACCM_CONFIG_MISMATCH                 (-4103)
 /** @} */
 
 
@@ -1271,6 +1319,15 @@
 #define VERR_WEB_INVALID_OBJECT_ID                  (-4303)
 /** Unsupported interface for managed object reference */
 #define VERR_WEB_UNSUPPORTED_INTERFACE              (-4304)
+/** @} */
+
+
+/** @name VBox PARAV Status Codes
+ * @{
+ */
+/** Switch back to host */
+#define VINF_PARAV_SWITCH_TO_HOST                     4400
+
 /** @} */
 
 /* SED-END */

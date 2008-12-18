@@ -20,6 +20,9 @@
 
 #ifndef _slirp_state_h_
 #define _slirp_state_h_
+#ifdef VBOX_WITH_SLIRP_ICMP
+#include "ip_icmp.h"
+#endif
 
 /** Number of DHCP clients supported by NAT. */
 #define NB_ADDR     16
@@ -31,14 +34,16 @@
 #define LEASE_TIME (24 * 3600)
 
 /** Entry in the table of known DHCP clients. */
-typedef struct {
+typedef struct
+{
     bool allocated;
     uint8_t macaddr[6];
 } BOOTPClient;
 
 
 /** TFTP session entry. */
-struct tftp_session {
+struct tftp_session
+{
     int in_use;
     unsigned char filename[TFTP_FILENAME_MAX];
 
@@ -68,7 +73,10 @@ typedef struct NATState
     struct icmpstat_t icmpstat;
     /* Stuff from ip_input.c */
     struct ipstat_t ipstat;
-    struct ipq_t ipq;
+    struct ipqhead ipq[IPREASS_NHASH];
+    int maxnipq;    /* Administrative limit on # of reass queues*/
+    int maxfragsperpacket; /* Maximum number of IPv4 fragments allowed per packet */
+    int nipq; /* total number of reass queues */
     uint16_t ip_currid;
     /* Stuff from mbuf.c */
     int mbuf_alloced, mbuf_max;
@@ -97,17 +105,13 @@ typedef struct NATState
     struct socket tcb;
     struct socket *tcp_last_so;
     tcp_seq tcp_iss;
-#if ARCH_BITS == 64
-    /* Stuff from tcp_subr.c */
-    void *apvHash[16384];
-    uint32_t cpvHashUsed;
-    uint32_t cpvHashCollisions;
-    uint64_t cpvHashInserts;
-    uint64_t cpvHashDone;
-#endif
     /* Stuff from tcp_timer.c */
     struct tcpstat_t tcpstat;
     uint32_t tcp_now;
+    int tcp_reass_qsize;
+    int tcp_reass_maxqlen;
+    int tcp_reass_maxseg;
+    int tcp_reass_overflows;
     /* Stuff from tftp.c */
     struct tftp_session tftp_sessions[TFTP_SESSIONS_MAX];
     const char *tftp_prefix;
@@ -115,6 +119,32 @@ typedef struct NATState
     struct udpstat_t udpstat;
     struct socket udb;
     struct socket *udp_last_so;
+#ifdef VBOX_WITH_SLIRP_ICMP
+    struct socket icmp_socket;
+    struct icmp_storage icmp_msg_head;
+# ifdef RT_OS_WINDOWS
+    void *pvIcmpBuffer;
+    size_t szIcmpBuffer;
+    /* Accordin MSDN specification IcmpParseReplies 
+     * function should be detected in runtime
+     */
+    long (WINAPI * pfIcmpParseReplies)(void *, long);
+    BOOL (WINAPI * pfIcmpCloseHandle)(HANDLE);
+    HMODULE hmIcmpLibrary;
+# endif
+#endif
+#if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS)
+# define VBOX_SOCKET_EVENT (pData->phEvents[VBOX_SOCKET_EVENT_INDEX])
+    HANDLE phEvents[VBOX_EVENT_COUNT];
+#endif
+    STAMPROFILE StatFill;
+    STAMPROFILE StatPoll;
+    STAMPROFILE StatFastTimer;
+    STAMPROFILE StatSlowTimer;
+    STAMCOUNTER StatTCP;
+    STAMCOUNTER StatUDP;
+    STAMCOUNTER StatTCPHot;
+    STAMCOUNTER StatUDPHot;
 } NATState;
 
 
@@ -211,29 +241,13 @@ typedef struct NATState
 #define udb pData->udb
 #define udp_last_so pData->udp_last_so
 
+#define maxfragsperpacket pData->maxfragsperpacket
+#define maxnipq pData->maxnipq
+#define nipq pData->nipq
 
-#if SIZEOF_CHAR_P != 4
-    extern void     VBoxU32PtrDone(PNATState pData, void *pv, uint32_t iHint);
-    extern uint32_t VBoxU32PtrHashSlow(PNATState pData, void *pv);
-
-    /** Hash the pointer, inserting it if need be. */
-    DECLINLINE(uint32_t) VBoxU32PtrHash(PNATState pData, void *pv)
-    {
-        uint32_t i = ((uintptr_t)pv >> 3) % RT_ELEMENTS(pData->apvHash);
-        if (RT_LIKELY(pData->apvHash[i] == pv && pv))
-            return i;
-        return VBoxU32PtrHashSlow(pData, pv);
-    }
-    /** Lookup the hash value. */
-    DECLINLINE(void *) VBoxU32PtrLookup(PNATState pData, uint32_t i)
-    {
-        void *pv;
-        Assert(i < RT_ELEMENTS(pData->apvHash));
-        pv = pData->apvHash[i];
-        Assert(pv || !i);
-        return pv;
-    }
-#endif
-
+#define tcp_reass_qsize pData->tcp_reass_qsize
+#define tcp_reass_maxqlen pData->tcp_reass_maxqlen
+#define tcp_reass_maxseg pData->tcp_reass_maxseg
+#define tcp_reass_overflows pData->tcp_reass_overflows
 
 #endif /* !_slirp_state_h_ */

@@ -1,4 +1,4 @@
-/* $Id: PATMGC.cpp $ */
+/* $Id: PATMGC.cpp 14029 2008-11-10 17:27:22Z vboxsync $ */
 /** @file
  * PATM - Dynamic Guest OS Patching Manager - Guest Context
  */
@@ -46,8 +46,6 @@
 #include <iprt/assert.h>
 #include <iprt/asm.h>
 #include <iprt/string.h>
-#include <stdlib.h>
-#include <stdio.h>
 
 
 /**
@@ -62,7 +60,7 @@
  * @param   offRange    The offset of the access into this range.
  *                      (If it's a EIP range this's the EIP, if not it's pvFault.)
  */
-PATMGCDECL(int) PATMGCMonitorPage(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
+VMMRCDECL(int) PATMGCMonitorPage(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
 {
     pVM->patm.s.pvFaultMonitor = (RTRCPTR)pvFault;
     return VINF_PATM_CHECK_PATCH_PAGE;
@@ -80,7 +78,7 @@ PATMGCDECL(int) PATMGCMonitorPage(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRe
  * @param   cbWrite     Nr of bytes to write
  *
  */
-PATMGCDECL(int) PATMGCHandleWriteToPatchPage(PVM pVM, PCPUMCTXCORE pRegFrame, RTRCPTR GCPtr, uint32_t cbWrite)
+VMMRCDECL(int) PATMGCHandleWriteToPatchPage(PVM pVM, PCPUMCTXCORE pRegFrame, RTRCPTR GCPtr, uint32_t cbWrite)
 {
     RTGCUINTPTR          pWritePageStart, pWritePageEnd;
     PPATMPATCHPAGE       pPatchPage;
@@ -106,7 +104,7 @@ PATMGCDECL(int) PATMGCHandleWriteToPatchPage(PVM pVM, PCPUMCTXCORE pRegFrame, RT
 
 #ifdef LOG_ENABLED
     if (pPatchPage)
-        Log(("PATMIsWriteToPatchPage: Found page %VRv for write to %VRv %d bytes (page low:high %VRv:%VRv\n", pPatchPage->Core.Key, GCPtr, cbWrite, pPatchPage->pLowestAddrGC, pPatchPage->pHighestAddrGC));
+        Log(("PATMIsWriteToPatchPage: Found page %RRv for write to %RRv %d bytes (page low:high %RRv:%RRv\n", pPatchPage->Core.Key, GCPtr, cbWrite, pPatchPage->pLowestAddrGC, pPatchPage->pHighestAddrGC));
 #endif
 
     if (pPatchPage)
@@ -117,7 +115,7 @@ PATMGCDECL(int) PATMGCHandleWriteToPatchPage(PVM pVM, PCPUMCTXCORE pRegFrame, RT
             /* This part of the page was not patched; try to emulate the instruction. */
             uint32_t cb;
 
-            LogFlow(("PATMHandleWriteToPatchPage: Interpret %x accessing %VRv\n", pRegFrame->eip, GCPtr));
+            LogFlow(("PATMHandleWriteToPatchPage: Interpret %x accessing %RRv\n", pRegFrame->eip, GCPtr));
             int rc = EMInterpretInstruction(pVM, pRegFrame, (RTGCPTR)(RTRCUINTPTR)GCPtr, &cb);
             if (rc == VINF_SUCCESS)
             {
@@ -127,12 +125,12 @@ PATMGCDECL(int) PATMGCHandleWriteToPatchPage(PVM pVM, PCPUMCTXCORE pRegFrame, RT
             }
             STAM_COUNTER_INC(&pVM->patm.s.StatPatchWriteInterpretedFailed);
         }
-        R3PTRTYPE(PPATCHINFO) *paPatch = (R3PTRTYPE(PPATCHINFO) *)MMHyperHC2GC(pVM, pPatchPage->aPatch);
+        R3PTRTYPE(PPATCHINFO) *paPatch = (R3PTRTYPE(PPATCHINFO) *)MMHyperR3ToRC(pVM, pPatchPage->aPatch);
 
         /* Increase the invalid write counter for each patch that's registered for that page. */
         for (uint32_t i=0;i<pPatchPage->cCount;i++)
         {
-            PPATCHINFO pPatch = (PPATCHINFO)MMHyperHC2GC(pVM, paPatch[i]);
+            PPATCHINFO pPatch = (PPATCHINFO)MMHyperR3ToRC(pVM, paPatch[i]);
 
             pPatch->cInvalidWrites++;
         }
@@ -154,7 +152,7 @@ PATMGCDECL(int) PATMGCHandleWriteToPatchPage(PVM pVM, PCPUMCTXCORE pRegFrame, RT
  * @param   pVM         The VM handle.
  * @param   pCtxCore    The relevant core context.
  */
-PATMDECL(int) PATMGCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
+VMMDECL(int) PATMGCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
 {
     PPATMPATCHREC pRec;
     int rc;
@@ -200,6 +198,9 @@ PATMDECL(int) PATMGCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
                         rc = PATMAddBranchToLookupCache(pVM, (RTRCPTR)pRegFrame->edi, (RTRCPTR)pRegFrame->edx, pRelAddr);
                         if (rc == VINF_SUCCESS)
                         {
+                            Log(("Patch block %RRv called as function\n", pRec->patch.pPrivInstrGC));
+                            pRec->patch.flags |= PATMFL_CODE_REFERENCED;
+
                             pRegFrame->eip += PATM_ILLEGAL_INSTR_SIZE;
                             pRegFrame->eax = pRelAddr;
                             STAM_COUNTER_INC(&pVM->patm.s.StatFunctionFound);
@@ -217,15 +218,6 @@ PATMDECL(int) PATMGCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
                 }
                 else
                 {
-#if 0
-                    if (pRegFrame->edx == 0x806eca98) 
-                    {
-                        pRegFrame->eip += PATM_ILLEGAL_INSTR_SIZE;
-                        pRegFrame->eax = 0;     /* make it fault */
-                        STAM_COUNTER_INC(&pVM->patm.s.StatFunctionNotFound);
-                        return VINF_SUCCESS;
-                    } 
-#endif
                     STAM_COUNTER_INC(&pVM->patm.s.StatFunctionNotFound);
                     return VINF_PATM_DUPLICATE_FUNCTION;
                 }
@@ -289,17 +281,17 @@ PATMDECL(int) PATMGCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
                 pVM->patm.s.CTXSUFF(pGCState)->Restore.uFlags = 0;
 
                 rc = EMInterpretIret(pVM, pRegFrame);
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
-                    STAM_COUNTER_INC(&pVM->patm.s.StatEmulIret); 
+                    STAM_COUNTER_INC(&pVM->patm.s.StatEmulIret);
 
                     /* We are no longer executing PATM code; set PIF again. */
                     pVM->patm.s.CTXSUFF(pGCState)->fPIF = 1;
                     CPUMGCCallV86Code(pRegFrame);
                     /* does not return */
                 }
-                else 
-                    STAM_COUNTER_INC(&pVM->patm.s.StatEmulIretFailed); 
+                else
+                    STAM_COUNTER_INC(&pVM->patm.s.StatEmulIretFailed);
                 return rc;
             }
 
@@ -423,7 +415,7 @@ PATMDECL(int) PATMGCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
                 return VINF_SUCCESS;
 
             case PATM_ACTION_LOG_CALL:
-                Log(("PATMGC: CALL to %VRv return addr %VRv ESP=%x iopl=%d\n", pVM->patm.s.CTXSUFF(pGCState)->GCCallPatchTargetAddr, pVM->patm.s.CTXSUFF(pGCState)->GCCallReturnAddr, pRegFrame->edx, X86_EFL_GET_IOPL(pVM->patm.s.CTXSUFF(pGCState)->uVMFlags)));
+                Log(("PATMGC: CALL to %RRv return addr %RRv ESP=%x iopl=%d\n", pVM->patm.s.CTXSUFF(pGCState)->GCCallPatchTargetAddr, pVM->patm.s.CTXSUFF(pGCState)->GCCallReturnAddr, pRegFrame->edx, X86_EFL_GET_IOPL(pVM->patm.s.CTXSUFF(pGCState)->uVMFlags)));
                 pRegFrame->eip += PATM_ILLEGAL_INSTR_SIZE;
                 return VINF_SUCCESS;
 #endif
@@ -448,7 +440,7 @@ PATMDECL(int) PATMGCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
  * @param   pVM         The VM handle.
  * @param   pCtxCore    The relevant core context.
  */
-PATMDECL(int) PATMHandleInt3PatchTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
+VMMDECL(int) PATMHandleInt3PatchTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
 {
     PPATMPATCHREC pRec;
     int rc;
@@ -516,9 +508,9 @@ PATMDECL(int) PATMHandleInt3PatchTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
                 return VINF_EM_RAW_EMULATE_INSTR;
             }
             rc = DISCoreOne(&cpu, (RTUINTPTR)&pRec->patch.aPrivInstr[0], &cbOp);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
             {
-                Log(("DISCoreOne failed with %Vrc\n", rc));
+                Log(("DISCoreOne failed with %Rrc\n", rc));
                 PATM_STAT_FAULT_INC(&pRec->patch);
                 pRec->patch.cTraps++;
                 return VINF_EM_RAW_EMULATE_INSTR;
@@ -527,7 +519,7 @@ PATMDECL(int) PATMHandleInt3PatchTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
             rc = EMInterpretInstructionCPU(pVM, &cpu, pRegFrame, 0 /* not relevant here */, &size);
             if (rc != VINF_SUCCESS)
             {
-                Log(("EMInterpretInstructionCPU failed with %Vrc\n", rc));
+                Log(("EMInterpretInstructionCPU failed with %Rrc\n", rc));
                 PATM_STAT_FAULT_INC(&pRec->patch);
                 pRec->patch.cTraps++;
                 return VINF_EM_RAW_EMULATE_INSTR;

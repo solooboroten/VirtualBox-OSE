@@ -38,7 +38,9 @@ using namespace com;
 #define LOG_INSTANCE NULL
 #include <VBox/log.h>
 
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
+#include <iprt/path.h>
+#include <iprt/param.h>
 #include <iprt/stream.h>
 
 #define printf RTPrintf
@@ -47,8 +49,13 @@ using namespace com;
 // forward declarations
 ///////////////////////////////////////////////////////////////////////////////
 
-void queryMetrics (ComPtr <IPerformanceCollector> collector,
-                   ComSafeArrayIn (IUnknown *, objects));
+static Bstr getObjectName(ComPtr<IVirtualBox> aVirtualBox,
+                                  ComPtr<IUnknown> aObject);
+static void queryMetrics (ComPtr<IVirtualBox> aVirtualBox,
+                          ComPtr <IPerformanceCollector> collector,
+                          ComSafeArrayIn (IUnknown *, objects));
+static void listAffectedMetrics(ComPtr<IVirtualBox> aVirtualBox,
+                                ComSafeArrayIn(IPerformanceMetric*, aMetrics));
 
 // funcs
 ///////////////////////////////////////////////////////////////////////////////
@@ -274,7 +281,7 @@ int main(int argc, char *argv[])
                 break;
             }
 
-            printf ("IVirtualBox(virualBox)=%p IVirtualBox(virualBox2)=%p\n",
+            printf ("IVirtualBox(virtualBox)=%p IVirtualBox(virtualBox2)=%p\n",
                     (IVirtualBox *) virtualBox, (IVirtualBox *) virtualBox2);
             Assert ((IVirtualBox *) virtualBox == (IVirtualBox *) virtualBox2);
 
@@ -282,14 +289,14 @@ int main(int argc, char *argv[])
             ComPtr <IUnknown> unk2;
             unk2 = virtualBox2;
 
-            printf ("IUnknown(virualBox)=%p IUnknown(virualBox2)=%p\n",
+            printf ("IUnknown(virtualBox)=%p IUnknown(virtualBox2)=%p\n",
                     (IUnknown *) unk, (IUnknown *) unk2);
             Assert ((IUnknown *) unk == (IUnknown *) unk2);
 
             ComPtr <IVirtualBox> vb = unk;
             ComPtr <IVirtualBox> vb2 = unk;
 
-            printf ("IVirtualBox(IUnknown(virualBox))=%p IVirtualBox(IUnknown(virualBox2))=%p\n",
+            printf ("IVirtualBox(IUnknown(virtualBox))=%p IVirtualBox(IUnknown(virtualBox2))=%p\n",
                     (IVirtualBox *) vb, (IVirtualBox *) vb2);
             Assert ((IVirtualBox *) vb == (IVirtualBox *) vb2);
         }
@@ -347,7 +354,7 @@ int main(int argc, char *argv[])
     }
 #endif
 
-#if 1
+#if 0
     // Array test
     ////////////////////////////////////////////////////////////////////////////
     {
@@ -366,6 +373,34 @@ int main(int argc, char *argv[])
             CHECK_ERROR_BREAK (machines [i], COMGETTER(Name) (name.asOutParam()));
             printf ("machines[%u]='%s'\n", i, Utf8Str (name).raw());
         }
+
+#if 0
+        {
+            printf ("Testing [out] arrays...\n");
+            com::SafeGUIDArray uuids;
+            CHECK_ERROR_BREAK (virtualBox,
+                               COMGETTER(Uuids) (ComSafeArrayAsOutParam (uuids)));
+
+            for (size_t i = 0; i < uuids.size(); ++ i)
+                printf ("uuids[%u]=%Vuuid\n", i, &uuids [i]);
+        }
+
+        {
+            printf ("Testing [in] arrays...\n");
+            com::SafeGUIDArray uuids (5);
+            for (size_t i = 0; i < uuids.size(); ++ i)
+            {
+                Guid id;
+                id.create();
+                uuids [i] = id;
+                printf ("uuids[%u]=%Vuuid\n", i, &uuids [i]);
+            }
+
+            CHECK_ERROR_BREAK (virtualBox,
+                               SetUuids (ComSafeArrayAsInParam (uuids)));
+        }
+#endif
+
     }
 #endif
 
@@ -559,27 +594,31 @@ int main(int argc, char *argv[])
 #endif
 
 #if 0
-    // find a registered hard disk by location
+    // find a registered hard disk by location and get properties
     ///////////////////////////////////////////////////////////////////////////
     do
     {
-        ComPtr <IHardDisk> hd;
+        ComPtr <IHardDisk2> hd;
         static const wchar_t *Names[] =
         {
 #ifndef RT_OS_LINUX
-            L"E:/Develop/innotek/images/thinker/freedos.vdi",
-            L"E:/Develop/innotek/images/thinker/fReeDoS.vDI",
-            L"E:/Develop/innotek/images/vmdk/haiku.vmdk",
+            L"freedos.vdi",
+            L"MS-DOS.vmdk",
+            L"iscsi",
+            L"some/path/and/disk.vdi",
 #else
-            L"/mnt/host/common/Develop/innotek/images/maggot/freedos.vdi",
-            L"/mnt/host/common/Develop/innotek/images/maggot/fReeDoS.vDI",
+            L"xp.vdi",
+            L"Xp.vDI",
 #endif
         };
-        for (size_t i = 0; i < ELEMENTS (Names); ++ i)
+
+        printf ("\n");
+
+        for (size_t i = 0; i < RT_ELEMENTS (Names); ++ i)
         {
             Bstr src = Names [i];
             printf ("Searching for hard disk '%ls'...\n", src.raw());
-            rc = virtualBox->FindHardDisk (src, hd.asOutParam());
+            rc = virtualBox->FindHardDisk2 (src, hd.asOutParam());
             if (SUCCEEDED (rc))
             {
                 Guid id;
@@ -588,11 +627,35 @@ int main(int argc, char *argv[])
                 CHECK_ERROR_BREAK (hd, COMGETTER(Location) (location.asOutParam()));
                 printf ("Found, UUID={%Vuuid}, location='%ls'.\n",
                         id.raw(), location.raw());
+
+                com::SafeArray <BSTR> names;
+                com::SafeArray <BSTR> values;
+
+                CHECK_ERROR_BREAK (hd, GetProperties (NULL,
+                                                      ComSafeArrayAsOutParam (names),
+                                                      ComSafeArrayAsOutParam (values)));
+
+                printf ("Properties:\n");
+                for (size_t i = 0; i < names.size(); ++ i)
+                    printf (" %ls = %ls\n", names [i], values [i]);
+
+                if (names.size() == 0)
+                    printf (" <none>\n");
+
+#if 0
+                Bstr name ("TargetAddress");
+                Bstr value = Utf8StrFmt ("lalala (%llu)", RTTimeMilliTS());
+
+                printf ("Settings property %ls to %ls...\n", name.raw(), value.raw());
+                CHECK_ERROR (hd, SetProperty (name, value));
+#endif
             }
             else
             {
-                PRINT_ERROR_INFO (com::ErrorInfo (virtualBox));
+                com::ErrorInfo info (virtualBox);
+                PRINT_ERROR_INFO (info);
             }
+            printf ("\n");
         }
     }
     while (FALSE);
@@ -721,66 +784,204 @@ int main(int argc, char *argv[])
 #endif
 
 #if 0
+    // check for available hd backends
+    ///////////////////////////////////////////////////////////////////////////
+    {
+        RTPrintf("Supported hard disk backends: --------------------------\n");
+        ComPtr<ISystemProperties> systemProperties;
+        CHECK_ERROR_BREAK (virtualBox,
+                           COMGETTER(SystemProperties) (systemProperties.asOutParam()));
+        com::SafeIfaceArray <IHardDiskFormat> hardDiskFormats;
+        CHECK_ERROR_BREAK (systemProperties,
+                           COMGETTER(HardDiskFormats) (ComSafeArrayAsOutParam (hardDiskFormats)));
+
+        for (size_t i = 0; i < hardDiskFormats.size(); ++ i)
+        {
+            /* General information */
+            Bstr id;
+            CHECK_ERROR_BREAK (hardDiskFormats [i],
+                               COMGETTER(Id) (id.asOutParam()));
+
+            Bstr description;
+            CHECK_ERROR_BREAK (hardDiskFormats [i],
+                               COMGETTER(Id) (description.asOutParam()));
+
+            ULONG caps;
+            CHECK_ERROR_BREAK (hardDiskFormats [i],
+                               COMGETTER(Capabilities) (&caps));
+
+            RTPrintf("Backend %u: id='%ls' description='%ls' capabilities=%#06x extensions='",
+                     i, id.raw(), description.raw(), caps);
+
+            /* File extensions */
+            com::SafeArray <BSTR> fileExtensions;
+            CHECK_ERROR_BREAK (hardDiskFormats [i],
+                               COMGETTER(FileExtensions) (ComSafeArrayAsOutParam (fileExtensions)));
+            for (size_t a = 0; a < fileExtensions.size(); ++ a)
+            {
+                RTPrintf ("%ls", Bstr (fileExtensions [a]).raw());
+                if (a != fileExtensions.size()-1)
+                    RTPrintf (",");
+            }
+            RTPrintf ("'");
+
+            /* Configuration keys */
+            com::SafeArray <BSTR> propertyNames;
+            com::SafeArray <BSTR> propertyDescriptions;
+            com::SafeArray <ULONG> propertyTypes;
+            com::SafeArray <ULONG> propertyFlags;
+            com::SafeArray <BSTR> propertyDefaults;
+            CHECK_ERROR_BREAK (hardDiskFormats [i],
+                               DescribeProperties (ComSafeArrayAsOutParam (propertyNames),
+                                                   ComSafeArrayAsOutParam (propertyDescriptions),
+                                                   ComSafeArrayAsOutParam (propertyTypes),
+                                                   ComSafeArrayAsOutParam (propertyFlags),
+                                                   ComSafeArrayAsOutParam (propertyDefaults)));
+
+            RTPrintf (" config=(");
+            if (propertyNames.size() > 0)
+            {
+                for (size_t a = 0; a < propertyNames.size(); ++ a)
+                {
+                    RTPrintf ("key='%ls' desc='%ls' type=", Bstr (propertyNames [a]).raw(), Bstr (propertyDescriptions [a]).raw());
+                    switch (propertyTypes [a])
+                    {
+                        case DataType_Int32Type: RTPrintf ("int"); break;
+                        case DataType_Int8Type: RTPrintf ("byte"); break;
+                        case DataType_StringType: RTPrintf ("string"); break;
+                    }
+                    RTPrintf (" flags=%#04x", propertyFlags [a]);
+                    RTPrintf (" default='%ls'", Bstr (propertyDefaults [a]).raw());
+                    if (a != propertyNames.size()-1)
+                        RTPrintf (",");
+                }
+            }
+            RTPrintf (")\n");
+        }
+        RTPrintf("-------------------------------------------------------\n");
+    }
+#endif
+
+#if 0
     // enumerate hard disks & dvd images
     ///////////////////////////////////////////////////////////////////////////
     do
     {
         {
-            ComPtr <IHardDiskCollection> coll;
-            CHECK_RC_BREAK (virtualBox->COMGETTER(HardDisks) (coll.asOutParam()));
-            ComPtr <IHardDiskEnumerator> enumerator;
-            CHECK_RC_BREAK (coll->Enumerate (enumerator.asOutParam()));
-            BOOL hasmore;
-            while (SUCCEEDED (enumerator->HasMore (&hasmore)) && hasmore)
-            {
-                ComPtr <IHardDisk> disk;
-                CHECK_RC_BREAK (enumerator->GetNext (disk.asOutParam()));
-                Guid id;
-                CHECK_RC_BREAK (disk->COMGETTER(Id) (id.asOutParam()));
-                Bstr path;
-                CHECK_RC_BREAK (disk->COMGETTER(FilePath) (path.asOutParam()));
-                printf ("Hard Disk: id={%s}, path={%ls}\n",
-                        id.toString().raw(), path.raw());
-                Guid mid;
-                CHECK_RC_BREAK (
-                    virtualBox->GetHardDiskUsage (id, ResourceUsage_All,
-                                                  mid.asOutParam())
-                );
-                if (mid.isEmpty())
-                    printf ("  not used\n");
-                else
-                    printf ("  used by VM: {%s}\n", mid.toString().raw());
-            }
-            CHECK_RC_BREAK (rc);
-        }
+            com::SafeIfaceArray <IHardDisk2> disks;
+            CHECK_ERROR_BREAK (virtualBox,
+                               COMGETTER(HardDisks2) (ComSafeArrayAsOutParam (disks)));
 
-        {
-            ComPtr <IDVDImageCollection> coll;
-            CHECK_RC_BREAK (virtualBox->COMGETTER(DVDImages) (coll.asOutParam()));
-            ComPtr <IDVDImageEnumerator> enumerator;
-            CHECK_RC_BREAK (coll->Enumerate (enumerator.asOutParam()));
-            BOOL hasmore;
-            while (SUCCEEDED (enumerator->HasMore (&hasmore)) && hasmore)
+            printf ("%u base hard disks registered (disks.isNull()=%d).\n",
+                    disks.size(), disks.isNull());
+
+            for (size_t i = 0; i < disks.size(); ++ i)
             {
-                ComPtr <IDVDImage> image;
-                CHECK_RC_BREAK (enumerator->GetNext (image.asOutParam()));
+                Bstr loc;
+                CHECK_ERROR_BREAK (disks [i], COMGETTER(Location) (loc.asOutParam()));
                 Guid id;
-                CHECK_RC_BREAK (image->COMGETTER(Id) (id.asOutParam()));
-                Bstr path;
-                CHECK_RC_BREAK (image->COMGETTER(FilePath) (path.asOutParam()));
-                printf ("CD/DVD Image: id={%s}, path={%ls}\n",
-                        id.toString().raw(), path.raw());
-                Bstr mIDs;
-                CHECK_RC_BREAK (
-                    virtualBox->GetDVDImageUsage (id, ResourceUsage_All,
-                                                  mIDs.asOutParam())
-                );
-                if (mIDs.isNull())
-                    printf ("  not used\n");
+                CHECK_ERROR_BREAK (disks [i], COMGETTER(Id) (id.asOutParam()));
+                MediaState_T state;
+                CHECK_ERROR_BREAK (disks [i], COMGETTER(State) (&state));
+                Bstr format;
+                CHECK_ERROR_BREAK (disks [i], COMGETTER(Format) (format.asOutParam()));
+
+                printf (" disks[%u]: '%ls'\n"
+                        "  UUID:         {%Vuuid}\n"
+                        "  State:        %s\n"
+                        "  Format:       %ls\n",
+                        i, loc.raw(), id.raw(),
+                        state == MediaState_NotCreated ? "Not Created" :
+                        state == MediaState_Created ? "Created" :
+                        state == MediaState_Inaccessible ? "Inaccessible" :
+                        state == MediaState_LockedRead ? "Locked Read" :
+                        state == MediaState_LockedWrite ? "Locked Write" :
+                        "???",
+                        format.raw());
+
+                if (state == MediaState_Inaccessible)
+                {
+                    Bstr error;
+                    CHECK_ERROR_BREAK (disks [i],
+                                       COMGETTER(LastAccessError)(error.asOutParam()));
+                    printf ("  Access Error: %ls\n", error.raw());
+                }
+
+                /* get usage */
+
+                printf ("  Used by VMs:\n");
+
+                com::SafeGUIDArray ids;
+                CHECK_ERROR_BREAK (disks [i],
+                                   COMGETTER(MachineIds) (ComSafeArrayAsOutParam (ids)));
+                if (ids.size() == 0)
+                {
+                    printf ("   <not used>\n");
+                }
                 else
-                    printf ("  used by VMs: {%ls}\n", mIDs.raw());
+                {
+                    for (size_t j = 0; j < ids.size(); ++ j)
+                    {
+                        printf ("   {%Vuuid}\n", &ids [i]);
+                    }
+                }
             }
-            CHECK_RC_BREAK (rc);
+        }
+        {
+            com::SafeIfaceArray <IDVDImage2> images;
+            CHECK_ERROR_BREAK (virtualBox,
+                               COMGETTER(DVDImages) (ComSafeArrayAsOutParam (images)));
+
+            printf ("%u DVD images registered (images.isNull()=%d).\n",
+                    images.size(), images.isNull());
+
+            for (size_t i = 0; i < images.size(); ++ i)
+            {
+                Bstr loc;
+                CHECK_ERROR_BREAK (images [i], COMGETTER(Location) (loc.asOutParam()));
+                Guid id;
+                CHECK_ERROR_BREAK (images [i], COMGETTER(Id) (id.asOutParam()));
+                MediaState_T state;
+                CHECK_ERROR_BREAK (images [i], COMGETTER(State) (&state));
+
+                printf (" images[%u]: '%ls'\n"
+                        "  UUID:         {%Vuuid}\n"
+                        "  State:        %s\n",
+                        i, loc.raw(), id.raw(),
+                        state == MediaState_NotCreated ? "Not Created" :
+                        state == MediaState_Created ? "Created" :
+                        state == MediaState_Inaccessible ? "Inaccessible" :
+                        state == MediaState_LockedRead ? "Locked Read" :
+                        state == MediaState_LockedWrite ? "Locked Write" :
+                        "???");
+
+                if (state == MediaState_Inaccessible)
+                {
+                    Bstr error;
+                    CHECK_ERROR_BREAK (images [i],
+                                       COMGETTER(LastAccessError)(error.asOutParam()));
+                    printf ("  Access Error: %ls\n", error.raw());
+                }
+
+                /* get usage */
+
+                printf ("  Used by VMs:\n");
+
+                com::SafeGUIDArray ids;
+                CHECK_ERROR_BREAK (images [i],
+                                   COMGETTER(MachineIds) (ComSafeArrayAsOutParam (ids)));
+                if (ids.size() == 0)
+                {
+                    printf ("   <not used>\n");
+                }
+                else
+                {
+                    for (size_t j = 0; j < ids.size(); ++ j)
+                    {
+                        printf ("   {%Vuuid}\n", &ids [i]);
+                    }
+                }
+            }
         }
     }
     while (FALSE);
@@ -925,7 +1126,21 @@ int main(int argc, char *argv[])
     printf ("\n");
 #endif
 
-#ifdef VBOX_WITH_RESOURCE_USAGE_API
+#if 1
+    do {
+        // Get host
+        ComPtr <IHost> host;
+        CHECK_ERROR_BREAK (virtualBox, COMGETTER(Host) (host.asOutParam()));
+
+        ULONG uMemSize, uMemAvail;
+        CHECK_ERROR_BREAK (host, COMGETTER(MemorySize) (&uMemSize));
+        printf("Total memory (MB): %u\n", uMemSize);
+        CHECK_ERROR_BREAK (host, COMGETTER(MemoryAvailable) (&uMemAvail));
+        printf("Free memory (MB): %u\n", uMemAvail);
+    } while (0);
+#endif
+
+#if 0 && defined (VBOX_WITH_RESOURCE_USAGE_API)
     do {
         // Get collector
         ComPtr <IPerformanceCollector> collector;
@@ -945,6 +1160,7 @@ int main(int argc, char *argv[])
         // Get machine
         ComPtr <IMachine> machine;
         Bstr name = argc > 1 ? argv [1] : "dsl";
+        Bstr sessionType = argc > 2 ? argv [2] : "vrdp";
         printf ("Getting a machine object named '%ls'...\n", name.raw());
         CHECK_RC_BREAK (virtualBox->FindMachine (name, machine.asOutParam()));
 
@@ -953,7 +1169,7 @@ int main(int argc, char *argv[])
         CHECK_RC_BREAK (machine->COMGETTER(Id) (guid.asOutParam()));
         printf ("Opening a remote session for this machine...\n");
         ComPtr <IProgress> progress;
-        CHECK_RC_BREAK (virtualBox->OpenRemoteSession (session, guid, Bstr("vrdp"),
+        CHECK_RC_BREAK (virtualBox->OpenRemoteSession (session, guid, sessionType,
                                                        NULL, progress.asOutParam()));
         printf ("Waiting for the session to open...\n");
         CHECK_RC_BREAK (progress->WaitForCompletion (-1));
@@ -963,11 +1179,16 @@ int main(int argc, char *argv[])
 
         // Setup base metrics
         // Note that one needs to set up metrics after a session is open for a machine.
+        com::SafeIfaceArray<IPerformanceMetric> affectedMetrics;
         com::SafeIfaceArray<IUnknown> objects(2);
         host.queryInterfaceTo(&objects[0]);
         machine.queryInterfaceTo(&objects[1]);
         CHECK_ERROR_BREAK (collector, SetupMetrics(ComSafeArrayAsInParam(baseMetrics),
-                                                   ComSafeArrayAsInParam(objects), 1u, 10u) );
+                                                   ComSafeArrayAsInParam(objects), 1u, 10u,
+                                                   ComSafeArrayAsOutParam(affectedMetrics)) );
+        listAffectedMetrics(virtualBox,
+                            ComSafeArrayAsInParam(affectedMetrics));
+        affectedMetrics.setNull();
 
         // Get console
         ComPtr <IConsole> console;
@@ -976,8 +1197,8 @@ int main(int argc, char *argv[])
 
         RTThreadSleep(5000); // Sleep for 5 seconds
 
-        printf("Metrics collected with DSL machine running: --------------------\n");
-        queryMetrics(collector, ComSafeArrayAsInParam(objects));
+        printf("\nMetrics collected with VM running: --------------------\n");
+        queryMetrics(virtualBox, collector, ComSafeArrayAsInParam(objects));
 
         // Pause
         //printf ("Press enter to pause the VM execution in the remote session...");
@@ -986,8 +1207,43 @@ int main(int argc, char *argv[])
 
         RTThreadSleep(5000); // Sleep for 5 seconds
 
-        printf("Metrics collected with DSL machine paused: ---------------------\n");
-        queryMetrics(collector, ComSafeArrayAsInParam(objects));
+        printf("\nMetrics collected with VM paused: ---------------------\n");
+        queryMetrics(virtualBox, collector, ComSafeArrayAsInParam(objects));
+
+        printf("\nDrop collected metrics: ----------------------------------------\n");
+        CHECK_ERROR_BREAK (collector,
+            SetupMetrics(ComSafeArrayAsInParam(baseMetrics),
+                         ComSafeArrayAsInParam(objects),
+                         1u, 5u, ComSafeArrayAsOutParam(affectedMetrics)) );
+        listAffectedMetrics(virtualBox,
+                            ComSafeArrayAsInParam(affectedMetrics));
+        affectedMetrics.setNull();
+        queryMetrics(virtualBox, collector, ComSafeArrayAsInParam(objects));
+
+        com::SafeIfaceArray<IUnknown> vmObject(1);
+        machine.queryInterfaceTo(&vmObject[0]);
+
+        printf("\nDisable collection of VM metrics: ------------------------------\n");
+        CHECK_ERROR_BREAK (collector,
+            DisableMetrics(ComSafeArrayAsInParam(baseMetrics),
+                           ComSafeArrayAsInParam(vmObject),
+                           ComSafeArrayAsOutParam(affectedMetrics)) );
+        listAffectedMetrics(virtualBox,
+                            ComSafeArrayAsInParam(affectedMetrics));
+        affectedMetrics.setNull();
+        RTThreadSleep(5000); // Sleep for 5 seconds
+        queryMetrics(virtualBox, collector, ComSafeArrayAsInParam(objects));
+
+        printf("\nRe-enable collection of all metrics: ---------------------------\n");
+        CHECK_ERROR_BREAK (collector,
+            EnableMetrics(ComSafeArrayAsInParam(baseMetrics),
+                          ComSafeArrayAsInParam(objects),
+                          ComSafeArrayAsOutParam(affectedMetrics)) );
+        listAffectedMetrics(virtualBox,
+                            ComSafeArrayAsInParam(affectedMetrics));
+        affectedMetrics.setNull();
+        RTThreadSleep(5000); // Sleep for 5 seconds
+        queryMetrics(virtualBox, collector, ComSafeArrayAsInParam(objects));
 
         // Power off
         printf ("Press enter to power off VM...");
@@ -1018,8 +1274,9 @@ int main(int argc, char *argv[])
 }
 
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
-void queryMetrics (ComPtr <IPerformanceCollector> collector,
-                   ComSafeArrayIn (IUnknown *, objects))
+static void queryMetrics (ComPtr<IVirtualBox> aVirtualBox,
+                          ComPtr <IPerformanceCollector> collector,
+                          ComSafeArrayIn (IUnknown *, objects))
 {
     HRESULT rc;
 
@@ -1029,6 +1286,9 @@ void queryMetrics (ComPtr <IPerformanceCollector> collector,
     metricNames[0].cloneTo (&metrics [0]);
     com::SafeArray<BSTR>          retNames;
     com::SafeIfaceArray<IUnknown> retObjects;
+    com::SafeArray<BSTR>          retUnits;
+    com::SafeArray<ULONG>         retScales;
+    com::SafeArray<ULONG>         retSequenceNumbers;
     com::SafeArray<ULONG>         retIndices;
     com::SafeArray<ULONG>         retLengths;
     com::SafeArray<LONG>          retData;
@@ -1036,35 +1296,78 @@ void queryMetrics (ComPtr <IPerformanceCollector> collector,
                                              ComSafeArrayInArg(objects),
                                              ComSafeArrayAsOutParam(retNames),
                                              ComSafeArrayAsOutParam(retObjects),
+                                             ComSafeArrayAsOutParam(retUnits),
+                                             ComSafeArrayAsOutParam(retScales),
+                                             ComSafeArrayAsOutParam(retSequenceNumbers),
                                              ComSafeArrayAsOutParam(retIndices),
                                              ComSafeArrayAsOutParam(retLengths),
                                              ComSafeArrayAsOutParam(retData)) );
+    RTPrintf("Object     Metric               Values\n"
+             "---------- -------------------- --------------------------------------------\n");
     for (unsigned i = 0; i < retNames.size(); i++)
     {
-        // Get info for the metric
-        com::SafeArray<BSTR> nameOfMetric(1);
-        Bstr tmpName(retNames[i]);
-        tmpName.detachTo (&nameOfMetric[0]);
-        com::SafeIfaceArray<IUnknown> anObject(1);
-        ComPtr<IUnknown> tmpObject(retObjects[i]);
-        tmpObject.queryInterfaceTo(&anObject[0]);
-        com::SafeIfaceArray <IPerformanceMetric> metricInfo;
-        CHECK_RC_BREAK (collector->GetMetrics( ComSafeArrayAsInParam(nameOfMetric),
-                                               ComSafeArrayAsInParam(anObject),
-                                               ComSafeArrayAsOutParam(metricInfo) ));
-        BSTR metricUnitBSTR;
-        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(Unit) (&metricUnitBSTR));
-        Bstr metricUnit(metricUnitBSTR);
+        Bstr metricUnit(retUnits[i]);
         Bstr metricName(retNames[i]);
-        LONG minVal, maxVal;
-        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MinimumValue) (&minVal));
-        CHECK_RC_BREAK (metricInfo[0]->COMGETTER(MaximumValue) (&maxVal));
-        printf("obj(%p) %ls (min=%lu max=%lu)", anObject[0], metricName.raw(), minVal, maxVal);
+        RTPrintf("%-10ls %-20ls ", getObjectName(aVirtualBox, retObjects[i]).raw(), metricName.raw());
+        const char *separator = "";
         for (unsigned j = 0; j < retLengths[i]; j++)
         {
-            printf(", %d %ls", retData[retIndices[i] + j] / (strcmp((const char *)metricUnit.raw(), "%")?1:1000), metricUnit.raw());
+            if (retScales[i] == 1)
+                RTPrintf("%s%d %ls", separator, retData[retIndices[i] + j], metricUnit.raw());
+            else
+                RTPrintf("%s%d.%02d%ls", separator, retData[retIndices[i] + j] / retScales[i],
+                         (retData[retIndices[i] + j] * 100 / retScales[i]) % 100, metricUnit.raw());
+            separator = ", ";
         }
-        printf("\n");
+        RTPrintf("\n");
     }
 }
+
+static Bstr getObjectName(ComPtr<IVirtualBox> aVirtualBox,
+                                  ComPtr<IUnknown> aObject)
+{
+    HRESULT rc;
+
+    ComPtr<IHost> host = aObject;
+    if (!host.isNull())
+        return Bstr("host");
+
+    ComPtr<IMachine> machine = aObject;
+    if (!machine.isNull())
+    {
+        Bstr name;
+        CHECK_ERROR(machine, COMGETTER(Name)(name.asOutParam()));
+        if (SUCCEEDED(rc))
+            return name;
+    }
+    return Bstr("unknown");
+}
+
+static void listAffectedMetrics(ComPtr<IVirtualBox> aVirtualBox,
+                                ComSafeArrayIn(IPerformanceMetric*, aMetrics))
+{
+    HRESULT rc;
+    com::SafeIfaceArray<IPerformanceMetric> metrics(ComSafeArrayInArg(aMetrics));
+    if (metrics.size())
+    {
+        ComPtr<IUnknown> object;
+        Bstr metricName;
+        RTPrintf("The following metrics were modified:\n\n"
+                 "Object     Metric\n"
+                 "---------- --------------------\n");
+        for (size_t i = 0; i < metrics.size(); i++)
+        {
+            CHECK_ERROR(metrics[i], COMGETTER(Object)(object.asOutParam()));
+            CHECK_ERROR(metrics[i], COMGETTER(MetricName)(metricName.asOutParam()));
+            RTPrintf("%-10ls %-20ls\n",
+                getObjectName(aVirtualBox, object).raw(), metricName.raw());
+        }
+        RTPrintf("\n");
+    }
+    else
+    {
+        RTPrintf("No metrics match the specified filter!\n");
+    }
+}
+
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */

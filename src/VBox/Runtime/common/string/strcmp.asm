@@ -1,4 +1,4 @@
-; $Id: strcmp.asm $
+; $Id: strcmp.asm 14021 2008-11-10 16:31:22Z vboxsync $
 ;; @file
 ; IPRT - No-CRT strcmp - AMD64 & X86.
 ;
@@ -35,7 +35,7 @@ BEGINCODE
 ;;
 ; @param    psz1   gcc: rdi  msc: rcx  x86:[esp+4]
 ; @param    psz2   gcc: rsi  msc: rdx  x86:[esp+8]
-BEGINPROC RT_NOCRT(strcmp)
+RT_NOCRT_BEGINPROC strcmp
         ; input
 %ifdef RT_ARCH_AMD64
  %ifdef ASM_CALL64_MSC
@@ -69,8 +69,6 @@ BEGINPROC RT_NOCRT(strcmp)
         jne     .not_equal
         test    al, al
         jz      .equal
-        inc     psz1
-        inc     psz2
 
         mov     al, [psz1 + 2]
         mov     ah, [psz2 + 2]
@@ -78,8 +76,6 @@ BEGINPROC RT_NOCRT(strcmp)
         jne     .not_equal
         test    al, al
         jz      .equal
-        inc     psz1
-        inc     psz2
 
         mov     al, [psz1 + 3]
         mov     ah, [psz2 + 3]

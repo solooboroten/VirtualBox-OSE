@@ -1,4 +1,4 @@
-/* $Id: PDM.cpp $ */
+/* $Id: PDM.cpp 14072 2008-11-10 23:53:50Z vboxsync $ */
 /** @file
  * PDM - Pluggable Device Manager.
  */
@@ -20,85 +20,232 @@
  */
 
 
-/** @page   pg_pdm      PDM - The Pluggable Device Manager
+/** @page   pg_pdm      PDM - The Pluggable Device & Driver Manager
  *
- * VBox is designed to be very configurable, i.e. the ability to select
- * virtual devices and configure them uniquely for a VM. For this reason
- * virtual devices are not statically linked with the VMM but loaded and
- * linked at runtime thru the Configuration Manager (CFGM). PDM will use
- * CFGM to enumerate devices which needs loading and instantiation.
+ * VirtualBox is designed to be very configurable, i.e. the ability to select
+ * virtual devices and configure them uniquely for a VM.  For this reason
+ * virtual devices are not statically linked with the VMM but loaded, linked and
+ * instantiated at runtime by PDM using the information found in the
+ * Configuration Manager (CFGM).
+ *
+ * While the chief purpose of PDM is to manager of devices their drivers, it
+ * also serves as somewhere to put usful things like cross context queues, cross
+ * context synchronization (like critsect), VM centric thread management,
+ * asynchronous I/O framework, and so on.
+ *
+ * @see grp_pdm
  *
  *
- * @section sec_pdm_dev      The Pluggable Device
+ * @section sec_pdm_dev     The Pluggable Devices
  *
- * Devices register themselves when the module containing them is loaded.
- * PDM will call an entry point 'VBoxDevicesRegister' when loading a device
- * module. The device module will then use the supplied callback table to
- * check the VMM version and to register its devices. Each device have an
- * unique (for the configured VM) name (string). The name is not only used
- * in PDM but in CFGM - to organize device and device instance settings - and
- * by anyone who wants to do ioctls to the device.
+ * Devices register themselves when the module containing them is loaded.  PDM
+ * will call the entry point 'VBoxDevicesRegister' when loading a device module.
+ * The device module will then use the supplied callback table to check the VMM
+ * version and to register its devices.  Each device have an unique (for the
+ * configured VM) name.  The name is not only used in PDM but also in CFGM (to
+ * organize device and device instance settings) and by anyone who wants to talk
+ * to a specific device instance.
  *
  * When all device modules have been successfully loaded PDM will instantiate
- * those devices which are configured for the VM. Mark that this might mean
- * creating several instances of some devices. When instantiating a device
- * PDM provides device instance memory and a callback table with the VM APIs
- * which the device instance is trusted with.
+ * those devices which are configured for the VM.  Note that a device may have
+ * more than one instance, see network adaptors for instance.  When
+ * instantiating a device PDM provides device instance memory and a callback
+ * table (aka Device Helpers / DevHlp) with the VM APIs which the device
+ * instance is trusted with.
  *
- * Some devices are trusted devices, most are not. The trusted devices are
- * an integrated part of the VM and can obtain the VM handle from their
- * device instance handles, thus enabling them to call any VM api. Untrusted
- * devices are can only use the callbacks provided during device
- * instantiation.
+ * Some devices are trusted devices, most are not.  The trusted devices are an
+ * integrated part of the VM and can obtain the VM handle from their device
+ * instance handles, thus enabling them to call any VM api.  Untrusted devices
+ * can only use the callbacks provided during device instantiation.
  *
- * The guest context extention (optional) of a device is initialized as part
- * of the GC init. A device marks in it's registration structure that it have
- * a GC part, in which module and which name the entry point have. PDM will
- * use its loader facilities to load this module into GC and to find the
- * specified entry point.
+ * The main purpose in having DevHlps rather than just giving all the devices
+ * the VM handle and let them call the internal VM APIs directly, is both to
+ * create a binary interface that can be supported accross releases and to
+ * create a barrier between devices and the VM.  (The trusted / untrusted bit
+ * hasn't turned out to be of much use btw., but it's easy to maintain so there
+ * isn't any point in removing it.)
  *
- * When writing a GC extention the programmer must keep in mind that this
- * code will be relocated, so that using global/static pointer variables
- * won't work.
+ * A device can provide a ring-0 and/or a raw-mode context extension to improve
+ * the VM performance by handling exits and traps (respectively) without
+ * requiring context switches (to ring-3).  Callbacks for MMIO and I/O ports can
+ * needs to be registered specifically for the additional contexts for this to
+ * make sense.  Also, the device has to be trusted to be loaded into R0/RC
+ * because of the extra privilege it entails.  Note that raw-mode code and data
+ * will be subject to relocation.
  *
  *
- * @section sec_pdm_drv      The Pluggable Drivers
+ * @section sec_pdm_special_devs    Special Devices
  *
- * The VM devices are often accessing host hardware or OS facilities. For
- * most devices these facilities can be abstracted in one or more levels.
- * These abstractions are called drivers.
+ * Several kinds of devices interacts with the VMM and/or other device and PDM
+ * will work like a mediator for these. The typical pattern is that the device
+ * calls a special registration device helper with a set of callbacks, PDM
+ * responds by copying this and providing a pointer to a set helper callbacks
+ * for that particular kind of device. Unlike interfaces where the callback
+ * table pointer is used a 'this' pointer, these arrangements will use the
+ * device instance pointer (PPDMDEVINS) as a kind of 'this' pointer.
  *
- * For instance take a DVD/CD drive. This can be connected to a SCSI
- * controller, EIDE controller or SATA controller. The basics of the
- * DVD/CD drive implementation remains the same - eject, insert,
- * read, seek, and such. (For the scsi case, you might wanna speak SCSI
- * directly to, but that can of course be fixed.) So, it makes much sense to
- * have a generic CD/DVD driver which implements this.
+ * For an example of this kind of setup, see the PIC. The PIC registers itself
+ * by calling PDMDEVHLPR3::pfnPICRegister.  PDM saves the device instance,
+ * copies the callback tables (PDMPICREG), resolving the ring-0 and raw-mode
+ * addresses in the process, and hands back the pointer to a set of helper
+ * methods (PDMPICHLPR3).  The PCI device then queries the ring-0 and raw-mode
+ * helpers using PDMPICHLPR3::pfnGetR0Helpers and PDMPICHLPR3::pfnGetRCHelpers.
+ * The PCI device repeates ths pfnGetRCHelpers call in it's relocation method
+ * since the address changes when RC is relocated.
  *
- * Then the media 'inserted' into the DVD/CD drive can be a ISO image, or
- * it can be read from a real CD or DVD drive (there are probably other
- * custom formats someone could desire to read or construct too). So, it
- * would make sense to have abstracted interfaces for dealing with this
- * in a generic way so the cdrom unit doesn't have to implement it all.
- * Thus we have created the CDROM/DVD media driver family.
+ * @see grp_pdm_device
+ *
+ *
+ * @section sec_pdm_usbdev  The Pluggable USB Devices
+ *
+ * USB devices are handled a little bit differently than other devices.  The
+ * general concepts wrt. pluggability are mostly the same, but the details
+ * varies.  The registration entry point is 'VBoxUsbRegister', the device
+ * instance is PDMUSBINS and the callbacks helpers are different.  Also, USB
+ * device are restricted to ring-3 and cannot have any ring-0 or raw-mode
+ * extensions (at least not yet).
+ *
+ * The way USB devices work differs greatly from other devices though since they
+ * aren't attaches directly to the PCI/ISA/whatever system buses but via a
+ * USB host control (OHCI, UHCI or EHCI).  USB devices handles USB requests
+ * (URBs) and does not register I/O ports, MMIO ranges or PCI bus
+ * devices/functions.
+ *
+ * @see grp_pdm_usbdev
+ *
+ *
+ * @section sec_pdm_drv     The Pluggable Drivers
+ *
+ * The VM devices are often accessing host hardware or OS facilities.  For most
+ * devices these facilities can be abstracted in one or more levels.  These
+ * abstractions are called drivers.
+ *
+ * For instance take a DVD/CD drive.  This can be connected to a SCSI
+ * controller, an ATA controller or a SATA controller.  The basics of the DVD/CD
+ * drive implementation remains the same - eject, insert, read, seek, and such.
+ * (For the scsi case, you might wanna speak SCSI directly to, but that can of
+ * course be fixed - see SCSI passthru.)  So, it
+ * makes much sense to have a generic CD/DVD driver which implements this.
+ *
+ * Then the media 'inserted' into the DVD/CD drive can be a ISO image, or it can
+ * be read from a real CD or DVD drive (there are probably other custom formats
+ * someone could desire to read or construct too).  So, it would make sense to
+ * have abstracted interfaces for dealing with this in a generic way so the
+ * cdrom unit doesn't have to implement it all.  Thus we have created the
+ * CDROM/DVD media driver family.
  *
  * So, for this example the IDE controller #1 (i.e. secondary) will have
- * the DVD/CD Driver attached to it's LUN #0 (master). When a media is mounted
- * the DVD/CD Driver will have a ISO, NativeCD, NativeDVD or RAW (media) Driver
- * attached.
+ * the DVD/CD Driver attached to it's LUN #0 (master).  When a media is mounted
+ * the DVD/CD Driver will have a ISO, HostDVD or RAW (media) Driver attached.
  *
  * It is possible to configure many levels of drivers inserting filters, loggers,
- * or whatever you desire into the chain.
+ * or whatever you desire into the chain.  We're using this for network sniffing
+ * for instance.
+ *
+ * The drivers are loaded in a similar manner to that of the device, namely by
+ * iterating a keyspace in CFGM, load the modules listed there and call
+ * 'VBoxDriversRegister' with a callback table.
+ *
+ * @see grp_pdm_driver
  *
  *
- * @subsection sec_pdm_drv_interfaces   Interfaces
+ * @section sec_pdm_ifs     Interfaces
  *
- * The pluggable drivers exposes one standard interface (callback table) which
- * is used to construct, destruct, attach, detach, and query other interfaces.
- * A device will query the interfaces required for it's operation during init
- * and hotplug. PDM will query some interfaces during runtime mounting too.
+ * The pluggable drivers and devices exposes one standard interface (callback
+ * table) which is used to construct, destruct, attach, detach,( ++,) and query
+ * other interfaces. A device will query the interfaces required for it's
+ * operation during init and hotplug.  PDM may query some interfaces during
+ * runtime mounting too.
  *
- * ... list interfaces ...
+ * An interface here means a function table contained within the device or
+ * driver instance data. Its method are invoked with the function table pointer
+ * as the first argument and they will calculate the address of the device or
+ * driver instance data from it. (This is one of the aspects which *might* have
+ * been better done in C++.)
+ *
+ * @see grp_pdm_interfaces
+ *
+ *
+ * @section sec_pdm_utils   Utilities
+ *
+ * As mentioned earlier, PDM is the location of any usful constrcts that doesn't
+ * quite fit into IPRT. The next subsections will discuss these.
+ *
+ * One thing these APIs all have in common is that resources will be associated
+ * with a device / driver and automatically freed after it has been destroyed if
+ * the destructor didn't do this.
+ *
+ *
+ * @subsection sec_pdm_async_completion     Async I/O
+ *
+ * The PDM Async I/O API provides a somewhat platform agnostic interface for
+ * asynchronous I/O.  For reasons of performance and complexcity this does not
+ * build upon any IPRT API.
+ *
+ * @todo more details.
+ *
+ * @see grp_pdm_async_completion
+ *
+ *
+ * @subsection sec_pdm_async_task   Async Task - not implemented
+ *
+ * @todo implement and describe
+ *
+ * @see grp_pdm_async_task
+ *
+ *
+ * @subsection sec_pdm_critsect     Critical Section
+ *
+ * The PDM Critical Section API is currently building on the IPRT API with the
+ * same name.  It adds the posibility to use critical sections in ring-0 and
+ * raw-mode as well as in ring-3.  There are certain restrictions on the RC and
+ * R0 usage though since we're not able to wait on it, nor wake up anyone that
+ * is waiting on it.  These restrictions origins with the use of a ring-3 event
+ * semaphore.  In a later incarnation we plan to replace the ring-3 event
+ * semaphore with a ring-0 one, thus enabling us to wake up waiters while
+ * exectuing in ring-0 and making the hardware assisted execution mode more
+ * efficient. (Raw-mode won't benefit much from this, naturally.)
+ *
+ * @see grp_pdm_critsect
+ *
+ *
+ * @subsection sec_pdm_queue        Queue
+ *
+ * The PDM Queue API is for queuing one or more tasks for later consumption in
+ * ring-3 by EMT, and optinally forcing a delayed or ASAP return to ring-3.  The
+ * queues can also be run on a timer basis as an alternative to the ASAP thing.
+ * The queue will be flushed at forced action time.
+ *
+ * A queue can also be used by another thread (a I/O worker for instance) to
+ * send work / events over to the EMT.
+ *
+ * @see grp_pdm_queue
+ *
+ *
+ * @subsection sec_pdm_task        Task - not implemented yet
+ *
+ * The PDM Task API is for flagging a task for execution at a later point when
+ * we're back in ring-3, optionally forcing the ring-3 return to happen ASAP.
+ * As you can see the concept is similar to queues only simpler.
+ *
+ * A task can also be scheduled by another thread (a I/O worker for instance) as
+ * a mean of getting something done in EMT.
+ *
+ * @see grp_pdm_task
+ *
+ *
+ * @subsection sec_pdm_thread       Thread
+ *
+ * The PDM Thread API is there to help devices and drivers manage their threads
+ * correctly wrt. power on, suspend, resume, power off and destruction.
+ *
+ * The general usage pattern for threads in the employ of devices and drivers is
+ * that they shuffle data or requests while the VM is running and stop doing
+ * this when the VM is paused or powered down. Rogue threads running while the
+ * VM is paused can cause the state to change during saving or have other
+ * unwanted side effects. The PDM Threads API ensures that this won't happen.
+ *
+ * @see grp_pdm_thread
  *
  */
 
@@ -154,7 +301,7 @@ static DECLCALLBACK(void) pdmR3PollerTimer(PVM pVM, PTMTIMER pTimer, void *pvUse
  * @returns VBox status code.
  * @param   pUVM        Pointer to the user mode VM structure.
  */
-PDMR3DECL(int) PDMR3InitUVM(PUVM pUVM)
+VMMR3DECL(int) PDMR3InitUVM(PUVM pUVM)
 {
     AssertCompile(sizeof(pUVM->pdm.s) <= sizeof(pUVM->pdm.padding));
     AssertRelease(sizeof(pUVM->pdm.s) <= sizeof(pUVM->pdm.padding));
@@ -169,7 +316,7 @@ PDMR3DECL(int) PDMR3InitUVM(PUVM pUVM)
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  */
-PDMR3DECL(int) PDMR3Init(PVM pVM)
+VMMR3DECL(int) PDMR3Init(PVM pVM)
 {
     LogFlow(("PDMR3Init\n"));
 
@@ -183,6 +330,7 @@ PDMR3DECL(int) PDMR3Init(PVM pVM)
      * Init the structure.
      */
     pVM->pdm.s.offVM = RT_OFFSETOF(VM, pdm.s);
+    pVM->pdm.s.GCPhysVMMDevHeap = NIL_RTGCPHYS;
 
     int rc = TMR3TimerCreateInternal(pVM, TMCLOCK_VIRTUAL, pdmR3PollerTimer, NULL, "PDM Poller", &pVM->pdm.s.pTimerPollers);
     AssertRC(rc);
@@ -191,22 +339,22 @@ PDMR3DECL(int) PDMR3Init(PVM pVM)
      * Initialize sub compontents.
      */
     rc = pdmR3CritSectInit(pVM);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         rc = PDMR3CritSectInit(pVM, &pVM->pdm.s.CritSect, "PDM");
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
             rc = pdmR3LdrInitU(pVM->pUVM);
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
         {
             rc = pdmR3DrvInit(pVM);
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
             {
                 rc = pdmR3DevInit(pVM);
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
 #ifdef VBOX_WITH_PDM_ASYNC_COMPLETION
                     rc = pdmR3AsyncCompletionInit(pVM);
-                    if (VBOX_SUCCESS(rc))
+                    if (RT_SUCCESS(rc))
 #endif
                     {
                         /*
@@ -215,7 +363,7 @@ PDMR3DECL(int) PDMR3Init(PVM pVM)
                         rc = SSMR3RegisterInternal(pVM, "pdm", 1, PDM_SAVED_STATE_VERSION, 128,
                                                    NULL, pdmR3Save, NULL,
                                                    pdmR3LoadPrep, pdmR3Load, NULL);
-                        if (VBOX_SUCCESS(rc))
+                        if (RT_SUCCESS(rc))
                         {
                             LogFlow(("PDM: Successfully initialized\n"));
                             return rc;
@@ -231,7 +379,7 @@ PDMR3DECL(int) PDMR3Init(PVM pVM)
      * Cleanup and return failure.
      */
     PDMR3Term(pVM);
-    LogFlow(("PDMR3Init: returns %Vrc\n", rc));
+    LogFlow(("PDMR3Init: returns %Rrc\n", rc));
     return rc;
 }
 
@@ -246,7 +394,7 @@ PDMR3DECL(int) PDMR3Init(PVM pVM)
  * @remark  The loader subcomponent is relocated by PDMR3LdrRelocate() very
  *          early in the relocation phase.
  */
-PDMR3DECL(void) PDMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
+VMMR3DECL(void) PDMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
 {
     LogFlow(("PDMR3Relocate\n"));
 
@@ -254,7 +402,7 @@ PDMR3DECL(void) PDMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
      * Queues.
      */
     pdmR3QueueRelocate(pVM, offDelta);
-    pVM->pdm.s.pDevHlpQueueGC = PDMQueueGCPtr(pVM->pdm.s.pDevHlpQueueHC);
+    pVM->pdm.s.pDevHlpQueueRC = PDMQueueRCPtr(pVM->pdm.s.pDevHlpQueueR3);
 
     /*
      * Critical sections.
@@ -283,6 +431,8 @@ PDMR3DECL(void) PDMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
         pVM->pdm.s.Apic.pfnSetTPRRC         += offDelta;
         pVM->pdm.s.Apic.pfnGetTPRRC         += offDelta;
         pVM->pdm.s.Apic.pfnBusDeliverRC     += offDelta;
+        pVM->pdm.s.Apic.pfnWriteMSRRC       += offDelta;
+        pVM->pdm.s.Apic.pfnReadMSRRC        += offDelta;
     }
 
     /*
@@ -309,21 +459,20 @@ PDMR3DECL(void) PDMR3Relocate(PVM pVM, RTGCINTPTR offDelta)
     /*
      * Devices.
      */
-    RCPTRTYPE(PCPDMDEVHLPGC) pDevHlpGC;
-    int rc = PDMR3GetSymbolGC(pVM, NULL, "g_pdmGCDevHlp", &pDevHlpGC);
-    AssertReleaseMsgRC(rc, ("rc=%Vrc when resolving g_pdmGCDevHlp\n", rc));
-    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextHC)
+    PCPDMDEVHLPRC pDevHlpRC;
+    int rc = PDMR3LdrGetSymbolRC(pVM, NULL, "g_pdmRCDevHlp", &pDevHlpRC);
+    AssertReleaseMsgRC(rc, ("rc=%Rrc when resolving g_pdmRCDevHlp\n", rc));
+    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextR3)
     {
-        if (pDevIns->pDevReg->fFlags & PDM_DEVREG_FLAGS_GC)
+        if (pDevIns->pDevReg->fFlags & PDM_DEVREG_FLAGS_RC)
         {
-            pDevIns->pDevHlpGC = pDevHlpGC;
-            pDevIns->pvInstanceDataGC = MMHyperR3ToRC(pVM, pDevIns->pvInstanceDataR3);
-            pDevIns->pvInstanceDataR0 = MMHyperR3ToR0(pVM, pDevIns->pvInstanceDataR3);
-            pDevIns->Internal.s.pVMGC = pVM->pVMGC;
-            if (pDevIns->Internal.s.pPciBusHC)
-                pDevIns->Internal.s.pPciBusGC = MMHyperR3ToRC(pVM, pDevIns->Internal.s.pPciBusHC);
-            if (pDevIns->Internal.s.pPciDeviceHC)
-                pDevIns->Internal.s.pPciDeviceGC = MMHyperR3ToRC(pVM, pDevIns->Internal.s.pPciDeviceHC);
+            pDevIns->pDevHlpRC = pDevHlpRC;
+            pDevIns->pvInstanceDataRC = MMHyperR3ToRC(pVM, pDevIns->pvInstanceDataR3);
+            pDevIns->Internal.s.pVMRC = pVM->pVMRC;
+            if (pDevIns->Internal.s.pPciBusR3)
+                pDevIns->Internal.s.pPciBusRC = MMHyperR3ToRC(pVM, pDevIns->Internal.s.pPciBusR3);
+            if (pDevIns->Internal.s.pPciDeviceR3)
+                pDevIns->Internal.s.pPciDeviceRC = MMHyperR3ToRC(pVM, pDevIns->Internal.s.pPciDeviceR3);
             if (pDevIns->pDevReg->pfnRelocate)
             {
                 LogFlow(("PDMR3Relocate: Relocating device '%s'/%d\n",
@@ -384,7 +533,7 @@ static void pdmR3TermLuns(PVM pVM, PPDMLUN pLun, const char *pszDevice, unsigned
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  */
-PDMR3DECL(int) PDMR3Term(PVM pVM)
+VMMR3DECL(int) PDMR3Term(PVM pVM)
 {
     LogFlow(("PDMR3Term:\n"));
     AssertMsg(pVM->pdm.s.offVM, ("bad init order!\n"));
@@ -414,9 +563,9 @@ PDMR3DECL(int) PDMR3Term(PVM pVM)
     }
 
     /* then the 'normal' ones. */
-    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextHC)
+    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextR3)
     {
-        pdmR3TermLuns(pVM, pDevIns->Internal.s.pLunsHC, pDevIns->pDevReg->szDeviceName, pDevIns->iInstance);
+        pdmR3TermLuns(pVM, pDevIns->Internal.s.pLunsR3, pDevIns->pDevReg->szDeviceName, pDevIns->iInstance);
 
         if (pDevIns->pDevReg->pfnDestruct)
         {
@@ -455,7 +604,7 @@ PDMR3DECL(int) PDMR3Term(PVM pVM)
      */
     PDMR3CritSectDelete(&pVM->pdm.s.CritSect);
 
-    LogFlow(("PDMR3Term: returns %Vrc\n", VINF_SUCCESS));
+    LogFlow(("PDMR3Term: returns %Rrc\n", VINF_SUCCESS));
     return VINF_SUCCESS;
 }
 
@@ -467,7 +616,7 @@ PDMR3DECL(int) PDMR3Term(PVM pVM)
  *
  * @param   pUVM        Pointer to the user mode VM structure.
  */
-PDMR3DECL(void) PDMR3TermUVM(PUVM pUVM)
+VMMR3DECL(void) PDMR3TermUVM(PUVM pUVM)
 {
     /*
      * In the normal cause of events we will now call pdmR3LdrTermU for
@@ -506,7 +655,7 @@ static DECLCALLBACK(int) pdmR3Save(PVM pVM, PSSMHANDLE pSSM)
      */
     /** @todo We might have to filter out some device classes, like USB attached devices. */
     uint32_t i = 0;
-    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextHC, i++)
+    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextR3, i++)
     {
         SSMR3PutU32(pSSM, i);
         SSMR3PutStrZ(pSSM, pDevIns->pDevReg->szDeviceName);
@@ -577,7 +726,7 @@ static DECLCALLBACK(int) pdmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
     /* APIC interrupt */
     RTUINT fInterruptPending = 0;
     int rc = SSMR3GetUInt(pSSM, &fInterruptPending);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (fInterruptPending & ~1)
     {
@@ -591,7 +740,7 @@ static DECLCALLBACK(int) pdmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
     /* PIC interrupt */
     fInterruptPending = 0;
     rc = SSMR3GetUInt(pSSM, &fInterruptPending);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (fInterruptPending & ~1)
     {
@@ -605,7 +754,7 @@ static DECLCALLBACK(int) pdmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
     /* DMA pending */
     RTUINT fDMAPending = 0;
     rc = SSMR3GetUInt(pSSM, &fDMAPending);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (fDMAPending & ~1)
     {
@@ -624,12 +773,12 @@ static DECLCALLBACK(int) pdmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
      */
     uint32_t i = 0;
     PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances;
-    for (;;pDevIns = pDevIns->Internal.s.pNextHC, i++)
+    for (;;pDevIns = pDevIns->Internal.s.pNextR3, i++)
     {
         /* Get the separator / terminator. */
         uint32_t    u32Sep;
         int rc = SSMR3GetU32(pSSM, &u32Sep);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
         if (u32Sep == (uint32_t)~0)
             break;
@@ -639,11 +788,11 @@ static DECLCALLBACK(int) pdmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
         /* get the name and instance number. */
         char szDeviceName[sizeof(pDevIns->pDevReg->szDeviceName)];
         rc = SSMR3GetStrZ(pSSM, szDeviceName, sizeof(szDeviceName));
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
         RTUINT iInstance;
         rc = SSMR3GetUInt(pSSM, &iInstance);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
 
         /* compare */
@@ -684,7 +833,7 @@ static DECLCALLBACK(int) pdmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
  *
  * @param   pVM     VM Handle.
  */
-PDMR3DECL(void) PDMR3PowerOn(PVM pVM)
+VMMR3DECL(void) PDMR3PowerOn(PVM pVM)
 {
     LogFlow(("PDMR3PowerOn:\n"));
 
@@ -692,9 +841,9 @@ PDMR3DECL(void) PDMR3PowerOn(PVM pVM)
      * Iterate the device instances.
      * The attached drivers are processed first.
      */
-    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextHC)
+    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextR3)
     {
-        for (PPDMLUN pLun = pDevIns->Internal.s.pLunsHC; pLun; pLun = pLun->pNext)
+        for (PPDMLUN pLun = pDevIns->Internal.s.pLunsR3; pLun; pLun = pLun->pNext)
             /** @todo Inverse the order here? */
             for (PPDMDRVINS pDrvIns = pLun->pTop; pDrvIns; pDrvIns = pDrvIns->Internal.s.pDown)
                 if (pDrvIns->pDrvReg->pfnPowerOn)
@@ -750,7 +899,7 @@ PDMR3DECL(void) PDMR3PowerOn(PVM pVM)
  *
  * @param   pVM     VM Handle.
  */
-PDMR3DECL(void) PDMR3Reset(PVM pVM)
+VMMR3DECL(void) PDMR3Reset(PVM pVM)
 {
     LogFlow(("PDMR3Reset:\n"));
 
@@ -765,9 +914,9 @@ PDMR3DECL(void) PDMR3Reset(PVM pVM)
      * Iterate the device instances.
      * The attached drivers are processed first.
      */
-    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextHC)
+    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextR3)
     {
-        for (PPDMLUN pLun = pDevIns->Internal.s.pLunsHC; pLun; pLun = pLun->pNext)
+        for (PPDMLUN pLun = pDevIns->Internal.s.pLunsR3; pLun; pLun = pLun->pNext)
             /** @todo Inverse the order here? */
             for (PPDMDRVINS pDrvIns = pLun->pTop; pDrvIns; pDrvIns = pDrvIns->Internal.s.pDown)
                 if (pDrvIns->pDrvReg->pfnReset)
@@ -816,7 +965,7 @@ PDMR3DECL(void) PDMR3Reset(PVM pVM)
  *
  * @param   pVM     VM Handle.
  */
-PDMR3DECL(void) PDMR3Suspend(PVM pVM)
+VMMR3DECL(void) PDMR3Suspend(PVM pVM)
 {
     LogFlow(("PDMR3Suspend:\n"));
 
@@ -824,9 +973,9 @@ PDMR3DECL(void) PDMR3Suspend(PVM pVM)
      * Iterate the device instances.
      * The attached drivers are processed first.
      */
-    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextHC)
+    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextR3)
     {
-        for (PPDMLUN pLun = pDevIns->Internal.s.pLunsHC; pLun; pLun = pLun->pNext)
+        for (PPDMLUN pLun = pDevIns->Internal.s.pLunsR3; pLun; pLun = pLun->pNext)
             for (PPDMDRVINS pDrvIns = pLun->pTop; pDrvIns; pDrvIns = pDrvIns->Internal.s.pDown)
                 if (pDrvIns->pDrvReg->pfnSuspend)
                 {
@@ -879,7 +1028,7 @@ PDMR3DECL(void) PDMR3Suspend(PVM pVM)
  *
  * @param   pVM     VM Handle.
  */
-PDMR3DECL(void) PDMR3Resume(PVM pVM)
+VMMR3DECL(void) PDMR3Resume(PVM pVM)
 {
     LogFlow(("PDMR3Resume:\n"));
 
@@ -887,9 +1036,9 @@ PDMR3DECL(void) PDMR3Resume(PVM pVM)
      * Iterate the device instances.
      * The attached drivers are processed first.
      */
-    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextHC)
+    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextR3)
     {
-        for (PPDMLUN pLun = pDevIns->Internal.s.pLunsHC; pLun; pLun = pLun->pNext)
+        for (PPDMLUN pLun = pDevIns->Internal.s.pLunsR3; pLun; pLun = pLun->pNext)
             for (PPDMDRVINS pDrvIns = pLun->pTop; pDrvIns; pDrvIns = pDrvIns->Internal.s.pDown)
                 if (pDrvIns->pDrvReg->pfnResume)
                 {
@@ -942,7 +1091,7 @@ PDMR3DECL(void) PDMR3Resume(PVM pVM)
  *
  * @param   pVM     VM Handle.
  */
-PDMR3DECL(void) PDMR3PowerOff(PVM pVM)
+VMMR3DECL(void) PDMR3PowerOff(PVM pVM)
 {
     LogFlow(("PDMR3PowerOff:\n"));
 
@@ -950,9 +1099,9 @@ PDMR3DECL(void) PDMR3PowerOff(PVM pVM)
      * Iterate the device instances.
      * The attached drivers are processed first.
      */
-    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextHC)
+    for (PPDMDEVINS pDevIns = pVM->pdm.s.pDevInstances; pDevIns; pDevIns = pDevIns->Internal.s.pNextR3)
     {
-        for (PPDMLUN pLun = pDevIns->Internal.s.pLunsHC; pLun; pLun = pLun->pNext)
+        for (PPDMLUN pLun = pDevIns->Internal.s.pLunsR3; pLun; pLun = pLun->pNext)
             for (PPDMDRVINS pDrvIns = pLun->pTop; pDrvIns; pDrvIns = pDrvIns->Internal.s.pDown)
                 if (pDrvIns->pDrvReg->pfnPowerOff)
                 {
@@ -1013,14 +1162,14 @@ PDMR3DECL(void) PDMR3PowerOff(PVM pVM)
  * @remark  We're not doing any locking ATM, so don't try call this at times when the
  *          device chain is known to be updated.
  */
-PDMR3DECL(int) PDMR3QueryDevice(PVM pVM, const char *pszDevice, unsigned iInstance, PPDMIBASE *ppBase)
+VMMR3DECL(int) PDMR3QueryDevice(PVM pVM, const char *pszDevice, unsigned iInstance, PPDMIBASE *ppBase)
 {
     LogFlow(("PDMR3DeviceQuery: pszDevice=%p:{%s} iInstance=%u ppBase=%p\n", pszDevice, pszDevice, iInstance, ppBase));
 
     /*
      * Iterate registered devices looking for the device.
      */
-    RTUINT cchDevice = strlen(pszDevice);
+    size_t cchDevice = strlen(pszDevice);
     for (PPDMDEV pDev = pVM->pdm.s.pDevs; pDev; pDev = pDev->pNext)
     {
         if (    pDev->cchName == cchDevice
@@ -1029,7 +1178,7 @@ PDMR3DECL(int) PDMR3QueryDevice(PVM pVM, const char *pszDevice, unsigned iInstan
             /*
              * Iterate device instances.
              */
-            for (PPDMDEVINS pDevIns = pDev->pInstances; pDevIns; pDevIns = pDevIns->Internal.s.pPerDeviceNextHC)
+            for (PPDMDEVINS pDevIns = pDev->pInstances; pDevIns; pDevIns = pDevIns->Internal.s.pPerDeviceNextR3)
             {
                 if (pDevIns->iInstance == iInstance)
                 {
@@ -1070,7 +1219,7 @@ PDMR3DECL(int) PDMR3QueryDevice(PVM pVM, const char *pszDevice, unsigned iInstan
  * @remark  We're not doing any locking ATM, so don't try call this at times when the
  *          device chain is known to be updated.
  */
-PDMR3DECL(int) PDMR3QueryDeviceLun(PVM pVM, const char *pszDevice, unsigned iInstance, unsigned iLun, PPDMIBASE *ppBase)
+VMMR3DECL(int) PDMR3QueryDeviceLun(PVM pVM, const char *pszDevice, unsigned iInstance, unsigned iLun, PPDMIBASE *ppBase)
 {
     LogFlow(("PDMR3QueryLun: pszDevice=%p:{%s} iInstance=%u iLun=%u ppBase=%p\n",
              pszDevice, pszDevice, iInstance, iLun, ppBase));
@@ -1080,13 +1229,13 @@ PDMR3DECL(int) PDMR3QueryDeviceLun(PVM pVM, const char *pszDevice, unsigned iIns
      */
     PPDMLUN pLun;
     int rc = pdmR3DevFindLun(pVM, pszDevice, iInstance, iLun, &pLun);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         *ppBase = pLun->pBase;
         LogFlow(("PDMR3QueryDeviceLun: return VINF_SUCCESS and *ppBase=%p\n", *ppBase));
         return VINF_SUCCESS;
     }
-    LogFlow(("PDMR3QueryDeviceLun: returns %Vrc\n", rc));
+    LogFlow(("PDMR3QueryDeviceLun: returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1103,7 +1252,7 @@ PDMR3DECL(int) PDMR3QueryDeviceLun(PVM pVM, const char *pszDevice, unsigned iIns
  * @remark  We're not doing any locking ATM, so don't try call this at times when the
  *          device chain is known to be updated.
  */
-PDMR3DECL(int) PDMR3QueryLun(PVM pVM, const char *pszDevice, unsigned iInstance, unsigned iLun, PPDMIBASE *ppBase)
+VMMR3DECL(int) PDMR3QueryLun(PVM pVM, const char *pszDevice, unsigned iInstance, unsigned iLun, PPDMIBASE *ppBase)
 {
     LogFlow(("PDMR3QueryLun: pszDevice=%p:{%s} iInstance=%u iLun=%u ppBase=%p\n",
              pszDevice, pszDevice, iInstance, iLun, ppBase));
@@ -1113,17 +1262,17 @@ PDMR3DECL(int) PDMR3QueryLun(PVM pVM, const char *pszDevice, unsigned iInstance,
      */
     PPDMLUN pLun;
     int rc = pdmR3DevFindLun(pVM, pszDevice, iInstance, iLun, &pLun);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         if (pLun->pTop)
         {
             *ppBase = &pLun->pTop->IBase;
-            LogFlow(("PDMR3QueryLun: return %Vrc and *ppBase=%p\n", VINF_SUCCESS, *ppBase));
+            LogFlow(("PDMR3QueryLun: return %Rrc and *ppBase=%p\n", VINF_SUCCESS, *ppBase));
             return VINF_SUCCESS;
         }
         rc = VERR_PDM_NO_DRIVER_ATTACHED_TO_LUN;
     }
-    LogFlow(("PDMR3QueryLun: returns %Vrc\n", rc));
+    LogFlow(("PDMR3QueryLun: returns %Rrc\n", rc));
     return rc;
 }
 
@@ -1133,7 +1282,7 @@ PDMR3DECL(int) PDMR3QueryLun(PVM pVM, const char *pszDevice, unsigned iInstance,
  *
  * @param   pVM             VM handle.
  */
-PDMR3DECL(void) PDMR3DmaRun(PVM pVM)
+VMMR3DECL(void) PDMR3DmaRun(PVM pVM)
 {
     VM_FF_CLEAR(pVM, VM_FF_PDM_DMA);
     if (pVM->pdm.s.pDmac)
@@ -1150,7 +1299,7 @@ PDMR3DECL(void) PDMR3DmaRun(PVM pVM)
  *
  * @param   pVM             VM handle.
  */
-PDMR3DECL(void) PDMR3Poll(PVM pVM)
+VMMR3DECL(void) PDMR3Poll(PVM pVM)
 {
     /* This is temporary hack and shall be removed ASAP! */
     unsigned iPoller = pVM->pdm.s.cPollers;
@@ -1182,8 +1331,87 @@ static DECLCALLBACK(void) pdmR3PollerTimer(PVM pVM, PTMTIMER pTimer, void *pvUse
  * @returns VBox status code.
  * @param   pVM     The VM handle.
  */
-PDMR3DECL(int) PDMR3LockCall(PVM pVM)
+VMMR3DECL(int) PDMR3LockCall(PVM pVM)
 {
     return PDMR3CritSectEnterEx(&pVM->pdm.s.CritSect, true /* fHostCall */);
 }
 
+
+/**
+ * Registers the VMM device heap
+ *
+ * @returns VBox status code.
+ * @param   pVM             VM handle.
+ * @param   GCPhys          The physical address.
+ * @param   pvHeap          Ring-3 pointer.
+ * @param   cbSize          Size of the heap.
+ */
+VMMR3DECL(int) PDMR3RegisterVMMDevHeap(PVM pVM, RTGCPHYS GCPhys, RTR3PTR pvHeap, unsigned cbSize)
+{
+    Assert(pVM->pdm.s.pvVMMDevHeap == NULL);
+
+    Log(("PDMR3RegisterVMMDevHeap %RGp %RHv %x\n", GCPhys, pvHeap, cbSize));
+    pVM->pdm.s.pvVMMDevHeap     = pvHeap;
+    pVM->pdm.s.GCPhysVMMDevHeap = GCPhys;
+    pVM->pdm.s.cbVMMDevHeap     = cbSize;
+    pVM->pdm.s.cbVMMDevHeapLeft = cbSize;
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Unregisters the VMM device heap
+ *
+ * @returns VBox status code.
+ * @param   pVM             VM handle.
+ * @param   GCPhys          The physical address.
+ */
+VMMR3DECL(int) PDMR3UnregisterVMMDevHeap(PVM pVM, RTGCPHYS GCPhys)
+{
+    Assert(pVM->pdm.s.GCPhysVMMDevHeap == GCPhys);
+
+    Log(("PDMR3UnregisterVMMDevHeap %RGp\n", GCPhys));
+    pVM->pdm.s.pvVMMDevHeap     = NULL;
+    pVM->pdm.s.GCPhysVMMDevHeap = NIL_RTGCPHYS;
+    pVM->pdm.s.cbVMMDevHeap     = 0;
+    pVM->pdm.s.cbVMMDevHeapLeft = 0;
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Allocates memory from the VMM device heap
+ *
+ * @returns VBox status code.
+ * @param   pVM             VM handle.
+ * @param   cbSize          Allocation size.
+ * @param   pv              Ring-3 pointer. (out)
+ */
+VMMR3DECL(int) PDMR3VMMDevHeapAlloc(PVM pVM, unsigned cbSize, RTR3PTR *ppv)
+{
+    AssertReturn(cbSize && cbSize <= pVM->pdm.s.cbVMMDevHeapLeft, VERR_NO_MEMORY);
+
+    Log(("PDMR3VMMDevHeapAlloc %x\n", cbSize));
+
+    /** @todo not a real heap as there's currently only one user. */
+    *ppv = pVM->pdm.s.pvVMMDevHeap;
+    pVM->pdm.s.cbVMMDevHeapLeft = 0;
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Frees memory from the VMM device heap
+ *
+ * @returns VBox status code.
+ * @param   pVM             VM handle.
+ * @param   pv              Ring-3 pointer.
+ */
+VMMR3DECL(int) PDMR3VMMDevHeapFree(PVM pVM, RTR3PTR pv)
+{
+    Log(("PDMR3VMMDevHeapFree %RHv\n", pv));
+
+    /** @todo not a real heap as there's currently only one user. */
+    pVM->pdm.s.cbVMMDevHeapLeft = pVM->pdm.s.cbVMMDevHeap;
+    return VINF_SUCCESS;
+}

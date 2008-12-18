@@ -1,4 +1,4 @@
-/* $Id: mp-os2.cpp $ */
+/* $Id: mp-os2.cpp 13908 2008-11-06 11:53:47Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, OS/2.
  */
@@ -45,7 +45,7 @@
 
 RTDECL(int) RTMpCpuIdToSetIndex(RTCPUID idCpu)
 {
-    return idCpu < RTCPUSET_MAX_CPUS ? idCpu : -1;
+    return idCpu < RTCPUSET_MAX_CPUS ? (int) idCpu : -1;
 }
 
 

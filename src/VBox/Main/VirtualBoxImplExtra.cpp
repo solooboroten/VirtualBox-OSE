@@ -34,10 +34,12 @@
 /* embedded settings converter template for updating settings files */
 #include "xml_SettingsConverter_xsl.h"
 
+/* embedded VirtualBox element definition that contains a proper 'version'
+ * attribute constraint */
 static const unsigned char g_ab_xml_VirtualBox_settings_root_xsd[] =
 "<xsd:schema"
 "  xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\""
-"  xmlns=\"http://www.innotek.de/VirtualBox-settings\"" 
+"  xmlns=\"http://www.innotek.de/VirtualBox-settings\""
 "  xmlns:vb=\"http://www.innotek.de/VirtualBox-settings\""
 "  targetNamespace=\"http://www.innotek.de/VirtualBox-settings\""
 "  elementFormDefault=\"qualified\""
@@ -65,33 +67,33 @@ static const unsigned g_cb_xml_VirtualBox_settings_root_xsd =
  * @return      Input stream created using @c new or NULL to indicate
  *              a wrong URI/ID pair.
  */
-settings::Input *
+xml::Input *
 VirtualBox::SettingsTreeHelper::resolveEntity (const char *aURI, const char *aID)
 {
     if (strcmp (aURI, VBOX_XML_SCHEMA_COMMON) == 0)
     {
-        return new settings::
+        return new xml::
             MemoryBuf ((const char *) g_ab_xml_VirtualBox_settings_common_xsd,
                        g_cb_xml_VirtualBox_settings_common_xsd, aURI);
     }
 
     if (strcmp (aURI, VBOX_XML_SCHEMA_ROOT) == 0)
     {
-        return new settings::
+        return new xml::
             MemoryBuf ((const char *) g_ab_xml_VirtualBox_settings_root_xsd,
                        g_cb_xml_VirtualBox_settings_root_xsd, aURI);
     }
 
     if (strcmp (aURI, VBOX_XML_SCHEMA) == 0)
     {
-        return new settings::
+        return new xml::
             MemoryBuf ((const char *) g_ab_xml_VirtualBox_settings_xsd,
                        g_cb_xml_VirtualBox_settings_xsd, aURI);
     }
 
     if (strcmp (aURI, VBOX_XML_SETTINGS_CONVERTER) == 0)
     {
-        return new settings::
+        return new xml::
             MemoryBuf ((const char *) g_ab_xml_SettingsConverter_xsl,
                        g_cb_xml_SettingsConverter_xsl, aURI);
     }
@@ -132,7 +134,8 @@ VirtualBox::SettingsTreeHelper::resolveEntity (const char *aURI, const char *aID
  *
  * @param aRoot                 Root settings key.
  * @param aOldVersionString     Where to store old version string
- *                              pointer. May be NULL.
+ *                              pointer. May be NULL. Allocated memory is
+ *                              freed by the caller using RTStrFree().
  */
 bool VirtualBox::SettingsTreeHelper::
 needsConversion (const settings::Key &aRoot, char **aOldVersion) const
@@ -168,4 +171,4 @@ const char *VirtualBox::SettingsTreeHelper::templateUri() const
 {
     return VBOX_XML_SETTINGS_CONVERTER;
 }
-
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

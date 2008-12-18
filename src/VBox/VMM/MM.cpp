@@ -1,6 +1,6 @@
-/* $Id: MM.cpp $ */
+/* $Id: MM.cpp 14299 2008-11-18 13:25:40Z vboxsync $ */
 /** @file
- * MM - Memory Monitor(/Manager).
+ * MM - Memory Manager.
  */
 
 /*
@@ -20,64 +20,128 @@
  */
 
 
-/** @page pg_mm     MM - The Memory Monitor/Manager
+/** @page pg_mm     MM - The Memory Manager
  *
- * WARNING: THIS IS SOMEWHAT OUTDATED!
+ * The memory manager is in charge of the following memory:
+ *      - Hypervisor Memory Area (HMA) - Address space management.
+ *      - Hypervisor Heap - A memory heap that lives in all contexts.
+ *      - Tagged ring-3 heap.
+ *      - Page pools - Primarily used by PGM for shadow page tables.
+ *      - Locked process memory - Guest RAM and other. (reduce/obsolete this)
+ *      - Physical guest memory (RAM & ROM) - Moving to PGM. (obsolete this)
  *
- * It seems like this is going to be the entity taking care of memory allocations
- * and the locking of physical memory for a VM. MM will track these allocations and
- * pinnings so pointer conversions, memory read and write, and correct clean up can
- * be done.
+ * The global memory manager (GMM) is the global counter part / partner of MM.
+ * MM will provide therefore ring-3 callable interfaces for some of the GMM APIs
+ * related to resource tracking (PGM is the user).
  *
- * Memory types:
- *      - Hypervisor Memory Area (HMA).
- *      - Page tables.
- *      - Physical pages.
- *
- * The first two types are not accessible using the generic conversion functions
- * for GC memory, there are special functions for these.
- *
- *
- * A decent structure for this component need to be eveloped as we see usage. One
- * or two rewrites is probabaly needed to get it right...
+ * @see grp_mm
  *
  *
+ * @section sec_mm_hma  Hypervisor Memory Area
  *
- * @section         Hypervisor Memory Area
+ * The HMA is used when executing in raw-mode. We borrow, with the help of
+ * PGMMap, some unused space (one or more page directory entries to be precise)
+ * in the guest's virtual memory context. PGM will monitor the guest's virtual
+ * address space for changes and relocate the HMA when required.
  *
- * The hypervisor is give 4MB of space inside the guest, we assume that we can
- * steal an page directory entry from the guest OS without cause trouble. In
- * addition to these 4MB we'll be mapping memory for the graphics emulation,
- * but that will be an independant mapping.
+ * To give some idea what's in the HMA, study the 'info hma' output:
+ * @verbatim
+VBoxDbg> info hma
+Hypervisor Memory Area (HMA) Layout: Base 00000000a0000000, 0x00800000 bytes
+00000000a05cc000-00000000a05cd000                  DYNAMIC                  fence
+00000000a05c4000-00000000a05cc000                  DYNAMIC                  Dynamic mapping
+00000000a05c3000-00000000a05c4000                  DYNAMIC                  fence
+00000000a05b8000-00000000a05c3000                  DYNAMIC                  Paging
+00000000a05b6000-00000000a05b8000                  MMIO2   0000000000000000 PCNetShMem
+00000000a0536000-00000000a05b6000                  MMIO2   0000000000000000 VGA VRam
+00000000a0523000-00000000a0536000 00002aaab3d0c000 LOCKED  autofree         alloc once (PDM_DEVICE)
+00000000a0522000-00000000a0523000                  DYNAMIC                  fence
+00000000a051e000-00000000a0522000 00002aaab36f5000 LOCKED  autofree         VBoxDD2GC.gc
+00000000a051d000-00000000a051e000                  DYNAMIC                  fence
+00000000a04eb000-00000000a051d000 00002aaab36c3000 LOCKED  autofree         VBoxDDGC.gc
+00000000a04ea000-00000000a04eb000                  DYNAMIC                  fence
+00000000a04e9000-00000000a04ea000 00002aaab36c2000 LOCKED  autofree         ram range (High ROM Region)
+00000000a04e8000-00000000a04e9000                  DYNAMIC                  fence
+00000000a040e000-00000000a04e8000 00002aaab2e6d000 LOCKED  autofree         VMMGC.gc
+00000000a0208000-00000000a040e000 00002aaab2c67000 LOCKED  autofree         alloc once (PATM)
+00000000a01f7000-00000000a0208000 00002aaaab92d000 LOCKED  autofree         alloc once (SELM)
+00000000a01e7000-00000000a01f7000 00002aaaab5e8000 LOCKED  autofree         alloc once (SELM)
+00000000a01e6000-00000000a01e7000                  DYNAMIC                  fence
+00000000a01e5000-00000000a01e6000 00002aaaab5e7000 HCPHYS  00000000c363c000 Core Code
+00000000a01e4000-00000000a01e5000                  DYNAMIC                  fence
+00000000a01e3000-00000000a01e4000 00002aaaaab26000 HCPHYS  00000000619cf000 GIP
+00000000a01a2000-00000000a01e3000 00002aaaabf32000 LOCKED  autofree         alloc once (PGM_PHYS)
+00000000a016b000-00000000a01a2000 00002aaab233f000 LOCKED  autofree         alloc once (PGM_POOL)
+00000000a016a000-00000000a016b000                  DYNAMIC                  fence
+00000000a0165000-00000000a016a000                  DYNAMIC                  CR3 mapping
+00000000a0164000-00000000a0165000                  DYNAMIC                  fence
+00000000a0024000-00000000a0164000 00002aaab215f000 LOCKED  autofree         Heap
+00000000a0023000-00000000a0024000                  DYNAMIC                  fence
+00000000a0001000-00000000a0023000 00002aaab1d24000 LOCKED  pages            VM
+00000000a0000000-00000000a0001000                  DYNAMIC                  fence
+ @endverbatim
  *
- * The 4MBs are divided into two main parts:
- *      -# The static code and data
- *      -# The shortlived page mappings.
  *
- * The first part is used for the VM structure, the core code (VMMSwitch),
- * GC modules, and the alloc-only-heap. The size will be determined at a
- * later point but initially we'll say 2MB of locked memory, most of which
- * is non contiguous physically.
+ * @section sec_mm_hyperheap    Hypervisor Heap
  *
- * The second part is used for mapping pages to the hypervisor. We'll be using
- * a simple round robin when doing these mappings. This means that no-one can
- * assume that a mapping hangs around for very long, while the managing of the
- * pages are very simple.
+ * The heap is accessible from ring-3, ring-0 and the raw-mode context. That
+ * said, it's not necessarily mapped into ring-0 on if that's possible since we
+ * don't wish to waste kernel address space without a good reason.
+ *
+ * Allocations within the heap are always in the same relative position in all
+ * contexts, so, it's possible to use offset based linking. In fact, the heap is
+ * internally using offset based linked lists tracking heap blocks. We use
+ * offset linked AVL trees and lists in a lot of places where share structures
+ * between RC, R3 and R0, so this is a strict requirement of the heap. However
+ * this means that we cannot easily extend the heap since the extension won't
+ * necessarily be in the continuation of the current heap memory in all (or any)
+ * context.
+ *
+ * All allocations are tagged. Per tag allocation statistics will be maintaing
+ * and exposed thru STAM when VBOX_WITH_STATISTICS is defined.
  *
  *
+ * @section sec_mm_r3heap   Tagged Ring-3 Heap
  *
- * @section         Page Pool
+ * The ring-3 heap is a wrapper around the RTMem API adding allocation
+ * statistics and automatic cleanup on VM destruction.
  *
- * The MM manages a per VM page pool from which other components can allocate
- * locked, page aligned and page granular memory objects. The pool provides
- * facilities to convert back and forth between physical and virtual addresses
- * (within the pool of course). Several specialized interfaces are provided
- * for the most common alloctions and convertions to save the caller from
- * bothersome casting and extra parameter passing.
+ * Per tag allocation statistics will be maintaing and exposed thru STAM when
+ * VBOX_WITH_STATISTICS is defined.
  *
+ *
+ * @section sec_mm_page     Page Pool
+ *
+ * The MM manages a page pool from which other components can allocate locked,
+ * page aligned and page sized memory objects. The pool provides facilities to
+ * convert back and forth between (host) physical and virtual addresses (within
+ * the pool of course). Several specialized interfaces are provided for the most
+ * common alloctions and convertions to save the caller from bothersome casting
+ * and extra parameter passing.
+ *
+ *
+ * @section sec_mm_locked   Locked Process Memory
+ *
+ * MM manages the locked process memory. This is used for a bunch of things
+ * (count the LOCKED entries in the'info hma' output found in @ref sec_mm_hma),
+ * but the main consumer of memory is currently for guest RAM. There is an
+ * ongoing rewrite that will move all the guest RAM allocation to PGM and
+ * GMM.
+ *
+ * The locking of memory is something doing in cooperation with the VirtualBox
+ * support driver, SUPDrv (aka. VBoxDrv), thru the support library API,
+ * SUPR3 (aka. SUPLib).
+ *
+ *
+ * @section sec_mm_phys     Physical Guest Memory
+ *
+ * MM is currently managing the physical memory for the guest. It relies heavily
+ * on PGM for this. There is an ongoing rewrite that will move this to PGM. (The
+ * rewrite is driven by the need for more flexible guest ram allocation, but
+ * also motivated by the fact that MMPhys is just adding stupid bureaucracy and
+ * that MMR3PhysReserve is a totally weird artifact that must go away.)
  *
  */
-
 
 
 /*******************************************************************************
@@ -115,6 +179,8 @@ static DECLCALLBACK(int) mmR3Save(PVM pVM, PSSMHANDLE pSSM);
 static DECLCALLBACK(int) mmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version);
 
 
+
+
 /**
  * Initializes the MM members of the UVM.
  *
@@ -123,7 +189,7 @@ static DECLCALLBACK(int) mmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
  * @returns VBox status code.
  * @param   pUVM    Pointer to the user mode VM structure.
  */
-MMR3DECL(int) MMR3InitUVM(PUVM pUVM)
+VMMR3DECL(int) MMR3InitUVM(PUVM pUVM)
 {
     /*
      * Assert sizes and order.
@@ -152,12 +218,12 @@ MMR3DECL(int) MMR3InitUVM(PUVM pUVM)
  *
  * MM determins the virtual address of the hypvervisor memory area by
  * checking for location at previous run. If that property isn't available
- * it will choose a default starting location, currently 0xe0000000.
+ * it will choose a default starting location, currently 0xa0000000.
  *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  */
-MMR3DECL(int) MMR3Init(PVM pVM)
+VMMR3DECL(int) MMR3Init(PVM pVM)
 {
     LogFlow(("MMR3Init\n"));
 
@@ -178,13 +244,13 @@ MMR3DECL(int) MMR3Init(PVM pVM)
      * Init the page pool.
      */
     int rc = mmR3PagePoolInit(pVM);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         /*
          * Init the hypervisor related stuff.
          */
         rc = mmR3HyperInit(pVM);
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
         {
             /*
              * Register the saved state data unit.
@@ -192,7 +258,7 @@ MMR3DECL(int) MMR3Init(PVM pVM)
             rc = SSMR3RegisterInternal(pVM, "mm", 1, MM_SAVED_STATE_VERSION, sizeof(uint32_t) * 2,
                                        NULL, mmR3Save, NULL,
                                        NULL, mmR3Load, NULL);
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
                 return rc;
 
             /* .... failure .... */
@@ -210,7 +276,7 @@ MMR3DECL(int) MMR3Init(PVM pVM)
  * @param   pVM         The VM to operate on.
  * @remark  No cleanup necessary since MMR3Term() will be called on failure.
  */
-MMR3DECL(int) MMR3InitPaging(PVM pVM)
+VMMR3DECL(int) MMR3InitPaging(PVM pVM)
 {
     LogFlow(("MMR3InitPaging:\n"));
 
@@ -219,7 +285,7 @@ MMR3DECL(int) MMR3InitPaging(PVM pVM)
      */
     int rc;
     PCFGMNODE pMMCfg = CFGMR3GetChild(CFGMR3GetRoot(pVM), "MM");
-    if (pMMCfg)
+    if (!pMMCfg)
     {
         rc = CFGMR3InsertNode(CFGMR3GetRoot(pVM), "MM", &pMMCfg);
         AssertRCReturn(rc, rc);
@@ -234,7 +300,7 @@ MMR3DECL(int) MMR3InitPaging(PVM pVM)
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
         fPreAlloc = false;
     else
-        AssertMsgRCReturn(rc, ("Configuration error: Failed to query integer \"RamPreAlloc\", rc=%Vrc.\n", rc), rc);
+        AssertMsgRCReturn(rc, ("Configuration error: Failed to query integer \"RamPreAlloc\", rc=%Rrc.\n", rc), rc);
 
     /** @cfgm{RamSize, uint64_t, 0, 0, UINT64_MAX}
      * Specifies the size of the base RAM that is to be set up during
@@ -245,7 +311,7 @@ MMR3DECL(int) MMR3InitPaging(PVM pVM)
     if (rc == VERR_CFGM_VALUE_NOT_FOUND)
         cbRam = 0;
     else
-        AssertMsgRCReturn(rc, ("Configuration error: Failed to query integer \"RamSize\", rc=%Vrc.\n", rc), rc);
+        AssertMsgRCReturn(rc, ("Configuration error: Failed to query integer \"RamSize\", rc=%Rrc.\n", rc), rc);
 
     cbRam &= X86_PTE_PAE_PG_MASK;
     pVM->mm.s.cbRamBase = cbRam;            /* Warning: don't move this code to MMR3Init without fixing REMR3Init.  */
@@ -269,7 +335,7 @@ MMR3DECL(int) MMR3InitPaging(PVM pVM)
     else if (rc == VERR_CFGM_VALUE_NOT_FOUND)
         enmPolicy = GMMOCPOLICY_NO_OC;
     else
-        AssertMsgRCReturn(rc, ("Configuration error: Failed to query string \"MM/Policy\", rc=%Vrc.\n", rc), rc);
+        AssertMsgRCReturn(rc, ("Configuration error: Failed to query string \"MM/Policy\", rc=%Rrc.\n", rc), rc);
 
     /** @cfgm{MM/Priority, string, normal}
      * Specifies the memory priority of this VM. The priority comes into play when the
@@ -292,7 +358,7 @@ MMR3DECL(int) MMR3InitPaging(PVM pVM)
     else if (rc == VERR_CFGM_VALUE_NOT_FOUND)
         enmPriority = GMMPRIORITY_NORMAL;
     else
-        AssertMsgRCReturn(rc, ("Configuration error: Failed to query string \"MM/Priority\", rc=%Vrc.\n", rc), rc);
+        AssertMsgRCReturn(rc, ("Configuration error: Failed to query string \"MM/Priority\", rc=%Rrc.\n", rc), rc);
 
     /*
      * Make the initial memory reservation with GMM.
@@ -344,7 +410,7 @@ MMR3DECL(int) MMR3InitPaging(PVM pVM)
     }
 #endif
 
-    LogFlow(("MMR3InitPaging: returns %Vrc\n", rc));
+    LogFlow(("MMR3InitPaging: returns %Rrc\n", rc));
     return rc;
 }
 
@@ -358,7 +424,7 @@ MMR3DECL(int) MMR3InitPaging(PVM pVM)
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  */
-MMR3DECL(int) MMR3Term(PVM pVM)
+VMMR3DECL(int) MMR3Term(PVM pVM)
 {
     /*
      * Destroy the page pool. (first as it used the hyper heap)
@@ -395,11 +461,12 @@ MMR3DECL(int) MMR3Term(PVM pVM)
      */
     pVM->mm.s.offLookupHyper = NIL_OFFSET;
     pVM->mm.s.pLockedMem     = NULL;
-    pVM->mm.s.pHyperHeapHC   = NULL;    /* freed above. */
-    pVM->mm.s.pHyperHeapGC   = 0;       /* freed above. */
-    pVM->mm.s.offVM          = 0;       /* init assertion on this */
+    pVM->mm.s.pHyperHeapR3   = NULL;        /* freed above. */
+    pVM->mm.s.pHyperHeapR0   = NIL_RTR0PTR; /* freed above. */
+    pVM->mm.s.pHyperHeapRC   = NIL_RTRCPTR; /* freed above. */
+    pVM->mm.s.offVM          = 0;           /* init assertion on this */
 
-    return 0;
+    return VINF_SUCCESS;
 }
 
 
@@ -412,7 +479,7 @@ MMR3DECL(int) MMR3Term(PVM pVM)
  * @returns VBox status code.
  * @param   pUVM        Pointer to the user mode VM structure.
  */
-MMR3DECL(void) MMR3TermUVM(PUVM pUVM)
+VMMR3DECL(void) MMR3TermUVM(PUVM pUVM)
 {
     /*
      * Destroy the heap.
@@ -430,7 +497,7 @@ MMR3DECL(void) MMR3TermUVM(PUVM pUVM)
  *
  * @param   pVM             The VM handle.
  */
-MMR3DECL(void) MMR3Reset(PVM pVM)
+VMMR3DECL(void) MMR3Reset(PVM pVM)
 {
     mmR3PhysRomReset(pVM);
 }
@@ -490,11 +557,11 @@ static DECLCALLBACK(int) mmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
         rc = SSMR3GetUInt(pSSM, &cb1);
         cPages = cb1 >> PAGE_SHIFT;
     }
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (cPages != pVM->mm.s.cBasePages)
     {
-        Log(("mmR3Load: Memory configuration has changed. cPages=%#RX64 saved=%#RX64\n", pVM->mm.s.cBasePages, cPages));
+        LogRel(("mmR3Load: Memory configuration has changed. cPages=%#RX64 saved=%#RX64\n", pVM->mm.s.cBasePages, cPages));
         return VERR_SSM_LOAD_MEMORY_SIZE_MISMATCH;
     }
 
@@ -507,11 +574,11 @@ static DECLCALLBACK(int) mmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
         rc = SSMR3GetUInt(pSSM, &cb1);
         cb = cb1;
     }
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     if (cb != pVM->mm.s.cbRamBase)
     {
-        Log(("mmR3Load: Memory configuration has changed. cbRamBase=%#RX64 save=%#RX64\n", pVM->mm.s.cbRamBase, cb));
+        LogRel(("mmR3Load: Memory configuration has changed. cbRamBase=%#RX64 save=%#RX64\n", pVM->mm.s.cbRamBase, cb));
         return VERR_SSM_LOAD_MEMORY_SIZE_MISMATCH;
     }
 
@@ -549,7 +616,7 @@ int mmR3UpdateReservation(PVM pVM)
  * @param   pVM             The shared VM structure.
  * @param   cAddBasePages   The number of pages to add.
  */
-MMR3DECL(int) MMR3IncreaseBaseReservation(PVM pVM, uint64_t cAddBasePages)
+VMMR3DECL(int) MMR3IncreaseBaseReservation(PVM pVM, uint64_t cAddBasePages)
 {
     uint64_t cOld = pVM->mm.s.cBasePages;
     pVM->mm.s.cBasePages += cAddBasePages;
@@ -574,7 +641,7 @@ MMR3DECL(int) MMR3IncreaseBaseReservation(PVM pVM, uint64_t cAddBasePages)
  * @param   cDeltaFixedPages    The number of pages to add (positive) or subtract (negative).
  * @param   pszDesc             Some description associated with the reservation.
  */
-MMR3DECL(int) MMR3AdjustFixedReservation(PVM pVM, int32_t cDeltaFixedPages, const char *pszDesc)
+VMMR3DECL(int) MMR3AdjustFixedReservation(PVM pVM, int32_t cDeltaFixedPages, const char *pszDesc)
 {
     const uint32_t cOld = pVM->mm.s.cFixedPages;
     pVM->mm.s.cFixedPages += cDeltaFixedPages;
@@ -599,7 +666,7 @@ MMR3DECL(int) MMR3AdjustFixedReservation(PVM pVM, int32_t cDeltaFixedPages, cons
  * @param   pVM             The shared VM structure.
  * @param   cShadowPages    The new page count.
  */
-MMR3DECL(int) MMR3UpdateShadowReservation(PVM pVM, uint32_t cShadowPages)
+VMMR3DECL(int) MMR3UpdateShadowReservation(PVM pVM, uint32_t cShadowPages)
 {
     const uint32_t cOld = pVM->mm.s.cShadowPages;
     pVM->mm.s.cShadowPages = cShadowPages;
@@ -639,7 +706,7 @@ int mmR3LockMem(PVM pVM, void *pv, size_t cb, MMLOCKEDTYPE eType, PMMLOCKEDMEM *
     /*
      * Allocate locked mem structure.
      */
-    unsigned        cPages = cb >> PAGE_SHIFT;
+    unsigned        cPages = (unsigned)(cb >> PAGE_SHIFT);
     AssertReturn(cPages == (cb >> PAGE_SHIFT), VERR_OUT_OF_RANGE);
     PMMLOCKEDMEM    pLockedMem = (PMMLOCKEDMEM)MMR3HeapAlloc(pVM, MM_TAG_MM, RT_OFFSETOF(MMLOCKEDMEM, aPhysPages[cPages]));
     if (!pLockedMem)
@@ -653,7 +720,7 @@ int mmR3LockMem(PVM pVM, void *pv, size_t cb, MMLOCKEDTYPE eType, PMMLOCKEDMEM *
      * Lock the memory.
      */
     int rc = SUPPageLock(pv, cPages, &pLockedMem->aPhysPages[0]);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         /*
          * Setup the reserved field.
@@ -712,14 +779,14 @@ int mmR3MapLocked(PVM pVM, PMMLOCKEDMEM pLockedMem, RTGCPTR Addr, unsigned iPage
     AssertMsg(iPage + cPages <= (pLockedMem->cb >> PAGE_SHIFT), ("never even think about giving me a bad cPages(=%d)\n", cPages));
 
     /*
-     * Map the the pages.
+     * Map the pages.
      */
     PSUPPAGE    pPhysPage = &pLockedMem->aPhysPages[iPage];
     while (cPages)
     {
         RTHCPHYS HCPhys = pPhysPage->Phys;
         int rc = PGMMap(pVM, Addr, HCPhys, PAGE_SIZE, fFlags);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
             /** @todo how the hell can we do a proper bailout here. */
             return rc;
@@ -744,14 +811,18 @@ int mmR3MapLocked(PVM pVM, PMMLOCKEDMEM pLockedMem, RTGCPTR Addr, unsigned iPage
  * @param   HCPhys      The host context virtual address.
  * @param   ppv         Where to store the resulting address.
  * @thread  The Emulation Thread.
+ *
+ * @remarks Avoid whenever possible.
+ *          Intended for the debugger facility only.
+ * @todo    Rename to indicate the special usage.
  */
-MMR3DECL(int) MMR3HCPhys2HCVirt(PVM pVM, RTHCPHYS HCPhys, void **ppv)
+VMMR3DECL(int) MMR3HCPhys2HCVirt(PVM pVM, RTHCPHYS HCPhys, void **ppv)
 {
     /*
      * Try page tables.
      */
     int rc = MMPagePhys2PageTry(pVM, HCPhys, ppv);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
         return rc;
 
     /*
@@ -782,12 +853,15 @@ MMR3DECL(int) MMR3HCPhys2HCVirt(PVM pVM, RTHCPHYS HCPhys, void **ppv)
  * @param   pvDst       Destination address (HC of course).
  * @param   GCPtr       GC virtual address.
  * @param   cb          Number of bytes to read.
+ *
+ * @remarks Intended for the debugger facility only.
+ * @todo    Move to DBGF, it's only selecting which functions to use!
  */
-MMR3DECL(int) MMR3ReadGCVirt(PVM pVM, void *pvDst, RTGCPTR GCPtr, size_t cb)
+VMMR3DECL(int) MMR3ReadGCVirt(PVM pVM, void *pvDst, RTGCPTR GCPtr, size_t cb)
 {
     if (GCPtr - pVM->mm.s.pvHyperAreaGC < pVM->mm.s.cbHyperArea)
         return MMR3HyperReadGCVirt(pVM, pvDst, GCPtr, cb);
-    return PGMPhysReadGCPtr(pVM, pvDst, GCPtr, cb);
+    return PGMPhysSimpleReadGCPtr(pVM, pvDst, GCPtr, cb);
 }
 
 
@@ -799,11 +873,14 @@ MMR3DECL(int) MMR3ReadGCVirt(PVM pVM, void *pvDst, RTGCPTR GCPtr, size_t cb)
  * @param   GCPtrDst    GC virtual address.
  * @param   pvSrc       The source address (HC of course).
  * @param   cb          Number of bytes to read.
+ *
+ * @remarks Intended for the debugger facility only.
+ * @todo    Move to DBGF, it's only selecting which functions to use!
  */
-MMR3DECL(int) MMR3WriteGCVirt(PVM pVM, RTGCPTR GCPtrDst, const void *pvSrc, size_t cb)
+VMMR3DECL(int) MMR3WriteGCVirt(PVM pVM, RTGCPTR GCPtrDst, const void *pvSrc, size_t cb)
 {
     if (GCPtrDst - pVM->mm.s.pvHyperAreaGC < pVM->mm.s.cbHyperArea)
         return VERR_ACCESS_DENIED;
-    return PGMPhysWriteGCPtr(pVM, GCPtrDst, pvSrc, cb);
+    return PGMPhysSimpleWriteGCPtr(pVM, GCPtrDst, pvSrc, cb);
 }
 

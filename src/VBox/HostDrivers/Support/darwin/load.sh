@@ -28,7 +28,12 @@
 # additional information or have any questions.
 #
 
-DRVNAME="VBoxDrv.kext"
+XNU_VERSION=`LC_ALL=C uname -r | LC_ALL=C cut -d . -f 1`
+if [ "$XNU_VERSION" -ge "9" ]; then
+  DRVNAME="VBoxDrv.kext"
+else
+  DRVNAME="VBoxDrvTiger.kext"
+fi
 BUNDLE="org.virtualbox.kext.VBoxDrv"
 
 DIR=`dirname "$0"`
@@ -55,6 +60,19 @@ if test -n "$LOADED"; then
         exit 1;
     fi
     echo "load.sh: Successfully unloaded org.virtualbox.kext.VBoxUSB"
+fi
+
+# Make sure VBoxNetFlt is unloaded as it might be using symbols from us.
+LOADED=`kextstat -b org.virtualbox.kext.VBoxNetFlt -l`
+if test -n "$LOADED"; then
+    echo "load.sh: Unloading org.virtualbox.kext.VBoxNetFlt..."
+    sudo kextunload -v 6 -b org.virtualbox.kext.VBoxNetFlt
+    LOADED=`kextstat -b org.virtualbox.kext.VBoxNetFlt -l`
+    if test -n "$LOADED"; then
+        echo "load.sh: failed to unload org.virtualbox.kext.VBoxNetFlt, see above..."
+        exit 1;
+    fi
+    echo "load.sh: Successfully unloaded org.virtualbox.kext.VBoxNetFlt"
 fi
 
 # Try unload any existing instance first.
@@ -99,7 +117,7 @@ if test "$OWNER" -ne 0; then
 
     # make a copy and switch over DIR
     mkdir -p "$TMP_DIR/"
-    cp -Rp "$DIR" "$TMP_DIR/"
+    sudo cp -Rp "$DIR" "$TMP_DIR/"
     DIR="$TMP_DIR/$DRVNAME"
 
     # retry

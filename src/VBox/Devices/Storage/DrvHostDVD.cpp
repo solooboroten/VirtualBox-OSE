@@ -1,4 +1,4 @@
-/* $Id: DrvHostDVD.cpp $ */
+/* $Id: DrvHostDVD.cpp 12767 2008-09-26 13:00:29Z vboxsync $ */
 /** @file
  * DrvHostDVD - Host DVD block driver.
  */
@@ -392,8 +392,9 @@ DECLCALLBACK(int) drvHostDvdPoll(PDRVHOSTBASE pThis)
 
 
 /** @copydoc PDMIBLOCK::pfnSendCmd */
-static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLOCKTXDIR enmTxDir, void *pvBuf, size_t *pcbBuf,
-                             uint8_t *pbStat, uint32_t cTimeoutMillies)
+static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd,
+                             PDMBLOCKTXDIR enmTxDir, void *pvBuf, size_t *pcbBuf,
+                             uint8_t *pabSense, size_t cbSense, uint32_t cTimeoutMillies)
 {
     PDRVHOSTBASE pThis = PDMIBLOCK_2_DRVHOSTBASE(pInterface);
     int rc;
@@ -406,13 +407,10 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
      */
     if (enmTxDir == PDMBLOCKTXDIR_FROM_DEVICE)
         memset(pvBuf, '\0', *pcbBuf); /* we got read size, but zero it anyway. */
-    uint8_t abSense[32];
-    rc = DRVHostBaseScsiCmd(pThis, pbCmd, 12, PDMBLOCKTXDIR_FROM_DEVICE, pvBuf, pcbBuf, abSense, sizeof(abSense), cTimeoutMillies);
+    rc = DRVHostBaseScsiCmd(pThis, pbCmd, 12, PDMBLOCKTXDIR_FROM_DEVICE, pvBuf, pcbBuf, pabSense, cbSense, cTimeoutMillies);
     if (rc == VERR_UNRESOLVED_ERROR)
-    {
-        *pbStat = abSense[2] & 0x0f;
-        rc = VINF_SUCCESS;
-    }
+        /* sense information set */
+        rc = VERR_DEV_IO_ERROR;
 
 #elif defined(RT_OS_L4)
     /* Not really ported to L4 yet. */
@@ -421,7 +419,6 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
 #elif defined(RT_OS_LINUX)
     int direction;
     struct cdrom_generic_command cgc;
-    request_sense sense;
 
     switch (enmTxDir)
     {
@@ -454,7 +451,8 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
     cgc.buffer = (unsigned char *)pvBuf;
     cgc.buflen = *pcbBuf;
     cgc.stat = 0;
-    cgc.sense = &sense;
+    Assert(cbSense >= sizeof(struct request_sense));
+    cgc.sense = (struct request_sense *)pabSense;
     cgc.data_direction = direction;
     cgc.quiet = false;
     cgc.timeout = cTimeoutMillies;
@@ -467,10 +465,9 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
             rc = VERR_NOT_SUPPORTED;
         else
         {
+            rc = RTErrConvertFromErrno(errno);
             if (rc == VERR_ACCESS_DENIED && cgc.sense->sense_key == SCSI_SENSE_NONE)
                 cgc.sense->sense_key = SCSI_SENSE_ILLEGAL_REQUEST;
-            *pbStat = cgc.sense->sense_key;
-            rc = RTErrConvertFromErrno(errno);
             Log2(("%s: error status %d, rc=%Rrc\n", __FUNCTION__, cgc.stat, rc));
         }
     }
@@ -512,10 +509,9 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
         default:
             AssertMsgFailedReturn(("%d\n", enmTxDir), VERR_INTERNAL_ERROR);
     }
-    char aSense[32];
     usc.uscsi_flags |= USCSI_RQENABLE;
-    usc.uscsi_rqbuf = aSense;
-    usc.uscsi_rqlen = 32;
+    usc.uscsi_rqbuf = (char *)pabSense;
+    usc.uscsi_rqlen = cbSense;
     usc.uscsi_cdb = (caddr_t)&scdb;
     usc.uscsi_cdblen = 12;
     memcpy (usc.uscsi_cdb, pbCmd, usc.uscsi_cdblen);
@@ -538,12 +534,9 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
             return VERR_PERMISSION_DENIED;
         if (usc.uscsi_status)
         {
-            *pbStat = aSense[2] & 0x0f;
             rc = RTErrConvertFromErrno(errno);
             Log2(("%s: error status. rc=%Rrc\n", __FUNCTION__, rc));
         }
-        else
-            *pbStat = SCSI_SENSE_NONE;
     }
     Log2(("%s: after ioctl: residual buflen=%d original buflen=%d\n", __FUNCTION__, usc.uscsi_resid, usc.uscsi_buflen));
 
@@ -552,7 +545,7 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
     struct _REQ
     {
         SCSI_PASS_THROUGH_DIRECT spt;
-        uint8_t aSense[18];
+        uint8_t aSense[64];
     } Req;
     DWORD cbReturned = 0;
 
@@ -588,18 +581,22 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
     Req.spt.DataTransferLength = *pcbBuf;
     Req.spt.DataIn = direction;
     Req.spt.TimeOutValue = (cTimeoutMillies + 999) / 1000; /* Convert to seconds */
-    Req.spt.SenseInfoLength = sizeof(Req.aSense);
+    Assert(cbSense <= sizeof(Req.aSense));
+    Req.spt.SenseInfoLength = cbSense;
     Req.spt.SenseInfoOffset = RT_OFFSETOF(struct _REQ, aSense);
     if (DeviceIoControl((HANDLE)pThis->FileDevice, IOCTL_SCSI_PASS_THROUGH_DIRECT,
                         &Req, sizeof(Req), &Req, sizeof(Req), &cbReturned, NULL))
     {
         if (cbReturned > RT_OFFSETOF(struct _REQ, aSense))
-            *pbStat = Req.aSense[2] & 0x0f;
+            memcpy(pabSense, Req.aSense, cbSense);
         else
-            *pbStat = SCSI_SENSE_NONE;
+            memset(pabSense, '\0', cbSense);
         /* Windows shares the property of not properly reflecting the actually
-         * transferred data size. See above. Assume that everything worked ok. */
-        rc = VINF_SUCCESS;
+         * transferred data size. See above. Assume that everything worked ok.
+         * Except if there are sense information. */
+        rc = (pabSense[2] & 0x0f) == SCSI_SENSE_NONE
+                 ? VINF_SUCCESS
+                 : VERR_DEV_IO_ERROR;
     }
     else
         rc = RTErrConvertFromWin32(GetLastError());
@@ -608,6 +605,15 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLO
 #else
 # error "Unsupported platform."
 #endif
+
+    if (pbCmd[0] == SCSI_GET_EVENT_STATUS_NOTIFICATION)
+    {
+        uint8_t *pbBuf = (uint8_t*)pvBuf;
+        Log2(("Event Status Notification class=%#02x supported classes=%#02x\n", pbBuf[2], pbBuf[3]));
+        if (RT_BE2H_U16(*(uint16_t*)pbBuf) >= 6)
+            Log2(("  event %#02x %#02x %#02x %#02x\n", pbBuf[4], pbBuf[5], pbBuf[6], pbBuf[7]));
+    }
+
     LogFlow(("%s: rc=%Rrc\n", __FUNCTION__, rc));
     return rc;
 }

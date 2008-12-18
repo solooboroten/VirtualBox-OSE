@@ -1,4 +1,4 @@
-/* $Id: REMAll.cpp $ */
+/* $Id: REMAll.cpp 13832 2008-11-05 02:01:12Z vboxsync $ */
 /** @file
  * REM - Recompiled Execution Monitor, all Contexts part.
  */
@@ -34,6 +34,8 @@
 #include <iprt/assert.h>
 
 
+#ifndef IN_RING3
+
 /**
  * Records a invlpg instruction for replaying upon REM entry.
  *
@@ -43,7 +45,7 @@
  * @param   pVM         The VM handle.
  * @param   GCPtrPage   The
  */
-REMDECL(int) REMNotifyInvalidatePage(PVM pVM, RTGCPTR GCPtrPage)
+VMMDECL(int) REMNotifyInvalidatePage(PVM pVM, RTGCPTR GCPtrPage)
 {
     if (pVM->rem.s.cInvalidatedPages < RT_ELEMENTS(pVM->rem.s.aGCPtrInvalidatedPages))
     {
@@ -70,7 +72,7 @@ REMDECL(int) REMNotifyInvalidatePage(PVM pVM, RTGCPTR GCPtrPage)
  */
 static void remFlushHandlerNotifications(PVM pVM)
 {
-#ifdef IN_GC
+#ifdef IN_RC
     VMMGCCallHost(pVM, VMMCALLHOST_REM_REPLAY_HANDLER_NOTIFICATIONS, 0);
 #elif defined(IN_RING0)
     /** @todo necessary? */
@@ -91,7 +93,7 @@ static void remFlushHandlerNotifications(PVM pVM)
  * @param   cb              Size of the handler range.
  * @param   fHasHCHandler   Set if the handler have a HC callback function.
  */
-REMDECL(void) REMNotifyHandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler)
+VMMDECL(void) REMNotifyHandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler)
 {
     if (pVM->rem.s.cHandlerNotifications >= RT_ELEMENTS(pVM->rem.s.aHandlerNotifications))
         remFlushHandlerNotifications(pVM);
@@ -115,7 +117,7 @@ REMDECL(void) REMNotifyHandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmTy
  * @param   fHasHCHandler   Set if the handler have a HC callback function.
  * @param   fRestoreAsRAM   Whether the to restore it as normal RAM or as unassigned memory.
  */
-REMDECL(void) REMNotifyHandlerPhysicalDeregister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM)
+VMMDECL(void) REMNotifyHandlerPhysicalDeregister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM)
 {
     if (pVM->rem.s.cHandlerNotifications >= RT_ELEMENTS(pVM->rem.s.aHandlerNotifications))
         remFlushHandlerNotifications(pVM);
@@ -141,7 +143,7 @@ REMDECL(void) REMNotifyHandlerPhysicalDeregister(PVM pVM, PGMPHYSHANDLERTYPE enm
  * @param   fHasHCHandler   Set if the handler have a HC callback function.
  * @param   fRestoreAsRAM   Whether the to restore it as normal RAM or as unassigned memory.
  */
-REMDECL(void) REMNotifyHandlerPhysicalModify(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhysOld, RTGCPHYS GCPhysNew, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM)
+VMMDECL(void) REMNotifyHandlerPhysicalModify(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhysOld, RTGCPHYS GCPhysNew, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM)
 {
     if (pVM->rem.s.cHandlerNotifications >= RT_ELEMENTS(pVM->rem.s.aHandlerNotifications))
         remFlushHandlerNotifications(pVM);
@@ -154,5 +156,19 @@ REMDECL(void) REMNotifyHandlerPhysicalModify(PVM pVM, PGMPHYSHANDLERTYPE enmType
     pRec->u.PhysicalModify.fHasHCHandler = fHasHCHandler;
     pRec->u.PhysicalModify.fRestoreAsRAM = fRestoreAsRAM;
     VM_FF_SET(pVM, VM_FF_REM_HANDLER_NOTIFY);
+}
+
+#endif /* !IN_RING3 */
+
+/**
+ * Make REM flush all translation block upon the next call to REMR3State().
+ *
+ * @param   pVM             Pointer to the shared VM structure.
+ */
+VMMDECL(void) REMFlushTBs(PVM pVM)
+{
+    LogFlow(("REMFlushTBs: fFlushTBs=%RTbool fInREM=%RTbool fInStateSync=%RTbool\n",
+             pVM->rem.s.fFlushTBs, pVM->rem.s.fInREM, pVM->rem.s.fInStateSync));
+    pVM->rem.s.fFlushTBs = true;
 }
 

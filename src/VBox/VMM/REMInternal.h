@@ -1,4 +1,4 @@
-/* $Id: REMInternal.h $ */
+/* $Id: REMInternal.h 15063 2008-12-07 14:04:13Z vboxsync $ */
 /** @file
  * REM - Internal header file.
  */
@@ -32,9 +32,6 @@
 #endif
 
 
-#if !defined(IN_REM_R3) && !defined(IN_REM_R0) && !defined(IN_REM_GC)
-# error "Not in REM! This is an internal header!"
-#endif
 
 /** @defgroup grp_rem_int   Internals
  * @ingroup grp_rem
@@ -51,6 +48,9 @@
  * Enable to monitor code pages that have been translated by the recompiler. */
 /** Currently broken and interferes with CSAM monitoring (see #2784) */
 ////#define REM_MONITOR_CODE_PAGES
+#ifdef DOXYGEN_RUNNING
+# define REM_MONITOR_CODE_PAGES
+#endif
 
 typedef enum REMHANDLERNOTIFICATIONKIND
 {
@@ -165,6 +165,9 @@ typedef struct REM
     /** In REMR3State. */
     bool                    fInStateSync;
 
+    /** Set when the translation blocks cache need to be flushed. */
+    bool                    fFlushTBs;
+
     /** Ignore all that can be ignored. */
     bool                    fIgnoreAll;
     /** Ignore CR3 load notifications from the REM. */
@@ -242,11 +245,19 @@ typedef struct REM
     uint32_t                abPadding[HC_ARCH_BITS == 32 ? 0 : 4];
 #endif
 
+#ifdef VBOX_WITH_NEW_RECOMPILER
 #if GC_ARCH_BITS == 32
-#define REM_ENV_SIZE        (HC_ARCH_BITS == 32 ? 0x6550 : 0xb4a0)
+# define REM_ENV_SIZE        (HC_ARCH_BITS == 32 ? 0xff00 : 0xff00)
 #else
-#define REM_ENV_SIZE        (HC_ARCH_BITS == 32 ? 0x9440 : 0xd4a0)
+# define REM_ENV_SIZE        (HC_ARCH_BITS == 32 ? 0xff00 : 0xff00)
 #endif
+#else  /* !VBOX_WITH_NEW_RECOMPILER */
+#if GC_ARCH_BITS == 32
+# define REM_ENV_SIZE        (HC_ARCH_BITS == 32 ? 0x6550 : 0xb4a0)
+#else
+# define REM_ENV_SIZE        (HC_ARCH_BITS == 32 ? 0x9440 : 0xd4a0)
+#endif
+#endif /* !VBOX_WITH_NEW_RECOMILER */
 
     /** Recompiler CPU state. */
 #ifdef REM_INCLUDE_CPU_H
@@ -256,7 +267,7 @@ typedef struct REM
     {
         char                achPadding[REM_ENV_SIZE];
     }                       Env;
-#endif
+#endif /* !REM_INCLUDE_CPU_H */
 } REM;
 
 /** Pointer to the REM Data. */
@@ -276,11 +287,15 @@ void    remR3ProtectCode(CPUState *env, RTGCPTR GCPtr);
 void    remR3ChangeCpuMode(CPUState *env);
 void    remR3DmaRun(CPUState *env);
 void    remR3TimersRun(CPUState *env);
-int     remR3NotifyTrap(CPUState *env, uint32_t uTrap, uint32_t uErrorCode, uint32_t pvNextEIP);
+# ifdef VBOX_WITH_NEW_RECOMPILER
+int     remR3NotifyTrap(CPUState *env, uint32_t uTrap, uint32_t uErrorCode, RTGCPTR pvNextEIP);
+# else
+int remR3NotifyTrap(CPUState *env, uint32_t uTrap, uint32_t uErrorCode, uint32_t pvNextEIP);
+# endif
 void    remR3TrapStat(CPUState *env, uint32_t uTrap);
 void    remR3CpuId(CPUState *env, unsigned uOperator, void *pvEAX, void *pvEBX, void *pvECX, void *pvEDX);
 void    remR3RecordCall(CPUState *env);
-#endif
+#endif /* REM_INCLUDE_CPU_H */
 void    remR3TrapClear(PVM pVM);
 void    remR3RaiseRC(PVM pVM, int rc);
 void    remR3DumpLnxSyscall(PVM pVM);
@@ -295,22 +310,22 @@ void    remR3DumpOBsdSyscall(PVM pVM);
 
 #ifdef VBOX_WITH_STATISTICS
 
-#define STATS_EMULATE_SINGLE_INSTR          1
-#define STATS_QEMU_COMPILATION              2
-#define STATS_QEMU_RUN_EMULATED_CODE        3
-#define STATS_QEMU_TOTAL                    4
-#define STATS_QEMU_RUN_TIMERS               5
-#define STATS_TLB_LOOKUP                    6
-#define STATS_IRQ_HANDLING                  7
-#define STATS_RAW_CHECK                     8
-
+# define STATS_EMULATE_SINGLE_INSTR         1
+# define STATS_QEMU_COMPILATION             2
+# define STATS_QEMU_RUN_EMULATED_CODE       3
+# define STATS_QEMU_TOTAL                   4
+# define STATS_QEMU_RUN_TIMERS              5
+# define STATS_TLB_LOOKUP                   6
+# define STATS_IRQ_HANDLING                 7
+# define STATS_RAW_CHECK                    8
 
 void remR3ProfileStart(int statcode);
 void remR3ProfileStop(int statcode);
-#else
-#define remR3ProfileStart(c)
-#define remR3ProfileStop(c)
-#endif
+
+#else  /* !VBOX_WITH_STATISTICS */
+# define remR3ProfileStart(c)
+# define remR3ProfileStop(c)
+#endif /* !VBOX_WITH_STATISTICS */
 
 /** @} */
 

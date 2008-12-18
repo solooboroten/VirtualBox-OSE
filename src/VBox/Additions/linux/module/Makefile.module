@@ -60,7 +60,6 @@ endif
 override MODULE = vboxadd
 OBJS   = \
 	cmc.o \
-	hgcmcall.o \
 	vboxmod.o \
 	GenericRequest.o \
 	HGCMInternal.o \
@@ -69,7 +68,11 @@ OBJS   = \
 	SysHlp.o \
 	VMMDev.o \
 	r0drv/alloc-r0drv.o \
+	r0drv/memobj-r0drv.o \
 	r0drv/linux/alloc-r0drv-linux.o \
+	r0drv/linux/assert-r0drv-linux.o \
+	r0drv/linux/memobj-r0drv-linux.o \
+	r0drv/linux/process-r0drv-linux.o \
 	r0drv/linux/semevent-r0drv-linux.o \
 	r0drv/linux/semfastmutex-r0drv-linux.o \
 	RTErrConvertToErrno.o \
@@ -78,13 +81,14 @@ OBJS   = \
 	udivdi3.o \
 	umoddi3.o \
 	qdivrem.o \
-	assert.o \
 	logbackdoor.o \
 	logformat.o \
 	strformat.o \
 	strformatrt.o \
 	strformattype.o \
-	strformat-vbox.o
+	strprintf.o \
+	strformat-vbox.o \
+    RTAssertShouldPanic-generic.o
 ifeq ($(BUILD_TARGET_ARCH),amd64)
 OBJS += \
 	alloc/heapsimple.o \
@@ -239,4 +243,4 @@ endif # eq($(MAKECMDGOALS),clean)
 
 clean:
 	for f in . linux r0drv r0drv/linux; do rm -f $$f/*.o $$f/.*.cmd $$f/.*.flags; done
-	rm -rf .vboxadd* .tmp_ver* vboxadd.* Module.symvers Modules.symvers
+	rm -rf .vboxadd* .tmp_ver* vboxadd.* Module.symvers Modules.symvers modules.order

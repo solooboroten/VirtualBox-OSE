@@ -1,4 +1,4 @@
-/* $Id: path.cpp $ */
+/* $Id: path.cpp 14324 2008-11-18 19:09:34Z vboxsync $ */
 /** @file
  * IPRT - Path Manipulation.
  */
@@ -50,12 +50,14 @@
  * Strips the filename from a path.
  *
  * @param   pszPath     Path which filename should be extracted from.
+ *                      If only filename in the string a '.' will be returned.
  *
  */
 RTDECL(void) RTPathStripFilename(char *pszPath)
 {
     char *psz = pszPath;
-    char *pszLastSep = pszPath;
+    char *pszLastSep = NULL;
+
 
     for (;; psz++)
     {
@@ -65,6 +67,10 @@ RTDECL(void) RTPathStripFilename(char *pszPath)
 #if defined(RT_OS_WINDOWS) || defined(RT_OS_OS2)
             case ':':
                 pszLastSep = psz + 1;
+                if (RTPATH_IS_SLASH(psz[1]))
+                    pszPath = psz + 1;
+                else
+                    pszPath = psz;
                 break;
 
             case '\\':
@@ -75,9 +81,19 @@ RTDECL(void) RTPathStripFilename(char *pszPath)
 
             /* the end */
             case '\0':
-                if (pszLastSep == pszPath)
-                    *pszLastSep++ = '.';
-                *pszLastSep = '\0';
+                if (!pszLastSep)
+                {
+                    /* no directory component */
+                    pszPath[0] = '.';
+                    pszPath[1] = '\0';
+                }
+                else if (pszLastSep == pszPath)
+                {
+                    /* only root. */
+                    pszLastSep[1] = '\0';
+                }
+                else
+                    pszLastSep[0] = '\0';
                 return;
         }
     }
@@ -122,12 +138,12 @@ RTDECL(void) RTPathStripExt(char *pszPath)
 
 /**
  * Parses a path.
- * 
- * It figures the length of the directory component, the offset of 
+ *
+ * It figures the length of the directory component, the offset of
  * the file name and the location of the suffix dot.
  *
  * @returns The path length.
- * 
+ *
  * @param   pszPath     Path to find filename in.
  * @param   pcbDir      Where to put the length of the directory component.
  *                      If no directory, this will be 0. Optional.
@@ -137,7 +153,7 @@ RTDECL(void) RTPathStripExt(char *pszPath)
  * @param   poffSuff    Where to store the suffix offset (the last dot).
  *                      If empty string or if it's ending with a slash this
  *                      will be set to -1. Optional.
- * @param   pfFlags     Where to set flags returning more information about 
+ * @param   pfFlags     Where to set flags returning more information about
  *                      the path. For the future. Optional.
  */
 RTDECL(size_t) RTPathParse(const char *pszPath, size_t *pcchDir, ssize_t *poffName, ssize_t *poffSuff)
@@ -168,7 +184,7 @@ RTDECL(size_t) RTPathParse(const char *pszPath, size_t *pcchDir, ssize_t *poffNa
                 pszLastDot = psz;
                 break;
 
-            /* 
+            /*
              * The end. Complete the results.
              */
             case '\0':
@@ -252,6 +268,8 @@ RTDECL(char *) RTPathFilename(const char *pszPath)
  * Strips the trailing slashes of a path name.
  *
  * @param   pszPath     Path to strip.
+ *
+ * @todo    This isn't safe for a root element! Needs fixing.
  */
 RTDECL(void) RTPathStripTrailingSlash(char *pszPath)
 {
@@ -570,7 +588,7 @@ size_t rtPathVolumeSpecLen(const char *pszPath)
  * @param   pszAbsPath      Where to store the absolute path.
  * @param   cchAbsPath      Size of the buffer.
  */
-RTDECL(int) RTPathAbsEx(const char *pszBase, const char *pszPath, char *pszAbsPath, unsigned cchAbsPath)
+RTDECL(int) RTPathAbsEx(const char *pszBase, const char *pszPath, char *pszAbsPath, size_t cchAbsPath)
 {
     if (pszBase && pszPath && !rtPathVolumeSpecLen(pszPath))
     {
@@ -647,7 +665,7 @@ RTDECL(char *) RTPathAbsExDup(const char *pszBase, const char *pszPath)
 
 #ifndef RT_MINI
 
-RTDECL(int) RTPathProgram(char *pszPath, unsigned cchPath)
+RTDECL(int) RTPathProgram(char *pszPath, size_t cchPath)
 {
     AssertReturn(g_szrtProcExePath[0], VERR_WRONG_ORDER);
 
@@ -676,7 +694,7 @@ RTDECL(int) RTPathProgram(char *pszPath, unsigned cchPath)
  * Old path: same as RTPathProgram()
  *
  */
-RTDECL(int) RTPathAppPrivateNoArch(char *pszPath, unsigned cchPath)
+RTDECL(int) RTPathAppPrivateNoArch(char *pszPath, size_t cchPath)
 {
 #if !defined(RT_OS_WINDOWS) && defined(RTPATH_APP_PRIVATE)
     char *pszUtf8Path;
@@ -710,7 +728,7 @@ RTDECL(int) RTPathAppPrivateNoArch(char *pszPath, unsigned cchPath)
  * @param   pszPath     Buffer where to store the path.
  * @param   cchPath     Buffer size in bytes.
  */
-RTDECL(int) RTPathAppPrivateArch(char *pszPath, unsigned cchPath)
+RTDECL(int) RTPathAppPrivateArch(char *pszPath, size_t cchPath)
 {
 #if !defined(RT_OS_WINDOWS) && defined(RTPATH_APP_PRIVATE_ARCH)
     char *pszUtf8Path;
@@ -745,7 +763,7 @@ RTDECL(int) RTPathAppPrivateArch(char *pszPath, unsigned cchPath)
  * @param   pszPath     Buffer where to store the path.
  * @param   cchPath     Buffer size in bytes.
  */
-RTDECL(int) RTPathSharedLibs(char *pszPath, unsigned cchPath)
+RTDECL(int) RTPathSharedLibs(char *pszPath, size_t cchPath)
 {
 #if !defined(RT_OS_WINDOWS) && defined(RTPATH_SHARED_LIBS)
     char *pszUtf8Path;
@@ -778,7 +796,7 @@ RTDECL(int) RTPathSharedLibs(char *pszPath, unsigned cchPath)
  * @param   pszPath     Buffer where to store the path.
  * @param   cchPath     Buffer size in bytes.
  */
-RTDECL(int) RTPathAppDocs(char *pszPath, unsigned cchPath)
+RTDECL(int) RTPathAppDocs(char *pszPath, size_t cchPath)
 {
 #if !defined(RT_OS_WINDOWS) && defined(RTPATH_APP_DOCS)
     char *pszUtf8Path;

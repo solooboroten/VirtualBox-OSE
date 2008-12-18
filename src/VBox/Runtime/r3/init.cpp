@@ -1,4 +1,4 @@
-/* $Id: init.cpp $ */
+/* $Id: init.cpp 14856 2008-12-01 13:41:12Z vboxsync $ */
 /** @file
  * IPRT - Init Ring-3.
  */
@@ -40,12 +40,13 @@
 # include <unistd.h>
 #endif
 
-#include <iprt/runtime.h>
-#include <iprt/path.h>
+#include <iprt/initterm.h>
+#include <iprt/asm.h>
 #include <iprt/assert.h>
-#include <iprt/log.h>
-#include <iprt/time.h>
 #include <iprt/err.h>
+#include <iprt/log.h>
+#include <iprt/path.h>
+#include <iprt/time.h>
 #include <iprt/string.h>
 #include <iprt/param.h>
 #if !defined(IN_GUEST) && !defined(RT_NO_GIP)
@@ -68,7 +69,7 @@ static int32_t volatile g_cUsers = 0;
 /** Whether we're currently initializing the IPRT. */
 static bool volatile    g_fInitializing = false;
 
-/** The process path. 
+/** The process path.
  * This is used by RTPathProgram and RTProcGetExecutableName and set by rtProcInitName. */
 char        g_szrtProcExePath[RTPATH_MAX];
 /** The length of g_szrtProcExePath. */
@@ -105,11 +106,11 @@ RTPROCPRIORITY g_enmProcessPriority = RTPROCPRIORITY_DEFAULT;
 
 
 
-/** 
- * Internal worker which initializes or re-initializes the 
+/**
+ * Internal worker which initializes or re-initializes the
  * program path, name and directory globals.
  *
- * @returns IPRT status code. 
+ * @returns IPRT status code.
  * @param   pszProgramPath  The program path, NULL if not specified.
  */
 static int rtR3InitProgramPath(const char *pszProgramPath)
@@ -218,13 +219,6 @@ static int rtR3Init(bool fInitSUPLib, const char *pszProgramPath)
 #endif
 
     /*
-     * Init the program start TSes.
-     */
-    g_u64ProgramStartNanoTS = RTTimeNanoTS();
-    g_u64ProgramStartMicroTS = g_u64ProgramStartNanoTS / 1000;
-    g_u64ProgramStartMilliTS = g_u64ProgramStartNanoTS / 1000000;
-
-    /*
      * The Process ID.
      */
 #ifdef _MSC_VER
@@ -256,6 +250,14 @@ static int rtR3Init(bool fInitSUPLib, const char *pszProgramPath)
         RTTimeNanoTS();
     }
 #endif
+
+    /*
+     * Init the program start TSes.
+     * Do that here to be sure that the GIP time was properly updated the 1st time.
+     */
+    g_u64ProgramStartNanoTS = RTTimeNanoTS();
+    g_u64ProgramStartMicroTS = g_u64ProgramStartNanoTS / 1000;
+    g_u64ProgramStartMilliTS = g_u64ProgramStartNanoTS / 1000000;
 
     /*
      * More stuff to come?

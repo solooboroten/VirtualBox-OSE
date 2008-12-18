@@ -1,4 +1,4 @@
-/* $Id: DBGFInternal.h $ */
+/* $Id: DBGFInternal.h 12989 2008-10-06 02:15:39Z vboxsync $ */
 /** @file
  * DBGF - Internal header file.
  */
@@ -30,10 +30,6 @@
 #include <iprt/avl.h>
 #include <VBox/dbgf.h>
 
-
-#if !defined(IN_DBGF_R3) && !defined(IN_DBGF_R0) && !defined(IN_DBGF_GC)
-# error "Not in DBGF! This is an internal header!"
-#endif
 
 
 /** @defgroup grp_dbgf_int   Internals
@@ -73,8 +69,11 @@ typedef enum DBGFCMD
 
     /** Detaches the debugger.
      * Disabling all breakpoints, watch points and the like. */
-    DBGFCMD_DETACH_DEBUGGER = 0x7fffffff
-
+    DBGFCMD_DETACH_DEBUGGER = 0x7ffffffe,
+    /** Detached the debugger.
+     * The isn't a command as such, it's just that it's necessary for the
+     * detaching protocol to be racefree. */
+    DBGFCMD_DETACHED_DEBUGGER = 0x7fffffff
 } DBGFCMD;
 
 /**
@@ -83,7 +82,6 @@ typedef enum DBGFCMD
 typedef union DBGFCMDDATA
 {
     uint32_t    uDummy;
-
 } DBGFCMDDATA;
 /** Pointer to DBGF Command Data. */
 typedef DBGFCMDDATA *PDBGFCMDDATA;
@@ -204,13 +202,13 @@ typedef struct DBGF
     /** Debugger Attached flag.
      * Set if a debugger is attached, elsewise it's clear.
      */
-    volatile bool           fAttached;
+    bool volatile           fAttached;
 
     /** Stopped in the Hypervisor.
      * Set if we're stopped on a trace, breakpoint or assertion inside
      * the hypervisor and have to restrict the available operations.
      */
-    volatile bool           fStoppedInHyper;
+    bool volatile           fStoppedInHyper;
 
     /**
      * Ping-Pong construct where the Ping side is the VMM and the Pong side
@@ -231,7 +229,7 @@ typedef struct DBGF
      * is set. The VMM will reset this member to the no-command state
      * when it have processed it.
      */
-    volatile DBGFCMD        enmVMMCmd;
+    DBGFCMD volatile        enmVMMCmd;
     /** The Command data.
      * Not all commands take data. */
     DBGFCMDDATA             VMMCmdData;

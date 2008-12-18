@@ -1,6 +1,6 @@
-/* $Id: VMMGC.cpp $ */
+/* $Id: VMMGC.cpp 13816 2008-11-04 22:52:12Z vboxsync $ */
 /** @file
- * VMM - Guest Context.
+ * VMM - Raw-mode Context.
  */
 
 /*
@@ -61,13 +61,13 @@ static DECLCALLBACK(int) vmmGCTestTmpPFHandlerCorruptFS(PVM pVM, PCPUMCTXCORE pR
  * @param   uOperation  Which operation to execute (VMMGCOPERATION).
  * @param   uArg        Argument to that operation.
  */
-VMMGCDECL(int) VMMGCEntry(PVM pVM, unsigned uOperation, unsigned uArg, ...)
+VMMRCDECL(int) VMMGCEntry(PVM pVM, unsigned uOperation, unsigned uArg, ...)
 {
     /* todo */
     switch (uOperation)
     {
         /*
-         * Init GC modules.
+         * Init RC modules.
          */
         case VMMGC_DO_VMMGC_INIT:
         {
@@ -86,7 +86,7 @@ VMMGCDECL(int) VMMGCEntry(PVM pVM, unsigned uOperation, unsigned uArg, ...)
             uint64_t u64TS = va_arg(va, uint64_t);
             va_end(va);
 
-            int rc = RTGCInit(u64TS);
+            int rc = RTRCInit(u64TS);
             Log(("VMMGCEntry: VMMGC_DO_VMMGC_INIT - uArg=%u (svn revision) u64TS=%RX64; rc=%Rrc\n", uArg, u64TS, rc));
             AssertRCReturn(rc, rc);
 
@@ -161,13 +161,13 @@ VMMGCDECL(int) VMMGCEntry(PVM pVM, unsigned uOperation, unsigned uArg, ...)
 
 
 /**
- * Internal GC logger worker: Flush logger.
+ * Internal RC logger worker: Flush logger.
  *
  * @returns VINF_SUCCESS.
  * @param   pLogger     The logger instance to flush.
  * @remark  This function must be exported!
  */
-VMMGCDECL(int) vmmGCLoggerFlush(PRTLOGGERRC pLogger)
+VMMRCDECL(int) vmmGCLoggerFlush(PRTLOGGERRC pLogger)
 {
     PVM pVM = &g_VM;
     NOREF(pLogger);
@@ -181,9 +181,9 @@ VMMGCDECL(int) vmmGCLoggerFlush(PRTLOGGERRC pLogger)
  * @param   pVM         The VM handle.
  * @param   rc          The status code.
  */
-VMMGCDECL(void) VMMGCGuestToHost(PVM pVM, int rc)
+VMMRCDECL(void) VMMGCGuestToHost(PVM pVM, int rc)
 {
-    pVM->vmm.s.pfnGCGuestToHost(rc);
+    pVM->vmm.s.pfnGuestToHostRC(rc);
 }
 
 
@@ -195,13 +195,13 @@ VMMGCDECL(void) VMMGCGuestToHost(PVM pVM, int rc)
  * @param   enmOperation    The operation.
  * @param   uArg            The argument to the operation.
  */
-VMMGCDECL(int) VMMGCCallHost(PVM pVM, VMMCALLHOST enmOperation, uint64_t uArg)
+VMMRCDECL(int) VMMGCCallHost(PVM pVM, VMMCALLHOST enmOperation, uint64_t uArg)
 {
 /** @todo profile this! */
     pVM->vmm.s.enmCallHostOperation = enmOperation;
     pVM->vmm.s.u64CallHostArg = uArg;
     pVM->vmm.s.rcCallHost = VERR_INTERNAL_ERROR;
-    pVM->vmm.s.pfnGCGuestToHost(VINF_VMM_CALL_HOST);
+    pVM->vmm.s.pfnGuestToHostRC(VINF_VMM_CALL_HOST);
     return pVM->vmm.s.rcCallHost;
 }
 
@@ -300,13 +300,13 @@ static int vmmGCTest(PVM pVM, unsigned uOperation, unsigned uArg)
                  * Test the use of a temporary #PF handler.
                  */
                 rc = TRPMGCSetTempHandler(pVM, X86_XCPT_PF, uArg != 4 ? vmmGCTestTmpPFHandler : vmmGCTestTmpPFHandlerCorruptFS);
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
                     rc = vmmGCTestTrap0e();
 
                     /* in case it didn't fire. */
                     int rc2 = TRPMGCSetTempHandler(pVM, X86_XCPT_PF, NULL);
-                    if (VBOX_FAILURE(rc2) && VBOX_SUCCESS(rc))
+                    if (RT_FAILURE(rc2) && RT_SUCCESS(rc))
                         rc = rc2;
                 }
             }
@@ -328,7 +328,7 @@ static int vmmGCTest(PVM pVM, unsigned uOperation, unsigned uArg)
  * Temporary #PF trap handler for the #PF test case.
  *
  * @returns VBox status code (appropriate for GC return).
- *          In this context VBOX_SUCCESS means to restart the instruction.
+ *          In this context RT_SUCCESS means to restart the instruction.
  * @param   pVM         VM handle.
  * @param   pRegFrame   Trap register frame.
  */
@@ -347,7 +347,7 @@ static DECLCALLBACK(int) vmmGCTestTmpPFHandler(PVM pVM, PCPUMCTXCORE pRegFrame)
  * Temporary #PF trap handler for the #PF test case, this one messes up the fs selector.
  *
  * @returns VBox status code (appropriate for GC return).
- *          In this context VBOX_SUCCESS means to restart the instruction.
+ *          In this context RT_SUCCESS means to restart the instruction.
  * @param   pVM         VM handle.
  * @param   pRegFrame   Trap register frame.
  */

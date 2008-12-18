@@ -147,7 +147,7 @@ typedef enum RTLOGGROUP
 #endif
 
 /** Logger structure. */
-#ifdef IN_GC
+#ifdef IN_RC
 typedef struct RTLOGGERRC RTLOGGER;
 #else
 typedef struct RTLOGGER RTLOGGER;
@@ -231,7 +231,7 @@ struct RTLOGGERRC
 
 
 
-#ifndef IN_GC
+#ifndef IN_RC
 /**
  * Logger instance structure.
  */
@@ -620,10 +620,10 @@ RTDECL(void) RTLogPrintfEx(void *pvInstance, unsigned fFlags, unsigned iGroup, c
  */
 #ifdef LOG_USE_C99
 # define LogTraceMsg(a) \
-    _LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_FLOW, LOG_GROUP, ">>>>> %s (%d): %M" LOG_FN_FMT, __FILE__, __LINE__, __PRETTY_FUNCTION__, _LogRemoveParentheseis a )
+    _LogIt(LOG_INSTANCE, RTLOGGRPFLAGS_FLOW, LOG_GROUP, ">>>>> %s (%d): " LOG_FN_FMT ": %M", __FILE__, __LINE__, __PRETTY_FUNCTION__, _LogRemoveParentheseis a )
 #else
 # define LogTraceMsg(a) \
-    do {  LogFlow((">>>>> %s (%d): " LOG_FN_FMT, __FILE__, __LINE__, __PRETTY_FUNCTION__)); LogFlow(a); } while (0)
+    do {  LogFlow((">>>>> %s (%d): " LOG_FN_FMT ": ", __FILE__, __LINE__, __PRETTY_FUNCTION__)); LogFlow(a); } while (0)
 #endif
 
 /** @def LogFunc
@@ -1004,7 +1004,7 @@ RTDECL(void) RTLogPrintfEx(void *pvInstance, unsigned fFlags, unsigned iGroup, c
 #define LogRelIsFlowEnabled()  LogRelIsItEnabled(LOG_REL_INSTANCE, RTLOGGRPFLAGS_FLOW, LOG_GROUP)
 
 
-#ifndef IN_GC
+#ifndef IN_RC
 /**
  * Sets the default release logger instance.
  *
@@ -1012,7 +1012,7 @@ RTDECL(void) RTLogPrintfEx(void *pvInstance, unsigned fFlags, unsigned iGroup, c
  * @param   pLogger     The new default release logger instance.
  */
 RTDECL(PRTLOGGER) RTLogRelSetDefaultInstance(PRTLOGGER pLogger);
-#endif /* !IN_GC */
+#endif /* !IN_RC */
 
 /**
  * Gets the default release logger instance.
@@ -1209,7 +1209,7 @@ RTDECL(void) RTLogRelPrintfV(const char *pszFormat, va_list args);
  */
 RTDECL(PRTLOGGER)   RTLogDefaultInstance(void);
 
-#ifndef IN_GC
+#ifndef IN_RC
 /**
  * Sets the default logger instance.
  *
@@ -1217,7 +1217,7 @@ RTDECL(PRTLOGGER)   RTLogDefaultInstance(void);
  * @param   pLogger     The new default logger instance.
  */
 RTDECL(PRTLOGGER) RTLogSetDefaultInstance(PRTLOGGER pLogger);
-#endif /* !IN_GC */
+#endif /* !IN_RC */
 
 #ifdef IN_RING0
 /**
@@ -1252,7 +1252,7 @@ DECLINLINE(bool) LogIsItEnabledInternal(void *pvInst, unsigned iGroup, unsigned 
 #endif
 
 
-#ifndef IN_GC
+#ifndef IN_RC
 /**
  * Creates the default logger instance for a iprt users.
  *
@@ -1357,24 +1357,26 @@ RTDECL(int) RTLogDestroy(PRTLOGGER pLogger);
  * @returns iprt status code.
  *
  * @param   pLogger             The logger instance to be cloned.
- * @param   pLoggerGC           Where to create the GC logger instance.
- * @param   cbLoggerGC          Amount of memory allocated to for the GC logger instance clone.
- * @param   pfnLoggerGCPtr      Pointer to logger wrapper function for this instance (GC Ptr).
- * @param   pfnFlushGCPtr       Pointer to flush function (GC Ptr).
+ * @param   pLoggerRC           Where to create the RC logger instance.
+ * @param   cbLoggerRC          Amount of memory allocated to for the RC logger
+ *                              instance clone.
+ * @param   pfnLoggerRCPtr      Pointer to logger wrapper function for this
+ *                              instance (RC Ptr).
+ * @param   pfnFlushRCPtr       Pointer to flush function (RC Ptr).
  * @param   fFlags              Logger instance flags, a combination of the RTLOGFLAGS_* values.
  */
-RTDECL(int) RTLogCloneRC(PRTLOGGER pLogger, PRTLOGGERRC pLoggerGC, size_t cbLoggerGC,
-                         RTRCPTR pfnLoggerGCPtr, RTRCPTR pfnFlushGCPtr, RTUINT fFlags);
+RTDECL(int) RTLogCloneRC(PRTLOGGER pLogger, PRTLOGGERRC pLoggerRC, size_t cbLoggerRC,
+                         RTRCPTR pfnLoggerRCPtr, RTRCPTR pfnFlushRCPtr, RTUINT fFlags);
 
 /**
- * Flushes a GC logger instance to a HC logger.
+ * Flushes a RC logger instance to a R3 logger.
  *
  * @returns iprt status code.
- * @param   pLogger     The HC logger instance to flush pLoggerGC to.
- *                      If NULL the default logger is used.
- * @param   pLoggerGC   The GC logger instance to flush.
+ * @param   pLogger     The R3 logger instance to flush pLoggerRC to. If NULL
+ *                      the default logger is used.
+ * @param   pLoggerRC   The RC logger instance to flush.
  */
-RTDECL(void) RTLogFlushGC(PRTLOGGER pLogger, PRTLOGGERRC pLoggerGC);
+RTDECL(void) RTLogFlushRC(PRTLOGGER pLogger, PRTLOGGERRC pLoggerRC);
 
 /**
  * Flushes the buffer in one logger instance onto another logger.
@@ -1408,7 +1410,7 @@ RTDECL(int) RTLogCopyGroupsAndFlags(PRTLOGGER pDstLogger, PCRTLOGGER pSrcLogger,
  * @param   pszVar      Value to parse.
  */
 RTDECL(int) RTLogGroupSettings(PRTLOGGER pLogger, const char *pszVar);
-#endif /* !IN_GC */
+#endif /* !IN_RC */
 
 /**
  * Updates the flags for the logger instance using the specified

@@ -112,7 +112,9 @@ PFNDISPARSE  pfnFullDisasm[IDX_ParseMax] =
     ParseEscFP,
     ParseNopPause,
     ParseImmByteSX,
-    ParseImmZ
+    ParseImmZ,
+    ParseThreeByteEsc4,
+    ParseThreeByteEsc5
 };
 
 PFNDISPARSE  pfnCalcSize[IDX_ParseMax] =
@@ -154,7 +156,9 @@ PFNDISPARSE  pfnCalcSize[IDX_ParseMax] =
     ParseEscFP,
     ParseNopPause,
     ParseImmByteSX_SizeOnly,
-    ParseImmZ_SizeOnly
+    ParseImmZ_SizeOnly,
+    ParseThreeByteEsc4,
+    ParseThreeByteEsc5
 };
 
 /**
@@ -193,7 +197,7 @@ DISDECL(int) DISCoreOne(PDISCPUSTATE pCpu, RTUINTPTR InstructionAddr, unsigned *
     pCpu->uFilter       = OPTYPE_ALL;
     pCpu->pfnDisasmFnTable = pfnFullDisasm;
 
-    return VBOX_SUCCESS(disCoreOne(pCpu, InstructionAddr, pcbInstruction));
+    return RT_SUCCESS(disCoreOne(pCpu, InstructionAddr, pcbInstruction));
 }
 
 /**
@@ -780,7 +784,7 @@ unsigned UseModRM(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, P
             if (rm == 5)
             {
                 /* 32 bits displacement */
-                if (pCpu->mode == CPUMODE_32BIT)
+                if (pCpu->mode != CPUMODE_64BIT)
                 {
                     pParam->flags |= USE_DISPLACEMENT32;
                     pParam->disp32 = pCpu->disp;
@@ -1282,7 +1286,7 @@ unsigned ParseImmV(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, 
         pParam->flags |= USE_IMMEDIATE64;
         pParam->size   = sizeof(uint64_t);
 
-        disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "0%VX64h", pParam->parval);
+        disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "0%RX64h", pParam->parval);
         return sizeof(uint64_t);
     }
     else
@@ -1326,10 +1330,10 @@ unsigned ParseImmZ(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, 
         /* 64 bits op mode means *sign* extend to 64 bits. */
         if (pCpu->opmode == CPUMODE_64BIT)
         {
-            pParam->parval = (uint64_t)(int32_t)DISReadDWord(pCpu, lpszCodeBlock);           
+            pParam->parval = (uint64_t)(int32_t)DISReadDWord(pCpu, lpszCodeBlock);
             pParam->flags |= USE_IMMEDIATE64;
             pParam->size   = sizeof(uint64_t);
-            disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "0%VX64h", pParam->parval);
+            disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "0%RX64h", pParam->parval);
         }
         else
         {
@@ -1392,7 +1396,7 @@ unsigned ParseImmVRel(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pPara
         pParam->flags |= USE_IMMEDIATE64_REL;
         pParam->size   = sizeof(int64_t);
 
-        disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), " (0%VX64h)", pParam->parval);
+        disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), " (0%RX64h)", pParam->parval);
         return sizeof(int32_t);
     }
     else
@@ -1728,8 +1732,10 @@ unsigned ParseTwoByteEsc(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pP
     const OPCODE *pOpcode;
     int           size    = sizeof(uint8_t);
 
-    //2nd byte
+    /* 2nd byte */
     pCpu->opcode = DISReadByte(pCpu, lpszCodeBlock);
+
+    /* default to the non-prefixed table. */
     pOpcode      = &g_aTwoByteMapX86[pCpu->opcode];
 
     /* Handle opcode table extensions that rely on the address, repe or repne prefix byte.  */
@@ -1773,6 +1779,100 @@ unsigned ParseTwoByteEsc(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pP
             break;
         }
     }
+
+    size += ParseInstruction(lpszCodeBlock+size, pOpcode, pCpu);
+    return size;
+}
+//*****************************************************************************
+//*****************************************************************************
+unsigned ParseThreeByteEsc4(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu)
+{
+    const OPCODE *pOpcode;
+    int           size    = sizeof(uint8_t);
+
+    /* 3rd byte */
+    pCpu->opcode = DISReadByte(pCpu, lpszCodeBlock);
+
+    /* default to the non-prefixed table. */
+    if (g_apThreeByteMapX86_0F38[pCpu->opcode >> 4])
+    {
+        pOpcode = g_apThreeByteMapX86_0F38[pCpu->opcode >> 4];
+        pOpcode = &pOpcode[pCpu->opcode & 0xf];
+    }
+    else
+        pOpcode = &g_InvalidOpcode[0];
+
+    /* Handle opcode table extensions that rely on the address, repne prefix byte.  */
+    /** @todo Should we take the first or last prefix byte in case of multiple prefix bytes??? */
+    switch (pCpu->lastprefix)
+    {
+    case OP_OPSIZE: /* 0x66 */
+        if (g_apThreeByteMapX86_660F38[pCpu->opcode >> 4])
+        {
+            pOpcode = g_apThreeByteMapX86_660F38[pCpu->opcode >> 4];
+            pOpcode = &pOpcode[pCpu->opcode & 0xf];
+
+            if (pOpcode->opcode != OP_INVALID)
+            {
+                /* Table entry is valid, so use the extension table. */
+
+                /* Cancel prefix changes. */
+                pCpu->prefix &= ~PREFIX_OPSIZE;
+                pCpu->opmode  = pCpu->mode;
+            }
+        }
+        break;
+
+    case OP_REPNE:   /* 0xF2 */
+        if (g_apThreeByteMapX86_F20F38[pCpu->opcode >> 4])
+        {
+            pOpcode = g_apThreeByteMapX86_F20F38[pCpu->opcode >> 4];
+            pOpcode = &pOpcode[pCpu->opcode & 0xf];
+
+            if (pOpcode->opcode != OP_INVALID)
+            {
+                /* Table entry is valid, so use the extension table. */
+
+                /* Cancel prefix changes. */
+                pCpu->prefix &= ~PREFIX_REPNE;
+            }
+        }
+        break;
+    }
+
+    size += ParseInstruction(lpszCodeBlock+size, pOpcode, pCpu);
+    return size;
+}
+//*****************************************************************************
+//*****************************************************************************
+unsigned ParseThreeByteEsc5(RTUINTPTR lpszCodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu)
+{
+    const OPCODE *pOpcode;
+    int           size    = sizeof(uint8_t);
+
+    /* 3rd byte */
+    pCpu->opcode = DISReadByte(pCpu, lpszCodeBlock);
+
+    /** @todo Should we take the first or last prefix byte in case of multiple prefix bytes??? */
+    Assert(pCpu->lastprefix == OP_OPSIZE);
+
+    /* default to the non-prefixed table. */
+    if (g_apThreeByteMapX86_660F3A[pCpu->opcode >> 4])
+    {
+        pOpcode = g_apThreeByteMapX86_660F3A[pCpu->opcode >> 4];
+        pOpcode = &pOpcode[pCpu->opcode & 0xf];
+
+        if (pOpcode->opcode != OP_INVALID)
+        {
+            /* Table entry is valid, so use the extension table. */
+
+            /* Cancel prefix changes. */
+            pCpu->prefix &= ~PREFIX_OPSIZE;
+            pCpu->opmode  = pCpu->mode;
+        }
+    }
+    else
+        pOpcode = &g_InvalidOpcode[0];
 
     size += ParseInstruction(lpszCodeBlock+size, pOpcode, pCpu);
     return size;
@@ -2207,7 +2307,7 @@ void disasmModRMReg(PDISCPUSTATE pCpu, PCOPCODE pOp, unsigned idx, POP_PARAMETER
         /* AH, BH, CH & DH map to DIL, SIL, EBL & SPL when a rex prefix is present. */
         /* Intel® 64 and IA-32 Architectures Software Developer’s Manual: 3.4.1.1 */
         if (    (pCpu->prefix & PREFIX_REX)
-            &&  idx >= USE_REG_AH 
+            &&  idx >= USE_REG_AH
             &&  idx <= USE_REG_BH)
         {
             idx += (USE_REG_SPL - USE_REG_AH);
@@ -2268,17 +2368,17 @@ void disasmModRMReg16(PDISCPUSTATE pCpu, PCOPCODE pOp, unsigned idx, POP_PARAMET
 void disasmModRMSReg(PDISCPUSTATE pCpu, PCOPCODE pOp, unsigned idx, POP_PARAMETER pParam)
 {
 #if 0 //def DEBUG_Sander
-    AssertMsg(idx < ELEMENTS(szModRMSegReg), ("idx=%d\n", idx));
+    AssertMsg(idx < RT_ELEMENTS(szModRMSegReg), ("idx=%d\n", idx));
 #endif
 #ifdef IN_RING3
-    if (idx >= ELEMENTS(szModRMSegReg))
+    if (idx >= RT_ELEMENTS(szModRMSegReg))
     {
         Log(("disasmModRMSReg %d failed!!\n", idx));
         DIS_THROW(ExceptionInvalidParameter);
     }
 #endif
 
-    idx = RT_MIN(idx, ELEMENTS(szModRMSegReg)-1);
+    idx = RT_MIN(idx, RT_ELEMENTS(szModRMSegReg)-1);
     disasmAddString(pParam->szParam, szModRMSegReg[idx]);
     pParam->flags |= USE_REG_SEG;
     pParam->base.reg_seg = (DIS_SELREG)idx;
@@ -2375,7 +2475,7 @@ void disasmGetPtrString(PDISCPUSTATE pCpu, PCOPCODE pOp, POP_PARAMETER pParam)
     if (pCpu->prefix & PREFIX_SEG)
         disasmAddStringF(pParam->szParam, sizeof(pParam->szParam), "%s:", szModRMSegReg[pCpu->enmPrefixSeg]);
 }
-#ifndef IN_GC
+#ifndef IN_RC
 //*****************************************************************************
 /* Read functions for getting the opcode bytes */
 //*****************************************************************************
@@ -2387,7 +2487,7 @@ uint8_t DISReadByte(PDISCPUSTATE pCpu, RTUINTPTR pAddress)
          int     rc;
 
          rc = pCpu->pfnReadBytes(pAddress, &temp, sizeof(temp), pCpu);
-         if (VBOX_FAILURE(rc))
+         if (RT_FAILURE(rc))
          {
              Log(("DISReadByte failed!!\n"));
              DIS_THROW(ExceptionMemRead);
@@ -2411,7 +2511,7 @@ uint16_t DISReadWord(PDISCPUSTATE pCpu, RTUINTPTR pAddress)
          int     rc;
 
          rc = pCpu->pfnReadBytes(pAddress, (uint8_t*)&temp, sizeof(temp), pCpu);
-         if (VBOX_FAILURE(rc))
+         if (RT_FAILURE(rc))
          {
              Log(("DISReadWord failed!!\n"));
              DIS_THROW(ExceptionMemRead);
@@ -2435,7 +2535,7 @@ uint32_t DISReadDWord(PDISCPUSTATE pCpu, RTUINTPTR pAddress)
          int     rc;
 
          rc = pCpu->pfnReadBytes(pAddress, (uint8_t*)&temp, sizeof(temp), pCpu);
-         if (VBOX_FAILURE(rc))
+         if (RT_FAILURE(rc))
          {
              Log(("DISReadDWord failed!!\n"));
              DIS_THROW(ExceptionMemRead);
@@ -2459,7 +2559,7 @@ uint64_t DISReadQWord(PDISCPUSTATE pCpu, RTUINTPTR pAddress)
          int     rc;
 
          rc = pCpu->pfnReadBytes(pAddress, (uint8_t*)&temp, sizeof(temp), pCpu);
-         if (VBOX_FAILURE(rc))
+         if (RT_FAILURE(rc))
          {
              Log(("DISReadQWord %x failed!!\n", pAddress));
              DIS_THROW(ExceptionMemRead);
@@ -2474,7 +2574,7 @@ uint64_t DISReadQWord(PDISCPUSTATE pCpu, RTUINTPTR pAddress)
     else return *(uint64_t *)pAddress;
 #endif
 }
-#endif /* IN_GC */
+#endif /* IN_RC */
 
 #if !defined(DIS_CORE_ONLY) && defined(LOG_ENABLED)
 //*****************************************************************************

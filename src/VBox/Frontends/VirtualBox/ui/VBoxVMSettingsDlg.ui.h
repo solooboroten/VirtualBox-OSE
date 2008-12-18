@@ -597,8 +597,8 @@ void VBoxVMSettingsDlg::init()
     connect (wvalHDD, SIGNAL (isValidRequested (QIWidgetValidator *)),
              this, SLOT (revalidate (QIWidgetValidator *)));
 
-    connect (mHDSettings, SIGNAL (hddListChanged()), wvalHDD, SLOT (revalidate()));
-    connect (mHDSettings, SIGNAL (hddListChanged()), this, SLOT (resetFirstRunFlag()));
+    connect (mHDSettings, SIGNAL (hardDiskListChanged()), wvalHDD, SLOT (revalidate()));
+    connect (mHDSettings, SIGNAL (hardDiskListChanged()), this, SLOT (resetFirstRunFlag()));
 
     /* CD/DVD-ROM Drive Page */
 
@@ -606,7 +606,7 @@ void VBoxVMSettingsDlg::init()
                      tr ("When checked, mounts the specified media to the CD/DVD drive of the "
                          "virtual machine. Note that the CD/DVD drive is always connected to the "
                          "Secondary Master IDE controller of the machine."));
-    cbISODVD = new VBoxMediaComboBox (bgDVD, "cbISODVD", VBoxDefs::CD);
+    cbISODVD = new VBoxMediaComboBox (bgDVD, "cbISODVD", VBoxDefs::MediaType_DVD);
     cdLayout->insertWidget(0, cbISODVD);
     QWhatsThis::add (cbISODVD, tr ("Displays the image file to mount to the virtual CD/DVD "
                                    "drive and allows to quickly select a different image."));
@@ -621,7 +621,7 @@ void VBoxVMSettingsDlg::init()
     connect (rbHostDVD, SIGNAL (stateChanged (int)), wvalDVD, SLOT (revalidate()));
     connect (rbISODVD, SIGNAL (stateChanged (int)), wvalDVD, SLOT (revalidate()));
     connect (cbISODVD, SIGNAL (activated (int)), this, SLOT (cdMediaChanged()));
-    connect (tbISODVD, SIGNAL (clicked()), this, SLOT (showImageManagerISODVD()));
+    connect (tbISODVD, SIGNAL (clicked()), this, SLOT (showDVDManager()));
 
     /* setup iconsets -- qdesigner is not capable... */
     tbISODVD->setIconSet (VBoxGlobal::iconSet ("select_file_16px.png",
@@ -632,7 +632,7 @@ void VBoxVMSettingsDlg::init()
     QWhatsThis::add (static_cast <QWidget *> (bgFloppy->child ("qt_groupbox_checkbox")),
                      tr ("When checked, mounts the specified media to the Floppy drive of the "
                          "virtual machine."));
-    cbISOFloppy = new VBoxMediaComboBox (bgFloppy, "cbISOFloppy", VBoxDefs::FD);
+    cbISOFloppy = new VBoxMediaComboBox (bgFloppy, "cbISOFloppy", VBoxDefs::MediaType_Floppy);
     fdLayout->insertWidget(0, cbISOFloppy);
     QWhatsThis::add (cbISOFloppy, tr ("Displays the image file to mount to the virtual Floppy "
                                       "drive and allows to quickly select a different image."));
@@ -647,7 +647,7 @@ void VBoxVMSettingsDlg::init()
     connect (rbHostFloppy, SIGNAL (stateChanged (int)), wvalFloppy, SLOT (revalidate()));
     connect (rbISOFloppy, SIGNAL (stateChanged (int)), wvalFloppy, SLOT (revalidate()));
     connect (cbISOFloppy, SIGNAL (activated (int)), this, SLOT (fdMediaChanged()));
-    connect (tbISOFloppy, SIGNAL (clicked()), this, SLOT (showImageManagerISOFloppy()));
+    connect (tbISOFloppy, SIGNAL (clicked()), this, SLOT (showFloppyManager()));
 
     /* setup iconsets -- qdesigner is not capable... */
     tbISOFloppy->setIconSet (VBoxGlobal::iconSet ("select_file_16px.png",
@@ -981,10 +981,11 @@ void VBoxVMSettingsDlg::loadInterfacesList()
     /* clear inner list */
     mInterfaceList.clear();
     /* load current inner list */
-    CHostNetworkInterfaceEnumerator en =
-        vboxGlobal().virtualBox().GetHost().GetNetworkInterfaces().Enumerate();
-    while (en.HasMore())
-        mInterfaceList += en.GetNext().GetName();
+    CHostNetworkInterfaceVector interfaces =
+        vboxGlobal().virtualBox().GetHost().GetNetworkInterfaces();
+    for (CHostNetworkInterfaceVector::ConstIterator it = interfaces.begin();
+         it != interfaces.end(); ++it)
+        mInterfaceList += it->GetName();
     /* save current list item name */
     QString currentListItemName = lbHostInterface->currentText();
     /* load current list items */
@@ -1118,8 +1119,14 @@ void VBoxVMSettingsDlg::hostInterfaceRemove()
         return;
 
     CHost host = vboxGlobal().virtualBox().GetHost();
-    CHostNetworkInterface iFace = host.GetNetworkInterfaces().FindByName (iName);
-    if (host.isOk())
+    CHostNetworkInterfaceVector interfaces =
+        host.GetNetworkInterfaces();
+    CHostNetworkInterface iFace;
+    for (CHostNetworkInterfaceVector::ConstIterator it = interfaces.begin();
+         it != interfaces.end(); ++it)
+        if (it->GetName() == iName)
+            iFace = *it;
+    if (!iFace.isNull())
     {
         /* delete interface */
         CProgress progress = host.RemoveHostNetworkInterface (iFace.GetId(), iFace);
@@ -1177,7 +1184,7 @@ void VBoxVMSettingsDlg::resetFirstRunFlag()
 void VBoxVMSettingsDlg::cdMediaChanged()
 {
     resetFirstRunFlag();
-    uuidISODVD = bgDVD->isChecked() ? cbISODVD->getId() : QUuid();
+    uuidISODVD = bgDVD->isChecked() ? cbISODVD->id() : QUuid();
     /* revailidate */
     wvalDVD->revalidate();
 }
@@ -1186,21 +1193,11 @@ void VBoxVMSettingsDlg::cdMediaChanged()
 void VBoxVMSettingsDlg::fdMediaChanged()
 {
     resetFirstRunFlag();
-    uuidISOFloppy = bgFloppy->isChecked() ? cbISOFloppy->getId() : QUuid();
+    uuidISOFloppy = bgFloppy->isChecked() ? cbISOFloppy->id() : QUuid();
     /* revailidate */
     wvalFloppy->revalidate();
 }
 
-
-QString VBoxVMSettingsDlg::getHdInfo (QGroupBox *aGroupBox, QUuid aId)
-{
-    QString notAttached = tr ("<not attached>", "hard disk");
-    if (aId.isNull())
-        return notAttached;
-    return aGroupBox->isChecked() ?
-        vboxGlobal().details (vboxGlobal().virtualBox().GetHardDisk (aId), true) :
-        notAttached;
-}
 
 void VBoxVMSettingsDlg::updateWhatsThis (bool gotFocus /* = false */)
 {
@@ -1233,6 +1230,7 @@ void VBoxVMSettingsDlg::updateWhatsThis (bool gotFocus /* = false */)
     whatsThisLabel->setText (text);
 }
 
+
 void VBoxVMSettingsDlg::setWarning (const QString &warning)
 {
     warningString = warning;
@@ -1245,22 +1243,23 @@ void VBoxVMSettingsDlg::setWarning (const QString &warning)
         updateWhatsThis (true);
 }
 
+
 /**
- *  Sets up this dialog.
+ * Sets up this dialog.
  *
- *  If @a aCategory is non-null, it should be one of values from the hidden
- *  '[cat]' column of #listView (see VBoxVMSettingsDlg.ui in qdesigner)
- *  prepended with the '#' sign. In this case, the specified category page
- *  will be activated when the dialog is open.
+ * If @a aCategory is non-null, it should be one of values from the hidden
+ * '[cat]' column of #listView (see VBoxVMSettingsDlg.ui in qdesigner) prepended
+ * with the '#' sign. In this case, the specified category page will be
+ * activated when the dialog is open.
  *
- *  If @a aWidget is non-null, it should be a name of one of widgets
- *  from the given category page. In this case, the specified widget
- *  will get focus when the dialog is open.
+ * If @a aWidget is non-null, it should be a name of one of widgets from the
+ * given category page. In this case, the specified widget will get focus when
+ * the dialog is open.
  *
- *  @note Calling this method after the dialog is open has no sense.
+ * @note Calling this method after the dialog is open has no sense.
  *
- *  @param  aCategory   Category to select when the dialog is open or null.
- *  @param  aWidget     Category to select when the dialog is open or null.
+ * @param  aCategory    Category to select when the dialog is open or null.
+ * @param  aWidget      Category to select when the dialog is open or null.
  */
 void VBoxVMSettingsDlg::setup (const QString &aCategory, const QString &aControl)
 {
@@ -1302,6 +1301,7 @@ void VBoxVMSettingsDlg::setup (const QString &aCategory, const QString &aControl
         }
     }
 }
+
 
 void VBoxVMSettingsDlg::listView_currentChanged (QListViewItem *item)
 {
@@ -1651,8 +1651,8 @@ void VBoxVMSettingsDlg::getFromMachine (const CMachine &machine)
             }
             case KDriveState_ImageMounted:
             {
-                CFloppyImage img = floppy.GetImage();
-                QString src = img.GetFilePath();
+                CFloppyImage2 img = floppy.GetImage();
+                QString src = img.GetLocation();
                 AssertMsg (!src.isNull(), ("Image file must not be null"));
                 QFileInfo fi (src);
                 rbISOFloppy->setChecked (true);
@@ -1723,8 +1723,8 @@ void VBoxVMSettingsDlg::getFromMachine (const CMachine &machine)
             }
             case KDriveState_ImageMounted:
             {
-                CDVDImage img = dvd.GetImage();
-                QString src = img.GetFilePath();
+                CDVDImage2 img = dvd.GetImage();
+                QString src = img.GetLocation();
                 AssertMsg (!src.isNull(), ("Image file must not be null"));
                 QFileInfo fi (src);
                 rbISODVD->setChecked (true);
@@ -2102,45 +2102,53 @@ COMResult VBoxVMSettingsDlg::putBackToMachine()
 }
 
 
-void VBoxVMSettingsDlg::showImageManagerISODVD() { showVDImageManager (&uuidISODVD, cbISODVD); }
-void VBoxVMSettingsDlg::showImageManagerISOFloppy() { showVDImageManager(&uuidISOFloppy, cbISOFloppy); }
-
-void VBoxVMSettingsDlg::showVDImageManager (QUuid *id, VBoxMediaComboBox *cbb, QLabel*)
+void VBoxVMSettingsDlg::showDVDManager()
 {
-    VBoxDefs::DiskType type = VBoxDefs::InvalidType;
-    if (cbb == cbISODVD)
-        type = VBoxDefs::CD;
-    else if (cbb == cbISOFloppy)
-        type = VBoxDefs::FD;
-    else
-        type = VBoxDefs::HD;
+    showMediaManager (&uuidISODVD, cbISODVD);
+}
 
-    VBoxDiskImageManagerDlg dlg (this, "VBoxDiskImageManagerDlg",
-                                 WType_Dialog | WShowModal);
-    QUuid machineId = cmachine.GetId();
-    QUuid hdId = type == VBoxDefs::HD ? cbb->getId() : QUuid();
-    QUuid cdId = type == VBoxDefs::CD ? cbb->getId() : QUuid();
-    QUuid fdId = type == VBoxDefs::FD ? cbb->getId() : QUuid();
-    dlg.setup (type, true, &machineId, true /* aRefresh */, cmachine,
-               hdId, cdId, fdId);
-    if (dlg.exec() == VBoxDiskImageManagerDlg::Accepted)
+
+void VBoxVMSettingsDlg::showFloppyManager()
+{
+    showMediaManager (&uuidISOFloppy, cbISOFloppy);
+}
+
+
+void VBoxVMSettingsDlg::showMediaManager (QUuid *aId, VBoxMediaComboBox *aCombo)
+{
+    VBoxDefs::MediaType type = VBoxDefs::MediaType_Invalid;
+
+    if (aCombo == cbISODVD)
+        type = VBoxDefs::MediaType_DVD;
+    else if (aCombo == cbISOFloppy)
+        type = VBoxDefs::MediaType_Floppy;
+
+    AssertReturnVoid (type != VBoxDefs::MediaType_Invalid);
+
+    VBoxMediaManagerDlg dlg (this, "VBoxMediaManagerDlg",
+                             WType_Dialog | WShowModal);
+
+    dlg.setup (type, true /* aDoSelect */, true /* aRefresh */, cmachine,
+               aCombo->id());
+
+    if (dlg.exec() == VBoxMediaManagerDlg::Accepted)
     {
-        *id = dlg.getSelectedUuid();
+        *aId = dlg.selectedId();
         resetFirstRunFlag();
     }
     else
     {
-        *id = cbb->getId();
+        *aId = aCombo->id();
     }
 
-    cbb->setCurrentItem (*id);
-    cbb->setFocus();
+    aCombo->setCurrentItem (*aId);
+    aCombo->setFocus();
 
     /* revalidate pages with custom validation */
-    wvalHDD->revalidate();
     wvalDVD->revalidate();
     wvalFloppy->revalidate();
 }
+
 
 void VBoxVMSettingsDlg::addNetworkAdapter (const CNetworkAdapter &aAdapter)
 {
@@ -2193,6 +2201,7 @@ void VBoxVMSettingsDlg::addNetworkAdapter (const CNetworkAdapter &aAdapter)
 #endif
 }
 
+
 void VBoxVMSettingsDlg::updateNetworksList()
 {
     if (mLockNetworkListUpdate)
@@ -2221,6 +2230,7 @@ void VBoxVMSettingsDlg::updateNetworksList()
 
     mLockNetworkListUpdate = false;
 }
+
 
 void VBoxVMSettingsDlg::addSerialPort (const CSerialPort &aPort)
 {
@@ -2256,6 +2266,7 @@ void VBoxVMSettingsDlg::addSerialPort (const CSerialPort &aPort)
     wval->revalidate();
 }
 
+
 void VBoxVMSettingsDlg::addParallelPort (const CParallelPort &aPort)
 {
     VBoxVMParallelPortSettings *page = new VBoxVMParallelPortSettings();
@@ -2288,25 +2299,30 @@ void VBoxVMSettingsDlg::addParallelPort (const CParallelPort &aPort)
     wval->revalidate();
 }
 
+
 void VBoxVMSettingsDlg::slRAM_valueChanged( int val )
 {
     leRAM->setText( QString().setNum( val ) );
 }
+
 
 void VBoxVMSettingsDlg::leRAM_textChanged( const QString &text )
 {
     slRAM->setValue( text.toInt() );
 }
 
+
 void VBoxVMSettingsDlg::slVRAM_valueChanged( int val )
 {
     leVRAM->setText( QString().setNum( val ) );
 }
 
+
 void VBoxVMSettingsDlg::leVRAM_textChanged( const QString &text )
 {
     slVRAM->setValue( text.toInt() );
 }
+
 
 void VBoxVMSettingsDlg::cbOS_activated (int item)
 {
@@ -2321,6 +2337,7 @@ void VBoxVMSettingsDlg::cbOS_activated (int item)
     txVRAMBest->setText (QString::null);
 }
 
+
 void VBoxVMSettingsDlg::tbResetSavedStateFolder_clicked()
 {
     /*
@@ -2330,6 +2347,7 @@ void VBoxVMSettingsDlg::tbResetSavedStateFolder_clicked()
     leSnapshotFolder->selectAll();
     leSnapshotFolder->del();
 }
+
 
 void VBoxVMSettingsDlg::tbSelectSavedStateFolder_clicked()
 {
@@ -2353,8 +2371,10 @@ void VBoxVMSettingsDlg::tbSelectSavedStateFolder_clicked()
     leSnapshotFolder->insert (folder);
 }
 
+
 // USB Filter stuff
 ////////////////////////////////////////////////////////////////////////////////
+
 
 void VBoxVMSettingsDlg::usbAdapterToggled (bool aOn)
 {
@@ -2362,6 +2382,7 @@ void VBoxVMSettingsDlg::usbAdapterToggled (bool aOn)
         cbEnableUSBEhci->setChecked (aOn);
     grbUSBFilters->setEnabled (aOn);
 }
+
 
 void VBoxVMSettingsDlg::addUSBFilter (const CUSBDeviceFilter &aFilter, bool isNew)
 {
@@ -2404,6 +2425,7 @@ void VBoxVMSettingsDlg::addUSBFilter (const CUSBDeviceFilter &aFilter, bool isNe
     wval->revalidate();
 }
 
+
 void VBoxVMSettingsDlg::lvUSBFilters_currentChanged (QListViewItem *item)
 {
     if (item && lvUSBFilters->selectedItem() != item)
@@ -2426,11 +2448,13 @@ void VBoxVMSettingsDlg::lvUSBFilters_currentChanged (QListViewItem *item)
     }
 }
 
+
 void VBoxVMSettingsDlg::lvUSBFilters_contextMenuRequested (QListViewItem *,
                                                            const QPoint &aPoint, int)
 {
     mUSBContextMenu->exec (aPoint);
 }
+
 
 void VBoxVMSettingsDlg::lvUSBFilters_setCurrentText (const QString &aText)
 {
@@ -2439,6 +2463,7 @@ void VBoxVMSettingsDlg::lvUSBFilters_setCurrentText (const QString &aText)
 
     item->setText (lvUSBFilters_Name, aText);
 }
+
 
 void VBoxVMSettingsDlg::addUSBFilterAct_activated()
 {
@@ -2467,6 +2492,7 @@ void VBoxVMSettingsDlg::addUSBFilterAct_activated()
     mUSBFilterListModified = true;
 }
 
+
 void VBoxVMSettingsDlg::addUSBFilterFromAct_activated()
 {
     QPoint pos = QCursor::pos();
@@ -2479,6 +2505,7 @@ void VBoxVMSettingsDlg::addUSBFilterFromAct_activated()
 
     usbDevicesMenu->exec (pos);
 }
+
 
 void VBoxVMSettingsDlg::menuAddUSBFilterFrom_activated (int aIndex)
 {
@@ -2512,6 +2539,7 @@ void VBoxVMSettingsDlg::menuAddUSBFilterFrom_activated (int aIndex)
     mUSBFilterListModified = true;
 }
 
+
 void VBoxVMSettingsDlg::removeUSBFilterAct_activated()
 {
     QListViewItem *item = lvUSBFilters->currentItem();
@@ -2528,6 +2556,7 @@ void VBoxVMSettingsDlg::removeUSBFilterAct_activated()
     lvUSBFilters->setSelected (lvUSBFilters->currentItem(), true);
     mUSBFilterListModified = true;
 }
+
 
 void VBoxVMSettingsDlg::USBFilterUpAct_activated()
 {
@@ -2550,6 +2579,7 @@ void VBoxVMSettingsDlg::USBFilterUpAct_activated()
     mUSBFilterListModified = true;
 }
 
+
 void VBoxVMSettingsDlg::USBFilterDownAct_activated()
 {
     QListViewItem *item = lvUSBFilters->currentItem();
@@ -2563,6 +2593,7 @@ void VBoxVMSettingsDlg::USBFilterDownAct_activated()
     lvUSBFilters_currentChanged (item);
     mUSBFilterListModified = true;
 }
+
 
 #include "VBoxVMSettingsDlg.ui.moc"
 

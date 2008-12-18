@@ -1,4 +1,4 @@
-/* $Id: DevSB16.cpp $ */
+/* $Id: DevSB16.cpp 12978 2008-10-03 23:28:44Z vboxsync $ */
 /** @file
  * DevSB16 - VBox SB16 Audio Controller.
  *
@@ -1847,23 +1847,25 @@ const PDMDEVREG g_DeviceSB16 =
     PDM_DEVREG_VERSION,
     /* szDeviceName */
     "sb16",
-    /* szGCMod */
+    /* szRCMod */
     "",
     /* szR0Mod */
     "",
     /* pszDescription */
     "Sound Blaster 16 Controller",
     /* fFlags */
-    PDM_DEVREG_FLAGS_HOST_BITS_DEFAULT | PDM_DEVREG_FLAGS_GUEST_BITS_DEFAULT,
+    PDM_DEVREG_FLAGS_DEFAULT_BITS,
     /* fClass */
     PDM_DEVREG_CLASS_AUDIO,
     /* cMaxInstances */
     1,
-    /* bInstance */
+    /* cbInstance */
     sizeof(SB16State),
     /* pfnConstruct */
     sb16Construct,
     /* pfnDesctruct */
+    NULL,
+    /* pfnRelocate */
     NULL,
     /* pfnIOCtl */
     NULL,
@@ -1879,8 +1881,16 @@ const PDMDEVREG g_DeviceSB16 =
     NULL,
     /* pfnDetach */
     NULL,
-    /* pfnQueryInterface. */
-    NULL
+    /* pfnQueryInterface */
+    NULL,
+    /* pfnInitComplete */
+    NULL,
+    /* pfnPowerOff */
+    NULL,
+    /* pfnSoftReset */
+    NULL,
+    /* u32VersionEnd */
+    PDM_DEVREG_VERSION
 };
 
 #endif /* VBOX */

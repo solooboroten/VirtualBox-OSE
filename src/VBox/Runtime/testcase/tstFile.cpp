@@ -1,4 +1,4 @@
-/* $Id: tstFile.cpp $ */
+/* $Id: tstFile.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * IPRT Testcase - File I/O.
  */
@@ -36,7 +36,7 @@
 #include <iprt/err.h>
 #include <iprt/string.h>
 #include <iprt/stream.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 
 
 int main()

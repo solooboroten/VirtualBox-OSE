@@ -1,4 +1,4 @@
-/* $Id: DevRTC.cpp $ */
+/* $Id: DevRTC.cpp 13840 2008-11-05 03:31:46Z vboxsync $ */
 /** @file
  * Motorola MC146818 RTC/CMOS Device.
  */
@@ -775,7 +775,7 @@ static DECLCALLBACK(int)  rtcInitComplete(PPDMDEVINS pDevIns)
      */
     rtcCalcCRC(pThis);
 
-    Log(("CMOS: \n%16.128Vhxd\n", pThis->cmos_data));
+    Log(("CMOS: \n%16.128Rhxd\n", pThis->cmos_data));
     return VINF_SUCCESS;
 }
 
@@ -913,7 +913,7 @@ static DECLCALLBACK(int)  rtcConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
     /*
      * Register ourselves as the RTC/CMOS with PDM.
      */
-    rc = pDevIns->pDevHlp->pfnRTCRegister(pDevIns, &pThis->RtcReg, &pThis->pRtcHlpR3);
+    rc = pDevIns->pDevHlpR3->pfnRTCRegister(pDevIns, &pThis->RtcReg, &pThis->pRtcHlpR3);
     if (RT_FAILURE(rc))
         return rc;
 
@@ -930,14 +930,14 @@ const PDMDEVREG g_DeviceMC146818 =
     PDM_DEVREG_VERSION,
     /* szDeviceName */
     "mc146818",
-    /* szGCMod */
+    /* szRCMod */
     "VBoxDDGC.gc",
     /* szR0Mod */
     "VBoxDDR0.r0",
     /* pszDescription */
     "Motorola MC146818 RTC/CMOS Device.",
     /* fFlags */
-    PDM_DEVREG_FLAGS_HOST_BITS_DEFAULT | PDM_DEVREG_FLAGS_GUEST_BITS_32_64 | PDM_DEVREG_FLAGS_PAE36 | PDM_DEVREG_FLAGS_GC | PDM_DEVREG_FLAGS_R0,
+    PDM_DEVREG_FLAGS_HOST_BITS_DEFAULT | PDM_DEVREG_FLAGS_GUEST_BITS_32_64 | PDM_DEVREG_FLAGS_PAE36 | PDM_DEVREG_FLAGS_RC | PDM_DEVREG_FLAGS_R0,
     /* fClass */
     PDM_DEVREG_CLASS_RTC,
     /* cMaxInstances */
@@ -967,7 +967,13 @@ const PDMDEVREG g_DeviceMC146818 =
     /* pfnQueryInterface */
     NULL,
     /* pfnInitComplete */
-    rtcInitComplete
+    rtcInitComplete,
+    /* pfnPowerOff */
+    NULL,
+    /* pfnSoftReset */
+    NULL,
+    /* u32VersionEnd */
+    PDM_DEVREG_VERSION
 };
 #endif /* IN_RING3 */
 #endif /* !VBOX_DEVICE_STRUCT_TESTCASE */

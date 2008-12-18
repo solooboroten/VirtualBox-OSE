@@ -69,7 +69,9 @@
 #define IDX_ParseNopPause           35
 #define IDX_ParseImmByteSX          36
 #define IDX_ParseImmZ               37
-#define IDX_ParseMax                (IDX_ParseImmZ+1)
+#define IDX_ParseThreeByteEsc4      38
+#define IDX_ParseThreeByteEsc5      39
+#define IDX_ParseMax                (IDX_ParseThreeByteEsc5+1)
 
 #ifdef IN_RING0
 #define DIS_THROW(a)                /* Not available. */
@@ -116,6 +118,8 @@ unsigned ParseImmQword(RTUINTPTR pu8CodeBlock, PCOPCODE pOp, POP_PARAMETER pPara
 unsigned ParseImmQword_SizeOnly(RTUINTPTR pu8CodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu);
 
 unsigned ParseTwoByteEsc(RTUINTPTR pu8CodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu);
+unsigned ParseThreeByteEsc4(RTUINTPTR pu8CodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu);
+unsigned ParseThreeByteEsc5(RTUINTPTR pu8CodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu);
 unsigned ParseImmGrpl(RTUINTPTR pu8CodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu);
 unsigned ParseShiftGrp2(RTUINTPTR pu8CodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu);
 unsigned ParseGrp3(RTUINTPTR pu8CodeBlock, PCOPCODE pOp, POP_PARAMETER pParam, PDISCPUSTATE pCpu);
@@ -158,7 +162,7 @@ void disasmPrintDisp8(POP_PARAMETER pParam);
 void disasmPrintDisp16(POP_PARAMETER pParam);
 
 
-#ifdef IN_GC
+#ifdef IN_RC
 #define  DISReadByte(pCpu,  pAddress) (*(uint8_t *)(pAddress))
 #define  DISReadWord(pCpu,  pAddress) (*(uint16_t *)(pAddress))
 #define  DISReadDWord(pCpu, pAddress) (*(uint32_t *)(pAddress))

@@ -42,6 +42,129 @@
  * @{
  */
 
+/** Maximum number of virtual CPUs per VM. */
+#define VMCPU_MAX_CPU_COUNT    255
+
+/**
+ * The state of a virtual CPU.
+ *
+ * The VM running states are a sub-states of the VMSTATE_RUNNING state. While
+ * VMCPUSTATE_NOT_RUNNING is a place holder for the other VM states.
+ */
+typedef enum VMCPUSTATE
+{
+    /** The customary invalid zero. */
+    VMCPUSTATE_INVALID = 0,
+
+    /** Running guest code (VM running). */
+    VMCPUSTATE_RUN_EXEC,
+    /** Running guest code in the recompiler (VM running). */
+    VMCPUSTATE_RUN_EXEC_REM,
+    /** Halted (VM running). */
+    VMCPUSTATE_RUN_HALTED,
+    /** All the other bits we do while running a VM (VM running). */
+    VMCPUSTATE_RUN_MISC,
+    /** VM not running, we're servicing requests or whatever. */
+    VMCPUSTATE_NOT_RUNNING,
+    /** The end of valid virtual CPU states. */
+    VMCPUSTATE_END,
+
+    /** Ensure 32-bit type. */
+    VMCPUSTATE_32BIT_HACK = 0x7fffffff
+} VMCPUSTATE;
+
+
+/**
+ * Per virtual CPU data.
+ */
+typedef struct VMCPU
+{
+    /** Per CPU forced action.
+     * See the VMCPU_FF_* \#defines. Updated atomically. */
+    uint32_t volatile       fForcedActions;
+    /** The CPU state. */
+    VMCPUSTATE volatile     enmState;
+
+    /** Ring-3 Host Context VM Pointer. */
+    PVMR3                   pVMR3;
+    /** Ring-0 Host Context VM Pointer. */
+    PVMR0                   pVMR0;
+    /** Raw-mode Context VM Pointer. */
+    PVMRC                   pVMRC;
+    /** The CPU ID.
+     * This is the index into the VM::aCpu array. */
+    VMCPUID                 idCpu;
+    /** The native thread handle. */
+    RTNATIVETHREAD          hNativeThread;
+
+    /** Align the next bit on a 64-byte boundary.
+     *
+     * @remarks The aligments of the members that are larger than 48 bytes should be
+     *          64-byte for cache line reasons. structs containing small amounts of
+     *          data could be lumped together at the end with a < 64 byte padding
+     *          following it (to grow into and align the struct size).
+     *   */
+    uint32_t                au32Alignment[HC_ARCH_BITS == 32 ? 9 : 6];
+
+    /** CPUM part. */
+    union
+    {
+#ifdef ___CPUMInternal_h
+        struct CPUMCPU      s;
+#endif
+        char                padding[2560];      /* multiple of 64 */
+    } cpum;
+    /** VMM part. */
+    union
+    {
+#ifdef ___VMMInternal_h
+        struct VMMCPU       s;
+#endif
+        char                padding[64];        /* multiple of 64 */
+    } vmm;
+
+    /** PGM part. */
+    union
+    {
+#ifdef ___PGMInternal_h
+        struct PGMCPU       s;
+#endif
+        char                padding[2048];       /* multiple of 64 */
+    } pgm;
+
+    /** HWACCM part. */
+    union
+    {
+#ifdef ___HWACCMInternal_h
+        struct HWACCMCPU    s;
+#endif
+        char                padding[5120];      /* multiple of 64 */
+    } hwaccm;
+
+    /** EM part. */
+    union
+    {
+#ifdef ___EMInternal_h
+        struct EMCPU        s;
+#endif
+        char                padding[64];        /* multiple of 64 */
+    } em;
+
+    /** TM part. */
+    union
+    {
+#ifdef ___TMInternal_h
+        struct TMCPU        s;
+#endif
+        char                padding[64];        /* multiple of 64 */
+    } tm;
+} VMCPU;
+
+/** Pointer to a VMCPU. */
+#ifndef ___VBox_types_h
+typedef struct VMCPU *PVMCPU;
+#endif
+
 /** The name of the Guest Context VMM Core module. */
 #define VMMGC_MAIN_MODULE_NAME          "VMMGC.gc"
 /** The name of the Ring 0 Context VMM Core module. */
@@ -144,12 +267,25 @@
  * @param   fFlag   The flag to set.
  */
 #if 1
-# define VM_FF_SET(pVM, fFlag)           ASMAtomicOrU32(&(pVM)->fForcedActions, (fFlag))
+# define VM_FF_SET(pVM, fFlag)              ASMAtomicOrU32(&(pVM)->fForcedActions, (fFlag))
 #else
 # define VM_FF_SET(pVM, fFlag) \
     do { ASMAtomicOrU32(&(pVM)->fForcedActions, (fFlag)); \
          RTLogPrintf("VM_FF_SET  : %08x %s - %s(%d) %s\n", (pVM)->fForcedActions, #fFlag, __FILE__, __LINE__, __FUNCTION__); \
     } while (0)
+#endif
+
+/** @def VMCPU_FF_SET
+ * Sets a force action flag for given VCPU.
+ *
+ * @param   pVM     VM Handle.
+ * @param   idCpu   Virtual CPU ID.
+ * @param   fFlag   The flag to set.
+ */
+#ifdef VBOX_WITH_SMP_GUESTS
+# define VMCPU_FF_SET(pVM, idCpu, fFlag)    ASMAtomicOrU32(&(pVM)->aCpu[idCpu].fForcedActions, (fFlag))
+#else
+# define VMCPU_FF_SET(pVM, idCpu, fFlag)    VM_FF_SET(pVM, fFlag)
 #endif
 
 /** @def VM_FF_CLEAR
@@ -159,12 +295,25 @@
  * @param   fFlag   The flag to clear.
  */
 #if 1
-# define VM_FF_CLEAR(pVM, fFlag)         ASMAtomicAndU32(&(pVM)->fForcedActions, ~(fFlag))
+# define VM_FF_CLEAR(pVM, fFlag)            ASMAtomicAndU32(&(pVM)->fForcedActions, ~(fFlag))
 #else
 # define VM_FF_CLEAR(pVM, fFlag) \
     do { ASMAtomicAndU32(&(pVM)->fForcedActions, ~(fFlag)); \
          RTLogPrintf("VM_FF_CLEAR: %08x %s - %s(%d) %s\n", (pVM)->fForcedActions, #fFlag, __FILE__, __LINE__, __FUNCTION__); \
     } while (0)
+#endif
+
+/** @def VMCPU_FF_CLEAR
+ * Clears a force action flag for given VCPU.
+ *
+ * @param   pVM     VM Handle.
+ * @param   idCpu   Virtual CPU ID.
+ * @param   fFlag   The flag to clear.
+ */
+#ifdef VBOX_WITH_SMP_GUESTS
+# define VMCPU_FF_CLEAR(pVM, idCpu, fFlag)  ASMAtomicAndU32(&(pVM)->aCpu[idCpu].fForcedActions, ~(fFlag))
+#else
+# define VMCPU_FF_CLEAR(pVM, idCpu, fFlag)  VM_FF_CLEAR(pVM, fFlag)
 #endif
 
 /** @def VM_FF_ISSET
@@ -173,7 +322,20 @@
  * @param   pVM     VM Handle.
  * @param   fFlag   The flag to check.
  */
-#define VM_FF_ISSET(pVM, fFlag)         (((pVM)->fForcedActions & (fFlag)) == (fFlag))
+#define VM_FF_ISSET(pVM, fFlag)             (((pVM)->fForcedActions & (fFlag)) == (fFlag))
+
+/** @def VMCPU_FF_ISSET
+ * Checks if a force action flag is set for given VCPU.
+ *
+ * @param   pVM     VM Handle.
+ * @param   idCpu   Virtual CPU ID.
+ * @param   fFlag   The flag to check.
+ */
+#ifdef VBOX_WITH_SMP_GUESTS
+# define VMCPU_FF_ISSET(pVM, idCpu, fFlag)  (((pVM)->aCpu[idCpu].fForcedActions & (fFlag)) == (fFlag))
+#else
+# define VMCPU_FF_ISSET(pVM, idCpu, fFlag)  VM_FF_ISSET(pVM, fFlag)
+#endif
 
 /** @def VM_FF_ISPENDING
  * Checks if one or more force action in the specified set is pending.
@@ -181,8 +343,20 @@
  * @param   pVM     VM Handle.
  * @param   fFlags  The flags to check for.
  */
-#define VM_FF_ISPENDING(pVM, fFlags)    ((pVM)->fForcedActions & (fFlags))
+#define VM_FF_ISPENDING(pVM, fFlags)        ((pVM)->fForcedActions & (fFlags))
 
+/** @def VMCPU_FF_ISPENDING
+ * Checks if one or more force action in the specified set is pending for given VCPU.
+ *
+ * @param   pVM     VM Handle.
+ * @param   idCpu   Virtual CPU ID.
+ * @param   fFlags  The flags to check for.
+ */
+#ifdef VBOX_WITH_SMP_GUESTS
+# define VMCPU_FF_ISPENDING(pVM, idCpu, fFlags) ((pVM)->aCpu[idCpu].fForcedActions & (fFlags))
+#else
+# define VMCPU_FF_ISPENDING(pVM, idCpu, fFlags) VM_FF_ISPENDING(pVM, fFlags)
+#endif
 
 /** @def VM_IS_EMT
  * Checks if the current thread is the emulation thread (EMT).
@@ -190,40 +364,42 @@
  * @remark  The ring-0 variation will need attention if we expand the ring-0
  *          code to let threads other than EMT mess around with the VM.
  */
-#ifdef IN_GC
-# define VM_IS_EMT(pVM)                 true
+#ifdef IN_RC
+# define VM_IS_EMT(pVM)                     true
 #elif defined(IN_RING0)
-# define VM_IS_EMT(pVM)                 true
+# define VM_IS_EMT(pVM)                     true
 #else
-# define VM_IS_EMT(pVM)                 ((pVM)->NativeThreadEMT == RTThreadNativeSelf())
+/** @todo need to rework this macro for the case of multiple emulation threads for SMP */
+# define VM_IS_EMT(pVM)                     (VMR3GetVMCPUNativeThread(pVM) == RTThreadNativeSelf())
 #endif
 
 /** @def VM_ASSERT_EMT
  * Asserts that the current thread IS the emulation thread (EMT).
  */
-#ifdef IN_GC
-# define VM_ASSERT_EMT(pVM) Assert(VM_IS_EMT(pVM))
+#ifdef IN_RC
+# define VM_ASSERT_EMT(pVM)                 Assert(VM_IS_EMT(pVM))
 #elif defined(IN_RING0)
-# define VM_ASSERT_EMT(pVM) Assert(VM_IS_EMT(pVM))
+# define VM_ASSERT_EMT(pVM)                 Assert(VM_IS_EMT(pVM))
 #else
 # define VM_ASSERT_EMT(pVM) \
     AssertMsg(VM_IS_EMT(pVM), \
-        ("Not emulation thread! Thread=%RTnthrd ThreadEMT=%RTnthrd\n", RTThreadNativeSelf(), pVM->NativeThreadEMT))
+        ("Not emulation thread! Thread=%RTnthrd ThreadEMT=%RTnthrd\n", RTThreadNativeSelf(), VMR3GetVMCPUNativeThread(pVM)))
 #endif
 
 /** @def VM_ASSERT_EMT_RETURN
  * Asserts that the current thread IS the emulation thread (EMT) and returns if it isn't.
  */
-#ifdef IN_GC
-# define VM_ASSERT_EMT_RETURN(pVM, rc)  AssertReturn(VM_IS_EMT(pVM), (rc))
+#ifdef IN_RC
+# define VM_ASSERT_EMT_RETURN(pVM, rc)      AssertReturn(VM_IS_EMT(pVM), (rc))
 #elif defined(IN_RING0)
-# define VM_ASSERT_EMT_RETURN(pVM, rc)  AssertReturn(VM_IS_EMT(pVM), (rc))
+# define VM_ASSERT_EMT_RETURN(pVM, rc)      AssertReturn(VM_IS_EMT(pVM), (rc))
 #else
 # define VM_ASSERT_EMT_RETURN(pVM, rc) \
     AssertMsgReturn(VM_IS_EMT(pVM), \
-        ("Not emulation thread! Thread=%RTnthrd ThreadEMT=%RTnthrd\n", RTThreadNativeSelf(), pVM->NativeThreadEMT), \
+        ("Not emulation thread! Thread=%RTnthrd ThreadEMT=%RTnthrd\n", RTThreadNativeSelf(), VMR3GetVMCPUNativeThread(pVM)), \
         (rc))
 #endif
+
 
 /**
  * Asserts that the current thread is NOT the emulation thread.
@@ -281,13 +457,22 @@ typedef struct VM
     R3PTRTYPE(struct VM *)      pVMR3;
     /** Ring-0 Host Context VM Pointer. */
     R0PTRTYPE(struct VM *)      pVMR0;
-    /** Guest Context VM Pointer. */
-    RCPTRTYPE(struct VM *)      pVMGC;
+    /** Raw-mode Context VM Pointer. */
+    RCPTRTYPE(struct VM *)      pVMRC;
 
     /** The GVM VM handle. Only the GVM should modify this field. */
     uint32_t                    hSelf;
-    /** Reserved / padding. */
-    uint32_t                    u32Reserved;
+    /** Number of virtual CPUs. */
+    uint32_t                    cCPUs;
+
+    /** Size of the VM structure including the VMCPU array. */
+    uint32_t                    cbSelf;
+
+    /** Offset to the VMCPU array starting from beginning of this structure. */
+    uint32_t                    offVMCPU;
+
+    /** Reserved; alignment. */
+    uint32_t                    u32Reserved[6];
 
     /** @name Public VMM Switcher APIs
      * @{ */
@@ -299,7 +484,7 @@ typedef struct VM
      * @param   Ctx         The guest core context.
      * @remark  Assume interrupts disabled.
      */
-    RTGCPTR32           pfnVMMGCGuestToHostAsmGuestCtx/*(int32_t eax, CPUMCTXCORE Ctx)*/;
+    RTRCPTR             pfnVMMGCGuestToHostAsmGuestCtx/*(int32_t eax, CPUMCTXCORE Ctx)*/;
 
     /**
      * Assembly switch entry point for returning to host context.
@@ -314,7 +499,7 @@ typedef struct VM
      * @param   ecx         Pointer to the  hypervisor core context, register.
      * @remark  Assume interrupts disabled.
      */
-    RTGCPTR32           pfnVMMGCGuestToHostAsmHyperCtx/*(int32_t eax, PCPUMCTXCORE ecx)*/;
+    RTRCPTR             pfnVMMGCGuestToHostAsmHyperCtx/*(int32_t eax, PCPUMCTXCORE ecx)*/;
 
     /**
      * Assembly switch entry point for returning to host context.
@@ -326,18 +511,16 @@ typedef struct VM
      * @param   eax         The return code, register.
      * @remark  Assume interrupts disabled.
      */
-    RTGCPTR32           pfnVMMGCGuestToHostAsm/*(int32_t eax)*/;
+    RTRCPTR             pfnVMMGCGuestToHostAsm/*(int32_t eax)*/;
     /** @} */
 
 
     /** @name Various VM data owned by VM.
      * @{ */
-    /** The thread handle of the emulation thread.
-     * Use the VM_IS_EMT() macro to check if executing in EMT. */
-    RTTHREAD            ThreadEMT;
+    RTTHREAD            uPadding1;
     /** The native handle of ThreadEMT. Getting the native handle
      * is generally faster than getting the IPRT one (except on OS/2 :-). */
-    RTNATIVETHREAD      NativeThreadEMT;
+    RTNATIVETHREAD      uPadding2;
     /** @} */
 
 
@@ -353,10 +536,14 @@ typedef struct VM
     /** CSAM enabled flag.
      * This is placed here for performance reasons. */
     bool                fCSAMEnabled;
-
     /** Hardware VM support is available and enabled.
      * This is placed here for performance reasons. */
     bool                fHWACCMEnabled;
+    /** Hardware VM support is required and non-optional.
+     * This is initialized together with the rest of the VM structure. */
+    bool                fHwVirtExtForced;
+    /** PARAV enabled flag. */
+    bool                fPARAVEnabled;
     /** @} */
 
 
@@ -389,8 +576,10 @@ typedef struct VM
     STAMPROFILEADV      StatSwitcherLldt;
     STAMPROFILEADV      StatSwitcherTSS;
 
+/** @todo Realign everything on 64 byte boundaries to better match the
+ *        cache-line size. */
     /* padding - the unions must be aligned on 32 bytes boundraries. */
-    uint32_t            padding[HC_ARCH_BITS == 32 ? 4 : 6];
+    uint32_t            padding[HC_ARCH_BITS == 32 ? 4+8 : 6];
 
     /** CPUM part. */
     union
@@ -398,7 +587,7 @@ typedef struct VM
 #ifdef ___CPUMInternal_h
         struct CPUM s;
 #endif
-        char        padding[4416];      /* multiple of 32 */
+        char        padding[4096];      /* multiple of 32 */
     } cpum;
 
     /** VMM part. */
@@ -425,7 +614,7 @@ typedef struct VM
 #ifdef ___HWACCMInternal_h
         struct HWACCM s;
 #endif
-        char        padding[1536];       /* multiple of 32 */
+        char        padding[512];       /* multiple of 32 */
     } hwaccm;
 
     /** TRPM part. */
@@ -452,7 +641,7 @@ typedef struct VM
 #ifdef ___MMInternal_h
         struct MM   s;
 #endif
-        char        padding[128];       /* multiple of 32 */
+        char        padding[192];       /* multiple of 32 */
     } mm;
 
     /** CFGM part. */
@@ -470,7 +659,7 @@ typedef struct VM
 #ifdef ___PDMInternal_h
         struct PDM s;
 #endif
-        char        padding[1056];      /* multiple of 32 */
+        char        padding[1824];      /* multiple of 32 */
     } pdm;
 
     /** IOM part. */
@@ -500,6 +689,15 @@ typedef struct VM
         char        padding[3328];    /* multiple of 32 */
     } csam;
 
+    /** PARAV part. */
+    union
+    {
+#ifdef ___PARAVInternal_h
+        struct PARAV s;
+#endif
+        char        padding[128];
+    } parav;
+
     /** EM part. */
     union
     {
@@ -515,7 +713,7 @@ typedef struct VM
 #ifdef ___TMInternal_h
         struct TM   s;
 #endif
-        char        padding[1344];      /* multiple of 32 */
+        char        padding[1536];      /* multiple of 32 */
     } tm;
 
     /** DBGF part. */
@@ -551,12 +749,23 @@ typedef struct VM
 #ifdef ___REMInternal_h
         struct REM  s;
 #endif
+
+/** @def VM_REM_SIZE
+ * Must be multiple of 32 and coherent with REM_ENV_SIZE from REMInternal.h. */
 #if GC_ARCH_BITS == 32
-        char        padding[HC_ARCH_BITS == 32 ? 0x6f00 : 0xbf00];    /* multiple of 32 */
+# define VM_REM_SIZE        (HC_ARCH_BITS == 32 ? 0x10800 : 0x10800)
 #else
-        char        padding[HC_ARCH_BITS == 32 ? 0x9f00 : 0xdf00];    /* multiple of 32 */
+# define VM_REM_SIZE        (HC_ARCH_BITS == 32 ? 0x10900 : 0x10900)
 #endif
+        char        padding[VM_REM_SIZE];   /* multiple of 32 */
     } rem;
+
+    /** Padding for aligning the cpu array on a 64 byte boundrary. */
+    uint32_t    u32Reserved2[8];
+
+    /** VMCPU array for the configured number of virtual CPUs.
+     * Must be aligned on a 64-byte boundrary.  */
+    VMCPU       aCpus[1];
 } VM;
 
 /** Pointer to a VM. */
@@ -565,7 +774,7 @@ typedef struct VM *PVM;
 #endif
 
 
-#ifdef IN_GC
+#ifdef IN_RC
 __BEGIN_DECLS
 
 /** The VM structure.

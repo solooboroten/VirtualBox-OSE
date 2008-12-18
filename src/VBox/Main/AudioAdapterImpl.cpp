@@ -56,7 +56,7 @@ HRESULT AudioAdapter::init (Machine *aParent)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     /* mPeer is left null */
@@ -87,7 +87,7 @@ HRESULT AudioAdapter::init (Machine *aParent, AudioAdapter *aThat)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     unconst (mPeer) = aThat;
@@ -119,7 +119,7 @@ HRESULT AudioAdapter::initCopy (Machine *aParent, AudioAdapter *aThat)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     /* mPeer is left null */
@@ -160,8 +160,7 @@ void AudioAdapter::uninit()
 
 STDMETHODIMP AudioAdapter::COMGETTER(Enabled)(BOOL *aEnabled)
 {
-    if (!aEnabled)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aEnabled);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -195,8 +194,7 @@ STDMETHODIMP AudioAdapter::COMSETTER(Enabled)(BOOL aEnabled)
 
 STDMETHODIMP AudioAdapter::COMGETTER(AudioDriver)(AudioDriverType_T *aAudioDriver)
 {
-    if (!aAudioDriver)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aAudioDriver);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -273,8 +271,7 @@ STDMETHODIMP AudioAdapter::COMSETTER(AudioDriver)(AudioDriverType_T aAudioDriver
 
 STDMETHODIMP AudioAdapter::COMGETTER(AudioController)(AudioControllerType_T *aAudioController)
 {
-    if (!aAudioController)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aAudioController);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -526,7 +523,7 @@ HRESULT AudioAdapter::saveSettings (settings::Key &aMachineNode)
             }
 #endif
             default:
-                ComAssertMsgFailedRet (("Wrong audio driver type! driver = %d\n",
+                ComAssertMsgFailedRet (("Wrong audio driver type! driver = %d",
                                         mData->mAudioDriver),
                                        E_FAIL);
     }
@@ -613,3 +610,4 @@ void AudioAdapter::copyFrom (AudioAdapter *aThat)
     /* this will back up current data */
     mData.assignCopy (aThat->mData);
 }
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

@@ -1,6 +1,6 @@
-/* $Id: DBGFModule.cpp $ */
+/* $Id: DBGFModule.cpp 12677 2008-09-24 07:19:03Z vboxsync $ */
 /** @file
- * VMM DBGF - Debugger Facility, Module & Segment Management.
+ * DBGF - Debugger Facility, Module & Segment Management.
  */
 
 /*
@@ -20,7 +20,7 @@
  */
 
 
-/** @page pg_dbgf_module    Module & Segment Management
+/** @page pg_dbgf_module    DBGFModule - Module & Segment Management
  *
  * A module is our representation of an executable binary. It's main purpose
  * is to provide segments that can be mapped into address spaces and thereby

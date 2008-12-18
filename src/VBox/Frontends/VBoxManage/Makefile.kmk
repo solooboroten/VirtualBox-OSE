@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 15492 2008-12-15 10:36:07Z vboxsync $
 ## @file
 # Sub-Makefile for VBoxManage (the cli frontend).
 #
@@ -38,10 +38,15 @@ else # !VBOX_ONLY_DOCS
  	$(if $(VBOX_WITH_PULSE),VBOX_WITH_PULSE) \
  	$(if $(VBOX_WITH_E1000),VBOX_WITH_E1000) \
  	$(if $(VBOX_WITH_AHCI), VBOX_WITH_AHCI) \
- 	$(if $(VBOX_WITH_GUEST_PROPS),VBOX_WITH_GUEST_PROPS)
+ 	$(if $(VBOX_WITH_GUEST_PROPS),VBOX_WITH_GUEST_PROPS) \
+ 	$(if $(VBOX_WITH_HOSTNETIF_API), VBOX_WITH_HOSTNETIF_API)
  VBoxManage_DEFS.win   = _WIN32_WINNT=0x0500
  VBoxManage_SOURCES = \
  	VBoxManage.cpp \
+ 	VBoxManageInfo.cpp \
+ 	VBoxManageMetrics.cpp \
+ 	VBoxManageList.cpp \
+ 	VBoxManageDisk.cpp \
  	VBoxInternalManage.cpp \
  	$(if $(VBOX_WITH_GUEST_PROPS),VBoxManageGuestProp.cpp) \
  	VBoxManageSVN.cpp
@@ -54,7 +59,7 @@ ifneq ($(KBUILD_TARGET),win)
  # Some later revisions of version 4.3.1 are known to work so we assume
  # that version 4.3.2 or later has this bug definitely fixed.
  VBoxManage_CXXFLAGS.release += \
-	$(if $(int-lt $(VBOX_GCC_VERSION_CXX),40300)$(int-gt $(VBOX_GCC_VERSION_CXX),40301),,--param max-fields-for-field-sensitive=0)
+	$(if $(VBOX_GCC_VERSION_CXX),$(if-expr $(VBOX_GCC_VERSION_CXX) < 40300 || $(VBOX_GCC_VERSION_CXX) > 40301,,--param max-fields-for-field-sensitive=0),)
 endif
 ifndef VBOX_ONLY_DOCS
  VBoxManage_LIBS      += $(LIB_DDU)

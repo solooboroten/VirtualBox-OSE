@@ -1,6 +1,6 @@
-/* $Id: DBGFSym.cpp $ */
+/* $Id: DBGFSym.cpp 14072 2008-11-10 23:53:50Z vboxsync $ */
 /** @file
- * VMM DBGF - Debugger Facility, Symbol Management.
+ * DBGF - Debugger Facility, Symbol Management.
  */
 
 /*
@@ -48,7 +48,6 @@
 
 #include <stdio.h> /* for fopen(). */ /** @todo use iprt/stream.h! */
 #include <stdlib.h>
-
 
 
 /*******************************************************************************
@@ -117,7 +116,7 @@ static int dbgfR3SymbolInit(PVM pVM)
         pSym->szName[0] = '\0';
         if (RTAvlrGCPtrInsert(&pVM->dbgf.s.SymbolTree, &pSym->Core))
             return VINF_SUCCESS;
-        AssertReleaseMsgFailed(("Failed to insert %VGv-%VGv!\n", pSym->Core.Key, pSym->Core.KeyLast));
+        AssertReleaseMsgFailed(("Failed to insert %RGv-%RGv!\n", pSym->Core.Key, pSym->Core.KeyLast));
         return VERR_INTERNAL_ERROR;
     }
     return VERR_NO_MEMORY;
@@ -181,10 +180,10 @@ static int dbgfR3SymbolInsert(PVM pVM, const char *pszName, RTGCPTR Address, siz
                     return VINF_SUCCESS;
                 }
             }
-            AssertReleaseMsgFailed(("Failed to insert %VGv-%VGv!\n", pSym->Core.Key, pSym->Core.KeyLast));
+            AssertReleaseMsgFailed(("Failed to insert %RGv-%RGv!\n", pSym->Core.Key, pSym->Core.KeyLast));
         }
         else
-            AssertMsgFailed(("pOld! %VGv %s\n", pSym->Core.Key, pszName));
+            AssertMsgFailed(("pOld! %RGv %s\n", pSym->Core.Key, pszName));
         return VERR_INTERNAL_ERROR;
 
     }
@@ -257,7 +256,7 @@ int dbgfR3SymInit(PVM pVM)
 #ifndef HAVE_DBGHELP
     /* modules & lines later */
     rc = dbgfR3SymbolInit(pVM);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
     pVM->dbgf.s.fSymInited = true;
 #endif
@@ -281,7 +280,7 @@ int dbgfR3SymInit(PVM pVM)
             /* File */
             char *pszFilename;
             rc = CFGMR3QueryStringAlloc(pCmdNode, "Filename", &pszFilename);
-            AssertMsgRCReturn(rc, ("rc=%Vrc querying the 'File' attribute of '/DBGF/loadsyms/%s'!\n", rc, szCmdName), rc);
+            AssertMsgRCReturn(rc, ("rc=%Rrc querying the 'File' attribute of '/DBGF/loadsyms/%s'!\n", rc, szCmdName), rc);
 
             /* Delta (optional) */
             RTGCINTPTR offDelta;
@@ -289,7 +288,7 @@ int dbgfR3SymInit(PVM pVM)
             if (rc == VERR_CFGM_VALUE_NOT_FOUND)
                 offDelta = 0;
             else
-                AssertMsgRCReturn(rc, ("rc=%Vrc querying the 'Delta' attribute of '/DBGF/loadsyms/%s'!\n", rc, szCmdName), rc);
+                AssertMsgRCReturn(rc, ("rc=%Rrc querying the 'Delta' attribute of '/DBGF/loadsyms/%s'!\n", rc, szCmdName), rc);
 
             /* Module (optional) */
             char *pszModule;
@@ -297,7 +296,7 @@ int dbgfR3SymInit(PVM pVM)
             if (rc == VERR_CFGM_VALUE_NOT_FOUND)
                 pszModule = NULL;
             else
-                AssertMsgRCReturn(rc, ("rc=%Vrc querying the 'Module' attribute of '/DBGF/loadsyms/%s'!\n", rc, szCmdName), rc);
+                AssertMsgRCReturn(rc, ("rc=%Rrc querying the 'Module' attribute of '/DBGF/loadsyms/%s'!\n", rc, szCmdName), rc);
 
             /* Module (optional) */
             RTGCUINTPTR ModuleAddress;
@@ -305,7 +304,7 @@ int dbgfR3SymInit(PVM pVM)
             if (rc == VERR_CFGM_VALUE_NOT_FOUND)
                 ModuleAddress = 0;
             else
-                AssertMsgRCReturn(rc, ("rc=%Vrc querying the 'ModuleAddress' attribute of '/DBGF/loadsyms/%s'!\n", rc, szCmdName), rc);
+                AssertMsgRCReturn(rc, ("rc=%Rrc querying the 'ModuleAddress' attribute of '/DBGF/loadsyms/%s'!\n", rc, szCmdName), rc);
 
             /* Image size (optional) */
             RTGCUINTPTR cbModule;
@@ -313,7 +312,7 @@ int dbgfR3SymInit(PVM pVM)
             if (rc == VERR_CFGM_VALUE_NOT_FOUND)
                 cbModule = 0;
             else
-                AssertMsgRCReturn(rc, ("rc=%Vrc querying the 'ModuleAddress' attribute of '/DBGF/loadsyms/%s'!\n", rc, szCmdName), rc);
+                AssertMsgRCReturn(rc, ("rc=%Rrc querying the 'ModuleAddress' attribute of '/DBGF/loadsyms/%s'!\n", rc, szCmdName), rc);
 
 
             /*
@@ -509,8 +508,8 @@ static int dbgfR3LoadLinuxSystemMap(PVM pVM, FILE *pFile, RTGCUINTPTR ModuleAddr
                 if (*psz)
                 {
                     int rc2 = DBGFR3SymbolAdd(pVM, ModuleAddress, Address + AddressDelta, 0, psz);
-                    if (VBOX_FAILURE(rc2))
-                        Log2(("DBGFR3SymbolAdd(,, %#VGv, 0, '%s') -> %Vrc\n", Address, psz, rc2));
+                    if (RT_FAILURE(rc2))
+                        Log2(("DBGFR3SymbolAdd(,, %RGv, 0, '%s') -> %Rrc\n", Address, psz, rc2));
                 }
             }
         }
@@ -533,7 +532,7 @@ static int dbgfR3LoadLinuxSystemMap(PVM pVM, FILE *pFile, RTGCUINTPTR ModuleAddr
  * @param   cbImage         Size of the image.
  *                          Ignored when pszName is NULL.
  */
-DBGFR3DECL(int) DBGFR3ModuleLoad(PVM pVM, const char *pszFilename, RTGCUINTPTR AddressDelta, const char *pszName, RTGCUINTPTR ModuleAddress, unsigned cbImage)
+VMMR3DECL(int) DBGFR3ModuleLoad(PVM pVM, const char *pszFilename, RTGCUINTPTR AddressDelta, const char *pszName, RTGCUINTPTR ModuleAddress, unsigned cbImage)
 {
     /*
      * Lazy init.
@@ -541,7 +540,7 @@ DBGFR3DECL(int) DBGFR3ModuleLoad(PVM pVM, const char *pszFilename, RTGCUINTPTR A
     if (!pVM->dbgf.s.fSymInited)
     {
         int rc = dbgfR3SymLazyInit(pVM);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
@@ -570,7 +569,7 @@ DBGFR3DECL(int) DBGFR3ModuleLoad(PVM pVM, const char *pszFilename, RTGCUINTPTR A
                     ImageBase = SymLoadModule64(pVM, NULL, (char *)(void *)pszName, (char *)(void *)pszName, ModuleAddress, cbImage);
                 if (ImageBase)
                 {
-                    AssertMsg(ModuleAddress == 0 || ModuleAddress == ImageBase, ("ModuleAddres=%VGv ImageBase=%llx\n", ModuleAddress, ImageBase));
+                    AssertMsg(ModuleAddress == 0 || ModuleAddress == ImageBase, ("ModuleAddres=%RGv ImageBase=%llx\n", ModuleAddress, ImageBase));
                     ModuleAddress = ImageBase;
                 }
                 else
@@ -579,7 +578,7 @@ DBGFR3DECL(int) DBGFR3ModuleLoad(PVM pVM, const char *pszFilename, RTGCUINTPTR A
                 rc = VERR_NOT_IMPLEMENTED;
                 #endif
             }
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
             {
                 /*
                  * Seek to the start of the file.
@@ -638,16 +637,17 @@ DBGFR3DECL(int) DBGFR3ModuleLoad(PVM pVM, const char *pszFilename, RTGCUINTPTR A
  * @param   pszFilename     The image filename.
  * @param   pszName         The module name.
  */
-DBGFR3DECL(void) DBGFR3ModuleRelocate(PVM pVM, RTGCUINTPTR OldImageBase, RTGCUINTPTR NewImageBase, unsigned cbImage,
+VMMR3DECL(void) DBGFR3ModuleRelocate(PVM pVM, RTGCUINTPTR OldImageBase, RTGCUINTPTR NewImageBase, RTGCUINTPTR cbImage,
                                       const char *pszFilename, const char *pszName)
 {
 #ifdef HAVE_DBGHELP
     if (pVM->dbgf.s.fSymInited)
     {
         if (!SymUnloadModule64(pVM, OldImageBase))
-            Log(("SymUnloadModule64(,%VGv) failed, lasterr=%d\n", OldImageBase, GetLastError()));
+            Log(("SymUnloadModule64(,%RGv) failed, lasterr=%d\n", OldImageBase, GetLastError()));
 
-        DWORD64 LoadedImageBase = SymLoadModule64(pVM, NULL, (char *)(void *)pszFilename, (char *)(void *)pszName, NewImageBase, cbImage);
+        DWORD ImageSize = (DWORD)cbImage; Assert(ImageSize == cbImage);
+        DWORD64 LoadedImageBase = SymLoadModule64(pVM, NULL, (char *)(void *)pszFilename, (char *)(void *)pszName, NewImageBase, ImageSize);
         if (!LoadedImageBase)
             Log(("SymLoadModule64(,,%s,,) -> lasterr=%d (relocate)\n", pszFilename, GetLastError()));
         else
@@ -669,7 +669,7 @@ DBGFR3DECL(void) DBGFR3ModuleRelocate(PVM pVM, RTGCUINTPTR OldImageBase, RTGCUIN
  * @param   cbSymbol        Size of the symbol. Use 0 if info not available.
  * @param   pszSymbol       Symbol name.
  */
-DBGFR3DECL(int) DBGFR3SymbolAdd(PVM pVM, RTGCUINTPTR ModuleAddress, RTGCUINTPTR SymbolAddress, RTUINT cbSymbol, const char *pszSymbol)
+VMMR3DECL(int) DBGFR3SymbolAdd(PVM pVM, RTGCUINTPTR ModuleAddress, RTGCUINTPTR SymbolAddress, RTUINT cbSymbol, const char *pszSymbol)
 {
     /*
      * Validate.
@@ -686,7 +686,7 @@ DBGFR3DECL(int) DBGFR3SymbolAdd(PVM pVM, RTGCUINTPTR ModuleAddress, RTGCUINTPTR 
     if (!pVM->dbgf.s.fSymInited)
     {
         int rc = dbgfR3SymLazyInit(pVM);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
@@ -710,7 +710,7 @@ DBGFR3DECL(int) DBGFR3SymbolAdd(PVM pVM, RTGCUINTPTR ModuleAddress, RTGCUINTPTR 
  * @param   poffDisplacement    Where to store the symbol displacement from Address.
  * @param   pSymbol             Where to store the symbol info.
  */
-DBGFR3DECL(int) DBGFR3SymbolByAddr(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR poffDisplacement, PDBGFSYMBOL pSymbol)
+VMMR3DECL(int) DBGFR3SymbolByAddr(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR poffDisplacement, PDBGFSYMBOL pSymbol)
 {
     /*
      * Lazy init.
@@ -718,7 +718,7 @@ DBGFR3DECL(int) DBGFR3SymbolByAddr(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR pof
     if (!pVM->dbgf.s.fSymInited)
     {
         int rc = dbgfR3SymLazyInit(pVM);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
@@ -764,19 +764,19 @@ DBGFR3DECL(int) DBGFR3SymbolByAddr(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR pof
     if (MMHyperIsInsideArea(pVM, Address))
     {
         char        szModName[64];
-        RTGCPTR     GCPtrMod;
+        RTRCPTR     RCPtrMod;
         char        szNearSym1[260];
-        RTGCPTR     GCPtrNearSym1;
+        RTRCPTR     RCPtrNearSym1;
         char        szNearSym2[260];
-        RTGCPTR     GCPtrNearSym2;
-        int rc = PDMR3QueryModFromEIP(pVM, Address,
-                                      &szModName[0],  sizeof(szModName),  &GCPtrMod,
-                                      &szNearSym1[0], sizeof(szNearSym1), &GCPtrNearSym1,
-                                      &szNearSym2[0], sizeof(szNearSym2), &GCPtrNearSym2);
-        if (VBOX_SUCCESS(rc) && szNearSym1[0])
+        RTRCPTR     RCPtrNearSym2;
+        int rc = PDMR3LdrQueryRCModFromPC(pVM, Address,
+                                          &szModName[0],  sizeof(szModName),  &RCPtrMod,
+                                          &szNearSym1[0], sizeof(szNearSym1), &RCPtrNearSym1,
+                                          &szNearSym2[0], sizeof(szNearSym2), &RCPtrNearSym2);
+        if (RT_SUCCESS(rc) && szNearSym1[0])
         {
-            pSymbol->Value = GCPtrNearSym1;
-            pSymbol->cb = GCPtrNearSym2 > GCPtrNearSym1 ? GCPtrNearSym2 - GCPtrNearSym1 : 0;
+            pSymbol->Value = RCPtrNearSym1;
+            pSymbol->cb = RCPtrNearSym2 > RCPtrNearSym1 ? RCPtrNearSym2 - RCPtrNearSym1 : 0;
             pSymbol->fFlags = 0;
             pSymbol->szName[0] = '\0';
             strncat(pSymbol->szName, szNearSym1,  sizeof(pSymbol->szName) - 1);
@@ -798,7 +798,7 @@ DBGFR3DECL(int) DBGFR3SymbolByAddr(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR pof
  * @param   pszSymbol           Symbol name.
  * @param   pSymbol             Where to store the symbol info.
  */
-DBGFR3DECL(int) DBGFR3SymbolByName(PVM pVM, const char *pszSymbol, PDBGFSYMBOL pSymbol)
+VMMR3DECL(int) DBGFR3SymbolByName(PVM pVM, const char *pszSymbol, PDBGFSYMBOL pSymbol)
 {
     /*
      * Lazy init.
@@ -806,7 +806,7 @@ DBGFR3DECL(int) DBGFR3SymbolByName(PVM pVM, const char *pszSymbol, PDBGFSYMBOL p
     if (!pVM->dbgf.s.fSymInited)
     {
         int rc = dbgfR3SymLazyInit(pVM);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
@@ -872,11 +872,11 @@ static PDBGFSYMBOL dbgfR3SymbolDup(PVM pVM, PCDBGFSYMBOL pSymbol)
  * @param   Address             Address.
  * @param   poffDisplacement    Where to store the symbol displacement from Address.
  */
-DBGFR3DECL(PDBGFSYMBOL) DBGFR3SymbolByAddrAlloc(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR poffDisplacement)
+VMMR3DECL(PDBGFSYMBOL) DBGFR3SymbolByAddrAlloc(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR poffDisplacement)
 {
     DBGFSYMBOL Symbol;
     int rc = DBGFR3SymbolByAddr(pVM, Address, poffDisplacement, &Symbol);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return NULL;
     return dbgfR3SymbolDup(pVM, &Symbol);
 }
@@ -890,11 +890,11 @@ DBGFR3DECL(PDBGFSYMBOL) DBGFR3SymbolByAddrAlloc(PVM pVM, RTGCUINTPTR Address, PR
  * @param   pVM                 VM handle.
  * @param   pszSymbol           Symbol name.
  */
-DBGFR3DECL(PDBGFSYMBOL) DBGFR3SymbolByNameAlloc(PVM pVM, const char *pszSymbol)
+VMMR3DECL(PDBGFSYMBOL) DBGFR3SymbolByNameAlloc(PVM pVM, const char *pszSymbol)
 {
     DBGFSYMBOL Symbol;
     int rc = DBGFR3SymbolByName(pVM, pszSymbol, &Symbol);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return NULL;
     return dbgfR3SymbolDup(pVM, &Symbol);
 }
@@ -905,7 +905,7 @@ DBGFR3DECL(PDBGFSYMBOL) DBGFR3SymbolByNameAlloc(PVM pVM, const char *pszSymbol)
  *
  * @param   pSymbol         Pointer to the symbol.
  */
-DBGFR3DECL(void) DBGFR3SymbolFree(PDBGFSYMBOL pSymbol)
+VMMR3DECL(void) DBGFR3SymbolFree(PDBGFSYMBOL pSymbol)
 {
     if (pSymbol)
         MMR3HeapFree(pSymbol);
@@ -921,7 +921,7 @@ DBGFR3DECL(void) DBGFR3SymbolFree(PDBGFSYMBOL pSymbol)
  * @param   poffDisplacement    Where to store the line displacement from Address.
  * @param   pLine               Where to store the line info.
  */
-DBGFR3DECL(int) DBGFR3LineByAddr(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR poffDisplacement, PDBGFLINE pLine)
+VMMR3DECL(int) DBGFR3LineByAddr(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR poffDisplacement, PDBGFLINE pLine)
 {
     /*
      * Lazy init.
@@ -929,7 +929,7 @@ DBGFR3DECL(int) DBGFR3LineByAddr(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR poffD
     if (!pVM->dbgf.s.fSymInited)
     {
         int rc = dbgfR3SymLazyInit(pVM);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return rc;
     }
 
@@ -983,11 +983,11 @@ static PDBGFLINE dbgfR3LineDup(PVM pVM, PCDBGFLINE pLine)
  * @param   Address             Address.
  * @param   poffDisplacement    Where to store the line displacement from Address.
  */
-DBGFR3DECL(PDBGFLINE) DBGFR3LineByAddrAlloc(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR poffDisplacement)
+VMMR3DECL(PDBGFLINE) DBGFR3LineByAddrAlloc(PVM pVM, RTGCUINTPTR Address, PRTGCINTPTR poffDisplacement)
 {
     DBGFLINE Line;
     int rc = DBGFR3LineByAddr(pVM, Address, poffDisplacement, &Line);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return NULL;
     return dbgfR3LineDup(pVM, &Line);
 }
@@ -998,7 +998,7 @@ DBGFR3DECL(PDBGFLINE) DBGFR3LineByAddrAlloc(PVM pVM, RTGCUINTPTR Address, PRTGCI
  *
  * @param   pLine           Pointer to the line.
  */
-DBGFR3DECL(void) DBGFR3LineFree(PDBGFLINE pLine)
+VMMR3DECL(void) DBGFR3LineFree(PDBGFLINE pLine)
 {
     if (pLine)
         MMR3HeapFree(pLine);

@@ -28,6 +28,9 @@
  */
 #ifdef VBOX
 # include <VBox/err.h>
+# ifdef VBOX_WITH_VMI
+#  include <VBox/parav.h>
+# endif
 #endif
 #include "exec.h"
 
@@ -172,8 +175,18 @@ static inline void load_seg_cache_raw_dt(SegmentCache *sc, uint32_t e1, uint32_t
 static inline void load_seg_vm(int seg, int selector)
 {
     selector &= 0xffff;
+#ifdef VBOX
+    unsigned flags = DESC_P_MASK | DESC_S_MASK | DESC_W_MASK;
+
+    if (seg == R_CS)
+        flags |= DESC_CS_MASK;
+
+    cpu_x86_load_seg_cache(env, seg, selector,
+                           (selector << 4), 0xffff, flags);
+#else
     cpu_x86_load_seg_cache(env, seg, selector,
                            (selector << 4), 0xffff, 0);
+#endif
 }
 
 static inline void get_ss_esp_from_tss(uint32_t *ss_ptr,
@@ -624,6 +637,14 @@ static void do_interrupt_protected(int intno, int is_int, int error_code,
     uint32_t old_eip, sp_mask;
 
 #ifdef VBOX
+# ifdef VBOX_WITH_VMI
+    if (   intno == 6
+        && PARAVIsBiosCall(env->pVM, (RTRCPTR)next_eip, env->regs[R_EAX]))
+    {
+        env->exception_index = EXCP_PARAV_CALL;
+        cpu_loop_exit();
+    }
+# endif
     if (remR3NotifyTrap(env, intno, error_code, next_eip) != VINF_SUCCESS)
         cpu_loop_exit();
 #endif
@@ -965,6 +986,11 @@ static void do_interrupt64(int intno, int is_int, int error_code,
     uint32_t e1, e2, e3, ss;
     target_ulong old_eip, esp, offset;
 
+#ifdef VBOX
+    if (remR3NotifyTrap(env, intno, error_code, next_eip) != VINF_SUCCESS)
+        cpu_loop_exit();
+#endif
+
     has_error_code = 0;
     if (!is_int && !is_hw) {
         switch(intno) {
@@ -1112,6 +1138,7 @@ void helper_syscall(int next_eip_addend)
                                DESC_S_MASK |
                                DESC_W_MASK | DESC_A_MASK);
         env->eflags &= ~env->fmask;
+        load_eflags(env->eflags, 0);
         if (code64)
             env->eip = env->lstar;
         else
@@ -1382,7 +1409,7 @@ void raise_interrupt(int intno, int is_int, int error_code,
                      int next_eip_addend)
 {
 #if defined(VBOX) && defined(DEBUG)
-    NOT_DMIK(Log2(("raise_interrupt: %x %x %x %08x\n", intno, is_int, error_code, env->eip + next_eip_addend)));
+    NOT_DMIK(Log2(("raise_interrupt: %x %x %x %RGv\n", intno, is_int, error_code, env->eip + next_eip_addend)));
 #endif
     env->exception_index = intno;
     env->error_code = error_code;
@@ -1950,7 +1977,7 @@ void helper_lldt_T0(void)
     int index, entry_limit;
     target_ulong ptr;
 #ifdef VBOX
-    Log(("helper_lldt_T0: old ldtr=%RTsel {.base=%VGv, .limit=%VGv} new=%RTsel\n",
+    Log(("helper_lldt_T0: old ldtr=%RTsel {.base=%RGv, .limit=%RGv} new=%RTsel\n",
          (RTSEL)env->ldt.selector, (RTGCPTR)env->ldt.base, (RTGCPTR)env->ldt.limit, (RTSEL)(T0 & 0xffff)));
 #endif
 
@@ -1993,7 +2020,7 @@ void helper_lldt_T0(void)
     }
     env->ldt.selector = selector;
 #ifdef VBOX
-    Log(("helper_lldt_T0: new ldtr=%RTsel {.base=%VGv, .limit=%VGv}\n",
+    Log(("helper_lldt_T0: new ldtr=%RTsel {.base=%RGv, .limit=%RGv}\n",
          (RTSEL)env->ldt.selector, (RTGCPTR)env->ldt.base, (RTGCPTR)env->ldt.limit));
 #endif
 }
@@ -2007,7 +2034,7 @@ void helper_ltr_T0(void)
     target_ulong ptr;
 
 #ifdef VBOX
-    Log(("helper_ltr_T0: old tr=%RTsel {.base=%VGv, .limit=%VGv, .flags=%RX32} new=%RTsel\n",
+    Log(("helper_ltr_T0: old tr=%RTsel {.base=%RGv, .limit=%RGv, .flags=%RX32} new=%RTsel\n",
          (RTSEL)env->tr.selector, (RTGCPTR)env->tr.base, (RTGCPTR)env->tr.limit,
          env->tr.flags, (RTSEL)(T0 & 0xffff)));
 #endif
@@ -2056,7 +2083,7 @@ void helper_ltr_T0(void)
     }
     env->tr.selector = selector;
 #ifdef VBOX
-    Log(("helper_ltr_T0: new tr=%RTsel {.base=%VGv, .limit=%VGv, .flags=%RX32} new=%RTsel\n",
+    Log(("helper_ltr_T0: new tr=%RTsel {.base=%RGv, .limit=%RGv, .flags=%RX32} new=%RTsel\n",
          (RTSEL)env->tr.selector, (RTGCPTR)env->tr.base, (RTGCPTR)env->tr.limit,
          env->tr.flags, (RTSEL)(T0 & 0xffff)));
 #endif
@@ -2995,6 +3022,22 @@ void helper_rdtsc(void)
     EDX = (uint32_t)(val >> 32);
 }
 
+#ifdef VBOX
+void helper_rdtscp(void)
+{
+    uint64_t val;
+
+    if ((env->cr[4] & CR4_TSD_MASK) && ((env->hflags & HF_CPL_MASK) != 0)) {
+        raise_exception(EXCP0D_GPF);
+    }
+
+    val = cpu_get_tsc(env);
+    EAX = (uint32_t)(val);
+    EDX = (uint32_t)(val >> 32);
+    ECX = cpu_rdmsr(env, MSR_K8_TSC_AUX);
+}
+#endif
+
 #if defined(CONFIG_USER_ONLY)
 void helper_wrmsr(void)
 {
@@ -3066,8 +3109,22 @@ void helper_wrmsr(void)
         break;
 #endif
     default:
+#ifndef VBOX
         /* XXX: exception ? */
         break;
+#else  /* VBOX */
+    {
+        uint32_t ecx = (uint32_t)ECX;
+        /* In X2APIC specification this range is reserved for APIC control. */
+        if (ecx >= MSR_APIC_RANGE_START && ecx < MSR_APIC_RANGE_END)
+            cpu_apic_wrmsr(env, ecx, val);
+        /** @todo else exception? */
+        break;
+    }
+    case MSR_K8_TSC_AUX:
+        cpu_wrmsr(env, MSR_K8_TSC_AUX, val);
+        break;
+#endif /* VBOX */
     }
 }
 
@@ -3117,9 +3174,24 @@ void helper_rdmsr(void)
         break;
 #endif
     default:
+#ifndef VBOX
         /* XXX: exception ? */
         val = 0;
         break;
+#else  /* VBOX */
+    {
+        uint32_t ecx = (uint32_t)ECX;
+        /* In X2APIC specification this range is reserved for APIC control. */
+        if (ecx >= MSR_APIC_RANGE_START && ecx < MSR_APIC_RANGE_END)
+            val = cpu_apic_rdmsr(env, ecx);
+        else
+            val = 0; /** @todo else exception? */
+        break;
+    }
+    case MSR_K8_TSC_AUX:
+        val = cpu_rdmsr(env, MSR_K8_TSC_AUX);
+        break;
+#endif /* VBOX */
     }
     EAX = (uint32_t)(val);
     EDX = (uint32_t)(val >> 32);
@@ -4600,7 +4672,7 @@ int emulate_single_instr(CPUX86State *env1)
      */
     if (env->hflags & HF_INHIBIT_IRQ_MASK)
     {
-        Log(("REM: Emulating next instruction due to instruction fusing (HF_INHIBIT_IRQ_MASK) at %VGv\n", env->eip));
+        Log(("REM: Emulating next instruction due to instruction fusing (HF_INHIBIT_IRQ_MASK) at %RGv\n", env->eip));
         env->hflags &= ~HF_INHIBIT_IRQ_MASK;
         emulate_single_instr(env);
     }

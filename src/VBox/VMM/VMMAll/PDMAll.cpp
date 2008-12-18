@@ -1,4 +1,4 @@
-/* $Id: PDMAll.cpp $ */
+/* $Id: PDMAll.cpp 13832 2008-11-05 02:01:12Z vboxsync $ */
 /** @file
  * PDM Critical Sections
  */
@@ -42,7 +42,7 @@
  * @param   pVM             VM handle.
  * @param   pu8Interrupt    Where to store the interrupt on success.
  */
-PDMDECL(int) PDMGetInterrupt(PVM pVM, uint8_t *pu8Interrupt)
+VMMDECL(int) PDMGetInterrupt(PVM pVM, uint8_t *pu8Interrupt)
 {
     pdmLock(pVM);
 
@@ -97,7 +97,7 @@ PDMDECL(int) PDMGetInterrupt(PVM pVM, uint8_t *pu8Interrupt)
  * @param   u8Irq           The IRQ line.
  * @param   u8Level         The new level.
  */
-PDMDECL(int) PDMIsaSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level)
+VMMDECL(int) PDMIsaSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level)
 {
     pdmLock(pVM);
 
@@ -129,7 +129,7 @@ PDMDECL(int) PDMIsaSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level)
  * @param   u8Irq           The IRQ line.
  * @param   u8Level         The new level.
  */
-PDMDECL(int) PDMIoApicSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level)
+VMMDECL(int) PDMIoApicSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level)
 {
     if (pVM->pdm.s.IoApic.CTX_SUFF(pDevIns))
     {
@@ -150,7 +150,7 @@ PDMDECL(int) PDMIoApicSetIrq(PVM pVM, uint8_t u8Irq, uint8_t u8Level)
  * @param   pVM             VM handle.
  * @param   u64Base         The new base.
  */
-PDMDECL(int) PDMApicSetBase(PVM pVM, uint64_t u64Base)
+VMMDECL(int) PDMApicSetBase(PVM pVM, uint64_t u64Base)
 {
     if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
     {
@@ -171,7 +171,7 @@ PDMDECL(int) PDMApicSetBase(PVM pVM, uint64_t u64Base)
  * @param   pVM             VM handle.
  * @param   pu64Base        Where to store the APIC base.
  */
-PDMDECL(int) PDMApicGetBase(PVM pVM, uint64_t *pu64Base)
+VMMDECL(int) PDMApicGetBase(PVM pVM, uint64_t *pu64Base)
 {
     if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
     {
@@ -193,7 +193,7 @@ PDMDECL(int) PDMApicGetBase(PVM pVM, uint64_t *pu64Base)
  * @param   pDevIns         Device instance of the APIC.
  * @param   pfPending       Pending state (out).
  */
-PDMDECL(int) PDMApicHasPendingIrq(PVM pVM, bool *pfPending)
+VMMDECL(int) PDMApicHasPendingIrq(PVM pVM, bool *pfPending)
 {
     if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
     {
@@ -214,7 +214,7 @@ PDMDECL(int) PDMApicHasPendingIrq(PVM pVM, bool *pfPending)
  * @param   pVM             VM handle.
  * @param   u8TPR           The new TPR.
  */
-PDMDECL(int) PDMApicSetTPR(PVM pVM, uint8_t u8TPR)
+VMMDECL(int) PDMApicSetTPR(PVM pVM, uint8_t u8TPR)
 {
     if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
     {
@@ -236,7 +236,7 @@ PDMDECL(int) PDMApicSetTPR(PVM pVM, uint8_t u8TPR)
  * @param   pu8TPR          Where to store the TRP.
  * @param   pfPending       Pending interrupt state (out).
 */
-PDMDECL(int) PDMApicGetTPR(PVM pVM, uint8_t *pu8TPR, bool *pfPending)
+VMMDECL(int) PDMApicGetTPR(PVM pVM, uint8_t *pu8TPR, bool *pfPending)
 {
     if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
     {
@@ -249,6 +249,50 @@ PDMDECL(int) PDMApicGetTPR(PVM pVM, uint8_t *pu8TPR, bool *pfPending)
         return VINF_SUCCESS;
     }
     *pu8TPR = 0;
+    return VERR_PDM_NO_APIC_INSTANCE;
+}
+
+/**
+ * Write MSR in APIC range.
+ *
+ * @returns VBox status code.
+ * @param   pVM             VM handle.
+ * @param   iCpu            Target CPU.
+ * @param   u32Reg          MSR to write.
+ * @param   u64Value        Value to write.
+ */
+VMMDECL(int) PDMApicWriteMSR(PVM pVM, VMCPUID iCpu, uint32_t u32Reg, uint64_t u64Value)
+{
+    if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
+    {
+        Assert(pVM->pdm.s.Apic.CTX_SUFF(pfnWriteMSR));
+        pdmLock(pVM);
+        pVM->pdm.s.Apic.CTX_SUFF(pfnWriteMSR)(pVM->pdm.s.Apic.CTX_SUFF(pDevIns), iCpu, u32Reg, u64Value);
+        pdmUnlock(pVM);
+        return VINF_SUCCESS;
+    }
+    return VERR_PDM_NO_APIC_INSTANCE;
+}
+
+/**
+ * Read MSR in APIC range.
+ *
+ * @returns VBox status code.
+ * @param   pVM             VM handle.
+ * @param   iCpu            Target CPU.
+ * @param   u32Reg          MSR to read.
+ * @param   pu64Value       Value read.
+ */
+VMMDECL(int) PDMApicReadMSR(PVM pVM, VMCPUID iCpu, uint32_t u32Reg, uint64_t *pu64Value)
+{
+    if (pVM->pdm.s.Apic.CTX_SUFF(pDevIns))
+    {
+        Assert(pVM->pdm.s.Apic.CTX_SUFF(pfnReadMSR));
+        pdmLock(pVM);
+        pVM->pdm.s.Apic.CTX_SUFF(pfnReadMSR)(pVM->pdm.s.Apic.CTX_SUFF(pDevIns), iCpu, u32Reg, pu64Value);
+        pdmUnlock(pVM);
+        return VINF_SUCCESS;
+    }
     return VERR_PDM_NO_APIC_INSTANCE;
 }
 
@@ -267,7 +311,7 @@ void pdmLock(PVM pVM)
     int rc = PDMCritSectEnter(&pVM->pdm.s.CritSect, VERR_GENERAL_FAILURE);
     if (rc == VERR_GENERAL_FAILURE)
     {
-# ifdef IN_GC
+# ifdef IN_RC
         rc = VMMGCCallHost(pVM, VMMCALLHOST_PDM_LOCK, 0);
 # else
         rc = VMMR0CallHost(pVM, VMMCALLHOST_PDM_LOCK, 0);
@@ -302,3 +346,19 @@ void pdmUnlock(PVM pVM)
     PDMCritSectLeave(&pVM->pdm.s.CritSect);
 }
 
+
+/**
+ * Converts ring 3 VMM heap pointer to a guest physical address
+ *
+ * @returns VBox status code.
+ * @param   pVM             VM handle.
+ * @param   pv              Ring-3 pointer.
+ * @param   pGCPhys         GC phys address (out).
+ */
+VMMDECL(int) PDMVMMDevHeapR3ToGCPhys(PVM pVM, RTR3PTR pv, RTGCPHYS *pGCPhys)
+{
+    AssertReturn(pv >= pVM->pdm.s.pvVMMDevHeap && (RTR3UINTPTR)pv < (RTR3UINTPTR)pVM->pdm.s.pvVMMDevHeap + pVM->pdm.s.cbVMMDevHeap, VERR_INVALID_PARAMETER);
+
+    *pGCPhys = (pVM->pdm.s.GCPhysVMMDevHeap + ((RTR3UINTPTR)pv - (RTR3UINTPTR)pVM->pdm.s.pvVMMDevHeap));
+    return VINF_SUCCESS;
+}

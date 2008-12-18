@@ -1,4 +1,4 @@
-/* $Id: TMAllCpu.cpp $ */
+/* $Id: TMAllCpu.cpp 13586 2008-10-27 16:33:51Z vboxsync $ */
 /** @file
  * TM - Timeout Manager, CPU Time, All Contexts.
  */
@@ -25,7 +25,7 @@
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_TM
 #include <VBox/tm.h>
-#include "TMInternal.h"
+#include "../TMInternal.h"
 #include <VBox/vm.h>
 #include <VBox/sup.h>
 
@@ -53,8 +53,9 @@ DECLINLINE(uint64_t) tmCpuTickGetRawVirtual(PVM pVM, bool fCheckTimers)
  *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
+ * @internal
  */
-TMDECL(int) TMCpuTickResume(PVM pVM)
+int tmCpuTickResume(PVM pVM)
 {
     if (!pVM->tm.s.fTSCTicking)
     {
@@ -75,12 +76,29 @@ TMDECL(int) TMCpuTickResume(PVM pVM)
 
 
 /**
+ * Resumes the CPU timestamp counter ticking.
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ * @todo replace this with TMNotifyResume
+ */
+VMMDECL(int) TMCpuTickResume(PVM pVM)
+{
+    if (!pVM->tm.s.fTSCTiedToExecution)
+        return tmCpuTickResume(pVM);
+    /* ignored */
+    return VINF_SUCCESS;
+}
+
+
+/**
  * Pauses the CPU timestamp counter ticking.
  *
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
+ * @internal
  */
-TMDECL(int) TMCpuTickPause(PVM pVM)
+int tmCpuTickPause(PVM pVM)
 {
     if (pVM->tm.s.fTSCTicking)
     {
@@ -94,6 +112,22 @@ TMDECL(int) TMCpuTickPause(PVM pVM)
 
 
 /**
+ * Pauses the CPU timestamp counter ticking.
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ * @todo replace this with TMNotifySuspend
+ */
+VMMDECL(int) TMCpuTickPause(PVM pVM)
+{
+    if (!pVM->tm.s.fTSCTiedToExecution)
+        return tmCpuTickPause(pVM);
+    /* ignored */
+    return VINF_SUCCESS;
+}
+
+
+/**
  * Checks if AMD-V / VT-x can use an offsetted hardware TSC or not.
  *
  * @returns true/false accordingly.
@@ -102,16 +136,16 @@ TMDECL(int) TMCpuTickPause(PVM pVM)
  *                          Can be NULL.
  * @thread EMT.
  */
-TMDECL(bool) TMCpuTickCanUseRealTSC(PVM pVM, uint64_t *poffRealTSC)
+VMMDECL(bool) TMCpuTickCanUseRealTSC(PVM pVM, uint64_t *poffRealTSC)
 {
     /*
      * We require:
      *     1. A fixed TSC, this is checked at init time.
      *     2. That the TSC is ticking (we shouldn't be here if it isn't)
      *     3. Either that we're using the real TSC as time source or
-     *          a) We don't have any lag to catch up.
-     *          b) The virtual sync clock hasn't been halted by an expired timer.
-     *          c) We're not using warp drive (accelerated virtual guest time).
+     *          a) we don't have any lag to catch up, and
+     *          b) the virtual sync clock hasn't been halted by an expired timer, and
+     *          c) we're not using warp drive (accelerated virtual guest time).
      */
     if (    pVM->tm.s.fMaybeUseOffsettedHostTSC
         &&  RT_LIKELY(pVM->tm.s.fTSCTicking)
@@ -145,9 +179,35 @@ TMDECL(bool) TMCpuTickCanUseRealTSC(PVM pVM, uint64_t *poffRealTSC)
             else
                 *poffRealTSC = 0;
         }
+        /** @todo count this? */
         return true;
     }
 
+#ifdef VBOX_WITH_STATISTICS
+    /* Sample the reason for refusing. */
+    if (!pVM->tm.s.fMaybeUseOffsettedHostTSC)
+       STAM_COUNTER_INC(&pVM->tm.s.StatTSCNotFixed);
+    else if (!pVM->tm.s.fTSCTicking)
+       STAM_COUNTER_INC(&pVM->tm.s.StatTSCNotTicking);
+    else if (!pVM->tm.s.fTSCUseRealTSC)
+    {
+        if (pVM->tm.s.fVirtualSyncCatchUp)
+        {
+           if (pVM->tm.s.u32VirtualSyncCatchUpPercentage <= 10)
+               STAM_COUNTER_INC(&pVM->tm.s.StatTSCCatchupLE010);
+           else if (pVM->tm.s.u32VirtualSyncCatchUpPercentage <= 25)
+               STAM_COUNTER_INC(&pVM->tm.s.StatTSCCatchupLE025);
+           else if (pVM->tm.s.u32VirtualSyncCatchUpPercentage <= 100)
+               STAM_COUNTER_INC(&pVM->tm.s.StatTSCCatchupLE100);
+           else
+               STAM_COUNTER_INC(&pVM->tm.s.StatTSCCatchupOther);
+        }
+        else if (!pVM->tm.s.fVirtualSyncTicking)
+           STAM_COUNTER_INC(&pVM->tm.s.StatTSCSyncNotTicking);
+        else if (pVM->tm.s.fVirtualWarpDrive)
+           STAM_COUNTER_INC(&pVM->tm.s.StatTSCWarp);
+    }
+#endif
     return false;
 }
 
@@ -158,7 +218,7 @@ TMDECL(bool) TMCpuTickCanUseRealTSC(PVM pVM, uint64_t *poffRealTSC)
  * @returns Gets the CPU tsc.
  * @param   pVM         The VM to operate on.
  */
-TMDECL(uint64_t) TMCpuTickGet(PVM pVM)
+VMMDECL(uint64_t) TMCpuTickGet(PVM pVM)
 {
     uint64_t u64;
     if (RT_LIKELY(pVM->tm.s.fTSCTicking))
@@ -187,7 +247,7 @@ TMDECL(uint64_t) TMCpuTickGet(PVM pVM)
  * @param   pVM         The VM to operate on.
  * @param   u64Tick     The new timestamp value.
  */
-TMDECL(int) TMCpuTickSet(PVM pVM, uint64_t u64Tick)
+VMMDECL(int) TMCpuTickSet(PVM pVM, uint64_t u64Tick)
 {
     Assert(!pVM->tm.s.fTSCTicking);
     pVM->tm.s.u64TSC = u64Tick;
@@ -201,7 +261,7 @@ TMDECL(int) TMCpuTickSet(PVM pVM, uint64_t u64Tick)
  * @returns Number of ticks per second.
  * @param   pVM     The VM.
  */
-TMDECL(uint64_t) TMCpuTicksPerSecond(PVM pVM)
+VMMDECL(uint64_t) TMCpuTicksPerSecond(PVM pVM)
 {
     if (pVM->tm.s.fTSCUseRealTSC)
     {

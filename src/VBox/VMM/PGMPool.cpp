@@ -1,4 +1,4 @@
-/* $Id: PGMPool.cpp $ */
+/* $Id: PGMPool.cpp 15225 2008-12-10 04:24:39Z vboxsync $ */
 /** @file
  * PGM Shadow Page Pool.
  */
@@ -25,29 +25,35 @@
  *      -# Relationship between shadow page tables and physical guest pages. This
  *         should allow us to skip most of the global flushes now following access
  *         handler changes. The main expense is flushing shadow pages.
- *      -# Limit the pool size (currently it's kind of limitless IIRC).
- *      -# Allocate shadow pages from GC. Currently we're allocating at SyncCR3 time.
+ *      -# Limit the pool size if necessary (default is kind of limitless).
+ *      -# Allocate shadow pages from RC. We use to only do this in SyncCR3.
  *      -# Required for 64-bit guests.
  *      -# Combining the PD cache and page pool in order to simplify caching.
  *
  *
  * @section sec_pgm_pool_outline    Design Outline
  *
- * The shadow page pool tracks pages used for shadowing paging structures (i.e. page
- * tables, page directory, page directory pointer table and page map level-4). Each
- * page in the pool has an unique identifier. This identifier is used to link a guest
- * physical page to a shadow PT. The identifier is a non-zero value and has a
- * relativly low max value - say 14 bits. This makes it possible to fit it into the
- * upper bits of the of the aHCPhys entries in the ram range.
+ * The shadow page pool tracks pages used for shadowing paging structures (i.e.
+ * page tables, page directory, page directory pointer table and page map
+ * level-4). Each page in the pool has an unique identifier. This identifier is
+ * used to link a guest physical page to a shadow PT. The identifier is a
+ * non-zero value and has a relativly low max value - say 14 bits. This makes it
+ * possible to fit it into the upper bits of the of the aHCPhys entries in the
+ * ram range.
  *
- * By restricting host physical memory to the first 48 bits (which is the announced
- * physical memory range of the K8L chip (scheduled for 2008)), we can safely use the
- * upper 16 bits for shadow page ID and reference counting.
+ * By restricting host physical memory to the first 48 bits (which is the
+ * announced physical memory range of the K8L chip (scheduled for 2008)), we
+ * can safely use the upper 16 bits for shadow page ID and reference counting.
  *
- * Now, it's possible for a page to be aliased, i.e. mapped by more than one PT or
- * PD. This is solved by creating a list of physical cross reference extents when
- * ever this happens. Each node in the list (extent) is can contain 3 page pool
- * indexes. The list it self is chained using indexes into the paPhysExt array.
+ * Update: The 48 bit assumption will be lifted with the new physical memory
+ * management (PGMPAGE), so we won't have any trouble when someone stuffs 2TB
+ * into a box in some years.
+ *
+ * Now, it's possible for a page to be aliased, i.e. mapped by more than one PT
+ * or PD. This is solved by creating a list of physical cross reference extents
+ * when ever this happens. Each node in the list (extent) is can contain 3 page
+ * pool indexes. The list it self is chained using indexes into the paPhysExt
+ * array.
  *
  *
  * @section sec_pgm_pool_life       Life Cycle of a Shadow Page
@@ -77,10 +83,11 @@
  *
  * @section sec_pgm_pool_impl       Implementation
  *
- * The pool will take pages from the MM page pool. The tracking data (attributes,
- * bitmaps and so on) are allocated from the hypervisor heap. The pool content can
- * be accessed both by using the page id and the physical address (HC). The former
- * is managed by means of an array, the latter by an offset based AVL tree.
+ * The pool will take pages from the MM page pool. The tracking data
+ * (attributes, bitmaps and so on) are allocated from the hypervisor heap. The
+ * pool content can be accessed both by using the page id and the physical
+ * address (HC). The former is managed by means of an array, the latter by an
+ * offset based AVL tree.
  *
  * Flushing of a pool page means that we iterate the content (we know what kind
  * it is) and updates the link information in the ram range.
@@ -124,43 +131,48 @@ int pgmR3PoolInit(PVM pVM)
      * Query Pool config.
      */
     PCFGMNODE pCfg = CFGMR3GetChild(CFGMR3GetRoot(pVM), "/PGM/Pool");
+
+    /** @cfgm{/PGM/Pool/MaxPages, uint16_t, #pages, 16, 0x3fff, 1024}
+     * The max size of the shadow page pool in pages. The pool will grow dynamically
+     * up to this limit.
+     */
     uint16_t cMaxPages;
-    int rc = CFGMR3QueryU16(pCfg, "MaxPages", &cMaxPages);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND || rc == VERR_CFGM_NO_PARENT)
-        cMaxPages = 4*_1M >> PAGE_SHIFT;
-    else if (VBOX_FAILURE(rc))
-        AssertRCReturn(rc, rc);
-    else
-        AssertMsgReturn(cMaxPages <= PGMPOOL_IDX_LAST && cMaxPages >= RT_ALIGN(PGMPOOL_IDX_FIRST, 16),
-                        ("cMaxPages=%u (%#x)\n", cMaxPages, cMaxPages), VERR_INVALID_PARAMETER);
+    int rc = CFGMR3QueryU16Def(pCfg, "MaxPages", &cMaxPages, 4*_1M >> PAGE_SHIFT);
+    AssertLogRelRCReturn(rc, rc);
+    AssertLogRelMsgReturn(cMaxPages <= PGMPOOL_IDX_LAST && cMaxPages >= RT_ALIGN(PGMPOOL_IDX_FIRST, 16),
+                          ("cMaxPages=%u (%#x)\n", cMaxPages, cMaxPages), VERR_INVALID_PARAMETER);
     cMaxPages = RT_ALIGN(cMaxPages, 16);
 
+    /** @cfgm{/PGM/Pool/MaxUsers, uint16_t, #users, MaxUsers, 32K, MaxPages*2}
+     * The max number of shadow page user tracking records. Each shadow page has
+     * zero of other shadow pages (or CR3s) that references it, or uses it if you
+     * like. The structures describing these relationships are allocated from a
+     * fixed sized pool. This configuration variable defines the pool size.
+     */
     uint16_t cMaxUsers;
-    rc = CFGMR3QueryU16(pCfg, "MaxUsers", &cMaxUsers);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND || rc == VERR_CFGM_NO_PARENT)
-        cMaxUsers = cMaxPages * 2;
-    else if (VBOX_FAILURE(rc))
-        AssertRCReturn(rc, rc);
-    else
-        AssertMsgReturn(cMaxUsers >= cMaxPages && cMaxPages <= _32K,
-                        ("cMaxUsers=%u (%#x)\n", cMaxUsers, cMaxUsers), VERR_INVALID_PARAMETER);
+    rc = CFGMR3QueryU16Def(pCfg, "MaxUsers", &cMaxUsers, cMaxPages * 2);
+    AssertLogRelRCReturn(rc, rc);
+    AssertLogRelMsgReturn(cMaxUsers >= cMaxPages && cMaxPages <= _32K,
+                          ("cMaxUsers=%u (%#x)\n", cMaxUsers, cMaxUsers), VERR_INVALID_PARAMETER);
 
+    /** @cfgm{/PGM/Pool/MaxPhysExts, uint16_t, #extents, 16, MaxPages * 2, MAX(MaxPages*2,0x3fff)}
+     * The max number of extents for tracking aliased guest pages.
+     */
     uint16_t cMaxPhysExts;
-    rc = CFGMR3QueryU16(pCfg, "MaxPhysExts", &cMaxPhysExts);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND || rc == VERR_CFGM_NO_PARENT)
-        cMaxPhysExts = RT_MAX(cMaxPages * 2, PGMPOOL_IDX_LAST);
-    else if (VBOX_FAILURE(rc))
-        AssertRCReturn(rc, rc);
-    else
-        AssertMsgReturn(cMaxPhysExts >= 16 && cMaxPages <= PGMPOOL_IDX_LAST,
-                        ("cMaxPhysExts=%u (%#x)\n", cMaxPhysExts, cMaxUsers), VERR_INVALID_PARAMETER);
+    rc = CFGMR3QueryU16Def(pCfg, "MaxPhysExts", &cMaxPhysExts, RT_MAX(cMaxPages * 2, PGMPOOL_IDX_LAST));
+    AssertLogRelRCReturn(rc, rc);
+    AssertLogRelMsgReturn(cMaxPhysExts >= 16 && cMaxPages <= PGMPOOL_IDX_LAST,
+                          ("cMaxPhysExts=%u (%#x)\n", cMaxPhysExts, cMaxPhysExts), VERR_INVALID_PARAMETER);
 
+    /** @cfgm{/PGM/Pool/ChacheEnabled, bool, true}
+     * Enables or disabling caching of shadow pages. Chaching means that we will try
+     * reuse shadow pages instead of recreating them everything SyncCR3, SyncPT or
+     * SyncPage requests one. When reusing a shadow page, we can save time
+     * reconstructing it and it's children.
+     */
     bool fCacheEnabled;
-    rc = CFGMR3QueryBool(pCfg, "CacheEnabled", &fCacheEnabled);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND || rc == VERR_CFGM_NO_PARENT)
-        fCacheEnabled = true;
-    else if (VBOX_FAILURE(rc))
-        AssertRCReturn(rc, rc);
+    rc = CFGMR3QueryBoolDef(pCfg, "CacheEnabled", &fCacheEnabled, true);
+    AssertLogRelRCReturn(rc, rc);
 
     Log(("pgmR3PoolInit: cMaxPages=%#RX16 cMaxUsers=%#RX16 cMaxPhysExts=%#RX16 fCacheEnable=%RTbool\n",
          cMaxPages, cMaxUsers, cMaxPhysExts, fCacheEnabled));
@@ -177,24 +189,27 @@ int pgmR3PoolInit(PVM pVM)
 #endif
     PPGMPOOL pPool;
     rc = MMR3HyperAllocOnceNoRel(pVM, cb, 0, MM_TAG_PGM_POOL, (void **)&pPool);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
-    pVM->pgm.s.pPoolHC = pPool;
-    pVM->pgm.s.pPoolGC = MMHyperHC2GC(pVM, pPool);
+    pVM->pgm.s.pPoolR3 = pPool;
+    pVM->pgm.s.pPoolR0 = MMHyperR3ToR0(pVM, pPool);
+    pVM->pgm.s.pPoolRC = MMHyperR3ToRC(pVM, pPool);
 
     /*
      * Initialize it.
      */
-    pPool->pVMHC     = pVM;
-    pPool->pVMGC     = pVM->pVMGC;
+    pPool->pVMR3     = pVM;
+    pPool->pVMR0     = pVM->pVMR0;
+    pPool->pVMRC     = pVM->pVMRC;
     pPool->cMaxPages = cMaxPages;
     pPool->cCurPages = PGMPOOL_IDX_FIRST;
 #ifdef PGMPOOL_WITH_USER_TRACKING
     pPool->iUserFreeHead = 0;
     pPool->cMaxUsers = cMaxUsers;
     PPGMPOOLUSER paUsers = (PPGMPOOLUSER)&pPool->aPages[pPool->cMaxPages];
-    pPool->paUsersHC = paUsers;
-    pPool->paUsersGC = MMHyperHC2GC(pVM, paUsers);
+    pPool->paUsersR3 = paUsers;
+    pPool->paUsersR0 = MMHyperR3ToR0(pVM, paUsers);
+    pPool->paUsersRC = MMHyperR3ToRC(pVM, paUsers);
     for (unsigned i = 0; i < cMaxUsers; i++)
     {
         paUsers[i].iNext = i + 1;
@@ -207,8 +222,9 @@ int pgmR3PoolInit(PVM pVM)
     pPool->iPhysExtFreeHead = 0;
     pPool->cMaxPhysExts = cMaxPhysExts;
     PPGMPOOLPHYSEXT paPhysExts = (PPGMPOOLPHYSEXT)&paUsers[cMaxUsers];
-    pPool->paPhysExtsHC = paPhysExts;
-    pPool->paPhysExtsGC = MMHyperHC2GC(pVM, paPhysExts);
+    pPool->paPhysExtsR3 = paPhysExts;
+    pPool->paPhysExtsR0 = MMHyperR3ToR0(pVM, paPhysExts);
+    pPool->paPhysExtsRC = MMHyperR3ToRC(pVM, paPhysExts);
     for (unsigned i = 0; i < cMaxPhysExts; i++)
     {
         paPhysExts[i].iNext = i + 1;
@@ -238,14 +254,20 @@ int pgmR3PoolInit(PVM pVM)
     /* The Shadow 32-bit PD. (32 bits guest paging) */
     pPool->aPages[PGMPOOL_IDX_PD].Core.Key  = NIL_RTHCPHYS;
     pPool->aPages[PGMPOOL_IDX_PD].GCPhys    = NIL_RTGCPHYS;
-    pPool->aPages[PGMPOOL_IDX_PD].pvPageHC  = pVM->pgm.s.pHC32BitPD;
+#ifdef VBOX_WITH_PGMPOOL_PAGING_ONLY
+    pPool->aPages[PGMPOOL_IDX_PD].pvPageR3  = 0;
+    pPool->aPages[PGMPOOL_IDX_PD].enmKind   = PGMPOOLKIND_32BIT_PD;
+#else
+    pPool->aPages[PGMPOOL_IDX_PD].pvPageR3  = pVM->pgm.s.pShw32BitPdR3;
     pPool->aPages[PGMPOOL_IDX_PD].enmKind   = PGMPOOLKIND_ROOT_32BIT_PD;
+#endif
     pPool->aPages[PGMPOOL_IDX_PD].idx       = PGMPOOL_IDX_PD;
 
+#ifndef VBOX_WITH_PGMPOOL_PAGING_ONLY
     /* The Shadow PAE PDs. This is actually 4 pages! (32 bits guest paging)  */
     pPool->aPages[PGMPOOL_IDX_PAE_PD].Core.Key  = NIL_RTHCPHYS;
     pPool->aPages[PGMPOOL_IDX_PAE_PD].GCPhys    = NIL_RTGCPHYS;
-    pPool->aPages[PGMPOOL_IDX_PAE_PD].pvPageHC  = pVM->pgm.s.apHCPaePDs[0];
+    pPool->aPages[PGMPOOL_IDX_PAE_PD].pvPageR3  = pVM->pgm.s.apShwPaePDsR3[0];
     pPool->aPages[PGMPOOL_IDX_PAE_PD].enmKind   = PGMPOOLKIND_ROOT_PAE_PD;
     pPool->aPages[PGMPOOL_IDX_PAE_PD].idx       = PGMPOOL_IDX_PAE_PD;
 
@@ -254,29 +276,39 @@ int pgmR3PoolInit(PVM pVM)
     {
         pPool->aPages[PGMPOOL_IDX_PAE_PD_0 + i].Core.Key  = NIL_RTHCPHYS;
         pPool->aPages[PGMPOOL_IDX_PAE_PD_0 + i].GCPhys    = NIL_RTGCPHYS;
-        pPool->aPages[PGMPOOL_IDX_PAE_PD_0 + i].pvPageHC  = pVM->pgm.s.apHCPaePDs[i];
+        pPool->aPages[PGMPOOL_IDX_PAE_PD_0 + i].pvPageR3  = pVM->pgm.s.apShwPaePDsR3[i];
         pPool->aPages[PGMPOOL_IDX_PAE_PD_0 + i].enmKind   = PGMPOOLKIND_PAE_PD_FOR_PAE_PD;
         pPool->aPages[PGMPOOL_IDX_PAE_PD_0 + i].idx       = PGMPOOL_IDX_PAE_PD_0 + i;
     }
+#endif
 
     /* The Shadow PDPT. */
     pPool->aPages[PGMPOOL_IDX_PDPT].Core.Key  = NIL_RTHCPHYS;
     pPool->aPages[PGMPOOL_IDX_PDPT].GCPhys    = NIL_RTGCPHYS;
-    pPool->aPages[PGMPOOL_IDX_PDPT].pvPageHC  = pVM->pgm.s.pHCPaePDPT;
+#ifdef VBOX_WITH_PGMPOOL_PAGING_ONLY
+    pPool->aPages[PGMPOOL_IDX_PDPT].pvPageR3  = 0;
+    pPool->aPages[PGMPOOL_IDX_PDPT].enmKind   = PGMPOOLKIND_PAE_PDPT;
+#else
+    pPool->aPages[PGMPOOL_IDX_PDPT].pvPageR3  = pVM->pgm.s.pShwPaePdptR3;
     pPool->aPages[PGMPOOL_IDX_PDPT].enmKind   = PGMPOOLKIND_ROOT_PDPT;
+#endif
     pPool->aPages[PGMPOOL_IDX_PDPT].idx       = PGMPOOL_IDX_PDPT;
 
     /* The Shadow AMD64 CR3. */
     pPool->aPages[PGMPOOL_IDX_AMD64_CR3].Core.Key  = NIL_RTHCPHYS;
     pPool->aPages[PGMPOOL_IDX_AMD64_CR3].GCPhys    = NIL_RTGCPHYS;
-    pPool->aPages[PGMPOOL_IDX_AMD64_CR3].pvPageHC  = pVM->pgm.s.pHCPaePDPT;     /* not used */
+#ifdef VBOX_WITH_PGMPOOL_PAGING_ONLY
+    pPool->aPages[PGMPOOL_IDX_AMD64_CR3].pvPageR3  = 0;
+#else
+    pPool->aPages[PGMPOOL_IDX_AMD64_CR3].pvPageR3  = pVM->pgm.s.pShwPaePdptR3;  /* not used - isn't it wrong as well? */
+#endif
     pPool->aPages[PGMPOOL_IDX_AMD64_CR3].enmKind   = PGMPOOLKIND_64BIT_PML4_FOR_64BIT_PML4;
     pPool->aPages[PGMPOOL_IDX_AMD64_CR3].idx       = PGMPOOL_IDX_AMD64_CR3;
 
-    /* The Shadow AMD64 CR3. */
+    /* The Nested Paging CR3. */
     pPool->aPages[PGMPOOL_IDX_NESTED_ROOT].Core.Key  = NIL_RTHCPHYS;
     pPool->aPages[PGMPOOL_IDX_NESTED_ROOT].GCPhys    = NIL_RTGCPHYS;
-    pPool->aPages[PGMPOOL_IDX_NESTED_ROOT].pvPageHC  = pVM->pgm.s.pHCNestedRoot;
+    pPool->aPages[PGMPOOL_IDX_NESTED_ROOT].pvPageR3  = pVM->pgm.s.pShwNestedRootR3;
     pPool->aPages[PGMPOOL_IDX_NESTED_ROOT].enmKind   = PGMPOOLKIND_ROOT_NESTED;
     pPool->aPages[PGMPOOL_IDX_NESTED_ROOT].idx       = PGMPOOL_IDX_NESTED_ROOT;
 
@@ -299,7 +331,7 @@ int pgmR3PoolInit(PVM pVM)
         pPool->aPages[iPage].iAgeNext       = NIL_PGMPOOL_IDX;
         pPool->aPages[iPage].iAgePrev       = NIL_PGMPOOL_IDX;
 #endif
-        Assert(VALID_PTR(pPool->aPages[iPage].pvPageHC));
+        Assert(VALID_PTR(pPool->aPages[iPage].pvPageR3));
         Assert(pPool->aPages[iPage].idx == iPage);
         Assert(pPool->aPages[iPage].GCPhys == NIL_RTGCPHYS);
         Assert(!pPool->aPages[iPage].fSeenNonGlobal);
@@ -322,7 +354,7 @@ int pgmR3PoolInit(PVM pVM)
     STAM_REG(pVM, &pPool->StatFlushAllInt,              STAMTYPE_PROFILE,   "/PGM/Pool/FlushAllInt",    STAMUNIT_TICKS_PER_CALL,    "Profiling of pgmPoolFlushAllInt.");
     STAM_REG(pVM, &pPool->StatFlushPage,                STAMTYPE_PROFILE,   "/PGM/Pool/FlushPage",      STAMUNIT_TICKS_PER_CALL,    "Profiling of pgmPoolFlushPage.");
     STAM_REG(pVM, &pPool->StatFree,                     STAMTYPE_PROFILE,   "/PGM/Pool/Free",           STAMUNIT_TICKS_PER_CALL,    "Profiling of pgmPoolFree.");
-    STAM_REG(pVM, &pPool->StatZeroPage,                 STAMTYPE_PROFILE,   "/PGM/Pool/ZeroPage",       STAMUNIT_TICKS_PER_CALL,    "Profiling time spend zeroing pages. Overlaps with Alloc.");
+    STAM_REG(pVM, &pPool->StatZeroPage,                 STAMTYPE_PROFILE,   "/PGM/Pool/ZeroPage",       STAMUNIT_TICKS_PER_CALL,    "Profiling time spent zeroing pages. Overlaps with Alloc.");
 # ifdef PGMPOOL_WITH_USER_TRACKING
     STAM_REG(pVM, &pPool->cMaxUsers,                    STAMTYPE_U16,       "/PGM/Pool/Track/cMaxUsers",            STAMUNIT_COUNT,      "Max user tracking records.");
     STAM_REG(pVM, &pPool->cPresent,                     STAMTYPE_U32,       "/PGM/Pool/Track/cPresent",             STAMUNIT_COUNT,      "Number of present page table entries.");
@@ -338,23 +370,23 @@ int pgmR3PoolInit(PVM pVM)
     STAM_REG(pVM, &pPool->StamTrackPhysExtAllocFailures,STAMTYPE_COUNTER,   "/PGM/Pool/Track/PhysExtAllocFailures", STAMUNIT_OCCURENCES, "The number of failing pgmPoolTrackPhysExtAlloc calls.");
 # endif
 # ifdef PGMPOOL_WITH_MONITORING
-    STAM_REG(pVM, &pPool->StatMonitorGC,                STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/GC",                 STAMUNIT_TICKS_PER_CALL, "Profiling the GC PT access handler.");
-    STAM_REG(pVM, &pPool->StatMonitorGCEmulateInstr,    STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/GCEmulateInstr",     STAMUNIT_OCCURENCES,     "Times we've failed interpreting the instruction.");
-    STAM_REG(pVM, &pPool->StatMonitorGCFlushPage,       STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/GCFlushPage",        STAMUNIT_TICKS_PER_CALL, "Profiling the pgmPoolFlushPage calls made from the GC PT access handler.");
-    STAM_REG(pVM, &pPool->StatMonitorGCFork,            STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/GCFork",             STAMUNIT_OCCURENCES,     "Times we've detected fork().");
-    STAM_REG(pVM, &pPool->StatMonitorGCHandled,         STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/GCHandled",          STAMUNIT_TICKS_PER_CALL, "Profiling the GC access we've handled (except REP STOSD).");
-    STAM_REG(pVM, &pPool->StatMonitorGCIntrFailPatch1,  STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/GCIntrFailPatch1",   STAMUNIT_OCCURENCES,     "Times we've failed interpreting a patch code instruction.");
-    STAM_REG(pVM, &pPool->StatMonitorGCIntrFailPatch2,  STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/GCIntrFailPatch2",   STAMUNIT_OCCURENCES,     "Times we've failed interpreting a patch code instruction during flushing.");
-    STAM_REG(pVM, &pPool->StatMonitorGCRepPrefix,       STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/GCRepPrefix",        STAMUNIT_OCCURENCES,     "The number of times we've seen rep prefixes we can't handle.");
-    STAM_REG(pVM, &pPool->StatMonitorGCRepStosd,        STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/GCRepStosd",         STAMUNIT_TICKS_PER_CALL, "Profiling the REP STOSD cases we've handled.");
-    STAM_REG(pVM, &pPool->StatMonitorHC,                STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/HC",                 STAMUNIT_TICKS_PER_CALL, "Profiling the HC PT access handler.");
-    STAM_REG(pVM, &pPool->StatMonitorHCEmulateInstr,    STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/HCEmulateInstr",     STAMUNIT_OCCURENCES,     "Times we've failed interpreting the instruction.");
-    STAM_REG(pVM, &pPool->StatMonitorHCFlushPage,       STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/HCFlushPage",        STAMUNIT_TICKS_PER_CALL, "Profiling the pgmPoolFlushPage calls made from the HC PT access handler.");
-    STAM_REG(pVM, &pPool->StatMonitorHCFork,            STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/HCFork",             STAMUNIT_OCCURENCES,     "Times we've detected fork().");
-    STAM_REG(pVM, &pPool->StatMonitorHCHandled,         STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/HCHandled",          STAMUNIT_TICKS_PER_CALL, "Profiling the HC access we've handled (except REP STOSD).");
-    STAM_REG(pVM, &pPool->StatMonitorHCRepPrefix,       STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/HCRepPrefix",        STAMUNIT_OCCURENCES,     "The number of times we've seen rep prefixes we can't handle.");
-    STAM_REG(pVM, &pPool->StatMonitorHCRepStosd,        STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/HCRepStosd",         STAMUNIT_TICKS_PER_CALL, "Profiling the REP STOSD cases we've handled.");
-    STAM_REG(pVM, &pPool->StatMonitorHCAsync,           STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/HCAsync",            STAMUNIT_OCCURENCES,     "Times we're called in an async thread and need to flush.");
+    STAM_REG(pVM, &pPool->StatMonitorRZ,                STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/RZ",                 STAMUNIT_TICKS_PER_CALL, "Profiling the RC/R0 access handler.");
+    STAM_REG(pVM, &pPool->StatMonitorRZEmulateInstr,    STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/RZ/EmulateInstr",    STAMUNIT_OCCURENCES,     "Times we've failed interpreting the instruction.");
+    STAM_REG(pVM, &pPool->StatMonitorRZFlushPage,       STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/RZ/FlushPage",       STAMUNIT_TICKS_PER_CALL, "Profiling the pgmPoolFlushPage calls made from the RC/R0 access handler.");
+    STAM_REG(pVM, &pPool->StatMonitorRZFork,            STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/RZ/Fork",            STAMUNIT_OCCURENCES,     "Times we've detected fork().");
+    STAM_REG(pVM, &pPool->StatMonitorRZHandled,         STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/RZ/Handled",         STAMUNIT_TICKS_PER_CALL, "Profiling the RC/R0 access we've handled (except REP STOSD).");
+    STAM_REG(pVM, &pPool->StatMonitorRZIntrFailPatch1,  STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/RZ/IntrFailPatch1",  STAMUNIT_OCCURENCES,     "Times we've failed interpreting a patch code instruction.");
+    STAM_REG(pVM, &pPool->StatMonitorRZIntrFailPatch2,  STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/RZ/IntrFailPatch2",  STAMUNIT_OCCURENCES,     "Times we've failed interpreting a patch code instruction during flushing.");
+    STAM_REG(pVM, &pPool->StatMonitorRZRepPrefix,       STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/RZ/RepPrefix",       STAMUNIT_OCCURENCES,     "The number of times we've seen rep prefixes we can't handle.");
+    STAM_REG(pVM, &pPool->StatMonitorRZRepStosd,        STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/RZ/RepStosd",        STAMUNIT_TICKS_PER_CALL, "Profiling the REP STOSD cases we've handled.");
+    STAM_REG(pVM, &pPool->StatMonitorR3,                STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/R3",                 STAMUNIT_TICKS_PER_CALL, "Profiling the R3 access handler.");
+    STAM_REG(pVM, &pPool->StatMonitorR3EmulateInstr,    STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/R3/EmulateInstr",    STAMUNIT_OCCURENCES,     "Times we've failed interpreting the instruction.");
+    STAM_REG(pVM, &pPool->StatMonitorR3FlushPage,       STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/R3/FlushPage",       STAMUNIT_TICKS_PER_CALL, "Profiling the pgmPoolFlushPage calls made from the R3 access handler.");
+    STAM_REG(pVM, &pPool->StatMonitorR3Fork,            STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/R3/Fork",            STAMUNIT_OCCURENCES,     "Times we've detected fork().");
+    STAM_REG(pVM, &pPool->StatMonitorR3Handled,         STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/R3/Handled",         STAMUNIT_TICKS_PER_CALL, "Profiling the R3 access we've handled (except REP STOSD).");
+    STAM_REG(pVM, &pPool->StatMonitorR3RepPrefix,       STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/R3/RepPrefix",       STAMUNIT_OCCURENCES,     "The number of times we've seen rep prefixes we can't handle.");
+    STAM_REG(pVM, &pPool->StatMonitorR3RepStosd,        STAMTYPE_PROFILE,   "/PGM/Pool/Monitor/R3/RepStosd",        STAMUNIT_TICKS_PER_CALL, "Profiling the REP STOSD cases we've handled.");
+    STAM_REG(pVM, &pPool->StatMonitorR3Async,           STAMTYPE_COUNTER,   "/PGM/Pool/Monitor/R3/Async",           STAMUNIT_OCCURENCES,     "Times we're called in an async thread and need to flush.");
     STAM_REG(pVM, &pPool->cModifiedPages,               STAMTYPE_U16,       "/PGM/Pool/Monitor/cModifiedPages",     STAMUNIT_PAGES,          "The current cModifiedPages value.");
     STAM_REG(pVM, &pPool->cModifiedPagesHigh,           STAMTYPE_U16_RESET, "/PGM/Pool/Monitor/cModifiedPagesHigh", STAMUNIT_PAGES,          "The high watermark for cModifiedPages.");
 # endif
@@ -379,21 +411,21 @@ int pgmR3PoolInit(PVM pVM)
  */
 void pgmR3PoolRelocate(PVM pVM)
 {
-    pVM->pgm.s.pPoolGC = MMHyperHC2GC(pVM, pVM->pgm.s.pPoolHC);
-    pVM->pgm.s.pPoolHC->pVMGC = pVM->pVMGC;
+    pVM->pgm.s.pPoolRC = MMHyperR3ToRC(pVM, pVM->pgm.s.pPoolR3);
+    pVM->pgm.s.pPoolR3->pVMRC = pVM->pVMRC;
 #ifdef PGMPOOL_WITH_USER_TRACKING
-    pVM->pgm.s.pPoolHC->paUsersGC = MMHyperHC2GC(pVM, pVM->pgm.s.pPoolHC->paUsersHC);
+    pVM->pgm.s.pPoolR3->paUsersRC = MMHyperR3ToRC(pVM, pVM->pgm.s.pPoolR3->paUsersR3);
 #endif
 #ifdef PGMPOOL_WITH_GCPHYS_TRACKING
-    pVM->pgm.s.pPoolHC->paPhysExtsGC = MMHyperHC2GC(pVM, pVM->pgm.s.pPoolHC->paPhysExtsHC);
+    pVM->pgm.s.pPoolR3->paPhysExtsRC = MMHyperR3ToRC(pVM, pVM->pgm.s.pPoolR3->paPhysExtsR3);
 #endif
 #ifdef PGMPOOL_WITH_MONITORING
-    int rc = PDMR3GetSymbolGC(pVM, NULL, "pgmPoolAccessHandler", &pVM->pgm.s.pPoolHC->pfnAccessHandlerGC);
+    int rc = PDMR3LdrGetSymbolRC(pVM, NULL, "pgmPoolAccessHandler", &pVM->pgm.s.pPoolR3->pfnAccessHandlerRC);
     AssertReleaseRC(rc);
     /* init order hack. */
-    if (!pVM->pgm.s.pPoolHC->pfnAccessHandlerR0)
+    if (!pVM->pgm.s.pPoolR3->pfnAccessHandlerR0)
     {
-        rc = PDMR3GetSymbolR0(pVM, NULL, "pgmPoolAccessHandler", &pVM->pgm.s.pPoolHC->pfnAccessHandlerR0);
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL, "pgmPoolAccessHandler", &pVM->pgm.s.pPoolR3->pfnAccessHandlerR0);
         AssertReleaseRC(rc);
     }
 #endif
@@ -420,9 +452,9 @@ void pgmR3PoolReset(PVM pVM)
  * @returns VBox status code.
  * @param   pVM     The VM handle.
  */
-PDMR3DECL(int) PGMR3PoolGrow(PVM pVM)
+VMMR3DECL(int) PGMR3PoolGrow(PVM pVM)
 {
-    PPGMPOOL pPool = pVM->pgm.s.pPoolHC;
+    PPGMPOOL pPool = pVM->pgm.s.pPoolR3;
     AssertReturn(pPool->cCurPages < pPool->cMaxPages, VERR_INTERNAL_ERROR);
 
     /*
@@ -436,14 +468,14 @@ PDMR3DECL(int) PGMR3PoolGrow(PVM pVM)
     {
         PPGMPOOLPAGE pPage = &pPool->aPages[i];
 
-        pPage->pvPageHC = MMR3PageAlloc(pVM);
-        if (!pPage->pvPageHC)
+        pPage->pvPageR3 = MMR3PageAlloc(pVM);
+        if (!pPage->pvPageR3)
         {
             Log(("We're out of memory!! i=%d\n", i));
             return i ? VINF_SUCCESS : VERR_NO_PAGE_MEMORY;
         }
-        pPage->Core.Key  = MMPage2Phys(pVM, pPage->pvPageHC);
-        LogFlow(("PGMR3PoolGrow: insert page %VHp\n", pPage->Core.Key));
+        pPage->Core.Key  = MMPage2Phys(pVM, pPage->pvPageR3);
+        LogFlow(("PGMR3PoolGrow: insert page %RHp\n", pPage->Core.Key));
         pPage->GCPhys    = NIL_RTGCPHYS;
         pPage->enmKind   = PGMPOOLKIND_FREE;
         pPage->idx       = pPage - &pPool->aPages[0];
@@ -483,11 +515,11 @@ PDMR3DECL(int) PGMR3PoolGrow(PVM pVM)
 static DECLCALLBACK(void) pgmR3PoolFlushReusedPage(PPGMPOOL pPool, PPGMPOOLPAGE pPage)
 {
     /* for the present this should be safe enough I think... */
-    pgmLock(pPool->pVMHC);
+    pgmLock(pPool->pVMR3);
     if (    pPage->fReusedFlushPending
         &&  pPage->enmKind != PGMPOOLKIND_FREE)
         pgmPoolFlushPage(pPool, pPage);
-    pgmUnlock(pPool->pVMHC);
+    pgmUnlock(pPool->pVMR3);
 }
 
 
@@ -509,10 +541,10 @@ static DECLCALLBACK(void) pgmR3PoolFlushReusedPage(PPGMPOOL pPool, PPGMPOOLPAGE 
  */
 static DECLCALLBACK(int) pgmR3PoolAccessHandler(PVM pVM, RTGCPHYS GCPhys, void *pvPhys, void *pvBuf, size_t cbBuf, PGMACCESSTYPE enmAccessType, void *pvUser)
 {
-    STAM_PROFILE_START(&pVM->pgm.s.pPoolHC->StatMonitorHC, a);
-    PPGMPOOL pPool = pVM->pgm.s.pPoolHC;
+    STAM_PROFILE_START(&pVM->pgm.s.pPoolR3->StatMonitorR3, a);
+    PPGMPOOL pPool = pVM->pgm.s.pPoolR3;
     PPGMPOOLPAGE pPage = (PPGMPOOLPAGE)pvUser;
-    LogFlow(("pgmR3PoolAccessHandler: GCPhys=%VGp %p:{.Core=%RHp, .idx=%d, .GCPhys=%RGp, .enmType=%d}\n",
+    LogFlow(("pgmR3PoolAccessHandler: GCPhys=%RGp %p:{.Core=%RHp, .idx=%d, .GCPhys=%RGp, .enmType=%d}\n",
              GCPhys, pPage, pPage->Core.Key, pPage->idx, pPage->GCPhys, pPage->enmKind));
 
     /*
@@ -526,10 +558,10 @@ static DECLCALLBACK(int) pgmR3PoolAccessHandler(PVM pVM, RTGCPHYS GCPhys, void *
     {
         Log(("pgmR3PoolAccessHandler: async thread, requesting EMT to flush the page: %p:{.Core=%RHp, .idx=%d, .GCPhys=%RGp, .enmType=%d}\n",
              pPage, pPage->Core.Key, pPage->idx, pPage->GCPhys, pPage->enmKind));
-        STAM_COUNTER_INC(&pPool->StatMonitorHCAsync);
+        STAM_COUNTER_INC(&pPool->StatMonitorR3Async);
         if (!pPage->fReusedFlushPending)
         {
-            int rc = VMR3ReqCallEx(pPool->pVMHC, NULL, 0, VMREQFLAGS_NO_WAIT | VMREQFLAGS_VOID, (PFNRT)pgmR3PoolFlushReusedPage, 2, pPool, pPage);
+            int rc = VMR3ReqCallEx(pPool->pVMR3, VMREQDEST_ANY, NULL, 0, VMREQFLAGS_NO_WAIT | VMREQFLAGS_VOID, (PFNRT)pgmR3PoolFlushReusedPage, 2, pPool, pPage);
             AssertRCReturn(rc, rc);
             pPage->fReusedFlushPending = true;
             pPage->cModifications += 0x1000;
@@ -543,7 +575,7 @@ static DECLCALLBACK(int) pgmR3PoolAccessHandler(PVM pVM, RTGCPHYS GCPhys, void *
             GCPhys += 4;
             pgmPoolMonitorChainChanging(pPool, pPage, GCPhys, pvPhys, NULL);
         }
-        STAM_PROFILE_STOP(&pPool->StatMonitorHC, a);
+        STAM_PROFILE_STOP(&pPool->StatMonitorR3, a);
     }
     else if (    (pPage->fCR3Mix || pPage->cModifications < 96) /* it's cheaper here. */
              &&  cbBuf <= 4)
@@ -553,12 +585,12 @@ static DECLCALLBACK(int) pgmR3PoolAccessHandler(PVM pVM, RTGCPHYS GCPhys, void *
             pgmPoolMonitorModifiedInsert(pPool, pPage);
         /** @todo r=bird: making unsafe assumption about not crossing entries here! */
         pgmPoolMonitorChainChanging(pPool, pPage, GCPhys, pvPhys, NULL);
-        STAM_PROFILE_STOP(&pPool->StatMonitorHC, a);
+        STAM_PROFILE_STOP(&pPool->StatMonitorR3, a);
     }
     else
     {
         pgmPoolMonitorChainFlush(pPool, pPage); /* ASSUME that VERR_PGM_POOL_CLEARED can be ignored here and that FFs will deal with it in due time. */
-        STAM_PROFILE_STOP_EX(&pPool->StatMonitorHC, &pPool->StatMonitorHCFlushPage, a);
+        STAM_PROFILE_STOP_EX(&pPool->StatMonitorR3, &pPool->StatMonitorR3FlushPage, a);
     }
 
     return VINF_PGM_HANDLER_DO_DEFAULT;

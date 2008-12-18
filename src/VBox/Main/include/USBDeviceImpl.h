@@ -1,9 +1,11 @@
+/* $Id: USBDeviceImpl.h 15051 2008-12-05 17:20:00Z vboxsync $ */
+
 /** @file
  * Header file for the OUSBDevice (IUSBDevice) class, VBoxC.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2008 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -31,32 +33,37 @@
  * Generally this contains much less information.
  */
 class ATL_NO_VTABLE OUSBDevice :
+    public VirtualBoxBaseNEXT,
     public VirtualBoxSupportErrorInfoImpl<OUSBDevice, IUSBDevice>,
     public VirtualBoxSupportTranslation<OUSBDevice>,
-    public VirtualBoxBase,
     public IUSBDevice
 {
 public:
 
-    OUSBDevice();
-    virtual ~OUSBDevice();
+    VIRTUALBOXBASE_ADD_ERRORINFO_SUPPORT (OUSBDevice)
 
     DECLARE_NOT_AGGREGATABLE(OUSBDevice)
 
     DECLARE_PROTECT_FINAL_CONSTRUCT()
 
     BEGIN_COM_MAP(OUSBDevice)
-        COM_INTERFACE_ENTRY(ISupportErrorInfo)
-        COM_INTERFACE_ENTRY(IUSBDevice)
+        COM_INTERFACE_ENTRY (ISupportErrorInfo)
+        COM_INTERFACE_ENTRY (IUSBDevice)
     END_COM_MAP()
 
     NS_DECL_ISUPPORTS
 
+    DECLARE_EMPTY_CTOR_DTOR (OUSBDevice)
+
+    HRESULT FinalConstruct();
+    void FinalRelease();
+
     // public initializer/uninitializer for internal purposes only
-    HRESULT init(IUSBDevice *a_pUSBDevice);
+    HRESULT init (IUSBDevice *a_pUSBDevice);
+    void uninit();
 
     // IUSBDevice properties
-    STDMETHOD(COMGETTER(Id))(GUIDPARAMOUT aId);
+    STDMETHOD(COMGETTER(Id))(OUT_GUID aId);
     STDMETHOD(COMGETTER(VendorId))(USHORT *aVendorId);
     STDMETHOD(COMGETTER(ProductId))(USHORT *aProductId);
     STDMETHOD(COMGETTER(Revision))(USHORT *aRevision);
@@ -70,43 +77,52 @@ public:
     STDMETHOD(COMGETTER(Remote))(BOOL *aRemote);
 
     // public methods only for internal purposes
-    const Guid &id() { return mId; }
+    const Guid &id() const { return mData.id; }
 
     // for VirtualBoxSupportErrorInfoImpl
     static const wchar_t *getComponentName() { return L"USBDevice"; }
 
 private:
-    /** The UUID of this device. */
-    Guid mId;
 
-    /** The vendor id of this USB device. */
-    USHORT mVendorId;
-    /** The product id of this USB device. */
-    USHORT mProductId;
-    /** The product revision number of this USB device.
-     * (high byte = integer; low byte = decimal) */
-    USHORT mRevision;
-    /** The Manufacturer string. (Quite possibly NULL.) */
-    Bstr mManufacturer;
-    /** The Product string. (Quite possibly NULL.) */
-    Bstr mProduct;
-    /** The SerialNumber string. (Quite possibly NULL.) */
-    Bstr mSerialNumber;
-    /** The host specific address of the device. */
-    Bstr mAddress;
-    /** The host port number. */
-    USHORT mPort;
-    /** The major USB version number of the device. */
-    USHORT mVersion;
-    /** The major USB version number of the port the device is attached to. */
-    USHORT mPortVersion;
-    /** Remote (VRDP) or local device. */
-    BOOL mRemote;
+    struct Data
+    {
+        Data() : vendorId (0), productId (0), revision (0), port (0),
+                 version (1), portVersion (1), remote (FALSE) {}
+
+        /** The UUID of this device. */
+        const Guid id;
+
+        /** The vendor id of this USB device. */
+        const USHORT vendorId;
+        /** The product id of this USB device. */
+        const USHORT productId;
+        /** The product revision number of this USB device.
+         * (high byte = integer; low byte = decimal) */
+        const USHORT revision;
+        /** The Manufacturer string. (Quite possibly NULL.) */
+        const Bstr manufacturer;
+        /** The Product string. (Quite possibly NULL.) */
+        const Bstr product;
+        /** The SerialNumber string. (Quite possibly NULL.) */
+        const Bstr serialNumber;
+        /** The host specific address of the device. */
+        const Bstr address;
+        /** The host port number. */
+        const USHORT port;
+        /** The major USB version number of the device. */
+        const USHORT version;
+        /** The major USB version number of the port the device is attached to. */
+        const USHORT portVersion;
+        /** Remote (VRDP) or local device. */
+        const BOOL remote;
+    };
+
+    Data mData;
 };
 
 COM_DECL_READONLY_ENUM_AND_COLLECTION_EX_BEGIN (ComObjPtr <OUSBDevice>, IUSBDevice, OUSBDevice)
 
-    STDMETHOD(FindById) (INPTR GUIDPARAM aId, IUSBDevice **aDevice)
+    STDMETHOD(FindById) (IN_GUID aId, IUSBDevice **aDevice)
     {
         Guid idToFind = aId;
         if (idToFind.isEmpty())
@@ -136,7 +152,7 @@ COM_DECL_READONLY_ENUM_AND_COLLECTION_EX_BEGIN (ComObjPtr <OUSBDevice>, IUSBDevi
         return found.queryInterfaceTo (aDevice);
     }
 
-    STDMETHOD(FindByAddress) (INPTR BSTR aAddress, IUSBDevice **aDevice)
+    STDMETHOD(FindByAddress) (IN_BSTR aAddress, IUSBDevice **aDevice)
     {
         if (!aAddress)
             return E_INVALIDARG;
@@ -166,3 +182,4 @@ COM_DECL_READONLY_ENUM_AND_COLLECTION_EX_BEGIN (ComObjPtr <OUSBDevice>, IUSBDevi
 COM_DECL_READONLY_ENUM_AND_COLLECTION_EX_END (ComObjPtr <OUSBDevice>, IUSBDevice, OUSBDevice)
 
 #endif // ____H_USBDEVICEIMPL
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

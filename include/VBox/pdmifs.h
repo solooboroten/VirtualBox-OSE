@@ -35,7 +35,7 @@
 
 __BEGIN_DECLS
 
-/** @defgroup grp_pdm_interfaces    Interfaces
+/** @defgroup grp_pdm_interfaces    The PDM Interface Definitions
  * @ingroup grp_pdm
  * @{
  */
@@ -151,8 +151,11 @@ typedef enum PDMINTERFACE
     /** VUSBIRHCONFIG           - VUSB RootHub configuration interface. (Main)   Used by the managment api. */
     PDMINTERFACE_VUSB_RH_CONFIG,
 
-    /** VUSBROOTHUBCONNECTOR    - VUSB Device interface.                (Up)     No coupling. */
+    /** VUSBIDEVICE             - VUSB Device interface.                (Up)     No coupling. */
     PDMINTERFACE_VUSB_DEVICE,
+
+    /** VUSBITIMER              - VUSB Timer interface.                 (Up)     No coupling. */
+    PDMINTERFACE_VUSB_TIMER,
 
     /** PDMIHOSTPARALLELPORT    - The Host Parallel port interface.     (Down)   Coupled with PDMINTERFACE_HOST_PARALLEL_CONNECTOR. */
     PDMINTERFACE_HOST_PARALLEL_PORT,
@@ -600,9 +603,9 @@ typedef struct PDMIBLOCK
      *
      * @returns VBox status code.
      * @param   pInterface      Pointer to the interface structure containing the called function pointer.
-     * @param   off             Offset to start reading from.
+     * @param   off             Offset to start reading from. The offset must be aligned to a sector boundary.
      * @param   pvBuf           Where to store the read bits.
-     * @param   cbRead          Number of bytes to read.
+     * @param   cbRead          Number of bytes to read. Must be aligned to a sector boundary.
      * @thread  Any thread.
      */
     DECLR3CALLBACKMEMBER(int, pfnRead,(PPDMIBLOCK pInterface, uint64_t off, void *pvBuf, size_t cbRead));
@@ -612,9 +615,9 @@ typedef struct PDMIBLOCK
      *
      * @returns VBox status code.
      * @param   pInterface      Pointer to the interface structure containing the called function pointer.
-     * @param   off             Offset to start writing at.
+     * @param   off             Offset to start writing at. The offset must be aligned to a sector boundary.
      * @param   pvBuf           Where to store the write bits.
-     * @param   cbWrite         Number of bytes to write.
+     * @param   cbWrite         Number of bytes to write. Must be aligned to a sector boundary.
      * @thread  Any thread.
      */
     DECLR3CALLBACKMEMBER(int, pfnWrite,(PPDMIBLOCK pInterface, uint64_t off, const void *pvBuf, size_t cbWrite));
@@ -642,7 +645,7 @@ typedef struct PDMIBLOCK
      * @param   cTimeoutMillies Command timeout in milliseconds.
      * @thread  Any thread.
      */
-    DECLR3CALLBACKMEMBER(int, pfnSendCmd,(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLOCKTXDIR enmTxDir, void *pvBuf, size_t *pcbBuf, uint8_t *pbSenseKey, uint32_t cTimeoutMillies));
+    DECLR3CALLBACKMEMBER(int, pfnSendCmd,(PPDMIBLOCK pInterface, const uint8_t *pbCmd, PDMBLOCKTXDIR enmTxDir, void *pvBuf, size_t *pcbBuf, uint8_t *pabSense, size_t cbSense, uint32_t cTimeoutMillies));
 
     /**
      * Check if the media is readonly or not.
@@ -815,9 +818,9 @@ typedef struct PDMIMEDIA
      *
      * @returns VBox status code.
      * @param   pInterface      Pointer to the interface structure containing the called function pointer.
-     * @param   off             Offset to start reading from.
+     * @param   off             Offset to start reading from. The offset must be aligned to a sector boundary.
      * @param   pvBuf           Where to store the read bits.
-     * @param   cbRead          Number of bytes to read.
+     * @param   cbRead          Number of bytes to read. Must be aligned to a sector boundary.
      * @thread  Any thread.
      */
     DECLR3CALLBACKMEMBER(int, pfnRead,(PPDMIMEDIA pInterface, uint64_t off, void *pvBuf, size_t cbRead));
@@ -827,9 +830,9 @@ typedef struct PDMIMEDIA
      *
      * @returns VBox status code.
      * @param   pInterface      Pointer to the interface structure containing the called function pointer.
-     * @param   off             Offset to start writing at.
+     * @param   off             Offset to start writing at. The offset must be aligned to a sector boundary.
      * @param   pvBuf           Where to store the write bits.
-     * @param   cbWrite         Number of bytes to write.
+     * @param   cbWrite         Number of bytes to write. Must be aligned to a sector boundary.
      * @thread  Any thread.
      */
     DECLR3CALLBACKMEMBER(int, pfnWrite,(PPDMIMEDIA pInterface, uint64_t off, const void *pvBuf, size_t cbWrite));
@@ -1219,10 +1222,10 @@ typedef struct PDMIBLOCKASYNC
      *
      * @returns VBox status code.
      * @param   pInterface      Pointer to the interface structure containing the called function pointer.
-     * @param   off             Offset to start reading from.
+     * @param   off             Offset to start reading from.c
      * @param   pSeg            Pointer to the first element in the scatter list.
      * @param   cSeg            Number of entries in the list.
-     * @param   cbRead          Number of bytes to read.
+     * @param   cbRead          Number of bytes to read. Must be aligned to a sector boundary.
      * @param   pvUser          User argument which is returned in completion callback.
      * @thread  Any thread.
      */
@@ -1233,10 +1236,10 @@ typedef struct PDMIBLOCKASYNC
      *
      * @returns VBox status code.
      * @param   pInterface      Pointer to the interface structure containing the called function pointer.
-     * @param   off             Offset to start writing at.
+     * @param   off             Offset to start writing at. The offset must be aligned to a sector boundary.
      * @param   pSeg            Pointer to the first element in the gather list.
      * @param   cSeg            Number of entries in the list.
-     * @param   cbWrite         Number of bytes to write.
+     * @param   cbWrite         Number of bytes to write. Must be aligned to a sector boundary.
      * @param   pvUser          User argument which is returned in completion callback.
      * @thread  Any thread.
      */
@@ -1278,10 +1281,10 @@ typedef struct PDMIMEDIAASYNC
      *
      * @returns VBox status code.
      * @param   pInterface      Pointer to the interface structure containing the called function pointer.
-     * @param   off             Offset to start reading from.
+     * @param   off             Offset to start reading from. Must be aligned to a sector boundary.
      * @param   pSeg            Pointer to the first element in the scatter list.
      * @param   cSeg            Number of entries in the list.
-     * @param   cbRead          Number of bytes to read.
+     * @param   cbRead          Number of bytes to read. Must be aligned to a sector boundary.
      * @param   pvUser          User data.
      * @thread  Any thread.
      */
@@ -1292,10 +1295,10 @@ typedef struct PDMIMEDIAASYNC
      *
      * @returns VBox status code.
      * @param   pInterface      Pointer to the interface structure containing the called function pointer.
-     * @param   off             Offset to start writing at.
+     * @param   off             Offset to start writing at. Must be aligned to a sector boundary.
      * @param   pSeg            Pointer to the first element in the gather list.
      * @param   cSeg            Number of entries in the list.
-     * @param   cbWrite         Number of bytes to write.
+     * @param   cbWrite         Number of bytes to write. Must be aligned to a sector boundary.
      * @param   pvUser          User data.
      * @thread  Any thread.
      */
@@ -1712,8 +1715,8 @@ typedef PDMACPIBATCAPACITY *PPDMACPIBATCAPACITY;
 typedef enum PDMACPIBATSTATE
 {
     PDM_ACPI_BAT_STATE_CHARGED     = 0x00,
-    PDM_ACPI_BAT_STATE_CHARGING    = 0x01,
-    PDM_ACPI_BAT_STATE_DISCHARGING = 0x02,
+    PDM_ACPI_BAT_STATE_DISCHARGING = 0x01,
+    PDM_ACPI_BAT_STATE_CHARGING    = 0x02,
     PDM_ACPI_BAT_STATE_CRITICAL    = 0x04
 } PDMACPIBATSTATE;
 /** Pointer to ACPI battery state. */
@@ -1750,6 +1753,15 @@ typedef struct PDMIACPIPORT
      * @param   pfHandled       Is set to true if the last power button event was handled, false otherwise.
      */
     DECLR3CALLBACKMEMBER(int, pfnGetPowerButtonHandled,(PPDMIACPIPORT pInterface, bool *pfHandled));
+
+    /**
+     * Check if the guest entered the ACPI mode.
+     *
+     * @returns VBox status code
+     * @param   pInterface      Pointer to the interface structure containing the called function pointer.
+     * @param   pfEnabled       Is set to true if the guest entered the ACPI mode, false otherwise.
+     */
+    DECLR3CALLBACKMEMBER(int, pfnGetGuestEnteredACPIMode,(PPDMIACPIPORT pInterface, bool *pfEntered));
 } PDMIACPIPORT;
 
 /** Pointer to an ACPI connector interface. */
@@ -2490,30 +2502,44 @@ typedef struct PDMIHGCMCONNECTOR
 #endif
 
 /**
+ * Data direction.
+ */
+typedef enum PDMSCSIREQUESTTXDIR
+{
+    PDMSCSIREQUESTTXDIR_UNKNOWN     = 0x00,
+    PDMSCSIREQUESTTXDIR_FROM_DEVICE = 0x01,
+    PDMSCSIREQUESTTXDIR_TO_DEVICE   = 0x02,
+    PDMSCSIREQUESTTXDIR_NONE        = 0x03,
+    PDMSCSIREQUESTTXDIR_32BIT_HACK  = 0x7fffffff
+} PDMSCSIREQUESTTXDIR;
+
+/**
  * SCSI request structure.
  */
 typedef struct PDMSCSIREQUEST
 {
     /** The logical unit. */
-    uint32_t    uLogicalUnit;
+    uint32_t               uLogicalUnit;
+    /** Direction of the data flow. */
+    PDMSCSIREQUESTTXDIR    uDataDirection;
     /** Size of the SCSI CDB. */
-    uint32_t    cbCDB;
+    uint32_t               cbCDB;
     /** Pointer to the SCSI CDB. */
-    uint8_t    *paCDB;
+    uint8_t               *pbCDB;
     /** Overall size of all scatter gather list elements
      *  for data transfer if any. */
-    uint32_t    cbScatterGather;
+    uint32_t               cbScatterGather;
     /** Number of elements in the scatter gather list. */
-    uint32_t    cScatterGatherEntries;
+    uint32_t               cScatterGatherEntries;
     /** Pointer to the head of the scatter gather list. */
-    PPDMDATASEG paScatterGatherHead;
+    PPDMDATASEG            paScatterGatherHead;
     /** Size of the sense buffer. */
-    uint32_t    cbSenseBuffer;
+    uint32_t               cbSenseBuffer;
     /** Pointer to the sense buffer. *
      * Current assumption that the sense buffer is not scattered. */
-    uint8_t    *pu8SenseBuffer;
+    uint8_t               *pbSenseBuffer;
     /** Opaque user data for use by the device. Left untouched by everything else! */
-    void       *pvUser;
+    void                  *pvUser;
 } PDMSCSIREQUEST, *PPDMSCSIREQUEST;
 /** Pointer to a const SCSI request structure. */
 typedef const PDMSCSIREQUEST *PCSCSIREQUEST;
@@ -2534,8 +2560,9 @@ typedef struct PDMISCSIPORT
      * @returns VBox status code.
      * @param   pInterface    Pointer to this interface.
      * @param   pSCSIRequest  Pointer to the finished SCSI request.
+     * @param   rcCompletion  SCSI_STATUS_* code for the completed request.
      */
-     DECLR3CALLBACKMEMBER(int, pfnSCSIRequestCompleted, (PPDMISCSIPORT pInterface, PPDMSCSIREQUEST pSCSIRequest));
+     DECLR3CALLBACKMEMBER(int, pfnSCSIRequestCompleted, (PPDMISCSIPORT pInterface, PPDMSCSIREQUEST pSCSIRequest, int rcCompletion));
 
 } PDMISCSIPORT;
 
@@ -2555,7 +2582,6 @@ typedef struct PDMISCSICONNECTOR
      * @returns VBox status code.
      * @param   pInterface    Pointer to this interface.
      * @param   pSCSIRequest  Pointer to the SCSI request to execute.
-     * @remark  pfnSetSimultaneousRequestsMax must be called before this function can be used.
      */
      DECLR3CALLBACKMEMBER(int, pfnSCSIRequestSend, (PPDMISCSICONNECTOR pInterface, PPDMSCSIREQUEST pSCSIRequest));
 

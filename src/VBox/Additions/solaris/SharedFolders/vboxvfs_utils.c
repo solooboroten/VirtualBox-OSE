@@ -1,4 +1,4 @@
-/* $Id: vboxvfs_utils.c $ */
+/* $Id: vboxvfs_utils.c 13837 2008-11-05 02:54:02Z vboxsync $ */
 /** @file
  * VirtualBox File System Driver for Solaris Guests, Utility functions.
  */
@@ -74,9 +74,9 @@ int vboxvfs_Stat(const char *pszCaller, vboxvfs_globinfo_t *pVBoxVFSGlobalInfo, 
 
     Params.CreateFlags = SHFL_CF_LOOKUP | SHFL_CF_ACT_FAIL_IF_NEW;
     rc = vboxCallCreate(&g_VBoxVFSClient, &pVBoxVFSGlobalInfo->Map, pPath, &Params);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        Log((DEVICE_NAME ":vboxCallCreate failed! caller=%s rc=%Vrc\n", pszCaller, rc));
+        Log((DEVICE_NAME ":vboxCallCreate failed! caller=%s rc=%Rrc\n", pszCaller, rc));
         return EPROTO;
     }
 

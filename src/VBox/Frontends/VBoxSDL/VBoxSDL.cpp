@@ -58,11 +58,14 @@ using namespace com;
 #include <VBox/version.h>
 
 #include <iprt/alloca.h>
+#include <iprt/asm.h>
 #include <iprt/assert.h>
 #include <iprt/env.h>
+#include <iprt/file.h>
 #include <iprt/ldr.h>
+#include <iprt/initterm.h>
 #include <iprt/path.h>
-#include <iprt/runtime.h>
+#include <iprt/process.h>
 #include <iprt/semaphore.h>
 #include <iprt/string.h>
 #include <iprt/stream.h>
@@ -277,17 +280,17 @@ public:
 
     NS_DECL_ISUPPORTS
 
-    STDMETHOD(OnMachineStateChange)(INPTR GUIDPARAM machineId, MachineState_T state)
+    STDMETHOD(OnMachineStateChange)(IN_GUID machineId, MachineState_T state)
     {
         return S_OK;
     }
 
-    STDMETHOD(OnMachineDataChange)(INPTR GUIDPARAM machineId)
+    STDMETHOD(OnMachineDataChange)(IN_GUID machineId)
     {
         return S_OK;
     }
 
-    STDMETHOD(OnExtraDataCanChange)(INPTR GUIDPARAM machineId, INPTR BSTR key, INPTR BSTR value,
+    STDMETHOD(OnExtraDataCanChange)(IN_GUID machineId, IN_BSTR key, IN_BSTR value,
                                     BSTR *error, BOOL *changeAllowed)
     {
         /* we never disagree */
@@ -297,7 +300,7 @@ public:
         return S_OK;
     }
 
-    STDMETHOD(OnExtraDataChange)(INPTR GUIDPARAM machineId, INPTR BSTR key, INPTR BSTR value)
+    STDMETHOD(OnExtraDataChange)(IN_GUID machineId, IN_BSTR key, IN_BSTR value)
     {
 #ifdef VBOX_SECURELABEL
         Assert(key);
@@ -328,7 +331,7 @@ public:
         return S_OK;
     }
 
-    STDMETHOD(OnMediaRegistered) (INPTR GUIDPARAM mediaId, DeviceType_T mediaType,
+    STDMETHOD(OnMediaRegistered) (IN_GUID mediaId, DeviceType_T mediaType,
                                   BOOL registered)
     {
         NOREF (mediaId);
@@ -337,32 +340,32 @@ public:
         return S_OK;
     }
 
-    STDMETHOD(OnMachineRegistered)(INPTR GUIDPARAM machineId, BOOL registered)
+    STDMETHOD(OnMachineRegistered)(IN_GUID machineId, BOOL registered)
     {
         return S_OK;
     }
 
-    STDMETHOD(OnSessionStateChange)(INPTR GUIDPARAM machineId, SessionState_T state)
+    STDMETHOD(OnSessionStateChange)(IN_GUID machineId, SessionState_T state)
     {
         return S_OK;
     }
 
-    STDMETHOD(OnSnapshotTaken) (INPTR GUIDPARAM aMachineId, INPTR GUIDPARAM aSnapshotId)
+    STDMETHOD(OnSnapshotTaken) (IN_GUID aMachineId, IN_GUID aSnapshotId)
     {
         return S_OK;
     }
 
-    STDMETHOD(OnSnapshotDiscarded) (INPTR GUIDPARAM aMachineId, INPTR GUIDPARAM aSnapshotId)
+    STDMETHOD(OnSnapshotDiscarded) (IN_GUID aMachineId, IN_GUID aSnapshotId)
     {
         return S_OK;
     }
 
-    STDMETHOD(OnSnapshotChange) (INPTR GUIDPARAM aMachineId, INPTR GUIDPARAM aSnapshotId)
+    STDMETHOD(OnSnapshotChange) (IN_GUID aMachineId, IN_GUID aSnapshotId)
     {
         return S_OK;
     }
 
-    STDMETHOD(OnGuestPropertyChange)(INPTR GUIDPARAM machineId, INPTR BSTR key, INPTR BSTR value, INPTR BSTR flags)
+    STDMETHOD(OnGuestPropertyChange)(IN_GUID machineId, IN_BSTR key, IN_BSTR value, IN_BSTR flags)
     {
         return S_OK;
     }
@@ -556,7 +559,7 @@ public:
         return S_OK;
     }
 
-    STDMETHOD(OnRuntimeError)(BOOL fFatal, INPTR BSTR id, INPTR BSTR message)
+    STDMETHOD(OnRuntimeError)(BOOL fFatal, IN_BSTR id, IN_BSTR message)
     {
         MachineState_T machineState;
         gMachine->COMGETTER(State)(&machineState);
@@ -667,8 +670,6 @@ static void show_usage()
              "  -hostkey <key> {<key2>} <mod> Set the host key to the values obtained using -detecthostkey\n"
              "  -termacpi                Send an ACPI power button event when closing the window\n"
 #if defined(RT_OS_LINUX) || defined(RT_OS_DARWIN) /** @todo UNIXISH_TAP stuff out of main and up to Config.kmk! */
-             "  -tapdev<1-N> <dev>       Use existing persistent TAP device with the given name\n"
-             "  -tapfd<1-N> <fd>         Use existing TAP device, don't allocate\n"
              "  -evdevkeymap             Use evdev keycode map\n"
 #endif
 #ifdef VBOX_WITH_VRDP
@@ -723,7 +724,7 @@ static void show_usage()
              "\n");
 }
 
-static void PrintError(const char *pszName, const BSTR pwszDescr, const BSTR pwszComponent=NULL)
+static void PrintError(const char *pszName, CBSTR pwszDescr, CBSTR pwszComponent=NULL)
 {
     const char *pszFile, *pszFunc, *pszStat;
     char  pszBuffer[1024];
@@ -1056,7 +1057,8 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     uint32_t u32WarpDrive = 0;
 #endif
 #ifdef VBOX_WIN32_UI
-    bool fWin32UI = false;
+    bool fWin32UI = true;
+    uint64_t winId = 0;
 #endif
     bool fShowSDLConfig    = false;
     uint32_t fixedWidth    = ~(uint32_t)0;
@@ -1192,11 +1194,6 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     virtualBox->COMGETTER(SystemProperties) (sysInfo.asOutParam());
     sysInfo->COMGETTER (NetworkAdapterCount) (&NetworkAdapterCount);
 
-#if defined(RT_OS_LINUX) || defined(RT_OS_DARWIN)
-    std::vector <Bstr> tapdev (NetworkAdapterCount);
-    std::vector <int> tapfd (NetworkAdapterCount, 0);
-#endif
-
     ConvertSettings fConvertSettings = ConvertSettings_No;
 
     // command line argument parsing stuff
@@ -1212,7 +1209,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
                 break;
             }
             // first check if a UUID was supplied
-            if (VBOX_FAILURE(RTUuidFromStr(uuid.ptr(), argv[curArg])))
+            if (RT_FAILURE(RTUuidFromStr(uuid.ptr(), argv[curArg])))
             {
                 LogFlow(("invalid UUID format, assuming it's a VM name\n"));
                 vmName = argv[curArg];
@@ -1421,34 +1418,6 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             guseEvdevKeymap = TRUE;
         }
 #endif /* RT_OS_LINUX  */
-#if defined(RT_OS_LINUX) || defined(RT_OS_DARWIN)
-        else if (strncmp(argv[curArg], "-tapdev", 7) == 0)
-        {
-            ULONG n = 0;
-            if (!argv[curArg][7] || ((n = strtoul(&argv[curArg][7], NULL, 10)) < 1) ||
-                (n > NetworkAdapterCount) || (argc <= (curArg + 1)))
-            {
-                RTPrintf("Error: invalid TAP device option!\n");
-                rc = E_FAIL;
-                break;
-            }
-            tapdev[n - 1] = argv[curArg + 1];
-            curArg++;
-        }
-        else if (strncmp(argv[curArg], "-tapfd", 6) == 0)
-        {
-            ULONG n = 0;
-            if (!argv[curArg][6] || ((n = strtoul(&argv[curArg][6], NULL, 10)) < 1) ||
-                (n > NetworkAdapterCount) || (argc <= (curArg + 1)))
-            {
-                RTPrintf("Error: invalid TAP file descriptor option!\n");
-                rc = E_FAIL;
-                break;
-            }
-            tapfd[n - 1] = atoi(argv[curArg + 1]);
-            curArg++;
-        }
-#endif /* RT_OS_LINUX || RT_OS_DARWIN */
 #ifdef VBOX_WITH_VRDP
         else if (strcmp(argv[curArg], "-vrdp") == 0)
         {
@@ -1688,15 +1657,13 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
          * it to the VM.
          */
         Bstr hdaFileBstr = hdaFile;
-        ComPtr<IHardDisk> hardDisk;
-        virtualBox->FindHardDisk(hdaFileBstr, hardDisk.asOutParam());
+        ComPtr<IHardDisk2> hardDisk;
+        virtualBox->FindHardDisk2(hdaFileBstr, hardDisk.asOutParam());
         if (!hardDisk)
         {
             /* we've not found the image */
-            RTPrintf("Registering hard disk image '%S'...\n", hdaFile);
-            virtualBox->OpenHardDisk (hdaFileBstr, hardDisk.asOutParam());
-            if (hardDisk)
-                virtualBox->RegisterHardDisk (hardDisk);
+            RTPrintf("Adding hard disk '%S'...\n", hdaFile);
+            virtualBox->OpenHardDisk2 (hdaFileBstr, hardDisk.asOutParam());
         }
         /* do we have the right image now? */
         if (hardDisk)
@@ -1706,8 +1673,8 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
              */
             Guid uuid;
             hardDisk->COMGETTER(Id)(uuid.asOutParam());
-            gMachine->DetachHardDisk(StorageBus_IDE, 0, 0);
-            gMachine->AttachHardDisk(uuid, StorageBus_IDE, 0, 0);
+            gMachine->DetachHardDisk2(StorageBus_IDE, 0, 0);
+            gMachine->AttachHardDisk2(uuid, StorageBus_IDE, 0, 0);
             /// @todo why is this attachment saved?
         }
         else
@@ -1735,7 +1702,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             break;
         }
 
-        Bstr media = fdaFile;
+        Bstr medium = fdaFile;
         bool done = false;
 
         /* Assume it's a host drive name */
@@ -1745,7 +1712,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             ComPtr <IHostFloppyDriveCollection> coll;
             CHECK_ERROR_BREAK (host, COMGETTER(FloppyDrives)(coll.asOutParam()));
             ComPtr <IHostFloppyDrive> hostDrive;
-            rc = coll->FindByName (media, hostDrive.asOutParam());
+            rc = coll->FindByName (medium, hostDrive.asOutParam());
             if (SUCCEEDED (rc))
             {
                 done = true;
@@ -1757,16 +1724,15 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         if (!done)
         {
             /* try to find an existing one */
-            ComPtr <IFloppyImage> image;
-            rc = virtualBox->FindFloppyImage (media, image.asOutParam());
+            ComPtr <IFloppyImage2> image;
+            rc = virtualBox->FindFloppyImage (medium, image.asOutParam());
             if (FAILED (rc))
             {
-                /* try to register */
-                RTPrintf ("Registering floppy image '%S'...\n", fdaFile);
+                /* try to add to the list */
+                RTPrintf ("Adding floppy image '%S'...\n", fdaFile);
                 Guid uuid;
-                CHECK_ERROR_BREAK (virtualBox, OpenFloppyImage (media, uuid,
+                CHECK_ERROR_BREAK (virtualBox, OpenFloppyImage (medium, uuid,
                                                                 image.asOutParam()));
-                CHECK_ERROR_BREAK (virtualBox, RegisterFloppyImage (image));
             }
 
             /* attach */
@@ -1797,7 +1763,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             break;
         }
 
-        Bstr media = cdromFile;
+        Bstr medium = cdromFile;
         bool done = false;
 
         /* Assume it's a host drive name */
@@ -1807,7 +1773,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             ComPtr <IHostDVDDriveCollection> coll;
             CHECK_ERROR_BREAK (host, COMGETTER(DVDDrives)(coll.asOutParam()));
             ComPtr <IHostDVDDrive> hostDrive;
-            rc = coll->FindByName (media, hostDrive.asOutParam());
+            rc = coll->FindByName (medium, hostDrive.asOutParam());
             if (SUCCEEDED (rc))
             {
                 done = true;
@@ -1819,16 +1785,15 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         if (!done)
         {
             /* try to find an existing one */
-            ComPtr <IDVDImage> image;
-            rc = virtualBox->FindDVDImage (media, image.asOutParam());
+            ComPtr <IDVDImage2> image;
+            rc = virtualBox->FindDVDImage (medium, image.asOutParam());
             if (FAILED (rc))
             {
-                /* try to register */
-                RTPrintf ("Registering ISO image '%S'...\n", cdromFile);
+                /* try to add to the list */
+                RTPrintf ("Adding ISO image '%S'...\n", cdromFile);
                 Guid uuid;
-                CHECK_ERROR_BREAK (virtualBox, OpenDVDImage (media, uuid,
+                CHECK_ERROR_BREAK (virtualBox, OpenDVDImage (medium, uuid,
                                                              image.asOutParam()));
-                CHECK_ERROR_BREAK (virtualBox, RegisterDVDImage (image));
             }
 
             /* attach */
@@ -1919,7 +1884,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     if (fWin32UI)
     {
         /* initialize the Win32 user interface inside which SDL will be embedded */
-        if (initUI(fResizable))
+        if (initUI(fResizable, winId))
             return 1;
     }
 #endif
@@ -1933,6 +1898,11 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         RTPrintf("Error: could not create framebuffer object!\n");
         goto leave;
     }
+
+#ifdef VBOX_WIN32_UI
+    gpFrameBuffer->setWinId(winId);
+#endif
+
     if (!gpFrameBuffer->initialized())
         goto leave;
     gpFrameBuffer->AddRef();
@@ -1950,29 +1920,29 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         /* load the SDL_ttf library and get the required imports */
         int rcVBox;
         rcVBox = RTLdrLoad(LIBSDL_TTF_NAME, &gLibrarySDL_ttf);
-        if (VBOX_SUCCESS(rcVBox))
+        if (RT_SUCCESS(rcVBox))
             rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_Init", (void**)&pTTF_Init);
-        if (VBOX_SUCCESS(rcVBox))
+        if (RT_SUCCESS(rcVBox))
             rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_OpenFont", (void**)&pTTF_OpenFont);
-        if (VBOX_SUCCESS(rcVBox))
+        if (RT_SUCCESS(rcVBox))
             rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_RenderUTF8_Solid", (void**)&pTTF_RenderUTF8_Solid);
-        if (VBOX_SUCCESS(rcVBox))
+        if (RT_SUCCESS(rcVBox))
         {
             /* silently ignore errors here */
             rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_RenderUTF8_Blended", (void**)&pTTF_RenderUTF8_Blended);
-            if (VBOX_FAILURE(rcVBox))
+            if (RT_FAILURE(rcVBox))
                 pTTF_RenderUTF8_Blended = NULL;
             rcVBox = VINF_SUCCESS;
         }
-        if (VBOX_SUCCESS(rcVBox))
+        if (RT_SUCCESS(rcVBox))
             rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_CloseFont", (void**)&pTTF_CloseFont);
-        if (VBOX_SUCCESS(rcVBox))
+        if (RT_SUCCESS(rcVBox))
             rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_Quit", (void**)&pTTF_Quit);
-        if (VBOX_SUCCESS(rcVBox))
+        if (RT_SUCCESS(rcVBox))
             rcVBox = gpFrameBuffer->initSecureLabel(SECURE_LABEL_HEIGHT, secureLabelFontFile, secureLabelPointSize, secureLabelFontOffs);
-        if (VBOX_FAILURE(rcVBox))
+        if (RT_FAILURE(rcVBox))
         {
-            RTPrintf("Error: could not initialize secure labeling: rc = %Vrc\n", rcVBox);
+            RTPrintf("Error: could not initialize secure labeling: rc = %Rrc\n", rcVBox);
             goto leave;
         }
         Bstr key = VBOXSDL_SECURELABEL_EXTRADATA;
@@ -2014,45 +1984,6 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     gConsole->RegisterCallback(consoleCallback);
     // until we've tried to to start the VM, ignore power off events
     consoleCallback->ignorePowerOffEvents(true);
-
-#if defined(RT_OS_LINUX) || defined(RT_OS_DARWIN)
-    /*
-     * Do we have a TAP device name or file descriptor? If so, communicate
-     * it to the network adapter so that it doesn't allocate a new one
-     * in case TAP is already configured.
-     */
-    {
-        ComPtr<INetworkAdapter> networkAdapter;
-        for (ULONG i = 0; i < NetworkAdapterCount; i++)
-        {
-            if (tapdev[i] || tapfd[i])
-            {
-                gMachine->GetNetworkAdapter(i, networkAdapter.asOutParam());
-                if (networkAdapter)
-                {
-                    NetworkAttachmentType_T attachmentType;
-                    networkAdapter->COMGETTER(AttachmentType)(&attachmentType);
-                    if (attachmentType == NetworkAttachmentType_HostInterface)
-                    {
-                        if (tapdev[i])
-                            networkAdapter->COMSETTER(HostInterface)(tapdev[i]);
-                        else
-                            networkAdapter->COMSETTER(TAPFileDescriptor)(tapfd[i]);
-                    }
-                    else
-                    {
-                        RTPrintf("Warning: network adapter %d is not configured for TAP. Command ignored!\n", i + 1);
-                    }
-                }
-                else
-                {
-                    /* warning */
-                    RTPrintf("Warning: network adapter %d not defined. Command ignored!\n", i + 1);
-                }
-            }
-        }
-    }
-#endif /* RT_OS_LINUX || RT_OS_DARWIN */
 
 #ifdef VBOX_WITH_VRDP
     if (portVRDP != ~0)
@@ -2460,7 +2391,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
                                 enmHKeyState = HKEYSTATE_USED;
                                 break;
                             }
-                            if (VBOX_SUCCESS(rc))
+                            if (RT_SUCCESS(rc))
                                 goto leave;
                         }
                         else /* SDL_KEYUP */
@@ -2497,7 +2428,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
                         if (event.type == SDL_KEYDOWN)
                         {
                             int rc = HandleHostKey(&event.key);
-                            if (VBOX_SUCCESS(rc) && rc != VINF_SUCCESS)
+                            if (RT_SUCCESS(rc) && rc != VINF_SUCCESS)
                                 goto leave;
                         }
                         break;
@@ -2928,7 +2859,7 @@ int main(int argc, char **argv)
      * Before we do *anything*, we initialize the runtime.
      */
     int rcRT = RTR3InitAndSUPLib();
-    if (VBOX_FAILURE(rcRT))
+    if (RT_FAILURE(rcRT))
     {
         RTPrintf("Error: RTR3Init failed rcRC=%d\n", rcRT);
         return 1;
@@ -4199,7 +4130,7 @@ static void UpdateTitlebar(TitlebarMode mode, uint32_t u32User)
 
         case TITLEBAR_SAVE:
         {
-            AssertMsg(u32User >= 0 && u32User <= 100, ("%d\n", u32User));
+            AssertMsg(u32User <= 100, ("%d\n", u32User));
             RTStrPrintf(szTitle + strlen(szTitle), sizeof(szTitle) - strlen(szTitle),
                         " - Saving %d%%...", u32User);
             break;
@@ -4207,7 +4138,7 @@ static void UpdateTitlebar(TitlebarMode mode, uint32_t u32User)
 
         case TITLEBAR_SNAPSHOT:
         {
-            AssertMsg(u32User >= 0 && u32User <= 100, ("%d\n", u32User));
+            AssertMsg(u32User <= 100, ("%d\n", u32User));
             RTStrPrintf(szTitle + strlen(szTitle), sizeof(szTitle) - strlen(szTitle),
                         " - Taking snapshot %d%%...", u32User);
             break;
@@ -4818,7 +4749,7 @@ static Uint32 QuitTimer(Uint32 interval, void *param)
     {
         int rc = gConsole->GetPowerButtonHandled(&fHandled);
         LogRel(("QuitTimer: rc=%d handled=%d\n", rc, fHandled));
-        if (VBOX_FAILURE(rc) || !fHandled)
+        if (RT_FAILURE(rc) || !fHandled)
         {
             /* event was not handled, power down the guest */
             gfACPITerm = FALSE;

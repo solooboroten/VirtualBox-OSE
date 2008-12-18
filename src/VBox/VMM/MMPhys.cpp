@@ -1,6 +1,9 @@
-/* $Id: MMPhys.cpp $ */
+/* $Id: MMPhys.cpp 13841 2008-11-05 03:38:52Z vboxsync $ */
 /** @file
- * MM - Memory Monitor(/Manager) - Physical Memory.
+ * MM - Memory Manager - Physical Memory.
+ *
+ * @remarks This will will be eliminated ASAP, all physical memory management
+ *          is done by PGM now.
  */
 
 /*
@@ -52,7 +55,7 @@
  * @param   fFlags      Flags of the MM_RAM_FLAGS_* defines.
  * @param   pszDesc     Description of the memory.
  */
-MMR3DECL(int) MMR3PhysRegister(PVM pVM, void *pvRam, RTGCPHYS GCPhys, unsigned cb, unsigned fFlags, const char *pszDesc)
+VMMR3DECL(int) MMR3PhysRegister(PVM pVM, void *pvRam, RTGCPHYS GCPhys, unsigned cb, unsigned fFlags, const char *pszDesc)
 {
     return MMR3PhysRegisterEx(pVM, pvRam, GCPhys, cb, fFlags, MM_PHYS_TYPE_NORMAL, pszDesc);
 }
@@ -77,11 +80,11 @@ MMR3DECL(int) MMR3PhysRegister(PVM pVM, void *pvRam, RTGCPHYS GCPhys, unsigned c
  * @deprecated  For the old dynamic allocation code only. Will be removed with VBOX_WITH_NEW_PHYS_CODE.
  */
 /** @todo this function description is not longer up-to-date */
-MMR3DECL(int) MMR3PhysRegisterEx(PVM pVM, void *pvRam, RTGCPHYS GCPhys, unsigned cb, unsigned fFlags, MMPHYSREG enmType, const char *pszDesc)
+VMMR3DECL(int) MMR3PhysRegisterEx(PVM pVM, void *pvRam, RTGCPHYS GCPhys, unsigned cb, unsigned fFlags, MMPHYSREG enmType, const char *pszDesc)
 {
     int rc = VINF_SUCCESS;
 
-    Log(("MMR3PhysRegister: pvRam=%p GCPhys=%VGp cb=%#x fFlags=%#x\n", pvRam, GCPhys, cb, fFlags));
+    Log(("MMR3PhysRegister: pvRam=%p GCPhys=%RGp cb=%#x fFlags=%#x\n", pvRam, GCPhys, cb, fFlags));
 
     /*
      * Validate input.
@@ -134,7 +137,7 @@ MMR3DECL(int) MMR3PhysRegisterEx(PVM pVM, void *pvRam, RTGCPHYS GCPhys, unsigned
          * Register the ram with PGM.
          */
         rc = PGMR3PhysRegister(pVM, pvRam, GCPhys, cb, fFlags, NULL, pszDesc);
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
         {
             if (fFlags == MM_RAM_FLAGS_DYNAMIC_ALLOC)
                 pVM->mm.s.cBasePages += cb >> PAGE_SHIFT;
@@ -150,7 +153,7 @@ MMR3DECL(int) MMR3PhysRegisterEx(PVM pVM, void *pvRam, RTGCPHYS GCPhys, unsigned
          */
         PMMLOCKEDMEM    pLockedMem;
         rc = mmR3LockMem(pVM, pvRam, cb, MM_LOCKED_TYPE_PHYS, &pLockedMem, enmType == MM_PHYS_TYPE_DYNALLOC_CHUNK /* fSilentFailure */);
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
         {
             pLockedMem->u.phys.GCPhys = GCPhys;
 
@@ -167,7 +170,7 @@ MMR3DECL(int) MMR3PhysRegisterEx(PVM pVM, void *pvRam, RTGCPHYS GCPhys, unsigned
             if (enmType == MM_PHYS_TYPE_NORMAL)
             {
                 rc = PGMR3PhysRegister(pVM, pvRam, pLockedMem->u.phys.GCPhys, cb, fFlags, &pLockedMem->aPhysPages[0], pszDesc);
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
                     if (!fFlags)
                         pVM->mm.s.cBasePages += cb >> PAGE_SHIFT;
@@ -216,7 +219,7 @@ MMR3DECL(int) MMR3PhysRegisterEx(PVM pVM, void *pvRam, RTGCPHYS GCPhys, unsigned
  * @remark  There is no way to remove the rom, automatically on device cleanup or
  *          manually from the device yet. At present I doubt we need such features...
  */
-MMR3DECL(int) MMR3PhysRomRegister(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys, RTUINT cbRange, const void *pvBinary,
+VMMR3DECL(int) MMR3PhysRomRegister(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys, RTUINT cbRange, const void *pvBinary,
                                   bool fShadow, const char *pszDesc)
 {
     /*
@@ -247,12 +250,12 @@ MMR3DECL(int) MMR3PhysRomRegister(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys, 
             break;
     if (!pCur)
     {
-        AssertMsgFailed(("No physical range was found matching the ROM location (%#VGp LB%#x)\n", GCPhys, cbRange));
+        AssertMsgFailed(("No physical range was found matching the ROM location (%RGp LB%#x)\n", GCPhys, cbRange));
         return VERR_INVALID_PARAMETER;
     }
     if (GCPhysLast - pCur->u.phys.GCPhys >= pCur->cb)
     {
-        AssertMsgFailed(("The ROM range (%#VGp LB%#x) was crossing the end of the physical range (%#VGp LB%#x)\n",
+        AssertMsgFailed(("The ROM range (%RGp LB%#x) was crossing the end of the physical range (%RGp LB%#x)\n",
                          GCPhys, cbRange, pCur->u.phys.GCPhys, pCur->cb));
         return VERR_INVALID_PARAMETER;
     }
@@ -264,7 +267,7 @@ MMR3DECL(int) MMR3PhysRomRegister(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys, 
         if (    (pCur->aPhysPages[iPage].Phys & (MM_RAM_FLAGS_RESERVED | MM_RAM_FLAGS_ROM | MM_RAM_FLAGS_MMIO | MM_RAM_FLAGS_MMIO2))
             !=  MM_RAM_FLAGS_RESERVED)
         {
-            AssertMsgFailed(("Flags conflict at %VGp, HCPhys=%VHp.\n", pCur->u.phys.GCPhys + (iPage << PAGE_SHIFT), pCur->aPhysPages[iPage].Phys));
+            AssertMsgFailed(("Flags conflict at %RGp, HCPhys=%RHp.\n", pCur->u.phys.GCPhys + (iPage << PAGE_SHIFT), pCur->aPhysPages[iPage].Phys));
             return VERR_INVALID_PARAMETER;
         }
 
@@ -283,7 +286,7 @@ MMR3DECL(int) MMR3PhysRomRegister(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys, 
     }
     int rc = PGMR3PhysSetFlags(pVM, GCPhys, cbRange, fSet, ~MM_RAM_FLAGS_RESERVED);
     AssertRC(rc);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         /*
          * To prevent the shadow page table mappings from being RW in raw-mode, we
@@ -305,7 +308,7 @@ MMR3DECL(int) MMR3PhysRomRegister(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys, 
      * Create a ROM range it so we can make a 'info rom' thingy and more importantly
      * reload and protect/unprotect shadow ROM correctly.
      */
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         PMMROMRANGE pRomRange = (PMMROMRANGE)MMR3HeapAlloc(pVM, MM_TAG_MM, sizeof(*pRomRange));
         AssertReturn(pRomRange, VERR_NO_MEMORY);
@@ -346,7 +349,7 @@ MMR3DECL(int) MMR3PhysRomRegister(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys, 
  * @param   cbRange         The size of the range.
  * @param   pszDesc         Description string.
  */
-MMR3DECL(int) MMR3PhysReserve(PVM pVM, RTGCPHYS GCPhys, RTUINT cbRange, const char *pszDesc)
+VMMR3DECL(int) MMR3PhysReserve(PVM pVM, RTGCPHYS GCPhys, RTUINT cbRange, const char *pszDesc)
 {
     /*
      * Validate input.
@@ -372,17 +375,17 @@ MMR3DECL(int) MMR3PhysReserve(PVM pVM, RTGCPHYS GCPhys, RTUINT cbRange, const ch
          */
         void *pvPages;
         int rc = SUPPageAlloc(cbRange >> PAGE_SHIFT, &pvPages);
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
         {
             rc = MMR3PhysRegister(pVM, pvPages, GCPhys, cbRange, MM_RAM_FLAGS_RESERVED, pszDesc);
-            if (VBOX_FAILURE(rc))
+            if (RT_FAILURE(rc))
                 SUPPageFree(pvPages, cbRange >> PAGE_SHIFT);
         }
         return rc;
     }
     if (GCPhysLast - pCur->u.phys.GCPhys >= pCur->cb)
     {
-        AssertMsgFailed(("The reserved range (%#VGp LB%#x) was crossing the end of the physical range (%#VGp LB%#x)\n",
+        AssertMsgFailed(("The reserved range (%RGp LB%#x) was crossing the end of the physical range (%RGp LB%#x)\n",
                          GCPhys, cbRange, pCur->u.phys.GCPhys, pCur->cb));
         return VERR_INVALID_PARAMETER;
     }
@@ -410,7 +413,7 @@ MMR3DECL(int) MMR3PhysReserve(PVM pVM, RTGCPHYS GCPhys, RTUINT cbRange, const ch
  * @param   pVM         The VM handle.
  * @thread  Any.
  */
-MMR3DECL(uint64_t) MMR3PhysGetRamSize(PVM pVM)
+VMMR3DECL(uint64_t) MMR3PhysGetRamSize(PVM pVM)
 {
     return pVM->mm.s.cbRamBase;
 }
@@ -456,7 +459,7 @@ void mmR3PhysRomReset(PVM pVM)
  * @param   cbRange     The length of the registered shadow ROM range.
  *                      This can be NULL (not sure about the BIOS interface yet).
  */
-MMR3DECL(int) MMR3PhysRomProtect(PVM pVM, RTGCPHYS GCPhys, RTUINT cbRange)
+VMMR3DECL(int) MMR3PhysRomProtect(PVM pVM, RTGCPHYS GCPhys, RTUINT cbRange)
 {
     for (PMMROMRANGE pCur = pVM->mm.s.pRomHead; pCur; pCur = pCur->pNext)
         if (    pCur->GCPhys == GCPhys
@@ -482,7 +485,7 @@ MMR3DECL(int) MMR3PhysRomProtect(PVM pVM, RTGCPHYS GCPhys, RTUINT cbRange)
             }
             return VINF_SUCCESS;
         }
-    AssertMsgFailed(("GCPhys=%VGp cbRange=%#x\n", GCPhys, cbRange));
+    AssertMsgFailed(("GCPhys=%RGp cbRange=%#x\n", GCPhys, cbRange));
     return VERR_INVALID_PARAMETER;
 }
 

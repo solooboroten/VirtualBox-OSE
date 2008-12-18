@@ -1,4 +1,4 @@
-/* $Id: PGMShw.h $ */
+/* $Id: PGMShw.h 14151 2008-11-12 23:26:37Z vboxsync $ */
 /** @file
  * VBox - Page Manager / Monitor, Shadow Paging Template.
  */
@@ -80,12 +80,12 @@ __BEGIN_DECLS
 /* r3 */
 PGM_SHW_DECL(int, InitData)(PVM pVM, PPGMMODEDATA pModeData, bool fResolveGCAndR0);
 PGM_SHW_DECL(int, Enter)(PVM pVM);
-PGM_SHW_DECL(int, Relocate)(PVM pVM, RTGCUINTPTR offDelta);
+PGM_SHW_DECL(int, Relocate)(PVM pVM, RTGCPTR offDelta);
 PGM_SHW_DECL(int, Exit)(PVM pVM);
 
 /* all */
-PGM_SHW_DECL(int, GetPage)(PVM pVM, RTGCUINTPTR GCPtr, uint64_t *pfFlags, PRTHCPHYS pHCPhys);
-PGM_SHW_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask);
+PGM_SHW_DECL(int, GetPage)(PVM pVM, RTGCPTR GCPtr, uint64_t *pfFlags, PRTHCPHYS pHCPhys);
+PGM_SHW_DECL(int, ModifyPage)(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask);
 __END_DECLS
 
 
@@ -114,17 +114,17 @@ PGM_SHW_DECL(int, InitData)(PVM pVM, PPGMMODEDATA pModeData, bool fResolveGCAndR
 
 #if PGM_SHW_TYPE != PGM_TYPE_AMD64 && PGM_SHW_TYPE != PGM_TYPE_NESTED && PGM_SHW_TYPE != PGM_TYPE_EPT /* No AMD64 for traditional virtualization, only VT-x and AMD-V. */
         /* GC */
-        rc = PDMR3GetSymbolGC(pVM, NULL, PGM_SHW_NAME_GC_STR(GetPage),  &pModeData->pfnGCShwGetPage);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_SHW_NAME_GC_STR(GetPage),  rc), rc);
-        rc = PDMR3GetSymbolGC(pVM, NULL, PGM_SHW_NAME_GC_STR(ModifyPage),  &pModeData->pfnGCShwModifyPage);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_SHW_NAME_GC_STR(ModifyPage),  rc), rc);
+        rc = PDMR3LdrGetSymbolRC(pVM, NULL,       PGM_SHW_NAME_RC_STR(GetPage),    &pModeData->pfnRCShwGetPage);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_SHW_NAME_RC_STR(GetPage),  rc), rc);
+        rc = PDMR3LdrGetSymbolRC(pVM, NULL,       PGM_SHW_NAME_RC_STR(ModifyPage), &pModeData->pfnRCShwModifyPage);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_SHW_NAME_RC_STR(ModifyPage), rc), rc);
 #endif /* Not AMD64 shadow paging. */
 
         /* Ring-0 */
-        rc = PDMR3GetSymbolR0(pVM, NULL, PGM_SHW_NAME_R0_STR(GetPage),  &pModeData->pfnR0ShwGetPage);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_SHW_NAME_R0_STR(GetPage),  rc), rc);
-        rc = PDMR3GetSymbolR0(pVM, NULL, PGM_SHW_NAME_R0_STR(ModifyPage),  &pModeData->pfnR0ShwModifyPage);
-        AssertMsgRCReturn(rc, ("%s -> rc=%Vrc\n", PGM_SHW_NAME_R0_STR(ModifyPage),  rc), rc);
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL,       PGM_SHW_NAME_R0_STR(GetPage),    &pModeData->pfnR0ShwGetPage);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_SHW_NAME_R0_STR(GetPage),  rc), rc);
+        rc = PDMR3LdrGetSymbolR0(pVM, NULL,       PGM_SHW_NAME_R0_STR(ModifyPage), &pModeData->pfnR0ShwModifyPage);
+        AssertMsgRCReturn(rc, ("%s -> rc=%Rrc\n", PGM_SHW_NAME_R0_STR(ModifyPage), rc), rc);
     }
     return VINF_SUCCESS;
 }
@@ -140,10 +140,13 @@ PGM_SHW_DECL(int, Enter)(PVM pVM)
 #if PGM_SHW_TYPE == PGM_TYPE_NESTED
     Assert(HWACCMIsNestedPagingActive(pVM));
 
-    Log(("Enter nested shadow paging mode: root %VHv phys %VHp\n", pVM->pgm.s.pHCNestedRoot, pVM->pgm.s.HCPhysNestedRoot));
+    Log(("Enter nested shadow paging mode: root %RHv phys %RHp\n", pVM->pgm.s.pShwNestedRootR3, pVM->pgm.s.HCPhysShwNestedRoot));
     /* In non-nested mode we allocate the PML4 page on-demand; in nested mode we just use our fixed nested paging root. */
-    pVM->pgm.s.pHCPaePML4    = (PX86PML4)pVM->pgm.s.pHCNestedRoot;
-    pVM->pgm.s.HCPhysPaePML4 = pVM->pgm.s.HCPhysNestedRoot;
+    pVM->pgm.s.pShwPaePml4R3 = (R3PTRTYPE(PX86PML4))pVM->pgm.s.pShwNestedRootR3;
+# ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+    pVM->pgm.s.pShwPaePml4R0 = (R0PTRTYPE(PX86PML4))pVM->pgm.s.pShwNestedRootR0;
+# endif
+    pVM->pgm.s.HCPhysShwPaePml4 = pVM->pgm.s.HCPhysShwNestedRoot;
 #endif
     return VINF_SUCCESS;
 }
@@ -156,7 +159,7 @@ PGM_SHW_DECL(int, Enter)(PVM pVM)
  * @param   pVM         The VM handle.
  * @param   offDelta    The reloation offset.
  */
-PGM_SHW_DECL(int, Relocate)(PVM pVM, RTGCUINTPTR offDelta)
+PGM_SHW_DECL(int, Relocate)(PVM pVM, RTGCPTR offDelta)
 {
     /* nothing special to do here - InitData does the job. */
     return VINF_SUCCESS;
@@ -173,8 +176,11 @@ PGM_SHW_DECL(int, Exit)(PVM pVM)
 {
 #if PGM_SHW_TYPE == PGM_TYPE_NESTED
     Assert(HWACCMIsNestedPagingActive(pVM));
-    pVM->pgm.s.pHCPaePML4    = 0;
-    pVM->pgm.s.HCPhysPaePML4 = 0;
+    pVM->pgm.s.pShwPaePml4R3 = 0;
+# ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+    pVM->pgm.s.pShwPaePml4R0 = 0;
+# endif
+    pVM->pgm.s.HCPhysShwPaePml4 = 0;
     Log(("Leave nested shadow paging mode\n"));
 #endif
 

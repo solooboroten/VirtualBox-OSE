@@ -1,4 +1,4 @@
-/* $Id: com.cpp $ */
+/* $Id: com.cpp 13908 2008-11-06 11:53:47Z vboxsync $ */
 
 /** @file
  * MS COM / XPCOM Abstraction Layer
@@ -36,6 +36,12 @@
 
 #endif /* !defined (VBOX_WITH_XPCOM) */
 
+#include "VBox/com/com.h"
+#include "VBox/com/assert.h"
+
+#include "VBox/com/Guid.h"
+#include "VBox/com/array.h"
+
 #include <iprt/param.h>
 #include <iprt/path.h>
 #include <iprt/dir.h>
@@ -43,11 +49,6 @@
 #include <iprt/string.h>
 
 #include <VBox/err.h>
-
-#include "VBox/com/com.h"
-#include "VBox/com/assert.h"
-
-#include <VBox/com/Guid.h>
 
 
 #ifdef RT_OS_DARWIN
@@ -191,5 +192,12 @@ int GetVBoxUserHomeDirectory (char *aDir, size_t aDirLen)
 
 /* static */
 const Guid Guid::Empty; /* default ctor is OK */
+
+#if defined (VBOX_WITH_XPCOM)
+
+/* static */
+const nsID *SafeGUIDArray::nsIDRef::Empty = (const nsID *) Guid::Empty.raw();
+
+#endif /* (VBOX_WITH_XPCOM) */
 
 } /* namespace com */

@@ -66,6 +66,8 @@ else
  $(warning Using BUILD_TYPE='$(BUILD_TYPE)' from the $(origin BUILD_TYPE).)
 endif
 
+# use vm_insert_page() API (if available) to map kernel pages to userland - better debugging 
+# VBOX_USE_INSERT_PAGE = 1
 
 # override is required by the Debian guys
 override MODULE = vboxdrv
@@ -76,6 +78,8 @@ OBJS   = \
 	r0drv/initterm-r0drv.o \
 	r0drv/memobj-r0drv.o \
 	r0drv/mpnotification-r0drv.o \
+	r0drv/powernotification-r0drv.o \
+	r0drv/linux/assert-r0drv-linux.o \
 	r0drv/linux/alloc-r0drv-linux.o \
 	r0drv/linux/initterm-r0drv-linux.o \
 	r0drv/linux/memobj-r0drv-linux.o \
@@ -87,21 +91,11 @@ OBJS   = \
 	r0drv/linux/semfastmutex-r0drv-linux.o \
 	r0drv/linux/spinlock-r0drv-linux.o \
 	r0drv/linux/thread-r0drv-linux.o \
+	r0drv/linux/thread2-r0drv-linux.o \
 	r0drv/linux/time-r0drv-linux.o \
 	r0drv/linux/timer-r0drv-linux.o \
-	common/err/RTErrConvertFromErrno.o
-ifeq ($(BUILD_TARGET_ARCH),x86)
-OBJS += math/gcc/divdi3.o \
-	math/gcc/moddi3.o \
-	math/gcc/qdivrem.o \
-	math/gcc/udivdi3.o
-endif
-ifeq ($(BUILD_TARGET_ARCH),amd64)
-OBJS += alloc/heapsimple.o
-endif
-
-ifeq ($(BUILD_TYPE),debug)
-OBJS += common/log/log.o \
+	common/err/RTErrConvertFromErrno.o \
+	common/log/log.o \
 	common/log/logellipsis.o \
 	common/log/logrel.o \
 	common/log/logrelellipsis.o \
@@ -113,6 +107,7 @@ OBJS += common/log/log.o \
 	common/string/strprintf.o \
 	common/string/strtonum.o \
 	r0drv/linux/RTLogWriteDebugger-r0drv-linux.o \
+	generic/RTAssertShouldPanic-generic.o \
 	generic/RTLogWriteStdErr-stub-generic.o \
 	generic/RTLogWriteStdOut-stub-generic.o \
 	generic/RTLogWriteUser-generic.o \
@@ -120,9 +115,15 @@ OBJS += common/log/log.o \
 	VBox/strformat-vbox.o
 ifeq ($(BUILD_TARGET_ARCH),x86)
 OBJS += math/gcc/divdi3.o \
+	math/gcc/moddi3.o \
+	math/gcc/qdivrem.o \
+	math/gcc/udivdi3.o \
+        math/gcc/divdi3.o \
 	math/gcc/umoddi3.o
 endif
-endif # debug
+ifeq ($(BUILD_TARGET_ARCH),amd64)
+OBJS += alloc/heapsimple.o
+endif
 
 ifneq ($(MAKECMDGOALS),clean)
 
@@ -204,6 +205,8 @@ $(warning dbg: MODULE_DIR   = $(MODULE_DIR))
 $(warning dbg: KERN_VERSION = $(KERN_VERSION))
 endif
 
+KBUILD_VERBOSE ?= 1
+
 #
 # Compiler options
 #
@@ -235,6 +238,18 @@ ifeq ($(BUILD_TYPE),debug)
  KFLAGS  += -DIPRT_DEBUG_SEMS
 endif
 
+# By default we use remap_pfn_range() kernel API to make kernel pages
+# visible for userland. Unfortuately, it leads to situation that
+# during debug session all structures on that page (such as PVM pointer)
+# are not accessible to the debugger (see #3214).
+# This code enables experimental support
+# for vm_insert_page() kernel API, allowing to export kernel pages
+# to the userland in more debugger-friendly way. Due to stability
+# concerns, not enabled by default yet.
+ifdef VBOX_USE_INSERT_PAGE
+ KFLAGS  += -DVBOX_USE_INSERT_PAGE
+endif
+
 ifeq ($(KERN_VERSION),24)
 # 2.4
 TOPDIR         = $(KERN_DIR)
@@ -255,7 +270,7 @@ all: $(MODULE)
 obj-m += $(MODULE).o
 
 $(MODULE):
-	$(MAKE) KBUILD_VERBOSE=1 -C $(KERN_DIR) SUBDIRS=$(CURDIR) SRCROOT=$(CURDIR) modules
+	$(MAKE) KBUILD_VERBOSE=$(KBUILD_VERBOSE) -C $(KERN_DIR) SUBDIRS=$(CURDIR) SRCROOT=$(CURDIR) modules
 
 ifeq ($(KERN_VERSION),24)
 #
@@ -281,6 +296,6 @@ install_rpm: $(MODULE)
 endif # eq($(MAKECMDGOALS),clean)
 
 clean:
-	for f in . linux r0drv r0drv/linux VBox common/string common/log generic math/gcc; \
+	for f in . linux r0drv r0drv/linux VBox common/err common/string common/log generic math/gcc; \
 	    do rm -f $$f/*.o $$f/.*.cmd $$f/.*.flags; done
-	rm -rf .vboxdrv* .tmp_ver* vboxdrv.* Module.symvers Modules.symvers
+	rm -rf .vboxdrv* .tmp_ver* vboxdrv.* Module.symvers Modules.symvers modules.order

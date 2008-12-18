@@ -1,4 +1,4 @@
-/* $Id: VBoxDev.cpp $ */
+/* $Id: VBoxDev.cpp 15534 2008-12-15 19:06:14Z vboxsync $ */
 /** @file
  * VMMDev - Guest <-> VMM/Host communication device.
  */
@@ -39,7 +39,7 @@
 #include <iprt/assert.h>
 #include <iprt/string.h>
 #include <iprt/time.h>
-#ifndef IN_GC
+#ifndef IN_RC
 # include <iprt/mem.h>
 #endif
 
@@ -248,7 +248,7 @@ void VMMDevCtlSetGuestFilterMask (VMMDevState *pVMMDevState,
         int rc;
         PVMREQ pReq;
 
-        rc = VMR3ReqCallVoid (pVM, &pReq, RT_INDEFINITE_WAIT,
+        rc = VMR3ReqCallVoid (pVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT,
                               (PFNRT) vmmdevCtlGuestFilterMask_EMT,
                               3, pVMMDevState, u32OrMask, u32NotMask);
         AssertReleaseRC (rc);
@@ -273,7 +273,7 @@ void VMMDevNotifyGuest (VMMDevState *pVMMDevState, uint32_t u32EventMask)
     /* No need to wait for the completion of this request. It is a notification
      * about something, which has already happened.
      */
-    rc = VMR3ReqCallEx(pVM, NULL, 0, VMREQFLAGS_NO_WAIT | VMREQFLAGS_VOID,
+    rc = VMR3ReqCallEx(pVM, VMREQDEST_ANY, NULL, 0, VMREQFLAGS_NO_WAIT | VMREQFLAGS_VOID,
                        (PFNRT) vmmdevNotifyGuest_EMT,
                        2, pVMMDevState, u32EventMask);
     AssertRC(rc);
@@ -1091,7 +1091,7 @@ static DECLCALLBACK(int) vmmdevRequestHandler(PPDMDEVINS pDevIns, void *pvUser, 
                 VMMDevHGCMCall *pHGCMCall = (VMMDevHGCMCall *)pRequestHeader;
 
                 Log2(("VMMDevReq_HGCMCall: sizeof (VMMDevHGCMRequest) = %04X\n", sizeof (VMMDevHGCMCall)));
-                Log2(("%.*Vhxd\n", pRequestHeader->size, pRequestHeader));
+                Log2(("%.*Rhxd\n", pRequestHeader->size, pRequestHeader));
 
 #ifdef VBOX_WITH_64_BITS_GUESTS
                 bool f64Bits = (pRequestHeader->requestType == VMMDevReq_HGCMCall64);
@@ -1611,25 +1611,57 @@ static DECLCALLBACK(int) vmmdevIORAMRegionMap(PPCIDEVICE pPciDev, /*unsigned*/ i
     VMMDevState *pThis = PCIDEV_2_VMMDEVSTATE(pPciDev);
     int rc;
 
-    AssertReturn(iRegion == 1 && enmType == PCI_ADDRESS_SPACE_MEM, VERR_INTERNAL_ERROR);
-    Assert(pThis->pVMMDevRAMR3 != NULL);
-
-    if (GCPhysAddress != NIL_RTGCPHYS)
+    if (iRegion == 1)
     {
-        /*
-         * Map the MMIO2 memory.
-         */
-        pThis->GCPhysVMMDevRAM = GCPhysAddress;
-        Assert(pThis->GCPhysVMMDevRAM == GCPhysAddress);
-        rc = PDMDevHlpMMIO2Map(pPciDev->pDevIns, iRegion, GCPhysAddress);
+        AssertReturn(enmType == PCI_ADDRESS_SPACE_MEM, VERR_INTERNAL_ERROR);
+        Assert(pThis->pVMMDevRAMR3 != NULL);
+        if (GCPhysAddress != NIL_RTGCPHYS)
+        {
+            /*
+             * Map the MMIO2 memory.
+             */
+            pThis->GCPhysVMMDevRAM = GCPhysAddress;
+            Assert(pThis->GCPhysVMMDevRAM == GCPhysAddress);
+            rc = PDMDevHlpMMIO2Map(pPciDev->pDevIns, iRegion, GCPhysAddress);
+        }
+        else
+        {
+            /*
+             * It is about to be unmapped, just clean up.
+             */
+            pThis->GCPhysVMMDevRAM = NIL_RTGCPHYS32;
+            rc = VINF_SUCCESS;
+        }
+    }
+    else if (iRegion == 2)
+    {
+        AssertReturn(enmType == PCI_ADDRESS_SPACE_MEM_PREFETCH, VERR_INTERNAL_ERROR);
+        Assert(pThis->pVMMDevHeapR3 != NULL);
+        if (GCPhysAddress != NIL_RTGCPHYS)
+        {
+            /*
+             * Map the MMIO2 memory.
+             */
+            pThis->GCPhysVMMDevHeap = GCPhysAddress;
+            Assert(pThis->GCPhysVMMDevHeap == GCPhysAddress);
+            rc = PDMDevHlpMMIO2Map(pPciDev->pDevIns, iRegion, GCPhysAddress);
+            if (RT_SUCCESS(rc))
+                rc = PDMDevHlpRegisterVMMDevHeap(pPciDev->pDevIns, GCPhysAddress, pThis->pVMMDevHeapR3, VMMDEV_HEAP_SIZE);
+        }
+        else
+        {
+            /*
+             * It is about to be unmapped, just clean up.
+             */
+            PDMDevHlpUnregisterVMMDevHeap(pPciDev->pDevIns, pThis->GCPhysVMMDevHeap);
+            pThis->GCPhysVMMDevHeap = NIL_RTGCPHYS32;
+            rc = VINF_SUCCESS;
+        }
     }
     else
     {
-        /*
-         * It is about to be unmapped, just clean up.
-         */
-        pThis->GCPhysVMMDevRAM = NIL_RTGCPHYS32;
-        rc = VINF_SUCCESS;
+        AssertMsgFailed(("%d\n", iRegion));
+        rc = VERR_INVALID_PARAMETER;
     }
 
     return rc;
@@ -2157,7 +2189,12 @@ static DECLCALLBACK(int) vmmdevConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
     /*
      * Validate and read the configuration.
      */
-    if (!CFGMR3AreValuesValid(pCfgHandle, "GetHostTimeDisabled\0" "BackdoorLogDisabled\0" "KeepCredentials\0"))
+    if (!CFGMR3AreValuesValid(pCfgHandle,
+                              "GetHostTimeDisabled\0"
+                              "BackdoorLogDisabled\0"
+                              "KeepCredentials\0"
+                              "HeapEnabled\0"
+                              ))
         return VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES;
 
     rc = CFGMR3QueryBoolDef(pCfgHandle, "GetHostTimeDisabled", &pThis->fGetHostTimeDisabled, false);
@@ -2174,6 +2211,12 @@ static DECLCALLBACK(int) vmmdevConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
     if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed querying \"KeepCredentials\" as a boolean"));
+
+    bool fHeapEnabled;
+    rc = CFGMR3QueryBoolDef(pCfgHandle, "HeapEnabled", &fHeapEnabled, true);
+    if (RT_FAILURE(rc))
+        return PDMDEV_SET_ERROR(pDevIns, rc,
+                                N_("Configuration error: Failed querying \"HeapEnabled\" as a boolean"));
 
     /*
      * Initialize data (most of it anyway).
@@ -2244,11 +2287,19 @@ static DECLCALLBACK(int) vmmdevConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
     /*
      * Allocate and initialize the MMIO2 memory.
      */
-    rc = PDMDevHlpMMIO2Register(pDevIns, 1 /*iRegion*/, VMMDEV_RAM_SIZE, 0, (void **)&pThis->pVMMDevRAMR3, "VMMDev");
+    rc = PDMDevHlpMMIO2Register(pDevIns, 1 /*iRegion*/, VMMDEV_RAM_SIZE, 0 /*fFlags*/, (void **)&pThis->pVMMDevRAMR3, "VMMDev");
     if (RT_FAILURE(rc))
         return PDMDevHlpVMSetError(pDevIns, rc, RT_SRC_POS,
                                    N_("Failed to allocate %u bytes of memory for the VMM device"), VMMDEV_RAM_SIZE);
     vmmdevInitRam(pThis);
+
+    if (fHeapEnabled)
+    {
+        rc = PDMDevHlpMMIO2Register(pDevIns, 2 /*iRegion*/, VMMDEV_HEAP_SIZE, 0 /*fFlags*/, (void **)&pThis->pVMMDevHeapR3, "VMMDev Heap");
+        if (RT_FAILURE(rc))
+            return PDMDevHlpVMSetError(pDevIns, rc, RT_SRC_POS,
+                                       N_("Failed to allocate %u bytes of memory for the VMM device heap"), PAGE_SIZE);
+    }
 
     /*
      * Register the PCI device.
@@ -2264,6 +2315,12 @@ static DECLCALLBACK(int) vmmdevConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
     rc = PDMDevHlpPCIIORegionRegister(pDevIns, 1, VMMDEV_RAM_SIZE, PCI_ADDRESS_SPACE_MEM, vmmdevIORAMRegionMap);
     if (RT_FAILURE(rc))
         return rc;
+    if (fHeapEnabled)
+    {
+        rc = PDMDevHlpPCIIORegionRegister(pDevIns, 2, VMMDEV_HEAP_SIZE, PCI_ADDRESS_SPACE_MEM_PREFETCH, vmmdevIORAMRegionMap);
+        if (RT_FAILURE(rc))
+            return rc;
+    }
 
     /*
      * Get the corresponding connector interface
@@ -2425,7 +2482,7 @@ extern "C" const PDMDEVREG g_DeviceVMMDev =
     PDM_DEVREG_VERSION,
     /* szDeviceName */
     "VMMDev",
-    /* szGCMod */
+    /* szRCMod */
     "",
     /* szR0Mod */
     "",
@@ -2460,7 +2517,15 @@ extern "C" const PDMDEVREG g_DeviceVMMDev =
     /* pfnDetach */
     NULL,
     /* pfnQueryInterface. */
-    NULL
+    NULL,
+    /* pfnInitComplete */
+    NULL,
+    /* pfnPowerOff */
+    NULL,
+    /* pfnSoftReset */
+    NULL,
+    /* u32VersionEnd */
+    PDM_DEVREG_VERSION
 };
 #endif /* !VBOX_DEVICE_STRUCT_TESTCASE */
 

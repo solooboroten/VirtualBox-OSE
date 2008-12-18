@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 15333 2008-12-11 18:56:36Z vboxsync $
 ## @file
 # Sub-Makefile for XPCOM.
 #
@@ -25,6 +25,15 @@ include $(KBUILD_PATH)/subheader.kmk
 # File for filtering out C symbols from the XPCOM library. Used to avoid
 # symbol namespace pollution, causing trouble with system libraries.
 XPCOM_C_NAMESPACE_MAP = $(VBOX_PATH_XPCOM_SRC)/xpcom-namespace-cleanup.map
+ifdef VBOX_WITH_XPCOM_NAMESPACE_CLEANUP
+ VBOX_NM = nm$(HOSTSUFF_EXE)
+ # At the moment, only Solaris uses the generated map file. GNU ld is smart
+ # enough to handle symbol wildcards itself.
+ if1of ($(KBUILD_TARGET), solaris)
+  XPCOM_C_NAMESPACE_MAP = $(PATH_TARGET)/xpcom-namespace-cleanup.map
+  OTHER_CLEAN += $(XPCOM_C_NAMESPACE_MAP)
+ endif
+endif
 
 # @todo check whether VBoxXPCOMIPCC.so or VBoxXPCOMIPCD contain undefined
 # symbols starting with NS_, PL_, PR_ or XPT. Would move the test time failure
@@ -211,7 +220,11 @@ TEMPLATE_XPCOMBLDPROG_INCS.$(KBUILD_TARGET)         = $(TEMPLATE_XPCOMEXE_INCS.$
 TEMPLATE_XPCOMBLDPROG_INCS.$(KBUILD_TARGET_ARCH)    = $(TEMPLATE_XPCOMEXE_INCS.$(KBUILD_TARGET_ARCH))
 TEMPLATE_XPCOMBLDPROG_LIBPATH.$(KBUILD_TARGET)      = $(TEMPLATE_XPCOMEXE_LIBPATH.$(KBUILD_TARGET))
 TEMPLATE_XPCOMBLDPROG_LIBPATH.$(KBUILD_TARGET_ARCH) = $(TEMPLATE_XPCOMEXE_LIBPATH.$(KBUILD_TARGET_ARCH))
+ifeq ($(KBUILD_TARGET),darwin)
+TEMPLATE_XPCOMBLDPROG_LDFLAGS.$(KBUILD_TARGET)      = $(filter-out $(TEMPLATE_XPCOMEXE_LDFLAGS.$(KBUILD_TARGET)),$(TEMPLATE_VBOXR3NP_LDFLAGS.$(KBUILD_TARGET))) $(TEMPLATE_VBOXBLDPROG_LDFLAGS.darwin)
+else
 TEMPLATE_XPCOMBLDPROG_LDFLAGS.$(KBUILD_TARGET)      = $(TEMPLATE_XPCOMEXE_LDFLAGS.$(KBUILD_TARGET))
+endif
 TEMPLATE_XPCOMBLDPROG_LDFLAGS.$(KBUILD_TARGET_ARCH) = $(TEMPLATE_XPCOMEXE_LDFLAGS.$(KBUILD_TARGET_ARCH))
 TEMPLATE_XPCOMBLDPROG_ORDERDEPS         = $(foreach hdrinst, $(filter %-HEADERS, $(INSTALLS)), $(TARGET_$(hdrinst)))
 
@@ -630,7 +643,7 @@ ifeq ($(KBUILD_TARGET),os2)
 	$(VBOX_PATH_LIBIDL)/lib/glib.lib
  # install necessary DLLs to the same place where xpidl goes
  INSTALLS += xpidl-DLLS
- xpidl_ORDERDEPS = xpidl-DLLS
+ xpidl_ORDERDEPS = $(TARGET_xpidl-DLLS)
  xpidl-DLLS_INST = $(xpidl_INST)
  # static libraries of these may be provided instead,
  # so copy DLLs only when they are present
@@ -1124,10 +1137,9 @@ VBoxXPCOM_NAME = $(basename $(notdir $(LIB_XPCOM)))
 VBoxXPCOM_DEFS = BUILD_DCONNECT="1" _IMPL_NS_COM
 ifdef VBOX_WITH_XPCOM_NAMESPACE_CLEANUP
  VBoxXPCOM_LDFLAGS.linux    = -Wl,--version-script=$(XPCOM_C_NAMESPACE_MAP)
- VBoxXPCOM_DEPS.linux      += $(XPCOM_C_NAMESPACE_MAP)
-# Disable temporarily, as Solaris doesn't support map files with non-trivial wildcards.
-# VBoxXPCOM_LDFLAGS.solaris  = -Wl,-M,$(XPCOM_C_NAMESPACE_MAP)
-# VBoxXPCOM_DEPS.solaris    += $(XPCOM_C_NAMESPACE_MAP)
+ VBoxXPCOM_LNK_DEPS.linux  += $(XPCOM_C_NAMESPACE_MAP)
+ VBoxXPCOM_LDFLAGS.solaris  = -Wl,-M,$(XPCOM_C_NAMESPACE_MAP)
+ VBoxXPCOM_LNK_DEPS.solaris+= $(XPCOM_C_NAMESPACE_MAP)
 endif
 VBoxXPCOM_SOURCES = \
 	xpcom/build/nsXPComInit.cpp \
@@ -1151,6 +1163,8 @@ VBoxXPCOM_LIBS = \
 	$(TARGET_VBox-xpcom-proxy) \
 	$(TARGET_VBox-xpcom-nspr) \
 	$(TARGET_VBoxXPCOMGlue_s)
+VBoxXPCOM_LIBS.linux = \
+	pthread dl
 
 ifeq ($(filter-out freebsd l4 linux netbsd openbsd,$(KBUILD_TARGET)),) # gnu ld.
 VBoxXPCOM_LDFLAGS = -Wl,--whole-archive \
@@ -1684,7 +1698,7 @@ VBoxXPCOMBase-xpt-inst_CLEAN = \
 	$(PATH_TARGET)/VBox-xpcom-xpt-files/VBoxXPCOMBase.xpt
 
 # combined typelib library
-$(PATH_TARGET)/VBox-xpcom-xpt-files/VBoxXPCOMBase.xpt: $(VBOX_XPTFILES) | $$(TARGET_xpt_link) $(PATH_TARGET)/VBox-xpcom-xpt-files/
+$(PATH_TARGET)/VBox-xpcom-xpt-files/VBoxXPCOMBase.xpt: $$(VBOX_XPTFILES) | $$(TARGET_xpt_link) $(PATH_TARGET)/VBox-xpcom-xpt-files/
 	$(call MSG_LINK,XPCOM_TYPELIB,$@)
 	$(QUIET)$(MKDIR) -p -- $(PATH_BIN)/components
 	$(QUIET)$(TARGET_xpt_link) $@ $^
@@ -1726,11 +1740,39 @@ endef
 $(foreach idl, $(XPCOM_IDLFILES), $(eval $(def_IDL)))
 
 # dummy target.
-$(PATH_VBox-xpcom-string)/idl_ts: $(addprefix $(VBOX_PATH_SDK)/bindings/xpcom/include/,$(notdir $(subst .idl,.h,$(XPCOM_IDLFILES))))
+$(PATH_VBox-xpcom-string)/idl_ts: $$(addprefix $$(VBOX_PATH_SDK)/bindings/xpcom/include/,$$(notdir $$(subst .idl,.h,$$(XPCOM_IDLFILES))))
 	$(call MSG_L1,IDL processing completed.)
 	$(QUIET)$(MKDIR) -p $(dir $@)
-	$(QUIET)$(ECHO_EXT) > $@
+	$(QUIET)$(APPEND) -t $@
 
-# Make sure main doesn't start using xpidl before we're done with the idl files here.
+#
+# HACK ALERT! Make sure main doesn't start using xpidl before we're done
+# with the idl files here. The trick here is that we're using TARGET_xpidl,
+# i.e. the copy residing in obj/, while VBOX_XPIDL is pointing to
+# INSTARGET_xpidl which is the one in bin/.
+#
 $(VBOX_XPIDL): $$(PATH_VBox-xpcom-string)/idl_ts
+
+
+#
+# Generate linker map file filtering out unwanted global symbols.
+#
+$(PATH_TARGET)/xpcom-namespace-cleanup.map foo.map: $$(VBoxXPCOM_LIBS) $$(VBoxXPCOM_OBJS_)
+	$(call MSG_L1, Creating linker map $@ for scrubbing the symbol namespace)
+	$(QUIET)$(APPEND) -t $@ '{ local: *; global: '
+	$(QUIET)$(VBOX_NM) -p -g $^ \
+	| $(SED) -n \
+		-e '/^$$/b' \
+		-e '/:$$/b' \
+		-e '/ U /b' \
+		-e 's/^[^ ]* [A-Z] \(.*\)$$/\1/' \
+		-e 's/\<_Z[^ ]*$$/&;/p' \
+		-e 's/\<VBoxNs[^ ]*$$/&;/p' \
+		-e 's/\<_edata$$/&;/p' \
+		-e 's/\<_end$$/&;/p' \
+		-e 's/\<_etext$$/&;/p'\
+		-e 's/\<_fini$$/&;/p' \
+		-e 's/\<_init$$/&;/p' \
+		--append $@
+	$(QUIET)$(APPEND) $@ '};'
 

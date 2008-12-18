@@ -60,8 +60,8 @@ sf_dir_open (struct inode *inode, struct file *file)
         LogFunc(("sf_dir_open: calling vboxCallCreate, folder %s, flags %#x\n",
                  sf_i->path->String.utf8, params.CreateFlags));
         rc = vboxCallCreate (&client_handle, &sf_g->map, sf_i->path, &params);
-        if (VBOX_FAILURE (rc)) {
-                LogFunc(("vboxCallCreate(%s) failed rc=%Vrc\n",
+        if (RT_FAILURE (rc)) {
+                LogFunc(("vboxCallCreate(%s) failed rc=%Rrc\n",
                          sf_i->path->String.utf8, rc));
                 sf_dir_info_free (sf_d);
                 return -EPERM;
@@ -76,8 +76,8 @@ sf_dir_open (struct inode *inode, struct file *file)
         err = sf_dir_read_all (sf_g, sf_i, sf_d, params.Handle);
         if (err) {
                 rc = vboxCallClose (&client_handle, &sf_g->map, params.Handle);
-                if (VBOX_FAILURE (rc)) {
-                        LogFunc(("vboxCallClose(%s) after err=%d failed rc=%Vrc\n",
+                if (RT_FAILURE (rc)) {
+                        LogFunc(("vboxCallClose(%s) after err=%d failed rc=%Rrc\n",
                                  sf_i->path->String.utf8, err, rc));
                 }
                 sf_dir_info_free (sf_d);
@@ -86,8 +86,8 @@ sf_dir_open (struct inode *inode, struct file *file)
 
 
         rc = vboxCallClose (&client_handle, &sf_g->map, params.Handle);
-        if (VBOX_FAILURE (rc)) {
-                LogFunc(("vboxCallClose(%s) failed rc=%Vrc\n",
+        if (RT_FAILURE (rc)) {
+                LogFunc(("vboxCallClose(%s) failed rc=%Rrc\n",
                           sf_i->path->String.utf8, rc));
         }
 
@@ -430,13 +430,13 @@ sf_create_aux (struct inode *parent, struct dentry *dentry, int dirop)
         LogFunc(("calling vboxCallCreate, folder %s, flags %#x\n",
                  path->String.utf8, params.CreateFlags));
         rc = vboxCallCreate (&client_handle, &sf_g->map, path, &params);
-        if (VBOX_FAILURE (rc)) {
+        if (RT_FAILURE (rc)) {
                 if (rc == VERR_WRITE_PROTECT) {
                         err = -EROFS;
                         goto fail0;
                 }
                 err = -EPROTO;
-                LogFunc(("(%d): vboxCallCreate(%s) failed rc=%Vrc\n", dirop,
+                LogFunc(("(%d): vboxCallCreate(%s) failed rc=%Rrc\n", dirop,
                          sf_i->path->String.utf8, rc));
                 goto fail0;
         }
@@ -456,8 +456,8 @@ sf_create_aux (struct inode *parent, struct dentry *dentry, int dirop)
         }
 
         rc = vboxCallClose (&client_handle, &sf_g->map, params.Handle);
-        if (VBOX_FAILURE (rc)) {
-                LogFunc(("(%d): vboxCallClose failed rc=%Vrc\n", dirop, rc));
+        if (RT_FAILURE (rc)) {
+                LogFunc(("(%d): vboxCallClose failed rc=%Rrc\n", dirop, rc));
         }
 
         sf_i->force_restat = 1;
@@ -465,8 +465,8 @@ sf_create_aux (struct inode *parent, struct dentry *dentry, int dirop)
 
  fail1:
         rc = vboxCallClose (&client_handle, &sf_g->map, params.Handle);
-        if (VBOX_FAILURE (rc)) {
-                LogFunc(("(%d): vboxCallClose failed rc=%Vrc\n", dirop, rc));
+        if (RT_FAILURE (rc)) {
+                LogFunc(("(%d): vboxCallClose failed rc=%Rrc\n", dirop, rc));
         }
 
  fail0:
@@ -510,8 +510,8 @@ sf_unlink_aux (struct inode *parent, struct dentry *dentry, int dirop)
 
         rc = vboxCallRemove (&client_handle, &sf_g->map, path,
                              dirop ? SHFL_REMOVE_DIR : SHFL_REMOVE_FILE);
-        if (VBOX_FAILURE (rc)) {
-                LogFunc(("(%d): vboxCallRemove(%s) failed rc=%Vrc\n", dirop,
+        if (RT_FAILURE (rc)) {
+                LogFunc(("(%d): vboxCallRemove(%s) failed rc=%Rrc\n", dirop,
                          path->String.utf8, rc));
                          err = -RTErrConvertToErrno (rc);
                 goto fail1;
@@ -582,7 +582,7 @@ sf_rename (struct inode *old_parent, struct dentry *old_dentry,
                                 /* Set the new relative path in the inode. */
                                 sf_file_i->path = new_path;
                         } else {
-                                LogFunc(("vboxCallRename failed rc=%Vrc\n", rc));
+                                LogFunc(("vboxCallRename failed rc=%Rrc\n", rc));
                                 err = -RTErrConvertToErrno (rc);
                         }
                         if (0 != err)

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 15370 2008-12-12 14:16:00Z vboxsync $
 ## @file
 # Top level makefile.
 #
@@ -89,12 +89,16 @@ endif
 # The Qt DLLs.
 ifneq ($(VBOX_WITH_QTGUI),)
  if1of ($(KBUILD_TARGET), win os2)
-  #include $(KBUILD_PATH)/sdks/QT3.kmk
-  #bin_SOURCES += \
-  #	$(DLL_SDK_QT3_QT)
-  ifneq ($(strip $(VBOX_DLL_QT)),)
+  ## @todo remove ifeq and make it work for win too (see
+  ifeq ($(KBUILD_TARGET),os2)
+   include $(KBUILD_PATH)/units/qt3.kmk
    bin_SOURCES += \
-	$(VBOX_DLL_QT)=>$(not-dir $(VBOX_DLL_QT))
+    $(DLL_SDK_QT3_QT)=>$(not-dir $(DLL_SDK_QT3_QT))
+  else
+   ifneq ($(strip $(VBOX_DLL_QT)),)
+    bin_SOURCES += \
+     $(VBOX_DLL_QT)=>$(not-dir $(VBOX_DLL_QT))
+   endif
   endif
   ifdef VBOX_QT_BINARIES
    bin_SOURCES += $(VBOX_QT_BINARIES)
@@ -169,6 +173,7 @@ ifdef VBOX_WITH_QT4_SUN
   qt4-bin_SOURCES = \
 	$(VBOX_PATH_QT4)/Frameworks/QtCore.framework/Versions/4/QtCore=>Frameworks/QtCore.framework/Versions/4/QtCore \
 	$(VBOX_PATH_QT4)/Frameworks/QtGui.framework/Versions/4/QtGui=>Frameworks/QtGui.framework/Versions/4/QtGui \
+	$(VBOX_PATH_QT4)/Frameworks/QtNetwork.framework/Versions/4/QtNetwork=>Frameworks/QtNetwork.framework/Versions/4/QtNetwork \
 	$(PATH_qt4-bin)/libqtaccessiblewidgets.dylib=>MacOS/accessible/libqtaccessiblewidgets.dylib
   qt4-bin_CLEAN = $(PATH_qt4-bin)/libqtaccessiblewidgets.dylib
 $$(PATH_qt4-bin)/libqtaccessiblewidgets.dylib: $$(VBOX_PATH_QT4)/plugins/accessible/libqtaccessiblewidgets.dylib | $$(dir $$@)
@@ -179,6 +184,8 @@ $$(PATH_qt4-bin)/libqtaccessiblewidgets.dylib: $$(VBOX_PATH_QT4)/plugins/accessi
 		 @executable_path/../Frameworks/QtCore.framework/Versions/4/QtCore \
 		-change                         QtGui.framework/Versions/4/QtGui \
 		 @executable_path/../Frameworks/QtGui.framework/Versions/4/QtGui \
+		-change                         QtNetwork.framework/Versions/4/QtNetwork \
+		 @executable_path/../Frameworks/QtNetwork.framework/Versions/4/QtNetwork \
 		$@
 
  else ifeq ($(KBUILD_TARGET),win)
@@ -186,6 +193,7 @@ $$(PATH_qt4-bin)/libqtaccessiblewidgets.dylib: $$(VBOX_PATH_QT4)/plugins/accessi
   qt4-bin_SOURCES = \
 	$(VBOX_PATH_QT4_LIB)/VBoxQtCore4.dll \
 	$(VBOX_PATH_QT4_LIB)/VBoxQtGui4.dll \
+	$(VBOX_PATH_QT4_LIB)/VBoxQtNetwork4.dll \
 	$(VBOX_PATH_QT4)/plugins/accessible/qtaccessiblewidgets4.dll=>accessible/qtaccessiblewidgets4.dll
 
  else
@@ -193,6 +201,7 @@ $$(PATH_qt4-bin)/libqtaccessiblewidgets.dylib: $$(VBOX_PATH_QT4)/plugins/accessi
   qt4-bin_SOURCES = \
 	$(VBOX_PATH_QT4_LIB)/libVBoxQtCore.so.4 \
 	$(VBOX_PATH_QT4_LIB)/libVBoxQtGui.so.4 \
+	$(VBOX_PATH_QT4_LIB)/libVBoxQtNetwork.so.4 \
 	$(VBOX_PATH_QT4)/plugins/accessible/libqtaccessiblewidgets$(SUFF_DLL)=>accessible/libqtaccessiblewidgets$(SUFF_DLL)
  endif
 endif # VBOX_WITH_QT4_SUN
@@ -203,7 +212,6 @@ endif # VBOX_WITH_QT4_SUN
 # The $(CP)/$(RM) stuff can be replaced by a simple $(TOUCH) once that has
 # been added to kBuild.
 #
-## @todo need kmk_builtin_touch!
 ifdef VBOX_WITH_ADDITIONS_FROM_BUILD_SERVER
 INSTALLS += buildserver-additions
 buildserver-additions_INST = $(INST_ADDITIONS)
@@ -211,15 +219,20 @@ buildserver-additions_MODE = 0644
 buildserver-additions_SOURCES = $(PATH_TARGET)/VBoxGuestAdditions.iso
 buildserver-additions_CLEANS = $(PATH_TARGET)/VBoxGuestAdditions.iso $(PATH_TARGET)/VBoxGuestAdditions.iso.tmp
 
-$(PATH_TARGET)/VBoxGuestAdditions.iso: $(VBOX_SVN_REV_KMK) $(PATH_DEVTOOLS)/bin/additions.sh | $(call DIRDEP, $(PATH_TARGET))
+$(PATH_TARGET)/VBoxGuestAdditions.iso: $(VBOX_SVN_REV_KMK) $(PATH_DEVTOOLS)/bin/additions.sh | $$(dir $$@)
 	$(RM) -f $(PATH_TARGET)/VBoxGuestAdditions.iso $(PATH_TARGET)/VBoxGuestAdditions.iso.tmp
-#	$(PATH_DEVTOOLS)/bin/additions.sh --cmd fetch --filename $(PATH_TARGET)/VBoxGuestAdditions.iso.tmp
-	$(KMK) --affinity 1 -f $(MAKEFILE) buildserver-additions-affinity-hack
+ ifneq ($(KBUILD_HOST),win)
+	$(SHELL) $(PATH_DEVTOOLS)/bin/additions.sh --cmd fetch --filename $(PATH_TARGET)/VBoxGuestAdditions.iso.tmp
+ else
+	$(KMK) --affinity 1 -f $(MAKEFILE) VBOX_SINGLE_MAKEFILE= buildserver-additions-affinity-hack
+ endif
 	$(CP) -f $(PATH_TARGET)/VBoxGuestAdditions.iso.tmp $(PATH_TARGET)/VBoxGuestAdditions.iso
 	$(RM) -f $(PATH_TARGET)/VBoxGuestAdditions.iso.tmp
 
+ ifeq ($(KBUILD_HOST),win)
 buildserver-additions-affinity-hack:
 	$(SHELL) $(PATH_DEVTOOLS)/bin/additions.sh --cmd fetch --filename $(PATH_TARGET)/VBoxGuestAdditions.iso.tmp
+ endif
 endif
 
 
@@ -229,8 +242,8 @@ endif
 # The $(CP)/$(RM) stuff can be replaced by a simple $(TOUCH) once that has
 # been added to kBuild.
 #
-## @todo need kmk_builtin_touch!
 ifdef VBOX_WITH_DOCS_FROM_BUILD_SERVER
+## @todo r=bird: Too much mess now for $(PATH_TARGET); move to doc/manual/.
 INSTALLS += buildserver-docs
 buildserver-docs_INST = $(INST_BIN)
 buildserver-docs_MODE = 0644
@@ -244,24 +257,30 @@ buildserver-docs_CLEANS = \
 		VirtualBox.chm UserManual.pdf \
 		$(foreach f,$(VBOX_MANUAL_ADD_LANGUAGES),VirtualBox_$(f).chm UserManual_$(f).pdf))
 
-## @todo including this directly is a hack, but using the tool variables
-# is simply too tempting. Could all go away once we have plain unzip targets.
+## @todo Hack to get at TOOL_ZIP_UNPACK; see if this can be integrated somehow...
 include $(KBUILD_PATH)/tools/ZIP.kmk
 
-$(PATH_TARGET)/VirtualBox.chm + $(PATH_TARGET)/UserManual.pdf $(foreach f,$(VBOX_MANUAL_ADD_LANGUAGES),+ $(PATH_TARGET)/VirtualBox_$(f).chm + $(PATH_TARGET)/UserManual_$(f).pdf) : $(PATH_TARGET)/VBoxDocumentation.zip
+$(PATH_TARGET)/VirtualBox.chm + $(PATH_TARGET)/UserManual.pdf \
+$(foreach f,$(VBOX_MANUAL_ADD_LANGUAGES), + $(PATH_TARGET)/VirtualBox_$(f).chm + $(PATH_TARGET)/UserManual_$(f).pdf): \
+		$(PATH_TARGET)/VBoxDocumentation.zip
 	$(call MSG_L1,Unpacking documentation)
 	$(QUIET)$(TOOL_ZIP_UNPACK) $(TOOL_ZIP_UNPACKFLAGS) -o $< -d $(PATH_TARGET)
 
-$(PATH_TARGET)/VBoxDocumentation.zip: $(VBOX_SVN_REV_KMK) $(PATH_DEVTOOLS)/bin/documentation.sh | $(call DIRDEP, $(PATH_TARGET))
+$(PATH_TARGET)/VBoxDocumentation.zip: $(VBOX_SVN_REV_KMK) $(PATH_DEVTOOLS)/bin/documentation.sh | $$(dir $$@)
 	$(RM) -f $(PATH_TARGET)/VBoxDocumentation.zip $(PATH_TARGET)/VBoxDocumentation.zip.tmp
-#	$(PATH_DEVTOOLS)/bin/documentation.sh --cmd fetch --filename $(PATH_TARGET)/VBoxDocumentation.zip.tmp
-	$(KMK) --affinity 1 -f $(MAKEFILE) buildserver-documentation-affinity-hack
+ ifneq ($(KBUILD_HOST),win)
+	$(SHELL) $(PATH_DEVTOOLS)/bin/documentation.sh --cmd fetch --filename $(PATH_TARGET)/VBoxDocumentation.zip.tmp
+ else
+	$(KMK) --affinity 1 -f $(MAKEFILE) VBOX_SINGLE_MAKEFILE= buildserver-documentation-affinity-hack
+ endif
 	$(CP) -f $(PATH_TARGET)/VBoxDocumentation.zip.tmp $(PATH_TARGET)/VBoxDocumentation.zip
 	$(RM) -f $(PATH_TARGET)/VBoxDocumentation.zip.tmp
 
+ ifeq ($(KBUILD_HOST),win)
 buildserver-documentation-affinity-hack:
 	$(SHELL) $(PATH_DEVTOOLS)/bin/documentation.sh --cmd fetch --filename $(PATH_TARGET)/VBoxDocumentation.zip.tmp
-endif
+ endif
+endif # VBOX_WITH_DOCS_FROM_BUILD_SERVER
 
 
 #
@@ -301,23 +320,29 @@ endif # !VBOX_ONLY_DOCS
 include $(KBUILD_PATH)/subfooter.kmk
 
 
-#
-# Generate documentation.
-# (This should be converted into a separate pass or merged with an existing one later.)
-#
 ifdef VBOX_ONLY_DOCS
 # It may sound a bit odd, but for preparing the documentation package the
 # doxygen documentation isn't needed and increases the build time a lot.
 docs:
-else # !VBOX_ONLY_DOCS
+else  # !VBOX_ONLY_DOCS
+#
+# Generate documentation.
+# (This should be converted into a separate pass or merged with an existing one later.)
+#
+ ifdef VBOX_SINGLE_MAKEFILE
+  ifdef VBOX_WITH_ALL_DOXYGEN_TARGETS
+docs: docs.Core
+  endif
+ else  # !VBOX_SINGLE_MAKEFILE
 docs: $(if $(VBOX_WITH_ALL_DOXYGEN_TARGETS),docs.Core)
-	$(KMK) -C src/VBox/Main docs
-ifdef VBOX_WITH_ALL_DOXYGEN_TARGETS
-	$(KMK) -C src/VBox/Runtime docs
-endif
+	$(KMK) -C src/VBox/Main    docs.Main
+  ifdef VBOX_WITH_ALL_DOXYGEN_TARGETS
+	$(KMK) -C src/VBox/Runtime docs.iprt
+  endif
+ endif # !VBOX_SINGLE_MAKEFILE
 endif # !VBOX_ONLY_DOCS
 
-docs.Core: $(PATH_TARGET)/docs.Core
+docs.Core docs.core: $(PATH_TARGET)/docs.Core
 
 
 
@@ -478,7 +503,7 @@ VBOX_CORE_DOXYFILE_INPUT_FIRST =\
 	$(PATH_ROOT)/include/VBox/vm.h \
 	\
 	$(PATH_ROOT)/include/VBox/sup.h \
-	$(PATH_ROOT)/include/VBox/VBoxHDD.h \
+	$(PATH_ROOT)/include/VBox/VBoxHDD-new.h \
 	$(PATH_ROOT)/include/VBox/types.h \
 	$(PATH_ROOT)/include/VBox/err.h \
 	$(PATH_ROOT)/include/VBox/x86.h \
@@ -513,6 +538,7 @@ VBOX_CORE_DOXYFILE_INPUT += \
 
 
 VBOX_CORE_DOXYFILE_OUTPUT = $(PATH_OUT)/docs/Core
+BLDDIRS += $(VBOX_CORE_DOXYFILE_OUTPUT)
 
 -include $(PATH_TARGET)/Doxyfile.Core.dep
 
@@ -538,12 +564,8 @@ $(PATH_TARGET)/Doxyfile.Core: Doxyfile.Core \
 	@$(APPEND) $(PATH_TARGET)/Doxyfile.Core.dep "DOXYGEN_OUTPUT_PREV = $(VBOX_CORE_DOXYFILE_OUTPUT)"
 	@$(APPEND) $(PATH_TARGET)/Doxyfile.Core.dep "DOXYGEN_INPUT_PREV = $(VBOX_CORE_DOXYFILE_INPUT)"
 
-# Create the output directory.
-$(call DIRDEP, $(VBOX_CORE_DOXYFILE_OUTPUT)):
-	$(MKDIR) -p $@
-
 # Do the actual job.
-$(PATH_TARGET)/docs.Core: $(PATH_TARGET)/Doxyfile.Core $(VBOX_CORE_DOXYFILE_INPUT) | $(call DIRDEP, $(VBOX_CORE_DOXYFILE_OUTPUT))
+$(PATH_TARGET)/docs.Core: $(PATH_TARGET)/Doxyfile.Core $$(VBOX_CORE_DOXYFILE_INPUT) | $(VBOX_CORE_DOXYFILE_OUTPUT)/
 	$(RM) -f $(PATH_TARGET)/docs.Core
 	$(RM) -Rf $(VBOX_CORE_DOXYFILE_OUTPUT)/html/
 	doxygen $(PATH_TARGET)/Doxyfile.Core
@@ -562,6 +584,9 @@ incs:
 		-e '/#define/!d' \
 		-e '/\\$$/d' \
 		-e 's/#define/%define/' \
+		-e 's/\([0-9a-fA-F][0-9a-fA-F]*\)U$$/\1/' \
+		-e 's/\([0-9a-fA-F][0-9a-fA-F]*\)U[[:space:]]/\1 /' \
+		-e 's/[[:space:]]\/\*\*<.*$$//' \
 		--output include/VBox/x86.mac \
 		include/VBox/x86.h
 
@@ -656,7 +681,7 @@ endif
 #
 up update up2 update2::
 ifndef VBOX_OSE
-	$(MAKE) -C tools fetch
+	+$(MAKE) -C tools fetch
 else
 	$(MAKE) -C tools -f Makefile-ose.kmk fetch
 endif
@@ -709,18 +734,22 @@ VBOX_ADDITIONS_BUILD.x86 = VBOX_ONLY_ADDITIONS=1 VBOX_WITHOUT_ADDITIONS_ISO=1 \
 # out directory names inside the additions building VMs.
 VBOX_ADDITIONS_BUILD_SUBDIRNAME := $(lastword $(subst /, ,$(PATH_ROOT)))
 
+VBOX_KMK_TIME = $(KBUILD_BIN_PATH)/kmk_time
+
 # Oh well, this gets really fancy - ms vc8 doesn't work inside ssh due to some
 # session setup issue. So do this indirectly through psexec. The downside is
 # that there is no direct build feedback. Also I couldn't get the share to
 # work via psexec, so rsync over the result of the build.
 additions-build-win.amd64:
 ifeq ($(KBUILD_TARGET),win)
-	+ $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
+	+ $(VBOX_KMK_TIME) $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
 else
+	$(call MSG_L1,Building Windows/amd64 additions)
 	rsync -av --no-owner --no-group --delete --delete-excluded --exclude .svn/ --exclude out/ --exclude tinderclient.log . 192.168.27.5:/cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)
-	ssh vbox@192.168.27.5 c:/psexec/psexec.exe \\\\\\\\addvm -u vbox -p $(WIN64PASSWORD) c:\\\\cygwin\\\\bin\\\\bash.exe -c \''PATH=/usr/bin:/bin e:/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)/tools/env.sh kmk $(VBOX_ADDITIONS_BUILD.amd64) > e:/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME).log 2>&1'\'; \
+	$(VBOX_KMK_TIME) ssh vbox@192.168.27.5 c:/psexec/psexec.exe \\\\\\\\addvm -u vbox -p $(WIN64PASSWORD) c:\\\\cygwin\\\\bin\\\\bash.exe -c \''PATH=/usr/bin:/bin e:/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)/tools/env.sh kmk $(VBOX_ADDITIONS_BUILD.amd64) > e:/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME).log 2>&1'\'; \
 	rc=$$?; \
 	rsync -av --delete 192.168.27.5:/cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)/out/win.amd64/ out/win.amd64; \
+	mkdir -p out/win.amd64; \
 	rsync -a --delete 192.168.27.5:/cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME).log out/win.amd64/build.log; \
 	cat out/win.amd64/build.log; \
 	exit $$rc
@@ -728,46 +757,51 @@ endif
 
 additions-build-win.x86:
 ifeq ($(KBUILD_TARGET),win)
-	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
+	+ $(VBOX_KMK_TIME) $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
 else
+	$(call MSG_L1,Building Windows/x86 additions)
 	rsync -av --no-owner --no-group --delete --delete-excluded --exclude .svn/ --exclude out/ --exclude tinderclient.log . 192.168.27.5:/cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)
-	ssh vbox@192.168.27.5 " cd /cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && PATH_OUT_BASE=Z:/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)/out tools/env.sh kmk $(VBOX_ADDITIONS_BUILD.x86)"
+	$(VBOX_KMK_TIME) ssh vbox@192.168.27.5 " cd /cygdrive/e/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && PATH_OUT_BASE=Z:/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME)/out tools/env.sh kmk $(VBOX_ADDITIONS_BUILD.x86)"
 endif
 
 additions-build-solaris.amd64:
 ifeq ($(KBUILD_TARGET),solaris)
-	+ $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
+	+ $(VBOX_KMK_TIME) $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
 else
-	ssh vbox@192.168.27.4 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.amd64) "
+	$(call MSG_L1,Building Solaris/amd64 additions)
+	$(VBOX_KMK_TIME) ssh vbox@192.168.27.4 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.amd64) "
 endif
 
 # ASSUMES 64-bit is built already. See @todo above.
 additions-build-solaris.x86:
 ifeq ($(KBUILD_TARGET),solaris)
-	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86) VBOX_WITH_COMBINED_SOLARIS_GUEST_PACKAGE=1
+	+ $(VBOX_KMK_TIME) $(KMK) $(VBOX_ADDITIONS_BUILD.x86) VBOX_WITH_COMBINED_SOLARIS_GUEST_PACKAGE=1
 else
-	ssh vbox@192.168.27.4 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) VBOX_WITH_COMBINED_SOLARIS_GUEST_PACKAGE=1"
+	$(call MSG_L1,Building Solaris/x86 additions)
+	$(VBOX_KMK_TIME) ssh vbox@192.168.27.4 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) VBOX_WITH_COMBINED_SOLARIS_GUEST_PACKAGE=1"
 endif
 
 additions-build-os2.x86:
 #ifeq ($(KBUILD_TARGET),os2)
-#	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
+#	+ $(VBOX_KMK_TIME) $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
 #else
-#	ssh vbox@192.168.27.3 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
+#	$(VBOX_KMK_TIME) ssh vbox@192.168.27.3 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
 #endif
 
 additions-build-linux.amd64:
 ifeq ($(KBUILD_TARGET).$(KBUILD_TARGET_ARCH),linux.amd64)
-	+ $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
+	+ $(VBOX_KMK_TIME) $(KMK) $(VBOX_ADDITIONS_BUILD.amd64)
 else
-	ssh vbox@192.168.27.12 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.amd64) "
+	$(call MSG_L1,Building Linux/amd64 additions)
+	$(VBOX_KMK_TIME) ssh vbox@192.168.27.12 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.amd64) "
 endif
 
 additions-build-linux.x86:
 ifeq ($(KBUILD_TARGET).$(KBUILD_TARGET_ARCH),linux.x86)
-	+ $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
+	+ $(VBOX_KMK_TIME) $(KMK) $(VBOX_ADDITIONS_BUILD.x86)
 else
-	ssh vbox@192.168.27.2 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
+	$(call MSG_L1,Building Linux/x86 additions)
+	$(VBOX_KMK_TIME) ssh vbox@192.168.27.2 " cd /mnt/vbox/$(VBOX_ADDITIONS_BUILD_SUBDIRNAME) && ./tools/env.sh --no-wine kmk $(VBOX_ADDITIONS_BUILD.x86) "
 endif
 
 
@@ -785,12 +819,21 @@ additions-packing:
 		-C src/VBox/Additions \
 		$(VBOX_PATH_ADDITIONS)/VBoxGuestAdditions.iso
 
-sdk:
-	+ $(KMK) VBOX_ONLY_SDK=1  \
-              pass_bldprogs pass_others pass_installs pass_packing
 
-fetch_sdk_reqs:
+
+#
+# Aliases for building the SDK.
+#
+.NOTPARALLEL: sdk sdk-fetch
+sdk:
+	+ $(KMK) VBOX_ONLY_SDK=1 \
+		pass_bldprogs pass_others pass_installs pass_packing
+
+sdk-fetch:
 	+ $(KMK) KBUILD_TARGET=win  KBUILD_TARGET_ARCH=x86  -C tools fetch
+
+
+
 
 #
 # Generate VirtualBox-OSE-x.x.x.tar.bz2 tarballs for distribution

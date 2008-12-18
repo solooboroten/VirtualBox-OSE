@@ -1055,6 +1055,13 @@ void OPPROTO op_rdtsc(void)
     helper_rdtsc();
 }
 
+#ifdef VBOX
+void OPPROTO op_rdtscp(void)
+{
+    helper_rdtscp();
+}
+#endif
+
 void OPPROTO op_cpuid(void)
 {
     helper_cpuid();
@@ -1258,7 +1265,9 @@ void OPPROTO op_movl_seg_T0_vm(void)
     sc->selector = selector;
     sc->base = (selector << 4);
 #ifdef VBOX
-    sc->flags = 0; /* clear attributes */
+    sc->flags = DESC_P_MASK | DESC_S_MASK | DESC_W_MASK;
+    if (PARAM1 == offsetof(CPUX86State,segs[R_CS]))
+        sc->flags |= DESC_CS_MASK;
 #endif
 }
 

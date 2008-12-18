@@ -1,4 +1,4 @@
-/* $Id: log-vbox.cpp $ */
+/* $Id: log-vbox.cpp 14112 2008-11-11 21:27:07Z vboxsync $ */
 /** @file
  * Virtual Box Runtime - Logging configuration.
  */
@@ -196,7 +196,7 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
      */
 #define ASSERT_LOG_GROUP(grp)  ASSERT_LOG_GROUP2(LOG_GROUP_##grp, #grp)
 #define ASSERT_LOG_GROUP2(def, str) \
-    do { if (strcmp(g_apszGroups[def], str)) {printf("%s='%s' expects '%s'\n", #def, g_apszGroups[def], str); AssertReleaseBreakpoint(); } } while (0)
+    do { if (strcmp(g_apszGroups[def], str)) {printf("%s='%s' expects '%s'\n", #def, g_apszGroups[def], str); RTAssertDoPanic(); } } while (0)
     ASSERT_LOG_GROUP(DEFAULT);
     ASSERT_LOG_GROUP(CFGM);
     ASSERT_LOG_GROUP(CPUM);
@@ -410,6 +410,11 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
 # endif
 # if defined(DEBUG_ramshankar)  /* Guest ring-0 as well */
         RTLogGroupSettings(pLogger, "+all.e.l.f");
+        RTLogFlags(pLogger, "enabled unbuffered");
+        pLogger->fDestFlags |= RTLOGDEST_DEBUGGER;
+# endif
+# if defined(DEBUG_aleksey)  /* Guest ring-0 as well */
+        RTLogGroupSettings(pLogger, "+net_flt_drv.e.l.f");
         RTLogFlags(pLogger, "enabled unbuffered");
         pLogger->fDestFlags |= RTLOGDEST_DEBUGGER;
 # endif

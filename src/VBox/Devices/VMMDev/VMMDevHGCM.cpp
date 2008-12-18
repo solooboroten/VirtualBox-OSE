@@ -1,4 +1,4 @@
-/* $Id: VMMDevHGCM.cpp $ */
+/* $Id: VMMDevHGCM.cpp 13840 2008-11-05 03:31:46Z vboxsync $ */
 /** @file
  * VMMDev - HGCM - Host-Guest Communication Manager Device.
  */
@@ -1137,7 +1137,7 @@ DECLCALLBACK(void) hgcmCompleted (PPDMIHGCMPORT pInterface, int32_t result, PVBO
     VMMDevState *pVMMDevState = PDMIHGCMPORT_2_VMMDEVSTATE(pInterface);
 
     /* Not safe to execute asynchroneously; forward to EMT */
-    int rc = VMR3ReqCallEx(PDMDevHlpGetVM(pVMMDevState->pDevIns), NULL, 0, VMREQFLAGS_NO_WAIT | VMREQFLAGS_VOID,
+    int rc = VMR3ReqCallEx(PDMDevHlpGetVM(pVMMDevState->pDevIns), VMREQDEST_ANY, NULL, 0, VMREQFLAGS_NO_WAIT | VMREQFLAGS_VOID,
                            (PFNRT)hgcmCompletedWorker, 3, pInterface, result, pCmd);
     AssertRC(rc);
 }
@@ -1343,7 +1343,7 @@ int vmmdevHGCMLoadStateDone(VMMDevState *pVMMDevState, PSSMHANDLE pSSM)
 
                                 Log(("VMMDevReq_HGCMCall: sizeof (VMMDevHGCMRequest) = %04X\n", sizeof (VMMDevHGCMCall)));
 
-                                Log(("%.*Vhxd\n", requestHeader->size, requestHeader));
+                                Log(("%.*Rhxd\n", requestHeader->size, requestHeader));
 
 #ifdef VBOX_WITH_64_BITS_GUESTS
                                 bool f64Bits = (requestHeader->requestType == VMMDevReq_HGCMCall64);

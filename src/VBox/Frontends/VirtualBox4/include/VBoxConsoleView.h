@@ -123,13 +123,20 @@ public:
     }
     void updateSliders();
 
+    void requestToResize (const QSize &aSize);
+
+#if defined(Q_WS_MAC)
+    void updateDockIcon();
+    void setDockIconEnabled (bool aOn) { mDockIconEnabled = aOn; };
+#endif
+
 signals:
 
     void keyboardStateChanged (int state);
     void mouseStateChanged (int state);
     void machineStateChanged (KMachineState state);
     void additionsStateChanged (const QString &, bool, bool, bool);
-    void mediaChanged (VBoxDefs::DiskType aType);
+    void mediaDriveChanged (VBoxDefs::MediaType aType);
     void networkStateChange();
     void usbStateChange();
     void sharedFoldersChanged();
@@ -256,6 +263,7 @@ private:
 
     bool mIgnoreMainwndResize : 1;
     bool mAutoresizeGuest : 1;
+    bool mIgnoreFrameBufferResize : 1;
 
     /**
      * This flag indicates whether the last console resize should trigger
@@ -301,6 +309,7 @@ private:
     static LRESULT CALLBACK lowLevelKeyboardProc (int nCode,
                                                   WPARAM wParam, LPARAM lParam);
 #elif defined (Q_WS_MAC)
+    EventHandlerRef mDarwinWindowOverlayHandlerRef;
 # ifndef VBOX_WITH_HACKED_QT
     static pascal OSStatus darwinEventHandlerProc (EventHandlerCallRef inHandlerCallRef,
                                                    EventRef inEvent, void *inUserData);
@@ -312,10 +321,12 @@ private:
     QPixmap mPausedShot;
 #if defined(Q_WS_MAC)
     CGImageRef mVirtualBoxLogo;
+    bool mDockIconEnabled;
 #endif
     DesktopGeo mDesktopGeo;
     QRect mDesktopGeometry;
     QRect mLastSizeHint;
+    bool mPassCAD;
 };
 
 #endif // __VBoxConsoleView_h__

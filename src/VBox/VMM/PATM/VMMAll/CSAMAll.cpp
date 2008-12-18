@@ -1,4 +1,4 @@
-/* $Id: CSAMAll.cpp $ */
+/* $Id: CSAMAll.cpp 14299 2008-11-18 13:25:40Z vboxsync $ */
 /** @file
  * CSAM - Guest OS Code Scanning and Analysis Manager - Any Context
  */
@@ -52,7 +52,7 @@
  * @param   pVM         The VM to operate on.
  * @param   pvFault     Fault address
  */
-CSAMDECL(int) CSAMExecFault(PVM pVM, RTRCPTR pvFault)
+VMMDECL(int) CSAMExecFault(PVM pVM, RTRCPTR pvFault)
 {
     if(!CSAMIsEnabled(pVM))
         return VINF_SUCCESS;
@@ -79,7 +79,7 @@ CSAMDECL(int) CSAMExecFault(PVM pVM, RTRCPTR pvFault)
  * @param   pVM         The VM to operate on.
  * @param   pPage       GC page address
  */
-CSAMDECL(bool) CSAMIsPageScanned(PVM pVM, RTRCPTR pPage)
+VMMDECL(bool) CSAMIsPageScanned(PVM pVM, RTRCPTR pPage)
 {
     int pgdir, bit;
     uintptr_t page;
@@ -107,14 +107,14 @@ CSAMDECL(bool) CSAMIsPageScanned(PVM pVM, RTRCPTR pPage)
  * @param   fScanned    Mark as scanned or not scanned
  *
  */
-CSAMDECL(int) CSAMMarkPage(PVM pVM, RTRCPTR pPage, bool fScanned)
+VMMDECL(int) CSAMMarkPage(PVM pVM, RTRCPTR pPage, bool fScanned)
 {
     int pgdir, bit;
     uintptr_t page;
 
 #ifdef LOG_ENABLED
     if (fScanned && !CSAMIsPageScanned(pVM, pPage))
-       Log(("CSAMMarkPage %VRv\n", pPage));
+       Log(("CSAMMarkPage %RRv\n", pPage));
 #endif
 
     if(!CSAMIsEnabled(pVM))
@@ -131,23 +131,23 @@ CSAMDECL(int) CSAMMarkPage(PVM pVM, RTRCPTR pPage, bool fScanned)
     {
         STAM_COUNTER_INC(&pVM->csam.s.StatBitmapAlloc);
         int rc = MMHyperAlloc(pVM, CSAM_PAGE_BITMAP_SIZE, 0, MM_TAG_CSAM, (void **)&pVM->csam.s.CTXSUFF(pPDBitmap)[pgdir]);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
             Log(("MMR3HyperAlloc failed with %d\n", rc));
             return rc;
         }
-#ifdef IN_GC
-        pVM->csam.s.pPDHCBitmapGC[pgdir] = MMHyperGC2HC(pVM, (RCPTRTYPE(void*))pVM->csam.s.pPDBitmapGC[pgdir]);
+#ifdef IN_RC
+        pVM->csam.s.pPDHCBitmapGC[pgdir] = MMHyperRCToR3(pVM, (RCPTRTYPE(void*))pVM->csam.s.pPDBitmapGC[pgdir]);
         if (!pVM->csam.s.pPDHCBitmapGC[pgdir])
         {
-            Log(("MMHyperHC2GC failed for %VRv\n", pVM->csam.s.pPDBitmapGC[pgdir]));
+            Log(("MMHyperHC2GC failed for %RRv\n", pVM->csam.s.pPDBitmapGC[pgdir]));
             return rc;
         }
 #else
-        pVM->csam.s.pPDGCBitmapHC[pgdir] = MMHyperHC2GC(pVM, pVM->csam.s.pPDBitmapHC[pgdir]);
+        pVM->csam.s.pPDGCBitmapHC[pgdir] = MMHyperR3ToRC(pVM, pVM->csam.s.pPDBitmapHC[pgdir]);
         if (!pVM->csam.s.pPDGCBitmapHC[pgdir])
         {
-            Log(("MMHyperHC2GC failed for %VHv\n", pVM->csam.s.pPDBitmapHC[pgdir]));
+            Log(("MMHyperHC2GC failed for %RHv\n", pVM->csam.s.pPDBitmapHC[pgdir]));
             return rc;
         }
 #endif
@@ -167,7 +167,7 @@ CSAMDECL(int) CSAMMarkPage(PVM pVM, RTRCPTR pPage, bool fScanned)
  * only when CSAM is enabled. Leaving these selection criteria
  * to the caller simplifies the interface (PTE passing).
  *
- * Note the the page has not yet been synced, so the TLB trick
+ * Note that the page has not yet been synced, so the TLB trick
  * (which wasn't ever active anyway) cannot be applied.
  *
  * @returns true if the page should be marked not present because
@@ -176,7 +176,7 @@ CSAMDECL(int) CSAMMarkPage(PVM pVM, RTRCPTR pPage, bool fScanned)
  * @param   pVM         The VM to operate on.
  * @param   GCPtr       GC pointer of page
  */
-CSAMDECL(bool) CSAMDoesPageNeedScanning(PVM pVM, RTRCPTR GCPtr)
+VMMDECL(bool) CSAMDoesPageNeedScanning(PVM pVM, RTRCPTR GCPtr)
 {
     if(!CSAMIsEnabled(pVM))
         return false;
@@ -199,7 +199,7 @@ CSAMDECL(bool) CSAMDoesPageNeedScanning(PVM pVM, RTRCPTR GCPtr)
  * @param   pVM         The VM to operate on.
  * @param   GCPtr       GC pointer of page
  */
-CSAMDECL(void) CSAMMarkPossibleCodePage(PVM pVM, RTRCPTR GCPtr)
+VMMDECL(void) CSAMMarkPossibleCodePage(PVM pVM, RTRCPTR GCPtr)
 {
     if (pVM->csam.s.cPossibleCodePages < RT_ELEMENTS(pVM->csam.s.pvPossibleCodePage))
     {
@@ -216,7 +216,7 @@ CSAMDECL(void) CSAMMarkPossibleCodePage(PVM pVM, RTRCPTR GCPtr)
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  */
-CSAMDECL(int) CSAMEnableScanning(PVM pVM)
+VMMDECL(int) CSAMEnableScanning(PVM pVM)
 {
     pVM->fCSAMEnabled = true;
     return VINF_SUCCESS;
@@ -228,7 +228,7 @@ CSAMDECL(int) CSAMEnableScanning(PVM pVM)
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  */
-CSAMDECL(int) CSAMDisableScanning(PVM pVM)
+VMMDECL(int) CSAMDisableScanning(PVM pVM)
 {
     pVM->fCSAMEnabled = false;
     return VINF_SUCCESS;
@@ -246,7 +246,7 @@ CSAMDECL(int) CSAMDisableScanning(PVM pVM)
  * @param   pVM         The VM to operate on.
  * @param   GCPtr       GC pointer of page table entry
  */
-CSAMDECL(bool) CSAMIsKnownDangerousInstr(PVM pVM, RTRCPTR GCPtr)
+VMMDECL(bool) CSAMIsKnownDangerousInstr(PVM pVM, RTRCPTR GCPtr)
 {
     for (uint32_t i=0;i<pVM->csam.s.cDangerousInstr;i++)
     {

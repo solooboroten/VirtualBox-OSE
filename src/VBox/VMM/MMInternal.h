@@ -1,4 +1,4 @@
-/* $Id: MMInternal.h $ */
+/* $Id: MMInternal.h 14597 2008-11-25 20:41:40Z vboxsync $ */
 /** @file
  * MM - Internal header file.
  */
@@ -30,10 +30,6 @@
 #include <iprt/critsect.h>
 
 
-#if !defined(IN_MM_R3) && !defined(IN_MM_R0) && !defined(IN_MM_GC)
-# error "Not in MM! This is an internal header!"
-#endif
-
 
 /** @defgroup grp_mm_int   Internals
  * @internal
@@ -64,24 +60,24 @@
 typedef struct MMHEAPSTAT
 {
     /** Core avl node, key is the tag. */
-    AVLULNODECORE   Core;
+    AVLULNODECORE           Core;
     /** Pointer to the heap the memory belongs to. */
-    struct MMHEAP  *pHeap;
+    struct MMHEAP          *pHeap;
 #ifdef MMR3HEAP_WITH_STATISTICS
     /** Number of allocation. */
-    uint64_t        cAllocations;
+    uint64_t                cAllocations;
     /** Number of reallocations. */
-    uint64_t        cReallocations;
+    uint64_t                cReallocations;
     /** Number of frees. */
-    uint64_t        cFrees;
+    uint64_t                cFrees;
     /** Failures. */
-    uint64_t        cFailures;
+    uint64_t                cFailures;
     /** Number of bytes allocated (sum). */
-    uint64_t        cbAllocated;
+    uint64_t                cbAllocated;
     /** Number of bytes freed. */
-    uint64_t        cbFreed;
+    uint64_t                cbFreed;
     /** Number of bytes currently allocated. */
-    size_t          cbCurAllocated;
+    size_t                  cbCurAllocated;
 #endif
 } MMHEAPSTAT;
 /** Pointer to heap statistics record. */
@@ -95,14 +91,14 @@ typedef MMHEAPSTAT *PMMHEAPSTAT;
 typedef struct MMHEAPHDR
 {
     /** Pointer to the next record. */
-    struct MMHEAPHDR   *pNext;
+    struct MMHEAPHDR       *pNext;
     /** Pointer to the previous record. */
-    struct MMHEAPHDR   *pPrev;
+    struct MMHEAPHDR       *pPrev;
     /** Pointer to the heap statistics record.
      * (Where the a PVM can be found.) */
-    PMMHEAPSTAT         pStat;
+    PMMHEAPSTAT             pStat;
     /** Size of the allocation (including this header). */
-    size_t              cbSize;
+    size_t                  cbSize;
 } MMHEAPHDR;
 /** Pointer to MM heap header. */
 typedef MMHEAPHDR *PMMHEAPHDR;
@@ -112,17 +108,17 @@ typedef MMHEAPHDR *PMMHEAPHDR;
 typedef struct MMHEAP
 {
     /** Lock protecting the heap. */
-    RTCRITSECT          Lock;
+    RTCRITSECT              Lock;
     /** Heap block list head. */
-    PMMHEAPHDR          pHead;
+    PMMHEAPHDR              pHead;
     /** Heap block list tail. */
-    PMMHEAPHDR          pTail;
+    PMMHEAPHDR              pTail;
     /** Heap per tag statistics tree. */
-    PAVLULNODECORE      pStatTree;
+    PAVLULNODECORE          pStatTree;
     /** The VM handle. */
-    PUVM                pUVM;
+    PUVM                    pUVM;
     /** Heap global statistics. */
-    MMHEAPSTAT          Stat;
+    MMHEAPSTAT              Stat;
 } MMHEAP;
 /** Pointer to MM Heap structure. */
 typedef MMHEAP *PMMHEAP;
@@ -138,23 +134,23 @@ typedef MMHEAP *PMMHEAP;
 /** @def MMHYPER_HEAP_FREE_DELAY
  * If defined, it indicates the number of frees that should be delayed.
  */
-#if defined(__DOXYGEN__)
-# define MMHYPER_HEAP_FREE_DELAY   64
+#if defined(DOXYGEN_RUNNING)
+# define MMHYPER_HEAP_FREE_DELAY            64
 #endif
 
 /** @def MMHYPER_HEAP_FREE_POISON
  * If defined, it indicates that freed memory should be poisoned
  * with the value it has.
  */
-#if defined(VBOX_STRICT) || defined(__DOXYGEN__)
-# define MMHYPER_HEAP_FREE_POISON   0xCB
+#if defined(VBOX_STRICT) || defined(DOXYGEN_RUNNING)
+# define MMHYPER_HEAP_FREE_POISON           0xcb
 #endif
 
 /** @def MMHYPER_HEAP_STRICT
  * Enables a bunch of assertions in the heap code. */
-#if defined(VBOX_STRICT) || defined(__DOXYGEN__)
+#if defined(VBOX_STRICT) || defined(DOXYGEN_RUNNING)
 # define MMHYPER_HEAP_STRICT 1
-# if 0 || defined(__DOXYGEN__)
+# if 0 || defined(DOXYGEN_RUNNING)
 /** @def MMHYPER_HEAP_STRICT_FENCE
  * Enables tail fence. */
 #  define MMHYPER_HEAP_STRICT_FENCE
@@ -163,7 +159,7 @@ typedef MMHEAP *PMMHEAP;
 #  define MMHYPER_HEAP_STRICT_FENCE_SIZE    256
 /** @def MMHYPER_HEAP_STRICT_FENCE_U32
  * The fence filler. */
-#  define MMHYPER_HEAP_STRICT_FENCE_U32     0xdeadbeef
+#  define MMHYPER_HEAP_STRICT_FENCE_U32     UINT32_C(0xdeadbeef)
 # endif
 #endif
 
@@ -175,25 +171,25 @@ typedef struct MMHYPERSTAT
 {
     /** Core avl node, key is the tag.
      * @todo The type is wrong! Get your lazy a$$ over and create that offsetted uint32_t version we need here!  */
-    AVLOGCPHYSNODECORE Core;
+    AVLOGCPHYSNODECORE      Core;
     /** Aligning the 64-bit fields on a 64-bit line. */
-    uint32_t        u32Padding0;
+    uint32_t                u32Padding0;
     /** Indicator for whether these statistics are registered with STAM or not. */
-    bool            fRegistered;
+    bool                    fRegistered;
     /** Number of allocation. */
-    uint64_t        cAllocations;
+    uint64_t                cAllocations;
     /** Number of frees. */
-    uint64_t        cFrees;
+    uint64_t                cFrees;
     /** Failures. */
-    uint64_t        cFailures;
+    uint64_t                cFailures;
     /** Number of bytes allocated (sum). */
-    uint64_t        cbAllocated;
+    uint64_t                cbAllocated;
     /** Number of bytes freed (sum). */
-    uint64_t        cbFreed;
+    uint64_t                cbFreed;
     /** Number of bytes currently allocated. */
-    uint32_t        cbCurAllocated;
+    uint32_t                cbCurAllocated;
     /** Max number of bytes allocated. */
-    uint32_t        cbMaxAllocated;
+    uint32_t                cbMaxAllocated;
 } MMHYPERSTAT;
 /** Pointer to hypervisor heap statistics record. */
 typedef MMHYPERSTAT *PMMHYPERSTAT;
@@ -244,14 +240,18 @@ typedef struct MMHYPERHEAP
     uint32_t                u32Magic;
     /** The heap size. (This structure is not included!) */
     uint32_t                cbHeap;
-    /** The HC Ring-3 address of the VM. */
-    R3PTRTYPE(PVM)          pVMHC;
-    /** The HC Ring-3 address of the heap. */
-    R3R0PTRTYPE(uint8_t *)  pbHeapHC;
-    /** The GC address of the heap. */
-    RCPTRTYPE(uint8_t *)    pbHeapGC;
-    /** The GC address of the VM. */
-    RCPTRTYPE(PVM)          pVMGC;
+    /** The HC ring-3 address of the heap. */
+    R3PTRTYPE(uint8_t *)    pbHeapR3;
+    /** The HC ring-3 address of the shared VM strcture. */
+    PVMR3                   pVMR3;
+    /** The HC ring-0 address of the heap. */
+    R0PTRTYPE(uint8_t *)    pbHeapR0;
+    /** The HC ring-0 address of the shared VM strcture. */
+    PVMR0                   pVMR0;
+    /** The RC address of the heap. */
+    RCPTRTYPE(uint8_t *)    pbHeapRC;
+    /** The RC address of the shared VM strcture. */
+    PVMRC                   pVMRC;
     /** The amount of free memory in the heap. */
     uint32_t                cbFree;
     /** Offset of the first free chunk in the heap.
@@ -275,17 +275,23 @@ typedef struct MMHYPERHEAP
         RTUINTPTR           uCaller;
         /** The offset of the freed chunk. */
         uint32_t            offChunk;
-    }                   aDelayedFrees[MMHYPER_HEAP_FREE_DELAY];
+    } aDelayedFrees[MMHYPER_HEAP_FREE_DELAY];
 #else
     /** Padding the structure to a 64-bit aligned size. */
-    uint32_t            u32Padding0;
+    uint32_t                u32Padding0;
+#endif
+    /** The heap physical pages. */
+    R3PTRTYPE(PSUPPAGE)     paPages;
+#if HC_ARCH_BITS == 32
+    /** Padding the structure to a 64-bit aligned size. */
+    uint32_t                u32Padding1;
 #endif
 } MMHYPERHEAP;
 /** Pointer to the hypervisor heap. */
 typedef MMHYPERHEAP *PMMHYPERHEAP;
 
 /** Magic value for MMHYPERHEAP. (C. S. Lewis) */
-#define MMHYPERHEAP_MAGIC   0x18981129
+#define MMHYPERHEAP_MAGIC               UINT32_C(0x18981129)
 
 
 /**
@@ -342,36 +348,52 @@ typedef MMHYPERHEAP *PMMHYPERHEAP;
 /**
  * Page sub pool
  *
- * About the allocation of this structrue. To keep the number of heap blocks,
+ * About the allocation of this structure. To keep the number of heap blocks,
  * the number of heap calls, and fragmentation low we allocate all the data
  * related to a MMPAGESUBPOOL node in one chunk. That means that after the
  * bitmap (which is of variable size) comes the SUPPAGE records and then
- * follows the lookup tree nodes.
+ * follows the lookup tree nodes. (The heap in question is the hyper heap.)
  */
 typedef struct MMPAGESUBPOOL
 {
     /** Pointer to next sub pool. */
-    struct MMPAGESUBPOOL   *pNext;
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+    R3PTRTYPE(struct MMPAGESUBPOOL *)   pNext;
+#else
+    R3R0PTRTYPE(struct MMPAGESUBPOOL *) pNext;
+#endif
     /** Pointer to next sub pool in the free chain.
      * This is NULL if we're not in the free chain or at the end of it. */
-    struct MMPAGESUBPOOL   *pNextFree;
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+    R3PTRTYPE(struct MMPAGESUBPOOL *)   pNextFree;
+#else
+    R3R0PTRTYPE(struct MMPAGESUBPOOL *) pNextFree;
+#endif
     /** Pointer to array of lock ranges.
      * This is allocated together with the MMPAGESUBPOOL and thus needs no freeing.
      * It follows immediately after the bitmap.
      * The reserved field is a pointer to this structure.
      */
-    PSUPPAGE                paPhysPages;
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+    R3PTRTYPE(PSUPPAGE)                 paPhysPages;
+#else
+    R3R0PTRTYPE(PSUPPAGE)               paPhysPages;
+#endif
     /** Pointer to the first page. */
-    void                   *pvPages;
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+    R3PTRTYPE(void *)                   pvPages;
+#else
+    R3R0PTRTYPE(void *)                 pvPages;
+#endif
     /** Size of the subpool. */
-    unsigned                cPages;
+    uint32_t                            cPages;
     /** Number of free pages. */
-    unsigned                cPagesFree;
+    uint32_t                            cPagesFree;
     /** The allocation bitmap.
      * This may extend beyond the end of the defined array size.
      */
-    unsigned                auBitmap[1];
-    /* ... SUPPAGE          aRanges[1]; */
+    uint32_t                            auBitmap[1];
+    /* ... SUPPAGE                      aRanges[1]; */
 } MMPAGESUBPOOL;
 /** Pointer to page sub pool. */
 typedef MMPAGESUBPOOL *PMMPAGESUBPOOL;
@@ -382,44 +404,64 @@ typedef MMPAGESUBPOOL *PMMPAGESUBPOOL;
 typedef struct MMPAGEPOOL
 {
     /** List of subpools. */
-    PMMPAGESUBPOOL      pHead;
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+    R3PTRTYPE(PMMPAGESUBPOOL)           pHead;
+#else
+    R3R0PTRTYPE(PMMPAGESUBPOOL)         pHead;
+#endif
     /** Head of subpools with free pages. */
-    PMMPAGESUBPOOL      pHeadFree;
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+    R3PTRTYPE(PMMPAGESUBPOOL)           pHeadFree;
+#else
+    R3R0PTRTYPE(PMMPAGESUBPOOL)         pHeadFree;
+#endif
     /** AVLPV tree for looking up HC virtual addresses.
      * The tree contains MMLOOKUPVIRTPP records.
      */
-    PAVLPVNODECORE      pLookupVirt;
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+    R3PTRTYPE(PAVLPVNODECORE)           pLookupVirt;
+#else
+    R3R0PTRTYPE(PAVLPVNODECORE)         pLookupVirt;
+#endif
     /** Tree for looking up HC physical addresses.
      * The tree contains MMLOOKUPPHYSHC records.
      */
-    AVLHCPHYSTREE       pLookupPhys;
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+    R3PTRTYPE(AVLHCPHYSTREE)            pLookupPhys;
+#else
+    R3R0PTRTYPE(AVLHCPHYSTREE)          pLookupPhys;
+#endif
     /** Pointer to the VM this pool belongs. */
-    PVM                 pVM;
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+    PVMR3                               pVM;
+#else
+    R3R0PTRTYPE(PVM)                    pVM;
+#endif
     /** Flag indicating the allocation method.
      * Set: SUPLowAlloc().
      * Clear: SUPPageAlloc() + SUPPageLock(). */
-    bool                fLow;
+    bool                                fLow;
     /** Number of subpools. */
-    uint32_t            cSubPools;
+    uint32_t                            cSubPools;
     /** Number of pages in pool. */
-    uint32_t            cPages;
+    uint32_t                            cPages;
 #ifdef VBOX_WITH_STATISTICS
     /** Number of free pages in pool. */
-    uint32_t            cFreePages;
+    uint32_t                            cFreePages;
     /** Number of alloc calls. */
-    STAMCOUNTER         cAllocCalls;
+    STAMCOUNTER                         cAllocCalls;
     /** Number of free calls. */
-    STAMCOUNTER         cFreeCalls;
+    STAMCOUNTER                         cFreeCalls;
     /** Number of to phys conversions. */
-    STAMCOUNTER         cToPhysCalls;
+    STAMCOUNTER                         cToPhysCalls;
     /** Number of to virtual conversions. */
-    STAMCOUNTER         cToVirtCalls;
+    STAMCOUNTER                         cToVirtCalls;
     /** Number of real errors. */
-    STAMCOUNTER         cErrors;
+    STAMCOUNTER                         cErrors;
 #endif
 } MMPAGEPOOL;
 /** Pointer to page pool. */
-typedef MMPAGEPOOL     *PMMPAGEPOOL;
+typedef MMPAGEPOOL *PMMPAGEPOOL;
 
 /**
  * Lookup record for HC virtual memory in the page pool.
@@ -427,7 +469,7 @@ typedef MMPAGEPOOL     *PMMPAGEPOOL;
 typedef struct MMPPLOOKUPHCPTR
 {
     /** The key is virtual address. */
-    AVLPVNODECORE   Core;
+    AVLPVNODECORE           Core;
     /** Pointer to subpool if lookup record for a pool. */
     struct MMPAGESUBPOOL   *pSubPool;
 } MMPPLOOKUPHCPTR;
@@ -440,9 +482,9 @@ typedef MMPPLOOKUPHCPTR *PMMPPLOOKUPHCPTR;
 typedef struct MMPPLOOKUPHCPHYS
 {
     /** The key is physical address. */
-    AVLHCPHYSNODECORE   Core;
+    AVLHCPHYSNODECORE       Core;
     /** Pointer to SUPPAGE record for this physical address. */
-    PSUPPAGE            pPhysPage;
+    PSUPPAGE                pPhysPage;
 } MMPPLOOKUPHCPHYS;
 /** Pointer to physical memory lookup record. */
 typedef MMPPLOOKUPHCPHYS *PMMPPLOOKUPHCPHYS;
@@ -483,20 +525,20 @@ typedef MMLOCKEDTYPE *PMMLOCKEDTYPE;
 typedef struct MMLOCKEDMEM
 {
     /** Address (host mapping). */
-    void               *pv;
+    void                   *pv;
     /** Size. */
-    size_t              cb;
+    size_t                  cb;
     /** Next record. */
-    struct MMLOCKEDMEM *pNext;
+    struct MMLOCKEDMEM     *pNext;
     /** Record type. */
-    MMLOCKEDTYPE        eType;
+    MMLOCKEDTYPE            eType;
     /** Type specific data. */
     union
     {
         /** Data for MM_LOCKED_TYPE_HYPER, MM_LOCKED_TYPE_HYPER_NOFREE and MM_LOCKED_TYPE_HYPER_PAGES. */
         struct
         {
-            unsigned    uNothing;
+            unsigned        uNothing;
         } hyper;
 
         /** Data for MM_LOCKED_TYPE_PHYS. */
@@ -505,7 +547,7 @@ typedef struct MMLOCKEDMEM
             /** The GC physical address.
              * (Assuming that this is a linear range of GC physical pages.)
              */
-            RTGCPHYS    GCPhys;
+            RTGCPHYS        GCPhys;
         } phys;
     } u;
 
@@ -516,7 +558,7 @@ typedef struct MMLOCKEDMEM
      * For MM_LOCKED_TYPE_PHYS the low 12 bits of the pvPhys member
      * are bits (MM_RAM_FLAGS_*) and not part of the physical address.
      */
-    SUPPAGE             aPhysPages[1];
+    SUPPAGE                 aPhysPages[1];
 } MMLOCKEDMEM;
 /** Pointer to locked memory. */
 typedef MMLOCKEDMEM *PMMLOCKEDMEM;
@@ -533,21 +575,21 @@ typedef MMLOCKEDMEM *PMMLOCKEDMEM;
 typedef struct MMROMRANGE
 {
     /** Pointer to the next */
-    struct MMROMRANGE  *pNext;
+    struct MMROMRANGE      *pNext;
     /** Address of the range. */
-    RTGCPHYS            GCPhys;
+    RTGCPHYS                GCPhys;
     /** Size of the range. */
-    uint32_t            cbRange;
+    uint32_t                cbRange;
     /** Shadow ROM? */
-    bool                fShadow;
+    bool                    fShadow;
     /** Is the shadow ROM currently wriable? */
-    bool                fWritable;
+    bool                    fWritable;
     /** The address of the virgin ROM image for shadow ROM. */
-    const void         *pvBinary;
+    const void             *pvBinary;
     /** The address of the guest RAM that's shadowing the ROM. (lazy bird) */
-    void               *pvCopy;
+    void                   *pvCopy;
     /** The ROM description. */
-    const char         *pszDesc;
+    const char             *pszDesc;
 } MMROMRANGE;
 /** Pointer to a ROM range. */
 typedef MMROMRANGE *PMMROMRANGE;
@@ -593,9 +635,9 @@ typedef struct MMLOOKUPHYPER
         /** Locked memory. */
         struct
         {
-            /** Host context pointer. */
-            R3PTRTYPE(void *)       pvHC;
-            /** Host context ring-0 pointer. */
+            /** Host context ring-3 pointer. */
+            R3PTRTYPE(void *)       pvR3;
+            /** Host context ring-0 pointer. Optional. */
             RTR0PTR                 pvR0;
             /** Pointer to the locked mem record. */
             R3PTRTYPE(PMMLOCKEDMEM) pLockedMem;
@@ -604,22 +646,26 @@ typedef struct MMLOOKUPHYPER
         /** Contiguous physical memory. */
         struct
         {
-            /** Host context pointer. */
-            R3PTRTYPE(void *)       pvHC;
-            /** HC physical address corresponding to pvHC. */
+            /** Host context ring-3 pointer. */
+            R3PTRTYPE(void *)       pvR3;
+            /** Host context ring-0 pointer. Optional. */
+            RTR0PTR                 pvR0;
+            /** HC physical address corresponding to pvR3/pvR0. */
             RTHCPHYS                HCPhys;
         } HCPhys;
+
         /** Contiguous guest physical memory. */
         struct
         {
-            /** HC physical address corresponding to pvHC. */
+            /** The memory address (Guest Context). */
             RTGCPHYS                GCPhys;
         } GCPhys;
+
         /** MMIO2 memory. */
         struct
         {
             /** The device instance owning the MMIO2 region. */
-            PPDMDEVINS              pDevIns;
+            PPDMDEVINSR3            pDevIns;
             /** The region number. */
             uint32_t                iRegion;
             /** The offset into the MMIO2 region. */
@@ -638,7 +684,7 @@ typedef MMLOOKUPHYPER *PMMLOOKUPHYPER;
  * @returns Pointer to the VM structure the MM is part of.
  * @param   pMM   Pointer to MM instance data.
  */
-#define MM2VM(pMM)  ( (PVM)((char*)pMM - pMM->offVM) )
+#define MM2VM(pMM)  ( (PVM)((uint8_t *)pMM - pMM->offVM) )
 
 
 /**
@@ -660,7 +706,7 @@ typedef struct MM
 
     /** Lookup list for the Hypervisor Memory Area.
      * The offset is relative to the start of the heap.
-     * Use pHyperHeapHC or pHyperHeapGC to calculate the address.
+     * Use pHyperHeapR3, pHyperHeapR0 or pHypeRHeapRC to calculate the address.
      */
     RTUINT                      offLookupHyper;
 
@@ -670,24 +716,34 @@ typedef struct MM
      * Starts at 12MB and will be fixed late in the init process. */
     RTUINT                      cbHyperArea;
 
-    /** Guest address of the Hypervisor Memory Area. */
+    /** Guest address of the Hypervisor Memory Area.
+     * @remarks It's still a bit open whether this should be change to RTRCPTR or
+     *          remain a RTGCPTR. */
     RTGCPTR                     pvHyperAreaGC;
 
     /** The hypervisor heap (GC Ptr). */
-    RCPTRTYPE(PMMHYPERHEAP)     pHyperHeapGC;
+    RCPTRTYPE(PMMHYPERHEAP)     pHyperHeapRC;
 #if HC_ARCH_BITS == 64 && GC_ARCH_BITS == 64
     uint32_t                    u32Padding2;
 #endif
-    /** The hypervisor heap (HC Ptr). */
-    R3R0PTRTYPE(PMMHYPERHEAP)   pHyperHeapHC;
 
+    /** The hypervisor heap (R0 Ptr). */
+    R0PTRTYPE(PMMHYPERHEAP)     pHyperHeapR0;
+#ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+    /** Page pool - R0 Ptr. */
+    R0PTRTYPE(PMMPAGEPOOL)      pPagePoolR0;
+    /** Page pool pages in low memory R0 Ptr. */
+    R0PTRTYPE(PMMPAGEPOOL)      pPagePoolLowR0;
+#endif /* !VBOX_WITH_2X_4GB_ADDR_SPACE */
+
+    /** The hypervisor heap (R3 Ptr). */
+    R3PTRTYPE(PMMHYPERHEAP)     pHyperHeapR3;
+    /** Page pool - R3 Ptr. */
+    R3PTRTYPE(PMMPAGEPOOL)      pPagePoolR3;
+    /** Page pool pages in low memory R3 Ptr. */
+    R3PTRTYPE(PMMPAGEPOOL)      pPagePoolLowR3;
     /** List of memory locks. (HC only) */
     R3PTRTYPE(PMMLOCKEDMEM)     pLockedMem;
-
-    /** Page pool. (HC only) */
-    R3R0PTRTYPE(PMMPAGEPOOL)    pPagePool;
-    /** Page pool pages in low memory. (HC only) */
-    R3R0PTRTYPE(PMMPAGEPOOL)    pPagePoolLow;
 
     /** Pointer to the dummy page.
      * The dummy page is a paranoia thingy used for instance for pure MMIO RAM ranges
@@ -758,7 +814,7 @@ void mmR3PhysRomReset(PVM pVM);
  * @param   pv      The address to convert.
  * @thread  The Emulation Thread.
  */
-MMDECL(RTHCPHYS) mmPagePoolPtr2Phys(PMMPAGEPOOL pPool, void *pv);
+RTHCPHYS mmPagePoolPtr2Phys(PMMPAGEPOOL pPool, void *pv);
 
 /**
  * Converts a pool physical address to a linear address.
@@ -770,10 +826,11 @@ MMDECL(RTHCPHYS) mmPagePoolPtr2Phys(PMMPAGEPOOL pPool, void *pv);
  * @param   HCPhys      The address to convert.
  * @thread  The Emulation Thread.
  */
-MMDECL(void *) mmPagePoolPhys2Ptr(PMMPAGEPOOL pPool, RTHCPHYS HCPhys);
+void *mmPagePoolPhys2Ptr(PMMPAGEPOOL pPool, RTHCPHYS HCPhys);
 
 __END_DECLS
 
 /** @} */
 
 #endif
+

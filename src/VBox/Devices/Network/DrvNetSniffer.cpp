@@ -319,12 +319,16 @@ static DECLCALLBACK(int) drvNetSnifferConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
     if (!CFGMR3AreValuesValid(pCfgHandle, "File\0"))
         return VERR_PDM_DRVINS_UNKNOWN_CFG_VALUES;
 
+    if (CFGMR3GetFirstChild(pCfgHandle))
+        LogRel(("NetSniffer: Found child config entries -- are you trying to redirect ports?\n"));
+
     /*
      * Init the static parts.
      */
     pThis->pDrvIns                      = pDrvIns;
     pThis->File                         = NIL_RTFILE;
-    pThis->StartNanoTS                  = /*RTTimeProgramNanoTS() - */ RTTimeNanoTS();
+    /* The pcap file *must* start at time offset 0,0. */
+    pThis->StartNanoTS                  = RTTimeNanoTS() - RTTimeProgramNanoTS();
     /* IBase */
     pDrvIns->IBase.pfnQueryInterface    = drvNetSnifferQueryInterface;
     /* INetworkConnector */
@@ -406,15 +410,14 @@ static DECLCALLBACK(int) drvNetSnifferConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pC
     rc = RTFileOpen(&pThis->File, pThis->szFilename,
                     RTFILE_O_WRITE | RTFILE_O_CREATE_REPLACE | RTFILE_O_DENY_WRITE);
     if (RT_FAILURE(rc))
-    {
-        AssertMsgFailed(("Failed to create file '%s' for writing. rc=%Rrc\n", pThis->szFilename, rc));
-        return rc;
-    }
+        return PDMDrvHlpVMSetError(pDrvIns, rc, RT_SRC_POS,
+                                   N_("Netsniffer cannot open '%s' for writing. The directory must exist and it must be writable for the current user"), pThis->szFilename);
 
     /*
      * Write pcap header.
+     * Some time is done since capturing pThis->StartNanoTS so capture the current time again.
      */
-    PcapFileHdr(pThis->File, pThis->StartNanoTS);
+    PcapFileHdr(pThis->File, RTTimeNanoTS());
 
     return VINF_SUCCESS;
 }

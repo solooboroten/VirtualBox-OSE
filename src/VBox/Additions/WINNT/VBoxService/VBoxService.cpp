@@ -1,4 +1,4 @@
-/* $Id: VBoxService.cpp $ */
+/* $Id: VBoxService.cpp 13837 2008-11-05 02:54:02Z vboxsync $ */
 /** @file
  * VBoxService - The Guest Additions Helper Service.
  */
@@ -171,9 +171,9 @@ static int vboxStartServices (VBOXSERVICEENV *pEnv, VBOXSERVICEINFO *pTable)
             rc = pTable->pfnInit (pEnv, &pTable->pInstance, &fStartThread);
         }
 
-        if (VBOX_FAILURE (rc))
+        if (RT_FAILURE (rc))
         {
-            writeLog("VBoxService: Failed to initialize! Error = %Vrc.\n", rc);
+            writeLog("VBoxService: Failed to initialize! Error = %Rrc.\n", rc);
         }
         else
         {
@@ -194,7 +194,7 @@ static int vboxStartServices (VBOXSERVICEENV *pEnv, VBOXSERVICEINFO *pTable)
                 }
             }
 
-            if (VBOX_FAILURE (rc))
+            if (RT_FAILURE (rc))
             {
                 Log(("VBoxService: Failed to start the thread: %s\n", pTable->pszName));
 

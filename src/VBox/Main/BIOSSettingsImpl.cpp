@@ -22,6 +22,7 @@
 #include "BIOSSettingsImpl.h"
 #include "MachineImpl.h"
 #include "Logging.h"
+#include "GuestOSTypeImpl.h"
 #include <iprt/cpputils.h>
 
 // constructor / destructor
@@ -54,7 +55,7 @@ HRESULT BIOSSettings::init (Machine *aParent)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     /* share the parent weakly */
     unconst (mParent) = aParent;
@@ -84,7 +85,7 @@ HRESULT BIOSSettings::init (Machine *aParent, BIOSSettings *that)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     mParent = aParent;
     mPeer = that;
@@ -112,7 +113,7 @@ HRESULT BIOSSettings::initCopy (Machine *aParent, BIOSSettings *that)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     mParent = aParent;
     // mPeer is left null
@@ -260,7 +261,7 @@ STDMETHODIMP BIOSSettings::COMGETTER(LogoImagePath)(BSTR *imagePath)
     return S_OK;
 }
 
-STDMETHODIMP BIOSSettings::COMSETTER(LogoImagePath)(INPTR BSTR imagePath)
+STDMETHODIMP BIOSSettings::COMSETTER(LogoImagePath)(IN_BSTR imagePath)
 {
     /* empty strings are not allowed as path names */
     if (imagePath && !(*imagePath))
@@ -410,8 +411,7 @@ STDMETHODIMP BIOSSettings::COMSETTER(PXEDebugEnabled)(BOOL enable)
 
 STDMETHODIMP BIOSSettings::COMGETTER(IDEControllerType)(IDEControllerType_T *aControllerType)
 {
-    if (!aControllerType)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aControllerType);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -441,7 +441,7 @@ STDMETHODIMP BIOSSettings::COMSETTER(IDEControllerType)(IDEControllerType_T aCon
         case IDEControllerType_PIIX4:
             break;
         default:
-            return setError (E_FAIL,
+            return setError (E_INVALIDARG,
                 tr("Invalid IDE controller type '%d'"),
                 aControllerType);
     }
@@ -566,7 +566,7 @@ HRESULT BIOSSettings::loadSettings (const settings::Key &aMachineNode)
             else if (strcmp (modeStr, "MessageAndMenu") == 0)
                 mData->mBootMenuMode = BIOSBootMenuMode_MessageAndMenu;
             else
-                ComAssertMsgFailedRet (("Invalid boot menu mode '%s'\n", modeStr),
+                ComAssertMsgFailedRet (("Invalid boot menu mode '%s'", modeStr),
                                        E_FAIL);
         }
     }
@@ -599,7 +599,7 @@ HRESULT BIOSSettings::loadSettings (const settings::Key &aMachineNode)
             else if (strcmp (typeStr, "PIIX4") == 0)
                 mData->mIDEControllerType = IDEControllerType_PIIX4;
             else
-                ComAssertMsgFailedRet (("Invalid boot menu mode '%s'\n", typeStr),
+                ComAssertMsgFailedRet (("Invalid boot menu mode '%s'", typeStr),
                                        E_FAIL);
         }
     }
@@ -664,7 +664,7 @@ HRESULT BIOSSettings::saveSettings (settings::Key &aMachineNode)
                 modeStr = "MessageAndMenu";
                 break;
             default:
-                ComAssertMsgFailedRet (("Invalid boot menu type: %d\n",
+                ComAssertMsgFailedRet (("Invalid boot menu type: %d",
                                         mData->mBootMenuMode),
                                        E_FAIL);
         }
@@ -696,7 +696,7 @@ HRESULT BIOSSettings::saveSettings (settings::Key &aMachineNode)
                 ideControllerTypeStr = "PIIX4";
                 break;
             default:
-                ComAssertMsgFailedRet (("Invalid IDE Controller type: %d\n",
+                ComAssertMsgFailedRet (("Invalid IDE Controller type: %d",
                                         mData->mIDEControllerType),
                                        E_FAIL);
         }
@@ -708,13 +708,24 @@ HRESULT BIOSSettings::saveSettings (settings::Key &aMachineNode)
 
 void BIOSSettings::commit()
 {
-    AutoWriteLock alock (this);
+    /* sanity */
+    AutoCaller autoCaller (this);
+    AssertComRCReturnVoid (autoCaller.rc());
+
+    /* sanity too */
+    AutoCaller peerCaller (mPeer);
+    AssertComRCReturnVoid (peerCaller.rc());
+
+    /* lock both for writing since we modify both (mPeer is "master" so locked
+     * first) */
+    AutoMultiWriteLock2 alock (mPeer, this);
+
     if (mData.isBackedUp())
     {
         mData.commit();
         if (mPeer)
         {
-            // attach new data to the peer and reshare it
+            /* attach new data to the peer and reshare it */
             AutoWriteLock peerlock (mPeer);
             mPeer->mData.attach (mData);
         }
@@ -723,9 +734,35 @@ void BIOSSettings::commit()
 
 void BIOSSettings::copyFrom (BIOSSettings *aThat)
 {
-    AutoWriteLock alock (this);
+    AssertReturnVoid (aThat != NULL);
 
-    // this will back up current data
+    /* sanity */
+    AutoCaller autoCaller (this);
+    AssertComRCReturnVoid (autoCaller.rc());
+
+    /* sanity too */
+    AutoCaller thatCaller (aThat);
+    AssertComRCReturnVoid (thatCaller.rc());
+
+    /* peer is not modified, lock it for reading (aThat is "master" so locked
+     * first) */
+    AutoMultiLock2 alock (aThat->rlock(), this->wlock());
+
+    /* this will back up current data */
     mData.assignCopy (aThat->mData);
 }
 
+void BIOSSettings::applyDefaults (GuestOSType *aOsType)
+{
+    AssertReturnVoid (aOsType != NULL);
+
+    /* sanity */
+    AutoCaller autoCaller (this);
+    AssertComRCReturnVoid (autoCaller.rc());
+
+    AutoWriteLock alock (this);
+
+    /* Initialize default BIOS settings here */
+    mData->mIOAPICEnabled = aOsType->recommendedIOAPIC();
+}
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

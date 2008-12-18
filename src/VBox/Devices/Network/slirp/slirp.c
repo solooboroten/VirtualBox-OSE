@@ -3,23 +3,146 @@
 # include <paths.h>
 #endif
 
+/* disable these counters for the final release */
+/* #define VBOX_WITHOUT_RELEASE_STATISTICS */
+
 #include <VBox/err.h>
+#include <VBox/pdmdrv.h>
 #include <iprt/assert.h>
 
-static const uint8_t special_ethaddr[6] = {
+#if !defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) || !defined(RT_OS_WINDOWS)
+
+# define DO_ENGAGE_EVENT1(so, fdset, label)          \
+    do {                                             \
+        FD_SET((so)->s, (fdset));                    \
+        UPD_NFDS((so)->s);                           \
+    } while(0)
+
+
+# define DO_ENGAGE_EVENT2(so, fdset1, fdset2, label) \
+    do {                                             \
+        FD_SET((so)->s, (fdset1));                   \
+        FD_SET((so)->s, (fdset2));                   \
+        UPD_NFDS((so)->s);                           \
+    } while(0)
+
+# define DO_POLL_EVENTS(rc, error, so, events, label) do {} while (0)
+
+#define DO_CHECK_FD_SET(so, events, fdset) (FD_ISSET((so)->s, (fdset)))
+
+# ifdef VBOX_WITH_SLIRP_ICMP
+#  define ICMP_ENGAGE_EVENT(so, fdset)               \
+    do {                                             \
+        if (pData->icmp_socket.s != -1)              \
+            DO_ENGAGE_EVENT1((so), (fdset), ICMP);   \
+    } while (0)
+# else /* !VBOX_WITH_SLIRP_ICMP */
+#  define ICMP_ENGAGE_EVENT(so, fdset)               do {} while (0)
+# endif /* !VBOX_WITH_SLIRP_ICMP */
+
+#else /* defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS) */
+
+/*
+ * On Windows, we will be notified by IcmpSendEcho2() when the response arrives.
+ * So no call to WSAEventSelect necessary.
+ */
+# define ICMP_ENGAGE_EVENT(so, fdset)                do {} while(0)
+
+# define DO_ENGAGE_EVENT1(so, fdset1, label)         \
+    do {                                             \
+        rc = WSAEventSelect((so)->s, VBOX_SOCKET_EVENT, FD_ALL_EVENTS); \
+        if (rc == SOCKET_ERROR)                      \
+        {                                            \
+            /* This should not happen */             \
+            error = WSAGetLastError();               \
+            LogRel(("WSAEventSelector (" #label ") error %d (so=%x, socket=%s, event=%x)\n", \
+                        error, (so), (so)->s, VBOX_SOCKET_EVENT)); \
+        }                                            \
+    } while(0);					     \
+    continue
+
+# define DO_ENGAGE_EVENT2(so, fdset1, fdset2, label) \
+    DO_ENGAGE_EVENT1((so), (fdset1), label)
+
+# define DO_POLL_EVENTS(rc, error, so, events, label)                       \
+    (rc) = WSAEnumNetworkEvents((so)->s, VBOX_SOCKET_EVENT, (events));      \
+    if ((rc) == SOCKET_ERROR)                                               \
+    {                                                                       \
+        (error) = WSAGetLastError();                                        \
+        LogRel(("WSAEnumNetworkEvents " #label " error %d\n", (error)));    \
+        continue;                                                           \
+    }
+
+# define readfds_win FD_READ
+# define readfds_win_bit FD_READ_BIT
+
+# define writefds_win FD_WRITE
+# define writefds_win_bit FD_WRITE_BIT
+
+# define xfds_win FD_OOB
+# define xfds_win_bit FD_OOB_BIT
+
+# define DO_CHECK_FD_SET(so, events, fdset)  \
+    (((events).lNetworkEvents & fdset ## _win) && ((events).iErrorCode[fdset ## _win_bit] == 0))
+
+
+#endif /* defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS) */
+
+#define TCP_ENGAGE_EVENT1(so, fdset) \
+    DO_ENGAGE_EVENT1((so), (fdset), TCP)
+
+#define TCP_ENGAGE_EVENT2(so, fdset1, fdset2) \
+    DO_ENGAGE_EVENT2((so), (fdset1), (fdset2), TCP)
+
+#define UDP_ENGAGE_EVENT(so, fdset) \
+    DO_ENGAGE_EVENT1((so), (fdset), UDP)
+
+#define POLL_TCP_EVENTS(rc, error, so, events) \
+    DO_POLL_EVENTS((rc), (error), (so), (events), TCP)
+
+#define POLL_UDP_EVENTS(rc, error, so, events) \
+    DO_POLL_EVENTS((rc), (error), (so), (events), UDP)
+
+#define CHECK_FD_SET(so, events, set)           \
+    (DO_CHECK_FD_SET((so), (events), set))
+
+/*
+ * Loging macros
+ */
+#if VBOX_WITH_DEBUG_NAT_SOCKETS
+# if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS)
+#  define  DO_LOG_NAT_SOCK(so, proto, winevent, r_fdset, w_fdset, x_fdset)              \
+    do {                                                                                \
+        LogRel(("  " #proto "%R[natsock] %R[natwinnetevents]\n", (so), (winevent)));    \
+    } while (0)
+# else
+#  define  DO_LOG_NAT_SOCK(so, proto, winevent, r_fdset, w_fdset, x_fdset)                              \
+    do {                                                                                                \
+            LogRel(("  " #proto " %R[natsock] %s %s %s\n", (so), FD_ISSET((so)->s, (r_fdset))?"READ":"",\
+                     FD_ISSET((so)->s, (w_fdset))?"WRITE":"", FD_ISSET((so)->s, (x_fdset))?"OOB":""));  \
+    } while (0)
+# endif /* VBOX_WITH_DEBUG_NAT_SOCKETS */
+#else
+# define DO_LOG_NAT_SOCK(so, proto, winevent, r_fdset, w_fdset, x_fdset) do {} while (0)
+#endif /* !VBOX_WITH_DEBUG_NAT_SOCKETS */
+
+#define LOG_NAT_SOCK(so, proto, winevent, r_fdset, w_fdset, x_fdset) DO_LOG_NAT_SOCK((so), proto, (winevent), (r_fdset), (w_fdset), (x_fdset))
+
+static const uint8_t special_ethaddr[6] =
+{
     0x52, 0x54, 0x00, 0x12, 0x35, 0x00
 };
 
-#ifdef _WIN32
+#ifdef RT_OS_WINDOWS
 
 static int get_dns_addr_domain(PNATState pData, bool fVerbose,
                                struct in_addr *pdns_addr,
                                const char **ppszDomain)
 {
-    int rc = 0;
-    FIXED_INFO *FixedInfo=NULL;
-    ULONG    BufLen;
-    DWORD    ret;
+    int  rc = 0;
+    FIXED_INFO *FixedInfo = NULL;
+    ULONG BufLen;
+    DWORD ret;
     IP_ADDR_STRING *pIPAddr;
     struct in_addr tmp_addr;
 
@@ -29,17 +152,21 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
     /** @todo: this API returns all DNS servers, no matter whether the
      * corresponding network adapter is disabled or not. Maybe replace
      * this by GetAdapterAddresses(), which is XP/Vista only though. */
-    if (ERROR_BUFFER_OVERFLOW == GetNetworkParams(FixedInfo, &BufLen)) {
-        if (FixedInfo) {
+    if (ERROR_BUFFER_OVERFLOW == GetNetworkParams(FixedInfo, &BufLen))
+    {
+        if (FixedInfo)
+        {
             GlobalFree(FixedInfo);
             FixedInfo = NULL;
         }
         FixedInfo = GlobalAlloc(GPTR, BufLen);
     }
 
-    if ((ret = GetNetworkParams(FixedInfo, &BufLen)) != ERROR_SUCCESS) {
+    if ((ret = GetNetworkParams(FixedInfo, &BufLen)) != ERROR_SUCCESS)
+    {
         Log(("GetNetworkParams failed. ret = %08x\n", (u_int)ret ));
-        if (FixedInfo) {
+        if (FixedInfo)
+        {
             GlobalFree(FixedInfo);
             FixedInfo = NULL;
         }
@@ -55,13 +182,14 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
     *pdns_addr = tmp_addr;
 
     pIPAddr = FixedInfo -> DnsServerList.Next;
-    while ( pIPAddr )
+    while (pIPAddr)
     {
         if (fVerbose)
             LogRel(("NAT: ignored DNS address: %s\n", pIPAddr ->IpAddress.String));
         pIPAddr = pIPAddr ->Next;
     }
-    if (FixedInfo) {
+    if (FixedInfo)
+    {
         GlobalFree(FixedInfo);
         FixedInfo = NULL;
     }
@@ -121,11 +249,13 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
         snprintf(buff, sizeof(buff), "%s/RESOLV2", etc);
         f = fopen(buff, "rt");
     }
-    if (!f) {
+    if (!f)
+    {
         snprintf(buff, sizeof(buff), "%s/RESOLV2", _PATH_ETC);
         f = fopen(buff, "rt");
     }
-    if (!f) {
+    if (!f)
+    {
         snprintf(buff, sizeof(buff), "%s/resolv.conf", _PATH_ETC);
         f = fopen(buff, "rt");
     }
@@ -138,8 +268,10 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
     if (ppszDomain)
         *ppszDomain = NULL;
     Log(("nat: DNS Servers:\n"));
-    while (fgets(buff, 512, f) != NULL) {
-        if (sscanf(buff, "nameserver%*[ \t]%256s", buff2) == 1) {
+    while (fgets(buff, 512, f) != NULL)
+    {
+        if (sscanf(buff, "nameserver%*[ \t]%256s", buff2) == 1)
+        {
             if (!inet_aton(buff2, &tmp_addr))
                 continue;
             if (tmp_addr.s_addr == loopback_addr.s_addr)
@@ -209,25 +341,28 @@ int slirp_init(PNATState *ppData, const char *pszNetAddr, uint32_t u32Netmask,
     memset(pData, '\0', sizeof(NATState));
     pData->fPassDomain = fPassDomain;
     pData->pvUser = pvUser;
-#if ARCH_BITS == 64
-    pData->cpvHashUsed = 1;
-#endif
     tftp_prefix = pszTFTPPrefix;
     bootp_filename = pszBootFile;
     pData->netmask = u32Netmask;
 
-#ifdef _WIN32
+#ifdef RT_OS_WINDOWS
     {
         WSADATA Data;
         WSAStartup(MAKEWORD(2,0), &Data);
     }
+# if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC)
+    pData->phEvents[VBOX_SOCKET_EVENT_INDEX] = CreateEvent(NULL, FALSE, FALSE, NULL);
+# endif
 #endif
 
-    Assert(sizeof(struct ip) == 20);
     link_up = 1;
 
+    debug_init();
     if_init(pData);
     ip_init(pData);
+#ifdef VBOX_WITH_SLIRP_ICMP
+    icmp_init(pData);
+#endif /* VBOX_WITH_SLIRP_ICMP */
 
     /* Initialise mbufs *after* setting the MTU */
     m_init(pData);
@@ -243,6 +378,31 @@ int slirp_init(PNATState *ppData, const char *pszNetAddr, uint32_t u32Netmask,
     alias_addr.s_addr = special_addr.s_addr | htonl(CTL_ALIAS);
     getouraddr(pData);
     return fNATfailed ? VINF_NAT_DNS : VINF_SUCCESS;
+}
+
+/**
+ * Statistics counters.
+ */
+void slirp_register_timers(PNATState pData, PPDMDRVINS pDrvIns)
+{
+#ifndef VBOX_WITHOUT_RELEASE_STATISTICS
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatFill, STAMTYPE_PROFILE, STAMVISIBILITY_ALWAYS,
+                           STAMUNIT_TICKS_PER_CALL, "Profiling slirp fills", "/Drivers/NAT%d/Fill", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatPoll, STAMTYPE_PROFILE, STAMVISIBILITY_ALWAYS,
+                           STAMUNIT_TICKS_PER_CALL, "Profiling slirp polls", "/Drivers/NAT%d/Poll", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatFastTimer, STAMTYPE_PROFILE, STAMVISIBILITY_ALWAYS,
+                           STAMUNIT_TICKS_PER_CALL, "Profiling slirp fast timer", "/Drivers/NAT%d/TimerFast", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatSlowTimer, STAMTYPE_PROFILE, STAMVISIBILITY_ALWAYS,
+                           STAMUNIT_TICKS_PER_CALL, "Profiling slirp slow timer", "/Drivers/NAT%d/TimerSlow", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatTCP, STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS,
+                           STAMUNIT_COUNT, "TCP sockets", "/Drivers/NAT%d/SockTCP", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatTCPHot, STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS,
+                           STAMUNIT_COUNT, "TCP sockets active", "/Drivers/NAT%d/SockTCPHot", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatUDP, STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS,
+                           STAMUNIT_COUNT, "UDP sockets", "/Drivers/NAT%d/SockUDP", pDrvIns->iInstance);
+    PDMDrvHlpSTAMRegisterF(pDrvIns, &pData->StatUDPHot, STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS,
+                           STAMUNIT_COUNT, "UDP sockets active", "/Drivers/NAT%d/SockUDPHot", pDrvIns->iInstance);
+#endif /* VBOX_WITHOUT_RELEASE_STATISTICS */
 }
 
 /**
@@ -282,13 +442,18 @@ void slirp_term(PNATState pData)
     if (pData->pszDomain)
         RTStrFree((char *)(void *)pData->pszDomain);
 
-#if ARCH_BITS == 64
-    LogRel(("NAT: cpvHashUsed=%RU32 cpvHashCollisions=%RU32 cpvHashInserts=%RU64 cpvHashDone=%RU64\n",
-            pData->cpvHashUsed, pData->cpvHashCollisions, pData->cpvHashInserts, pData->cpvHashDone));
+#ifdef VBOX_WITH_SLIRP_ICMP
+# ifdef RT_OS_WINDOWS
+    pData->pfIcmpCloseHandle(pData->icmp_socket.sh);
+    FreeLibrary(pData->hmIcmpLibrary);
+    free(pData->pvIcmpBuffer);
+# else
+    closesocket(pData->icmp_socket.s);
+# endif
 #endif
 
     slirp_link_down(pData);
-#ifdef WIN32
+#ifdef RT_OS_WINDOWS
     WSACleanup();
 #endif
 #ifdef LOG_ENABLED
@@ -311,13 +476,13 @@ void slirp_term(PNATState pData)
 
 
 #define CONN_CANFSEND(so) (((so)->so_state & (SS_FCANTSENDMORE|SS_ISFCONNECTED)) == SS_ISFCONNECTED)
-#define CONN_CANFRCV(so) (((so)->so_state & (SS_FCANTRCVMORE|SS_ISFCONNECTED)) == SS_ISFCONNECTED)
-#define UPD_NFDS(x) if (nfds < (x)) nfds = (x)
+#define CONN_CANFRCV(so)  (((so)->so_state & (SS_FCANTRCVMORE|SS_ISFCONNECTED)) == SS_ISFCONNECTED)
+#define UPD_NFDS(x)       if (nfds < (x)) nfds = (x)
 
 /*
  * curtime kept to an accuracy of 1ms
  */
-#ifdef _WIN32
+#ifdef RT_OS_WINDOWS
 static void updtime(PNATState pData)
 {
     struct _timeb tb;
@@ -329,13 +494,13 @@ static void updtime(PNATState pData)
 #else
 static void updtime(PNATState pData)
 {
-	gettimeofday(&tt, 0);
+        gettimeofday(&tt, 0);
 
-	curtime = (u_int)tt.tv_sec * (u_int)1000;
-	curtime += (u_int)tt.tv_usec / (u_int)1000;
+        curtime = (u_int)tt.tv_sec * (u_int)1000;
+        curtime += (u_int)tt.tv_usec / (u_int)1000;
 
-	if ((tt.tv_usec % 1000) >= 500)
-	   curtime++;
+        if ((tt.tv_usec % 1000) >= 500)
+           curtime++;
 }
 #endif
 
@@ -343,346 +508,465 @@ void slirp_select_fill(PNATState pData, int *pnfds,
                        fd_set *readfds, fd_set *writefds, fd_set *xfds)
 {
     struct socket *so, *so_next;
-    struct timeval timeout;
     int nfds;
-    int tmp_time;
+#if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS)
+    int rc;
+    int error;
+#endif
+    int i;
+
+    STAM_REL_PROFILE_START(&pData->StatFill, a);
 
     nfds = *pnfds;
-	/*
-	 * First, TCP sockets
-	 */
-	do_slowtimo = 0;
-	if (link_up) {
-		/*
-		 * *_slowtimo needs calling if there are IP fragments
-		 * in the fragment queue, or there are TCP connections active
-		 */
-		do_slowtimo = ((tcb.so_next != &tcb) ||
-			       ((struct ipasfrag *)&ipq != u32_to_ptr(pData, ipq.next, struct ipasfrag *)));
 
-		for (so = tcb.so_next; so != &tcb; so = so_next) {
-			so_next = so->so_next;
+    /*
+     * First, TCP sockets
+     */
+    do_slowtimo = 0;
+    if (link_up)
+    {
+        /*
+         * *_slowtimo needs calling if there are IP fragments
+         * in the fragment queue, or there are TCP connections active
+         */
+        /* XXX:
+         * triggering of fragment expiration should be the same but use new macroses
+         */
+        do_slowtimo = (tcb.so_next != &tcb);
+        if (!do_slowtimo)
+        {
+            for (i = 0; i < IPREASS_NHASH; i++)
+            {
+                if (!TAILQ_EMPTY(&ipq[i]))
+                {
+                    do_slowtimo = 1;
+                    break;
+                }
+            }
+        }
+        ICMP_ENGAGE_EVENT(&pData->icmp_socket, readfds);
 
-			/*
-			 * See if we need a tcp_fasttimo
-			 */
-			if (time_fasttimo == 0 && so->so_tcpcb->t_flags & TF_DELACK)
-			   time_fasttimo = curtime; /* Flag when we want a fasttimo */
+        STAM_REL_COUNTER_RESET(&pData->StatTCP);
+        STAM_REL_COUNTER_RESET(&pData->StatTCPHot);
 
-			/*
-			 * NOFDREF can include still connecting to local-host,
-			 * newly socreated() sockets etc. Don't want to select these.
-	 		 */
-			if (so->so_state & SS_NOFDREF || so->s == -1)
-			   continue;
+        for (so = tcb.so_next; so != &tcb; so = so_next)
+        {
+            so_next = so->so_next;
 
-			/*
-			 * Set for reading sockets which are accepting
-			 */
-			if (so->so_state & SS_FACCEPTCONN) {
-                                FD_SET(so->s, readfds);
-				UPD_NFDS(so->s);
-				continue;
-			}
+            STAM_REL_COUNTER_INC(&pData->StatTCP);
 
-			/*
-			 * Set for writing sockets which are connecting
-			 */
-			if (so->so_state & SS_ISFCONNECTING) {
-				FD_SET(so->s, writefds);
-				UPD_NFDS(so->s);
-				continue;
-			}
+            /*
+             * See if we need a tcp_fasttimo
+             */
+            if (time_fasttimo == 0 && so->so_tcpcb->t_flags & TF_DELACK)
+                time_fasttimo = curtime; /* Flag when we want a fasttimo */
 
-			/*
-			 * Set for writing if we are connected, can send more, and
-			 * we have something to send
-			 */
-			if (CONN_CANFSEND(so) && so->so_rcv.sb_cc) {
-				FD_SET(so->s, writefds);
-				UPD_NFDS(so->s);
-			}
+            /*
+             * NOFDREF can include still connecting to local-host,
+             * newly socreated() sockets etc. Don't want to select these.
+             */
+            if (so->so_state & SS_NOFDREF || so->s == -1)
+                continue;
 
-			/*
-			 * Set for reading (and urgent data) if we are connected, can
-			 * receive more, and we have room for it XXX /2 ?
-			 */
-			if (CONN_CANFRCV(so) && (so->so_snd.sb_cc < (so->so_snd.sb_datalen/2))) {
-				FD_SET(so->s, readfds);
-				FD_SET(so->s, xfds);
-				UPD_NFDS(so->s);
-			}
-		}
+            /*
+             * Set for reading sockets which are accepting
+             */
+            if (so->so_state & SS_FACCEPTCONN)
+            {
+                STAM_REL_COUNTER_INC(&pData->StatTCPHot);
+                TCP_ENGAGE_EVENT1(so, readfds);
+                continue;
+            }
 
-		/*
-		 * UDP sockets
-		 */
-		for (so = udb.so_next; so != &udb; so = so_next) {
-			so_next = so->so_next;
+            /*
+             * Set for writing sockets which are connecting
+             */
+            if (so->so_state & SS_ISFCONNECTING)
+            {
+                STAM_REL_COUNTER_INC(&pData->StatTCPHot);
+                TCP_ENGAGE_EVENT1(so, writefds);
+            }
 
-			/*
-			 * See if it's timed out
-			 */
-			if (so->so_expire) {
-				if (so->so_expire <= curtime) {
-					udp_detach(pData, so);
-					continue;
-				} else
-					do_slowtimo = 1; /* Let socket expire */
-			}
+            /*
+             * Set for writing if we are connected, can send more, and
+             * we have something to send
+             */
+            if (CONN_CANFSEND(so) && so->so_rcv.sb_cc)
+            {
+                STAM_REL_COUNTER_INC(&pData->StatTCPHot);
+                TCP_ENGAGE_EVENT1(so, writefds);
+            }
 
-			/*
-			 * When UDP packets are received from over the
-			 * link, they're sendto()'d straight away, so
-			 * no need for setting for writing
-			 * Limit the number of packets queued by this session
-			 * to 4.  Note that even though we try and limit this
-			 * to 4 packets, the session could have more queued
-			 * if the packets needed to be fragmented
-			 * (XXX <= 4 ?)
-			 */
-			if ((so->so_state & SS_ISFCONNECTED) && so->so_queued <= 4) {
-				FD_SET(so->s, readfds);
-				UPD_NFDS(so->s);
-			}
-		}
-	}
+            /*
+             * Set for reading (and urgent data) if we are connected, can
+             * receive more, and we have room for it XXX /2 ?
+             */
+            if (CONN_CANFRCV(so) && (so->so_snd.sb_cc < (so->so_snd.sb_datalen/2)))
+            {
+                STAM_REL_COUNTER_INC(&pData->StatTCPHot);
+                TCP_ENGAGE_EVENT2(so, readfds, xfds);
+            }
+        }
 
-	/*
-	 * Setup timeout to use minimum CPU usage, especially when idle
-	 */
+        /*
+         * UDP sockets
+         */
+        STAM_REL_COUNTER_RESET(&pData->StatUDP);
+        STAM_REL_COUNTER_RESET(&pData->StatUDPHot);
 
-	/*
-	 * First, see the timeout needed by *timo
-	 */
-	timeout.tv_sec = 0;
-	timeout.tv_usec = -1;
-	/*
-	 * If a slowtimo is needed, set timeout to 500ms from the last
-	 * slow timeout. If a fast timeout is needed, set timeout within
-	 * 200ms of when it was requested.
-	 */
-	if (do_slowtimo) {
-		/* XXX + 10000 because some select()'s aren't that accurate */
-		timeout.tv_usec = ((500 - (curtime - last_slowtimo)) * 1000) + 10000;
-		if (timeout.tv_usec < 0)
-		   timeout.tv_usec = 0;
-		else if (timeout.tv_usec > 510000)
-		   timeout.tv_usec = 510000;
+        for (so = udb.so_next; so != &udb; so = so_next)
+        {
+            so_next = so->so_next;
 
-		/* Can only fasttimo if we also slowtimo */
-		if (time_fasttimo) {
-			tmp_time = (200 - (curtime - time_fasttimo)) * 1000;
-			if (tmp_time < 0)
-			   tmp_time = 0;
+            STAM_REL_COUNTER_INC(&pData->StatUDP);
 
-			/* Choose the smallest of the 2 */
-			if (tmp_time < timeout.tv_usec)
-			   timeout.tv_usec = (u_int)tmp_time;
-		}
-	}
-        *pnfds = nfds;
+            /*
+             * See if it's timed out
+             */
+            if (so->so_expire)
+            {
+                if (so->so_expire <= curtime)
+                {
+                    udp_detach(pData, so);
+                    continue;
+                }
+                else
+                    do_slowtimo = 1; /* Let socket expire */
+            }
+
+            /*
+             * When UDP packets are received from over the link, they're
+             * sendto()'d straight away, so no need for setting for writing
+             * Limit the number of packets queued by this session to 4.
+             * Note that even though we try and limit this to 4 packets,
+             * the session could have more queued if the packets needed
+             * to be fragmented.
+             *
+             * (XXX <= 4 ?)
+             */
+            if ((so->so_state & SS_ISFCONNECTED) && so->so_queued <= 4)
+            {
+                STAM_REL_COUNTER_INC(&pData->StatUDPHot);
+                UDP_ENGAGE_EVENT(so, readfds);
+            }
+        }
+
+    }
+
+#if !defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) || !defined(RT_OS_WINDOWS)
+    *pnfds = nfds;
+#else
+    *pnfds = VBOX_EVENT_COUNT;
+#endif
+
+    STAM_REL_PROFILE_STOP(&pData->StatFill, a);
 }
 
+#if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS)
+void slirp_select_poll(PNATState pData, int fTimeout, int fIcmp)
+#else
 void slirp_select_poll(PNATState pData, fd_set *readfds, fd_set *writefds, fd_set *xfds)
+#endif
 {
     struct socket *so, *so_next;
     int ret;
+#if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS)
+    WSANETWORKEVENTS NetworkEvents;
+    int rc;
+    int error;
+#endif
 
-	/* Update time */
-	updtime(pData);
+    STAM_REL_PROFILE_START(&pData->StatPoll, a);
 
-	/*
-	 * See if anything has timed out
-	 */
-	if (link_up) {
-		if (time_fasttimo && ((curtime - time_fasttimo) >= 2)) {
-			tcp_fasttimo(pData);
-			time_fasttimo = 0;
-		}
-		if (do_slowtimo && ((curtime - last_slowtimo) >= 499)) {
-			ip_slowtimo(pData);
-			tcp_slowtimo(pData);
-			last_slowtimo = curtime;
-		}
-	}
+    /* Update time */
+    updtime(pData);
 
-	/*
-	 * Check sockets
-	 */
-	if (link_up) {
-		/*
-		 * Check TCP sockets
-		 */
-		for (so = tcb.so_next; so != &tcb; so = so_next) {
-			so_next = so->so_next;
+    /*
+     * See if anything has timed out
+     */
+    if (link_up)
+    {
+        if (time_fasttimo && ((curtime - time_fasttimo) >= 2))
+        {
+            STAM_REL_PROFILE_START(&pData->StatFastTimer, a);
+            tcp_fasttimo(pData);
+            time_fasttimo = 0;
+            STAM_REL_PROFILE_STOP(&pData->StatFastTimer, a);
+        }
+        if (do_slowtimo && ((curtime - last_slowtimo) >= 499))
+        {
+            STAM_REL_PROFILE_START(&pData->StatSlowTimer, a);
+            ip_slowtimo(pData);
+            tcp_slowtimo(pData);
+            last_slowtimo = curtime;
+            STAM_REL_PROFILE_STOP(&pData->StatSlowTimer, a);
+        }
+    }
+#if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS)
+    if (fTimeout)
+        return; /* only timer update */
+#endif
 
-			/*
-			 * FD_ISSET is meaningless on these sockets
-			 * (and they can crash the program)
-			 */
-			if (so->so_state & SS_NOFDREF || so->s == -1)
-			   continue;
+    /*
+     * Check sockets
+     */
+    if (link_up)
+    {
+#if defined(VBOX_WITH_SLIRP_ICMP)
+# if defined(RT_OS_WINDOWS)
+        if (fIcmp)
+            sorecvfrom(pData, &pData->icmp_socket);
+# else
+        if (pData->icmp_socket.s != -1 && FD_ISSET(pData->icmp_socket.s, readfds))
+            sorecvfrom(pData, &pData->icmp_socket);
+# endif
+#endif
+        /*
+         * Check TCP sockets
+         */
+        for (so = tcb.so_next; so != &tcb; so = so_next)
+        {
+            so_next = so->so_next;
 
-			/*
-			 * Check for URG data
-			 * This will soread as well, so no need to
-			 * test for readfds below if this succeeds
-			 */
-			if (FD_ISSET(so->s, xfds))
-			   sorecvoob(pData, so);
-			/*
-			 * Check sockets for reading
-			 */
-			else if (FD_ISSET(so->s, readfds)) {
-				/*
-				 * Check for incoming connections
-				 */
-				if (so->so_state & SS_FACCEPTCONN) {
-					tcp_connect(pData, so);
-					continue;
-				} /* else */
-				ret = soread(pData, so);
+            /*
+             * FD_ISSET is meaningless on these sockets
+             * (and they can crash the program)
+             */
+            if (so->so_state & SS_NOFDREF || so->s == -1)
+                continue;
 
-				/* Output it if we read something */
-				if (ret > 0)
-				   tcp_output(pData, sototcpcb(so));
-			}
+            POLL_TCP_EVENTS(rc, error, so, &NetworkEvents);
 
-			/*
-			 * Check sockets for writing
-			 */
-			if (FD_ISSET(so->s, writefds)) {
-			  /*
-			   * Check for non-blocking, still-connecting sockets
-			   */
-			  if (so->so_state & SS_ISFCONNECTING) {
-			    /* Connected */
-			    so->so_state &= ~SS_ISFCONNECTING;
+            LOG_NAT_SOCK(so, TCP, &NetworkEvents, readfds, writefds, xfds);
 
+            /*
+             * Check for URG data
+             * This will soread as well, so no need to
+             * test for readfds below if this succeeds
+             */
+
+            /* out-of-band data */
+            if (CHECK_FD_SET(so, NetworkEvents, xfds))
+            {
+                sorecvoob(pData, so);
+            }
+
+            /*
+             * Check sockets for reading
+             */
+            else if (CHECK_FD_SET(so, NetworkEvents, readfds))
+            {
                 /*
-                 * This should be probably guarded by PROBE_CONN too. Anyway,
-                 * we disable it on OS/2 because the below send call returns
-                 * EFAULT which causes the opened TCP socket to close right
-                 * after it has been opened and connected.
+                 * Check for incoming connections
                  */
+                if (so->so_state & SS_FACCEPTCONN)
+                {
+                    tcp_connect(pData, so);
+#if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS)
+                    if (!(NetworkEvents.lNetworkEvents & FD_CLOSE))
+#endif
+                        continue;
+                }
+
+                ret = soread(pData, so, /*fCloseIfNothingRead=*/false);
+                /* Output it if we read something */
+                if (ret > 0)
+                    tcp_output(pData, sototcpcb(so));
+            }
+
+#if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS)
+            /*
+             * Check for FD_CLOSE events.
+             */
+            if (NetworkEvents.lNetworkEvents & FD_CLOSE)
+            {
+                /*
+                 * drain the socket
+                 */
+                for (;;)
+                {
+                    ret = soread(pData, so, /*fCloseIfNothingRead=*/true);
+                    if (ret > 0)
+                        tcp_output(pData, sototcpcb(so));
+                    else
+                        break;
+                }
+            }
+#endif
+
+            /*
+             * Check sockets for writing
+             */
+            if (CHECK_FD_SET(so, NetworkEvents, writefds))
+            {
+                /*
+                 * Check for non-blocking, still-connecting sockets
+                 */
+                if (so->so_state & SS_ISFCONNECTING)
+                {
+                    /* Connected */
+                    so->so_state &= ~SS_ISFCONNECTING;
+
+                    /*
+                     * This should be probably guarded by PROBE_CONN too. Anyway,
+                     * we disable it on OS/2 because the below send call returns
+                     * EFAULT which causes the opened TCP socket to close right
+                     * after it has been opened and connected.
+                     */
 #ifndef RT_OS_OS2
-			    ret = send(so->s, (const char *)&ret, 0, 0);
-			    if (ret < 0) {
-			      /* XXXXX Must fix, zero bytes is a NOP */
-			      if (errno == EAGAIN || errno == EWOULDBLOCK ||
-				  errno == EINPROGRESS || errno == ENOTCONN)
-				continue;
+                    ret = send(so->s, (const char *)&ret, 0, 0);
+                    if (ret < 0)
+                    {
+                        /* XXXXX Must fix, zero bytes is a NOP */
+                        if (   errno == EAGAIN
+                            || errno == EWOULDBLOCK
+                            || errno == EINPROGRESS
+                            || errno == ENOTCONN)
+                            continue;
 
-			      /* else failed */
-			      so->so_state = SS_NOFDREF;
-			    }
-			    /* else so->so_state &= ~SS_ISFCONNECTING; */
+                        /* else failed */
+                        so->so_state = SS_NOFDREF;
+                    }
+                    /* else so->so_state &= ~SS_ISFCONNECTING; */
 #endif
 
-			    /*
-			     * Continue tcp_input
-			     */
-			    tcp_input(pData, (struct mbuf *)NULL, sizeof(struct ip), so);
-			    /* continue; */
-			  } else
-			    ret = sowrite(pData, so);
-			  /*
-			   * XXXXX If we wrote something (a lot), there
-			   * could be a need for a window update.
-			   * In the worst case, the remote will send
-			   * a window probe to get things going again
-			   */
-			}
+                    /*
+                     * Continue tcp_input
+                     */
+                    tcp_input(pData, (struct mbuf *)NULL, sizeof(struct ip), so);
+                    /* continue; */
+                }
+                else
+                    ret = sowrite(pData, so);
+                /*
+                 * XXX If we wrote something (a lot), there could be the need
+                 * for a window update. In the worst case, the remote will send
+                 * a window probe to get things going again.
+                 */
+            }
 
-			/*
-			 * Probe a still-connecting, non-blocking socket
-			 * to check if it's still alive
-	 	 	 */
+            /*
+             * Probe a still-connecting, non-blocking socket
+             * to check if it's still alive
+             */
 #ifdef PROBE_CONN
-			if (so->so_state & SS_ISFCONNECTING) {
-			  ret = recv(so->s, (char *)&ret, 0,0);
+            if (so->so_state & SS_ISFCONNECTING)
+            {
+                ret = recv(so->s, (char *)&ret, 0, 0);
 
-			  if (ret < 0) {
-			    /* XXX */
-			    if (errno == EAGAIN || errno == EWOULDBLOCK ||
-				errno == EINPROGRESS || errno == ENOTCONN)
-			      continue; /* Still connecting, continue */
+                if (ret < 0)
+                {
+                    /* XXX */
+                    if (   errno == EAGAIN
+                        || errno == EWOULDBLOCK
+                        || errno == EINPROGRESS
+                        || errno == ENOTCONN)
+                    {
+                        continue; /* Still connecting, continue */
+                    }
 
-			    /* else failed */
-			    so->so_state = SS_NOFDREF;
+                    /* else failed */
+                    so->so_state = SS_NOFDREF;
 
-			    /* tcp_input will take care of it */
-			  } else {
-			    ret = send(so->s, &ret, 0,0);
-			    if (ret < 0) {
-			      /* XXX */
-			      if (errno == EAGAIN || errno == EWOULDBLOCK ||
-				  errno == EINPROGRESS || errno == ENOTCONN)
-				continue;
-			      /* else failed */
-			      so->so_state = SS_NOFDREF;
-			    } else
-			      so->so_state &= ~SS_ISFCONNECTING;
-
-			  }
-			  tcp_input((struct mbuf *)NULL, sizeof(struct ip),so);
-			} /* SS_ISFCONNECTING */
-#endif
-		}
-
-		/*
-		 * Now UDP sockets.
-		 * Incoming packets are sent straight away, they're not buffered.
-		 * Incoming UDP data isn't buffered either.
-		 */
-		for (so = udb.so_next; so != &udb; so = so_next) {
-			so_next = so->so_next;
-
-			if (so->s != -1 && FD_ISSET(so->s, readfds)) {
-                            sorecvfrom(pData, so);
+                    /* tcp_input will take care of it */
+                }
+                else
+                {
+                    ret = send(so->s, &ret, 0, 0);
+                    if (ret < 0)
+                    {
+                        /* XXX */
+                        if (   errno == EAGAIN
+                            || errno == EWOULDBLOCK
+                            || errno == EINPROGRESS
+                            || errno == ENOTCONN)
+                        {
+                            continue;
                         }
-		}
-	}
+                        /* else failed */
+                        so->so_state = SS_NOFDREF;
+                    }
+                    else
+                        so->so_state &= ~SS_ISFCONNECTING;
 
-	/*
-	 * See if we can start outputting
-	 */
-	if (if_queued && link_up)
-	   if_start(pData);
+                }
+                tcp_input((struct mbuf *)NULL, sizeof(struct ip),so);
+            } /* SS_ISFCONNECTING */
+#endif
+        }
+
+        /*
+         * Now UDP sockets.
+         * Incoming packets are sent straight away, they're not buffered.
+         * Incoming UDP data isn't buffered either.
+         */
+        for (so = udb.so_next; so != &udb; so = so_next)
+        {
+            so_next = so->so_next;
+
+            POLL_UDP_EVENTS(rc, error, so, &NetworkEvents);
+
+            LOG_NAT_SOCK(so, UDP, &NetworkEvents, readfds, writefds, xfds);
+
+            if (so->s != -1 && CHECK_FD_SET(so, NetworkEvents, readfds))
+            {
+                sorecvfrom(pData, so);
+            }
+        }
+
+#if 0
+#if defined(VBOX_WITH_SLIRP_ICMP)
+# if defined(RT_OS_WINDOWS)
+        if (fIcmp)
+            sorecvfrom(pData, &pData->icmp_socket);
+# else
+        if (pData->icmp_socket.s != -1 && FD_ISSET(pData->icmp_socket.s, readfds))
+            sorecvfrom(pData, &pData->icmp_socket);
+# endif
+#endif
+#endif
+    }
+
+    /*
+     * See if we can start outputting
+     */
+    if (if_queued && link_up)
+        if_start(pData);
+
+    STAM_REL_PROFILE_STOP(&pData->StatPoll, a);
 }
 
-#define ETH_ALEN 6
-#define ETH_HLEN 14
+#define ETH_ALEN        6
+#define ETH_HLEN        14
 
-#define ETH_P_IP	0x0800		/* Internet Protocol packet	*/
-#define ETH_P_ARP	0x0806		/* Address Resolution packet	*/
+#define ETH_P_IP        0x0800          /* Internet Protocol packet     */
+#define ETH_P_ARP       0x0806          /* Address Resolution packet    */
 
-#define	ARPOP_REQUEST	1		/* ARP request			*/
-#define	ARPOP_REPLY	2		/* ARP reply			*/
+#define ARPOP_REQUEST   1               /* ARP request                  */
+#define ARPOP_REPLY     2               /* ARP reply                    */
 
 struct ethhdr
 {
-	unsigned char	h_dest[ETH_ALEN];	/* destination eth addr	*/
-	unsigned char	h_source[ETH_ALEN];	/* source ether addr	*/
-	unsigned short	h_proto;		/* packet type ID field	*/
+    unsigned char   h_dest[ETH_ALEN];           /* destination eth addr */
+    unsigned char   h_source[ETH_ALEN];         /* source ether addr    */
+    unsigned short  h_proto;                    /* packet type ID field */
 };
 
 struct arphdr
 {
-	unsigned short	ar_hrd;		/* format of hardware address	*/
-	unsigned short	ar_pro;		/* format of protocol address	*/
-	unsigned char	ar_hln;		/* length of hardware address	*/
-	unsigned char	ar_pln;		/* length of protocol address	*/
-	unsigned short	ar_op;		/* ARP opcode (command)		*/
+    unsigned short  ar_hrd;             /* format of hardware address   */
+    unsigned short  ar_pro;             /* format of protocol address   */
+    unsigned char   ar_hln;             /* length of hardware address   */
+    unsigned char   ar_pln;             /* length of protocol address   */
+    unsigned short  ar_op;              /* ARP opcode (command)         */
 
-	 /*
-	  *	 Ethernet looks like this : This bit is variable sized however...
-	  */
-	unsigned char		ar_sha[ETH_ALEN];	/* sender hardware address	*/
-	unsigned char		ar_sip[4];		/* sender IP address		*/
-	unsigned char		ar_tha[ETH_ALEN];	/* target hardware address	*/
-	unsigned char		ar_tip[4];		/* target IP address		*/
+    /*
+     *      Ethernet looks like this : This bit is variable sized however...
+     */
+    unsigned char   ar_sha[ETH_ALEN];   /* sender hardware address      */
+    unsigned char   ar_sip[4];          /* sender IP address            */
+    unsigned char   ar_tha[ETH_ALEN];   /* target hardware address      */
+    unsigned char   ar_tip[4];          /* target IP address            */
 };
 
 static
@@ -698,41 +982,44 @@ void arp_input(PNATState pData, const uint8_t *pkt, int pkt_len)
     uint32_t htip = ntohl(*(uint32_t*)ah->ar_tip);
 
     ar_op = ntohs(ah->ar_op);
-    switch(ar_op) {
-    case ARPOP_REQUEST:
-        if ((htip & pData->netmask) == ntohl(special_addr.s_addr)) {
-            if (   (htip & ~pData->netmask) == CTL_DNS
-                || (htip & ~pData->netmask) == CTL_ALIAS)
-                goto arp_ok;
-            for (ex_ptr = exec_list; ex_ptr; ex_ptr = ex_ptr->ex_next) {
-                if ((htip & ~pData->netmask) == ex_ptr->ex_addr)
+    switch(ar_op)
+    {
+        case ARPOP_REQUEST:
+            if ((htip & pData->netmask) == ntohl(special_addr.s_addr))
+            {
+                if (   (htip & ~pData->netmask) == CTL_DNS
+                    || (htip & ~pData->netmask) == CTL_ALIAS)
                     goto arp_ok;
-            }
-            return;
+                for (ex_ptr = exec_list; ex_ptr; ex_ptr = ex_ptr->ex_next)
+                {
+                    if ((htip & ~pData->netmask) == ex_ptr->ex_addr)
+                        goto arp_ok;
+                }
+                return;
         arp_ok:
-            /* XXX: make an ARP request to have the client address */
-            memcpy(client_ethaddr, eh->h_source, ETH_ALEN);
+                /* XXX: make an ARP request to have the client address */
+                memcpy(client_ethaddr, eh->h_source, ETH_ALEN);
 
-            /* ARP request for alias/dns mac address */
-            memcpy(reh->h_dest, pkt + ETH_ALEN, ETH_ALEN);
-            memcpy(reh->h_source, special_ethaddr, ETH_ALEN - 1);
-            reh->h_source[5] = ah->ar_tip[3];
-            reh->h_proto = htons(ETH_P_ARP);
+                /* ARP request for alias/dns mac address */
+                memcpy(reh->h_dest, pkt + ETH_ALEN, ETH_ALEN);
+                memcpy(reh->h_source, special_ethaddr, ETH_ALEN - 1);
+                reh->h_source[5] = ah->ar_tip[3];
+                reh->h_proto = htons(ETH_P_ARP);
 
-            rah->ar_hrd = htons(1);
-            rah->ar_pro = htons(ETH_P_IP);
-            rah->ar_hln = ETH_ALEN;
-            rah->ar_pln = 4;
-            rah->ar_op = htons(ARPOP_REPLY);
-            memcpy(rah->ar_sha, reh->h_source, ETH_ALEN);
-            memcpy(rah->ar_sip, ah->ar_tip, 4);
-            memcpy(rah->ar_tha, ah->ar_sha, ETH_ALEN);
-            memcpy(rah->ar_tip, ah->ar_sip, 4);
-            slirp_output(pData->pvUser, arp_reply, sizeof(arp_reply));
-        }
-        break;
-    default:
-        break;
+                rah->ar_hrd = htons(1);
+                rah->ar_pro = htons(ETH_P_IP);
+                rah->ar_hln = ETH_ALEN;
+                rah->ar_pln = 4;
+                rah->ar_op = htons(ARPOP_REPLY);
+                memcpy(rah->ar_sha, reh->h_source, ETH_ALEN);
+                memcpy(rah->ar_sip, ah->ar_tip, 4);
+                memcpy(rah->ar_tha, ah->ar_sha, ETH_ALEN);
+                memcpy(rah->ar_tip, ah->ar_sip, 4);
+                slirp_output(pData->pvUser, arp_reply, sizeof(arp_reply));
+            }
+            break;
+        default:
+            break;
     }
 }
 
@@ -745,32 +1032,34 @@ void slirp_input(PNATState pData, const uint8_t *pkt, int pkt_len)
         return;
 
     proto = ntohs(*(uint16_t *)(pkt + 12));
-    switch(proto) {
-    case ETH_P_ARP:
-        arp_input(pData, pkt, pkt_len);
-        break;
-    case ETH_P_IP:
-	/* Update time. Important if the network is very quiet, as otherwise
-         * the first outgoing connection gets an incorrect timestamp. */
-	updtime(pData);
+    switch(proto)
+    {
+        case ETH_P_ARP:
+            arp_input(pData, pkt, pkt_len);
+            break;
+        case ETH_P_IP:
+            /* Update time. Important if the network is very quiet, as otherwise
+             * the first outgoing connection gets an incorrect timestamp. */
+            updtime(pData);
 
-        m = m_get(pData);
-        if (!m)
-            return;
-        /* Note: we add to align the IP header */
-        if (M_FREEROOM(m) < pkt_len + 2) {
-            m_inc(m, pkt_len + 2);
-        }
-        m->m_len = pkt_len + 2;
-        memcpy(m->m_data + 2, pkt, pkt_len);
+            m = m_get(pData);
+            if (!m)
+                return;
+            /* Note: we add to align the IP header */
+            if (M_FREEROOM(m) < pkt_len + 2)
+            {
+                m_inc(m, pkt_len + 2);
+            }
+            m->m_len = pkt_len + 2;
+            memcpy(m->m_data + 2, pkt, pkt_len);
 
-        m->m_data += 2 + ETH_HLEN;
-        m->m_len -= 2 + ETH_HLEN;
+            m->m_data += 2 + ETH_HLEN;
+            m->m_len -= 2 + ETH_HLEN;
 
-        ip_input(pData, m);
-        break;
-    default:
-        break;
+            ip_input(pData, m);
+            break;
+        default:
+            break;
     }
 }
 
@@ -795,11 +1084,14 @@ void if_encap(PNATState pData, const uint8_t *ip_data, int ip_data_len)
 int slirp_redir(PNATState pData, int is_udp, int host_port,
                 struct in_addr guest_addr, int guest_port)
 {
-    if (is_udp) {
+    if (is_udp)
+    {
         if (!udp_listen(pData, htons(host_port), guest_addr.s_addr,
                         htons(guest_port), 0))
             return -1;
-    } else {
+    }
+    else
+    {
         if (!solisten(pData, htons(host_port), guest_addr.s_addr,
                       htons(guest_port), 0))
             return -1;
@@ -817,4 +1109,27 @@ int slirp_add_exec(PNATState pData, int do_pty, const char *args, int addr_low_b
 void slirp_set_ethaddr(PNATState pData, const uint8_t *ethaddr)
 {
     memcpy(client_ethaddr, ethaddr, ETH_ALEN);
+}
+
+#if defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC) && defined(RT_OS_WINDOWS)
+HANDLE *slirp_get_events(PNATState pData)
+{
+        return pData->phEvents;
+}
+void slirp_register_external_event(PNATState pData, HANDLE hEvent, int index)
+{
+        pData->phEvents[index] = hEvent;
+}
+#endif
+
+unsigned int slirp_get_timeout_ms(PNATState pData)
+{
+    if (link_up)
+    {
+        if (time_fasttimo)
+            return 2;
+        if (do_slowtimo)
+            return 500; /* see PR_SLOWHZ */
+    }
+    return 0;
 }

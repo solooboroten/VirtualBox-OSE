@@ -1,4 +1,4 @@
-/* $Id: path-win.cpp $ */
+/* $Id: path-win.cpp 14065 2008-11-10 23:29:48Z vboxsync $ */
 /** @file
  * IPRT - Path manipulation.
  */
@@ -55,7 +55,7 @@
  * @param   pszRealPath     Where to store the real path.
  * @param   cchRealPath     Size of the buffer.
  */
-RTDECL(int) RTPathReal(const char *pszPath, char *pszRealPath, unsigned cchRealPath)
+RTDECL(int) RTPathReal(const char *pszPath, char *pszRealPath, size_t cchRealPath)
 {
     /*
      * Convert to UTF-16, call Win32 APIs, convert back.
@@ -67,8 +67,8 @@ RTDECL(int) RTPathReal(const char *pszPath, char *pszRealPath, unsigned cchRealP
 
     LPWSTR lpFile;
     WCHAR  wsz[RTPATH_MAX];
-    rc = GetFullPathNameW((LPCWSTR)pwszPath, ELEMENTS(wsz), &wsz[0], &lpFile);
-    if (rc > 0 && rc < ELEMENTS(wsz))
+    rc = GetFullPathNameW((LPCWSTR)pwszPath, RT_ELEMENTS(wsz), &wsz[0], &lpFile);
+    if (rc > 0 && rc < RT_ELEMENTS(wsz))
     {
         /* Check that it exists. (Use RTPathAbs() to just resolve the name.) */
         DWORD dwAttr = GetFileAttributesW(wsz);
@@ -96,7 +96,7 @@ RTDECL(int) RTPathReal(const char *pszPath, char *pszRealPath, unsigned cchRealP
  * @param   pszAbsPath      Where to store the absolute path.
  * @param   cchAbsPath      Size of the buffer.
  */
-RTDECL(int) RTPathAbs(const char *pszPath, char *pszAbsPath, unsigned cchAbsPath)
+RTDECL(int) RTPathAbs(const char *pszPath, char *pszAbsPath, size_t cchAbsPath)
 {
     /*
      * Convert to UTF-16, call Win32 API, convert back.
@@ -129,7 +129,7 @@ RTDECL(int) RTPathAbs(const char *pszPath, char *pszAbsPath, unsigned cchAbsPath
  * @param   pszPath     Buffer where to store the path.
  * @param   cchPath     Buffer size in bytes.
  */
-RTDECL(int) RTPathUserHome(char *pszPath, unsigned cchPath)
+RTDECL(int) RTPathUserHome(char *pszPath, size_t cchPath)
 {
     RTUTF16 wszPath[RTPATH_MAX];
     DWORD   dwAttr;
@@ -149,7 +149,7 @@ RTDECL(int) RTPathUserHome(char *pszPath, unsigned cchPath)
             if (!GetEnvironmentVariableW(L"HOMEDRIVE", &wszPath[0], RTPATH_MAX))
                 return VERR_PATH_NOT_FOUND;
             size_t const cwc = RTUtf16Len(&wszPath[0]);
-            if (    !GetEnvironmentVariableW(L"HOMEPATH", &wszPath[cwc], RTPATH_MAX - cwc)
+            if (    !GetEnvironmentVariableW(L"HOMEPATH", &wszPath[cwc], RTPATH_MAX - (DWORD)cwc)
                 ||  (dwAttr = GetFileAttributesW(&wszPath[0])) == INVALID_FILE_ATTRIBUTES
                 ||  !(dwAttr & FILE_ATTRIBUTE_DIRECTORY))
                 return VERR_PATH_NOT_FOUND;
@@ -237,8 +237,8 @@ RTR3DECL(int) RTPathQueryInfo(const char *pszPath, PRTFSOBJINFO pObjInfo, RTFSOB
             pObjInfo->Attr.u.Unix.uid             = ~0U;
             pObjInfo->Attr.u.Unix.gid             = ~0U;
             pObjInfo->Attr.u.Unix.cHardlinks      = 1;
-            pObjInfo->Attr.u.Unix.INodeIdDevice   = 0;
-            pObjInfo->Attr.u.Unix.INodeId         = 0;
+            pObjInfo->Attr.u.Unix.INodeIdDevice   = 0; /** @todo use volume serial number */
+            pObjInfo->Attr.u.Unix.INodeId         = 0; /** @todo use fileid (see GetFileInformationByHandle). */
             pObjInfo->Attr.u.Unix.fFlags          = 0;
             pObjInfo->Attr.u.Unix.GenerationId    = 0;
             pObjInfo->Attr.u.Unix.Device          = 0;
@@ -317,7 +317,7 @@ RTR3DECL(int) RTPathSetTimes(const char *pszPath, PCRTTIMESPEC pAccessTime, PCRT
                 {
                     DWORD Err = GetLastError();
                     rc = RTErrConvertFromWin32(Err);
-                    Log(("RTPathSetTimes('%s', %p, %p, %p, %p): SetFileTime failed with lasterr %d (%Vrc)\n",
+                    Log(("RTPathSetTimes('%s', %p, %p, %p, %p): SetFileTime failed with lasterr %d (%Rrc)\n",
                          pszPath, pAccessTime, pModificationTime, pChangeTime, pBirthTime, Err, rc));
                 }
             }

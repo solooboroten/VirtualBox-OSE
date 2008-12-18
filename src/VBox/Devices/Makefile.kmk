@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 15475 2008-12-14 23:21:50Z vboxsync $
 ## @file
 # Top-level makefile for the devices, drivers and services.
 #
@@ -22,6 +22,11 @@
 SUB_DEPTH = ../../..
 include $(KBUILD_PATH)/subheader.kmk
 
+# temporary, we will remove this in some days
+VBOX_WITH_SLIRP_ICMP = 1
+
+VBOX_PATH_DEVICES_SRC := $(PATH_SUB_CURRENT)
+
 # Include sub-makefiles.
 include $(PATH_SUB_CURRENT)/PC/BIOS/Makefile.kmk
 ifdef VBOX_WITH_VMI
@@ -37,8 +42,10 @@ ifdef VBOX_WITH_INTEL_PXE
  include $(PATH_SUB_CURRENT)/PC/PXE/Makefile.kmk
 else
  # Subdir with complex makefile.
- SUBDIRS_LIBRARIES += PC/Etherboot-src
- SUBDIRS_CLEAN     += PC/Etherboot-src
+ SUBDIRS_LIBRARIES += $(VBOX_PATH_DEVICES_SRC)/PC/Etherboot-src
+ SUBDIRS_CLEAN     += $(VBOX_PATH_DEVICES_SRC)/PC/Etherboot-src
+ # Disable the unsafe pass order optimizations.
+ KBUILD_SAFE_PARALLEL = 1
 endif
 
 #
@@ -57,6 +64,7 @@ SYSMODS   += VBoxDDGC VBoxDD2GC VBoxDDR0 VBoxDD2R0
 #
 VBoxDDU_TEMPLATE         = VBOXR3
 VBoxDDU_NAME             = $(basename $(notdir $(LIB_DDU)))
+VBoxDDU_INST.darwin      = $(INST_DLL) $(INST_TESTCASE)
 VBoxDDU_DEFS             = IN_VBOXDDU
 ifdef VBOX_WITH_USB
  VBoxDDU_DEFS           += VBOX_WITH_USB IN_USBLIB
@@ -72,7 +80,6 @@ else
 endif
 VBoxDDU_SOURCES          = \
 	Storage/VBoxHDD-new.cpp \
-	Storage/VDICore.cpp \
 	Storage/VDIHDDCore.cpp \
 	Storage/VHDHDDCore.cpp \
 	Storage/VmdkHDDCore.cpp \
@@ -144,6 +151,15 @@ endif
 ifdef VBOX_WITH_PDM_ASYNC_COMPLETION
  VBoxDD_DEFS           += VBOX_WITH_PDM_ASYNC_COMPLETION
 endif
+ifdef VBOX_WITH_SCSI
+ VBoxDD_DEFS           += VBOX_WITH_SCSI
+endif
+ifdef VBOX_WITH_LSILOGIC
+ VBoxDD_DEFS           += VBOX_WITH_LSILOGIC
+endif
+ifdef VBOX_WITH_FAULT_INJECTION
+ VBoxDD_DEFS           += VBOX_WITH_FAULT_INJECTION
+endif
 VBoxDD_LIBS             = \
 	$(PATH_LIB)/DevicesR3$(VBOX_SUFF_LIB) \
 	$(PATH_LIB)/Drivers$(VBOX_SUFF_LIB) \
@@ -169,6 +185,10 @@ ifdef VBOX_USE_NAT
 VBoxDD_LIBS           += $(PATH_LIB)/NatAlias$(VBOX_SUFF_LIB)
 endif
 
+ifdef VBOX_WITH_NETFLT
+VBoxDD_LIBS.win       += $(PATH_LIB)/WinNetConfig.lib
+endif
+
 ifeq ($(KBUILD_TARGET),solaris)
  VBoxDD_LIBS           += adm
  ifdef VBOX_WITH_SUID_WRAPPER
@@ -188,12 +208,12 @@ VBoxDD_LDFLAGS.darwin   = -install_name $(VBOX_DYLD_EXECUTABLE_PATH)/VBoxDD.dyli
 VBoxDD_LDFLAGS.linux    = -Wl,--no-undefined
 VBoxDD_LDFLAGS.l4       = -Wl,--no-undefined
 
-
 #
 # VBoxDD2 (shared object)
 #
 VBoxDD2_TEMPLATE        = VBOXR3
-VBoxDD2_DEFS            = IN_VBOXDD2
+VBoxDD2_DEFS            = IN_VBOXDD2 \
+			  $(if $(VBOX_WITH_VMI),VBOX_WITH_VMI,)
 VBoxDD2_INCS           := \
 	$(PATH_SUB_CURRENT)
 VBoxDD2_SOURCES         = \
@@ -221,6 +241,7 @@ VBoxDD2_LDFLAGS.l4      = -Wl,--no-undefined
 #
 DevicesR3_TEMPLATE      = VBOXR3
 DevicesR3_SDKS.win      = WINPSDK W2K3DDK
+DevicesR3_DEFS.darwin   = VBOX_WITH_2X_4GB_ADDR_SPACE
 DevicesR3_DEFS         += VBOX_HGCM_HOST_CODE \
 			  $(if $(VBOX_WITH_VMI),VBOX_WITH_VMI,)
 DevicesR3_INCS         := \
@@ -243,6 +264,7 @@ DevicesR3_SOURCES       = \
 	Audio/DevSB16.cpp \
 	PC/DevDMA.cpp \
 	Storage/fdc.c \
+	Storage/Debug.cpp \
 	Serial/DevSerial.cpp \
 	Parallel/DevParallel.cpp
 
@@ -302,6 +324,12 @@ DevicesR3_SOURCES      += \
 	Storage/VBoxSCSI.cpp
 endif
 
+ifdef VBOX_WITH_LSILOGIC
+DevicesR3_DEFS	       += VBOX_WITH_LSILOGIC
+DevicesR3_SOURCES      += \
+	Storage/DevLsiLogicSCSI.cpp
+endif
+
 ifdef VBOX_WITH_USB
 DevicesR3_DEFS         += VBOX_WITH_USB IN_USB_R3
 
@@ -342,8 +370,9 @@ Graphics/DevVGA.cpp_DEPS = $(PATH_VgaBiosBin)/vbetables.h
 # VBoxDDGC (sysmod)
 #
 VBoxDDGC_TEMPLATE       = VBOXGC
-VBoxDDGC_DEFS           =
 VBoxDDGC_SYSSUFF        = .gc
+VBoxDDGC_DEFS.darwin    = VBOX_WITH_2X_4GB_ADDR_SPACE
+VBoxDDGC_DEFS           =
 VBoxDDGC_INCS          := \
 	$(PATH_SUB_CURRENT)
 VBoxDDGC_SOURCES        = \
@@ -392,10 +421,16 @@ VBoxDDGC_SOURCES       += \
 	Storage/DevBusLogic.cpp
 endif
 
+ifdef VBOX_WITH_LSILOGIC
+VBoxDDGC_DEFS          += VBOX_WITH_LSILOGIC
+VBoxDDGC_SOURCES       += \
+	Storage/DevLsiLogicSCSI.cpp
+endif
+
 ifeq ($(VBOX_LDR_FMT32),pe)
 VBoxDDGC_LDFLAGS        = -Entry:vgaMMIOWrite
 endif
-ifneq ($(filter pe lx,$(VBOX_LDR_FMT32)),)
+if1of ($(VBOX_LDR_FMT32), pe lx)
 VBoxDDGC_LIBS           = \
 	$(PATH_LIB)/VMMGCBuiltin$(VBOX_SUFF_LIB) \
 	$(PATH_LIB)/VMMGCImp$(VBOX_SUFF_LIB)
@@ -407,6 +442,7 @@ endif
 #
 VBoxDDR0_TEMPLATE       = VBOXR0
 VBoxDDR0_SYSSUFF        = .r0
+VBoxDDR0_DEFS.darwin    = VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0 VBOX_WITH_2X_4GB_ADDR_SPACE
 VBoxDDR0_DEFS           = IN_RT_R0
 VBoxDDR0_INCS          := \
 	$(PATH_SUB_CURRENT)
@@ -455,15 +491,17 @@ VBoxDDR0_SOURCES       += \
 	Storage/DevBusLogic.cpp
 endif
 
+ifdef VBOX_WITH_LSILOGIC
+VBoxDDR0_DEFS          += VBOX_WITH_LSILOGIC
+VBoxDDR0_SOURCES       += \
+	Storage/DevLsiLogicSCSI.cpp
+endif
+
 ifeq ($(VBOX_LDR_FMT32),pe)
 VBoxDDR0_LDFLAGS        = -Entry:vgaMMIOWrite
 endif
-ifneq ($(filter pe lx,$(VBOX_LDR_FMT32)),)
+if1of ($(VBOX_LDR_FMT), pe lx)
 VBoxDDR0_LIBS           = $(PATH_LIB)/VMMR0Imp$(VBOX_SUFF_LIB)
-endif
-VBoxDDR0_LIBS          += $(PATH_LIB)/RuntimeR0$(VBOX_SUFF_LIB)
-ifeq ($(VBOX_LDR_FMT32),elf) # this is template stuff!
-VBoxDDR0_LIBS          += $(VBOX_GCC_LIBGCC)
 endif
 
 
@@ -480,7 +518,7 @@ VBoxDD2GC_SOURCES        = \
 ifeq ($(VBOX_LDR_FMT32),pe)
 VBoxDD2GC_LDFLAGS        = -Entry:apicMMIOWrite
 endif
-ifneq ($(filter pe lx,$(VBOX_LDR_FMT32)),)
+if1of ($(VBOX_LDR_FMT32), pe lx)
 VBoxDD2GC_LIBS           = \
 	$(PATH_LIB)/VMMGCBuiltin$(VBOX_SUFF_LIB) \
 	$(PATH_LIB)/VMMGCImp$(VBOX_SUFF_LIB)
@@ -500,12 +538,8 @@ VBoxDD2R0_SOURCES        = \
 ifeq ($(VBOX_LDR_FMT),pe)
 VBoxDD2R0_LDFLAGS        = -Entry:apicMMIOWrite
 endif
-ifneq ($(filter pe lx,$(VBOX_LDR_FMT)),)
+if1of ($(VBOX_LDR_FMT), pe lx)
 VBoxDD2R0_LIBS           = $(PATH_LIB)/VMMR0Imp$(VBOX_SUFF_LIB)
-endif
-VBoxDD2R0_LIBS          += $(PATH_LIB)/RuntimeR0$(VBOX_SUFF_LIB)
-ifeq ($(VBOX_LDR_FMT),elf)
-VBoxDD2R0_LIBS          += $(VBOX_GCC_LIBGCC)
 endif
 
 
@@ -522,7 +556,10 @@ Storage/DrvHostDVD.cpp_SDKS.win = W2K3DDK
 Drivers_DEFS.win  += _WIN32_WINNT=0x0510
 Drivers_DEFS       = IN_IDE_R3
 ifdef VBOX_WITH_NETFLT
-Drivers_DEFS       = VBOX_WITH_NETFLT
+Drivers_DEFS      += VBOX_WITH_NETFLT
+endif
+ifdef VBOX_WITH_FAULT_INJECTION
+Drivers_DEFS      += VBOX_WITH_FAULT_INJECTION
 endif
 Drivers_INCS      := \
 	$(PATH_SUB_CURRENT) \
@@ -545,11 +582,10 @@ Drivers_SOURCES    = \
 	Storage/DrvMediaISO.cpp \
 	Storage/DrvRawImage.cpp \
 	Storage/DrvVD.cpp \
-	Storage/VBoxHDD.cpp \
 	Network/DrvNetSniffer.cpp \
 	Network/Pcap.cpp
-ifndef VBOX_USE_NAT
-Drivers_SOURCES += \
+
+VBOX_SLIRP_SOURCES = \
 	Network/DrvNAT.cpp \
 	Network/slirp/bootp.c \
 	Network/slirp/cksum.c \
@@ -569,98 +605,21 @@ Drivers_SOURCES += \
 	Network/slirp/tcp_timer.c \
 	Network/slirp/tftp.c \
 	Network/slirp/udp.c
-else
-NatAlias_TEMPLATE   = VBOXR3NP
 
-
-Drivers_SOURCES +=	Network/DrvNAT.cpp
-
-Network/DrvNAT.cpp_DEFS += VBOX_NAT_SOURCES
-
-Drivers_SOURCES += Network/nat/nat_socket.c
-
-NatAlias_CFLAGS += -include Network/nat/bsd.h
-NatAlias_DEFS += VBOX_NAT_SOURCES
-NatAlias_DEFS += __BSD_VISIBLE=1
-NatAlias_DEFS += INET
-NatAlias_DEFS += IPFIREWALL_NAT
-NatAlias_DEFS += RWLOCK_NOINLINE
-NatAlias_DEFS += MUTEX_NOINLINE
-
-NatAlias_DEFS += IN_NAT # used in Network/nat/nat.h (which glues VBox and *BSD sources)
-
-NatAlias_DEFS.linux   += _GNU_SOURCE
-
-NatAlias_SOURCES +=	Network/nat/nat_utils.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/ip_fw_nat.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/in_cksum.c
-NatAlias_SOURCES +=	Network/nat/src/sys/net/if.c
-NatAlias_SOURCES +=	Network/nat/src/sys/net/if_ef.c
-NatAlias_SOURCES +=	Network/nat/src/sys/net/if_ethersubr.c
-NatAlias_SOURCES +=	Network/nat/src/sys/net/route.c
-NatAlias_SOURCES +=	Network/nat/src/sys/net/pfil.c
-NatAlias_SOURCES +=	Network/nat/src/sys/net/netisr.c
-NatAlias_SOURCES +=	Network/nat/src/sys/net/radix.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/ip_options.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/tcp_timewait.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/tcp_timer.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/if_ether.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/in.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/in_pcb.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/in_proto.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/in_rmx.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/in_mcast.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/ip_icmp.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/ip_fastfwd.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/ip_output.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/ip_input.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/ip_mroute.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/ip_id.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/raw_ip.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/tcp_syncache.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/tcp_sack.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/tcp_subr.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/tcp_input.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/tcp_output.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/tcp_reass.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/tcp_hostcache.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/tcp_usrreq.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/udp_usrreq.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/subr_eventhandler.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/kern_mbuf.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/kern_subr.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/kern_resource.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/kern_time.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/kern_clock.c
-#NatAlias_SOURCES +=	Network/nat/src/sys/kern/kern_timeout.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/subr_sbuf.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/uipc_mbuf.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/uipc_mbuf2.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/uipc_sockbuf.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/uipc_socket.c
-NatAlias_SOURCES +=	Network/nat/src/sys/kern/uipc_domain.c
-NatAlias_SOURCES +=	Network/nat/src/sys/vm/uma_core.c
-NatAlias_SOURCES +=	Network/nat/src/sys/netinet/ip_fw2.c
-NatAlias_SOURCES += Network/nat/src/sys/netinet/libalias/alias.c
-#NatAlias_SOURCES += Network/nat/src/sys/netinet/libalias/alias_cuseeme.c
-NatAlias_SOURCES += Network/nat/src/sys/netinet/libalias/alias_db.c
-NatAlias_SOURCES += Network/nat/src/sys/netinet/libalias/alias_dummy.c
-#NatAlias_SOURCES += Network/nat/src/sys/libalias/alias_ftp.c
-#NatAlias_SOURCES += Network/nat/src/sys/libalias/alias_irc.c
-NatAlias_SOURCES += Network/nat/src/sys/netinet/libalias/alias_mod.c
-#NatAlias_SOURCES += Network/nat/src/sys/libalias/alias_nbt.c
-#NatAlias_SOURCES += Network/nat/src/sys/libalias/alias_pptp.c
-NatAlias_SOURCES += Network/nat/src/sys/netinet/libalias/alias_proxy.c
-#NatAlias_SOURCES += Network/nat/src/sys/libalias/alias_skinny.c
-#NatAlias_SOURCES += Network/nat/src/sys/libalias/alias_smedia.c
-NatAlias_SOURCES += Network/nat/src/sys/netinet/libalias/alias_util.c
-
-NatAlias_SOURCES.amd64 +=	Network/nat/src/sys/amd64/amd64/in_cksum.c
-
-NatAlias_INCS += Network/nat/src/sys
-NatAlias_INCS +=  Network/nat/src/sys/contrib/altq
-NatAlias_INCS.amd64 += Network/nat/src/sys/amd64/include
-endif
+Drivers_SOURCES += $(VBOX_SLIRP_SOURCES)
+define def_vbox_slirp_cflags
+  $(file)_DEFS += \
+      VBOX_WITH_SIMPLIFIED_SLIRP_SYNC \
+      $(if $(VBOX_WITH_SLIRP_MEMORY_CHECK),VBOX_WITH_SLIRP_MEMORY_CHECK,) \
+      $(if $(VBOX_WITH_DEBUG_NAT_SOCKETS),VBOX_WITH_DEBUG_NAT_SOCKETS,) \
+      $(if $(VBOX_WITH_SLIRP_ICMP),VBOX_WITH_SLIRP_ICMP,)
+ ifeq ($(KBUILD_TARGET),win)
+  $(file)_CFLAGS = -wd4018
+ else
+  $(file)_CFLAGS = -Wno-sign-compare
+ endif
+endef
+$(foreach file,$(VBOX_SLIRP_SOURCES),$(eval $(def_vbox_slirp_cflags)))
 
 # -- OS specific --
 
@@ -686,7 +645,6 @@ ifeq ($(KBUILD_TARGET),l4)
 Drivers_SOURCES       = \
 	Input/DrvMouseQueue.cpp \
 	Input/DrvKeyboardQueue.cpp \
-	Storage/VBoxHDD.cpp \
 	Storage/DrvBlock.cpp \
 	Storage/DrvMediaISO.cpp \
 	Storage/DrvRawImage.cpp \
@@ -744,21 +702,23 @@ Drivers_SOURCES.win   = \
 	Audio/dsoundaudio.c \
 	Serial/DrvHostSerial.cpp
 
+if defined(VBOX_WITH_NETFLT)
+ if defined(VBOX_NETFLT_ONDEMAND_BIND)
+  Drivers_DEFS.win     += VBOX_NETFLT_ONDEMAND_BIND
+ endif
+ Drivers_SOURCES.win   += Network/win/DrvIntNet-win.cpp
+endif
 
 # -- features --
 
 ifdef VBOX_WITH_ISCSI
- Drivers_SOURCES      += \
-	Storage/DrvISCSI.cpp \
-	Storage/DrvISCSITransportTCP.cpp
- Drivers_DEFS         += VBOX_WITH_ISCSI
- Storage/DrvISCSITransportTCP.cpp_INCS = \
-	Network/lwip/src/include \
-	Network/lwip/src/include/ipv4 \
-	Network/lwip/vbox/include
  VBoxDDU_SOURCES      += \
     Storage/ISCSIHDDCore.cpp
  VBoxDDU_DEFS         += VBOX_WITH_ISCSI
+ Storage/DrvVD.cpp_INCS = \
+	Network/lwip/src/include \
+	Network/lwip/src/include/ipv4 \
+	Network/lwip/vbox/include
 endif # VBOX_WITH_ISCSI
 
 ifdef VBOX_WITH_ALSA
@@ -797,11 +757,11 @@ ifdef VBOX_WITH_USB
 	USB/USBProxyDevice.cpp \
 	USB/darwin/USBProxyDevice-darwin.cpp
 
- Drivers_DEFS.linux   += VUSB_HAVE_USBPROXY_DEVICE
- ifdef VBOX_WITHOUT_LINUX_COMPILER_H
-  Drivers_DEFS.linux  += VBOX_WITHOUT_LINUX_COMPILER_H
- endif
- Drivers_SOURCES.linux+= \
+ Drivers_DEFS.linux    += \
+	VUSB_HAVE_USBPROXY_DEVICE \
+	$(if $(VBOX_WITHOUT_LINUX_COMPILER_H),VBOX_WITHOUT_LINUX_COMPILER_H,) \
+	$(if $(VBOX_USB_WITH_SYSFS),VBOX_USB_WITH_SYSFS,)
+ Drivers_SOURCES.linux += \
 	USB/USBProxyDevice.cpp \
 	USB/linux/USBProxyDevice-linux.cpp
 
@@ -834,13 +794,19 @@ ifdef VBOX_WITH_PDM_ASYNC_COMPLETION
 	Storage/DrvTransportAsync.cpp
 endif #VBOX_WITH_PDM_ASYNC_COMPLETION
 
-ifdef VBOX_WITH_BUSLOGIC
- Drivers_DEFS += VBOX_WITH_BUSLOGIC
+ifdef VBOX_WITH_SCSI
+ Drivers_DEFS += VBOX_WITH_SCSI
  Drivers_SOURCES += \
 	Storage/DrvSCSI.cpp
  Drivers_SOURCES.linux += \
 	Storage/DrvSCSIHost.cpp
-endif # VBOX_WITH_BUSLOGIC
+endif # VBOX_WITH_SCSI
+
+ifdef VBOX_WITH_FAULT_INJECTION
+ Drivers_DEFS += VBOX_WITH_FAULT_INJECTION
+ Drivers_SOURCES += \
+	Storage/DrvFaultInject.cpp
+endif # VBOX_WITH_FAULT_INJECTION
 
 #
 # Ring-0 Services (library, linked into VMMR0.r0)
@@ -849,6 +815,12 @@ ServicesR0_TEMPLATE  = VBOXR0
 ServicesR0_DEFS      = IN_INTNET_R0 IN_RT_R0
 ServicesR0_SOURCES   = \
 	Network/SrvIntNetR0.cpp
+
+if defined(VBOX_WITH_NETFLT)
+ ServicesR0_SOURCES.win.amd64 += Network/win/SrvIntNetR0A-win.asm
+ ServicesR0_DEFS.win.amd64    += RT_WITH_W64_UNWIND_HACK
+endif
+
 
 #
 # Internal Networking - Ring-3 Testcase for the Ring-0 code (a bit hackish).

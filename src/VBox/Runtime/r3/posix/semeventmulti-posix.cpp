@@ -1,4 +1,4 @@
-/* $Id: semeventmulti-posix.cpp $ */
+/* $Id: semeventmulti-posix.cpp 14318 2008-11-18 16:56:53Z vboxsync $ */
 /** @file
  * IPRT - Multiple Release Event Semaphore, POSIX.
  */
@@ -66,7 +66,7 @@ struct RTSEMEVENTMULTIINTERNAL
  * @{ */
 /** The object isn't initialized. */
 #define EVENTMULTI_STATE_UNINITIALIZED   0
-/** The semaphore is is signaled. */
+/** The semaphore is signaled. */
 #define EVENTMULTI_STATE_SIGNALED        0xff00ff00
 /** The semaphore is not signaled. */
 #define EVENTMULTI_STATE_NOT_SIGNALED    0x00ff00ff
@@ -177,7 +177,7 @@ RTDECL(int)  RTSemEventMultiDestroy(RTSEMEVENTMULTI EventMultiSem)
             break;
         pthread_cond_broadcast(&pThis->Cond);
         usleep(1000);
-    } while (rc == EBUSY);
+    }
     if (rc)
     {
         AssertMsgFailed(("Failed to destroy event sem %p, rc=%d.\n", EventMultiSem, rc));

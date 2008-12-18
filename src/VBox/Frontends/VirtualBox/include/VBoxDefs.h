@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2008 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -28,9 +28,7 @@
 #define LOG_GROUP LOG_GROUP_GUI
 #include <VBox/log.h>
 #include <iprt/assert.h>
-
 #include <iprt/alloc.h>
-#include <iprt/asm.h>
 
 #ifdef VBOX_GUI_DEBUG
 
@@ -77,9 +75,7 @@
 class VMCPUTimer : public QThread // for crossplatform msleep()
 {
 public:
-    inline static uint64_t ticks() {
-        return ASMReadTSC();
-    }
+    static uint64_t ticks();
     inline static uint64_t msecs( uint64_t tcks ) {
         return tcks / ticks_per_msec;
     }
@@ -109,8 +105,15 @@ private:
 /* A common namespace for all enums */
 struct VBoxDefs
 {
-    /** Disk image type. */
-    enum DiskType { InvalidType, HD = 0x01, CD = 0x02, FD = 0x04 };
+    /** Media type. */
+    enum MediaType
+    {
+        MediaType_Invalid,
+        MediaType_HardDisk,
+        MediaType_DVD,
+        MediaType_Floppy,
+        MediaType_All
+    };
 
     /** VM display rendering mode. */
     enum RenderMode
@@ -129,7 +132,7 @@ struct VBoxDefs
         MousePointerChangeEventType,
         MachineStateChangeEventType,
         AdditionsStateChangeEventType,
-        MediaChangeEventType,
+        MediaDriveChangeEventType,
         MachineDataChangeEventType,
         MachineRegisteredEventType,
         SessionStateChangeEventType,
@@ -141,7 +144,7 @@ struct VBoxDefs
         SharedFolderChangeEventType,
         RuntimeErrorEventType,
         ModifierKeyChangeEventType,
-        EnumerateMediaEventType,
+        MediaEnumEventType,
 #if defined (Q_WS_WIN)
         ShellExecuteEventType,
 #endif

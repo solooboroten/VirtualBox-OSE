@@ -37,7 +37,7 @@
 
 __BEGIN_DECLS
 
-/** @defgroup grp_cpum      The CPU Monitor(/Manager) API
+/** @defgroup grp_cpum      The CPU Monitor / Manager API
  * @{
  */
 
@@ -51,7 +51,7 @@ typedef struct CPUMSELREGHID
      *  Long mode remarks:
      *  - Unused in long mode for CS, DS, ES, SS
      *  - 32 bits for FS & GS; FS(GS)_BASE msr used for the base address
-     *  - 64 bits for TR & LDTR 
+     *  - 64 bits for TR & LDTR
      */
     uint64_t    u64Base;
     /** Limit (expanded). */
@@ -305,16 +305,12 @@ typedef struct CPUMCTX
     /** @} */
 
     /** Debug registers.
+     * @remarks DR4 and DR5 should not be used since they are aliases for
+     *          DR6 and DR7 respectively on both AMD and Intel CPUs.
+     * @remarks DR8-15 are currently not supported by AMD or Intel, so
+     *          neither do we.
      * @{ */
-    uint64_t        dr0;
-    uint64_t        dr1;
-    uint64_t        dr2;
-    uint64_t        dr3;
-    uint64_t        dr4; /**< @todo remove dr4 and dr5. */
-    uint64_t        dr5;
-    uint64_t        dr6;
-    uint64_t        dr7;
-    /* DR8-15 are currently not supported */
+    uint64_t        dr[8];
     /** @} */
 
     /** Global Descriptor Table register. */
@@ -353,8 +349,10 @@ typedef struct CPUMCTX
     CPUMSELREGHID   trHid;
     /** @} */
 
-    /* padding to get 32byte aligned size */
-////    uint32_t        padding[6];
+#if 0
+    /*& Padding to align the size on a 64 byte boundrary. */
+    uint32_t        padding[6];
+#endif
 } CPUMCTX;
 #pragma pack()
 
@@ -363,9 +361,8 @@ typedef struct CPUMCTX
  */
 #define CPUMCTX2CORE(pCtx) ((PCPUMCTXCORE)(void *)&(pCtx)->edi)
 
-
 /**
- * Selector hidden registers. (version 1.6)
+ * Selector hidden registers, for version 1.6 saved state.
  */
 typedef struct CPUMSELREGHID_VER1_6
 {
@@ -380,7 +377,8 @@ typedef struct CPUMSELREGHID_VER1_6
 } CPUMSELREGHID_VER1_6;
 
 /**
- * CPU context. (Version 1.6)
+ * CPU context, for version 1.6 saved state.
+ * @remarks PATM uses this, which is why it has to be here.
  */
 #pragma pack(1)
 typedef struct CPUMCTX_VER1_6
@@ -544,6 +542,21 @@ typedef struct CPUMCTX_VER1_6
 } CPUMCTX_VER1_6;
 #pragma pack()
 
+/* Guest MSR state. */
+typedef union CPUMCTXMSR
+{
+    struct
+    {
+        uint64_t        tscAux;         /* MSR_K8_TSC_AUX */
+    } msr;
+    uint64_t    au64[64];
+} CPUMCTXMSR;
+/** Pointer to the guest MSR state. */
+typedef CPUMCTXMSR *PCPUMCTXMSR;
+/** Pointer to the const guest MSR state. */
+typedef const CPUMCTXMSR *PCCPUMCTXMSR;
+
+
 /**
  * The register set returned by a CPUID operation.
  */
@@ -581,11 +594,15 @@ typedef enum CPUMCPUIDFEATURE
     CPUMCPUIDFEATURE_LONG_MODE,
     /** The PAT feature bit. (Std+Ext) */
     CPUMCPUIDFEATURE_PAT,
+    /** The x2APIC  feature bit. (Std) */
+    CPUMCPUIDFEATURE_X2APIC,
+    /** The RDTSCP feature bit. (Ext) */
+    CPUMCPUIDFEATURE_RDTSCP,
     /** 32bit hackishness. */
     CPUMCPUIDFEATURE_32BIT_HACK = 0x7fffffff
 } CPUMCPUIDFEATURE;
 
-/*
+/**
  * CPU Vendor.
  */
 typedef enum CPUMCPUVENDOR
@@ -602,94 +619,100 @@ typedef enum CPUMCPUVENDOR
 
 /** @name Guest Register Getters.
  * @{ */
-CPUMDECL(void)      CPUMGetGuestGDTR(PVM pVM, PVBOXGDTR pGDTR);
-CPUMDECL(RTGCPTR)   CPUMGetGuestIDTR(PVM pVM, uint16_t *pcbLimit);
-CPUMDECL(RTSEL)     CPUMGetGuestTR(PVM pVM);
-CPUMDECL(RTSEL)     CPUMGetGuestLDTR(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestCR0(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestCR2(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestCR3(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestCR4(PVM pVM);
-CPUMDECL(int)       CPUMGetGuestCRx(PVM pVM, unsigned iReg, uint64_t *pValue);
-CPUMDECL(uint32_t)  CPUMGetGuestEFlags(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestEIP(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestRIP(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestEAX(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestEBX(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestECX(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestEDX(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestESI(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestEDI(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestESP(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestEBP(PVM pVM);
-CPUMDECL(RTSEL)     CPUMGetGuestCS(PVM pVM);
-CPUMDECL(RTSEL)     CPUMGetGuestDS(PVM pVM);
-CPUMDECL(RTSEL)     CPUMGetGuestES(PVM pVM);
-CPUMDECL(RTSEL)     CPUMGetGuestFS(PVM pVM);
-CPUMDECL(RTSEL)     CPUMGetGuestGS(PVM pVM);
-CPUMDECL(RTSEL)     CPUMGetGuestSS(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestDR0(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestDR1(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestDR2(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestDR3(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestDR6(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestDR7(PVM pVM);
-CPUMDECL(int)       CPUMGetGuestDRx(PVM pVM, uint32_t iReg, uint64_t *pValue);
-CPUMDECL(void)      CPUMGetGuestCpuId(PVM pVM, uint32_t iLeaf, uint32_t *pEax, uint32_t *pEbx, uint32_t *pEcx, uint32_t *pEdx);
-CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdStdGCPtr(PVM pVM);
-CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdExtGCPtr(PVM pVM);
-CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdCentaurGCPtr(PVM pVM);
-CPUMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdDefGCPtr(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestCpuIdStdMax(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestCpuIdExtMax(PVM pVM);
-CPUMDECL(uint32_t)  CPUMGetGuestCpuIdCentaurMax(PVM pVM);
-CPUMDECL(CPUMSELREGHID *) CPUMGetGuestTRHid(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestEFER(PVM pVM);
-CPUMDECL(uint64_t)  CPUMGetGuestMsr(PVM pVM, unsigned idMsr);
+VMMDECL(void)       CPUMGetGuestGDTR(PVM pVM, PVBOXGDTR pGDTR);
+VMMDECL(RTGCPTR)    CPUMGetGuestIDTR(PVM pVM, uint16_t *pcbLimit);
+VMMDECL(RTSEL)      CPUMGetGuestTR(PVM pVM);
+VMMDECL(RTSEL)      CPUMGetGuestLDTR(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestCR0(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestCR2(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestCR3(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestCR4(PVM pVM);
+VMMDECL(int)        CPUMGetGuestCRx(PVM pVM, unsigned iReg, uint64_t *pValue);
+VMMDECL(uint32_t)   CPUMGetGuestEFlags(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestEIP(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestRIP(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestEAX(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestEBX(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestECX(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestEDX(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestESI(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestEDI(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestESP(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestEBP(PVM pVM);
+VMMDECL(RTSEL)      CPUMGetGuestCS(PVM pVM);
+VMMDECL(RTSEL)      CPUMGetGuestDS(PVM pVM);
+VMMDECL(RTSEL)      CPUMGetGuestES(PVM pVM);
+VMMDECL(RTSEL)      CPUMGetGuestFS(PVM pVM);
+VMMDECL(RTSEL)      CPUMGetGuestGS(PVM pVM);
+VMMDECL(RTSEL)      CPUMGetGuestSS(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestDR0(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestDR1(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestDR2(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestDR3(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestDR6(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestDR7(PVM pVM);
+VMMDECL(int)        CPUMGetGuestDRx(PVM pVM, uint32_t iReg, uint64_t *pValue);
+VMMDECL(void)       CPUMGetGuestCpuId(PVM pVM, uint32_t iLeaf, uint32_t *pEax, uint32_t *pEbx, uint32_t *pEcx, uint32_t *pEdx);
+VMMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdStdRCPtr(PVM pVM);
+VMMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdExtRCPtr(PVM pVM);
+VMMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdCentaurRCPtr(PVM pVM);
+VMMDECL(RCPTRTYPE(PCCPUMCPUID)) CPUMGetGuestCpuIdDefRCPtr(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestCpuIdStdMax(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestCpuIdExtMax(PVM pVM);
+VMMDECL(uint32_t)   CPUMGetGuestCpuIdCentaurMax(PVM pVM);
+VMMDECL(CPUMSELREGHID *) CPUMGetGuestTRHid(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestEFER(PVM pVM);
+VMMDECL(uint64_t)   CPUMGetGuestMsr(PVM pVM, unsigned idMsr);
+VMMDECL(void)       CPUMSetGuestMsr(PVM pVM, unsigned idMsr, uint64_t valMsr);
 /** @} */
 
 /** @name Guest Register Setters.
  * @{ */
-CPUMDECL(int)       CPUMSetGuestGDTR(PVM pVM, uint32_t addr, uint16_t limit);
-CPUMDECL(int)       CPUMSetGuestIDTR(PVM pVM, uint32_t addr, uint16_t limit);
-CPUMDECL(int)       CPUMSetGuestTR(PVM pVM, uint16_t tr);
-CPUMDECL(int)       CPUMSetGuestLDTR(PVM pVM, uint16_t ldtr);
-CPUMDECL(int)       CPUMSetGuestCR0(PVM pVM, uint64_t cr0);
-CPUMDECL(int)       CPUMSetGuestCR2(PVM pVM, uint64_t cr2);
-CPUMDECL(int)       CPUMSetGuestCR3(PVM pVM, uint64_t cr3);
-CPUMDECL(int)       CPUMSetGuestCR4(PVM pVM, uint64_t cr4);
-CPUMDECL(int)       CPUMSetGuestDR0(PVM pVM, uint64_t uDr0);
-CPUMDECL(int)       CPUMSetGuestDR1(PVM pVM, uint64_t uDr1);
-CPUMDECL(int)       CPUMSetGuestDR2(PVM pVM, uint64_t uDr2);
-CPUMDECL(int)       CPUMSetGuestDR3(PVM pVM, uint64_t uDr3);
-CPUMDECL(int)       CPUMSetGuestDR6(PVM pVM, uint64_t uDr6);
-CPUMDECL(int)       CPUMSetGuestDR7(PVM pVM, uint64_t uDr7);
-CPUMDECL(int)       CPUMSetGuestDRx(PVM pVM, uint32_t iReg, uint64_t Value);
-CPUMDECL(int)       CPUMSetGuestEFlags(PVM pVM, uint32_t eflags);
-CPUMDECL(int)       CPUMSetGuestEIP(PVM pVM, uint32_t eip);
-CPUMDECL(int)       CPUMSetGuestEAX(PVM pVM, uint32_t eax);
-CPUMDECL(int)       CPUMSetGuestEBX(PVM pVM, uint32_t ebx);
-CPUMDECL(int)       CPUMSetGuestECX(PVM pVM, uint32_t ecx);
-CPUMDECL(int)       CPUMSetGuestEDX(PVM pVM, uint32_t edx);
-CPUMDECL(int)       CPUMSetGuestESI(PVM pVM, uint32_t esi);
-CPUMDECL(int)       CPUMSetGuestEDI(PVM pVM, uint32_t edi);
-CPUMDECL(int)       CPUMSetGuestESP(PVM pVM, uint32_t esp);
-CPUMDECL(int)       CPUMSetGuestEBP(PVM pVM, uint32_t ebp);
-CPUMDECL(int)       CPUMSetGuestCS(PVM pVM, uint16_t cs);
-CPUMDECL(int)       CPUMSetGuestDS(PVM pVM, uint16_t ds);
-CPUMDECL(int)       CPUMSetGuestES(PVM pVM, uint16_t es);
-CPUMDECL(int)       CPUMSetGuestFS(PVM pVM, uint16_t fs);
-CPUMDECL(int)       CPUMSetGuestGS(PVM pVM, uint16_t gs);
-CPUMDECL(int)       CPUMSetGuestSS(PVM pVM, uint16_t ss);
-CPUMDECL(void)      CPUMSetGuestEFER(PVM pVM, uint64_t val);
-CPUMDECL(void)      CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature);
-CPUMDECL(void)      CPUMClearGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature);
-CPUMDECL(bool)      CPUMGetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature);
-CPUMDECL(void)      CPUMSetGuestCtx(PVM pVM, const PCPUMCTX pCtx);
+VMMDECL(int)        CPUMSetGuestGDTR(PVM pVM, uint32_t addr, uint16_t limit);
+VMMDECL(int)        CPUMSetGuestIDTR(PVM pVM, uint32_t addr, uint16_t limit);
+VMMDECL(int)        CPUMSetGuestTR(PVM pVM, uint16_t tr);
+VMMDECL(int)        CPUMSetGuestLDTR(PVM pVM, uint16_t ldtr);
+VMMDECL(int)        CPUMSetGuestCR0(PVM pVM, uint64_t cr0);
+VMMDECL(int)        CPUMSetGuestCR2(PVM pVM, uint64_t cr2);
+VMMDECL(int)        CPUMSetGuestCR3(PVM pVM, uint64_t cr3);
+VMMDECL(int)        CPUMSetGuestCR4(PVM pVM, uint64_t cr4);
+VMMDECL(int)        CPUMSetGuestDR0(PVM pVM, uint64_t uDr0);
+VMMDECL(int)        CPUMSetGuestDR1(PVM pVM, uint64_t uDr1);
+VMMDECL(int)        CPUMSetGuestDR2(PVM pVM, uint64_t uDr2);
+VMMDECL(int)        CPUMSetGuestDR3(PVM pVM, uint64_t uDr3);
+VMMDECL(int)        CPUMSetGuestDR6(PVM pVM, uint64_t uDr6);
+VMMDECL(int)        CPUMSetGuestDR7(PVM pVM, uint64_t uDr7);
+VMMDECL(int)        CPUMSetGuestDRx(PVM pVM, uint32_t iReg, uint64_t Value);
+VMMDECL(int)        CPUMSetGuestEFlags(PVM pVM, uint32_t eflags);
+VMMDECL(int)        CPUMSetGuestEIP(PVM pVM, uint32_t eip);
+VMMDECL(int)        CPUMSetGuestEAX(PVM pVM, uint32_t eax);
+VMMDECL(int)        CPUMSetGuestEBX(PVM pVM, uint32_t ebx);
+VMMDECL(int)        CPUMSetGuestECX(PVM pVM, uint32_t ecx);
+VMMDECL(int)        CPUMSetGuestEDX(PVM pVM, uint32_t edx);
+VMMDECL(int)        CPUMSetGuestESI(PVM pVM, uint32_t esi);
+VMMDECL(int)        CPUMSetGuestEDI(PVM pVM, uint32_t edi);
+VMMDECL(int)        CPUMSetGuestESP(PVM pVM, uint32_t esp);
+VMMDECL(int)        CPUMSetGuestEBP(PVM pVM, uint32_t ebp);
+VMMDECL(int)        CPUMSetGuestCS(PVM pVM, uint16_t cs);
+VMMDECL(int)        CPUMSetGuestDS(PVM pVM, uint16_t ds);
+VMMDECL(int)        CPUMSetGuestES(PVM pVM, uint16_t es);
+VMMDECL(int)        CPUMSetGuestFS(PVM pVM, uint16_t fs);
+VMMDECL(int)        CPUMSetGuestGS(PVM pVM, uint16_t gs);
+VMMDECL(int)        CPUMSetGuestSS(PVM pVM, uint16_t ss);
+VMMDECL(void)       CPUMSetGuestEFER(PVM pVM, uint64_t val);
+VMMDECL(void)       CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature);
+VMMDECL(void)       CPUMClearGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature);
+VMMDECL(bool)       CPUMGetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature);
+VMMDECL(void)       CPUMSetGuestCtx(PVM pVM, const PCPUMCTX pCtx);
 /** @} */
 
 /** @name Misc Guest Predicate Functions.
  * @{  */
+
+
+VMMDECL(bool)       CPUMIsGuestIn16BitCode(PVM pVM);
+VMMDECL(bool)       CPUMIsGuestIn32BitCode(PVM pVM);
+VMMDECL(CPUMCPUVENDOR) CPUMGetCPUVendor(PVM pVM);
 
 /**
  * Tests if the guest is running in real mode or not.
@@ -700,6 +723,17 @@ CPUMDECL(void)      CPUMSetGuestCtx(PVM pVM, const PCPUMCTX pCtx);
 DECLINLINE(bool) CPUMIsGuestInRealMode(PVM pVM)
 {
     return !(CPUMGetGuestCR0(pVM) & X86_CR0_PE);
+}
+
+/**
+ * Tests if the guest is running in real mode or not.
+ *
+ * @returns true if in real mode, otherwise false.
+ * @param   pCtx    Current CPU context
+ */
+DECLINLINE(bool) CPUMIsGuestInRealModeEx(PCPUMCTX pCtx)
+{
+    return !(pCtx->cr0 & X86_CR0_PE);
 }
 
 /**
@@ -725,6 +759,17 @@ DECLINLINE(bool) CPUMIsGuestInPagedProtectedMode(PVM pVM)
 }
 
 /**
+ * Tests if the guest is running in paged protected or not.
+ *
+ * @returns true if in paged protected mode, otherwise false.
+ * @param   pVM     The VM handle.
+ */
+DECLINLINE(bool) CPUMIsGuestInPagedProtectedModeEx(PCPUMCTX pCtx)
+{
+    return (pCtx->cr0 & (X86_CR0_PE | X86_CR0_PG)) == (X86_CR0_PE | X86_CR0_PG);
+}
+
+/**
  * Tests if the guest is running in long mode or not.
  *
  * @returns true if in long mode, otherwise false.
@@ -745,22 +790,6 @@ DECLINLINE(bool) CPUMIsGuestInLongModeEx(PCPUMCTX pCtx)
 {
     return (pCtx->msrEFER & MSR_K6_EFER_LMA) == MSR_K6_EFER_LMA;
 }
-
-/**
- * Tests if the guest is running in 16 bits paged protected or not.
- *
- * @returns true if in paged protected mode, otherwise false.
- * @param   pVM     The VM handle.
- */
-CPUMDECL(bool) CPUMIsGuestIn16BitCode(PVM pVM);
-
-/**
- * Tests if the guest is running in 32 bits paged protected or not.
- *
- * @returns true if in paged protected mode, otherwise false.
- * @param   pVM     The VM handle.
- */
-CPUMDECL(bool) CPUMIsGuestIn32BitCode(PVM pVM);
 
 /**
  * Tests if the guest is running in 64 bits mode or not.
@@ -793,205 +822,101 @@ DECLINLINE(bool) CPUMIsGuestIn64BitCodeEx(PCCPUMCTX pCtx)
 }
 
 /**
- * Gets the CPU vendor 
+ * Tests if the guest is running in PAE mode or not.
  *
- * @returns CPU vendor
- * @param   pVM     The VM handle.
+ * @returns true if in PAE mode, otherwise false.
+ * @param   pCtx    Current CPU context
  */
-CPUMDECL(CPUMCPUVENDOR) CPUMGetCPUVendor(PVM pVM);
-
+DECLINLINE(bool) CPUMIsGuestInPAEModeEx(PCPUMCTX pCtx)
+{
+    return (    CPUMIsGuestInPagedProtectedModeEx(pCtx)
+            &&  (pCtx->cr4 & X86_CR4_PAE)
+            &&  !CPUMIsGuestInLongModeEx(pCtx));
+}
 
 /** @} */
-
 
 
 /** @name Hypervisor Register Getters.
  * @{ */
-CPUMDECL(RTSEL)         CPUMGetHyperCS(PVM pVM);
-CPUMDECL(RTSEL)         CPUMGetHyperDS(PVM pVM);
-CPUMDECL(RTSEL)         CPUMGetHyperES(PVM pVM);
-CPUMDECL(RTSEL)         CPUMGetHyperFS(PVM pVM);
-CPUMDECL(RTSEL)         CPUMGetHyperGS(PVM pVM);
-CPUMDECL(RTSEL)         CPUMGetHyperSS(PVM pVM);
+VMMDECL(RTSEL)          CPUMGetHyperCS(PVM pVM);
+VMMDECL(RTSEL)          CPUMGetHyperDS(PVM pVM);
+VMMDECL(RTSEL)          CPUMGetHyperES(PVM pVM);
+VMMDECL(RTSEL)          CPUMGetHyperFS(PVM pVM);
+VMMDECL(RTSEL)          CPUMGetHyperGS(PVM pVM);
+VMMDECL(RTSEL)          CPUMGetHyperSS(PVM pVM);
 #if 0 /* these are not correct. */
-CPUMDECL(uint32_t)      CPUMGetHyperCR0(PVM pVM);
-CPUMDECL(uint32_t)      CPUMGetHyperCR2(PVM pVM);
-CPUMDECL(uint32_t)      CPUMGetHyperCR3(PVM pVM);
-CPUMDECL(uint32_t)      CPUMGetHyperCR4(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperCR0(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperCR2(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperCR3(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperCR4(PVM pVM);
 #endif
 /** This register is only saved on fatal traps. */
-CPUMDECL(uint32_t)      CPUMGetHyperEAX(PVM pVM);
-CPUMDECL(uint32_t)      CPUMGetHyperEBX(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperEAX(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperEBX(PVM pVM);
 /** This register is only saved on fatal traps. */
-CPUMDECL(uint32_t)      CPUMGetHyperECX(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperECX(PVM pVM);
 /** This register is only saved on fatal traps. */
-CPUMDECL(uint32_t)      CPUMGetHyperEDX(PVM pVM);
-CPUMDECL(uint32_t)      CPUMGetHyperESI(PVM pVM);
-CPUMDECL(uint32_t)      CPUMGetHyperEDI(PVM pVM);
-CPUMDECL(uint32_t)      CPUMGetHyperEBP(PVM pVM);
-CPUMDECL(uint32_t)      CPUMGetHyperESP(PVM pVM);
-CPUMDECL(uint32_t)      CPUMGetHyperEFlags(PVM pVM);
-CPUMDECL(uint32_t)      CPUMGetHyperEIP(PVM pVM);
-CPUMDECL(uint64_t)      CPUMGetHyperRIP(PVM pVM);
-CPUMDECL(uint32_t)      CPUMGetHyperIDTR(PVM pVM, uint16_t *pcbLimit);
-CPUMDECL(uint32_t)      CPUMGetHyperGDTR(PVM pVM, uint16_t *pcbLimit);
-CPUMDECL(RTSEL)         CPUMGetHyperLDTR(PVM pVM);
-CPUMDECL(RTGCUINTREG)   CPUMGetHyperDR0(PVM pVM);
-CPUMDECL(RTGCUINTREG)   CPUMGetHyperDR1(PVM pVM);
-CPUMDECL(RTGCUINTREG)   CPUMGetHyperDR2(PVM pVM);
-CPUMDECL(RTGCUINTREG)   CPUMGetHyperDR3(PVM pVM);
-CPUMDECL(RTGCUINTREG)   CPUMGetHyperDR6(PVM pVM);
-CPUMDECL(RTGCUINTREG)   CPUMGetHyperDR7(PVM pVM);
-CPUMDECL(void)          CPUMGetHyperCtx(PVM pVM, PCPUMCTX pCtx);
+VMMDECL(uint32_t)       CPUMGetHyperEDX(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperESI(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperEDI(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperEBP(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperESP(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperEFlags(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperEIP(PVM pVM);
+VMMDECL(uint64_t)       CPUMGetHyperRIP(PVM pVM);
+VMMDECL(uint32_t)       CPUMGetHyperIDTR(PVM pVM, uint16_t *pcbLimit);
+VMMDECL(uint32_t)       CPUMGetHyperGDTR(PVM pVM, uint16_t *pcbLimit);
+VMMDECL(RTSEL)          CPUMGetHyperLDTR(PVM pVM);
+VMMDECL(RTGCUINTREG)    CPUMGetHyperDR0(PVM pVM);
+VMMDECL(RTGCUINTREG)    CPUMGetHyperDR1(PVM pVM);
+VMMDECL(RTGCUINTREG)    CPUMGetHyperDR2(PVM pVM);
+VMMDECL(RTGCUINTREG)    CPUMGetHyperDR3(PVM pVM);
+VMMDECL(RTGCUINTREG)    CPUMGetHyperDR6(PVM pVM);
+VMMDECL(RTGCUINTREG)    CPUMGetHyperDR7(PVM pVM);
+VMMDECL(void)           CPUMGetHyperCtx(PVM pVM, PCPUMCTX pCtx);
 /** @} */
 
 /** @name Hypervisor Register Setters.
  * @{ */
-CPUMDECL(void)          CPUMSetHyperGDTR(PVM pVM, uint32_t addr, uint16_t limit);
-CPUMDECL(void)          CPUMSetHyperLDTR(PVM pVM, RTSEL SelLDTR);
-CPUMDECL(void)          CPUMSetHyperIDTR(PVM pVM, uint32_t addr, uint16_t limit);
-CPUMDECL(void)          CPUMSetHyperCR3(PVM pVM, uint32_t cr3);
-CPUMDECL(void)          CPUMSetHyperTR(PVM pVM, RTSEL SelTR);
-CPUMDECL(void)          CPUMSetHyperCS(PVM pVM, RTSEL SelCS);
-CPUMDECL(void)          CPUMSetHyperDS(PVM pVM, RTSEL SelDS);
-CPUMDECL(void)          CPUMSetHyperES(PVM pVM, RTSEL SelDS);
-CPUMDECL(void)          CPUMSetHyperFS(PVM pVM, RTSEL SelDS);
-CPUMDECL(void)          CPUMSetHyperGS(PVM pVM, RTSEL SelDS);
-CPUMDECL(void)          CPUMSetHyperSS(PVM pVM, RTSEL SelSS);
-CPUMDECL(void)          CPUMSetHyperESP(PVM pVM, uint32_t u32ESP);
-CPUMDECL(int)           CPUMSetHyperEFlags(PVM pVM, uint32_t Efl);
-CPUMDECL(void)          CPUMSetHyperEIP(PVM pVM, uint32_t u32EIP);
-CPUMDECL(void)          CPUMSetHyperDR0(PVM pVM, RTGCUINTREG uDr0);
-CPUMDECL(void)          CPUMSetHyperDR1(PVM pVM, RTGCUINTREG uDr1);
-CPUMDECL(void)          CPUMSetHyperDR2(PVM pVM, RTGCUINTREG uDr2);
-CPUMDECL(void)          CPUMSetHyperDR3(PVM pVM, RTGCUINTREG uDr3);
-CPUMDECL(void)          CPUMSetHyperDR6(PVM pVM, RTGCUINTREG uDr6);
-CPUMDECL(void)          CPUMSetHyperDR7(PVM pVM, RTGCUINTREG uDr7);
-CPUMDECL(void)          CPUMSetHyperCtx(PVM pVM, const PCPUMCTX pCtx);
-CPUMDECL(int)           CPUMRecalcHyperDRx(PVM pVM);
+VMMDECL(void)           CPUMSetHyperGDTR(PVM pVM, uint32_t addr, uint16_t limit);
+VMMDECL(void)           CPUMSetHyperLDTR(PVM pVM, RTSEL SelLDTR);
+VMMDECL(void)           CPUMSetHyperIDTR(PVM pVM, uint32_t addr, uint16_t limit);
+VMMDECL(void)           CPUMSetHyperCR3(PVM pVM, uint32_t cr3);
+VMMDECL(void)           CPUMSetHyperTR(PVM pVM, RTSEL SelTR);
+VMMDECL(void)           CPUMSetHyperCS(PVM pVM, RTSEL SelCS);
+VMMDECL(void)           CPUMSetHyperDS(PVM pVM, RTSEL SelDS);
+VMMDECL(void)           CPUMSetHyperES(PVM pVM, RTSEL SelDS);
+VMMDECL(void)           CPUMSetHyperFS(PVM pVM, RTSEL SelDS);
+VMMDECL(void)           CPUMSetHyperGS(PVM pVM, RTSEL SelDS);
+VMMDECL(void)           CPUMSetHyperSS(PVM pVM, RTSEL SelSS);
+VMMDECL(void)           CPUMSetHyperESP(PVM pVM, uint32_t u32ESP);
+VMMDECL(int)            CPUMSetHyperEFlags(PVM pVM, uint32_t Efl);
+VMMDECL(void)           CPUMSetHyperEIP(PVM pVM, uint32_t u32EIP);
+VMMDECL(void)           CPUMSetHyperDR0(PVM pVM, RTGCUINTREG uDr0);
+VMMDECL(void)           CPUMSetHyperDR1(PVM pVM, RTGCUINTREG uDr1);
+VMMDECL(void)           CPUMSetHyperDR2(PVM pVM, RTGCUINTREG uDr2);
+VMMDECL(void)           CPUMSetHyperDR3(PVM pVM, RTGCUINTREG uDr3);
+VMMDECL(void)           CPUMSetHyperDR6(PVM pVM, RTGCUINTREG uDr6);
+VMMDECL(void)           CPUMSetHyperDR7(PVM pVM, RTGCUINTREG uDr7);
+VMMDECL(void)           CPUMSetHyperCtx(PVM pVM, const PCPUMCTX pCtx);
+VMMDECL(int)            CPUMRecalcHyperDRx(PVM pVM);
 /** @} */
 
-CPUMDECL(void) CPUMPushHyper(PVM pVM, uint32_t u32);
-
-/**
- * Sets or resets an alternative hypervisor context core.
- *
- * This is called when we get a hypervisor trap set switch the context
- * core with the trap frame on the stack. It is called again to reset
- * back to the default context core when resuming hypervisor execution.
- *
- * @param   pVM         The VM handle.
- * @param   pCtxCore    Pointer to the alternative context core or NULL
- *                      to go back to the default context core.
- */
-CPUMDECL(void) CPUMHyperSetCtxCore(PVM pVM, PCPUMCTXCORE pCtxCore);
-
-
-/**
- * Queries the pointer to the internal CPUMCTX structure
- *
- * @returns VBox status code.
- * @param   pVM         Handle to the virtual machine.
- * @param   ppCtx       Receives the CPUMCTX pointer when successful.
- */
-CPUMDECL(int) CPUMQueryGuestCtxPtr(PVM pVM, PCPUMCTX *ppCtx);
-
-/**
- * Queries the pointer to the internal CPUMCTX structure for the hypervisor.
- *
- * @returns VBox status code.
- * @param   pVM         Handle to the virtual machine.
- * @param   ppCtx       Receives the hyper CPUMCTX pointer when successful.
- */
-CPUMDECL(int) CPUMQueryHyperCtxPtr(PVM pVM, PCPUMCTX *ppCtx);
-
-
-/**
- * Gets the pointer to the internal CPUMCTXCORE structure.
- * This is only for reading in order to save a few calls.
- *
- * @param   pVM         Handle to the virtual machine.
- */
-CPUMDECL(PCCPUMCTXCORE) CPUMGetGuestCtxCore(PVM pVM);
-
-/**
- * Gets the pointer to the internal CPUMCTXCORE structure for the hypervisor.
- * This is only for reading in order to save a few calls.
- *
- * @param   pVM         Handle to the virtual machine.
- */
-CPUMDECL(PCCPUMCTXCORE) CPUMGetHyperCtxCore(PVM pVM);
-
-/**
- * Sets the guest context core registers.
- *
- * @param   pVM         Handle to the virtual machine.
- * @param   pCtxCore    The new context core values.
- */
-CPUMDECL(void) CPUMSetGuestCtxCore(PVM pVM, PCCPUMCTXCORE pCtxCore);
-
-
-/**
- * Transforms the guest CPU state to raw-ring mode.
- *
- * This function will change the any of the cs and ss register with DPL=0 to DPL=1.
- *
- * @returns VBox status. (recompiler failure)
- * @param   pVM         VM handle.
- * @param   pCtxCore    The context core (for trap usage).
- * @see     @ref pg_raw
- */
-CPUMDECL(int) CPUMRawEnter(PVM pVM, PCPUMCTXCORE pCtxCore);
-
-/**
- * Transforms the guest CPU state from raw-ring mode to correct values.
- *
- * This function will change any selector registers with DPL=1 to DPL=0.
- *
- * @returns Adjusted rc.
- * @param   pVM         VM handle.
- * @param   rc          Raw mode return code
- * @param   pCtxCore    The context core (for trap usage).
- * @see     @ref pg_raw
- */
-CPUMDECL(int) CPUMRawLeave(PVM pVM, PCPUMCTXCORE pCtxCore, int rc);
-
-/**
- * Gets the EFLAGS while we're in raw-mode.
- *
- * @returns The eflags.
- * @param   pVM         The VM handle.
- * @param   pCtxCore    The context core.
- */
-CPUMDECL(uint32_t) CPUMRawGetEFlags(PVM pVM, PCPUMCTXCORE pCtxCore);
-
-/**
- * Updates the EFLAGS while we're in raw-mode.
- *
- * @param   pVM         The VM handle.
- * @param   pCtxCore    The context core.
- * @param   eflags      The new EFLAGS value.
- */
-CPUMDECL(void) CPUMRawSetEFlags(PVM pVM, PCPUMCTXCORE pCtxCore, uint32_t eflags);
-
-/**
- * Lazily sync in the FPU/XMM state
- *
- * This function will change any selector registers with DPL=1 to DPL=0.
- *
- * @returns VBox status code.
- * @param   pVM         VM handle.
- */
-CPUMDECL(int) CPUMHandleLazyFPU(PVM pVM);
-
-
-/**
- * Restore host FPU/XMM state
- *
- * @returns VBox status code.
- * @param   pVM         VM handle.
- */
-CPUMDECL(int) CPUMRestoreHostFPUState(PVM pVM);
+VMMDECL(void)           CPUMPushHyper(PVM pVM, uint32_t u32);
+VMMDECL(void)           CPUMHyperSetCtxCore(PVM pVM, PCPUMCTXCORE pCtxCore);
+VMMDECL(PCPUMCTX)       CPUMQueryGuestCtxPtr(PVM pVM);
+VMMDECL(PCPUMCTX)       CPUMQueryGuestCtxPtrEx(PVM pVM, PVMCPU pVCpu);
+VMMDECL(int)            CPUMQueryHyperCtxPtr(PVM pVM, PCPUMCTX *ppCtx);
+VMMDECL(PCCPUMCTXCORE)  CPUMGetGuestCtxCore(PVM pVM);
+VMMDECL(PCCPUMCTXCORE)  CPUMGetGuestCtxCoreEx(PVM pVM, PVMCPU pVCpu);
+VMMDECL(PCCPUMCTXCORE)  CPUMGetHyperCtxCore(PVM pVM);
+VMMDECL(void)           CPUMSetGuestCtxCore(PVM pVM, PCCPUMCTXCORE pCtxCore);
+VMMDECL(int)            CPUMRawEnter(PVM pVM, PCPUMCTXCORE pCtxCore);
+VMMDECL(int)            CPUMRawLeave(PVM pVM, PCPUMCTXCORE pCtxCore, int rc);
+VMMDECL(uint32_t)       CPUMRawGetEFlags(PVM pVM, PCPUMCTXCORE pCtxCore);
+VMMDECL(void)           CPUMRawSetEFlags(PVM pVM, PCPUMCTXCORE pCtxCore, uint32_t eflags);
+VMMDECL(int)            CPUMHandleLazyFPU(PVM pVM, PVMCPU pVCpu);
 
 /** @name Changed flags
  * These flags are used to keep track of which important register that
@@ -1014,83 +939,18 @@ CPUMDECL(int) CPUMRestoreHostFPUState(PVM pVM);
 #define CPUM_CHANGED_ALL                (CPUM_CHANGED_FPU_REM|CPUM_CHANGED_CR0|CPUM_CHANGED_CR3|CPUM_CHANGED_CR4|CPUM_CHANGED_GDTR|CPUM_CHANGED_IDTR|CPUM_CHANGED_LDTR|CPUM_CHANGED_TR|CPUM_CHANGED_SYSENTER_MSR|CPUM_CHANGED_HIDDEN_SEL_REGS|CPUM_CHANGED_CPUID)
 /** @} */
 
-/**
- * Gets and resets the changed flags (CPUM_CHANGED_*).
- *
- * @returns The changed flags.
- * @param   pVM     VM handle.
- */
-CPUMDECL(unsigned) CPUMGetAndClearChangedFlagsREM(PVM pVM);
-
-/**
- * Sets the specified changed flags (CPUM_CHANGED_*).
- *
- * @param   pVM     The VM handle.
- */
-CPUMDECL(void) CPUMSetChangedFlags(PVM pVM, uint32_t fChangedFlags);
-
-/**
- * Checks if the CPU supports the FXSAVE and FXRSTOR instruction.
- * @returns true if supported.
- * @returns false if not supported.
- * @param   pVM     The VM handle.
- */
-CPUMDECL(bool) CPUMSupportsFXSR(PVM pVM);
-
-/**
- * Checks if the host OS uses the SYSENTER / SYSEXIT instructions.
- * @returns true if used.
- * @returns false if not used.
- * @param   pVM     The VM handle.
- */
-CPUMDECL(bool) CPUMIsHostUsingSysEnter(PVM pVM);
-
-/**
- * Checks if the host OS uses the SYSCALL / SYSRET instructions.
- * @returns true if used.
- * @returns false if not used.
- * @param   pVM     The VM handle.
- */
-CPUMDECL(bool) CPUMIsHostUsingSysCall(PVM pVM);
-
-/**
- * Checks if we activated the FPU/XMM state of the guest OS
- * @returns true if we did.
- * @returns false if not.
- * @param   pVM     The VM handle.
- */
-CPUMDECL(bool) CPUMIsGuestFPUStateActive(PVM pVM);
-
-/**
- * Deactivate the FPU/XMM state of the guest OS
- * @param   pVM     The VM handle.
- */
-CPUMDECL(void) CPUMDeactivateGuestFPUState(PVM pVM);
-
-
-/**
- * Checks if the hidden selector registers are valid
- * @returns true if they are.
- * @returns false if not.
- * @param   pVM     The VM handle.
- */
-CPUMDECL(bool) CPUMAreHiddenSelRegsValid(PVM pVM);
-
-/**
- * Checks if the hidden selector registers are valid
- * @param   pVM     The VM handle.
- * @param   fValid  Valid or not
- */
-CPUMDECL(void) CPUMSetHiddenSelRegsValid(PVM pVM, bool fValid);
-
-/**
- * Get the current privilege level of the guest.
- *
- * @returns cpl
- * @param   pVM         VM Handle.
- * @param   pRegFrame   Trap register frame.
- */
-CPUMDECL(uint32_t) CPUMGetGuestCPL(PVM pVM, PCPUMCTXCORE pCtxCore);
+VMMDECL(unsigned)       CPUMGetAndClearChangedFlagsREM(PVM pVM);
+VMMDECL(void)           CPUMSetChangedFlags(PVM pVM, uint32_t fChangedFlags);
+VMMDECL(bool)           CPUMSupportsFXSR(PVM pVM);
+VMMDECL(bool)           CPUMIsHostUsingSysEnter(PVM pVM);
+VMMDECL(bool)           CPUMIsHostUsingSysCall(PVM pVM);
+VMMDECL(bool)           CPUMIsGuestFPUStateActive(PVMCPU pVCPU);
+VMMDECL(void)           CPUMDeactivateGuestFPUState(PVM pVM);
+VMMDECL(bool)           CPUMIsGuestDebugStateActive(PVM pVM);
+VMMDECL(void)           CPUMDeactivateGuestDebugState(PVM pVM);
+VMMDECL(bool)           CPUMAreHiddenSelRegsValid(PVM pVM);
+VMMDECL(void)           CPUMSetHiddenSelRegsValid(PVM pVM, bool fValid);
+VMMDECL(uint32_t)       CPUMGetGuestCPL(PVM pVM, PCPUMCTXCORE pCtxCore);
 
 /**
  * CPU modes.
@@ -1107,15 +967,7 @@ typedef enum CPUMMODE
     CPUMMODE_LONG
 } CPUMMODE;
 
-/**
- * Gets the current guest CPU mode.
- *
- * If paging mode is what you need, check out PGMGetGuestMode().
- *
- * @returns The CPU mode.
- * @param   pVM         The VM handle.
- */
-CPUMDECL(CPUMMODE) CPUMGetGuestMode(PVM pVM);
+VMMDECL(CPUMMODE)  CPUMGetGuestMode(PVM pVM);
 
 
 #ifdef IN_RING3
@@ -1124,79 +976,21 @@ CPUMDECL(CPUMMODE) CPUMGetGuestMode(PVM pVM);
  * @{
  */
 
-/**
- * Initializes the CPUM.
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-CPUMR3DECL(int) CPUMR3Init(PVM pVM);
-
-/**
- * Applies relocations to data and code managed by this
- * component. This function will be called at init and
- * whenever the VMM need to relocate it self inside the GC.
- *
- * The CPUM will update the addresses used by the switcher.
- *
- * @param   pVM     The VM.
- */
-CPUMR3DECL(void) CPUMR3Relocate(PVM pVM);
-
-/**
- * Terminates the CPUM.
- *
- * Termination means cleaning up and freeing all resources,
- * the VM it self is at this point powered off or suspended.
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-CPUMR3DECL(int) CPUMR3Term(PVM pVM);
-
-/**
- * Resets the CPU.
- *
- * @param   pVM         The VM handle.
- */
-CPUMR3DECL(void) CPUMR3Reset(PVM pVM);
-
-/**
- * Queries the pointer to the internal CPUMCTX structure
- *
- * @returns VBox status code.
- * @param   pVM         Handle to the virtual machine.
- * @param   ppCtx       Receives the CPUMCTX GC pointer when successful.
- */
-CPUMR3DECL(int) CPUMR3QueryGuestCtxGCPtr(PVM pVM, RCPTRTYPE(PCPUMCTX) *ppCtx);
-
-
-#ifdef DEBUG
-/**
- * Debug helper - Saves guest context on raw mode entry (for fatal dump)
- *
- * @internal
- */
-CPUMR3DECL(void) CPUMR3SaveEntryCtx(PVM pVM);
-#endif
-
-/**
- * API for controlling a few of the CPU features found in CR4.
- *
- * Currently only X86_CR4_TSD is accepted as input.
- *
- * @returns VBox status code.
- *
- * @param   pVM     The VM handle.
- * @param   fOr     The CR4 OR mask.
- * @param   fAnd    The CR4 AND mask.
- */
-CPUMR3DECL(int) CPUMR3SetCR4Feature(PVM pVM, RTHCUINTREG fOr, RTHCUINTREG fAnd);
+VMMR3DECL(int)          CPUMR3Init(PVM pVM);
+VMMR3DECL(int)          CPUMR3InitCPU(PVM pVM);
+VMMR3DECL(void)         CPUMR3Relocate(PVM pVM);
+VMMR3DECL(int)          CPUMR3Term(PVM pVM);
+VMMR3DECL(int)          CPUMR3TermCPU(PVM pVM);
+VMMR3DECL(void)         CPUMR3Reset(PVM pVM);
+# ifdef DEBUG
+VMMR3DECL(void)         CPUMR3SaveEntryCtx(PVM pVM);
+# endif
+VMMR3DECL(int)          CPUMR3SetCR4Feature(PVM pVM, RTHCUINTREG fOr, RTHCUINTREG fAnd);
 
 /** @} */
-#endif
+#endif /* IN_RING3 */
 
-#ifdef IN_GC
+#ifdef IN_RC
 /** @defgroup grp_cpum_gc    The CPU Monitor(/Manager) API
  * @ingroup grp_cpum
  * @{
@@ -1214,68 +1008,30 @@ CPUMR3DECL(int) CPUMR3SetCR4Feature(PVM pVM, RTHCUINTREG fOr, RTHCUINTREG fAnd);
  * @param   pEsp        Stack address for handler
  *
  * This function does not return!
- *
  */
-DECLASM(void) CPUMGCCallGuestTrapHandler(PCPUMCTXCORE pRegFrame, uint32_t selCS, RTRCPTR pHandler, uint32_t eflags, uint32_t selSS, RTRCPTR pEsp);
-
-/**
- * Performs an iret to V86 code
- * Assumes a trap stack frame has already been setup on the guest's stack!
- *
- * @param   pRegFrame   Original trap/interrupt context
- *
- * This function does not return!
- */
-CPUMGCDECL(void) CPUMGCCallV86Code(PCPUMCTXCORE pRegFrame);
+DECLASM(void)           CPUMGCCallGuestTrapHandler(PCPUMCTXCORE pRegFrame, uint32_t selCS, RTRCPTR pHandler, uint32_t eflags, uint32_t selSS, RTRCPTR pEsp);
+VMMRCDECL(void)         CPUMGCCallV86Code(PCPUMCTXCORE pRegFrame);
 
 /** @} */
-#endif
+#endif /* IN_RC */
 
 #ifdef IN_RING0
 /** @defgroup grp_cpum_r0    The CPU Monitor(/Manager) API
  * @ingroup grp_cpum
  * @{
  */
-
-/**
- * Does Ring-0 CPUM initialization.
- *
- * This is mainly to check that the Host CPU mode is compatible
- * with VBox.
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-CPUMR0DECL(int) CPUMR0Init(PVM pVM);
-
-/**
- * Lazily sync in the FPU/XMM state
- *
- * @returns VBox status code.
- * @param   pVM         VM handle.
- * @param   pCtx        CPU context
- */
-CPUMR0DECL(int) CPUMR0LoadGuestFPU(PVM pVM, PCPUMCTX pCtx);
-
-/**
- * Save guest FPU/XMM state
- *
- * @returns VBox status code.
- * @param   pVM         VM handle.
- * @param   pCtx        CPU context
- */
-CPUMR0DECL(int) CPUMR0SaveGuestFPU(PVM pVM, PCPUMCTX pCtx);
+VMMR0DECL(int)          CPUMR0Init(PVM pVM);
+VMMR0DECL(int)          CPUMR0LoadGuestFPU(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
+VMMR0DECL(int)          CPUMR0SaveGuestFPU(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
+VMMR0DECL(int)          CPUMR0SaveGuestDebugState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, bool fDR6);
+VMMR0DECL(int)          CPUMR0LoadGuestDebugState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, bool fDR6);
 
 /** @} */
-#endif
+#endif /* IN_RING0 */
 
 /** @} */
 __END_DECLS
 
 
 #endif
-
-
-
-
 

@@ -157,7 +157,7 @@ FFmpegFB::~FFmpegFB()
             avcodec_close(mpStream->codec);
             av_write_trailer(mpFormatContext);
             /* free the streams */
-            for(unsigned i = 0; i < mpFormatContext->nb_streams; i++) {
+            for(unsigned i = 0; i < (unsigned)mpFormatContext->nb_streams; i++) {
                 av_freep(&mpFormatContext->streams[i]->codec);
                 av_freep(&mpFormatContext->streams[i]);
             }
@@ -381,6 +381,20 @@ STDMETHODIMP FFmpegFB::COMGETTER(Overlay) (IFramebufferOverlay **aOverlay)
     /* not yet implemented */
     *aOverlay = 0;
     LogFlow(("FFmpeg::COMGETTER(Overlay): returning 0\n"));
+    return S_OK;
+}
+
+/**
+ * Return id of associated window
+ *
+ * @returns          COM status code
+ * @retval  winId Associated window id
+ */
+STDMETHODIMP FFmpegFB::COMGETTER(WinId) (ULONG64 *winId)
+{
+    if (!winId)
+        return E_POINTER;
+    *winId = 0;
     return S_OK;
 }
 

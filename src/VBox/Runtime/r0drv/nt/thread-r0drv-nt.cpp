@@ -1,4 +1,4 @@
-/* $Id: thread-r0drv-nt.cpp $ */
+/* $Id: thread-r0drv-nt.cpp 13262 2008-10-14 13:09:04Z vboxsync $ */
 /** @file
  * IPRT - Threads, Ring-0 Driver, NT.
  */
@@ -35,6 +35,8 @@
 
 #include <iprt/thread.h>
 #include <iprt/err.h>
+#include <iprt/assert.h>
+#include <iprt/asm.h>
 
 __BEGIN_DECLS
 NTSTATUS NTAPI ZwYieldExecution(void);
@@ -70,4 +72,36 @@ RTDECL(bool) RTThreadYield(void)
     return ZwYieldExecution() != STATUS_NO_YIELD_PERFORMED;
 }
 
+
+RTDECL(bool) RTThreadPreemptIsEnabled(RTTHREAD hThread)
+{
+    Assert(hThread == NIL_RTTHREAD);
+    KIRQL Irql = KeGetCurrentIrql();
+    if (Irql > APC_LEVEL)
+        return false;
+#if defined(RT_ARCH_X86) || defined(RT_ARCH_AMD64)
+    if (!(ASMGetFlags() & 0x00000200 /* X86_EFL_IF */))
+        return false;
+#endif
+    return true;
+}
+
+
+RTDECL(void) RTThreadPreemptDisable(PRTTHREADPREEMPTSTATE pState)
+{
+    AssertPtr(pState);
+    Assert(pState->uchOldIrql == 255);
+    Assert(KeGetCurrentIrql() <= DISPATCH_LEVEL);
+
+    KeRaiseIrql(DISPATCH_LEVEL, &pState->uchOldIrql);
+}
+
+
+RTDECL(void) RTThreadPreemptRestore(PRTTHREADPREEMPTSTATE pState)
+{
+    AssertPtr(pState);
+
+    KeLowerIrql(pState->uchOldIrql);
+    pState->uchOldIrql = 255;
+}
 

@@ -1,4 +1,4 @@
-/* $Id: errmsgxpcom.cpp $ */
+/* $Id: errmsgxpcom.cpp 14626 2008-11-26 10:01:53Z vboxsync $ */
 /** @file
  * IPRT - Status code messages for XPCOM.
  */
@@ -106,6 +106,10 @@ static const RTCOMERRMSG  g_aStatusMsgs[] =
     MY_ERR("NS_ERROR_FILE_ACCESS_DENIED",           "NS_ERROR_FILE_ACCESS_DENIED",                  UINT32_C(0x80520015)),
     MY_ERR("NS_SUCCESS_FILE_DIRECTORY_EMPTY",       "NS_SUCCESS_FILE_DIRECTORY_EMPTY",              UINT32_C(0x00520001)),
 
+#if defined(VBOX) && !defined(IN_GUEST)
+# include "errmsgvboxcomdata.h"
+#endif
+
     { NULL, NULL, 0 }
 #undef MY_ERR
 };
@@ -142,7 +146,7 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc)
      * Need to use the temporary stuff.
      */
     int32_t iMsg = (ASMAtomicIncU32(&g_iUnknownMsgs) - 1) % RT_ELEMENTS(g_aUnknownMsgs);
-    RTStrPrintf(&g_aszUnknownStr[iMsg][0], sizeof(g_aszUnknownStr[iMsg]), "Unknown Status 0x%X\n", rc);
+    RTStrPrintf(&g_aszUnknownStr[iMsg][0], sizeof(g_aszUnknownStr[iMsg]), "Unknown Status 0x%X", rc);
     return &g_aUnknownMsgs[iMsg];
 }
 

@@ -27,6 +27,7 @@
 #include "VirtualBoxBase.h"
 
 class Machine;
+class GuestOSType;
 
 class ATL_NO_VTABLE BIOSSettings :
     public VirtualBoxSupportErrorInfoImpl <BIOSSettings, IBIOSSettings>,
@@ -105,7 +106,7 @@ public:
     STDMETHOD(COMGETTER(LogoDisplayTime))(ULONG *displayTime);
     STDMETHOD(COMSETTER(LogoDisplayTime))(ULONG displayTime);
     STDMETHOD(COMGETTER(LogoImagePath))(BSTR *imagePath);
-    STDMETHOD(COMSETTER(LogoImagePath))(INPTR BSTR imagePath);
+    STDMETHOD(COMSETTER(LogoImagePath))(IN_BSTR imagePath);
     STDMETHOD(COMGETTER(BootMenuMode))(BIOSBootMenuMode_T *bootMenuMode);
     STDMETHOD(COMSETTER(BootMenuMode))(BIOSBootMenuMode_T bootMenuMode);
     STDMETHOD(COMGETTER(ACPIEnabled))(BOOL *enabled);
@@ -131,6 +132,7 @@ public:
     void rollback() { AutoWriteLock alock (this); mData.rollback(); }
     void commit();
     void copyFrom (BIOSSettings *aThat);
+    void applyDefaults (GuestOSType *aOsType);
 
     // for VirtualBoxSupportErrorInfoImpl
     static const wchar_t *getComponentName() { return L"BIOSSettings"; }
@@ -144,3 +146,4 @@ private:
 
 #endif // ____H_BIOSSETTINGS
 
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

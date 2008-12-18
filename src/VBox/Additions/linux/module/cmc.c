@@ -20,6 +20,7 @@
 
 #include "the-linux-kernel.h"
 #include "vboxmod.h"
+#include "waitcompat.h"
 
 /**
  * HGCM
@@ -29,36 +30,61 @@ static DECLVBGL(void)
 vboxadd_hgcm_callback (VMMDevHGCMRequestHeader *pHeader, void *pvData, uint32_t u32Data)
 {
     VBoxDevice *dev = pvData;
-    wait_event (dev->eventq, pHeader->fu32Flags & VBOX_HGCM_REQ_DONE);
+    if (u32Data == RT_INDEFINITE_WAIT)
+        wait_event (dev->eventq, pHeader->fu32Flags & VBOX_HGCM_REQ_DONE);
+    else
+        wait_event_timeout (dev->eventq, pHeader->fu32Flags & VBOX_HGCM_REQ_DONE,
+                            msecs_to_jiffies (u32Data));
 }
 
 static DECLVBGL(void)
 vboxadd_hgcm_callback_interruptible (VMMDevHGCMRequestHeader *pHeader, void *pvData, uint32_t u32Data)
 {
     VBoxDevice *dev = pvData;
-    wait_event_interruptible (dev->eventq, pHeader->fu32Flags & VBOX_HGCM_REQ_DONE);
+    if (u32Data == RT_INDEFINITE_WAIT)
+        wait_event_interruptible (dev->eventq, pHeader->fu32Flags & VBOX_HGCM_REQ_DONE);
+    else
+        wait_event_interruptible_timeout (dev->eventq, pHeader->fu32Flags & VBOX_HGCM_REQ_DONE,
+                                          msecs_to_jiffies (u32Data));
 }
 
 DECLVBGL (int) vboxadd_cmc_call (void *opaque, uint32_t func, void *data)
 {
-    switch (func)
+    int rc = VINF_SUCCESS;
+
+    /* this function can handle cancelled requests */
+    if (   VBOXGUEST_IOCTL_STRIP_SIZE(func)
+        == VBOXGUEST_IOCTL_STRIP_SIZE(VBOXGUEST_IOCTL_HGCM_CALL(0)))
+        rc = VbglHGCMCall (data, vboxadd_hgcm_callback_interruptible, opaque, RT_INDEFINITE_WAIT);
+    /* this function can handle cancelled requests */
+    else if (   VBOXGUEST_IOCTL_STRIP_SIZE(func)
+             == VBOXGUEST_IOCTL_STRIP_SIZE(VBOXGUEST_IOCTL_HGCM_CALL_TIMED(0)))
+    {
+        VBoxGuestHGCMCallInfoTimed *pCallInfo;
+        pCallInfo = (VBoxGuestHGCMCallInfoTimed *) data;
+        if (pCallInfo->fInterruptible)
+            rc = VbglHGCMCall (&pCallInfo->info, vboxadd_hgcm_callback_interruptible,
+                               opaque, pCallInfo->u32Timeout);
+        else
+            rc = VbglHGCMCall (&pCallInfo->info, vboxadd_hgcm_callback,
+                               opaque, pCallInfo->u32Timeout);
+    }
+    else switch (func)
     {
         /* this function can NOT handle cancelled requests */
         case VBOXGUEST_IOCTL_HGCM_CONNECT:
-            return VbglHGCMConnect (data, vboxadd_hgcm_callback, opaque, 0);
+            rc = VbglHGCMConnect (data, vboxadd_hgcm_callback, opaque, RT_INDEFINITE_WAIT);
+            break;
 
         /* this function can NOT handle cancelled requests */
         case VBOXGUEST_IOCTL_HGCM_DISCONNECT:
-            return VbglHGCMDisconnect (data, vboxadd_hgcm_callback, opaque, 0);
+            rc = VbglHGCMDisconnect (data, vboxadd_hgcm_callback, opaque, RT_INDEFINITE_WAIT);
+            break;
 
-        /* this function can handle cancelled requests */
         default:
-            if (VBOXGUEST_IOCTL_STRIP_SIZE(func) != VBOXGUEST_IOCTL_STRIP_SIZE(VBOXGUEST_IOCTL_HGCM_CALL(0)))
-                return VERR_VBGL_IOCTL_FAILED;
-            /* fall thru */
-        case VBOXGUEST_IOCTL_STRIP_SIZE (VBOXGUEST_IOCTL_HGCM_CALL (0)):
-            return VbglHGCMCall (data, vboxadd_hgcm_callback_interruptible, opaque, 0);
+            rc = VERR_VBGL_IOCTL_FAILED;
     }
+    return rc;
 }
 
 int vboxadd_cmc_init (void)
@@ -79,7 +105,7 @@ vboxadd_cmc_ctl_guest_filter_mask (uint32_t or_mask, uint32_t not_mask)
     rc = VbglGRAlloc ((VMMDevRequestHeader**) &req, sizeof (*req),
                       VMMDevReq_CtlGuestFilterMask);
 
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
     {
         elog ("VbglGRAlloc (CtlGuestFilterMask) failed rc=%d\n", rc);
         return -1;
@@ -90,7 +116,7 @@ vboxadd_cmc_ctl_guest_filter_mask (uint32_t or_mask, uint32_t not_mask)
 
     rc = VbglGRPerform (&req->header);
     VbglGRFree (&req->header);
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
     {
         elog ("VbglGRPerform (CtlGuestFilterMask) failed rc=%d\n", rc);
         return -1;

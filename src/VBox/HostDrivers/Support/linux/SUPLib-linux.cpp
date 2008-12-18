@@ -1,4 +1,4 @@
-/* $Id: SUPLib-linux.cpp $ */
+/* $Id: SUPLib-linux.cpp 13865 2008-11-05 14:14:11Z vboxsync $ */
 /** @file
  * VirtualBox Support Library - GNU/Linux specific parts.
  */
@@ -114,7 +114,7 @@ int suplibOsInit(PSUPLIBDATA pThis, bool fPreInited)
                 case ENOENT:    rc = VERR_VM_DRIVER_NOT_INSTALLED; break;
                 default:        rc = VERR_VM_DRIVER_OPEN_ERROR; break;
             }
-            LogRel(("Failed to open \"%s\", errno=%d, rc=%Vrc\n", DEVICE_NAME, errno, rc));
+            LogRel(("Failed to open \"%s\", errno=%d, rc=%Rrc\n", DEVICE_NAME, errno, rc));
             return rc;
         }
     }
@@ -201,9 +201,9 @@ int suplibOsIOCtl(PSUPLIBDATA pThis, uintptr_t uFunction, void *pvReq, size_t cb
 }
 
 
-int suplibOsIOCtlFast(PSUPLIBDATA pThis, uintptr_t uFunction)
+int suplibOsIOCtlFast(PSUPLIBDATA pThis, uintptr_t uFunction, uintptr_t idCpu)
 {
-    int rc = ioctl(pThis->hDevice, uFunction, NULL);
+    int rc = ioctl(pThis->hDevice, uFunction, idCpu);
     if (rc == -1)
         rc = -errno;
     return rc;

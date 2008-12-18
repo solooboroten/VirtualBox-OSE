@@ -5,13 +5,11 @@
  * terms and conditions of the copyright.
  */
 
-#define PRN_STDERR	1
-#define PRN_SPRINTF	2
+#define PRN_STDERR      1
+#define PRN_SPRINTF     2
 
 /* Unused anyway, using VBox Log facility. */
 #define dfd NULL
-extern int dostats;
-extern int slirp_debug;
 
 #define DBG_CALL 0x1
 #define DBG_MISC 0x2
@@ -61,9 +59,7 @@ DECLINLINE(void) __debug_log(FILE *pIgnore, const char *pszFormat, ...)
 
 #endif  /* !LOG_ENABLED */
 
-void debug_init _P((char *, int));
-/*void ttystats _P((struct ttys *)); */
-void allttystats _P((void));
+int debug_init _P((void));
 void ipstats _P((PNATState));
 void tcpstats _P((PNATState));
 void udpstats _P((PNATState));

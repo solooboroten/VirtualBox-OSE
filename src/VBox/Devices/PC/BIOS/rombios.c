@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c $
+// $Id: rombios.c,v 1.176 2006/12/30 17:13:17 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -216,6 +216,10 @@
 
 #if defined(VBOX) && !BX_USE_ATADRV
 #    error VBOX requires enabling the ATA/ATAPI driver
+#endif
+
+#ifdef VBOX_WITH_SCSI
+#    define BX_MAX_SCSI_DEVICES 1
 #endif
 
 #ifndef VBOX
@@ -693,7 +697,7 @@ typedef struct {
     } ata_channel_t;
 
   typedef struct {
-    Bit8u  type;         // Detected type of ata (ata/atapi/none/unknown)
+    Bit8u  type;         // Detected type of ata (ata/atapi/none/unknown/scsi)
     Bit8u  device;       // Detected type of attached devices (hd/cd/none)
     Bit8u  removable;    // Removable device flag
     Bit8u  lock;         // Locks for removable devices
@@ -715,8 +719,12 @@ typedef struct {
     // ATA devices info
     ata_device_t  devices[BX_MAX_ATA_DEVICES];
     //
-    // map between (bios hd id - 0x80) and ata channels
+    // map between (bios hd id - 0x80) and ata channels and scsi disks.
+#ifdef VBOX_WITH_SCSI
+    Bit8u  hdcount, hdidmap[BX_MAX_ATA_DEVICES+BX_MAX_SCSI_DEVICES];
+#else
     Bit8u  hdcount, hdidmap[BX_MAX_ATA_DEVICES];
+#endif
 
     // map between (bios cd id - 0xE0) and ata channels
     Bit8u  cdcount, cdidmap[BX_MAX_ATA_DEVICES];
@@ -748,6 +756,24 @@ typedef struct {
     } cdemu_t;
 #endif // BX_ELTORITO_BOOT
 
+#ifdef VBOX_WITH_SCSI
+  typedef struct {
+    // I/O port this device is attached to.
+    Bit16u        io_base;
+    // Target Id.
+    Bit8u         target_id;
+    // SCSI devices info
+    ata_device_t  device_info;
+    } scsi_device_t;
+
+  typedef struct {
+    // SCSi device info
+    scsi_device_t   devices[BX_MAX_SCSI_DEVICES];
+    // Number of scsi disks.
+    Bit8u  hdcount;
+    } scsi_t;
+#endif
+
   // for access to EBDA area
   //     The EBDA structure should conform to
   //     http://www.frontiernet.net/~fys/rombios.htm document
@@ -768,7 +794,14 @@ typedef struct {
     // El Torito Emulation data
     cdemu_t cdemu;
 #endif // BX_ELTORITO_BOOT
+
 #ifdef VBOX
+
+#ifdef VBOX_WITH_SCSI
+    // SCSI Driver data
+    scsi_t scsi;
+# endif
+
     unsigned char uForceBootDrive;
     unsigned char uForceBootDevice;
 #endif /* VBOX */
@@ -2235,6 +2268,7 @@ debugger_off()
 #define ATA_TYPE_UNKNOWN  0x01
 #define ATA_TYPE_ATA      0x02
 #define ATA_TYPE_ATAPI    0x03
+#define ATA_TYPE_SCSI     0x04 // SCSI disk
 
 #define ATA_DEVICE_NONE  0x00
 #define ATA_DEVICE_HD    0xFF
@@ -3741,6 +3775,10 @@ cdrom_boot()
 // ---------------------------------------------------------------------------
 #endif // BX_ELTORITO_BOOT
 
+#ifdef VBOX_WITH_SCSI
+#  include "scsi.c"
+#endif
+
   void
 int14_function(regs, ds, iret_addr)
   pusha_regs_t regs; // regs pushed from PUSHA instruction
@@ -4587,11 +4625,11 @@ int15_function32(regs, ES, DS, FLAGS)
   Bit16u ES, DS, FLAGS;
 {
   Bit32u  extended_memory_size=0; // 64bits long
-#if VBOX_WITH_SMP_GUESTS
+#ifdef VBOX_WITH_MORE_THAN_4GB
   Bit32u  extra_lowbits_memory_size=0;
 #endif
   Bit16u  CX,DX;
-#if VBOX_WITH_SMP_GUESTS
+#ifdef VBOX_WITH_MORE_THAN_4GB
   Bit8u   extra_highbits_memory_size=0;
 #endif
 
@@ -4667,7 +4705,7 @@ ASM_END
                     extended_memory_size *= 1024;
                 }
 
-#if VBOX_WITH_SMP_GUESTS /* bird: later (btw. this ain't making sense complixity wise, unless its a AMI/AWARD/PHOENIX interface) */
+#ifdef VBOX_WITH_MORE_THAN_4GB /* bird: later (btw. this ain't making sense complixity wise, unless its a AMI/AWARD/PHOENIX interface) */
                 extra_lowbits_memory_size = inb_cmos(0x61);
                 extra_lowbits_memory_size <<= 8;
                 extra_lowbits_memory_size |= inb_cmos(0x62);
@@ -4742,7 +4780,7 @@ ASM_END
                         /* 256KB BIOS area at the end of 4 GB */
                         set_e820_range(ES, regs.u.r16.di,
                                        0xfffc0000L, 0x00000000L, 0, 0, 2);
-#if VBOX_WITH_SMP_GUESTS
+#ifdef VBOX_WITH_MORE_THAN_4GB
                         if (extra_highbits_memory_size || extra_lowbits_memory_size)
                             regs.u.r32.ebx = 6;
                         else
@@ -4752,7 +4790,7 @@ ASM_END
                         regs.u.r32.ecx = 0x14;
                         CLEAR_CF();
                         return;
-#if VBOX_WITH_SMP_GUESTS
+#ifdef VBOX_WITH_MORE_THAN_4GB
                     case 6:
                         /* Mapping of memory above 4 GB */
                         set_e820_range(ES, regs.u.r16.di,
@@ -5334,25 +5372,45 @@ int13_harddisk(EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
 
   write_byte(0x0040, 0x008e, 0);  // clear completion flag
 
+#ifdef VBOX_WITH_SCSI
+  // basic check : device has to be defined
+  if ( (GET_ELDL() < 0x80) || (GET_ELDL() >= 0x80 + BX_MAX_ATA_DEVICES + BX_MAX_SCSI_DEVICES) ) {
+    BX_INFO("int13_harddisk: function %02x, ELDL out of range %02x\n", GET_AH(), GET_ELDL());
+    goto int13_fail;
+    }
+#else
   // basic check : device has to be defined
   if ( (GET_ELDL() < 0x80) || (GET_ELDL() >= 0x80 + BX_MAX_ATA_DEVICES) ) {
     BX_INFO("int13_harddisk: function %02x, ELDL out of range %02x\n", GET_AH(), GET_ELDL());
     goto int13_fail;
     }
+#endif
 
   // Get the ata channel
   device=read_byte(ebda_seg,&EbdaData->ata.hdidmap[GET_ELDL()-0x80]);
 
+#ifdef VBOX_WITH_SCSI
+  // basic check : device has to be valid
+  if (device >= BX_MAX_ATA_DEVICES + BX_MAX_SCSI_DEVICES) {
+    BX_INFO("int13_harddisk: function %02x, unmapped device for ELDL=%02x\n", GET_AH(), GET_ELDL());
+    goto int13_fail;
+    }
+#else
   // basic check : device has to be valid
   if (device >= BX_MAX_ATA_DEVICES) {
     BX_INFO("int13_harddisk: function %02x, unmapped device for ELDL=%02x\n", GET_AH(), GET_ELDL());
     goto int13_fail;
     }
+#endif
 
   switch (GET_AH()) {
 
     case 0x00: /* disk controller reset */
-      ata_reset (device);
+#ifdef VBOX_WITH_SCSI
+      /* SCSI controller does not need a reset. */
+      if (!VBOX_IS_SCSI_DEVICE(device))
+#endif
+        ata_reset (device);
       goto int13_success;
       break;
 
@@ -5383,9 +5441,24 @@ int13_harddisk(EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
         goto int13_fail;
         }
 
-      nlc   = read_word(ebda_seg, &EbdaData->ata.devices[device].lchs.cylinders);
-      nlh   = read_word(ebda_seg, &EbdaData->ata.devices[device].lchs.heads);
-      nlspt = read_word(ebda_seg, &EbdaData->ata.devices[device].lchs.spt);
+#ifdef VBOX_WITH_SCSI
+      if (!VBOX_IS_SCSI_DEVICE(device))
+#endif
+      {
+        nlc   = read_word(ebda_seg, &EbdaData->ata.devices[device].lchs.cylinders);
+        nlh   = read_word(ebda_seg, &EbdaData->ata.devices[device].lchs.heads);
+        nlspt = read_word(ebda_seg, &EbdaData->ata.devices[device].lchs.spt);
+      }
+#ifdef VBOX_WITH_SCSI
+      else
+      {
+        Bit8u scsi_device = VBOX_GET_SCSI_DEVICE(device);
+
+        nlc   = read_word(ebda_seg, &EbdaData->scsi.devices[scsi_device].device_info.lchs.cylinders);
+        nlh   = read_word(ebda_seg, &EbdaData->scsi.devices[scsi_device].device_info.lchs.heads);
+        nlspt = read_word(ebda_seg, &EbdaData->scsi.devices[scsi_device].device_info.lchs.spt);
+      }
+#endif
 
       // sanity check on cyl heads, sec
       if( (cylinder >= nlc) || (head >= nlh) || (sector > nlspt )) {
@@ -5396,19 +5469,53 @@ int13_harddisk(EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
       // FIXME verify
       if ( GET_AH() == 0x04 ) goto int13_success;
 
-      nph   = read_word(ebda_seg, &EbdaData->ata.devices[device].pchs.heads);
-      npspt = read_word(ebda_seg, &EbdaData->ata.devices[device].pchs.spt);
+#ifdef VBOX_WITH_SCSI
+      if (!VBOX_IS_SCSI_DEVICE(device))
+#endif
+      {
+        nph   = read_word(ebda_seg, &EbdaData->ata.devices[device].pchs.heads);
+        npspt = read_word(ebda_seg, &EbdaData->ata.devices[device].pchs.spt);
+      }
+#ifdef VBOX_WITH_SCSI
+      else
+      {
+        Bit8u scsi_device = VBOX_GET_SCSI_DEVICE(device);
+        nph   = read_word(ebda_seg, &EbdaData->scsi.devices[scsi_device].device_info.pchs.heads);
+        npspt = read_word(ebda_seg, &EbdaData->scsi.devices[scsi_device].device_info.pchs.spt);
+      }
+#endif
 
       // if needed, translate lchs to lba, and execute command
-      if ( (nph != nlh) || (npspt != nlspt)) {
+#ifdef VBOX_WITH_SCSI
+      if (( (nph != nlh) || (npspt != nlspt)) || VBOX_IS_SCSI_DEVICE(device)) {
         lba = ((((Bit32u)cylinder * (Bit32u)nlh) + (Bit32u)head) * (Bit32u)nlspt) + (Bit32u)sector - 1;
         sector = 0; // this forces the command to be lba
         }
+#else
+      if (( (nph != nlh) || (npspt != nlspt)) ) {
+        lba = ((((Bit32u)cylinder * (Bit32u)nlh) + (Bit32u)head) * (Bit32u)nlspt) + (Bit32u)sector - 1;
+        sector = 0; // this forces the command to be lba
+        }
+#endif
 
       if ( GET_AH() == 0x02 )
-        status=ata_cmd_data_in(device, ATA_CMD_READ_SECTORS, count, cylinder, head, sector, lba, segment, offset);
+      {
+#ifdef VBOX_WITH_SCSI
+        if (VBOX_IS_SCSI_DEVICE(device))
+          status=scsi_read_sectors(VBOX_GET_SCSI_DEVICE(device), count, lba, segment, offset);
+        else
+#endif
+          status=ata_cmd_data_in(device, ATA_CMD_READ_SECTORS, count, cylinder, head, sector, lba, segment, offset);
+      }
       else
-        status=ata_cmd_data_out(device, ATA_CMD_WRITE_SECTORS, count, cylinder, head, sector, lba, segment, offset);
+      {
+#ifdef VBOX_WITH_SCSI
+        if (VBOX_IS_SCSI_DEVICE(device))
+          status=scsi_write_sectors(VBOX_GET_SCSI_DEVICE(device), count, lba, segment, offset);
+        else
+#endif
+          status=ata_cmd_data_out(device, ATA_CMD_WRITE_SECTORS, count, cylinder, head, sector, lba, segment, offset);
+      }
 
       // Set nb of sector transferred
       SET_AL(read_word(ebda_seg, &EbdaData->ata.trsfsectors));
@@ -5514,10 +5621,22 @@ int13_harddisk(EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
 
       // Get 32 bits lba and check
       lba=read_dword(DS, SI+(Bit16u)&Int13Ext->lba1);
-      if (lba >= read_dword(ebda_seg, &EbdaData->ata.devices[device].sectors) ) {
-        BX_INFO("int13_harddisk: function %02x. LBA out of range\n",GET_AH());
-        goto int13_fail;
-        }
+
+#ifdef VBOX_WITH_SCSI
+      if (VBOX_IS_SCSI_DEVICE(device))
+      {
+        if (lba >= read_dword(ebda_seg, &EbdaData->scsi.devices[VBOX_GET_SCSI_DEVICE(device)].device_info.sectors) ) {
+          BX_INFO("int13_harddisk: function %02x. LBA out of range\n",GET_AH());
+          goto int13_fail;
+          }
+      }
+      else
+#endif
+        if (lba >= read_dword(ebda_seg, &EbdaData->ata.devices[device].sectors) ) {
+          BX_INFO("int13_harddisk: function %02x. LBA out of range\n",GET_AH());
+          goto int13_fail;
+          }
+
 
       // If verify or seek
       if (( GET_AH() == 0x44 ) || ( GET_AH() == 0x47 ))
@@ -5527,10 +5646,17 @@ int13_harddisk(EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
       if ( GET_AH() == 0x42 )
 #ifdef VBOX
       {
-        if (count >= 256 || lba + count >= 268435456)
-          status=ata_cmd_data_in(device, ATA_CMD_READ_SECTORS_EXT, count, 0, 0, 0, lba, segment, offset);
+#ifdef VBOX_WITH_SCSI
+        if (VBOX_IS_SCSI_DEVICE(device))
+          status=scsi_read_sectors(VBOX_GET_SCSI_DEVICE(device), count, lba, segment, offset);
         else
-          status=ata_cmd_data_in(device, ATA_CMD_READ_SECTORS, count, 0, 0, 0, lba, segment, offset);
+#endif
+        {
+          if (count >= 256 || lba + count >= 268435456)
+            status=ata_cmd_data_in(device, ATA_CMD_READ_SECTORS_EXT, count, 0, 0, 0, lba, segment, offset);
+          else
+            status=ata_cmd_data_in(device, ATA_CMD_READ_SECTORS, count, 0, 0, 0, lba, segment, offset);
+        }
       }
 #else /* !VBOX */
         status=ata_cmd_data_in(device, ATA_CMD_READ_SECTORS, count, 0, 0, 0, lba, segment, offset);
@@ -5538,10 +5664,17 @@ int13_harddisk(EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
       else
 #ifdef VBOX
       {
-        if (count >= 256 || lba + count >= 268435456)
-          status=ata_cmd_data_out(device, ATA_CMD_WRITE_SECTORS_EXT, count, 0, 0, 0, lba, segment, offset);
+#ifdef VBOX_WITH_SCSI
+        if (VBOX_IS_SCSI_DEVICE(device))
+          status=scsi_write_sectors(VBOX_GET_SCSI_DEVICE(device), count, lba, segment, offset);
         else
-          status=ata_cmd_data_out(device, ATA_CMD_WRITE_SECTORS, count, 0, 0, 0, lba, segment, offset);
+#endif
+        {
+          if (count >= 256 || lba + count >= 268435456)
+            status=ata_cmd_data_out(device, ATA_CMD_WRITE_SECTORS_EXT, count, 0, 0, 0, lba, segment, offset);
+          else
+            status=ata_cmd_data_out(device, ATA_CMD_WRITE_SECTORS, count, 0, 0, 0, lba, segment, offset);
+        }
       }
 #else /* !VBOX */
         status=ata_cmd_data_out(device, ATA_CMD_WRITE_SECTORS, count, 0, 0, 0, lba, segment, offset);
@@ -8167,6 +8300,7 @@ Bit8u bseqnr;
 #ifdef VBOX
   bootlan=0;
 #endif /* VBOX */
+
   switch(bootseq & 0x0f) {
     case 0x01:
         bootdrv=0x00;
@@ -9527,6 +9661,34 @@ int76_handler:
   pop   ax
   iret
 
+;--------------------
+#ifdef VBOX
+init_pic:
+  ;; init PIC
+  mov al, #0x11 ; send initialisation commands
+  out 0x20, al
+  out 0xa0, al
+  mov al, #0x08
+  out 0x21, al
+  mov al, #0x70
+  out 0xa1, al
+  mov al, #0x04
+  out 0x21, al
+  mov al, #0x02
+  out 0xa1, al
+  mov al, #0x01
+  out 0x21, al
+  out 0xa1, al
+  mov  al, #0xb8
+  out  0x21, AL ;master pic: unmask IRQ 0, 1, 2, 6
+#if BX_USE_PS2_MOUSE
+  mov  al, #0x8f
+#else
+  mov  al, #0x9f
+#endif
+  out  0xa1, AL ;slave  pic: unmask IRQ 12, 13, 14
+  ret
+#endif /* VBOX */
 
 ;--------------------
 #if BX_APM
@@ -9607,7 +9769,7 @@ pci_pro_f02: ;; find pci device
   jne pci_pro_f03
   shl ecx, #16
   mov cx, dx
-  xor bx, bx
+  xor ebx, ebx
   mov di, #0x00
 pci_pro_devloop:
   call pci_pro_select_reg
@@ -9619,15 +9781,15 @@ pci_pro_devloop:
   je  pci_pro_ok
   dec si
 pci_pro_nextdev:
-  inc bx
-  cmp bx, #0x0100
+  inc ebx
+  cmp ebx, #0x10000
   jne pci_pro_devloop
   mov ah, #0x86
   jmp pci_pro_fail
 pci_pro_f03: ;; find class code
   cmp al, #0x03
   jne pci_pro_f08
-  xor bx, bx
+  xor ebx, ebx
   mov di, #0x08
 pci_pro_devloop2:
   call pci_pro_select_reg
@@ -9640,8 +9802,8 @@ pci_pro_devloop2:
   je  pci_pro_ok
   dec si
 pci_pro_nextdev2:
-  inc bx
-  cmp bx, #0x0100
+  inc ebx
+  cmp ebx, #0x10000
   jne pci_pro_devloop2
   mov ah, #0x86
   jmp pci_pro_fail
@@ -9791,7 +9953,7 @@ pci_real_f02: ;; find pci device
   jne pci_real_f03
   shl ecx, #16
   mov cx, dx
-  xor bx, bx
+  xor ebx, ebx
   mov di, #0x00
 pci_real_devloop:
   call pci_real_select_reg
@@ -9803,8 +9965,8 @@ pci_real_devloop:
   je  pci_real_ok
   dec si
 pci_real_nextdev:
-  inc bx
-  cmp bx, #0x0100
+  inc ebx
+  cmp ebx, #0x10000
   jne pci_real_devloop
   mov dx, cx
   shr ecx, #16
@@ -9813,7 +9975,7 @@ pci_real_nextdev:
 pci_real_f03: ;; find class code
   cmp al, #0x03
   jne pci_real_f08
-  xor bx, bx
+  xor ebx, ebx
   mov di, #0x08
 pci_real_devloop2:
   call pci_real_select_reg
@@ -9826,8 +9988,8 @@ pci_real_devloop2:
   je  pci_real_ok
   dec si
 pci_real_nextdev2:
-  inc bx
-  cmp bx, #0x0100
+  inc ebx
+  cmp ebx, #0x10000
   jne pci_real_devloop2
   mov dx, cx
   shr ecx, #16
@@ -9973,7 +10135,11 @@ pci_routing_table_structure:
   db 0x24, 0x50, 0x49, 0x52  ;; "$PIR" signature
   db 0, 1 ;; version
 #ifdef VBOX
+#if 0
+  dw 32 + (30 * 16) ;; table size
+#else
   dw 32 + (10 * 16) ;; table size
+#endif
 #else /* !VBOX */
   dw 32 + (6 * 16) ;; table size
 #endif /* !VBOX */
@@ -9985,7 +10151,7 @@ pci_routing_table_structure:
   dw 0,0 ;; Miniport data
   db 0,0,0,0,0,0,0,0,0,0,0 ;; reserved
 #ifdef VBOX
-  db 0x21 ;; checksum
+  db 0x00 ;; checksum (set by biossums)
 #else /* !VBOX */
   db 0x07 ;; checksum
 #endif /* !VBOX */
@@ -10185,6 +10351,214 @@ pci_routing_table_structure_start:
   db 0x60 ;; link value INTD#
   dw 0xdef8 ;; IRQ bitmap INTD#
   db 14 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 16th slot entry: 15th PCI slot
+  db 0 ;; pci bus number
+  db 0x80 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 15 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 17th slot entry: 16th PCI slot
+  db 0 ;; pci bus number
+  db 0x88 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 16 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 18th slot entry: 17th PCI slot
+  db 0 ;; pci bus number
+  db 0x90 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 17 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 19th slot entry: 18th PCI slot
+  db 0 ;; pci bus number
+  db 0x98 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 18 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 20th slot entry: 19th PCI slot
+  db 0 ;; pci bus number
+  db 0xa0 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 19 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 21th slot entry: 20th PCI slot
+  db 0 ;; pci bus number
+  db 0xa8 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 20 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 21th slot entry: 20th PCI slot
+  db 0 ;; pci bus number
+  db 0xb0 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 20 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 22th slot entry: 21th PCI slot
+  db 0 ;; pci bus number
+  db 0xb8 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 21 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 23th slot entry: 22th PCI slot
+  db 0 ;; pci bus number
+  db 0xc0 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 22 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 24th slot entry: 23th PCI slot
+  db 0 ;; pci bus number
+  db 0xc8 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 23 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 25th slot entry: 24th PCI slot
+  db 0 ;; pci bus number
+  db 0xd0 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 24 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 26th slot entry: 25th PCI slot
+  db 0 ;; pci bus number
+  db 0xd8 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 25 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 27th slot entry: 26th PCI slot
+  db 0 ;; pci bus number
+  db 0xe0 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 26 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 28th slot entry: 27th PCI slot
+  db 0 ;; pci bus number
+  db 0xe8 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 27 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 29th slot entry: 28th PCI slot
+  db 0 ;; pci bus number
+  db 0xf0 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 28 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 30th slot entry: 29th PCI slot
+  db 0 ;; pci bus number
+  db 0xf8 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA#
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB#
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC#
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 29 ;; physical slot (0 = embedded)
   db 0 ;; reserved
 #endif /* VBOX */
 pci_routing_table_structure_end:
@@ -10965,6 +11339,12 @@ post_default_ints:
   ;; Video setup
   SET_INT_VECTOR(0x10, #0xF000, #int10_handler)
 
+#ifdef VBOX
+  ;; moved the PIC initialization to another place as we need
+  ;; some space for additions init calls. Otherwise this code
+  ;; overlaps with the NMI handler at 0xe2c3 (fixed BIOS entry)
+  call init_pic
+#else /* !VBOX */
   ;; PIC
   mov al, #0x11 ; send initialisation commands
   out 0x20, al
@@ -10988,6 +11368,7 @@ post_default_ints:
   mov  al, #0x9f
 #endif
   out  0xa1, AL ;slave  pic: unmask IRQ 12, 13, 14
+#endif /* !VBOX */
 
 #if BX_ROMBIOS32
   call rombios32_init
@@ -11003,6 +11384,14 @@ post_default_ints:
   ;;
   call _ata_init
   call _ata_detect
+  ;;
+#endif
+
+#ifdef VBOX_WITH_SCSI
+  ;;
+  ;; SCSI driver setup
+  ;;
+  call _scsi_init
   ;;
 #endif
 
@@ -11620,15 +12009,9 @@ int08_store_ticks:
 // The SMBIOS header
 .org 0xff30
 .align 16
- db   0x5f, 0x53, 0x4d, 0x5f          ; "_SM_" signature
- ; calculate Entry Point Structure checksum - note that we already
- ; know the checksum for the DMI header paragraph is zero
-       db ( - ( 0x5f + 0x53 + 0x4d + 0x5f \
-               + 0x1f \
-               + ((VBOX_SMBIOS_MAJOR_VER    ) & 0xff) + ((VBOX_SMBIOS_MINOR_VER    ) & 0xff) \
-               + ((VBOX_SMBIOS_MAXSS        ) & 0xff) + ((VBOX_SMBIOS_MAXSS   >>  8) & 0xff) \
-          )) & 0xff
- db 0x1f                              ; EPS length - defined by standard
+ db 0x5f, 0x53, 0x4d, 0x5f            ; "_SM_" signature
+ db 0x00                              ; checksum (set by biossums)
+ db 0x1f                              ; EPS length, defined by standard
  db VBOX_SMBIOS_MAJOR_VER             ; SMBIOS major version
  db VBOX_SMBIOS_MINOR_VER             ; SMBIOS minor version
  dw VBOX_SMBIOS_MAXSS                 ; Maximum structure size
@@ -11636,15 +12019,8 @@ int08_store_ticks:
  db 0x00, 0x00, 0x00, 0x00, 0x00
 
 // The DMI header
- db   0x5f, 0x44, 0x4d, 0x49, 0x5f    ; "_DMI_" signature
- ; calculate the DMI header checksum
- db ( - ( 0x5f + 0x44 + 0x4d + 0x49 + 0x5f \
-         + ((VBOX_DMI_TABLE_BASE      ) & 0xff) + ((VBOX_DMI_TABLE_BASE >>  8) & 0xff) \
-         + ((VBOX_DMI_TABLE_BASE >> 16) & 0xff) + ((VBOX_DMI_TABLE_BASE >> 24) & 0xff) \
-         + ((VBOX_DMI_TABLE_SIZE      ) & 0xff) + ((VBOX_DMI_TABLE_SIZE >>  8) & 0xff) \
-         + ((VBOX_DMI_TABLE_ENTR      ) & 0xff) + ((VBOX_DMI_TABLE_ENTR >>  8) & 0xff) \
-         + VBOX_DMI_TABLE_VER \
-    )) & 0xff
+ db 0x5f, 0x44, 0x4d, 0x49, 0x5f      ; "_DMI_" signature
+ db 0x00                              ; checksum (set by biossums)
  dw VBOX_DMI_TABLE_SIZE               ; DMI tables length
  dd VBOX_DMI_TABLE_BASE               ; DMI tables base
  dw VBOX_DMI_TABLE_ENTR               ; DMI tables entries

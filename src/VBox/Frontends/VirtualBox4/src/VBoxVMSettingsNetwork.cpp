@@ -629,8 +629,14 @@ void VBoxNIList::delHostInterface()
         return;
 
     CHost host = vboxGlobal().virtualBox().GetHost();
-    CHostNetworkInterface iFace = host.GetNetworkInterfaces().FindByName (iName);
-    if (host.isOk())
+    CHostNetworkInterfaceVector interfaces =
+        host.GetNetworkInterfaces();
+    CHostNetworkInterface iFace;
+    for (CHostNetworkInterfaceVector::ConstIterator it = interfaces.begin();
+         it != interfaces.end(); ++it)
+        if (it->GetName() == iName)
+            iFace = *it;
+    if (!iFace.isNull())
     {
         /* Delete interface */
         CProgress progress = host.RemoveHostNetworkInterface (iFace.GetId(), iFace);
@@ -673,10 +679,11 @@ void VBoxNIList::populateInterfacesList()
 {
     /* Load current inner list */
     QList<QTreeWidgetItem*> itemsList;
-    CHostNetworkInterfaceEnumerator en =
-        vboxGlobal().virtualBox().GetHost().GetNetworkInterfaces().Enumerate();
-    while (en.HasMore())
-        itemsList << new VBoxNIListItem (en.GetNext().GetName());
+    CHostNetworkInterfaceVector interfaces =
+        vboxGlobal().virtualBox().GetHost().GetNetworkInterfaces();
+    for (CHostNetworkInterfaceVector::ConstIterator it = interfaces.begin();
+         it != interfaces.end(); ++it)
+        itemsList << new VBoxNIListItem (it->GetName());
 
     /* Save current list item name */
     QString currentListItemName = mList->currentItem() ?
@@ -729,7 +736,7 @@ void VBoxVMSettingsNetworkPage::getFrom (const CMachine &aMachine)
 
     /* Creating Tab Pages */
     CVirtualBox vbox = vboxGlobal().virtualBox();
-    ulong count = vbox.GetSystemProperties().GetNetworkAdapterCount();
+    ulong count = qMin ((ULONG) 4, vbox.GetSystemProperties().GetNetworkAdapterCount());
     for (ulong slot = 0; slot < count; ++ slot)
     {
         /* Get Adapter */
@@ -896,7 +903,7 @@ void VBoxVMSettingsNetworkPage::populateNetworksList()
 
     /* Load internal network list */
     CVirtualBox vbox = vboxGlobal().virtualBox();
-    ulong count = vbox.GetSystemProperties().GetNetworkAdapterCount();
+    ulong count = qMin ((ULONG) 4, vbox.GetSystemProperties().GetNetworkAdapterCount());
     CMachineVector vec =  vbox.GetMachines2();
     for (CMachineVector::ConstIterator m = vec.begin();
          m != vec.end(); ++ m)

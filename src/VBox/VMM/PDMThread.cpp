@@ -1,4 +1,4 @@
-/* $Id: PDMThread.cpp $ */
+/* $Id: PDMThread.cpp 15540 2008-12-15 20:01:28Z vboxsync $ */
 /** @file
  * PDM Thread - VM Thread Management.
  */
@@ -212,11 +212,12 @@ int pdmR3ThreadCreateDevice(PVM pVM, PPDMDEVINS pDevIns, PPPDMTHREAD ppThread, v
     int rc = pdmR3ThreadNew(pVM, ppThread);
     if (RT_SUCCESS(rc))
     {
-        (*ppThread)->pvUser = pvUser;
-        (*ppThread)->Internal.s.enmType = PDMTHREADTYPE_DEVICE;
-        (*ppThread)->u.Dev.pDevIns = pDevIns;
-        (*ppThread)->u.Dev.pfnThread = pfnThread;
-        (*ppThread)->u.Dev.pfnWakeUp = pfnWakeUp;
+        PPDMTHREAD pThread = *ppThread;
+        pThread->pvUser = pvUser;
+        pThread->Internal.s.enmType = PDMTHREADTYPE_DEVICE;
+        pThread->u.Dev.pDevIns = pDevIns;
+        pThread->u.Dev.pfnThread = pfnThread;
+        pThread->u.Dev.pfnWakeUp = pfnWakeUp;
         rc = pdmR3ThreadInit(pVM, ppThread, cbStack, enmType, pszName);
     }
     return rc;
@@ -244,11 +245,12 @@ int pdmR3ThreadCreateUsb(PVM pVM, PPDMUSBINS pUsbIns, PPPDMTHREAD ppThread, void
     int rc = pdmR3ThreadNew(pVM, ppThread);
     if (RT_SUCCESS(rc))
     {
-        (*ppThread)->pvUser = pvUser;
-        (*ppThread)->Internal.s.enmType = PDMTHREADTYPE_USB;
-        (*ppThread)->u.Usb.pUsbIns = pUsbIns;
-        (*ppThread)->u.Usb.pfnThread = pfnThread;
-        (*ppThread)->u.Usb.pfnWakeUp = pfnWakeUp;
+        PPDMTHREAD pThread = *ppThread;
+        pThread->pvUser = pvUser;
+        pThread->Internal.s.enmType = PDMTHREADTYPE_USB;
+        pThread->u.Usb.pUsbIns = pUsbIns;
+        pThread->u.Usb.pfnThread = pfnThread;
+        pThread->u.Usb.pfnWakeUp = pfnWakeUp;
         rc = pdmR3ThreadInit(pVM, ppThread, cbStack, enmType, pszName);
     }
     return rc;
@@ -276,11 +278,12 @@ int pdmR3ThreadCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, PPPDMTHREAD ppThread, v
     int rc = pdmR3ThreadNew(pVM, ppThread);
     if (RT_SUCCESS(rc))
     {
-        (*ppThread)->pvUser = pvUser;
-        (*ppThread)->Internal.s.enmType = PDMTHREADTYPE_DRIVER;
-        (*ppThread)->u.Drv.pDrvIns = pDrvIns;
-        (*ppThread)->u.Drv.pfnThread = pfnThread;
-        (*ppThread)->u.Drv.pfnWakeUp = pfnWakeUp;
+        PPDMTHREAD pThread = *ppThread;
+        pThread->pvUser = pvUser;
+        pThread->Internal.s.enmType = PDMTHREADTYPE_DRIVER;
+        pThread->u.Drv.pDrvIns = pDrvIns;
+        pThread->u.Drv.pfnThread = pfnThread;
+        pThread->u.Drv.pfnWakeUp = pfnWakeUp;
         rc = pdmR3ThreadInit(pVM, ppThread, cbStack, enmType, pszName);
     }
     return rc;
@@ -301,16 +304,17 @@ int pdmR3ThreadCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, PPPDMTHREAD ppThread, v
  * @param   enmType     See RTThreadCreate.
  * @param   pszName     See RTThreadCreate.
  */
-PDMR3DECL(int) PDMR3ThreadCreate(PVM pVM, PPPDMTHREAD ppThread, void *pvUser, PFNPDMTHREADINT pfnThread,
+VMMR3DECL(int) PDMR3ThreadCreate(PVM pVM, PPPDMTHREAD ppThread, void *pvUser, PFNPDMTHREADINT pfnThread,
                                  PFNPDMTHREADWAKEUPINT pfnWakeUp, size_t cbStack, RTTHREADTYPE enmType, const char *pszName)
 {
     int rc = pdmR3ThreadNew(pVM, ppThread);
     if (RT_SUCCESS(rc))
     {
-        (*ppThread)->pvUser = pvUser;
-        (*ppThread)->Internal.s.enmType = PDMTHREADTYPE_INTERNAL;
-        (*ppThread)->u.Int.pfnThread = pfnThread;
-        (*ppThread)->u.Int.pfnWakeUp = pfnWakeUp;
+        PPDMTHREAD pThread = *ppThread;
+        pThread->pvUser = pvUser;
+        pThread->Internal.s.enmType = PDMTHREADTYPE_INTERNAL;
+        pThread->u.Int.pfnThread = pfnThread;
+        pThread->u.Int.pfnWakeUp = pfnWakeUp;
         rc = pdmR3ThreadInit(pVM, ppThread, cbStack, enmType, pszName);
     }
     return rc;
@@ -331,16 +335,17 @@ PDMR3DECL(int) PDMR3ThreadCreate(PVM pVM, PPPDMTHREAD ppThread, void *pvUser, PF
  * @param   enmType     See RTThreadCreate.
  * @param   pszName     See RTThreadCreate.
  */
-PDMR3DECL(int) PDMR3ThreadCreateExternal(PVM pVM, PPPDMTHREAD ppThread, void *pvUser, PFNPDMTHREADEXT pfnThread,
+VMMR3DECL(int) PDMR3ThreadCreateExternal(PVM pVM, PPPDMTHREAD ppThread, void *pvUser, PFNPDMTHREADEXT pfnThread,
                                          PFNPDMTHREADWAKEUPEXT pfnWakeUp, size_t cbStack, RTTHREADTYPE enmType, const char *pszName)
 {
     int rc = pdmR3ThreadNew(pVM, ppThread);
     if (RT_SUCCESS(rc))
     {
-        (*ppThread)->pvUser = pvUser;
-        (*ppThread)->Internal.s.enmType = PDMTHREADTYPE_EXTERNAL;
-        (*ppThread)->u.Ext.pfnThread = pfnThread;
-        (*ppThread)->u.Ext.pfnWakeUp = pfnWakeUp;
+        PPDMTHREAD pThread = *ppThread;
+        pThread->pvUser = pvUser;
+        pThread->Internal.s.enmType = PDMTHREADTYPE_EXTERNAL;
+        pThread->u.Ext.pfnThread = pfnThread;
+        pThread->u.Ext.pfnWakeUp = pfnWakeUp;
         rc = pdmR3ThreadInit(pVM, ppThread, cbStack, enmType, pszName);
     }
     return rc;
@@ -359,7 +364,7 @@ PDMR3DECL(int) PDMR3ThreadCreateExternal(PVM pVM, PPPDMTHREAD ppThread, void *pv
  * @param   pRcThread       Where to store the thread exit code. Optional.
  * @thread  The emulation thread (EMT).
  */
-PDMR3DECL(int) PDMR3ThreadDestroy(PPDMTHREAD pThread, int *pRcThread)
+VMMR3DECL(int) PDMR3ThreadDestroy(PPDMTHREAD pThread, int *pRcThread)
 {
     /*
      * Assert sanity.
@@ -620,7 +625,7 @@ static void pdmR3ThreadBailMeOut(PPDMTHREAD pThread)
  *          On failure, terminate the thread.
  * @param   pThread     The PDM thread.
  */
-PDMR3DECL(int) PDMR3ThreadIAmSuspending(PPDMTHREAD pThread)
+VMMR3DECL(int) PDMR3ThreadIAmSuspending(PPDMTHREAD pThread)
 {
     /*
      * Assert sanity.
@@ -661,14 +666,14 @@ PDMR3DECL(int) PDMR3ThreadIAmSuspending(PPDMTHREAD pThread)
  * Called by the PDM thread in response to a resuming state.
  *
  * The purpose of this API is to tell the PDMR3ThreadResume caller that
- * the the PDM thread has successfully resumed. It will also do the
+ * the PDM thread has successfully resumed. It will also do the
  * state transition from the resuming to the running state.
  *
  * @returns VBox status code.
  *          On failure, terminate the thread.
  * @param   pThread     The PDM thread.
  */
-PDMR3DECL(int) PDMR3ThreadIAmRunning(PPDMTHREAD pThread)
+VMMR3DECL(int) PDMR3ThreadIAmRunning(PPDMTHREAD pThread)
 {
     /*
      * Assert sanity.
@@ -706,7 +711,7 @@ PDMR3DECL(int) PDMR3ThreadIAmRunning(PPDMTHREAD pThread)
  * @param   pThread     The PDM thread.
  * @param   cMillies    The number of milliseconds to sleep.
  */
-PDMR3DECL(int) PDMR3ThreadSleep(PPDMTHREAD pThread, unsigned cMillies)
+VMMR3DECL(int) PDMR3ThreadSleep(PPDMTHREAD pThread, unsigned cMillies)
 {
     /*
      * Assert sanity.
@@ -802,6 +807,9 @@ static DECLCALLBACK(int) pdmR3ThreadMain(RTTHREAD Thread, void *pvUser)
             break;
     }
 
+    if (RT_FAILURE(rc))
+        LogRel(("PDMThread: Thread '%s' (%RTthrd) quit unexpectedly with rc=%Rrc.\n", RTThreadGetName(Thread), Thread, rc));
+
     /*
      * Advance the state to terminating and then on to terminated.
      */
@@ -878,7 +886,7 @@ static void pdmR3ThreadBailOut(PPDMTHREAD pThread)
  * @returns VBox status code.
  * @param   pThread     The PDM thread.
  */
-PDMR3DECL(int) PDMR3ThreadSuspend(PPDMTHREAD pThread)
+VMMR3DECL(int) PDMR3ThreadSuspend(PPDMTHREAD pThread)
 {
     /*
      * Assert sanity.
@@ -972,7 +980,7 @@ int pdmR3ThreadSuspendAll(PVM pVM)
  * @returns VBox status code.
  * @param   pThread     The PDM thread.
  */
-PDMR3DECL(int) PDMR3ThreadResume(PPDMTHREAD pThread)
+VMMR3DECL(int) PDMR3ThreadResume(PPDMTHREAD pThread)
 {
     /*
      * Assert sanity.

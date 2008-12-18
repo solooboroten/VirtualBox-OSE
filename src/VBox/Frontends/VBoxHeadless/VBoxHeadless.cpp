@@ -37,7 +37,7 @@ using namespace com;
 #ifdef VBOX_WITH_VRDP
 # include <VBox/vrdpapi.h>
 #endif
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/stream.h>
 #include <iprt/ldr.h>
 #include <iprt/getopt.h>
@@ -50,6 +50,7 @@ using namespace com;
 #include <iprt/env.h>
 #include <iprt/param.h>
 #include <iprt/process.h>
+#include <VBox/sup.h>
 #endif
 
 //#define VBOX_WITH_SAVESTATE_ON_SIGNAL
@@ -235,7 +236,7 @@ public:
         return S_OK;
     }
 
-    STDMETHOD(OnRuntimeError)(BOOL fatal, INPTR BSTR id, INPTR BSTR message)
+    STDMETHOD(OnRuntimeError)(BOOL fatal, IN_BSTR id, IN_BSTR message)
     {
         return S_OK;
     }
@@ -689,7 +690,7 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
             int rrc = VINF_SUCCESS, rcc = S_OK;
 
             Log2(("VBoxHeadless: loading VBoxFFmpegFB shared library\n"));
-            rrc = RTLdrLoad("VBoxFFmpegFB", &hLdrFFmpegFB);
+            rrc = SUPR3HardenedLdrLoadAppPriv("VBoxFFmpegFB", &hLdrFFmpegFB);
 
             if (RT_SUCCESS(rrc))
             {

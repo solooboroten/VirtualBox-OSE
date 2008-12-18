@@ -1,4 +1,4 @@
-/* $Id: STAMInternal.h $ */
+/* $Id: STAMInternal.h 12989 2008-10-06 02:15:39Z vboxsync $ */
 /** @file
  * STAM Internal Header.
  */
@@ -28,9 +28,6 @@
 #include <VBox/gvmm.h>
 #include <iprt/semaphore.h>
 
-#if !defined(IN_STAM_R3) && !defined(IN_STAM_R0) && !defined(IN_STAM_GC)
-# error "Not in STAM! This is an internal header!"
-#endif
 
 
 __BEGIN_DECLS

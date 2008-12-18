@@ -1,4 +1,4 @@
-/* $Id: tstStrToNum.cpp $ */
+/* $Id: tstStrToNum.cpp 13837 2008-11-05 02:54:02Z vboxsync $ */
 /** @file
  * IPRT Testcase - String To Number Conversion.
  */
@@ -77,7 +77,7 @@ struct TstU32
         } \
         else if (rc != Test.rc) \
         { \
-            RTPrintf("failure: '%s' -> rc=%Vrc expected %Vrc. (%s/%u)\n", Test.psz, rc, Test.rc, #Fun, iTest); \
+            RTPrintf("failure: '%s' -> rc=%Rrc expected %Rrc. (%s/%u)\n", Test.psz, rc, Test.rc, #Fun, iTest); \
             cErrors++; \
         } \
     } while (0)
@@ -86,7 +86,7 @@ struct TstU32
 #define RUN_TESTS(aTests, Type, Fmt, Fun) \
     do \
     { \
-        for (unsigned iTest = 0; iTest < ELEMENTS(aTests); iTest++) \
+        for (unsigned iTest = 0; iTest < RT_ELEMENTS(aTests); iTest++) \
         { \
             TEST(aTests[iTest], Type, Fmt, Fun, iTest); \
         } \

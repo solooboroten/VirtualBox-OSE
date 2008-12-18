@@ -1,4 +1,4 @@
-/* $Id: tstTimer.cpp $ */
+/* $Id: tstTimer.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * IPRT Testcase - Timers.
  */
@@ -34,7 +34,7 @@
 #include <iprt/timer.h>
 #include <iprt/time.h>
 #include <iprt/thread.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/stream.h>
 #include <iprt/err.h>
 
@@ -134,7 +134,7 @@ int main()
     };
 
     unsigned i = 0;
-    for (i = 0; i < ELEMENTS(aTests); i++)
+    for (i = 0; i < RT_ELEMENTS(aTests); i++)
     {
         aTests[i].cLower = (aTests[i].uMilliesWait - aTests[i].uMilliesWait / 10) / aTests[i].uMilliesInterval;
         aTests[i].cUpper = (aTests[i].uMilliesWait + aTests[i].uMilliesWait / 10) / aTests[i].uMilliesInterval;

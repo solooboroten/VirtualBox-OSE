@@ -1,4 +1,4 @@
-/* $Id: GVMMR0.cpp $ */
+/* $Id: GVMMR0.cpp 14821 2008-11-30 01:08:47Z vboxsync $ */
 /** @file
  * GVMM - Global VM Manager.
  */
@@ -20,7 +20,7 @@
  */
 
 
-/** @page pg_GVMM   GVMM - The Global VM Manager
+/** @page pg_gvmm   GVMM - The Global VM Manager
  *
  * The Global VM Manager lives in ring-0. It's main function at the moment
  * is to manage a list of all running VMs, keep a ring-0 only structure (GVM)
@@ -42,6 +42,7 @@
 #include "GVMMR0Internal.h"
 #include <VBox/gvm.h>
 #include <VBox/vm.h>
+#include <VBox/vmm.h>
 #include <VBox/err.h>
 #include <iprt/alloc.h>
 #include <iprt/semaphore.h>
@@ -476,7 +477,7 @@ GVMMR0DECL(int) GVMMR0CreateVMReq(PGVMMCREATEVMREQ pReq)
     PVM pVM;
     pReq->pVMR0 = NULL;
     pReq->pVMR3 = NIL_RTR3PTR;
-    int rc = GVMMR0CreateVM(pReq->pSession, &pVM);
+    int rc = GVMMR0CreateVM(pReq->pSession, pReq->cCPUs, &pVM);
     if (RT_SUCCESS(rc))
     {
         pReq->pVMR0 = pVM;
@@ -493,11 +494,12 @@ GVMMR0DECL(int) GVMMR0CreateVMReq(PGVMMCREATEVMREQ pReq)
  *
  * @returns VBox status code.
  * @param   pSession    The support driver session.
+ * @param   cCPUs       Number of virtual CPUs for the new VM.
  * @param   ppVM        Where to store the pointer to the VM structure.
  *
  * @thread  EMT.
  */
-GVMMR0DECL(int) GVMMR0CreateVM(PSUPDRVSESSION pSession, PVM *ppVM)
+GVMMR0DECL(int) GVMMR0CreateVM(PSUPDRVSESSION pSession, uint32_t cCPUs, PVM *ppVM)
 {
     LogFlow(("GVMMR0CreateVM: pSession=%p\n", pSession));
     PGVMM pGVMM;
@@ -505,6 +507,10 @@ GVMMR0DECL(int) GVMMR0CreateVM(PSUPDRVSESSION pSession, PVM *ppVM)
 
     AssertPtrReturn(ppVM, VERR_INVALID_POINTER);
     *ppVM = NULL;
+
+    if (    cCPUs == 0
+        ||  cCPUs > VMCPU_MAX_CPU_COUNT)
+        return VERR_INVALID_PARAMETER;
 
     RTNATIVETHREAD hEMT = RTThreadNativeSelf();
     AssertReturn(hEMT != NIL_RTNATIVETHREAD, VERR_INTERNAL_ERROR);
@@ -570,16 +576,20 @@ GVMMR0DECL(int) GVMMR0CreateVM(PSUPDRVSESSION pSession, PVM *ppVM)
                         /*
                          * Allocate the shared VM structure and associated page array.
                          */
-                        const size_t cPages = RT_ALIGN(sizeof(VM), PAGE_SIZE) >> PAGE_SHIFT;
+                        const size_t cbVM   = RT_UOFFSETOF(VM, aCpus[cCPUs]);
+                        const size_t cPages = RT_ALIGN(cbVM, PAGE_SIZE) >> PAGE_SHIFT;
                         rc = RTR0MemObjAllocLow(&pGVM->gvmm.s.VMMemObj, cPages << PAGE_SHIFT, false /* fExecutable */);
                         if (RT_SUCCESS(rc))
                         {
                             PVM pVM = (PVM)RTR0MemObjAddress(pGVM->gvmm.s.VMMemObj); AssertPtr(pVM);
                             memset(pVM, 0, cPages << PAGE_SHIFT);
                             pVM->enmVMState = VMSTATE_CREATING;
-                            pVM->pVMR0 = pVM;
-                            pVM->pSession = pSession;
-                            pVM->hSelf = iHandle;
+                            pVM->pVMR0      = pVM;
+                            pVM->pSession   = pSession;
+                            pVM->hSelf      = iHandle;
+                            pVM->cbSelf     = cbVM;
+                            pVM->cCPUs      = cCPUs;
+                            pVM->offVMCPU   = RT_UOFFSETOF(VM, aCpus);
 
                             rc = RTR0MemObjAllocPage(&pGVM->gvmm.s.VMPagesMemObj, cPages * sizeof(SUPPAGE), false /* fExecutable */);
                             if (RT_SUCCESS(rc))
@@ -601,6 +611,13 @@ GVMMR0DECL(int) GVMMR0CreateVM(PSUPDRVSESSION pSession, PVM *ppVM)
                                 {
                                     pVM->pVMR3 = RTR0MemObjAddressR3(pGVM->gvmm.s.VMMapObj);
                                     AssertPtr((void *)pVM->pVMR3);
+
+                                    /* Initialize all the VM pointers. */
+                                    for (uint32_t i = 0; i < cCPUs; i++)
+                                    {
+                                        pVM->aCpus[i].pVMR0 = pVM;
+                                        pVM->aCpus[i].pVMR3 = pVM->pVMR3;
+                                    }
 
                                     rc = RTR0MemObjMapUser(&pGVM->gvmm.s.VMPagesMapObj, pGVM->gvmm.s.VMPagesMemObj, (RTR3PTR)-1, 0,
                                                            RTMEM_PROT_READ | RTMEM_PROT_WRITE, NIL_RTR0PROCESS);
@@ -681,6 +698,8 @@ static void gvmmR0InitPerVMData(PGVM pGVM)
     pGVM->gvmm.s.VMPagesMemObj = NIL_RTR0MEMOBJ;
     pGVM->gvmm.s.VMPagesMapObj = NIL_RTR0MEMOBJ;
     pGVM->gvmm.s.HaltEventMulti = NIL_RTSEMEVENTMULTI;
+    pGVM->gvmm.s.fDoneVMMR0Init = false;
+    pGVM->gvmm.s.fDoneVMMR0Term = false;
 }
 
 
@@ -702,7 +721,8 @@ GVMMR0DECL(int) GVMMR0InitVM(PVM pVM)
     int rc = gvmmR0ByVMAndEMT(pVM, &pGVM, &pGVMM);
     if (RT_SUCCESS(rc))
     {
-        if (pGVM->gvmm.s.HaltEventMulti == NIL_RTSEMEVENTMULTI)
+        if (   !pGVM->gvmm.s.fDoneVMMR0Init
+            && pGVM->gvmm.s.HaltEventMulti == NIL_RTSEMEVENTMULTI)
         {
             rc = RTSemEventMultiCreate(&pGVM->gvmm.s.HaltEventMulti);
             if (RT_FAILURE(rc))
@@ -714,6 +734,52 @@ GVMMR0DECL(int) GVMMR0InitVM(PVM pVM)
 
     LogFlow(("GVMMR0InitVM: returns %Rrc\n", rc));
     return rc;
+}
+
+
+/**
+ * Indicates that we're done with the ring-0 initialization
+ * of the VM.
+ *
+ * @param   pVM         Pointer to the shared VM structure.
+ */
+GVMMR0DECL(void) GVMMR0DoneInitVM(PVM pVM)
+{
+    /* Validate the VM structure, state and handle. */
+    PGVM pGVM;
+    PGVMM pGVMM;
+    int rc = gvmmR0ByVMAndEMT(pVM, &pGVM, &pGVMM);
+    AssertRCReturnVoid(rc);
+
+    /* Set the indicator. */
+    pGVM->gvmm.s.fDoneVMMR0Init = true;
+}
+
+
+/**
+ * Indicates that we're doing the ring-0 termination of the VM.
+ *
+ * @returns true if termination hasn't been done already, false if it has.
+ * @param   pVM         Pointer to the shared VM structure.
+ * @param   pGVM        Pointer to the global VM structure. Optional.
+ */
+GVMMR0DECL(bool) GVMMR0DoingTermVM(PVM pVM, PGVM pGVM)
+{
+    /* Validate the VM structure, state and handle. */
+    AssertPtrNullReturn(pGVM, false);
+    AssertReturn(!pGVM || pGVM->u32Magic == GVM_MAGIC, false);
+    if (!pGVM)
+    {
+        PGVMM pGVMM;
+        int rc = gvmmR0ByVMAndEMT(pVM, &pGVM, &pGVMM);
+        AssertRCReturn(rc, false);
+    }
+
+    /* Set the indicator. */
+    if (pGVM->gvmm.s.fDoneVMMR0Term)
+        return false;
+    pGVM->gvmm.s.fDoneVMMR0Term = true;
+    return true;
 }
 
 
@@ -790,9 +856,31 @@ GVMMR0DECL(int) GVMMR0DestroyVM(PVM pVM)
 
 
 /**
+ * Performs VM cleanup task as part of object destruction.
+ *
+ * @param   pGVM        The GVM pointer.
+ */
+static void gmmR0CleanupVM(PGVM pGVM)
+{
+    if (    pGVM->gvmm.s.fDoneVMMR0Init
+        &&  !pGVM->gvmm.s.fDoneVMMR0Term)
+    {
+        if (    pGVM->gvmm.s.VMMemObj != NIL_RTR0MEMOBJ
+            &&  RTR0MemObjAddress(pGVM->gvmm.s.VMMemObj) == pGVM->pVM)
+        {
+            LogFlow(("gmmR0CleanupVM: Calling VMMR0TermVM\n"));
+            VMMR0TermVM(pGVM->pVM, pGVM);
+        }
+        else
+            AssertMsgFailed(("gmmR0CleanupVM: VMMemObj=%p pVM=%p\n", pGVM->gvmm.s.VMMemObj, pGVM->pVM));
+    }
+}
+
+
+/**
  * Handle destructor.
  *
- * @param   pvGVMM       The GVM instance pointer.
+ * @param   pvGVMM      The GVM instance pointer.
  * @param   pvHandle    The handle pointer.
  */
 static DECLCALLBACK(void) gvmmR0HandleObjDestructor(void *pvObj, void *pvGVMM, void *pvHandle)
@@ -879,7 +967,7 @@ static DECLCALLBACK(void) gvmmR0HandleObjDestructor(void *pvObj, void *pvGVMM, v
     if (    VALID_PTR(pGVM)
         &&  pGVM->u32Magic == GVM_MAGIC)
     {
-        /// @todo GMMR0CleanupVM(pGVM);
+        gmmR0CleanupVM(pGVM);
 
         /*
          * Do the GVMM cleanup - must be done last.
@@ -916,7 +1004,7 @@ static DECLCALLBACK(void) gvmmR0HandleObjDestructor(void *pvObj, void *pvGVMM, v
         }
 
         /* the GVM structure itself. */
-        pGVM->u32Magic++;
+        pGVM->u32Magic |= UINT32_C(0x80000000);
         RTMemFree(pGVM);
     }
     /* else: GVMMR0CreateVM cleanup.  */

@@ -1,4 +1,4 @@
-; $Id: EMAllA.asm $
+; $Id: EMAllA.asm 15420 2008-12-13 07:21:55Z vboxsync $
 ;; @file
 ; EM Assembly Routines.
 ;
@@ -29,25 +29,45 @@
 ;; @def MY_PTR_REG
 ; The register we use for value pointers (And,Or,Dec,Inc).
 %ifdef RT_ARCH_AMD64
-%define MY_PTR_REG  rcx
+ %define MY_PTR_REG     rcx
 %else
-%define MY_PTR_REG  ecx
+ %define MY_PTR_REG     ecx
 %endif
 
 ;; @def MY_RET_REG
 ; The register we return the result in.
 %ifdef RT_ARCH_AMD64
-%define MY_RET_REG  rax
+ %define MY_RET_REG     rax
 %else
-%define MY_RET_REG  eax
+ %define MY_RET_REG     eax
 %endif
+
+;; @def RT_ARCH_AMD64
+; Indicator for whether we can deal with 8 byte operatands. (Darwin fun again.)
+%ifdef RT_ARCH_AMD64
+ %define CAN_DO_8_BYTE_OP  1
+%endif
+%ifdef VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+ %define CAN_DO_8_BYTE_OP  1
+ %define MY_PTR_REG64   rcx
+%endif
+
+
+;*******************************************************************************
+;*  External Symbols                                                           *
+;*******************************************************************************
+%ifdef VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+extern NAME(SUPR0Abs64bitKernelCS)
+extern NAME(SUPR0AbsKernelCS)
+%endif
+
 
 BEGINCODE
 
 
 ;;
 ; Emulate CMP instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateCmp(uint32_t u32Param1, uint64_t u64Param2, size_t cb);
+; VMMDECL(uint32_t) EMEmulateCmp(uint32_t u32Param1, uint64_t u64Param2, size_t cb);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]  rdi  rcx       Param 1 - First parameter (Dst).
@@ -111,7 +131,7 @@ ENDPROC     EMEmulateCmp
 
 ;;
 ; Emulate AND instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateAnd(void *pvParam1, uint64_t u64Param2, size_t cb);
+; VMMDECL(uint32_t) EMEmulateAnd(void *pvParam1, uint64_t u64Param2, size_t cb);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]    Param 1 - First parameter - pointer to data item.
@@ -136,7 +156,7 @@ BEGINPROC   EMEmulateAnd
 %endif
 
     ; switch on size
-%ifdef RT_ARCH_AMD64
+%ifdef CAN_DO_8_BYTE_OP
     cmp     al, 8
     je short .do_qword                  ; 8 bytes variant
 %endif
@@ -171,12 +191,28 @@ BEGINPROC   EMEmulateAnd
     pushf
     pop     MY_RET_REG
     retn
+
+%ifdef VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+.do_qword:
+    db      0xea                        ; jmp far .sixtyfourbit_mode
+    dd      .sixtyfourbit_mode, NAME(SUPR0Abs64bitKernelCS)
+BITS 64
+.sixtyfourbit_mode:
+    and     esp, 0ffffffffh
+    and     MY_PTR_REG, 0ffffffffh
+    mov     rdx, qword [rsp + 08h]      ; rdx = second parameter
+    and     [MY_PTR_REG64], rdx         ; do 8 bytes AND
+    jmp far [.fpret wrt rip]
+.fpret:                                 ; 16:32 Pointer to .done.
+    dd      .done, NAME(SUPR0AbsKernelCS)
+BITS 32
+%endif ; VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
 ENDPROC     EMEmulateAnd
 
 
 ;;
 ; Emulate OR instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateOr(void *pvParam1, uint64_t u64Param2, size_t cb);
+; VMMDECL(uint32_t) EMEmulateOr(void *pvParam1, uint64_t u64Param2, size_t cb);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]    Param 1 - First parameter - pointer to data item.
@@ -201,7 +237,7 @@ BEGINPROC   EMEmulateOr
 %endif
 
     ; switch on size
-%ifdef RT_ARCH_AMD64
+%ifdef CAN_DO_8_BYTE_OP
     cmp     al, 8
     je short .do_qword                  ; 8 bytes variant
 %endif
@@ -236,11 +272,28 @@ BEGINPROC   EMEmulateOr
     pushf
     pop     MY_RET_REG
     retn
+
+%ifdef VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+.do_qword:
+    db      0xea                        ; jmp far .sixtyfourbit_mode
+    dd      .sixtyfourbit_mode, NAME(SUPR0Abs64bitKernelCS)
+BITS 64
+.sixtyfourbit_mode:
+    and     esp, 0ffffffffh
+    and     MY_PTR_REG, 0ffffffffh
+    mov     rdx, qword [rsp + 08h]      ; rdx = second parameter
+    or      [MY_PTR_REG64], rdx         ; do 8 bytes OR
+    jmp far [.fpret wrt rip]
+.fpret:                                 ; 16:32 Pointer to .done.
+    dd      .done, NAME(SUPR0AbsKernelCS)
+BITS 32
+%endif ; VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
 ENDPROC     EMEmulateOr
+
 
 ;;
 ; Emulate LOCK OR instruction.
-; EMDECL(int)      EMEmulateLockOr(void *pvParam1, uint64_t u64Param2, size_t cbSize, RTGCUINTREG32 *pf);
+; VMMDECL(int)      EMEmulateLockOr(void *pvParam1, uint64_t u64Param2, size_t cbSize, RTGCUINTREG32 *pf);
 ;
 ; @returns VINF_SUCCESS on success, VERR_ACCESS_DENIED on \#PF (GC only).
 ; @param    [esp + 04h]  gcc:rdi  msc:rcx   Param 1 - First parameter - pointer to data item (the real stuff).
@@ -265,7 +318,7 @@ BEGINPROC   EMEmulateLockOr
 %endif
 
     ; switch on size
-%ifdef RT_ARCH_AMD64
+%ifdef CAN_DO_8_BYTE_OP
     cmp     al, 8
     je short .do_qword                  ; 8 bytes variant
 %endif
@@ -309,11 +362,28 @@ BEGINPROC   EMEmulateLockOr
     mov     eax, [esp + 14h + 4]
     pop     dword [eax]
 %endif
-    mov     eax, VINF_SUCCESS     
+    mov     eax, VINF_SUCCESS
     retn
 
-%ifdef IN_GC
-; #PF resume point. 
+%ifdef VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+.do_qword:
+    db      0xea                        ; jmp far .sixtyfourbit_mode
+    dd      .sixtyfourbit_mode, NAME(SUPR0Abs64bitKernelCS)
+BITS 64
+.sixtyfourbit_mode:
+    and     esp, 0ffffffffh
+    and     MY_PTR_REG, 0ffffffffh
+    mov     rdx, qword [rsp + 08h]      ; rdx = second parameter
+    lock or [MY_PTR_REG64], rdx         ; do 8 bytes OR
+    jmp far [.fpret wrt rip]
+.fpret:                                 ; 16:32 Pointer to .done.
+    dd      .done, NAME(SUPR0AbsKernelCS)
+BITS 32
+%endif ; VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+
+
+%ifdef IN_RC
+; #PF resume point.
 GLOBALNAME EMEmulateLockOr_Error
     mov     eax, VERR_ACCESS_DENIED
     ret
@@ -321,9 +391,10 @@ GLOBALNAME EMEmulateLockOr_Error
 
 ENDPROC     EMEmulateLockOr
 
+
 ;;
 ; Emulate XOR instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateXor(void *pvParam1, uint64_t u64Param2, size_t cb);
+; VMMDECL(uint32_t) EMEmulateXor(void *pvParam1, uint64_t u64Param2, size_t cb);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]    Param 1 - First parameter - pointer to data item.
@@ -348,7 +419,7 @@ BEGINPROC   EMEmulateXor
 %endif
 
     ; switch on size
-%ifdef RT_ARCH_AMD64
+%ifdef CAN_DO_8_BYTE_OP
     cmp     al, 8
     je short .do_qword                  ; 8 bytes variant
 %endif
@@ -383,11 +454,28 @@ BEGINPROC   EMEmulateXor
     pushf
     pop     MY_RET_REG
     retn
+
+%ifdef VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+.do_qword:
+    db      0xea                        ; jmp far .sixtyfourbit_mode
+    dd      .sixtyfourbit_mode, NAME(SUPR0Abs64bitKernelCS)
+BITS 64
+.sixtyfourbit_mode:
+    and     esp, 0ffffffffh
+    and     MY_PTR_REG, 0ffffffffh
+    mov     rdx, qword [rsp + 08h]      ; rdx = second parameter
+    xor     [MY_PTR_REG64], rdx         ; do 8 bytes XOR
+    jmp far [.fpret wrt rip]
+.fpret:                                 ; 16:32 Pointer to .done.
+    dd      .done, NAME(SUPR0AbsKernelCS)
+BITS 32
+%endif ; VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
 ENDPROC     EMEmulateXor
+
 
 ;;
 ; Emulate INC instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateInc(void *pvParam1, size_t cb);
+; VMMDECL(uint32_t) EMEmulateInc(void *pvParam1, size_t cb);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]  rdi  rcx   Param 1 - First parameter - pointer to data item.
@@ -450,7 +538,7 @@ ENDPROC     EMEmulateInc
 
 ;;
 ; Emulate DEC instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateDec(void *pvParam1, size_t cb);
+; VMMDECL(uint32_t) EMEmulateDec(void *pvParam1, size_t cb);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]    Param 1 - First parameter - pointer to data item.
@@ -510,9 +598,10 @@ BEGINPROC   EMEmulateDec
     retn
 ENDPROC     EMEmulateDec
 
+
 ;;
 ; Emulate ADD instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateAdd(void *pvParam1, uint64_t u64Param2, size_t cb);
+; VMMDECL(uint32_t) EMEmulateAdd(void *pvParam1, uint64_t u64Param2, size_t cb);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]    Param 1 - First parameter - pointer to data item.
@@ -537,7 +626,7 @@ BEGINPROC   EMEmulateAdd
 %endif
 
     ; switch on size
-%ifdef RT_ARCH_AMD64
+%ifdef CAN_DO_8_BYTE_OP
     cmp     al, 8
     je short .do_qword                  ; 8 bytes variant
 %endif
@@ -572,11 +661,28 @@ BEGINPROC   EMEmulateAdd
     pushf
     pop     MY_RET_REG
     retn
+
+%ifdef VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+.do_qword:
+    db      0xea                        ; jmp far .sixtyfourbit_mode
+    dd      .sixtyfourbit_mode, NAME(SUPR0Abs64bitKernelCS)
+BITS 64
+.sixtyfourbit_mode:
+    and     esp, 0ffffffffh
+    and     MY_PTR_REG, 0ffffffffh
+    mov     rdx, qword [rsp + 08h]      ; rdx = second parameter
+    add     [MY_PTR_REG64], rdx         ; do 8 bytes ADD
+    jmp far [.fpret wrt rip]
+.fpret:                                 ; 16:32 Pointer to .done.
+    dd      .done, NAME(SUPR0AbsKernelCS)
+BITS 32
+%endif ; VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
 ENDPROC     EMEmulateAdd
+
 
 ;;
 ; Emulate ADC instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateAdcWithCarrySet(void *pvParam1, uint64_t u64Param2, size_t cb);
+; VMMDECL(uint32_t) EMEmulateAdcWithCarrySet(void *pvParam1, uint64_t u64Param2, size_t cb);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]    Param 1 - First parameter - pointer to data item.
@@ -601,7 +707,7 @@ BEGINPROC   EMEmulateAdcWithCarrySet
 %endif
 
     ; switch on size
-%ifdef RT_ARCH_AMD64
+%ifdef CAN_DO_8_BYTE_OP
     cmp     al, 8
     je short .do_qword                  ; 8 bytes variant
 %endif
@@ -640,11 +746,29 @@ BEGINPROC   EMEmulateAdcWithCarrySet
     pushf
     pop     MY_RET_REG
     retn
+
+%ifdef VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+.do_qword:
+    db      0xea                        ; jmp far .sixtyfourbit_mode
+    dd      .sixtyfourbit_mode, NAME(SUPR0Abs64bitKernelCS)
+BITS 64
+.sixtyfourbit_mode:
+    and     esp, 0ffffffffh
+    and     MY_PTR_REG, 0ffffffffh
+    mov     rdx, qword [rsp + 08h]      ; rdx = second parameter
+    stc     ; set carry flag
+    adc     [MY_PTR_REG64], rdx         ; do 8 bytes ADC
+    jmp far [.fpret wrt rip]
+.fpret:                                 ; 16:32 Pointer to .done.
+    dd      .done, NAME(SUPR0AbsKernelCS)
+BITS 32
+%endif ; VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
 ENDPROC     EMEmulateAdcWithCarrySet
+
 
 ;;
 ; Emulate SUB instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateSub(void *pvParam1, uint64_t u64Param2, size_t cb);
+; VMMDECL(uint32_t) EMEmulateSub(void *pvParam1, uint64_t u64Param2, size_t cb);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]    Param 1 - First parameter - pointer to data item.
@@ -669,7 +793,7 @@ BEGINPROC   EMEmulateSub
 %endif
 
     ; switch on size
-%ifdef RT_ARCH_AMD64
+%ifdef CAN_DO_8_BYTE_OP
     cmp     al, 8
     je short .do_qword                  ; 8 bytes variant
 %endif
@@ -704,12 +828,28 @@ BEGINPROC   EMEmulateSub
     pushf
     pop     MY_RET_REG
     retn
+
+%ifdef VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+.do_qword:
+    db      0xea                        ; jmp far .sixtyfourbit_mode
+    dd      .sixtyfourbit_mode, NAME(SUPR0Abs64bitKernelCS)
+BITS 64
+.sixtyfourbit_mode:
+    and     esp, 0ffffffffh
+    and     MY_PTR_REG, 0ffffffffh
+    mov     rdx, qword [rsp + 08h]      ; rdx = second parameter
+    sub     [MY_PTR_REG64], rdx         ; do 8 bytes SUB
+    jmp far [.fpret wrt rip]
+.fpret:                                 ; 16:32 Pointer to .done.
+    dd      .done, NAME(SUPR0AbsKernelCS)
+BITS 32
+%endif ; VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
 ENDPROC     EMEmulateSub
 
 
 ;;
 ; Emulate BTR instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateBtr(void *pvParam1, uint64_t u64Param2);
+; VMMDECL(uint32_t) EMEmulateBtr(void *pvParam1, uint64_t u64Param2);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]    Param 1 - First parameter - pointer to data item.
@@ -739,7 +879,7 @@ ENDPROC     EMEmulateBtr
 
 ;;
 ; Emulate LOCK BTR instruction.
-; EMDECL(int)      EMEmulateLockBtr(void *pvParam1, uint64_t u64Param2, RTGCUINTREG32 *pf);
+; VMMDECL(int)      EMEmulateLockBtr(void *pvParam1, uint64_t u64Param2, RTGCUINTREG32 *pf);
 ;
 ; @returns VINF_SUCCESS on success, VERR_ACCESS_DENIED on \#PF (GC only).
 ; @param    [esp + 04h]  gcc:rdi  msc:rcx   Param 1 - First parameter - pointer to data item (the real stuff).
@@ -771,8 +911,8 @@ BEGINPROC   EMEmulateLockBtr
     mov     eax, VINF_SUCCESS
     retn
 
-%ifdef IN_GC
-; #PF resume point. 
+%ifdef IN_RC
+; #PF resume point.
 GLOBALNAME EMEmulateLockBtr_Error
     mov     eax, VERR_ACCESS_DENIED
     ret
@@ -780,9 +920,10 @@ GLOBALNAME EMEmulateLockBtr_Error
 
 ENDPROC     EMEmulateLockBtr
 
+
 ;;
 ; Emulate BTC instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateBtc(void *pvParam1, uint64_t u64Param2);
+; VMMDECL(uint32_t) EMEmulateBtc(void *pvParam1, uint64_t u64Param2);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]    Param 1 - First parameter - pointer to data item.
@@ -810,9 +951,10 @@ BEGINPROC   EMEmulateBtc
     retn
 ENDPROC     EMEmulateBtc
 
+
 ;;
 ; Emulate BTS instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateBts(void *pvParam1, uint64_t u64Param2);
+; VMMDECL(uint32_t) EMEmulateBts(void *pvParam1, uint64_t u64Param2);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]    Param 1 - First parameter - pointer to data item.
@@ -843,7 +985,7 @@ ENDPROC     EMEmulateBts
 
 ;;
 ; Emulate LOCK CMPXCHG instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateLockCmpXchg(void *pvParam1, uint64_t *pu64Param2, uint64_t u64Param3, size_t cbSize);
+; VMMDECL(uint32_t) EMEmulateLockCmpXchg(void *pvParam1, uint64_t *pu64Param2, uint64_t u64Param3, size_t cbSize);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]  gcc:rdi  msc:rcx   Param 1 - First parameter - pointer to first parameter
@@ -874,7 +1016,7 @@ BEGINPROC   EMEmulateLockCmpXchg
     mov     eax, [esp + 14h + 4]        ; eax = size of parameters
 %endif
 
-%ifdef RT_ARCH_AMD64
+%ifdef CAN_DO_8_BYTE_OP
     cmp     al, 8
     je short .do_qword                  ; 8 bytes variant
 %endif
@@ -891,7 +1033,7 @@ BEGINPROC   EMEmulateLockCmpXchg
     ; load 2nd parameter's value
     mov     rax, qword [rbx]
 
-    lock cmpxchg qword [rcx], rdx            ; do 8 bytes CMPXCHG
+    lock cmpxchg qword [rcx], rdx       ; do 8 bytes CMPXCHG
     mov     qword [rbx], rax
     jmp     short .done
 %endif
@@ -900,7 +1042,7 @@ BEGINPROC   EMEmulateLockCmpXchg
     ; load 2nd parameter's value
     mov     eax, dword [xBX]
 
-    lock cmpxchg dword [xCX], edx            ; do 4 bytes CMPXCHG
+    lock cmpxchg dword [xCX], edx       ; do 4 bytes CMPXCHG
     mov     dword [xBX], eax
     jmp     short .done
 
@@ -908,7 +1050,7 @@ BEGINPROC   EMEmulateLockCmpXchg
     ; load 2nd parameter's value
     mov     eax, dword [xBX]
 
-    lock cmpxchg word [xCX], dx              ; do 2 bytes CMPXCHG
+    lock cmpxchg word [xCX], dx         ; do 2 bytes CMPXCHG
     mov     word [xBX], ax
     jmp     short .done
 
@@ -916,7 +1058,7 @@ BEGINPROC   EMEmulateLockCmpXchg
     ; load 2nd parameter's value
     mov     eax, dword [xBX]
 
-    lock cmpxchg byte [xCX], dl              ; do 1 byte CMPXCHG
+    lock cmpxchg byte [xCX], dl         ; do 1 byte CMPXCHG
     mov     byte [xBX], al
 
 .done:
@@ -926,11 +1068,32 @@ BEGINPROC   EMEmulateLockCmpXchg
 
     pop     xBX
     retn
+
+%ifdef VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+.do_qword:
+    db      0xea                        ; jmp far .sixtyfourbit_mode
+    dd      .sixtyfourbit_mode, NAME(SUPR0Abs64bitKernelCS)
+BITS 64
+.sixtyfourbit_mode:
+    and     ebx, 0ffffffffh
+    and     esp, 0ffffffffh
+    and     ecx, 0ffffffffh
+    mov     rax, qword [rbx]            ; load 2nd parameter's value
+    mov     rdx, qword [rsp + 0ch + 4]  ; rdx = third parameter
+
+    lock cmpxchg qword [rcx], rdx       ; do 8 byte CMPXCHG
+    mov     qword [rbx], rax
+    jmp far [.fpret wrt rip]
+.fpret:                                 ; 16:32 Pointer to .done.
+    dd      .done, NAME(SUPR0AbsKernelCS)
+BITS 32
+%endif ; VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
 ENDPROC     EMEmulateLockCmpXchg
+
 
 ;;
 ; Emulate CMPXCHG instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateCmpXchg(void *pvParam1, uint64_t *pu32Param2, uint64_t u32Param3, size_t cbSize);
+; VMMDECL(uint32_t) EMEmulateCmpXchg(void *pvParam1, uint64_t *pu32Param2, uint64_t u32Param3, size_t cbSize);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
 ; @param    [esp + 04h]  gcc:rdi  msc:rcx   Param 1 - First parameter - pointer to first parameter
@@ -961,7 +1124,7 @@ BEGINPROC   EMEmulateCmpXchg
     mov     eax, [esp + 14h + 4]        ; eax = size of parameters
 %endif
 
-%ifdef RT_ARCH_AMD64
+%ifdef CAN_DO_8_BYTE_OP
     cmp     al, 8
     je short .do_qword                  ; 8 bytes variant
 %endif
@@ -1013,27 +1176,62 @@ BEGINPROC   EMEmulateCmpXchg
 
     pop     xBX
     retn
+
+%ifdef VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
+.do_qword:
+    db      0xea                        ; jmp far .sixtyfourbit_mode
+    dd      .sixtyfourbit_mode, NAME(SUPR0Abs64bitKernelCS)
+BITS 64
+.sixtyfourbit_mode:
+    and     ebx, 0ffffffffh
+    and     esp, 0ffffffffh
+    and     ecx, 0ffffffffh
+    mov     rax, qword [rbx]            ; load 2nd parameter's value
+    mov     rdx, qword [rsp + 0ch + 4]  ; rdx = third parameter
+
+    cmpxchg qword [rcx], rdx            ; do 8 byte CMPXCHG
+    mov     qword [rbx], rax
+    jmp far [.fpret wrt rip]
+.fpret:                                 ; 16:32 Pointer to .done.
+    dd      .done, NAME(SUPR0AbsKernelCS)
+BITS 32
+%endif ; VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0
 ENDPROC     EMEmulateCmpXchg
 
-%if 0
-;; not tested!!
 
 ;;
 ; Emulate LOCK CMPXCHG8B instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateLockCmpXchg8b(RTHCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
+; VMMDECL(uint32_t) EMEmulateLockCmpXchg8b(void *pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
 ;
-; @returns EFLAGS after the operation, only arithmetic flags are valid.
-; @param    [esp + 04h]    Param 1 - First parameter - pointer to first parameter
-; @param    [esp + 08h]    Param 2 - Address of the eax register
-; @param    [esp + 0ch]    Param 3 - Address of the edx register
-; @param    [esp + 10h]    Param 4 - EBX
-; @param    [esp + 14h]    Param 5 - ECX
+; @returns EFLAGS after the operation, only the ZF flag is valid.
+; @param    [esp + 04h]  gcc:rdi  msc:rcx       Param 1 - First parameter - pointer to first parameter
+; @param    [esp + 08h]  gcc:rsi  msc:rdx       Param 2 - Address of the eax register
+; @param    [esp + 0ch]  gcc:rdx  msc:r8        Param 3 - Address of the edx register
+; @param    [esp + 10h]  gcc:rcx  msc:r9        Param 4 - EBX
+; @param    [esp + 14h]  gcc:r8   msc:[rsp + 8] Param 5 - ECX
 ; @uses     eax, ecx, edx
 ;
 align 16
 BEGINPROC   EMEmulateLockCmpXchg8b
-    push    ebp
-    push    ebx
+    push    xBP
+    push    xBX
+%ifdef RT_ARCH_AMD64
+ %ifdef RT_OS_WINDOWS
+    mov     rbp, rcx
+    mov     r10, rdx
+    mov     eax, dword [rdx]
+    mov     edx, dword [r8]
+    mov     rbx, r9
+    mov     ecx, [rsp + 28h + 16]
+ %else
+    mov     rbp, rdi
+    mov     r10, rdx
+    mov     eax, dword [rsi]
+    mov     edx, dword [rdx]
+    mov     rbx, rcx
+    mov     rcx, r8
+ %endif
+%else
     mov     ebp, [esp + 04h + 8]        ; ebp = first parameter
     mov     eax, [esp + 08h + 8]        ; &EAX
     mov     eax, dword [eax]
@@ -1041,39 +1239,70 @@ BEGINPROC   EMEmulateLockCmpXchg8b
     mov     edx, dword [edx]
     mov     ebx, [esp + 10h + 8]        ; EBX
     mov     ecx, [esp + 14h + 8]        ; ECX
+%endif
 
-    lock cmpxchg8b qword [ebp]          ; do CMPXCHG8B
+%ifdef RT_OS_OS2
+    lock    cmpxchg8b [xBP]                ; do CMPXCHG8B
+%else
+    lock    cmpxchg8b qword [xBP]          ; do CMPXCHG8B
+%endif
+
+%ifdef RT_ARCH_AMD64
+ %ifdef RT_OS_WINDOWS
+    mov     dword [r10], eax
+    mov     dword [r8], edx
+ %else
+    mov     dword [rsi], eax
+    mov     dword [r10], edx
+ %endif
+%else
     mov     ebx, dword [esp + 08h + 8]
     mov     dword [ebx], eax
     mov     ebx, dword [esp + 0ch + 8]
     mov     dword [ebx], edx
-
+%endif
     ; collect flags and return.
     pushf
-    pop     eax
+    pop     MY_RET_REG
 
-    pop     ebx
-    pop     ebp
+    pop     xBX
+    pop     xBP
     retn
-
 ENDPROC     EMEmulateLockCmpXchg8b
 
 ;;
 ; Emulate CMPXCHG8B instruction, CDECL calling conv.
-; EMDECL(uint32_t) EMEmulateCmpXchg8b(RTHCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
+; VMMDECL(uint32_t) EMEmulateCmpXchg8b(void *pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
 ;
 ; @returns EFLAGS after the operation, only arithmetic flags are valid.
-; @param    [esp + 04h]    Param 1 - First parameter - pointer to first parameter
-; @param    [esp + 08h]    Param 2 - Address of the eax register
-; @param    [esp + 0ch]    Param 3 - Address of the edx register
-; @param    [esp + 10h]    Param 4 - EBX
-; @param    [esp + 14h]    Param 5 - ECX
+; @param    [esp + 04h]  gcc:rdi  msc:rcx       Param 1 - First parameter - pointer to first parameter
+; @param    [esp + 08h]  gcc:rsi  msc:rdx       Param 2 - Address of the eax register
+; @param    [esp + 0ch]  gcc:rdx  msc:r8        Param 3 - Address of the edx register
+; @param    [esp + 10h]  gcc:rcx  msc:r9        Param 4 - EBX
+; @param    [esp + 14h]  gcc:r8   msc:[rsp + 8] Param 5 - ECX
 ; @uses     eax, ecx, edx
 ;
 align 16
 BEGINPROC   EMEmulateCmpXchg8b
-    push    ebp
-    push    ebx
+    push    xBP
+    push    xBX
+%ifdef RT_ARCH_AMD64
+ %ifdef RT_OS_WINDOWS
+    mov     rbp, rcx
+    mov     r10, rdx
+    mov     eax, dword [rdx]
+    mov     edx, dword [r8]
+    mov     rbx, r9
+    mov     ecx, [rsp + 28h + 16]
+ %else
+    mov     rbp, rdi
+    mov     r10, rdx
+    mov     eax, dword [rsi]
+    mov     edx, dword [rdx]
+    mov     rbx, rcx
+    mov     rcx, r8
+ %endif
+%else
     mov     ebp, [esp + 04h + 8]        ; ebp = first parameter
     mov     eax, [esp + 08h + 8]        ; &EAX
     mov     eax, dword [eax]
@@ -1081,20 +1310,35 @@ BEGINPROC   EMEmulateCmpXchg8b
     mov     edx, dword [edx]
     mov     ebx, [esp + 10h + 8]        ; EBX
     mov     ecx, [esp + 14h + 8]        ; ECX
+%endif
 
-    cmpxchg8b qword [ebp]               ; do CMPXCHG8B
+%ifdef RT_OS_OS2
+    cmpxchg8b [xBP]                ; do CMPXCHG8B
+%else
+    cmpxchg8b qword [xBP]          ; do CMPXCHG8B
+%endif
+
+%ifdef RT_ARCH_AMD64
+ %ifdef RT_OS_WINDOWS
+    mov     dword [r10], eax
+    mov     dword [r8], edx
+ %else
+    mov     dword [rsi], eax
+    mov     dword [r10], edx
+ %endif
+%else
     mov     ebx, dword [esp + 08h + 8]
     mov     dword [ebx], eax
     mov     ebx, dword [esp + 0ch + 8]
     mov     dword [ebx], edx
+%endif
 
     ; collect flags and return.
     pushf
-    pop     eax
+    pop     MY_RET_REG
 
-    pop     ebx
-    pop     ebp
+    pop     xBX
+    pop     xBP
     retn
 ENDPROC     EMEmulateCmpXchg8b
 
-%endif

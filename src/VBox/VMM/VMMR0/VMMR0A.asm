@@ -1,4 +1,4 @@
-; $Id: VMMR0A.asm $
+; $Id: VMMR0A.asm 14721 2008-11-27 16:34:10Z vboxsync $
 ;; @file
 ; VMM - R0 assembly routines.
 ;
@@ -28,7 +28,11 @@
 
 
 %ifdef RT_ARCH_X86      ; The other architecture(s) use(s) C99 variadict macros.
-extern IMPNAME(RTLogLogger)
+extern NAME(RTLogLogger)
+%endif
+
+%ifdef RT_OS_DARWIN
+ %define VMM_R0_SWITCH_STACK
 %endif
 
 
@@ -43,9 +47,10 @@ BEGINCODE
 ; argument. This has to do with resuming code and the stack frame of the caller.
 ;
 ; @returns  VINF_SUCCESS on success or whatever is passed to vmmR0CallHostLongJmp.
-; @param    pJmpBuf msc:rcx gcc:rdi x86:[esp+4]     Our jmp_buf.
-; @param    pfn     msc:rdx gcc:rsi x86:[esp+8]     The function to be called when not resuming.
-; @param    pvUser  msc:r8  gcc:rdx x86:[esp+c]     The argument of that function.
+; @param    pJmpBuf msc:rcx gcc:rdi x86:[esp+0x04]     Our jmp_buf.
+; @param    pfn     msc:rdx gcc:rsi x86:[esp+0x08]     The function to be called when not resuming.
+; @param    pvUser1 msc:r8  gcc:rdx x86:[esp+0x0c]     The argument of that function.
+; @param    pvUser2 msc:r9  gcc:rcx x86:[esp+0x10]     The argument of that function.
 ;
 BEGINPROC vmmR0CallHostSetJmp
 GLOBALNAME vmmR0CallHostSetJmpEx
@@ -69,28 +74,70 @@ GLOBALNAME vmmR0CallHostSetJmpEx
     test    byte [edx + VMMR0JMPBUF.fInRing3Call], 1
     jnz     .resume
 
-    mov     ecx, [esp + 0ch]            ; pvArg
+    mov     ebx, edx                    ; pJmpBuf -> ebx (persistent reg)
+%ifdef VMM_R0_SWITCH_STACK
+    mov     esi, [ebx + VMMR0JMPBUF.pvSavedStack]
+    test    esi, esi
+    jz      .entry_error
+ %ifdef VBOX_STRICT
+    mov      edx, esi
+    mov      edi, esi
+    mov      ecx, 2048
+    mov      eax, 0eeeeeeeeh
+    repne stosd
+ %endif
+    lea     esi, [esi + 8192 - 32]
+    mov     [esi + 1ch], dword 0deadbeefh ; Marker 1.
+    mov     [esi + 18h], ebx            ; Save pJmpBuf pointer.
+    mov     [esi + 14h], dword 00c00ffeeh ; Marker 2.
+    mov     [esi + 10h], dword 0f00dbeefh ; Marker 3.
+    mov     edx, [esp + 10h]            ; pvArg2
+    mov     [esi + 04h], edx
+    mov     ecx, [esp + 0ch]            ; pvArg1
+    mov     [esi      ], ecx
+    mov     eax, [esp + 08h]            ; pfn
+    mov     esp, esi                    ; Switch stack!
+    call    eax
+    and     dword [esi + 1ch], byte 0   ; clear marker.
+
+%else  ; !VMM_R0_SWITCH_STACK
+    mov     ecx, [esp + 0ch]            ; pvArg1
+    mov     edx, [esp + 10h]            ; pvArg2
     mov     eax, [esp + 08h]            ; pfn
     sub     esp, 12                     ; align the stack on a 16-byte boundrary.
-    mov     [esp], ecx
+    mov     [esp      ], ecx
+    mov     [esp + 04h], edx
     call    eax
-    add     esp, 12
-    mov     edx, [esp + 4h]             ; pJmpBuf
+%endif ; !VMM_R0_SWITCH_STACK
+    mov     edx, ebx                    ; pJmpBuf -> edx (volatile reg)
 
-    ; restore the registers that we're not allowed to modify
-    ; otherwise a resume might restore the wrong values (from the previous run)
-    mov     edi, [edx + VMMR0JMPBUF.edi]
-    mov     esi, [edx + VMMR0JMPBUF.esi]
+    ;
+    ; Return like in the long jump.
+    ; (It is vital that we restore all registers since they might've changed
+    ;  by a long jump.)
+    ;
+.proper_return:
     mov     ebx, [edx + VMMR0JMPBUF.ebx]
+    mov     esi, [edx + VMMR0JMPBUF.esi]
+    mov     edi, [edx + VMMR0JMPBUF.edi]
     mov     ebp, [edx + VMMR0JMPBUF.ebp]
-
+    mov     ecx, [edx + VMMR0JMPBUF.eip]
     and     dword [edx + VMMR0JMPBUF.eip], byte 0 ; used for valid check.
-    ret
+    mov     esp, [edx + VMMR0JMPBUF.esp]
+    jmp     ecx
+
+.entry_error:
+    mov     eax, VERR_INTERNAL_ERROR
+    jmp     .proper_return
 
     ;
     ; Resume VMMR0CallHost the call.
     ;
 .resume:
+%ifdef VMM_R0_SWITCH_STACK
+    ; Switch stack.
+    mov     esp, [edx + VMMR0JMPBUF.SpResume]
+%else  ; !VMM_R0_SWITCH_STACK
     ; Sanity checks.
     cmp     ecx, [edx + VMMR0JMPBUF.SpCheck]
     je      .espCheck_ok
@@ -116,17 +163,26 @@ GLOBALNAME vmmR0CallHostSetJmpEx
     ;
     ; Restore the stack.
     ;
-    mov     byte [edx + VMMR0JMPBUF.fInRing3Call], 0
     mov     ecx, [edx + VMMR0JMPBUF.cbSavedStack]
     shr     ecx, 2
     mov     esi, [edx + VMMR0JMPBUF.pvSavedStack]
     mov     edi, [edx + VMMR0JMPBUF.SpResume]
     mov     esp, edi
     rep movsd
+%endif ; !VMM_R0_SWITCH_STACK
+    mov     byte [edx + VMMR0JMPBUF.fInRing3Call], 0
 
     ;
     ; Continue where we left off.
     ;
+%ifdef VBOX_STRICT
+    pop     eax                         ; magic
+    cmp     eax, 0f00dbed0h
+    je      .magic_ok
+    mov     ecx, 0123h
+    mov     [ecx], edx
+.magic_ok:
+%endif
     popf
     pop     ebx
     pop     esi
@@ -148,7 +204,8 @@ GLOBALNAME vmmR0CallHostSetJmpEx
     mov     rdx, rcx                    ; pJmpBuf;
  %else
     sub     rsp, 10h
-    mov     r8, rdx                     ; pvUser (save it like MSC)
+    mov     r8, rdx                     ; pvUser1 (save it like MSC)
+    mov     r9, rcx                     ; pvUser2 (save it like MSC)
     mov     r11, rsi                    ; pfn
     mov     rdx, rdi                    ; pJmpBuf
  %endif
@@ -177,8 +234,10 @@ GLOBALNAME vmmR0CallHostSetJmpEx
     mov     [rbp - 8], rdx              ; Save it and fix stack alignment (16).
  %ifdef ASM_CALL64_MSC
     mov     rcx, r8                     ; pvUser -> arg0
+    mov     rdx, r9
  %else
     mov     rdi, r8                     ; pvUser -> arg0
+    mov     rsi, r9
  %endif
     call    r11
     mov     rdx, [rbp - 8]              ; pJmpBuf
@@ -281,6 +340,9 @@ BEGINPROC vmmR0CallHostLongJmp
     push    esi
     push    ebx
     pushf
+%ifdef VBOX_STRICT
+    push    dword 0f00dbed0h
+%endif
 
     ;
     ; Load parameters.
@@ -295,31 +357,30 @@ BEGINPROC vmmR0CallHostLongJmp
     je      .nok
 
     ;
-    ; Save the stack.
+    ; Sanity checks.
     ;
     mov     edi, [edx + VMMR0JMPBUF.pvSavedStack]
+    test    edi, edi                    ; darwin may set this to 0.
+    jz      .nok
     mov     [edx + VMMR0JMPBUF.SpResume], esp
+%ifndef VMM_R0_SWITCH_STACK
     mov     esi, esp
     mov     ecx, [edx + VMMR0JMPBUF.esp]
     sub     ecx, esi
 
     ; two sanity checks on the size.
     cmp     ecx, 8192                   ; check max size.
-    jbe     .ok
-.nok:
-    mov     eax, VERR_INTERNAL_ERROR
-    popf
-    pop     ebx
-    pop     esi
-    pop     edi
-    leave
-    ret
-.ok:
+    jnbe    .nok
+
+    ;
+    ; Copy the stack.
+    ;
     test    ecx, 3                      ; check alignment
     jnz     .nok
     mov     [edx + VMMR0JMPBUF.cbSavedStack], ecx
     shr     ecx, 2
     rep movsd
+%endif ; !VMM_R0_SWITCH_STACK
 
     ; store the last pieces of info.
     mov     ecx, [edx + VMMR0JMPBUF.esp]
@@ -336,6 +397,26 @@ BEGINPROC vmmR0CallHostLongJmp
     mov     ecx, [edx + VMMR0JMPBUF.eip]
     mov     esp, [edx + VMMR0JMPBUF.esp]
     jmp     ecx
+
+    ;
+    ; Failure
+    ;
+.nok:
+%ifdef VBOX_STRICT
+    pop     eax                         ; magic
+    cmp     eax, 0f00dbed0h
+    je      .magic_ok
+    mov     ecx, 0123h
+    mov     [ecx], edx
+.magic_ok:
+%endif
+    popf
+    pop     ebx
+    pop     esi
+    pop     edi
+    mov     eax, VERR_INTERNAL_ERROR
+    leave
+    ret
 %endif ; RT_ARCH_X86
 
 %ifdef RT_ARCH_AMD64
@@ -376,6 +457,8 @@ BEGINPROC vmmR0CallHostLongJmp
     ; Save the stack.
     ;
     mov     rdi, [rdx + VMMR0JMPBUF.pvSavedStack]
+    test    rdi, rdi                    ; darwin may set this to 0.
+    jz      .nok
     mov     [rdx + VMMR0JMPBUF.SpResume], rsp
     mov     rsi, rsp
     mov     rcx, [rdx + VMMR0JMPBUF.rsp]
@@ -439,7 +522,7 @@ ENDPROC vmmR0CallHostLongJmp
 EXPORTEDNAME vmmR0LoggerWrapper
 %ifdef RT_ARCH_X86      ; The other architecture(s) use(s) C99 variadict macros.
     push    0                           ; assumes we're the wrapper for a default instance.
-    call    IMP(RTLogLogger)
+    call    NAME(RTLogLogger)
     add     esp, byte 4
     ret
 %else

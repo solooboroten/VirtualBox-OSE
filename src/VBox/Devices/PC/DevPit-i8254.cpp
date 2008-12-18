@@ -1,4 +1,4 @@
-/** $Id: DevPit-i8254.cpp $ */
+/* $Id: DevPit-i8254.cpp 14789 2008-11-28 16:16:05Z vboxsync $ */
 /** @file
  * DevPIT-i8254 - Intel 8254 Programmable Interval Timer (PIT) And Dummy Speaker Device.
  */
@@ -74,7 +74,10 @@
 /** @def FAKE_REFRESH_CLOCK
  * Define this to flip the 15usec refresh bit on every read.
  * If not defined, it will be flipped correctly. */
-//#define FAKE_REFRESH_CLOCK
+/* #define FAKE_REFRESH_CLOCK */
+#ifdef DOXYGEN_RUNNING
+# define FAKE_REFRESH_CLOCK
+#endif
 
 
 /*******************************************************************************
@@ -644,12 +647,13 @@ PDMBOTHCBDECL(int) pitIOPortSpeakerRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPO
         /* bit 6,7 Parity error stuff. */
         /* bit 5 - mirrors timer 2 output condition. */
         const int fOut = pit_get_out(pThis, 2, u64Now);
-        /* bit 4 - toggled every with each (DRAM?) refresh request, every 15.085 µs. */
-#ifdef FAKE_REFRESH_CLOCK
+        /* bit 4 - toggled with each (DRAM?) refresh request, every 15.085 µs.
+                   ASSUMES ns timer freq, see assertion above. */
+#ifndef FAKE_REFRESH_CLOCK
+        const int fRefresh = (u64Now / 15085) & 1;
+#else
         pThis->dummy_refresh_clock ^= 1;
         const int fRefresh = pThis->dummy_refresh_clock;
-#else
-        const int fRefresh = (u64Now / 15085) & 1;
 #endif
         /* bit 2,3 NMI / parity status stuff. */
         /* bit 1 - speaker data status */
@@ -1049,14 +1053,14 @@ const PDMDEVREG g_DeviceI8254 =
     PDM_DEVREG_VERSION,
     /* szDeviceName */
     "i8254",
-    /* szGCMod */
+    /* szRCMod */
     "VBoxDDGC.gc",
     /* szR0Mod */
     "VBoxDDR0.r0",
     /* pszDescription */
     "Intel 8254 Programmable Interval Timer (PIT) And Dummy Speaker Device",
     /* fFlags */
-    PDM_DEVREG_FLAGS_HOST_BITS_DEFAULT | PDM_DEVREG_FLAGS_GUEST_BITS_32_64 | PDM_DEVREG_FLAGS_PAE36 | PDM_DEVREG_FLAGS_GC | PDM_DEVREG_FLAGS_R0,
+    PDM_DEVREG_FLAGS_HOST_BITS_DEFAULT | PDM_DEVREG_FLAGS_GUEST_BITS_32_64 | PDM_DEVREG_FLAGS_PAE36 | PDM_DEVREG_FLAGS_RC | PDM_DEVREG_FLAGS_R0,
     /* fClass */
     PDM_DEVREG_CLASS_PIT,
     /* cMaxInstances */
@@ -1084,7 +1088,15 @@ const PDMDEVREG g_DeviceI8254 =
     /* pfnDetach */
     NULL,
     /* pfnQueryInterface. */
-    NULL
+    NULL,
+    /* pfnInitComplete */
+    NULL,
+    /* pfnPowerOff */
+    NULL,
+    /* pfnSoftReset */
+    NULL,
+    /* u32VersionEnd */
+    PDM_DEVREG_VERSION
 };
 
 #endif /* IN_RING3 */

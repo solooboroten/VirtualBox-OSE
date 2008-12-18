@@ -1,4 +1,4 @@
-/* $Id: TRPMGCHandlers.cpp $ */
+/* $Id: TRPMGCHandlers.cpp 13960 2008-11-07 13:04:45Z vboxsync $ */
 /** @file
  * TRPM - Guest Context Trap Handlers, CPP part
  */
@@ -154,7 +154,7 @@ static int trpmGCExitTrap(PVM pVM, int rc, PCPUMCTXCORE pRegFrame)
         if (!(++s_iTimerPoll & 0xf))
         {
             uint64_t cTicks = TMTimerPoll(pVM); NOREF(cTicks);
-            Log2(("TMTimerPoll at %VRv returned %RX64 (VM_FF_TIMER=%d)\n", pRegFrame->eip, cTicks, VM_FF_ISPENDING(pVM, VM_FF_TIMER)));
+            Log2(("TMTimerPoll at %08RX32 returned %RX64 (VM_FF_TIMER=%d)\n", pRegFrame->eip, cTicks, VM_FF_ISPENDING(pVM, VM_FF_TIMER)));
         }
     }
     else
@@ -164,7 +164,7 @@ static int trpmGCExitTrap(PVM pVM, int rc, PCPUMCTXCORE pRegFrame)
     /* Clear pending inhibit interrupt state if required. (necessary for dispatching interrupts later on) */
     if (VM_FF_ISSET(pVM, VM_FF_INHIBIT_INTERRUPTS))
     {
-        Log2(("VM_FF_INHIBIT_INTERRUPTS at %VRv successor %VGv\n", pRegFrame->eip, EMGetInhibitInterruptsPC(pVM)));
+        Log2(("VM_FF_INHIBIT_INTERRUPTS at %08RX32 successor %RGv\n", pRegFrame->eip, EMGetInhibitInterruptsPC(pVM)));
         if (pRegFrame->eip != EMGetInhibitInterruptsPC(pVM))
         {
             /** @note we intentionally don't clear VM_FF_INHIBIT_INTERRUPTS here if the eip is the same as the inhibited instr address.
@@ -200,8 +200,8 @@ static int trpmGCExitTrap(PVM pVM, int rc, PCPUMCTXCORE pRegFrame)
         {
             uint8_t u8Interrupt;
             rc = PDMGetInterrupt(pVM, &u8Interrupt);
-            Log(("trpmGCExitTrap: u8Interrupt=%d (%#x) rc=%Vrc\n", u8Interrupt, u8Interrupt, rc));
-            AssertFatalMsgRC(rc, ("PDMGetInterrupt failed with %Vrc\n", rc));
+            Log(("trpmGCExitTrap: u8Interrupt=%d (%#x) rc=%Rrc\n", u8Interrupt, u8Interrupt, rc));
+            AssertFatalMsgRC(rc, ("PDMGetInterrupt failed with %Rrc\n", rc));
             rc = TRPMForwardTrap(pVM, pRegFrame, (uint32_t)u8Interrupt, 0, TRPM_TRAP_NO_ERRORCODE, TRPM_HARDWARE_INT, uOldActiveVector);
             /* can't return if successful */
             Assert(rc != VINF_SUCCESS);
@@ -234,7 +234,7 @@ static int trpmGCExitTrap(PVM pVM, int rc, PCPUMCTXCORE pRegFrame)
     AssertMsg(     rc != VINF_SUCCESS
               ||   (   pRegFrame->eflags.Bits.u1IF
                     && ( pRegFrame->eflags.Bits.u2IOPL < (unsigned)(pRegFrame->ss & X86_SEL_RPL) || pRegFrame->eflags.Bits.u1VM))
-              , ("rc = %VRv\neflags=%RX32 ss=%RTsel IOPL=%d\n", rc, pRegFrame->eflags.u32, pRegFrame->ss, pRegFrame->eflags.Bits.u2IOPL));
+              , ("rc=%Rrc\neflags=%RX32 ss=%RTsel IOPL=%d\n", rc, pRegFrame->eflags.u32, pRegFrame->ss, pRegFrame->eflags.Bits.u2IOPL));
     return rc;
 }
 
@@ -278,7 +278,6 @@ DECLASM(int) TRPMGCTrap01Handler(PTRPM pTrpm, PCPUMCTXCORE pRegFrame)
 
     return trpmGCExitTrap(pVM, rc, pRegFrame);
 }
-
 
 
 /**
@@ -350,7 +349,7 @@ DECLASM(int) TRPMGCTrap06Handler(PTRPM pTrpm, PCPUMCTXCORE pRegFrame)
     PVM pVM = TRPM2VM(pTrpm);
     int rc;
 
-    LogFlow(("TRPMGCTrap06Handler %VRv eflags=%x\n", pRegFrame->eip, pRegFrame->eflags.u32));
+    LogFlow(("TRPMGCTrap06Handler %08RX32 eflags=%x\n", pRegFrame->eip, pRegFrame->eflags.u32));
 
     if (CPUMGetGuestCPL(pVM, pRegFrame) == 0)
     {
@@ -359,16 +358,16 @@ DECLASM(int) TRPMGCTrap06Handler(PTRPM pTrpm, PCPUMCTXCORE pRegFrame)
          */
         RTGCPTR PC;
         rc = SELMValidateAndConvertCSAddr(pVM, pRegFrame->eflags, pRegFrame->ss, pRegFrame->cs, &pRegFrame->csHid, (RTGCPTR)pRegFrame->eip, &PC);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
-            Log(("TRPMGCTrap06Handler: Failed to convert %RTsel:%RX32 (cpl=%d) - rc=%Vrc !!\n", pRegFrame->cs, pRegFrame->eip, pRegFrame->ss & X86_SEL_RPL, rc));
+            Log(("TRPMGCTrap06Handler: Failed to convert %RTsel:%RX32 (cpl=%d) - rc=%Rrc !!\n", pRegFrame->cs, pRegFrame->eip, pRegFrame->ss & X86_SEL_RPL, rc));
             return trpmGCExitTrap(pVM, VINF_EM_RAW_GUEST_TRAP, pRegFrame);
         }
 
         DISCPUSTATE Cpu;
         uint32_t    cbOp;
         rc = EMInterpretDisasOneEx(pVM, (RTGCUINTPTR)PC, pRegFrame, &Cpu, &cbOp);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
             return trpmGCExitTrap(pVM, VINF_EM_RAW_EMULATE_INSTR, pRegFrame);
 
         /*
@@ -406,7 +405,7 @@ DECLASM(int) TRPMGCTrap06Handler(PTRPM pTrpm, PCPUMCTXCORE pRegFrame)
         {
             uint32_t cbIgnored;
             rc = EMInterpretInstructionCPU(pVM, &Cpu, pRegFrame, PC, &cbIgnored);
-            if (RT_LIKELY(VBOX_SUCCESS(rc)))
+            if (RT_LIKELY(RT_SUCCESS(rc)))
                 pRegFrame->eip += Cpu.opsize;
         }
         /* Never generate a raw trap here; it might be an instruction, that requires emulation. */
@@ -440,8 +439,8 @@ DECLASM(int) TRPMGCTrap07Handler(PTRPM pTrpm, PCPUMCTXCORE pRegFrame)
 {
     PVM pVM = TRPM2VM(pTrpm);
 
-    LogFlow(("TRPMTrap07HandlerGC: eip=%VRv\n", pRegFrame->eip));
-    return CPUMHandleLazyFPU(pVM);
+    LogFlow(("TRPMTrap07HandlerGC: eip=%08RX32\n", pRegFrame->eip));
+    return CPUMHandleLazyFPU(pVM, VMMGetCpu(pVM));
 }
 
 
@@ -458,7 +457,7 @@ DECLASM(int) TRPMGCTrap07Handler(PTRPM pTrpm, PCPUMCTXCORE pRegFrame)
  */
 DECLASM(int) TRPMGCTrap0bHandler(PTRPM pTrpm, PCPUMCTXCORE pRegFrame)
 {
-    LogFlow(("TRPMGCTrap0bHandler: eip=%VRv\n", pRegFrame->eip));
+    LogFlow(("TRPMGCTrap0bHandler: eip=%08RX32\n", pRegFrame->eip));
     PVM pVM = TRPM2VM(pTrpm);
 
     /*
@@ -583,7 +582,7 @@ static int trpmGCTrap0dHandlerRing0(PVM pVM, PCPUMCTXCORE pRegFrame, PDISCPUSTAT
                 }
             }
             rc = TRPMForwardTrap(pVM, pRegFrame, (uint32_t)pCpu->param1.parval, pCpu->opsize, TRPM_TRAP_NO_ERRORCODE, TRPM_SOFTWARE_INT, 0xd);
-            if (VBOX_SUCCESS(rc) && rc != VINF_EM_RAW_GUEST_TRAP)
+            if (RT_SUCCESS(rc) && rc != VINF_EM_RAW_GUEST_TRAP)
                 return trpmGCExitTrap(pVM, VINF_SUCCESS, pRegFrame);
 
             pVM->trpm.s.uActiveVector = (pVM->trpm.s.uActiveErrorCode & X86_TRAP_ERR_SEL_MASK) >> X86_TRAP_ERR_SEL_SHIFT;
@@ -627,7 +626,7 @@ static int trpmGCTrap0dHandlerRing0(PVM pVM, PCPUMCTXCORE pRegFrame, PDISCPUSTAT
         {
             uint32_t cbIgnored;
             rc = EMInterpretInstructionCPU(pVM, pCpu, pRegFrame, PC, &cbIgnored);
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
                 pRegFrame->eip += pCpu->opsize;
             else if (rc == VERR_EM_INTERPRETER)
                 rc = VINF_EM_RAW_EXCEPTION_PRIVILEGED;
@@ -674,7 +673,7 @@ static int trpmGCTrap0dHandlerRing3(PVM pVM, PCPUMCTXCORE pRegFrame, PDISCPUSTAT
         {
             Assert(pCpu->param1.flags & USE_IMMEDIATE8);
             rc = TRPMForwardTrap(pVM, pRegFrame, (uint32_t)pCpu->param1.parval, pCpu->opsize, TRPM_TRAP_NO_ERRORCODE, TRPM_SOFTWARE_INT, 0xd);
-            if (VBOX_SUCCESS(rc) && rc != VINF_EM_RAW_GUEST_TRAP)
+            if (RT_SUCCESS(rc) && rc != VINF_EM_RAW_GUEST_TRAP)
                 return trpmGCExitTrap(pVM, VINF_SUCCESS, pRegFrame);
 
             pVM->trpm.s.uActiveVector = (pVM->trpm.s.uActiveErrorCode & X86_TRAP_ERR_SEL_MASK) >> X86_TRAP_ERR_SEL_SHIFT;
@@ -705,7 +704,7 @@ static int trpmGCTrap0dHandlerRing3(PVM pVM, PCPUMCTXCORE pRegFrame, PDISCPUSTAT
         {
             uint32_t cbIgnored;
             rc = EMInterpretInstructionCPU(pVM, pCpu, pRegFrame, PC, &cbIgnored);
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
                 pRegFrame->eip += pCpu->opsize;
             else if (rc == VERR_EM_INTERPRETER)
                 rc = VINF_EM_RAW_EXCEPTION_PRIVILEGED;
@@ -773,7 +772,7 @@ DECLINLINE(int) trpmGCTrap0dHandlerRdTsc(PVM pVM, PCPUMCTXCORE pRegFrame)
  */
 static int trpmGCTrap0dHandler(PVM pVM, PTRPM pTrpm, PCPUMCTXCORE pRegFrame)
 {
-    LogFlow(("trpmGCTrap0dHandler: cs:eip=%RTsel:%VRv uErr=%VGv\n", pRegFrame->ss, pRegFrame->eip, pTrpm->uActiveErrorCode));
+    LogFlow(("trpmGCTrap0dHandler: cs:eip=%RTsel:%08RX32 uErr=%RGv\n", pRegFrame->ss, pRegFrame->eip, pTrpm->uActiveErrorCode));
 
     /*
      * Convert and validate CS.
@@ -813,7 +812,7 @@ static int trpmGCTrap0dHandler(PVM pVM, PTRPM pTrpm, PCPUMCTXCORE pRegFrame)
                       NULL, NULL, &Cpu, &cbOp);
     if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("DISCoreOneEx failed to PC=%VGv rc=%Vrc\n", PC, rc));
+        AssertMsgFailed(("DISCoreOneEx failed to PC=%RGv rc=%Rrc\n", PC, rc));
         STAM_PROFILE_STOP(&pVM->trpm.s.StatTrap0dDisasm, a);
         return trpmGCExitTrap(pVM, VINF_EM_RAW_EMULATE_INSTR, pRegFrame);
     }
@@ -913,6 +912,7 @@ DECLASM(int) TRPMGCTrap0dHandler(PTRPM pTrpm, PCPUMCTXCORE pRegFrame)
         }
     return rc;
 }
+
 
 /**
  * \#PF (Page Fault) handler.
@@ -1101,7 +1101,7 @@ DECLCALLBACK(int) trpmGCTrapInGeneric(PVM pVM, PCPUMCTXCORE pRegFrame, uintptr_t
          * Check that there is still some stack left, if not we'll flag
          * a guru meditation (the alternative is a triple fault).
          */
-        RTGCUINTPTR cbStackUsed = (RTGCUINTPTR)VMMGetStackGC(pVM) - pRegFrame->esp;
+        RTRCUINTPTR cbStackUsed = (RTRCUINTPTR)VMMGetStackRC(pVM) - pRegFrame->esp;
         if (cbStackUsed > VMM_STACK_SIZE - _1K)
         {
             LogRel(("trpmGCTrapInGeneric: ran out of stack: esp=#x cbStackUsed=%#x\n", pRegFrame->esp, cbStackUsed));

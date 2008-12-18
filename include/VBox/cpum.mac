@@ -31,7 +31,6 @@
 %ifndef __VBox_cpum_mac__
 %define __VBox_cpum_mac__
 
-
 ;;
 ; Registers frame.
 ; This is used internally in TRPM, VMMSwitcher_GuestToHost_GuestCtx
@@ -163,18 +162,13 @@ struc CPUMCTX
     .cr3            resq    1
     .cr4            resq    1
 
-    .dr0            resq    1
-    .dr1            resq    1
-    .dr2            resq    1
-    .dr3            resq    1
-    .dr4            resq    1
-    .dr5            resq    1
-    .dr6            resq    1
-    .dr7            resq    1
+    .dr             resq    8
 
-    .gdtr           resb    10          ; GDT limit + linear address
+    .gdtr.cbGdt     resw    1
+    .gdtr.pGdt      resq    1
     .gdtrPadding    resw    1
-    .idtr           resb    10          ; IDT limit + linear address
+    .idtr.cbIdt     resw    1
+    .idtr.pIdt      resq    1
     .idtrPadding    resw    1
     .ldtr           resw    1
     .ldtrPadding    resw    1
@@ -203,6 +197,12 @@ struc CPUMCTX
 
     ; padding
 ;;;    .padding            resd    6
+endstruc
+
+
+;;/* Guest MSR state. */
+struc CPUMCTXMSR
+    .au64               resq  64
 endstruc
 
 ;;

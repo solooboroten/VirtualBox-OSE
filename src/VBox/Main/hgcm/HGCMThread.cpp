@@ -208,7 +208,7 @@ static DECLCALLBACK(int) hgcmWorkerThreadFunc (RTTHREAD ThreadSelf, void *pvUser
     return rc;
 }
 
-HGCMThread::HGCMThread () 
+HGCMThread::HGCMThread ()
     :
     HGCMObject(HGCMOBJ_THREAD),
     m_pfnThread (NULL),
@@ -264,7 +264,7 @@ int HGCMThread::WaitForTermination (void)
         rc = RTThreadWait (m_thread, 5000, NULL);
     }
 
-    LogFlowFunc(("rc = %Vrc\n", rc));
+    LogFlowFunc(("rc = %Rrc\n", rc));
     return rc;
 }
 
@@ -274,15 +274,15 @@ int HGCMThread::Initialize (HGCMTHREADHANDLE handle, const char *pszThreadName, 
 
     rc = RTSemEventMultiCreate (&m_eventThread);
 
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         rc = RTSemEventMultiCreate (&m_eventSend);
 
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
         {
             rc = RTCritSectInit (&m_critsect);
 
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
             {
                 m_pfnThread = pfnThread;
                 m_pvUser    = pvUser;
@@ -295,12 +295,12 @@ int HGCMThread::Initialize (HGCMTHREADHANDLE handle, const char *pszThreadName, 
                                      RTTHREADTYPE_IO, RTTHREADFLAGS_WAITABLE,
                                      pszThreadName);
 
-                if (VBOX_SUCCESS(rc))
+                if (RT_SUCCESS(rc))
                 {
                     /* Wait until the thread is ready. */
                     rc = RTThreadUserWait (thread, 30000);
                     AssertRC (rc);
-                    Assert (!(m_fu32ThreadFlags & HGCMMSG_TF_INITIALIZING) || VBOX_FAILURE (rc));
+                    Assert (!(m_fu32ThreadFlags & HGCMMSG_TF_INITIALIZING) || RT_FAILURE (rc));
                 }
                 else
                 {
@@ -334,9 +334,9 @@ inline int HGCMThread::Enter (void)
     int rc = RTCritSectEnter (&m_critsect);
 
 #ifdef LOG_ENABLED
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
     {
-        Log(("HGCMThread::MsgPost: FAILURE: could not obtain worker thread mutex, rc = %Vrc!!!\n", rc));
+        Log(("HGCMThread::MsgPost: FAILURE: could not obtain worker thread mutex, rc = %Rrc!!!\n", rc));
     }
 #endif /* LOG_ENABLED */
 
@@ -357,7 +357,7 @@ int HGCMThread::MsgAlloc (HGCMMSGHANDLE *pHandle, uint32_t u32MsgId, PFNHGCMNEWM
 
     bool fFromFreeList = false;
 
-    if (!pmsg && VBOX_SUCCESS(rc))
+    if (!pmsg && RT_SUCCESS(rc))
     {
         /* We have to allocate a new memory block. */
         pmsg = pfnNewMessage (u32MsgId);
@@ -368,7 +368,7 @@ int HGCMThread::MsgAlloc (HGCMMSGHANDLE *pHandle, uint32_t u32MsgId, PFNHGCMNEWM
         }
     }
 
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         /* Initialize just allocated message core */
         pmsg->InitializeCore (u32MsgId, m_handle);
@@ -401,7 +401,7 @@ int HGCMThread::MsgPost (HGCMMsgCore *pMsg, PHGCMMSGCALLBACK pfnCallback, bool f
 
     rc = Enter ();
 
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         pMsg->m_pfnCallback = pfnCallback;
 
@@ -448,7 +448,7 @@ int HGCMThread::MsgPost (HGCMMsgCore *pMsg, PHGCMMSGCALLBACK pfnCallback, bool f
         }
     }
 
-    LogFlow(("HGCMThread::MsgPost: rc = %Vrc\n", rc));
+    LogFlow(("HGCMThread::MsgPost: rc = %Rrc\n", rc));
 
     return rc;
 }
@@ -475,7 +475,7 @@ int HGCMThread::MsgGet (HGCMMsgCore **ppMsg)
             /* Move the message to the m_pMsgInProcessHead list */
             rc = Enter ();
 
-            if (VBOX_FAILURE (rc))
+            if (RT_FAILURE (rc))
             {
                 break;
             }
@@ -530,7 +530,7 @@ int HGCMThread::MsgGet (HGCMMsgCore **ppMsg)
         RTSemEventMultiReset (m_eventThread);
     }
 
-    LogFlow(("HGCMThread::MsgGet: *ppMsg = %p, return rc = %Vrc\n", *ppMsg, rc));
+    LogFlow(("HGCMThread::MsgGet: *ppMsg = %p, return rc = %Rrc\n", *ppMsg, rc));
 
     return rc;
 }
@@ -557,7 +557,7 @@ void HGCMThread::MsgComplete (HGCMMsgCore *pMsg, int32_t result)
 
     rc = Enter ();
 
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         /* Remove the message from the InProcess queue. */
 
@@ -595,7 +595,7 @@ void HGCMThread::MsgComplete (HGCMMsgCore *pMsg, int32_t result)
 
         if (fWaited)
         {
-            /* If message is being waited, then it is referenced by the waiter and the pointer 
+            /* If message is being waited, then it is referenced by the waiter and the pointer
              * if valid even after hgcmObjDeleteHandle.
              */
             pMsg->m_rcSend = result;
@@ -637,13 +637,13 @@ int hgcmThreadCreate (HGCMTHREADHANDLE *pHandle, const char *pszThreadName, PFNH
         rc = VERR_NO_MEMORY;
     }
 
-    if (VBOX_SUCCESS (rc))
+    if (RT_SUCCESS (rc))
     {
         *pHandle = handle;
     }
     else
     {
-        Log(("hgcmThreadCreate: FAILURE: rc = %Vrc.\n", rc));
+        Log(("hgcmThreadCreate: FAILURE: rc = %Rrc.\n", rc));
 
         if (handle != 0)
         {
@@ -652,7 +652,7 @@ int hgcmThreadCreate (HGCMTHREADHANDLE *pHandle, const char *pszThreadName, PFNH
         }
     }
 
-    LogFlow(("MAIN::hgcmThreadCreate: rc = %Vrc\n", rc));
+    LogFlow(("MAIN::hgcmThreadCreate: rc = %Rrc\n", rc));
 
     return rc;
 }
@@ -671,7 +671,7 @@ int hgcmThreadWait (HGCMTHREADHANDLE hThread)
         hgcmObjDereference (pThread);
     }
 
-    LogFlowFunc(("rc = %Vrc\n", rc));
+    LogFlowFunc(("rc = %Rrc\n", rc));
     return rc;
 }
 
@@ -699,7 +699,7 @@ int hgcmMsgAlloc (HGCMTHREADHANDLE hThread, HGCMMSGHANDLE *pHandle, uint32_t u32
         hgcmObjDereference (pThread);
     }
 
-    LogFlow(("MAIN::hgcmMsgAlloc: handle 0x%08X, rc = %Vrc\n", *pHandle, rc));
+    LogFlow(("MAIN::hgcmMsgAlloc: handle 0x%08X, rc = %Rrc\n", *pHandle, rc));
 
     return rc;
 }
@@ -723,7 +723,7 @@ static int hgcmMsgPostInternal (HGCMMSGHANDLE hMsg, PHGCMMSGCALLBACK pfnCallback
         hgcmObjDereference (pMsg);
     }
 
-    LogFlow(("MAIN::hgcmMsgPostInternal: hMsg 0x%08X, rc = %Vrc\n", hMsg, rc));
+    LogFlow(("MAIN::hgcmMsgPostInternal: hMsg 0x%08X, rc = %Rrc\n", hMsg, rc));
 
     return rc;
 }
@@ -738,7 +738,7 @@ int hgcmMsgPost (HGCMMSGHANDLE hMsg, PHGCMMSGCALLBACK pfnCallback)
 {
     int rc = hgcmMsgPostInternal (hMsg, pfnCallback, false);
 
-    if (VBOX_SUCCESS (rc))
+    if (RT_SUCCESS (rc))
     {
         rc = VINF_HGCM_ASYNC_EXECUTE;
     }
@@ -781,7 +781,7 @@ int hgcmMsgGet (HGCMTHREADHANDLE hThread, HGCMMsgCore **ppMsg)
         hgcmObjDereference (pThread);
     }
 
-    LogFlow(("MAIN::hgcmMsgGet: *ppMsg = %p, rc = %Vrc\n", *ppMsg, rc));
+    LogFlow(("MAIN::hgcmMsgGet: *ppMsg = %p, rc = %Rrc\n", *ppMsg, rc));
 
     return rc;
 }
@@ -814,7 +814,7 @@ int hgcmThreadInit (void)
 
     rc = hgcmObjInit ();
 
-    LogFlow(("MAIN::hgcmThreadInit: rc = %Vrc\n", rc));
+    LogFlow(("MAIN::hgcmThreadInit: rc = %Rrc\n", rc));
 
     return rc;
 }

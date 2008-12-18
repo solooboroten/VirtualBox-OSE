@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 15176 2008-12-09 14:24:02Z vboxsync $
 ## @file
 # Sub-Makefile for the Windows Guest Additions Service.
 #
@@ -19,12 +19,7 @@
 # additional information or have any questions.
 #
 
-ifdef VBOX_SINGLE_MAKEFILE
 SUB_DEPTH = ../../../../..
-else
-DEPTH    ?= ../../../../..
-SUB_DEPTH = ../..
-endif
 include	$(KBUILD_PATH)/subheader.kmk
 
 PROGRAMS += VBoxService
@@ -63,13 +58,16 @@ endif
 # VBoxService.cpp uses VBOX_SVN_REV.
 VBoxService.cpp_DEFS += VBOX_SVN_REV=$(VBOX_SVN_REV)
 VBoxService.cpp_DEPS = $(VBOX_SVN_REV_KMK)
+
+# The icon is configurable.
 VBoxService.rc_INCS = $(PATH_VBoxService)
 VBoxService.rc_DEPS = $(PATH_VBoxService)/VBoxService-icon.rc
 VBoxService.rc_CLEAN = $(PATH_VBoxService)/VBoxService-icon.rc
 
+# Icon include file.
+$$(PATH_VBoxService)/VBoxService-icon.rc: $(VBOX_WINDOWS_ADDITIONS_ICON_FILE) $$(VBoxService_PATH)/Makefile.kmk | $$(dir $$@)
+	$(RM) -f $@
+	$(APPEND) $@ 'IDI_VIRTUALBOX ICON DISCARDABLE "$(subst /,\\,$(VBOX_WINDOWS_ADDITIONS_ICON_FILE))"'
+
 include	$(KBUILD_PATH)/subfooter.kmk
 
-# Icon include file.
-$(PATH_VBoxService)/VBoxService-icon.rc: $(VBOX_WINDOWS_ICON_FILE) $(VBoxService_PATH)/Makefile.kmk | $$(call DIRDEP,$$(@D))
-	$(RM) -f $@
-	$(APPEND) $@ 'IDI_VIRTUALBOX ICON DISCARDABLE "$(subst /,\\,$(VBOX_WINDOWS_ICON_FILE))"'

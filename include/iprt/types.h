@@ -52,8 +52,8 @@
 # elif defined(RT_OS_FREEBSD) && defined(_KERNEL)
     /*
      * Kludge for the FreeBSD kernel:
-     *  stddef.h and sys/types.h has sligtly different offsetof definitions
-     *  when compiling in kernel mode. This is just to make GCC keep shut.
+     *  stddef.h and sys/types.h have slightly different offsetof definitions
+     *  when compiling in kernel mode. This is just to make GCC shut up.
      */
 #  ifndef _STDDEF_H_
 #   undef offsetof
@@ -104,7 +104,7 @@
 # endif
 
 #else /* no crt */
-# include <iprt/nocrt/compiler/gcc.h>
+# include <iprt/nocrt/compiler/compiler.h>
 #endif /* no crt */
 
 
@@ -177,7 +177,7 @@ typedef struct int128_s
 
 
 /**
- * 16-bit unsigned interger union.
+ * 16-bit unsigned integer union.
  */
 typedef union RTUINT16U
 {
@@ -195,14 +195,14 @@ typedef union RTUINT16U
         uint16_t    Hi;
     } s;
 } RTUINT16U;
-/** Pointer to a 16-bit unsigned interger union. */
+/** Pointer to a 16-bit unsigned integer union. */
 typedef RTUINT16U *PRTUINT16U;
-/** Pointer to a const 32-bit unsigned interger union. */
+/** Pointer to a const 32-bit unsigned integer union. */
 typedef const RTUINT16U *PCRTUINT16U;
 
 
 /**
- * 32-bit unsigned interger union.
+ * 32-bit unsigned integer union.
  */
 typedef union RTUINT32U
 {
@@ -228,14 +228,14 @@ typedef union RTUINT32U
     /** 8-bit view. */
     uint8_t     au8[4];
 } RTUINT32U;
-/** Pointer to a 32-bit unsigned interger union. */
+/** Pointer to a 32-bit unsigned integer union. */
 typedef RTUINT32U *PRTUINT32U;
-/** Pointer to a const 32-bit unsigned interger union. */
+/** Pointer to a const 32-bit unsigned integer union. */
 typedef const RTUINT32U *PCRTUINT32U;
 
 
 /**
- * 64-bit unsigned interger union.
+ * 64-bit unsigned integer union.
  */
 typedef union RTUINT64U
 {
@@ -271,19 +271,19 @@ typedef union RTUINT64U
     /** 8-bit view. */
     uint8_t     au8[8];
 } RTUINT64U;
-/** Pointer to a 64-bit unsigned interger union. */
+/** Pointer to a 64-bit unsigned integer union. */
 typedef RTUINT64U *PRTUINT64U;
-/** Pointer to a const 64-bit unsigned interger union. */
+/** Pointer to a const 64-bit unsigned integer union. */
 typedef const RTUINT64U *PCRTUINT64U;
 
 
 /**
- * 128-bit unsigned interger union.
+ * 128-bit unsigned integer union.
  */
 typedef union RTUINT128U
 {
     /** Natural view.
-     * WARNING! This member depends on compiler supporing 128-bit stuff. */
+     * WARNING! This member depends on the compiler supporting 128-bit stuff. */
     uint128_t   u;
     /** Hi/Low view. */
     struct
@@ -327,9 +327,9 @@ typedef union RTUINT128U
     /** 8-bit view. */
     uint8_t     au8[16];
 } RTUINT128U;
-/** Pointer to a 64-bit unsigned interger union. */
+/** Pointer to a 64-bit unsigned integer union. */
 typedef RTUINT128U *PRTUINT128U;
-/** Pointer to a const 64-bit unsigned interger union. */
+/** Pointer to a const 64-bit unsigned integer union. */
 typedef const RTUINT128U *PCRTUINT128U;
 
 
@@ -455,6 +455,8 @@ typedef uint16_t        RTSEL;
 typedef RTSEL          *PRTSEL;
 /** Pointer to const selector. */
 typedef const RTSEL    *PCRTSEL;
+/** Max selector value. */
+#define RTSEL_MAX       UINT16_MAX
 
 /** Far 16-bit pointer. */
 #pragma pack(1)
@@ -503,18 +505,24 @@ typedef const RTFAR64 *PCRTFAR64;
  * @{
  */
 
-/** HC Natural signed integer. */
+/** HC Natural signed integer.
+ * @deprecated silly type. */
 typedef int32_t         RTHCINT;
-/** Pointer to HC Natural signed integer. */
+/** Pointer to HC Natural signed integer.
+ * @deprecated silly type. */
 typedef RTHCINT        *PRTHCINT;
-/** Pointer to const HC Natural signed integer. */
+/** Pointer to const HC Natural signed integer.
+ * @deprecated silly type. */
 typedef const RTHCINT  *PCRTHCINT;
 
-/** HC Natural unsigned integer. */
+/** HC Natural unsigned integer.
+ * @deprecated silly type. */
 typedef uint32_t        RTHCUINT;
-/** Pointer to HC Natural unsigned integer. */
+/** Pointer to HC Natural unsigned integer.
+ * @deprecated silly type. */
 typedef RTHCUINT       *PRTHCUINT;
-/** Pointer to const HC Natural unsigned integer. */
+/** Pointer to const HC Natural unsigned integer.
+ * @deprecated silly type. */
 typedef const RTHCUINT *PCRTHCUINT;
 
 
@@ -526,9 +534,9 @@ typedef int64_t         RTHCINTPTR;
 #else
 #  error Unsupported HC_ARCH_BITS value.
 #endif
-/** Pointer to signed interger which can contain a HC pointer. */
+/** Pointer to signed integer which can contain a HC pointer. */
 typedef RTHCINTPTR     *PRTHCINTPTR;
-/** Pointer to const signed interger which can contain a HC pointer. */
+/** Pointer to const signed integer which can contain a HC pointer. */
 typedef const RTHCINTPTR *PCRTHCINTPTR;
 
 /** Signed integer which can contain a HC ring-3 pointer. */
@@ -539,9 +547,9 @@ typedef int64_t         RTR3INTPTR;
 #else
 #  error Unsupported R3_ARCH_BITS value.
 #endif
-/** Pointer to signed interger which can contain a HC ring-3 pointer. */
+/** Pointer to signed integer which can contain a HC ring-3 pointer. */
 typedef RTR3INTPTR     *PRTR3INTPTR;
-/** Pointer to const signed interger which can contain a HC ring-3 pointer. */
+/** Pointer to const signed integer which can contain a HC ring-3 pointer. */
 typedef const RTR3INTPTR *PCRTR3INTPTR;
 
 /** Signed integer which can contain a HC ring-0 pointer. */
@@ -552,9 +560,9 @@ typedef int64_t         RTR0INTPTR;
 #else
 #  error Unsupported R0_ARCH_BITS value.
 #endif
-/** Pointer to signed interger which can contain a HC ring-0 pointer. */
+/** Pointer to signed integer which can contain a HC ring-0 pointer. */
 typedef RTR0INTPTR     *PRTR0INTPTR;
-/** Pointer to const signed interger which can contain a HC ring-0 pointer. */
+/** Pointer to const signed integer which can contain a HC ring-0 pointer. */
 typedef const RTR0INTPTR *PCRTR0INTPTR;
 
 
@@ -566,9 +574,9 @@ typedef uint64_t        RTHCUINTPTR;
 #else
 #  error Unsupported HC_ARCH_BITS value.
 #endif
-/** Pointer to unsigned interger which can contain a HC pointer. */
+/** Pointer to unsigned integer which can contain a HC pointer. */
 typedef RTHCUINTPTR    *PRTHCUINTPTR;
-/** Pointer to unsigned interger which can contain a HC pointer. */
+/** Pointer to unsigned integer which can contain a HC pointer. */
 typedef const RTHCUINTPTR *PCRTHCUINTPTR;
 
 /** Unsigned integer which can contain a HC ring-3 pointer. */
@@ -579,9 +587,9 @@ typedef uint64_t        RTR3UINTPTR;
 #else
 #  error Unsupported R3_ARCH_BITS value.
 #endif
-/** Pointer to unsigned interger which can contain a HC ring-3 pointer. */
+/** Pointer to unsigned integer which can contain a HC ring-3 pointer. */
 typedef RTR3UINTPTR    *PRTR3UINTPTR;
-/** Pointer to unsigned interger which can contain a HC ring-3 pointer. */
+/** Pointer to unsigned integer which can contain a HC ring-3 pointer. */
 typedef const RTR3UINTPTR *PCRTR3UINTPTR;
 
 /** Unsigned integer which can contain a HC ring-0 pointer. */
@@ -592,9 +600,9 @@ typedef uint64_t        RTR0UINTPTR;
 #else
 #  error Unsupported R0_ARCH_BITS value.
 #endif
-/** Pointer to unsigned interger which can contain a HC ring-0 pointer. */
+/** Pointer to unsigned integer which can contain a HC ring-0 pointer. */
 typedef RTR0UINTPTR    *PRTR0UINTPTR;
-/** Pointer to unsigned interger which can contain a HC ring-0 pointer. */
+/** Pointer to unsigned integer which can contain a HC ring-0 pointer. */
 typedef const RTR0UINTPTR *PCRTR0UINTPTR;
 
 
@@ -613,7 +621,7 @@ typedef const RTHCPHYS *PCRTHCPHYS;
 
 
 /** HC pointer. */
-#ifndef IN_GC
+#ifndef IN_RC
 typedef void *          RTHCPTR;
 #else
 typedef RTHCUINTPTR     RTHCPTR;
@@ -705,26 +713,32 @@ typedef const RTR0UINTREG  *PCRTR0UINTREG;
  * @{
  */
 
-/** Natural signed integer in the GC. */
+/** Natural signed integer in the GC.
+ * @deprecated silly type. */
 #if GC_ARCH_BITS == 32
 typedef int32_t         RTGCINT;
-#elif GC_ARCH_BITS == 64
+#elif GC_ARCH_BITS == 64 /** @todo this isn't right, natural int is 32-bit, see RTHCINT. */
 typedef int64_t         RTGCINT;
 #endif
-/** Pointer to natural signed interger in GC. */
+/** Pointer to natural signed integer in GC.
+ * @deprecated silly type. */
 typedef RTGCINT        *PRTGCINT;
-/** Pointer to const natural signed interger in GC. */
+/** Pointer to const natural signed integer in GC.
+ * @deprecated silly type. */
 typedef const RTGCINT  *PCRTGCINT;
 
-/** Natural unsigned integer in the GC. */
+/** Natural unsigned integer in the GC.
+ * @deprecated silly type. */
 #if GC_ARCH_BITS == 32
 typedef uint32_t        RTGCUINT;
-#elif GC_ARCH_BITS == 64
+#elif GC_ARCH_BITS == 64 /** @todo this isn't right, natural int is 32-bit, see RTHCUINT. */
 typedef uint64_t        RTGCUINT;
 #endif
-/** Pointer to natural unsigned integer in GC. */
+/** Pointer to natural unsigned integer in GC.
+ * @deprecated silly type. */
 typedef RTGCUINT       *PRTGCUINT;
-/** Pointer to const natural unsigned integer in GC. */
+/** Pointer to const natural unsigned integer in GC.
+ * @deprecated silly type. */
 typedef const RTGCUINT *PCRTGCUINT;
 
 /** Signed integer which can contain a GC pointer. */
@@ -733,9 +747,9 @@ typedef int32_t         RTGCINTPTR;
 #elif GC_ARCH_BITS == 64
 typedef int64_t         RTGCINTPTR;
 #endif
-/** Pointer to signed interger which can contain a GC pointer. */
+/** Pointer to signed integer which can contain a GC pointer. */
 typedef RTGCINTPTR     *PRTGCINTPTR;
-/** Pointer to const signed interger which can contain a GC pointer. */
+/** Pointer to const signed integer which can contain a GC pointer. */
 typedef const RTGCINTPTR *PCRTGCINTPTR;
 
 /** Unsigned integer which can contain a GC pointer. */
@@ -746,23 +760,23 @@ typedef uint64_t        RTGCUINTPTR;
 #else
 #  error Unsupported GC_ARCH_BITS value.
 #endif
-/** Pointer to unsigned interger which can contain a GC pointer. */
+/** Pointer to unsigned integer which can contain a GC pointer. */
 typedef RTGCUINTPTR     *PRTGCUINTPTR;
-/** Pointer to unsigned interger which can contain a GC pointer. */
+/** Pointer to unsigned integer which can contain a GC pointer. */
 typedef const RTGCUINTPTR *PCRTGCUINTPTR;
 
 /** Unsigned integer which can contain a 32 bits GC pointer. */
 typedef uint32_t        RTGCUINTPTR32;
-/** Pointer to unsigned interger which can contain a 32 bits GC pointer. */
+/** Pointer to unsigned integer which can contain a 32 bits GC pointer. */
 typedef RTGCUINTPTR32   *PRTGCUINTPTR32;
-/** Pointer to unsigned interger which can contain a 32 bits GC pointer. */
+/** Pointer to unsigned integer which can contain a 32 bits GC pointer. */
 typedef const RTGCUINTPTR32 *PCRTGCUINTPTR32;
 
 /** Unsigned integer which can contain a 64 bits GC pointer. */
 typedef uint64_t        RTGCUINTPTR64;
-/** Pointer to unsigned interger which can contain a 32 bits GC pointer. */
+/** Pointer to unsigned integer which can contain a 32 bits GC pointer. */
 typedef RTGCUINTPTR64   *PRTGCUINTPTR64;
-/** Pointer to unsigned interger which can contain a 32 bits GC pointer. */
+/** Pointer to unsigned integer which can contain a 32 bits GC pointer. */
 typedef const RTGCUINTPTR64 *PCRTGCUINTPTR64;
 
 /** Guest Physical Memory Address.*/
@@ -895,11 +909,11 @@ typedef const RTGCUINTREG  *PCRTGCUINTREG;
  * @{
  */
 
-/** Raw mode context pointer; a 32 bits guest context pointer
+/** Raw mode context pointer; a 32 bits guest context pointer.
  * Keep in mind that this type is an unsigned integer in
- * HC and void pointer in GC.
+ * HC and void pointer in RC.
  */
-#ifdef IN_GC
+#ifdef IN_RC
 typedef void *          RTRCPTR;
 #else
 typedef uint32_t        RTRCPTR;
@@ -912,14 +926,28 @@ typedef const RTRCPTR  *PCRTRCPTR;
  * NIL RC pointer.
  */
 #define NIL_RTRCPTR    ((RTRCPTR)0)
-
 /** @def RTRCPTR_MAX
  * The maximum value a RTRCPTR can have. Mostly used as INVALID value.
  */
-#define RTRCPTR_MAX    ((RTRCPTR)~0)
+#define RTRCPTR_MAX    ((RTRCPTR)UINT32_MAX)
 
-typedef int32_t       RTRCINTPTR;
-typedef uint32_t      RTRCUINTPTR;
+/** Raw mode context pointer, unsigned integer variant. */
+typedef int32_t         RTRCINTPTR;
+/** @def RTRCUINPTR_MAX
+ * The maximum value a RTRCUINPTR can have.
+ */
+#define RTRCUINTPTR_MAX ((RTRCUINTPTR)UINT32_MAX)
+
+/** Raw mode context pointer, signed integer variant. */
+typedef uint32_t        RTRCUINTPTR;
+/** @def RTRCINPTR_MIN
+ * The minimum value a RTRCINPTR can have.
+ */
+#define RTRCINTPTR_MIN ((RTRCINTPTR)INT32_MIN)
+/** @def RTRCINPTR_MAX
+ * The maximum value a RTRCINPTR can have.
+ */
+#define RTRCINTPTR_MAX ((RTRCINTPTR)INT32_MAX)
 
 /** @} */
 
@@ -930,7 +958,7 @@ typedef uint32_t      RTRCUINTPTR;
  */
 
 /** Current Context Physical Memory Address.*/
-#ifdef IN_GC
+#ifdef IN_RC
 typedef RTGCPHYS RTCCPHYS;
 #else
 typedef RTHCPHYS RTCCPHYS;
@@ -944,42 +972,35 @@ typedef const RTCCPHYS *PCRTCCPHYS;
  * NIL_RTCCPHYS is used to signal an invalid physical address, similar
  * to the NULL pointer.
  */
-#ifdef IN_GC
+#ifdef IN_RC
 # define NIL_RTCCPHYS   NIL_RTGCPHYS
 #else
 # define NIL_RTCCPHYS   NIL_RTHCPHYS
 #endif
 
-/** Unsigned integer register in the current 32 bits context. */
-typedef uint32_t              RTCCUINTREG32;
-/** Pointer to an unsigned integer register in the current context. */
-typedef RTCCUINTREG32        *PRTCCUINTREG32;
-/** Pointer to a const unsigned integer register in the current context. */
-typedef const RTCCUINTREG32  *PCRTCCUINTREG32;
-
-/** Unsigned integer register in the current 64 bits context. */
-typedef uint64_t              RTCCUINTREG64;
-/** Pointer to an unsigned integer register in the current context. */
-typedef RTCCUINTREG64        *PRTCCUINTREG64;
-/** Pointer to a const unsigned integer register in the current context. */
-typedef const RTCCUINTREG64  *PCRTCCUINTREG64;
-
 /** Unsigned integer register in the current context. */
 #if ARCH_BITS == 32
-typedef RTCCUINTREG32         RTCCUINTREG;
-/** Pointer to an unsigned integer register in the current context. */
-typedef PRTCCUINTREG32        PRTCCUINTREG;
-/** Pointer to a const unsigned integer register in the current context. */
-typedef PCRTCCUINTREG32       PCRTCCUINTREG;
+typedef uint32_t                RTCCUINTREG;
 #elif ARCH_BITS == 64
-typedef RTCCUINTREG64         RTCCUINTREG;
-/** Pointer to an unsigned integer register in the current context. */
-typedef PRTCCUINTREG64      PRTCCUINTREG;
-/** Pointer to a const unsigned integer register in the current context. */
-typedef PCRTCCUINTREG64     PCRTCCUINTREG;
+typedef uint64_t                RTCCUINTREG;
 #else
 # error "Unsupported ARCH_BITS!"
 #endif
+/** Pointer to an unsigned integer register in the current context. */
+typedef RTCCUINTREG            *PRTCCUINTREG;
+/** Pointer to a const unsigned integer register in the current context. */
+typedef RTCCUINTREG const      *PCRTCCUINTREG;
+
+/** Signed integer register in the current context. */
+#if ARCH_BITS == 32
+typedef int32_t                 RTCCINTREG;
+#elif ARCH_BITS == 64
+typedef int64_t                 RTCCINTREG;
+#endif
+/** Pointer to a signed integer register in the current context. */
+typedef RTCCINTREG             *PRTCCINTREG;
+/** Pointer to a const signed integer register in the current context. */
+typedef RTCCINTREG const       *PCRTCCINTREG;
 
 /** @} */
 

@@ -68,6 +68,8 @@
 #  pragma intrinsic(__writecr0)
 #  pragma intrinsic(__writecr3)
 #  pragma intrinsic(__writecr4)
+#  pragma intrinsic(__readdr)
+#  pragma intrinsic(__writedr)
 #  pragma intrinsic(_BitScanForward)
 #  pragma intrinsic(_BitScanReverse)
 #  pragma intrinsic(_bittest)
@@ -90,8 +92,6 @@
 #   pragma intrinsic(__stosq)
 #   pragma intrinsic(__readcr8)
 #   pragma intrinsic(__writecr8)
-#   pragma intrinsic(__readdr)
-#   pragma intrinsic(__writedr)
 #   pragma intrinsic(_byteswap_uint64)
 #   pragma intrinsic(_InterlockedExchange64)
 #  endif
@@ -147,7 +147,7 @@
  * The ASM* functions will then be implemented in an external .asm file.
  *
  * @remark  At the present time it's unconfirmed whether or not Microsoft skipped
- *          inline assmebly in their AMD64 compiler.
+ *          inline assembly in their AMD64 compiler.
  */
 #if defined(_MSC_VER) && defined(RT_ARCH_AMD64)
 # define RT_INLINE_ASM_EXTERNAL 1
@@ -156,7 +156,7 @@
 #endif
 
 /** @def RT_INLINE_ASM_GNU_STYLE
- * Defined as 1 if the compiler understand GNU style inline assembly.
+ * Defined as 1 if the compiler understands GNU style inline assembly.
  */
 #if defined(_MSC_VER)
 # define RT_INLINE_ASM_GNU_STYLE 0
@@ -745,7 +745,7 @@ DECLINLINE(uint32_t) ASMCpuId_EDX(uint32_t uOperator)
                "=d" (xDX)
              : "0" (uOperator)
              : "rbx", "rcx");
-#  elif (defined(PIC) || defined(RT_OS_DARWIN)) && defined(__i386__) /* darwin: PIC by default. */
+#  elif (defined(PIC) || defined(__PIC__)) && defined(__i386__)
     __asm__ ("push  %%ebx\n\t"
              "cpuid\n\t"
              "pop   %%ebx\n\t"
@@ -801,7 +801,7 @@ DECLINLINE(uint32_t) ASMCpuId_ECX(uint32_t uOperator)
                "=c" (xCX)
              : "0" (uOperator)
              : "rbx", "rdx");
-#  elif (defined(PIC) || defined(RT_OS_DARWIN)) && defined(__i386__) /* darwin: 4.0.1 compiler option / bug? */
+#  elif (defined(PIC) || defined(__PIC__)) && defined(__i386__)
     __asm__ ("push  %%ebx\n\t"
              "cpuid\n\t"
              "pop   %%ebx\n\t"
@@ -906,7 +906,7 @@ DECLINLINE(uint8_t) ASMGetApicId(void)
                "=b" (xBX)
              : "0" (1)
              : "rcx", "rdx");
-#  elif (defined(PIC) || defined(RT_OS_DARWIN)) && defined(__i386__)
+#  elif (defined(PIC) || defined(__PIC__)) && defined(__i386__)
     RTCCUINTREG uSpill;
     __asm__ ("mov   %%ebx,%1\n\t"
              "cpuid\n\t"
@@ -955,8 +955,8 @@ DECLINLINE(uint8_t) ASMGetApicId(void)
 DECLINLINE(bool) ASMIsIntelCpuEx(uint32_t uEBX, uint32_t uECX, uint32_t uEDX)
 {
     return uEBX == 0x756e6547
-        || uECX == 0x6c65746e
-        || uEDX == 0x49656e69;
+        && uECX == 0x6c65746e
+        && uEDX == 0x49656e69;
 }
 
 
@@ -968,7 +968,7 @@ DECLINLINE(bool) ASMIsIntelCpuEx(uint32_t uEBX, uint32_t uECX, uint32_t uEDX)
 DECLINLINE(bool) ASMIsIntelCpu(void)
 {
     uint32_t uEAX, uEBX, uECX, uEDX;
-    ASMCpuId(1, &uEAX, &uEBX, &uECX, &uEDX);
+    ASMCpuId(0, &uEAX, &uEBX, &uECX, &uEDX);
     return ASMIsIntelCpuEx(uEBX, uECX, uEDX);
 }
 
@@ -2514,7 +2514,7 @@ DECLINLINE(uint64_t) ASMAtomicXchgU64(volatile uint64_t *pu64, uint64_t u64)
 #  endif
 # else /* !RT_ARCH_AMD64 */
 #  if RT_INLINE_ASM_GNU_STYLE
-#   if defined(PIC) || defined(RT_OS_DARWIN) /* darwin: 4.0.1 compiler option / bug? */
+#   if defined(PIC) || defined(__PIC__)
     uint32_t u32EBX = (uint32_t)u64;
     __asm__ __volatile__(/*"xchgl %%esi, %5\n\t"*/
                          "xchgl %%ebx, %3\n\t"
@@ -2641,7 +2641,7 @@ DECLINLINE(uint128_t) ASMAtomicXchgU128(volatile uint128_t *pu128, uint128_t u12
  * @param   ppv    Pointer to the pointer variable to update.
  * @param   pv     The pointer value to assign to *ppv.
  */
-DECLINLINE(void *) ASMAtomicXchgPtr(void * volatile *ppv, void *pv)
+DECLINLINE(void *) ASMAtomicXchgPtr(void * volatile *ppv, const void *pv)
 {
 #if ARCH_BITS == 32
     return (void *)ASMAtomicXchgU32((volatile uint32_t *)(void *)ppv, (uint32_t)pv);
@@ -2649,6 +2649,57 @@ DECLINLINE(void *) ASMAtomicXchgPtr(void * volatile *ppv, void *pv)
     return (void *)ASMAtomicXchgU64((volatile uint64_t *)(void *)ppv, (uint64_t)pv);
 #else
 # error "ARCH_BITS is bogus"
+#endif
+}
+
+
+/**
+ * Atomically Exchange a raw-mode context pointer value, ordered.
+ *
+ * @returns Current *ppv value
+ * @param   ppvRC   Pointer to the pointer variable to update.
+ * @param   pvRC    The pointer value to assign to *ppv.
+ */
+DECLINLINE(RTRCPTR) ASMAtomicXchgRCPtr(RTRCPTR volatile *ppvRC, RTRCPTR pvRC)
+{
+    return (RTRCPTR)ASMAtomicXchgU32((uint32_t volatile *)(void *)ppvRC, (uint32_t)pvRC);
+}
+
+
+/**
+ * Atomically Exchange a ring-0 pointer value, ordered.
+ *
+ * @returns Current *ppv value
+ * @param   ppvR0  Pointer to the pointer variable to update.
+ * @param   pvR0   The pointer value to assign to *ppv.
+ */
+DECLINLINE(RTR0PTR) ASMAtomicXchgR0Ptr(RTR0PTR volatile *ppvR0, RTR0PTR pvR0)
+{
+#if R0_ARCH_BITS == 32
+    return (RTR0PTR)ASMAtomicXchgU32((volatile uint32_t *)(void *)ppvR0, (uint32_t)pvR0);
+#elif R0_ARCH_BITS == 64
+    return (RTR0PTR)ASMAtomicXchgU64((volatile uint64_t *)(void *)ppvR0, (uint64_t)pvR0);
+#else
+# error "R0_ARCH_BITS is bogus"
+#endif
+}
+
+
+/**
+ * Atomically Exchange a ring-3 pointer value, ordered.
+ *
+ * @returns Current *ppv value
+ * @param   ppvR3  Pointer to the pointer variable to update.
+ * @param   pvR3   The pointer value to assign to *ppv.
+ */
+DECLINLINE(RTR3PTR) ASMAtomicXchgR3Ptr(RTR3PTR volatile *ppvR3, RTR3PTR pvR3)
+{
+#if R3_ARCH_BITS == 32
+    return (RTR3PTR)ASMAtomicXchgU32((volatile uint32_t *)(void *)ppvR3, (uint32_t)pvR3);
+#elif R3_ARCH_BITS == 64
+    return (RTR3PTR)ASMAtomicXchgU64((volatile uint64_t *)(void *)ppvR3, (uint64_t)pvR3);
+#else
+# error "R3_ARCH_BITS is bogus"
 #endif
 }
 
@@ -2664,7 +2715,7 @@ DECLINLINE(void *) ASMAtomicXchgPtr(void * volatile *ppv, void *pv)
  */
 #define ASMAtomicXchgHandle(ph, hNew, phRes) \
     do { \
-        *(void **)(phRes) = ASMAtomicXchgPtr((void * volatile *)(ph), (void *)(hNew)); \
+        *(void **)(phRes) = ASMAtomicXchgPtr((void * volatile *)(ph), (const void *)(hNew)); \
         AssertCompile(sizeof(*ph) == sizeof(void *)); \
         AssertCompile(sizeof(*phRes) == sizeof(void *)); \
     } while (0)
@@ -2827,7 +2878,7 @@ DECLINLINE(bool) ASMAtomicCmpXchgU64(volatile uint64_t *pu64, const uint64_t u64
 # else /* !RT_ARCH_AMD64 */
     uint32_t u32Ret;
 #  if RT_INLINE_ASM_GNU_STYLE
-#   if defined(PIC) || defined(RT_OS_DARWIN) /* darwin: 4.0.1 compiler option / bug? */
+#   if defined(PIC) || defined(__PIC__)
     uint32_t u32EBX = (uint32_t)u64New;
     uint32_t u32Spill;
     __asm__ __volatile__("xchgl %%ebx, %4\n\t"
@@ -2905,7 +2956,7 @@ DECLINLINE(bool) ASMAtomicCmpXchgS64(volatile int64_t *pi64, const int64_t i64, 
  * @param   pvNew       The new value to assigned to *ppv.
  * @param   pvOld       The old value to *ppv compare with.
  */
-DECLINLINE(bool) ASMAtomicCmpXchgPtr(void * volatile *ppv, void *pvNew, void *pvOld)
+DECLINLINE(bool) ASMAtomicCmpXchgPtr(void * volatile *ppv, const void *pvNew, const void *pvOld)
 {
 #if ARCH_BITS == 32
     return ASMAtomicCmpXchgU32((volatile uint32_t *)(void *)ppv, (uint32_t)pvNew, (uint32_t)pvOld);
@@ -3087,7 +3138,7 @@ DECLINLINE(bool) ASMAtomicCmpXchgExU64(volatile uint64_t *pu64, const uint64_t u
 # else /* !RT_ARCH_AMD64 */
 #  if RT_INLINE_ASM_GNU_STYLE
     uint64_t u64Ret;
-#   if defined(PIC) || defined(RT_OS_DARWIN) /* darwin: 4.0.1 compiler option / bug? */
+#   if defined(PIC) || defined(__PIC__)
     /* NB: this code uses a memory clobber description, because the clean
      * solution with an output value for *pu64 makes gcc run out of registers.
      * This will cause suboptimal code, and anyone with a better solution is
@@ -3219,7 +3270,7 @@ DECLINLINE(bool) ASMAtomicCmpXchgExS64(volatile int64_t *pi64, const int64_t i64
  * @param   pvOld       The old value to *ppv compare with.
  * @param   ppvOld      Pointer store the old value at.
  */
-DECLINLINE(bool) ASMAtomicCmpXchgExPtr(void * volatile *ppv, void *pvNew, void *pvOld, void **ppvOld)
+DECLINLINE(bool) ASMAtomicCmpXchgExPtr(void * volatile *ppv, const void *pvNew, const void *pvOld, void **ppvOld)
 {
 #if ARCH_BITS == 32
     return ASMAtomicCmpXchgExU32((volatile uint32_t *)(void *)ppv, (uint32_t)pvNew, (uint32_t)pvOld, (uint32_t *)ppvOld);
@@ -3284,6 +3335,32 @@ DECLINLINE(uint32_t) ASMAtomicAddU32(uint32_t volatile *pu32, uint32_t u32)
 DECLINLINE(int32_t) ASMAtomicAddS32(int32_t volatile *pi32, int32_t i32)
 {
     return (int32_t)ASMAtomicAddU32((uint32_t volatile *)pi32, (uint32_t)i32);
+}
+
+
+/**
+ * Atomically exchanges and subtracts to an unsigned 32-bit value, ordered.
+ *
+ * @returns The old value.
+ * @param   pu32        Pointer to the value.
+ * @param   u32         Number to subtract.
+ */
+DECLINLINE(uint32_t) ASMAtomicSubU32(int32_t volatile *pi32, uint32_t u32)
+{
+    return ASMAtomicAddU32((uint32_t volatile *)pi32, (uint32_t)-(int32_t)u32);
+}
+
+
+/**
+ * Atomically exchanges and subtracts to a signed 32-bit value, ordered.
+ *
+ * @returns The old value.
+ * @param   pi32        Pointer to the value.
+ * @param   i32         Number to subtract.
+ */
+DECLINLINE(int32_t) ASMAtomicSubS32(int32_t volatile *pi32, int32_t i32)
+{
+    return (int32_t)ASMAtomicAddU32((uint32_t volatile *)pi32, (uint32_t)-i32);
 }
 
 
@@ -3716,7 +3793,7 @@ DECLINLINE(uint64_t) ASMAtomicReadU64(volatile uint64_t *pu64)
     u64 = *pu64;
 # else /* !RT_ARCH_AMD64 */
 #  if RT_INLINE_ASM_GNU_STYLE
-#   if defined(PIC) || defined(RT_OS_DARWIN) /* darwin: 4.0.1 compiler option / bug? */
+#   if defined(PIC) || defined(__PIC__)
     uint32_t u32EBX = 0;
     Assert(!((uintptr_t)pu64 & 7));
     __asm__ __volatile__("xchgl %%ebx, %3\n\t"
@@ -3792,7 +3869,7 @@ DECLINLINE(uint64_t) ASMAtomicUoReadU64(volatile uint64_t *pu64)
     u64 = *pu64;
 # else /* !RT_ARCH_AMD64 */
 #  if RT_INLINE_ASM_GNU_STYLE
-#   if defined(PIC) || defined(RT_OS_DARWIN) /* darwin: 4.0.1 compiler option / bug? */
+#   if defined(PIC) || defined(__PIC__)
     uint32_t u32EBX = 0;
     uint32_t u32Spill;
     Assert(!((uintptr_t)pu64 & 7));
@@ -4235,7 +4312,7 @@ DECLINLINE(void) ASMAtomicUoWriteBool(volatile bool *pf, bool f)
  * @param   ppv     Pointer to the pointer variable.
  * @param   pv      The pointer value to assigne to *ppv.
  */
-DECLINLINE(void) ASMAtomicWritePtr(void * volatile *ppv, void *pv)
+DECLINLINE(void) ASMAtomicWritePtr(void * volatile *ppv, const void *pv)
 {
 #if ARCH_BITS == 32
     ASMAtomicWriteU32((volatile uint32_t *)(void *)ppv, (uint32_t)pv);
@@ -4254,7 +4331,7 @@ DECLINLINE(void) ASMAtomicWritePtr(void * volatile *ppv, void *pv)
  * @param   ppv     Pointer to the pointer variable.
  * @param   pv      The pointer value to assigne to *ppv.
  */
-DECLINLINE(void) ASMAtomicUoWritePtr(void * volatile *ppv, void *pv)
+DECLINLINE(void) ASMAtomicUoWritePtr(void * volatile *ppv, const void *pv)
 {
 #if ARCH_BITS == 32
     ASMAtomicUoWriteU32((volatile uint32_t *)(void *)ppv, (uint32_t)pv);
@@ -4276,7 +4353,7 @@ DECLINLINE(void) ASMAtomicUoWritePtr(void * volatile *ppv, void *pv)
  */
 #define ASMAtomicWriteHandle(ph, hNew) \
     do { \
-        ASMAtomicWritePtr((void * volatile *)(ph), (void *)hNew); \
+        ASMAtomicWritePtr((void * volatile *)(ph), (const void *)hNew); \
         AssertCompile(sizeof(*ph) == sizeof(void*)); \
     } while (0)
 
@@ -4291,7 +4368,7 @@ DECLINLINE(void) ASMAtomicUoWritePtr(void * volatile *ppv, void *pv)
  */
 #define ASMAtomicUoWriteHandle(ph, hNew) \
     do { \
-        ASMAtomicUoWritePtr((void * volatile *)(ph), (void *)hNew); \
+        ASMAtomicUoWritePtr((void * volatile *)(ph), (const void *)hNew); \
         AssertCompile(sizeof(*ph) == sizeof(void*)); \
     } while (0)
 

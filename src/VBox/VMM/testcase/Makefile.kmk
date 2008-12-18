@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 15236 2008-12-10 09:50:10Z vboxsync $
 ## @file
 # Sub-Makefile for the VMM testcases.
 #
@@ -25,7 +25,7 @@ include	$(KBUILD_PATH)/subheader.kmk
 #
 # Target lists.
 #
-PROGRAMS   += tstVMStructSize tstVMStructGC tstAsmStructs tstAsmStructsGC tstVMM tstVMM-HwAccm tstGlobalConfig
+PROGRAMS   += tstVMStructSize tstVMStructGC tstAsmStructs tstAsmStructsGC tstVMM tstVMM-HwAccm tstGlobalConfig tstInstrEmul
 ifneq ($(KBUILD_TARGET),win)
 PROGRAMS   += tstVMMFork
 endif
@@ -53,18 +53,21 @@ ifeq ($(KBUILD_TARGET),$(KBUILD_HOST))
  ifeq ($(filter-out x86.x86 amd64.amd64 x86.amd64, $(KBUILD_TARGET_ARCH).$(KBUILD_HOST_ARCH)),)
   OTHERS += \
 	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstAsmStructs.run \
-	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstVMStructSize.run
+	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstVMStructSize.run \
+	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstInstrEmul.run
  endif
 endif
 
 # The normal testing pass.
 TESTING += \
 	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstAsmStructs.run \
-	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstVMStructSize.run
+	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstVMStructSize.run \
+        $(VBOX_VMM_TESTCASE_OUT_DIR)/tstInstrEmul.run
 
 OTHER_CLEAN += \
 	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstAsmStructs.run \
 	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstVMStructSize.run \
+        $(VBOX_VMM_TESTCASE_OUT_DIR)/tstInstrEmul.run \
 	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstAsmStructs.h \
 	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstAsmStructsAsm.o \
 	$(VBOX_VMM_TESTCASE_OUT_DIR)/tstAsmStructsAsm.mac \
@@ -84,34 +87,50 @@ VBOX_PATH_VMM_SRC = $(PATH_ROOT)/src/VBox/VMM
 # Targets
 #
 tstVMStructGC_TEMPLATE  = VBOXGCEXE
-tstVMStructGC_DEFS      = IN_VMM_GC IN_PDM_GC IN_CFGM_GC IN_IOM_GC IN_VM_GC IN_CPUM_GC IN_SELM_GC IN_PGM_GC IN_TRPM_GC IN_MM_GC IN_PDM_GC IN_DBGF_GC IN_PATM_GC IN_DIS_GC IN_STAM_GC IN_VGADEVICE_GC IN_CSAM_GC IN_SSM_GC IN_REM_GC IN_RRM_GC
-ifdef VBOX_WITH_IDT_PATCHING
-tstVMStructGC_DEFS     += VBOX_WITH_IDT_PATCHING
+tstVMStructGC_DEFS      = IN_VMM_RC IN_DIS IN_RT_RC IN_RT_GC
+ifdef VBOX_WITH_R0_LOGGING
+tstVMStructGC_DEFS     += VBOX_WITH_R0_LOGGING
+endif
+ifdef VBOX_WITH_NEW_RECOMPILER
+tstVMStructGC_DEFS     += VBOX_WITH_NEW_RECOMPILER
 endif
 tstVMStructGC_SOURCES   = tstVMStructGC.cpp
 tstVMStructGC_INCS      = $(VBOX_PATH_VMM_SRC) $(VBOX_PATH_VMM_SRC)/PATM
 
 tstVMStructSize_TEMPLATE= VBOXR3AUTOTST
-tstVMStructSize_DEFS    = IN_VMM_R3 IN_PDM_R3 IN_CFGM_R3 IN_IOM_R3 IN_VM_R3 IN_CPUM_R3 IN_SELM_R3 IN_PGM_R3 IN_TRPM_R3 IN_MM_R3 IN_PDM_R3 IN_DBGF_R3 IN_PATM_R3 IN_DIS_R3 IN_STAM_R3 IN_VGADEVICE_R3 IN_CSAM_R3 IN_SSM_R3 IN_REM_R3
-ifdef VBOX_WITH_IDT_PATCHING
-tstVMStructSize_DEFS   += VBOX_WITH_IDT_PATCHING
-endif
+tstVMStructSize_DEFS    = IN_VMM_R3 IN_DIS
 tstVMStructSize_INCS    = $(VBOX_PATH_VMM_SRC) $(VBOX_PATH_VMM_SRC)/PATM $(VBOX_VMM_TESTCASE_OUT_DIR)
 tstVMStructSize_SOURCES = tstVMStructSize.cpp
 tstVMStructSize.cpp_DEPS= $(VBOX_VMM_TESTCASE_OUT_DIR)/tstVMStructGC.h
+ifdef VBOX_WITH_R0_LOGGING
+tstVMStructSize_DEFS   += VBOX_WITH_R0_LOGGING
+endif
+ifdef VBOX_WITH_NEW_RECOMPILER
+tstVMStructSize_DEFS   += VBOX_WITH_NEW_RECOMPILER
+endif
+ifdef VBOX_WITH_VMI
+tstVMStructSize_DEFS   += VBOX_WITH_VMI
+tstVMStructSize_INCS   += $(VBOX_PATH_VMM_SRC)/PARAV
+endif
 
 tstAsmStructs_TEMPLATE  = VBOXR3AUTOTST
-tstAsmStructs_DEFS      = IN_VMM_R3 IN_PDM_R3 IN_CFGM_R3 IN_IOM_R3 IN_VM_R3 IN_CPUM_R3 IN_SELM_R3 IN_PGM_R3 IN_TRPM_R3 IN_MM_R3 IN_PDM_R3 IN_DBGF_R3 IN_PATM_R3 IN_DIS_R3 IN_STAM_R3 IN_VGADEVICE_R3 IN_CSAM_R3 IN_SSM_R3
-ifdef VBOX_WITH_IDT_PATCHING
-tstAsmStructs_DEFS     += VBOX_WITH_IDT_PATCHING
+tstAsmStructs_DEFS      = IN_VMM_R3 IN_DIS
+ifdef VBOX_WITH_R0_LOGGING
+tstAsmStructs_DEFS     += VBOX_WITH_R0_LOGGING
+endif
+ifdef VBOX_WITH_NEW_RECOMPILER
+tstAsmStruct_DEFS      += VBOX_WITH_NEW_RECOMPILER
 endif
 tstAsmStructs_INCS      = $(VBOX_PATH_VMM_SRC) $(VBOX_VMM_TESTCASE_OUT_DIR)
 tstAsmStructs_SOURCES   = tstAsmStructs.cpp
 
 tstAsmStructsGC_TEMPLATE= VBOXGCEXE
-tstAsmStructsGC_DEFS    = IN_VMM_GC IN_PDM_GC IN_CFGM_GC IN_IOM_GC IN_VM_GC IN_CPUM_GC IN_SELM_GC IN_PGM_GC IN_TRPM_GC IN_MM_GC IN_PDM_GC IN_DBGF_GC IN_PATM_GC IN_DIS_GC IN_STAM_GC IN_VGADEVICE_GC IN_CSAM_GC IN_SSM_GC IN_RRM_GC
-ifdef VBOX_WITH_IDT_PATCHING
-tstAsmStructsGC_DEFS    += VBOX_WITH_IDT_PATCHING
+tstAsmStructsGC_DEFS    = IN_VMM_RC IN_DIS IN_RT_RC IN_RT_GC
+ifdef VBOX_WITH_R0_LOGGING
+tstAsmStructsGC_DEFS   += VBOX_WITH_R0_LOGGING
+endif
+ifdef VBOX_WITH_NEW_RECOMPILER
+tstAsmStructGC_DEFS    += VBOX_WITH_NEW_RECOMPILER
 endif
 tstAsmStructsGC_INCS    = $(VBOX_PATH_VMM_SRC) $(VBOX_VMM_TESTCASE_OUT_DIR)
 tstAsmStructsGC_SOURCES = tstAsmStructs.cpp
@@ -130,6 +149,10 @@ tstMMHyperHeap_LIBS     = $(LIB_VMM) $(LIB_REM) $(LIB_RUNTIME)
 tstSSM_TEMPLATE         = VBOXR3TSTEXE
 tstSSM_SOURCES          = tstSSM.cpp
 tstSSM_LIBS             = $(LIB_VMM) $(LIB_REM) $(LIB_RUNTIME)
+
+tstInstrEmul_TEMPLATE   = VBOXR3TSTEXE
+tstInstrEmul_SOURCES    = tstInstrEmul.cpp ../VMMAll/EMAllA.asm
+tstInstrEmul_LIBS       = $(LIB_VMM) $(LIB_REM) $(LIB_RUNTIME)
 
 tstCFGM_TEMPLATE        = VBOXR3TSTEXE
 tstCFGM_SOURCES         = tstCFGM.cpp
@@ -208,7 +231,9 @@ include	$(KBUILD_PATH)/subfooter.kmk
 #
 
 ifeq ($(KBUILD_HOST),win)
- include $(KBUILD_PATH)/tools/MINGW32.kmk
+ ifndef TOOL_MINGW32
+  include $(KBUILD_PATH)/tools/MINGW32.kmk
+ endif
  VBOX_NM ?= $(PATH_TOOL_MINGW32)/bin/nm.exe -p
 else
  VBOX_NM ?= nm -p
@@ -236,6 +261,7 @@ $(VBOX_VMM_TESTCASE_OUT_DIR)/tstAsmStructsAsm.mac: \
 		$(DEPTH)/include/VBox/vm.mac \
 		$(VBOX_PATH_VMM_SRC)/CPUMInternal.mac \
 		$(VBOX_PATH_VMM_SRC)/TRPMInternal.mac \
+		$(VBOX_PATH_VMM_SRC)/HWACCMInternal.mac \
 		$(VBOX_PATH_VMM_SRC)/VMMInternal.mac \
 		$(VBOX_PATH_VMM_SRC)/testcase/Makefile.kmk \
 		$(PATH_ROOT)/Config.kmk $(LOCALCFG) $(AUTOCFG) \
@@ -273,7 +299,7 @@ $(VBOX_VMM_TESTCASE_OUT_DIR)/tstAsmStructsHC.h: $(VBOX_VMM_TESTCASE_OUT_DIR)/tst
 	$(QUIET)$(SED) -e '/STAMPROFILEADV/d' \
 	       -e '/00[0-9a-fA-F]* [aA] [^_.]*\./!d'       -e 's/\(00[0-9a-fA-F]*\) [aA] \([^.]*\)\.\(.*$$\)/    CHECK_OFF(\2, 0x0\1, \3);/' \
 	       --output $@.tmp $@.dump
-	$(QUIET)$(SED) -e '/VM_size$$/d' \
+	$(QUIET)$(SED) -e '/VM_size$$/d' -e '/VMCPU_size$$/d' \
 	       -e '/00[0-9a-fA-F]* [aA] [^_.]*_size$$/!d'  -e 's/\(00[0-9a-fA-F]*\) [aA] \([^_.]*\)_size/    CHECK_SIZE(\2, 0x0\1);/' \
 	       --append $@.tmp $@.dump
 	$(QUIET)$(MV) -f $@.tmp $@
@@ -314,3 +340,14 @@ $(VBOX_VMM_TESTCASE_OUT_DIR)/tstVMStructSize.run: $$(INSTARGET_tstVMStructSize) 
 # alias for the two struct tests.
 run-struct-tests: $(VBOX_VMM_TESTCASE_OUT_DIR)/tstAsmStructs.run $(VBOX_VMM_TESTCASE_OUT_DIR)/tstVMStructSize.run
 
+
+#
+# Run rule for tstInstrEmul.
+#
+$(VBOX_VMM_TESTCASE_OUT_DIR)/tstInstrEmul.run: $$(INSTARGET_tstInstrEmul) | $$(dir $$@)
+	$(QUIET)$(RM) -f $@
+	$(QUIET)$(REDIRECT) -E 'VBOX_LOG_FLAGS=disabled' -E 'VBOX_LOG_DEST=nofile' \
+		$(if $(eq $(KBUILD_TARGET),darwin), -E 'DYLD_FALLBACK_LIBRARY_PATH=$(dir $(LIB_RUNTIME))') \
+		-- \
+		$(INSTARGET_tstInstrEmul)
+	$(QUIET)$(APPEND) "$@" "done"

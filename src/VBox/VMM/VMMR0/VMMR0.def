@@ -29,6 +29,8 @@ EXPORTS
     PDMQueueInsert
     PGMHandlerPhysicalPageTempOff
     PGMShwModifyPage
+    IOMMMIOResetRegion
+    IOMMMIOModifyPage
     RTLogDefaultInstance
     RTLogRelDefaultInstance
     RTLogLogger
@@ -55,10 +57,19 @@ EXPORTS
     ; runtime
     AssertMsg1
     AssertMsg2
-    RTAssertDoBreakpoint
+    RTAssertShouldPanic
     RTTimeNanoTSLegacySync
     RTTimeNanoTSLegacyAsync
     RTTimeNanoTSLFenceSync
     RTTimeNanoTSLFenceAsync
     ASMMultU64ByU32DivByU32             ; not-os2
+    ASMAtomicXchgU8                     ; not-x86
+    nocrt_memchr
+    nocrt_memcmp
+    nocrt_memcpy
+    memcpy=nocrt_memcpy                 ; not-os2
+    nocrt_memset
+    nocrt_strcpy
+    nocrt_strcmp
+    nocrt_strchr
 

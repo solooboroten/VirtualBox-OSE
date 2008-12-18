@@ -255,14 +255,14 @@ const PDMDEVREG g_DeviceAudioSniffer =
     PDM_DEVREG_VERSION,
     /* szDeviceName */
     "AudioSniffer",
-    /* szGCMod */
+    /* szRCMod */
     "",
     /* szR0Mod */
     "",
     /* pszDescription */
     "Audio Sniffer device. Redirects audio data to sniffer driver.",
     /* fFlags */
-    PDM_DEVREG_FLAGS_HOST_BITS_DEFAULT | PDM_DEVREG_FLAGS_GUEST_BITS_DEFAULT,
+    PDM_DEVREG_FLAGS_DEFAULT_BITS,
     /* fClass */
     PDM_DEVREG_CLASS_AUDIO,
     /* cMaxInstances */
@@ -292,5 +292,10 @@ const PDMDEVREG g_DeviceAudioSniffer =
     /* pfnQueryInterface */
     NULL,
     /* pfnInitComplete */
-    NULL
+    NULL,
+    /* pfnPowerOff */
+    NULL,
+    /* pfnSoftReset */
+    NULL,
+    PDM_DEVREG_VERSION
 };

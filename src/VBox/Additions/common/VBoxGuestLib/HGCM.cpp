@@ -54,8 +54,8 @@ DECLINLINE(int) vbglHandleHeapEnter (void)
 {
     int rc = RTSemFastMutexRequest(g_vbgldata.mutexHGCMHandle);
 
-    VBGL_HGCM_ASSERTMsg(VBOX_SUCCESS(rc),
-                        ("Failed to request handle heap mutex, rc = %Vrc\n", rc));
+    VBGL_HGCM_ASSERTMsg(RT_SUCCESS(rc),
+                        ("Failed to request handle heap mutex, rc = %Rrc\n", rc));
 
     return rc;
 }
@@ -71,7 +71,7 @@ struct VBGLHGCMHANDLEDATA *vbglHGCMHandleAlloc (void)
     int rc = vbglHandleHeapEnter ();
     uint32_t i;
 
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
         return NULL;
 
     p = NULL;
@@ -80,7 +80,7 @@ struct VBGLHGCMHANDLEDATA *vbglHGCMHandleAlloc (void)
      * @todo bitmap for faster search and other obvious optimizations.
      */
 
-    for (i = 0; i < ELEMENTS(g_vbgldata.aHGCMHandleData); i++)
+    for (i = 0; i < RT_ELEMENTS(g_vbgldata.aHGCMHandleData); i++)
     {
         if (!g_vbgldata.aHGCMHandleData[i].fAllocated)
         {
@@ -107,7 +107,7 @@ void vbglHGCMHandleFree (struct VBGLHGCMHANDLEDATA *pHandle)
 
     rc = vbglHandleHeapEnter ();
 
-    if (VBOX_FAILURE (rc))
+    if (RT_FAILURE (rc))
         return;
 
     VBGL_HGCM_ASSERTMsg(pHandle->fAllocated,
@@ -138,11 +138,11 @@ DECLVBGL(int) VbglHGCMConnect (VBGLHGCMHANDLE *pHandle, VBoxGuestHGCMConnectInfo
     {
         rc = vbglDriverOpen (&pHandleData->driver);
 
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
         {
             rc = vbglDriverIOCtl (&pHandleData->driver, VBOXGUEST_IOCTL_HGCM_CONNECT, pData, sizeof (*pData));
 
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
             {
                 *pHandle = pHandleData;
             }
@@ -152,7 +152,7 @@ DECLVBGL(int) VbglHGCMConnect (VBGLHGCMHANDLE *pHandle, VBoxGuestHGCMConnectInfo
             }
         }
 
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
             vbglHGCMHandleFree (pHandleData);
         }
@@ -182,6 +182,23 @@ DECLVBGL(int) VbglHGCMCall (VBGLHGCMHANDLE handle, VBoxGuestHGCMCallInfo *pData,
                         ("cbData = %d, cParms = %d (calculated size %d)\n", cbData, pData->cParms, sizeof (VBoxGuestHGCMCallInfo) + pData->cParms * sizeof (VBoxGuestHGCMCallInfo)));
 
     rc = vbglDriverIOCtl (&handle->driver, VBOXGUEST_IOCTL_HGCM_CALL(cbData), pData, cbData);
+
+    return rc;
+}
+
+DECLVBGL(int) VbglHGCMCallTimed (VBGLHGCMHANDLE handle,
+                                 VBoxGuestHGCMCallInfoTimed *pData, uint32_t cbData)
+{
+    int rc = VINF_SUCCESS;
+
+    uint32_t cbExpected =   sizeof (VBoxGuestHGCMCallInfoTimed)
+                          + pData->info.cParms * sizeof (HGCMFunctionParameter);
+    VBGL_HGCM_ASSERTMsg(cbData >= cbExpected,
+                        ("cbData = %d, cParms = %d (calculated size %d)\n",
+                        cbData, pData->info.cParms, cbExpected));
+
+    rc = vbglDriverIOCtl (&handle->driver, VBOXGUEST_IOCTL_HGCM_CALL_TIMED(cbData),
+                          pData, cbData);
 
     return rc;
 }

@@ -1,4 +1,4 @@
-/* $Id: TRPMGC.cpp $ */
+/* $Id: TRPMGC.cpp 13823 2008-11-05 01:10:20Z vboxsync $ */
 /** @file
  * TRPM - The Trap Monitor, Guest Context
  */
@@ -54,7 +54,7 @@
  * @param   iTrap       Trap number to install handler [0..255].
  * @param   pfnHandler  Pointer to the handler. Use NULL for uninstalling the handler.
  */
-TRPMGCDECL(int) TRPMGCSetTempHandler(PVM pVM, unsigned iTrap, PFNTRPMGCTRAPHANDLER pfnHandler)
+VMMRCDECL(int) TRPMGCSetTempHandler(PVM pVM, unsigned iTrap, PFNTRPMGCTRAPHANDLER pfnHandler)
 {
     /*
      * Validate input.
@@ -68,7 +68,7 @@ TRPMGCDECL(int) TRPMGCSetTempHandler(PVM pVM, unsigned iTrap, PFNTRPMGCTRAPHANDL
     /*
      * Install handler.
      */
-    pVM->trpm.s.aTmpTrapHandlers[iTrap] = (RTRCPTR)pfnHandler;
+    pVM->trpm.s.aTmpTrapHandlers[iTrap] = (RTRCPTR)(uintptr_t)pfnHandler;
     return VINF_SUCCESS;
 }
 
@@ -82,9 +82,9 @@ TRPMGCDECL(int) TRPMGCSetTempHandler(PVM pVM, unsigned iTrap, PFNTRPMGCTRAPHANDL
  * @param   pVM     The VM handle.
  * @param   rc      The return code for host context.
  */
-TRPMGCDECL(void) TRPMGCHyperReturnToHost(PVM pVM, int rc)
+VMMRCDECL(void) TRPMGCHyperReturnToHost(PVM pVM, int rc)
 {
-    LogFlow(("TRPMGCHyperReturnToHost: rc=%Vrc\n", rc));
+    LogFlow(("TRPMGCHyperReturnToHost: rc=%Rrc\n", rc));
     TRPMResetTrap(pVM);
     CPUMHyperSetCtxCore(pVM, NULL);
     VMMGCGuestToHost(pVM, rc);
@@ -104,7 +104,7 @@ TRPMGCDECL(void) TRPMGCHyperReturnToHost(PVM pVM, int rc)
  * @param   offRange    The offset of the access into this range.
  *                      (If it's a EIP range this's the EIP, if not it's pvFault.)
  */
-TRPMGCDECL(int) trpmgcGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
+VMMRCDECL(int) trpmRCGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
 {
     uint16_t    cbIDT;
     RTGCPTR     GCPtrIDT    = (RTGCPTR)CPUMGetGuestIDTR(pVM, &cbIDT);
@@ -113,29 +113,29 @@ TRPMGCDECL(int) trpmgcGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
 #endif
     uint32_t    iGate       = ((RTGCUINTPTR)pvFault - (RTGCUINTPTR)GCPtrIDT)/sizeof(VBOXIDTE);
 
-    AssertMsg(offRange < (uint32_t)cbIDT+1, ("pvFault=%VGv GCPtrIDT=%VGv-%VGv pvRange=%VGv\n", pvFault, GCPtrIDT, GCPtrIDTEnd, pvRange));
+    AssertMsg(offRange < (uint32_t)cbIDT+1, ("pvFault=%RGv GCPtrIDT=%RGv-%RGv pvRange=%RGv\n", pvFault, GCPtrIDT, GCPtrIDTEnd, pvRange));
     Assert((RTGCPTR)(RTRCUINTPTR)pvRange == GCPtrIDT);
 
 #if 0
-    /** @note this causes problems in Windows XP as instructions following the update can be dangerous (str eax has been seen) */
-    /** @note not going back to ring 3 could make the code scanner miss them. */
+    /* Note! this causes problems in Windows XP as instructions following the update can be dangerous (str eax has been seen) */
+    /* Note! not going back to ring 3 could make the code scanner miss them. */
     /* Check if we can handle the write here. */
     if (     iGate != 3                                         /* Gate 3 is handled differently; could do it here as well, but let ring 3 handle this case for now. */
         &&  !ASMBitTest(&pVM->trpm.s.au32IdtPatched[0], iGate)) /* Passthru gates need special attention too. */
     {
         uint32_t cb;
         int rc = EMInterpretInstruction(pVM, pRegFrame, pvFault, &cb);
-        if (VBOX_SUCCESS(rc) && cb)
+        if (RT_SUCCESS(rc) && cb)
         {
             uint32_t iGate1 = (offRange + cb - 1)/sizeof(VBOXIDTE);
 
-            Log(("trpmgcGuestIDTWriteHandler: write to gate %x (%x) offset %x cb=%d\n", iGate, iGate1, offRange, cb));
+            Log(("trpmRCGuestIDTWriteHandler: write to gate %x (%x) offset %x cb=%d\n", iGate, iGate1, offRange, cb));
 
             trpmClearGuestTrapHandler(pVM, iGate);
             if (iGate != iGate1)
                 trpmClearGuestTrapHandler(pVM, iGate1);
 
-            STAM_COUNTER_INC(&pVM->trpm.s.StatGCWriteGuestIDTHandled);
+            STAM_COUNTER_INC(&pVM->trpm.s.StatRCWriteGuestIDTHandled);
             return VINF_SUCCESS;
         }
     }
@@ -143,12 +143,12 @@ TRPMGCDECL(int) trpmgcGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
     NOREF(iGate);
 #endif
 
-    Log(("trpmgcGuestIDTWriteHandler: eip=%VGv write to gate %x offset %x\n", pRegFrame->eip, iGate, offRange));
+    Log(("trpmRCGuestIDTWriteHandler: eip=%RGv write to gate %x offset %x\n", pRegFrame->eip, iGate, offRange));
 
     /** @todo Check which IDT entry and keep the update cost low in TRPMR3SyncIDT() and CSAMCheckGates(). */
     VM_FF_SET(pVM, VM_FF_TRPM_SYNC_IDT);
 
-    STAM_COUNTER_INC(&pVM->trpm.s.StatGCWriteGuestIDTFault);
+    STAM_COUNTER_INC(&pVM->trpm.s.StatRCWriteGuestIDTFault);
     return VINF_EM_RAW_EMULATE_INSTR_IDT_FAULT;
 }
 
@@ -165,9 +165,9 @@ TRPMGCDECL(int) trpmgcGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
  * @param   offRange    The offset of the access into this range.
  *                      (If it's a EIP range this's the EIP, if not it's pvFault.)
  */
-TRPMGCDECL(int) trpmgcShadowIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
+VMMRCDECL(int) trpmRCShadowIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
 {
-    LogRel(("FATAL ERROR: trpmgcShadowIDTWriteHandler: eip=%08X pvFault=%VGv pvRange=%08X\r\n", pRegFrame->eip, pvFault, pvRange));
+    LogRel(("FATAL ERROR: trpmRCShadowIDTWriteHandler: eip=%08X pvFault=%RGv pvRange=%08X\r\n", pRegFrame->eip, pvFault, pvRange));
 
     /* If we ever get here, then the guest has executed an sidt instruction that we failed to patch. In theory this could be very bad, but
      * there are nasty applications out there that install device drivers that mess with the guest's IDT. In those cases, it's quite ok

@@ -1,4 +1,4 @@
-/* $Id: tstSSM.cpp $ */
+/* $Id: tstSSM.cpp 13818 2008-11-04 22:59:47Z vboxsync $ */
 /** @file
  * Saved State Manager Testcase.
  */
@@ -87,9 +87,9 @@ DECLCALLBACK(int) Item01Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
      * Test writing some memory block.
      */
     int rc = SSMR3PutMem(pSSM, gachMem1, sizeof(gachMem1));
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item01: #1 - SSMR3PutMem -> %Vrc\n", rc);
+        RTPrintf("Item01: #1 - SSMR3PutMem -> %Rrc\n", rc);
         return rc;
     }
 
@@ -97,9 +97,9 @@ DECLCALLBACK(int) Item01Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
      * Test writing a zeroterminated string.
      */
     rc = SSMR3PutStrZ(pSSM, "String");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item01: #1 - SSMR3PutMem -> %Vrc\n", rc);
+        RTPrintf("Item01: #1 - SSMR3PutMem -> %Rrc\n", rc);
         return rc;
     }
 
@@ -110,9 +110,9 @@ DECLCALLBACK(int) Item01Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
      */
 #define ITEM(suff,bits, val) \
     rc = SSMR3Put##suff(pSSM, val); \
-    if (VBOX_FAILURE(rc)) \
+    if (RT_FAILURE(rc)) \
     { \
-        RTPrintf("Item01: #" #suff " - SSMR3Put" #suff "(," #val ") -> %Vrc\n", rc); \
+        RTPrintf("Item01: #" #suff " - SSMR3Put" #suff "(," #val ") -> %Rrc\n", rc); \
         return rc; \
     }
     /* copy & past with the load one! */
@@ -168,9 +168,9 @@ DECLCALLBACK(int) Item01Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t u32Ve
      */
     char achTmp[sizeof(gachMem1)];
     int rc = SSMR3GetMem(pSSM, achTmp, sizeof(gachMem1));
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item01: #1 - SSMR3GetMem -> %Vrc\n", rc);
+        RTPrintf("Item01: #1 - SSMR3GetMem -> %Rrc\n", rc);
         return rc;
     }
 
@@ -178,9 +178,9 @@ DECLCALLBACK(int) Item01Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t u32Ve
      * Load the string.
      */
     rc = SSMR3GetStrZ(pSSM, achTmp, sizeof(achTmp));
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item01: #2 - SSMR3GetStrZ -> %Vrc\n", rc);
+        RTPrintf("Item01: #2 - SSMR3GetStrZ -> %Rrc\n", rc);
         return rc;
     }
 
@@ -192,9 +192,9 @@ DECLCALLBACK(int) Item01Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t u32Ve
     do { \
         type var = {0}; \
         rc = SSMR3Get##suff(pSSM, &var); \
-        if (VBOX_FAILURE(rc)) \
+        if (RT_FAILURE(rc)) \
         { \
-            RTPrintf("Item01: #" #suff " - SSMR3Get" #suff "(," #val ") -> %Vrc\n", rc); \
+            RTPrintf("Item01: #" #suff " - SSMR3Get" #suff "(," #val ") -> %Rrc\n", rc); \
             return rc; \
         } \
         if (var != val) \
@@ -257,9 +257,9 @@ DECLCALLBACK(int) Item02Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
      */
     size_t cb = sizeof(gabBigMem);
     int rc = SSMR3PutU32(pSSM, cb);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item02: PutU32 -> %Vrc\n", rc);
+        RTPrintf("Item02: PutU32 -> %Rrc\n", rc);
         return rc;
     }
 
@@ -269,9 +269,9 @@ DECLCALLBACK(int) Item02Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
     uint8_t *pbMem = &gabBigMem[0];
     size_t cbChunk = cb / 47;
     rc = SSMR3PutMem(pSSM, pbMem, cbChunk);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item02: PutMem(,%p,%#x) -> %Vrc\n", pbMem, cbChunk, rc);
+        RTPrintf("Item02: PutMem(,%p,%#x) -> %Rrc\n", pbMem, cbChunk, rc);
         return rc;
     }
     cb -= cbChunk;
@@ -280,9 +280,9 @@ DECLCALLBACK(int) Item02Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
     /* next piece. */
     cbChunk *= 19;
     rc = SSMR3PutMem(pSSM, pbMem, cbChunk);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item02: PutMem(,%p,%#x) -> %Vrc\n", pbMem, cbChunk, rc);
+        RTPrintf("Item02: PutMem(,%p,%#x) -> %Rrc\n", pbMem, cbChunk, rc);
         return rc;
     }
     cb -= cbChunk;
@@ -291,9 +291,9 @@ DECLCALLBACK(int) Item02Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
     /* last piece. */
     cbChunk = cb;
     rc = SSMR3PutMem(pSSM, pbMem, cbChunk);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item02: PutMem(,%p,%#x) -> %Vrc\n", pbMem, cbChunk, rc);
+        RTPrintf("Item02: PutMem(,%p,%#x) -> %Rrc\n", pbMem, cbChunk, rc);
         return rc;
     }
 
@@ -316,9 +316,9 @@ DECLCALLBACK(int) Item02Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t u32Ve
      */
     uint32_t cb;
     int rc = SSMR3GetU32(pSSM, &cb);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item02: SSMR3GetU32 -> %Vrc\n", rc);
+        RTPrintf("Item02: SSMR3GetU32 -> %Rrc\n", rc);
         return rc;
     }
     if (cb != sizeof(gabBigMem))
@@ -341,7 +341,7 @@ DECLCALLBACK(int) Item02Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t u32Ve
         if (cbChunk > cb)
             cbChunk = cb;
         rc = SSMR3GetMem(pSSM, &achTmp[0], cbChunk);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
             RTPrintf("Item02: SSMR3GetMem(,,%#x) -> %d offset %#x\n", cbChunk, rc, pbMem - &gabBigMem[0]);
             return rc;
@@ -377,9 +377,9 @@ DECLCALLBACK(int) Item03Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
      */
     size_t cb = 512*_1M;
     int rc = SSMR3PutU32(pSSM, cb);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item03: PutU32 -> %Vrc\n", rc);
+        RTPrintf("Item03: PutU32 -> %Rrc\n", rc);
         return rc;
     }
 
@@ -390,9 +390,9 @@ DECLCALLBACK(int) Item03Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
     while (cb > 0)
     {
         rc = SSMR3PutMem(pSSM, pu8Org, PAGE_SIZE);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
-            RTPrintf("Item03: PutMem(,%p,%#x) -> %Vrc\n", pu8Org, PAGE_SIZE, rc);
+            RTPrintf("Item03: PutMem(,%p,%#x) -> %Rrc\n", pu8Org, PAGE_SIZE, rc);
             return rc;
         }
 
@@ -422,9 +422,9 @@ DECLCALLBACK(int) Item03Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t u32Ve
      */
     uint32_t cb;
     int rc = SSMR3GetU32(pSSM, &cb);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item03: SSMR3GetU32 -> %Vrc\n", rc);
+        RTPrintf("Item03: SSMR3GetU32 -> %Rrc\n", rc);
         return rc;
     }
     if (cb != 512*_1M)
@@ -441,9 +441,9 @@ DECLCALLBACK(int) Item03Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t u32Ve
     {
         char achPage[PAGE_SIZE];
         rc = SSMR3GetMem(pSSM, &achPage[0], PAGE_SIZE);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
-            RTPrintf("Item03: SSMR3GetMem(,,%#x) -> %Vrc offset %#x\n", PAGE_SIZE, rc, 512*_1M - cb);
+            RTPrintf("Item03: SSMR3GetMem(,,%#x) -> %Rrc offset %#x\n", PAGE_SIZE, rc, 512*_1M - cb);
             return rc;
         }
         if (memcmp(achPage, pu8Org, PAGE_SIZE))
@@ -479,9 +479,9 @@ DECLCALLBACK(int) Item04Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
      */
     size_t cb = 512*_1M;
     int rc = SSMR3PutU32(pSSM, cb);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item04: PutU32 -> %Vrc\n", rc);
+        RTPrintf("Item04: PutU32 -> %Rrc\n", rc);
         return rc;
     }
 
@@ -491,9 +491,9 @@ DECLCALLBACK(int) Item04Save(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
     while (cb > 0)
     {
         rc = SSMR3PutMem(pSSM, gabPage, PAGE_SIZE);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
-            RTPrintf("Item04: PutMem(,%p,%#x) -> %Vrc\n", gabPage, PAGE_SIZE, rc);
+            RTPrintf("Item04: PutMem(,%p,%#x) -> %Rrc\n", gabPage, PAGE_SIZE, rc);
             return rc;
         }
 
@@ -520,9 +520,9 @@ DECLCALLBACK(int) Item04Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t u32Ve
      */
     uint32_t cb;
     int rc = SSMR3GetU32(pSSM, &cb);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item04: SSMR3GetU32 -> %Vrc\n", rc);
+        RTPrintf("Item04: SSMR3GetU32 -> %Rrc\n", rc);
         return rc;
     }
     if (cb != 512*_1M)
@@ -538,9 +538,9 @@ DECLCALLBACK(int) Item04Load(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uint32_t u32Ve
     {
         char achPage[PAGE_SIZE];
         rc = SSMR3GetMem(pSSM, &achPage[0], PAGE_SIZE);
-        if (VBOX_FAILURE(rc))
+        if (RT_FAILURE(rc))
         {
-            RTPrintf("Item04: SSMR3GetMem(,,%#x) -> %Vrc offset %#x\n", PAGE_SIZE, rc, 512*_1M - cb);
+            RTPrintf("Item04: SSMR3GetMem(,,%#x) -> %Rrc offset %#x\n", PAGE_SIZE, rc, 512*_1M - cb);
             return rc;
         }
         if (memcmp(achPage, gabPage, PAGE_SIZE))
@@ -621,9 +621,9 @@ int main(int argc, char **argv)
      * Create an fake VM structure and init SSM.
      */
     int rc = SUPR3Init(NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Fatal error: SUP Failure! rc=%Vrc\n", rc);
+        RTPrintf("Fatal error: SUP Failure! rc=%Rrc\n", rc);
         return 1;
     }
     PVM pVM;
@@ -633,39 +633,39 @@ int main(int argc, char **argv)
     /*
      * Register a few callbacks.
      */
-    rc = SSMR3Register(pVM, NULL, "SSM Testcase Data Item no.1 (all types)", 1, 0, 256,
+    rc = SSMR3RegisterDevice(pVM, NULL, "SSM Testcase Data Item no.1 (all types)", 1, 0, 256,
         NULL, Item01Save, NULL,
         NULL, Item01Load, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Register #1 -> %Vrc\n", rc);
+        RTPrintf("SSMR3Register #1 -> %Rrc\n", rc);
         return 1;
     }
 
-    rc = SSMR3Register(pVM, NULL, "SSM Testcase Data Item no.2 (rand mem)", 2, 0, _1M * 8,
+    rc = SSMR3RegisterDevice(pVM, NULL, "SSM Testcase Data Item no.2 (rand mem)", 2, 0, _1M * 8,
         NULL, Item02Save, NULL,
         NULL, Item02Load, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Register #2 -> %Vrc\n", rc);
+        RTPrintf("SSMR3Register #2 -> %Rrc\n", rc);
         return 1;
     }
 
-    rc = SSMR3Register(pVM, NULL, "SSM Testcase Data Item no.3 (big mem)", 0, 123, 512*_1M,
+    rc = SSMR3RegisterDevice(pVM, NULL, "SSM Testcase Data Item no.3 (big mem)", 0, 123, 512*_1M,
         NULL, Item03Save, NULL,
         NULL, Item03Load, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Register #3 -> %Vrc\n", rc);
+        RTPrintf("SSMR3Register #3 -> %Rrc\n", rc);
         return 1;
     }
 
-    rc = SSMR3Register(pVM, NULL, "SSM Testcase Data Item no.4 (big zero mem)", 0, 42, 512*_1M,
+    rc = SSMR3RegisterDevice(pVM, NULL, "SSM Testcase Data Item no.4 (big zero mem)", 0, 42, 512*_1M,
         NULL, Item04Save, NULL,
         NULL, Item04Load, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Register #4 -> %Vrc\n", rc);
+        RTPrintf("SSMR3Register #4 -> %Rrc\n", rc);
         return 1;
     }
 
@@ -674,9 +674,9 @@ int main(int argc, char **argv)
      */
     uint64_t u64Start = RTTimeNanoTS();
     rc = SSMR3Save(pVM, pszFilename, SSMAFTER_DESTROY, NULL, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Save #1 -> %Vrc\n", rc);
+        RTPrintf("SSMR3Save #1 -> %Rrc\n", rc);
         return 1;
     }
     uint64_t u64Elapsed = RTTimeNanoTS() - u64Start;
@@ -687,9 +687,9 @@ int main(int argc, char **argv)
      */
     u64Start = RTTimeNanoTS();
     rc = SSMR3Load(pVM, pszFilename, SSMAFTER_RESUME, NULL, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Load #1 -> %Vrc\n", rc);
+        RTPrintf("SSMR3Load #1 -> %Rrc\n", rc);
         return 1;
     }
     u64Elapsed = RTTimeNanoTS() - u64Start;
@@ -700,9 +700,9 @@ int main(int argc, char **argv)
      */
     u64Start = RTTimeNanoTS();
     rc = SSMR3ValidateFile(pszFilename);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3ValidateFile #1 -> %Vrc\n", rc);
+        RTPrintf("SSMR3ValidateFile #1 -> %Rrc\n", rc);
         return 1;
     }
     u64Elapsed = RTTimeNanoTS() - u64Start;
@@ -714,9 +714,9 @@ int main(int argc, char **argv)
     u64Start = RTTimeNanoTS();
     PSSMHANDLE pSSM;
     rc = SSMR3Open(pszFilename, 0, &pSSM);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Open #1 -> %Vrc\n", rc);
+        RTPrintf("SSMR3Open #1 -> %Rrc\n", rc);
         return 1;
     }
     u64Elapsed = RTTimeNanoTS() - u64Start;
@@ -727,7 +727,7 @@ int main(int argc, char **argv)
     rc = SSMR3Seek(pSSM, "some unit that doesn't exist", 0, NULL);
     if (rc != VERR_SSM_UNIT_NOT_FOUND)
     {
-        RTPrintf("SSMR3Seek #1 negative -> %Vrc\n", rc);
+        RTPrintf("SSMR3Seek #1 negative -> %Rrc\n", rc);
         return 1;
     }
     u64Elapsed = RTTimeNanoTS() - u64Start;
@@ -735,23 +735,23 @@ int main(int argc, char **argv)
 
     /* 2nd unit */
     rc = SSMR3Seek(pSSM, "SSM Testcase Data Item no.2 (rand mem)", 0, NULL);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Seek #1 unit 2-> %Vrc\n", rc);
+        RTPrintf("SSMR3Seek #1 unit 2-> %Rrc\n", rc);
         return 1;
     }
     uint32_t u32Version = 0xbadc0ded;
     rc = SSMR3Seek(pSSM, "SSM Testcase Data Item no.2 (rand mem)", 0, &u32Version);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Seek #1 unit 2-> %Vrc\n", rc);
+        RTPrintf("SSMR3Seek #1 unit 2-> %Rrc\n", rc);
         return 1;
     }
     u64Start = RTTimeNanoTS();
     rc = Item02Load(NULL, pSSM, u32Version);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item02Load #1 -> %Vrc\n", rc);
+        RTPrintf("Item02Load #1 -> %Rrc\n", rc);
         return 1;
     }
     u64Elapsed = RTTimeNanoTS() - u64Start;
@@ -760,16 +760,16 @@ int main(int argc, char **argv)
     /* 1st unit */
     u32Version = 0xbadc0ded;
     rc = SSMR3Seek(pSSM, "SSM Testcase Data Item no.1 (all types)", 0, &u32Version);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Seek #1 unit 1 -> %Vrc\n", rc);
+        RTPrintf("SSMR3Seek #1 unit 1 -> %Rrc\n", rc);
         return 1;
     }
     u64Start = RTTimeNanoTS();
     rc = Item01Load(NULL, pSSM, u32Version);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item01Load #1 -> %Vrc\n", rc);
+        RTPrintf("Item01Load #1 -> %Rrc\n", rc);
         return 1;
     }
     u64Elapsed = RTTimeNanoTS() - u64Start;
@@ -778,16 +778,16 @@ int main(int argc, char **argv)
     /* 3st unit */
     u32Version = 0xbadc0ded;
     rc = SSMR3Seek(pSSM, "SSM Testcase Data Item no.3 (big mem)", 123, &u32Version);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Seek #3 unit 1 -> %Vrc\n", rc);
+        RTPrintf("SSMR3Seek #3 unit 1 -> %Rrc\n", rc);
         return 1;
     }
     u64Start = RTTimeNanoTS();
     rc = Item03Load(NULL, pSSM, u32Version);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("Item01Load #3 -> %Vrc\n", rc);
+        RTPrintf("Item01Load #3 -> %Rrc\n", rc);
         return 1;
     }
     u64Elapsed = RTTimeNanoTS() - u64Start;
@@ -795,9 +795,9 @@ int main(int argc, char **argv)
 
     /* close */
     rc = SSMR3Close(pSSM);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        RTPrintf("SSMR3Close #1 -> %Vrc\n", rc);
+        RTPrintf("SSMR3Close #1 -> %Rrc\n", rc);
         return 1;
     }
 

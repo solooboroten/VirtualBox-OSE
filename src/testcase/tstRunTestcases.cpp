@@ -1,4 +1,4 @@
-/* $Id: tstRunTestcases.cpp $ */
+/* $Id: tstRunTestcases.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * tstRunTescases - Driver program for running VBox testcase (tst* testcase/tst*).
  */
@@ -23,10 +23,11 @@
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/dir.h>
-#include <iprt/process.h>
+#include <iprt/param.h>
 #include <iprt/path.h>
+#include <iprt/process.h>
 #include <iprt/string.h>
 #include <iprt/stream.h>
 #include <iprt/thread.h>
@@ -52,13 +53,14 @@ static const char  *g_apszExclude[] =
     "testcase/tstSemMutex",
     "testcase/tstVD",
 #endif
-    "testcase/tstVD-2",
     "testcase/tstFileLock",
     "testcase/tstCritSect",
     "testcase/tstCritSectW32",
     "testcase/tstDeadlock",
     "testcase/tstDisasm-2",
     "testcase/tstFileAppendWin-1",
+    "testcase/tstDir",              /* useless, requires parameters */
+    "testcase/tstDir-2",            /* useless, requires parameters */
     "testcase/tstGlobalConfig",
     "testcase/tstLdr-2",
     "testcase/tstLdr-3",
@@ -71,6 +73,7 @@ static const char  *g_apszExclude[] =
     "testcase/tstSDL",
     "testcase/tstTime-3",
     "testcase/tstSeamlessX11",
+    "testcase/tstVBoxControl",
     "./tstRunTestcases",
     "./tstAnimate",
     "./tstAPI",
@@ -112,7 +115,7 @@ static bool IsTestcaseIncluded(const char *pszTestcase)
     if (pszDup)
     {
         RTPathStripExt(pszDup);
-        for (unsigned i = 0; i < ELEMENTS(g_apszExclude); i++)
+        for (unsigned i = 0; i < RT_ELEMENTS(g_apszExclude); i++)
         {
             if (!strcmp(g_apszExclude[i], pszDup))
             {

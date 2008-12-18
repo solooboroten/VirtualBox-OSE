@@ -1,6 +1,8 @@
-/* $Id: MMAllPagePool.cpp $ */
+/* $Id: MMAllPagePool.cpp 14157 2008-11-13 02:50:46Z vboxsync $ */
 /** @file
- * MM - Memory Monitor(/Manager) - Page Pool.
+ * MM - Memory Manager - Page Pool.
+ *
+ * @remarks     This file is NOT built for the raw-mode context.
  */
 
 /*
@@ -40,6 +42,123 @@
 #endif
 
 
+#ifndef VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0
+
+/**
+ * Converts a pool physical address to a linear address.
+ * The specified allocation type must match with the address.
+ *
+ * @returns Physical address.
+ * @returns NULL if not found or eType is not matching.
+ * @param   pPool       Pointer to the page pool.
+ * @param   HCPhys      The address to convert.
+ * @thread  The Emulation Thread.
+ */
+void *mmPagePoolPhys2Ptr(PMMPAGEPOOL pPool, RTHCPHYS HCPhys)
+{
+#if 0 /** @todo have to fix the debugger, but until then this is going on my nerves. */
+#ifdef IN_RING3
+    VM_ASSERT_EMT(pPool->pVM);
+#endif
+#endif
+
+    /*
+     * Lookup the virtual address.
+     */
+    PMMPPLOOKUPHCPHYS pLookup = (PMMPPLOOKUPHCPHYS)RTAvlHCPhysGet(&pPool->pLookupPhys, HCPhys & X86_PTE_PAE_PG_MASK);
+    if (pLookup)
+    {
+        STAM_COUNTER_INC(&pPool->cToVirtCalls);
+        PSUPPAGE        pPhysPage = pLookup->pPhysPage;
+        PMMPAGESUBPOOL  pSubPool = (PMMPAGESUBPOOL)pPhysPage->uReserved;
+        unsigned        iPage = pPhysPage - pSubPool->paPhysPages;
+        return (char *)pSubPool->pvPages + (HCPhys & PAGE_OFFSET_MASK) + (iPage << PAGE_SHIFT);
+    }
+    return NULL;
+}
+
+
+/**
+ * Convert physical address of a page to a HC virtual address.
+ * This works for pages allocated by MMR3PageAlloc(), MMR3PageAllocPhys()
+ * and MMR3PageAllocLow().
+ *
+ * @returns VBox status code.
+ * @param   pVM         VM handle.
+ * @param   HCPhysPage  The physical address of a page.
+ * @param   ppvPage     Where to store the address corresponding to HCPhysPage.
+ * @thread  The Emulation Thread.
+ */
+VMMDECL(int) MMPagePhys2PageEx(PVM pVM, RTHCPHYS HCPhysPage, void **ppvPage)
+{
+    void *pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.CTX_SUFF(pPagePool), HCPhysPage);
+    if (!pvPage)
+    {
+        pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.CTX_SUFF(pPagePoolLow), HCPhysPage);
+        if (!pvPage)
+        {
+            STAM_COUNTER_INC(&pVM->mm.s.CTX_SUFF(pPagePool)->cErrors);
+            AssertMsg(pvPage, ("Invalid HCPhysPage=%RHp specified\n", HCPhysPage));
+            return VERR_INVALID_POINTER;
+        }
+    }
+    *ppvPage = pvPage;
+    return VINF_SUCCESS;
+}
+
+#endif /* !VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0 */
+#ifdef IN_RING3
+
+/**
+ * Convert physical address of a page to a HC virtual address.
+ * This works for pages allocated by MMR3PageAlloc(), MMR3PageAllocPhys()
+ * and MMR3PageAllocLow().
+ *
+ * @returns Pointer to the page at that physical address.
+ * @param   pVM         VM handle.
+ * @param   HCPhysPage  The physical address of a page.
+ * @thread  The Emulation Thread.
+ */
+VMMDECL(void *) MMPagePhys2Page(PVM pVM, RTHCPHYS HCPhysPage)
+{
+    void *pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.CTX_SUFF(pPagePool), HCPhysPage);
+    if (!pvPage)
+    {
+        pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.CTX_SUFF(pPagePoolLow), HCPhysPage);
+        if (!pvPage)
+        {
+            STAM_COUNTER_INC(&pVM->mm.s.CTX_SUFF(pPagePool)->cErrors);
+            AssertMsg(pvPage, ("Invalid HCPhysPage=%RHp specified\n", HCPhysPage));
+        }
+    }
+    return pvPage;
+}
+
+
+/**
+ * Try convert physical address of a page to a HC virtual address.
+ * This works for pages allocated by MMR3PageAlloc(), MMR3PageAllocPhys()
+ * and MMR3PageAllocLow().
+ *
+ * @returns VBox status code.
+ * @param   pVM         VM handle.
+ * @param   HCPhysPage  The physical address of a page.
+ * @param   ppvPage     Where to store the address corresponding to HCPhysPage.
+ * @thread  The Emulation Thread.
+ */
+VMMDECL(int) MMPagePhys2PageTry(PVM pVM, RTHCPHYS HCPhysPage, void **ppvPage)
+{
+    void *pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.CTX_SUFF(pPagePool), HCPhysPage);
+    if (!pvPage)
+    {
+        pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.CTX_SUFF(pPagePoolLow), HCPhysPage);
+        if (!pvPage)
+            return VERR_INVALID_POINTER;
+    }
+    *ppvPage = pvPage;
+    return VINF_SUCCESS;
+}
+
 
 /**
  * Converts a pool address to a physical address.
@@ -51,7 +170,7 @@
  * @param   pv      The address to convert.
  * @thread  The Emulation Thread.
  */
-MMDECL(RTHCPHYS) mmPagePoolPtr2Phys(PMMPAGEPOOL pPool, void *pv)
+RTHCPHYS mmPagePoolPtr2Phys(PMMPAGEPOOL pPool, void *pv)
 {
 #ifdef IN_RING3
     VM_ASSERT_EMT(pPool->pVM);
@@ -80,39 +199,6 @@ MMDECL(RTHCPHYS) mmPagePoolPtr2Phys(PMMPAGEPOOL pPool, void *pv)
     return NIL_RTHCPHYS;
 }
 
-/**
- * Converts a pool physical address to a linear address.
- * The specified allocation type must match with the address.
- *
- * @returns Physical address.
- * @returns NULL if not found or eType is not matching.
- * @param   pPool       Pointer to the page pool.
- * @param   HCPhys      The address to convert.
- * @thread  The Emulation Thread.
- */
-MMDECL(void *) mmPagePoolPhys2Ptr(PMMPAGEPOOL pPool, RTHCPHYS HCPhys)
-{
-#if 0 /** @todo have to fix the debugger, but until then this is going on my nevers. */
-#ifdef IN_RING3
-    VM_ASSERT_EMT(pPool->pVM);
-#endif
-#endif
-
-    /*
-     * Lookup the virtual address.
-     */
-    PMMPPLOOKUPHCPHYS pLookup = (PMMPPLOOKUPHCPHYS)RTAvlHCPhysGet(&pPool->pLookupPhys, HCPhys & X86_PTE_PAE_PG_MASK);
-    if (pLookup)
-    {
-        STAM_COUNTER_INC(&pPool->cToVirtCalls);
-        PSUPPAGE        pPhysPage = pLookup->pPhysPage;
-        PMMPAGESUBPOOL  pSubPool = (PMMPAGESUBPOOL)pPhysPage->uReserved;
-        unsigned        iPage = pPhysPage - pSubPool->paPhysPages;
-        return (char *)pSubPool->pvPages + (HCPhys & PAGE_OFFSET_MASK) + (iPage << PAGE_SHIFT);
-    }
-    return NULL;
-}
-
 
 /**
  * Convert a page in the page pool to a HC physical address.
@@ -124,15 +210,15 @@ MMDECL(void *) mmPagePoolPhys2Ptr(PMMPAGEPOOL pPool, RTHCPHYS HCPhys)
  * @param   pvPage      Page which physical address we query.
  * @thread  The Emulation Thread.
  */
-MMDECL(RTHCPHYS) MMPage2Phys(PVM pVM, void *pvPage)
+VMMDECL(RTHCPHYS) MMPage2Phys(PVM pVM, void *pvPage)
 {
-    RTHCPHYS HCPhys = mmPagePoolPtr2Phys(pVM->mm.s.pPagePool, pvPage);
+    RTHCPHYS HCPhys = mmPagePoolPtr2Phys(pVM->mm.s.CTX_SUFF(pPagePool), pvPage);
     if (HCPhys == NIL_RTHCPHYS)
     {
-        HCPhys = mmPagePoolPtr2Phys(pVM->mm.s.pPagePoolLow, pvPage);
+        HCPhys = mmPagePoolPtr2Phys(pVM->mm.s.CTX_SUFF(pPagePoolLow), pvPage);
         if (HCPhys == NIL_RTHCPHYS)
         {
-            STAM_COUNTER_INC(&pVM->mm.s.pPagePool->cErrors);
+            STAM_COUNTER_INC(&pVM->mm.s.CTX_SUFF(pPagePool)->cErrors);
             AssertMsgFailed(("Invalid pvPage=%p specified\n", pvPage));
         }
     }
@@ -140,81 +226,5 @@ MMDECL(RTHCPHYS) MMPage2Phys(PVM pVM, void *pvPage)
 }
 
 
-/**
- * Convert physical address of a page to a HC virtual address.
- * This works for pages allocated by MMR3PageAlloc(), MMR3PageAllocPhys()
- * and MMR3PageAllocLow().
- *
- * @returns Pointer to the page at that physical address.
- * @param   pVM         VM handle.
- * @param   HCPhysPage  The physical address of a page.
- * @thread  The Emulation Thread.
- */
-MMDECL(void *) MMPagePhys2Page(PVM pVM, RTHCPHYS HCPhysPage)
-{
-    void *pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.pPagePool, HCPhysPage);
-    if (!pvPage)
-    {
-        pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.pPagePoolLow, HCPhysPage);
-        if (!pvPage)
-        {
-            STAM_COUNTER_INC(&pVM->mm.s.pPagePool->cErrors);
-            AssertMsg(pvPage, ("Invalid HCPhysPage=%VHp specified\n", HCPhysPage));
-        }
-    }
-    return pvPage;
-}
+#endif /* IN_RING3 */
 
-
-/**
- * Convert physical address of a page to a HC virtual address.
- * This works for pages allocated by MMR3PageAlloc(), MMR3PageAllocPhys()
- * and MMR3PageAllocLow().
- *
- * @returns VBox status code.
- * @param   pVM         VM handle.
- * @param   HCPhysPage  The physical address of a page.
- * @param   ppvPage     Where to store the address corresponding to HCPhysPage.
- * @thread  The Emulation Thread.
- */
-MMDECL(int) MMPagePhys2PageEx(PVM pVM, RTHCPHYS HCPhysPage, void **ppvPage)
-{
-    void *pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.pPagePool, HCPhysPage);
-    if (!pvPage)
-    {
-        pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.pPagePoolLow, HCPhysPage);
-        if (!pvPage)
-        {
-            STAM_COUNTER_INC(&pVM->mm.s.pPagePool->cErrors);
-            AssertMsg(pvPage, ("Invalid HCPhysPage=%VHp specified\n", HCPhysPage));
-            return VERR_INVALID_POINTER;
-        }
-    }
-    *ppvPage = pvPage;
-    return VINF_SUCCESS;
-}
-
-
-/**
- * Try convert physical address of a page to a HC virtual address.
- * This works for pages allocated by MMR3PageAlloc(), MMR3PageAllocPhys()
- * and MMR3PageAllocLow().
- *
- * @returns VBox status code.
- * @param   pVM         VM handle.
- * @param   HCPhysPage  The physical address of a page.
- * @param   ppvPage     Where to store the address corresponding to HCPhysPage.
- * @thread  The Emulation Thread.
- */
-MMDECL(int) MMPagePhys2PageTry(PVM pVM, RTHCPHYS HCPhysPage, void **ppvPage)
-{
-    void *pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.pPagePool, HCPhysPage);
-    if (!pvPage)
-    {
-        pvPage = mmPagePoolPhys2Ptr(pVM->mm.s.pPagePoolLow, HCPhysPage);
-        if (!pvPage)
-            return VERR_INVALID_POINTER;
-    }
-    *ppvPage = pvPage;
-    return VINF_SUCCESS;
-}

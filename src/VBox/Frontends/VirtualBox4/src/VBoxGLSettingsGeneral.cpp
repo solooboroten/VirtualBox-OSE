@@ -30,7 +30,11 @@ VBoxGLSettingsGeneral::VBoxGLSettingsGeneral()
     /* Apply UI decorations */
     Ui::VBoxGLSettingsGeneral::setupUi (this);
 
-    mPsVdi->setHomeDir (vboxGlobal().virtualBox().GetHomeFolder());
+#ifndef VBOX_GUI_WITH_SYSTRAY
+    mCbCheckTrayIcon->hide();
+#endif
+
+    mPsHardDisk->setHomeDir (vboxGlobal().virtualBox().GetHomeFolder());
     mPsMach->setHomeDir (vboxGlobal().virtualBox().GetHomeFolder());
     mPsVRDP->setHomeDir (vboxGlobal().virtualBox().GetHomeFolder());
     mPsVRDP->setMode (VBoxFilePathSelectorWidget::Mode_File);
@@ -40,29 +44,32 @@ VBoxGLSettingsGeneral::VBoxGLSettingsGeneral()
 }
 
 void VBoxGLSettingsGeneral::getFrom (const CSystemProperties &aProps,
-                                         const VBoxGlobalSettings &)
+                                     const VBoxGlobalSettings &aGs)
 {
-    mPsVdi->setPath (aProps.GetDefaultVDIFolder());
+    mPsHardDisk->setPath (aProps.GetDefaultHardDiskFolder());
     mPsMach->setPath (aProps.GetDefaultMachineFolder());
     mPsVRDP->setPath (aProps.GetRemoteDisplayAuthLibrary());
+    mCbCheckTrayIcon->setChecked (aGs.trayIconEnabled());
 }
 
 void VBoxGLSettingsGeneral::putBackTo (CSystemProperties &aProps,
-                                       VBoxGlobalSettings &)
+                                       VBoxGlobalSettings &aGs)
 {
-    if (mPsVdi->isModified())
-        aProps.SetDefaultVDIFolder (mPsVdi->path());
+    if (mPsHardDisk->isModified())
+        aProps.SetDefaultHardDiskFolder (mPsHardDisk->path());
     if (aProps.isOk() && mPsMach->isModified())
         aProps.SetDefaultMachineFolder (mPsMach->path());
-    if (mPsVdi->isModified())
+    if (aProps.isOk() && mPsVRDP->isModified())
         aProps.SetRemoteDisplayAuthLibrary (mPsVRDP->path());
+    aGs.setTrayIconEnabled (mCbCheckTrayIcon->isChecked());
 }
 
 void VBoxGLSettingsGeneral::setOrderAfter (QWidget *aWidget)
 {
-    setTabOrder (aWidget, mPsVdi);
-    setTabOrder (mPsVdi, mPsMach);
+    setTabOrder (aWidget, mPsHardDisk);
+    setTabOrder (mPsHardDisk, mPsMach);
     setTabOrder (mPsMach, mPsVRDP);
+    setTabOrder (mPsVRDP, mCbCheckTrayIcon);
 }
 
 void VBoxGLSettingsGeneral::retranslateUi()
@@ -70,10 +77,10 @@ void VBoxGLSettingsGeneral::retranslateUi()
     /* Translate uic generated strings */
     Ui::VBoxGLSettingsGeneral::retranslateUi (this);
 
-    mPsVdi->setWhatsThis (tr ("Displays the path to the default VDI folder. "
-                              "This folder is used, if not explicitly "
-                              "specified otherwise, when adding existing or "
-                              "creating new virtual hard disks."));
+    mPsHardDisk->setWhatsThis (tr ("Displays the path to the default hard disk "
+                                   "folder. This folder is used, if not explicitly "
+                                   "specified otherwise, when adding existing or "
+                                   "creating new virtual hard disks."));
     mPsMach->setWhatsThis (tr ("Displays the path to the default virtual "
                                "machine folder. This folder is used, if not "
                                "explicitly specified otherwise, when creating "

@@ -485,7 +485,7 @@ public:
     Matchable (const Bstr &aString)
         : F (aString), mString (aString) {}
 
-    Matchable (const BSTR aString)
+    Matchable (CBSTR aString)
         : F (Bstr (aString)), mString (aString) {}
 
     /**
@@ -499,7 +499,7 @@ public:
         return *this;
     }
 
-    Matchable &operator= (const BSTR aString)
+    Matchable &operator= (CBSTR aString)
     {
         F::operator= (Bstr (aString));
         mString = aString;
@@ -523,3 +523,4 @@ private:
 } /* namespace matching */
 
 #endif // ____H_MATCHING
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

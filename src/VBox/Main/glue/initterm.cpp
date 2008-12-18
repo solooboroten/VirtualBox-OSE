@@ -48,6 +48,11 @@
 
 #endif /* !defined (VBOX_WITH_XPCOM) */
 
+#include "VBox/com/com.h"
+#include "VBox/com/assert.h"
+
+#include "../include/Logging.h"
+
 #include <iprt/param.h>
 #include <iprt/path.h>
 #include <iprt/string.h>
@@ -55,11 +60,6 @@
 #include <iprt/asm.h>
 
 #include <VBox/err.h>
-
-#include "VBox/com/com.h"
-#include "VBox/com/assert.h"
-
-#include "../include/Logging.h"
 
 namespace com
 {
@@ -74,15 +74,15 @@ public:
 
     DirectoryServiceProvider()
         : mCompRegLocation (NULL), mXPTIDatLocation (NULL)
-	, mComponentDirLocation (NULL), mCurrProcDirLocation (NULL)
+        , mComponentDirLocation (NULL), mCurrProcDirLocation (NULL)
         {}
 
     virtual ~DirectoryServiceProvider();
 
     HRESULT init (const char *aCompRegLocation,
                   const char *aXPTIDatLocation,
-		  const char *aComponentDirLocation,
-		  const char *aCurrProcDirLocation);
+                  const char *aComponentDirLocation,
+                  const char *aCurrProcDirLocation);
 
     NS_DECL_NSIDIRECTORYSERVICEPROVIDER
 
@@ -127,8 +127,8 @@ DirectoryServiceProvider::~DirectoryServiceProvider()
 HRESULT
 DirectoryServiceProvider::init (const char *aCompRegLocation,
                                 const char *aXPTIDatLocation,
-				const char *aComponentDirLocation,
-				const char *aCurrProcDirLocation)
+                                const char *aComponentDirLocation,
+                                const char *aCurrProcDirLocation)
 {
     AssertReturn (aCompRegLocation, NS_ERROR_INVALID_ARG);
     AssertReturn (aXPTIDatLocation, NS_ERROR_INVALID_ARG);
@@ -139,7 +139,7 @@ DirectoryServiceProvider::init (const char *aCompRegLocation,
     if (RT_SUCCESS (vrc) && aComponentDirLocation)
         vrc = RTStrUtf8ToCurrentCP (&mComponentDirLocation, aComponentDirLocation);
     if (RT_SUCCESS (vrc) && aCurrProcDirLocation)
-	vrc = RTStrUtf8ToCurrentCP (&mCurrProcDirLocation, aCurrProcDirLocation);
+        vrc = RTStrUtf8ToCurrentCP (&mCurrProcDirLocation, aCurrProcDirLocation);
 
     return RT_SUCCESS (vrc) ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
 }
@@ -162,14 +162,14 @@ DirectoryServiceProvider::GetFile (const char *aProp,
     else if (strcmp (aProp, NS_XPCOM_XPTI_REGISTRY_FILE) == 0)
         fileLocation = mXPTIDatLocation;
     else if (mComponentDirLocation && strcmp (aProp, NS_XPCOM_COMPONENT_DIR) == 0)
-	fileLocation = mComponentDirLocation;
+        fileLocation = mComponentDirLocation;
     else if (mCurrProcDirLocation && strcmp (aProp, NS_XPCOM_CURRENT_PROCESS_DIR) == 0)
-	fileLocation = mCurrProcDirLocation;
+        fileLocation = mCurrProcDirLocation;
     else
         return NS_ERROR_FAILURE;
 
     rv = NS_NewNativeLocalFile (nsEmbedCString (fileLocation),
-                                PR_TRUE, getter_AddRefs (localFile));  
+                                PR_TRUE, getter_AddRefs (localFile));
     if (NS_FAILED(rv))
         return rv;
 
@@ -345,8 +345,8 @@ HRESULT Initialize()
                      homeDir, RTPATH_DELIMITER, "compreg.dat");
         RTStrPrintf (xptiDat, sizeof (xptiDat), "%s%c%s",
                      homeDir, RTPATH_DELIMITER, "xpti.dat");
-        RTStrPrintf (compDir, sizeof (compDir), "%s%c/components",
-                     privateArchDir, RTPATH_DELIMITER);
+        RTStrPrintf (compDir, sizeof (compDir), "%s%c%s",
+                     privateArchDir, RTPATH_DELIMITER, "components");
 
         LogFlowFunc (("component registry  : \"%s\"\n", compReg));
         LogFlowFunc (("XPTI data file      : \"%s\"\n", xptiDat));
@@ -397,7 +397,7 @@ HRESULT Initialize()
                                             PR_FALSE, getter_AddRefs (file));
                 if (NS_SUCCEEDED (rc))
                     appDir = do_QueryInterface (file, &rc);
-            
+
                 RTStrFree (appDirCP);
             }
             else

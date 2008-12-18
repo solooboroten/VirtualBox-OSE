@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 14162 2008-11-13 08:55:50Z vboxsync $
 ## @file
 # Top-level makefile for src/VBox.
 #
@@ -19,12 +19,16 @@
 # additional information or have any questions.
 #
 
-ifdef VBOX_SINGLE_MAKEFILE
 SUB_DEPTH = ../..
 include $(KBUILD_PATH)/subheader.kmk
 
+ifdef VBOX_SINGLE_MAKEFILE
+
 ifdef VBOX_ONLY_ADDITIONS
  include $(PATH_SUB_CURRENT)/Runtime/Makefile.kmk
+ ifdef VBOX_WITH_CROGL
+  include $(PATH_SUB_CURRENT)/GuestHost/Makefile.kmk
+ endif
  include $(PATH_SUB_CURRENT)/Additions/Makefile.kmk
 
 else ifdef VBOX_ONLY_DOCS
@@ -47,29 +51,32 @@ else
  include $(PATH_SUB_CURRENT)/Disassembler/Makefile.kmk
  include $(PATH_SUB_CURRENT)/HostDrivers/Makefile.kmk
  include $(PATH_SUB_CURRENT)/HostServices/Makefile.kmk
- include $(PATH_SUB_CURRENT)/Debugger/Makefile.kmk
+ ifdef VBOX_WITH_DEBUGGER
+  include $(PATH_SUB_CURRENT)/Debugger/Makefile.kmk
+ endif
  include $(PATH_SUB_CURRENT)/Frontends/Makefile.kmk
  ifdef VBOX_WITH_VRDP
   include $(PATH_SUB_CURRENT)/RDP/Makefile.kmk
  endif
-# ifdef VBOX_WITH_ADDITIONS
-#  include $(PATH_SUB_CURRENT)/Additions/Makefile.kmk
-# endif
+ ifdef VBOX_WITH_CROGL
+  include $(PATH_SUB_CURRENT)/GuestHost/Makefile.kmk
+ endif
+ ifdef VBOX_WITH_ADDITIONS
+  include $(PATH_SUB_CURRENT)/Additions/Makefile.kmk
+ endif
  ifdef VBOX_WITH_INSTALLER
   include $(PATH_SUB_CURRENT)/Installer/Makefile.kmk 		        # Keep this last.
  endif
 endif # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS
 
-include $(KBUILD_PATH)/subfooter.kmk
-
 else # !VBOX_SINGLE_MAKEFILE
-DEPTH = ../..
-include $(KBUILD_PATH)/header.kmk
 
 ifdef VBOX_ONLY_ADDITIONS
- SUBDIRS = \
-	Runtime \
-	Additions
+ SUBDIRS = Runtime
+ ifdef VBOX_WITH_CROGL
+  SUBDIRS += GuestHost
+ endif
+ SUBDIRS += Additions
 
 else ifdef VBOX_ONLY_DOCS
  SUBDIRS = \
@@ -78,9 +85,9 @@ else ifdef VBOX_ONLY_DOCS
 	HostDrivers
 
 else ifdef VBOX_ONLY_SDK
-  SUBDIRS =        \
-        Main       \
-        RDP        \
+  SUBDIRS = \
+        Main \
+        RDP \
         Installer
 
 else  # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS
@@ -91,9 +98,17 @@ else  # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS
 	HostDrivers \
 	VMM \
 	Devices \
-	Disassembler \
-	HostServices \
-	Debugger
+	Disassembler
+
+ ifdef VBOX_WITH_CROGL
+  SUBDIRS += GuestHost
+ endif
+
+ SUBDIRS += HostServices
+
+ ifdef VBOX_WITH_DEBUGGER
+  SUBDIRS += Debugger
+ endif
 
  ifdef VBOX_WITH_MAIN
   SUBDIRS += Main
@@ -115,6 +130,7 @@ else  # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS
  endif
 endif # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS
 
-include $(KBUILD_PATH)/footer.kmk
 endif # !VBOX_SINGLE_MAKEFILE
+
+include $(KBUILD_PATH)/subfooter.kmk
 

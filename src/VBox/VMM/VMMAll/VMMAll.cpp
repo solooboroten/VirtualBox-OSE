@@ -1,4 +1,4 @@
-/* $Id: VMMAll.cpp $ */
+/* $Id: VMMAll.cpp 14875 2008-12-01 16:24:22Z vboxsync $ */
 /** @file
  * VMM All Contexts.
  */
@@ -28,37 +28,93 @@
 #include "VMMInternal.h"
 #include <VBox/vm.h>
 #include <VBox/param.h>
+#include <VBox/hwaccm.h>
 
-
-#ifndef IN_RING0
 
 /**
- * Gets the bottom of the hypervisor stack - GC Ptr.
- * I.e. the returned address is not actually writable.
+ * Gets the bottom of the hypervisor stack - RC Ptr.
+ *
+ * (The returned address is not actually writable, only after it's decremented
+ * by a push/ret/whatever does it become writable.)
  *
  * @returns bottom of the stack.
  * @param   pVM         The VM handle.
  */
-RTGCPTR VMMGetStackGC(PVM pVM)
+RTRCPTR VMMGetStackRC(PVM pVM)
 {
-    return (RTGCPTR)pVM->vmm.s.pbGCStackBottom;
+    return (RTRCPTR)pVM->vmm.s.pbEMTStackBottomRC;
 }
 
 
 /**
- * Gets the bottom of the hypervisor stack - HC Ptr.
- * I.e. the returned address is not actually writable.
+ * Gets the current virtual CPU ID.
  *
- * @returns bottom of the stack.
- * @param   pVM         The VM handle.
+ * @returns The CPU ID.
+ * @param   pVM         Pointer to the shared VM handle.
+ * @thread  EMT
  */
-RTHCPTR VMMGetHCStack(PVM pVM)
+VMCPUID VMMGetCpuId(PVM pVM)
 {
-    return pVM->vmm.s.pbHCStack + VMM_STACK_SIZE;
+#ifdef IN_RING3
+    /* Only emulation thread(s) allowed to ask for CPU id */
+    if (!VM_IS_EMT(pVM))
+        return 0;
+#endif
+
+    /* Only emulation thread(s) allowed to ask for CPU id */
+    VM_ASSERT_EMT(pVM);
+
+#if defined(IN_RC)
+    /* There is only one CPU if we're in GC. */
+    return 0;
+
+#elif defined(IN_RING3)
+    return VMR3GetVMCPUId(pVM);
+
+#else  /* IN_RING0 */
+    return HWACCMGetVMCPUId(pVM);
+#endif /* IN_RING0 */
 }
 
-#endif /* !IN_RING0 */
+/**
+ * Returns the VMCPU of the current EMT thread.
+ *
+ * @returns The VMCPU pointer.
+ * @param   pVM         The VM to operate on.
+ */
+PVMCPU VMMGetCpu(PVM pVM)
+{
+#ifdef IN_RING3
+    /* Only emulation thread(s) allowed to ask for CPU id */
+    if (!VM_IS_EMT(pVM))
+        return &pVM->aCpus[0];
+#endif
+    /* Only emulation thread(s) allowed to ask for CPU id */
+    VM_ASSERT_EMT(pVM);
 
+#if defined(IN_RC)
+    /* There is only one CPU if we're in GC. */
+    return &pVM->aCpus[0];
+
+#elif defined(IN_RING3)
+    return &pVM->aCpus[VMR3GetVMCPUId(pVM)];
+
+#else  /* IN_RING0 */
+    return &pVM->aCpus[HWACCMGetVMCPUId(pVM)];
+#endif /* IN_RING0 */
+}
+
+/**
+ * Returns the VMCPU of the specified virtual CPU.
+ *
+ * @returns The VMCPU pointer.
+ * @param   pVM         The VM to operate on.
+ */
+VMMDECL(PVMCPU) VMMGetCpuEx(PVM pVM, RTCPUID idCpu)
+{
+    AssertReturn(idCpu < pVM->cCPUs, NULL);
+    return &pVM->aCpus[idCpu];
+}
 
 /**
  * Gets the VBOX_SVN_REV.
@@ -72,3 +128,4 @@ VMMDECL(uint32_t) VMMGetSvnRev(void)
 {
     return VBOX_SVN_REV;
 }
+

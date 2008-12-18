@@ -38,7 +38,7 @@
 #endif
 
 
-#ifdef IN_GC
+#ifdef IN_RC
 # error "There are no RTMem APIs available Guest Context!"
 #endif
 
@@ -369,6 +369,7 @@ __END_DECLS
 
 
 #ifdef __cplusplus
+# include <iprt/assert.h>
 
 /**
  * Template function wrapping RTMemFree to get the correct Destruct

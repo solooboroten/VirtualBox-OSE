@@ -1,6 +1,6 @@
-/* $Id: DBGFMem.cpp $ */
+/* $Id: DBGFMem.cpp 13816 2008-11-04 22:52:12Z vboxsync $ */
 /** @file
- * VMM DBGF - Debugger Facility, Memory Methods.
+ * DBGF - Debugger Facility, Memory Methods.
  */
 
 /*
@@ -74,6 +74,13 @@ static DECLCALLBACK(int) dbgfR3MemScan(PVM pVM, PCDBGFADDRESS pAddress, RTGCUINT
     }
     else
     {
+#if GC_ARCH_BITS > 32
+        if (    (   pAddress->FlatPtr >= _4G
+                 || pAddress->FlatPtr + cbRange > _4G)
+            &&  enmMode != PGMMODE_AMD64
+            &&  enmMode != PGMMODE_AMD64_NX)
+            return VERR_DBGF_MEM_NOT_FOUND;
+#endif
         RTGCUINTPTR GCPtrHit;
         rc = PGMR3DbgScanVirtual(pVM, pAddress->FlatPtr, cbRange, pabNeedle, cbNeedle, &GCPtrHit);
         if (RT_SUCCESS(rc))
@@ -102,12 +109,12 @@ static DECLCALLBACK(int) dbgfR3MemScan(PVM pVM, PCDBGFADDRESS pAddress, RTGCUINT
  *
  * @thread  Any thread.
  */
-DBGFR3DECL(int) DBGFR3MemScan(PVM pVM, PCDBGFADDRESS pAddress, RTGCUINTPTR cbRange, const uint8_t *pabNeedle, size_t cbNeedle, PDBGFADDRESS pHitAddress)
+VMMR3DECL(int) DBGFR3MemScan(PVM pVM, PCDBGFADDRESS pAddress, RTGCUINTPTR cbRange, const uint8_t *pabNeedle, size_t cbNeedle, PDBGFADDRESS pHitAddress)
 {
     PVMREQ pReq;
-    int rc = VMR3ReqCall(pVM, &pReq, RT_INDEFINITE_WAIT, (PFNRT)dbgfR3MemScan, 6,
+    int rc = VMR3ReqCall(pVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, (PFNRT)dbgfR3MemScan, 6,
                          pVM, pAddress, cbRange, pabNeedle, cbNeedle, pHitAddress);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
         rc = pReq->iStatus;
     VMR3ReqFree(pReq);
 
@@ -144,9 +151,18 @@ static DECLCALLBACK(int) dbgfR3MemRead(PVM pVM, PCDBGFADDRESS pAddress, void *pv
     if (    enmMode == PGMMODE_REAL
         ||  enmMode == PGMMODE_PROTECTED
         ||  DBGFADDRESS_IS_PHYS(pAddress) )
-        rc = PGMPhysReadGCPhys(pVM, pvBuf, pAddress->FlatPtr, cbRead);
+        rc = PGMPhysSimpleReadGCPhys(pVM, pvBuf, pAddress->FlatPtr, cbRead);
     else
-        rc = PGMPhysReadGCPtr(pVM, pvBuf, pAddress->FlatPtr, cbRead);
+    {
+#if GC_ARCH_BITS > 32
+        if (    (   pAddress->FlatPtr >= _4G
+                 || pAddress->FlatPtr + cbRead > _4G)
+            &&  enmMode != PGMMODE_AMD64
+            &&  enmMode != PGMMODE_AMD64_NX)
+            return VERR_PAGE_TABLE_NOT_PRESENT;
+#endif
+        rc = PGMPhysSimpleReadGCPtr(pVM, pvBuf, pAddress->FlatPtr, cbRead);
+    }
     return rc;
 }
 
@@ -160,12 +176,12 @@ static DECLCALLBACK(int) dbgfR3MemRead(PVM pVM, PCDBGFADDRESS pAddress, void *pv
  * @param   pvBuf           Where to store the data we've read.
  * @param   cbRead          The number of bytes to read.
  */
-DBGFR3DECL(int) DBGFR3MemRead(PVM pVM, PCDBGFADDRESS pAddress, void *pvBuf, size_t cbRead)
+VMMR3DECL(int) DBGFR3MemRead(PVM pVM, PCDBGFADDRESS pAddress, void *pvBuf, size_t cbRead)
 {
     PVMREQ pReq;
-    int rc = VMR3ReqCallU(pVM->pUVM, &pReq, RT_INDEFINITE_WAIT, 0, (PFNRT)dbgfR3MemRead, 4,
+    int rc = VMR3ReqCallU(pVM->pUVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, 0, (PFNRT)dbgfR3MemRead, 4,
                           pVM, pAddress, pvBuf, cbRead);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
         rc = pReq->iStatus;
     VMR3ReqFree(pReq);
 
@@ -202,9 +218,18 @@ static DECLCALLBACK(int) dbgfR3MemReadString(PVM pVM, PCDBGFADDRESS pAddress, ch
     if (    enmMode == PGMMODE_REAL
         ||  enmMode == PGMMODE_PROTECTED
         ||  DBGFADDRESS_IS_PHYS(pAddress) )
-        rc = PGMPhysReadGCPhys(pVM, pszBuf, pAddress->FlatPtr, cchBuf);
+        rc = PGMPhysSimpleReadGCPhys(pVM, pszBuf, pAddress->FlatPtr, cchBuf);
     else
-        rc = PGMPhysReadGCPtr(pVM, pszBuf, pAddress->FlatPtr, cchBuf);
+    {
+#if GC_ARCH_BITS > 32
+        if (    (   pAddress->FlatPtr >= _4G
+                 || pAddress->FlatPtr + cchBuf > _4G)
+            &&  enmMode != PGMMODE_AMD64
+            &&  enmMode != PGMMODE_AMD64_NX)
+            return VERR_PAGE_TABLE_NOT_PRESENT;
+#endif
+        rc = PGMPhysSimpleReadGCPtr(pVM, pszBuf, pAddress->FlatPtr, cchBuf);
+    }
 
     /*
      * Make sure the result is terminated and that overflow is signaled.
@@ -236,7 +261,7 @@ static DECLCALLBACK(int) dbgfR3MemReadString(PVM pVM, PCDBGFADDRESS pAddress, ch
  * @param   pszBuf          Where to store the string.
  * @param   cchBuf          The size of the buffer.
  */
-DBGFR3DECL(int) DBGFR3MemReadString(PVM pVM, PCDBGFADDRESS pAddress, char *pszBuf, size_t cchBuf)
+VMMR3DECL(int) DBGFR3MemReadString(PVM pVM, PCDBGFADDRESS pAddress, char *pszBuf, size_t cchBuf)
 {
     /*
      * Validate and zero output.
@@ -251,9 +276,9 @@ DBGFR3DECL(int) DBGFR3MemReadString(PVM pVM, PCDBGFADDRESS pAddress, char *pszBu
      * Pass it on to the EMT.
      */
     PVMREQ pReq;
-    int rc = VMR3ReqCallU(pVM->pUVM, &pReq, RT_INDEFINITE_WAIT, 0, (PFNRT)dbgfR3MemReadString, 4,
+    int rc = VMR3ReqCallU(pVM->pUVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, 0, (PFNRT)dbgfR3MemReadString, 4,
                           pVM, pAddress, pszBuf, cchBuf);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
         rc = pReq->iStatus;
     VMR3ReqFree(pReq);
 

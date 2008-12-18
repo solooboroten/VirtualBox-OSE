@@ -1,4 +1,4 @@
-/* $Id: SATAControllerImpl.cpp $ */
+/* $Id: SATAControllerImpl.cpp 14972 2008-12-04 12:10:37Z vboxsync $ */
 
 /** @file
  *
@@ -69,7 +69,7 @@ HRESULT SATAController::init (Machine *aParent)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     /* mPeer is left null */
@@ -103,7 +103,7 @@ HRESULT SATAController::init (Machine *aParent, SATAController *aPeer)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     unconst (mPeer) = aPeer;
@@ -131,7 +131,7 @@ HRESULT SATAController::initCopy (Machine *aParent, SATAController *aPeer)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     /* mPeer is left null */
@@ -174,8 +174,7 @@ void SATAController::uninit()
 
 STDMETHODIMP SATAController::COMGETTER(Enabled) (BOOL *aEnabled)
 {
-    if (!aEnabled)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aEnabled);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -217,8 +216,7 @@ STDMETHODIMP SATAController::COMSETTER(Enabled) (BOOL aEnabled)
 
 STDMETHODIMP SATAController::COMGETTER(PortCount) (ULONG *aPortCount)
 {
-    if (!aPortCount)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aPortCount);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -269,8 +267,7 @@ STDMETHODIMP SATAController::COMSETTER(PortCount) (ULONG aPortCount)
 
 STDMETHODIMP SATAController::GetIDEEmulationPort(LONG DevicePosition, LONG *aPortNumber)
 {
-    if (!aPortNumber)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aPortNumber);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -521,4 +518,4 @@ void SATAController::copyFrom (SATAController *aThat)
 
 // private methods
 /////////////////////////////////////////////////////////////////////////////
-
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

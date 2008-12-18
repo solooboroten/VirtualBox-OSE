@@ -1,4 +1,4 @@
-/* $Id: VBoxGuest-os2.cpp $ */
+/* $Id: VBoxGuest-os2.cpp 14297 2008-11-18 12:40:43Z vboxsync $ */
 /** @file
  * VBoxGuest - OS/2 specifics.
  */
@@ -199,27 +199,27 @@ DECLASM(int) VBoxGuestOS2Init(const char *pszArgs)
                         return VINF_SUCCESS;
                     }
 
-                    g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxGuest.sys: SetIrq failed for IRQ %#d, rc=%Vrc\n",
+                    g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxGuest.sys: SetIrq failed for IRQ %#d, rc=%Rrc\n",
                                                 g_bInterruptLine, rc);
                 }
                 else
-                    g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxGuest.sys: RTSpinlockCreate failed, rc=%Vrc\n", rc);
+                    g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxGuest.sys: RTSpinlockCreate failed, rc=%Rrc\n", rc);
                 VBoxGuestDeleteDevExt(&g_DevExt);
             }
             else
-                g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxGuest.sys: VBoxGuestOS2InitDevExt failed, rc=%Vrc\n", rc);
+                g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxGuest.sys: VBoxGuestOS2InitDevExt failed, rc=%Rrc\n", rc);
 
             int rc2 = RTR0MemObjFree(g_MemObjMMIO, true /* fFreeMappings */); AssertRC(rc2);
             g_MemObjMMIO = g_MemMapMMIO = NIL_RTR0MEMOBJ;
         }
         else
-            g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxGuest.sys: VBoxGuestOS2MapMMIO failed, rc=%Vrc\n", rc);
+            g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxGuest.sys: VBoxGuestOS2MapMMIO failed, rc=%Rrc\n", rc);
         RTR0Term();
     }
     else
-        g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxGuest.sys: RTR0Init failed, rc=%Vrc\n", rc);
+        g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxGuest.sys: RTR0Init failed, rc=%Rrc\n", rc);
 
-    RTLogBackdoorPrintf("VBoxGuestOS2Init: failed rc=%Vrc - %s", rc, &g_szInitText[0]);
+    RTLogBackdoorPrintf("VBoxGuestOS2Init: failed rc=%Rrc - %s", rc, &g_szInitText[0]);
     return rc;
 }
 
@@ -287,7 +287,7 @@ static int vboxGuestOS2MapMemory(void)
             &&  pVMMDev->u32Size >= 32 /* just for checking sanity */)
         {
             /*
-             * Did we hit the the correct size? If not we'll have to
+             * Did we hit the correct size? If not we'll have to
              * redo the mapping using the correct size.
              */
             if (RT_ALIGN_32(pVMMDev->u32Size, PAGE_SIZE) == cb)

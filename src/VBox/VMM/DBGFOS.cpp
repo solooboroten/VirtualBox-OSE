@@ -1,6 +1,6 @@
-/* $Id: DBGFOS.cpp $ */
+/* $Id: DBGFOS.cpp 13782 2008-11-04 12:16:30Z vboxsync $ */
 /** @file
- * VMM DBGF - Debugger Facility, Guest OS Diggers.
+ * DBGF - Debugger Facility, Guest OS Diggers.
  */
 
 /*
@@ -46,7 +46,8 @@
 static DECLCALLBACK(int) dbgfR3OSRegister(PVM pVM, PDBGFOSREG pReg)
 {
     /* more validations. */
-    for (PDBGFOS pOS = pVM->dbgf.s.pOSHead; pOS; pOS = pOS->pNext)
+    PDBGFOS pOS;
+    for (pOS = pVM->dbgf.s.pOSHead; pOS; pOS = pOS->pNext)
         if (!strcmp(pOS->pReg->szName, pReg->szName))
         {
             Log(("dbgfR3OSRegister: %s -> VERR_ALREADY_LOADED\n", pReg->szName));
@@ -56,7 +57,7 @@ static DECLCALLBACK(int) dbgfR3OSRegister(PVM pVM, PDBGFOSREG pReg)
     /*
      * Allocate a new structure, call the constructor and link it into the list.
      */
-    PDBGFOS pOS = (PDBGFOS)MMR3HeapAllocZ(pVM, MM_TAG_DBGF_OS, RT_OFFSETOF(DBGFOS, abData[pReg->cbData]));
+    pOS = (PDBGFOS)MMR3HeapAllocZ(pVM, MM_TAG_DBGF_OS, RT_OFFSETOF(DBGFOS, abData[pReg->cbData]));
     AssertReturn(pOS, VERR_NO_MEMORY);
     pOS->pReg = pReg;
 
@@ -88,7 +89,7 @@ static DECLCALLBACK(int) dbgfR3OSRegister(PVM pVM, PDBGFOSREG pReg)
  * @param   pReg    The registration structure.
  * @thread  Any.
  */
-DBGFR3DECL(int) DBGFR3OSRegister(PVM pVM, PCDBGFOSREG pReg)
+VMMR3DECL(int) DBGFR3OSRegister(PVM pVM, PCDBGFOSREG pReg)
 {
     /*
      * Validate intput.
@@ -113,7 +114,7 @@ DBGFR3DECL(int) DBGFR3OSRegister(PVM pVM, PCDBGFOSREG pReg)
      * Pass it on to the EMT.
      */
     PVMREQ pReq;
-    int rc = VMR3ReqCallU(pVM->pUVM, &pReq, RT_INDEFINITE_WAIT, 0, (PFNRT)dbgfR3OSRegister, 2, pVM, pReg);
+    int rc = VMR3ReqCallU(pVM->pUVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, 0, (PFNRT)dbgfR3OSRegister, 2, pVM, pReg);
     if (RT_SUCCESS(rc))
         rc = pReq->iStatus;
     VMR3ReqFree(pReq);
@@ -211,7 +212,7 @@ static DECLCALLBACK(int) dbgfR3OSDetect(PVM pVM, char *pszName, size_t cchName)
  * @param   cchName     Size of the buffer.
  * @thread  Any.
  */
-DBGFR3DECL(int) DBGFR3OSDetect(PVM pVM, char *pszName, size_t cchName)
+VMMR3DECL(int) DBGFR3OSDetect(PVM pVM, char *pszName, size_t cchName)
 {
     AssertPtrNullReturn(pszName, VERR_INVALID_POINTER);
     if (pszName && cchName)
@@ -221,7 +222,7 @@ DBGFR3DECL(int) DBGFR3OSDetect(PVM pVM, char *pszName, size_t cchName)
      * Pass it on to the EMT.
      */
     PVMREQ pReq;
-    int rc = VMR3ReqCallU(pVM->pUVM, &pReq, RT_INDEFINITE_WAIT, 0, (PFNRT)dbgfR3OSDetect, 3, pVM, pszName, cchName);
+    int rc = VMR3ReqCallU(pVM->pUVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, 0, (PFNRT)dbgfR3OSDetect, 3, pVM, pszName, cchName);
     if (RT_SUCCESS(rc))
         rc = pReq->iStatus;
     VMR3ReqFree(pReq);
@@ -288,7 +289,7 @@ static DECLCALLBACK(int) dbgfR3OSQueryNameAndVersion(PVM pVM, char *pszName, siz
  * @param   cchVersion      The size of the version buffer.
  * @thread  Any.
  */
-DBGFR3DECL(int) DBGFR3OSQueryNameAndVersion(PVM pVM, char *pszName, size_t cchName, char *pszVersion, size_t cchVersion)
+VMMR3DECL(int) DBGFR3OSQueryNameAndVersion(PVM pVM, char *pszName, size_t cchName, char *pszVersion, size_t cchVersion)
 {
     AssertPtrNullReturn(pszName, VERR_INVALID_POINTER);
     AssertPtrNullReturn(pszVersion, VERR_INVALID_POINTER);
@@ -305,7 +306,7 @@ DBGFR3DECL(int) DBGFR3OSQueryNameAndVersion(PVM pVM, char *pszName, size_t cchNa
      * Pass it on to the EMT.
      */
     PVMREQ pReq;
-    int rc = VMR3ReqCallU(pVM->pUVM, &pReq, RT_INDEFINITE_WAIT, 0, (PFNRT)dbgfR3OSQueryNameAndVersion,
+    int rc = VMR3ReqCallU(pVM->pUVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, 0, (PFNRT)dbgfR3OSQueryNameAndVersion,
                           5, pVM, pszName, cchName, pszVersion, cchVersion);
     if (RT_SUCCESS(rc))
         rc = pReq->iStatus;
@@ -347,7 +348,7 @@ static DECLCALLBACK(void) dbgfR3OSQueryInterface(PVM pVM, DBGFOSINTERFACE enmIf,
  * @param   enmIf       The interface identifier.
  * @thread  Any.
  */
-DBGFR3DECL(void *) DBGFR3OSQueryInterface(PVM pVM, DBGFOSINTERFACE enmIf)
+VMMR3DECL(void *) DBGFR3OSQueryInterface(PVM pVM, DBGFOSINTERFACE enmIf)
 {
     AssertMsgReturn(enmIf > DBGFOSINTERFACE_INVALID && enmIf < DBGFOSINTERFACE_END, ("%d\n", enmIf), NULL);
 
@@ -356,7 +357,7 @@ DBGFR3DECL(void *) DBGFR3OSQueryInterface(PVM pVM, DBGFOSINTERFACE enmIf)
      */
     void *pvIf = NULL;
     PVMREQ pReq;
-    VMR3ReqCallVoidU(pVM->pUVM, &pReq, RT_INDEFINITE_WAIT, (PFNRT)dbgfR3OSQueryInterface, 3, pVM, enmIf, &pvIf);
+    VMR3ReqCallVoidU(pVM->pUVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, (PFNRT)dbgfR3OSQueryInterface, 3, pVM, enmIf, &pvIf);
     VMR3ReqFree(pReq);
 
     return pvIf;

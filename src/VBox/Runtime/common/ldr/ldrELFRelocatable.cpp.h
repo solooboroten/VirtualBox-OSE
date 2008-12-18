@@ -1,4 +1,4 @@
-/* $Id: ldrELFRelocatable.cpp.h $ */
+/* $Id: ldrELFRelocatable.cpp.h 14049 2008-11-10 22:45:51Z vboxsync $ */
 /** @file
  * IPRT - Binary Image Loader, Template for ELF Relocatable Images.
  */
@@ -735,7 +735,7 @@ static int RTLDRELF_NAME(ValidateElfHeader)(const Elf_Ehdr *pEhdr, const char *p
           "RTLdrELF: e_shentsize: " FMT_ELF_HALF "\n"
           "RTLdrELF:     e_shnum: " FMT_ELF_HALF "\n"
           "RTLdrELF:  e_shstrndx: " FMT_ELF_HALF "\n",
-          ELEMENTS(pEhdr->e_ident), &pEhdr->e_ident[0], pEhdr->e_type, pEhdr->e_version,
+          RT_ELEMENTS(pEhdr->e_ident), &pEhdr->e_ident[0], pEhdr->e_type, pEhdr->e_version,
           pEhdr->e_entry, pEhdr->e_phoff, pEhdr->e_shoff,pEhdr->e_flags, pEhdr->e_ehsize, pEhdr->e_phentsize,
           pEhdr->e_phnum, pEhdr->e_shentsize, pEhdr->e_shnum, pEhdr->e_shstrndx));
 
@@ -1047,7 +1047,7 @@ static int RTLDRELF_NAME(Open)(PRTLDRREADER pReader, PRTLDRMOD phLdrMod)
                     {
                         paShdrs[i].sh_addr = paShdrs[i].sh_addralign
                             ? RT_ALIGN_T(pModElf->cbImage, paShdrs[i].sh_addralign, Elf_Addr)
-                            : pModElf->cbImage;
+                            : (Elf_Addr)pModElf->cbImage;
                         pModElf->cbImage = (size_t)paShdrs[i].sh_addr + (size_t)paShdrs[i].sh_size;
                         AssertMsgReturn(pModElf->cbImage == paShdrs[i].sh_addr + paShdrs[i].sh_size,
                                         (FMT_ELF_ADDR "\n", paShdrs[i].sh_addr + paShdrs[i].sh_size),

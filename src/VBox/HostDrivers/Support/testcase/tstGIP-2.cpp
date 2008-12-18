@@ -105,7 +105,7 @@ int main(int argc, char **argv)
      */
     PSUPDRVSESSION pSession = NIL_RTR0PTR;
     int rc = SUPR3Init(&pSession);
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         if (g_pSUPGlobalInfoPage)
         {
@@ -180,6 +180,6 @@ int main(int argc, char **argv)
         SUPTerm();
     }
     else
-        RTPrintf("tstGIP-2: SUPR3Init failed: %Vrc\n", rc);
+        RTPrintf("tstGIP-2: SUPR3Init failed: %Rrc\n", rc);
     return !!rc;
 }

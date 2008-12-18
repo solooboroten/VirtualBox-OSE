@@ -40,14 +40,19 @@
 
 VBoxVMLogViewer::LogViewersMap VBoxVMLogViewer::mSelfArray = LogViewersMap();
 
-void VBoxVMLogViewer::createLogViewer (QWidget *aParent, CMachine &aMachine)
+void VBoxVMLogViewer::createLogViewer (QWidget *aCenterWidget, CMachine &aMachine)
 {
-    if (!mSelfArray.contains (aMachine.GetName())) 
+    if (!mSelfArray.contains (aMachine.GetName()))
     {
-        /* creating new log viewer if there is no one existing */
-        VBoxVMLogViewer *lv = new VBoxVMLogViewer (aParent,
-            Qt::Window, aMachine);
-        /* Self destroy on close event */
+        /* Creating new log viewer if there is no one existing */
+#ifdef Q_WS_MAC
+        VBoxVMLogViewer *lv = new VBoxVMLogViewer (aCenterWidget, Qt::Window, aMachine);
+#else /* Q_WS_MAC */
+        VBoxVMLogViewer *lv = new VBoxVMLogViewer (NULL, Qt::Window, aMachine);
+#endif /* Q_WS_MAC */
+
+        lv->centerAccording (aCenterWidget);
+        connect (vboxGlobal().mainWindow(), SIGNAL (closing()), lv, SLOT (close()));
         lv->setAttribute (Qt::WA_DeleteOnClose);
         mSelfArray [aMachine.GetName()] = lv;
     }
@@ -71,6 +76,10 @@ VBoxVMLogViewer::VBoxVMLogViewer (QWidget *aParent,
     /* Apply UI decorations */
     Ui::VBoxVMLogViewer::setupUi (this);
 
+    /* Apply window icons */
+    setWindowIcon (vboxGlobal().iconSetFull (QSize (32, 32), QSize (16, 16),
+                                             ":/vm_show_logs_32px.png", ":/show_logs_16px.png"));
+
     /* Enable size grip without using a status bar. */
     setSizeGripEnabled (true);
 
@@ -90,21 +99,10 @@ VBoxVMLogViewer::VBoxVMLogViewer (QWidget *aParent,
 
     /* Add missing buttons & retrieve standard buttons */
     mBtnHelp = mButtonBox->button (QDialogButtonBox::Help);
-    mBtnFind = mButtonBox->addButton (QString::null, QDialogButtonBox::ActionRole); 
+    mBtnFind = mButtonBox->addButton (QString::null, QDialogButtonBox::ActionRole);
     mBtnSave = mButtonBox->button (QDialogButtonBox::Save);
-    mBtnRefresh = mButtonBox->addButton (QString::null, QDialogButtonBox::ActionRole); 
+    mBtnRefresh = mButtonBox->addButton (QString::null, QDialogButtonBox::ActionRole);
     mBtnClose = mButtonBox->button (QDialogButtonBox::Close);
-
-    /* Fix the tab order to ensure the dialog keys are always the last */
-    /* @todo: Not sure if this is necessary any longer. On Linux this looks
-     * good in the default order. Keep in mind that with the QDialogButtonBox
-     * the order isn't fixed any more. */
-//    setTabOrder (mSearchPanel->focusProxy(), mBtnHelp);
-//    setTabOrder (mBtnHelp, mBtnFind);
-//    setTabOrder (mBtnFind, mBtnSave);
-//    setTabOrder (mBtnSave, mBtnRefresh);
-//    setTabOrder (mBtnRefresh, mBtnClose);
-//    setTabOrder (mBtnClose, mLogList);
 
     /* Setup connections */
     connect (mButtonBox, SIGNAL (helpRequested()),
@@ -124,7 +122,6 @@ VBoxVMLogViewer::VBoxVMLogViewer (QWidget *aParent,
 #endif /* Q_WS_MAC */
     /* Loading language constants */
     retranslateUi();
-
 }
 
 VBoxVMLogViewer::~VBoxVMLogViewer()
@@ -219,7 +216,7 @@ void VBoxVMLogViewer::save()
     QString dtString = dtInfo.toString ("yyyy-MM-dd-hh-mm-ss");
     QString defaultFileName = QString ("%1-%2.log")
         .arg (mMachine.GetName()).arg (dtString);
-    QString defaultFullName = QDir::convertSeparators (
+    QString defaultFullName = QDir::toNativeSeparators (
         QDir::home().absolutePath() + "/" + defaultFileName);
     QString newFileName = QFileDialog::getSaveFileName (this,
         tr ("Save VirtualBox Log As"), defaultFullName);
@@ -246,7 +243,7 @@ void VBoxVMLogViewer::search()
 
 void VBoxVMLogViewer::currentLogPageChanged (int aIndex)
 {
-    if (aIndex >= 0 && 
+    if (aIndex >= 0 &&
         aIndex < mLogFilesList.count())
         setFileForProxyIcon (mLogFilesList.at (aIndex));
 }
@@ -262,8 +259,8 @@ void VBoxVMLogViewer::retranslateUi()
 
     mBtnFind->setText (tr ("&Find"));
     mBtnRefresh->setText (tr ("&Refresh"));
-    mBtnSave->setText (tr ("&Save")); 
-    mBtnClose->setText (tr ("Close")); 
+    mBtnSave->setText (tr ("&Save"));
+    mBtnClose->setText (tr ("Close"));
 }
 
 void VBoxVMLogViewer::showEvent (QShowEvent *aEvent)
@@ -298,8 +295,6 @@ void VBoxVMLogViewer::showEvent (QShowEvent *aEvent)
             mFirstRun = false;
         }
     }
-
-    VBoxGlobal::centerWidget (this, parentWidget());
 }
 
 void VBoxVMLogViewer::loadLogFile (const QString &aFileName)

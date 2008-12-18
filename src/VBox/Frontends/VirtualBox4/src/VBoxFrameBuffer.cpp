@@ -137,6 +137,14 @@ STDMETHODIMP VBoxFrameBuffer::COMGETTER(Overlay) (IFramebufferOverlay **aOverlay
     return S_OK;
 }
 
+STDMETHODIMP VBoxFrameBuffer::COMGETTER(WinId) (ULONG64 *winId)
+{
+    if (!winId)
+        return E_POINTER;
+    *winId = (mView && mView->viewport()) ? (ULONG64) mView->viewport()->winId() : 0;	
+    return S_OK;
+}
+
 STDMETHODIMP VBoxFrameBuffer::Lock()
 {
     this->lock();
@@ -341,8 +349,6 @@ void VBoxQImageFrameBuffer::paintEvent (QPaintEvent *pe)
                   img.width(), img.height()));
 #endif
 
-    FRAMEBUF_DEBUG_START (xxx);
-
     QPainter painter (mView->viewport());
 
     if (r.width() < mWdt * 2 / 3)
@@ -362,8 +368,6 @@ void VBoxQImageFrameBuffer::paintEvent (QPaintEvent *pe)
         painter.drawPixmap (r.x(), r.y(), mPM,
                             r.x() + mView->contentsX(), 0, 0, 0);
     }
-
-    FRAMEBUF_DEBUG_STOP (xxx, r.width(), r.height());
 }
 
 void VBoxQImageFrameBuffer::resizeEvent (VBoxResizeEvent *re)

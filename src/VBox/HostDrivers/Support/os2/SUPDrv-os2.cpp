@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-os2.cpp $ */
+/* $Id: SUPDrv-os2.cpp 13998 2008-11-10 12:08:56Z vboxsync $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - OS/2 specifics.
  */
@@ -129,15 +129,15 @@ DECLASM(int) VBoxDrvInit(const char *pszArgs)
                 }
                 return VINF_SUCCESS;
             }
-            g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxDrv.sys: RTSpinlockCreate failed, rc=%Vrc\n", rc);
+            g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxDrv.sys: RTSpinlockCreate failed, rc=%Rrc\n", rc);
             supdrvDeleteDevExt(&g_DevExt);
         }
         else
-            g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxDrv.sys: supdrvInitDevExt failed, rc=%Vrc\n", rc);
+            g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxDrv.sys: supdrvInitDevExt failed, rc=%Rrc\n", rc);
         RTR0Term();
     }
     else
-        g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxDrv.sys: RTR0Init failed, rc=%Vrc\n", rc);
+        g_cchInitText = RTStrPrintf(&g_szInitText[0], g_cchInitTextMax, "VBoxDrv.sys: RTR0Init failed, rc=%Rrc\n", rc);
     return rc;
 }
 
@@ -257,7 +257,7 @@ DECLASM(int) VBoxDrvIOCtlFast(uint16_t sfn, uint8_t iFunction)
     /*
      * Dispatch the fast IOCtl.
      */
-    supdrvIOCtlFast(iFunction, &g_DevExt, pSession);
+    supdrvIOCtlFast(iFunction, 0, &g_DevExt, pSession);
     return 0;
 }
 
@@ -373,6 +373,14 @@ bool VBOXCALL   supdrvOSObjCanAccess(PSUPDRVOBJ pObj, PSUPDRVSESSION pSession, c
     NOREF(prc);
     return false;
 }
+
+
+bool VBOXCALL  supdrvOSGetForcedAsyncTscMode(PSUPDRVDEVEXT pDevExt)
+{
+    NOREF(pDevExt);
+    return false;
+}
+
 
 /**
  * Callback for writing to the log buffer.

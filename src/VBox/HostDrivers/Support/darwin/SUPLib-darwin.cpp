@@ -1,4 +1,4 @@
-/* $Id:  $ */
+/* $Id: $ */
 /** @file
  * VirtualBox Support Library - Darwin specific parts.
  */
@@ -96,7 +96,7 @@ static int suplibDarwinOpenDevice(PSUPLIBDATA pThis)
             case ENOENT:    rc = VERR_VM_DRIVER_NOT_INSTALLED; break;
             default:        rc = VERR_VM_DRIVER_OPEN_ERROR; break;
         }
-        LogRel(("SUP: Failed to open \"%s\", errno=%d, rc=%Vrc\n", DEVICE_NAME, errno, rc));
+        LogRel(("SUP: Failed to open \"%s\", errno=%d, rc=%Rrc\n", DEVICE_NAME, errno, rc));
         return rc;
     }
 
@@ -239,7 +239,7 @@ int suplibOsTerm(PSUPLIBDATA pThis)
     /*
      * Check if we're initited at all.
      */
-    if (pThis->hDevice >= 0)
+    if ((int)pThis->hDevice >= 0)
     {
         if (close(pThis->hDevice))
             AssertFailed();
@@ -270,7 +270,7 @@ int suplibOsIOCtl(PSUPLIBDATA pThis, uintptr_t uFunction, void *pvReq, size_t cb
 }
 
 
-int suplibOsIOCtlFast(PSUPLIBDATA pThis, uintptr_t uFunction)
+int suplibOsIOCtlFast(PSUPLIBDATA pThis, uintptr_t uFunction, uintptr_t idCpu)
 {
     int rc = ioctl(pThis->hDevice, uFunction, NULL);
     if (rc == -1)

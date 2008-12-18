@@ -1,4 +1,4 @@
-/* $Id: USBControllerImpl.cpp $ */
+/* $Id: USBControllerImpl.cpp 15157 2008-12-09 11:39:21Z vboxsync $ */
 /** @file
  * Implementation of IUSBController.
  */
@@ -74,7 +74,7 @@ HRESULT USBController::init (Machine *aParent)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     /* mPeer is left null */
@@ -89,7 +89,6 @@ HRESULT USBController::init (Machine *aParent)
 
     return S_OK;
 }
-
 
 /**
  * Initializes the USB controller object given another USB controller object
@@ -111,7 +110,7 @@ HRESULT USBController::init (Machine *aParent, USBController *aPeer)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     unconst (mPeer) = aPeer;
@@ -153,7 +152,7 @@ HRESULT USBController::initCopy (Machine *aParent, USBController *aPeer)
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     unconst (mParent) = aParent;
     /* mPeer is left null */
@@ -213,8 +212,7 @@ void USBController::uninit()
 
 STDMETHODIMP USBController::COMGETTER(Enabled) (BOOL *aEnabled)
 {
-    if (!aEnabled)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aEnabled);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -256,8 +254,7 @@ STDMETHODIMP USBController::COMSETTER(Enabled) (BOOL aEnabled)
 
 STDMETHODIMP USBController::COMGETTER(EnabledEhci) (BOOL *aEnabled)
 {
-    if (!aEnabled)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aEnabled);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -298,8 +295,7 @@ STDMETHODIMP USBController::COMSETTER(EnabledEhci) (BOOL aEnabled)
 
 STDMETHODIMP USBController::COMGETTER(USBStandard) (USHORT *aUSBStandard)
 {
-    if (!aUSBStandard)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aUSBStandard);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -337,25 +333,25 @@ public:
 
     // IUSBDeviceFilter properties
     STDMETHOD(COMGETTER(Name)) (BSTR *aName);
-    STDMETHOD(COMSETTER(Name)) (INPTR BSTR aName);
+    STDMETHOD(COMSETTER(Name)) (IN_BSTR aName);
     STDMETHOD(COMGETTER(Active)) (BOOL *aActive);
     STDMETHOD(COMSETTER(Active)) (BOOL aActive);
     STDMETHOD(COMGETTER(VendorId)) (BSTR *aVendorId);
-    STDMETHOD(COMSETTER(VendorId)) (INPTR BSTR aVendorId);
+    STDMETHOD(COMSETTER(VendorId)) (IN_BSTR aVendorId);
     STDMETHOD(COMGETTER(ProductId)) (BSTR *aProductId);
-    STDMETHOD(COMSETTER(ProductId)) (INPTR BSTR aProductId);
+    STDMETHOD(COMSETTER(ProductId)) (IN_BSTR aProductId);
     STDMETHOD(COMGETTER(Revision)) (BSTR *aRevision);
-    STDMETHOD(COMSETTER(Revision)) (INPTR BSTR aRevision);
+    STDMETHOD(COMSETTER(Revision)) (IN_BSTR aRevision);
     STDMETHOD(COMGETTER(Manufacturer)) (BSTR *aManufacturer);
-    STDMETHOD(COMSETTER(Manufacturer)) (INPTR BSTR aManufacturer);
+    STDMETHOD(COMSETTER(Manufacturer)) (IN_BSTR aManufacturer);
     STDMETHOD(COMGETTER(Product)) (BSTR *aProduct);
-    STDMETHOD(COMSETTER(Product)) (INPTR BSTR aProduct);
+    STDMETHOD(COMSETTER(Product)) (IN_BSTR aProduct);
     STDMETHOD(COMGETTER(SerialNumber)) (BSTR *aSerialNumber);
-    STDMETHOD(COMSETTER(SerialNumber)) (INPTR BSTR aSerialNumber);
+    STDMETHOD(COMSETTER(SerialNumber)) (IN_BSTR aSerialNumber);
     STDMETHOD(COMGETTER(Port)) (BSTR *aPort);
-    STDMETHOD(COMSETTER(Port)) (INPTR BSTR aPort);
+    STDMETHOD(COMSETTER(Port)) (IN_BSTR aPort);
     STDMETHOD(COMGETTER(Remote)) (BSTR *aRemote);
-    STDMETHOD(COMSETTER(Remote)) (INPTR BSTR aRemote);
+    STDMETHOD(COMSETTER(Remote)) (IN_BSTR aRemote);
     STDMETHOD(COMGETTER(MaskedInterfaces)) (ULONG *aMaskedIfs);
     STDMETHOD(COMSETTER(MaskedInterfaces)) (ULONG aMaskedIfs);
 };
@@ -366,8 +362,7 @@ COM_IMPL_READONLY_ENUM_AND_COLLECTION (USBDeviceFilter);
 
 STDMETHODIMP USBController::COMGETTER(DeviceFilters) (IUSBDeviceFilterCollection **aDevicesFilters)
 {
-    if (!aDevicesFilters)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aDevicesFilters);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -387,15 +382,13 @@ STDMETHODIMP USBController::COMGETTER(DeviceFilters) (IUSBDeviceFilterCollection
 // IUSBController methods
 /////////////////////////////////////////////////////////////////////////////
 
-STDMETHODIMP USBController::CreateDeviceFilter (INPTR BSTR aName,
+STDMETHODIMP USBController::CreateDeviceFilter (IN_BSTR aName,
                                                 IUSBDeviceFilter **aFilter)
 {
 #ifdef VBOX_WITH_USB
-    if (!aFilter)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aFilter);
 
-    if (!aName || *aName == 0)
-        return E_INVALIDARG;
+    CheckComArgStrNotEmptyOrNull(aName);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -415,7 +408,7 @@ STDMETHODIMP USBController::CreateDeviceFilter (INPTR BSTR aName,
 
     return S_OK;
 #else
-    return E_NOTIMPL;
+    ReturnComNotImplemented();
 #endif
 }
 
@@ -423,8 +416,8 @@ STDMETHODIMP USBController::InsertDeviceFilter (ULONG aPosition,
                                                 IUSBDeviceFilter *aFilter)
 {
 #ifdef VBOX_WITH_USB
-    if (!aFilter)
-        return E_INVALIDARG;
+
+    CheckComArgNotNull(aFilter);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -461,15 +454,8 @@ STDMETHODIMP USBController::InsertDeviceFilter (ULONG aPosition,
     mDeviceFilters->insert (it, filter);
     filter->mInList = true;
 
-    /// @todo After rewriting Win32 USB support, no more necessary;
-    //  a candidate for removal.
-#if 0
-    /* notify the proxy (only when the filter is active) */
-    if (filter->data().mActive)
-#else
     /* notify the proxy (only when it makes sense) */
     if (filter->data().mActive && adep.machineState() >= MachineState_Running)
-#endif
     {
         USBProxyService *service = mParent->virtualBox()->host()->usbProxyService();
         ComAssertRet (service, E_FAIL);
@@ -479,17 +465,20 @@ STDMETHODIMP USBController::InsertDeviceFilter (ULONG aPosition,
     }
 
     return S_OK;
-#else
-    return E_NOTIMPL;
-#endif
+
+#else /* VBOX_WITH_USB */
+
+    ReturnComNotImplemented();
+
+#endif /* VBOX_WITH_USB */
 }
 
 STDMETHODIMP USBController::RemoveDeviceFilter (ULONG aPosition,
                                                 IUSBDeviceFilter **aFilter)
 {
 #ifdef VBOX_WITH_USB
-    if (!aFilter)
-        return E_POINTER;
+
+    CheckComArgOutPointerValid(aFilter);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -529,15 +518,8 @@ STDMETHODIMP USBController::RemoveDeviceFilter (ULONG aPosition,
 
     filter.queryInterfaceTo (aFilter);
 
-    /// @todo After rewriting Win32 USB support, no more necessary;
-    //  a candidate for removal.
-#if 0
-    /* notify the proxy (only when the filter is active) */
-    if (filter->data().mActive)
-#else
     /* notify the proxy (only when it makes sense) */
     if (filter->data().mActive && adep.machineState() >= MachineState_Running)
-#endif
     {
         USBProxyService *service = mParent->virtualBox()->host()->usbProxyService();
         ComAssertRet (service, E_FAIL);
@@ -548,9 +530,12 @@ STDMETHODIMP USBController::RemoveDeviceFilter (ULONG aPosition,
     }
 
     return S_OK;
-#else
-    return E_NOTIMPL;
-#endif
+
+#else /* VBOX_WITH_USB */
+
+    ReturnComNotImplemented();
+
+#endif /* VBOX_WITH_USB */
 }
 
 // public methods only for internal purposes
@@ -844,6 +829,7 @@ bool USBController::rollback()
     }
 
 #ifdef VBOX_WITH_USB
+
     if (mDeviceFilters.isBackedUp())
     {
         USBProxyService *service = mParent->virtualBox()->host()->usbProxyService();
@@ -857,16 +843,10 @@ bool USBController::rollback()
             if (std::find (backedList->begin(), backedList->end(), *it) ==
                 backedList->end())
             {
-    /// @todo After rewriting Win32 USB support, no more necessary;
-    //  a candidate for removal.
-#if 0
-                /* notify the proxy (only when the filter is active) */
-                if ((*it)->data().mActive)
-#else
                 /* notify the proxy (only when it makes sense) */
                 if ((*it)->data().mActive &&
-                    adep.machineState() >= MachineState_Running)
-#endif
+                    adep.machineState() >= MachineState_Running &&
+                    adep.machineState() < MachineState_Discarding)
                 {
                     USBDeviceFilter *filter = *it;
                     ComAssertRet (filter->id() != NULL, false);
@@ -879,12 +859,8 @@ bool USBController::rollback()
             ++ it;
         }
 
-    /// @todo After rewriting Win32 USB support, no more necessary;
-    //  a candidate for removal.
-#if 0
-#else
-        if (adep.machineState() >= MachineState_Running)
-#endif
+        if (adep.machineState() >= MachineState_Running &&
+            adep.machineState() < MachineState_Discarding)
         {
             /* find all removed old filters (absent in the new list)
              * and insert them back to the USB proxy */
@@ -925,6 +901,7 @@ bool USBController::rollback()
         }
         ++ it;
     }
+
 #endif /* VBOX_WITH_USB */
 
     return dataChanged;
@@ -970,6 +947,7 @@ void USBController::commit()
         if (mPeer)
         {
             AutoWriteLock peerlock (mPeer);
+
             /* commit all changes to new filters (this will reshare data with
              * peers for those who have peers) */
             DeviceFilterList *newList = new DeviceFilterList();
@@ -1051,22 +1029,25 @@ void USBController::copyFrom (USBController *aThat)
     AutoCaller thatCaller (aThat);
     AssertComRCReturnVoid (thatCaller.rc());
 
+    /* even more sanity */
+    Machine::AutoAnyStateDependency adep (mParent);
+    AssertComRCReturnVoid (adep.rc());
+    /* Machine::copyFrom() may not be called when the VM is running */
+    AssertReturnVoid (adep.machineState() < MachineState_Running ||
+                      adep.machineState() >= MachineState_Discarding);
+
     /* peer is not modified, lock it for reading (aThat is "master" so locked
      * first) */
     AutoMultiLock2 alock (aThat->rlock(), this->wlock());
-
-    if (mParent->isRegistered())
-    {
-        /* reuse onMachineRegistered to tell USB proxy to remove all current
-           filters */
-        HRESULT rc = onMachineRegistered (FALSE);
-        AssertComRCReturn (rc, (void) 0);
-    }
 
     /* this will back up current data */
     mData.assignCopy (aThat->mData);
 
 #ifdef VBOX_WITH_USB
+
+    /* Note that we won't inform the USB proxy about new filters since the VM is
+     * not running when we are here and therefore no need to do so */
+
     /* create private copies of all filters */
     mDeviceFilters.backup();
     mDeviceFilters->clear();
@@ -1079,37 +1060,8 @@ void USBController::copyFrom (USBController *aThat)
         filter->initCopy (this, *it);
         mDeviceFilters->push_back (filter);
     }
+
 #endif /* VBOX_WITH_USB */
-
-    if (mParent->isRegistered())
-    {
-        /* reuse onMachineRegistered to tell USB proxy to insert all current
-           filters */
-        HRESULT rc = onMachineRegistered (TRUE);
-        AssertComRCReturn (rc, (void) 0);
-    }
-}
-
-/**
- *  Called by VirtualBox when it changes the registered state
- *  of the machine this USB controller belongs to.
- *
- *  @param aRegistered  new registered state of the machine
- *
- *  @note Locks nothing.
- */
-HRESULT USBController::onMachineRegistered (BOOL aRegistered)
-{
-    AutoCaller autoCaller (this);
-    AssertComRCReturnRC (autoCaller.rc());
-
-    /// @todo After rewriting Win32 USB support, no more necessary;
-    //  a candidate for removal.
-#if 0
-    notifyProxy (!!aRegistered);
-#endif
-
-    return S_OK;
 }
 
 #ifdef VBOX_WITH_USB
@@ -1125,10 +1077,6 @@ HRESULT USBController::onDeviceFilterChange (USBDeviceFilter *aFilter,
     AutoCaller autoCaller (this);
     AssertComRCReturnRC (autoCaller.rc());
 
-    /// @todo After rewriting Win32 USB support, no more necessary;
-    //  a candidate for removal.
-#if 0
-#else
     /* we need the machine state */
     Machine::AutoAnyStateDependency adep (mParent);
     AssertComRCReturnRC (adep.rc());
@@ -1136,7 +1084,6 @@ HRESULT USBController::onDeviceFilterChange (USBDeviceFilter *aFilter,
     /* nothing to do if the machine isn't running */
     if (adep.machineState() < MachineState_Running)
         return S_OK;
-#endif
 
     /* we don't modify our data fields -- no need to lock */
 
@@ -1373,4 +1320,4 @@ HRESULT USBController::notifyProxy (bool aInsertFilters)
 
 // private methods
 /////////////////////////////////////////////////////////////////////////////
-
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

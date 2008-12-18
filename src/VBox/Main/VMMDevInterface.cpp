@@ -130,7 +130,7 @@ int VMMDev::WaitCredentialsJudgement (uint32_t u32Timeout, uint32_t *pu32Credent
 
     int rc = RTSemEventWait (mCredentialsEvent, u32Timeout);
 
-    if (VBOX_SUCCESS (rc))
+    if (RT_SUCCESS (rc))
     {
         *pu32CredentialsFlags = mu32CredentialsFlags;
     }
@@ -694,7 +694,7 @@ DECLCALLBACK(int) VMMDev::drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
     /*
      * Validate configuration.
      */
-    if (!CFGMR3AreValuesValid(pCfgHandle, "Object\0OpenGLEnabled\0"))
+    if (!CFGMR3AreValuesValid(pCfgHandle, "Object\0OpenGLEnabled\0crOpenGLEnabled\0"))
         return VERR_PDM_DRVINS_UNKNOWN_CFG_VALUES;
     PPDMIBASE pBaseIgnore;
     int rc = pDrvIns->pDrvHlp->pfnAttach(pDrvIns, &pBaseIgnore);
@@ -754,9 +754,9 @@ DECLCALLBACK(int) VMMDev::drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
      */
     void *pv;
     rc = CFGMR3QueryPtr(pCfgHandle, "Object", &pv);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Configuration error: No/bad \"Object\" value! rc=%Vrc\n", rc));
+        AssertMsgFailed(("Configuration error: No/bad \"Object\" value! rc=%Rrc\n", rc));
         return rc;
     }
 
@@ -766,8 +766,8 @@ DECLCALLBACK(int) VMMDev::drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
 #ifdef VBOX_WITH_HGCM
     rc = pData->pVMMDev->hgcmLoadService (VBOXSHAREDFOLDERS_DLL,
                                           "VBoxSharedFolders");
-    pData->pVMMDev->fSharedFolderActive = VBOX_SUCCESS(rc);
-    if (VBOX_SUCCESS(rc))
+    pData->pVMMDev->fSharedFolderActive = RT_SUCCESS(rc);
+    if (RT_SUCCESS(rc))
     {
         PPDMLED       pLed;
         PPDMILEDPORTS pLedPort;
@@ -780,7 +780,7 @@ DECLCALLBACK(int) VMMDev::drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
             return VERR_PDM_MISSING_INTERFACE_ABOVE;
         }
         rc = pLedPort->pfnQueryStatusLed(pLedPort, 0, &pLed);
-        if (VBOX_SUCCESS(rc) && pLed)
+        if (RT_SUCCESS(rc) && pLed)
         {
             VBOXHGCMSVCPARM  parm;
 
@@ -791,28 +791,28 @@ DECLCALLBACK(int) VMMDev::drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle)
             rc = HGCMHostCall("VBoxSharedFolders", SHFL_FN_SET_STATUS_LED, 1, &parm);
         }
         else
-            AssertMsgFailed(("pfnQueryStatusLed failed with %Vrc (pLed=%x)\n", rc, pLed));
+            AssertMsgFailed(("pfnQueryStatusLed failed with %Rrc (pLed=%x)\n", rc, pLed));
     }
     else
     {
-        LogRel(("Failed to load Shared Folders service %Vrc\n", rc));
+        LogRel(("Failed to load Shared Folders service %Rrc\n", rc));
     }
 
     bool fEnabled;
 
     /* Check CFGM option. */
     rc = CFGMR3QueryBool(pCfgHandle, "OpenGLEnabled", &fEnabled);
-    if (    VBOX_SUCCESS(rc)
+    if (    RT_SUCCESS(rc)
         &&  fEnabled)
     {
         rc = pData->pVMMDev->hgcmLoadService ("VBoxSharedOpenGL", "VBoxSharedOpenGL");
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
         {
             LogRel(("Shared OpenGL service loaded.\n"));
         }
         else
         {
-            LogRel(("Failed to load Shared OpenGL service %Vrc\n", rc));
+            LogRel(("Failed to load Shared OpenGL service %Rrc\n", rc));
         }
     }
 
@@ -859,3 +859,4 @@ const PDMDRVREG VMMDev::DrvReg =
     /* pfnDetach */
     NULL
 };
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

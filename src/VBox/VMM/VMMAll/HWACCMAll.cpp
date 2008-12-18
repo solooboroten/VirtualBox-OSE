@@ -1,4 +1,4 @@
-/* $Id: HWACCMAll.cpp $ */
+/* $Id: HWACCMAll.cpp 15167 2008-12-09 13:45:12Z vboxsync $ */
 /** @file
  * HWACCM - All contexts.
  */
@@ -50,12 +50,15 @@
  * @param   pVM         The VM to operate on.
  * @param   GCVirt      Page to invalidate
  */
-HWACCMDECL(int) HWACCMInvalidatePage(PVM pVM, RTGCPTR GCVirt)
+VMMDECL(int) HWACCMInvalidatePage(PVM pVM, RTGCPTR GCVirt)
 {
-    /* @todo Intel for nested paging */
 #ifdef IN_RING0
-    if (pVM->hwaccm.s.svm.fSupported)
-        return SVMR0InvalidatePage(pVM, GCVirt);
+    PVMCPU pVCpu = VMMGetCpu(pVM);
+    if (pVM->hwaccm.s.vmx.fSupported)
+        return VMXR0InvalidatePage(pVM, pVCpu, GCVirt);
+
+    Assert(pVM->hwaccm.s.svm.fSupported);
+    return SVMR0InvalidatePage(pVM, pVCpu, GCVirt);
 #endif
 
     return VINF_SUCCESS;
@@ -67,15 +70,14 @@ HWACCMDECL(int) HWACCMInvalidatePage(PVM pVM, RTGCPTR GCVirt)
  * @returns VBox status code.
  * @param   pVM         The VM to operate on.
  */
-HWACCMDECL(int) HWACCMFlushTLB(PVM pVM)
+VMMDECL(int) HWACCMFlushTLB(PVM pVM)
 {
-    /* @todo Intel for nested paging */
-    if (pVM->hwaccm.s.svm.fSupported)
-    {
-        LogFlow(("HWACCMFlushTLB\n"));
-        pVM->hwaccm.s.svm.fForceTLBFlush = true;
-        STAM_COUNTER_INC(&pVM->hwaccm.s.StatFlushTLBManual);
-    }
+    PVMCPU pVCpu = VMMGetCpu(pVM);
+
+    LogFlow(("HWACCMFlushTLB\n"));
+
+    pVCpu->hwaccm.s.fForceTLBFlush = true;
+    STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatFlushTLBManual);
     return VINF_SUCCESS;
 }
 
@@ -85,7 +87,7 @@ HWACCMDECL(int) HWACCMFlushTLB(PVM pVM)
  * @returns boolean
  * @param   pVM         The VM to operate on.
  */
-HWACCMDECL(bool) HWACCMIsNestedPagingActive(PVM pVM)
+VMMDECL(bool) HWACCMIsNestedPagingActive(PVM pVM)
 {
     return HWACCMIsEnabled(pVM) && pVM->hwaccm.s.fNestedPaging;
 }
@@ -96,11 +98,12 @@ HWACCMDECL(bool) HWACCMIsNestedPagingActive(PVM pVM)
  * @returns shadow paging mode
  * @param   pVM         The VM to operate on.
  */
-HWACCMDECL(PGMMODE) HWACCMGetPagingMode(PVM pVM)
+VMMDECL(PGMMODE) HWACCMGetShwPagingMode(PVM pVM)
 {
     Assert(HWACCMIsNestedPagingActive(pVM));
     if (pVM->hwaccm.s.svm.fSupported)
         return PGMMODE_NESTED;
+
     Assert(pVM->hwaccm.s.vmx.fSupported);
     return PGMMODE_EPT;
 }
@@ -114,17 +117,18 @@ HWACCMDECL(PGMMODE) HWACCMGetPagingMode(PVM pVM)
  * @param   pVM         The VM to operate on.
  * @param   GCPhys      Page to invalidate
  */
-HWACCMDECL(int) HWACCMInvalidatePhysPage(PVM pVM, RTGCPHYS GCPhys)
+VMMDECL(int) HWACCMInvalidatePhysPage(PVM pVM, RTGCPHYS GCPhys)
 {
     if (!HWACCMIsNestedPagingActive(pVM))
         return VINF_SUCCESS;
 
 #ifdef IN_RING0
-    /* @todo Intel for nested paging */
-    if (pVM->hwaccm.s.svm.fSupported)
-    {
-        SVMR0InvalidatePhysPage(pVM, GCPhys);
-    }
+    PVMCPU pVCpu = VMMGetCpu(pVM);
+    if (pVM->hwaccm.s.vmx.fSupported)
+        return VMXR0InvalidatePhysPage(pVM, pVCpu, GCPhys);
+
+    Assert(pVM->hwaccm.s.svm.fSupported);
+    SVMR0InvalidatePhysPage(pVM, pVCpu, GCPhys);
 #else
     HWACCMFlushTLB(pVM);
 #endif
@@ -132,13 +136,27 @@ HWACCMDECL(int) HWACCMInvalidatePhysPage(PVM pVM, RTGCPHYS GCPhys)
 }
 
 /**
- * Checks if an interrupt event is currently pending. 
+ * Checks if an interrupt event is currently pending.
  *
  * @returns Interrupt event pending state.
  * @param   pVM         The VM to operate on.
  */
-HWACCMDECL(bool) HWACCMHasPendingIrq(PVM pVM)
+VMMDECL(bool) HWACCMHasPendingIrq(PVM pVM)
 {
-    return pVM->hwaccm.s.Event.fPending;
+    PVMCPU pVCpu = VMMGetCpu(pVM);
+    return !!pVCpu->hwaccm.s.Event.fPending;
 }
 
+#ifndef IN_RC
+/**
+ * Returns the VMCPU id of the current EMT thread.
+ *
+ * @param   pVM         The VM to operate on.
+ */
+VMMDECL(RTCPUID) HWACCMGetVMCPUId(PVM pVM)
+{
+    /* @todo */
+    Assert(pVM->cCPUs == 1);
+    return 0;
+}
+#endif

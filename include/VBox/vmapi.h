@@ -43,23 +43,6 @@ __BEGIN_DECLS
  * @ingroup grp_vm
  * @{ */
 
-/** @def VM_GUEST_ADDR
- * Converts a current context address of data within the VM structure to the equivalent
- * guest address.
- *
- * @returns guest virtual address.
- * @param   pVM     Pointer to the VM.
- * @param   pvInVM  CC Pointer within the VM.
- * @deprecated Use VM_RC_ADDR
- */
-#ifdef IN_RING3
-# define VM_GUEST_ADDR(pVM, pvInVM)     ( (RTGCPTR)((RTGCUINTPTR)pVM->pVMGC + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMR3)) )
-#elif defined(IN_RING0)
-# define VM_GUEST_ADDR(pVM, pvInVM)     ( (RTGCPTR)((RTGCUINTPTR)pVM->pVMGC + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMR0)) )
-#else
-# define VM_GUEST_ADDR(pVM, pvInVM)     ( (RTGCPTR)(pvInVM) )
-#endif
-
 /** @def VM_RC_ADDR
  * Converts a current context address of data within the VM structure to the equivalent
  * raw-mode address.
@@ -69,9 +52,9 @@ __BEGIN_DECLS
  * @param   pvInVM  CC Pointer within the VM.
  */
 #ifdef IN_RING3
-# define VM_RC_ADDR(pVM, pvInVM)        ( (RTRCPTR)((RTRCUINTPTR)pVM->pVMGC + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMR3)) )
+# define VM_RC_ADDR(pVM, pvInVM)        ( (RTRCPTR)((RTRCUINTPTR)pVM->pVMRC + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMR3)) )
 #elif defined(IN_RING0)
-# define VM_RC_ADDR(pVM, pvInVM)        ( (RTRCPTR)((RTRCUINTPTR)pVM->pVMGC + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMR0)) )
+# define VM_RC_ADDR(pVM, pvInVM)        ( (RTRCPTR)((RTRCUINTPTR)pVM->pVMRC + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMR0)) )
 #else
 # define VM_RC_ADDR(pVM, pvInVM)        ( (RTRCPTR)(pvInVM) )
 #endif
@@ -84,8 +67,8 @@ __BEGIN_DECLS
  * @param   pVM     Pointer to the VM.
  * @param   pvInVM  CC pointer within the VM.
  */
-#ifdef IN_GC
-# define VM_R3_ADDR(pVM, pvInVM)       ( (RTR3PTR)((RTR3UINTPTR)pVM->pVMR3 + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMGC)) )
+#ifdef IN_RC
+# define VM_R3_ADDR(pVM, pvInVM)       ( (RTR3PTR)((RTR3UINTPTR)pVM->pVMR3 + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMRC)) )
 #elif defined(IN_RING0)
 # define VM_R3_ADDR(pVM, pvInVM)       ( (RTR3PTR)((RTR3UINTPTR)pVM->pVMR3 + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMR0)) )
 #else
@@ -101,8 +84,8 @@ __BEGIN_DECLS
  * @param   pVM     Pointer to the VM.
  * @param   pvInVM  CC pointer within the VM.
  */
-#ifdef IN_GC
-# define VM_R0_ADDR(pVM, pvInVM)       ( (RTR0PTR)((RTR0UINTPTR)pVM->pVMR0 + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMGC)) )
+#ifdef IN_RC
+# define VM_R0_ADDR(pVM, pvInVM)       ( (RTR0PTR)((RTR0UINTPTR)pVM->pVMR0 + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMRC)) )
 #elif defined(IN_RING3)
 # define VM_R0_ADDR(pVM, pvInVM)       ( (RTR0PTR)((RTR0UINTPTR)pVM->pVMR0 + (uint32_t)((uintptr_t)(pvInVM) - (uintptr_t)pVM->pVMR3)) )
 #else
@@ -126,8 +109,8 @@ typedef DECLCALLBACK(void) FNVMATERROR(PVM pVM, void *pvUser, int rc, RT_SRC_POS
 /** Pointer to a VM error callback. */
 typedef FNVMATERROR *PFNVMATERROR;
 
-VMDECL(int) VMSetError(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, ...);
-VMDECL(int) VMSetErrorV(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, va_list args);
+VMMDECL(int) VMSetError(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, ...);
+VMMDECL(int) VMSetErrorV(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, va_list args);
 
 /** @def VM_SET_ERROR
  * Macro for setting a simple VM error message.
@@ -162,8 +145,8 @@ typedef DECLCALLBACK(void) FNVMATRUNTIMEERROR(PVM pVM, void *pvUser, bool fFatal
 /** Pointer to a VM runtime error callback. */
 typedef FNVMATRUNTIMEERROR *PFNVMATRUNTIMEERROR;
 
-VMDECL(int) VMSetRuntimeError(PVM pVM, bool fFatal, const char *pszErrorID, const char *pszFormat, ...);
-VMDECL(int) VMSetRuntimeErrorV(PVM pVM, bool fFatal, const char *pszErrorID, const char *pszFormat, va_list args);
+VMMDECL(int) VMSetRuntimeError(PVM pVM, bool fFatal, const char *pszErrorID, const char *pszFormat, ...);
+VMMDECL(int) VMSetRuntimeErrorV(PVM pVM, bool fFatal, const char *pszErrorID, const char *pszFormat, va_list args);
 
 
 /**
@@ -213,7 +196,7 @@ typedef DECLCALLBACK(void) FNVMATSTATE(PVM pVM, VMSTATE enmState, VMSTATE enmOld
 /** Pointer to a VM state callback. */
 typedef FNVMATSTATE *PFNVMATSTATE;
 
-VMDECL(const char *) VMGetStateName(VMSTATE enmState);
+VMMDECL(const char *) VMGetStateName(VMSTATE enmState);
 
 
 /**
@@ -264,6 +247,21 @@ typedef enum VMREQFLAGS
 } VMREQFLAGS;
 
 /**
+ * Request destination
+ */
+typedef enum VMREQDEST
+{
+    /** Request packet for VCPU 0. */
+    VMREQDEST_CPU0          = 0,
+
+    /** Request packet for all VMCPU threads. */
+    VMREQDEST_BROADCAST     = 0x1000,
+
+    /** Request packet for any VMCPU thread. */
+    VMREQDEST_ANY           = 0x1001
+} VMREQDEST;
+
+/**
  * VM Request packet.
  *
  * This is used to request an action in the EMT. Usually the requester is
@@ -291,6 +289,8 @@ typedef struct VMREQ
     unsigned                fFlags;
     /** Request type. */
     VMREQTYPE               enmType;
+    /** Request destination. */
+    VMREQDEST               enmDest;
     /** Request specific data. */
     union VMREQ_U
     {
@@ -312,7 +312,7 @@ typedef VMREQ *PVMREQ;
 /** @} */
 
 
-#ifndef IN_GC
+#ifndef IN_RC
 /** @defgroup grp_vmm_apis_hc  VM Host Context API
  * @ingroup grp_vm
  * @{ */
@@ -341,12 +341,12 @@ typedef enum VMINITCOMPLETED
 } VMINITCOMPLETED;
 
 
-VMR3DECL(int)   VMR3Create(PFNVMATERROR pfnVMAtError, void *pvUserVM, PFNCFGMCONSTRUCTOR pfnCFGMConstructor, void *pvUserCFGM, PVM *ppVM);
-VMR3DECL(int)   VMR3PowerOn(PVM pVM);
-VMR3DECL(int)   VMR3Suspend(PVM pVM);
-VMR3DECL(int)   VMR3SuspendNoSave(PVM pVM);
-VMR3DECL(int)   VMR3Resume(PVM pVM);
-VMR3DECL(int)   VMR3Reset(PVM pVM);
+VMMR3DECL(int)  VMR3Create(uint32_t cCPUs, PFNVMATERROR pfnVMAtError, void *pvUserVM, PFNCFGMCONSTRUCTOR pfnCFGMConstructor, void *pvUserCFGM, PVM *ppVM);
+VMMR3DECL(int)  VMR3PowerOn(PVM pVM);
+VMMR3DECL(int)  VMR3Suspend(PVM pVM);
+VMMR3DECL(int)  VMR3SuspendNoSave(PVM pVM);
+VMMR3DECL(int)  VMR3Resume(PVM pVM);
+VMMR3DECL(int)  VMR3Reset(PVM pVM);
 
 /**
  * Progress callback.
@@ -362,13 +362,13 @@ typedef DECLCALLBACK(int) FNVMPROGRESS(PVM pVM, unsigned uPercent, void *pvUser)
 /** Pointer to a FNVMPROGRESS function. */
 typedef FNVMPROGRESS *PFNVMPROGRESS;
 
-VMR3DECL(int)   VMR3Save(PVM pVM, const char *pszFilename, PFNVMPROGRESS pfnProgress, void *pvUser);
-VMR3DECL(int)   VMR3Load(PVM pVM, const char *pszFilename, PFNVMPROGRESS pfnProgress, void *pvUser);
-VMR3DECL(int)   VMR3PowerOff(PVM pVM);
-VMR3DECL(int)   VMR3Destroy(PVM pVM);
-VMR3DECL(void)  VMR3Relocate(PVM pVM, RTGCINTPTR offDelta);
-VMR3DECL(PVM)   VMR3EnumVMs(PVM pVMPrev);
-VMR3DECL(int)   VMR3WaitForResume(PVM pVM);
+VMMR3DECL(int)  VMR3Save(PVM pVM, const char *pszFilename, PFNVMPROGRESS pfnProgress, void *pvUser);
+VMMR3DECL(int)  VMR3Load(PVM pVM, const char *pszFilename, PFNVMPROGRESS pfnProgress, void *pvUser);
+VMMR3DECL(int)  VMR3PowerOff(PVM pVM);
+VMMR3DECL(int)  VMR3Destroy(PVM pVM);
+VMMR3DECL(void) VMR3Relocate(PVM pVM, RTGCINTPTR offDelta);
+VMMR3DECL(PVM)  VMR3EnumVMs(PVM pVMPrev);
+VMMR3DECL(int)  VMR3WaitForResume(PVM pVM);
 
 /**
  * VM destruction callback.
@@ -379,47 +379,52 @@ typedef DECLCALLBACK(void) FNVMATDTOR(PVM pVM, void *pvUser);
 /** Pointer to a VM destruction callback. */
 typedef FNVMATDTOR *PFNVMATDTOR;
 
-VMR3DECL(int)   VMR3AtDtorRegister(PFNVMATDTOR pfnAtDtor, void *pvUser);
-VMR3DECL(int)   VMR3AtDtorDeregister(PFNVMATDTOR pfnAtDtor);
-VMR3DECL(int)   VMR3AtResetRegister(PVM pVM, PPDMDEVINS pDevInst, PFNVMATRESET pfnCallback, void *pvUser, const char *pszDesc);
-VMR3DECL(int)   VMR3AtResetRegisterInternal(PVM pVM, PFNVMATRESETINT pfnCallback, void *pvUser, const char *pszDesc);
-VMR3DECL(int)   VMR3AtResetRegisterExternal(PVM pVM, PFNVMATRESETEXT pfnCallback, void *pvUser, const char *pszDesc);
-VMR3DECL(int)   VMR3AtResetDeregister(PVM pVM, PPDMDEVINS pDevInst, PFNVMATRESET pfnCallback);
-VMR3DECL(int)   VMR3AtResetDeregisterInternal(PVM pVM, PFNVMATRESETINT pfnCallback);
-VMR3DECL(int)   VMR3AtResetDeregisterExternal(PVM pVM, PFNVMATRESETEXT pfnCallback);
-VMR3DECL(int)   VMR3AtStateRegister(PVM pVM, PFNVMATSTATE pfnAtState, void *pvUser);
-VMR3DECL(int)   VMR3AtStateDeregister(PVM pVM, PFNVMATSTATE pfnAtState, void *pvUser);
-VMR3DECL(VMSTATE) VMR3GetState(PVM pVM);
-VMR3DECL(const char *) VMR3GetStateName(VMSTATE enmState);
-VMR3DECL(int)   VMR3AtErrorRegister(PVM pVM, PFNVMATERROR pfnAtError, void *pvUser);
-VMR3DECL(int)   VMR3AtErrorRegisterU(PUVM pVM, PFNVMATERROR pfnAtError, void *pvUser);
-VMR3DECL(int)   VMR3AtErrorDeregister(PVM pVM, PFNVMATERROR pfnAtError, void *pvUser);
-VMR3DECL(void)  VMR3SetErrorWorker(PVM pVM);
-VMR3DECL(int)   VMR3AtRuntimeErrorRegister(PVM pVM, PFNVMATRUNTIMEERROR pfnAtRuntimeError, void *pvUser);
-VMR3DECL(int)   VMR3AtRuntimeErrorDeregister(PVM pVM, PFNVMATRUNTIMEERROR pfnAtRuntimeError, void *pvUser);
-VMR3DECL(void)  VMR3SetRuntimeErrorWorker(PVM pVM);
-VMR3DECL(int)   VMR3ReqCall(PVM pVM, PVMREQ *ppReq, unsigned cMillies, PFNRT pfnFunction, unsigned cArgs, ...);
-VMR3DECL(int)   VMR3ReqCallVoidU(PUVM pUVM, PVMREQ *ppReq, unsigned cMillies, PFNRT pfnFunction, unsigned cArgs, ...);
-VMR3DECL(int)   VMR3ReqCallVoid(PVM pVM, PVMREQ *ppReq, unsigned cMillies, PFNRT pfnFunction, unsigned cArgs, ...);
-VMR3DECL(int)   VMR3ReqCallEx(PVM pVM, PVMREQ *ppReq, unsigned cMillies, unsigned fFlags, PFNRT pfnFunction, unsigned cArgs, ...);
-VMR3DECL(int)   VMR3ReqCallU(PUVM pUVM, PVMREQ *ppReq, unsigned cMillies, unsigned fFlags, PFNRT pfnFunction, unsigned cArgs, ...);
-VMR3DECL(int)   VMR3ReqCallVU(PUVM pUVM, PVMREQ *ppReq, unsigned cMillies, unsigned fFlags, PFNRT pfnFunction, unsigned cArgs, va_list Args);
-VMR3DECL(int)   VMR3ReqAlloc(PVM pVM, PVMREQ *ppReq, VMREQTYPE enmType);
-VMR3DECL(int)   VMR3ReqAllocU(PUVM pUVM, PVMREQ *ppReq, VMREQTYPE enmType);
-VMR3DECL(int)   VMR3ReqFree(PVMREQ pReq);
-VMR3DECL(int)   VMR3ReqQueue(PVMREQ pReq, unsigned cMillies);
-VMR3DECL(int)   VMR3ReqWait(PVMREQ pReq, unsigned cMillies);
-VMR3DECL(int)   VMR3ReqProcessU(PUVM pUVM);
-VMR3DECL(void)  VMR3NotifyFF(PVM pVM, bool fNotifiedREM);
-VMR3DECL(void)  VMR3NotifyFFU(PUVM pUVM, bool fNotifiedREM);
-VMR3DECL(int)   VMR3WaitHalted(PVM pVM, bool fIgnoreInterrupts);
-VMR3DECL(int)   VMR3WaitU(PUVM pUVM);
+VMMR3DECL(int)  VMR3AtDtorRegister(PFNVMATDTOR pfnAtDtor, void *pvUser);
+VMMR3DECL(int)  VMR3AtDtorDeregister(PFNVMATDTOR pfnAtDtor);
+VMMR3DECL(int)  VMR3AtResetRegister(PVM pVM, PPDMDEVINS pDevInst, PFNVMATRESET pfnCallback, void *pvUser, const char *pszDesc);
+VMMR3DECL(int)  VMR3AtResetRegisterInternal(PVM pVM, PFNVMATRESETINT pfnCallback, void *pvUser, const char *pszDesc);
+VMMR3DECL(int)  VMR3AtResetRegisterExternal(PVM pVM, PFNVMATRESETEXT pfnCallback, void *pvUser, const char *pszDesc);
+VMMR3DECL(int)  VMR3AtResetDeregister(PVM pVM, PPDMDEVINS pDevInst, PFNVMATRESET pfnCallback);
+VMMR3DECL(int)  VMR3AtResetDeregisterInternal(PVM pVM, PFNVMATRESETINT pfnCallback);
+VMMR3DECL(int)  VMR3AtResetDeregisterExternal(PVM pVM, PFNVMATRESETEXT pfnCallback);
+VMMR3DECL(int)  VMR3AtStateRegister(PVM pVM, PFNVMATSTATE pfnAtState, void *pvUser);
+VMMR3DECL(int)  VMR3AtStateDeregister(PVM pVM, PFNVMATSTATE pfnAtState, void *pvUser);
+VMMR3DECL(VMSTATE) VMR3GetState(PVM pVM);
+VMMR3DECL(const char *) VMR3GetStateName(VMSTATE enmState);
+VMMR3DECL(int)  VMR3AtErrorRegister(PVM pVM, PFNVMATERROR pfnAtError, void *pvUser);
+VMMR3DECL(int)  VMR3AtErrorRegisterU(PUVM pVM, PFNVMATERROR pfnAtError, void *pvUser);
+VMMR3DECL(int)  VMR3AtErrorDeregister(PVM pVM, PFNVMATERROR pfnAtError, void *pvUser);
+VMMR3DECL(void) VMR3SetErrorWorker(PVM pVM);
+VMMR3DECL(int)  VMR3AtRuntimeErrorRegister(PVM pVM, PFNVMATRUNTIMEERROR pfnAtRuntimeError, void *pvUser);
+VMMR3DECL(int)  VMR3AtRuntimeErrorDeregister(PVM pVM, PFNVMATRUNTIMEERROR pfnAtRuntimeError, void *pvUser);
+VMMR3DECL(void) VMR3SetRuntimeErrorWorker(PVM pVM);
+VMMR3DECL(int)  VMR3ReqCall(PVM pVM, VMREQDEST enmDest, PVMREQ *ppReq, unsigned cMillies, PFNRT pfnFunction, unsigned cArgs, ...);
+VMMR3DECL(int)  VMR3ReqCallVoidU(PUVM pUVM, VMREQDEST enmDest, PVMREQ *ppReq, unsigned cMillies, PFNRT pfnFunction, unsigned cArgs, ...);
+VMMR3DECL(int)  VMR3ReqCallVoid(PVM pVM, VMREQDEST enmDest, PVMREQ *ppReq, unsigned cMillies, PFNRT pfnFunction, unsigned cArgs, ...);
+VMMR3DECL(int)  VMR3ReqCallEx(PVM pVM, VMREQDEST enmDest, PVMREQ *ppReq, unsigned cMillies, unsigned fFlags, PFNRT pfnFunction, unsigned cArgs, ...);
+VMMR3DECL(int)  VMR3ReqCallU(PUVM pUVM, VMREQDEST enmDest, PVMREQ *ppReq, unsigned cMillies, unsigned fFlags, PFNRT pfnFunction, unsigned cArgs, ...);
+VMMR3DECL(int)  VMR3ReqCallVU(PUVM pUVM, VMREQDEST enmDest, PVMREQ *ppReq, unsigned cMillies, unsigned fFlags, PFNRT pfnFunction, unsigned cArgs, va_list Args);
+VMMR3DECL(int)  VMR3ReqAlloc(PVM pVM, PVMREQ *ppReq, VMREQTYPE enmType, VMREQDEST enmDest);
+VMMR3DECL(int)  VMR3ReqAllocU(PUVM pUVM, PVMREQ *ppReq, VMREQTYPE enmType, VMREQDEST enmDest);
+VMMR3DECL(int)  VMR3ReqFree(PVMREQ pReq);
+VMMR3DECL(int)  VMR3ReqQueue(PVMREQ pReq, unsigned cMillies);
+VMMR3DECL(int)  VMR3ReqWait(PVMREQ pReq, unsigned cMillies);
+VMMR3DECL(int)  VMR3ReqProcessU(PUVM pUVM, VMREQDEST enmDest);
+VMMR3DECL(void) VMR3NotifyFF(PVM pVM, bool fNotifiedREM);
+VMMR3DECL(void) VMR3NotifyFFU(PUVM pUVM, bool fNotifiedREM);
+VMMR3DECL(int)  VMR3WaitHalted(PVM pVM, bool fIgnoreInterrupts);
+VMMR3DECL(int)  VMR3WaitU(PUVM pUVM);
+VMMR3DECL(RTCPUID)          VMR3GetVMCPUId(PVM pVM);
+VMMR3DECL(RTTHREAD)         VMR3GetVMCPUThread(PVM pVM);
+VMMR3DECL(RTTHREAD)         VMR3GetVMCPUThreadU(PUVM pUVM);
+VMMR3DECL(RTNATIVETHREAD)   VMR3GetVMCPUNativeThread(PVM pVM);
+VMMR3DECL(RTNATIVETHREAD)   VMR3GetVMCPUNativeThreadU(PUVM pUVM);
 
 /** @} */
 #endif /* IN_RING3 */
 
 
-#ifdef IN_GC
+#ifdef IN_RC
 /** @defgroup grp_vmm_apis_gc  VM Guest Context APIs
  * @ingroup grp_vm
  * @{ */

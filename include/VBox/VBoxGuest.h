@@ -70,7 +70,7 @@ typedef RTGCPHYS64 VMMDEVHYPPHYS64;
 
 #elif defined(RT_OS_SOLARIS)
 /** The support device name. */
-# define VBOXGUEST_DEVICE_NAME        "/devices/pci@0,0/pci80ee,cafe@4:vboxguest"
+# define VBOXGUEST_DEVICE_NAME        "/dev/vboxguest"
 
 #elif defined(RT_OS_WINDOWS)
 /** The support service name. */
@@ -720,6 +720,47 @@ typedef struct _HGCMFUNCTIONPARAMETER32
             } u;
         } Pointer;
     } u;
+#ifdef __cplusplus
+    void SetUInt32(uint32_t u32)
+    {
+        type = VMMDevHGCMParmType_32bit;
+        u.value64 = 0; /* init unused bits to 0 */
+        u.value32 = u32;
+    }
+
+    int GetUInt32(uint32_t *pu32)
+    {
+        if (type == VMMDevHGCMParmType_32bit)
+        {
+            *pu32 = u.value32;
+            return VINF_SUCCESS;
+        }
+        return VERR_INVALID_PARAMETER;
+    }
+
+    void SetUInt64(uint64_t u64)
+    {
+        type      = VMMDevHGCMParmType_64bit;
+        u.value64 = u64;
+    }
+
+    int GetUInt64(uint64_t *pu64)
+    {
+        if (type == VMMDevHGCMParmType_64bit)
+        {
+            *pu64 = u.value64;
+            return VINF_SUCCESS;
+        }
+        return VERR_INVALID_PARAMETER;
+    }
+
+    void SetPtr(void *pv, uint32_t cb)
+    {
+        type                    = VMMDevHGCMParmType_LinAddr;
+        u.Pointer.size          = cb;
+        u.Pointer.u.linearAddr  = (VMMDEVHYPPTR32)(uintptr_t)pv;
+    }
+#endif
 } HGCMFunctionParameter32;
 
 typedef struct _HGCMFUNCTIONPARAMETER64
@@ -740,6 +781,47 @@ typedef struct _HGCMFUNCTIONPARAMETER64
             } u;
         } Pointer;
     } u;
+#ifdef __cplusplus
+    void SetUInt32(uint32_t u32)
+    {
+        type = VMMDevHGCMParmType_32bit;
+        u.value64 = 0; /* init unused bits to 0 */
+        u.value32 = u32;
+    }
+
+    int GetUInt32(uint32_t *pu32)
+    {
+        if (type == VMMDevHGCMParmType_32bit)
+        {
+            *pu32 = u.value32;
+            return VINF_SUCCESS;
+        }
+        return VERR_INVALID_PARAMETER;
+    }
+
+    void SetUInt64(uint64_t u64)
+    {
+        type      = VMMDevHGCMParmType_64bit;
+        u.value64 = u64;
+    }
+
+    int GetUInt64(uint64_t *pu64)
+    {
+        if (type == VMMDevHGCMParmType_64bit)
+        {
+            *pu64 = u.value64;
+            return VINF_SUCCESS;
+        }
+        return VERR_INVALID_PARAMETER;
+    }
+
+    void SetPtr(void *pv, uint32_t cb)
+    {
+        type                    = VMMDevHGCMParmType_LinAddr;
+        u.Pointer.size          = cb;
+        u.Pointer.u.linearAddr  = (uintptr_t)pv;
+    }
+#endif
 } HGCMFunctionParameter64;
 #else /* !VBOX_WITH_64_BITS_GUESTS */
 typedef struct _HGCMFUNCTIONPARAMETER
@@ -760,6 +842,47 @@ typedef struct _HGCMFUNCTIONPARAMETER
             } u;
         } Pointer;
     } u;
+#ifdef __cplusplus
+    void SetUInt32(uint32_t u32)
+    {
+        type = VMMDevHGCMParmType_32bit;
+        u.value64 = 0; /* init unused bits to 0 */
+        u.value32 = u32;
+    }
+
+    int GetUInt32(uint32_t *pu32)
+    {
+        if (type == VMMDevHGCMParmType_32bit)
+        {
+            *pu32 = u.value32;
+            return VINF_SUCCESS;
+        }
+        return VERR_INVALID_PARAMETER;
+    }
+
+    void SetUInt64(uint64_t u64)
+    {
+        type      = VMMDevHGCMParmType_64bit;
+        u.value64 = u64;
+    }
+
+    int GetUInt64(uint64_t *pu64)
+    {
+        if (type == VMMDevHGCMParmType_64bit)
+        {
+            *pu64 = u.value64;
+            return VINF_SUCCESS;
+        }
+        return VERR_INVALID_PARAMETER;
+    }
+
+    void SetPtr(void *pv, uint32_t cb)
+    {
+        type                    = VMMDevHGCMParmType_LinAddr;
+        u.Pointer.size          = cb;
+        u.Pointer.u.linearAddr  = (uintptr_t)pv;
+    }
+#endif
 } HGCMFunctionParameter;
 #endif /* !VBOX_WITH_64_BITS_GUESTS */
 
@@ -1030,8 +1153,8 @@ typedef struct
 /** @} */
 
 
-/**
- * VBoxGuest IOCTL codes and structures.
+#if !defined(IN_RC) && !defined(IN_RING0_AGNOSTIC) && !defined(IPRT_NO_CRT)
+/** @name VBoxGuest IOCTL codes and structures.
  *
  * The range 0..15 is for basic driver communication.
  * The range 16..31 is for HGCM communcation.
@@ -1171,8 +1294,7 @@ typedef struct _VBoxGuestPortInfo
  * @see VBOXGUEST_IOCTL_WAITEVENT */
 #define VBOXGUEST_IOCTL_CANCEL_ALL_WAITEVENTS       VBOXGUEST_IOCTL_CODE(5, 0)
 
-/**
- * Result codes for VBoxGuestWaitEventInfo::u32Result
+/** @name Result codes for VBoxGuestWaitEventInfo::u32Result
  * @{
  */
 /** Successful completion, an event occured. */
@@ -1247,12 +1369,22 @@ typedef struct _VBoxGuestHGCMCallInfo
     uint32_t cParms;          /**< IN  How many parms. */
     /* Parameters follow in form HGCMFunctionParameter aParms[cParms] */
 } VBoxGuestHGCMCallInfo;
+
+typedef struct _VBoxGuestHGCMCallInfoTimed
+{
+    uint32_t u32Timeout;         /**< IN  How long to wait for completion before cancelling the call */
+    uint32_t fInterruptible;     /**< IN  Is this request interruptible? */
+    VBoxGuestHGCMCallInfo info;  /**< IN/OUT The rest of the call information.  Placed after the timeout
+                                  * so that the parameters follow as they would for a normal call. */
+    /* Parameters follow in form HGCMFunctionParameter aParms[cParms] */
+} VBoxGuestHGCMCallInfoTimed;
 # pragma pack()
 
-# define VBOXGUEST_IOCTL_HGCM_CONNECT       VBOXGUEST_IOCTL_CODE(16, sizeof(VBoxGuestHGCMConnectInfo))
-# define VBOXGUEST_IOCTL_HGCM_DISCONNECT    VBOXGUEST_IOCTL_CODE(17, sizeof(VBoxGuestHGCMDisconnectInfo))
-# define VBOXGUEST_IOCTL_HGCM_CALL(Size)    VBOXGUEST_IOCTL_CODE(18, (Size))
-# define VBOXGUEST_IOCTL_CLIPBOARD_CONNECT  VBOXGUEST_IOCTL_CODE(19, sizeof(uint32_t))
+# define VBOXGUEST_IOCTL_HGCM_CONNECT             VBOXGUEST_IOCTL_CODE(16, sizeof(VBoxGuestHGCMConnectInfo))
+# define VBOXGUEST_IOCTL_HGCM_DISCONNECT          VBOXGUEST_IOCTL_CODE(17, sizeof(VBoxGuestHGCMDisconnectInfo))
+# define VBOXGUEST_IOCTL_HGCM_CALL(Size)          VBOXGUEST_IOCTL_CODE(18, (Size))
+# define VBOXGUEST_IOCTL_HGCM_CALL_TIMED(Size)    VBOXGUEST_IOCTL_CODE(20, (Size))
+# define VBOXGUEST_IOCTL_CLIPBOARD_CONNECT        VBOXGUEST_IOCTL_CODE(19, sizeof(uint32_t))
 
 # define VBOXGUEST_HGCM_CALL_PARMS(a)       ((HGCMFunctionParameter *)((uint8_t *)(a) + sizeof (VBoxGuestHGCMCallInfo)))
 
@@ -1477,6 +1609,7 @@ typedef VBOXGUESTOS2IDCCONNECT *PVBOXGUESTOS2IDCCONNECT;
 #endif /* RT_OS_OS2 */
 
 /** @} */
+#endif /* !defined(IN_RC) && !defined(IN_RING0_AGNOSTIC) && !defined(IPRT_NO_CRT) */
 
 
 #ifdef IN_RING3
@@ -1556,10 +1689,13 @@ VBGLR3DECL(int)     VbglR3GuestPropReadValue(uint32_t ClientId, const char *pszN
 VBGLR3DECL(int)     VbglR3GuestPropReadValueAlloc(uint32_t u32ClientId, const char *pszName, char **ppszValue);
 VBGLR3DECL(void)    VbglR3GuestPropReadValueFree(char *pszValue);
 VBGLR3DECL(int)     VbglR3GuestPropEnumRaw(uint32_t u32ClientId, const char *paszPatterns, char *pcBuf, uint32_t cbBuf, uint32_t *pcbBufActual);
-VBGLR3DECL(int)     VbglR3GuestPropEnum(uint32_t u32ClientId, char **ppaszPatterns, int cPatterns, PVBGLR3GUESTPROPENUM *ppHandle, char **ppszName, char **ppszValue, uint64_t *pu64Timestamp, char **ppszFlags);
-VBGLR3DECL(int)     VbglR3GuestPropEnumNext(PVBGLR3GUESTPROPENUM pHandle, char **ppszName, char **ppszValue, uint64_t *pu64Timestamp, char **ppszFlags);
+VBGLR3DECL(int)     VbglR3GuestPropEnum(uint32_t u32ClientId, char const * const *ppaszPatterns, uint32_t cPatterns, PVBGLR3GUESTPROPENUM *ppHandle,
+                                        char const **ppszName, char const **ppszValue, uint64_t *pu64Timestamp, char const **ppszFlags);
+VBGLR3DECL(int)     VbglR3GuestPropEnumNext(PVBGLR3GUESTPROPENUM pHandle, char const **ppszName, char const **ppszValue, uint64_t *pu64Timestamp,
+                                            char const **ppszFlags);
 VBGLR3DECL(void)    VbglR3GuestPropEnumFree(PVBGLR3GUESTPROPENUM pHandle);
-VBGLR3DECL(int)     VbglR3GuestPropDelTree(uint32_t u32ClientId, char **papszPatterns, int cPatterns);
+VBGLR3DECL(int)     VbglR3GuestPropDelSet(uint32_t u32ClientId, char const * const *papszPatterns, uint32_t cPatterns);
+VBGLR3DECL(int)     VbglR3GuestPropWait(uint32_t u32ClientId, const char *pszPatterns, void *pvBuf, uint32_t cbBuf, uint64_t u64Timestamp, uint32_t u32Timeout, char ** ppszName, char **ppszValue, uint64_t *pu64Timestamp, char **ppszFlags, uint32_t *pcbBufActual);
 /** @}  */
 #endif /* VBOX_WITH_GUEST_PROPS defined */
 

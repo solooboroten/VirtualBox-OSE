@@ -1,4 +1,4 @@
-; $Id: CPUMAllA.asm $
+; $Id: CPUMAllA.asm 15416 2008-12-13 05:31:06Z vboxsync $
 ;; @file
 ; CPUM - Guest Context Assembly Routines.
 ;
@@ -40,14 +40,6 @@
 ;
 %define ENABLE_WRITE_PROTECTION 1
 
-;; @def CPUM_REG
-; The register which we load the CPUM pointer into.
-%ifdef RT_ARCH_AMD64
- %define CPUM_REG   rdx
-%else
- %define CPUM_REG   edx
-%endif
-
 BEGINCODE
 
 
@@ -63,10 +55,10 @@ BEGINCODE
 ;
 ; @returns  0 if caller should continue execution.
 ; @returns  VINF_EM_RAW_GUEST_TRAP if a guest trap should be generated.
-; @param    pCPUM  x86:[esp+4] GCC:rdi MSC:rcx     CPUM pointer
+; @param    pCPUMCPU  x86:[esp+4] GCC:rdi MSC:rcx     CPUMCPU pointer
 ;
 align 16
-BEGINPROC   CPUMHandleLazyFPUAsm
+BEGINPROC   cpumHandleLazyFPUAsm
     ;
     ; Figure out what to do.
     ;
@@ -106,7 +98,7 @@ BEGINPROC   CPUMHandleLazyFPUAsm
 %else
     mov     xDX, dword [esp + 4]
 %endif
-    test    dword [xDX + CPUM.fUseFlags], CPUM_USED_FPU
+    test    dword [xDX + CPUMCPU.fUseFlags], CPUM_USED_FPU
     jz      hlfpua_not_loaded
     jmp     hlfpua_to_host
 
@@ -115,7 +107,7 @@ BEGINPROC   CPUMHandleLazyFPUAsm
     ;
 align 16
 hlfpua_not_loaded:
-    mov     eax, [xDX + CPUM.Guest.cr0]
+    mov     eax, [xDX + CPUMCPU.Guest.cr0]
     and     eax, X86_CR0_MP | X86_CR0_EM | X86_CR0_TS
 %ifdef RT_ARCH_AMD64
     lea     r8, [hlfpuajmp1 wrt rip]
@@ -150,7 +142,7 @@ hlfpu_afFlags:
     ;
 align 16
 hlfpua_switch_fpu_ctx:
-%ifndef IN_RING3 ; IN_GC or IN_RING0
+%ifndef IN_RING3 ; IN_RC or IN_RING0
     mov     xCX, cr0
  %ifdef RT_ARCH_AMD64
     lea     r8, [hlfpu_afFlags wrt rip]
@@ -163,15 +155,18 @@ hlfpua_switch_fpu_ctx:
     mov     cr0, xAX                            ; clear flags so we don't trap here.
 %endif
 %ifndef RT_ARCH_AMD64
-    test    dword [xDX + CPUM.CPUFeatures.edx], X86_CPUID_FEATURE_EDX_FXSR
+    mov     eax, edx
+    ; Calculate the PCPUM pointer
+    sub     eax, [edx + CPUMCPU.ulOffCPUM]
+    test    dword [eax + CPUM.CPUFeatures.edx], X86_CPUID_FEATURE_EDX_FXSR
     jz short hlfpua_no_fxsave
 %endif
 
-    fxsave  [xDX + CPUM.Host.fpu]
-    or      dword [xDX + CPUM.fUseFlags], (CPUM_USED_FPU | CPUM_USED_FPU_SINCE_REM)
-    fxrstor [xDX + CPUM.Guest.fpu]
+    fxsave  [xDX + CPUMCPU.Host.fpu]
+    or      dword [xDX + CPUMCPU.fUseFlags], (CPUM_USED_FPU | CPUM_USED_FPU_SINCE_REM)
+    fxrstor [xDX + CPUMCPU.Guest.fpu]
 hlfpua_finished_switch:
-%ifdef IN_GC
+%ifdef IN_RC
     mov     cr0, xCX                            ; load the new cr0 flags.
 %endif
     ; return continue execution.
@@ -181,17 +176,17 @@ hlfpua_finished_switch:
 %ifndef RT_ARCH_AMD64
 ; legacy support.
 hlfpua_no_fxsave:
-    fnsave  [xDX + CPUM.Host.fpu]
-    or      dword [xDX + CPUM.fUseFlags], dword (CPUM_USED_FPU | CPUM_USED_FPU_SINCE_REM) ; yasm / nasm
-    mov     eax, [xDX + CPUM.Guest.fpu]    ; control word
+    fnsave  [xDX + CPUMCPU.Host.fpu]
+    or      dword [xDX + CPUMCPU.fUseFlags], dword (CPUM_USED_FPU | CPUM_USED_FPU_SINCE_REM) ; yasm / nasm
+    mov     eax, [xDX + CPUMCPU.Guest.fpu]    ; control word
     not     eax                                 ; 1 means exception ignored (6 LS bits)
     and     eax, byte 03Fh                      ; 6 LS bits only
-    test    eax, [xDX + CPUM.Guest.fpu + 4]; status word
+    test    eax, [xDX + CPUMCPU.Guest.fpu + 4]; status word
     jz short hlfpua_no_exceptions_pending
     ; technically incorrect, but we certainly don't want any exceptions now!!
-    and     dword [xDX + CPUM.Guest.fpu + 4], ~03Fh
+    and     dword [xDX + CPUMCPU.Guest.fpu + 4], ~03Fh
 hlfpua_no_exceptions_pending:
-    frstor  [xDX + CPUM.Guest.fpu]
+    frstor  [xDX + CPUMCPU.Guest.fpu]
     jmp near hlfpua_finished_switch
 %endif ; !RT_ARCH_AMD64
 
@@ -203,236 +198,6 @@ hlfpua_action_4:
 hlfpua_to_host:
     mov     eax, VINF_EM_RAW_GUEST_TRAP
     ret
-ENDPROC     CPUMHandleLazyFPUAsm
+ENDPROC     cpumHandleLazyFPUAsm
 
 
-;;
-; Restores the host's FPU/XMM state
-;
-; @returns  0
-; @param    pCPUM  x86:[esp+4] GCC:rdi MSC:rcx     CPUM pointer
-;
-align 16
-BEGINPROC CPUMRestoreHostFPUStateAsm
-%ifdef RT_ARCH_AMD64
- %ifdef RT_OS_WINDOWS
-    mov     xDX, rcx
- %else
-    mov     xDX, rdi
- %endif
-%else
-    mov     xDX, dword [esp + 4]
-%endif
-
-    ; Restore FPU if guest has used it.
-    ; Using fxrstor should ensure that we're not causing unwanted exception on the host.
-    test    dword [xDX + CPUM.fUseFlags], CPUM_USED_FPU
-    jz short gth_fpu_no
-
-    mov     xAX, cr0
-    mov     xCX, xAX                    ; save old CR0
-    and     xAX, ~(X86_CR0_TS | X86_CR0_EM)
-    mov     cr0, xAX
-
-    fxsave  [xDX + CPUM.Guest.fpu]
-    fxrstor [xDX + CPUM.Host.fpu]
-
-    mov     cr0, xCX                    ; and restore old CR0 again
-    and     dword [xDX + CPUM.fUseFlags], ~CPUM_USED_FPU
-gth_fpu_no:
-    xor     eax, eax
-    ret
-ENDPROC   CPUMRestoreHostFPUStateAsm
-
-
-;;
-; Restores the guest's FPU/XMM state
-;
-; @param    pCtx  x86:[esp+4] GCC:rdi MSC:rcx     CPUMCTX pointer
-;
-align 16
-BEGINPROC   CPUMLoadFPUAsm
-%ifdef RT_ARCH_AMD64
- %ifdef RT_OS_WINDOWS
-    mov     xDX, rcx
- %else
-    mov     xDX, rdi
- %endif
-%else
-    mov     xDX, dword [esp + 4]
-%endif
-    fxrstor [xDX + CPUMCTX.fpu]
-    ret
-ENDPROC     CPUMLoadFPUAsm
-
-;;
-; Restores the guest's FPU/XMM state
-;
-; @param    pCtx  x86:[esp+4] GCC:rdi MSC:rcx     CPUMCTX pointer
-;
-align 16
-BEGINPROC   CPUMSaveFPUAsm
-%ifdef RT_ARCH_AMD64
- %ifdef RT_OS_WINDOWS
-    mov     xDX, rcx
- %else
-    mov     xDX, rdi
- %endif
-%else
-    mov     xDX, dword [esp + 4]
-%endif
-    fxsave  [xDX + CPUMCTX.fpu]
-    ret
-ENDPROC CPUMSaveFPUAsm
-
-;;
-; Restores the guest's XMM state
-;
-; @param    pCtx  x86:[esp+4] GCC:rdi MSC:rcx     CPUMCTX pointer
-;
-align 16
-BEGINPROC   CPUMLoadXMMAsm
-%ifdef RT_ARCH_AMD64
- %ifdef RT_OS_WINDOWS
-    mov     xDX, rcx
- %else
-    mov     xDX, rdi
- %endif
-%else
-    mov     xDX, dword [esp + 4]
-%endif
-    movdqa  xmm0, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*0]
-    movdqa  xmm1, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*1]
-    movdqa  xmm2, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*2]
-    movdqa  xmm3, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*3]
-    movdqa  xmm4, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*4]
-    movdqa  xmm5, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*5]
-    movdqa  xmm6, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*6]
-    movdqa  xmm7, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*7]
-    
-%ifdef RT_ARCH_AMD64
-    test qword [xDX + CPUMCTX.msrEFER], MSR_K6_EFER_LMA
-    jz CPUMLoadXMMAsm_done
-    
-    movdqa  xmm8, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*8]
-    movdqa  xmm9, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*9]
-    movdqa  xmm10, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*10]
-    movdqa  xmm11, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*11]
-    movdqa  xmm12, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*12]
-    movdqa  xmm13, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*13]
-    movdqa  xmm14, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*14]
-    movdqa  xmm15, [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*15]
-CPUMLoadXMMAsm_done:
-%endif
-
-    ret
-ENDPROC     CPUMLoadXMMAsm
-
-
-;;
-; Restores the guest's XMM state
-;
-; @param    pCtx  x86:[esp+4] GCC:rdi MSC:rcx     CPUMCTX pointer
-;
-align 16
-BEGINPROC   CPUMSaveXMMAsm
-%ifdef RT_ARCH_AMD64
- %ifdef RT_OS_WINDOWS
-    mov     xDX, rcx
- %else
-    mov     xDX, rdi
- %endif
-%else
-    mov     xDX, dword [esp + 4]
-%endif
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*0], xmm0
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*1], xmm1
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*2], xmm2
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*3], xmm3
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*4], xmm4
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*5], xmm5
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*6], xmm6
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*7], xmm7
-    
-%ifdef RT_ARCH_AMD64
-    test qword [xDX + CPUMCTX.msrEFER], MSR_K6_EFER_LMA
-    jz CPUMSaveXMMAsm_done
-
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*8], xmm8
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*9], xmm9
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*10], xmm10
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*11], xmm11
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*12], xmm12
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*13], xmm13
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*14], xmm14
-    movdqa  [xDX + CPUMCTX.fpu + X86FXSTATE.aXMM + 16*15], xmm15
-    
-CPUMSaveXMMAsm_done:
-%endif
-    ret
-ENDPROC     CPUMSaveXMMAsm
-
-
-;;
-; Set the FPU control word; clearing exceptions first
-;
-; @param  u16FCW    x86:[esp+4] GCC:rdi MSC:rcx     New FPU control word
-align 16
-BEGINPROC CPUMSetFCW
-%ifdef RT_ARCH_AMD64
- %ifdef RT_OS_WINDOWS
-    mov     xAX, rcx
- %else
-    mov     xAX, rdi
- %endif
-%else
-    mov     xAX, dword [esp + 4]
-%endif
-    fnclex
-    push    xAX
-    fldcw   [xSP]
-    pop     xAX
-    ret
-ENDPROC   CPUMSetFCW
-
-;;
-; Get the FPU control word
-;
-align 16
-BEGINPROC CPUMGetFCW
-    fnstcw  [xSP - 8]
-    mov     ax, word [xSP - 8]
-    ret
-ENDPROC   CPUMGetFCW
-
-
-;;
-; Set the MXCSR; 
-;
-; @param  u32MXCSR    x86:[esp+4] GCC:rdi MSC:rcx     New MXCSR
-align 16
-BEGINPROC CPUMSetMXCSR
-%ifdef RT_ARCH_AMD64
- %ifdef RT_OS_WINDOWS
-    mov     xAX, rcx
- %else
-    mov     xAX, rdi
- %endif
-%else
-    mov     xAX, dword [esp + 4]
-%endif
-    push    xAX
-    ldmxcsr [xSP]
-    pop     xAX
-    ret
-ENDPROC   CPUMSetMXCSR
-
-;;
-; Get the MXCSR
-;
-align 16
-BEGINPROC CPUMGetMXCSR
-    stmxcsr [xSP - 8]
-    mov     eax, dword [xSP - 8]
-    ret
-ENDPROC   CPUMGetMXCSR

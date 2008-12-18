@@ -28,8 +28,10 @@
 
 GuestOSType::GuestOSType()
     : mOSType (VBOXOSTYPE_Unknown)
+    , mOSHint (VBOXOSHINT_NONE)
     , mRAMSize (0), mVRAMSize (0)
     , mHDDSize (0), mMonitorCount (0)
+    , mNetworkAdapterType (NetworkAdapterType_Am79C973)
 {
 }
 
@@ -54,33 +56,51 @@ void GuestOSType::FinalRelease()
  * Initializes the guest OS type object.
  *
  * @returns COM result indicator
- * @param aId          os short name string
- * @param aDescription os name string
- * @param aOSType      global OS type ID
- * @param aRAMSize     recommended RAM size in megabytes
- * @param aVRAMSize    recommended video memory size in megabytes
- * @param aHDDSize     recommended HDD size in megabytes
+ * @param aFamilyId          os family short name string
+ * @param aFamilyDescription os family name string
+ * @param aId                os short name string
+ * @param aDescription       os name string
+ * @param aOSType            global OS type ID
+ * @param aOSHint            os configuration hint
+ * @param aRAMSize           recommended RAM size in megabytes
+ * @param aVRAMSize          recommended video memory size in megabytes
+ * @param aHDDSize           recommended HDD size in megabytes
  */
-HRESULT GuestOSType::init (const char *aId, const char *aDescription, VBOXOSTYPE aOSType,
-                           uint32_t aRAMSize, uint32_t aVRAMSize, uint32_t aHDDSize)
+HRESULT GuestOSType::init (const char *aFamilyId, const char *aFamilyDescription,
+                           const char *aId, const char *aDescription,
+                           VBOXOSTYPE aOSType, uint32_t aOSHint,
+                           uint32_t aRAMSize, uint32_t aVRAMSize, uint32_t aHDDSize,
+                           NetworkAdapterType_T aNetworkAdapterType)
 {
-    LogFlowThisFunc (("aId='%s', aDescription='%s', aType=%d, "
-                      "aRAMSize=%d, aVRAMSize=%d, aHDDSize=%d\n",
-                      aId, aDescription, aOSType,
-                      aRAMSize, aVRAMSize, aHDDSize));
+#if 0
+    LogFlowThisFunc (("aFamilyId='%s', aFamilyDescription='%s', "
+                      "aId='%s', aDescription='%s', "
+                      "aType=%d, aOSHint=%x, "
+                      "aRAMSize=%d, aVRAMSize=%d, aHDDSize=%d, "
+                      "aNetworkAdapterType=%d\n",
+                      aFamilyId, aFamilyDescription,
+                      aId, aDescription,
+                      aOSType, aOSHint,
+                      aRAMSize, aVRAMSize, aHDDSize,
+                      aNetworkAdapterType));
+#endif
 
-    ComAssertRet (aId && aDescription, E_INVALIDARG);
+    ComAssertRet (aFamilyId && aFamilyDescription && aId && aDescription, E_INVALIDARG);
 
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
+    unconst (mFamilyID) = aFamilyId;
+    unconst (mFamilyDescription) = aFamilyDescription;
     unconst (mID) = aId;
     unconst (mDescription) = aDescription;
     unconst (mOSType) = aOSType;
+    unconst (mOSHint) = aOSHint;
     unconst (mRAMSize) = aRAMSize;
     unconst (mVRAMSize) = aVRAMSize;
     unconst (mHDDSize) = aHDDSize;
+    unconst (mNetworkAdapterType) = aNetworkAdapterType;
 
     /* Confirm a successful initialization when it's the case */
     autoInitSpan.setSucceeded();
@@ -103,10 +123,35 @@ void GuestOSType::uninit()
 // IGuestOSType properties
 /////////////////////////////////////////////////////////////////////////////
 
+STDMETHODIMP GuestOSType::COMGETTER(FamilyId) (BSTR *aFamilyId)
+{
+    CheckComArgOutPointerValid(aFamilyId);
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* mFamilyID is constant during life time, no need to lock */
+    mFamilyID.cloneTo (aFamilyId);
+
+    return S_OK;
+}
+
+STDMETHODIMP GuestOSType::COMGETTER(FamilyDescription) (BSTR *aFamilyDescription)
+{
+    CheckComArgOutPointerValid(aFamilyDescription);
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* mFamilyDescription is constant during life time, no need to lock */
+    mFamilyDescription.cloneTo (aFamilyDescription);
+
+    return S_OK;
+}
+
 STDMETHODIMP GuestOSType::COMGETTER(Id) (BSTR *aId)
 {
-    if (!aId)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aId);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -119,8 +164,7 @@ STDMETHODIMP GuestOSType::COMGETTER(Id) (BSTR *aId)
 
 STDMETHODIMP GuestOSType::COMGETTER(Description) (BSTR *aDescription)
 {
-    if (!aDescription)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aDescription);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -131,10 +175,48 @@ STDMETHODIMP GuestOSType::COMGETTER(Description) (BSTR *aDescription)
     return S_OK;
 }
 
+STDMETHODIMP GuestOSType::COMGETTER(Is64Bit) (BOOL *aIs64Bit)
+{
+    CheckComArgOutPointerValid(aIs64Bit);
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* mIs64Bit is constant during life time, no need to lock */
+    *aIs64Bit = !!(mOSHint & VBOXOSHINT_64BIT);
+
+    return S_OK;
+}
+
+STDMETHODIMP GuestOSType::COMGETTER(RecommendedIOAPIC) (BOOL *aRecommendedIOAPIC)
+{
+    CheckComArgOutPointerValid(aRecommendedIOAPIC);
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* mRecommendedIOAPIC is constant during life time, no need to lock */
+    *aRecommendedIOAPIC = !!(mOSHint & VBOXOSHINT_IOAPIC);
+
+    return S_OK;
+}
+
+STDMETHODIMP GuestOSType::COMGETTER(RecommendedVirtEx) (BOOL *aRecommendedVirtEx)
+{
+    CheckComArgOutPointerValid(aRecommendedVirtEx);
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* mRecommendedVirtEx is constant during life time, no need to lock */
+    *aRecommendedVirtEx = !!(mOSHint & VBOXOSHINT_HWVIRTEX);
+
+    return S_OK;
+}
+
 STDMETHODIMP GuestOSType::COMGETTER(RecommendedRAM) (ULONG *aRAMSize)
 {
-    if (!aRAMSize)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aRAMSize);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -147,8 +229,7 @@ STDMETHODIMP GuestOSType::COMGETTER(RecommendedRAM) (ULONG *aRAMSize)
 
 STDMETHODIMP GuestOSType::COMGETTER(RecommendedVRAM) (ULONG *aVRAMSize)
 {
-    if (!aVRAMSize)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aVRAMSize);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -161,8 +242,7 @@ STDMETHODIMP GuestOSType::COMGETTER(RecommendedVRAM) (ULONG *aVRAMSize)
 
 STDMETHODIMP GuestOSType::COMGETTER(RecommendedHDD) (ULONG *aHDDSize)
 {
-    if (!aHDDSize)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aHDDSize);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -172,3 +252,17 @@ STDMETHODIMP GuestOSType::COMGETTER(RecommendedHDD) (ULONG *aHDDSize)
 
     return S_OK;
 }
+
+STDMETHODIMP GuestOSType::COMGETTER(AdapterType) (NetworkAdapterType_T *aNetworkAdapterType)
+{
+    CheckComArgOutPointerValid(aNetworkAdapterType);
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    /* mNetworkAdapterType is constant during life time, no need to lock */
+    *aNetworkAdapterType = mNetworkAdapterType;
+
+    return S_OK;
+}
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

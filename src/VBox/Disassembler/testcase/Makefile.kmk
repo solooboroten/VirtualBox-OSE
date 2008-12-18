@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 15302 2008-12-11 12:32:27Z vboxsync $
 ## @file
 # Sub-Makefile for the VBox Disassembler.
 #
@@ -25,7 +25,7 @@ ifdef VBOX_WITH_TESTCASES
 
 PROGRAMS += tstDisasm-2
 tstDisasm-2_TEMPLATE    = VBOXR3TSTEXE
-tstDisasm-2_DEFS        = IN_DIS_R3
+tstDisasm-2_DEFS        = IN_DIS
 tstDisasm-2_SOURCES     = \
 	tstDisasm-2.cpp
 tstDisasm-2_LIBS        = \
@@ -208,7 +208,7 @@ OTHER_CLEAN += $(VBOX_DISAS_TEST_CLEAN)
 
 # We don't want any of the tests rules to run in parallel because the
 # output will be difficult to follow. Abusing VBOX_DISAS_TEST_CLEAN here...
-.NOTPARALLEL: $(VBOX_DISAS_TEST_CLEAN)
+.NOTPARALLEL: $$(VBOX_DISAS_TEST_CLEAN)
 
 
 #
@@ -216,10 +216,6 @@ OTHER_CLEAN += $(VBOX_DISAS_TEST_CLEAN)
 # (kBuild r1646)
 #
 TESTING += $(addprefix $(VBOX_DISAS_TEST_OUT_DIR)/,$(VBOX_DISAS_TESTS))
-
-# Aliases for use till kBuild gets updated.
-.PHONY: check test
-check test: $(TESTING)
 
 
 #

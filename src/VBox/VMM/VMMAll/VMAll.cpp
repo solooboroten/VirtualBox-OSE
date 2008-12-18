@@ -1,4 +1,4 @@
-/* $Id: VMAll.cpp $ */
+/* $Id: VMAll.cpp 13832 2008-11-05 02:01:12Z vboxsync $ */
 /** @file
  * VM - Virtual Machine All Contexts.
  */
@@ -48,7 +48,7 @@
  * @param   ...             Error message arguments.
  * @thread  Any
  */
-VMDECL(int) VMSetError(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, ...)
+VMMDECL(int) VMSetError(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, ...)
 {
     va_list args;
     va_start(args, pszFormat);
@@ -72,7 +72,7 @@ VMDECL(int) VMSetError(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, 
  * @param   args            Error message arguments.
  * @thread  Any
  */
-VMDECL(int) VMSetErrorV(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, va_list args)
+VMMDECL(int) VMSetErrorV(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, va_list args)
 {
 #ifdef IN_RING3
     /*
@@ -81,7 +81,7 @@ VMDECL(int) VMSetErrorV(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat,
     va_list va2;
     va_copy(va2, args); /* Have to make a copy here or GCC will break. */
     PVMREQ pReq;
-    VMR3ReqCall(pVM, &pReq, RT_INDEFINITE_WAIT, (PFNRT)vmR3SetErrorUV, 7,   /* ASSUMES 3 source pos args! */
+    VMR3ReqCall(pVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, (PFNRT)vmR3SetErrorUV, 7,   /* ASSUMES 3 source pos args! */
                 pVM->pUVM, rc, RT_SRC_POS_ARGS, pszFormat, &va2);
     VMR3ReqFree(pReq);
     va_end(va2);
@@ -92,7 +92,7 @@ VMDECL(int) VMSetErrorV(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat,
      */
     vmSetErrorCopy(pVM, rc, RT_SRC_POS_ARGS, pszFormat, args);
 
-# ifdef IN_GC
+# ifdef IN_RC
     VMMGCCallHost(pVM, VMMCALLHOST_VM_SET_ERROR, 0);
 # elif defined(IN_RING0)
     VMMR0CallHost(pVM, VMMCALLHOST_VM_SET_ERROR, 0);
@@ -139,7 +139,7 @@ void vmSetErrorCopy(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, va_
     /* allocate it */
     void *pv;
     int rc2 = MMHyperAlloc(pVM, cb, 0, MM_TAG_VM, &pv);
-    if (VBOX_SUCCESS(rc2))
+    if (RT_SUCCESS(rc2))
     {
         /* initialize it. */
         PVMERROR pErr = (PVMERROR)pv;
@@ -224,8 +224,8 @@ void vmSetErrorCopy(PVM pVM, int rc, RT_SRC_POS_DECL, const char *pszFormat, va_
  *
  *                  Also, why a string ID and not an enum?
  */
-VMDECL(int) VMSetRuntimeError(PVM pVM, bool fFatal, const char *pszErrorID,
-                              const char *pszFormat, ...)
+VMMDECL(int) VMSetRuntimeError(PVM pVM, bool fFatal, const char *pszErrorID,
+                               const char *pszFormat, ...)
 {
     va_list args;
     va_start(args, pszFormat);
@@ -249,7 +249,7 @@ VMDECL(int) VMSetRuntimeError(PVM pVM, bool fFatal, const char *pszErrorID,
  *
  * @thread  Any
  */
-VMDECL(int) VMSetRuntimeErrorV(PVM pVM, bool fFatal, const char *pszErrorID,
+VMMDECL(int) VMSetRuntimeErrorV(PVM pVM, bool fFatal, const char *pszErrorID,
                                const char *pszFormat, va_list args)
 {
 #ifdef IN_RING3
@@ -259,7 +259,7 @@ VMDECL(int) VMSetRuntimeErrorV(PVM pVM, bool fFatal, const char *pszErrorID,
     va_list va2;
     va_copy(va2, args); /* Have to make a copy here or GCC will break. */
     PVMREQ pReq;
-    VMR3ReqCall(pVM, &pReq, RT_INDEFINITE_WAIT, (PFNRT)vmR3SetRuntimeErrorV, 5,
+    VMR3ReqCall(pVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT, (PFNRT)vmR3SetRuntimeErrorV, 5,
                 pVM, fFatal, pszErrorID, pszFormat, &va2);
     VMR3ReqFree(pReq);
     va_end(va2);
@@ -270,7 +270,7 @@ VMDECL(int) VMSetRuntimeErrorV(PVM pVM, bool fFatal, const char *pszErrorID,
      */
     vmSetRuntimeErrorCopy(pVM, fFatal, pszErrorID, pszFormat, args);
 
-# ifdef IN_GC
+# ifdef IN_RC
     VMMGCCallHost(pVM, VMMCALLHOST_VM_SET_RUNTIME_ERROR, 0);
 # elif defined(IN_RING0)
     VMMR0CallHost(pVM, VMMCALLHOST_VM_SET_RUNTIME_ERROR, 0);
@@ -316,7 +316,7 @@ void vmSetRuntimeErrorCopy(PVM pVM, bool fFatal, const char *pszErrorID,
     /* allocate it */
     void *pv;
     int rc2 = MMHyperAlloc(pVM, cb, 0, MM_TAG_VM, &pv);
-    if (VBOX_SUCCESS(rc2))
+    if (RT_SUCCESS(rc2))
     {
         /* initialize it. */
         PVMRUNTIMEERROR pErr = (PVMRUNTIMEERROR)pv;
@@ -356,7 +356,7 @@ void vmSetRuntimeErrorCopy(PVM pVM, bool fFatal, const char *pszErrorID,
  * @returns Pointer to a read-only string with the state name.
  * @param   enmState    The state.
  */
-VMDECL(const char *) VMGetStateName(VMSTATE enmState)
+VMMDECL(const char *) VMGetStateName(VMSTATE enmState)
 {
     switch (enmState)
     {
@@ -378,3 +378,4 @@ VMDECL(const char *) VMGetStateName(VMSTATE enmState)
             return "Unknown";
     }
 }
+

@@ -1,4 +1,4 @@
-/* $Id: tstRTFsQueries.cpp $ */
+/* $Id: tstRTFsQueries.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * IPRT Testcase - RTFs Queries..
  */
@@ -32,7 +32,7 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #include <iprt/path.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/stream.h>
 #include <iprt/err.h>
 
@@ -55,7 +55,7 @@ int main(int argc, char **argv)
             RTPrintf("tstRTFsQueries: u32Serial=%#010RX32\n", u32Serial);
         else
         {
-            RTPrintf("tstRTFsQueries: RTFsQuerySerial failed, rc=%Vrc\n", rc);
+            RTPrintf("tstRTFsQueries: RTFsQuerySerial failed, rc=%Rrc\n", rc);
             cErrors++;
         }
 
@@ -69,14 +69,14 @@ int main(int argc, char **argv)
                      cbTotal, cbFree, cbBlock, cbSector);
         else
         {
-            RTPrintf("tstRTFsQueries: RTFsQuerySerial failed, rc=%Vrc\n", rc);
+            RTPrintf("tstRTFsQueries: RTFsQuerySerial failed, rc=%Rrc\n", rc);
             cErrors++;
         }
 
         rc = RTFsQuerySizes(argv[i], NULL, NULL, NULL, NULL);
         if (RT_FAILURE(rc))
         {
-            RTPrintf("tstRTFsQueries: RTFsQuerySizes(nop) failed, rc=%Vrc\n", rc);
+            RTPrintf("tstRTFsQueries: RTFsQuerySizes(nop) failed, rc=%Rrc\n", rc);
             cErrors++;
         }
 
@@ -93,7 +93,7 @@ int main(int argc, char **argv)
                      Props.fSupportsUnicode ? "supports-unicode" : "doesn't-support-unicode");
         else
         {
-            RTPrintf("tstRTFsQueries: RTFsQueryProperties failed, rc=%Vrc\n", rc);
+            RTPrintf("tstRTFsQueries: RTFsQueryProperties failed, rc=%Rrc\n", rc);
             cErrors++;
         }
     }

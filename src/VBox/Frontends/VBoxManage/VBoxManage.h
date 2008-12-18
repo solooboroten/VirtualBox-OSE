@@ -1,6 +1,6 @@
+/* $Id: VBoxManage.h 15602 2008-12-16 18:01:38Z vboxsync $ */
 /** @file
- * VBox frontends: VBoxManage (command-line interface):
- * VBoxManage header.
+ * VBoxManage - VirtualBox command-line interface, internal header file.
  */
 
 /*
@@ -22,11 +22,18 @@
 #ifndef ___H_VBOXMANAGE
 #define ___H_VBOXMANAGE
 
-#include <iprt/types.h>
 #ifndef VBOX_ONLY_DOCS
 #include <VBox/com/ptr.h>
 #include <VBox/com/VirtualBox.h>
+#include <VBox/com/EventQueue.h>
+#include <VBox/com/string.h>
 #endif /* !VBOX_ONLY_DOCS */
+
+#include <iprt/types.h>
+
+#if defined(VBOX_WITH_XPCOM) && !defined(RT_OS_DARWIN) && !defined(RT_OS_OS2)
+# define USE_XPCOM_QUEUE
+#endif
 
 /** @name Syntax diagram category.
  * @{ */
@@ -43,10 +50,10 @@
 #define USAGE_SNAPSHOT              RT_BIT_64(9)
 #define USAGE_REGISTERIMAGE         RT_BIT_64(10)
 #define USAGE_UNREGISTERIMAGE       RT_BIT_64(11)
-#define USAGE_SHOWVDIINFO           RT_BIT_64(12)
-#define USAGE_CREATEVDI             RT_BIT_64(13)
-#define USAGE_MODIFYVDI             RT_BIT_64(14)
-#define USAGE_CLONEVDI              RT_BIT_64(15)
+#define USAGE_SHOWHDINFO            RT_BIT_64(12)
+#define USAGE_CREATEHD              RT_BIT_64(13)
+#define USAGE_MODIFYHD              RT_BIT_64(14)
+#define USAGE_CLONEHD               RT_BIT_64(15)
 #define USAGE_ADDISCSIDISK          RT_BIT_64(16)
 #define USAGE_CREATEHOSTIF          RT_BIT_64(17)
 #define USAGE_REMOVEHOSTIF          RT_BIT_64(18)
@@ -62,8 +69,8 @@
 #define USAGE_SHAREDFOLDER_REMOVE   RT_BIT_64(26)
 #define USAGE_LOADSYMS              RT_BIT_64(29)
 #define USAGE_UNLOADSYMS            RT_BIT_64(30)
-#define USAGE_SETVDIUUID            RT_BIT_64(31)
-#define USAGE_CONVERTDD             RT_BIT_64(32)
+#define USAGE_SETHDUUID             RT_BIT_64(31)
+#define USAGE_CONVERTFROMRAW        RT_BIT_64(32)
 #define USAGE_LISTPARTITIONS        RT_BIT_64(33)
 #define USAGE_CREATERAWVMDK         RT_BIT_64(34)
 #define USAGE_VM_STATISTICS         RT_BIT_64(35)
@@ -76,6 +83,7 @@
 #endif  /* VBOX_WITH_GUEST_PROPS defined */
 #define USAGE_CONVERTTORAW          RT_BIT_64(41)
 #define USAGE_METRICS               RT_BIT_64(42)
+#define USAGE_CONVERTHD             RT_BIT_64(43)
 #define USAGE_ALL                   (~(uint64_t)0)
 /** @} */
 
@@ -83,6 +91,13 @@ typedef uint64_t USAGECATEGORY;
 
 /** flag whether we're in internal mode */
 extern bool g_fInternalMode;
+
+#ifndef VBOX_ONLY_DOCS
+# ifdef USE_XPCOM_QUEUE
+/** A pointer to the event queue, set by main() before calling any handlers. */
+extern nsCOMPtr<nsIEventQueue> g_pEventQ;
+# endif
+#endif /* !VBOX_ONLY_DOCS */
 
 /** showVMInfo details */
 typedef enum
@@ -97,19 +112,64 @@ typedef enum
 /*
  * Prototypes
  */
+/* VBoxManage.cpp */
 int errorSyntax(USAGECATEGORY u64Cmd, const char *pszFormat, ...);
 int errorArgument(const char *pszFormat, ...);
 
 void printUsageInternal(USAGECATEGORY u64Cmd);
+
 #ifndef VBOX_ONLY_DOCS
+void showProgress(ComPtr<IProgress> progress);
+
 int handleInternalCommands(int argc, char *argv[],
                            ComPtr <IVirtualBox> aVirtualBox, ComPtr<ISession> aSession);
 #endif /* !VBOX_ONLY_DOCS */
+
+/* VBoxManageGuestProp.cpp */
 extern void usageGuestProperty(void);
 #ifndef VBOX_ONLY_DOCS
 extern int handleGuestProperty(int argc, char *argv[],
                                ComPtr<IVirtualBox> aVirtualBox, ComPtr<ISession> aSession);
+
+/* VBoxManageVMInfo.cpp */
+void showSnapshots(ComPtr<ISnapshot> rootSnapshot, VMINFO_DETAILS details, const com::Bstr &prefix = "", int level = 0);
+int handleShowVMInfo(int argc, char *argv[],
+                     ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session);
+HRESULT showVMInfo(ComPtr <IVirtualBox> virtualBox, ComPtr<IMachine> machine,
+                   ComPtr <IConsole> console = ComPtr <IConsole> (),
+                   VMINFO_DETAILS details = VMINFO_NONE);
+
+/* VBoxManageList.cpp */
+int handleList(int argc, char *argv[],
+               ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session);
+
+/* VBoxManageMetrics.cpp */
+int handleMetrics(int argc, char *argv[],
+                  ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session);
+
+/* VBoxManageDisk.cpp */
+int handleCreateHardDisk(int argc, char *argv[],
+                         ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session);
+int handleModifyHardDisk(int argc, char *argv[],
+                         ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session);
+int handleCloneHardDisk(int argc, char *argv[],
+                        ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session);
+int handleConvertHardDisk(int argc, char **argv);
+int handleConvertFromRaw(int argc, char *argv[]);
+int handleAddiSCSIDisk(int argc, char *argv[],
+                       ComPtr <IVirtualBox> aVirtualBox, ComPtr<ISession> aSession);
+int handleShowHardDiskInfo(int argc, char *argv[],
+                           ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session);
+int handleOpenMedium(int argc, char *argv[],
+                     ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session);
+int handleCloseMedium(int argc, char *argv[],
+                      ComPtr<IVirtualBox> virtualBox, ComPtr<ISession> session);
+
+/* VBoxManageUSB.cpp */
+/* VBoxManageTODO.cpp */
+
 #endif /* !VBOX_ONLY_DOCS */
 unsigned long VBoxSVNRev();
 
 #endif /* !___H_VBOXMANAGE */
+

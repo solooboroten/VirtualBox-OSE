@@ -1,4 +1,4 @@
-/* $Id: tstLdr-2.cpp $ */
+/* $Id: tstLdr-2.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * IPRT - Testcase for parts of RTLdr*, manual inspection.
  */
@@ -36,7 +36,7 @@
 #include <iprt/alloc.h>
 #include <iprt/stream.h>
 #include <iprt/assert.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <VBox/dis.h>
 #include <iprt/err.h>
 #include <iprt/string.h>
@@ -84,7 +84,7 @@ static DECLCALLBACK(int) testGetImport(RTLDRMOD hLdrMod, const char *pszModule, 
 /**
  * One test iteration with one file.
  *
- * The test is very simple, we load the the file three times
+ * The test is very simple, we load the file three times
  * into two different regions. The first two into each of the
  * regions the for compare usage. The third is loaded into one
  * and then relocated between the two and other locations a few times.
@@ -98,7 +98,7 @@ static int testLdrOne(const char *pszFilename)
     int rc = RTLdrOpen(pszFilename, &hLdrMod);
     if (RT_FAILURE(rc))
     {
-        RTPrintf("tstLdr: Failed to open '%s', rc=%Vrc. aborting test.\n", pszFilename, rc);
+        RTPrintf("tstLdr: Failed to open '%s', rc=%Rrc. aborting test.\n", pszFilename, rc);
         Assert(hLdrMod == NIL_RTLDRMOD);
         return 1;
     }
@@ -137,7 +137,7 @@ static int testLdrOne(const char *pszFilename)
                                     RTPrintf("tstLdr: Disassembly failed!\n");
                             }
                             else
-                                RTPrintf("tstLdr: Relocate of '%s' from %#x to %#x failed, rc=%Vrc. Aborting test.\n",
+                                RTPrintf("tstLdr: Relocate of '%s' from %#x to %#x failed, rc=%Rrc. Aborting test.\n",
                                          pszFilename, Addr2, Addr, rc);
                         }
                         else
@@ -148,10 +148,10 @@ static int testLdrOne(const char *pszFilename)
                                  "Entrypoint", pszFilename, off, Value);
                 }
                 else
-                    RTPrintf("tstLdr: Failed to resolve symbol '%s' in '%s', rc=%Vrc.\n", "Entrypoint", pszFilename, rc);
+                    RTPrintf("tstLdr: Failed to resolve symbol '%s' in '%s', rc=%Rrc.\n", "Entrypoint", pszFilename, rc);
             }
             else
-                RTPrintf("tstLdr: Failed to get bits for '%s', rc=%Vrc. aborting test\n", pszFilename, rc);
+                RTPrintf("tstLdr: Failed to get bits for '%s', rc=%Rrc. aborting test\n", pszFilename, rc);
             RTMemFree(pvBits);
         }
         else
@@ -165,7 +165,7 @@ static int testLdrOne(const char *pszFilename)
     rc = RTLdrClose(hLdrMod);
     if (RT_FAILURE(rc))
     {
-        RTPrintf("tstLdr: Failed to close '%s', rc=%Vrc.\n", pszFilename, rc);
+        RTPrintf("tstLdr: Failed to close '%s', rc=%Rrc.\n", pszFilename, rc);
         rcRet++;
     }
 

@@ -83,7 +83,7 @@ HRESULT Session::init()
 {
     /* Enclose the state transition NotReady->InInit->Ready */
     AutoInitSpan autoInitSpan (this);
-    AssertReturn (autoInitSpan.isOk(), E_UNEXPECTED);
+    AssertReturn (autoInitSpan.isOk(), E_FAIL);
 
     LogFlowThisFuncEnter();
 
@@ -149,8 +149,7 @@ void Session::uninit (bool aFinalRelease)
 
 STDMETHODIMP Session::COMGETTER(State) (SessionState_T *aState)
 {
-    if (!aState)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aState);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -164,8 +163,7 @@ STDMETHODIMP Session::COMGETTER(State) (SessionState_T *aState)
 
 STDMETHODIMP Session::COMGETTER(Type) (SessionType_T *aType)
 {
-    if (!aType)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aType);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -180,8 +178,7 @@ STDMETHODIMP Session::COMGETTER(Type) (SessionType_T *aType)
 
 STDMETHODIMP Session::COMGETTER(Machine) (IMachine **aMachine)
 {
-    if (!aMachine)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aMachine);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -203,8 +200,7 @@ STDMETHODIMP Session::COMGETTER(Machine) (IMachine **aMachine)
 
 STDMETHODIMP Session::COMGETTER(Console) (IConsole **aConsole)
 {
-    if (!aConsole)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aConsole);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -269,10 +265,15 @@ STDMETHODIMP Session::GetRemoteConsole (IConsole **aConsole)
 
     AutoReadLock alock (this);
 
-    AssertReturn (mState == SessionState_Open, E_FAIL);
+    AssertReturn (mState != SessionState_Closed, E_FAIL);
 
     AssertMsgReturn (mType == SessionType_Direct && !!mConsole,
                      ("This is not a direct session!\n"), E_FAIL);
+
+    /* return a failure if the session already transitioned to Closing
+     * but the server hasn't processed Machine::OnSessionEnd() yet. */
+    if (mState != SessionState_Open)
+        return E_UNEXPECTED;
 
     mConsole.queryInterfaceTo (aConsole);
 
@@ -627,7 +628,7 @@ STDMETHODIMP Session::OnUSBDeviceAttach (IUSBDevice *aDevice,
     return mConsole->onUSBDeviceAttach (aDevice, aError, aMaskedIfs);
 }
 
-STDMETHODIMP Session::OnUSBDeviceDetach (INPTR GUIDPARAM aId,
+STDMETHODIMP Session::OnUSBDeviceDetach (IN_GUID aId,
                                          IVirtualBoxErrorInfo *aError)
 {
     LogFlowThisFunc (("\n"));
@@ -665,7 +666,7 @@ STDMETHODIMP Session::OnShowWindow (BOOL aCheck, BOOL *aCanShow, ULONG64 *aWinId
     return mConsole->onShowWindow (aCheck, aCanShow, aWinId);
 }
 
-STDMETHODIMP Session::AccessGuestProperty (INPTR BSTR aName, INPTR BSTR aValue, INPTR BSTR aFlags,
+STDMETHODIMP Session::AccessGuestProperty (IN_BSTR aName, IN_BSTR aValue, IN_BSTR aFlags,
                                            BOOL aIsSetter, BSTR *aRetValue, ULONG64 *aRetTimestamp, BSTR *aRetFlags)
 {
 #ifdef VBOX_WITH_GUEST_PROPS
@@ -673,12 +674,11 @@ STDMETHODIMP Session::AccessGuestProperty (INPTR BSTR aName, INPTR BSTR aValue, 
     AssertComRCReturn (autoCaller.rc(), autoCaller.rc());
 
     if (mState != SessionState_Open)
-        return setError (E_FAIL,
+        return setError (VBOX_E_INVALID_VM_STATE,
             tr ("Machine session is not open (session state: %d)."),
             mState);
     AssertReturn (mType == SessionType_Direct, E_UNEXPECTED);
-    if (!VALID_PTR (aName))
-        return E_POINTER;
+    CheckComArgNotNull(aName);
     if (!aIsSetter && !VALID_PTR (aRetValue))
         return E_POINTER;
     if (!aIsSetter && !VALID_PTR (aRetTimestamp))
@@ -696,11 +696,11 @@ STDMETHODIMP Session::AccessGuestProperty (INPTR BSTR aName, INPTR BSTR aValue, 
     else
         return mConsole->setGuestProperty (aName, aValue, aFlags);
 #else /* VBOX_WITH_GUEST_PROPS not defined */
-    return E_NOTIMPL;
+    ReturnComNotImplemented();
 #endif /* VBOX_WITH_GUEST_PROPS not defined */
 }
 
-STDMETHODIMP Session::EnumerateGuestProperties (INPTR BSTR aPatterns,
+STDMETHODIMP Session::EnumerateGuestProperties (IN_BSTR aPatterns,
                                                 ComSafeArrayOut(BSTR, aNames),
                                                 ComSafeArrayOut(BSTR, aValues),
                                                 ComSafeArrayOut(ULONG64, aTimestamps),
@@ -731,7 +731,7 @@ STDMETHODIMP Session::EnumerateGuestProperties (INPTR BSTR aPatterns,
                                               ComSafeArrayOutArg(aTimestamps),
                                               ComSafeArrayOutArg(aFlags));
 #else /* VBOX_WITH_GUEST_PROPS not defined */
-    return E_NOTIMPL;
+    ReturnComNotImplemented();
 #endif /* VBOX_WITH_GUEST_PROPS not defined */
 }
 
@@ -948,7 +948,7 @@ HRESULT Session::grabIPCSemaphore()
 
     /* wait until thread init is completed */
     vrc = RTThreadUserWait (mIPCThread, RT_INDEFINITE_WAIT);
-    AssertReturn (VBOX_SUCCESS (vrc) || vrc == VERR_INTERRUPTED, E_FAIL);
+    AssertReturn (RT_SUCCESS (vrc) || vrc == VERR_INTERRUPTED, E_FAIL);
 
     /* the thread must succeed */
     AssertReturn ((bool) data [2], E_FAIL);
@@ -1010,7 +1010,7 @@ void Session::releaseIPCSemaphore()
 
         /* wait for the thread to finish */
         vrc = RTThreadUserWait (mIPCThread, RT_INDEFINITE_WAIT);
-        Assert (VBOX_SUCCESS (vrc) || vrc == VERR_INTERRUPTED);
+        Assert (RT_SUCCESS (vrc) || vrc == VERR_INTERRUPTED);
 
         mIPCThread = NIL_RTTHREAD;
     }
@@ -1141,3 +1141,4 @@ DECLCALLBACK(int) IPCMutexHolderThread (RTTHREAD Thread, void *pvUser)
     return 0;
 }
 #endif
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

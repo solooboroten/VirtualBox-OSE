@@ -1,4 +1,4 @@
-/** $Id: tstInt.cpp $ */
+/** $Id: tstInt.cpp 14831 2008-11-30 10:31:16Z vboxsync $ */
 /** @file
  * Testcase: Test the interrupt gate feature of the support library.
  */
@@ -37,9 +37,11 @@
 #include <VBox/vmm.h>
 #include <VBox/err.h>
 #include <VBox/param.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/stream.h>
 #include <iprt/string.h>
+#include <iprt/alloc.h>
+#include <iprt/time.h>
 
 
 /**
@@ -82,7 +84,7 @@ int main(int argc, char **argv)
     PSUPDRVSESSION pSession;
     rc = SUPR3Init(&pSession);
     rcRet += rc != 0;
-    RTPrintf("tstInt: SUPR3Init -> rc=%Vrc\n", rc);
+    RTPrintf("tstInt: SUPR3Init -> rc=%Rrc\n", rc);
     if (!rc)
     {
         /*
@@ -103,9 +105,9 @@ int main(int argc, char **argv)
                 rc = SUPLowAlloc(cPages, (void **)&pVM, &pVMR0, &paPages[0]);
             else
                 rc = VERR_NO_MEMORY;
-            if (VBOX_SUCCESS(rc))
+            if (RT_SUCCESS(rc))
             {
-                pVM->pVMGC = 0;
+                pVM->pVMRC = 0;
                 pVM->pVMR3 = pVM;
                 pVM->pVMR0 = pVMR0;
                 pVM->paVMPagesR3 = paPages;
@@ -124,12 +126,12 @@ int main(int argc, char **argv)
                         rc = SUPCallVMMR0(pVMR0, VMMR0_DO_SLOW_NOP, NULL);
                         if (rc != VINF_SUCCESS)
                         {
-                            RTPrintf("tstInt: SUPCallVMMR0 -> rc=%Vrc i=%d Expected VINF_SUCCESS!\n", rc, i);
+                            RTPrintf("tstInt: SUPCallVMMR0 -> rc=%Rrc i=%d Expected VINF_SUCCESS!\n", rc, i);
                             rcRet++;
                             break;
                         }
                     }
-                    RTPrintf("tstInt: Performed SUPCallVMMR0 %d times (rc=%Vrc)\n", cIterations, rc);
+                    RTPrintf("tstInt: Performed SUPCallVMMR0 %d times (rc=%Rrc)\n", cIterations, rc);
 
                     /*
                      * The fast path.
@@ -143,14 +145,14 @@ int main(int argc, char **argv)
                         for (i = 0; i < 1000000; i++)
                         {
                             uint64_t OneStartTick = ASMReadTSC();
-                            rc = SUPCallVMMR0Fast(pVMR0, VMMR0_DO_NOP);
+                            rc = SUPCallVMMR0Fast(pVMR0, VMMR0_DO_NOP, 0);
                             uint64_t Ticks = ASMReadTSC() - OneStartTick;
                             if (Ticks < MinTicks)
                                 MinTicks = Ticks;
 
                             if (RT_UNLIKELY(rc != VINF_SUCCESS))
                             {
-                                RTPrintf("tstInt: SUPCallVMMR0Fast -> rc=%Vrc i=%d Expected VINF_SUCCESS!\n", rc, i);
+                                RTPrintf("tstInt: SUPCallVMMR0Fast -> rc=%Rrc i=%d Expected VINF_SUCCESS!\n", rc, i);
                                 rcRet++;
                                 break;
                             }
@@ -160,36 +162,6 @@ int main(int argc, char **argv)
 
                         RTPrintf("tstInt: SUPCallVMMR0Fast - %d iterations in %llu ns / %llu ticks. %llu ns / %#llu ticks per iteration. Min %llu ticks.\n",
                                  i, NanoSecs, Ticks, NanoSecs / i, Ticks / i, MinTicks);
-
-#ifdef VBOX_WITH_IDT_PATCHING
-                        /*
-                         * The fast path.
-                         */
-                        RTTimeNanoTS();
-                        StartTS = RTTimeNanoTS();
-                        StartTick = ASMReadTSC();
-                        MinTicks = UINT64_MAX;
-                        for (i = 0; i < 1000000; i++)
-                        {
-                            uint64_t OneStartTick = ASMReadTSC();
-                            rc = SUPCallVMMR0(pVMR0, VMMR0_DO_NOP, NULL);
-                            uint64_t Ticks = ASMReadTSC() - OneStartTick;
-                            if (Ticks < MinTicks)
-                                MinTicks = Ticks;
-
-                            if (RT_UNLIKELY(rc != VINF_SUCCESS))
-                            {
-                                RTPrintf("tstInt: SUPCallVMMR0/idt -> rc=%Vrc i=%d Expected VINF_SUCCESS!\n", rc, i);
-                                rcRet++;
-                                break;
-                            }
-                        }
-                        Ticks = ASMReadTSC() - StartTick;
-                        NanoSecs = RTTimeNanoTS() - StartTS;
-
-                        RTPrintf("tstInt: SUPCallVMMR0/idt - %d iterations in %llu ns / %llu ticks. %llu ns / %#llu ticks per iteration. Min %llu ticks.\n",
-                                 i, NanoSecs, Ticks, NanoSecs / i, Ticks / i, MinTicks);
-#endif /* VBOX_WITH_IDT_PATCHING */
 
                         /*
                          * The ordinary path.
@@ -208,7 +180,7 @@ int main(int argc, char **argv)
 
                             if (RT_UNLIKELY(rc != VINF_SUCCESS))
                             {
-                                RTPrintf("tstInt: SUPCallVMMR0Ex -> rc=%Vrc i=%d Expected VINF_SUCCESS!\n", rc, i);
+                                RTPrintf("tstInt: SUPCallVMMR0Ex -> rc=%Rrc i=%d Expected VINF_SUCCESS!\n", rc, i);
                                 rcRet++;
                                 break;
                             }
@@ -222,7 +194,7 @@ int main(int argc, char **argv)
                 }
                 else
                 {
-                    RTPrintf("tstInt: SUPSetVMForFastIOCtl failed: %Vrc\n", rc);
+                    RTPrintf("tstInt: SUPSetVMForFastIOCtl failed: %Rrc\n", rc);
                     rcRet++;
                 }
             }
@@ -238,13 +210,13 @@ int main(int argc, char **argv)
             rc = SUPUnloadVMM();
             if (rc)
             {
-                RTPrintf("tstInt: SUPUnloadVMM failed with rc=%Vrc\n", rc);
+                RTPrintf("tstInt: SUPUnloadVMM failed with rc=%Rrc\n", rc);
                 rcRet++;
             }
         }
         else
         {
-            RTPrintf("tstInt: SUPLoadVMM failed with rc=%Vrc\n", rc);
+            RTPrintf("tstInt: SUPLoadVMM failed with rc=%Rrc\n", rc);
             rcRet++;
         }
 
@@ -253,7 +225,7 @@ int main(int argc, char **argv)
          */
         rc = SUPTerm();
         rcRet += rc != 0;
-        RTPrintf("tstInt: SUPTerm -> rc=%Vrc\n", rc);
+        RTPrintf("tstInt: SUPTerm -> rc=%Rrc\n", rc);
     }
 
     return !!rc;

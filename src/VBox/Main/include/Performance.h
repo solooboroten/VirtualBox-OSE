@@ -1,4 +1,4 @@
-/* $Id: Performance.h $ */
+/* $Id: Performance.h 15051 2008-12-05 17:20:00Z vboxsync $ */
 
 /** @file
  *
@@ -22,9 +22,12 @@
  */
 
 
-#include <iprt/types.h>
 #include <VBox/com/defs.h>
 #include <VBox/com/ptr.h>
+
+#include <iprt/types.h>
+#include <iprt/err.h>
+
 #include <algorithm>
 #include <list>
 #include <string>
@@ -42,13 +45,15 @@ namespace pm
         CircularBuffer() : mData(0), mLength(0), mEnd(0), mWrapped(false) {};
         void init(ULONG length);
         ULONG length();
+        ULONG getSequenceNumber() { return mSequenceNumber; }
         void put(ULONG value);
         void copyTo(ULONG *data);
     private:
         ULONG *mData;
         ULONG  mLength;
         ULONG  mEnd;
-        bool           mWrapped;
+        ULONG  mSequenceNumber;
+        bool   mWrapped;
     };
 
     class SubMetric : public CircularBuffer
@@ -85,26 +90,22 @@ namespace pm
         typedef std::list<ProcessFlagsPair> ProcessList;
 
         CollectorHints() : mHostFlags(COLLECT_NONE) {}
-        void collectHostCpuLoad() { mHostFlags |= COLLECT_CPU_LOAD; }
-        void collectHostRamUsage() { mHostFlags |= COLLECT_RAM_USAGE; }
+        void collectHostCpuLoad()
+            { mHostFlags |= COLLECT_CPU_LOAD; }
+        void collectHostRamUsage()
+            { mHostFlags |= COLLECT_RAM_USAGE; }
         void collectProcessCpuLoad(RTPROCESS process)
-        {
-            findProcess(process).second |= COLLECT_CPU_LOAD;
-        }
+            { findProcess(process).second |= COLLECT_CPU_LOAD; }
         void collectProcessRamUsage(RTPROCESS process)
-        {
-            findProcess(process).second |= COLLECT_RAM_USAGE;
-        }
-        bool isHostCpuLoadCollected() { return (mHostFlags & COLLECT_CPU_LOAD) != 0; }
-        bool isHostRamUsageCollected() { return (mHostFlags & COLLECT_RAM_USAGE) != 0; }
+            { findProcess(process).second |= COLLECT_RAM_USAGE; }
+        bool isHostCpuLoadCollected() const
+            { return (mHostFlags & COLLECT_CPU_LOAD) != 0; }
+        bool isHostRamUsageCollected() const
+            { return (mHostFlags & COLLECT_RAM_USAGE) != 0; }
         bool isProcessCpuLoadCollected(RTPROCESS process)
-        {
-            return (findProcess(process).second & COLLECT_CPU_LOAD) != 0;
-        }
+            { return (findProcess(process).second & COLLECT_CPU_LOAD) != 0; }
         bool isProcessRamUsageCollected(RTPROCESS process)
-        {
-            return (findProcess(process).second & COLLECT_RAM_USAGE) != 0;
-        }
+            { return (findProcess(process).second & COLLECT_RAM_USAGE) != 0; }
         void getProcesses(std::vector<RTPROCESS>& processes) const
         {
             processes.clear();
@@ -167,6 +168,7 @@ namespace pm
         virtual const char *getUnit() = 0;
         virtual ULONG getMinValue() = 0;
         virtual ULONG getMaxValue() = 0;
+        virtual ULONG getScale() = 0;
 
         bool collectorBeat(uint64_t nowAt);
 
@@ -201,6 +203,7 @@ namespace pm
         const char *getUnit() { return "%"; };
         ULONG getMinValue() { return 0; };
         ULONG getMaxValue() { return PM_CPU_LOAD_MULTIPLIER; };
+        ULONG getScale() { return PM_CPU_LOAD_MULTIPLIER / 100; }
 
     protected:
         SubMetric *mUser;
@@ -234,6 +237,7 @@ namespace pm
         const char *getUnit() { return "MHz"; };
         ULONG getMinValue() { return 0; };
         ULONG getMaxValue() { return INT32_MAX; };
+        ULONG getScale() { return 1; }
     private:
         SubMetric *mMHz;
     };
@@ -250,6 +254,7 @@ namespace pm
         const char *getUnit() { return "kB"; };
         ULONG getMinValue() { return 0; };
         ULONG getMaxValue() { return INT32_MAX; };
+        ULONG getScale() { return 1; }
     private:
         SubMetric *mTotal;
         SubMetric *mUsed;
@@ -267,6 +272,7 @@ namespace pm
         const char *getUnit() { return "%"; };
         ULONG getMinValue() { return 0; };
         ULONG getMaxValue() { return PM_CPU_LOAD_MULTIPLIER; };
+        ULONG getScale() { return PM_CPU_LOAD_MULTIPLIER / 100; }
     protected:
         RTPROCESS  mProcess;
         SubMetric *mUser;
@@ -299,6 +305,7 @@ namespace pm
         const char *getUnit() { return "kB"; };
         ULONG getMinValue() { return 0; };
         ULONG getMaxValue() { return INT32_MAX; };
+        ULONG getScale() { return 1; }
     private:
         RTPROCESS  mProcess;
         SubMetric *mUsed;
@@ -363,7 +370,8 @@ namespace pm
         ULONG getPeriod() { return mBaseMetric->getPeriod(); };
         ULONG getLength()
             { return mAggregate ? 1 : mBaseMetric->getLength(); };
-        void query(ULONG **data, ULONG *count);
+        ULONG getScale() { return mBaseMetric->getScale(); }
+        void query(ULONG **data, ULONG *count, ULONG *sequenceNumber);
 
     private:
         std::string mName;
@@ -377,11 +385,15 @@ namespace pm
     class Filter
     {
     public:
-        Filter(ComSafeArrayIn(INPTR BSTR, metricNames),
+        Filter(ComSafeArrayIn(IN_BSTR, metricNames),
                ComSafeArrayIn(IUnknown * , objects));
-        static bool patternMatch(const char *pszPat, const char *pszName);
+        static bool patternMatch(const char *pszPat, const char *pszName,
+                                 bool fSeenColon = false);
         bool match(const ComPtr<IUnknown> object, const std::string &name) const;
     private:
+        void init(ComSafeArrayIn(IN_BSTR, metricNames),
+                  ComSafeArrayIn(IUnknown * , objects));
+
         typedef std::pair<const ComPtr<IUnknown>, const std::string> FilterElement;
         typedef std::list<FilterElement> ElementList;
 
@@ -391,3 +403,4 @@ namespace pm
     };
 }
 
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

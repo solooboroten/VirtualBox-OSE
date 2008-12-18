@@ -214,7 +214,7 @@ VBoxVMSettingsDlg::VBoxVMSettingsDlg (QWidget *aParent,
 #endif /* Q_WS_MAC */
 
     /* Common */
-    connect (&vboxGlobal(), SIGNAL (mediaEnumFinished (const VBoxMediaList &)),
+    connect (&vboxGlobal(), SIGNAL (mediumEnumFinished (const VBoxMediaList &)),
              this, SLOT (onMediaEnumerationDone()));
 
     /* Creating settings pages */
@@ -282,7 +282,7 @@ VBoxVMSettingsDlg::VBoxVMSettingsDlg (QWidget *aParent,
 
     /* Parallel page */
     prefPage = new VBoxVMSettingsParallelPage();
-    addItem (":/parallel_port_32px.png", ":/parallel_port_disabled_32px.png", ":/parallel_port_16px.png", ":/parallel_port_disabled_16px.png", 
+    addItem (":/parallel_port_32px.png", ":/parallel_port_disabled_32px.png", ":/parallel_port_16px.png", ":/parallel_port_disabled_16px.png",
              ParallelId, "#parallelPorts",
              prefPage, PortsId);
 
@@ -360,16 +360,15 @@ void VBoxVMSettingsDlg::revalidate (QIWidgetValidator *aWval)
     QWidget *pg = aWval->widget();
     bool valid = aWval->isOtherValid();
 
-    QString warningText;
-
-    VBoxSettingsPage *page = static_cast<VBoxSettingsPage*> (pg);
+    VBoxSettingsPage *page = static_cast <VBoxSettingsPage*> (pg);
     QString pageTitle = mSelector->itemTextByPage (page);
 
-    valid = page->revalidate (warningText, pageTitle);
-
-    if (!valid)
-        setWarning (tr ("%1 on the <b>%2</b> page.")
-                    .arg (warningText, pageTitle));
+    QString text;
+    valid = page->revalidate (text, pageTitle);
+    text = text.isEmpty() ? QString::null :
+           tr ("On the <b>%1</b> page, %2").arg (pageTitle, text);
+    aWval->setLastWarning (text);
+    valid ? setWarning (text) : setError (text);
 
     aWval->setOtherValid (valid);
 }

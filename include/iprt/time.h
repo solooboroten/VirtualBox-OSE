@@ -47,7 +47,7 @@ __BEGIN_DECLS
  *
  * The current representation is in nanoseconds relative to the unix epoch
  * (1970-01-01 00:00:00 UTC). This gives us an approximate span from
- * 1678 to 2262 without sacrifying the resolution offered by the various
+ * 1678 to 2262 without sacrificing the resolution offered by the various
  * host OSes (BSD & LINUX 1ns, NT 100ns).
  */
 typedef struct RTTIMESPEC
@@ -835,11 +835,11 @@ typedef struct RTTIMENANOTSDATAR0
 typedef RTTIMENANOTSDATA RTTIMENANOTSDATAR0;
 #endif
 
-#ifndef IN_GC
+#ifndef IN_RC
 /**
- * The GC layout of the RTTIMENANOTSDATA structure.
+ * The RC layout of the RTTIMENANOTSDATA structure.
  */
-typedef struct RTTIMENANOTSDATAGC
+typedef struct RTTIMENANOTSDATARC
 {
     RCPTRTYPE(uint64_t volatile  *) pu64Prev;
     DECLRCCALLBACKMEMBER(void, pfnBad,(PRTTIMENANOTSDATA pData, uint64_t u64NanoTS, uint64_t u64DeltaPrev, uint64_t u64PrevNanoTS));
@@ -849,9 +849,9 @@ typedef struct RTTIMENANOTSDATAGC
     uint32_t            cExpired;
     uint32_t            cBadPrev;
     uint32_t            cUpdateRaces;
-} RTTIMENANOTSDATAGC;
+} RTTIMENANOTSDATARC;
 #else
-typedef RTTIMENANOTSDATA RTTIMENANOTSDATAGC;
+typedef RTTIMENANOTSDATA RTTIMENANOTSDATARC;
 #endif
 
 /** Internal RTTimeNanoTS worker (assembly). */

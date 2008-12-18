@@ -43,13 +43,11 @@
 __BEGIN_DECLS
 
 /** @def VBOX_WITH_DEBUGGER
- * The build is with debugger module. Test if this is defined before
- * registering external debugger commands.
+ * The build is with debugger module. Test if this is defined before registering
+ * external debugger commands. This is normally defined in Config.kmk.
  */
-#ifndef VBOX_WITH_DEBUGGER
-# ifdef DEBUG
-#  define VBOX_WITH_DEBUGGER
-# endif
+#ifdef DOXYGEN_RUNNING
+# define VBOX_WITH_DEBUGGER
 #endif
 
 
@@ -640,6 +638,18 @@ typedef DECLCALLBACK(int) FNDBGCBACKWRITE(PDBGCBACK pBack, const void *pvBuf, si
 /** Pointer to a FNDBGCBACKWRITE() callback. */
 typedef FNDBGCBACKWRITE *PFNDBGCBACKWRITE;
 
+/**
+ * Ready / busy notification.
+ *
+ * @param   pBack       Pointer to the backend structure supplied by
+ *                      the backend. The backend can use this to find
+ *                      it's instance data.
+ * @param   fReady      Whether it's ready (true) or busy (false).
+ */
+typedef DECLCALLBACK(void) FNDBGCBACKSETREADY(PDBGCBACK pBack, bool fReady);
+/** Pointer to a FNDBGCBACKSETREADY() callback. */
+typedef FNDBGCBACKSETREADY *PFNDBGCBACKSETREADY;
+
 
 /**
  * The communication backend provides the console with a number of callbacks
@@ -653,6 +663,8 @@ typedef struct DBGCBACK
     PFNDBGCBACKREAD     pfnRead;
     /** Write output. */
     PFNDBGCBACKWRITE    pfnWrite;
+    /** Ready / busy notification. */
+    PFNDBGCBACKSETREADY pfnSetReady;
 } DBGCBACK;
 
 

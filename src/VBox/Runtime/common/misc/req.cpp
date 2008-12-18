@@ -1,4 +1,4 @@
-/* $Id: VMReq.cpp $ */
+/* $Id: VMReq.cpp 17451 2007-01-15 14:08:28Z bird $ */
 /** @file
  * IPRT - Request packets
  */
@@ -172,7 +172,7 @@ RTDECL(int) RTReqProcess(PRTREQQUEUE pQueue, unsigned cMillies)
         }
     }
 
-    LogFlow(("RTReqProcess: returns %Vrc\n", rc));
+    LogFlow(("RTReqProcess: returns %Rrc\n", rc));
     return rc;
 }
 
@@ -355,10 +355,10 @@ RTDECL(int) RTReqCallV(PRTREQQUEUE pQueue, PRTREQ *ppReq, unsigned cMillies, uns
     if (!(fFlags & RTREQFLAGS_NO_WAIT))
     {
         *ppReq = pReq;
-        LogFlow(("RTReqCallV: returns %Vrc *ppReq=%p\n", rc, pReq));
+        LogFlow(("RTReqCallV: returns %Rrc *ppReq=%p\n", rc, pReq));
     }
     else
-        LogFlow(("RTReqCallV: returns %Vrc\n", rc));
+        LogFlow(("RTReqCallV: returns %Rrc\n", rc));
     Assert(rc != VERR_INTERRUPTED);
     return rc;
 }
@@ -405,15 +405,15 @@ static void vmr3ReqJoinFree(PRTREQQUEUE pQueue, PRTREQ pList)
         if (cReqs++ > 25)
         {
             const uint32_t i = pQueue->iReqFree;
-            vmr3ReqJoinFreeSub(&pQueue->apReqFree[(i + 2) % ELEMENTS(pQueue->apReqFree)], pTail->pNext);
+            vmr3ReqJoinFreeSub(&pQueue->apReqFree[(i + 2) % RT_ELEMENTS(pQueue->apReqFree)], pTail->pNext);
 
             pTail->pNext = NULL;
-            vmr3ReqJoinFreeSub(&pQueue->apReqFree[(i + 2 + (i == pQueue->iReqFree)) % ELEMENTS(pQueue->apReqFree)], pTail->pNext);
+            vmr3ReqJoinFreeSub(&pQueue->apReqFree[(i + 2 + (i == pQueue->iReqFree)) % RT_ELEMENTS(pQueue->apReqFree)], pTail->pNext);
             return;
         }
         pTail = pTail->pNext;
     }
-    vmr3ReqJoinFreeSub(&pQueue->apReqFree[(pQueue->iReqFree + 2) % ELEMENTS(pQueue->apReqFree)], pList);
+    vmr3ReqJoinFreeSub(&pQueue->apReqFree[(pQueue->iReqFree + 2) % RT_ELEMENTS(pQueue->apReqFree)], pList);
 }
 
 
@@ -447,10 +447,10 @@ RTDECL(int) RTReqAlloc(PRTREQQUEUE pQueue, PRTREQ *ppReq, RTREQTYPE enmType)
      * While this could all be solved with a single list with a lock, it's a sport
      * of mine to avoid locks.
      */
-    int cTries = ELEMENTS(pQueue->apReqFree) * 2;
+    int cTries = RT_ELEMENTS(pQueue->apReqFree) * 2;
     while (--cTries >= 0)
     {
-        PRTREQ volatile *ppHead = &pQueue->apReqFree[ASMAtomicIncU32(&pQueue->iReqFree) % ELEMENTS(pQueue->apReqFree)];
+        PRTREQ volatile *ppHead = &pQueue->apReqFree[ASMAtomicIncU32(&pQueue->iReqFree) % RT_ELEMENTS(pQueue->apReqFree)];
 #if 0 /* sad, but this won't work safely because the reading of pReq->pNext. */
         PRTREQ pNext = NULL;
         PRTREQ pReq = *ppHead;
@@ -487,7 +487,7 @@ RTDECL(int) RTReqAlloc(PRTREQQUEUE pQueue, PRTREQ *ppReq, RTREQTYPE enmType)
                      * This shall not happen, but if it does we'll just destroy
                      * the semaphore and create a new one.
                      */
-                    AssertMsgFailed(("rc=%Vrc from RTSemEventWait(%#x).\n", rc, pReq->EventSem));
+                    AssertMsgFailed(("rc=%Rrc from RTSemEventWait(%#x).\n", rc, pReq->EventSem));
                     RTSemEventDestroy(pReq->EventSem);
                     rc = RTSemEventCreate(&pReq->EventSem);
                     AssertRC(rc);
@@ -593,7 +593,7 @@ RTDECL(int) RTReqFree(PRTREQ pReq)
     if (pQueue->cReqFree < 128)
     {
         ASMAtomicIncU32(&pQueue->cReqFree);
-        PRTREQ volatile *ppHead = &pQueue->apReqFree[ASMAtomicIncU32(&pQueue->iReqFree) % ELEMENTS(pQueue->apReqFree)];
+        PRTREQ volatile *ppHead = &pQueue->apReqFree[ASMAtomicIncU32(&pQueue->iReqFree) % RT_ELEMENTS(pQueue->apReqFree)];
         PRTREQ pNext;
         do
         {
@@ -658,25 +658,27 @@ RTDECL(int) RTReqQueue(PRTREQ pReq, unsigned cMillies)
     /*
      * Insert it.
      */
+    PRTREQQUEUE pQueue = ((RTREQ volatile *)pReq)->pQueue;                 /* volatile paranoia */
+    unsigned fFlags = ((RTREQ volatile *)pReq)->fFlags;                    /* volatile paranoia */
     pReq->enmState = RTREQSTATE_QUEUED;
     PRTREQ pNext;
     do
     {
-        pNext = pReq->pQueue->pReqs;
+        pNext = pQueue->pReqs;
         pReq->pNext = pNext;
-    } while (!ASMAtomicCmpXchgPtr((void * volatile *)&pReq->pQueue->pReqs, (void *)pReq, (void *)pNext));
+    } while (!ASMAtomicCmpXchgPtr((void * volatile *)&pQueue->pReqs, (void *)pReq, (void *)pNext));
 
     /*
      * Notify queue thread.
      */
-    RTSemEventSignal(pReq->pQueue->EventSem);
+    RTSemEventSignal(pQueue->EventSem);
 
     /*
      * Wait and return.
      */
-    if (!(pReq->fFlags & RTREQFLAGS_NO_WAIT))
+    if (!(fFlags & RTREQFLAGS_NO_WAIT))
         rc = RTReqWait(pReq, cMillies);
-    LogFlow(("RTReqQueue: returns %Vrc\n", rc));
+    LogFlow(("RTReqQueue: returns %Rrc\n", rc));
     return rc;
 }
 
@@ -738,7 +740,7 @@ RTDECL(int) RTReqWait(PRTREQ pReq, unsigned cMillies)
         ASMAtomicXchgSize(&pReq->fEventSemClear, true);
     if (pReq->enmState == RTREQSTATE_COMPLETED)
         rc = VINF_SUCCESS;
-    LogFlow(("RTReqWait: returns %Vrc\n", rc));
+    LogFlow(("RTReqWait: returns %Rrc\n", rc));
     Assert(rc != VERR_INTERRUPTED);
     return rc;
 }
@@ -867,14 +869,14 @@ static int  rtReqProcessOne(PRTREQ pReq)
     if (pReq->fFlags & RTREQFLAGS_NO_WAIT)
     {
         /* Free the packet, nobody is waiting. */
-        LogFlow(("rtReqProcessOne: Completed request %p: rcReq=%Vrc rcRet=%Vrc - freeing it\n",
+        LogFlow(("rtReqProcessOne: Completed request %p: rcReq=%Rrc rcRet=%Rrc - freeing it\n",
                  pReq, rcReq, rcRet));
         RTReqFree(pReq);
     }
     else
     {
         /* Notify the waiter and him free up the packet. */
-        LogFlow(("rtReqProcessOne: Completed request %p: rcReq=%Vrc rcRet=%Vrc - notifying waiting thread\n",
+        LogFlow(("rtReqProcessOne: Completed request %p: rcReq=%Rrc rcRet=%Rrc - notifying waiting thread\n",
                  pReq, rcReq, rcRet));
         ASMAtomicXchgSize(&pReq->fEventSemClear, false);
         int rc2 = RTSemEventSignal(pReq->EventSem);

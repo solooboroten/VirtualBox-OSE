@@ -1,4 +1,4 @@
-/* $Id: PGMHandler.cpp $ */
+/* $Id: PGMHandler.cpp 14969 2008-12-04 10:57:17Z vboxsync $ */
 /** @file
  * PGM - Page Manager / Monitor, Access Handlers.
  */
@@ -76,25 +76,26 @@ static DECLCALLBACK(int) pgmR3InfoHandlersVirtualOne(PAVLROGCPTRNODECORE pNode, 
  * @param   pszModR0        The R0 handler module. NULL means the default R0 module.
  * @param   pszHandlerR0    The R0 handler symbol name.
  * @param   pvUserR0        User argument to the R0 handler.
- * @param   pszModGC        The GC handler module. NULL means the default GC module.
- * @param   pszHandlerGC    The GC handler symbol name.
- * @param   pvUserGC        User argument to the GC handler.
- *                          This must be a GC pointer because it will be relocated!
+ * @param   pszModRC        The RC handler module. NULL means the default RC
+ *                          module.
+ * @param   pszHandlerRC    The RC handler symbol name.
+ * @param   pvUserRC        User argument to the RC handler. Values less than
+ *                          0x10000 will not be relocated.
  * @param   pszDesc         Pointer to description string. This must not be freed.
  */
-PGMR3DECL(int) PGMR3HandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS GCPhysLast,
+VMMR3DECL(int) PGMR3HandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS GCPhysLast,
                                             PFNPGMR3PHYSHANDLER pfnHandlerR3, void *pvUserR3,
                                             const char *pszModR0, const char *pszHandlerR0, RTR0PTR pvUserR0,
-                                            const char *pszModGC, const char *pszHandlerGC, RTGCPTR pvUserGC, const char *pszDesc)
+                                            const char *pszModRC, const char *pszHandlerRC, RTRCPTR pvUserRC, const char *pszDesc)
 {
-    LogFlow(("PGMR3HandlerPhysicalRegister: enmType=%d GCPhys=%VGv GCPhysLast=%VGv pfnHandlerR3=%VHv pvUserHC=%VHv pszModGC=%p:{%s} pszHandlerGC=%p:{%s} pvUser=%VGv pszDesc=%s\n",
-             enmType, GCPhys, GCPhysLast, pfnHandlerR3, pvUserR3, pszModGC, pszModGC, pszHandlerGC, pszHandlerGC, pvUserGC, pszDesc));
+    LogFlow(("PGMR3HandlerPhysicalRegister: enmType=%d GCPhys=%RGp GCPhysLast=%RGp pfnHandlerR3=%RHv pvUserHC=%RHv pszModR0=%s pszHandlerR0=%s pvUserR0=%RHv pszModRC=%s pszHandlerRC=%s pvUser=%RRv pszDesc=%s\n",
+             enmType, GCPhys, GCPhysLast, pfnHandlerR3, pvUserR3, pszModR0, pszHandlerR0, pvUserR0, pszHandlerRC, pszModRC, pvUserRC, pszDesc));
 
     /*
      * Validate input.
      */
-    if (!pszModGC)
-        pszModGC = VMMGC_MAIN_MODULE_NAME;
+    if (!pszModRC)
+        pszModRC = VMMGC_MAIN_MODULE_NAME;
 
     if (!pszModR0)
         pszModR0 = VMMR0_MAIN_MODULE_NAME;
@@ -105,24 +106,24 @@ PGMR3DECL(int) PGMR3HandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmType,
     R0PTRTYPE(PFNPGMR0PHYSHANDLER) pfnHandlerR0 = NIL_RTR0PTR;
     int rc = VINF_SUCCESS;
     if (pszHandlerR0)
-        rc = PDMR3GetSymbolR0Lazy(pVM, pszModR0, pszHandlerR0, &pfnHandlerR0);
-    if (VBOX_SUCCESS(rc))
+        rc = PDMR3LdrGetSymbolR0Lazy(pVM, pszModR0, pszHandlerR0, &pfnHandlerR0);
+    if (RT_SUCCESS(rc))
     {
         /*
          * Resolve the GC handler.
          */
-        RTGCPTR32 pfnHandlerGC = NIL_RTGCPTR;
-        if (pszHandlerGC)
-            rc = PDMR3GetSymbolGCLazy(pVM, pszModGC, pszHandlerGC, &pfnHandlerGC);
+        RTRCPTR pfnHandlerRC = NIL_RTRCPTR;
+        if (pszHandlerRC)
+            rc = PDMR3LdrGetSymbolRCLazy(pVM, pszModRC, pszHandlerRC, &pfnHandlerRC);
 
-        if (VBOX_SUCCESS(rc))
+        if (RT_SUCCESS(rc))
             return PGMHandlerPhysicalRegisterEx(pVM, enmType, GCPhys, GCPhysLast, pfnHandlerR3, pvUserR3,
-                                                pfnHandlerR0, pvUserR0, pfnHandlerGC, pvUserGC, pszDesc);
+                                                pfnHandlerR0, pvUserR0, pfnHandlerRC, pvUserRC, pszDesc);
 
-        AssertMsgFailed(("Failed to resolve %s.%s, rc=%Vrc.\n", pszModGC, pszHandlerGC, rc));
+        AssertMsgFailed(("Failed to resolve %s.%s, rc=%Rrc.\n", pszModRC, pszHandlerRC, rc));
     }
     else
-        AssertMsgFailed(("Failed to resolve %s.%s, rc=%Vrc.\n", pszModR0, pszHandlerR0, rc));
+        AssertMsgFailed(("Failed to resolve %s.%s, rc=%Rrc.\n", pszModR0, pszHandlerR0, rc));
 
     return rc;
 }
@@ -143,8 +144,8 @@ void pgmR3HandlerPhysicalUpdateAll(PVM pVM)
      * (the right -> left on the setting pass is just bird speculating on cache hits)
      */
     pgmLock(pVM);
-    RTAvlroGCPhysDoWithAll(&pVM->pgm.s.CTXSUFF(pTrees)->PhysHandlers,  true, pgmR3HandlerPhysicalOneClear, pVM);
-    RTAvlroGCPhysDoWithAll(&pVM->pgm.s.CTXSUFF(pTrees)->PhysHandlers, false, pgmR3HandlerPhysicalOneSet, pVM);
+    RTAvlroGCPhysDoWithAll(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers,  true, pgmR3HandlerPhysicalOneClear, pVM);
+    RTAvlroGCPhysDoWithAll(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, false, pgmR3HandlerPhysicalOneSet, pVM);
     pgmUnlock(pVM);
 }
 
@@ -210,7 +211,6 @@ static DECLCALLBACK(int) pgmR3HandlerPhysicalOneSet(PAVLROGCPHYSNODECORE pNode, 
 }
 
 
-
 /**
  * Register a access handler for a virtual range.
  *
@@ -219,42 +219,41 @@ static DECLCALLBACK(int) pgmR3HandlerPhysicalOneSet(PAVLROGCPHYSNODECORE pNode, 
  * @param   enmType         Handler type. Any of the PGMVIRTHANDLERTYPE_* enums.
  * @param   GCPtr           Start address.
  * @param   GCPtrLast       Last address (inclusive).
- * @param   pfnInvalidateHC The HC invalidate callback (can be 0)
- * @param   pfnHandlerHC    The HC handler.
- * @param   pszHandlerGC    The GC handler symbol name.
- * @param   pszModGC        The GC handler module.
+ * @param   pfnInvalidateR3 The R3 invalidate callback (can be 0)
+ * @param   pfnHandlerR3    The R3 handler.
+ * @param   pszHandlerRC    The RC handler symbol name.
+ * @param   pszModRC        The RC handler module.
  * @param   pszDesc         Pointer to description string. This must not be freed.
  */
-/** @todo rename this function to PGMR3HandlerVirtualRegister */
-PGMR3DECL(int) PGMR3HandlerVirtualRegister(PVM pVM, PGMVIRTHANDLERTYPE enmType, RTGCPTR GCPtr, RTGCPTR GCPtrLast,
-                                           PFNPGMHCVIRTINVALIDATE pfnInvalidateHC,
-                                           PFNPGMHCVIRTHANDLER pfnHandlerHC,
-                                           const char *pszHandlerGC, const char *pszModGC,
+VMMR3DECL(int) PGMR3HandlerVirtualRegister(PVM pVM, PGMVIRTHANDLERTYPE enmType, RTGCPTR GCPtr, RTGCPTR GCPtrLast,
+                                           PFNPGMR3VIRTINVALIDATE pfnInvalidateR3,
+                                           PFNPGMR3VIRTHANDLER pfnHandlerR3,
+                                           const char *pszHandlerRC, const char *pszModRC,
                                            const char *pszDesc)
 {
-    LogFlow(("PGMR3HandlerVirtualRegisterEx: enmType=%d GCPtr=%VGv GCPtrLast=%VGv pszHandlerGC=%p:{%s} pszModGC=%p:{%s} pszDesc=%s\n",
-             enmType, GCPtr, GCPtrLast, pszHandlerGC, pszHandlerGC, pszModGC, pszModGC, pszDesc));
+    LogFlow(("PGMR3HandlerVirtualRegisterEx: enmType=%d GCPtr=%RGv GCPtrLast=%RGv pszHandlerRC=%p:{%s} pszModRC=%p:{%s} pszDesc=%s\n",
+             enmType, GCPtr, GCPtrLast, pszHandlerRC, pszHandlerRC, pszModRC, pszModRC, pszDesc));
 
     /*
      * Validate input.
      */
-    if (!pszModGC)
-        pszModGC = VMMGC_MAIN_MODULE_NAME;
-    if (!pszModGC || !*pszModGC || !pszHandlerGC || !*pszHandlerGC)
+    if (!pszModRC)
+        pszModRC = VMMGC_MAIN_MODULE_NAME;
+    if (!pszModRC || !*pszModRC || !pszHandlerRC || !*pszHandlerRC)
     {
-        AssertMsgFailed(("pfnHandlerGC or/and pszModGC is missing\n"));
+        AssertMsgFailed(("pfnHandlerGC or/and pszModRC is missing\n"));
         return VERR_INVALID_PARAMETER;
     }
 
     /*
      * Resolve the GC handler.
      */
-    RTGCPTR32 pfnHandlerGC;
-    int rc = PDMR3GetSymbolGCLazy(pVM, pszModGC, pszHandlerGC, &pfnHandlerGC);
-    if (VBOX_SUCCESS(rc))
-        return PGMHandlerVirtualRegisterEx(pVM, enmType, GCPtr, GCPtrLast, pfnInvalidateHC, pfnHandlerHC, pfnHandlerGC, pszDesc);
+    RTRCPTR pfnHandlerRC;
+    int rc = PDMR3LdrGetSymbolRCLazy(pVM, pszModRC, pszHandlerRC, &pfnHandlerRC);
+    if (RT_SUCCESS(rc))
+        return PGMR3HandlerVirtualRegisterEx(pVM, enmType, GCPtr, GCPtrLast, pfnInvalidateR3, pfnHandlerR3, pfnHandlerRC, pszDesc);
 
-    AssertMsgFailed(("Failed to resolve %s.%s, rc=%Vrc.\n", pszModGC, pszHandlerGC, rc));
+    AssertMsgFailed(("Failed to resolve %s.%s, rc=%Rrc.\n", pszModRC, pszHandlerRC, rc));
     return rc;
 }
 
@@ -267,21 +266,22 @@ PGMR3DECL(int) PGMR3HandlerVirtualRegister(PVM pVM, PGMVIRTHANDLERTYPE enmType, 
  * @param   enmType         Handler type. Any of the PGMVIRTHANDLERTYPE_* enums.
  * @param   GCPtr           Start address.
  * @param   GCPtrLast       Last address (inclusive).
- * @param   pfnInvalidateHC The HC invalidate callback (can be 0)
- * @param   pfnHandlerHC    The HC handler.
- * @param   pfnHandlerGC    The GC handler.
+ * @param   pfnInvalidateR3 The R3 invalidate callback (can be 0)
+ * @param   pfnHandlerR3    The R3 handler.
+ * @param   pfnHandlerRC    The RC handler.
  * @param   pszDesc         Pointer to description string. This must not be freed.
  * @thread  EMT
  */
-/** @todo rename this to PGMR3HandlerVirtualRegisterEx. */
 /** @todo create a template for virtual handlers (see async i/o), we're wasting space
  * duplicating the function pointers now. (Or we will once we add the missing callbacks.) */
-PGMDECL(int) PGMHandlerVirtualRegisterEx(PVM pVM, PGMVIRTHANDLERTYPE enmType, RTGCPTR GCPtr, RTGCPTR GCPtrLast,
-                                         PFNPGMHCVIRTINVALIDATE pfnInvalidateHC,
-                                         PFNPGMHCVIRTHANDLER pfnHandlerHC, RTGCPTR pfnHandlerGC,
-                                         R3PTRTYPE(const char *) pszDesc)
+VMMDECL(int) PGMR3HandlerVirtualRegisterEx(PVM pVM, PGMVIRTHANDLERTYPE enmType, RTGCPTR GCPtr, RTGCPTR GCPtrLast,
+                                           R3PTRTYPE(PFNPGMR3VIRTINVALIDATE) pfnInvalidateR3,
+                                           R3PTRTYPE(PFNPGMR3VIRTHANDLER) pfnHandlerR3,
+                                           RCPTRTYPE(PFNPGMRCVIRTHANDLER) pfnHandlerRC,
+                                           R3PTRTYPE(const char *) pszDesc)
 {
-    Log(("PGMR3HandlerVirtualRegister: enmType=%d GCPtr=%RGv GCPtrLast=%RGv pfnHandlerGC=%RGv pszDesc=%s\n", enmType, GCPtr, GCPtrLast, pfnHandlerGC, pszDesc));
+    Log(("PGMR3HandlerVirtualRegister: enmType=%d GCPtr=%RGv GCPtrLast=%RGv pfnInvalidateR3=%RHv pfnHandlerR3=%RHv pfnHandlerRC=%RGv pszDesc=%s\n",
+         enmType, GCPtr, GCPtrLast, pfnInvalidateR3, pfnHandlerR3, pfnHandlerRC, pszDesc));
 
     /*
      * Validate input.
@@ -290,7 +290,7 @@ PGMDECL(int) PGMHandlerVirtualRegisterEx(PVM pVM, PGMVIRTHANDLERTYPE enmType, RT
     {
         case PGMVIRTHANDLERTYPE_ALL:
         case PGMVIRTHANDLERTYPE_WRITE:
-            if (!pfnHandlerHC)
+            if (!pfnHandlerR3)
             {
                 AssertMsgFailed(("No HC handler specified!!\n"));
                 return VERR_INVALID_PARAMETER;
@@ -298,9 +298,9 @@ PGMDECL(int) PGMHandlerVirtualRegisterEx(PVM pVM, PGMVIRTHANDLERTYPE enmType, RT
             break;
 
         case PGMVIRTHANDLERTYPE_HYPERVISOR:
-            if (pfnHandlerHC)
+            if (pfnHandlerR3)
             {
-                AssertMsgFailed(("HC handler specified for hypervisor range!?!\n"));
+                AssertMsgFailed(("R3 handler specified for hypervisor range!?!\n"));
                 return VERR_INVALID_PARAMETER;
             }
             break;
@@ -313,31 +313,29 @@ PGMDECL(int) PGMHandlerVirtualRegisterEx(PVM pVM, PGMVIRTHANDLERTYPE enmType, RT
         AssertMsgFailed(("GCPtrLast < GCPtr (%#x < %#x)\n", GCPtrLast, GCPtr));
         return VERR_INVALID_PARAMETER;
     }
-    if (!pfnHandlerGC)
+    if (!pfnHandlerRC)
     {
-        AssertMsgFailed(("pfnHandlerGC is missing\n"));
+        AssertMsgFailed(("pfnHandlerRC is missing\n"));
         return VERR_INVALID_PARAMETER;
     }
 
     /*
      * Allocate and initialize a new entry.
      */
-    unsigned cPages = (RT_ALIGN((RTGCUINTPTR)GCPtrLast + 1, PAGE_SIZE) - ((RTGCUINTPTR)GCPtr & PAGE_BASE_GC_MASK)) >> PAGE_SHIFT;
+    unsigned cPages = (RT_ALIGN(GCPtrLast + 1, PAGE_SIZE) - (GCPtr & PAGE_BASE_GC_MASK)) >> PAGE_SHIFT;
     PPGMVIRTHANDLER pNew;
     int rc = MMHyperAlloc(pVM, RT_OFFSETOF(PGMVIRTHANDLER, aPhysToVirt[cPages]), 0, MM_TAG_PGM_HANDLERS, (void **)&pNew); /** @todo r=bird: incorrect member name PhysToVirt? */
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
         return rc;
 
     pNew->Core.Key      = GCPtr;
     pNew->Core.KeyLast  = GCPtrLast;
 
     pNew->enmType       = enmType;
-    pNew->pfnInvalidateHC = pfnInvalidateHC;
-    pNew->pfnHandlerGC  = pfnHandlerGC;
-    pNew->pfnHandlerHC  = pfnHandlerHC;
+    pNew->pfnInvalidateR3 = pfnInvalidateR3;
+    pNew->pfnHandlerRC  = pfnHandlerRC;
+    pNew->pfnHandlerR3  = pfnHandlerR3;
     pNew->pszDesc       = pszDesc;
-    pNew->GCPtr         = GCPtr;
-    pNew->GCPtrLast     = GCPtrLast;
     pNew->cb            = GCPtrLast - GCPtr + 1;
     pNew->cPages        = cPages;
     /* Will be synced at next guest execution attempt. */
@@ -356,26 +354,26 @@ PGMDECL(int) PGMHandlerVirtualRegisterEx(PVM pVM, PGMVIRTHANDLERTYPE enmType, RT
      * the same range this makes everything much simpler and faster.
      */
     AVLROGCPTRTREE *pRoot = enmType != PGMVIRTHANDLERTYPE_HYPERVISOR
-                          ? &pVM->pgm.s.CTXSUFF(pTrees)->VirtHandlers
-                          : &pVM->pgm.s.CTXSUFF(pTrees)->HyperVirtHandlers;
+                          ? &pVM->pgm.s.CTX_SUFF(pTrees)->VirtHandlers
+                          : &pVM->pgm.s.CTX_SUFF(pTrees)->HyperVirtHandlers;
     pgmLock(pVM);
     if (*pRoot != 0)
     {
         PPGMVIRTHANDLER pCur = (PPGMVIRTHANDLER)RTAvlroGCPtrGetBestFit(pRoot, pNew->Core.Key, true);
         if (    !pCur
-            ||  GCPtr     > pCur->GCPtrLast
-            ||  GCPtrLast < pCur->GCPtr)
+            ||  GCPtr     > pCur->Core.KeyLast
+            ||  GCPtrLast < pCur->Core.Key)
             pCur = (PPGMVIRTHANDLER)RTAvlroGCPtrGetBestFit(pRoot, pNew->Core.Key, false);
         if (    pCur
-            &&  GCPtr     <= pCur->GCPtrLast
-            &&  GCPtrLast >= pCur->GCPtr)
+            &&  GCPtr     <= pCur->Core.KeyLast
+            &&  GCPtrLast >= pCur->Core.Key)
         {
             /*
              * The LDT sometimes conflicts with the IDT and LDT ranges while being
              * updated on linux. So, we don't assert simply log it.
              */
             Log(("PGMR3HandlerVirtualRegister: Conflict with existing range %RGv-%RGv (%s), req. %RGv-%RGv (%s)\n",
-                 pCur->GCPtr, pCur->GCPtrLast, pCur->pszDesc, GCPtr, GCPtrLast, pszDesc));
+                 pCur->Core.Key, pCur->Core.KeyLast, pCur->pszDesc, GCPtr, GCPtrLast, pszDesc));
             MMHyperFree(pVM, pNew);
             pgmUnlock(pVM);
             return VERR_PGM_HANDLER_VIRTUAL_CONFLICT;
@@ -393,7 +391,7 @@ PGMDECL(int) PGMHandlerVirtualRegisterEx(PVM pVM, PGMVIRTHANDLERTYPE enmType, RT
 
 #ifdef VBOX_WITH_STATISTICS
         char szPath[256];
-        RTStrPrintf(szPath, sizeof(szPath), "/PGM/VirtHandler/Calls/%VGv-%VGv", pNew->GCPtr, pNew->GCPtrLast);
+        RTStrPrintf(szPath, sizeof(szPath), "/PGM/VirtHandler/Calls/%RGv-%RGv", pNew->Core.Key, pNew->Core.KeyLast);
         rc = STAMR3Register(pVM, &pNew->Stat, STAMTYPE_PROFILE, STAMVISIBILITY_USED, szPath, STAMUNIT_TICKS_PER_CALL, pszDesc);
         AssertRC(rc);
 #endif
@@ -414,16 +412,16 @@ PGMDECL(int) PGMHandlerVirtualRegisterEx(PVM pVM, PGMVIRTHANDLERTYPE enmType, RT
  * @returns VBox status code.
  * @param   pVM             VM handle.
  * @param   GCPtr           Start address.
- * @param   pfnInvalidateHC The HC invalidate callback (can be 0)
+ * @param   pfnInvalidateR3 The R3 invalidate callback (can be 0)
  * @remarks Doesn't work with the hypervisor access handler type.
  */
-PGMDECL(int) PGMHandlerVirtualChangeInvalidateCallback(PVM pVM, RTGCPTR GCPtr, PFNPGMHCVIRTINVALIDATE pfnInvalidateHC)
+VMMDECL(int) PGMHandlerVirtualChangeInvalidateCallback(PVM pVM, RTGCPTR GCPtr, PFNPGMR3VIRTINVALIDATE pfnInvalidateR3)
 {
     pgmLock(pVM);
-    PPGMVIRTHANDLER pCur = (PPGMVIRTHANDLER)RTAvlroGCPtrGet(&pVM->pgm.s.pTreesHC->VirtHandlers, GCPtr);
+    PPGMVIRTHANDLER pCur = (PPGMVIRTHANDLER)RTAvlroGCPtrGet(&pVM->pgm.s.pTreesR3->VirtHandlers, GCPtr);
     if (pCur)
     {
-        pCur->pfnInvalidateHC = pfnInvalidateHC;
+        pCur->pfnInvalidateR3 = pfnInvalidateR3;
         pgmUnlock(pVM);
         return VINF_SUCCESS;
     }
@@ -431,7 +429,6 @@ PGMDECL(int) PGMHandlerVirtualChangeInvalidateCallback(PVM pVM, RTGCPTR GCPtr, P
     AssertMsgFailed(("Range %#x not found!\n", GCPtr));
     return VERR_INVALID_PARAMETER;
 }
-
 
 /**
  * Deregister an access handler for a virtual range.
@@ -441,7 +438,7 @@ PGMDECL(int) PGMHandlerVirtualChangeInvalidateCallback(PVM pVM, RTGCPTR GCPtr, P
  * @param   GCPtr       Start address.
  * @thread  EMT
  */
-PGMDECL(int) PGMHandlerVirtualDeregister(PVM pVM, RTGCPTR GCPtr)
+VMMDECL(int) PGMHandlerVirtualDeregister(PVM pVM, RTGCPTR GCPtr)
 {
     pgmLock(pVM);
 
@@ -449,11 +446,11 @@ PGMDECL(int) PGMHandlerVirtualDeregister(PVM pVM, RTGCPTR GCPtr)
      * Find the handler.
      * We naturally assume GCPtr is a unique specification.
      */
-    PPGMVIRTHANDLER pCur = (PPGMVIRTHANDLER)RTAvlroGCPtrRemove(&pVM->pgm.s.CTXSUFF(pTrees)->VirtHandlers, GCPtr);
+    PPGMVIRTHANDLER pCur = (PPGMVIRTHANDLER)RTAvlroGCPtrRemove(&pVM->pgm.s.CTX_SUFF(pTrees)->VirtHandlers, GCPtr);
     if (RT_LIKELY(pCur))
     {
-        Log(("PGMHandlerVirtualDeregister: Removing Virtual (%d) Range %VGv-%VGv %s\n", pCur->enmType,
-             pCur->GCPtr, pCur->GCPtrLast, pCur->pszDesc));
+        Log(("PGMHandlerVirtualDeregister: Removing Virtual (%d) Range %RGv-%RGv %s\n", pCur->enmType,
+             pCur->Core.Key, pCur->Core.KeyLast, pCur->pszDesc));
         Assert(pCur->enmType != PGMVIRTHANDLERTYPE_HYPERVISOR);
 
         /*
@@ -473,7 +470,7 @@ PGMDECL(int) PGMHandlerVirtualDeregister(PVM pVM, RTGCPTR GCPtr)
     else
     {
         /* must be a hypervisor one then. */
-        pCur = (PPGMVIRTHANDLER)RTAvlroGCPtrRemove(&pVM->pgm.s.CTXSUFF(pTrees)->HyperVirtHandlers, GCPtr);
+        pCur = (PPGMVIRTHANDLER)RTAvlroGCPtrRemove(&pVM->pgm.s.CTX_SUFF(pTrees)->HyperVirtHandlers, GCPtr);
         if (RT_UNLIKELY(!pCur))
         {
             pgmUnlock(pVM);
@@ -481,8 +478,8 @@ PGMDECL(int) PGMHandlerVirtualDeregister(PVM pVM, RTGCPTR GCPtr)
             return VERR_INVALID_PARAMETER;
         }
 
-        Log(("PGMHandlerVirtualDeregister: Removing Hyper Virtual (%d) Range %VGv-%VGv %s\n", pCur->enmType,
-             pCur->GCPtr, pCur->GCPtrLast, pCur->pszDesc));
+        Log(("PGMHandlerVirtualDeregister: Removing Hyper Virtual (%d) Range %RGv-%RGv %s\n", pCur->enmType,
+             pCur->Core.Key, pCur->Core.KeyLast, pCur->pszDesc));
         Assert(pCur->enmType == PGMVIRTHANDLERTYPE_HYPERVISOR);
     }
 
@@ -539,8 +536,8 @@ DECLCALLBACK(void) pgmR3InfoHandlers(PVM pVM, PCDBGFINFOHLP pHlp, const char *ps
         pHlp->pfnPrintf(pHlp,
             "Physical handlers: (PhysHandlers=%d (%#x))\n"
             "From     - To (incl) HandlerHC UserHC    HandlerGC UserGC    Type     Description\n",
-            pVM->pgm.s.pTreesHC->PhysHandlers, pVM->pgm.s.pTreesHC->PhysHandlers);
-        RTAvlroGCPhysDoWithAll(&pVM->pgm.s.pTreesHC->PhysHandlers, true, pgmR3InfoHandlersPhysicalOne, &Args);
+            pVM->pgm.s.pTreesR3->PhysHandlers, pVM->pgm.s.pTreesR3->PhysHandlers);
+        RTAvlroGCPhysDoWithAll(&pVM->pgm.s.pTreesR3->PhysHandlers, true, pgmR3InfoHandlersPhysicalOne, &Args);
     }
 
     if (fVirtual)
@@ -548,7 +545,7 @@ DECLCALLBACK(void) pgmR3InfoHandlers(PVM pVM, PCDBGFINFOHLP pHlp, const char *ps
         pHlp->pfnPrintf(pHlp,
             "Virtual handlers:\n"
             "From     - To (excl) HandlerHC HandlerGC Type     Description\n");
-        RTAvlroGCPtrDoWithAll(&pVM->pgm.s.pTreesHC->VirtHandlers, true, pgmR3InfoHandlersVirtualOne, &Args);
+        RTAvlroGCPtrDoWithAll(&pVM->pgm.s.pTreesR3->VirtHandlers, true, pgmR3InfoHandlersVirtualOne, &Args);
     }
 
     if (fHyper)
@@ -556,7 +553,7 @@ DECLCALLBACK(void) pgmR3InfoHandlers(PVM pVM, PCDBGFINFOHLP pHlp, const char *ps
         pHlp->pfnPrintf(pHlp,
             "Hypervisor Virtual handlers:\n"
             "From     - To (excl) HandlerHC HandlerGC Type     Description\n");
-        RTAvlroGCPtrDoWithAll(&pVM->pgm.s.pTreesHC->HyperVirtHandlers, true, pgmR3InfoHandlersVirtualOne, &Args);
+        RTAvlroGCPtrDoWithAll(&pVM->pgm.s.pTreesR3->HyperVirtHandlers, true, pgmR3InfoHandlersVirtualOne, &Args);
     }
 }
 
@@ -582,8 +579,8 @@ static DECLCALLBACK(int) pgmR3InfoHandlersPhysicalOne(PAVLROGCPHYSNODECORE pNode
         default:                                pszType = "????"; break;
     }
     pHlp->pfnPrintf(pHlp,
-        "%VGp - %VGp  %VHv  %VHv  %VRv  %VRv  %s  %s\n",
-        pCur->Core.Key, pCur->Core.KeyLast, pCur->pfnHandlerR3, pCur->pvUserR3, pCur->pfnHandlerGC, pCur->pvUserGC, pszType, pCur->pszDesc);
+        "%RGp - %RGp  %RHv  %RHv  %RRv  %RRv  %s  %s\n",
+        pCur->Core.Key, pCur->Core.KeyLast, pCur->pfnHandlerR3, pCur->pvUserR3, pCur->pfnHandlerRC, pCur->pvUserRC, pszType, pCur->pszDesc);
 #ifdef VBOX_WITH_STATISTICS
     if (pArgs->fStats)
         pHlp->pfnPrintf(pHlp, "   cPeriods: %9RU64  cTicks: %11RU64  Min: %11RU64  Avg: %11RU64 Max: %11RU64\n",
@@ -614,8 +611,8 @@ static DECLCALLBACK(int) pgmR3InfoHandlersVirtualOne(PAVLROGCPTRNODECORE pNode, 
         case PGMVIRTHANDLERTYPE_HYPERVISOR: pszType = "WriteHyp "; break;
         default:                            pszType = "????"; break;
     }
-    pHlp->pfnPrintf(pHlp, "%VGv - %VGv  %VHv  %VRv  %s  %s\n",
-        pCur->GCPtr, pCur->GCPtrLast, pCur->pfnHandlerHC, pCur->pfnHandlerGC, pszType, pCur->pszDesc);
+    pHlp->pfnPrintf(pHlp, "%RGv - %RGv  %RHv  %RRv  %s  %s\n",
+        pCur->Core.Key, pCur->Core.KeyLast, pCur->pfnHandlerR3, pCur->pfnHandlerRC, pszType, pCur->pszDesc);
 #ifdef VBOX_WITH_STATISTICS
     if (pArgs->fStats)
         pHlp->pfnPrintf(pHlp, "   cPeriods: %9RU64  cTicks: %11RU64  Min: %11RU64  Avg: %11RU64 Max: %11RU64\n",

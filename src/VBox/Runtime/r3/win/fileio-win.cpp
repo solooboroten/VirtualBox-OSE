@@ -1,4 +1,4 @@
-/* $Id: fileio-win.cpp $ */
+/* $Id: fileio-win.cpp 14064 2008-11-10 23:27:40Z vboxsync $ */
 /** @file
  * IPRT - File I/O, native implementation for the Windows host platform.
  */
@@ -356,9 +356,11 @@ RTR3DECL(int)  RTFileRead(RTFILE File, void *pvBuf, size_t cbToRead, size_t *pcb
 {
     if (cbToRead <= 0)
         return VINF_SUCCESS;
+    ULONG cbToReadAdj = (ULONG)cbToRead;
+    AssertReturn(cbToReadAdj == cbToRead, VERR_NUMBER_TOO_BIG);
 
     ULONG cbRead = 0;
-    if (ReadFile((HANDLE)File, pvBuf, cbToRead, &cbRead, NULL))
+    if (ReadFile((HANDLE)File, pvBuf, cbToReadAdj, &cbRead, NULL))
     {
         if (pcbRead)
             /* Caller can handle partial reads. */
@@ -366,10 +368,10 @@ RTR3DECL(int)  RTFileRead(RTFILE File, void *pvBuf, size_t cbToRead, size_t *pcb
         else
         {
             /* Caller expects everything to be read. */
-            while (cbToRead > cbRead)
+            while (cbToReadAdj > cbRead)
             {
                 ULONG cbReadPart = 0;
-                if (!ReadFile((HANDLE)File, (char*)pvBuf + cbRead, cbToRead - cbRead, &cbReadPart, NULL))
+                if (!ReadFile((HANDLE)File, (char*)pvBuf + cbRead, cbToReadAdj - cbRead, &cbReadPart, NULL))
                     return RTErrConvertFromWin32(GetLastError());
                 if (cbReadPart == 0)
                     return VERR_EOF;
@@ -386,9 +388,11 @@ RTR3DECL(int)  RTFileWrite(RTFILE File, const void *pvBuf, size_t cbToWrite, siz
 {
     if (cbToWrite <= 0)
         return VINF_SUCCESS;
+    ULONG cbToWriteAdj = (ULONG)cbToWrite;
+    AssertReturn(cbToWriteAdj == cbToWrite, VERR_NUMBER_TOO_BIG);
 
     ULONG cbWritten = 0;
-    if (WriteFile((HANDLE)File, pvBuf, cbToWrite, &cbWritten, NULL))
+    if (WriteFile((HANDLE)File, pvBuf, cbToWriteAdj, &cbWritten, NULL))
     {
         if (pcbWritten)
             /* Caller can handle partial writes. */
@@ -396,14 +400,14 @@ RTR3DECL(int)  RTFileWrite(RTFILE File, const void *pvBuf, size_t cbToWrite, siz
         else
         {
             /* Caller expects everything to be written. */
-            while (cbToWrite > cbWritten)
+            while (cbToWriteAdj > cbWritten)
             {
                 ULONG cbWrittenPart = 0;
-                if (!WriteFile((HANDLE)File, (char*)pvBuf + cbWritten, cbToWrite - cbWritten, &cbWrittenPart, NULL))
+                if (!WriteFile((HANDLE)File, (char*)pvBuf + cbWritten, cbToWriteAdj - cbWritten, &cbWrittenPart, NULL))
                 {
                     int rc = RTErrConvertFromWin32(GetLastError());
                     if (   rc == VERR_DISK_FULL
-                        && IsBeyondLimit(File, cbToWrite - cbWritten, FILE_CURRENT)
+                        && IsBeyondLimit(File, cbToWriteAdj - cbWritten, FILE_CURRENT)
                        )
                         rc = VERR_FILE_TOO_BIG;
                     return rc;
@@ -417,8 +421,7 @@ RTR3DECL(int)  RTFileWrite(RTFILE File, const void *pvBuf, size_t cbToWrite, siz
     }
     int rc = RTErrConvertFromWin32(GetLastError());
     if (   rc == VERR_DISK_FULL
-        && IsBeyondLimit(File, cbToWrite - cbWritten, FILE_CURRENT)
-       )
+        && IsBeyondLimit(File, cbToWriteAdj - cbWritten, FILE_CURRENT))
         rc = VERR_FILE_TOO_BIG;
     return rc;
 }
@@ -667,8 +670,8 @@ RTR3DECL(int) RTFileQueryInfo(RTFILE File, PRTFSOBJINFO pObjInfo, RTFSOBJATTRADD
             pObjInfo->Attr.u.Unix.uid             = ~0U;
             pObjInfo->Attr.u.Unix.gid             = ~0U;
             pObjInfo->Attr.u.Unix.cHardlinks      = Data.nNumberOfLinks ? Data.nNumberOfLinks : 1;
-            pObjInfo->Attr.u.Unix.INodeIdDevice   = 0;
-            pObjInfo->Attr.u.Unix.INodeId         = 0;
+            pObjInfo->Attr.u.Unix.INodeIdDevice   = 0; /** @todo Use the volume serial number (see GetFileInformationByHandle). */
+            pObjInfo->Attr.u.Unix.INodeId         = 0; /** @todo Use the fileid (see GetFileInformationByHandle). */
             pObjInfo->Attr.u.Unix.fFlags          = 0;
             pObjInfo->Attr.u.Unix.GenerationId    = 0;
             pObjInfo->Attr.u.Unix.Device          = 0;
@@ -713,7 +716,7 @@ RTR3DECL(int) RTFileSetTimes(RTFILE File, PCRTTIMESPEC pAccessTime, PCRTTIMESPEC
     {
         DWORD Err = GetLastError();
         rc = RTErrConvertFromWin32(Err);
-        Log(("RTFileSetTimes(%RTfile, %p, %p, %p, %p): SetFileTime failed with lasterr %d (%Vrc)\n",
+        Log(("RTFileSetTimes(%RTfile, %p, %p, %p, %p): SetFileTime failed with lasterr %d (%Rrc)\n",
              File, pAccessTime, pModificationTime, pChangeTime, pBirthTime, Err, rc));
     }
     return rc;

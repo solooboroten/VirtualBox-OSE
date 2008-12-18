@@ -173,9 +173,9 @@ bool credentialsPollerCreate(void)
     /* create the poller thread */
     int rc = RTThreadCreate(&gThreadPoller, credentialsPoller, NULL, 0, RTTHREADTYPE_INFREQUENT_POLLER,
                             RTTHREADFLAGS_WAITABLE, "creds");
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        Log(("VBoxGINA::credentialsPollerCreate: failed to create thread, rc = %Vrc\n", rc));
+        Log(("VBoxGINA::credentialsPollerCreate: failed to create thread, rc = %Rrc\n", rc));
         return false;
     }
     return true;
@@ -197,14 +197,14 @@ bool credentialsPollerTerminate(void)
         Log(("VBoxGINA::credentialsPollerTerminate: waiting for thread to terminate\n"));
         /* wait until the thread has terminated */
         rc = RTThreadWait(gThreadPoller, RT_INDEFINITE_WAIT, NULL);
-        Log(("VBoxGINA::credentialsPollerTermiante: thread has (probably) terminated (rc = %Vrc)\n", rc));
+        Log(("VBoxGINA::credentialsPollerTermiante: thread has (probably) terminated (rc = %Rrc)\n", rc));
     }
     else
     {
         /* failed to signal the thread - very unlikely - so no point in waiting long. */
-        Log(("VBoxGINA::credentialsPollerTermiante: failed to signal semaphore, rc = %Vrc\n", rc));
+        Log(("VBoxGINA::credentialsPollerTermiante: failed to signal semaphore, rc = %Rrc\n", rc));
         rc = RTThreadWait(gThreadPoller, 100, NULL);
-        Log(("VBoxGINA::credentialsPollerTermiante: thread has terminated? wait rc = %Vrc\n", rc));
+        Log(("VBoxGINA::credentialsPollerTermiante: thread has terminated? wait rc = %Rrc\n", rc));
     }
     /* now cleanup */
     gThreadPoller = NIL_RTTHREAD;

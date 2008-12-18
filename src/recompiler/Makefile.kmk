@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 13852 2008-11-05 12:50:30Z vboxsync $
 ## @file
 # The Recompiler Sub-Makefile.
 #
@@ -103,8 +103,10 @@ dyngen_SOURCES        = dyngen.c
 #
 # The VBoxREM.[dll|so|..] or VBoxREM2.rel.
 #
-$(REM_MOD)_DEFS             = IN_REM_R3 REM_INCLUDE_CPU_H
-$(REM_MOD)_DEFS            += REM_PHYS_ADDR_IN_TLB
+$(REM_MOD)_DEFS             = \
+	IN_REM_R3 REM_INCLUDE_CPU_H REM_PHYS_ADDR_IN_TLB \
+	$(if $(VBOX_WITH_VMI),VBOX_WITH_VMI,)
+
 #$(REM_MOD)_DEFS          += DEBUG_ALL_LOGGING DEBUG_DISAS DEBUG_PCALL DEBUG_EXEC DEBUG_FLUSH DEBUG_IOPORT DEBUG_SIGNAL DEBUG_TLB_CHECK DEBUG_TB_INVALIDATE DEBUG_TLB  # Enables huge amounts of debug logging.
 
 $(REM_MOD)_INCS             = \
@@ -134,7 +136,7 @@ ifeq ($(filter-out win os2,$(KBUILD_TARGET)),)
 else # The remaining targets can be using gcc-4 and needs checking.
  $(REM_MOD)_SOURCES        += $(PATH_$(REM_MOD))/op.S
  FILE_OP_OBJ                = $(PATH_$(REM_MOD))/gen/op.o
- $(REM_MOD)_CLEAN           = $(FILE_OP_OBJ) $(PATH_$(REM_MOD))/op.S.dep
+ $(REM_MOD)_CLEAN           = $(FILE_OP_OBJ) $(PATH_$(REM_MOD))/op.S.dep $(PATH_$(REM_MOD))/op.S
 endif
 $(REM_MOD)_SOURCES.win.x86  = $(REM_MOD).def
 ifneq ($(REM_MOD),VBoxREM2)
@@ -204,6 +206,14 @@ else # !REM_USE_NOCRT
  $(REM_MOD)_LDFLAGS.darwin  = -read_only_relocs suppress -install_name $(VBOX_DYLD_EXECUTABLE_PATH)/$(REM_MOD).dylib -multiple_defined warning
  $(REM_MOD)_LDFLAGS.l4      = -T$(L4_LIBDIR)/../main_rel.ld -nostdlib -Wl,--no-undefined
  $(REM_MOD)_LDFLAGS.linux   = $(VBOX_LD_as_needed)
+ ifneq ($(KBUILD_TARGET),win)
+  ifdef VBOX_WITH_RUNPATH
+   $(REM_MOD)_LDFLAGS      += '$(VBOX_GCC_RPATH_OPT)$(VBOX_WITH_RUNPATH)'
+  else ifdef VBOX_WITH_ORIGIN
+   $(REM_MOD)_LDFLAGS += '$(VBOX_GCC_RPATH_OPT)$$(VBOX_ORIGIN)'
+   $(REM_MOD)_LDFLAGS += -Wl,-z,origin
+  endif
+ endif
  $(REM_MOD)_LDFLAGS.os2     = -Zomf
  $(REM_MOD)_LDFLAGS.debug   = -g
  $(REM_MOD)_LDFLAGS.solaris = -mimpure-text
@@ -287,7 +297,7 @@ ifeq ($(REM_MOD),VBoxREM2)
 # The VBoxREM2 wrapper.
 #
 VBoxREM_TEMPLATE       = VBOXR3
-VBoxREM_DEFS           = IN_REM_R3
+VBoxREM_DEFS           = IN_REM_R3 $(if $(VBOX_WITH_VMI),VBOX_WITH_VMI,)
 VBoxREM_SOURCES        = \
 	VBoxREMWrapper.cpp \
 	VBoxREMWrapperA.asm
@@ -301,8 +311,15 @@ endif
 #
 # The VBoxREM import library.
 #
+# This is a HACK to get around (a) the cyclic dependency between VBoxVMM and
+# VBoxREM during linking and (b) the recursive build ordering which means VBoxREM
+# won't be built until after all the other DLLs.
+#
 VBoxREMImp_TEMPLATE         = VBOXR3
-ifeq ($(KBUILD_TARGET),darwin)
+if1of ($(KBUILD_TARGET), os2 win)
+VBoxREMImp_INST             = $(INST_LIB)
+else
+VBoxREMImp_NAME             = VBoxREM
 VBoxREMImp_INST             = $(INST_LIB)
 endif
 VBoxREMImp_SOURCES.win      = VBoxREM.def
@@ -398,7 +415,7 @@ endif
 # Drop incompatible options when using the cross-compiler on darwin.
 ifeq ($(KBUILD_TARGET),darwin)
  ifeq ($(filter-out i386-elf-gcc%, $(VBOX_RECOMPILER_OP_GCC)),)
-  COMPILE_OP_CMDS = $(filter-out -mdynamic-no-pic -mno-dynamic-no-pic -fno-stack-protector, $(COMPILE_OP_CMDS_2))
+  COMPILE_OP_CMDS = $(filter-out -mdynamic-no-pic -mno-dynamic-no-pic -fno-stack-protector -Wno-missing-field-initializers, $(COMPILE_OP_CMDS_2))
  endif
 else if1of ($(KBUILD_TARGET),linux)
  ifneq ($(TOOL_$(VBOX_GCC_TOOL)_CC),$(VBOX_RECOMPILER_OP_GCC))
@@ -407,7 +424,7 @@ else if1of ($(KBUILD_TARGET),linux)
     then echo "$(1)"; \
     else echo "$(2)"; fi; )
   COMPILE_OP_CMDS = \
-    $(filter-out -fno-stack-protector, $(COMPILE_OP_CMDS_2)) \
+    $(filter-out -fno-stack-protector -Wextra -Wno-missing-field-initializers, $(COMPILE_OP_CMDS_2)) \
     $(call VBOX_RECOMPILER_OP_CHECK_CC_GCC,-fno-stack-protector)
  endif
 endif

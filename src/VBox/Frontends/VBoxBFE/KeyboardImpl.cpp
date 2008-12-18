@@ -89,7 +89,7 @@ STDMETHODIMP Keyboard::PutScancode(LONG scancode)
         return S_OK;
 
     int rcVBox = mpDrv->pUpPort->pfnPutEvent(mpDrv->pUpPort, (uint8_t)scancode);
-    if (VBOX_FAILURE (rcVBox))
+    if (RT_FAILURE (rcVBox))
         return E_FAIL;
 
     return S_OK;
@@ -115,12 +115,12 @@ STDMETHODIMP Keyboard::PutScancodes(ComSafeArrayIn (LONG, scancodes),
     com::SafeArray <LONG> keys(ComSafeArrayInArg(scancodes));
     int rcVBox = VINF_SUCCESS;
 
-    for (uint32_t i = 0; (i < keys.size()) && VBOX_SUCCESS(rcVBox); i++)
+    for (uint32_t i = 0; (i < keys.size()) && RT_SUCCESS(rcVBox); i++)
     {
         rcVBox = mpDrv->pUpPort->pfnPutEvent(mpDrv->pUpPort, (uint8_t)keys[i]);
     }
 
-    if (VBOX_FAILURE (rcVBox))
+    if (RT_FAILURE (rcVBox))
         return E_FAIL;
 
     /// @todo is it actually possible that not all scancodes can be transmitted?
@@ -140,7 +140,7 @@ STDMETHODIMP Keyboard::PutScancodes(ComSafeArrayIn (LONG, scancodes),
 STDMETHODIMP Keyboard::PutCAD()
 {
     static com::SafeArray<LONG> cadSequence(6);
-    
+
     cadSequence[0] = 0x1d; // Ctrl down
     cadSequence[1] = 0x38; // Alt down
     cadSequence[2] = 0x53; // Del down
@@ -254,9 +254,9 @@ DECLCALLBACK(int) Keyboard::drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandl
      */
     void *pv;
     rc = CFGMR3QueryPtr(pCfgHandle, "Object", &pv);
-    if (VBOX_FAILURE(rc))
+    if (RT_FAILURE(rc))
     {
-        AssertMsgFailed(("Configuration error: No/bad \"Object\" value! rc=%Vrc\n", rc));
+        AssertMsgFailed(("Configuration error: No/bad \"Object\" value! rc=%Rrc\n", rc));
         return rc;
     }
     pData->pKeyboard = (Keyboard *)pv;        /** @todo Check this cast! */

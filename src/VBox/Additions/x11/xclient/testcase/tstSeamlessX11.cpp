@@ -19,9 +19,10 @@
  */
 
 #include <iostream>
+#include <stdlib.h> /* exit() */
 
 #include <iprt/semaphore.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <VBox/VBoxGuest.h>
 
 #include "../seamless.h"

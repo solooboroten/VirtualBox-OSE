@@ -37,9 +37,9 @@
 #include <VBox/cdefs.h>
 #include <VBox/types.h>
 #include <VBox/err.h>
-/** @todo eliminate this dependency by moving data type definitions to the
- * right place. PFNVMPROGRESS and P*PDMMEDIAGEOMETRY are affected. */
-#include <VBox/pdm.h>
+#include <VBox/pdmifs.h>
+/** @todo remove this dependency, using PFNVMPROGRESS outside VMM is *WRONG*. */
+#include <VBox/vmapi.h>
 
 __BEGIN_DECLS
 
@@ -215,6 +215,9 @@ typedef struct VBOXHDDRAW
 /** The backend uses the config interface. The caller needs to know how to
  * provide the mandatory configuration parts this way. */
 #define VD_CAP_CONFIG               RT_BIT(7)
+/** The backend uses the network stack interface. The caller has to provide
+ * the appropriate interface. */
+#define VD_CAP_TCPNET               RT_BIT(8)
 /** @}*/
 
 /**
@@ -232,6 +235,8 @@ typedef enum VDINTERFACETYPE
     VDINTERFACETYPE_PROGRESS,
     /** Interface for configuration information. Per-image. */
     VDINTERFACETYPE_CONFIG,
+    /** Interface for TCP network stack. Per-disk. */
+    VDINTERFACETYPE_TCPNET,
     /** invalid interface. */
     VDINTERFACETYPE_INVALID
 } VDINTERFACETYPE;
@@ -251,7 +256,7 @@ typedef struct VDINTERFACE
     VDINTERFACETYPE     enmInterface;
     /** Opaque user data which is passed on every call. */
     void               *pvUser;
-    /** Pointer to the function call table of the interface. 
+    /** Pointer to the function call table of the interface.
      *  As this is opaque this must be casted to the right interface
      *  struct defined below based on the interface type in enmInterface. */
     void               *pCallbacks;
@@ -287,7 +292,7 @@ DECLINLINE(PVDINTERFACE) VDInterfaceGet(PVDINTERFACE pVDIfs, VDINTERFACETYPE enm
         /* Sanity checks. */
         AssertMsgBreak(pVDIfs->cbSize == sizeof(VDINTERFACE),
                        ("cbSize=%u\n", pVDIfs->cbSize));
-                       
+
         if (pVDIfs->enmInterface == enmInterface)
             return pVDIfs;
         pVDIfs = pVDIfs->pNext;
@@ -394,7 +399,7 @@ DECLINLINE(PVDINTERFACEERROR) VDGetInterfaceError(PVDINTERFACE pInterface)
     return pInterfaceError;
 }
 
-/** 
+/**
  * Completion callback which is called by the interface owner
  * to inform the backend that a task finished.
  *
@@ -450,11 +455,11 @@ typedef struct VDINTERFACEASYNCIO
      * @param   pvUser          The opaque data passed on container creation.
      * @param   pStorage        The storage handle to use.
      * @param   uOffset         The offset to start from.
-     * @þaram   cbWrite         How many bytes to write.
+     * @param   cbWrite         How many bytes to write.
      * @param   pvBuf           Pointer to the bits need to be written.
      * @param   pcbWritten      Where to store how many bytes where actually written.
      */
-    DECLR3CALLBACKMEMBER(int, pfnWrite, (void *pvUser, void *pStorage, uint64_t uOffset, 
+    DECLR3CALLBACKMEMBER(int, pfnWrite, (void *pvUser, void *pStorage, uint64_t uOffset,
                                          size_t cbWrite, const void *pvBuf, size_t *pcbWritten));
 
     /**
@@ -464,11 +469,11 @@ typedef struct VDINTERFACEASYNCIO
      * @param   pvUser          The opaque data passed on container creation.
      * @param   pStorage        The storage handle to use.
      * @param   uOffset         The offset to start from.
-     * @þaram   cbRead          How many bytes to read.
+     * @param   cbRead          How many bytes to read.
      * @param   pvBuf           Where to store the read bits.
      * @param   pcbRead         Where to store how many bytes where actually read.
      */
-    DECLR3CALLBACKMEMBER(int, pfnRead, (void *pvUser, void *pStorage, uint64_t uOffset, 
+    DECLR3CALLBACKMEMBER(int, pfnRead, (void *pvUser, void *pStorage, uint64_t uOffset,
                                         size_t cbRead, void *pvBuf, size_t *pcbRead));
 
     /**
@@ -491,7 +496,7 @@ typedef struct VDINTERFACEASYNCIO
      * @param   cbRead         How many bytes to read.
      * @param   ppTask         Where to store the opaque task handle.
      */
-    DECLR3CALLBACKMEMBER(int, pfnPrepareRead, (void *pvUser, void *pStorage, uint64_t uOffset, 
+    DECLR3CALLBACKMEMBER(int, pfnPrepareRead, (void *pvUser, void *pStorage, uint64_t uOffset,
                                                void *pvBuf, size_t cbRead, void **ppTask));
 
     /**
@@ -505,7 +510,7 @@ typedef struct VDINTERFACEASYNCIO
      * @param   cbWrite        How many bytes to write.
      * @param   ppTask         Where to store the opaque task handle.
      */
-    DECLR3CALLBACKMEMBER(int, pfnPrepareWrite, (void *pvUser, void *pStorage, uint64_t uOffset, 
+    DECLR3CALLBACKMEMBER(int, pfnPrepareWrite, (void *pvUser, void *pStorage, uint64_t uOffset,
                                                 void *pvBuf, size_t cbWrite, void **ppTask));
 
     /**
@@ -549,7 +554,7 @@ DECLINLINE(PVDINTERFACEASYNCIO) VDGetInterfaceAsyncIO(PVDINTERFACE pInterface)
 
 /**
  * Progress notification interface
- * 
+ *
  * Per-operation. Optional.
  */
 typedef struct VDINTERFACEPROGRESS
@@ -566,6 +571,7 @@ typedef struct VDINTERFACEPROGRESS
 
     /**
      * Progress notification callbacks.
+     * @todo r=bird: Why the heck are we using PFNVMPROGRESS here?
      */
     PFNVMPROGRESS   pfnProgress;
 } VDINTERFACEPROGRESS, *PVDINTERFACEPROGRESS;
@@ -594,52 +600,6 @@ DECLINLINE(PVDINTERFACEPROGRESS) VDGetInterfaceProgress(PVDINTERFACE pInterface)
     return pInterfaceProgress;
 }
 
-/** Configuration node for configuration information interface. */
-typedef struct VDCFGNODE *PVDCFGNODE;
-
-/**
- * Configuration value type for configuration information interface.
- */
-typedef enum VDCFGVALUETYPE
-{
-    /** Integer value. */
-    VDCFGVALUETYPE_INTEGER = 1,
-    /** String value. */
-    VDCFGVALUETYPE_STRING,
-    /** Bytestring value. */
-    VDCFGVALUETYPE_BYTES
-} VDCFGVALUETYPE;
-/** Pointer to configuration value type for configuration information interface. */
-typedef VDCFGVALUETYPE *PVDCFGVALUETYPE;
-
-/**
- * Configuration value. This is not identical to CFGMVALUE.
- */
-typedef union VDCFGVALUE
-{
-    /** Integer value. */
-    struct VDCFGVALUE_INTEGER
-    {
-        /** The integer represented as 64-bit unsigned. */
-        uint64_t    u64;
-    } Integer;
-
-    /** String value. (UTF-8 of course) */
-    struct VDCFGVALUE_STRING
-    {
-        /** Pointer to the string. */
-        char        *psz;
-    } String;
-
-    /** Byte string value. */
-    struct VDCFGVALUE_BYTES
-    {
-        /** Length of byte string. (in bytes) */
-        RTUINT      cb;
-        /** Pointer to the byte string. */
-        void        *pv;
-    } Bytes;
-} VDCFGVALUE, *PVDCFGVALUE;
 
 /**
  * Configuration information interface
@@ -660,22 +620,40 @@ typedef struct VDINTERFACECONFIG
     VDINTERFACETYPE enmInterface;
 
     /**
-     * Validates that the values are within a set of valid names.
+     * Validates that the keys are within a set of valid names.
      *
-     * @return  true if all names are found in pszzAllowed.
+     * @return  true if all key names are found in pszzAllowed.
      * @return  false if not.
-     * @param   pNode           The node which values should be examined.
-     * @param   pszzValid       List of valid names separated by '\\0' and ending with
+     * @param   pvUser          The opaque user data associated with this interface.
+     * @param   pszzValid       List of valid key names separated by '\\0' and ending with
      *                          a double '\\0'.
      */
-    DECLR3CALLBACKMEMBER(bool, pfnAreValuesValid, (PVDCFGNODE pNode, const char *pszzValid));
-    DECLR3CALLBACKMEMBER(int, pfnQueryType, (PVDCFGNODE pNode, const char *pszName, PVDCFGVALUETYPE penmType));
-    DECLR3CALLBACKMEMBER(int, pfnQuerySize, (PVDCFGNODE pNode, const char *pszName, size_t *pcb));
-    DECLR3CALLBACKMEMBER(int, pfnQueryInteger, (PVDCFGNODE pNode, const char *pszName, uint64_t *pu64));
-    DECLR3CALLBACKMEMBER(int, pfnQueryIntegerDef, (PVDCFGNODE pNode, const char *pszName, uint64_t *pu64, uint64_t u64Def));
-    DECLR3CALLBACKMEMBER(int, pfnQueryString, (PVDCFGNODE pNode, const char *pszName, char *pszString, size_t cchString));
-    DECLR3CALLBACKMEMBER(int, pfnQueryStringDef, (PVDCFGNODE pNode, const char *pszName, char *pszString, size_t cchString, const char *pszDef));
-    DECLR3CALLBACKMEMBER(int, pfnQueryBytes, (PVDCFGNODE pNode, const char *pszName, void *pvData, size_t cbData));
+    DECLR3CALLBACKMEMBER(bool, pfnAreKeysValid, (void *pvUser, const char *pszzValid));
+
+    /**
+     * Retrieves the length of the string value associated with a key (including
+     * the terminator, for compatibility with CFGMR3QuerySize).
+     *
+     * @return  VBox status code.
+     *          VERR_CFGM_VALUE_NOT_FOUND means that the key is not known.
+     * @param   pvUser          The opaque user data associated with this interface.
+     * @param   pszName         Name of the key to query.
+     * @param   pcbValue        Where to store the value length. Non-NULL.
+     */
+    DECLR3CALLBACKMEMBER(int, pfnQuerySize, (void *pvUser, const char *pszName, size_t *pcbValue));
+
+    /**
+     * Query the string value associated with a key.
+     *
+     * @return  VBox status code.
+     *          VERR_CFGM_VALUE_NOT_FOUND means that the key is not known.
+     *          VERR_CFGM_NOT_ENOUGH_SPACE means that the buffer is not big enough.
+     * @param   pvUser          The opaque user data associated with this interface.
+     * @param   pszName         Name of the key to query.
+     * @param   pszValue        Pointer to buffer where to store value.
+     * @param   cchValue        Length of value buffer.
+     */
+    DECLR3CALLBACKMEMBER(int, pfnQuery, (void *pvUser, const char *pszName, char *pszValue, size_t cchValue));
 } VDINTERFACECONFIG, *PVDINTERFACECONFIG;
 
 /**
@@ -686,7 +664,7 @@ typedef struct VDINTERFACECONFIG
  */
 DECLINLINE(PVDINTERFACECONFIG) VDGetInterfaceConfig(PVDINTERFACE pInterface)
 {
-    /* Check that the interface descriptor is a progress interface. */
+    /* Check that the interface descriptor is a config interface. */
     AssertMsgReturn(   (pInterface->enmInterface == VDINTERFACETYPE_CONFIG)
                     && (pInterface->cbSize == sizeof(VDINTERFACE)),
                     ("Not a config interface"), NULL);
@@ -702,56 +680,66 @@ DECLINLINE(PVDINTERFACECONFIG) VDGetInterfaceConfig(PVDINTERFACE pInterface)
 }
 
 /**
- * Query configuration, validates that the values are within a set of valid names.
+ * Query configuration, validates that the keys are within a set of valid names.
  *
- * @returns true if all names are found in pszzAllowed.
- * @returns false if not.
+ * @return  true if all key names are found in pszzAllowed.
+ * @return  false if not.
  * @param   pCfgIf      Pointer to configuration callback table.
- * @param   pNode       The node which values should be examined.
+ * @param   pvUser      The opaque user data associated with this interface.
  * @param   pszzValid   List of valid names separated by '\\0' and ending with
  *                      a double '\\0'.
  */
-DECLINLINE(bool) VDCFGAreValuesValid(PVDINTERFACECONFIG pCfgIf,
-                                     PVDCFGNODE pNode,
-                                     const char *pszzValid)
+DECLINLINE(bool) VDCFGAreKeysValid(PVDINTERFACECONFIG pCfgIf, void *pvUser,
+                                   const char *pszzValid)
 {
-    return pCfgIf->pfnAreValuesValid(pNode, pszzValid);
+    return pCfgIf->pfnAreKeysValid(pvUser, pszzValid);
 }
 
 /**
  * Query configuration, unsigned 64-bit integer value with default.
- * 
+ *
  * @return  VBox status code.
  * @param   pCfgIf      Pointer to configuration callback table.
- * @param   pNode       Which node to search for pszName in.
+ * @param   pvUser      The opaque user data associated with this interface.
  * @param   pszName     Name of an integer value
  * @param   pu64        Where to store the value. Set to default on failure.
  * @param   u64Def      The default value.
  */
-DECLINLINE(int) VDCFGQueryU64Def(PVDINTERFACECONFIG pCfgIf, PVDCFGNODE pNode,
+DECLINLINE(int) VDCFGQueryU64Def(PVDINTERFACECONFIG pCfgIf, void *pvUser,
                                  const char *pszName, uint64_t *pu64,
                                  uint64_t u64Def)
 {
-    return pCfgIf->pfnQueryIntegerDef(pNode, pszName, pu64, u64Def);
+    char aszBuf[32];
+    int rc = pCfgIf->pfnQuery(pvUser, pszName, aszBuf, sizeof(aszBuf));
+    if (RT_SUCCESS(rc))
+    {
+        rc = RTStrToUInt64Full(aszBuf, 0, pu64);
+    }
+    else if (rc == VERR_CFGM_VALUE_NOT_FOUND)
+    {
+        rc = VINF_SUCCESS;
+        *pu64 = u64Def;
+    }
+    return rc;
 }
 
 /**
  * Query configuration, unsigned 32-bit integer value with default.
- * 
+ *
  * @return  VBox status code.
  * @param   pCfgIf      Pointer to configuration callback table.
- * @param   pNode       Which node to search for pszName in.
+ * @param   pvUser      The opaque user data associated with this interface.
  * @param   pszName     Name of an integer value
  * @param   pu32        Where to store the value. Set to default on failure.
  * @param   u32Def      The default value.
  */
-DECLINLINE(int) VDCFGQueryU32Def(PVDINTERFACECONFIG pCfgIf, PVDCFGNODE pNode,
+DECLINLINE(int) VDCFGQueryU32Def(PVDINTERFACECONFIG pCfgIf, void *pvUser,
                                  const char *pszName, uint32_t *pu32,
                                  uint32_t u32Def)
 {
     uint64_t u64;
-    int rc = pCfgIf->pfnQueryIntegerDef(pNode, pszName, &u64, u32Def);
-    if (VBOX_SUCCESS(rc))
+    int rc = VDCFGQueryU64Def(pCfgIf, pvUser, pszName, &u64, u32Def);
+    if (RT_SUCCESS(rc))
     {
         if (!(u64 & UINT64_C(0xffffffff00000000)))
             *pu32 = (uint32_t)u64;
@@ -763,21 +751,21 @@ DECLINLINE(int) VDCFGQueryU32Def(PVDINTERFACECONFIG pCfgIf, PVDCFGNODE pNode,
 
 /**
  * Query configuration, bool value with default.
- * 
+ *
  * @return  VBox status code.
  * @param   pCfgIf      Pointer to configuration callback table.
- * @param   pNode       Which node to search for pszName in.
+ * @param   pvUser      The opaque user data associated with this interface.
  * @param   pszName     Name of an integer value
  * @param   pf          Where to store the value. Set to default on failure.
  * @param   fDef        The default value.
  */
-DECLINLINE(int) VDCFGQueryBoolDef(PVDINTERFACECONFIG pCfgIf, PVDCFGNODE pNode,
+DECLINLINE(int) VDCFGQueryBoolDef(PVDINTERFACECONFIG pCfgIf, void *pvUser,
                                   const char *pszName, bool *pf,
                                   bool fDef)
 {
     uint64_t u64;
-    int rc = pCfgIf->pfnQueryIntegerDef(pNode, pszName, &u64, fDef);
-    if (VBOX_SUCCESS(rc))
+    int rc = VDCFGQueryU64Def(pCfgIf, pvUser, pszName, &u64, fDef);
+    if (RT_SUCCESS(rc))
         *pf = u64 ? true : false;
     return rc;
 }
@@ -785,28 +773,27 @@ DECLINLINE(int) VDCFGQueryBoolDef(PVDINTERFACECONFIG pCfgIf, PVDCFGNODE pNode,
 /**
  * Query configuration, dynamically allocated (RTMemAlloc) zero terminated
  * character value.
- * 
+ *
  * @return  VBox status code.
  * @param   pCfgIf      Pointer to configuration callback table.
- * @param   pNode       Which node to search for pszName in.
+ * @param   pvUser      The opaque user data associated with this interface.
  * @param   pszName     Name of an zero terminated character value
  * @param   ppszString  Where to store the string pointer. Not set on failure.
  *                      Free this using RTMemFree().
  */
 DECLINLINE(int) VDCFGQueryStringAlloc(PVDINTERFACECONFIG pCfgIf,
-                                      PVDCFGNODE pNode,
-                                      const char *pszName,
+                                      void *pvUser, const char *pszName,
                                       char **ppszString)
 {
     size_t cch;
-    int rc = pCfgIf->pfnQuerySize(pNode, pszName, &cch);
-    if (VBOX_SUCCESS(rc))
+    int rc = pCfgIf->pfnQuerySize(pvUser, pszName, &cch);
+    if (RT_SUCCESS(rc))
     {
         char *pszString = (char *)RTMemAlloc(cch);
         if (pszString)
         {
-            rc = pCfgIf->pfnQueryString(pNode, pszName, pszString, cch);
-            if (VBOX_SUCCESS(rc))
+            rc = pCfgIf->pfnQuery(pvUser, pszName, pszString, cch);
+            if (RT_SUCCESS(rc))
                 *ppszString = pszString;
             else
                 RTMemFree(pszString);
@@ -820,35 +807,39 @@ DECLINLINE(int) VDCFGQueryStringAlloc(PVDINTERFACECONFIG pCfgIf,
 /**
  * Query configuration, dynamically allocated (RTMemAlloc) zero terminated
  * character value with default.
- * 
+ *
  * @return  VBox status code.
  * @param   pCfgIf      Pointer to configuration callback table.
- * @param   pNode       Which node to search for pszName in.
+ * @param   pvUser      The opaque user data associated with this interface.
  * @param   pszName     Name of an zero terminated character value
  * @param   ppszString  Where to store the string pointer. Not set on failure.
  *                      Free this using RTMemFree().
  * @param   pszDef      The default value.
  */
 DECLINLINE(int) VDCFGQueryStringAllocDef(PVDINTERFACECONFIG pCfgIf,
-                                         PVDCFGNODE pNode,
-                                         const char *pszName,
+                                         void *pvUser, const char *pszName,
                                          char **ppszString,
                                          const char *pszDef)
 {
     size_t cch;
-    int rc = pCfgIf->pfnQuerySize(pNode, pszName, &cch);
+    int rc = pCfgIf->pfnQuerySize(pvUser, pszName, &cch);
     if (rc == VERR_CFGM_VALUE_NOT_FOUND || rc == VERR_CFGM_NO_PARENT)
     {
         cch = strlen(pszDef) + 1;
         rc = VINF_SUCCESS;
     }
-    if (VBOX_SUCCESS(rc))
+    if (RT_SUCCESS(rc))
     {
         char *pszString = (char *)RTMemAlloc(cch);
         if (pszString)
         {
-            rc = pCfgIf->pfnQueryStringDef(pNode, pszName, pszString, cch, pszDef);
-            if (VBOX_SUCCESS(rc))
+            rc = pCfgIf->pfnQuery(pvUser, pszName, pszString, cch);
+            if (rc == VERR_CFGM_VALUE_NOT_FOUND)
+            {
+                memcpy(pszString, pszDef, cch);
+                rc = VINF_SUCCESS;
+            }
+            if (RT_SUCCESS(rc))
                 *ppszString = pszString;
             else
                 RTMemFree(pszString);
@@ -861,28 +852,28 @@ DECLINLINE(int) VDCFGQueryStringAllocDef(PVDINTERFACECONFIG pCfgIf,
 
 /**
  * Query configuration, dynamically allocated (RTMemAlloc) byte string value.
- * 
+ *
  * @return  VBox status code.
  * @param   pCfgIf      Pointer to configuration callback table.
- * @param   pNode       Which node to search for pszName in.
+ * @param   pvUser      The opaque user data associated with this interface.
  * @param   pszName     Name of an zero terminated character value
  * @param   ppvData     Where to store the byte string pointer. Not set on failure.
  *                      Free this using RTMemFree().
  * @param   pcbData     Where to store the byte string length.
  */
 DECLINLINE(int) VDCFGQueryBytesAlloc(PVDINTERFACECONFIG pCfgIf,
-                                     PVDCFGNODE pNode, const char *pszName,
+                                     void *pvUser, const char *pszName,
                                      void **ppvData, size_t *pcbData)
 {
     size_t cb;
-    int rc = pCfgIf->pfnQuerySize(pNode, pszName, &cb);
-    if (VBOX_SUCCESS(rc))
+    int rc = pCfgIf->pfnQuerySize(pvUser, pszName, &cb);
+    if (RT_SUCCESS(rc))
     {
         char *pvData = (char *)RTMemAlloc(cb);
         if (pvData)
         {
-            rc = pCfgIf->pfnQueryBytes(pNode, pszName, pvData, cb);
-            if (VBOX_SUCCESS(rc))
+            rc = pCfgIf->pfnQuery(pvUser, pszName, pvData, cb);
+            if (RT_SUCCESS(rc))
             {
                 *ppvData = pvData;
                 *pcbData = cb;
@@ -897,6 +888,112 @@ DECLINLINE(int) VDCFGQueryBytesAlloc(PVDINTERFACECONFIG pCfgIf,
 }
 
 
+/**
+ * TCP network stack interface
+ *
+ * Per-disk. Mandatory for backends which have the VD_CAP_TCPNET bit set.
+ */
+typedef struct VDINTERFACETCPNET
+{
+    /**
+     * Size of the configuration interface.
+     */
+    uint32_t    cbSize;
+
+    /**
+     * Interface type.
+     */
+    VDINTERFACETYPE enmInterface;
+
+    /**
+     * Connect as a client to a TCP port.
+     *
+     * @return  iprt status code.
+     * @param   pszAddress      The address to connect to.
+     * @param   uPort           The port to connect to.
+     * @param   pSock           Where to store the handle to the established connect
+ion.
+     */
+    DECLR3CALLBACKMEMBER(int, pfnClientConnect, (const char *pszAddress, uint32_t uPort, PRTSOCKET pSock));
+
+    /**
+     * Close a TCP connection.
+     *
+     * @return  iprt status code.
+     * @param   Sock            Socket descriptor.
+ion.
+     */
+    DECLR3CALLBACKMEMBER(int, pfnClientClose, (RTSOCKET Sock));
+
+    /**
+     * Socket I/O multiplexing.
+     * Checks if the socket is ready for reading.
+     *
+     * @return  iprt status code.
+     * @param   Sock        Socket descriptor.
+     * @param   cMillies    Number of milliseconds to wait for the socket.
+     *                      Use RT_INDEFINITE_WAIT to wait for ever.
+     */
+    DECLR3CALLBACKMEMBER(int, pfnSelectOne, (RTSOCKET Sock, unsigned cMillies));
+
+    /**
+     * Receive data from a socket.
+     *
+     * @return  iprt status code.
+     * @param   Sock        Socket descriptor.
+     * @param   pvBuffer    Where to put the data we read.
+     * @param   cbBuffer    Read buffer size.
+     * @param   pcbRead     Number of bytes read.
+     *                      If NULL the entire buffer will be filled upon successful return.
+     *                      If not NULL a partial read can be done successfully.
+     */
+    DECLR3CALLBACKMEMBER(int, pfnRead, (RTSOCKET Sock, void *pvBuffer, size_t cbBuffer, size_t *pcbRead));
+
+    /**
+     * Send data from a socket.
+     *
+     * @return  iprt status code.
+     * @param   Sock        Socket descriptor.
+     * @param   pvBuffer    Buffer to write data to socket.
+     * @param   cbBuffer    How much to write.
+     * @param   pcbRead     Number of bytes read.
+     */
+    DECLR3CALLBACKMEMBER(int, pfnWrite, (RTSOCKET Sock, const void *pvBuffer, size_t cbBuffer));
+
+    /**
+     * Flush socket write buffers.
+     *
+     * @return  iprt status code.
+     * @param   Sock        Socket descriptor.
+     */
+    DECLR3CALLBACKMEMBER(int, pfnFlush, (RTSOCKET Sock));
+
+} VDINTERFACETCPNET, *PVDINTERFACETCPNET;
+
+/**
+ * Get TCP network stack interface from opaque callback table.
+ *
+ * @return Pointer to the callback table.
+ * @param  pInterface Pointer to the interface descriptor.
+ */
+DECLINLINE(PVDINTERFACETCPNET) VDGetInterfaceTcpNet(PVDINTERFACE pInterface)
+{
+    /* Check that the interface descriptor is a TCP network stack interface. */
+    AssertMsgReturn(   (pInterface->enmInterface == VDINTERFACETYPE_TCPNET)
+                    && (pInterface->cbSize == sizeof(VDINTERFACE)),
+                    ("Not a TCP network stack interface"), NULL);
+
+    PVDINTERFACETCPNET pInterfaceTcpNet = (PVDINTERFACETCPNET)pInterface->pCallbacks;
+
+    /* Do basic checks. */
+    AssertMsgReturn(   (pInterfaceTcpNet->cbSize == sizeof(VDINTERFACETCPNET))
+                    && (pInterfaceTcpNet->enmInterface == VDINTERFACETYPE_TCPNET),
+                    ("A non TCP network stack callback table attached to a TCP network stack interface descriptor\n"), NULL);
+
+    return pInterfaceTcpNet;
+}
+
+
 /** @name Configuration interface key handling flags.
  * @{
  */
@@ -908,6 +1005,21 @@ DECLINLINE(int) VDCFGQueryBytesAlloc(PVDINTERFACECONFIG pCfgIf,
 #define VD_CFGKEY_EXPERT            RT_BIT(1)
 /** @}*/
 
+
+/**
+ * Configuration value type for configuration information interface.
+ */
+typedef enum VDCFGVALUETYPE
+{
+    /** Integer value. */
+    VDCFGVALUETYPE_INTEGER = 1,
+    /** String value. */
+    VDCFGVALUETYPE_STRING,
+    /** Bytestring value. */
+    VDCFGVALUETYPE_BYTES
+} VDCFGVALUETYPE;
+
+
 /**
  * Structure describing configuration keys required/supported by a backend
  * through the config interface.
@@ -918,7 +1030,7 @@ typedef struct VDCONFIGINFO
     const char *pszKey;
     /** Pointer to default value (descriptor). NULL if no useful default value
      * can be specified. */
-    const PVDCFGVALUE pDefaultValue;
+    const char *pszDefaultValue;
     /** Value type for this key. */
     VDCFGVALUETYPE enmValueType;
     /** Key handling flags (a combination of VD_CFGKEY_* flags). */
@@ -936,8 +1048,8 @@ typedef const VDCONFIGINFO *PCVDCONFIGINFO;
  */
 typedef struct VDBACKENDINFO
 {
-    /** Name of the backend. */
-    char *pszBackend;
+    /** Name of the backend. Must be unique even with case insensitive comparison. */
+    const char *pszBackend;
     /** Capabilities of the backend (a combination of the VD_CAP_* flags). */
     uint64_t uBackendCaps;
     /** Pointer to a NULL-terminated array of strings, containing the supported
@@ -949,6 +1061,17 @@ typedef struct VDBACKENDINFO
      * the configuration interface, so this pointer may just contain NULL.
      * Mandatory if the backend sets VD_CAP_CONFIG. */
     PCVDCONFIGINFO paConfigInfo;
+    /** Returns a human readable hard disk location string given a
+     *  set of hard disk configuration keys. The returned string is an
+     *  equivalent of the full file path for image-based hard disks.
+     *  Mandatory for backends with no VD_CAP_FILE and NULL otherwise. */
+    DECLR3CALLBACKMEMBER(int, pfnComposeLocation, (PVDINTERFACE pConfig, char **pszLocation));
+    /** Returns a human readable hard disk name string given a
+     *  set of hard disk configuration keys. The returned string is an
+     *  equivalent of the file name part in the full file path for
+     *  image-based hard disks. Mandatory for backends with no
+     *  VD_CAP_FILE and NULL otherwise. */
+    DECLR3CALLBACKMEMBER(int, pfnComposeName, (PVDINTERFACE pConfig, char **pszName));
 } VDBACKENDINFO, *PVDBACKENDINFO;
 
 
@@ -960,6 +1083,19 @@ struct VBOXHDD;
 typedef struct VBOXHDD VBOXHDD;
 typedef VBOXHDD *PVBOXHDD;
 
+/**
+ * Initializes HDD backends.
+ *
+ * @returns VBox status code.
+ */
+VBOXDDU_DECL(int) VDInit();
+
+/**
+ * Destroys loaded HDD backends.
+ *
+ * @returns VBox status code.
+ */
+VBOXDDU_DECL(int) VDShutdown();
 
 /**
  * Lists all HDD backends and their capabilities in a caller-provided buffer.
@@ -979,7 +1115,7 @@ VBOXDDU_DECL(int) VDBackendInfo(unsigned cEntriesAlloc, PVDBACKENDINFO pEntries,
  * Free all returned names with RTStrFree() when you no longer need them.
  *
  * @return  VBox status code.
- * @param   pszBackend      The backend name.
+ * @param   pszBackend      The backend name (case insensitive).
  * @param   pEntries        Pointer to an entry.
  */
 VBOXDDU_DECL(int) VDBackendInfoOne(const char *pszBackend, PVDBACKENDINFO pEntry);
@@ -1027,7 +1163,7 @@ VBOXDDU_DECL(int) VDGetFormat(const char *pszFilename, char **ppszFormat);
  *
  * @return  VBox status code.
  * @param   pDisk           Pointer to HDD container.
- * @param   pszBackend      Name of the image file backend to use.
+ * @param   pszBackend      Name of the image file backend to use (case insensitive).
  * @param   pszFilename     Name of the image file to open.
  * @param   uOpenFlags      Image file open mode, see VD_OPEN_FLAGS_* constants.
  * @param   pVDIfsImage     Pointer to the per-image VD interface list.
@@ -1041,7 +1177,7 @@ VBOXDDU_DECL(int) VDOpen(PVBOXHDD pDisk, const char *pszBackend,
  *
  * @return  VBox status code.
  * @param   pDisk           Pointer to HDD container.
- * @param   pszBackend      Name of the image file backend to use.
+ * @param   pszBackend      Name of the image file backend to use (case insensitive).
  * @param   pszFilename     Name of the image file to create.
  * @param   enmType         Image type, only base image types are acceptable.
  * @param   cbSize          Image size in bytes.
@@ -1070,11 +1206,12 @@ VBOXDDU_DECL(int) VDCreateBase(PVBOXHDD pDisk, const char *pszBackend,
  *
  * @return  VBox status code.
  * @param   pDisk           Pointer to HDD container.
- * @param   pszBackend      Name of the image file backend to use.
+ * @param   pszBackend      Name of the image file backend to use (case insensitive).
  * @param   pszFilename     Name of the differencing image file to create.
  * @param   uImageFlags     Flags specifying special image features.
  * @param   pszComment      Pointer to image comment. NULL is ok.
  * @param   pUuid           New UUID of the image. If NULL, a new UUID is created.
+ * @param   pParentUuid     New parent UUID of the image. If NULL, the UUID is queried automatically.
  * @param   uOpenFlags      Image file open mode, see VD_OPEN_FLAGS_* constants.
  * @param   pVDIfsImage     Pointer to the per-image VD interface list.
  * @param   pVDIfsOperation Pointer to the per-operation VD interface list.
@@ -1082,7 +1219,8 @@ VBOXDDU_DECL(int) VDCreateBase(PVBOXHDD pDisk, const char *pszBackend,
 VBOXDDU_DECL(int) VDCreateDiff(PVBOXHDD pDisk, const char *pszBackend,
                                const char *pszFilename, unsigned uImageFlags,
                                const char *pszComment, PCRTUUID pUuid,
-                               unsigned uOpenFlags, PVDINTERFACE pVDIfsImage,
+                               PCRTUUID pParentUuid, unsigned uOpenFlags,
+                               PVDINTERFACE pVDIfsImage,
                                PVDINTERFACE pVDIfsOperation);
 
 /**
@@ -1092,7 +1230,7 @@ VBOXDDU_DECL(int) VDCreateDiff(PVBOXHDD pDisk, const char *pszBackend,
  * images in the HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImageFrom      Name of the image file to merge from.
  * @param   nImageTo        Name of the image file to merge to.
@@ -1112,14 +1250,17 @@ VBOXDDU_DECL(int) VDMerge(PVBOXHDD pDisk, unsigned nImageFrom,
  * the image at the new location is opened in the same way as the old one was.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDiskFrom       Pointer to source HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pDiskTo         Pointer to destination HDD container.
- * @param   pszBackend      Name of the image file backend to use (may be NULL to use the same as the source).
+ * @param   pszBackend      Name of the image file backend to use (may be NULL to use the same as the source, case insensitive).
  * @param   pszFilename     New name of the image (may be NULL if pDiskFrom == pDiskTo).
  * @param   fMoveByRename   If true, attempt to perform a move by renaming (if successful the new size is ignored).
  * @param   cbSize          New image size (0 means leave unchanged).
+ * @param   pDstUuid        New UUID of the destination image. If NULL, a new UUID is created.
+ *                          This parameter is used if and only if a true copy is created.
+ *                          In all rename/move cases the UUIDs are copied over.
  * @param   pVDIfsOperation Pointer to the per-operation VD interface list.
  * @param   pDstVDIfsImage  Pointer to the per-image VD interface list, for the
  *                          destination image.
@@ -1128,7 +1269,7 @@ VBOXDDU_DECL(int) VDMerge(PVBOXHDD pDisk, unsigned nImageFrom,
  */
 VBOXDDU_DECL(int) VDCopy(PVBOXHDD pDiskFrom, unsigned nImage, PVBOXHDD pDiskTo,
                          const char *pszBackend, const char *pszFilename,
-                         bool fMoveByRename, uint64_t cbSize,
+                         bool fMoveByRename, uint64_t cbSize, PCRTUUID pDstUuid,
                          PVDINTERFACE pVDIfsOperation,
                          PVDINTERFACE pDstVDIfsImage,
                          PVDINTERFACE pDstVDIfsOperation);
@@ -1140,7 +1281,7 @@ VBOXDDU_DECL(int) VDCopy(PVBOXHDD pDiskFrom, unsigned nImage, PVBOXHDD pDiskTo,
  * will be reopened in read/write mode.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_NOT_OPENED if no image is opened in HDD container.
+ * @return  VERR_VD_NOT_OPENED if no image is opened in HDD container.
  * @param   pDisk           Pointer to HDD container.
  * @param   fDelete         If true, delete the image from the host disk.
  */
@@ -1158,11 +1299,13 @@ VBOXDDU_DECL(int) VDCloseAll(PVBOXHDD pDisk);
  * Read data from virtual HDD.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_NOT_OPENED if no image is opened in HDD container.
+ * @return  VERR_VD_NOT_OPENED if no image is opened in HDD container.
  * @param   pDisk           Pointer to HDD container.
  * @param   uOffset         Offset of first reading byte from start of disk.
+ *                          Must be aligned to a sector boundary.
  * @param   pvBuf           Pointer to buffer for reading data.
  * @param   cbRead          Number of bytes to read.
+ *                          Must be aligned to a sector boundary.
  */
 VBOXDDU_DECL(int) VDRead(PVBOXHDD pDisk, uint64_t uOffset, void *pvBuf, size_t cbRead);
 
@@ -1170,11 +1313,13 @@ VBOXDDU_DECL(int) VDRead(PVBOXHDD pDisk, uint64_t uOffset, void *pvBuf, size_t c
  * Write data to virtual HDD.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_NOT_OPENED if no image is opened in HDD container.
+ * @return  VERR_VD_NOT_OPENED if no image is opened in HDD container.
  * @param   pDisk           Pointer to HDD container.
  * @param   uOffset         Offset of first writing byte from start of disk.
+ *                          Must be aligned to a sector boundary.
  * @param   pvBuf           Pointer to buffer for writing data.
  * @param   cbWrite         Number of bytes to write.
+ *                          Must be aligned to a sector boundary.
  */
 VBOXDDU_DECL(int) VDWrite(PVBOXHDD pDisk, uint64_t uOffset, const void *pvBuf, size_t cbWrite);
 
@@ -1182,7 +1327,7 @@ VBOXDDU_DECL(int) VDWrite(PVBOXHDD pDisk, uint64_t uOffset, const void *pvBuf, s
  * Make sure the on disk representation of a virtual HDD is up to date.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_NOT_OPENED if no image is opened in HDD container.
+ * @return  VERR_VD_NOT_OPENED if no image is opened in HDD container.
  * @param   pDisk           Pointer to HDD container.
  */
 VBOXDDU_DECL(int) VDFlush(PVBOXHDD pDisk);
@@ -1228,8 +1373,8 @@ VBOXDDU_DECL(uint64_t) VDGetFileSize(PVBOXHDD pDisk, unsigned nImage);
  * Get virtual disk PCHS geometry of an image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
- * @return  VERR_VDI_GEOMETRY_NOT_SET if no geometry present in the HDD container.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_GEOMETRY_NOT_SET if no geometry present in the HDD container.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pPCHSGeometry   Where to store PCHS geometry. Not NULL.
@@ -1241,7 +1386,7 @@ VBOXDDU_DECL(int) VDGetPCHSGeometry(PVBOXHDD pDisk, unsigned nImage,
  * Store virtual disk PCHS geometry of an image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pPCHSGeometry   Where to load PCHS geometry from. Not NULL.
@@ -1253,8 +1398,8 @@ VBOXDDU_DECL(int) VDSetPCHSGeometry(PVBOXHDD pDisk, unsigned nImage,
  * Get virtual disk LCHS geometry of an image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
- * @return  VERR_VDI_GEOMETRY_NOT_SET if no geometry present in the HDD container.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_GEOMETRY_NOT_SET if no geometry present in the HDD container.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pLCHSGeometry   Where to store LCHS geometry. Not NULL.
@@ -1266,7 +1411,7 @@ VBOXDDU_DECL(int) VDGetLCHSGeometry(PVBOXHDD pDisk, unsigned nImage,
  * Store virtual disk LCHS geometry of an image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pLCHSGeometry   Where to load LCHS geometry from. Not NULL.
@@ -1278,7 +1423,7 @@ VBOXDDU_DECL(int) VDSetLCHSGeometry(PVBOXHDD pDisk, unsigned nImage,
  * Get version of image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   puVersion       Where to store the image version.
@@ -1290,7 +1435,7 @@ VBOXDDU_DECL(int) VDGetVersion(PVBOXHDD pDisk, unsigned nImage,
  * Get type of image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   penmType        Where to store the image type.
@@ -1302,7 +1447,7 @@ VBOXDDU_DECL(int) VDGetImageType(PVBOXHDD pDisk, unsigned nImage,
  * List the capabilities of image backend in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to the HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pbackendInfo    Where to store the backend information.
@@ -1314,7 +1459,7 @@ VBOXDDU_DECL(int) VDBackendInfoSingle(PVBOXHDD pDisk, unsigned nImage,
  * Get flags of image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   puImageFlags    Where to store the image flags.
@@ -1325,7 +1470,7 @@ VBOXDDU_DECL(int) VDGetImageFlags(PVBOXHDD pDisk, unsigned nImage, unsigned *puI
  * Get open flags of image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   puOpenFlags     Where to store the image open flags.
@@ -1339,7 +1484,7 @@ VBOXDDU_DECL(int) VDGetOpenFlags(PVBOXHDD pDisk, unsigned nImage,
  * Note that in case of unrecoverable error all images in HDD container will be closed.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   uOpenFlags      Image file open mode, see VD_OPEN_FLAGS_* constants.
@@ -1353,7 +1498,7 @@ VBOXDDU_DECL(int) VDSetOpenFlags(PVBOXHDD pDisk, unsigned nImage,
  * purposes.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @return  VERR_BUFFER_OVERFLOW if pszFilename buffer too small to hold filename.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
@@ -1367,7 +1512,7 @@ VBOXDDU_DECL(int) VDGetFilename(PVBOXHDD pDisk, unsigned nImage,
  * Get the comment line of image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @return  VERR_BUFFER_OVERFLOW if pszComment buffer too small to hold comment text.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
@@ -1381,7 +1526,7 @@ VBOXDDU_DECL(int) VDGetComment(PVBOXHDD pDisk, unsigned nImage,
  * Changes the comment line of image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pszComment      New comment string (UTF-8). NULL is allowed to reset the comment.
@@ -1393,7 +1538,7 @@ VBOXDDU_DECL(int) VDSetComment(PVBOXHDD pDisk, unsigned nImage,
  * Get UUID of image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pUuid           Where to store the image UUID.
@@ -1404,7 +1549,7 @@ VBOXDDU_DECL(int) VDGetUuid(PVBOXHDD pDisk, unsigned nImage, PRTUUID pUuid);
  * Set the image's UUID. Should not be used by normal applications.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pUuid           New UUID of the image. If NULL, a new UUID is created.
@@ -1415,7 +1560,7 @@ VBOXDDU_DECL(int) VDSetUuid(PVBOXHDD pDisk, unsigned nImage, PCRTUUID pUuid);
  * Get last modification UUID of image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pUuid           Where to store the image modification UUID.
@@ -1427,7 +1572,7 @@ VBOXDDU_DECL(int) VDGetModificationUuid(PVBOXHDD pDisk, unsigned nImage,
  * Set the image's last modification UUID. Should not be used by normal applications.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pUuid           New modification UUID of the image. If NULL, a new UUID is created.
@@ -1439,7 +1584,7 @@ VBOXDDU_DECL(int) VDSetModificationUuid(PVBOXHDD pDisk, unsigned nImage,
  * Get parent UUID of image in HDD container.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of the container.
  * @param   pUuid           Where to store the parent image UUID.
@@ -1471,7 +1616,7 @@ VBOXDDU_DECL(void) VDDumpImages(PVBOXHDD pDisk);
  * Query if asynchronous operations are supported for this disk.
  *
  * @return  VBox status code.
- * @return  VERR_VDI_IMAGE_NOT_FOUND if image with specified number was not opened.
+ * @return  VERR_VD_IMAGE_NOT_FOUND if image with specified number was not opened.
  * @param   pDisk           Pointer to the HDD container.
  * @param   nImage          Image number, counts from 0. 0 is always base image of container.
  * @param   pfAIOSupported  Where to store if async IO is supported.
@@ -1490,7 +1635,7 @@ VBOXDDU_DECL(int) VDImageIsAsyncIOSupported(PVBOXHDD pDisk, unsigned nImage, boo
  * @param   cSeg            Number of segments in the array.
  * @param   pvUser          User data which is passed on completion
  */
-VBOXDDU_DECL(int) VDAsyncRead(PVBOXHDD pDisk, uint64_t uOffset, size_t cbRead, 
+VBOXDDU_DECL(int) VDAsyncRead(PVBOXHDD pDisk, uint64_t uOffset, size_t cbRead,
                               PPDMDATASEG paSeg, unsigned cSeg,
                               void *pvUser);
 

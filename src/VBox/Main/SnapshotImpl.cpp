@@ -64,7 +64,7 @@ void Snapshot::FinalRelease()
  *  @param  aMachine       machine associated with this snapshot
  *  @param  aParent        parent snapshot (NULL if no parent)
  */
-HRESULT Snapshot::init (const Guid &aId, INPTR BSTR aName, INPTR BSTR aDescription,
+HRESULT Snapshot::init (const Guid &aId, IN_BSTR aName, IN_BSTR aDescription,
                         RTTIMESPEC aTimeStamp, SnapshotMachine *aMachine,
                         Snapshot *aParent)
 {
@@ -73,7 +73,7 @@ HRESULT Snapshot::init (const Guid &aId, INPTR BSTR aName, INPTR BSTR aDescripti
     ComAssertRet (!aId.isEmpty() && aName && aMachine, E_INVALIDARG);
 
     AutoWriteLock alock (this);
-    ComAssertRet (!isReady(), E_UNEXPECTED);
+    ComAssertRet (!isReady(), E_FAIL);
 
     mParent = aParent;
 
@@ -164,10 +164,9 @@ void Snapshot::discard()
 // ISnapshot methods
 ////////////////////////////////////////////////////////////////////////////////
 
-STDMETHODIMP Snapshot::COMGETTER(Id) (GUIDPARAMOUT aId)
+STDMETHODIMP Snapshot::COMGETTER(Id) (OUT_GUID aId)
 {
-    if (!aId)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aId);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -178,8 +177,7 @@ STDMETHODIMP Snapshot::COMGETTER(Id) (GUIDPARAMOUT aId)
 
 STDMETHODIMP Snapshot::COMGETTER(Name) (BSTR *aName)
 {
-    if (!aName)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aName);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -192,10 +190,9 @@ STDMETHODIMP Snapshot::COMGETTER(Name) (BSTR *aName)
  *  @note Locks this object for writing, then calls Machine::onSnapshotChange()
  *  (see its lock requirements).
  */
-STDMETHODIMP Snapshot::COMSETTER(Name) (INPTR BSTR aName)
+STDMETHODIMP Snapshot::COMSETTER(Name) (IN_BSTR aName)
 {
-    if (!aName)
-        return E_INVALIDARG;
+    CheckComArgNotNull(aName);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -214,8 +211,7 @@ STDMETHODIMP Snapshot::COMSETTER(Name) (INPTR BSTR aName)
 
 STDMETHODIMP Snapshot::COMGETTER(Description) (BSTR *aDescription)
 {
-    if (!aDescription)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aDescription);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -224,10 +220,9 @@ STDMETHODIMP Snapshot::COMGETTER(Description) (BSTR *aDescription)
     return S_OK;
 }
 
-STDMETHODIMP Snapshot::COMSETTER(Description) (INPTR BSTR aDescription)
+STDMETHODIMP Snapshot::COMSETTER(Description) (IN_BSTR aDescription)
 {
-    if (!aDescription)
-        return E_INVALIDARG;
+    CheckComArgNotNull(aDescription);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -246,8 +241,7 @@ STDMETHODIMP Snapshot::COMSETTER(Description) (INPTR BSTR aDescription)
 
 STDMETHODIMP Snapshot::COMGETTER(TimeStamp) (LONG64 *aTimeStamp)
 {
-    if (!aTimeStamp)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aTimeStamp);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -258,8 +252,7 @@ STDMETHODIMP Snapshot::COMGETTER(TimeStamp) (LONG64 *aTimeStamp)
 
 STDMETHODIMP Snapshot::COMGETTER(Online) (BOOL *aOnline)
 {
-    if (!aOnline)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aOnline);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -270,8 +263,7 @@ STDMETHODIMP Snapshot::COMGETTER(Online) (BOOL *aOnline)
 
 STDMETHODIMP Snapshot::COMGETTER(Machine) (IMachine **aMachine)
 {
-    if (!aMachine)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aMachine);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -282,8 +274,7 @@ STDMETHODIMP Snapshot::COMGETTER(Machine) (IMachine **aMachine)
 
 STDMETHODIMP Snapshot::COMGETTER(Parent) (ISnapshot **aParent)
 {
-    if (!aParent)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aParent);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -294,8 +285,7 @@ STDMETHODIMP Snapshot::COMGETTER(Parent) (ISnapshot **aParent)
 
 STDMETHODIMP Snapshot::COMGETTER(Children) (ISnapshotCollection **aChildren)
 {
-    if (!aChildren)
-        return E_POINTER;
+    CheckComArgOutPointerValid(aChildren);
 
     AutoWriteLock alock (this);
     CHECK_READY();
@@ -348,7 +338,7 @@ ULONG Snapshot::descendantCount()
  *  Searches for a snapshot with the given ID among children, grand-children,
  *  etc. of this snapshot. This snapshot itself is also included in the search.
  */
-ComObjPtr <Snapshot> Snapshot::findChildOrSelf (INPTR GUIDPARAM aId)
+ComObjPtr <Snapshot> Snapshot::findChildOrSelf (IN_GUID aId)
 {
     ComObjPtr <Snapshot> child;
 
@@ -375,7 +365,7 @@ ComObjPtr <Snapshot> Snapshot::findChildOrSelf (INPTR GUIDPARAM aId)
  *  grand-children, etc. of this snapshot. This snapshot itself is also included
  *  in the search.
  */
-ComObjPtr <Snapshot> Snapshot::findChildOrSelf (INPTR BSTR aName)
+ComObjPtr <Snapshot> Snapshot::findChildOrSelf (IN_BSTR aName)
 {
     ComObjPtr <Snapshot> child;
     AssertReturn (aName, child);
@@ -396,84 +386,6 @@ ComObjPtr <Snapshot> Snapshot::findChildOrSelf (INPTR BSTR aName)
     }
 
     return child;
-}
-
-/**
- *  Returns @c true if the given DVD image is attached to this snapshot or any
- *  of its children, recursively.
- *
- *  @param aId          Image ID to check.
- *
- *  @note Locks this object for reading.
- */
-bool Snapshot::isDVDImageUsed (const Guid &aId)
-{
-    AutoReadLock alock (this);
-    AssertReturn (isReady(), false);
-
-    AssertReturn (!mData.mMachine.isNull(), false);
-    AssertReturn (!mData.mMachine->mDVDDrive.isNull(), false);
-
-    DVDDrive::Data *d = mData.mMachine->mDVDDrive->data().data();
-
-    if (d &&
-        d->mDriveState == DriveState_ImageMounted)
-    {
-        Guid id;
-        HRESULT rc = d->mDVDImage->COMGETTER(Id) (id.asOutParam());
-        AssertComRC (rc);
-        if (id == aId)
-            return true;
-    }
-
-    AutoReadLock chLock (childrenLock());
-    for (SnapshotList::const_iterator it = children().begin();
-         it != children().end(); ++ it)
-    {
-        if ((*it)->isDVDImageUsed (aId))
-            return true;
-    }
-
-    return false;
-}
-
-/**
- *  Returns @c true if the given Floppy image is attached to this snapshot or any
- *  of its children, recursively.
- *
- *  @param aId          Image ID to check.
- *
- *  @note Locks this object for reading.
- */
-bool Snapshot::isFloppyImageUsed (const Guid &aId)
-{
-    AutoReadLock alock (this);
-    AssertReturn (isReady(), false);
-
-    AssertReturn (!mData.mMachine.isNull(), false);
-    AssertReturn (!mData.mMachine->mFloppyDrive.isNull(), false);
-
-    FloppyDrive::Data *d = mData.mMachine->mFloppyDrive->data().data();
-
-    if (d &&
-        d->mDriveState == DriveState_ImageMounted)
-    {
-        Guid id;
-        HRESULT rc = d->mFloppyImage->COMGETTER(Id) (id.asOutParam());
-        AssertComRC (rc);
-        if (id == aId)
-            return true;
-    }
-
-    AutoReadLock chLock (childrenLock());
-    for (SnapshotList::const_iterator it = children().begin();
-         it != children().end(); ++ it)
-    {
-        if ((*it)->isFloppyImageUsed (aId))
-            return true;
-    }
-
-    return false;
 }
 
 /**
@@ -517,3 +429,4 @@ void Snapshot::updateSavedStatePaths (const char *aOldPath, const char *aNewPath
     }
 }
 
+/* vi: set tabstop=4 shiftwidth=4 expandtab: */

@@ -1,4 +1,4 @@
-/* $Id: tstDeviceStructSize.cpp $ */
+/* $Id: tstDeviceStructSize.cpp 15475 2008-12-14 23:21:50Z vboxsync $ */
 /** @file
  * tstDeviceStructSize - testcase for check structure sizes/alignment
  *                       and to verify that HC and GC uses the same
@@ -70,6 +70,10 @@
 #ifdef VBOX_WITH_BUSLOGIC
 # undef LOG_GROUP
 # include "../Storage/DevBusLogic.cpp"
+#endif
+#ifdef VBOX_WITH_LSILOGIC
+# undef LOG_GROUP
+# include "../Storage/DevLsiLogicSCSI.cpp"
 #endif
 
 #include <stdio.h>
@@ -212,18 +216,18 @@ int main()
     /*
      * Misc alignment checks.
      */
-    CHECK_MEMBER_ALIGNMENT(PDMDEVINS, achInstanceData, 32);
+    CHECK_MEMBER_ALIGNMENT(PDMDEVINS, achInstanceData, 64);
     CHECK_MEMBER_ALIGNMENT(PCIDEVICE, Int.s, 16);
     CHECK_MEMBER_ALIGNMENT(PCIDEVICE, Int.s.aIORegions, 16);
     CHECK_MEMBER_ALIGNMENT(PCIBUS, devices, 16);
     CHECK_MEMBER_ALIGNMENT(PCIGLOBALS, pci_irq_levels, 16);
     CHECK_MEMBER_ALIGNMENT(PCNetState, u64LastPoll, 8);
     CHECK_MEMBER_ALIGNMENT(VGASTATE, Dev, 8);
-    CHECK_MEMBER_ALIGNMENT(VGASTATE, StatGCMemoryRead, 8);
+    CHECK_MEMBER_ALIGNMENT(VGASTATE, StatRZMemoryRead, 8);
 #ifdef VBOX_WITH_STATISTICS
 //    CHECK_MEMBER_ALIGNMENT(PCNetState, StatMMIOReadGC, 8);
     CHECK_MEMBER_ALIGNMENT(DEVPIC, StatSetIrqGC, 8);
-    CHECK_MEMBER_ALIGNMENT(APICState, StatMMIOReadGC, 8);
+    CHECK_MEMBER_ALIGNMENT(APICDeviceInfo, StatMMIOReadGC, 8);
     CHECK_MEMBER_ALIGNMENT(IOAPICState, StatMMIOReadGC, 8);
     CHECK_MEMBER_ALIGNMENT(IOAPICState, StatMMIOReadGC, 8);
 #endif

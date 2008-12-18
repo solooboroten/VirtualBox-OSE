@@ -63,65 +63,21 @@ __BEGIN_DECLS
  * @returns 0 - disabled, 1 - enabled
  * @param   pVM         The VM to operate on.
  */
-#define HWACCMIsEnabled(a)    (a->fHWACCMEnabled)
+#define HWACCMIsEnabled(pVM)    ((pVM)->fHWACCMEnabled)
 
-/**
- * Invalidates a guest page
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- * @param   GCVirt      Page to invalidate
- */
-HWACCMDECL(int) HWACCMInvalidatePage(PVM pVM, RTGCPTR GCVirt);
+VMMDECL(int)    HWACCMInvalidatePage(PVM pVM, RTGCPTR GCVirt);
+VMMDECL(bool)   HWACCMHasPendingIrq(PVM pVM);
 
-/**
- * Checks if an interrupt event is currently pending. 
- *
- * @returns Interrupt event pending state.
- * @param   pVM         The VM to operate on.
- */
-HWACCMDECL(bool) HWACCMHasPendingIrq(PVM pVM);
-
-#ifndef IN_GC
-/**
- * Flushes the guest TLB
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-HWACCMDECL(int) HWACCMFlushTLB(PVM pVM);
-
-/**
- * Invalidates a guest page by physical address
- *
- * NOTE: Assumes the current instruction references this physical page though a virtual address!!
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- * @param   GCPhys      Page to invalidate
- */
-HWACCMDECL(int) HWACCMInvalidatePhysPage(PVM pVM, RTGCPHYS GCPhys);
-
-/**
- * Checks if nested paging is enabled
- *
- * @returns boolean
- * @param   pVM         The VM to operate on.
- */
-HWACCMDECL(bool) HWACCMIsNestedPagingActive(PVM pVM);
-
-/**
- * Return the shadow paging mode for nested paging/ept
- *
- * @returns shadow paging mode
- * @param   pVM         The VM to operate on.
- */
-HWACCMDECL(PGMMODE) HWACCMGetPagingMode(PVM pVM);
-
+#ifndef IN_RC
+VMMDECL(int)     HWACCMFlushTLB(PVM pVM);
+VMMDECL(int)     HWACCMInvalidatePhysPage(PVM pVM, RTGCPHYS GCPhys);
+VMMDECL(bool)    HWACCMIsNestedPagingActive(PVM pVM);
+VMMDECL(PGMMODE) HWACCMGetShwPagingMode(PVM pVM);
+VMMDECL(RTCPUID) HWACCMGetVMCPUId(PVM pVM);
 #else
 /* Nop in GC */
-#define HWACCMFlushTLB(pVM)                     do { } while (0)
-#define HWACCMIsNestedPagingActive(pVM)         false
+# define HWACCMFlushTLB(pVM)                    do { } while (0)
+# define HWACCMIsNestedPagingActive(pVM)        false
 #endif
 
 #ifdef IN_RING0
@@ -129,52 +85,13 @@ HWACCMDECL(PGMMODE) HWACCMGetPagingMode(PVM pVM);
  * @ingroup grp_hwaccm
  * @{
  */
-
-/**
- * Does global Ring-0 HWACCM initialization.
- *
- * @returns VBox status code.
- */
-HWACCMR0DECL(int) HWACCMR0Init();
-
-/**
- * Does global Ring-0 HWACCM termination.
- *
- * @returns VBox status code.
- */
-HWACCMR0DECL(int) HWACCMR0Term();
-
-/**
- * Does Ring-0 per VM HWACCM initialization.
- *
- * This is mainly to check that the Host CPU mode is compatible
- * with VMX or SVM.
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-HWACCMR0DECL(int) HWACCMR0InitVM(PVM pVM);
-
-/**
- * Does Ring-0 per VM HWACCM termination.
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-HWACCMR0DECL(int) HWACCMR0TermVM(PVM pVM);
-
-/**
- * Sets up HWACCM on all cpus.
- *
- * @returns VBox status code.
- * @param   pVM                 The VM to operate on.
- * @param   enmNewHwAccmState   New hwaccm state
- *
- */
-HWACCMR0DECL(int) HWACCMR0EnableAllCpus(PVM pVM, HWACCMSTATE enmNewHwAccmState);
-
+VMMR0DECL(int)  HWACCMR0Init(void);
+VMMR0DECL(int)  HWACCMR0Term(void);
+VMMR0DECL(int)  HWACCMR0InitVM(PVM pVM);
+VMMR0DECL(int)  HWACCMR0TermVM(PVM pVM);
+VMMR0DECL(int)  HWACCMR0EnableAllCpus(PVM pVM, HWACCMSTATE enmNewHwAccmState);
 /** @} */
-#endif
+#endif /* IN_RING0 */
 
 
 #ifdef IN_RING3
@@ -182,175 +99,48 @@ HWACCMR0DECL(int) HWACCMR0EnableAllCpus(PVM pVM, HWACCMSTATE enmNewHwAccmState);
  * @ingroup grp_hwaccm
  * @{
  */
-
-/**
- * Checks if internal events are pending
- *
- * @returns boolean
- * @param   pVM         The VM to operate on.
- */
-HWACCMR3DECL(bool) HWACCMR3IsEventPending(PVM pVM);
-
-/**
- * Initializes the HWACCM.
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-HWACCMR3DECL(int) HWACCMR3Init(PVM pVM);
-
-/**
- * Initialize VT-x or AMD-V
- *
- * @returns VBox status code.
- * @param   pVM         The VM handle.
- */
-HWACCMR3DECL(int) HWACCMR3InitFinalizeR0(PVM pVM);
-
-/**
- * Applies relocations to data and code managed by this
- * component. This function will be called at init and
- * whenever the VMM need to relocate it self inside the GC.
- *
- * The HWACCM will update the addresses used by the switcher.
- *
- * @param   pVM     The VM.
- */
-HWACCMR3DECL(void) HWACCMR3Relocate(PVM pVM);
-
-/**
- * Terminates the VMXM.
- *
- * Termination means cleaning up and freeing all resources,
- * the VM it self is at this point powered off or suspended.
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-HWACCMR3DECL(int) HWACCMR3Term(PVM pVM);
-
-/**
- * VMXM reset callback.
- *
- * @param   pVM     The VM which is reset.
- */
-HWACCMR3DECL(void) HWACCMR3Reset(PVM pVM);
-
-
-/**
- * Check fatal VT-x/AMD-V error and produce some meaningful 
- * log release message.
- *
- * @param   pVM         The VM to operate on.
- * @param   iStatusCode VBox status code
- */
-HWACCMR3DECL(void) HWACCMR3CheckError(PVM pVM, int iStatusCode);
-
-/**
- * Checks if we can currently use hardware accelerated raw mode.
- *
- * @returns boolean
- * @param   pVM         The VM to operate on.
- * @param   pCtx        Partial VM execution context
- */
-HWACCMR3DECL(bool) HWACCMR3CanExecuteGuest(PVM pVM, PCPUMCTX pCtx);
-
-
-/**
- * Checks if we are currently using hardware accelerated raw mode.
- *
- * @returns boolean
- * @param   pVM         The VM to operate on.
- */
-HWACCMR3DECL(bool) HWACCMR3IsActive(PVM pVM);
-
-/**
- * Checks if we are currently using nested paging.
- *
- * @returns boolean
- * @param   pVM         The VM to operate on.
- */
-HWACCMR3DECL(bool) HWACCMR3IsNestedPagingActive(PVM pVM);
-
-/**
- * Checks hardware accelerated raw mode is allowed.
- *
- * @returns boolean
- * @param   pVM         The VM to operate on.
- */
-HWACCMR3DECL(bool) HWACCMR3IsAllowed(PVM pVM);
-
-/**
- * Notification callback which is called whenever there is a chance that a CR3
- * value might have changed.
- * This is called by PGM.
- *
- * @param   pVM            The VM to operate on.
- * @param   enmShadowMode  New paging mode.
- */
-HWACCMR3DECL(void) HWACCMR3PagingModeChanged(PVM pVM, PGMMODE enmShadowMode);
+VMMR3DECL(bool) HWACCMR3IsEventPending(PVM pVM);
+VMMR3DECL(int)  HWACCMR3Init(PVM pVM);
+VMMR3DECL(int)  HWACCMR3InitCPU(PVM pVM);
+VMMR3DECL(int)  HWACCMR3InitFinalizeR0(PVM pVM);
+VMMR3DECL(void) HWACCMR3Relocate(PVM pVM);
+VMMR3DECL(int)  HWACCMR3Term(PVM pVM);
+VMMR3DECL(int)  HWACCMR3TermCPU(PVM pVM);
+VMMR3DECL(void) HWACCMR3Reset(PVM pVM);
+VMMR3DECL(void) HWACCMR3CheckError(PVM pVM, int iStatusCode);
+VMMR3DECL(bool) HWACCMR3CanExecuteGuest(PVM pVM, PCPUMCTX pCtx);
+VMMR3DECL(void) HWACCMR3NotifyScheduled(PVMCPU pVCpu);
+VMMR3DECL(void) HWACCMR3NotifyEmulated(PVMCPU pVCpu);
+VMMR3DECL(bool) HWACCMR3IsActive(PVM pVM);
+VMMR3DECL(bool) HWACCMR3IsNestedPagingActive(PVM pVM);
+VMMR3DECL(bool) HWACCMR3IsAllowed(PVM pVM);
+VMMR3DECL(void) HWACCMR3PagingModeChanged(PVM pVM, PGMMODE enmShadowMode, PGMMODE enmGuestMode);
+VMMR3DECL(bool) HWACCMR3IsVPIDActive(PVM pVM);
+VMMR3DECL(int)  HWACCMR3InjectNMI(PVM pVM);
 
 /** @} */
-#endif
+#endif /* IN_RING3 */
 
 #ifdef IN_RING0
 /** @addtogroup grp_hwaccm_r0
  * @{
  */
+VMMR0DECL(int)   HWACCMR0SetupVM(PVM pVM);
+VMMR0DECL(int)   HWACCMR0RunGuestCode(PVM pVM, PVMCPU pVCpu);
+VMMR0DECL(int)   HWACCMR0Enter(PVM pVM, PVMCPU pVCpu);
+VMMR0DECL(int)   HWACCMR0Leave(PVM pVM, PVMCPU pVCpu);
+VMMR0DECL(int)   HWACCMR0InvalidatePage(PVM pVM, PVMCPU pVCpu);
+VMMR0DECL(int)   HWACCMR0FlushTLB(PVM pVM);
+VMMR0DECL(bool)  HWACCMR0SuspendPending();
 
-/**
- * Sets up a VT-x or AMD-V session
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-HWACCMR0DECL(int) HWACCMR0SetupVM(PVM pVM);
-
-
-/**
- * Runs guest code in a VMX/SVM VM.
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-HWACCMR0DECL(int) HWACCMR0RunGuestCode(PVM pVM);
-
-/**
- * Enters the VT-x or AMD-V session
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-HWACCMR0DECL(int) HWACCMR0Enter(PVM pVM);
-
-
-/**
- * Leaves the VT-x or AMD-V session
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-HWACCMR0DECL(int) HWACCMR0Leave(PVM pVM);
-
-/**
- * Invalidates a guest page
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- * @param   GCVirt      Page to invalidate
- */
-HWACCMR0DECL(int) HWACCMR0InvalidatePage(PVM pVM, RTGCPTR GCVirt);
-
-/**
- * Flushes the guest TLB
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-HWACCMR0DECL(int) HWACCMR0FlushTLB(PVM pVM);
+# if HC_ARCH_BITS == 32 && defined(VBOX_WITH_64_BITS_GUESTS)
+VMMR0DECL(int)   HWACCMR0SaveFPUState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
+VMMR0DECL(int)   HWACCMR0SaveDebugState(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
+VMMR0DECL(int)   HWACCMR0TestSwitcher3264(PVM pVM);
+# endif
 
 /** @} */
-#endif
+#endif /* IN_RING0 */
 
 
 /** @} */

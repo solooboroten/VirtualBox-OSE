@@ -1,4 +1,4 @@
-/* $Id: tstVMM.cpp $ */
+/* $Id: tstVMM.cpp 17451 2007-01-15 14:08:28Z bird $ */
 /** @file
  * VMM Testcase.
  */
@@ -29,7 +29,7 @@
 #include <VBox/err.h>
 #include <VBox/log.h>
 #include <iprt/assert.h>
-#include <iprt/runtime.h>
+#include <iprt/initterm.h>
 #include <iprt/semaphore.h>
 #include <iprt/stream.h>
 
@@ -85,15 +85,15 @@ int main(int argc, char **argv)
      */
     RTPrintf(TESTCASE ": Initializing...\n");
     PVM pVM;
-    int rc = VMR3Create(NULL, NULL, CFGMConstructor, NULL, &pVM);
-    if (VBOX_SUCCESS(rc))
+    int rc = VMR3Create(1, NULL, NULL, CFGMConstructor, NULL, &pVM);
+    if (RT_SUCCESS(rc))
     {
         /*
          * Do testing.
          */
         RTPrintf(TESTCASE ": Testing...\n");
         PVMREQ pReq1 = NULL;
-        rc = VMR3ReqCall(pVM, &pReq1, RT_INDEFINITE_WAIT, (PFNRT)VMMDoHwAccmTest, 1, pVM);
+        rc = VMR3ReqCall(pVM, VMREQDEST_ANY, &pReq1, RT_INDEFINITE_WAIT, (PFNRT)VMMDoHwAccmTest, 1, pVM);
         AssertRC(rc);
         VMR3ReqFree(pReq1);
 
@@ -103,7 +103,7 @@ int main(int argc, char **argv)
          * Cleanup.
          */
         rc = VMR3Destroy(pVM);
-        if (!VBOX_SUCCESS(rc))
+        if (!RT_SUCCESS(rc))
         {
             RTPrintf(TESTCASE ": error: failed to destroy vm! rc=%d\n", rc);
             rcRet++;

@@ -37,7 +37,7 @@
 
 __BEGIN_DECLS
 
-/** @defgroup grp_em        The Execution Monitor API
+/** @defgroup grp_em        The Execution Monitor / Manager API
  * @{
  */
 
@@ -55,6 +55,8 @@ typedef enum EMSTATE
     EMSTATE_RAW,
     /** Hardware accelerated raw-mode execution. */
     EMSTATE_HWACC,
+    /** PARAV function. */
+    EMSTATE_PARAV,
     /** Recompiled mode execution. */
     EMSTATE_REM,
     /** Execution is halted. (waiting for interrupt) */
@@ -77,23 +79,24 @@ typedef enum EMSTATE
     EMSTATE_MAKE_32BIT_HACK = 0x7fffffff
 } EMSTATE;
 
-/*
- * Callback handlers for instruction emulation functions.
- */
-typedef DECLCALLBACK(uint32_t) PFN_EMULATE_PARAM2_UINT32(void *pvParam1, uint64_t val2);
-typedef DECLCALLBACK(uint32_t) PFN_EMULATE_PARAM2(void *pvParam1, size_t val2);
-typedef DECLCALLBACK(uint32_t) PFN_EMULATE_PARAM3(void *pvParam1, uint64_t val2, size_t val3);
-typedef DECLCALLBACK(int)      FNEMULATELOCKPARAM2(void *pvParam1, uint64_t val2, RTGCUINTREG32 *pf);
-typedef FNEMULATELOCKPARAM2 *PFNEMULATELOCKPARAM2;
-typedef DECLCALLBACK(int)      FNEMULATELOCKPARAM3(void *pvParam1, uint64_t val2, size_t cb, RTGCUINTREG32 *pf);
-typedef FNEMULATELOCKPARAM3 *PFNEMULATELOCKPARAM3;
+VMMDECL(EMSTATE) EMGetState(PVM pVM);
 
-/**
- * Get the current execution manager status.
- *
- * @returns Current status.
+/** @name Callback handlers for instruction emulation functions.
+ * These are placed here because IOM wants to use them as well.
+ * @{
  */
-EMDECL(EMSTATE) EMGetState(PVM pVM);
+typedef DECLCALLBACK(uint32_t)  FNEMULATEPARAM2UINT32(void *pvParam1, uint64_t val2);
+typedef FNEMULATEPARAM2UINT32  *PFNEMULATEPARAM2UINT32;
+typedef DECLCALLBACK(uint32_t)  FNEMULATEPARAM2(void *pvParam1, size_t val2);
+typedef FNEMULATEPARAM2        *PFNEMULATEPARAM2;
+typedef DECLCALLBACK(uint32_t)  FNEMULATEPARAM3(void *pvParam1, uint64_t val2, size_t val3);
+typedef FNEMULATEPARAM3        *PFNEMULATEPARAM3;
+typedef DECLCALLBACK(int)       FNEMULATELOCKPARAM2(void *pvParam1, uint64_t val2, RTGCUINTREG32 *pf);
+typedef FNEMULATELOCKPARAM2    *PFNEMULATELOCKPARAM2;
+typedef DECLCALLBACK(int)       FNEMULATELOCKPARAM3(void *pvParam1, uint64_t val2, size_t cb, RTGCUINTREG32 *pf);
+typedef FNEMULATELOCKPARAM3    *PFNEMULATELOCKPARAM3;
+/** @}  */
+
 
 /**
  * Checks if raw ring-3 execute mode is enabled.
@@ -113,285 +116,65 @@ EMDECL(EMSTATE) EMGetState(PVM pVM);
  */
 #define EMIsRawRing0Enabled(pVM) ((pVM)->fRawR0Enabled)
 
-/**
- * Sets the PC for which interrupts should be inhibited.
- *
- * @param   pVM         The VM handle.
- * @param   PC          The PC.
- */
-EMDECL(void) EMSetInhibitInterruptsPC(PVM pVM, RTGCUINTPTR PC);
+VMMDECL(void)       EMSetInhibitInterruptsPC(PVM pVM, RTGCUINTPTR PC);
+VMMDECL(RTGCUINTPTR) EMGetInhibitInterruptsPC(PVM pVM);
+VMMDECL(int)        EMInterpretDisasOne(PVM pVM, PCCPUMCTXCORE pCtxCore, PDISCPUSTATE pCpu, unsigned *pcbInstr);
+VMMDECL(int)        EMInterpretDisasOneEx(PVM pVM, RTGCUINTPTR GCPtrInstr, PCCPUMCTXCORE pCtxCore,
+                                         PDISCPUSTATE pCpu, unsigned *pcbInstr);
+VMMDECL(int)        EMInterpretInstruction(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, uint32_t *pcbSize);
+VMMDECL(int)        EMInterpretInstructionCPU(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, uint32_t *pcbSize);
+VMMDECL(int)        EMInterpretCpuId(PVM pVM, PCPUMCTXCORE pRegFrame);
+VMMDECL(int)        EMInterpretRdtsc(PVM pVM, PCPUMCTXCORE pRegFrame);
+VMMDECL(int)        EMInterpretRdtscp(PVM pVM, PCPUMCTX pCtx);
+VMMDECL(int)        EMInterpretInvlpg(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCPTR pAddrGC);
+VMMDECL(int)        EMInterpretIret(PVM pVM, PCPUMCTXCORE pRegFrame);
+VMMDECL(int)        EMInterpretDRxWrite(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegDrx, uint32_t SrcRegGen);
+VMMDECL(int)        EMInterpretDRxRead(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegGen, uint32_t SrcRegDrx);
+VMMDECL(int)        EMInterpretCRxWrite(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegCrx, uint32_t SrcRegGen);
+VMMDECL(int)        EMInterpretCRxRead(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegGen, uint32_t SrcRegCrx);
+VMMDECL(int)        EMInterpretLMSW(PVM pVM, PCPUMCTXCORE pRegFrame, uint16_t u16Data);
+VMMDECL(int)        EMInterpretCLTS(PVM pVM);
+VMMDECL(int)        EMInterpretPortIO(PVM pVM, PCPUMCTXCORE pCtxCore, PDISCPUSTATE pCpu, uint32_t cbOp);
+VMMDECL(int)        EMInterpretRdmsr(PVM pVM, PCPUMCTXCORE pRegFrame);
+VMMDECL(int)        EMInterpretWrmsr(PVM pVM, PCPUMCTXCORE pRegFrame);
 
-/**
- * Gets the PC for which interrupts should be inhibited.
- *
- * There are a few instructions which inhibits or delays interrupts
- * for the instruction following them. These instructions are:
- *      - STI
- *      - MOV SS, r/m16
- *      - POP SS
- *
- * @returns The PC for which interrupts should be inhibited.
- * @param   pVM         VM handle.
- *
- */
-EMDECL(RTGCUINTPTR) EMGetInhibitInterruptsPC(PVM pVM);
-
-/**
- * Disassembles one instruction.
- *
- * @param   pVM             The VM handle.
- * @param   pCtxCore        The context core (used for both the mode and instruction).
- * @param   pCpu            Where to return the parsed instruction info.
- * @param   pcbInstr        Where to return the instruction size. (optional)
- */
-EMDECL(int) EMInterpretDisasOne(PVM pVM, PCCPUMCTXCORE pCtxCore, PDISCPUSTATE pCpu, unsigned *pcbInstr);
-
-/**
- * Disassembles one instruction.
- *
- * This is used by internally by the interpreter and by trap/access handlers.
- *
- * @param   pVM             The VM handle.
- * @param   GCPtrInstr      The flat address of the instruction.
- * @param   pCtxCore        The context core (used to determin the cpu mode).
- * @param   pCpu            Where to return the parsed instruction info.
- * @param   pcbInstr        Where to return the instruction size. (optional)
- */
-EMDECL(int) EMInterpretDisasOneEx(PVM pVM, RTGCUINTPTR GCPtrInstr, PCCPUMCTXCORE pCtxCore,
-                                  PDISCPUSTATE pCpu, unsigned *pcbInstr);
-
-/**
- * Interprets the current instruction.
- *
- * @returns VBox status code.
- * @retval  VINF_*                  Scheduling instructions.
- * @retval  VERR_EM_INTERPRETER     Something we can't cope with.
- * @retval  VERR_*                  Fatal errors.
- *
- * @param   pVM         The VM handle.
- * @param   pRegFrame   The register frame.
- *                      Updates the EIP if an instruction was executed successfully.
- * @param   pvFault     The fault address (CR2).
- * @param   pcbSize     Size of the write (if applicable).
- *
- * @remark  Invalid opcode exceptions have a higher priority than GP (see Intel
- *          Architecture System Developers Manual, Vol 3, 5.5) so we don't need
- *          to worry about e.g. invalid modrm combinations (!)
- */
-EMDECL(int) EMInterpretInstruction(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, uint32_t *pcbSize);
-
-/**
- * Interprets the current instruction using the supplied DISCPUSTATE structure.
- *
- * EIP is *NOT* updated!
- *
- * @returns VBox status code.
- * @retval  VINF_*                  Scheduling instructions. When these are returned, it
- *                                  starts to get a bit tricky to know whether code was
- *                                  executed or not... We'll address this when it becomes a problem.
- * @retval  VERR_EM_INTERPRETER     Something we can't cope with.
- * @retval  VERR_*                  Fatal errors.
- *
- * @param   pVM         The VM handle.
- * @param   pCpu        The disassembler cpu state for the instruction to be interpreted.
- * @param   pRegFrame   The register frame. EIP is *NOT* changed!
- * @param   pvFault     The fault address (CR2).
- * @param   pcbSize     Size of the write (if applicable).
- *
- * @remark  Invalid opcode exceptions have a higher priority than GP (see Intel
- *          Architecture System Developers Manual, Vol 3, 5.5) so we don't need
- *          to worry about e.g. invalid modrm combinations (!)
- */
-EMDECL(int) EMInterpretInstructionCPU(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, uint32_t *pcbSize);
-
-/**
- * Interpret CPUID given the parameters in the CPU context
- *
- * @returns VBox status code.
- * @param   pVM         The VM handle.
- * @param   pRegFrame   The register frame.
- *
- */
-EMDECL(int) EMInterpretCpuId(PVM pVM, PCPUMCTXCORE pRegFrame);
-
-/**
- * Interpret RDTSC
- *
- * @returns VBox status code.
- * @param   pVM         The VM handle.
- * @param   pRegFrame   The register frame.
- *
- */
-EMDECL(int) EMInterpretRdtsc(PVM pVM, PCPUMCTXCORE pRegFrame);
-
-/**
- * Interpret INVLPG
- *
- * @returns VBox status code.
- * @param   pVM         The VM handle.
- * @param   pRegFrame   The register frame.
- * @param   pAddrGC     Operand address
- *
- */
-EMDECL(int) EMInterpretInvlpg(PVM pVM, PCPUMCTXCORE pRegFrame, RTGCPTR pAddrGC);
-
-/**
- * Interpret IRET (currently only to V86 code)
- *
- * @returns VBox status code.
- * @param   pVM         The VM handle.
- * @param   pRegFrame   The register frame.
- *
- */
-EMDECL(int) EMInterpretIret(PVM pVM, PCPUMCTXCORE pRegFrame);
-
-/**
- * Interpret DRx write
- *
- * @returns VBox status code.
- * @param   pVM         The VM handle.
- * @param   pRegFrame   The register frame.
- * @param   DestRegDRx  DRx register index (USE_REG_DR*)
- * @param   SrcRegGen   General purpose register index (USE_REG_E**))
- *
- */
-EMDECL(int) EMInterpretDRxWrite(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegDrx, uint32_t SrcRegGen);
-
-/**
- * Interpret DRx read
- *
- * @returns VBox status code.
- * @param   pVM         The VM handle.
- * @param   pRegFrame   The register frame.
- * @param   DestRegGen  General purpose register index (USE_REG_E**))
- * @param   SrcRegDRx   DRx register index (USE_REG_DR*)
- *
- */
-EMDECL(int) EMInterpretDRxRead(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegGen, uint32_t SrcRegDrx);
-
-/**
- * Interpret CRx write
- *
- * @returns VBox status code.
- * @param   pVM         The VM handle.
- * @param   pRegFrame   The register frame.
- * @param   DestRegCRx  DRx register index (USE_REG_CR*)
- * @param   SrcRegGen   General purpose register index (USE_REG_E**))
- *
- */
-EMDECL(int) EMInterpretCRxWrite(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegCrx, uint32_t SrcRegGen);
-
-/**
- * Interpret CRx read
- *
- * @returns VBox status code.
- * @param   pVM         The VM handle.
- * @param   pRegFrame   The register frame.
- * @param   DestRegGen  General purpose register index (USE_REG_E**))
- * @param   SrcRegCRx   CRx register index (USE_REG_CR*)
- *
- */
-EMDECL(int) EMInterpretCRxRead(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegGen, uint32_t SrcRegCrx);
-
-/**
- * Interpret LMSW
- *
- * @returns VBox status code.
- * @param   pVM         The VM handle.
- * @param   u16Data     LMSW source data.
- */
-EMDECL(int) EMInterpretLMSW(PVM pVM, uint16_t u16Data);
-
-/**
- * Interpret CLTS
- *
- * @returns VBox status code.
- * @param   pVM         The VM handle.
- *
- */
-EMDECL(int) EMInterpretCLTS(PVM pVM);
-
-/**
- * Interpret a port I/O instruction.
- *
- * @returns VBox status code suitable for scheduling.
- * @param   pVM         The VM handle.
- * @param   pCtxCore    The context core. This will be updated on successful return.
- * @param   pCpu        The instruction to interpret.
- * @param   cbOp        The size of the instruction.
- * @remark  This may raise exceptions.
- */
-EMDECL(int) EMInterpretPortIO(PVM pVM, PCPUMCTXCORE pCtxCore, PDISCPUSTATE pCpu, uint32_t cbOp);
-
-/**
- * Flushes the REM translation blocks the next time we execute code there.
- *
- * @param   pVM         The VM handle.
- */
-EMDECL(void) EMFlushREMTBs(PVM pVM);
-
-EMDECL(uint32_t) EMEmulateCmp(uint32_t u32Param1, uint64_t u64Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateAnd(void *pvParam1, uint64_t u64Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateInc(void *pvParam1, size_t cb);
-EMDECL(uint32_t) EMEmulateDec(void *pvParam1, size_t cb);
-EMDECL(uint32_t) EMEmulateOr(void *pvParam1, uint64_t u64Param2, size_t cb);
-EMDECL(int)      EMEmulateLockOr(void *pvParam1, uint64_t u64Param2, size_t cbSize, RTGCUINTREG32 *pf);
-EMDECL(uint32_t) EMEmulateXor(void *pvParam1, uint64_t u64Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateAdd(void *pvParam1, uint64_t u64Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateSub(void *pvParam1, uint64_t u64Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateAdcWithCarrySet(void *pvParam1, uint64_t u64Param2, size_t cb);
-EMDECL(uint32_t) EMEmulateBtr(void *pvParam1, uint64_t u64Param2);
-EMDECL(int)      EMEmulateLockBtr(void *pvParam1, uint64_t u64Param2, RTGCUINTREG32 *pf);
-EMDECL(uint32_t) EMEmulateBts(void *pvParam1, uint64_t u64Param2);
-EMDECL(uint32_t) EMEmulateBtc(void *pvParam1, uint64_t u64Param2);
-EMDECL(uint32_t) EMEmulateCmpXchg(void *pvParam1, uint64_t *pu32Param2, uint64_t u32Param3, size_t cbSize);
-EMDECL(uint32_t) EMEmulateLockCmpXchg(void *pvParam1, uint64_t *pu64Param2, uint64_t u64Param3, size_t cbSize);
-EMDECL(uint32_t) EMEmulateCmpXchg8b32(RTHCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
-EMDECL(uint32_t) EMEmulateLockCmpXchg8b(RTHCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
-EMDECL(int)      EMInterpretRdmsr(PVM pVM, PCPUMCTXCORE pRegFrame);
-EMDECL(int)      EMInterpretWrmsr(PVM pVM, PCPUMCTXCORE pRegFrame);
+/** @name Assembly routines
+ * @{ */
+VMMDECL(uint32_t)   EMEmulateCmp(uint32_t u32Param1, uint64_t u64Param2, size_t cb);
+VMMDECL(uint32_t)   EMEmulateAnd(void *pvParam1, uint64_t u64Param2, size_t cb);
+VMMDECL(uint32_t)   EMEmulateInc(void *pvParam1, size_t cb);
+VMMDECL(uint32_t)   EMEmulateDec(void *pvParam1, size_t cb);
+VMMDECL(uint32_t)   EMEmulateOr(void *pvParam1, uint64_t u64Param2, size_t cb);
+VMMDECL(int)        EMEmulateLockOr(void *pvParam1, uint64_t u64Param2, size_t cbSize, RTGCUINTREG32 *pf);
+VMMDECL(uint32_t)   EMEmulateXor(void *pvParam1, uint64_t u64Param2, size_t cb);
+VMMDECL(uint32_t)   EMEmulateAdd(void *pvParam1, uint64_t u64Param2, size_t cb);
+VMMDECL(uint32_t)   EMEmulateSub(void *pvParam1, uint64_t u64Param2, size_t cb);
+VMMDECL(uint32_t)   EMEmulateAdcWithCarrySet(void *pvParam1, uint64_t u64Param2, size_t cb);
+VMMDECL(uint32_t)   EMEmulateBtr(void *pvParam1, uint64_t u64Param2);
+VMMDECL(int)        EMEmulateLockBtr(void *pvParam1, uint64_t u64Param2, RTGCUINTREG32 *pf);
+VMMDECL(uint32_t)   EMEmulateBts(void *pvParam1, uint64_t u64Param2);
+VMMDECL(uint32_t)   EMEmulateBtc(void *pvParam1, uint64_t u64Param2);
+VMMDECL(uint32_t)   EMEmulateCmpXchg(void *pvParam1, uint64_t *pu32Param2, uint64_t u32Param3, size_t cbSize);
+VMMDECL(uint32_t)   EMEmulateLockCmpXchg(void *pvParam1, uint64_t *pu64Param2, uint64_t u64Param3, size_t cbSize);
+VMMDECL(uint32_t)   EMEmulateCmpXchg8b(void *pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
+VMMDECL(uint32_t)   EMEmulateLockCmpXchg8b(void *pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
+/** @} */
 
 #ifdef IN_RING3
 /** @defgroup grp_em_r3     The EM Host Context Ring-3 API
  * @ingroup grp_em
  * @{
  */
-
-/**
- * Initializes the EM.
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-EMR3DECL(int) EMR3Init(PVM pVM);
-
-/**
- * Applies relocations to data and code managed by this
- * component. This function will be called at init and
- * whenever the VMM need to relocate it self inside the GC.
- *
- * @param   pVM     The VM.
- */
-EMR3DECL(void) EMR3Relocate(PVM pVM);
-
-/**
- * Reset notification.
- *
- * @param   pVM
- */
-EMR3DECL(void) EMR3Reset(PVM pVM);
-
-/**
- * Terminates the EM.
- *
- * Termination means cleaning up and freeing all resources,
- * the VM it self is at this point powered off or suspended.
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-EMR3DECL(int) EMR3Term(PVM pVM);
-
+VMMR3DECL(int)      EMR3Init(PVM pVM);
+VMMR3DECL(int)      EMR3InitCPU(PVM pVM);
+VMMR3DECL(void)     EMR3Relocate(PVM pVM);
+VMMR3DECL(void)     EMR3Reset(PVM pVM);
+VMMR3DECL(int)      EMR3Term(PVM pVM);
+VMMR3DECL(int)      EMR3TermCPU(PVM pVM);
+VMMR3DECL(DECLNORETURN(void)) EMR3FatalError(PVM pVM, int rc);
+VMMR3DECL(int)      EMR3ExecuteVM(PVM pVM, RTCPUID idCpu);
+VMMR3DECL(int)      EMR3CheckRawForcedActions(PVM pVM);
+VMMR3DECL(int)      EMR3Interpret(PVM pVM);
 
 /**
  * Command argument for EMR3RawSetMode().
@@ -414,94 +197,25 @@ typedef enum EMRAWMODE
     EMRAW_END
 } EMRAWMODE;
 
-/**
- * Enables or disables a set of raw-mode execution modes.
- *
- * @returns VINF_SUCCESS on success.
- * @returns VINF_RESCHEDULE if a rescheduling might be required.
- * @returns VERR_INVALID_PARAMETER on an invalid enmMode value.
- *
- * @param   pVM         The VM to operate on.
- * @param   enmMode     The execution mode change.
- * @thread  The emulation thread.
- */
-EMR3DECL(int) EMR3RawSetMode(PVM pVM, EMRAWMODE enmMode);
-
-/**
- * Raise a fatal error.
- *
- * Safely terminate the VM with full state report and stuff. This function
- * will naturally never return.
- *
- * @param   pVM         VM handle.
- * @param   rc          VBox status code.
- */
-EMR3DECL(DECLNORETURN(void)) EMR3FatalError(PVM pVM, int rc);
-
-/**
- * Execute VM
- *
- * This function is the main loop of the VM. The emulation thread
- * calls this function when the VM has been successfully constructed
- * and we're ready for executing the VM.
- *
- * Returning from this function means that the VM is turned off or
- * suspended (state already saved) and deconstruction in next in line.
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-EMR3DECL(int) EMR3ExecuteVM(PVM pVM);
-
-/**
- * Check for pending raw actions
- *
- * @returns VBox status code.
- * @param   pVM         The VM to operate on.
- */
-EMR3DECL(int) EMR3CheckRawForcedActions(PVM pVM);
-
-/**
- * Interpret instructions.
- * This works directly on the Guest CPUM context.
- * The interpretation will try execute at least one instruction. It will
- * stop when a we're better off in a raw or recompiler mode.
- *
- * @returns Todo - status describing what to do next?
- * @param   pVM         The VM to operate on.
- */
-EMR3DECL(int) EMR3Interpret(PVM pVM);
-
+VMMR3DECL(int)      EMR3RawSetMode(PVM pVM, EMRAWMODE enmMode);
 /** @} */
-#endif
+#endif /* IN_RING3 */
 
 
-#ifdef IN_GC
+#ifdef IN_RC
 /** @defgroup grp_em_gc     The EM Guest Context API
  * @ingroup grp_em
  * @{
  */
-
-/**
- * Decide what to do with a trap.
- *
- * @returns Next VMM state.
- * @returns Might not return at all?
- * @param   pVM         The VM to operate on.
- * @param   uTrap       The trap number.
- * @param   pRegFrame   Register frame to operate on.
- */
-EMGCDECL(int) EMGCTrap(PVM pVM, unsigned uTrap, PCPUMCTXCORE pRegFrame);
-
-EMGCDECL(uint32_t) EMGCEmulateLockCmpXchg(RTRCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize, uint32_t *pEflags);
-EMGCDECL(uint32_t) EMGCEmulateCmpXchg(RTRCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize, uint32_t *pEflags);
-EMGCDECL(uint32_t) EMGCEmulateLockCmpXchg8b(RTRCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX, uint32_t *pEflags);
-EMGCDECL(uint32_t) EMGCEmulateCmpXchg8b(RTRCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX, uint32_t *pEflags);
-EMGCDECL(uint32_t) EMGCEmulateLockXAdd(RTRCPTR pu32Param1, uint32_t *pu32Param2, size_t cbSize, uint32_t *pEflags);
-EMGCDECL(uint32_t) EMGCEmulateXAdd(RTRCPTR pu32Param1, uint32_t *pu32Param2, size_t cbSize, uint32_t *pEflags);
-
+VMMRCDECL(int)      EMGCTrap(PVM pVM, unsigned uTrap, PCPUMCTXCORE pRegFrame);
+VMMRCDECL(uint32_t) EMGCEmulateLockCmpXchg(RTRCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize, uint32_t *pEflags);
+VMMRCDECL(uint32_t) EMGCEmulateCmpXchg(RTRCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize, uint32_t *pEflags);
+VMMRCDECL(uint32_t) EMGCEmulateLockCmpXchg8b(RTRCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX, uint32_t *pEflags);
+VMMRCDECL(uint32_t) EMGCEmulateCmpXchg8b(RTRCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX, uint32_t *pEflags);
+VMMRCDECL(uint32_t) EMGCEmulateLockXAdd(RTRCPTR pu32Param1, uint32_t *pu32Param2, size_t cbSize, uint32_t *pEflags);
+VMMRCDECL(uint32_t) EMGCEmulateXAdd(RTRCPTR pu32Param1, uint32_t *pu32Param2, size_t cbSize, uint32_t *pEflags);
 /** @} */
-#endif
+#endif /* IN_RC */
 
 /** @} */
 

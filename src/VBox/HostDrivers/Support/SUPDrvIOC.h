@@ -1,4 +1,4 @@
-/* $Revision: 36616 $ */
+/* $Revision: 15505 $ */
 /** @file
  * VirtualBox Support Driver - IOCtl definitions.
  */
@@ -180,8 +180,14 @@ typedef SUPREQHDR *PSUPREQHDR;
 
 /** Current interface version.
  * The upper 16-bit is the major version, the the lower the minor version.
- * When incompatible changes are made, the upper major number has to be changed. */
-#define SUPDRV_IOC_VERSION                              0x00090000
+ * When incompatible changes are made, the upper major number has to be changed.
+ *
+ * @todo Pending work on next major version change:
+ *          - Eliminate supdrvPageWasLockedByPageAlloc and supdrvPageGetPhys.
+ *          - Remove SUPR0PageAlloc in favor of SUPR0PageAllocEx, removing
+ *            and renaming the related IOCtls too.
+ */
+#define SUPDRV_IOC_VERSION                              0x000a0008
 
 /** SUP_IOCTL_COOKIE. */
 typedef struct SUPCOOKIE
@@ -226,7 +232,7 @@ typedef struct SUPCOOKIE
  * @{
  */
 #define SUP_IOCTL_QUERY_FUNCS(cFuncs)                   SUP_CTL_CODE_SIZE(2, SUP_IOCTL_QUERY_FUNCS_SIZE(cFuncs))
-#define SUP_IOCTL_QUERY_FUNCS_SIZE(cFuncs)              RT_OFFSETOF(SUPQUERYFUNCS, u.Out.aFunctions[(cFuncs)])
+#define SUP_IOCTL_QUERY_FUNCS_SIZE(cFuncs)              RT_UOFFSETOF(SUPQUERYFUNCS, u.Out.aFunctions[(cFuncs)])
 #define SUP_IOCTL_QUERY_FUNCS_SIZE_IN                   sizeof(SUPREQHDR)
 #define SUP_IOCTL_QUERY_FUNCS_SIZE_OUT(cFuncs)          SUP_IOCTL_QUERY_FUNCS_SIZE(cFuncs)
 
@@ -337,8 +343,8 @@ typedef struct SUPLDROPEN
  * @{
  */
 #define SUP_IOCTL_LDR_LOAD                              SUP_CTL_CODE_BIG(6)
-#define SUP_IOCTL_LDR_LOAD_SIZE(cbImage)                RT_OFFSETOF(SUPLDRLOAD, u.In.achImage[cbImage])
-#define SUP_IOCTL_LDR_LOAD_SIZE_IN(cbImage)             RT_OFFSETOF(SUPLDRLOAD, u.In.achImage[cbImage])
+#define SUP_IOCTL_LDR_LOAD_SIZE(cbImage)                RT_UOFFSETOF(SUPLDRLOAD, u.In.achImage[cbImage])
+#define SUP_IOCTL_LDR_LOAD_SIZE_IN(cbImage)             RT_UOFFSETOF(SUPLDRLOAD, u.In.achImage[cbImage])
 #define SUP_IOCTL_LDR_LOAD_SIZE_OUT                     sizeof(SUPREQHDR)
 
 /**
@@ -382,6 +388,7 @@ typedef enum SUPLDRLOADEP
 {
     SUPLDRLOADEP_NOTHING = 0,
     SUPLDRLOADEP_VMMR0,
+    SUPLDRLOADEP_SERVICE,
     SUPLDRLOADEP_32BIT_HACK = 0x7fffffff
 } SUPLDRLOADEP;
 
@@ -400,17 +407,27 @@ typedef struct SUPLDRLOAD
             /** Special entry points. */
             union
             {
+                /** SUPLDRLOADEP_VMMR0. */
                 struct
                 {
                     /** The module handle (i.e. address). */
-                    RTR0PTR         pvVMMR0;
+                    RTR0PTR                 pvVMMR0;
                     /** Address of VMMR0EntryInt function. */
-                    RTR0PTR         pvVMMR0EntryInt;
+                    RTR0PTR                 pvVMMR0EntryInt;
                     /** Address of VMMR0EntryFast function. */
-                    RTR0PTR         pvVMMR0EntryFast;
+                    RTR0PTR                 pvVMMR0EntryFast;
                     /** Address of VMMR0EntryEx function. */
-                    RTR0PTR         pvVMMR0EntryEx;
+                    RTR0PTR                 pvVMMR0EntryEx;
                 } VMMR0;
+                /** SUPLDRLOADEP_SERVICE. */
+                struct
+                {
+                    /** The service request handler.
+                     * (PFNR0SERVICEREQHANDLER isn't defined yet.) */
+                    RTR0PTR                 pfnServiceReq;
+                    /** Reserved, must be NIL. */
+                    RTR0PTR                 apvReserved[3];
+                } Service;
             }               EP;
             /** Address. */
             RTR0PTR         pvImageBase;
@@ -496,7 +513,7 @@ typedef struct SUPLDRGETSYMBOL
  * @{
  */
 #define SUP_IOCTL_CALL_VMMR0(cbReq)                     SUP_CTL_CODE_SIZE(9, SUP_IOCTL_CALL_VMMR0_SIZE(cbReq))
-#define SUP_IOCTL_CALL_VMMR0_SIZE(cbReq)                RT_OFFSETOF(SUPCALLVMMR0, abReqPkt[cbReq])
+#define SUP_IOCTL_CALL_VMMR0_SIZE(cbReq)                RT_UOFFSETOF(SUPCALLVMMR0, abReqPkt[cbReq])
 #define SUP_IOCTL_CALL_VMMR0_SIZE_IN(cbReq)             SUP_IOCTL_CALL_VMMR0_SIZE(cbReq)
 #define SUP_IOCTL_CALL_VMMR0_SIZE_OUT(cbReq)            SUP_IOCTL_CALL_VMMR0_SIZE(cbReq)
 typedef struct SUPCALLVMMR0
@@ -530,7 +547,7 @@ typedef struct SUPCALLVMMR0
  * @{
  */
 #define SUP_IOCTL_LOW_ALLOC                             SUP_CTL_CODE_BIG(10)
-#define SUP_IOCTL_LOW_ALLOC_SIZE(cPages)                ((uint32_t)RT_OFFSETOF(SUPLOWALLOC, u.Out.aPages[cPages]))
+#define SUP_IOCTL_LOW_ALLOC_SIZE(cPages)                ((uint32_t)RT_UOFFSETOF(SUPLOWALLOC, u.Out.aPages[cPages]))
 #define SUP_IOCTL_LOW_ALLOC_SIZE_IN                     (sizeof(SUPREQHDR) + RT_SIZEOFMEMB(SUPLOWALLOC, u.In))
 #define SUP_IOCTL_LOW_ALLOC_SIZE_OUT(cPages)            SUP_IOCTL_LOW_ALLOC_SIZE(cPages)
 typedef struct SUPLOWALLOC
@@ -588,7 +605,7 @@ typedef struct SUPLOWFREE
  * @{
  */
 #define SUP_IOCTL_PAGE_ALLOC                            SUP_CTL_CODE_BIG(12)
-#define SUP_IOCTL_PAGE_ALLOC_SIZE(cPages)               RT_OFFSETOF(SUPPAGEALLOC, u.Out.aPages[cPages])
+#define SUP_IOCTL_PAGE_ALLOC_SIZE(cPages)               RT_UOFFSETOF(SUPPAGEALLOC, u.Out.aPages[cPages])
 #define SUP_IOCTL_PAGE_ALLOC_SIZE_IN                    (sizeof(SUPREQHDR) + RT_SIZEOFMEMB(SUPPAGEALLOC, u.In))
 #define SUP_IOCTL_PAGE_ALLOC_SIZE_OUT(cPages)           SUP_IOCTL_PAGE_ALLOC_SIZE(cPages)
 typedef struct SUPPAGEALLOC
@@ -615,7 +632,7 @@ typedef struct SUPPAGEALLOC
 
 
 /** @name SUP_IOCTL_PAGE_FREE
- * Free memory allocated with SUP_IOCTL_PAGE_ALLOC.
+ * Free memory allocated with SUP_IOCTL_PAGE_ALLOC or SUP_IOCTL_PAGE_ALLOC_EX.
  * @{
  */
 #define SUP_IOCTL_PAGE_FREE                             SUP_CTL_CODE_SIZE(13, SUP_IOCTL_PAGE_FREE_SIZE_IN)
@@ -645,7 +662,7 @@ typedef struct SUPPAGEFREE
 #define SUP_IOCTL_PAGE_LOCK                             SUP_CTL_CODE_BIG(14)
 #define SUP_IOCTL_PAGE_LOCK_SIZE(cPages)                (RT_MAX((size_t)SUP_IOCTL_PAGE_LOCK_SIZE_IN, (size_t)SUP_IOCTL_PAGE_LOCK_SIZE_OUT(cPages)))
 #define SUP_IOCTL_PAGE_LOCK_SIZE_IN                     (sizeof(SUPREQHDR) + RT_SIZEOFMEMB(SUPPAGELOCK, u.In))
-#define SUP_IOCTL_PAGE_LOCK_SIZE_OUT(cPages)            RT_OFFSETOF(SUPPAGELOCK, u.Out.aPages[cPages])
+#define SUP_IOCTL_PAGE_LOCK_SIZE_OUT(cPages)            RT_UOFFSETOF(SUPPAGELOCK, u.Out.aPages[cPages])
 typedef struct SUPPAGELOCK
 {
     /** The header. */
@@ -840,6 +857,128 @@ typedef struct SUPGIPUNMAP
     /** The header. */
     SUPREQHDR               Hdr;
 } SUPGIPUNMAP, *PSUPGIPUNMAP;
+/** @} */
+
+
+/** @name SUP_IOCTL_CALL_SERVICE
+ * Call the a ring-0 service.
+ *
+ * @todo    Might have to convert this to a big request, just like
+ *          SUP_IOCTL_CALL_VMMR0
+ * @{
+ */
+#define SUP_IOCTL_CALL_SERVICE(cbReq)                   SUP_CTL_CODE_SIZE(22, SUP_IOCTL_CALL_SERVICE_SIZE(cbReq))
+#define SUP_IOCTL_CALL_SERVICE_SIZE(cbReq)              RT_UOFFSETOF(SUPCALLSERVICE, abReqPkt[cbReq])
+#define SUP_IOCTL_CALL_SERVICE_SIZE_IN(cbReq)           SUP_IOCTL_CALL_SERVICE_SIZE(cbReq)
+#define SUP_IOCTL_CALL_SERVICE_SIZE_OUT(cbReq)          SUP_IOCTL_CALL_SERVICE_SIZE(cbReq)
+typedef struct SUPCALLSERVICE
+{
+    /** The header. */
+    SUPREQHDR               Hdr;
+    union
+    {
+        struct
+        {
+            /** The service name. */
+            char            szName[28];
+            /** Which operation to execute. */
+            uint32_t        uOperation;
+            /** Argument to use when no request packet is supplied. */
+            uint64_t        u64Arg;
+        } In;
+    } u;
+    /** The request packet passed to SUP. */
+    uint8_t                 abReqPkt[1];
+} SUPCALLSERVICE, *PSUPCALLSERVICE;
+/** @} */
+
+/** @name SUP_IOCTL_PAGE_ALLOC_EX
+ * Allocate memory and map it into kernel and/or user space. The memory is of
+ * course locked. This is an extended version of SUP_IOCTL_PAGE_ALLOC and the
+ * result should be freed using SUP_IOCTL_PAGE_FREE.
+ *
+ * @remarks Allocations without a kernel mapping may fail with
+ *          VERR_NOT_SUPPORTED on some platforms just like with
+ *          SUP_IOCTL_PAGE_ALLOC.
+ *
+ * @{
+ */
+#define SUP_IOCTL_PAGE_ALLOC_EX                     SUP_CTL_CODE_BIG(23)
+#define SUP_IOCTL_PAGE_ALLOC_EX_SIZE(cPages)        RT_UOFFSETOF(SUPPAGEALLOCEX, u.Out.aPages[cPages])
+#define SUP_IOCTL_PAGE_ALLOC_EX_SIZE_IN             (sizeof(SUPREQHDR) + RT_SIZEOFMEMB(SUPPAGEALLOCEX, u.In))
+#define SUP_IOCTL_PAGE_ALLOC_EX_SIZE_OUT(cPages)    SUP_IOCTL_PAGE_ALLOC_EX_SIZE(cPages)
+typedef struct SUPPAGEALLOCEX
+{
+    /** The header. */
+    SUPREQHDR               Hdr;
+    union
+    {
+        struct
+        {
+            /** Number of pages to allocate */
+            uint32_t        cPages;
+            /** Whether it should have kernel mapping. */
+            bool            fKernelMapping;
+            /** Whether it should have a user mapping. */
+            bool            fUserMapping;
+            /** Reserved. Must be false. */
+            bool            fReserved0;
+            /** Reserved. Must be false. */
+            bool            fReserved1;
+        } In;
+        struct
+        {
+            /** Returned ring-3 address. */
+            RTR3PTR         pvR3;
+            /** Returned ring-0 address. */
+            RTR0PTR         pvR0;
+            /** The physical addresses of the allocated pages. */
+            RTHCPHYS        aPages[1];
+        } Out;
+    } u;
+} SUPPAGEALLOCEX, *PSUPPAGEALLOCEX;
+/** @} */
+
+
+/** @name SUP_IOCTL_PAGE_MAP_KERNEL
+ * Maps a portion of memory allocated by SUP_IOCTL_PAGE_ALLOC_EX /
+ * SUPR0PageAllocEx into kernel space for use by a device or similar.
+ *
+ * The mapping will be freed together with the ring-3 mapping when
+ * SUP_IOCTL_PAGE_FREE or SUPR0PageFree is called.
+ *
+ * @remarks Not necessarily supported on all platforms.
+ *
+ * @{
+ */
+#define SUP_IOCTL_PAGE_MAP_KERNEL                     SUP_CTL_CODE_SIZE(24, SUP_IOCTL_PAGE_MAP_KERNEL_SIZE)
+#define SUP_IOCTL_PAGE_MAP_KERNEL_SIZE                sizeof(SUPPAGEMAPKERNEL)
+#define SUP_IOCTL_PAGE_MAP_KERNEL_SIZE_IN             sizeof(SUPPAGEMAPKERNEL)
+#define SUP_IOCTL_PAGE_MAP_KERNEL_SIZE_OUT            sizeof(SUPPAGEMAPKERNEL)
+typedef struct SUPPAGEMAPKERNEL
+{
+    /** The header. */
+    SUPREQHDR               Hdr;
+    union
+    {
+        struct
+        {
+            /** The pointer of to the previously allocated memory. */
+            RTR3PTR         pvR3;
+            /** The offset to start mapping from. */
+            uint32_t        offSub;
+            /** Size of the section to map. */
+            uint32_t        cbSub;
+            /** Flags reserved for future fun. */
+            uint32_t        fFlags;
+        } In;
+        struct
+        {
+            /** The ring-0 address corresponding to pvR3 + offSub. */
+            RTR0PTR         pvR0;
+        } Out;
+    } u;
+} SUPPAGEMAPKERNEL, *PSUPPAGEMAPKERNEL;
 /** @} */
 
 

@@ -46,12 +46,13 @@ __BEGIN_DECLS
 #define REM_NO_PENDING_IRQ          (~(uint32_t)0)
 
 
-#if defined(IN_RING0) || defined(IN_GC)
-REMDECL(int)  REMNotifyInvalidatePage(PVM pVM, RTGCPTR GCPtrPage);
-REMDECL(void) REMNotifyHandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler);
-REMDECL(void) REMNotifyHandlerPhysicalDeregister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM);
-REMDECL(void) REMNotifyHandlerPhysicalModify(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhysOld, RTGCPHYS GCPhysNew, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM);
-#endif /* IN_RING0 || IN_GC */
+#if defined(IN_RING0) || defined(IN_RC)
+VMMDECL(int)  REMNotifyInvalidatePage(PVM pVM, RTGCPTR GCPtrPage);
+VMMDECL(void) REMNotifyHandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler);
+VMMDECL(void) REMNotifyHandlerPhysicalDeregister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM);
+VMMDECL(void) REMNotifyHandlerPhysicalModify(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhysOld, RTGCPHYS GCPhysNew, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM);
+#endif /* IN_RING0 || IN_RC */
+VMMDECL(void) REMFlushTBs(PVM pVM);
 
 
 #ifdef IN_RING3
@@ -67,7 +68,7 @@ REMR3DECL(int)  REMR3EmulateInstruction(PVM pVM);
 REMR3DECL(int)  REMR3Step(PVM pVM);
 REMR3DECL(int)  REMR3BreakpointSet(PVM pVM, RTGCUINTPTR Address);
 REMR3DECL(int)  REMR3BreakpointClear(PVM pVM, RTGCUINTPTR Address);
-REMR3DECL(int)  REMR3State(PVM pVM, bool fFlushTBs);
+REMR3DECL(int)  REMR3State(PVM pVM);
 REMR3DECL(int)  REMR3StateBack(PVM pVM);
 REMR3DECL(void) REMR3StateUpdate(PVM pVM);
 REMR3DECL(void) REMR3A20Set(PVM pVM, bool fEnable);

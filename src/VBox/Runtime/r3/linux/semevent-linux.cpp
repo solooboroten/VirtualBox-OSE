@@ -1,4 +1,4 @@
-/* $Id: semevent-linux.cpp $ */
+/* $Id: semevent-linux.cpp 14468 2008-11-21 15:44:27Z vboxsync $ */
 /** @file
  * IPRT - Event Semaphore, Linux (2.6.x+).
  */
@@ -27,6 +27,24 @@
  * Clara, CA 95054 USA or visit http://www.sun.com if you need
  * additional information or have any questions.
  */
+
+#include <features.h>
+#if __GLIBC_PREREQ(2,6)
+
+/*
+ * glibc 2.6 fixed a serious bug in the mutex implementation. We wrote this
+ * linux specific event semaphores code in order to work around the bug. As it
+ * turns out, this code seems to have an unresolved issue (#2599), so we'll
+ * fall back on the pthread based implementation if glibc is known to contain
+ * the bug fix.
+ *
+ * The external refernce to epoll_pwait is a hack which prevents that we link
+ * against glibc < 2.6.
+ */
+#include "../posix/semevent-posix.cpp"
+asm volatile (".global epoll_pwait");
+
+#else /* glibc < 2.6 */
 
 /*******************************************************************************
 *   Header Files                                                               *
@@ -119,7 +137,7 @@ RTDECL(int)  RTSemEventDestroy(RTSEMEVENT EventSem)
     /*
      * Invalidate the semaphore and wake up anyone waiting on it.
      */
-    ASMAtomicXchgSize(&pThis->iMagic, RTSEMEVENT_MAGIC + 1);
+    ASMAtomicXchgSize(&pThis->iMagic, RTSEMEVENT_MAGIC | UINT32_C(0x80000000));
     if (ASMAtomicXchgS32(&pThis->cWaiters, INT32_MIN / 2) > 0)
     {
         sys_futex(&pThis->cWaiters, FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
@@ -147,12 +165,9 @@ RTDECL(int)  RTSemEventSignal(RTSEMEVENT EventSem)
      */
     for (unsigned i = 0;; i++)
     {
-        int32_t iCur = pThis->cWaiters;
-        if (iCur == 0)
-        {
-            if (ASMAtomicCmpXchgS32(&pThis->cWaiters, -1, 0))
-                break; /* nobody is waiting */
-        }
+        int32_t iCur;
+        if (ASMAtomicCmpXchgExS32(&pThis->cWaiters, -1, 0, &iCur))
+            break; /* nobody is waiting */
         else if (iCur < 0)
             break; /* already signaled */
         else
@@ -188,6 +203,10 @@ RTDECL(int)  RTSemEventSignal(RTSEMEVENT EventSem)
                     AssertReleaseMsg(i < 4096, ("iCur=%#x pThis=%p\n", iCur, pThis));
             }
         }
+
+        /* Check the magic to fend off races with RTSemEventDestroy. */
+        if (RT_UNLIKELY(pThis->iMagic != RTSEMEVENT_MAGIC))
+            return VERR_SEM_DESTROYED;
     }
     return VINF_SUCCESS;
 }
@@ -295,3 +314,4 @@ RTDECL(int)  RTSemEventWaitNoResume(RTSEMEVENT EventSem, unsigned cMillies)
     return rtSemEventWait(EventSem, cMillies, false);
 }
 
+#endif /* glibc < 2.6 */

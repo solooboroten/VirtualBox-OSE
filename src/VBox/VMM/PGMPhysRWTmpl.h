@@ -1,4 +1,4 @@
-/* $Id: PGMPhysRWTmpl.h $ */
+/* $Id: PGMPhysRWTmpl.h 13146 2008-10-09 22:58:12Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor, Physical Memory Access Template.
  */
@@ -23,13 +23,13 @@
 /**
  * Read physical memory. (one byte/word/dword)
  *
- * This API respects access handlers and MMIO. Use PGMPhysReadGCPhys() if you
+ * This API respects access handlers and MMIO. Use PGMPhysSimpleReadGCPhys() if you
  * want to ignore those.
  *
  * @param   pVM             VM Handle.
  * @param   GCPhys          Physical address start reading from.
  */
-PGMDECL(PGMPHYS_DATATYPE) PGMPHYSFN_READNAME(PVM pVM, RTGCPHYS GCPhys)
+VMMDECL(PGMPHYS_DATATYPE) PGMPHYSFN_READNAME(PVM pVM, RTGCPHYS GCPhys)
 {
     uint32_t iCacheIndex;
 
@@ -51,7 +51,7 @@ PGMDECL(PGMPHYS_DATATYPE) PGMPHYSFN_READNAME(PVM pVM, RTGCPHYS GCPhys)
        )
     {
         RTGCPHYS off = GCPhys - pVM->pgm.s.pgmphysreadcache.Entry[iCacheIndex].GCPhys;
-        return *(PGMPHYS_DATATYPE *)(pVM->pgm.s.pgmphysreadcache.Entry[iCacheIndex].pbHC + off);
+        return *(PGMPHYS_DATATYPE *)(pVM->pgm.s.pgmphysreadcache.Entry[iCacheIndex].pbR3 + off);
     }
 #endif /* PGM_PHYSMEMACCESS_CACHING */
     PGMPHYS_DATATYPE val;
@@ -64,14 +64,14 @@ PGMDECL(PGMPHYS_DATATYPE) PGMPHYSFN_READNAME(PVM pVM, RTGCPHYS GCPhys)
 /**
  * Write to physical memory. (one byte/word/dword)
  *
- * This API respects access handlers and MMIO. Use PGMPhysReadGCPhys() if you
+ * This API respects access handlers and MMIO. Use PGMPhysSimpleReadGCPhys() if you
  * want to ignore those.
  *
  * @param   pVM             VM Handle.
  * @param   GCPhys          Physical address to write to.
  * @param   val             What to write.
  */
-PGMDECL(void) PGMPHYSFN_WRITENAME(PVM pVM, RTGCPHYS GCPhys, PGMPHYS_DATATYPE val)
+VMMDECL(void) PGMPHYSFN_WRITENAME(PVM pVM, RTGCPHYS GCPhys, PGMPHYS_DATATYPE val)
 {
     uint32_t iCacheIndex;
 
@@ -93,7 +93,7 @@ PGMDECL(void) PGMPHYSFN_WRITENAME(PVM pVM, RTGCPHYS GCPhys, PGMPHYS_DATATYPE val
        )
     {
         RTGCPHYS off = GCPhys - pVM->pgm.s.pgmphyswritecache.Entry[iCacheIndex].GCPhys;
-        *(PGMPHYS_DATATYPE *)(pVM->pgm.s.pgmphyswritecache.Entry[iCacheIndex].pbHC + off) = val;
+        *(PGMPHYS_DATATYPE *)(pVM->pgm.s.pgmphyswritecache.Entry[iCacheIndex].pbR3 + off) = val;
         return;
     }
 #endif /* PGM_PHYSMEMACCESS_CACHING */

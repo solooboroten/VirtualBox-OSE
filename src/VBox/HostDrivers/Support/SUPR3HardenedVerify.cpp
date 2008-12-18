@@ -1,4 +1,4 @@
-/* $Id: SUPR3HardenedVerify.cpp $ */
+/* $Id: SUPR3HardenedVerify.cpp 15353 2008-12-12 06:10:39Z vboxsync $ */
 /** @file
  * VirtualBox Support Library - Verification of Hardened Installation.
  */
@@ -36,6 +36,11 @@
 # define INCL_ERRORS
 # include <os2.h>
 # include <stdio.h>
+# include <stdlib.h>
+# include <unistd.h>
+# include <sys/fcntl.h>
+# include <sys/errno.h>
+# include <sys/syslimits.h>
 
 #elif defined(RT_OS_WINDOWS)
 # include <Windows.h>
@@ -78,7 +83,7 @@
  * The files that gets verified.
  *
  * @todo This needs reviewing against the linux packages.
- * @todo The excessive use of kSupID_SharedLib needs to be reviewed at some point. For 
+ * @todo The excessive use of kSupID_SharedLib needs to be reviewed at some point. For
  *       the time being we're building the linux packages with SharedLib pointing to
  *       AppPrivArch (lazy bird).
  */
@@ -97,6 +102,10 @@ static SUPINSTFILE const    g_aSupInstallFiles[] =
     {   kSupIFT_Dll,  kSupID_SharedLib,         false, "VBoxRT"  SUPLIB_DLL_SUFF },
     {   kSupIFT_Dll,  kSupID_SharedLib,         false, "VBoxVMM"  SUPLIB_DLL_SUFF },
     {   kSupIFT_Dll,  kSupID_SharedLib,         false, "VBoxREM"  SUPLIB_DLL_SUFF },
+#if HC_ARCH_BITS == 32
+    {   kSupIFT_Dll,  kSupID_SharedLib,          true, "VBoxREM32"  SUPLIB_DLL_SUFF },
+    {   kSupIFT_Dll,  kSupID_SharedLib,          true, "VBoxREM64"  SUPLIB_DLL_SUFF },
+#endif
     {   kSupIFT_Dll,  kSupID_SharedLib,         false, "VBoxDD"  SUPLIB_DLL_SUFF },
     {   kSupIFT_Dll,  kSupID_SharedLib,         false, "VBoxDD2"  SUPLIB_DLL_SUFF },
     {   kSupIFT_Dll,  kSupID_SharedLib,         false, "VBoxDDU"  SUPLIB_DLL_SUFF },
@@ -108,7 +117,13 @@ static SUPINSTFILE const    g_aSupInstallFiles[] =
 
     {   kSupIFT_Dll,  kSupID_AppPrivArch,       false, "VBoxSharedClipboard" SUPLIB_DLL_SUFF },
     {   kSupIFT_Dll,  kSupID_AppPrivArch,       false, "VBoxSharedFolders" SUPLIB_DLL_SUFF },
+    {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxSharedCrOpenGL" SUPLIB_DLL_SUFF },
     {   kSupIFT_Dll,  kSupID_AppPrivArch,       false, "VBoxGuestPropSvc" SUPLIB_DLL_SUFF },
+
+    {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxSharedCrOpenGL" SUPLIB_DLL_SUFF },
+    {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxOGLhostcrutil" SUPLIB_DLL_SUFF },
+    {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxOGLhosterrorspu" SUPLIB_DLL_SUFF },
+    {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxOGLrenderspu" SUPLIB_DLL_SUFF },
 
     {   kSupIFT_Exe,  kSupID_AppBin,            false, "VBoxManage" SUPLIB_EXE_SUFF },
 
@@ -133,6 +148,7 @@ static SUPINSTFILE const    g_aSupInstallFiles[] =
 //#ifdef VBOX_WITH_HEADLESS
     {   kSupIFT_Exe,  kSupID_AppBin,             true, "VBoxHeadless" SUPLIB_EXE_SUFF },
     {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxHeadless" SUPLIB_DLL_SUFF },
+    {   kSupIFT_Dll,  kSupID_AppPrivArch,        true, "VBoxFFmpegFB" SUPLIB_DLL_SUFF },
 //#endif
 
 //#ifdef VBOX_WITH_QT4GUI

@@ -2,6 +2,73 @@ import traceback
 import sys
 import pdb
 
+class PerfCollector:
+    """ This class provides a wrapper over IPerformanceCollector in order to
+    get more 'pythonic' interface.
+
+    To begin collection of metrics use setup() method.
+
+    To get collected data use query() method.
+
+    It is possible to disable metric collection without changing collection
+    parameters with disable() method. The enable() method resumes metric
+    collection.
+    """
+
+    def __init__(self, vb):
+        """ Initializes the instance.
+        
+        Pass an instance of IVirtualBox as parameter.
+        """
+        self.collector = vb.performanceCollector 
+
+    def setup(self, names, objects, period, nsamples):
+        """ Discards all previously collected values for the specified
+        metrics, sets the period of collection and the number of retained
+        samples, enables collection.
+        """
+        self.collector.setupMetrics(names, objects, period, nsamples)
+
+    def enable(self, names, objects):
+        """ Resumes metric collection for the specified metrics.
+        """
+        self.collector.enableMetrics(names, objects)
+
+    def disable(self, names, objects):
+        """ Suspends metric collection for the specified metrics.
+        """
+        self.collector.disableMetrics(names, objects)
+
+    def query(self, names, objects):
+        """ Retrieves collected metric values as well as some auxiliary
+        information. Returns an array of dictionaries, one dictionary per
+        metric. Each dictionary contains the following entries:
+        'name': metric name
+        'object': managed object this metric associated with
+        'unit': unit of measurement
+        'scale': divide 'values' by this number to get float numbers
+        'values': collected data
+        'values_as_string': pre-processed values ready for 'print' statement
+        """
+        (values, names_out, objects_out, units, scales, sequence_numbers,
+            indices, lengths) = self.collector.queryMetricsData(names, objects)
+        out = []
+        for i in xrange(0, len(names_out)):
+            scale = int(scales[i])
+            if scale != 1:
+                fmt = '%.2f%s'
+            else:
+                fmt = '%d %s'
+            out.append({
+                'name':str(names_out[i]),
+                'object':str(objects_out[i]),
+                'unit':str(units[i]),
+                'scale':scale,
+                'values':[int(values[j]) for j in xrange(int(indices[i]), int(indices[i])+int(lengths[i]))],
+                'values_as_string':'['+', '.join([fmt % (int(values[j])/scale, units[i]) for j in xrange(int(indices[i]), int(indices[i])+int(lengths[i]))])+']'
+            })
+        return out
+
 g_hasreadline = 1
 try:
     import readline
@@ -77,7 +144,7 @@ g_verbose = True
 def split_no_quotes(s):
    return s.split()
    
-def startVm(mgr,vb,mach,type):
+def startVm(mgr,vb,mach,type,perf):
     session = mgr.getSessionObject(vb)
     uuid = mach.id
     progress = vb.openRemoteSession(session, uuid, type, "")
@@ -85,8 +152,16 @@ def startVm(mgr,vb,mach,type):
     completed = progress.completed
     rc = progress.resultCode
     print "Completed:", completed, "rc:",rc
-    if rc == 0:
-        vb.performanceCollector.setupMetrics(['*'], [mach], 10, 15)
+    if int(rc) == 0:
+        # we ignore exceptions to allow starting VM even if 
+        # perf collector cannot be started
+        try:
+            perf.setup(['*'], [mach], 10, 15)
+        except:
+            print e
+            if g_verbose:
+                traceback.print_exc()
+            pass
     session.close()
 
 def getMachines(ctx):
@@ -99,14 +174,8 @@ def asState(var):
         return 'off'
 
 def guestStats(ctx,mach):
-    collector = ctx['vb'].performanceCollector
-    (vals, names, objs, idxs, lens) = collector.queryMetricsData(["*"], [mach])
-    for i in range(0,len(names)):
-        valsStr = '[ '
-        for j in range(0, lens[i]):
-            valsStr += str(vals[idxs[i]])+' '
-        valsStr += ']'
-        print names[i],valsStr
+    for metric in ctx['perf'].query(["*"], [mach]):
+        print metric['name'], metric['values_as_string']
 
 def cmdExistingVm(ctx,mach,cmd):
     mgr=ctx['mgr']
@@ -213,7 +282,7 @@ def startCmd(ctx, args):
         type = args[2]
     else:
         type = "gui"
-    startVm(ctx['mgr'], ctx['vb'], mach, type)
+    startVm(ctx['mgr'], ctx['vb'], mach, type, ctx['perf'])
     return 0
 
 def pauseCmd(ctx, args):
@@ -287,16 +356,20 @@ def hostCmd(ctx, args):
    for i in range(0,cnt):
       print "Processor #%d speed: %dMHz" %(i,host.getProcessorSpeed(i))
                 
-   collector = ctx['vb'].performanceCollector
-  
-   (vals, names, objs, idxs, lens) = collector.queryMetricsData(["*"], [host])
-   for i in range(0,len(names)):
-       valsStr = '[ '
-       for j in range(0, lens[i]):
-           valsStr += str(vals[idxs[i]])+' '
-       valsStr += ']'
-       print names[i],valsStr
+   for metric in ctx['perf'].query(["*"], [host]):
+       print metric['name'], metric['values_as_string']
 
+   return 0
+
+
+def evalCmd(ctx, args):
+   expr = ' '.join(args[1:])
+   try:
+        exec expr
+   except Exception, e:
+        print 'failed: ',e
+        if g_verbose:
+            traceback.print_exc()
    return 0
 
 aliases = {'s':'start',  
@@ -317,13 +390,15 @@ commands = {'help':['Prints help information', helpCmd],
             'info':['Shows info on machine', infoCmd],
             'aliases':['Shows aliases', aliasesCmd],
             'verbose':['Toggle verbosity', verboseCmd],
-            'setvar':['Set VMs variable: "setvar Fedora BIOSSettings.ACPIEnabled True"', setvarCmd],
+            'setvar':['Set VMs variable: setvar Fedora BIOSSettings.ACPIEnabled True', setvarCmd],
+            'eval':['Evaluate arbitrary Python construction: eval for m in getMachines(ctx): print m.name,"has",m.memorySize,"M"', evalCmd],
             'quit':['Exits', quitCmd],
             'host':['Show host information', hostCmd]}
 
 def runCommand(ctx, cmd):
     if len(cmd) == 0: return 0 
     args = split_no_quotes(cmd)
+    if len(args) == 0: return 0 
     c = args[0]
     if aliases.get(c, None) != None:
         c = aliases[c]
@@ -338,12 +413,17 @@ def interpret(ctx):
     vbox = ctx['vb']
     print "Running VirtualBox version %s" %(vbox.version)
 
+    ctx['perf'] = PerfCollector(vbox)
+
     autoCompletion(commands, ctx)
 
     # to allow to print actual host information, we collect info for
     # last 150 secs maximum, (sample every 10 secs and keep up to 15 samples)
-    vbox.performanceCollector.setupMetrics(['*'], [vbox.host], 10, 15)
-   
+    try:
+        ctx['perf'].setup(['*'], [vbox.host], 10, 15)
+    except:
+        pass
+
     while True:
         try:
             cmd = raw_input("vbox> ")
@@ -359,4 +439,8 @@ def interpret(ctx):
             if g_verbose:
                 traceback.print_exc()
 
-    vbox.performanceCollector.disableMetrics(['*'], [vbox.host])
+    try:
+        # There is no need to disable metric collection. This is just an example.
+        ctx['perf'].disable(['*'], [vbox.host])
+    except:
+        pass

@@ -1,4 +1,4 @@
-/* $Id: sched-linux.cpp $ */
+/* $Id: sched-linux.cpp 13837 2008-11-05 02:54:02Z vboxsync $ */
 /** @file
  * IPRT - Scheduling, POSIX.
  */
@@ -565,7 +565,7 @@ int rtProcNativeSetPriority(RTPROCPRIORITY enmPriority)
          * Find a configuration which matches and can be applied.
          */
         rc = VERR_FILE_NOT_FOUND;
-        for (unsigned i = 0; i < ELEMENTS(g_aUnixConfigs); i++)
+        for (unsigned i = 0; i < RT_ELEMENTS(g_aUnixConfigs); i++)
         {
             if (g_aUnixConfigs[i].enmPriority == enmPriority)
             {
@@ -585,7 +585,7 @@ int rtProcNativeSetPriority(RTPROCPRIORITY enmPriority)
     }
 
 #ifdef THREAD_LOGGING
-    LogFlow(("rtProcNativeSetPriority: returns %Vrc enmPriority=%d\n", rc, enmPriority));
+    LogFlow(("rtProcNativeSetPriority: returns %Rrc enmPriority=%d\n", rc, enmPriority));
     rtSchedDumpPriority();
 #endif
     return rc;
@@ -625,7 +625,7 @@ int rtThreadNativeSetPriority(PRTTHREADINT pThread, RTTHREADTYPE enmType)
     else
     {
         rc = RTErrConvertFromErrno(errno);
-        AssertMsgFailed(("setpriority(,, %d) -> errno=%d rc=%Vrc\n", iPriority, errno, rc));
+        AssertMsgFailed(("setpriority(,, %d) -> errno=%d rc=%Rrc\n", iPriority, errno, rc));
         rc = VINF_SUCCESS; //non-fatal for now.
     }
 
