@@ -1,4 +1,4 @@
-/* $Id: Global.cpp 15259 2008-12-10 16:30:40Z vboxsync $ */
+/* $Id: Global.cpp 16004 2009-01-16 18:18:46Z vboxsync $ */
 
 /** @file
  *

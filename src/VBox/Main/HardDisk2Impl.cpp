@@ -1,4 +1,4 @@
-/* $Id: HardDisk2Impl.cpp 15596 2008-12-16 15:59:30Z vboxsync $ */
+/* $Id: HardDisk2Impl.cpp 16118 2009-01-21 09:43:00Z vboxsync $ */
 
 /** @file
  *

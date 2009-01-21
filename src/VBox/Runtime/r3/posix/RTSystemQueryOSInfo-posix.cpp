@@ -1,4 +1,4 @@
-/* $Id: RTSystemQueryOSInfo-posix.cpp 11352 2008-08-12 12:54:16Z vboxsync $ */
+/* $Id: RTSystemQueryOSInfo-posix.cpp 15850 2009-01-08 10:16:09Z vboxsync $ */
 /** @file
  * IPRT - RTSystemQueryOSInfo, POSIX implementation.
  */

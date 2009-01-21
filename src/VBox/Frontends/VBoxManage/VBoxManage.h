@@ -1,4 +1,4 @@
-/* $Id: VBoxManage.h 15602 2008-12-16 18:01:38Z vboxsync $ */
+/* $Id: VBoxManage.h 16057 2009-01-19 19:21:02Z vboxsync $ */
 /** @file
  * VBoxManage - VirtualBox command-line interface, internal header file.
  */

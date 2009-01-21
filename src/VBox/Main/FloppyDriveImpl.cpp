@@ -1,4 +1,4 @@
-/* $Id: FloppyDriveImpl.cpp 15334 2008-12-11 19:37:55Z vboxsync $ */
+/* $Id: FloppyDriveImpl.cpp 15991 2009-01-16 14:02:20Z vboxsync $ */
 
 /** @file
  *

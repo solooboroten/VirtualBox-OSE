@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 12446 2008-09-14 23:32:31Z vboxsync $
+# $Id: Makefile.kmk 16138 2009-01-21 14:01:28Z vboxsync $
 ## @file
 # Sub-Makefile for VBoxGINA.
 #

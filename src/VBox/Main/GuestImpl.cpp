@@ -1,4 +1,4 @@
-/* $Id: GuestImpl.cpp 15152 2008-12-09 10:43:07Z vboxsync $ */
+/* $Id: GuestImpl.cpp 16125 2009-01-21 11:03:50Z vboxsync $ */
 
 /** @file
  *

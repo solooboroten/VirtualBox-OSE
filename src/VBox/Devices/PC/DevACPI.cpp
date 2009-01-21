@@ -1,4 +1,4 @@
-/* $Id: DevACPI.cpp 14976 2008-12-04 12:50:07Z vboxsync $ */
+/* $Id: DevACPI.cpp 16042 2009-01-19 12:06:00Z vboxsync $ */
 /** @file
  * DevACPI - Advanced Configuration and Power Interface (ACPI) Device.
  */

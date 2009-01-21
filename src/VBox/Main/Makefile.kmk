@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 15372 2008-12-12 14:51:29Z vboxsync $
+# $Id: Makefile.kmk 16049 2009-01-19 17:12:11Z vboxsync $
 ## @file
 # Makefile for the VBox Main module.
 #

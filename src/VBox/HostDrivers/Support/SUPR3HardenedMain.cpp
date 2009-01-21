@@ -1,4 +1,4 @@
-/* $Id: SUPR3HardenedMain.cpp 15314 2008-12-11 16:47:29Z vboxsync $ */
+/* $Id: SUPR3HardenedMain.cpp 16067 2009-01-20 07:52:25Z vboxsync $ */
 /** @file
  * VirtualBox Support Library - Hardened main().
  */
