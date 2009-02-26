@@ -561,6 +561,7 @@ PGM_GST_DECL(int, UnmapCR3)(PVM pVM)
     if (!HWACCMIsNestedPagingActive(pVM))
     {
         pVM->pgm.s.pHCPaePML4    = 0;
+        pVM->pgm.s.HCPhysPaePML4 = 0;
         if (pVM->pgm.s.pHCShwAmd64CR3)
         {
             PPGMPOOL pPool = pVM->pgm.s.CTXSUFF(pPool);

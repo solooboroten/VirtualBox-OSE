@@ -1360,7 +1360,6 @@ ResumeExecution:
     case VERR_VMX_UNABLE_TO_START_VM:
     case VERR_VMX_UNABLE_TO_RESUME_VM:
     {
-#ifdef VBOX_STRICT
         int      rc1;
 
         rc1  = VMXReadVMCS(VMX_VMCS_RO_EXIT_REASON, &exitReason);
@@ -1368,13 +1367,17 @@ ResumeExecution:
         AssertRC(rc1);
         if (rc1 == VINF_SUCCESS)
         {
+            Log(("Unable to start/resume VM for reason: %x. Instruction error %x\n", (uint32_t)exitReason, (uint32_t)instrError));
+            Log(("Current stack %08x\n", &rc1));
+
+            pVM->hwaccm.s.vmx.lasterror.ulLastInstrError = instrError;
+            pVM->hwaccm.s.vmx.lasterror.ulLastExitReason = exitReason;
+
+#ifdef VBOX_STRICT
             RTGDTR     gdtr;
             PX86DESCHC pDesc;
 
             ASMGetGDTR(&gdtr);
-
-            Log(("Unable to start/resume VM for reason: %x. Instruction error %x\n", (uint32_t)exitReason, (uint32_t)instrError));
-            Log(("Current stack %08x\n", &rc1));
 
 
             VMXReadVMCS(VMX_VMCS_GUEST_RIP, &val);
@@ -1475,15 +1478,15 @@ ResumeExecution:
             VMXReadVMCS(VMX_VMCS_HOST_RIP, &val);
             Log(("VMX_VMCS_HOST_RIP %VHv\n", val));
 
-#if HC_ARCH_BITS == 64
+# if HC_ARCH_BITS == 64
             Log(("MSR_K6_EFER       = %VX64\n", ASMRdMsr(MSR_K6_EFER)));
             Log(("MSR_K6_STAR       = %VX64\n", ASMRdMsr(MSR_K6_STAR)));
             Log(("MSR_K8_LSTAR      = %VX64\n", ASMRdMsr(MSR_K8_LSTAR)));
             Log(("MSR_K8_CSTAR      = %VX64\n", ASMRdMsr(MSR_K8_CSTAR)));
             Log(("MSR_K8_SF_MASK    = %VX64\n", ASMRdMsr(MSR_K8_SF_MASK)));
-#endif
-        }
+# endif
 #endif /* VBOX_STRICT */
+        }
         goto end;
     }
 
@@ -1597,7 +1600,10 @@ ResumeExecution:
     AssertRC(rc);
     pVM->hwaccm.s.Event.intInfo = VMX_VMCS_CTRL_ENTRY_IRQ_INFO_FROM_EXIT_INT_INFO(val);
     if (    VMX_EXIT_INTERRUPTION_INFO_VALID(pVM->hwaccm.s.Event.intInfo)
-        &&  VMX_EXIT_INTERRUPTION_INFO_TYPE(pVM->hwaccm.s.Event.intInfo) != VMX_EXIT_INTERRUPTION_INFO_TYPE_SW)
+        /* Ignore 'int xx' as they'll be restarted anyway. */
+        &&  VMX_EXIT_INTERRUPTION_INFO_TYPE(pVM->hwaccm.s.Event.intInfo) != VMX_EXIT_INTERRUPTION_INFO_TYPE_SW
+        /* Ignore software exceptions (such as int3) as they're reoccur when we restart the instruction anyway. */
+        &&  VMX_EXIT_INTERRUPTION_INFO_TYPE(pVM->hwaccm.s.Event.intInfo) != VMX_EXIT_INTERRUPTION_INFO_TYPE_SWEXCPT)
     {
         pVM->hwaccm.s.Event.fPending = true;
         /* Error code present? */
@@ -1614,8 +1620,14 @@ ResumeExecution:
             pVM->hwaccm.s.Event.errCode  = 0;
         }
     }
-
 #ifdef VBOX_STRICT
+    else
+    if (    VMX_EXIT_INTERRUPTION_INFO_VALID(pVM->hwaccm.s.Event.intInfo)
+        /* Ignore software exceptions (such as int3) as they're reoccur when we restart the instruction anyway. */
+        &&  VMX_EXIT_INTERRUPTION_INFO_TYPE(pVM->hwaccm.s.Event.intInfo) == VMX_EXIT_INTERRUPTION_INFO_TYPE_SWEXCPT)
+    {
+        Log(("Ignore pending inject %RX64 at %RGv exit=%08x intInfo=%08x exitQualification=%08x\n", pVM->hwaccm.s.Event.intInfo, (RTGCPTR)pCtx->rip, exitReason, intInfo, exitQualification));
+    }
     if (exitReason == VMX_EXIT_ERR_INVALID_GUEST_STATE)
         HWACCMDumpRegs(pVM, pCtx);
 #endif

@@ -46,11 +46,11 @@ if [ -z "$4" ]; then
     exit 1
 fi
 
-VBOX_INSTALLED_DIR=$1
-VBOX_PKGFILE=$2.pkg
-VBOX_ARCHIVE=$2.tar.gz
-VBOX_PKG_ARCH=$3
-VBOX_SVN_REV=$4
+VBOX_INSTALLED_DIR="$1"
+VBOX_PKGFILE="$2.pkg"
+VBOX_ARCHIVE="$2.tar.gz"
+VBOX_PKG_ARCH="$3"
+VBOX_SVN_REV="$4"
 
 VBOX_PKGNAME=SUNWvbox
 VBOX_GGREP=/usr/sfw/bin/ggrep

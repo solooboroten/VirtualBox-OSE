@@ -50,6 +50,7 @@
 
 #include "../SUPDrvInternal.h"
 #include <VBox/log.h>
+#include <VBox/version.h>
 #include <iprt/semaphore.h>
 #include <iprt/spinlock.h>
 #include <iprt/mp.h>
@@ -63,10 +64,14 @@
 /*******************************************************************************
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
+/** @todo this quoting macros probably should be moved to a common place.
+  * The indirection is for expanding macros passed to the first macro. */
+#define VBOXSOLQUOTE2(x)         #x
+#define VBOXSOLQUOTE(x)          VBOXSOLQUOTE2(x)
 /** The module name. */
 #define DEVICE_NAME              "vboxdrv"
 /** The module description as seen in 'modinfo'. */
-#define DEVICE_DESC              "VirtualBox Host Driver"
+#define DEVICE_DESC              "VirtualBox HostDrv"
 /** Maximum number of driver instances. */
 #define DEVICE_MAXINSTANCES      16
 

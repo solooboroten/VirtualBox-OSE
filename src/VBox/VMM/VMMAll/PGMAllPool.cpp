@@ -1124,6 +1124,18 @@ static int pgmPoolCacheFreeOne(PPGMPOOL pPool, uint16_t iUser)
     Assert(iToFree != iUser);
     AssertRelease(iToFree != NIL_PGMPOOL_IDX);
 
+    PPGMPOOLPAGE pPage = &pPool->aPages[iToFree];
+
+    /*
+     * Reject any attempts at flushing the currently active shadow CR3 mapping
+     */
+    if (PGMGetHyperCR3(pPool->CTXSUFF(pVM)) == pPage->Core.Key)
+    {
+        /* Refresh the cr3 mapping by putting it at the head of the age list. */
+        pgmPoolCacheUsed(pPool, pPage);
+        return pgmPoolCacheFreeOne(pPool, iUser);
+    }
+
     int rc = pgmPoolFlushPage(pPool, &pPool->aPages[iToFree]);
     if (rc == VINF_SUCCESS)
         PGM_INVL_GUEST_TLBS(); /* see PT handler. */
@@ -3797,7 +3809,7 @@ int pgmPoolAlloc(PVM pVM, RTGCPHYS GCPhys, PGMPOOLKIND enmKind, uint16_t iUser, 
             rc = VERR_PGM_POOL_FLUSHED;
         }
         iNew = pPool->iFreeHead;
-        AssertReleaseReturn(iNew != NIL_PGMPOOL_IDX, VERR_INTERNAL_ERROR);
+        AssertReleaseMsgReturn(iNew != NIL_PGMPOOL_IDX, ("iUser=%x\n", iUser), VERR_INTERNAL_ERROR);
     }
 
     /* unlink the free head */

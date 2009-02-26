@@ -93,7 +93,7 @@ enum Status
     EOk = 0,
     ELockFileOpen = -1,
     ELockFileLock = -2,
-
+    ELockFileOwner = -3,
 };
 
 static int ipcLockFD = 0;
@@ -112,15 +112,69 @@ static Status AcquireDaemonLock(const char *baseDir)
     lockFile[dirLen] = '/';
     memcpy(lockFile + dirLen + 1, lockName, sizeof(lockName));
 
+#ifdef VBOX
+    //
+    // Security checks for the directory
+    //
+    struct stat st;
+    if (stat(baseDir, &st) == -1)
+    {
+        printf("Cannot stat '%s'.\n", baseDir);
+        return ELockFileOwner;
+    }
+
+    if (st.st_uid != getuid() && st.st_uid != geteuid())
+    {
+        printf("Wrong owner (%d) of '%s'.\n", st.st_uid, baseDir);
+        return ELockFileOwner;
+    }
+
+    if (st.st_mode != (S_IRUSR | S_IWUSR | S_IXUSR | S_IFDIR))
+    {
+        printf("Wrong mode (%o) of '%s'.\n", st.st_mode, baseDir);
+        return ELockFileOwner;
+    }
+#endif
+
     //
     // open lock file.  it remains open until we shutdown.
     //
     ipcLockFD = open(lockFile, O_WRONLY|O_CREAT, S_IWUSR|S_IRUSR);
 
+#ifndef VBOX
     free(lockFile);
+#endif
 
     if (ipcLockFD == -1)
         return ELockFileOpen;
+
+#ifdef VBOX
+    //
+    // Security checks for the lock file
+    //
+    if (fstat(ipcLockFD, &st) == -1)
+    {
+        printf("Cannot stat '%s'.\n", lockFile);
+        free(lockFile);
+        return ELockFileOwner;
+    }
+
+    if (st.st_uid != getuid() && st.st_uid != geteuid())
+    {
+        printf("Wrong owner (%d) of '%s'.\n", st.st_uid, lockFile);
+        free(lockFile);
+        return ELockFileOwner;
+    }
+
+    if (st.st_mode != (S_IRUSR | S_IWUSR | S_IFREG))
+    {
+        printf("Wrong mode (%o) of '%s'.\n", st.st_mode, lockFile);
+        free(lockFile);
+        return ELockFileOwner;
+    }
+
+    free(lockFile);
+#endif
 
     //
     // we use fcntl for locking.  assumption: filesystem should be local.
@@ -433,8 +487,9 @@ int main(int argc, char **argv)
             // don't notify the parent to cause it to fail in PR_Read() after
             // we terminate
 #ifdef VBOX
-            printf("Cannot create a lock file for '%s'.\n"
-                   "Check permissions.\n", addr.local.path);
+            if (status != ELockFileOwner)
+                printf("Cannot create a lock file for '%s'.\n"
+                        "Check permissions.\n", addr.local.path);
 #endif
             return 0;
         }

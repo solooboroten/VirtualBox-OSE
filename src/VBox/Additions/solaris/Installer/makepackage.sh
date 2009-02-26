@@ -26,6 +26,9 @@ if test -z "$2"; then
     exit 1
 fi
 
+VBOX_INSTALLED_DIR="$1"
+VBOX_PKGFILE="$2"
+
 VBOX_PKGNAME=SUNWvboxguest
 VBOX_AWK=/usr/bin/awk
 VBOX_GGREP=/usr/sfw/bin/ggrep
@@ -49,7 +52,7 @@ filelist_fixup()
 }
 
 # prepare file list
-cd "$1"
+cd "$VBOX_INSTALLED_DIR"
 echo 'i pkginfo=./vboxguest.pkginfo' > prototype
 echo 'i postinstall=./postinstall.sh' >> prototype
 echo 'i preremove=./preremove.sh' >> prototype
@@ -89,7 +92,7 @@ VBOXPKG_TIMESTAMP=vboxguest`date '+%Y%m%d%H%M%S'`
 pkgmk -p $VBOXPKG_TIMESTAMP -o -r .
 
 # translate into package datastream
-pkgtrans -s -o /var/spool/pkg `pwd`/$2 "$VBOX_PKGNAME"
+pkgtrans -s -o /var/spool/pkg "`pwd`/$VBOX_PKGFILE" "$VBOX_PKGNAME"
 
 rm -rf "/var/spool/pkg/$VBOX_PKGNAME"
 exit $?

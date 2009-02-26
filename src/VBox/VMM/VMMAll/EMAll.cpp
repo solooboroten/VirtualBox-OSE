@@ -1906,10 +1906,16 @@ static int emInterpretInvlPg(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame,
  */
 EMDECL(int) EMInterpretCpuId(PVM pVM, PCPUMCTXCORE pRegFrame)
 {
-    uint32_t iLeaf = pRegFrame->eax; NOREF(iLeaf);
+    uint32_t iLeaf = pRegFrame->eax;
+
+    /* cpuid clears the high dwords of the affected 64 bits registers. */
+    pRegFrame->rax = 0;
+    pRegFrame->rbx = 0;
+    pRegFrame->rcx = 0;
+    pRegFrame->rdx = 0;
 
     /* Note: operates the same in 64 and non-64 bits mode. */
-    CPUMGetGuestCpuId(pVM, pRegFrame->eax, &pRegFrame->eax, &pRegFrame->ebx, &pRegFrame->ecx, &pRegFrame->edx);
+    CPUMGetGuestCpuId(pVM, iLeaf, &pRegFrame->eax, &pRegFrame->ebx, &pRegFrame->ecx, &pRegFrame->edx);
     Log(("Emulate: CPUID %x -> %08x %08x %08x %08x\n", iLeaf, pRegFrame->eax, pRegFrame->ebx, pRegFrame->ecx, pRegFrame->edx));
     return VINF_SUCCESS;
 }
@@ -2363,8 +2369,8 @@ EMDECL(int) EMInterpretRdtsc(PVM pVM, PCPUMCTXCORE pRegFrame)
     uint64_t uTicks = TMCpuTickGet(pVM);
 
     /* Same behaviour in 32 & 64 bits mode */
-    pRegFrame->eax = uTicks;
-    pRegFrame->edx = (uTicks >> 32ULL);
+    pRegFrame->rax = (uint32_t)uTicks;
+    pRegFrame->rdx = (uTicks >> 32ULL);
 
     return VINF_SUCCESS;
 }
@@ -2593,8 +2599,8 @@ EMDECL(int) EMInterpretRdmsr(PVM pVM, PCPUMCTXCORE pRegFrame)
         break;
     }
     Log(("EMInterpretRdmsr %s (%x) -> val=%VX64\n", emMSRtoString(pRegFrame->ecx), pRegFrame->ecx, val));
-    pRegFrame->eax = (uint32_t) val;
-    pRegFrame->edx = (uint32_t) (val >> 32ULL);
+    pRegFrame->rax = (uint32_t) val;
+    pRegFrame->rdx = (uint32_t) (val >> 32ULL);
     return VINF_SUCCESS;
 }
 

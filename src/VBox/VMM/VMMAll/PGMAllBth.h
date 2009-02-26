@@ -137,13 +137,10 @@ PGM_BTH_DECL(int, Trap0eHandler)(PVM pVM, RTGCUINT uErr, PCPUMCTXCORE pRegFrame,
     const unsigned  iPDDst = (RTGCUINTPTR)pvFault >> SHW_PD_SHIFT;
     PX86PDPAE       pPDDst = pVM->pgm.s.CTXMID(ap,PaePDs)[0];       /* We treat this as a PD with 2048 entries, so no need to and with SHW_PD_MASK to get iPDDst */
 
-#  if PGM_GST_TYPE == PGM_TYPE_PAE
     /* Did we mark the PDPT as not present in SyncCR3? */
     unsigned iPdpte = ((RTGCUINTPTR)pvFault >> SHW_PDPT_SHIFT) & SHW_PDPT_MASK;
     if (!pVM->pgm.s.CTXMID(p,PaePDPT)->a[iPdpte].n.u1Present)
         pVM->pgm.s.CTXMID(p,PaePDPT)->a[iPdpte].n.u1Present = 1;
-
-#  endif
 
 # elif PGM_SHW_TYPE == PGM_TYPE_AMD64
     const unsigned  iPDDst = (((RTGCUINTPTR)pvFault >> SHW_PD_SHIFT) & SHW_PD_MASK);

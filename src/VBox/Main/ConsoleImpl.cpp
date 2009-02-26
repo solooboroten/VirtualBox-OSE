@@ -6648,6 +6648,8 @@ static DECLCALLBACK(int) reconfigureVDI(PVM pVM, IHardDiskAttachment *hda, HRESU
     hrc = hda->COMGETTER(Channel)(&lChannel);                                   H();
 
     int iLUN;
+    const char *pcszDevice = NULL;
+
     switch (enmBus)
     {
         case StorageBus_IDE:
@@ -6664,10 +6666,12 @@ static DECLCALLBACK(int) reconfigureVDI(PVM pVM, IHardDiskAttachment *hda, HRESU
                 return VERR_GENERAL_FAILURE;
             }
             iLUN = 2*lChannel + lDev;
+            pcszDevice = "piix3ide";
         }
         break;
         case StorageBus_SATA:
             iLUN = lChannel;
+            pcszDevice = "ahci";
             break;
         default:
             AssertMsgFailed(("invalid disk controller type: %d\n", enmBus));
@@ -6679,10 +6683,13 @@ static DECLCALLBACK(int) reconfigureVDI(PVM pVM, IHardDiskAttachment *hda, HRESU
      * We ASSUME that this will NEVER collide with the DVD.
      */
     PCFGMNODE pCfg;
-    PCFGMNODE pLunL1 = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/piix3ide/0/LUN#%d/AttachedDriver/", iLUN);
+    PCFGMNODE pLunL1;
+
+    pLunL1 = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/%s/0/LUN#%d/AttachedDriver/", pcszDevice, iLUN);
+
     if (!pLunL1)
     {
-        PCFGMNODE pInst = CFGMR3GetChild(CFGMR3GetRoot(pVM), "Devices/piix3ide/0/");
+        PCFGMNODE pInst = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/%s/0/", pcszDevice);
         AssertReturn(pInst, VERR_INTERNAL_ERROR);
 
         PCFGMNODE pLunL0;
@@ -6772,7 +6779,7 @@ static DECLCALLBACK(int) reconfigureVDI(PVM pVM, IHardDiskAttachment *hda, HRESU
         /*
          * Detach the driver and replace the config node.
          */
-        rc = PDMR3DeviceDetach(pVM, "piix3ide", 0, iLUN);                           RC_CHECK();
+        rc = PDMR3DeviceDetach(pVM, pcszDevice, 0, iLUN);                           RC_CHECK();
         CFGMR3RemoveNode(pCfg);
         rc = CFGMR3InsertNode(pLunL1, "Config", &pCfg);                             RC_CHECK();
     }
@@ -6819,7 +6826,7 @@ static DECLCALLBACK(int) reconfigureVDI(PVM pVM, IHardDiskAttachment *hda, HRESU
     /*
      * Attach the new driver.
      */
-    rc = PDMR3DeviceAttach(pVM, "piix3ide", 0, iLUN, NULL);                     RC_CHECK();
+    rc = PDMR3DeviceAttach(pVM, pcszDevice, 0, iLUN, NULL);                     RC_CHECK();
 
     LogFlowFunc (("Returns success\n"));
     return rc;

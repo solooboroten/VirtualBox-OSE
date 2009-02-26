@@ -2298,6 +2298,8 @@ DECLINLINE(int) emR3RawHandleRC(PVM pVM, PCPUMCTX pCtx, int rc)
         case VERR_VMX_UNEXPECTED_EXCEPTION:
         case VERR_VMX_UNEXPECTED_EXIT_CODE:
         case VERR_VMX_INVALID_GUEST_STATE:
+        case VERR_VMX_UNABLE_TO_START_VM:
+        case VERR_VMX_UNABLE_TO_RESUME_VM:
             HWACCMR3CheckError(pVM, rc);
             break;
         /*
@@ -3311,9 +3313,12 @@ EMR3DECL(int) EMR3ExecuteVM(PVM pVM)
                  * We might end up doing a double reset for now, we'll have to clean up the mess later.
                  */
                 case VINF_EM_RESET:
-                    Log2(("EMR3ExecuteVM: VINF_EM_RESET: %d -> %d\n", pVM->em.s.enmState, EMSTATE_REM));
-                    pVM->em.s.enmState = EMSTATE_REM;
+                {
+                    EMSTATE enmState = emR3Reschedule(pVM, pVM->em.s.pCtx);
+                    Log2(("EMR3ExecuteVM: VINF_EM_RESET: %d -> %d (%s)\n", pVM->em.s.enmState, enmState, EMR3GetStateName(enmState)));
+                    pVM->em.s.enmState = enmState;
                     break;
+                }
 
                 /*
                  * Power Off.

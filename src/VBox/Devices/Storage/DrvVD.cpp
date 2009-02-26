@@ -520,10 +520,6 @@ static DECLCALLBACK(void *) drvvdQueryInterface(PPDMIBASE pInterface,
             return &pDrvIns->IBase;
         case PDMINTERFACE_MEDIA:
             return &pThis->IMedia;
-        case PDMINTERFACE_MEDIA_ASYNC:
-            return pThis->fAsyncIOSupported ? &pThis->IMediaAsync : NULL;
-        case PDMINTERFACE_TRANSPORT_ASYNC_PORT:
-            return &pThis->ITransportAsyncPort;
         default:
             return NULL;
     }
@@ -562,6 +558,7 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
     pDrvIns->IBase.pfnQueryInterface    = drvvdQueryInterface;
     pThis->pDrvIns                      = pDrvIns;
     pThis->fTempReadOnly                = false;
+    pThis->fAsyncIOSupported            = false;
     pThis->pDisk                        = NULL;
 
     /* IMedia */
@@ -624,44 +621,6 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
 
     /* List of images is empty now. */
     pThis->pImages = NULL;
-
-    /* Try to attach async media port interface above.*/
-    pThis->pDrvMediaAsyncPort = (PPDMIMEDIAASYNCPORT)pDrvIns->pUpBase->pfnQueryInterface(pDrvIns->pUpBase, PDMINTERFACE_MEDIA_ASYNC_PORT);
-
-    /*
-     * Attach the async transport driver below of the device above us implements the
-     * async interface.
-     */
-    if (pThis->pDrvMediaAsyncPort)
-    {
-        /* Try to attach the driver. */
-        PPDMIBASE pBase;
-
-        rc = pDrvIns->pDrvHlp->pfnAttach(pDrvIns, &pBase);
-        if (rc == VERR_PDM_NO_ATTACHED_DRIVER)
-        {
-            /*
-             * Though the device supports async I/O the backend seems to not support it.
-             * Revert to non async I/O.
-             */
-            pThis->pDrvMediaAsyncPort = NULL;
-        }
-        else if (RT_FAILURE(rc))
-        {
-            AssertMsgFailed(("Failed to attach async transport driver below rc=%Rrc\n", rc));
-        }
-        else
-        {
-            /* Success query the async transport interface. */
-            pThis->pDrvTransportAsync = (PPDMITRANSPORTASYNC)pBase->pfnQueryInterface(pBase, PDMINTERFACE_TRANSPORT_ASYNC);
-            if (!pThis->pDrvTransportAsync)
-            {
-                /* Whoops. */
-                AssertMsgFailed(("Configuration error: No async transport interface below!\n"));
-                return VERR_PDM_MISSING_INTERFACE_ABOVE;
-            }
-        }
-    }
 
     /*
      * Validate configuration and find all parent images.
@@ -784,17 +743,9 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
             uOpenFlags = VD_OPEN_FLAGS_NORMAL;
         if (fHonorZeroWrites)
             uOpenFlags |= VD_OPEN_FLAGS_HONOR_ZEROES;
-        if (pThis->pDrvMediaAsyncPort)
-            uOpenFlags |= VD_OPEN_FLAGS_ASYNC_IO;
 
         /** Try to open backend in asyc I/O mode first. */
         rc = VDOpen(pThis->pDisk, pszFormat, pszName, uOpenFlags, pImage->pVDIfsImage);
-        if (rc == VERR_NOT_SUPPORTED)
-        {
-            /* Seems async I/O is not supported by the backend, open in normal mode. */
-            uOpenFlags &= ~VD_OPEN_FLAGS_ASYNC_IO;
-            rc = VDOpen(pThis->pDisk, pszFormat, pszName, uOpenFlags, pImage->pVDIfsImage);
-        }
 
         if (RT_SUCCESS(rc))
             Log(("%s: %d - Opened '%s' in %s mode\n", __FUNCTION__,
@@ -831,49 +782,6 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
             MMR3HeapFree(pszFormat);
 
         return rc;
-    }
-
-    /*
-     * Check for async I/O support. Every opened image has to support
-     * it.
-     */
-    pThis->fAsyncIOSupported = true;
-    for (unsigned i = 0; i < VDGetCount(pThis->pDisk); i++)
-    {
-        VDBACKENDINFO vdBackendInfo;
-
-        rc = VDBackendInfoSingle(pThis->pDisk, i, &vdBackendInfo);
-        AssertRC(rc);
-
-        if (vdBackendInfo.uBackendCaps & VD_CAP_ASYNC)
-        {
-            /*
-             * Backend indicates support for at least some files.
-             * Check if current file is supported with async I/O)
-             */
-            rc = VDImageIsAsyncIOSupported(pThis->pDisk, i, &pThis->fAsyncIOSupported);
-            AssertRC(rc);
-
-            /*
-             * Check if current image is supported.
-             * If not we can stop checking because
-             * at least one does not support it.
-             */
-            if (!pThis->fAsyncIOSupported)
-                break;
-        }
-        else
-        {
-            pThis->fAsyncIOSupported = false;
-            break;
-        }
-    }
-
-    /* Create cache if async I/O is supported. */
-    if (pThis->fAsyncIOSupported)
-    {
-        rc = RTCacheCreate(&pThis->pCache, 0, sizeof(DRVVDASYNCTASK), RTOBJCACHE_PROTECT_INSERT);
-        AssertMsg(RT_SUCCESS(rc), ("Failed to create cache rc=%Rrc\n", rc));
     }
 
     LogFlow(("%s: returns %Rrc\n", __FUNCTION__, rc));
