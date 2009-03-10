@@ -78,6 +78,8 @@ if1of ($(KBUILD_TARGET), linux freebsd solaris)
 #  VBOX_MAIN_DEFS += VBOX_MAIN_AUTOLOCK_TRAP
 # endif
 endif
+# Unconditionally enable the new semaphore key generation code
+VBOX_MAIN_DEFS += VBOX_WITH_NEW_SYS_V_KEYGEN
 
 VBOX_IDL_FILE.MSCOM    = $(VBOX_PATH_SDK)/bindings/mscom/idl/VirtualBox.idl
 VBOX_IDL_FILE.XPCOM    = $(VBOX_PATH_SDK)/bindings/xpcom/idl/VirtualBox_XPCOM.idl
@@ -503,7 +505,7 @@ endif
 
 ConsoleImpl.cpp_DEFS = \
 	VBOX_BUILD_TARGET=\"$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)\"
-		
+
 
 Version.cpp_DEFS  = VBOX_SVN_REV=$(VBOX_SVN_REV)
 Version.cpp_DEPS  = $(VBOX_SVN_REV_KMK)

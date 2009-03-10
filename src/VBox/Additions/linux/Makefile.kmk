@@ -41,6 +41,11 @@ endif
 VBOX_PATH_LINUX_ADDITION_INSTALLER := $(PATH_SUB_CURRENT)/installer
 VBOX_PATH_X11_ADDITION_INSTALLER   := $(PATH_ROOT)/src/VBox/Additions/x11/installer
 
+INSTALLS += GuestDrivers-src
+GuestDrivers-src_INST = bin/additions/src/
+GuestDrivers-src_MODE = a+r,u+w
+GuestDrivers-src_SOURCES = Makefile
+
 include	$(KBUILD_PATH)/subfooter.kmk
 
 ifeq ($(KBUILD_TYPE),debug)

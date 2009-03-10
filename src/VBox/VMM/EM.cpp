@@ -3210,8 +3210,11 @@ EMR3DECL(int) EMR3ExecuteVM(PVM pVM)
          * The Outer Main Loop.
          */
         bool fFFDone = false;
-        rc = VINF_EM_RESCHEDULE;
-        pVM->em.s.enmState = EMSTATE_REM;
+
+        /* Reschedule right away to start in the right state. */
+        rc = VINF_SUCCESS;
+        pVM->em.s.enmState = emR3Reschedule(pVM, pVM->em.s.pCtx);
+
         STAM_REL_PROFILE_ADV_START(&pVM->em.s.StatTotal, x);
         for (;;)
         {

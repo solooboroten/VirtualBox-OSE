@@ -715,13 +715,13 @@ STDMETHODIMP Machine::COMGETTER(Accessible) (BOOL *aAccessible)
     {
         /* try to initialize the VM once more if not accessible */
 
-        AutoReadySpan autoReadySpan (this);
-        AssertReturn (autoReadySpan.isOk(), E_FAIL);
+        AutoReinitSpan autoReinitSpan (this);
+        AssertReturn (autoReinitSpan.isOk(), E_FAIL);
 
         rc = registeredInit();
 
         if (mData->mAccessible)
-            autoReadySpan.setSucceeded();
+            autoReinitSpan.setSucceeded();
     }
 
     if (SUCCEEDED (rc))
@@ -2736,9 +2736,15 @@ STDMETHODIMP Machine::GetGuestProperty (INPTR BSTR aKey, BSTR *aValue, ULONG64 *
         /* just be on the safe side when calling another process */
         alock.unlock();
 
-        rc = directControl->AccessGuestProperty (aKey, NULL, NULL,
-                                                 false /* isSetter */,
-                                                 aValue, aTimestamp, aFlags);
+        /* fail if we were called after #OnSessionEnd() is called.  This is a
+         * silly race condition. */
+
+        if (!directControl)
+            rc = E_FAIL;
+        else
+            rc = directControl->AccessGuestProperty (aKey, NULL, NULL,
+                                                     false /* isSetter */,
+                                                     aValue, aTimestamp, aFlags);
     }
     return rc;
 #endif /* else !defined (VBOX_WITH_GUEST_PROPS) */
@@ -2800,7 +2806,7 @@ STDMETHODIMP Machine::SetGuestProperty (INPTR BSTR aName, INPTR BSTR aValue, INP
                 /* The backup() operation invalidates our iterator, so get a
                  * new one. */
                 for (it = mHWData->mGuestProperties.begin();
-                     it->mName != aName; ++it); 
+                     it->mName != aName; ++it);
                 mHWData->mGuestProperties.erase(it);
                 found = true;
             }
@@ -2838,9 +2844,12 @@ STDMETHODIMP Machine::SetGuestProperty (INPTR BSTR aName, INPTR BSTR aValue, INP
 
         BSTR dummy = NULL;
         ULONG64 dummy64;
-        rc = directControl->AccessGuestProperty (aName, aValue, aFlags,
-                                                 true /* isSetter */,
-                                                 &dummy, &dummy64, &dummy);
+        if (!directControl)
+            rc = E_FAIL;
+        else
+            rc = directControl->AccessGuestProperty (aName, aValue, aFlags,
+                                                     true /* isSetter */,
+                                                     &dummy, &dummy64, &dummy);
     }
     return rc;
 #endif /* else !defined (VBOX_WITH_GUEST_PROPS) */
@@ -3025,11 +3034,14 @@ STDMETHODIMP Machine::EnumerateGuestProperties (INPTR BSTR aPatterns, ComSafeArr
         /* just be on the safe side when calling another process */
         alock.unlock();
 
-        rc = directControl->EnumerateGuestProperties(aPatterns,
-                                                     ComSafeArrayOutArg(aNames),
-                                                     ComSafeArrayOutArg(aValues),
-                                                     ComSafeArrayOutArg(aTimestamps),
-                                                     ComSafeArrayOutArg(aFlags));
+        if (!directControl)
+            rc = E_FAIL;
+        else
+            rc = directControl->EnumerateGuestProperties (aPatterns,
+                                                          ComSafeArrayOutArg (aNames),
+                                                          ComSafeArrayOutArg (aValues),
+                                                          ComSafeArrayOutArg (aTimestamps),
+                                                          ComSafeArrayOutArg (aFlags));
     }
     return rc;
 #endif /* else !defined (VBOX_WITH_GUEST_PROPS) */
@@ -3369,6 +3381,12 @@ HRESULT Machine::openSession (IInternalSessionControl *aControl)
     HRESULT rc = sessionMachine->init (this);
     AssertComRC (rc);
 
+    /* NOTE: doing return from this function after this point but
+     * before the end is forbidden since it may call SessionMachine::uninit()
+     * (through the ComObjPtr's destructor) which requests the VirtualBox write
+     * lock while still holding the Machine lock in alock so that a deadlock
+     * is possible due to the wrong lock order. */
+
     if (SUCCEEDED (rc))
     {
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
@@ -3502,6 +3520,10 @@ HRESULT Machine::openSession (IInternalSessionControl *aControl)
         mData->mSession.mProgress->notifyComplete (rc);
         mData->mSession.mProgress.setNull();
     }
+
+    /* Leave the lock since SessionMachine::uninit() locks VirtualBox which
+     * would break the lock order */
+    alock.leave();
 
     /* uninitialize the created session machine on failure */
     if (FAILED (rc))
@@ -5163,7 +5185,7 @@ HRESULT Machine::loadHardware (const settings::Key &aNode)
                 ULONG64 timestamp = (*it).value<ULONG64> ("timestamp");
                 /* property flags (optional, defaults to empty) */
                 Bstr flags = (*it).stringValue ("flags");
-    
+
                 HWData::GuestProperty property = { name, value, timestamp, flags };
                 mHWData->mGuestProperties.push_back(property);
             }
@@ -6337,7 +6359,7 @@ HRESULT Machine::saveHardware (settings::Key &aNode)
         /* Nested paging (optional, default is true) */
         Key HWVirtExNestedPagingNode = cpuNode.createKey ("HardwareVirtExNestedPaging");
         HWVirtExNestedPagingNode.setValue <bool> ("enabled", !!mHWData->mHWVirtExNestedPagingEnabled);
-        
+
         /* PAE (optional, default is false) */
         Key PAENode = cpuNode.createKey ("PAE");
         PAENode.setValue <bool> ("enabled", !!mHWData->mPAEEnabled);
@@ -7960,15 +7982,35 @@ HRESULT SessionMachine::init (Machine *aMachine)
                       ipcSem.raw(), arc),
                      E_FAIL);
 #elif defined(VBOX_WITH_SYS_V_IPC_SESSION_WATCHER)
-    Utf8Str configFile = aMachine->mData->mConfigFileFull;
-    char *configFileCP = NULL;
-    int error;
-    RTStrUtf8ToCurrentCP (&configFileCP, configFile);
-    key_t key = ::ftok (configFileCP, 0);
-    RTStrFree (configFileCP);
+# ifdef VBOX_WITH_NEW_SYS_V_KEYGEN
+    AssertCompileSize(key_t, 4);
+    key_t key;
+    mIPCSem = -1;
+    mIPCKey = "0";
+    for (uint32_t i = 0; i < 1 << 24; i++)
+    {
+        key = ((uint32_t)'V' << 24) | i;
+        int sem = ::semget (key, 1, S_IRUSR | S_IWUSR | IPC_CREAT | IPC_EXCL);
+        if (sem >= 0 || (errno != EEXIST && errno != EACCES))
+        {
+            mIPCSem = sem;
+            if (sem >= 0)
+                mIPCKey = Bstr (Utf8StrFmt ("%u", key));
+            break;
+        }
+    }
+# else /* !VBOX_WITH_NEW_SYS_V_KEYGEN */
+    Utf8Str semName = aMachine->mData->mConfigFileFull;
+    char *pszSemName = NULL;
+    RTStrUtf8ToCurrentCP (&pszSemName, semName);
+    key_t key = ::ftok (pszSemName, 'V');
+    RTStrFree (pszSemName);
+
     mIPCSem = ::semget (key, 1, S_IRWXU | S_IRWXG | S_IRWXO | IPC_CREAT);
-    error = errno;
-    if (mIPCSem < 0 && error == ENOSYS)
+# endif /* !VBOX_WITH_NEW_SYS_V_KEYGEN */
+
+    int errnoSave = errno;
+    if (mIPCSem < 0 && errnoSave == ENOSYS)
     {
         setError(E_FAIL,
                 tr ("Cannot create IPC semaphore. Most likely your host kernel lacks "
@@ -7976,7 +8018,7 @@ HRESULT SessionMachine::init (Machine *aMachine)
                      "CONFIG_SYSVIPC=y"));
         return E_FAIL;
     }
-    ComAssertMsgRet (mIPCSem >= 0, ("Cannot create IPC semaphore, errno=%d", error),
+    ComAssertMsgRet (mIPCSem >= 0, ("Cannot create IPC semaphore, errno=%d", errnoSave),
                      E_FAIL);
     /* set the initial value to 1 */
     int rv = ::semctl (mIPCSem, 0, SETVAL, 1);
@@ -8097,6 +8139,9 @@ void SessionMachine::uninit (Uninit::Reason aReason)
         if (mIPCSem >= 0)
             ::semctl (mIPCSem, 0, IPC_RMID);
         mIPCSem = -1;
+# ifdef VBOX_WITH_NEW_SYS_V_KEYGEN
+        mIPCKey = "0";
+# endif /* VBOX_WITH_NEW_SYS_V_KEYGEN */
 #else
 # error "Port me!"
 #endif
@@ -8261,6 +8306,9 @@ void SessionMachine::uninit (Uninit::Reason aReason)
     if (mIPCSem >= 0)
         ::semctl (mIPCSem, 0, IPC_RMID);
     mIPCSem = -1;
+# ifdef VBOX_WITH_NEW_SYS_V_KEYGEN
+    mIPCKey = "0";
+# endif /* VBOX_WITH_NEW_SYS_V_KEYGEN */
 #else
 # error "Port me!"
 #endif
@@ -8320,7 +8368,11 @@ STDMETHODIMP SessionMachine::GetIPCId (BSTR *id)
     mIPCSemName.cloneTo (id);
     return S_OK;
 #elif defined(VBOX_WITH_SYS_V_IPC_SESSION_WATCHER)
-    mData->mConfigFileFull.cloneTo (id);
+# ifdef VBOX_WITH_NEW_SYS_V_KEYGEN
+    mIPCKey.cloneTo (id);
+# else /* !VBOX_WITH_NEW_SYS_V_KEYGEN */
+    mData->mConfigFileFull.cloneTo (aId);
+# endif /* !VBOX_WITH_NEW_SYS_V_KEYGEN */
     return S_OK;
 #else
 # error "Port me!"

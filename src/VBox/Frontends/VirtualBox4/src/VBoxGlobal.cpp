@@ -86,6 +86,10 @@
 #include <iprt/env.h>
 #include <iprt/file.h>
 
+#if defined (Q_OS_MACX) || defined (Q_OS_SOLARIS) /* platform info */
+#include <iprt/system.h>
+#endif
+
 #if defined (Q_WS_X11)
 #include <iprt/mem.h>
 #endif
@@ -2046,7 +2050,7 @@ QString VBoxGlobal::platformInfo()
         .arg (distrib).arg (version).arg (kernel);
 #elif defined (Q_OS_OS2)
     // TODO: add sys info for os2 if any...
-#elif defined (Q_OS_LINUX) || defined (Q_OS_MACX) || defined (Q_OS_FREEBSD) || defined (Q_OS_SOLARIS)
+#elif defined (Q_OS_LINUX)
     /* Get script path */
     char szAppPrivPath [RTPATH_MAX];
     int rc = RTPathAppPrivateNoArch (szAppPrivPath, sizeof (szAppPrivPath)); NOREF(rc);
@@ -2056,6 +2060,22 @@ QString VBoxGlobal::platformInfo()
         Process::singleShot (QString (szAppPrivPath) + "/VBoxSysInfo.sh");
     if (!result.isNull())
         platform += QString (" [%1]").arg (QString (result).trimmed());
+#elif defined (Q_OS_MACX) || defined (Q_OS_SOLARIS) || defined (Q_OS_FREEBSD)
+    char szTmp[256];
+    QStringList components;
+    int vrc = RTSystemQueryOSInfo (RTSYSOSINFO_PRODUCT, szTmp, sizeof(szTmp));
+    if (RT_SUCCESS (vrc) || vrc == VERR_BUFFER_OVERFLOW)
+        components << QString ("Product: %1").arg (szTmp);
+    vrc = RTSystemQueryOSInfo (RTSYSOSINFO_RELEASE, szTmp, sizeof(szTmp));
+    if (RT_SUCCESS (vrc) || vrc == VERR_BUFFER_OVERFLOW)
+        components << QString ("Release: %1").arg (szTmp);
+    vrc = RTSystemQueryOSInfo (RTSYSOSINFO_VERSION, szTmp, sizeof(szTmp));
+    if (RT_SUCCESS (vrc) || vrc == VERR_BUFFER_OVERFLOW)
+        components << QString ("Version: %1").arg (szTmp);
+    vrc = RTSystemQueryOSInfo (RTSYSOSINFO_SERVICE_PACK, szTmp, sizeof(szTmp));
+    if (RT_SUCCESS (vrc) || vrc == VERR_BUFFER_OVERFLOW)
+        components << QString ("SP: %1").arg (szTmp);
+    platform += QString (" [%1]").arg (components.join (" | "));
 #endif
 
     return platform;

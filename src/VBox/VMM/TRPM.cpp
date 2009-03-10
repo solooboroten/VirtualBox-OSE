@@ -1203,6 +1203,8 @@ TRPMR3DECL(int) TRPMR3SetGuestTrapHandler(PVM pVM, unsigned iTrap, RTRCPTR pHand
          * Exactly why 0x80 is safe on 32-bit Windows is a bit hazy, but it seems
          * to work ok... However on 64-bit Vista (SMP?) is doesn't work reliably.
          * Booting Linux/BSD guest will cause system lockups on most of the computers.
+         * -> Update: It seems gate 0x80 is not safe on 32-bits Windows either. See
+         *            defect #3604.
          *
          * PORTME - Check if your host keeps any of these gates free from hw ints.
          *
@@ -1211,7 +1213,7 @@ TRPMR3DECL(int) TRPMR3SetGuestTrapHandler(PVM pVM, unsigned iTrap, RTRCPTR pHand
         /** @todo handle those dependencies better! */
         /** @todo Solve this in a proper manner. see defect #1186 */
 #if defined(RT_OS_WINDOWS) && defined(RT_ARCH_X86)
-        if (iTrap == 0x2E || iTrap == 0x80)
+        if (iTrap == 0x2E)
 #elif defined(RT_OS_LINUX)
         if (iTrap == 0x80)
 #else

@@ -81,7 +81,3 @@ FILES_VBOXVFS_NOBIN=" \
     ${PATH_ROOT}/src/VBox/Additions/linux/sharedfolders/vfsmod.h=>vfsmod.h \
     ${PATH_OUT}/version-generated.h=>version-generated.h \
 "
-
-FILES_VBOXVFS_BIN=" \
-    ${PATH_ROOT}/src/VBox/HostDrivers/Support/linux/build_in_tmp=>build_in_tmp \
-"

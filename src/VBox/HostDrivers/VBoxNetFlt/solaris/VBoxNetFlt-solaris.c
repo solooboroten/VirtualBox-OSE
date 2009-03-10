@@ -1707,6 +1707,8 @@ static int vboxNetFltSolarisModSetup(PVBOXNETFLTINS pThis, bool fAttach)
                                             ldi_close(ARPDevHandle, FREAD | FWRITE, kcred);
                                             ldi_close(IPDevHandle, FREAD | FWRITE, kcred);
 
+                                            releasef(IpMuxFd);
+                                            releasef(ArpMuxFd);
                                             LogFlow((DEVICE_NAME ":vboxNetFltSolarisModSetup: Success! %s %s@(Ip:%d Arp:%d) "
                                                     "%s interface %s\n", fAttach ? "Injected" : "Ejected", StrMod.mod_name,
                                                     StrMod.pos, ArpStrMod.pos, fAttach ? "to" : "from", pThis->szName));
@@ -1761,6 +1763,9 @@ static int vboxNetFltSolarisModSetup(PVBOXNETFLTINS pThis, bool fAttach)
                             }
                             else
                                 LogRel((DEVICE_NAME ":vboxNetFltSolarisModSetup: failed to find position. rc=%d rc2=%d\n", rc, rc2));
+
+                            releasef(IpMuxFd);
+                            releasef(ArpMuxFd);
                         }
                         else
                             LogRel((DEVICE_NAME ":vboxNetFltSolarisModSetup: failed to get vnode from MuxFd.\n"));

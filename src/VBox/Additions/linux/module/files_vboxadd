@@ -88,7 +88,3 @@ FILES_VBOXADD_NOBIN=" \
     ${PATH_ROOT}/src/VBox/Additions/linux/module/Makefile.module=>Makefile \
     ${PATH_OUT}/version-generated.h=>version-generated.h \
 "
-
-FILES_VBOXADD_BIN=" \
-    ${PATH_ROOT}/src/VBox/HostDrivers/Support/linux/build_in_tmp=>build_in_tmp \
-"

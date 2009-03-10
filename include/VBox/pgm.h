@@ -512,6 +512,7 @@ PGMR3DECL(int)  PGMR3PhysSetFlags(PVM pVM, RTGCPHYS GCPhys, size_t cb, unsigned 
 PGMDECL(void)   PGMR3PhysSetA20(PVM pVM, bool fEnable);
 PGMR3DECL(int)  PGMR3MapPT(PVM pVM, RTGCPTR GCPtr, uint32_t cb, PFNPGMRELOCATE pfnRelocate, void *pvUser, const char *pszDesc);
 PGMR3DECL(int)  PGMR3UnmapPT(PVM pVM, RTGCPTR GCPtr);
+VMMR3DECL(int)  PGMR3FinalizeMappings(PVM pVM);
 PGMR3DECL(int)  PGMR3MappingsSize(PVM pVM, uint32_t *pcb);
 PGMR3DECL(int)  PGMR3MappingsFix(PVM pVM, RTGCPTR GCPtrBase, uint32_t cb);
 PGMR3DECL(int)  PGMR3MappingsUnfix(PVM pVM);

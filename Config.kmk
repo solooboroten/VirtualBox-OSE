@@ -25,6 +25,9 @@ VBOX_ROOT_CONFIG_KMK_INCLUDED = 1
 # kBuild stuff
 #
 
+# Required for building with kBuild 0.1.5 without breaking 0.1.4.
+KBUILD_NO_TESTING_PASS_ALIASES = 1
+
 # Experimental
 .SECONDTARGETEXPANSION:
 
@@ -120,7 +123,7 @@ VBOX_VERSION_MINOR = 0
 # This is the current build number. It should be increased every time we publish a
 # new build. The define is available in every source file. Only even build numbers
 # will be published, odd numbers are set during development.
-VBOX_VERSION_BUILD = 6
+VBOX_VERSION_BUILD = 8
 # Full version string (may include more than just x.y.z, but no spaces or other problematic chars).
 VBOX_VERSION_STRING = $(VBOX_VERSION_MAJOR).$(VBOX_VERSION_MINOR).$(VBOX_VERSION_BUILD)
 # Force the additions.sh script to get an exact additions build when we're doing the release.
@@ -1490,7 +1493,7 @@ ifdef VBOX_SIGNING_MODE
     VBOX_PATH_SELFSIGN := $(PATH_DEVTOOLS)/win.x86/selfsign/r1
    endif
   endif
-  VBOX_SIGNTOOL ?= $(VBOX_PATH_SELFSIGN)/SignTool.exe
+  VBOX_SIGNTOOL ?= $(PATH_DEVTOOLS)/bin/retry.cmd $(VBOX_PATH_SELFSIGN)/SignTool.exe
   VBOX_INF2CAT  ?= $(VBOX_PATH_SELFSIGN)/Inf2Cat.exe
 
   # There are three signing modes; 'test', 'development' and 'release'.
@@ -1789,14 +1792,19 @@ if1of ($(KBUILD_TARGET), linux)
  ifneq ($(VBOX_LINUX_SRC),)
   ifeq ($(origin VBOX_LINUX_INCS),undefined)
    export VBOX_LINUX_INCS           := $(VBOX_LINUX_SRC)/include
-   # support splitted Linux kernels (make O=<build directory>)
-   # XXX hack alert!
-   kernelsrc := $(shell $(SED_EXT) -ne 's+^KERNELSRC.*= *\(.*\)+\1+p' $(VBOX_LINUX_SRC)/Makefile)
-   ifneq ($(kernelsrc),)
-    kernelpath := $(realpath $(VBOX_LINUX_SRC)/$(kernelsrc))
-   else
+   # XXX hack alert! support splitted Linux kernels (make O=<build directory>)
+   # XXX put this crap elsewhere
+   kernelpath := $(shell $(SED_EXT) -ne 's+^KERNELSRC.*= *\(.*\)+\1+p' $(VBOX_LINUX_SRC)/Makefile)
+   ifeq ($(kernelpath),)
     # Linux >= 2.6.25
     kernelpath := $(shell $(SED_EXT) -ne 's+^MAKEARGS *:= *-C *\(.*\)+\1+p' $(VBOX_LINUX_SRC)/Makefile)
+   endif
+   ifneq ($(kernelpath),)
+    # absolute path?
+    ifneq ($(patsubst /%,,$(kernelpath)),)
+     # no, relative path
+     kernelpath := $(realpath $(VBOX_LINUX_SRC)/$(kernelpath))
+    endif
    endif
    ifneq ($(kernelpath),)
     VBOX_LINUX_INCS                 += $(VBOX_LINUX_SRC)/include2 $(kernelpath)/include
@@ -1804,7 +1812,9 @@ if1of ($(KBUILD_TARGET), linux)
     kernelpath := $(VBOX_LINUX_SRC)
    endif
    VBOX_LINUX_INCS                  += $(kernelpath)/include/asm-i386/mach-default \
-                                       $(kernelpath)/include/asm-x86/mach-default
+                                       $(kernelpath)/include/asm-x86/mach-default \
+                                       $(kernelpath)/arch/x86/include \
+                                       $(kernelpath)/arch/x86/include/asm/mach-default
   endif
  endif
 endif
@@ -3307,6 +3317,8 @@ else # the gcc guys
  TEMPLATE_VBOXGUESTR3EXE_EXTENDS  = VBOXR3EXE
  TEMPLATE_VBOXGUESTR3EXE_TOOL    := $(subst GXX,GCC,$(TEMPLATE_VBOXR3EXE_TOOL))
  TEMPLATE_VBOXGUESTR3EXE_CXXFLAGS = $(TEMPLATE_VBOXR3EXE_CXXFLAGS) -fno-exceptions
+ TEMPLATE_VBOXGUESTR3EXE_LDFLAGS  = $(filter-out '$(VBOX_GCC_RPATH_OPT)%,$(TEMPLATE_VBOXR3EXE_LDFLAGS))
+ TEMPLATE_VBOXGUESTR3EXE_LDFLAGS.linux = $(filter-out $(VBOX_GCC_ORIGIN_OPT),$(TEMPLATE_VBOXR3EXE_LDFLAGS.linux))
 endif
 TEMPLATE_VBOXGUESTR3EXE_INST      = $(INST_ADDITIONS)
 TEMPLATE_VBOXGUESTR3EXE_DEFS     := $(TEMPLATE_VBOXR3EXE_DEFS) IN_GUEST IN_GUEST_R3 IN_RT_R3
@@ -3544,7 +3556,7 @@ makefile: | $(VBOX_VERSION_HEADER) $(VBOX_VERSION_MK) $(VBOX_PACKAGE_HEADER)
 SVN                    ?= svn$(HOSTSUFF_EXE)
 VBOX_SVN_REV_KMK        = $(PATH_OUT)/revision.kmk
 ifndef VBOX_SVN_REV
- VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 39754 $  )
+ VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 44071 $  )
  VBOX_SVN_DEP          := $(wildcard $(PATH_ROOT)/.svn/entries)
  ifeq ($(which $(SVN)),)
   VBOX_SVN_DEP         :=

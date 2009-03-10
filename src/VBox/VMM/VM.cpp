@@ -292,7 +292,7 @@ VMR3DECL(int)   VMR3Create(PFNVMATERROR pfnVMAtError, void *pvUserVM, PFNCFGMCON
                     pszError = N_("VirtualBox kernel module is not accessible, permission problem. "
                                   "If you have built VirtualBox yourself, make sure that you do "
                                   "not have the vboxdrv kernel module from a different install loaded.");
-# endif 
+# endif
 #endif
                     break;
                 case VERR_INVALID_HANDLE: /** @todo track down and fix this error. */
@@ -461,9 +461,12 @@ static int vmR3CreateU(PUVM pUVM, PFNCFGMCONSTRUCTOR pfnCFGMConstructor, void *p
             }
 
             /*
-             * Init the Ring-3 components and do a round of relocations with 0 delta.
+             * Init the Ring-3 components and a relocation round (intermediate context
+             * finalization will do this).
              */
             rc = vmR3InitRing3(pVM, pUVM);
+            if (RT_SUCCESS(rc))
+                rc = PGMR3FinalizeMappings(pVM);
             if (VBOX_SUCCESS(rc))
             {
                 VMR3Relocate(pVM, 0);

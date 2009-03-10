@@ -3366,6 +3366,8 @@ HRESULT Console::onVRDPServerChange()
         rc = mVRDPServer->COMGETTER(Enabled) (&vrdpEnabled);
         ComAssertComRCRetRC (rc);
 
+        // all calls to the VRDP server must be without the lock
+        alock.leave();
         if (vrdpEnabled)
         {
             // If there was no VRDP server started the 'stop' will do nothing.
@@ -3386,6 +3388,7 @@ HRESULT Console::onVRDPServerChange()
         {
             mConsoleVRDPServer->Stop ();
         }
+        alock.enter();
     }
 
     /* notify console callbacks on success */

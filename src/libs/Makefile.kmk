@@ -50,7 +50,7 @@ endif
 # OpenSSL for VRDP.
 if defined(VBOX_WITH_VRDP) && !defined(VBOX_ONLY_DOCS) && !defined(VBOX_ONLY_SDK) \
  && "$(SDK_VBOX_OPENSSL_INCS)" == "$(SDK_VBOX_OPENSSL_DEFAULT_INCS)"
- include $(PATH_SUB_CURRENT)/openssl-0.9.8h/Makefile.kmk
+ include $(PATH_SUB_CURRENT)/openssl-0.9.8j/Makefile.kmk
 endif
 
 
@@ -100,7 +100,7 @@ endif
 #endif # !VBOX_OSE
 ifdef VBOX_WITH_VRDP
  ifeq ($(SDK_VBOX_OPENSSL_INCS),$(SDK_VBOX_OPENSSL_DEFAULT_INCS))
-  subdirs += openssl-0.9.8h
+  subdirs += openssl-0.9.8j
  endif
 endif
 ifdef VBOX_WITH_MAIN
@@ -130,7 +130,7 @@ ifdef VBOX_ONLY_DOCS
 endif
 
 ifdef VBOX_ONLY_SDK
- subdirs := $(filter-out liblzf-1.51 zlib-1.2.1 libpng-1.2.8 openssl-0.9.7e openssl-0.9.8h ffmpeg-20060710, $(subdirs))
+ subdirs := $(filter-out liblzf-1.51 zlib-1.2.1 libpng-1.2.8 openssl-0.9.8j ffmpeg-20060710, $(subdirs))
 endif
 
 # optimized walking

@@ -30,7 +30,9 @@ include	$(KBUILD_PATH)/subheader.kmk
 INSTALLS += vboxmod-mod vboxmod-sh
 OTHERS.linux += \
 	$(VBOX_PATH_ADDITIONS)/src/vboxadd/build_in_tmp \
-	$(if $(VBOX_OSE),,$(VBOX_PATH_ADDITIONS)/src/vboxadd/dkms.conf)
+	$(if $(VBOX_OSE),,\
+	  $(VBOX_PATH_ADDITIONS)/src/vboxadd/dkms.conf \
+	  $(VBOX_PATH_ADDITIONS)/src/vboxadd/do_Module.symvers)
 ifdef VBOX_WITH_ADDITION_DRIVERS
  SYSMODS += vboxadd
 endif
@@ -53,6 +55,12 @@ $(VBOX_PATH_ADDITIONS)/src/vboxadd/dkms.conf: \
 		$(VBOX_VERSION_STAMP)
 	$(call MSG_TOOL,Creating,,$@)
 	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g" < $< > $@
+
+$(VBOX_PATH_ADDITIONS)/src/vboxadd/do_Module.symvers: \
+		$(PATH_ROOT)/src/VBox/HostDrivers/Support/linux/do_Module.symvers
+	$(call MSG_TOOL,Creating,,$@)
+	$(QUIET)$(CP) $< $@
+	$(QUIET)chmod 0755 $@
 
 vboxmod-mod_INST    = $(INST_ADDITIONS)src/vboxadd/
 vboxmod-mod_MODE    = a+r,u+w

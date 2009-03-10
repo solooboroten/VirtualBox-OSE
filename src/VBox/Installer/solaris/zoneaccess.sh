@@ -19,7 +19,7 @@
 
 if test -c "/devices/pseudo/vboxdrv@0:vboxdrv"; then
     if test -h "/dev/vboxdrv" || test -f "/dev/vboxdrv"; then
-        sleep 1000000000 < /dev/vboxdrv &
+        sleep 500000000 < /dev/vboxdrv &
     else
         echo "VirtualBox Host kernel module device link missing..."
         exit 2

@@ -111,7 +111,7 @@ typedef enum SCSICMD
     SCSI_READ_6                         = 0x08
 } SCSICMD;
 
-#ifdef DEBUG
+#ifdef LOG_ENABLED
 static const char * const g_apszSCSICmdNames[256] =
 {
     "TEST UNIT READY",                     /* 0x00 */
@@ -371,7 +371,7 @@ static const char * const g_apszSCSICmdNames[256] =
     "",                                    /* 0xfe */
     ""                                     /* 0xff */
 };
-#endif /* DEBUG */
+#endif /* LOG_ENABLED */
 
 /* Mode page codes for mode sense/select commands. */
 #define SCSI_MODEPAGE_ERROR_RECOVERY   0x01

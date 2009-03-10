@@ -55,7 +55,7 @@
 #define VBOX_OGL_GEN_OP(op)                                                                 \
     OGL_CMD(op, 0, 0);                                                                      \
     OGL_CMD_END(op);
-    
+
 #define VBOX_OGL_GEN_OP1(op, p1)                                                            \
     OGL_CMD(op, 1, sizeof(p1));                                                             \
     OGL_PARAM(p1, sizeof(p1));                                                              \
@@ -575,7 +575,7 @@
 #define VBOX_OGL_GEN_OP(op)                                                                 \
     OGL_CMD(op, 0);                                                                         \
     gl##op();
-    
+
 #define VBOX_OGL_GEN_OP1(op, Type1)                                                         \
     OGL_CMD(op, 1);                                                                         \
     OGL_PARAM(Type1, p1);                                                                   \
@@ -766,7 +766,7 @@
     OGL_CMD(op, 1);                                                                             \
     OGL_PARAM(Type1, p1);                                                                       \
     pClient->lastretval = gl##op(p1);
-    
+
 #define VBOX_OGL_GEN_SYNC_OP2_RET(rettype, op, Type1, Type2)                                          \
     OGL_CMD(op, 2);                                                                             \
     OGL_PARAM(Type1, p1);                                                                       \
@@ -1015,7 +1015,7 @@
 
 /* OpenGL opcodes */
 /* Note: keep all three tables in sync! */
-typedef enum 
+typedef enum
 {
     VBOX_OGL_OP_Illegal                     = 0,
     VBOX_OGL_OP_ArrayElement,
@@ -1299,7 +1299,7 @@ typedef enum
     VBOX_OGL_OP_SizeHack                     = 0x7fffffff
 } VBOX_OGL_OP;
 
-#if defined(DEBUG) && defined(VBOX_OGL_WITH_CMD_STRINGS)
+#if defined(LOG_ENABLED) && defined(VBOX_OGL_WITH_CMD_STRINGS)
 static const char *pszVBoxOGLCmd[VBOX_OGL_OP_Last] =
 {
     "ILLEGAL",
@@ -1890,7 +1890,7 @@ static PFNWGLGETSWAPINTERVALEXTPROC     pfnwglGetSwapIntervalEXT    = NULL;
 
 #endif
 
-static OPENGL_EXT OpenGLExtensions[] = 
+static OPENGL_EXT OpenGLExtensions[] =
 {
     {   "WGL_EXT_swap_control",             "wglSwapIntervalEXT",               VBOX_OGL_EXTENSION(wglSwapIntervalEXT),                      false },
     {   "WGL_EXT_swap_control",             "wglGetSwapIntervalEXT",            VBOX_OGL_EXTENSION(wglGetSwapIntervalEXT),                   false },
