@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl.cpp 15991 2009-01-16 14:02:20Z vboxsync $ */
+/* $Id: ConsoleImpl.cpp 17684 2009-03-11 12:15:33Z vboxsync $ */
 
 /** @file
  *
@@ -188,39 +188,18 @@ struct VMPowerUpTask : public VMProgressTask
         : VMProgressTask (aConsole, aProgress, false /* aUsesVMPtr */)
         , mSetVMErrorCallback (NULL), mConfigConstructor (NULL), mStartPaused (false) {}
 
-    ~VMPowerUpTask()
-    {
-        /* No null output parameters in IPC*/
-        MediaState_T dummy;
-
-        /* if the locked media list is not empty, treat as a failure and
-         * unlock all */
-        for (LockedMedia::const_iterator it = lockedMedia.begin();
-             it != lockedMedia.end(); ++ it)
-        {
-            if (it->second)
-                it->first->UnlockWrite (&dummy);
-            else
-                it->first->UnlockRead (&dummy);
-        }
-    }
-
     PFNVMATERROR mSetVMErrorCallback;
     PFNCFGMCONSTRUCTOR mConfigConstructor;
     Utf8Str mSavedStateFile;
     Console::SharedFolderDataMap mSharedFolders;
     bool mStartPaused;
 
-    /**
-     * Successfully locked media list. The 2nd value in the pair is true if the
-     * medium is locked for writing and false if locked for reading.
-     */
-    typedef std::list <std::pair <ComPtr <IMedium>, bool > > LockedMedia;
-    LockedMedia lockedMedia;
+    typedef std::list <ComPtr <IHardDisk> > HardDiskList;
+    HardDiskList hardDisks;
 
-    /** Media that need an accessibility check */
-    typedef std::list <ComPtr <IMedium> > Media;
-    Media mediaToCheck;
+    /* array of progress objects for hard disk reset operations */
+    typedef std::list <ComPtr <IProgress> > ProgressList;
+    ProgressList hardDiskProgresses;
 };
 
 struct VMSaveTask : public VMProgressTask
@@ -1260,36 +1239,32 @@ STDMETHODIMP Console::COMGETTER(Debugger) (IMachineDebugger **aDebugger)
     return S_OK;
 }
 
-STDMETHODIMP Console::COMGETTER(USBDevices) (IUSBDeviceCollection **aUSBDevices)
+STDMETHODIMP Console::COMGETTER(USBDevices) (ComSafeArrayOut (IUSBDevice *, aUSBDevices))
 {
-    CheckComArgOutPointerValid(aUSBDevices);
+    CheckComArgOutSafeArrayPointerValid(aUSBDevices);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 
     AutoReadLock alock (this);
 
-    ComObjPtr <OUSBDeviceCollection> collection;
-    collection.createObject();
-    collection->init (mUSBDevices);
-    collection.queryInterfaceTo (aUSBDevices);
+    SafeIfaceArray <IUSBDevice> collection (mUSBDevices);
+    collection.detachTo (ComSafeArrayOutArg(aUSBDevices));
 
     return S_OK;
 }
 
-STDMETHODIMP Console::COMGETTER(RemoteUSBDevices) (IHostUSBDeviceCollection **aRemoteUSBDevices)
+STDMETHODIMP Console::COMGETTER(RemoteUSBDevices) (ComSafeArrayOut (IHostUSBDevice *, aRemoteUSBDevices))
 {
-    CheckComArgOutPointerValid(aRemoteUSBDevices);
+    CheckComArgOutSafeArrayPointerValid(aRemoteUSBDevices);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 
     AutoReadLock alock (this);
 
-    ComObjPtr <RemoteUSBDeviceCollection> collection;
-    collection.createObject();
-    collection->init (mRemoteUSBDevices);
-    collection.queryInterfaceTo (aRemoteUSBDevices);
+    SafeIfaceArray <IHostUSBDevice> collection (mRemoteUSBDevices);
+    collection.detachTo (ComSafeArrayOutArg(aRemoteUSBDevices));
 
     return S_OK;
 }
@@ -1308,9 +1283,9 @@ STDMETHODIMP Console::COMGETTER(RemoteDisplayInfo) (IRemoteDisplayInfo **aRemote
 }
 
 STDMETHODIMP
-Console::COMGETTER(SharedFolders) (ISharedFolderCollection **aSharedFolders)
+Console::COMGETTER(SharedFolders) (ComSafeArrayOut (ISharedFolder *, aSharedFolders))
 {
-    CheckComArgOutPointerValid(aSharedFolders);
+    CheckComArgOutSafeArrayPointerValid(aSharedFolders);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -1322,16 +1297,16 @@ Console::COMGETTER(SharedFolders) (ISharedFolderCollection **aSharedFolders)
     HRESULT rc = loadDataFromSavedState();
     CheckComRCReturnRC (rc);
 
-    ComObjPtr <SharedFolderCollection> coll;
-    coll.createObject();
-    coll->init (mSharedFolders);
-    coll.queryInterfaceTo (aSharedFolders);
+    SafeIfaceArray <ISharedFolder> sf (mSharedFolders);
+    sf.detachTo (ComSafeArrayOutArg(aSharedFolders));
 
     return S_OK;
 }
 
+
 // IConsole methods
 /////////////////////////////////////////////////////////////////////////////
+
 
 STDMETHODIMP Console::PowerUp (IProgress **aProgress)
 {
@@ -2073,6 +2048,76 @@ STDMETHODIMP Console::DetachUSBDevice (IN_GUID aId, IUSBDevice **aDevice)
 #endif  /* !VBOX_WITH_USB */
 }
 
+STDMETHODIMP Console::FindUSBDeviceByAddress(IN_BSTR aAddress, IUSBDevice **aDevice)
+{
+#ifdef VBOX_WITH_USB
+    CheckComArgNotNull(aAddress);
+    CheckComArgOutPointerValid(aDevice);
+
+    *aDevice = NULL;
+
+    SafeIfaceArray <IUSBDevice> devsvec;
+    HRESULT rc = COMGETTER(USBDevices) (ComSafeArrayAsOutParam(devsvec));
+    CheckComRCReturnRC (rc);
+
+    for (size_t i = 0; i < devsvec.size(); ++i)
+    {
+        Bstr address;
+        rc = devsvec[i]->COMGETTER(Address) (address.asOutParam());
+        CheckComRCReturnRC (rc);
+        if (address == aAddress)
+        {
+            ComObjPtr<OUSBDevice> found;
+            found.createObject();
+            found->init (devsvec[i]);
+            return found.queryInterfaceTo (aDevice);
+        }
+    }
+
+    return setErrorNoLog (VBOX_E_OBJECT_NOT_FOUND, tr (
+        "Could not find a USB device with address '%ls'"),
+        aAddress);
+
+#else   /* !VBOX_WITH_USB */
+    return E_NOTIMPL;
+#endif  /* !VBOX_WITH_USB */
+}
+
+STDMETHODIMP Console::FindUSBDeviceById(IN_GUID aId, IUSBDevice **aDevice)
+{
+#ifdef VBOX_WITH_USB
+    CheckComArgExpr(aId, Guid (aId).isEmpty() == false);
+    CheckComArgOutPointerValid(aDevice);
+
+    *aDevice = NULL;
+
+    SafeIfaceArray <IUSBDevice> devsvec;
+    HRESULT rc = COMGETTER(USBDevices) (ComSafeArrayAsOutParam(devsvec));
+    CheckComRCReturnRC (rc);
+
+    for (size_t i = 0; i < devsvec.size(); ++i)
+    {
+        Guid id;
+        rc = devsvec[i]->COMGETTER(Id) (id.asOutParam());
+        CheckComRCReturnRC (rc);
+        if (id == aId)
+        {
+            ComObjPtr<OUSBDevice> found;
+            found.createObject();
+            found->init(devsvec[i]);
+            return found.queryInterfaceTo (aDevice);
+        }
+    }
+
+    return setErrorNoLog (VBOX_E_OBJECT_NOT_FOUND, tr (
+        "Could not find a USB device with uuid {%RTuuid}"),
+        Guid (aId).raw());
+
+#else   /* !VBOX_WITH_USB */
+    return E_NOTIMPL;
+#endif  /* !VBOX_WITH_USB */
+}
+
 STDMETHODIMP
 Console::CreateSharedFolder (IN_BSTR aName, IN_BSTR aHostPath, BOOL aWritable)
 {
@@ -2546,7 +2591,7 @@ HRESULT Console::onDVDDriveChange()
     {
         case DriveState_ImageMounted:
         {
-            ComPtr <IDVDImage2> ImagePtr;
+            ComPtr <IDVDImage> ImagePtr;
             rc = mDVDDrive->GetImage (ImagePtr.asOutParam());
             if (SUCCEEDED (rc))
                 rc = ImagePtr->COMGETTER(Location) (Path.asOutParam());
@@ -2652,7 +2697,7 @@ HRESULT Console::onFloppyDriveChange()
     {
         case DriveState_ImageMounted:
         {
-            ComPtr <IFloppyImage2> ImagePtr;
+            ComPtr<IFloppyImage> ImagePtr;
             rc = mFloppyDrive->GetImage (ImagePtr.asOutParam());
             if (SUCCEEDED (rc))
                 rc = ImagePtr->COMGETTER(Location) (Path.asOutParam());
@@ -3262,6 +3307,44 @@ HRESULT Console::onParallelPortChange (IParallelPort *aParallelPort)
 }
 
 /**
+ *  Called by IInternalSessionControl::OnStorageControllerChange().
+ *
+ *  @note Locks this object for writing.
+ */
+HRESULT Console::onStorageControllerChange ()
+{
+    LogFlowThisFunc (("\n"));
+
+    AutoCaller autoCaller (this);
+    AssertComRCReturnRC (autoCaller.rc());
+
+    AutoWriteLock alock (this);
+
+    /* Don't do anything if the VM isn't running */
+    if (!mpVM)
+        return S_OK;
+
+    HRESULT rc = S_OK;
+
+    /* protect mpVM */
+    AutoVMCaller autoVMCaller (this);
+    CheckComRCReturnRC (autoVMCaller.rc());
+
+    /* nothing to do so far */
+
+    /* notify console callbacks on success */
+    if (SUCCEEDED (rc))
+    {
+        CallbackList::iterator it = mCallbacks.begin();
+        while (it != mCallbacks.end())
+            (*it++)->OnStorageControllerChange ();
+    }
+
+    LogFlowThisFunc (("Leaving rc=%#x\n", rc));
+    return rc;
+}
+
+/**
  *  Called by IInternalSessionControl::OnVRDPServerChange().
  *
  *  @note Locks this object for writing.
@@ -3281,6 +3364,9 @@ HRESULT Console::onVRDPServerChange()
 
         rc = mVRDPServer->COMGETTER(Enabled) (&vrdpEnabled);
         ComAssertComRCRetRC (rc);
+
+        /* VRDP server may call this Console object back from other threads (VRDP INPUT or OUTPUT). */
+        alock.leave();
 
         if (vrdpEnabled)
         {
@@ -3302,6 +3388,8 @@ HRESULT Console::onVRDPServerChange()
         {
             mConsoleVRDPServer->Stop ();
         }
+
+        alock.enter();
     }
 
     /* notify console callbacks on success */
@@ -4218,7 +4306,7 @@ HRESULT Console::powerUp (IProgress **aProgress, bool aPaused)
     if (Global::IsOnlineOrTransient (mMachineState))
         return setError(VBOX_E_INVALID_VM_STATE,
             tr ("Virtual machine is already running or busy "
-            "(machine state: %d)"), mMachineState);
+                "(machine state: %d)"), mMachineState);
 
     HRESULT rc = S_OK;
 
@@ -4236,7 +4324,7 @@ HRESULT Console::powerUp (IProgress **aProgress, bool aPaused)
         adapter->COMGETTER(AttachmentType)(&netattach);
         switch (netattach)
         {
-            case NetworkAttachmentType_HostInterface:
+            case NetworkAttachmentType_Bridged:
             {
 #ifdef RT_OS_WINDOWS
                 /* a valid host interface must have been set */
@@ -4252,20 +4340,8 @@ HRESULT Console::powerUp (IProgress **aProgress, bool aPaused)
                 mMachine->COMGETTER(Parent)(virtualBox.asOutParam());
                 ComPtr<IHost> host;
                 virtualBox->COMGETTER(Host)(host.asOutParam());
-                com::SafeIfaceArray <IHostNetworkInterface> hostNetworkInterfaces;
-                host->COMGETTER(NetworkInterfaces) (ComSafeArrayAsOutParam (hostNetworkInterfaces));
-                bool found = false;
-                for (size_t i = 0; i < hostNetworkInterfaces.size(); ++i)
-                {
-                    Bstr name;
-                    hostNetworkInterfaces[i]->COMGETTER(Name) (name.asOutParam());
-                    if (name == hostif)
-                    {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
+                ComPtr<IHostNetworkInterface> hostInterface;
+                if (!SUCCEEDED(host->FindHostNetworkInterfaceByName(hostif, hostInterface.asOutParam())))
                 {
                     return setError (VBOX_E_HOST_ERROR,
                         tr ("VM cannot start because the host interface '%ls' "
@@ -4321,26 +4397,22 @@ HRESULT Console::powerUp (IProgress **aProgress, bool aPaused)
                     savedStateFile.raw(), vrc);
     }
 
-    /* create an IProgress object to track progress of this operation */
-    ComObjPtr <Progress> progress;
-    progress.createObject();
+    /* create a progress object to track progress of this operation */
+    ComObjPtr <Progress> powerupProgress;
+    powerupProgress.createObject();
     Bstr progressDesc;
     if (mMachineState == MachineState_Saved)
         progressDesc = tr ("Restoring virtual machine");
     else
         progressDesc = tr ("Starting virtual machine");
-    rc = progress->init (static_cast <IConsole *> (this),
-                         progressDesc, FALSE /* aCancelable */);
+    rc = powerupProgress->init (static_cast <IConsole *> (this),
+                                progressDesc, FALSE /* aCancelable */);
     CheckComRCReturnRC (rc);
-
-    /* pass reference to caller if requested */
-    if (aProgress)
-        progress.queryInterfaceTo (aProgress);
 
     /* setup task object and thread to carry out the operation
      * asynchronously */
 
-    std::auto_ptr <VMPowerUpTask> task (new VMPowerUpTask (this, progress));
+    std::auto_ptr <VMPowerUpTask> task (new VMPowerUpTask (this, powerupProgress));
     ComAssertComRCRetRC (task->rc());
 
     task->mSetVMErrorCallback = setVMErrorCallback;
@@ -4350,117 +4422,65 @@ HRESULT Console::powerUp (IProgress **aProgress, bool aPaused)
     if (mMachineState == MachineState_Saved)
         task->mSavedStateFile = savedStateFile;
 
-    /* Lock all attached media in necessary mode. Note that until
-     * setMachineState() is called below, it is OUR responsibility to unlock
-     * media on failure (and VMPowerUpTask::lockedMedia is used for that). After
-     * the setMachineState() call, VBoxSVC (SessionMachine::setMachineState())
-     * will unlock all the media upon the appropriate state change. Note that
-     * media accessibility checks are performed on the powerup thread because
-     * they may block. */
-
-    MediaState_T mediaState;
-
-    /* lock all hard disks for writing and their parents for reading */
+    /* Reset differencing hard disks for which autoReset is true */
     {
-        com::SafeIfaceArray <IHardDisk2Attachment> atts;
+        com::SafeIfaceArray <IHardDiskAttachment> atts;
         rc = mMachine->
-            COMGETTER(HardDisk2Attachments) (ComSafeArrayAsOutParam (atts));
+            COMGETTER(HardDiskAttachments) (ComSafeArrayAsOutParam (atts));
         CheckComRCReturnRC (rc);
 
         for (size_t i = 0; i < atts.size(); ++ i)
         {
-            ComPtr <IHardDisk2> hardDisk;
+            ComPtr <IHardDisk> hardDisk;
             rc = atts [i]->COMGETTER(HardDisk) (hardDisk.asOutParam());
             CheckComRCReturnRC (rc);
 
-            bool first = true;
+            /* save for later use on the powerup thread */
+            task->hardDisks.push_back (hardDisk);
 
-            while (!hardDisk.isNull())
+            /* needs autoreset? */
+            BOOL autoReset = FALSE;
+            rc = hardDisk->COMGETTER(AutoReset)(&autoReset);
+            CheckComRCReturnRC (rc);
+
+            if (autoReset)
             {
-                if (first)
-                {
-                    rc = hardDisk->LockWrite (&mediaState);
-                    CheckComRCReturnRC (rc);
-
-                    task->lockedMedia.push_back (VMPowerUpTask::LockedMedia::
-                                                 value_type (hardDisk, true));
-                    first = false;
-                }
-                else
-                {
-                    rc = hardDisk->LockRead (&mediaState);
-                    CheckComRCReturnRC (rc);
-
-                    task->lockedMedia.push_back (VMPowerUpTask::LockedMedia::
-                                                 value_type (hardDisk, false));
-                }
-
-                if (mediaState == MediaState_Inaccessible)
-                    task->mediaToCheck.push_back (hardDisk);
-
-                ComPtr <IHardDisk2> parent;
-                rc = hardDisk->COMGETTER(Parent) (parent.asOutParam());
+                ComPtr <IProgress> resetProgress;
+                rc = hardDisk->Reset (resetProgress.asOutParam());
                 CheckComRCReturnRC (rc);
-                hardDisk = parent;
+
+                /* save for later use on the powerup thread */
+                task->hardDiskProgresses.push_back (resetProgress);
             }
         }
     }
-    /* lock the DVD image for reading if mounted */
-    {
-        ComPtr <IDVDDrive> drive;
-        rc = mMachine->COMGETTER(DVDDrive) (drive.asOutParam());
-        CheckComRCReturnRC (rc);
-
-        DriveState_T driveState;
-        rc = drive->COMGETTER(State) (&driveState);
-        CheckComRCReturnRC (rc);
-
-        if (driveState == DriveState_ImageMounted)
-        {
-            ComPtr <IDVDImage2> image;
-            rc = drive->GetImage (image.asOutParam());
-            CheckComRCReturnRC (rc);
-
-            rc = image->LockRead (&mediaState);
-            CheckComRCReturnRC (rc);
-
-            task->lockedMedia.push_back (VMPowerUpTask::LockedMedia::
-                                         value_type (image, false));
-
-            if (mediaState == MediaState_Inaccessible)
-                task->mediaToCheck.push_back (image);
-        }
-    }
-    /* lock the floppy image for reading if mounted */
-    {
-        ComPtr <IFloppyDrive> drive;
-        rc = mMachine->COMGETTER(FloppyDrive) (drive.asOutParam());
-        CheckComRCReturnRC (rc);
-
-        DriveState_T driveState;
-        rc = drive->COMGETTER(State) (&driveState);
-        CheckComRCReturnRC (rc);
-
-        if (driveState == DriveState_ImageMounted)
-        {
-            ComPtr <IFloppyImage2> image;
-            rc = drive->GetImage (image.asOutParam());
-            CheckComRCReturnRC (rc);
-
-            rc = image->LockRead (&mediaState);
-            CheckComRCReturnRC (rc);
-
-            task->lockedMedia.push_back (VMPowerUpTask::LockedMedia::
-                                         value_type (image, false));
-
-            if (mediaState == MediaState_Inaccessible)
-                task->mediaToCheck.push_back (image);
-        }
-    }
-    /* SUCCEEDED locking all media */
 
     rc = consoleInitReleaseLog (mMachine);
     CheckComRCReturnRC (rc);
+
+    /* pass the progress object to the caller if requested */
+    if (aProgress)
+    {
+        if (task->hardDiskProgresses.size() == 0)
+        {
+            /* there are no other operations to track, return the powerup
+             * progress only */
+            powerupProgress.queryInterfaceTo (aProgress);
+        }
+        else
+        {
+            /* create a combined progress object */
+            ComObjPtr <CombinedProgress> progress;
+            progress.createObject();
+            VMPowerUpTask::ProgressList progresses (task->hardDiskProgresses);
+            progresses.push_back (ComPtr <IProgress> (powerupProgress));
+            rc = progress->init (static_cast <IConsole *> (this),
+                                 progressDesc, progresses.begin(),
+                                 progresses.end());
+            AssertComRCReturnRC (rc);
+            progress.queryInterfaceTo (aProgress);
+        }
+    }
 
     int vrc = RTThreadCreate (NULL, Console::powerUpThread, (void *) task.get(),
                               0, RTTHREADTYPE_MAIN_WORKER, 0, "VMPowerUp");
@@ -4468,14 +4488,12 @@ HRESULT Console::powerUp (IProgress **aProgress, bool aPaused)
     ComAssertMsgRCRet (vrc, ("Could not create VMPowerUp thread (%Rrc)", vrc),
                        E_FAIL);
 
-    /* clear the locked media list to prevent unlocking on task destruction as
-     * we are not going to fail after this point */
-    task->lockedMedia.clear();
-
     /* task is now owned by powerUpThread(), so release it */
     task.release();
 
-    /* finally, set the state: no right to fail in this method afterwards! */
+    /* finally, set the state: no right to fail in this method afterwards
+     * since we've already started the thread and it is now responsible for
+     * any error reporting and appropriate state change! */
 
     if (mMachineState == MachineState_Saved)
         setMachineState (MachineState_Restoring);
@@ -4965,20 +4983,13 @@ HRESULT Console::fetchSharedFolders (BOOL aGlobal)
 
         mMachineSharedFolders.clear();
 
-        ComPtr <ISharedFolderCollection> coll;
-        rc = mMachine->COMGETTER(SharedFolders) (coll.asOutParam());
+        SafeIfaceArray <ISharedFolder> folders;
+        rc = mMachine->COMGETTER(SharedFolders) (ComSafeArrayAsOutParam(folders));
         AssertComRCReturnRC (rc);
 
-        ComPtr <ISharedFolderEnumerator> en;
-        rc = coll->Enumerate (en.asOutParam());
-        AssertComRCReturnRC (rc);
-
-        BOOL hasMore = FALSE;
-        while (SUCCEEDED (rc = en->HasMore (&hasMore)) && hasMore)
+        for (size_t i = 0; i < folders.size(); ++i)
         {
-            ComPtr <ISharedFolder> folder;
-            rc = en->GetNext (folder.asOutParam());
-            CheckComRCBreakRC (rc);
+            ComPtr <ISharedFolder> folder = folders[i];
 
             Bstr name;
             Bstr hostPath;
@@ -5664,94 +5675,6 @@ Console::usbDetachCallback (Console *that, USBDeviceList::iterator *aIt, PCRTUUI
 
 #endif /* VBOX_WITH_USB */
 
-/**
-  * Call the initialisation script for a dynamic TAP interface.
-  *
-  * The initialisation script should create a TAP interface, set it up and write its name to
-  * standard output followed by a carriage return.  Anything further written to standard
-  * output will be ignored.  If it returns a non-zero exit code, or does not write an
-  * intelligible interface name to standard output, it will be treated as having failed.
-  * For now, this method only works on Linux.
-  *
-  * @returns COM status code
-  * @param   tapDevice           string to store the name of the tap device created to
-  * @param   tapSetupApplication the name of the setup script
-  */
-HRESULT Console::callTapSetupApplication(bool isStatic, RTFILE tapFD, Bstr &tapDevice,
-                                         Bstr &tapSetupApplication)
-{
-    LogFlowThisFunc(("\n"));
-#ifdef RT_OS_LINUX
-    /* Command line to start the script with. */
-    char szCommand[4096];
-    /* Result code */
-    int rc;
-
-    /* Get the script name. */
-    Utf8Str tapSetupAppUtf8(tapSetupApplication), tapDeviceUtf8(tapDevice);
-    RTStrPrintf(szCommand, sizeof(szCommand), "%s %d %s", tapSetupAppUtf8.raw(),
-                isStatic ? tapFD : 0, isStatic ? tapDeviceUtf8.raw() : "");
-    /*
-     * Create the process and read its output.
-     */
-    Log2(("About to start the TAP setup script with the following command line: %s\n",
-          szCommand));
-    FILE *pfScriptHandle = popen(szCommand, "r");
-    if (pfScriptHandle == 0)
-    {
-        int iErr = errno;
-        LogRel(("Failed to start the TAP interface setup script %s, error text: %s\n",
-              szCommand, strerror(iErr)));
-        LogFlowThisFunc(("rc=E_FAIL\n"));
-        return setError(E_FAIL, tr ("Failed to run the host networking set up command %s: %s"),
-                        szCommand, strerror(iErr));
-    }
-    /* If we are using a dynamic TAP interface, we need to get the interface name. */
-    if (!isStatic)
-    {
-        /* Buffer to read the application output to.  It doesn't have to be long, as we are only
-            interested in the first few (normally 5 or 6) bytes. */
-        char acBuffer[64];
-        /* The length of the string returned by the application.  We only accept strings of 63
-           characters or less. */
-        size_t cBufSize;
-
-        /* Read the name of the device from the application. */
-        fgets(acBuffer, sizeof(acBuffer), pfScriptHandle);
-        cBufSize = strlen(acBuffer);
-        /* The script must return the name of the interface followed by a carriage return as the
-          first line of its output.  We need a null-terminated string. */
-        if ((cBufSize < 2) || (acBuffer[cBufSize - 1] != '\n'))
-        {
-            pclose(pfScriptHandle);
-            LogRel(("The TAP interface setup script did not return the name of a TAP device.\n"));
-            LogFlowThisFunc(("rc=E_FAIL\n"));
-            return setError(E_FAIL, tr ("The host networking set up command did not supply an interface name"));
-        }
-        /* Overwrite the terminating newline character. */
-        acBuffer[cBufSize - 1] = 0;
-        tapDevice = acBuffer;
-    }
-    rc = pclose(pfScriptHandle);
-    if (!WIFEXITED(rc))
-    {
-        LogRel(("The TAP interface setup script terminated abnormally.\n"));
-        LogFlowThisFunc(("rc=E_FAIL\n"));
-        return setError(E_FAIL, tr ("The host networking set up command did not run correctly"));
-    }
-    if (WEXITSTATUS(rc) != 0)
-    {
-        LogRel(("The TAP interface setup script returned a non-zero exit code.\n"));
-        LogFlowThisFunc(("rc=E_FAIL\n"));
-        return setError(E_FAIL, tr ("The host networking set up command returned a non-zero exit code"));
-    }
-    LogFlowThisFunc(("rc=S_OK\n"));
-    return S_OK;
-#else /* RT_OS_LINUX not defined */
-    LogFlowThisFunc(("rc=E_NOTIMPL\n"));
-    ReturnComNotImplemented();  /* not yet supported */
-#endif
-}
 
 /**
  *  Helper function to handle host interface device creation and attachment.
@@ -5761,7 +5684,7 @@ HRESULT Console::callTapSetupApplication(bool isStatic, RTFILE tapFD, Bstr &tapD
  *
  *  @note The caller must lock this object for writing.
  */
-HRESULT Console::attachToHostInterface(INetworkAdapter *networkAdapter)
+HRESULT Console::attachToBridgedInterface(INetworkAdapter *networkAdapter)
 {
 #if !defined(RT_OS_LINUX) || defined(VBOX_WITH_NETFLT)
     /*
@@ -5773,7 +5696,8 @@ HRESULT Console::attachToHostInterface(INetworkAdapter *networkAdapter)
     NOREF(networkAdapter);
     return S_OK;
 
-#else /* RT_OS_LINUX */
+#else /* RT_OS_LINUX && !VBOX_WITH_NETFLT */
+
     LogFlowThisFunc(("\n"));
     /* sanity check */
     AssertReturn (isWriteLockOnCurrentThread(), E_FAIL);
@@ -5782,7 +5706,7 @@ HRESULT Console::attachToHostInterface(INetworkAdapter *networkAdapter)
     /* paranoia */
     NetworkAttachmentType_T attachment;
     networkAdapter->COMGETTER(AttachmentType)(&attachment);
-    Assert(attachment == NetworkAttachmentType_HostInterface);
+    Assert(attachment == NetworkAttachmentType_Bridged);
 # endif /* VBOX_STRICT */
 
     HRESULT rc = S_OK;
@@ -5792,148 +5716,91 @@ HRESULT Console::attachToHostInterface(INetworkAdapter *networkAdapter)
     AssertComRC(rc);
 
     /*
-     * Try get the FD.
+     * Allocate a host interface device
      */
-    LONG        ltapFD;
-    rc = networkAdapter->COMGETTER(TAPFileDescriptor)(&ltapFD);
-    if (SUCCEEDED(rc))
-        maTapFD[slot] = (RTFILE)ltapFD;
-    else
-        maTapFD[slot] = NIL_RTFILE;
-
-    /*
-     * Are we supposed to use an existing TAP interface?
-     */
-    if (maTapFD[slot] != NIL_RTFILE)
+    int rcVBox = RTFileOpen(&maTapFD[slot], "/dev/net/tun",
+                            RTFILE_O_READWRITE | RTFILE_O_OPEN | RTFILE_O_DENY_NONE | RTFILE_O_INHERIT);
+    if (VBOX_SUCCESS(rcVBox))
     {
-        /* nothing to do */
-        Assert(ltapFD >= 0);
-        Assert((LONG)maTapFD[slot] == ltapFD);
-        rc = S_OK;
+        /*
+         * Set/obtain the tap interface.
+         */
+        struct ifreq IfReq;
+        memset(&IfReq, 0, sizeof(IfReq));
+        /* The name of the TAP interface we are using */
+        Bstr tapDeviceName;
+        rc = networkAdapter->COMGETTER(HostInterface)(tapDeviceName.asOutParam());
+        if (FAILED(rc))
+            tapDeviceName.setNull();  /* Is this necessary? */
+        if (tapDeviceName.isEmpty())
+        {
+            LogRel(("No TAP device name was supplied.\n"));
+            rc = setError(E_FAIL, tr ("No TAP device name was supplied for the host networking interface"));
+        }
+
+        if (SUCCEEDED(rc))
+        {
+            /* If we are using a static TAP device then try to open it. */
+            Utf8Str str(tapDeviceName);
+            if (str.length() <= sizeof(IfReq.ifr_name))
+                strcpy(IfReq.ifr_name, str.raw());
+            else
+                memcpy(IfReq.ifr_name, str.raw(), sizeof(IfReq.ifr_name) - 1); /** @todo bitch about names which are too long... */
+            IfReq.ifr_flags = IFF_TAP | IFF_NO_PI;
+            rcVBox = ioctl(maTapFD[slot], TUNSETIFF, &IfReq);
+            if (rcVBox != 0)
+            {
+                LogRel(("Failed to open the host network interface %ls\n", tapDeviceName.raw()));
+                rc = setError(E_FAIL, tr ("Failed to open the host network interface %ls"),
+                              tapDeviceName.raw());
+            }
+        }
+        if (SUCCEEDED(rc))
+        {
+            /*
+             * Make it pollable.
+             */
+            if (fcntl(maTapFD[slot], F_SETFL, O_NONBLOCK) != -1)
+            {
+                Log(("attachToBridgedInterface: %RTfile %ls\n", maTapFD[slot], tapDeviceName.raw()));
+                /*
+                 * Here is the right place to communicate the TAP file descriptor and
+                 * the host interface name to the server if/when it becomes really
+                 * necessary.
+                 */
+                maTAPDeviceName[slot] = tapDeviceName;
+                rcVBox = VINF_SUCCESS;
+            }
+            else
+            {
+                int iErr = errno;
+
+                LogRel(("Configuration error: Failed to configure /dev/net/tun non blocking. Error: %s\n", strerror(iErr)));
+                rcVBox = VERR_HOSTIF_BLOCKING;
+                rc = setError(E_FAIL, tr ("could not set up the host networking device for non blocking access: %s"),
+                                          strerror(errno));
+            }
+        }
     }
     else
     {
-        /*
-         * Allocate a host interface device
-         */
-        int rcVBox = RTFileOpen(&maTapFD[slot], "/dev/net/tun",
-                                RTFILE_O_READWRITE | RTFILE_O_OPEN | RTFILE_O_DENY_NONE | RTFILE_O_INHERIT);
-        if (VBOX_SUCCESS(rcVBox))
+        LogRel(("Configuration error: Failed to open /dev/net/tun rc=%Rrc\n", rcVBox));
+        switch (rcVBox)
         {
-            /*
-             * Set/obtain the tap interface.
-             */
-            bool isStatic = false;
-            struct ifreq IfReq;
-            memset(&IfReq, 0, sizeof(IfReq));
-            /* The name of the TAP interface we are using and the TAP setup script resp. */
-            Bstr tapDeviceName, tapSetupApplication;
-            rc = networkAdapter->COMGETTER(HostInterface)(tapDeviceName.asOutParam());
-            if (FAILED(rc))
-            {
-                tapDeviceName.setNull();  /* Is this necessary? */
-            }
-            else if (!tapDeviceName.isEmpty())
-            {
-                isStatic = true;
-                /* If we are using a static TAP device then try to open it. */
-                Utf8Str str(tapDeviceName);
-                if (str.length() <= sizeof(IfReq.ifr_name))
-                    strcpy(IfReq.ifr_name, str.raw());
-                else
-                    memcpy(IfReq.ifr_name, str.raw(), sizeof(IfReq.ifr_name) - 1); /** @todo bitch about names which are too long... */
-                IfReq.ifr_flags = IFF_TAP | IFF_NO_PI;
-                rcVBox = ioctl(maTapFD[slot], TUNSETIFF, &IfReq);
-                if (rcVBox != 0)
-                {
-                    LogRel(("Failed to open the host network interface %ls\n", tapDeviceName.raw()));
-                    rc = setError(E_FAIL, tr ("Failed to open the host network interface %ls"),
-                                          tapDeviceName.raw());
-                }
-            }
-            if (SUCCEEDED(rc))
-            {
-                networkAdapter->COMGETTER(TAPSetupApplication)(tapSetupApplication.asOutParam());
-                if (tapSetupApplication.isEmpty())
-                {
-                    if (tapDeviceName.isEmpty())
-                    {
-                        LogRel(("No setup application was supplied for the TAP interface.\n"));
-                        rc = setError(E_FAIL, tr ("No setup application was supplied for the host networking interface"));
-                    }
-                }
-                else
-                {
-                    rc = callTapSetupApplication(isStatic, maTapFD[slot], tapDeviceName,
-                                                 tapSetupApplication);
-                }
-            }
-            if (SUCCEEDED(rc))
-            {
-                if (!isStatic)
-                {
-                    Utf8Str str(tapDeviceName);
-                    if (str.length() <= sizeof(IfReq.ifr_name))
-                        strcpy(IfReq.ifr_name, str.raw());
-                    else
-                        memcpy(IfReq.ifr_name, str.raw(), sizeof(IfReq.ifr_name) - 1); /** @todo bitch about names which are too long... */
-                    IfReq.ifr_flags = IFF_TAP | IFF_NO_PI;
-                    rcVBox = ioctl(maTapFD[slot], TUNSETIFF, &IfReq);
-                    if (rcVBox != 0)
-                    {
-                        LogRel(("Failed to open the host network interface %ls returned by the setup script", tapDeviceName.raw()));
-                        rc = setError(E_FAIL, tr ("Failed to open the host network interface %ls returned by the setup script"), tapDeviceName.raw());
-                    }
-                }
-                if (SUCCEEDED(rc))
-                {
-                    /*
-                    * Make it pollable.
-                    */
-                    if (fcntl(maTapFD[slot], F_SETFL, O_NONBLOCK) != -1)
-                    {
-                        Log(("attachToHostInterface: %RTfile %ls\n", maTapFD[slot], tapDeviceName.raw()));
-
-                        /*
-                        * Here is the right place to communicate the TAP file descriptor and
-                        * the host interface name to the server if/when it becomes really
-                        * necessary.
-                        */
-                        maTAPDeviceName[slot] = tapDeviceName;
-                        rcVBox = VINF_SUCCESS;
-                    }
-                    else
-                    {
-                        int iErr = errno;
-
-                        LogRel(("Configuration error: Failed to configure /dev/net/tun non blocking. Error: %s\n", strerror(iErr)));
-                        rcVBox = VERR_HOSTIF_BLOCKING;
-                        rc = setError(E_FAIL, tr ("could not set up the host networking device for non blocking access: %s"),
-                                              strerror(errno));
-                    }
-                }
-            }
+            case VERR_ACCESS_DENIED:
+                /* will be handled by our caller */
+                rc = rcVBox;
+                break;
+            default:
+                rc = setError(E_FAIL, tr ("Could not set up the host networking device: %Rrc"), rcVBox);
+                break;
         }
-        else
-        {
-            LogRel(("Configuration error: Failed to open /dev/net/tun rc=%Rrc\n", rcVBox));
-            switch (rcVBox)
-            {
-                case VERR_ACCESS_DENIED:
-                    /* will be handled by our caller */
-                    rc = rcVBox;
-                    break;
-                default:
-                    rc = setError(E_FAIL, tr ("Could not set up the host networking device: %Rrc"), rcVBox);
-                    break;
-            }
-        }
-        /* in case of failure, cleanup. */
-        if (VBOX_FAILURE(rcVBox) && SUCCEEDED(rc))
-        {
-            LogRel(("General failure attaching to host interface\n"));
-            rc = setError(E_FAIL, tr ("General failure attaching to host interface"));
-        }
+    }
+    /* in case of failure, cleanup. */
+    if (VBOX_FAILURE(rcVBox) && SUCCEEDED(rc))
+    {
+        LogRel(("General failure attaching to host interface\n"));
+        rc = setError(E_FAIL, tr ("General failure attaching to host interface"));
     }
     LogFlowThisFunc(("rc=%d\n", rc));
     return rc;
@@ -5948,7 +5815,7 @@ HRESULT Console::attachToHostInterface(INetworkAdapter *networkAdapter)
  *
  *  @note The caller must lock this object for writing.
  */
-HRESULT Console::detachFromHostInterface(INetworkAdapter *networkAdapter)
+HRESULT Console::detachFromBridgedInterface(INetworkAdapter *networkAdapter)
 {
 #if !defined(RT_OS_LINUX) || defined(VBOX_WITH_NETFLT)
     /*
@@ -5968,7 +5835,7 @@ HRESULT Console::detachFromHostInterface(INetworkAdapter *networkAdapter)
     /* paranoia */
     NetworkAttachmentType_T attachment;
     networkAdapter->COMGETTER(AttachmentType)(&attachment);
-    Assert(attachment == NetworkAttachmentType_HostInterface);
+    Assert(attachment == NetworkAttachmentType_Bridged);
 # endif /* VBOX_STRICT */
 
     ULONG slot = 0;
@@ -5994,43 +5861,6 @@ HRESULT Console::detachFromHostInterface(INetworkAdapter *networkAdapter)
             AssertRC(rcVBox);
             maTapFD[slot] = NIL_RTFILE;
         }
-        /*
-         * Execute the termination command.
-         */
-        networkAdapter->COMGETTER(TAPTerminateApplication)(tapTerminateApplication.asOutParam());
-        if (tapTerminateApplication)
-        {
-            /* Get the program name. */
-            Utf8Str tapTermAppUtf8(tapTerminateApplication);
-
-            /* Build the command line. */
-            char szCommand[4096];
-            RTStrPrintf(szCommand, sizeof(szCommand), "%s %d %s", tapTermAppUtf8.raw(),
-                        isStatic ? maTapFD[slot] : 0, maTAPDeviceName[slot].raw());
-            /** @todo check for overflow or use RTStrAPrintf! */
-
-            /*
-             * Create the process and wait for it to complete.
-             */
-            Log(("Calling the termination command: %s\n", szCommand));
-            int rcCommand = system(szCommand);
-            if (rcCommand == -1)
-            {
-                LogRel(("Failed to execute the clean up script for the TAP interface"));
-                rc = setError(E_FAIL, tr ("Failed to execute the clean up script for the TAP interface"));
-            }
-            if (!WIFEXITED(rc))
-            {
-                LogRel(("The TAP interface clean up script terminated abnormally.\n"));
-                rc = setError(E_FAIL, tr ("The TAP interface clean up script terminated abnormally"));
-            }
-            if (WEXITSTATUS(rc) != 0)
-            {
-                LogRel(("The TAP interface clean up script returned a non-zero exit code.\n"));
-                rc = setError(E_FAIL, tr ("The TAP interface clean up script returned a non-zero exit code"));
-            }
-        }
-
         if (isStatic)
         {
             /* If we are using a static TAP device, we close it now, after having called the
@@ -6077,9 +5907,9 @@ HRESULT Console::powerDownHostInterfaces()
 
         NetworkAttachmentType_T attachment;
         networkAdapter->COMGETTER(AttachmentType)(&attachment);
-        if (attachment == NetworkAttachmentType_HostInterface)
+        if (attachment == NetworkAttachmentType_Bridged)
         {
-            HRESULT rc2 = detachFromHostInterface(networkAdapter);
+            HRESULT rc2 = detachFromBridgedInterface(networkAdapter);
             if (FAILED(rc2) && SUCCEEDED(rc))
                 rc = rc2;
         }
@@ -6461,51 +6291,21 @@ DECLCALLBACK (int) Console::powerUpThread (RTTHREAD Thread, void *pvUser)
 
     try
     {
+        /* wait for auto reset ops to complete so that we can successfully lock
+         * the attached hard disks by calling LockMedia() below */
+        for (VMPowerUpTask::ProgressList::const_iterator
+             it = task->hardDiskProgresses.begin();
+             it != task->hardDiskProgresses.end(); ++ it)
         {
-            ErrorInfoKeeper eik (true /* aIsNull */);
-            MultiResult mrc (S_OK);
-
-            /* perform a check of inaccessible media deferred in PowerUp() */
-            for (VMPowerUpTask::Media::const_iterator
-                 it = task->mediaToCheck.begin();
-                 it != task->mediaToCheck.end(); ++ it)
-            {
-                MediaState_T mediaState;
-                rc = (*it)->COMGETTER(State) (&mediaState);
-                CheckComRCThrowRC (rc);
-
-                Assert (mediaState == MediaState_LockedRead ||
-                        mediaState == MediaState_LockedWrite);
-
-                /* Note that we locked the medium already, so use the error
-                 * value to see if there was an accessibility failure */
-
-                Bstr error;
-                rc = (*it)->COMGETTER(LastAccessError) (error.asOutParam());
-                CheckComRCThrowRC (rc);
-
-                if (!error.isNull())
-                {
-                    Bstr loc;
-                    rc = (*it)->COMGETTER(Location) (loc.asOutParam());
-                    CheckComRCThrowRC (rc);
-
-                    /* collect multiple errors */
-                    eik.restore();
-
-                    /* be in sync with MediumBase::setStateError() */
-                    Assert (!error.isEmpty());
-                    mrc = setError (E_FAIL,
-                        tr ("Medium '%ls' is not accessible. %ls"),
-                        loc.raw(), error.raw());
-
-                    eik.fetch();
-                }
-            }
-
-            eik.restore();
-            CheckComRCThrowRC ((HRESULT) mrc);
+            HRESULT rc2 = (*it)->WaitForCompletion (-1);
+            AssertComRC (rc2);
         }
+
+        /* lock attached media. This method will also check their
+         * accessibility. Note that the media will be unlocked automatically
+         * by SessionMachine::setMachineState() when the VM is powered down. */
+        rc = console->mControl->LockMedia();
+        CheckComRCThrowRC (rc);
 
 #ifdef VBOX_WITH_VRDP
 
@@ -6784,12 +6584,16 @@ DECLCALLBACK (int) Console::powerUpThread (RTTHREAD Thread, void *pvUser)
 /**
  *  Reconfigures a VDI.
  *
- *  @param   pVM     The VM handle.
- *  @param   hda     The harddisk attachment.
- *  @param   phrc    Where to store com error - only valid if we return VERR_GENERAL_FAILURE.
+ *  @param   pVM           The VM handle.
+ *  @param   lInstance     The instance of the controller.
+ *  @param   enmController The type of the controller.
+ *  @param   hda           The harddisk attachment.
+ *  @param   phrc          Where to store com error - only valid if we return VERR_GENERAL_FAILURE.
  *  @return  VBox status code.
  */
-static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, IHardDisk2Attachment *hda,
+static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, ULONG lInstance,
+                                              StorageControllerType_T enmController,
+                                              IHardDiskAttachment *hda,
                                               HRESULT *phrc)
 {
     LogFlowFunc (("pVM=%p hda=%p phrc=%p\n", pVM, hda, phrc));
@@ -6804,25 +6608,26 @@ static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, IHardDisk2Attachment *hda
     /*
      * Figure out which IDE device this is.
      */
-    ComPtr<IHardDisk2> hardDisk;
+    ComPtr<IHardDisk> hardDisk;
     hrc = hda->COMGETTER(HardDisk)(hardDisk.asOutParam());                      H();
-    StorageBus_T enmBus;
-    hrc = hda->COMGETTER(Bus)(&enmBus);                                         H();
     LONG lDev;
     hrc = hda->COMGETTER(Device)(&lDev);                                        H();
-    LONG lChannel;
-    hrc = hda->COMGETTER(Channel)(&lChannel);                                   H();
+    LONG lPort;
+    hrc = hda->COMGETTER(Port)(&lPort);                                         H();
 
     int         iLUN;
     const char *pcszDevice = NULL;
+    bool        fSCSI = false;
 
-    switch (enmBus)
+    switch (enmController)
     {
-        case StorageBus_IDE:
+        case StorageControllerType_PIIX3:
+        case StorageControllerType_PIIX4:
+        case StorageControllerType_ICH6:
         {
-            if (lChannel >= 2 || lChannel < 0)
+            if (lPort >= 2 || lPort < 0)
             {
-                AssertMsgFailed(("invalid controller channel number: %d\n", lChannel));
+                AssertMsgFailed(("invalid controller channel number: %d\n", lPort));
                 return VERR_GENERAL_FAILURE;
             }
 
@@ -6832,19 +6637,33 @@ static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, IHardDisk2Attachment *hda
                 return VERR_GENERAL_FAILURE;
             }
 
-            iLUN = 2*lChannel + lDev;
+            iLUN = 2*lPort + lDev;
             pcszDevice = "piix3ide";
             break;
         }
-        case StorageBus_SATA:
+        case StorageControllerType_IntelAhci:
         {
-            iLUN = lChannel;
+            iLUN = lPort;
             pcszDevice = "ahci";
+            break;
+        }
+        case StorageControllerType_BusLogic:
+        {
+            iLUN = lPort;
+            pcszDevice = "buslogic";
+            fSCSI = true;
+            break;
+        }
+        case StorageControllerType_LsiLogic:
+        {
+            iLUN = lPort;
+            pcszDevice = "lsilogicscsi";
+            fSCSI = true;
             break;
         }
         default:
         {
-            AssertMsgFailed(("invalid disk controller type: %d\n", enmBus));
+            AssertMsgFailed(("invalid disk controller type: %d\n", enmController));
             return VERR_GENERAL_FAILURE;
         }
     }
@@ -6860,15 +6679,28 @@ static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, IHardDisk2Attachment *hda
     PCFGMNODE pLunL1;
     PCFGMNODE pLunL2;
 
-    pLunL1 = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/%s/0/LUN#%d/AttachedDriver/", pcszDevice, iLUN);
+    /* SCSI has an extra driver between the device and the block driver. */
+    if (fSCSI)
+        pLunL1 = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/%s/%u/LUN#%d/AttachedDriver/AttachedDriver/", pcszDevice, lInstance, iLUN);
+    else
+        pLunL1 = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/%s/%u/LUN#%d/AttachedDriver/", pcszDevice, lInstance, iLUN);
 
     if (!pLunL1)
     {
-        PCFGMNODE pInst = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/%s/0/", pcszDevice);
+        PCFGMNODE pInst = CFGMR3GetChildF(CFGMR3GetRoot(pVM), "Devices/%s/%u/", pcszDevice, lInstance);
         AssertReturn(pInst, VERR_INTERNAL_ERROR);
 
         PCFGMNODE pLunL0;
         rc = CFGMR3InsertNodeF(pInst, &pLunL0, "LUN#%d", iLUN);                     RC_CHECK();
+
+        if (fSCSI)
+        {
+            rc = CFGMR3InsertString(pLunL0, "Driver",              "SCSI");             RC_CHECK();
+            rc = CFGMR3InsertNode(pLunL0,   "Config", &pCfg);                           RC_CHECK();
+
+            rc = CFGMR3InsertNode(pLunL0,   "AttachedDriver", &pLunL0);                 RC_CHECK();
+        }
+
         rc = CFGMR3InsertString(pLunL0, "Driver",              "Block");            RC_CHECK();
         rc = CFGMR3InsertNode(pLunL0,   "Config", &pCfg);                           RC_CHECK();
         rc = CFGMR3InsertString(pCfg,   "Type",                "HardDisk");         RC_CHECK();
@@ -6954,7 +6786,7 @@ static DECLCALLBACK(int) reconfigureHardDisks(PVM pVM, IHardDisk2Attachment *hda
     }
 
     /* Create an inversed tree of parents. */
-    ComPtr<IHardDisk2> parentHardDisk = hardDisk;
+    ComPtr<IHardDisk> parentHardDisk = hardDisk;
     for (PCFGMNODE pParent = pCfg;;)
     {
         hrc = parentHardDisk->COMGETTER(Parent)(hardDisk.asOutParam());     H();
@@ -7091,21 +6923,41 @@ DECLCALLBACK (int) Console::saveStateThread (RTTHREAD Thread, void *pvUser)
         {
             LogFlowFunc (("Reattaching new differencing hard disks...\n"));
 
-            com::SafeIfaceArray <IHardDisk2Attachment> atts;
+            com::SafeIfaceArray <IHardDiskAttachment> atts;
             rc = that->mMachine->
-                COMGETTER(HardDisk2Attachments) (ComSafeArrayAsOutParam (atts));
+                COMGETTER(HardDiskAttachments) (ComSafeArrayAsOutParam (atts));
             if (FAILED (rc))
                 break;
             for (size_t i = 0; i < atts.size(); ++ i)
             {
                 PVMREQ pReq;
+                ComPtr<IStorageController> controller;
+                BSTR controllerName;
+                ULONG lInstance;
+                StorageControllerType_T enmController;
+
+                /*
+                 * We can't pass a storage controller object directly
+                 * (g++ complains about not being able to pass non POD types through '...')
+                 * so we have to query needed values here and pass them.
+                 */
+                rc = atts[i]->COMGETTER(Controller)(&controllerName);
+                if (FAILED (rc))
+                    break;
+
+                rc = that->mMachine->GetStorageControllerByName(controllerName, controller.asOutParam());
+                if (FAILED (rc))
+                    break;
+
+                rc = controller->COMGETTER(ControllerType)(&enmController);
+                rc = controller->COMGETTER(Instance)(&lInstance);
                 /*
                  *  don't leave the lock since reconfigureHardDisks isn't going
                  *  to access Console.
                  */
                 int vrc = VMR3ReqCall (that->mpVM, VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT,
-                                       (PFNRT)reconfigureHardDisks, 3, that->mpVM,
-                                       atts [i], &rc);
+                                       (PFNRT)reconfigureHardDisks, 5, that->mpVM, lInstance,
+                                       enmController, atts [i], &rc);
                 if (VBOX_SUCCESS (rc))
                     rc = pReq->iStatus;
                 VMR3ReqFree (pReq);

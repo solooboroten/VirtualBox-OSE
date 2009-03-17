@@ -1,4 +1,4 @@
-/* $Id: log-vbox.cpp 16079 2009-01-20 11:13:08Z vboxsync $ */
+/* $Id: log-vbox.cpp 17095 2009-02-24 20:08:20Z vboxsync $ */
 /** @file
  * Virtual Box Runtime - Logging configuration.
  */
@@ -212,6 +212,7 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
     ASSERT_LOG_GROUP(DEV_HPET);
     ASSERT_LOG_GROUP(DEV_IDE);
     ASSERT_LOG_GROUP(DEV_KBD);
+    ASSERT_LOG_GROUP(DEV_LPC);
     ASSERT_LOG_GROUP(DEV_NE2000);
     ASSERT_LOG_GROUP(DEV_PC);
     ASSERT_LOG_GROUP(DEV_PC_ARCH);
@@ -416,9 +417,9 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
         pLogger->fDestFlags |= RTLOGDEST_DEBUGGER;
 # endif
 # if defined(DEBUG_aleksey)  /* Guest ring-0 as well */
-        RTLogGroupSettings(pLogger, "+net_flt_drv.e.l");
+        RTLogGroupSettings(pLogger, "+net_tap_drv.e.l.f+net_flt_drv.e.l.f+srv_intnet.e.l.f");
         RTLogFlags(pLogger, "enabled unbuffered");
-        pLogger->fDestFlags |= RTLOGDEST_DEBUGGER;
+        pLogger->fDestFlags |= RTLOGDEST_DEBUGGER | RTLOGDEST_STDOUT;
 # endif
 # if defined(DEBUG_misha)  /* Guest ring-0 as well */
         RTLogGroupSettings(pLogger, "+net_flt_drv.e.l.f.l2+srv_intnet.e.l.f");
@@ -434,4 +435,3 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
 #endif /* IN_RING0 */
     return g_pLogger = RT_SUCCESS(rc) ? pLogger : NULL;
 }
-

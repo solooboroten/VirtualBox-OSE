@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 14162 2008-11-13 08:55:50Z vboxsync $
+# $Id: Makefile.kmk 17818 2009-03-13 12:48:05Z vboxsync $
 ## @file
 # Top-level makefile for src/VBox.
 #
@@ -27,7 +27,9 @@ ifdef VBOX_SINGLE_MAKEFILE
 ifdef VBOX_ONLY_ADDITIONS
  include $(PATH_SUB_CURRENT)/Runtime/Makefile.kmk
  ifdef VBOX_WITH_CROGL
-  include $(PATH_SUB_CURRENT)/GuestHost/Makefile.kmk
+  if1of ($(KBUILD_TARGET),win linux)  ## @todo add Solaris here?
+   include $(PATH_SUB_CURRENT)/GuestHost/Makefile.kmk
+  endif
  endif
  include $(PATH_SUB_CURRENT)/Additions/Makefile.kmk
 
@@ -38,7 +40,9 @@ else ifdef VBOX_ONLY_DOCS
 
 else ifdef VBOX_ONLY_SDK
  include $(PATH_SUB_CURRENT)/Main/Makefile.kmk
- include $(PATH_SUB_CURRENT)/RDP/Makefile.kmk
+ ifdef VBOX_WITH_VRDP
+  include $(PATH_SUB_CURRENT)/RDP/Makefile.kmk
+ endif
  include $(PATH_SUB_CURRENT)/Installer/Makefile.kmk
 
 else
@@ -64,6 +68,7 @@ else
  ifdef VBOX_WITH_ADDITIONS
   include $(PATH_SUB_CURRENT)/Additions/Makefile.kmk
  endif
+ include $(PATH_SUB_CURRENT)/NetworkServices/Makefile.kmk
  ifdef VBOX_WITH_INSTALLER
   include $(PATH_SUB_CURRENT)/Installer/Makefile.kmk 		        # Keep this last.
  endif
@@ -122,7 +127,9 @@ else  # !VBOX_ONLY_ADDITIONS && !VBOX_ONLY_DOCS
   SUBDIRS += Additions
  endif
 
- SUBDIRS += Frontends
+ SUBDIRS += \
+	Frontends \
+	NetworkServices
 
  # This must be the last one.
  ifdef VBOX_WITH_INSTALLER

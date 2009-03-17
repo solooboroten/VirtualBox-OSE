@@ -101,6 +101,8 @@ typedef enum SCSICMD
     SCSI_WRITE_AND_VERIFY_10            = 0x2e,
     SCSI_WRITE_BUFFER                   = 0x3b,
 
+    /** Mode Sekect(6) command */
+    SCSI_MODE_SELECT_6                  = 0x15,
     /** Mode Sense(6) command */
     SCSI_MODE_SENSE_6                   = 0x1a,
     /** Report LUNs command. */
@@ -111,7 +113,8 @@ typedef enum SCSICMD
     SCSI_SERVICE_ACTION_IN_16           = 0x9e,
     SCSI_READ_16                        = 0x88,
     SCSI_WRITE_16                       = 0x8a,
-    SCSI_READ_6                         = 0x08
+    SCSI_READ_6                         = 0x08,
+    SCSI_WRITE_6                        = 0x0a
 } SCSICMD;
 
 /* Mode page codes for mode sense/select commands. */

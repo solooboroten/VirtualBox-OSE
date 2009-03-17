@@ -1,4 +1,4 @@
-/* $Id: vboxhgcm.c 15964 2009-01-15 12:52:20Z vboxsync $ */
+/* $Id: vboxhgcm.c 17860 2009-03-13 21:55:58Z vboxsync $ */
 
 /** @file
  * VBox HGCM connection
@@ -94,6 +94,7 @@ typedef struct CRVBOXHGCMBUFFER {
 /* Some forward declarations */
 static void crVBoxHGCMReceiveMessage(CRConnection *conn);
 
+#ifndef IN_GUEST
 static bool _crVBoxHGCMReadBytes(CRConnection *conn, void *buf, uint32_t len)
 {
     CRASSERT(conn && buf);
@@ -108,6 +109,7 @@ static bool _crVBoxHGCMReadBytes(CRConnection *conn, void *buf, uint32_t len)
 
     return TRUE;
 }
+#endif
 
 /*@todo get rid of it*/
 static bool _crVBoxHGCMWriteBytes(CRConnection *conn, const void *buf, uint32_t len)
@@ -354,7 +356,8 @@ static void crVBoxHGCMReadExact( CRConnection *conn, const void *buf, unsigned i
 
     if (parms.cbBuffer.u.value32)
     {
-        conn->pBuffer  = (uint8_t*) parms.pBuffer.u.Pointer.u.linearAddr;
+        //conn->pBuffer  = (uint8_t*) parms.pBuffer.u.Pointer.u.linearAddr;
+        conn->pBuffer  = conn->pHostBuffer;
         conn->cbBuffer = parms.cbBuffer.u.value32;
     }
 
@@ -429,7 +432,8 @@ crVBoxHGCMWriteReadExact(CRConnection *conn, const void *buf, unsigned int len, 
 
     if (parms.cbWriteback.u.value32)
     {
-        conn->pBuffer  = (uint8_t*) parms.pWriteback.u.Pointer.u.linearAddr;
+        //conn->pBuffer  = (uint8_t*) parms.pWriteback.u.Pointer.u.linearAddr;
+        conn->pBuffer  = conn->pHostBuffer;
         conn->cbBuffer = parms.cbWriteback.u.value32;
     }
 
@@ -610,9 +614,9 @@ static void crVBoxHGCMReceiveMessage(CRConnection *conn)
             hgcm_buffer->magic     = CR_VBOXHGCM_BUFFER_MAGIC;
             hgcm_buffer->kind      = CR_VBOXHGCM_MEMORY_BIG;
             hgcm_buffer->allocated = sizeof(CRVBOXHGCMBUFFER) + len;
-#ifdef RT_OS_WINDOWS
+# ifdef RT_OS_WINDOWS
             hgcm_buffer->pDDS      = NULL;
-#endif
+# endif
         }
 
         hgcm_buffer->len = len;
@@ -686,7 +690,7 @@ static int crVBoxHGCMDoConnect( CRConnection *conn )
 #else
     if (g_crvboxhgcm.iGuestDrv == INVALID_HANDLE_VALUE)
     {
-        g_crvboxhgcm.iGuestDrv = open(VBOXGUEST_DEVICE_NAME, O_RDWR, 0);
+        g_crvboxhgcm.iGuestDrv = open(VBOXGUEST_USER_DEVICE_NAME, O_RDWR, 0);
         if (g_crvboxhgcm.iGuestDrv == INVALID_HANDLE_VALUE)
         {
             crDebug("could not open Guest Additions kernel module! rc = %d\n", errno);

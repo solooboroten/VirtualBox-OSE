@@ -3,7 +3,7 @@
  *      demo webservice client in C++. This mimics some of the
  *      functionality of VBoxManage for testing purposes.
  *
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -156,11 +156,11 @@ int main(int argc, char* argv[])
             std::cout << "Not enough arguments for \"" << pcszMode << "\" mode.\n";
         else
         {
-            _vbox__IVirtualBox_USCOREgetMachines2 req;
+            _vbox__IVirtualBox_USCOREgetMachines req;
             req._USCOREthis = argv[2];
-            _vbox__IVirtualBox_USCOREgetMachines2Response resp;
+            _vbox__IVirtualBox_USCOREgetMachinesResponse resp;
 
-            if (!(soaprc = soap_call___vbox__IVirtualBox_USCOREgetMachines2(&soap,
+            if (!(soaprc = soap_call___vbox__IVirtualBox_USCOREgetMachines(&soap,
                                                                 pcszArgEndpoint,
                                                                 NULL,
                                                                 &req,
@@ -232,12 +232,12 @@ int main(int argc, char* argv[])
                                                            &resp)))
         {
             unsigned int i,
-                         c = resp.returnval->array.size();
+                         c = resp.returnval.size();
             for(i = 0;
                 i < c;
                 ++i)
             {
-                std::cout << "DVD drive " << i << ": objref " << resp.returnval->array[i] << "\n";
+                std::cout << "DVD drive " << i << ": objref " << resp.returnval[i] << "\n";
             }
         }
         }

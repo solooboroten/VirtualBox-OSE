@@ -1,4 +1,4 @@
-/* $Id: MM.cpp 14299 2008-11-18 13:25:40Z vboxsync $ */
+/* $Id: MM.cpp 17547 2009-03-09 02:48:02Z vboxsync $ */
 /** @file
  * MM - Memory Manager.
  */
@@ -302,7 +302,7 @@ VMMR3DECL(int) MMR3InitPaging(PVM pVM)
     else
         AssertMsgRCReturn(rc, ("Configuration error: Failed to query integer \"RamPreAlloc\", rc=%Rrc.\n", rc), rc);
 
-    /** @cfgm{RamSize, uint64_t, 0, 0, UINT64_MAX}
+    /** @cfgm{RamSize, uint64_t, 0, 16TB, 0}
      * Specifies the size of the base RAM that is to be set up during
      * VM initialization.
      */
@@ -312,28 +312,47 @@ VMMR3DECL(int) MMR3InitPaging(PVM pVM)
         cbRam = 0;
     else
         AssertMsgRCReturn(rc, ("Configuration error: Failed to query integer \"RamSize\", rc=%Rrc.\n", rc), rc);
-
+    AssertLogRelMsg(!(cbRam & ~X86_PTE_PAE_PG_MASK), ("%RGp X86_PTE_PAE_PG_MASK=%RX64\n", cbRam, X86_PTE_PAE_PG_MASK));
+    AssertLogRelMsgReturn(cbRam <= GMM_GCPHYS_LAST, ("cbRam=%RGp GMM_GCPHYS_LAST=%RX64\n", cbRam, GMM_GCPHYS_LAST), VERR_OUT_OF_RANGE);
     cbRam &= X86_PTE_PAE_PG_MASK;
-    pVM->mm.s.cbRamBase = cbRam;            /* Warning: don't move this code to MMR3Init without fixing REMR3Init.  */
-    Log(("MM: %RU64 bytes of RAM%s\n", cbRam, fPreAlloc ? " (PreAlloc)" : ""));
+    pVM->mm.s.cbRamBase = cbRam;
+
+    /** @cfgm{RamHoleSize, uint32_t, 0, 4032MB, 512MB}
+     * Specifies the size of the memory hole. The memory hole is used
+     * to avoid mapping RAM to the range normally used for PCI memory regions.
+     * Must be aligned on a 4MB boundrary. */
+    uint32_t cbRamHole;
+    rc = CFGMR3QueryU32Def(CFGMR3GetRoot(pVM), "RamHoleSize", &cbRamHole, MM_RAM_HOLE_SIZE_DEFAULT);
+    AssertLogRelMsgRCReturn(rc, ("Configuration error: Failed to query integer \"RamHoleSize\", rc=%Rrc.\n", rc), rc);
+    AssertLogRelMsgReturn(cbRamHole <= 4032U * _1M,
+                          ("Configuration error: \"RamHoleSize\"=%#RX32 is too large.\n", cbRamHole), VERR_OUT_OF_RANGE);
+    AssertLogRelMsgReturn(cbRamHole > 16 * _1M,
+                          ("Configuration error: \"RamHoleSize\"=%#RX32 is too large.\n", cbRamHole), VERR_OUT_OF_RANGE);
+    AssertLogRelMsgReturn(!(cbRamHole & (_4M - 1)),
+                          ("Configuration error: \"RamHoleSize\"=%#RX32 is misaligned.\n", cbRamHole), VERR_OUT_OF_RANGE);
+    uint64_t const offRamHole = _4G - cbRamHole;
+    if (cbRam < offRamHole)
+        Log(("MM: %RU64 bytes of RAM%s\n", cbRam, fPreAlloc ? " (PreAlloc)" : ""));
+    else
+        Log(("MM: %RU64 bytes of RAM%s with a hole at %RU64 up to 4GB.\n", cbRam, fPreAlloc ? " (PreAlloc)" : "", offRamHole));
 
     /** @cfgm{MM/Policy, string, no overcommitment}
      * Specifies the policy to use when reserving memory for this VM. The recognized
      * value is 'no overcommitment' (default). See GMMPOLICY.
      */
-    GMMOCPOLICY enmPolicy;
+    GMMOCPOLICY enmOcPolicy;
     char sz[64];
     rc = CFGMR3QueryString(CFGMR3GetRoot(pVM), "Policy", sz, sizeof(sz));
     if (RT_SUCCESS(rc))
     {
         if (    !RTStrICmp(sz, "no_oc")
             ||  !RTStrICmp(sz, "no overcommitment"))
-            enmPolicy = GMMOCPOLICY_NO_OC;
+            enmOcPolicy = GMMOCPOLICY_NO_OC;
         else
             return VMSetError(pVM, VERR_INVALID_PARAMETER, RT_SRC_POS, "Unknown \"MM/Policy\" value \"%s\"", sz);
     }
     else if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        enmPolicy = GMMOCPOLICY_NO_OC;
+        enmOcPolicy = GMMOCPOLICY_NO_OC;
     else
         AssertMsgRCReturn(rc, ("Configuration error: Failed to query string \"MM/Policy\", rc=%Rrc.\n", rc), rc);
 
@@ -363,15 +382,21 @@ VMMR3DECL(int) MMR3InitPaging(PVM pVM)
     /*
      * Make the initial memory reservation with GMM.
      */
-    rc = GMMR3InitialReservation(pVM, cbRam >> PAGE_SHIFT, 1, 1, enmPolicy, enmPriority);
+    uint64_t cBasePages = (cbRam >> PAGE_SHIFT) + pVM->mm.s.cBasePages;
+    rc = GMMR3InitialReservation(pVM,
+                                 RT_MAX(cBasePages + pVM->mm.s.cHandyPages, 1),
+                                 RT_MAX(pVM->mm.s.cShadowPages, 1),
+                                 RT_MAX(pVM->mm.s.cFixedPages, 1),
+                                 enmOcPolicy,
+                                 enmPriority);
     if (RT_FAILURE(rc))
     {
         if (rc == VERR_GMM_MEMORY_RESERVATION_DECLINED)
             return VMSetError(pVM, rc, RT_SRC_POS,
-                              N_("Insufficient free memory to start the VM (cbRam=%#RX64 enmPolicy=%d enmPriority=%d)"),
-                              cbRam, enmPolicy, enmPriority);
+                              N_("Insufficient free memory to start the VM (cbRam=%#RX64 enmOcPolicy=%d enmPriority=%d)"),
+                              cbRam, enmOcPolicy, enmPriority);
         return VMSetError(pVM, rc, RT_SRC_POS, "GMMR3InitialReservation(,%#RX64,0,0,%d,%d)",
-                          cbRam >> PAGE_SHIFT, enmPolicy, enmPriority);
+                          cbRam >> PAGE_SHIFT, enmOcPolicy, enmPriority);
     }
 
     /*
@@ -386,14 +411,23 @@ VMMR3DECL(int) MMR3InitPaging(PVM pVM)
     /*
      * Setup the base ram (PGM).
      */
-    rc = PGMR3PhysRegisterRam(pVM, 0, cbRam, "Base RAM");
 #ifdef VBOX_WITH_NEW_PHYS_CODE
-    if (RT_SUCCESS(rc) && fPreAlloc)
+    if (cbRam > offRamHole)
+    {
+        rc = PGMR3PhysRegisterRam(pVM, 0, offRamHole, "Base RAM");
+        if (RT_SUCCESS(rc))
+            rc = PGMR3PhysRegisterRam(pVM, _4G, cbRam - offRamHole, "Above 4GB Base RAM");
+    }
+    else
+        rc = PGMR3PhysRegisterRam(pVM, 0, RT_MIN(cbRam, offRamHole), "Base RAM");
+    if (    RT_SUCCESS(rc)
+        &&  fPreAlloc)
     {
         /** @todo RamPreAlloc should be handled at the very end of the VM creation. (lazy bird) */
         return VM_SET_ERROR(pVM, VERR_NOT_IMPLEMENTED, "TODO: RamPreAlloc");
     }
 #else
+    rc = PGMR3PhysRegisterRam(pVM, 0, cbRam, "Base RAM");
     if (RT_SUCCESS(rc))
     {
         /*
@@ -408,6 +442,15 @@ VMMR3DECL(int) MMR3InitPaging(PVM pVM)
                  GCPhys += PGM_DYNAMIC_CHUNK_SIZE)
                 rc = PGM3PhysGrowRange(pVM, &GCPhys);
     }
+#endif
+
+#ifdef VBOX_WITH_NEW_PHYS_CODE
+    /*
+     * Enabled mmR3UpdateReservation here since we don't want the
+     * PGMR3PhysRegisterRam calls above mess things up.
+     */
+    pVM->mm.s.fDoneMMR3InitPaging = true;
+    AssertMsg(pVM->mm.s.cBasePages == cBasePages || RT_FAILURE(rc), ("%RX64 != %RX64\n", pVM->mm.s.cBasePages, cBasePages));
 #endif
 
     LogFlow(("MMR3InitPaging: returns %Rrc\n", rc));
@@ -499,7 +542,9 @@ VMMR3DECL(void) MMR3TermUVM(PUVM pUVM)
  */
 VMMR3DECL(void) MMR3Reset(PVM pVM)
 {
+#ifndef VBOX_WITH_NEW_PHYS_CODE
     mmR3PhysRomReset(pVM);
+#endif
 }
 
 
@@ -600,7 +645,7 @@ int mmR3UpdateReservation(PVM pVM)
     VM_ASSERT_EMT(pVM);
     if (pVM->mm.s.fDoneMMR3InitPaging)
         return GMMR3UpdateReservation(pVM,
-                                      RT_MAX(pVM->mm.s.cBasePages, 1),
+                                      RT_MAX(pVM->mm.s.cBasePages + pVM->mm.s.cHandyPages, 1),
                                       RT_MAX(pVM->mm.s.cShadowPages, 1),
                                       RT_MAX(pVM->mm.s.cFixedPages, 1));
     return VINF_SUCCESS;
@@ -624,8 +669,36 @@ VMMR3DECL(int) MMR3IncreaseBaseReservation(PVM pVM, uint64_t cAddBasePages)
     int rc = mmR3UpdateReservation(pVM);
     if (RT_FAILURE(rc))
     {
-        VMSetError(pVM, rc, RT_SRC_POS, N_("Failed to reserved physical memory for the RAM (%#RX64 -> %#RX64)"), cOld, pVM->mm.s.cBasePages);
+        VMSetError(pVM, rc, RT_SRC_POS, N_("Failed to reserved physical memory for the RAM (%#RX64 -> %#RX64 + %#RX32)"),
+                   cOld, pVM->mm.s.cBasePages, pVM->mm.s.cHandyPages);
         pVM->mm.s.cBasePages = cOld;
+    }
+    return rc;
+}
+
+
+/**
+ * Interface for PGM to make reservations for handy pages in addition to the
+ * base memory.
+ *
+ * This can be called before MMR3InitPaging.
+ *
+ * @returns VBox status code. Will set VM error on failure.
+ * @param   pVM             The shared VM structure.
+ * @param   cHandyPages     The number of handy pages.
+ */
+VMMR3DECL(int) MMR3ReserveHandyPages(PVM pVM, uint32_t cHandyPages)
+{
+    AssertReturn(!pVM->mm.s.cHandyPages, VERR_WRONG_ORDER);
+
+    pVM->mm.s.cHandyPages = cHandyPages;
+    LogFlow(("MMR3ReserveHandyPages: %RU32 (base %RU64)\n", pVM->mm.s.cHandyPages, pVM->mm.s.cBasePages));
+    int rc = mmR3UpdateReservation(pVM);
+    if (RT_FAILURE(rc))
+    {
+        VMSetError(pVM, rc, RT_SRC_POS, N_("Failed to reserved physical memory for the RAM (%#RX64 + %#RX32)"),
+                   pVM->mm.s.cBasePages, pVM->mm.s.cHandyPages);
+        pVM->mm.s.cHandyPages = 0;
     }
     return rc;
 }
@@ -882,5 +955,21 @@ VMMR3DECL(int) MMR3WriteGCVirt(PVM pVM, RTGCPTR GCPtrDst, const void *pvSrc, siz
     if (GCPtrDst - pVM->mm.s.pvHyperAreaGC < pVM->mm.s.cbHyperArea)
         return VERR_ACCESS_DENIED;
     return PGMPhysSimpleWriteGCPtr(pVM, GCPtrDst, pvSrc, cb);
+}
+
+
+/**
+ * Get the size of the base RAM.
+ * This usually means the size of the first contigous block of physical memory.
+ *
+ * @returns The guest base RAM size.
+ * @param   pVM         The VM handle.
+ * @thread  Any.
+ *
+ * @deprecated
+ */
+VMMR3DECL(uint64_t) MMR3PhysGetRamSize(PVM pVM)
+{
+    return pVM->mm.s.cbRamBase;
 }
 

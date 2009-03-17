@@ -502,6 +502,8 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_DANGLING_OBJECTS               (-86)
 /** Generic dangling objects status. */
 #define VWRN_DANGLING_OBJECTS               86
+/** Invalid Base64 encoding. */
+#define VERR_INVALID_BASE64_ENCODING        (-87)
 /** @} */
 
 
@@ -851,6 +853,8 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_IMAGE_TOO_BIG                      (-612)
 /** The image base address is to high for this image type. */
 #define VERR_IMAGE_BASE_TOO_HIGH                (-614)
+/** Mismatching architecture. */
+#define VERR_LDR_ARCH_MISMATCH                  (-615)
 /** The PE loader encountered delayed imports, a feature which hasn't been implemented yet. */
 #define VERR_LDRPE_DELAY_IMPORT                 (-620)
 /** The PE loader doesn't have a clue what the security data directory entry is all about. */
@@ -948,6 +952,8 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_GETOPT_REQUIRED_ARGUMENT_MISSING   (-826)
 /** RTGetOpt: command line option has argument with bad format. */
 #define VERR_GETOPT_INVALID_ARGUMENT_FORMAT     (-827)
+/** RTGetOpt: Not an option. */
+#define VINF_GETOPT_NOT_OPTION                  828
 /** @} */
 
 /** @name RTCache status codes

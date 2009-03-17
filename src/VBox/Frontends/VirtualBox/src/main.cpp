@@ -24,22 +24,40 @@
 #include "VBoxProblemReporter.h"
 #include "VBoxSelectorWnd.h"
 #include "VBoxConsoleWnd.h"
-#ifdef Q_WS_MAC
+#include "VBoxUtils.h"
+#if defined(Q_WS_MAC) && !defined(QT_MAC_USE_COCOA)
 # include "QIApplication.h"
 #else
 # define QIApplication QApplication
 #endif
+#ifdef QT_MAC_USE_COCOA
+# include "darwin/VBoxCocoaApplication.h"
+#endif
 
+#ifdef Q_WS_X11
+#include <QFontDatabase>
+#endif
+
+#include <QCleanlooksStyle>
+#include <QPlastiqueStyle>
 #include <qmessagebox.h>
 #include <qlocale.h>
 #include <qtranslator.h>
 
+#include <iprt/err.h>
 #include <iprt/initterm.h>
+#include <iprt/process.h>
 #include <iprt/stream.h>
+#ifdef VBOX_WITH_HARDENING
+# include <VBox/sup.h>
+#endif
+
+#ifdef RT_OS_LINUX
+# include <unistd.h>
+#endif
 
 #if defined(DEBUG) && defined(Q_WS_X11) && defined(RT_OS_LINUX)
 
-#include <stdlib.h>
 #include <signal.h>
 #include <execinfo.h>
 
@@ -87,7 +105,25 @@ void bt_sighandler (int sig, siginfo_t *info, void *secret) {
     exit (0);
 }
 
-#endif
+#endif /* DEBUG && X11 && LINUX*/
+
+#if defined(RT_OS_DARWIN) && defined(RT_ARCH_AMD64)
+# include <dlfcn.h>
+# include <sys/mman.h>
+# include <iprt/asm.h>
+
+/** Really ugly hack to shut up a silly check in AppKit. */
+static void ShutUpAppKit(void)
+{
+    /*
+     * Find issetguid() and make it always return 0 by modifying the code.
+     */
+    void *addr = dlsym(RTLD_DEFAULT, "issetugid");
+    int rc = mprotect((void *)((uintptr_t)addr & ~(uintptr_t)0xfff), 0x2000, PROT_WRITE|PROT_READ|PROT_EXEC);
+    if (!rc)
+        ASMAtomicWriteU32((volatile uint32_t *)addr, 0xccc3c031); /* xor eax, eax; ret; int3 */
+}
+#endif /* DARWIN + AMD64 */
 
 static void QtMessageOutput (QtMsgType type, const char *msg)
 {
@@ -106,6 +142,13 @@ static void QtMessageOutput (QtMsgType type, const char *msg)
             RTStrmPrintf(g_pStdErr, "Qt WARNING: %s\n", msg);
 #endif
             break;
+        case QtCriticalMsg:
+            Log (("Qt CRITICAL: %s\n", msg));
+#ifdef Q_WS_X11
+            /* Needed for instance for the message ``cannot connect to X server'' */
+            RTStrmPrintf(g_pStdErr, "Qt CRITICAL: %s\n", msg);
+#endif
+            break;
         case QtFatalMsg:
             Log (("Qt FATAL: %s\n", msg));
 #ifdef Q_WS_X11
@@ -114,9 +157,70 @@ static void QtMessageOutput (QtMsgType type, const char *msg)
     }
 }
 
+#ifndef Q_WS_WIN
+/**
+ * Show all available command line parameters.
+ */
+static void showHelp()
+{
+    QString mode = "", dflt = "";
+#ifdef VBOX_GUI_USE_SDL
+    mode += "sdl";
+#endif
+#ifdef VBOX_GUI_USE_QIMAGE
+    if (!mode.isEmpty())
+        mode += "|";
+    mode += "image";
+#endif
+#ifdef VBOX_GUI_USE_DDRAW
+    if (!mode.isEmpty())
+        mode += "|";
+    mode += "ddraw";
+#endif
+#ifdef VBOX_GUI_USE_QUARTZ2D
+    if (!mode.isEmpty())
+        mode += "|";
+    mode += "quartz2d";
+#endif
+#if defined (Q_WS_MAC) && defined (VBOX_GUI_USE_QUARTZ2D)
+    dflt = "quartz2d";
+#elif (defined (Q_WS_WIN32) || defined (Q_WS_PM)) && defined (VBOX_GUI_USE_QIMAGE)
+    dflt = "image";
+#elif defined (Q_WS_X11) && defined (VBOX_GUI_USE_SDL)
+    dflt = "sdl";
+#else
+    dflt = "image";
+#endif
+
+    RTPrintf("Sun xVM VirtualBox Graphical User Interface "VBOX_VERSION_STRING"\n"
+            "(C) 2005-2009 Sun Microsystems, Inc.\n"
+            "All rights reserved.\n"
+            "\n"
+            "Usage:\n"
+            "  -startvm <vmname|UUID>     start a VM by specifying its UUID or name\n"
+            "  -rmode %-19s select different render mode (default is %s)\n"
+# ifdef VBOX_WITH_DEBUGGER_GUI
+            "  -dbg                       enable the GUI debug menu\n"
+            "  -debug                     like -dbg and show debug windows at VM startup\n"
+            "  -no-debug                  disable the GUI debug menu and debug windows\n"
+            "\n"
+            "The following environment variables are evaluated:\n"
+            "  VBOX_GUI_DBG_ENABLED       enable the GUI debug menu if set\n"
+            "  VBOX_GUI_DBG_AUTO_SHOW     show debug windows at VM startup\n"
+            "  VBOX_GUI_NO_DEBUGGER       disable the GUI debug menu and debug windows\n"
+# endif
+            "\n",
+            mode.toLatin1().constData(),
+            dflt.toLatin1().constData());
+}
+#endif
+
 extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
 {
     LogFlowFuncEnter();
+# if defined(RT_OS_DARWIN) && defined(RT_ARCH_AMD64)
+    ShutUpAppKit();
+# endif
 
 #ifdef Q_WS_WIN
     /* Initialize COM early, before QApplication calls OleInitialize(), to
@@ -131,6 +235,19 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
     HRESULT hrc = COMBase::InitializeCOM();
 #endif
 
+#ifndef Q_WS_WIN
+    int i;
+    for (i=0; i<argc; i++)
+        if (   !strcmp(argv[i], "-h")
+            || !strcmp(argv[i], "-?")
+            || !strcmp(argv[i], "-help")
+            || !strcmp(argv[i], "--help"))
+        {
+            showHelp();
+            return 0;
+        }
+#endif
+
 #if defined(DEBUG) && defined(Q_WS_X11) && defined(RT_OS_LINUX)
     /* install our signal handler to backtrace the call stack */
     struct sigaction sa;
@@ -142,6 +259,12 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
     sigaction (SIGUSR1, &sa, NULL);
 #endif
 
+#ifdef QT_MAC_USE_COCOA
+    /* Instantiate our NSApplication derivative before QApplication
+     * forces NSApplication to be instantiated. */
+    VBoxCocoaApplication_sharedApplication();
+#endif
+
     qInstallMsgHandler (QtMessageOutput);
 
     int rc = 1; /* failure */
@@ -149,6 +272,58 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
     /* scope the QIApplication variable */
     {
         QIApplication a (argc, argv);
+
+        /* Qt4.3 version has the QProcess bug which freezing the application
+         * for 30 seconds. This bug is internally used at initialization of
+         * Cleanlooks style. So we have to change this style to another one.
+         * See http://trolltech.com/developer/task-tracker/index_html?id=179200&method=entry
+         * for details. */
+        if (QString (qVersion()).startsWith ("4.3") &&
+            qobject_cast <QCleanlooksStyle*> (QApplication::style()))
+            QApplication::setStyle (new QPlastiqueStyle);
+
+#ifdef Q_OS_SOLARIS
+        /* Solaris have some issue with cleanlooks style which leads to application
+         * crash in case of using it on Qt4.4 version, lets make the same substitute */
+        if (QString (qVersion()).startsWith ("4.4") &&
+            qobject_cast <QCleanlooksStyle*> (QApplication::style()))
+            QApplication::setStyle (new QPlastiqueStyle);
+#endif
+
+#ifdef Q_WS_X11
+        /* This patch is not used for now on Solaris & OpenSolaris because
+         * there is no anti-aliasing enabled by default, Qt4 to be rebuilt. */
+#ifndef Q_OS_SOLARIS
+        /* Cause Qt4 has the conflict with fontconfig application as a result
+         * sometimes substituting some fonts with non scaleable-anti-aliased
+         * bitmap font we are reseting substitutes for the current application
+         * font family if it is non scaleable-anti-aliased. */
+        QFontDatabase fontDataBase;
+
+        QString currentFamily (QApplication::font().family());
+        bool isCurrentScaleable = fontDataBase.isScalable (currentFamily);
+
+        /*
+        LogFlowFunc (("Font: Current family is '%s'. It is %s.\n",
+            currentFamily.toLatin1().constData(),
+            isCurrentScaleable ? "scalable" : "not scalable"));
+        QStringList subFamilies (QFont::substitutes (currentFamily));
+        foreach (QString sub, subFamilies)
+        {
+            bool isSubScalable = fontDataBase.isScalable (sub);
+            LogFlowFunc (("Font: Substitute family is '%s'. It is %s.\n",
+                sub.toLatin1().constData(),
+                isSubScalable ? "scalable" : "not scalable"));
+        }
+        */
+
+        QString subFamily (QFont::substitute (currentFamily));
+        bool isSubScaleable = fontDataBase.isScalable (subFamily);
+
+        if (isCurrentScaleable && !isSubScaleable)
+            QFont::removeSubstitution (currentFamily);
+#endif /* Q_OS_SOLARIS */
+#endif
 
 #ifdef Q_WS_WIN
         /* Drag in the sound drivers and DLLs early to get rid of the delay taking
@@ -160,19 +335,9 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
         PlaySound (NULL, NULL, 0);
 #endif
 
-#ifndef RT_OS_DARWIN
-        /* some gui qt-styles has it's own different color for buttons
-         * causing tool-buttons and dropped menu displayed in
-         * different annoying color, so fixing palette button's color */
-        QPalette pal = a.palette();
-        pal.setColor (QPalette::Disabled, QColorGroup::Button,
-                      pal.color (QPalette::Disabled, QColorGroup::Background));
-        pal.setColor (QPalette::Active, QColorGroup::Button,
-                      pal.color (QPalette::Active, QColorGroup::Background));
-        pal.setColor (QPalette::Inactive, QColorGroup::Button,
-                      pal.color (QPalette::Inactive, QColorGroup::Background));
-        a.setPalette (pal);
-#endif
+#ifdef Q_WS_MAC
+        ::darwinDisableIconsInMenus();
+#endif /* Q_WS_MAC */
 
 #ifdef Q_WS_X11
         /* version check (major.minor are sensitive, fix number is ignored) */
@@ -191,13 +356,13 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
         {
             QString msg =
                 QApplication::tr ("Executable <b>%1</b> requires Qt %2.x, found Qt %3.")
-                                  .arg (QString::fromLatin1 (qAppName()))
+                                  .arg (qAppName())
                                   .arg (ver_str_base)
                                   .arg (rt_ver_str);
             QMessageBox::critical (
                 0, QApplication::tr ("Incompatible Qt Library Error"),
                 msg, QMessageBox::Abort, 0);
-            qFatal (msg.ascii());
+            qFatal ("%s", msg.toAscii().constData());
         }
 #endif
 
@@ -218,12 +383,6 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
             if (!vboxGlobal().isValid())
                 break;
 
-            /* Note: the settings conversion check must be done before
-             * anything else that can unconditionally overwrite settings files
-             * int he new format (like the license thingy below) */
-            if (!vboxGlobal().checkForAutoConvertedSettings())
-                break;
-
 #ifndef VBOX_OSE
 #ifdef Q_WS_X11
             /* show the user license file */
@@ -238,7 +397,13 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
 
             if (vboxGlobal().isVMConsoleProcess())
             {
-                a.setMainWidget (&vboxGlobal().consoleWnd());
+                vboxGlobal().setMainWindow (&vboxGlobal().consoleWnd());
+#ifdef VBOX_GUI_WITH_SYSTRAY
+                if (vboxGlobal().trayIconInstall())
+                {
+                    /* Nothing to do here yet. */
+                }
+#endif
                 if (vboxGlobal().startMachine (vboxGlobal().managedVMUuid()))
                     rc = a.exec();
             }
@@ -248,15 +413,38 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
             }
             else
             {
-                /* pre-populate the media list before showing the main widget */
-                vboxGlobal().startEnumeratingMedia();
+                /* Check for BETA version */
+                QString vboxVersion (vboxGlobal().virtualBox().GetVersion());
+                if (vboxVersion.contains ("BETA"))
+                    vboxProblem().showBETAWarning();
 
-                a.setMainWidget (&vboxGlobal().selectorWnd());
-                vboxGlobal().selectorWnd().show();
-#ifdef VBOX_WITH_REGISTRATION_REQUEST
-                vboxGlobal().showRegistrationDialog (false /* aForce */);
+                vboxGlobal().setMainWindow (&vboxGlobal().selectorWnd());
+#ifdef VBOX_GUI_WITH_SYSTRAY
+                if (vboxGlobal().trayIconInstall())
+                {
+                    /* Nothing to do here yet. */
+                }
+
+                if (false == vboxGlobal().isTrayMenu())
+                {
 #endif
-                rc = a.exec();
+                    vboxGlobal().selectorWnd().show();
+#ifdef VBOX_WITH_REGISTRATION_REQUEST
+                    vboxGlobal().showRegistrationDialog (false /* aForce */);
+#endif
+#ifdef VBOX_WITH_UPDATE_REQUEST
+                    vboxGlobal().showUpdateDialog (false /* aForce */);
+#endif
+#ifdef VBOX_GUI_WITH_SYSTRAY
+                }
+
+                do
+                {
+#endif
+                    rc = a.exec();
+#ifdef VBOX_GUI_WITH_SYSTRAY
+                } while (vboxGlobal().isTrayMenu());
+#endif
             }
         }
         while (0);
@@ -274,15 +462,15 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
     return rc;
 }
 
-
 #ifndef VBOX_WITH_HARDENING
+
 int main (int argc, char **argv, char **envp)
 {
     /* Initialize VBox Runtime. Initialize the SUPLib as well only if we
      * are really about to start a VM. Don't do this if we are only starting
      * the selector window. */
     bool fInitSUPLib = false;
-    for (int i = 0; i < argc; i++)
+    for (int i = 1; i < argc; i++)
     {
         if (!::strcmp (argv[i], "-startvm" ))
         {
@@ -298,5 +486,78 @@ int main (int argc, char **argv, char **envp)
 
     return TrustedMain (argc, argv, envp);
 }
-#endif /* !VBOX_WITH_HARDENING */
+
+#else  /* VBOX_WITH_HARDENING */
+
+/**
+ * Hardened main failed, report the error without any unnecessary fuzz.
+ *
+ * @remarks Do not call IPRT here unless really required, it might not be
+ *          initialized.
+ */
+extern "C" DECLEXPORT(void) TrustedError (const char *pszWhere, SUPINITOP enmWhat, int rc, const char *pszMsgFmt, va_list va)
+{
+# if defined(RT_OS_DARWIN) && defined(RT_ARCH_AMD64)
+    ShutUpAppKit();
+# endif
+
+    /*
+     * Init the Qt application object. This is a bit hackish as we
+     * don't have the argument vector handy.
+     */
+    int argc = 0;
+    char *argv[2] = { NULL, NULL };
+    QApplication a (argc, &argv[0]);
+
+    /*
+     * Compose and show the error message.
+     */
+    QString msgTitle = QApplication::tr ("VirtualBox - Error In %1").arg (pszWhere);
+
+    char msgBuf[1024];
+    vsprintf (msgBuf, pszMsgFmt, va);
+
+    QString msgText = QApplication::tr (
+            "<html><b>%1 (rc=%2)</b><br/><br/>").arg (msgBuf).arg (rc);
+    switch (enmWhat)
+    {
+        case kSupInitOp_Driver:
+            msgText += QApplication::tr (
+#ifdef RT_OS_LINUX
+            "The VirtualBox Linux kernel driver (vboxdrv) is either not loaded or "
+            "there is a permission problem with /dev/vboxdrv. Re-setup the kernel "
+            "module by executing<br/><br/>"
+            "  <font color=blue>'/etc/init.d/vboxdrv setup'</font><br/><br/>"
+            "as root. Users of Ubuntu or Fedora should install the DKMS package "
+            "at first. This package keeps track of Linux kernel changes and "
+            "recompiles the vboxdrv kernel module if necessary."
+#else
+            "Make sure the kernel module has been loaded successfully."
+#endif
+            );
+            break;
+        case kSupInitOp_IPRT:
+        case kSupInitOp_Integrity:
+        case kSupInitOp_RootCheck:
+            msgText += QApplication::tr ("It may help to reinstall VirtualBox."); /* hope this isn't (C), (TM) or (R) Microsoft support ;-) */
+            break;
+        default:
+            /* no hints here */
+            break;
+    }
+    msgText += "</html>";
+
+#ifdef RT_OS_LINUX
+    sleep(2);
+#endif
+    QMessageBox::critical (
+        0,                      /* parent */
+        msgTitle,               /* title */
+        msgText,                /* text */
+        QMessageBox::Abort,     /* button0 */
+        0);                     /* button1 */
+    qFatal ("%s", msgText.toAscii().constData());
+}
+
+#endif /* VBOX_WITH_HARDENING */
 

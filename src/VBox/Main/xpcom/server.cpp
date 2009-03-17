@@ -1,10 +1,10 @@
-/* $Id: server.cpp 15904 2009-01-13 08:25:13Z vboxsync $ */
+/* $Id: server.cpp 18023 2009-03-17 13:48:59Z vboxsync $ */
 /** @file
  * XPCOM server process (VBoxSVC) start point.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -60,6 +60,10 @@
 #include <errno.h>
 #include <getopt.h>
 
+#ifndef RT_OS_OS2
+# include <sys/resource.h>
+#endif
+
 // for the backtrace signal handler
 #if defined(DEBUG) && defined(RT_OS_LINUX)
 # define USE_BACKTRACE
@@ -87,9 +91,10 @@
 #include <VirtualBox_XPCOM.h>
 #include <VirtualBoxImpl.h>
 #include <MachineImpl.h>
+#include <ApplianceImpl.h>
 #include <SnapshotImpl.h>
 #include <MediumImpl.h>
-#include <HardDisk2Impl.h>
+#include <HardDiskImpl.h>
 #include <HardDiskFormatImpl.h>
 #include <ProgressImpl.h>
 #include <DVDDriveImpl.h>
@@ -105,14 +110,14 @@
 #include <SerialPortImpl.h>
 #include <ParallelPortImpl.h>
 #include <USBControllerImpl.h>
+#include "DHCPServerImpl.h"
 #ifdef VBOX_WITH_USB
 # include <HostUSBDeviceImpl.h>
 # include <USBDeviceImpl.h>
 #endif
-#include <SATAControllerImpl.h>
+#include <StorageControllerImpl.h>
 #include <AudioAdapterImpl.h>
 #include <SystemPropertiesImpl.h>
-#include <Collection.h>
 
 /* implement nsISupports parts of our objects with support for nsIClassInfo */
 
@@ -121,6 +126,12 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI(VirtualBox, IVirtualBox)
 
 NS_DECL_CLASSINFO(Machine)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Machine, IMachine)
+
+NS_DECL_CLASSINFO(Appliance)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Appliance, IAppliance)
+
+NS_DECL_CLASSINFO(VirtualSystemDescription)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(VirtualSystemDescription, IVirtualSystemDescription)
 
 NS_DECL_CLASSINFO(SessionMachine)
 NS_IMPL_THREADSAFE_ISUPPORTS2_CI(SessionMachine, IMachine, IInternalMachineControl)
@@ -131,25 +142,25 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI(SnapshotMachine, IMachine)
 NS_DECL_CLASSINFO(Snapshot)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Snapshot, ISnapshot)
 
-NS_DECL_CLASSINFO(DVDImage2)
-NS_IMPL_THREADSAFE_ISUPPORTS2_AMBIGUOUS_CI(DVDImage2,
+NS_DECL_CLASSINFO(DVDImage)
+NS_IMPL_THREADSAFE_ISUPPORTS2_AMBIGUOUS_CI(DVDImage,
                                            IMedium, ImageMediumBase,
-                                           IDVDImage2, DVDImage2)
-NS_DECL_CLASSINFO(FloppyImage2)
-NS_IMPL_THREADSAFE_ISUPPORTS2_AMBIGUOUS_CI(FloppyImage2,
+                                           IDVDImage, DVDImage)
+NS_DECL_CLASSINFO(FloppyImage)
+NS_IMPL_THREADSAFE_ISUPPORTS2_AMBIGUOUS_CI(FloppyImage,
                                            IMedium, ImageMediumBase,
-                                           IFloppyImage2, FloppyImage2)
+                                           IFloppyImage, FloppyImage)
 
-NS_DECL_CLASSINFO(HardDisk2)
-NS_IMPL_THREADSAFE_ISUPPORTS2_AMBIGUOUS_CI(HardDisk2,
+NS_DECL_CLASSINFO(HardDisk)
+NS_IMPL_THREADSAFE_ISUPPORTS2_AMBIGUOUS_CI(HardDisk,
                                            IMedium, MediumBase,
-                                           IHardDisk2, HardDisk2)
+                                           IHardDisk, HardDisk)
 
 NS_DECL_CLASSINFO(HardDiskFormat)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HardDiskFormat, IHardDiskFormat)
 
-NS_DECL_CLASSINFO(HardDisk2Attachment)
-NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HardDisk2Attachment, IHardDisk2Attachment)
+NS_DECL_CLASSINFO(HardDiskAttachment)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HardDiskAttachment, IHardDiskAttachment)
 
 NS_DECL_CLASSINFO(Progress)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Progress, IProgress)
@@ -183,6 +194,9 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HostFloppyDrive, IHostFloppyDrive)
 NS_DECL_CLASSINFO(HostNetworkInterface)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HostNetworkInterface, IHostNetworkInterface)
 
+NS_DECL_CLASSINFO(DHCPServer)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(DHCPServer, IDHCPServer)
+
 NS_DECL_CLASSINFO(GuestOSType)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(GuestOSType, IGuestOSType)
 
@@ -198,8 +212,8 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI(ParallelPort, IParallelPort)
 NS_DECL_CLASSINFO(USBController)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(USBController, IUSBController)
 
-NS_DECL_CLASSINFO(SATAController)
-NS_IMPL_THREADSAFE_ISUPPORTS1_CI(SATAController, ISATAController)
+NS_DECL_CLASSINFO(StorageController)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(StorageController, IStorageController)
 
 #ifdef VBOX_WITH_USB
 NS_DECL_CLASSINFO(USBDeviceFilter)
@@ -227,24 +241,6 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI(PerformanceMetric, IPerformanceMetric)
 
 NS_DECL_CLASSINFO(BIOSSettings)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(BIOSSettings, IBIOSSettings)
-
-/* collections and enumerators */
-
-COM_IMPL_READONLY_ENUM_AND_COLLECTION(Snapshot)
-COM_IMPL_READONLY_ENUM_AND_COLLECTION(GuestOSType)
-COM_IMPL_READONLY_ENUM_AND_COLLECTION(HostDVDDrive)
-COM_IMPL_READONLY_ENUM_AND_COLLECTION(HostFloppyDrive)
-COM_IMPL_READONLY_ENUM_AND_COLLECTION(SharedFolder)
-#ifdef VBOX_WITH_USB
-COM_IMPL_READONLY_ENUM_AND_COLLECTION(HostUSBDevice)
-COM_IMPL_READONLY_ENUM_AND_COLLECTION(HostUSBDeviceFilter)
-COM_IMPL_READONLY_ENUM_AND_COLLECTION(USBDeviceFilter)
-#endif
-
-COM_IMPL_READONLY_ENUM_AND_COLLECTION_AS(Progress, IProgress)
-#ifdef VBOX_WITH_USB
-COM_IMPL_READONLY_ENUM_AND_COLLECTION_AS(IfaceUSBDevice, IUSBDevice)
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -777,7 +773,7 @@ class ForceQuitEvent : public MyEvent
     }
 };
 
-static void signal_handler (int sig)
+static void signal_handler (int /* sig */)
 {
     if (gEventQ && gKeepRunning)
     {
@@ -1155,6 +1151,23 @@ int main (int argc, char **argv)
             RTFileWrite(pidFile, lf, strlen(lf), NULL);
             RTFileClose(pidFile);
         }
+
+#ifndef RT_OS_OS2
+        // Increase the file table size to 10240 or as high as possible.
+        struct rlimit lim;
+        if (getrlimit(RLIMIT_NOFILE, &lim) == 0)
+        {
+            if (    lim.rlim_cur < 10240
+                &&  lim.rlim_cur < lim.rlim_max)
+            {
+                lim.rlim_cur = RT_MIN(lim.rlim_max, 10240);
+                if (setrlimit(RLIMIT_NOFILE, &lim) == -1)
+                    printf("WARNING: failed to increase file descriptor limit. (%d)\n", errno);
+            }
+        }
+        else
+            printf("WARNING: failed to obtain per-process file-descriptor limit (%d).\n", errno);
+#endif
 
         PLEvent *ev;
         while (gKeepRunning)

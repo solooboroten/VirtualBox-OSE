@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 15492 2008-12-15 10:36:07Z vboxsync $
+# $Id: Makefile.kmk 18023 2009-03-17 13:48:59Z vboxsync $
 ## @file
 # Sub-Makefile for VBoxManage (the cli frontend).
 #
@@ -28,6 +28,7 @@ ifdef VBOX_ONLY_DOCS
  VBoxManage_DEFS      += VBOX_ONLY_DOCS
  VBoxManage_SOURCES = \
 	VBoxManage.cpp \
+ 	VBoxManageHelp.cpp \
 	VBoxManageSVN.cpp
  VBoxManage_LIBS      += $(LIB_RUNTIME)
 else # !VBOX_ONLY_DOCS
@@ -38,16 +39,27 @@ else # !VBOX_ONLY_DOCS
  	$(if $(VBOX_WITH_PULSE),VBOX_WITH_PULSE) \
  	$(if $(VBOX_WITH_E1000),VBOX_WITH_E1000) \
  	$(if $(VBOX_WITH_AHCI), VBOX_WITH_AHCI) \
+ 	$(if $(VBOX_WITH_SCSI), VBOX_WITH_SCSI) \
  	$(if $(VBOX_WITH_GUEST_PROPS),VBOX_WITH_GUEST_PROPS) \
  	$(if $(VBOX_WITH_HOSTNETIF_API), VBOX_WITH_HOSTNETIF_API)
  VBoxManage_DEFS.win   = _WIN32_WINNT=0x0500
+ifdef VBOX_WITH_NETFLT
+ VBoxManage_DEFS += VBOX_WITH_NETFLT
+endif 
  VBoxManage_SOURCES = \
  	VBoxManage.cpp \
+ 	VBoxManageHelp.cpp \
+ 	VBoxManageModifyVM.cpp \
  	VBoxManageInfo.cpp \
+ 	VBoxManageImport.cpp \
  	VBoxManageMetrics.cpp \
  	VBoxManageList.cpp \
  	VBoxManageDisk.cpp \
+ 	VBoxManageSnapshot.cpp \
+ 	VBoxManageUSB.cpp \
  	VBoxInternalManage.cpp \
+ 	VBoxManageHostonly.cpp \
+ 	VBoxManageDHCPServer.cpp \
  	$(if $(VBOX_WITH_GUEST_PROPS),VBoxManageGuestProp.cpp) \
  	VBoxManageSVN.cpp
 endif # !VBOX_ONLY_DOCS

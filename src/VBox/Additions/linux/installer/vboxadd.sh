@@ -18,7 +18,7 @@
 #
 
 
-# chkconfig: 35 30 60
+# chkconfig: 35 30 70
 # description: VirtualBox Linux Additions kernel modules
 #
 ### BEGIN INIT INFO
@@ -33,6 +33,7 @@
 PATH=$PATH:/bin:/sbin:/usr/sbin
 BUILDVBOXADD=`/bin/ls /usr/src/vboxadd*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
 BUILDVBOXVFS=`/bin/ls /usr/src/vboxvfs*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
+BUILDVBOXVIDEO=`/bin/ls /usr/src/vboxvideo*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
 LOG="/var/log/vboxadd-install.log"
 
 if [ -f /etc/arch-release ]; then
@@ -43,6 +44,8 @@ elif [ -f /etc/SuSE-release ]; then
     system=suse
 elif [ -f /etc/gentoo-release ]; then
     system=gentoo
+elif [ -f /etc/lfs-release -a -d /etc/rc.d/init.d ]; then
+    system=lfs
 else
     system=other
 fi
@@ -113,6 +116,19 @@ if [ "$system" = "gentoo" ]; then
     fi
 fi
 
+if [ "$system" = "lfs" ]; then
+    . /etc/rc.d/init.d/functions
+    fail_msg() {
+        echo_failure
+    }
+    succ_msg() {
+        echo_ok
+    }
+    begin() {
+        echo $1
+    }
+fi
+
 if [ "$system" = "other" ]; then
     fail_msg() {
         echo " ...fail!"
@@ -126,6 +142,7 @@ if [ "$system" = "other" ]; then
 fi
 
 dev=/dev/vboxadd
+userdev=/dev/vboxuser
 owner=vboxadd
 group=1
 
@@ -158,6 +175,10 @@ start()
             fail "Cannot remove $dev"
         }
 
+        rm -f $userdev || {
+            fail "Cannot remove $userdev"
+        }
+
         modprobe vboxadd >/dev/null 2>&1 || {
             fail "modprobe vboxadd failed"
         }
@@ -183,9 +204,28 @@ start()
             fail "Cannot create device $dev with major $maj and minor $min"
         }
     fi
+    if [ ! -c $userdev ]; then
+        maj=10
+        min=`sed -n 's;\([0-9]\+\) vboxuser;\1;p' /proc/misc`
+        if [ ! -z "$min" ]; then
+            mknod -m 0666 $userdev c $maj $min || {
+                rm -f $dev 2>/dev/null
+                rmmod vboxadd 2>/dev/null
+                fail "Cannot create device $userdev with major $maj and minor $min"
+            }
+        fi
+    fi
     chown $owner:$group $dev 2>/dev/null || {
+        rm -f $dev 2>/dev/null
+        rm -f $userdev 2>/dev/null
         rmmod vboxadd 2>/dev/null
         fail "Cannot change owner $owner:$group for device $dev"
+    }
+    chown $owner:$group $userdev 2>/dev/null || {
+        rm -f $dev 2>/dev/null
+        rm -f $userdev 2>/dev/null
+        rmmod vboxadd 2>/dev/null
+        fail "Cannot change owner $owner:$group for device $userdev"
     }
 
     if [ -n "$BUILDVBOXVFS" ]; then
@@ -193,8 +233,8 @@ start()
             modprobe vboxvfs > /dev/null 2>&1 || {
                 if dmesg | grep "vboxConnect failed" > /dev/null 2>&1; then
                     fail_msg
-                    echo "You may be trying to run Guest Additions from binary release of VirtualBox"
-                    echo "in the Open Source Edition."
+                    echo "Unable to start shared folders support.  Make sure that your VirtualBox build"
+                    echo "supports this feature."
                     exit 1
                 fi
                 fail "modprobe vboxvfs failed"
@@ -223,6 +263,7 @@ stop()
     fi
     if running_vboxadd; then
         rmmod vboxadd 2>/dev/null || fail "Cannot unload module vboxadd"
+        rm -f $userdev || fail "Cannot unlink $userdev"
         rm -f $dev || fail "Cannot unlink $dev"
     fi
     succ_msg
@@ -256,6 +297,13 @@ setup()
     fi
     if [ -n "$BUILDVBOXVFS" ]; then
         if ! $BUILDVBOXVFS \
+            --use-module-symvers /tmp/vboxadd-Module.symvers \
+            --no-print-directory install >> $LOG 2>&1; then
+            fail "Look at $LOG to find out what went wrong"
+        fi
+    fi
+    if [ -n "$BUILDVBOXVIDEO" ]; then
+        if ! $BUILDVBOXVIDEO \
             --use-module-symvers /tmp/vboxadd-Module.symvers \
             --no-print-directory install >> $LOG 2>&1; then
             fail "Look at $LOG to find out what went wrong"

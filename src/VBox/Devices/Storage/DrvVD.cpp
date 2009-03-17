@@ -1,4 +1,4 @@
-/* $Id: DrvVD.cpp 15592 2008-12-16 14:48:13Z vboxsync $ */
+/* $Id: DrvVD.cpp 17796 2009-03-13 09:37:44Z vboxsync $ */
 /** @file
  * DrvVD - Generic VBox disk media driver.
  */
@@ -24,7 +24,7 @@
 *   Header files                                                               *
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_DRV_VD
-#include <VBox/VBoxHDD-new.h>
+#include <VBox/VBoxHDD.h>
 #include <VBox/pdmdrv.h>
 #include <iprt/alloc.h>
 #include <iprt/assert.h>
@@ -34,21 +34,21 @@
 #include <iprt/cache.h>
 #include <iprt/tcp.h>
 
-#ifndef VBOX_OSE
+#ifdef VBOX_WITH_INIP
 /* All lwip header files are not C++ safe. So hack around this. */
 __BEGIN_DECLS
 #include <lwip/inet.h>
 #include <lwip/tcp.h>
 #include <lwip/sockets.h>
 __END_DECLS
-#endif /* !VBOX_OSE */
+#endif /* VBOX_WITH_INIP */
 
 #include "Builtins.h"
 
-#ifndef VBOX_OSE
+#ifdef VBOX_WITH_INIP
 /* Small hack to get at lwIP initialized status */
 extern bool DevINIPConfigured(void);
-#endif /* !VBOX_OSE */
+#endif /* VBOX_WITH_INIP */
 
 
 /*******************************************************************************
@@ -304,7 +304,7 @@ static int drvvdCfgQuery(void *pvUser, const char *pszName, char *pszString, siz
 }
 
 
-#ifndef VBOX_OSE
+#ifdef VBOX_WITH_INIP
 /*******************************************************************************
 *   VD TCP network stack interface implementation - INIP case                  *
 *******************************************************************************/
@@ -459,7 +459,7 @@ static DECLCALLBACK(int) drvvdINIPFlush(RTSOCKET Sock)
                     (const char *)&fFlag, sizeof(fFlag));
     return VINF_SUCCESS;
 }
-#endif /* !VBOX_OSE */
+#endif /* VBOX_WITH_INIP */
 
 
 /*******************************************************************************
@@ -924,10 +924,10 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
         }
         else
         {
-#ifdef VBOX_OSE
+#ifndef VBOX_WITH_INIP
             rc = PDMDrvHlpVMSetError(pDrvIns, VERR_PDM_DRVINS_UNKNOWN_CFG_VALUES,
-                                     RT_SRC_POS, N_("DrvVD: Configuration error: TCP over Internal Networking not supported in VirtualBox OSE"));
-#else /* !VBOX_OSE */
+                                     RT_SRC_POS, N_("DrvVD: Configuration error: TCP over Internal Networking not compiled in"));
+#else /* VBOX_WITH_INIP */
             pThis->VDITcpNetCallbacks.cbSize = sizeof(VDINTERFACETCPNET);
             pThis->VDITcpNetCallbacks.enmInterface = VDINTERFACETYPE_TCPNET;
             pThis->VDITcpNetCallbacks.pfnClientConnect = drvvdINIPClientConnect;
@@ -936,7 +936,7 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
             pThis->VDITcpNetCallbacks.pfnRead = drvvdINIPRead;
             pThis->VDITcpNetCallbacks.pfnWrite = drvvdINIPWrite;
             pThis->VDITcpNetCallbacks.pfnFlush = drvvdINIPFlush;
-#endif /* !VBOX_OSE */
+#endif /* VBOX_WITH_INIP */
         }
         if (RT_SUCCESS(rc))
         {
@@ -999,7 +999,7 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
         if (pThis->pDrvMediaAsyncPort)
             uOpenFlags |= VD_OPEN_FLAGS_ASYNC_IO;
 
-        /** Try to open backend in asyc I/O mode first. */
+        /* Try to open backend in asyc I/O mode first. */
         rc = VDOpen(pThis->pDisk, pszFormat, pszName, uOpenFlags, pImage->pVDIfsImage);
         if (rc == VERR_NOT_SUPPORTED)
         {

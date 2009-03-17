@@ -40,7 +40,9 @@
 #include <VBox/ssm.h>
 #include <VBox/cfgm.h>
 #include <VBox/dbgf.h>
-#include <VBox/mm.h>
+#ifndef VBOX_WITH_NEW_PHYS_CODE
+# include <VBox/mm.h>
+#endif
 #include <VBox/err.h>
 #include <VBox/pci.h>
 #include <iprt/stdarg.h>
@@ -2659,17 +2661,17 @@ typedef struct PDMDEVHLPR3
     DECLR3CALLBACKMEMBER(void, pfnGetCpuId,(PPDMDEVINS pDevIns, uint32_t iLeaf, uint32_t *pEax, uint32_t *pEbx, uint32_t *pEcx, uint32_t *pEdx));
 
     /**
-     * Write protects a shadow ROM mapping.
+     * Changes the protection of shadowed ROM mapping.
      *
-     * This is intented for use by the system BIOS or by the device that
-     * employs a shadow ROM BIOS, so that the shadow ROM mapping can be
-     * write protected once the POST is over.
+     * This is intented for use by the system BIOS, chipset or device in question to
+     * change the protection of shadowed ROM code after init and on reset.
      *
      * @param   pDevIns     Device instance.
-     * @param   GCPhysStart Where the shadow ROM mapping starts.
-     * @param   cbRange     The size of the shadow ROM mapping.
+     * @param   GCPhysStart Where the mapping starts.
+     * @param   cbRange     The size of the mapping.
+     * @param   enmProt     The new protection type.
      */
-    DECLR3CALLBACKMEMBER(int, pfnROMProtectShadow,(PPDMDEVINS pDevIns, RTGCPHYS GCPhysStart, RTUINT cbRange));
+    DECLR3CALLBACKMEMBER(int, pfnROMProtectShadow,(PPDMDEVINS pDevIns, RTGCPHYS GCPhysStart, RTUINT cbRange, PGMROMPROT enmProt));
 
     /**
      * Allocate and register a MMIO2 region.
@@ -3064,6 +3066,14 @@ typedef struct PDMDEVHLPR0
      */
     DECLR0CALLBACKMEMBER(PVM, pfnGetVM,(PPDMDEVINS pDevIns));
 
+    /**
+     * Checks if our current CPU state allows for IO block emulation fallback to the recompiler
+     *
+     * @returns true = yes, false = no
+     * @param   pDevIns         Device instance.
+     */
+    DECLR0CALLBACKMEMBER(bool, pfnCanEmulateIoBlock,(PPDMDEVINS pDevIns));
+
     /** Just a safety precaution. */
     uint32_t                        u32TheEnd;
 } PDMDEVHLPR0;
@@ -3073,7 +3083,7 @@ typedef R0PTRTYPE(struct PDMDEVHLPR0 *) PPDMDEVHLPR0;
 typedef R0PTRTYPE(const struct PDMDEVHLPR0 *) PCPDMDEVHLPR0;
 
 /** Current PDMDEVHLP version number. */
-#define PDM_DEVHLPR0_VERSION  0xfb010000
+#define PDM_DEVHLPR0_VERSION  0xfb020000
 
 
 
@@ -3293,9 +3303,9 @@ DECLINLINE(int) PDMDevHlpROMRegister(PPDMDEVINS pDevIns, RTGCPHYS GCPhysStart, R
 /**
  * @copydoc PDMDEVHLPR3::pfnROMProtectShadow
  */
-DECLINLINE(int) PDMDevHlpROMProtectShadow(PPDMDEVINS pDevIns, RTGCPHYS GCPhysStart, RTUINT cbRange)
+DECLINLINE(int) PDMDevHlpROMProtectShadow(PPDMDEVINS pDevIns, RTGCPHYS GCPhysStart, RTUINT cbRange, PGMROMPROT enmProt)
 {
-    return pDevIns->pDevHlpR3->pfnROMProtectShadow(pDevIns, GCPhysStart, cbRange);
+    return pDevIns->pDevHlpR3->pfnROMProtectShadow(pDevIns, GCPhysStart, cbRange, enmProt);
 }
 
 /**
@@ -3510,6 +3520,7 @@ DECLINLINE(int) PDMDevHlpPhysWriteGCVirt(PPDMDEVINS pDevIns, RTGCPTR GCVirtDst, 
     return pDevIns->pDevHlpR3->pfnPhysWriteGCVirt(pDevIns, GCVirtDst, pvSrc, cb);
 }
 
+#ifndef VBOX_WITH_NEW_PHYS_CODE
 /**
  * @copydoc PDMDEVHLPR3::pfnPhysReserve
  */
@@ -3517,6 +3528,7 @@ DECLINLINE(int) PDMDevHlpPhysReserve(PPDMDEVINS pDevIns, RTGCPHYS GCPhys, RTUINT
 {
     return pDevIns->pDevHlpR3->pfnPhysReserve(pDevIns, GCPhys, cbRange, pszDesc);
 }
+#endif
 
 /**
  * @copydoc PDMDEVHLPR3::pfnPhysGCPtr2GCPhys
@@ -3656,6 +3668,16 @@ DECLINLINE(PVM) PDMDevHlpGetVM(PPDMDEVINS pDevIns)
 {
     return pDevIns->CTX_SUFF(pDevHlp)->pfnGetVM(pDevIns);
 }
+
+#ifdef IN_RING0
+/**
+ * @copydoc PDMDEVHLPR0::pfnCanEmulateIoBlock
+ */
+DECLINLINE(bool) PDMDevHlpCanEmulateIoBlock(PPDMDEVINS pDevIns)
+{
+    return pDevIns->CTX_SUFF(pDevHlp)->pfnCanEmulateIoBlock(pDevIns);
+}
+#endif
 
 /**
  * @copydoc PDMDEVHLPR3::pfnPCISetIrq

@@ -1,4 +1,4 @@
-/* $Id: string.h 15051 2008-12-05 17:20:00Z vboxsync $ */
+/* $Id: string.h 17973 2009-03-16 19:35:42Z vboxsync $ */
 
 /** @file
  * MS COM / XPCOM Abstraction Layer:
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -125,9 +125,9 @@ public:
     }
 
     /**
-     *  Allocates memory for a string capable to store \a aSize - 1 characters
-     *  plus the terminating zero character. If \a aSize is zero, or if a
-     *  memory allocation error occurs, this object will become null.
+     *  Allocates memory for a string capable to store \a aSize - 1 characters;
+     *  in other words, aSize includes the terminating zero character. If \a aSize
+     *  is zero, or if a memory allocation error occurs, this object will become null.
      */
     Bstr &alloc (size_t aSize)
     {
@@ -327,6 +327,12 @@ class Utf8Str
 {
 public:
 
+    enum CaseSensitivity
+    {
+        CaseSensitive,
+        CaseInsensitive
+    };
+
     typedef char *String;
     typedef const char *ConstString;
 
@@ -388,9 +394,9 @@ public:
     }
 
     /**
-     *  Allocates memory for a string capable to store \a aSize - 1 characters
-     *  plus the terminating zero character. If \a aSize is zero, or if a
-     *  memory allocation error occurs, this object will become null.
+     *  Allocates memory for a string capable to store \a aSize - 1 bytes (not characters!);
+     *  in other words, aSize includes the terminating zero character. If \a aSize
+     *  is zero, or if a memory allocation error occurs, this object will become null.
      */
     Utf8Str &alloc (size_t aSize)
     {
@@ -408,24 +414,90 @@ public:
         return *this;
     }
 
-    int compare (const char *s) const
+    void append(const Utf8Str &that)
     {
-        if (str == s)
+        size_t cbThis = length();
+        size_t cbThat = that.length();
+
+        if (cbThat)
+        {
+            size_t cbBoth = cbThis + cbThat + 1;
+
+            // @todo optimize with realloc() once the memory management is fixed
+            char *pszTemp;
+#if !defined (VBOX_WITH_XPCOM)
+            pszTemp = (char*)::RTMemTmpAlloc(cbBoth);
+#else
+            pszTemp = (char*)nsMemory::Alloc(cbBoth);
+#endif
+            if (str)
+            {
+                memcpy(pszTemp, str, cbThis);
+                setNull();
+            }
+            if (that.str)
+                memcpy(pszTemp + cbThis, that.str, cbThat);
+            pszTemp[cbThis + cbThat] = '\0';
+
+            str = pszTemp;
+        }
+    }
+
+    int compare (const char *pcsz, CaseSensitivity cs = CaseSensitive) const
+    {
+        if (str == pcsz)
             return 0;
         if (str == NULL)
             return -1;
-        if (s == NULL)
+        if (pcsz == NULL)
             return 1;
 
-        return ::strcmp (str, s);
+        if (cs == CaseSensitive)
+            return ::RTStrCmp(str, pcsz);
+        else
+            return ::RTStrICmp(str, pcsz);
     }
 
-    bool operator == (const Utf8Str &that) const { return !compare (that.str); }
-    bool operator != (const Utf8Str &that) const { return !!compare (that.str); }
+    int compare (const Utf8Str &that, CaseSensitivity cs = CaseSensitive) const
+    {
+        return compare (that.str, cs);
+    }
+
+    bool operator == (const Utf8Str &that) const { return !compare (that); }
+    bool operator != (const Utf8Str &that) const { return !!compare (that); }
     bool operator == (const char *that) const { return !compare (that); }
     bool operator != (const char *that) const { return !!compare (that); }
-    bool operator < (const Utf8Str &that) const { return compare (that.str) < 0; }
+    bool operator < (const Utf8Str &that) const { return compare (that) < 0; }
     bool operator < (const char *that) const { return compare (that) < 0; }
+
+    bool endsWith (const Utf8Str &that, CaseSensitivity cs = CaseSensitive) const
+    {
+        if (isNull() || that.isNull())
+            return false;
+
+        if (length() < that.length())
+            return false;
+
+        size_t l = length() - that.length();
+        if (cs == CaseSensitive)
+            return ::RTStrCmp(&str[l], that.str) == 0;
+        else
+            return ::RTStrICmp(&str[l], that.str) == 0;
+    }
+
+    bool startsWith (const Utf8Str &that, CaseSensitivity cs = CaseSensitive) const
+    {
+        if (isNull() || that.isNull())
+            return false;
+
+        if (length() < that.length())
+            return false;
+
+        if (cs == CaseSensitive)
+            return ::RTStrNCmp(str, that.str, that.length()) == 0;
+        else
+            return ::RTStrNICmp(str, that.str, that.length()) == 0;
+    }
 
     bool isNull() const { return str == NULL; }
     operator bool() const { return !isNull(); }
@@ -440,6 +512,10 @@ public:
     /** The same as operator const char *(), but for situations where the compiler
         cannot typecast implicitly (for example, in printf() argument list). */
     const char *raw() const { return str; }
+
+    /** The same as operator const char *(), but for situations where the compiler
+        cannot typecast implicitly (for example, in printf() argument list). */
+    const char *c_str() const { return str; }
 
     /**
      *  Returns a non-const raw pointer that allows to modify the string directly.
@@ -494,6 +570,82 @@ public:
         }
         return *this;
     }
+
+    static const size_t npos;
+
+    /**
+     * Looks for pcszFind in "this" starting at "pos" and returns its position,
+     * counting from the beginning of "this" at 0. Returns npos if not found.
+     */
+    size_t find(const char *pcszFind, size_t pos = 0) const;
+
+    /**
+     * Returns a substring of "this" as a new Utf8Str. Works exactly like
+     * its equivalent in std::string except that this interprets pos and n
+     * as UTF-8 codepoints instead of bytes. With the default parameters "0"
+     * and "npos", this always copies the entire string.
+     * @param pos Index of first codepoint to copy from "this", counting from 0.
+     * @param n Number of codepoints to copy, starting with the one at "pos".
+     */
+    Utf8Str substr(size_t pos = 0, size_t n = npos) const;
+
+    /**
+     * Attempts to convert the member string into an 32-bit integer.
+     *
+     * @returns 32-bit unsigned number on success.
+     * @returns 0 on failure.
+     */
+    int toInt32() const
+    {
+        return RTStrToInt32(str);
+    }
+
+    /**
+     * Attempts to convert the member string into an unsigned 32-bit integer.
+     *
+     * @returns 32-bit unsigned number on success.
+     * @returns 0 on failure.
+     */
+    int toUInt32() const
+    {
+        return RTStrToUInt32(str);
+    }
+
+    /**
+     * Attempts to convert the member string into an 64-bit integer.
+     *
+     * @returns 64-bit unsigned number on success.
+     * @returns 0 on failure.
+     */
+    int64_t toInt64() const
+    {
+        return RTStrToInt64(str);
+    }
+
+    /**
+     * Attempts to convert the member string into an unsigned 64-bit integer.
+     *
+     * @returns 64-bit unsigned number on success.
+     * @returns 0 on failure.
+     */
+    uint64_t toUInt64() const
+    {
+        return RTStrToUInt64(str);
+    }
+
+    /**
+     * Attempts to convert the member string into an unsigned 64-bit integer.
+     * @return IPRT error code.
+     * @param i Output buffer.
+     */
+    int toInt(uint64_t &i) const;
+
+    /**
+     * Attempts to convert the member string into an unsigned 32-bit integer.
+     * @return IPRT error code.
+     * @param i Output buffer.
+     */
+    int toInt(uint32_t &i) const;
 
     /**
      *  Intended to pass instances as out (|char **|) parameters to methods.

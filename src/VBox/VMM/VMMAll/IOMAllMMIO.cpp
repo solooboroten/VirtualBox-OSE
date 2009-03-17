@@ -1,4 +1,4 @@
-/* $Id: IOMAllMMIO.cpp 16037 2009-01-19 10:30:36Z vboxsync $ */
+/* $Id: IOMAllMMIO.cpp 17533 2009-03-08 03:03:43Z vboxsync $ */
 /** @file
  * IOM - Input / Output Monitor - Any Context, MMIO & String I/O.
  */
@@ -270,6 +270,8 @@ static int iomInterpretMOVxXWrite(PVM pVM, PCPUMCTXCORE pRegFrame, PDISCPUSTATE 
 /** Wrapper for reading virtual memory. */
 DECLINLINE(int) iomRamRead(PVM pVM, void *pDest, RTGCPTR GCSrc, uint32_t cb)
 {
+    /* Note: This will fail in R0 or RC if it hits an access handler. That
+             isn't a problem though since the operation can be restarted in REM. */
 #ifdef IN_RC
     return MMGCRamReadNoTrapHandler(pDest, (void *)GCSrc, cb);
 #else
@@ -279,12 +281,30 @@ DECLINLINE(int) iomRamRead(PVM pVM, void *pDest, RTGCPTR GCSrc, uint32_t cb)
 
 
 /** Wrapper for writing virtual memory. */
-DECLINLINE(int) iomRamWrite(PVM pVM, RTGCPTR GCDest, void *pSrc, uint32_t cb)
+DECLINLINE(int) iomRamWrite(PVM pVM, PCPUMCTXCORE pCtxCore, RTGCPTR GCPtrDst, void *pvSrc, uint32_t cb)
 {
+    /** @todo Need to update PGMVerifyAccess to take access handlers into account for Ring-0 and
+     *        raw mode code. Some thought needs to be spent on theoretical concurrency issues as
+     *        as well since we're not behind the pgm lock and handler may change between calls.
+     *        MMGCRamWriteNoTrapHandler may also trap if the page isn't shadowed, or was kicked
+     *        out from both the shadow pt (SMP or our changes) and TLB.
+     *
+     *        Currently MMGCRamWriteNoTrapHandler may also fail when it hits a write access handler.
+     *        PGMPhysInterpretedWriteNoHandlers/PGMPhysWriteGCPtr OTOH may mess up the state
+     *        of some shadowed structure in R0. */
 #ifdef IN_RC
-    return MMGCRamWriteNoTrapHandler((void *)GCDest, pSrc, cb);
+    NOREF(pCtxCore);
+    return MMGCRamWriteNoTrapHandler((void *)GCPtrDst, pvSrc, cb);
+#elif IN_RING0
+# ifdef VBOX_WITH_NEW_PHYS_CODE /* PGMPhysWriteGCPtr will fail, make sure we ignore handlers here. */
+    return PGMPhysInterpretedWriteNoHandlers(pVM, pCtxCore, GCPtrDst, pvSrc, cb, false /*fRaiseTrap*/);
+# else
+    NOREF(pCtxCore);
+    return PGMPhysWriteGCPtr(pVM, GCPtrDst, pvSrc, cb);
+# endif
 #else
-    return PGMPhysWriteGCPtr(pVM, GCDest, pSrc, cb);
+    NOREF(pCtxCore);
+    return PGMPhysWriteGCPtr(pVM, GCPtrDst, pvSrc, cb);
 #endif
 }
 
@@ -491,7 +511,7 @@ static int iomInterpretMOVS(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame
                 rc = iomMMIODoRead(pVM, pRange, Phys, &u32Data, cb);
                 if (rc != VINF_SUCCESS)
                     break;
-                rc = iomRamWrite(pVM, (RTGCPTR)pu8Virt, &u32Data, cb);
+                rc = iomRamWrite(pVM, pRegFrame, (RTGCPTR)pu8Virt, &u32Data, cb);
                 if (rc != VINF_SUCCESS)
                 {
                     Log(("iomRamWrite %08X size=%d failed with %d\n", pu8Virt, cb, rc));
@@ -1514,7 +1534,7 @@ VMMDECL(int) IOMInterpretINSEx(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t uPort, 
         rc = IOMIOPortRead(pVM, uPort, &u32Value, cbTransfer);
         if (!IOM_SUCCESS(rc))
             break;
-        int rc2 = iomRamWrite(pVM, GCPtrDst, &u32Value, cbTransfer);
+        int rc2 = iomRamWrite(pVM, pRegFrame, GCPtrDst, &u32Value, cbTransfer);
         Assert(rc2 == VINF_SUCCESS); NOREF(rc2);
         GCPtrDst = (RTGCPTR)((RTGCUINTPTR)GCPtrDst + cbTransfer);
         pRegFrame->rdi += cbTransfer;
@@ -1758,6 +1778,12 @@ VMMDECL(int) IOMMMIOModifyPage(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCPhysRemapped
 
     Log(("IOMMMIOModifyPage %RGp -> %RGp flags=%RX64\n", GCPhys, GCPhysRemapped, fPageFlags));
 
+    /* This currently only works in real mode, protected mode without paging or with nested paging. */
+    if (    !HWACCMIsEnabled(pVM)       /* useless without VT-x/AMD-V */
+        ||  (   CPUMIsGuestInPagedProtectedMode(pVM)
+             && !HWACCMIsNestedPagingActive(pVM)))
+        return VINF_SUCCESS;    /* ignore */
+
     /*
      * Lookup the current context range node and statistics.
      */
@@ -1769,11 +1795,6 @@ VMMDECL(int) IOMMMIOModifyPage(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCPhysRemapped
     GCPhys         &= ~(RTGCPHYS)0xfff;
     GCPhysRemapped &= ~(RTGCPHYS)0xfff;
 
-    /* This currently only works in real mode, protected mode without paging or with nested paging. */
-    if (    CPUMIsGuestInPagedProtectedMode(pVM)
-        && !HWACCMIsNestedPagingActive(pVM))
-        return VINF_SUCCESS;    /* ignore */
-
     int rc = PGMHandlerPhysicalPageAlias(pVM, pRange->GCPhys, GCPhys, GCPhysRemapped);
     AssertRCReturn(rc, rc);
 
@@ -1784,10 +1805,9 @@ VMMDECL(int) IOMMMIOModifyPage(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCPhysRemapped
     Assert(rc == VERR_PAGE_NOT_PRESENT || rc == VERR_PAGE_TABLE_NOT_PRESENT);
 #endif
 
-    /* Mark it as writable and present so reads and writes no longer fault. */
-    rc = PGMShwModifyPage(pVM, (RTGCPTR)GCPhys, 1, fPageFlags, ~fPageFlags);
+    /* @note this is a NOP in the EPT case; we'll just let it fault again to resync the page. */
+    rc = PGMPrefetchPage(pVM, (RTGCPTR)GCPhys);
     Assert(rc == VINF_SUCCESS || rc == VERR_PAGE_NOT_PRESENT || rc == VERR_PAGE_TABLE_NOT_PRESENT);
-
     return VINF_SUCCESS;
 }
 
@@ -1802,9 +1822,13 @@ VMMDECL(int) IOMMMIOModifyPage(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCPhysRemapped
  */
 VMMDECL(int)  IOMMMIOResetRegion(PVM pVM, RTGCPHYS GCPhys)
 {
-    uint32_t cb;
-
     Log(("IOMMMIOResetRegion %RGp\n", GCPhys));
+
+    /* This currently only works in real mode, protected mode without paging or with nested paging. */
+    if (    !HWACCMIsEnabled(pVM)       /* useless without VT-x/AMD-V */
+        ||  (   CPUMIsGuestInPagedProtectedMode(pVM)
+             && !HWACCMIsNestedPagingActive(pVM)))
+        return VINF_SUCCESS;    /* ignore */
 
     /*
      * Lookup the current context range node and statistics.
@@ -1814,33 +1838,26 @@ VMMDECL(int)  IOMMMIOResetRegion(PVM pVM, RTGCPHYS GCPhys)
                     ("Handlers and page tables are out of sync or something! GCPhys=%RGp\n", GCPhys),
                     VERR_INTERNAL_ERROR);
 
-    /* This currently only works in real mode, protected mode without paging or with nested paging. */
-    if (    CPUMIsGuestInPagedProtectedMode(pVM)
-        && !HWACCMIsNestedPagingActive(pVM))
-        return VINF_SUCCESS;    /* ignore */
+    /* Reset the entire range by clearing all shadow page table entries. */
+    int rc = PGMHandlerPhysicalReset(pVM, pRange->GCPhys);
+    AssertRC(rc);
 
+#ifdef VBOX_STRICT
+    uint32_t cb = pRange->cb;
 
-    cb     = pRange->cb;
     GCPhys = pRange->GCPhys;
 
     while (cb)
     {
-        int rc = PGMHandlerPhysicalPageReset(pVM, pRange->GCPhys, GCPhys);
-        AssertRC(rc);
 
-        /* Mark it as not present again to intercept all read and write access. */
-        rc = PGMShwModifyPage(pVM, (RTGCPTR)GCPhys, 1, 0, ~(uint64_t)(X86_PTE_RW|X86_PTE_P));
-        Assert(rc == VINF_SUCCESS || rc == VERR_PAGE_NOT_PRESENT || rc == VERR_PAGE_TABLE_NOT_PRESENT);
-
-#ifdef VBOX_STRICT
         uint64_t fFlags;
         RTHCPHYS HCPhys;
         rc = PGMShwGetPage(pVM, (RTGCPTR)GCPhys, &fFlags, &HCPhys);
         Assert(rc == VERR_PAGE_NOT_PRESENT || rc == VERR_PAGE_TABLE_NOT_PRESENT);
-#endif
         cb     -= PAGE_SIZE;
         GCPhys += PAGE_SIZE;
     }
+#endif
     return VINF_SUCCESS;
 }
 #endif /* !IN_RC */

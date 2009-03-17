@@ -1,4 +1,4 @@
-/* $Id: VBoxBFE.cpp 15256 2008-12-10 15:53:00Z vboxsync $ */
+/* $Id: VBoxBFE.cpp 17743 2009-03-12 13:18:06Z vboxsync $ */
 /** @file
  * Basic Frontend (BFE): VBoxBFE main routines.
  *
@@ -1385,6 +1385,7 @@ static DECLCALLBACK(int) vboxbfeConfigConstructor(PVM pVM, void *pvUser)
     PCFGMNODE pRoot = CFGMR3GetRoot(pVM);
     rc = CFGMR3InsertString(pRoot,  "Name",           "Default VM");                UPDATE_RC();
     rc = CFGMR3InsertInteger(pRoot, "RamSize",        g_u32MemorySizeMB * _1M);     UPDATE_RC();
+    rc = CFGMR3InsertInteger(pRoot, "RamHoleSize",    512U * _1M);                  UPDATE_RC();
     if (g_fPreAllocRam)
     {
         rc = CFGMR3InsertInteger(pRoot, "RamPreAlloc",    1);                       UPDATE_RC();
@@ -1436,6 +1437,7 @@ static DECLCALLBACK(int) vboxbfeConfigConstructor(PVM pVM, void *pvUser)
     rc = CFGMR3InsertInteger(pInst, "Trusted",              1);     /* boolean */   UPDATE_RC();
     rc = CFGMR3InsertNode(pInst,    "Config",         &pCfg);                       UPDATE_RC();
     rc = CFGMR3InsertInteger(pCfg,  "RamSize",        g_u32MemorySizeMB * _1M);     UPDATE_RC();
+    rc = CFGMR3InsertInteger(pCfg,  "RamHoleSize",    512U * _1M);                  UPDATE_RC();
     rc = CFGMR3InsertString(pCfg,   "BootDevice0",    g_pszBootDevice);             UPDATE_RC();
     rc = CFGMR3InsertString(pCfg,   "BootDevice1",    "NONE");                      UPDATE_RC();
     rc = CFGMR3InsertString(pCfg,   "BootDevice2",    "NONE");                      UPDATE_RC();
@@ -1457,6 +1459,7 @@ static DECLCALLBACK(int) vboxbfeConfigConstructor(PVM pVM, void *pvUser)
         rc = CFGMR3InsertInteger(pInst, "Trusted",        1);       /* boolean */   UPDATE_RC();
         rc = CFGMR3InsertNode(pInst,    "Config",         &pCfg);                   UPDATE_RC();
         rc = CFGMR3InsertInteger(pCfg,  "RamSize",        g_u32MemorySizeMB * _1M); UPDATE_RC();
+        rc = CFGMR3InsertInteger(pCfg,  "RamHoleSize",    512U * _1M);              UPDATE_RC();
         rc = CFGMR3InsertInteger(pCfg,  "IOAPIC",         g_fIOAPIC);               UPDATE_RC();
         rc = CFGMR3InsertInteger(pInst, "PCIDeviceNo",    7);                       UPDATE_RC();
         rc = CFGMR3InsertInteger(pInst, "PCIFunctionNo",  0);                       UPDATE_RC();
@@ -1662,12 +1665,6 @@ static DECLCALLBACK(int) vboxbfeConfigConstructor(PVM pVM, void *pvUser)
 
     if (g_pszHdaFile)
     {
-        const char *szDriver;
-        if (0 == strcmp(RTPathExt(g_pszHdaFile), ".vdi"))
-            szDriver = "VBoxHDD";  /* .vdi */
-        else
-            szDriver = "VD";       /* .vmdk */
-
         rc = CFGMR3InsertNode(pInst,    "LUN#0",          &pLunL0);                 UPDATE_RC();
         rc = CFGMR3InsertString(pLunL0, "Driver",         "Block");                 UPDATE_RC();
         rc = CFGMR3InsertNode(pLunL0,   "Config",         &pCfg);                   UPDATE_RC();
@@ -1675,7 +1672,7 @@ static DECLCALLBACK(int) vboxbfeConfigConstructor(PVM pVM, void *pvUser)
         rc = CFGMR3InsertInteger(pCfg,  "Mountable",      0);                       UPDATE_RC();
 
         rc = CFGMR3InsertNode(pLunL0,   "AttachedDriver", &pDrv);                   UPDATE_RC();
-        rc = CFGMR3InsertString(pDrv,   "Driver",         szDriver);                UPDATE_RC();
+        rc = CFGMR3InsertString(pDrv,   "Driver",         "VD");                    UPDATE_RC();
         rc = CFGMR3InsertNode(pDrv,     "Config",         &pCfg);                   UPDATE_RC();
         rc = CFGMR3InsertString(pCfg,   "Path",           g_pszHdaFile);            UPDATE_RC();
 
@@ -1683,16 +1680,22 @@ static DECLCALLBACK(int) vboxbfeConfigConstructor(PVM pVM, void *pvUser)
         {
             rc = CFGMR3InsertString(pCfg, "Format",       "SPF");                   UPDATE_RC();
         }
+        else
+        {
+            char *pcExt = RTPathExt(g_pszHdaFile);
+            if ((pcExt) && (!strcmp(pcExt, ".vdi")))
+            {
+                rc = CFGMR3InsertString(pCfg, "Format",       "VDI");               UPDATE_RC();
+            }
+            else
+            {
+                rc = CFGMR3InsertString(pCfg, "Format",       "VMDK");              UPDATE_RC();
+            }
+        }
     }
 
     if (g_pszHdbFile)
     {
-        const char *szDriver;
-        if (0 == strcmp(RTPathExt(g_pszHdbFile), ".vdi"))
-            szDriver = "VBoxHDD";  /* .vdi */
-        else
-            szDriver = "VD";       /* .vmdk */
-
         rc = CFGMR3InsertNode(pInst,    "LUN#1",          &pLunL1);                 UPDATE_RC();
         rc = CFGMR3InsertString(pLunL1, "Driver",         "Block");                 UPDATE_RC();
         rc = CFGMR3InsertNode(pLunL1,   "Config",         &pCfg);                   UPDATE_RC();
@@ -1700,13 +1703,25 @@ static DECLCALLBACK(int) vboxbfeConfigConstructor(PVM pVM, void *pvUser)
         rc = CFGMR3InsertInteger(pCfg,  "Mountable",      0);                       UPDATE_RC();
 
         rc = CFGMR3InsertNode(pLunL1,   "AttachedDriver", &pDrv);                   UPDATE_RC();
-        rc = CFGMR3InsertString(pDrv,   "Driver",         szDriver);                UPDATE_RC();
+        rc = CFGMR3InsertString(pDrv,   "Driver",         "VD");                    UPDATE_RC();
         rc = CFGMR3InsertNode(pDrv,     "Config",         &pCfg);                   UPDATE_RC();
         rc = CFGMR3InsertString(pCfg,   "Path",           g_pszHdbFile);            UPDATE_RC();
 
         if (g_fHdbSpf)
         {
             rc = CFGMR3InsertString(pCfg, "Format",       "SPF");                   UPDATE_RC();
+        }
+        else
+        {
+            char *pcExt = RTPathExt(g_pszHdbFile);
+            if ((pcExt) && (!strcmp(pcExt, ".vdi")))
+            {
+                rc = CFGMR3InsertString(pCfg, "Format",       "VDI");               UPDATE_RC();
+            }
+            else
+            {
+                rc = CFGMR3InsertString(pCfg, "Format",       "VMDK");              UPDATE_RC();
+            }
         }
     }
 

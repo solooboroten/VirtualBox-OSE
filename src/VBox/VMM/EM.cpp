@@ -1,4 +1,4 @@
-/* $Id: EM.cpp 16132 2009-01-21 12:30:44Z vboxsync $ */
+/* $Id: EM.cpp 17969 2009-03-16 19:03:33Z vboxsync $ */
 /** @file
  * EM - Execution Monitor / Manager.
  */
@@ -2096,8 +2096,7 @@ int emR3RawPrivileged(PVM pVM)
                                 PATMTRANSSTATE  enmState;
                                 RTGCPTR         pOrgInstrGC = PATMR3PatchToGCPtr(pVM, pCtx->rip, &enmState);
 
-                                Assert(pCtx->eflags.Bits.u1IF == 0);
-                                Log(("Force recompiler switch due to cr0 (%RGp) update\n", pCtx->cr0));
+                                Log(("Force recompiler switch due to cr0 (%RGp) update rip=%RGv -> %RGv (enmState=%d)\n", pCtx->cr0, pCtx->rip, pOrgInstrGC, enmState));
                                 if (enmState == PATMTRANS_OVERWRITTEN)
                                 {
                                     rc = PATMR3DetectConflict(pVM, pOrgInstrGC, pOrgInstrGC);
@@ -2157,6 +2156,7 @@ DECLINLINE(int) emR3RawUpdateForceFlag(PVM pVM, PCPUMCTX pCtx, int rc)
         {
             case VINF_EM_RESCHEDULE:
             case VINF_EM_RESCHEDULE_REM:
+                LogFlow(("emR3RawUpdateForceFlag: patch address -> force raw reschedule\n"));
                 rc = VINF_SUCCESS;
                 break;
         }
@@ -2353,6 +2353,13 @@ DECLINLINE(int) emR3RawHandleRC(PVM pVM, PCPUMCTX pCtx, int rc)
         case VINF_IOM_HC_MMIO_WRITE:
         case VINF_IOM_HC_MMIO_READ_WRITE:
             rc = emR3RawExecuteInstruction(pVM, "MMIO");
+            break;
+
+        /*
+         * (MM)IO intensive code block detected; fall back to the recompiler for better performance
+         */
+        case VINF_EM_RAW_EMULATE_IO_BLOCK:
+            rc =HWACCMR3EmulateIoBlock(pVM, pCtx);
             break;
 
         /*
@@ -2606,7 +2613,7 @@ static int emR3RawExecute(PVM pVM, bool *pfFFDone)
                   || PATMShouldUseRawMode(pVM, (RTGCPTR)pCtx->eip),
                   ("Tried to execute code with IF at EIP=%08x!\n", pCtx->eip));
         if (    !VM_FF_ISPENDING(pVM, VM_FF_PGM_SYNC_CR3 | VM_FF_PGM_SYNC_CR3_NON_GLOBAL)
-            &&  PGMR3MapHasConflicts(pVM, pCtx->cr3, pVM->fRawR0Enabled))
+            &&  PGMMapHasConflicts(pVM))
         {
             AssertMsgFailed(("We should not get conflicts any longer!!!\n"));
             return VERR_INTERNAL_ERROR;
@@ -2719,7 +2726,7 @@ static int emR3RawExecute(PVM pVM, bool *pfFFDone)
          * Let's go paranoid!
          */
         if (    !VM_FF_ISPENDING(pVM, VM_FF_PGM_SYNC_CR3 | VM_FF_PGM_SYNC_CR3_NON_GLOBAL)
-            &&  PGMR3MapHasConflicts(pVM, pCtx->cr3, pVM->fRawR0Enabled))
+            &&  PGMMapHasConflicts(pVM))
         {
             AssertMsgFailed(("We should not get conflicts any longer!!!\n"));
             return VERR_INTERNAL_ERROR;
@@ -2844,9 +2851,9 @@ static int emR3HwAccExecute(PVM pVM, RTCPUID idCpu, bool *pfFFDone)
         if (pCtx->eflags.Bits.u1VM)
             Log(("HWV86: %08X IF=%d\n", pCtx->eip, pCtx->eflags.Bits.u1IF));
         else if (CPUMIsGuestIn64BitCode(pVM, CPUMCTX2CORE(pCtx)))
-            Log(("HWR%d: %04X:%RGv ESP=%RGv IF=%d CR0=%x CR4=%x EFER=%x\n", cpl, pCtx->cs, (RTGCPTR)pCtx->rip, pCtx->rsp, pCtx->eflags.Bits.u1IF, (uint32_t)pCtx->cr0, (uint32_t)pCtx->cr4, (uint32_t)pCtx->msrEFER));
+            Log(("HWR%d: %04X:%RGv ESP=%RGv IF=%d IOPL=%d CR0=%x CR4=%x EFER=%x\n", cpl, pCtx->cs, (RTGCPTR)pCtx->rip, pCtx->rsp, pCtx->eflags.Bits.u1IF, pCtx->eflags.Bits.u2IOPL, (uint32_t)pCtx->cr0, (uint32_t)pCtx->cr4, (uint32_t)pCtx->msrEFER));
         else
-            Log(("HWR%d: %04X:%08X ESP=%08X IF=%d CR0=%x CR4=%x EFER=%x\n", cpl, pCtx->cs,          pCtx->eip, pCtx->esp, pCtx->eflags.Bits.u1IF, (uint32_t)pCtx->cr0, (uint32_t)pCtx->cr4, (uint32_t)pCtx->msrEFER));
+            Log(("HWR%d: %04X:%08X ESP=%08X IF=%d IOPL=%d CR0=%x CR4=%x EFER=%x\n", cpl, pCtx->cs,          pCtx->eip, pCtx->esp, pCtx->eflags.Bits.u1IF, pCtx->eflags.Bits.u2IOPL, (uint32_t)pCtx->cr0, (uint32_t)pCtx->cr4, (uint32_t)pCtx->msrEFER));
 #endif /* LOG_ENABLED */
 
         /*
@@ -3245,7 +3252,7 @@ static int emR3ForcedActions(PVM pVM, int rc)
          * Interrupts.
          */
         if (    !VM_FF_ISSET(pVM, VM_FF_INHIBIT_INTERRUPTS)
-            &&  (!rc || rc >= VINF_EM_RESCHEDULE_RAW)
+            &&  (!rc || rc >= VINF_EM_RESCHEDULE_HWACC)
             &&  !TRPMHasTrap(pVM) /* an interrupt could already be scheduled for dispatching in the recompiler. */
             &&  PATMAreInterruptsEnabled(pVM)
             &&  !HWACCMR3IsEventPending(pVM))

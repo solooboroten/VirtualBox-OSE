@@ -1,4 +1,4 @@
-/* $Id: VM.cpp 15349 2008-12-12 02:36:19Z vboxsync $ */
+/* $Id: VM.cpp 17900 2009-03-15 21:43:18Z vboxsync $ */
 /** @file
  * VM - Virtual Machine
  */
@@ -559,18 +559,20 @@ static int vmR3CreateU(PUVM pUVM, uint32_t cCPUs, PFNCFGMCONSTRUCTOR pfnCFGMCons
             if (RT_SUCCESS(rc))
             {
                 /*
-                 * Init the Ring-3 components and do a round of relocations with 0 delta.
+                 * Init the ring-3 components and ring-3 per cpu data, finishing it off
+                 * by a relocation round (intermediate context finalization will do this).
                  */
                 rc = vmR3InitRing3(pVM, pUVM);
                 if (RT_SUCCESS(rc))
                 {
-                    VMR3Relocate(pVM, 0);
-                    LogFlow(("Ring-3 init succeeded\n"));
-
-                    /* Initialize the VMCPU components. */
                     rc = vmR3InitVMCpu(pVM);
                     if (RT_SUCCESS(rc))
+                        rc = PGMR3FinalizeMappings(pVM);
+                    if (RT_SUCCESS(rc))
                     {
+
+                        LogFlow(("Ring-3 init succeeded\n"));
+
                         /*
                          * Init the Ring-0 components.
                          */
@@ -745,6 +747,8 @@ static int vmR3InitRing3(PVM pVM, PUVM pUVM)
                                                                         rc = TMR3InitFinalize(pVM);
                                                                     if (RT_SUCCESS(rc))
                                                                         rc = VMMR3InitFinalize(pVM);
+                                                                    if (RT_SUCCESS(rc))
+                                                                        rc = REMR3InitFinalize(pVM);
                                                                     if (RT_SUCCESS(rc))
                                                                         rc = vmR3InitDoCompleted(pVM, VMINITCOMPLETED_RING3);
                                                                     if (RT_SUCCESS(rc))
@@ -2296,10 +2300,10 @@ static PVMATRESET vmr3AtResetFreeU(PUVM pUVM, PVMATRESET pCur, PVMATRESET pPrev)
  *
  * @returns VBox status code.
  * @param   pVM             The VM.
- * @param   pDevInst        Device instance.
+ * @param   pDevIns         Device instance.
  * @param   pfnCallback     Callback function.
  */
-VMMR3DECL(int)   VMR3AtResetDeregister(PVM pVM, PPDMDEVINS pDevInst, PFNVMATRESET pfnCallback)
+VMMR3DECL(int)   VMR3AtResetDeregister(PVM pVM, PPDMDEVINS pDevIns, PFNVMATRESET pfnCallback)
 {
     int         rc = VERR_VM_ATRESET_NOT_FOUND;
     PVMATRESET  pPrev = NULL;
@@ -2307,8 +2311,9 @@ VMMR3DECL(int)   VMR3AtResetDeregister(PVM pVM, PPDMDEVINS pDevInst, PFNVMATRESE
     while (pCur)
     {
         if (    pCur->enmType == VMATRESETTYPE_DEV
-            &&  pCur->u.Dev.pDevIns == pDevInst
-            &&  (!pfnCallback || pCur->u.Dev.pfnCallback == pfnCallback))
+            &&  pCur->u.Dev.pDevIns == pDevIns
+            &&  (   !pfnCallback 
+                 || pCur->u.Dev.pfnCallback == pfnCallback))
         {
             pCur = vmr3AtResetFreeU(pVM->pUVM, pCur, pPrev);
             rc = VINF_SUCCESS;
@@ -2603,8 +2608,8 @@ static DECLCALLBACK(int) vmR3AtStateDeregisterU(PUVM pUVM, PFNVMATSTATE pfnAtSta
     PVMATSTATE pPrev = NULL;
     PVMATSTATE pCur = pUVM->vm.s.pAtState;
     while (     pCur
-           &&   pCur->pfnAtState == pfnAtState
-           &&   pCur->pvUser == pvUser)
+           &&   (   pCur->pfnAtState != pfnAtState
+                 || pCur->pvUser != pvUser))
     {
         pPrev = pCur;
         pCur = pCur->pNext;
@@ -2774,8 +2779,8 @@ static DECLCALLBACK(int)    vmR3AtErrorDeregisterU(PUVM pUVM, PFNVMATERROR pfnAt
     PVMATERROR pPrev = NULL;
     PVMATERROR pCur = pUVM->vm.s.pAtError;
     while (     pCur
-           &&   pCur->pfnAtError == pfnAtError
-           &&   pCur->pvUser == pvUser)
+           &&   (   pCur->pfnAtError != pfnAtError
+                 || pCur->pvUser != pvUser))
     {
         pPrev = pCur;
         pCur = pCur->pNext;
@@ -3059,8 +3064,8 @@ static DECLCALLBACK(int)    vmR3AtRuntimeErrorDeregisterU(PUVM pUVM, PFNVMATRUNT
     PVMATRUNTIMEERROR pPrev = NULL;
     PVMATRUNTIMEERROR pCur = pUVM->vm.s.pAtRuntimeError;
     while (     pCur
-           &&   pCur->pfnAtRuntimeError == pfnAtRuntimeError
-           &&   pCur->pvUser == pvUser)
+           &&   (   pCur->pfnAtRuntimeError != pfnAtRuntimeError
+                 || pCur->pvUser != pvUser))
     {
         pPrev = pCur;
         pCur = pCur->pNext;
@@ -3122,7 +3127,7 @@ static void vmR3SetRuntimeErrorWorkerDoCall(PVM pVM, PVMATRUNTIMEERROR pCur, boo
 VMMR3DECL(void) VMR3SetRuntimeErrorWorker(PVM pVM)
 {
     VM_ASSERT_EMT(pVM);
-    AssertReleaseMsgFailed(("And we have a winner! You get to implement Ring-0 and GC VMSetRuntimeErrorV! Contrats!\n"));
+    AssertReleaseMsgFailed(("And we have a winner! You get to implement Ring-0 and GC VMSetRuntimeErrorV! Congrats!\n"));
 
     /*
      * Unpack the error (if we managed to format one).

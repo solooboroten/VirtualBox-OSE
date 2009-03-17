@@ -31,6 +31,11 @@
 #endif
 #include "Helper.h"
 #include <excpt.h>
+#ifdef VBOX_WITH_GUEST_BUGCHECK_DETECTION
+ #ifndef TARGET_NT4
+  #include <aux_klib.h>
+ #endif
+#endif
 #include <VBox/err.h>
 #include <VBox/log.h>
 #include <iprt/assert.h>
@@ -71,6 +76,9 @@ static VOID     reserveHypervisorMemory(PVBOXGUESTDEVEXT pDevExt);
 static VOID     vboxIdleThread(PVOID context);
 }
 
+#ifdef VBOX_WITH_HGCM
+DECLVBGL(void) VBoxHGCMCallback(VMMDevHGCMRequestHeader *pHeader, void *pvData, uint32_t u32Data);
+#endif
 
 /*******************************************************************************
 *   Exported Functions                                                         *
@@ -225,7 +233,23 @@ static NTSTATUS VBoxGuestAddDevice(PDRIVER_OBJECT pDrvObj, PDEVICE_OBJECT pDevOb
         return STATUS_DEVICE_NOT_CONNECTED;
     }
 
-    // driver is ready now
+#ifdef VBOX_WITH_HGCM
+    int rc2 = RTSpinlockCreate(&pDevExt->SessionSpinlock);
+    if (RT_FAILURE(rc2))
+    {
+        dprintf(("VBoxGuest::VBoxGuestAddDevice: RTSpinlockCreate failed\n"));
+        IoDetachDevice(pDevExt->nextLowerDriver);
+        IoDeleteSymbolicLink(&win32Name);
+        IoDeleteDevice(deviceObject);
+        return STATUS_DRIVER_UNABLE_TO_LOAD;
+    }
+#endif
+
+#ifdef VBOX_WITH_GUEST_BUGCHECK_DETECTION
+    rc = hlpRegisterBugCheckCallback(pDevExt);
+#endif
+
+    /* Driver is ready now. */
     deviceObject->Flags &= ~DO_DEVICE_INITIALIZING;
 
     dprintf(("VBoxGuest::VBoxGuestAddDevice: returning with rc = 0x%x\n", rc));
@@ -267,6 +291,22 @@ void VBoxGuestUnload(PDRIVER_OBJECT pDrvObj)
 
     VBoxCleanupMemBalloon(pDevExt);
 
+#ifdef VBOX_WITH_GUEST_BUGCHECK_DETECTION
+    /* Unregister bugcheck callback. */
+    if (pDevExt->bugcheckContext)
+    {
+        if (pDevExt->bBugcheckCallbackRegistered)
+        {
+            if (FALSE == KeDeregisterBugCheckCallback(&pDevExt->bugcheckContext->bugcheckRecord))
+                dprintf(("VBoxGuest::VBoxGuestUnload: Unregistering bugcheck callback routine failed!\n"));
+        }
+
+        ExFreePool(&pDevExt->bugcheckContext);
+        pDevExt->bugcheckContext = NULL;
+        pDevExt->bBugcheckCallbackRegistered = FALSE;
+    }
+#endif
+
     /*
      * I don't think it's possible to unload a driver which processes have
      * opened, at least we'll blindly assume that here.
@@ -274,11 +314,16 @@ void VBoxGuestUnload(PDRIVER_OBJECT pDrvObj)
     UNICODE_STRING win32Name;
     RtlInitUnicodeString(&win32Name, VBOXGUEST_DEVICE_NAME_DOS);
     NTSTATUS rc = IoDeleteSymbolicLink(&win32Name);
+
+#ifdef VBOX_WITH_HGCM
+    if (pDevExt->SessionSpinlock != NIL_RTSPINLOCK)
+        RTSpinlockDestroy(pDevExt->SessionSpinlock);
+#endif
     IoDeleteDevice(pDrvObj->DeviceObject);
 #endif
+
     dprintf(("VBoxGuest::VBoxGuestUnload: returning\n"));
 }
-
 
 /**
  * Create (i.e. Open) file entry point.
@@ -307,6 +352,25 @@ NTSTATUS VBoxGuestCreate(PDEVICE_OBJECT pDevObj, PIRP pIrp)
         return STATUS_NOT_A_DIRECTORY;
     }
 
+#ifdef VBOX_WITH_HGCM
+    if (pFileObj)
+    {
+        PVBOXGUESTSESSION pSession = (PVBOXGUESTSESSION)RTMemAllocZ(sizeof(*pSession));
+        if (RT_UNLIKELY(!pSession))
+        {
+            dprintf(("VBoxGuestCreate: no memory!\n"));
+            pIrp->IoStatus.Status       = STATUS_NO_MEMORY;
+            pIrp->IoStatus.Information  = 0;
+            IoCompleteRequest(pIrp, IO_NO_INCREMENT);
+            return STATUS_NO_MEMORY;
+        }
+
+        pFileObj->FsContext = pSession;
+        dprintf(("VBoxGuestCreate: pDevExt=%p pFileObj=%p pSession=%p\n",
+                 pDevExt, pFileObj, pFileObj->FsContext));
+    }
+#endif
+
     NTSTATUS    rcNt = pIrp->IoStatus.Status = STATUS_SUCCESS;
     pIrp->IoStatus.Information  = 0;
     IoCompleteRequest(pIrp, IO_NO_INCREMENT);
@@ -331,6 +395,31 @@ NTSTATUS VBoxGuestClose(PDEVICE_OBJECT pDevObj, PIRP pIrp)
     PFILE_OBJECT       pFileObj = pStack->FileObject;
     dprintf(("VBoxGuest::VBoxGuestClose: pDevExt=%p pFileObj=%p pSession=%p\n",
              pDevExt, pFileObj, pFileObj->FsContext));
+
+#ifdef VBOX_WITH_HGCM
+    if (pFileObj)
+    {
+        PVBOXGUESTSESSION pSession = (PVBOXGUESTSESSION)pFileObj->FsContext;
+        if (RT_UNLIKELY(!pSession))
+        {
+            dprintf(("VBoxGuestClose: no FsContext!\n"));
+        }
+        else
+        {
+            for (unsigned i = 0; i < RT_ELEMENTS(pSession->aHGCMClientIds); i++)
+                if (pSession->aHGCMClientIds[i])
+                {
+                    VBoxGuestHGCMDisconnectInfo Info;
+                    Info.result = 0;
+                    Info.u32ClientID = pSession->aHGCMClientIds[i];
+                    pSession->aHGCMClientIds[i] = 0;
+                    dprintf(("VBoxGuestClose: disconnecting HGCM client id %#RX32\n", Info.u32ClientID));
+                    VbglHGCMDisconnect(&Info, VBoxHGCMCallback, pDevExt, RT_INDEFINITE_WAIT);
+                }
+            RTMemFree(pSession);
+        }
+    }
+#endif
 
     pFileObj->FsContext = NULL;
     pIrp->IoStatus.Information = 0;
@@ -948,6 +1037,51 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             else
             {
                 cbOut = pStack->Parameters.DeviceIoControl.OutputBufferLength;
+
+                if (RT_SUCCESS(ptr->result) && pStack->FileObject)
+                {
+                    dprintf(("VBOXGUEST_IOCTL_HGCM_CONNECT: pDevExt=%p pFileObj=%p pSession=%p\n",
+                             pDevExt, pStack->FileObject, pStack->FileObject->FsContext));
+
+                    /*
+                     * Append the client id to the client id table.
+                     * If the table has somehow become filled up, we'll disconnect the session.
+                     */
+                    unsigned i;
+                    PVBOXGUESTSESSION pSession = (PVBOXGUESTSESSION)pStack->FileObject->FsContext;
+                    RTSPINLOCKTMP Tmp = RTSPINLOCKTMP_INITIALIZER;
+
+                    RTSpinlockAcquireNoInts(pDevExt->SessionSpinlock, &Tmp);
+                    for (i = 0; i < RT_ELEMENTS(pSession->aHGCMClientIds); i++)
+                        if (!pSession->aHGCMClientIds[i])
+                        {
+                            pSession->aHGCMClientIds[i] = ptr->u32ClientID;
+                            break;
+                        }
+                    RTSpinlockReleaseNoInts(pDevExt->SessionSpinlock, &Tmp);
+
+                    if (i >= RT_ELEMENTS(pSession->aHGCMClientIds))
+                    {
+                        static unsigned s_cErrors = 0;
+                        if (s_cErrors++ < 32)
+                            dprintf(("VBoxGuestCommonIOCtl: HGCM_CONNECT: too many HGCMConnect calls for one session!\n"));
+
+                        VBoxGuestHGCMDisconnectInfo Info;
+                        Info.result = 0;
+                        Info.u32ClientID = ptr->u32ClientID;
+                        VbglHGCMDisconnect(&Info, VBoxHGCMCallback, pDevExt, RT_INDEFINITE_WAIT);
+                        Status = STATUS_UNSUCCESSFUL;
+                        break;
+                    }
+                }
+                else
+                {
+                    /* @fixme, r=Leonid. I have no clue what to do in cases where
+                     * pStack->FileObject==NULL. Can't populate list of HGCM ID's...
+                     * But things worked before, so do nothing for now.
+                     */
+                    dprintf(("VBOXGUEST_IOCTL_HGCM_CONNECT: pDevExt=%p, pStack->FileObject=%p\n", pDevExt, pStack->FileObject));
+                }
             }
 
         } break;
@@ -976,6 +1110,38 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
             VBoxGuestHGCMDisconnectInfo *ptr = (VBoxGuestHGCMDisconnectInfo *)pBuf;
 
+            uint32_t u32ClientId=0;
+            unsigned i=0;
+            PVBOXGUESTSESSION pSession=0;
+            RTSPINLOCKTMP Tmp = RTSPINLOCKTMP_INITIALIZER;
+
+            /* See comment in VBOXGUEST_IOCTL_HGCM_CONNECT */
+            if (pStack->FileObject)
+            {
+                dprintf(("VBOXGUEST_IOCTL_HGCM_DISCONNECT: pDevExt=%p pFileObj=%p pSession=%p\n",
+                         pDevExt, pStack->FileObject, pStack->FileObject->FsContext));
+
+                u32ClientId = ptr->u32ClientID;
+                pSession = (PVBOXGUESTSESSION)pStack->FileObject->FsContext;
+
+                RTSpinlockAcquireNoInts(pDevExt->SessionSpinlock, &Tmp);
+                for (i = 0; i < RT_ELEMENTS(pSession->aHGCMClientIds); i++)
+                    if (pSession->aHGCMClientIds[i] == u32ClientId)
+                    {
+                        pSession->aHGCMClientIds[i] = UINT32_MAX;
+                        break;
+                    }
+                RTSpinlockReleaseNoInts(pDevExt->SessionSpinlock, &Tmp);
+                if (i >= RT_ELEMENTS(pSession->aHGCMClientIds))
+                {
+                    static unsigned s_cErrors = 0;
+                    if (s_cErrors++ > 32)
+                        dprintf(("VBoxGuestCommonIOCtl: HGCM_DISCONNECT: u32Client=%RX32\n", u32ClientId));
+                    Status = STATUS_INVALID_PARAMETER;
+                    break;
+                }
+            }
+
             /* If request will be processed asynchronously, execution will
              * go to VBoxHGCMCallback. There it will wait for the request event, signalled from IRQ.
              * On IRQ arrival, the VBoxHGCMCallback(s) will check the request memory and, if completion
@@ -994,6 +1160,13 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
                 cbOut = pStack->Parameters.DeviceIoControl.OutputBufferLength;
             }
 
+            if (pStack->FileObject)
+            {
+                RTSpinlockAcquireNoInts(pDevExt->SessionSpinlock, &Tmp);
+                if (pSession->aHGCMClientIds[i] == UINT32_MAX)
+                    pSession->aHGCMClientIds[i] = RT_SUCCESS(rc) && RT_SUCCESS(ptr->result) ? 0 : u32ClientId;
+                RTSpinlockReleaseNoInts(pDevExt->SessionSpinlock, &Tmp);
+            }
         } break;
 
 #ifdef RT_ARCH_AMD64
@@ -1362,8 +1535,8 @@ BOOLEAN VBoxGuestIsrHandler(PKINTERRUPT interrupt, PVOID serviceContext)
 }
 
 /**
- * Worker thread to do periodic things such as synchronize the
- * system time and notify other drivers of events.
+ * Worker thread to do periodic things such as notify other
+ * drivers of events.
  *
  * @param   pDevExt device extension pointer
  */
@@ -1374,52 +1547,12 @@ VOID vboxWorkerThread(PVOID context)
     pDevExt = (PVBOXGUESTDEVEXT)context;
     dprintf(("VBoxGuest::vboxWorkerThread entered\n"));
 
-    VMMDevReqHostTime *req = NULL;
-
-    int rc = VbglGRAlloc ((VMMDevRequestHeader **)&req, sizeof (VMMDevReqHostTime), VMMDevReq_GetHostTime);
-
-    if (RT_FAILURE(rc))
-    {
-        dprintf(("VBoxGuest::vboxWorkerThread: could not allocate request buffer, exiting rc = %d!\n", rc));
-        return;
-    }
-
     /* perform the hypervisor address space reservation */
     reserveHypervisorMemory(pDevExt);
 
     do
     {
-        /*
-         * Do the time sync
-         */
-        {
-            LARGE_INTEGER systemTime;
-            #define TICKSPERSEC  10000000
-            #define TICKSPERMSEC 10000
-            #define SECSPERDAY   86400
-            #define SECS_1601_TO_1970  ((369 * 365 + 89) * (uint64_t)SECSPERDAY)
-            #define TICKS_1601_TO_1970 (SECS_1601_TO_1970 * TICKSPERSEC)
-
-
-            req->header.rc = VERR_GENERAL_FAILURE;
-
-            rc = VbglGRPerform (&req->header);
-
-            if (RT_SUCCESS(rc) && RT_SUCCESS(req->header.rc))
-            {
-                uint64_t hostTime = req->time;
-
-                // Windows was originally designed in 1601...
-                systemTime.QuadPart = hostTime * (uint64_t)TICKSPERMSEC + (uint64_t)TICKS_1601_TO_1970;
-                dprintf(("VBoxGuest::vboxWorkerThread: synching time with host time (msec/UTC): %llu\n", hostTime));
-                ZwSetSystemTime(&systemTime, NULL);
-            }
-            else
-            {
-                dprintf(("VBoxGuest::PowerStateRequest: error performing request to VMMDev."
-                          "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
-            }
-        }
+        /* Nothing to do here yet. */
 
         /*
          * Go asleep unless we're supposed to terminate
@@ -1439,9 +1572,6 @@ VOID vboxWorkerThread(PVOID context)
     } while (!pDevExt->stopThread);
 
     dprintf(("VBoxGuest::vboxWorkerThread: we've been asked to terminate!\n"));
-
-    /* free our request buffer */
-    VbglGRFree (&req->header);
 
     if (pDevExt->workerThread)
     {

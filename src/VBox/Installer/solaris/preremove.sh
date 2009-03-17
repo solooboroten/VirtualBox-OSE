@@ -37,6 +37,8 @@ if test "$currentzone" = "global"; then
     fi
 
     # vboxdrv.sh would've been installed, we just need to call it.
+    /opt/VirtualBox/vboxdrv.sh usbstop alwaysremdrv
+    /opt/VirtualBox/vboxdrv.sh netstop alwaysremdrv
     /opt/VirtualBox/vboxdrv.sh fltstop alwaysremdrv
     /opt/VirtualBox/vboxdrv.sh stop alwaysremdrv
 
@@ -45,9 +47,17 @@ if test "$currentzone" = "global"; then
 /name=vboxdrv/d' /etc/devlink.tab > /etc/devlink.vbox
     mv -f /etc/devlink.vbox /etc/devlink.tab
 
-    # remove the link
+    # remove devlink.tab entry for vboxusbmon
+    sed -e '
+/name=vboxusbmon/d' /etc/devlink.tab > /etc/devlink.vbox
+    mv -f /etc/devlink.vbox /etc/devlink.tab
+
+    # remove the devlinks
     if test -h "/dev/vboxdrv" || test -f "/dev/vboxdrv"; then
         rm -f /dev/vboxdrv
+    fi
+    if test -h "/dev/vboxusbmon" || test -f "/dev/vboxusbmon"; then
+        rm -f /dev/vboxusbmon
     fi
 fi
 

@@ -617,7 +617,7 @@ typedef const RTHCPHYS *PCRTHCPHYS;
  * NIL_RTHCPHYS is used to signal an invalid physical address, similar
  * to the NULL pointer.
  */
-#define NIL_RTHCPHYS     ((RTHCPHYS)~0U) /** @todo change this to (~(VBOXHCPHYS)0) */
+#define NIL_RTHCPHYS     (~(RTHCPHYS)0)
 
 
 /** HC pointer. */
@@ -1109,7 +1109,7 @@ typedef RTTHREAD                                   *PRTTHREAD;
 #define NIL_RTTHREAD                                0
 
 /** A TLS index. */
-typedef int                                         RTTLS;
+typedef RTHCINTPTR                                  RTTLS;
 /** Pointer to a TLS index. */
 typedef RTTLS                                      *PRTTLS;
 /** Pointer to a const TLS index. */

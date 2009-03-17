@@ -1,4 +1,4 @@
-/* $Id: DevATA.cpp 16114 2009-01-21 09:13:08Z vboxsync $ */
+/* $Id: DevATA.cpp 17947 2009-03-16 16:00:37Z vboxsync $ */
 /** @file
  * VBox storage devices: ATA/ATAPI controller device (disk and cdrom).
  */
@@ -29,7 +29,8 @@
 /**
  * The SSM saved state versions.
  */
-#define ATA_SAVED_STATE_VERSION 18
+#define ATA_SAVED_STATE_VERSION 19
+#define ATA_SAVED_STATE_VERSION_WITH_BOOL_TYPE     18
 #define ATA_SAVED_STATE_VERSION_WITHOUT_FULL_SENSE 16
 #define ATA_SAVED_STATE_VERSION_WITHOUT_EVENT_STATUS 17
 
@@ -421,6 +422,16 @@ typedef struct ATACONTROLLER
     STAMPROFILE     StatLockWait;
 } ATACONTROLLER, *PATACONTROLLER;
 
+typedef enum CHIPSET
+{
+    /** PIIX3 chipset, must be 0 for saved state compatibility */
+    CHIPSET_PIIX3 = 0,
+    /** PIIX4 chipset, must be 1 for saved state compatibility */
+    CHIPSET_PIIX4 = 1,
+    /** ICH6 chipset */
+    CHIPSET_ICH6 = 2
+} CHIPSET;
+
 typedef struct PCIATAState {
     PCIDEVICE           dev;
     /** The controllers. */
@@ -437,9 +448,9 @@ typedef struct PCIATAState {
     bool                fGCEnabled;
     /** Flag whether R0 is enabled. */
     bool                fR0Enabled;
-    /** Flag indicating whether PIIX4 or PIIX3 is being emulated. */
-    bool                fPIIX4;
-    bool                Alignment0[HC_ARCH_BITS == 64 ? 5 : 1]; /**< Align the struct size. */
+    /** Flag indicating chipset being emulated. */
+    uint8_t             u8Type;
+    bool                Alignment0[HC_ARCH_BITS == 64 ? 5 : 1 ]; /**< Align the struct size. */
 } PCIATAState;
 
 #define PDMIBASE_2_PCIATASTATE(pInterface)      ( (PCIATAState *)((uintptr_t)(pInterface) - RT_OFFSETOF(PCIATAState, IBase)) )
@@ -1351,7 +1362,86 @@ static void ataSetSector(ATADevState *s, uint64_t iLBA)
 }
 
 
-static int ataReadSectors(ATADevState *s, uint64_t u64Sector, void *pvBuf, uint32_t cSectors)
+static void ataWarningDiskFull(PPDMDEVINS pDevIns)
+{
+    int rc;
+    LogRel(("PIIX3 ATA: Host disk full\n"));
+    rc = VMSetRuntimeError(PDMDevHlpGetVM(pDevIns),
+                           false, "DevATA_DISKFULL",
+                           N_("Host system reported disk full. VM execution is suspended. You can resume after freeing some space"));
+    AssertRC(rc);
+}
+
+static void ataWarningFileTooBig(PPDMDEVINS pDevIns)
+{
+    int rc;
+    LogRel(("PIIX3 ATA: File too big\n"));
+    rc = VMSetRuntimeError(PDMDevHlpGetVM(pDevIns),
+                           false, "DevATA_FILETOOBIG",
+                           N_("Host system reported that the file size limit of the host file system has been exceeded. VM execution is suspended. You need to move your virtual hard disk to a filesystem which allows bigger files"));
+    AssertRC(rc);
+}
+
+static void ataWarningISCSI(PPDMDEVINS pDevIns)
+{
+    int rc;
+    LogRel(("PIIX3 ATA: iSCSI target unavailable\n"));
+    rc = VMSetRuntimeError(PDMDevHlpGetVM(pDevIns),
+                           false, "DevATA_ISCSIDOWN",
+                           N_("The iSCSI target has stopped responding. VM execution is suspended. You can resume when it is available again"));
+    AssertRC(rc);
+}
+
+/**
+ * Suspend I/O operations on a controller. Also suspends EMT, because it's
+ * waiting for I/O to make progress. The next attempt to perform an I/O
+ * operation will be made when EMT is resumed up again (as the resume
+ * callback below restarts I/O).
+ *
+ * @param pCtl      Controller for which to suspend I/O.
+ */
+static void ataSuspendRedo(PATACONTROLLER pCtl)
+{
+    PPDMDEVINS  pDevIns = CONTROLLER_2_DEVINS(pCtl);
+    PVMREQ      pReq;
+    int         rc;
+
+    pCtl->fRedoIdle = true;
+    rc = VMR3ReqCall(PDMDevHlpGetVM(pDevIns), VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT,
+                     (PFNRT)PDMDevHlpVMSuspend, 1, pDevIns);
+    AssertReleaseRC(rc);
+    VMR3ReqFree(pReq);
+}
+
+bool ataIsRedoSetWarning(ATADevState *s, int rc)
+{
+    PATACONTROLLER pCtl = ATADEVSTATE_2_CONTROLLER(s);
+    Assert(!PDMCritSectIsOwner(&pCtl->lock));
+    if (rc == VERR_DISK_FULL)
+    {
+        ataWarningDiskFull(ATADEVSTATE_2_DEVINS(s));
+        ataSuspendRedo(pCtl);
+        return true;
+    }
+    if (rc == VERR_FILE_TOO_BIG)
+    {
+        ataWarningFileTooBig(ATADEVSTATE_2_DEVINS(s));
+        ataSuspendRedo(pCtl);
+        return true;
+    }
+    if (rc == VERR_BROKEN_PIPE || rc == VERR_NET_CONNECTION_REFUSED)
+    {
+        /* iSCSI connection abort (first error) or failure to reestablish
+         * connection (second error). Pause VM. On resume we'll retry. */
+        ataWarningISCSI(ATADEVSTATE_2_DEVINS(s));
+        ataSuspendRedo(pCtl);
+        return true;
+    }
+    return false;
+}
+
+
+static int ataReadSectors(ATADevState *s, uint64_t u64Sector, void *pvBuf, uint32_t cSectors, bool *fRedo)
 {
     PATACONTROLLER pCtl = ATADEVSTATE_2_CONTROLLER(s);
     int rc;
@@ -1366,6 +1456,11 @@ static int ataReadSectors(ATADevState *s, uint64_t u64Sector, void *pvBuf, uint3
 
     STAM_REL_COUNTER_ADD(&s->StatBytesRead, cSectors * 512);
 
+    if (RT_SUCCESS(rc))
+        *fRedo = false;
+    else
+        *fRedo = ataIsRedoSetWarning(s, rc);
+
     STAM_PROFILE_START(&pCtl->StatLockWait, a);
     PDMCritSectEnter(&pCtl->lock, VINF_SUCCESS);
     STAM_PROFILE_STOP(&pCtl->StatLockWait, a);
@@ -1373,7 +1468,7 @@ static int ataReadSectors(ATADevState *s, uint64_t u64Sector, void *pvBuf, uint3
 }
 
 
-static int ataWriteSectors(ATADevState *s, uint64_t u64Sector, const void *pvBuf, uint32_t cSectors)
+static int ataWriteSectors(ATADevState *s, uint64_t u64Sector, const void *pvBuf, uint32_t cSectors, bool *fRedo)
 {
     PATACONTROLLER pCtl = ATADEVSTATE_2_CONTROLLER(s);
     int rc;
@@ -1396,6 +1491,11 @@ static int ataWriteSectors(ATADevState *s, uint64_t u64Sector, const void *pvBuf
 
     STAM_REL_COUNTER_ADD(&s->StatBytesWritten, cSectors * 512);
 
+    if (RT_SUCCESS(rc))
+        *fRedo = false;
+    else
+        *fRedo = ataIsRedoSetWarning(s, rc);
+
     STAM_PROFILE_START(&pCtl->StatLockWait, a);
     PDMCritSectEnter(&pCtl->lock, VINF_SUCCESS);
     STAM_PROFILE_STOP(&pCtl->StatLockWait, a);
@@ -1417,50 +1517,18 @@ static void ataReadWriteSectorsBT(ATADevState *s)
 }
 
 
-static void ataWarningDiskFull(PPDMDEVINS pDevIns)
-{
-    int rc;
-    LogRel(("PIIX3 ATA: Host disk full\n"));
-    rc = VMSetRuntimeError(PDMDevHlpGetVM(pDevIns),
-                           false, "DevATA_DISKFULL",
-                           N_("Host system reported disk full. VM execution is suspended. You can resume after freeing some space"));
-    AssertRC(rc);
-}
-
-
-static void ataWarningFileTooBig(PPDMDEVINS pDevIns)
-{
-    int rc;
-    LogRel(("PIIX3 ATA: File too big\n"));
-    rc = VMSetRuntimeError(PDMDevHlpGetVM(pDevIns),
-                           false, "DevATA_FILETOOBIG",
-                           N_("Host system reported that the file size limit of the host file system has been exceeded. VM execution is suspended. You need to move your virtual hard disk to a filesystem which allows bigger files"));
-    AssertRC(rc);
-}
-
-
-static void ataWarningISCSI(PPDMDEVINS pDevIns)
-{
-    int rc;
-    LogRel(("PIIX3 ATA: iSCSI target unavailable\n"));
-    rc = VMSetRuntimeError(PDMDevHlpGetVM(pDevIns),
-                           false, "DevATA_ISCSIDOWN",
-                           N_("The iSCSI target has stopped responding. VM execution is suspended. You can resume when it is available again"));
-    AssertRC(rc);
-}
-
-
 static bool ataReadSectorsSS(ATADevState *s)
 {
     int rc;
     uint32_t cSectors;
     uint64_t iLBA;
+    bool fRedo;
 
     cSectors = s->cbElementaryTransfer / 512;
     Assert(cSectors);
     iLBA = ataGetSector(s);
     Log(("%s: %d sectors at LBA %d\n", __FUNCTION__, cSectors, iLBA));
-    rc = ataReadSectors(s, iLBA, s->CTX_SUFF(pbIOBuffer), cSectors);
+    rc = ataReadSectors(s, iLBA, s->CTX_SUFF(pbIOBuffer), cSectors, &fRedo);
     if (RT_SUCCESS(rc))
     {
         ataSetSector(s, iLBA + cSectors);
@@ -1470,23 +1538,8 @@ static bool ataReadSectorsSS(ATADevState *s)
     }
     else
     {
-        if (rc == VERR_DISK_FULL)
-        {
-            ataWarningDiskFull(ATADEVSTATE_2_DEVINS(s));
-            return true;
-        }
-        if (rc == VERR_FILE_TOO_BIG)
-        {
-            ataWarningFileTooBig(ATADEVSTATE_2_DEVINS(s));
-            return true;
-        }
-        if (rc == VERR_BROKEN_PIPE || rc == VERR_NET_CONNECTION_REFUSED)
-        {
-            /* iSCSI connection abort (first error) or failure to reestablish
-             * connection (second error). Pause VM. On resume we'll retry. */
-            ataWarningISCSI(ATADEVSTATE_2_DEVINS(s));
-            return true;
-        }
+        if (fRedo)
+            return fRedo;
         if (s->cErrors++ < MAX_LOG_REL_ERRORS)
             LogRel(("PIIX3 ATA: LUN#%d: disk read error (rc=%Rrc iSector=%#RX64 cSectors=%#RX32)\n",
                     s->iLUN, rc, iLBA, cSectors));
@@ -1498,7 +1551,6 @@ static bool ataReadSectorsSS(ATADevState *s)
         if (rc != VERR_INTERRUPTED)
             ataCmdError(s, ID_ERR);
     }
-    /** @todo implement redo for iSCSI */
     return false;
 }
 
@@ -1508,12 +1560,13 @@ static bool ataWriteSectorsSS(ATADevState *s)
     int rc;
     uint32_t cSectors;
     uint64_t iLBA;
+    bool fRedo;
 
     cSectors = s->cbElementaryTransfer / 512;
     Assert(cSectors);
     iLBA = ataGetSector(s);
     Log(("%s: %d sectors at LBA %d\n", __FUNCTION__, cSectors, iLBA));
-    rc = ataWriteSectors(s, iLBA, s->CTX_SUFF(pbIOBuffer), cSectors);
+    rc = ataWriteSectors(s, iLBA, s->CTX_SUFF(pbIOBuffer), cSectors, &fRedo);
     if (RT_SUCCESS(rc))
     {
         ataSetSector(s, iLBA + cSectors);
@@ -1523,23 +1576,8 @@ static bool ataWriteSectorsSS(ATADevState *s)
     }
     else
     {
-        if (rc == VERR_DISK_FULL)
-        {
-            ataWarningDiskFull(ATADEVSTATE_2_DEVINS(s));
-            return true;
-        }
-        if (rc == VERR_FILE_TOO_BIG)
-        {
-            ataWarningFileTooBig(ATADEVSTATE_2_DEVINS(s));
-            return true;
-        }
-        if (rc == VERR_BROKEN_PIPE || rc == VERR_NET_CONNECTION_REFUSED)
-        {
-            /* iSCSI connection abort (first error) or failure to reestablish
-             * connection (second error). Pause VM. On resume we'll retry. */
-            ataWarningISCSI(ATADEVSTATE_2_DEVINS(s));
-            return true;
-        }
+        if (fRedo)
+            return fRedo;
         if (s->cErrors++ < MAX_LOG_REL_ERRORS)
             LogRel(("PIIX3 ATA: LUN#%d: disk write error (rc=%Rrc iSector=%#RX64 cSectors=%#RX32)\n",
                     s->iLUN, rc, iLBA, cSectors));
@@ -1551,7 +1589,6 @@ static bool ataWriteSectorsSS(ATADevState *s)
         if (rc != VERR_INTERRUPTED)
             ataCmdError(s, ID_ERR);
     }
-    /** @todo implement redo for iSCSI */
     return false;
 }
 
@@ -1719,10 +1756,11 @@ static bool atapiReadSS(ATADevState *s)
 
                 for (uint32_t i = s->iATAPILBA; i < s->iATAPILBA + cSectors; i++)
                 {
-                    /* sync bytes */
+                    /* Sync bytes, see 4.2.3.8 CD Main Channel Block Formats */
                     *pbBuf++ = 0x00;
-                    memset(pbBuf, 0xff, 11);
-                    pbBuf += 11;
+                    memset(pbBuf, 0xff, 10);
+                    pbBuf += 10;
+                    *pbBuf++ = 0x00;
                     /* MSF */
                     ataLBA2MSF(pbBuf, i);
                     pbBuf += 3;
@@ -1732,9 +1770,14 @@ static bool atapiReadSS(ATADevState *s)
                     if (RT_FAILURE(rc))
                         break;
                     pbBuf += 2048;
-                    /* ECC */
-                    memset(pbBuf, 0, 288);
-                    pbBuf += 288;
+                    /**
+                     * @todo: maybe compute ECC and parity, layout is:
+                     * 2072 4   EDC
+                     * 2076 172 P parity symbols
+                     * 2248 104 Q parity symbols
+                     */
+                    memset(pbBuf, 0, 280);
+                    pbBuf += 280;
                 }
             }
             break;
@@ -4277,27 +4320,6 @@ static void ataDMATransfer(PATACONTROLLER pCtl)
 }
 
 
-/**
- * Suspend I/O operations on a controller. Also suspends EMT, because it's
- * waiting for I/O to make progress. The next attempt to perform an I/O
- * operation will be made when EMT is resumed up again (as the resume
- * callback below restarts I/O).
- *
- * @param pCtl      Controller for which to suspend I/O.
- */
-static void ataSuspendRedo(PATACONTROLLER pCtl)
-{
-    PPDMDEVINS  pDevIns = CONTROLLER_2_DEVINS(pCtl);
-    PVMREQ      pReq;
-    int         rc;
-
-    pCtl->fRedoIdle = true;
-    rc = VMR3ReqCall(PDMDevHlpGetVM(pDevIns), VMREQDEST_ANY, &pReq, RT_INDEFINITE_WAIT,
-                     (PFNRT)PDMDevHlpVMSuspend, 1, pDevIns);
-    AssertReleaseRC(rc);
-    VMR3ReqFree(pReq);
-}
-
 /** Asynch I/O thread for an interface. Once upon a time this was readable
  * code with several loops and a different semaphore for each purpose. But
  * then came the "how can one save the state in the middle of a PIO transfer"
@@ -4452,7 +4474,6 @@ static DECLCALLBACK(int) ataAsyncIOLoop(RTTHREAD ThreadSelf, void *pvUser)
                              * request. Occurs very rarely, not worth optimizing. */
                             LogRel(("%s: Ctl#%d: redo entire operation\n", __FUNCTION__, ATACONTROLLER_IDX(pCtl)));
                             ataAsyncIOPutRequest(pCtl, pReq);
-                            ataSuspendRedo(pCtl);
                             break;
                         }
                     }
@@ -4557,7 +4578,6 @@ static DECLCALLBACK(int) ataAsyncIOLoop(RTTHREAD ThreadSelf, void *pvUser)
                 {
                     LogRel(("PIIX3 ATA: Ctl#%d: redo DMA operation\n", ATACONTROLLER_IDX(pCtl)));
                     ataAsyncIOPutRequest(pCtl, &ataDMARequest);
-                    ataSuspendRedo(pCtl);
                     break;
                 }
 
@@ -5580,7 +5600,7 @@ static DECLCALLBACK(void) ataDetach(PPDMDEVINS pDevIns, unsigned iLUN)
  */
 static int ataConfigLun(PPDMDEVINS pDevIns, ATADevState *pIf)
 {
-    int             rc;
+    int             rc = VINF_SUCCESS;
     PDMBLOCKTYPE    enmType;
 
     /*
@@ -5691,13 +5711,14 @@ static int ataConfigLun(PPDMDEVINS pDevIns, ATADevState *pIf)
             pIf->PCHSGeometry.cCylinders = RT_MAX(RT_MIN(cCylinders, 16383), 1);
             pIf->PCHSGeometry.cHeads = 16;
             pIf->PCHSGeometry.cSectors = 63;
-            /* Set the disk geometry information. */
-            rc = pIf->pDrvBlockBios->pfnSetPCHSGeometry(pIf->pDrvBlockBios,
-                                                        &pIf->PCHSGeometry);
+            /* Set the disk geometry information. Ignore errors. */
+            pIf->pDrvBlockBios->pfnSetPCHSGeometry(pIf->pDrvBlockBios,
+                                                   &pIf->PCHSGeometry);
+            rc = VINF_SUCCESS;
         }
         LogRel(("PIIX3 ATA: LUN#%d: disk, PCHS=%u/%u/%u, total number of sectors %Ld\n", pIf->iLUN, pIf->PCHSGeometry.cCylinders, pIf->PCHSGeometry.cHeads, pIf->PCHSGeometry.cSectors, pIf->cTotalSectors));
     }
-    return VINF_SUCCESS;
+    return rc;
 }
 
 
@@ -5915,7 +5936,7 @@ static DECLCALLBACK(int) ataSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle)
                 Assert(pThis->aCts[i].aIfs[j].CTX_SUFF(pbIOBuffer) == NULL);
         }
     }
-    SSMR3PutBool(pSSMHandle, pThis->fPIIX4);
+    SSMR3PutU8(pSSMHandle, pThis->u8Type);
 
     return SSMR3PutU32(pSSMHandle, ~0); /* sanity/terminator */
 }
@@ -5937,7 +5958,8 @@ static DECLCALLBACK(int) ataLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
 
     if (   u32Version != ATA_SAVED_STATE_VERSION
         && u32Version != ATA_SAVED_STATE_VERSION_WITHOUT_FULL_SENSE
-        && u32Version != ATA_SAVED_STATE_VERSION_WITHOUT_EVENT_STATUS)
+        && u32Version != ATA_SAVED_STATE_VERSION_WITHOUT_EVENT_STATUS
+        && u32Version != ATA_SAVED_STATE_VERSION_WITH_BOOL_TYPE)
     {
         AssertMsgFailed(("u32Version=%d\n", u32Version));
         return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
@@ -6055,7 +6077,7 @@ static DECLCALLBACK(int) ataLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
                 Assert(pThis->aCts[i].aIfs[j].CTX_SUFF(pbIOBuffer) == NULL);
         }
     }
-    SSMR3GetBool(pSSMHandle, &pThis->fPIIX4);
+    SSMR3GetU8(pSSMHandle, &pThis->u8Type);
 
     rc = SSMR3GetU32(pSSMHandle, &u32);
     if (RT_FAILURE(rc))
@@ -6068,6 +6090,38 @@ static DECLCALLBACK(int) ataLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSMHandle, 
     }
 
     return VINF_SUCCESS;
+}
+
+/**
+ * Convert config value to DEVPCBIOSBOOT.
+ *
+ * @returns VBox status code.
+ * @param   pDevIns     The device instance data.
+ * @param   pCfgHandle  Configuration handle.
+ * @param   penmChipset Where to store the chipset type.
+ */
+static int ataControllerFromCfg(PPDMDEVINS pDevIns, PCFGMNODE pCfgHandle, CHIPSET *penmChipset)
+{
+    char szType[20];
+
+    int rc = CFGMR3QueryStringDef(pCfgHandle, "Type", &szType[0], sizeof(szType), "PIIX4");
+    if (RT_FAILURE(rc))
+        return PDMDevHlpVMSetError(pDevIns, rc, RT_SRC_POS,
+                                   N_("Configuration error: Querying \"Type\" as a string failed"));
+    if (!strcmp(szType, "PIIX3"))
+        *penmChipset = CHIPSET_PIIX3;
+    else if (!strcmp(szType, "PIIX4"))
+        *penmChipset = CHIPSET_PIIX4;
+    else if (!strcmp(szType, "ICH6"))
+        *penmChipset = CHIPSET_ICH6;
+    else
+    {
+        PDMDevHlpVMSetError(pDevIns, rc, RT_SRC_POS,
+                            N_("Configuration error: The \"Type\" value \"%s\" is unknown"),
+                            szType);
+        rc = VERR_INTERNAL_ERROR;
+    }
+    return rc;
 }
 
 
@@ -6108,7 +6162,7 @@ static DECLCALLBACK(int)   ataConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGM
     /*
      * Validate and read configuration.
      */
-    if (!CFGMR3AreValuesValid(pCfgHandle, "GCEnabled\0IRQDelay\0R0Enabled\0PIIX4\0"))
+    if (!CFGMR3AreValuesValid(pCfgHandle, "GCEnabled\0IRQDelay\0R0Enabled\0Type\0"))
         return PDMDEV_SET_ERROR(pDevIns, VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES,
                                 N_("PIIX3 configuration error: unknown option specified"));
 
@@ -6131,11 +6185,11 @@ static DECLCALLBACK(int)   ataConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGM
     Log(("%s: DelayIRQMillies=%d\n", __FUNCTION__, DelayIRQMillies));
     Assert(DelayIRQMillies < 50);
 
-    rc = CFGMR3QueryBoolDef(pCfgHandle, "PIIX4", &pThis->fPIIX4, false);
+    CHIPSET enmChipset = CHIPSET_PIIX3;
+    rc = ataControllerFromCfg(pDevIns, pCfgHandle, &enmChipset);
     if (RT_FAILURE(rc))
-        return PDMDEV_SET_ERROR(pDevIns, rc,
-                                N_("PIIX3 configuration error: failed to read PIIX4 as boolean"));
-    Log(("%s: fPIIX4=%d\n", __FUNCTION__, pThis->fPIIX4));
+        return rc;
+    pThis->u8Type = (uint8_t)enmChipset;
 
     /*
      * Initialize data (most of it anyway).
@@ -6146,16 +6200,46 @@ static DECLCALLBACK(int)   ataConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGM
 
     /* PCI configuration space. */
     PCIDevSetVendorId(&pThis->dev, 0x8086); /* Intel */
-    if (pThis->fPIIX4)
+
+    /*
+     * When adding more IDE chipsets, don't forget to update pci_bios_init_device()
+     * as it explicitly checks for PCI id for IDE controllers.
+     */
+    switch (pThis->u8Type)
     {
-        PCIDevSetDeviceId(&pThis->dev, 0x7111); /* PIIX4 IDE */
-        PCIDevSetRevisionId(&pThis->dev, 0x01); /* PIIX4E */
-        pThis->dev.config[0x48] = 0x00; /* UDMACTL */
-        pThis->dev.config[0x4A] = 0x00; /* UDMATIM */
-        pThis->dev.config[0x4B] = 0x00;
+        case CHIPSET_ICH6:
+            PCIDevSetDeviceId(&pThis->dev, 0x269e); /* ICH6 IDE */
+            /** @todo: do we need it? Do we need anything else? */
+            pThis->dev.config[0x48] = 0x00; /* UDMACTL */
+            pThis->dev.config[0x4A] = 0x00; /* UDMATIM */
+            pThis->dev.config[0x4B] = 0x00;
+            {
+                /*
+                 * See www.intel.com/Assets/PDF/manual/298600.pdf p. 30
+                 * Report
+                 *   WR_Ping-Pong_EN: must be set
+                 *   PCR0, PCR1: 80-pin primary cable reporting for both disks
+                 *   SCR0, SCR1: 80-pin secondary cable reporting for both disks
+                 */
+                uint16_t u16Config = (1<<10) | (1<<7)  | (1<<6) | (1<<5) | (1<<4) ;
+                pThis->dev.config[0x54] = u16Config & 0xff;
+                pThis->dev.config[0x55] = u16Config >> 8;
+            }
+            break;
+        case CHIPSET_PIIX4:
+            PCIDevSetDeviceId(&pThis->dev, 0x7111); /* PIIX4 IDE */
+            PCIDevSetRevisionId(&pThis->dev, 0x01); /* PIIX4E */
+            pThis->dev.config[0x48] = 0x00; /* UDMACTL */
+            pThis->dev.config[0x4A] = 0x00; /* UDMATIM */
+            pThis->dev.config[0x4B] = 0x00;
+            break;
+        case CHIPSET_PIIX3:
+            PCIDevSetDeviceId(&pThis->dev, 0x7010); /* PIIX3 IDE */
+            break;
+        default:
+            AssertMsgFailed(("Unsupported IDE chipset type: %d\n", pThis->u8Type));
     }
-    else
-        PCIDevSetDeviceId(&pThis->dev, 0x7010); /* PIIX3 IDE */
+
     PCIDevSetCommand(   &pThis->dev, PCI_COMMAND_IOACCESS | PCI_COMMAND_MEMACCESS | PCI_COMMAND_BUSMASTER);
     PCIDevSetClassProg( &pThis->dev, 0x8a); /* programming interface = PCI_IDE bus master is supported */
     PCIDevSetClassSub(  &pThis->dev, 0x01); /* class_sub = PCI_IDE */
@@ -6529,4 +6613,3 @@ const PDMDEVREG g_DevicePIIX3IDE =
 };
 #endif /* IN_RING3 */
 #endif /* !VBOX_DEVICE_STRUCT_TESTCASE */
-

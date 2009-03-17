@@ -1,4 +1,4 @@
-/* $Revision: 15843 $ */
+/* $Revision: 16447 $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Common code.
  */
@@ -2072,8 +2072,8 @@ SUPR0DECL(int) SUPR0ObjVerifyAccess(void *pvObj, PSUPDRVSESSION pSession, const 
  * @param   pSession    Session to which the locked memory should be associated.
  * @param   pvR3        Start of the memory range to lock.
  *                      This must be page aligned.
- * @param   cb          Size of the memory range to lock.
- *                      This must be page aligned.
+ * @param   cPages      Number of pages to lock.
+ * @param   paPages     Where to put the physical addresses of locked memory.
  */
 SUPR0DECL(int) SUPR0LockMem(PSUPDRVSESSION pSession, RTR3PTR pvR3, uint32_t cPages, PRTHCPHYS paPages)
 {
@@ -2167,7 +2167,7 @@ SUPR0DECL(int) SUPR0UnlockMem(PSUPDRVSESSION pSession, RTR3PTR pvR3)
  *
  * @returns IPRT status code.
  * @param   pSession    Session data.
- * @param   cb          Number of bytes to allocate.
+ * @param   cPages      Number of pages to allocate.
  * @param   ppvR0       Where to put the address of Ring-0 mapping the allocated memory.
  * @param   ppvR3       Where to put the address of Ring-3 mapping the allocated memory.
  * @param   pHCPhys     Where to put the physical address of allocated memory.
@@ -2859,9 +2859,9 @@ SUPR0DECL(int) SUPR0GipMap(PSUPDRVSESSION pSession, PRTR3PTR ppGipR3, PRTHCPHYS 
         *ppGipR3 = pGip;
 
 #ifdef DEBUG_DARWIN_GIP
-    OSDBGPRINT(("SUPR0GipMap: returns %d *pHCPhysGip=%lx *ppGip=%p GipMapObjR3\n", rc, (unsigned long)HCPhys, pGip, pSession->GipMapObjR3));
+    OSDBGPRINT(("SUPR0GipMap: returns %d *pHCPhysGip=%lx pGip=%p\n", rc, (unsigned long)HCPhys, (void *)pGip));
 #else
-    LogFlow(("SUPR0GipMap: returns %d *pHCPhysGip=%lx *ppGipR3=%p\n", rc, (unsigned long)HCPhys, (void *)(uintptr_t)pGip));
+    LogFlow((   "SUPR0GipMap: returns %d *pHCPhysGip=%lx pGip=%p\n", rc, (unsigned long)HCPhys, (void *)pGip));
 #endif
     return rc;
 }

@@ -35,6 +35,7 @@
 #ifdef IN_RING3
 # include <iprt/stdarg.h>
 #endif
+#include <iprt/assert.h>
 #include <VBox/err.h>
 #include <VBox/ostypes.h>
 
@@ -63,20 +64,24 @@ typedef RTGCPHYS64 VMMDEVHYPPHYS64;
 #if defined(RT_OS_LINUX)
 /** The support device name. */
 # define VBOXGUEST_DEVICE_NAME        "/dev/vboxadd"
+# define VBOXGUEST_USER_DEVICE_NAME   "/dev/vboxuser"
 
 #elif defined(RT_OS_OS2)
 /** The support device name. */
 # define VBOXGUEST_DEVICE_NAME        "\\Dev\\VBoxGst$"
+# define VBOXGUEST_USER_DEVICE_NAME   "\\Dev\\VBoxGst$"
 
 #elif defined(RT_OS_SOLARIS)
 /** The support device name. */
 # define VBOXGUEST_DEVICE_NAME        "/dev/vboxguest"
+# define VBOXGUEST_USER_DEVICE_NAME   "/dev/vboxguest"
 
 #elif defined(RT_OS_WINDOWS)
 /** The support service name. */
 # define VBOXGUEST_SERVICE_NAME       "VBoxGuest"
 /** Win32 Device name. */
 # define VBOXGUEST_DEVICE_NAME        "\\\\.\\VBoxGuest"
+# define VBOXGUEST_USER_DEVICE_NAME   "\\\\.\\VBoxGuest"
 /** Global name for Win2k+ */
 # define VBOXGUEST_DEVICE_NAME_GLOBAL "\\\\.\\Global\\VBoxGuest"
 /** Win32 driver name */
@@ -87,6 +92,7 @@ typedef RTGCPHYS64 VMMDEVHYPPHYS64;
 #elif defined(RT_OS_FREEBSD)
 /** The support device name. */
 # define VBOXGUEST_DEVICE_NAME        "/dev/vboxguest"
+# define VBOXGUEST_USER_DEVICE_NAME   "/dev/vboxguest"
 
 #else
 /* PORTME */
@@ -237,6 +243,7 @@ typedef struct
     uint32_t reserved1;
     uint32_t reserved2;
 } VMMDevRequestHeader;
+AssertCompileSize(VMMDevRequestHeader, 24);
 
 /** mouse status request structure */
 typedef struct
@@ -639,6 +646,7 @@ typedef struct _VMMDevHGCMRequestHeader
     /** Result code. */
     int32_t result;
 } VMMDevHGCMRequestHeader;
+AssertCompileSize(VMMDevHGCMRequestHeader, 24+8);
 
 /** HGCM service location types. */
 typedef enum
@@ -1226,6 +1234,9 @@ typedef struct VBGLBIGREQ
     uint32_t    cbData;
     /** The user address of the data buffer. */
     RTR3PTR     pvDataR3;
+#if HC_ARCH_BITS == 32
+    uint32_t    u32Padding;
+#endif    
 } VBGLBIGREQ;
 /** Pointer to a request wrapper for solaris guests. */
 typedef VBGLBIGREQ *PVBGLBIGREQ;
@@ -1286,7 +1297,8 @@ typedef const VBGLBIGREQ *PCVBGLBIGREQ;
 # define VBOXGUEST_IOCTL_CODE_FAST_32(Function)  VBOXGUEST_IOCTL_CODE_FAST_(Function)
 #endif /* RT_ARCH_AMD64 */
 
-/** IOCTL to VBoxGuest to query the VMMDev IO port region start. */
+/** IOCTL to VBoxGuest to query the VMMDev IO port region start. 
+ * @remarks Ring-0 only. */
 #define VBOXGUEST_IOCTL_GETVMMDEVPORT   VBOXGUEST_IOCTL_CODE(1, sizeof(VBoxGuestPortInfo))
 
 #pragma pack(4)
@@ -1297,12 +1309,12 @@ typedef struct _VBoxGuestPortInfo
 } VBoxGuestPortInfo;
 
 /** IOCTL to VBoxGuest to wait for a VMMDev host notification */
-#define VBOXGUEST_IOCTL_WAITEVENT       VBOXGUEST_IOCTL_CODE(2, sizeof(VBoxGuestWaitEventInfo))
+#define VBOXGUEST_IOCTL_WAITEVENT       VBOXGUEST_IOCTL_CODE_(2, sizeof(VBoxGuestWaitEventInfo))
 
 /** IOCTL to VBoxGuest to interrupt (cancel) any pending WAITEVENTs and return.
  * Handled inside the guest additions and not seen by the host at all.
  * @see VBOXGUEST_IOCTL_WAITEVENT */
-#define VBOXGUEST_IOCTL_CANCEL_ALL_WAITEVENTS       VBOXGUEST_IOCTL_CODE(5, 0)
+#define VBOXGUEST_IOCTL_CANCEL_ALL_WAITEVENTS       VBOXGUEST_IOCTL_CODE_(5, 0)
 
 /** @name Result codes for VBoxGuestWaitEventInfo::u32Result
  * @{
@@ -1329,11 +1341,12 @@ typedef struct _VBoxGuestWaitEventInfo
     /** events occured */
     uint32_t u32EventFlagsOut;
 } VBoxGuestWaitEventInfo;
+AssertCompileSize(VBoxGuestWaitEventInfo, 16);
 
 /** IOCTL to VBoxGuest to perform a VMM request
  * @remark  The data buffer for this IOCtl has an variable size, keep this in mind
  *          on systems where this matters. */
-#define VBOXGUEST_IOCTL_VMMREQUEST(Size)            VBOXGUEST_IOCTL_CODE(3, (Size))
+#define VBOXGUEST_IOCTL_VMMREQUEST(Size)            VBOXGUEST_IOCTL_CODE_(3, (Size))
 
 /** Input and output buffer layout of the IOCTL_VBOXGUEST_CTL_FILTER_MASK. */
 typedef struct _VBoxGuestFilterMaskInfo
@@ -1341,16 +1354,17 @@ typedef struct _VBoxGuestFilterMaskInfo
     uint32_t u32OrMask;
     uint32_t u32NotMask;
 } VBoxGuestFilterMaskInfo;
+AssertCompileSize(VBoxGuestFilterMaskInfo, 8);
 #pragma pack()
 
 /** IOCTL to VBoxGuest to control event filter mask. */
-#define VBOXGUEST_IOCTL_CTL_FILTER_MASK             VBOXGUEST_IOCTL_CODE(4, sizeof(VBoxGuestFilterMaskInfo))
+#define VBOXGUEST_IOCTL_CTL_FILTER_MASK             VBOXGUEST_IOCTL_CODE_(4, sizeof(VBoxGuestFilterMaskInfo))
 
 /** IOCTL to VBoxGuest to check memory ballooning. */
-#define VBOXGUEST_IOCTL_CTL_CHECK_BALLOON_MASK      VBOXGUEST_IOCTL_CODE(7, 100)
+#define VBOXGUEST_IOCTL_CTL_CHECK_BALLOON_MASK      VBOXGUEST_IOCTL_CODE_(7, 100)
 
 /** IOCTL to VBoxGuest to perform backdoor logging. */
-#define VBOXGUEST_IOCTL_LOG(Size)                   VBOXGUEST_IOCTL_CODE(6, (Size))
+#define VBOXGUEST_IOCTL_LOG(Size)                   VBOXGUEST_IOCTL_CODE_(6, (Size))
 
 
 #ifdef VBOX_WITH_HGCM
@@ -1360,25 +1374,28 @@ typedef struct _VBoxGuestFilterMaskInfo
 # pragma pack(1)
 typedef struct _VBoxGuestHGCMConnectInfo
 {
-    uint32_t result;          /**< OUT */
+    int32_t result;           /**< OUT */
     HGCMServiceLocation Loc;  /**< IN */
     uint32_t u32ClientID;     /**< OUT */
 } VBoxGuestHGCMConnectInfo;
+AssertCompileSize(VBoxGuestHGCMConnectInfo, 4+4+128+4);
 
 typedef struct _VBoxGuestHGCMDisconnectInfo
 {
-    uint32_t result;          /**< OUT */
+    int32_t result;           /**< OUT */
     uint32_t u32ClientID;     /**< IN */
 } VBoxGuestHGCMDisconnectInfo;
+AssertCompileSize(VBoxGuestHGCMDisconnectInfo, 8);
 
 typedef struct _VBoxGuestHGCMCallInfo
 {
-    uint32_t result;          /**< OUT Host HGCM return code.*/
+    int32_t result;           /**< OUT Host HGCM return code.*/
     uint32_t u32ClientID;     /**< IN  The id of the caller. */
     uint32_t u32Function;     /**< IN  Function number. */
     uint32_t cParms;          /**< IN  How many parms. */
     /* Parameters follow in form HGCMFunctionParameter aParms[cParms] */
 } VBoxGuestHGCMCallInfo;
+AssertCompileSize(VBoxGuestHGCMCallInfo, 16);
 
 typedef struct _VBoxGuestHGCMCallInfoTimed
 {
@@ -1388,19 +1405,21 @@ typedef struct _VBoxGuestHGCMCallInfoTimed
                                   * so that the parameters follow as they would for a normal call. */
     /* Parameters follow in form HGCMFunctionParameter aParms[cParms] */
 } VBoxGuestHGCMCallInfoTimed;
+AssertCompileSize(VBoxGuestHGCMCallInfoTimed, 8+16);
 # pragma pack()
 
 # define VBOXGUEST_IOCTL_HGCM_CONNECT             VBOXGUEST_IOCTL_CODE(16, sizeof(VBoxGuestHGCMConnectInfo))
 # define VBOXGUEST_IOCTL_HGCM_DISCONNECT          VBOXGUEST_IOCTL_CODE(17, sizeof(VBoxGuestHGCMDisconnectInfo))
 # define VBOXGUEST_IOCTL_HGCM_CALL(Size)          VBOXGUEST_IOCTL_CODE(18, (Size))
 # define VBOXGUEST_IOCTL_HGCM_CALL_TIMED(Size)    VBOXGUEST_IOCTL_CODE(20, (Size))
-# define VBOXGUEST_IOCTL_CLIPBOARD_CONNECT        VBOXGUEST_IOCTL_CODE(19, sizeof(uint32_t))
-#ifdef RT_ARCH_AMD64
+# define VBOXGUEST_IOCTL_CLIPBOARD_CONNECT        VBOXGUEST_IOCTL_CODE_(19, sizeof(uint32_t))
+# ifdef RT_ARCH_AMD64
 /* Following HGCM IOCtls can be used by a 32 bit application on a 64 bit guest (Windows OpenGL guest driver). */
-# define VBOXGUEST_IOCTL_HGCM_CONNECT_32          VBOXGUEST_IOCTL_CODE_32(16, sizeof(VBoxGuestHGCMConnectInfo))
-# define VBOXGUEST_IOCTL_HGCM_DISCONNECT_32       VBOXGUEST_IOCTL_CODE_32(17, sizeof(VBoxGuestHGCMDisconnectInfo))
-# define VBOXGUEST_IOCTL_HGCM_CALL_32(Size)       VBOXGUEST_IOCTL_CODE_32(18, (Size))
-#endif /* RT_ARCH_AMD64 */
+#  define VBOXGUEST_IOCTL_HGCM_CONNECT_32         VBOXGUEST_IOCTL_CODE_32(16, sizeof(VBoxGuestHGCMConnectInfo))
+#  define VBOXGUEST_IOCTL_HGCM_DISCONNECT_32      VBOXGUEST_IOCTL_CODE_32(17, sizeof(VBoxGuestHGCMDisconnectInfo))
+#  define VBOXGUEST_IOCTL_HGCM_CALL_32(Size)      VBOXGUEST_IOCTL_CODE_32(18, (Size))
+#  define VBOXGUEST_IOCTL_HGCM_CALL_TIMED_32(Size) VBOXGUEST_IOCTL_CODE_32(20, (Size))
+# endif /* RT_ARCH_AMD64 */
 
 # define VBOXGUEST_HGCM_CALL_PARMS(a)       ((HGCMFunctionParameter *)((uint8_t *)(a) + sizeof (VBoxGuestHGCMCallInfo)))
 # define VBOXGUEST_HGCM_CALL_PARMS32(a)     ((HGCMFunctionParameter32 *)((uint8_t *)(a) + sizeof (VBoxGuestHGCMCallInfo)))
@@ -1641,6 +1660,7 @@ typedef VBOXGUESTOS2IDCCONNECT *PVBOXGUESTOS2IDCCONNECT;
 
 __BEGIN_DECLS
 VBGLR3DECL(int)     VbglR3Init(void);
+VBGLR3DECL(int)     VbglR3InitUser(void);
 VBGLR3DECL(void)    VbglR3Term(void);
 # ifdef ___iprt_time_h
 VBGLR3DECL(int)     VbglR3GetHostTime(PRTTIMESPEC pTime);

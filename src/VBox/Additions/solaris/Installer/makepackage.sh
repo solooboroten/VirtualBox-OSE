@@ -58,6 +58,7 @@ echo 'i pkginfo=./vboxguest.pkginfo' > prototype
 echo 'i postinstall=./postinstall.sh' >> prototype
 echo 'i preremove=./preremove.sh' >> prototype
 echo 'i space=./vboxguest.space' >> prototype
+echo 'i depend=./vboxguest.depend' >> prototype
 if test -f "./vboxguest.copyright"; then
     echo 'i copyright=./vboxguest.copyright' >> prototype
 fi
@@ -71,14 +72,21 @@ filelist_fixup prototype '$2 == "none"'                                         
 filelist_fixup prototype '$3 == "opt/VirtualBoxAdditions/VBoxService=VBoxService"'              '$4 = "4755"'
 filelist_fixup prototype '$3 == "opt/VirtualBoxAdditions/amd64/VBoxService=amd64/VBoxService"'  '$4 = "4755"'
 
-# 32-bit kernel module
-filelist_fixup prototype '$3 == "opt/VirtualBoxAdditions/vboxguest=vboxguest"'              '$3 = "platform/i86pc/kernel/drv/vboxguest=vboxguest"; $6="sys"'
+# 32-bit vboxguest
+filelist_fixup prototype '$3 == "opt/VirtualBoxAdditions/vboxguest=vboxguest"'              '$3 = "usr/kernel/drv/vboxguest=vboxguest"; $6="sys"'
 
-# 64-bit kernel module
-filelist_fixup prototype '$3 == "opt/VirtualBoxAdditions/amd64/vboxguest=amd64/vboxguest"'  '$3 = "platform/i86pc/kernel/drv/amd64/vboxguest=amd64/vboxguest"; $6="sys"'
+# 64-bit vboxguest
+filelist_fixup prototype '$3 == "opt/VirtualBoxAdditions/amd64/vboxguest=amd64/vboxguest"'  '$3 = "usr/kernel/drv/amd64/vboxguest=amd64/vboxguest"; $6="sys"'
 
-# kernel module config file
-filelist_fixup prototype '$3 == "opt/VirtualBoxAdditions/vboxguest.conf=vboxguest.conf"'    '$3 = "platform/i86pc/kernel/drv/vboxguest.conf=vboxguest.conf"'
+# vboxguest module config file
+filelist_fixup prototype '$3 == "opt/VirtualBoxAdditions/vboxguest.conf=vboxguest.conf"'    '$3 = "usr/kernel/drv/vboxguest.conf=vboxguest.conf"'
+
+# vboxfsmount binary (always 32-bit on combined package)
+filelist_fixup prototype '$3 == "opt/VirtualBoxAdditions/vboxfsmount=vboxfsmount"'         '$3 = "etc/fs/vboxfs/mount=vboxfsmount"; $6="sys"'
+
+# this is required for amd64-specific package where we do not build 32-bit binaries
+filelist_fixup prototype '$3 == "opt/VirtualBoxAdditions/amd64/vboxfsmount=vboxfsmount"'   '$3 = "etc/fs/vboxfs/mount=amd64/vboxfsmount"; $6="sys"'
+
 
 filelist_fixup prototype '$3 == "opt/VirtualBoxAdditions/vboxservice.xml=vboxservice.xml"'  '$3 = "var/svc/manifest/system/virtualbox/vboxservice.xml=vboxservice.xml"'
 echo " --- start of prototype  ---" 

@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -29,6 +29,8 @@
 #include <VBox/com/Guid.h>
 #include <VBox/com/array.h>
 #include <VBox/com/ErrorInfo.h>
+#include <VBox/com/errorprint2.h>
+
 #include <VBox/com/EventQueue.h>
 #include <VBox/com/VirtualBox.h>
 
@@ -559,6 +561,11 @@ public:
         return S_OK;
     }
 
+    STDMETHOD(OnStorageControllerChange) ()
+    {
+        return S_OK;
+    }
+
     STDMETHOD(OnRuntimeError)(BOOL fFatal, IN_BSTR id, IN_BSTR message)
     {
         MachineState_T machineState;
@@ -812,8 +819,7 @@ static bool checkForAutoConvertedSettings (ComPtr<IVirtualBox> virtualBox,
     do
     {
         Bstr formatVersion;
-        CHECK_RC_BREAK (virtualBox->
-                        COMGETTER(SettingsFormatVersion) (formatVersion.asOutParam()));
+        CHECK_ERROR_BREAK(virtualBox, COMGETTER(SettingsFormatVersion) (formatVersion.asOutParam()));
 
         bool isGlobalConverted = false;
         std::list <ComPtr <IMachine> > cvtMachines;
@@ -822,40 +828,35 @@ static bool checkForAutoConvertedSettings (ComPtr<IVirtualBox> virtualBox,
         Bstr filePath;
 
         com::SafeIfaceArray <IMachine> machines;
-        CHECK_RC_BREAK (virtualBox->
-                        COMGETTER(Machines2) (ComSafeArrayAsOutParam (machines)));
+        CHECK_ERROR_BREAK(virtualBox, COMGETTER(Machines)(ComSafeArrayAsOutParam (machines)));
 
         for (size_t i = 0; i < machines.size(); ++ i)
         {
             BOOL accessible;
-            CHECK_RC_BREAK (machines [i]->
-                            COMGETTER(Accessible) (&accessible));
+            CHECK_ERROR_BREAK(machines[i], COMGETTER(Accessible) (&accessible));
             if (!accessible)
                 continue;
 
-            CHECK_RC_BREAK (machines [i]->
-                            COMGETTER(SettingsFileVersion) (version.asOutParam()));
+            CHECK_ERROR_BREAK(machines[i], COMGETTER(SettingsFileVersion) (version.asOutParam()));
 
             if (version != formatVersion)
             {
-                cvtMachines.push_back (machines [i]);
+                cvtMachines.push_back (machines[i]);
                 Bstr filePath;
-                CHECK_RC_BREAK (machines [i]->
-                                COMGETTER(SettingsFilePath) (filePath.asOutParam()));
+                CHECK_ERROR_BREAK(machines[i], COMGETTER(SettingsFilePath) (filePath.asOutParam()));
                 fileList.push_back (Utf8StrFmt ("%ls  (%ls)", filePath.raw(),
                                                 version.raw()));
             }
         }
 
-        CHECK_RC_BREAK (rc);
+        if (FAILED(rc))
+            break;
 
-        CHECK_RC_BREAK (virtualBox->
-                        COMGETTER(SettingsFileVersion) (version.asOutParam()));
+        CHECK_ERROR_BREAK(virtualBox, COMGETTER(SettingsFileVersion) (version.asOutParam()));
         if (version != formatVersion)
         {
             isGlobalConverted = true;
-            CHECK_RC_BREAK (virtualBox->
-                            COMGETTER(SettingsFilePath) (filePath.asOutParam()));
+            CHECK_ERROR_BREAK(virtualBox, COMGETTER(SettingsFilePath) (filePath.asOutParam()));
             fileList.push_back (Utf8StrFmt ("%ls  (%ls)", filePath.raw(),
                                             version.raw()));
         }
@@ -907,13 +908,13 @@ static bool checkForAutoConvertedSettings (ComPtr<IVirtualBox> virtualBox,
                  m != cvtMachines.end(); ++ m)
             {
                 Guid id;
-                CHECK_RC_BREAK ((*m)->COMGETTER(Id) (id.asOutParam()));
+                CHECK_ERROR_BREAK((*m), COMGETTER(Id) (id.asOutParam()));
 
                 /* open a session for the VM */
                 CHECK_ERROR_BREAK (virtualBox, OpenSession (session, id));
 
                 ComPtr <IMachine> sm;
-                CHECK_RC_BREAK (session->COMGETTER(Machine) (sm.asOutParam()));
+                CHECK_ERROR_BREAK(session, COMGETTER(Machine) (sm.asOutParam()));
 
                 Bstr bakFileName;
                 if (fConvertSettings == ConvertSettings_Backup)
@@ -923,10 +924,12 @@ static bool checkForAutoConvertedSettings (ComPtr<IVirtualBox> virtualBox,
 
                 session->Close();
 
-                CHECK_RC_BREAK (rc);
+                if (FAILED(rc))
+                    break;
             }
 
-            CHECK_RC_BREAK (rc);
+            if (FAILED(rc))
+                break;
 
             if (isGlobalConverted)
             {
@@ -937,7 +940,8 @@ static bool checkForAutoConvertedSettings (ComPtr<IVirtualBox> virtualBox,
                     CHECK_ERROR (virtualBox, SaveSettings());
             }
 
-            CHECK_RC_BREAK (rc);
+            if (FAILED(rc))
+                break;
         }
     }
     while (0);
@@ -1659,13 +1663,13 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
          * it to the VM.
          */
         Bstr hdaFileBstr = hdaFile;
-        ComPtr<IHardDisk2> hardDisk;
-        virtualBox->FindHardDisk2(hdaFileBstr, hardDisk.asOutParam());
+        ComPtr<IHardDisk> hardDisk;
+        virtualBox->FindHardDisk(hdaFileBstr, hardDisk.asOutParam());
         if (!hardDisk)
         {
             /* we've not found the image */
             RTPrintf("Adding hard disk '%S'...\n", hdaFile);
-            virtualBox->OpenHardDisk2 (hdaFileBstr, hardDisk.asOutParam());
+            virtualBox->OpenHardDisk(hdaFileBstr, hardDisk.asOutParam());
         }
         /* do we have the right image now? */
         if (hardDisk)
@@ -1675,8 +1679,8 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
              */
             Guid uuid;
             hardDisk->COMGETTER(Id)(uuid.asOutParam());
-            gMachine->DetachHardDisk2(StorageBus_IDE, 0, 0);
-            gMachine->AttachHardDisk2(uuid, StorageBus_IDE, 0, 0);
+            gMachine->DetachHardDisk(Bstr("IDE"), 0, 0);
+            gMachine->AttachHardDisk(uuid, Bstr("IDE"), 0, 0);
             /// @todo why is this attachment saved?
         }
         else
@@ -1711,10 +1715,10 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         {
             ComPtr <IHost> host;
             CHECK_ERROR_BREAK (virtualBox, COMGETTER(Host)(host.asOutParam()));
-            ComPtr <IHostFloppyDriveCollection> coll;
-            CHECK_ERROR_BREAK (host, COMGETTER(FloppyDrives)(coll.asOutParam()));
+            com::SafeIfaceArray <IHostFloppyDrive> coll;
+            CHECK_ERROR_BREAK (host, COMGETTER(FloppyDrives)(ComSafeArrayAsOutParam(coll)));
             ComPtr <IHostFloppyDrive> hostDrive;
-            rc = coll->FindByName (medium, hostDrive.asOutParam());
+            rc = host->FindHostFloppyDrive (medium, hostDrive.asOutParam());
             if (SUCCEEDED (rc))
             {
                 done = true;
@@ -1726,7 +1730,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         if (!done)
         {
             /* try to find an existing one */
-            ComPtr <IFloppyImage2> image;
+            ComPtr<IFloppyImage> image;
             rc = virtualBox->FindFloppyImage (medium, image.asOutParam());
             if (FAILED (rc))
             {
@@ -1772,10 +1776,10 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         {
             ComPtr <IHost> host;
             CHECK_ERROR_BREAK (virtualBox, COMGETTER(Host)(host.asOutParam()));
-            ComPtr <IHostDVDDriveCollection> coll;
-            CHECK_ERROR_BREAK (host, COMGETTER(DVDDrives)(coll.asOutParam()));
+            SafeIfaceArray <IHostDVDDrive> coll;
+            CHECK_ERROR_BREAK (host, COMGETTER(DVDDrives)(ComSafeArrayAsOutParam(coll)));
             ComPtr <IHostDVDDrive> hostDrive;
-            rc = coll->FindByName (medium, hostDrive.asOutParam());
+            rc = host->FindHostDVDDrive (medium, hostDrive.asOutParam());
             if (SUCCEEDED (rc))
             {
                 done = true;
@@ -1787,7 +1791,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         if (!done)
         {
             /* try to find an existing one */
-            ComPtr <IDVDImage2> image;
+            ComPtr <IDVDImage> image;
             rc = virtualBox->FindDVDImage (medium, image.asOutParam());
             if (FAILED (rc))
             {

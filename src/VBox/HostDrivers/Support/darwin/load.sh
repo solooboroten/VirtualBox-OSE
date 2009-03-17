@@ -126,7 +126,13 @@ fi
 sudo chmod -R o-rwx "$DIR"
 sync
 echo "load.sh: loading $DIR..."
-sudo kextload $OPTS "$DIR"
+
+if [ "$XNU_VERSION" -ge "10" ]; then
+    echo "${SCRIPT_NAME}.sh: loading $DIR... (kextutil $OPTS \"$DIR\")"
+    sudo kextutil $OPTS "$DIR"
+else
+    sudo kextload $OPTS "$DIR"
+fi
 sync
 sudo chown -R `whoami` "$DIR"
 #sudo chmod 666 /dev/vboxdrv

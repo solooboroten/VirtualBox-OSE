@@ -17,10 +17,10 @@ class PerfCollector:
 
     def __init__(self, vb):
         """ Initializes the instance.
-        
+
         Pass an instance of IVirtualBox as parameter.
         """
-        self.collector = vb.performanceCollector 
+        self.collector = vb.performanceCollector
 
     def setup(self, names, objects, period, nsamples):
         """ Discards all previously collected values for the specified
@@ -99,7 +99,7 @@ if g_hasreadline:
         Return a list of all names currently defined
         in self.namespace that match.
         """
-        
+
         matches = []
         n = len(text)
 
@@ -111,7 +111,7 @@ if g_hasreadline:
 
         try:
             for m in getMachines(self.ctx):
-                # although it has autoconversion, we need to cast 
+                # although it has autoconversion, we need to cast
                 # explicitly for subscripts to work
                 word = str(m.name)
                 if word[:n] == text:
@@ -131,7 +131,7 @@ if g_hasreadline:
 def autoCompletion(commands, ctx):
   if  not g_hasreadline:
       return
-  
+
   comps = {}
   for (k,v) in commands.items():
       comps[k] = None
@@ -143,17 +143,38 @@ g_verbose = True
 
 def split_no_quotes(s):
    return s.split()
-   
-def startVm(mgr,vb,mach,type,perf):
+
+def createVm(ctx,name,kind,base):
+    mgr = ctx['mgr']
+    vb = ctx['vb']
+    session = mgr.getSessionObject(vb)
+    mach = vb.createMachine(name, kind, base,
+                            "00000000-0000-0000-0000-000000000000")
+    mach.saveSettings()
+    print "created machine with UUID",mach.id
+    vb.registerMachine(mach)
+
+def removeVm(ctx,mach):
+    mgr = ctx['mgr']
+    vb = ctx['vb']
+    print "removing machine ",mach.name,"with UUID",mach.id
+    mach = vb.unregisterMachine(mach.id)
+    if mach:
+         mach.deleteSettings()
+
+def startVm(ctx,mach,type):
+    mgr = ctx['mgr']
+    vb = ctx['vb']
+    perf = ctx['perf']
     session = mgr.getSessionObject(vb)
     uuid = mach.id
     progress = vb.openRemoteSession(session, uuid, type, "")
     progress.waitForCompletion(-1)
     completed = progress.completed
     rc = progress.resultCode
-    print "Completed:", completed, "rc:",rc
+    print "Completed:", completed, "rc:",hex(rc&0xffffffff)
     if int(rc) == 0:
-        # we ignore exceptions to allow starting VM even if 
+        # we ignore exceptions to allow starting VM even if
         # perf collector cannot be started
         try:
             perf.setup(['*'], [mach], 10, 15)
@@ -162,10 +183,15 @@ def startVm(mgr,vb,mach,type,perf):
             if g_verbose:
                 traceback.print_exc()
             pass
-    session.close()
+         # if session not opened, close doesn't make sense
+        session.close()
+    else:
+        # Not yet implemented error string query API for remote API
+        if not ctx['remote']:
+            print session.QueryErrorObject(rc)
 
 def getMachines(ctx):
-    return ctx['vb'].getMachines2()
+    return ctx['vb'].getMachines()
 
 def asState(var):
     if var:
@@ -196,7 +222,7 @@ def cmdExistingVm(ctx,mach,cmd):
     # this is an example how to handle local only functionality
     if ctx['remote'] and cmd == 'stats2':
         print 'Trying to use local only functionality, ignored'
-        return        
+        return
     console=session.console
     ops={'pause' :     lambda: console.pause(),
          'resume':     lambda: console.resume(),
@@ -235,7 +261,7 @@ def helpCmd(ctx, args):
     if len(args) == 1:
         print "Help page:"
         for i in commands:
-            print "   ",i,":", commands[i][0] 
+            print "   ",i,":", commands[i][0]
     else:
         c = commands.get(args[1], None)
         if c == None:
@@ -253,7 +279,7 @@ def infoCmd(ctx,args):
     if (len(args) < 2):
         print "usage: info [vmname|uuid]"
         return 0
-    mach = argsToMach(ctx,args) 
+    mach = argsToMach(ctx,args)
     if mach == None:
         return 0
     os = ctx['vb'].getGuestOSType(mach.OSTypeId)
@@ -262,7 +288,6 @@ def infoCmd(ctx,args):
     print "  OS Type: ",os.description
     print "  RAM:  %dM" %(mach.memorySize)
     print "  VRAM:  %dM" %(mach.VRAMSize)
-    print "  Monitors:  %d" %(mach.MonitorCount)
     print "  Clipboard mode:  %d" %(mach.clipboardMode)
     print "  Machine status: " ,mach.sessionState
     bios = mach.BIOSSettings
@@ -272,42 +297,67 @@ def infoCmd(ctx,args):
     print "  Nested paging: ",asState(mach.HWVirtExNestedPagingEnabled)
     print "  Last changed: ",mach.lastStateChange
 
-    return 0 
+    return 0
 
 def startCmd(ctx, args):
-    mach = argsToMach(ctx,args) 
+    mach = argsToMach(ctx,args)
     if mach == None:
         return 0
     if len(args) > 2:
         type = args[2]
     else:
         type = "gui"
-    startVm(ctx['mgr'], ctx['vb'], mach, type, ctx['perf'])
+    startVm(ctx, mach, type)
+    return 0
+
+def createCmd(ctx, args):
+    if (len(args) < 3 or len(args) > 4):
+        print "usage: create name ostype <basefolder>"
+        return 0
+    name = args[1]
+    oskind = args[2]
+    if len(args) == 4:
+        base = args[3]
+    else:
+        base = ''
+    try:
+         ctx['vb'].getGuestOSType(oskind)
+    except Exception, e:
+        print 'Unknown OS type:',oskind
+        return 0
+    createVm(ctx, name, oskind, base)
+    return 0
+
+def removeCmd(ctx, args):
+    mach = argsToMach(ctx,args)
+    if mach == None:
+        return 0
+    removeVm(ctx, mach)
     return 0
 
 def pauseCmd(ctx, args):
-    mach = argsToMach(ctx,args) 
+    mach = argsToMach(ctx,args)
     if mach == None:
         return 0
     cmdExistingVm(ctx, mach, 'pause')
     return 0
 
 def powerdownCmd(ctx, args):
-    mach = argsToMach(ctx,args) 
+    mach = argsToMach(ctx,args)
     if mach == None:
         return 0
     cmdExistingVm(ctx, mach, 'powerdown')
     return 0
 
 def resumeCmd(ctx, args):
-    mach = argsToMach(ctx,args) 
+    mach = argsToMach(ctx,args)
     if mach == None:
         return 0
     cmdExistingVm(ctx, mach, 'resume')
     return 0
 
 def statsCmd(ctx, args):
-    mach = argsToMach(ctx,args) 
+    mach = argsToMach(ctx,args)
     if mach == None:
         return 0
     cmdExistingVm(ctx, mach, 'stats')
@@ -317,7 +367,7 @@ def setvarCmd(ctx, args):
     if (len(args) < 4):
         print "usage: setvar [vmname|uuid] expr value"
         return 0
-    mach = argsToMach(ctx,args) 
+    mach = argsToMach(ctx,args)
     if mach == None:
         return 0
     vbox = ctx['vb']
@@ -340,7 +390,7 @@ def quitCmd(ctx, args):
     return 1
 
 def aliasesCmd(ctx, args):
-    for (k,v) in aliases.items(): 
+    for (k,v) in aliases.items():
         print "'%s' is an alias for '%s'" %(k,v)
     return 0
 
@@ -355,7 +405,7 @@ def hostCmd(ctx, args):
    print "Processor count:",cnt
    for i in range(0,cnt):
       print "Processor #%d speed: %dMHz" %(i,host.getProcessorSpeed(i))
-                
+
    for metric in ctx['perf'].query(["*"], [host]):
        print metric['name'], metric['values_as_string']
 
@@ -372,7 +422,7 @@ def evalCmd(ctx, args):
             traceback.print_exc()
    return 0
 
-aliases = {'s':'start',  
+aliases = {'s':'start',
            'i':'info',
            'l':'list',
            'h':'help',
@@ -382,6 +432,8 @@ aliases = {'s':'start',
 
 commands = {'help':['Prints help information', helpCmd],
             'start':['Start virtual machine by name or uuid', startCmd],
+            'create':['Create virtual machine', createCmd],
+            'remove':['Remove virtual machine', removeCmd],
             'pause':['Pause virtual machine', pauseCmd],
             'resume':['Resume virtual machine', resumeCmd],
             'stats':['Stats for virtual machine', statsCmd],
@@ -396,9 +448,9 @@ commands = {'help':['Prints help information', helpCmd],
             'host':['Show host information', hostCmd]}
 
 def runCommand(ctx, cmd):
-    if len(cmd) == 0: return 0 
+    if len(cmd) == 0: return 0
     args = split_no_quotes(cmd)
-    if len(args) == 0: return 0 
+    if len(args) == 0: return 0
     c = args[0]
     if aliases.get(c, None) != None:
         c = aliases[c]
@@ -429,7 +481,7 @@ def interpret(ctx):
             cmd = raw_input("vbox> ")
             done = runCommand(ctx, cmd)
             if done != 0: break
-        except KeyboardInterrupt:            
+        except KeyboardInterrupt:
             print '====== You can type quit or q to leave'
             break
         except EOFError:

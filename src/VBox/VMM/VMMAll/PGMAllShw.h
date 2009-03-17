@@ -1,4 +1,4 @@
-/* $Id: PGMAllShw.h 14147 2008-11-12 23:07:51Z vboxsync $ */
+/* $Id: PGMAllShw.h 17586 2009-03-09 15:28:25Z vboxsync $ */
 /** @file
  * VBox - Page Manager, Shadow Paging Template - All context code.
  */
@@ -96,18 +96,21 @@
 # define SHW_PTE_PG_MASK        X86_PTE_PAE_PG_MASK
 # define SHW_PT_SHIFT           X86_PT_PAE_SHIFT
 # define SHW_PT_MASK            X86_PT_PAE_MASK
+
 # if PGM_SHW_TYPE == PGM_TYPE_AMD64
 #  define SHW_PDPT_SHIFT        X86_PDPT_SHIFT
 #  define SHW_PDPT_MASK         X86_PDPT_MASK_AMD64
 #  define SHW_PDPE_PG_MASK      X86_PDPE_PG_MASK
 #  define SHW_TOTAL_PD_ENTRIES  (X86_PG_AMD64_ENTRIES*X86_PG_AMD64_PDPE_ENTRIES)
-#  define SHW_POOL_ROOT_IDX     PGMPOOL_IDX_PAE_PD      /* do not use! exception is real mode & protected mode without paging. */
+#  define SHW_POOL_ROOT_IDX     PGMPOOL_IDX_AMD64_CR3
+
 # else /* 32 bits PAE mode */
 #  define SHW_PDPT_SHIFT        X86_PDPT_SHIFT
 #  define SHW_PDPT_MASK         X86_PDPT_MASK_PAE
 #  define SHW_PDPE_PG_MASK      X86_PDPE_PG_MASK
 #  define SHW_TOTAL_PD_ENTRIES  (X86_PG_PAE_ENTRIES*X86_PG_PAE_PDPE_ENTRIES)
-#  define SHW_POOL_ROOT_IDX     PGMPOOL_IDX_PAE_PD
+#  define SHW_POOL_ROOT_IDX     PGMPOOL_IDX_PDPT
+
 # endif
 #endif
 
@@ -350,11 +353,7 @@ PGM_SHW_DECL(int, ModifyPage)(PVM pVM, RTGCUINTPTR GCPtr, size_t cb, uint64_t fF
             if (pPT->a[iPTE].n.u1Present)
             {
                 pPT->a[iPTE].u = (pPT->a[iPTE].u & (fMask | SHW_PTE_PG_MASK)) | (fFlags & ~SHW_PTE_PG_MASK);
-/** @todo r=bird: I think this may break assumptions in page pool GCPhys
- * tracking, and I seems to recall putting it here to prevent API users from
- * making anything !P. The assertion is kind of useless now, as it
- * won't hit anything any longer... */
-                Assert(pPT->a[iPTE].n.u1Present || !(fMask & X86_PTE_P));
+                Assert(pPT->a[iPTE].n.u1Present);
 # if PGM_SHW_TYPE == PGM_TYPE_EPT
                 HWACCMInvalidatePhysPage(pVM, (RTGCPHYS)GCPtr);
 # else

@@ -48,6 +48,8 @@ __END_DECLS
 # endif
 #endif
 
+#include <iprt/spinlock.h>
+
 #include <VBox/VBoxGuest.h>
 
 /*******************************************************************************
@@ -122,6 +124,10 @@ typedef struct _BASE_ADDRESS {
 
 } BASE_ADDRESS, *PBASE_ADDRESS;
 
+typedef struct 
+{
+    KBUGCHECK_CALLBACK_RECORD bugcheckRecord;
+} VBOXBUGCHECKCONTEXT, *PVBOXBUGCHECKCONTEXT;
 
 /**
  * Device extension.
@@ -153,7 +159,8 @@ typedef struct VBOXGUESTDEVEXT
     PKINTERRUPT interruptObject;
 /////
 
-
+    // the driver name
+    UCHAR szDriverName[32];
     // our functional driver object
     PDEVICE_OBJECT deviceObject;
     // the top of the stack
@@ -197,6 +204,10 @@ typedef struct VBOXGUESTDEVEXT
     /* Preallocated VMMDevEvents for IRQ handler */
     VMMDevEvents *irqAckEvents;
 
+#ifdef VBOX_WITH_HGCM
+    /** Spinlock various items in the VBOXGUESTSESSION. */
+    RTSPINLOCK SessionSpinlock;
+#endif
 
     struct
     {
@@ -207,6 +218,10 @@ typedef struct VBOXGUESTDEVEXT
 
     /* Preallocated generic request for shutdown. */
     VMMDevPowerStateRequest *powerStateRequest;
+
+    /* Bugcheck context. */
+    BOOLEAN bBugcheckCallbackRegistered;
+    PVBOXBUGCHECKCONTEXT bugcheckContext;
 
 } VBOXGUESTDEVEXT, *PVBOXGUESTDEVEXT;
 
@@ -220,6 +235,22 @@ typedef enum
     WINVISTA = 5
 } winVersion_t;
 extern winVersion_t winVersion;
+
+#ifdef VBOX_WITH_HGCM
+/**
+ * The VBoxGuest per session data.
+ *
+ * @remark  Just to store hgcm ID's, perhaps could combine with one from common/VBoxGuest/vboxguestinternal.h?
+ */
+typedef struct VBOXGUESTSESSION
+{
+    /** Array containing HGCM client IDs associated with this session.
+     * This will be automatically disconnected when the session is closed. 
+     * Note that array size also affects/is maximum number of supported opengl threads per guest process.
+     */
+    uint32_t volatile           aHGCMClientIds[8];
+} VBOXGUESTSESSION, *PVBOXGUESTSESSION;
+#endif
 
 extern "C"
 {

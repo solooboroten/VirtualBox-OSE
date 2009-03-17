@@ -1,4 +1,4 @@
-/* $Id: DVDDriveImpl.cpp 15991 2009-01-16 14:02:20Z vboxsync $ */
+/* $Id: DVDDriveImpl.cpp 17238 2009-03-02 10:58:10Z vboxsync $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2008 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -34,6 +34,8 @@
 
 #include <iprt/string.h>
 #include <iprt/cpputils.h>
+
+#include <VBox/settings.h>
 
 // constructor / destructor
 ////////////////////////////////////////////////////////////////////////////////
@@ -263,9 +265,9 @@ STDMETHODIMP DVDDrive::MountImage (IN_GUID aImageId)
     /* Our lifetime is bound to mParent's lifetime, so we don't add caller.
      * We also don't lock mParent since its mParent field is const. */
 
-    ComObjPtr <DVDImage2> image;
-    rc = mParent->virtualBox()->findDVDImage2 (&imageId, NULL,
-                                               true /* aSetError */, &image);
+    ComObjPtr<DVDImage> image;
+    rc = mParent->virtualBox()->findDVDImage(&imageId, NULL,
+                                             true /* aSetError */, &image);
 
     if (SUCCEEDED (rc))
     {
@@ -367,7 +369,7 @@ STDMETHODIMP DVDDrive::Unmount()
     return S_OK;
 }
 
-STDMETHODIMP DVDDrive::GetImage (IDVDImage2 **aDVDImage)
+STDMETHODIMP DVDDrive::GetImage (IDVDImage **aDVDImage)
 {
     CheckComArgOutPointerValid(aDVDImage);
 
@@ -449,15 +451,16 @@ HRESULT DVDDrive::loadSettings (const settings::Key &aMachineNode)
 
         Bstr src = typeNode.stringValue ("src");
 
-        /* find the correspoding object */
+        /* find the corresponding object */
         ComObjPtr <Host> host = mParent->virtualBox()->host();
 
-        ComPtr <IHostDVDDriveCollection> coll;
-        rc = host->COMGETTER(DVDDrives) (coll.asOutParam());
+        com::SafeIfaceArray <IHostDVDDrive> coll;
+        rc = host->COMGETTER(DVDDrives) (ComSafeArrayAsOutParam(coll));
         AssertComRC (rc);
 
         ComPtr <IHostDVDDrive> drive;
-        rc = coll->FindByName (src, drive.asOutParam());
+        rc = host->FindHostDVDDrive (src, drive.asOutParam());
+
         if (SUCCEEDED (rc))
         {
             rc = CaptureHostDrive (drive);

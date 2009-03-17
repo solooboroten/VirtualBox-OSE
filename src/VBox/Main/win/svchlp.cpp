@@ -21,10 +21,13 @@
 
 #include "svchlp.h"
 
-#include "HostImpl.h"
+//#include "HostImpl.h"
 #include "Logging.h"
 
 #include <VBox/err.h>
+
+int netIfNetworkInterfaceHelperServer (SVCHlpClient *aClient,
+                                        SVCHlpMsg::Code aMsgCode);
 
 using namespace com;
 
@@ -271,10 +274,16 @@ int SVCHlpServer::run()
 
         switch (msgCode)
         {
-            case SVCHlpMsg::CreateHostNetworkInterface:
-            case SVCHlpMsg::RemoveHostNetworkInterface:
+            case SVCHlpMsg::CreateHostOnlyNetworkInterface:
+            case SVCHlpMsg::RemoveHostOnlyNetworkInterface:
+            case SVCHlpMsg::EnableDynamicIpConfig:
+            case SVCHlpMsg::EnableStaticIpConfig:
+            case SVCHlpMsg::EnableStaticIpConfigV6:
+            case SVCHlpMsg::DhcpRediscover:
             {
-                vrc = Host::networkInterfaceHelperServer (this, msgCode);
+#ifdef VBOX_WITH_NETFLT
+                vrc = netIfNetworkInterfaceHelperServer (this, msgCode);
+#endif
                 break;
             }
             default:

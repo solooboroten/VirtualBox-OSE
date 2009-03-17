@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-solaris.c 13865 2008-11-05 14:14:11Z vboxsync $ */
+/* $Id: SUPDrv-solaris.c 16905 2009-02-18 14:45:18Z vboxsync $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Solaris specifics.
  */
@@ -59,6 +59,7 @@
 #include <iprt/initterm.h>
 #include <iprt/alloc.h>
 #include <iprt/string.h>
+#include <iprt/err.h>
 
 
 /*******************************************************************************
@@ -66,8 +67,8 @@
 *******************************************************************************/
 /** @todo this quoting macros probably should be moved to a common place.
   * The indirection is for expanding macros passed to the first macro. */
-#define VBOXSOLQUOTE2(x)                #x
-#define VBOXSOLQUOTE(x)                 VBOXSOLQUOTE2(x)
+#define VBOXSOLQUOTE2(x)         #x
+#define VBOXSOLQUOTE(x)          VBOXSOLQUOTE2(x)
 /** The module name. */
 #define DEVICE_NAME              "vboxdrv"
 /** The module description as seen in 'modinfo'. */
@@ -179,9 +180,6 @@ static void *g_pVBoxDrvSolarisState;
 /** Device extention & session data association structure */
 static SUPDRVDEVEXT         g_DevExt;
 
-/* GCC C++ hack. */
-unsigned __gxx_personality_v0 = 0xcccccccc;
-
 /** Hash table */
 static PSUPDRVSESSION       g_apSessionHashTab[19];
 /** Spinlock protecting g_apSessionHashTab. */
@@ -229,7 +227,7 @@ int _init(void)
                 {
                     rc = mod_install(&g_VBoxDrvSolarisModLinkage);
                     if (!rc)
-                        return 0; /* success */
+                        return rc; /* success */
 
                     ddi_soft_state_fini(&g_pVBoxDrvSolarisState);
                     LogRel((DEVICE_NAME ":mod_install failed! rc=%d\n", rc));
@@ -252,7 +250,7 @@ int _init(void)
         LogRel((DEVICE_NAME ":VBoxDrvSolarisAttach: failed to init R0Drv\n"));
     memset(&g_DevExt, 0, sizeof(g_DevExt));
 
-    return -1;
+    return RTErrConvertToErrno(rc);
 }
 
 
@@ -694,52 +692,62 @@ static int VBoxDrvSolarisIOCtlSlow(PSUPDRVSESSION pSession, int iCmd, int Mode, 
 {
     int         rc;
     uint32_t    cbBuf = 0;
-    SUPREQHDR   Hdr;
+    union 
+    {
+        SUPREQHDR   Hdr;
+        uint8_t     abBuf[64];
+    }           StackBuf;
     PSUPREQHDR  pHdr;
 
 
     /*
      * Read the header.
      */
-    if (RT_UNLIKELY(IOCPARM_LEN(iCmd) != sizeof(Hdr)))
+    if (RT_UNLIKELY(IOCPARM_LEN(iCmd) != sizeof(StackBuf.Hdr)))
     {
-        LogRel((DEVICE_NAME ":VBoxDrvSolarisIOCtlSlow: iCmd=%#x len %d expected %d\n", iCmd, IOCPARM_LEN(iCmd), sizeof(Hdr)));
+        LogRel((DEVICE_NAME ":VBoxDrvSolarisIOCtlSlow: iCmd=%#x len %d expected %d\n", iCmd, IOCPARM_LEN(iCmd), sizeof(StackBuf.Hdr)));
         return EINVAL;
     }
-    rc = ddi_copyin((void *)iArg, &Hdr, sizeof(Hdr), Mode);
+    rc = ddi_copyin((void *)iArg, &StackBuf.Hdr, sizeof(StackBuf.Hdr), Mode);
     if (RT_UNLIKELY(rc))
     {
         LogRel((DEVICE_NAME ":VBoxDrvSolarisIOCtlSlow: ddi_copyin(,%#lx,) failed; iCmd=%#x. rc=%d\n", iArg, iCmd, rc));
         return EFAULT;
     }
-    if (RT_UNLIKELY((Hdr.fFlags & SUPREQHDR_FLAGS_MAGIC_MASK) != SUPREQHDR_FLAGS_MAGIC))
+    if (RT_UNLIKELY((StackBuf.Hdr.fFlags & SUPREQHDR_FLAGS_MAGIC_MASK) != SUPREQHDR_FLAGS_MAGIC))
     {
-        LogRel((DEVICE_NAME ":VBoxDrvSolarisIOCtlSlow: bad header magic %#x; iCmd=%#x\n", Hdr.fFlags & SUPREQHDR_FLAGS_MAGIC_MASK, iCmd));
+        LogRel((DEVICE_NAME ":VBoxDrvSolarisIOCtlSlow: bad header magic %#x; iCmd=%#x\n", StackBuf.Hdr.fFlags & SUPREQHDR_FLAGS_MAGIC_MASK, iCmd));
         return EINVAL;
     }
-    cbBuf = RT_MAX(Hdr.cbIn, Hdr.cbOut);
-    if (RT_UNLIKELY(    Hdr.cbIn < sizeof(Hdr)
-                    ||  Hdr.cbOut < sizeof(Hdr)
+    cbBuf = RT_MAX(StackBuf.Hdr.cbIn, StackBuf.Hdr.cbOut);
+    if (RT_UNLIKELY(    StackBuf.Hdr.cbIn < sizeof(StackBuf.Hdr)
+                    ||  StackBuf.Hdr.cbOut < sizeof(StackBuf.Hdr)
                     ||  cbBuf > _1M*16))
     {
-        LogRel((DEVICE_NAME ":VBoxDrvSolarisIOCtlSlow: max(%#x,%#x); iCmd=%#x\n", Hdr.cbIn, Hdr.cbOut, iCmd));
+        LogRel((DEVICE_NAME ":VBoxDrvSolarisIOCtlSlow: max(%#x,%#x); iCmd=%#x\n", StackBuf.Hdr.cbIn, StackBuf.Hdr.cbOut, iCmd));
         return EINVAL;
     }
 
     /*
      * Buffer the request.
      */
-    pHdr = RTMemTmpAlloc(cbBuf);
-    if (RT_UNLIKELY(!pHdr))
+    if (cbBuf <= sizeof(StackBuf))
+        pHdr = &StackBuf.Hdr;
+    else
     {
-        LogRel((DEVICE_NAME ":VBoxDrvSolarisIOCtlSlow: failed to allocate buffer of %d bytes for iCmd=%#x.\n", cbBuf, iCmd));
-        return ENOMEM;
+        pHdr = RTMemTmpAlloc(cbBuf);
+        if (RT_UNLIKELY(!pHdr))
+        {
+            LogRel((DEVICE_NAME ":VBoxDrvSolarisIOCtlSlow: failed to allocate buffer of %d bytes for iCmd=%#x.\n", cbBuf, iCmd));
+            return ENOMEM;
+        }
     }
     rc = ddi_copyin((void *)iArg, pHdr, cbBuf, Mode);
     if (RT_UNLIKELY(rc))
     {
-        LogRel((DEVICE_NAME ":VBoxDrvSolarisIOCtlSlow: copy_from_user(,%#lx, %#x) failed; iCmd=%#x. rc=%d\n", iArg, Hdr.cbIn, iCmd, rc));
-        RTMemFree(pHdr);
+        LogRel((DEVICE_NAME ":VBoxDrvSolarisIOCtlSlow: copy_from_user(,%#lx, %#x) failed; iCmd=%#x. rc=%d\n", iArg, cbBuf, iCmd, rc));
+        if (pHdr != &StackBuf.Hdr)
+            RTMemFree(pHdr);
         return EFAULT;
     }
 
@@ -747,7 +755,7 @@ static int VBoxDrvSolarisIOCtlSlow(PSUPDRVSESSION pSession, int iCmd, int Mode, 
      * Process the IOCtl.
      */
     rc = supdrvIOCtl(iCmd, &g_DevExt, pSession, pHdr);
-
+    
     /*
      * Copy ioctl data and output buffer back to user space.
      */
@@ -770,7 +778,8 @@ static int VBoxDrvSolarisIOCtlSlow(PSUPDRVSESSION pSession, int iCmd, int Mode, 
     else
         rc = EINVAL;
 
-    RTMemTmpFree(pHdr);
+    if (pHdr != &StackBuf.Hdr)
+        RTMemTmpFree(pHdr);
     return rc;
 }
 

@@ -1,4 +1,4 @@
-/* $Id: FloppyDriveImpl.cpp 15991 2009-01-16 14:02:20Z vboxsync $ */
+/* $Id: FloppyDriveImpl.cpp 17255 2009-03-02 15:42:10Z vboxsync $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -34,6 +34,8 @@
 
 #include <iprt/string.h>
 #include <iprt/cpputils.h>
+
+#include <VBox/settings.h>
 
 // constructor / destructor
 /////////////////////////////////////////////////////////////////////////////
@@ -270,9 +272,9 @@ STDMETHODIMP FloppyDrive::MountImage (IN_GUID aImageId)
     /* Our lifetime is bound to mParent's lifetime, so we don't add caller.
      * We also don't lock mParent since its mParent field is const. */
 
-    ComObjPtr <FloppyImage2> image;
-    rc = mParent->virtualBox()->findFloppyImage2 (&imageId, NULL,
-                                                  true /* aSetError */, &image);
+    ComObjPtr<FloppyImage> image;
+    rc = mParent->virtualBox()->findFloppyImage(&imageId, NULL,
+                                                true /* aSetError */, &image);
 
     if (SUCCEEDED (rc))
     {
@@ -374,7 +376,7 @@ STDMETHODIMP FloppyDrive::Unmount()
     return S_OK;
 }
 
-STDMETHODIMP FloppyDrive::GetImage (IFloppyImage2 **aFloppyImage)
+STDMETHODIMP FloppyDrive::GetImage(IFloppyImage **aFloppyImage)
 {
     CheckComArgOutPointerValid(aFloppyImage);
 
@@ -456,15 +458,16 @@ HRESULT FloppyDrive::loadSettings (const settings::Key &aMachineNode)
 
         Bstr src = typeNode.stringValue ("src");
 
-        /* find the correspoding object */
+        /* find the corresponding object */
         ComObjPtr <Host> host = mParent->virtualBox()->host();
 
-        ComPtr <IHostFloppyDriveCollection> coll;
-        rc = host->COMGETTER(FloppyDrives) (coll.asOutParam());
+        com::SafeIfaceArray <IHostFloppyDrive> coll;
+        rc = host->COMGETTER(FloppyDrives) (ComSafeArrayAsOutParam(coll));
         AssertComRC (rc);
 
         ComPtr <IHostFloppyDrive> drive;
-        rc = coll->FindByName (src, drive.asOutParam());
+        rc = host->FindHostFloppyDrive (src, drive.asOutParam());
+
         if (SUCCEEDED (rc))
         {
             rc = CaptureHostDrive (drive);

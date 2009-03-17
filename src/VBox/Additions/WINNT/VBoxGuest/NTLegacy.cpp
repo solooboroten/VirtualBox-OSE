@@ -110,12 +110,28 @@ NTSTATUS ntCreateDevice(PDRIVER_OBJECT pDrvObj, PDEVICE_OBJECT pDevObj, PUNICODE
             IoDeleteDevice(deviceObject);
             return STATUS_NO_SUCH_DEVICE;
         }
+
+#ifdef VBOX_WITH_HGCM
+        int rc2 = RTSpinlockCreate(&pDevExt->SessionSpinlock);
+        if (RT_FAILURE(rc2))
+        {
+            dprintf(("VBoxGuest::ntCreateDevice: RTSpinlockCreate failed\n"));
+            IoDetachDevice(pDevExt->nextLowerDriver);
+            IoDeleteSymbolicLink(&DosName);
+            IoDeleteDevice(deviceObject);
+            return STATUS_DRIVER_UNABLE_TO_LOAD;
+        }
+#endif
     }
     // store a reference to ourself
     pDevExt->deviceObject = deviceObject;
     // store bus and slot number we've queried before
     pDevExt->busNumber = busNumber;
     pDevExt->slotNumber = slotNumber;
+
+#ifdef VBOX_WITH_GUEST_BUGCHECK_DETECTION
+    rc = hlpRegisterBugCheckCallback(pDevExt);
+#endif
 
     //
     // let's have a look at what our PCI adapter offers

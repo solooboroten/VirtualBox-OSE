@@ -1,4 +1,4 @@
-/* $Id: NetworkAdapterImpl.h 15708 2008-12-19 18:28:27Z vboxsync $ */
+/* $Id: NetworkAdapterImpl.h 17684 2009-03-11 12:15:33Z vboxsync $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -25,7 +25,6 @@
 #define ____H_NETWORKADAPTER
 
 #include "VirtualBoxBase.h"
-#include "Collection.h"
 
 class Machine;
 class GuestOSType;
@@ -126,8 +125,9 @@ public:
 
     // INetworkAdapter methods
     STDMETHOD(AttachToNAT)();
-    STDMETHOD(AttachToHostInterface)();
+    STDMETHOD(AttachToBridgedInterface)();
     STDMETHOD(AttachToInternalNetwork)();
+    STDMETHOD(AttachToHostOnlyInterface)();
     STDMETHOD(Detach)();
 
     // public methods only for internal purposes

@@ -1,4 +1,4 @@
-/* $Id: PerformanceImpl.cpp 15051 2008-12-05 17:20:00Z vboxsync $ */
+/* $Id: PerformanceImpl.cpp 17911 2009-03-16 10:30:55Z vboxsync $ */
 
 /** @file
  *
@@ -21,16 +21,14 @@
  * additional information or have any questions.
  */
 
-#if defined(RT_OS_WINDOWS)
-#elif defined(RT_OS_LINUX)
-#endif
-
 #include "PerformanceImpl.h"
 
 #include "Logging.h"
 
-#include <VBox/err.h>
 #include <iprt/process.h>
+
+#include <VBox/err.h>
+#include <VBox/settings.h>
 
 #include <vector>
 #include <algorithm>
@@ -516,7 +514,7 @@ void PerformanceCollector::unregisterMetricsFor (const ComPtr <IUnknown> &aObjec
 
 /* static */
 void PerformanceCollector::staticSamplerCallback (RTTIMERLR hTimerLR, void *pvUser,
-                                                  uint64_t iTick)
+                                                  uint64_t /* iTick */)
 {
     AssertReturnVoid (pvUser != NULL);
     PerformanceCollector *collector = static_cast <PerformanceCollector *> (pvUser);

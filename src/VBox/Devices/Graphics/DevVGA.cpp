@@ -1,5 +1,5 @@
 #ifdef VBOX
-/* $Id: DevVGA.cpp 15977 2009-01-15 18:42:16Z vboxsync $ */
+/* $Id: DevVGA.cpp 17767 2009-03-12 17:14:01Z vboxsync $ */
 /** @file
  * DevVGA - VBox VGA/VESA device.
  */
@@ -127,6 +127,7 @@
 #include <iprt/assert.h>
 #include <iprt/asm.h>
 #include <iprt/file.h>
+#include <iprt/time.h>
 #include <iprt/string.h>
 
 #include <VBox/VBoxGuest.h>
@@ -883,6 +884,11 @@ static int vbe_ioport_write_data(void *opaque, uint32_t addr, uint32_t val)
             if (val == VBE_DISPI_ID_VBOX_VIDEO) {
                 s->vbe_regs[s->vbe_index] = val;
             }
+#ifdef VBOX_WITH_HGSMI
+            else if (val == VBE_DISPI_ID_HGSMI) {
+                s->vbe_regs[s->vbe_index] = val;
+            }
+#endif /* VBOX_WITH_HGSMI */
 #endif /* VBOX */
             break;
         case VBE_DISPI_INDEX_XRES:
@@ -1375,6 +1381,45 @@ int vga_mem_writeb(void *opaque, target_phys_addr_t addr, uint32_t val)
     } else {
         /* standard VGA latched access */
         VERIFY_VRAM_WRITE_OFF_RETURN(s, addr * 4 + 3);
+
+#ifdef IN_RING0
+        if (((++s->cLatchAccesses) & s->uMaskLatchAccess) == s->uMaskLatchAccess)
+        {
+            static uint32_t aMask[5]  = {0x3ff, 0x1ff, 0x7f, 0x3f, 0x1f};
+            static uint64_t aDelta[5]  = {10000000, 5000000, 2500000, 1250000, 625000};
+            if (PDMDevHlpCanEmulateIoBlock(s->CTX_SUFF(pDevIns)))
+            {
+                uint64_t u64CurTime = RTTimeSystemNanoTS();
+
+                /* About 1000 (or more) accesses per 10 ms will trigger a reschedule
+                * to the recompiler
+                */
+                if (u64CurTime - s->u64LastLatchedAccess < aDelta[s->iMask])
+                {
+                    s->u64LastLatchedAccess = 0;
+                    s->iMask                = RT_MIN(s->iMask + 1, RT_ELEMENTS(aMask) - 1);
+                    s->uMaskLatchAccess     = aMask[s->iMask];
+                    s->cLatchAccesses       = s->uMaskLatchAccess - 1;
+                    return VINF_EM_RAW_EMULATE_IO_BLOCK;
+                }
+                if (s->u64LastLatchedAccess)
+                {
+                    Log2(("Reset mask (was %d) delta %RX64 (limit %x)\n", s->iMask, u64CurTime - s->u64LastLatchedAccess, aDelta[s->iMask]));
+                    if (s->iMask) 
+                        s->iMask--;
+                    s->uMaskLatchAccess     = aMask[s->iMask];
+                }
+                s->u64LastLatchedAccess = u64CurTime;
+            }
+            else
+            {
+                s->u64LastLatchedAccess = 0;
+                s->iMask                = 0;
+                s->uMaskLatchAccess     = aMask[s->iMask];
+                s->cLatchAccesses       = 0;
+            }
+        }
+#endif
 
         write_mode = s->gr[5] & 3;
         switch(write_mode) {
@@ -3090,6 +3135,29 @@ PDMBOTHCBDECL(int) vgaIOPortWriteVBEData(PPDMDEVINS pDevIns, void *pvUser, RTIOP
 
     NOREF(pvUser);
 
+#ifdef VBOX_WITH_HGSMI
+#ifdef IN_RING3
+    if (s->vbe_index == VBE_DISPI_INDEX_VBVA_GUEST)
+    {
+        HGSMIGuestWrite (s->pHGSMI, u32);
+        return VINF_SUCCESS;
+    }
+    if (s->vbe_index == VBE_DISPI_INDEX_VBVA_HOST)
+    {
+        HGSMIHostWrite (s->pHGSMI, u32);
+        return VINF_SUCCESS;
+    }
+#else
+    if (   s->vbe_index == VBE_DISPI_INDEX_VBVA_HOST
+        || s->vbe_index == VBE_DISPI_INDEX_VBVA_GUEST)
+    {
+        Log(("vgaIOPortWriteVBEData: %s - Switching to host...\n",
+             s->vbe_index == VBE_DISPI_INDEX_VBVA_HOST? "VBE_DISPI_INDEX_VBVA_HOST": "VBE_DISPI_INDEX_VBVA_GUEST"));
+        return VINF_IOM_HC_IOPORT_WRITE;
+    }
+#endif /* !IN_RING3 */
+#endif /* VBOX_WITH_HGSMI */
+
 #ifndef IN_RING3
     /*
      * This has to be done on the host in order to execute the connector callbacks.
@@ -3205,6 +3273,30 @@ PDMBOTHCBDECL(int) vgaIOPortWriteVBEIndex(PPDMDEVINS pDevIns, void *pvUser, RTIO
 PDMBOTHCBDECL(int) vgaIOPortReadVBEData(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t *pu32, unsigned cb)
 {
     NOREF(pvUser);
+
+#ifdef VBOX_WITH_HGSMI
+#ifdef IN_RING3
+    VGAState *s = PDMINS_2_DATA(pDevIns, PVGASTATE);
+
+    if (s->vbe_index == VBE_DISPI_INDEX_VBVA_GUEST)
+    {
+        *pu32 = HGSMIGuestRead (s->pHGSMI);
+        return VINF_SUCCESS;
+    }
+    if (s->vbe_index == VBE_DISPI_INDEX_VBVA_HOST)
+    {
+        *pu32 = HGSMIHostRead (s->pHGSMI);
+        return VINF_SUCCESS;
+    }
+#else
+    if (   Port == VBE_DISPI_INDEX_VBVA_HOST
+        || Port == VBE_DISPI_INDEX_VBVA_GUEST)
+    {
+       return VINF_IOM_HC_IOPORT_WRITE;
+    }
+#endif /* !IN_RING3 */
+#endif /* VBOX_WITH_HGSMI */
+
 #ifdef VBE_BYTEWISE_IO
     if (cb == 1)
     {
@@ -4562,7 +4654,14 @@ static DECLCALLBACK(int) vgaPortUpdateDisplay(PPDMIDISPLAYPORT pInterface)
     PDMDEV_ASSERT_EMT(VGASTATE2DEVINS(pThis));
     PPDMDEVINS pDevIns = pThis->CTX_SUFF(pDevIns);
 
+#ifndef VBOX_WITH_HGSMI
     /* This should be called only in non VBVA mode. */
+#else
+    if (VBVAUpdateDisplay (pThis) == VINF_SUCCESS)
+    {
+        return VINF_SUCCESS;
+    }
+#endif /* VBOX_WITH_HGSMI */
 
     int rc = vga_update_display(pThis, false);
     if (rc != VINF_SUCCESS)
@@ -5245,6 +5344,12 @@ static DECLCALLBACK(void)  vgaR3Reset(PPDMDEVINS pDevIns)
     /* notify port handler */
     if (pThis->pDrv)
         pThis->pDrv->pfnReset(pThis->pDrv);
+
+    /* Reset latched access mask. */
+    pThis->uMaskLatchAccess     = 0x3ff;
+    pThis->cLatchAccesses       = 0;
+    pThis->u64LastLatchedAccess = 0;
+    pThis->iMask                = 0;
 }
 
 
@@ -6068,6 +6173,10 @@ static DECLCALLBACK(int)   vgaR3Construct(PPDMDEVINS pDevIns, int iInstance, PCF
     if (FileLogo != NIL_RTFILE)
         RTFileClose(FileLogo);
 
+#ifdef VBOX_WITH_HGSMI
+    VBVAInit (pThis);
+#endif /* VBOX_WITH_HGSMI */
+
     /*
      * Statistics.
      */
@@ -6076,6 +6185,8 @@ static DECLCALLBACK(int)   vgaR3Construct(PPDMDEVINS pDevIns, int iInstance, PCF
     STAM_REG(pVM, &pThis->StatRZMemoryWrite,    STAMTYPE_PROFILE, "/Devices/VGA/RZ/MMIO-Write", STAMUNIT_TICKS_PER_CALL, "Profiling of the VGAGCMemoryWrite() body.");
     STAM_REG(pVM, &pThis->StatR3MemoryWrite,    STAMTYPE_PROFILE, "/Devices/VGA/R3/MMIO-Write", STAMUNIT_TICKS_PER_CALL, "Profiling of the VGAGCMemoryWrite() body.");
 
+    /* Init latched access mask. */
+    pThis->uMaskLatchAccess = 0x3ff;
     return rc;
 }
 

@@ -1,11 +1,11 @@
-/* $Id: VirtualBoxImpl.cpp 16040 2009-01-19 11:11:12Z vboxsync $ */
+/* $Id: VirtualBoxImpl.cpp 18023 2009-03-17 13:48:59Z vboxsync $ */
 
 /** @file
  * Implementation of IVirtualBox in VBoxSVC.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -20,31 +20,6 @@
  * additional information or have any questions.
  */
 
-#include "VirtualBoxImpl.h"
-
-#include "Global.h"
-#include "MachineImpl.h"
-#include "HardDisk2Impl.h"
-#include "MediumImpl.h"
-#include "SharedFolderImpl.h"
-#include "ProgressImpl.h"
-#include "HostImpl.h"
-#include "USBControllerImpl.h"
-#include "SystemPropertiesImpl.h"
-#include "GuestOSTypeImpl.h"
-#include "Version.h"
-
-#include "VirtualBoxXMLUtil.h"
-
-#include "Logging.h"
-
-#ifdef RT_OS_WINDOWS
-# include "win/svchlp.h"
-#endif
-
-#include <stdio.h>
-#include <stdlib.h>
-
 #include <iprt/path.h>
 #include <iprt/dir.h>
 #include <iprt/file.h>
@@ -55,20 +30,49 @@
 #include <iprt/env.h>
 #include <iprt/cpputils.h>
 
-#include <VBox/err.h>
-#include <VBox/param.h>
-#include <VBox/VBoxHDD-new.h>
-#include <VBox/version.h>
-#include <package-generated.h>
-
 #include <VBox/com/com.h>
 #include <VBox/com/array.h>
+
+#include <VBox/err.h>
+#include <VBox/param.h>
+#include <VBox/VBoxHDD.h>
+#include <VBox/settings.h>
+#include <VBox/version.h>
+
+#include <package-generated.h>
 
 #include <algorithm>
 #include <set>
 #include <memory> // for auto_ptr
 
 #include <typeinfo>
+
+#include "VirtualBoxImpl.h"
+#include "VirtualBoxImplExtra.h"
+
+#include "Global.h"
+#include "MachineImpl.h"
+#include "HardDiskImpl.h"
+#include "MediumImpl.h"
+#include "SharedFolderImpl.h"
+#include "ProgressImpl.h"
+#include "HostImpl.h"
+#include "USBControllerImpl.h"
+#include "SystemPropertiesImpl.h"
+#include "GuestOSTypeImpl.h"
+#include "Version.h"
+#include "DHCPServerImpl.h"
+
+#include "VirtualBoxXMLUtil.h"
+
+#include "Logging.h"
+
+#ifdef RT_OS_WINDOWS
+# include "win/svchlp.h"
+#endif
+
+// #include <stdio.h>
+// #include <stdlib.h>
 
 // defines
 /////////////////////////////////////////////////////////////////////////////
@@ -87,6 +91,19 @@ static const char gDefaultGlobalConfig [] =
     "  <Global>"RTFILE_LINEFEED
     "    <MachineRegistry/>"RTFILE_LINEFEED
     "    <MediaRegistry/>"RTFILE_LINEFEED
+    "    <NetserviceRegistry>"RTFILE_LINEFEED
+    "       <DHCPServers>"RTFILE_LINEFEED
+    "          <DHCPServer "
+#ifdef RT_OS_WINDOWS
+                          "networkName=\"HostInterfaceNetworking-VirtualBox Host-Only Network Adapter\" "
+#else
+                          "networkName=\"HostInterfaceNetworking-vboxnet0\" "
+#endif
+                          "IPAddress=\"192.168.56.100\" networkMask=\"255.255.255.0\" "
+                          "lowerIP=\"192.168.56.101\" upperIP=\"192.168.56.254\" "
+                          "enabled=\"1\"/>"RTFILE_LINEFEED
+    "       </DHCPServers>"RTFILE_LINEFEED
+    "    </NetserviceRegistry>"RTFILE_LINEFEED
     "    <USBDeviceFilters/>"RTFILE_LINEFEED
     "    <SystemProperties/>"RTFILE_LINEFEED
     "  </Global>"RTFILE_LINEFEED
@@ -285,6 +302,10 @@ HRESULT VirtualBox::init()
             rc = loadMachines (global);
             CheckComRCThrowRC (rc);
 
+            /* net services */
+            rc = loadNetservices(global);
+            CheckComRCThrowRC (rc);
+
             /* check hard disk consistency */
 /// @todo (r=dmik) add IVirtualBox::cleanupHardDisks() instead or similar
 //            for (HardDiskList::const_iterator it = mData.mHardDisks.begin();
@@ -383,11 +404,12 @@ void VirtualBox::uninit()
      * operations). */
     uninitDependentChildren();
 
-    mData.mHardDisk2Map.clear();
+    mData.mHardDiskMap.clear();
 
-    mData.mFloppyImages2.clear();
-    mData.mDVDImages2.clear();
-    mData.mHardDisks2.clear();
+    mData.mFloppyImages.clear();
+    mData.mDVDImages.clear();
+    mData.mHardDisks.clear();
+    mData.mDHCPServers.clear();
 
     mData.mProgressOperations.clear();
 
@@ -397,7 +419,7 @@ void VirtualBox::uninit()
      * In some cases this is important because these other children may use
      * some resources of the singletons which would prevent them from
      * uninitializing (as for example, mSystemProperties which owns
-     * HardDiskFormat objects which HardDisk2 objects refer to) */
+     * HardDiskFormat objects which HardDisk objects refer to) */
     if (mData.mSystemProperties)
     {
         mData.mSystemProperties->uninit();
@@ -606,7 +628,7 @@ VirtualBox::COMGETTER(SystemProperties) (ISystemProperties **aSystemProperties)
 }
 
 STDMETHODIMP
-VirtualBox::COMGETTER(Machines2) (ComSafeArrayOut (IMachine *, aMachines))
+VirtualBox::COMGETTER(Machines) (ComSafeArrayOut (IMachine *, aMachines))
 {
     if (ComSafeArrayOutIsNull (aMachines))
         return E_POINTER;
@@ -622,7 +644,7 @@ VirtualBox::COMGETTER(Machines2) (ComSafeArrayOut (IMachine *, aMachines))
     return S_OK;
 }
 
-STDMETHODIMP VirtualBox::COMGETTER(HardDisks2) (ComSafeArrayOut (IHardDisk2 *, aHardDisks))
+STDMETHODIMP VirtualBox::COMGETTER(HardDisks) (ComSafeArrayOut (IHardDisk *, aHardDisks))
 {
     if (ComSafeArrayOutIsNull (aHardDisks))
         return E_POINTER;
@@ -632,14 +654,14 @@ STDMETHODIMP VirtualBox::COMGETTER(HardDisks2) (ComSafeArrayOut (IHardDisk2 *, a
 
     AutoReadLock alock (this);
 
-    SafeIfaceArray <IHardDisk2> hardDisks (mData.mHardDisks2);
+    SafeIfaceArray<IHardDisk> hardDisks (mData.mHardDisks);
     hardDisks.detachTo (ComSafeArrayOutArg (aHardDisks));
 
     return S_OK;
 }
 
 STDMETHODIMP
-VirtualBox::COMGETTER(DVDImages) (ComSafeArrayOut (IDVDImage2 *, aDVDImages))
+VirtualBox::COMGETTER(DVDImages) (ComSafeArrayOut (IDVDImage *, aDVDImages))
 {
     if (ComSafeArrayOutIsNull (aDVDImages))
         return E_POINTER;
@@ -649,14 +671,14 @@ VirtualBox::COMGETTER(DVDImages) (ComSafeArrayOut (IDVDImage2 *, aDVDImages))
 
     AutoReadLock alock (this);
 
-    SafeIfaceArray <IDVDImage2> images (mData.mDVDImages2);
+    SafeIfaceArray <IDVDImage> images (mData.mDVDImages);
     images.detachTo (ComSafeArrayOutArg (aDVDImages));
 
     return S_OK;
 }
 
 STDMETHODIMP
-VirtualBox::COMGETTER(FloppyImages) (ComSafeArrayOut (IFloppyImage2 *, aFloppyImages))
+VirtualBox::COMGETTER(FloppyImages) (ComSafeArrayOut(IFloppyImage *, aFloppyImages))
 {
     if (ComSafeArrayOutIsNull (aFloppyImages))
         return E_POINTER;
@@ -666,51 +688,50 @@ VirtualBox::COMGETTER(FloppyImages) (ComSafeArrayOut (IFloppyImage2 *, aFloppyIm
 
     AutoReadLock alock (this);
 
-    SafeIfaceArray <IFloppyImage2> images (mData.mFloppyImages2);
+    SafeIfaceArray<IFloppyImage> images (mData.mFloppyImages);
     images.detachTo (ComSafeArrayOutArg (aFloppyImages));
 
     return S_OK;
 }
 
-STDMETHODIMP VirtualBox::COMGETTER(ProgressOperations) (IProgressCollection **aOperations)
+STDMETHODIMP VirtualBox::COMGETTER(ProgressOperations) (ComSafeArrayOut (IProgress *, aOperations))
 {
     CheckComArgOutSafeArrayPointerValid(aOperations);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 
-    ComObjPtr <ProgressCollection> collection;
-    collection.createObject();
-
     /* protect mProgressOperations */
     AutoReadLock safeLock (mSafeLock);
 
-    collection->init (mData.mProgressOperations);
-    collection.queryInterfaceTo (aOperations);
+    SafeIfaceArray <IProgress> progress (mData.mProgressOperations);
+    progress.detachTo (ComSafeArrayOutArg (aOperations));
 
     return S_OK;
 }
 
-STDMETHODIMP VirtualBox::COMGETTER(GuestOSTypes) (IGuestOSTypeCollection **aGuestOSTypes)
+STDMETHODIMP VirtualBox::COMGETTER(GuestOSTypes) (ComSafeArrayOut (IGuestOSType *, aGuestOSTypes))
 {
     CheckComArgOutSafeArrayPointerValid(aGuestOSTypes);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 
-    ComObjPtr <GuestOSTypeCollection> collection;
-    collection.createObject();
-
     AutoReadLock alock (this);
-    collection->init (mData.mGuestOSTypes);
-    collection.queryInterfaceTo (aGuestOSTypes);
+
+    SafeIfaceArray <IGuestOSType> ostypes (mData.mGuestOSTypes);
+    ostypes.detachTo (ComSafeArrayOutArg (aGuestOSTypes));
 
     return S_OK;
 }
 
 STDMETHODIMP
-VirtualBox::COMGETTER(SharedFolders) (ISharedFolderCollection **aSharedFolders)
+VirtualBox::COMGETTER(SharedFolders) (ComSafeArrayOut (ISharedFolder *, aSharedFolders))
 {
+#ifndef RT_OS_WINDOWS
+    NOREF(aSharedFoldersSize);
+#endif /* RT_OS_WINDOWS */
+
     CheckComArgOutSafeArrayPointerValid(aSharedFolders);
 
     AutoCaller autoCaller (this);
@@ -737,6 +758,23 @@ VirtualBox::COMGETTER(PerformanceCollector) (IPerformanceCollector **aPerformanc
 #endif /* !VBOX_WITH_RESOURCE_USAGE_API */
 }
 
+STDMETHODIMP
+VirtualBox::COMGETTER(DHCPServers) (ComSafeArrayOut (IDHCPServer *, aDHCPServers))
+{
+    if (ComSafeArrayOutIsNull (aDHCPServers))
+        return E_POINTER;
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoReadLock alock (this);
+
+    SafeIfaceArray<IDHCPServer> svrs (mData.mDHCPServers);
+    svrs.detachTo (ComSafeArrayOutArg (aDHCPServers));
+
+    return S_OK;
+}
+
 // IVirtualBox methods
 /////////////////////////////////////////////////////////////////////////////
 
@@ -748,6 +786,7 @@ STDMETHODIMP VirtualBox::CreateMachine (IN_BSTR aName,
                                         IMachine **aMachine)
 {
     LogFlowThisFuncEnter();
+    LogFlowThisFunc (("aName=\"%ls\",aOsTypeId =\"%ls\",aBaseFolder=\"%ls\"\n", aName, aOsTypeId, aBaseFolder));
 
     CheckComArgStrNotEmptyOrNull (aName);
     CheckComArgOutPointerValid (aMachine);
@@ -1062,9 +1101,9 @@ STDMETHODIMP VirtualBox::UnregisterMachine (IN_GUID aId,
     return rc;
 }
 
-STDMETHODIMP VirtualBox::CreateHardDisk2 (IN_BSTR aFormat,
-                                          IN_BSTR aLocation,
-                                          IHardDisk2 **aHardDisk)
+STDMETHODIMP VirtualBox::CreateHardDisk(IN_BSTR aFormat,
+                                        IN_BSTR aLocation,
+                                        IHardDisk **aHardDisk)
 {
     CheckComArgStrNotEmptyOrNull (aFormat);
     CheckComArgOutPointerValid (aHardDisk);
@@ -1083,7 +1122,7 @@ STDMETHODIMP VirtualBox::CreateHardDisk2 (IN_BSTR aFormat,
 
     HRESULT rc = E_FAIL;
 
-    ComObjPtr <HardDisk2> hardDisk;
+    ComObjPtr<HardDisk> hardDisk;
     hardDisk.createObject();
     rc = hardDisk->init (this, format, aLocation);
 
@@ -1093,8 +1132,8 @@ STDMETHODIMP VirtualBox::CreateHardDisk2 (IN_BSTR aFormat,
     return rc;
 }
 
-STDMETHODIMP VirtualBox::OpenHardDisk2 (IN_BSTR aLocation,
-                                        IHardDisk2 **aHardDisk)
+STDMETHODIMP VirtualBox::OpenHardDisk(IN_BSTR aLocation,
+                                      IHardDisk **aHardDisk)
 {
     CheckComArgNotNull(aLocation);
     CheckComArgOutSafeArrayPointerValid(aHardDisk);
@@ -1106,13 +1145,13 @@ STDMETHODIMP VirtualBox::OpenHardDisk2 (IN_BSTR aLocation,
 
     HRESULT rc = E_FAIL;
 
-    ComObjPtr <HardDisk2> hardDisk;
+    ComObjPtr<HardDisk> hardDisk;
     hardDisk.createObject();
     rc = hardDisk->init (this, aLocation);
 
     if (SUCCEEDED (rc))
     {
-        rc = registerHardDisk2 (hardDisk);
+        rc = registerHardDisk (hardDisk);
 
         /* Note that it's important to call uninit() on failure to register
          * because the differencing hard disk would have been already associated
@@ -1127,8 +1166,8 @@ STDMETHODIMP VirtualBox::OpenHardDisk2 (IN_BSTR aLocation,
     return rc;
 }
 
-STDMETHODIMP VirtualBox::GetHardDisk2 (IN_GUID aId,
-                                       IHardDisk2 **aHardDisk)
+STDMETHODIMP VirtualBox::GetHardDisk(IN_GUID aId,
+                                     IHardDisk **aHardDisk)
 {
     CheckComArgOutSafeArrayPointerValid(aHardDisk);
 
@@ -1136,8 +1175,8 @@ STDMETHODIMP VirtualBox::GetHardDisk2 (IN_GUID aId,
     CheckComRCReturnRC (autoCaller.rc());
 
     Guid id = aId;
-    ComObjPtr <HardDisk2> hardDisk;
-    HRESULT rc = findHardDisk2 (&id, NULL, true /* setError */, &hardDisk);
+    ComObjPtr<HardDisk> hardDisk;
+    HRESULT rc = findHardDisk(&id, NULL, true /* setError */, &hardDisk);
 
     /* the below will set *aHardDisk to NULL if hardDisk is null */
     hardDisk.queryInterfaceTo (aHardDisk);
@@ -1145,8 +1184,8 @@ STDMETHODIMP VirtualBox::GetHardDisk2 (IN_GUID aId,
     return rc;
 }
 
-STDMETHODIMP VirtualBox::FindHardDisk2 (IN_BSTR aLocation,
-                                        IHardDisk2 **aHardDisk)
+STDMETHODIMP VirtualBox::FindHardDisk(IN_BSTR aLocation,
+                                      IHardDisk **aHardDisk)
 {
     CheckComArgNotNull(aLocation);
     CheckComArgOutSafeArrayPointerValid(aHardDisk);
@@ -1154,8 +1193,8 @@ STDMETHODIMP VirtualBox::FindHardDisk2 (IN_BSTR aLocation,
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 
-    ComObjPtr <HardDisk2> hardDisk;
-    HRESULT rc = findHardDisk2 (NULL, aLocation, true /* setError */, &hardDisk);
+    ComObjPtr<HardDisk> hardDisk;
+    HRESULT rc = findHardDisk(NULL, aLocation, true /* setError */, &hardDisk);
 
     /* the below will set *aHardDisk to NULL if hardDisk is null */
     hardDisk.queryInterfaceTo (aHardDisk);
@@ -1165,7 +1204,7 @@ STDMETHODIMP VirtualBox::FindHardDisk2 (IN_BSTR aLocation,
 
 /** @note Doesn't lock anything. */
 STDMETHODIMP VirtualBox::OpenDVDImage (IN_BSTR aLocation, IN_GUID aId,
-                                       IDVDImage2 **aDVDImage)
+                                       IDVDImage **aDVDImage)
 {
     CheckComArgStrNotEmptyOrNull(aLocation);
     CheckComArgOutSafeArrayPointerValid(aDVDImage);
@@ -1180,7 +1219,7 @@ STDMETHODIMP VirtualBox::OpenDVDImage (IN_BSTR aLocation, IN_GUID aId,
     if (id.isEmpty())
         id.create();
 
-    ComObjPtr <DVDImage2> image;
+    ComObjPtr <DVDImage> image;
     image.createObject();
     rc = image->init (this, aLocation, id);
     if (SUCCEEDED (rc))
@@ -1195,7 +1234,7 @@ STDMETHODIMP VirtualBox::OpenDVDImage (IN_BSTR aLocation, IN_GUID aId,
 }
 
 /** @note Locks objects! */
-STDMETHODIMP VirtualBox::GetDVDImage (IN_GUID aId, IDVDImage2 **aDVDImage)
+STDMETHODIMP VirtualBox::GetDVDImage (IN_GUID aId, IDVDImage **aDVDImage)
 {
     CheckComArgOutSafeArrayPointerValid(aDVDImage);
 
@@ -1203,8 +1242,8 @@ STDMETHODIMP VirtualBox::GetDVDImage (IN_GUID aId, IDVDImage2 **aDVDImage)
     CheckComRCReturnRC (autoCaller.rc());
 
     Guid id = aId;
-    ComObjPtr <DVDImage2> image;
-    HRESULT rc = findDVDImage2 (&id, NULL, true /* setError */, &image);
+    ComObjPtr <DVDImage> image;
+    HRESULT rc = findDVDImage (&id, NULL, true /* setError */, &image);
 
     /* the below will set *aDVDImage to NULL if image is null */
     image.queryInterfaceTo (aDVDImage);
@@ -1213,7 +1252,7 @@ STDMETHODIMP VirtualBox::GetDVDImage (IN_GUID aId, IDVDImage2 **aDVDImage)
 }
 
 /** @note Locks objects! */
-STDMETHODIMP VirtualBox::FindDVDImage (IN_BSTR aLocation, IDVDImage2 **aDVDImage)
+STDMETHODIMP VirtualBox::FindDVDImage (IN_BSTR aLocation, IDVDImage **aDVDImage)
 {
     CheckComArgNotNull(aLocation);
     CheckComArgOutSafeArrayPointerValid(aDVDImage);
@@ -1221,8 +1260,8 @@ STDMETHODIMP VirtualBox::FindDVDImage (IN_BSTR aLocation, IDVDImage2 **aDVDImage
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 
-    ComObjPtr <DVDImage2> image;
-    HRESULT rc = findDVDImage2 (NULL, aLocation, true /* setError */, &image);
+    ComObjPtr <DVDImage> image;
+    HRESULT rc = findDVDImage (NULL, aLocation, true /* setError */, &image);
 
     /* the below will set *aDVDImage to NULL if dvd is null */
     image.queryInterfaceTo (aDVDImage);
@@ -1232,7 +1271,7 @@ STDMETHODIMP VirtualBox::FindDVDImage (IN_BSTR aLocation, IDVDImage2 **aDVDImage
 
 /** @note Doesn't lock anything. */
 STDMETHODIMP VirtualBox::OpenFloppyImage (IN_BSTR aLocation, IN_GUID aId,
-                                          IFloppyImage2 **aFloppyImage)
+                                          IFloppyImage **aFloppyImage)
 {
     CheckComArgStrNotEmptyOrNull(aLocation);
     CheckComArgOutSafeArrayPointerValid(aFloppyImage);
@@ -1247,7 +1286,7 @@ STDMETHODIMP VirtualBox::OpenFloppyImage (IN_BSTR aLocation, IN_GUID aId,
     if (id.isEmpty())
         id.create();
 
-    ComObjPtr <FloppyImage2> image;
+    ComObjPtr<FloppyImage> image;
     image.createObject();
     rc = image->init (this, aLocation, id);
     if (SUCCEEDED (rc))
@@ -1263,7 +1302,7 @@ STDMETHODIMP VirtualBox::OpenFloppyImage (IN_BSTR aLocation, IN_GUID aId,
 
 /** @note Locks objects! */
 STDMETHODIMP VirtualBox::GetFloppyImage (IN_GUID aId,
-                                         IFloppyImage2 **aFloppyImage)
+                                         IFloppyImage **aFloppyImage)
 
 {
     CheckComArgOutSafeArrayPointerValid(aFloppyImage);
@@ -1272,8 +1311,8 @@ STDMETHODIMP VirtualBox::GetFloppyImage (IN_GUID aId,
     CheckComRCReturnRC (autoCaller.rc());
 
     Guid id = aId;
-    ComObjPtr <FloppyImage2> image;
-    HRESULT rc = findFloppyImage2 (&id, NULL, true /* setError */, &image);
+    ComObjPtr<FloppyImage> image;
+    HRESULT rc = findFloppyImage (&id, NULL, true /* setError */, &image);
 
     /* the below will set *aFloppyImage to NULL if image is null */
     image.queryInterfaceTo (aFloppyImage);
@@ -1283,7 +1322,7 @@ STDMETHODIMP VirtualBox::GetFloppyImage (IN_GUID aId,
 
 /** @note Locks objects! */
 STDMETHODIMP VirtualBox::FindFloppyImage (IN_BSTR aLocation,
-                                          IFloppyImage2 **aFloppyImage)
+                                          IFloppyImage **aFloppyImage)
 {
     CheckComArgNotNull(aLocation);
     CheckComArgOutSafeArrayPointerValid(aFloppyImage);
@@ -1291,8 +1330,8 @@ STDMETHODIMP VirtualBox::FindFloppyImage (IN_BSTR aLocation,
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
 
-    ComObjPtr <FloppyImage2> image;
-    HRESULT rc = findFloppyImage2 (NULL, aLocation, true /* setError */, &image);
+    ComObjPtr<FloppyImage> image;
+    HRESULT rc = findFloppyImage(NULL, aLocation, true /* setError */, &image);
 
     /* the below will set *aFloppyImage to NULL if img is null */
     image.queryInterfaceTo (aFloppyImage);
@@ -1303,10 +1342,40 @@ STDMETHODIMP VirtualBox::FindFloppyImage (IN_BSTR aLocation,
 /** @note Locks this object for reading. */
 STDMETHODIMP VirtualBox::GetGuestOSType (IN_BSTR aId, IGuestOSType **aType)
 {
-    CheckComArgNotNull(aType);
+    /* Old ID to new ID conversion table. See r39691 for a source */
+    static const wchar_t *kOldNewIDs[] =
+    {
+        L"unknown", L"Other",
+        L"win31", L"Windows31",
+        L"win95", L"Windows95",
+        L"win98", L"Windows98",
+        L"winme", L"WindowsMe",
+        L"winnt4", L"WindowsNT4",
+        L"win2k", L"Windows2000",
+        L"winxp", L"WindowsXP",
+        L"win2k3", L"Windows2003",
+        L"winvista", L"WindowsVista",
+        L"win2k8", L"Windows2008",
+        L"ecs", L"OS2eCS",
+        L"fedoracore", L"Fedora",
+        /* the rest is covered by the case-insensitive comparison */
+    };
+
+    CheckComArgNotNull (aType);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
+
+    /* first, look for a substitution */
+    Bstr id = aId;
+    for (size_t i = 0; i < RT_ELEMENTS (kOldNewIDs) / 2; i += 2)
+    {
+        if (id == kOldNewIDs [i])
+        {
+            id = kOldNewIDs [i + 1];
+            break;
+        }
+    }
 
     *aType = NULL;
 
@@ -1318,7 +1387,7 @@ STDMETHODIMP VirtualBox::GetGuestOSType (IN_BSTR aId, IGuestOSType **aType)
     {
         const Bstr &typeId = (*it)->id();
         AssertMsg (!!typeId, ("ID must not be NULL"));
-        if (typeId == aId)
+        if (typeId.compareIgnoreCase (id) == 0)
         {
             (*it).queryInterfaceTo (aType);
             break;
@@ -1332,7 +1401,7 @@ STDMETHODIMP VirtualBox::GetGuestOSType (IN_BSTR aId, IGuestOSType **aType)
 }
 
 STDMETHODIMP
-VirtualBox::CreateSharedFolder (IN_BSTR aName, IN_BSTR aHostPath, BOOL aWritable)
+VirtualBox::CreateSharedFolder (IN_BSTR aName, IN_BSTR aHostPath, BOOL /* aWritable */)
 {
     CheckComArgNotNull(aName);
     CheckComArgNotNull(aHostPath);
@@ -1371,6 +1440,8 @@ GetNextExtraDataKey (IN_BSTR aKey, BSTR *aNextKey, BSTR *aNextValue)
 
     HRESULT rc = S_OK;
 
+    Bstr bstrInKey(aKey);
+
     /* serialize file access (prevent writes) */
     AutoReadLock alock (this);
 
@@ -1401,7 +1472,7 @@ GetNextExtraDataKey (IN_BSTR aKey, BSTR *aNextKey, BSTR *aNextValue)
                     Bstr key = (*it).stringValue ("name");
 
                     /* if we're supposed to return the first one */
-                    if (aKey == NULL)
+                    if (bstrInKey.isEmpty())
                     {
                         key.cloneTo (aNextKey);
                         if (aNextValue)
@@ -1413,7 +1484,7 @@ GetNextExtraDataKey (IN_BSTR aKey, BSTR *aNextKey, BSTR *aNextValue)
                     }
 
                     /* did we find the key we're looking for? */
-                    if (key == aKey)
+                    if (key == bstrInKey)
                     {
                         ++ it;
                         /* is there another item? */
@@ -1440,9 +1511,9 @@ GetNextExtraDataKey (IN_BSTR aKey, BSTR *aNextKey, BSTR *aNextValue)
          * (which is the case only when there are no items), we just fall
          * through to return NULLs and S_OK. */
 
-        if (aKey != NULL)
+        if (!bstrInKey.isEmpty())
             return setError (VBOX_E_OBJECT_NOT_FOUND,
-                tr ("Could not find the extra data key '%ls'"), aKey);
+                tr("Could not find the extra data key '%ls'"), bstrInKey.raw());
     }
     catch (...)
     {
@@ -1804,8 +1875,8 @@ STDMETHODIMP VirtualBox::UnregisterCallback (IVirtualBoxCallback *aCallback)
     return rc;
 }
 
-STDMETHODIMP VirtualBox::WaitForPropertyChange (IN_BSTR aWhat, ULONG aTimeout,
-                                                BSTR *aChanged, BSTR *aValues)
+STDMETHODIMP VirtualBox::WaitForPropertyChange (IN_BSTR /* aWhat */, ULONG /* aTimeout */,
+                                                BSTR * /* aChanged */, BSTR * /* aValues */)
 {
     ReturnComNotImplemented();
 }
@@ -2604,8 +2675,8 @@ HRESULT VirtualBox::findMachine (const Guid &aId, bool aSetError,
  * @note Locks this object and hard disk objects for reading.
  */
 HRESULT VirtualBox::
-findHardDisk2 (const Guid *aId, CBSTR aLocation,
-               bool aSetError, ComObjPtr <HardDisk2> *aHardDisk /*= NULL*/)
+findHardDisk(const Guid *aId, CBSTR aLocation,
+             bool aSetError, ComObjPtr<HardDisk> *aHardDisk /*= NULL*/)
 {
     AssertReturn (aId || aLocation, E_INVALIDARG);
 
@@ -2614,8 +2685,8 @@ findHardDisk2 (const Guid *aId, CBSTR aLocation,
     /* first, look up by UUID in the map if UUID is provided */
     if (aId)
     {
-        HardDisk2Map::const_iterator it = mData.mHardDisk2Map.find (*aId);
-        if (it != mData.mHardDisk2Map.end())
+        HardDiskMap::const_iterator it = mData.mHardDiskMap.find (*aId);
+        if (it != mData.mHardDiskMap.end())
         {
             if (aHardDisk)
                 *aHardDisk = (*it).second;
@@ -2629,11 +2700,11 @@ findHardDisk2 (const Guid *aId, CBSTR aLocation,
     {
         Utf8Str location = aLocation;
 
-        for (HardDisk2Map::const_iterator it = mData.mHardDisk2Map.begin();
-             it != mData.mHardDisk2Map.end();
+        for (HardDiskMap::const_iterator it = mData.mHardDiskMap.begin();
+             it != mData.mHardDiskMap.end();
              ++ it)
         {
-            const ComObjPtr <HardDisk2> &hd = (*it).second;
+            const ComObjPtr<HardDisk> &hd = (*it).second;
 
             HRESULT rc = hd->compareLocationTo (location, result);
             CheckComRCReturnRC (rc);
@@ -2665,7 +2736,7 @@ findHardDisk2 (const Guid *aId, CBSTR aLocation,
 }
 
 /**
- * Searches for a DVDImage2 object with the given ID or location in the list of
+ * Searches for a DVDImage object with the given ID or location in the list of
  * registered DVD images. If both ID and file path are specified, the first
  * object that matches either of them (not necessarily both) is returned.
  *
@@ -2679,9 +2750,9 @@ findHardDisk2 (const Guid *aId, CBSTR aLocation,
  *
  * @note Locks this object and image objects for reading.
  */
-HRESULT VirtualBox::findDVDImage2 (const Guid *aId, CBSTR aLocation,
-                                   bool aSetError,
-                                   ComObjPtr <DVDImage2> *aImage /* = NULL */)
+HRESULT VirtualBox::findDVDImage(const Guid *aId, CBSTR aLocation,
+                                 bool aSetError,
+                                 ComObjPtr<DVDImage> *aImage /* = NULL */)
 {
     AssertReturn (aId || aLocation, E_INVALIDARG);
 
@@ -2700,8 +2771,8 @@ HRESULT VirtualBox::findDVDImage2 (const Guid *aId, CBSTR aLocation,
 
     bool found = false;
 
-    for (DVDImage2List::const_iterator it = mData.mDVDImages2.begin();
-         it != mData.mDVDImages2.end();
+    for (DVDImageList::const_iterator it = mData.mDVDImages.begin();
+         it != mData.mDVDImages.end();
          ++ it)
     {
         /* no AutoCaller, registered image life time is bound to this */
@@ -2736,7 +2807,7 @@ HRESULT VirtualBox::findDVDImage2 (const Guid *aId, CBSTR aLocation,
 }
 
 /**
- * Searches for a FloppyImage2 object with the given ID or location in the
+ * Searches for a FloppyImage object with the given ID or location in the
  * collection of registered DVD images. If both ID and file path are specified,
  * the first object that matches either of them (not necessarily both) is
  * returned.
@@ -2751,9 +2822,9 @@ HRESULT VirtualBox::findDVDImage2 (const Guid *aId, CBSTR aLocation,
  *
  * @note Locks this object and image objects for reading.
  */
-HRESULT VirtualBox::findFloppyImage2 (const Guid *aId, CBSTR aLocation,
-                                      bool aSetError,
-                                      ComObjPtr <FloppyImage2> *aImage /* = NULL */)
+HRESULT VirtualBox::findFloppyImage(const Guid *aId, CBSTR aLocation,
+                                    bool aSetError,
+                                    ComObjPtr<FloppyImage> *aImage /* = NULL */)
 {
     AssertReturn (aId || aLocation, E_INVALIDARG);
 
@@ -2772,8 +2843,8 @@ HRESULT VirtualBox::findFloppyImage2 (const Guid *aId, CBSTR aLocation,
 
     bool found = false;
 
-    for (FloppyImage2List::const_iterator it = mData.mFloppyImages2.begin();
-         it != mData.mFloppyImages2.end();
+    for (FloppyImageList::const_iterator it = mData.mFloppyImages.begin();
+         it != mData.mFloppyImages.end();
          ++ it)
     {
         /* no AutoCaller, registered image life time is bound to this */
@@ -2894,8 +2965,8 @@ HRESULT VirtualBox::checkMediaForConflicts2 (const Guid &aId,
     HRESULT rc = S_OK;
 
     {
-        ComObjPtr <HardDisk2> hardDisk;
-        rc = findHardDisk2 (&aId, aLocation, false /* aSetError */, &hardDisk);
+        ComObjPtr<HardDisk> hardDisk;
+        rc = findHardDisk(&aId, aLocation, false /* aSetError */, &hardDisk);
         if (SUCCEEDED (rc))
         {
             /* Note: no AutoCaller since bound to this */
@@ -2908,8 +2979,8 @@ HRESULT VirtualBox::checkMediaForConflicts2 (const Guid &aId,
     }
 
     {
-        ComObjPtr <DVDImage2> image;
-        rc = findDVDImage2 (&aId, aLocation, false /* aSetError */, &image);
+        ComObjPtr<DVDImage> image;
+        rc = findDVDImage (&aId, aLocation, false /* aSetError */, &image);
         if (SUCCEEDED (rc))
         {
             /* Note: no AutoCaller since bound to this */
@@ -2922,8 +2993,8 @@ HRESULT VirtualBox::checkMediaForConflicts2 (const Guid &aId,
     }
 
     {
-        ComObjPtr <FloppyImage2> image;
-        rc = findFloppyImage2 (&aId, aLocation, false /* aSetError */, &image);
+        ComObjPtr<FloppyImage> image;
+        rc = findFloppyImage(&aId, aLocation, false /* aSetError */, &image);
         if (SUCCEEDED (rc))
         {
             /* Note: no AutoCaller since bound to this */
@@ -3016,12 +3087,12 @@ HRESULT VirtualBox::loadMedia (const settings::Key &aGlobal)
             for (Key::List::const_iterator it = hardDisks.begin();
                  it != hardDisks.end(); ++ it)
             {
-                ComObjPtr <HardDisk2> hardDisk;
+                ComObjPtr<HardDisk> hardDisk;
                 hardDisk.createObject();
                 rc = hardDisk->init (this, NULL, *it);
                 CheckComRCBreakRC (rc);
 
-                rc = registerHardDisk2 (hardDisk, false /* aSaveRegistry */);
+                rc = registerHardDisk(hardDisk, false /* aSaveRegistry */);
                 CheckComRCBreakRC (rc);
             }
 
@@ -3038,7 +3109,7 @@ HRESULT VirtualBox::loadMedia (const settings::Key &aGlobal)
             {
                 case 1: /* DVDImages */
                 {
-                    ComObjPtr <DVDImage2> image;
+                    ComObjPtr<DVDImage> image;
                     image.createObject();
                     rc = image->init (this, *it);
                     CheckComRCBreakRC (rc);
@@ -3050,7 +3121,7 @@ HRESULT VirtualBox::loadMedia (const settings::Key &aGlobal)
                 }
                 case 2: /* FloppyImages */
                 {
-                    ComObjPtr <FloppyImage2> image;
+                    ComObjPtr<FloppyImage> image;
                     image.createObject();
                     rc = image->init (this, *it);
                     CheckComRCBreakRC (rc);
@@ -3071,6 +3142,58 @@ HRESULT VirtualBox::loadMedia (const settings::Key &aGlobal)
     }
 
     return rc;
+}
+
+/**
+ *  Reads in the network service registration entries from the global settings file
+ *  and creates the relevant objects.
+ *
+ *  @param aGlobal  <Global> node
+ *
+ *  @note Can be called only from #init().
+ *  @note Doesn't lock anything.
+ */
+HRESULT VirtualBox::loadNetservices (const settings::Key &aGlobal)
+{
+    using namespace settings;
+
+    AutoCaller autoCaller (this);
+    AssertReturn (autoCaller.state() == InInit, E_FAIL);
+
+    HRESULT rc = S_OK;
+
+    Key registry = aGlobal.findKey ("NetserviceRegistry");
+    if(registry.isNull())
+        return S_OK;
+
+    const char *kMediaNodes[] = { "DHCPServers" };
+
+    for (size_t n = 0; n < RT_ELEMENTS (kMediaNodes); ++ n)
+    {
+        /* All three media nodes are optional */
+        Key node = registry.findKey (kMediaNodes [n]);
+        if (node.isNull())
+            continue;
+
+        if (n == 0)
+        {
+            Key::List dhcpServers = node.keys ("DHCPServer");
+            for (Key::List::const_iterator it = dhcpServers.begin();
+                 it != dhcpServers.end(); ++ it)
+            {
+                ComObjPtr<DHCPServer> dhcpServer;
+                dhcpServer.createObject();
+                rc = dhcpServer->init (this, *it);
+                CheckComRCBreakRC (rc);
+
+                rc = registerDHCPServer(dhcpServer, false /* aSaveRegistry */);
+                CheckComRCBreakRC (rc);
+            }
+
+            continue;
+        }
+    }
+   return rc;
 }
 
 /**
@@ -3137,9 +3260,9 @@ HRESULT VirtualBox::saveSettings()
             {
                 Key hardDisksNode = registryNode.createKey ("HardDisks");
 
-                for (HardDisk2List::const_iterator it =
-                        mData.mHardDisks2.begin();
-                     it != mData.mHardDisks2.end();
+                for (HardDiskList::const_iterator it =
+                        mData.mHardDisks.begin();
+                     it != mData.mHardDisks.end();
                      ++ it)
                 {
                     rc = (*it)->saveSettings (hardDisksNode);
@@ -3151,9 +3274,9 @@ HRESULT VirtualBox::saveSettings()
             {
                 Key imagesNode = registryNode.createKey ("DVDImages");
 
-                for (DVDImage2List::const_iterator it =
-                        mData.mDVDImages2.begin();
-                     it != mData.mDVDImages2.end();
+                for (DVDImageList::const_iterator it =
+                        mData.mDVDImages.begin();
+                     it != mData.mDVDImages.end();
                      ++ it)
                 {
                     rc = (*it)->saveSettings (imagesNode);
@@ -3165,12 +3288,36 @@ HRESULT VirtualBox::saveSettings()
             {
                 Key imagesNode = registryNode.createKey ("FloppyImages");
 
-                for (FloppyImage2List::const_iterator it =
-                        mData.mFloppyImages2.begin();
-                     it != mData.mFloppyImages2.end();
+                for (FloppyImageList::const_iterator it =
+                        mData.mFloppyImages.begin();
+                     it != mData.mFloppyImages.end();
                      ++ it)
                 {
                     rc = (*it)->saveSettings (imagesNode);
+                    CheckComRCThrowRC (rc);
+                }
+            }
+        }
+
+        /* netservices */
+        {
+            /* first, delete the entire netservice registry */
+            Key registryNode = global.findKey ("NetserviceRegistry");
+            if (!registryNode.isNull())
+                registryNode.zap();
+            /* then, recreate it */
+            registryNode = global.createKey ("NetserviceRegistry");
+
+            /* hard disks */
+            {
+                Key dhcpServersNode = registryNode.createKey ("DHCPServers");
+
+                for (DHCPServerList::const_iterator it =
+                        mData.mDHCPServers.begin();
+                     it != mData.mDHCPServers.end();
+                     ++ it)
+                {
+                    rc = (*it)->saveSettings (dhcpServersNode);
                     CheckComRCThrowRC (rc);
                 }
             }
@@ -3276,8 +3423,8 @@ HRESULT VirtualBox::registerMachine (Machine *aMachine)
  *
  * @note Locks this object for writing and @a aHardDisk for reading.
  */
-HRESULT VirtualBox::registerHardDisk2 (HardDisk2 *aHardDisk,
-                                       bool aSaveRegistry /*= true*/)
+HRESULT VirtualBox::registerHardDisk(HardDisk *aHardDisk,
+                                     bool aSaveRegistry /*= true*/)
 {
     AssertReturn (aHardDisk != NULL, E_INVALIDARG);
 
@@ -3309,18 +3456,18 @@ HRESULT VirtualBox::registerHardDisk2 (HardDisk2 *aHardDisk,
     if (aHardDisk->parent().isNull())
     {
         /* base (root) hard disk */
-        mData.mHardDisks2.push_back (aHardDisk);
+        mData.mHardDisks.push_back (aHardDisk);
     }
 
-    mData.mHardDisk2Map
-        .insert (HardDisk2Map::value_type (
-            aHardDisk->id(), HardDisk2Map::mapped_type (aHardDisk)));
+    mData.mHardDiskMap
+        .insert (HardDiskMap::value_type (
+            aHardDisk->id(), HardDiskMap::mapped_type (aHardDisk)));
 
     if (aSaveRegistry)
     {
         rc = saveSettings();
         if (FAILED (rc))
-            unregisterHardDisk2 (aHardDisk, false /* aSaveRegistry */);
+            unregisterHardDisk(aHardDisk, false /* aSaveRegistry */);
     }
 
     return rc;
@@ -3341,8 +3488,8 @@ HRESULT VirtualBox::registerHardDisk2 (HardDisk2 *aHardDisk,
  *
  * @note Locks this object for writing and @a aHardDisk for reading.
  */
-HRESULT VirtualBox::unregisterHardDisk2 (HardDisk2 *aHardDisk,
-                                         bool aSaveRegistry /*= true*/)
+HRESULT VirtualBox::unregisterHardDisk(HardDisk *aHardDisk,
+                                       bool aSaveRegistry /*= true*/)
 {
     AssertReturn (aHardDisk != NULL, E_INVALIDARG);
 
@@ -3356,13 +3503,13 @@ HRESULT VirtualBox::unregisterHardDisk2 (HardDisk2 *aHardDisk,
 
     AutoReadLock hardDiskLock (aHardDisk);
 
-    size_t cnt = mData.mHardDisk2Map.erase (aHardDisk->id());
+    size_t cnt = mData.mHardDiskMap.erase (aHardDisk->id());
     Assert (cnt == 1);
 
     if (aHardDisk->parent().isNull())
     {
         /* base (root) hard disk */
-        mData.mHardDisks2.remove (aHardDisk);
+        mData.mHardDisks.remove (aHardDisk);
     }
 
     HRESULT rc = S_OK;
@@ -3371,7 +3518,7 @@ HRESULT VirtualBox::unregisterHardDisk2 (HardDisk2 *aHardDisk,
     {
         rc = saveSettings();
         if (FAILED (rc))
-            registerHardDisk2 (aHardDisk, false /* aSaveRegistry */);
+            registerHardDisk(aHardDisk, false /* aSaveRegistry */);
     }
 
     return rc;
@@ -3392,7 +3539,7 @@ HRESULT VirtualBox::unregisterHardDisk2 (HardDisk2 *aHardDisk,
  *
  * @note Locks this object for writing and @a aImage for reading.
  */
-HRESULT VirtualBox::registerDVDImage (DVDImage2 *aImage,
+HRESULT VirtualBox::registerDVDImage (DVDImage *aImage,
                                       bool aSaveRegistry /*= true*/)
 {
     AssertReturn (aImage != NULL, E_INVALIDARG);
@@ -3422,7 +3569,7 @@ HRESULT VirtualBox::registerDVDImage (DVDImage2 *aImage,
     }
 
     /* add to the collection */
-    mData.mDVDImages2.push_back (aImage);
+    mData.mDVDImages.push_back (aImage);
 
     if (aSaveRegistry)
     {
@@ -3449,7 +3596,7 @@ HRESULT VirtualBox::registerDVDImage (DVDImage2 *aImage,
  *
  * @note Locks this object for writing and @a aImage for reading.
  */
-HRESULT VirtualBox::unregisterDVDImage (DVDImage2 *aImage,
+HRESULT VirtualBox::unregisterDVDImage (DVDImage *aImage,
                                         bool aSaveRegistry /*= true*/)
 {
     AssertReturn (aImage != NULL, E_INVALIDARG);
@@ -3464,7 +3611,7 @@ HRESULT VirtualBox::unregisterDVDImage (DVDImage2 *aImage,
 
     AutoReadLock imageLock (aImage);
 
-    mData.mDVDImages2.remove (aImage);
+    mData.mDVDImages.remove (aImage);
 
     HRESULT rc = S_OK;
 
@@ -3493,8 +3640,8 @@ HRESULT VirtualBox::unregisterDVDImage (DVDImage2 *aImage,
  *
  * @note Locks this object for writing and @a aImage for reading.
  */
-HRESULT VirtualBox::registerFloppyImage (FloppyImage2 *aImage,
-                                         bool aSaveRegistry /*= true*/)
+HRESULT VirtualBox::registerFloppyImage(FloppyImage *aImage,
+                                        bool aSaveRegistry /*= true*/)
 {
     AssertReturn (aImage != NULL, E_INVALIDARG);
 
@@ -3523,7 +3670,7 @@ HRESULT VirtualBox::registerFloppyImage (FloppyImage2 *aImage,
     }
 
     /* add to the collection */
-    mData.mFloppyImages2.push_back (aImage);
+    mData.mFloppyImages.push_back (aImage);
 
     if (aSaveRegistry)
     {
@@ -3550,8 +3697,8 @@ HRESULT VirtualBox::registerFloppyImage (FloppyImage2 *aImage,
  *
  * @note Locks this object for writing and @a aImage for reading.
  */
-HRESULT VirtualBox::unregisterFloppyImage (FloppyImage2 *aImage,
-                                           bool aSaveRegistry /*= true*/)
+HRESULT VirtualBox::unregisterFloppyImage(FloppyImage *aImage,
+                                          bool aSaveRegistry /*= true*/)
 {
     AssertReturn (aImage != NULL, E_INVALIDARG);
 
@@ -3565,7 +3712,7 @@ HRESULT VirtualBox::unregisterFloppyImage (FloppyImage2 *aImage,
 
     AutoReadLock imageLock (aImage);
 
-    mData.mFloppyImages2.remove (aImage);
+    mData.mFloppyImages.remove (aImage);
 
     HRESULT rc = S_OK;
 
@@ -3589,7 +3736,7 @@ HRESULT VirtualBox::unregisterFloppyImage (FloppyImage2 *aImage,
  *
  * @note Locks #childrenLock() for reading.
  */
-HRESULT VirtualBox::cast (IHardDisk2 *aFrom, ComObjPtr <HardDisk2> &aTo)
+HRESULT VirtualBox::cast (IHardDisk *aFrom, ComObjPtr <HardDisk> &aTo)
 {
     AssertReturn (aFrom != NULL, E_INVALIDARG);
 
@@ -3608,7 +3755,7 @@ HRESULT VirtualBox::cast (IHardDisk2 *aFrom, ComObjPtr <HardDisk2> &aTo)
     /* we can safely cast child to HardDisk * here because only HardDisk
      * implementations of IHardDisk can be among our children */
 
-    aTo = static_cast <HardDisk2 *> (child);
+    aTo = static_cast<HardDisk*>(child);
 
     return S_OK;
 }
@@ -3636,24 +3783,24 @@ HRESULT VirtualBox::updateSettings (const char *aOldPath, const char *aNewPath)
     AutoWriteLock alock (this);
 
     /* check DVD paths */
-    for (DVDImage2List::iterator it = mData.mDVDImages2.begin();
-         it != mData.mDVDImages2.end();
+    for (DVDImageList::iterator it = mData.mDVDImages.begin();
+         it != mData.mDVDImages.end();
          ++ it)
     {
         (*it)->updatePath (aOldPath, aNewPath);
     }
 
     /* check Floppy paths */
-    for (FloppyImage2List::iterator it = mData.mFloppyImages2.begin();
-         it != mData.mFloppyImages2.end();
+    for (FloppyImageList::iterator it = mData.mFloppyImages.begin();
+         it != mData.mFloppyImages  .end();
          ++ it)
     {
         (*it)->updatePath (aOldPath, aNewPath);
     }
 
     /* check HardDisk paths */
-    for (HardDisk2List::const_iterator it = mData.mHardDisks2.begin();
-         it != mData.mHardDisks2.end();
+    for (HardDiskList::const_iterator it = mData.mHardDisks.begin();
+         it != mData.mHardDisks.end();
          ++ it)
     {
         (*it)->updatePaths (aOldPath, aNewPath);
@@ -3984,7 +4131,7 @@ HRESULT VirtualBox::unlockConfig()
  *  that have opened sessions using IVirtualBox::OpenSession()
  */
 // static
-DECLCALLBACK(int) VirtualBox::ClientWatcher (RTTHREAD thread, void *pvUser)
+DECLCALLBACK(int) VirtualBox::ClientWatcher (RTTHREAD /* thread */, void *pvUser)
 {
     LogFlowFuncEnter();
 
@@ -4527,4 +4674,182 @@ void *VirtualBox::CallbackEvent::handler()
 
     return NULL;
 }
+
+//STDMETHODIMP VirtualBox::CreateDHCPServerForInterface (/*IHostNetworkInterface * aIinterface,*/ IDHCPServer ** aServer)
+//{
+//    return E_NOTIMPL;
+//}
+
+STDMETHODIMP VirtualBox::CreateDHCPServer (IN_BSTR aName, IDHCPServer ** aServer)
+{
+    CheckComArgNotNull(aName);
+    CheckComArgNotNull(aServer);
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    ComObjPtr<DHCPServer> dhcpServer;
+    dhcpServer.createObject();
+    HRESULT rc = dhcpServer->init (this, aName);
+    CheckComRCReturnRC (rc);
+
+    rc = registerDHCPServer(dhcpServer, true);
+    CheckComRCReturnRC (rc);
+
+    dhcpServer.queryInterfaceTo(aServer);
+
+    return rc;
+}
+
+//STDMETHODIMP VirtualBox::FindDHCPServerForInterface (IHostNetworkInterface * aIinterface, IDHCPServer ** aServer)
+//{
+//    return E_NOTIMPL;
+//}
+
+STDMETHODIMP VirtualBox::FindDHCPServerByNetworkName (IN_BSTR aName, IDHCPServer ** aServer)
+{
+    CheckComArgNotNull(aName);
+    CheckComArgNotNull(aServer);
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    AutoWriteLock alock (this);
+
+    HRESULT rc;
+    Bstr bstr;
+    ComPtr <DHCPServer> found;
+
+    for (DHCPServerList::const_iterator it =
+            mData.mDHCPServers.begin();
+         it != mData.mDHCPServers.end();
+         ++ it)
+    {
+        rc = (*it)->COMGETTER(NetworkName) (bstr.asOutParam());
+        CheckComRCThrowRC (rc);
+
+        if(bstr == aName)
+        {
+            found = *it;
+            break;
+        }
+    }
+
+    if (!found)
+        return E_INVALIDARG;
+
+    return found.queryInterfaceTo (aServer);
+}
+
+STDMETHODIMP VirtualBox::RemoveDHCPServer (IDHCPServer * aServer)
+{
+    CheckComArgNotNull(aServer);
+
+    AutoCaller autoCaller (this);
+    CheckComRCReturnRC (autoCaller.rc());
+
+    HRESULT rc = unregisterDHCPServer(static_cast<DHCPServer *>(aServer), true);
+
+    return rc;
+}
+
+/**
+ * Remembers the given dhcp server by storing it in the hard disk registry.
+ *
+ * @param aDHCPServer     Dhcp Server object to remember.
+ * @param aSaveRegistry @c true to save hard disk registry to disk (default).
+ *
+ * When @a aSaveRegistry is @c true, this operation may fail because of the
+ * failed #saveSettings() method it calls. In this case, the dhcp server object
+ * will not be remembered. It is therefore the responsibility of the caller to
+ * call this method as the last step of some action that requires registration
+ * in order to make sure that only fully functional dhcp server objects get
+ * registered.
+ *
+ * @note Locks this object for writing and @a aDHCPServer for reading.
+ */
+HRESULT VirtualBox::registerDHCPServer(DHCPServer *aDHCPServer,
+                                     bool aSaveRegistry /*= true*/)
+{
+    AssertReturn (aDHCPServer != NULL, E_INVALIDARG);
+
+    AutoCaller autoCaller (this);
+    AssertComRCReturn (autoCaller.rc(), autoCaller.rc());
+
+    AutoWriteLock alock (this);
+
+    AutoCaller dhcpServerCaller (aDHCPServer);
+    AssertComRCReturn (dhcpServerCaller.rc(), dhcpServerCaller.rc());
+
+    AutoReadLock dhcpServerLock (aDHCPServer);
+
+    Bstr name;
+    HRESULT rc;
+    rc = aDHCPServer->COMGETTER(NetworkName) (name.asOutParam());
+    CheckComRCReturnRC (rc);
+
+    ComPtr<IDHCPServer> existing;
+    rc = FindDHCPServerByNetworkName(name.mutableRaw(), existing.asOutParam());
+    if(SUCCEEDED(rc))
+    {
+        return E_INVALIDARG;
+    }
+    rc = S_OK;
+
+    mData.mDHCPServers.push_back (aDHCPServer);
+
+    if (aSaveRegistry)
+    {
+        rc = saveSettings();
+        if (FAILED (rc))
+            unregisterDHCPServer(aDHCPServer, false /* aSaveRegistry */);
+    }
+
+    return rc;
+}
+
+/**
+ * Removes the given hard disk from the hard disk registry.
+ *
+ * @param aHardDisk     Hard disk object to remove.
+ * @param aSaveRegistry @c true to save hard disk registry to disk (default).
+ *
+ * When @a aSaveRegistry is @c true, this operation may fail because of the
+ * failed #saveSettings() method it calls. In this case, the hard disk object
+ * will NOT be removed from the registry when this method returns. It is
+ * therefore the responsibility of the caller to call this method as the first
+ * step of some action that requires unregistration, before calling uninit() on
+ * @a aHardDisk.
+ *
+ * @note Locks this object for writing and @a aHardDisk for reading.
+ */
+HRESULT VirtualBox::unregisterDHCPServer(DHCPServer *aDHCPServer,
+                                       bool aSaveRegistry /*= true*/)
+{
+    AssertReturn (aDHCPServer != NULL, E_INVALIDARG);
+
+    AutoCaller autoCaller (this);
+    AssertComRCReturn (autoCaller.rc(), autoCaller.rc());
+
+    AutoWriteLock alock (this);
+
+    AutoCaller dhcpServerCaller (aDHCPServer);
+    AssertComRCReturn (dhcpServerCaller.rc(), dhcpServerCaller.rc());
+
+    AutoReadLock dhcpServerLock (aDHCPServer);
+
+    mData.mDHCPServers.remove (aDHCPServer);
+
+    HRESULT rc = S_OK;
+
+    if (aSaveRegistry)
+    {
+        rc = saveSettings();
+        if (FAILED (rc))
+            registerDHCPServer(aDHCPServer, false /* aSaveRegistry */);
+    }
+
+    return rc;
+}
+
 /* vi: set tabstop=4 shiftwidth=4 expandtab: */

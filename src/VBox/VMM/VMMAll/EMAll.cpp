@@ -1,4 +1,4 @@
-/* $Id: EMAll.cpp 15635 2008-12-17 16:44:58Z vboxsync $ */
+/* $Id: EMAll.cpp 17695 2009-03-11 13:48:09Z vboxsync $ */
 /** @file
  * EM - Execution Monitor(/Manager) - All contexts
  */
@@ -298,10 +298,10 @@ VMMDECL(int) EMInterpretPortIO(PVM pVM, PCPUMCTXCORE pCtxCore, PDISCPUSTATE pCpu
 }
 
 
-DECLINLINE(int) emRamRead(PVM pVM, void *pDest, RTGCPTR GCSrc, uint32_t cb)
+DECLINLINE(int) emRamRead(PVM pVM, PCPUMCTXCORE pCtxCore, void *pvDst, RTGCPTR GCPtrSrc, uint32_t cb)
 {
 #ifdef IN_RC
-    int rc = MMGCRamRead(pVM, pDest, (void *)GCSrc, cb);
+    int rc = MMGCRamRead(pVM, pvDst, (void *)GCPtrSrc, cb);
     if (RT_LIKELY(rc != VERR_ACCESS_DENIED))
         return rc;
     /*
@@ -309,21 +309,28 @@ DECLINLINE(int) emRamRead(PVM pVM, void *pDest, RTGCPTR GCSrc, uint32_t cb)
      * flushed one of the shadow mappings used by the trapping
      * instruction and it either flushed the TLB or the CPU reused it.
      */
-    RTGCPHYS GCPhys;
-    rc = PGMPhysGCPtr2GCPhys(pVM, GCSrc, &GCPhys);
-    AssertRCReturn(rc, rc);
-    PGMPhysRead(pVM, GCPhys, pDest, cb);
-    return VINF_SUCCESS;
+#endif
+#ifdef VBOX_WITH_NEW_PHYS_CODE
+    return PGMPhysInterpretedReadNoHandlers(pVM, pCtxCore, pvDst, GCPtrSrc, cb, /*fMayTrap*/ false);
 #else
-    return PGMPhysReadGCPtr(pVM, pDest, GCSrc, cb);
+    NOREF(pCtxCore);
+# ifdef IN_RC
+    RTGCPHYS GCPhys;
+    rc = PGMPhysGCPtr2GCPhys(pVM, GCPtrSrc, &GCPhys);
+    AssertRCReturn(rc, rc);
+    PGMPhysRead(pVM, GCPhys, pvDst, cb);
+    return VINF_SUCCESS;
+# else
+    return PGMPhysReadGCPtr(pVM, pvDst, GCPtrSrc, cb);
+# endif
 #endif
 }
 
 
-DECLINLINE(int) emRamWrite(PVM pVM, RTGCPTR GCDest, void *pSrc, uint32_t cb)
+DECLINLINE(int) emRamWrite(PVM pVM, PCPUMCTXCORE pCtxCore, RTGCPTR GCPtrDst, const void *pvSrc, uint32_t cb)
 {
 #ifdef IN_RC
-    int rc = MMGCRamWrite(pVM, (void *)GCDest, pSrc, cb);
+    int rc = MMGCRamWrite(pVM, (void *)(uintptr_t)GCPtrDst, (void *)pvSrc, cb);
     if (RT_LIKELY(rc != VERR_ACCESS_DENIED))
         return rc;
     /*
@@ -333,20 +340,26 @@ DECLINLINE(int) emRamWrite(PVM pVM, RTGCPTR GCDest, void *pSrc, uint32_t cb)
      * We want to play safe here, verifying that we've got write
      * access doesn't cost us much (see PGMPhysGCPtr2GCPhys()).
      */
+#endif
+#ifdef VBOX_WITH_NEW_PHYS_CODE
+    return PGMPhysInterpretedWriteNoHandlers(pVM, pCtxCore, GCPtrDst, pvSrc, cb, /*fMayTrap*/ false);
+#else
+    NOREF(pCtxCore);
+# ifdef IN_RC
     uint64_t fFlags;
     RTGCPHYS GCPhys;
-    rc = PGMGstGetPage(pVM, GCDest, &fFlags, &GCPhys);
+    rc = PGMGstGetPage(pVM, GCPtrDst, &fFlags, &GCPhys);
     if (RT_FAILURE(rc))
         return rc;
     if (    !(fFlags & X86_PTE_RW)
         &&  (CPUMGetGuestCR0(pVM) & X86_CR0_WP))
         return VERR_ACCESS_DENIED;
 
-    PGMPhysWrite(pVM, GCPhys + ((RTGCUINTPTR)GCDest & PAGE_OFFSET_MASK), pSrc, cb);
+    PGMPhysWrite(pVM, GCPhys + ((RTGCUINTPTR)GCPtrDst & PAGE_OFFSET_MASK), pvSrc, cb);
     return VINF_SUCCESS;
-
-#else
-    return PGMPhysWriteGCPtr(pVM, GCDest, pSrc, cb);
+# else
+    return PGMPhysWriteGCPtr(pVM, GCPtrDst, pvSrc, cb);
+# endif
 #endif
 }
 
@@ -395,6 +408,7 @@ static const char *emGetMnemonic(PDISCPUSTATE pCpu)
         case OP_SBB:        return "Sbb";
         case OP_RDTSC:      return "Rdtsc";
         case OP_STI:        return "Sti";
+        case OP_CLI:        return "Cli";
         case OP_XADD:       return "XAdd";
         case OP_HLT:        return "Hlt";
         case OP_IRET:       return "Iret";
@@ -454,7 +468,7 @@ static int emInterpretXchg(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, R
                 pParam1 = (RTGCPTR)param1.val.val64;
                 pParam1 = emConvertToFlatAddr(pVM, pRegFrame, pCpu, &pCpu->param1, pParam1);
                 EM_ASSERT_FAULT_RETURN(pParam1 == pvFault, VERR_EM_INTERPRETER);
-                rc = emRamRead(pVM, &valpar1, pParam1, param1.size);
+                rc = emRamRead(pVM, pRegFrame, &valpar1, pParam1, param1.size);
                 if (RT_FAILURE(rc))
                 {
                     AssertMsgFailed(("MMGCRamRead %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -473,7 +487,7 @@ static int emInterpretXchg(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, R
                 pParam2 = (RTGCPTR)param2.val.val64;
                 pParam2 = emConvertToFlatAddr(pVM, pRegFrame, pCpu, &pCpu->param2, pParam2);
                 EM_ASSERT_FAULT_RETURN(pParam2 == pvFault, VERR_EM_INTERPRETER);
-                rc = emRamRead(pVM,  &valpar2, pParam2, param2.size);
+                rc = emRamRead(pVM, pRegFrame, &valpar2, pParam2, param2.size);
                 if (RT_FAILURE(rc))
                 {
                     AssertMsgFailed(("MMGCRamRead %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -507,7 +521,7 @@ static int emInterpretXchg(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, R
             }
             else
             {
-                rc = emRamWrite(pVM, pParam1, &valpar2, param1.size);
+                rc = emRamWrite(pVM, pRegFrame, pParam1, &valpar2, param1.size);
                 if (RT_FAILURE(rc))
                 {
                     AssertMsgFailed(("emRamWrite %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -533,7 +547,7 @@ static int emInterpretXchg(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, R
             }
             else
             {
-                rc = emRamWrite(pVM, pParam2, &valpar1, param2.size);
+                rc = emRamWrite(pVM, pRegFrame, pParam2, &valpar1, param2.size);
                 if (RT_FAILURE(rc))
                 {
                     AssertMsgFailed(("emRamWrite %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -580,7 +594,7 @@ static int emInterpretIncDec(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame,
                 /* Safety check (in theory it could cross a page boundary and fault there though) */
                 AssertReturn(pParam1 == pvFault, VERR_EM_INTERPRETER);
 #endif
-                rc = emRamRead(pVM,  &valpar1, pParam1, param1.size);
+                rc = emRamRead(pVM, pRegFrame,  &valpar1, pParam1, param1.size);
                 if (RT_FAILURE(rc))
                 {
                     AssertMsgFailed(("emRamRead %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -598,7 +612,7 @@ static int emInterpretIncDec(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame,
             eflags = pfnEmulate(&valpar1, param1.size);
 
             /* Write result back */
-            rc = emRamWrite(pVM, pParam1, &valpar1, param1.size);
+            rc = emRamWrite(pVM, pRegFrame, pParam1, &valpar1, param1.size);
             if (RT_FAILURE(rc))
             {
                 AssertMsgFailed(("emRamWrite %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -650,7 +664,7 @@ static int emInterpretPop(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, RT
             if (pStackVal == 0)
                 return VERR_EM_INTERPRETER;
 
-            rc = emRamRead(pVM,  &valpar1, pStackVal, param1.size);
+            rc = emRamRead(pVM, pRegFrame, &valpar1, pStackVal, param1.size);
             if (RT_FAILURE(rc))
             {
                 AssertMsgFailed(("emRamRead %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -671,7 +685,7 @@ static int emInterpretPop(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, RT
 
                 pParam1 = emConvertToFlatAddr(pVM, pRegFrame, pCpu, &pCpu->param1, pParam1);
                 EM_ASSERT_FAULT_RETURN(pParam1 == pvFault || (RTGCPTR)pRegFrame->esp == pvFault, VERR_EM_INTERPRETER);
-                rc = emRamWrite(pVM, pParam1, &valpar1, param1.size);
+                rc = emRamWrite(pVM, pRegFrame, pParam1, &valpar1, param1.size);
                 if (RT_FAILURE(rc))
                 {
                     AssertMsgFailed(("emRamWrite %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -743,7 +757,7 @@ static int emInterpretOrXorAnd(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFram
                 pParam1 = (RTGCPTR)param1.val.val64;
                 pParam1 = emConvertToFlatAddr(pVM, pRegFrame, pCpu, &pCpu->param1, pParam1);
                 EM_ASSERT_FAULT_RETURN(pParam1 == pvFault, VERR_EM_INTERPRETER);
-                rc = emRamRead(pVM,  &valpar1, pParam1, param1.size);
+                rc = emRamRead(pVM, pRegFrame, &valpar1, pParam1, param1.size);
                 if (RT_FAILURE(rc))
                 {
                     AssertMsgFailed(("emRamRead %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -780,7 +794,7 @@ static int emInterpretOrXorAnd(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFram
                                   | (eflags                &  (X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF | X86_EFL_SF | X86_EFL_OF));
 
             /* And write it back */
-            rc = emRamWrite(pVM, pParam1, &valpar1, param1.size);
+            rc = emRamWrite(pVM, pRegFrame, pParam1, &valpar1, param1.size);
             if (RT_SUCCESS(rc))
             {
                 /* All done! */
@@ -921,7 +935,7 @@ static int emInterpretAddSub(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame,
                 pParam1 = (RTGCPTR)param1.val.val64;
                 pParam1 = emConvertToFlatAddr(pVM, pRegFrame, pCpu, &pCpu->param1, pParam1);
                 EM_ASSERT_FAULT_RETURN(pParam1 == pvFault, VERR_EM_INTERPRETER);
-                rc = emRamRead(pVM,  &valpar1, pParam1, param1.size);
+                rc = emRamRead(pVM, pRegFrame, &valpar1, pParam1, param1.size);
                 if (RT_FAILURE(rc))
                 {
                     AssertMsgFailed(("emRamRead %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -956,7 +970,7 @@ static int emInterpretAddSub(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame,
                                   | (eflags                &  (X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF | X86_EFL_SF | X86_EFL_OF));
 
             /* And write it back */
-            rc = emRamWrite(pVM, pParam1, &valpar1, param1.size);
+            rc = emRamWrite(pVM, pRegFrame, pParam1, &valpar1, param1.size);
             if (RT_SUCCESS(rc))
             {
                 /* All done! */
@@ -1030,7 +1044,7 @@ static int emInterpretBitTest(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame
             Log2(("emInterpret%s: pvFault=%RGv pParam1=%RGv val2=%x\n", emGetMnemonic(pCpu), pvFault, pParam1, valpar2));
             pParam1 = (RTGCPTR)((RTGCUINTPTR)pParam1 + valpar2/8);
             EM_ASSERT_FAULT_RETURN((RTGCPTR)((RTGCUINTPTR)pParam1 & ~3) == pvFault, VERR_EM_INTERPRETER);
-            rc = emRamRead(pVM, &valpar1, pParam1, 1);
+            rc = emRamRead(pVM, pRegFrame, &valpar1, pParam1, 1);
             if (RT_FAILURE(rc))
             {
                 AssertMsgFailed(("emRamRead %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -1048,7 +1062,7 @@ static int emInterpretBitTest(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame
                                   | (eflags                &  (X86_EFL_CF | X86_EFL_PF | X86_EFL_AF | X86_EFL_ZF | X86_EFL_SF | X86_EFL_OF));
 
             /* And write it back */
-            rc = emRamWrite(pVM, pParam1, &valpar1, 1);
+            rc = emRamWrite(pVM, pRegFrame, pParam1, &valpar1, 1);
             if (RT_SUCCESS(rc))
             {
                 /* All done! */
@@ -1201,7 +1215,7 @@ static int emInterpretMov(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, RT
 
             Assert(param2.size <= 8 && param2.size > 0);
             EM_ASSERT_FAULT_RETURN(pDest == pvFault, VERR_EM_INTERPRETER);
-            rc = emRamWrite(pVM, pDest, &val64, param2.size);
+            rc = emRamWrite(pVM, pRegFrame, pDest, &val64, param2.size);
             if (RT_FAILURE(rc))
                 return VERR_EM_INTERPRETER;
 
@@ -1231,7 +1245,7 @@ static int emInterpretMov(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, RT
 
             Assert(param1.size <= 8 && param1.size > 0);
             EM_ASSERT_FAULT_RETURN(pSrc == pvFault, VERR_EM_INTERPRETER);
-            rc = emRamRead(pVM, &val64, pSrc, param1.size);
+            rc = emRamRead(pVM, pRegFrame, &val64, pSrc, param1.size);
             if (RT_FAILURE(rc))
                 return VERR_EM_INTERPRETER;
 
@@ -1328,7 +1342,11 @@ static int emInterpretStosWD(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame,
     {
         LogFlow(("emInterpretStosWD dest=%04X:%RGv (%RGv) cbSize=%d\n", pRegFrame->es, GCOffset, GCDest, cbSize));
 
+#ifdef VBOX_WITH_NEW_PHYS_CODE
+        rc = emRamWrite(pVM, pRegFrame, GCDest, &pRegFrame->rax, cbSize);
+#else
         rc = PGMPhysWriteGCPtr(pVM, GCDest, &pRegFrame->rax, cbSize);
+#endif
         if (RT_FAILURE(rc))
             return VERR_EM_INTERPRETER;
         Assert(rc == VINF_SUCCESS);
@@ -1356,8 +1374,12 @@ static int emInterpretStosWD(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame,
         if (!cTransfers)
             return VINF_SUCCESS;
 
-        /* Do *not* try emulate cross page stuff here, this also fends off big copies which
-           would kill PGMR0DynMap. */
+        /*
+         * Do *not* try emulate cross page stuff here because we don't know what might
+         * be waiting for us on the subsequent pages. The caller has only asked us to
+         * ignore access handlers fro the current page.
+         * This also fends off big stores which would quickly kill PGMR0DynMap.
+         */
         if (    cbSize > PAGE_SIZE
             ||  cTransfers > PAGE_SIZE
             ||  (GCDest >> PAGE_SHIFT) != ((GCDest + offIncrement * cTransfers) >> PAGE_SHIFT))
@@ -1381,7 +1403,11 @@ static int emInterpretStosWD(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame,
         /* REP case */
         while (cTransfers)
         {
+#ifdef VBOX_WITH_NEW_PHYS_CODE
+            rc = emRamWrite(pVM, pRegFrame, GCDest, &pRegFrame->rax, cbSize);
+#else
             rc = PGMPhysWriteGCPtr(pVM, GCDest, &pRegFrame->rax, cbSize);
+#endif
             if (RT_FAILURE(rc))
             {
                 rc = VERR_EM_INTERPRETER;
@@ -1772,18 +1798,18 @@ VMMDECL(int) EMInterpretIret(PVM pVM, PCPUMCTXCORE pRegFrame)
 
     Assert(!CPUMIsGuestIn64BitCode(pVM, pRegFrame));
 
-    rc  = emRamRead(pVM, &eip,      (RTGCPTR)pIretStack      , 4);
-    rc |= emRamRead(pVM, &cs,       (RTGCPTR)(pIretStack + 4), 4);
-    rc |= emRamRead(pVM, &eflags,   (RTGCPTR)(pIretStack + 8), 4);
+    rc  = emRamRead(pVM, pRegFrame, &eip,      (RTGCPTR)pIretStack      , 4);
+    rc |= emRamRead(pVM, pRegFrame, &cs,       (RTGCPTR)(pIretStack + 4), 4);
+    rc |= emRamRead(pVM, pRegFrame, &eflags,   (RTGCPTR)(pIretStack + 8), 4);
     AssertRCReturn(rc, VERR_EM_INTERPRETER);
     AssertReturn(eflags & X86_EFL_VM, VERR_EM_INTERPRETER);
 
-    rc |= emRamRead(pVM, &esp,      (RTGCPTR)(pIretStack + 12), 4);
-    rc |= emRamRead(pVM, &ss,       (RTGCPTR)(pIretStack + 16), 4);
-    rc |= emRamRead(pVM, &es,       (RTGCPTR)(pIretStack + 20), 4);
-    rc |= emRamRead(pVM, &ds,       (RTGCPTR)(pIretStack + 24), 4);
-    rc |= emRamRead(pVM, &fs,       (RTGCPTR)(pIretStack + 28), 4);
-    rc |= emRamRead(pVM, &gs,       (RTGCPTR)(pIretStack + 32), 4);
+    rc |= emRamRead(pVM, pRegFrame, &esp,      (RTGCPTR)(pIretStack + 12), 4);
+    rc |= emRamRead(pVM, pRegFrame, &ss,       (RTGCPTR)(pIretStack + 16), 4);
+    rc |= emRamRead(pVM, pRegFrame, &es,       (RTGCPTR)(pIretStack + 20), 4);
+    rc |= emRamRead(pVM, pRegFrame, &ds,       (RTGCPTR)(pIretStack + 24), 4);
+    rc |= emRamRead(pVM, pRegFrame, &fs,       (RTGCPTR)(pIretStack + 28), 4);
+    rc |= emRamRead(pVM, pRegFrame, &gs,       (RTGCPTR)(pIretStack + 32), 4);
     AssertRCReturn(rc, VERR_EM_INTERPRETER);
 
     pRegFrame->eip = eip & 0xffff;
@@ -2014,11 +2040,11 @@ static int emInterpretClts(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, R
  * @param   val         New CRx value
  *
  */
-static int EMUpdateCRx(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegCrx, uint64_t val)
+static int emUpdateCRx(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegCrx, uint64_t val)
 {
     uint64_t oldval;
     uint64_t msrEFER;
-    int      rc;
+    int      rc, rc2;
 
     /** @todo Clean up this mess. */
     LogFlow(("EMInterpretCRxWrite at %RGv CR%d <- %RX64\n", (RTGCPTR)pRegFrame->rip, DestRegCrx, val));
@@ -2032,6 +2058,7 @@ static int EMUpdateCRx(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegCrx, uin
             !=  (oldval & (X86_CR0_WP | X86_CR0_AM)))
             return VERR_EM_INTERPRETER;
 #endif
+        rc = VINF_SUCCESS;
         CPUMSetGuestCR0(pVM, val);
         val = CPUMGetGuestCR0(pVM);
         if (    (oldval & (X86_CR0_PG | X86_CR0_WP | X86_CR0_PE))
@@ -2073,7 +2100,8 @@ static int EMUpdateCRx(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegCrx, uin
             }
             CPUMSetGuestEFER(pVM, msrEFER);
         }
-        return PGMChangeMode(pVM, CPUMGetGuestCR0(pVM), CPUMGetGuestCR4(pVM), CPUMGetGuestEFER(pVM));
+        rc2 = PGMChangeMode(pVM, CPUMGetGuestCR0(pVM), CPUMGetGuestCR4(pVM), CPUMGetGuestEFER(pVM));
+        return rc2 == VINF_SUCCESS ? rc : rc2;
 
     case USE_REG_CR2:
         rc = CPUMSetGuestCR2(pVM, val); AssertRC(rc);
@@ -2088,22 +2116,23 @@ static int EMUpdateCRx(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegCrx, uin
             rc = PGMFlushTLB(pVM, val, !(CPUMGetGuestCR4(pVM) & X86_CR4_PGE));
             AssertRCReturn(rc, rc);
         }
-        return VINF_SUCCESS;
+        return rc;
 
     case USE_REG_CR4:
         oldval = CPUMGetGuestCR4(pVM);
         rc = CPUMSetGuestCR4(pVM, val); AssertRC(rc);
-        val   = CPUMGetGuestCR4(pVM);
+        val = CPUMGetGuestCR4(pVM);
 
-        msrEFER = CPUMGetGuestEFER(pVM);
         /* Illegal to disable PAE when long mode is active. (AMD Arch. Programmer's Manual Volume 2: Table 14-5) */
+        msrEFER = CPUMGetGuestEFER(pVM);
         if (    (msrEFER & MSR_K6_EFER_LMA)
             &&  (oldval & X86_CR4_PAE)
             &&  !(val & X86_CR4_PAE))
         {
-            return VERR_EM_INTERPRETER; /* @todo generate #GP(0) */
+            return VERR_EM_INTERPRETER; /** @todo generate #GP(0) */
         }
 
+        rc = VINF_SUCCESS;
         if (    (oldval & (X86_CR4_PGE|X86_CR4_PAE|X86_CR4_PSE))
             !=  (val    & (X86_CR4_PGE|X86_CR4_PAE|X86_CR4_PSE)))
         {
@@ -2111,8 +2140,9 @@ static int EMUpdateCRx(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegCrx, uin
             rc = PGMFlushTLB(pVM, CPUMGetGuestCR3(pVM), true /* global */);
             AssertRCReturn(rc, rc);
         }
-# ifdef IN_RC
+
         /* Feeling extremely lazy. */
+# ifdef IN_RC
         if (    (oldval & (X86_CR4_OSFSXR|X86_CR4_OSXMMEEXCPT|X86_CR4_PCE|X86_CR4_MCE|X86_CR4_PAE|X86_CR4_DE|X86_CR4_TSD|X86_CR4_PVI|X86_CR4_VME))
             !=  (val    & (X86_CR4_OSFSXR|X86_CR4_OSXMMEEXCPT|X86_CR4_PCE|X86_CR4_MCE|X86_CR4_PAE|X86_CR4_DE|X86_CR4_TSD|X86_CR4_PVI|X86_CR4_VME)))
         {
@@ -2120,7 +2150,11 @@ static int EMUpdateCRx(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestRegCrx, uin
             VM_FF_SET(pVM, VM_FF_TO_R3);
         }
 # endif
-        return PGMChangeMode(pVM, CPUMGetGuestCR0(pVM), CPUMGetGuestCR4(pVM), CPUMGetGuestEFER(pVM));
+        if ((val ^ oldval) & X86_CR4_VME)
+            VM_FF_SET(pVM, VM_FF_SELM_SYNC_TSS);
+
+        rc2 = PGMChangeMode(pVM, CPUMGetGuestCR0(pVM), CPUMGetGuestCR4(pVM), CPUMGetGuestEFER(pVM));
+        return rc2 == VINF_SUCCESS ? rc : rc2;
 
     case USE_REG_CR8:
         return PDMApicSetTPR(pVM, val);
@@ -2160,7 +2194,7 @@ VMMDECL(int) EMInterpretCRxWrite(PVM pVM, PCPUMCTXCORE pRegFrame, uint32_t DestR
     }
 
     if (RT_SUCCESS(rc))
-        return EMUpdateCRx(pVM, pRegFrame, DestRegCrx, val);
+        return emUpdateCRx(pVM, pRegFrame, DestRegCrx, val);
 
     return VERR_EM_INTERPRETER;
 }
@@ -2182,7 +2216,7 @@ VMMDECL(int) EMInterpretLMSW(PVM pVM, PCPUMCTXCORE pRegFrame, uint16_t u16Data)
     uint64_t NewCr0 = ( OldCr0 & ~(             X86_CR0_MP | X86_CR0_EM | X86_CR0_TS))
                     | (u16Data &  (X86_CR0_PE | X86_CR0_MP | X86_CR0_EM | X86_CR0_TS));
 
-    return EMUpdateCRx(pVM, pRegFrame, USE_REG_CR0, NewCr0);
+    return emUpdateCRx(pVM, pRegFrame, USE_REG_CR0, NewCr0);
 }
 
 /**
@@ -2248,7 +2282,7 @@ static int emInterpretSmsw(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, R
         pParam1 = emConvertToFlatAddr(pVM, pRegFrame, pCpu, &pCpu->param1, pParam1);
         LogFlow(("emInterpretSmsw %VGv <- cr0 (%x)\n", pParam1, cr0));
 
-        rc = emRamWrite(pVM, pParam1, &cr0, sizeof(uint16_t));
+        rc = emRamWrite(pVM, pRegFrame, pParam1, &cr0, sizeof(uint16_t));
         if (RT_FAILURE(rc))
         {
             AssertMsgFailed(("emRamWrite %RGv size=%d failed with %Rrc\n", pParam1, param1.size, rc));
@@ -2400,6 +2434,12 @@ static int emInterpretLLdt(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, R
         return VERR_EM_INTERPRETER;
     }
 
+#ifdef IN_RING0
+    /* Only for the VT-x real-mode emulation case. */
+    AssertReturn(CPUMIsGuestInRealMode(pVM), VERR_EM_INTERPRETER);
+    CPUMSetGuestLDTR(pVM, sel);
+    return VINF_SUCCESS;
+#else
     if (sel == 0)
     {
         if (CPUMGetHyperLDTR(pVM) == 0)
@@ -2410,6 +2450,7 @@ static int emInterpretLLdt(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, R
     }
     //still feeling lazy
     return VERR_EM_INTERPRETER;
+#endif
 }
 
 #ifdef IN_RING0
@@ -2425,8 +2466,7 @@ static int emInterpretLIGdt(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, 
     Log(("Emulate %s at %RGv\n", emGetMnemonic(pCpu), (RTGCPTR)pRegFrame->rip));
 
     /* Only for the VT-x real-mode emulation case. */
-    if (!CPUMIsGuestInRealMode(pVM))
-        return VERR_EM_INTERPRETER;
+    AssertReturn(CPUMIsGuestInRealMode(pVM), VERR_EM_INTERPRETER);
 
     int rc = DISQueryParamVal(pRegFrame, pCpu, &pCpu->param1, &param1, PARAM_SOURCE);
     if(RT_FAILURE(rc))
@@ -2442,7 +2482,7 @@ static int emInterpretLIGdt(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, 
         return VERR_EM_INTERPRETER;
     }
 
-    rc = emRamRead(pVM, &dtr32, pParam1, sizeof(dtr32));
+    rc = emRamRead(pVM, pRegFrame, &dtr32, pParam1, sizeof(dtr32));
     AssertRCReturn(rc, VERR_EM_INTERPRETER);
 
     if (!(pCpu->prefix & PREFIX_OPSIZE))
@@ -3081,6 +3121,9 @@ DECLINLINE(int) emInterpretInstructionCPU(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCO
 #endif
     switch (pCpu->pCurInstr->opcode)
     {
+        /*
+         * Macros for generating the right case statements.
+         */
 # define INTERPRET_CASE_EX_LOCK_PARAM3(opcode, Instr, InstrFn, pfnEmulate, pfnEmulateLock) \
         case opcode:\
             if (pCpu->prefix & PREFIX_LOCK) \
@@ -3127,6 +3170,9 @@ DECLINLINE(int) emInterpretInstructionCPU(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCO
 #define INTERPRET_STAT_CASE(opcode, Instr) \
         case opcode: STAM_COUNTER_INC(&pVM->em.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,Failed##Instr)); return VERR_EM_INTERPRETER;
 
+        /*
+         * The actual case statements.
+         */
         INTERPRET_CASE(OP_XCHG,Xchg);
         INTERPRET_CASE_EX_PARAM2(OP_DEC,Dec, IncDec, EMEmulateDec);
         INTERPRET_CASE_EX_PARAM2(OP_INC,Inc, IncDec, EMEmulateInc);
@@ -3142,11 +3188,11 @@ DECLINLINE(int) emInterpretInstructionCPU(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCO
         INTERPRET_CASE(OP_CPUID,CpuId);
         INTERPRET_CASE(OP_MOV_CR,MovCRx);
         INTERPRET_CASE(OP_MOV_DR,MovDRx);
-        INTERPRET_CASE(OP_LLDT,LLdt);
 #ifdef IN_RING0
         INTERPRET_CASE_EX_DUAL_PARAM2(OP_LIDT, LIdt, LIGdt);
         INTERPRET_CASE_EX_DUAL_PARAM2(OP_LGDT, LGdt, LIGdt);
 #endif
+        INTERPRET_CASE(OP_LLDT,LLdt);
         INTERPRET_CASE(OP_LMSW,Lmsw);
 #ifdef EM_EMULATE_SMSW
         INTERPRET_CASE(OP_SMSW,Smsw);
@@ -3173,20 +3219,22 @@ DECLINLINE(int) emInterpretInstructionCPU(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCO
         INTERPRET_CASE(OP_IRET,Iret);
         INTERPRET_CASE(OP_WBINVD,WbInvd);
 #ifdef VBOX_WITH_STATISTICS
-#ifndef IN_RC
+# ifndef IN_RC
         INTERPRET_STAT_CASE(OP_XADD, XAdd);
-#endif
+# endif
         INTERPRET_STAT_CASE(OP_MOVNTPS,MovNTPS);
 #endif
+
         default:
             Log3(("emInterpretInstructionCPU: opcode=%d\n", pCpu->pCurInstr->opcode));
             STAM_COUNTER_INC(&pVM->em.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,FailedMisc));
             return VERR_EM_INTERPRETER;
+
 #undef INTERPRET_CASE_EX_PARAM2
 #undef INTERPRET_STAT_CASE
 #undef INTERPRET_CASE_EX
 #undef INTERPRET_CASE
-    }
+    } /* switch (opcode) */
     AssertFailed();
     return VERR_INTERNAL_ERROR;
 }

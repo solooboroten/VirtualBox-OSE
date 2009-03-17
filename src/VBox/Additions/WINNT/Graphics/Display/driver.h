@@ -1,5 +1,22 @@
 /******************************Module*Header*******************************\
 *
+* Copyright (C) 2006-2007 Sun Microsystems, Inc.
+*
+* This file is part of VirtualBox Open Source Edition (OSE), as
+* available from http://www.virtualbox.org. This file is free software;
+* you can redistribute it and/or modify it under the terms of the GNU
+* General Public License (GPL) as published by the Free Software
+* Foundation, in version 2 as it comes in the "COPYING" file of the
+* VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+* hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+*
+* Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
+* Clara, CA 95054 USA or visit http://www.sun.com if you need
+* additional information or have any questions.
+*/
+/*
+* Based in part on Microsoft DDK sample code
+*
 *                           *******************
 *                           * GDI SAMPLE CODE *
 *                           *******************
@@ -111,8 +128,10 @@ struct  _PDEV
     BOOL    bSupportDCI;                // Does the miniport support DCI?
     FLONG   flHooks;
     
+#ifndef VBOX_WITH_HGSMI
     VBVAENABLERESULT vbva;
     uint32_t         u32VRDPResetFlag;
+#endif /* !VBOX_WITH_HGSMI */
     BOOL             fHwBufferOverflow;
     VBVARECORD       *pRecord;
     VRDPBC           cache;
@@ -120,8 +139,10 @@ struct  _PDEV
     ULONG cSSB;                 // Number of active saved screen bits records in the following array.
     SSB aSSB[4];                // LIFO type stack for saved screen areas.
 
+#ifndef VBOX_WITH_HGSMI
     VBOXDISPLAYINFO *pInfo;
     BOOLEAN bVBoxVideoSupported;
+#endif /* !VBOX_WITH_HGSMI */
     ULONG iDevice;
     VRAMLAYOUT layout;
 
@@ -137,6 +158,12 @@ struct  _PDEV
         RECTL rArea;
     } ddLock;
 #endif /* VBOX_WITH_DDRAW */
+
+#ifdef VBOX_WITH_HGSMI
+    BOOLEAN bHGSMISupported;
+    HGSMIHEAP hgsmiDisplayHeap;
+    VBVABUFFER *pVBVA; /* Pointer to the pjScreen + layout->offVBVABuffer. NULL if VBVA is not enabled. */
+#endif /* VBOX_WITH_HGSMI */
 };
 
 #ifdef VBOX_WITH_OPENGL 
@@ -148,8 +175,17 @@ typedef struct
 } OPENGL_INFO, *POPENGL_INFO; 
 #endif 
 
+#ifndef VBOX_WITH_HGSMI
 /* The global semaphore handle for all driver instances. */
 extern HSEMAPHORE ghsemHwBuffer;
+#endif /* !VBOX_WITH_HGSMI */
+
+
+#ifdef VBOX_WITH_HGSMI
+#define VBE_DISPI_IOPORT_INDEX          0x01CE
+#define VBE_DISPI_IOPORT_DATA           0x01CF
+#define VBE_DISPI_INDEX_VBVA_GUEST      0xc
+#endif /* VBOX_WITH_HGSMI */
 
 extern BOOL  g_bOnNT40;
 

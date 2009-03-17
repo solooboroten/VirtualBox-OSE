@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl.h 15708 2008-12-19 18:28:27Z vboxsync $ */
+/* $Id: ConsoleImpl.h 17684 2009-03-11 12:15:33Z vboxsync $ */
 
 /** @file
  *
@@ -114,10 +114,10 @@ public:
     STDMETHOD(COMGETTER(Mouse)) (IMouse **aMouse);
     STDMETHOD(COMGETTER(Display)) (IDisplay **aDisplay);
     STDMETHOD(COMGETTER(Debugger)) (IMachineDebugger **aDebugger);
-    STDMETHOD(COMGETTER(USBDevices)) (IUSBDeviceCollection **aUSBDevices);
-    STDMETHOD(COMGETTER(RemoteUSBDevices)) (IHostUSBDeviceCollection **aRemoteUSBDevices);
+    STDMETHOD(COMGETTER(USBDevices)) (ComSafeArrayOut (IUSBDevice *, aUSBDevices));
+    STDMETHOD(COMGETTER(RemoteUSBDevices)) (ComSafeArrayOut (IHostUSBDevice *, aRemoteUSBDevices));
     STDMETHOD(COMGETTER(RemoteDisplayInfo)) (IRemoteDisplayInfo **aRemoteDisplayInfo);
-    STDMETHOD(COMGETTER(SharedFolders)) (ISharedFolderCollection **aSharedFolders);
+    STDMETHOD(COMGETTER(SharedFolders)) (ComSafeArrayOut (ISharedFolder *, aSharedFolders));
 
     // IConsole methods
     STDMETHOD(PowerUp) (IProgress **aProgress);
@@ -138,6 +138,8 @@ public:
                                  DeviceActivity_T *aDeviceActivity);
     STDMETHOD(AttachUSBDevice) (IN_GUID aId);
     STDMETHOD(DetachUSBDevice) (IN_GUID aId, IUSBDevice **aDevice);
+    STDMETHOD(FindUSBDeviceByAddress) (IN_BSTR aAddress, IUSBDevice **aDevice);
+    STDMETHOD(FindUSBDeviceById) (IN_GUID aId, IUSBDevice **aDevice);
     STDMETHOD(CreateSharedFolder) (IN_BSTR aName, IN_BSTR aHostPath, BOOL aWritable);
     STDMETHOD(RemoveSharedFolder) (IN_BSTR aName);
     STDMETHOD(TakeSnapshot) (IN_BSTR aName, IN_BSTR aDescription,
@@ -176,6 +178,7 @@ public:
     HRESULT onNetworkAdapterChange (INetworkAdapter *aNetworkAdapter);
     HRESULT onSerialPortChange (ISerialPort *aSerialPort);
     HRESULT onParallelPortChange (IParallelPort *aParallelPort);
+    HRESULT onStorageControllerChange ();
     HRESULT onVRDPServerChange();
     HRESULT onUSBControllerChange();
     HRESULT onSharedFolderChange (BOOL aGlobal);
@@ -402,8 +405,8 @@ private:
 
     HRESULT callTapSetupApplication(bool isStatic, RTFILE tapFD, Bstr &tapDevice,
                                     Bstr &tapSetupApplication);
-    HRESULT attachToHostInterface(INetworkAdapter *networkAdapter);
-    HRESULT detachFromHostInterface(INetworkAdapter *networkAdapter);
+    HRESULT attachToBridgedInterface(INetworkAdapter *networkAdapter);
+    HRESULT detachFromBridgedInterface(INetworkAdapter *networkAdapter);
     HRESULT powerDownHostInterfaces();
 
     HRESULT setMachineState (MachineState_T aMachineState, bool aUpdateServer = true);
@@ -544,6 +547,10 @@ private:
     PPDMLED     mapNetworkLeds[8];
     PPDMLED     mapSharedFolderLed;
     PPDMLED     mapUSBLed[2];
+#if !defined(VBOX_WITH_NETFLT) && defined(RT_OS_LINUX)
+    Utf8Str     maTAPDeviceName[8];
+    RTFILE      maTapFD[8];
+#endif
 
     bool mVMStateChangeCallbackDisabled;
 

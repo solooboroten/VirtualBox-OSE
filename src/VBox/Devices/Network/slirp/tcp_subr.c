@@ -185,11 +185,10 @@ tcp_newtcpcb(PNATState pData, struct socket *so)
 {
     register struct tcpcb *tp;
 
-    tp = (struct tcpcb *)RTMemAlloc(sizeof(*tp));
+    tp = (struct tcpcb *)RTMemAllocZ(sizeof(*tp));
     if (tp == NULL)
         return ((struct tcpcb *)0);
 
-    memset((char *) tp, 0, sizeof(struct tcpcb));
     tp->t_maxseg = tcp_mssdflt;
 
     tp->t_flags = tcp_do_rfc1323 ? (TF_REQ_SCALE|TF_REQ_TSTMP) : 0;
@@ -259,13 +258,13 @@ struct tcpcb *tcp_drop(PNATState pData, struct tcpcb *tp, int err)
 struct tcpcb *
 tcp_close(PNATState pData, register struct tcpcb *tp)
 {
-    register struct tcpiphdr *t;
     struct socket *so = tp->t_socket;
-    register struct mbuf *m;
+    struct socket *so_next, *so_prev;
 
     struct tseg_qent *te = NULL;
     DEBUG_CALL("tcp_close");
     DEBUG_ARG("tp = %lx", (long )tp);
+    so_next = so_prev = NULL;
     /*XXX: freeing the reassembly queue */
     while (!LIST_EMPTY(&tp->t_segq))
     {
@@ -285,6 +284,7 @@ tcp_close(PNATState pData, register struct tcpcb *tp)
     sbfree(&so->so_rcv);
     sbfree(&so->so_snd);
     sofree(pData, so);
+    SOCKET_UNLOCK(so);
     tcpstat.tcps_closed++;
     return ((struct tcpcb *)0);
 }
@@ -352,7 +352,7 @@ tcp_sockclosed(PNATState pData, struct tcpcb *tp)
             break;
     }
 /*  soisfdisconnecting(tp->t_socket); */
-    if (   tp 
+    if (   tp
         && tp->t_state >= TCPS_FIN_WAIT_2)
         soisfdisconnected(tp->t_socket);
     if (tp)
@@ -376,16 +376,16 @@ int tcp_fconnect(PNATState pData, struct socket *so)
     DEBUG_CALL("tcp_fconnect");
     DEBUG_ARG("so = %lx", (long )so);
 
-    if ((ret = so->s = socket(AF_INET,SOCK_STREAM,0)) >= 0)
+    if ((ret = so->s = socket(AF_INET, SOCK_STREAM, 0)) >= 0)
     {
         int opt, s = so->s;
         struct sockaddr_in addr;
 
         fd_nonblock(s);
         opt = 1;
-        setsockopt(s,SOL_SOCKET,SO_REUSEADDR,(char *)&opt, sizeof(opt));
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt));
         opt = 1;
-        setsockopt(s,SOL_SOCKET,SO_OOBINLINE,(char *)&opt, sizeof(opt));
+        setsockopt(s, SOL_SOCKET, SO_OOBINLINE, (char *)&opt, sizeof(opt));
 
         addr.sin_family = AF_INET;
         if ((so->so_faddr.s_addr & htonl(pData->netmask)) == special_addr.s_addr)
@@ -394,11 +394,13 @@ int tcp_fconnect(PNATState pData, struct socket *so)
             switch(ntohl(so->so_faddr.s_addr) & ~pData->netmask)
             {
                 case CTL_DNS:
+#ifndef VBOX_WITH_MULTI_DNS
                     if (!get_dns_addr(pData, &dns_addr))
                         addr.sin_addr = dns_addr;
                     else
                         addr.sin_addr = loopback_addr;
                     break;
+#endif
                 case CTL_ALIAS:
                 default:
                     addr.sin_addr = loopback_addr;
@@ -444,7 +446,9 @@ tcp_connect(PNATState pData, struct socket *inso)
     struct sockaddr_in addr;
     socklen_t addrlen = sizeof(struct sockaddr_in);
     struct tcpcb *tp;
-    int s, opt;
+    int s, opt, status;
+    socklen_t optlen;
+    static int cVerbose = 1;
 
     DEBUG_CALL("tcp_connect");
     DEBUG_ARG("inso = %lx", (long)inso);
@@ -477,6 +481,7 @@ tcp_connect(PNATState pData, struct socket *inso)
 
     (void) tcp_mss(pData, sototcpcb(so), 0);
 
+    fd_nonblock(inso->s);
     if ((s = accept(inso->s,(struct sockaddr *)&addr,&addrlen)) < 0)
     {
         tcp_close(pData, sototcpcb(so)); /* This will sofree() as well */
@@ -484,12 +489,48 @@ tcp_connect(PNATState pData, struct socket *inso)
     }
     fd_nonblock(s);
     opt = 1;
-    setsockopt(s,SOL_SOCKET,SO_REUSEADDR,(char *)&opt,sizeof(int));
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR,(char *)&opt, sizeof(int));
     opt = 1;
-    setsockopt(s,SOL_SOCKET,SO_OOBINLINE,(char *)&opt,sizeof(int));
+    setsockopt(s, SOL_SOCKET, SO_OOBINLINE,(char *)&opt, sizeof(int));
     opt = 1;
-    setsockopt(s,IPPROTO_TCP,TCP_NODELAY,(char *)&opt,sizeof(int));
+    setsockopt(s, IPPROTO_TCP, TCP_NODELAY,(char *)&opt, sizeof(int));
 
+    optlen = sizeof(int);
+    status = getsockopt(s, SOL_SOCKET, SO_RCVBUF, (char *)&opt, &optlen);
+    if (status < 0)
+    {
+        LogRel(("NAT: Error(%d) while getting RCV capacity\n", errno));
+        goto no_sockopt;
+    }
+    if (cVerbose > 0)
+        LogRel(("NAT: old socket rcv size: %dKB\n", opt / 1024));
+    opt *= 4;
+    status = setsockopt(s, SOL_SOCKET, SO_RCVBUF, (char *)&opt, sizeof(int));
+    if (status < 0)
+    {
+        LogRel(("NAT: Error(%d) while setting RCV capacity to (%d)\n", errno, opt));
+        goto no_sockopt;
+    }
+    optlen = sizeof(int);
+    status = getsockopt(s, SOL_SOCKET, SO_SNDBUF, (char *)&opt, &optlen);
+    if (status < 0)
+    {
+        LogRel(("NAT: Error(%d) while getting SND capacity\n", errno));
+        goto no_sockopt;
+    }
+    if (cVerbose > 0)
+        LogRel(("NAT: old socket snd size: %dKB\n", opt / 1024));
+    opt *= 4;
+    status = setsockopt(s, SOL_SOCKET, SO_SNDBUF, (char *)&opt, sizeof(int));
+    if (status < 0)
+    {
+        LogRel(("NAT: Error(%d) while setting SND capacity to (%d)\n", errno, opt));
+        goto no_sockopt;
+    }
+    if (cVerbose > 0)
+        cVerbose--;
+
+ no_sockopt:
     so->so_fport = addr.sin_port;
     so->so_faddr = addr.sin_addr;
     /* Translate connections from localhost to the real hostname */
@@ -536,7 +577,11 @@ tcp_attach(PNATState pData, struct socket *so)
     if ((so->so_tcpcb = tcp_newtcpcb(pData, so)) == NULL)
         return -1;
 
+    SOCKET_LOCK_CREATE(so);
+    QSOCKET_LOCK(tcb);
     insque(pData, so, &tcb);
+    NSOCK_INC();
+    QSOCKET_UNLOCK(tcb);
     return 0;
 }
 
@@ -761,7 +806,7 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
             }
             if (   m->m_data[m->m_len-1] == '\0'
                 && lport != 0
-                && (so = solisten(pData, 0, so->so_laddr.s_addr, 
+                && (so = solisten(pData, 0, so->so_laddr.s_addr,
                                   htons(lport), SS_FACCEPTONCE)) != NULL)
                 m->m_len = sprintf(m->m_data, "%d", ntohs(so->so_fport))+1;
             return 1;
@@ -777,7 +822,7 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
             /* The %256s is for the broken mIRC */
             if (sscanf(bptr, "DCC CHAT %256s %u %u", buff, &laddr, &lport) == 3)
             {
-                if ((so = solisten(pData, 0, htonl(laddr), 
+                if ((so = solisten(pData, 0, htonl(laddr),
                                    htons(lport), SS_FACCEPTONCE)) == NULL)
                     return 1;
 

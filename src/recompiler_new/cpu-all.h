@@ -271,7 +271,6 @@ void        remR3PhysWriteU64(RTGCPHYS DstGCPhys, uint64_t val);
 
 #ifndef REM_PHYS_ADDR_IN_TLB
 void       *remR3TlbGCPhys2Ptr(CPUState *env1, target_ulong physAddr, int fWritable);
-target_ulong remR3HCVirt2GCPhys(CPUState *env1, void *addr);
 #endif
 
 #endif /* VBOX */
@@ -1186,7 +1185,7 @@ extern int phys_ram_size;
 #else /* VBOX */
 extern RTGCPHYS phys_ram_size;
 /** This is required for bounds checking the phys_ram_dirty accesses. */
-extern uint32_t phys_ram_dirty_size;
+extern RTGCPHYS phys_ram_dirty_size;
 #endif /* VBOX */
 #if !defined(VBOX)
 extern uint8_t *phys_ram_base;

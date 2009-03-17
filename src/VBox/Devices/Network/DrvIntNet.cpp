@@ -1,4 +1,4 @@
-/* $Id: DrvIntNet.cpp 15541 2008-12-15 20:29:08Z vboxsync $ */
+/* $Id: DrvIntNet.cpp 18023 2009-03-17 13:48:59Z vboxsync $ */
 /** @file
  * DrvIntNet - Internal network transport driver.
  */
@@ -44,6 +44,7 @@
 # include "win/DrvIntNet-win.h"
 #endif
 
+#include "DHCPServerRunner.h"
 
 /*******************************************************************************
 *   Structures and Typedefs                                                    *
@@ -779,7 +780,12 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
                               "QuietlyIgnoreTrunkWirePromisc\0"
                               "IgnoreTrunkHostPromisc\0"
                               "QuietlyIgnoreTrunkHostPromisc\0"
-                              "IsService\0"))
+                              "IsService\0"
+                              "DhcpIPAddress\0"
+                              "DhcpNetworkMask\0"
+                              "DhcpLowerIP\0"
+                              "DhcpUpperIP\0"
+                              "DhcpMacAddress\0"))
         return VERR_PDM_DRVINS_UNKNOWN_CFG_VALUES;
 
     /*
@@ -1025,14 +1031,15 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
     }
 
 #elif defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT)
-    if (OpenReq.enmTrunkType == kIntNetTrunkType_NetFlt)
+    if (OpenReq.enmTrunkType == kIntNetTrunkType_NetFlt
+            || OpenReq.enmTrunkType == kIntNetTrunkType_NetAdp)
     {
 # ifndef VBOX_NETFLT_ONDEMAND_BIND
         /*
          * We have a ndis filter driver started on system boot before the VBoxDrv,
          * tell the filter driver to init VBoxNetFlt functionality.
          */
-        rc = drvIntNetWinConstruct(pDrvIns, pCfgHandle);
+        rc = drvIntNetWinConstruct(pDrvIns, pCfgHandle, OpenReq.enmTrunkType);
         AssertLogRelMsgRCReturn(rc, ("drvIntNetWinConstruct failed, rc=%Rrc", rc), rc);
 # endif
 
@@ -1064,6 +1071,77 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
     AssertRelease(OpenReq.hIf != INTNET_HANDLE_INVALID);
     pThis->hIf = OpenReq.hIf;
     Log(("IntNet%d: hIf=%RX32 '%s'\n", pDrvIns->iInstance, pThis->hIf, pThis->szNetwork));
+
+    if(rc != VINF_ALREADY_INITIALIZED)
+    {
+        /* new network gets created, check if we need to launch a DHCP server for it */
+        char ip[16], mask[16], lowerIp[16], upperIp[16], mac[13];
+        rc = CFGMR3QueryString(pCfgHandle, "DhcpIPAddress", ip, sizeof(ip));
+        if (RT_SUCCESS(rc))
+        {
+            /* this means we have DHCP server enabled */
+            rc = CFGMR3QueryString(pCfgHandle, "DhcpNetworkMask", mask, sizeof(mask));
+            if (RT_FAILURE(rc))
+                return PDMDRV_SET_ERROR(pDrvIns, rc,
+                                    N_("Configuration error: Failed to get the \"DhcpNetworkMask\" value"));
+
+            rc = CFGMR3QueryString(pCfgHandle, "DhcpLowerIP", lowerIp, sizeof(lowerIp));
+            if (RT_FAILURE(rc))
+                return PDMDRV_SET_ERROR(pDrvIns, rc,
+                                    N_("Configuration error: Failed to get the \"DhcpLowerIP\" value"));
+
+            rc = CFGMR3QueryString(pCfgHandle, "DhcpUpperIP", upperIp, sizeof(upperIp));
+            if (RT_FAILURE(rc))
+                return PDMDRV_SET_ERROR(pDrvIns, rc,
+                                    N_("Configuration error: Failed to get the \"DhcpUpperIP\" value"));
+
+            rc = CFGMR3QueryString(pCfgHandle, "DhcpMacAddress", mac, sizeof(mac));
+            if (RT_FAILURE(rc))
+                return PDMDRV_SET_ERROR(pDrvIns, rc,
+                                    N_("Configuration error: Failed to get the \"DhcpMacAddress\" value"));
+
+
+            DHCPServerRunner dhcp;
+            dhcp.setOption(DHCPCFG_NETNAME, OpenReq.szNetwork);
+            dhcp.setOption(DHCPCFG_TRUNKNAME, OpenReq.szTrunk);
+            switch(OpenReq.enmTrunkType)
+            {
+            case kIntNetTrunkType_WhateverNone:
+                dhcp.setOption(DHCPCFG_TRUNKTYPE, TRUNKTYPE_WHATEVER);
+                break;
+            case kIntNetTrunkType_NetFlt:
+                dhcp.setOption(DHCPCFG_TRUNKTYPE, TRUNKTYPE_NETFLT);
+                break;
+            case kIntNetTrunkType_NetAdp:
+                dhcp.setOption(DHCPCFG_TRUNKTYPE, TRUNKTYPE_NETADP);
+                break;
+            case kIntNetTrunkType_SrvNat:
+                dhcp.setOption(DHCPCFG_TRUNKTYPE, TRUNKTYPE_SRVNAT);
+                break;
+            default:
+                AssertFailed();
+                break;
+            }
+        //temporary hack for testing
+            //    DHCPCFG_NAME
+            dhcp.setOption(DHCPCFG_MACADDRESS, mac);
+            dhcp.setOption(DHCPCFG_IPADDRESS,  ip);
+        //        DHCPCFG_LEASEDB,
+        //        DHCPCFG_VERBOSE,
+        //        DHCPCFG_GATEWAY,
+            dhcp.setOption(DHCPCFG_LOWERIP,  lowerIp);
+            dhcp.setOption(DHCPCFG_UPPERIP,  upperIp);
+            dhcp.setOption(DHCPCFG_NETMASK,  mask);
+
+        //        DHCPCFG_HELP,
+        //        DHCPCFG_VERSION,
+        //        DHCPCFG_NOTOPT_MAXVAL
+            dhcp.setOption(DHCPCFG_BEGINCONFIG,  "");
+            dhcp.start();
+
+            dhcp.detachFromServer(); /* need to do this to avoid server shutdown on runner destruction */
+        }
+    }
 
     /*
      * Get default buffer.
@@ -1114,7 +1192,7 @@ static DECLCALLBACK(int) drvIntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHa
         drvIntNetSetActive(pThis, true /* fActive */);
     }
 
-    return rc;
+   return rc;
 }
 
 

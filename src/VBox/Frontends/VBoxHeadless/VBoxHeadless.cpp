@@ -24,6 +24,7 @@
 #include <VBox/com/string.h>
 #include <VBox/com/Guid.h>
 #include <VBox/com/ErrorInfo.h>
+#include <VBox/com/errorprint2.h>
 #include <VBox/com/EventQueue.h>
 
 #include <VBox/com/VirtualBox.h>
@@ -221,6 +222,11 @@ public:
     }
 
     STDMETHOD(OnUSBControllerChange)()
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnStorageControllerChange)()
     {
         return S_OK;
     }
@@ -459,7 +465,7 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
         OPT_COMMENT,
     };
 
-    static const RTOPTIONDEF g_aOptions[] =
+    static const RTGETOPTDEF s_aOptions[] =
     {
         { "-startvm", 's', RTGETOPT_REQ_STRING },
         { "--startvm", 's', RTGETOPT_REQ_STRING },
@@ -501,9 +507,10 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
 
     // parse the command line
     int ch;
-    int i = 1;
-    RTOPTIONUNION ValueUnion;
-    while ((ch = RTGetOpt(argc, argv, g_aOptions, RT_ELEMENTS(g_aOptions), &i, &ValueUnion)))
+    RTGETOPTUNION ValueUnion;
+    RTGETOPTSTATE GetState;
+    RTGetOptInit(&GetState, argc, argv, s_aOptions, RT_ELEMENTS(s_aOptions), 1, 0 /* fFlags */);
+    while ((ch = RTGetOpt(&GetState, &ValueUnion)))
     {
         if (ch < 0)
         {
@@ -570,7 +577,11 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
                 pszFileNameParam = ValueUnion.psz;
                 break;
 #endif /* VBOX_FFMPEG defined */
+            case VINF_GETOPT_NOT_OPTION:
+                /* ignore */
+                break;
             default: /* comment */
+                /** @todo If we would not ignore this, that would be really really nice... */
                 break;
         }
     }
@@ -616,34 +627,37 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
     HRESULT rc;
 
     rc = com::Initialize();
-    if (FAILED (rc))
+    if (FAILED(rc))
+    {
+        RTPrintf("ERROR: failed to initialize COM!\n");
         return rc;
+    }
 
     do
     {
-        ComPtr <IVirtualBox> virtualBox;
-        ComPtr <ISession> session;
+        ComPtr<IVirtualBox> virtualBox;
+        ComPtr<ISession> session;
 
-        /* create VirtualBox object */
-        rc = virtualBox.createLocalObject (CLSID_VirtualBox);
-        if (FAILED (rc))
+        rc = virtualBox.createLocalObject(CLSID_VirtualBox);
+        if (FAILED(rc))
+            RTPrintf("ERROR: failed to create the VirtualBox object!\n");
+        else
         {
-            com::ErrorInfo info;
-            if (info.isFullAvailable())
-            {
-                RTPrintf("Failed to create VirtualBox object! Error info: '%lS' (component %lS).\n",
-                         info.getText().raw(), info.getComponent().raw());
-            }
-            else
-                RTPrintf("Failed to create VirtualBox object! No error information available (rc = 0x%x).\n", rc);
-            break;
+            rc = session.createInprocObject(CLSID_Session);
+            if (FAILED(rc))
+                RTPrintf("ERROR: failed to create a session object!\n");
         }
 
-        /* create Session object */
-        rc = session.createInprocObject (CLSID_Session);
-        if (FAILED (rc))
+        if (FAILED(rc))
         {
-            LogError ("Cannot create Session object!", rc);
+            com::ErrorInfo info;
+            if (!info.isFullAvailable() && !info.isBasicAvailable())
+            {
+                com::GluePrintRCMessage(rc);
+                RTPrintf("Most likely, the VirtualBox COM server is not running or failed to start.\n");
+            }
+            else
+                GluePrintErrorInfo(info);
             break;
         }
 

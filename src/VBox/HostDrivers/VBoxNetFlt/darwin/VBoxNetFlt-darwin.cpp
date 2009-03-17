@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFlt-darwin.cpp 15527 2008-12-15 18:11:08Z vboxsync $ */
+/* $Id: VBoxNetFlt-darwin.cpp 17186 2009-02-27 00:57:39Z vboxsync $ */
 /** @file
  * VBoxNetFlt - Network Filter Driver (Host), Darwin Specific Code.
  */
@@ -170,7 +170,7 @@ static kern_return_t    VBoxNetFltDarwinStart(struct kmod_info *pKModInfo, void 
              * for establishing the connect to the support driver.
              */
             memset(&g_VBoxNetFltGlobals, 0, sizeof(g_VBoxNetFltGlobals));
-            rc = vboxNetFltInitGlobals(&g_VBoxNetFltGlobals);
+            rc = vboxNetFltInitGlobalsAndIdc(&g_VBoxNetFltGlobals);
             if (RT_SUCCESS(rc))
             {
                 LogRel(("VBoxFltDrv: version " VBOX_VERSION_STRING " r%d\n", VBOX_SVN_REV));
@@ -203,7 +203,7 @@ static kern_return_t VBoxNetFltDarwinStop(struct kmod_info *pKModInfo, void *pvD
      * This is important as I/O kit / xnu will to be able to do usage
      * tracking for us!
      */
-    int rc = vboxNetFltTryDeleteGlobals(&g_VBoxNetFltGlobals);
+    int rc = vboxNetFltTryDeleteIdcAndGlobals(&g_VBoxNetFltGlobals);
     if (RT_FAILURE(rc))
     {
         Log(("VBoxNetFltDarwinStop - failed, busy.\n"));
@@ -1050,6 +1050,29 @@ void vboxNetFltPortOsSetActive(PVBOXNETFLTINS pThis, bool fActive)
     if (pIfNet)
     {
         /*
+         * If there is no need to set promiscuous mode the only thing
+         * we have to do in order to preserve the backward compatibility
+         * is to try bringing the interface up if it gets activated.
+         */
+        if (pThis->fDisablePromiscuous)
+        {
+            Log(("vboxNetFltPortOsSetActive: promisc disabled, do nothing.\n"));
+            if (fActive)
+            {
+                /*
+                 * Try bring the interface up and running if it's down.
+                 */
+                u_int16_t fIf = ifnet_flags(pIfNet);
+                if ((fIf & (IFF_UP | IFF_RUNNING)) != (IFF_UP | IFF_RUNNING))
+                {
+                    ifnet_set_flags(pIfNet, IFF_UP, IFF_UP);
+                    ifnet_ioctl(pIfNet, 0, SIOCSIFFLAGS, NULL);
+                }
+            }
+            vboxNetFltDarwinReleaseIfNet(pThis, pIfNet);
+            return;
+        }
+        /*
          * This api is a bit weird, the best reference is the code.
          *
          * Also, we have a bit or race conditions wrt the maintance of
@@ -1161,8 +1184,9 @@ void vboxNetFltOsDeleteInstance(PVBOXNETFLTINS pThis)
 }
 
 
-int  vboxNetFltOsInitInstance(PVBOXNETFLTINS pThis)
+int  vboxNetFltOsInitInstance(PVBOXNETFLTINS pThis, void *pvContext)
 {
+    NOREF(pvContext);
     return vboxNetFltDarwinAttachToInterface(pThis, false /* fRediscovery */);
 }
 

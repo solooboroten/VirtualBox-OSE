@@ -1,4 +1,4 @@
-# $Id: CommonFetch.kmk 8758 2008-05-11 18:27:49Z vboxsync $
+# $Id: CommonFetch.kmk 16983 2009-02-21 00:07:59Z vboxsync $
 ## @file
 # Common Fetch.
 # Included by both Makefile.kmk and Makefile-ose.kmk.
@@ -15,21 +15,6 @@
 #  distribution. VirtualBox OSE is distributed in the hope that it will
 #  be useful, but WITHOUT ANY WARRANTY of any kind.
 #
-
-
-#
-# Template for the fetch targets.
-#
-TEMPLATE_VBOXFETCH = Template for all the fetch targets.
-ifdef FETCHDIR
-TEMPLATE_VBOXFETCH_FETCHDIR ?= $(FETCHDIR)
-else
-TEMPLATE_VBOXFETCH_FETCHDIR ?= $(PATH_DEVTOOLS)/FetchDir
-endif
-TEMPLATE_VBOXFETCH_FETCHTOOL = WGET
-TEMPLATE_VBOXFETCH_FETCHFLAGS = $(VBOX_FETCHFLAGS)
-TEMPLATE_VBOXFETCH_UNPACKTOOL = ZIP
-TEMPLATE_VBOXFETCH_UNPACKFLAGS = -o
 
 
 #

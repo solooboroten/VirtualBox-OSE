@@ -1,4 +1,4 @@
-/* $Id: NetIfList-solaris.cpp 15548 2008-12-15 21:33:35Z vboxsync $ */
+/* $Id: NetIfList-solaris.cpp 18018 2009-03-17 13:00:36Z vboxsync $ */
 /** @file
  * Main - NetIfList, Solaris implementation.
  */
@@ -91,8 +91,8 @@ static void vboxSolarisAddHostIface(char *pszIface, int Instance, void *pvHostNe
         SolarisNICMap.insert(NICPair("rtls", "Realtek 8139 Fast Ethernet"));
         SolarisNICMap.insert(NICPair("skge", "SksKonnect Gigabit Ethernet"));
         SolarisNICMap.insert(NICPair("spwr", "SMC EtherPower II 10/100 (9432) Ethernet"));
+        SolarisNICMap.insert(NICPair("vboxnet", "VirtualBox Host Ethernet"));
         SolarisNICMap.insert(NICPair("vnic", "Virtual Network Interface Ethernet"));
-        SolarisNICMap.insert(NICPair("xge", "Neterior Xframe Gigabit Ethernet"));
         SolarisNICMap.insert(NICPair("xge", "Neterior Xframe 10Gigabit Ethernet"));
     }
 
@@ -103,10 +103,15 @@ static void vboxSolarisAddHostIface(char *pszIface, int Instance, void *pvHostNe
     RTStrPrintf(szNICInstance, sizeof(szNICInstance), "%s%d", pszIface, Instance);
     char szNICDesc[256];
     std::string Description = SolarisNICMap[pszIface];
-    if (Description != "")
-        RTStrPrintf(szNICDesc, sizeof(szNICDesc), "%s - %s", szNICInstance, Description.c_str());
+    if (Description != "VirtualBox Host Ethernet")
+    {
+        if (Description != "")
+            RTStrPrintf(szNICDesc, sizeof(szNICDesc), "%s - %s", szNICInstance, Description.c_str());
+        else
+            RTStrPrintf(szNICDesc, sizeof(szNICDesc), "%s - Ethernet", szNICInstance);
+    }
     else
-        RTStrPrintf(szNICDesc, sizeof(szNICDesc), "%s - Ethernet", szNICInstance);
+        RTStrPrintf(szNICDesc, sizeof(szNICDesc), "%s", szNICInstance);
 
     /*
      * Try to get IP V4 address and netmask as well as Ethernet address.
@@ -168,7 +173,7 @@ static void vboxSolarisAddHostIface(char *pszIface, int Instance, void *pvHostNe
                     sizeof(Info.IPv6NetMask.au8));
         }
         close(Sock);
-    }   
+    }
 
     /*
      * Construct UUID with interface name and the MAC address if available.
@@ -185,11 +190,16 @@ static void vboxSolarisAddHostIface(char *pszIface, int Instance, void *pvHostNe
     Uuid.Gen.au8Node[4] = Info.MACAddress.au8[4];
     Uuid.Gen.au8Node[5] = Info.MACAddress.au8[5];
     Info.Uuid = Uuid;
-    Info.enmType = NETIF_T_ETHERNET;
+    Info.enmMediumType = NETIF_T_ETHERNET;
 
+    HostNetworkInterfaceType_T enmType;
+    if (strncmp("vboxnet", szNICInstance, 7))
+        enmType = HostNetworkInterfaceType_Bridged;
+    else
+        enmType = HostNetworkInterfaceType_HostOnly;
     ComObjPtr<HostNetworkInterface> IfObj;
     IfObj.createObject();
-    if (SUCCEEDED(IfObj->init(Bstr(szNICDesc), &Info)))
+    if (SUCCEEDED(IfObj->init(Bstr(szNICDesc), enmType, &Info)))
         pList->push_back(IfObj);
 }
 

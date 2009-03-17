@@ -1,4 +1,4 @@
-/* $Id: CPUM.cpp 15962 2009-01-15 12:33:49Z vboxsync $ */
+/* $Id: CPUM.cpp 17034 2009-02-23 21:05:34Z vboxsync $ */
 /** @file
  * CPUM - CPU Monitor / Manager.
  */
@@ -751,7 +751,7 @@ VMMR3DECL(void) CPUMR3Reset(PVM pVM)
 
         pCtx->trHid.u32Limit            = 0xffff;
         pCtx->trHid.Attr.n.u1Present    = 1;
-        pCtx->trHid.Attr.n.u4Type       = X86_SEL_TYPE_SYS_386_TSS_BUSY;
+        pCtx->trHid.Attr.n.u4Type       = X86_SEL_TYPE_SYS_286_TSS_BUSY;
 
         pCtx->dr[6]                     = X86_DR6_INIT_VAL;
         pCtx->dr[7]                     = X86_DR7_INIT_VAL;
@@ -1014,6 +1014,7 @@ static DECLCALLBACK(int) cpumR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Versio
 
     /*
      * Check that the basic cpuid id information is unchanged.
+     * @todo we should check the 64 bits capabilities too!
      */
     uint32_t au32CpuId[8] = {0};
     ASMCpuId(0, &au32CpuId[0], &au32CpuId[1], &au32CpuId[2], &au32CpuId[3]);
@@ -1022,9 +1023,14 @@ static DECLCALLBACK(int) cpumR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Versio
     rc = SSMR3GetMem(pSSM, &au32CpuIdSaved[0], sizeof(au32CpuIdSaved));
     if (RT_SUCCESS(rc))
     {
+        /* Ignore CPU stepping. */
+        au32CpuId[4]      &=  0xfffffff0;
+        au32CpuIdSaved[4] &=  0xfffffff0;
+
         /* Ignore APIC ID (AMD specs). */
         au32CpuId[5]      &= ~0xff000000;
         au32CpuIdSaved[5] &= ~0xff000000;
+
         /* Ignore the number of Logical CPUs (AMD specs). */
         au32CpuId[5]      &= ~0x00ff0000;
         au32CpuIdSaved[5] &= ~0x00ff0000;

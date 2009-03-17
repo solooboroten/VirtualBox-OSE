@@ -1,4 +1,4 @@
-/* $Id: HWSVMR0.cpp 15931 2009-01-14 09:40:44Z vboxsync $ */
+/* $Id: HWSVMR0.cpp 17926 2009-03-16 12:37:00Z vboxsync $ */
 /** @file
  * HWACCM SVM - Host Context Ring 0.
  */
@@ -893,7 +893,7 @@ ResumeExecution:
     if (!DBGFIsStepping(pVM))
 #endif
     {
-        if (VM_FF_ISPENDING(pVM, VM_FF_TO_R3 | VM_FF_TIMER))
+        if (VM_FF_ISPENDING(pVM, VM_FF_TO_R3 | VM_FF_TIMER | VM_FF_PGM_NEED_HANDY_PAGES))
         {
             VM_FF_CLEAR(pVM, VM_FF_TO_R3);
             STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatSwitchToR3);
@@ -1452,7 +1452,7 @@ ResumeExecution:
                 goto ResumeExecution;
             }
 #ifdef VBOX_STRICT
-            if (rc != VINF_EM_RAW_EMULATE_INSTR)
+            if (rc != VINF_EM_RAW_EMULATE_INSTR && rc != VINF_EM_RAW_EMULATE_IO_BLOCK)
                 LogFlow(("PGMTrap0eHandler failed with %d\n", rc));
 #endif
             /* Need to go back to the recompiler to emulate the instruction. */
@@ -1712,7 +1712,7 @@ ResumeExecution:
             STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatFlushTLBCRxChange);
 
             /* Must be set by PGMSyncCR3 */
-            Assert(PGMGetGuestMode(pVM) <= PGMMODE_PROTECTED || pVCpu->hwaccm.s.fForceTLBFlush);
+            Assert(rc != VINF_SUCCESS || PGMGetGuestMode(pVM) <= PGMMODE_PROTECTED || pVCpu->hwaccm.s.fForceTLBFlush);
         }
         if (rc == VINF_SUCCESS)
         {

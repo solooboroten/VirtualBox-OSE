@@ -1,4 +1,4 @@
-/* $Id: tstDeviceStructSizeGC.cpp 16042 2009-01-19 12:06:00Z vboxsync $ */
+/* $Id: tstDeviceStructSizeGC.cpp 16247 2009-01-26 20:54:05Z vboxsync $ */
 /** @file
  * tstDeviceStructSizeGC - Generate structure member and size checks from the GC perspective.
  *
@@ -84,6 +84,10 @@
 #ifdef VBOX_WITH_LSILOGIC
 # undef LOG_GROUP
 # include "../Storage/DevLsiLogicSCSI.cpp"
+#endif
+#ifdef VBOX_WITH_HPET
+# undef LOG_GROUP
+# include "../PC/DevHPET.cpp"
 #endif
 
 /* we don't use iprt here because we're pretending to be in GC! */
@@ -441,6 +445,9 @@ int main()
     GEN_CHECK_OFF(ACPIState, au8RSDPPage);
     GEN_CHECK_OFF(ACPIState, u8IndexShift);
     GEN_CHECK_OFF(ACPIState, u8UseIOApic);
+    GEN_CHECK_OFF(ACPIState, fUseFdc);
+    GEN_CHECK_OFF(ACPIState, fUseHpet);
+    GEN_CHECK_OFF(ACPIState, fUseSmc);
     GEN_CHECK_OFF(ACPIState, IBase);
     GEN_CHECK_OFF(ACPIState, IACPIPort);
     GEN_CHECK_OFF(ACPIState, pDevIns);
@@ -1420,6 +1427,31 @@ int main()
     GEN_CHECK_OFF(LSILOGICSCSI, pTaskCache);
 #endif /* VBOX_WITH_LSILOGIC */
 
+#ifdef VBOX_WITH_HPET
+    GEN_CHECK_SIZE(HpetState);
+    GEN_CHECK_OFF(HpetState, pDevInsR3);
+    GEN_CHECK_OFF(HpetState, pDevInsR0);
+    GEN_CHECK_OFF(HpetState, pDevInsRC);
+    GEN_CHECK_OFF(HpetState, u64HpetOffset);
+    GEN_CHECK_OFF(HpetState, u64Capabilities);
+    GEN_CHECK_OFF(HpetState, u64Config);
+    GEN_CHECK_OFF(HpetState, u64Isr);
+    GEN_CHECK_OFF(HpetState, u64HpetCounter);
+
+    GEN_CHECK_SIZE(HpetTimer);
+    GEN_CHECK_OFF(HpetTimer, pTimerR3);
+    GEN_CHECK_OFF(HpetTimer, pHpetR3);
+    GEN_CHECK_OFF(HpetTimer, pTimerR0);
+    GEN_CHECK_OFF(HpetTimer, pHpetR0);
+    GEN_CHECK_OFF(HpetTimer, pTimerRC);
+    GEN_CHECK_OFF(HpetTimer, pHpetRC);
+    GEN_CHECK_OFF(HpetTimer, u8TimerNumber);
+    GEN_CHECK_OFF(HpetTimer, u64Config);
+    GEN_CHECK_OFF(HpetTimer, u64Cmp);
+    GEN_CHECK_OFF(HpetTimer, u64Fsb);
+    GEN_CHECK_OFF(HpetTimer, u64Period);
+    GEN_CHECK_OFF(HpetTimer, u8Wrap);
+#endif
+
     return (0);
 }
-

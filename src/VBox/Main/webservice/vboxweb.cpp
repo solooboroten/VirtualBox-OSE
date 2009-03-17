@@ -25,6 +25,7 @@
 #include <VBox/com/string.h>
 #include <VBox/com/Guid.h>
 #include <VBox/com/ErrorInfo.h>
+#include <VBox/com/errorprint2.h>
 #include <VBox/com/EventQueue.h>
 #include <VBox/com/VirtualBox.h>
 #include <VBox/err.h>
@@ -129,7 +130,7 @@ ULONG64             g_cManagedObjects = 0;
  *
  ****************************************************************************/
 
-static const RTOPTIONDEF g_aOptions[]
+static const RTGETOPTDEF g_aOptions[]
     = {
         { "--help",             'h', RTGETOPT_REQ_NOTHING },
 #if defined(RT_OS_DARWIN) || defined(RT_OS_LINUX) || defined (RT_OS_SOLARIS) || defined(RT_OS_FREEBSD)
@@ -152,7 +153,7 @@ void DisplayHelp()
     {
         std::string str(g_aOptions[i].pszLong);
         str += ", -";
-        str += (char)g_aOptions[i].iShort;
+        str += g_aOptions[i].iShort;
         str += ":";
 
         const char *pcszDescr = "";
@@ -244,40 +245,21 @@ int main(int argc, char* argv[])
 {
     int rc;
 
+    // intialize runtime
+    RTR3Init();
+
     RTStrmPrintf(g_pStdErr, "Sun xVM VirtualBox Webservice Version %s\n"
                             "(C) 2005-2009 Sun Microsystems, Inc.\n"
                             "All rights reserved.\n", VBOX_VERSION_STRING);
 
-    // intialize runtime
-    RTR3Init(); /** @todo r=bird: This isn't at top of main(), is it? */
-
     int c;
-    int i = 1;
-    RTOPTIONUNION ValueUnion;
-    while ((c = RTGetOpt(argc, argv, g_aOptions, RT_ELEMENTS(g_aOptions), &i, &ValueUnion)))
+    RTGETOPTUNION ValueUnion;
+    RTGETOPTSTATE GetState;
+    RTGetOptInit(&GetState, argc, argv, g_aOptions, RT_ELEMENTS(g_aOptions), 1, 0 /* fFlags */);
+    while ((c = RTGetOpt(&GetState, &ValueUnion)))
     {
         switch (c)
         {
-            case VERR_GETOPT_UNKNOWN_OPTION:
-                RTStrmPrintf(g_pStdErr, "Unknown option %s\n", argv[i]);
-                exit(1);
-            break;
-
-            case VERR_GETOPT_REQUIRED_ARGUMENT_MISSING:
-                RTStrmPrintf(g_pStdErr, "Option %s requires an argument value\n", ValueUnion.pDef->pszLong);
-                exit(1);
-            break;
-
-            case VERR_GETOPT_INVALID_ARGUMENT_FORMAT:
-                RTStrmPrintf(g_pStdErr, "Argument to option %s has invalid format\n", ValueUnion.pDef->pszLong);
-                exit(1);
-            break;
-
-            default:
-                RTStrmPrintf(g_pStdErr, "RTGetOpt returned %d\n", c);
-                exit(1);
-            break;
-
             case 'H':
                 g_pcszBindToHost = ValueUnion.psz;
             break;
@@ -303,7 +285,8 @@ int main(int argc, char* argv[])
                     exit(2);
                 }
 
-                WebLog("Opened log file \"%s\"\n", ValueUnion.psz);
+                WebLog("Sun xVM VirtualBox Webservice Version %s\n"
+                       "Opened log file \"%s\"\n", VBOX_VERSION_STRING, ValueUnion.psz);
             }
             break;
 
@@ -321,12 +304,20 @@ int main(int argc, char* argv[])
                 g_fDaemonize = true;
             break;
 #endif
+            case VINF_GETOPT_NOT_OPTION:
+                RTStrmPrintf(g_pStdErr, "Unknown option %s\n", ValueUnion.psz);
+            return 1;
+
+            default:
+                if (c > 0)
+                    RTStrmPrintf(g_pStdErr, "missing case: %c\n", c);
+                else if (ValueUnion.pDef)
+                    RTStrmPrintf(g_pStdErr, "%s: %Rrs", ValueUnion.pDef->pszLong, c);
+                else
+                    RTStrmPrintf(g_pStdErr, "%Rrs", c);
+                exit(1);
+            break;
         }
-    }
-    if (i != argc)
-    {
-        RTStrmPrintf(g_pStdErr, "Unknown option %s\n", argv[i]);
-        exit(1);
     }
 
 #if defined(RT_OS_DARWIN) || defined(RT_OS_LINUX) || defined (RT_OS_SOLARIS) || defined(RT_OS_FREEBSD)
@@ -343,24 +334,36 @@ int main(int argc, char* argv[])
 #endif
 
     // intialize COM/XPCOM
-    ComPtr<ISession> session;
-    if ((rc = com::Initialize()))
-        RTStrmPrintf(g_pStdErr, "[!] Failed to initialize COM!\n");
-    else if ((rc = g_pVirtualBox.createLocalObject(CLSID_VirtualBox)))
-        RTStrmPrintf(g_pStdErr, "[!] Failed to create the local VirtualBox object!\n");
-    else if ((rc = session.createInprocObject(CLSID_Session)))
-        RTStrmPrintf(g_pStdErr, "[!] Failed to create the inproc VirtualBox object!\n");
-
-    if (rc)
+    rc = com::Initialize();
+    if (FAILED(rc))
     {
-        PRINT_RC_MESSAGE(rc);
+        RTPrintf("ERROR: failed to initialize COM!\n");
+        return rc;
+    }
 
+    ComPtr<ISession> session;
+
+    rc = g_pVirtualBox.createLocalObject(CLSID_VirtualBox);
+    if (FAILED(rc))
+        RTPrintf("ERROR: failed to create the VirtualBox object!\n");
+    else
+    {
+        rc = session.createInprocObject(CLSID_Session);
+        if (FAILED(rc))
+            RTPrintf("ERROR: failed to create a session object!\n");
+    }
+
+    if (FAILED(rc))
+    {
         com::ErrorInfo info;
         if (!info.isFullAvailable() && !info.isBasicAvailable())
-            RTStrmPrintf(g_pStdErr, "[!] Most likely, the VirtualBox COM server is not running or failed to start.\n");
+        {
+            com::GluePrintRCMessage(rc);
+            RTPrintf("Most likely, the VirtualBox COM server is not running or failed to start.\n");
+        }
         else
-            PRINT_ERROR_INFO(info);
-        exit(rc);
+            com::GluePrintErrorInfo(info);
+        return rc;
     }
 
     if (g_iWatchdogTimeoutSecs > 0)
@@ -687,19 +690,18 @@ bool SplitManagedObjectRef(const WSDLT_ID &id,
  * Creates a managed object reference (in string form) from
  * two integers representing a session and object ID, respectively.
  *
- * @param id
+ * @param sz Buffer with at least 34 bytes space to receive MOR string.
  * @param sessid
  * @param objid
  * @return
  */
-WSDLT_ID MakeManagedObjectRef(uint64_t &sessid,
-                              uint64_t &objid)
+void MakeManagedObjectRef(char *sz,
+                          uint64_t &sessid,
+                          uint64_t &objid)
 {
-    char sz[34];
     RTStrFormatNumber(sz, sessid, 16, 16, 0, RTSTR_F_64BIT | RTSTR_F_ZEROPAD);
     sz[16] = '-';
     RTStrFormatNumber(sz + 17, objid, 16, 16, 0, RTSTR_F_64BIT | RTSTR_F_ZEROPAD);
-    return sz;
 }
 
 /****************************************************************************
@@ -861,7 +863,11 @@ int WebServiceSession::authenticate(const char *pcszUsername,
             // now create the ISession object that this webservice session can use
             // (and of which IWebsessionManager::getSessionObject returns a managed object reference)
             ComPtr<ISession> session;
-            CHECK_RC_BREAK(session.createInprocObject(CLSID_Session));
+            if (FAILED(rc = session.createInprocObject(CLSID_Session)))
+            {
+                WEBDEBUG(("ERROR: cannot create session object!"));
+                break;
+            }
 
             _pISession = new ManagedObjectRef(*this, g_pcszISession, session);
 
@@ -1023,7 +1029,9 @@ ManagedObjectRef::ManagedObjectRef(WebServiceSession &session,
     // and count globally
     ULONG64 cTotal = ++g_cManagedObjects;           // raise global count and make a copy for the debug message below
 
-    _strID = MakeManagedObjectRef(session._uSessionID, _id);
+    char sz[34];
+    MakeManagedObjectRef(sz, session._uSessionID, _id);
+    _strID = sz;
 
     session._pp->_mapManagedObjectsById[_id] = this;
     session._pp->_mapManagedObjectsByPtr[_ulp] = this;

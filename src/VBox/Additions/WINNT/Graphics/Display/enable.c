@@ -1,5 +1,22 @@
 /******************************Module*Header*******************************\
 *
+* Copyright (C) 2006-2007 Sun Microsystems, Inc.
+*
+* This file is part of VirtualBox Open Source Edition (OSE), as
+* available from http://www.virtualbox.org. This file is free software;
+* you can redistribute it and/or modify it under the terms of the GNU
+* General Public License (GPL) as published by the Free Software
+* Foundation, in version 2 as it comes in the "COPYING" file of the
+* VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+* hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+*
+* Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
+* Clara, CA 95054 USA or visit http://www.sun.com if you need
+* additional information or have any questions.
+*/
+/*
+* Based in part on Microsoft DDK sample code
+*
 *                           *******************
 *                           * GDI SAMPLE CODE *
 *                           *******************
@@ -112,6 +129,7 @@ ULONG APIENTRY DrvEscape(SURFOBJ *pso, ULONG iEsc, ULONG cjIn, PVOID pvIn, ULONG
     {
         ULONG ret = 0;
 
+#ifndef VBOX_WITH_HGSMI
         if (ppdev && ppdev->pInfo && vboxHwBufferBeginUpdate (ppdev))
         {
             if (ppdev->vbva.pVbvaMemory->fu32ModeFlags
@@ -124,6 +142,18 @@ ULONG APIENTRY DrvEscape(SURFOBJ *pso, ULONG iEsc, ULONG cjIn, PVOID pvIn, ULONG
         }
         else
             DISPDBG((0, "VBOXESC_ISVRDPACTIVE -> 0\n"));
+#else
+        if (ppdev && ppdev->pVBVA)
+        {
+            if (ppdev->pVBVA->u32HostEvents & VBVA_F_MODE_VRDP)
+            {
+                ret = 1;
+            }
+            DISPDBG((0, "VBOXESC_ISVRDPACTIVE -> %d (%x)\n", ret, ppdev->pVBVA->u32HostEvents));
+        }
+        else
+            DISPDBG((0, "VBOXESC_ISVRDPACTIVE -> 0\n"));
+#endif  /* VBOX_WITH_HGSMI */
         return ret;
     }
 
@@ -256,6 +286,7 @@ DRVFN gadrvfn_nt5[] = {
     {   INDEX_DrvDitherColor,           (PFN) DrvDitherColor        },	// 13 0xd
     {   INDEX_DrvStrokePath,            (PFN) DrvStrokePath         },	// 14 0xe
     {   INDEX_DrvFillPath,              (PFN) DrvFillPath           },	// 15 0xf
+//    {   INDEX_DrvStrokeAndFillPath,     (PFN) DrvStrokeAndFillPath  },	// 16 0x10
     {   INDEX_DrvPaint,                 (PFN) DrvPaint              },	// 17 0x11
     {   INDEX_DrvBitBlt,                (PFN) DrvBitBlt             },	// 18 0x12
     {   INDEX_DrvCopyBits,              (PFN) DrvCopyBits           },	// 19 0x13
@@ -298,7 +329,9 @@ static ULONG gflHooks = 0;
 #define HOOKS_BMF24BPP gflHooks
 #define HOOKS_BMF32BPP gflHooks
 
+#ifndef VBOX_WITH_HGSMI
 HSEMAPHORE ghsemHwBuffer = 0;
+#endif /* !VBOX_WITH_HGSMI */
 
 /******************************Public*Routine******************************\
 * DrvEnableDriver
@@ -318,7 +351,7 @@ BOOL DrvEnableDriver(ULONG iEngineVersion, ULONG cj, PDRVENABLEDATA pded)
 
     // Set up hook flags to intercept all functions which can generate VRDP orders
     gflHooks = HOOK_BITBLT | HOOK_TEXTOUT | HOOK_FILLPATH |
-               HOOK_COPYBITS | HOOK_STROKEPATH | HOOK_LINETO |
+               HOOK_COPYBITS | HOOK_STROKEPATH | HOOK_LINETO | /* HOOK_STROKEANDFILLPATH | */
 #ifdef VBOX_NEW_SURFACE_CODE
                HOOK_PAINT | HOOK_STRETCHBLT | HOOK_SYNCHRONIZE;
 #else
@@ -349,10 +382,12 @@ BOOL DrvEnableDriver(ULONG iEngineVersion, ULONG cj, PDRVENABLEDATA pded)
             DDI_DRIVER_VERSION_NT5:
             DDI_DRIVER_VERSION_NT4;
 
+#ifndef VBOX_WITH_HGSMI
     if (!ghsemHwBuffer)
     {
         ghsemHwBuffer = EngCreateSemaphore ();
     }
+#endif /* !VBOX_WITH_HGSMI */
 
     return(TRUE);
 }
@@ -369,11 +404,13 @@ VOID DrvDisableDriver(VOID)
 {
     DISPDBG((0, "VBoxDisp::DrvDisableDriver called.\n"));
 
+#ifndef VBOX_WITH_HGSMI
     if (ghsemHwBuffer)
     {
         EngDeleteSemaphore (ghsemHwBuffer);
         ghsemHwBuffer = NULL;
     }
+#endif /* !VBOX_WITH_HGSMI */
 
     return;
 }
@@ -1110,6 +1147,7 @@ PVOID pvData)
     {
         case DN_DEVICE_ORIGIN:
             ppdev->ptlDevOrg = *(PPOINTL)pvData;
+#ifndef VBOX_WITH_HGSMI
             DISPDBG((3, "DN_DEVICE_ORIGIN: %d, %d (PSO = %p, pInfo = %p)\n", ppdev->ptlDevOrg.x, 
                      ppdev->ptlDevOrg.y, pso, ppdev->pInfo));
             if (ppdev->pInfo)
@@ -1118,6 +1156,11 @@ PVOID pvData)
                 ppdev->pInfo->screen.yOrigin = ppdev->ptlDevOrg.y;
                 VBoxProcessDisplayInfo(ppdev);
             }
+#else
+            DISPDBG((3, "DN_DEVICE_ORIGIN: %d, %d (PSO = %p)\n", ppdev->ptlDevOrg.x, 
+                     ppdev->ptlDevOrg.y, pso));
+            VBoxProcessDisplayInfo(ppdev);
+#endif /* VBOX_WITH_HGSMI */
             break;
         case DN_DRAWING_BEGIN:
             DISPDBG((3, "DN_DRAWING_BEGIN (PSO = %p)\n", pso));

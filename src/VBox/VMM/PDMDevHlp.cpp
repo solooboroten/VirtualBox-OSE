@@ -1,4 +1,4 @@
-/* $Id: PDMDevHlp.cpp 15129 2008-12-08 19:12:50Z vboxsync $ */
+/* $Id: PDMDevHlp.cpp 17534 2009-03-08 03:05:52Z vboxsync $ */
 /** @file
  * PDM - Pluggable Device and Driver Manager, Device Helpers.
  */
@@ -46,12 +46,6 @@
 /*******************************************************************************
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
-/** Allow physical read and writes from any thread.
- * (pdmR3DevHlp_PhysRead and pdmR3DevHlp_PhysWrite.)
- */
-#define PDM_PHYS_READWRITE_FROM_ANY_THREAD
-
-
 /** @name R3 DevHlp
  * @{
  */
@@ -348,7 +342,15 @@ static DECLCALLBACK(int) pdmR3DevHlp_ROMRegister(PPDMDEVINS pDevIns, RTGCPHYS GC
     LogFlow(("pdmR3DevHlp_ROMRegister: caller='%s'/%d: GCPhysStart=%RGp cbRange=%#x pvBinary=%p fShadow=%RTbool pszDesc=%p:{%s}\n",
              pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, GCPhysStart, cbRange, pvBinary, fShadow, pszDesc, pszDesc));
 
+#ifdef VBOX_WITH_NEW_PHYS_CODE
+    uint32_t fFlags = 0;
+    if (fShadow)
+        fFlags |= PGMPHYS_ROM_FLAG_SHADOWED;
+    /** @todo PGMPHYS_ROM_FLAG_PERMANENT_BINARY */
+    int rc = PGMR3PhysRomRegister(pDevIns->Internal.s.pVMR3, pDevIns, GCPhysStart, cbRange, pvBinary, fFlags, pszDesc);
+#else
     int rc = MMR3PhysRomRegister(pDevIns->Internal.s.pVMR3, pDevIns, GCPhysStart, cbRange, pvBinary, fShadow, pszDesc);
+#endif
 
     LogFlow(("pdmR3DevHlp_ROMRegister: caller='%s'/%d: returns %Rrc\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, rc));
     return rc;
@@ -2024,32 +2026,22 @@ static DECLCALLBACK(int) pdmR3DevHlp_DMACRegister(PPDMDEVINS pDevIns, PPDMDMACRE
 static DECLCALLBACK(void) pdmR3DevHlp_PhysRead(PPDMDEVINS pDevIns, RTGCPHYS GCPhys, void *pvBuf, size_t cbRead)
 {
     PDMDEV_ASSERT_DEVINS(pDevIns);
+    PVM pVM = pDevIns->Internal.s.pVMR3;
     LogFlow(("pdmR3DevHlp_PhysRead: caller='%s'/%d: GCPhys=%RGp pvBuf=%p cbRead=%#x\n",
              pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, GCPhys, pvBuf, cbRead));
 
-    /*
-     * For the convenience of the device we put no thread restriction on this interface.
-     * That means we'll have to check which thread we're in and choose our path.
-     */
-#ifdef PDM_PHYS_READWRITE_FROM_ANY_THREAD
-    PGMPhysRead(pDevIns->Internal.s.pVMR3, GCPhys, pvBuf, cbRead);
-#else
-    if (VM_IS_EMT(pDevIns->Internal.s.pVMR3) || VMMR3LockIsOwner(pDevIns->Internal.s.pVMR3))
-        PGMPhysRead(pDevIns->Internal.s.pVMR3, GCPhys, pvBuf, cbRead);
+    int rc;
+#ifdef VBOX_WITH_NEW_PHYS_CODE
+    if (!VM_IS_EMT(pVM))
+        rc = PGMR3PhysReadExternal(pVM, GCPhys, pvBuf, cbRead);
     else
-    {
-        Log(("pdmR3DevHlp_PhysRead: caller='%s'/%d: Requesting call in EMT...\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance));
-        PVMREQ pReq;
-        AssertCompileSize(RTGCPHYS, 4);
-        int rc = VMR3ReqCallVoid(pDevIns->Internal.s.pVMR3, &pReq, RT_INDEFINITE_WAIT,
-                                 (PFNRT)PGMPhysRead, 4, pDevIns->Internal.s.pVMR3, GCPhys, pvBuf, cbRead);
-        while (rc == VERR_TIMEOUT)
-            rc = VMR3ReqWait(pReq, RT_INDEFINITE_WAIT);
-        AssertReleaseRC(rc);
-        VMR3ReqFree(pReq);
-    }
+        rc = PGMPhysRead(pVM, GCPhys, pvBuf, cbRead);
+#else
+    PGMPhysRead(pVM, GCPhys, pvBuf, cbRead);
+    rc = VINF_SUCCESS;
 #endif
-    Log(("pdmR3DevHlp_PhysRead: caller='%s'/%d: returns void\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance));
+    Log(("pdmR3DevHlp_PhysRead: caller='%s'/%d: returns %Rrc\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, rc));
+    /** @todo return rc; */ NOREF(rc);
 }
 
 
@@ -2057,32 +2049,22 @@ static DECLCALLBACK(void) pdmR3DevHlp_PhysRead(PPDMDEVINS pDevIns, RTGCPHYS GCPh
 static DECLCALLBACK(void) pdmR3DevHlp_PhysWrite(PPDMDEVINS pDevIns, RTGCPHYS GCPhys, const void *pvBuf, size_t cbWrite)
 {
     PDMDEV_ASSERT_DEVINS(pDevIns);
+    PVM pVM = pDevIns->Internal.s.pVMR3;
     LogFlow(("pdmR3DevHlp_PhysWrite: caller='%s'/%d: GCPhys=%RGp pvBuf=%p cbWrite=%#x\n",
              pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, GCPhys, pvBuf, cbWrite));
 
-    /*
-     * For the convenience of the device we put no thread restriction on this interface.
-     * That means we'll have to check which thread we're in and choose our path.
-     */
-#ifdef PDM_PHYS_READWRITE_FROM_ANY_THREAD
-    PGMPhysWrite(pDevIns->Internal.s.pVMR3, GCPhys, pvBuf, cbWrite);
-#else
-    if (VM_IS_EMT(pDevIns->Internal.s.pVMR3) || VMMR3LockIsOwner(pDevIns->Internal.s.pVMR3))
-        PGMPhysWrite(pDevIns->Internal.s.pVMR3, GCPhys, pvBuf, cbWrite);
+    int rc;
+#ifdef VBOX_WITH_NEW_PHYS_CODE
+    if (!VM_IS_EMT(pVM))
+        rc = PGMR3PhysWriteExternal(pVM, GCPhys, pvBuf, cbWrite);
     else
-    {
-        Log(("pdmR3DevHlp_PhysWrite: caller='%s'/%d: Requesting call in EMT...\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance));
-        PVMREQ pReq;
-        AssertCompileSize(RTGCPHYS, 4);
-        int rc = VMR3ReqCallVoid(pDevIns->Internal.s.pVMR3, &pReq, RT_INDEFINITE_WAIT,
-                                 (PFNRT)PGMPhysWrite, 4, pDevIns->Internal.s.pVMR3, GCPhys, pvBuf, cbWrite);
-        while (rc == VERR_TIMEOUT)
-            rc = VMR3ReqWait(pReq, RT_INDEFINITE_WAIT);
-        AssertReleaseRC(rc);
-        VMR3ReqFree(pReq);
-    }
+        rc = PGMPhysWrite(pVM, GCPhys, pvBuf, cbWrite);
+#else
+    PGMPhysWrite(pVM, GCPhys, pvBuf, cbWrite);
+    rc = VINF_SUCCESS;
 #endif
-    Log(("pdmR3DevHlp_PhysWrite: caller='%s'/%d: returns void\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance));
+    Log(("pdmR3DevHlp_PhysWrite: caller='%s'/%d: returns %Rrc\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, rc));
+    /** @todo return rc; */ NOREF(rc);
 }
 
 
@@ -2129,6 +2111,10 @@ static DECLCALLBACK(int) pdmR3DevHlp_PhysWriteGCVirt(PPDMDEVINS pDevIns, RTGCPTR
 /** @copydoc PDMDEVHLPR3::pfnPhysReserve */
 static DECLCALLBACK(int) pdmR3DevHlp_PhysReserve(PPDMDEVINS pDevIns, RTGCPHYS GCPhys, RTUINT cbRange, const char *pszDesc)
 {
+#ifdef VBOX_WITH_NEW_PHYS_CODE
+    AssertFailed();
+    return VERR_ACCESS_DENIED;
+#else
     PDMDEV_ASSERT_DEVINS(pDevIns);
     VM_ASSERT_EMT(pDevIns->Internal.s.pVMR3);
     LogFlow(("pdmR3DevHlp_PhysReserve: caller='%s'/%d: GCPhys=%RGp cbRange=%#x pszDesc=%p:{%s}\n",
@@ -2139,6 +2125,7 @@ static DECLCALLBACK(int) pdmR3DevHlp_PhysReserve(PPDMDEVINS pDevIns, RTGCPHYS GC
     LogFlow(("pdmR3DevHlp_PhysReserve: caller='%s'/%d: returns %Rrc\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, rc));
 
     return rc;
+#endif
 }
 
 
@@ -2504,13 +2491,17 @@ static DECLCALLBACK(void) pdmR3DevHlp_GetCpuId(PPDMDEVINS pDevIns, uint32_t iLea
 
 
 /** @copydoc PDMDEVHLPR3::pfnROMProtectShadow */
-static DECLCALLBACK(int) pdmR3DevHlp_ROMProtectShadow(PPDMDEVINS pDevIns, RTGCPHYS GCPhysStart, RTUINT cbRange)
+static DECLCALLBACK(int) pdmR3DevHlp_ROMProtectShadow(PPDMDEVINS pDevIns, RTGCPHYS GCPhysStart, RTUINT cbRange, PGMROMPROT enmProt)
 {
     PDMDEV_ASSERT_DEVINS(pDevIns);
-    LogFlow(("pdmR3DevHlp_ROMProtectShadow: caller='%s'/%d: GCPhysStart=%RGp cbRange=%#x\n",
-             pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, GCPhysStart, cbRange));
+    LogFlow(("pdmR3DevHlp_ROMProtectShadow: caller='%s'/%d: GCPhysStart=%RGp cbRange=%#x enmProt=%d\n",
+             pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, GCPhysStart, cbRange, enmProt));
 
+#ifdef VBOX_WITH_NEW_PHYS_CODE
+    int rc = PGMR3PhysRomProtect(pDevIns->Internal.s.pVMR3, GCPhysStart, cbRange, enmProt);
+#else
     int rc = MMR3PhysRomProtect(pDevIns->Internal.s.pVMR3, GCPhysStart, cbRange);
+#endif
 
     LogFlow(("pdmR3DevHlp_ROMProtectShadow: caller='%s'/%d: returns %Rrc\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance, rc));
     return rc;
@@ -3049,7 +3040,7 @@ static DECLCALLBACK(void) pdmR3DevHlp_Untrusted_GetCpuId(PPDMDEVINS pDevIns, uin
 
 
 /** @copydoc PDMDEVHLPR3::pfnROMProtectShadow */
-static DECLCALLBACK(int) pdmR3DevHlp_Untrusted_ROMProtectShadow(PPDMDEVINS pDevIns, RTGCPHYS GCPhysStart, RTUINT cbRange)
+static DECLCALLBACK(int) pdmR3DevHlp_Untrusted_ROMProtectShadow(PPDMDEVINS pDevIns, RTGCPHYS GCPhysStart, RTUINT cbRange, PGMROMPROT enmProt)
 {
     PDMDEV_ASSERT_DEVINS(pDevIns);
     AssertReleaseMsgFailed(("Untrusted device called trusted helper! '%s'/%d\n", pDevIns->pDevReg->szDeviceName, pDevIns->iInstance));

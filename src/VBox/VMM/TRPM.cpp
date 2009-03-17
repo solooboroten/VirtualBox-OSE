@@ -1,4 +1,4 @@
-/* $Id: TRPM.cpp 14755 2008-11-28 02:58:01Z vboxsync $ */
+/* $Id: TRPM.cpp 17428 2009-03-06 01:59:51Z vboxsync $ */
 /** @file
  * TRPM - The Trap Monitor.
  */
@@ -1231,6 +1231,8 @@ VMMR3DECL(int) TRPMR3SetGuestTrapHandler(PVM pVM, unsigned iTrap, RTRCPTR pHandl
          * Exactly why 0x80 is safe on 32-bit Windows is a bit hazy, but it seems
          * to work ok... However on 64-bit Vista (SMP?) is doesn't work reliably.
          * Booting Linux/BSD guest will cause system lockups on most of the computers.
+         * -> Update: It seems gate 0x80 is not safe on 32-bits Windows either. See
+         *            defect #3604.
          *
          * PORTME - Check if your host keeps any of these gates free from hw ints.
          *
@@ -1239,7 +1241,7 @@ VMMR3DECL(int) TRPMR3SetGuestTrapHandler(PVM pVM, unsigned iTrap, RTRCPTR pHandl
         /** @todo handle those dependencies better! */
         /** @todo Solve this in a proper manner. see defect #1186 */
 #if defined(RT_OS_WINDOWS) && defined(RT_ARCH_X86)
-        if (iTrap == 0x2E || iTrap == 0x80)
+        if (iTrap == 0x2E)
 #elif defined(RT_OS_LINUX)
         if (iTrap == 0x80)
 #else
@@ -1317,8 +1319,9 @@ VMMR3DECL(bool) TRPMR3IsGateHandler(PVM pVM, RTRCPTR GCPtr)
          * Convert this page to a HC address.
          * (This function checks for not-present pages.)
          */
-        PVBOXIDTE   pIDTE;
-        int rc = PGMPhysGCPtr2R3Ptr(pVM, GCPtrIDTE, (void **)&pIDTE);
+        PCVBOXIDTE      pIDTE;
+        PGMPAGEMAPLOCK  Lock;
+        int rc = PGMPhysGCPtr2CCPtrReadOnly(pVM, GCPtrIDTE, (const void **)&pIDTE, &Lock);
         if (RT_SUCCESS(rc))
         {
             /*
@@ -1331,7 +1334,10 @@ VMMR3DECL(bool) TRPMR3IsGateHandler(PVM pVM, RTRCPTR GCPtr)
                 {
                     RTRCPTR GCPtrHandler = VBOXIDTE_OFFSET(*pIDTE);
                     if (GCPtr == GCPtrHandler)
+                    {
+                        PGMPhysReleasePageMappingLock(pVM, &Lock);
                         return true;
+                    }
                 }
 
                 /* next entry */
@@ -1345,6 +1351,7 @@ VMMR3DECL(bool) TRPMR3IsGateHandler(PVM pVM, RTRCPTR GCPtr)
                 GCPtrIDTE += sizeof(VBOXIDTE);
                 pIDTE++;
             }
+            PGMPhysReleasePageMappingLock(pVM, &Lock);
         }
         else
         {

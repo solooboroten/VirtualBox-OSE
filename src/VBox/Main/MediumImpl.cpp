@@ -1,4 +1,4 @@
-/* $Id: MediumImpl.cpp 15215 2008-12-09 23:46:52Z vboxsync $ */
+/* $Id: MediumImpl.cpp 16867 2009-02-17 17:00:56Z vboxsync $ */
 
 /** @file
  *
@@ -29,11 +29,12 @@
 
 #include <VBox/com/array.h>
 
+#include <VBox/err.h>
+#include <VBox/settings.h>
+
 #include <iprt/param.h>
 #include <iprt/path.h>
 #include <iprt/file.h>
-
-#include <VBox/err.h>
 
 ////////////////////////////////////////////////////////////////////////////////
 // MediumBase class
@@ -1094,31 +1095,31 @@ HRESULT ImageMediumBase::saveSettings (settings::Key &aImagesNode)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DVDImage2 class
+// DVDImage class
 ////////////////////////////////////////////////////////////////////////////////
 
-DEFINE_EMPTY_CTOR_DTOR (DVDImage2)
+DEFINE_EMPTY_CTOR_DTOR (DVDImage)
 
 /**
  * @note Called from within this object's AutoMayUninitSpan and from under
  *       mVirtualBox write lock.
  */
-HRESULT DVDImage2::unregisterWithVirtualBox()
+HRESULT DVDImage::unregisterWithVirtualBox()
 {
     return mVirtualBox->unregisterDVDImage (this);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// FloppyImage2 class
+// FloppyImage class
 ////////////////////////////////////////////////////////////////////////////////
 
-DEFINE_EMPTY_CTOR_DTOR (FloppyImage2)
+DEFINE_EMPTY_CTOR_DTOR (FloppyImage)
 
 /**
  * @note Called from within this object's AutoMayUninitSpan and from under
  *       mVirtualBox write lock.
  */
-HRESULT FloppyImage2::unregisterWithVirtualBox()
+HRESULT FloppyImage::unregisterWithVirtualBox()
 {
     return mVirtualBox->unregisterFloppyImage (this);
 }

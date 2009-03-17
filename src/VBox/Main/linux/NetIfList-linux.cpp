@@ -1,4 +1,4 @@
-/* $Id: NetIfList-linux.cpp 15936 2009-01-14 12:37:54Z vboxsync $ */
+/* $Id: NetIfList-linux.cpp 18018 2009-03-17 13:00:36Z vboxsync $ */
 /** @file
  * Main - NetIfList, Linux implementation.
  */
@@ -51,17 +51,21 @@ static int getInterfaceInfo(int iSocket, const char *pszName, PNETIFINFO pInfo)
         switch (Req.ifr_hwaddr.sa_family)
         {
             case ARPHRD_ETHER:
-                pInfo->enmType = NETIF_T_ETHERNET;
+                pInfo->enmMediumType = NETIF_T_ETHERNET;
                 break;
             default:
-                pInfo->enmType = NETIF_T_UNKNOWN;
+                pInfo->enmMediumType = NETIF_T_UNKNOWN;
                 break;
         }
-        /* Pick up some garbage from stack. */
+        /* Generate UUID from name and MAC address. */
         RTUUID uuid;
-        Assert(sizeof(uuid) <= sizeof(Req));
+        RTUuidClear(&uuid);
+        memcpy(&uuid, Req.ifr_name, RT_MIN(sizeof(Req.ifr_name), sizeof(uuid)));
+        uuid.Gen.u8ClockSeqHiAndReserved = (uuid.Gen.u8ClockSeqHiAndReserved & 0x3f) | 0x80;
+        uuid.Gen.u16TimeHiAndVersion = (uuid.Gen.u16TimeHiAndVersion & 0x0fff) | 0x4000;
         memcpy(uuid.Gen.au8Node, &Req.ifr_hwaddr.sa_data, sizeof(uuid.Gen.au8Node));
         pInfo->Uuid = uuid;
+
         memcpy(&pInfo->MACAddress, Req.ifr_hwaddr.sa_data, sizeof(pInfo->MACAddress));
 
         if (ioctl(iSocket, SIOCGIFADDR, &Req) >= 0)
@@ -137,11 +141,18 @@ int NetIfList(std::list <ComObjPtr <HostNetworkInterface> > &list)
                 rc = getInterfaceInfo(sock, pszName, &Info);
                 if (RT_FAILURE(rc))
                     break;
-                if (Info.enmType == NETIF_T_ETHERNET)
+                if (Info.enmMediumType == NETIF_T_ETHERNET)
                 {
                     ComObjPtr<HostNetworkInterface> IfObj;
                     IfObj.createObject();
-                    if (SUCCEEDED(IfObj->init(Bstr(pszName), &Info)))
+
+                    HostNetworkInterfaceType_T enmType;
+                    if (strncmp("vboxnet", pszName, 7))
+                        enmType = HostNetworkInterfaceType_Bridged;
+                    else
+                        enmType = HostNetworkInterfaceType_HostOnly;
+
+                    if (SUCCEEDED(IfObj->init(Bstr(pszName), enmType, &Info)))
                         list.push_back(IfObj);
                 }
 
@@ -153,5 +164,3 @@ int NetIfList(std::list <ComObjPtr <HostNetworkInterface> > &list)
 
     return rc;
 }
-
-

@@ -2,6 +2,23 @@
 
 /******************************Module*Header**********************************\
 *
+* Copyright (C) 2006-2007 Sun Microsystems, Inc.
+*
+* This file is part of VirtualBox Open Source Edition (OSE), as
+* available from http://www.virtualbox.org. This file is free software;
+* you can redistribute it and/or modify it under the terms of the GNU
+* General Public License (GPL) as published by the Free Software
+* Foundation, in version 2 as it comes in the "COPYING" file of the
+* VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+* hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+*
+* Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
+* Clara, CA 95054 USA or visit http://www.sun.com if you need
+* additional information or have any questions.
+*/
+/*
+* Based in part on Microsoft DDK sample code
+*
 *                           **************************
 *                           * DirectDraw SAMPLE CODE *
 *                           **************************
@@ -780,6 +797,7 @@ DWORD APIENTRY DdUnlock(PDD_UNLOCKDATA lpUnlock)
     {
         DISPDBG((0, "%d,%d %dx%d\n", pDev->ddLock.rArea.left, pDev->ddLock.rArea.top, pDev->ddLock.rArea.right - pDev->ddLock.rArea.left, pDev->ddLock.rArea.bottom - pDev->ddLock.rArea.top));
         
+#ifndef VBOX_WITH_HGSMI
         if (pDev->pInfo && vboxHwBufferBeginUpdate (pDev))
         {
             vbvaReportDirtyRect (pDev, &pDev->ddLock.rArea);
@@ -801,6 +819,30 @@ DWORD APIENTRY DdUnlock(PDD_UNLOCKDATA lpUnlock)
 
             vboxHwBufferEndUpdate (pDev);
         }
+#else
+        if (pDev->bHGSMISupported && vboxHwBufferBeginUpdate (pDev))
+        {
+            vbvaReportDirtyRect (pDev, &pDev->ddLock.rArea);
+
+            if (  pDev->pVBVA->u32HostEvents
+                & VBOX_VIDEO_INFO_HOST_EVENTS_F_VRDP_RESET)
+            {
+                vrdpReset (pDev);
+
+                pDev->pVBVA->u32HostEvents &=
+                          ~VBOX_VIDEO_INFO_HOST_EVENTS_F_VRDP_RESET;
+            }
+
+            if (pDev->pVBVA->u32HostEvents
+                & VBVA_F_MODE_VRDP)
+            {
+                vrdpReportDirtyRect (pDev, &pDev->ddLock.rArea);
+            }
+
+            vboxHwBufferEndUpdate (pDev);
+        }
+#endif /* VBOX_WITH_HGSMI */
+
         pDev->ddLock.bLocked = FALSE;
     }
 

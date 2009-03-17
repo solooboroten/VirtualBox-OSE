@@ -1,4 +1,4 @@
-/* $Id: VBoxInternalManage.cpp 16052 2009-01-19 18:24:29Z vboxsync $ */
+/* $Id: VBoxInternalManage.cpp 17970 2009-03-16 19:08:16Z vboxsync $ */
 /** @file
  * VBoxManage - The 'internalcommands' command.
  *
@@ -32,10 +32,11 @@
 #include <VBox/com/string.h>
 #include <VBox/com/Guid.h>
 #include <VBox/com/ErrorInfo.h>
+#include <VBox/com/errorprint2.h>
 
 #include <VBox/com/VirtualBox.h>
 
-#include <VBox/VBoxHDD-new.h>
+#include <VBox/VBoxHDD.h>
 #include <VBox/sup.h>
 #include <VBox/err.h>
 #include <VBox/log.h>
@@ -1213,10 +1214,10 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
     LCHS.cCylinders = 0;
     LCHS.cHeads = 0;
     LCHS.cSectors = 0;
-    vrc = VDCreateBase(pDisk, "VMDK", Utf8Str(filename).raw(),
-                       VD_IMAGE_TYPE_FIXED, cbSize,
-                       VD_VMDK_IMAGE_FLAGS_RAWDISK, (char *)&RawDescriptor,
-		               &PCHS, &LCHS, NULL, VD_OPEN_FLAGS_NORMAL, NULL, NULL);
+    vrc = VDCreateBase(pDisk, "VMDK", Utf8Str(filename).raw(), cbSize,
+                       VD_IMAGE_FLAGS_FIXED | VD_VMDK_IMAGE_FLAGS_RAWDISK,
+                       (char *)&RawDescriptor, &PCHS, &LCHS, NULL,
+                       VD_OPEN_FLAGS_NORMAL, NULL, NULL);
     if (RT_FAILURE(vrc))
     {
         RTPrintf("Error while creating the raw disk VMDK: %Rrc\n", vrc);
@@ -1246,8 +1247,8 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
 
     if (fRegister)
     {
-        ComPtr<IHardDisk2> hardDisk;
-        CHECK_ERROR(aVirtualBox, OpenHardDisk2(filename, hardDisk.asOutParam()));
+        ComPtr<IHardDisk> hardDisk;
+        CHECK_ERROR(aVirtualBox, OpenHardDisk(filename, hardDisk.asOutParam()));
     }
 
     return SUCCEEDED(rc) ? 0 : 1;
@@ -1321,7 +1322,7 @@ static int CmdRenameVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox,
         }
         else
         {
-            vrc = VDCopy(pDisk, 0, pDisk, "VMDK", Utf8Str(dst).raw(), true, 0, NULL, NULL, NULL, NULL);
+            vrc = VDCopy(pDisk, 0, pDisk, "VMDK", Utf8Str(dst).raw(), true, 0, VD_IMAGE_FLAGS_NONE, NULL, NULL, NULL, NULL);
             if (RT_FAILURE(vrc))
             {
                 RTPrintf("Error while renaming the image: %Rrc\n", vrc);
@@ -1598,7 +1599,7 @@ static int CmdConvertHardDisk(int argc, char **argv, ComPtr<IVirtualBox> aVirtua
 
         /* Create the output image */
         vrc = VDCopy(pSrcDisk, VD_LAST_IMAGE, pDstDisk, Utf8Str(dstformat).raw(),
-                     Utf8Str(dst).raw(), false, 0, NULL, NULL, NULL, NULL);
+                     Utf8Str(dst).raw(), false, 0, VD_VMDK_IMAGE_FLAGS_STREAM_OPTIMIZED, NULL, NULL, NULL, NULL);
         if (RT_FAILURE(vrc))
         {
             RTPrintf("Error while copying the image: %Rrc\n", vrc);

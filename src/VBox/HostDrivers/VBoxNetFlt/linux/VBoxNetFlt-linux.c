@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFlt-linux.c 16098 2009-01-20 19:22:12Z vboxsync $ */
+/* $Id: VBoxNetFlt-linux.c 17375 2009-03-05 07:55:39Z vboxsync $ */
 /** @file
  * VBoxNetFlt - Network Filter Driver (Host), Linux Specific Code.
  */
@@ -98,7 +98,7 @@ unsigned dev_get_flags(const struct net_device *dev)
 
         flags = (dev->flags & ~(IFF_PROMISC |
                                 IFF_ALLMULTI |
-                                IFF_RUNNING)) | 
+                                IFF_RUNNING)) |
                 (dev->gflags & (IFF_PROMISC |
                                 IFF_ALLMULTI));
 
@@ -157,6 +157,114 @@ MODULE_VERSION(VBOX_VERSION_STRING " (" xstr(INTNETTRUNKIFPORT_VERSION) ")");
 static VBOXNETFLTGLOBALS g_VBoxNetFltGlobals;
 
 
+/*
+ * TAP-related part
+ */
+
+#define VBOX_TAP_NAME "vboxnet%d"
+
+struct net_device *g_pNetDev;
+
+struct VBoxTapPriv
+{
+    struct net_device_stats Stats;
+};
+typedef struct VBoxTapPriv VBOXTAPPRIV;
+typedef VBOXTAPPRIV *PVBOXTAPPRIV;
+
+static int vboxTapOpen(struct net_device *pNetDev)
+{
+    netif_start_queue(pNetDev);
+    printk("vboxTapOpen returns 0\n");
+    return 0;
+}
+
+static int vboxTapStop(struct net_device *pNetDev)
+{
+    netif_stop_queue(pNetDev);
+    return 0;
+}
+
+static int vboxTapXmit(struct sk_buff *pSkb, struct net_device *pNetDev)
+{
+    PVBOXTAPPRIV pPriv = netdev_priv(pNetDev);
+
+    /* Update the stats. */
+    pPriv->Stats.tx_packets++;
+    pPriv->Stats.tx_bytes += pSkb->len;
+    /* Update transmission time stamp. */
+    pNetDev->trans_start = jiffies;
+    /* Nothing else to do, just free the sk_buff. */
+    dev_kfree_skb(pSkb);
+    return 0;
+}
+
+struct net_device_stats *vboxTapGetStats(struct net_device *pNetDev)
+{
+    PVBOXTAPPRIV pPriv = netdev_priv(pNetDev);
+    return &pPriv->Stats;
+}
+
+static int vboxTapValidateAddr(struct net_device *dev)
+{
+    Log(("vboxTapValidateAddr: %02x:%02x:%02x:%02x:%02x:%02x\n",
+         dev->dev_addr[0], dev->dev_addr[1], dev->dev_addr[2],
+         dev->dev_addr[3], dev->dev_addr[4], dev->dev_addr[5]));
+    return -EADDRNOTAVAIL;
+}
+
+static void vboxTapNetDevInit(struct net_device *pNetDev)
+{
+    PVBOXTAPPRIV pPriv;
+
+    ether_setup(pNetDev);
+    /// @todo Use Sun vendor id
+    memcpy(pNetDev->dev_addr, "\0vbnet", ETH_ALEN);
+    Log(("vboxTapNetDevInit: pNetDev->dev_addr = %.6Rhxd\n", pNetDev->dev_addr));
+    pNetDev->open = vboxTapOpen;
+    pNetDev->stop = vboxTapStop;
+    pNetDev->hard_start_xmit = vboxTapXmit;
+    pNetDev->get_stats = vboxTapGetStats;
+    //pNetDev->validate_addr = vboxTapValidateAddr;
+/*    pNetDev-> = vboxTap;
+    pNetDev-> = vboxTap;
+    pNetDev-> = vboxTap;
+    pNetDev-> = vboxTap;
+    pNetDev-> = vboxTap;*/
+
+    pPriv = netdev_priv(pNetDev);
+    memset(pPriv, 0, sizeof(*pPriv));
+}
+
+static int vboxTapRegisterNetDev(void)
+{
+    int rc = VINF_SUCCESS;
+    struct net_device *pNetDev;
+
+    /* No need for private data. */
+    pNetDev = alloc_netdev(sizeof(VBOXTAPPRIV), VBOX_TAP_NAME, vboxTapNetDevInit);
+    if (pNetDev)
+    {
+        int err = register_netdev(pNetDev);
+        if (!err)
+        {
+            g_pNetDev = pNetDev;
+            return VINF_SUCCESS;
+        }
+        free_netdev(pNetDev);
+        rc = RTErrConvertFromErrno(err);
+    }
+    return rc;
+}
+
+static int vboxTapUnregisterNetDev(void)
+{
+    unregister_netdev(g_pNetDev);
+    free_netdev(g_pNetDev);
+    g_pNetDev = NULL;
+    return VINF_SUCCESS;
+}
+
 /**
  * Initialize module.
  *
@@ -188,14 +296,20 @@ static int __init VBoxNetFltLinuxInit(void)
          * for establishing the connect to the support driver.
          */
         memset(&g_VBoxNetFltGlobals, 0, sizeof(g_VBoxNetFltGlobals));
-        rc = vboxNetFltInitGlobals(&g_VBoxNetFltGlobals);
+        rc = vboxNetFltInitGlobalsAndIdc(&g_VBoxNetFltGlobals);
         if (RT_SUCCESS(rc))
         {
-            LogRel(("VBoxNetFlt: Successfully started.\n"));
-            return 0;
+            rc = vboxTapRegisterNetDev();
+            if (RT_SUCCESS(rc))
+            {
+                LogRel(("VBoxNetFlt: Successfully started.\n"));
+                return 0;
+            }
+            else
+                LogRel(("VBoxNetFlt: failed to register device (rc=%d)\n", rc));
         }
-
-        LogRel(("VBoxNetFlt: failed to initialize device extension (rc=%d)\n", rc));
+        else
+            LogRel(("VBoxNetFlt: failed to initialize device extension (rc=%d)\n", rc));
         RTR0Term();
     }
     else
@@ -220,7 +334,9 @@ static void __exit VBoxNetFltLinuxUnload(void)
     /*
      * Undo the work done during start (in reverse order).
      */
-    rc = vboxNetFltTryDeleteGlobals(&g_VBoxNetFltGlobals);
+    rc = vboxTapUnregisterNetDev();
+    AssertRC(rc);
+    rc = vboxNetFltTryDeleteIdcAndGlobals(&g_VBoxNetFltGlobals);
     AssertRC(rc); NOREF(rc);
 
     RTR0Term();
@@ -289,7 +405,7 @@ DECLINLINE(void) vboxNetFltLinuxReleaseNetDev(PVBOXNETFLTINS pThis, struct net_d
 #endif
 }
 
-#define VBOXNETFLT_CB_TAG 0xA1C9D7C3
+#define VBOXNETFLT_CB_TAG(skb) (0xA1C90000 | (skb->dev->ifindex & 0xFFFF))
 #define VBOXNETFLT_SKB_TAG(skb) (*(uint32_t*)&((skb)->cb[sizeof((skb)->cb)-sizeof(uint32_t)]))
 
 /**
@@ -301,7 +417,7 @@ DECLINLINE(void) vboxNetFltLinuxReleaseNetDev(PVBOXNETFLTINS pThis, struct net_d
  */
 DECLINLINE(bool) vboxNetFltLinuxSkBufIsOur(struct sk_buff *pBuf)
 {
-    return VBOXNETFLT_SKB_TAG(pBuf) == VBOXNETFLT_CB_TAG ;
+    return VBOXNETFLT_SKB_TAG(pBuf) == VBOXNETFLT_CB_TAG(pBuf);
 }
 
 
@@ -355,7 +471,7 @@ static struct sk_buff *vboxNetFltLinuxSkBufFromSG(PVBOXNETFLTINS pThis, PINTNETS
             skb_push(pPkt, ETH_HLEN);
             VBOX_SKB_RESET_MAC_HDR(pPkt);
         }
-        VBOXNETFLT_SKB_TAG(pPkt) = VBOXNETFLT_CB_TAG;
+        VBOXNETFLT_SKB_TAG(pPkt) = VBOXNETFLT_CB_TAG(pPkt);
 
         return pPkt;
     }
@@ -481,7 +597,7 @@ static int vboxNetFltLinuxPacketHandler(struct sk_buff *pBuf,
      */
     if (!pBuf)
         return 0;
-    
+
     pThis = VBOX_FLT_PT_TO_INST(pPacketType);
     pDev = (struct net_device *)ASMAtomicUoReadPtr((void * volatile *)&pThis->u.s.pDev);
     if (pThis->u.s.pDev != pSkbDev)
@@ -552,7 +668,7 @@ static void  vboxNetFltLinuxFreeSkBuff(struct sk_buff *pBuf, PINTNETSG pSG)
         kunmap(pSG->aSegs[i+1].pv);
     }
 #endif
-            
+
     dev_kfree_skb(pBuf);
 }
 
@@ -938,8 +1054,12 @@ void vboxNetFltPortOsSetActive(PVBOXNETFLTINS pThis, bool fActive)
 {
     struct net_device * pDev;
 
-    LogFlow(("vboxNetFltPortOsSetActive: pThis=%p (%s), fActive=%s\n",
-             pThis, pThis->szName, fActive?"true":"false"));
+    LogFlow(("vboxNetFltPortOsSetActive: pThis=%p (%s), fActive=%s, fDisablePromiscuous=%s\n",
+             pThis, pThis->szName, fActive?"true":"false",
+             pThis->fDisablePromiscuous?"true":"false"));
+
+    if (pThis->fDisablePromiscuous)
+        return;
 
     pDev = vboxNetFltLinuxRetainNetDev(pThis);
     if (pDev)
@@ -950,64 +1070,24 @@ void vboxNetFltPortOsSetActive(PVBOXNETFLTINS pThis, bool fActive)
          * Also, we have a bit or race conditions wrt the maintance of
          * host the interface promiscuity for vboxNetFltPortOsIsPromiscuous.
          */
-        u_int16_t fIf;
 #ifdef LOG_ENABLED
+        u_int16_t fIf;
         unsigned const cPromiscBefore = VBOX_GET_PCOUNT(pDev);
 #endif
         if (fActive)
         {
             Assert(!pThis->u.s.fPromiscuousSet);
 
-#if 0
-            /*
-             * Try bring the interface up and running if it's down.
-             */
-            fIf = dev_get_flags(pDev);
-            if ((fIf & (IFF_UP | IFF_RUNNING)) != (IFF_UP | IFF_RUNNING))
-            {
-                rtnl_lock();
-                int err = dev_change_flags(pDev, fIf | IFF_UP);
-                rtnl_unlock();
-                fIf = dev_get_flags(pDev);
-            }
-
-            /*
-             * Is it already up?  If it isn't, leave it to the link event or
-             * we'll upset if_pcount (as stated above, ifnet_set_promiscuous is weird).
-             */
-            if ((fIf & (IFF_UP | IFF_RUNNING)) == (IFF_UP | IFF_RUNNING)
-                && !ASMAtomicReadBool(&pThis->u.s.fPromiscuousSet))
-            {
-#endif
-                rtnl_lock();
-                dev_set_promiscuity(pDev, 1);
-                rtnl_unlock();
-                pThis->u.s.fPromiscuousSet = true;
-                Log(("vboxNetFltPortOsSetActive: enabled promiscuous mode on %s (%d)\n", pThis->szName, VBOX_GET_PCOUNT(pDev)));
-#if 0
-                /* check if it actually worked, this stuff is not always behaving well. */
-                if (!(dev_get_flags(pDev) & IFF_PROMISC))
-                {
-                    err = dev_change_flags(pDev, fIf | IFF_PROMISC);
-                    if (!err)
-                        Log(("vboxNetFlt: fixed IFF_PROMISC on %s (%d->%d)\n", pThis->szName, cPromiscBefore, VBOX_GET_PCOUNT(pDev)));
-                    else
-                        Log(("VBoxNetFlt: failed to fix IFF_PROMISC on %s, err=%d (%d->%d)\n",
-                             pThis->szName, err, cPromiscBefore, VBOX_GET_PCOUNT(pDev)));
-                }
-#endif
-#if 0
-            }
-            else if (!err)
-                Log(("VBoxNetFlt: Waiting for the link to come up... (%d->%d)\n", cPromiscBefore, VBOX_GET_PCOUNT(pDev)));
-            if (err)
-                LogRel(("VBoxNetFlt: Failed to put '%s' into promiscuous mode, err=%d (%d->%d)\n", pThis->szName, err, cPromiscBefore, VBOX_GET_PCOUNT(pDev)));
-#endif
+            rtnl_lock();
+            dev_set_promiscuity(pDev, 1);
+            rtnl_unlock();
+            pThis->u.s.fPromiscuousSet = true;
+            Log(("vboxNetFltPortOsSetActive: enabled promiscuous mode on %s (%d)\n", pThis->szName, VBOX_GET_PCOUNT(pDev)));
         }
         else
         {
             if (pThis->u.s.fPromiscuousSet)
-            {    
+            {
                 rtnl_lock();
                 dev_set_promiscuity(pDev, -1);
                 rtnl_unlock();
@@ -1015,8 +1095,10 @@ void vboxNetFltPortOsSetActive(PVBOXNETFLTINS pThis, bool fActive)
             }
             pThis->u.s.fPromiscuousSet = false;
 
+#ifdef LOG_ENABLED
             fIf = dev_get_flags(pDev);
             Log(("VBoxNetFlt: fIf=%#x; %d->%d\n", fIf, cPromiscBefore, VBOX_GET_PCOUNT(pDev)));
+#endif
         }
 
         vboxNetFltLinuxReleaseNetDev(pThis, pDev);
@@ -1058,12 +1140,15 @@ void vboxNetFltOsDeleteInstance(PVBOXNETFLTINS pThis)
     }
     Log(("vboxNetFltOsDeleteInstance: this=%p: Notifier removed.\n", pThis));
     unregister_netdevice_notifier(&pThis->u.s.Notifier);
+    module_put(THIS_MODULE);
 }
 
 
-int  vboxNetFltOsInitInstance(PVBOXNETFLTINS pThis)
+int  vboxNetFltOsInitInstance(PVBOXNETFLTINS pThis, void *pvContext)
 {
     int err;
+    NOREF(pvContext);
+
     pThis->u.s.Notifier.notifier_call = vboxNetFltLinuxNotifierCallback;
     err = register_netdevice_notifier(&pThis->u.s.Notifier);
     if (err)
@@ -1074,8 +1159,13 @@ int  vboxNetFltOsInitInstance(PVBOXNETFLTINS pThis)
         LogRel(("VBoxNetFlt: failed to find %s.\n", pThis->szName));
         return VERR_INTNET_FLT_IF_NOT_FOUND;
     }
+
     Log(("vboxNetFltOsInitInstance: this=%p: Notifier installed.\n", pThis));
-    return pThis->fDisconnectedFromHost ? VERR_INTNET_FLT_IF_FAILED : VINF_SUCCESS;
+    if (   pThis->fDisconnectedFromHost
+        || !try_module_get(THIS_MODULE))
+        return VERR_INTNET_FLT_IF_FAILED;
+
+    return VINF_SUCCESS;
 }
 
 int  vboxNetFltOsPreInitInstance(PVBOXNETFLTINS pThis)

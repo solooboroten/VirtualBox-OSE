@@ -1,11 +1,11 @@
-/* $Id: ProgressImpl.h 15051 2008-12-05 17:20:00Z vboxsync $ */
+/* $Id: ProgressImpl.h 17684 2009-03-11 12:15:33Z vboxsync $ */
 /** @file
  *
  * VirtualBox COM class implementation
  */
 
 /*
- * Copyright (C) 2006-2008 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -24,7 +24,6 @@
 #define ____H_PROGRESSIMPL
 
 #include "VirtualBoxBase.h"
-#include "Collection.h"
 
 #include <VBox/com/SupportErrorInfo.h>
 
@@ -357,8 +356,6 @@ private:
     size_t mProgress;
     ULONG mCompletedOperations;
 };
-
-COM_DECL_READONLY_ENUM_AND_COLLECTION_AS (Progress, IProgress)
 
 #endif /* ____H_PROGRESSIMPL */
 /* vi: set tabstop=4 shiftwidth=4 expandtab: */

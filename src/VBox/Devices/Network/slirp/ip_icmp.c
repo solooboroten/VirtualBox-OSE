@@ -99,6 +99,8 @@ icmp_init(PNATState pData)
         LogRel(("NAT: ICMP/ping not available (could open ICMP socket, error %Rrc)\n", rc));
         return 1;
     }
+    fd_nonblock(pData->icmp_socket.s);
+    NSOCK_INC();
 #else /* RT_OS_WINDOWS */
     pData->hmIcmpLibrary = LoadLibrary("Iphlpapi.dll");
     if (pData->hmIcmpLibrary != NULL)
@@ -107,10 +109,24 @@ icmp_init(PNATState pData)
                                     GetProcAddress(pData->hmIcmpLibrary, "IcmpParseReplies");
         pData->pfIcmpCloseHandle = (BOOL (WINAPI *)(HANDLE))
                                     GetProcAddress(pData->hmIcmpLibrary, "IcmpCloseHandle");
+# ifdef VBOX_WITH_MULTI_DNS 
+        pData->pfGetAdaptersAddresses = (ULONG (WINAPI *)(HANDLE))
+                                    GetProcAddress(pData->hmIcmpLibrary, "GetAdaptersAddresses");
+        if (pData->pfGetAdaptersAddresses == NULL) 
+        {
+            LogRel(("NAT: Can't find GetAdapterAddresses in Iphlpapi.dll"));
+        }
+# endif
     }
+
     if (pData->pfIcmpParseReplies == NULL)
     {
+# ifdef VBOX_WITH_MULTI_DNS 
+        if(pData->pfGetAdaptersAddresses == NULL) 
+            FreeLibrary(pData->hmIcmpLibrary);
+# else
         FreeLibrary(pData->hmIcmpLibrary);
+# endif
         pData->hmIcmpLibrary = LoadLibrary("Icmp.dll");
         if (pData->hmIcmpLibrary == NULL)
         {
@@ -188,6 +204,7 @@ icmp_find_original_mbuf(PNATState pData, struct ip *ip)
                     && icp->icmp_seq == icp0->icmp_seq)
                 {
                     found = 1;
+                    Log(("Have found %R[natsock]\n", icm->im_so));
                     break;
                 }
                 Log(("Have found nothing\n"));
@@ -248,6 +265,12 @@ icmp_find_original_mbuf(PNATState pData, struct ip *ip)
     sofound:
     if (found == 1 && icm == NULL)
     {
+        if (so->so_state == SS_NOFDREF) 
+        {
+            /* socket is shutdowning we've already sent ICMP on it.*/
+            LogRel(("NAT: Received icmp on shutdowning socket (probably corresponding ICMP socket has been already sent)\n"));
+            return NULL;
+        }
         icm = RTMemAlloc(sizeof(struct icmp_msg));
         icm->im_m = so->so_m;
         icm->im_so = so;
@@ -274,6 +297,7 @@ icmp_attach(PNATState pData, struct mbuf *m)
     Assert(ip->ip_p == IPPROTO_ICMP);
     icm = RTMemAlloc(sizeof(struct icmp_msg));
     icm->im_m = m;
+    icm->im_so = m->m_so;
     LIST_INSERT_HEAD(&pData->icmp_msg_head, icm, im_list);
     return 0;
 }
@@ -355,8 +379,10 @@ freeit:
                     switch (ntohl(ip->ip_dst.s_addr) & ~pData->netmask)
                     {
                         case CTL_DNS:
+#ifndef VBOX_WITH_MULTI_DNS
                             addr.sin_addr = dns_addr;
                             break;
+#endif
                         case CTL_ALIAS:
                         default:
                             addr.sin_addr = loopback_addr;
@@ -368,6 +394,7 @@ freeit:
 #ifndef RT_OS_WINDOWS
                 if (pData->icmp_socket.s != -1)
                 {
+                    m->m_so = &pData->icmp_socket;
                     icmp_attach(pData, m);
                     ttl = ip->ip_ttl;
                     Log(("NAT/ICMP: try to set TTL(%d)\n", ttl));
@@ -379,10 +406,9 @@ freeit:
                     if (sendto(pData->icmp_socket.s, icp, icmplen, 0,
                               (struct sockaddr *)&addr, sizeof(addr)) == -1)
                     {
-                        DEBUG_MISC((dfd,"icmp_input udp sendto tx errno = %d-%s\n",
+                        Log((dfd,"icmp_input udp sendto tx errno = %d-%s\n",
                                     errno, strerror(errno)));
-                        icmp_error(pData, m, ICMP_UNREACH,ICMP_UNREACH_NET, 0, strerror(errno));
-                        m_free(pData, m);
+                        icmp_error(pData, m, ICMP_UNREACH, ICMP_UNREACH_NET, 0, strerror(errno));
                     }
                 }
                 else
@@ -400,9 +426,10 @@ freeit:
                 pData->icmp_socket.so_laddr.s_addr = ip->ip_src.s_addr; /* XXX: hack*/
                 pData->icmp_socket.so_icmp_id = icp->icmp_id;
                 pData->icmp_socket.so_icmp_seq = icp->icmp_seq;
+                m->m_so = &pData->icmp_socket;
                 memset(&ipopt, 0, sizeof(IP_OPTION_INFORMATION));
                 ipopt.Ttl = ip->ip_ttl;
-                status = ICMP_SEND_ECHO(pData->phEvents[VBOX_ICMP_EVENT_INDEX], notify_slirp, addr.sin_addr.s_addr, 
+                status = ICMP_SEND_ECHO(pData->phEvents[VBOX_ICMP_EVENT_INDEX], notify_slirp, addr.sin_addr.s_addr,
                                 icp->icmp_data, icmplen - ICMP_MINLEN, &ipopt);
                 if (status == 0 && (error = GetLastError()) != ERROR_IO_PENDING)
                 {
@@ -593,8 +620,10 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
 
     icmpstat.icps_reflect++;
 
+    return;
+
 end_error:
-    ;
+    LogRel(("NAT: error occured while sending ICMP error message \n"));
 }
 #undef ICMP_MAXDATALEN
 
@@ -628,7 +657,7 @@ icmp_reflect(PNATState pData, struct mbuf *m)
     icmpstat.icps_reflect++;
 }
 #if defined(RT_OS_WINDOWS) && !defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC)
-static void WINAPI  
+static void WINAPI
 notify_slirp(void *ctx)
 {
     /* pData name is important see slirp_state.h */
