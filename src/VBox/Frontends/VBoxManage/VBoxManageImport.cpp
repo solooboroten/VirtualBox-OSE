@@ -1,4 +1,4 @@
-/* $Id: VBoxManageImport.cpp 17827 2009-03-13 14:14:08Z vboxsync $ */
+/* $Id: VBoxManageImport.cpp 18396 2009-03-27 14:06:29Z vboxsync $ */
 /** @file
  * VBoxManage - The appliance-related commands.
  */
@@ -41,6 +41,7 @@
 
 #include <iprt/stream.h>
 #include <iprt/getopt.h>
+#include <iprt/ctype.h>
 
 #include <VBox/log.h>
 
@@ -102,6 +103,8 @@ int handleImportAppliance(HandlerArg *a)
              || (strThisArg == "-n")
            )
             fExecute = false;
+        else if (strThisArg == "--detailed-progress")
+            g_fDetailedProgress = true;
         else if (strThisArg == "-vsys")
         {
             if (++i < a->argc)
@@ -118,6 +121,7 @@ int handleImportAppliance(HandlerArg *a)
         else if (    (strThisArg == "-ostype")
                   || (strThisArg == "-vmname")
                   || (strThisArg == "-memory")
+                  || (strThisArg == "-eula")
                   || (fIsIgnore = (strThisArg == "-ignore"))
                   || (strThisArg.substr(0, 5) == "-type")
                   || (strThisArg.substr(0, 11) == "-controller")
@@ -221,6 +225,8 @@ int handleImportAppliance(HandlerArg *a)
                                    ulVsys, cVirtualSystemDescriptions);
         }
 
+        uint32_t cLicensesInTheWay = 0;
+
         // dump virtual system descriptions and match command-line arguments
         if (cVirtualSystemDescriptions > 0)
         {
@@ -288,6 +294,39 @@ int handleImportAppliance(HandlerArg *a)
                                 RTPrintf("%2d: Suggested OS type: \"%ls\""
                                         "\n    (change with \"-vsys %d -ostype <type>\"; use \"list ostypes\" to list all)\n",
                                         a, bstrFinalValue.raw(), i);
+                        break;
+
+                        case VirtualSystemDescriptionType_Description:
+                            RTPrintf("%2d: Description: \"%ls\"\n",
+                                     a, bstrFinalValue.raw());
+                        break;
+
+                        case VirtualSystemDescriptionType_License:
+                            ++cLicensesInTheWay;
+                            if (findArgValue(strOverride, pmapArgs, "-eula"))
+                            {
+                                if (strOverride == "show")
+                                {
+                                    RTPrintf("%2d: End-user license agreement"
+                                             "\n    (accept with \"-vsys %d -eula accept\"):"
+                                             "\n\n%ls\n\n",
+                                             a, i, bstrFinalValue.raw());
+                                }
+                                else if (strOverride == "accept")
+                                {
+                                    RTPrintf("%2d: End-user license agreement (accepted)\n",
+                                             a);
+                                    --cLicensesInTheWay;
+                                }
+                                else
+                                    return errorSyntax(USAGE_IMPORTAPPLIANCE,
+                                                       "Argument to -eula must be either \"show\" or \"accept\".");
+                            }
+                            else
+                                RTPrintf("%2d: End-user license agreement"
+                                        "\n    (display with \"-vsys %d -eula show\";"
+                                        "\n    accept with \"-vsys %d -eula accept\")\n",
+                                        a, i, i);
                         break;
 
                         case VirtualSystemDescriptionType_CPU:
@@ -489,7 +528,12 @@ int handleImportAppliance(HandlerArg *a)
 
             } // for (unsigned i = 0; i < cVirtualSystemDescriptions; ++i)
 
-            if (fExecute)
+            if (cLicensesInTheWay == 1)
+                RTPrintf("ERROR: Cannot import until the license agreement listed above is accepted.\n");
+            else if (cLicensesInTheWay > 1)
+                RTPrintf("ERROR: Cannot import until the %c license agreements listed above are accepted.\n", cLicensesInTheWay);
+
+            if (!cLicensesInTheWay && fExecute)
             {
                 // go!
                 ComPtr<IProgress> progress;
@@ -534,13 +578,9 @@ int handleExportAppliance(HandlerArg *a)
 
         RTGETOPTUNION ValueUnion;
         RTGETOPTSTATE GetState;
-        RTGetOptInit(&GetState,
-                     a->argc,
-                     a->argv,
-                     g_aExportOptions,
-                     RT_ELEMENTS(g_aExportOptions),
-                     0, // start at 0 even though arg 1 was "list" because main() has hacked both the argc and argv given to us
-                     0 /* fFlags */);
+        // start at 0 because main() has hacked both the argc and argv given to us
+        RTGetOptInit(&GetState, a->argc, a->argv, g_aExportOptions,
+                     RT_ELEMENTS(g_aExportOptions), 0, 0 /* fFlags */);
         while ((c = RTGetOpt(&GetState, &ValueUnion)))
         {
             switch (c)
@@ -572,11 +612,18 @@ int handleExportAppliance(HandlerArg *a)
 
                 default:
                     if (c > 0)
-                        return errorSyntax(USAGE_LIST, "missing case: %c\n", c);
+                    {
+                        if (RT_C_IS_GRAPH(c))
+                            return errorSyntax(USAGE_EXPORTAPPLIANCE, "unhandled option: -%c", c);
+                        else
+                            return errorSyntax(USAGE_EXPORTAPPLIANCE, "unhandled option: %i", c);
+                    }
+                    else if (c == VERR_GETOPT_UNKNOWN_OPTION)
+                        return errorSyntax(USAGE_EXPORTAPPLIANCE, "unknown option: %s", ValueUnion.psz);
                     else if (ValueUnion.pDef)
-                        return errorSyntax(USAGE_LIST, "%s: %Rrs", ValueUnion.pDef->pszLong, c);
+                        return errorSyntax(USAGE_EXPORTAPPLIANCE, "%s: %Rrs", ValueUnion.pDef->pszLong, c);
                     else
-                        return errorSyntax(USAGE_LIST, "%Rrs", c);
+                        return errorSyntax(USAGE_EXPORTAPPLIANCE, "%Rrs", c);
             }
 
             if (FAILED(rc))
@@ -600,7 +647,8 @@ int handleExportAppliance(HandlerArg *a)
              ++itM)
         {
             ComPtr<IMachine> pMachine = *itM;
-            CHECK_ERROR_BREAK(pMachine, Export(pAppliance));
+            ComPtr<IVirtualSystemDescription> pVSD;
+            CHECK_ERROR_BREAK(pMachine, Export(pAppliance, pVSD.asOutParam()));
         }
 
         if (FAILED(rc))

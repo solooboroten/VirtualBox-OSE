@@ -1,10 +1,10 @@
-/* $Revision: 17813 $ */
+/* $Revision: 18241 $ */
 /** @file VBoxXPCOMCGlue.h
  * Glue for dynamically linking with VBoxXPCOMC.
  */
 
 /*
- * Copyright (C) 2009 Sun Microsystems, Inc.
+ * Copyright (C) 2008-2009 Sun Microsystems, Inc.
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation

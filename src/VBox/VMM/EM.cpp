@@ -1,4 +1,4 @@
-/* $Id: EM.cpp 17969 2009-03-16 19:03:33Z vboxsync $ */
+/* $Id: EM.cpp 18343 2009-03-26 18:35:12Z vboxsync $ */
 /** @file
  * EM - Execution Monitor / Manager.
  */
@@ -760,6 +760,13 @@ static int emR3Debug(PVM pVM, int rc)
                 case VERR_TRPM_DONT_PANIC:
                 case VERR_VMM_RING0_ASSERTION:
                 case VERR_INTERNAL_ERROR:
+                case VERR_INTERNAL_ERROR_2:
+                case VERR_INTERNAL_ERROR_3:
+                case VERR_INTERNAL_ERROR_4:
+                case VERR_INTERNAL_ERROR_5:
+                case VERR_IPE_UNEXPECTED_STATUS:
+                case VERR_IPE_UNEXPECTED_INFO_STATUS:
+                case VERR_IPE_UNEXPECTED_ERROR_STATUS:
                     return rc;
 
                 /*
@@ -1291,7 +1298,7 @@ static int emR3RawExecuteInstructionWorker(PVM pVM, int rcGC)
 
             default:
                 AssertReleaseMsgFailed(("Unknown return code %Rrc from PATMR3HandleTrap\n", rc));
-                return VERR_INTERNAL_ERROR;
+                return VERR_IPE_UNEXPECTED_STATUS;
         }
     }
 
@@ -1873,7 +1880,7 @@ static int emR3PatchTrap(PVM pVM, PCPUMCTX pCtx, int gcret)
              */
             default:
                 AssertReleaseMsgFailed(("Unknown return code %Rrc from PATMR3HandleTrap!\n", rc));
-                return VERR_INTERNAL_ERROR;
+                return VERR_IPE_UNEXPECTED_STATUS;
         }
     }
     return VINF_SUCCESS;
@@ -2553,6 +2560,7 @@ static int emR3RawForcedActions(PVM pVM, PCPUMCTX pCtx)
                 return rc;
         }
         /** @todo maybe prefetch the supervisor stack page as well */
+        Assert(!VM_FF_ISPENDING(pVM, VM_FF_SELM_SYNC_GDT | VM_FF_SELM_SYNC_LDT));
     }
 
     /*
@@ -2615,6 +2623,7 @@ static int emR3RawExecute(PVM pVM, bool *pfFFDone)
         if (    !VM_FF_ISPENDING(pVM, VM_FF_PGM_SYNC_CR3 | VM_FF_PGM_SYNC_CR3_NON_GLOBAL)
             &&  PGMMapHasConflicts(pVM))
         {
+            PGMMapCheck(pVM);
             AssertMsgFailed(("We should not get conflicts any longer!!!\n"));
             return VERR_INTERNAL_ERROR;
         }
@@ -2652,6 +2661,12 @@ static int emR3RawExecute(PVM pVM, bool *pfFFDone)
             STAM_PROFILE_ADV_SUSPEND(&pVM->em.s.StatRAWEntry, b);
             CSAMR3CheckCodeEx(pVM, CPUMCTX2CORE(pCtx), pCtx->eip);
             STAM_PROFILE_ADV_RESUME(&pVM->em.s.StatRAWEntry, b);
+            if (VM_FF_ISPENDING(pVM, VM_FF_HIGH_PRIORITY_PRE_RAW_MASK))
+            {
+                rc = emR3RawForcedActions(pVM, pCtx);
+                if (RT_FAILURE(rc))
+                    break;
+            }
         }
 
 #ifdef LOG_ENABLED
@@ -2728,7 +2743,8 @@ static int emR3RawExecute(PVM pVM, bool *pfFFDone)
         if (    !VM_FF_ISPENDING(pVM, VM_FF_PGM_SYNC_CR3 | VM_FF_PGM_SYNC_CR3_NON_GLOBAL)
             &&  PGMMapHasConflicts(pVM))
         {
-            AssertMsgFailed(("We should not get conflicts any longer!!!\n"));
+            PGMMapCheck(pVM);
+            AssertMsgFailed(("We should not get conflicts any longer!!! rc=%Rrc\n", rc));
             return VERR_INTERNAL_ERROR;
         }
 #endif /* VBOX_STRICT */

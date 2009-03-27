@@ -1,11 +1,11 @@
-/* $Id: MachineImpl.cpp 17942 2009-03-16 14:54:50Z vboxsync $ */
+/* $Id: MachineImpl.cpp 18269 2009-03-25 18:01:07Z vboxsync $ */
 
 /** @file
  * Implementation of IMachine in VBoxSVC.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -56,6 +56,7 @@
 #include "VirtualBoxXMLUtil.h"
 
 #include "Logging.h"
+#include "Performance.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,7 +103,7 @@
 static const char gDefaultMachineConfig[] =
 {
     "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>" RTFILE_LINEFEED
-    "<!-- Sun xVM VirtualBox Machine Configuration -->" RTFILE_LINEFEED
+    "<!-- Sun VirtualBox Machine Configuration -->" RTFILE_LINEFEED
     "<VirtualBox xmlns=\"" VBOX_XML_NAMESPACE "\" "
         "version=\"" VBOX_XML_VERSION_FULL "\">" RTFILE_LINEFEED
     "</VirtualBox>" RTFILE_LINEFEED
@@ -117,11 +118,11 @@ static const char gDefaultMachineConfig[] =
  */
 static DECLCALLBACK(int) progressCallback (unsigned uPercentage, void *pvUser)
 {
-    Progress *progress = static_cast <Progress *> (pvUser);
+    Progress *progress = static_cast<Progress*>(pvUser);
 
     /* update the progress object */
     if (progress)
-        progress->notifyProgress (uPercentage);
+        progress->setCurrentOperationProgress(uPercentage);
 
     return VINF_SUCCESS;
 }
@@ -981,11 +982,11 @@ STDMETHODIMP Machine::COMGETTER(MemorySize) (ULONG *memorySize)
 STDMETHODIMP Machine::COMSETTER(MemorySize) (ULONG memorySize)
 {
     /* check RAM limits */
-    if (memorySize < SchemaDefs::MinGuestRAM ||
-        memorySize > SchemaDefs::MaxGuestRAM)
+    if (memorySize < MM_RAM_MIN_IN_MB ||
+        memorySize > MM_RAM_MAX_IN_MB)
         return setError (E_INVALIDARG,
             tr ("Invalid RAM size: %lu MB (must be in range [%lu, %lu] MB)"),
-                memorySize, SchemaDefs::MinGuestRAM, SchemaDefs::MaxGuestRAM);
+                memorySize, MM_RAM_MIN_IN_MB, MM_RAM_MAX_IN_MB);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
@@ -2151,9 +2152,10 @@ STDMETHODIMP Machine::AttachHardDisk(IN_GUID aId,
 
         ComObjPtr<HardDisk> diff;
         diff.createObject();
-        rc = diff->init (mParent, hd->preferredDiffFormat(),
-                         BstrFmt ("%ls"RTPATH_SLASH_STR,
-                                  mUserData->mSnapshotFolderFull.raw()));
+        rc = diff->init(mParent,
+                        hd->preferredDiffFormat(),
+                        BstrFmt ("%ls"RTPATH_SLASH_STR,
+                                 mUserData->mSnapshotFolderFull.raw()));
         CheckComRCReturnRC (rc);
 
         /* make sure the hard disk is not modified before createDiffStorage() */
@@ -7222,9 +7224,9 @@ HRESULT Machine::createImplicitDiffs (const Bstr &aFolder,
 
                 Assert (hd->type() == HardDiskType_Writethrough);
 
-                rc = aProgress->advanceOperation (
-                    BstrFmt (tr ("Skipping writethrough hard disk '%s'"),
-                             hd->root()->name().raw()));
+                rc = aProgress->setNextOperation(BstrFmt(tr("Skipping writethrough hard disk '%s'"),
+                                                         hd->root()->name().raw()),
+                                                 1);        // weight
                 CheckComRCThrowRC (rc);
 
                 mHDData->mAttachments.push_back (hda);
@@ -7233,9 +7235,9 @@ HRESULT Machine::createImplicitDiffs (const Bstr &aFolder,
 
             /* need a diff */
 
-            rc = aProgress->advanceOperation (
-                BstrFmt (tr ("Creating differencing hard disk for '%s'"),
-                         hd->root()->name().raw()));
+            rc = aProgress->setNextOperation(BstrFmt(tr("Creating differencing hard disk for '%s'"),
+                                                     hd->root()->name().raw()),
+                                             1);        // weight
             CheckComRCThrowRC (rc);
 
             ComObjPtr<HardDisk> diff;
@@ -7748,40 +7750,41 @@ void Machine::rollback (bool aNotify)
         }
     }
 
-    if (mStorageControllers.isBackedUp())
+    if (!mStorageControllers.isNull())
     {
-        /* unitialize all new devices (absent in the backed up list). */
-        StorageControllerList::const_iterator it = mStorageControllers->begin();
-        StorageControllerList *backedList = mStorageControllers.backedUpData();
-        while (it != mStorageControllers->end())
+        if (mStorageControllers.isBackedUp())
         {
-            if (std::find (backedList->begin(), backedList->end(), *it ) ==
-                backedList->end())
+            /* unitialize all new devices (absent in the backed up list). */
+            StorageControllerList::const_iterator it = mStorageControllers->begin();
+            StorageControllerList *backedList = mStorageControllers.backedUpData();
+            while (it != mStorageControllers->end())
             {
-                (*it)->uninit();
+                if (std::find (backedList->begin(), backedList->end(), *it ) ==
+                    backedList->end())
+                {
+                    (*it)->uninit();
+                }
+                ++ it;
             }
-            ++ it;
+
+            /* restore the list */
+            mStorageControllers.rollback();
         }
 
-        /* restore the list */
-        mStorageControllers.rollback();
-    }
+        /* rollback any changes to devices after restoring the list */
+        StorageControllerList::const_iterator it = mStorageControllers->begin();
+        while (it != mStorageControllers->end())
+        {
+            if ((*it)->isModified())
+                (*it)->rollback();
 
-    /* rollback any changes to devices after restoring the list */
-    StorageControllerList::const_iterator it = mStorageControllers->begin();
-    while (it != mStorageControllers->end())
-    {
-        if ((*it)->isModified())
-            (*it)->rollback();
-
-        ++ it;
+            ++ it;
+        }
     }
 
     mUserData.rollback();
 
     mHWData.rollback();
-
-    mStorageControllers.rollback();
 
     if (mHDData.isBackedUp())
         fixupHardDisks(false /* aCommit */);
@@ -10143,8 +10146,8 @@ void SessionMachine::takeSnapshotHandler (TakeSnapshotTask & /* aTask */)
         LogFlowThisFunc (("Copying the execution state from '%s' to '%s'...\n",
                           stateFrom.raw(), stateTo.raw()));
 
-        mSnapshotData.mServerProgress->advanceOperation (
-            Bstr (tr ("Copying the execution state")));
+        mSnapshotData.mServerProgress->setNextOperation(Bstr(tr("Copying the execution state")),
+                                                        1);        // weight
 
         /* Leave the lock before a lengthy operation (mMachineState is
          * MachineState_Saving here) */
@@ -10296,9 +10299,9 @@ void SessionMachine::discardSnapshotHandler (DiscardSnapshotTask &aTask)
 
                 Assert (hd->type() == HardDiskType_Writethrough);
 
-                rc = aTask.progress->advanceOperation (
-                    BstrFmt (tr ("Skipping writethrough hard disk '%s'"),
-                             hd->root()->name().raw()));
+                rc = aTask.progress->setNextOperation(BstrFmt(tr("Skipping writethrough hard disk '%s'"),
+                                                              hd->root()->name().raw()),
+                                                      1); // weight
                 CheckComRCThrowRC (rc);
 
                 continue;
@@ -10451,8 +10454,8 @@ void SessionMachine::discardSnapshotHandler (DiscardSnapshotTask &aTask)
             //  to return a warning if the state file path cannot be deleted
             if (stateFilePath)
             {
-                aTask.progress->advanceOperation (
-                    Bstr (tr ("Discarding the execution state")));
+                aTask.progress->setNextOperation(Bstr(tr("Discarding the execution state")),
+                                                 1);        // weight
 
                 RTFileDelete (Utf8Str (stateFilePath));
             }
@@ -10696,8 +10699,8 @@ void SessionMachine::discardCurrentStateHandler (DiscardCurrentStateTask &aTask)
                 LogFlowThisFunc (("Copying saved state file from '%s' to '%s'...\n",
                                   snapStateFilePath.raw(), stateFilePath.raw()));
 
-                aTask.progress->advanceOperation (
-                    Bstr (tr ("Restoring the execution state")));
+                aTask.progress->setNextOperation(Bstr(tr("Restoring the execution state")),
+                                                 1);        // weight
 
                 /* leave the lock before the potentially lengthy operation */
                 snapshotLock.unlock();
@@ -10922,6 +10925,8 @@ HRESULT SessionMachine::lockMedia()
 
             bool first = true;
 
+            /** @todo split out the media locking, and put it into
+             * HardDiskImpl.cpp, as it needs this functionality too. */
             while (!hd.isNull())
             {
                 if (first)

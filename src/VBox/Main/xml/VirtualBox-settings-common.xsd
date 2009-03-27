@@ -3,10 +3,10 @@
  *  :tabSize=2:indentSize=2:noTabs=true:
  *  :folding=explicit:collapseFolds=1:
  *
- *  Sun xVM VirtualBox Settings Schema
+ *  Sun VirtualBox Settings Schema
  *  Common definitions
 
-     Copyright (C) 2004-2008 Sun Microsystems, Inc.
+     Copyright (C) 2004-2009 Sun Microsystems, Inc.
 
      This file is part of VirtualBox Open Source Edition (OSE), as
      available from http://www.virtualbox.org. This file is free software;
@@ -31,7 +31,7 @@
 
 <xsd:annotation>
   <xsd:documentation xml:lang="en">
-    Sun xVM VirtualBox Settings Schema (common definitions).
+    Sun VirtualBox Settings Schema (common definitions).
     Copyright (c) 2004-2008 Sun Microsystems, Inc.
   </xsd:documentation>
 </xsd:annotation>
@@ -774,6 +774,17 @@
     <xsd:element name="GuestProperty" type="TGuestProperty" minOccurs="0" maxOccurs="unbounded"/>
   </xsd:sequence>
   <xsd:attribute name="notificationPatterns" type="xsd:string" default=""/>
+</xsd:complexType>
+
+<xsd:complexType name="TMemory">
+  <xsd:attribute name="RAMSize" use="required">
+    <xsd:simpleType>
+      <xsd:restriction base="xsd:unsignedInt">
+        <xsd:minInclusive value="4"/>
+        <xsd:maxInclusive value="16384"/>
+      </xsd:restriction>
+    </xsd:simpleType>
+  </xsd:attribute>
 </xsd:complexType>
 
 <xsd:complexType name="THardware">

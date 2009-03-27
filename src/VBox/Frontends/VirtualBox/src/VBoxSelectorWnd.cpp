@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2008 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -1278,7 +1278,7 @@ void VBoxSelectorWnd::retranslateUi()
 #ifdef VBOX_OSE
     setWindowTitle (tr ("VirtualBox OSE"));
 #else
-    setWindowTitle (tr ("Sun xVM VirtualBox"));
+    setWindowTitle (tr ("Sun VirtualBox"));
 #endif
 
     mVmTabWidget->setTabText (mVmTabWidget->indexOf (mVmDetailsView), tr ("&Details"));
@@ -1293,11 +1293,11 @@ void VBoxSelectorWnd::retranslateUi()
     mFileMediaMgrAction->setStatusTip (tr ("Display the Virtual Media Manager dialog"));
 
     mFileApplianceImportAction->setText (tr ("&Import Appliance..."));
-    mFileApplianceImportAction->setShortcut (QKeySequence ("Ctrl+K"));
+    mFileApplianceImportAction->setShortcut (QKeySequence ("Ctrl+I"));
     mFileApplianceImportAction->setStatusTip (tr ("Import an appliance into VirtualBox"));
 
     mFileApplianceExportAction->setText (tr ("&Export Appliance..."));
-    mFileApplianceExportAction->setShortcut (QKeySequence ("Ctrl+J"));
+    mFileApplianceExportAction->setShortcut (QKeySequence ("Ctrl+E"));
     mFileApplianceExportAction->setStatusTip (tr ("Export an appliance out of VM's from VirtualBox"));
 
 #ifdef Q_WS_MAC
@@ -1340,6 +1340,7 @@ void VBoxSelectorWnd::retranslateUi()
         QString (" (%1)").arg (mVmConfigAction->shortcut().toString()));
 
     mVmDeleteAction->setText (tr ("&Delete"));
+    mVmDeleteAction->setShortcut (QKeySequence ("Ctrl+R"));
     mVmDeleteAction->setStatusTip (tr ("Delete the selected virtual machine"));
 
     /* Note: mVmStartAction text is set up in vmListViewCurrentChanged() */
@@ -1352,8 +1353,7 @@ void VBoxSelectorWnd::retranslateUi()
     mVmPauseAction->setStatusTip (
         tr ("Suspend the execution of the virtual machine"));
 
-    mVmRefreshAction->setText (tr ("&Refresh"));
-    mVmRefreshAction->setShortcut (QKeySequence ("Ctrl+R"));
+    mVmRefreshAction->setText (tr ("Re&fresh"));
     mVmRefreshAction->setStatusTip (
         tr ("Refresh the accessibility state of the selected virtual machine"));
 

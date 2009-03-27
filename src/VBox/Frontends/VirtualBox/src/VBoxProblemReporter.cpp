@@ -25,6 +25,7 @@
 #include "VBoxGlobal.h"
 #include "VBoxSelectorWnd.h"
 #include "VBoxConsoleWnd.h"
+#include "VBoxProgressDialog.h"
 
 #include "VBoxAboutDlg.h"
 
@@ -35,8 +36,6 @@
 #endif
 
 /* Qt includes */
-#include <QProgressDialog>
-#include <QProcess>
 #include <QFileInfo>
 #ifdef Q_WS_MAC
 # include <QPushButton>
@@ -49,151 +48,6 @@
 #if defined (Q_WS_WIN32)
 #include <Htmlhelp.h>
 #endif
-
-////////////////////////////////////////////////////////////////////////////////
-// VBoxProgressDialog class
-////////////////////////////////////////////////////////////////////////////////
-
-/**
- * A QProgressDialog enhancement that allows to:
- *
- * 1) prevent closing the dialog when it has no cancel button;
- * 2) effectively track the IProgress object completion (w/o using
- *    IProgress::waitForCompletion() and w/o blocking the UI thread in any other
- *    way for too long).
- *
- * @note The CProgress instance is passed as a non-const reference to the
- *       constructor (to memorize COM errors if they happen), and therefore must
- *       not be destroyed before the created VBoxProgressDialog instance is
- *       destroyed.
- */
-class VBoxProgressDialog : public QProgressDialog
-{
-public:
-
-    VBoxProgressDialog (CProgress &aProgress, const QString &aTitle,
-                        int aMinDuration = 2000, QWidget *aCreator = 0)
-        : QProgressDialog (aCreator,
-                           Qt::MSWindowsFixedSizeDialogHint | Qt::WindowTitleHint)
-        , mProgress (aProgress)
-        , mEventLoop (new QEventLoop (this))
-        , mCalcelEnabled (false)
-        , mOpCount (mProgress.GetOperationCount())
-        , mCurOp (mProgress.GetOperation() + 1)
-        , mEnded (false)
-    {
-        setModal (true);
-#ifdef Q_WS_MAC
-        ::darwinSetHidesAllTitleButtons (this);
-        ::darwinSetShowsResizeIndicator (this, false);
-#endif /* Q_WS_MAC */
-
-        if (mOpCount > 1)
-            setLabelText (QString (sOpDescTpl)
-                          .arg (mProgress.GetOperationDescription())
-                          .arg (mCurOp).arg (mOpCount));
-        else
-            setLabelText (QString ("%1...")
-                          .arg (mProgress.GetOperationDescription()));
-        setCancelButtonText (QString::null);
-        setMaximum (100);
-        setWindowTitle (QString ("%1: %2")
-                    .arg (aTitle, mProgress.GetDescription()));
-        setMinimumDuration (aMinDuration);
-        setValue (0);
-    }
-
-    int run (int aRefreshInterval)
-    {
-        if (mProgress.isOk())
-        {
-            /* Start refresh timer */
-            int id = startTimer (aRefreshInterval);
-
-            /* The progress dialog is automatically shown after the duration is over */
-
-            /* Enter the modal loop */
-            mEventLoop->exec();
-
-            /* Kill refresh timer */
-            killTimer (id);
-
-            return result();
-        }
-        return Rejected;
-    }
-
-    /* These methods disabled for now as not used anywhere */
-    // bool cancelEnabled() const { return mCalcelEnabled; }
-    // void setCancelEnabled (bool aEnabled) { mCalcelEnabled = aEnabled; }
-
-protected:
-
-    virtual void timerEvent (QTimerEvent * /* aEvent */)
-    {
-        if (!mEnded && (!mProgress.isOk() || mProgress.GetCompleted()))
-        {
-            /* Progress finished */
-            if (mProgress.isOk())
-            {
-                setValue (100);
-                setResult (Accepted);
-            }
-            /* Progress is not valid */
-            else
-                setResult (Rejected);
-
-            /* Request to exit loop */
-            mEnded = true;
-
-            /* The progress will be finalized
-             * on next timer iteration. */
-            return;
-        }
-
-        if (mEnded)
-        {
-            /* Exit loop if it is running */
-            if (mEventLoop->isRunning())
-                mEventLoop->quit();
-            return;
-        }
-
-        /* Update the progress dialog */
-        ulong newOp = mProgress.GetOperation() + 1;
-        if (newOp != mCurOp)
-        {
-            mCurOp = newOp;
-            setLabelText (QString (sOpDescTpl)
-                .arg (mProgress.GetOperationDescription())
-                .arg (mCurOp).arg (mOpCount));
-        }
-        setValue (mProgress.GetPercent());
-    }
-
-    virtual void reject() { if (mCalcelEnabled) QProgressDialog::reject(); }
-
-    virtual void closeEvent (QCloseEvent *aEvent)
-    {
-        if (mCalcelEnabled)
-            QProgressDialog::closeEvent (aEvent);
-        else
-            aEvent->ignore();
-    }
-
-private:
-
-    CProgress &mProgress;
-    QEventLoop *mEventLoop;
-    bool mCalcelEnabled;
-    const ulong mOpCount;
-    ulong mCurOp;
-    bool mEnded;
-
-    static const char *sOpDescTpl;
-};
-
-const char *VBoxProgressDialog::sOpDescTpl = "%1... (%2/%3)";
 
 ////////////////////////////////////////////////////////////////////////////////
 // VBoxProblemReporter class
@@ -338,10 +192,7 @@ int VBoxProblemReporter::message (QWidget *aParent, Type aType, const QString &a
         box->setButtonText (2, aText3);
 
     if (!aDetails.isEmpty())
-    {
         box->setDetailsText (aDetails);
-        box->setDetailsShown (true);
-    }
 
     if (aAutoConfirmId)
     {
@@ -454,6 +305,31 @@ bool VBoxProblemReporter::askForOverridingFileIfExists (const QString& aPath, QW
         return true;
 }
 
+bool VBoxProblemReporter::askForOverridingFilesIfExists (const QStringList& aPaths, QWidget *aParent /* = NULL */) const
+{
+    QStringList existingFiles;
+    foreach (const QString &file, aPaths)
+    {
+        QFileInfo fi (file);
+        if (fi.exists())
+            existingFiles << fi.absoluteFilePath();
+    }
+    if (existingFiles.size() == 1)
+        /* If it is only one file use the single question versions above */
+        return askForOverridingFileIfExists (existingFiles.at (0), aParent);
+    else if (existingFiles.size() > 1)
+        return messageYesNo (aParent, Question, tr ("The following files already exist:<br /><br />%1<br /><br />Are you sure you want to replace them? Replacing them will overwrite their contents.").arg (existingFiles.join ("<br />")));
+    else
+        return true;
+}
+
+void VBoxProblemReporter::cannotDeleteFile (const QString& path, QWidget *aParent /* = NULL */) const
+{
+    message (aParent, Error,
+             tr ("Failed to remove the file <b>%1</b>.<br /><br />Please try to remove that file yourself & try again.")
+             .arg (path));
+}
+
 // Special Problem handlers
 /////////////////////////////////////////////////////////////////////////////
 
@@ -461,8 +337,8 @@ void VBoxProblemReporter::showBETAWarning()
 {
     message
         (0, Warning,
-         tr ("You're running a prerelease version of VirtualBox. "
-             "This version is not designed for production use."));
+         tr ("You are running a prerelease version of VirtualBox. "
+             "This version is not suitable for production use."));
 }
 
 #ifdef Q_WS_X11
@@ -875,10 +751,10 @@ bool VBoxProblemReporter::warnAboutVirtNotEnabled()
 {
     return messageOkCancel (mainWindowShown(), Error,
         tr ("<p>VT-x/AMD-V hardware acceleration has been enabled, but is "
-            "not operational. Your 64 bits guest will fail to detect a 64 "
-            "bits CPU and will not be able to boot.</p><p>Please check if you "
-            "have enabled VT-x/AMD-V properly in the BIOS of your host "
-            "computer.</p>"),
+            "not operational. Your 64-bit guest will fail to detect a "
+            "64-bit CPU and will not be able to boot.</p><p>Please ensure "
+            "that you have enabled VT-x/AMD-V properly in the BIOS of your "
+            "host computer.</p>"),
         0 /* aAutoConfirmId */,
         tr ("Close VM"), tr ("Continue"));
 }
@@ -1173,7 +1049,7 @@ int VBoxProblemReporter::confirmDetachAddControllerSlots (QWidget *aParent) cons
         tr ("<p>There are hard disks attached to ports of the additional controller. "
             "If you disable the additional controller, all these hard disks "
             "will be automatically detached.</p>"
-            "<p>Are you sure that you want to "
+            "<p>Are you sure you want to "
             "disable the additional controller?</p>"),
         0 /* aAutoConfirmId */,
         tr ("Disable", "hard disk"));
@@ -1185,7 +1061,7 @@ int VBoxProblemReporter::confirmChangeAddControllerSlots (QWidget *aParent) cons
         tr ("<p>There are hard disks attached to ports of the additional controller. "
             "If you change the additional controller, all these hard disks "
             "will be automatically detached.</p>"
-            "<p>Are you sure that you want to "
+            "<p>Are you sure you want to "
             "change the additional controller?</p>"),
         0 /* aAutoConfirmId */,
         tr ("Change", "hard disk"));
@@ -1848,8 +1724,32 @@ int VBoxProblemReporter::warnAboutAutoConvertedSettings (const QString &aFormatV
                                                          const QString &aFileList,
                                                          bool aAfterRefresh)
 {
+    /* The aAfterRefresh parameter says if an item which was inaccessible is
+       become accessible after a refresh. For the time beeing we present the
+       old message dialog. This case should be rather unlikly. */
     if (!aAfterRefresh)
     {
+        int rc = message (mainWindowShown(), Info,
+            tr ("<p>Your existing VirtualBox settings files will be automatically "
+                "converted from the old format to a new format necessary for the "
+                "new version of VirtualBox.</p>"
+                "<p>Press <b>OK</b> to start VirtualBox now or press <b>Exit</b> if "
+                "you want to terminate the VirtualBox "
+                "application without any further actions.</p>"),
+            NULL /* aAutoConfirmId */,
+            QIMessageBox::Ok | QIMessageBox::Default,
+            QIMessageBox::Cancel | QIMessageBox::Escape,
+            0,
+            0,
+            tr ("E&xit", "warnAboutAutoConvertedSettings message box"));
+
+        if (rc == QIMessageBox::Cancel)
+            return QIMessageBox::Cancel;
+
+        /* We backup in any case */
+        return QIMessageBox::No;
+
+#if 0
         int rc = message (mainWindowShown(), Info,
             tr ("<p>Your existing VirtualBox settings files were automatically "
                 "converted from the old format to a new format necessary for the "
@@ -1874,6 +1774,7 @@ int VBoxProblemReporter::warnAboutAutoConvertedSettings (const QString &aFormatV
 
         if (rc == QIMessageBox::Cancel)
             return QIMessageBox::Cancel;
+#endif
     }
 
     return message (mainWindowShown(), Info,
@@ -2108,7 +2009,7 @@ void VBoxProblemReporter::cannotExportAppliance (CAppliance *aAppliance, QWidget
     {
         message (aParent ? aParent : mainWindowShown(),
                  Error,
-                 tr ("Failed to create an appliance."));
+                 tr ("Failed to create appliance."));
     }else
     {
         /* Preserve the current error info before calling the object again */
@@ -2392,8 +2293,7 @@ QString VBoxProblemReporter::doFormatErrorInfo (const COMErrorInfo &aInfo,
     formatted += "</table>";
 
     if (aInfo.next())
-        formatted = doFormatErrorInfo (*aInfo.next()) +  "<p></p>" +
-                    formatted;
+        formatted = formatted + "<!--EOP-->" + doFormatErrorInfo (*aInfo.next());
 
     return formatted;
 }

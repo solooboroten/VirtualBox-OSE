@@ -1,4 +1,4 @@
-/* $Id: EMAll.cpp 17695 2009-03-11 13:48:09Z vboxsync $ */
+/* $Id: EMAll.cpp 18338 2009-03-26 18:15:06Z vboxsync $ */
 /** @file
  * EM - Execution Monitor(/Manager) - All contexts
  */
@@ -142,6 +142,10 @@ DECLINLINE(int) emDisCoreOne(PVM pVM, DISCPUSTATE *pCpu, RTGCUINTPTR InstrGC, ui
 /**
  * Disassembles one instruction.
  *
+ * @returns VBox status code, see SELMToFlatEx and EMInterpretDisasOneEx for
+ *          details.
+ * @retval  VERR_INTERNAL_ERROR on DISCoreOneEx failure.
+ *
  * @param   pVM             The VM handle.
  * @param   pCtxCore        The context core (used for both the mode and instruction).
  * @param   pCpu            Where to return the parsed instruction info.
@@ -165,6 +169,9 @@ VMMDECL(int) EMInterpretDisasOne(PVM pVM, PCCPUMCTXCORE pCtxCore, PDISCPUSTATE p
  * Disassembles one instruction.
  *
  * This is used by internally by the interpreter and by trap/access handlers.
+ *
+ * @returns VBox status code.
+ * @retval  VERR_INTERNAL_ERROR on DISCoreOneEx failure.
  *
  * @param   pVM             The VM handle.
  * @param   GCPtrInstr      The flat address of the instruction.
@@ -2681,7 +2688,7 @@ static const char *emMSRtoString(uint32_t uMsr)
     case MSR_IA32_BIOS_UPDT_TRIG:
         return "Unsupported MSR_IA32_BIOS_UPDT_TRIG";
     case MSR_IA32_TSC:
-        return "Unsupported MSR_IA32_TSC";
+        return "MSR_IA32_TSC";
     case MSR_IA32_MTRR_CAP:
         return "Unsupported MSR_IA32_MTRR_CAP";
     case MSR_IA32_MCP_CAP:
@@ -2740,6 +2747,10 @@ VMMDECL(int) EMInterpretRdmsr(PVM pVM, PCPUMCTXCORE pRegFrame)
 
     switch (pRegFrame->ecx)
     {
+    case MSR_IA32_TSC:
+        val = TMCpuTickGet(pVM);
+        break;
+
     case MSR_IA32_APICBASE:
         rc = PDMApicGetBase(pVM, &val);
         AssertRC(rc);

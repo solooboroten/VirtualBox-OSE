@@ -1,4 +1,4 @@
-/* $Id: MediumImpl.cpp 16867 2009-02-17 17:00:56Z vboxsync $ */
+/* $Id: MediumImpl.cpp 18313 2009-03-26 13:59:14Z vboxsync $ */
 
 /** @file
  *
@@ -962,7 +962,8 @@ HRESULT ImageMediumBase::protectedInit (VirtualBox *aVirtualBox, CBSTR aLocation
 
     /* get all the information about the medium from the file */
     rc = queryInfo();
-    if (SUCCEEDED (rc))
+
+    if (SUCCEEDED(rc))
     {
         /* if the image file is not accessible, it's not acceptable for the
          * newly opened media so convert this into an error */

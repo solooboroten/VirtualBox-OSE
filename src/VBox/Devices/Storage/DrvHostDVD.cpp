@@ -1,4 +1,4 @@
-/* $Id: DrvHostDVD.cpp 16334 2009-01-28 20:34:41Z vboxsync $ */
+/* $Id: DrvHostDVD.cpp 18087 2009-03-19 11:40:27Z vboxsync $ */
 /** @file
  * DrvHostDVD - Host DVD block driver.
  */
@@ -42,15 +42,18 @@
 
 #elif defined RT_OS_LINUX
 # include <sys/ioctl.h>
+# include <linux/version.h>
+/* All the following crap is apparently not necessary anymore since Linux
+ * version 2.6.29. */
+# if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 29)
 /* This is a hack to work around conflicts between these linux kernel headers
  * and the GLIBC tcpip headers. They have different declarations of the 4
  * standard byte order functions. */
-# define _LINUX_BYTEORDER_GENERIC_H
+#  define _LINUX_BYTEORDER_GENERIC_H
 /* This is another hack for not bothering with C++ unfriendly byteswap macros. */
-# define _LINUX_BYTEORDER_SWAB_H
-# define _LINUX_BYTEORDER_SWABB_H
-/* Those macros that are needed are defined in the header below */
-# include "swab.h"
+/* Those macros that are needed are defined in the header below. */
+#  include "swab.h"
+# endif
 # include <linux/cdrom.h>
 # include <sys/fcntl.h>
 # include <errno.h>

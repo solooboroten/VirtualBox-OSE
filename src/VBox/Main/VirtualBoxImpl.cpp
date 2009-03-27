@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxImpl.cpp 18023 2009-03-17 13:48:59Z vboxsync $ */
+/* $Id: VirtualBoxImpl.cpp 18265 2009-03-25 17:09:08Z vboxsync $ */
 
 /** @file
  * Implementation of IVirtualBox in VBoxSVC.
@@ -61,6 +61,7 @@
 #include "SystemPropertiesImpl.h"
 #include "GuestOSTypeImpl.h"
 #include "Version.h"
+#include "DHCPServerRunner.h"
 #include "DHCPServerImpl.h"
 
 #include "VirtualBoxXMLUtil.h"
@@ -85,7 +86,7 @@
 static const char gDefaultGlobalConfig [] =
 {
     "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>" RTFILE_LINEFEED
-    "<!-- Sun xVM VirtualBox Global Configuration -->" RTFILE_LINEFEED
+    "<!-- Sun VirtualBox Global Configuration -->" RTFILE_LINEFEED
     "<VirtualBox xmlns=\"" VBOX_XML_NAMESPACE "\" "
         "version=\"" VBOX_XML_VERSION_FULL "\">" RTFILE_LINEFEED
     "  <Global>"RTFILE_LINEFEED
@@ -1124,7 +1125,7 @@ STDMETHODIMP VirtualBox::CreateHardDisk(IN_BSTR aFormat,
 
     ComObjPtr<HardDisk> hardDisk;
     hardDisk.createObject();
-    rc = hardDisk->init (this, format, aLocation);
+    rc = hardDisk->init(this, format, aLocation);
 
     if (SUCCEEDED (rc))
         hardDisk.queryInterfaceTo (aHardDisk);
@@ -1133,6 +1134,7 @@ STDMETHODIMP VirtualBox::CreateHardDisk(IN_BSTR aFormat,
 }
 
 STDMETHODIMP VirtualBox::OpenHardDisk(IN_BSTR aLocation,
+                                      AccessMode_T accessMode,
                                       IHardDisk **aHardDisk)
 {
     CheckComArgNotNull(aLocation);
@@ -1147,7 +1149,9 @@ STDMETHODIMP VirtualBox::OpenHardDisk(IN_BSTR aLocation,
 
     ComObjPtr<HardDisk> hardDisk;
     hardDisk.createObject();
-    rc = hardDisk->init (this, aLocation);
+    rc = hardDisk->init(this,
+                        aLocation,
+                        (accessMode == AccessMode_ReadWrite) ? HardDisk::OpenReadWrite : HardDisk::OpenReadOnly );
 
     if (SUCCEEDED (rc))
     {
@@ -2001,6 +2005,7 @@ HRESULT VirtualBox::removeProgress (IN_GUID aId)
 
     size_t cnt = mData.mProgressOperations.erase (aId);
     Assert (cnt == 1);
+    NOREF(cnt);
 
     return S_OK;
 }
@@ -3089,7 +3094,7 @@ HRESULT VirtualBox::loadMedia (const settings::Key &aGlobal)
             {
                 ComObjPtr<HardDisk> hardDisk;
                 hardDisk.createObject();
-                rc = hardDisk->init (this, NULL, *it);
+                rc = hardDisk->init(this, NULL, *it);
                 CheckComRCBreakRC (rc);
 
                 rc = registerHardDisk(hardDisk, false /* aSaveRegistry */);
@@ -3505,6 +3510,7 @@ HRESULT VirtualBox::unregisterHardDisk(HardDisk *aHardDisk,
 
     size_t cnt = mData.mHardDiskMap.erase (aHardDisk->id());
     Assert (cnt == 1);
+    NOREF(cnt);
 
     if (aHardDisk->parent().isNull())
     {

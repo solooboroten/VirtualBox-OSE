@@ -1,4 +1,4 @@
-/* $Id: MMHyper.cpp 17536 2009-03-08 03:39:42Z vboxsync $ */
+/* $Id: MMHyper.cpp 18354 2009-03-26 22:17:20Z vboxsync $ */
 /** @file
  * MM - Memory Manager - Hypervisor Memory Area.
  */
@@ -77,15 +77,26 @@ int mmR3HyperInit(PVM pVM)
     uint32_t cbHyperHeap;
     int rc = CFGMR3QueryU32(CFGMR3GetChild(CFGMR3GetRoot(pVM), "MM"), "cbHyperHeap", &cbHyperHeap);
     if (rc == VERR_CFGM_NO_PARENT || rc == VERR_CFGM_VALUE_NOT_FOUND)
+    {
         cbHyperHeap = VMMIsHwVirtExtForced(pVM)
                     ? 640*_1K
                     : 1280*_1K;
-    else if (RT_FAILURE(rc))
-    {
-        LogRel(("MM/cbHyperHeap query -> %Rrc\n", rc));
-        AssertRCReturn(rc, rc);
+
+        /* Adjust for dynamic stuff like RAM mapping chunks. Try playing kind
+           of safe with existing configs here (HMA size must not change)... */
+        uint64_t cbRam;
+        CFGMR3QueryU64Def(CFGMR3GetRoot(pVM), "RamSize", &cbRam, 0);
+        if (cbRam > _2G)
+        {
+            cbRam = RT_MIN(cbRam, _1T);
+            cbHyperHeap += (cbRam - _1G) / _1M * 128; /* 128 is a quick guess */
+            cbHyperHeap = RT_ALIGN_32(cbHyperHeap, _64K);
+        }
     }
+    else
+        AssertLogRelRCReturn(rc, rc);
     cbHyperHeap = RT_ALIGN_32(cbHyperHeap, PAGE_SIZE);
+    LogRel(("MM: cbHyperHeap=%#x (%u)\n", cbHyperHeap, cbHyperHeap));
 
     /*
      * Allocate the hypervisor heap.
@@ -159,7 +170,7 @@ VMMR3DECL(int) MMR3HyperInitFinalize(PVM pVM)
      */
     while ((RTINT)pVM->mm.s.offHyperNextStatic + 64*_1K < (RTINT)pVM->mm.s.cbHyperArea - _4M)
         pVM->mm.s.cbHyperArea -= _4M;
-    int rc = PGMR3MapPT(pVM, pVM->mm.s.pvHyperAreaGC, pVM->mm.s.cbHyperArea,
+    int rc = PGMR3MapPT(pVM, pVM->mm.s.pvHyperAreaGC, pVM->mm.s.cbHyperArea, 0 /*fFlags*/,
                         mmR3HyperRelocateCallback, NULL, "Hypervisor Memory Area");
     if (RT_FAILURE(rc))
         return rc;
@@ -720,15 +731,19 @@ static int mmR3HyperHeapCreate(PVM pVM, const size_t cb, PMMHYPERHEAP *ppHeap, P
     int rc = SUPR3PageAllocEx(cPages,
                               0 /*fFlags*/,
                               &pv,
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
                               VMMIsHwVirtExtForced(pVM) ? &pvR0 : NULL,
+#else
+                              NULL,
+#endif
                               paPages);
     if (RT_SUCCESS(rc))
     {
-        if (!VMMIsHwVirtExtForced(pVM))
 #ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+        if (!VMMIsHwVirtExtForced(pVM))
             pvR0 = NIL_RTR0PTR;
 #else
-            pvR0 = (uintptr_t)pv;
+        pvR0 = (uintptr_t)pv;
 #endif
         memset(pv, 0, cbAligned);
 
@@ -886,15 +901,19 @@ VMMDECL(int) MMR3HyperAllocOnceNoRel(PVM pVM, size_t cb, unsigned uAlignment, MM
     int rc = SUPR3PageAllocEx(cPages,
                               0 /*fFlags*/,
                               &pvPages,
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
                               VMMIsHwVirtExtForced(pVM) ? &pvR0 : NULL,
+#else
+                              NULL,
+#endif
                               paPages);
     if (RT_SUCCESS(rc))
     {
-        if (!VMMIsHwVirtExtForced(pVM))
 #ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+        if (!VMMIsHwVirtExtForced(pVM))
             pvR0 = NIL_RTR0PTR;
 #else
-            pvR0 = (uintptr_t)pvPages;
+        pvR0 = (uintptr_t)pvPages;
 #endif
         memset(pvPages, 0, cb);
 

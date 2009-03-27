@@ -1,4 +1,4 @@
-/* $Id: ApplianceImpl.h 18024 2009-03-17 14:00:08Z vboxsync $ */
+/* $Id: ApplianceImpl.h 18304 2009-03-26 11:27:20Z vboxsync $ */
 
 /** @file
  *
@@ -33,6 +33,7 @@ namespace xml
 }
 
 class VirtualBox;
+class Progress;
 
 class ATL_NO_VTABLE Appliance :
     public VirtualBoxBaseWithChildrenNEXT,
@@ -95,7 +96,8 @@ private:
 
     HRESULT searchUniqueVMName(Utf8Str& aName) const;
     HRESULT searchUniqueDiskImageFilePath(Utf8Str& aName) const;
-    uint32_t calcMaxProgress();
+    HRESULT setUpProgress(ComObjPtr<Progress> &pProgress, const Bstr &bstrDescription);
+    void waitForAsyncProgress(ComObjPtr<Progress> &pProgressThis, ComPtr<IProgress> &pProgressAsync);
     void addWarning(const char* aWarning, ...);
 
     struct TaskImportMachines;  /* Worker thread for import */
@@ -115,6 +117,8 @@ struct VirtualSystemDescriptionEntry
     Utf8Str strOvf;                         // original OVF value (type-dependent)
     Utf8Str strVbox;                        // configuration value (type-dependent)
     Utf8Str strExtraConfig;                 // extra configuration key=value strings (type-dependent)
+
+    uint32_t ulSizeMB;                      // hard disk images only: size of the uncompressed image in MB
 };
 
 class ATL_NO_VTABLE VirtualSystemDescription :
@@ -168,9 +172,17 @@ public:
                                     ComSafeArrayOut(BSTR, aVboxValues),
                                     ComSafeArrayOut(BSTR, aExtraConfigValues));
 
+    STDMETHOD(GetValuesByType)(VirtualSystemDescriptionType_T aType,
+                               VirtualSystemDescriptionValueType_T aWhich,
+                               ComSafeArrayOut(BSTR, aValues));
+
     STDMETHOD(SetFinalValues)(ComSafeArrayIn(BOOL, aEnabled),
                               ComSafeArrayIn(IN_BSTR, aVboxValues),
                               ComSafeArrayIn(IN_BSTR, aExtraConfigValues));
+
+    STDMETHOD(AddDescription)(VirtualSystemDescriptionType_T aType,
+                              IN_BSTR aVboxValue,
+                              IN_BSTR aExtraConfigValue);
 
     /* public methods only for internal purposes */
 
@@ -178,6 +190,7 @@ public:
                   const Utf8Str &strRef,
                   const Utf8Str &aOrigValue,
                   const Utf8Str &aAutoValue,
+                  uint32_t ulSizeMB = 0,
                   const Utf8Str &strExtraConfig = "");
 
     std::list<VirtualSystemDescriptionEntry*> findByType(VirtualSystemDescriptionType_T aType);

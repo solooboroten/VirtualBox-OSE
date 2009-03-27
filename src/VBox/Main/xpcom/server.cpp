@@ -1,4 +1,4 @@
-/* $Id: server.cpp 18023 2009-03-17 13:48:59Z vboxsync $ */
+/* $Id: server.cpp 18265 2009-03-25 17:09:08Z vboxsync $ */
 /** @file
  * XPCOM server process (VBoxSVC) start point.
  */
@@ -110,6 +110,7 @@
 #include <SerialPortImpl.h>
 #include <ParallelPortImpl.h>
 #include <USBControllerImpl.h>
+#include "DHCPServerRunner.h"
 #include "DHCPServerImpl.h"
 #ifdef VBOX_WITH_USB
 # include <HostUSBDeviceImpl.h>
@@ -1110,7 +1111,7 @@ int main (int argc, char **argv)
             int  iSize;
 
             iSize = snprintf (szBuf, sizeof(szBuf),
-                              "Sun xVM VirtualBox XPCOM Server Version "
+                              "Sun VirtualBox XPCOM Server Version "
                               VBOX_VERSION_STRING);
             for (int i=iSize; i>0; i--)
                 putchar('*');

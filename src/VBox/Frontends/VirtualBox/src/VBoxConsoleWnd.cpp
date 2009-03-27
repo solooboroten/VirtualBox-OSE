@@ -1281,8 +1281,6 @@ void VBoxConsoleWnd::closeEvent (QCloseEvent *e)
     static const char *kPowerOff = "powerOff";
     static const char *kDiscardCurState = "discardCurState";
 
-    bool isACPIEnabled = csession.GetConsole().GetGuestEnteredACPIMode();
-
     if (!console)
     {
         e->accept();
@@ -1315,6 +1313,8 @@ void VBoxConsoleWnd::closeEvent (QCloseEvent *e)
     {
         /* start with ignore the close event */
         e->ignore();
+
+        bool isACPIEnabled = csession.GetConsole().GetGuestEnteredACPIMode();
 
         bool success = true;
 
@@ -1600,7 +1600,7 @@ void VBoxConsoleWnd::retranslateUi()
 #ifdef VBOX_OSE
     caption_prefix = tr ("VirtualBox OSE");
 #else
-    caption_prefix = tr ("Sun xVM VirtualBox");
+    caption_prefix = tr ("Sun VirtualBox");
 #endif
 
     /*

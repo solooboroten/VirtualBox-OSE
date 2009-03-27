@@ -1,5 +1,5 @@
 #ifdef VBOX
-/* $Id: DevVGA.cpp 17767 2009-03-12 17:14:01Z vboxsync $ */
+/* $Id: DevVGA.cpp 18232 2009-03-25 01:15:31Z vboxsync $ */
 /** @file
  * DevVGA - VBox VGA/VESA device.
  */
@@ -1197,7 +1197,7 @@ uint32_t vga_mem_readb(void *opaque, target_phys_addr_t addr)
             && !vga_is_dirty(s, addr))
         {
             /** @todo only allow read access (doesn't work now) */
-            IOMMMIOModifyPage(PDMDevHlpGetVM(s->CTX_SUFF(pDevIns)), GCPhys, s->GCPhysVRAM + addr, X86_PTE_RW|X86_PTE_P);
+            IOMMMIOMapMMIO2Page(PDMDevHlpGetVM(s->CTX_SUFF(pDevIns)), GCPhys, s->GCPhysVRAM + addr, X86_PTE_RW|X86_PTE_P);
             /* Set as dirty as write accesses won't be noticed now. */
             vga_set_dirty(s, addr);
             s->fRemappedVGA = true;
@@ -1329,7 +1329,7 @@ int vga_mem_writeb(void *opaque, target_phys_addr_t addr, uint32_t val)
             if (   (s->sr[2] & 3) == 3
                 && !vga_is_dirty(s, addr))
             {
-                IOMMMIOModifyPage(PDMDevHlpGetVM(s->CTX_SUFF(pDevIns)), GCPhys, s->GCPhysVRAM + addr, X86_PTE_RW | X86_PTE_P);
+                IOMMMIOMapMMIO2Page(PDMDevHlpGetVM(s->CTX_SUFF(pDevIns)), GCPhys, s->GCPhysVRAM + addr, X86_PTE_RW | X86_PTE_P);
                 s->fRemappedVGA = true;
             }
 # endif /* IN_RC */
@@ -1405,7 +1405,7 @@ int vga_mem_writeb(void *opaque, target_phys_addr_t addr, uint32_t val)
                 if (s->u64LastLatchedAccess)
                 {
                     Log2(("Reset mask (was %d) delta %RX64 (limit %x)\n", s->iMask, u64CurTime - s->u64LastLatchedAccess, aDelta[s->iMask]));
-                    if (s->iMask) 
+                    if (s->iMask)
                         s->iMask--;
                     s->uMaskLatchAccess     = aMask[s->iMask];
                 }
@@ -4819,7 +4819,7 @@ static DECLCALLBACK(int) vgaPortSnapshot(PPDMIDISPLAYPORT pInterface, void *pvDa
     pThis->fRenderVRAM = 1;             /* force the guest VRAM rendering to the given buffer. */
 
     /* make the snapshot.
-     * The second parameter is 'false' because the current display state, already updated by the 
+     * The second parameter is 'false' because the current display state, already updated by the
      * pfnUpdateDisplayAll call above, is being rendered to an external buffer using a fake connector.
      * That is if display is blanked, we expect a black screen in the external buffer.
      */
@@ -5775,7 +5775,7 @@ static DECLCALLBACK(int)   vgaR3Construct(PPDMDEVINS pDevIns, int iInstance, PCF
     AssertReleaseMsg(g_cbVgaBiosBinary <= _64K && g_cbVgaBiosBinary >= 32*_1K, ("g_cbVgaBiosBinary=%#x\n", g_cbVgaBiosBinary));
     AssertReleaseMsg(RT_ALIGN_Z(g_cbVgaBiosBinary, PAGE_SIZE) == g_cbVgaBiosBinary, ("g_cbVgaBiosBinary=%#x\n", g_cbVgaBiosBinary));
     rc = PDMDevHlpROMRegister(pDevIns, 0x000c0000, g_cbVgaBiosBinary, &g_abVgaBiosBinary[0],
-                              false /* fShadow */, "VGA BIOS");
+                              PGMPHYS_ROM_FLAGS_PERMANENT_BINARY, "VGA BIOS");
     if (RT_FAILURE(rc))
         return rc;
 

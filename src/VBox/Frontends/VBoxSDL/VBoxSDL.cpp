@@ -1137,7 +1137,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     SDL_Event EvHKeyDown2;
 
     LogFlow(("SDL GUI started\n"));
-    RTPrintf("Sun xVM VirtualBox SDL GUI version %s\n"
+    RTPrintf("Sun VirtualBox SDL GUI version %s\n"
              "(C) 2005-2009 Sun Microsystems, Inc.\n"
              "All rights reserved.\n\n",
              VBOX_VERSION_STRING);
@@ -1669,7 +1669,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         {
             /* we've not found the image */
             RTPrintf("Adding hard disk '%S'...\n", hdaFile);
-            virtualBox->OpenHardDisk(hdaFileBstr, hardDisk.asOutParam());
+            virtualBox->OpenHardDisk(hdaFileBstr, AccessMode_ReadWrite, hardDisk.asOutParam());
         }
         /* do we have the right image now? */
         if (hardDisk)
@@ -3920,7 +3920,7 @@ void SaveState(void)
      * Wait for the operation to be completed and work
      * the title bar in the mean while.
      */
-    LONG    cPercent = 0;
+    ULONG    cPercent = 0;
 #ifndef RT_OS_DARWIN /* don't break the other guys yet. */
     for (;;)
     {
@@ -3928,7 +3928,7 @@ void SaveState(void)
         rc = gProgress->COMGETTER(Completed)(&fCompleted);
         if (FAILED(rc) || fCompleted)
             break;
-        LONG cPercentNow;
+        ULONG cPercentNow;
         rc = gProgress->COMGETTER(Percent)(&cPercentNow);
         if (FAILED(rc))
             break;
@@ -3960,7 +3960,7 @@ void SaveState(void)
         rc = gProgress->COMGETTER(Completed)(&fCompleted);
         if (FAILED(rc) || fCompleted)
             break;
-        LONG cPercentNow;
+        ULONG cPercentNow;
         rc = gProgress->COMGETTER(Percent)(&cPercentNow);
         if (FAILED(rc))
             break;
@@ -4046,7 +4046,7 @@ static void UpdateTitlebar(TitlebarMode mode, uint32_t u32User)
     strcpy(szPrevTitle, szTitle);
 
 
-    strcpy(szTitle, "Sun xVM VirtualBox - ");
+    strcpy(szTitle, "Sun VirtualBox - ");
 
     Bstr name;
     gMachine->COMGETTER(Name)(name.asOutParam());
@@ -4121,7 +4121,7 @@ static void UpdateTitlebar(TitlebarMode mode, uint32_t u32User)
                 strcat(szTitle, " - Starting...");
             else if (machineState == MachineState_Restoring)
             {
-                LONG cPercentNow;
+                ULONG cPercentNow;
                 HRESULT rc = gProgress->COMGETTER(Percent)(&cPercentNow);
                 if (SUCCEEDED(rc))
                     RTStrPrintf(szTitle + strlen(szTitle), sizeof(szTitle) - strlen(szTitle),
@@ -4167,7 +4167,7 @@ static void UpdateTitlebar(TitlebarMode mode, uint32_t u32User)
 #ifdef VBOX_WIN32_UI
     setUITitle(szTitle);
 #else
-    SDL_WM_SetCaption(szTitle, "Sun xVM VirtualBox");
+    SDL_WM_SetCaption(szTitle, "Sun VirtualBox");
 #endif
 }
 
@@ -4657,14 +4657,14 @@ static int HandleHostKey(const SDL_KeyboardEvent *pEv)
              * Wait for the operation to be completed and work
              * the title bar in the mean while.
              */
-            LONG    cPercent = 0;
+            ULONG    cPercent = 0;
             for (;;)
             {
                 BOOL fCompleted = false;
                 rc = gProgress->COMGETTER(Completed)(&fCompleted);
                 if (FAILED(rc) || fCompleted)
                     break;
-                LONG cPercentNow;
+                ULONG cPercentNow;
                 rc = gProgress->COMGETTER(Percent)(&cPercentNow);
                 if (FAILED(rc))
                     break;

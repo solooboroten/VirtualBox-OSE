@@ -1,4 +1,4 @@
-/* $Id: VBoxManageHelp.cpp 18035 2009-03-17 15:48:46Z vboxsync $ */
+/* $Id: VBoxManageHelp.cpp 18403 2009-03-27 15:13:28Z vboxsync $ */
 /** @file
  * VBoxManage - help and other message output.
  */
@@ -75,12 +75,12 @@ void printUsage(USAGECATEGORY u64Cmd)
     if (u64Cmd & USAGE_LIST)
     {
         RTPrintf("VBoxManage list [--long|-l] vms|runningvms|ostypes|hostdvds|hostfloppies|\n"
-#if (defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT))
-                "                            bridgedifs|hostonlyifs|dhcpservers|hostinfo|hddbackends|hdds|dvds|floppies|\n"
+#if defined(VBOX_WITH_NETFLT)
+                 "                            bridgedifs|hostonlyifs|dhcpservers|hostinfo|\n"
 #else
-                "                            bridgedifs|hostinfo|dhcpservers|hddbackends|hdds|dvds|floppies|\n"
+                 "                            bridgedifs|hostinfo|dhcpservers|\n"
 #endif
-
+                 "                            hddbackends|hdds|dvds|floppies|\n"
                  "                            usbhost|usbfilters|systemproperties\n"
                  "\n");
     }
@@ -111,18 +111,6 @@ void printUsage(USAGECATEGORY u64Cmd)
                  "                            [-register]\n"
                  "                            [-basefolder <path> | -settingsfile <path>]\n"
                  "                            [-uuid <uuid>]\n"
-                 "\n");
-    }
-
-    if (u64Cmd & USAGE_IMPORTAPPLIANCE)
-    {
-        RTPrintf("VBoxManage import           <ovf>\n"
-                 "\n"); // @todo
-    }
-
-    if (u64Cmd & USAGE_EXPORTAPPLIANCE)
-    {
-        RTPrintf("VBoxManage export           <machines> [--output|-o] <ovf>\n"
                  "\n");
     }
 
@@ -166,7 +154,7 @@ void printUsage(USAGECATEGORY u64Cmd)
                  "                            [-dvdpassthrough on|off]\n"
                  "                            [-floppy disabled|empty|<uuid>|\n"
                  "                                     <filename>|host:<drive>]\n"
-#if defined(RT_OS_LINUX) || defined(RT_OS_DARWIN) || (defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT))
+#if defined(VBOX_WITH_NETFLT)
                  "                            [-nic<1-N> none|null|nat|bridged|intnet|hostonly]\n"
 #else /* !RT_OS_LINUX && !RT_OS_DARWIN */
                  "                            [-nic<1-N> none|null|nat|bridged|intnet]\n"
@@ -242,6 +230,18 @@ void printUsage(USAGECATEGORY u64Cmd)
                  "                            [-usbehci on|off]\n"
                  "                            [-snapshotfolder default|<path>]\n");
         RTPrintf("\n");
+    }
+
+    if (u64Cmd & USAGE_IMPORTAPPLIANCE)
+    {
+        RTPrintf("VBoxManage import           <ovf> [--dry-run|-n] [more options]\n"
+                 "    (run with -n to have options displayed for a particular OVF)\n\n");
+    }
+
+    if (u64Cmd & USAGE_EXPORTAPPLIANCE)
+    {
+        RTPrintf("VBoxManage export           <machines> --output|-o <ovf>\n"
+                 "\n");
     }
 
     if (u64Cmd & USAGE_STARTVM)
@@ -323,7 +323,7 @@ void printUsage(USAGECATEGORY u64Cmd)
         RTPrintf("VBoxManage createhd         --filename <filename>\n"
                  "                            --size <megabytes>\n"
                  "                            [--format VDI|VMDK|VHD] (default: VDI)\n"
-                 "                            [--variant Standard,Fixed,Diff,Split2G,Stream]\n"
+                 "                            [--variant Standard,Fixed,Split2G,StreamOptimized]\n"
                  "                            [--type normal|writethrough] (default: normal)\n"
                  "                            [--comment <comment>]\n"
                  "                            [--remember]\n"
@@ -334,8 +334,7 @@ void printUsage(USAGECATEGORY u64Cmd)
     {
         RTPrintf("VBoxManage modifyhd         <uuid>|<filename>\n"
                  "                            settype normal|writethrough|immutable |\n"
-                 "                            autoreset on|off |\n"
-                 "                            compact\n"
+                 "                            autoreset on|off\n"
                  "\n");
     }
 
@@ -343,7 +342,7 @@ void printUsage(USAGECATEGORY u64Cmd)
     {
         RTPrintf("VBoxManage clonehd          <uuid>|<filename> <outputfile>\n"
                  "                            [--format VDI|VMDK|VHD|RAW|<other>]\n"
-                 "                            [--variant Standard,Fixed,Diff,Split2G,Stream]\n"
+                 "                            [--variant Standard,Fixed,Split2G,StreamOptimized]\n"
                  "                            [--type normal|writethrough|immutable]\n"
                  "                            [--remember]\n"
                  "\n");
@@ -353,10 +352,10 @@ void printUsage(USAGECATEGORY u64Cmd)
     {
         RTPrintf("VBoxManage convertfromraw   <filename> <outputfile>\n"
                  "                            [--format VDI|VMDK|VHD]\n"
-                 "                            [--variant Standard,Fixed,Diff,Split2G,Stream]\n"
+                 "                            [--variant Standard,Fixed,Split2G,StreamOptimized]\n"
                  "VBoxManage convertfromraw   stdin <outputfile> <bytes>\n"
                  "                            [--format VDI|VMDK|VHD]\n"
-                 "                            [--variant Standard,Fixed,Diff,Split2G,Stream]\n"
+                 "                            [--variant Standard,Fixed,Split2G,StreamOptimized]\n"
                  "\n");
     }
 
@@ -472,7 +471,8 @@ void printUsage(USAGECATEGORY u64Cmd)
 
     if (u64Cmd & USAGE_METRICS)
     {
-        RTPrintf("VBoxManage metrics          list [*|host|<vmname> [<metric_list>]] (comma-separated)\n\n"
+        RTPrintf("VBoxManage metrics          list [*|host|<vmname> [<metric_list>]]\n"
+                 "                                                 (comma-separated)\n\n"
                  "VBoxManage metrics          setup\n"
                  "                            [-period <seconds>]\n"
                  "                            [-samples <count>]\n"
@@ -487,13 +487,13 @@ void printUsage(USAGECATEGORY u64Cmd)
                  "                            [*|host|<vmname> [<metric_list>]]\n"
                  "\n");
     }
-#if !defined(RT_OS_WINDOWS) || defined(VBOX_WITH_NETFLT)
+#if defined(VBOX_WITH_NETFLT)
     if (u64Cmd & USAGE_HOSTONLYIFS)
     {
-        RTPrintf("VBoxManage hostonlyif       ipconfig <name> \n"
-                 "                                     [-dhcp| \n"
-                 "                                      -ip<ipv4> [-netmask<ipv4> (default is 255.255.255.0)]| \n"
-                 "                                      -ipv6<ipv6> [-netmasklengthv6<length> (default is 64)]]\n"
+        RTPrintf("VBoxManage hostonlyif       ipconfig <name>\n"
+                 "                            [--dhcp |\n"
+                 "                            --ip<ipv4> [--netmask<ipv4> (def: 255.255.255.0)] |\n"
+                 "                            --ipv6<ipv6> [--netmasklengthv6<length> (def: 64)]]\n"
 # if defined(RT_OS_WINDOWS)
                  "                            create |\n"
                  "                            remove <name>\n"
@@ -502,19 +502,23 @@ void printUsage(USAGECATEGORY u64Cmd)
     }
 #endif
 
-#if !defined(RT_OS_WINDOWS) || defined(VBOX_WITH_NETFLT)
     if (u64Cmd & USAGE_DHCPSERVER)
     {
-        RTPrintf("VBoxManage dhcpserver       [add | modify] [-netname <network_name> | -ifname <hostonly_if_name>]\n"
-                 "                                [-ip <ip_address>\n"
-                 "                                 -netmask <network_mask>\n"
-                 "                                 -lowerip <lower_ip>\n"
-                 "                                 -upperip <upper_ip>]\n"
-                 "                                [-enable | -disable]\n"
-                 "                            remove [-netname <network_name> | -ifname <hostonly_if_name>]\n"
+        RTPrintf("VBoxManage dhcpserver       add|modify --netname <network_name> |\n"
+#if defined(VBOX_WITH_NETFLT)
+                 "                                       --ifname <hostonly_if_name>\n"
+#endif
+                 "                                [--ip <ip_address>\n"
+                 "                                 --netmask <network_mask>\n"
+                 "                                 --lowerip <lower_ip>\n"
+                 "                                 --upperip <upper_ip>]\n"
+                 "                                [--enable | --disable]\n"
+                 "VBoxManage dhcpserver       remove --netname <network_name> |\n"
+#if defined(VBOX_WITH_NETFLT)
+                 "                                   --ifname <hostonly_if_name>\n"
+#endif
                  "\n");
     }
-#endif
 }
 
 /**
@@ -549,55 +553,3 @@ int errorArgument(const char *pszFormat, ...)
     return 1;
 }
 
-#ifndef VBOX_ONLY_DOCS
-/**
- * Print out progress on the console
- */
-void showProgress(ComPtr<IProgress> progress)
-{
-    BOOL fCompleted;
-    LONG currentPercent;
-    LONG lastPercent = 0;
-
-    RTPrintf("0%%...");
-    RTStrmFlush(g_pStdOut);
-    while (SUCCEEDED(progress->COMGETTER(Completed(&fCompleted))))
-    {
-        progress->COMGETTER(Percent(&currentPercent));
-
-        /* did we cross a 10% mark? */
-        if (((currentPercent / 10) > (lastPercent / 10)))
-        {
-            /* make sure to also print out missed steps */
-            for (LONG curVal = (lastPercent / 10) * 10 + 10; curVal <= (currentPercent / 10) * 10; curVal += 10)
-            {
-                if (curVal < 100)
-                {
-                    RTPrintf("%ld%%...", curVal);
-                    RTStrmFlush(g_pStdOut);
-                }
-            }
-            lastPercent = (currentPercent / 10) * 10;
-        }
-        if (fCompleted)
-            break;
-
-        /* make sure the loop is not too tight */
-        progress->WaitForCompletion(100);
-    }
-
-    /* complete the line. */
-    HRESULT rc;
-    if (SUCCEEDED(progress->COMGETTER(ResultCode)(&rc)))
-    {
-        if (SUCCEEDED(rc))
-            RTPrintf("100%%\n");
-        else
-            RTPrintf("FAILED\n");
-    }
-    else
-        RTPrintf("\n");
-    RTStrmFlush(g_pStdOut);
-}
-
-#endif /* !VBOX_ONLY_DOCS */

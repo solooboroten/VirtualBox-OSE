@@ -1,4 +1,4 @@
-/* $Id: HardDiskImpl.cpp 17974 2009-03-16 19:53:46Z vboxsync $ */
+/* $Id: HardDiskImpl.cpp 18388 2009-03-27 13:11:42Z vboxsync $ */
 
 /** @file
  *
@@ -84,10 +84,31 @@ struct HardDisk::Task : public com::SupportErrorInfoBase
         AssertComRC (rc);
     }
 
+    void setData (HardDisk *aTarget, HardDisk *aParent)
+    {
+        d.target = aTarget;
+        HRESULT rc = d.target->addCaller();
+        AssertComRC (rc);
+        d.parentDisk = aParent;
+        if (aParent)
+        {
+            rc = d.parentDisk->addCaller();
+            AssertComRC (rc);
+        }
+    }
+
     void setData (MergeChain *aChain)
     {
         AssertReturnVoid (aChain != NULL);
         d.chain.reset (aChain);
+    }
+
+    void setData (CloneChain *aSrcChain, CloneChain *aParentChain)
+    {
+        AssertReturnVoid (aSrcChain != NULL);
+        AssertReturnVoid (aParentChain != NULL);
+        d.source.reset (aSrcChain);
+        d.parent.reset (aParentChain);
     }
 
     HRESULT startThread();
@@ -105,9 +126,18 @@ struct HardDisk::Task : public com::SupportErrorInfoBase
 
         HardDiskVariant_T variant;
 
-        /* CreateDiff */
+        /* CreateDiff, Clone */
 
         ComObjPtr<HardDisk> target;
+
+        /* Clone */
+
+        /** Hard disks to open, in {parent,child} order */
+        std::auto_ptr <CloneChain> source;
+        /** Hard disks which are parent of target, in {parent,child} order */
+        std::auto_ptr <CloneChain> parent;
+        /** The to-be parent hard disk object */
+        ComObjPtr<HardDisk> parentDisk;
 
         /* Merge */
 
@@ -425,6 +455,106 @@ private:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Helper class for clone operations.
+ *
+ * @note It is assumed that when modifying methods of this class are called,
+ *       HardDisk::treeLock() is held in read mode.
+ */
+class HardDisk::CloneChain : public HardDisk::List,
+                             public com::SupportErrorInfoBase
+{
+public:
+
+    CloneChain () {}
+
+    ~CloneChain()
+    {
+        for (iterator it = begin(); it != end(); ++ it)
+        {
+            AutoWriteLock alock (*it);
+            Assert ((*it)->m.state == MediaState_LockedRead);
+            if ((*it)->m.state == MediaState_LockedRead)
+                (*it)->UnlockRead (NULL);
+
+            (*it)->releaseCaller();
+        }
+    }
+
+    HRESULT addImage (HardDisk *aHardDisk)
+    {
+        HRESULT rc = aHardDisk->addCaller();
+        CheckComRCReturnRC (rc);
+
+        push_front (aHardDisk);
+
+        return S_OK;
+    }
+
+    HRESULT lockImagesRead ()
+    {
+        /* Lock all disks in the chain in {parent, child} order,
+         * and make sure they are accessible. */
+        /// @todo code duplication with SessionMachine::lockMedia, see below
+        ErrorInfoKeeper eik (true /* aIsNull */);
+        MultiResult mrc (S_OK);
+        for (List::const_iterator it = begin(); it != end(); ++ it)
+        {
+            HRESULT rc = S_OK;
+            MediaState_T mediaState;
+            rc = (*it)->LockRead(&mediaState);
+            CheckComRCReturnRC (rc);
+
+            if (mediaState == MediaState_Inaccessible)
+            {
+                rc = (*it)->COMGETTER(State) (&mediaState);
+                CheckComRCReturnRC (rc);
+                Assert (mediaState == MediaState_LockedRead);
+
+                /* Note that we locked the medium already, so use the error
+                 * value to see if there was an accessibility failure */
+                Bstr error;
+                rc = (*it)->COMGETTER(LastAccessError) (error.asOutParam());
+                CheckComRCReturnRC (rc);
+
+                if (!error.isNull())
+                {
+                    Bstr loc;
+                    rc = (*it)->COMGETTER(Location) (loc.asOutParam());
+                    CheckComRCThrowRC (rc);
+
+                    /* collect multiple errors */
+                    eik.restore();
+
+                    /* be in sync with MediumBase::setStateError() */
+                    Assert (!error.isEmpty());
+                    mrc = setError (E_FAIL,
+                        tr ("Medium '%ls' is not accessible. %ls"),
+                        loc.raw(), error.raw());
+
+                    eik.fetch();
+                }
+            }
+        }
+
+        eik.restore();
+        CheckComRCReturnRC ((HRESULT) mrc);
+
+        return S_OK;
+    }
+
+protected:
+
+    // SupportErrorInfoBase interface
+    const GUID &mainInterfaceID() const { return COM_IIDOF (IHardDisk); }
+    const char *componentName() const { return HardDisk::ComponentName(); }
+
+private:
+
+};
+
+////////////////////////////////////////////////////////////////////////////////
 // HardDisk class
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -512,7 +642,8 @@ void HardDisk::FinalRelease()
  * @param aVirtualBox   VirtualBox object.
  * @param aLocaiton     Storage unit location.
  */
-HRESULT HardDisk::init (VirtualBox *aVirtualBox, CBSTR aFormat,
+HRESULT HardDisk::init (VirtualBox *aVirtualBox,
+                        CBSTR aFormat,
                         CBSTR aLocation)
 {
     AssertReturn (aVirtualBox != NULL, E_FAIL);
@@ -583,7 +714,8 @@ HRESULT HardDisk::init (VirtualBox *aVirtualBox, CBSTR aFormat,
 
 /**
  * Initializes the hard disk object by opening the storage unit at the specified
- * location.
+ * location. If the fWrite parameter is true, then the image will be opened
+ * read/write, otherwise it will be opened read-only.
  *
  * Note that the UUID, format and the parent of this hard disk will be
  * determined when reading the hard disk storage unit. If the detected parent is
@@ -592,7 +724,9 @@ HRESULT HardDisk::init (VirtualBox *aVirtualBox, CBSTR aFormat,
  * @param aVirtualBox   VirtualBox object.
  * @param aLocaiton     Storage unit location.
  */
-HRESULT HardDisk::init (VirtualBox *aVirtualBox, CBSTR aLocation)
+HRESULT HardDisk::init(VirtualBox *aVirtualBox,
+                       CBSTR aLocation,
+                       HDDOpenMode enOpenMode)
 {
     AssertReturn (aVirtualBox, E_INVALIDARG);
     AssertReturn (aLocation, E_INVALIDARG);
@@ -613,12 +747,16 @@ HRESULT HardDisk::init (VirtualBox *aVirtualBox, CBSTR aLocation)
     /* there must be a storage unit */
     m.state = MediaState_Created;
 
+    /* remember the open mode (defaults to ReadWrite) */
+    mm.hddOpenMode = enOpenMode;
+
     rc = setLocation (aLocation);
     CheckComRCReturnRC (rc);
 
     /* get all the information about the medium from the storage unit */
     rc = queryInfo();
-    if (SUCCEEDED (rc))
+
+    if (SUCCEEDED(rc))
     {
         /* if the storage unit is not accessible, it's not acceptable for the
          * newly opened media so convert this into an error */
@@ -629,9 +767,10 @@ HRESULT HardDisk::init (VirtualBox *aVirtualBox, CBSTR aLocation)
         }
         else
         {
-            /* storage format must be detected by queryInfo() if the medium is
-            * accessible */
-            AssertReturn (!m.id.isEmpty() && !mm.format.isNull(), E_FAIL);
+            AssertReturn(!m.id.isEmpty(), E_FAIL);
+
+            /* storage format must be detected by queryInfo() if the medium is accessible */
+            AssertReturn(!mm.format.isNull(), E_FAIL);
         }
     }
 
@@ -644,7 +783,7 @@ HRESULT HardDisk::init (VirtualBox *aVirtualBox, CBSTR aLocation)
 
 /**
  * Initializes the hard disk object by loading its data from the given settings
- * node.
+ * node. In this mode, the image will always be opened read/write.
  *
  * @param aVirtualBox   VirtualBox object.
  * @param aParent       Parent hard disk or NULL for a root (base) hard disk.
@@ -652,7 +791,8 @@ HRESULT HardDisk::init (VirtualBox *aVirtualBox, CBSTR aLocation)
  *
  * @note Locks VirtualBox lock for writing, treeLock() for writing.
  */
-HRESULT HardDisk::init (VirtualBox *aVirtualBox, HardDisk *aParent,
+HRESULT HardDisk::init (VirtualBox *aVirtualBox,
+                        HardDisk *aParent,
                         const settings::Key &aNode)
 {
     using namespace settings;
@@ -712,7 +852,7 @@ HRESULT HardDisk::init (VirtualBox *aVirtualBox, HardDisk *aParent,
      * if some properties are not supported but preseint in the settings file,
      * they will still be read and accessible (for possible backward
      * compatibility; we can also clean them up from the XML upon next
-     * XML format versino change if we wish) */
+     * XML format version change if we wish) */
     Key::List properties = aNode.keys ("Property");
     for (Key::List::const_iterator it = properties.begin();
          it != properties.end(); ++ it)
@@ -757,7 +897,7 @@ HRESULT HardDisk::init (VirtualBox *aVirtualBox, HardDisk *aParent,
     {
         ComObjPtr<HardDisk> hardDisk;
         hardDisk.createObject();
-        rc = hardDisk->init (aVirtualBox, this, *it);
+        rc = hardDisk->init(aVirtualBox, this, *it);
         CheckComRCBreakRC (rc);
 
         rc = mVirtualBox->registerHardDisk(hardDisk, false /* aSaveRegistry */);
@@ -1215,7 +1355,7 @@ STDMETHODIMP HardDisk::CreateBaseStorage(ULONG64 aLogicalSize,
         (aVariant & HardDiskVariant_Fixed)
           ? BstrFmt (tr ("Creating fixed hard disk storage unit '%ls'"), m.locationFull.raw())
           : BstrFmt (tr ("Creating dynamic hard disk storage unit '%ls'"), m.locationFull.raw()),
-        FALSE /* aCancelable */);
+        TRUE /* aCancelable */);
     CheckComRCReturnRC (rc);
 
     /* setup task object and thread to carry out the operation
@@ -1315,6 +1455,7 @@ STDMETHODIMP HardDisk::MergeTo (IN_GUID /* aTargetId */, IProgress ** /* aProgre
 
 STDMETHODIMP HardDisk::CloneTo (IHardDisk *aTarget,
                                 HardDiskVariant_T aVariant,
+                                IHardDisk *aParent,
                                 IProgress **aProgress)
 {
     CheckComArgNotNull (aTarget);
@@ -1326,13 +1467,14 @@ STDMETHODIMP HardDisk::CloneTo (IHardDisk *aTarget,
     ComObjPtr <HardDisk> target;
     HRESULT rc = mVirtualBox->cast (aTarget, target);
     CheckComRCReturnRC (rc);
+    ComObjPtr <HardDisk> parent;
+    if (aParent)
+    {
+        rc = mVirtualBox->cast (aParent, parent);
+        CheckComRCReturnRC (rc);
+    }
 
-    AutoMultiWriteLock2 alock (this, target);
-
-    /* We want to be locked for reading as long as the clone hard disk is being
-     * created*/
-    rc = LockRead (NULL);
-    CheckComRCReturnRC (rc);
+    AutoMultiWriteLock3 alock (this, target, parent);
 
     ComObjPtr <Progress> progress;
 
@@ -1341,11 +1483,43 @@ STDMETHODIMP HardDisk::CloneTo (IHardDisk *aTarget,
         if (target->m.state != MediaState_NotCreated)
             throw target->setStateError();
 
+        /** @todo separate out creating/locking an image chain from
+         * SessionMachine::lockMedia and use it from here too.
+         * logically this belongs into HardDisk functionality. */
+
+        /* Build the source chain and lock images in the proper order. */
+        std::auto_ptr <CloneChain> srcChain (new CloneChain ());
+
+        /* we walk the source tree */
+        AutoReadLock srcTreeLock (this->treeLock());
+        for (HardDisk *hd = this; hd; hd = hd->mParent)
+        {
+            rc = srcChain->addImage(hd);
+            CheckComRCThrowRC (rc);
+        }
+        rc = srcChain->lockImagesRead();
+        CheckComRCThrowRC (rc);
+
+        /* Build the parent chain and lock images in the proper order. */
+        std::auto_ptr <CloneChain> parentChain (new CloneChain ());
+
+        /* we walk the future parent tree */
+        AutoReadLock parentTreeLock;
+        if (parent)
+            parentTreeLock.attach(parent->treeLock());
+        for (HardDisk *hd = parent; hd; hd = hd->mParent)
+        {
+            rc = parentChain->addImage(hd);
+            CheckComRCThrowRC (rc);
+        }
+        rc = parentChain->lockImagesRead();
+        CheckComRCThrowRC (rc);
+
         progress.createObject();
         rc = progress->init (mVirtualBox, static_cast <IHardDisk *> (this),
             BstrFmt (tr ("Creating clone hard disk '%ls'"),
                      target->m.locationFull.raw()),
-            FALSE /* aCancelable */);
+            TRUE /* aCancelable */);
         CheckComRCThrowRC (rc);
 
         /* setup task object and thread to carry out the operation
@@ -1354,8 +1528,9 @@ STDMETHODIMP HardDisk::CloneTo (IHardDisk *aTarget,
         std::auto_ptr <Task> task (new Task (this, progress, Task::Clone));
         AssertComRCThrowRC (task->autoCaller.rc());
 
-        task->setData (target);
+        task->setData (target, parent);
         task->d.variant = aVariant;
+        task->setData (srcChain.release(), parentChain.release());
 
         rc = task->startThread();
         CheckComRCThrowRC (rc);
@@ -1371,32 +1546,13 @@ STDMETHODIMP HardDisk::CloneTo (IHardDisk *aTarget,
         rc = aRC;
     }
 
-    if (FAILED (rc))
-    {
-        HRESULT rc2 = UnlockRead (NULL);
-        AssertComRC (rc2);
-        /* Note: on success, taskThread() will unlock this */
-    }
-    else
+    if (SUCCEEDED (rc))
     {
         /* return progress to the caller */
         progress.queryInterfaceTo (aProgress);
     }
 
     return rc;
-}
-
-STDMETHODIMP HardDisk::FlattenTo (IHardDisk *aTarget,
-                                  HardDiskVariant_T /* aVariant */,
-                                  IProgress **aProgress)
-{
-    CheckComArgNotNull (aTarget);
-    CheckComArgOutPointerValid (aProgress);
-
-    AutoCaller autoCaller (this);
-    CheckComRCReturnRC (autoCaller.rc());
-
-    ReturnComNotImplemented();
 }
 
 STDMETHODIMP HardDisk::Compact (IProgress **aProgress)
@@ -1750,7 +1906,7 @@ Utf8Str HardDisk::name()
  * Checks that this hard disk may be discarded and performs necessary state
  * changes.
  *
- * This method is to be called prior to calling the #discrad() to perform
+ * This method is to be called prior to calling the #discard() to perform
  * necessary consistency checks and place involved hard disks to appropriate
  * states. If #discard() is not called or fails, the state modifications
  * performed by this method must be undone by #cancelDiscard().
@@ -1905,8 +2061,8 @@ HRESULT HardDisk::discard (ComObjPtr <Progress> &aProgress, MergeChain *aChain)
         AutoCaller autoCaller (this);
         AssertComRCReturnRC (autoCaller.rc());
 
-        aProgress->advanceOperation (BstrFmt (
-            tr ("Discarding hard disk '%s'"), name().raw()));
+        aProgress->setNextOperation(BstrFmt(tr("Discarding hard disk '%s'"), name().raw()),
+                                    1);        // weight
 
         if (aChain == NULL)
         {
@@ -2271,7 +2427,7 @@ HRESULT HardDisk::createDiffStorage(ComObjPtr<HardDisk> &aTarget,
             rc = progress->init (mVirtualBox, static_cast<IHardDisk*> (this),
                 BstrFmt (tr ("Creating differencing hard disk storage unit '%ls'"),
                          aTarget->m.locationFull.raw()),
-                FALSE /* aCancelable */);
+                TRUE /* aCancelable */);
             CheckComRCReturnRC (rc);
         }
     }
@@ -2517,7 +2673,7 @@ HRESULT HardDisk::mergeTo(MergeChain *aChain,
             rc = progress->init (mVirtualBox, static_cast<IHardDisk*>(this),
                 BstrFmt (tr ("Merging hard disk '%s' to '%s'"),
                          name().raw(), aChain->target()->name().raw()),
-                FALSE /* aCancelable */);
+                TRUE /* aCancelable */);
             CheckComRCReturnRC (rc);
         }
     }
@@ -2886,11 +3042,16 @@ HRESULT HardDisk::queryInfo()
              * when opening hard disks of some third-party formats for the first
              * time in VirtualBox (such as VMDK for which VDOpen() needs to
              * generate an UUID if it is missing) */
-            if (!isImport)
+            if (    (mm.hddOpenMode == OpenReadOnly)
+                 || !isImport
+               )
                 flags |= VD_OPEN_FLAGS_READONLY;
 
-            vrc = VDOpen (hdd, Utf8Str (mm.format), location, flags,
-                          mm.vdDiskIfaces);
+            vrc = VDOpen(hdd,
+                         Utf8Str(mm.format),
+                         location,
+                         flags,
+                         mm.vdDiskIfaces);
             if (RT_FAILURE (vrc))
             {
                 lastAccessError = Utf8StrFmt (
@@ -2903,12 +3064,16 @@ HRESULT HardDisk::queryInfo()
             {
                 /* check the UUID */
                 RTUUID uuid;
-                vrc = VDGetUuid (hdd, 0, &uuid);
-                ComAssertRCThrow (vrc, E_FAIL);
+                vrc = VDGetUuid(hdd, 0, &uuid);
+                ComAssertRCThrow(vrc, E_FAIL);
 
                 if (isImport)
                 {
-                    unconst (m.id) = uuid;
+                    unconst(m.id) = uuid;
+
+                    if (m.id.isEmpty() && (mm.hddOpenMode == OpenReadOnly))
+                        // only when importing a VDMK that has no UUID, create one in memory
+                        unconst(m.id).create();
                 }
                 else
                 {
@@ -2933,7 +3098,7 @@ HRESULT HardDisk::queryInfo()
 
                 /* generate an UUID for an imported UUID-less hard disk */
                 if (isImport)
-                    unconst (m.id).create();
+                    unconst(m.id).create();
             }
 
             /* check the type */
@@ -3247,7 +3412,14 @@ DECLCALLBACK(int) HardDisk::vdProgressCall(PVM /* pVM */, unsigned uPercent,
     {
         /* update the progress object, capping it at 99% as the final percent
          * is used for additional operations like setting the UUIDs and similar. */
-        that->mm.vdProgress->notifyProgress (RT_MIN (uPercent, 99));
+        HRESULT rc = that->mm.vdProgress->setCurrentOperationProgress(uPercent * 99 / 100);
+        if (FAILED(rc))
+        {
+            if (rc == E_FAIL)
+                return VERR_CANCELLED;
+            else
+                return VERR_INVALID_STATE;
+        }
     }
 
     return VINF_SUCCESS;
@@ -3435,7 +3607,7 @@ DECLCALLBACK(int) HardDisk::taskThread (RTTHREAD thread, void *pvUser)
             }
             else
             {
-                /* back to NotCreated on failiure */
+                /* back to NotCreated on failure */
                 that->m.state = MediaState_NotCreated;
 
                 /* reset UUID to prevent it from being reused next time */
@@ -3585,7 +3757,7 @@ DECLCALLBACK(int) HardDisk::taskThread (RTTHREAD thread, void *pvUser)
             }
             else
             {
-                /* back to NotCreated on failiure */
+                /* back to NotCreated on failure */
                 target->m.state = MediaState_NotCreated;
 
                 target->mm.autoReset = FALSE;
@@ -3643,10 +3815,10 @@ DECLCALLBACK(int) HardDisk::taskThread (RTTHREAD thread, void *pvUser)
 
                 try
                 {
-                    /* open all hard disks in the chain (they are in the
+                    /* Open all hard disks in the chain (they are in the
                      * {parent,child} order in there. Note that we don't lock
                      * objects in this chain since they must be in states
-                     * (Deleting and LockedWrite) that prevent from chaning
+                     * (Deleting and LockedWrite) that prevent from changing
                      * their format and location fields from outside. */
 
                     for (MergeChain::const_iterator it = chain->begin();
@@ -3922,11 +4094,15 @@ DECLCALLBACK(int) HardDisk::taskThread (RTTHREAD thread, void *pvUser)
         case Task::Clone:
         {
             ComObjPtr<HardDisk> &target = task->d.target;
+            ComObjPtr<HardDisk> &parent = task->d.parentDisk;
 
-            /* Lock both in {parent,child} order. The lock is also used as a
+            /* Lock all in {parent,child} order. The lock is also used as a
              * signal from the task initiator (which releases it only after
-             * RTThreadCreate()) that we can start the job*/
-            AutoMultiWriteLock2 thatLock (that, target);
+             * RTThreadCreate()) that we can start the job. */
+            AutoMultiWriteLock3 thatLock (that, target, parent);
+
+            CloneChain *srcChain = task->d.source.get();
+            CloneChain *parentChain = task->d.parent.get();
 
             uint64_t size = 0, logicalSize = 0;
 
@@ -3947,31 +4123,39 @@ DECLCALLBACK(int) HardDisk::taskThread (RTTHREAD thread, void *pvUser)
                 int vrc = VDCreate (that->mm.vdDiskIfaces, &hdd);
                 ComAssertRCThrow (vrc, E_FAIL);
 
-                Utf8Str format (that->mm.format);
-                Utf8Str location (that->m.locationFull);
-
-                Utf8Str targetFormat (target->mm.format);
-                Utf8Str targetLocation (target->m.locationFull);
-
-                Assert (target->m.state == MediaState_Creating);
-
-                Assert (that->m.state == MediaState_LockedRead);
-
-                /* unlock before the potentially lengthy operation */
-                thatLock.leave();
-
                 try
                 {
-                    vrc = VDOpen (hdd, format, location,
-                                  VD_OPEN_FLAGS_READONLY | VD_OPEN_FLAGS_INFO,
-                                  that->mm.vdDiskIfaces);
-                    if (RT_FAILURE (vrc))
+                    /* Open all hard disk images in the source chain. */
+                    for (List::const_iterator it = srcChain->begin();
+                         it != srcChain->end(); ++ it)
                     {
-                        throw setError (E_FAIL,
-                            tr ("Could not open the hard disk storage "
-                                "unit '%s'%s"),
-                            location.raw(), that->vdError (vrc).raw());
+                        /* sanity check */
+                        Assert ((*it)->m.state == MediaState_LockedRead);
+
+                        /** Open all images in read-only mode. */
+                        vrc = VDOpen (hdd, Utf8Str ((*it)->mm.format),
+                                      Utf8Str ((*it)->m.locationFull),
+                                      VD_OPEN_FLAGS_READONLY,
+                                      (*it)->mm.vdDiskIfaces);
+                        if (RT_FAILURE (vrc))
+                        {
+                            throw setError (E_FAIL,
+                                tr ("Could not open the hard disk storage "
+                                    "unit '%s'%s"),
+                                Utf8Str ((*it)->m.locationFull).raw(),
+                                that->vdError (vrc).raw());
+                        }
                     }
+
+                    /* unlock before the potentially lengthy operation */
+                    thatLock.leave();
+
+                    Utf8Str targetFormat (target->mm.format);
+                    Utf8Str targetLocation (target->m.locationFull);
+
+                    Assert (target->m.state == MediaState_Creating);
+                    Assert (that->m.state == MediaState_LockedRead);
+                    Assert (parent.isNull() || parent->m.state == MediaState_LockedRead);
 
                     /* ensure the target directory exists */
                     rc = VirtualBox::ensureFilePathExists (targetLocation);
@@ -3984,26 +4168,49 @@ DECLCALLBACK(int) HardDisk::taskThread (RTTHREAD thread, void *pvUser)
                     int vrc = VDCreate (that->mm.vdDiskIfaces, &targetHdd);
                     ComAssertRCThrow (vrc, E_FAIL);
 
-                    vrc = VDCopy (hdd, 0, targetHdd, targetFormat,
-                                  targetLocation, false, 0, task->d.variant,
-                                  targetId.raw(), NULL,
-                                  target->mm.vdDiskIfaces,
-                                  that->mm.vdDiskIfaces);
-
-                    that->mm.vdProgress = NULL;
-
-                    if (RT_FAILURE (vrc))
+                    try
                     {
-                        VDDestroy (targetHdd);
+                        /* Open all hard disk images in the parent chain. */
+                        for (List::const_iterator it = parentChain->begin();
+                             it != parentChain->end(); ++ it)
+                        {
+                            /* sanity check */
+                            Assert ((*it)->m.state == MediaState_LockedRead);
 
-                        throw setError (E_FAIL,
-                            tr ("Could not create the clone hard disk "
-                                "'%s'%s"),
-                            targetLocation.raw(), that->vdError (vrc).raw());
+                            /** Open all images in read-only mode. */
+                            vrc = VDOpen (hdd, Utf8Str ((*it)->mm.format),
+                                          Utf8Str ((*it)->m.locationFull),
+                                          VD_OPEN_FLAGS_READONLY,
+                                          (*it)->mm.vdDiskIfaces);
+                            if (RT_FAILURE (vrc))
+                            {
+                                throw setError (E_FAIL,
+                                    tr ("Could not open the hard disk storage "
+                                        "unit '%s'%s"),
+                                    Utf8Str ((*it)->m.locationFull).raw(),
+                                    that->vdError (vrc).raw());
+                            }
+                        }
+
+                        vrc = VDCopy (hdd, VD_LAST_IMAGE, targetHdd,
+                                      targetFormat, targetLocation, false, 0,
+                                      task->d.variant, targetId.raw(), NULL,
+                                      target->mm.vdDiskIfaces,
+                                      that->mm.vdDiskIfaces);
+
+                        that->mm.vdProgress = NULL;
+
+                        if (RT_FAILURE (vrc))
+                        {
+                            throw setError (E_FAIL,
+                                tr ("Could not create the clone hard disk "
+                                    "'%s'%s"),
+                                targetLocation.raw(), that->vdError (vrc).raw());
+                        }
+                        size = VDGetFileSize (targetHdd, 0);
+                        logicalSize = VDGetSize (targetHdd, 0) / _1M;
                     }
-
-                    size = VDGetFileSize (targetHdd, 0);
-                    logicalSize = VDGetSize (targetHdd, 0) / _1M;
+                    catch (HRESULT aRC) { rc = aRC; }
 
                     VDDestroy (targetHdd);
                 }
@@ -4022,24 +4229,24 @@ DECLCALLBACK(int) HardDisk::taskThread (RTTHREAD thread, void *pvUser)
 
                 Assert (target->mParent.isNull());
 
-                if (!that->mParent.isNull())
+                if (parent)
                 {
-                    /* associate the clone with the original's parent and
-                     * deassociate from VirtualBox */
-                    target->mParent = that->mParent;
-                    that->mParent->addDependentChild (target);
+                    /* associate the clone with the parent and deassociate
+                     * from VirtualBox */
+                    target->mParent = parent;
+                    parent->addDependentChild (target);
                     target->mVirtualBox->removeDependentChild (target);
 
                     /* register with mVirtualBox as the last step and move to
                      * Created state only on success (leaving an orphan file is
                      * better than breaking media registry consistency) */
-                    rc = that->mVirtualBox->registerHardDisk(target);
+                    rc = parent->mVirtualBox->registerHardDisk(target);
 
                     if (FAILED (rc))
                     {
-                        /* break the parent association on failure to register */
+                        /* break parent association on failure to register */
                         target->mVirtualBox->addDependentChild (target);
-                        that->mParent->removeDependentChild (target);
+                        parent->removeDependentChild (target);
                         target->mParent.setNull();
                     }
                 }
@@ -4061,7 +4268,7 @@ DECLCALLBACK(int) HardDisk::taskThread (RTTHREAD thread, void *pvUser)
             }
             else
             {
-                /* back to NotCreated on failiure */
+                /* back to NotCreated on failure */
                 target->m.state = MediaState_NotCreated;
 
                 /* reset UUID to prevent it from being reused next time */
@@ -4069,19 +4276,8 @@ DECLCALLBACK(int) HardDisk::taskThread (RTTHREAD thread, void *pvUser)
                     unconst (target->m.id).clear();
             }
 
-            if (isAsync)
-            {
-                /* unlock ourselves when done (unless in MediaState_LockedWrite
-                 * state because of taking the online snapshot*/
-                if (that->m.state != MediaState_LockedWrite)
-                {
-                    HRESULT rc2 = that->UnlockRead (NULL);
-                    AssertComRC (rc2);
-                }
-            }
-
-            /* Note that in sync mode, it's the caller's responsibility to
-             * unlock the hard disk */
+            /* Everything is explicitly unlocked when the task exits,
+             * as the task destruction also destroys the source chain. */
 
             break;
         }

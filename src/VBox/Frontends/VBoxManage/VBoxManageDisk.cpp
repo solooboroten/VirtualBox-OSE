@@ -1,4 +1,4 @@
-/* $Id: VBoxManageDisk.cpp 17980 2009-03-16 20:41:00Z vboxsync $ */
+/* $Id: VBoxManageDisk.cpp 18388 2009-03-27 13:11:42Z vboxsync $ */
 /** @file
  * VBoxManage - The disk delated commands.
  */
@@ -119,23 +119,23 @@ static int parseDiskType(const char *psz, HardDiskType_T *pDiskType)
 static const RTGETOPTDEF g_aCreateHardDiskOptions[] =
 {
     { "--filename",     'f', RTGETOPT_REQ_STRING },
-    { "-filename",      'f', RTGETOPT_REQ_STRING },
+    { "-filename",      'f', RTGETOPT_REQ_STRING },     // deprecated
     { "--size",         's', RTGETOPT_REQ_UINT64 },
-    { "-size",          's', RTGETOPT_REQ_UINT64 },
+    { "-size",          's', RTGETOPT_REQ_UINT64 },     // deprecated
     { "--format",       'o', RTGETOPT_REQ_STRING },
-    { "-format",        'o', RTGETOPT_REQ_STRING },
+    { "-format",        'o', RTGETOPT_REQ_STRING },     // deprecated
     { "--static",       'F', RTGETOPT_REQ_NOTHING },
-    { "-static",        'F', RTGETOPT_REQ_NOTHING },
+    { "-static",        'F', RTGETOPT_REQ_NOTHING },    // deprecated
     { "--variant",      'm', RTGETOPT_REQ_STRING },
-    { "-variant",       'm', RTGETOPT_REQ_STRING },
+    { "-variant",       'm', RTGETOPT_REQ_STRING },     // deprecated
     { "--type",         't', RTGETOPT_REQ_STRING },
-    { "-type",          't', RTGETOPT_REQ_STRING },
+    { "-type",          't', RTGETOPT_REQ_STRING },     // deprecated
     { "--comment",      'c', RTGETOPT_REQ_STRING },
-    { "-comment",       'c', RTGETOPT_REQ_STRING },
+    { "-comment",       'c', RTGETOPT_REQ_STRING },     // deprecated
     { "--remember",     'r', RTGETOPT_REQ_NOTHING },
-    { "-remember",      'r', RTGETOPT_REQ_NOTHING },
-    { "--register",     'r', RTGETOPT_REQ_NOTHING },
-    { "-register",      'r', RTGETOPT_REQ_NOTHING },
+    { "-remember",      'r', RTGETOPT_REQ_NOTHING },    // deprecated
+    { "--register",     'r', RTGETOPT_REQ_NOTHING },    // deprecated (inofficial)
+    { "-register",      'r', RTGETOPT_REQ_NOTHING },    // deprecated
 };
 
 int handleCreateHardDisk(HandlerArg *a)
@@ -387,7 +387,7 @@ int handleModifyHardDisk(HandlerArg *a)
         /* the hard disk image might not be registered */
         if (!hardDisk)
         {
-            a->virtualBox->OpenHardDisk(Bstr(a->argv[0]), hardDisk.asOutParam());
+            a->virtualBox->OpenHardDisk(Bstr(a->argv[0]), AccessMode_ReadWrite, hardDisk.asOutParam());
             if (!hardDisk)
                 return errorArgument("Hard disk image not found");
         }
@@ -487,11 +487,13 @@ int handleCloneHardDisk(HandlerArg *a)
             default:
                 if (c > 0)
                 {
-                    if (RT_C_IS_PRINT(c))
-                        return errorSyntax(USAGE_CLONEHD, "Invalid option -%c", c);
+                    if (RT_C_IS_GRAPH(c))
+                        return errorSyntax(USAGE_CLONEHD, "unhandled option: -%c", c);
                     else
-                        return errorSyntax(USAGE_CLONEHD, "Invalid option case %i", c);
+                        return errorSyntax(USAGE_CLONEHD, "unhandled option: %i", c);
                 }
+                else if (c == VERR_GETOPT_UNKNOWN_OPTION)
+                    return errorSyntax(USAGE_CLONEHD, "unknown option: %s", ValueUnion.psz);
                 else if (ValueUnion.pDef)
                     return errorSyntax(USAGE_CLONEHD, "%s: %Rrs", ValueUnion.pDef->pszLong, c);
                 else
@@ -518,7 +520,7 @@ int handleCloneHardDisk(HandlerArg *a)
         /* no? well, then it's an unkwnown image */
         if (FAILED (rc))
         {
-            CHECK_ERROR(a->virtualBox, OpenHardDisk(src, srcDisk.asOutParam()));
+            CHECK_ERROR(a->virtualBox, OpenHardDisk(src, AccessMode_ReadWrite, srcDisk.asOutParam()));
             if (SUCCEEDED (rc))
             {
                 unknown = true;
@@ -540,7 +542,7 @@ int handleCloneHardDisk(HandlerArg *a)
         CHECK_ERROR_BREAK(a->virtualBox, CreateHardDisk(format, dst, dstDisk.asOutParam()));
 
         ComPtr<IProgress> progress;
-        CHECK_ERROR_BREAK(srcDisk, CloneTo(dstDisk, DiskVariant, progress.asOutParam()));
+        CHECK_ERROR_BREAK(srcDisk, CloneTo(dstDisk, DiskVariant, NULL, progress.asOutParam()));
 
         showProgress(progress);
         progress->COMGETTER(ResultCode)(&rc);
@@ -940,7 +942,7 @@ int handleShowHardDiskInfo(HandlerArg *a)
         /* no? well, then it's an unkwnown image */
         if (FAILED (rc))
         {
-            CHECK_ERROR(a->virtualBox, OpenHardDisk(filepath, hardDisk.asOutParam()));
+            CHECK_ERROR(a->virtualBox, OpenHardDisk(filepath, AccessMode_ReadWrite, hardDisk.asOutParam()));
             if (SUCCEEDED (rc))
             {
                 unknown = true;
@@ -1080,7 +1082,7 @@ int handleOpenMedium(HandlerArg *a)
         }
 
         ComPtr<IHardDisk> hardDisk;
-        CHECK_ERROR(a->virtualBox, OpenHardDisk(filepath, hardDisk.asOutParam()));
+        CHECK_ERROR(a->virtualBox, OpenHardDisk(filepath, AccessMode_ReadWrite, hardDisk.asOutParam()));
         if (SUCCEEDED(rc) && hardDisk)
         {
             /* change the type if requested */

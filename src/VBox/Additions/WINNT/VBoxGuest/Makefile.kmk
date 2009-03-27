@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 18037 2009-03-17 16:20:46Z vboxsync $
+# $Id: Makefile.kmk 18172 2009-03-24 11:15:06Z vboxsync $
 ## @file
 # Sub-Makefile for VBoxGuest (Windows Guest Additions Driver).
 #
@@ -36,13 +36,14 @@ ifdef VBOX_WITH_GUEST_BUGCHECK_DETECTION
 endif
 #VBoxGuest_DEFS       += LOG_ENABLED
 VBoxGuest_INCS        = \
-	../include	
+	../include
 VBoxGuest_LDFLAGS.x86   = -Entry:DriverEntry@8
 VBoxGuest_LDFLAGS.amd64 = -Entry:DriverEntry
 VBoxGuest_SOURCES       = \
 	VBoxGuest.cpp \
 	VBoxGuestPnP.cpp \
 	Helper.cpp \
+	HelperBugCheck.cpp \
 	VBoxGuest.rc
 VBoxGuest_LIBS        = \
 	$(PATH_SDK_W2K3DDK_LIB)/ntoskrnl.lib \
@@ -51,11 +52,11 @@ VBoxGuest_LIBS        = \
 	$(VBOX_LIB_IPRT_GUEST_R0)
 
 ifdef VBOX_WITH_GUEST_BUGCHECK_DETECTION
- #VBoxGuest_SDKS = WINDDKWLH
- VBoxGuest_LIBS = \
+ VBoxGuest_LIBS += \
+	$(PATH_SDK_WINDDKWLH_LIB)/aux_klib.lib \
 	$(PATH_SDK_WINDDKWLH_LIB)/ksecdd.lib \
-	$(PATH_SDK_WINDDKWLH_LIB)/BufferOverflowK.lib \
-	$(PATH_SDK_WINDDKWLH_LIB)/aux_klib.lib
+	$(PATH_SDK_WINDDKWLH_LIB)/BufferOverflowK.lib
+ VBoxGuest_HelperBugCheck.cpp_SDKS = WINDDKWLH
 endif
 
 #
@@ -69,6 +70,7 @@ VBoxGuestNT_DEFS      = $(VBoxGuest_DEFS) TARGET_NT4
 VBoxGuestNT_SOURCES   = \
 	VBoxGuest.cpp \
 	Helper.cpp \
+	HelperBugCheck.cpp \
 	NTLegacy.cpp \
 	VBoxGuest.rc
 VBoxGuestNT_LIBS      = \

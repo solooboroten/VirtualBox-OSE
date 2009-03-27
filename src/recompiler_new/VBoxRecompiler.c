@@ -1,4 +1,4 @@
-/* $Id: VBoxRecompiler.c 17538 2009-03-08 05:32:49Z vboxsync $ */
+/* $Id: VBoxRecompiler.c 18280 2009-03-25 20:08:38Z vboxsync $ */
 /** @file
  * VBox Recompiler - QEMU.
  */
@@ -739,6 +739,11 @@ REMR3DECL(int) REMR3Step(PVM pVM)
             case EXCP_RC:
                 rc = pVM->rem.s.rc;
                 pVM->rem.s.rc = VERR_INTERNAL_ERROR;
+                break;
+            case EXCP_EXECUTE_RAW:
+            case EXCP_EXECUTE_HWACC:
+                /** @todo: is it correct? No! */
+                rc = VINF_SUCCESS;
                 break;
             default:
                 AssertReleaseMsgFailed(("This really shouldn't happen, rc=%d!\n", rc));

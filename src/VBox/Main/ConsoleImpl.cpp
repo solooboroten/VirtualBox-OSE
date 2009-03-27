@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl.cpp 17684 2009-03-11 12:15:33Z vboxsync $ */
+/* $Id: ConsoleImpl.cpp 18348 2009-03-26 19:35:20Z vboxsync $ */
 
 /** @file
  *
@@ -244,6 +244,7 @@ HRESULT Console::FinalConstruct()
     memset(mapFDLeds, 0, sizeof(mapFDLeds));
     memset(mapIDELeds, 0, sizeof(mapIDELeds));
     memset(mapSATALeds, 0, sizeof(mapSATALeds));
+    memset(mapSCSILeds, 0, sizeof(mapSCSILeds));
     memset(mapNetworkLeds, 0, sizeof(mapNetworkLeds));
     memset(&mapUSBLed, 0, sizeof(mapUSBLed));
     memset(&mapSharedFolderLed, 0, sizeof(mapSharedFolderLed));
@@ -1612,7 +1613,8 @@ STDMETHODIMP Console::GetGuestEnteredACPIMode(BOOL *aEntered)
 
     if (mMachineState != MachineState_Running)
         return setError (VBOX_E_INVALID_VM_STATE,
-            tr ("Invalid machine state: %d)"), mMachineState);
+            tr ("Invalid machine state %d when checking if the guest entered "
+                "the ACPI mode)"), mMachineState);
 
     /* protect mpVM */
     AutoVMCaller autoVMCaller (this);
@@ -1901,6 +1903,8 @@ STDMETHODIMP Console::GetDeviceActivity (DeviceType_T aDeviceType,
             SumLed.u32 |= readAndClearLed(mapIDELeds[3]);
             for (unsigned i = 0; i < RT_ELEMENTS(mapSATALeds); i++)
                 SumLed.u32 |= readAndClearLed(mapSATALeds[i]);
+            for (unsigned i = 0; i < RT_ELEMENTS(mapSCSILeds); i++)
+                SumLed.u32 |= readAndClearLed(mapSCSILeds[i]);
             break;
         }
 
@@ -4611,7 +4615,7 @@ HRESULT Console::powerDown (Progress *aProgress /*= NULL*/)
 
     /* advance percent count */
     if (aProgress)
-        aProgress->notifyProgress (99 * (++ step) / StepCount );
+        aProgress->setCurrentOperationProgress(99 * (++ step) / StepCount );
 
 #ifdef VBOX_WITH_HGCM
 
@@ -4678,7 +4682,7 @@ HRESULT Console::powerDown (Progress *aProgress /*= NULL*/)
 
     /* advance percent count */
     if (aProgress)
-        aProgress->notifyProgress (99 * (++ step) / StepCount );
+        aProgress->setCurrentOperationProgress(99 * (++ step) / StepCount );
 
 # endif /* VBOX_WITH_GUEST_PROPS defined */
 
@@ -4698,7 +4702,7 @@ HRESULT Console::powerDown (Progress *aProgress /*= NULL*/)
 
     /* advance percent count */
     if (aProgress)
-        aProgress->notifyProgress (99 * (++ step) / StepCount );
+        aProgress->setCurrentOperationProgress(99 * (++ step) / StepCount );
 
 #endif /* VBOX_WITH_HGCM */
 
@@ -4729,7 +4733,7 @@ HRESULT Console::powerDown (Progress *aProgress /*= NULL*/)
 
     /* advance percent count */
     if (aProgress)
-        aProgress->notifyProgress (99 * (++ step) / StepCount );
+        aProgress->setCurrentOperationProgress(99 * (++ step) / StepCount );
 
     vrc = VINF_SUCCESS;
 
@@ -4758,7 +4762,7 @@ HRESULT Console::powerDown (Progress *aProgress /*= NULL*/)
 
     /* advance percent count */
     if (aProgress)
-        aProgress->notifyProgress (99 * (++ step) / StepCount );
+        aProgress->setCurrentOperationProgress(99 * (++ step) / StepCount );
 
     LogFlowThisFunc (("Ready for VM destruction.\n"));
 
@@ -4802,7 +4806,7 @@ HRESULT Console::powerDown (Progress *aProgress /*= NULL*/)
 
         /* advance percent count */
         if (aProgress)
-            aProgress->notifyProgress (99 * (++ step) / StepCount );
+            aProgress->setCurrentOperationProgress(99 * (++ step) / StepCount );
 
         if (VBOX_SUCCESS (vrc))
         {
@@ -4830,7 +4834,7 @@ HRESULT Console::powerDown (Progress *aProgress /*= NULL*/)
 
         /* advance percent count */
         if (aProgress)
-            aProgress->notifyProgress (99 * (++ step) / StepCount );
+            aProgress->setCurrentOperationProgress(99 * (++ step) / StepCount );
     }
     else
     {
@@ -5935,7 +5939,7 @@ Console::stateProgressCallback (PVM pVM, unsigned uPercent, void *pvUser)
 
     /* update the progress object */
     if (task->mProgress)
-        task->mProgress->notifyProgress (uPercent);
+        task->mProgress->setCurrentOperationProgress(uPercent);
 
     return VINF_SUCCESS;
 }

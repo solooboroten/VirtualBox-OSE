@@ -219,7 +219,12 @@
 #endif
 
 #ifdef VBOX_WITH_SCSI
-#    define BX_MAX_SCSI_DEVICES 2
+/* Enough for now */
+#    define BX_MAX_SCSI_DEVICES 4
+
+/* A SCSI device starts always at BX_MAX_ATA_DEVICES. */
+#    define VBOX_IS_SCSI_DEVICE(device_id) (device_id >= BX_MAX_ATA_DEVICES)
+#    define VBOX_GET_SCSI_DEVICE(device_id) (device_id - BX_MAX_ATA_DEVICES)
 #endif
 
 #ifndef VBOX
@@ -1011,7 +1016,7 @@ static char bios_prefix_string[] = "BIOS: ";
 /* Do not use build timestamps in this string. Otherwise even rebuilding the
  * very same code will lead to compare errors when restoring saved state. */
 static char bios_cvs_version_string[] = "VirtualBox " VBOX_VERSION_STRING;
-#define BIOS_COPYRIGHT_STRING "Sun xVM VirtualBox BIOS"
+#define BIOS_COPYRIGHT_STRING "Sun VirtualBox BIOS"
 #else /* !VBOX */
 static char bios_cvs_version_string[] = "$Revision: 1.176 $ $Date: 2006/12/30 17:13:17 $";
 

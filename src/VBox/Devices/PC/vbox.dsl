@@ -1,4 +1,4 @@
-// $Id: vbox.dsl 17633 2009-03-10 14:46:33Z vboxsync $
+// $Id: vbox.dsl 18228 2009-03-24 22:21:29Z vboxsync $
 /// @file
 //
 // VirtualBox ACPI
@@ -950,6 +950,8 @@ DefinitionBlock ("DSDT.aml", "DSDT", 1, "VBOX  ", "VBOXBIOS", 2)
          // High Precision Event Timer
         Device(HPET) {
             Name(_HID,  EISAID("PNP0103"))
+// bird: Perhaps this is the cause for the RTC bitching below, but I've no patience to fine out.
+//            Name (_CID, 0x010CD041)
             Name(_UID, 0)
             Method (_STA, 0, NotSerialized) {
                     Return(UHPT)
@@ -966,6 +968,23 @@ DefinitionBlock ("DSDT.aml", "DSDT", 1, "VBOX  ", "VBOXBIOS", 2)
                 )
             })
         }
+
+// bird: Doesn't work, breaks Vista and W7. Why is the length 8 and not 2? The examples
+//       I've got here uses 2 and also  includes IRQNoFlags () {8}
+//       Note: Do NOT even thing about re-enabling this without testing ALL windows versions.
+//
+//        Device (RTC) {
+//            Name (_HID, EisaId ("PNP0B00"))
+//            Name (_CRS, ResourceTemplate ()
+//            {
+//                IO (Decode16,
+//                    0x0070,             // Range Minimum
+//                    0x0070,             // Range Maximum
+//                    0x01,               // Alignment
+//                    0x08,               // Length
+//                    )
+//            })
+//        }
 
        // System Management Controller
        Device (SMC)

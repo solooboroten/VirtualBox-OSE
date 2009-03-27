@@ -1,4 +1,4 @@
-/* $Id: VBoxManageModifyVM.cpp 17939 2009-03-16 14:28:53Z vboxsync $ */
+/* $Id: VBoxManageModifyVM.cpp 18177 2009-03-24 13:21:12Z vboxsync $ */
 /** @file
  * VBoxManage - Implementation of -modifyvm command.
  */
@@ -463,6 +463,7 @@ int handleModifyVM(HandlerArg *a)
             hostifdev[n - 1] = a->argv[i + 1];
             i++;
         }
+#if defined(VBOX_WITH_NETFLT)
         else if (strncmp(a->argv[i], "-hostonlyadapter", 16) == 0)
         {
             unsigned n = parseNum(&a->argv[i][16], NetworkAdapterCount, "NIC");
@@ -473,6 +474,7 @@ int handleModifyVM(HandlerArg *a)
             hostifdev[n - 1] = a->argv[i + 1];
             i++;
         }
+#endif
         else if (strncmp(a->argv[i], "-intnet", 7) == 0)
         {
             unsigned n = parseNum(&a->argv[i][7], NetworkAdapterCount, "NIC");
@@ -1051,7 +1053,7 @@ int handleModifyVM(HandlerArg *a)
                     if (FAILED(rc))
                     {
                         /* open the new hard disk object */
-                        CHECK_ERROR(a->virtualBox, OpenHardDisk(Bstr(hdds[0]), hardDisk.asOutParam()));
+                        CHECK_ERROR(a->virtualBox, OpenHardDisk(Bstr(hdds[0]), AccessMode_ReadWrite, hardDisk.asOutParam()));
                     }
                 }
                 if (hardDisk)
@@ -1084,7 +1086,7 @@ int handleModifyVM(HandlerArg *a)
                     if (FAILED(rc))
                     {
                         /* open the new hard disk object */
-                        CHECK_ERROR(a->virtualBox, OpenHardDisk(Bstr(hdds[1]), hardDisk.asOutParam()));
+                        CHECK_ERROR(a->virtualBox, OpenHardDisk(Bstr(hdds[1]), AccessMode_ReadWrite, hardDisk.asOutParam()));
                     }
                 }
                 if (hardDisk)
@@ -1117,7 +1119,7 @@ int handleModifyVM(HandlerArg *a)
                     if (FAILED(rc))
                     {
                         /* open the new hard disk object */
-                        CHECK_ERROR(a->virtualBox, OpenHardDisk(Bstr(hdds[2]), hardDisk.asOutParam()));
+                        CHECK_ERROR(a->virtualBox, OpenHardDisk(Bstr(hdds[2]), AccessMode_ReadWrite, hardDisk.asOutParam()));
                     }
                 }
                 if (hardDisk)
@@ -1454,14 +1456,14 @@ int handleModifyVM(HandlerArg *a)
                     CHECK_ERROR_RET(nic, COMSETTER(Enabled) (TRUE), 1);
                     CHECK_ERROR_RET(nic, AttachToInternalNetwork(), 1);
                 }
-#if defined(RT_OS_LINUX) || defined(RT_OS_DARWIN) || (defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT))
+#if defined(VBOX_WITH_NETFLT)
                 else if (strcmp(nics[n], "hostonly") == 0)
                 {
 
                     CHECK_ERROR_RET(nic, COMSETTER(Enabled) (TRUE), 1);
                     CHECK_ERROR_RET(nic, AttachToHostOnlyInterface(), 1);
                 }
-#endif /* defined(RT_OS_LINUX) || defined(RT_OS_DARWIN) */
+#endif
                 else
                 {
                     errorArgument("Invalid type '%s' specfied for NIC %lu", nics[n], n + 1);
@@ -1830,7 +1832,7 @@ int handleModifyVM(HandlerArg *a)
                         if (FAILED(rc))
                         {
                             /* open the new hard disk object */
-                            CHECK_ERROR(a->virtualBox, OpenHardDisk(Bstr(hdds[i]), hardDisk.asOutParam()));
+                            CHECK_ERROR(a->virtualBox, OpenHardDisk(Bstr(hdds[i]), AccessMode_ReadWrite, hardDisk.asOutParam()));
                         }
                     }
                     if (hardDisk)
@@ -1919,7 +1921,7 @@ int handleModifyVM(HandlerArg *a)
                         if (FAILED(rc))
                         {
                             /* open the new hard disk object */
-                            CHECK_ERROR(a->virtualBox, OpenHardDisk(Bstr(hdds[i]), hardDisk.asOutParam()));
+                            CHECK_ERROR(a->virtualBox, OpenHardDisk(Bstr(hdds[i]), AccessMode_ReadWrite, hardDisk.asOutParam()));
                         }
                     }
                     if (hardDisk)

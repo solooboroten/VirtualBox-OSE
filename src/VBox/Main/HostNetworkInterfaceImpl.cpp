@@ -1,4 +1,4 @@
-/* $Id: HostNetworkInterfaceImpl.cpp 18014 2009-03-17 11:59:31Z vboxsync $ */
+/* $Id: HostNetworkInterfaceImpl.cpp 18389 2009-03-27 13:13:31Z vboxsync $ */
 
 /** @file
  *
@@ -540,9 +540,38 @@ STDMETHODIMP HostNetworkInterface::DhcpRediscover ()
 
 HRESULT HostNetworkInterface::setVirtualBox(VirtualBox *pVBox)
 {
+    HRESULT hrc;
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());
     mVBox = pVBox;
+
+    /* If IPv4 address hasn't been initialized */
+    if (m.IPAddress == 0)
+    {
+        Bstr tmpAddr, tmpMask;
+        hrc = mVBox->GetExtraData(Bstr(Utf8StrFmt("HostOnly/%ls/IPAddress", mInterfaceName.raw())), tmpAddr.asOutParam());
+        hrc = mVBox->GetExtraData(Bstr(Utf8StrFmt("HostOnly/%ls/IPNetMask", mInterfaceName.raw())), tmpMask.asOutParam());
+        if (tmpAddr.isEmpty())
+            tmpAddr = Bstr(VBOXNET_IPV4ADDR_DEFAULT);
+        if (tmpMask.isEmpty())
+            tmpMask = Bstr(VBOXNET_IPV4MASK_DEFAULT);
+        m.IPAddress = inet_addr(Utf8Str(tmpAddr).raw());
+        m.networkMask = inet_addr(Utf8Str(tmpMask).raw());
+    }
+
+    if (m.IPV6Address.isEmpty())
+    {
+        Bstr tmpPrefixLen;
+        hrc = mVBox->GetExtraData(Bstr(Utf8StrFmt("HostOnly/%ls/IPV6Address", mInterfaceName.raw())), m.IPV6Address.asOutParam());
+        if (!m.IPV6Address.isEmpty())
+        {
+            hrc = mVBox->GetExtraData(Bstr(Utf8StrFmt("HostOnly/%ls/IPV6PrefixLen", mInterfaceName.raw())), tmpPrefixLen.asOutParam());
+            if (SUCCEEDED(hrc) && !tmpPrefixLen.isEmpty())
+                m.IPV6NetworkMaskPrefixLength = Utf8Str(tmpPrefixLen).toUInt32();
+            else
+                m.IPV6NetworkMaskPrefixLength = 64;
+        }
+    }
 
     return S_OK;
 }

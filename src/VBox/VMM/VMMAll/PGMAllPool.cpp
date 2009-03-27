@@ -1,4 +1,4 @@
-/* $Id: PGMAllPool.cpp 17667 2009-03-11 09:35:22Z vboxsync $ */
+/* $Id: PGMAllPool.cpp 18355 2009-03-26 22:18:55Z vboxsync $ */
 /** @file
  * PGM Shadow Page Pool.
  */
@@ -1245,39 +1245,43 @@ static int pgmPoolCacheFreeOne(PPGMPOOL pPool, uint16_t iUser)
     /*
      * Select one page from the tail of the age list.
      */
-    uint16_t iToFree = pPool->iAgeTail;
-    if (iToFree == iUser)
-        iToFree = pPool->aPages[iToFree].iAgePrev;
-/* This is the alternative to the SyncCR3 pgmPoolCacheUsed calls.
-    if (pPool->aPages[iToFree].iUserHead != NIL_PGMPOOL_USER_INDEX)
+    PPGMPOOLPAGE    pPage;
+    for (unsigned iLoop = 0; ; iLoop++)
     {
-        uint16_t i = pPool->aPages[iToFree].iAgePrev;
-        for (unsigned j = 0; j < 10 && i != NIL_PGMPOOL_USER_INDEX; j++, i = pPool->aPages[i].iAgePrev)
+        uint16_t iToFree = pPool->iAgeTail;
+        if (iToFree == iUser)
+            iToFree = pPool->aPages[iToFree].iAgePrev;
+/* This is the alternative to the SyncCR3 pgmPoolCacheUsed calls.
+        if (pPool->aPages[iToFree].iUserHead != NIL_PGMPOOL_USER_INDEX)
         {
-            if (pPool->aPages[iToFree].iUserHead == NIL_PGMPOOL_USER_INDEX)
-                continue;
-            iToFree = i;
-            break;
+            uint16_t i = pPool->aPages[iToFree].iAgePrev;
+            for (unsigned j = 0; j < 10 && i != NIL_PGMPOOL_USER_INDEX; j++, i = pPool->aPages[i].iAgePrev)
+            {
+                if (pPool->aPages[iToFree].iUserHead == NIL_PGMPOOL_USER_INDEX)
+                    continue;
+                iToFree = i;
+                break;
+            }
         }
-    }
 */
+        Assert(iToFree != iUser);
+        AssertRelease(iToFree != NIL_PGMPOOL_IDX);
+        pPage = &pPool->aPages[iToFree];
 
-    Assert(iToFree != iUser);
-    AssertRelease(iToFree != NIL_PGMPOOL_IDX);
-
-    PPGMPOOLPAGE pPage = &pPool->aPages[iToFree];
+        /*
+         * Reject any attempts at flushing the currently active shadow CR3 mapping.
+         * Call pgmPoolCacheUsed to move the page to the head of the age list.
+         */
+        if (!pgmPoolIsPageLocked(&pPool->CTX_SUFF(pVM)->pgm.s, pPage))
+            break;
+        LogFlow(("pgmPoolCacheFreeOne: refuse CR3 mapping\n"));
+        pgmPoolCacheUsed(pPool, pPage);
+        AssertLogRelReturn(iLoop < 8192, VERR_INTERNAL_ERROR);
+    }
 
     /*
-     * Reject any attempts at flushing the currently active shadow CR3 mapping
+     * Found a usable page, flush it and return.
      */
-    if (pgmPoolIsPageLocked(&pPool->CTX_SUFF(pVM)->pgm.s, pPage))
-    {
-        /* Refresh the cr3 mapping by putting it at the head of the age list. */
-        LogFlow(("pgmPoolCacheFreeOne refuse CR3 mapping\n"));
-        pgmPoolCacheUsed(pPool, pPage);
-        return pgmPoolCacheFreeOne(pPool, iUser);
-    }
-
     int rc = pgmPoolFlushPage(pPool, pPage);
     if (rc == VINF_SUCCESS)
         PGM_INVL_GUEST_TLBS(); /* see PT handler. */
@@ -1715,7 +1719,7 @@ static int pgmPoolMonitorInsert(PPGMPOOL pPool, PPGMPOOLPAGE pPage)
         /** @todo we should probably deal with out-of-memory conditions here, but for now increasing
          * the heap size should suffice. */
         AssertFatalRC(rc);
-        Assert(!(pVM->pgm.s.fSyncFlags & PGM_SYNC_CLEAR_PGM_POOL) || VM_FF_ISSET(pVM, VM_FF_PGM_SYNC_CR3));   
+        Assert(!(pVM->pgm.s.fSyncFlags & PGM_SYNC_CLEAR_PGM_POOL) || VM_FF_ISSET(pVM, VM_FF_PGM_SYNC_CR3));
     }
     pPage->fMonitored = true;
     return rc;
@@ -1812,7 +1816,8 @@ static int pgmPoolMonitorFlush(PPGMPOOL pPool, PPGMPOOLPAGE pPage)
     {
         rc = PGMHandlerPhysicalDeregister(pVM, pPage->GCPhys & ~(RTGCPHYS)(PAGE_SIZE - 1));
         AssertFatalRC(rc);
-        Assert(!(pVM->pgm.s.fSyncFlags & PGM_SYNC_CLEAR_PGM_POOL) || VM_FF_ISSET(pVM, VM_FF_PGM_SYNC_CR3));   
+        AssertMsg(!(pVM->pgm.s.fSyncFlags & PGM_SYNC_CLEAR_PGM_POOL) || VM_FF_ISSET(pVM, VM_FF_PGM_SYNC_CR3),
+                  ("%#x %#x\n", pVM->pgm.s.fSyncFlags, pVM->fForcedActions));
     }
     pPage->fMonitored = false;
 
@@ -2628,8 +2633,8 @@ void pgmPoolTrackFlushGCPhysPTs(PVM pVM, PPGMPAGE pPhysPage, uint16_t iPhysExt)
  *
  * @returns VBox status code.
  * @retval  VINF_SUCCESS if all references has been successfully cleared.
- * @retval  VINF_PGM_GCPHYS_ALIASED if we're better off with a CR3 sync and
- *          a page pool cleaning.
+ * @retval  VINF_PGM_SYNC_CR3 if we're better off with a CR3 sync and a page
+ *          pool cleaning. FF and sync flags are set.
  *
  * @param   pVM         The VM handle.
  * @param   pPhysPage   The guest page in question.
@@ -2704,6 +2709,13 @@ int pgmPoolTrackFlushGCPhys(PVM pVM, PPGMPAGE pPhysPage, bool *pfFlushTLBs)
 #else
     rc = VINF_PGM_GCPHYS_ALIASED;
 #endif
+
+    if (rc == VINF_PGM_GCPHYS_ALIASED)
+    {
+        pVM->pgm.s.fSyncFlags |= PGM_SYNC_CLEAR_PGM_POOL;
+        VM_FF_SET(pVM, VM_FF_PGM_SYNC_CR3);
+        rc = VINF_PGM_SYNC_CR3;
+    }
 
     return rc;
 }
@@ -3952,10 +3964,12 @@ static void pgmPoolFlushAllInt(PPGMPOOL pPool)
 #endif
     }
 
-    /* Force a shadow mode reinit (necessary for nested paging and ept). */
+    /*
+     * Force a shadow mode reinit (necessary for nested paging and ept).
+     * Reinit the current shadow paging mode as well; nested paging and
+     * EPT use a root CR3 which will get flushed here.
+     */
     pVM->pgm.s.enmShadowMode = PGMMODE_INVALID;
-
-    /* Reinit the current shadow paging mode as well; nested paging and EPT use a root CR3 which will get flushed here. */
     rc = PGMR3ChangeMode(pVM, PGMGetGuestMode(pVM));
     AssertRC(rc);
 
@@ -4317,8 +4331,10 @@ PPGMPOOLPAGE pgmPoolGetPageByHCPhys(PVM pVM, RTHCPHYS HCPhys)
     /** @todo profile this! */
     PPGMPOOL pPool = pVM->pgm.s.CTX_SUFF(pPool);
     PPGMPOOLPAGE pPage = pgmPoolGetPage(pPool, HCPhys);
-    Log4(("pgmPoolGetPageByHCPhys: HCPhys=%RHp -> %p:{.idx=%d .GCPhys=%RGp .enmKind=%s}\n",
+#ifndef DEBUG_bird /* extremely noisy */
+    Log5(("pgmPoolGetPageByHCPhys: HCPhys=%RHp -> %p:{.idx=%d .GCPhys=%RGp .enmKind=%s}\n",
           HCPhys, pPage, pPage->idx, pPage->GCPhys, pgmPoolPoolKindToStr(pPage->enmKind)));
+#endif
     return pPage;
 }
 

@@ -679,8 +679,9 @@ EOF
 
 
 #
-# Check for libxslt, needed by VBoxSettings. For now we depend on 1.1.17.
-# This library is available on Ubuntu Edgy which fulfils the minimal libxml2
+# Check for libxslt, needed by VBoxSettings. For now we depend on 1.1.15,
+# as Solaris right now has no newer version and it definitely works.
+# 1.1.17 is available on Ubuntu Edgy which fulfils the minimal libxml2
 # requirement (2.6.26).
 #
 check_libxslt()
@@ -1414,7 +1415,8 @@ EOF
 
 
 #
-# Check whether static libstdc++ is installed
+# Check whether static libstdc++ is installed. This library is required
+# for the Linux guest additions.
 #
 check_staticlibstdcxx()
 {
@@ -1730,7 +1732,11 @@ check_gsoap()
           cnf_append "VBOX_GSOAP_INSTALLED"   "1"
           cnf_append "VBOX_PATH_GSOAP"        "$GSOAP"
           cnf_append "VBOX_PATH_GSOAP_IMPORT" "$GSOAP_IMPORT"
-          cnf_append "VBOX_GSOAP_CXX_SOURCES" ""
+          if [ -f "$GSOAP/share/gsoap/stdsoap2.cpp" ]; then
+            cnf_append "VBOX_GSOAP_CXX_SOURCES" "$GSOAP/share/gsoap/stdsoap2.cpp"
+          else
+            cnf_append "VBOX_GSOAP_CXX_SOURCES" ""
+          fi
           cnf_append "VBOX_GSOAP_CXX_LIBS"    "libgsoap++"
           log_success "found"
         else
@@ -2129,7 +2135,9 @@ check_gcc
 
 # Linux-specific
 if [ "$OS" = "linux" ]; then
-  check_staticlibstdcxx
+  # don't check for the static libstdc++ in the PUEL version as we build the
+  # additions at a dedicated box
+  [ $OSE -ge 1 ] && check_staticlibstdcxx
   if [ $WITH_KMODS -eq 1 ]; then
     check_linux
   else

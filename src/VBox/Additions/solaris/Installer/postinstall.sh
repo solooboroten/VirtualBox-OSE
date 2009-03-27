@@ -1,8 +1,8 @@
 #!/bin/sh
-# Sun xVM VirtualBox
+# Sun VirtualBox
 # VirtualBox postinstall script for Solaris.
 #
-# Copyright (C) 2008 Sun Microsystems, Inc.
+# Copyright (C) 2008-2009 Sun Microsystems, Inc.
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -110,6 +110,7 @@ echo "Creating links..."
 /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxService=$vboxadditions_path/VBox.sh s
 /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxControl=$vboxadditions_path/VBox.sh s
 /usr/sbin/installf -c none $PKGINST /usr/bin/VBoxRandR=$vboxadditions_path/VBoxRandR.sh s
+/usr/sbin/installf -c none $PKGINST /usr/bin/VBoxClient-all=$vboxadditions_path/1099.vboxclient s
 
 # Install Xorg components to the required places
 xorgversion_long=`/usr/X11/bin/Xorg -version 2>&1 | grep "X Window System Version"`

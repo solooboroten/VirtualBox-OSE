@@ -1,4 +1,4 @@
-/* $Id: PGMAllPhys.cpp 17795 2009-03-13 09:37:11Z vboxsync $ */
+/* $Id: PGMAllPhys.cpp 18345 2009-03-26 18:35:57Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor, Physical Memory Addressing.
  */
@@ -114,7 +114,7 @@ VMMDECL(int) pgmPhysRomWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE p
         case PGMROMPROT_READ_RAM_WRITE_RAM:
             rc = PGMHandlerPhysicalPageTempOff(pVM, pRom->GCPhys, GCPhysFault & X86_PTE_PG_MASK);
             AssertRC(rc);
-            break; /** @todo Must restart the instruction, not use the interpreter! */
+            break; /** @todo Must edit the shadow PT and restart the instruction, not use the interpreter! */
 
         case PGMROMPROT_READ_ROM_WRITE_RAM:
             /* Handle it in ring-3 because it's *way* easier there. */
@@ -381,19 +381,7 @@ int pgmPhysAllocPage(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys)
      */
     bool fFlushTLBs = false;
     int rc = pgmPoolTrackFlushGCPhys(pVM, pPage, &fFlushTLBs);
-    if (rc == VINF_SUCCESS)
-        /* nothing */;
-    else if (rc == VINF_PGM_GCPHYS_ALIASED)
-    {
-        pVM->pgm.s.fSyncFlags |= PGM_SYNC_CLEAR_PGM_POOL;
-        VM_FF_SET(pVM, VM_FF_PGM_SYNC_CR3);
-        rc = VINF_PGM_SYNC_CR3;
-    }
-    else
-    {
-        AssertRCReturn(rc, rc);
-        AssertMsgFailedReturn(("%Rrc\n", rc), VERR_INTERNAL_ERROR);
-    }
+    AssertMsgReturn(rc == VINF_SUCCESS || rc == VINF_PGM_SYNC_CR3, ("%Rrc\n", rc), RT_FAILURE(rc) ? rc : VERR_IPE_UNEXPECTED_STATUS);
 
     /*
      * Ensure that we've got a page handy, take it and use it.
@@ -653,12 +641,12 @@ int pgmPhysPageMap(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, PPPGMPAGEMAP ppMap,
     const uint32_t idChunk = PGM_PAGE_GET_CHUNKID(pPage);
     if (idChunk == NIL_GMM_CHUNKID)
     {
-        AssertMsgReturn(PGM_PAGE_GET_PAGEID(pPage) == NIL_GMM_PAGEID, ("pPage=%R[pgmpage]\n", pPage), VERR_INTERNAL_ERROR);
+        AssertMsgReturn(PGM_PAGE_GET_PAGEID(pPage) == NIL_GMM_PAGEID, ("pPage=%R[pgmpage]\n", pPage), VERR_INTERNAL_ERROR_2);
         if (PGM_PAGE_GET_TYPE(pPage) == PGMPAGETYPE_MMIO2)
         {
             /* Lookup the MMIO2 range and use pvR3 to calc the address. */
             PPGMRAMRANGE pRam = pgmPhysGetRange(&pVM->pgm.s, GCPhys);
-            AssertMsgReturn(pRam || !pRam->pvR3, ("pRam=%p pPage=%R[pgmpage]\n", pRam, pPage), VERR_INTERNAL_ERROR);
+            AssertMsgReturn(pRam || !pRam->pvR3, ("pRam=%p pPage=%R[pgmpage]\n", pRam, pPage), VERR_INTERNAL_ERROR_2);
             *ppv = (void *)((uintptr_t)pRam->pvR3 + (GCPhys - pRam->GCPhys));
         }
         else if (PGM_PAGE_GET_TYPE(pPage) == PGMPAGETYPE_MMIO2_ALIAS_MMIO)
@@ -667,15 +655,15 @@ int pgmPhysPageMap(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, PPPGMPAGEMAP ppMap,
              * One solution would be to seed MMIO2 pages to GMM and get unique Page IDs for
              * them, that would also avoid this mess. It would actually be kind of
              * elegant... */
-            AssertFailedReturn(VERR_INTERNAL_ERROR);
+            AssertLogRelMsgFailedReturn(("%RGp\n", GCPhys), VERR_INTERNAL_ERROR_3);
         }
         else
         {
             /** @todo handle MMIO2 */
-            AssertMsgReturn(PGM_PAGE_IS_ZERO(pPage), ("pPage=%R[pgmpage]\n", pPage), VERR_INTERNAL_ERROR);
+            AssertMsgReturn(PGM_PAGE_IS_ZERO(pPage), ("pPage=%R[pgmpage]\n", pPage), VERR_INTERNAL_ERROR_2);
             AssertMsgReturn(PGM_PAGE_GET_HCPHYS(pPage) == pVM->pgm.s.HCPhysZeroPg,
-                        ("pPage=%R[pgmpage]\n", pPage),
-                        VERR_INTERNAL_ERROR);
+                            ("pPage=%R[pgmpage]\n", pPage),
+                            VERR_INTERNAL_ERROR_2);
             *ppv = pVM->pgm.s.CTXALLSUFF(pvZeroPg);
         }
         *ppMap = NULL;
@@ -939,8 +927,12 @@ int pgmPhysGCPhys2CCPtrInternalReadOnly(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys
  * @param   ppv         Where to store the address corresponding to GCPhys.
  * @param   pLock       Where to store the lock information that PGMPhysReleasePageMappingLock needs.
  *
- * @remark  Avoid calling this API from within critical sections (other than
- *          the PGM one) because of the deadlock risk.
+ * @remarks The caller is responsible for dealing with access handlers.
+ * @todo    Add an informational return code for pages with access handlers?
+ *
+ * @remark  Avoid calling this API from within critical sections (other than the
+ *          PGM one) because of the deadlock risk. External threads may need to
+ *          delegate jobs to the EMTs.
  * @thread  Any thread.
  */
 VMMDECL(int) PGMPhysGCPhys2CCPtr(PVM pVM, RTGCPHYS GCPhys, void **ppv, PPGMPAGEMAPLOCK pLock)
@@ -971,7 +963,7 @@ VMMDECL(int) PGMPhysGCPhys2CCPtr(PVM pVM, RTGCPHYS GCPhys, void **ppv, PPGMPAGEM
         }
     }
 
-# else
+# else  /* IN_RING3 || IN_RING0 */
     int rc = pgmLock(pVM);
     AssertRCReturn(rc, rc);
 
@@ -1002,13 +994,15 @@ VMMDECL(int) PGMPhysGCPhys2CCPtr(PVM pVM, RTGCPHYS GCPhys, void **ppv, PPGMPAGEM
              * Now, just perform the locking and calculate the return address.
              */
             PPGMPAGEMAP pMap = pTlbe->pMap;
-            pMap->cRefs++;
+            if (pMap)
+                pMap->cRefs++;
 #if 0 /** @todo implement locking properly */
             if (RT_LIKELY(pPage->cLocks != PGM_PAGE_MAX_LOCKS))
                 if (RT_UNLIKELY(++pPage->cLocks == PGM_PAGE_MAX_LOCKS))
                 {
                     AssertMsgFailed(("%RGp is entering permanent locked state!\n", GCPhys));
-                    pMap->cRefs++; /* Extra ref to prevent it from going away. */
+                    if (pMap)
+                        pMap->cRefs++; /* Extra ref to prevent it from going away. */
                 }
 #endif
             *ppv = (void *)((uintptr_t)pTlbe->pv | (GCPhys & PAGE_OFFSET_MASK));
@@ -1052,14 +1046,89 @@ VMMDECL(int) PGMPhysGCPhys2CCPtr(PVM pVM, RTGCPHYS GCPhys, void **ppv, PPGMPAGEM
  * @param   ppv         Where to store the address corresponding to GCPhys.
  * @param   pLock       Where to store the lock information that PGMPhysReleasePageMappingLock needs.
  *
+ * @remarks The caller is responsible for dealing with access handlers.
+ * @todo    Add an informational return code for pages with access handlers?
+ *
  * @remark  Avoid calling this API from within critical sections (other than
  *          the PGM one) because of the deadlock risk.
  * @thread  Any thread.
  */
 VMMDECL(int) PGMPhysGCPhys2CCPtrReadOnly(PVM pVM, RTGCPHYS GCPhys, void const **ppv, PPGMPAGEMAPLOCK pLock)
 {
-    /** @todo implement this */
+#ifdef VBOX_WITH_NEW_PHYS_CODE
+# if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
+
+    /*
+     * Find the page and make sure it's readable.
+     */
+    PPGMPAGE pPage;
+    int rc = pgmPhysGetPageEx(&pVM->pgm.s, GCPhys, &pPage);
+    if (RT_SUCCESS(rc))
+    {
+        if (RT_UNLIKELY(PGM_PAGE_IS_MMIO(pPage)))
+            rc = VERR_PGM_PHYS_PAGE_RESERVED;
+        else
+        {
+            *ppv = pgmDynMapHCPageOff(&pVM->pgm.s, PGM_PAGE_GET_HCPHYS(pPage) | (GCPhys & PAGE_OFFSET_MASK)); /** @todo add a read only flag? */
+#if 0
+            pLock->pvMap = 0;
+            pLock->pvPage = pPage;
+#else
+            pLock->u32Dummy = UINT32_MAX;
+#endif
+            AssertMsg(rc == VINF_SUCCESS || rc == VINF_PGM_SYNC_CR3 /* not returned */, ("%Rrc\n", rc));
+            rc = VINF_SUCCESS;
+        }
+    }
+
+# else  /* IN_RING3 || IN_RING0 */
+    int rc = pgmLock(pVM);
+    AssertRCReturn(rc, rc);
+
+    /*
+     * Query the Physical TLB entry for the page (may fail).
+     */
+    PPGMPAGEMAPTLBE pTlbe;
+    rc = pgmPhysPageQueryTlbe(&pVM->pgm.s, GCPhys, &pTlbe);
+    if (RT_SUCCESS(rc))
+    {
+        /* MMIO pages doesn't have any readable backing. */
+        PPGMPAGE pPage = pTlbe->pPage;
+        if (RT_UNLIKELY(PGM_PAGE_IS_MMIO(pPage)))
+            rc = VERR_PGM_PHYS_PAGE_RESERVED;
+        else
+        {
+            /*
+             * Now, just perform the locking and calculate the return address.
+             */
+            PPGMPAGEMAP pMap = pTlbe->pMap;
+            if (pMap)
+                pMap->cRefs++;
+#if 0 /** @todo implement locking properly */
+            if (RT_LIKELY(pPage->cLocks != PGM_PAGE_MAX_LOCKS))
+                if (RT_UNLIKELY(++pPage->cLocks == PGM_PAGE_MAX_LOCKS))
+                {
+                    AssertMsgFailed(("%RGp is entering permanent locked state!\n", GCPhys));
+                    if (pMap)
+                        pMap->cRefs++; /* Extra ref to prevent it from going away. */
+                }
+#endif
+            *ppv = (void *)((uintptr_t)pTlbe->pv | (GCPhys & PAGE_OFFSET_MASK));
+            pLock->pvPage = pPage;
+            pLock->pvMap = pMap;
+        }
+    }
+
+    pgmUnlock(pVM);
+#endif /* IN_RING3 || IN_RING0 */
+    return rc;
+
+#else  /* !VBOX_WITH_NEW_PHYS_CODE */
+    /*
+     * Fallback code.
+     */
     return PGMPhysGCPhys2CCPtr(pVM, GCPhys, (void **)ppv, pLock);
+#endif /* !VBOX_WITH_NEW_PHYS_CODE */
 }
 
 
@@ -1209,7 +1278,7 @@ VMMDECL(int) PGMPhysGCPhys2R3Ptr(PVM pVM, RTGCPHYS GCPhys, RTUINT cbRange, PRTR3
 /** @todo this is kind of hacky and needs some more work. */
     VM_ASSERT_EMT(pVM); /* no longer safe for use outside the EMT thread! */
 
-    LogAlways(("PGMPhysGCPhys2R3Ptr(,%RGp,%#x,): dont use this API!\n", GCPhys, cbRange)); /** @todo eliminate this API! */
+    Log(("PGMPhysGCPhys2R3Ptr(,%RGp,%#x,): dont use this API!\n", GCPhys, cbRange)); /** @todo eliminate this API! */
 # if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
     AssertFailedReturn(VERR_NOT_IMPLEMENTED);
 # else
@@ -3469,7 +3538,7 @@ VMMDECL(int) PGMPhysInterpretedReadNoHandlers(PVM pVM, PCPUMCTXCORE pCtxCore, vo
                         break;
                     default:
                         AssertMsgFailed(("%Rrc\n", rc));
-                        AssertReturn(RT_FAILURE(rc), VERR_INTERNAL_ERROR);
+                        AssertReturn(RT_FAILURE(rc), VERR_IPE_UNEXPECTED_INFO_STATUS);
                         return rc;
                 }
                 PGMPhysReleasePageMappingLock(pVM, &Lock);
@@ -3519,7 +3588,7 @@ VMMDECL(int) PGMPhysInterpretedReadNoHandlers(PVM pVM, PCPUMCTXCORE pCtxCore, vo
                             break;
                         default:
                             AssertMsgFailed(("%Rrc\n", rc));
-                            AssertReturn(RT_FAILURE(rc), VERR_INTERNAL_ERROR);
+                            AssertReturn(RT_FAILURE(rc), VERR_IPE_UNEXPECTED_INFO_STATUS);
                             return rc;
                     }
 
@@ -3536,7 +3605,7 @@ VMMDECL(int) PGMPhysInterpretedReadNoHandlers(PVM pVM, PCPUMCTXCORE pCtxCore, vo
                             break;
                         default:
                             AssertMsgFailed(("%Rrc\n", rc));
-                            AssertReturn(RT_FAILURE(rc), VERR_INTERNAL_ERROR);
+                            AssertReturn(RT_FAILURE(rc), VERR_IPE_UNEXPECTED_INFO_STATUS);
                             return rc;
                     }
 
@@ -3579,7 +3648,7 @@ VMMDECL(int) PGMPhysInterpretedReadNoHandlers(PVM pVM, PCPUMCTXCORE pCtxCore, vo
 
         default:
             AssertMsgFailed(("rc=%Rrc GCPtrSrc=%RGv cb=%#x\n", rc, GCPtrSrc, cb));
-            AssertReturn(RT_FAILURE(rc), VERR_INTERNAL_ERROR);
+            AssertReturn(RT_FAILURE(rc), VERR_IPE_UNEXPECTED_INFO_STATUS);
             return rc;
     }
     if (fRaiseTrap)
@@ -3662,7 +3731,7 @@ VMMDECL(int) PGMPhysInterpretedWriteNoHandlers(PVM pVM, PCPUMCTXCORE pCtxCore, R
                         break;
                     default:
                         AssertMsgFailed(("%Rrc\n", rc));
-                        AssertReturn(RT_FAILURE(rc), VERR_INTERNAL_ERROR);
+                        AssertReturn(RT_FAILURE(rc), VERR_IPE_UNEXPECTED_INFO_STATUS);
                         return rc;
                 }
 
@@ -3715,7 +3784,7 @@ VMMDECL(int) PGMPhysInterpretedWriteNoHandlers(PVM pVM, PCPUMCTXCORE pCtxCore, R
                             break;
                         default:
                             AssertMsgFailed(("%Rrc\n", rc));
-                            AssertReturn(RT_FAILURE(rc), VERR_INTERNAL_ERROR);
+                            AssertReturn(RT_FAILURE(rc), VERR_IPE_UNEXPECTED_INFO_STATUS);
                             return rc;
                     }
 
@@ -3732,7 +3801,7 @@ VMMDECL(int) PGMPhysInterpretedWriteNoHandlers(PVM pVM, PCPUMCTXCORE pCtxCore, R
                             break;
                         default:
                             AssertMsgFailed(("%Rrc\n", rc));
-                            AssertReturn(RT_FAILURE(rc), VERR_INTERNAL_ERROR);
+                            AssertReturn(RT_FAILURE(rc), VERR_IPE_UNEXPECTED_INFO_STATUS);
                             return rc;
                     }
 
@@ -3781,7 +3850,7 @@ VMMDECL(int) PGMPhysInterpretedWriteNoHandlers(PVM pVM, PCPUMCTXCORE pCtxCore, R
 
         default:
             AssertMsgFailed(("rc=%Rrc GCPtrDst=%RGv cb=%#x\n", rc, GCPtrDst, cb));
-            AssertReturn(RT_FAILURE(rc), VERR_INTERNAL_ERROR);
+            AssertReturn(RT_FAILURE(rc), VERR_IPE_UNEXPECTED_INFO_STATUS);
             return rc;
     }
     if (fRaiseTrap)

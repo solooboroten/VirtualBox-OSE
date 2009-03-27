@@ -1,8 +1,8 @@
 #! /bin/sh
-# Sun xVM VirtualBox
+# Sun VirtualBox
 # Linux Additions kernel module init script
 #
-# Copyright (C) 2006-2007 Sun Microsystems, Inc.
+# Copyright (C) 2006-2009 Sun Microsystems, Inc.
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -204,6 +204,13 @@ start()
             fail "Cannot create device $dev with major $maj and minor $min"
         }
     fi
+    chown $owner:$group $dev 2>/dev/null || {
+        rm -f $dev 2>/dev/null
+        rm -f $userdev 2>/dev/null
+        rmmod vboxadd 2>/dev/null
+        fail "Cannot change owner $owner:$group for device $dev"
+    }
+
     if [ ! -c $userdev ]; then
         maj=10
         min=`sed -n 's;\([0-9]\+\) vboxuser;\1;p' /proc/misc`
@@ -213,20 +220,14 @@ start()
                 rmmod vboxadd 2>/dev/null
                 fail "Cannot create device $userdev with major $maj and minor $min"
             }
+            chown $owner:$group $userdev 2>/dev/null || {
+                rm -f $dev 2>/dev/null
+                rm -f $userdev 2>/dev/null
+                rmmod vboxadd 2>/dev/null
+                fail "Cannot change owner $owner:$group for device $userdev"
+            }
         fi
     fi
-    chown $owner:$group $dev 2>/dev/null || {
-        rm -f $dev 2>/dev/null
-        rm -f $userdev 2>/dev/null
-        rmmod vboxadd 2>/dev/null
-        fail "Cannot change owner $owner:$group for device $dev"
-    }
-    chown $owner:$group $userdev 2>/dev/null || {
-        rm -f $dev 2>/dev/null
-        rm -f $userdev 2>/dev/null
-        rmmod vboxadd 2>/dev/null
-        fail "Cannot change owner $owner:$group for device $userdev"
-    }
 
     if [ -n "$BUILDVBOXVFS" ]; then
         running_vboxvfs || {
@@ -283,7 +284,7 @@ setup()
         begin "Removing old VirtualBox vboxvfs kernel module"
         find /lib/modules/`uname -r` -name "vboxvfs\.*" 2>/dev/null|xargs rm -f 2>/dev/null
         succ_msg
-    fi  
+    fi
     if find /lib/modules/`uname -r` -name "vboxadd\.*" 2>/dev/null|grep -q vboxadd; then
         begin "Removing old VirtualBox vboxadd kernel module"
         find /lib/modules/`uname -r` -name "vboxadd\.*" 2>/dev/null|xargs rm -f 2>/dev/null

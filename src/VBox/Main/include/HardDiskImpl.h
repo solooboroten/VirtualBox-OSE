@@ -1,4 +1,4 @@
-/* $Id: HardDiskImpl.h 17970 2009-03-16 19:08:16Z vboxsync $ */
+/* $Id: HardDiskImpl.h 18388 2009-03-27 13:11:42Z vboxsync $ */
 
 /** @file
  *
@@ -55,6 +55,7 @@ public:
         List;
 
     class MergeChain;
+    class CloneChain;
 
     VIRTUALBOXSUPPORTTRANSLATION_OVERRIDE (HardDisk)
 
@@ -75,13 +76,21 @@ public:
     HRESULT FinalConstruct();
     void FinalRelease();
 
+    enum HDDOpenMode  { OpenReadWrite, OpenReadOnly };
+                // have to use a special enum for the overloaded init() below;
+                // can't use AccessMode_T from XIDL because that's mapped to an int
+                // and would be ambiguous
+
     // public initializer/uninitializer for internal purposes only
-    HRESULT init (VirtualBox *aVirtualBox, CBSTR aFormat,
-                  CBSTR aLocation);
-    HRESULT init (VirtualBox *aVirtualBox,
-                  CBSTR aLocation);
-    HRESULT init (VirtualBox *aVirtualBox, HardDisk *aParent,
-                  const settings::Key &aNode);
+    HRESULT init(VirtualBox *aVirtualBox,
+                 CBSTR aFormat,
+                 CBSTR aLocation);
+    HRESULT init(VirtualBox *aVirtualBox,
+                 CBSTR aLocation,
+                 HDDOpenMode enOpenMode);
+    HRESULT init(VirtualBox *aVirtualBox,
+                 HardDisk *aParent,
+                 const settings::Key &aNode);
     void uninit();
 
     // IMedium properties & methods
@@ -116,9 +125,7 @@ public:
                                   IProgress **aProgress);
     STDMETHOD(MergeTo) (IN_GUID aTargetId, IProgress **aProgress);
     STDMETHOD(CloneTo) (IHardDisk *aTarget, HardDiskVariant_T aVariant,
-                        IProgress **aProgress);
-    STDMETHOD(FlattenTo) (IHardDisk *aTarget, HardDiskVariant_T aVariant,
-                          IProgress **aProgress);
+                        IHardDisk *aParent, IProgress **aProgress);
     STDMETHOD(Compact) (IProgress **aProgress);
     STDMETHOD(Reset) (IProgress **aProgress);
 
@@ -246,7 +253,7 @@ private:
     HRESULT setLocation (CBSTR aLocation);
     HRESULT setFormat (CBSTR aFormat);
 
-    HRESULT queryInfo();
+    virtual HRESULT queryInfo();
 
     HRESULT canClose();
     HRESULT canAttach (const Guid &aMachineId,
@@ -279,15 +286,24 @@ private:
 
     struct Data
     {
-        Data() : type (HardDiskType_Normal), logicalSize (0), autoReset (false)
-               , implicit (false), numCreateDiffTasks (0)
-               , vdProgress (NULL) , vdDiskIfaces (NULL) {}
+        Data()
+            : type(HardDiskType_Normal),
+              logicalSize(0),
+              hddOpenMode(OpenReadWrite),
+              autoReset(false),
+              implicit(false),
+              numCreateDiffTasks(0),
+              vdProgress(NULL),
+              vdDiskIfaces(NULL)
+        {}
 
         const Bstr format;
         ComObjPtr <HardDiskFormat> formatObj;
 
         HardDiskType_T type;
         uint64_t logicalSize;   /*< In MBytes. */
+
+        HDDOpenMode hddOpenMode;
 
         BOOL autoReset : 1;
 
