@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 18208 2009-03-24 17:01:32Z vboxsync $
+# $Id: Makefile.kmk 18785 2009-04-06 16:01:39Z vboxsync $
 ## @file
 # Makefile for the VBox Main module.
 #
@@ -84,18 +84,23 @@ VBOX_IDL_HEADER.XPCOM  = $(VBOX_PATH_SDK)/bindings/xpcom/include/VirtualBox_XPCO
 # The MS COM specific stuff.
 if defined(VBOX_ONLY_SDK) || "$(KBUILD_TARGET)" == "win"
  OTHERS         += \
-        $(VBOX_IDL_FILE.MSCOM) \
-        $(VBOX_PATH_SDK)/bindings/mscom/include/VirtualBox.h \
-        $(VBOX_PATH_SDK)/bindings/mscom/lib/VirtualBox.tlb \
-        $(VBOX_PATH_SDK)/bindings/mscom/lib/VirtualBox_i.c
+ 	$(VBOX_IDL_FILE.MSCOM) \
+ 	$(VBOX_PATH_SDK)/bindings/mscom/include/VirtualBox.h \
+ 	$(VBOX_PATH_SDK)/bindings/mscom/lib/VirtualBox.tlb \
+ 	$(VBOX_PATH_SDK)/bindings/mscom/lib/VirtualBox_i.c \
+ 	$(VBOX_PATH_SDK)/bindings/mscom/python/samples/vboxshell.py   \
+ 	$(VBOX_PATH_SDK)/bindings/mscom/python/samples/shellcommon.py
  OTHER_CLEAN    += \
-	$(VBOX_IDL_FILE.MSCOM) \
-	$(VBOX_PATH_SDK)/bindings/mscom/include/VirtualBox.h \
-	$(VBOX_PATH_SDK)/bindings/mscom/lib/VirtualBox.tlb \
-	$(VBOX_PATH_SDK)/bindings/mscom/lib/VirtualBox_i.c \
-	$(PATH_VBoxCOM)/VirtualBox.h \
-	$(PATH_VBoxCOM)/VirtualBox_i.c \
-	$(PATH_VBoxCOM)/VirtualBox.tlb
+ 	$(VBOX_IDL_FILE.MSCOM) \
+ 	$(VBOX_PATH_SDK)/bindings/mscom/include/VirtualBox.h \
+ 	$(VBOX_PATH_SDK)/bindings/mscom/lib/VirtualBox.tlb \
+ 	$(VBOX_PATH_SDK)/bindings/mscom/lib/VirtualBox_i.c \
+ 	$(PATH_VBoxCOM)/VirtualBox.h   \
+ 	$(PATH_VBoxCOM)/VirtualBox_i.c \
+ 	$(PATH_VBoxCOM)/VirtualBox.tlb \
+ 	$(VBOX_PATH_SDK)/bindings/mscom/python/samples/vboxshell.py \
+ 	$(VBOX_PATH_SDK)/bindings/mscom/python/samples/shellcommon.py
+
  VBOX_MAIN_PREREQS += $(PATH_VBoxCOM)/VirtualBox_i.c
  BLDDIRS += $(VBOX_PATH_SDK)/bindings/mscom/idl
 endif
@@ -144,6 +149,13 @@ $(PATH_TARGET)/docs.Main: \
 	$(VBOX_XSLTPROC) -o $(PATH_TARGET)/VirtualBox.idl $(VBOX_PATH_MAIN_SRC)/idl/doxygen.xsl $(VBOX_XIDL_FILE_SRC)
 	$(REDIRECT) -E 'DOCDIR=$(VBOX_MAIN_DOC_DIR)' -E 'PATH_TARGET=$(PATH_TARGET)' -E 'PATH_CHM=$(subst /,\,$(VBOX_MAIN_DOC_DIR)/VirtualBoxAPI.chm)' \
 		-- doxygen $(VBOX_PATH_MAIN_SRC)/Doxyfile.Main
+	$(QUIET)$(TEST) -s "$(PATH_TARGET)/Main.err" -- $(ECHO_EXT) ">>>>>>>>>>>>>>>>>>>> Main.err: >>>>>>>>>>>>>>>>>>>>>>>>"
+	$(QUIET)$(TEST) -s "$(PATH_TARGET)/Main.err" -- $(CAT) "$(PATH_TARGET)/Main.err"
+	$(QUIET)$(TEST) -s "$(PATH_TARGET)/Main.err" -- $(ECHO_EXT) "<<<<<<<<<<<<<<<<<<<< Main.err <<<<<<<<<<<<<<<<<<<<<<<<<"
+	$(QUIET)$(TEST) -s "$(PATH_TARGET)/Main.err" -- $(ECHO_EXT) "===> **************************************************"
+	$(QUIET)$(TEST) -s "$(PATH_TARGET)/Main.err" -- $(ECHO_EXT) "===> Please fix above doxygen errors/warnings listed in"
+	$(QUIET)$(TEST) -s "$(PATH_TARGET)/Main.err" -- $(ECHO_EXT) "===> $(PATH_TARGET)/Main.err"
+	$(QUIET)$(TEST) -s "$(PATH_TARGET)/Main.err" -- $(ECHO_EXT) "===> **************************************************"
 	-$(EXEC_X86_WIN32) $(VBOX_PATH_HTML_HELP_WORKSHOP)/hhc.exe $(subst /,\\,$(VBOX_MAIN_DOC_DIR)/html/index.hhp)
 	$(APPEND) $(PATH_TARGET)/docs.Main
 # aliases
@@ -183,6 +195,7 @@ VBoxSVC_TEMPLATE = VBOXMAINEXE
 VBoxSVC_DEFS = \
 	VBOX_MAIN_SETTINGS_ADDONS \
 	$(VBOX_MAIN_DEFS) \
+	$(if $(VBOX_WITH_VBOXSDL),VBOX_WITH_VBOXSDL,) \
 	$(if $(VBOX_WITH_VRDP),VBOX_WITH_VRDP,) \
 	$(if $(VBOX_WITH_HEADLESS),VBOX_WITH_HEADLESS,) \
 	$(if $(VBOX_WITH_QTGUI),VBOX_WITH_QTGUI,) \
@@ -335,7 +348,7 @@ ifdef VBOX_WITH_NETFLT
  #       we're using the VCC since we're not using the DDK compiler/crt.
  #       Since this is potentially risky, restrict it to the source file
  #       needing it.
- win/NetIfList-win.cpp_INCS.win += $(PATH_TOOL_$(VBOX_VCC_TOOL)_INC)
+ win/NetIf-win.cpp_INCS.win += $(PATH_TOOL_$(VBOX_VCC_TOOL)_INC)
  VBoxSVC_LIBS.win += \
 	$(PATH_LIB)/WinNetConfig.lib \
 	$(PATH_TOOL_$(VBOX_VCC_TOOL)_LIB)/comsupp.lib \
@@ -365,11 +378,11 @@ ifdef VBOX_WITH_RESOURCE_USAGE_API
 endif
 
 ifdef VBOX_WITH_HOSTNETIF_API
- VBoxSVC_SOURCES.win     +=     win/NetIfList-win.cpp
- VBoxSVC_SOURCES.linux   +=   linux/NetIfList-linux.cpp
- VBoxSVC_SOURCES.os2     +=     os2/NetIfList-os2.cpp
- VBoxSVC_SOURCES.darwin  +=  darwin/NetIfList-darwin.cpp
- VBoxSVC_SOURCES.solaris += solaris/NetIfList-solaris.cpp
+ VBoxSVC_SOURCES.win     +=     win/NetIf-win.cpp
+ VBoxSVC_SOURCES.linux   +=   linux/NetIf-linux.cpp
+ VBoxSVC_SOURCES.os2     +=     os2/NetIf-os2.cpp
+ VBoxSVC_SOURCES.darwin  +=  darwin/NetIf-darwin.cpp
+ VBoxSVC_SOURCES.solaris += solaris/NetIf-solaris.cpp
  VBoxSVC_DEFS            += VBOX_WITH_HOSTNETIF_API
  if1of ($(KBUILD_TARGET), linux darwin solaris)
   VBoxSVC_SOURCES        += generic/NetIf-generic.cpp
@@ -716,6 +729,17 @@ $(PATH_VBoxCOM)/VirtualBox_i.c \
 	$(MKDIR) -p $(VBOX_PATH_SDK)/bindings/mscom/lib
 	$(CP) $(PATH_VBoxCOM)/VirtualBox.tlb $(VBOX_PATH_SDK)/bindings/mscom/lib
 	$(CP) $(PATH_VBoxCOM)/VirtualBox_i.c $(VBOX_PATH_SDK)/bindings/mscom/lib
+
+
+## @todo Use install targets, please.
+#        Actually, what on earth is this stuff doing? Why copy two files like this?
+$(VBOX_PATH_SDK)/bindings/mscom/python/samples/shellcommon.py \
++ $(VBOX_PATH_SDK)/bindings/mscom/python/samples/vboxshell.py: \
+		$(PATH_ROOT)/src/VBox/Frontends/VBoxShell/shellcommon.py \
+		$(PATH_ROOT)/src/VBox/Frontends/VBoxShell/mscom/vboxshell.py
+	$(MKDIR) -p $(VBOX_PATH_SDK)/bindings/mscom/python/samples
+	$(CP) $(PATH_ROOT)/src/VBox/Frontends/VBoxShell/shellcommon.py     $(VBOX_PATH_SDK)/bindings/mscom/python/samples/shellcommon.py
+	$(CP) $(PATH_ROOT)/src/VBox/Frontends/VBoxShell/mscom/vboxshell.py $(VBOX_PATH_SDK)/bindings/mscom/python/samples/vboxshell.py
 
 #
 # Translation stuff

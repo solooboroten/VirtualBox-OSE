@@ -1,4 +1,4 @@
-/* $Id: GMMR0.cpp 18369 2009-03-27 03:24:07Z vboxsync $ */
+/* $Id: GMMR0.cpp 18647 2009-04-02 16:03:29Z vboxsync $ */
 /** @file
  * GMM - Global Memory Manager.
  */
@@ -741,7 +741,7 @@ GMMR0DECL(void) GMMR0CleanupVM(PGVM pGVM)
      * request has been serviced.
      */
     if (    pGVM->gmm.s.enmPolicy > GMMOCPOLICY_INVALID
-        ||  pGVM->gmm.s.enmPolicy < GMMOCPOLICY_END)
+        &&  pGVM->gmm.s.enmPolicy < GMMOCPOLICY_END)
     {
         /*
          * If it's the last VM around, we can skip walking all the chunk looking
@@ -1465,6 +1465,8 @@ static int gmmR0AllocateOneChunk(PGMM pGMM, PGMMCHUNKFREESET pSet)
         if (RT_FAILURE(rc))
             RTR0MemObjFree(MemObj, false /* fFreeMappings */);
     }
+    /** @todo Check that RTR0MemObjAllocPhysNC always returns VERR_NO_MEMORY on
+     *        allocation failure. */
     return rc;
 }
 

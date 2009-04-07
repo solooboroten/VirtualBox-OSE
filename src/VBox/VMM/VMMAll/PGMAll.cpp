@@ -1,4 +1,4 @@
-/* $Id: PGMAll.cpp 18131 2009-03-23 10:32:05Z vboxsync $ */
+/* $Id: PGMAll.cpp 18731 2009-04-06 08:25:50Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor - All context code.
  */
@@ -399,7 +399,7 @@ DECLINLINE(int) pgmShwGetPaePoolPagePD(PPGM pPGM, RTGCPTR GCPtr, PPGMPOOLPAGE *p
  */
 VMMDECL(int)     PGMTrap0eHandler(PVM pVM, RTGCUINT uErr, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault)
 {
-    LogFlow(("PGMTrap0eHandler: uErr=%RGu pvFault=%RGv eip=%RGv\n", uErr, pvFault, (RTGCPTR)pRegFrame->rip));
+    LogFlow(("PGMTrap0eHandler: uErr=%RGu pvFault=%RGv eip=%04x:%RGv\n", uErr, pvFault, pRegFrame->cs, (RTGCPTR)pRegFrame->rip));
     STAM_PROFILE_START(&pVM->pgm.s.StatRZTrap0e, a);
     STAM_STATS({ pVM->pgm.s.CTX_SUFF(pStatTrap0eAttribution) = NULL; } );
 
@@ -957,8 +957,9 @@ int pgmShwSyncPaePDPtr(PVM pVM, RTGCPTR GCPtr, PX86PDPE pGstPdpe, PX86PDPAE *ppP
     {
         pShwPage = pgmPoolGetPage(pPool, pPdpe->u & X86_PDPE_PG_MASK);
         AssertReturn(pShwPage, VERR_INTERNAL_ERROR);
-
         Assert((pPdpe->u & X86_PDPE_PG_MASK) == pShwPage->Core.Key);
+
+        pgmPoolCacheUsed(pPool, pShwPage);
     }
     *ppPD = (PX86PDPAE)PGMPOOL_PAGE_2_PTR(pVM, pShwPage);
     return VINF_SUCCESS;
@@ -1052,6 +1053,8 @@ int pgmShwSyncLongModePDPtr(PVM pVM, RTGCPTR64 GCPtr, PX86PML4E pGstPml4e, PX86P
     {
         pShwPage = pgmPoolGetPage(pPool, pPml4e->u & X86_PML4E_PG_MASK);
         AssertReturn(pShwPage, VERR_INTERNAL_ERROR);
+
+        pgmPoolCacheUsed(pPool, pShwPage);
     }
     /* The PDPT was cached or created; hook it up now. */
     pPml4e->u |= pShwPage->Core.Key
@@ -1090,6 +1093,8 @@ int pgmShwSyncLongModePDPtr(PVM pVM, RTGCPTR64 GCPtr, PX86PML4E pGstPml4e, PX86P
     {
         pShwPage = pgmPoolGetPage(pPool, pPdpe->u & X86_PDPE_PG_MASK);
         AssertReturn(pShwPage, VERR_INTERNAL_ERROR);
+
+        pgmPoolCacheUsed(pPool, pShwPage);
     }
     /* The PD was cached or created; hook it up now. */
     pPdpe->u |= pShwPage->Core.Key
@@ -1117,6 +1122,9 @@ DECLINLINE(int) pgmShwGetLongModePDPtr(PVM pVM, RTGCPTR64 GCPtr, PX86PML4E *ppPm
     AssertReturn(pPml4e, VERR_INTERNAL_ERROR);
     if (ppPml4e)
         *ppPml4e = (PX86PML4E)pPml4e;
+
+    Log4(("pgmShwGetLongModePDPtr %VGv (%VHv) %RX64\n", GCPtr, pPml4e, pPml4e->u));
+
     if (!pPml4e->n.u1Present)
         return VERR_PAGE_MAP_LEVEL4_NOT_PRESENT;
 
@@ -1177,6 +1185,8 @@ int pgmShwGetEPTPDPtr(PVM pVM, RTGCPTR64 GCPtr, PEPTPDPT *ppPdpt, PEPTPD *ppPD)
     {
         pShwPage = pgmPoolGetPage(pPool, pPml4e->u & EPT_PML4E_PG_MASK);
         AssertReturn(pShwPage, VERR_INTERNAL_ERROR);
+
+        pgmPoolCacheUsed(pPool, pShwPage);
     }
     /* The PDPT was cached or created; hook it up now and fill with the default value. */
     pPml4e->u           = pShwPage->Core.Key;
@@ -1204,6 +1214,8 @@ int pgmShwGetEPTPDPtr(PVM pVM, RTGCPTR64 GCPtr, PEPTPDPT *ppPdpt, PEPTPD *ppPD)
     {
         pShwPage = pgmPoolGetPage(pPool, pPdpe->u & EPT_PDPTE_PG_MASK);
         AssertReturn(pShwPage, VERR_INTERNAL_ERROR);
+
+        pgmPoolCacheUsed(pPool, pShwPage);
     }
     /* The PD was cached or created; hook it up now and fill with the default value. */
     pPdpe->u            = pShwPage->Core.Key;
@@ -1309,7 +1321,6 @@ VMMDECL(int)  PGMGstModifyPage(PVM pVM, RTGCPTR GCPtr, size_t cb, uint64_t fFlag
     return rc;
 }
 
-#ifdef VBOX_WITH_NEW_PHYS_CODE
 #ifdef IN_RING3
 
 /**
@@ -1466,7 +1477,6 @@ PX86PML4 pgmGstLazyMapPml4(PPGM pPGM)
 }
 #endif /* VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R3 */
 
-#endif /* VBOX_WITH_NEW_PHYS_CODE */
 
 /**
  * Gets the specified page directory pointer table entry.
@@ -1756,7 +1766,7 @@ VMMDECL(int) PGMUpdateCR3(PVM pVM, uint64_t cr3)
     /* We assume we're only called in nested paging mode. */
     Assert(pVM->pgm.s.fMappingsFixed);
     Assert(!(pVM->pgm.s.fSyncFlags & PGM_SYNC_MONITOR_CR3));
-    Assert(pVM->pgm.s.enmShadowMode == PGMMODE_NESTED || pVM->pgm.s.enmShadowMode == PGMMODE_EPT);
+    Assert(HWACCMIsNestedPagingActive(pVM) || pVM->pgm.s.enmShadowMode == PGMMODE_EPT);
 
     /*
      * Remap the CR3 content and adjust the monitoring if CR3 was actually changed.
@@ -1919,9 +1929,13 @@ VMMDECL(int) PGMSyncCR3(PVM pVM, uint64_t cr0, uint64_t cr3, uint64_t cr4, bool 
  * Called whenever CR0 or CR4 in a way which may change
  * the paging mode.
  *
- * @returns VBox status code fit for scheduling in GC and R0.
+ * @returns VBox status code, with the following informational code for
+ *          VM scheduling.
  * @retval  VINF_SUCCESS if the was no change, or it was successfully dealt with.
- * @retval  VINF_PGM_CHANGE_MODE if we're in GC or R0 and the mode changes.
+ * @retval  VINF_PGM_CHANGE_MODE if we're in RC or R0 and the mode changes.
+ *          (I.e. not in R3.)
+ * @retval  VINF_EM_SUSPEND or VINF_EM_OFF on a fatal runtime error. (R3 only)
+ *
  * @param   pVM         VM handle.
  * @param   cr0         The new cr0.
  * @param   cr4         The new cr4.

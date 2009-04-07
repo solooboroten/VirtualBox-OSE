@@ -1653,7 +1653,7 @@ QString VBoxGlobal::detailsReport (const CMachine &aMachine, bool aIsNewVM,
         int rows = 2; /* including section header and footer */
 
         CHardDiskAttachmentVector vec = aMachine.GetHardDiskAttachments();
-        for (size_t i = 0; i < (size_t) vec.size(); ++ i)
+        for (int i = 0; i < vec.size(); ++ i)
         {
             CHardDiskAttachment hda = vec [i];
             CHardDisk hd = hda.GetHardDisk();
@@ -2912,6 +2912,8 @@ void VBoxGlobal::retranslateUi()
         tr ("Intel PRO/1000 MT Desktop (82540EM)", "NetworkAdapterType");
     mNetworkAdapterTypes [KNetworkAdapterType_I82543GC] =
         tr ("Intel PRO/1000 T Server (82543GC)", "NetworkAdapterType");
+    mNetworkAdapterTypes [KNetworkAdapterType_I82545EM] =
+        tr ("Intel PRO/1000 MT Server (82545EM)", "NetworkAdapterType");
 
     mNetworkAttachmentTypes [KNetworkAttachmentType_Null] =
         tr ("Not attached", "NetworkAttachmentType");
@@ -5365,7 +5367,11 @@ void VBoxGlobal::init()
     while (i < argc)
     {
         const char *arg = qApp->argv() [i];
-        if (       !::strcmp (arg, "-startvm"))
+        if (    !::strcmp (arg, "--startvm")
+            ||  !::strcmp (arg, "-startvm")
+            ||  !::strcmp (arg, "-s")
+            ||  !::strcmp (arg, "--vm")
+            ||  !::strcmp (arg, "-vm"))
         {
             if (++i < argc)
             {
@@ -5388,16 +5394,16 @@ void VBoxGlobal::init()
             }
         }
 #ifdef VBOX_GUI_WITH_SYSTRAY
-        else if (!::strcmp (arg, "-systray"))
+        else if (!::strcmp (arg, "-systray") || !::strcmp (arg, "--systray"))
         {
             mIsTrayMenu = true;
         }
 #endif
-        else if (!::strcmp (arg, "-comment"))
+        else if (!::strcmp (arg, "-comment") || !::strcmp (arg, "--comment"))
         {
             ++i;
         }
-        else if (!::strcmp (arg, "-rmode"))
+        else if (!::strcmp (arg, "-rmode") || !::strcmp (arg, "--rmode"))
         {
             if (++i < argc)
                 vm_render_mode_str = qApp->argv() [i];
@@ -5407,7 +5413,7 @@ void VBoxGlobal::init()
         {
             mDbgEnabled = true;
         }
-        else if (!::strcmp( arg, "-debug") || !::strcmp( arg, "--debug"))
+        else if (!::strcmp( arg, "-debug") || !::strcmp (arg, "--debug"))
         {
             mDbgEnabled = true;
             mDbgAutoShow = true;

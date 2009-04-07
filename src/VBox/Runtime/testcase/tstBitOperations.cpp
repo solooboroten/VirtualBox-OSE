@@ -1,4 +1,4 @@
-/* $Id: tstBitOperations.cpp 18367 2009-03-27 03:19:09Z vboxsync $ */
+/* $Id: tstBitOperations.cpp 18569 2009-03-31 13:07:20Z vboxsync $ */
 /** @file
  * IPRT Testcase - Inlined Bit Operations.
  */
@@ -45,7 +45,7 @@
  */
 
 #define NIL_TEST2_ID    0
-#define TEST2_ID_LAST   (RT_BIT_32(28) - 1 >> 8)
+#define TEST2_ID_LAST   ((RT_BIT_32(28) - 1) >> 8)
 
 struct TestMap2
 {
@@ -102,7 +102,7 @@ static void test2(RTTEST hTest)
     p2->idLast = TEST2_ID_LAST;
 
     /* Some simple tests first. */
-    memset(&p2->bmChunkId[0],    0, sizeof(p2->bmChunkId));
+    RT_ZERO(p2->bmChunkId);
     RTTEST_CHECK(hTest, ASMBitFirstSet(&p2->bmChunkId[0], TEST2_ID_LAST + 1) == -1);
     for (uint32_t iBit = 0; iBit <= TEST2_ID_LAST; iBit++)
         RTTEST_CHECK(hTest, !ASMBitTest(&p2->bmChunkId[0], iBit));
@@ -114,7 +114,7 @@ static void test2(RTTEST hTest)
 
     /* The real test. */
     p2->idChunkPrev = 0;
-    memset(&p2->bmChunkId[0],    0, sizeof(p2->bmChunkId));
+    RT_ZERO(p2->bmChunkId);
     ASMBitSet(p2->bmChunkId, NIL_TEST2_ID);
     uint32_t cLeft = TEST2_ID_LAST;
     while (cLeft-- > 0)
@@ -156,7 +156,7 @@ int main()
 #else
     struct TestMap *p = (struct TestMap *)RTTestGuardedAllocTail(hTest, sizeof(*p));
 #endif
-#define DUMP()          RTTestPrintf(hTest, "au32={%08x,%08x,%08x,%08x}", p->au32[0], p->au32[1], p->au32[2], p->au32[3])
+#define DUMP()          RTTestPrintf(hTest, RTTESTLVL_INFO, "au32={%08x,%08x,%08x,%08x}", p->au32[0], p->au32[1], p->au32[2], p->au32[3])
 #define CHECK(expr)     do { if (!(expr)) { RTTestFailed(hTest, "line %d: %s", __LINE__, #expr); DUMP(); } CHECK_GUARD(s); } while (0)
 #define CHECK_BIT(expr,  b1)            do { if (!(expr)) { RTTestFailed(hTest, "line %d, b1=%d: %s", __LINE__, b1, #expr); } CHECK_GUARD(s); } while (0)
 #define CHECK_BIT2(expr, b1, b2)        do { if (!(expr)) { RTTestFailed(hTest, "line %d, b1=%d b2=%d: %s", __LINE__, b1, b2, #expr); } CHECK_GUARD(s); } while (0)
@@ -164,7 +164,7 @@ int main()
 
 #define GUARD_MAP(p)    do {  } while (0)
 #define CHECK_GUARD(p)  do {  } while (0)
-#define MAP_CLEAR(p)    do { memset(p,    0, sizeof(*(p))); GUARD_MAP(p); } while (0)
+#define MAP_CLEAR(p)    do { RT_ZERO(*(p)); GUARD_MAP(p); } while (0)
 #define MAP_SET(p)      do { memset(p, 0xff, sizeof(*(p))); GUARD_MAP(p); } while (0)
 
     /* self check. */

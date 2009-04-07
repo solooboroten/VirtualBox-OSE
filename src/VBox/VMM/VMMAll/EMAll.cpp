@@ -1,4 +1,4 @@
-/* $Id: EMAll.cpp 18338 2009-03-26 18:15:06Z vboxsync $ */
+/* $Id: EMAll.cpp 18771 2009-04-06 15:01:22Z vboxsync $ */
 /** @file
  * EM - Execution Monitor(/Manager) - All contexts
  */
@@ -317,20 +317,7 @@ DECLINLINE(int) emRamRead(PVM pVM, PCPUMCTXCORE pCtxCore, void *pvDst, RTGCPTR G
      * instruction and it either flushed the TLB or the CPU reused it.
      */
 #endif
-#ifdef VBOX_WITH_NEW_PHYS_CODE
     return PGMPhysInterpretedReadNoHandlers(pVM, pCtxCore, pvDst, GCPtrSrc, cb, /*fMayTrap*/ false);
-#else
-    NOREF(pCtxCore);
-# ifdef IN_RC
-    RTGCPHYS GCPhys;
-    rc = PGMPhysGCPtr2GCPhys(pVM, GCPtrSrc, &GCPhys);
-    AssertRCReturn(rc, rc);
-    PGMPhysRead(pVM, GCPhys, pvDst, cb);
-    return VINF_SUCCESS;
-# else
-    return PGMPhysReadGCPtr(pVM, pvDst, GCPtrSrc, cb);
-# endif
-#endif
 }
 
 
@@ -348,26 +335,7 @@ DECLINLINE(int) emRamWrite(PVM pVM, PCPUMCTXCORE pCtxCore, RTGCPTR GCPtrDst, con
      * access doesn't cost us much (see PGMPhysGCPtr2GCPhys()).
      */
 #endif
-#ifdef VBOX_WITH_NEW_PHYS_CODE
     return PGMPhysInterpretedWriteNoHandlers(pVM, pCtxCore, GCPtrDst, pvSrc, cb, /*fMayTrap*/ false);
-#else
-    NOREF(pCtxCore);
-# ifdef IN_RC
-    uint64_t fFlags;
-    RTGCPHYS GCPhys;
-    rc = PGMGstGetPage(pVM, GCPtrDst, &fFlags, &GCPhys);
-    if (RT_FAILURE(rc))
-        return rc;
-    if (    !(fFlags & X86_PTE_RW)
-        &&  (CPUMGetGuestCR0(pVM) & X86_CR0_WP))
-        return VERR_ACCESS_DENIED;
-
-    PGMPhysWrite(pVM, GCPhys + ((RTGCUINTPTR)GCPtrDst & PAGE_OFFSET_MASK), pvSrc, cb);
-    return VINF_SUCCESS;
-# else
-    return PGMPhysWriteGCPtr(pVM, GCPtrDst, pvSrc, cb);
-# endif
-#endif
 }
 
 
@@ -1349,11 +1317,7 @@ static int emInterpretStosWD(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame,
     {
         LogFlow(("emInterpretStosWD dest=%04X:%RGv (%RGv) cbSize=%d\n", pRegFrame->es, GCOffset, GCDest, cbSize));
 
-#ifdef VBOX_WITH_NEW_PHYS_CODE
         rc = emRamWrite(pVM, pRegFrame, GCDest, &pRegFrame->rax, cbSize);
-#else
-        rc = PGMPhysWriteGCPtr(pVM, GCDest, &pRegFrame->rax, cbSize);
-#endif
         if (RT_FAILURE(rc))
             return VERR_EM_INTERPRETER;
         Assert(rc == VINF_SUCCESS);
@@ -1410,11 +1374,7 @@ static int emInterpretStosWD(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame,
         /* REP case */
         while (cTransfers)
         {
-#ifdef VBOX_WITH_NEW_PHYS_CODE
             rc = emRamWrite(pVM, pRegFrame, GCDest, &pRegFrame->rax, cbSize);
-#else
-            rc = PGMPhysWriteGCPtr(pVM, GCDest, &pRegFrame->rax, cbSize);
-#endif
             if (RT_FAILURE(rc))
             {
                 rc = VERR_EM_INTERPRETER;
@@ -2598,6 +2558,40 @@ static int emInterpretRdtsc(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, 
     return EMInterpretRdtsc(pVM, pRegFrame);
 }
 
+/**
+ * Interpret RDPMC
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM handle.
+ * @param   pRegFrame   The register frame.
+ *
+ */
+VMMDECL(int) EMInterpretRdpmc(PVM pVM, PCPUMCTXCORE pRegFrame)
+{
+    unsigned uCR4 = CPUMGetGuestCR4(pVM);
+
+    /* If X86_CR4_PCE is not set, then CPL must be zero. */
+    if (    !(uCR4 & X86_CR4_PCE)
+        &&  CPUMGetGuestCPL(pVM, pRegFrame) != 0)
+    {
+        Assert(CPUMGetGuestCR0(pVM) & X86_CR0_PE);
+        return VERR_EM_INTERPRETER; /* genuine #GP */
+    }
+
+    /* Just return zero here; rather tricky to properly emulate this, especially as the specs are a mess. */
+    pRegFrame->rax = 0;
+    pRegFrame->rdx = 0;
+    /* @todo We should trigger a #GP here if the cpu doesn't support the index in ecx. */
+    return VINF_SUCCESS;
+}
+
+/**
+ * RDPMC Emulation
+ */
+static int emInterpretRdpmc(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, uint32_t *pcbSize)
+{
+    return EMInterpretRdpmc(pVM, pRegFrame);
+}
 
 /**
  * MONITOR Emulation.
@@ -2711,6 +2705,14 @@ static const char *emMSRtoString(uint32_t uMsr)
         return "Unsupported MSR_IA32_MC0_CTL";
     case MSR_IA32_MC0_STATUS:
         return "Unsupported MSR_IA32_MC0_STATUS";
+    case MSR_IA32_PERFEVTSEL0:
+        return "Unsupported MSR_IA32_PERFEVTSEL0";
+    case MSR_IA32_PERFEVTSEL1:
+        return "Unsupported MSR_IA32_PERFEVTSEL1";
+    case MSR_IA32_PERF_STATUS:
+        return "Unsupported MSR_IA32_PERF_STATUS";
+    case MSR_IA32_PERF_CTL:
+        return "Unsupported MSR_IA32_PERF_CTL";
     }
     return "Unknown MSR";
 }
@@ -3219,6 +3221,7 @@ DECLINLINE(int) emInterpretInstructionCPU(PVM pVM, PDISCPUSTATE pCpu, PCPUMCTXCO
         INTERPRET_CASE_EX_LOCK_PARAM2(OP_BTR,Btr, BitTest, EMEmulateBtr, EMEmulateLockBtr);
         INTERPRET_CASE_EX_PARAM2(OP_BTS,Bts, BitTest, EMEmulateBts);
         INTERPRET_CASE_EX_PARAM2(OP_BTC,Btc, BitTest, EMEmulateBtc);
+        INTERPRET_CASE(OP_RDPMC,Rdpmc);
         INTERPRET_CASE(OP_RDTSC,Rdtsc);
         INTERPRET_CASE(OP_CMPXCHG, CmpXchg);
 #ifdef IN_RC

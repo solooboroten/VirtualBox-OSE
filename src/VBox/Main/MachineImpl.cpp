@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp 18269 2009-03-25 18:01:07Z vboxsync $ */
+/* $Id: MachineImpl.cpp 18818 2009-04-07 12:47:04Z vboxsync $ */
 
 /** @file
  * Implementation of IMachine in VBoxSVC.
@@ -2741,6 +2741,7 @@ STDMETHODIMP Machine::DeleteSettings()
             tr ("Cannot delete settings of a registered machine"));
 
     /* delete the settings only when the file actually exists */
+    lockConfig();
     if (isConfigLocked())
     {
         unlockConfig();
@@ -3824,10 +3825,10 @@ HRESULT Machine::openRemoteSession (IInternalSessionControl *aControl,
 
         Utf8Str idStr = mData->mUuid.toString();
 # ifdef RT_OS_WINDOWS /** @todo drop this once the RTProcCreate bug has been fixed */
-        const char * args[] = {path, "-startvm", idStr, 0 };
+        const char * args[] = {path, "--startvm", idStr, 0 };
 # else
         Utf8Str name = mUserData->mName;
-        const char * args[] = {path, "-comment", name, "-startvm", idStr, 0 };
+        const char * args[] = {path, "--comment", name, "--startvm", idStr, 0 };
 # endif
         vrc = RTProcCreate (path, args, env, 0, &pid);
     }
@@ -3835,6 +3836,29 @@ HRESULT Machine::openRemoteSession (IInternalSessionControl *aControl,
     if (0)
         ;
 #endif /* VBOX_WITH_QTGUI */
+
+    else
+
+#ifdef VBOX_WITH_VBOXSDL
+    if (type == "sdl" || type == "GUI/SDL")
+    {
+        const char VBoxSDL_exe[] = "VBoxSDL" HOSTSUFF_EXE;
+        Assert (sz >= sizeof (VBoxSDL_exe));
+        strcpy (cmd, VBoxSDL_exe);
+
+        Utf8Str idStr = mData->mUuid.toString();
+# ifdef RT_OS_WINDOWS
+        const char * args[] = {path, "--startvm", idStr, 0 };
+# else
+        Utf8Str name = mUserData->mName;
+        const char * args[] = {path, "--comment", name, "--startvm", idStr, 0 };
+# endif
+        vrc = RTProcCreate (path, args, env, 0, &pid);
+    }
+#else /* !VBOX_WITH_VBOXSDL */
+    if (0)
+        ;
+#endif /* !VBOX_WITH_VBOXSDL */
 
     else
 
@@ -3847,10 +3871,10 @@ HRESULT Machine::openRemoteSession (IInternalSessionControl *aControl,
 
         Utf8Str idStr = mData->mUuid.toString();
 # ifdef RT_OS_WINDOWS
-        const char * args[] = {path, "-startvm", idStr, 0 };
+        const char * args[] = {path, "--startvm", idStr, 0 };
 # else
         Utf8Str name = mUserData->mName;
-        const char * args[] = {path, "-comment", name, "-startvm", idStr, 0 };
+        const char * args[] = {path, "--comment", name, "--startvm", idStr, 0 };
 # endif
         vrc = RTProcCreate (path, args, env, 0, &pid);
     }
@@ -3870,10 +3894,10 @@ HRESULT Machine::openRemoteSession (IInternalSessionControl *aControl,
 
         Utf8Str idStr = mData->mUuid.toString();
 # ifdef RT_OS_WINDOWS
-        const char * args[] = {path, "-startvm", idStr, "-capture", 0 };
+        const char * args[] = {path, "--startvm", idStr, "--capture", 0 };
 # else
         Utf8Str name = mUserData->mName;
-        const char * args[] = {path, "-comment", name, "-startvm", idStr, "-capture", 0 };
+        const char * args[] = {path, "--comment", name, "--startvm", idStr, "--capture", 0 };
 # endif
         vrc = RTProcCreate (path, args, env, 0, &pid);
     }
@@ -7444,6 +7468,10 @@ void Machine::fixupHardDisks(bool aCommit, bool aOnline /*= false*/)
                     rc = hd->LockWrite (NULL);
                     AssertComRC (rc);
 
+                    mData->mSession.mLockedMedia.push_back (
+                        Data::Session::LockedMedia::value_type (
+                            ComPtr <IHardDisk> (hd), true));
+
                     /* also, relock the old hard disk which is a base for the
                      * new diff for reading if the VM is online */
 
@@ -7454,6 +7482,14 @@ void Machine::fixupHardDisks(bool aCommit, bool aOnline /*= false*/)
                     AssertComRC (rc);
                     rc = parent->LockRead (NULL);
                     AssertComRC (rc);
+
+                    /* XXX actually we should replace the old entry in that
+                     * vector (write lock => read lock) but this would take
+                     * some effort. So lets just ignore the error code in
+                     * SessionMachine::unlockMedia(). */
+                    mData->mSession.mLockedMedia.push_back (
+                        Data::Session::LockedMedia::value_type (
+                            ComPtr <IHardDisk> (parent), false));
                 }
 
                 continue;
@@ -7530,7 +7566,7 @@ HRESULT Machine::lockConfig()
         {
             mData->mHandleCfgFile = NIL_RTFILE;
 
-            rc = setError (E_FAIL,
+            rc = setError (VBOX_E_FILE_ERROR,
                 tr ("Could not lock the settings file '%ls' (%Rrc)"),
                 mData->mConfigFileFull.raw(), vrc);
         }
@@ -9066,7 +9102,7 @@ STDMETHODIMP SessionMachine::BeginTakingSnapshot (
     ComObjPtr <Progress> serverProgress;
     serverProgress.createObject();
     {
-        ULONG opCount = 1 + mHDData->mAttachments.size();
+        ULONG opCount = 1 + (ULONG)mHDData->mAttachments.size();
         if (mData->mMachineState == MachineState_Saved)
             opCount ++;
         if (takingSnapshotOnline)
@@ -9216,7 +9252,7 @@ STDMETHODIMP SessionMachine::DiscardSnapshot (
                          Bstr (Utf8StrFmt (tr ("Discarding snapshot '%ls'"),
                              snapshot->data().mName.raw())),
                          FALSE /* aCancelable */,
-                         1 + snapshot->data().mMachine->mHDData->mAttachments.size() +
+                         1 + (ULONG)snapshot->data().mMachine->mHDData->mAttachments.size() +
                          (snapshot->stateFilePath().isNull() ? 0 : 1),
                          Bstr (tr ("Preparing to discard snapshot")));
     AssertComRCReturn (rc, rc);
@@ -9271,8 +9307,8 @@ STDMETHODIMP SessionMachine::DiscardCurrentState (
     ComObjPtr <Progress> progress;
     progress.createObject();
     {
-        ULONG opCount = 1 + mData->mCurrentSnapshot->data()
-                                .mMachine->mHDData->mAttachments.size();
+        ULONG opCount = 1 + (ULONG)mData->mCurrentSnapshot->data()
+                                       .mMachine->mHDData->mAttachments.size();
         if (mData->mCurrentSnapshot->stateFilePath())
             ++ opCount;
         progress->init (mParent, aInitiator,
@@ -9348,8 +9384,8 @@ STDMETHODIMP SessionMachine::DiscardCurrentSnapshotAndState (
         ULONG opCount = 1;
         if (prevSnapshot)
         {
-            opCount += curSnapshot->data().mMachine->mHDData->mAttachments.size();
-            opCount += prevSnapshot->data().mMachine->mHDData->mAttachments.size();
+            opCount += (ULONG)curSnapshot->data().mMachine->mHDData->mAttachments.size();
+            opCount += (ULONG)prevSnapshot->data().mMachine->mHDData->mAttachments.size();
             if (prevSnapshot->stateFilePath())
                 ++ opCount;
             if (curSnapshot->stateFilePath())
@@ -9358,7 +9394,7 @@ STDMETHODIMP SessionMachine::DiscardCurrentSnapshotAndState (
         else
         {
             opCount +=
-                curSnapshot->data().mMachine->mHDData->mAttachments.size() * 2;
+                (ULONG)curSnapshot->data().mMachine->mHDData->mAttachments.size() * 2;
             if (curSnapshot->stateFilePath())
                 opCount += 2;
         }
@@ -11074,12 +11110,15 @@ void SessionMachine::unlockMedia()
          it = mData->mSession.mLockedMedia.begin();
          it != mData->mSession.mLockedMedia.end(); ++ it)
     {
+        MediaState_T state;
         if (it->second)
-            rc = it->first->UnlockWrite (NULL);
+            rc = it->first->UnlockWrite (&state);
         else
-            rc = it->first->UnlockRead (NULL);
+            rc = it->first->UnlockRead (&state);
 
-        AssertComRC (rc);
+        /* the latter can happen if an object was re-locked in
+         * Machine::fixupHardDisks() */
+        Assert (SUCCEEDED (rc) || state == MediaState_LockedRead);
     }
 
     mData->mSession.mLockedMedia.clear();

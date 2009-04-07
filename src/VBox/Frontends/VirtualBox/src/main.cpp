@@ -230,12 +230,12 @@ static void showHelp()
             "All rights reserved.\n"
             "\n"
             "Usage:\n"
-            "  -startvm <vmname|UUID>     start a VM by specifying its UUID or name\n"
-            "  -rmode %-19s select different render mode (default is %s)\n"
+            "  --startvm <vmname|UUID>    start a VM by specifying its UUID or name\n"
+            "  --rmode %-18s select different render mode (default is %s)\n"
 # ifdef VBOX_WITH_DEBUGGER_GUI
-            "  -dbg                       enable the GUI debug menu\n"
-            "  -debug                     like -dbg and show debug windows at VM startup\n"
-            "  -no-debug                  disable the GUI debug menu and debug windows\n"
+            "  --dbg                      enable the GUI debug menu\n"
+            "  --debug                    like --dbg and show debug windows at VM startup\n"
+            "  --no-debug                 disable the GUI debug menu and debug windows\n"
             "\n"
             "The following environment variables are evaluated:\n"
             "  VBOX_GUI_DBG_ENABLED       enable the GUI debug menu if set\n"
@@ -257,7 +257,7 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
 
 #ifdef Q_WS_WIN
     /* Initialize COM early, before QApplication calls OleInitialize(), to
-     * make sure we enter the multi threded apartment instead of a single
+     * make sure we enter the multi threaded apartment instead of a single
      * threaded one. Note that this will make some non-threadsafe system
      * services that use OLE and require STA (such as Drag&Drop) not work
      * anymore, however it's still better because otherwise VBox will not work
@@ -505,7 +505,8 @@ int main (int argc, char **argv, char **envp)
     bool fInitSUPLib = false;
     for (int i = 1; i < argc; i++)
     {
-        if (!::strcmp (argv[i], "-startvm" ))
+        if (    !::strcmp(argv[i], "--startvm")
+            ||  !::strcmp(argv[i], "-startvm"))
         {
             fInitSUPLib = true;
             break;
@@ -522,7 +523,7 @@ int main (int argc, char **argv, char **envp)
         QApplication a (argc, &argv[0]);
         QString msgTitle = QApplication::tr ("VirtualBox - Runtime Error");
         QString msgText = "<html>";
-        
+
         switch (rc)
         {
             case VERR_VM_DRIVER_NOT_INSTALLED:
@@ -537,6 +538,11 @@ int main (int argc, char **argv, char **envp)
 # ifdef RT_OS_LINUX
             case VERR_NO_MEMORY:
                 msgText += g_QStrHintLinuxNoMemory;
+                break;
+# endif
+# if 0 /** @todo Enable after 2.2.0 (/ NLS unfreeze). */
+            case VERR_VM_DRIVER_NOT_ACCESSIBLE:
+                msgText += QApplication::tr ("Kernel driver not accessible");
                 break;
 # endif
             default:

@@ -83,12 +83,16 @@ __BEGIN_DECLS
 #define VD_VMDK_IMAGE_FLAGS_RAWDISK             (0x0002)
 /** VMDK: stream optimized image, read only. */
 #define VD_VMDK_IMAGE_FLAGS_STREAM_OPTIMIZED    (0x0004)
+/** VMDK: ESX variant, use in addition to other flags. */
+#define VD_VMDK_IMAGE_FLAGS_ESX                 (0x0008)
 /** VDI: Fill new blocks with zeroes while expanding image file. Only valid
  * for newly created images, never set for opened existing images. */
 #define VD_VDI_IMAGE_FLAGS_ZERO_EXPAND          (0x0100)
 
 /** Mask of valid image flags for VMDK. */
-#define VD_VMDK_IMAGE_FLAGS_MASK            (VD_IMAGE_FLAGS_FIXED | VD_IMAGE_FLAGS_DIFF | VD_IMAGE_FLAGS_NONE | VD_VMDK_IMAGE_FLAGS_SPLIT_2G | VD_VMDK_IMAGE_FLAGS_RAWDISK | VD_VMDK_IMAGE_FLAGS_STREAM_OPTIMIZED)
+#define VD_VMDK_IMAGE_FLAGS_MASK            (   VD_IMAGE_FLAGS_FIXED | VD_IMAGE_FLAGS_DIFF | VD_IMAGE_FLAGS_NONE \
+                                             |  VD_VMDK_IMAGE_FLAGS_SPLIT_2G | VD_VMDK_IMAGE_FLAGS_RAWDISK \
+                                             | VD_VMDK_IMAGE_FLAGS_STREAM_OPTIMIZED | VD_VMDK_IMAGE_FLAGS_ESX)
 
 /** Mask of valid image flags for VDI. */
 #define VD_VDI_IMAGE_FLAGS_MASK             (VD_IMAGE_FLAGS_FIXED | VD_IMAGE_FLAGS_DIFF | VD_IMAGE_FLAGS_NONE | VD_VDI_IMAGE_FLAGS_ZERO_EXPAND)
@@ -1166,7 +1170,7 @@ VBOXDDU_DECL(int) VDOpen(PVBOXHDD pDisk, const char *pszBackend,
  * @param   uImageFlags     Flags specifying special image features.
  * @param   pszComment      Pointer to image comment. NULL is ok.
  * @param   pPCHSGeometry   Pointer to physical disk geometry <= (16383,16,63). Not NULL.
- * @param   pLCHSGeometry   Pointer to logical disk geometry <= (1024,255,63). Not NULL.
+ * @param   pLCHSGeometry   Pointer to logical disk geometry <= (x,255,63). Not NULL.
  * @param   pUuid           New UUID of the image. If NULL, a new UUID is created.
  * @param   uOpenFlags      Image file open mode, see VD_OPEN_FLAGS_* constants.
  * @param   pVDIfsImage     Pointer to the per-image VD interface list.

@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl2.cpp 18405 2009-03-27 15:23:11Z vboxsync $ */
+/* $Id: ConsoleImpl2.cpp 18829 2009-04-07 15:42:32Z vboxsync $ */
 /** @file
  * VBox Console COM Class implementation
  *
@@ -39,6 +39,10 @@
 #include <iprt/path.h>
 #include <iprt/dir.h>
 #include <iprt/param.h>
+#if 0 /* enable to play with lots of memory. */
+# include <iprt/env.h>
+# include <iprt/string.h>
+#endif
 
 #include <VBox/vmapi.h>
 #include <VBox/err.h>
@@ -88,6 +92,8 @@
 
 #include <VBox/param.h>
 
+/* Comment out the following line to remove VMWare compatibility hack. */
+#define VMWARE_NET_IN_SLOT_11
 
 /**
  * Translate IDE StorageControllerType_T to string representation.
@@ -191,7 +197,8 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     ULONG cRamMBs;
     hrc = pMachine->COMGETTER(MemorySize)(&cRamMBs);                                H();
 #if 0 /* enable to play with lots of memory. */
-    cRamMBs = 512 * 1024;
+    if (RTEnvExist("VBOX_RAM_SIZE"))
+        cRamMBs = RTStrToUInt64(RTEnvGet("VBOX_RAM_SIZE")) * 1024;
 #endif
     uint64_t const cbRam = cRamMBs * (uint64_t)_1M;
     uint32_t const cbRamHole = MM_RAM_HOLE_SIZE_DEFAULT;
@@ -239,11 +246,9 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         fHWVirtExEnabled = (hwVirtExEnabled == TSBool_True);
 #ifdef RT_OS_DARWIN
     rc = CFGMR3InsertInteger(pRoot, "HwVirtExtForced",      fHWVirtExEnabled);      RC_CHECK();
-#elif defined(VBOX_WITH_NEW_PHYS_CODE)
+#else
     /* With more than 4GB PGM will use different RAMRANGE sizes for raw mode and hv mode to optimize lookup times. */
     rc = CFGMR3InsertInteger(pRoot, "HwVirtExtForced",      fHWVirtExEnabled && cbRam > (_4G - cbRamHole)); RC_CHECK();
-#else
-    rc = CFGMR3InsertInteger(pRoot, "HwVirtExtForced",      0);                     RC_CHECK();
 #endif
 
     PCFGMNODE pHWVirtExt;
@@ -1173,6 +1178,9 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     /*
      * Network adapters
      */
+#ifdef VMWARE_NET_IN_SLOT_11
+    bool fSwapSlots3and11 = false;
+#endif
     PCFGMNODE pDevPCNet = NULL;          /* PCNet-type devices */
     rc = CFGMR3InsertNode(pDevices, "pcnet", &pDevPCNet);                           RC_CHECK();
 #ifdef VBOX_WITH_E1000
@@ -1202,6 +1210,7 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
 #ifdef VBOX_WITH_E1000
             case NetworkAdapterType_I82540EM:
             case NetworkAdapterType_I82543GC:
+            case NetworkAdapterType_I82545EM:
                 pDev = pDevE1000;
                 break;
 #endif
@@ -1227,6 +1236,19 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
             else
                 iPciDeviceNo = ulInstance - 4 + 16;
         }
+#ifdef VMWARE_NET_IN_SLOT_11
+        /* 
+         * Dirty hack for PCI slot compatibility with VMWare,
+         * it assigns slot 11 to the first network controller.
+         */
+        if (iPciDeviceNo == 3 && adapterType == NetworkAdapterType_I82545EM)
+        {
+            iPciDeviceNo = 0x11;
+            fSwapSlots3and11 = true;
+        }
+        else if (iPciDeviceNo == 0x11 && fSwapSlots3and11)
+            iPciDeviceNo = 3;
+#endif
         rc = CFGMR3InsertInteger(pInst, "PCIDeviceNo", iPciDeviceNo);               RC_CHECK();
         Assert(!afPciDeviceNo[iPciDeviceNo]);
         afPciDeviceNo[iPciDeviceNo] = true;
@@ -1255,6 +1277,9 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                 break;
             case NetworkAdapterType_I82543GC:
                 rc = CFGMR3InsertInteger(pCfg, "AdapterType", 1);                   RC_CHECK();
+                break;
+            case NetworkAdapterType_I82545EM:
+                rc = CFGMR3InsertInteger(pCfg, "AdapterType", 2);                   RC_CHECK();
                 break;
         }
 
@@ -1702,41 +1727,8 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
 #  endif
 # endif
 
-#elif defined(RT_OS_WINDOWS)
-                    if (fSniffer)
-                    {
-                        rc = CFGMR3InsertNode(pLunL0, "AttachedDriver", &pLunL0);   RC_CHECK();
-                    }
-                    else
-                    {
-                        rc = CFGMR3InsertNode(pInst, "LUN#0", &pLunL0);             RC_CHECK();
-                    }
-                    Bstr hostInterfaceName;
-                    hrc = networkAdapter->COMGETTER(HostInterface)(hostInterfaceName.asOutParam()); H();
-                    ComPtr<IHostNetworkInterface> hostInterface;
-                    rc = host->FindHostNetworkInterfaceByName(hostInterfaceName, hostInterface.asOutParam());
-                    if (!SUCCEEDED(rc))
-                    {
-                        AssertMsgFailed(("Cannot get GUID for host interface '%ls'\n", hostInterfaceName));
-                        hrc = networkAdapter->Detach();                             H();
-                    }
-                    else
-                    {
-# ifdef VBOX_WITH_NETFLT
-                        rc = CFGMR3InsertString(pLunL0, "Driver", "IntNet");                            RC_CHECK();
-                        rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                                 RC_CHECK();
-                        rc = CFGMR3InsertString(pCfg, "Trunk", Utf8Str(hostInterfaceName));             RC_CHECK();
-                        rc = CFGMR3InsertInteger(pCfg, "TrunkType", kIntNetTrunkType_NetFlt);           RC_CHECK();
-# endif
-                        Guid hostIFGuid;
-                        hrc = hostInterface->COMGETTER(Id)(hostIFGuid.asOutParam());                    H();
-                        char szDriverGUID[256] = {0};
-                        /* add curly brackets */
-                        szDriverGUID[0] = '{';
-                        strcpy(szDriverGUID + 1, hostIFGuid.toString().raw());
-                        strcat(szDriverGUID, "}");
-                        rc = CFGMR3InsertBytes(pCfg, "GUID", szDriverGUID, sizeof(szDriverGUID));       RC_CHECK();
-                    }
+#elif defined(RT_OS_WINDOWS) /* not defined NetFlt */
+                    /* NOTHING TO DO HERE */
 #elif defined(RT_OS_LINUX)
 /// @todo aleksey: is there anything to be done here?
 #elif defined(RT_OS_FREEBSD)
@@ -1947,7 +1939,7 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                 networkName = Bstr(szNetwork);
                 trunkName   = Bstr(pszTrunk);
                 trunkType   = TRUNKTYPE_NETADP;
-# endif /* definedd VBOX_WITH_NETFLT*/
+# endif /* defined VBOX_WITH_NETFLT*/
 #elif defined(RT_OS_DARWIN)
                 rc = CFGMR3InsertString(pCfg, "Trunk", "vboxnet0");             RC_CHECK();
                 rc = CFGMR3InsertString(pCfg, "Network", "HostInterfaceNetworking-vboxnet0"); RC_CHECK();

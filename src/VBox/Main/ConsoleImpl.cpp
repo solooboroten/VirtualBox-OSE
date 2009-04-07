@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl.cpp 18348 2009-03-26 19:35:20Z vboxsync $ */
+/* $Id: ConsoleImpl.cpp 18829 2009-04-07 15:42:32Z vboxsync $ */
 
 /** @file
  *
@@ -1056,7 +1056,7 @@ HRESULT Console::doEnumerateGuestProperties (CBSTR aPatterns,
     Utf8Str utf8Patterns(aPatterns);
     parm[0].type = VBOX_HGCM_SVC_PARM_PTR;
     parm[0].u.pointer.addr = utf8Patterns.mutableRaw();
-    parm[0].u.pointer.size = utf8Patterns.length() + 1;
+    parm[0].u.pointer.size = (uint32_t)utf8Patterns.length() + 1;
 
     /*
      * Now things get slightly complicated.  Due to a race with the guest adding
@@ -1075,7 +1075,7 @@ HRESULT Console::doEnumerateGuestProperties (CBSTR aPatterns,
             return E_OUTOFMEMORY;
         parm[1].type = VBOX_HGCM_SVC_PARM_PTR;
         parm[1].u.pointer.addr = Utf8Buf.mutableRaw();
-        parm[1].u.pointer.size = cchBuf + 1024;
+        parm[1].u.pointer.size = (uint32_t)cchBuf + 1024;
         vrc = mVMMDev->hgcmHostCall ("VBoxGuestPropSvc", ENUM_PROPS_HOST, 3,
                                      &parm[0]);
         if (parm[2].type != VBOX_HGCM_SVC_PARM_32BIT)
@@ -3195,7 +3195,8 @@ HRESULT Console::onNetworkAdapterChange (INetworkAdapter *aNetworkAdapter)
             rc = aNetworkAdapter->COMGETTER(AdapterType)(&adapterType);
             AssertComRC(rc);
             if (adapterType == NetworkAdapterType_I82540EM ||
-                adapterType == NetworkAdapterType_I82543GC)
+                adapterType == NetworkAdapterType_I82543GC ||
+                adapterType == NetworkAdapterType_I82545EM)
                 cszAdapterName = "e1000";
 #endif
             int vrc = PDMR3QueryDeviceLun (mpVM, cszAdapterName,
@@ -3674,7 +3675,7 @@ HRESULT Console::getGuestProperty (IN_BSTR aName, BSTR *aValue,
     /* To save doing a const cast, we use the mutableRaw() member. */
     parm[0].u.pointer.addr = Utf8Name.mutableRaw();
     /* The + 1 is the null terminator */
-    parm[0].u.pointer.size = Utf8Name.length() + 1;
+    parm[0].u.pointer.size = (uint32_t)Utf8Name.length() + 1;
     parm[1].type = VBOX_HGCM_SVC_PARM_PTR;
     parm[1].u.pointer.addr = pszBuffer;
     parm[1].u.pointer.size = sizeof(pszBuffer);
@@ -3739,7 +3740,7 @@ HRESULT Console::setGuestProperty (IN_BSTR aName, IN_BSTR aValue, IN_BSTR aFlags
     /* To save doing a const cast, we use the mutableRaw() member. */
     parm[0].u.pointer.addr = Utf8Name.mutableRaw();
     /* The + 1 is the null terminator */
-    parm[0].u.pointer.size = Utf8Name.length() + 1;
+    parm[0].u.pointer.size = (uint32_t)Utf8Name.length() + 1;
     Utf8Str Utf8Value = aValue;
     if (aValue != NULL)
     {
@@ -3747,7 +3748,7 @@ HRESULT Console::setGuestProperty (IN_BSTR aName, IN_BSTR aValue, IN_BSTR aFlags
         /* To save doing a const cast, we use the mutableRaw() member. */
         parm[1].u.pointer.addr = Utf8Value.mutableRaw();
         /* The + 1 is the null terminator */
-        parm[1].u.pointer.size = Utf8Value.length() + 1;
+        parm[1].u.pointer.size = (uint32_t)Utf8Value.length() + 1;
     }
     Utf8Str Utf8Flags = aFlags;
     if (aFlags != NULL)
@@ -3756,7 +3757,7 @@ HRESULT Console::setGuestProperty (IN_BSTR aName, IN_BSTR aValue, IN_BSTR aFlags
         /* To save doing a const cast, we use the mutableRaw() member. */
         parm[2].u.pointer.addr = Utf8Flags.mutableRaw();
         /* The + 1 is the null terminator */
-        parm[2].u.pointer.size = Utf8Flags.length() + 1;
+        parm[2].u.pointer.size = (uint32_t)Utf8Flags.length() + 1;
     }
     if ((aValue != NULL) && (aFlags != NULL))
         vrc = mVMMDev->hgcmHostCall ("VBoxGuestPropSvc", SET_PROP_HOST,
@@ -4550,7 +4551,7 @@ HRESULT Console::powerDown (Progress *aProgress /*= NULL*/)
      * number of "advance percent count" comments in this method! */
     enum { StepCount = 7 };
     /* current step */
-    size_t step = 0;
+    ULONG step = 0;
 
     HRESULT rc = S_OK;
     int vrc = VINF_SUCCESS;
@@ -5987,29 +5988,30 @@ Console::setVMErrorCallback (PVM pVM, void *pvUser, int rc, RT_SRC_POS_DECL,
  *
  * @param   pVM             The VM handle.
  * @param   pvUser          The user argument.
- * @param   fFatal          Whether it is a fatal error or not.
- * @param   pszErrorID      Error ID string.
+ * @param   fFlags          The action flags. See VMSETRTERR_FLAGS_*.
+ * @param   pszErrorId      Error ID string.
  * @param   pszFormat       Error message format string.
- * @param   args            Error message arguments.
+ * @param   va              Error message arguments.
  * @thread EMT.
  */
 /* static */ DECLCALLBACK(void)
-Console::setVMRuntimeErrorCallback (PVM pVM, void *pvUser, bool fFatal,
-                                    const char *pszErrorID,
-                                    const char *pszFormat, va_list args)
+Console::setVMRuntimeErrorCallback (PVM pVM, void *pvUser, uint32_t fFlags,
+                                    const char *pszErrorId,
+                                    const char *pszFormat, va_list va)
 {
+    bool const fFatal = !!(fFlags & VMSETRTERR_FLAGS_FATAL);
     LogFlowFuncEnter();
 
     Console *that = static_cast <Console *> (pvUser);
     AssertReturnVoid (that);
 
-    Utf8Str message = Utf8StrFmtVA (pszFormat, args);
+    Utf8Str message = Utf8StrFmtVA (pszFormat, va);
 
     LogRel (("Console: VM runtime error: fatal=%RTbool, "
              "errorID=%s message=\"%s\"\n",
-             fFatal, pszErrorID, message.raw()));
+             fFatal, pszErrorId, message.raw()));
 
-    that->onRuntimeError (BOOL (fFatal), Bstr (pszErrorID), Bstr (message));
+    that->onRuntimeError (BOOL (fFatal), Bstr (pszErrorId), Bstr (message));
 
     LogFlowFuncLeave();
 }
@@ -6496,6 +6498,12 @@ DECLCALLBACK (int) Console::powerUpThread (RTTHREAD Thread, void *pvUser)
                 HRESULT rc2 = console->powerDown();
                 AssertComRC (rc2);
             }
+
+            /* Deregister the VMSetError callback. This is necessary as the
+             * pfnVMAtError() function passed to VMR3Create() is supposed to
+             * be sticky but our error callback isn't. */
+            VMR3AtErrorDeregister(pVM, task->mSetVMErrorCallback, task.get());
+            /** @todo register another VMSetError callback? */
         }
         else
         {

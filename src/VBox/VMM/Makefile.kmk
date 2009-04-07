@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 17294 2009-03-03 15:51:21Z vboxsync $
+# $Id: Makefile.kmk 18792 2009-04-06 18:40:52Z vboxsync $
 ## @file
 # Top-level makefile for the VMM.
 #
@@ -70,7 +70,7 @@ VMMR3_SOURCES   = \
 	MMHeap.cpp \
 	MMHyper.cpp \
 	MMPagePool.cpp \
-	MMPhys.cpp \
+	MMUkHeap.cpp \
 	PDM.cpp \
 	PDMDevice.cpp \
 	PDMDevHlp.cpp \

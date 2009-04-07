@@ -1,4 +1,4 @@
-/* $Id: string.h 18148 2009-03-23 16:10:48Z vboxsync $ */
+/* $Id: string.h 18589 2009-04-01 09:11:02Z vboxsync $ */
 
 /** @file
  * MS COM / XPCOM Abstraction Layer:
@@ -501,6 +501,34 @@ public:
             return ::RTStrNCmp(str, that.str, l2) == 0;
         else
             return ::RTStrNICmp(str, that.str, l2) == 0;
+    }
+
+    bool contains (const Utf8Str &that, CaseSensitivity cs = CaseSensitive) const
+    {
+        if (cs == CaseSensitive)
+            return ::RTStrStr (str, that.str) != NULL;
+        else
+            return ::RTStrIStr (str, that.str) != NULL;
+    }
+
+    Utf8Str& toLower()
+    {
+        if (isEmpty())
+            return *this;
+
+        ::RTStrToLower(str);
+
+        return *this;
+    }
+
+    Utf8Str& toUpper()
+    {
+        if (isEmpty())
+            return *this;
+
+        ::RTStrToUpper(str);
+
+        return *this;
     }
 
     bool isNull() const { return str == NULL; }

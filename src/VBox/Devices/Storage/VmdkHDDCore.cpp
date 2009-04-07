@@ -1,4 +1,4 @@
-/* $Id: VmdkHDDCore.cpp 18347 2009-03-26 19:23:37Z vboxsync $ */
+/* $Id: VmdkHDDCore.cpp 18822 2009-04-07 13:22:57Z vboxsync $ */
 /** @file
  * VMDK Disk image, Core Code.
  */
@@ -197,7 +197,9 @@ typedef enum VMDKETYPE
     /** Flat extent. */
     VMDKETYPE_FLAT,
     /** Zero extent. */
-    VMDKETYPE_ZERO
+    VMDKETYPE_ZERO,
+    /** VMFS extent, used by ESX. */
+    VMDKETYPE_VMFS
 #ifdef VBOX_WITH_VMDK_ESX
     ,
     /** ESX sparse extent. */
@@ -890,7 +892,7 @@ DECLINLINE(int) vmdkFileDeflateAt(PVMDKFILE pVmdkFile,
         VMDKDEFLATESTATE DeflateState;
 
         Marker.uSector = RT_H2LE_U64(uLBA);
-        Marker.cbSize = RT_H2LE_U32(cbToWrite);
+        Marker.cbSize = RT_H2LE_U32((uint32_t)cbToWrite);
         if (uMarker == VMDK_MARKER_IGNORE)
         {
             /* Compressed grain marker. Data follows immediately. */
@@ -1648,11 +1650,14 @@ static int vmdkDescExtInsert(PVMDKIMAGE pImage, PVMDKDESCRIPTOR pDescriptor,
                              uint64_t uSectorOffset)
 {
     static const char *apszAccess[] = { "NOACCESS", "RDONLY", "RW" };
-    static const char *apszType[] = { "", "SPARSE", "FLAT", "ZERO" };
+    static const char *apszType[] = { "", "SPARSE", "FLAT", "ZERO", "VMFS" };
     char *pszTmp;
     unsigned uStart = pDescriptor->uFirstExtent, uLast = 0;
     char szExt[1024];
     ssize_t cbDiff;
+
+    Assert((unsigned)enmAccess < RT_ELEMENTS(apszAccess));
+    Assert((unsigned)enmType < RT_ELEMENTS(apszType));
 
     /* Find last entry in extent description. */
     while (uStart)
@@ -2072,6 +2077,8 @@ static int vmdkParseDescriptor(PVMDKIMAGE pImage, char *pDescData,
         pImage->uImageFlags |= VD_VMDK_IMAGE_FLAGS_RAWDISK;
     else if (!strcmp(pszCreateType, "streamOptimized"))
         pImage->uImageFlags |= VD_VMDK_IMAGE_FLAGS_STREAM_OPTIMIZED;
+    else if (!strcmp(pszCreateType, "vmfs"))
+        pImage->uImageFlags |= VD_IMAGE_FLAGS_FIXED | VD_VMDK_IMAGE_FLAGS_ESX;
     RTStrFree((char *)(void *)pszCreateType);
 
     /* Count the number of extent config entries. */
@@ -2147,6 +2154,11 @@ static int vmdkParseDescriptor(PVMDKIMAGE pImage, char *pDescData,
         else if (!strncmp(pszLine, "ZERO", 4))
         {
             pImage->pExtents[i].enmType = VMDKETYPE_ZERO;
+            pszLine += 4;
+        }
+        else if (!strncmp(pszLine, "VMFS", 4))
+        {
+            pImage->pExtents[i].enmType = VMDKETYPE_VMFS;
             pszLine += 4;
         }
         else
@@ -3009,8 +3021,9 @@ static int vmdkOpenImage(PVMDKIMAGE pImage, unsigned uOpenFlags)
             {
                 PVMDKEXTENT pExtent = &pImage->pExtents[i];
 
-                if (   (pExtent->enmType != VMDKETYPE_FLAT)
-                    && (pExtent->enmType != VMDKETYPE_ZERO))
+                if (    pExtent->enmType != VMDKETYPE_FLAT
+                    &&  pExtent->enmType != VMDKETYPE_ZERO
+                    &&  pExtent->enmType != VMDKETYPE_VMFS)
                 {
                     /*
                      * Opened image contains at least one none flat or zero extent.
@@ -3093,6 +3106,7 @@ static int vmdkOpenImage(PVMDKIMAGE pImage, unsigned uOpenFlags)
                         pExtent->fMetaDirty = true;
                     }
                     break;
+                case VMDKETYPE_VMFS:
                 case VMDKETYPE_FLAT:
                     rc = vmdkFileOpen(pImage, &pExtent->pFile, pExtent->pszFullname,
                                       uOpenFlags & VD_OPEN_FLAGS_READONLY
@@ -3616,7 +3630,12 @@ static int vmdkCreateRegularImage(PVMDKIMAGE pImage, uint64_t cbSize,
             }
         }
         else
-            pExtent->enmType = VMDKETYPE_FLAT;
+        {
+            if (uImageFlags & VD_VMDK_IMAGE_FLAGS_ESX)
+                pExtent->enmType = VMDKETYPE_VMFS;
+            else
+                pExtent->enmType = VMDKETYPE_FLAT;
+        }
 
         pExtent->enmAccess = VMDKACCESS_READWRITE;
         pExtent->fUncleanShutdown = true;
@@ -3647,8 +3666,11 @@ static int vmdkCreateRegularImage(PVMDKIMAGE pImage, uint64_t cbSize,
     const char *pszDescType = NULL;
     if (uImageFlags & VD_IMAGE_FLAGS_FIXED)
     {
-        pszDescType =   (cExtents == 1)
-                      ? "monolithicFlat" : "twoGbMaxExtentFlat";
+        if (pImage->uImageFlags & VD_VMDK_IMAGE_FLAGS_ESX)
+            pszDescType = "vmfs";
+        else
+            pszDescType =   (cExtents == 1)
+                          ? "monolithicFlat" : "twoGbMaxExtentFlat";
     }
     else
     {
@@ -3941,6 +3963,7 @@ static int vmdkFlushImage(PVMDKIMAGE pImage)
                     /** @todo update the header. */
                     break;
 #endif /* VBOX_WITH_VMDK_ESX */
+                case VMDKETYPE_VMFS:
                 case VMDKETYPE_FLAT:
                     /* Nothing to do. */
                     break;
@@ -3957,6 +3980,7 @@ static int vmdkFlushImage(PVMDKIMAGE pImage)
 #ifdef VBOX_WITH_VMDK_ESX
             case VMDKETYPE_ESX_SPARSE:
 #endif /* VBOX_WITH_VMDK_ESX */
+            case VMDKETYPE_VMFS:
             case VMDKETYPE_FLAT:
                 /** @todo implement proper path absolute check. */
                 if (   pExtent->pFile != NULL
@@ -4461,6 +4485,14 @@ static int vmdkCreate(const char *pszFilename, uint64_t cbSize,
         goto out;
     }
 
+    /* Check size. Maximum 2TB-64K for sparse images, otherwise unlimited. */
+    if (    !cbSize
+        ||  (!(uImageFlags & VD_IMAGE_FLAGS_FIXED) && cbSize >= _1T * 2 - _64K))
+    {
+        rc = VERR_VD_INVALID_SIZE;
+        goto out;
+    }
+
     /* Check remaining arguments. */
     if (   !VALID_PTR(pszFilename)
         || !*pszFilename
@@ -4901,6 +4933,7 @@ static int vmdkRead(void *pBackendData, uint64_t uOffset, void *pvBuf,
                 }
             }
             break;
+        case VMDKETYPE_VMFS:
         case VMDKETYPE_FLAT:
             rc = vmdkFileReadAt(pExtent->pFile,
                                 VMDK_SECTOR2BYTE(uSectorExtentRel),
@@ -5075,6 +5108,7 @@ static int vmdkWrite(void *pBackendData, uint64_t uOffset, const void *pvBuf,
                 }
             }
             break;
+        case VMDKETYPE_VMFS:
         case VMDKETYPE_FLAT:
             /* Clip write range to remain in this extent. */
             cbToWrite = RT_MIN(cbToWrite, VMDK_SECTOR2BYTE(pExtent->uSectorOffset + pExtent->cNominalSectors - uSectorExtentRel));
@@ -5683,8 +5717,9 @@ static bool vmdkIsAsyncIOSupported(void *pvBackendData)
         fAsyncIOSupported = true;
         for (unsigned i = 0; i < pImage->cExtents; i++)
         {
-            if (   (pImage->pExtents[i].enmType != VMDKETYPE_FLAT)
-                && (pImage->pExtents[i].enmType != VMDKETYPE_ZERO))
+            if (    pImage->pExtents[i].enmType != VMDKETYPE_FLAT
+                &&  pImage->pExtents[i].enmType != VMDKETYPE_ZERO
+                &&  pImage->pExtents[i].enmType != VMDKETYPE_VMFS)
             {
                 fAsyncIOSupported = false;
                 break; /* Stop search */
@@ -5703,8 +5738,8 @@ static int vmdkAsyncRead(void *pvBackendData, uint64_t uOffset, size_t cbRead,
     int rc = VINF_SUCCESS;
     unsigned cTasksToSubmit = 0;
     PPDMDATASEG paSegCurrent = paSeg;
-    unsigned cbLeftInCurrentSegment = paSegCurrent->cbSeg;
-    unsigned uOffsetInCurrentSegment = 0;
+    size_t cbLeftInCurrentSegment = paSegCurrent->cbSeg;
+    size_t uOffsetInCurrentSegment = 0;
 
     AssertPtr(pImage);
     Assert(uOffset % 512 == 0);
@@ -5719,7 +5754,7 @@ static int vmdkAsyncRead(void *pvBackendData, uint64_t uOffset, size_t cbRead,
 
     while (cbRead && cSeg)
     {
-        unsigned cbToRead;
+        size_t cbToRead;
         uint64_t uSectorExtentRel;
 
         rc = vmdkFindExtent(pImage, VMDK_BYTE2SECTOR(uOffset),
@@ -5741,14 +5776,15 @@ static int vmdkAsyncRead(void *pvBackendData, uint64_t uOffset, size_t cbRead,
 
         switch (pExtent->enmType)
         {
+            case VMDKETYPE_VMFS:
             case VMDKETYPE_FLAT:
             {
                 /* Setup new task. */
                 void *pTask;
                 rc = pImage->pInterfaceAsyncIOCallbacks->pfnPrepareRead(pImage->pInterfaceAsyncIO->pvUser, pExtent->pFile->pStorage,
-                                                                       VMDK_SECTOR2BYTE(uSectorExtentRel),
-                                                                       (uint8_t *)paSegCurrent->pvSeg + uOffsetInCurrentSegment,
-                                                                       cbToRead, &pTask);
+                                                                        VMDK_SECTOR2BYTE(uSectorExtentRel),
+                                                                        (uint8_t *)paSegCurrent->pvSeg + uOffsetInCurrentSegment,
+                                                                        cbToRead, &pTask);
                 if (RT_FAILURE(rc))
                 {
                     AssertMsgFailed(("Preparing read failed rc=%Rrc\n", rc));
@@ -5839,8 +5875,8 @@ static int vmdkAsyncWrite(void *pvBackendData, uint64_t uOffset, size_t cbWrite,
     int rc = VINF_SUCCESS;
     unsigned cTasksToSubmit = 0;
     PPDMDATASEG paSegCurrent = paSeg;
-    unsigned cbLeftInCurrentSegment = paSegCurrent->cbSeg;
-    unsigned uOffsetInCurrentSegment = 0;
+    size_t cbLeftInCurrentSegment = paSegCurrent->cbSeg;
+    size_t uOffsetInCurrentSegment = 0;
 
     AssertPtr(pImage);
     Assert(uOffset % 512 == 0);
@@ -5855,7 +5891,7 @@ static int vmdkAsyncWrite(void *pvBackendData, uint64_t uOffset, size_t cbWrite,
 
     while (cbWrite && cSeg)
     {
-        unsigned cbToWrite;
+        size_t cbToWrite;
         uint64_t uSectorExtentRel;
 
         rc = vmdkFindExtent(pImage, VMDK_BYTE2SECTOR(uOffset),
@@ -5877,6 +5913,7 @@ static int vmdkAsyncWrite(void *pvBackendData, uint64_t uOffset, size_t cbWrite,
 
         switch (pExtent->enmType)
         {
+            case VMDKETYPE_VMFS:
             case VMDKETYPE_FLAT:
             {
                 /* Setup new task. */

@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxImpl.cpp 18265 2009-03-25 17:09:08Z vboxsync $ */
+/* $Id: VirtualBoxImpl.cpp 18520 2009-03-30 08:45:50Z vboxsync $ */
 
 /** @file
  * Implementation of IVirtualBox in VBoxSVC.
@@ -96,7 +96,7 @@ static const char gDefaultGlobalConfig [] =
     "       <DHCPServers>"RTFILE_LINEFEED
     "          <DHCPServer "
 #ifdef RT_OS_WINDOWS
-                          "networkName=\"HostInterfaceNetworking-VirtualBox Host-Only Network Adapter\" "
+                          "networkName=\"HostInterfaceNetworking-VirtualBox Host-Only Ethernet Adapter\" "
 #else
                           "networkName=\"HostInterfaceNetworking-vboxnet0\" "
 #endif
@@ -1092,6 +1092,10 @@ STDMETHODIMP VirtualBox::UnregisterMachine (IN_GUID aId,
 
     /* save the global registry */
     rc = saveSettings();
+    CheckComRCReturnRC (rc);
+
+    /* Close settings file for this machine. */
+    rc = machine->unlockConfig();
 
     /* return the unregistered machine to the caller */
     machine.queryInterfaceTo (aMachine);
@@ -4174,7 +4178,7 @@ DECLCALLBACK(int) VirtualBox::ClientWatcher (RTTHREAD /* thread */, void *pvUser
             /* release the caller to let uninit() ever proceed */
             autoCaller.release();
 
-            DWORD rc = ::WaitForMultipleObjects (1 + cnt + cntSpawned,
+            DWORD rc = ::WaitForMultipleObjects ((DWORD)(1 + cnt + cntSpawned),
                                                  handles, FALSE, INFINITE);
 
             /* Restore the caller before using VirtualBox. If it fails, this

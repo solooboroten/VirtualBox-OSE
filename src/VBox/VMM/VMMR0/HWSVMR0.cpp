@@ -1,4 +1,4 @@
-/* $Id: HWSVMR0.cpp 17926 2009-03-16 12:37:00Z vboxsync $ */
+/* $Id: HWSVMR0.cpp 18781 2009-04-06 15:51:30Z vboxsync $ */
 /** @file
  * HWACCM SVM - Host Context Ring 0.
  */
@@ -893,12 +893,12 @@ ResumeExecution:
     if (!DBGFIsStepping(pVM))
 #endif
     {
-        if (VM_FF_ISPENDING(pVM, VM_FF_TO_R3 | VM_FF_TIMER | VM_FF_PGM_NEED_HANDY_PAGES))
+        if (VM_FF_ISPENDING(pVM, VM_FF_HWACCM_TO_R3_MASK))
         {
             VM_FF_CLEAR(pVM, VM_FF_TO_R3);
             STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatSwitchToR3);
             STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatEntry, x);
-            rc = VINF_EM_RAW_TO_R3;
+            rc = RT_UNLIKELY(VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY)) ? VINF_EM_NO_MEMORY : VINF_EM_RAW_TO_R3;
             goto end;
         }
     }
@@ -1633,7 +1633,21 @@ ResumeExecution:
             STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatExit1, x);
             goto ResumeExecution;
         }
-        AssertMsgFailed(("EMU: rdtsc failed with %Rrc\n", rc));
+        rc = VINF_EM_RAW_EMULATE_INSTR;
+        break;
+    }
+
+    case SVM_EXIT_RDPMC:                /* Guest software attempted to execute RDPMC. */
+    {
+        Log2(("SVM: Rdpmc %x\n", pCtx->ecx));
+        STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatExitRdpmc);
+        rc = EMInterpretRdpmc(pVM, CPUMCTX2CORE(pCtx));
+        if (rc == VINF_SUCCESS)
+        {
+            /* Update EIP and continue execution. */
+            pCtx->rip += 2;             /* Note! hardcoded opcode size! */
+            goto ResumeExecution;
+        }
         rc = VINF_EM_RAW_EMULATE_INSTR;
         break;
     }
@@ -2047,7 +2061,6 @@ ResumeExecution:
     }
 
     case SVM_EXIT_MONITOR:
-    case SVM_EXIT_RDPMC:
     case SVM_EXIT_PAUSE:
     case SVM_EXIT_MWAIT_UNCOND:
     case SVM_EXIT_MWAIT_ARMED:

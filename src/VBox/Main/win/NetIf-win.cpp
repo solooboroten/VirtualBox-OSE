@@ -1,4 +1,4 @@
-/* $Id: NetIfList-win.cpp 18375 2009-03-27 08:56:00Z vboxsync $ */
+/* $Id: NetIf-win.cpp 18732 2009-04-06 09:01:53Z vboxsync $ */
 /** @file
  * Main - NetIfList, Windows implementation.
  */
@@ -1406,7 +1406,7 @@ static HRESULT netIfNetworkInterfaceHelperClient (SVCHlpClient *aClient,
 }
 
 
-/* The original source of the VBoxTAP adapter creation/destruction code has the following copyright */
+/* The original source of the VBoxNetAdp adapter creation/destruction code has the following copyright */
 /*
    Copyright 2004 by the Massachusetts Institute of Technology
 
@@ -1435,7 +1435,9 @@ static HRESULT netIfNetworkInterfaceHelperClient (SVCHlpClient *aClient,
 
 #define SetErrBreak(strAndArgs) \
     if (1) { \
-        aErrMsg = Utf8StrFmt strAndArgs; vrc = VERR_GENERAL_FAILURE; break; \
+        aErrMsg = Utf8StrFmt strAndArgs; vrc = VERR_GENERAL_FAILURE; \
+        Assert(0);\
+        break; \
     } else do {} while (0)
 
 /* static */
@@ -1457,7 +1459,8 @@ static int createNetworkInterface (SVCHlpClient *aClient,
     BOOL found = FALSE;
     BOOL registered = FALSE;
     BOOL destroyList = FALSE;
-    TCHAR pCfgGuidString [50];
+    WCHAR pWCfgGuidString [50];
+    WCHAR DevName[256];
 
     do
     {
@@ -1470,7 +1473,7 @@ static int createNetworkInterface (SVCHlpClient *aClient,
         PSP_DRVINFO_DETAIL_DATA pDriverInfoDetail;
         /* for our purposes, 2k buffer is more
          * than enough to obtain the hardware ID
-         * of the VBoxTAP driver. */
+         * of the VBoxNetAdp driver. */
         DWORD detailBuf [2048];
 
         HKEY hkey = NULL;
@@ -1671,11 +1674,41 @@ static int createNetworkInterface (SVCHlpClient *aClient,
             SetErrBreak (("SetupDiOpenDevRegKey failed (0x%08X)",
                           GetLastError()));
 
-        cbSize = sizeof (pCfgGuidString);
+        cbSize = sizeof (pWCfgGuidString);
         DWORD ret;
-        ret = RegQueryValueEx (hkey, _T("NetCfgInstanceId"), NULL,
-                               &dwValueType, (LPBYTE) pCfgGuidString, &cbSize);
+        ret = RegQueryValueExW (hkey, L"NetCfgInstanceId", NULL,
+                               &dwValueType, (LPBYTE) pWCfgGuidString, &cbSize);
+
         RegCloseKey (hkey);
+
+        if(!SetupDiGetDeviceRegistryPropertyW(hDeviceInfo, &DeviceInfoData,
+                SPDRP_FRIENDLYNAME , /* IN DWORD  Property,*/
+                  NULL, /*OUT PDWORD  PropertyRegDataType,  OPTIONAL*/
+                  (PBYTE)DevName, /*OUT PBYTE  PropertyBuffer,*/
+                  sizeof(DevName), /* IN DWORD  PropertyBufferSize,*/
+                  NULL /*OUT PDWORD  RequiredSize  OPTIONAL*/
+                ))
+        {
+            int err = GetLastError();
+            if(err != ERROR_INVALID_DATA)
+            {
+                SetErrBreak (("SetupDiGetDeviceRegistryProperty failed (0x%08X)",
+                              err));
+            }
+
+            if(!SetupDiGetDeviceRegistryPropertyW(hDeviceInfo, &DeviceInfoData,
+                              SPDRP_DEVICEDESC  , /* IN DWORD  Property,*/
+                              NULL, /*OUT PDWORD  PropertyRegDataType,  OPTIONAL*/
+                              (PBYTE)DevName, /*OUT PBYTE  PropertyBuffer,*/
+                              sizeof(DevName), /* IN DWORD  PropertyBufferSize,*/
+                              NULL /*OUT PDWORD  RequiredSize  OPTIONAL*/
+                            ))
+            {
+                err = GetLastError();
+                SetErrBreak (("SetupDiGetDeviceRegistryProperty failed (0x%08X)",
+                                              err));
+            }
+        }
     }
     while (0);
 
@@ -1702,58 +1735,25 @@ static int createNetworkInterface (SVCHlpClient *aClient,
     /* return the network connection GUID on success */
     if (RT_SUCCESS (vrc))
     {
-        /* remove the curly bracket at the end */
-        pCfgGuidString [_tcslen (pCfgGuidString) - 1] = '\0';
-        LogFlowFunc (("Network connection GUID string = {%ls}\n", pCfgGuidString + 1));
+        Bstr str(DevName);
+        str.detachTo(pName);
 
-        aGUID = Guid (Utf8Str (pCfgGuidString + 1));
-        LogFlowFunc (("Network connection GUID = {%RTuuid}\n", aGUID.raw()));
-        Assert (!aGUID.isEmpty());
+        WCHAR ConnectoinName[128];
+        ULONG cbName = sizeof(ConnectoinName);
 
-        INetCfg              *pNc;
-        INetCfgComponent     *pMpNcc;
-        LPWSTR               lpszApp;
-
-        HRESULT hr = VBoxNetCfgWinQueryINetCfg( FALSE,
-                           VBOX_APP_NAME,
-                           &pNc,
-                           &lpszApp );
+        HRESULT hr = VBoxNetCfgWinGenHostonlyConnectionName (DevName, ConnectoinName, &cbName);
         if(hr == S_OK)
         {
-            hr = VBoxNetCfgWinGetComponentByGuid(pNc,
-                                            &GUID_DEVCLASS_NET,
-                                            aGUID.asOutParam(),
-                                            &pMpNcc);
-            if(hr == S_OK)
-            {
-                LPWSTR name;
-                hr = pMpNcc->GetDisplayName(&name);
-                if(hr == S_OK)
-                {
-                    Bstr str(name);
-                    str.detachTo(pName);
-                    WCHAR ConnectoinName[128];
-                    ULONG cbBuf = sizeof(ConnectoinName);
-
-                    hr = VBoxNetCfgWinGenHostonlyConnectionName (name, ConnectoinName, &cbBuf);
-                    if(hr == S_OK)
-                    {
-                        hr = VBoxNetCfgWinRenameConnection ((GUID*)aGUID.raw(), ConnectoinName);
-                    }
-
-                    CoTaskMemFree (name);
-                }
-
-                VBoxNetCfgWinReleaseRef(pMpNcc);
-            }
-            VBoxNetCfgWinReleaseINetCfg(pNc, FALSE);
+            hr = VBoxNetCfgWinRenameConnection (pWCfgGuidString, ConnectoinName);
         }
 
-        if(hr != S_OK)
-        {
-            vrc = VERR_GENERAL_FAILURE;
-        }
+        /* remove the curly bracket at the end */
+        pWCfgGuidString [wcslen (pWCfgGuidString) - 1] = L'\0';
+        LogFlowFunc (("Network connection GUID string = {%ls}\n", pWCfgGuidString + 1));
 
+        aGUID = Guid (Utf8Str (pWCfgGuidString + 1));
+        LogFlowFunc (("Network connection GUID = {%RTuuid}\n", aGUID.raw()));
+        Assert (!aGUID.isEmpty());
     }
 
     LogFlowFunc (("vrc=%Rrc\n", vrc));

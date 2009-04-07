@@ -1,4 +1,4 @@
-/* $Id: VBoxNetDHCP.cpp 18282 2009-03-25 21:03:41Z vboxsync $ */
+/* $Id: VBoxNetDHCP.cpp 18691 2009-04-03 13:37:55Z vboxsync $ */
 /** @file
  * VBoxNetDHCP - DHCP Service for connecting to IntNet.
  */
@@ -48,6 +48,11 @@
 
 #include <vector>
 #include <string>
+
+#ifdef RT_OS_WINDOWS /* WinMain */
+# include <Windows.h>
+# include <stdlib.h>
+#endif
 
 
 /*******************************************************************************
@@ -421,7 +426,7 @@ protected:
      * @{  */
     int32_t             m_cVerbosity;
     uint8_t             m_uCurMsgType;
-    uint16_t            m_cbCurMsg;
+    size_t              m_cbCurMsg;
     PCRTNETBOOTP        m_pCurMsg;
     VBOXNETUDPHDRS      m_CurHdrs;
     /** @} */
@@ -1394,7 +1399,7 @@ public:
         /* Emit the option header. */
         m_pOpt = (PRTNETDHCPOPT)m_pbCur;
         m_pOpt->dhcp_opt = uOption;
-        m_pOpt->dhcp_len = cb;
+        m_pOpt->dhcp_len = (uint8_t)cb;
         m_pbCur += 2;
         return true;
     }
@@ -2036,7 +2041,6 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
 }
 
 
-
 #ifndef VBOX_WITH_HARDENING
 
 int main(int argc, char **argv, char **envp)
@@ -2053,73 +2057,101 @@ int main(int argc, char **argv, char **envp)
 
 # ifdef RT_OS_WINDOWS
 
-#include <windows.h>
-#include <iprt/mem.h>
-
-int WINAPI WinMain(          HINSTANCE hInstance,
-    HINSTANCE hPrevInstance,
-    LPSTR lpCmdLine,
-    int nCmdShow
+static LRESULT CALLBACK WindowProc(HWND hwnd,
+    UINT uMsg,
+    WPARAM wParam,
+    LPARAM lParam
 )
 {
-    int rc = RTR3InitAndSUPLib();
-    if (RT_FAILURE(rc))
+    if(uMsg == WM_DESTROY)
     {
-        RTStrmPrintf(g_pStdErr, "VBoxNetDHCP: RTR3InitAndSupLib failed, rc=%Rrc\n", rc);
-        return 1;
+        PostQuitMessage(0);
+        return 0;
     }
-
-    LPWSTR lpwCmd = GetCommandLineW();
-    size_t size = wcslen(lpwCmd);
-    size++; /* for null terminator */
-
-    int argc;
-    int ret = 1;
-
-    LPWSTR * pwArgs = CommandLineToArgvW(lpwCmd,&argc);
-    if(pwArgs)
-    {
-        size+=argc-1; /* null terminators */
-        char **argv = (char**)RTMemTmpAlloc(size + argc*sizeof(char*));
-        if(argv)
-        {
-            char *pBuf = (char*)(argv+argc);
-            int i;
-            for(i = 0; i < argc; i++)
-            {
-                argv[i] = pBuf;
-
-                int num = WideCharToMultiByte(
-                        CP_ACP, /*UINT CodePage*/
-                        0, /*DWORD dwFlags*/
-                        pwArgs[i],
-                        -1, /*int cchWideChar */
-                        argv[i], /*LPSTR lpMultiByteStr*/
-                        size, /*int cbMultiByte*/
-                        NULL, /*LPCSTR lpDefaultChar*/
-                        FALSE/*LPBOOL lpUsedDefaultChar*/
-                    );
-                if(num <= 0)
-                    break;
-
-                size-=num;
-                pBuf+=num;
-            }
-
-            if(i == argc)
-            {
-                ret = TrustedMain(argc, argv, NULL);
-            }
-            RTMemFree(argv);
-        }
-
-        LocalFree(pwArgs);
-    }
-
-    return ret;
+    return DefWindowProc (hwnd, uMsg, wParam, lParam);
 }
 
-# endif
+static LPCSTR g_WndClassName = "VBoxNetDHCPClass";
+
+static DWORD WINAPI MsgThreadProc(__in  LPVOID lpParameter)
+{
+     HWND                 hwnd = 0;
+     HINSTANCE hInstance = (HINSTANCE)GetModuleHandle (NULL);
+     bool bExit = false;
+
+     /* Register the Window Class. */
+     WNDCLASS wc;
+     wc.style         = 0;
+     wc.lpfnWndProc   = WindowProc;
+     wc.cbClsExtra    = 0;
+     wc.cbWndExtra    = sizeof(void *);
+     wc.hInstance     = hInstance;
+     wc.hIcon         = NULL;
+     wc.hCursor       = NULL;
+     wc.hbrBackground = (HBRUSH)(COLOR_BACKGROUND + 1);
+     wc.lpszMenuName  = NULL;
+     wc.lpszClassName = g_WndClassName;
+
+     ATOM atomWindowClass = RegisterClass(&wc);
+
+     if (atomWindowClass != 0)
+     {
+         /* Create the window. */
+         hwnd = CreateWindowEx (WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_TOPMOST,
+                 g_WndClassName, g_WndClassName,
+                                                   WS_POPUPWINDOW,
+                                                  -200, -200, 100, 100, NULL, NULL, hInstance, NULL);
+
+         if (hwnd)
+         {
+             SetWindowPos(hwnd, HWND_TOPMOST, -200, -200, 0, 0,
+                          SWP_NOACTIVATE | SWP_HIDEWINDOW | SWP_NOCOPYBITS | SWP_NOREDRAW | SWP_NOSIZE);
+
+             MSG msg;
+             while (GetMessage(&msg, NULL, 0, 0))
+             {
+                 TranslateMessage(&msg);
+                 DispatchMessage(&msg);
+             }
+
+             DestroyWindow (hwnd);
+
+             bExit = true;
+         }
+
+         UnregisterClass (g_WndClassName, hInstance);
+     }
+
+     if(bExit)
+     {
+         /* no need any accuracy here, in anyway the DHCP server usually gets terminated with TerminateProcess */
+         exit(0);
+     }
+
+     return 0;
+}
+
+
+/** (We don't want a console usually.) */
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
+{
+    NOREF(hInstance); NOREF(hPrevInstance); NOREF(lpCmdLine); NOREF(nCmdShow);
+
+    HANDLE hThread = CreateThread(
+      NULL, /*__in_opt   LPSECURITY_ATTRIBUTES lpThreadAttributes, */
+      0, /*__in       SIZE_T dwStackSize, */
+      MsgThreadProc, /*__in       LPTHREAD_START_ROUTINE lpStartAddress,*/
+      NULL, /*__in_opt   LPVOID lpParameter,*/
+      0, /*__in       DWORD dwCreationFlags,*/
+      NULL /*__out_opt  LPDWORD lpThreadId*/
+    );
+
+    if(hThread != NULL)
+        CloseHandle(hThread);
+
+    return main(__argc, __argv, environ);
+}
+# endif /* RT_OS_WINDOWS */
 
 #endif /* !VBOX_WITH_HARDENING */
 

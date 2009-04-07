@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!python
 #
 #################################################################################
 # This program is a simple interactive shell for VirtualBox. You can query      #
@@ -11,37 +11,35 @@
 #                                                Enjoy.                         #
 #################################################################################
 #
-# To make it work, the following variables have to be set.
-# Please note the trailing slash in VBOX_PROGRAM_PATH - it's a must.
-# 
-# This is the place where VirtualBox resides
-#  export VBOX_PROGRAM_PATH=/opt/VirtualBox-2.0.0/
-# To allow Python find modules
-#  export PYTHONPATH=../:$VBOX_PROGRAM_PATH
 #
 
-# this one has to be the first XPCOM related import
-import xpcom.vboxxpcom
-import xpcom
-import xpcom.components
-import sys, traceback
+import sys, os
+from win32com import universal
+from win32com.client import gencache, DispatchWithEvents, Dispatch
+from win32com.client import constants, getevents
+import win32com.server.register
+import win32com
+import pythoncom
+import win32api
+import traceback
 
 from shellcommon import interpret
 
 class LocalManager:
     def getSessionObject(self, vb):
-        return xpcom.components.classes["@virtualbox.org/Session;1"].createInstance()
+	return win32com.client.Dispatch("{3C02F46D-C9D2-4f11-A384-53F0CF917214}")
 
 vbox = None
 mgr = LocalManager()
 try:
-    vbox = xpcom.components.classes["@virtualbox.org/VirtualBox;1"].createInstance()
-except xpcom.Exception, e:
-    print "XPCOM exception: ",e
+	vbox = win32com.client.Dispatch("{B1A7A4F2-47B9-4A1E-82B2-07CCD5323C3F}")
+except Exception,e:
+    print "COM exception: ",e
     traceback.print_exc()
     sys.exit(1)
 
-ctx = {'mgr':mgr, 'vb':vbox, 'ifaces':xpcom.components.interfaces, 'remote':False}
+ctx = {'mgr':mgr, 'vb':vbox, 'ifaces':win32com.client.constants, 
+       'remote':False, 'perf':PerfCollector(vbox) }
 
 interpret(ctx)
 

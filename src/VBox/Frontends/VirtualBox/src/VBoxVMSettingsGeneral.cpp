@@ -109,9 +109,7 @@ VBoxVMSettingsGeneral::VBoxVMSettingsGeneral()
     mSlRam->setMinimum ((MinRAM / mSlRam->pageStep()) * mSlRam->pageStep());
     mSlRam->setMaximum (MaxRAM);
     /* Limit min/max. size of QLineEdit */
-    mLeRam->setMaximumSize (mLeRam->fontMetrics().width ("99999"),
-                            mLeRam->minimumSizeHint().height());
-    mLeRam->setMinimumSize (mLeRam->maximumSize());
+    mLeRam->setFixedWidthByText (QString().fill ('9', 5));
     /* Ensure mLeRam value and validation is updated */
     valueChangedRAM (mSlRam->value());
 
@@ -122,9 +120,7 @@ VBoxVMSettingsGeneral::VBoxVMSettingsGeneral()
     mSlVideo->setMinimum ((MinVRAM / mSlVideo->pageStep()) * mSlVideo->pageStep());
     mSlVideo->setMaximum (MaxVRAM);
     /* Limit min/max. size of QLineEdit */
-    mLeVideo->setMaximumSize (mLeVideo->fontMetrics().width ("99999"),
-                              mLeVideo->minimumSizeHint().height());
-    mLeVideo->setMinimumSize (mLeVideo->maximumSize());
+    mLeVideo->setFixedWidthByText (QString().fill ('9', 5));
     /* Ensure mLeVideo value and validation is updated */
     valueChangedVRAM (mSlVideo->value());
 
@@ -437,7 +433,7 @@ bool VBoxVMSettingsGeneral::revalidate (QString &aWarning, QString & /* aTitle *
             "(<b>%2</b>) to the virtual machine. Not enough memory is left "
             "for your host operating system. Please select a smaller amount.")
             .arg ((unsigned)(maxPct * 100))
-            .arg (vboxGlobal().formatSize (fullSize * _1M));
+            .arg (vboxGlobal().formatSize ((uint64_t)fullSize * _1M));
         return false;
     }
     if (mSlRam->value() + mSlVideo->value() > warnPct * fullSize)
@@ -447,7 +443,7 @@ bool VBoxVMSettingsGeneral::revalidate (QString &aWarning, QString & /* aTitle *
             "(<b>%2</b>) to the virtual machine. Not enough memory might be "
             "left for your host operating system. Continue at your own risk.")
             .arg ((unsigned)(warnPct * 100))
-            .arg (vboxGlobal().formatSize (fullSize * _1M));
+            .arg (vboxGlobal().formatSize ((uint64_t)fullSize * _1M));
         return true;
     }
     if ((quint64) mSlVideo->value() * _1M < needBytes)

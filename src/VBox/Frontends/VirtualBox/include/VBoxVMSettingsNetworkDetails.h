@@ -60,11 +60,11 @@ private slots:
 private:
 
     void populateComboboxes();
+    void saveAlternative();
     QComboBox* comboBox() const;
 
     KNetworkAttachmentType mType;
     CNetworkAdapter mAdapter;
-    QString mNotSelected;
 };
 
 #endif // __VBoxVMSettingsNetworkDetails_h__

@@ -1,4 +1,4 @@
-/* $Id: DrvVD.cpp 18134 2009-03-23 12:33:12Z vboxsync $ */
+/* $Id: DrvVD.cpp 18778 2009-04-06 15:33:28Z vboxsync $ */
 /** @file
  * DrvVD - Generic VBox disk media driver.
  */
@@ -115,6 +115,8 @@ typedef struct VBOXDISK
     PPDMDRVINS         pDrvIns;
     /** Flag whether suspend has changed image open mode to read only. */
     bool               fTempReadOnly;
+    /** Flag whether to use the runtime (true) or startup error facility. */
+    bool               fErrorUseRuntime;
     /** Pointer to list of VD interfaces. Per-disk. */
     PVDINTERFACE       pVDIfsDisk;
     /** Common structure for the supported error interface. */
@@ -155,7 +157,15 @@ static void drvvdErrorCallback(void *pvUser, int rc, RT_SRC_POS_DECL,
                                const char *pszFormat, va_list va)
 {
     PPDMDRVINS pDrvIns = (PPDMDRVINS)pvUser;
-    pDrvIns->pDrvHlp->pfnVMSetErrorV(pDrvIns, rc, RT_SRC_POS_ARGS, pszFormat, va);
+    PVBOXDISK pThis = PDMINS_2_DATA(pDrvIns, PVBOXDISK);
+    if (pThis->fErrorUseRuntime)
+        /* We must not pass VMSETRTERR_FLAGS_FATAL as it could lead to a
+         * deadlock: We are probably executed in a thread context != EMT
+         * and the EM thread would wait until every thread is suspended
+         * but we would wait for the EM thread ... */
+        pDrvIns->pDrvHlp->pfnVMSetRuntimeErrorV(pDrvIns, /* fFlags=*/ 0, "DrvVD", pszFormat, va);
+    else
+        pDrvIns->pDrvHlp->pfnVMSetErrorV(pDrvIns, rc, RT_SRC_POS_ARGS, pszFormat, va);
 }
 
 
@@ -1106,6 +1116,9 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
             rc = RTCacheCreate(&pThis->pCache, 0, sizeof(DRVVDASYNCTASK), RTOBJCACHE_PROTECT_INSERT);
             AssertMsgRC(rc, ("Failed to create cache rc=%Rrc\n", rc));
         }
+
+        /* Switch to runtime error facility. */
+        pThis->fErrorUseRuntime = true;
     }
 
     LogFlow(("%s: returns %Rrc\n", __FUNCTION__, rc));

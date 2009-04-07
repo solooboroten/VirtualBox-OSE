@@ -1,4 +1,4 @@
-/* $Id: DevPcBios.cpp 18373 2009-03-27 06:28:50Z vboxsync $ */
+/* $Id: DevPcBios.cpp 18663 2009-04-02 19:08:14Z vboxsync $ */
 /** @file
  * PC BIOS Device.
  */
@@ -409,7 +409,6 @@ static int setLogicalDiskGeometry(PPDMIBASE pBase, PPDMIBLOCKBIOS pHardDisk, PPD
     rc = pHardDisk->pfnGetLCHSGeometry(pHardDisk, &LCHSGeometry);
     if (   rc == VERR_PDM_GEOMETRY_NOT_SET
         || LCHSGeometry.cCylinders == 0
-        || LCHSGeometry.cCylinders > 1024
         || LCHSGeometry.cHeads == 0
         || LCHSGeometry.cHeads > 255
         || LCHSGeometry.cSectors == 0
@@ -1224,7 +1223,6 @@ static DECLCALLBACK(void) pcbiosReset(PPDMDEVINS pDevIns)
     if (pThis->u8IOAPIC)
         pcbiosPlantMPStable(pDevIns, pThis->au8DMIPage + VBOX_DMI_TABLE_SIZE, pThis->cCpus);
 
-#ifdef VBOX_WITH_NEW_PHYS_CODE
     /*
      * Re-shadow the LAN ROM image and make it RAM/RAM.
      *
@@ -1258,7 +1256,6 @@ static DECLCALLBACK(void) pcbiosReset(PPDMDEVINS pDevIns)
         GCPhys += PAGE_SIZE;
         cPages--;
     }
-#endif
 }
 
 
@@ -1767,7 +1764,6 @@ static DECLCALLBACK(int)  pcbiosConstruct(PPDMDEVINS pDevIns, int iInstance, PCF
 
         rc = PDMDevHlpROMRegister(pDevIns, VBOX_LANBOOT_SEG << 4, cbLanBootBinary, pu8LanBootBinary,
                                   PGMPHYS_ROM_FLAGS_SHADOWED, "Net Boot ROM");
-#ifdef VBOX_WITH_NEW_PHYS_CODE
         if (RT_SUCCESS(rc))
         {
             rc = PDMDevHlpROMProtectShadow(pDevIns, VBOX_LANBOOT_SEG << 4, cbLanBootBinary, PGMROMPROT_READ_RAM_WRITE_RAM);
@@ -1775,7 +1771,6 @@ static DECLCALLBACK(int)  pcbiosConstruct(PPDMDEVINS pDevIns, int iInstance, PCF
             rc = PDMDevHlpPhysWrite(pDevIns, VBOX_LANBOOT_SEG << 4, pu8LanBootBinary, cbLanBootBinary);
             AssertRCReturn(rc, rc);
         }
-#endif
     }
 
     rc = CFGMR3QueryU8Def(pCfgHandle, "DelayBoot", &pThis->uBootDelay, 0);

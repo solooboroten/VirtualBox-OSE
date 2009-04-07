@@ -765,8 +765,10 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     EventTypeSpec eventTypes[] =
     {
         { kEventClassVBox, kEventVBoxShowWindow },
+        { kEventClassVBox, kEventVBoxHideWindow },
         { kEventClassVBox, kEventVBoxMoveWindow },
         { kEventClassVBox, kEventVBoxResizeWindow },
+        { kEventClassVBox, kEventVBoxDisposeWindow },
         { kEventClassVBox, kEventVBoxUpdateDock }
     };
 
@@ -3226,6 +3228,20 @@ void VBoxConsoleView::doRefresh()
 void VBoxConsoleView::resizeEvent (QResizeEvent *)
 {
     updateSliders();
+#if defined(Q_WS_MAC) && !defined(QT_MAC_USE_COCOA)
+    QRect r = viewport()->geometry();
+//    printf ("qt resize: %d %d %d %d\n", r.x(), r.y(), r.width(), r.height());
+    PostBoundsChanged (r);
+#endif /* Q_WS_MAC */
+}
+
+void VBoxConsoleView::moveEvent (QMoveEvent *)
+{
+#if defined(Q_WS_MAC) && !defined(QT_MAC_USE_COCOA)
+    QRect r = viewport()->geometry();
+//    printf ("qt resize: %d %d %d %d\n", r.x(), r.y(), r.width(), r.height());
+    PostBoundsChanged (r);
+#endif /* Q_WS_MAC */
 }
 
 void VBoxConsoleView::paintEvent (QPaintEvent *pe)

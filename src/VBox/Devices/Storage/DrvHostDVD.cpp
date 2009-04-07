@@ -1,4 +1,4 @@
-/* $Id: DrvHostDVD.cpp 18087 2009-03-19 11:40:27Z vboxsync $ */
+/* $Id: DrvHostDVD.cpp 18446 2009-03-28 03:17:32Z vboxsync $ */
 /** @file
  * DrvHostDVD - Host DVD block driver.
  */
@@ -398,7 +398,7 @@ DECLCALLBACK(int) drvHostDvdPoll(PDRVHOSTBASE pThis)
 
 /** @copydoc PDMIBLOCK::pfnSendCmd */
 static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd,
-                             PDMBLOCKTXDIR enmTxDir, void *pvBuf, size_t *pcbBuf,
+                             PDMBLOCKTXDIR enmTxDir, void *pvBuf, uint32_t *pcbBuf,
                              uint8_t *pabSense, size_t cbSense, uint32_t cTimeoutMillies)
 {
     PDRVHOSTBASE pThis = PDMIBLOCK_2_DRVHOSTBASE(pInterface);
@@ -598,7 +598,7 @@ static int drvHostDvdSendCmd(PPDMIBLOCK pInterface, const uint8_t *pbCmd,
     Req.spt.DataIn = direction;
     Req.spt.TimeOutValue = (cTimeoutMillies + 999) / 1000; /* Convert to seconds */
     Assert(cbSense <= sizeof(Req.aSense));
-    Req.spt.SenseInfoLength = cbSense;
+    Req.spt.SenseInfoLength = (UCHAR)RT_MIN(sizeof(Req.aSense), cbSense);
     Req.spt.SenseInfoOffset = RT_OFFSETOF(struct _REQ, aSense);
     if (DeviceIoControl((HANDLE)pThis->FileDevice, IOCTL_SCSI_PASS_THROUGH_DIRECT,
                         &Req, sizeof(Req), &Req, sizeof(Req), &cbReturned, NULL))

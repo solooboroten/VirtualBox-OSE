@@ -1,4 +1,4 @@
-/* $Id: PGMAllBth.h 18330 2009-03-26 17:22:14Z vboxsync $ */
+/* $Id: PGMAllBth.h 18835 2009-04-07 16:24:55Z vboxsync $ */
 /** @file
  * VBox - Page Manager, Shadow+Guest Paging Template - All context code.
  *
@@ -74,6 +74,7 @@ __END_DECLS
  * #PF Handler for raw-mode guest execution.
  *
  * @returns VBox status code (appropriate for trap handling and GC return).
+ *
  * @param   pVM         VM Handle.
  * @param   uErr        The trap error code.
  * @param   pRegFrame   Trap register frame.
@@ -752,7 +753,6 @@ PGM_BTH_DECL(int, Trap0eHandler)(PVM pVM, RTGCUINT uErr, PCPUMCTXCORE pRegFrame,
                  */
                 if (RT_SUCCESS(rc) && (uErr & X86_TRAP_PF_RW))
                 {
-#   ifdef VBOX_WITH_NEW_PHYS_CODE
                     if (PGM_PAGE_GET_STATE(pPage) != PGM_PAGE_STATE_ALLOCATED)
                     {
                         Log(("PGM #PF: Make writable: %RGp %R[pgmpage] pvFault=%RGp uErr=%#x\n",
@@ -763,9 +763,10 @@ PGM_BTH_DECL(int, Trap0eHandler)(PVM pVM, RTGCUINT uErr, PCPUMCTXCORE pRegFrame,
                             AssertMsg(rc == VINF_PGM_SYNC_CR3 || RT_FAILURE(rc), ("%Rrc\n", rc));
                             return rc;
                         }
+                        if (RT_UNLIKELY(VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY)))
+                            return VINF_EM_NO_MEMORY;
                     }
                     /// @todo count the above case; else
-#   endif /* VBOX_WITH_NEW_PHYS_CODE */
                     if (uErr & X86_TRAP_PF_US)
                         STAM_COUNTER_INC(&pVM->pgm.s.CTX_MID_Z(Stat,PageOutOfSyncUser));
                     else /* supervisor */
@@ -1422,8 +1423,7 @@ DECLINLINE(void) PGM_BTH_NAME(SyncPageWorker)(PVM pVM, PSHWPTE pPteDst, GSTPDE P
         int rc = pgmPhysGetPageEx(&pVM->pgm.s, PteSrc.u & GST_PTE_PG_MASK, &pPage);
         if (RT_SUCCESS(rc))
         {
-#ifdef VBOX_WITH_NEW_PHYS_CODE
-# ifndef VBOX_WITH_NEW_LAZY_PAGE_ALLOC
+#ifndef VBOX_WITH_NEW_LAZY_PAGE_ALLOC
             /* Try make the page writable if necessary. */
             if (    PteSrc.n.u1Write
                 &&  PGM_PAGE_GET_STATE(pPage) != PGM_PAGE_STATE_ALLOCATED
@@ -1432,7 +1432,6 @@ DECLINLINE(void) PGM_BTH_NAME(SyncPageWorker)(PVM pVM, PSHWPTE pPteDst, GSTPDE P
                 rc = pgmPhysPageMakeWritableUnlocked(pVM, pPage, PteSrc.u & GST_PTE_PG_MASK);
                 AssertRC(rc);
             }
-# endif
 #endif
 
             /** @todo investiage PWT, PCD and PAT. */
@@ -1508,7 +1507,6 @@ DECLINLINE(void) PGM_BTH_NAME(SyncPageWorker)(PVM pVM, PSHWPTE pPteDst, GSTPDE P
                 }
             }
 
-#ifdef VBOX_WITH_NEW_PHYS_CODE
             /*
              * Make sure only allocated pages are mapped writable.
              */
@@ -1519,7 +1517,6 @@ DECLINLINE(void) PGM_BTH_NAME(SyncPageWorker)(PVM pVM, PSHWPTE pPteDst, GSTPDE P
                 PteDst.n.u1Write = 0;   /** @todo this isn't quite working yet. */
                 Log3(("SyncPageWorker: write-protecting %RGp pPage=%R[pgmpage]at iPTDst=%d\n", (RTGCPHYS)(PteSrc.u & X86_PTE_PAE_PG_MASK), pPage, iPTDst));
             }
-#endif
 
 #ifdef PGMPOOL_WITH_USER_TRACKING
             /*
@@ -1714,7 +1711,9 @@ PGM_BTH_DECL(int, SyncPage)(PVM pVM, GSTPDE PdeSrc, RTGCPTR GCPtrPage, unsigned 
                 {
 # ifdef PGM_SYNC_N_PAGES
                     Assert(cPages == 1 || !(uErr & X86_TRAP_PF_P));
-                    if (cPages > 1 && !(uErr & X86_TRAP_PF_P))
+                    if (    cPages > 1
+                        &&  !(uErr & X86_TRAP_PF_P)
+                        &&  !VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY))
                     {
                         /*
                          * This code path is currently only taken when the caller is PGMTrap0eHandler
@@ -1801,8 +1800,7 @@ PGM_BTH_DECL(int, SyncPage)(PVM pVM, GSTPDE PdeSrc, RTGCPTR GCPtrPage, unsigned 
                 int rc = pgmPhysGetPageEx(&pVM->pgm.s, GCPhys, &pPage);
                 if (RT_SUCCESS(rc))
                 {
-# ifdef VBOX_WITH_NEW_PHYS_CODE
-#  ifndef VBOX_WITH_NEW_LAZY_PAGE_ALLOC
+# ifndef VBOX_WITH_NEW_LAZY_PAGE_ALLOC
                     /* Try make the page writable if necessary. */
                     if (    PdeSrc.n.u1Write
                         &&  PGM_PAGE_GET_STATE(pPage) != PGM_PAGE_STATE_ALLOCATED
@@ -1811,7 +1809,6 @@ PGM_BTH_DECL(int, SyncPage)(PVM pVM, GSTPDE PdeSrc, RTGCPTR GCPtrPage, unsigned 
                         rc = pgmPhysPageMakeWritableUnlocked(pVM, pPage, GCPhys);
                         AssertRC(rc);
                     }
-#  endif
 # endif
 
                     /*
@@ -1832,7 +1829,6 @@ PGM_BTH_DECL(int, SyncPage)(PVM pVM, GSTPDE PdeSrc, RTGCPTR GCPtrPage, unsigned 
                     if (PteDst.n.u1Present && !pPTDst->a[iPTDst].n.u1Present)
                         PGM_BTH_NAME(SyncPageWorkerTrackAddref)(pVM, pShwPage, PGM_PAGE_GET_TRACKING(pPage), pPage, iPTDst);
 # endif
-# ifdef VBOX_WITH_NEW_PHYS_CODE
                     /* Make sure only allocated pages are mapped writable. */
                     if (    PteDst.n.u1Write
                         &&  PteDst.n.u1Present
@@ -1841,7 +1837,6 @@ PGM_BTH_DECL(int, SyncPage)(PVM pVM, GSTPDE PdeSrc, RTGCPTR GCPtrPage, unsigned 
                         PteDst.n.u1Write = 0;   /** @todo this isn't quite working yet... */
                         Log3(("SyncPage: write-protecting %RGp pPage=%R[pgmpage] at %RGv\n", GCPhys, pPage, GCPtrPage));
                     }
-# endif
 
                     pPTDst->a[iPTDst] = PteDst;
 
@@ -1952,7 +1947,9 @@ PGM_BTH_DECL(int, SyncPage)(PVM pVM, GSTPDE PdeSrc, RTGCPTR GCPtrPage, unsigned 
     PSHWPT pPTDst = (PSHWPT)PGMPOOL_PAGE_2_PTR(pVM, pShwPage);
 
     Assert(cPages == 1 || !(uErr & X86_TRAP_PF_P));
-    if (cPages > 1 && !(uErr & X86_TRAP_PF_P))
+    if (    cPages > 1
+        &&  !(uErr & X86_TRAP_PF_P)
+        &&  !VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY))
     {
         /*
          * This code path is currently only taken when the caller is PGMTrap0eHandler
@@ -1992,6 +1989,9 @@ PGM_BTH_DECL(int, SyncPage)(PVM pVM, GSTPDE PdeSrc, RTGCPTR GCPtrPage, unsigned 
                       (uint64_t)PteSrc.u,
                       (uint64_t)pPTDst->a[iPTDst].u,
                       pPTDst->a[iPTDst].u & PGM_PTFLAGS_TRACK_DIRTY ? " Track-Dirty" : ""));
+
+                if (RT_UNLIKELY(VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY)))
+                    break;
             }
             else
                 Log4(("%RGv iPTDst=%x pPTDst->a[iPTDst] %RX64\n", (GCPtrPage & ~(RTGCPTR)(SHW_PT_MASK << SHW_PT_SHIFT)) | (iPTDst << PAGE_SHIFT), iPTDst, pPTDst->a[iPTDst].u));
@@ -2676,7 +2676,8 @@ PGM_BTH_DECL(int, SyncPT)(PVM pVM, unsigned iPDSrc, PGSTPD pPDSrc, RTGCPTR GCPtr
                   GCPhys, PdeDst.u & PGM_PDFLAGS_TRACK_DIRTY ? " Track-Dirty" : ""));
             PPGMRAMRANGE    pRam   = pVM->pgm.s.CTX_SUFF(pRamRanges);
             unsigned        iPTDst = 0;
-            while (iPTDst < RT_ELEMENTS(pPTDst->a))
+            while (     iPTDst < RT_ELEMENTS(pPTDst->a)
+                   &&   !VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY))
             {
                 /* Advance ram range list. */
                 while (pRam && GCPhys > pRam->GCPhysLast)
@@ -2690,8 +2691,7 @@ PGM_BTH_DECL(int, SyncPT)(PVM pVM, unsigned iPDSrc, PGSTPD pPDSrc, RTGCPTR GCPtr
                         PPGMPAGE    pPage = &pRam->aPages[iHCPage];
                         SHWPTE      PteDst;
 
-# ifdef VBOX_WITH_NEW_PHYS_CODE
-#  ifndef VBOX_WITH_NEW_LAZY_PAGE_ALLOC
+# ifndef VBOX_WITH_NEW_LAZY_PAGE_ALLOC
                         /* Try make the page writable if necessary. */
                         if (    PteDstBase.n.u1Write
                             &&  PGM_PAGE_GET_STATE(pPage) != PGM_PAGE_STATE_ALLOCATED
@@ -2699,24 +2699,10 @@ PGM_BTH_DECL(int, SyncPT)(PVM pVM, unsigned iPDSrc, PGSTPD pPDSrc, RTGCPTR GCPtr
                         {
                             rc = pgmPhysPageMakeWritableUnlocked(pVM, pPage, GCPhys);
                             AssertRCReturn(rc, rc);
+                            if (VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY))
+                                break;
                         }
-#  endif
-# else  /* !VBOX_WITH_NEW_PHYS_CODE */
-                        /* Make sure the RAM has already been allocated. */
-                        if (pRam->fFlags & MM_RAM_FLAGS_DYNAMIC_ALLOC)  /** @todo PAGE FLAGS */
-                        {
-                            if (RT_UNLIKELY(!PGM_PAGE_GET_HCPHYS(pPage)))
-                            {
-#  ifdef IN_RING3
-                                int rc = pgmr3PhysGrowRange(pVM, GCPhys);
-#  else
-                                int rc = CTXALLMID(VMM, CallHost)(pVM, VMMCALLHOST_PGM_RAM_GROW_RANGE, GCPhys);
-#  endif
-                                if (rc != VINF_SUCCESS)
-                                    return rc;
-                            }
-                        }
-# endif /* !VBOX_WITH_NEW_PHYS_CODE */
+# endif
 
                         if (PGM_PAGE_HAS_ACTIVE_HANDLERS(pPage))
                         {
@@ -2741,7 +2727,6 @@ PGM_BTH_DECL(int, SyncPT)(PVM pVM, unsigned iPDSrc, PGSTPD pPDSrc, RTGCPTR GCPtr
                         else
                             PteDst.u = PGM_PAGE_GET_HCPHYS(pPage) | PteDstBase.u;
 
-# ifdef VBOX_WITH_NEW_PHYS_CODE
                         /* Only map writable pages writable. */
                         if (    PteDst.n.u1Write
                             &&  PteDst.n.u1Present
@@ -2750,7 +2735,6 @@ PGM_BTH_DECL(int, SyncPT)(PVM pVM, unsigned iPDSrc, PGSTPD pPDSrc, RTGCPTR GCPtr
                             PteDst.n.u1Write = 0;   /** @todo this isn't quite working yet... */
                             Log3(("SyncPT: write-protecting %RGp pPage=%R[pgmpage] at %RGv\n", GCPhys, pPage, (RTGCPTR)(GCPtr | (iPTDst << SHW_PT_SHIFT))));
                         }
-# endif
 
 # ifdef PGMPOOL_WITH_USER_TRACKING
                         if (PteDst.n.u1Present)
@@ -3778,7 +3762,7 @@ PGM_BTH_DECL(unsigned, AssertCR3)(PVM pVM, uint64_t cr3, uint64_t cr4, RTGCPTR G
                             rc = PGMPhysGCPhys2HCPhys(pVM, GCPhysGst, &HCPhys);
                             if (RT_FAILURE(rc))
                             {
-                                if (HCPhysShw != MMR3PageDummyHCPhys(pVM))
+                                if (HCPhysShw != MMR3PageDummyHCPhys(pVM)) /** @todo this is wrong. */
                                 {
                                     AssertMsgFailed(("Cannot find guest physical address %RGp at %RGv! PteSrc=%#RX64 PteDst=%#RX64\n",
                                                     GCPhysGst, GCPtr + off, (uint64_t)PteSrc.u, (uint64_t)PteDst.u));
@@ -3799,7 +3783,7 @@ PGM_BTH_DECL(unsigned, AssertCR3)(PVM pVM, uint64_t cr3, uint64_t cr4, RTGCPTR G
                             if (!pPhysPage)
                             {
 # ifdef IN_RING3 /** @todo make MMR3PageDummyHCPhys an 'All' function! */
-                                if (HCPhysShw != MMR3PageDummyHCPhys(pVM))
+                                if (HCPhysShw != MMR3PageDummyHCPhys(pVM))  /** @todo this is wrong. */
                                 {
                                     AssertMsgFailed(("Cannot find guest physical address %RGp at %RGv! PteSrc=%#RX64 PteDst=%#RX64\n",
                                                     GCPhysGst, GCPtr + off, (uint64_t)PteSrc.u, (uint64_t)PteDst.u));
@@ -4008,7 +3992,7 @@ PGM_BTH_DECL(unsigned, AssertCR3)(PVM pVM, uint64_t cr3, uint64_t cr4, RTGCPTR G
                             rc = PGMPhysGCPhys2HCPhys(pVM, GCPhysGst, &HCPhys);
                             if (RT_FAILURE(rc))
                             {
-                                if (HCPhysShw != MMR3PageDummyHCPhys(pVM))
+                                if (HCPhysShw != MMR3PageDummyHCPhys(pVM))  /** @todo this is wrong. */
                                 {
                                     AssertMsgFailed(("Cannot find guest physical address %RGp at %RGv! PdeSrc=%#RX64 PteDst=%#RX64\n",
                                                     GCPhysGst, GCPtr + off, (uint64_t)PdeSrc.u, (uint64_t)PteDst.u));
@@ -4027,7 +4011,7 @@ PGM_BTH_DECL(unsigned, AssertCR3)(PVM pVM, uint64_t cr3, uint64_t cr4, RTGCPTR G
                             if (!pPhysPage)
                             {
 # ifdef IN_RING3 /** @todo make MMR3PageDummyHCPhys an 'All' function! */
-                                if (HCPhysShw != MMR3PageDummyHCPhys(pVM))
+                                if (HCPhysShw != MMR3PageDummyHCPhys(pVM))  /** @todo this is wrong. */
                                 {
                                     AssertMsgFailed(("Cannot find guest physical address %RGp at %RGv! PdeSrc=%#RX64 PteDst=%#RX64\n",
                                                     GCPhysGst, GCPtr + off, (uint64_t)PdeSrc.u, (uint64_t)PteDst.u));
@@ -4138,22 +4122,18 @@ PGM_BTH_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
      */
     RTHCPTR     HCPtrGuestCR3;
     RTHCPHYS    HCPhysGuestCR3;
-# ifdef VBOX_WITH_NEW_PHYS_CODE
     pgmLock(pVM);
     PPGMPAGE    pPage = pgmPhysGetPage(&pVM->pgm.s, GCPhysCR3);
     AssertReturn(pPage, VERR_INTERNAL_ERROR_2);
     HCPhysGuestCR3 = PGM_PAGE_GET_HCPHYS(pPage);
     /** @todo this needs some reworking wrt. locking.  */
-#  if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
+# if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
     HCPtrGuestCR3 = NIL_RTHCPTR;
     int rc = VINF_SUCCESS;
-#  else
+# else
     int rc = pgmPhysGCPhys2CCPtrInternal(pVM, pPage, GCPhysCR3 & GST_CR3_PAGE_MASK, (void **)&HCPtrGuestCR3);
-#  endif
+# endif
     pgmUnlock(pVM);
-# else  /* !VBOX_WITH_NEW_PHYS_CODE */
-    int rc = pgmRamGCPhys2HCPtrAndHCPhys(&pVM->pgm.s, GCPhysCR3 & GST_CR3_PAGE_MASK, &HCPtrGuestCR3, &HCPhysGuestCR3);
-# endif /* !VBOX_WITH_NEW_PHYS_CODE */
     if (RT_SUCCESS(rc))
     {
         rc = PGMMap(pVM, (RTGCPTR)pVM->pgm.s.GCPtrCR3Mapping, HCPhysGuestCR3, PAGE_SIZE, 0);
@@ -4190,21 +4170,17 @@ PGM_BTH_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
                     RTHCPTR     HCPtr;
                     RTHCPHYS    HCPhys;
                     RTGCPHYS    GCPhys = pGuestPDPT->a[i].u & X86_PDPE_PG_MASK;
-#  ifdef VBOX_WITH_NEW_PHYS_CODE
                     pgmLock(pVM);
                     PPGMPAGE    pPage  = pgmPhysGetPage(&pVM->pgm.s, GCPhys);
                     AssertReturn(pPage, VERR_INTERNAL_ERROR_2);
                     HCPhys = PGM_PAGE_GET_HCPHYS(pPage);
-#   if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
+#  if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
                     HCPtr = NIL_RTHCPTR;
                     int rc2 = VINF_SUCCESS;
-#   else
+#  else
                     int rc2 = pgmPhysGCPhys2CCPtrInternal(pVM, pPage, GCPhys, (void **)&HCPtr);
-#   endif
+#  endif
                     pgmUnlock(pVM);
-#  else  /* !VBOX_WITH_NEW_PHYS_CODE */
-                    int rc2 = pgmRamGCPhys2HCPtrAndHCPhys(&pVM->pgm.s, GCPhys, &HCPtr, &HCPhys);
-#  endif /* !VBOX_WITH_NEW_PHYS_CODE */
                     if (RT_SUCCESS(rc2))
                     {
                         rc = PGMMap(pVM, GCPtr, HCPhys, PAGE_SIZE, 0);
@@ -4277,6 +4253,7 @@ PGM_BTH_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
 #  ifdef IN_RC
     /* NOTE: We can't deal with jumps to ring 3 here as we're now in an inconsistent state! */
     bool fLog = VMMGCLogDisable(pVM);
+    pgmLock(pVM);
 #  endif
 
     pVM->pgm.s.iShwUser      = SHW_POOL_ROOT_IDX;
@@ -4311,6 +4288,7 @@ PGM_BTH_DECL(int, MapCR3)(PVM pVM, RTGCPHYS GCPhysCR3)
     SELMShadowCR3Changed(pVM);
 
 #  ifdef IN_RC
+    pgmUnlock(pVM);
     VMMGCLogRestore(pVM, fLog);
 #  endif
 
@@ -4345,12 +4323,14 @@ PGM_BTH_DECL(int, UnmapCR3)(PVM pVM)
 
     int rc = VINF_SUCCESS;
 
-    /* Update guest paging info. */
+    /*
+     * Update guest paging info.
+     */
 #if PGM_GST_TYPE == PGM_TYPE_32BIT
     pVM->pgm.s.pGst32BitPdR3 = 0;
-#ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
+# ifndef VBOX_WITH_2X_4GB_ADDR_SPACE
     pVM->pgm.s.pGst32BitPdR0 = 0;
-#endif
+# endif
     pVM->pgm.s.pGst32BitPdRC = 0;
 
 #elif PGM_GST_TYPE == PGM_TYPE_PAE
@@ -4380,7 +4360,9 @@ PGM_BTH_DECL(int, UnmapCR3)(PVM pVM)
 #endif
 
 #if !defined(IN_RC) /* In RC we rely on MapCR3 to do the shadow part for us at a safe time */
-    /* Update shadow paging info. */
+    /*
+     * Update shadow paging info.
+     */
 # if  (   (   PGM_SHW_TYPE == PGM_TYPE_32BIT  \
            || PGM_SHW_TYPE == PGM_TYPE_PAE    \
            || PGM_SHW_TYPE == PGM_TYPE_AMD64))

@@ -181,13 +181,15 @@ typedef struct PhysPageDesc {
  */
 #define L1_BITS (TARGET_VIRT_ADDR_SPACE_BITS - L2_BITS - TARGET_PAGE_BITS)
 #else
-# ifdef VBOX /* > 4GB please. */
-#define L1_BITS (TARGET_PHYS_ADDR_SPACE_BITS - L2_BITS - TARGET_PAGE_BITS)
-# else
 #define L1_BITS (32 - L2_BITS - TARGET_PAGE_BITS)
-# endif
+#endif
+#ifdef VBOX
+#define L0_BITS (TARGET_PHYS_ADDR_SPACE_BITS - 32)
 #endif
 
+#ifdef VBOX
+#define L0_SIZE (1 << L0_BITS)
+#endif
 #define L1_SIZE (1 << L1_BITS)
 #define L2_SIZE (1 << L2_BITS)
 
@@ -199,8 +201,14 @@ unsigned long qemu_host_page_size;
 unsigned long qemu_host_page_mask;
 
 /* XXX: for system emulation, it could just be an array */
+#ifndef VBOX
 static PageDesc *l1_map[L1_SIZE];
 static PhysPageDesc **l1_phys_map;
+#else
+static unsigned l0_map_max_used = 0;
+static PageDesc **l0_map[L0_SIZE];
+static void **l0_phys_map[L0_SIZE];
+#endif
 
 #if !defined(CONFIG_USER_ONLY)
 static void io_mem_init(void);
@@ -224,11 +232,15 @@ static int log_append = 0;
 #endif
 
 /* statistics */
+#ifndef VBOX
 static int tlb_flush_count;
 static int tb_flush_count;
-#ifndef VBOX
 static int tb_phys_invalidate_count;
-#endif /* !VBOX */
+#else  /* VBOX - Resettable U32 stats, see VBoxRecompiler.c. */
+uint32_t tlb_flush_count;
+uint32_t tb_flush_count;
+uint32_t tb_phys_invalidate_count;
+#endif /* VBOX */
 
 #define SUBPAGE_IDX(addr) ((addr) & ~TARGET_PAGE_MASK)
 typedef struct subpage_t {
@@ -307,8 +319,10 @@ static void page_init(void)
 #endif
         qemu_host_page_bits++;
     qemu_host_page_mask = ~(qemu_host_page_size - 1);
+#ifndef VBOX
     l1_phys_map = qemu_vmalloc(L1_SIZE * sizeof(void *));
     memset(l1_phys_map, 0, L1_SIZE * sizeof(void *));
+#endif
 #ifdef VBOX
     /* We use other means to set reserved bit on our pages */
 #else
@@ -348,21 +362,32 @@ static inline PageDesc **page_l1_map(target_ulong index)
 DECLINLINE(PageDesc **) page_l1_map(target_ulong index)
 #endif
 {
+#ifndef VBOX
 #if TARGET_LONG_BITS > 32
     /* Host memory outside guest VM.  For 32-bit targets we have already
        excluded high addresses.  */
-# ifndef VBOX
     if (index > ((target_ulong)L2_SIZE * L1_SIZE))
         return NULL;
-# else  /* VBOX */
-    AssertMsgReturn(index < (target_ulong)L2_SIZE * L1_SIZE,
-                    ("index=%RGp >= %RGp; L1_SIZE=%#x L2_SIZE=%#x\n",
-                     (RTGCPHYS)index, (RTGCPHYS)L2_SIZE * L1_SIZE, L1_SIZE, L2_SIZE),
-                    NULL);
-# endif /* VBOX */
-
 #endif
     return &l1_map[index >> L2_BITS];
+#else  /* VBOX */
+    PageDesc **l1_map;
+    AssertMsgReturn(index < (target_ulong)L2_SIZE * L1_SIZE * L0_SIZE,
+                    ("index=%RGp >= %RGp; L1_SIZE=%#x L2_SIZE=%#x L0_SIZE=%#x\n",
+                     (RTGCPHYS)index, (RTGCPHYS)L2_SIZE * L1_SIZE, L1_SIZE, L2_SIZE, L0_SIZE),
+                    NULL);
+    l1_map = l0_map[index >> (L1_BITS + L2_BITS)];
+    if (RT_UNLIKELY(!l1_map))
+    {
+        unsigned i0 = index >> (L1_BITS + L2_BITS);
+        l0_map[i0] = l1_map = qemu_mallocz(sizeof(PageDesc *) * L1_SIZE);
+        if (RT_UNLIKELY(!l1_map))
+            return NULL;
+        if (i0 >= l0_map_max_used)
+            l0_map_max_used = i0 + 1;
+    }
+    return &l1_map[(index >> L2_BITS) & (L1_SIZE - 1)];
+#endif /* VBOX */
 }
 
 #ifndef VBOX
@@ -422,6 +447,7 @@ static PhysPageDesc *phys_page_find_alloc(target_phys_addr_t index, int alloc)
     void **lp, **p;
     PhysPageDesc *pd;
 
+#ifndef VBOX
     p = (void **)l1_phys_map;
 #if TARGET_PHYS_ADDR_SPACE_BITS > 32
 
@@ -439,6 +465,21 @@ static PhysPageDesc *phys_page_find_alloc(target_phys_addr_t index, int alloc)
         *lp = p;
     }
 #endif
+#else  /* VBOX */
+    /* level 0 lookup and lazy allocation of level 1 map. */
+    if (RT_UNLIKELY(index >= (target_phys_addr_t)L2_SIZE * L1_SIZE * L0_SIZE))
+        return NULL;
+    p = l0_phys_map[index >> (L1_BITS + L2_BITS)];
+    if (RT_UNLIKELY(!p)) {
+        if (!alloc)
+            return NULL;
+        p = qemu_vmalloc(sizeof(void **) * L1_SIZE);
+        memset(p, 0, sizeof(void **) * L1_SIZE);
+        l0_phys_map[index >> (L1_BITS + L2_BITS)] = p;
+    }
+
+    /* level 1 lookup and lazy allocation of level 2 map. */
+#endif /* VBOX */
     lp = p + ((index >> L2_BITS) & (L1_SIZE - 1));
     pd = *lp;
     if (!pd) {
@@ -451,14 +492,7 @@ static PhysPageDesc *phys_page_find_alloc(target_phys_addr_t index, int alloc)
         for (i = 0; i < L2_SIZE; i++)
           pd[i].phys_offset = IO_MEM_UNASSIGNED;
     }
-#if defined(VBOX) && !defined(VBOX_WITH_NEW_PHYS_CODE)
-    pd = ((PhysPageDesc *)pd) + (index & (L2_SIZE - 1));
-    if (RT_UNLIKELY((pd->phys_offset & ~TARGET_PAGE_MASK) == IO_MEM_RAM_MISSING))
-        remR3GrowDynRange(pd->phys_offset & TARGET_PAGE_MASK);
-    return pd;
-#else
     return ((PhysPageDesc *)pd) + (index & (L2_SIZE - 1));
-#endif
 }
 
 #ifndef VBOX
@@ -698,17 +732,30 @@ static void page_flush_tb(void)
 {
     int i, j;
     PageDesc *p;
+#ifdef VBOX
+    int k;
+#endif
 
-    for(i = 0; i < L1_SIZE; i++) {
-        p = l1_map[i];
-        if (p) {
-            for(j = 0; j < L2_SIZE; j++) {
-                p->first_tb = NULL;
-                invalidate_page_bitmap(p);
-                p++;
+#ifdef VBOX
+    k = l0_map_max_used;
+    while (k-- > 0) {
+        PageDesc **l1_map = l0_map[k];
+        if (l1_map) {
+#endif
+            for(i = 0; i < L1_SIZE; i++) {
+                p = l1_map[i];
+                if (p) {
+                    for(j = 0; j < L2_SIZE; j++) {
+                        p->first_tb = NULL;
+                        invalidate_page_bitmap(p);
+                        p++;
+                    }
+                }
             }
+#ifdef VBOX
         }
     }
+#endif
 }
 
 /* flush all the translation blocks */
@@ -716,6 +763,9 @@ static void page_flush_tb(void)
 void tb_flush(CPUState *env1)
 {
     CPUState *env;
+#ifdef VBOX
+    STAM_PROFILE_START(&env1->StatTbFlush, a);
+#endif
 #if defined(DEBUG_FLUSH)
     printf("qemu: flush code_size=%ld nb_tbs=%d avg_tb_size=%ld\n",
            (unsigned long)(code_gen_ptr - code_gen_buffer),
@@ -738,6 +788,9 @@ void tb_flush(CPUState *env1)
     /* XXX: flush processor icache at this point if cache flush is
        expensive */
     tb_flush_count++;
+#ifdef VBOX
+    STAM_PROFILE_STOP(&env1->StatTbFlush, a);
+#endif
 }
 
 #ifdef DEBUG_TB_CHECK
@@ -933,9 +986,7 @@ void tb_phys_invalidate(TranslationBlock *tb, target_ulong page_addr)
     }
     tb->jmp_first = (TranslationBlock *)((long)tb | 2); /* fail safe */
 
-#ifndef VBOX
     tb_phys_invalidate_count++;
-#endif
 }
 
 
@@ -2062,7 +2113,7 @@ void cpu_physical_memory_reset_dirty(ram_addr_t start, ram_addr_t end,
 #elif !defined(VBOX)
     start1 = start + (unsigned long)phys_ram_base;
 #else
-    start1 = (unsigned long)remR3TlbGCPhys2Ptr(first_cpu, start, 1 /*fWritable*/); /** @todo this can be harmful with VBOX_WITH_NEW_PHYS_CODE, fix interface/whatever. */
+    start1 = (unsigned long)remR3TlbGCPhys2Ptr(first_cpu, start, 1 /*fWritable*/); /** @todo page replacing (sharing or read only) may cause trouble, fix interface/whatever. */
 #endif
     for(env = first_cpu; env != NULL; env = env->next_cpu) {
         for(i = 0; i < CPU_TLB_SIZE; i++)
@@ -2650,27 +2701,15 @@ void cpu_register_physical_memory(target_phys_addr_t start_addr,
                 subpage_register(subpage, start_addr2, end_addr2, phys_offset);
             } else {
                 p->phys_offset = phys_offset;
-#if !defined(VBOX) || defined(VBOX_WITH_NEW_PHYS_CODE)
         if ((phys_offset & ~TARGET_PAGE_MASK) <= IO_MEM_ROM ||
             (phys_offset & IO_MEM_ROMD))
-#else
-        if (   (phys_offset & ~TARGET_PAGE_MASK) <= IO_MEM_ROM
-            || (phys_offset & IO_MEM_ROMD)
-            || (phys_offset & ~TARGET_PAGE_MASK) == IO_MEM_RAM_MISSING)
-#endif
                     phys_offset += TARGET_PAGE_SIZE;
             }
         } else {
             p = phys_page_find_alloc(addr >> TARGET_PAGE_BITS, 1);
             p->phys_offset = phys_offset;
-#if !defined(VBOX) || defined(VBOX_WITH_NEW_PHYS_CODE)
         if ((phys_offset & ~TARGET_PAGE_MASK) <= IO_MEM_ROM ||
             (phys_offset & IO_MEM_ROMD))
-#else
-        if (   (phys_offset & ~TARGET_PAGE_MASK) <= IO_MEM_ROM
-            || (phys_offset & IO_MEM_ROMD)
-            || (phys_offset & ~TARGET_PAGE_MASK) == IO_MEM_RAM_MISSING)
-#endif
                 phys_offset += TARGET_PAGE_SIZE;
             else {
                 target_phys_addr_t start_addr2, end_addr2;
@@ -3178,12 +3217,7 @@ static void io_mem_init(void)
     cpu_register_io_memory(IO_MEM_ROM >> IO_MEM_SHIFT, error_mem_read, unassigned_mem_write, NULL);
     cpu_register_io_memory(IO_MEM_UNASSIGNED >> IO_MEM_SHIFT, unassigned_mem_read, unassigned_mem_write, NULL);
     cpu_register_io_memory(IO_MEM_NOTDIRTY >> IO_MEM_SHIFT, error_mem_read, notdirty_mem_write, NULL);
-#if defined(VBOX) && !defined(VBOX_WITH_NEW_PHYS_CODE)
-    cpu_register_io_memory(IO_MEM_RAM_MISSING >> IO_MEM_SHIFT, unassigned_mem_read, unassigned_mem_write, NULL);
-    io_mem_nb = 6;
-#else
     io_mem_nb = 5;
-#endif
 
     io_mem_watch = cpu_register_io_memory(0, watch_mem_read,
                                           watch_mem_write, NULL);

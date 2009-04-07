@@ -1,4 +1,4 @@
-/* $Id: HWVMXR0.cpp 17924 2009-03-16 12:18:08Z vboxsync $ */
+/* $Id: HWVMXR0.cpp 18781 2009-04-06 15:51:30Z vboxsync $ */
 /** @file
  * HWACCM VMX - Host Context Ring 0.
  */
@@ -656,13 +656,8 @@ static int VMXR0InjectEvent(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, uint32_t intIn
 
         /* Read the selector:offset pair of the interrupt handler. */
         GCPhysHandler = (RTGCPHYS)pCtx->idtr.pIdt + iGate * 4;
-#ifdef VBOX_WITH_NEW_PHYS_CODE
         rc = PGMPhysSimpleReadGCPhys(pVM, &offset, GCPhysHandler,     sizeof(offset)); AssertRC(rc);
         rc = PGMPhysSimpleReadGCPhys(pVM, &sel,    GCPhysHandler + 2, sizeof(sel));    AssertRC(rc);
-#else
-        PGMPhysRead(pVM, GCPhysHandler,     &offset, sizeof(offset));
-        PGMPhysRead(pVM, GCPhysHandler + 2, &sel,    sizeof(sel));
-#endif
 
         LogFlow(("IDT handler %04X:%04X\n", sel, offset));
 
@@ -670,25 +665,13 @@ static int VMXR0InjectEvent(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, uint32_t intIn
         /** @todo should check stack limit. */
         pCtx->sp -= 2;
         LogFlow(("ss:sp %04X:%04X eflags=%x\n", pCtx->ss, pCtx->sp, pCtx->eflags.u));
-#ifdef VBOX_WITH_NEW_PHYS_CODE
         rc = PGMPhysSimpleWriteGCPhys(pVM, pCtx->ssHid.u64Base + pCtx->sp, &pCtx->eflags, sizeof(uint16_t)); AssertRC(rc);
-#else
-        PGMPhysWrite(pVM, pCtx->ssHid.u64Base + pCtx->sp, &pCtx->eflags, sizeof(uint16_t));
-#endif
         pCtx->sp -= 2;
         LogFlow(("ss:sp %04X:%04X cs=%x\n", pCtx->ss, pCtx->sp, pCtx->cs));
-#ifdef VBOX_WITH_NEW_PHYS_CODE
         rc = PGMPhysSimpleWriteGCPhys(pVM, pCtx->ssHid.u64Base + pCtx->sp, &pCtx->cs, sizeof(uint16_t)); AssertRC(rc);
-#else
-        PGMPhysWrite(pVM, pCtx->ssHid.u64Base + pCtx->sp, &pCtx->cs, sizeof(uint16_t));
-#endif
         pCtx->sp -= 2;
         LogFlow(("ss:sp %04X:%04X ip=%x\n", pCtx->ss, pCtx->sp, ip));
-#ifdef VBOX_WITH_NEW_PHYS_CODE
         rc = PGMPhysSimpleWriteGCPhys(pVM, pCtx->ssHid.u64Base + pCtx->sp, &ip, sizeof(ip)); AssertRC(rc);
-#else
-        PGMPhysWrite(pVM, pCtx->ssHid.u64Base + pCtx->sp, &ip, sizeof(ip));
-#endif
 
         /* Update the CPU state for executing the handler. */
         pCtx->rip           = offset;
@@ -2074,11 +2057,11 @@ ResumeExecution:
     }
 
     /* Check for pending actions that force us to go back to ring 3. */
-    if (VM_FF_ISPENDING(pVM, VM_FF_TO_R3 | VM_FF_TIMER | VM_FF_PGM_NEED_HANDY_PAGES))
+    if (VM_FF_ISPENDING(pVM, VM_FF_HWACCM_TO_R3_MASK))
     {
         VM_FF_CLEAR(pVM, VM_FF_TO_R3);
         STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatSwitchToR3);
-        rc = VINF_EM_RAW_TO_R3;
+        rc = RT_UNLIKELY(VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY)) ? VINF_EM_NO_MEMORY : VINF_EM_RAW_TO_R3;
         goto end;
     }
     /* Pending request packets might contain actions that need immediate attention, such as pending hardware interrupts. */
@@ -2604,16 +2587,12 @@ ResumeExecution:
                             break;
                         }
                         eflags.u = 0;
-#ifdef VBOX_WITH_NEW_PHYS_CODE
                         rc = PGMPhysRead(pVM, (RTGCPHYS)GCPtrStack, &eflags.u, cbParm);
                         if (RT_FAILURE(rc))
                         {
                             rc = VERR_EM_INTERPRETER;
                             break;
                         }
-#else
-                        PGMPhysRead(pVM, (RTGCPHYS)GCPtrStack, &eflags.u, cbParm);
-#endif
                         LogFlow(("POPF %x -> %RGv mask=%x\n", eflags.u, pCtx->rsp, uMask));
                         pCtx->eflags.u = (pCtx->eflags.u & ~(X86_EFL_POPF_BITS & uMask)) | (eflags.u & X86_EFL_POPF_BITS & uMask);
                         /* RF cleared when popped in real mode; see pushf description in AMD manual. */
@@ -2654,16 +2633,12 @@ ResumeExecution:
                         eflags.Bits.u1RF = 0;
                         eflags.Bits.u1VM = 0;
 
-#ifdef VBOX_WITH_NEW_PHYS_CODE
                         rc = PGMPhysWrite(pVM, (RTGCPHYS)GCPtrStack, &eflags.u, cbParm);
                         if (RT_FAILURE(rc))
                         {
                             rc = VERR_EM_INTERPRETER;
                             break;
                         }
-#else
-                        PGMPhysWrite(pVM, (RTGCPHYS)GCPtrStack, &eflags.u, cbParm);
-#endif
                         LogFlow(("PUSHF %x -> %RGv\n", eflags.u, GCPtrStack));
                         pCtx->esp -= cbParm;
                         pCtx->esp &= uMask;
@@ -2689,16 +2664,12 @@ ResumeExecution:
                             rc = VERR_EM_INTERPRETER;
                             break;
                         }
-#ifdef VBOX_WITH_NEW_PHYS_CODE
                         rc = PGMPhysRead(pVM, (RTGCPHYS)GCPtrStack, &aIretFrame[0], sizeof(aIretFrame));
                         if (RT_FAILURE(rc))
                         {
                             rc = VERR_EM_INTERPRETER;
                             break;
                         }
-#else
-                        PGMPhysRead(pVM, (RTGCPHYS)GCPtrStack, &aIretFrame[0], sizeof(aIretFrame));
-#endif
                         pCtx->ip            = aIretFrame[0];
                         pCtx->cs            = aIretFrame[1];
                         pCtx->csHid.u64Base = pCtx->cs << 4;
@@ -2949,6 +2920,22 @@ ResumeExecution:
         break;
     }
 
+    case VMX_EXIT_RDPMC:                /* 15 Guest software attempted to execute RDPMC. */
+    {
+        Log2(("VMX: Rdpmc %x\n", pCtx->ecx));
+        STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatExitRdpmc);
+        rc = EMInterpretRdpmc(pVM, CPUMCTX2CORE(pCtx));
+        if (rc == VINF_SUCCESS)
+        {
+            /* Update EIP and continue execution. */
+            Assert(cbInstr == 2);
+            pCtx->rip += cbInstr;
+            goto ResumeExecution;
+        }
+        rc = VINF_EM_RAW_EMULATE_INSTR;
+        break;
+    }
+
     case VMX_EXIT_RDTSC:                /* 16 Guest software attempted to execute RDTSC. */
     {
         Log2(("VMX: Rdtsc\n"));
@@ -2961,7 +2948,6 @@ ResumeExecution:
             pCtx->rip += cbInstr;
             goto ResumeExecution;
         }
-        AssertMsgFailed(("EMU: rdtsc failed with %Rrc\n", rc));
         rc = VINF_EM_RAW_EMULATE_INSTR;
         break;
     }
@@ -3389,6 +3375,7 @@ ResumeExecution:
     case VMX_EXIT_CRX_MOVE:             /* 28 Control-register accesses. */
     case VMX_EXIT_DRX_MOVE:             /* 29 Debug-register accesses. */
     case VMX_EXIT_PORT_IO:              /* 30 I/O instruction. */
+    case VMX_EXIT_RDPMC:                /* 15 Guest software attempted to execute RDPMC. */
         /* already handled above */
         AssertMsg(   rc == VINF_PGM_CHANGE_MODE
                   || rc == VINF_EM_RAW_INTERRUPT
@@ -3410,7 +3397,6 @@ ResumeExecution:
         rc = VERR_EM_INTERPRETER;
         break;
 
-    case VMX_EXIT_RDPMC:                /* 15 Guest software attempted to execute RDPMC. */
     case VMX_EXIT_MWAIT:                /* 36 Guest software executed MWAIT. */
     case VMX_EXIT_MONITOR:              /* 39 Guest software attempted to execute MONITOR. */
     case VMX_EXIT_PAUSE:                /* 40 Guest software attempted to execute PAUSE. */

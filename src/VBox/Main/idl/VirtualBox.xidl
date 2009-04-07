@@ -451,7 +451,7 @@
       being executed (such as <link to="IMachine::attachHardDisk"/>).
 
       <pre>
-    +-----------------------------------(same sate as before the call)------+
+    +----------------------------------(same state as before the call)------+
     |                                                                       |
     +-&gt; PoweredOff --+                                                      |
     |                |                                                      |
@@ -465,7 +465,7 @@
       operations, respectively.
 
       <pre>
-    +-----------------------------------(same sate as before the call)------+
+    +----------------------------------(same state as before the call)------+
     |                                                                       |
     +-&gt; PoweredOff --+                                                      |
     |                +--&gt;[takeSnapshot()] -------------------&gt; Saving ------+
@@ -500,7 +500,7 @@
     </desc>
 
     <const name="Null"                  value="0">
-      <desc>Null value (nver used by the API).</desc>
+      <desc>Null value (never used by the API).</desc>
     </const>
     <const name="PoweredOff"            value="1">
       <desc>
@@ -1652,7 +1652,7 @@
         saved to disk (and therefore no settings file is created)
         until <link to="IMachine::saveSettings"/> is called. If the
         specified settings file already exists, this method
-        will fail with <link to="VBOX_E_FILE_ERROR"/>..
+        will fail with <link to="VBOX_E_FILE_ERROR"/>.
 
         See <link to="#createMachine"/> for more information.
 
@@ -1932,7 +1932,8 @@
         <link to="ISystemProperties::defaultHardDiskFolder"/> for more details.
 
         <result name="VBOX_E_FILE_ERROR">
-          Invalid hard disk storage file location.
+          Invalid hard disk storage file location or could not find the hard
+          disk at the specified location.
         </result>
         <result name="VBOX_E_IPRT_ERROR">
           Could not get hard disk storage format.
@@ -2035,6 +2036,10 @@
           Currently only ISO 9960 CD/DVD images are supported by VirtualBox.
         </note>
 
+        <result name="VBOX_E_FILE_ERROR">
+          Invalid CD/DVD image file location or could not find the CD/DVD
+          image at the specified location.
+        </result>
         <result name="VBOX_E_INVALID_OBJECT_STATE">
           CD/DVD image already exists in the media registry.
         </result>
@@ -2129,7 +2134,8 @@
         of the location string.
 
         <result name="VBOX_E_FILE_ERROR">
-          Floppy image specified by @a location not accessible.
+          Invalid floppy image file location or could not find the floppy
+          image at the specified location.
         </result>
         <result name="VBOX_E_INVALID_OBJECT_STATE">
           Floppy image already exists in the media registry.
@@ -2756,13 +2762,13 @@
     <method name="saveSettingsWithBackup">
       <desc>
         Creates a backup copy of the global settings file
-        (<link to="#settingsFilePath"/>) in case of auto-conversion, and then
-        calls <link to="#saveSettings"/>.
+        (<link to="IVirtualBox::settingsFilePath"/>) in case of auto-conversion,
+        and then calls <link to="IVirtualBox::saveSettings"/>.
 
         Note that the backup copy is created <b>only</b> if the settings file
         auto-conversion took place (see <link to="#settingsFileVersion"/> for
         details). Otherwise, this call is fully equivalent to
-        <link to="#saveSettings"/> and no backup copying is done.
+        <link to="IVirtualBox::saveSettings"/> and no backup copying is done.
 
         The backup copy is created in the same directory where the original
         settings file is located. It is given the following file name:
@@ -3036,7 +3042,7 @@
 
   <interface
      name="IAppliance" extends="$unknown"
-     uuid="a7a71c1f-20d3-4483-95c0-7357dda77f50"
+     uuid="30bfa6b8-9eda-4b0a-b218-a86813248ccd"
      wsmap="managed"
      >
     <desc>
@@ -3126,7 +3132,7 @@
       <desc>
         Array of virtual disk definitions. One such description exists for each
         disk definition in the OVF; each string array item represents one such piece of
-        disk information, with the information fields separated by tab (\t) characters.
+        disk information, with the information fields separated by tab (\\t) characters.
 
         The caller should be prepared for additional fields being appended to
         this string in future versions of VirtualBox and therefore check for
@@ -3233,11 +3239,17 @@
           disk images, which can take a long time, this method operates asynchronously and
           returns an IProgress object to allow the caller to monitor the progress.
       </desc>
-      <param name="path" type="wstring" dir="in">
+      <param name="format" type="wstring" dir="in">
         <desc>
-          Name of appliance file to open (either with an <tt>.ovf</tt> or <tt>.ova</tt> extension, depending
-          on whether the appliance is distributed as a set of files or as a single file, respectively).
+            Output format, as a string. Currently supported formats are "ovf-0.9" and "ovf-1.0";
+            future versions of VirtualBox may support additional formats.
         </desc>
+      </param>
+      <param name="path" type="wstring" dir="in">
+          <desc>
+              Name of appliance file to open (either with an <tt>.ovf</tt> or <tt>.ova</tt> extension, depending
+              on whether the appliance is distributed as a set of files or as a single file, respectively).
+          </desc>
       </param>
       <param name="aProgress" type="IProgress" dir="return">
           <desc></desc>
@@ -3256,7 +3268,7 @@
 
   <enum
     name="VirtualSystemDescriptionType"
-    uuid="68537dd6-78e6-4863-a1cd-20be54761891"
+    uuid="aacc58de-5b45-4f82-ae2e-dd9a824fc3b5"
   >
     <desc>Used with <link to="IVirtualSystemDescription" /> to describe the type of
     a configuration value.</desc>
@@ -3271,17 +3283,18 @@
     <const name="VendorUrl" value="8" />
     <const name="Description" value="9" />
     <const name="License" value="10" />
-    <const name="CPU" value="11" />
-    <const name="Memory" value="12" />
-    <const name="HardDiskControllerIDE" value="13" />
-    <const name="HardDiskControllerSATA" value="14" />
-    <const name="HardDiskControllerSCSI" value="15" />
-    <const name="HardDiskImage" value="16" />
-    <const name="Floppy" value="17" />
-    <const name="CDROM" value="18" />
-    <const name="NetworkAdapter" value="19" />
-    <const name="USBController" value="20" />
-    <const name="SoundCard" value="21" />
+    <const name="Miscellaneous" value="11" />
+    <const name="CPU" value="12" />
+    <const name="Memory" value="13" />
+    <const name="HardDiskControllerIDE" value="14" />
+    <const name="HardDiskControllerSATA" value="15" />
+    <const name="HardDiskControllerSCSI" value="16" />
+    <const name="HardDiskImage" value="17" />
+    <const name="Floppy" value="18" />
+    <const name="CDROM" value="19" />
+    <const name="NetworkAdapter" value="20" />
+    <const name="USBController" value="21" />
+    <const name="SoundCard" value="22" />
 
   </enum>
 
@@ -3289,7 +3302,7 @@
     name="VirtualSystemDescriptionValueType"
     uuid="56d9403f-3425-4118-9919-36f2a9b8c77c"
   >
-    <desc>Used with <link to="GetValuesByType" /> to describe the value
+    <desc>Used with <link to="IVirtualSystemDescription::getValuesByType" /> to describe the value
     type to fetch.</desc>
 
     <const name="Reference" value="1" />
@@ -3348,6 +3361,9 @@
       <li>
           "License": the EULA section from the OVF, if present. It is the responsibility of the calling
           code to display such a license for agreement; the Main API does not enforce any such policy.
+      </li>
+      <li>
+          Miscellaneous: reserved for future use.
       </li>
       <li>
         "CPU": the number of CPUs. There can be at most one such item, which will presently be ignored.
@@ -3436,7 +3452,7 @@
     </method>
 
     <method name="getDescriptionByType">
-      <desc>This is the same as <link to="getDescription" /> except that you can specify which types
+      <desc>This is the same as <link to="#getDescription" /> except that you can specify which types
       should be returned.</desc>
 
       <param name="aType" type="VirtualSystemDescriptionType" dir="in">
@@ -3466,7 +3482,7 @@
     </method>
 
     <method name="getValuesByType">
-      <desc>This is the same as <link to="getDescriptionByType" /> except that you can specify which
+      <desc>This is the same as <link to="#getDescriptionByType" /> except that you can specify which
       value types should be returned. See <link to="VirtualSystemDescriptionValueType" /> for possible
       values.</desc>
 
@@ -3487,7 +3503,7 @@
     <method name="setFinalValues">
       <desc>
         This method allows the appliance's user to change the configuration for the virtual
-        system descriptions. For each array item returned from <link to="getDescription" />,
+        system descriptions. For each array item returned from <link to="#getDescription" />,
         you must pass in one boolean value and one configuration value.
 
         Each item in the boolean array determines whether the particular configuration item
@@ -4290,9 +4306,6 @@
         Associated USB controller object.
 
         <note>
-          This method may set a @ref com_warnings "warning result code".
-        </note>
-        <note>
           If USB functionality is not available in the given edition of
           VirtualBox, this method will set the result code to @c E_NOTIMPL.
         </note>
@@ -4316,7 +4329,7 @@
     <attribute name="settingsFileVersion" type="wstring" readonly="yes">
       <desc>
         Current version of the format of the settings file of this machine
-        (<link to="#settingsFilePath"/>).
+        (<link to="IMachine::settingsFilePath"/>).
 
         The version string has the following format:
         <pre>
@@ -4764,7 +4777,7 @@
         machine and returns it as an instance of
         <link to="IStorageController" />.
 
-        @a name identifies the controller with subsequent calls such as
+        @a name identifies the controller for subsequent calls such as
         <link to="#getStorageControllerByName" /> or
         <link to="#removeStorageController" /> or
         <link to="#attachHardDisk" />.
@@ -4970,13 +4983,13 @@
     <method name="saveSettingsWithBackup">
       <desc>
         Creates a backup copy of the machine settings file (<link
-        to="#settingsFilePath"/>) in case of auto-conversion, and then calls
-        <link to="#saveSettings"/>.
+        to="IMachine::settingsFilePath"/>) in case of auto-conversion, and then calls
+        <link to="IMachine::saveSettings"/>.
 
         Note that the backup copy is created <b>only</b> if the settings file
         auto-conversion took place (see <link to="#settingsFileVersion"/> for
         details). Otherwise, this call is fully equivalent to
-        <link to="#saveSettings"/> and no backup copying is done.
+        <link to="IMachine::saveSettings"/> and no backup copying is done.
 
         The backup copy is created in the same directory where the original
         settings file is located. It is given the following file name:
@@ -5603,8 +5616,8 @@
     <method name="onStorageControllerChange">
       <desc>
         Notification when a property of one of the
-        virtual <link to="IMachine::getStorageControllers">storage controllers</link>
-        changes. Interested callees should use query the corresponding collections
+        virtual <link to="IMachine::storageControllers">storage controllers</link>
+        changes. Interested callees should query the corresponding collections
         to find out what has changed.
       </desc>
     </method>
@@ -6602,7 +6615,7 @@
 
     <method name="discardCurrentState">
       <desc>
-        This operation is similar to <link to="#discardSnapshot"/> but
+        This operation is similar to <link to="IConsole::discardSnapshot"/> but
         affects the current machine state. This means that the state stored in
         the current snapshot will become a new current state, and all current
         settings of the machine and changes stored in differencing hard disks
@@ -6642,7 +6655,7 @@
         This method is equivalent to
         doing <link to="IConsole::discardSnapshot">discardSnapshot</link>
         (currentSnapshot.id(), progress) followed by
-        <link to="#discardCurrentState"/>.
+        <link to="IConsole::discardCurrentState"/>.
 
         As a result, the machine will be fully restored from the
         snapshot preceding the current snapshot, while both the current
@@ -6653,8 +6666,8 @@
         discarded <b>before</b> discarding the snapshot. In other words, the
         machine will be restored from its last snapshot, before discarding
         it. This differs from performing a single
-        <link to="#discardSnapshot"/> call (note that no
-        <link to="#discardCurrentState"/> will be possible after it)
+        <link to="IConsole::discardSnapshot"/> call (note that no
+        <link to="IConsole::discardCurrentState"/> will be possible after it)
         to the effect that the latter will preserve the current state instead of
         discarding it.
 
@@ -6984,9 +6997,6 @@
         it appears in this list and remains there until detached.
 
         <note>
-          This method may set a @ref com_warnings "warning result code".
-        </note>
-        <note>
           If USB functionality is not available in the given edition of
           VirtualBox, this method will set the result code to @c E_NOTIMPL.
         </note>
@@ -7006,9 +7016,6 @@
         currently running virtual machines
         (<link to="IUSBController::deviceFilters"/>) are applied to it.
 
-        <note>
-          This method may set a @ref com_warnings "warning result code".
-        </note>
         <note>
           If USB functionality is not available in the given edition of
           VirtualBox, this method will set the result code to @c E_NOTIMPL.
@@ -7178,11 +7185,7 @@
 
         <note>
           Duplicates are not allowed, so an attempt to insert a
-          filter that is already in the list, will return an
-          error.
-        </note>
-        <note>
-          This method may set a @ref com_warnings "warning result code".
+          filter already in the list is an error.
         </note>
         <note>
           If USB functionality is not available in the given edition of
@@ -7216,9 +7219,6 @@
         position equal to or greater than the number of elements in
         the list will produce an error.
 
-        <note>
-          This method may set a @ref com_warnings "warning result code".
-        </note>
         <note>
           If USB functionality is not available in the given edition of
           VirtualBox, this method will set the result code to @c E_NOTIMPL.
@@ -7322,7 +7322,7 @@
         Searches for a USB device with the given UUID.
 
         <result name="VBOX_E_OBJECT_NOT_FOUND">
-          Given @id does not correspond to any USB device.
+          Given @c id does not correspond to any USB device.
         </result>
 
         <see>IHostUSBDevice::id</see>
@@ -7955,6 +7955,9 @@
       </desc>
 
       <param name="timeout" type="long" dir="in">
+        <desc>
+          Maximum time in milliseconds to wait or -1 to wait indefinitely.
+        </desc>
       </param>
     </method>
 
@@ -7975,6 +7978,9 @@
         </desc>
       </param>
       <param name="timeout" type="long" dir="in">
+        <desc>
+          Maximum time in milliseconds to wait or -1 to wait indefinitely.
+        </desc>
       </param>
     </method>
 
@@ -8745,7 +8751,7 @@
 
   <enum
     name="HardDiskVariant"
-    uuid="99334b63-7ed0-4f61-8a7e-7ec3e20dd912"
+    uuid="eb7fc6b3-ae23-4c5d-a1f6-e3522dd1efb0"
    >
     <desc>
       Virtual hard disk image variant. More than one flag may be set.
@@ -8768,12 +8774,17 @@
         read-only/append-only.
       </desc>
     </const>
-    <const name="Fixed" value="0x1000">
+    <const name="VmdkESX" value="0x08">
+      <desc>
+        VMDK format variant used on ESX products.
+      </desc>
+    </const>
+    <const name="Fixed" value="0x10000">
       <desc>
         Fixed image. Only allowed for base images.
       </desc>
     </const>
-    <const name="Diff" value="0x2000">
+    <const name="Diff" value="0x20000">
       <desc>
         Fixed image. Only allowed for base images.
       </desc>
@@ -10893,7 +10904,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <enum
     name="NetworkAdapterType"
-    uuid="156b17b9-5d61-4d54-be90-62e37dda848d"
+    uuid="50c3dfd8-07ac-4a31-baac-519c828fbf97"
   >
     <desc>
       Network adapter type.
@@ -10902,10 +10913,21 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
     <const name="Null"                  value="0">
       <desc>Null value (never used by the API).</desc>
     </const>
-    <const name="Am79C970A"             value="1"/>
-    <const name="Am79C973"              value="2"/>
-    <const name="I82540EM"              value="3"/>
-    <const name="I82543GC"              value="4"/>
+    <const name="Am79C970A"             value="1">
+        <desc>AMD PCNet-PCI II network card (Am79C970A).</desc>
+    </const>
+    <const name="Am79C973"              value="2">
+        <desc>AMD PCNet-FAST III network card (Am79C973).</desc>
+    </const>
+    <const name="I82540EM"              value="3">
+        <desc>Intel PRO/1000 MT Desktop network card (82540EM).</desc>
+    </const>
+    <const name="I82543GC"              value="4">
+        <desc>Intel PRO/1000 T Server network card (82543GC).</desc>
+    </const>
+    <const name="I82545EM"              value="5">
+        <desc>Intel PRO/1000 MT Server network card (82545EM).</desc>
+    </const>
   </enum>
 
   <interface
@@ -11134,12 +11156,11 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
     <attribute name="path" type="wstring">
       <desc>
-        Path to the serial port's pipe on the host when <link to="#hostMode"/> is
+        Path to the serial port's pipe on the host when <link to="ISerialPort::hostMode"/> is
         PortMode_HostPipe, or the host serial device name when
-        <link to="#hostMode"/> is PortMode_HostDevice. In either of the above
-        cases, setting a @c  null or an empty string as the attribute's value
-        will result into an error. Otherwise, the value of this property is
-        ignored.
+        <link to="ISerialPort::hostMode"/> is PortMode_HostDevice. For both
+        cases, setting a @c null or empty string as the attribute's value
+        is an error. Otherwise, the value of this property is ignored.
       </desc>
     </attribute>
 
@@ -12718,15 +12739,13 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
     <attribute name="minPortCount" type="unsigned long" readonly="yes">
       <desc>
-        Minimum number of ports which can be set with
-        <link to="IStorageController::SetPortCount"/>.
+        Minimum number of ports that <link to="IStorageController::portCount"/> can be set to.
       </desc>
     </attribute>
 
     <attribute name="maxPortCount" type="unsigned long" readonly="yes">
       <desc>
-        Maximum number of ports which can be set with
-        <link to="IStorageController::SetPortCount"/>.
+        Maximum number of ports that <link to="IStorageController::portCount"/> can be set to.
       </desc>
     </attribute>
 
@@ -12739,9 +12758,9 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
     <attribute name="portCount" type="unsigned long">
       <desc>
         The number of currently usable ports on the controller.
-        The minimum and maximum number of ports for one controller type can
-        be determined with <link to="IStorageController::GetMinPortCount"/>
-        and <link to="IStorageController::GetMaxPortCount"/>..
+        The minimum and maximum number of ports for one controller are
+        stored in <link to="IStorageController::minPortCount"/>
+        and <link to="IStorageController::maxPortCount"/>.
       </desc>
     </attribute>
 

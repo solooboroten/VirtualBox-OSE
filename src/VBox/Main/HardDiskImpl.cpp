@@ -1,4 +1,4 @@
-/* $Id: HardDiskImpl.cpp 18388 2009-03-27 13:11:42Z vboxsync $ */
+/* $Id: HardDiskImpl.cpp 18813 2009-04-07 12:28:57Z vboxsync $ */
 
 /** @file
  *
@@ -2853,9 +2853,16 @@ HRESULT HardDisk::setLocation (CBSTR aLocation)
             }
 
             if (RT_FAILURE (vrc))
-                return setError (VBOX_E_IPRT_ERROR,
-                    tr ("Could not get the storage format of the hard disk "
-                        "'%s' (%Rrc)"), locationFull.raw(), vrc);
+            {
+                if (vrc == VERR_FILE_NOT_FOUND || vrc == VERR_PATH_NOT_FOUND)
+                    return setError (VBOX_E_FILE_ERROR,
+                        tr ("Could not find file for the hard disk "
+                            "'%s' (%Rrc)"), locationFull.raw(), vrc);
+                else
+                    return setError (VBOX_E_IPRT_ERROR,
+                        tr ("Could not get the storage format of the hard disk "
+                            "'%s' (%Rrc)"), locationFull.raw(), vrc);
+            }
 
             ComAssertRet (backendName != NULL && *backendName != '\0', E_FAIL);
 
@@ -3858,9 +3865,9 @@ DECLCALLBACK(int) HardDisk::taskThread (RTTHREAD thread, void *pvUser)
                     that->mm.vdProgress = task->progress;
 
                     unsigned start = chain->isForward() ?
-                        0 : chain->size() - 1;
+                        0 : (unsigned)chain->size() - 1;
                     unsigned end = chain->isForward() ?
-                        chain->size() - 1 : 0;
+                        (unsigned)chain->size() - 1 : 0;
 #if 0
                     LogFlow (("*** MERGE from %d to %d\n", start, end));
 #endif
