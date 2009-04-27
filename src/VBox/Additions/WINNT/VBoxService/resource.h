@@ -1,4 +1,4 @@
-/* $Id: resource.h 13462 2008-10-22 06:46:45Z vboxsync $ */
+/* $Id: resource.h $ */
 /** @file
  * VBoxService - Guest Additions Service, resource IDs.
  */

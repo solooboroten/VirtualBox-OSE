@@ -1,4 +1,4 @@
-/* $Id: VBoxVMInfoAdditions.h 33539 2008-07-21 12:21:29Z bird $ */
+/* $Id: VBoxVMInfoAdditions.h $ */
 /** @file
  *  VBoxUtil - Some tool functions.
  */

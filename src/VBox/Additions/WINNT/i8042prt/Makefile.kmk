@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 12624 2008-09-21 19:37:36Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the VirtualBox NT4 guest additions mouse driver.
 #

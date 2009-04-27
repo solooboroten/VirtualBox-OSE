@@ -1,4 +1,4 @@
-/* $Id: VBoxTimeSync.cpp 17272 2009-03-03 12:59:51Z vboxsync $ */
+/* $Id: VBoxTimeSync.cpp $ */
 /** @file
  * VBoxTimeSync - Virtual machine (guest) time synchronization with the host.
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxVMInfoNet.cpp 13462 2008-10-22 06:46:45Z vboxsync $ */
+/* $Id: VBoxVMInfoNet.cpp $ */
 /** @file
  * VBoxVMInfoNet - Network information for the host.
  */

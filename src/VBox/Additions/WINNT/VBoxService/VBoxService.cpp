@@ -1,4 +1,4 @@
-/* $Id: VBoxService.cpp 16954 2009-02-19 16:55:55Z vboxsync $ */
+/* $Id: VBoxService.cpp $ */
 /** @file
  * VBoxService - The Guest Additions Helper Service.
  */

@@ -25,7 +25,7 @@
 --  covered by the  GNU Public License.                                     --
 ------------------------------------------------------------------------------
 
---  $Id: zlib.ads,v 1.1 2004/11/15 16:42:25 bird Exp $
+--  $Id: zlib.ads $
 
 with Ada.Streams;
 

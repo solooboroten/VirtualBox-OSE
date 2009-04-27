@@ -1,4 +1,4 @@
-/* $Id: VBoxService.rc 13462 2008-10-22 06:46:45Z vboxsync $ */
+/* $Id: VBoxService.rc $ */
 /** @file
  * VBoxService - Resouce file containing version info and icon.
  */

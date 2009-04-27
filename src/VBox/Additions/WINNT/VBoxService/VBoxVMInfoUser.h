@@ -1,4 +1,4 @@
-/* $Id: VBoxVMInfoUser.h 14409 2008-11-20 13:19:20Z vboxsync $ */
+/* $Id: VBoxVMInfoUser.h $ */
 /** @file
  * VBoxVMInfoUser - User information for the host.
  */

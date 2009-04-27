@@ -1,5 +1,5 @@
 
-/* $Id: VBoxUtil.cpp 33909 2008-07-31 09:30:59Z andy $ */
+/* $Id: VBoxUtil.cpp $ */
 /** @file
  * VBoxUtil - Some tool functions.
  */
