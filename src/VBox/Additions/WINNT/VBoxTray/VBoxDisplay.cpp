@@ -232,6 +232,10 @@ static BOOL ResizeDisplayDevice(ULONG Id, DWORD Width, DWORD Height, DWORD BitsP
         
             paDisplayDevices[DevNum] = DisplayDevice;
             
+            /* First try to get the video mode stored in registry (ENUM_REGISTRY_SETTINGS).
+             * A secondary display could be not active at the moment and would not have
+             * a current video mode (ENUM_CURRENT_SETTINGS).
+             */
             ZeroMemory(&paDeviceModes[DevNum], sizeof(DEVMODE));
             paDeviceModes[DevNum].dmSize = sizeof(DEVMODE);
             if (!EnumDisplaySettings((LPSTR)DisplayDevice.DeviceName,
@@ -241,9 +245,26 @@ static BOOL ResizeDisplayDevice(ULONG Id, DWORD Width, DWORD Height, DWORD BitsP
                 return FALSE;
             }
             
-            Log(("%dx%d at %d,%d\n",
+            if (   paDeviceModes[DevNum].dmPelsWidth == 0
+                || paDeviceModes[DevNum].dmPelsHeight == 0)
+            {
+                /* No ENUM_REGISTRY_SETTINGS yet. Seen on Windows 7 after installation.
+                 * Get the current video mode then.
+                 */
+                ZeroMemory(&paDeviceModes[DevNum], sizeof(DEVMODE));
+                paDeviceModes[DevNum].dmSize = sizeof(DEVMODE);
+                if (!EnumDisplaySettings((LPSTR)DisplayDevice.DeviceName,
+                     ENUM_CURRENT_SETTINGS, &paDeviceModes[DevNum]))
+                {
+                    Log(("EnumDisplaySettings(ENUM_CURRENT_SETTINGS) err %d\n", GetLastError ()));
+                    return FALSE;
+                }
+            }
+            
+            Log(("%dx%dx%d at %d,%d\n",
                     paDeviceModes[DevNum].dmPelsWidth,
                     paDeviceModes[DevNum].dmPelsHeight,
+                    paDeviceModes[DevNum].dmBitsPerPel,
                     paDeviceModes[DevNum].dmPosition.x,
                     paDeviceModes[DevNum].dmPosition.y));
                     
@@ -311,16 +332,25 @@ static BOOL ResizeDisplayDevice(ULONG Id, DWORD Width, DWORD Height, DWORD BitsP
         paDeviceModes[i].dmPelsWidth  = paRects[i].right - paRects[i].left;
         paDeviceModes[i].dmPelsHeight = paRects[i].bottom - paRects[i].top;
         
-        paDeviceModes[i].dmFields = DM_POSITION | DM_PELSHEIGHT | DM_PELSWIDTH;
+        /* On Windows 7 one must specify DM_BITSPERPEL.
+         * Note that the current mode dmBitsPerPel is already in the DEVMODE structure.
+         */
+        paDeviceModes[i].dmFields = DM_POSITION | DM_PELSHEIGHT | DM_PELSWIDTH | DM_BITSPERPEL;
         
         if (   i == Id
             && BitsPerPixel != 0)
         {
-            paDeviceModes[i].dmFields |= DM_BITSPERPEL;
+            /* Change dmBitsPerPel if requested. */
             paDeviceModes[i].dmBitsPerPel = BitsPerPixel;
         }
 
-        Log(("calling pfnChangeDisplaySettingsEx %x\n", gCtx.pfnChangeDisplaySettingsEx));     
+        Log(("calling pfnChangeDisplaySettingsEx %x: %dx%dx%d at %d,%d\n",
+              gCtx.pfnChangeDisplaySettingsEx,
+              paDeviceModes[i].dmPelsWidth,
+              paDeviceModes[i].dmPelsHeight,
+              paDeviceModes[i].dmBitsPerPel,
+              paDeviceModes[i].dmPosition.x,
+              paDeviceModes[i].dmPosition.y));
 
         gCtx.pfnChangeDisplaySettingsEx((LPSTR)paDisplayDevices[i].DeviceName, 
                                         &paDeviceModes[i], NULL, CDS_NORESET | CDS_UPDATEREGISTRY, NULL); 
