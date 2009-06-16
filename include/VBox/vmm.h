@@ -34,9 +34,10 @@
 #include <VBox/types.h>
 #include <VBox/vmapi.h>
 #include <VBox/sup.h>
+#include <VBox/log.h>
 #include <iprt/stdarg.h>
 
-__BEGIN_DECLS
+RT_C_DECLS_BEGIN
 
 /** @defgroup grp_vmm       The Virtual Machine Monitor API
  * @{
@@ -93,6 +94,8 @@ typedef enum VMMCALLHOST
     VMMCALLHOST_PGM_MAP_CHUNK,
     /** Allocates more handy pages. */
     VMMCALLHOST_PGM_ALLOCATE_HANDY_PAGES,
+    /** Acquire the MM hypervisor heap lock. */
+    VMMCALLHOST_MMHYPER_LOCK,
     /** Replay the REM handler notifications. */
     VMMCALLHOST_REM_REPLAY_HANDLER_NOTIFICATIONS,
     /** Flush the GC/R0 logger. */
@@ -109,10 +112,23 @@ typedef enum VMMCALLHOST
     VMMCALLHOST_32BIT_HACK = 0x7fffffff
 } VMMCALLHOST;
 
-RTRCPTR              VMMGetStackRC(PVM pVM);
-VMCPUID              VMMGetCpuId(PVM pVM);
-PVMCPU               VMMGetCpu(PVM pVM);
-VMMDECL(PVMCPU)      VMMGetCpuEx(PVM pVM, RTCPUID idCpu);
+/**
+ * VMMR3AtomicExecuteHandler callback function.
+ *
+ * @returns VBox status code.
+ * @param   pVM     Pointer to the shared VM structure.
+ * @param   pvUser  User specified argument
+ */
+typedef DECLCALLBACK(int) FNATOMICHANDLER(PVM pVM, void *pvUser);
+/** Pointer to a FNMMATOMICHANDLER(). */
+typedef FNATOMICHANDLER *PFNATOMICHANDLER;
+
+
+VMMDECL(RTRCPTR)     VMMGetStackRC(PVM pVM);
+VMMDECL(VMCPUID)     VMMGetCpuId(PVM pVM);
+VMMDECL(PVMCPU)      VMMGetCpu(PVM pVM);
+VMMDECL(PVMCPU)      VMMGetCpu0(PVM pVM);
+VMMDECL(PVMCPU)      VMMGetCpuById(PVM pVM, VMCPUID idCpu);
 VMMDECL(uint32_t)    VMMGetSvnRev(void);
 VMMDECL(VMMSWITCHER) VMMGetSwitcher(PVM pVM);
 
@@ -123,7 +139,8 @@ VMMDECL(VMMSWITCHER) VMMGetSwitcher(PVM pVM);
  * using hardware assisted virtualization.
  *
  * @returns true / false.
- * @param   pVM     Pointer to the shared VM structure. */
+ * @param   pVM     Pointer to the shared VM structure.
+ */
 #define VMMIsHwVirtExtForced(pVM)   ((pVM)->fHwVirtExtForced)
 
 
@@ -147,20 +164,20 @@ VMMR3DECL(int)      VMMR3GetImportRC(PVM pVM, const char *pszSymbol, PRTRCPTR pR
 VMMR3DECL(int)      VMMR3SelectSwitcher(PVM pVM, VMMSWITCHER enmSwitcher);
 VMMR3DECL(int)      VMMR3DisableSwitcher(PVM pVM);
 VMMR3DECL(RTR0PTR)  VMMR3GetHostToGuestSwitcher(PVM pVM, VMMSWITCHER enmSwitcher);
-VMMR3DECL(int)      VMMR3RawRunGC(PVM pVM);
-VMMR3DECL(int)      VMMR3HwAccRunGC(PVM pVM, RTCPUID idCpu);
+VMMR3DECL(int)      VMMR3RawRunGC(PVM pVM, PVMCPU pVCpu);
+VMMR3DECL(int)      VMMR3HwAccRunGC(PVM pVM, PVMCPU pVCpu);
 VMMR3DECL(int)      VMMR3CallRC(PVM pVM, RTRCPTR RCPtrEntry, unsigned cArgs, ...);
 VMMR3DECL(int)      VMMR3CallRCV(PVM pVM, RTRCPTR RCPtrEntry, unsigned cArgs, va_list args);
 VMMR3DECL(int)      VMMR3CallR0(PVM pVM, uint32_t uOperation, uint64_t u64Arg, PSUPVMMR0REQHDR pReqHdr);
-VMMR3DECL(int)      VMMR3ResumeHyper(PVM pVM);
-VMMR3DECL(void)     VMMR3FatalDump(PVM pVM, int rcErr);
-VMMR3DECL(int)      VMMR3Lock(PVM pVM);
-VMMR3DECL(int)      VMMR3Unlock(PVM pVM);
-VMMR3DECL(RTNATIVETHREAD) VMMR3LockGetOwner(PVM pVM);
-VMMR3DECL(bool)     VMMR3LockIsOwner(PVM pVM);
+VMMR3DECL(int)      VMMR3ResumeHyper(PVM pVM, PVMCPU pVCpu);
+VMMR3DECL(void)     VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr);
 VMMR3DECL(void)     VMMR3YieldSuspend(PVM pVM);
 VMMR3DECL(void)     VMMR3YieldStop(PVM pVM);
 VMMR3DECL(void)     VMMR3YieldResume(PVM pVM);
+VMMR3DECL(void)     VMMR3SendSipi(PVM pVM, VMCPUID idCpu, uint32_t uVector);
+VMMR3DECL(void)     VMMR3SendInitIpi(PVM pVM, VMCPUID idCpu);
+VMMR3DECL(int)      VMMR3AtomicExecuteHandler(PVM pVM, PFNATOMICHANDLER pfnHandler, void *pvUser);
+VMMR3DECL(int)      VMMR3ReadR0Stack(PVM pVM, VMCPUID idCpu, RTHCUINTPTR pAddress, void *pvBuf, size_t cbRead);
 /** @} */
 #endif /* IN_RING3 */
 
@@ -192,12 +209,18 @@ typedef enum VMMR0OPERATION
     VMMR0_DO_GVMM_SCHED_HALT,
     /** Call GVMMR0SchedWakeUp(). */
     VMMR0_DO_GVMM_SCHED_WAKE_UP,
+    /** Call GVMMR0SchedPoke(). */
+    VMMR0_DO_GVMM_SCHED_POKE,
+    /** Call GVMMR0SchedWakeUpAndPokeCpus(). */
+    VMMR0_DO_GVMM_SCHED_WAKE_UP_AND_POKE_CPUS,
     /** Call GVMMR0SchedPoll(). */
     VMMR0_DO_GVMM_SCHED_POLL,
     /** Call GVMMR0QueryStatistics(). */
     VMMR0_DO_GVMM_QUERY_STATISTICS,
     /** Call GVMMR0ResetStatistics(). */
     VMMR0_DO_GVMM_RESET_STATISTICS,
+    /** Call GVMMR0RegisterVCpu(). */
+    VMMR0_DO_GVMM_REGISTER_VMCPU,
 
     /** Call VMMR0 Per VM Init. */
     VMMR0_DO_VMMR0_INIT,
@@ -293,12 +316,18 @@ typedef struct GCFGMVALUEREQ
 typedef GCFGMVALUEREQ *PGCFGMVALUEREQ;
 
 VMMR0DECL(int)      VMMR0EntryInt(PVM pVM, VMMR0OPERATION enmOperation, void *pvArg);
-VMMR0DECL(void)     VMMR0EntryFast(PVM pVM, unsigned idCpu, VMMR0OPERATION enmOperation);
-VMMR0DECL(int)      VMMR0EntryEx(PVM pVM, VMMR0OPERATION enmOperation, PSUPVMMR0REQHDR pReq, uint64_t u64Arg, PSUPDRVSESSION);
+VMMR0DECL(void)     VMMR0EntryFast(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperation);
+VMMR0DECL(int)      VMMR0EntryEx(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperation, PSUPVMMR0REQHDR pReq, uint64_t u64Arg, PSUPDRVSESSION);
 VMMR0DECL(int)      VMMR0TermVM(PVM pVM, PGVM pGVM);
 VMMR0DECL(int)      VMMR0CallHost(PVM pVM, VMMCALLHOST enmOperation, uint64_t uArg);
+
+#ifdef LOG_ENABLED
 VMMR0DECL(void)     VMMR0LogFlushDisable(PVMCPU pVCpu);
 VMMR0DECL(void)     VMMR0LogFlushEnable(PVMCPU pVCpu);
+#else
+#define             VMMR0LogFlushDisable(pVCpu)     do { } while(0)
+#define             VMMR0LogFlushEnable(pVCpu)      do { } while(0)
+#endif
 
 /** @} */
 
@@ -319,7 +348,7 @@ VMMRCDECL(void)     VMMGCLogFlushIfFull(PVM pVM);
 
 
 /** @} */
-__END_DECLS
+RT_C_DECLS_END
 
 #endif
 

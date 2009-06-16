@@ -33,7 +33,7 @@
 #include <iprt/cdefs.h>
 #include <iprt/types.h>
 
-__BEGIN_DECLS
+RT_C_DECLS_BEGIN
 
 /** @defgroup grp_rt_err            RTErr - Status Codes
  * @ingroup grp_rt
@@ -360,7 +360,9 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_THREAD_NOT_WAITABLE            (-30)
 /** Pagetable not present. */
 #define VERR_PAGE_TABLE_NOT_PRESENT         (-31)
-
+/** Invalid context.
+ * Typically an API was used by the wrong thread. */
+#define VERR_INVALID_CONTEXT                (-32)
 /** The per process timer is busy. */
 #define VERR_TIMER_BUSY                     (-33)
 /** Address conflict. */
@@ -569,6 +571,25 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_IS_A_DIRECTORY                 (-127)
 /** Tried to grow a file beyond the limit imposed by the process or the filesystem. */
 #define VERR_FILE_TOO_BIG                   (-128)
+/** No pending request the aio context has to wait for completion. */
+#define VERR_FILE_AIO_NO_REQUEST            (-129)
+/** The request could not be canceled or prepared for another transfer
+ *  because it is still in progress. */
+#define VERR_FILE_AIO_IN_PROGRESS           (-130)
+/** The request could not be canceled because it already completed. */
+#define VERR_FILE_AIO_COMPLETED             (-131)
+/** The I/O context couldn't be destroyed because there are still pending requests. */
+#define VERR_FILE_AIO_BUSY                  (-132)
+/** The requests couldn't be submitted because that would exceed the capacity of the context. */
+#define VERR_FILE_AIO_LIMIT_EXCEEDED        (-133)
+/** The request was canceled. */
+#define VERR_FILE_AIO_CANCELED              (-134)
+/** The request wasn't submitted so it can't be canceled. */
+#define VERR_FILE_AIO_NOT_SUBMITTED         (-135)
+/** A request was not prepared and thus could not be submitted. */
+#define VERR_FILE_AIO_NOT_PREPARED          (-136)
+/** Not all requests could be submitted due to ressource shortage. */
+#define VERR_FILE_AIO_INSUFFICIENT_RESSOURCES (-137)
 /** @} */
 
 
@@ -985,11 +1006,25 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_CACHE_EMPTY                        (-851)
 /** @} */
 
+/** @name RTS3 status codes
+ * @{ */
+/** Access denied error */
+#define VERR_S3_ACCESS_DENIED                   (-875)
+/** The bucket/key wasn't found */
+#define VERR_S3_NOT_FOUND                       (-876)
+/** Bucket already exists. */
+#define VERR_S3_BUCKET_ALREADY_EXISTS           (-877)
+/** Can't delete bucket with keys. */
+#define VERR_S3_BUCKET_NOT_EMPTY                (-878)
+/** The current operation was canceled */
+#define VERR_S3_CANCELED                        (-879)
+/** @} */
+
 /* SED-END */
 
 /** @} */
 
-__END_DECLS
+RT_C_DECLS_END
 
 #endif
 

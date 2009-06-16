@@ -1,4 +1,4 @@
-/* $Id: VmdkHDDCore.cpp 18822 2009-04-07 13:22:57Z vboxsync $ */
+/* $Id: VmdkHDDCore.cpp 20640 2009-06-16 16:13:14Z vboxsync $ */
 /** @file
  * VMDK Disk image, Core Code.
  */
@@ -431,14 +431,14 @@ typedef struct VMDKIMAGE
     /** Async I/O interface callbacks. */
     PVDINTERFACEASYNCIO pInterfaceAsyncIOCallbacks;
     /**
-     * Pointer to an array of task handles for task submission.
+     * Pointer to an array of segment entries for async I/O.
      * This is an optimization because the task number to submit is not known
      * and allocating/freeing an array in the read/write functions every time
      * is too expensive.
      */
-    void            **apTask;
-    /** Entries available in the task handle array. */
-    unsigned        cTask;
+    PPDMDATASEG     paSegments;
+    /** Entries available in the segments array. */
+    unsigned        cSegments;
 
     /** Open flags passed by VBoxHD layer. */
     unsigned        uOpenFlags;
@@ -583,6 +583,7 @@ static int vmdkFileOpen(PVMDKIMAGE pImage, PVMDKFILE *ppVmdkFile,
                                                          pImage->uOpenFlags & VD_OPEN_FLAGS_READONLY
                                                            ? true
                                                            : false,
+                                                         NULL,
                                                          &pVmdkFile->pStorage);
         pVmdkFile->fAsyncIO = true;
     }
@@ -669,9 +670,9 @@ DECLINLINE(int) vmdkFileReadAt(PVMDKFILE pVmdkFile,
     PVMDKIMAGE pImage = pVmdkFile->pImage;
 
     if (pVmdkFile->fAsyncIO)
-        return pImage->pInterfaceAsyncIOCallbacks->pfnRead(pImage->pInterfaceAsyncIO->pvUser,
-                                                           pVmdkFile->pStorage, uOffset,
-                                                           cbToRead, pvBuf, pcbRead);
+        return pImage->pInterfaceAsyncIOCallbacks->pfnReadSync(pImage->pInterfaceAsyncIO->pvUser,
+                                                               pVmdkFile->pStorage, uOffset,
+                                                               cbToRead, pvBuf, pcbRead);
     else
         return RTFileReadAt(pVmdkFile->File, uOffset, pvBuf, cbToRead, pcbRead);
 }
@@ -686,9 +687,9 @@ DECLINLINE(int) vmdkFileWriteAt(PVMDKFILE pVmdkFile,
     PVMDKIMAGE pImage = pVmdkFile->pImage;
 
     if (pVmdkFile->fAsyncIO)
-        return pImage->pInterfaceAsyncIOCallbacks->pfnWrite(pImage->pInterfaceAsyncIO->pvUser,
-                                                            pVmdkFile->pStorage, uOffset,
-                                                            cbToWrite, pvBuf, pcbWritten);
+        return pImage->pInterfaceAsyncIOCallbacks->pfnWriteSync(pImage->pInterfaceAsyncIO->pvUser,
+                                                                pVmdkFile->pStorage, uOffset,
+                                                                cbToWrite, pvBuf, pcbWritten);
     else
         return RTFileWriteAt(pVmdkFile->File, uOffset, pvBuf, cbToWrite, pcbWritten);
 }
@@ -729,8 +730,8 @@ DECLINLINE(int) vmdkFileFlush(PVMDKFILE pVmdkFile)
     PVMDKIMAGE pImage = pVmdkFile->pImage;
 
     if (pVmdkFile->fAsyncIO)
-        return pImage->pInterfaceAsyncIOCallbacks->pfnFlush(pImage->pInterfaceAsyncIO->pvUser,
-                                                            pVmdkFile->pStorage);
+        return pImage->pInterfaceAsyncIOCallbacks->pfnFlushSync(pImage->pInterfaceAsyncIO->pvUser,
+                                                                pVmdkFile->pStorage);
     else
         return RTFileFlush(pVmdkFile->File);
 }
@@ -783,8 +784,11 @@ DECLINLINE(int) vmdkFileInflateAt(PVMDKFILE pVmdkFile,
         uint64_t uCompOffset, cbComp;
         VMDKINFLATESTATE InflateState;
         size_t cbActuallyRead;
+        size_t cbMarker = sizeof(Marker);
 
-        rc = RTFileReadAt(pVmdkFile->File, uOffset, &Marker, sizeof(Marker), NULL);
+        if (uMarker == VMDK_MARKER_IGNORE)
+            cbMarker -= sizeof(Marker.uType);
+        rc = RTFileReadAt(pVmdkFile->File, uOffset, &Marker, cbMarker, NULL);
         if (RT_FAILURE(rc))
             return rc;
         Marker.uSector = RT_LE2H_U64(Marker.uSector);
@@ -3663,6 +3667,15 @@ static int vmdkCreateRegularImage(PVMDKIMAGE pImage, uint64_t cbSize,
         cbOffset += cbExtent;
     }
 
+    if (pImage->uImageFlags & VD_VMDK_IMAGE_FLAGS_ESX)
+    {
+        /* VirtualBox doesn't care, but VMWare ESX freaks out if the wrong
+         * controller type is set in an image. */
+        rc = vmdkDescDDBSetStr(pImage, &pImage->Descriptor, "ddb.adapterType", "lsilogic");
+        if (RT_FAILURE(rc))
+            return vmdkError(pImage, rc, RT_SRC_POS, N_("VMDK: could not set controller type to lsilogic in '%s'"), pImage->pszFilename);
+    }
+
     const char *pszDescType = NULL;
     if (uImageFlags & VD_IMAGE_FLAGS_FIXED)
     {
@@ -4499,6 +4512,10 @@ static int vmdkCreate(const char *pszFilename, uint64_t cbSize,
         || strchr(pszFilename, '"')
         || !VALID_PTR(pPCHSGeometry)
         || !VALID_PTR(pLCHSGeometry)
+#ifndef VBOX_WITH_VMDK_ESX
+        || (    uImageFlags & VD_VMDK_IMAGE_FLAGS_ESX
+            &&  !(uImageFlags & VD_IMAGE_FLAGS_FIXED))
+#endif
         || (   (uImageFlags & VD_VMDK_IMAGE_FLAGS_STREAM_OPTIMIZED)
             && (uImageFlags & ~(VD_VMDK_IMAGE_FLAGS_STREAM_OPTIMIZED | VD_IMAGE_FLAGS_DIFF))))
     {
@@ -5049,7 +5066,7 @@ static int vmdkWrite(void *pBackendData, uint64_t uOffset, const void *pvBuf,
                 {
                     uint32_t uSectorInGrain = uSectorExtentRel % pExtent->cSectorsPerGrain;
                     uSectorExtentAbs -= uSectorInGrain;
-                    uint64_t uLBA;
+                    uint64_t uLBA = uSectorExtentRel;
                     if (    pExtent->uGrainSector != uSectorExtentAbs
                         ||  pExtent->uGrainSector != pExtent->uLastGrainSector)
                     {
@@ -5736,7 +5753,7 @@ static int vmdkAsyncRead(void *pvBackendData, uint64_t uOffset, size_t cbRead,
     PVMDKIMAGE pImage = (PVMDKIMAGE)pvBackendData;
     PVMDKEXTENT pExtent;
     int rc = VINF_SUCCESS;
-    unsigned cTasksToSubmit = 0;
+    unsigned cSegments = 0;
     PPDMDATASEG paSegCurrent = paSeg;
     size_t cbLeftInCurrentSegment = paSegCurrent->cbSeg;
     size_t uOffsetInCurrentSegment = 0;
@@ -5769,9 +5786,9 @@ static int vmdkAsyncRead(void *pvBackendData, uint64_t uOffset, size_t cbRead,
             goto out;
         }
 
-        /* Clip read range to remain in this extent. */
+        /* Clip write range to remain in this extent. */
         cbToRead = RT_MIN(cbRead, VMDK_SECTOR2BYTE(pExtent->uSectorOffset + pExtent->cNominalSectors - uSectorExtentRel));
-        /* Clip read range to remain into current data segment. */
+        /* Clip write range to remain into current data segment. */
         cbToRead = RT_MIN(cbToRead, cbLeftInCurrentSegment);
 
         switch (pExtent->enmType)
@@ -5779,29 +5796,17 @@ static int vmdkAsyncRead(void *pvBackendData, uint64_t uOffset, size_t cbRead,
             case VMDKETYPE_VMFS:
             case VMDKETYPE_FLAT:
             {
-                /* Setup new task. */
-                void *pTask;
-                rc = pImage->pInterfaceAsyncIOCallbacks->pfnPrepareRead(pImage->pInterfaceAsyncIO->pvUser, pExtent->pFile->pStorage,
-                                                                        VMDK_SECTOR2BYTE(uSectorExtentRel),
-                                                                        (uint8_t *)paSegCurrent->pvSeg + uOffsetInCurrentSegment,
-                                                                        cbToRead, &pTask);
-                if (RT_FAILURE(rc))
-                {
-                    AssertMsgFailed(("Preparing read failed rc=%Rrc\n", rc));
-                    goto out;
-                }
-
                 /* Check for enough room first. */
-                if (cTasksToSubmit >= pImage->cTask)
+                if (RT_LIKELY(cSegments >= pImage->cSegments))
                 {
                     /* We reached maximum, resize array. Try to realloc memory first. */
-                    void **apTaskNew = (void **)RTMemRealloc(pImage->apTask, (cTasksToSubmit + 10)*sizeof(void *));
+                    PPDMDATASEG paSegmentsNew = (PPDMDATASEG)RTMemRealloc(pImage->paSegments, (cSegments + 10)*sizeof(PDMDATASEG));
 
-                    if (!apTaskNew)
+                    if (!paSegmentsNew)
                     {
                         /* We failed. Allocate completely new. */
-                        apTaskNew = (void **)RTMemAllocZ((cTasksToSubmit + 10)* sizeof(void *));
-                        if (!apTaskNew)
+                        paSegmentsNew = (PPDMDATASEG)RTMemAllocZ((cSegments + 10)* sizeof(PDMDATASEG));
+                        if (!paSegmentsNew)
                         {
                             /* Damn, we are out of memory. */
                             rc = VERR_NO_MEMORY;
@@ -5809,23 +5814,24 @@ static int vmdkAsyncRead(void *pvBackendData, uint64_t uOffset, size_t cbRead,
                         }
 
                         /* Copy task handles over. */
-                        for (unsigned i = 0; i < cTasksToSubmit; i++)
-                            apTaskNew[i] = pImage->apTask[i];
+                        for (unsigned i = 0; i < cSegments; i++)
+                            paSegmentsNew[i] = pImage->paSegments[i];
 
                         /* Free old memory. */
-                        RTMemFree(pImage->apTask);
+                        RTMemFree(pImage->paSegments);
                     }
 
-                    pImage->cTask = cTasksToSubmit + 10;
-                    pImage->apTask = apTaskNew;
+                    pImage->cSegments = cSegments + 10;
+                    pImage->paSegments = paSegmentsNew;
                 }
 
-                pImage->apTask[cTasksToSubmit] = pTask;
-                cTasksToSubmit++;
+                pImage->paSegments[cSegments].cbSeg = cbToRead;
+                pImage->paSegments[cSegments].pvSeg = (uint8_t *)paSegCurrent->pvSeg + uOffsetInCurrentSegment;
+                cSegments++;
                 break;
             }
             case VMDKETYPE_ZERO:
-                memset((uint8_t *)paSegCurrent->pvSeg + uOffsetInCurrentSegment, 0, cbToRead);
+                /* Nothing left to do. */
                 break;
             default:
                 AssertMsgFailed(("Unsupported extent type %u\n", pExtent->enmType));
@@ -5845,21 +5851,21 @@ static int vmdkAsyncRead(void *pvBackendData, uint64_t uOffset, size_t cbRead,
         }
     }
 
-    AssertMsg(cbRead == 0, ("No segment left but there is still data to read\n"));
+    AssertMsg(cbRead == 0, ("No segment left but there is still data to write\n"));
 
-    if (cTasksToSubmit == 0)
+    if (cSegments == 0)
     {
         /* The request was completely in a ZERO extent nothing to do. */
         rc = VINF_VD_ASYNC_IO_FINISHED;
     }
     else
     {
-        /* Submit tasks. */
-        rc = pImage->pInterfaceAsyncIOCallbacks->pfnTasksSubmit(pImage->pInterfaceAsyncIO->pvUser,
-                                                                pImage->apTask, cTasksToSubmit,
-                                                                NULL, pvUser,
-                                                                NULL /* Nothing required after read. */);
-        AssertMsgRC(rc, ("Failed to enqueue tasks rc=%Rrc\n", rc));
+        /* Start the write */
+        void *pTask;
+        rc = pImage->pInterfaceAsyncIOCallbacks->pfnReadAsync(pImage->pInterfaceAsyncIO->pvUser,
+                                                               pExtent->pFile->pStorage, uOffset,
+                                                               pImage->paSegments, cSegments, cbRead,
+                                                               pvUser, &pTask);
     }
 
 out:
@@ -5873,7 +5879,7 @@ static int vmdkAsyncWrite(void *pvBackendData, uint64_t uOffset, size_t cbWrite,
     PVMDKIMAGE pImage = (PVMDKIMAGE)pvBackendData;
     PVMDKEXTENT pExtent;
     int rc = VINF_SUCCESS;
-    unsigned cTasksToSubmit = 0;
+    unsigned cSegments = 0;
     PPDMDATASEG paSegCurrent = paSeg;
     size_t cbLeftInCurrentSegment = paSegCurrent->cbSeg;
     size_t uOffsetInCurrentSegment = 0;
@@ -5916,29 +5922,17 @@ static int vmdkAsyncWrite(void *pvBackendData, uint64_t uOffset, size_t cbWrite,
             case VMDKETYPE_VMFS:
             case VMDKETYPE_FLAT:
             {
-                /* Setup new task. */
-                void *pTask;
-                rc = pImage->pInterfaceAsyncIOCallbacks->pfnPrepareWrite(pImage->pInterfaceAsyncIO->pvUser, pExtent->pFile->pStorage,
-                                                                         VMDK_SECTOR2BYTE(uSectorExtentRel),
-                                                                         (uint8_t *)paSegCurrent->pvSeg + uOffsetInCurrentSegment,
-                                                                         cbToWrite, &pTask);
-                if (RT_FAILURE(rc))
-                {
-                    AssertMsgFailed(("Preparing read failed rc=%Rrc\n", rc));
-                    goto out;
-                }
-
                 /* Check for enough room first. */
-                if (cTasksToSubmit >= pImage->cTask)
+                if (RT_LIKELY(cSegments >= pImage->cSegments))
                 {
                     /* We reached maximum, resize array. Try to realloc memory first. */
-                    void **apTaskNew = (void **)RTMemRealloc(pImage->apTask, (cTasksToSubmit + 10)*sizeof(void *));
+                    PPDMDATASEG paSegmentsNew = (PPDMDATASEG)RTMemRealloc(pImage->paSegments, (cSegments + 10)*sizeof(PDMDATASEG));
 
-                    if (!apTaskNew)
+                    if (!paSegmentsNew)
                     {
                         /* We failed. Allocate completely new. */
-                        apTaskNew = (void **)RTMemAllocZ((cTasksToSubmit + 10)* sizeof(void *));
-                        if (!apTaskNew)
+                        paSegmentsNew = (PPDMDATASEG)RTMemAllocZ((cSegments + 10)* sizeof(PDMDATASEG));
+                        if (!paSegmentsNew)
                         {
                             /* Damn, we are out of memory. */
                             rc = VERR_NO_MEMORY;
@@ -5946,19 +5940,20 @@ static int vmdkAsyncWrite(void *pvBackendData, uint64_t uOffset, size_t cbWrite,
                         }
 
                         /* Copy task handles over. */
-                        for (unsigned i = 0; i < cTasksToSubmit; i++)
-                            apTaskNew[i] = pImage->apTask[i];
+                        for (unsigned i = 0; i < cSegments; i++)
+                            paSegmentsNew[i] = pImage->paSegments[i];
 
                         /* Free old memory. */
-                        RTMemFree(pImage->apTask);
+                        RTMemFree(pImage->paSegments);
                     }
 
-                    pImage->cTask = cTasksToSubmit + 10;
-                    pImage->apTask = apTaskNew;
+                    pImage->cSegments = cSegments + 10;
+                    pImage->paSegments = paSegmentsNew;
                 }
 
-                pImage->apTask[cTasksToSubmit] = pTask;
-                cTasksToSubmit++;
+                pImage->paSegments[cSegments].cbSeg = cbToWrite;
+                pImage->paSegments[cSegments].pvSeg = (uint8_t *)paSegCurrent->pvSeg + uOffsetInCurrentSegment;
+                cSegments++;
                 break;
             }
             case VMDKETYPE_ZERO:
@@ -5982,27 +5977,26 @@ static int vmdkAsyncWrite(void *pvBackendData, uint64_t uOffset, size_t cbWrite,
         }
     }
 
-    AssertMsg(cbWrite == 0, ("No segment left but there is still data to read\n"));
+    AssertMsg(cbWrite == 0, ("No segment left but there is still data to write\n"));
 
-    if (cTasksToSubmit == 0)
+    if (cSegments == 0)
     {
         /* The request was completely in a ZERO extent nothing to do. */
         rc = VINF_VD_ASYNC_IO_FINISHED;
     }
     else
     {
-        /* Submit tasks. */
-        rc = pImage->pInterfaceAsyncIOCallbacks->pfnTasksSubmit(pImage->pInterfaceAsyncIO->pvUser,
-                                                                pImage->apTask, cTasksToSubmit,
-                                                                NULL, pvUser,
-                                                                NULL /* Nothing required after read. */);
-        AssertMsgRC(rc, ("Failed to enqueue tasks rc=%Rrc\n", rc));
+        /* Start the write */
+        void *pTask;
+        rc = pImage->pInterfaceAsyncIOCallbacks->pfnWriteAsync(pImage->pInterfaceAsyncIO->pvUser,
+                                                               pExtent->pFile->pStorage, uOffset,
+                                                               pImage->paSegments, cSegments, cbWrite,
+                                                               pvUser, &pTask);
     }
 
 out:
     LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
-
 }
 
 

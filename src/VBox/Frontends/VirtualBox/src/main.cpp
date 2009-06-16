@@ -40,23 +40,24 @@
 
 #include <QCleanlooksStyle>
 #include <QPlastiqueStyle>
-#include <qmessagebox.h>
-#include <qlocale.h>
-#include <qtranslator.h>
+#include <QMessageBox>
+#include <QLocale>
+#include <QTranslator>
 
 #include <iprt/err.h>
 #include <iprt/initterm.h>
 #include <iprt/process.h>
 #include <iprt/stream.h>
+#include <VBox/err.h>
 #ifdef VBOX_WITH_HARDENING
 # include <VBox/sup.h>
-#else
-# include <VBox/err.h>
 #endif
 
 #ifdef RT_OS_LINUX
 # include <unistd.h>
 #endif
+
+#include <cstdio>
 
 /* XXX Temporarily. Don't rely on ther user to hack the Makefile himsef! */
 QString g_QStrHintLinuxNoMemory = QApplication::tr(
@@ -78,6 +79,22 @@ QString g_QStrHintLinuxNoDriver = QApplication::tr(
   "as root. Users of Ubuntu, Fedora or Mandriva should install the DKMS "
   "package first. This package keeps track of Linux kernel changes and "
   "recompiles the vboxdrv kernel module if necessary."
+  );
+
+QString g_QStrHintOtherWrongDriverVersion = QApplication::tr(
+  "The VirtualBox kernel modules do not fit to this version of "
+  "VirtualBox. The installation of VirtualBox was apparently not "
+  "successful. It may help to completely uninstall and re-install "
+  "VirtualBox."
+  );
+
+QString g_QStrHintLinuxWrongDriverVersion = QApplication::tr(
+  "The VirtualBox kernel modules do not fit to this version of "
+  "VirtualBox. The installation of VirtualBox was apparently not "
+  "successful. Executing<br/><br/>"
+  "  <font color=blue>'/etc/init.d/vboxdrv setup'</font><br/><br/>"
+  "should fix that problem. Make sure that you don't mix the "
+  "OSE version and the PUEL version of VirtualBox."
   );
 
 QString g_QStrHintOtherNoDriver = QApplication::tr(
@@ -235,7 +252,11 @@ static void showHelp()
 # ifdef VBOX_WITH_DEBUGGER_GUI
             "  --dbg                      enable the GUI debug menu\n"
             "  --debug                    like --dbg and show debug windows at VM startup\n"
+            "  --debug-command-line       like --dbg and show command line window at VM startup\n"
+            "  --debug-statistics         like --dbg and show statistics window at VM startup\n"
             "  --no-debug                 disable the GUI debug menu and debug windows\n"
+            "  --start-paused             start the VM in the paused state\n"
+            "  --start-running            start the VM running (for overriding --debug*)\n"
             "\n"
             "The following environment variables are evaluated:\n"
             "  VBOX_GUI_DBG_ENABLED       enable the GUI debug menu if set\n"
@@ -540,11 +561,16 @@ int main (int argc, char **argv, char **envp)
                 msgText += g_QStrHintLinuxNoMemory;
                 break;
 # endif
-# if 0 /** @todo Enable after 2.2.0 (/ NLS unfreeze). */
             case VERR_VM_DRIVER_NOT_ACCESSIBLE:
                 msgText += QApplication::tr ("Kernel driver not accessible");
                 break;
-# endif
+            case VERR_VM_DRIVER_VERSION_MISMATCH:
+# ifdef RT_OS_LINUX
+                msgText += g_QStrHintLinuxWrongDriverVersion;
+# else
+                msgText += g_QStrHintOtherWrongDriverVersion;
+# endif 
+                break;
             default:
                 msgText += QApplication::tr (
                         "Unknown %2 error during initialization of the Runtime"
@@ -611,6 +637,13 @@ extern "C" DECLEXPORT(void) TrustedError (const char *pszWhere, SUPINITOP enmWha
                 msgText += g_QStrHintLinuxNoMemory;
             else
 # endif
+            if (rc == VERR_VM_DRIVER_VERSION_MISMATCH)
+# ifdef RT_OS_LINUX
+                msgText += g_QStrHintLinuxWrongDriverVersion;
+# else
+                msgText += g_QStrHintOtherWrongDriverVersion;
+# endif
+            else
                 msgText += g_QStrHintReinstall;
             break;
         case kSupInitOp_Integrity:

@@ -1,4 +1,4 @@
-/* $Id: VBoxInternalManage.cpp 18491 2009-03-29 01:40:31Z vboxsync $ */
+/* $Id: VBoxInternalManage.cpp 20629 2009-06-16 13:40:30Z vboxsync $ */
 /** @file
  * VBoxManage - The 'internalcommands' command.
  *
@@ -413,7 +413,7 @@ static int CmdLoadSyms(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox, C
      */
     ComPtr<IMachine> machine;
     /* assume it's a UUID */
-    rc = aVirtualBox->GetMachine(Guid(argv[0]), machine.asOutParam());
+    rc = aVirtualBox->GetMachine(Bstr(argv[0]), machine.asOutParam());
     if (FAILED(rc) || !machine)
     {
         /* must be a name */
@@ -1157,7 +1157,10 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
             else
                 RawDescriptor.pPartitions[i].cbPartition =  partitions.aPartitions[i].uSize * 512;
             RawDescriptor.pPartitions[i].uPartitionDataStart = partitions.aPartitions[i].uPartDataStart * 512;
-            RawDescriptor.pPartitions[i].cbPartitionData = partitions.aPartitions[i].cPartDataSectors * 512;
+            /** @todo the clipping below isn't 100% accurate, as it should
+             * actually clip to the track size. However that's easier said
+             * than done as figuring out the track size is heuristics. */
+            RawDescriptor.pPartitions[i].cbPartitionData = RT_MIN(partitions.aPartitions[i].cPartDataSectors, 63) * 512;
             if (RawDescriptor.pPartitions[i].cbPartitionData)
             {
                 Assert (RawDescriptor.pPartitions[i].cbPartitionData -

@@ -1,4 +1,4 @@
-/* $Id: tstGlobalConfig.cpp 11822 2008-08-29 14:21:03Z vboxsync $ */
+/* $Id: tstGlobalConfig.cpp 19454 2009-05-06 19:20:18Z vboxsync $ */
 /** @file
  * Ring-3 Management program for the GCFGM mock-up.
  */
@@ -106,7 +106,7 @@ int main(int argc, char **argv)
     if (RT_SUCCESS(rc))
     {
         Req.pSession = pSession;
-        rc = SUPCallVMMR0Ex(NIL_RTR0PTR, enmOp, 0, &Req.Hdr);
+        rc = SUPCallVMMR0Ex(NIL_RTR0PTR, NIL_VMCPUID, enmOp, 0, &Req.Hdr);
         if (RT_SUCCESS(rc))
         {
             if (enmOp == VMMR0_DO_GCFGM_QUERY_VALUE)

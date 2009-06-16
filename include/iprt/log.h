@@ -34,7 +34,7 @@
 #include <iprt/types.h>
 #include <iprt/stdarg.h>
 
-__BEGIN_DECLS
+RT_C_DECLS_BEGIN
 
 /** @defgroup grp_rt_log    RTLog - Logging
  * @ingroup grp_rt
@@ -302,6 +302,8 @@ typedef enum RTLOGFLAGS
     RTLOGFLAGS_REL_TS               = 0x00000040,
     /** Show decimal timestamps with PREFIX_TSC and PREFIX_TS */
     RTLOGFLAGS_DECIMAL_TS           = 0x00000080,
+    /** Log flushing disabled. */
+    RTLOGFLAGS_NO_FLUSH             = 0x00000100,
     /** New lines should be prefixed with the write and read lock counts. */
     RTLOGFLAGS_PREFIX_LOCK_COUNTS   = 0x00008000,
     /** New lines should be prefixed with the CPU id (ApicID on intel/amd). */
@@ -1688,7 +1690,7 @@ RTDECL(size_t)  RTLogBackdoorPrintfV(const char *pszFormat, va_list args);
 
 #endif /* VBOX */
 
-__END_DECLS
+RT_C_DECLS_END
 
 /** @} */
 

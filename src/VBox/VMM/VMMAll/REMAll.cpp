@@ -1,4 +1,4 @@
-/* $Id: REMAll.cpp 13832 2008-11-05 02:01:12Z vboxsync $ */
+/* $Id: REMAll.cpp 20431 2009-06-09 11:52:48Z vboxsync $ */
 /** @file
  * REM - Recompiled Execution Monitor, all Contexts part.
  */
@@ -25,6 +25,7 @@
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_REM
 #include <VBox/rem.h>
+#include <VBox/em.h>
 #include <VBox/vmm.h>
 #include "REMInternal.h"
 #include <VBox/vm.h>
@@ -40,24 +41,24 @@
  * Records a invlpg instruction for replaying upon REM entry.
  *
  * @returns VINF_SUCCESS on success.
- * @returns VERR_REM_FLUSHED_PAGES_OVERFLOW if a return to HC for flushing of
- *          recorded pages is required before the call can succeed.
  * @param   pVM         The VM handle.
  * @param   GCPtrPage   The
  */
 VMMDECL(int) REMNotifyInvalidatePage(PVM pVM, RTGCPTR GCPtrPage)
 {
-    if (pVM->rem.s.cInvalidatedPages < RT_ELEMENTS(pVM->rem.s.aGCPtrInvalidatedPages))
+    if (    pVM->rem.s.cInvalidatedPages < RT_ELEMENTS(pVM->rem.s.aGCPtrInvalidatedPages)
+        &&  EMTryEnterRemLock(pVM) == VINF_SUCCESS) /* if this fails, then we'll just flush the tlb as we don't want to waste time here. */
     {
         /*
          * We sync them back in REMR3State.
          */
         pVM->rem.s.aGCPtrInvalidatedPages[pVM->rem.s.cInvalidatedPages++] = GCPtrPage;
+        EMRemUnlock(pVM);
     }
     else
     {
         /* Tell the recompiler to flush its TLB. */
-        CPUMSetChangedFlags(pVM, CPUM_CHANGED_GLOBAL_TLB_FLUSH);
+        CPUMSetChangedFlags(VMMGetCpu(pVM), CPUM_CHANGED_GLOBAL_TLB_FLUSH);
         pVM->rem.s.cInvalidatedPages = 0;
     }
 
@@ -80,9 +81,52 @@ static void remFlushHandlerNotifications(PVM pVM)
 #else
     AssertReleaseMsgFailed(("Ring 3 call????.\n"));
 #endif
-    Assert(pVM->rem.s.cHandlerNotifications == 0);
 }
 
+
+/**
+ * Insert pending notification
+ *
+ * @param   pVM             VM Handle.
+ * @param   pRec            Notification record to insert
+ */
+static void remNotifyHandlerInsert(PVM pVM, PREMHANDLERNOTIFICATION pRec)
+{
+    uint32_t idxFree;
+    uint32_t idxNext;
+    PREMHANDLERNOTIFICATION pFree;
+
+    /* Fetch a free record. */
+    do
+    {
+        idxFree = pVM->rem.s.idxFreeList;
+        if (idxFree == (uint32_t)-1)
+        {
+            pFree = NULL;
+            break;
+        }
+        pFree = &pVM->rem.s.aHandlerNotifications[idxFree];  
+    } while (!ASMAtomicCmpXchgU32(&pVM->rem.s.idxFreeList, pFree->idxNext, idxFree));
+
+    if (!pFree)
+    {
+        remFlushHandlerNotifications(pVM);
+        return;
+    }
+
+    /* Copy the record. */
+    *pFree = *pRec;
+    pFree->idxSelf = idxFree; /* was trashed */
+
+    /* Insert it into the pending list. */
+    do
+    {
+        idxNext = pVM->rem.s.idxPendingList;
+        pFree->idxNext = idxNext;
+    } while (!ASMAtomicCmpXchgU32(&pVM->rem.s.idxPendingList, idxFree, idxNext));
+
+    VM_FF_SET(pVM, VM_FF_REM_HANDLER_NOTIFY);
+}
 
 /**
  * Notification about a successful PGMR3HandlerPhysicalRegister() call.
@@ -95,15 +139,13 @@ static void remFlushHandlerNotifications(PVM pVM)
  */
 VMMDECL(void) REMNotifyHandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler)
 {
-    if (pVM->rem.s.cHandlerNotifications >= RT_ELEMENTS(pVM->rem.s.aHandlerNotifications))
-        remFlushHandlerNotifications(pVM);
-    PREMHANDLERNOTIFICATION pRec = &pVM->rem.s.aHandlerNotifications[pVM->rem.s.cHandlerNotifications++];
-    pRec->enmKind = REMHANDLERNOTIFICATIONKIND_PHYSICAL_REGISTER;
-    pRec->u.PhysicalRegister.enmType = enmType;
-    pRec->u.PhysicalRegister.GCPhys = GCPhys;
-    pRec->u.PhysicalRegister.cb = cb;
-    pRec->u.PhysicalRegister.fHasHCHandler = fHasHCHandler;
-    VM_FF_SET(pVM, VM_FF_REM_HANDLER_NOTIFY);
+    REMHANDLERNOTIFICATION Rec;
+    Rec.enmKind = REMHANDLERNOTIFICATIONKIND_PHYSICAL_REGISTER;
+    Rec.u.PhysicalRegister.enmType = enmType;
+    Rec.u.PhysicalRegister.GCPhys = GCPhys;
+    Rec.u.PhysicalRegister.cb = cb;
+    Rec.u.PhysicalRegister.fHasHCHandler = fHasHCHandler;
+    remNotifyHandlerInsert(pVM, &Rec);
 }
 
 
@@ -119,16 +161,14 @@ VMMDECL(void) REMNotifyHandlerPhysicalRegister(PVM pVM, PGMPHYSHANDLERTYPE enmTy
  */
 VMMDECL(void) REMNotifyHandlerPhysicalDeregister(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhys, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM)
 {
-    if (pVM->rem.s.cHandlerNotifications >= RT_ELEMENTS(pVM->rem.s.aHandlerNotifications))
-        remFlushHandlerNotifications(pVM);
-    PREMHANDLERNOTIFICATION pRec = &pVM->rem.s.aHandlerNotifications[pVM->rem.s.cHandlerNotifications++];
-    pRec->enmKind = REMHANDLERNOTIFICATIONKIND_PHYSICAL_DEREGISTER;
-    pRec->u.PhysicalDeregister.enmType = enmType;
-    pRec->u.PhysicalDeregister.GCPhys = GCPhys;
-    pRec->u.PhysicalDeregister.cb = cb;
-    pRec->u.PhysicalDeregister.fHasHCHandler = fHasHCHandler;
-    pRec->u.PhysicalDeregister.fRestoreAsRAM = fRestoreAsRAM;
-    VM_FF_SET(pVM, VM_FF_REM_HANDLER_NOTIFY);
+    REMHANDLERNOTIFICATION Rec;
+    Rec.enmKind = REMHANDLERNOTIFICATIONKIND_PHYSICAL_DEREGISTER;
+    Rec.u.PhysicalDeregister.enmType = enmType;
+    Rec.u.PhysicalDeregister.GCPhys = GCPhys;
+    Rec.u.PhysicalDeregister.cb = cb;
+    Rec.u.PhysicalDeregister.fHasHCHandler = fHasHCHandler;
+    Rec.u.PhysicalDeregister.fRestoreAsRAM = fRestoreAsRAM;
+    remNotifyHandlerInsert(pVM, &Rec);
 }
 
 
@@ -145,17 +185,15 @@ VMMDECL(void) REMNotifyHandlerPhysicalDeregister(PVM pVM, PGMPHYSHANDLERTYPE enm
  */
 VMMDECL(void) REMNotifyHandlerPhysicalModify(PVM pVM, PGMPHYSHANDLERTYPE enmType, RTGCPHYS GCPhysOld, RTGCPHYS GCPhysNew, RTGCPHYS cb, bool fHasHCHandler, bool fRestoreAsRAM)
 {
-    if (pVM->rem.s.cHandlerNotifications >= RT_ELEMENTS(pVM->rem.s.aHandlerNotifications))
-        remFlushHandlerNotifications(pVM);
-    PREMHANDLERNOTIFICATION pRec = &pVM->rem.s.aHandlerNotifications[pVM->rem.s.cHandlerNotifications++];
-    pRec->enmKind = REMHANDLERNOTIFICATIONKIND_PHYSICAL_MODIFY;
-    pRec->u.PhysicalModify.enmType = enmType;
-    pRec->u.PhysicalModify.GCPhysOld = GCPhysOld;
-    pRec->u.PhysicalModify.GCPhysNew = GCPhysNew;
-    pRec->u.PhysicalModify.cb = cb;
-    pRec->u.PhysicalModify.fHasHCHandler = fHasHCHandler;
-    pRec->u.PhysicalModify.fRestoreAsRAM = fRestoreAsRAM;
-    VM_FF_SET(pVM, VM_FF_REM_HANDLER_NOTIFY);
+    REMHANDLERNOTIFICATION Rec;
+    Rec.enmKind = REMHANDLERNOTIFICATIONKIND_PHYSICAL_MODIFY;
+    Rec.u.PhysicalModify.enmType = enmType;
+    Rec.u.PhysicalModify.GCPhysOld = GCPhysOld;
+    Rec.u.PhysicalModify.GCPhysNew = GCPhysNew;
+    Rec.u.PhysicalModify.cb = cb;
+    Rec.u.PhysicalModify.fHasHCHandler = fHasHCHandler;
+    Rec.u.PhysicalModify.fRestoreAsRAM = fRestoreAsRAM;
+    remNotifyHandlerInsert(pVM, &Rec);
 }
 
 #endif /* !IN_RING3 */

@@ -1,4 +1,4 @@
-/* $Id: HardDiskImpl.h 18388 2009-03-27 13:11:42Z vboxsync $ */
+/* $Id: HardDiskImpl.h 19239 2009-04-28 13:19:14Z vboxsync $ */
 
 /** @file
  *
@@ -47,7 +47,7 @@ class ATL_NO_VTABLE HardDisk
     : public com::SupportErrorInfoDerived<MediumBase, HardDisk, IHardDisk>
     , public VirtualBoxBaseWithTypedChildrenNEXT<HardDisk>
     , public VirtualBoxSupportTranslation<HardDisk>
-    , public IHardDisk
+    , VBOX_SCRIPTABLE_IMPL(IHardDisk)
 {
 public:
 
@@ -55,7 +55,7 @@ public:
         List;
 
     class MergeChain;
-    class CloneChain;
+    class ImageChain;
 
     VIRTUALBOXSUPPORTTRANSLATION_OVERRIDE (HardDisk)
 
@@ -64,9 +64,11 @@ public:
     DECLARE_PROTECT_FINAL_CONSTRUCT()
 
     BEGIN_COM_MAP (HardDisk)
-        COM_INTERFACE_ENTRY (ISupportErrorInfo)
+        COM_INTERFACE_ENTRY  (ISupportErrorInfo)
         COM_INTERFACE_ENTRY2 (IMedium, MediumBase)
-        COM_INTERFACE_ENTRY (IHardDisk)
+        COM_INTERFACE_ENTRY  (IHardDisk)
+        COM_INTERFACE_ENTRY2 (IDispatch, IHardDisk)
+        COM_INTERFACE_ENTRY2 (IDispatch, MediumBase)
     END_COM_MAP()
 
     NS_DECL_ISUPPORTS
@@ -123,7 +125,7 @@ public:
     STDMETHOD(CreateDiffStorage) (IHardDisk *aTarget,
                                   HardDiskVariant_T aVariant,
                                   IProgress **aProgress);
-    STDMETHOD(MergeTo) (IN_GUID aTargetId, IProgress **aProgress);
+    STDMETHOD(MergeTo) (IN_BSTR aTargetId, IProgress **aProgress);
     STDMETHOD(CloneTo) (IHardDisk *aTarget, HardDiskVariant_T aVariant,
                         IHardDisk *aParent, IProgress **aProgress);
     STDMETHOD(Compact) (IProgress **aProgress);

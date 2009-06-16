@@ -1,4 +1,4 @@
-/* $Id: VBoxManageImport.cpp 18809 2009-04-07 11:57:07Z vboxsync $ */
+/* $Id: VBoxManageImport.cpp 20221 2009-06-03 08:54:39Z vboxsync $ */
 /** @file
  * VBoxManage - The appliance-related commands.
  */
@@ -646,7 +646,11 @@ int handleImportAppliance(HandlerArg *a)
                 showProgress(progress);
 
                 if (SUCCEEDED(rc))
-                    progress->COMGETTER(ResultCode)(&rc);
+                {
+                    LONG iRc;
+                    progress->COMGETTER(ResultCode)(&iRc);
+                    rc = iRc;
+                }
 
                 if (FAILED(rc))
                 {
@@ -766,7 +770,7 @@ int handleExportAppliance(HandlerArg *a)
                     // must be machine: try UUID or name
                     ComPtr<IMachine> machine;
                     /* assume it's a UUID */
-                    rc = a->virtualBox->GetMachine(Guid(strMachine), machine.asOutParam());
+                    rc = a->virtualBox->GetMachine(Bstr(strMachine), machine.asOutParam());
                     if (FAILED(rc) || !machine)
                     {
                         /* must be a name */
@@ -891,7 +895,11 @@ int handleExportAppliance(HandlerArg *a)
         showProgress(progress);
 
         if (SUCCEEDED(rc))
-            progress->COMGETTER(ResultCode)(&rc);
+        {
+            LONG iRc;
+            progress->COMGETTER(ResultCode)(&iRc);
+            rc = iRc;
+        }
 
         if (FAILED(rc))
         {

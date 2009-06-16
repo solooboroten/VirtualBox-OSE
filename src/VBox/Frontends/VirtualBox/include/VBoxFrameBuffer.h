@@ -24,11 +24,17 @@
 #define ___VBoxFrameBuffer_h___
 
 #include "COMDefs.h"
+#include <iprt/critsect.h>
 
 /* Qt includes */
 #include <QImage>
 #include <QPixmap>
 #include <QMutex>
+#include <QPaintEvent>
+#include <QMoveEvent>
+#if defined (VBOX_GUI_USE_QGL)
+#include <QGLWidget>
+#endif
 
 #if defined (VBOX_GUI_USE_SDL)
 #include <SDL.h>
@@ -110,6 +116,20 @@ private:
     QRegion mReg;
 };
 
+#ifdef VBOX_WITH_VIDEOHWACCEL
+class VBoxVHWACommandProcessEvent : public QEvent
+{
+public:
+    VBoxVHWACommandProcessEvent (struct _VBOXVHWACMD * pCmd)
+        : QEvent ((QEvent::Type) VBoxDefs::VHWACommandProcessType)
+        , mpCmd (pCmd) {}
+    struct _VBOXVHWACMD * command() { return mpCmd; }
+private:
+    struct _VBOXVHWACMD * mpCmd;
+};
+
+#endif
+
 /////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -134,7 +154,7 @@ private:
  *  See IFramebuffer documentation for more info.
  */
 
-class VBoxFrameBuffer : public IFramebuffer
+class VBoxFrameBuffer : VBOX_SCRIPTABLE_IMPL(IFramebuffer)
 {
 public:
 
@@ -196,17 +216,13 @@ public:
                               ULONG aWidth, ULONG aHeight,
                               BOOL *aFinished);
 
-    STDMETHOD(OperationSupported)(FramebufferAccelerationOperation_T aOperation,
-                                  BOOL *aSupported);
     STDMETHOD(VideoModeSupported) (ULONG aWidth, ULONG aHeight, ULONG aBPP,
                                    BOOL *aSupported);
-    STDMETHOD(SolidFill) (ULONG aX, ULONG aY, ULONG aWidth, ULONG aHeight,
-                          ULONG aColor, BOOL *aHandled);
-    STDMETHOD(CopyScreenBits) (ULONG aXDst, ULONG aYDst, ULONG aXSrc, ULONG aYSrc,
-                               ULONG aWidth, ULONG aHeight, BOOL *aHandled);
 
     STDMETHOD(GetVisibleRegion)(BYTE *aRectangles, ULONG aCount, ULONG *aCountCopied);
     STDMETHOD(SetVisibleRegion)(BYTE *aRectangles, ULONG aCount);
+
+    STDMETHOD(ProcessVHWACommand)(BYTE *pCommand);
 
     ulong width() { return mWdt; }
     ulong height() { return mHgt; }
@@ -221,8 +237,8 @@ public:
         return false;
     }
 
-    void lock() { mMutex->lock(); }
-    void unlock() { mMutex->unlock(); }
+    void lock() { RTCritSectEnter(&mCritSect); }
+    void unlock() { RTCritSectLeave(&mCritSect); }
 
     virtual uchar *address() = 0;
     virtual ulong bitsPerPixel() = 0;
@@ -250,10 +266,16 @@ public:
      */
     virtual void moveEvent (QMoveEvent * /*me*/ ) {}
 
+#ifdef VBOX_WITH_VIDEOHWACCEL
+    /* this method is called from the GUI thread
+     * to perform the actual Video HW Acceleration command processing */
+    virtual void doProcessVHWACommand(struct _VBOXVHWACMD * pCommand);
+#endif
+
 protected:
 
     VBoxConsoleView *mView;
-    QMutex *mMutex;
+    RTCRITSECT mCritSect;
     int mWdt;
     int mHgt;
     uint64_t mWinId;
@@ -275,8 +297,7 @@ public:
     VBoxQImageFrameBuffer (VBoxConsoleView *aView);
 
     STDMETHOD(NotifyUpdate) (ULONG aX, ULONG aY,
-                             ULONG aW, ULONG aH,
-                             BOOL *aFinished);
+                             ULONG aW, ULONG aH);
 
     ulong pixelFormat() { return mPixelFormat; }
     bool usesGuestVRAM() { return mUsesGuestVRAM; }
@@ -300,6 +321,250 @@ private:
 
 /////////////////////////////////////////////////////////////////////////////
 
+#if defined (VBOX_GUI_USE_QGL)
+class VBoxVHWADirtyRect
+{
+public:
+    VBoxVHWADirtyRect() :
+        mIsClear(false)
+    {}
+
+    VBoxVHWADirtyRect(const QRect & aRect)
+    {
+        if(aRect.isEmpty())
+        {
+            mIsClear = false;
+            mRect = aRect;
+        }
+        else
+        {
+            mIsClear = true;
+        }
+    }
+
+    bool isClear() { return mIsClear; }
+
+    void add(const QRect & aRect)
+    {
+        if(aRect.isEmpty())
+            return;
+
+        mRect = mIsClear ? aRect : mRect.united(aRect);
+        mIsClear = false;
+    }
+
+    void set(const QRect & aRect)
+    {
+        if(aRect.isEmpty())
+        {
+            mIsClear = true;
+        }
+        else
+        {
+            mRect = aRect;
+        }
+    }
+
+    void clear() { mIsClear = true; }
+
+    const QRect & rect() {return mRect;}
+
+    bool intersects(const QRect & aRect) {return mIsClear ? false : mRect.intersects(aRect);}
+
+private:
+    QRect mRect;
+    bool mIsClear;
+};
+
+class VBoxVHWASurfaceBase
+{
+public:
+    VBoxVHWASurfaceBase(GLsizei aWidth, GLsizei aHeight,
+            GLint aInternalFormat, GLenum aFormat, GLenum aType);
+
+    virtual ~VBoxVHWASurfaceBase();
+
+    virtual void init(uchar *pvMem);
+
+    virtual void uninit();
+
+    static void globalInit();
+
+    int blt(const QRect * pDstRect, VBoxVHWASurfaceBase * pSrtSurface, const QRect * pSrcRect);
+
+    int lock(const QRect * pRect);
+
+    int unlock();
+
+    virtual void makeCurrent() = 0;
+
+    void paint(const QRect * pRect);
+
+    void performDisplay() { Assert(mDisplayInitialized); glCallList(mDisplay); }
+
+    static ulong calcBytesPerPixel(GLenum format, GLenum type);
+
+    static GLsizei makePowerOf2(GLsizei val);
+
+    uchar * address(){ return mAddress; }
+    uchar * pointAddress(int x, int y) { return mAddress + y*mBytesPerLine + x*mBytesPerPixel; }
+    ulong   memSize(){ return mBytesPerLine * mDisplayHeight; }
+
+    ulong width()  { return mDisplayWidth;  }
+    ulong height() { return mDisplayHeight; }
+
+    GLenum format() {return mFormat; }
+    GLint  internalFormat() { return mInternalFormat; }
+    GLenum type() { return mType; }
+    ulong  bytesPerPixel() { return mBytesPerPixel; }
+    ulong  bytesPerLine() { return mBytesPerLine; }
+
+    /* clients should treat the rerurned texture as read-only */
+    GLuint textureSynched(const QRect * aRect) { synchTexture(aRect); return mTexture; }
+
+private:
+    void initDisplay();
+    void deleteDisplay();
+    void updateTexture(const QRect * pRect);
+    void synchTexture(const QRect * pRect);
+    void synchMem(const QRect * pRect);
+
+    GLuint mDisplay;
+    bool mDisplayInitialized;
+
+    uchar * mAddress;
+    GLuint mTexture;
+
+    GLenum mFormat;
+    GLint  mInternalFormat;
+    GLenum mType;
+    ulong  mDisplayWidth;
+    ulong  mDisplayHeight;
+    ulong  mBytesPerPixel;
+    ulong  mBytesPerLine;
+
+    VBoxVHWADirtyRect mLockedRect;
+    /*in case of blit we blit from another surface's texture, so our current texture gets durty  */
+    VBoxVHWADirtyRect mUpdateFB2TexRect;
+    /*in case of blit the memory buffer does not get updated until we need it, e.g. for pain or lock operations */
+    VBoxVHWADirtyRect mUpdateFB2MemRect;
+
+    bool mFreeAddress;
+};
+
+class VBoxVHWASurfacePrimary : public VBoxVHWASurfaceBase
+{
+public:
+    VBoxVHWASurfacePrimary(GLsizei aWidth, GLsizei aHeight,
+            GLint aInternalFormat, GLenum aFormat, GLenum aType,
+            class VBoxGLWidget *pWidget) :
+                VBoxVHWASurfaceBase(aWidth, aHeight,
+                        aInternalFormat, aFormat, aType),
+                mWidget(pWidget)
+    {}
+
+    void makeCurrent();
+private:
+    class VBoxGLWidget *mWidget;
+};
+
+class VBoxGLWidget : public QGLWidget
+{
+public:
+    VBoxGLWidget (QWidget *aParent)
+        : QGLWidget (aParent),
+        pDisplay(NULL),
+        mRe(NULL),
+        mpIntersectionRect(NULL),
+        mBitsPerPixel(0),
+        mPixelFormat(0),
+        mUsesGuestVRAM(false)
+    {
+//        /* No need for background drawing */
+//        setAttribute (Qt::WA_OpaquePaintEvent);
+    }
+
+    ulong vboxPixelFormat() { return mPixelFormat; }
+    bool vboxUsesGuestVRAM() { return mUsesGuestVRAM; }
+
+    uchar *vboxAddress() { return pDisplay ? pDisplay->address() : NULL; }
+    ulong vboxBitsPerPixel() { return mBitsPerPixel; }
+    ulong vboxBytesPerLine() { return pDisplay ? pDisplay->bytesPerLine() : NULL; }
+
+    void vboxPaintEvent (QPaintEvent *pe);
+    void vboxResizeEvent (VBoxResizeEvent *re);
+
+    VBoxVHWASurfacePrimary * vboxGetSurface() { return pDisplay; }
+protected:
+//    void resizeGL (int height, int width);
+
+    void paintGL();
+
+    void initializeGL();
+
+private:
+//    void vboxDoInitDisplay();
+//    void vboxDoDeleteDisplay();
+//    void vboxDoPerformDisplay() { Assert(mDisplayInitialized); glCallList(mDisplay); }
+
+    void vboxDoResize(VBoxResizeEvent *re);
+    void vboxDoPaint(const QRect *rec);
+    VBoxVHWASurfacePrimary * pDisplay;
+
+    VBoxResizeEvent *mRe;
+    const QRect *mpIntersectionRect;
+    ulong  mBitsPerPixel;
+    ulong  mPixelFormat;
+    bool   mUsesGuestVRAM;
+};
+
+
+class VBoxQGLFrameBuffer : public VBoxFrameBuffer
+{
+public:
+
+    VBoxQGLFrameBuffer (VBoxConsoleView *aView);
+
+    STDMETHOD(NotifyUpdate) (ULONG aX, ULONG aY,
+                             ULONG aW, ULONG aH);
+
+#ifdef VBOX_WITH_VIDEOHWACCEL
+    STDMETHOD(ProcessVHWACommand)(BYTE *pCommand);
+#endif
+
+    ulong pixelFormat() { return vboxWidget()->vboxPixelFormat(); }
+    bool usesGuestVRAM() { return vboxWidget()->vboxUsesGuestVRAM(); }
+
+    uchar *address() { /*Assert(0); */return vboxWidget()->vboxAddress(); }
+    ulong bitsPerPixel() { return vboxWidget()->vboxBitsPerPixel(); }
+    ulong bytesPerLine() { return vboxWidget()->vboxBytesPerLine(); }
+
+    void paintEvent (QPaintEvent *pe);
+    void resizeEvent (VBoxResizeEvent *re);
+#ifdef VBOX_WITH_VIDEOHWACCEL
+    void doProcessVHWACommand(struct _VBOXVHWACMD * pCommand);
+#endif
+
+private:
+#ifdef VBOX_WITH_VIDEOHWACCEL
+    int vhwaSurfaceCanCreate(struct _VBOXVHWACMD_SURF_CANCREATE *pCmd);
+    int vhwaSurfaceCreate(struct _VBOXVHWACMD_SURF_CREATE *pCmd);
+    int vhwaSurfaceDestroy(struct _VBOXVHWACMD_SURF_DESTROY *pCmd);
+    int vhwaSurfaceLock(struct _VBOXVHWACMD_SURF_LOCK *pCmd);
+    int vhwaSurfaceUnlock(struct _VBOXVHWACMD_SURF_UNLOCK *pCmd);
+    int vhwaSurfaceBlt(struct _VBOXVHWACMD_SURF_BLT *pCmd);
+    int vhwaQueryInfo1(struct _VBOXVHWACMD_QUERYINFO1 *pCmd);
+    int vhwaQueryInfo2(struct _VBOXVHWACMD_QUERYINFO2 *pCmd);
+#endif
+    void vboxMakeCurrent();
+    VBoxGLWidget * vboxWidget();
+};
+
+
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+
 #if defined (VBOX_GUI_USE_SDL)
 
 class VBoxSDLFrameBuffer : public VBoxFrameBuffer
@@ -310,8 +575,7 @@ public:
     virtual ~VBoxSDLFrameBuffer();
 
     STDMETHOD(NotifyUpdate) (ULONG aX, ULONG aY,
-                             ULONG aW, ULONG aH,
-                             BOOL *aFinished);
+                             ULONG aW, ULONG aH);
 
     uchar *address()
     {
@@ -366,8 +630,7 @@ public:
     virtual ~VBoxDDRAWFrameBuffer();
 
     STDMETHOD(NotifyUpdate) (ULONG aX, ULONG aY,
-                             ULONG aW, ULONG aH,
-                             BOOL *aFinished);
+                             ULONG aW, ULONG aH);
 
     uchar *address() { return (uchar *) mSurfaceDesc.lpSurface; }
     ulong bitsPerPixel() { return mSurfaceDesc.ddpfPixelFormat.dwRGBBitCount; }
@@ -424,8 +687,7 @@ public:
     virtual ~VBoxQuartz2DFrameBuffer ();
 
     STDMETHOD (NotifyUpdate) (ULONG aX, ULONG aY,
-                              ULONG aW, ULONG aH,
-                              BOOL *aFinished);
+                              ULONG aW, ULONG aH);
     STDMETHOD (SetVisibleRegion) (BYTE *aRectangles, ULONG aCount);
 
     uchar *address() { return mDataAddress; }

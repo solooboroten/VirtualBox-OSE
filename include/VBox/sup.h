@@ -36,7 +36,7 @@
 #include <iprt/stdarg.h>
 #include <iprt/asm.h>
 
-__BEGIN_DECLS
+RT_C_DECLS_BEGIN
 
 /** @defgroup   grp_sup     The Support Library API
  * @{
@@ -307,6 +307,138 @@ typedef SUPR0SERVICEREQHDR *PSUPR0SERVICEREQHDR;
 #define SUPR0SERVICEREQHDR_MAGIC    UINT32_C(0x19640416)
 
 
+/** Event semaphore handle. Ring-0 / ring-3. */
+typedef R0PTRTYPE(struct SUPSEMEVENTHANDLE *) SUPSEMEVENT;
+/** Pointer to an event semaphore handle. */
+typedef SUPSEMEVENT *PSUPSEMEVENT;
+/** Nil event semaphore handle. */
+#define NIL_SUPSEMEVENT         ((SUPSEMEVENT)0)
+
+/**
+ * Creates a single release event semaphore.
+ *
+ * @returns VBox status code.
+ * @param   pSession        The session handle of the caller.
+ * @param   phEvent         Where to return the handle to the event semaphore.
+ */
+SUPDECL(int) SUPSemEventCreate(PSUPDRVSESSION pSession, PSUPSEMEVENT phEvent);
+
+/**
+ * Closes a single release event semaphore handle.
+ *
+ * @returns VBox status code.
+ * @retval  VINF_OBJECT_DESTROYED if the semaphore was destroyed.
+ * @retval  VINF_SUCCESS if the handle was successfully closed but the sempahore
+ *          object remained alive because of other references.
+ *
+ * @param   pSession            The session handle of the caller.
+ * @param   hEvent              The handle. Nil is quietly ignored.
+ */
+SUPDECL(int) SUPSemEventClose(PSUPDRVSESSION pSession, SUPSEMEVENT hEvent);
+
+/**
+ * Signals a single release event semaphore.
+ *
+ * @returns VBox status code.
+ * @param   pSession            The session handle of the caller.
+ * @param   hEvent              The semaphore handle.
+ */
+SUPDECL(int) SUPSemEventSignal(PSUPDRVSESSION pSession, SUPSEMEVENT hEvent);
+
+#ifdef IN_RING0
+/**
+ * Waits on a single release event semaphore, not interruptible.
+ *
+ * @returns VBox status code.
+ * @param   pSession            The session handle of the caller.
+ * @param   hEvent              The semaphore handle.
+ * @param   cMillies            The number of milliseconds to wait.
+ * @remarks Not available in ring-3.
+ */
+SUPDECL(int) SUPSemEventWait(PSUPDRVSESSION pSession, SUPSEMEVENT hEvent, uint32_t cMillies);
+#endif
+
+/**
+ * Waits on a single release event semaphore, interruptible.
+ *
+ * @returns VBox status code.
+ * @param   pSession            The session handle of the caller.
+ * @param   hEvent              The semaphore handle.
+ * @param   cMillies            The number of milliseconds to wait.
+ */
+SUPDECL(int) SUPSemEventWaitNoResume(PSUPDRVSESSION pSession, SUPSEMEVENT hEvent, uint32_t cMillies);
+
+
+/** Multiple release event semaphore handle. Ring-0 / ring-3. */
+typedef R0PTRTYPE(struct SUPSEMEVENTMULTIHANDLE *)  SUPSEMEVENTMULTI;
+/** Pointer to an multiple release event semaphore handle. */
+typedef SUPSEMEVENTMULTI                           *PSUPSEMEVENTMULTI;
+/** Nil multiple release event semaphore handle. */
+#define NIL_SUPSEMEVENTMULTI                        ((SUPSEMEVENTMULTI)0)
+
+/**
+ * Creates a multiple release event semaphore.
+ *
+ * @returns VBox status code.
+ * @param   pSession        The session handle of the caller.
+ * @param   phEventMulti    Where to return the handle to the event semaphore.
+ */
+SUPDECL(int) SUPSemEventMultiCreate(PSUPDRVSESSION pSession, PSUPSEMEVENTMULTI phEventMulti);
+
+/**
+ * Closes a multiple release event semaphore handle.
+ *
+ * @returns VBox status code.
+ * @retval  VINF_OBJECT_DESTROYED if the semaphore was destroyed.
+ * @retval  VINF_SUCCESS if the handle was successfully closed but the sempahore
+ *          object remained alive because of other references.
+ *
+ * @param   pSession            The session handle of the caller.
+ * @param   hEventMulti         The handle. Nil is quietly ignored.
+ */
+SUPDECL(int) SUPSemEventMultiClose(PSUPDRVSESSION pSession, SUPSEMEVENTMULTI hEventMulti);
+
+/**
+ * Signals a multiple release event semaphore.
+ *
+ * @returns VBox status code.
+ * @param   pSession            The session handle of the caller.
+ * @param   hEventMulti         The semaphore handle.
+ */
+SUPDECL(int) SUPSemEventMultiSignal(PSUPDRVSESSION pSession, SUPSEMEVENTMULTI hEventMulti);
+
+/**
+ * Resets a multiple release event semaphore.
+ *
+ * @returns VBox status code.
+ * @param   pSession            The session handle of the caller.
+ * @param   hEventMulti         The semaphore handle.
+ */
+SUPDECL(int) SUPSemEventMultiReset(PSUPDRVSESSION pSession, SUPSEMEVENTMULTI hEventMulti);
+
+#ifdef IN_RING0
+/**
+ * Waits on a multiple release event semaphore, not interruptible.
+ *
+ * @returns VBox status code.
+ * @param   pSession            The session handle of the caller.
+ * @param   hEventMulti         The semaphore handle.
+ * @param   cMillies            The number of milliseconds to wait.
+ * @remarks Not available in ring-3.
+ */
+SUPDECL(int) SUPSemEventMultiWait(PSUPDRVSESSION pSession, SUPSEMEVENTMULTI hEventMulti, uint32_t cMillies);
+#endif
+
+/**
+ * Waits on a multiple release event semaphore, interruptible.
+ *
+ * @returns VBox status code.
+ * @param   pSession            The session handle of the caller.
+ * @param   hEventMulti         The semaphore handle.
+ * @param   cMillies            The number of milliseconds to wait.
+ */
+SUPDECL(int) SUPSemEventMultiWaitNoResume(PSUPDRVSESSION pSession, SUPSEMEVENTMULTI hEventMulti, uint32_t cMillies);
+
 
 #ifdef IN_RING3
 
@@ -446,10 +578,11 @@ SUPR3DECL(int) SUPSetVMForFastIOCtl(PVMR0 pVMR0);
  *
  * @returns error code specific to uFunction.
  * @param   pVMR0       Pointer to the Ring-0 (Host Context) mapping of the VM structure.
+ * @param   idCpu       The virtual CPU ID.
  * @param   uOperation  Operation to execute.
  * @param   pvArg       Argument.
  */
-SUPR3DECL(int) SUPCallVMMR0(PVMR0 pVMR0, unsigned uOperation, void *pvArg);
+SUPR3DECL(int) SUPCallVMMR0(PVMR0 pVMR0, VMCPUID idCpu, unsigned uOperation, void *pvArg);
 
 /**
  * Variant of SUPCallVMMR0, except that this takes the fast ioclt path
@@ -458,9 +591,9 @@ SUPR3DECL(int) SUPCallVMMR0(PVMR0 pVMR0, unsigned uOperation, void *pvArg);
  * @returns VBox status code.
  * @param   pVMR0       The ring-0 VM handle.
  * @param   uOperation  The operation; only the SUP_VMMR0_DO_* ones are valid.
- * @param   idCPU       VMCPU id.
+ * @param   idCpu       The virtual CPU ID.
  */
-SUPR3DECL(int) SUPCallVMMR0Fast(PVMR0 pVMR0, unsigned uOperation, unsigned idCPU);
+SUPR3DECL(int) SUPCallVMMR0Fast(PVMR0 pVMR0, unsigned uOperation, VMCPUID idCpu);
 
 /**
  * Calls the HC R0 VMM entry point, in a safer but slower manner than SUPCallVMMR0.
@@ -471,13 +604,14 @@ SUPR3DECL(int) SUPCallVMMR0Fast(PVMR0 pVMR0, unsigned uOperation, unsigned idCPU
  *
  * @returns error code specific to uFunction.
  * @param   pVMR0       Pointer to the Ring-0 (Host Context) mapping of the VM structure.
+ * @param   idCpu       The virtual CPU ID.
  * @param   uOperation  Operation to execute.
  * @param   u64Arg      Constant argument.
  * @param   pReqHdr     Pointer to a request header. Optional.
  *                      This will be copied in and out of kernel space. There currently is a size
  *                      limit on this, just below 4KB.
  */
-SUPR3DECL(int) SUPCallVMMR0Ex(PVMR0 pVMR0, unsigned uOperation, uint64_t u64Arg, PSUPVMMR0REQHDR pReqHdr);
+SUPR3DECL(int) SUPCallVMMR0Ex(PVMR0 pVMR0, VMCPUID idCpu, unsigned uOperation, uint64_t u64Arg, PSUPVMMR0REQHDR pReqHdr);
 
 /**
  * Calls a ring-0 service.
@@ -607,16 +741,38 @@ SUPR3DECL(int) SUPR3PageAllocEx(size_t cPages, uint32_t fFlags, void **ppvPages,
 /**
  * Maps a portion of a ring-3 only allocation into kernel space.
  *
- * @return VBox status code.
+ * @returns VBox status code.
  *
- * @param  pvR3             The address SUPR3PageAllocEx return.
- * @param  off              Offset to start mapping at. Must be page aligned.
- * @param  cb               Number of bytes to map. Must be page aligned.
- * @param  fFlags           Flags, must be zero.
- * @param  pR0Ptr           Where to store the address on success.
+ * @param   pvR3            The address SUPR3PageAllocEx return.
+ * @param   off             Offset to start mapping at. Must be page aligned.
+ * @param   cb              Number of bytes to map. Must be page aligned.
+ * @param   fFlags          Flags, must be zero.
+ * @param   pR0Ptr          Where to store the address on success.
  *
  */
 SUPR3DECL(int) SUPR3PageMapKernel(void *pvR3, uint32_t off, uint32_t cb, uint32_t fFlags, PRTR0PTR pR0Ptr);
+
+/**
+ * Changes the protection of
+ *
+ * @returns VBox status code.
+ * @retval  VERR_NOT_SUPPORTED if the OS doesn't allow us to change page level
+ *          protection. See also RTR0MemObjProtect.
+ *
+ * @param   pvR3            The ring-3 address SUPR3PageAllocEx returned.
+ * @param   R0Ptr           The ring-0 address SUPR3PageAllocEx returned if it
+ *                          is desired that the corresponding ring-0 page
+ *                          mappings should change protection as well. Pass
+ *                          NIL_RTR0PTR if the ring-0 pages should remain
+ *                          unaffected.
+ * @param   off             Offset to start at which to start chagning the page
+ *                          level protection. Must be page aligned.
+ * @param   cb              Number of bytes to change. Must be page aligned.
+ * @param   fProt           The new page level protection, either a combination
+ *                          of RTMEM_PROT_READ, RTMEM_PROT_WRITE and
+ *                          RTMEM_PROT_EXEC, or just RTMEM_PROT_NONE.
+ */
+SUPR3DECL(int) SUPR3PageProtect(void *pvR3, RTR0PTR R0Ptr, uint32_t off, uint32_t cb, uint32_t fProt);
 
 /**
  * Free pages allocated by SUPR3PageAllocEx.
@@ -855,6 +1011,10 @@ typedef enum SUPDRVOBJTYPE
     SUPDRVOBJTYPE_INTERNAL_NETWORK,
     /** Internal network interface. */
     SUPDRVOBJTYPE_INTERNAL_NETWORK_INTERFACE,
+    /** Single release event semaphore. */
+    SUPDRVOBJTYPE_SEM_EVENT,
+    /** Multiple release event semaphore. */
+    SUPDRVOBJTYPE_SEM_EVENT_MULTI,
     /** The first invalid object type in this end. */
     SUPDRVOBJTYPE_END,
     /** The usual 32-bit type size hack. */
@@ -891,6 +1051,7 @@ SUPR0DECL(int) SUPR0MemFree(PSUPDRVSESSION pSession, RTHCUINTPTR uPtr);
 SUPR0DECL(int) SUPR0PageAlloc(PSUPDRVSESSION pSession, uint32_t cPages, PRTR3PTR ppvR3, PRTHCPHYS paPages);
 SUPR0DECL(int) SUPR0PageAllocEx(PSUPDRVSESSION pSession, uint32_t cPages, uint32_t fFlags, PRTR3PTR ppvR3, PRTR0PTR ppvR0, PRTHCPHYS paPages);
 SUPR0DECL(int) SUPR0PageMapKernel(PSUPDRVSESSION pSession, RTR3PTR pvR3, uint32_t offSub, uint32_t cbSub, uint32_t fFlags, PRTR0PTR ppvR0);
+SUPR0DECL(int) SUPR0PageProtect(PSUPDRVSESSION pSession, RTR3PTR pvR3, RTR0PTR pvR0, uint32_t offSub, uint32_t cbSub, uint32_t fProt);
 SUPR0DECL(int) SUPR0PageFree(PSUPDRVSESSION pSession, RTR3PTR pvR3);
 SUPR0DECL(int) SUPR0GipMap(PSUPDRVSESSION pSession, PRTR3PTR ppGipR3, PRTHCPHYS pHCPhysGip);
 SUPR0DECL(int) SUPR0GipUnmap(PSUPDRVSESSION pSession);
@@ -1007,7 +1168,7 @@ SUPR0DECL(int) SUPR0IdcComponentDeregisterFactory(PSUPDRVIDCHANDLE pHandle, PCSU
 
 /** @} */
 
-__END_DECLS
+RT_C_DECLS_END
 
 #endif
 

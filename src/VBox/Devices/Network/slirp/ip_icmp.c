@@ -42,16 +42,9 @@
 #endif
 
 #ifdef RT_OS_WINDOWS
-# ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
 # define ICMP_SEND_ECHO(event, routine, addr, data, datasize, ipopt)                                        \
                 IcmpSendEcho2(pData->icmp_socket.sh, (event), NULL, NULL, (addr), (data), (datasize),       \
                                (ipopt), pData->pvIcmpBuffer, pData->szIcmpBuffer, 1)
-# else /* VBOX_WITH_SIMPLIFIED_SLIRP_SYNC */
-# define ICMP_SEND_ECHO(event, routine, addr, data, datasize, ipopt)                                                        \
-                IcmpSendEcho2(pData->icmp_socket.sh, NULL, (FARPROC)(routine), (void *)pData, (addr), (data), (datasize),   \
-                             (ipopt), pData->pvIcmpBuffer, pData->szIcmpBuffer, 1)
-static void WINAPI notify_slirp(void *);
-# endif /* !VBOX_WITH_SIMPLIFIED_SLIRP_SYNC */
 #endif /* RT_OS_WINDOWS */
 
 /* The message sent when emulating PING */
@@ -110,7 +103,7 @@ icmp_init(PNATState pData)
         pData->pfIcmpCloseHandle = (BOOL (WINAPI *)(HANDLE))
                                     GetProcAddress(pData->hmIcmpLibrary, "IcmpCloseHandle");
 # ifdef VBOX_WITH_MULTI_DNS 
-        pData->pfGetAdaptersAddresses = (ULONG (WINAPI *)(HANDLE))
+        pData->pfGetAdaptersAddresses = (ULONG (WINAPI *)(ULONG, ULONG, PVOID, PIP_ADAPTER_ADDRESSES, PULONG))
                                     GetProcAddress(pData->hmIcmpLibrary, "GetAdaptersAddresses");
         if (pData->pfGetAdaptersAddresses == NULL) 
         {
@@ -151,9 +144,7 @@ icmp_init(PNATState pData)
         return 1;
     }
     pData->icmp_socket.sh = IcmpCreateFile();
-# ifdef VBOX_WITH_SIMPLIFIED_SLIRP_SYNC
     pData->phEvents[VBOX_ICMP_EVENT_INDEX] = CreateEvent(NULL, FALSE, FALSE, NULL);
-# endif /* VBOX_WITH_SIMPLIFIED_SLIRP_SYNC */
     pData->szIcmpBuffer = sizeof(ICMP_ECHO_REPLY) * 10;
     pData->pvIcmpBuffer = RTMemAlloc(pData->szIcmpBuffer);
 #endif /* RT_OS_WINDOWS */
@@ -547,11 +538,12 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
         goto end_error;                    /* get mbuf */
     {
         int new_m_size;
-        m->m_data += if_maxlinkhdr;
+        m_adj(m, if_maxlinkhdr);
         new_m_size = sizeof(struct ip) + ICMP_MINLEN + msrc->m_len + ICMP_MAXDATALEN;
         if (new_m_size>m->m_size)
             m_inc(m, new_m_size);
     }
+
     memcpy(m->m_data, msrc->m_data, msrc->m_len);
     m->m_len = msrc->m_len;                /* copy msrc to m */
 
@@ -656,12 +648,3 @@ icmp_reflect(PNATState pData, struct mbuf *m)
 
     icmpstat.icps_reflect++;
 }
-#if defined(RT_OS_WINDOWS) && !defined(VBOX_WITH_SIMPLIFIED_SLIRP_SYNC)
-static void WINAPI
-notify_slirp(void *ctx)
-{
-    /* pData name is important see slirp_state.h */
-    PNATState pData = (PNATState)ctx;
-    fIcmp = 1;
-}
-#endif

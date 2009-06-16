@@ -34,7 +34,7 @@
 #include <iprt/cdefs.h>
 #include <iprt/types.h>
 
-__BEGIN_DECLS
+RT_C_DECLS_BEGIN
 
 /** @defgroup grp_rt_getopt    RTGetOpt - Command Line Parsing
  * @ingroup grp_rt
@@ -103,7 +103,7 @@ typedef struct RTGETOPTDEF
     const char     *pszLong;
     /** The short option character.
      * This doesn't have to be a character, it may also be a \#define or enum value if
-     * there isn't any short version of this option. */
+     * there isn't any short version of this option. Must be greater than 0. */
     int             iShort;
     /** The flags (RTGETOPT_*). */
     unsigned        fFlags;
@@ -250,7 +250,6 @@ int main(int argc, char **argv)
      };
 
      int ch;
-     int i = 1;
      RTGETOPTUNION ValueUnion;
      RTGETOPTSTATE GetState;
      RTGetOptInit(&GetState, argc, argv, s_aOptions, RT_ELEMENTS(s_aOptions), 1, 0);
@@ -321,7 +320,7 @@ RTDECL(int) RTGetOpt(PRTGETOPTSTATE pState, PRTGETOPTUNION pValueUnion);
 
 /** @} */
 
-__END_DECLS
+RT_C_DECLS_END
 
 #endif
 

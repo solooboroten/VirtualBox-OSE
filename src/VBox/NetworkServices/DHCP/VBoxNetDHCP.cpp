@@ -1,4 +1,4 @@
-/* $Id: VBoxNetDHCP.cpp 18691 2009-04-03 13:37:55Z vboxsync $ */
+/* $Id: VBoxNetDHCP.cpp 20354 2009-06-07 09:11:03Z vboxsync $ */
 /** @file
  * VBoxNetDHCP - DHCP Service for connecting to IntNet.
  */
@@ -576,7 +576,7 @@ VBoxNetDhcp::~VBoxNetDhcp()
         CloseReq.pSession = m_pSession;
         CloseReq.hIf = m_hIf;
         m_hIf = INTNET_HANDLE_INVALID;
-        int rc = SUPCallVMMR0Ex(NIL_RTR0PTR, VMMR0_DO_INTNET_IF_CLOSE, 0, &CloseReq.Hdr);
+        int rc = SUPCallVMMR0Ex(NIL_RTR0PTR, NIL_VMCPUID, VMMR0_DO_INTNET_IF_CLOSE, 0, &CloseReq.Hdr);
         AssertRC(rc);
     }
 
@@ -871,7 +871,7 @@ int VBoxNetDhcp::tryGoOnline(void)
     }
 
     char szPath[RTPATH_MAX];
-    rc = RTPathProgram(szPath, sizeof(szPath) - sizeof("/VMMR0.r0"));
+    rc = RTPathExecDir(szPath, sizeof(szPath) - sizeof("/VMMR0.r0"));
     if (RT_FAILURE(rc))
     {
         RTStrmPrintf(g_pStdErr, "VBoxNetDHCP: RTPathProgram -> %Rrc", rc);
@@ -906,7 +906,7 @@ int VBoxNetDhcp::tryGoOnline(void)
      * Issue the request.
      */
     debugPrint(2, false, "attempting to open/create network \"%s\"...", OpenReq.szNetwork);
-    rc = SUPCallVMMR0Ex(NIL_RTR0PTR, VMMR0_DO_INTNET_OPEN, 0, &OpenReq.Hdr);
+    rc = SUPCallVMMR0Ex(NIL_RTR0PTR, NIL_VMCPUID, VMMR0_DO_INTNET_OPEN, 0, &OpenReq.Hdr);
     if (RT_SUCCESS(rc))
     {
         m_hIf = OpenReq.hIf;
@@ -921,7 +921,7 @@ int VBoxNetDhcp::tryGoOnline(void)
         GetRing3BufferReq.pSession = m_pSession;
         GetRing3BufferReq.hIf = m_hIf;
         GetRing3BufferReq.pRing3Buf = NULL;
-        rc = SUPCallVMMR0Ex(NIL_RTR0PTR, VMMR0_DO_INTNET_IF_GET_RING3_BUFFER, 0, &GetRing3BufferReq.Hdr);
+        rc = SUPCallVMMR0Ex(NIL_RTR0PTR, NIL_VMCPUID, VMMR0_DO_INTNET_IF_GET_RING3_BUFFER, 0, &GetRing3BufferReq.Hdr);
         if (RT_SUCCESS(rc))
         {
             PINTNETBUF pBuf = GetRing3BufferReq.pRing3Buf;
@@ -938,7 +938,7 @@ int VBoxNetDhcp::tryGoOnline(void)
             ActiveReq.pSession = m_pSession;
             ActiveReq.hIf = m_hIf;
             ActiveReq.fActive = true;
-            rc = SUPCallVMMR0Ex(NIL_RTR0PTR, VMMR0_DO_INTNET_IF_SET_ACTIVE, 0, &ActiveReq.Hdr);
+            rc = SUPCallVMMR0Ex(NIL_RTR0PTR, NIL_VMCPUID, VMMR0_DO_INTNET_IF_SET_ACTIVE, 0, &ActiveReq.Hdr);
             if (RT_SUCCESS(rc))
                 return 0;
 
@@ -978,7 +978,7 @@ int VBoxNetDhcp::run(void)
         WaitReq.pSession = m_pSession;
         WaitReq.hIf = m_hIf;
         WaitReq.cMillies = 2000; /* 2 secs - the sleep is for some reason uninterruptible... */  /** @todo fix interruptability in SrvIntNet! */
-        int rc = SUPCallVMMR0Ex(NIL_RTR0PTR, VMMR0_DO_INTNET_IF_WAIT, 0, &WaitReq.Hdr);
+        int rc = SUPCallVMMR0Ex(NIL_RTR0PTR, NIL_VMCPUID, VMMR0_DO_INTNET_IF_WAIT, 0, &WaitReq.Hdr);
         if (RT_FAILURE(rc))
         {
             if (rc == VERR_TIMEOUT)
@@ -1166,14 +1166,13 @@ bool VBoxNetDhcp::handleDhcpReqRequest(PCRTNETBOOTP pDhcpMsg, size_t cb)
     {
         if (pLease->isBeingOffered())
         {
-            fAckIt = true;
             if (pLease->m_xid == pDhcpMsg->bp_xid)
                 debugPrint(2, true, "REQUEST for offered lease.");
             else
                 debugPrint(2, true, "REQUEST for offered lease, xid mismatch. Expected %#x, got %#x.",
                            pLease->m_xid, pDhcpMsg->bp_xid);
-            pLease->m_xid = pDhcpMsg->bp_xid; /* update xid */
-            pLease->activate();
+            pLease->activate(pDhcpMsg->bp_xid);
+            fAckIt = true;
         }
         else if (!pLease->isInCurrentConfig())
             debugPrint(1, true, "REQUEST for obsolete lease -> NAK");

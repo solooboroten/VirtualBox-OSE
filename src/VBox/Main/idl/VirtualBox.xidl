@@ -898,7 +898,7 @@
 
   <interface
      name="IVirtualBoxErrorInfo" extends="$errorinfo"
-     uuid="e98b5376-8eb4-4eea-812a-3964bf3bb26f"
+     uuid="bcae7fc3-3fd0-4bac-923c-ec1596c7bc83"
      supportsErrorInfo="no"
      wsmap="suppress"
      >
@@ -931,7 +931,7 @@
       in the chain).
     </desc>
 
-    <attribute name="resultCode" type="result" readonly="yes">
+    <attribute name="resultCode" type="long" readonly="yes">
       <desc>
         Result code of the error.
         Usually, it will be the same as the result code returned
@@ -939,7 +939,8 @@
         always. For example, on Win32, CoCreateInstance() will most
         likely return E_NOINTERFACE upon unsuccessful component
         instantiation attempt, but not the value the component factory
-        returned.
+        returned. Value is typed 'long', not 'result',
+        to make interface usable from scripting languages.
         <note>
           In MS COM, there is no equivalent.
           In XPCOM, it is the same as nsIException::result.
@@ -997,7 +998,7 @@
 
   <interface
      name="IVirtualBoxCallback" extends="$unknown"
-     uuid="5516cc08-fb81-47a6-b184-031e7bbd2997"
+     uuid="2990059f-5bc8-4635-8415-658917cd3186"
      wsmap="suppress"
      >
     <method name="onMachineStateChange">
@@ -1005,7 +1006,7 @@
         The execution state of the given machine has changed.
         <see>IMachine::state</see>
       </desc>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>ID of the machine this event relates to.</desc>
       </param>
       <param name="state" type="MachineState" dir="in">
@@ -1017,7 +1018,7 @@
       <desc>
         Any of the settings of the given machine has changed.
       </desc>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>ID of the machine this event relates to.</desc>
       </param>
     </method>
@@ -1028,7 +1029,7 @@
         either the given machine or (if null) global extra data.
         This gives the chance to veto against changes.
       </desc>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>
           ID of the machine this event relates to
           (null ID for global extra data change requests).
@@ -1063,7 +1064,7 @@
         Notification when machine specific or global extra data
         has changed.
       </desc>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>
           ID of the machine this event relates to.
           Null for global extra data changes.
@@ -1108,7 +1109,7 @@
         application will do required cleanup based on the
         @a mediaId value.
       </desc>
-      <param name="mediaId" type="uuid" dir="in">
+      <param name="mediaId" type="wstring" dir="in">
         <desc>ID of the media this event relates to.</desc>
       </param>
       <param name="mediaType" type="DeviceType" dir="in">
@@ -1127,7 +1128,7 @@
         The given machine was registered or unregistered
         within this VirtualBox installation.
       </desc>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>ID of the machine this event relates to.</desc>
       </param>
       <param name="registered" type="boolean" dir="in">
@@ -1143,7 +1144,7 @@
         The state of the session for the given machine was changed.
         <see>IMachine::sessionState</see>
       </desc>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>ID of the machine this event relates to.</desc>
       </param>
       <param name="state" type="SessionState" dir="in">
@@ -1156,10 +1157,10 @@
         A new snapshot of the machine has been taken.
         <see>ISnapshot</see>
       </desc>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>ID of the machine this event relates to.</desc>
       </param>
-      <param name="snapshotId" type="uuid" dir="in">
+      <param name="snapshotId" type="wstring" dir="in">
         <desc>ID of the new snapshot.</desc>
       </param>
     </method>
@@ -1176,10 +1177,10 @@
 
         <see>ISnapshot</see>
       </desc>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>ID of the machine this event relates to.</desc>
       </param>
-      <param name="snapshotId" type="uuid" dir="in">
+      <param name="snapshotId" type="wstring" dir="in">
         <desc>
           ID of the discarded snapshot. <tt>null</tt> means the
           current machine state has been discarded (restored from
@@ -1193,10 +1194,10 @@
         Snapshot properties (name and/or description) have been changed.
         <see>ISnapshot</see>
       </desc>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>ID of the machine this event relates to.</desc>
       </param>
-      <param name="snapshotId" type="uuid" dir="in">
+      <param name="snapshotId" type="wstring" dir="in">
         <desc>ID of the changed snapshot.</desc>
       </param>
     </method>
@@ -1205,7 +1206,7 @@
       <desc>
         Notification when a guest property has changed.
       </desc>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>
           ID of the machine this event relates to.
         </desc>
@@ -1342,7 +1343,7 @@
 
   <interface
     name="IVirtualBox" extends="$dispatched"
-    uuid="779264f4-65ed-48ed-be39-518ca549e296"
+    uuid="54bf05ec-3fa9-4735-b92e-76e7c6c7e2be"
     wsmap="managed"
   >
     <desc>
@@ -1625,7 +1626,7 @@
       <param name="baseFolder" type="wstring" dir="in">
         <desc>Base machine folder (optional).</desc>
       </param>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>Machine UUID (optional).</desc>
       </param>
       <param name="machine" type="IMachine" dir="return">
@@ -1685,7 +1686,7 @@
       <param name="settingsFile" type="wstring" dir="in">
         <desc>Name of the machine settings file.</desc>
       </param>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>Machine UUID (optional).</desc>
       </param>
       <param name="machine" type="IMachine" dir="return">
@@ -1762,7 +1763,7 @@
         </result>
 
       </desc>
-      <param name="id" type="uuid" dir="in"/>
+      <param name="id" type="wstring" dir="in"/>
       <param name="machine" type="IMachine" dir="return"/>
     </method>
 
@@ -1819,7 +1820,7 @@
         </result>
 
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the machine to unregister.</desc>
       </param>
       <param name="machine" type="IMachine" dir="return">
@@ -1973,7 +1974,7 @@
         </result>
 
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the hard disk to look for.</desc>
       </param>
       <param name="hardDisk" type="IHardDisk" dir="return">
@@ -2050,7 +2051,7 @@
           Full path to the file that contains a valid CD/DVD image.
         </desc>
       </param>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>
           UUID to assign to the given image within this VirtualBox installation.
           If an empty (null) UUID is specified, the system will randomly
@@ -2075,7 +2076,7 @@
         </result>
 
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the image to look for.</desc>
       </param>
       <param name="image" type="IDVDImage" dir="return">
@@ -2150,7 +2151,7 @@
           Full path to the file that contains a valid floppy image.
         </desc>
       </param>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>
           UUID to assign to the given image file within this VirtualBox
           installation. If an empty (null) UUID is specified, the system will
@@ -2175,7 +2176,7 @@
         </result>
 
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the image to look for.</desc>
       </param>
       <param name="image" type="IFloppyImage" dir="return">
@@ -2452,7 +2453,7 @@
           </note>
         </desc>
       </param>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>ID of the virtual machine to open a session with.</desc>
       </param>
     </method>
@@ -2544,7 +2545,7 @@
           represent an already open session).
         </desc>
       </param>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>ID of the virtual machine to open a session with.</desc>
       </param>
       <param name="type" type="wstring" dir="in">
@@ -2610,7 +2611,7 @@
           </note>
         </desc>
       </param>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>ID of the virtual machine to open a session with.</desc>
       </param>
     </method>
@@ -2892,6 +2893,115 @@
   </interface>
 
   <!--
+  // IVFSExplorer
+  /////////////////////////////////////////////////////////////////////////
+  -->
+
+  <enum
+    name="VFSType"
+    uuid="813999ba-b949-48a8-9230-aadc6285e2f2"
+  >
+    <desc>
+      Supported virtual file systems of VFSExplorer.
+    </desc>
+
+    <const name="File" value="1" />
+    <const name="Cloud" value="2" />
+    <const name="S3" value="3" />
+    <const name="WebDav" value="4" />
+  </enum>
+
+  <enum
+    name="VFSFileType"
+    uuid="714333cd-44e2-415f-a245-d378fa9b1242"
+  >
+    <desc>
+      File types known by VFSExplorer.
+    </desc>
+
+    <const name="Unknown" value="1" />
+    <const name="Fifo" value="2" />
+    <const name="DevChar" value="3" />
+    <const name="Directory" value="4" />
+    <const name="DevBlock" value="5" />
+    <const name="File" value="6" />
+    <const name="SymLink" value="7" />
+    <const name="Socket" value="8" />
+    <const name="WhiteOut" value="9" />
+  </enum>
+
+  <interface
+     name="IVFSExplorer" extends="$unknown"
+     uuid="fd7da337-80ef-4a5c-9122-918435e33003"
+     wsmap="managed"
+     >
+    <desc>
+      The VFSExplorer interface unify the access to different file system
+      types. This includes local file systems as well remote file systems like
+      the S3 one. For a list of supported types see <link to="VFSType" />.
+    </desc>
+
+    <attribute name="path" type="wstring" readonly="yes">
+      <desc>Return the current path in the virtual file system.</desc>
+    </attribute>
+
+    <attribute name="type" type="VFSType" readonly="yes">
+      <desc>Return the file system type which is currently in use.</desc>
+    </attribute>
+
+    <method name="update">
+      <desc>This method updates the internal list of files/directories from the
+      current directory level. Use <link to="entryList" /> to get the full list
+      after a call to this method.</desc>
+
+      <param name="aProgress" type="IProgress" dir="return">
+        <desc>Progress object to track the operation completion.</desc>
+      </param>
+    </method>
+
+    <method name="entryList">
+      <desc>Fetch the list of files/directories after a call to <link
+      to="update" />. The user is responcible for keeping this internal list up
+      do date.</desc>
+
+      <param name="aNames" type="wstring" safearray="yes" dir="out">
+        <desc>The list of names for the entries.</desc>
+      </param>
+
+      <param name="aTypes" type="unsigned long" safearray="yes" dir="out">
+        <desc>The list of types for the entries.</desc>
+      </param>
+    </method>
+
+    <method name="exists">
+        <desc>Check if the given file list exists in the current directory
+        level.</desc>
+
+      <param name="aNames" type="wstring" safearray="yes" dir="in">
+        <desc>The names to check.</desc>
+      </param>
+
+      <param name="aExists" type="wstring" safearray="yes" dir="return">
+        <desc>The names which exists.</desc>
+      </param>
+    </method>
+
+    <method name="remove">
+        <desc>Remove the given file names from the current directory
+        level.</desc>
+
+      <param name="aNames" type="wstring" safearray="yes" dir="in">
+        <desc>The names to remove.</desc>
+      </param>
+
+      <param name="aProgress" type="IProgress" dir="return">
+        <desc>Progress object to track the operation completion.</desc>
+      </param>
+    </method>
+    
+  </interface>
+
+  <!--
   // IAppliance
   /////////////////////////////////////////////////////////////////////////
   -->
@@ -3042,7 +3152,7 @@
 
   <interface
      name="IAppliance" extends="$unknown"
-     uuid="30bfa6b8-9eda-4b0a-b218-a86813248ccd"
+     uuid="07495095-d16c-4911-8964-5914341ced5d"
      wsmap="managed"
      >
     <desc>
@@ -3228,6 +3338,18 @@
       </param>
     </method>
 
+    <method name="createVFSExplorer">
+      <desc>Returns a <link to="IVFSExplorer" /> object for the given URI.</desc>
+
+      <param name="aUri" type="wstring" dir="in">
+        <desc>The URI describing the file system to use.</desc>
+      </param>
+
+      <param name="aExplorer" type="IVFSExplorer" dir="return">
+        <desc></desc>
+      </param>
+    </method>
+
     <method name="write">
       <desc>
           Writes the contents of the appliance exports into a new OVF file.
@@ -3252,7 +3374,7 @@
           </desc>
       </param>
       <param name="aProgress" type="IProgress" dir="return">
-          <desc></desc>
+        <desc>Progress object to track the operation completion.</desc>
       </param>
     </method>
 
@@ -3336,14 +3458,14 @@
       The list below identifies the value sets that are possible depending on the
       <link to="VirtualSystemDescriptionType" /> enum value in the array item in aTypes[]. In each case,
       the array item with the same index in aOvfValues[] will contain the original value as contained
-      in the OVF file (just for informational purposes), and the corresponding item in aVboxValues[]
+      in the OVF file (just for informational purposes), and the corresponding item in aVBoxValues[]
       will contain a suggested value to be used for VirtualBox. Depending on the description type,
       the aExtraConfigValues[] array item may also be used.
 
       <ul>
       <li>
         "OS": the guest operating system type. There must be exactly one such array item on import. The
-        corresponding item in aVboxValues[] contains the suggested guest operating system for VirtualBox.
+        corresponding item in aVBoxValues[] contains the suggested guest operating system for VirtualBox.
         This will be one of the values listed in <link to="IVirtualBox::guestOSTypes" />. The corresponding
         item in aOvfValues[] will contain a numerical value that described the operating system in the OVF
         (see <link to="CIMOSType" />).
@@ -3352,7 +3474,7 @@
         "Name": the name to give to the new virtual machine. There can be at most one such array item;
         if none is present on import, then an automatic name will be created from the operating system
         type. The correponding item im aOvfValues[] will contain the suggested virtual machine name
-        from the OVF file, and aVboxValues[] will contain a suggestion for a unique VirtualBox
+        from the OVF file, and aVBoxValues[] will contain a suggestion for a unique VirtualBox
         <link to="IMachine" /> name that does not exist yet.
       </li>
       <li>
@@ -3375,18 +3497,18 @@
       </li>
       <li>
         "HarddiskControllerIDE": an IDE hard disk controller. There can be at most one such item. This
-        has no value in aOvfValues[] or aVboxValues[].
+        has no value in aOvfValues[] or aVBoxValues[].
         The matching item in the aRefs[] array will contain an integer that items of the "Harddisk"
         type can use to specify which hard disk controller a virtual disk should be connected to.
       </li>
       <li>
         "HarddiskControllerSATA": an SATA hard disk controller. There can be at most one such item. This
-        has no value in aOvfValues[] or aVboxValues[].
+        has no value in aOvfValues[] or aVBoxValues[].
         The matching item in the aRefs[] array will be used as with IDE controllers (see above).
       </li>
       <li>
         "HarddiskControllerSCSI": a SCSI hard disk controller. There can be at most one such item.
-        The items in aOvfValues[] and aVboxValues[] will either be "LsiLogic" or "BusLogic".
+        The items in aOvfValues[] and aVBoxValues[] will either be "LsiLogic" or "BusLogic".
         The matching item in the aRefs[] array will be used as with IDE controllers (see above).
       </li>
       <li>
@@ -3395,7 +3517,7 @@
 
         The array item in aOvfValues[] will contain the file specification from the OVF file (without
         a path since the image file should be in the same location as the OVF file itself), whereas the
-        item in aVboxValues[] will contain a qualified path specification to where VirtualBox uses the
+        item in aVBoxValues[] will contain a qualified path specification to where VirtualBox uses the
         hard disk image. This means that on import the image will be copied and converted from the
         "ovf" location to the "vbox" location; on export, this will be handled the other way round.
         On import, the target image will also be registered with VirtualBox.
@@ -3411,7 +3533,7 @@
         SCSI conrollers, the channel can range from 0-29.
       </li>
       <li>
-        "NetworkAdapter": a network adapter. The array item in aVboxValues[] will specify the hardware
+        "NetworkAdapter": a network adapter. The array item in aVBoxValues[] will specify the hardware
         for the network adapter, whereas the array item in aExtraConfigValues[] will have a string
         of the "type=&lt;X&gt;" format, where &lt;X&gt; must be either "NAT" or "Bridged".
       </li>
@@ -3441,7 +3563,7 @@
         <desc></desc>
       </param>
 
-      <param name="aVboxValues" type="wstring" dir="out" safearray="yes">
+      <param name="aVBoxValues" type="wstring" dir="out" safearray="yes">
         <desc></desc>
       </param>
 
@@ -3471,7 +3593,7 @@
         <desc></desc>
       </param>
 
-      <param name="aVboxValues" type="wstring" dir="out" safearray="yes">
+      <param name="aVBoxValues" type="wstring" dir="out" safearray="yes">
         <desc></desc>
       </param>
 
@@ -3513,7 +3635,7 @@
         and SoundCard.
 
         For the "vbox" and "extra configuration" values, if you pass in the same arrays
-        as returned in the aVboxValues and aExtraConfigValues arrays from getDescription(),
+        as returned in the aVBoxValues and aExtraConfigValues arrays from getDescription(),
         the configuration remains unchanged. Please see the documentation for getDescription()
         for valid configuration values for the individual array item types. If the
         corresponding item in the aEnabled array is false, the configuration value is ignored.
@@ -3523,7 +3645,7 @@
         <desc></desc>
       </param>
 
-      <param name="aVboxValues" type="wstring" dir="in" safearray="yes">
+      <param name="aVBoxValues" type="wstring" dir="in" safearray="yes">
         <desc></desc>
       </param>
 
@@ -3544,7 +3666,7 @@
         <desc></desc>
       </param>
 
-      <param name="aVboxValue" type="wstring" dir="in">
+      <param name="aVBoxValue" type="wstring" dir="in">
         <desc></desc>
       </param>
 
@@ -3562,7 +3684,7 @@
 
   <interface
      name="IInternalMachineControl" extends="$unknown"
-     uuid="2c88b969-7a74-4ef3-b95f-8a209a1535f3"
+     uuid="5595cae1-6b18-42c1-b416-bc7493a87618"
      internal="yes"
      wsmap="suppress"
      >
@@ -3605,7 +3727,7 @@
         get a <link to="IInternalSessionControl::onUSBDeviceAttach"/>
         notification.
       </desc>
-      <param name="id" type="uuid" dir="in"/>
+      <param name="id" type="wstring" dir="in"/>
     </method>
 
     <method name="detachUSBDevice">
@@ -3621,7 +3743,7 @@
           as if it were just attached to the host computer.
         </note>
       </desc>
-      <param name="id" type="uuid" dir="in"/>
+      <param name="id" type="wstring" dir="in"/>
       <param name="done" type="boolean" dir="in"/>
     </method>
 
@@ -3781,7 +3903,7 @@
       <param name="initiator" type="IConsole" dir="in">
         <desc>The console object that initiated this call.</desc>
       </param>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the snapshot to discard.</desc>
       </param>
       <param name="machineState" type="MachineState" dir="out">
@@ -3989,7 +4111,7 @@
 
   <interface
      name="IMachine" extends="$unknown"
-     uuid="13420cbb-175a-4456-85d0-301126dfdec7"
+     uuid="4d1df26d-d9c1-4c7e-b689-15e85ecf8ffc"
      wsmap="managed"
      >
     <desc>
@@ -4155,7 +4277,7 @@
       </desc>
     </attribute>
 
-    <attribute name="id" type="uuid" readonly="yes">
+    <attribute name="id" type="wstring" readonly="yes">
       <desc>UUID of the virtual machine.</desc>
     </attribute>
 
@@ -4649,7 +4771,7 @@
         </result>
 
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the hard disk to attach.</desc>
       </param>
       <param name="name" type="wstring" dir="in">
@@ -5119,7 +5241,7 @@
         </result>
 
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the snapshot to get</desc>
       </param>
       <param name="snapshot" type="ISnapshot" dir="return">
@@ -5152,7 +5274,7 @@
           implemented.
         </note>
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the snapshot to set as the current snapshot.</desc>
       </param>
     </method>
@@ -5946,7 +6068,7 @@
 
   <interface
      name="IConsole" extends="$unknown"
-     uuid="9511bc54-15ee-4ddf-808e-472aba03809c"
+     uuid="a7f17a42-5b64-488d-977b-4b2c639ada27"
      wsmap="managed"
      >
     <desc>
@@ -6369,7 +6491,7 @@
           Virtual machine does not have a USB controller.
         </result>
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the host USB device to attach.</desc>
       </param>
     </method>
@@ -6393,7 +6515,7 @@
           USB device not attached to this virtual machine.
         </result>
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the USB device to detach.</desc>
       </param>
       <param name="device" type="IUSBDevice" dir="return">
@@ -6432,7 +6554,7 @@
 
         <see>IUSBDevice::id</see>
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the USB device to search for.</desc>
       </param>
       <param name="device" type="IUSBDevice" dir="return">
@@ -6605,7 +6727,7 @@
           Virtual machine is running.
         </result>
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the snapshot to discard.</desc>
       </param>
       <param name="progress" type="IProgress" dir="return">
@@ -6866,7 +6988,7 @@
 
   <interface
      name="IHostNetworkInterface" extends="$unknown"
-     uuid="88adaf3f-166b-4542-9457-0f1323507fae"
+     uuid="ce6fae58-7642-4102-b5db-c9005c2320a8"
      wsmap="managed"
      >
     <desc>
@@ -6879,7 +7001,7 @@
       <desc>Returns the host network interface name.</desc>
     </attribute>
 
-    <attribute name="id" type="uuid" readonly="yes">
+    <attribute name="id" type="wstring" readonly="yes">
       <desc>Returns the interface UUID.</desc>
     </attribute>
 
@@ -6967,7 +7089,7 @@
 
   <interface
      name="IHost" extends="$unknown"
-     uuid="926469ca-9091-42ef-928e-582d78b66c70"
+     uuid="a13b5556-5c0b-4f80-9df6-6f804f3336a1"
      wsmap="managed"
      >
     <desc>
@@ -7108,7 +7230,10 @@
       <desc>Returns the current host time in milliseconds since 1970-01-01 UTC.</desc>
     </attribute>
 
-<if target="midl">
+    <attribute name="Acceleration3DAvailable" type="boolean" readonly="yes">
+      <desc>Returns true when the host supports 3D hardware acceleration.</desc>
+    </attribute>
+
     <method name="createHostOnlyNetworkInterface">
       <desc>
         Creates a new adapter for Host Only Networking.
@@ -7127,6 +7252,7 @@
         </desc>
       </param>
     </method>
+
     <method name="removeHostOnlyNetworkInterface">
       <desc>
         Removes the given Host Only Networking interface.
@@ -7134,7 +7260,7 @@
           No host network interface matching @a id found.
         </result>
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>
           Adapter GUID.
         </desc>
@@ -7150,7 +7276,6 @@
         </desc>
       </param>
     </method>
-</if>
 
     <method name="createUSBDeviceFilter">
       <desc>
@@ -7298,7 +7423,7 @@
           correspond to any host network interface.
         </note>
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>GUID of the host network interface to search for.</desc>
       </param>
       <param name="networkInterface" type="IHostNetworkInterface" dir="return">
@@ -7327,7 +7452,7 @@
 
         <see>IHostUSBDevice::id</see>
       </desc>
-      <param name="id" type="uuid" dir="in">
+      <param name="id" type="wstring" dir="in">
         <desc>UUID of the USB device to search for.</desc>
       </param>
       <param name="device" type="IHostUSBDevice" dir="return">
@@ -7366,7 +7491,7 @@
   <interface
      name="ISystemProperties"
      extends="$unknown"
-     uuid="0760e03f-06d0-481e-9f81-be43fef092ba"
+     uuid="63bfd184-df69-4949-9159-a923cf7b1207"
      wsmap="managed"
      >
     <desc>
@@ -7632,6 +7757,11 @@
         This value specifies how many old release log files are kept.
        </desc>
     </attribute>
+
+    <attribute name="defaultAudioDriver" type="AudioDriverType" readonly="yes">
+      <desc>This value hold the default audio driver for the current
+      system.</desc>
+    </attribute>
   </interface>
 
   <!--
@@ -7820,7 +7950,7 @@
 
   <interface
      name="IProgress" extends="$unknown"
-     uuid="c4f94e6b-2273-446b-9539-4c05bb416fe7"
+     uuid="6fcd0198-7fc5-4c53-8c37-653ac76854b5"
      wsmap="managed"
      >
     <desc>
@@ -7860,7 +7990,7 @@
         <link to="#waitForCompletion" />.
     </desc>
 
-    <attribute name="id" type="uuid" readonly="yes">
+    <attribute name="id" type="wstring" readonly="yes">
       <desc>ID of the task.</desc>
     </attribute>
 
@@ -7906,7 +8036,7 @@
       <desc>Whether the task has been canceled.</desc>
     </attribute>
 
-    <attribute name="resultCode" type="result" readonly="yes">
+    <attribute name="resultCode" type="long" readonly="yes">
       <desc>
         Result code of the progress task.
         Valid only if <link to="#completed"/> is true.
@@ -8009,7 +8139,7 @@
 
   <interface
      name="ISnapshot" extends="$unknown"
-     uuid="5db6b1d9-c76b-4424-a6f4-8257f642d6ea"
+     uuid="1a2d0551-58a4-4107-857e-ef414fc42ffc"
      wsmap="managed"
      >
     <desc>
@@ -8147,7 +8277,7 @@
 
     </desc>
 
-    <attribute name="id" type="uuid" readonly="yes">
+    <attribute name="id" type="wstring" readonly="yes">
       <desc>UUID of the snapshot.</desc>
     </attribute>
 
@@ -8271,7 +8401,7 @@
 
   <interface
     name="IMedium" extends="$unknown"
-    uuid="a7fb3bfb-c180-4274-bae4-7fbc89046e13"
+    uuid="f585787c-7728-40f6-853a-13705426e936"
     wsmap="managed"
   >
     <desc>
@@ -8359,7 +8489,7 @@
       check media accessibility right away or not.
     </desc>
 
-    <attribute name="id" type="uuid" readonly="yes">
+    <attribute name="id" type="wstring" readonly="yes">
       <desc>
         UUID of the medium. For a newly created medium, this value is a randomly
         generated UUID.
@@ -8489,7 +8619,7 @@
       </desc>
     </attribute>
 
-    <attribute name="machineIds" type="uuid" safearray="yes" readonly="yes">
+    <attribute name="machineIds" type="wstring" safearray="yes" readonly="yes">
       <desc>
         Array of UUIDs of all machines this medium is attached to.
 
@@ -8522,12 +8652,12 @@
         to the given machine at all, neither in the current state nor in one of
         the snapshots.
       </desc>
-      <param name="machineId" type="uuid" dir="in">
+      <param name="machineId" type="wstring" dir="in">
         <desc>
           UUID of the machine to query.
         </desc>
       </param>
-      <param name="snapshotIds" type="uuid" safearray="yes" dir="return">
+      <param name="snapshotIds" type="wstring" safearray="yes" dir="return">
         <desc>
           Array of snapshot UUIDs of the given machine using this medium.
         </desc>
@@ -8826,7 +8956,7 @@
 
   <interface
     name="IHardDisk" extends="IMedium"
-    uuid="91648dc6-bb19-46bf-9e1c-4bf5b960c8e2"
+    uuid="62551115-83b8-4d20-925f-79e9d3c00f96"
     wsmap="managed"
   >
     <desc>
@@ -9552,7 +9682,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
           duration of this operation.
         </note>
       </desc>
-      <param name="targetId" type="uuid" dir="in">
+      <param name="targetId" type="wstring" dir="in">
         <desc>UUID of the target ancestor or descendant hard disk.</desc>
       </param>
       <param name="progress" type="IProgress" dir="return">
@@ -9616,6 +9746,15 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         state and all its parent hard disks (if any) will be placed to
         <link to="MediaState_LockedRead"/> state for the duration of this
         operation.
+
+        Please note that the results can be either returned straight away,
+        or later as the result of the background operation via the object
+        returned via the @a progress parameter.
+
+        <result name="VBOX_E_NOT_SUPPORTED">
+          Hard disk format does not support compacting (but potentially
+          needs it).
+        </result>
       </desc>
       <param name="progress" type="IProgress" dir="return">
         <desc>Progress object to track the operation completion.</desc>
@@ -9897,7 +10036,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IDVDDrive" extends="$unknown"
-    uuid="d650ef30-be9b-4dae-b463-11d5824681a5"
+    uuid="156944d1-4c6d-4812-8f12-ab3890767ab4"
     wsmap="managed"
   >
     <desc>
@@ -9933,7 +10072,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         </result>
 
       </desc>
-      <param name="imageId" type="uuid" dir="in"/>
+      <param name="imageId" type="wstring" dir="in"/>
     </method>
 
     <method name="captureHostDrive">
@@ -9965,7 +10104,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
      name="IFloppyDrive" extends="$unknown"
-     uuid="159412cd-bab8-452e-8097-218a020825a6"
+     uuid="a8676d38-5cf0-4b53-85b1-aa693611ab86"
      wsmap="managed"
   >
     <desc>
@@ -9999,7 +10138,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         </result>
 
       </desc>
-      <param name="imageId" type="uuid" dir="in"/>
+      <param name="imageId" type="wstring" dir="in"/>
     </method>
 
     <method name="captureHostDrive">
@@ -10239,18 +10378,6 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
   -->
 
   <enum
-    name="FramebufferAccelerationOperation"
-    uuid="f0e5ebbe-dc8e-4e2d-916e-53baa3844df8"
-  >
-    <desc>
-      Frame buffer acceleration operation.
-    </desc>
-
-    <const name="SolidFillAcceleration"   value="1"/>
-    <const name="ScreenCopyAcceleration"  value="2"/>
-  </enum>
-
-  <enum
     name="FramebufferPixelFormat"
     uuid="7acfd5ed-29e3-45e3-8136-73c9224f3d2d"
   >
@@ -10279,7 +10406,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
      name="IFramebuffer" extends="$unknown"
-     uuid="af431304-5b09-40e2-94da-3c3cb03822c1"
+     uuid="b7ed347a-5765-40a0-ae1c-f543eb4ddeaf"
      wsmap="suppress"
      >
     <attribute name="address" type="octet" mod="ptr" readonly="yes">
@@ -10388,7 +10515,6 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <param name="y" type="unsigned long" dir="in"/>
       <param name="width" type="unsigned long" dir="in"/>
       <param name="height" type="unsigned long" dir="in"/>
-      <param name="finished" type="boolean" dir="return"/>
     </method>
 
     <method name="requestResize">
@@ -10510,22 +10636,6 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       </param>
     </method>
 
-    <method name="operationSupported">
-      <desc>
-        Returns whether the given acceleration operation is supported
-        by the IFramebuffer implementation. If not, the display object
-        will not attempt to call the corresponding IFramebuffer entry
-        point. Even if an operation is indicated as supported, the
-        IFramebuffer implementation always has the option to return non
-        supported from the corresponding acceleration method in which
-        case the operation will be performed by the display engine. This
-        allows for reduced IFramebuffer implementation complexity where
-        only common cases are handled.
-      </desc>
-      <param name="operation" type="FramebufferAccelerationOperation" dir="in"/>
-      <param name="supported" type="boolean" dir="return"/>
-    </method>
-
     <method name="videoModeSupported">
       <desc>
         Returns whether the frame buffer implementation is willing to
@@ -10540,31 +10650,6 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <param name="height" type="unsigned long" dir="in"/>
       <param name="bpp" type="unsigned long" dir="in"/>
       <param name="supported" type="boolean" dir="return"/>
-    </method>
-
-    <method name="solidFill">
-      <desc>
-        Fills the specified rectangle on screen with a solid color.
-      </desc>
-      <param name="x" type="unsigned long" dir="in"/>
-      <param name="y" type="unsigned long" dir="in"/>
-      <param name="width" type="unsigned long" dir="in"/>
-      <param name="height" type="unsigned long" dir="in"/>
-      <param name="color" type="unsigned long" dir="in"/>
-      <param name="handled" type="boolean" dir="return"/>
-    </method>
-
-    <method name="copyScreenBits">
-      <desc>
-        Copies specified rectangle on the screen.
-      </desc>
-      <param name="xDst" type="unsigned long" dir="in"/>
-      <param name="yDst" type="unsigned long" dir="in"/>
-      <param name="xSrc" type="unsigned long" dir="in"/>
-      <param name="ySrc" type="unsigned long" dir="in"/>
-      <param name="width" type="unsigned long" dir="in"/>
-      <param name="height" type="unsigned long" dir="in"/>
-      <param name="handled" type="boolean" dir="return"/>
     </method>
 
     <method name="getVisibleRegion">
@@ -10628,6 +10713,23 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         <desc>Number of <tt>RTRECT</tt> elements in the @a rectangles array.</desc>
       </param>
     </method>
+    
+    <method name="processVHWACommand">
+      <desc>
+        Posts a Video HW Acceleration Command to the frame buffer for processing.
+        The commands used for 2D video acceleration (DDraw surface creation/destroying, blitting, scaling, color covnersion, overlaying, etc.)
+        are posted from quest to the host to be processed by the host hardware.
+        
+        <note>
+          The address of the provided command must be in the process space of
+          this IFramebuffer object.
+        </note>
+      </desc>
+    
+      <param name="command" type="octet" mod="ptr" dir="in">
+        <desc>Pointer to VBOXVHWACMD containing the command to execute.</desc>
+      </param>
+    </method>
 
   </interface>
 
@@ -10679,7 +10781,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
      name="IDisplay" extends="$unknown"
-     uuid="09789f63-4525-48e5-a5e4-1080453b0eab"
+     uuid="26881797-bc98-444d-ac69-820633b93ec7"
      wsmap="suppress"
      >
     <desc>
@@ -10707,43 +10809,6 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         from <link to="IFramebuffer::bitsPerPixel"/>.
       </desc>
     </attribute>
-
-    <method name="setupInternalFramebuffer">
-      <desc>
-        Prepares an internally managed frame buffer.
-      </desc>
-      <param name="depth" type="unsigned long" dir="in"/>
-    </method>
-
-    <method name="lockFramebuffer">
-      <desc>
-        Requests access to the internal frame buffer.
-
-        <result name="VBOX_E_NOT_SUPPORTED">
-          Attempt to lock a non-internal frame buffer.
-        </result>
-
-      </desc>
-      <param name="address" type="octet" mod="ptr" dir="return"/>
-    </method>
-
-    <method name="unlockFramebuffer">
-      <desc>
-        Releases access to the internal frame buffer.
-
-        <result name="VBOX_E_NOT_SUPPORTED">
-          Attempt to unlock a non-internal frame buffer.
-        </result>
-
-      </desc>
-    </method>
-
-    <method name="registerExternalFramebuffer">
-      <desc>
-        Registers an external frame buffer.
-      </desc>
-      <param name="framebuffer" type="IFramebuffer" dir="in"/>
-    </method>
 
     <method name="setFramebuffer">
       <desc>
@@ -10876,6 +10941,16 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         </result>
 
       </desc>
+    </method>
+
+    <method name="completeVHWACommand">
+      <desc>
+        Signals that the Video HW Acceleration command has completed.
+      </desc>
+ 
+      <param name="command" type="octet" mod="ptr" dir="in">
+        <desc>Pointer to VBOXVHWACMD containing the completed command.</desc>
+      </param>
     </method>
 
   </interface>
@@ -11065,7 +11140,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <enum
     name="PortMode"
-    uuid="b266f43c-2e93-46b3-812b-c20e600e867b"
+    uuid="533b5fe3-0185-4197-86a7-17e37dd39d76"
   >
     <desc>
       The PortMode enumeration represents possible communication modes for
@@ -11080,6 +11155,9 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
     </const>
     <const name="HostDevice"          value="2">
       <desc>Virtual device is attached to a host device.</desc>
+    </const>
+    <const name="RawFile"             value="3">
+      <desc>Virtual device is attached to a raw file.</desc>
     </const>
   </enum>
 
@@ -11504,7 +11582,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
      name="IUSBDevice" extends="$unknown"
-     uuid="850af07b-9ee8-48c2-b6b0-f6d0acbf63c3"
+     uuid="f8967b0b-4483-400f-92b5-8b675d98a85b"
      wsmap="managed"
      >
     <desc>
@@ -11516,7 +11594,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       attached to a running virtual machine's USB controller.
     </desc>
 
-    <attribute name="id" type="uuid" readonly="yes">
+    <attribute name="id" type="wstring" readonly="yes">
       <desc>
         Unique USB device ID. This ID is built from #vendorId,
         #productId, #revision and #serialNumber.
@@ -12167,7 +12245,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
      name="IInternalSessionControl" extends="$unknown"
-     uuid="2581845a-5a9d-45fb-bc3b-2476552dd970"
+     uuid="b26552e7-9534-4f47-b766-98eac648a90d"
      internal="yes"
      wsmap="suppress"
      >
@@ -12434,7 +12512,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         </result>
 
       </desc>
-      <param name="id" type="uuid" dir="in"/>
+      <param name="id" type="wstring" dir="in"/>
       <param name="error" type="IVirtualBoxErrorInfo" dir="in"/>
     </method>
 

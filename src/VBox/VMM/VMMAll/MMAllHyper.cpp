@@ -1,4 +1,4 @@
-/* $Id: MMAllHyper.cpp 18287 2009-03-26 03:34:54Z vboxsync $ */
+/* $Id: MMAllHyper.cpp 19667 2009-05-13 15:49:38Z vboxsync $ */
 /** @file
  * MM - Memory Manager - Hypervisor Memory Area, All Contexts.
  */
@@ -151,6 +151,51 @@ static int mmHyperFree(PMMHYPERHEAP pHeap, PMMHYPERCHUNK pChunk);
 static void mmHyperHeapCheck(PMMHYPERHEAP pHeap);
 #endif
 
+/**
+ * Locks the hypervisor heap.
+ * This might call back to Ring-3 in order to deal with lock contention in GC and R3.
+ *
+ * @param   pVM     The VM handle.
+ */
+static int mmHyperLock(PVM pVM)
+{
+    PMMHYPERHEAP pHeap = pVM->mm.s.CTX_SUFF(pHyperHeap);
+
+#ifdef IN_RING3
+    if (!PDMCritSectIsInitialized(&pHeap->Lock))
+        return VINF_SUCCESS;     /* early init */
+#else
+    Assert(PDMCritSectIsInitialized(&pHeap->Lock));
+#endif
+    int rc = PDMCritSectEnter(&pHeap->Lock, VERR_SEM_BUSY);
+#ifdef IN_RC
+    if (rc == VERR_SEM_BUSY)
+        rc = VMMGCCallHost(pVM, VMMCALLHOST_MMHYPER_LOCK, 0);
+#elif defined(IN_RING0)
+    if (rc == VERR_SEM_BUSY)
+        rc = VMMR0CallHost(pVM, VMMCALLHOST_MMHYPER_LOCK, 0);
+#endif
+    AssertRC(rc);
+    return rc;
+}
+
+
+/**
+ * Unlocks the hypervisor heap.
+ *
+ * @param   pVM     The VM handle.
+ */
+static void mmHyperUnlock(PVM pVM)
+{
+    PMMHYPERHEAP pHeap = pVM->mm.s.CTX_SUFF(pHyperHeap);
+
+#ifdef IN_RING3
+    if (!PDMCritSectIsInitialized(&pHeap->Lock))
+        return;     /* early init */
+#endif
+    Assert(PDMCritSectIsInitialized(&pHeap->Lock));
+    PDMCritSectLeave(&pHeap->Lock);
+}
 
 /**
  * Allocates memory in the Hypervisor (RC VMM) area.
@@ -165,9 +210,8 @@ static void mmHyperHeapCheck(PMMHYPERHEAP pHeap);
  * @param   enmTag      The statistics tag.
  * @param   ppv         Where to store the address to the allocated
  *                      memory.
- * @remark  This is assumed not to be used at times when serialization is required.
  */
-VMMDECL(int) MMHyperAlloc(PVM pVM, size_t cb, unsigned uAlignment, MMTAG enmTag, void **ppv)
+static int mmHyperAllocInternal(PVM pVM, size_t cb, unsigned uAlignment, MMTAG enmTag, void **ppv)
 {
     AssertMsg(cb >= 8, ("Hey! Do you really mean to allocate less than 8 bytes?! cb=%d\n", cb));
 
@@ -281,7 +325,21 @@ VMMDECL(int) MMHyperAlloc(PVM pVM, size_t cb, unsigned uAlignment, MMTAG enmTag,
     return VERR_MM_HYPER_NO_MEMORY;
 }
 
+/**
+ * Wrapper for mmHyperAllocInternal
+ */
+VMMDECL(int) MMHyperAlloc(PVM pVM, size_t cb, unsigned uAlignment, MMTAG enmTag, void **ppv)
+{
+    int rc;
 
+    rc = mmHyperLock(pVM);
+    AssertRCReturn(rc, rc);
+
+    rc = mmHyperAllocInternal(pVM, cb, uAlignment, enmTag, ppv);
+
+    mmHyperUnlock(pVM);
+    return rc;
+}
 
 /**
  * Allocates a chunk of memory from the specified heap.
@@ -704,7 +762,7 @@ static void mmR3HyperStatRegisterOne(PVM pVM, PMMHYPERSTAT pStat)
  * @param   pv          The memory to free.
  * @remark  Try avoid free hyper memory.
  */
-VMMDECL(int) MMHyperFree(PVM pVM, void *pv)
+static int mmHyperFreeInternal(PVM pVM, void *pv)
 {
     Log2(("MMHyperFree: pv=%p\n", pv));
     if (!pv)
@@ -757,7 +815,7 @@ VMMDECL(int) MMHyperFree(PVM pVM, void *pv)
     AssertMsgReturn(pHeap->u32Magic == MMHYPERHEAP_MAGIC,
                     ("%p: u32Magic=%#x\n", pv, pHeap->u32Magic),
                     VERR_INVALID_POINTER);
-Assert(pHeap == pVM->mm.s.CTX_SUFF(pHyperHeap));
+    Assert(pHeap == pVM->mm.s.CTX_SUFF(pHyperHeap));
 
     /* Some more verifications using additional info from pHeap. */
     AssertMsgReturn((uintptr_t)pChunk + offPrev >= (uintptr_t)pHeap->CTX_SUFF(pbHeap),
@@ -843,6 +901,23 @@ Assert(pHeap == pVM->mm.s.CTX_SUFF(pHyperHeap));
         pStat->cFailures++;
 #endif
 
+    return rc;
+}
+
+
+/**
+ * Wrapper for mmHyperFreeInternal
+ */
+VMMDECL(int) MMHyperFree(PVM pVM, void *pv)
+{
+    int rc;
+
+    rc = mmHyperLock(pVM);
+    AssertRCReturn(rc, rc);
+
+    rc = mmHyperFreeInternal(pVM, pv);
+
+    mmHyperUnlock(pVM);
     return rc;
 }
 
@@ -1116,7 +1191,12 @@ static void mmHyperHeapCheck(PMMHYPERHEAP pHeap)
 VMMDECL(void) MMHyperHeapCheck(PVM pVM)
 {
 #ifdef MMHYPER_HEAP_STRICT
+    int rc;
+
+    rc = mmHyperLock(pVM);
+    AssertRC(rc);
     mmHyperHeapCheck(pVM->mm.s.CTX_SUFF(pHyperHeap));
+    mmHyperUnlock(pVM);
 #endif
 }
 

@@ -1,4 +1,4 @@
-/* $Id: SUPLib.cpp 18761 2009-04-06 14:11:49Z vboxsync $ */
+/* $Id: SUPLib.cpp 20528 2009-06-13 20:21:48Z vboxsync $ */
 /** @file
  * VirtualBox Support Library - Common code.
  */
@@ -99,7 +99,7 @@ static bool                     g_fPreInited = false;
 /** The SUPLib instance data.
  * Well, at least parts of it, specificly the parts that are being handed over
  * via the pre-init mechanism from the hardened executable stub.  */
-static SUPLIBDATA               g_supLibData =
+SUPLIBDATA                      g_supLibData =
 {
     NIL_RTFILE
 #if   defined(RT_OS_DARWIN)
@@ -259,8 +259,8 @@ SUPR3DECL(int) SUPR3Init(PSUPDRVSESSION *ppSession)
         CookieReq.Hdr.rc = VERR_INTERNAL_ERROR;
         strcpy(CookieReq.u.In.szMagic, SUPCOOKIE_MAGIC);
         CookieReq.u.In.u32ReqVersion = SUPDRV_IOC_VERSION;
-        const uint32_t MinVersion = (SUPDRV_IOC_VERSION & 0xffff0000) == 0x000a0000
-                                  ? 0x000a0009
+        const uint32_t MinVersion = (SUPDRV_IOC_VERSION & 0xffff0000) == 0x000d0000
+                                  ?  0x000d0001
                                   :  SUPDRV_IOC_VERSION & 0xffff0000;
         CookieReq.u.In.u32MinVersion = MinVersion;
         rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_COOKIE, &CookieReq, SUP_IOCTL_COOKIE_SIZE);
@@ -567,7 +567,7 @@ static int supCallVMMR0ExFake(PVMR0 pVMR0, unsigned uOperation, uint64_t u64Arg,
 }
 
 
-SUPR3DECL(int) SUPCallVMMR0Fast(PVMR0 pVMR0, unsigned uOperation, unsigned idCpu)
+SUPR3DECL(int) SUPCallVMMR0Fast(PVMR0 pVMR0, unsigned uOperation, VMCPUID idCpu)
 {
     if (RT_LIKELY(uOperation == SUP_VMMR0_DO_RAW_RUN))
         return suplibOsIOCtlFast(&g_supLibData, SUP_IOCTL_FAST_DO_RAW_RUN, idCpu);
@@ -581,7 +581,7 @@ SUPR3DECL(int) SUPCallVMMR0Fast(PVMR0 pVMR0, unsigned uOperation, unsigned idCpu
 }
 
 
-SUPR3DECL(int) SUPCallVMMR0Ex(PVMR0 pVMR0, unsigned uOperation, uint64_t u64Arg, PSUPVMMR0REQHDR pReqHdr)
+SUPR3DECL(int) SUPCallVMMR0Ex(PVMR0 pVMR0, VMCPUID idCpu, unsigned uOperation, uint64_t u64Arg, PSUPVMMR0REQHDR pReqHdr)
 {
     /*
      * The following operations don't belong here.
@@ -608,6 +608,7 @@ SUPR3DECL(int) SUPCallVMMR0Ex(PVMR0 pVMR0, unsigned uOperation, uint64_t u64Arg,
         Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
         Req.Hdr.rc = VERR_INTERNAL_ERROR;
         Req.u.In.pVMR0 = pVMR0;
+        Req.u.In.idCpu = idCpu;
         Req.u.In.uOperation = uOperation;
         Req.u.In.u64Arg = u64Arg;
         rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_CALL_VMMR0(0), &Req, SUP_IOCTL_CALL_VMMR0_SIZE(0));
@@ -628,6 +629,7 @@ SUPR3DECL(int) SUPCallVMMR0Ex(PVMR0 pVMR0, unsigned uOperation, uint64_t u64Arg,
         pReq->Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
         pReq->Hdr.rc = VERR_INTERNAL_ERROR;
         pReq->u.In.pVMR0 = pVMR0;
+        pReq->u.In.idCpu = idCpu;
         pReq->u.In.uOperation = uOperation;
         pReq->u.In.u64Arg = u64Arg;
         memcpy(&pReq->abReqPkt[0], pReqHdr, cbReq);
@@ -642,7 +644,7 @@ SUPR3DECL(int) SUPCallVMMR0Ex(PVMR0 pVMR0, unsigned uOperation, uint64_t u64Arg,
 }
 
 
-SUPR3DECL(int) SUPCallVMMR0(PVMR0 pVMR0, unsigned uOperation, void *pvArg)
+SUPR3DECL(int) SUPCallVMMR0(PVMR0 pVMR0, VMCPUID idCpu, unsigned uOperation, void *pvArg)
 {
     /*
      * The following operations don't belong here.
@@ -652,7 +654,7 @@ SUPR3DECL(int) SUPCallVMMR0(PVMR0 pVMR0, unsigned uOperation, void *pvArg)
                     &&  uOperation != SUP_VMMR0_DO_NOP,
                     ("%#x\n", uOperation),
                     VERR_INTERNAL_ERROR);
-    return SUPCallVMMR0Ex(pVMR0, uOperation, (uintptr_t)pvArg, NULL);
+    return SUPCallVMMR0Ex(pVMR0, idCpu, uOperation, (uintptr_t)pvArg, NULL);
 }
 
 
@@ -1138,6 +1140,46 @@ SUPR3DECL(int) SUPR3PageMapKernel(void *pvR3, uint32_t off, uint32_t cb, uint32_
         rc = Req.Hdr.rc;
     if (RT_SUCCESS(rc))
         *pR0Ptr = Req.u.Out.pvR0;
+    return rc;
+}
+
+
+SUPR3DECL(int) SUPR3PageProtect(void *pvR3, RTR0PTR R0Ptr, uint32_t off, uint32_t cb, uint32_t fProt)
+{
+    /*
+     * Validate.
+     */
+    AssertPtrReturn(pvR3, VERR_INVALID_POINTER);
+    Assert(!(off & PAGE_OFFSET_MASK));
+    Assert(!(cb & PAGE_OFFSET_MASK) && cb);
+    AssertReturn(!(fProt & ~(RTMEM_PROT_NONE | RTMEM_PROT_READ | RTMEM_PROT_WRITE | RTMEM_PROT_EXEC)), VERR_INVALID_PARAMETER);
+
+    /* fake */
+    if (RT_UNLIKELY(g_u32FakeMode))
+        return RTMemProtect((uint8_t *)pvR3 + off, cb, fProt);
+
+    /*
+     * Some OSes can do this from ring-3, so try that before we
+     * issue the IOCtl to the SUPDRV kernel module.
+     * (Yea, this isn't very nice, but just try get the job done for now.)
+     */
+    RTMemProtect((uint8_t *)pvR3 + off, cb, fProt);
+
+    SUPPAGEPROTECT Req;
+    Req.Hdr.u32Cookie = g_u32Cookie;
+    Req.Hdr.u32SessionCookie = g_u32SessionCookie;
+    Req.Hdr.cbIn = SUP_IOCTL_PAGE_PROTECT_SIZE_IN;
+    Req.Hdr.cbOut = SUP_IOCTL_PAGE_PROTECT_SIZE_OUT;
+    Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
+    Req.Hdr.rc = VERR_INTERNAL_ERROR;
+    Req.u.In.pvR3 = pvR3;
+    Req.u.In.pvR0 = R0Ptr;
+    Req.u.In.offSub = off;
+    Req.u.In.cbSub = cb;
+    Req.u.In.fProt = fProt;
+    int rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_PAGE_PROTECT, &Req, SUP_IOCTL_PAGE_PROTECT_SIZE);
+    if (RT_SUCCESS(rc))
+        rc = Req.Hdr.rc;
     return rc;
 }
 

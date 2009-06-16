@@ -1,4 +1,4 @@
-/* $Id: VBoxRTDeps.cpp 13306 2008-10-15 21:17:04Z vboxsync $ */
+/* $Id: VBoxRTDeps.cpp 19892 2009-05-21 15:29:29Z vboxsync $ */
 /** @file
  * IPRT - VBoxRT.dll/so dependencies.
  */
@@ -34,6 +34,16 @@
 #include <VBox/sup.h>
 #include <iprt/system.h>
 #include <iprt/assert.h>
+#include <iprt/asm.h>
+#ifdef VBOX_WITH_LIBXML2_IN_VBOXRT
+# include <libxml/xmlmodule.h>
+# include <libxml/globals.h>
+# include <openssl/md5.h>
+# include <openssl/rc4.h>
+# include <openssl/pem.h>
+# include <openssl/x509.h>
+# include <openssl/rsa.h>
+#endif
 
 
 /*******************************************************************************
@@ -43,6 +53,21 @@ PFNRT g_VBoxRTDeps[] =
 {
     (PFNRT)SUPR3Init,
     (PFNRT)SUPPageLock,
-    (PFNRT)RTAssertShouldPanic
+    (PFNRT)SUPSemEventCreate,
+#ifdef VBOX_WITH_LIBXML2_IN_VBOXRT
+    (PFNRT)xmlModuleOpen,
+    (PFNRT)MD5_Init,
+    (PFNRT)RC4,
+    (PFNRT)RC4_set_key,
+    (PFNRT)PEM_read_bio_X509,
+    (PFNRT)PEM_read_bio_PrivateKey,
+    (PFNRT)X509_free,
+    (PFNRT)i2d_X509,
+    (PFNRT)RSA_generate_key,
+#endif
+    (PFNRT)RTAssertShouldPanic,
+    (PFNRT)ASMAtomicReadU64,
+    (PFNRT)ASMAtomicCmpXchgU64,
+    NULL
 };
 

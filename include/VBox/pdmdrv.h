@@ -47,7 +47,7 @@
 # include <VBox/pdmasynccompletion.h>
 #endif
 
-__BEGIN_DECLS
+RT_C_DECLS_BEGIN
 
 /** @defgroup grp_pdm_driver    The PDM Drivers API
  * @ingroup grp_pdm
@@ -521,12 +521,14 @@ typedef struct PDMDRVHLP
      * @param   pDrvIns         Driver instance.
      * @param   enmClock        The clock to use on this timer.
      * @param   pfnCallback     Callback function.
+     * @param   pvUser          The user argument to the callback.
+     * @param   fFlags          Timer creation flags, see grp_tm_timer_flags.
      * @param   pszDesc         Pointer to description string which must stay around
      *                          until the timer is fully destroyed (i.e. a bit after TMTimerDestroy()).
      * @param   ppTimer         Where to store the timer on success.
      * @thread  EMT
      */
-    DECLR3CALLBACKMEMBER(int, pfnTMTimerCreate,(PPDMDRVINS pDrvIns, TMCLOCK enmClock, PFNTMTIMERDRV pfnCallback, const char *pszDesc, PPTMTIMERR3 ppTimer));
+    DECLR3CALLBACKMEMBER(int, pfnTMTimerCreate,(PPDMDRVINS pDrvIns, TMCLOCK enmClock, PFNTMTIMERDRV pfnCallback, void *pvUser, uint32_t fFlags, const char *pszDesc, PPTMTIMERR3 ppTimer));
 
     /**
      * Register a save state data unit.
@@ -681,10 +683,12 @@ typedef struct PDMDRVHLP
      * @param   pDrvIns         The driver instance.
      * @param   ppTemplate      Where to store the template pointer on success.
      * @param   pfnCompleted    The completion callback routine.
+     * @param   pvTemplateUser  Template user argument.
      * @param   pszDesc         Description.
      */
     DECLR3CALLBACKMEMBER(int, pfnPDMAsyncCompletionTemplateCreate,(PPDMDRVINS pDrvIns, PPPDMASYNCCOMPLETIONTEMPLATE ppTemplate,
-                                                                   PFNPDMASYNCCOMPLETEDRV pfnCompleted, const char *pszDesc));
+                                                                   PFNPDMASYNCCOMPLETEDRV pfnCompleted, void *pvTemplateUser,
+                                                                   const char *pszDesc));
 #endif
 
     /** Just a safety precaution. */
@@ -696,7 +700,7 @@ typedef PDMDRVHLP *PPDMDRVHLP;
 typedef const PDMDRVHLP *PCPDMDRVHLP;
 
 /** Current DRVHLP version number. */
-#define PDM_DRVHLP_VERSION  0x90020001
+#define PDM_DRVHLP_VERSION  0x90030000
 
 
 
@@ -836,9 +840,9 @@ DECLINLINE(uint64_t) PDMDrvHlpTMGetVirtualTime(PPDMDRVINS pDrvIns)
 /**
  * @copydoc PDMDRVHLP::pfnTMTimerCreate
  */
-DECLINLINE(int) PDMDrvHlpTMTimerCreate(PPDMDRVINS pDrvIns, TMCLOCK enmClock, PFNTMTIMERDRV pfnCallback, const char *pszDesc, PPTMTIMERR3 ppTimer)
+DECLINLINE(int) PDMDrvHlpTMTimerCreate(PPDMDRVINS pDrvIns, TMCLOCK enmClock, PFNTMTIMERDRV pfnCallback, void *pvUser, uint32_t fFlags, const char *pszDesc, PPTMTIMERR3 ppTimer)
 {
-    return pDrvIns->pDrvHlp->pfnTMTimerCreate(pDrvIns, enmClock, pfnCallback, pszDesc, ppTimer);
+    return pDrvIns->pDrvHlp->pfnTMTimerCreate(pDrvIns, enmClock, pfnCallback, pvUser, fFlags, pszDesc, ppTimer);
 }
 
 /**
@@ -903,9 +907,9 @@ DECLINLINE(VMSTATE) PDMDrvHlpVMState(PPDMDRVINS pDrvIns)
  * @copydoc PDMDRVHLP::pfnPDMAsyncCompletionTemplateCreate
  */
 DECLINLINE(int) PDMDrvHlpPDMAsyncCompletionTemplateCreate(PPDMDRVINS pDrvIns, PPPDMASYNCCOMPLETIONTEMPLATE ppTemplate,
-                                                          PFNPDMASYNCCOMPLETEDRV pfnCompleted, const char *pszDesc)
+                                                          PFNPDMASYNCCOMPLETEDRV pfnCompleted, void *pvTemplateUser, const char *pszDesc)
 {
-    return pDrvIns->pDrvHlp->pfnPDMAsyncCompletionTemplateCreate(pDrvIns, ppTemplate, pfnCompleted, pszDesc);
+    return pDrvIns->pDrvHlp->pfnPDMAsyncCompletionTemplateCreate(pDrvIns, ppTemplate, pfnCompleted, pvTemplateUser, pszDesc);
 }
 #endif
 
@@ -958,6 +962,6 @@ VMMR3DECL(int) PDMR3RegisterDrivers(PVM pVM, FNPDMVBOXDRIVERSREGISTER pfnCallbac
 
 /** @} */
 
-__END_DECLS
+RT_C_DECLS_END
 
 #endif

@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -57,6 +57,8 @@
 #include <sys/machparam.h>
 
 #include "vbi.h"
+
+#define VBIPROC() ((proc_t *)vbi_proc())
 
 /*
  * We have to use dl_lookup to find contig_free().
@@ -108,7 +110,7 @@ typedef struct vbi_cpuset {
  * module linkage stuff
  */
 static struct modlmisc vbi_modlmisc = {
-	&mod_miscops, "VirtualBox Interfaces V3"
+	&mod_miscops, "VirtualBox Interfaces V5"
 };
 
 static struct modlinkage vbi_modlinkage = {
@@ -196,22 +198,28 @@ static ddi_dma_attr_t base_attr = {
 	0			/* bus-specific flags */
 };
 
-void *
-vbi_contig_alloc(uint64_t *phys, size_t size)
+static void *
+vbi_internal_alloc(uint64_t *phys, size_t size, int contig)
 {
 	ddi_dma_attr_t attr;
 	pfn_t pfn;
 	void *ptr;
+	uint_t npages;
 
 	if ((size & PAGEOFFSET) != 0)
+		return (NULL);
+	npages = size >> PAGESHIFT;
+	if (npages == 0)
 		return (NULL);
 
 	attr = base_attr;
 	attr.dma_attr_addr_hi = *phys;
+	if (!contig)
+		attr.dma_attr_sgllen = npages;
 	ptr = contig_alloc(size, &attr, PAGESIZE, 1);
 
 	if (ptr == NULL) {
-		VBI_VERBOSE("vbi_contig_alloc() failure");
+		VBI_VERBOSE("vbi_internal_alloc() failure");
 		return (NULL);
 	}
 
@@ -220,6 +228,12 @@ vbi_contig_alloc(uint64_t *phys, size_t size)
 		panic("vbi_contig_alloc(): hat_getpfnum() failed\n");
 	*phys = (uint64_t)pfn << PAGESHIFT;
 	return (ptr);
+}
+
+void *
+vbi_contig_alloc(uint64_t *phys, size_t size)
+{
+	return (vbi_internal_alloc(phys, size, 1));
 }
 
 void
@@ -253,7 +267,7 @@ vbi_unmap(void *va, size_t size)
 		hat_unload(kas.a_hat, va, size, HAT_UNLOAD | HAT_UNLOAD_UNLOCK);
 		vmem_free(heap_arena, va, size);
 	} else {
-		struct as *as = curproc->p_as;
+		struct as *as = VBIPROC()->p_as;
 
 		as_rangelock(as);
 		(void) as_unmap(as, va, size);
@@ -378,7 +392,9 @@ vbi_tod(void)
 void *
 vbi_proc(void)
 {
-	return (curproc);
+	proc_t *p;
+	drv_getparm(UPROCP, &p);
+	return (p);
 }
 
 void
@@ -397,7 +413,7 @@ vbi_thread_create(void *func, void *arg, size_t len, int priority)
 	kthread_t *t;
 
 	t = thread_create(NULL, NULL, (void (*)())func, arg, len,
-	    curproc, TS_RUN, priority);
+	    VBIPROC(), TS_RUN, priority);
 	return (t);
 }
 
@@ -517,7 +533,7 @@ vbi_execute_on_one(void *func, void *arg, int c)
 
 	for (i = 0; i < VBI_SET_WORDS; ++i)
 		set.words[i] = 0;
-	BT_SET(set.words, vbi_cpu_id());
+	BT_SET(set.words, c);
 	if (use_old) {
 		if (use_old_with_ulong) {
 			p_xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI,
@@ -541,7 +557,7 @@ vbi_lock_va(void *addr, size_t len, void **handle)
 	 */
 	*handle = NULL;
 	if (!IS_KERNEL(addr)) {
-		err = as_fault(curproc->p_as->a_hat, curproc->p_as,
+		err = as_fault(VBIPROC()->p_as->a_hat, VBIPROC()->p_as,
 		    (caddr_t)addr, len, F_SOFTLOCK, S_WRITE);
 		if (err != 0) {
 			VBI_VERBOSE("vbi_lock_va() failed to lock");
@@ -556,8 +572,8 @@ void
 vbi_unlock_va(void *addr, size_t len, void *handle)
 {
 	if (!IS_KERNEL(addr))
-		as_fault(curproc->p_as->a_hat, curproc->p_as, (caddr_t)addr,
-		    len, F_SOFTUNLOCK, S_WRITE);
+		as_fault(VBIPROC()->p_as->a_hat, VBIPROC()->p_as,
+		    (caddr_t)addr, len, F_SOFTUNLOCK, S_WRITE);
 }
 
 uint64_t
@@ -570,7 +586,7 @@ vbi_va_to_pa(void *addr)
 	if (IS_KERNEL(v))
 		hat = kas.a_hat;
 	else
-		hat = curproc->p_as->a_hat;
+		hat = VBIPROC()->p_as->a_hat;
 	pfn = hat_getpfnum(hat, (caddr_t)(v & PAGEMASK));
 	if (pfn == PFN_INVALID)
 		return (-(uint64_t)1);
@@ -824,7 +840,7 @@ static struct seg_ops segvbi_ops = {
 int
 vbi_user_map(caddr_t *va, uint_t prot, uint64_t *palist, size_t len)
 {
-	struct as *as = curproc->p_as;
+	struct as *as = VBIPROC()->p_as;
 	struct segvbi_crargs args;
 	int error = 0;
 
@@ -1049,15 +1065,34 @@ vbi_gtimer_end(vbi_gtimer_t *t)
 	kmem_free(t, sizeof (*t));
 }
 
-/*
- * This is revision 3 of the interface. As more functions are added,
- * they should go after this point in the file and the revision level
- * increased. Also change vbi_modlmisc at the top of the file.
- */
-uint_t vbi_revision_level = 3;
-
 int
 vbi_is_preempt_enabled(void)
 {
 	return (curthread->t_preempt == 0);
+}
+
+void
+vbi_poke_cpu(int c)
+{
+	if (c < ncpus)
+		poke_cpu(c);
+}
+
+/*
+ * This is revision 5 of the interface. As more functions are added,
+ * they should go after this point in the file and the revision level
+ * increased. Also change vbi_modlmisc at the top of the file.
+ */
+uint_t vbi_revision_level = 5;
+
+void *
+vbi_lowmem_alloc(uint64_t phys, size_t size)
+{
+	return (vbi_internal_alloc(&phys, size, 0));
+}
+
+void
+vbi_lowmem_free(void *va, size_t size)
+{
+	p_contig_free(va, size);
 }

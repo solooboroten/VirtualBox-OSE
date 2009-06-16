@@ -1,4 +1,4 @@
-/* $Revision: 18191 $ */
+/* $Revision: 20528 $ */
 /** @file
  * VirtualBox Support Driver - IOCtl definitions.
  */
@@ -182,12 +182,20 @@ typedef SUPREQHDR *PSUPREQHDR;
  * The upper 16-bit is the major version, the the lower the minor version.
  * When incompatible changes are made, the upper major number has to be changed.
  *
+ * Update rules:
+ *  -# Only update the major number when incompatible changes has been made.
+ *  -# When adding new features (new IOC number, new flags, new exports, ++)
+ *     only update the minor number and change SUPLib.cpp to require the
+ *     new IOC version.
+ *  -# When incrementing the major number, clear the minor part and reset
+ *     any IOC version requirements in SUPLib.cpp.
+ *
  * @todo Pending work on next major version change:
  *          - Eliminate supdrvPageWasLockedByPageAlloc and supdrvPageGetPhys.
  *          - Remove SUPR0PageAlloc in favor of SUPR0PageAllocEx, removing
  *            and renaming the related IOCtls too.
  */
-#define SUPDRV_IOC_VERSION                              0x000a0009
+#define SUPDRV_IOC_VERSION                              0x000d0001
 
 /** SUP_IOCTL_COOKIE. */
 typedef struct SUPCOOKIE
@@ -231,7 +239,7 @@ typedef struct SUPCOOKIE
  * Query SUPR0 functions.
  * @{
  */
-#define SUP_IOCTL_QUERY_FUNCS(cFuncs)                   SUP_CTL_CODE_SIZE(2, SUP_IOCTL_QUERY_FUNCS_SIZE(cFuncs))
+#define SUP_IOCTL_QUERY_FUNCS(cFuncs)                   SUP_CTL_CODE_BIG(2)
 #define SUP_IOCTL_QUERY_FUNCS_SIZE(cFuncs)              RT_UOFFSETOF(SUPQUERYFUNCS, u.Out.aFunctions[(cFuncs)])
 #define SUP_IOCTL_QUERY_FUNCS_SIZE_IN                   sizeof(SUPREQHDR)
 #define SUP_IOCTL_QUERY_FUNCS_SIZE_OUT(cFuncs)          SUP_IOCTL_QUERY_FUNCS_SIZE(cFuncs)
@@ -526,12 +534,10 @@ typedef struct SUPCALLVMMR0
         {
             /** The VM handle. */
             PVMR0           pVMR0;
+            /** VCPU id. */
+            uint32_t        idCpu;
             /** Which operation to execute. */
             uint32_t        uOperation;
-#if R0_ARCH_BITS == 64
-            /** Alignment. */
-            uint32_t        u32Reserved;
-#endif
             /** Argument to use when no request packet is supplied. */
             uint64_t        u64Arg;
         } In;
@@ -1026,6 +1032,121 @@ typedef struct SUPLOGGERSETTINGS
 /** Destroy the logger instance. */
 #define SUPLOGGERSETTINGS_WHAT_DESTROY      2
 
+/** @} */
+
+
+/** @name Semaphore Types
+ * @{ */
+#define SUP_SEM_TYPE_EVENT                  0
+#define SUP_SEM_TYPE_EVENT_MULTI            1
+/** @} */
+
+
+/** @name SUP_IOCTL_SEM_CREATE
+ * Create a semaphore
+ * @{
+ */
+#define SUP_IOCTL_SEM_CREATE                            SUP_CTL_CODE_SIZE(26, SUP_IOCTL_SEM_CREATE_SIZE)
+#define SUP_IOCTL_SEM_CREATE_SIZE                       sizeof(SUPSEMCREATE)
+#define SUP_IOCTL_SEM_CREATE_SIZE_IN                    sizeof(SUPSEMCREATE)
+#define SUP_IOCTL_SEM_CREATE_SIZE_OUT                   sizeof(SUPSEMCREATE)
+typedef struct SUPSEMCREATE
+{
+    /** The header. */
+    SUPREQHDR               Hdr;
+    union
+    {
+        struct
+        {
+            /** The semaphore type. */
+            uint32_t        uType;
+        } In;
+        struct
+        {
+            /** The handle of the created semaphore. */
+            uint32_t        hSem;
+        } Out;
+    } u;
+} SUPSEMCREATE, *PSUPSEMCREATE;
+
+/** @} */
+
+
+/** @name SUP_IOCTL_SEM_OP
+ * Semaphore operations.
+ * @{
+ */
+#define SUP_IOCTL_SEM_OP                                SUP_CTL_CODE_SIZE(27, SUP_IOCTL_SEM_OP_SIZE)
+#define SUP_IOCTL_SEM_OP_SIZE                           sizeof(SUPSEMOP)
+#define SUP_IOCTL_SEM_OP_SIZE_IN                        sizeof(SUPSEMOP)
+#define SUP_IOCTL_SEM_OP_SIZE_OUT                       sizeof(SUPREQHDR)
+typedef struct SUPSEMOP
+{
+    /** The header. */
+    SUPREQHDR               Hdr;
+    union
+    {
+        struct
+        {
+            /** The semaphore type. */
+            uint32_t        uType;
+            /** The semaphore handle. */
+            uint32_t        hSem;
+            /** The operation. */
+            uint32_t        uOp;
+            /** The number of milliseconds to wait if it's a wait operation. */
+            uint32_t        cMillies;
+        } In;
+    } u;
+} SUPSEMOP, *PSUPSEMOP;
+
+/** Wait for a number of millisecons. */
+#define SUPSEMOP_WAIT       0
+/** Signal the semaphore. */
+#define SUPSEMOP_SIGNAL     1
+/** Reset the sempahore (only applicable to SUP_SEM_TYPE_EVENT_MULTI). */
+#define SUPSEMOP_RESET      2
+/** Close the semaphore handle. */
+#define SUPSEMOP_CLOSE      3
+
+/** @} */
+
+
+/** @name SUP_IOCTL_PAGE_PROTECT
+ * Changes the page level protection of the user and/or kernel mappings of
+ * memory previously allocated by SUPR0PageAllocEx.
+ *
+ * @remarks Not necessarily supported on all platforms.
+ *
+ * @{
+ */
+#define SUP_IOCTL_PAGE_PROTECT                          SUP_CTL_CODE_SIZE(28, SUP_IOCTL_PAGE_PROTECT_SIZE)
+#define SUP_IOCTL_PAGE_PROTECT_SIZE                     sizeof(SUPPAGEPROTECT)
+#define SUP_IOCTL_PAGE_PROTECT_SIZE_IN                  sizeof(SUPPAGEPROTECT)
+#define SUP_IOCTL_PAGE_PROTECT_SIZE_OUT                 sizeof(SUPPAGEPROTECT)
+typedef struct SUPPAGEPROTECT
+{
+    /** The header. */
+    SUPREQHDR               Hdr;
+    union
+    {
+        struct
+        {
+            /** The pointer of to the previously allocated memory.
+             * Pass NIL_RTR3PTR if the ring-0 mapping should remain unaffected. */
+            RTR3PTR         pvR3;
+            /** The pointer of to the previously allocated memory.
+             * Pass NIL_RTR0PTR if the ring-0 mapping should remain unaffected. */
+            RTR0PTR         pvR0;
+            /** The offset to start changing protection at. */
+            uint32_t        offSub;
+            /** Size of the portion that should be changed. */
+            uint32_t        cbSub;
+            /** Protection flags, RTMEM_PROT_*. */
+            uint32_t        fProt;
+        } In;
+    } u;
+} SUPPAGEPROTECT, *PSUPPAGEPROTECT;
 /** @} */
 
 

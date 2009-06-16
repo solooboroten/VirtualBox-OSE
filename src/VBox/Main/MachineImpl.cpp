@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp 18818 2009-04-07 12:47:04Z vboxsync $ */
+/* $Id: MachineImpl.cpp 20326 2009-06-05 12:59:46Z vboxsync $ */
 
 /** @file
  * Implementation of IMachine in VBoxSVC.
@@ -868,7 +868,7 @@ STDMETHODIMP Machine::COMSETTER(Description) (IN_BSTR aDescription)
     return S_OK;
 }
 
-STDMETHODIMP Machine::COMGETTER(Id) (OUT_GUID aId)
+STDMETHODIMP Machine::COMGETTER(Id) (BSTR *aId)
 {
     CheckComArgOutPointerValid (aId);
 
@@ -877,7 +877,7 @@ STDMETHODIMP Machine::COMGETTER(Id) (OUT_GUID aId)
 
     AutoReadLock alock (this);
 
-    mData->mUuid.cloneTo (aId);
+    mData->mUuid.toUtf16().cloneTo (aId);
 
     return S_OK;
 }
@@ -1468,6 +1468,7 @@ STDMETHODIMP Machine::COMGETTER(VRDPServer)(IVRDPServer **vrdpServer)
 
     return S_OK;
 #else
+    NOREF(vrdpServer);
     ReturnComNotImplemented();
 #endif
 }
@@ -1534,6 +1535,7 @@ STDMETHODIMP Machine::COMGETTER(USBController) (IUSBController **aUSBController)
     /* Note: The GUI depends on this method returning E_NOTIMPL with no
      * extended error info to indicate that USB is simply not available
      * (w/o treting it as a failure), for example, as in OSE */
+    NOREF(aUSBController);
     ReturnComNotImplemented();
 #endif
 }
@@ -1886,7 +1888,7 @@ STDMETHODIMP Machine::GetBootOrder (ULONG aPosition, DeviceType_T *aDevice)
     return S_OK;
 }
 
-STDMETHODIMP Machine::AttachHardDisk(IN_GUID aId,
+STDMETHODIMP Machine::AttachHardDisk(IN_BSTR aId,
                                      IN_BSTR aControllerName, LONG aControllerPort,
                                      LONG aDevice)
 {
@@ -1953,7 +1955,7 @@ STDMETHODIMP Machine::AttachHardDisk(IN_GUID aId,
             hd->locationFull().raw(), aDevice, aControllerPort, aControllerName);
     }
 
-    Guid id = aId;
+    Guid id(aId);
 
     /* find a hard disk by UUID */
     ComObjPtr<HardDisk> hd;
@@ -2483,6 +2485,16 @@ STDMETHODIMP Machine::GetExtraData (IN_BSTR aKey, BSTR *aValue)
     if (!isConfigLocked())
         return S_OK;
 
+    Utf8Str val;
+    HRESULT rc = getExtraData(Utf8Str(aKey), val);
+    if (SUCCEEDED(rc))
+        val.cloneTo (aValue);
+
+    return rc;
+}
+
+HRESULT Machine::getExtraData(const Utf8Str &aKey, Utf8Str &aValue)
+{
     HRESULT rc = S_OK;
 
     try
@@ -2498,8 +2510,6 @@ STDMETHODIMP Machine::GetExtraData (IN_BSTR aKey, BSTR *aValue)
         rc = VirtualBox::loadSettingsTree_Again (tree, file);
         CheckComRCReturnRC (rc);
 
-        const Utf8Str key = aKey;
-
         Key machineNode = tree.rootKey().key ("Machine");
         Key extraDataNode = machineNode.findKey ("ExtraData");
 
@@ -2510,10 +2520,9 @@ STDMETHODIMP Machine::GetExtraData (IN_BSTR aKey, BSTR *aValue)
             for (Key::List::const_iterator it = items.begin();
                  it != items.end(); ++ it)
             {
-                if (key == (*it).stringValue ("name"))
+                if (aKey == (*it).stringValue ("name"))
                 {
-                    Bstr val = (*it).stringValue ("value");
-                    val.cloneTo (aValue);
+                    aValue = (*it).stringValue ("value");
                     break;
                 }
             }
@@ -2741,7 +2750,6 @@ STDMETHODIMP Machine::DeleteSettings()
             tr ("Cannot delete settings of a registered machine"));
 
     /* delete the settings only when the file actually exists */
-    lockConfig();
     if (isConfigLocked())
     {
         unlockConfig();
@@ -2799,7 +2807,7 @@ STDMETHODIMP Machine::DeleteSettings()
     return S_OK;
 }
 
-STDMETHODIMP Machine::GetSnapshot (IN_GUID aId, ISnapshot **aSnapshot)
+STDMETHODIMP Machine::GetSnapshot (IN_BSTR aId, ISnapshot **aSnapshot)
 {
     CheckComArgOutPointerValid (aSnapshot);
 
@@ -2808,7 +2816,7 @@ STDMETHODIMP Machine::GetSnapshot (IN_GUID aId, ISnapshot **aSnapshot)
 
     AutoReadLock alock (this);
 
-    Guid id = aId;
+    Guid id(aId);
     ComObjPtr <Snapshot> snapshot;
 
     HRESULT rc = findSnapshot (id, snapshot, true /* aSetError */);
@@ -2835,7 +2843,7 @@ STDMETHODIMP Machine::FindSnapshot (IN_BSTR aName, ISnapshot **aSnapshot)
     return rc;
 }
 
-STDMETHODIMP Machine::SetCurrentSnapshot (IN_GUID /* aId */)
+STDMETHODIMP Machine::SetCurrentSnapshot (IN_BSTR /* aId */)
 {
     /// @todo (dmik) don't forget to set
     //  mData->mCurrentStateModified to FALSE
@@ -3862,43 +3870,39 @@ HRESULT Machine::openRemoteSession (IInternalSessionControl *aControl,
 
     else
 
-#ifdef VBOX_WITH_VRDP
-    if (type == "vrdp")
-    {
-        const char VBoxVRDP_exe[] = "VBoxHeadless" HOSTSUFF_EXE;
-        Assert (sz >= sizeof (VBoxVRDP_exe));
-        strcpy (cmd, VBoxVRDP_exe);
-
-        Utf8Str idStr = mData->mUuid.toString();
-# ifdef RT_OS_WINDOWS
-        const char * args[] = {path, "--startvm", idStr, 0 };
-# else
-        Utf8Str name = mUserData->mName;
-        const char * args[] = {path, "--comment", name, "--startvm", idStr, 0 };
-# endif
-        vrc = RTProcCreate (path, args, env, 0, &pid);
-    }
-#else /* !VBOX_WITH_VRDP */
-    if (0)
-        ;
-#endif /* !VBOX_WITH_VRDP */
-
-    else
-
 #ifdef VBOX_WITH_HEADLESS
-    if (type == "capture")
+    if (   type == "headless"
+        || type == "capture"
+#ifdef VBOX_WITH_VRDP
+        || type == "vrdp"
+#endif
+       )
     {
-        const char VBoxVRDP_exe[] = "VBoxHeadless" HOSTSUFF_EXE;
-        Assert (sz >= sizeof (VBoxVRDP_exe));
-        strcpy (cmd, VBoxVRDP_exe);
+        const char VBoxHeadless_exe[] = "VBoxHeadless" HOSTSUFF_EXE;
+        Assert (sz >= sizeof (VBoxHeadless_exe));
+        strcpy (cmd, VBoxHeadless_exe);
 
         Utf8Str idStr = mData->mUuid.toString();
+        /* Leave space for 2 args, as "headless" needs --vrdp off on non-OSE. */
 # ifdef RT_OS_WINDOWS
-        const char * args[] = {path, "--startvm", idStr, "--capture", 0 };
+        const char * args[] = {path, "--startvm", idStr, 0, 0, 0 };
 # else
         Utf8Str name = mUserData->mName;
-        const char * args[] = {path, "--comment", name, "--startvm", idStr, "--capture", 0 };
+        const char * args[] = {path, "--comment", name, "--startvm", idStr, 0, 0, 0 };
 # endif
+#ifdef VBOX_WITH_VRDP
+        if (type == "headless")
+        {
+            unsigned pos = RT_ELEMENTS(args) - 3;
+            args[pos++] = "--vrdp";
+            args[pos] = "off";
+        }
+#endif
+        if (type == "capture")
+        {
+            unsigned pos = RT_ELEMENTS(args) - 3;
+            args[pos] = "--capture";
+        }
         vrc = RTProcCreate (path, args, env, 0, &pid);
     }
 #else /* !VBOX_WITH_HEADLESS */
@@ -7562,13 +7566,35 @@ HRESULT Machine::lockConfig()
                               Utf8Str (mData->mConfigFileFull),
                               RTFILE_O_READWRITE | RTFILE_O_OPEN |
                               RTFILE_O_DENY_WRITE);
-        if (RT_FAILURE (vrc))
+        if (RT_FAILURE (vrc) && (vrc != VERR_FILE_NOT_FOUND))
+        {
+            /* Open the associated config file only with read access. */
+            vrc = RTFileOpen (&mData->mHandleCfgFile,
+                              Utf8Str (mData->mConfigFileFull),
+                              RTFILE_O_READ | RTFILE_O_OPEN |
+                              RTFILE_O_DENY_NONE);
+            if (RT_FAILURE (vrc))
+            {
+                /* We even cannot open it in read mode, so there's seriously
+                   something wrong. */
+                rc = setError (E_FAIL,
+                        tr ("Could not even open settings file '%ls' in read mode (%Rrc)"),
+                        mData->mConfigFile.raw(), vrc);
+            }
+            else
+            {
+                mData->mConfigFileReadonly = TRUE;
+            }
+        }
+        else
+        {
+            mData->mConfigFileReadonly = FALSE;
+        }
+
+        if (RT_FAILURE(vrc))
         {
             mData->mHandleCfgFile = NIL_RTFILE;
-
-            rc = setError (VBOX_E_FILE_ERROR,
-                tr ("Could not lock the settings file '%ls' (%Rrc)"),
-                mData->mConfigFileFull.raw(), vrc);
+            mData->mConfigFileReadonly = FALSE;
         }
     }
 
@@ -7595,6 +7621,7 @@ HRESULT Machine::unlockConfig()
         RTFileClose (mData->mHandleCfgFile);
         /** @todo flush the directory. */
         mData->mHandleCfgFile = NIL_RTFILE;
+        mData->mConfigFileReadonly = FALSE;
     }
 
     LogFlowThisFunc (("\n"));
@@ -8107,15 +8134,11 @@ void Machine::registerMetrics (PerformanceCollector *aCollector, Machine *aMachi
     pm::SubMetric *ramUsageUsed  = new pm::SubMetric ("RAM/Usage/Used",
         "Size of resident portion of VM process in memory.");
     /* Create and register base metrics */
-    IUnknown *objptr;
-
-    ComObjPtr<Machine> tmp = aMachine;
-    tmp.queryInterfaceTo (&objptr);
-    pm::BaseMetric *cpuLoad = new pm::MachineCpuLoadRaw (hal, objptr, pid,
-                                             cpuLoadUser, cpuLoadKernel);
+    pm::BaseMetric *cpuLoad = new pm::MachineCpuLoadRaw (hal, aMachine, pid,
+                                                         cpuLoadUser, cpuLoadKernel);
     aCollector->registerBaseMetric (cpuLoad);
-    pm::BaseMetric *ramUsage = new pm::MachineRamUsage (hal, objptr, pid,
-                                                           ramUsageUsed);
+    pm::BaseMetric *ramUsage = new pm::MachineRamUsage (hal, aMachine, pid,
+                                                        ramUsageUsed);
     aCollector->registerBaseMetric (ramUsage);
 
     aCollector->registerMetric (new pm::Metric (cpuLoad, cpuLoadUser, 0));
@@ -8283,7 +8306,12 @@ HRESULT SessionMachine::init (Machine *aMachine)
                      E_FAIL);
 #elif defined(VBOX_WITH_SYS_V_IPC_SESSION_WATCHER)
 # ifdef VBOX_WITH_NEW_SYS_V_KEYGEN
+#  if defined(RT_OS_FREEBSD) && (HC_ARCH_BITS == 64)
+    /** @todo Check that this still works correctly. */
+    AssertCompileSize(key_t, 8);
+#  else
     AssertCompileSize(key_t, 4);
+#  endif
     key_t key;
     mIPCSem = -1;
     mIPCKey = "0";
@@ -8472,6 +8500,7 @@ void SessionMachine::uninit (Uninit::Reason aReason)
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
     MachineState_T lastState = mData->mMachineState;
+    NOREF(lastState);
 
     if (aReason == Uninit::Abnormal)
     {
@@ -8709,6 +8738,8 @@ STDMETHODIMP SessionMachine::RunUSBDeviceFilters (IUSBDevice *aUSBDevice,
 #ifdef VBOX_WITH_USB
     *aMatched = mUSBController->hasMatchingFilter (aUSBDevice, aMaskedIfs);
 #else
+    NOREF(aUSBDevice);
+    NOREF(aMaskedIfs);
     *aMatched = FALSE;
 #endif
 
@@ -8718,7 +8749,7 @@ STDMETHODIMP SessionMachine::RunUSBDeviceFilters (IUSBDevice *aUSBDevice,
 /**
  *  @note Locks the same as Host::captureUSBDevice() does.
  */
-STDMETHODIMP SessionMachine::CaptureUSBDevice (IN_GUID aId)
+STDMETHODIMP SessionMachine::CaptureUSBDevice (IN_BSTR aId)
 {
     LogFlowThisFunc (("\n"));
 
@@ -8732,8 +8763,9 @@ STDMETHODIMP SessionMachine::CaptureUSBDevice (IN_GUID aId)
 
     USBProxyService *service = mParent->host()->usbProxyService();
     AssertReturn (service, E_FAIL);
-    return service->captureDeviceForVM (this, aId);
+    return service->captureDeviceForVM (this, Guid(aId));
 #else
+    NOREF(aId);
     return E_NOTIMPL;
 #endif
 }
@@ -8741,7 +8773,7 @@ STDMETHODIMP SessionMachine::CaptureUSBDevice (IN_GUID aId)
 /**
  *  @note Locks the same as Host::detachUSBDevice() does.
  */
-STDMETHODIMP SessionMachine::DetachUSBDevice (IN_GUID aId, BOOL aDone)
+STDMETHODIMP SessionMachine::DetachUSBDevice (IN_BSTR aId, BOOL aDone)
 {
     LogFlowThisFunc (("\n"));
 
@@ -8751,8 +8783,10 @@ STDMETHODIMP SessionMachine::DetachUSBDevice (IN_GUID aId, BOOL aDone)
 #ifdef VBOX_WITH_USB
     USBProxyService *service = mParent->host()->usbProxyService();
     AssertReturn (service, E_FAIL);
-    return service->detachDeviceFromVM (this, aId, !!aDone);
+    return service->detachDeviceFromVM (this, Guid(aId), !!aDone);
 #else
+    NOREF(aId);
+    NOREF(aDone);
     return E_NOTIMPL;
 #endif
 }
@@ -8811,6 +8845,7 @@ STDMETHODIMP SessionMachine::DetachAllUSBDevices (BOOL aDone)
     AssertReturn (service, E_FAIL);
     return service->detachAllDevicesFromVM (this, !!aDone, false /* aAbnormal */);
 #else
+    NOREF(aDone);
     return S_OK;
 #endif
 }
@@ -8911,7 +8946,7 @@ STDMETHODIMP SessionMachine::BeginSavingState (IProgress *aProgress, BSTR *aStat
                   E_FAIL);
 
     /* memorize the progress ID and add it to the global collection */
-    Guid progressId;
+    Bstr progressId;
     HRESULT rc = aProgress->COMGETTER(Id) (progressId.asOutParam());
     AssertComRCReturn (rc, rc);
     rc = mParent->addProgress (aProgress);
@@ -8928,7 +8963,7 @@ STDMETHODIMP SessionMachine::BeginSavingState (IProgress *aProgress, BSTR *aStat
 
     /* fill in the snapshot data */
     mSnapshotData.mLastState = mData->mMachineState;
-    mSnapshotData.mProgressId = progressId;
+    mSnapshotData.mProgressId = Guid(progressId);
     mSnapshotData.mStateFilePath = stateFilePath;
 
     /* set the state to Saving (this is expected by Console::SaveState()) */
@@ -9197,12 +9232,12 @@ STDMETHODIMP SessionMachine::EndTakingSnapshot (BOOL aSuccess)
  *  @note Locks mParent + this + children objects for writing!
  */
 STDMETHODIMP SessionMachine::DiscardSnapshot (
-    IConsole *aInitiator, IN_GUID aId,
+    IConsole *aInitiator, IN_BSTR aId,
     MachineState_T *aMachineState, IProgress **aProgress)
 {
     LogFlowThisFunc (("\n"));
 
-    Guid id = aId;
+    Guid id(aId);
     AssertReturn (aInitiator && !id.isEmpty(), E_INVALIDARG);
     AssertReturn (aMachineState && aProgress, E_POINTER);
 
@@ -9923,6 +9958,9 @@ bool SessionMachine::hasMatchingUSBFilter (const ComObjPtr <HostUSBDevice> &aDev
             return mUSBController->hasMatchingFilter (aDevice, aMaskedIfs);
         default: break;
     }
+#else
+    NOREF(aDevice);
+    NOREF(aMaskedIfs);
 #endif
     return false;
 }
@@ -9963,7 +10001,7 @@ HRESULT SessionMachine::onUSBDeviceAttach (IUSBDevice *aDevice,
 /**
  *  @note The calls shall hold no locks. Will temporarily lock this object for reading.
  */
-HRESULT SessionMachine::onUSBDeviceDetach (IN_GUID aId,
+HRESULT SessionMachine::onUSBDeviceDetach (IN_BSTR aId,
                                            IVirtualBoxErrorInfo *aError)
 {
     LogFlowThisFunc (("\n"));
@@ -11237,8 +11275,15 @@ HRESULT SessionMachine::setMachineState (MachineState_T aMachineState)
 
     if (deleteSavedState == true)
     {
-        Assert (!mSSData->mStateFilePath.isEmpty());
-        RTFileDelete (Utf8Str (mSSData->mStateFilePath));
+        /** @todo remove this API hack, and provide a clean way for
+         * detaching a saved state without deleting. */
+        Utf8Str val;
+        HRESULT rc2 = getExtraData("API/DiscardSavedStateKeepFile", val);
+        if (FAILED(rc2) || val != "1")
+        {
+            Assert (!mSSData->mStateFilePath.isEmpty());
+            RTFileDelete (Utf8Str (mSSData->mStateFilePath));
+        }
         mSSData->mStateFilePath.setNull();
         stsFlags |= SaveSTS_StateFilePath;
     }

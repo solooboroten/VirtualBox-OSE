@@ -1,4 +1,4 @@
-/* $Id: PDMLdr.cpp 18431 2009-03-28 02:10:03Z vboxsync $ */
+/* $Id: PDMLdr.cpp 19924 2009-05-22 21:52:47Z vboxsync $ */
 /** @file
  * PDM - Pluggable Device Manager, module loader.
  */
@@ -335,6 +335,8 @@ static DECLCALLBACK(int) pdmR3GetImportRC(RTLDRMOD hLdrMod, const char *pszModul
             *pValue = VM_RC_ADDR(pVM, &pVM->cpum);
         else if (!strcmp(pszSymbol, "g_TRPM"))
             *pValue = VM_RC_ADDR(pVM, &pVM->trpm);
+        else if (!strcmp(pszSymbol, "g_TRPMCPU"))
+            *pValue = VM_RC_ADDR(pVM, &pVM->aCpus[0].trpm);
         else if (   !strncmp(pszSymbol, "VMM", 3)
                  || !strcmp(pszSymbol, "g_Logger")
                  || !strcmp(pszSymbol, "g_RelLogger"))
@@ -975,7 +977,7 @@ static char *pdmR3File(const char *pszFile, const char *pszDefaultExt, bool fSha
                  : RTPathAppPrivateArch(szPath, sizeof(szPath));
     if (!RT_SUCCESS(rc))
     {
-        AssertMsgFailed(("RTPathProgram(,%d) failed rc=%d!\n", sizeof(szPath), rc));
+        AssertMsgFailed(("RTPath[SharedLibs|AppPrivateArch](,%d) failed rc=%d!\n", sizeof(szPath), rc));
         return NULL;
     }
 

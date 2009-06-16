@@ -93,7 +93,7 @@ int main (int argc, char **argv)
         EventQueue eventQ;
 
         // find ID by name
-        Guid id;
+        Bstr id;
         {
             ComPtr <IMachine> m;
             CHECK_ERROR_BREAK (virtualBox, FindMachine (Bstr (name), m.asOutParam()));
@@ -115,7 +115,7 @@ int main (int argc, char **argv)
             CHECK_ERROR_BREAK (progress, COMGETTER(Completed) (&completed));
             ASSERT (completed);
 
-            HRESULT resultCode;
+            LONG resultCode;
             CHECK_ERROR_BREAK (progress, COMGETTER(ResultCode) (&resultCode));
             if (FAILED (resultCode))
             {

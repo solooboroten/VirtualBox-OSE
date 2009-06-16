@@ -1,9 +1,11 @@
 /** @file
  * VirtualBox Parameter Definitions.
+ *
+ * param.mac is generated from this file by running 'kmk incs' in the root.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -120,6 +122,11 @@
  */
 /** VMM stack size. */
 #define VMM_STACK_SIZE              8192U
+/** Min number of Virtual CPUs. */
+#define VMM_MIN_CPU_COUNT           1
+/** Max number of Virtual CPUs. */
+#define VMM_MAX_CPU_COUNT           32
+
 /** @} */
 
 

@@ -1,4 +1,4 @@
-/* $Id: PGMDbg.cpp 18665 2009-04-02 19:44:18Z vboxsync $ */
+/* $Id: PGMDbg.cpp 19334 2009-05-04 16:03:57Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor - Debugger & Debugging APIs.
  */
@@ -134,6 +134,7 @@ VMMR3DECL(int) PGMR3DbgHCPhys2GCPhys(PVM pVM, RTHCPHYS HCPhys, PRTGCPHYS pGCPhys
  * @param   fFlags      Flags, MBZ.
  * @param   pcbRead     For store the actual number of bytes read, pass NULL if
  *                      partial reads are unwanted.
+ * @todo    Unused?
  */
 VMMR3DECL(int) PGMR3DbgReadGCPhys(PVM pVM, void *pvDst, RTGCPHYS GCPhysSrc, size_t cb, uint32_t fFlags, size_t *pcbRead)
 {
@@ -185,6 +186,7 @@ VMMR3DECL(int) PGMR3DbgReadGCPhys(PVM pVM, void *pvDst, RTGCPHYS GCPhysSrc, size
  * @param   fFlags      Flags, MBZ.
  * @param   pcbWritten  For store the actual number of bytes written, pass NULL
  *                      if partial writes are unwanted.
+ * @todo    Unused?
  */
 VMMR3DECL(int) PGMR3DbgWriteGCPhys(PVM pVM, RTGCPHYS GCPhysDst, const void *pvSrc, size_t cb, uint32_t fFlags, size_t *pcbWritten)
 {
@@ -235,6 +237,7 @@ VMMR3DECL(int) PGMR3DbgWriteGCPhys(PVM pVM, RTGCPHYS GCPhysDst, const void *pvSr
  * @param   fFlags      Flags, MBZ.
  * @param   pcbRead     For store the actual number of bytes read, pass NULL if
  *                      partial reads are unwanted.
+ * @todo    Unused?
  */
 VMMR3DECL(int) PGMR3DbgReadGCPtr(PVM pVM, void *pvDst, RTGCPTR GCPtrSrc, size_t cb, uint32_t fFlags, size_t *pcbRead)
 {
@@ -242,9 +245,12 @@ VMMR3DECL(int) PGMR3DbgReadGCPtr(PVM pVM, void *pvDst, RTGCPTR GCPtrSrc, size_t 
     AssertReturn(!fFlags, VERR_INVALID_PARAMETER);
     AssertReturn(pVM, VERR_INVALID_PARAMETER);
 
+    /* @todo SMP support! */
+    PVMCPU pVCpu = &pVM->aCpus[0];
+
 /** @todo deal with HMA */
     /* try simple first. */
-    int rc = PGMPhysSimpleReadGCPtr(pVM, pvDst, GCPtrSrc, cb);
+    int rc = PGMPhysSimpleReadGCPtr(pVCpu, pvDst, GCPtrSrc, cb);
     if (RT_SUCCESS(rc) || !pcbRead)
         return rc;
 
@@ -258,7 +264,7 @@ VMMR3DECL(int) PGMR3DbgReadGCPtr(PVM pVM, void *pvDst, RTGCPTR GCPtrSrc, size_t 
         if (cbChunk > cb)
             cbChunk = cb;
 
-        rc = PGMPhysSimpleReadGCPtr(pVM, pvDst, GCPtrSrc, cbChunk);
+        rc = PGMPhysSimpleReadGCPtr(pVCpu, pvDst, GCPtrSrc, cbChunk);
 
         /* advance */
         if (RT_FAILURE(rc))
@@ -287,6 +293,7 @@ VMMR3DECL(int) PGMR3DbgReadGCPtr(PVM pVM, void *pvDst, RTGCPTR GCPtrSrc, size_t 
  * @param   fFlags      Flags, MBZ.
  * @param   pcbWritten  For store the actual number of bytes written, pass NULL
  *                      if partial writes are unwanted.
+ * @todo    Unused?
  */
 VMMR3DECL(int) PGMR3DbgWriteGCPtr(PVM pVM, RTGCPTR GCPtrDst, void const *pvSrc, size_t cb, uint32_t fFlags, size_t *pcbWritten)
 {
@@ -294,9 +301,12 @@ VMMR3DECL(int) PGMR3DbgWriteGCPtr(PVM pVM, RTGCPTR GCPtrDst, void const *pvSrc, 
     AssertReturn(!fFlags, VERR_INVALID_PARAMETER);
     AssertReturn(pVM, VERR_INVALID_PARAMETER);
 
+    /* @todo SMP support! */
+    PVMCPU pVCpu = &pVM->aCpus[0];
+
 /** @todo deal with HMA */
     /* try simple first. */
-    int rc = PGMPhysSimpleWriteGCPtr(pVM, GCPtrDst, pvSrc, cb);
+    int rc = PGMPhysSimpleWriteGCPtr(pVCpu, GCPtrDst, pvSrc, cb);
     if (RT_SUCCESS(rc) || !pcbWritten)
         return rc;
 
@@ -310,7 +320,7 @@ VMMR3DECL(int) PGMR3DbgWriteGCPtr(PVM pVM, RTGCPTR GCPtrDst, void const *pvSrc, 
         if (cbChunk > cb)
             cbChunk = cb;
 
-        rc = PGMPhysSimpleWriteGCPtr(pVM, GCPtrDst, pvSrc, cbChunk);
+        rc = PGMPhysSimpleWriteGCPtr(pVCpu, GCPtrDst, pvSrc, cbChunk);
 
         /* advance */
         if (RT_FAILURE(rc))
@@ -553,14 +563,17 @@ VMMR3DECL(int) PGMR3DbgScanPhysical(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS cbRange, 
  * @retval  VERR_INVALID_ARGUMENT if any other arguments are invalid.
  *
  * @param   pVM             Pointer to the shared VM structure.
+ * @param   pVCpu           The CPU context to search in.
  * @param   GCPtr           Where to start searching.
  * @param   cbRange         The number of bytes to search. Max 256 bytes.
  * @param   pabNeedle       The byte string to search for.
  * @param   cbNeedle        The length of the byte string.
  * @param   pGCPtrHit       Where to store the address of the first occurence on success.
  */
-VMMR3DECL(int) PGMR3DbgScanVirtual(PVM pVM, RTGCPTR GCPtr, RTGCPTR cbRange, const uint8_t *pabNeedle, size_t cbNeedle, PRTGCUINTPTR pGCPtrHit)
+VMMR3DECL(int) PGMR3DbgScanVirtual(PVM pVM, PVMCPU pVCpu, RTGCPTR GCPtr, RTGCPTR cbRange, const uint8_t *pabNeedle, size_t cbNeedle, PRTGCUINTPTR pGCPtrHit)
 {
+    VMCPU_ASSERT_EMT(pVCpu);
+
     /*
      * Validate and adjust the input a bit.
      */
@@ -592,7 +605,7 @@ VMMR3DECL(int) PGMR3DbgScanVirtual(PVM pVM, RTGCPTR GCPtr, RTGCPTR cbRange, cons
     while (cPages-- > 0)
     {
         RTGCPHYS GCPhys;
-        int rc = PGMPhysGCPtr2GCPhys(pVM, GCPtr, &GCPhys);
+        int rc = PGMPhysGCPtr2GCPhys(pVCpu, GCPtr, &GCPhys);
         if (RT_SUCCESS(rc))
         {
             PPGMPAGE pPage = pgmPhysGetPage(&pVM->pgm.s, GCPhys);

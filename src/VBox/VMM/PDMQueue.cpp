@@ -1,4 +1,4 @@
-/* $Id: PDMQueue.cpp 14074 2008-11-11 00:02:26Z vboxsync $ */
+/* $Id: PDMQueue.cpp 20088 2009-05-27 14:39:42Z vboxsync $ */
 /** @file
  * PDM Queue - Transport data and tasks to EMT and R3.
  */
@@ -126,7 +126,7 @@ static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMil
             if (RT_FAILURE(rc))
             {
                 AssertMsgFailed(("TMTimerSetMillies failed rc=%Rrc\n", rc));
-                int rc2 = TMTimerDestroy(pQueue->pTimer); AssertRC(rc2);
+                int rc2 = TMR3TimerDestroy(pQueue->pTimer); AssertRC(rc2);
             }
         }
         else
@@ -198,7 +198,7 @@ VMMR3DECL(int) PDMR3QueueCreateDevice(PVM pVM, PPDMDEVINS pDevIns, RTUINT cbItem
     /*
      * Validate input.
      */
-    VM_ASSERT_EMT(pVM);
+    VMCPU_ASSERT_EMT(&pVM->aCpus[0]);
     if (!pfnCallback)
     {
         AssertMsgFailed(("No consumer callback!\n"));
@@ -247,7 +247,7 @@ VMMR3DECL(int) PDMR3QueueCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, RTUINT cbItem
     /*
      * Validate input.
      */
-    VM_ASSERT_EMT(pVM);
+    VMCPU_ASSERT_EMT(&pVM->aCpus[0]);
     if (!pfnCallback)
     {
         AssertMsgFailed(("No consumer callback!\n"));
@@ -296,7 +296,7 @@ VMMR3DECL(int) PDMR3QueueCreateInternal(PVM pVM, RTUINT cbItem, RTUINT cItems, u
     /*
      * Validate input.
      */
-    VM_ASSERT_EMT(pVM);
+    VMCPU_ASSERT_EMT(&pVM->aCpus[0]);
     if (!pfnCallback)
     {
         AssertMsgFailed(("No consumer callback!\n"));
@@ -342,7 +342,7 @@ VMMR3DECL(int) PDMR3QueueCreateExternal(PVM pVM, RTUINT cbItem, RTUINT cItems, u
     /*
      * Validate input.
      */
-    VM_ASSERT_EMT(pVM);
+    VMCPU_ASSERT_EMT(&pVM->aCpus[0]);
     if (!pfnCallback)
     {
         AssertMsgFailed(("No consumer callback!\n"));
@@ -386,7 +386,7 @@ VMMR3DECL(int) PDMR3QueueDestroy(PPDMQUEUE pQueue)
         return VERR_INVALID_PARAMETER;
     Assert(pQueue && pQueue->pVMR3);
     PVM pVM = pQueue->pVMR3;
-    VM_ASSERT_EMT(pVM);
+    VMCPU_ASSERT_EMT(&pVM->aCpus[0]);
 
     /*
      * Unlink it.
@@ -437,7 +437,7 @@ VMMR3DECL(int) PDMR3QueueDestroy(PPDMQUEUE pQueue)
      */
     if (pQueue->pTimer)
     {
-        TMTimerDestroy(pQueue->pTimer);
+        TMR3TimerDestroy(pQueue->pTimer);
         pQueue->pTimer = NULL;
     }
     if (pQueue->pVMRC)
@@ -470,7 +470,7 @@ VMMR3DECL(int) PDMR3QueueDestroyDevice(PVM pVM, PPDMDEVINS pDevIns)
      */
     if (!pDevIns)
         return VERR_INVALID_PARAMETER;
-    VM_ASSERT_EMT(pVM);
+    VMCPU_ASSERT_EMT(&pVM->aCpus[0]);
 
     /*
      * Unlink it.
@@ -519,7 +519,7 @@ VMMR3DECL(int) PDMR3QueueDestroyDriver(PVM pVM, PPDMDRVINS pDrvIns)
      */
     if (!pDrvIns)
         return VERR_INVALID_PARAMETER;
-    VM_ASSERT_EMT(pVM);
+    VMCPU_ASSERT_EMT(&pVM->aCpus[0]); /** @todo fix this using the "Misc" critical section. */
 
     /*
      * Unlink it.
@@ -616,17 +616,20 @@ VMMR3DECL(void) PDMR3QueueFlushAll(PVM pVM)
     VM_ASSERT_EMT(pVM);
     LogFlow(("PDMR3QueuesFlush:\n"));
 
-    VM_FF_CLEAR(pVM, VM_FF_PDM_QUEUES);
-    for (PPDMQUEUE pCur = pVM->pdm.s.pQueuesForced; pCur; pCur = pCur->pNext)
+    /* Use atomic test and clear to prevent useless checks; pdmR3QueueFlush is SMP safe. */
+    if (VM_FF_TESTANDCLEAR(pVM, VM_FF_PDM_QUEUES_BIT))
     {
-        if (    pCur->pPendingR3
-            ||  pCur->pPendingR0
-            ||  pCur->pPendingRC)
+        for (PPDMQUEUE pCur = pVM->pdm.s.pQueuesForced; pCur; pCur = pCur->pNext)
         {
-            if (    pdmR3QueueFlush(pCur)
-                &&  pCur->pPendingR3)
-                /* new items arrived while flushing. */
-                pdmR3QueueFlush(pCur);
+            if (    pCur->pPendingR3
+                ||  pCur->pPendingR0
+                ||  pCur->pPendingRC)
+            {
+                if (    pdmR3QueueFlush(pCur)
+                    &&  pCur->pPendingR3)
+                    /* new items arrived while flushing. */
+                    pdmR3QueueFlush(pCur);
+            }
         }
     }
 }
@@ -648,8 +651,11 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
     RTRCPTR           pItemsRC = ASMAtomicXchgRCPtr(&pQueue->pPendingRC, NIL_RTRCPTR);
     RTR0PTR           pItemsR0 = ASMAtomicXchgR0Ptr(&pQueue->pPendingR0, NIL_RTR0PTR);
 
-    AssertMsg(pItems || pItemsRC || pItemsR0, ("ERROR: can't all be NULL now!\n"));
-
+    if (    !pItems
+        &&  !pItemsRC
+        &&  !pItemsR0)
+        /* Somebody was racing us. */
+        return true;
 
     /*
      * Reverse the list (it's inserted in LIFO order to avoid semaphores, remember).

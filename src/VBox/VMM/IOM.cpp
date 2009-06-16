@@ -1,4 +1,4 @@
-/* $Id: IOM.cpp 17332 2009-03-04 09:14:23Z vboxsync $ */
+/* $Id: IOM.cpp 20087 2009-05-27 14:31:18Z vboxsync $ */
 /** @file
  * IOM - Input / Output Monitor.
  */
@@ -147,8 +147,9 @@ VMMR3DECL(int) IOMR3Init(PVM pVM)
     /*
      * Assert alignment and sizes.
      */
-    AssertRelease(!(RT_OFFSETOF(VM, iom.s) & 31));
-    AssertRelease(sizeof(pVM->iom.s) <= sizeof(pVM->iom.padding));
+    AssertCompileMemberAlignment(VM, iom.s, 32);
+    AssertCompile(sizeof(pVM->iom.s) <= sizeof(pVM->iom.padding));
+    AssertCompileMemberAlignment(IOM, EmtLock, sizeof(uintptr_t));
 
     /*
      * Setup any fixed pointers and offsets.
@@ -156,9 +157,15 @@ VMMR3DECL(int) IOMR3Init(PVM pVM)
     pVM->iom.s.offVM = RT_OFFSETOF(VM, iom);
 
     /*
+     * Initialize the REM critical section.
+     */
+    int rc = PDMR3CritSectInit(pVM, &pVM->iom.s.EmtLock, "IOM EMT Lock");
+    AssertRCReturn(rc, rc);
+
+    /*
      * Allocate the trees structure.
      */
-    int rc = MMHyperAlloc(pVM, sizeof(*pVM->iom.s.pTreesR3), 0, MM_TAG_IOM, (void **)&pVM->iom.s.pTreesR3);
+    rc = MMHyperAlloc(pVM, sizeof(*pVM->iom.s.pTreesR3), 0, MM_TAG_IOM, (void **)&pVM->iom.s.pTreesR3);
     if (RT_SUCCESS(rc))
     {
         pVM->iom.s.pTreesRC = MMHyperR3ToRC(pVM, pVM->iom.s.pTreesR3);
@@ -1387,6 +1394,18 @@ VMMR3DECL(int)  IOMR3MMIORegisterR3(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys
     }
 
     /*
+     * For the 2nd+ instance, mangle the description string so it's unique.
+     * (PGM requires this.)
+     */
+    if (pDevIns->iInstance > 0)
+    {
+        pszDesc = MMR3HeapAPrintf(pVM, MM_TAG_IOM, "%s [%u]", pszDesc, pDevIns->iInstance);
+        if (!pszDesc)
+            return VERR_NO_MEMORY;
+    }
+
+
+    /*
      * Allocate new range record and initialize it.
      */
     PIOMMMIORANGE pRange;
@@ -1429,13 +1448,15 @@ VMMR3DECL(int)  IOMR3MMIORegisterR3(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys
             if (RTAvlroGCPhysInsert(&pVM->iom.s.pTreesR3->MMIOTree, &pRange->Core))
                 return VINF_SUCCESS;
 
+            /* bail out */
             DBGFR3Info(pVM, "mmio", NULL, NULL);
             AssertMsgFailed(("This cannot happen!\n"));
             rc = VERR_INTERNAL_ERROR;
         }
         MMHyperFree(pVM, pRange);
     }
-
+    if (pDevIns->iInstance > 0)
+        MMR3HeapFree((void *)pszDesc);
     return rc;
 }
 
@@ -1613,11 +1634,37 @@ VMMR3DECL(int)  IOMR3MMIODeregister(PVM pVM, PPDMDEVINS pDevIns, RTGCPHYS GCPhys
 
         /* advance and free. */
         GCPhys = pRange->Core.KeyLast + 1;
+        if (pDevIns->iInstance > 0)
+            MMR3HeapFree((void *)pRange->pszDesc);
         MMHyperFree(pVM, pRange);
     }
 
     iomR3FlushCache(pVM);
     return VINF_SUCCESS;
+}
+
+
+/**
+ * Release the IOM lock if owned by the current VCPU
+ *
+ * @param   pVM         The VM to operate on.
+ */
+VMMR3DECL(void) IOMR3ReleaseOwnedLocks(PVM pVM)
+{
+    while (PDMCritSectIsOwner(&pVM->iom.s.EmtLock))
+        PDMCritSectLeave(&pVM->iom.s.EmtLock);
+}
+
+
+/**
+ * For TM only!
+ *
+ * @returns Pointer to the critical section.
+ * @param   pVM                 The VM handle.
+ */
+VMMR3DECL(PPDMCRITSECT) IOMR3GetCritSect(PVM pVM)
+{
+    return &pVM->iom.s.EmtLock;
 }
 
 

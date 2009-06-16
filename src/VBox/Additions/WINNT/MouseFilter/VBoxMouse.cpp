@@ -29,9 +29,9 @@
 #include <VBox/VBoxGuestLib.h>
 // VBOX end
 
-__BEGIN_DECLS
+RT_C_DECLS_BEGIN
 NTSTATUS DriverEntry (PDRIVER_OBJECT, PUNICODE_STRING);
-__END_DECLS
+RT_C_DECLS_END
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text (INIT, DriverEntry)
@@ -231,7 +231,7 @@ static void vboxDeviceAdded (PDEVICE_EXTENSION devExt)
                     case CmResourceTypeInterrupt:
 
                         dprintf(("VBoxMouse::vboxDeviceAdded: PartialDescriptor %d: Int %ld\n", iPartialDescriptor, pPartialDescriptor->u.Interrupt.Vector));
-                        if (pPartialDescriptor->u.Interrupt.Vector == 0x12)
+                        if (pPartialDescriptor->u.Interrupt.Vector == 0xC)
                         {
                             bDetected = TRUE;
                         }

@@ -1,4 +1,4 @@
-/* $Id: HWACCMInternal.h 18770 2009-04-06 15:00:15Z vboxsync $ */
+/* $Id: HWACCMInternal.h 20530 2009-06-13 20:53:44Z vboxsync $ */
 /** @file
  * HWACCM - Internal header file.
  */
@@ -44,7 +44,7 @@
 #define HWACCM_VTX_WITH_EPT
 #define HWACCM_VTX_WITH_VPID
 
-__BEGIN_DECLS
+RT_C_DECLS_BEGIN
 
 
 /** @defgroup grp_hwaccm_int       Internal
@@ -57,6 +57,7 @@ __BEGIN_DECLS
 /** Maximum number of exit reason statistics counters. */
 #define MAX_EXITREASON_STAT        0x100
 #define MASK_EXITREASON_STAT       0xff
+#define MASK_INJECT_IRQ_STAT       0xff
 
 /** @name Changed flags
  * These flags are used to keep track of which important registers that
@@ -119,8 +120,8 @@ __BEGIN_DECLS
 /** @} */
 
 
-/** Maxium resume loops allowed in ring 0 (safety precaution) */
-#define HWACCM_MAX_RESUME_LOOPS             1024
+/** Maximum number of page flushes we are willing to remember before considering a full TLB flush. */
+#define HWACCM_MAX_TLB_SHOOTDOWN_PAGES      8
 
 /** Size for the EPT identity page table (1024 4 MB pages to cover the entire address space). */
 #define HWACCM_EPT_IDENTITY_PG_TABLE_SIZE   PAGE_SIZE
@@ -186,9 +187,6 @@ typedef struct HWACCM
     /** Set when we've initialized VMX or SVM. */
     bool                        fInitialized;
 
-    /** Set when we're using VMX/SVN at that moment. */
-    bool                        fActive;
-
     /** Set when hardware acceleration is allowed. */
     bool                        fAllowed;
 
@@ -204,6 +202,9 @@ typedef struct HWACCM
     /** Set if we can support 64-bit guests or not. */
     bool                        fAllow64BitGuests;
 
+    /** Set if an IO-APIC is configured for this VM. */
+    bool                        fHasIoApic;
+
     /** Explicit alignment padding to make 32-bit gcc align u64RegisterMask
      *  naturally. */
     bool                        padding[1];
@@ -213,6 +214,10 @@ typedef struct HWACCM
 
     /** Maximum ASID allowed. */
     RTUINT                      uMaxASID;
+
+    /** The maximum number of resumes loops allowed in ring-0 (safety precaution).
+     * This number is set much higher when RTThreadPreemptIsPending is reliable. */
+    uint32_t                    cMaxResumeLoops;
 
 #if HC_ARCH_BITS == 32 && defined(VBOX_ENABLE_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
     /** 32 to 64 bits switcher entrypoint. */
@@ -233,9 +238,9 @@ typedef struct HWACCM
     /* Test handler */
     RTRCPTR                     pfnTest64;
 
-    RTRCPTR                     uAlignment[1];
-#elif defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
-    uint32_t                    u32Alignment[1];
+    RTRCPTR                     uAlignment[2];
+/*#elif defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
+    uint32_t                    u32Alignment[1]; */
 #endif
 
     struct
@@ -258,11 +263,11 @@ typedef struct HWACCM
         /** Virtual address of the identity page table used for real mode and protected mode without paging emulation in EPT mode. */
         R3PTRTYPE(PX86PD)           pNonPagingModeEPTPageTable;
 
-        /** R0 memory object for the virtual APIC mmio cache. */
+        /** R0 memory object for the APIC physical page (serves for filtering accesses). */
         RTR0MEMOBJ                  pMemObjAPIC;
-        /** Physical address of the virtual APIC mmio cache. */
+        /** Physical address of the APIC physical page (serves for filtering accesses). */
         RTHCPHYS                    pAPICPhys;
-        /** Virtual address of the virtual APIC mmio cache. */
+        /** Virtual address of the APIC physical page (serves for filtering accesses). */
         R0PTRTYPE(uint8_t *)        pAPIC;
 
         /** R0 memory object for the MSR bitmap (1 page). */
@@ -339,13 +344,6 @@ typedef struct HWACCM
         /** Explicit alignment padding to make 32-bit gcc align u64RegisterMask
          *  naturally. */
         bool                        padding[1];
-
-        /** R0 memory object for the host VM control block (VMCB). */
-        RTR0MEMOBJ                  pMemObjVMCBHost;
-        /** Physical address of the host VM control block (VMCB). */
-        RTHCPHYS                    pVMCBHostPhys;
-        /** Virtual address of the host VM control block (VMCB). */
-        R0PTRTYPE(void *)           pVMCBHost;
 
         /** R0 memory object for the IO bitmap (12kb). */
         RTR0MEMOBJ                  pMemObjIOBitmap;
@@ -459,9 +457,8 @@ typedef struct HWACCMCPU
     /** Set if we need to flush the TLB during the world switch. */
     bool                        fForceTLBFlush;
 
-    /** Explicit alignment padding to make 32-bit gcc align u64RegisterMask
-     *  naturally. */
-    bool                        padding[1];
+    /** Set when we're using VT-x or AMD-V at that moment. */
+    bool                        fActive;
 
     /** HWACCM_CHANGED_* flags. */
     RTUINT                      fContextUseFlags;
@@ -489,6 +486,16 @@ typedef struct HWACCMCPU
 
         /** Current VMX_VMCS_CTRL_PROC_EXEC_CONTROLS. */
         uint64_t                    proc_ctls;
+
+        /** Current VMX_VMCS_CTRL_PROC_EXEC2_CONTROLS. */
+        uint64_t                    proc_ctls2;
+
+        /** R0 memory object for the virtual APIC page for TPR caching. */
+        RTR0MEMOBJ                  pMemObjVAPIC;
+        /** Physical address of the virtual APIC page for TPR caching. */
+        RTHCPHYS                    pVAPICPhys;
+        /** Virtual address of the virtual APIC page for TPR caching. */
+        R0PTRTYPE(uint8_t *)        pVAPIC;
 
         /** Current CR0 mask. */
         uint64_t                    cr0_mask;
@@ -529,6 +536,13 @@ typedef struct HWACCMCPU
 
     struct
     {
+        /** R0 memory object for the host VM control block (VMCB). */
+        RTR0MEMOBJ                  pMemObjVMCBHost;
+        /** Physical address of the host VM control block (VMCB). */
+        RTHCPHYS                    pVMCBHostPhys;
+        /** Virtual address of the host VM control block (VMCB). */
+        R0PTRTYPE(void *)           pVMCBHost;
+
         /** R0 memory object for the VM control block (VMCB). */
         RTR0MEMOBJ                  pMemObjVMCB;
         /** Physical address of the VM control block (VMCB). */
@@ -567,6 +581,26 @@ typedef struct HWACCMCPU
     /** The CPU ID of the CPU currently owning the VMCS. Set in
      * HWACCMR0Enter and cleared in HWACCMR0Leave. */
     RTCPUID                 idEnteredCpu;
+
+    /** To keep track of pending TLB shootdown pages. (SMP guest only) */
+    struct
+    {
+        RTGCPTR             aPages[HWACCM_MAX_TLB_SHOOTDOWN_PAGES];
+        unsigned            cPages;
+    } TlbShootdown;
+
+    /** For saving stack space, the disassembler state is allocated here instead of
+     * on the stack.
+     * @note The DISCPUSTATE structure is not R3/R0/RZ clean!  */
+    union
+    {
+        /** The disassembler scratch space. */
+        DISCPUSTATE         DisState;
+        /** Padding. */
+        uint8_t             abDisStatePadding[DISCPUSTATE_PADDING_SIZE];
+    };
+
+    RTUINT                  padding2[1];
 
     STAMPROFILEADV          StatEntry;
     STAMPROFILEADV          StatExit1;
@@ -610,8 +644,11 @@ typedef struct HWACCMCPU
     STAMCOUNTER             StatExitCRxRead[16];
     STAMCOUNTER             StatExitDRxWrite;
     STAMCOUNTER             StatExitDRxRead;
+    STAMCOUNTER             StatExitRdmsr;
+    STAMCOUNTER             StatExitWrmsr;
     STAMCOUNTER             StatExitCLTS;
     STAMCOUNTER             StatExitHlt;
+    STAMCOUNTER             StatExitMwait;
     STAMCOUNTER             StatExitLMSW;
     STAMCOUNTER             StatExitIOWrite;
     STAMCOUNTER             StatExitIORead;
@@ -619,6 +656,7 @@ typedef struct HWACCMCPU
     STAMCOUNTER             StatExitIOStringRead;
     STAMCOUNTER             StatExitIrqWindow;
     STAMCOUNTER             StatExitMaxResume;
+    STAMCOUNTER             StatExitPreemptPending;
     STAMCOUNTER             StatIntReinject;
     STAMCOUNTER             StatPendingHostIrq;
 
@@ -631,6 +669,8 @@ typedef struct HWACCMCPU
     STAMCOUNTER             StatFlushTLBCRxChange;
     STAMCOUNTER             StatFlushASID;
     STAMCOUNTER             StatFlushTLBInvlpga;
+    STAMCOUNTER             StatTlbShootdown;
+    STAMCOUNTER             StatTlbShootdownFlush;
 
     STAMCOUNTER             StatSwitchGuestIrq;
     STAMCOUNTER             StatSwitchToR3;
@@ -644,8 +684,12 @@ typedef struct HWACCMCPU
     STAMCOUNTER             StatDRxIOCheck;
 
 
+#ifdef VBOX_WITH_STATISTICS
     R3PTRTYPE(PSTAMCOUNTER) paStatExitReason;
     R0PTRTYPE(PSTAMCOUNTER) paStatExitReasonR0;
+    R3PTRTYPE(PSTAMCOUNTER) paStatInjectedIrqs;
+    R0PTRTYPE(PSTAMCOUNTER) paStatInjectedIrqsR0;
+#endif
 } HWACCMCPU;
 /** Pointer to HWACCM VM instance data. */
 typedef HWACCMCPU *PHWACCMCPU;
@@ -658,10 +702,10 @@ VMMR0DECL(PHWACCM_CPUINFO) HWACCMR0GetCurrentCpuEx(RTCPUID idCpu);
 
 
 #ifdef VBOX_STRICT
-VMMR0DECL(void) HWACCMDumpRegs(PVM pVM, PCPUMCTX pCtx);
+VMMR0DECL(void) HWACCMDumpRegs(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
 VMMR0DECL(void) HWACCMR0DumpDescriptor(PX86DESCHC  Desc, RTSEL Sel, const char *pszMsg);
 #else
-#define HWACCMDumpRegs(a, b)                do { } while (0)
+#define HWACCMDumpRegs(a, b ,c)             do { } while (0)
 #define HWACCMR0DumpDescriptor(a, b, c)     do { } while (0)
 #endif
 
@@ -697,7 +741,7 @@ DECLASM(uint64_t) hwaccmR0Get64bitCR3(void);
 
 /** @} */
 
-__END_DECLS
+RT_C_DECLS_END
 
 #endif
 
