@@ -1,4 +1,4 @@
-/* $Id: PGMAllHandler.cpp 20577 2009-06-15 07:45:29Z vboxsync $ */
+/* $Id: PGMAllHandler.cpp 20808 2009-06-23 08:43:53Z vboxsync $ */
 /** @file
  * PGM - Page Manager / Monitor, Access Handlers.
  */
@@ -166,7 +166,6 @@ VMMDECL(int) PGMHandlerPhysicalRegisterEx(PVM pVM, PGMPHYSHANDLERTYPE enmType, R
         rc = pgmHandlerPhysicalSetRamFlagsAndFlushShadowPTs(pVM, pNew, pRam);
         if (rc == VINF_PGM_SYNC_CR3)
             rc = VINF_PGM_GCPHYS_ALIASED;
-        pVM->pgm.s.fPhysCacheFlushPending = true;
         pgmUnlock(pVM);
         HWACCMFlushTLBOnAllVCpus(pVM);
 #ifndef IN_RING3
@@ -271,9 +270,9 @@ VMMDECL(int)  PGMHandlerPhysicalDeregister(PVM pVM, RTGCPHYS GCPhys)
          */
         pgmHandlerPhysicalResetRamFlags(pVM, pCur);
         pgmHandlerPhysicalDeregisterNotifyREM(pVM, pCur);
+        MMHyperFree(pVM, pCur);
         pgmUnlock(pVM);
         HWACCMFlushTLBOnAllVCpus(pVM);
-        MMHyperFree(pVM, pCur);
         return VINF_SUCCESS;
     }
     pgmUnlock(pVM);
@@ -420,7 +419,6 @@ void pgmHandlerPhysicalResetAliasedPage(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys
 # else
     HWACCMFlushTLBOnAllVCpus(pVM);
 # endif
-    pVM->pgm.s.fPhysCacheFlushPending = true;
 
     /*
      * Make it an MMIO/Zero page.
@@ -540,20 +538,23 @@ VMMDECL(int) PGMHandlerPhysicalModify(PVM pVM, RTGCPHYS GCPhysCurrent, RTGCPHYS 
 
                 if (RTAvlroGCPhysInsert(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, &pCur->Core))
                 {
+                    PGMPHYSHANDLERTYPE  enmType = pCur->enmType;
+                    RTGCPHYS            GCPhysLast = pCur->Core.KeyLast - GCPhys + 1;
+                    bool                fHasHCHandler = !!pCur->pfnHandlerR3;
+
                     /*
                      * Set ram flags, flush shadow PT entries and finally tell REM about this.
                      */
                     rc = pgmHandlerPhysicalSetRamFlagsAndFlushShadowPTs(pVM, pCur, pRam);
-                    pVM->pgm.s.fPhysCacheFlushPending = true;
+                    pgmUnlock(pVM);
 
 #ifndef IN_RING3
-                    REMNotifyHandlerPhysicalModify(pVM, pCur->enmType, GCPhysCurrent, GCPhys,
-                                                   pCur->Core.KeyLast - GCPhys + 1, !!pCur->pfnHandlerR3, fRestoreAsRAM);
+                    REMNotifyHandlerPhysicalModify(pVM, enmType, GCPhysCurrent, GCPhys,
+                                                   GCPhysLast - GCPhys + 1, fHasHCHandler, fRestoreAsRAM);
 #else
-                    REMR3NotifyHandlerPhysicalModify(pVM, pCur->enmType, GCPhysCurrent, GCPhys,
-                                                     pCur->Core.KeyLast - GCPhys + 1, !!pCur->pfnHandlerR3, fRestoreAsRAM);
+                    REMR3NotifyHandlerPhysicalModify(pVM, enmType, GCPhysCurrent, GCPhys,
+                                                     GCPhysLast, fHasHCHandler, fRestoreAsRAM);
 #endif
-                    pgmUnlock(pVM);
                     HWACCMFlushTLBOnAllVCpus(pVM);
                     Log(("PGMHandlerPhysicalModify: GCPhysCurrent=%RGp -> GCPhys=%RGp GCPhysLast=%RGp\n",
                          GCPhysCurrent, GCPhys, GCPhysLast));
@@ -747,8 +748,8 @@ VMMDECL(int) PGMHandlerPhysicalJoin(PVM pVM, RTGCPHYS GCPhys1, RTGCPHYS GCPhys2)
                         pCur1->cPages        = (pCur1->Core.KeyLast - (pCur1->Core.Key & X86_PTE_PAE_PG_MASK) + PAGE_SIZE) >> PAGE_SHIFT;
                         LogFlow(("PGMHandlerPhysicalJoin: %RGp-%RGp %RGp-%RGp\n",
                                  pCur1->Core.Key, pCur1->Core.KeyLast, pCur2->Core.Key, pCur2->Core.KeyLast));
-                        pgmUnlock(pVM);
                         MMHyperFree(pVM, pCur2);
+                        pgmUnlock(pVM);
                         return VINF_SUCCESS;
                     }
 
@@ -849,7 +850,6 @@ VMMDECL(int)  PGMHandlerPhysicalReset(PVM pVM, RTGCPHYS GCPhys)
                      * Set the flags and flush shadow PT entries.
                      */
                     rc = pgmHandlerPhysicalSetRamFlagsAndFlushShadowPTs(pVM, pCur, pRam);
-                    pVM->pgm.s.fPhysCacheFlushPending = true;
                     HWACCMFlushTLBOnAllVCpus(pVM);
                 }
 
@@ -900,6 +900,7 @@ VMMDECL(int)  PGMHandlerPhysicalPageTempOff(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS G
 {
     LogFlow(("PGMHandlerPhysicalPageTempOff GCPhys=%RGp\n", GCPhys));
 
+    pgmLock(pVM);
     /*
      * Validate the range.
      */
@@ -912,28 +913,29 @@ VMMDECL(int)  PGMHandlerPhysicalPageTempOff(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS G
             Assert(!(pCur->Core.Key & PAGE_OFFSET_MASK));
             Assert((pCur->Core.KeyLast & PAGE_OFFSET_MASK) == PAGE_OFFSET_MASK);
 
-            AssertReturn(   pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_WRITE
+            AssertReturnStmt(   pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_WRITE
                          || pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_ALL,
-                         VERR_ACCESS_DENIED);
+                         pgmUnlock(pVM), VERR_ACCESS_DENIED);
 
             /*
              * Change the page status.
              */
             PPGMPAGE pPage;
             int rc = pgmPhysGetPageEx(&pVM->pgm.s, GCPhysPage, &pPage);
-            AssertRCReturn(rc, rc);
+            AssertReturnStmt(RT_SUCCESS_NP(rc), pgmUnlock(pVM), rc);
             PGM_PAGE_SET_HNDL_PHYS_STATE(pPage, PGM_PAGE_HNDL_PHYS_STATE_DISABLED);
+            pgmUnlock(pVM);
 #ifndef IN_RC
             HWACCMInvalidatePhysPage(pVM, GCPhysPage);
 #endif
             return VINF_SUCCESS;
         }
-
+        pgmUnlock(pVM);
         AssertMsgFailed(("The page %#x is outside the range %#x-%#x\n",
                          GCPhysPage, pCur->Core.Key, pCur->Core.KeyLast));
         return VERR_INVALID_PARAMETER;
     }
-
+    pgmUnlock(pVM);
     AssertMsgFailed(("Specified physical handler start address %#x is invalid.\n", GCPhys));
     return VERR_PGM_HANDLER_NOT_FOUND;
 }
@@ -983,6 +985,7 @@ VMMDECL(int)  PGMHandlerPhysicalPageAlias(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCP
 {
 ///    Assert(!IOMIsLockOwner(pVM)); /* We mustn't own any other locks when calling this */
 
+    pgmLock(pVM);
     /*
      * Lookup and validate the range.
      */
@@ -992,30 +995,33 @@ VMMDECL(int)  PGMHandlerPhysicalPageAlias(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCP
         if (RT_LIKELY(    GCPhysPage >= pCur->Core.Key
                       &&  GCPhysPage <= pCur->Core.KeyLast))
         {
-            AssertReturn(pCur->enmType == PGMPHYSHANDLERTYPE_MMIO, VERR_ACCESS_DENIED);
-            AssertReturn(!(pCur->Core.Key & PAGE_OFFSET_MASK), VERR_INVALID_PARAMETER);
-            AssertReturn((pCur->Core.KeyLast & PAGE_OFFSET_MASK) == PAGE_OFFSET_MASK, VERR_INVALID_PARAMETER);
+            AssertReturnStmt(pCur->enmType == PGMPHYSHANDLERTYPE_MMIO, pgmUnlock(pVM), VERR_ACCESS_DENIED);
+            AssertReturnStmt(!(pCur->Core.Key & PAGE_OFFSET_MASK), pgmUnlock(pVM), VERR_INVALID_PARAMETER);
+            AssertReturnStmt((pCur->Core.KeyLast & PAGE_OFFSET_MASK) == PAGE_OFFSET_MASK, pgmUnlock(pVM), VERR_INVALID_PARAMETER);
 
             /*
              * Get and validate the two pages.
              */
             PPGMPAGE pPageRemap;
             int rc = pgmPhysGetPageEx(&pVM->pgm.s, GCPhysPageRemap, &pPageRemap);
-            AssertRCReturn(rc, rc);
-            AssertMsgReturn(PGM_PAGE_GET_TYPE(pPageRemap) == PGMPAGETYPE_MMIO2,
+            AssertReturnStmt(RT_SUCCESS_NP(rc), pgmUnlock(pVM), rc);
+            AssertMsgReturnStmt(PGM_PAGE_GET_TYPE(pPageRemap) == PGMPAGETYPE_MMIO2,
                             ("GCPhysPageRemap=%RGp %R[pgmpage]\n", GCPhysPageRemap, pPageRemap),
-                            VERR_PGM_PHYS_NOT_MMIO2);
+                            pgmUnlock(pVM), VERR_PGM_PHYS_NOT_MMIO2);
 
             PPGMPAGE pPage;
             rc = pgmPhysGetPageEx(&pVM->pgm.s, GCPhysPage, &pPage);
-            AssertRCReturn(rc, rc);
+            AssertReturnStmt(RT_SUCCESS_NP(rc), pgmUnlock(pVM), rc);
             if (PGM_PAGE_GET_TYPE(pPage) != PGMPAGETYPE_MMIO)
             {
                 AssertMsgReturn(PGM_PAGE_GET_TYPE(pPage) == PGMPAGETYPE_MMIO2_ALIAS_MMIO,
                                 ("GCPhysPage=%RGp %R[pgmpage]\n", GCPhysPage, pPage),
                                 VERR_PGM_PHYS_NOT_MMIO2);
                 if (PGM_PAGE_GET_HCPHYS(pPage) == PGM_PAGE_GET_HCPHYS(pPageRemap))
+                {
+                    pgmUnlock(pVM);
                     return VINF_PGM_HANDLER_ALREADY_ALIASED;
+                }
 
                 /*
                  * The page is already mapped as some other page, reset it
@@ -1040,17 +1046,20 @@ VMMDECL(int)  PGMHandlerPhysicalPageAlias(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCP
             PGM_PAGE_SET_HNDL_PHYS_STATE(pPage, PGM_PAGE_HNDL_PHYS_STATE_DISABLED);
             LogFlow(("PGMHandlerPhysicalPageAlias: => %R[pgmpage]\n", pPage));
 
+            pgmUnlock(pVM);
 #ifndef IN_RC
             HWACCMInvalidatePhysPage(pVM, GCPhysPage);
 #endif
             return VINF_SUCCESS;
         }
 
+        pgmUnlock(pVM);
         AssertMsgFailed(("The page %#x is outside the range %#x-%#x\n",
                          GCPhysPage, pCur->Core.Key, pCur->Core.KeyLast));
         return VERR_INVALID_PARAMETER;
     }
 
+    pgmUnlock(pVM);
     AssertMsgFailed(("Specified physical handler start address %#x is invalid.\n", GCPhys));
     return VERR_PGM_HANDLER_NOT_FOUND;
 }
@@ -1096,24 +1105,26 @@ VMMDECL(int)  PGMHandlerPhysicalPageAliasHC(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS G
     /*
      * Lookup and validate the range.
      */
+    pgmLock(pVM);
     PPGMPHYSHANDLER pCur = (PPGMPHYSHANDLER)RTAvlroGCPhysGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
     if (RT_LIKELY(pCur))
     {
         if (RT_LIKELY(    GCPhysPage >= pCur->Core.Key
                       &&  GCPhysPage <= pCur->Core.KeyLast))
         {
-            AssertReturn(pCur->enmType == PGMPHYSHANDLERTYPE_MMIO, VERR_ACCESS_DENIED);
-            AssertReturn(!(pCur->Core.Key & PAGE_OFFSET_MASK), VERR_INVALID_PARAMETER);
-            AssertReturn((pCur->Core.KeyLast & PAGE_OFFSET_MASK) == PAGE_OFFSET_MASK, VERR_INVALID_PARAMETER);
+            AssertReturnStmt(pCur->enmType == PGMPHYSHANDLERTYPE_MMIO, pgmUnlock(pVM), VERR_ACCESS_DENIED);
+            AssertReturnStmt(!(pCur->Core.Key & PAGE_OFFSET_MASK), pgmUnlock(pVM), VERR_INVALID_PARAMETER);
+            AssertReturnStmt((pCur->Core.KeyLast & PAGE_OFFSET_MASK) == PAGE_OFFSET_MASK, pgmUnlock(pVM), VERR_INVALID_PARAMETER);
 
             /*
              * Get and validate the pages.
              */
             PPGMPAGE pPage;
             int rc = pgmPhysGetPageEx(&pVM->pgm.s, GCPhysPage, &pPage);
-            AssertRCReturn(rc, rc);
+            AssertReturnStmt(RT_SUCCESS_NP(rc), pgmUnlock(pVM), rc);
             if (PGM_PAGE_GET_TYPE(pPage) != PGMPAGETYPE_MMIO)
             {
+                pgmUnlock(pVM);
                 AssertMsgReturn(PGM_PAGE_GET_TYPE(pPage) == PGMPAGETYPE_MMIO2_ALIAS_MMIO,
                                 ("GCPhysPage=%RGp %R[pgmpage]\n", GCPhysPage, pPage),
                                 VERR_PGM_PHYS_NOT_MMIO2);
@@ -1137,17 +1148,18 @@ VMMDECL(int)  PGMHandlerPhysicalPageAliasHC(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS G
             PGM_PAGE_SET_PAGEID(pPage, NIL_GMM_PAGEID);
             PGM_PAGE_SET_HNDL_PHYS_STATE(pPage, PGM_PAGE_HNDL_PHYS_STATE_DISABLED);
             LogFlow(("PGMHandlerPhysicalPageAliasHC: => %R[pgmpage]\n", pPage));
-
+            pgmUnlock(pVM);
 #ifndef IN_RC
             HWACCMInvalidatePhysPage(pVM, GCPhysPage);
 #endif
             return VINF_SUCCESS;
         }
-
+        pgmUnlock(pVM);
         AssertMsgFailed(("The page %#x is outside the range %#x-%#x\n",
                          GCPhysPage, pCur->Core.Key, pCur->Core.KeyLast));
         return VERR_INVALID_PARAMETER;
     }
+    pgmUnlock(pVM);
 
     AssertMsgFailed(("Specified physical handler start address %#x is invalid.\n", GCPhys));
     return VERR_PGM_HANDLER_NOT_FOUND;
@@ -1168,6 +1180,7 @@ VMMDECL(bool) PGMHandlerPhysicalIsRegistered(PVM pVM, RTGCPHYS GCPhys)
     /*
      * Find the handler.
      */
+    pgmLock(pVM);
     PPGMPHYSHANDLER pCur = (PPGMPHYSHANDLER)RTAvlroGCPhysRangeGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
     if (pCur)
     {
@@ -1175,9 +1188,10 @@ VMMDECL(bool) PGMHandlerPhysicalIsRegistered(PVM pVM, RTGCPHYS GCPhys)
         Assert(     pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_WRITE
                ||   pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_ALL
                ||   pCur->enmType == PGMPHYSHANDLERTYPE_MMIO);
+        pgmUnlock(pVM);
         return true;
     }
-
+    pgmUnlock(pVM);
     return false;
 }
 
@@ -1195,15 +1209,24 @@ VMMDECL(bool) PGMHandlerPhysicalIsRegistered(PVM pVM, RTGCPHYS GCPhys)
  */
 bool pgmHandlerPhysicalIsAll(PVM pVM, RTGCPHYS GCPhys)
 {
+    pgmLock(pVM);
     PPGMPHYSHANDLER pCur = (PPGMPHYSHANDLER)RTAvlroGCPhysRangeGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
-    AssertReturn(pCur, true);
+    if (!pCur)
+    {
+        pgmUnlock(pVM);
+        AssertFailed();
+        return true;
+    }
     Assert(     pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_WRITE
            ||   pCur->enmType == PGMPHYSHANDLERTYPE_PHYSICAL_ALL
            ||   pCur->enmType == PGMPHYSHANDLERTYPE_MMIO); /* sanity */
     /* Only whole pages can be disabled. */
     Assert(   pCur->Core.Key     <= (GCPhys & ~(RTGCPHYS)PAGE_OFFSET_MASK)
            && pCur->Core.KeyLast >= (GCPhys | PAGE_OFFSET_MASK));
-    return pCur->enmType != PGMPHYSHANDLERTYPE_PHYSICAL_WRITE;
+
+    bool bRet = pCur->enmType != PGMPHYSHANDLERTYPE_PHYSICAL_WRITE;
+    pgmUnlock(pVM);
+    return bRet;
 }
 
 
@@ -1594,6 +1617,8 @@ VMMDECL(unsigned) PGMAssertHandlerAndFlagsInSync(PVM pVM)
     State.uVirtStateFound = 0;
     State.cErrors = 0;
     State.pVM = pVM;
+
+    Assert(PGMIsLockOwner(pVM));
 
     /*
      * Check the RAM flags against the handlers.

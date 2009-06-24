@@ -1,4 +1,4 @@
-/* $Id: VBoxInternalManage.cpp 20629 2009-06-16 13:40:30Z vboxsync $ */
+/* $Id: VBoxInternalManage.cpp 20864 2009-06-23 19:19:42Z vboxsync $ */
 /** @file
  * VBoxManage - The 'internalcommands' command.
  *
@@ -1264,7 +1264,7 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
     if (fRegister)
     {
         ComPtr<IHardDisk> hardDisk;
-        CHECK_ERROR(aVirtualBox, OpenHardDisk(filename, AccessMode_ReadWrite, hardDisk.asOutParam()));
+        CHECK_ERROR(aVirtualBox, OpenHardDisk(filename, AccessMode_ReadWrite, false, Bstr(""), false, Bstr(""), hardDisk.asOutParam()));
     }
 
     return SUCCEEDED(rc) ? 0 : 1;
@@ -1640,7 +1640,7 @@ int CmdModUninstall(void)
 {
     int rc;
 
-    rc = SUPUninstall();
+    rc = SUPR3Uninstall();
     if (RT_SUCCESS(rc))
         return 0;
     if (rc == VERR_NOT_IMPLEMENTED)
@@ -1657,7 +1657,7 @@ int CmdModInstall(void)
 {
     int rc;
 
-    rc = SUPInstall();
+    rc = SUPR3Install();
     if (RT_SUCCESS(rc))
         return 0;
     if (rc == VERR_NOT_IMPLEMENTED)

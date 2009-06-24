@@ -1,4 +1,4 @@
-/* $Id: TMAllCpu.cpp 19747 2009-05-15 16:05:41Z vboxsync $ */
+/* $Id: TMAllCpu.cpp 20689 2009-06-18 12:13:14Z vboxsync $ */
 /** @file
  * TM - Timeout Manager, CPU Time, All Contexts.
  */
@@ -63,10 +63,12 @@ int tmCpuTickResume(PVM pVM, PVMCPU pVCpu)
         pVCpu->tm.s.fTSCTicking = true;
         if (pVM->tm.s.fTSCVirtualized)
         {
+            /** @todo Test that pausing and resuming doesn't cause lag! (I.e. that we're
+             *        unpaused before the virtual time and stopped after it. */
             if (pVM->tm.s.fTSCUseRealTSC)
-                pVCpu->tm.s.u64TSCOffset = ASMReadTSC() - pVCpu->tm.s.u64TSC;
+                pVCpu->tm.s.offTSCRawSrc = ASMReadTSC() - pVCpu->tm.s.u64TSC;
             else
-                pVCpu->tm.s.u64TSCOffset = tmCpuTickGetRawVirtual(pVM, false /* don't check for pending timers */)
+                pVCpu->tm.s.offTSCRawSrc = tmCpuTickGetRawVirtual(pVM, false /* don't check for pending timers */)
                                          - pVCpu->tm.s.u64TSC;
         }
         return VINF_SUCCESS;
@@ -94,24 +96,6 @@ int tmCpuTickPause(PVM pVM, PVMCPU pVCpu)
     }
     AssertFailed();
     return VERR_INTERNAL_ERROR;
-}
-
-
-/**
- * Pauses the CPU timestamp counter ticking.
- *
- * @returns VBox status code.
- * @param   pVCpu       The VMCPU to operate on.
- * @todo replace this with TMNotifySuspend
- */
-VMMDECL(int) TMCpuTickPause(PVMCPU pVCpu)
-{
-    PVM pVM = pVCpu->CTX_SUFF(pVM);
-
-    if (!pVM->tm.s.fTSCTiedToExecution)
-        return tmCpuTickPause(pVM, pVCpu);
-    /* ignored */
-    return VINF_SUCCESS;
 }
 
 
@@ -153,7 +137,7 @@ VMMDECL(bool) TMCpuTickCanUseRealTSC(PVMCPU pVCpu, uint64_t *poffRealTSC)
             if (poffRealTSC)
             {
                 uint64_t u64Now = tmCpuTickGetRawVirtual(pVM, false /* don't check for pending timers */)
-                                - pVCpu->tm.s.u64TSCOffset;
+                                - pVCpu->tm.s.offTSCRawSrc;
                 /** @todo When we start collecting statistics on how much time we spend executing
                  * guest code before exiting, we should check this against the next virtual sync
                  * timer timeout. If it's lower than the avg. length, we should trap rdtsc to increase
@@ -165,7 +149,7 @@ VMMDECL(bool) TMCpuTickCanUseRealTSC(PVMCPU pVCpu, uint64_t *poffRealTSC)
         {
             /* The source is the real TSC. */
             if (pVM->tm.s.fTSCVirtualized)
-                *poffRealTSC = pVCpu->tm.s.u64TSCOffset;
+                *poffRealTSC = pVCpu->tm.s.offTSCRawSrc;
             else
                 *poffRealTSC = 0;
         }
@@ -221,7 +205,7 @@ DECLINLINE(uint64_t) tmCpuTickGetInternal(PVMCPU pVCpu, bool fCheckTimers)
                 u64 = ASMReadTSC();
             else
                 u64 = tmCpuTickGetRawVirtual(pVM, fCheckTimers);
-            u64 -= pVCpu->tm.s.u64TSCOffset;
+            u64 -= pVCpu->tm.s.offTSCRawSrc;
         }
         else
             u64 = ASMReadTSC();
@@ -260,13 +244,29 @@ VMMDECL(uint64_t) TMCpuTickGetNoCheck(PVMCPU pVCpu)
  * Sets the current CPU timestamp counter.
  *
  * @returns VBox status code.
- * @param   pVCpu       The VMCPU to operate on.
+ * @param   pVM         The VM handle.
+ * @param   pVCpu       The virtual CPU to operate on.
  * @param   u64Tick     The new timestamp value.
+ *
+ * @thread  EMT which TSC is to be set.
  */
-VMMDECL(int) TMCpuTickSet(PVMCPU pVCpu, uint64_t u64Tick)
+VMMDECL(int) TMCpuTickSet(PVM pVM, PVMCPU pVCpu, uint64_t u64Tick)
 {
-    Assert(!pVCpu->tm.s.fTSCTicking);
-    pVCpu->tm.s.u64TSC = u64Tick;
+    VMCPU_ASSERT_EMT(pVCpu);
+    STAM_COUNTER_INC(&pVM->tm.s.StatTSCSet);
+
+    /*
+     * This is easier to do when the TSC is paused since resume will
+     * do all the calcuations for us. Actually, we don't need to
+     * call tmCpuTickPause here since we overwrite u64TSC anyway.
+     */
+    bool        fTSCTicking = pVCpu->tm.s.fTSCTicking;
+    pVCpu->tm.s.fTSCTicking = false;
+    pVCpu->tm.s.u64TSC      = u64Tick;
+    if (fTSCTicking)
+        tmCpuTickResume(pVM, pVCpu);
+    /** @todo Try help synchronizing it better among the virtual CPUs? */
+
     return VINF_SUCCESS;
 }
 

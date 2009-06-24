@@ -1,4 +1,4 @@
-/* $Id: HWVMXR0.cpp 20608 2009-06-16 08:00:54Z vboxsync $ */
+/* $Id: HWVMXR0.cpp 20846 2009-06-23 14:57:46Z vboxsync $ */
 /** @file
  * HWACCM VMX - Host Context Ring 0.
  */
@@ -753,58 +753,64 @@ static int VMXR0CheckPendingInterrupt(PVM pVM, PVMCPU pVCpu, CPUMCTX *pCtx)
         return VINF_SUCCESS;
     }
 
-    if (pVM->hwaccm.s.fInjectNMI)
+    /* If an active trap is already pending, then we must forward it first! */
+    if (!TRPMHasTrap(pVCpu))
     {
-        RTGCUINTPTR intInfo;
-
-        intInfo  = X86_XCPT_NMI;
-        intInfo |= (1 << VMX_EXIT_INTERRUPTION_INFO_VALID_SHIFT);
-        intInfo |= (VMX_EXIT_INTERRUPTION_INFO_TYPE_NMI << VMX_EXIT_INTERRUPTION_INFO_TYPE_SHIFT);
-
-        rc = VMXR0InjectEvent(pVM, pVCpu, pCtx, intInfo, 0, 0);
-        AssertRC(rc);
-
-        pVM->hwaccm.s.fInjectNMI = false;
-        return VINF_SUCCESS;
-    }
-
-    /* When external interrupts are pending, we should exit the VM when IF is set. */
-    if (    !TRPMHasTrap(pVCpu)
-        &&  VMCPU_FF_ISPENDING(pVCpu, (VMCPU_FF_INTERRUPT_APIC|VMCPU_FF_INTERRUPT_PIC)))
-    {
-        if (!(pCtx->eflags.u32 & X86_EFL_IF))
+        if (VMCPU_FF_TESTANDCLEAR(pVCpu, VMCPU_FF_INTERRUPT_NMI_BIT))
         {
-            if (!(pVCpu->hwaccm.s.vmx.proc_ctls & VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_IRQ_WINDOW_EXIT))
-            {
-                LogFlow(("Enable irq window exit!\n"));
-                pVCpu->hwaccm.s.vmx.proc_ctls |= VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_IRQ_WINDOW_EXIT;
-                rc = VMXWriteVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, pVCpu->hwaccm.s.vmx.proc_ctls);
-                AssertRC(rc);
-            }
-            /* else nothing to do but wait */
+            RTGCUINTPTR intInfo;
+
+            Log(("CPU%d: injecting #NMI\n", pVCpu->idCpu));
+
+            intInfo  = X86_XCPT_NMI;
+            intInfo |= (1 << VMX_EXIT_INTERRUPTION_INFO_VALID_SHIFT);
+            intInfo |= (VMX_EXIT_INTERRUPTION_INFO_TYPE_NMI << VMX_EXIT_INTERRUPTION_INFO_TYPE_SHIFT);
+
+            rc = VMXR0InjectEvent(pVM, pVCpu, pCtx, intInfo, 0, 0);
+            AssertRC(rc);
+
+            return VINF_SUCCESS;
         }
-        else
-        if (!VMCPU_FF_ISSET(pVCpu, VMCPU_FF_INHIBIT_INTERRUPTS))
-        {
-            uint8_t u8Interrupt;
 
-            rc = PDMGetInterrupt(pVCpu, &u8Interrupt);
-            Log(("CPU%d: Dispatch interrupt: u8Interrupt=%x (%d) rc=%Rrc cs:rip=%04X:%RGv\n", pVCpu->idCpu, u8Interrupt, u8Interrupt, rc, pCtx->cs, (RTGCPTR)pCtx->rip));
-            if (RT_SUCCESS(rc))
+        /* @todo SMI interrupts. */
+
+        /* When external interrupts are pending, we should exit the VM when IF is set. */
+        if (VMCPU_FF_ISPENDING(pVCpu, (VMCPU_FF_INTERRUPT_APIC|VMCPU_FF_INTERRUPT_PIC)))
+        {
+            if (!(pCtx->eflags.u32 & X86_EFL_IF))
             {
-                rc = TRPMAssertTrap(pVCpu, u8Interrupt, TRPM_HARDWARE_INT);
-                AssertRC(rc);
+                if (!(pVCpu->hwaccm.s.vmx.proc_ctls & VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_IRQ_WINDOW_EXIT))
+                {
+                    LogFlow(("Enable irq window exit!\n"));
+                    pVCpu->hwaccm.s.vmx.proc_ctls |= VMX_VMCS_CTRL_PROC_EXEC_CONTROLS_IRQ_WINDOW_EXIT;
+                    rc = VMXWriteVMCS(VMX_VMCS_CTRL_PROC_EXEC_CONTROLS, pVCpu->hwaccm.s.vmx.proc_ctls);
+                    AssertRC(rc);
+                }
+                /* else nothing to do but wait */
             }
             else
+            if (!VMCPU_FF_ISSET(pVCpu, VMCPU_FF_INHIBIT_INTERRUPTS))
             {
-                /* Can only happen in rare cases where a pending interrupt is cleared behind our back */
-                Assert(!VMCPU_FF_ISPENDING(pVCpu, (VMCPU_FF_INTERRUPT_APIC|VMCPU_FF_INTERRUPT_PIC)));
-                STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatSwitchGuestIrq);
-                /* Just continue */
+                uint8_t u8Interrupt;
+
+                rc = PDMGetInterrupt(pVCpu, &u8Interrupt);
+                Log(("CPU%d: Dispatch interrupt: u8Interrupt=%x (%d) rc=%Rrc cs:rip=%04X:%RGv\n", pVCpu->idCpu, u8Interrupt, u8Interrupt, rc, pCtx->cs, (RTGCPTR)pCtx->rip));
+                if (RT_SUCCESS(rc))
+                {
+                    rc = TRPMAssertTrap(pVCpu, u8Interrupt, TRPM_HARDWARE_INT);
+                    AssertRC(rc);
+                }
+                else
+                {
+                    /* Can only happen in rare cases where a pending interrupt is cleared behind our back */
+                    Assert(!VMCPU_FF_ISPENDING(pVCpu, (VMCPU_FF_INTERRUPT_APIC|VMCPU_FF_INTERRUPT_PIC)));
+                    STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatSwitchGuestIrq);
+                    /* Just continue */
+                }
             }
+            else
+                Log(("Pending interrupt blocked at %RGv by VM_FF_INHIBIT_INTERRUPTS!!\n", (RTGCPTR)pCtx->rip));
         }
-        else
-            Log(("Pending interrupt blocked at %RGv by VM_FF_INHIBIT_INTERRUPTS!!\n", (RTGCPTR)pCtx->rip));
     }
 
 #ifdef VBOX_STRICT
@@ -2003,8 +2009,8 @@ VMMR0DECL(int) VMXR0RunGuestCode(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
     RTGCUINTPTR exitQualification = 0;
     RTGCUINTPTR intInfo = 0; /* shut up buggy gcc 4 */
     RTGCUINTPTR errCode, instrInfo;
-    bool        fSyncTPR = false;
     bool        fSetupTPRCaching = false;
+    uint8_t     u8LastTPR = 0;
     PHWACCM_CPUINFO pCpu = 0;
     RTCCUINTREG uOldEFlags = ~(RTCCUINTREG)0;
     unsigned    cResume = 0;
@@ -2212,18 +2218,17 @@ ResumeExecution:
     /* Note the 32 bits exception for AMD (X86_CPUID_AMD_FEATURE_ECX_CR8L), but that appears missing in Intel CPUs */
     /* Note: we can't do this in LoadGuestState as PDMApicGetTPR can jump back to ring 3 (lock)!!!!! */
     /**
-     * @todo reduce overhead
+     * @todo query and update the TPR only when it could have been changed (mmio access & wrmsr (x2apic))
      */
     if (fSetupTPRCaching)
     {
         /* TPR caching in CR8 */
-        uint8_t u8TPR;
         bool    fPending;
 
-        int rc = PDMApicGetTPR(pVCpu, &u8TPR, &fPending);
+        int rc = PDMApicGetTPR(pVCpu, &u8LastTPR, &fPending);
         AssertRC(rc);
         /* The TPR can be found at offset 0x80 in the APIC mmio page. */
-        pVCpu->hwaccm.s.vmx.pVAPIC[0x80] = u8TPR << 4; /* bits 7-4 contain the task priority */
+        pVCpu->hwaccm.s.vmx.pVAPIC[0x80] = u8LastTPR;
 
         /* Two options here:
          * - external interrupt pending, but masked by the TPR value.
@@ -2231,11 +2236,8 @@ ResumeExecution:
          * - no pending interrupts
          *   -> We don't need to be explicitely notified. There are enough world switches for detecting pending interrupts.
          */
-        rc  = VMXWriteVMCS(VMX_VMCS_CTRL_TPR_THRESHOLD, (fPending) ? u8TPR : 0);
+        rc  = VMXWriteVMCS(VMX_VMCS_CTRL_TPR_THRESHOLD, (fPending) ? (u8LastTPR >> 4) : 0);     /* cr8 bits 3-0 correspond to bits 7-4 of the task priority mmio register. */
         AssertRC(rc);
-
-        /* Always sync back the TPR; we should optimize this though */ /** @todo optimize TPR sync. */
-        fSyncTPR = true;
     }
 
 #if defined(HWACCM_VTX_WITH_EPT) && defined(LOG_ENABLED)
@@ -2277,12 +2279,18 @@ ResumeExecution:
 #endif
     /* Save the host state first. */
     rc  = VMXR0SaveHostState(pVM, pVCpu);
-    if (rc != VINF_SUCCESS)
+    if (RT_UNLIKELY(rc != VINF_SUCCESS))
+    {
+        VMMR0LogFlushEnable(pVCpu);
         goto end;
+    }
     /* Load the guest state */
     rc = VMXR0LoadGuestState(pVM, pVCpu, pCtx);
-    if (rc != VINF_SUCCESS)
+    if (RT_UNLIKELY(rc != VINF_SUCCESS))
+    {
+        VMMR0LogFlushEnable(pVCpu);
         goto end;
+    }
 
 #ifndef VBOX_WITH_VMMR0_DISABLE_PREEMPTION
     /* Disable interrupts to make sure a poke will interrupt execution.
@@ -2348,9 +2356,10 @@ ResumeExecution:
     STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatInGC, z);
     STAM_PROFILE_ADV_START(&pVCpu->hwaccm.s.StatExit1, v);
 
-    if (rc != VINF_SUCCESS)
+    if (RT_UNLIKELY(rc != VINF_SUCCESS))
     {
         VMXR0ReportWorldSwitchError(pVM, pVCpu, rc, pCtx);
+        VMMR0LogFlushEnable(pVCpu);
         goto end;
     }
 
@@ -2375,9 +2384,7 @@ ResumeExecution:
     AssertRC(rc);
 
     /* Note! NOW IT'S SAFE FOR LOGGING! */
-#ifdef LOG_ENABLED
     VMMR0LogFlushEnable(pVCpu);
-#endif
     Log2(("Raw exit reason %08x\n", exitReason));
 
     /* Check if an injected event was interrupted prematurely. */
@@ -2425,9 +2432,11 @@ ResumeExecution:
     Log2(("Interruption error code %d\n", (uint32_t)errCode));
     Log2(("IntInfo = %08x\n", (uint32_t)intInfo));
 
-    if (fSyncTPR)
+    /* Sync back the TPR if it was changed. */
+    if (    fSetupTPRCaching
+        &&  u8LastTPR != pVCpu->hwaccm.s.vmx.pVAPIC[0x80])
     {
-        rc = PDMApicSetTPR(pVCpu, pVCpu->hwaccm.s.vmx.pVAPIC[0x80] >> 4);
+        rc = PDMApicSetTPR(pVCpu, pVCpu->hwaccm.s.vmx.pVAPIC[0x80]);
         AssertRC(rc);
     }
 
@@ -4213,11 +4222,7 @@ VMMR0DECL(int) VMXR0Execute64BitsHandler(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, R
 
     rc2 = VMXActivateVMCS(pVCpu->hwaccm.s.vmx.pVMCSPhys);
     AssertRCReturn(rc2, rc2);
-#ifdef RT_OS_WINDOWS
-    Assert(ASMGetFlags() & X86_EFL_IF);
-#else
     Assert(!(ASMGetFlags() & X86_EFL_IF));
-#endif
     return rc;
 }
 

@@ -1,4 +1,4 @@
-/* $Id: MMInternal.h 20374 2009-06-08 00:43:21Z vboxsync $ */
+/* $Id: MMInternal.h 20866 2009-06-23 19:33:23Z vboxsync $ */
 /** @file
  * MM - Internal header file.
  */
@@ -525,8 +525,8 @@ typedef struct MMPAGEPOOL
     R3R0PTRTYPE(PVM)                    pVM;
 #endif
     /** Flag indicating the allocation method.
-     * Set: SUPLowAlloc().
-     * Clear: SUPPageAlloc() + SUPPageLock(). */
+     * Set: SUPR3LowAlloc().
+     * Clear: SUPR3PageAllocEx(). */
     bool                                fLow;
     /** Number of subpools. */
     uint32_t                            cSubPools;
@@ -788,7 +788,7 @@ int  mmR3HyperInit(PVM pVM);
 int  mmR3HyperTerm(PVM pVM);
 int  mmR3HyperInitPaging(PVM pVM);
 
-const char *mmR3GetTagName(MMTAG enmTag);
+const char *mmGetTagName(MMTAG enmTag);
 
 /**
  * Converts a pool address to a physical address.

@@ -1,4 +1,4 @@
-/* $Id: TMInternal.h 20374 2009-06-08 00:43:21Z vboxsync $ */
+/* $Id: TMInternal.h 20784 2009-06-22 14:37:39Z vboxsync $ */
 /** @file
  * TM - Internal header file.
  */
@@ -437,8 +437,8 @@ typedef struct TM
     /* Alignment */
     bool                        u8Alignment[2];
 
-    /** Lock serializing EMT access to TM. */
-    PDMCRITSECT                 EmtLock;
+    /** Lock serializing access to the timer lists. */
+    PDMCRITSECT                 TimerCritSect;
     /** Lock serializing access to the VirtualSync clock. */
     PDMCRITSECT                 VirtualSyncLock;
 
@@ -481,8 +481,34 @@ typedef struct TM
     /** @} */
     /** TMTimerSet
      * @{ */
+    STAMCOUNTER                 StatTimerSet;
+    STAMCOUNTER                 StatTimerSetOpt;
     STAMPROFILE                 StatTimerSetRZ;
     STAMPROFILE                 StatTimerSetR3;
+    STAMCOUNTER                 StatTimerSetStStopped;
+    STAMCOUNTER                 StatTimerSetStExpDeliver;
+    STAMCOUNTER                 StatTimerSetStActive;
+    STAMCOUNTER                 StatTimerSetStPendStop;
+    STAMCOUNTER                 StatTimerSetStPendStopSched;
+    STAMCOUNTER                 StatTimerSetStPendSched;
+    STAMCOUNTER                 StatTimerSetStPendResched;
+    STAMCOUNTER                 StatTimerSetStOther;
+    /** @} */
+    /** TMTimerSetRelative
+     * @{ */
+    STAMCOUNTER                 StatTimerSetRelative;
+    STAMPROFILE                 StatTimerSetRelativeRZ;
+    STAMPROFILE                 StatTimerSetRelativeR3;
+    STAMCOUNTER                 StatTimerSetRelativeOpt;
+    STAMCOUNTER                 StatTimerSetRelativeRacyVirtSync;
+    STAMCOUNTER                 StatTimerSetRelativeStStopped;
+    STAMCOUNTER                 StatTimerSetRelativeStExpDeliver;
+    STAMCOUNTER                 StatTimerSetRelativeStActive;
+    STAMCOUNTER                 StatTimerSetRelativeStPendStop;
+    STAMCOUNTER                 StatTimerSetRelativeStPendStopSched;
+    STAMCOUNTER                 StatTimerSetRelativeStPendSched;
+    STAMCOUNTER                 StatTimerSetRelativeStPendResched;
+    STAMCOUNTER                 StatTimerSetRelativeStOther;
     /** @} */
     /** TMTimerStop
      * @{ */
@@ -506,6 +532,9 @@ typedef struct TM
     STAMPROFILE                 StatVirtualSyncFF;
     /** The timer callback. */
     STAMCOUNTER                 StatTimerCallbackSetFF;
+
+    /** Calls to TMCpuTickSet. */
+    STAMCOUNTER                 StatTSCSet;
 
     /** @name Reasons for refusing TSC offsetting in TMCpuTickCanUseRealTSC.
      * @{ */
@@ -536,9 +565,9 @@ typedef struct TMCPU
     bool                        fTSCTicking;
     bool                        afAlignment0[3]; /**< alignment padding */
 
-    /** The offset between the host TSC and the Guest TSC.
+    /** The offset between the raw TSC source and the Guest TSC.
      * Only valid if fTicking is set and and fTSCUseRealTSC is clear. */
-    uint64_t                    u64TSCOffset;
+    uint64_t                    offTSCRawSrc;
 
     /** The guest TSC when fTicking is cleared. */
     uint64_t                    u64TSC;
@@ -548,19 +577,19 @@ typedef struct TMCPU
 typedef TMCPU *PTMCPU;
 
 #if 0 /* enable this to rule out locking bugs on single cpu guests. */
-# define tmLock(pVM)                VINF_SUCCESS
-# define tmTryLock(pVM)             VINF_SUCCESS
-# define tmUnlock(pVM)              ((void)0)
+# define tmTimerLock(pVM)                VINF_SUCCESS
+# define tmTimerTryLock(pVM)             VINF_SUCCESS
+# define tmTimerUnlock(pVM)              ((void)0)
 # define tmVirtualSyncLock(pVM)     VINF_SUCCESS
 # define tmVirtualSyncTryLock(pVM)  VINF_SUCCESS
 # define tmVirtualSyncUnlock(pVM)   ((void)0)
-# define TM_ASSERT_EMT_LOCK(pVM) VM_ASSERT_EMT(pVM)
+# define TM_ASSERT_LOCK(pVM)        VM_ASSERT_EMT(pVM)
 #else
-int                     tmLock(PVM pVM);
-int                     tmTryLock(PVM pVM);
-void                    tmUnlock(PVM pVM);
-/** Checks that the caller owns the EMT lock.  */
-#define TM_ASSERT_EMT_LOCK(pVM) Assert(PDMCritSectIsOwner(&pVM->tm.s.EmtLock))
+int                     tmTimerLock(PVM pVM);
+int                     tmTimerTryLock(PVM pVM);
+void                    tmTimerUnlock(PVM pVM);
+/** Checks that the caller owns the timer lock.  */
+#define TM_ASSERT_LOCK(pVM) Assert(PDMCritSectIsOwner(&pVM->tm.s.TimerCritSect))
 int                     tmVirtualSyncLock(PVM pVM);
 int                     tmVirtualSyncTryLock(PVM pVM);
 void                    tmVirtualSyncUnlock(PVM pVM);

@@ -1,4 +1,4 @@
-/* $Id: tstVMStructGC.cpp 20530 2009-06-13 20:53:44Z vboxsync $ */
+/* $Id: tstVMStructGC.cpp 20875 2009-06-24 02:29:17Z vboxsync $ */
 /** @file
  * tstVMMStructGC - Generate structure member and size checks from the GC perspective.
  *
@@ -530,9 +530,6 @@ int main()
     GEN_CHECK_OFF(PGM, pPoolR0);
     GEN_CHECK_OFF(PGM, pPoolRC);
     GEN_CHECK_OFF(PGM, fNoMorePhysWrites);
-    GEN_CHECK_OFF(PGM, fPhysCacheFlushPending);
-    GEN_CHECK_OFF(PGM, pgmphysreadcache);
-    GEN_CHECK_OFF(PGM, pgmphyswritecache);
     GEN_CHECK_OFF(PGM, ChunkR3Map);
     GEN_CHECK_OFF(PGM, ChunkR3Map.pTree);
     GEN_CHECK_OFF(PGM, ChunkR3Map.Tlb);
@@ -738,6 +735,27 @@ int main()
     GEN_CHECK_OFF(REM, StatsInQEMU);
     GEN_CHECK_OFF(REM, Env);
 
+    GEN_CHECK_SIZE(REMHANDLERNOTIFICATION);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, enmKind);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalRegister.GCPhys);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalRegister.cb);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalRegister.enmType);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalRegister.fHasHCHandler);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalDeregister.GCPhys);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalDeregister.cb);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalDeregister.enmType);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalDeregister.fHasHCHandler);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalDeregister.fRestoreAsRAM);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalModify.GCPhysOld);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalModify.GCPhysNew);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalModify.cb);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalModify.enmType);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalModify.fHasHCHandler);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, u.PhysicalModify.fRestoreAsRAM);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, idxSelf);
+    GEN_CHECK_OFF(REMHANDLERNOTIFICATION, idxNext);
+
     GEN_CHECK_SIZE(SELM);
     GEN_CHECK_OFF(SELM, offVM);
     GEN_CHECK_OFF(SELM, aHyperSel[SELM_HYPER_SEL_CS]);
@@ -773,7 +791,7 @@ int main()
     GEN_CHECK_OFF(TMCPU, fTSCTicking);
     GEN_CHECK_OFF(TM, fTSCUseRealTSC);
     GEN_CHECK_OFF(TM, fTSCTiedToExecution);
-    GEN_CHECK_OFF(TMCPU, u64TSCOffset);
+    GEN_CHECK_OFF(TMCPU, offTSCRawSrc);
     GEN_CHECK_OFF(TMCPU, u64TSC);
     GEN_CHECK_OFF(TM, cTSCTicksPerSecond);
     GEN_CHECK_OFF(TM, cVirtualTicking);
@@ -832,7 +850,7 @@ int main()
     GEN_CHECK_OFF(TM, paTimerQueuesR3);
     GEN_CHECK_OFF(TM, paTimerQueuesR0);
     GEN_CHECK_OFF(TM, paTimerQueuesRC);
-    GEN_CHECK_OFF(TM, EmtLock);
+    GEN_CHECK_OFF(TM, TimerCritSect);
     GEN_CHECK_OFF(TM, VirtualSyncLock);
     GEN_CHECK_OFF(TM, StatDoQueues);
     GEN_CHECK_OFF(TM, StatTimerCallbackSetFF);
@@ -881,28 +899,45 @@ int main()
     GEN_CHECK_OFF(VMM, pfnCallTrampolineRC);
     GEN_CHECK_OFF(VMM, pfnCPUMRCResumeGuest);
     GEN_CHECK_OFF(VMM, pfnCPUMRCResumeGuestV86);
+    GEN_CHECK_OFF(VMM, pRCLoggerRC);
+    GEN_CHECK_OFF(VMM, pRCLoggerR3);
+    GEN_CHECK_OFF(VMM, cbRCLogger);
+    GEN_CHECK_OFF(VMM, fRCLoggerFlushingDisabled);
+    GEN_CHECK_OFF(VMM, pYieldTimer);
+    GEN_CHECK_OFF(VMM, cYieldResumeMillies);
+    GEN_CHECK_OFF(VMM, cYieldEveryMillies);
+    GEN_CHECK_OFF(VMM, CritSectSync);
+    GEN_CHECK_OFF(VMM, hEvtRendezvousEnterOneByOne);
+    GEN_CHECK_OFF(VMM, hEvtMulRendezvousEnterAllAtOnce);
+    GEN_CHECK_OFF(VMM, hEvtMulRendezvousDone);
+    GEN_CHECK_OFF(VMM, hEvtRendezvousDoneCaller);
+    GEN_CHECK_OFF(VMM, pfnRendezvous);
+    GEN_CHECK_OFF(VMM, pvRendezvousUser);
+    GEN_CHECK_OFF(VMM, fRendezvousFlags);
+    GEN_CHECK_OFF(VMM, cRendezvousEmtsEntered);
+    GEN_CHECK_OFF(VMM, cRendezvousEmtsDone);
+    GEN_CHECK_OFF(VMM, cRendezvousEmtsReturned);
+    GEN_CHECK_OFF(VMM, i32RendezvousStatus);
+    GEN_CHECK_OFF(VMM, u32RendezvousLock);
+    GEN_CHECK_OFF(VMM, szRing0AssertMsg1);
+    GEN_CHECK_OFF(VMM, szRing0AssertMsg2);
+    GEN_CHECK_OFF(VMM, StatRunRC);
+    GEN_CHECK_OFF(VMM, StatRZCallPGMLock);
     GEN_CHECK_OFF(VMMCPU, iLastGZRc);
     GEN_CHECK_OFF(VMMCPU, pbEMTStackR3);
     GEN_CHECK_OFF(VMMCPU, pbEMTStackRC);
     GEN_CHECK_OFF(VMMCPU, pbEMTStackBottomRC);
-    GEN_CHECK_OFF(VMM, pRCLoggerRC);
-    GEN_CHECK_OFF(VMM, pRCLoggerR3);
 #ifdef LOG_ENABLED
     GEN_CHECK_OFF(VMMCPU, pR0LoggerR0);
     GEN_CHECK_OFF(VMMCPU, pR0LoggerR3);
 #endif
-    GEN_CHECK_OFF(VMM, cbRCLogger);
-    GEN_CHECK_OFF(VMM, pYieldTimer);
-    GEN_CHECK_OFF(VMM, cYieldResumeMillies);
-    GEN_CHECK_OFF(VMM, cYieldEveryMillies);
-    GEN_CHECK_OFF(VMMCPU, enmCallHostOperation);
-    GEN_CHECK_OFF(VMMCPU, rcCallHost);
-    GEN_CHECK_OFF(VMMCPU, u64CallHostArg);
-    GEN_CHECK_OFF(VMMCPU, CallHostR0JmpBuf);
-    GEN_CHECK_OFF(VMMCPU, CallHostR0JmpBuf.SpCheck);
-    GEN_CHECK_OFF(VMMCPU, CallHostR0JmpBuf.SpResume);
-    GEN_CHECK_OFF(VMM, StatRunRC);
-    GEN_CHECK_OFF(VMM, StatRZCallPGMLock);
+    GEN_CHECK_OFF(VMMCPU, cCallRing3Disabled);
+    GEN_CHECK_OFF(VMMCPU, enmCallRing3Operation);
+    GEN_CHECK_OFF(VMMCPU, rcCallRing3);
+    GEN_CHECK_OFF(VMMCPU, u64CallRing3Arg);
+    GEN_CHECK_OFF(VMMCPU, CallRing3JmpBufR0);
+    GEN_CHECK_OFF(VMMCPU, CallRing3JmpBufR0.SpCheck);
+    GEN_CHECK_OFF(VMMCPU, CallRing3JmpBufR0.SpResume);
 
     GEN_CHECK_SIZE(RTPINGPONG);
     GEN_CHECK_SIZE(RTCRITSECT);

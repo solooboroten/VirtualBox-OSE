@@ -1902,7 +1902,8 @@
 
     <method name="openHardDisk">
       <desc>
-        Opens a hard disk from an existing location.
+        Opens a hard disk from an existing location, optionally replacing
+        the image UUID and/or parent UUID.
 
         After the hard disk is successfully opened by this method, it gets
         remembered by (known to) this VirtualBox installation and will be
@@ -1953,6 +1954,29 @@
       <param name="accessMode" type="AccessMode" dir="in">
           <desc>
               Determines whether to open the image in read/write or read-only mode.
+          </desc>
+      </param>
+      <param name="setImageId" type="boolean" dir="in">
+          <desc>
+              Select whether a new image UUID is set or not.
+          </desc>
+      </param>
+      <param name="imageId" type="wstring" dir="in">
+          <desc>
+              New UUID for the image. If an empty string is passed, then a new
+              UUID is automatically created. Specifying a zero UUIDs is not valid.
+          </desc>
+      </param>
+      <param name="setParentId" type="boolean" dir="in">
+          <desc>
+              Select whether a new parent UUID is set or not.
+          </desc>
+      </param>
+      <param name="parentId" type="wstring" dir="in">
+          <desc>
+              New parent UUID for the image. If an empty string is passed, then a
+              new UUID is automatically created, provided @a setParentId is
+              @c true. A zero UUID is valid.
           </desc>
       </param>
       <param name="hardDisk" type="IHardDisk" dir="return">
@@ -2498,6 +2522,7 @@
         <ul>
           <li><tt>gui</tt>: VirtualBox Qt GUI session</li>
           <li><tt>vrdp</tt>: VirtualBox VRDP Server session</li>
+          <li><tt>sdl</tt>: VirtualBox SDL GUI session</li>
         </ul>
 
         The @a environment argument is a string containing definitions of
@@ -2998,7 +3023,7 @@
         <desc>Progress object to track the operation completion.</desc>
       </param>
     </method>
-    
+
   </interface>
 
   <!--
@@ -5578,6 +5603,21 @@
      wsmap="suppress"
      >
 
+    <desc>
+        This interface is used by a client of the Main API that need to
+        be notified of events. For example, a graphical user interface
+        can use this to learn about machine state changes so they can
+        update the list of virtual machines without having to rely
+        on polling.
+
+        Whenever relevant events occur in VirtualBox, the callbacks in
+        objects of this interface are called. In order for this to be
+        useful, a client needs to create its own subclass that implements
+        this interface in which the methods for the relevant callbacks
+        are overridden. An instance of this subclass interface can then
+        be passed to <link to="IConsole::registerCallback" />.
+    </desc>
+
     <method name="onMousePointerShapeChange">
       <desc>
         Notification when the guest mouse pointer shape has
@@ -6992,7 +7032,7 @@
      wsmap="managed"
      >
     <desc>
-      Reprents one of host's network interfaces. IP V6 address and network
+      Represents one of host's network interfaces. IP V6 address and network
       mask are strings of 32 hexdecimal digits grouped by four. Groups are
       separated by colons.
       For example, fe80:0000:0000:0000:021e:c2ff:fed2:b030.
@@ -7825,8 +7865,7 @@
   <interface
      name="IGuest" extends="$unknown"
      uuid="d8556fca-81bc-12af-fca3-365528fa38ca"
-
-     wsmap="suppress"
+     wsmap="managed"
      >
     <desc>
       The IGuest interface represents information about the operating system
@@ -7935,7 +7974,7 @@
       <param name="statistic" type="GuestStatisticType" dir="in">
         <desc>Statistic type.</desc>
       </param>
-      <param name="statVal" type="unsigned long" dir="out">
+      <param name="statVal" type="unsigned long" dir="return">
         <desc>Statistics value</desc>
       </param>
     </method>
@@ -8416,9 +8455,9 @@
       The exact media type may be determined by querying the appropriate
       interface such as:
       <ul>
-        <li>IHardDisk (virtual hard disks)</li>
-        <li>IDVDImage (standard CD/DVD ISO image files)</li>
-        <li>IFloppyImage (raw floppy image files)</li>
+        <li><link to="IHardDisk" /> (virtual hard disks)</li>
+        <li><link to="IDVDImage" /> (standard CD/DVD ISO image files)</li>
+        <li><link to="IFloppyImage" /> (raw floppy image files)</li>
       </ul>
 
       Existing media are opened using the following methods, depending on the
@@ -8689,14 +8728,14 @@
         <link to="#unlockRead"/> calls.
 
         This method sets the media state to <link
-        to="MediaState_LockedRead"/> on success. The state prior to
-        this call must be <link to="MediaState_Created"/>, <link
-        to="MediaState_Inaccessible"/> or <link
-        to="MediaState_LockedRead"/>. As you can see, inaccessible
-        media can be locked too. This is not an error; this method
-        performs a logical lock that prevents modifications of this
-        media through the VirtualBox API, not a physical lock of the
-        underlying storage unit.
+        to="MediaState_LockedRead" /> on success. The state prior to
+        this call must be <link to="MediaState_Created" />,
+        <link to="MediaState_Inaccessible" /> or
+        <link to="MediaState_LockedRead" />.
+        As you can see, inaccessible media can be locked too. This is
+        not an error; this method performs a logical lock that prevents
+        modifications of this media through the VirtualBox API, not a
+        physical lock of the underlying storage unit.
 
         This method returns the current state of the medium
         <b>before</b> the operation.
@@ -8760,10 +8799,9 @@
         can <b>not</b> be nested and must be followed by a<link
         to="#unlockWrite"/> call before the next lockWrite call.
 
-        This method sets the media state to <link
-        to="MediaState_LockedWrite"/> on success. The state prior to
-        this call must be <link to="MediaState_Created"/> or <link
-        to="MediaState_Inaccessible"/>. As you can see, inaccessible
+        This method sets the media state to <link to="MediaState_LockedWrite" />
+        on success. The state prior to this call must be <link to="MediaState_Created"/>
+        or <link to="MediaState_Inaccessible"/>. As you can see, inaccessible
         media can be locked too. This is not an error; this method
         performs a logical lock preventing modifications of this
         media through the VirtualBox API, not a physical lock of the
@@ -8963,9 +9001,6 @@
       The IHardDisk interface represents a virtual hard disk drive
       used by a virtual machine. This is a subclass of <link to="IMedium" />; see remarks there.
 
-      Virtual hard disk objects virtualize the hard disk hardware and look like
-      regular hard disks for the guest OS running inside the virtual machine.
-
       <h3>Hard Disk Types</h3>
 
       There are three types of hard disks:
@@ -8977,20 +9012,17 @@
       machine with the attached hard disk is taken. The type of the hard disk is
       defined by the <link to="#type"/> attribute.
 
-      All hard disks can be also divided in two big groups: <i>base</i> hard
+      All hard disks can be also divided in two groups: <i>base</i> hard
       disks and <i>differencing</i> hard disks. A base hard disk contains all
-      sectors of the hard disk data in its storage unit and therefore can be
-      used independently. On the contrary, a differencing hard disk contains
-      only some part of the hard disk data (a subset of sectors) and needs
-      another hard disk to get access to the missing sectors of data. This
-      another hard disk is called a <i>parent</i> hard disk and defines a hard
-      disk to which this differencing hard disk is known to be <i>linked to</i>.
-      The parent hard disk may be itself a differencing hard disk. This
-      way, differencing hard disks form a linked hard disk chain. This chain
-      always ends with the base hard disk which is sometimes referred to as the
-      root hard disk of this chain. Note that several differencing hard disks
-      may be linked to the same parent hard disk. This way, all known hard disks
-      form a hard disk tree which is based on their parent-child relationship.
+      sectors of the hard disk data in its own storage and therefore can be
+      used independently. On the contrary, a differencing hard disk is a
+      "delta" to some other disk and contains only those sectors which differ
+      from that other disk, which is then called a <i>parent</i>. The differencing
+      hard disk is said to be <i>linked to</i> that parent.
+      The parent may be itself a differencing image, thus forming a chain of
+      linked hard disks. The last element in that chain (sometimes referred to as
+      the root hard disk) must always be a base. Note that several differencing
+      hard disks may be linked to the same parent hard disk.
 
       Differencing hard disks can be distinguished from base hard disks by
       querying the <link to="#parent"/> attribute: base hard disks do not have
@@ -9001,7 +9033,7 @@
       attribute.
 
       Note that the type of all differencing hard disks is
-      <link to="HardDiskType_Normal">Normal</link>; all other values are
+      <link to="HardDiskType_Normal" />; all other values are
       meaningless for them. Base hard disks may be of any type.
 
       <h3>Creating Hard Disks</h3>
@@ -10713,19 +10745,19 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         <desc>Number of <tt>RTRECT</tt> elements in the @a rectangles array.</desc>
       </param>
     </method>
-    
+
     <method name="processVHWACommand">
       <desc>
         Posts a Video HW Acceleration Command to the frame buffer for processing.
         The commands used for 2D video acceleration (DDraw surface creation/destroying, blitting, scaling, color covnersion, overlaying, etc.)
         are posted from quest to the host to be processed by the host hardware.
-        
+
         <note>
           The address of the provided command must be in the process space of
           this IFramebuffer object.
         </note>
       </desc>
-    
+
       <param name="command" type="octet" mod="ptr" dir="in">
         <desc>Pointer to VBOXVHWACMD containing the command to execute.</desc>
       </param>
@@ -10782,7 +10814,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
   <interface
      name="IDisplay" extends="$unknown"
      uuid="26881797-bc98-444d-ac69-820633b93ec7"
-     wsmap="suppress"
+     wsmap="managed"
      >
     <desc>
       The IDisplay interface represents the virtual machine's display.
@@ -10873,7 +10905,12 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
     <method name="takeScreenShot">
       <desc>
         Takes a screen shot of the requested size and copies it to the
-        32-bpp buffer allocated by the caller.
+        32-bpp buffer allocated by the caller and pointed to by @a address.
+
+        <note>This API can be used only by the COM/XPCOM C++ API as it
+            requires pointer support. Use <link to="#takeScreenShotSlow" />
+            with other language bindings.
+        </note>
 
         <result name="E_NOTIMPL">
           Feature not implemented.
@@ -10886,6 +10923,38 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <param name="address" type="octet" mod="ptr" dir="in"/>
       <param name="width" type="unsigned long" dir="in"/>
       <param name="height" type="unsigned long" dir="in"/>
+    </method>
+
+    <method name="takeScreenShotSlow">
+      <desc>
+        Takes a guest screen shot of the requested size and returns it as
+        an array of bytes in uncompressed 32-bit ARGB format.
+        This API is slow, but could be the only option to get guest screenshot
+        for scriptable languages not allowed to manipulate with addresses
+        directly.
+
+        <result name="E_NOTIMPL">
+          Feature not implemented.
+        </result>
+        <result name="VBOX_E_IPRT_ERROR">
+          Could not take a screenshot.
+        </result>
+      </desc>
+      <param name="width" type="unsigned long" dir="in">
+        <desc>
+          Desired image width.
+        </desc>
+      </param>
+      <param name="height" type="unsigned long" dir="in">
+        <desc>
+          Desired image height.
+        </desc>
+      </param>
+      <param name="screenData" type="octet" dir="return" safearray="yes">
+        <desc>
+          Array with resulting screen data.
+        </desc>
+      </param>
     </method>
 
     <method name="drawToScreen">
@@ -10947,7 +11016,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <desc>
         Signals that the Video HW Acceleration command has completed.
       </desc>
- 
+
       <param name="command" type="octet" mod="ptr" dir="in">
         <desc>Pointer to VBOXVHWACMD containing the completed command.</desc>
       </param>
@@ -13073,33 +13142,38 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       The IPerformanceCollector interface represents a service that collects and
       stores performance metrics data.
 
-      Performance metrics are associated with objects like IHost and
+      Performance metrics are associated with objects of interfaces like IHost and
       IMachine. Each object has a distinct set of performance metrics.
       The set can be obtained with <link to="IPerformanceCollector::getMetrics"/>.
 
-      Metric data are collected at the specified intervals and are retained
-      internally. The interval and the number of samples retained can be set
+      Metric data is collected at the specified intervals and is retained
+      internally. The interval and the number of retained samples can be set
       with <link to="IPerformanceCollector::setupMetrics" />.
 
-      Metrics are organized hierarchically, each level separated by slash (/).
-      General scheme for metric name is
-      "Category/Metric[/SubMetric][:aggregation]". For example CPU/Load/User:avg
-      metric name stands for: CPU category, Load metric, User submetric, average
-      aggregate. An aggregate function is computed over all retained data. Valid
-      aggregate functions are:
+      Metrics are organized hierarchically, with each level separated by a
+      slash (/) character. Generally, the scheme for metric names is like this:
 
-      <ul>
-      <li>avg -- average</li>
-      <li>min -- minimum</li>
-      <li>max -- maximum</li>
-      </ul>
+      <tt>Category/Metric[/SubMetric][:aggregation]</tt>
 
-      "Category/Metric" together form base metric name. A base metric is the
+      "Category/Metric" together form the base metric name. A base metric is the
       smallest unit for which a sampling interval and the number of retained
       samples can be set. Only base metrics can be enabled and disabled. All
       sub-metrics are collected when their base metric is collected.
       Collected values for any set of sub-metrics can be queried with
-      <link to="IPerformanceCollector::queryMetricsData" />. When setting up
+      <link to="IPerformanceCollector::queryMetricsData" />.
+
+      For example "CPU/Load/User:avg"
+      metric name stands for the "CPU" category, "Load" metric, "User" submetric,
+      "average" aggregate. An aggregate function is computed over all retained
+      data. Valid aggregate functions are:
+
+      <ul>
+          <li>avg -- average</li>
+          <li>min -- minimum</li>
+          <li>max -- maximum</li>
+      </ul>
+
+      When setting up
       metric parameters, querying metric data, enabling or disabling metrics
       wildcards can be used in metric names to specify a subset of metrics. For
       example, to select all CPU-related metrics use <tt>CPU/*</tt>, all

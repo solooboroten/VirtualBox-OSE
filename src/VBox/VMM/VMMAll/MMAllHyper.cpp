@@ -1,4 +1,4 @@
-/* $Id: MMAllHyper.cpp 19667 2009-05-13 15:49:38Z vboxsync $ */
+/* $Id: MMAllHyper.cpp 20874 2009-06-24 02:19:29Z vboxsync $ */
 /** @file
  * MM - Memory Manager - Hypervisor Memory Area, All Contexts.
  */
@@ -168,12 +168,9 @@ static int mmHyperLock(PVM pVM)
     Assert(PDMCritSectIsInitialized(&pHeap->Lock));
 #endif
     int rc = PDMCritSectEnter(&pHeap->Lock, VERR_SEM_BUSY);
-#ifdef IN_RC
+#if defined(IN_RC) || defined(IN_RING0)
     if (rc == VERR_SEM_BUSY)
-        rc = VMMGCCallHost(pVM, VMMCALLHOST_MMHYPER_LOCK, 0);
-#elif defined(IN_RING0)
-    if (rc == VERR_SEM_BUSY)
-        rc = VMMR0CallHost(pVM, VMMCALLHOST_MMHYPER_LOCK, 0);
+        rc = VMMRZCallRing3NoCpu(pVM, VMMCALLRING3_MMHYPER_LOCK, 0);
 #endif
     AssertRC(rc);
     return rc;
@@ -310,7 +307,7 @@ static int mmHyperAllocInternal(PVM pVM, size_t cb, unsigned uAlignment, MMTAG e
             pStat->cAllocations++;
 #endif
             *ppv = pv;
-            /* ASMMemZero32(pv, cbAligned); - not required since memory is alloc-only and SUPPageAlloc zeros it. */
+            /* ASMMemZero32(pv, cbAligned); - not required since memory is alloc-only and SUPR3PageAlloc zeros it. */
             Log2(("MMHyperAlloc: cb=%#x uAlignment=%#x returns VINF_SUCCESS and *ppv=%p\n", cb, uAlignment, ppv));
             return VINF_SUCCESS;
         }
@@ -334,6 +331,8 @@ VMMDECL(int) MMHyperAlloc(PVM pVM, size_t cb, unsigned uAlignment, MMTAG enmTag,
 
     rc = mmHyperLock(pVM);
     AssertRCReturn(rc, rc);
+
+    LogFlow(("MMHyperAlloc %x align=%x tag=%s\n", cb, uAlignment, mmGetTagName(enmTag)));
 
     rc = mmHyperAllocInternal(pVM, cb, uAlignment, enmTag, ppv);
 
@@ -738,7 +737,7 @@ static void mmR3HyperStatRegisterOne(PVM pVM, PMMHYPERSTAT pStat)
 {
     if (pStat->fRegistered)
         return;
-    const char *pszTag = mmR3GetTagName((MMTAG)pStat->Core.Key);
+    const char *pszTag = mmGetTagName((MMTAG)pStat->Core.Key);
     STAMR3RegisterF(pVM, &pStat->cbCurAllocated, STAMTYPE_U32, STAMVISIBILITY_ALWAYS, STAMUNIT_BYTES, "Number of bytes currently allocated.",           "/MM/HyperHeap/%s", pszTag);
     STAMR3RegisterF(pVM, &pStat->cAllocations,   STAMTYPE_U64, STAMVISIBILITY_ALWAYS, STAMUNIT_COUNT, "Number of alloc calls.",                         "/MM/HyperHeap/%s/cAllocations", pszTag);
     STAMR3RegisterF(pVM, &pStat->cFrees,         STAMTYPE_U64, STAMVISIBILITY_ALWAYS, STAMUNIT_COUNT, "Number of free calls.",                          "/MM/HyperHeap/%s/cFrees", pszTag);
@@ -914,6 +913,8 @@ VMMDECL(int) MMHyperFree(PVM pVM, void *pv)
 
     rc = mmHyperLock(pVM);
     AssertRCReturn(rc, rc);
+
+    LogFlow(("MMHyperFree %p\n", pv));
 
     rc = mmHyperFreeInternal(pVM, pv);
 
@@ -1106,7 +1107,7 @@ static void mmHyperHeapDumpOne(PMMHYPERHEAP pHeap, PMMHYPERCHUNKFREE pCur)
             Log(("%p  %06x USED offNext=%06x offPrev=-%06x %s%s\n",
                  pCur, (uintptr_t)pCur - (uintptr_t)pHeap->CTX_SUFF(pbHeap),
                  pCur->core.offNext, -MMHYPERCHUNK_GET_OFFPREV(&pCur->core),
-                 mmR3GetTagName((MMTAG)pStat->Core.Key), pszSelf));
+                 mmGetTagName((MMTAG)pStat->Core.Key), pszSelf));
 #else
             Log(("%p  %06x USED offNext=%06x offPrev=-%06x %d%s\n",
                  pCur, (uintptr_t)pCur - (uintptr_t)pHeap->CTX_SUFF(pbHeap),

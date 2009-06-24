@@ -76,41 +76,41 @@ typedef enum VMMSWITCHER
 
 
 /**
- * VMMGCCallHost operations.
+ * VMMRZCallRing3 operations.
  */
-typedef enum VMMCALLHOST
+typedef enum VMMCALLRING3
 {
     /** Invalid operation.  */
-    VMMCALLHOST_INVALID = 0,
+    VMMCALLRING3_INVALID = 0,
     /** Acquire the PDM lock. */
-    VMMCALLHOST_PDM_LOCK,
+    VMMCALLRING3_PDM_LOCK,
     /** Call PDMR3QueueFlushWorker. */
-    VMMCALLHOST_PDM_QUEUE_FLUSH,
+    VMMCALLRING3_PDM_QUEUE_FLUSH,
     /** Acquire the PGM lock. */
-    VMMCALLHOST_PGM_LOCK,
+    VMMCALLRING3_PGM_LOCK,
     /** Grow the PGM shadow page pool. */
-    VMMCALLHOST_PGM_POOL_GROW,
+    VMMCALLRING3_PGM_POOL_GROW,
     /** Maps a chunk into ring-3. */
-    VMMCALLHOST_PGM_MAP_CHUNK,
+    VMMCALLRING3_PGM_MAP_CHUNK,
     /** Allocates more handy pages. */
-    VMMCALLHOST_PGM_ALLOCATE_HANDY_PAGES,
+    VMMCALLRING3_PGM_ALLOCATE_HANDY_PAGES,
     /** Acquire the MM hypervisor heap lock. */
-    VMMCALLHOST_MMHYPER_LOCK,
+    VMMCALLRING3_MMHYPER_LOCK,
     /** Replay the REM handler notifications. */
-    VMMCALLHOST_REM_REPLAY_HANDLER_NOTIFICATIONS,
+    VMMCALLRING3_REM_REPLAY_HANDLER_NOTIFICATIONS,
     /** Flush the GC/R0 logger. */
-    VMMCALLHOST_VMM_LOGGER_FLUSH,
+    VMMCALLRING3_VMM_LOGGER_FLUSH,
     /** Set the VM error message. */
-    VMMCALLHOST_VM_SET_ERROR,
+    VMMCALLRING3_VM_SET_ERROR,
     /** Set the VM runtime error message. */
-    VMMCALLHOST_VM_SET_RUNTIME_ERROR,
+    VMMCALLRING3_VM_SET_RUNTIME_ERROR,
     /** Signal a ring 0 assertion. */
-    VMMCALLHOST_VM_R0_ASSERTION,
+    VMMCALLRING3_VM_R0_ASSERTION,
     /** Ring switch to force preemption. */
-    VMMCALLHOST_VM_R0_PREEMPT,
+    VMMCALLRING3_VM_R0_PREEMPT,
     /** The usual 32-bit hack. */
-    VMMCALLHOST_32BIT_HACK = 0x7fffffff
-} VMMCALLHOST;
+    VMMCALLRING3_32BIT_HACK = 0x7fffffff
+} VMMCALLRING3;
 
 /**
  * VMMR3AtomicExecuteHandler callback function.
@@ -118,10 +118,24 @@ typedef enum VMMCALLHOST
  * @returns VBox status code.
  * @param   pVM     Pointer to the shared VM structure.
  * @param   pvUser  User specified argument
+ *
+ * @todo missing prefix.
  */
 typedef DECLCALLBACK(int) FNATOMICHANDLER(PVM pVM, void *pvUser);
 /** Pointer to a FNMMATOMICHANDLER(). */
 typedef FNATOMICHANDLER *PFNATOMICHANDLER;
+
+/**
+ * Rendezvous callback.
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM handle.
+ * @param   pVCpu       The handle of the calling virtual CPU.
+ * @param   pvUser      The user argument.
+ */
+typedef DECLCALLBACK(int) FNVMMEMTRENDEZVOUS(PVM pVM, PVMCPU pVCpu, void *pvUser);
+/** Pointer to a rendezvous callback function. */
+typedef FNVMMEMTRENDEZVOUS *PFNVMMEMTRENDEZVOUS;
 
 
 VMMDECL(RTRCPTR)     VMMGetStackRC(PVM pVM);
@@ -177,6 +191,23 @@ VMMR3DECL(void)     VMMR3YieldResume(PVM pVM);
 VMMR3DECL(void)     VMMR3SendSipi(PVM pVM, VMCPUID idCpu, uint32_t uVector);
 VMMR3DECL(void)     VMMR3SendInitIpi(PVM pVM, VMCPUID idCpu);
 VMMR3DECL(int)      VMMR3AtomicExecuteHandler(PVM pVM, PFNATOMICHANDLER pfnHandler, void *pvUser);
+VMMR3DECL(int)      VMMR3EmtRendezvous(PVM pVM, uint32_t fFlags, PFNVMMEMTRENDEZVOUS pfnRendezvous, void *pvUser);
+/** @defgroup grp_VMMR3EmtRendezvous_fFlags     VMMR3EmtRendezvous flags
+ *  @{ */
+/** Execution type mask. */
+#define VMMEMTRENDEZVOUS_FLAGS_TYPE_MASK        UINT32_C(0x00000003)
+/** Invalid execution type. */
+#define VMMEMTRENDEZVOUS_FLAGS_TYPE_INVALID     UINT32_C(0)
+/** Let the EMTs execute the callback one by one (in no particular order). */
+#define VMMEMTRENDEZVOUS_FLAGS_TYPE_ONE_BY_ONE  UINT32_C(1)
+/** Let all the EMTs execute the callback at the same time. */
+#define VMMEMTRENDEZVOUS_FLAGS_TYPE_ALL_AT_ONCE UINT32_C(2)
+/** Only execute the callback on one EMT (no particular one). */
+#define VMMEMTRENDEZVOUS_FLAGS_TYPE_ONCE        UINT32_C(3)
+/** The valid flags. */
+#define VMMEMTRENDEZVOUS_FLAGS_VALID_MASK       VMMEMTRENDEZVOUS_FLAGS_TYPE_MASK
+/** @} */
+VMMR3DECL(void)     VMMR3EmtRendezvousFF(PVM pVM, PVMCPU pVCpu);
 VMMR3DECL(int)      VMMR3ReadR0Stack(PVM pVM, VMCPUID idCpu, RTHCUINTPTR pAddress, void *pvBuf, size_t cbRead);
 /** @} */
 #endif /* IN_RING3 */
@@ -319,7 +350,6 @@ VMMR0DECL(int)      VMMR0EntryInt(PVM pVM, VMMR0OPERATION enmOperation, void *pv
 VMMR0DECL(void)     VMMR0EntryFast(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperation);
 VMMR0DECL(int)      VMMR0EntryEx(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperation, PSUPVMMR0REQHDR pReq, uint64_t u64Arg, PSUPDRVSESSION);
 VMMR0DECL(int)      VMMR0TermVM(PVM pVM, PGVM pGVM);
-VMMR0DECL(int)      VMMR0CallHost(PVM pVM, VMMCALLHOST enmOperation, uint64_t uArg);
 
 #ifdef LOG_ENABLED
 VMMR0DECL(void)     VMMR0LogFlushDisable(PVMCPU pVCpu);
@@ -339,12 +369,22 @@ VMMR0DECL(void)     VMMR0LogFlushEnable(PVMCPU pVCpu);
  */
 VMMRCDECL(int)      VMMGCEntry(PVM pVM, unsigned uOperation, unsigned uArg, ...);
 VMMRCDECL(void)     VMMGCGuestToHost(PVM pVM, int rc);
-VMMRCDECL(int)      VMMGCCallHost(PVM pVM, VMMCALLHOST enmOperation, uint64_t uArg);
-VMMRCDECL(bool)     VMMGCLogDisable(PVM pVM);
-VMMRCDECL(void)     VMMGCLogRestore(PVM pVM, bool fLog);
 VMMRCDECL(void)     VMMGCLogFlushIfFull(PVM pVM);
 /** @} */
 #endif /* IN_RC */
+
+#if defined(IN_RC) || defined(IN_RING0)
+/** @defgroup grp_vmm_rz    The VMM Raw-Mode and Ring-0 Context API
+ * @ingroup grp_vmm
+ * @{
+ */
+VMMRZDECL(int)      VMMRZCallRing3(PVM pVM, PVMCPU pVCpu, VMMCALLRING3 enmOperation, uint64_t uArg);
+VMMRZDECL(int)      VMMRZCallRing3NoCpu(PVM pVM, VMMCALLRING3 enmOperation, uint64_t uArg);
+VMMRZDECL(void)     VMMRZCallRing3Disable(PVMCPU pVCpu);
+VMMRZDECL(void)     VMMRZCallRing3Enable(PVMCPU pVCpu);
+VMMRZDECL(bool)     VMMRZCallRing3IsEnabled(PVMCPU pVCpu);
+/** @} */
+#endif
 
 
 /** @} */

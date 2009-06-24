@@ -1,4 +1,4 @@
-/* $Id: REMAll.cpp 20431 2009-06-09 11:52:48Z vboxsync $ */
+/* $Id: REMAll.cpp 20874 2009-06-24 02:19:29Z vboxsync $ */
 /** @file
  * REM - Recompiled Execution Monitor, all Contexts part.
  */
@@ -21,7 +21,7 @@
 
 
 /*******************************************************************************
-*   Global Variables                                                           *
+*   Header Files                                                               *
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_REM
 #include <VBox/rem.h>
@@ -46,41 +46,35 @@
  */
 VMMDECL(int) REMNotifyInvalidatePage(PVM pVM, RTGCPTR GCPtrPage)
 {
-    if (    pVM->rem.s.cInvalidatedPages < RT_ELEMENTS(pVM->rem.s.aGCPtrInvalidatedPages)
-        &&  EMTryEnterRemLock(pVM) == VINF_SUCCESS) /* if this fails, then we'll just flush the tlb as we don't want to waste time here. */
+    /*
+     * Try take the REM lock and push the address onto the array.
+     */
+    if (   pVM->rem.s.cInvalidatedPages < RT_ELEMENTS(pVM->rem.s.aGCPtrInvalidatedPages)
+        && EMTryEnterRemLock(pVM) == VINF_SUCCESS)
     {
-        /*
-         * We sync them back in REMR3State.
-         */
-        pVM->rem.s.aGCPtrInvalidatedPages[pVM->rem.s.cInvalidatedPages++] = GCPtrPage;
+        uint32_t iPage = pVM->rem.s.cInvalidatedPages;
+        if (iPage < RT_ELEMENTS(pVM->rem.s.aGCPtrInvalidatedPages))
+        {
+            ASMAtomicWriteU32(&pVM->rem.s.cInvalidatedPages, iPage + 1);
+            pVM->rem.s.aGCPtrInvalidatedPages[iPage] = GCPtrPage;
+
+            EMRemUnlock(pVM);
+            return VINF_SUCCESS;
+        }
+
+        CPUMSetChangedFlags(VMMGetCpu(pVM), CPUM_CHANGED_GLOBAL_TLB_FLUSH); /** @todo this should be flagged globally, not locally! ... this array should be per-cpu technically speaking. */
+        ASMAtomicWriteU32(&pVM->rem.s.cInvalidatedPages, 0); /** @todo leave this alone? Optimize this code? */
+
         EMRemUnlock(pVM);
     }
     else
     {
-        /* Tell the recompiler to flush its TLB. */
+        /* Fallback: Simply tell the recompiler to flush its TLB. */
         CPUMSetChangedFlags(VMMGetCpu(pVM), CPUM_CHANGED_GLOBAL_TLB_FLUSH);
-        pVM->rem.s.cInvalidatedPages = 0;
+        ASMAtomicWriteU32(&pVM->rem.s.cInvalidatedPages, 0); /** @todo leave this alone?! Optimize this code? */
     }
 
     return VINF_SUCCESS;
-}
-
-
-/**
- * Flushes the handler notifications by calling the host.
- *
- * @param   pVM     The VM handle.
- */
-static void remFlushHandlerNotifications(PVM pVM)
-{
-#ifdef IN_RC
-    VMMGCCallHost(pVM, VMMCALLHOST_REM_REPLAY_HANDLER_NOTIFICATIONS, 0);
-#elif defined(IN_RING0)
-    /** @todo necessary? */
-    VMMR0CallHost(pVM, VMMCALLHOST_REM_REPLAY_HANDLER_NOTIFICATIONS, 0);
-#else
-    AssertReleaseMsgFailed(("Ring 3 call????.\n"));
-#endif
 }
 
 
@@ -92,41 +86,48 @@ static void remFlushHandlerNotifications(PVM pVM)
  */
 static void remNotifyHandlerInsert(PVM pVM, PREMHANDLERNOTIFICATION pRec)
 {
-    uint32_t idxFree;
-    uint32_t idxNext;
+    /*
+     * Fetch a free record.
+     */
+    uint32_t                cFlushes = 0;
+    uint32_t                idxFree;
     PREMHANDLERNOTIFICATION pFree;
-
-    /* Fetch a free record. */
     do
     {
-        idxFree = pVM->rem.s.idxFreeList;
+        idxFree = ASMAtomicUoReadU32(&pVM->rem.s.idxFreeList);
         if (idxFree == (uint32_t)-1)
         {
-            pFree = NULL;
-            break;
+            do
+            {
+                Assert(cFlushes++ != 128);
+                AssertFatal(cFlushes < _1M);
+                VMMRZCallRing3NoCpu(pVM, VMMCALLRING3_REM_REPLAY_HANDLER_NOTIFICATIONS, 0);
+                idxFree = ASMAtomicUoReadU32(&pVM->rem.s.idxFreeList);
+            } while (idxFree == (uint32_t)-1);
         }
-        pFree = &pVM->rem.s.aHandlerNotifications[idxFree];  
+        pFree = &pVM->rem.s.aHandlerNotifications[idxFree];
     } while (!ASMAtomicCmpXchgU32(&pVM->rem.s.idxFreeList, pFree->idxNext, idxFree));
 
-    if (!pFree)
-    {
-        remFlushHandlerNotifications(pVM);
-        return;
-    }
+    /*
+     * Copy the record.
+     */
+    pFree->enmKind = pRec->enmKind;
+    pFree->u = pRec->u;
 
-    /* Copy the record. */
-    *pFree = *pRec;
-    pFree->idxSelf = idxFree; /* was trashed */
-
-    /* Insert it into the pending list. */
+    /*
+     * Insert it into the pending list.
+     */
+    uint32_t idxNext;
     do
     {
-        idxNext = pVM->rem.s.idxPendingList;
-        pFree->idxNext = idxNext;
+        idxNext = ASMAtomicUoReadU32(&pVM->rem.s.idxPendingList);
+        ASMAtomicWriteU32(&pFree->idxNext, idxNext);
+        ASMCompilerBarrier();
     } while (!ASMAtomicCmpXchgU32(&pVM->rem.s.idxPendingList, idxFree, idxNext));
 
     VM_FF_SET(pVM, VM_FF_REM_HANDLER_NOTIFY);
 }
+
 
 /**
  * Notification about a successful PGMR3HandlerPhysicalRegister() call.
@@ -197,6 +198,38 @@ VMMDECL(void) REMNotifyHandlerPhysicalModify(PVM pVM, PGMPHYSHANDLERTYPE enmType
 }
 
 #endif /* !IN_RING3 */
+
+#ifdef IN_RC
+/**
+ * Flushes the physical handler notifications if the queue is almost full.
+ *
+ * This is for avoiding trouble in RC when changing CR3.
+ *
+ * @param   pVM         The VM handle.
+ * @param   pVCpu       The virtual CPU handle of the calling EMT.
+ */
+VMMDECL(void) REMNotifyHandlerPhysicalFlushIfAlmostFull(PVM pVM, PVMCPU pVCpu)
+{
+    Assert(pVM->cCPUs == 1);
+
+    /*
+     * Less than 10 items means we should flush.
+     */
+    uint32_t cFree = 0;
+    for (uint32_t idx = pVM->rem.s.idxFreeList;
+         idx != UINT32_MAX;
+         idx = pVM->rem.s.aHandlerNotifications[idx].idxNext)
+    {
+        Assert(idx < RT_ELEMENTS(pVM->rem.s.aHandlerNotifications));
+        if (++cFree > 10)
+            return;
+    }
+
+    /* Ok, we gotta flush them. */
+    VMMRZCallRing3NoCpu(pVM, VMMCALLRING3_REM_REPLAY_HANDLER_NOTIFICATIONS, 0);
+}
+#endif /* IN_RC */
+
 
 /**
  * Make REM flush all translation block upon the next call to REMR3State().

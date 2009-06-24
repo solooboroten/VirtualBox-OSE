@@ -1,4 +1,6 @@
-<!DOCTYPE TS><TS>
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE TS>
+<TS version="2.0">
 <context>
     <name>@@@</name>
     <message>
@@ -1529,7 +1531,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>bla</source>
-        <translation>&lt;vide&gt;</translation>
+        <translation type="obsolete">&lt;vide&gt;</translation>
     </message>
     <message>
         <source>&amp;Username:</source>
@@ -4835,7 +4837,7 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
     <message>
         <source>&amp;Password:</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Mot de &amp;passe :</translation>
     </message>
     <message>
         <source>I &amp;would like to register creating a new Sun Online account:</source>
@@ -5978,11 +5980,11 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>System</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Système</translation>
     </message>
     <message>
         <source>Display</source>
-        <translation type="unfinished"></translation>
+        <translation type="unfinished">Affichage</translation>
     </message>
     <message>
         <source>you have selected a 64-bit guest OS type for this VM. As such guestsrequire hardware virtualization (VT-x/AMD-V), this feature will be enabled automatically.</source>

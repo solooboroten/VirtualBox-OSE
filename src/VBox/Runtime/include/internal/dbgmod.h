@@ -1,4 +1,4 @@
-/* $Id: dbgmod.h 20513 2009-06-12 13:03:42Z vboxsync $ */
+/* $Id: dbgmod.h 20801 2009-06-23 00:10:32Z vboxsync $ */
 /** @file
  * IPRT - Internal Header for RTDbgMod and the associated interpreters.
  */
@@ -65,7 +65,7 @@ typedef struct RTDBGMODVTIMG
      *
      * This combines probing and opening.
      *
-     * @returns VBox status code. No informational returns defined.
+     * @returns IPRT status code. No informational returns defined.
      *
      * @param   pMod        Pointer to the module that is being opened.
      *
@@ -115,7 +115,7 @@ typedef struct RTDBGMODVTDBG
      *
      * This combines probing and opening.
      *
-     * @returns VBox status code. No informational returns defined.
+     * @returns IPRT status code. No informational returns defined.
      *
      * @param   pMod        Pointer to the module that is being opened.
      *
@@ -142,35 +142,136 @@ typedef struct RTDBGMODVTDBG
      */
     DECLCALLBACKMEMBER(int, pfnClose)(PRTDBGMODINT pMod);
 
+
+
+    /**
+     * Converts an image relative virtual address address to a segmented address.
+     *
+     * @returns Segment index on success, NIL_RTDBGSEGIDX on failure.
+     * @param   pMod        Pointer to the module structure.
+     * @param   uRva        The image relative address to convert.
+     * @param   poffSeg     Where to return the segment offset. Optional.
+     */
+    DECLCALLBACKMEMBER(RTDBGSEGIDX, pfnRvaToSegOff)(PRTDBGMODINT pMod, RTUINTPTR uRva, PRTUINTPTR poffSeg);
+
+    /**
+     * Image size when mapped if segments are mapped adjecently.
+     *
+     * For ELF, PE, and Mach-O images this is (usually) a natural query, for LX and
+     * NE and such it's a bit odder and the answer may not make much sense for them.
+     *
+     * @returns Image mapped size.
+     * @param   pMod        Pointer to the module structure.
+     */
+    DECLCALLBACKMEMBER(RTUINTPTR, pfnImageSize)(PRTDBGMODINT pMod);
+
+
+
+    /**
+     * Adds a segment to the module (optional).
+     *
+     * @returns IPRT status code.
+     * @retval  VERR_NOT_SUPPORTED if the interpreter doesn't support this feature.
+     * @retval  VERR_DBG_SEGMENT_INDEX_CONFLICT if the segment index exists already.
+     *
+     * @param   pMod        Pointer to the module structure.
+     * @param   uRva        The segment image relative address.
+     * @param   cb          The segment size.
+     * @param   pszName     The segment name.
+     * @param   cchName     The length of the segment name.
+     * @param   fFlags      Segment flags.
+     * @param   piSeg       The segment index or NIL_RTDBGSEGIDX on input.
+     *                      The assigned segment index on successful return.
+     *                      Optional.
+     */
+    DECLCALLBACKMEMBER(int, pfnSegmentAdd)(PRTDBGMODINT pMod, RTUINTPTR uRva, RTUINTPTR cb, const char *pszName, size_t cchName,
+                                           uint32_t fFlags, PRTDBGSEGIDX piSeg);
+
+    /**
+     * Gets the segment count.
+     *
+     * @returns Number of segments.
+     * @retval  NIL_RTDBGSEGIDX if unknown.
+     *
+     * @param   pMod        Pointer to the module structure.
+     */
+    DECLCALLBACKMEMBER(RTDBGSEGIDX, pfnSegmentCount)(PRTDBGMODINT pMod);
+
+    /**
+     * Gets information about a segment.
+     *
+     * @returns IPRT status code.
+     * @retval  VERR_DBG_INVALID_SEGMENT_INDEX if iSeg is too high.
+     *
+     * @param   pMod        Pointer to the module structure.
+     * @param   iSeg        The segment.
+     * @param   pSegInfo    Where to store the segment information.
+     */
+    DECLCALLBACKMEMBER(int, pfnSegmentByIndex)(PRTDBGMODINT pMod, RTDBGSEGIDX iSeg, PRTDBGSEGMENT pSegInfo);
+
+
+
     /**
      * Adds a symbol to the module (optional).
      *
-     * This method is used to implement DBGFR3SymbolAdd.
-     *
-     * @returns VBox status code.
+     * @returns IPRT  code.
      * @retval  VERR_NOT_SUPPORTED if the interpreter doesn't support this feature.
      *
      * @param   pMod        Pointer to the module structure.
      * @param   pszSymbol   The symbol name.
+     * @param   cchSymbol   The length for the symbol name.
      * @param   iSeg        The segment number (0-based). RTDBGMOD_SEG_RVA can be used.
      * @param   off         The offset into the segment.
-     * @param   cbSymbol    The area covered by the symbol. 0 is fine.
+     * @param   cb          The area covered by the symbol. 0 is fine.
+     * @param   piOrdinal   Where to return the symbol ordinal on success. If the
+     *                      interpreter doesn't do ordinals, this will be set to
+     *                      UINT32_MAX. Optional
      */
-    DECLCALLBACKMEMBER(int, pfnSymbolAdd)(PRTDBGMODINT pMod, const char *pszSymbol, uint32_t iSeg, RTGCUINTPTR off, RTUINT cbSymbol);
+    DECLCALLBACKMEMBER(int, pfnSymbolAdd)(PRTDBGMODINT pMod, const char *pszSymbol, size_t cchSymbol,
+                                          uint32_t iSeg, RTUINTPTR off, RTUINTPTR cb, uint32_t fFlags,
+                                          uint32_t *piOrdinal);
+
+    /**
+     * Gets the number of symbols in the module.
+     *
+     * This is used for figuring out the max value to pass to pfnSymbolByIndex among
+     * other things.
+     *
+     * @returns The number of symbols, UINT32_MAX if not known/supported.
+     *
+     * @param   pMod        Pointer to the module structure.
+     */
+    DECLCALLBACKMEMBER(uint32_t, pfnSymbolCount)(PRTDBGMODINT pMod);
+
+    /**
+     * Queries symbol information by ordinal number.
+     *
+     * @returns IPRT status code.
+     * @retval  VINF_SUCCESS on success, no informational status code.
+     * @retval  VERR_DBG_NO_SYMBOLS if there aren't any symbols.
+     * @retval  VERR_NOT_SUPPORTED if lookup by ordinal is not supported.
+     * @retval  VERR_SYMBOL_NOT_FOUND if there is no symbol at that index.
+     *
+     * @param   pMod        Pointer to the module structure.
+     * @param   iOrdinal    The symbol ordinal number.
+     * @param   pSymInfo    Where to store the symbol information.
+     */
+    DECLCALLBACKMEMBER(int, pfnSymbolByOrdinal)(PRTDBGMODINT pMod, uint32_t iOrdinal, PRTDBGSYMBOL pSymInfo);
 
     /**
      * Queries symbol information by symbol name.
      *
-     * @returns VBox status code.
+     * @returns IPRT status code.
      * @retval  VINF_SUCCESS on success, no informational status code.
-     * @retval  VERR_RTDBGMOD_NO_SYMBOLS if there aren't any symbols.
+     * @retval  VERR_DBG_NO_SYMBOLS if there aren't any symbols.
      * @retval  VERR_SYMBOL_NOT_FOUND if no suitable symbol was found.
      *
      * @param   pMod        Pointer to the module structure.
      * @param   pszSymbol   The symbol name.
-     * @para    pSymbol     Where to store the symbol information.
+     * @param   cchSymbol   The length of the symbol name.
+     * @param   pSymInfo    Where to store the symbol information.
      */
-    DECLCALLBACKMEMBER(int, pfnSymbolByName)(PRTDBGMODINT pMod, const char *pszSymbol, PRTDBGSYMBOL pSymbol);
+    DECLCALLBACKMEMBER(int, pfnSymbolByName)(PRTDBGMODINT pMod, const char *pszSymbol, size_t cchSymbol, PRTDBGSYMBOL pSymInfo);
 
     /**
      * Queries symbol information by address.
@@ -179,36 +280,82 @@ typedef struct RTDBGMODVTDBG
      * most applicable to the specified address. This usually means a symbol with an
      * address equal or lower than the requested.
      *
-     * @returns VBox status code.
+     * @returns IPRT status code.
      * @retval  VINF_SUCCESS on success, no informational status code.
-     * @retval  VERR_RTDBGMOD_NO_SYMBOLS if there aren't any symbols.
+     * @retval  VERR_DBG_NO_SYMBOLS if there aren't any symbols.
      * @retval  VERR_SYMBOL_NOT_FOUND if no suitable symbol was found.
      *
      * @param   pMod        Pointer to the module structure.
-     * @param   iSeg        The segment number (0-based). RTDBGMOD_SEG_RVA can be used.
+     * @param   iSeg        The segment number (0-based) or RTDBGSEGIDX_ABS.
      * @param   off         The offset into the segment.
      * @param   poffDisp    Where to store the distance between the specified address
      *                      and the returned symbol. Optional.
-     * @param   pSymbol     Where to store the symbol information.
+     * @param   pSymInfo    Where to store the symbol information.
      */
-    DECLCALLBACKMEMBER(int, pfnSymbolByAddr)(PRTDBGMODINT pMod, uint32_t iSeg, RTGCUINTPTR off, PRTGCINTPTR poffDisp, PRTDBGSYMBOL pSymbol);
+    DECLCALLBACKMEMBER(int, pfnSymbolByAddr)(PRTDBGMODINT pMod, uint32_t iSeg, RTUINTPTR off, PRTINTPTR poffDisp, PRTDBGSYMBOL pSymInfo);
+
+
+
+    /**
+     * Adds a line number to the module (optional).
+     *
+     * @returns IPRT status code.
+     * @retval  VERR_NOT_SUPPORTED if the interpreter doesn't support this feature.
+     *
+     * @param   pMod        Pointer to the module structure.
+     * @param   pszFile     The filename.
+     * @param   cchFile     The length of the filename.
+     * @param   iSeg        The segment number (0-based).
+     * @param   off         The offset into the segment.
+     * @param   piOrdinal   Where to return the line number ordinal on success. If
+     *                      the interpreter doesn't do ordinals, this will be set to
+     *                      UINT32_MAX. Optional
+     */
+    DECLCALLBACKMEMBER(int, pfnLineAdd)(PRTDBGMODINT pMod, const char *pszFile, size_t cchFile, uint32_t uLineNo,
+                                        uint32_t iSeg, RTUINTPTR off, uint32_t *piOrdinal);
+
+    /**
+     * Gets the number of line numbers in the module.
+     *
+     * @returns The number or UINT32_MAX if not known/supported.
+     *
+     * @param   pMod        Pointer to the module structure.
+     */
+    DECLCALLBACKMEMBER(uint32_t, pfnLineCount)(PRTDBGMODINT pMod);
+
+    /**
+     * Queries line number information by ordinal number.
+     *
+     * @returns IPRT status code.
+     * @retval  VINF_SUCCESS on success, no informational status code.
+     * @retval  VERR_DBG_NO_LINE_NUMBERS if there aren't any line numbers.
+     * @retval  VERR_DBG_LINE_NOT_FOUND if there is no line number with that
+     *          ordinal.
+     *
+     * @param   pMod        Pointer to the module structure.
+     * @param   iOrdinal    The line number ordinal number.
+     * @param   pLineInfo   Where to store the information about the line number.
+     */
+    DECLCALLBACKMEMBER(int, pfnLineByOrdinal)(PRTDBGMODINT pMod, uint32_t iOrdinal, PRTDBGLINE pLineInfo);
 
     /**
      * Queries line number information by address.
      *
-     * @returns VBox status code.
+     * @returns IPRT status code.
      * @retval  VINF_SUCCESS on success, no informational status code.
-     * @retval  VERR_RTDBGMOD_NO_LINE_NUMBERS if there aren't any line numbers.
-     * @retval  VERR_RTDBGMOD_LINE_NOT_FOUND if no suitable line number was found.
+     * @retval  VERR_DBG_NO_LINE_NUMBERS if there aren't any line numbers.
+     * @retval  VERR_DBG_LINE_NOT_FOUND if no suitable line number was found.
      *
      * @param   pMod        Pointer to the module structure.
-     * @param   iSeg        The segment number (0-based). RTDBGMOD_SEG_RVA can be used.
+     * @param   iSeg        The segment number (0-based) or RTDBGSEGIDX_ABS.
      * @param   off         The offset into the segment.
      * @param   poffDisp    Where to store the distance between the specified address
      *                      and the returned line number. Optional.
-     * @param   pLine       Where to store the information about the closest line number.
+     * @param   pLineInfo   Where to store the information about the closest line
+     *                      number.
      */
-    DECLCALLBACKMEMBER(int, pfnLineByAddr)(PRTDBGMODINT pMod, uint32_t iSeg, RTGCUINTPTR off, PRTGCINTPTR poffDisp, PRTDBGLINE pLine);
+    DECLCALLBACKMEMBER(int, pfnLineByAddr)(PRTDBGMODINT pMod, uint32_t iSeg, RTUINTPTR off, PRTINTPTR poffDisp, PRTDBGLINE pLineInfo);
+
 
     /** For catching initialization errors (RTDBGMODVTDBG_MAGIC). */
     uint32_t    u32EndMagic;
@@ -228,11 +375,11 @@ typedef struct RTDBGMODINT
      * This is used to perform automatic cleanup and sharing. */
     uint32_t volatile   cRefs;
     /** The module name (short). */
-    char               *pszName;
+    char const         *pszName;
     /** The module filename. Can be NULL. */
-    char               *pszImgFile;
+    char const         *pszImgFile;
     /** The debug info file (if external). Can be NULL. */
-    char               *pszDbgFile;
+    char const         *pszDbgFile;
 
     /** Critical section serializing access to the module. */
     RTCRITSECT          CritSect;
@@ -252,7 +399,10 @@ typedef struct RTDBGMODINT
 typedef RTDBGMODINT *PRTDBGMODINT;
 
 
-int rtDbgModContainerCreate(PRTDBGMODINT pMod, RTUINTPTR cb);
+extern DECLHIDDEN(RTSTRCACHE) g_hDbgModStrCache;
+
+
+int rtDbgModContainerCreate(PRTDBGMODINT pMod, RTUINTPTR cbSeg);
 
 /** @} */
 

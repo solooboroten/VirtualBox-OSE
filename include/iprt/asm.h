@@ -3849,7 +3849,7 @@ DECLINLINE(void) ASMAtomicAndS32(int32_t volatile *pi32, int32_t i32)
 }
 
 
-/** 
+/**
  * Serialize Instruction.
  */
 #if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
@@ -5447,8 +5447,12 @@ DECLINLINE(void) ASMProbeReadBuffer(const void *pvBuf, size_t cbBuf)
 /**
  * Sets a bit in a bitmap.
  *
- * @param   pvBitmap    Pointer to the bitmap.
+ * @param   pvBitmap    Pointer to the bitmap. This should be 32-bit aligned.
  * @param   iBit        The bit to set.
+ *
+ * @remarks The 32-bit aligning of pvBitmap is not a strict requirement.
+ *          However, doing so will yield better performance as well as avoiding
+ *          traps accessing the last bits in the bitmap.
  */
 #if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
 DECLASM(void) ASMBitSet(volatile void *pvBitmap, int32_t iBit);
@@ -5485,7 +5489,8 @@ DECLINLINE(void) ASMBitSet(volatile void *pvBitmap, int32_t iBit)
 /**
  * Atomically sets a bit in a bitmap, ordered.
  *
- * @param   pvBitmap    Pointer to the bitmap.
+ * @param   pvBitmap    Pointer to the bitmap. Must be 32-bit aligned, otherwise
+ *                      the memory access isn't atomic!
  * @param   iBit        The bit to set.
  */
 #if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
@@ -5493,6 +5498,7 @@ DECLASM(void) ASMAtomicBitSet(volatile void *pvBitmap, int32_t iBit);
 #else
 DECLINLINE(void) ASMAtomicBitSet(volatile void *pvBitmap, int32_t iBit)
 {
+    AssertMsg(!((uintptr_t)pvBitmap & 3), ("address %p not 32-bit aligned", pvBitmap));
 # if RT_INLINE_ASM_USES_INTRIN
     _interlockedbittestandset((long *)pvBitmap, iBit);
 # elif RT_INLINE_ASM_GNU_STYLE
@@ -5524,6 +5530,10 @@ DECLINLINE(void) ASMAtomicBitSet(volatile void *pvBitmap, int32_t iBit)
  *
  * @param   pvBitmap    Pointer to the bitmap.
  * @param   iBit        The bit to clear.
+ *
+ * @remarks The 32-bit aligning of pvBitmap is not a strict requirement.
+ *          However, doing so will yield better performance as well as avoiding
+ *          traps accessing the last bits in the bitmap.
  */
 #if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
 DECLASM(void) ASMBitClear(volatile void *pvBitmap, int32_t iBit);
@@ -5560,15 +5570,17 @@ DECLINLINE(void) ASMBitClear(volatile void *pvBitmap, int32_t iBit)
 /**
  * Atomically clears a bit in a bitmap, ordered.
  *
- * @param   pvBitmap    Pointer to the bitmap.
+ * @param   pvBitmap    Pointer to the bitmap. Must be 32-bit aligned, otherwise
+ *                      the memory access isn't atomic!
  * @param   iBit        The bit to toggle set.
- * @remark  No memory barrier, take care on smp.
+ * @remarks No memory barrier, take care on smp.
  */
 #if RT_INLINE_ASM_EXTERNAL
 DECLASM(void) ASMAtomicBitClear(volatile void *pvBitmap, int32_t iBit);
 #else
 DECLINLINE(void) ASMAtomicBitClear(volatile void *pvBitmap, int32_t iBit)
 {
+    AssertMsg(!((uintptr_t)pvBitmap & 3), ("address %p not 32-bit aligned", pvBitmap));
 # if RT_INLINE_ASM_GNU_STYLE
     __asm__ __volatile__("lock; btrl %1, %0"
                          : "=m" (*(volatile long *)pvBitmap)
@@ -5598,6 +5610,10 @@ DECLINLINE(void) ASMAtomicBitClear(volatile void *pvBitmap, int32_t iBit)
  *
  * @param   pvBitmap    Pointer to the bitmap.
  * @param   iBit        The bit to toggle.
+ *
+ * @remarks The 32-bit aligning of pvBitmap is not a strict requirement.
+ *          However, doing so will yield better performance as well as avoiding
+ *          traps accessing the last bits in the bitmap.
  */
 #if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
 DECLASM(void) ASMBitToggle(volatile void *pvBitmap, int32_t iBit);
@@ -5633,7 +5649,8 @@ DECLINLINE(void) ASMBitToggle(volatile void *pvBitmap, int32_t iBit)
 /**
  * Atomically toggles a bit in a bitmap, ordered.
  *
- * @param   pvBitmap    Pointer to the bitmap.
+ * @param   pvBitmap    Pointer to the bitmap. Must be 32-bit aligned, otherwise
+ *                      the memory access isn't atomic!
  * @param   iBit        The bit to test and set.
  */
 #if RT_INLINE_ASM_EXTERNAL
@@ -5641,6 +5658,7 @@ DECLASM(void) ASMAtomicBitToggle(volatile void *pvBitmap, int32_t iBit);
 #else
 DECLINLINE(void) ASMAtomicBitToggle(volatile void *pvBitmap, int32_t iBit)
 {
+    AssertMsg(!((uintptr_t)pvBitmap & 3), ("address %p not 32-bit aligned", pvBitmap));
 # if RT_INLINE_ASM_GNU_STYLE
     __asm__ __volatile__("lock; btcl %1, %0"
                          : "=m" (*(volatile long *)pvBitmap)
@@ -5670,8 +5688,13 @@ DECLINLINE(void) ASMAtomicBitToggle(volatile void *pvBitmap, int32_t iBit)
  *
  * @returns true if the bit was set.
  * @returns false if the bit was clear.
+ *
  * @param   pvBitmap    Pointer to the bitmap.
  * @param   iBit        The bit to test and set.
+ *
+ * @remarks The 32-bit aligning of pvBitmap is not a strict requirement.
+ *          However, doing so will yield better performance as well as avoiding
+ *          traps accessing the last bits in the bitmap.
  */
 #if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
 DECLASM(bool) ASMBitTestAndSet(volatile void *pvBitmap, int32_t iBit);
@@ -5717,7 +5740,9 @@ DECLINLINE(bool) ASMBitTestAndSet(volatile void *pvBitmap, int32_t iBit)
  *
  * @returns true if the bit was set.
  * @returns false if the bit was clear.
- * @param   pvBitmap    Pointer to the bitmap.
+ *
+ * @param   pvBitmap    Pointer to the bitmap. Must be 32-bit aligned, otherwise
+ *                      the memory access isn't atomic!
  * @param   iBit        The bit to set.
  */
 #if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
@@ -5726,6 +5751,7 @@ DECLASM(bool) ASMAtomicBitTestAndSet(volatile void *pvBitmap, int32_t iBit);
 DECLINLINE(bool) ASMAtomicBitTestAndSet(volatile void *pvBitmap, int32_t iBit)
 {
     union { bool f; uint32_t u32; uint8_t u8; } rc;
+    AssertMsg(!((uintptr_t)pvBitmap & 3), ("address %p not 32-bit aligned", pvBitmap));
 # if RT_INLINE_ASM_USES_INTRIN
     rc.u8 = _interlockedbittestandset((long *)pvBitmap, iBit);
 # elif RT_INLINE_ASM_GNU_STYLE
@@ -5763,8 +5789,13 @@ DECLINLINE(bool) ASMAtomicBitTestAndSet(volatile void *pvBitmap, int32_t iBit)
  *
  * @returns true if the bit was set.
  * @returns false if the bit was clear.
+ *
  * @param   pvBitmap    Pointer to the bitmap.
  * @param   iBit        The bit to test and clear.
+ *
+ * @remarks The 32-bit aligning of pvBitmap is not a strict requirement.
+ *          However, doing so will yield better performance as well as avoiding
+ *          traps accessing the last bits in the bitmap.
  */
 #if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
 DECLASM(bool) ASMBitTestAndClear(volatile void *pvBitmap, int32_t iBit);
@@ -5810,9 +5841,12 @@ DECLINLINE(bool) ASMBitTestAndClear(volatile void *pvBitmap, int32_t iBit)
  *
  * @returns true if the bit was set.
  * @returns false if the bit was clear.
- * @param   pvBitmap    Pointer to the bitmap.
+ *
+ * @param   pvBitmap    Pointer to the bitmap. Must be 32-bit aligned, otherwise
+ *                      the memory access isn't atomic!
  * @param   iBit        The bit to test and clear.
- * @remark  No memory barrier, take care on smp.
+ *
+ * @remarks No memory barrier, take care on smp.
  */
 #if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
 DECLASM(bool) ASMAtomicBitTestAndClear(volatile void *pvBitmap, int32_t iBit);
@@ -5820,6 +5854,7 @@ DECLASM(bool) ASMAtomicBitTestAndClear(volatile void *pvBitmap, int32_t iBit);
 DECLINLINE(bool) ASMAtomicBitTestAndClear(volatile void *pvBitmap, int32_t iBit)
 {
     union { bool f; uint32_t u32; uint8_t u8; } rc;
+    AssertMsg(!((uintptr_t)pvBitmap & 3), ("address %p not 32-bit aligned", pvBitmap));
 # if RT_INLINE_ASM_USES_INTRIN
     rc.u8 = _interlockedbittestandreset((long *)pvBitmap, iBit);
 
@@ -5858,8 +5893,13 @@ DECLINLINE(bool) ASMAtomicBitTestAndClear(volatile void *pvBitmap, int32_t iBit)
  *
  * @returns true if the bit was set.
  * @returns false if the bit was clear.
+ *
  * @param   pvBitmap    Pointer to the bitmap.
  * @param   iBit        The bit to test and toggle.
+ *
+ * @remarks The 32-bit aligning of pvBitmap is not a strict requirement.
+ *          However, doing so will yield better performance as well as avoiding
+ *          traps accessing the last bits in the bitmap.
  */
 #if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
 DECLINLINE(bool) ASMBitTestAndToggle(volatile void *pvBitmap, int32_t iBit);
@@ -5905,7 +5945,9 @@ DECLINLINE(bool) ASMBitTestAndToggle(volatile void *pvBitmap, int32_t iBit)
  *
  * @returns true if the bit was set.
  * @returns false if the bit was clear.
- * @param   pvBitmap    Pointer to the bitmap.
+ *
+ * @param   pvBitmap    Pointer to the bitmap. Must be 32-bit aligned, otherwise
+ *                      the memory access isn't atomic!
  * @param   iBit        The bit to test and toggle.
  */
 #if RT_INLINE_ASM_EXTERNAL
@@ -5914,6 +5956,7 @@ DECLASM(bool) ASMAtomicBitTestAndToggle(volatile void *pvBitmap, int32_t iBit);
 DECLINLINE(bool) ASMAtomicBitTestAndToggle(volatile void *pvBitmap, int32_t iBit)
 {
     union { bool f; uint32_t u32; uint8_t u8; } rc;
+    AssertMsg(!((uintptr_t)pvBitmap & 3), ("address %p not 32-bit aligned", pvBitmap));
 # if RT_INLINE_ASM_GNU_STYLE
     __asm__ __volatile__("lock; btcl %2, %1\n\t"
                          "setc %b0\n\t"
@@ -5949,8 +5992,13 @@ DECLINLINE(bool) ASMAtomicBitTestAndToggle(volatile void *pvBitmap, int32_t iBit
  *
  * @returns true if the bit is set.
  * @returns false if the bit is clear.
+ *
  * @param   pvBitmap    Pointer to the bitmap.
  * @param   iBit        The bit to test.
+ *
+ * @remarks The 32-bit aligning of pvBitmap is not a strict requirement.
+ *          However, doing so will yield better performance as well as avoiding
+ *          traps accessing the last bits in the bitmap.
  */
 #if RT_INLINE_ASM_EXTERNAL && !RT_INLINE_ASM_USES_INTRIN
 DECLASM(bool) ASMBitTest(const volatile void *pvBitmap, int32_t iBit);

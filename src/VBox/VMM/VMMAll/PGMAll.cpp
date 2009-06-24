@@ -1,4 +1,4 @@
-/* $Id: PGMAll.cpp 20567 2009-06-14 20:31:54Z vboxsync $ */
+/* $Id: PGMAll.cpp 20874 2009-06-24 02:19:29Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor - All context code.
  */
@@ -398,8 +398,10 @@ DECLINLINE(int) pgmShwGetPaePoolPagePD(PPGMCPU pPGM, RTGCPTR GCPtr, PPGMPOOLPAGE
  * @param   pRegFrame   Trap register frame.
  * @param   pvFault     The fault address.
  */
-VMMDECL(int)     PGMTrap0eHandler(PVMCPU pVCpu, RTGCUINT uErr, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault)
+VMMDECL(int) PGMTrap0eHandler(PVMCPU pVCpu, RTGCUINT uErr, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault)
 {
+    PVM pVM = pVCpu->CTX_SUFF(pVM);
+
     LogFlow(("PGMTrap0eHandler: uErr=%RGu pvFault=%RGv eip=%04x:%RGv\n", uErr, pvFault, pRegFrame->cs, (RTGCPTR)pRegFrame->rip));
     STAM_PROFILE_START(&pVCpu->pgm.s.StatRZTrap0e, a);
     STAM_STATS({ pVCpu->pgm.s.CTX_SUFF(pStatTrap0eAttribution) = NULL; } );
@@ -448,7 +450,10 @@ VMMDECL(int)     PGMTrap0eHandler(PVMCPU pVCpu, RTGCUINT uErr, PCPUMCTXCORE pReg
     /*
      * Call the worker.
      */
+    pgmLock(pVM);
     int rc = PGM_BTH_PFN(Trap0eHandler, pVCpu)(pVCpu, uErr, pRegFrame, pvFault);
+    Assert(PGMIsLockOwner(pVM));
+    pgmUnlock(pVM);
     if (rc == VINF_PGM_SYNCPAGE_MODIFIED_PDE)
         rc = VINF_SUCCESS;
     STAM_STATS({ if (rc == VINF_EM_RAW_GUEST_TRAP) STAM_COUNTER_INC(&pVCpu->pgm.s.StatRZTrap0eGuestPF); });
@@ -867,6 +872,8 @@ int pgmShwSyncPaePDPtr(PVMCPU pVCpu, RTGCPTR GCPtr, PX86PDPE pGstPdpe, PX86PDPAE
     PPGMPOOLPAGE   pShwPage;
     int            rc;
 
+    Assert(PGMIsLockOwner(pVM));
+
     /* Allocate page directory if not present. */
     if (    !pPdpe->n.u1Present
         &&  !(pPdpe->u & X86_PDPE_PG_MASK))
@@ -958,6 +965,9 @@ DECLINLINE(int) pgmShwGetPaePoolPagePD(PPGMCPU pPGM, RTGCPTR GCPtr, PPGMPOOLPAGE
 {
     const unsigned  iPdPt = (GCPtr >> X86_PDPT_SHIFT) & X86_PDPT_MASK_PAE;
     PX86PDPT        pPdpt = pgmShwGetPaePDPTPtr(pPGM);
+
+    Assert(PGMIsLockOwner(PGMCPU2VM(pPGM)));
+
     AssertReturn(pPdpt, VERR_PAGE_DIRECTORY_PTR_NOT_PRESENT);    /* can't happen */
     if (!pPdpt->a[iPdPt].n.u1Present)
     {
@@ -1002,6 +1012,8 @@ int pgmShwSyncLongModePDPtr(PVMCPU pVCpu, RTGCPTR64 GCPtr, PX86PML4E pGstPml4e, 
     bool           fPaging       = !!(CPUMGetGuestCR0(pVCpu) & X86_CR0_PG);
     PPGMPOOLPAGE   pShwPage;
     int            rc;
+
+    Assert(PGMIsLockOwner(pVM));
 
     /* Allocate page directory pointer table if not present. */
     if (    !pPml4e->n.u1Present
@@ -1100,6 +1112,9 @@ DECLINLINE(int) pgmShwGetLongModePDPtr(PVMCPU pVCpu, RTGCPTR64 GCPtr, PX86PML4E 
     PPGMCPU         pPGM = &pVCpu->pgm.s;
     const unsigned  iPml4 = (GCPtr >> X86_PML4_SHIFT) & X86_PML4_MASK;
     PCX86PML4E      pPml4e = pgmShwGetLongModePML4EPtr(pPGM, iPml4);
+
+    Assert(PGMIsLockOwner(PGMCPU2VM(pPGM)));
+
     AssertReturn(pPml4e, VERR_INTERNAL_ERROR);
     if (ppPml4e)
         *ppPml4e = (PX86PML4E)pPml4e;
@@ -1149,6 +1164,7 @@ int pgmShwGetEPTPDPtr(PVMCPU pVCpu, RTGCPTR64 GCPtr, PEPTPDPT *ppPdpt, PEPTPD *p
     int            rc;
 
     Assert(HWACCMIsNestedPagingActive(pVM));
+    Assert(PGMIsLockOwner(pVM));
 
     pPml4 = (PEPTPML4)PGMPOOL_PAGE_2_PTR_BY_PGMCPU(pPGM, pPGM->CTX_SUFF(pShwPageCR3));
     Assert(pPml4);
@@ -1351,7 +1367,7 @@ PX86PDPT pgmGstLazyMapPaePDPT(PPGMCPU pPGM)
     AssertReturn(pPage, NULL);
 
     RTHCPTR     HCPtrGuestCR3;
-    int rc = pgmPhysGCPhys2CCPtrInternal(pVM, pPage, pPGM->GCPhysCR3 & X86_CR3_PAE_PAGE_MASK, (void **)&HCPtrGuestCR3);
+    int rc = pgmPhysGCPhys2CCPtrInternal(pVM, pPage, pPGM->GCPhysCR3 & X86_CR3_PAE_PAGE_MASK, (void **)&HCPtrGuestCR3); /** @todo r=bird: This GCPhysR3 masking isn't necessary. */
     AssertRCReturn(rc, NULL);
 
     pPGM->pGstPaePdptR3 = (R3PTRTYPE(PX86PDPT))HCPtrGuestCR3;
@@ -1447,7 +1463,7 @@ PX86PML4 pgmGstLazyMapPml4(PPGMCPU pPGM)
     AssertReturn(pPage, NULL);
 
     RTHCPTR     HCPtrGuestCR3;
-    int rc = pgmPhysGCPhys2CCPtrInternal(pVM, pPage, pPGM->GCPhysCR3 & X86_CR3_AMD64_PAGE_MASK, (void **)&HCPtrGuestCR3);
+    int rc = pgmPhysGCPhys2CCPtrInternal(pVM, pPage, pPGM->GCPhysCR3 & X86_CR3_AMD64_PAGE_MASK, (void **)&HCPtrGuestCR3); /** @todo r=bird: This GCPhysCR3 masking isn't necessary. */
     AssertRCReturn(rc, NULL);
 
     pPGM->pGstAmd64Pml4R3 = (R3PTRTYPE(PX86PML4))HCPtrGuestCR3;
@@ -2060,12 +2076,9 @@ VMMDECL(bool) PGMIsLockOwner(PVM pVM)
 int pgmLock(PVM pVM)
 {
     int rc = PDMCritSectEnter(&pVM->pgm.s.CritSect, VERR_SEM_BUSY);
-#ifdef IN_RC
+#if defined(IN_RC) || defined(IN_RING0)
     if (rc == VERR_SEM_BUSY)
-        rc = VMMGCCallHost(pVM, VMMCALLHOST_PGM_LOCK, 0);
-#elif defined(IN_RING0)
-    if (rc == VERR_SEM_BUSY)
-        rc = VMMR0CallHost(pVM, VMMCALLHOST_PGM_LOCK, 0);
+        rc = VMMRZCallRing3NoCpu(pVM, VMMCALLRING3_PGM_LOCK, 0);
 #endif
     AssertMsg(rc == VINF_SUCCESS, ("%Rrc\n", rc));
     return rc;
@@ -2529,7 +2542,9 @@ VMMDECL(unsigned) PGMAssertNoMappingConflicts(PVM pVM)
 VMMDECL(unsigned) PGMAssertCR3(PVM pVM, PVMCPU pVCpu, uint64_t cr3, uint64_t cr4)
 {
     STAM_PROFILE_START(&pVCpu->pgm.s.CTX_MID_Z(Stat,SyncCR3), a);
+    pgmLock(pVM);
     unsigned cErrors = PGM_BTH_PFN(AssertCR3, pVCpu)(pVCpu, cr3, cr4, 0, ~(RTGCPTR)0);
+    pgmUnlock(pVM);
     STAM_PROFILE_STOP(&pVCpu->pgm.s.CTX_MID_Z(Stat,SyncCR3), a);
     return cErrors;
 }

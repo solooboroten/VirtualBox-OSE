@@ -1,4 +1,4 @@
-/* $Id: PDMAllCritSect.cpp 20628 2009-06-16 13:28:15Z vboxsync $ */
+/* $Id: PDMAllCritSect.cpp 20874 2009-06-24 02:19:29Z vboxsync $ */
 /** @file
  * PDM - Critical Sections, All Contexts.
  */
@@ -25,7 +25,7 @@
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_PDM//_CRITSECT
 #include "PDMInternal.h"
-#include <VBox/pdm.h>
+#include <VBox/pdmcritsect.h>
 #include <VBox/mm.h>
 #include <VBox/vm.h>
 #include <VBox/err.h>
@@ -91,7 +91,7 @@ DECL_FORCE_INLINE(int) pdmCritSectEnterFirst(PPDMCRITSECT pCritSect, RTNATIVETHR
     AssertMsg(pCritSect->s.Core.NativeThreadOwner == NIL_RTNATIVETHREAD, ("NativeThreadOwner=%p\n", pCritSect->s.Core.NativeThreadOwner));
     Assert(!(pCritSect->s.Core.fFlags & PDMCRITSECT_FLAGS_PENDING_UNLOCK));
 
-    pCritSect->s.Core.cNestings = 1;
+    ASMAtomicWriteS32(&pCritSect->s.Core.cNestings, 1);
     ASMAtomicWriteHandle(&pCritSect->s.Core.NativeThreadOwner, hNativeSelf);
 
 # if defined(PDMCRITSECT_STRICT) && defined(IN_RING3)
@@ -187,8 +187,8 @@ VMMDECL(int) PDMCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy)
     if (pCritSect->s.Core.NativeThreadOwner == hNativeSelf)
     {
         ASMAtomicIncS32(&pCritSect->s.Core.cLockers);
-        pCritSect->s.Core.cNestings++;
-        pCritSect->s.Core.fFlags &= ~PDMCRITSECT_FLAGS_PENDING_UNLOCK;
+        ASMAtomicIncS32(&pCritSect->s.Core.cNestings);
+        ASMAtomicAndU32(&pCritSect->s.Core.fFlags, ~PDMCRITSECT_FLAGS_PENDING_UNLOCK);
         return VINF_SUCCESS;
     }
 
@@ -203,7 +203,10 @@ VMMDECL(int) PDMCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy)
         if (ASMAtomicCmpXchgS32(&pCritSect->s.Core.cLockers, 0, -1))
             return pdmCritSectEnterFirst(pCritSect, hNativeSelf);
         /** @todo need pause/nop instruction here! */
-        /* Should use monitor/mwait on e.g. &cLockers here */
+        /** @todo Should use monitor/mwait on e.g. &cLockers here, possibly with a
+           cli'ed pendingpreemption check up front using sti w/ instruction fusing
+           for avoiding races. Hmm ... This is assuming the other party is actually
+           executing code on another CPU... */
     }
 
 #ifdef IN_RING3
@@ -251,8 +254,8 @@ VMMDECL(int) PDMCritSectTryEnter(PPDMCRITSECT pCritSect)
     if (pCritSect->s.Core.NativeThreadOwner == hNativeSelf)
     {
         ASMAtomicIncS32(&pCritSect->s.Core.cLockers);
-        pCritSect->s.Core.cNestings++;
-        pCritSect->s.Core.fFlags &= ~PDMCRITSECT_FLAGS_PENDING_UNLOCK;
+        ASMAtomicIncS32(&pCritSect->s.Core.cNestings);
+        ASMAtomicAndU32(&pCritSect->s.Core.fFlags, ~PDMCRITSECT_FLAGS_PENDING_UNLOCK);
         return VINF_SUCCESS;
     }
 
@@ -280,13 +283,13 @@ VMMDECL(int) PDMCritSectTryEnter(PPDMCRITSECT pCritSect)
  * @returns VERR_SEM_DESTROYED if the critical section is dead.
  *
  * @param   pCritSect           The PDM critical section to enter.
- * @param   fCallHost           Whether this is a VMMGCCallHost() or VMMR0CallHost() request.
+ * @param   fCallRing3          Whether this is a VMMRZCallRing3()request.
  */
-VMMR3DECL(int) PDMR3CritSectEnterEx(PPDMCRITSECT pCritSect, bool fCallHost)
+VMMR3DECL(int) PDMR3CritSectEnterEx(PPDMCRITSECT pCritSect, bool fCallRing3)
 {
     int rc = PDMCritSectEnter(pCritSect, VERR_INTERNAL_ERROR);
     if (    rc == VINF_SUCCESS
-        &&  fCallHost
+        &&  fCallRing3
         &&  pCritSect->s.Core.Strict.ThreadOwner != NIL_RTTHREAD)
     {
         RTThreadWriteLockDec(pCritSect->s.Core.Strict.ThreadOwner);
@@ -313,7 +316,7 @@ VMMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
      */
     if (pCritSect->s.Core.cNestings > 1)
     {
-        pCritSect->s.Core.cNestings--;
+        ASMAtomicDecS32(&pCritSect->s.Core.cNestings);
         ASMAtomicDecS32(&pCritSect->s.Core.cLockers);
         return;
     }
@@ -332,13 +335,14 @@ VMMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
     ASMAtomicWriteHandle(&pCritSect->s.Core.Strict.ThreadOwner, NIL_RTTHREAD);
 #  endif
 # endif
-    pCritSect->s.Core.fFlags    &= ~PDMCRITSECT_FLAGS_PENDING_UNLOCK;
+    ASMAtomicAndU32(&pCritSect->s.Core.fFlags, ~PDMCRITSECT_FLAGS_PENDING_UNLOCK);
     Assert(pCritSect->s.Core.Strict.ThreadOwner == NIL_RTTHREAD);
     ASMAtomicWriteHandle(&pCritSect->s.Core.NativeThreadOwner, NIL_RTNATIVETHREAD);
-    pCritSect->s.Core.cNestings--;
+    ASMAtomicDecS32(&pCritSect->s.Core.cNestings);
 
     /* stop and decrement lockers. */
     STAM_PROFILE_ADV_STOP(&pCritSect->s.StatLocked, l);
+    ASMCompilerBarrier();
     if (ASMAtomicDecS32(&pCritSect->s.Core.cLockers) >= 0)
     {
         /* Someone is waiting, wake up one of them. */
@@ -364,9 +368,9 @@ VMMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
      */
     if (pCritSect->s.Core.cLockers == 0)
     {
-        pCritSect->s.Core.cNestings  = 0;
+        ASMAtomicWriteS32(&pCritSect->s.Core.cNestings, 0);
         RTNATIVETHREAD hNativeThread = pCritSect->s.Core.NativeThreadOwner;
-        pCritSect->s.Core.fFlags    &= ~PDMCRITSECT_FLAGS_PENDING_UNLOCK;
+        ASMAtomicAndU32(&pCritSect->s.Core.fFlags, ~PDMCRITSECT_FLAGS_PENDING_UNLOCK);
         STAM_PROFILE_ADV_STOP(&pCritSect->s.StatLocked, l);
 
         ASMAtomicWriteHandle(&pCritSect->s.Core.NativeThreadOwner, NIL_RTNATIVETHREAD);
@@ -376,9 +380,9 @@ VMMDECL(void) PDMCritSectLeave(PPDMCRITSECT pCritSect)
         /* darn, someone raced in on us. */
         ASMAtomicWriteHandle(&pCritSect->s.Core.NativeThreadOwner, hNativeThread);
         STAM_PROFILE_ADV_START(&pCritSect->s.StatLocked, l);
-        pCritSect->s.Core.cNestings = 1;
+        ASMAtomicWriteS32(&pCritSect->s.Core.cNestings, 1);
     }
-    pCritSect->s.Core.fFlags |= PDMCRITSECT_FLAGS_PENDING_UNLOCK;
+    ASMAtomicOrU32(&pCritSect->s.Core.fFlags, PDMCRITSECT_FLAGS_PENDING_UNLOCK);
 
     /*
      * Queue the request.

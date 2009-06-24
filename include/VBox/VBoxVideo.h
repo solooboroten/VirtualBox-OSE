@@ -263,7 +263,9 @@ typedef enum
     VBOXVHWACMD_TYPE_SURF_UNLOCK,
     VBOXVHWACMD_TYPE_SURF_BLT,
     VBOXVHWACMD_TYPE_QUERY_INFO1,
-    VBOXVHWACMD_TYPE_QUERY_INFO2
+    VBOXVHWACMD_TYPE_QUERY_INFO2,
+    VBOXVHWACMD_TYPE_ENABLE,
+    VBOXVHWACMD_TYPE_DISABLE
 } VBOXVHWACMD_TYPE;
 
 /* the command processing was asynch, set by the host to indicate asynch command completion
@@ -281,6 +283,12 @@ typedef struct _VBOXVHWACMD
     volatile int32_t Flags; /* ored VBOXVHWACMD_FLAG_xxx values */
     uint64_t GuestVBVAReserved1; /* field internally used by the guest VBVA cmd handling, must NOT be modified by clients */
     uint64_t GuestVBVAReserved2; /* field internally used by the guest VBVA cmd handling, must NOT be modified by clients */
+    union
+    {
+        struct _VBOXVHWACMD *pNext;
+        uint32_t             offNext;
+        uint64_t Data; /* the body is 64-bit aligned */
+    } u;
     char body[1];
 } VBOXVHWACMD;
 
@@ -335,18 +343,22 @@ typedef struct _VBOXVHWA_PIXELFORMAT
     } m3;
 } VBOXVHWA_PIXELFORMAT;
 
-typedef struct _VBOXVHWA_SURFINFO
+typedef struct _VBOXVHWA_SURFACEDESC
 {
+    uint32_t flags;
     uint32_t height;
     uint32_t width;
+    uint32_t pitch;
+    uint32_t cBackBuffers;
+    uint32_t Reserved1;
     VBOXVHWA_COLORKEY DstOverlayCK;
     VBOXVHWA_COLORKEY DstBltCK;
     VBOXVHWA_COLORKEY SrcOverlayCK;
     VBOXVHWA_COLORKEY SrcBltCK;
     VBOXVHWA_PIXELFORMAT PixelFormat;
     uint32_t surfCaps;
-    uint32_t Reserved;
-} VBOXVHWA_SURFINFO;
+    uint32_t Reserved2;
+} VBOXVHWA_SURFACEDESC;
 
 #define VBOXVHWA_CAPS_BLT             0x00000001
 #define VBOXVHWA_CAPS_BLTCOLORFILL    0x00000002
@@ -371,7 +383,24 @@ typedef struct _VBOXVHWA_SURFINFO
 #define VBOXVHWA_PF_YUV                 0x00000008
 #define VBOXVHWA_PF_FOURCC              0x00000010
 
-#define VBOXVHWA_CFG_ENABLED          0x00000001
+#define VBOXVHWA_LOCK_DISCARDCONTENTS   0x00000001
+
+#define VBOXVHWA_CFG_ENABLED            0x00000001
+
+#define VBOXVHWA_SD_BACKBUFFERCOUNT     0x00000001
+#define VBOXVHWA_SD_CAPS                0x00000002
+#define VBOXVHWA_SD_CKDESTBLT           0x00000004
+#define VBOXVHWA_SD_CKDESTOVERLAY       0x00000008
+#define VBOXVHWA_SD_CKSRCBLT            0x00000010
+#define VBOXVHWA_SD_CKSRCOVERLAY        0x00000020
+#define VBOXVHWA_SD_HEIGHT              0x00000040
+#define VBOXVHWA_SD_PITCH               0x00000080
+#define VBOXVHWA_SD_PIXELFORMAT         0x00000100
+//#define VBOXVHWA_SD_REFRESHRATE       0x00000200
+#define VBOXVHWA_SD_WIDTH               0x00000400
+
+
+#define VBOXVHWA_OFFSET64_VOID        (~0L)
 
 typedef struct _VBOXVHWACMD_QUERYINFO1
 {
@@ -399,7 +428,9 @@ typedef struct _VBOXVHWACMD_SURF_CANCREATE
     {
         struct
         {
-            VBOXVHWA_SURFINFO SurfInfo;
+            VBOXVHWA_SURFACEDESC SurfInfo;
+            uint32_t bIsDifferentPixelFormat;
+            uint32_t Reserved;
         } in;
 
         struct
@@ -415,7 +446,8 @@ typedef struct _VBOXVHWACMD_SURF_CREATE
     {
         struct
         {
-            VBOXVHWA_SURFINFO SurfInfo;
+            VBOXVHWA_SURFACEDESC SurfInfo;
+            uint64_t offSurface;
         } in;
 
         struct
@@ -443,8 +475,9 @@ typedef struct _VBOXVHWACMD_SURF_LOCK
         struct
         {
             VBOXVHWA_SURFHANDLE hSurf;
+            uint64_t offSurface;
             uint32_t flags;
-            uint32_t Reserved;
+            uint32_t rectValid;
             VBOXVHWA_RECTL rect;
         } in;
     } u;
@@ -470,8 +503,10 @@ typedef struct _VBOXVHWACMD_SURF_BLT
         struct
         {
             VBOXVHWA_SURFHANDLE hDstSurf;
+            uint64_t offDstSurface;
             VBOXVHWA_RECTL dstRect;
             VBOXVHWA_SURFHANDLE hSrcSurf;
+            uint64_t offSrcSurface;
             VBOXVHWA_RECTL srcRect;
             uint32_t flags;
             uint32_t reserved;
@@ -557,7 +592,8 @@ typedef struct _VBVAHOSTCMD
     union
     {
         struct _VBVAHOSTCMD *pNext;
-        uint64_t Data; /* the body is 64-bit alligned */
+        uint32_t             offNext;
+        uint64_t Data; /* the body is 64-bit aligned */
     } u;
     char body[1];
 }VBVAHOSTCMD;

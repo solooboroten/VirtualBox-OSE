@@ -1,4 +1,4 @@
-/* $Id: VMEmt.cpp 20593 2009-06-15 14:39:04Z vboxsync $ */
+/* $Id: VMEmt.cpp 20880 2009-06-24 08:10:25Z vboxsync $ */
 /** @file
  * VM - Virtual Machine, The Emulation Thread.
  */
@@ -135,7 +135,10 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
                  */
                 rc = VMR3WaitU(pUVCpu);
                 if (RT_FAILURE(rc))
+                {
+                    AssertMsgFailed(("VMR3WaitU failed with %Rrc\n", rc));
                     break;
+                }
             }
         }
         else
@@ -154,6 +157,8 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
                 rc = VINF_EM_TERMINATE;
                 break;
             }
+            if (VM_FF_ISPENDING(pVM, VM_FF_EMT_RENDEZVOUS))
+                VMMR3EmtRendezvousFF(pVM, &pVM->aCpus[idCpu]);
             if (pUVM->vm.s.pReqs)
             {
                 /*
@@ -194,7 +199,10 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
                  */
                 rc = VMR3WaitU(pUVCpu);
                 if (RT_FAILURE(rc))
+                {
+                    AssertMsgFailed(("VMR3WaitU failed with %Rrc\n", rc));
                     break;
+                }
             }
 
             /*
@@ -202,7 +210,7 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
              */
             if (    rc == VINF_EM_TERMINATE
                 ||  pUVM->vm.s.fTerminateEMT
-                ||  (   pUVM->pVM
+                ||  (   pUVM->pVM /* pVM may have become invalid by now. */
                      && VM_FF_ISSET(pUVM->pVM, VM_FF_TERMINATE)))
                 break;
         }
@@ -643,7 +651,7 @@ static DECLCALLBACK(int) vmR3HaltGlobal1Halt(PUVMCPU pUVCpu, const uint32_t fMas
 
             //RTLogRelPrintf("u64NanoTS=%RI64 cLoops=%3d sleep %02dms (%7RU64) ", u64NanoTS, cLoops, cMilliSecs, u64NanoTS);
             STAM_REL_PROFILE_START(&pUVCpu->vm.s.StatHaltBlock, c);
-            rc = SUPCallVMMR0Ex(pVM->pVMR0, pVCpu->idCpu, VMMR0_DO_GVMM_SCHED_HALT, u64GipTime, NULL);
+            rc = SUPR3CallVMMR0Ex(pVM->pVMR0, pVCpu->idCpu, VMMR0_DO_GVMM_SCHED_HALT, u64GipTime, NULL);
             STAM_REL_PROFILE_STOP(&pUVCpu->vm.s.StatHaltBlock, c);
             if (rc == VERR_INTERRUPTED)
                 rc = VINF_SUCCESS;
@@ -663,7 +671,7 @@ static DECLCALLBACK(int) vmR3HaltGlobal1Halt(PUVMCPU pUVCpu, const uint32_t fMas
         else if (!(cLoops & 0x1fff))
         {
             STAM_REL_PROFILE_START(&pUVCpu->vm.s.StatHaltYield, d);
-            rc = SUPCallVMMR0Ex(pVM->pVMR0, pVCpu->idCpu, VMMR0_DO_GVMM_SCHED_POLL, false /* don't yield */, NULL);
+            rc = SUPR3CallVMMR0Ex(pVM->pVMR0, pVCpu->idCpu, VMMR0_DO_GVMM_SCHED_POLL, false /* don't yield */, NULL);
             STAM_REL_PROFILE_STOP(&pUVCpu->vm.s.StatHaltYield, d);
         }
     }
@@ -702,7 +710,7 @@ static DECLCALLBACK(int) vmR3HaltGlobal1Wait(PUVMCPU pUVCpu)
          * Wait for a while. Someone will wake us up or interrupt the call if
          * anything needs our attention.
          */
-        rc = SUPCallVMMR0Ex(pVM->pVMR0, pVCpu->idCpu, VMMR0_DO_GVMM_SCHED_HALT, RTTimeNanoTS() + 1000000000 /* +1s */, NULL);
+        rc = SUPR3CallVMMR0Ex(pVM->pVMR0, pVCpu->idCpu, VMMR0_DO_GVMM_SCHED_HALT, RTTimeNanoTS() + 1000000000 /* +1s */, NULL);
         if (rc == VERR_INTERRUPTED)
             rc = VINF_SUCCESS;
         else if (RT_FAILURE(rc))
@@ -731,7 +739,7 @@ static DECLCALLBACK(void) vmR3HaltGlobal1NotifyCpuFF(PUVMCPU pUVCpu, uint32_t fF
 {
     if (pUVCpu->vm.s.fWait)
     {
-        int rc = SUPCallVMMR0Ex(pUVCpu->pVM->pVMR0, pUVCpu->idCpu, VMMR0_DO_GVMM_SCHED_WAKE_UP, 0, NULL);
+        int rc = SUPR3CallVMMR0Ex(pUVCpu->pVM->pVMR0, pUVCpu->idCpu, VMMR0_DO_GVMM_SCHED_WAKE_UP, 0, NULL);
         AssertRC(rc);
     }
     else if (   (   (fFlags & VMNOTIFYFF_FLAGS_POKE)
@@ -743,7 +751,7 @@ static DECLCALLBACK(void) vmR3HaltGlobal1NotifyCpuFF(PUVMCPU pUVCpu, uint32_t fF
         {
             if (fFlags & VMNOTIFYFF_FLAGS_POKE)
             {
-                int rc = SUPCallVMMR0Ex(pUVCpu->pVM->pVMR0, pUVCpu->idCpu, VMMR0_DO_GVMM_SCHED_POKE, 0, NULL);
+                int rc = SUPR3CallVMMR0Ex(pUVCpu->pVM->pVMR0, pUVCpu->idCpu, VMMR0_DO_GVMM_SCHED_POKE, 0, NULL);
                 AssertRC(rc);
             }
         }
@@ -1085,6 +1093,62 @@ VMMR3DECL(int) VMR3WaitU(PUVMCPU pUVCpu)
 
 
 /**
+ * Rendezvous callback that will be called once.
+ *
+ * @returns VBox status code.
+ * @param   pVM                 VM handle.
+ * @param   pVCpu               The VMCPU handle for the calling EMT.
+ * @param   pvUser              The new g_aHaltMethods index.
+ */
+static DECLCALLBACK(int) vmR3SetHaltMethodCallback(PVM pVM, PVMCPU pVCpu, void *pvUser)
+{
+    PUVM        pUVM = pVM->pUVM;
+    uintptr_t   i    = (uintptr_t)pvUser;
+    Assert(i < RT_ELEMENTS(g_aHaltMethods));
+    NOREF(pVCpu);
+
+    /*
+     * Terminate the old one.
+     */
+    if (    pUVM->vm.s.enmHaltMethod != VMHALTMETHOD_INVALID
+        &&  g_aHaltMethods[pUVM->vm.s.iHaltMethod].pfnTerm)
+    {
+        g_aHaltMethods[pUVM->vm.s.iHaltMethod].pfnTerm(pUVM);
+        pUVM->vm.s.enmHaltMethod = VMHALTMETHOD_INVALID;
+    }
+
+    /* Assert that the failure fallback is where we expect. */
+    Assert(g_aHaltMethods[0].enmHaltMethod == VMHALTMETHOD_BOOTSTRAP);
+    Assert(!g_aHaltMethods[0].pfnTerm && !g_aHaltMethods[0].pfnInit);
+
+    /*
+     * Init the new one.
+     */
+    int rc = VINF_SUCCESS;
+    memset(&pUVM->vm.s.Halt, 0, sizeof(pUVM->vm.s.Halt));
+    if (g_aHaltMethods[i].pfnInit)
+    {
+        rc = g_aHaltMethods[i].pfnInit(pUVM);
+        if (RT_FAILURE(rc))
+        {
+            /* Fall back on the bootstrap method. This requires no
+               init/term (see assertion above), and will always work. */
+            AssertLogRelRC(rc);
+            i = 0;
+        }
+    }
+
+    /*
+     * Commit it.
+     */
+    pUVM->vm.s.enmHaltMethod = g_aHaltMethods[i].enmHaltMethod;
+    ASMAtomicWriteU32(&pUVM->vm.s.iHaltMethod, i);
+
+    return rc;
+}
+
+
+/**
  * Changes the halt method.
  *
  * @returns VBox status code.
@@ -1130,31 +1194,8 @@ int vmR3SetHaltMethodU(PUVM pUVM, VMHALTMETHOD enmHaltMethod)
     AssertReturn(i < RT_ELEMENTS(g_aHaltMethods), VERR_INVALID_PARAMETER);
 
     /*
-     * Terminate the old one.
+     * This needs to be done while the other EMTs are not sleeping or otherwise messing around.
      */
-    if (    pUVM->vm.s.enmHaltMethod != VMHALTMETHOD_INVALID
-        &&  g_aHaltMethods[pUVM->vm.s.iHaltMethod].pfnTerm)
-    {
-        g_aHaltMethods[pUVM->vm.s.iHaltMethod].pfnTerm(pUVM);
-        pUVM->vm.s.enmHaltMethod = VMHALTMETHOD_INVALID;
-    }
-
-/** @todo SMP: Need rendezvous thing here, the other EMTs must not be
- *        sleeping when we switch the notification method or we'll never
- *        manage to wake them up properly and end up relying on timeouts... */
-
-    /*
-     * Init the new one.
-     */
-    memset(&pUVM->vm.s.Halt, 0, sizeof(pUVM->vm.s.Halt));
-    if (g_aHaltMethods[i].pfnInit)
-    {
-        int rc = g_aHaltMethods[i].pfnInit(pUVM);
-        AssertRCReturn(rc, rc);
-    }
-    pUVM->vm.s.enmHaltMethod = enmHaltMethod;
-
-    ASMAtomicWriteU32(&pUVM->vm.s.iHaltMethod, i);
-    return VINF_SUCCESS;
+    return VMMR3EmtRendezvous(pVM, VMMEMTRENDEZVOUS_FLAGS_TYPE_ONCE, vmR3SetHaltMethodCallback, (void *)(uintptr_t)i);
 }
 

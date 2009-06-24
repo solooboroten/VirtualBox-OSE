@@ -57,7 +57,7 @@ typedef union PDMCRITSECT
 VMMR3DECL(int)      PDMR3CritSectInit(PVM pVM, PPDMCRITSECT pCritSect, const char *pszName);
 VMMDECL(int)        PDMCritSectEnter(PPDMCRITSECT pCritSect, int rcBusy);
 VMMDECL(int)        PDMCritSectTryEnter(PPDMCRITSECT pCritSect);
-VMMR3DECL(int)      PDMR3CritSectEnterEx(PPDMCRITSECT pCritSect, bool fCallHost);
+VMMR3DECL(int)      PDMR3CritSectEnterEx(PPDMCRITSECT pCritSect, bool fCallRing3);
 VMMDECL(void)       PDMCritSectLeave(PPDMCRITSECT pCritSect);
 VMMDECL(bool)       PDMCritSectIsOwner(PCPDMCRITSECT pCritSect);
 VMMDECL(bool)       PDMCritSectIsOwnerEx(PCPDMCRITSECT pCritSect, VMCPUID idCpu);
@@ -70,6 +70,7 @@ VMMR3DECL(int)      PDMR3CritSectDelete(PPDMCRITSECT pCritSect);
 VMMDECL(int)        PDMR3CritSectTerm(PVM pVM);
 VMMDECL(void)       PDMCritSectFF(PVMCPU pVCpu);
 VMMR3DECL(uint32_t) PDMR3CritSectCountOwned(PVM pVM, char *pszNames, size_t cbNames);
+VMMR3DECL(void)     PDMR3CritSectLeaveAll(PVM pVM);
 
 /** @} */
 

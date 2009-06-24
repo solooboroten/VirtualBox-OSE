@@ -1,4 +1,4 @@
-/* $Id: VMMGuruMeditation.cpp 19797 2009-05-18 15:28:49Z vboxsync $ */
+/* $Id: VMMGuruMeditation.cpp 20875 2009-06-24 02:29:17Z vboxsync $ */
 /** @file
  * VMM - The Virtual Machine Monitor, Guru Meditation Code.
  */
@@ -25,6 +25,7 @@
 #define LOG_GROUP LOG_GROUP_VMM
 #include <VBox/vmm.h>
 #include <VBox/pdmapi.h>
+#include <VBox/pdmcritsect.h>
 #include <VBox/trpm.h>
 #include <VBox/dbgf.h>
 #include "VMMInternal.h"
@@ -212,11 +213,15 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
     vmmR3FatalDumpInfoHlpInit(&Hlp);
 
     /* Release owned locks to make sure other VCPUs can continue in case they were waiting for one. */
+#if 1
+    PDMR3CritSectLeaveAll(pVM);
+#else
     MMR3ReleaseOwnedLocks(pVM);
     PGMR3ReleaseOwnedLocks(pVM);
     PDMR3ReleaseOwnedLocks(pVM);
     IOMR3ReleaseOwnedLocks(pVM);
     EMR3ReleaseOwnedLocks(pVM);
+#endif
 
     /*
      * Header.
@@ -239,6 +244,7 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
          */
         case VERR_VMM_RING0_ASSERTION:
         case VINF_EM_DBG_HYPER_ASSERTION:
+        case VERR_VMM_RING3_CALL_DISABLED:
         {
             const char *pszMsg1 = VMMR3GetRZAssertMsg1(pVM);
             while (pszMsg1 && *pszMsg1 == '\n')
@@ -264,6 +270,7 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
         case VINF_EM_RAW_IRET_TRAP:
         case VINF_EM_DBG_HYPER_BREAKPOINT:
         case VINF_EM_DBG_HYPER_STEPPED:
+        case VERR_VMM_HYPER_CR3_MISMATCH:
         {
             /*
              * Active trap? This is only of partial interest when in hardware
@@ -304,17 +311,17 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
 
                 eip.fFlags   = DBGFADDRESS_FLAGS_RING0 | DBGFADDRESS_FLAGS_VALID;
 #if HC_ARCH_BITS == 64
-                eip.FlatPtr = eip.off = pVCpu->vmm.s.CallHostR0JmpBuf.rip;
+                eip.FlatPtr = eip.off = pVCpu->vmm.s.CallRing3JmpBufR0.rip;
 #else
-                eip.FlatPtr = eip.off = pVCpu->vmm.s.CallHostR0JmpBuf.eip;
+                eip.FlatPtr = eip.off = pVCpu->vmm.s.CallRing3JmpBufR0.eip;
 #endif
                 eip.Sel      = DBGF_SEL_FLAT;
                 ebp.fFlags   = DBGFADDRESS_FLAGS_RING0 | DBGFADDRESS_FLAGS_VALID;
-                ebp.FlatPtr  = ebp.off = pVCpu->vmm.s.CallHostR0JmpBuf.SavedEbp;
+                ebp.FlatPtr  = ebp.off = pVCpu->vmm.s.CallRing3JmpBufR0.SavedEbp;
                 ebp.Sel      = DBGF_SEL_FLAT;
                 esp.fFlags   = DBGFADDRESS_FLAGS_RING0 | DBGFADDRESS_FLAGS_VALID;
                 esp.Sel      = DBGF_SEL_FLAT;
-                esp.FlatPtr  = esp.off = pVCpu->vmm.s.CallHostR0JmpBuf.SavedEsp;
+                esp.FlatPtr  = esp.off = pVCpu->vmm.s.CallRing3JmpBufR0.SavedEsp;
 
                 rc2 = DBGFR3StackWalkBeginEx(pVM, pVCpu->idCpu, DBGFCODETYPE_RING0, &ebp, &esp, &eip,
                                              DBGFRETURNTYPE_INVALID, &pFirstFrame);
@@ -520,5 +527,11 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
      * Delete the output instance (flushing and restoring of flags).
      */
     vmmR3FatalDumpInfoHlpDelete(&Hlp);
+
+    /*
+     * Reset the ring-0 long jump buffer and stack.
+     */
+    /** @todo reset the R0 for the calling virtual cpu. We'll assert (luckily) in
+     *        PGMPhys.cpp otherwise. */
 }
 

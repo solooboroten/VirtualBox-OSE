@@ -1,4 +1,4 @@
-/* $Id: VM.cpp 20564 2009-06-14 19:21:54Z vboxsync $ */
+/* $Id: VM.cpp 20864 2009-06-23 19:19:42Z vboxsync $ */
 /** @file
  * VM - Virtual Machine
  */
@@ -130,6 +130,7 @@ static int               vmR3InitVMCpu(PVM pVM);
 static int               vmR3InitRing0(PVM pVM);
 static int               vmR3InitGC(PVM pVM);
 static int               vmR3InitDoCompleted(PVM pVM, VMINITCOMPLETED enmWhat);
+static DECLCALLBACK(size_t) vmR3LogPrefixCallback(PRTLOGGER pLogger, char *pchBuf, size_t cchBuf, void *pvUser);
 static DECLCALLBACK(int) vmR3PowerOn(PVM pVM);
 static DECLCALLBACK(int) vmR3Suspend(PVM pVM);
 static DECLCALLBACK(int) vmR3Resume(PVM pVM);
@@ -526,7 +527,7 @@ static int vmR3CreateU(PUVM pUVM, uint32_t cCpus, PFNCFGMCONSTRUCTOR pfnCFGMCons
     CreateVMReq.pVMR0           = NIL_RTR0PTR;
     CreateVMReq.pVMR3           = NULL;
     CreateVMReq.cCpus           = cCpus;
-    rc = SUPCallVMMR0Ex(NIL_RTR0PTR, NIL_VMCPUID, VMMR0_DO_GVMM_CREATE_VM, 0, &CreateVMReq.Hdr);
+    rc = SUPR3CallVMMR0Ex(NIL_RTR0PTR, NIL_VMCPUID, VMMR0_DO_GVMM_CREATE_VM, 0, &CreateVMReq.Hdr);
     if (RT_SUCCESS(rc))
     {
         PVM pVM = pUVM->pVM = CreateVMReq.pVMR3;
@@ -644,11 +645,15 @@ static int vmR3CreateU(PUVM pUVM, uint32_t cCpus, PFNCFGMCONSTRUCTOR pfnCFGMCons
                                     if (RT_SUCCESS(rc))
                                     {
                                         /*
-                                        * Set the state and link into the global list.
-                                        */
+                                         * Set the state and link into the global list.
+                                         */
                                         vmR3SetState(pVM, VMSTATE_CREATED);
                                         pUVM->pNext = g_pUVMsHead;
                                         g_pUVMsHead = pUVM;
+
+#ifdef LOG_ENABLED
+                                        RTLogSetCustomPrefixCallback(NULL, vmR3LogPrefixCallback, pUVM);
+#endif
                                         return VINF_SUCCESS;
                                     }
                                 }
@@ -692,7 +697,7 @@ static int vmR3CreateU(PUVM pUVM, uint32_t cCpus, PFNCFGMCONSTRUCTOR pfnCFGMCons
             RTThreadSleep(RT_MIN(100 + 25 *(pUVM->cCpus - 1), 500)); /* very sophisticated */
         }
 
-        int rc2 = SUPCallVMMR0Ex(CreateVMReq.pVMR0, 0 /* VCPU 0 */, VMMR0_DO_GVMM_DESTROY_VM, 0, NULL);
+        int rc2 = SUPR3CallVMMR0Ex(CreateVMReq.pVMR0, 0 /*idCpu*/, VMMR0_DO_GVMM_DESTROY_VM, 0, NULL);
         AssertRC(rc2);
     }
     else
@@ -713,7 +718,7 @@ static int vmR3CreateU(PUVM pUVM, uint32_t cCpus, PFNCFGMCONSTRUCTOR pfnCFGMCons
 static DECLCALLBACK(int) vmR3RegisterEMT(PVM pVM, VMCPUID idCpu)
 {
     Assert(VMMGetCpuId(pVM) == idCpu);
-    int rc = SUPCallVMMR0Ex(pVM->pVMR0, idCpu, VMMR0_DO_GVMM_REGISTER_VMCPU, 0, NULL);
+    int rc = SUPR3CallVMMR0Ex(pVM->pVMR0, idCpu, VMMR0_DO_GVMM_REGISTER_VMCPU, 0, NULL);
     if (RT_FAILURE(rc))
         LogRel(("idCpu=%u rc=%Rrc\n", idCpu, rc));
     return rc;
@@ -1034,6 +1039,37 @@ static int vmR3InitGC(PVM pVM)
 static int vmR3InitDoCompleted(PVM pVM, VMINITCOMPLETED enmWhat)
 {
     return VINF_SUCCESS;
+}
+
+
+/**
+ * Logger callback for inserting a custom prefix.
+ *
+ * @returns Number of chars written.
+ * @param   pLogger             The logger.
+ * @param   pchBuf              The output buffer.
+ * @param   cchBuf              The output buffer size.
+ * @param   pvUser              Pointer to the UVM structure.
+ */
+static DECLCALLBACK(size_t) vmR3LogPrefixCallback(PRTLOGGER pLogger, char *pchBuf, size_t cchBuf, void *pvUser)
+{
+    AssertReturn(cchBuf >= 2, 0);
+    PUVM        pUVM   = (PUVM)pvUser;
+    PUVMCPU     pUVCpu = (PUVMCPU)RTTlsGet(pUVM->vm.s.idxTLS);
+    if (pUVCpu)
+    {
+        static const char s_szHex[17] = "0123456789abcdef";
+        VMCPUID const     idCpu       = pUVCpu->idCpu;
+        pchBuf[1] = s_szHex[ idCpu       & 15];
+        pchBuf[0] = s_szHex[(idCpu >> 4) & 15];
+    }
+    else
+    {
+        pchBuf[0] = 'x';
+        pchBuf[1] = 'y';
+    }
+
+    return 2;
 }
 
 
@@ -1874,7 +1910,7 @@ void vmR3DestroyFinalBitFromEMT(PUVM pUVM)
         /*
          * Tell GVMM to destroy the VM and free its resources.
          */
-        int rc = SUPCallVMMR0Ex(pUVM->pVM->pVMR0, 0 /* VCPU 0 */, VMMR0_DO_GVMM_DESTROY_VM, 0, NULL);
+        int rc = SUPR3CallVMMR0Ex(pUVM->pVM->pVMR0, 0 /*idCpu*/, VMMR0_DO_GVMM_DESTROY_VM, 0, NULL);
         AssertRC(rc);
         pUVM->pVM = NULL;
     }
@@ -2020,7 +2056,7 @@ static void vmR3DestroyUVM(PUVM pUVM, uint32_t cMilliesEMTWait)
      */
     if (pUVM->vm.s.pSession)
     {
-        int rc = SUPTerm();
+        int rc = SUPR3Term(false /*fForced*/);
         AssertRC(rc);
         pUVM->vm.s.pSession = NIL_RTR0PTR;
     }
@@ -2031,6 +2067,9 @@ static void vmR3DestroyUVM(PUVM pUVM, uint32_t cMilliesEMTWait)
     MMR3TermUVM(pUVM);
     STAMR3TermUVM(pUVM);
 
+#ifdef LOG_ENABLED
+    RTLogSetCustomPrefixCallback(NULL, NULL, NULL);
+#endif
     RTTlsFree(pUVM->vm.s.idxTLS);
 
     ASMAtomicUoWriteU32(&pUVM->u32Magic, UINT32_MAX);

@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl2.cpp 20634 2009-06-16 14:20:26Z vboxsync $ */
+/* $Id: ConsoleImpl2.cpp 20727 2009-06-19 14:13:31Z vboxsync $ */
 /** @file
  * VBox Console COM Class implementation
  *
@@ -660,6 +660,14 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     hrc = biosSettings->COMGETTER(ACPIEnabled)(&fACPI);                             H();
     if (fACPI)
     {
+        BOOL fShowCpu = fExtProfile;
+        /* Always show the CPU leafs when we have multiple VCPUs or when the IO-APIC is enabled.
+         * The Windows SMP kernel needs a CPU leaf or else its idle loop will burn cpu cycles; the
+         * intelppm driver refuses to register an idle state handler.
+         */
+        if ((cCpus > 1) ||  fIOAPIC)
+            fShowCpu = true;
+
         rc = CFGMR3InsertNode(pDevices, "acpi", &pDev);                             RC_CHECK();
         rc = CFGMR3InsertNode(pDev,     "0", &pInst);                               RC_CHECK();
         rc = CFGMR3InsertInteger(pInst, "Trusted", 1);              /* boolean */   RC_CHECK();
@@ -677,7 +685,8 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         rc = CFGMR3InsertInteger(pCfg,  "SmcEnabled", fSmcEnabled);                 RC_CHECK();
 #endif
         rc = CFGMR3InsertInteger(pCfg,  "ShowRtc", fExtProfile);                    RC_CHECK();
-        rc = CFGMR3InsertInteger(pCfg,  "ShowCpu", fExtProfile);                    RC_CHECK();
+
+        rc = CFGMR3InsertInteger(pCfg,  "ShowCpu", fShowCpu);                       RC_CHECK();
         rc = CFGMR3InsertInteger(pInst, "PCIDeviceNo",          7);                 RC_CHECK();
         Assert(!afPciDeviceNo[7]);
         afPciDeviceNo[7] = true;
@@ -1206,7 +1215,7 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         /*
          * The virtual hardware type. Create appropriate device first.
          */
-        const char *cszAdapterName = "pcnet";
+        const char *pszAdapterName = "pcnet";
         NetworkAdapterType_T adapterType;
         hrc = networkAdapter->COMGETTER(AdapterType)(&adapterType);                 H();
         switch (adapterType)
@@ -1220,7 +1229,7 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
             case NetworkAdapterType_I82543GC:
             case NetworkAdapterType_I82545EM:
                 pDev = pDevE1000;
-                cszAdapterName = "e1000";
+                pszAdapterName = "e1000";
                 break;
 #endif
             default:
@@ -1339,33 +1348,10 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         rc = CFGMR3InsertInteger(pCfg,  "papLeds", (uintptr_t)&pConsole->mapNetworkLeds[ulInstance]); RC_CHECK();
 
         /*
-         * Enable the packet sniffer if requested.
-         */
-        BOOL fSniffer;
-        hrc = networkAdapter->COMGETTER(TraceEnabled)(&fSniffer);                   H();
-        if (fSniffer)
-        {
-            /* insert the sniffer filter driver. */
-            rc = CFGMR3InsertNode(pInst, "LUN#0", &pLunL0);                         RC_CHECK();
-            rc = CFGMR3InsertString(pLunL0, "Driver", "NetSniffer");                RC_CHECK();
-            rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                         RC_CHECK();
-            hrc = networkAdapter->COMGETTER(TraceFile)(&str);                       H();
-            if (str) /* check convention for indicating default file. */
-            {
-                STR_CONV();
-                rc = CFGMR3InsertString(pCfg, "File", psz);                         RC_CHECK();
-                STR_FREE();
-            }
-        }
-
-        /*
          * Configure the network card now
          */
-        NetworkAttachmentType_T networkAttachment;
-        hrc = networkAdapter->COMGETTER(AttachmentType)(&networkAttachment);        H();
 
-        rc = configNetwork((Console*) pvConsole, cszAdapterName, ulInstance, 0, networkAttachment,
-                           &meAttachmentType[ulInstance], networkAdapter, pCfg, pLunL0, pInst, false);
+        rc = configNetwork(pConsole, pszAdapterName, ulInstance, 0, networkAdapter, pCfg, pLunL0, pInst, false);
         RC_CHECK();
     }
 
@@ -2064,16 +2050,12 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
  *  @param   pszDevice           The PDM device name.
  *  @param   uInstance           The PDM device instance.
  *  @param   uLun                The PDM LUN number of the drive.
- *  @param   eAttachmentType     The new attachment type.
- *  @param   meAttachmentType    The current attachment type.
  *  @param   aNetworkAdapter     The network adapter whose attachment needs to be changed
  *
  *  @note Locks the Console object for writing.
  */
 DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
                                           unsigned uInstance, unsigned uLun,
-                                          NetworkAttachmentType_T eAttachmentType,
-                                          NetworkAttachmentType_T *meAttachmentType,
                                           INetworkAdapter *aNetworkAdapter,
                                           PCFGMNODE pCfg, PCFGMNODE pLunL0,
                                           PCFGMNODE pInst, bool attachDetach)
@@ -2155,6 +2137,9 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
         }
 
         Bstr networkName, trunkName, trunkType;
+        NetworkAttachmentType_T eAttachmentType;
+        hrc = aNetworkAdapter->COMGETTER(AttachmentType)(&eAttachmentType);
+        H();
         switch (eAttachmentType)
         {
             case NetworkAttachmentType_Null:
@@ -2857,6 +2842,15 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
                         AssertRC (rc);
                     }
 
+                    {
+                        /** @todo r=pritesh: get the dhcp server name from the
+                         * previous network configuration and then stop the server
+                         * else it may conflict with the dhcp server running  with
+                         * the current attachment type
+                         */
+                        /* Stop the hostonly DHCP Server */
+                    }
+
                     if(!networkName.isNull())
                     {
                         /*
@@ -2894,7 +2888,7 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
                 break;
         }
 
-        *meAttachmentType = eAttachmentType;
+        meAttachmentType[uInstance] = eAttachmentType;
     }
     while (0);
 

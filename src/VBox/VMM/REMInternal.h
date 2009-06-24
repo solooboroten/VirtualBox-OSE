@@ -1,4 +1,4 @@
-/* $Id: REMInternal.h 20430 2009-06-09 11:47:03Z vboxsync $ */
+/* $Id: REMInternal.h 20749 2009-06-21 20:57:37Z vboxsync $ */
 /** @file
  * REM - Internal header file.
  */
@@ -108,8 +108,10 @@ typedef struct REMHANDLERNOTIFICATION
         uint64_t                padding[5];
     } u;
     uint32_t                    idxSelf;
-    uint32_t                    idxNext;
-} REMHANDLERNOTIFICATION, *PREMHANDLERNOTIFICATION;
+    uint32_t volatile           idxNext;
+} REMHANDLERNOTIFICATION;
+/** Pointer to a handler notification record. */
+typedef REMHANDLERNOTIFICATION *PREMHANDLERNOTIFICATION;
 
 /**
  * Converts a REM pointer into a VM pointer.
@@ -162,7 +164,7 @@ typedef struct REM
     uint32_t                u32PendingInterrupt;
 
     /** Number of recorded invlpg instructions. */
-    uint32_t                cInvalidatedPages;
+    uint32_t volatile       cInvalidatedPages;
 #if HC_ARCH_BITS == 32
     uint32_t                uPadding2;
 #endif

@@ -1,4 +1,4 @@
-/* $Id: tstVMMR0CallHost-1.cpp 20545 2009-06-13 23:56:48Z vboxsync $ */
+/* $Id: tstVMMR0CallHost-1.cpp 20875 2009-06-24 02:29:17Z vboxsync $ */
 /** @file
  * Testcase for the VMMR0JMPBUF operations.
  */
@@ -40,7 +40,7 @@
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
 #if !defined(VMM_R0_SWITCH_STACK) && !defined(VMM_R0_NO_SWITCH_STACK)
-# error "VMM_R0_SWITCH_STACK or VMM_R0_NO_SWITCH_STACK has to be defined.
+# error "VMM_R0_SWITCH_STACK or VMM_R0_NO_SWITCH_STACK has to be defined."
 #endif
 
 
@@ -66,20 +66,20 @@ int foo(int i, int iZero, int iMinusOne)
     RTStrPrintf(pv, cb, "i=%d%*s\n", i, cb, "");
 #ifdef VMM_R0_SWITCH_STACK
     g_cbFooUsed = VMM_STACK_SIZE - ((uintptr_t)pv - (uintptr_t)g_Jmp.pvSavedStack);
-    RTTESTI_CHECK_MSG_RET(g_cbFooUsed < VMM_STACK_SIZE - 128, ("%#x - (%p - %p) -> %#x; cb=%#x i=%d\n", VMM_STACK_SIZE, pv, g_Jmp.pvSavedStack, g_cbFooUsed, cb, i), -15);
+    RTTESTI_CHECK_MSG_RET(g_cbFooUsed < (intptr_t)VMM_STACK_SIZE - 128, ("%#x - (%p - %p) -> %#x; cb=%#x i=%d\n", VMM_STACK_SIZE, pv, g_Jmp.pvSavedStack, g_cbFooUsed, cb, i), -15);
 #elif defined(RT_ARCH_AMD64)
     g_cbFooUsed = (uintptr_t)g_Jmp.rsp - (uintptr_t)pv;
     RTTESTI_CHECK_MSG_RET(g_cbFooUsed < VMM_STACK_SIZE - 128, ("%p - %p -> %#x; cb=%#x i=%d\n", g_Jmp.rsp, pv, g_cbFooUsed, cb, i), -15);
 #elif defined(RT_ARCH_X86)
     g_cbFooUsed = (uintptr_t)g_Jmp.esp - (uintptr_t)pv;
-    RTTESTI_CHECK_MSG_RET(g_cbFooUsed < VMM_STACK_SIZE - 128, ("%p - %p -> %#x; cb=%#x i=%d\n", g_Jmp.esp, pv, g_cbFooUsed, cb, i), -15);
+    RTTESTI_CHECK_MSG_RET(g_cbFooUsed < (intptr_t)VMM_STACK_SIZE - 128, ("%p - %p -> %#x; cb=%#x i=%d\n", g_Jmp.esp, pv, g_cbFooUsed, cb, i), -15);
 #endif
 
     /* Do long jmps every 7th time */
     if ((i % 7) == 0)
     {
         g_cJmps++;
-        int rc = vmmR0CallHostLongJmp(&g_Jmp, 42);
+        int rc = vmmR0CallRing3LongJmp(&g_Jmp, 42);
         if (!rc)
             return i + 10000;
         return -1;
@@ -117,7 +117,7 @@ void tst(int iFrom, int iTo, int iInc)
 
     for (int i = iFrom, iItr = 0; i != iTo; i += iInc, iItr++)
     {
-        int rc = vmmR0CallHostSetJmp(&g_Jmp, (PFNVMMR0SETJMP)tst2, (PVM)i, 0);
+        int rc = vmmR0CallRing3SetJmp(&g_Jmp, (PFNVMMR0SETJMP)tst2, (PVM)i, 0);
         RTTESTI_CHECK_MSG_RETV(rc == 0 || rc == 42, ("i=%d rc=%d setjmp; cbFoo=%#x cbFooUsed=%#x\n", i, rc, g_cbFoo, g_cbFooUsed));
 
 #ifdef VMM_R0_SWITCH_STACK

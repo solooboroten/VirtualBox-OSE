@@ -1,4 +1,4 @@
-/* $Id: EMAll.cpp 20588 2009-06-15 11:26:16Z vboxsync $ */
+/* $Id: EMAll.cpp 20682 2009-06-18 11:07:33Z vboxsync $ */
 /** @file
  * EM - Execution Monitor(/Manager) - All contexts
  */
@@ -1994,6 +1994,7 @@ VMMDECL(int) EMInterpretCRxRead(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, u
         val64 = 0;
         rc = PDMApicGetTPR(pVCpu, (uint8_t *)&val64, NULL);
         AssertMsgRCReturn(rc, ("PDMApicGetTPR failed\n"), VERR_EM_INTERPRETER);
+        val64 >>= 4;     /* bits 7-4 contain the task priority that go in cr8, bits 3-0*/
     }
     else
     {
@@ -2169,7 +2170,7 @@ static int emUpdateCRx(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t D
         return rc2 == VINF_SUCCESS ? rc : rc2;
 
     case USE_REG_CR8:
-        return PDMApicSetTPR(pVCpu, val);
+        return PDMApicSetTPR(pVCpu, val << 4);  /* cr8 bits 3-0 correspond to bits 7-4 of the task priority mmio register. */
 
     default:
         AssertFailed();
@@ -2906,7 +2907,8 @@ VMMDECL(int) EMInterpretRdmsr(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame)
 #endif
     default:
         /* In X2APIC specification this range is reserved for APIC control. */
-        if ((pRegFrame->ecx >= MSR_IA32_APIC_START) && (pRegFrame->ecx < MSR_IA32_APIC_END))
+        if (    pRegFrame->ecx >= MSR_IA32_APIC_START
+            &&  pRegFrame->ecx <  MSR_IA32_APIC_END)
             rc = PDMApicReadMSR(pVM, pVCpu->idCpu, pRegFrame->ecx, &val);
         else
             /* We should actually trigger a #GP here, but don't as that will cause more trouble. */
@@ -2917,7 +2919,7 @@ VMMDECL(int) EMInterpretRdmsr(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame)
     if (rc == VINF_SUCCESS)
     {
         pRegFrame->rax = (uint32_t) val;
-        pRegFrame->rdx = (uint32_t) (val >> 32ULL);
+        pRegFrame->rdx = (uint32_t)(val >> 32);
     }
     return rc;
 }
@@ -2964,6 +2966,10 @@ VMMDECL(int) EMInterpretWrmsr(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame)
     LogFlow(("EMInterpretWrmsr %s (%x) val=%RX64\n", emMSRtoString(pRegFrame->ecx), pRegFrame->ecx, val));
     switch (pRegFrame->ecx)
     {
+    case MSR_IA32_TSC:
+        TMCpuTickSet(pVM, pVCpu, val);
+        break;
+
     case MSR_IA32_APICBASE:
     {
         int rc = PDMApicSetBase(pVM, val);
@@ -3056,7 +3062,8 @@ VMMDECL(int) EMInterpretWrmsr(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame)
 
     default:
         /* In X2APIC specification this range is reserved for APIC control. */
-        if ((pRegFrame->ecx >=  MSR_IA32_APIC_START) && (pRegFrame->ecx <  MSR_IA32_APIC_END))
+        if (    pRegFrame->ecx >= MSR_IA32_APIC_START
+            &&  pRegFrame->ecx <  MSR_IA32_APIC_END)
             return PDMApicWriteMSR(pVM, pVCpu->idCpu, pRegFrame->ecx, val);
 
         /* We should actually trigger a #GP here, but don't as that might cause more trouble. */
@@ -3379,6 +3386,7 @@ VMMDECL(void) EMRemLock(PVM pVM)
     if (!PDMCritSectIsInitialized(&pVM->em.s.CritSectREM))
         return;     /* early init */
 
+    Assert(!PGMIsLockOwner(pVM) && !IOMIsLockOwner(pVM));
     int rc = PDMCritSectEnter(&pVM->em.s.CritSectREM, VERR_SEM_BUSY);
     AssertMsg(rc == VINF_SUCCESS, ("%Rrc\n", rc));
 }

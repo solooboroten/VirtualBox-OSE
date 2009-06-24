@@ -129,7 +129,7 @@ VMMDECL(uint64_t) TMVirtualFromMilli(PVM pVM, uint64_t u64MilliTS);
 VMMDECL(uint64_t) TMCpuTickGet(PVMCPU pVCpu);
 VMMDECL(uint64_t) TMCpuTickGetNoCheck(PVMCPU pVCpu);
 VMMDECL(bool)     TMCpuTickCanUseRealTSC(PVMCPU pVCpu, uint64_t *poffRealTSC);
-VMMDECL(int)      TMCpuTickSet(PVMCPU pVCpu, uint64_t u64Tick);
+VMMDECL(int)      TMCpuTickSet(PVM pVM, PVMCPU pVCpu, uint64_t u64Tick);
 VMMDECL(uint64_t) TMCpuTicksPerSecond(PVM pVM);
 /** @} */
 
@@ -192,27 +192,28 @@ typedef FNTMTIMEREXT *PFNTMTIMEREXT;
 VMMDECL(PTMTIMERR3) TMTimerR3Ptr(PTMTIMER pTimer);
 VMMDECL(PTMTIMERR0) TMTimerR0Ptr(PTMTIMER pTimer);
 VMMDECL(PTMTIMERRC) TMTimerRCPtr(PTMTIMER pTimer);
-VMMDECL(int)      TMTimerSet(PTMTIMER pTimer, uint64_t u64Expire);
-VMMDECL(int)      TMTimerSetMillies(PTMTIMER pTimer, uint32_t cMilliesToNext);
-VMMDECL(int)      TMTimerSetMicro(PTMTIMER pTimer, uint64_t cMicrosToNext);
-VMMDECL(int)      TMTimerSetNano(PTMTIMER pTimer, uint64_t cNanosToNext);
-VMMDECL(uint64_t) TMTimerGet(PTMTIMER pTimer);
-VMMDECL(uint64_t) TMTimerGetNano(PTMTIMER pTimer);
-VMMDECL(uint64_t) TMTimerGetMicro(PTMTIMER pTimer);
-VMMDECL(uint64_t) TMTimerGetMilli(PTMTIMER pTimer);
-VMMDECL(uint64_t) TMTimerGetFreq(PTMTIMER pTimer);
-VMMDECL(uint64_t) TMTimerGetExpire(PTMTIMER pTimer);
-VMMDECL(uint64_t) TMTimerToNano(PTMTIMER pTimer, uint64_t u64Ticks);
-VMMDECL(uint64_t) TMTimerToMicro(PTMTIMER pTimer, uint64_t u64Ticks);
-VMMDECL(uint64_t) TMTimerToMilli(PTMTIMER pTimer, uint64_t u64Ticks);
-VMMDECL(uint64_t) TMTimerFromNano(PTMTIMER pTimer, uint64_t u64NanoTS);
-VMMDECL(uint64_t) TMTimerFromMicro(PTMTIMER pTimer, uint64_t u64MicroTS);
-VMMDECL(uint64_t) TMTimerFromMilli(PTMTIMER pTimer, uint64_t u64MilliTS);
-VMMDECL(int)      TMTimerStop(PTMTIMER pTimer);
-VMMDECL(bool)     TMTimerIsActive(PTMTIMER pTimer);
-VMMDECL(bool)     TMTimerPollBool(PVM pVM, PVMCPU pVCpu);
-VMMDECL(void)     TMTimerPollVoid(PVM pVM, PVMCPU pVCpu);
-VMMDECL(uint64_t) TMTimerPollGIP(PVM pVM, PVMCPU pVCpu, uint64_t *pu64Delta);
+VMMDECL(int)        TMTimerSet(PTMTIMER pTimer, uint64_t u64Expire);
+VMMDECL(int)        TMTimerSetRelative(PTMTIMER pTimer, uint64_t cTicksToNext, uint64_t *pu64Now);
+VMMDECL(int)        TMTimerSetMillies(PTMTIMER pTimer, uint32_t cMilliesToNext);
+VMMDECL(int)        TMTimerSetMicro(PTMTIMER pTimer, uint64_t cMicrosToNext);
+VMMDECL(int)        TMTimerSetNano(PTMTIMER pTimer, uint64_t cNanosToNext);
+VMMDECL(uint64_t)   TMTimerGet(PTMTIMER pTimer);
+VMMDECL(uint64_t)   TMTimerGetNano(PTMTIMER pTimer);
+VMMDECL(uint64_t)   TMTimerGetMicro(PTMTIMER pTimer);
+VMMDECL(uint64_t)   TMTimerGetMilli(PTMTIMER pTimer);
+VMMDECL(uint64_t)   TMTimerGetFreq(PTMTIMER pTimer);
+VMMDECL(uint64_t)   TMTimerGetExpire(PTMTIMER pTimer);
+VMMDECL(uint64_t)   TMTimerToNano(PTMTIMER pTimer, uint64_t u64Ticks);
+VMMDECL(uint64_t)   TMTimerToMicro(PTMTIMER pTimer, uint64_t u64Ticks);
+VMMDECL(uint64_t)   TMTimerToMilli(PTMTIMER pTimer, uint64_t u64Ticks);
+VMMDECL(uint64_t)   TMTimerFromNano(PTMTIMER pTimer, uint64_t u64NanoTS);
+VMMDECL(uint64_t)   TMTimerFromMicro(PTMTIMER pTimer, uint64_t u64MicroTS);
+VMMDECL(uint64_t)   TMTimerFromMilli(PTMTIMER pTimer, uint64_t u64MilliTS);
+VMMDECL(int)        TMTimerStop(PTMTIMER pTimer);
+VMMDECL(bool)       TMTimerIsActive(PTMTIMER pTimer);
+VMMDECL(bool)       TMTimerPollBool(PVM pVM, PVMCPU pVCpu);
+VMMDECL(void)       TMTimerPollVoid(PVM pVM, PVMCPU pVCpu);
+VMMDECL(uint64_t)   TMTimerPollGIP(PVM pVM, PVMCPU pVCpu, uint64_t *pu64Delta);
 
 /** @} */
 

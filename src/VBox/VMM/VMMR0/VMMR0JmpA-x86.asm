@@ -1,4 +1,4 @@
-; $Id: VMMR0JmpA-x86.asm 20548 2009-06-14 00:52:53Z vboxsync $
+; $Id: VMMR0JmpA-x86.asm 20875 2009-06-24 02:29:17Z vboxsync $
 ;; @file
 ; VMM - R0 SetJmp / LongJmp routines for X86.
 ;
@@ -45,18 +45,18 @@ BEGINCODE
 ;;
 ; The setjmp variant used for calling Ring-3.
 ;
-; This differs from the normal setjmp in that it will resume VMMR0CallHost if we're
+; This differs from the normal setjmp in that it will resume VMMRZCallRing3 if we're
 ; in the middle of a ring-3 call. Another differences is the function pointer and
 ; argument. This has to do with resuming code and the stack frame of the caller.
 ;
-; @returns  VINF_SUCCESS on success or whatever is passed to vmmR0CallHostLongJmp.
+; @returns  VINF_SUCCESS on success or whatever is passed to vmmR0CallRing3LongJmp.
 ; @param    pJmpBuf msc:rcx gcc:rdi x86:[esp+0x04]     Our jmp_buf.
 ; @param    pfn     msc:rdx gcc:rsi x86:[esp+0x08]     The function to be called when not resuming.
 ; @param    pvUser1 msc:r8  gcc:rdx x86:[esp+0x0c]     The argument of that function.
 ; @param    pvUser2 msc:r9  gcc:rcx x86:[esp+0x10]     The argument of that function.
 ;
-BEGINPROC vmmR0CallHostSetJmp
-GLOBALNAME vmmR0CallHostSetJmpEx
+BEGINPROC vmmR0CallRing3SetJmp
+GLOBALNAME vmmR0CallRing3SetJmpEx
     ;
     ; Save the registers.
     ;
@@ -202,7 +202,7 @@ GLOBALNAME vmmR0CallHostSetJmpEx
     ret
 
     ;
-    ; Resume VMMR0CallHost the call.
+    ; Resume VMMRZCallRing3 the call.
     ;
 .resume:
     ; Sanity checks.
@@ -269,17 +269,17 @@ GLOBALNAME vmmR0CallHostSetJmpEx
     pop     ebp
     xor     eax, eax                    ; VINF_SUCCESS
     ret
-ENDPROC vmmR0CallHostSetJmp
+ENDPROC vmmR0CallRing3SetJmp
 
 
 ;;
-; Worker for VMMR0CallHost.
+; Worker for VMMRZCallRing3.
 ; This will save the stack and registers.
 ;
 ; @param    pJmpBuf msc:rcx gcc:rdi x86:[ebp+8]     Pointer to the jump buffer.
 ; @param    rc      msc:rdx gcc:rsi x86:[ebp+c]     The return code.
 ;
-BEGINPROC vmmR0CallHostLongJmp
+BEGINPROC vmmR0CallRing3LongJmp
     ;
     ; Save the registers on the stack.
     ;
@@ -372,7 +372,7 @@ BEGINPROC vmmR0CallHostLongJmp
     mov     eax, VERR_INTERNAL_ERROR_4
     leave
     ret
-ENDPROC vmmR0CallHostLongJmp
+ENDPROC vmmR0CallRing3LongJmp
 
 
 ;;

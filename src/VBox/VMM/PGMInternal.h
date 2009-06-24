@@ -1,4 +1,4 @@
-/* $Id: PGMInternal.h 20567 2009-06-14 20:31:54Z vboxsync $ */
+/* $Id: PGMInternal.h 20808 2009-06-23 08:43:53Z vboxsync $ */
 /** @file
  * PGM - Internal header file.
  */
@@ -83,11 +83,6 @@
  */
 #define PGM_MAX_PHYSCACHE_ENTRIES       64
 #define PGM_MAX_PHYSCACHE_ENTRIES_MASK  (PGM_MAX_PHYSCACHE_ENTRIES-1)
-
-/**
- * Enable caching of PGMR3PhysRead/WriteByte/Word/Dword
- */
-#define PGM_PHYSMEMACCESS_CACHING
 
 /** @def PGMPOOL_WITH_CACHE
  * Enable agressive caching using the page pool.
@@ -2370,14 +2365,6 @@ typedef struct PGM
      * (Only used in strict builds.) */
     bool                            fNoMorePhysWrites;
 
-    /** Flush the cache on the next access. */
-    bool                            fPhysCacheFlushPending;
-/** @todo r=bird: Fix member names!*/
-    /** PGMPhysRead cache */
-    PGMPHYSCACHE                    pgmphysreadcache;
-    /** PGMPhysWrite cache */
-    PGMPHYSCACHE                    pgmphyswritecache;
-
     /**
      * Data associated with managing the ring-3 mappings of the allocation chunks.
      */
@@ -2976,11 +2963,11 @@ void            pgmR3PoolReset(PVM pVM);
 #ifdef VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0
 int             pgmR0DynMapHCPageCommon(PVM pVM, PPGMMAPSET pSet, RTHCPHYS HCPhys, void **ppv);
 #endif
-int             pgmPoolAllocEx(PVM pVM, RTGCPHYS GCPhys, PGMPOOLKIND enmKind, PGMPOOLACCESS enmAccess, uint16_t iUser, uint32_t iUserTable, PPPGMPOOLPAGE ppPage);
+int             pgmPoolAllocEx(PVM pVM, RTGCPHYS GCPhys, PGMPOOLKIND enmKind, PGMPOOLACCESS enmAccess, uint16_t iUser, uint32_t iUserTable, PPPGMPOOLPAGE ppPage, bool fLockPage = false);
 
-DECLINLINE(int) pgmPoolAlloc(PVM pVM, RTGCPHYS GCPhys, PGMPOOLKIND enmKind, uint16_t iUser, uint32_t iUserTable, PPPGMPOOLPAGE ppPage)
+DECLINLINE(int) pgmPoolAlloc(PVM pVM, RTGCPHYS GCPhys, PGMPOOLKIND enmKind, uint16_t iUser, uint32_t iUserTable, PPPGMPOOLPAGE ppPage, bool fLockPage = false)
 {
-    return pgmPoolAllocEx(pVM, GCPhys, enmKind, PGMPOOLACCESS_DONTCARE, iUser, iUserTable, ppPage);
+    return pgmPoolAllocEx(pVM, GCPhys, enmKind, PGMPOOLACCESS_DONTCARE, iUser, iUserTable, ppPage, fLockPage);
 }
 
 void            pgmPoolFree(PVM pVM, RTHCPHYS HCPhys, uint16_t iUser, uint32_t iUserTable);
@@ -3310,7 +3297,7 @@ DECLINLINE(int) pgmR0DynMapGCPageInlined(PPGM pPGM, RTGCPHYS GCPhys, void **ppv)
     PPGMCPU pPGMCPU = (PPGMCPU)((uint8_t *)VMMGetCpu(pVM) + pPGM->offVCpuPGM); /* very pretty ;-) */
 
     STAM_PROFILE_START(&pPGMCPU->StatR0DynMapGCPageInl, a);
-    Assert(!(GCPhys & PAGE_OFFSET_MASK));
+    AssertMsg(!(GCPhys & PAGE_OFFSET_MASK), ("%RGp\n", GCPhys));
 
     /*
      * Get the ram range.
@@ -3347,6 +3334,65 @@ DECLINLINE(int) pgmR0DynMapGCPageInlined(PPGM pPGM, RTGCPHYS GCPhys, void **ppv)
     {
         STAM_COUNTER_INC(&pPGMCPU->StatR0DynMapGCPageInlMisses);
         pgmR0DynMapHCPageCommon(pVM, pSet, HCPhys, ppv);
+    }
+
+    STAM_PROFILE_STOP(&pPGMCPU->StatR0DynMapGCPageInl, a);
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Inlined version of the ring-0 version of PGMDynMapGCPageOff that optimizes
+ * access to pages already in the set.
+ *
+ * @returns See PGMDynMapGCPage.
+ * @param   pPGM        Pointer to the PVM instance data.
+ * @param   HCPhys      The physical address of the page.
+ * @param   ppv         Where to store the mapping address.
+ */
+DECLINLINE(int) pgmR0DynMapGCPageOffInlined(PPGM pPGM, RTGCPHYS GCPhys, void **ppv)
+{
+    PVM     pVM     = PGM2VM(pPGM);
+    PPGMCPU pPGMCPU = (PPGMCPU)((uint8_t *)VMMGetCpu(pVM) + pPGM->offVCpuPGM); /* very pretty ;-) */
+
+    STAM_PROFILE_START(&pPGMCPU->StatR0DynMapGCPageInl, a);
+
+    /*
+     * Get the ram range.
+     */
+    PPGMRAMRANGE    pRam = pPGM->CTX_SUFF(pRamRanges);
+    RTGCPHYS        off = GCPhys - pRam->GCPhys;
+    if (RT_UNLIKELY(off >= pRam->cb
+        /** @todo   || page state stuff */))
+    {
+        /* This case is not counted into StatR0DynMapGCPageInl. */
+        STAM_COUNTER_INC(&pPGMCPU->StatR0DynMapGCPageInlRamMisses);
+        return PGMDynMapGCPageOff(pVM, GCPhys, ppv);
+    }
+
+    RTHCPHYS HCPhys = PGM_PAGE_GET_HCPHYS(&pRam->aPages[off >> PAGE_SHIFT]);
+    STAM_COUNTER_INC(&pPGMCPU->StatR0DynMapGCPageInlRamHits);
+
+    /*
+     * pgmR0DynMapHCPageInlined with out stats.
+     */
+    PPGMMAPSET pSet = &pPGMCPU->AutoSet;
+    Assert(!(HCPhys & PAGE_OFFSET_MASK));
+    Assert(pSet->cEntries <= RT_ELEMENTS(pSet->aEntries));
+
+    unsigned    iHash   = PGMMAPSET_HASH(HCPhys);
+    unsigned    iEntry  = pSet->aiHashTable[iHash];
+    if (    iEntry < pSet->cEntries
+        &&  pSet->aEntries[iEntry].HCPhys == HCPhys)
+    {
+        *ppv = (void *)((uintptr_t)pSet->aEntries[iEntry].pvPage | (PAGE_OFFSET_MASK & (uintptr_t)GCPhys));
+        STAM_COUNTER_INC(&pPGMCPU->StatR0DynMapGCPageInlHits);
+    }
+    else
+    {
+        STAM_COUNTER_INC(&pPGMCPU->StatR0DynMapGCPageInlMisses);
+        pgmR0DynMapHCPageCommon(pVM, pSet, HCPhys, ppv);
+        *ppv = (void *)((uintptr_t)*ppv | (PAGE_OFFSET_MASK & (uintptr_t)GCPhys));
     }
 
     STAM_PROFILE_STOP(&pPGMCPU->StatR0DynMapGCPageInl, a);
@@ -3567,7 +3613,7 @@ DECLINLINE(PX86PDPT) pgmGstGetPaePDPTPtr(PPGMCPU pPGM)
 {
 #ifdef VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0
     PX86PDPT pGuestPDPT = NULL;
-    int rc = pgmR0DynMapGCPageInlined(PGMCPU2PGM(pPGM), pPGM->GCPhysCR3, (void **)&pGuestPDPT);
+    int rc = pgmR0DynMapGCPageOffInlined(PGMCPU2PGM(pPGM), pPGM->GCPhysCR3, (void **)&pGuestPDPT);
     AssertRCReturn(rc, NULL);
 #else
     PX86PDPT pGuestPDPT = pPGM->CTX_SUFF(pGstPaePdpt);
@@ -3594,7 +3640,7 @@ DECLINLINE(PX86PDPE) pgmGstGetPaePDPEPtr(PPGMCPU pPGM, RTGCPTR GCPtr)
 
 #ifdef VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0
     PX86PDPT pGuestPDPT = 0;
-    int rc = pgmR0DynMapGCPageInlined(PGMCPU2PGM(pPGM), pPGM->GCPhysCR3, (void **)&pGuestPDPT);
+    int rc = pgmR0DynMapGCPageOffInlined(PGMCPU2PGM(pPGM), pPGM->GCPhysCR3, (void **)&pGuestPDPT);
     AssertRCReturn(rc, 0);
 #else
     PX86PDPT pGuestPDPT = pPGM->CTX_SUFF(pGstPaePdpt);
@@ -4472,6 +4518,7 @@ DECLINLINE(void) pgmPoolCacheUsed(PPGMPOOL pPool, PPGMPOOLPAGE pPage)
  */
 DECLINLINE(void) pgmPoolLockPage(PPGMPOOL pPool, PPGMPOOLPAGE pPage)
 {
+    Assert(PGMIsLockOwner(pPool->CTX_SUFF(pVM)));
     ASMAtomicIncU32(&pPage->cLocked);
 }
 
@@ -4484,6 +4531,7 @@ DECLINLINE(void) pgmPoolLockPage(PPGMPOOL pPool, PPGMPOOLPAGE pPage)
  */
 DECLINLINE(void) pgmPoolUnlockPage(PPGMPOOL pPool, PPGMPOOLPAGE pPage)
 {
+    Assert(PGMIsLockOwner(pPool->CTX_SUFF(pVM)));
     Assert(pPage->cLocked);
     ASMAtomicDecU32(&pPage->cLocked);
 }

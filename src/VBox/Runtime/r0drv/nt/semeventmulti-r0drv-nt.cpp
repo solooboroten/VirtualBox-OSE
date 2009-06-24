@@ -1,4 +1,4 @@
-/* $Id: semeventmulti-r0drv-nt.cpp 8245 2008-04-21 17:24:28Z vboxsync $ */
+/* $Id: semeventmulti-r0drv-nt.cpp 20884 2009-06-24 09:09:46Z vboxsync $ */
 /** @file
  * IPRT -  Multiple Release Event Semaphores, Ring-0 Driver, NT.
  */
@@ -144,15 +144,23 @@ static int rtSemEventMultiWait(RTSEMEVENTMULTI EventMultiSem, unsigned cMillies,
 
     /*
      * Wait for it.
+     *
+     * We default to UserMode here as the waits might be aborted due to process termination. 
+     * @todo As far as I can tell this is currently safe as all calls are made on behalf of user threads.
      */
     NTSTATUS rcNt;
     if (cMillies == RT_INDEFINITE_WAIT)
-        rcNt = KeWaitForSingleObject(&pThis->Event, Executive, KernelMode, fInterruptible, NULL);
+        rcNt = KeWaitForSingleObject(&pThis->Event, Executive, UserMode, fInterruptible, NULL);
     else
     {
-        LARGE_INTEGER Timeout;
-        Timeout.QuadPart = -(int64_t)cMillies * 10000;
-        rcNt = KeWaitForSingleObject(&pThis->Event, Executive, KernelMode, fInterruptible, &Timeout);
+        /* Can't use the stack here as the wait is UserMode. */
+        PLARGE_INTEGER pTimeout = (PLARGE_INTEGER)RTMemAlloc(sizeof(*pTimeout));
+        if (!pTimeout)
+            return VERR_NO_MEMORY;
+
+        pTimeout->QuadPart = -(int64_t)cMillies * 10000;
+        rcNt = KeWaitForSingleObject(&pThis->Event, Executive, UserMode, fInterruptible, pTimeout);
+        RTMemFree(pTimeout);
     }
     switch (rcNt)
     {

@@ -1,4 +1,4 @@
-/* $Id: HWSVMR0.cpp 20608 2009-06-16 08:00:54Z vboxsync $ */
+/* $Id: HWSVMR0.cpp 20846 2009-06-23 14:57:46Z vboxsync $ */
 /** @file
  * HWACCM SVM - Host Context Ring 0.
  */
@@ -425,57 +425,62 @@ static int SVMR0CheckPendingInterrupt(PVM pVM, PVMCPU pVCpu, SVM_VMCB *pVMCB, CP
         return VINF_SUCCESS;
     }
 
-    if (pVM->hwaccm.s.fInjectNMI)
+    /* If an active trap is already pending, then we must forward it first! */
+    if (!TRPMHasTrap(pVCpu))
     {
-        SVM_EVENT Event;
-
-        Event.n.u8Vector     = X86_XCPT_NMI;
-        Event.n.u1Valid      = 1;
-        Event.n.u32ErrorCode = 0;
-        Event.n.u3Type       = SVM_EVENT_NMI;
-
-        SVMR0InjectEvent(pVCpu, pVMCB, pCtx, &Event);
-        pVM->hwaccm.s.fInjectNMI = false;
-        return VINF_SUCCESS;
-    }
-
-    /* When external interrupts are pending, we should exit the VM when IF is set. */
-    if (    !TRPMHasTrap(pVCpu)
-        &&  VMCPU_FF_ISPENDING(pVCpu, (VMCPU_FF_INTERRUPT_APIC|VMCPU_FF_INTERRUPT_PIC)))
-    {
-        if (    !(pCtx->eflags.u32 & X86_EFL_IF)
-            ||  VMCPU_FF_ISSET(pVCpu, VMCPU_FF_INHIBIT_INTERRUPTS))
+        if (VMCPU_FF_TESTANDCLEAR(pVCpu, VMCPU_FF_INTERRUPT_NMI_BIT))
         {
-            if (!pVMCB->ctrl.IntCtrl.n.u1VIrqValid)
-            {
-                if (!VMCPU_FF_ISSET(pVCpu, VMCPU_FF_INHIBIT_INTERRUPTS))
-                    LogFlow(("Enable irq window exit!\n"));
-                else
-                    Log(("Pending interrupt blocked at %RGv by VM_FF_INHIBIT_INTERRUPTS -> irq window exit\n", (RTGCPTR)pCtx->rip));
+            SVM_EVENT Event;
 
-                /** @todo use virtual interrupt method to inject a pending irq; dispatched as soon as guest.IF is set. */
-                pVMCB->ctrl.u32InterceptCtrl1 |= SVM_CTRL1_INTERCEPT_VINTR;
-                pVMCB->ctrl.IntCtrl.n.u1VIrqValid    = 1;
-                pVMCB->ctrl.IntCtrl.n.u8VIrqVector   = 0; /* don't care */
-            }
+            Log(("CPU%d: injecting #NMI\n", pVCpu->idCpu));
+            Event.n.u8Vector     = X86_XCPT_NMI;
+            Event.n.u1Valid      = 1;
+            Event.n.u32ErrorCode = 0;
+            Event.n.u3Type       = SVM_EVENT_NMI;
+
+            SVMR0InjectEvent(pVCpu, pVMCB, pCtx, &Event);
+            return VINF_SUCCESS;
         }
-        else
-        {
-            uint8_t u8Interrupt;
 
-            rc = PDMGetInterrupt(pVCpu, &u8Interrupt);
-            Log(("Dispatch interrupt: u8Interrupt=%x (%d) rc=%Rrc\n", u8Interrupt, u8Interrupt, rc));
-            if (RT_SUCCESS(rc))
+        /* @todo SMI interrupts. */
+
+        /* When external interrupts are pending, we should exit the VM when IF is set. */
+        if (VMCPU_FF_ISPENDING(pVCpu, (VMCPU_FF_INTERRUPT_APIC|VMCPU_FF_INTERRUPT_PIC)))
+        {
+            if (    !(pCtx->eflags.u32 & X86_EFL_IF)
+                ||  VMCPU_FF_ISSET(pVCpu, VMCPU_FF_INHIBIT_INTERRUPTS))
             {
-                rc = TRPMAssertTrap(pVCpu, u8Interrupt, TRPM_HARDWARE_INT);
-                AssertRC(rc);
+                if (!pVMCB->ctrl.IntCtrl.n.u1VIrqValid)
+                {
+                    if (!VMCPU_FF_ISSET(pVCpu, VMCPU_FF_INHIBIT_INTERRUPTS))
+                        LogFlow(("Enable irq window exit!\n"));
+                    else
+                        Log(("Pending interrupt blocked at %RGv by VM_FF_INHIBIT_INTERRUPTS -> irq window exit\n", (RTGCPTR)pCtx->rip));
+
+                    /** @todo use virtual interrupt method to inject a pending irq; dispatched as soon as guest.IF is set. */
+                    pVMCB->ctrl.u32InterceptCtrl1 |= SVM_CTRL1_INTERCEPT_VINTR;
+                    pVMCB->ctrl.IntCtrl.n.u1VIrqValid    = 1;
+                    pVMCB->ctrl.IntCtrl.n.u8VIrqVector   = 0; /* don't care */
+                }
             }
             else
             {
-                /* Can only happen in rare cases where a pending interrupt is cleared behind our back */
-                Assert(!VMCPU_FF_ISPENDING(pVCpu, (VMCPU_FF_INTERRUPT_APIC|VMCPU_FF_INTERRUPT_PIC)));
-                STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatSwitchGuestIrq);
-                /* Just continue */
+                uint8_t u8Interrupt;
+
+                rc = PDMGetInterrupt(pVCpu, &u8Interrupt);
+                Log(("Dispatch interrupt: u8Interrupt=%x (%d) rc=%Rrc\n", u8Interrupt, u8Interrupt, rc));
+                if (RT_SUCCESS(rc))
+                {
+                    rc = TRPMAssertTrap(pVCpu, u8Interrupt, TRPM_HARDWARE_INT);
+                    AssertRC(rc);
+                }
+                else
+                {
+                    /* Can only happen in rare cases where a pending interrupt is cleared behind our back */
+                    Assert(!VMCPU_FF_ISPENDING(pVCpu, (VMCPU_FF_INTERRUPT_APIC|VMCPU_FF_INTERRUPT_PIC)));
+                    STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatSwitchGuestIrq);
+                    /* Just continue */
+                }
             }
         }
     }
@@ -855,7 +860,7 @@ VMMR0DECL(int) SVMR0RunGuestCode(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx)
     SVM_VMCB   *pVMCB;
     bool        fSyncTPR = false;
     unsigned    cResume = 0;
-    uint8_t     u8LastVTPR;
+    uint8_t     u8LastTPR;
     PHWACCM_CPUINFO pCpu = 0;
     RTCCUINTREG uOldEFlags = ~(RTCCUINTREG)0;
 #ifdef VBOX_STRICT
@@ -975,15 +980,17 @@ ResumeExecution:
     }
 
     /* TPR caching using CR8 is only available in 64 bits mode or with 32 bits guests when X86_CPUID_AMD_FEATURE_ECX_CR8L is supported. */
-    /* Note: we can't do this in LoadGuestState as PDMApicGetTPR can jump back to ring 3 (lock)!!!!!!!! */
+    /* Note: we can't do this in LoadGuestState as PDMApicGetTPR can jump back to ring 3 (lock)!!!!!!!! 
+     * @todo query and update the TPR only when it could have been changed (mmio access)
+     */
     if (pVM->hwaccm.s.fHasIoApic)
     {
         bool fPending;
 
         /* TPR caching in CR8 */
-        int rc = PDMApicGetTPR(pVCpu, &u8LastVTPR, &fPending);
+        int rc = PDMApicGetTPR(pVCpu, &u8LastTPR, &fPending);
         AssertRC(rc);
-        pVMCB->ctrl.IntCtrl.n.u8VTPR = u8LastVTPR;
+        pVMCB->ctrl.IntCtrl.n.u8VTPR = (u8LastTPR >> 4); /* cr8 bits 3-0 correspond to bits 7-4 of the task priority mmio register. */
 
         if (fPending)
         {
@@ -1026,15 +1033,14 @@ ResumeExecution:
 #ifdef VBOX_STRICT
     idCpuCheck = RTMpCpuId();
 #endif
-#ifdef LOG_ENABLED
     VMMR0LogFlushDisable(pVCpu);
-#endif
 
     /* Load the guest state; *must* be here as it sets up the shadow cr0 for lazy fpu syncing! */
     rc = SVMR0LoadGuestState(pVM, pVCpu, pCtx);
-    if (rc != VINF_SUCCESS)
+    if (RT_UNLIKELY(rc != VINF_SUCCESS))
     {
         STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatEntry, x);
+        VMMR0LogFlushEnable(pVCpu);
         goto end;
     }
 
@@ -1152,7 +1158,7 @@ ResumeExecution:
     /* Reason for the VM exit */
     exitCode = pVMCB->ctrl.u64ExitCode;
 
-    if (exitCode == (uint64_t)SVM_EXIT_INVALID)          /* Invalid guest state. */
+    if (RT_UNLIKELY(exitCode == (uint64_t)SVM_EXIT_INVALID))      /* Invalid guest state. */
     {
         HWACCMDumpRegs(pVM, pVCpu, pCtx);
 #ifdef DEBUG
@@ -1273,6 +1279,7 @@ ResumeExecution:
 
 #endif
         rc = VERR_SVM_UNABLE_TO_START_VM;
+        VMMR0LogFlushEnable(pVCpu);
         goto end;
     }
 
@@ -1323,9 +1330,7 @@ ResumeExecution:
     }
 
     /* Note! NOW IT'S SAFE FOR LOGGING! */
-#ifdef LOG_ENABLED
     VMMR0LogFlushEnable(pVCpu);
-#endif
 
     /* Take care of instruction fusing (sti, mov ss) (see 15.20.5 Interrupt Shadows) */
     if (pVMCB->ctrl.u64IntShadow & SVM_INTERRUPT_SHADOW_ACTIVE)
@@ -1375,9 +1380,11 @@ ResumeExecution:
         STAM_COUNTER_INC(&pVCpu->hwaccm.s.paStatExitReasonR0[exitCode & MASK_EXITREASON_STAT]);
 #endif
 
-    if (fSyncTPR)
+    /* Sync back the TPR if it was changed. */
+    if (    fSyncTPR
+        &&  (u8LastTPR >> 4) != pVMCB->ctrl.IntCtrl.n.u8VTPR)
     {
-        rc = PDMApicSetTPR(pVCpu, pVMCB->ctrl.IntCtrl.n.u8VTPR);
+        rc = PDMApicSetTPR(pVCpu, pVMCB->ctrl.IntCtrl.n.u8VTPR << 4);   /* cr8 bits 3-0 correspond to bits 7-4 of the task priority mmio register. */
         AssertRC(rc);
     }
 
@@ -2359,12 +2366,12 @@ static int svmR0EmulateTprMov(PVMCPU pVCpu, PDISCPUSTATE pDis, PCPUMCTX pCtx, un
 
             rc = DISFetchReg32(CPUMCTX2CORE(pCtx), pDis->param2.base.reg_gen, &val);
             AssertRC(rc);
-            u8Tpr = val >> 4;
+            u8Tpr = val;
         }
         else
         if (pDis->param2.flags == USE_IMMEDIATE32)
         {
-            u8Tpr = (uint8_t)pDis->param2.parval >> 4;
+            u8Tpr = (uint8_t)pDis->param2.parval;
         }
         else
             return VERR_EM_INTERPRETER;
@@ -2387,7 +2394,7 @@ static int svmR0EmulateTprMov(PVMCPU pVCpu, PDISCPUSTATE pDis, PCPUMCTX pCtx, un
         rc = PDMApicGetTPR(pVCpu, &u8Tpr, &fPending);
         AssertRC(rc);
 
-        rc = DISWriteReg32(CPUMCTX2CORE(pCtx), pDis->param1.base.reg_gen, u8Tpr << 4);
+        rc = DISWriteReg32(CPUMCTX2CORE(pCtx), pDis->param1.base.reg_gen, u8Tpr);
         AssertRC(rc);
 
         Log(("Emulated read successfully\n"));

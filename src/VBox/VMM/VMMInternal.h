@@ -1,4 +1,4 @@
-/* $Id: VMMInternal.h 20545 2009-06-13 23:56:48Z vboxsync $ */
+/* $Id: VMMInternal.h 20875 2009-06-24 02:29:17Z vboxsync $ */
 /** @file
  * VMM - Internal header file.
  */
@@ -111,7 +111,9 @@ typedef struct VMMR0LOGGER
     /** Flag indicating whether we've registered the instance already. */
     bool                        fRegistered;
     bool                        a8Alignment;
-#if HC_ARCH_BITS == 32
+    /** The CPU ID. */
+    VMCPUID                     idCpu;
+#if HC_ARCH_BITS == 64
     uint32_t                    u32Alignment;
 #endif
     /** The ring-0 logger instance. This extends beyond the size.  */
@@ -251,6 +253,9 @@ typedef struct VMM
     /** Size of the allocated release logger instance (pRCRelLoggerRC/pRCRelLoggerR3).
      * This may differ from cbRCLogger. */
     uint32_t                    cbRCRelLogger;
+    /** Whether log flushing has been disabled or not. */
+    bool                        fRCLoggerFlushingDisabled;
+    bool                        afAlignment[7]; /**< Alignment padding. */
     /** @} */
 
     /** The EMT yield timer. */
@@ -266,7 +271,35 @@ typedef struct VMM
     /** Critical section.
      * Use for synchronizing all VCPUs
      */
-    RTCRITSECT                 CritSectSync;
+    RTCRITSECT                  CritSectSync;
+
+    /** @name EMT Rendezvous
+     * @{ */
+    /** Semaphore to wait on upon entering for one-by-one execution. */
+    RTSEMEVENT                  hEvtRendezvousEnterOneByOne;
+    /** Semaphore to wait on upon entering for all-at-once execution. */
+    RTSEMEVENTMULTI             hEvtMulRendezvousEnterAllAtOnce;
+    /** Semaphore to wait on when done. */
+    RTSEMEVENTMULTI             hEvtMulRendezvousDone;
+    /** Semaphore the VMMR3EmtRendezvous caller waits on at the end. */
+    RTSEMEVENT                  hEvtRendezvousDoneCaller;
+    /** Callback. */
+    R3PTRTYPE(PFNVMMEMTRENDEZVOUS) volatile pfnRendezvous;
+    /** The user argument for the callback. */
+    RTR3PTR volatile            pvRendezvousUser;
+    /** Flags. */
+    volatile uint32_t           fRendezvousFlags;
+    /** The number of EMTs that has entered. */
+    volatile uint32_t           cRendezvousEmtsEntered;
+    /** The number of EMTs that has done their job. */
+    volatile uint32_t           cRendezvousEmtsDone;
+    /** The number of EMTs that has returned. */
+    volatile uint32_t           cRendezvousEmtsReturned;
+    /** The status code. */
+    volatile int32_t            i32RendezvousStatus;
+    /** Spin lock. */
+    volatile uint32_t           u32RendezvousLock;
+    /** @} */
 
     /** Buffer for storing the standard assertion message for a ring-0 assertion.
      * Used for saving the assertion message text for the release log and guru
@@ -315,7 +348,7 @@ typedef struct VMM
     STAMCOUNTER                 StatRZRetToR3;
     STAMCOUNTER                 StatRZRetTimerPending;
     STAMCOUNTER                 StatRZRetInterruptPending;
-    STAMCOUNTER                 StatRZRetCallHost;
+    STAMCOUNTER                 StatRZRetCallRing3;
     STAMCOUNTER                 StatRZRetPATMDuplicateFn;
     STAMCOUNTER                 StatRZRetPGMChangeMode;
     STAMCOUNTER                 StatRZRetEmulHlt;
@@ -366,19 +399,22 @@ typedef struct VMMCPU
     R0PTRTYPE(PVMMR0LOGGER)     pR0LoggerR0;
 #endif
 
-    /** @name CallHost
+    /** @name Call Ring-3
+     * Formerly known as host calls.
      * @{ */
+    /** The disable counter. */
+    uint32_t                    cCallRing3Disabled;
     /** The pending operation. */
-    VMMCALLHOST                 enmCallHostOperation;
+    VMMCALLRING3                enmCallRing3Operation;
     /** The result of the last operation. */
-    int32_t                     rcCallHost;
-#if HC_ARCH_BITS == 32
+    int32_t                     rcCallRing3;
+#if HC_ARCH_BITS == 64
     uint32_t                    padding;
 #endif
     /** The argument to the operation. */
-    uint64_t                    u64CallHostArg;
+    uint64_t                    u64CallRing3Arg;
     /** The Ring-0 jmp buffer. */
-    VMMR0JMPBUF                 CallHostR0JmpBuf;
+    VMMR0JMPBUF                 CallRing3JmpBufR0;
     /** @} */
 
 } VMMCPU;
@@ -462,7 +498,7 @@ void vmmR3SwitcherRelocate(PVM pVM, RTGCINTPTR offDelta);
 DECLASM(int)    vmmR0WorldSwitch(PVM pVM, unsigned uArg);
 
 /**
- * Callback function for vmmR0CallHostSetJmp.
+ * Callback function for vmmR0CallRing3SetJmp.
  *
  * @returns VBox status code.
  * @param   pVM     The VM handle.
@@ -474,19 +510,19 @@ typedef FNVMMR0SETJMP *PFNVMMR0SETJMP;
 /**
  * The setjmp variant used for calling Ring-3.
  *
- * This differs from the normal setjmp in that it will resume VMMR0CallHost if we're
+ * This differs from the normal setjmp in that it will resume VMMRZCallRing3 if we're
  * in the middle of a ring-3 call. Another differences is the function pointer and
  * argument. This has to do with resuming code and the stack frame of the caller.
  *
- * @returns VINF_SUCCESS on success or whatever is passed to vmmR0CallHostLongJmp.
+ * @returns VINF_SUCCESS on success or whatever is passed to vmmR0CallRing3LongJmp.
  * @param   pJmpBuf     The jmp_buf to set.
  * @param   pfn         The function to be called when not resuming..
  * @param   pVM         The argument of that function.
  */
-DECLASM(int)    vmmR0CallHostSetJmp(PVMMR0JMPBUF pJmpBuf, PFNVMMR0SETJMP pfn, PVM pVM, PVMCPU pVCpu);
+DECLASM(int)    vmmR0CallRing3SetJmp(PVMMR0JMPBUF pJmpBuf, PFNVMMR0SETJMP pfn, PVM pVM, PVMCPU pVCpu);
 
 /**
- * Callback function for vmmR0CallHostSetJmpEx.
+ * Callback function for vmmR0CallRing3SetJmpEx.
  *
  * @returns VBox status code.
  * @param   pvUser      The user argument.
@@ -496,25 +532,25 @@ typedef DECLCALLBACK(int) FNVMMR0SETJMPEX(void *pvUser);
 typedef FNVMMR0SETJMPEX *PFNVMMR0SETJMPEX;
 
 /**
- * Same as vmmR0CallHostSetJmp except for the function signature.
+ * Same as vmmR0CallRing3SetJmp except for the function signature.
  *
- * @returns VINF_SUCCESS on success or whatever is passed to vmmR0CallHostLongJmp.
+ * @returns VINF_SUCCESS on success or whatever is passed to vmmR0CallRing3LongJmp.
  * @param   pJmpBuf     The jmp_buf to set.
  * @param   pfn         The function to be called when not resuming..
  * @param   pvUser      The argument of that function.
  */
-DECLASM(int)    vmmR0CallHostSetJmpEx(PVMMR0JMPBUF pJmpBuf, PFNVMMR0SETJMPEX pfn, void *pvUser);
+DECLASM(int)    vmmR0CallRing3SetJmpEx(PVMMR0JMPBUF pJmpBuf, PFNVMMR0SETJMPEX pfn, void *pvUser);
 
 
 /**
- * Worker for VMMR0CallHost.
+ * Worker for VMMRZCallRing3.
  * This will save the stack and registers.
  *
  * @returns rc.
  * @param   pJmpBuf         Pointer to the jump buffer.
  * @param   rc              The return code.
  */
-DECLASM(int)    vmmR0CallHostLongJmp(PVMMR0JMPBUF pJmpBuf, int rc);
+DECLASM(int)    vmmR0CallRing3LongJmp(PVMMR0JMPBUF pJmpBuf, int rc);
 
 /**
  * Internal R0 logger worker: Logger wrapper.
@@ -528,6 +564,18 @@ VMMR0DECL(void) vmmR0LoggerWrapper(const char *pszFormat, ...);
  * @remark  This function must be exported!
  */
 VMMR0DECL(void) vmmR0LoggerFlush(PRTLOGGER pLogger);
+
+/**
+ * Interal R0 logger worker: Custom prefix.
+ *
+ * @returns Number of chars written.
+ *
+ * @param   pLogger     The logger instance.
+ * @param   pchBuf      The output buffer.
+ * @param   cchBuf      The size of the buffer.
+ * @param   pvUser      User argument (ignored).
+ */
+VMMR0DECL(size_t) vmmR0LoggerPrefix(PRTLOGGER pLogger, char *pchBuf, size_t cchBuf, void *pvUser);
 
 #endif /* IN_RING0 */
 #ifdef IN_RC

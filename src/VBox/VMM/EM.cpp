@@ -1,4 +1,4 @@
-/* $Id: EM.cpp 20408 2009-06-08 13:50:06Z vboxsync $ */
+/* $Id: EM.cpp 20871 2009-06-24 01:56:19Z vboxsync $ */
 /** @file
  * EM - Execution Monitor / Manager.
  */
@@ -626,6 +626,7 @@ VMMR3DECL(int) EMR3RawSetMode(PVM pVM, EMRAWMODE enmMode)
  */
 VMMR3DECL(void) EMR3FatalError(PVMCPU pVCpu, int rc)
 {
+    pVCpu->em.s.enmState = EMSTATE_GURU_MEDITATION;
     longjmp(pVCpu->em.s.u.FatalLongJump, rc);
     AssertReleaseMsgFailed(("longjmp returned!\n"));
 }
@@ -824,6 +825,8 @@ static int emR3Debug(PVM pVM, PVMCPU pVCpu, int rc)
                         case VERR_TRPM_PANIC:
                         case VERR_TRPM_DONT_PANIC:
                         case VERR_VMM_RING0_ASSERTION:
+                        case VERR_VMM_HYPER_CR3_MISMATCH:
+                        case VERR_VMM_RING3_CALL_DISABLED:
                             return rcLast;
                     }
                     return VINF_EM_OFF;
@@ -840,6 +843,8 @@ static int emR3Debug(PVM pVM, PVMCPU pVCpu, int rc)
                 case VERR_TRPM_PANIC:
                 case VERR_TRPM_DONT_PANIC:
                 case VERR_VMM_RING0_ASSERTION:
+                case VERR_VMM_HYPER_CR3_MISMATCH:
+                case VERR_VMM_RING3_CALL_DISABLED:
                 case VERR_INTERNAL_ERROR:
                 case VERR_INTERNAL_ERROR_2:
                 case VERR_INTERNAL_ERROR_3:
@@ -2569,6 +2574,8 @@ DECLINLINE(int) emR3RawHandleRC(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, int rc)
         case VERR_TRPM_DONT_PANIC:
         case VERR_TRPM_PANIC:
         case VERR_VMM_RING0_ASSERTION:
+        case VERR_VMM_HYPER_CR3_MISMATCH:
+        case VERR_VMM_RING3_CALL_DISABLED:
             break;
 
         /*
@@ -3319,6 +3326,12 @@ static int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
         ||  VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_NORMAL_PRIORITY_POST_MASK))
     {
         /*
+         * EMT Rendezvous (must be serviced before termination).
+         */
+        if (VM_FF_ISPENDING(pVM, VM_FF_EMT_RENDEZVOUS))
+            VMMR3EmtRendezvousFF(pVM, pVCpu);
+
+        /*
          * Termination request.
          */
         if (VM_FF_ISPENDING(pVM, VM_FF_TERMINATE))
@@ -3373,7 +3386,7 @@ static int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
         }
 
         /* check that we got them all  */
-        AssertCompile(VM_FF_NORMAL_PRIORITY_POST_MASK == (VM_FF_TERMINATE | VM_FF_DBGF | VM_FF_RESET | VM_FF_PGM_NO_MEMORY));
+        AssertCompile(VM_FF_NORMAL_PRIORITY_POST_MASK == (VM_FF_TERMINATE | VM_FF_DBGF | VM_FF_RESET | VM_FF_PGM_NO_MEMORY | VM_FF_EMT_RENDEZVOUS));
         AssertCompile(VMCPU_FF_NORMAL_PRIORITY_POST_MASK == VMCPU_FF_CSAM_SCAN_PAGE);
     }
 
@@ -3396,6 +3409,12 @@ static int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
             PDMR3DmaRun(pVM);
 
         /*
+         * EMT Rendezvous (make sure they are handled before the requests).
+         */
+        if (VM_FF_ISPENDING(pVM, VM_FF_EMT_RENDEZVOUS))
+            VMMR3EmtRendezvousFF(pVM, pVCpu);
+
+        /*
          * Requests from other threads.
          */
         if (VM_FF_IS_PENDING_EXCEPT(pVM, VM_FF_REQUEST, VM_FF_PGM_NO_MEMORY))
@@ -3414,13 +3433,20 @@ static int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
         /* Replay the handler notification changes. */
         if (VM_FF_IS_PENDING_EXCEPT(pVM, VM_FF_REM_HANDLER_NOTIFY, VM_FF_PGM_NO_MEMORY))
         {
-            EMRemLock(pVM);
-            REMR3ReplayHandlerNotifications(pVM);
-            EMRemUnlock(pVM);
+            /* Try not to cause deadlocks. */
+            if (    pVM->cCPUs == 1
+                ||  (   !PGMIsLockOwner(pVM)
+                     && !IOMIsLockOwner(pVM))
+               )
+            {
+                EMRemLock(pVM);
+                REMR3ReplayHandlerNotifications(pVM);
+                EMRemUnlock(pVM);
+            }
         }
 
         /* check that we got them all  */
-        AssertCompile(VM_FF_NORMAL_PRIORITY_MASK == (VM_FF_REQUEST | VM_FF_PDM_QUEUES | VM_FF_PDM_DMA | VM_FF_REM_HANDLER_NOTIFY));
+        AssertCompile(VM_FF_NORMAL_PRIORITY_MASK == (VM_FF_REQUEST | VM_FF_PDM_QUEUES | VM_FF_PDM_DMA | VM_FF_REM_HANDLER_NOTIFY | VM_FF_EMT_RENDEZVOUS));
     }
 
     /*
@@ -3495,7 +3521,7 @@ static int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
             &&  (!rc || rc >= VINF_EM_RESCHEDULE_HWACC)
             &&  !TRPMHasTrap(pVCpu) /* an interrupt could already be scheduled for dispatching in the recompiler. */
             &&  PATMAreInterruptsEnabled(pVM)
-            &&  !HWACCMR3IsEventPending(pVM))
+            &&  !HWACCMR3IsEventPending(pVCpu))
         {
             Assert(pVCpu->em.s.enmState != EMSTATE_WAIT_SIPI);
             if (VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_INTERRUPT_APIC | VMCPU_FF_INTERRUPT_PIC))
@@ -3533,6 +3559,12 @@ static int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
             rc2 = DBGFR3VMMForcedAction(pVM);
             UPDATE_RC();
         }
+
+        /*
+         * EMT Rendezvous (must be serviced before termination).
+         */
+        if (VM_FF_ISPENDING(pVM, VM_FF_EMT_RENDEZVOUS))
+            VMMR3EmtRendezvousFF(pVM, pVCpu);
 
         /*
          * Termination request.
@@ -3577,7 +3609,7 @@ static int emR3ForcedActions(PVM pVM, PVMCPU pVCpu, int rc)
 #endif
 
         /* check that we got them all  */
-        AssertCompile(VM_FF_HIGH_PRIORITY_PRE_MASK == (VM_FF_TM_VIRTUAL_SYNC | VM_FF_DBGF | VM_FF_TERMINATE | VM_FF_DEBUG_SUSPEND | VM_FF_PGM_NEED_HANDY_PAGES | VM_FF_PGM_NO_MEMORY));
+        AssertCompile(VM_FF_HIGH_PRIORITY_PRE_MASK == (VM_FF_TM_VIRTUAL_SYNC | VM_FF_DBGF | VM_FF_TERMINATE | VM_FF_DEBUG_SUSPEND | VM_FF_PGM_NEED_HANDY_PAGES | VM_FF_PGM_NO_MEMORY | VM_FF_EMT_RENDEZVOUS));
         AssertCompile(VMCPU_FF_HIGH_PRIORITY_PRE_MASK == (VMCPU_FF_TIMER | VMCPU_FF_INTERRUPT_APIC | VMCPU_FF_INTERRUPT_PIC | VMCPU_FF_PGM_SYNC_CR3 | VMCPU_FF_PGM_SYNC_CR3_NON_GLOBAL | VMCPU_FF_SELM_SYNC_TSS | VMCPU_FF_TRPM_SYNC_IDT | VMCPU_FF_SELM_SYNC_GDT | VMCPU_FF_SELM_SYNC_LDT | VMCPU_FF_INHIBIT_INTERRUPTS));
     }
 

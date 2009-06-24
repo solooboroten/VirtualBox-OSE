@@ -1,4 +1,4 @@
-/* $Id: VBoxNetAdp-linux.c 19038 2009-04-20 16:22:21Z vboxsync $ */
+/* $Id: VBoxNetAdp-linux.c 20802 2009-06-23 06:32:16Z vboxsync $ */
 /** @file
  * VBoxNetAdp - Virtual Network Adapter Driver (Host), Linux Specific Code.
  */
@@ -161,15 +161,28 @@ struct net_device_stats *vboxNetAdpLinuxGetStats(struct net_device *pNetDev)
     return &pPriv->Stats;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)
+static const struct net_device_ops vboxNetAdpNetdevOps = {
+    .ndo_open               = vboxNetAdpLinuxOpen,
+    .ndo_stop               = vboxNetAdpLinuxStop,
+    .ndo_start_xmit         = vboxNetAdpLinuxXmit,
+    .ndo_get_stats          = vboxNetAdpLinuxGetStats
+};
+#endif
+
 static void vboxNetAdpNetDevInit(struct net_device *pNetDev)
 {
     PVBOXNETADPPRIV pPriv;
 
     ether_setup(pNetDev);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)
+    pNetDev->netdev_ops = &vboxNetAdpNetdevOps;
+#else /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 29) */
     pNetDev->open = vboxNetAdpLinuxOpen;
     pNetDev->stop = vboxNetAdpLinuxStop;
     pNetDev->hard_start_xmit = vboxNetAdpLinuxXmit;
     pNetDev->get_stats = vboxNetAdpLinuxGetStats;
+#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 29) */
 
     pPriv = netdev_priv(pNetDev);
     memset(pPriv, 0, sizeof(*pPriv));
@@ -281,14 +294,14 @@ static int VBoxNetAdpLinuxIOCtl(struct inode *pInode, struct file *pFilp, unsign
                 {
                     if (cbReq < sizeof(VBOXNETADPREQ))
                     {
-                        printk(KERN_ERR "VBoxNetAdpLinuxIOCtl: param len %#x < req size %#x; uCmd=%#x\n", cbReq, sizeof(VBOXNETADPREQ), uCmd);
+                        printk(KERN_ERR "VBoxNetAdpLinuxIOCtl: param len %#x < req size %#zx; uCmd=%#x\n", cbReq, sizeof(VBOXNETADPREQ), uCmd);
                         return -EINVAL;
                     }
                     strncpy(Req.szName, pAdp->szName, sizeof(Req.szName));
                     if (RT_UNLIKELY(copy_to_user((void *)ulArg, &Req, sizeof(Req))))
                     {
                         /* this is really bad! */
-                        printk(KERN_ERR "VBoxNetAdpLinuxIOCtl: copy_to_user(%#lx,,%#x); uCmd=%#x!\n", ulArg, sizeof(Req), uCmd);
+                        printk(KERN_ERR "VBoxNetAdpLinuxIOCtl: copy_to_user(%#lx,,%#zx); uCmd=%#x!\n", ulArg, sizeof(Req), uCmd);
                         rc = -EFAULT;
                     }
                 }

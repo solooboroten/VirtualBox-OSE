@@ -1,4 +1,4 @@
-/* $Id: MMHyper.cpp 20531 2009-06-13 20:54:43Z vboxsync $ */
+/* $Id: MMHyper.cpp 20874 2009-06-24 02:19:29Z vboxsync $ */
 /** @file
  * MM - Memory Manager - Hypervisor Memory Area.
  */
@@ -78,9 +78,14 @@ int mmR3HyperInit(PVM pVM)
     uint32_t cbHyperHeap;
     int rc = CFGMR3QueryU32(CFGMR3GetChild(CFGMR3GetRoot(pVM), "MM"), "cbHyperHeap", &cbHyperHeap);
     if (rc == VERR_CFGM_NO_PARENT || rc == VERR_CFGM_VALUE_NOT_FOUND)
-        cbHyperHeap = VMMIsHwVirtExtForced(pVM)
-                    ? 640*_1K
-                    : 1280*_1K;
+    {
+        if (pVM->cCPUs > 1)
+            cbHyperHeap = _2M + pVM->cCPUs * _64K;
+        else
+            cbHyperHeap = VMMIsHwVirtExtForced(pVM)
+                        ? 640*_1K
+                        : 1280*_1K;
+    }
     else
         AssertLogRelRCReturn(rc, rc);
     cbHyperHeap = RT_ALIGN_32(cbHyperHeap, PAGE_SIZE);
@@ -338,7 +343,7 @@ static DECLCALLBACK(bool) mmR3HyperRelocateCallback(PVM pVM, RTGCPTR GCPtrOld, R
 }
 
 /**
- * Service a VMMCALLHOST_MMHYPER_LOCK call.
+ * Service a VMMCALLRING3_MMHYPER_LOCK call.
  *
  * @returns VBox status code.
  * @param   pVM     The VM handle.
@@ -943,7 +948,7 @@ VMMR3DECL(int) MMR3HyperAllocOnceNoRel(PVM pVM, size_t cb, unsigned uAlignment, 
                                pvR0,
                                cPages,
                                paPages,
-                               MMR3HeapAPrintf(pVM, MM_TAG_MM, "alloc once (%s)", mmR3GetTagName(enmTag)),
+                               MMR3HeapAPrintf(pVM, MM_TAG_MM, "alloc once (%s)", mmGetTagName(enmTag)),
                                &GCPtr);
         if (RT_SUCCESS(rc))
         {
@@ -1182,7 +1187,7 @@ VMMR3DECL(int)   MMR3HyperHCPhys2HCVirtEx(PVM pVM, RTHCPHYS HCPhys, void **ppv)
 VMMR3DECL(int) MMR3HyperReadGCVirt(PVM pVM, void *pvDst, RTGCPTR GCPtr, size_t cb)
 {
     if (GCPtr - pVM->mm.s.pvHyperAreaGC >= pVM->mm.s.cbHyperArea)
-        return VERR_INVALID_PARAMETER;
+        return VERR_INVALID_POINTER;
     return PGMR3MapRead(pVM, pvDst, GCPtr, cb);
 }
 

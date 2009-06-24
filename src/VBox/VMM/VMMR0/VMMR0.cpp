@@ -1,4 +1,4 @@
-/* $Id: VMMR0.cpp 20406 2009-06-08 13:39:32Z vboxsync $ */
+/* $Id: VMMR0.cpp 20875 2009-06-24 02:29:17Z vboxsync $ */
 /** @file
  * VMM - Host Context Ring 0.
  */
@@ -306,29 +306,6 @@ VMMR0DECL(int) VMMR0TermVM(PVM pVM, PGVM pGVM)
 }
 
 
-/**
- * Calls the ring-3 host code.
- *
- * @returns VBox status code of the ring-3 call.
- * @param   pVM             The VM handle.
- * @param   enmOperation    The operation.
- * @param   uArg            The argument to the operation.
- */
-VMMR0DECL(int) VMMR0CallHost(PVM pVM, VMMCALLHOST enmOperation, uint64_t uArg)
-{
-    PVMCPU pVCpu = VMMGetCpu(pVM);
-
-/** @todo profile this! */
-    pVCpu->vmm.s.enmCallHostOperation = enmOperation;
-    pVCpu->vmm.s.u64CallHostArg = uArg;
-    pVCpu->vmm.s.rcCallHost = VERR_INTERNAL_ERROR;
-    int rc = vmmR0CallHostLongJmp(&pVCpu->vmm.s.CallHostR0JmpBuf, VINF_VMM_CALL_HOST);
-    if (rc == VINF_SUCCESS)
-        rc = pVCpu->vmm.s.rcCallHost;
-    return rc;
-}
-
-
 #ifdef VBOX_WITH_STATISTICS
 /**
  * Record return code statistics
@@ -446,41 +423,41 @@ static void vmmR0RecordRC(PVM pVM, PVMCPU pVCpu, int rc)
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetInterruptPending);
             break;
         case VINF_VMM_CALL_HOST:
-            switch (pVCpu->vmm.s.enmCallHostOperation)
+            switch (pVCpu->vmm.s.enmCallRing3Operation)
             {
-                case VMMCALLHOST_PDM_LOCK:
+                case VMMCALLRING3_PDM_LOCK:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatRZCallPDMLock);
                     break;
-                case VMMCALLHOST_PDM_QUEUE_FLUSH:
+                case VMMCALLRING3_PDM_QUEUE_FLUSH:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatRZCallPDMQueueFlush);
                     break;
-                case VMMCALLHOST_PGM_POOL_GROW:
+                case VMMCALLRING3_PGM_POOL_GROW:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatRZCallPGMPoolGrow);
                     break;
-                case VMMCALLHOST_PGM_LOCK:
+                case VMMCALLRING3_PGM_LOCK:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatRZCallPGMLock);
                     break;
-                case VMMCALLHOST_PGM_MAP_CHUNK:
+                case VMMCALLRING3_PGM_MAP_CHUNK:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatRZCallPGMMapChunk);
                     break;
-                case VMMCALLHOST_PGM_ALLOCATE_HANDY_PAGES:
+                case VMMCALLRING3_PGM_ALLOCATE_HANDY_PAGES:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatRZCallPGMAllocHandy);
                     break;
-                case VMMCALLHOST_REM_REPLAY_HANDLER_NOTIFICATIONS:
+                case VMMCALLRING3_REM_REPLAY_HANDLER_NOTIFICATIONS:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatRZCallRemReplay);
                     break;
-                case VMMCALLHOST_VMM_LOGGER_FLUSH:
+                case VMMCALLRING3_VMM_LOGGER_FLUSH:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatRZCallLogFlush);
                     break;
-                case VMMCALLHOST_VM_SET_ERROR:
+                case VMMCALLRING3_VM_SET_ERROR:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatRZCallVMSetError);
                     break;
-                case VMMCALLHOST_VM_SET_RUNTIME_ERROR:
+                case VMMCALLRING3_VM_SET_RUNTIME_ERROR:
                     STAM_COUNTER_INC(&pVM->vmm.s.StatRZCallVMSetRuntimeError);
                     break;
-                case VMMCALLHOST_VM_R0_ASSERTION:
+                case VMMCALLRING3_VM_R0_ASSERTION:
                 default:
-                    STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetCallHost);
+                    STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetCallRing3);
                     break;
             }
             break;
@@ -650,7 +627,7 @@ VMMR0DECL(void) VMMR0EntryFast(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperati
                 rc = HWACCMR0Enter(pVM, pVCpu);
                 if (RT_SUCCESS(rc))
                 {
-                    rc = vmmR0CallHostSetJmp(&pVCpu->vmm.s.CallHostR0JmpBuf, HWACCMR0RunGuestCode, pVM, pVCpu); /* this may resume code. */
+                    rc = vmmR0CallRing3SetJmp(&pVCpu->vmm.s.CallRing3JmpBufR0, HWACCMR0RunGuestCode, pVM, pVCpu); /* this may resume code. */
                     int rc2 = HWACCMR0Leave(pVM, pVCpu);
                     AssertRC(rc2);
                 }
@@ -1132,7 +1109,7 @@ VMMR0DECL(int) VMMR0EntryEx(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperation,
             {
                 PVMCPU pVCpu = &pVM->aCpus[idCpu];
 
-                if (!pVCpu->vmm.s.CallHostR0JmpBuf.pvSavedStack)
+                if (!pVCpu->vmm.s.CallRing3JmpBufR0.pvSavedStack)
                     break;
 
                 /** @todo validate this EMT claim... GVM knows. */
@@ -1143,7 +1120,7 @@ VMMR0DECL(int) VMMR0EntryEx(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperation,
                 Args.pReq = pReq;
                 Args.u64Arg = u64Arg;
                 Args.pSession = pSession;
-                return vmmR0CallHostSetJmpEx(&pVCpu->vmm.s.CallHostR0JmpBuf, vmmR0EntryExWrapper, &Args);
+                return vmmR0CallRing3SetJmpEx(&pVCpu->vmm.s.CallRing3JmpBufR0, vmmR0EntryExWrapper, &Args);
             }
 
             default:
@@ -1195,11 +1172,11 @@ VMMR0DECL(void) vmmR0LoggerFlush(PRTLOGGER pLogger)
      * Check that the jump buffer is armed.
      */
 # ifdef RT_ARCH_X86
-    if (    !pVCpu->vmm.s.CallHostR0JmpBuf.eip
-        ||  pVCpu->vmm.s.CallHostR0JmpBuf.fInRing3Call)
+    if (    !pVCpu->vmm.s.CallRing3JmpBufR0.eip
+        ||  pVCpu->vmm.s.CallRing3JmpBufR0.fInRing3Call)
 # else
-    if (    !pVCpu->vmm.s.CallHostR0JmpBuf.rip
-        ||  pVCpu->vmm.s.CallHostR0JmpBuf.fInRing3Call)
+    if (    !pVCpu->vmm.s.CallRing3JmpBufR0.rip
+        ||  pVCpu->vmm.s.CallRing3JmpBufR0.fInRing3Call)
 # endif
     {
 # ifdef DEBUG
@@ -1207,9 +1184,42 @@ VMMR0DECL(void) vmmR0LoggerFlush(PRTLOGGER pLogger)
 # endif
         return;
     }
-    VMMR0CallHost(pVM, VMMCALLHOST_VMM_LOGGER_FLUSH, 0);
+    VMMRZCallRing3(pVM, pVCpu, VMMCALLRING3_VMM_LOGGER_FLUSH, 0);
 #endif
 }
+
+/**
+ * Interal R0 logger worker: Custom prefix.
+ *
+ * @returns Number of chars written.
+ *
+ * @param   pLogger     The logger instance.
+ * @param   pchBuf      The output buffer.
+ * @param   cchBuf      The size of the buffer.
+ * @param   pvUser      User argument (ignored).
+ */
+VMMR0DECL(size_t) vmmR0LoggerPrefix(PRTLOGGER pLogger, char *pchBuf, size_t cchBuf, void *pvUser)
+{
+    NOREF(pvUser);
+#ifdef LOG_ENABLED
+    PVMMR0LOGGER pR0Logger = (PVMMR0LOGGER)((uintptr_t)pLogger - RT_OFFSETOF(VMMR0LOGGER, Logger));
+    if (    !VALID_PTR(pR0Logger)
+        ||  !VALID_PTR(pR0Logger + 1)
+        ||  pLogger->u32Magic != RTLOGGER_MAGIC
+        ||  cchBuf < 2)
+        return 0;
+
+    static const char s_szHex[17] = "0123456789abcdef";
+    VMCPUID const     idCpu       = pR0Logger->idCpu;
+    pchBuf[1] = s_szHex[ idCpu       & 15];
+    pchBuf[0] = s_szHex[(idCpu >> 4) & 15];
+
+    return 2;
+#else
+    return 0;
+#endif
+}
+
 
 #ifdef LOG_ENABLED
 /**
@@ -1254,14 +1264,14 @@ DECLEXPORT(bool) RTCALL RTAssertShouldPanic(void)
         PVMCPU pVCpu = VMMGetCpu(pVM);
 
 #ifdef RT_ARCH_X86
-        if (    pVCpu->vmm.s.CallHostR0JmpBuf.eip
-            &&  !pVCpu->vmm.s.CallHostR0JmpBuf.fInRing3Call)
+        if (    pVCpu->vmm.s.CallRing3JmpBufR0.eip
+            &&  !pVCpu->vmm.s.CallRing3JmpBufR0.fInRing3Call)
 #else
-        if (    pVCpu->vmm.s.CallHostR0JmpBuf.rip
-            &&  !pVCpu->vmm.s.CallHostR0JmpBuf.fInRing3Call)
+        if (    pVCpu->vmm.s.CallRing3JmpBufR0.rip
+            &&  !pVCpu->vmm.s.CallRing3JmpBufR0.fInRing3Call)
 #endif
         {
-            int rc = VMMR0CallHost(pVM, VMMCALLHOST_VM_R0_ASSERTION, 0);
+            int rc = VMMRZCallRing3(pVM, pVCpu, VMMCALLRING3_VM_R0_ASSERTION, 0);
             return RT_FAILURE_NP(rc);
         }
     }

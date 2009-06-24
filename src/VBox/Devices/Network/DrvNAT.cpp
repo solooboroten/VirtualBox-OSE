@@ -1,4 +1,4 @@
-/* $Id: DrvNAT.cpp 20574 2009-06-15 01:51:43Z vboxsync $ */
+/* $Id: DrvNAT.cpp 20718 2009-06-19 12:05:50Z vboxsync $ */
 /** @file
  * DrvNAT - NAT network transport driver.
  */
@@ -26,7 +26,7 @@
 #define LOG_GROUP LOG_GROUP_DRV_NAT
 #define __STDC_LIMIT_MACROS
 #define __STDC_CONSTANT_MACROS
-#include "Network/slirp/libslirp.h"
+#include "slirp/libslirp.h"
 #include <VBox/pdmdrv.h>
 #include <iprt/assert.h>
 #include <iprt/file.h>
@@ -42,8 +42,8 @@
 # include <unistd.h>
 # include <fcntl.h>
 # include <poll.h>
+# include <errno.h>
 #endif
-#include <errno.h>
 #include <iprt/semaphore.h>
 #include <iprt/req.h>
 
@@ -56,30 +56,6 @@
  *        activity. This needs to be fixed properly.
  */
 #define VBOX_NAT_DELAY_HACK
-#ifdef VBOX_WITH_STATISTICS
-# define COUNTING_COUNTER(name, dsc) \
-    extern "C" void slirp_counting_counter_##name##_reset(PNATState pData); \
-    extern "C" void slirp_counting_counter_##name##_inc(PNATState pData); \
-    extern "C" void slirp_counting_counter_##name##_add(PNATState pData, int val); /**< @todo r=bird: COUNTING_COUTER is missing an 'N'
-                                                                                      and trailing a semicolon. The general idea is that
-                                                                                      macros functions should have a trailing semicolon to
-                                                                                      make the source easier to parse for doxygen and editors. */
-/** @todo think abaout it */
-# define PROFILE_COUNTER(name, dsc)
-# include "Network/slirp/counters.h"
-# undef COUNTING_COUNTER
-# undef PROFILE_COUNTER
-# define DRVNAT_COUNTER_RESET(pData, name) \
-    slirp_counting_counter_##name##_reset(pData)
-# define DRVNAT_COUNTER_INC(pData, name) \
-    slirp_counting_counter_##name##_inc(pData)
-# define DRVNAT_COUNTER_ADD(pData, name, val) \
-    slirp_counting_counter_##name##_add(pData, (val))
-#else
-# define DRVNAT_COUNTER_RESET(pData, name) do{}while(0)
-# define DRVNAT_COUNTER_INC(pData, name) do{}while(0)
-# define DRVNAT_COUNTER_ADD(pData, name) do{}while(0)
-#endif
 
 
 /*******************************************************************************
@@ -103,11 +79,11 @@ typedef struct DRVNAT
     /** NAT state for this instance. */
     PNATState               pNATState;
     /** TFTP directory prefix. */
-    char                    *pszTFTPPrefix;
+    char                   *pszTFTPPrefix;
     /** Boot file name to provide in the DHCP server response. */
-    char                    *pszBootFile;
+    char                   *pszBootFile;
     /** tftp server name to provide in the DHCP server response. */
-    char                    *pszNextServer;
+    char                   *pszNextServer;
     /* polling thread */
     PPDMTHREAD              pThread;
     /** Queue for NAT-thread-external events. */
@@ -126,8 +102,15 @@ typedef struct DRVNAT
     /** for external notification */
     HANDLE                  hWakeupEvent;
 #endif
-} DRVNAT, *PDRVNAT;
+    STAMCOUNTER             StatQueuePktSent;       /**< counting packet sent via PDM queue */
+    STAMCOUNTER             StatQueuePktDropped;    /**< counting packet drops by PDM queue */
+} DRVNAT;
+/** Pointer the NAT driver instance data. */
+typedef DRVNAT *PDRVNAT;
 
+/**
+ * NAT queue item.
+ */
 typedef struct DRVNATQUEUITEM
 {
     /** The core part owned by the queue manager. */
@@ -137,7 +120,9 @@ typedef struct DRVNATQUEUITEM
     /* size of buffer */
     size_t              cb;
     void                *mbuf;
-} DRVNATQUEUITEM, *PDRVNATQUEUITEM;
+} DRVNATQUEUITEM;
+/** Pointer to a NAT queue item. */
+typedef DRVNATQUEUITEM *PDRVNATQUEUITEM;
 
 /** Converts a pointer to NAT::INetworkConnector to a PRDVNAT. */
 #define PDMINETWORKCONNECTOR_2_DRVNAT(pInterface)   ( (PDRVNAT)((uintptr_t)pInterface - RT_OFFSETOF(DRVNAT, INetworkConnector)) )
@@ -153,6 +138,7 @@ static void drvNATSendWorker(PDRVNAT pThis, const void *pvBuf, size_t cb)
     if (pThis->enmLinkState == PDMNETWORKLINKSTATE_UP)
         slirp_input(pThis->pNATState, (uint8_t *)pvBuf, cb);
 }
+
 
 /**
  * Send data to the network.
@@ -232,6 +218,7 @@ static DECLCALLBACK(void) drvNATSetPromiscuousMode(PPDMINETWORKCONNECTOR pInterf
     /* nothing to do */
 }
 
+
 /**
  * Worker function for drvNATNotifyLinkChanged().
  * @thread "NAT" thread.
@@ -257,6 +244,7 @@ static void drvNATNotifyLinkChangedWorker(PDRVNAT pThis, PDMNETWORKLINKSTATE enm
             AssertMsgFailed(("drvNATNotifyLinkChanged: unexpected link state %d\n", enmLinkState));
     }
 }
+
 
 /**
  * Notification on link status changes.
@@ -432,12 +420,13 @@ static DECLCALLBACK(int) drvNATAsyncIoThread(PPDMDRVINS pDrvIns, PPDMTHREAD pThr
     return VINF_SUCCESS;
 }
 
- /**
- *  Unblock the send thread so it can respond to a state change.
+
+/**
+ * Unblock the send thread so it can respond to a state change.
  *
- *  @returns VBox status code.
- *  @param   pDevIns     The pcnet device instance.
- *  @param   pThread     The send thread.
+ * @returns VBox status code.
+ * @param   pDevIns     The pcnet device instance.
+ * @param   pThread     The send thread.
  */
 static DECLCALLBACK(int) drvNATAsyncIoWakeup(PPDMDRVINS pDrvIns, PPDMTHREAD pThread)
 {
@@ -456,6 +445,7 @@ static DECLCALLBACK(int) drvNATAsyncIoWakeup(PPDMDRVINS pDrvIns, PPDMTHREAD pThr
 }
 
 #ifdef VBOX_WITH_SLIRP_MT
+
 static DECLCALLBACK(int) drvNATAsyncIoGuest(PPDMDRVINS pDrvIns, PPDMTHREAD pThread)
 {
     PDRVNAT pThis = PDMINS_2_DATA(pDrvIns, PDRVNAT);
@@ -468,14 +458,15 @@ static DECLCALLBACK(int) drvNATAsyncIoGuest(PPDMDRVINS pDrvIns, PPDMTHREAD pThre
     return VINF_SUCCESS;
 }
 
+
 static DECLCALLBACK(int) drvNATAsyncIoGuestWakeup(PPDMDRVINS pDrvIns, PPDMTHREAD pThread)
 {
     PDRVNAT pThis = PDMINS_2_DATA(pDrvIns, PDRVNAT);
 
     return VINF_SUCCESS;
 }
-#endif /* VBOX_WITH_SLIRP_MT */
 
+#endif /* VBOX_WITH_SLIRP_MT */
 
 /**
  * Function called by slirp to check if it's possible to feed incoming data to the network port.
@@ -501,8 +492,11 @@ void slirp_output(void *pvUser, void *pvArg, const uint8_t *pu8Buf, int cb)
     LogFlow(("slirp_output BEGIN %x %d\n", pu8Buf, cb));
     Log2(("slirp_output: pu8Buf=%p cb=%#x (pThis=%p)\n%.*Rhxd\n", pu8Buf, cb, pThis, cb, pu8Buf));
 
-    DRVNAT_COUNTER_RESET(pThis->pNATState, DrvNAT_package_drop);
-    DRVNAT_COUNTER_RESET(pThis->pNATState, DrvNAT_package_sent);
+    /** @todo r-bird: Why do you reset the counters every time? You won't ever count
+     *        higher than ONE then. If you want to record what happened to the last
+     *        queued item, use a U8/bool instead to two 64-bit values. */
+    //STAM_COUNTER_RESET(&pThis->StatQueuePktDropped);
+    //STAM_COUNTER_RESET(&pThis->StatQueuePktSent);
     Assert(pThis);
 
     PDRVNATQUEUITEM pItem = (PDRVNATQUEUITEM)PDMQueueAlloc(pThis->pSendQueue);
@@ -513,22 +507,21 @@ void slirp_output(void *pvUser, void *pvArg, const uint8_t *pu8Buf, int cb)
         pItem->mbuf = pvArg;
         Log2(("pItem:%p %.Rhxd\n", pItem, pItem->pu8Buf));
         PDMQueueInsert(pThis->pSendQueue, &pItem->Core);
-        DRVNAT_COUNTER_INC(pThis->pNATState, DrvNAT_package_sent);
+        STAM_COUNTER_INC(&pThis->StatQueuePktSent);
         return;
     }
-    static unsigned cDroppedPackets;
-    if (cDroppedPackets < 64)
-    {
-        cDroppedPackets++;
-    }
+    static unsigned s_cDroppedPackets;
+    if (s_cDroppedPackets < 64)
+        s_cDroppedPackets++;
     else
     {
-        LogRel(("NAT: %d messages suppressed about dropping package (couldn't allocate queue item)\n", cDroppedPackets));
-        cDroppedPackets = 0;
+        LogRel(("NAT: %d messages suppressed about dropping packet (couldn't allocate queue item)\n", s_cDroppedPackets));
+        s_cDroppedPackets = 0;
     }
-    DRVNAT_COUNTER_INC(pThis->pNATState, DrvNAT_package_drop);
+    STAM_COUNTER_INC(&pThis->StatQueuePktDropped);
     RTMemFree((void *)pu8Buf);
 }
+
 
 /**
  * Queue callback for processing a queued item.
@@ -567,6 +560,7 @@ static DECLCALLBACK(bool) drvNATQueueConsumer(PPDMDRVINS pDrvIns, PPDMQUEUEITEMC
     return RT_SUCCESS(rc);
 }
 
+
 /**
  * Queries an interface to the driver.
  *
@@ -593,21 +587,41 @@ static DECLCALLBACK(void *) drvNATQueryInterface(PPDMIBASE pInterface, PDMINTERF
 
 
 /**
- * Destruct a driver instance.
+ * Get the MAC address into the slirp stack.
  *
- * Most VM resources are freed by the VM. This callback is provided so that any non-VM
- * resources can be freed correctly.
- *
- * @param   pDrvIns     The driver instance data.
+ * Called by drvNATLoadDone and drvNATPowerOn.
  */
-static DECLCALLBACK(void) drvNATDestruct(PPDMDRVINS pDrvIns)
+static void drvNATSetMac(PDRVNAT pThis)
+{
+    if (pThis->pConfig)
+    {
+        RTMAC Mac;
+        pThis->pConfig->pfnGetMac(pThis->pConfig, &Mac);
+        slirp_set_ethaddr(pThis->pNATState, Mac.au8);
+    }
+}
+
+
+/**
+ * After loading we have to pass the MAC address of the ethernet device to the slirp stack.
+ * Otherwise the guest is not reachable until it performs a DHCP request or an ARP request
+ * (usually done during guest boot).
+ */
+static DECLCALLBACK(int) drvNATLoadDone(PPDMDRVINS pDrvIns, PSSMHANDLE pSSMHandle)
 {
     PDRVNAT pThis = PDMINS_2_DATA(pDrvIns, PDRVNAT);
+    drvNATSetMac(pThis);
+    return VINF_SUCCESS;
+}
 
-    LogFlow(("drvNATDestruct:\n"));
 
-    slirp_term(pThis->pNATState);
-    pThis->pNATState = NULL;
+/**
+ * Some guests might not use DHCP to retrieve an IP but use a static IP.
+ */
+static DECLCALLBACK(void) drvNATPowerOn(PPDMDRVINS pDrvIns)
+{
+    PDRVNAT pThis = PDMINS_2_DATA(pDrvIns, PDRVNAT);
+    drvNATSetMac(pThis);
 }
 
 
@@ -691,40 +705,28 @@ static int drvNATConstructRedir(unsigned iInstance, PDRVNAT pThis, PCFGMNODE pCf
     return VINF_SUCCESS;
 }
 
-/**
- * Get the MAC address into the slirp stack.
- */
-static void drvNATSetMac(PDRVNAT pThis)
-{
-    if (pThis->pConfig)
-    {
-        RTMAC Mac;
-        pThis->pConfig->pfnGetMac(pThis->pConfig, &Mac);
-        slirp_set_ethaddr(pThis->pNATState, Mac.au8);
-    }
-}
-
 
 /**
- * After loading we have to pass the MAC address of the ethernet device to the slirp stack.
- * Otherwise the guest is not reachable until it performs a DHCP request or an ARP request
- * (usually done during guest boot).
+ * Destruct a driver instance.
+ *
+ * Most VM resources are freed by the VM. This callback is provided so that any non-VM
+ * resources can be freed correctly.
+ *
+ * @param   pDrvIns     The driver instance data.
  */
-static DECLCALLBACK(int) drvNATLoadDone(PPDMDRVINS pDrvIns, PSSMHANDLE pSSMHandle)
+static DECLCALLBACK(void) drvNATDestruct(PPDMDRVINS pDrvIns)
 {
     PDRVNAT pThis = PDMINS_2_DATA(pDrvIns, PDRVNAT);
-    drvNATSetMac(pThis);
-    return VINF_SUCCESS;
-}
 
+    LogFlow(("drvNATDestruct:\n"));
 
-/**
- * Some guests might not use DHCP to retrieve an IP but use a static IP.
- */
-static DECLCALLBACK(void) drvNATPowerOn(PPDMDRVINS pDrvIns)
-{
-    PDRVNAT pThis = PDMINS_2_DATA(pDrvIns, PDRVNAT);
-    drvNATSetMac(pThis);
+    slirp_term(pThis->pNATState);
+    slirp_deregister_statistics(pThis->pNATState, pDrvIns);
+    pThis->pNATState = NULL;
+#ifdef VBOX_WITH_STATISTICS
+    PDMDrvHlpSTAMDeregister(pDrvIns, &pThis->StatQueuePktSent);
+    PDMDrvHlpSTAMDeregister(pDrvIns, &pThis->StatQueuePktDropped);
+#endif
 }
 
 
@@ -838,19 +840,25 @@ static DECLCALLBACK(int) drvNATConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandl
         slirp_set_dhcp_dns_proxy(pThis->pNATState, !!fDNSProxy);
 #endif
 #define SLIRP_SET_TUNING_VALUE(name, setter)            \
-    do                                                  \
-    {                                                   \
-        int len = 0;                                    \
-        rc = CFGMR3QueryS32(pCfgHandle, name, &len);    \
-        if (RT_SUCCESS(rc))                             \
-            setter(pThis->pNATState, len);              \
-    }while(0)
+            do                                                  \
+            {                                                   \
+                int len = 0;                                    \
+                rc = CFGMR3QueryS32(pCfgHandle, name, &len);    \
+                if (RT_SUCCESS(rc))                             \
+                    setter(pThis->pNATState, len);              \
+            } while(0)
+
         SLIRP_SET_TUNING_VALUE("SocketRcvBuf", slirp_set_rcvbuf);
         SLIRP_SET_TUNING_VALUE("SocketSndBuf", slirp_set_sndbuf);
         SLIRP_SET_TUNING_VALUE("TcpRcvSpace", slirp_set_tcp_rcvspace);
         SLIRP_SET_TUNING_VALUE("TcpSndSpace", slirp_set_tcp_sndspace);
 
-        slirp_register_timers(pThis->pNATState, pDrvIns);
+        slirp_register_statistics(pThis->pNATState, pDrvIns);
+#ifdef VBOX_WITH_STATISTICS
+        PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->StatQueuePktSent,    STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS, STAMUNIT_COUNT, "counting packet sent via PDM queue", "/Drivers/NAT%u/QueuePacketSent", pDrvIns->iInstance);
+        PDMDrvHlpSTAMRegisterF(pDrvIns, &pThis->StatQueuePktDropped, STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS, STAMUNIT_COUNT, "counting packet sent via PDM queue", "/Drivers/NAT%u/QueuePacketDropped", pDrvIns->iInstance);
+#endif
+
         int rc2 = drvNATConstructRedir(pDrvIns->iInstance, pThis, pCfgHandle, Network);
         if (RT_SUCCESS(rc2))
         {
@@ -960,3 +968,4 @@ const PDMDRVREG g_DrvNAT =
     /* pfnPowerOff */
     NULL
 };
+

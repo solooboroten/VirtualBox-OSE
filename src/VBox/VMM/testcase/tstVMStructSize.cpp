@@ -1,4 +1,4 @@
-/* $Id: tstVMStructSize.cpp 20530 2009-06-13 20:53:44Z vboxsync $ */
+/* $Id: tstVMStructSize.cpp 20875 2009-06-24 02:29:17Z vboxsync $ */
 /** @file
  * tstVMStructSize - testcase for check structure sizes/alignment
  *                   and to verify that HC and GC uses the same
@@ -195,8 +195,8 @@ int main()
     CHECK_MEMBER_ALIGNMENT(VM, aCpus[1].cpum.s.Hyper, 64);
     CHECK_MEMBER_ALIGNMENT(VM, cpum.s.GuestEntry, 64);
 
-    CHECK_MEMBER_ALIGNMENT(VMCPU, vmm.s.u64CallHostArg, 8);
-    CHECK_MEMBER_ALIGNMENT(VMCPU, vmm.s.CallHostR0JmpBuf, 8);
+    CHECK_MEMBER_ALIGNMENT(VMCPU, vmm.s.u64CallRing3Arg, 8);
+    CHECK_MEMBER_ALIGNMENT(VMCPU, vmm.s.CallRing3JmpBufR0, 8);
     CHECK_MEMBER_ALIGNMENT(VM, vmm.s.u64LastYield, 8);
     CHECK_MEMBER_ALIGNMENT(VM, vmm.s.StatRunRC, 8);
     CHECK_MEMBER_ALIGNMENT(VM, StatTotalQemuToGC, 8);
@@ -277,12 +277,16 @@ int main()
     CHECK_MEMBER_ALIGNMENT(PGMRAMRANGE, aPages, 16);
     CHECK_MEMBER_ALIGNMENT(PGMMMIO2RANGE, RamRange, 16);
 
-    /* misc */
+    /* rem */
     CHECK_MEMBER_ALIGNMENT(REM, aGCPtrInvalidatedPages, 8);
-    CHECK_PADDING3(EMCPU, u.FatalLongJump, u.achPaddingFatalLongJump);
     CHECK_PADDING3(REMHANDLERNOTIFICATION, u.PhysicalRegister, u.padding);
     CHECK_PADDING3(REMHANDLERNOTIFICATION, u.PhysicalDeregister, u.padding);
     CHECK_PADDING3(REMHANDLERNOTIFICATION, u.PhysicalModify, u.padding);
+    CHECK_SIZE_ALIGNMENT(REMHANDLERNOTIFICATION, 8);
+    CHECK_MEMBER_ALIGNMENT(REMHANDLERNOTIFICATION, u.PhysicalDeregister.GCPhys, 8);
+
+    /* misc */
+    CHECK_PADDING3(EMCPU, u.FatalLongJump, u.achPaddingFatalLongJump);
     CHECK_SIZE_ALIGNMENT(VMMR0JMPBUF, 8);
     CHECK_SIZE_ALIGNMENT(PATCHINFO, 8);
 #if 0
@@ -292,7 +296,7 @@ int main()
 #endif
 
     /* TM */
-    CHECK_MEMBER_ALIGNMENT(TM, EmtLock, sizeof(uintptr_t));
+    CHECK_MEMBER_ALIGNMENT(TM, TimerCritSect, sizeof(uintptr_t));
     CHECK_MEMBER_ALIGNMENT(TM, VirtualSyncLock, sizeof(uintptr_t));
 
     CHECK_MEMBER_ALIGNMENT(IOM, EmtLock, sizeof(uintptr_t));
