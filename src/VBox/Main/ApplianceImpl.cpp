@@ -1,4 +1,4 @@
-/* $Id: ApplianceImpl.cpp 20842 2009-06-23 14:48:10Z vboxsync $ */
+/* $Id: ApplianceImpl.cpp 20930 2009-06-25 12:01:24Z vboxsync $ */
 /** @file
  *
  * IAppliance and IVirtualSystem COM class implementations.

@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.h 19610 2009-05-12 12:10:14Z vboxsync $ */
+/* $Id: MachineImpl.h 20928 2009-06-25 11:53:37Z vboxsync $ */
 
 /** @file
  *

@@ -1,4 +1,4 @@
-; $Id: VMMInternal.mac 20545 2009-06-13 23:56:48Z vboxsync $
+; $Id: VMMInternal.mac 20992 2009-06-26 18:20:27Z vboxsync $
 ;; @file
 ; VMM - Internal header file.
 ;

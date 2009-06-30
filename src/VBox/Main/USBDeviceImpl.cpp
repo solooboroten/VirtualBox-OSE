@@ -1,4 +1,4 @@
-/* $Id: USBDeviceImpl.cpp 19239 2009-04-28 13:19:14Z vboxsync $ */
+/* $Id: USBDeviceImpl.cpp 20976 2009-06-26 14:17:49Z vboxsync $ */
 
 /** @file
  *
