@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 19551 2009-05-08 21:14:45Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the libxslt library.
 #

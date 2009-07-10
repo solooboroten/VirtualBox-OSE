@@ -1,4 +1,4 @@
-# $Id: Config.kmk 14231 2008-11-17 00:44:48Z vboxsync $
+# $Id: Config.kmk $
 ## @file
 # OpenSSL kBuild Configuration file.
 #

@@ -1,4 +1,4 @@
-/* $Id: sw_common.c 20508 2009-06-12 12:48:23Z vboxsync $ */
+/* $Id: sw_common.c $ */
 
 /** @file
  * VBox D3D8/9 dll switcher
