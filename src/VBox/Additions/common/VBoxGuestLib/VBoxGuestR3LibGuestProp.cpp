@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestR3LibGuestProp.cpp $ */
+/* $Id: VBoxGuestR3LibGuestProp.cpp 49466 2009-07-02 15:39:51Z andy $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions,
  * guest properties.
@@ -507,45 +507,47 @@ VBGLR3DECL(int) VbglR3GuestPropEnumRaw(uint32_t u32ClientId,
  *          data, so retrying may help here.  Other parameters are left
  *          uninitialised
  *
- * @param   papszPatterns The patterns against which the properties are
- *                        matched.  Pass NULL if everything should be matched.
- * @param   cPatterns     The number of patterns in @a papszPatterns.  0 means
- *                        match everything.
- * @param   ppHandle      where the handle for continued enumeration is stored
- *                        on success.  This must be freed with
- *                        VbglR3GuestPropEnumFree when it is no longer needed.
- * @param   ppszName      Where to store the first property name on success.
- *                        Should not be freed.
- * @param   ppszValue     Where to store the first property value on success.
- *                        Should not be freed.
- * @param   ppszValue     Where to store the first timestamp value on success.
- * @param   ppszFlags     Where to store the first flags value on success.
- *                        Should not be freed.
+ * @param   u32ClientId     The client id returned by VbglR3InfoSvcConnect().
+ * @param   papszPatterns   The patterns against which the properties are
+ *                          matched.  Pass NULL if everything should be matched.
+ * @param   cPatterns       The number of patterns in @a papszPatterns.  0 means
+ *                          match everything.
+ * @param   ppHandle        where the handle for continued enumeration is stored
+ *                          on success.  This must be freed with
+ *                          VbglR3GuestPropEnumFree when it is no longer needed.
+ * @param   ppszName        Where to store the first property name on success.
+ *                          Should not be freed.
+ * @param   ppszValue       Where to store the first property value on success.
+ *                          Should not be freed.
+ * @param   ppszValue       Where to store the first timestamp value on success.
+ * @param   ppszFlags       Where to store the first flags value on success.
+ *                          Should not be freed.
  */
 VBGLR3DECL(int) VbglR3GuestPropEnum(uint32_t u32ClientId,
-                                    char **papszPatterns,
-                                    int cPatterns,
+                                    char const * const *papszPatterns,
+                                    uint32_t cPatterns,
                                     PVBGLR3GUESTPROPENUM *ppHandle,
-                                    char **ppszName,
-                                    char **ppszValue,
+                                    char const **ppszName,
+                                    char const **ppszValue,
                                     uint64_t *pu64Timestamp,
-                                    char **ppszFlags)
+                                    char const **ppszFlags)
 {
     int rc = VINF_SUCCESS;
     RTMemAutoPtr<VBGLR3GUESTPROPENUM, VbglR3GuestPropEnumFree> Handle;
-    Handle = (PVBGLR3GUESTPROPENUM) RTMemAllocZ(sizeof(VBGLR3GUESTPROPENUM));
+    Handle = (PVBGLR3GUESTPROPENUM)RTMemAllocZ(sizeof(VBGLR3GUESTPROPENUM));
     if (!Handle)
         rc = VERR_NO_MEMORY;
 
     /* Get the length of the pattern string, including the final terminator. */
     uint32_t cchPatterns = 1;
-    for (int i = 0; i < cPatterns; ++i)
+    for (unsigned i = 0; i < cPatterns; ++i)
         cchPatterns += strlen(papszPatterns[i]) + 1;
+
     /* Pack the pattern array */
     RTMemAutoPtr<char> Patterns;
-    Patterns = (char *) RTMemAlloc(cchPatterns);
+    Patterns = (char *)RTMemAlloc(cchPatterns);
     size_t iOffs = 0;
-    for (int i = 0; i < cPatterns; ++i)
+    for (size_t i = 0; i < cPatterns; ++i)
     {
         size_t cb = strlen(papszPatterns[i]) + 1;
         memcpy(&Patterns[iOffs], papszPatterns[i], cb);
@@ -614,14 +616,16 @@ VBGLR3DECL(int) VbglR3GuestPropEnum(uint32_t u32ClientId,
  *                       enumerate.  This pointer should not be freed.
  */
 VBGLR3DECL(int) VbglR3GuestPropEnumNext(PVBGLR3GUESTPROPENUM pHandle,
-                                        char **ppszName,
-                                        char **ppszValue,
+                                        char const **ppszName,
+                                        char const **ppszValue,
                                         uint64_t *pu64Timestamp,
-                                        char **ppszFlags)
+                                        char const **ppszFlags)
 {
     uint32_t iBuf = pHandle->iBuf;
     char *pszName = pHandle->pchBuf + iBuf;
-    /** @todo replace these with safe memchr's and return an error if needed. */
+    /** @todo replace these with safe memchr's and return an error if needed. A
+     *        PLEASE add a comment about the layout because this is rather
+     *        unreadable. */
     iBuf += strlen(pszName) + 1;
     char *pszValue = pHandle->pchBuf + iBuf;
     iBuf += strlen(pszValue) + 1;
@@ -651,36 +655,41 @@ VBGLR3DECL(void) VbglR3GuestPropEnumFree(PVBGLR3GUESTPROPENUM pHandle)
     RTMemFree(pHandle);
 }
 
+
 /**
- * Deletes a key (matching pattern) including its children.
+ * Deletes a set of keys.
  *
- * @returns VBox status code.
+ * The set is specified in the same way as for VbglR3GuestPropEnum.
+ *
+ * @returns VBox status code. Stops on first failure.
+ *          See also VbglR3GuestPropEnum.
+ *
+ * @param   u32ClientId     The client id returned by VbglR3InfoSvcConnect().
+ * @param   papszPatterns   The patterns against which the properties are
+ *                          matched.  Pass NULL if everything should be matched.
+ * @param   cPatterns       The number of patterns in @a papszPatterns.  0 means
+ *                          match everything.
  */
-VBGLR3DECL(int) VbglR3GuestPropDelTree(uint32_t u32ClientId,
-                                       char **papszPatterns,
-                                       int cPatterns)
+VBGLR3DECL(int) VbglR3GuestPropDelSet(uint32_t u32ClientId,
+                                      const char * const *papszPatterns,
+                                      size_t cPatterns)
 {
-    PVBGLR3GUESTPROPENUM pHandle = NULL;
-    int rc = VINF_SUCCESS;
+    PVBGLR3GUESTPROPENUM pHandle;
+    char const *pszName, *pszValue, *pszFlags;
+    uint64_t pu64Timestamp;
+    int rc = VbglR3GuestPropEnum(u32ClientId,
+                                 (char **)papszPatterns, /** @todo fix this cast. */
+                                 cPatterns,
+                                 &pHandle,
+                                 &pszName,
+                                 &pszValue,
+                                 &pu64Timestamp,
+                                 &pszFlags);
 
-    char* pszName = NULL;
-    char* pszValue = NULL;
-    uint64_t pu64Timestamp = 0;
-    char* pszFlags = NULL;
-
-    rc = VbglR3GuestPropEnum(u32ClientId,
-                             papszPatterns,
-                             cPatterns,
-                             &pHandle,
-                             &pszName,
-                             &pszValue,
-                             &pu64Timestamp,
-                             &pszFlags);
-
-    while (RT_SUCCESS(rc) && (pszName != NULL))
+    while (RT_SUCCESS(rc) && pszName)
     {
         rc = VbglR3GuestPropWriteValue(u32ClientId, pszName, NULL);
-        if(!RT_SUCCESS(rc))
+        if (!RT_SUCCESS(rc))
             break;
 
         rc = VbglR3GuestPropEnumNext(pHandle,
@@ -693,3 +702,4 @@ VBGLR3DECL(int) VbglR3GuestPropDelTree(uint32_t u32ClientId,
     VbglR3GuestPropEnumFree(pHandle);
     return rc;
 }
+

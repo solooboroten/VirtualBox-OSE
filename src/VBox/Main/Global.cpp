@@ -1,4 +1,4 @@
-/* $Id: Global.cpp $ */
+/* $Id: Global.cpp 36462 2008-09-11 15:10:36Z sandervl $ */
 
 /** @file
  *

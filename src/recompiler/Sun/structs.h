@@ -1,4 +1,4 @@
-/* $Id: structs.h $ */
+/* $Id: structs.h 35885 2008-09-02 13:09:44Z umoeller $ */
 /** @file
  * VBox Recompiler - structure offset tables.
  *

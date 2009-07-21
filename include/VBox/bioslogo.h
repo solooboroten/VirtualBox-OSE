@@ -1,4 +1,4 @@
-/* $Id: bioslogo.h $ */
+/* $Id: bioslogo.h 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * BiosLogo - The Private BIOS Logo Interface.
  */

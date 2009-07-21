@@ -1,4 +1,4 @@
-/** $Id: vl_vbox.h $ */
+/** $Id: vl_vbox.h 34348 2008-08-08 16:14:51Z bird $ */
 /** @file
  * VBox vl.h Replacement.
  *

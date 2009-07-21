@@ -1,4 +1,4 @@
-/* $Id: thread2-r0drv-solaris.c $ */
+/* $Id: thread2-r0drv-solaris.c 31282 2008-05-27 09:27:29Z bird $ */
 /** @file
  * IPRT - Threads (Part 2), Ring-0 Driver, Solaris.
  */

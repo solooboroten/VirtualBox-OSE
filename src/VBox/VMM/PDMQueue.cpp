@@ -1,4 +1,4 @@
-/* $Id: PDMQueue.cpp $ */
+/* $Id: PDMQueue.cpp 49442 2009-07-02 12:24:28Z bird $ */
 /** @file
  * PDM Queue - Transport data and tasks to EMT and R3.
  */
@@ -671,10 +671,10 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
         case PDMQUEUETYPE_DEV:
             while (pItems)
             {
+                if (!pQueue->u.Dev.pfnCallback(pQueue->u.Dev.pDevIns, pItems))
+                    break;
                 pCur = pItems;
                 pItems = pItems->pNextHC;
-                if (!pQueue->u.Dev.pfnCallback(pQueue->u.Dev.pDevIns, pCur))
-                    break;
                 pdmR3QueueFree(pQueue, pCur);
             }
             break;
@@ -682,10 +682,10 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
         case PDMQUEUETYPE_DRV:
             while (pItems)
             {
+                if (!pQueue->u.Drv.pfnCallback(pQueue->u.Drv.pDrvIns, pItems))
+                    break;
                 pCur = pItems;
                 pItems = pItems->pNextHC;
-                if (!pQueue->u.Drv.pfnCallback(pQueue->u.Drv.pDrvIns, pCur))
-                    break;
                 pdmR3QueueFree(pQueue, pCur);
             }
             break;
@@ -693,10 +693,10 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
         case PDMQUEUETYPE_INTERNAL:
             while (pItems)
             {
+                if (!pQueue->u.Int.pfnCallback(pQueue->pVMHC, pItems))
+                    break;
                 pCur = pItems;
                 pItems = pItems->pNextHC;
-                if (!pQueue->u.Int.pfnCallback(pQueue->pVMHC, pCur))
-                    break;
                 pdmR3QueueFree(pQueue, pCur);
             }
             break;
@@ -704,10 +704,10 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
         case PDMQUEUETYPE_EXTERNAL:
             while (pItems)
             {
+                if (!pQueue->u.Ext.pfnCallback(pQueue->u.Ext.pvUser, pItems))
+                    break;
                 pCur = pItems;
                 pItems = pItems->pNextHC;
-                if (!pQueue->u.Ext.pfnCallback(pQueue->u.Ext.pvUser, pCur))
-                    break;
                 pdmR3QueueFree(pQueue, pCur);
             }
             break;
@@ -723,31 +723,34 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
     if (pItems)
     {
         /*
-         * Shit, no!
-         *      1. Insert pCur.
-         *      2. Reverse the list.
-         *      3. Insert the LIFO at the tail of the pending list.
+         * Reverse the list.
          */
-        pCur->pNextHC = pItems;
-        pItems = pCur;
-
-        //pCur = pItems;
+        pCur = pItems;
         pItems = NULL;
         while (pCur)
         {
             PPDMQUEUEITEMCORE pInsert = pCur;
-            pCur = pCur->pNextHC;
+            pCur = pInsert->pNextHC;
             pInsert->pNextHC = pItems;
             pItems = pInsert;
         }
 
-        if (    pQueue->pPendingHC
-            ||  !ASMAtomicCmpXchgPtr((void * volatile *)&pQueue->pPendingHC, pItems, NULL))
+        /*
+         * Insert the list at the tail of the pending list.
+         */
+        for (;;)
         {
-            pCur = pQueue->pPendingHC;
-            while (pCur->pNextHC)
-                pCur = pCur->pNextHC;
-            pCur->pNextHC = pItems;
+            if (ASMAtomicCmpXchgPtr((void * volatile *)&pQueue->pPendingHC, pItems, NULL))
+                break;
+            PPDMQUEUEITEMCORE pPending = (PPDMQUEUEITEMCORE)ASMAtomicXchgPtr((void * volatile *)&pQueue->pPendingHC, NULL);
+            if (pPending)
+            {
+                pCur = pPending;
+                while (pCur->pNextHC)
+                    pCur = pCur->pNextHC;
+                pCur->pNextHC = pItems;
+                pItems = pPending;
+            }
         }
         return false;
     }

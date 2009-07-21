@@ -1,4 +1,4 @@
-/* $Id: tstVMM-2.cpp $ */
+/* $Id: tstVMM-2.cpp 35653 2008-08-29 14:21:03Z bird $ */
 /** @file
  * VMM Testcase - no. 2.
  */

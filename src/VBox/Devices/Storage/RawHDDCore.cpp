@@ -1,4 +1,4 @@
-/** $Id: RawHDDCore.cpp $ */
+/** $Id: RawHDDCore.cpp 36103 2008-09-05 15:57:39Z frank $ */
 /** @file
  * Raw Disk image, Core Code.
  */

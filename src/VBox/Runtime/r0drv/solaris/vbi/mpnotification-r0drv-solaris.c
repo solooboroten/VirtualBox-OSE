@@ -1,4 +1,4 @@
-/* $Id: mpnotification-r0drv-solaris.c $ */
+/* $Id: mpnotification-r0drv-solaris.c 35885 2008-09-02 13:09:44Z umoeller $ */
 /** @file
  * IPRT - Multiprocessor Event Notifications, Ring-0 Driver, Solaris.
  */

@@ -1,4 +1,4 @@
-/* $Id: randadv.cpp $ */
+/* $Id: randadv.cpp 35074 2008-08-20 20:48:52Z bird $ */
 /** @file
  * IPRT - Random Numbers, Generic Glue.
  */

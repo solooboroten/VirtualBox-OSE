@@ -1,4 +1,4 @@
-/* $Id: HardDiskImpl.h $ */
+/* $Id: HardDiskImpl.h 34787 2008-08-14 18:23:31Z klaus $ */
 
 /** @file
  *

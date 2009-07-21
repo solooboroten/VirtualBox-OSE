@@ -55,6 +55,10 @@ tcp_init(PNATState pData)
 	tcp_iss = 1;		/* wrong */
 	tcb.so_next = tcb.so_prev = &tcb;
         tcp_last_so = &tcb;
+#ifdef VBOX_WITH_BSD_REASS
+        tcp_reass_maxqlen = 48;
+        tcp_reass_maxseg  = 256;
+#endif /* VBOX_WITH_BSD_REASS */
 }
 
 /*
@@ -71,8 +75,13 @@ tcp_template(tp)
 	struct socket *so = tp->t_socket;
 	register struct tcpiphdr *n = &tp->t_template;
 
-	n->ti_next = n->ti_prev = 0;
-	n->ti_x1 = 0;
+#if !defined(VBOX_WITH_BSD_REASS)
+        n->ti_next = n->ti_prev = 0;
+        n->ti_x1 = 0;
+#else
+        memset(n->ti_x1, 0, 9);
+#endif
+
 	n->ti_pr = IPPROTO_TCP;
 	n->ti_len = htons(sizeof (struct tcpiphdr) - sizeof (struct ip));
 	n->ti_src = so->so_faddr;
@@ -149,8 +158,12 @@ tcp_respond(PNATState pData, struct tcpcb *tp, struct tcpiphdr *ti, struct mbuf 
 	tlen += sizeof (struct tcpiphdr);
 	m->m_len = tlen;
 
-	ti->ti_next = ti->ti_prev = 0;
-	ti->ti_x1 = 0;
+#if !defined(VBOX_WITH_BSD_REASS)
+        ti->ti_next = ti->ti_prev = 0;
+        ti->ti_x1 = 0;
+#else
+        memset(ti->ti_x1, 0, 9);
+#endif
 	ti->ti_seq = htonl(seq);
 	ti->ti_ack = htonl(ack);
 	ti->ti_x2 = 0;
@@ -188,7 +201,9 @@ tcp_newtcpcb(PNATState pData, struct socket *so)
 		return ((struct tcpcb *)0);
 
 	memset((char *) tp, 0, sizeof(struct tcpcb));
+#ifndef VBOX_WITH_BSD_REASS
 	tp->seg_next = tp->seg_prev = ptr_to_u32(pData, (struct tcpiphdr *)tp);
+#endif /* !VBOX_WITH_BSD_REASS */
 	tp->t_maxseg = tcp_mssdflt;
 
 	tp->t_flags = tcp_do_rfc1323 ? (TF_REQ_SCALE|TF_REQ_TSTMP) : 0;
@@ -259,6 +274,7 @@ tcp_close(PNATState pData, register struct tcpcb *tp)
 	struct socket *so = tp->t_socket;
 	register struct mbuf *m;
 
+#ifndef VBOX_WITH_BSD_REASS
 	DEBUG_CALL("tcp_close");
 	DEBUG_ARG("tp = %lx", (long )tp);
 
@@ -276,6 +292,19 @@ tcp_close(PNATState pData, register struct tcpcb *tp)
  */
 /*	free(tp, M_PCB);  */
 	u32ptr_done(pData, ptr_to_u32(pData, tp), tp);
+#else /* !VBOX_WITH_BSD_REASS */
+        struct tseg_qent *te;
+	DEBUG_CALL("tcp_close");
+	DEBUG_ARG("tp = %lx", (long )tp);
+        /*XXX: freeing the reassembly queue */
+        while(!LIST_EMPTY(&tp->t_segq)) {
+            te = LIST_FIRST(&tp->t_segq);
+            LIST_REMOVE(te, tqe_q);
+            m_freem(pData, te->tqe_m);
+            free(te);
+            tcp_reass_qsize--;
+        }
+#endif /* VBOX_WITH_BSD_TCP_REASS */
 	free(tp);
 	so->so_tcpcb = 0;
 	soisfdisconnected(so);
@@ -1293,7 +1322,7 @@ tcp_ctl(PNATState pData, struct socket *so)
 	}
 }
 
-#if SIZEOF_CHAR_P != 4
+#if SIZEOF_CHAR_P != 4 && !defined(VBOX_WITH_BSD_REASS)
 /**
  * Slow pointer hashing that deals with automatic inserting and collisions.
  */
@@ -1413,4 +1442,4 @@ void VBoxU32PtrDone(PNATState pData, void *pv, uint32_t iHint)
     pData->cpvHashUsed--;
 }
 
-#endif
+#endif /* SIZEOF_CHAR_P != 4 && !defined(VBOX_WITH_BSD_REASS */

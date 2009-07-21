@@ -1,4 +1,4 @@
-/* $Id: tstRTFsQueries.cpp $ */
+/* $Id: tstRTFsQueries.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
 /** @file
  * IPRT Testcase - RTFs Queries..
  */

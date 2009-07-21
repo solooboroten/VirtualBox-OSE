@@ -1,4 +1,4 @@
-/* $Id: time-r0drv-nt.cpp $ */
+/* $Id: time-r0drv-nt.cpp 32387 2008-06-26 14:25:49Z bird $ */
 /** @file
  * IPRT - Time, Ring-0 Driver, Nt.
  */

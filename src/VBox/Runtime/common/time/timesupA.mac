@@ -1,4 +1,4 @@
-; $Id: timesupA.mac $
+; $Id: timesupA.mac 30017 2008-04-22 11:18:25Z bird $
 ;; @file
 ; IPRT - Time using SUPLib, the Assembly Code Template.
 ;

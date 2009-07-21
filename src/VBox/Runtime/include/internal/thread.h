@@ -1,4 +1,4 @@
-/* $Id: thread.h $ */
+/* $Id: thread.h 30576 2008-05-07 11:01:00Z bird $ */
 /** @file
  * IPRT - Internal RTThread header.
  */

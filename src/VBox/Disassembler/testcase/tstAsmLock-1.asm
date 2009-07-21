@@ -1,4 +1,4 @@
-; $Id: tstAsmLock-1.asm $
+; $Id: tstAsmLock-1.asm 31053 2008-05-20 19:48:26Z bird $
 ;; @file
 ; Disassembly testcase - Valid lock sequences and related instructions.
 ;

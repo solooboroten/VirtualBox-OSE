@@ -1,4 +1,4 @@
-/* $Id: DevPCNet.cpp $ */
+/* $Id: DevPCNet.cpp 38070 2008-10-17 08:43:23Z frank $ */
 /** @file
  * DevPCNet - AMD PCnet-PCI II / PCnet-FAST III (Am79C970A / Am79C973) Ethernet Controller Emulation.
  *

@@ -38,7 +38,7 @@ if test "$currentzone" = "global"; then
         if test "$rc" -eq 0; then
             if test -f /platform/i86pc/kernel/drv/vboxflt.conf; then
                 /opt/VirtualBox/vboxdrv.sh fltstart
-                rc=$?            
+                rc=$?
             fi
         fi
     fi
@@ -93,6 +93,13 @@ if test "$currentzone" = "global"; then
     if test -f /var/svc/manifest/application/virtualbox/zoneaccess.xml; then
         /usr/sbin/svccfg import /var/svc/manifest/application/virtualbox/zoneaccess.xml
         /usr/sbin/svcadm enable -s svc:/application/virtualbox/zoneaccess
+    fi
+
+    # Update boot archive
+    BOOTADMBIN=/sbin/bootadm
+    if test -f "$BOOTADMBIN" || test -h "$BOOTADMBIN"; then
+        echo "Updating boot archive..."
+        $BOOTADMBIN update-archive > /dev/null
     fi
 fi
 

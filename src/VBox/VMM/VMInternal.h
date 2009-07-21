@@ -1,4 +1,4 @@
-/* $Id: VMInternal.h $ */
+/* $Id: VMInternal.h 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * VM - Internal header file.
  */

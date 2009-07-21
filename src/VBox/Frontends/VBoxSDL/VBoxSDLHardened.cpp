@@ -1,4 +1,4 @@
-/* $Id: VBoxSDLHardened.cpp $ */
+/* $Id: VBoxSDLHardened.cpp 35466 2008-08-27 22:21:47Z bird $ */
 /** @file
  * VBoxSDL - Hardened main().
  */

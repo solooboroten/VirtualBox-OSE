@@ -1,4 +1,4 @@
-/* $Id: GuestImpl.cpp $ */
+/* $Id: GuestImpl.cpp 31580 2008-06-03 17:10:09Z dmik $ */
 
 /** @file
  *

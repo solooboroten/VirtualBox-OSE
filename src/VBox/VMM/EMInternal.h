@@ -1,4 +1,4 @@
-/* $Id: EMInternal.h $ */
+/* $Id: EMInternal.h 36314 2008-09-09 15:50:15Z sandervl $ */
 /** @file
  * EM - Internal header file.
  */

@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -54,12 +54,15 @@
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
 #include <sys/modctl.h>
+#include <sys/machparam.h>
+#include <sys/utsname.h>
 
-#include <sys/vbi.h>
+#include "vbi.h"
+
+#define VBIPROC() ((proc_t *)vbi_proc())
 
 /*
- * If we are running on an old version of Solaris, then
- * we have to use dl_lookup to find contig_free().
+ * We have to use dl_lookup to find contig_free().
  */
 extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
 extern void contig_free(void *, size_t);
@@ -67,25 +70,122 @@ extern void contig_free(void *, size_t);
 static void (*p_contig_free)(void *, size_t) = contig_free;
 
 /*
- * Workarounds for running on old versions of solaris with lower NCPU.
- * If we detect this, the assumption is that NCPU was such that a cpuset_t
- * is just a ulong_t
- */
-static int use_old_xc_call = 0;
-static void (*p_xc_call)() = (void (*)())xc_call;
-#pragma weak cpuset_all
-#pragma weak cpuset_all_but
-#pragma weak cpuset_only
+ * Workarounds for running on old versions of solaris with different cross call
+ * interfaces. If we find xc_init_cpu() in the kenel, then just use the defined
+ * interfaces for xc_call() from the include file where the xc_call()
+ * interfaces just takes a pointer to a ulong_t array. The array must be long
+ * enough to hold "ncpus" bits at runtime.
 
+ * The reason for the hacks is that using the type "cpuset_t" is pretty much
+ * impossible from code built outside the Solaris source repository that wants
+ * to run on multiple releases of Solaris.
+ *
+ * For old style xc_call()s, 32 bit solaris and older 64 bit versions use
+ * "ulong_t" as cpuset_t.
+ *
+ * Later versions of 64 bit Solaris used: struct {ulong_t words[x];}
+ * where "x" depends on NCPU.
+ *
+ * We detect the difference in 64 bit support by checking the kernel value of
+ * max_cpuid, which always holds the compiled value of NCPU - 1.
+ *
+ * If Solaris increases NCPU to more than 256, this module will continue
+ * to work on all versions of Solaris as long as the number of installed
+ * CPUs in the machine is <= VBI_NCPU. If VBI_NCPU is increased, this code
+ * has to be re-written some to provide compatibility with older Solaris which
+ * expects cpuset_t to be based on NCPU==256 -- or we discontinue support
+ * of old Nevada/S10.
+ */
+static int use_old = 0;
+static int use_old_with_ulong = 0;
+static void (*p_xc_call)() = (void (*)())xc_call;
+
+#define	VBI_NCPU	256
+#define	VBI_SET_WORDS	(VBI_NCPU / (sizeof (ulong_t) * 8))
+typedef struct vbi_cpuset {
+	ulong_t words[VBI_SET_WORDS];
+} vbi_cpuset_t;
+#define	X_CALL_HIPRI	(2)	/* for old Solaris interface */
+
+/*
+ * module linkage stuff
+ */
 static struct modlmisc vbi_modlmisc = {
-	&mod_miscops, "VirtualBox Interfaces V3"
+	&mod_miscops, "VirtualBox Interfaces V6"
 };
 
 static struct modlinkage vbi_modlinkage = {
 	MODREV_1, (void *)&vbi_modlmisc, NULL
 };
 
+extern uintptr_t kernelbase;
 #define	IS_KERNEL(v)	((uintptr_t)(v) >= kernelbase)
+
+static int vbi_verbose = 0;
+
+#define VBI_VERBOSE(msg) {if (vbi_verbose) cmn_err(CE_WARN, msg);}
+
+/* Introduced in v6 */
+static int vbi_is_nevada = 0;
+
+#ifdef _LP64
+/* 64-bit Solaris 10 offsets */
+/* CPU */
+static int off_s10_cpu_runrun   = 232;
+static int off_s10_cpu_kprunrun = 233;
+/* kthread_t */
+static int off_s10_t_preempt    = 42;
+
+/* 64-bit Solaris 11 (Nevada/OpenSolaris) offsets */
+/* CPU */
+static int off_s11_cpu_runrun   = 216;
+static int off_s11_cpu_kprunrun = 217;
+/* kthread_t */
+static int off_s11_t_preempt    = 42;
+#else
+/* 32-bit Solaris 10 offsets */
+/* CPU */
+static int off_s10_cpu_runrun   = 124;
+static int off_s10_cpu_kprunrun = 125;
+/* kthread_t */
+static int off_s10_t_preempt    = 26;
+
+/* 32-bit Solaris 11 (Nevada/OpenSolaris) offsets */
+/* CPU */
+static int off_s11_cpu_runrun   = 112;
+static int off_s11_cpu_kprunrun = 113;
+/* kthread_t */
+static int off_s11_t_preempt    = 26;
+#endif
+
+
+/* Which offsets will be used */
+static int off_cpu_runrun       = -1;
+static int off_cpu_kprunrun     = -1;
+static int off_t_preempt        = -1;
+
+#define VBI_T_PREEMPT            (*((char *)curthread + off_t_preempt))
+#define VBI_CPU_KPRUNRUN         (*((char *)CPU + off_cpu_kprunrun))
+#define VBI_CPU_RUNRUN           (*((char *)CPU + off_cpu_runrun))
+
+#undef kpreempt_disable
+#undef kpreempt_enable
+
+#define	VBI_PREEMPT_DISABLE()			\
+	{									\
+		VBI_T_PREEMPT++;				\
+		ASSERT(VBI_T_PREEMPT >= 1);		\
+	}
+#define	VBI_PREEMPT_ENABLE()			\
+	{									\
+		ASSERT(VBI_T_PREEMPT >= 1);		\
+		if (--VBI_T_PREEMPT == 0 &&	\
+		    VBI_CPU_RUNRUN)				\
+			kpreempt(KPREEMPT_SYNC);	\
+	}
+
+/* End of v6 intro */
+
 
 int
 _init(void)
@@ -94,11 +194,22 @@ _init(void)
 
 	/*
 	 * Check to see if this version of virtualbox interface module will work
-	 * with the kernel. The sizeof (cpuset_t) is problematic, as it changed
-	 * with the change to NCPU in nevada build 87 and S10U6.
+	 * with the kernel.
 	 */
-	if (max_cpuid + 1 != NCPU)
-		use_old_xc_call = 1;
+	if (kobj_getsymvalue("xc_init_cpu", 1) != NULL) {
+		/*
+		 * Our bit vector storage needs to be large enough for the
+		 * actual number of CPUs running in the sytem.
+		 */
+		if (ncpus > VBI_NCPU)
+			return (EINVAL);
+	} else {
+		use_old = 1;
+		if (max_cpuid + 1 == sizeof(ulong_t) * 8)
+			use_old_with_ulong = 1;
+		else if (max_cpuid + 1 != VBI_NCPU)
+			return (EINVAL);	/* cpuset_t size mismatch */
+	}
 
 	/*
 	 * In older versions of Solaris contig_free() is a static routine.
@@ -110,6 +221,49 @@ _init(void)
 			cmn_err(CE_NOTE, " contig_free() not found in kernel");
 			return (EINVAL);
 		}
+	}
+
+	/*
+	 * Check if this is S10 or Nevada
+	 */
+	if (!strncmp(utsname.release, "5.11", sizeof("5.11") - 1))
+	{
+		/* Nevada detected... */
+		vbi_is_nevada = 1;
+
+		off_cpu_runrun = off_s11_cpu_runrun;
+		off_cpu_kprunrun = off_s11_cpu_kprunrun;
+		off_t_preempt = off_s11_t_preempt;
+	}
+	else
+	{
+		/* Solaris 10 detected... */
+		vbi_is_nevada = 0;
+
+		off_cpu_runrun = off_s10_cpu_runrun;
+		off_cpu_kprunrun = off_s10_cpu_kprunrun;
+		off_t_preempt = off_s10_t_preempt;
+	}
+
+	/*
+	 * Sanity checking...
+	 */
+	/* CPU */
+	char crr = VBI_CPU_RUNRUN;
+	char krr = VBI_CPU_KPRUNRUN;
+	if (   (crr < 0 || crr > 1)
+		|| (krr < 0 || krr > 1))
+	{
+		cmn_err(CE_NOTE, ":CPU structure sanity check failed! OS version mismatch.\n");
+		return EINVAL;
+	}
+
+	/* Thread */
+	char t_preempt = VBI_T_PREEMPT;
+	if (t_preempt < 0 || t_preempt > 32)
+	{
+		cmn_err(CE_NOTE, ":Thread structure sanity check failed! OS version mismatch.\n");
+		return EINVAL;
 	}
 
 	err = mod_install(&vbi_modlinkage);
@@ -140,9 +294,9 @@ static ddi_dma_attr_t base_attr = {
 	(uint64_t)0,		/* lower limit */
 	(uint64_t)0,		/* high limit */
 	(uint64_t)0xffffffff,	/* counter limit */
-	(uint64_t)MMU_PAGESIZE,	/* alignment */
-	(uint64_t)MMU_PAGESIZE,	/* burst size */
-	(uint64_t)MMU_PAGESIZE,	/* effective DMA size */
+	(uint64_t)PAGESIZE,	/* pagesize alignment */
+	(uint64_t)PAGESIZE,	/* pagesize burst size */
+	(uint64_t)PAGESIZE,	/* pagesize effective DMA size */
 	(uint64_t)0xffffffff,	/* max DMA xfer size */
 	(uint64_t)0xffffffff,	/* segment boundary */
 	1,			/* list length (1 for contiguous) */
@@ -150,28 +304,42 @@ static ddi_dma_attr_t base_attr = {
 	0			/* bus-specific flags */
 };
 
-void *
-vbi_contig_alloc(uint64_t *phys, size_t size)
+static void *
+vbi_internal_alloc(uint64_t *phys, size_t size, int contig)
 {
 	ddi_dma_attr_t attr;
 	pfn_t pfn;
 	void *ptr;
+	uint_t npages;
 
-	if ((size & MMU_PAGEOFFSET) != 0)
+	if ((size & PAGEOFFSET) != 0)
+		return (NULL);
+	npages = size >> PAGESHIFT;
+	if (npages == 0)
 		return (NULL);
 
 	attr = base_attr;
 	attr.dma_attr_addr_hi = *phys;
-	ptr = contig_alloc(size, &attr, MMU_PAGESIZE, 1);
+	if (!contig)
+		attr.dma_attr_sgllen = npages;
+	ptr = contig_alloc(size, &attr, PAGESIZE, 1);
 
-	if (ptr == NULL)
+	if (ptr == NULL) {
+		VBI_VERBOSE("vbi_internal_alloc() failure");
 		return (NULL);
+	}
 
 	pfn = hat_getpfnum(kas.a_hat, (caddr_t)ptr);
 	if (pfn == PFN_INVALID)
 		panic("vbi_contig_alloc(): hat_getpfnum() failed\n");
-	*phys = (uint64_t)pfn << MMU_PAGESHIFT;
+	*phys = (uint64_t)pfn << PAGESHIFT;
 	return (ptr);
+}
+
+void *
+vbi_contig_alloc(uint64_t *phys, size_t size)
+{
+	return (vbi_internal_alloc(phys, size, 1));
 }
 
 void
@@ -185,12 +353,14 @@ vbi_kernel_map(uint64_t pa, size_t size, uint_t prot)
 {
 	caddr_t va;
 
-	if ((pa & MMU_PAGEOFFSET) || (size & MMU_PAGEOFFSET))
+	if ((pa & PAGEOFFSET) || (size & PAGEOFFSET)) {
+		VBI_VERBOSE("vbi_kernel_map() bad pa or size");
 		return (NULL);
+	}
 
 	va = vmem_alloc(heap_arena, size, VM_SLEEP);
 
-	hat_devload(kas.a_hat, va, size, (pfn_t)(pa >> MMU_PAGESHIFT),
+	hat_devload(kas.a_hat, va, size, (pfn_t)(pa >> PAGESHIFT),
 	    prot, HAT_LOAD | HAT_LOAD_LOCK | HAT_UNORDERED_OK);
 
 	return (va);
@@ -203,7 +373,7 @@ vbi_unmap(void *va, size_t size)
 		hat_unload(kas.a_hat, va, size, HAT_UNLOAD | HAT_UNLOAD_UNLOCK);
 		vmem_free(heap_arena, va, size);
 	} else {
-		struct as *as = curproc->p_as;
+		struct as *as = VBIPROC()->p_as;
 
 		as_rangelock(as);
 		(void) as_unmap(as, va, size);
@@ -222,10 +392,14 @@ vbi_yield(void)
 {
 	int rv = 0;
 
-	kpreempt_disable();
-	if (curthread->t_preempt == 1 && CPU->cpu_kprunrun)
+	vbi_preempt_disable();
+
+	char tpr = VBI_T_PREEMPT;
+	char kpr = VBI_CPU_KPRUNRUN;
+	if (tpr == 1 && kpr)
 		rv = 1;
-	kpreempt_enable();
+
+	vbi_preempt_enable();
 	return (rv);
 }
 
@@ -328,7 +502,9 @@ vbi_tod(void)
 void *
 vbi_proc(void)
 {
-	return (curproc);
+	proc_t *p;
+	drv_getparm(UPROCP, &p);
+	return (p);
 }
 
 void
@@ -347,7 +523,7 @@ vbi_thread_create(void *func, void *arg, size_t len, int priority)
 	kthread_t *t;
 
 	t = thread_create(NULL, NULL, (void (*)())func, arg, len,
-	    curproc, TS_RUN, priority);
+	    VBIPROC(), TS_RUN, priority);
 	return (t);
 }
 
@@ -378,13 +554,13 @@ vbi_cpu_id(void)
 int
 vbi_max_cpu_id(void)
 {
-	return (NCPU - 1);
+	return (max_cpuid);
 }
 
 int
 vbi_cpu_maxcount(void)
 {
-	return (NCPU);
+	return (max_cpuid + 1);
 }
 
 int
@@ -407,114 +583,107 @@ vbi_cpu_online(int c)
 void
 vbi_preempt_disable(void)
 {
-	kpreempt_disable();
+	VBI_PREEMPT_DISABLE();
 }
 
 void
 vbi_preempt_enable(void)
 {
-	kpreempt_enable();
+	VBI_PREEMPT_ENABLE();
 }
 
 void
 vbi_execute_on_all(void *func, void *arg)
 {
-	cpuset_t set;
-	ulong_t hack_set;
+	vbi_cpuset_t set;
 	int i;
 
-	/*
-	 * hack for a kernel compiled with the different NCPU than this module
-	 */
-	ASSERT(curthread->t_preempt >= 1);
-	if (use_old_xc_call) {
-		hack_set = 0;
-		for (i = 0; i < ncpus; ++i)
-			hack_set |= 1ul << i;
-		p_xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI, hack_set,
-		    (xc_func_t)func);
+	for (i = 0; i < VBI_SET_WORDS; ++i)
+		set.words[i] = (ulong_t)-1L;
+	if (use_old) {
+		if (use_old_with_ulong) {
+			p_xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI,
+			    set.words[0], (xc_func_t)func);
+		} else {
+			p_xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI,
+			    set, (xc_func_t)func);
+		}
 	} else {
-		CPUSET_ALL(set);
-		xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI, set,
-		    (xc_func_t)func);
+		xc_call((xc_arg_t)arg, 0, 0, &set.words[0], (xc_func_t)func);
 	}
 }
 
 void
 vbi_execute_on_others(void *func, void *arg)
 {
-	cpuset_t set;
-	ulong_t hack_set;
+	vbi_cpuset_t set;
 	int i;
 
-	/*
-	 * hack for a kernel compiled with the different NCPU than this module
-	 */
-	ASSERT(curthread->t_preempt >= 1);
-	if (use_old_xc_call) {
-		hack_set = 0;
-		for (i = 0; i < ncpus; ++i) {
-			if (i != CPU->cpu_id)
-				hack_set |= 1ul << i;
+	for (i = 0; i < VBI_SET_WORDS; ++i)
+		set.words[i] = (ulong_t)-1L;
+	BT_CLEAR(set.words, vbi_cpu_id());
+	if (use_old) {
+		if (use_old_with_ulong) {
+			p_xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI,
+			    set.words[0], (xc_func_t)func);
+		} else {
+			p_xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI,
+			    set, (xc_func_t)func);
 		}
-		p_xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI, hack_set,
-		    (xc_func_t)func);
 	} else {
-		CPUSET_ALL_BUT(set, CPU->cpu_id);
-		xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI, set,
-		    (xc_func_t)func);
+		xc_call((xc_arg_t)arg, 0, 0, &set.words[0], (xc_func_t)func);
 	}
 }
 
 void
 vbi_execute_on_one(void *func, void *arg, int c)
 {
-	cpuset_t set;
-	ulong_t hack_set;
+	vbi_cpuset_t set;
+	int i;
 
-	/*
-	 * hack for a kernel compiled with the different NCPU than this module
-	 */
-	ASSERT(curthread->t_preempt >= 1);
-	if (use_old_xc_call) {
-		hack_set = 1ul << c;
-		p_xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI, hack_set,
-		    (xc_func_t)func);
+	for (i = 0; i < VBI_SET_WORDS; ++i)
+		set.words[i] = 0;
+	BT_SET(set.words, c);
+	if (use_old) {
+		if (use_old_with_ulong) {
+			p_xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI,
+			    set.words[0], (xc_func_t)func);
+		} else {
+			p_xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI,
+			    set, (xc_func_t)func);
+		}
 	} else {
-		CPUSET_ONLY(set, c);
-		xc_call((xc_arg_t)arg, 0, 0, X_CALL_HIPRI, set,
-		    (xc_func_t)func);
+		xc_call((xc_arg_t)arg, 0, 0, &set.words[0], (xc_func_t)func);
 	}
 }
 
 int
 vbi_lock_va(void *addr, size_t len, void **handle)
 {
-	page_t **ppl;
-	int rc = 0;
+	faultcode_t err;
 
-	if (IS_KERNEL(addr)) {
-		/* kernel mappings on x86 are always locked */
-		*handle = NULL;
-	} else {
-		rc = as_pagelock(curproc->p_as, &ppl, (caddr_t)addr, len,
-		    S_WRITE);
-		if (rc != 0)
-			return (rc);
-		*handle = (void *)ppl;
+	/*
+	 * kernel mappings on x86 are always locked, so only handle user.
+	 */
+	*handle = NULL;
+	if (!IS_KERNEL(addr)) {
+		err = as_fault(VBIPROC()->p_as->a_hat, VBIPROC()->p_as,
+		    (caddr_t)addr, len, F_SOFTLOCK, S_WRITE);
+		if (err != 0) {
+			VBI_VERBOSE("vbi_lock_va() failed to lock");
+			return (-1);
+		}
 	}
-	return (rc);
+	return (0);
 }
 
+/*ARGSUSED*/
 void
 vbi_unlock_va(void *addr, size_t len, void *handle)
 {
-	page_t **ppl = (page_t **)handle;
-
-	if (IS_KERNEL(addr))
-		ASSERT(handle == NULL);
-	else
-		as_pageunlock(curproc->p_as, ppl, (caddr_t)addr, len, S_WRITE);
+	if (!IS_KERNEL(addr))
+		as_fault(VBIPROC()->p_as->a_hat, VBIPROC()->p_as,
+		    (caddr_t)addr, len, F_SOFTUNLOCK, S_WRITE);
 }
 
 uint64_t
@@ -527,11 +696,11 @@ vbi_va_to_pa(void *addr)
 	if (IS_KERNEL(v))
 		hat = kas.a_hat;
 	else
-		hat = curproc->p_as->a_hat;
-	pfn = hat_getpfnum(hat, (caddr_t)(v & MMU_PAGEMASK));
+		hat = VBIPROC()->p_as->a_hat;
+	pfn = hat_getpfnum(hat, (caddr_t)(v & PAGEMASK));
 	if (pfn == PFN_INVALID)
 		return (-(uint64_t)1);
-	return (((uint64_t)pfn << MMU_PAGESHIFT) | (v & MMU_PAGEOFFSET));
+	return (((uint64_t)pfn << PAGESHIFT) | (v & PAGEOFFSET));
 }
 
 
@@ -568,12 +737,10 @@ segvbi_create(struct seg *seg, void *args)
 	 * now load locked mappings to the pages
 	 */
 	va = seg->s_base;
-	ASSERT(((uintptr_t)va & MMU_PAGEOFFSET) == 0);
-	pgcnt = seg->s_size >> MMU_PAGESHIFT;
-	for (p = 0; p < pgcnt; ++p, va += MMU_PAGESIZE) {
-		ASSERT((a->palist[p] & MMU_PAGEOFFSET) == 0);
+	pgcnt = seg->s_size >> PAGESHIFT;
+	for (p = 0; p < pgcnt; ++p, va += PAGESIZE) {
 		hat_devload(as->a_hat, va,
-		    MMU_PAGESIZE, a->palist[p] >> MMU_PAGESHIFT,
+		    PAGESIZE, a->palist[p] >> PAGESHIFT,
 		    data->prot | HAT_UNORDERED_OK, HAT_LOAD | HAT_LOAD_LOCK);
 	}
 
@@ -597,12 +764,11 @@ segvbi_dup(struct seg *seg, struct seg *newseg)
 	return (0);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_unmap(struct seg *seg, caddr_t addr, size_t len)
 {
 	if (addr < seg->s_base || addr + len > seg->s_base + seg->s_size ||
-	    (len & MMU_PAGEOFFSET) || ((uintptr_t)addr & MMU_PAGEOFFSET))
+	    (len & PAGEOFFSET) || ((uintptr_t)addr & PAGEOFFSET))
 		panic("segvbi_unmap");
 
 	if (addr != seg->s_base || len != seg->s_size)
@@ -625,7 +791,6 @@ segvbi_free(struct seg *seg)
 /*
  * We never demand-fault for seg_vbi.
  */
-/*ARGSUSED*/
 static int
 segvbi_fault(struct hat *hat, struct seg *seg, caddr_t addr, size_t len,
     enum fault_type type, enum seg_rw rw)
@@ -633,54 +798,47 @@ segvbi_fault(struct hat *hat, struct seg *seg, caddr_t addr, size_t len,
 	return (FC_MAKE_ERR(EFAULT));
 }
 
-/*ARGSUSED*/
 static int
 segvbi_faulta(struct seg *seg, caddr_t addr)
 {
 	return (0);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_setprot(struct seg *seg, caddr_t addr, size_t len, uint_t prot)
 {
 	return (EACCES);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_checkprot(struct seg *seg, caddr_t addr, size_t len, uint_t prot)
 {
 	return (EINVAL);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_kluster(struct seg *seg, caddr_t addr, ssize_t delta)
 {
 	return (-1);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_sync(struct seg *seg, caddr_t addr, size_t len, int attr, uint_t flags)
 {
 	return (0);
 }
 
-/*ARGSUSED*/
 static size_t
 segvbi_incore(struct seg *seg, caddr_t addr, size_t len, char *vec)
 {
 	size_t v;
 
-	for (v = 0, len = (len + MMU_PAGEOFFSET) & MMU_PAGEMASK; len;
-	    len -= MMU_PAGESIZE, v += MMU_PAGESIZE)
+	for (v = 0, len = (len + PAGEOFFSET) & PAGEMASK; len;
+	    len -= PAGESIZE, v += PAGESIZE)
 		*vec++ = 1;
 	return (v);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_lockop(struct seg *seg, caddr_t addr,
     size_t len, int attr, int op, ulong_t *lockmap, size_t pos)
@@ -688,7 +846,6 @@ segvbi_lockop(struct seg *seg, caddr_t addr,
 	return (0);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_getprot(struct seg *seg, caddr_t addr, size_t len, uint_t *protv)
 {
@@ -702,7 +859,6 @@ segvbi_getoffset(struct seg *seg, caddr_t addr)
 	return ((uintptr_t)addr - (uintptr_t)seg->s_base);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_gettype(struct seg *seg, caddr_t addr)
 {
@@ -711,7 +867,6 @@ segvbi_gettype(struct seg *seg, caddr_t addr)
 
 static vnode_t vbivp;
 
-/*ARGSUSED*/
 static int
 segvbi_getvp(struct seg *seg, caddr_t addr, struct vnode **vpp)
 {
@@ -719,19 +874,16 @@ segvbi_getvp(struct seg *seg, caddr_t addr, struct vnode **vpp)
 	return (0);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_advise(struct seg *seg, caddr_t addr, size_t len, uint_t behav)
 {
 	return (0);
 }
 
-/*ARGSUSED*/
 static void
 segvbi_dump(struct seg *seg)
 {}
 
-/*ARGSUSED*/
 static int
 segvbi_pagelock(struct seg *seg, caddr_t addr, size_t len,
     struct page ***ppp, enum lock_type type, enum seg_rw rw)
@@ -739,28 +891,24 @@ segvbi_pagelock(struct seg *seg, caddr_t addr, size_t len,
 	return (ENOTSUP);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_setpagesize(struct seg *seg, caddr_t addr, size_t len, uint_t szc)
 {
 	return (ENOTSUP);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_getmemid(struct seg *seg, caddr_t addr, memid_t *memid)
 {
 	return (ENODEV);
 }
 
-/*ARGSUSED*/
 static lgrp_mem_policy_info_t *
 segvbi_getpolicy(struct seg *seg, caddr_t addr)
 {
 	return (NULL);
 }
 
-/*ARGSUSED*/
 static int
 segvbi_capable(struct seg *seg, segcapability_t capability)
 {
@@ -802,7 +950,7 @@ static struct seg_ops segvbi_ops = {
 int
 vbi_user_map(caddr_t *va, uint_t prot, uint64_t *palist, size_t len)
 {
-	struct as *as = curproc->p_as;
+	struct as *as = VBIPROC()->p_as;
 	struct segvbi_crargs args;
 	int error = 0;
 
@@ -810,13 +958,12 @@ vbi_user_map(caddr_t *va, uint_t prot, uint64_t *palist, size_t len)
 	args.prot = prot;
 	as_rangelock(as);
 	map_addr(va, len, 0, 0, MAP_SHARED);
-	ASSERT(((uintptr_t)*va & MMU_PAGEOFFSET) == 0);
-	ASSERT((len & MMU_PAGEOFFSET) == 0);
-	ASSERT(len != 0);
 	if (*va != NULL)
 		error = as_map(as, *va, len, segvbi_create, &args);
 	else
 		error = ENOMEM;
+	if (error)
+		VBI_VERBOSE("vbi_user_map() failed");
 	as_rangeunlock(as);
 	return (error);
 }
@@ -906,11 +1053,6 @@ vbi_stimer_begin(
 {
 	vbi_stimer_t *t = kmem_zalloc(sizeof (*t), KM_SLEEP);
 
-	ASSERT(when < INT64_MAX);
-	ASSERT(interval < INT64_MAX);
-	ASSERT(interval + when < INT64_MAX);
-	ASSERT(on_cpu == VBI_ANY_CPU || on_cpu < ncpus);
-
 	t->s_handler.cyh_func = vbi_stimer_func;
 	t->s_handler.cyh_arg = t;
 	t->s_handler.cyh_level = CY_LOCK_LEVEL;
@@ -941,7 +1083,6 @@ done:
 extern void
 vbi_stimer_end(vbi_stimer_t *t)
 {
-	ASSERT(t->s_cyclic != CYCLIC_NONE);
 	mutex_enter(&cpu_lock);
 	cyclic_remove(t->s_cyclic);
 	mutex_exit(&cpu_lock);
@@ -965,7 +1106,7 @@ static void
 vbi_gtimer_func(void *arg)
 {
 	vbi_gtimer_t *t = arg;
-	t->g_func(t->g_arg, ++t->g_counters[CPU->cpu_id]);
+	t->g_func(t->g_arg, ++t->g_counters[vbi_cpu_id()]);
 }
 
 /*
@@ -1006,10 +1147,6 @@ vbi_gtimer_begin(
 	if (interval == 0)
 		return (NULL);
 
-	ASSERT(when < INT64_MAX);
-	ASSERT(interval < INT64_MAX);
-	ASSERT(interval + when < INT64_MAX);
-
 	t = kmem_zalloc(sizeof (*t), KM_SLEEP);
 	t->g_counters = kmem_zalloc(ncpus * sizeof (uint64_t), KM_SLEEP);
 	t->g_when = when + gethrtime();
@@ -1031,7 +1168,6 @@ vbi_gtimer_begin(
 extern void
 vbi_gtimer_end(vbi_gtimer_t *t)
 {
-	ASSERT(t->g_cyclic != CYCLIC_NONE);
 	mutex_enter(&cpu_lock);
 	cyclic_remove(t->g_cyclic);
 	mutex_exit(&cpu_lock);
@@ -1039,15 +1175,48 @@ vbi_gtimer_end(vbi_gtimer_t *t)
 	kmem_free(t, sizeof (*t));
 }
 
-/*
- * This is revision 3 of the interface. As more functions are added,
- * they should go after this point in the file and the revision level
- * increased. Also change vbi_modlmisc at the top of the file.
- */
-uint_t vbi_revision_level = 3;
-
 int
 vbi_is_preempt_enabled(void)
 {
-	return (curthread->t_preempt == 0);
+	char tpr = VBI_T_PREEMPT;
+	return (tpr == 0);
 }
+
+void
+vbi_poke_cpu(int c)
+{
+	if (c < ncpus)
+		poke_cpu(c);
+}
+
+/*
+ * This is revision 5 of the interface. As more functions are added,
+ * they should go after this point in the file and the revision level
+ * increased. Also change vbi_modlmisc at the top of the file.
+ */
+uint_t vbi_revision_level = 6;
+
+void *
+vbi_lowmem_alloc(uint64_t phys, size_t size)
+{
+	return (vbi_internal_alloc(&phys, size, 0));
+}
+
+void
+vbi_lowmem_free(void *va, size_t size)
+{
+	p_contig_free(va, size);
+}
+
+/*
+ * This is revision 6 of the interface.
+ */
+
+int
+vbi_is_preempt_pending(void)
+{
+	char crr = VBI_CPU_RUNRUN;
+	char krr = VBI_CPU_KPRUNRUN;
+	return crr != 0 || krr != 0;
+}
+

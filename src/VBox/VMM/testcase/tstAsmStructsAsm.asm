@@ -1,4 +1,4 @@
-; $Id: tstAsmStructsAsm.asm $
+; $Id: tstAsmStructsAsm.asm 33358 2008-07-15 12:15:41Z sandervl $
 ;; @file
 ; Assembly / C structure layout testcase.
 ;

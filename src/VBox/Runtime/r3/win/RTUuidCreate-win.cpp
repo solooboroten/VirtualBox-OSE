@@ -1,4 +1,4 @@
-/* $Id: RTUuidCreate-win.cpp $ */
+/* $Id: RTUuidCreate-win.cpp 32106 2008-06-17 08:42:50Z bird $ */
 /** @file
  * IPRT - UUID, Windows RTUuidCreate implementation.
  */

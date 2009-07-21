@@ -1,4 +1,4 @@
-/* $Id: tstDeviceStructSizeGC.cpp $ */
+/* $Id: tstDeviceStructSizeGC.cpp 49915 2009-07-10 13:47:14Z klaus $ */
 /** @file
  * tstDeviceStructSizeGC - Generate structure member and size checks from the GC perspective.
  *
@@ -681,6 +681,12 @@ int main()
     GEN_CHECK_OFF(ATADevState, pControllerR3);
     GEN_CHECK_OFF(ATADevState, pControllerR0);
     GEN_CHECK_OFF(ATADevState, pControllerRC);
+    GEN_CHECK_OFF(ATADevState, szSerialNumber);
+    GEN_CHECK_OFF(ATADevState, szSerialNumber[ATA_SERIAL_NUMBER_LENGTH]);
+    GEN_CHECK_OFF(ATADevState, szFirmwareRevision);
+    GEN_CHECK_OFF(ATADevState, szFirmwareRevision[ATA_FIRMWARE_REVISION_LENGTH]);
+    GEN_CHECK_OFF(ATADevState, szModelNumber);
+    GEN_CHECK_OFF(ATADevState, szModelNumber[ATA_MODEL_NUMBER_LENGTH]);
     GEN_CHECK_SIZE(ATATransferRequest);
     GEN_CHECK_OFF(ATATransferRequest, iIf);
     GEN_CHECK_OFF(ATATransferRequest, iBeginTransfer);
@@ -983,6 +989,12 @@ int main()
     GEN_CHECK_OFF(AHCIPort, StatBytesWritten);
     GEN_CHECK_OFF(AHCIPort, StatBytesRead);
     GEN_CHECK_OFF(AHCIPort, StatQueueFillRate);
+    GEN_CHECK_OFF(AHCIPort, szSerialNumber);
+    GEN_CHECK_OFF(AHCIPort, szSerialNumber[AHCI_SERIAL_NUMBER_LENGTH]); /* One additional byte for the termination.*/
+    GEN_CHECK_OFF(AHCIPort, szFirmwareRevision);
+    GEN_CHECK_OFF(AHCIPort, szFirmwareRevision[AHCI_FIRMWARE_REVISION_LENGTH]); /* One additional byte for the termination.*/
+    GEN_CHECK_OFF(AHCIPort, szModelNumber);
+    GEN_CHECK_OFF(AHCIPort, szModelNumber[AHCI_MODEL_NUMBER_LENGTH]); /* One additional byte for the termination.*/
 
     GEN_CHECK_SIZE(AHCI);
     GEN_CHECK_OFF(AHCI, dev);

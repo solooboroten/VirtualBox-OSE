@@ -1,4 +1,4 @@
-/* $Id: tstTimerLR.cpp $ */
+/* $Id: tstTimerLR.cpp 33809 2008-07-29 18:08:58Z bird $ */
 /** @file
  * IPRT Testcase - Low Resolution Timers.
  */

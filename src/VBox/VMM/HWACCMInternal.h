@@ -1,4 +1,4 @@
-/* $Id: HWACCMInternal.h $ */
+/* $Id: HWACCMInternal.h 38573 2008-10-29 09:03:47Z sandervl $ */
 /** @file
  * HWACCM - Internal header file.
  */

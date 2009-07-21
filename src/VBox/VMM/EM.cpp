@@ -1,4 +1,4 @@
-/* $Id: EM.cpp $ */
+/* $Id: EM.cpp 41476 2009-01-08 16:21:35Z frank $ */
 /** @file
  * EM - Execution Monitor/Manager.
  */

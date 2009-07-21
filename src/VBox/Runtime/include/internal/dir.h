@@ -1,4 +1,4 @@
-/* $Id: dir.h $ */
+/* $Id: dir.h 31573 2008-06-03 15:32:05Z bird $ */
 /** @file
  * IPRT - Internal Header for RTDir.
  */

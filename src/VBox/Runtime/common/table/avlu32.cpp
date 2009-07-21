@@ -1,4 +1,4 @@
-/* $Id: avlu32.cpp $ */
+/* $Id: avlu32.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
 /** @file
  * IPRT - AVL tree, uint32_t, unique keys.
  */

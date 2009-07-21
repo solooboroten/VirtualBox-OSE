@@ -1,4 +1,4 @@
-/* $Id: SUPLib-linux.cpp $ */
+/* $Id: SUPLib-linux.cpp 38391 2008-10-23 14:51:23Z frank $ */
 /** @file
  * VirtualBox Support Library - GNU/Linux specific parts.
  */

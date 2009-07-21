@@ -1,4 +1,4 @@
-/* $Id: config-host.h $ */
+/* $Id: config-host.h 29878 2008-04-18 16:58:27Z umoeller $ */
 /** @file
  * Sun host config - maintained by hand
  */

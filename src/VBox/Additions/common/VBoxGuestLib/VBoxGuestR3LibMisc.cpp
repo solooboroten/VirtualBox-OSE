@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestR3LibMisc.cpp $ */
+/* $Id: VBoxGuestR3LibMisc.cpp 33347 2008-07-15 10:01:32Z bird $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, Misc.
  */

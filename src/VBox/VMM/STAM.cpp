@@ -1,4 +1,4 @@
-/* $Id: STAM.cpp $ */
+/* $Id: STAM.cpp 34406 2008-08-08 23:31:54Z bird $ */
 /** @file
  * STAM - The Statistics Manager.
  */

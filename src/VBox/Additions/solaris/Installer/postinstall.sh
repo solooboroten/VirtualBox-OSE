@@ -20,19 +20,21 @@
 echo "Configuring VirtualBox guest kernel module..."
 
 sync
-vboxadditions_path="/opt/VirtualBoxAdditions"
-vboxadditions64_path=$vboxadditions_path/amd64
 solaris64dir="amd64"
+vboxadditions_path="/opt/VirtualBoxAdditions"
+vboxadditions64_path=$vboxadditions_path/$solaris64dir
 
 # vboxguest.sh would've been installed, we just need to call it.
 $vboxadditions_path/vboxguest.sh restart silentunload
 
 # get what ISA the guest is running 
-cputype=`isainfo -k` 
-isadir="" 
-if test "$cputype" = "amd64"; then 
-    isadir="amd64" 
+cputype=`isainfo -k`
+if test "$cputype" = "amd64"; then
+    isadir=$solaris64dir
+else
+    isadir=""
 fi
+vboxadditionsisa_path=$vboxadditions_path/$isadir
 
 # create links
 echo "Creating links..."
@@ -45,6 +47,10 @@ echo "Creating links..."
 # Install Xorg components to the required places
 xorgversion_long=`/usr/X11/bin/Xorg -version 2>&1 | grep "X Window System Version"`
 xorgversion=`/usr/bin/expr "${xorgversion_long}" : 'X Window System Version \([^ ]*\)'`
+if test -z "$xorgversion_long"; then
+    xorgversion_long=`/usr/X11/bin/Xorg -version 2>&1 | grep "X.Org X Server"`
+    xorgversion=`/usr/bin/expr "${xorgversion_long}" : 'X.Org X Server \([^ ]*\)'`
+fi
 
 vboxmouse_src=""
 vboxvideo_src=""
@@ -58,10 +64,14 @@ case "$xorgversion" in
         vboxmouse_src="vboxmouse_drv_14.so"
         vboxvideo_src="vboxvideo_drv_14.so"
         ;;
+    1.5.* )
+        vboxmouse_src="vboxmouse_drv_15.so"
+        vboxvideo_src="vboxvideo_drv_15.so"
+        ;;
     7.1.* | *7.2.* )
         vboxmouse_src="vboxmouse_drv_71.so"
         vboxvideo_src="vboxvideo_drv_71.so"
-	    ;;
+        ;;
     6.9.* | 7.0.* )
         vboxmouse_src="vboxmouse_drv_70.so"
         vboxvideo_src="vboxvideo_drv_70.so"
@@ -110,12 +120,35 @@ else
         rm -f $vboxadditions64_path/vboxvideo_drv_*
     fi
 
+
     # Some distros like Indiana have no xorg.conf, deal with this
     if test ! -f '/etc/X11/xorg.conf' && test ! -f '/etc/X11/.xorg.conf'; then
-        mv -f $vboxadditions_path/solaris_xorg.conf /etc/X11/.xorg.conf
-    fi
 
-    $vboxadditions_path/x11config.pl
+        # Xorg 1.3.x+ should use the modeline less Xorg confs while older should
+        # use ones with all the video modelines in place. Argh.
+        xorgconf_file="solaris_xorg_modeless.conf"
+        xorgconf_unfit="solaris_xorg.conf"
+        case "$xorgversion" in
+            7.1.* | 7.2.* | 6.9.* | 7.0.* )
+                xorgconf_file="solaris_xorg.conf"
+                xorgconf_unfit="solaris_xorg_modeless.conf"
+                ;;
+        esac
+
+        /usr/sbin/removef $PKGINST $vboxadditions_path/$xorgconf_file 1>/dev/null
+        mv -f $vboxadditions_path/$xorgconf_file /etc/X11/.xorg.conf
+
+        /usr/sbin/removef $PKGINST $vboxadditions_path/$xorgconf_unfit 1>/dev/null
+        rm -f $vboxadditions_path/$xorgconf_unfit
+    fi
+    case "$xorgversion" in
+        7.1.* | 7.2.* | 6.9.* | 7.0.* | 1.3.* )
+            $vboxadditions_path/x11config.pl
+            ;;
+        1.5.* | 1.6.* )
+            $vboxadditions_path/x11config15sol.pl
+            ;;
+    esac
 fi
 
 

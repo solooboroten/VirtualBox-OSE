@@ -1,4 +1,4 @@
-/* $Id: strtonum.cpp $ */
+/* $Id: strtonum.cpp 30026 2008-04-22 12:13:16Z bird $ */
 /** @file
  * IPRT - String To Number Convertion.
  */

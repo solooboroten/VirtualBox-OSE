@@ -1,4 +1,4 @@
-/* $Id: tstVMStructGC.cpp $ */
+/* $Id: tstVMStructGC.cpp 41936 2009-01-22 17:46:31Z bird $ */
 /** @file
  * tstVMMStructGC - Generate structure member and size checks from the GC perspective.
  *

@@ -1,4 +1,4 @@
-; $Id: SUPR0.def $
+; $Id: SUPR0.def 36616 2008-09-16 15:12:15Z sandervl $
 ;; @file
 ; VirtualBox Support Driver - Built-in exports.
 ;

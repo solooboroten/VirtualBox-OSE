@@ -1,4 +1,4 @@
-/* $Id: CSAMInternal.h $ */
+/* $Id: CSAMInternal.h 31559 2008-06-03 09:49:14Z sandervl $ */
 /** @file
  * CSAM - Internal header file.
  */

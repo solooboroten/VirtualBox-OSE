@@ -1,4 +1,4 @@
-/* $Id: DevParallel.cpp $ */
+/* $Id: DevParallel.cpp 34377 2008-08-08 22:32:08Z bird $ */
 /** @file
  * DevParallel - Parallel (Port) Device Emulation.
  *

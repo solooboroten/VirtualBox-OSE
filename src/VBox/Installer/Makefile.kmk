@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 36336 2008-09-09 18:14:12Z bird $
 ## @file
 # Install misc stuff and create dist packages.
 #

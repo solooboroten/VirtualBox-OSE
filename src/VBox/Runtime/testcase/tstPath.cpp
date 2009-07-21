@@ -1,4 +1,4 @@
-/* $Id: tstPath.cpp $ */
+/* $Id: tstPath.cpp 35668 2008-08-29 16:52:20Z bird $ */
 /** @file
  * IPRT Testcase - Test various path functions.
  */

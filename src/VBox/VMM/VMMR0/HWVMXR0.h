@@ -1,4 +1,4 @@
-/* $Id: HWVMXR0.h $ */
+/* $Id: HWVMXR0.h 33181 2008-07-11 09:31:15Z sandervl $ */
 /** @file
  * HWACCM VT-x - Internal header file.
  */

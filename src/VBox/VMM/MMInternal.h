@@ -1,4 +1,4 @@
-/* $Id: MMInternal.h $ */
+/* $Id: MMInternal.h 31620 2008-06-04 13:58:42Z frank $ */
 /** @file
  * MM - Internal header file.
  */

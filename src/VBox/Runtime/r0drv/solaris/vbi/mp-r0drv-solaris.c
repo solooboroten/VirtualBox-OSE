@@ -1,4 +1,4 @@
-/* $Id: mp-r0drv-solaris.c $ */
+/* $Id: mp-r0drv-solaris.c 33823 2008-07-29 19:51:36Z bird $ */
 /** @file
  * IPRT - Multiprocessor, Ring-0 Driver, Solaris.
  */

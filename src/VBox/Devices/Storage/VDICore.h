@@ -1,4 +1,4 @@
-/** $Id: VDICore.h $ */
+/** $Id: VDICore.h 34825 2008-08-15 14:33:02Z klaus $ */
 /** @file
  * Virtual Disk Image (VDI), Core Code Header (internal).
  */

@@ -1,4 +1,4 @@
-/* $Id: SELMGC.cpp $ */
+/* $Id: SELMGC.cpp 32586 2008-07-02 09:27:32Z sandervl $ */
 /** @file
  * SELM - The Selector Manager, Guest Context.
  */

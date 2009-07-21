@@ -1,4 +1,4 @@
-/* $Id: tstMemAutoPtr.cpp $ */
+/* $Id: tstMemAutoPtr.cpp 35653 2008-08-29 14:21:03Z bird $ */
 /** @file
  * IPRT - Testcase the RTMemAutoPtr template.
  */

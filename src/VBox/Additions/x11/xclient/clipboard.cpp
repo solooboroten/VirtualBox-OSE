@@ -1,4 +1,4 @@
-/** $Id: clipboard.cpp $ */
+/** $Id: clipboard.cpp 43204 2009-02-23 12:13:34Z fmehnert $ */
 /** @file
  * Guest Additions - X11 Shared Clipboard.
  */

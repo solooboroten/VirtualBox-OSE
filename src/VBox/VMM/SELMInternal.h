@@ -1,4 +1,4 @@
-/* $Id: SELMInternal.h $ */
+/* $Id: SELMInternal.h 32586 2008-07-02 09:27:32Z sandervl $ */
 /** @file
  * SELM - Internal header file.
  */

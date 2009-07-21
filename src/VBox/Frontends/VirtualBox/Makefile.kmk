@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 37914 2008-10-14 20:37:56Z frank $
 ## @file
 # Makefile for the VirtualBox Qt3 GUI.
 #

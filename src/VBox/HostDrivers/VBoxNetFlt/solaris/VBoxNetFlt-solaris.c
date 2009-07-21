@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFlt-solaris.c $ */
+/* $Id: VBoxNetFlt-solaris.c 50001 2009-07-13 12:26:02Z ramshankar $ */
 /** @file
  * VBoxNetFlt - Network Filter Driver (Host), Solaris Specific Code.
  */
@@ -1774,7 +1774,7 @@ static int vboxNetFltSolarisModSetup(PVBOXNETFLTINS pThis, bool fAttach)
                         LogRel((DEVICE_NAME ":vboxNetFltSolarisModSetup: failed to unlink upper stream rc=%d rc2=%d.\n", rc, rc2));
                 }
                 else
-                    LogRel((DEVICE_NAME ":vboxNetFltSolarisModSetup: failed to get MuxFd from MuxId. rc=%d rc2=%d\n"));
+                    LogRel((DEVICE_NAME ":vboxNetFltSolarisModSetup: failed to get MuxFd from MuxId. rc=%d rc2=%d\n", rc, rc2));
             }
             else
                 LogRel((DEVICE_NAME ":vboxNetFltSolarisModSetup: failed to get Mux Ids. rc=%d\n", rc));
@@ -2350,6 +2350,7 @@ static bool vboxNetFltSolarisIsOurMBlk(PVBOXNETFLTINS pThis, vboxnetflt_promisc_
         break;
     }
 
+    LogFlow((DEVICE_NAME ":vboxNetFltSolarisIsOurMBlk returns %d.\n", fIsOurPacket));
     RTSemFastMutexRelease(pThis->u.s.hFastMtx);
     return fIsOurPacket;
 }
@@ -2380,9 +2381,39 @@ static int vboxNetFltSolarisRecv(PVBOXNETFLTINS pThis, vboxnetflt_stream_t *pStr
     }
 
     /*
+     * Paranoia...
+     */
+    if (RT_UNLIKELY(MBLKL(pMsg) < sizeof(RTNETETHERHDR)))
+    {
+        size_t cbMsg = msgdsize(pMsg);
+        if (cbMsg < sizeof(RTNETETHERHDR))
+            return VINF_SUCCESS;
+
+        mblk_t *pFullMsg = allocb(cbMsg, BPRI_MED);
+        if (RT_LIKELY(pFullMsg))
+        {
+            mblk_t *pCur = pMsg;
+            while (pCur)
+            {
+                size_t cbBlock = MBLKL(pCur);
+                if (cbBlock > 0)
+                {
+                    bcopy(pCur->b_rptr, pFullMsg->b_wptr, cbBlock);
+                    pFullMsg->b_wptr += cbBlock;
+                }
+                pCur = pCur->b_cont;
+            }
+
+            freemsg(pMsg);
+            pMsg = pFullMsg;
+        }
+        else
+            return VERR_NO_MEMORY;
+    }
+
+    /*
      * Don't loopback packets we transmit to the wire.
      */
-    /** @todo maybe we need not check for loopback for INTNETTRUNKDIR_HOST case? */
     if (vboxNetFltSolarisIsOurMBlk(pThis, pPromiscStream, pMsg))
     {
         LogFlow((DEVICE_NAME ":Avoiding packet loopback.\n"));

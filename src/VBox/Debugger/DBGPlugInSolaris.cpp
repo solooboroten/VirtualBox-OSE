@@ -1,4 +1,4 @@
-/* $Id: DBGPlugInSolaris.cpp $ */
+/* $Id: DBGPlugInSolaris.cpp 31734 2008-06-06 13:03:50Z bird $ */
 /** @file
  * DBGPlugInSolaris - Debugger and Guest OS Digger Plugin For Solaris.
  */

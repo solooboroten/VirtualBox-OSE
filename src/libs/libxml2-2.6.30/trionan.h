@@ -1,6 +1,6 @@
 /*************************************************************************
  *
- * $Id: trionan.h $
+ * $Id: trionan.h 26769 2007-12-14 19:23:03Z dmik $
  *
  * Copyright (C) 2001 Bjorn Reese <breese@users.sourceforge.net>
  *

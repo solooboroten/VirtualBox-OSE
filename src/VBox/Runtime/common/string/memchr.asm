@@ -1,4 +1,4 @@
-; $Id: memchr.asm $
+; $Id: memchr.asm 29999 2008-04-21 20:53:28Z frank $
 ;; @file
 ; IPRT - No-CRT memchr - AMD64 & X86.
 ;

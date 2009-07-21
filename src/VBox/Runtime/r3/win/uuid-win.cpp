@@ -1,4 +1,4 @@
-/* $Id: uuid-win.cpp $ */
+/* $Id: uuid-win.cpp 32099 2008-06-16 22:53:02Z bird $ */
 /** @file
  * IPRT - UUID, Windows implementation.
  */

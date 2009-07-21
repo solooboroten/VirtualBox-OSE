@@ -1,4 +1,4 @@
-/* $Id: avl_Destroy.cpp.h $ */
+/* $Id: avl_Destroy.cpp.h 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * kAVLDestroy - Walk the tree calling a callback to destroy all the nodes.
  */

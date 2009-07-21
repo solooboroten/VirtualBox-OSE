@@ -1,4 +1,4 @@
-/* $Id: thread.cpp $ */
+/* $Id: thread.cpp 35230 2008-08-23 23:25:03Z bird $ */
 /** @file
  * IPRT - Threads, common routines.
  */

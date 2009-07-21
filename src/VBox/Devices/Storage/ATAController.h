@@ -1,4 +1,4 @@
-/* $Id: ATAController.h $ */
+/* $Id: ATAController.h 49915 2009-07-10 13:47:14Z klaus $ */
 /** @file
  * DevATA, DevAHCI - Shared ATA/ATAPI controller types.
  */
@@ -64,6 +64,12 @@
 /** The maximum number of release log entries per device. */
 #define MAX_LOG_REL_ERRORS  1024
 
+/**
+ * Length of the configurable VPD data (without termination)
+ */
+#define ATA_SERIAL_NUMBER_LENGTH     20
+#define ATA_FIRMWARE_REVISION_LENGTH  8
+#define ATA_MODEL_NUMBER_LENGTH      40
 
 /*******************************************************************************
 *   Structures and Typedefs                                                    *
@@ -240,6 +246,17 @@ typedef struct ATADevState {
     PPDMDEVINSRC                        pDevInsRC;
     /** Pointer to controller instance. */
     RCPTRTYPE(struct ATACONTROLLER *)   pControllerRC;
+
+    /** The serial numnber to use for IDENTIFY DEVICE commands. */
+    char                                szSerialNumber[ATA_SERIAL_NUMBER_LENGTH+1];
+    /** The firmware revision to use for IDENTIFY DEVICE commands. */
+    char                                szFirmwareRevision[ATA_FIRMWARE_REVISION_LENGTH+1];
+    /** The model number to use for IDENTIFY DEVICE commands. */
+    char                                szModelNumber[ATA_MODEL_NUMBER_LENGTH+1];
+
+#if HC_ARCH_BITS == 64
+    uint32_t                            Alignment3[2];
+#endif
 } ATADevState;
 
 

@@ -1,4 +1,4 @@
-/* $Id: VBoxBFE.cpp $ */
+/* $Id: VBoxBFE.cpp 36340 2008-09-09 20:03:07Z frank $ */
 /** @file
  * Basic Frontend (BFE): VBoxBFE main routines.
  *

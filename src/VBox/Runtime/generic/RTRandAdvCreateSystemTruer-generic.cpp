@@ -1,4 +1,4 @@
-/* $Id: RTRandAdvCreateSystemTruer-generic.cpp $ */
+/* $Id: RTRandAdvCreateSystemTruer-generic.cpp 35142 2008-08-21 21:47:31Z bird $ */
 /** @file
  * IPRT - Random Numbers, generic RTRandAdvCreateSystemTruer.
  */

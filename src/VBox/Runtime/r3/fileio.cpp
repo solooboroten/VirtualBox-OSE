@@ -1,4 +1,4 @@
-/* $Id: fileio.cpp $ */
+/* $Id: fileio.cpp 30968 2008-05-19 11:34:46Z frank $ */
 /** @file
  * IPRT - File I/O.
  */

@@ -1,4 +1,4 @@
-/* $Id: Global.h $ */
+/* $Id: Global.h 31581 2008-06-03 17:12:36Z dmik $ */
 
 /** @file
  *

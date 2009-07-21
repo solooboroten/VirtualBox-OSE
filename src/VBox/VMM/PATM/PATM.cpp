@@ -1,4 +1,4 @@
-/* $Id: PATM.cpp $ */
+/* $Id: PATM.cpp 47747 2009-05-26 10:32:30Z fmehnert $ */
 /** @file
  * PATM - Dynamic Guest OS Patching Manager
  *
@@ -121,7 +121,7 @@ PATMR3DECL(int) PATMR3Init(PVM pVM)
     rc = MMR3HyperAllocOnceNoRel(pVM, PATCH_MEMORY_SIZE + PAGE_SIZE + PATM_STACK_TOTAL_SIZE + PAGE_SIZE + PATM_STAT_MEMSIZE, PAGE_SIZE, MM_TAG_PATM, (void **)&pVM->patm.s.pPatchMemHC);
     if (VBOX_FAILURE(rc))
     {
-        Log(("MMR3HyperAlloc failed with %Vrc\n", rc));
+        Log(("MMR3HyperAllocOnceNoRel failed with %Rrc\n", rc));
         return rc;
     }
     pVM->patm.s.pPatchMemGC = MMHyperHC2GC(pVM, pVM->patm.s.pPatchMemHC);

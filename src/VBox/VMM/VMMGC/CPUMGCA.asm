@@ -1,4 +1,4 @@
-; $Id: CPUMGCA.asm $
+; $Id: CPUMGCA.asm 31497 2008-06-02 11:54:43Z sandervl $
 ;; @file
 ;
 ; CPUM - Guest Context Assembly Routines.

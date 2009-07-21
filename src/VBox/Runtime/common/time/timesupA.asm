@@ -1,4 +1,4 @@
-; $Id: timesupA.asm $
+; $Id: timesupA.asm 30029 2008-04-22 12:43:16Z bird $
 ;; @file
 ; IPRT - Time using SUPLib, the Assembly Implementation.
 ;

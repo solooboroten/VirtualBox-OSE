@@ -1,4 +1,4 @@
-/* $Id: file.h $ */
+/* $Id: file.h 29978 2008-04-21 17:24:28Z umoeller $ */
 /** @file
  * IPRT - Internal RTFile header.
  */

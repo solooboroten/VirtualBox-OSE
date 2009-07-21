@@ -1,4 +1,4 @@
-/* $Id: thread-posix.cpp $ */
+/* $Id: thread-posix.cpp 38608 2008-10-29 16:27:08Z frank $ */
 /** @file
  * IPRT - Threads, POSIX.
  */

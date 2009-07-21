@@ -1,4 +1,4 @@
-/* $Id: bin2c.c $ */
+/* $Id: bin2c.c 36166 2008-09-08 01:54:10Z bird $ */
 /** @file
  * bin2c - Binary 2 C Structure Converter.
  */

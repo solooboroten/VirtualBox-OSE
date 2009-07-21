@@ -1,4 +1,4 @@
-/* $Id: rtProcInitExePath-win.cpp $ */
+/* $Id: rtProcInitExePath-win.cpp 35671 2008-08-29 17:14:02Z bird $ */
 /** @file
  * IPRT - rtProcInitName, Windows.
  */

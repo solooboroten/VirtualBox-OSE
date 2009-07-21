@@ -1,4 +1,4 @@
-/* $Id: magics.h $ */
+/* $Id: magics.h 36289 2008-09-09 11:58:51Z MichalN $ */
 /** @file
  * IPRT - Internal header defining The Magic Numbers.
  */

@@ -1,4 +1,4 @@
-/* $Id: logo.c $ */
+/* $Id: logo.c 31812 2008-06-09 11:37:06Z frank $ */
 /** @file
  * Stuff for drawing the BIOS logo.
  */

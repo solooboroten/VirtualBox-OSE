@@ -1,4 +1,4 @@
-; $Id: llrintf.asm $
+; $Id: llrintf.asm 29999 2008-04-21 20:53:28Z frank $
 ;; @file
 ; IPRT - No-CRT llrintf - AMD64 & X86.
 ;

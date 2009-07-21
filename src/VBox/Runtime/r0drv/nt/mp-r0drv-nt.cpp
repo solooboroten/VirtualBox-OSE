@@ -1,4 +1,4 @@
-/* $Id: mp-r0drv-nt.cpp $ */
+/* $Id: mp-r0drv-nt.cpp 31932 2008-06-11 13:05:24Z bird $ */
 /** @file
  * IPRT - Multiprocessor, Ring-0 Driver, NT.
  */

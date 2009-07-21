@@ -1,4 +1,4 @@
-/* $Id: path.cpp $ */
+/* $Id: path.cpp 35673 2008-08-29 17:48:20Z bird $ */
 /** @file
  * IPRT - Path Manipulation.
  */

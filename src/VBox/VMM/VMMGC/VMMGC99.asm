@@ -1,4 +1,4 @@
-; $Id: VMMGC99.asm $
+; $Id: VMMGC99.asm 29865 2008-04-18 15:16:47Z umoeller $
 ;; @file
 ; VMMGC0 - The first object module in the link.
 ;

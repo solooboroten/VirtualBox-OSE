@@ -96,7 +96,7 @@ getouraddr(PNATState pData)
             our_addr.s_addr = loopback_addr.s_addr;
 }
 
-#if SIZEOF_CHAR_P == 8
+#if SIZEOF_CHAR_P == 8 && !defined(VBOX_WITH_BSD_REASS)
 
 struct quehead_32 {
 	u_int32_t qh_link;
@@ -129,7 +129,7 @@ remque_32(PNATState pData, void *a)
 	element->qh_rlink = 0;
 }
 
-#endif /* SIZEOF_CHAR_P == 8 */
+#endif /* SIZEOF_CHAR_P == 8 && !VBOX_WITH_BSD_REASS */
 
 struct quehead {
 	struct quehead *qh_link;

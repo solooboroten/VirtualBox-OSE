@@ -1,4 +1,4 @@
-; $Id: VMMR0A.asm $
+; $Id: VMMR0A.asm 29865 2008-04-18 15:16:47Z umoeller $
 ;; @file
 ; VMM - R0 assembly routines.
 ;

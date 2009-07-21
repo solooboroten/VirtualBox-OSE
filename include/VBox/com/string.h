@@ -1,4 +1,4 @@
-/* $Id: string.h $ */
+/* $Id: string.h 31546 2008-06-02 23:10:25Z bird $ */
 
 /** @file
  * MS COM / XPCOM Abstraction Layer:

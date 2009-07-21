@@ -1,4 +1,4 @@
-/* $Id: NetworkAdapterImpl.h $ */
+/* $Id: NetworkAdapterImpl.h 33724 2008-07-26 02:11:55Z bird $ */
 
 /** @file
  *

@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.h $ */
+/* $Id: MachineImpl.h 47188 2009-05-12 12:18:14Z klaus $ */
 
 /** @file
  *
@@ -738,6 +738,8 @@ protected:
     HRESULT saveHardDisks (settings::Key &aNode);
 
     HRESULT saveStateSettings (int aFlags);
+
+    HRESULT getExtraData(const Utf8Str &aKey, Utf8Str &aValue);
 
     HRESULT wipeOutImmutableDiffs();
 

@@ -1,4 +1,4 @@
-/* $Id: rtProcInitExePath-os2.cpp $ */
+/* $Id: rtProcInitExePath-os2.cpp 35671 2008-08-29 17:14:02Z bird $ */
 /** @file
  * IPRT - rtProcInitName, OS/2.
  */

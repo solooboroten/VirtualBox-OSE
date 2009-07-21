@@ -1,4 +1,4 @@
-/* $Id: RTErrConvertFromNtStatus.cpp $ */
+/* $Id: RTErrConvertFromNtStatus.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
 /** @file
  * IPRT - Convert NT status codes to iprt status codes.
  */

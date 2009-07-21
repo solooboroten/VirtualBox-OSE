@@ -1,4 +1,4 @@
-/* $Id: errmsgxpcom.cpp $ */
+/* $Id: errmsgxpcom.cpp 30640 2008-05-08 12:45:22Z bird $ */
 /** @file
  * IPRT - Status code messages for XPCOM.
  */

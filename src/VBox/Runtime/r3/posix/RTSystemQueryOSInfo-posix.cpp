@@ -1,4 +1,4 @@
-/* $Id: RTSystemQueryOSInfo-posix.cpp $ */
+/* $Id: RTSystemQueryOSInfo-posix.cpp 41481 2009-01-08 16:39:31Z frank $ */
 /** @file
  * IPRT - RTSystemQueryOSInfo, POSIX implementation.
  */

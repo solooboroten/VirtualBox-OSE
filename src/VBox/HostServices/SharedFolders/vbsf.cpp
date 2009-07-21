@@ -172,6 +172,69 @@ end:
     return rc;
 }
 
+static int vbsfPathCheck(const char *pUtf8Path, size_t cbPath)
+{
+    int rc = VINF_SUCCESS;
+
+    /* The pUtf8Path is what the guest sent. Verify that the path is within the root.
+     * Count '..' and other path components and check that we do not go over the root.
+     */
+
+    size_t i = 0;
+    int cComponents = 0; /* How many normal path components. */
+    int cParentDirs = 0; /* How many '..' components. */
+
+    for (;;)
+    {
+        /* Skip leading path delimiters. */
+        while (   i < cbPath
+               && (pUtf8Path[i] == '\\' || pUtf8Path[i] == '/'))
+            i++;
+
+        if (i >= cbPath)
+            break;
+
+        /* Check if that is a dot component. */
+        int cDots = 0;
+        while (i < cbPath && pUtf8Path[i] == '.')
+        {
+            cDots++;
+            i++;
+        }
+
+        if (   cDots >= 2 /* Consider all multidots sequences as a 'parent dir'. */
+            && (i >= cbPath || (pUtf8Path[i] == '\\' || pUtf8Path[i] == '/')))
+        {
+            cParentDirs++;
+        }
+        else if (   cDots == 1
+                 && (i >= cbPath || (pUtf8Path[i] == '\\' || pUtf8Path[i] == '/')))
+        {
+            /* Single dot, nothing changes. */
+        }
+        else
+        {
+            /* Skip this component. */
+            while (   i < cbPath
+                   && (pUtf8Path[i] != '\\' && pUtf8Path[i] != '/'))
+                i++;
+
+            cComponents++;
+        }
+
+        Assert(i >= cbPath || (pUtf8Path[i] == '\\' || pUtf8Path[i] == '/'));
+
+        /* Verify counters for every component. */
+        if (cParentDirs > cComponents)
+        {
+            rc = VERR_INVALID_NAME;
+            break;
+        }
+    }
+
+    return rc;
+}
+
 static int vbsfBuildFullPath (SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLSTRING *pPath,
                               uint32_t cbPath, char **ppszFullPath, uint32_t *pcbFullPathRoot, bool fWildCard = false)
 {
@@ -194,8 +257,15 @@ static int vbsfBuildFullPath (SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLSTRING
         int rc;
         char *utf8Root;
 
-        rc = RTUtf16ToUtf8 (pwszRoot, &utf8Root);
+        /* Verify that the path is under the root directory. */
+        rc = vbsfPathCheck((char *)&pPath->String.utf8[0], pPath->u16Length);
+
         if (VBOX_SUCCESS (rc))
+        {
+            rc = RTUtf16ToUtf8 (pwszRoot, &utf8Root);
+        }
+
+        if (RT_SUCCESS (rc))
         {
             size_t cbUtf8Root, cbUtf8FullPath;
             char *utf8FullPath;
@@ -339,13 +409,25 @@ static int vbsfBuildFullPath (SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLSTRING
                 {
                     AssertFailed();
 #ifdef RT_OS_DARWIN
-                	RTMemFree(pPath);
-                	pPath = pPathParameter;
+                    RTMemFree(pPath);
+                    pPath = pPathParameter;
 #endif
                     return rc;
                 }
 
                 uint32_t l = strlen (dst);
+
+                /* Verify that the path is under the root directory. */
+                rc = vbsfPathCheck(dst, l);
+
+                if (RT_FAILURE(rc))
+                {
+#ifdef RT_OS_DARWIN
+                    RTMemFree(pPath);
+                    pPath = pPathParameter;
+#endif
+                    return rc;
+                }
 
                 cb -= l;
                 dst += l;
@@ -1092,11 +1174,16 @@ int vbsfCreate (SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLSTRING *pPath, uint3
 
             rc = VINF_SUCCESS;
 
-            /* write access requested? */
-            if (pParms->CreateFlags & (  SHFL_CF_ACT_REPLACE_IF_EXISTS
-                                       | SHFL_CF_ACT_OVERWRITE_IF_EXISTS
-                                       | SHFL_CF_ACT_CREATE_IF_NEW
-                                       | SHFL_CF_ACCESS_WRITE))
+            /* Note: do not check the SHFL_CF_ACCESS_WRITE here, only check if the open operation
+             * will cause changes.
+             *
+             * Actual operations (write, set attr, etc), which can write to a shared folder, have
+             * the check and will return VERR_WRITE_PROTECT if the folder is not writable.
+             */
+            if (   (pParms->CreateFlags & SHFL_CF_ACT_MASK_IF_EXISTS) == SHFL_CF_ACT_REPLACE_IF_EXISTS
+                || (pParms->CreateFlags & SHFL_CF_ACT_MASK_IF_EXISTS) == SHFL_CF_ACT_OVERWRITE_IF_EXISTS
+                || (pParms->CreateFlags & SHFL_CF_ACT_MASK_IF_NEW) == SHFL_CF_ACT_CREATE_IF_NEW
+               )
             {
                 /* is the guest allowed to write to this share? */
                 bool fWritable;

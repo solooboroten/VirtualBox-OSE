@@ -1,4 +1,4 @@
-/** $Id: VBoxSFFind.cpp $ */
+/** $Id: VBoxSFFind.cpp 22929 2007-07-16 18:47:26Z bird $ */
 /** @file
  * VBoxSF - OS/2 Shared Folders, Find File IFS EPs.
  */

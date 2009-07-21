@@ -1,4 +1,4 @@
-/* $Id: VBoxTray.h $ */
+/* $Id: VBoxTray.h 33579 2008-07-22 09:00:44Z bird $ */
 /** @file
  * VBoxService - Guest Additions Service, Internal Header.
  */

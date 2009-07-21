@@ -1,4 +1,4 @@
-/* $Id: PDMDevice.cpp $ */
+/* $Id: PDMDevice.cpp 40530 2008-12-08 20:07:37Z frank $ */
 /** @file
  * PDM - Pluggable Device and Driver Manager, Device parts.
  */

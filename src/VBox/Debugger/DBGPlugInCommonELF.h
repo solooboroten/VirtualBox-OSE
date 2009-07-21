@@ -1,4 +1,4 @@
-/* $Id: DBGPlugInCommonELF.h $ */
+/* $Id: DBGPlugInCommonELF.h 30827 2008-05-14 19:49:42Z bird $ */
 /** @file
  * DBGPlugInCommonELF - Common code for dealing with ELF images, Header.
  */

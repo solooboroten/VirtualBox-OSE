@@ -1,4 +1,4 @@
-/* $Id: tstNoCrt-1.cpp $ */
+/* $Id: tstNoCrt-1.cpp 31773 2008-06-08 03:02:19Z bird $ */
 /** @file
  * IPRT Testcase - Testcase for the No-CRT assembly bits.
  */

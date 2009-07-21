@@ -1,4 +1,4 @@
-/* $Id: semeventmulti-r0drv-solaris.c $ */
+/* $Id: semeventmulti-r0drv-solaris.c 46820 2009-05-04 16:51:37Z ramshankar $ */
 /** @file
  * IPRT - Multiple Release Event Semaphores, Ring-0 Driver, Solaris.
  */
@@ -136,7 +136,7 @@ RTDECL(int)  RTSemEventMultiSignal(RTSEMEVENTMULTI EventMultiSem)
     {
         ASMAtomicXchgU32(&pThis->cWaking, pThis->cWaking + pThis->cWaiters);
         ASMAtomicXchgU32(&pThis->cWaiters, 0);
-        cv_signal(&pThis->Cnd);
+        cv_broadcast(&pThis->Cnd);
     }
 
     mutex_exit(&pThis->Mtx);

@@ -1,4 +1,4 @@
-; $Id: assertA-r0drv-os2.asm $
+; $Id: assertA-r0drv-os2.asm 29999 2008-04-21 20:53:28Z frank $
 ;; @file
 ; IPRT - DevHelp_GetDOSVar, Ring-0 Driver, OS/2.
 ;

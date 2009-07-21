@@ -1,4 +1,4 @@
-/** $Id: VBoxSFInternal.h $ */
+/** $Id: VBoxSFInternal.h 22929 2007-07-16 18:47:26Z bird $ */
 /** @file
  * VBoxSF - OS/2 Shared Folder IFS, Internal Header.
  */

@@ -1,4 +1,4 @@
-/* $Id: DBGPlugInCommonELF.cpp $ */
+/* $Id: DBGPlugInCommonELF.cpp 30987 2008-05-19 18:57:04Z frank $ */
 /** @file
  * DBGPlugInCommonELF - Common code for dealing with ELF images.
  */

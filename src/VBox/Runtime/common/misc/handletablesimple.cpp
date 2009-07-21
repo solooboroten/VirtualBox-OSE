@@ -1,4 +1,4 @@
-/* $Id: handletablesimple.cpp $ */
+/* $Id: handletablesimple.cpp 33566 2008-07-21 18:43:39Z bird $ */
 /** @file
  * IPRT - Handle Tables.
  */

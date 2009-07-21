@@ -1,4 +1,4 @@
-; $Id: tstAsm.mac $
+; $Id: tstAsm.mac 31037 2008-05-20 16:48:02Z bird $
 ;; @file
 ; Disassembly testcase - Common header for the xREG macros.
 ;

@@ -1,4 +1,4 @@
-/* $Id: SUPLib-solaris.cpp $ */
+/* $Id: SUPLib-solaris.cpp 35466 2008-08-27 22:21:47Z bird $ */
 /** @file
  * VirtualBox Support Library - Solaris specific parts.
  */

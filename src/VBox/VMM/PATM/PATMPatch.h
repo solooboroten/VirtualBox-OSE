@@ -1,4 +1,4 @@
-/* $Id: PATMPatch.h $ */
+/* $Id: PATMPatch.h 31403 2008-05-29 15:23:15Z sandervl $ */
 /** @file
  * PATMPatch - Internal header file.
  */

@@ -1,4 +1,4 @@
-/** $Id: VBoxServiceTimeSync.cpp $ */
+/** $Id: VBoxServiceTimeSync.cpp 49466 2009-07-02 15:39:51Z andy $ */
 /** @file
  * VBoxService - Guest Additions TimeSync Service.
  */
@@ -84,6 +84,8 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #ifdef RT_OS_WINDOWS
+# include <windows.h>
+# include <winbase.h>
 #else
 # include <unistd.h>
 # include <errno.h>
@@ -124,6 +126,17 @@ static uint32_t g_TimeSyncMaxLatency = 250;
 
 /** The semaphore we're blocking on. */
 static RTSEMEVENTMULTI g_TimeSyncEvent = NIL_RTSEMEVENTMULTI;
+
+#ifdef RT_OS_WINDOWS
+/** Process token. */
+static HANDLE g_hTokenProcess = NULL;
+/** Old token privileges. */
+static TOKEN_PRIVILEGES g_TkOldPrivileges;
+/** Backup values for time adjustment. */
+static DWORD g_dwWinTimeAdjustment;
+static DWORD g_dwWinTimeIncrement;
+static BOOL g_bWinTimeAdjustmentDisabled;
+#endif
 
 
 /** @copydoc VBOXSERVICE::pfnPreInit */
@@ -169,6 +182,60 @@ static DECLCALLBACK(int) VBoxServiceTimeSyncInit(void)
 
     int rc = RTSemEventMultiCreate(&g_TimeSyncEvent);
     AssertRC(rc);
+#ifdef RT_OS_WINDOWS
+    if (RT_SUCCESS(rc))
+    {
+        /*
+         * Adjust priviledges of this process so we can make system time adjustments.
+         */
+        if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &g_hTokenProcess))
+        {
+            TOKEN_PRIVILEGES tkPriv;
+            ZeroMemory(&tkPriv, sizeof(TOKEN_PRIVILEGES));
+            tkPriv.PrivilegeCount = 1;
+            tkPriv.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+            if (LookupPrivilegeValue(NULL, SE_SYSTEMTIME_NAME, &tkPriv.Privileges[0].Luid))
+            {
+                DWORD cbRet = sizeof(g_TkOldPrivileges);
+                if (!AdjustTokenPrivileges(g_hTokenProcess, FALSE, &tkPriv, sizeof(TOKEN_PRIVILEGES), &g_TkOldPrivileges, &cbRet))
+                {
+                    DWORD dwErr = GetLastError();
+                    rc = RTErrConvertFromWin32(dwErr);
+                    VBoxServiceError("Adjusting token privileges (SE_SYSTEMTIME_NAME) failed with status code %u/%Rrc!\n", dwErr, rc);
+                }
+            }
+            else
+            {
+                DWORD dwErr = GetLastError();
+                rc = RTErrConvertFromWin32(dwErr);
+                VBoxServiceError("Looking up token privileges (SE_SYSTEMTIME_NAME) failed with status code %u/%Rrc!\n", dwErr, rc);
+            }
+
+            if (RT_FAILURE(rc))
+            {
+                CloseHandle(g_hTokenProcess);
+                g_hTokenProcess = NULL;
+            }
+        }
+        else
+        {
+            DWORD dwErr = GetLastError();
+            rc = RTErrConvertFromWin32(dwErr);
+            VBoxServiceError("Opening process token (SE_SYSTEMTIME_NAME) failed with status code %u/%Rrc!\n", dwErr, rc);
+            g_hTokenProcess = NULL;
+        }
+    }
+
+    if (!::GetSystemTimeAdjustment(&g_dwWinTimeAdjustment, &g_dwWinTimeIncrement, &g_bWinTimeAdjustmentDisabled))
+    {
+        DWORD dwErr = GetLastError();
+        rc = RTErrConvertFromWin32(dwErr);
+        VBoxServiceError("Could not get time adjustment values! Last error: %ld!\n", dwErr);
+    }
+    else VBoxServiceVerbose(3, "Windows time adjustment: Initially %ld (100ns) units per %ld (100 ns) units interval, disabled=%d\n", 
+                            g_dwWinTimeAdjustment, g_dwWinTimeIncrement, g_bWinTimeAdjustmentDisabled ? 1 : 0);
+#endif /* RT_OS_WINDOWS */
+
     return rc;
 }
 
@@ -179,6 +246,12 @@ DECLCALLBACK(int) VBoxServiceTimeSyncWorker(bool volatile *pfShutdown)
     RTTIME Time;
     char sz[64];
     int rc = VINF_SUCCESS;
+
+    /*
+     * Tell the control thread that it can continue
+     * spawning services.
+     */
+    RTThreadUserSignal(RTThreadSelf());
 
     unsigned cErrors = 0;
     for (;;)
@@ -228,19 +301,74 @@ DECLCALLBACK(int) VBoxServiceTimeSyncWorker(bool volatile *pfShutdown)
                                        RTTimeToString(RTTimeExplode(&Time, &GuestNow), sz, sizeof(sz)),
                                        &Drift);
                 }
-                if (RTTimeSpecGetMilli(&AbsDrift) > MinAdjust)
+
+                uint32_t AbsDriftMilli = RTTimeSpecGetMilli(&AbsDrift);
+                if (AbsDriftMilli > MinAdjust)
                 {
                     /*
-                     * The drift is to big, we have to make adjustments. :-/
+                     * The drift is too big, we have to make adjustments. :-/
                      * If we've got adjtime around, try that first - most
                      * *NIX systems have it. Fall back on settimeofday.
                      */
 #ifdef RT_OS_WINDOWS
-                    /* just make sure it compiles for now, but later:
-                     SetSystemTimeAdjustment and fall back on SetSystemTime.
-                     */
-                    AssertFatalFailed();
-#else
+                    DWORD dwWinTimeAdjustment, dwWinNewTimeAdjustment, dwWinTimeIncrement;
+                    BOOL bWinTimeAdjustmentDisabled;
+                    if (!::GetSystemTimeAdjustment(&dwWinTimeAdjustment, &dwWinTimeIncrement, &bWinTimeAdjustmentDisabled))
+                    {
+                        VBoxServiceError("GetSystemTimeAdjustment failed, error=%ld\n", GetLastError());
+                    }
+                    else
+                    {
+                        DWORD dwDiffMax = g_dwWinTimeAdjustment * 0.50;
+                        DWORD dwDiffNew = dwWinTimeAdjustment * 0.10;
+
+                        if (RTTimeSpecGetMilli(&Drift) > 0)
+                        {
+                            dwWinNewTimeAdjustment = dwWinTimeAdjustment + dwDiffNew;
+                            if (dwWinNewTimeAdjustment > (g_dwWinTimeAdjustment + dwDiffMax))
+                            {    
+                                dwWinNewTimeAdjustment = g_dwWinTimeAdjustment + dwDiffMax;
+                                dwDiffNew = dwDiffMax;
+                            }
+                        }
+                        else 
+                        {
+                            dwWinNewTimeAdjustment = dwWinTimeAdjustment - dwDiffNew;
+                            if (dwWinNewTimeAdjustment < (g_dwWinTimeAdjustment - dwDiffMax))
+                            {    
+                                dwWinNewTimeAdjustment = g_dwWinTimeAdjustment - dwDiffMax;
+                                dwDiffNew = dwDiffMax;
+                            }
+                        }
+
+                        VBoxServiceVerbose(3, "Windows time adjustment: Drift=%ldms\n", RTTimeSpecGetMilli(&Drift));
+                        VBoxServiceVerbose(3, "Windows time adjustment: OrgTA=%ld, CurTA=%ld, NewTA=%ld, DiffNew=%ld, DiffMax=%ld\n", 
+                                           g_dwWinTimeAdjustment, dwWinTimeAdjustment, dwWinNewTimeAdjustment, dwDiffNew, dwDiffMax);
+                       
+                        /* Is AbsDrift way too big? Then a minimum adjustment via SetSystemTimeAdjustment() would take ages.
+                           So set the time in a hard manner. */
+                        if (AbsDriftMilli > (60 * 1000 * 20)) /** @todo 20 minutes here hardcoded here. Needs configurable parameter later. */
+                        {
+                            SYSTEMTIME st = {0};
+                            FILETIME ft = {0};
+
+                            VBoxServiceVerbose(3, "Windows time adjustment: Setting system time directly.\n");
+
+                            RTTimeSpecGetNtFileTime(&HostNow, &ft);
+                            if (FALSE == FileTimeToSystemTime(&ft,&st))
+                                VBoxServiceError("Cannot convert system times, error=%ld\n", GetLastError());
+
+                            if (!::SetSystemTime(&st))
+                                VBoxServiceError("SetSystemTime failed, error=%ld\n", GetLastError());
+                        }
+                        else
+                        {
+                            if (!::SetSystemTimeAdjustment(dwWinNewTimeAdjustment, FALSE /* Periodic adjustments enabled. */))
+                                VBoxServiceError("SetSystemTimeAdjustment failed, error=%ld\n", GetLastError());       
+                        }
+                    }
+
+#else  /* !RT_OS_WINDOWS */
                     struct timeval tv;
 # if !defined(RT_OS_OS2) /* PORTME */
                     RTTimeSpecGetTimeval(&Drift, &tv);
@@ -276,6 +404,13 @@ DECLCALLBACK(int) VBoxServiceTimeSyncWorker(bool volatile *pfShutdown)
                         else if (cErrors++ < 10)
                             VBoxServiceError("gettimeofday failed; errno=%d: %s\n", errno, strerror(errno));
                     }
+#endif /* !RT_OS_WINDOWS */
+                }
+                else /* The time delta is <= MinAdjust, so don't do anything here (anymore). */
+                {
+#ifdef RT_OS_WINDOWS
+                    if (::SetSystemTimeAdjustment(0, TRUE /* Periodic adjustments disabled. */))
+                        VBoxServiceVerbose(3, "Windows Time Adjustment is now disabled.\n");
 #endif /* !RT_OS_WINDOWS */
                 }
                 break;
@@ -319,8 +454,27 @@ static DECLCALLBACK(void) VBoxServiceTimeSyncStop(void)
 /** @copydoc VBOXSERVICE::pfnTerm */
 static DECLCALLBACK(void) VBoxServiceTimeSyncTerm(void)
 {
-    RTSemEventMultiDestroy(g_TimeSyncEvent);
-    g_TimeSyncEvent = NIL_RTSEMEVENTMULTI;
+#ifdef RT_OS_WINDOWS
+    /*
+     * Restore the SE_SYSTEMTIME_NAME token privileges (if init succeeded).
+     */
+    if (g_hTokenProcess)
+    {
+        if (!AdjustTokenPrivileges(g_hTokenProcess, FALSE, &g_TkOldPrivileges, sizeof(TOKEN_PRIVILEGES), NULL, NULL))
+        {
+            DWORD dwErr = GetLastError();
+            VBoxServiceError("Restoring token privileges (SE_SYSTEMTIME_NAME) failed with code %u!\n", dwErr);
+        }
+        CloseHandle(g_hTokenProcess);
+        g_hTokenProcess = NULL;
+    }
+#endif /* !RT_OS_WINDOWS */
+
+    if (g_TimeSyncEvent != NIL_RTSEMEVENTMULTI)
+    {
+        RTSemEventMultiDestroy(g_TimeSyncEvent);
+        g_TimeSyncEvent = NIL_RTSEMEVENTMULTI;
+    }
 }
 
 
@@ -340,7 +494,7 @@ VBOXSERVICE g_TimeSync =
     /* pszOptions. */
     "    --timesync-interval Specifies the interval at which to synchronize the\n"
     "                        time with the host. The default is 10000 ms.\n"
-    "    --timesync-min-adjust      The minimum absolute drift drift value measured\n"
+    "    --timesync-min-adjust      The minimum absolute drift value measured\n"
     "                        in milliseconds to make adjustments for.\n"
     "                        The default is 1000 ms on OS/2 and 100 ms elsewhere.\n"
     "    --timesync-latency-factor  The factor to multiply the time query latency\n"

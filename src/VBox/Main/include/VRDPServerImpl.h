@@ -1,4 +1,4 @@
-/* $Id: VRDPServerImpl.h $ */
+/* $Id: VRDPServerImpl.h 36079 2008-09-05 12:28:36Z sunlover $ */
 
 /** @file
  *

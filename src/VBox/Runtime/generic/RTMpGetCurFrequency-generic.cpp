@@ -1,4 +1,4 @@
-/* $Id: RTMpGetCurFrequency-generic.cpp $ */
+/* $Id: RTMpGetCurFrequency-generic.cpp 33085 2008-07-09 14:08:23Z bird $ */
 /** @file
  * IPRT - Multiprocessor, Generic RTMpGetCurFrequency.
  */

@@ -1,4 +1,4 @@
-/* $Id: darwin-pasteboard.cpp $ */
+/* $Id: darwin-pasteboard.cpp 30013 2008-04-22 09:12:54Z poetzsch $ */
 /** @file
  * Shared Clipboard: Mac OS X host implementation.
  */

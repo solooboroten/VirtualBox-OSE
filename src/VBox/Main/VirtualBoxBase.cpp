@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxBase.cpp $ */
+/* $Id: VirtualBoxBase.cpp 43145 2009-02-20 14:51:51Z dmik $ */
 
 /** @file
  *

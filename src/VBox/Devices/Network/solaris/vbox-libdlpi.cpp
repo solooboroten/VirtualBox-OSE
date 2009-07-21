@@ -1,4 +1,4 @@
-/** $Id: vbox-libdlpi.cpp $ */
+/** $Id: vbox-libdlpi.cpp 31247 2008-05-26 13:48:23Z klaus $ */
 /** @file
  * Dynamically load libdpli & symbols on Solaris hosts, Internal header.
  */

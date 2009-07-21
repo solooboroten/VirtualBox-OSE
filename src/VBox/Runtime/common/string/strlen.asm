@@ -1,4 +1,4 @@
-; $Id: strlen.asm $
+; $Id: strlen.asm 31773 2008-06-08 03:02:19Z bird $
 ;; @file
 ; IPRT - No-CRT strlen - AMD64 & X86.
 ;

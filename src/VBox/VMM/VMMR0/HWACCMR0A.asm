@@ -1,4 +1,4 @@
-; $Id: HWACCMR0A.asm $
+; $Id: HWACCMR0A.asm 50064 2009-07-14 11:24:51Z sandervl $
 ;; @file
 ; VMXM - R0 vmx helpers
 ;
@@ -1169,11 +1169,7 @@ BEGINPROC SVMInvlpgA
     mov     rax, rdi
     mov     rcx, rsi
  %else
-    ; from http://www.cs.cmu.edu/~fp/courses/15213-s06/misc/asm64-handout.pdf:
-    ; ``Perhaps unexpectedly, instructions that move or generate 32-bit register
-    ;   values also set the upper 32 bits of the register to zero. Consequently
-    ;   there is no need for an instruction movzlq.''
-    mov     eax, ecx
+    mov     rax, rcx
     mov     rcx, rdx
  %endif
 %else

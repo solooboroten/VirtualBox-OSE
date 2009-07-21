@@ -1,4 +1,4 @@
-/* $Id: avlou32.cpp $ */
+/* $Id: avlou32.cpp 31405 2008-05-29 15:30:59Z bird $ */
 /** @file
  * IPRT - AVL tree, uint_32, unique keys, offset pointers.
  */

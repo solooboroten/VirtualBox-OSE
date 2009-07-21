@@ -1,4 +1,4 @@
-/* $Id: tstMicro.cpp $ */
+/* $Id: tstMicro.cpp 35653 2008-08-29 14:21:03Z bird $ */
 /** @file
  * Micro Testcase, profiling special CPU operations.
  */

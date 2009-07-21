@@ -1,4 +1,4 @@
-/* $Id: HostImpl.cpp $ */
+/* $Id: HostImpl.cpp 40361 2008-12-04 15:03:33Z klaus $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */

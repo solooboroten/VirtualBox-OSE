@@ -1,4 +1,4 @@
-/* $Id: HWACCM.cpp $ */
+/* $Id: HWACCM.cpp 38573 2008-10-29 09:03:47Z sandervl $ */
 /** @file
  * HWACCM - Intel/AMD VM Hardware Support Manager
  */

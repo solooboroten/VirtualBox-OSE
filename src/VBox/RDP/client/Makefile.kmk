@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 36253 2008-09-09 02:02:27Z bird $
 ## @file
 # VBox - rdesktop with VRDP enhancements sub-makefile.
 #

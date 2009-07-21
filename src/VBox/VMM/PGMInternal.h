@@ -1,4 +1,4 @@
-/* $Id: PGMInternal.h $ */
+/* $Id: PGMInternal.h 41936 2009-01-22 17:46:31Z bird $ */
 /** @file
  * PGM - Internal header file.
  */

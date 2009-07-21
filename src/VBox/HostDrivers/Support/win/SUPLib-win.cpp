@@ -1,4 +1,4 @@
-/* $Id: SUPLib-win.cpp $ */
+/* $Id: SUPLib-win.cpp 35466 2008-08-27 22:21:47Z bird $ */
 /** @file
  * VirtualBox Support Library - Windows NT specific parts.
  */

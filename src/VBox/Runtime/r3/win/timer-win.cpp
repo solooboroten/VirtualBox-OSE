@@ -1,4 +1,4 @@
-/* $Id: timer-win.cpp $ */
+/* $Id: timer-win.cpp 32376 2008-06-26 11:56:57Z bird $ */
 /** @file
  * IPRT - Timer.
  */

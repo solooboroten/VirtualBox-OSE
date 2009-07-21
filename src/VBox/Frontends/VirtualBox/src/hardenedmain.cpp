@@ -1,4 +1,4 @@
-/* $Id: hardenedmain.cpp $ */
+/* $Id: hardenedmain.cpp 35466 2008-08-27 22:21:47Z bird $ */
 /** @file
  * VirtualBox3 - Hardened main().
  */

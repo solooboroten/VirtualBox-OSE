@@ -1,4 +1,4 @@
-; $Id: floorl.asm $
+; $Id: floorl.asm 29999 2008-04-21 20:53:28Z frank $
 ;; @file
 ; IPRT - No-CRT floorl - AMD64 & X86.
 ;

@@ -5,7 +5,7 @@
  *
  * Initial version by Michael Brown <mbrown@fensystems.co.uk>, January 2004.
  *
- * $Id: callbacks_arch.h $
+ * $Id: callbacks_arch.h 16040 2006-12-01 13:25:05Z klaus $
  */
 
 #ifndef CALLBACKS_ARCH_H

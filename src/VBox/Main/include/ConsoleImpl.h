@@ -482,6 +482,12 @@ private:
     static DECLCALLBACK(void)   saveStateFileExec (PSSMHANDLE pSSM, void *pvUser);
     static DECLCALLBACK(int)    loadStateFileExec (PSSMHANDLE pSSM, void *pvUser, uint32_t u32Version);
 
+#ifdef VBOX_WITH_GUEST_PROPS
+    bool enabledGuestPropertiesVRDP (void);
+    void updateGuestPropertiesVRDPLogon (uint32_t u32ClientId, const char *pszUser, const char *pszDomain);
+    void updateGuestPropertiesVRDPDisconnect (uint32_t u32ClientId);
+#endif
+
     bool mSavedStateDataLoaded : 1;
 
     const ComPtr <IMachine> mMachine;

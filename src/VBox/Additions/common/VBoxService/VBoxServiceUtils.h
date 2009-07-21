@@ -1,10 +1,10 @@
-/* $Id: VBoxVMInfoNet.h $ */
+/* $Id: VBoxServiceUtils.h 49448 2009-07-02 13:24:16Z andy $ */
 /** @file
- * VBoxVMInfoNet - Network information for the host.
+ * VBoxServiceUtils - Guest Additions Services (Utilities).
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -19,10 +19,19 @@
  * additional information or have any questions.
  */
 
-#ifndef ___VBOXSERVICEVMINFONET_H
-#define ___VBOXSERVICEVMINFONET_H
+#ifndef ___VBoxServiceUtils_h
+#define ___VBoxServiceUtils_h
 
-int vboxVMInfoNet (VBOXINFORMATIONCONTEXT* a_pCtx);
+#include "VBoxServiceInternal.h"
 
-#endif /* !___VBOXSERVICEVMINFONET_H */
+#ifdef VBOX_WITH_GUEST_PROPS
+int VboxServiceWritePropInt(uint32_t uiClientID, const char *pszKey, int iValue);
+int VboxServiceWriteProp(uint32_t uiClientID, const char *pszKey, const char *pszValue);
+#endif
+#ifdef RT_OS_WINDOWS
+/** Gets a pre-formatted version string from the VS_FIXEDFILEINFO table. */
+BOOL VboxServiceGetFileVersionString(LPCWSTR pszPath, LPCWSTR pszFileName, char* pszVersion, UINT uiSize);
+#endif
+
+#endif
 

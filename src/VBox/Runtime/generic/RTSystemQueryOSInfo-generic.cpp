@@ -1,4 +1,4 @@
-/* $Id: RTSystemQueryOSInfo-generic.cpp $ */
+/* $Id: RTSystemQueryOSInfo-generic.cpp 34518 2008-08-12 11:25:18Z bird $ */
 /** @file
  * IPRT - RTSystemQueryOSInfo, generic stub.
  */

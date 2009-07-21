@@ -1,4 +1,4 @@
-/* $Id: VMMCodingGuidelines.cpp $ */
+/* $Id: VMMCodingGuidelines.cpp 31380 2008-05-29 09:38:38Z sandervl $ */
 /** @file
  * VMM - Coding Guidelines.
  */

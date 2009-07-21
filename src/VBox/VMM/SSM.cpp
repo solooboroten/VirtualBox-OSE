@@ -1,4 +1,4 @@
-/* $Id: SSM.cpp $ */
+/* $Id: SSM.cpp 35827 2008-09-01 17:33:18Z sandervl $ */
 /** @file
  * SSM - Saved State Manager.
  */

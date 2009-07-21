@@ -1,4 +1,4 @@
-/* $Id: strchr_alias.c $ */
+/* $Id: strchr_alias.c 31774 2008-06-08 03:04:08Z bird $ */
 /** @file
  * IPRT - No-CRT strchr() alias for gcc.
  */

@@ -1,4 +1,4 @@
-; $Id: VBoxGuestA-os2.asm $
+; $Id: VBoxGuestA-os2.asm 29865 2008-04-18 15:16:47Z umoeller $
 ;; @file
 ; VBoxGuest - OS/2 assembly file, the first file in the link.
 ;

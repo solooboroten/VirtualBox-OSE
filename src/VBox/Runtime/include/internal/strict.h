@@ -1,4 +1,4 @@
-/* $Id: strict.h $ */
+/* $Id: strict.h 30582 2008-05-07 12:16:29Z bird $ */
 /** @file
  * IPRT - Internal Header Defining Strictness Indicators.
  */

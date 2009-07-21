@@ -1,4 +1,4 @@
-/* $Id: PGMAllPhys.cpp $ */
+/* $Id: PGMAllPhys.cpp 44336 2009-03-13 10:26:08Z fmehnert $ */
 /** @file
  * PGM - Page Manager and Monitor, Physical Memory Addressing.
  */
@@ -1417,19 +1417,20 @@ PGMDECL(void) PGMPhysWrite(PVM pVM, RTGCPHYS GCPhys, const void *pvBuf, size_t c
                 /* Physical chunk in dynamically allocated range not present? */
                 if (RT_UNLIKELY(!PGM_PAGE_GET_HCPHYS(pPage)))
                 {
-                    int rc;
+                    int         rc;
+                    RTGCPHYS    GCPhysPage = pRam->GCPhys + off;
 #ifdef IN_RING3
                     if (fGrabbedLock)
                     {
                         pgmUnlock(pVM);
-                        rc = pgmr3PhysGrowRange(pVM, GCPhys);
+                        rc = pgmr3PhysGrowRange(pVM, GCPhysPage);
                         if (rc == VINF_SUCCESS)
-                            PGMPhysWrite(pVM, GCPhys, pvBuf, cbWrite); /* try again; can't assume pRam is still valid (paranoia) */
+                            PGMPhysWrite(pVM, GCPhysPage, pvBuf, cbWrite); /* try again; can't assume pRam is still valid (paranoia) */
                         return;
                     }
-                    rc = pgmr3PhysGrowRange(pVM, GCPhys);
+                    rc = pgmr3PhysGrowRange(pVM, GCPhysPage);
 #else
-                    rc = CTXALLMID(VMM, CallHost)(pVM, VMMCALLHOST_PGM_RAM_GROW_RANGE, GCPhys);
+                    rc = CTXALLMID(VMM, CallHost)(pVM, VMMCALLHOST_PGM_RAM_GROW_RANGE, GCPhysPage);
 #endif
                     if (rc != VINF_SUCCESS)
                         goto end;

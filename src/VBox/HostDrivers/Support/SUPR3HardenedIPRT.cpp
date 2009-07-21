@@ -1,4 +1,4 @@
-/* $Id: SUPR3HardenedIPRT.cpp $ */
+/* $Id: SUPR3HardenedIPRT.cpp 38335 2008-10-22 18:32:48Z frank $ */
 /** @file
  * VirtualBox Support Library - Hardened Support Routines using IPRT.
  */

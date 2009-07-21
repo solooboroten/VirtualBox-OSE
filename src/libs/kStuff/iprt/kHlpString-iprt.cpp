@@ -1,4 +1,4 @@
-/* $Id: kHlpString-iprt.cpp $ */
+/* $Id: kHlpString-iprt.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * kHlpString - String And Memory Routines, IPRT based implementation.
  */

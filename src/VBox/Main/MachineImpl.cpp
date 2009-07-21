@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp $ */
+/* $Id: MachineImpl.cpp 47188 2009-05-12 12:18:14Z klaus $ */
 /** @file
  * Implementation of IMachine in VBoxSVC.
  */
@@ -2210,6 +2210,16 @@ STDMETHODIMP Machine::GetExtraData (INPTR BSTR aKey, BSTR *aValue)
     if (!isConfigLocked())
         return S_OK;
 
+    Utf8Str val;
+    HRESULT rc = getExtraData(Utf8Str(aKey), val);
+    if (SUCCEEDED(rc))
+        val.cloneTo (aValue);
+
+    return rc;
+}
+
+HRESULT Machine::getExtraData(const Utf8Str &aKey, Utf8Str &aValue)
+{
     HRESULT rc = S_OK;
 
     try
@@ -2224,8 +2234,6 @@ STDMETHODIMP Machine::GetExtraData (INPTR BSTR aKey, BSTR *aValue)
         rc = VirtualBox::loadSettingsTree_Again (tree, file);
         CheckComRCReturnRC (rc);
 
-        const Utf8Str key = aKey;
-
         Key machineNode = tree.rootKey().key ("Machine");
         Key extraDataNode = machineNode.findKey ("ExtraData");
 
@@ -2236,10 +2244,9 @@ STDMETHODIMP Machine::GetExtraData (INPTR BSTR aKey, BSTR *aValue)
             for (Key::List::const_iterator it = items.begin();
                  it != items.end(); ++ it)
             {
-                if (key == (*it).stringValue ("name"))
+                if (aKey == (*it).stringValue ("name"))
                 {
-                    Bstr val = (*it).stringValue ("value");
-                    val.cloneTo (aValue);
+                    aValue = (*it).stringValue ("value");
                     break;
                 }
             }
@@ -10612,8 +10619,15 @@ HRESULT SessionMachine::setMachineState (MachineState_T aMachineState)
 
     if (deleteSavedState == true)
     {
-        Assert (!mSSData->mStateFilePath.isEmpty());
-        RTFileDelete (Utf8Str (mSSData->mStateFilePath));
+        /** @todo remove this API hack, and provide a clean way for
+         * detaching a saved state without deleting. */
+        Utf8Str val;
+        HRESULT rc2 = getExtraData("API/DiscardSavedStateKeepFile", val);
+        if (FAILED(rc2) || val != "1")
+        {
+            Assert (!mSSData->mStateFilePath.isEmpty());
+            RTFileDelete (Utf8Str (mSSData->mStateFilePath));
+        }
         mSSData->mStateFilePath.setNull();
         stsFlags |= SaveSTS_StateFilePath;
     }

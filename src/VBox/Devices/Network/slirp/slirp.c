@@ -16,10 +16,10 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
                                struct in_addr *pdns_addr,
                                const char **ppszDomain)
 {
-    int rc = 0;
-    FIXED_INFO *FixedInfo=NULL;
-    ULONG    BufLen;
-    DWORD    ret;
+    int  rc = 0;
+    FIXED_INFO *FixedInfo = NULL;
+    ULONG BufLen;
+    DWORD ret;
     IP_ADDR_STRING *pIPAddr;
     struct in_addr tmp_addr;
 
@@ -29,17 +29,21 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
     /** @todo: this API returns all DNS servers, no matter whether the
      * corresponding network adapter is disabled or not. Maybe replace
      * this by GetAdapterAddresses(), which is XP/Vista only though. */
-    if (ERROR_BUFFER_OVERFLOW == GetNetworkParams(FixedInfo, &BufLen)) {
-        if (FixedInfo) {
+    if (ERROR_BUFFER_OVERFLOW == GetNetworkParams(FixedInfo, &BufLen))
+    {
+        if (FixedInfo)
+        {
             GlobalFree(FixedInfo);
             FixedInfo = NULL;
         }
         FixedInfo = GlobalAlloc(GPTR, BufLen);
     }
 
-    if ((ret = GetNetworkParams(FixedInfo, &BufLen)) != ERROR_SUCCESS) {
+    if ((ret = GetNetworkParams(FixedInfo, &BufLen)) != ERROR_SUCCESS)
+    {
         Log(("GetNetworkParams failed. ret = %08x\n", (u_int)ret ));
-        if (FixedInfo) {
+        if (FixedInfo)
+        {
             GlobalFree(FixedInfo);
             FixedInfo = NULL;
         }
@@ -55,13 +59,14 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
     *pdns_addr = tmp_addr;
 
     pIPAddr = FixedInfo -> DnsServerList.Next;
-    while ( pIPAddr )
+    while (pIPAddr)
     {
         if (fVerbose)
             LogRel(("NAT: ignored DNS address: %s\n", pIPAddr ->IpAddress.String));
         pIPAddr = pIPAddr ->Next;
     }
-    if (FixedInfo) {
+    if (FixedInfo)
+    {
         GlobalFree(FixedInfo);
         FixedInfo = NULL;
     }
@@ -121,11 +126,13 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
         snprintf(buff, sizeof(buff), "%s/RESOLV2", etc);
         f = fopen(buff, "rt");
     }
-    if (!f) {
+    if (!f)
+    {
         snprintf(buff, sizeof(buff), "%s/RESOLV2", _PATH_ETC);
         f = fopen(buff, "rt");
     }
-    if (!f) {
+    if (!f)
+    {
         snprintf(buff, sizeof(buff), "%s/resolv.conf", _PATH_ETC);
         f = fopen(buff, "rt");
     }
@@ -138,8 +145,10 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
     if (ppszDomain)
         *ppszDomain = NULL;
     Log(("nat: DNS Servers:\n"));
-    while (fgets(buff, 512, f) != NULL) {
-        if (sscanf(buff, "nameserver%*[ \t]%256s", buff2) == 1) {
+    while (fgets(buff, 512, f) != NULL)
+    {
+        if (sscanf(buff, "nameserver%*[ \t]%256s", buff2) == 1)
+        {
             if (!inet_aton(buff2, &tmp_addr))
                 continue;
             if (tmp_addr.s_addr == loopback_addr.s_addr)
@@ -209,7 +218,7 @@ int slirp_init(PNATState *ppData, const char *pszNetAddr, uint32_t u32Netmask,
     memset(pData, '\0', sizeof(NATState));
     pData->fPassDomain = fPassDomain;
     pData->pvUser = pvUser;
-#if ARCH_BITS == 64
+#if ARCH_BITS == 64 && !defined(VBOX_WITH_BSD_REASS)
     pData->cpvHashUsed = 1;
 #endif
     tftp_prefix = pszTFTPPrefix;
@@ -282,7 +291,7 @@ void slirp_term(PNATState pData)
     if (pData->pszDomain)
         RTStrFree((char *)(void *)pData->pszDomain);
 
-#if ARCH_BITS == 64
+#if ARCH_BITS == 64 && !defined(VBOX_WITH_BSD_REASS)
     LogRel(("NAT: cpvHashUsed=%RU32 cpvHashCollisions=%RU32 cpvHashInserts=%RU64 cpvHashDone=%RU64\n",
             pData->cpvHashUsed, pData->cpvHashCollisions, pData->cpvHashInserts, pData->cpvHashDone));
 #endif
@@ -311,8 +320,8 @@ void slirp_term(PNATState pData)
 
 
 #define CONN_CANFSEND(so) (((so)->so_state & (SS_FCANTSENDMORE|SS_ISFCONNECTED)) == SS_ISFCONNECTED)
-#define CONN_CANFRCV(so) (((so)->so_state & (SS_FCANTRCVMORE|SS_ISFCONNECTED)) == SS_ISFCONNECTED)
-#define UPD_NFDS(x) if (nfds < (x)) nfds = (x)
+#define CONN_CANFRCV(so)  (((so)->so_state & (SS_FCANTRCVMORE|SS_ISFCONNECTED)) == SS_ISFCONNECTED)
+#define UPD_NFDS(x)       if (nfds < (x)) nfds = (x)
 
 /*
  * curtime kept to an accuracy of 1ms
@@ -338,6 +347,9 @@ static void updtime(PNATState pData)
 	   curtime++;
 }
 #endif
+#ifdef VBOX_WITH_BSD_REASS
+    int i;
+#endif /* VBOX_WITH_BSD_REASS */
 
 void slirp_select_fill(PNATState pData, int *pnfds,
                        fd_set *readfds, fd_set *writefds, fd_set *xfds)
@@ -357,8 +369,21 @@ void slirp_select_fill(PNATState pData, int *pnfds,
 		 * *_slowtimo needs calling if there are IP fragments
 		 * in the fragment queue, or there are TCP connections active
 		 */
+#ifndef VBOX_WITH_BSD_REASS
 		do_slowtimo = ((tcb.so_next != &tcb) ||
 			       ((struct ipasfrag *)&ipq != u32_to_ptr(pData, ipq.next, struct ipasfrag *)));
+#else /* !VBOX_WITH_BSD_REASS */
+    /* XXX: triggering of fragment expiration should be the same but use
+     * new macroses
+     */
+                for (i = 0; i < IPREASS_NHASH; i++) {
+                        if (!TAILQ_EMPTY(&ipq[i])) {
+                            do_slowtimo = 1;
+                            break;
+                        }
+                }
+                do_slowtimo |= (tcb.so_next != &tcb);
+#endif /* VBOX_WITH_BSD_REASS */
 
 		for (so = tcb.so_next; so != &tcb; so = so_next) {
 			so_next = so->so_next;
@@ -698,41 +723,44 @@ void arp_input(PNATState pData, const uint8_t *pkt, int pkt_len)
     uint32_t htip = ntohl(*(uint32_t*)ah->ar_tip);
 
     ar_op = ntohs(ah->ar_op);
-    switch(ar_op) {
-    case ARPOP_REQUEST:
-        if ((htip & pData->netmask) == ntohl(special_addr.s_addr)) {
-            if (   (htip & ~pData->netmask) == CTL_DNS
-                || (htip & ~pData->netmask) == CTL_ALIAS)
-                goto arp_ok;
-            for (ex_ptr = exec_list; ex_ptr; ex_ptr = ex_ptr->ex_next) {
-                if ((htip & ~pData->netmask) == ex_ptr->ex_addr)
+    switch(ar_op)
+    {
+        case ARPOP_REQUEST:
+            if ((htip & pData->netmask) == ntohl(special_addr.s_addr))
+            {
+                if (   (htip & ~pData->netmask) == CTL_DNS
+                    || (htip & ~pData->netmask) == CTL_ALIAS)
                     goto arp_ok;
-            }
-            return;
+                for (ex_ptr = exec_list; ex_ptr; ex_ptr = ex_ptr->ex_next)
+                {
+                    if ((htip & ~pData->netmask) == ex_ptr->ex_addr)
+                        goto arp_ok;
+                }
+                return;
         arp_ok:
-            /* XXX: make an ARP request to have the client address */
-            memcpy(client_ethaddr, eh->h_source, ETH_ALEN);
+                /* XXX: make an ARP request to have the client address */
+                memcpy(client_ethaddr, eh->h_source, ETH_ALEN);
 
-            /* ARP request for alias/dns mac address */
-            memcpy(reh->h_dest, pkt + ETH_ALEN, ETH_ALEN);
-            memcpy(reh->h_source, special_ethaddr, ETH_ALEN - 1);
-            reh->h_source[5] = ah->ar_tip[3];
-            reh->h_proto = htons(ETH_P_ARP);
+                /* ARP request for alias/dns mac address */
+                memcpy(reh->h_dest, pkt + ETH_ALEN, ETH_ALEN);
+                memcpy(reh->h_source, special_ethaddr, ETH_ALEN - 1);
+                reh->h_source[5] = ah->ar_tip[3];
+                reh->h_proto = htons(ETH_P_ARP);
 
-            rah->ar_hrd = htons(1);
-            rah->ar_pro = htons(ETH_P_IP);
-            rah->ar_hln = ETH_ALEN;
-            rah->ar_pln = 4;
-            rah->ar_op = htons(ARPOP_REPLY);
-            memcpy(rah->ar_sha, reh->h_source, ETH_ALEN);
-            memcpy(rah->ar_sip, ah->ar_tip, 4);
-            memcpy(rah->ar_tha, ah->ar_sha, ETH_ALEN);
-            memcpy(rah->ar_tip, ah->ar_sip, 4);
-            slirp_output(pData->pvUser, arp_reply, sizeof(arp_reply));
-        }
-        break;
-    default:
-        break;
+                rah->ar_hrd = htons(1);
+                rah->ar_pro = htons(ETH_P_IP);
+                rah->ar_hln = ETH_ALEN;
+                rah->ar_pln = 4;
+                rah->ar_op = htons(ARPOP_REPLY);
+                memcpy(rah->ar_sha, reh->h_source, ETH_ALEN);
+                memcpy(rah->ar_sip, ah->ar_tip, 4);
+                memcpy(rah->ar_tha, ah->ar_sha, ETH_ALEN);
+                memcpy(rah->ar_tip, ah->ar_sip, 4);
+                slirp_output(pData->pvUser, arp_reply, sizeof(arp_reply));
+            }
+            break;
+        default:
+            break;
     }
 }
 
@@ -795,11 +823,14 @@ void if_encap(PNATState pData, const uint8_t *ip_data, int ip_data_len)
 int slirp_redir(PNATState pData, int is_udp, int host_port,
                 struct in_addr guest_addr, int guest_port)
 {
-    if (is_udp) {
+    if (is_udp)
+    {
         if (!udp_listen(pData, htons(host_port), guest_addr.s_addr,
                         htons(guest_port), 0))
             return -1;
-    } else {
+    }
+    else
+    {
         if (!solisten(pData, htons(host_port), guest_addr.s_addr,
                       htons(guest_port), 0))
             return -1;

@@ -1,4 +1,4 @@
-/* $Id: VMMInternal.h $ */
+/* $Id: VMMInternal.h 37226 2008-10-01 07:15:16Z frank $ */
 /** @file
  * VMM - Internal header file.
  */

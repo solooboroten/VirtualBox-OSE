@@ -1,4 +1,4 @@
-/* $Id: TRPMGC.cpp $ */
+/* $Id: TRPMGC.cpp 34406 2008-08-08 23:31:54Z bird $ */
 /** @file
  * TRPM - The Trap Monitor, Guest Context
  */

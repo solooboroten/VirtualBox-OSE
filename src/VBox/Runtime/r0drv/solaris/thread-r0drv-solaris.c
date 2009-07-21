@@ -1,4 +1,4 @@
-/* $Id: thread-r0drv-solaris.c $ */
+/* $Id: thread-r0drv-solaris.c 29978 2008-04-21 17:24:28Z umoeller $ */
 /** @file
  * IPRT - Threads, Ring-0 Driver, Solaris.
  */

@@ -1,4 +1,4 @@
-/** $Id: VmdkHDDCore.cpp $ */
+/** $Id: VmdkHDDCore.cpp 36405 2008-09-10 16:21:34Z klaus $ */
 /** @file
  * VMDK Disk image, Core Code.
  */

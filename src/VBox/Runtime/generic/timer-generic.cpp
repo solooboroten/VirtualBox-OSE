@@ -1,4 +1,4 @@
-/** $Id: timer-generic.cpp $ */
+/** $Id: timer-generic.cpp 31696 2008-06-05 18:08:17Z bird $ */
 /** @file
  * IPRT - Timers, Generic.
  */

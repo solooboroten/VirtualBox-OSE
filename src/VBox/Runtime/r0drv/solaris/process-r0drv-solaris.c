@@ -1,4 +1,4 @@
-/* $Id: process-r0drv-solaris.c $ */
+/* $Id: process-r0drv-solaris.c 47061 2009-05-08 12:41:58Z ramshankar $ */
 /** @file
  * IPRT - Process Management, Ring-0 Driver, Solaris.
  */
@@ -38,13 +38,16 @@
 
 RTDECL(RTPROCESS) RTProcSelf(void)
 {
-    struct pid *pPidInfo = curproc->p_pidp;
-    return pPidInfo->pid_id;
+    pid_t pid = -1;
+    drv_getparm(PPID, &pid);
+    return (RTPROCESS)pid;
 }
 
 
 RTR0DECL(RTR0PROCESS) RTR0ProcHandleSelf(void)
 {
-    return (RTR0PROCESS)curproc;
+    proc_t *p = NULL;
+    drv_getparm(UPROCP, &p);
+    return (RTR0PROCESS)p;
 }
 

@@ -1,4 +1,4 @@
-/* $Id: SUPR3HardenedMain.cpp $ */
+/* $Id: SUPR3HardenedMain.cpp 38335 2008-10-22 18:32:48Z frank $ */
 /** @file
  * VirtualBox Support Library - Hardened main().
  */

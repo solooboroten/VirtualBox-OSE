@@ -1,4 +1,4 @@
-/* $Id: tstCollector.cpp $ */
+/* $Id: tstCollector.cpp 36868 2008-09-19 14:26:54Z aleksey $ */
 
 /** @file
  *

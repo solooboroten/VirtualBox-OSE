@@ -1,6 +1,6 @@
 /*************************************************************************
  *
- * $Id: triop.h $
+ * $Id: triop.h 26769 2007-12-14 19:23:03Z dmik $
  *
  * Copyright (C) 2000 Bjorn Reese and Daniel Stenberg.
  *

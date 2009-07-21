@@ -1,4 +1,4 @@
-/* $Id: tstDBGCStubs.cpp $ */
+/* $Id: tstDBGCStubs.cpp 32399 2008-06-26 15:58:05Z frank $ */
 /** @file
  * DBGC Testcase - Command Parser, VMM Stub Functions.
  */

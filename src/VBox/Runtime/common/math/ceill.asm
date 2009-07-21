@@ -1,4 +1,4 @@
-; $Id: ceill.asm $
+; $Id: ceill.asm 29999 2008-04-21 20:53:28Z frank $
 ;; @file
 ; IPRT - No-CRT ceill - AMD64 & X86.
 ;

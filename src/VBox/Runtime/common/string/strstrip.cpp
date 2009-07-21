@@ -1,4 +1,4 @@
-/* $Id: strstrip.cpp $ */
+/* $Id: strstrip.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
 /** @file
  * IPRT - String Stripping and Trimming.
  */

@@ -1,4 +1,4 @@
-/* $Id: SUPLibInternal.h $ */
+/* $Id: SUPLibInternal.h 38335 2008-10-22 18:32:48Z frank $ */
 /** @file
  * VirtualBox Support Library - Internal header.
  */

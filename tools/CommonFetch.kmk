@@ -1,4 +1,4 @@
-# $Id: CommonFetch.kmk $
+# $Id: CommonFetch.kmk 30738 2008-05-11 18:27:49Z bird $
 ## @file
 # Common Fetch.
 # Included by both Makefile.kmk and Makefile-ose.kmk.

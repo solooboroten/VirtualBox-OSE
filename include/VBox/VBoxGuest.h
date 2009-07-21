@@ -35,6 +35,7 @@
 #ifdef IN_RING3
 # include <iprt/stdarg.h>
 #endif
+#include <iprt/assert.h>
 #include <VBox/err.h>
 #include <VBox/ostypes.h>
 
@@ -1498,7 +1499,9 @@ VBGLR3DECL(int)     VbglR3GetHostTime(PRTTIMESPEC pTime);
 VBGLR3DECL(int)     VbglR3InterruptEventWaits(void);
 VBGLR3DECL(int)     VbglR3WriteLog(const char *pch, size_t cb);
 VBGLR3DECL(int)     VbglR3CtlFilterMask(uint32_t fOr, uint32_t fNot);
-VBGLR3DECL(int)     VbglR3Daemonize(bool fNoChDir, bool fNoClose, char const *pszPidfile);
+VBGLR3DECL(int)     VbglR3Daemonize(bool fNoChDir, bool fNoClose);
+VBGLR3DECL(int)     VbglR3PidFile(const char *pszPath, PRTFILE phFile);
+VBGLR3DECL(void)    VbglR3ClosePidFile(const char *pszPath, RTFILE hFile);
 VBGLR3DECL(int)     VbglR3SetGuestCaps(uint32_t fOr, uint32_t fNot);
 
 /** @name Shared clipboard
@@ -1556,10 +1559,12 @@ VBGLR3DECL(int)     VbglR3GuestPropReadValue(uint32_t ClientId, const char *pszN
 VBGLR3DECL(int)     VbglR3GuestPropReadValueAlloc(uint32_t u32ClientId, const char *pszName, char **ppszValue);
 VBGLR3DECL(void)    VbglR3GuestPropReadValueFree(char *pszValue);
 VBGLR3DECL(int)     VbglR3GuestPropEnumRaw(uint32_t u32ClientId, const char *paszPatterns, char *pcBuf, uint32_t cbBuf, uint32_t *pcbBufActual);
-VBGLR3DECL(int)     VbglR3GuestPropEnum(uint32_t u32ClientId, char **ppaszPatterns, int cPatterns, PVBGLR3GUESTPROPENUM *ppHandle, char **ppszName, char **ppszValue, uint64_t *pu64Timestamp, char **ppszFlags);
-VBGLR3DECL(int)     VbglR3GuestPropEnumNext(PVBGLR3GUESTPROPENUM pHandle, char **ppszName, char **ppszValue, uint64_t *pu64Timestamp, char **ppszFlags);
+VBGLR3DECL(int)     VbglR3GuestPropEnum(uint32_t u32ClientId, char const * const *ppaszPatterns, uint32_t cPatterns, PVBGLR3GUESTPROPENUM *ppHandle,
+                                        char const **ppszName, char const **ppszValue, uint64_t *pu64Timestamp, char const **ppszFlags);
+VBGLR3DECL(int)     VbglR3GuestPropEnumNext(PVBGLR3GUESTPROPENUM pHandle, char const **ppszName, char const **ppszValue, uint64_t *pu64Timestamp,
+                                            char const **ppszFlags);
 VBGLR3DECL(void)    VbglR3GuestPropEnumFree(PVBGLR3GUESTPROPENUM pHandle);
-VBGLR3DECL(int)     VbglR3GuestPropDelTree(uint32_t u32ClientId, char **papszPatterns, int cPatterns);
+VBGLR3DECL(int)     VbglR3GuestPropDelSet(uint32_t u32ClientId, char const * const *papszPatterns, size_t cPatterns);
 /** @}  */
 #endif /* VBOX_WITH_GUEST_PROPS defined */
 

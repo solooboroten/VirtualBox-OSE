@@ -1,4 +1,4 @@
-/* $Id: PATMInternal.h $ */
+/* $Id: PATMInternal.h 35865 2008-09-02 11:06:07Z sandervl $ */
 /** @file
  * PATM - Internal header file.
  */

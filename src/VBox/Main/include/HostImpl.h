@@ -1,4 +1,4 @@
-/* $Id: HostImpl.h $ */
+/* $Id: HostImpl.h 34336 2008-08-08 14:38:28Z klaus $ */
 /** @file
  * Implemenation of IHost.
  */

@@ -1,4 +1,4 @@
-/* $Id: ide.h $ */
+/* $Id: ide.h 34134 2008-08-05 21:05:57Z bird $ */
 /** @file
  * VBox storage devices: ATA/ATAPI declarations
  */

@@ -891,7 +891,7 @@ static int vhdRead(void *pBackendData, uint64_t uOffset, void *pvBuf, size_t cbR
 
         /* Read in the block's bitmap. */
         rc = RTFileReadAt(pImage->File,
-            (uint64_t)pImage->pBlockAllocationTable[cBlockAllocationTableEntry] * VHD_SECTOR_SIZE,
+            ((uint64_t)pImage->pBlockAllocationTable[cBlockAllocationTableEntry]) * VHD_SECTOR_SIZE,
             pImage->pu8Bitmap, pImage->cbDataBlockBitmap, NULL);
         if (RT_SUCCESS(rc))
         {
@@ -1042,7 +1042,7 @@ static int vhdWrite(void *pBackendData, uint64_t uOffset, const void *pvBuf, siz
 
         /* Read in the block's bitmap. */
         rc = RTFileReadAt(pImage->File,
-            (uint64_t)pImage->pBlockAllocationTable[cBlockAllocationTableEntry] * VHD_SECTOR_SIZE,
+            ((uint64_t)pImage->pBlockAllocationTable[cBlockAllocationTableEntry]) * VHD_SECTOR_SIZE,
             pImage->pu8Bitmap, pImage->cbDataBlockBitmap, NULL);
         if (RT_SUCCESS(rc))
         {
@@ -1059,7 +1059,7 @@ static int vhdWrite(void *pBackendData, uint64_t uOffset, const void *pvBuf, siz
 
             /* Write the bitmap back. */
             rc = RTFileWriteAt(pImage->File,
-                pImage->pBlockAllocationTable[cBlockAllocationTableEntry] * VHD_SECTOR_SIZE,
+                ((uint64_t)pImage->pBlockAllocationTable[cBlockAllocationTableEntry]) * VHD_SECTOR_SIZE,
                 pImage->pu8Bitmap, pImage->cbDataBlockBitmap, NULL);
         }
     }

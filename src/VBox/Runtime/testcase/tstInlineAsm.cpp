@@ -1,4 +1,4 @@
-/* $Id: tstInlineAsm.cpp $ */
+/* $Id: tstInlineAsm.cpp 36124 2008-09-05 21:14:18Z frank $ */
 /** @file
  * IPRT Testcase - inline assembly.
  */

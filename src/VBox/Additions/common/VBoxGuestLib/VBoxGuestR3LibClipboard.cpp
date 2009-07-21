@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestR3LibClipboard.cpp $ */
+/* $Id: VBoxGuestR3LibClipboard.cpp 33244 2008-07-11 20:05:12Z andy $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, Clipboard.
  */

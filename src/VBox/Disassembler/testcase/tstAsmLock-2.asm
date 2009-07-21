@@ -1,4 +1,4 @@
-; $Id: tstAsmLock-2.asm $
+; $Id: tstAsmLock-2.asm 31054 2008-05-20 19:50:06Z bird $
 ;; @file
 ; Disassembly testcase - Invalid invariants.
 ;

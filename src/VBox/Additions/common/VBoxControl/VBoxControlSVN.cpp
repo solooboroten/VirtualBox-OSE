@@ -1,4 +1,4 @@
-/* $Id: VBoxControlSVN.cpp $ */
+/* $Id: VBoxControlSVN.cpp 32598 2008-07-02 12:40:08Z mt221433 $ */
 /** @file
  * VBoxControl - Guest Additions Command Line Management Interface
  * SVN revision.

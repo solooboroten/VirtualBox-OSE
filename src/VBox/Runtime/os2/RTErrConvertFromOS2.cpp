@@ -1,4 +1,4 @@
-/* $Id: RTErrConvertFromOS2.cpp $ */
+/* $Id: RTErrConvertFromOS2.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
 /** @file
  * IPRT - Convert OS/2 error codes to iprt status codes.
  */

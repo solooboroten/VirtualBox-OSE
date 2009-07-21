@@ -1,4 +1,4 @@
-/* $Id: tstStrFormat.cpp $ */
+/* $Id: tstStrFormat.cpp 34645 2008-08-13 10:14:09Z aleksey $ */
 /** @file
  * IPRT Testcase - String formatting.
  */

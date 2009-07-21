@@ -1,4 +1,4 @@
-/* $Id: RTStrNLenEx.cpp $ */
+/* $Id: RTStrNLenEx.cpp 33815 2008-07-29 18:56:03Z bird $ */
 /** @file
  * IPRT - RTStrNLenEx.
  */

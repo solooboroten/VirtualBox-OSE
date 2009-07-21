@@ -1,4 +1,4 @@
-/** $Id: VBoxHDD.cpp $ */
+/** $Id: VBoxHDD.cpp 34380 2008-08-08 22:35:40Z bird $ */
 /** @file
  *
  * VBox storage devices:

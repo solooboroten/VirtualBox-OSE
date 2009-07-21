@@ -1,4 +1,4 @@
-/* $Id: MMPagePool.cpp $ */
+/* $Id: MMPagePool.cpp 47747 2009-05-26 10:32:30Z fmehnert $ */
 /** @file
  * MM - Memory Monitor(/Manager) - Page Pool.
  */
@@ -312,11 +312,11 @@ DECLINLINE(void *) mmR3PagePoolAlloc(PMMPAGEPOOL pPool)
         return pSub->pvPages;
     }
 
-    MMR3HeapFree(pSub);
+    MMHyperFree(pPool->pVM, pSub);
     STAM_COUNTER_INC(&pPool->cErrors);
     if (pPool->fLow)
         VMSetError(pPool->pVM, rc, RT_SRC_POS,
-                   N_("Failed to expand page pool for memory below 4GB. current size: %d pages"),
+                   N_("Failed to expand page pool for memory below 4GB. Current size: %d pages"),
                    pPool->cPages);
     AssertMsgFailed(("Failed to expand pool%s. rc=%Vrc poolsize=%d\n",
                      pPool->fLow ? " (<4GB)" : "", rc, pPool->cPages));

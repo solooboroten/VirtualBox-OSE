@@ -1,4 +1,4 @@
-/* $Id: rand.h $ */
+/* $Id: rand.h 35074 2008-08-20 20:48:52Z bird $ */
 /** @file
  * IPRT - Internal RTRand header
  */

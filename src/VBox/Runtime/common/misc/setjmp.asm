@@ -1,4 +1,4 @@
-; $Id: setjmp.asm $
+; $Id: setjmp.asm 30003 2008-04-21 21:01:41Z frank $
 ;; @file
 ; IPRT - No-CRT setjmp & longjmp - AMD64 & X86.
 ;

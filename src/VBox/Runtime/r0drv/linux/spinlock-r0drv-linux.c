@@ -1,4 +1,4 @@
-/* $Id: spinlock-r0drv-linux.c $ */
+/* $Id: spinlock-r0drv-linux.c 38740 2008-11-03 17:00:23Z frank $ */
 /** @file
  * IPRT - Spinlocks, Ring-0 Driver, Linux.
  */

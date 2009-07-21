@@ -1,4 +1,4 @@
-/** $Id: DrvVD.cpp $ */
+/** $Id: DrvVD.cpp 38563 2008-10-28 19:08:37Z frank $ */
 /** @file
  *
  * VBox storage devices:

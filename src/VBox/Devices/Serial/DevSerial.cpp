@@ -1,4 +1,4 @@
-/* $Id: DevSerial.cpp $ */
+/* $Id: DevSerial.cpp 34377 2008-08-08 22:32:08Z bird $ */
 /** @file
  * DevSerial - 16450 UART emulation.
  */

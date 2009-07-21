@@ -1,4 +1,4 @@
-/* $Id: rtProcInitExePath-linux.cpp $ */
+/* $Id: rtProcInitExePath-linux.cpp 35671 2008-08-29 17:14:02Z bird $ */
 /** @file
  * IPRT - rtProcInitName, Linux.
  */

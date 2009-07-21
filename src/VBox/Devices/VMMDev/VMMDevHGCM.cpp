@@ -1,4 +1,4 @@
-/* $Id: VMMDevHGCM.cpp $ */
+/* $Id: VMMDevHGCM.cpp 35293 2008-08-25 16:06:34Z frank $ */
 /** @file
  * VMMDev - HGCM - Host-Guest Communication Manager Device.
  */

@@ -1,4 +1,4 @@
-/* $Id: RTFileReadAll-generic.cpp $ */
+/* $Id: RTFileReadAll-generic.cpp 30983 2008-05-19 16:59:11Z bird $ */
 /** @file
  * IPRT - RTFileReadAll, generic implementation.
  */

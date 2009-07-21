@@ -1,4 +1,4 @@
-/* $Id: CFGM.cpp $ */
+/* $Id: CFGM.cpp 33419 2008-07-16 14:21:17Z bird $ */
 /** @file
  * CFGM - Configuration Manager.
  */

@@ -1,4 +1,4 @@
-/* $Id: SELM.cpp $ */
+/* $Id: SELM.cpp 35599 2008-08-29 08:51:20Z sandervl $ */
 /** @file
  * SELM - The Selector manager.
  */

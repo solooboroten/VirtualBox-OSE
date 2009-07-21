@@ -1,4 +1,4 @@
-; $Id: truncl.asm $
+; $Id: truncl.asm 29999 2008-04-21 20:53:28Z frank $
 ;; @file
 ; IPRT - No-CRT truncl - AMD64 & X86.
 ;

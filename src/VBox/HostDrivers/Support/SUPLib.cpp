@@ -1,4 +1,4 @@
-/* $Id: SUPLib.cpp $ */
+/* $Id: SUPLib.cpp 35741 2008-08-31 18:08:32Z bird $ */
 /** @file
  * VirtualBox Support Library - Common code.
  */

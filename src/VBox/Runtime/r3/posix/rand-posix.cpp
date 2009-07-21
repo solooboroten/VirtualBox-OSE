@@ -1,4 +1,4 @@
-/* $Id: rand-posix.cpp $ */
+/* $Id: rand-posix.cpp 35142 2008-08-21 21:47:31Z bird $ */
 /** @file
  * IPRT - Random Numbers and Byte Streams, POSIX.
  */

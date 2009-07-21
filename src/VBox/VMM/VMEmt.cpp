@@ -1,4 +1,4 @@
-/* $Id: VMEmt.cpp $ */
+/* $Id: VMEmt.cpp 30794 2008-05-13 17:44:24Z bird $ */
 /** @file
  * VM - Virtual Machine, The Emulation Thread.
  */

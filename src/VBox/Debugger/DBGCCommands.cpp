@@ -1,4 +1,4 @@
-/** $Id: DBGCCommands.cpp $ */
+/** $Id: DBGCCommands.cpp 30800 2008-05-14 03:03:54Z bird $ */
 /** @file
  * DBGC - Debugger Console, Native Commands.
  */

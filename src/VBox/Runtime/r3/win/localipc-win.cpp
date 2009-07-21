@@ -1,4 +1,4 @@
-/* $Id: localipc-win.cpp $ */
+/* $Id: localipc-win.cpp 35466 2008-08-27 22:21:47Z bird $ */
 /** @file
  * IPRT - Local IPC, Windows Implementation Using Named Pipes.
  */

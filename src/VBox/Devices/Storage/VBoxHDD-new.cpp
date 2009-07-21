@@ -1,4 +1,4 @@
-/** $Id: VBoxHDD-new.cpp $ */
+/** $Id: VBoxHDD-new.cpp 36407 2008-09-10 16:46:04Z klaus $ */
 /** @file
  * VBox HDD Container implementation.
  */

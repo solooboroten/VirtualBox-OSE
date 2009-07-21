@@ -1,4 +1,4 @@
-; $Id: tstAsmRegs-1.asm $
+; $Id: tstAsmRegs-1.asm 32347 2008-06-25 14:42:31Z bird $
 ;; @file
 ; Disassembly testcase - Accessing all the registers
 ;

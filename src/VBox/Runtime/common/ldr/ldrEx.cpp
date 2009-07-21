@@ -1,4 +1,4 @@
-/* $Id: ldrEx.cpp $ */
+/* $Id: ldrEx.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
 /** @file
  * IPRT - Binary Image Loader, Extended Features.
  */

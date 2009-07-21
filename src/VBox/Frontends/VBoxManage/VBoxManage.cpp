@@ -1,4 +1,4 @@
-/* $Id: VBoxManage.cpp $ */
+/* $Id: VBoxManage.cpp 39687 2008-11-20 18:56:39Z aeichner $ */
 /** @file
  * VBoxManage - VirtualBox's command-line interface.
  */

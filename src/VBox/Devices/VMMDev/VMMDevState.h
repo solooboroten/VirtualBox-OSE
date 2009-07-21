@@ -1,4 +1,4 @@
-/* $Id: VMMDevState.h $ */
+/* $Id: VMMDevState.h 35651 2008-08-29 14:09:39Z frank $ */
 /** @file
  * VMMDev - Guest <-> VMM/Host communication device, internal header.
  */

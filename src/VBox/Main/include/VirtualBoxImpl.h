@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxImpl.h $ */
+/* $Id: VirtualBoxImpl.h 38247 2008-10-21 18:24:18Z frank $ */
 
 /** @file
  *

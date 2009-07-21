@@ -1,4 +1,4 @@
-/** $Id: DBGConsole.cpp $ */
+/** $Id: DBGConsole.cpp 32220 2008-06-20 09:06:35Z sandervl $ */
 /** @file
  * DBGC - Debugger Console.
  */

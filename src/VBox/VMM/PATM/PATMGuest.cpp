@@ -1,4 +1,4 @@
-/* $Id: PATMGuest.cpp $ */
+/* $Id: PATMGuest.cpp 31390 2008-05-29 12:34:27Z sandervl $ */
 /** @file
  * PATMGuest - Guest OS Patching Manager (non-generic)
  */

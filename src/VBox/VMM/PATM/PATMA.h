@@ -1,4 +1,4 @@
-/* $Id: PATMA.h $ */
+/* $Id: PATMA.h 35791 2008-09-01 13:44:18Z sandervl $ */
 /** @file
  * PATM macros & definitions (identical to PATMA.mac!!)
  */

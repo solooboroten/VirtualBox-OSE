@@ -1,4 +1,4 @@
-/* $Id: log-vbox.cpp $ */
+/* $Id: log-vbox.cpp 33307 2008-07-14 16:21:07Z bird $ */
 /** @file
  * Virtual Box Runtime - Logging configuration.
  */

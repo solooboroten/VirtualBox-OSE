@@ -1,4 +1,4 @@
-/* $Id: VMMGCDeps.cpp $ */
+/* $Id: VMMGCDeps.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * VMMGC Runtime Dependencies.
  */

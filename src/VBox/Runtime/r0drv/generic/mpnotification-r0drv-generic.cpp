@@ -1,4 +1,4 @@
-/* $Id: mpnotification-r0drv-generic.cpp $ */
+/* $Id: mpnotification-r0drv-generic.cpp 31945 2008-06-11 15:02:41Z bird $ */
 /** @file
  * IPRT - Multiprocessor Notifications, Ring-0 Driver, Generic Stubs.
  */

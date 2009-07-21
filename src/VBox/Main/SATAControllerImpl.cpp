@@ -1,4 +1,4 @@
-/* $Id: SATAControllerImpl.cpp $ */
+/* $Id: SATAControllerImpl.cpp 32572 2008-07-01 18:50:28Z frank $ */
 
 /** @file
  *

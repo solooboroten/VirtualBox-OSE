@@ -1,4 +1,4 @@
-/* $Id: USBControllerImpl.cpp $ */
+/* $Id: USBControllerImpl.cpp 33220 2008-07-11 15:28:06Z sandervl $ */
 /** @file
  * Implementation of IUSBController.
  */

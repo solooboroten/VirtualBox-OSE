@@ -1,4 +1,4 @@
-/* $Id: getopt.cpp $ */
+/* $Id: getopt.cpp 30985 2008-05-19 17:43:01Z bird $ */
 /** @file
  * IPRT - Command Line Parsing
  */

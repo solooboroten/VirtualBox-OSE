@@ -1,6 +1,6 @@
 /*************************************************************************
  *
- * $Id: triodef.h $
+ * $Id: triodef.h 28681 2008-03-05 10:43:38Z dmik $
  *
  * Copyright (C) 2001 Bjorn Reese <breese@users.sourceforge.net>
  *

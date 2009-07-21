@@ -1,4 +1,4 @@
-/* $Id: config.h $ */
+/* $Id: config.h 31273 2008-05-27 08:06:46Z sandervl $ */
 /** @file
  * Sun config - Maintained by hand
  */

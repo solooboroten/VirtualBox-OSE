@@ -1,4 +1,4 @@
-/* $Id: SUPR0IdcClient.c $ */
+/* $Id: SUPR0IdcClient.c 35604 2008-08-29 09:13:37Z bird $ */
 /** @file
  * VirtualBox Support Driver - IDC Client Lib, Core.
  */

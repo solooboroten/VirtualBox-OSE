@@ -1,4 +1,4 @@
-/* $Id: avl_Get.cpp.h $ */
+/* $Id: avl_Get.cpp.h 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * kAVLGet - get routine for AVL trees.
  */

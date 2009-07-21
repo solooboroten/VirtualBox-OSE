@@ -1,4 +1,4 @@
-/* $Id: PGMAllPool.cpp $ */
+/* $Id: PGMAllPool.cpp 47541 2009-05-20 13:37:05Z fmehnert $ */
 /** @file
  * PGM Shadow Page Pool.
  */
@@ -1263,9 +1263,15 @@ static int pgmPoolCacheAlloc(PPGMPOOL pPool, RTGCPHYS GCPhys, PGMPOOLKIND enmKin
             {
                 if ((PGMPOOLKIND)pPage->enmKind == enmKind)
                 {
+                    /* Put it at the start of the use list to make sure pgmPoolTrackAddUser 
+                     * doesn't flush it in case there are no more free use records.
+                     */
+                    pgmPoolCacheUsed(pPool, pPage);
+
                     int rc = pgmPoolTrackAddUser(pPool, pPage, iUser, iUserTable);
                     if (VBOX_SUCCESS(rc))
                     {
+                        Assert((PGMPOOLKIND)pPage->enmKind == enmKind);
                         *ppPage = pPage;
                         STAM_COUNTER_INC(&pPool->StatCacheHits);
                         return VINF_PGM_CACHED_PAGE;

@@ -1,4 +1,4 @@
-/* $Id: strcmp_alias.c $ */
+/* $Id: strcmp_alias.c 29978 2008-04-21 17:24:28Z umoeller $ */
 /** @file
  * IPRT - No-CRT strcmp() alias for gcc.
  */

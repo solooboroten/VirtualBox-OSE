@@ -1,4 +1,4 @@
-/* $Id: tstMp-1.cpp $ */
+/* $Id: tstMp-1.cpp 36048 2008-09-04 20:10:06Z bird $ */
 /** @file
  * IPRT Testcase - RTMp.
  */

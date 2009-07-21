@@ -28,16 +28,6 @@
 
 static const uint8_t rfc1533_cookie[] = { RFC1533_COOKIE };
 
-DECLINLINE(void) dprintf(const char *pszFormat, ...)
-{
-#ifdef LOG_ENABLED
-    va_list args;
-    va_start(args, pszFormat);
-    Log(("dhcp: %N", pszFormat, &args));
-    va_end(args);
-#endif
-}
-
 static BOOTPClient *get_new_addr(PNATState pData, struct in_addr *paddr)
 {
     BOOTPClient *bc;
@@ -110,7 +100,7 @@ static void dhcp_decode(const uint8_t *buf, int size,
             if (p >= p_end)
                 break;
             len = *p++;
-            dprintf("dhcp: tag=0x%02x len=%d\n", tag, len);
+            Log(("dhcp: tag=0x%02x len=%d\n", tag, len));
 
             switch(tag) {
             case RFC2132_REQ_ADDR:
@@ -145,7 +135,7 @@ static void bootp_reply(PNATState pData, struct bootp_t *bp)
     /* extract exact DHCP msg type */
     requested_ip.s_addr = 0xffffffff;
     dhcp_decode(bp->bp_vend, DHCP_OPT_LEN, &dhcp_msg_type, &requested_ip);
-    dprintf("bootp packet op=%d msgtype=%d\n", bp->bp_op, dhcp_msg_type);
+    Log(("bootp packet op=%d msgtype=%d\n", bp->bp_op, dhcp_msg_type));
 
     if (dhcp_msg_type == 0)
         dhcp_msg_type = DHCPREQUEST; /* Force reply for old BOOTP clients */
@@ -157,7 +147,7 @@ static void bootp_reply(PNATState pData, struct bootp_t *bp)
         LogRel(("NAT: %s %u.%u.%u.%u\n",
                 rc ? "DHCP released IP address" : "Ignored DHCP release for IP address",
                 ipv4_addr >> 24, (ipv4_addr >> 16) & 0xff, (ipv4_addr >> 8) & 0xff, ipv4_addr & 0xff));
-        dprintf("released addr=%08x\n", ntohl(bp->bp_ciaddr.s_addr));
+        Log(("released addr=%08x\n", ntohl(bp->bp_ciaddr.s_addr)));
         /* This message is not to be answered in any way. */
         return;
     }
@@ -183,7 +173,7 @@ static void bootp_reply(PNATState pData, struct bootp_t *bp)
             bc = get_new_addr(pData, &daddr.sin_addr);
             if (!bc) {
                 LogRel(("NAT: DHCP no IP address left\n"));
-                dprintf("no address left\n");
+                Log(("no address left\n"));
                 return;
             }
             memcpy(bc->macaddr, client_ethaddr, 6);
@@ -247,7 +237,7 @@ static void bootp_reply(PNATState pData, struct bootp_t *bp)
         ipv4_addr = ntohl(daddr.sin_addr.s_addr);
         LogRel(("NAT: DHCP offered IP address %u.%u.%u.%u\n",
                 ipv4_addr >> 24, (ipv4_addr >> 16) & 0xff, (ipv4_addr >> 8) & 0xff, ipv4_addr & 0xff));
-        dprintf("offered addr=%08x\n", ntohl(daddr.sin_addr.s_addr));
+        Log(("offered addr=%08x\n", ntohl(daddr.sin_addr.s_addr)));
     }
 
     if (dhcp_msg_type == DHCPDISCOVER ||

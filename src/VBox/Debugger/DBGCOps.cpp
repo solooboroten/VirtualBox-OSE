@@ -1,4 +1,4 @@
-/** $Id: DBGCOps.cpp $ */
+/** $Id: DBGCOps.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * DBGC - Debugger Console, Operators.
  */

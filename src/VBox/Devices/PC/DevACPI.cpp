@@ -1,4 +1,4 @@
-/* $Id: DevACPI.cpp $ */
+/* $Id: DevACPI.cpp 36322 2008-09-09 16:14:09Z ni81036 $ */
 /** @file
  * DevACPI - Advanced Configuration and Power Interface (ACPI) Device.
  */

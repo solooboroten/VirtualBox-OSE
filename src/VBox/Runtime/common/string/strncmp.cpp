@@ -1,4 +1,4 @@
-/* $Id: strncmp.cpp $ */
+/* $Id: strncmp.cpp 29978 2008-04-21 17:24:28Z umoeller $ */
 /** @file
  * IPRT - CRT Strings, strncmp().
  */

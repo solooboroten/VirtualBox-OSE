@@ -1,4 +1,4 @@
-/* $Id: tstErrUnique.cpp $ */
+/* $Id: tstErrUnique.cpp 30678 2008-05-08 23:35:34Z bird $ */
 /** @file
  * IPRT Testcase - Error Messages.
  */

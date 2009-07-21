@@ -1,4 +1,4 @@
-/* $Id: Guid.h $ */
+/* $Id: Guid.h 32094 2008-06-16 22:38:49Z bird $ */
 
 /** @file
  * MS COM / XPCOM Abstraction Layer:

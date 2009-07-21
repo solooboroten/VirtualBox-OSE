@@ -1,4 +1,4 @@
-/** $Id: timerlr-generic.cpp $ */
+/** $Id: timerlr-generic.cpp 33842 2008-07-30 11:15:45Z bird $ */
 /** @file
  * IPRT - Low Resolution Timers, Generic.
  *

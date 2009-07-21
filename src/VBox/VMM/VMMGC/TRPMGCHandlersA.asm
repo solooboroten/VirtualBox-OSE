@@ -1,4 +1,4 @@
-; $Id: TRPMGCHandlersA.asm $
+; $Id: TRPMGCHandlersA.asm 34950 2008-08-19 07:31:58Z frank $
 ;; @file
 ; TRPM - Guest Context Trap Handlers
 ;

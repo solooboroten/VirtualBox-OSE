@@ -1,4 +1,4 @@
-/* $Id: strformat.cpp $ */
+/* $Id: strformat.cpp 34626 2008-08-13 07:38:37Z aleksey $ */
 /** @file
  * IPRT - String Formatter.
  */

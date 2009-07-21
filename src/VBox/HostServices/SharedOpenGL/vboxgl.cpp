@@ -103,7 +103,7 @@ int vboxglFlushBuffer(VBOXOGLCTX *pClient, uint8_t *pCmdBuffer, uint32_t cbCmdBu
 
 if (   pCmd->enmOp != VBOX_OGL_OP_Vertex3f
     && pCmd->enmOp != VBOX_OGL_OP_Normal3f)
-        Log(("Flush cmd %s cParams=%d cbCmd=%x\n", pszVBoxOGLCmd[pCmd->enmOp], pCmd->cParams, pCmd->cbCmd));
+        Log(("Flush cmd %d cParams=%d cbCmd=%x\n", pCmd->enmOp, pCmd->cParams, pCmd->cbCmd));
 
         /* call wrapper */
         AssertMsgReturn(pfnOGLWrapper[pCmd->enmOp], ("No wrapper for opcode %x\n", pCmd->enmOp), VERR_INVALID_PARAMETER);

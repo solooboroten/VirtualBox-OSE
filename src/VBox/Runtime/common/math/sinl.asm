@@ -1,4 +1,4 @@
-; $Id: sinl.asm $
+; $Id: sinl.asm 29999 2008-04-21 20:53:28Z frank $
 ;; @file
 ; IPRT - No-CRT sinl - AMD64 & X86.
 ;

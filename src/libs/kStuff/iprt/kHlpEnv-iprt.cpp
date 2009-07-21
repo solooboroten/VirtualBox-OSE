@@ -1,4 +1,4 @@
-/* $Id: kHlpEnv-iprt.cpp $ */
+/* $Id: kHlpEnv-iprt.cpp 29865 2008-04-18 15:16:47Z umoeller $ */
 /** @file
  * kHlpEnv - Environment Manipulation, IPRT based implementation.
  */

@@ -1,4 +1,4 @@
-/* $Id: tstUuid.cpp $ */
+/* $Id: tstUuid.cpp 35119 2008-08-21 15:35:28Z bird $ */
 /** @file
  * IPRT Testcase - UUID.
  */
