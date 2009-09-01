@@ -210,6 +210,12 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     ULONG cCpus = 1;
     hrc = pMachine->COMGETTER(CPUCount)(&cCpus);                                    H();
 
+    Bstr osTypeId;
+    hrc = pMachine->COMGETTER(OSTypeId)(osTypeId.asOutParam());                     H();
+
+    BOOL fIOAPIC;
+    hrc = biosSettings->COMGETTER(IOAPICEnabled)(&fIOAPIC);                          H();
+
     /*
      * Get root node first.
      * This is the only node in the tree.
@@ -234,6 +240,18 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     /** @todo Config: RawR0, PATMEnabled and CASMEnabled needs attention later. */
     rc = CFGMR3InsertInteger(pRoot, "PATMEnabled",          1);     /* boolean */   RC_CHECK();
     rc = CFGMR3InsertInteger(pRoot, "CSAMEnabled",          1);     /* boolean */   RC_CHECK();
+
+    if (osTypeId == "WindowsNT4")
+    {
+        /*
+         * We must limit CPUID count for Windows NT 4, as otherwise it stops
+         * with error 0x3e (MULTIPROCESSOR_CONFIGURATION_NOT_SUPPORTED).
+         */
+        LogRel(("Limiting CPUID leaf count for NT4 guests\n"));
+        PCFGMNODE pCPUM;
+        rc = CFGMR3InsertNode(pRoot, "CPUM", &pCPUM);                               RC_CHECK();
+        rc = CFGMR3InsertInteger(pCPUM, "NT4LeafLimit", true);                      RC_CHECK();
+    }
 
     /* hardware virtualization extensions */
     BOOL fHWVirtExEnabled;
@@ -264,9 +282,6 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
          *        makes a lof of difference there (REM and Solaris performance).
          */
 
-        Bstr osTypeId;
-        hrc = pMachine->COMGETTER(OSTypeId)(osTypeId.asOutParam());                 H();
-
         ComPtr <IGuestOSType> guestOSType;
         hrc = virtualBox->GetGuestOSType(osTypeId, guestOSType.asOutParam());       H();
 
@@ -291,6 +306,20 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
             rc = CFGMR3InsertInteger(pHWVirtExt, "64bitEnabled", 0);                RC_CHECK();
         }
 #endif
+
+        /* @todo Not exactly pretty to check strings; VBOXOSTYPE would be better, but that requires quite a bit of API change in Main. */
+        if (    !fIs64BitGuest
+            &&  fIOAPIC
+            &&  (   osTypeId == "WindowsNT4"
+                 || osTypeId == "Windows2000"
+                 || osTypeId == "WindowsXP"
+                 || osTypeId == "Windows2003"))
+        {
+            /* Only allow TPR patching for NT, Win2k, XP and Windows Server 2003. (32 bits mode)
+             * We may want to consider adding more guest OSes (Solaris) later on.
+             */
+            rc = CFGMR3InsertInteger(pHWVirtExt, "TPRPatchingEnabled", 1);          RC_CHECK();
+        }
     }
 
     /* Nested paging (VT-x/AMD-V) */
@@ -307,9 +336,6 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     BOOL fEnablePAE = false;
     hrc = pMachine->COMGETTER(PAEEnabled)(&fEnablePAE);                             H();
     rc = CFGMR3InsertInteger(pRoot, "EnablePAE", fEnablePAE);                       RC_CHECK();
-
-    BOOL fIOAPIC;
-    hrc = biosSettings->COMGETTER(IOAPICEnabled)(&fIOAPIC);                          H();
 
     BOOL fPXEDebug;
     hrc = biosSettings->COMGETTER(PXEDebugEnabled)(&fPXEDebug);                      H();
@@ -2199,7 +2225,26 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
 
             case NetworkAttachmentType_Bridged:
             {
-#if !defined(VBOX_WITH_NETFLT) && defined(RT_OS_LINUX)
+#if defined(RT_OS_LINUX) && !defined(VBOX_WITH_NETFLT)
+                hrc = pThis->attachToTapInterface(aNetworkAdapter);
+                if (FAILED(hrc))
+                {
+                    switch (hrc)
+                    {
+                        case VERR_ACCESS_DENIED:
+                            return VMSetError(pVM, VERR_HOSTIF_INIT_FAILED, RT_SRC_POS,  N_(
+                                             "Failed to open '/dev/net/tun' for read/write access. Please check the "
+                                             "permissions of that node. Either run 'chmod 0666 /dev/net/tun' or "
+                                             "change the group of that node and make yourself a member of that group. Make "
+                                             "sure that these changes are permanent, especially if you are "
+                                             "using udev"));
+                        default:
+                            AssertMsgFailed(("Could not attach to host interface! Bad!\n"));
+                            return VMSetError(pVM, VERR_HOSTIF_INIT_FAILED, RT_SRC_POS, N_(
+                                             "Failed to initialize Host Interface Networking"));
+                    }
+                }
+
                 Assert ((int)pThis->maTapFD[uInstance] >= 0);
                 if ((int)pThis->maTapFD[uInstance] >= 0)
                 {
@@ -2220,6 +2265,7 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
                     rc = CFGMR3InsertInteger(pCfg, "FileHandle", pThis->maTapFD[uInstance]);
                     RC_CHECK();
                 }
+
 #elif defined(VBOX_WITH_NETFLT)
                 /*
                  * This is the new VBoxNetFlt+IntNet stuff.
@@ -2600,38 +2646,43 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
                 RC_CHECK();
                 rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);
                 RC_CHECK();
-#if defined(RT_OS_WINDOWS)
-# ifndef VBOX_WITH_NETFLT
-                hrc = E_NOTIMPL;
-                LogRel(("NetworkAttachmentType_HostOnly: Not Implemented"));
-                H();
-# else
+
                 Bstr HifName;
                 hrc = aNetworkAdapter->COMGETTER(HostInterface)(HifName.asOutParam());
                 if(FAILED(hrc))
                 {
-                    LogRel(("NetworkAttachmentType_HostOnly: COMGETTER(HostInterface) failed, hrc (0x%x)", hrc));
+                    LogRel(("NetworkAttachmentType_HostOnly: COMGETTER(HostInterface) failed, hrc (0x%x)\n", hrc));
                     H();
                 }
 
                 Utf8Str HifNameUtf8(HifName);
                 const char *pszHifName = HifNameUtf8.raw();
+                LogRel(("NetworkAttachmentType_HostOnly: COMGETTER(HostInterface): %s\n", pszHifName));
                 ComPtr<IHostNetworkInterface> hostInterface;
                 rc = host->FindHostNetworkInterfaceByName(HifName, hostInterface.asOutParam());
                 if (!SUCCEEDED(rc))
                 {
-                    AssertBreakpoint();
-                    LogRel(("NetworkAttachmentType_HostOnly: FindByName failed, rc (0x%x)", rc));
+                    LogRel(("NetworkAttachmentType_HostOnly: FindByName failed, rc (0x%x)\n", rc));
                     return VMSetError(pVM, VERR_INTERNAL_ERROR, RT_SRC_POS,
                                       N_("Inexistent host networking interface, name '%ls'"),
                                       HifName.raw());
                 }
 
+                char szNetwork[80];
+                RTStrPrintf(szNetwork, sizeof(szNetwork), "HostInterfaceNetworking-%s", pszHifName);
+
+#if defined(RT_OS_WINDOWS)
+# ifndef VBOX_WITH_NETFLT
+                hrc = E_NOTIMPL;
+                LogRel(("NetworkAttachmentType_HostOnly: Not Implemented\n"));
+                H();
+# else  /* defined VBOX_WITH_NETFLT*/
+
                 HostNetworkInterfaceType_T ifType;
                 hrc = hostInterface->COMGETTER(InterfaceType)(&ifType);
                 if(FAILED(hrc))
                 {
-                    LogRel(("NetworkAttachmentType_HostOnly: COMGETTER(InterfaceType) failed, hrc (0x%x)", hrc));
+                    LogRel(("NetworkAttachmentType_HostOnly: COMGETTER(InterfaceType) failed, hrc (0x%x)\n", hrc));
                     H();
                 }
 
@@ -2642,12 +2693,11 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
                                       HifName.raw());
                 }
 
-
                 Bstr hostIFGuid_;
                 hrc = hostInterface->COMGETTER(Id)(hostIFGuid_.asOutParam());
                 if(FAILED(hrc))
                 {
-                    LogRel(("NetworkAttachmentType_HostOnly: COMGETTER(Id) failed, hrc (0x%x)", hrc));
+                    LogRel(("NetworkAttachmentType_HostOnly: COMGETTER(Id) failed, hrc (0x%x)\n", hrc));
                     H();
                 }
                 Guid hostIFGuid(hostIFGuid_);
@@ -2669,7 +2719,7 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
                     if(hrc != S_OK)
                     {
                         VBoxNetCfgWinReleaseINetCfg( pNc, FALSE );
-                        LogRel(("NetworkAttachmentType_HostOnly: VBoxNetCfgWinGetComponentByGuid failed, hrc (0x%x)", hrc));
+                        LogRel(("NetworkAttachmentType_HostOnly: VBoxNetCfgWinGetComponentByGuid failed, hrc (0x%x)\n", hrc));
                         H();
                     }
                 }
@@ -2717,7 +2767,7 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
                 {
                     Assert(0);
                     VBoxNetCfgWinReleaseINetCfg( pNc, FALSE );
-                    LogRel(("NetworkAttachmentType_HostOnly: VBoxNetCfgWinGetComponentByGuid failed, hrc (0x%x)", hrc));
+                    LogRel(("NetworkAttachmentType_HostOnly: VBoxNetCfgWinGetComponentByGuid failed, hrc (0x%x)\n", hrc));
                     H();
                 }
 
@@ -2736,8 +2786,6 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
                 RC_CHECK();
                 rc = CFGMR3InsertString(pCfg, "Trunk", pszTrunk);
                 RC_CHECK();
-                char szNetwork[80];
-                RTStrPrintf(szNetwork, sizeof(szNetwork), "HostInterfaceNetworking-%s", pszHifName);
                 rc = CFGMR3InsertString(pCfg, "Network", szNetwork);
                 RC_CHECK();
                 networkName = Bstr(szNetwork);
@@ -2745,52 +2793,34 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
                 trunkType   = TRUNKTYPE_NETADP;
 # endif /* defined VBOX_WITH_NETFLT*/
 #elif defined(RT_OS_DARWIN)
-                rc = CFGMR3InsertString(pCfg, "Trunk", "vboxnet0");
+                rc = CFGMR3InsertString(pCfg, "Trunk", pszHifName);
                 RC_CHECK();
-                rc = CFGMR3InsertString(pCfg, "Network", "HostInterfaceNetworking-vboxnet0");
+                rc = CFGMR3InsertString(pCfg, "Network", szNetwork);
                 RC_CHECK();
                 rc = CFGMR3InsertInteger(pCfg, "TrunkType", kIntNetTrunkType_NetAdp);
                 RC_CHECK();
-                networkName = Bstr("HostInterfaceNetworking-vboxnet0");
-                trunkName   = Bstr("vboxnet0");
+                networkName = Bstr(szNetwork);
+                trunkName   = Bstr(pszHifName);
                 trunkType   = TRUNKTYPE_NETADP;
 #else
-                rc = CFGMR3InsertString(pCfg, "Trunk", "vboxnet0");
+                rc = CFGMR3InsertString(pCfg, "Trunk", pszHifName);
                 RC_CHECK();
-                rc = CFGMR3InsertString(pCfg, "Network", "HostInterfaceNetworking-vboxnet0");
+                rc = CFGMR3InsertString(pCfg, "Network", szNetwork);
                 RC_CHECK();
                 rc = CFGMR3InsertInteger(pCfg, "TrunkType", kIntNetTrunkType_NetFlt);
                 RC_CHECK();
-                networkName = Bstr("HostInterfaceNetworking-vboxnet0");
-                trunkName   = Bstr("vboxnet0");
+                networkName = Bstr(szNetwork);
+                trunkName   = Bstr(pszHifName);
                 trunkType   = TRUNKTYPE_NETFLT;
 #endif
 #if !defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT)
-                Bstr HifName;
-                hrc = aNetworkAdapter->COMGETTER(HostInterface)(HifName.asOutParam());
-                if(FAILED(hrc))
-                {
-                    LogRel(("NetworkAttachmentType_HostOnly: COMGETTER(HostInterface) failed, hrc (0x%x)", hrc));
-                    H();
-                }
 
-                LogRel(("NetworkAttachmentType_HostOnly: COMGETTER(HostInterface):  ", hrc));
-                Utf8Str HifNameUtf8(HifName);
-                const char *pszHifName = HifNameUtf8.raw();
-                ComPtr<IHostNetworkInterface> hostInterface;
-                rc = host->FindHostNetworkInterfaceByName(HifName, hostInterface.asOutParam());
-                if (!SUCCEEDED(rc))
-                {
-                    LogRel(("NetworkAttachmentType_HostOnly: FindByName failed, rc (0x%x)", rc));
-                    return VMSetError(pVM, VERR_INTERNAL_ERROR, RT_SRC_POS,
-                                      N_("Inexistent host networking interface, name '%ls'"),
-                                      HifName.raw());
-                }
                 Bstr tmpAddr, tmpMask;
-                hrc = virtualBox->GetExtraData(Bstr("HostOnly/vboxnet0/IPAddress"), tmpAddr.asOutParam());
+
+                hrc = virtualBox->GetExtraData(BstrFmt("HostOnly/%s/IPAddress", pszHifName), tmpAddr.asOutParam());
                 if (SUCCEEDED(hrc) && !tmpAddr.isEmpty())
                 {
-                    hrc = virtualBox->GetExtraData(Bstr("HostOnly/vboxnet0/IPNetMask"), tmpMask.asOutParam());
+                    hrc = virtualBox->GetExtraData(BstrFmt("HostOnly/%s/IPNetMask", pszHifName), tmpMask.asOutParam());
                     if (SUCCEEDED(hrc) && !tmpMask.isEmpty())
                         hrc = hostInterface->EnableStaticIpConfig(tmpAddr, tmpMask);
                     else
@@ -2801,10 +2831,9 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
                     hrc = hostInterface->EnableStaticIpConfig(Bstr(VBOXNET_IPV4ADDR_DEFAULT),
                                                               Bstr(VBOXNET_IPV4MASK_DEFAULT));
 
-
-                hrc = virtualBox->GetExtraData(Bstr("HostOnly/vboxnet0/IPV6Address"), tmpAddr.asOutParam());
+                hrc = virtualBox->GetExtraData(BstrFmt("HostOnly/%s/IPV6Address", pszHifName), tmpAddr.asOutParam());
                 if (SUCCEEDED(hrc))
-                    hrc = virtualBox->GetExtraData(Bstr("HostOnly/vboxnet0/IPV6NetMask"), tmpMask.asOutParam());
+                    hrc = virtualBox->GetExtraData(BstrFmt("HostOnly/%s/IPV6NetMask", pszHifName), tmpMask.asOutParam());
                 if (SUCCEEDED(hrc) && !tmpAddr.isEmpty() && !tmpMask.isEmpty())
                     hrc = hostInterface->EnableStaticIpConfigV6(tmpAddr, Utf8Str(tmpMask).toUInt32());
 #endif

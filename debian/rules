@@ -109,6 +109,7 @@ debian/build-stamp $(verfile):
 	    LOCALCFG=$(current)/debian/LocalConfig.kmk \
 	    PATH_OUT=$(current)/debian/builddir \
 	    VBOX_DO_STRIP= VBOX_DO_STRIP_MODULES= \
+	    VBOX_WITH_MULTIVERSION_PYTHON= \
 	    $(if $(filter _Debian_sarge _xandros4.1 _ucs1.3,$(debrel)),VBOX_LD_as_needed= ,) \
 	    $(debcfgs) \
 	    all
@@ -124,6 +125,7 @@ debian/build-stamp $(verfile):
 	    LOCALCFG=$(current)/debian/LocalConfig.kmk \
 	    PATH_OUT=$(current)/debian/builddir \
 	    VBOX_DO_STRIP= VBOX_DO_STRIP_MODULES= \
+	    VBOX_WITH_MULTIVERSION_PYTHON= \
 	    $(if $(filter _Debian_sarge _xandros4.1 _ucs1.3,$(debrel)),VBOX_LD_as_needed= ,) \
 	    VBOX_NO_LINUX_RUN_INSTALLER=1 $(if $(NODOCS),VBOX_WITH_DOCS= ,) \
 	    VBOX_PATH_ADDITIONS.linux.x86=$(builddir)/bin/additions \
@@ -186,8 +188,8 @@ binary binary-arch binary-indep: build $(if $(NOMODS),,modules)
 	install -d -g 0 -o 0 $(prefix)/usr/lib/$(package)
 	install -d -g 0 -o 0 $(prefix)/usr/share/$(package)
 	install -d -g 0 -o 0 $(prefix)/usr/share/doc/$(verpkg)
-	$(if $(NOQT),,mv $(archdir)/VirtualBox.desktop \
-	   $(prefix)/usr/share/applications/VirtualBox.desktop)
+	$(if $(NOQT),,mv $(archdir)/virtualbox.desktop \
+	   $(prefix)/usr/share/applications/virtualbox.desktop)
 	install -d -g 0 -o 0 $(prefix)/usr/share/pixmaps
 	install -d -g 0 -o 0 $(prefix)/usr/share/lintian/overrides
 	sed \

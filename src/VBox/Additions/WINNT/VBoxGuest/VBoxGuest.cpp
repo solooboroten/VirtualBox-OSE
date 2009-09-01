@@ -76,6 +76,10 @@ static VOID     vboxIdleThread(PVOID context);
 DECLVBGL(void) VBoxHGCMCallback(VMMDevHGCMRequestHeader *pHeader, void *pvData, uint32_t u32Data);
 #endif
 
+#ifdef DEBUG
+static VOID testVBoxGuest(VOID);
+#endif
+
 /*******************************************************************************
 *   Exported Functions                                                         *
 *******************************************************************************/
@@ -122,6 +126,9 @@ ULONG DriverEntry(PDRIVER_OBJECT pDrvObj, PUNICODE_STRING pRegPath)
     ULONG buildNumber;
     PsGetVersion(&majorVersion, &minorVersion, &buildNumber, NULL);
     dprintf(("VBoxGuest::DriverEntry: running on Windows NT version %d.%d, build %d\n", majorVersion, minorVersion, buildNumber));
+#ifdef DEBUG
+    testVBoxGuest();
+#endif
     switch (majorVersion)
     {
         case 6:
@@ -779,6 +786,30 @@ void VBoxCleanupMemBalloon(PVBOXGUESTDEVEXT pDevExt)
 #endif
 }
 
+/** A quick implementation of AtomicTestAndClear for uint32_t and multiple
+ *  bits.
+ */
+static uint32_t guestAtomicBitsTestAndClear(void *pu32Bits, uint32_t u32Mask)
+{
+    AssertPtrReturn(pu32Bits, 0);
+    LogFlowFunc(("*pu32Bits=0x%x, u32Mask=0x%x\n", *(long *)pu32Bits,
+                 u32Mask));
+    uint32_t u32Result = 0;
+    uint32_t u32WorkingMask = u32Mask;
+    int iBitOffset = ASMBitFirstSetU32 (u32WorkingMask);
+
+    while (iBitOffset > 0)
+    {
+        bool fSet = ASMAtomicBitTestAndClear(pu32Bits, iBitOffset - 1);
+        if (fSet)
+            u32Result |= 1 << (iBitOffset - 1);
+        u32WorkingMask &= ~(1 << (iBitOffset - 1));
+        iBitOffset = ASMBitFirstSetU32 (u32WorkingMask);
+    }
+    LogFlowFunc(("Returning 0x%x\n", u32Result));
+    return u32Result;
+}
+
 /**
  * Device I/O Control entry point.
  *
@@ -846,7 +877,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
             VBoxGuestWaitEventInfo *eventInfo = (VBoxGuestWaitEventInfo *)pBuf;
 
-            if (!eventInfo->u32EventMaskIn || !IsPowerOfTwo (eventInfo->u32EventMaskIn)) {
+            if (!eventInfo->u32EventMaskIn) {
                 dprintf (("VBoxGuest::VBoxGuestDeviceControl: Invalid input mask %#x\n",
                           eventInfo->u32EventMaskIn));
                 Status = STATUS_INVALID_PARAMETER;
@@ -854,10 +885,7 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
             }
 
             eventInfo->u32EventFlagsOut = 0;
-            int iBitOffset = ASMBitFirstSetU32 (eventInfo->u32EventMaskIn) - 1;
             bool fTimeout = (eventInfo->u32TimeoutIn != ~0L);
-
-            dprintf (("mask = %d, iBitOffset = %d\n", iBitOffset, eventInfo->u32EventMaskIn));
 
             /* Possible problem with request completion right between the pending event check and KeWaitForSingleObject
              * call; introduce a timeout (if none was specified) to make sure we don't wait indefinitely.
@@ -870,10 +898,15 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
             for (;;)
             {
-                bool fEventPending = ASMAtomicBitTestAndClear(&pDevExt->u32Events, iBitOffset);
-                if (fEventPending)
+                uint32_t u32EventsPending =
+                    guestAtomicBitsTestAndClear(&pDevExt->u32Events,
+                                                eventInfo->u32EventMaskIn);
+                dprintf (("mask = 0x%x, pending = 0x%x\n",
+                          eventInfo->u32EventMaskIn, u32EventsPending));
+
+                if (u32EventsPending)
                 {
-                    eventInfo->u32EventFlagsOut = 1 << iBitOffset;
+                    eventInfo->u32EventFlagsOut = u32EventsPending;
                     break;
                 }
 
@@ -1726,6 +1759,37 @@ VOID reserveHypervisorMemory(PVBOXGUESTDEVEXT pDevExt)
         VbglGRFree (&req->header);
     }
 
+#ifdef RT_ARCH_X86
+    /* Allocate locked executable memory that can be used for patching guest code. */
+    {
+        VMMDevReqPatchMemory *req = NULL;
+        int rc = VbglGRAlloc ((VMMDevRequestHeader **)&req, sizeof (VMMDevReqPatchMemory), VMMDevReq_RegisterPatchMemory);
+        if (RT_SUCCESS(rc))
+        {
+            req->cbPatchMem = VMMDEV_GUEST_DEFAULT_PATCHMEM_SIZE;
+
+            rc = RTR0MemObjAllocPage(&pDevExt->PatchMemObj, req->cbPatchMem, true /* executable. */);
+            if (RT_SUCCESS(rc))
+            {
+                req->pPatchMem = (RTGCPTR)(uintptr_t)RTR0MemObjAddress(pDevExt->PatchMemObj);
+
+                rc = VbglGRPerform (&req->header);
+                if (RT_FAILURE(rc) || RT_FAILURE(req->header.rc))
+                {
+                    dprintf(("VBoxGuest::reserveHypervisorMemory: VMMDevReq_RegisterPatchMemory error!"
+                                "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+                    RTR0MemObjFree(pDevExt->PatchMemObj, true);
+                    pDevExt->PatchMemObj = NULL;
+                }
+            }
+            else
+            {
+                dprintf(("VBoxGuest::reserveHypervisorMemory: RTR0MemObjAllocPage failed with rc %d\n", rc));
+            }
+            VbglGRFree (&req->header);
+        }
+    }
+#endif
     return;
 }
 
@@ -1736,6 +1800,34 @@ VOID reserveHypervisorMemory(PVBOXGUESTDEVEXT pDevExt)
  */
 VOID unreserveHypervisorMemory(PVBOXGUESTDEVEXT pDevExt)
 {
+#ifdef RT_ARCH_X86
+    /* Remove the locked executable memory range that can be used for patching guest code. */
+    if (pDevExt->PatchMemObj)
+    {
+        VMMDevReqPatchMemory *req = NULL;
+        int rc = VbglGRAlloc ((VMMDevRequestHeader **)&req, sizeof (VMMDevReqPatchMemory), VMMDevReq_DeregisterPatchMemory);
+        if (RT_SUCCESS(rc))
+        {
+            req->cbPatchMem = (uint32_t)RTR0MemObjSize(pDevExt->PatchMemObj);
+            req->pPatchMem  = (RTGCPTR)(uintptr_t)RTR0MemObjAddress(pDevExt->PatchMemObj);
+
+            rc = VbglGRPerform (&req->header);
+            if (RT_FAILURE(rc) || RT_FAILURE(req->header.rc))
+            {
+                dprintf(("VBoxGuest::reserveHypervisorMemory: VMMDevReq_DeregisterPatchMemory error!"
+                            "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+                /* We intentially leak the memory object here as there still could 
+                 * be references to it!!!
+                 */
+            }
+            else
+            {
+                RTR0MemObjFree(pDevExt->PatchMemObj, true);
+            }
+        }
+    }
+#endif
+
     VMMDevReqHypervisorInfo *req = NULL;
 
     int rc = VbglGRAlloc ((VMMDevRequestHeader **)&req, sizeof (VMMDevReqHypervisorInfo), VMMDevReq_SetHypervisorInfo);
@@ -1809,3 +1901,30 @@ VOID vboxIdleThread(PVOID context)
 
     dprintf(("VBoxGuest::vboxIdleThread leaving\n"));
 }
+
+#ifdef DEBUG
+static VOID testAtomicTestAndClearBitsU32(uint32_t u32Mask, uint32_t u32Bits,
+                                          uint32_t u32Exp)
+{
+    ULONG u32Bits2 = u32Bits;
+    uint32_t u32Result = guestAtomicBitsTestAndClear(&u32Bits2, u32Mask);
+    if (   u32Result != u32Exp
+        || (u32Bits2 & u32Mask)
+        || (u32Bits2 & u32Result)
+        || ((u32Bits2 | u32Result) != u32Bits)
+       )
+        AssertLogRelMsgFailed(("%s: TEST FAILED: u32Mask=0x%x, u32Bits (before)=0x%x, u32Bits (after)=0x%x, u32Result=0x%x, u32Exp=ox%x\n",
+                               __PRETTY_FUNCTION__, u32Mask, u32Bits, u32Bits2,
+                               u32Result));
+}
+
+static VOID testVBoxGuest(VOID)
+{
+    testAtomicTestAndClearBitsU32(0x00, 0x23, 0);
+    testAtomicTestAndClearBitsU32(0x11, 0, 0);
+    testAtomicTestAndClearBitsU32(0x11, 0x22, 0);
+    testAtomicTestAndClearBitsU32(0x11, 0x23, 0x1);
+    testAtomicTestAndClearBitsU32(0x11, 0x32, 0x10);
+    testAtomicTestAndClearBitsU32(0x22, 0x23, 0x22);
+}
+#endif
