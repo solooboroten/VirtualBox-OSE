@@ -1821,93 +1821,8 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     /*
      * Guest property service
      */
-    {
-        /* Load the service */
-        rc = pConsole->mVMMDev->hgcmLoadService ("VBoxGuestPropSvc", "VBoxGuestPropSvc");
 
-        if (RT_FAILURE (rc))
-        {
-            LogRel(("VBoxGuestPropSvc is not available. rc = %Rrc\n", rc));
-            /* That is not a fatal failure. */
-            rc = VINF_SUCCESS;
-        }
-        else
-        {
-            /* Pull over the properties from the server. */
-            SafeArray <BSTR> namesOut;
-            SafeArray <BSTR> valuesOut;
-            SafeArray <ULONG64> timestampsOut;
-            SafeArray <BSTR> flagsOut;
-            hrc = pConsole->mControl->PullGuestProperties(ComSafeArrayAsOutParam(namesOut),
-                                                ComSafeArrayAsOutParam(valuesOut),
-                                                ComSafeArrayAsOutParam(timestampsOut),
-                                                ComSafeArrayAsOutParam(flagsOut));         H();
-            size_t cProps = namesOut.size();
-            if (   valuesOut.size() != cProps
-                || timestampsOut.size() != cProps
-                || flagsOut.size() != cProps
-               )
-                rc = VERR_INVALID_PARAMETER;
-
-            std::vector <Utf8Str> utf8Names, utf8Values, utf8Flags;
-            std::vector <char *> names, values, flags;
-            std::vector <ULONG64> timestamps;
-            for (unsigned i = 0; i < cProps && RT_SUCCESS(rc); ++i)
-                if (   !VALID_PTR(namesOut[i])
-                    || !VALID_PTR(valuesOut[i])
-                    || !VALID_PTR(flagsOut[i])
-                   )
-                    rc = VERR_INVALID_POINTER;
-            for (unsigned i = 0; i < cProps && RT_SUCCESS(rc); ++i)
-            {
-                utf8Names.push_back(Bstr(namesOut[i]));
-                utf8Values.push_back(Bstr(valuesOut[i]));
-                timestamps.push_back(timestampsOut[i]);
-                utf8Flags.push_back(Bstr(flagsOut[i]));
-                if (   utf8Names.back().isNull()
-                    || utf8Values.back().isNull()
-                    || utf8Flags.back().isNull()
-                   )
-                    throw std::bad_alloc();
-            }
-            for (unsigned i = 0; i < cProps && RT_SUCCESS(rc); ++i)
-            {
-                names.push_back(utf8Names[i].mutableRaw());
-                values.push_back(utf8Values[i].mutableRaw());
-                flags.push_back(utf8Flags[i].mutableRaw());
-            }
-            names.push_back(NULL);
-            values.push_back(NULL);
-            timestamps.push_back(0);
-            flags.push_back(NULL);
-
-            /* Setup the service. */
-            VBOXHGCMSVCPARM parms[4];
-
-            parms[0].type = VBOX_HGCM_SVC_PARM_PTR;
-            parms[0].u.pointer.addr = &names.front();
-            parms[0].u.pointer.size = 0;  /* We don't actually care. */
-            parms[1].type = VBOX_HGCM_SVC_PARM_PTR;
-            parms[1].u.pointer.addr = &values.front();
-            parms[1].u.pointer.size = 0;  /* We don't actually care. */
-            parms[2].type = VBOX_HGCM_SVC_PARM_PTR;
-            parms[2].u.pointer.addr = &timestamps.front();
-            parms[2].u.pointer.size = 0;  /* We don't actually care. */
-            parms[3].type = VBOX_HGCM_SVC_PARM_PTR;
-            parms[3].u.pointer.addr = &flags.front();
-            parms[3].u.pointer.size = 0;  /* We don't actually care. */
-
-            pConsole->mVMMDev->hgcmHostCall ("VBoxGuestPropSvc", guestProp::SET_PROPS_HOST, 4, &parms[0]);
-
-            /* Register the host notification callback */
-            HGCMSVCEXTHANDLE hDummy;
-            HGCMHostRegisterServiceExtension (&hDummy, "VBoxGuestPropSvc",
-                                              Console::doGuestPropNotification,
-                                              pvConsole);
-
-            Log(("Set VBoxGuestPropSvc property store\n"));
-        }
-    }
+    rc = configGuestProperties(pConsole);
 #endif /* VBOX_WITH_GUEST_PROPS defined */
 
     /*
@@ -2924,4 +2839,188 @@ DECLCALLBACK(int)  Console::configNetwork(Console *pThis, const char *pszDevice,
     return rcRet;
 }
 
-/* vi: set tabstop=4 shiftwidth=4 expandtab: */
+#ifdef VBOX_WITH_GUEST_PROPS
+/**
+ * Set an array of guest properties
+ */
+static void configSetProperties(VMMDev * const pVMMDev, void *names,
+                                void *values, void *timestamps, void *flags)
+{
+    VBOXHGCMSVCPARM parms[4];
+
+    parms[0].type = VBOX_HGCM_SVC_PARM_PTR;
+    parms[0].u.pointer.addr = names;
+    parms[0].u.pointer.size = 0;  /* We don't actually care. */
+    parms[1].type = VBOX_HGCM_SVC_PARM_PTR;
+    parms[1].u.pointer.addr = values;
+    parms[1].u.pointer.size = 0;  /* We don't actually care. */
+    parms[2].type = VBOX_HGCM_SVC_PARM_PTR;
+    parms[2].u.pointer.addr = timestamps;
+    parms[2].u.pointer.size = 0;  /* We don't actually care. */
+    parms[3].type = VBOX_HGCM_SVC_PARM_PTR;
+    parms[3].u.pointer.addr = flags;
+    parms[3].u.pointer.size = 0;  /* We don't actually care. */
+
+    pVMMDev->hgcmHostCall ("VBoxGuestPropSvc", guestProp::SET_PROPS_HOST, 4,
+                           &parms[0]);
+}
+
+/**
+ * Set a single guest property
+ */
+static void configSetProperty(VMMDev * const pVMMDev, const char *pszName,
+                              const char *pszValue, const char *pszFlags)
+{
+    VBOXHGCMSVCPARM parms[4];
+
+    AssertPtrReturnVoid(pszName);
+    AssertPtrReturnVoid(pszValue);
+    AssertPtrReturnVoid(pszFlags);
+    parms[0].type = VBOX_HGCM_SVC_PARM_PTR;
+    parms[0].u.pointer.addr = (void *)pszName;
+    parms[0].u.pointer.size = strlen(pszName) + 1;
+    parms[1].type = VBOX_HGCM_SVC_PARM_PTR;
+    parms[1].u.pointer.addr = (void *)pszValue;
+    parms[1].u.pointer.size = strlen(pszValue) + 1;
+    parms[2].type = VBOX_HGCM_SVC_PARM_PTR;
+    parms[2].u.pointer.addr = (void *)pszFlags;
+    parms[2].u.pointer.size = strlen(pszFlags) + 1;
+    pVMMDev->hgcmHostCall ("VBoxGuestPropSvc", guestProp::SET_PROP_HOST, 3,
+                           &parms[0]);
+}
+#endif /* VBOX_WITH_GUEST_PROPS */
+
+/**
+ * Set up the Guest Property service, populate it with properties read from
+ * the machine XML and set a couple of initial properties.
+ */
+/* static */ int Console::configGuestProperties(void *pvConsole)
+{
+#ifdef VBOX_WITH_GUEST_PROPS
+    AssertReturn(pvConsole, VERR_GENERAL_FAILURE);
+    ComObjPtr<Console> pConsole = static_cast <Console *> (pvConsole);
+
+    /* Load the service */
+    int rc = pConsole->mVMMDev->hgcmLoadService ("VBoxGuestPropSvc", "VBoxGuestPropSvc");
+
+    if (RT_FAILURE(rc))
+    {
+        LogRel(("VBoxGuestPropSvc is not available. rc = %Rrc\n", rc));
+        /* That is not a fatal failure. */
+        rc = VINF_SUCCESS;
+    }
+    else
+    {
+        /*
+         * Initialize built-in properties that can be changed and saved.
+         *
+         * These are typically transient properties that the guest cannot
+         * change.
+         */
+
+        /* Sysprep execution by VBoxService. */
+        configSetProperty(pConsole->mVMMDev,
+                          "/VirtualBox/HostGuest/SysprepExec", "",
+                          "TRANSIENT, RDONLYGUEST");
+        configSetProperty(pConsole->mVMMDev,
+                          "/VirtualBox/HostGuest/SysprepArgs", "",
+                          "TRANSIENT, RDONLYGUEST");
+
+        /*
+         * Pull over the properties from the server.
+         */
+        SafeArray<BSTR> namesOut;
+        SafeArray<BSTR> valuesOut;
+        SafeArray<ULONG64> timestampsOut;
+        SafeArray<BSTR> flagsOut;
+        HRESULT hrc = pConsole->mControl->PullGuestProperties
+                                      (ComSafeArrayAsOutParam(namesOut),
+                                       ComSafeArrayAsOutParam(valuesOut),
+                                       ComSafeArrayAsOutParam(timestampsOut),
+                                       ComSafeArrayAsOutParam(flagsOut));
+        AssertMsgReturn(SUCCEEDED(hrc), ("hrc=%#x\n", hrc),
+                        VERR_GENERAL_FAILURE);
+        size_t cProps = namesOut.size(), cAlloc = cProps + 1;
+        if (   valuesOut.size() != cProps
+            || timestampsOut.size() != cProps
+            || flagsOut.size() != cProps
+           )
+            AssertFailedReturn(VERR_INVALID_PARAMETER);
+
+        char **papszNames, **papszValues, **papszFlags;
+        char szEmpty[] = "";
+        ULONG64 *pau64Timestamps;
+        papszNames = (char **)RTMemTmpAllocZ(sizeof(void *) * cAlloc);
+        papszValues = (char **)RTMemTmpAllocZ(sizeof(void *) * cAlloc);
+        pau64Timestamps = (ULONG64 *)RTMemTmpAllocZ(sizeof(ULONG64) * cAlloc);
+        papszFlags = (char **)RTMemTmpAllocZ(sizeof(void *) * cAlloc);
+        if (papszNames && papszValues && pau64Timestamps && papszFlags)
+        {
+            for (unsigned i = 0; RT_SUCCESS(rc) && i < cProps; ++i)
+            {
+                AssertPtrReturn(namesOut[i], VERR_INVALID_PARAMETER);
+                rc = RTUtf16ToUtf8(namesOut[i], &papszNames[i]);
+                if (RT_FAILURE(rc))
+                    break;
+                if (valuesOut[i])
+                    rc = RTUtf16ToUtf8(valuesOut[i], &papszValues[i]);
+                else
+                    papszValues[i] = szEmpty;
+                if (RT_FAILURE(rc))
+                    break;
+                pau64Timestamps[i] = timestampsOut[i];
+                if (flagsOut[i])
+                    rc = RTUtf16ToUtf8(flagsOut[i], &papszFlags[i]);
+                else
+                    papszFlags[i] = szEmpty;
+            }
+            if (RT_SUCCESS(rc))
+                configSetProperties(pConsole->mVMMDev,
+                                    (void *)papszNames,
+                                    (void *)papszValues,
+                                    (void *)pau64Timestamps,
+                                    (void *)papszFlags);
+            for (unsigned i = 0; i < cProps; ++i)
+            {
+                RTStrFree(papszNames[i]);
+                if (valuesOut[i])
+                    RTStrFree(papszValues[i]);
+                if (flagsOut[i])
+                    RTStrFree(papszFlags[i]);
+            }
+        }
+        else
+            rc = VERR_NO_MEMORY;
+        RTMemTmpFree(papszNames);
+        RTMemTmpFree(papszValues);
+        RTMemTmpFree(pau64Timestamps);
+        RTMemTmpFree(papszFlags);
+        AssertRCReturn(rc, rc);
+
+        /*
+         * These properties have to be set before pulling over the properties
+         * from the machine XML, to ensure that properties saved in the XML
+         * will override them.
+         */
+        /* Set the VBox version string as a guest property */
+        configSetProperty(pConsole->mVMMDev, "/VirtualBox/HostInfo/VBoxVer",
+                          VBOX_VERSION_STRING, "TRANSIENT, RDONLYGUEST");
+        /* Set the VBox SVN revision as a guest property */
+        configSetProperty(pConsole->mVMMDev, "/VirtualBox/HostInfo/VBoxRev",
+                          VBOX_SVN_REV, "TRANSIENT, RDONLYGUEST");
+
+        /*
+         * Register the host notification callback
+         */
+        HGCMSVCEXTHANDLE hDummy;
+        HGCMHostRegisterServiceExtension(&hDummy, "VBoxGuestPropSvc",
+                                         Console::doGuestPropNotification,
+                                         pvConsole);
+
+        Log(("Set VBoxGuestPropSvc property store\n"));
+    }
+    return VINF_SUCCESS;
+#else /* !VBOX_WITH_GUEST_PROPS */
+    return VERR_NOT_SUPPORTED;
+#endif /* !VBOX_WITH_GUEST_PROPS */
+}

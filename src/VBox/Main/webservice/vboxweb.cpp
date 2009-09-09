@@ -451,6 +451,9 @@ int main(int argc, char* argv[])
 
             soap_destroy(&soap); // clean up class instances
             soap_end(&soap); // clean up everything and close socket
+
+            // every COM thread needs to process its event queue, or memory leaks
+            int vrc = com::EventQueue::processThreadEventQueue(0);
         }
     }
     soap_done(&soap); // close master socket and detach environment
