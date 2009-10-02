@@ -262,7 +262,14 @@ winVersion_t vboxQueryWinVersion()
     dprintf(("VBoxVideo::vboxQueryWinVersion: running on Windows NT version %d.%d, build %d\n",
              majorVersion, minorVersion, buildNumber));
 
-    if (majorVersion >= 5)
+    if(majorVersion == 6)
+    {
+        if (minorVersion == 1)
+            winVersion = WIN7;
+        else if (minorVersion == 0)
+            winVersion = WINVISTA; /* Or Windows Server 2008. */
+    }
+    else if (majorVersion == 5)
     {
         if (minorVersion >= 1)
         {
@@ -271,11 +278,12 @@ winVersion_t vboxQueryWinVersion()
         {
             winVersion = WIN2K;
         }
-    } else
-    if (majorVersion == 4)
+    }
+    else if (majorVersion == 4)
     {
         winVersion = WINNT4;
-    } else
+    }
+    else
     {
         dprintf(("VBoxVideo::vboxQueryWinVersion: NT4 required!\n"));
     }

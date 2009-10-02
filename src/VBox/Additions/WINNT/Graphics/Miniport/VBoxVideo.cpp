@@ -809,7 +809,7 @@ int VBoxMapAdapterMemory (PDEVICE_EXTENSION PrimaryExtension, void **ppv, ULONG 
 
     if (!ulSize)
     {
-        dprintf(("Illegal length 0!\n"));
+        dprintf(("VBoxVideo::VBoxMapAdapterMemory: Illegal video RAM length (0)!\n"));
         return ERROR_INVALID_PARAMETER;
     }
 
@@ -836,7 +836,7 @@ int VBoxMapAdapterMemory (PDEVICE_EXTENSION PrimaryExtension, void **ppv, ULONG 
 
 void VBoxUnmapAdapterMemory (PDEVICE_EXTENSION PrimaryExtension, void **ppv)
 {
-    dprintf(("VBoxVideo::VBoxMapAdapterMemory\n"));
+    dprintf(("VBoxVideo::VBoxUnmapAdapterMemory\n"));
 
     if (*ppv)
     {
@@ -1005,6 +1005,7 @@ VOID VBoxSetupDisplays(PDEVICE_EXTENSION PrimaryExtension, PVIDEO_PORT_CONFIG_IN
         /* Query the size of the non-volatile heap. */
         ULONG cbMiniportHeap = 0;
         vboxQueryConf (PrimaryExtension, VBOX_VIDEO_QCI32_OFFSCREEN_HEAP_SIZE, &cbMiniportHeap);
+        dprintf(("VBoxVideo::VBoxSetupDisplays: vboxQueryConf cbMiniportHeap = 0x%08X", cbMiniportHeap));
 
         /* Do not allow too big heap. 50% of VRAM should be enough. */
         ULONG cbMiniportHeapMaxSize = AdapterMemorySize / 2 - VBOX_VIDEO_ADAPTER_INFORMATION_SIZE;
@@ -1150,7 +1151,7 @@ VP_STATUS VBoxVideoFindAdapter(IN PVOID HwDeviceExtension,
       }
    };
 
-   dprintf(("VBoxVideo::VBoxVideoFindAdapter\n"));
+   dprintf(("VBoxVideo::VBoxVideoFindAdapter %p\n", HwDeviceExtension));
 
    VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_ID);
    VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_DATA, VBE_DISPI_ID2);
@@ -1293,8 +1294,7 @@ BOOLEAN VBoxVideoInitialize(PVOID HwDeviceExtension)
  */
 static BOOLEAN ShowPointer(PVOID HwDeviceExtension)
 {
-    LogRelFlowFunc(("\n"));
-    BOOLEAN Result;
+    BOOLEAN Result = TRUE;
 
     if (DEV_MOUSE_HIDDEN((PDEVICE_EXTENSION)HwDeviceExtension))
     {
@@ -1317,7 +1317,6 @@ static BOOLEAN ShowPointer(PVOID HwDeviceExtension)
         else
             dprintf(("VBoxVideo::ShowPointer: Could not show the hardware pointer -> fallback\n"));
     }
-    LogRelFlowFunc(("returning %d\n", Result));
     return Result;
 }
 

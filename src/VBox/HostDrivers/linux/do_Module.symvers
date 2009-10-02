@@ -1,11 +1,10 @@
-# $Id: CommonFetch.kmk $
-## @file
-# Common Fetch.
-# Included by both Makefile.kmk and Makefile-ose.kmk.
-#
+#!/bin/sh
 
 #
-# Copyright (C) 2006-2007 Sun Microsystems, Inc.
+# This script is used when building kernel modules from DKMS. I don't
+# know how to solve the problem of inter-module dependencies better.
+#
+# Copyright (C) 2008 Sun Microsystems, Inc.
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -20,17 +19,19 @@
 # additional information or have any questions.
 #
 
-
-#
-# OS/2 stuff.
-#
-ifeq ($(KBUILD_TARGET),os2)
-FETCHES += os2.x86.glibidl.20070521
-os2.x86.glibidl.20070521_TEMPLATE = VBOXFETCH
-os2.x86.glibidl.20070521_INST     = $(PATH_DEVTOOLS)/os2.x86/glibidl/20070521/
-os2.x86.glibidl.20070521_SOURCES  = http://hobbes.nmsu.edu/pub/os2/dev/util/glibidl_20070521.zip
-glibidl_20070521.zip_MD5  = 054646a49b96ab762e4d5e9451ca1b37
-glibidl_20070521.zip_SIZE = 611335
-endif # OS/2 stuff
-
-
+SYMFILE="/tmp/$1-Module.symvers"
+case "$2" in
+  save)
+    if [ -f "$3" ]; then
+      cp "$3" "$SYMFILE"
+    fi
+    ;;
+  restore)
+    if [ -f "$SYMFILE" ]; then
+      cp "$SYMFILE" "$3"
+    fi
+    ;;
+  *)
+    echo "Usage: <modname> save|restore <location of Module.symvers>"
+    ;;
+esac

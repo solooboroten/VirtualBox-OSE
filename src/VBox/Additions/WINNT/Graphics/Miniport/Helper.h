@@ -26,7 +26,9 @@ typedef enum
     UNKNOWN_WINVERSION = 0,
     WINNT4 = 1,
     WIN2K  = 2,
-    WINXP  = 3
+    WINXP  = 3,
+    WINVISTA = 4,
+    WIN7 = 5
 } winVersion_t;
 
 
