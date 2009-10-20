@@ -1,4 +1,4 @@
-/* $Id: thread-r0drv-solaris.c 31315 2008-05-27 15:22:00Z ramshankar $ */
+/* $Id: thread-r0drv-solaris.c 52665 2009-09-22 12:33:08Z ramshankar $ */
 /** @file
  * IPRT - Threads, Ring-0 Driver, Solaris.
  */
@@ -37,6 +37,19 @@
 #include <iprt/err.h>
 #include <iprt/assert.h>
 
+#define	VBOX_PREEMPT_DISABLE()			\
+	{									\
+		VBOX_T_PREEMPT++;				\
+		ASSERT(VBOX_T_PREEMPT >= 1);		\
+	}
+#define	VBOX_PREEMPT_ENABLE()			\
+	{									\
+		ASSERT(VBOX_T_PREEMPT >= 1);		\
+		if (--VBOX_T_PREEMPT == 0 &&	\
+		    VBOX_CPU_RUNRUN)				\
+			kpreempt(KPREEMPT_SYNC);	\
+	}
+
 RTDECL(RTNATIVETHREAD) RTThreadNativeSelf(void)
 {
     return (RTNATIVETHREAD)vbi_curthread();
@@ -59,32 +72,7 @@ RTDECL(int) RTThreadSleep(unsigned cMillies)
     else
         cTicks = 0;
 
-#if 0
-    timeout = ddi_get_lbolt();
-    timeout += cTicks; 
- 
-    kcondvar_t cnd;
-    kmutex_t mtx;
-    mutex_init(&mtx, "IPRT Sleep Mutex", MUTEX_DRIVER, NULL);
-    cv_init(&cnd, "IPRT Sleep CV", CV_DRIVER, NULL);
-    mutex_enter(&mtx);
-    cv_timedwait (&cnd, &mtx, timeout);
-    mutex_exit(&mtx);
-    cv_destroy(&cnd);
-    mutex_destroy(&mtx);
-#endif
-
-#if 1
     delay(cTicks);
-#endif
-
-#if 0
-    /*   Hmm, no same effect as using delay() */
-    struct timespec t;
-    t.tv_sec = 0;
-    t.tv_nsec = cMillies * 1000000L;
-    nanosleep (&t, NULL);
-#endif
 
     return VINF_SUCCESS;
 }
@@ -94,4 +82,21 @@ RTDECL(bool) RTThreadYield(void)
 {
     return vbi_yield();
 }
+
+
+/*
+ * Ugly 2.0 Solaris specific hack.
+ * Reason: VBI isn't used by the additions and 
+ */
+RTDECL(void) SolarisThreadPreemptDisable(void)
+{
+    VBOX_PREEMPT_DISABLE();
+}
+
+
+RTDECL(void) SolarisThreadPreemptRestore(void)
+{
+    VBOX_PREEMPT_ENABLE();
+}
+
 

@@ -468,11 +468,11 @@ DECLINLINE(RTCCUINTREG) ASMGetFlags(void)
 #  ifdef RT_ARCH_AMD64
     __asm__ __volatile__("pushfq\n\t"
                          "popq  %0\n\t"
-                         : "=g" (uFlags));
+                         : "=r" (uFlags));
 #  else
     __asm__ __volatile__("pushfl\n\t"
                          "popl  %0\n\t"
-                         : "=g" (uFlags));
+                         : "=r" (uFlags));
 #  endif
 # else
     __asm
@@ -1452,12 +1452,12 @@ DECLINLINE(RTCCUINTREG) ASMIntDisableFlags(void)
     __asm__ __volatile__("pushfq\n\t"
                          "cli\n\t"
                          "popq  %0\n\t"
-                         : "=rm" (xFlags));
+                         : "=r" (xFlags));
 #  else
     __asm__ __volatile__("pushfl\n\t"
                          "cli\n\t"
                          "popl  %0\n\t"
-                         : "=rm" (xFlags));
+                         : "=r" (xFlags));
 #  endif
 # elif RT_INLINE_ASM_USES_INTRIN && !defined(RT_ARCH_X86)
     xFlags = ASMGetFlags();

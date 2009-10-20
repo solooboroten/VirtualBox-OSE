@@ -1,4 +1,4 @@
-/* $Id: semeventmulti-r0drv-solaris.c 31282 2008-05-27 09:27:29Z bird $ */
+/* $Id: semeventmulti-r0drv-solaris.c 52665 2009-09-22 12:33:08Z ramshankar $ */
 /** @file
  * IPRT - Multiple Release Event Semaphores, Ring-0 Driver, Solaris.
  */
@@ -129,7 +129,23 @@ RTDECL(int)  RTSemEventMultiSignal(RTSEMEVENTMULTI EventMultiSem)
                     ("pThis=%p u32Magic=%#x\n", pThis, pThis->u32Magic),
                     VERR_INVALID_HANDLE);
 
-    mutex_enter(&pThis->Mtx);
+    /*
+     * If we're in interrupt context we need to unpin the underlying current
+     * thread as this could lead to a deadlock (see #4259 for the full explanation)
+     *
+     * Note! See remarks about preemption in RTSemEventSignal.
+     */
+    int fAcquired = mutex_tryenter(&pThis->Mtx);
+    if (!fAcquired)
+    {
+        if (curthread->t_intr && getpil() < DISP_LEVEL)
+        {
+            SolarisThreadPreemptDisable();
+            preempt();
+            SolarisThreadPreemptRestore();
+        }
+        mutex_enter(&pThis->Mtx);
+    }
 
     ASMAtomicXchgU8(&pThis->fSignaled, true);
     if (pThis->cWaiters > 0)
@@ -151,8 +167,24 @@ RTDECL(int)  RTSemEventMultiReset(RTSEMEVENTMULTI EventMultiSem)
     AssertMsgReturn(pThis->u32Magic == RTSEMEVENTMULTI_MAGIC,
                     ("pThis=%p u32Magic=%#x\n", pThis, pThis->u32Magic),
                     VERR_INVALID_HANDLE);
+    /*
+     * If we're in interrupt context we need to unpin the underlying current
+     * thread as this could lead to a deadlock (see #4259 for the full explanation)
+     *
+     * Note! See remarks about preemption in RTSemEventSignal.
+     */
+    int fAcquired = mutex_tryenter(&pThis->Mtx);
+    if (!fAcquired)
+    {
+        if (curthread->t_intr && getpil() < DISP_LEVEL)
+        {
+            SolarisThreadPreemptDisable();
+            preempt();
+            SolarisThreadPreemptRestore();
+        }
+        mutex_enter(&pThis->Mtx);
+    }
 
-    mutex_enter(&pThis->Mtx);
     ASMAtomicXchgU8(&pThis->fSignaled, false);
     mutex_exit(&pThis->Mtx);
     return VINF_SUCCESS;

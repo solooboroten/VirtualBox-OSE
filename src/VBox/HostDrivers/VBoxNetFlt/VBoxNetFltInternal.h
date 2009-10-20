@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFltInternal.h 38335 2008-10-22 18:32:48Z frank $ */
+/* $Id: VBoxNetFltInternal.h 52849 2009-09-25 14:25:22Z ramshankar $ */
 /** @file
  * VBoxNetFlt - Network Filter Driver (Host), Internal Header.
  */
@@ -161,8 +161,10 @@ typedef struct VBOXNETFLTINS
 # elif defined(RT_OS_SOLARIS)
             /** @name Solaris instance data.
              * @{ */
-            /** Pointer to the bound IP stream. */
-            void volatile *pvIpStream;
+            /** Pointer to the bound IPv4 stream. */
+            void volatile *pvIp4Stream;
+            /** Pointer to the bound IPv6 stream. */
+            void volatile *pvIp6Stream;
             /** Pointer to the bound ARP stream. */
             void volatile *pvArpStream;
             /** Pointer to the unbound promiscuous stream. */
@@ -173,6 +175,7 @@ typedef struct VBOXNETFLTINS
             RTMAC Mac;
             /** Mutex protection used for loopback. */
             RTSEMFASTMUTEX hFastMtx;
+            /** @} */
 # elif defined(RT_OS_WINDOWS)
             /** pointer to the filter driver device context */
             PADAPT volatile pIfAdaptor;

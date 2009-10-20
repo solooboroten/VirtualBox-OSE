@@ -1,4 +1,4 @@
-/* $Id: the-solaris-kernel.h 29978 2008-04-21 17:24:28Z umoeller $ */
+/* $Id: the-solaris-kernel.h 52665 2009-09-22 12:33:08Z ramshankar $ */
 /** @file
  * IPRT - Include all necessary headers for the Solaris kernel.
  */
@@ -48,6 +48,7 @@
 #include <sys/cyclic.h>
 #include <sys/class.h>
 #include <sys/cpuvar.h>
+#include <sys/archsystm.h>
 #include <sys/x_call.h> /* in platform dir */
 #include <sys/x86_archext.h>
 #include <vm/hat.h>
@@ -55,6 +56,9 @@
 #include <vm/seg_kmem.h>
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
+#include <sys/utsname.h>
+#include <sys/spl.h>
+#include <sys/archsystm.h>
 
 #undef u /* /usr/include/sys/user.h:249:1 is where this is defined to (curproc->p_user). very cool. */
 
@@ -62,6 +66,18 @@
 
 __BEGIN_DECLS
 extern struct ddi_dma_attr g_SolarisX86PhysMemLimits;
+
+extern int g_VBoxOff_cpu_runrun;
+extern int g_VBoxOff_cpu_kprunrun;
+extern int g_VBoxOff_t_preempt;
+
+RTDECL(void) SolarisThreadPreemptDisable(void);
+RTDECL(void) SolarisThreadPreemptRestore(void);
+
 __END_DECLS
+
+#define VBOX_T_PREEMPT            (*((char *)curthread + g_VBoxOff_t_preempt))
+#define VBOX_CPU_KPRUNRUN         (*((char *)CPU + g_VBoxOff_cpu_kprunrun))
+#define VBOX_CPU_RUNRUN           (*((char *)CPU + g_VBoxOff_cpu_runrun))
 
 #endif

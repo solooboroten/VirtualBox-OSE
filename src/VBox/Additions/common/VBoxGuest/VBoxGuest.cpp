@@ -767,6 +767,13 @@ static int VBoxGuestCommonIOCtl_VMMRequest(PVBOXGUESTDEVEXT pDevExt, VMMDevReque
              cbData, cbReq, pReqHdr->requestType));
         return VERR_INVALID_PARAMETER;
     }
+    int rc = VbglGRVerify(pReqHdr, cbData);
+    if (RT_FAILURE(rc))
+    {
+        Log(("VBoxGuestCommonIOCtl: VMMREQUEST: invalid header: size %#x, expected >= %#x (hdr); type=%#x; rc %d!!\n",
+             cbData, cbReq, enmType, rc));
+        return rc;
+    }
 
     /*
      * Make a copy of the request in the physical memory heap so
@@ -776,7 +783,7 @@ static int VBoxGuestCommonIOCtl_VMMRequest(PVBOXGUESTDEVEXT pDevExt, VMMDevReque
      * it does makes things a bit simpler wrt to phys address.)
      */
     VMMDevRequestHeader *pReqCopy;
-    int rc = VbglGRAlloc(&pReqCopy, cbReq, pReqHdr->requestType);
+    rc = VbglGRAlloc(&pReqCopy, cbReq, pReqHdr->requestType);
     if (RT_FAILURE(rc))
     {
         Log(("VBoxGuestCommonIOCtl: VMMREQUEST: failed to allocate %u (%#x) bytes to cache the request. rc=%d!!\n",

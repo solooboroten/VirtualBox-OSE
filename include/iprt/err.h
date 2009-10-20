@@ -360,8 +360,9 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VERR_THREAD_NOT_WAITABLE            (-30)
 /** Pagetable not present. */
 #define VERR_PAGE_TABLE_NOT_PRESENT         (-31)
-/** Internal error - we're screwed if this happens. */
-#define VERR_INTERNAL_ERROR                 (-32)
+/** Invalid context.
+ * Typically an API was used by the wrong thread. */
+#define VERR_INVALID_CONTEXT                (-32)
 /** The per process timer is busy. */
 #define VERR_TIMER_BUSY                     (-33)
 /** Address conflict. */
@@ -483,6 +484,10 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VWRN_OUT_OF_RESOURCES               80
 /** No more handles available, too many open handles. */
 #define VERR_NO_MORE_HANDLES               (-81)
+/** Return instigated by a callback or similar. */
+#define VERR_CALLBACK_RETURN                (-88)
+/** Return instigated by a callback or similar. */
+#define VINF_CALLBACK_RETURN                88
 /** @} */
 
 
@@ -585,6 +590,29 @@ RTDECL(PCRTCOMERRMSG) RTErrCOMGet(uint32_t rc);
 #define VWRN_NO_DIRENT_INFO                 203
 /** @} */
 
+/** @name Internal Processing Errors
+ * @{
+ */
+/** Internal error - we're screwed if this happens.  */
+#define VERR_INTERNAL_ERROR                 (-225)
+/** Internal error no. 2. */
+#define VERR_INTERNAL_ERROR_2               (-226)
+/** Internal error no. 3. */
+#define VERR_INTERNAL_ERROR_3               (-227)
+/** Internal error no. 4. */
+#define VERR_INTERNAL_ERROR_4               (-228)
+/** Internal error no. 5. */
+#define VERR_INTERNAL_ERROR_5               (-229)
+/** Internal error: Unexpected status code. */
+#define VERR_IPE_UNEXPECTED_STATUS          (-230)
+/** Internal error: Unexpected status code. */
+#define VERR_IPE_UNEXPECTED_INFO_STATUS     (-231)
+/** Internal error: Unexpected status code. */
+#define VERR_IPE_UNEXPECTED_ERROR_STATUS    (-232)
+/** Internal error: Uninitialized status code.
+ * @remarks This is used by value elsewhere.  */
+#define VERR_IPE_UNINITIALIZED_STATUS       (-233)
+/** @} */
 
 /** @name Generic Device I/O Status Codes
  * @{

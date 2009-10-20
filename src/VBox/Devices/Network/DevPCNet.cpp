@@ -1,4 +1,4 @@
-/* $Id: DevPCNet.cpp 38070 2008-10-17 08:43:23Z frank $ */
+/* $Id: DevPCNet.cpp 53222 2009-10-05 20:32:21Z fmehnert $ */
 /** @file
  * DevPCNet - AMD PCnet-PCI II / PCnet-FAST III (Am79C970A / Am79C973) Ethernet Controller Emulation.
  *
@@ -1265,8 +1265,6 @@ static void pcnetSoftReset(PCNetState *pThis)
     pThis->GCRDRA   = 0;
     pThis->GCTDRA   = 0;
     pThis->u32RAP   = 0;
-
-    pThis->aBCR[BCR_BSBC] &= ~0x0080;
 
     pThis->aCSR[0]   = 0x0004;
     pThis->aCSR[3]   = 0x0000;
