@@ -1,4 +1,4 @@
-/* $Id: DrvHostBase.cpp 19974 2009-05-24 17:57:46Z vboxsync $ */
+/* $Id: DrvHostBase.cpp 24008 2009-10-23 08:20:17Z vboxsync $ */
 /** @file
  * DrvHostBase - Host base drive access driver.
  */
@@ -182,7 +182,7 @@ static DECLCALLBACK(int) drvHostBaseRead(PPDMIBLOCK pInterface, uint64_t off, vo
             off    += cbRead32;
             cbRead -= cbRead32;
             pvBuf   = (uint8_t *)pvBuf + cbRead32;
-        } while ((cbRead > 0) && RT_SUCCESS(rc)); 
+        } while ((cbRead > 0) && RT_SUCCESS(rc));
 
 #else
         /*
@@ -960,7 +960,7 @@ static int drvHostBaseOpen(PDRVHOSTBASE pThis, PRTFILE pFileDevice, bool fReadOn
     int rc = VINF_SUCCESS;
     RTFILE FileDevice;
 
-    rc = RTFileOpen(&FileDevice, pThis->pszDeviceOpen, RTFILE_O_READWRITE);
+    rc = RTFileOpen(&FileDevice, pThis->pszDeviceOpen, RTFILE_O_READWRITE | RTFILE_O_OPEN | RTFILE_O_DENY_NONE);
     if (RT_FAILURE(rc))
         return rc;
 
@@ -982,7 +982,7 @@ static int drvHostBaseOpen(PDRVHOSTBASE pThis, PRTFILE pFileDevice, bool fReadOn
         {
             RTFILE PassthroughDevice;
 
-            rc = RTFileOpen(&PassthroughDevice, pszPassthroughDevice, RTFILE_O_READWRITE);
+            rc = RTFileOpen(&PassthroughDevice, pszPassthroughDevice, RTFILE_O_READWRITE | RTFILE_O_OPEN | RTFILE_O_DENY_NONE);
 
             RTStrFree(pszPassthroughDevice);
 
@@ -1045,19 +1045,20 @@ static int drvHostBaseOpen(PDRVHOSTBASE pThis, PRTFILE pFileDevice, bool fReadOn
  */
 static int drvHostBaseOpen(PDRVHOSTBASE pThis, PRTFILE pFileBlockDevice, PRTFILE pFileRawDevice, bool fReadOnly)
 {
-    unsigned fFlags = (fReadOnly ? RTFILE_O_READ : RTFILE_O_READWRITE) | RTFILE_O_NON_BLOCK;
+    unsigned fFlags = (fReadOnly ? RTFILE_O_READ : RTFILE_O_READWRITE)
+                    | RTFILE_O_OPEN | RTFILE_O_DENY_NONE | RTFILE_O_NON_BLOCK;
     int rc = RTFileOpen(pFileBlockDevice, pThis->pszDeviceOpen, fFlags);
     if (RT_SUCCESS(rc))
     {
         rc = RTFileOpen(pFileRawDevice, pThis->pszRawDeviceOpen, fFlags);
-        if (RT_FAILURE(rc))
-        {
-            LogRel(("DVD: failed to open device %s\n", pThis->pszRawDeviceOpen));
-            RTFileClose(*pFileBlockDevice);
-        }
+        if (RT_SUCCESS(rc))
+            return rc;
+
+        LogRel(("DVD: failed to open device %s rc=%Rrc\n", pThis->pszRawDeviceOpen, rc));
+        RTFileClose(*pFileBlockDevice);
     }
     else
-        LogRel(("DVD: failed to open device %s\n", pThis->pszRawDeviceOpen));
+        LogRel(("DVD: failed to open device %s rc=%Rrc\n", pThis->pszDeviceOpen, rc));
     return rc;
 }
 #endif  /* RT_OS_SOLARIS */
@@ -1080,6 +1081,16 @@ static int drvHostBaseReopen(PDRVHOSTBASE pThis)
 
     RTFILE FileDevice;
 #ifdef RT_OS_SOLARIS
+    if (pThis->FileRawDevice != NIL_RTFILE)
+    {
+        RTFileClose(pThis->FileRawDevice);
+        pThis->FileRawDevice = NIL_RTFILE;
+    }
+    if (pThis->FileDevice != NIL_RTFILE)
+    {
+        RTFileClose(pThis->FileDevice);
+        pThis->FileDevice = NIL_RTFILE;
+    }
     RTFILE FileRawDevice;
     int rc = drvHostBaseOpen(pThis, &FileDevice, &FileRawDevice, pThis->fReadOnlyConfig);
 #else
@@ -1422,7 +1433,7 @@ int DRVHostBaseMediaPresent(PDRVHOSTBASE pThis)
         return rc;
 
     /*
-     * Determin the size.
+     * Determine the size.
      */
     uint64_t cb;
     rc = pThis->pfnGetMediaSize(pThis, &cb);
@@ -1993,7 +2004,7 @@ int DRVHostBaseInitData(PPDMDRVINS pDrvIns, PCFGMNODE pCfgHandle, PDMBLOCKTYPE e
 
     /* name to open & watch for */
 #ifdef RT_OS_WINDOWS
-    int iBit = toupper(pThis->pszDevice[0]) - 'A';
+    int iBit = RT_C_TO_UPPER(pThis->pszDevice[0]) - 'A';
     if (    iBit > 'Z' - 'A'
         ||  pThis->pszDevice[1] != ':'
         ||  pThis->pszDevice[2])
@@ -2044,20 +2055,14 @@ int DRVHostBaseInitFinish(PDRVHOSTBASE pThis)
     /*
      * Check that there are no drivers below us.
      */
-    PPDMIBASE pBase;
-    int rc = pDrvIns->pDrvHlp->pfnAttach(pDrvIns, &pBase);
-    if (rc != VERR_PDM_NO_ATTACHED_DRIVER)
-    {
-        AssertMsgFailed(("Configuration error: No attached driver, please! (rc=%Rrc)\n", rc));
-        return VERR_PDM_DRVINS_NO_ATTACH;
-    }
+    AssertMsgReturn(PDMDrvHlpNoAttach(pDrvIns) == VERR_PDM_NO_ATTACHED_DRIVER,
+                    ("Configuration error: Not possible to attach anything to this driver!\n"),
+                    VERR_PDM_DRVINS_NO_ATTACH);
 
     /*
      * Register saved state.
      */
-    rc = pDrvIns->pDrvHlp->pfnSSMRegister(pDrvIns, pDrvIns->pDrvReg->szDriverName, pDrvIns->iInstance, 1, 0,
-                                          NULL, NULL, NULL,
-                                          NULL, NULL, drvHostBaseLoadDone);
+    int rc = PDMDrvHlpSSMRegisterLoadDone(pDrvIns, drvHostBaseLoadDone);
     if (RT_FAILURE(rc))
         return rc;
 

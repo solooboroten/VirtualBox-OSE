@@ -1,4 +1,4 @@
-/* $Id: EventQueue.cpp 16555 2009-02-06 16:21:41Z vboxsync $ */
+/* $Id: EventQueue.cpp 23128 2009-09-18 12:50:55Z vboxsync $ */
 
 /** @file
  *
@@ -23,6 +23,21 @@
  */
 
 #include "VBox/com/EventQueue.h"
+
+#ifdef RT_OS_DARWIN
+# include <CoreFoundation/CFRunLoop.h>
+#endif
+
+#if defined(VBOX_WITH_XPCOM) && !defined(RT_OS_DARWIN) && !defined(RT_OS_OS2)
+# define USE_XPCOM_QUEUE
+#endif
+
+#include <iprt/err.h>
+#include <iprt/time.h>
+#include <iprt/thread.h>
+#ifdef USE_XPCOM_QUEUE
+# include <errno.h>
+#endif
 
 namespace com
 {
@@ -54,6 +69,8 @@ namespace com
 
 #endif // !defined (RT_OS_WINDOWS)
 
+EventQueue *EventQueue::mMainQueue = NULL;
+
 /**
  *  Constructs an event queue for the current thread.
  *
@@ -69,6 +86,15 @@ EventQueue::EventQueue()
     // force the system to create the message queue for the current thread
     MSG msg;
     PeekMessage (&msg, NULL, WM_USER, WM_USER, PM_NOREMOVE);
+
+    if (!DuplicateHandle (GetCurrentProcess(),
+                          GetCurrentThread(),
+                          GetCurrentProcess(),
+                          &mhThread,
+                          0 /*dwDesiredAccess*/,
+                          FALSE /*bInheritHandle*/,
+                          DUPLICATE_SAME_ACCESS))
+      mhThread = INVALID_HANDLE_VALUE;
 
 #else
 
@@ -91,14 +117,14 @@ EventQueue::EventQueue()
 
     nsresult rc = NS_GetEventQueueService (getter_AddRefs (mEventQService));
 
-    if (NS_SUCCEEDED (rc))
+    if (NS_SUCCEEDED(rc))
     {
         rc = mEventQService->GetThreadEventQueue (NS_CURRENT_THREAD,
                                                   getter_AddRefs (mEventQ));
         if (rc == NS_ERROR_NOT_AVAILABLE)
         {
             rc = mEventQService->CreateMonitoredThreadEventQueue();
-            if (NS_SUCCEEDED (rc))
+            if (NS_SUCCEEDED(rc))
             {
                 mEQCreated = TRUE;
                 rc = mEventQService->GetThreadEventQueue (NS_CURRENT_THREAD,
@@ -114,6 +140,11 @@ EventQueue::EventQueue()
 EventQueue::~EventQueue()
 {
 #if defined (RT_OS_WINDOWS)
+    if (mhThread != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle (mhThread);
+        mhThread = INVALID_HANDLE_VALUE;
+    }
 #else
     // process all pending events before destruction
     if (mEventQ)
@@ -128,6 +159,286 @@ EventQueue::~EventQueue()
         mEventQService = nsnull;
     }
 #endif
+}
+
+/**
+ *  Initializes the main event queue instance.
+ *  @returns VBox status code.
+ *
+ *  @remarks If you're using the rest of the COM/XPCOM glue library,
+ *           com::Initialize() will take care of initializing and uninitializing
+ *           the EventQueue class.  If you don't call com::Initialize, you must
+ *           make sure to call this method on the same thread that did the
+ *           XPCOM initialization or we'll end up using the wrong main queue.
+ */
+/* static */ int
+EventQueue::init()
+{
+    Assert(mMainQueue == NULL);
+    Assert(RTThreadIsMain(RTThreadSelf()));
+    mMainQueue = new EventQueue();
+
+#if defined (VBOX_WITH_XPCOM)
+    /* Check that it actually is the main event queue, i.e. that
+       we're called on the right thread. */
+    nsCOMPtr<nsIEventQueue> q;
+    nsresult rv = NS_GetMainEventQ(getter_AddRefs(q));
+    Assert(NS_SUCCEEDED(rv));
+    Assert(q == mMainQueue->mEventQ);
+
+    /* Check that it's a native queue. */
+    PRBool fIsNative = PR_FALSE;
+    rv = mMainQueue->mEventQ->IsQueueNative(&fIsNative);
+    Assert(NS_SUCCEEDED(rv) && fIsNative);
+#endif
+
+    return VINF_SUCCESS;
+}
+
+/**
+ *  Uninitialize the global resources (i.e. the main event queue instance).
+ *  @returns VINF_SUCCESS
+ */
+/* static */ int
+EventQueue::uninit()
+{
+    Assert(mMainQueue);
+    delete mMainQueue;
+    mMainQueue = NULL;
+    return VINF_SUCCESS;
+}
+
+/**
+ *  Get main event queue instance.
+ *
+ *  Depends on init() being called first.
+ */
+/* static */ EventQueue *
+EventQueue::getMainEventQueue()
+{
+    return mMainQueue;
+}
+
+#ifdef RT_OS_DARWIN
+/**
+ *  Wait for events and process them (Darwin).
+ *
+ *  @returns VINF_SUCCESS or VERR_TIMEOUT.
+ *
+ *  @param  cMsTimeout      How long to wait, or RT_INDEFINITE_WAIT.
+ */
+static int
+waitForEventsOnDarwin(unsigned cMsTimeout)
+{
+    /*
+     * Wait for the requested time, if we get a hit we do a poll to process
+     * any other pending messages.
+     *
+     * Note! About 1.0e10: According to the sources anything above 3.1556952e+9
+     *       means indefinite wait and 1.0e10 is what CFRunLoopRun() uses.
+     */
+    CFTimeInterval rdTimeout = cMsTimeout == RT_INDEFINITE_WAIT ? 1e10 : (double)cMsTimeout / 1000;
+    OSStatus orc = CFRunLoopRunInMode(kCFRunLoopDefaultMode, rdTimeout, true /*returnAfterSourceHandled*/);
+    /** @todo Not entire sure if the poll actually processes more than one message.
+     *        Feel free to check the sources anyone.  */
+    if (orc == kCFRunLoopRunHandledSource)
+        orc = CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, false /*returnAfterSourceHandled*/);
+    if (    orc == 0
+        ||  orc == kCFRunLoopRunHandledSource)
+        return VINF_SUCCESS;
+    if (    orc == kCFRunLoopRunStopped
+        ||  orc == kCFRunLoopRunFinished)
+        return VERR_INTERRUPTED;
+    AssertMsg(orc == kCFRunLoopRunTimedOut, ("Unexpected status code from CFRunLoopRunInMode: %#x", orc));
+    return VERR_TIMEOUT;
+}
+#elif !defined(RT_OS_WINDOWS)
+
+/**
+ *  Wait for events (Unix).
+ *
+ *  @returns VINF_SUCCESS or VERR_TIMEOUT.
+ *
+ *  @param  pQueue          The queue to wait on.
+ *  @param  cMsTimeout      How long to wait, or RT_INDEFINITE_WAIT.
+ */
+static int
+waitForEventsOnUnix(nsIEventQueue *pQueue, unsigned cMsTimeout)
+{
+    int     fd = pQueue->GetEventQueueSelectFD();
+    fd_set  fdsetR;
+    FD_ZERO(&fdsetR);
+    FD_SET(fd, &fdsetR);
+
+    fd_set  fdsetE = fdsetR;
+
+    struct timeval  tv = {0,0};
+    struct timeval *ptv;
+    if (cMsTimeout == RT_INDEFINITE_WAIT)
+        ptv = NULL;
+    else
+    {
+        tv.tv_sec  = cMsTimeout / 1000;
+        tv.tv_usec = (cMsTimeout % 1000) * 1000;
+        ptv = &tv;
+    }
+
+    int rc = select(fd + 1, &fdsetR, NULL, &fdsetE, ptv);
+    if (rc > 0)
+        rc = VINF_SUCCESS;
+    else if (rc == 0)
+        rc = VERR_TIMEOUT;
+    else if (errno == EINTR)
+        rc = VERR_INTERRUPTED;
+    else
+    {
+        AssertMsgFailed(("rc=%d errno=%d\n", rc, errno));
+        rc = VERR_INTERNAL_ERROR_4;
+    }
+    return rc;
+}
+
+#endif
+
+#ifdef RT_OS_WINDOWS
+/**
+ *  Process pending events (Windows).
+ *  @returns VINF_SUCCESS, VERR_TIMEOUT or VERR_INTERRUPTED.
+ */
+static int
+processPendingEvents(void)
+{
+    MSG Msg;
+    int rc = VERR_TIMEOUT;
+    while (PeekMessage(&Msg, NULL /*hWnd*/, 0 /*wMsgFilterMin*/, 0 /*wMsgFilterMax*/, PM_REMOVE))
+    {
+        if (Msg.message == WM_QUIT)
+            rc = VERR_INTERRUPTED;
+        DispatchMessage(&Msg);
+        if (rc == VERR_INTERRUPTED)
+            break;
+        rc = VINF_SUCCESS;
+    }
+    return rc;
+}
+#else  /* !RT_OS_WINDOWS */
+/**
+ * Process pending XPCOM events.
+ * @param pQueue The queue to process events on.
+ * @returns VINF_SUCCESS or VERR_TIMEOUT.
+ */
+static int
+processPendingEvents(nsIEventQueue *pQueue)
+{
+    /* Check for timeout condition so the caller can be a bit more lazy. */
+    PRBool fHasEvents = PR_FALSE;
+    nsresult hr = pQueue->PendingEvents(&fHasEvents);
+    if (NS_FAILED(hr))
+        return VERR_INTERNAL_ERROR_2;
+    if (!fHasEvents)
+        return VERR_TIMEOUT;
+
+    /** @todo: rethink interruption events, current NULL event approach is bad */
+    pQueue->ProcessPendingEvents();
+    return VINF_SUCCESS;
+}
+#endif /* !RT_OS_WINDOWS */
+
+
+/**
+ *  Process events pending on this event queue, and wait up to given timeout, if
+ *  nothing is available.
+ *
+ *  Must be called on same thread this event queue was created on.
+ *
+ *  @param cMsTimeout The timeout specified as milliseconds.  Use
+ *                    RT_INDEFINITE_WAIT to wait till an event is posted on the
+ *                    queue.
+ *
+ *  @returns VBox status code
+ *  @retval VINF_SUCCESS
+ *  @retval VERR_TIMEOUT
+ *  @retval VERR_INVALID_CONTEXT
+ */
+int EventQueue::processEventQueue(uint32_t cMsTimeout)
+{
+    int rc;
+    CHECK_THREAD_RET(VERR_INVALID_CONTEXT);
+
+#if defined (VBOX_WITH_XPCOM)
+    /*
+     * Process pending events, if none are available and we're not in a
+     * poll call, wait for some to appear.  (We have to be a little bit
+     * careful after waiting for the events since darwin will process
+     * them as part of the wait, while the unix case will not.)
+     *
+     * Note! Unfortunately, WaitForEvent isn't interruptible with Ctrl-C,
+     *       while select() is.  So we cannot use it for indefinite waits.
+     */
+    rc = processPendingEvents(mEventQ);
+    if (    rc == VERR_TIMEOUT
+        &&  cMsTimeout > 0)
+    {
+# ifdef RT_OS_DARWIN
+        /** @todo check how Ctrl-C works on darwin. */
+        rc = waitForEventsOnDarwin(cMsTimeout);
+        if (rc == VERR_TIMEOUT)
+            rc = processPendingEvents(mEventQ);
+# else
+        rc = waitForEventsOnUnix(mEventQ, cMsTimeout);
+        if (    RT_SUCCESS(rc)
+            ||  rc == VERR_TIMEOUT)
+            rc = processPendingEvents(mEventQ);
+# endif
+    }
+
+#else  /* !VBOX_WITH_XPCOM */
+    if (cMsTimeout == RT_INDEFINITE_WAIT)
+    {
+        Event *aEvent = NULL;
+
+        BOOL fHasEvent = waitForEvent(&aEvent);
+        if (fHasEvent)
+        {
+            handleEvent(aEvent);
+            rc = processPendingEvents();
+            if (rc == VERR_TIMEOUT)
+                rc = VINF_SUCCESS;
+        }
+        else
+            rc = VERR_INTERRUPTED;
+    }
+    else
+    {
+        rc = processPendingEvents();
+        if (   rc == VERR_TIMEOUT
+            || cMsTimeout == 0)
+        {
+            DWORD rcW = MsgWaitForMultipleObjects(1,
+                                                  &mhThread,
+                                                  TRUE /*fWaitAll*/,
+                                                  cMsTimeout,
+                                                  QS_ALLINPUT);
+            AssertMsgReturn(rcW == WAIT_TIMEOUT || rcW == WAIT_OBJECT_0,
+                            ("%d\n", rcW),
+                            VERR_INTERNAL_ERROR_4);
+            rc = processPendingEvents();
+        }
+    }
+#endif /* !VBOX_WITH_XPCOM */
+    return rc;
+}
+
+/**
+ *  Interrupt thread waiting on event queue processing.
+ *
+ *  Can be called on any thread.
+ */
+int EventQueue::interruptEventQueueProcessing()
+{
+    /** @todo: rethink me! */
+    postEvent(NULL);
+    return VINF_SUCCESS;
 }
 
 /**
@@ -150,7 +461,7 @@ BOOL EventQueue::postEvent (Event *event)
     MyPLEvent *ev = new MyPLEvent (event);
     mEventQ->InitEvent (ev, this, plEventHandler, plEventDestructor);
     HRESULT rc = mEventQ->PostEvent (ev);
-    return NS_SUCCEEDED (rc);
+    return NS_SUCCEEDED(rc);
 
 #endif
 }
@@ -245,5 +556,18 @@ BOOL EventQueue::handleEvent (Event *event)
     return TRUE;
 }
 
-} /* namespace com */
-
+/**
+ *  Get select()'able selector for this event queue.
+ *  This will return -1 on platforms and queue variants not supporting such
+ *  functionality.
+ */
+int  EventQueue::getSelectFD()
+{
+#ifdef VBOX_WITH_XPCOM
+    return mEventQ->GetEventQueueSelectFD();
+#else
+    return -1;
+#endif
+}
+}
+/* namespace com */

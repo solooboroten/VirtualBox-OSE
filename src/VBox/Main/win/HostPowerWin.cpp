@@ -40,9 +40,9 @@ HostPowerServiceWin::HostPowerServiceWin(VirtualBox *aVirtualBox) : HostPowerSer
     mHwnd = 0;
 
     int rc = RTThreadCreate (&mThread, HostPowerServiceWin::NotificationThread, this, 65536,
-                             RTTHREADTYPE_IO, RTTHREADFLAGS_WAITABLE, "MainPower");
+                             RTTHREADTYPE_GUI, RTTHREADFLAGS_WAITABLE, "MainPower");
 
-    if (RT_FAILURE (rc))
+    if (RT_FAILURE(rc))
     {
         Log(("HostPowerServiceWin::HostPowerServiceWin: RTThreadCreate failed with %Rrc\n", rc));
         return;
@@ -194,6 +194,8 @@ LRESULT CALLBACK HostPowerServiceWin::WndProc(HWND hwnd, UINT msg, WPARAM wParam
                     }
                     break;
                 }
+                default:
+                    return DefWindowProc (hwnd, msg, wParam, lParam);
                 }
             }
             return TRUE;

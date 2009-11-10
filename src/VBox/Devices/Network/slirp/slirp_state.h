@@ -22,11 +22,14 @@
 #define ___slirp_state_h
 
 #include <iprt/req.h>
+#include <iprt/critsect.h>
+
+#define COUNTERS_INIT
+#include "counters.h"
+
 #include "ip_icmp.h"
 #include "dnsproxy/dnsproxy.h"
 
-/** Number of DHCP clients supported by NAT. */
-#define NB_ADDR     16
 
 /** Where to start DHCP IP number allocation. */
 #define START_ADDR  15
@@ -34,16 +37,18 @@
 /** DHCP Lease time. */
 #define LEASE_TIME (24 * 3600)
 
-/** Entry in the table of known DHCP clients. */
-typedef struct
+/*
+ * ARP cache this is naive implementaion of ARP
+ * cache of mapping 4 byte IPv4 address to 6 byte
+ * ethernet one.
+ */
+struct arp_cache_entry
 {
-    bool allocated;
-    uint8_t macaddr[6];
-#ifdef VBOX_WITHOUT_SLIRP_CLIENT_ETHER
-    struct in_addr addr;
-#endif
-} BOOTPClient;
-
+    uint32_t ip;
+    uint8_t ether[6];
+    LIST_ENTRY(arp_cache_entry) list;
+};
+LIST_HEAD(arp_cache_head, arp_cache_entry);
 
 /** TFTP session entry. */
 struct tftp_session
@@ -70,12 +75,46 @@ struct dns_entry
     TAILQ_ENTRY(dns_entry) de_list;
 };
 TAILQ_HEAD(dns_list_head, dns_entry);
+#ifdef VBOX_WITH_SLIRP_BSD_MBUF
+TAILQ_HEAD(if_queue, mbuf);
+#endif
+
+struct port_forward_rule
+{
+    uint16_t proto;
+    uint16_t host_port;
+    uint16_t guest_port;
+#ifndef VBOX_WITH_NAT_SERVICE
+    struct in_addr guest_addr;
+#endif
+    struct in_addr bind_ip;
+    uint8_t mac_address[6]; /*need ETH_ALEN here */
+    int activated;
+    LIST_ENTRY(port_forward_rule) list;
+};
+LIST_HEAD(port_forward_rule_list, port_forward_rule);
+
+#ifndef VBOX_WITH_SLIRP_BSD_MBUF
+struct mbuf_zone
+{
+    LIST_ENTRY(mbuf_zone) list;
+    uint8_t *mbuf_zone_base_addr;
+};
+LIST_HEAD(mbuf_zone_list, mbuf_zone);
+#endif
+
+
+/* forward declaration */
+struct proto_handler;
 
 /** Main state/configuration structure for slirp NAT. */
 typedef struct NATState
 {
+#define PROFILE_COUNTER(name, dsc)     STAMPROFILE Stat ## name
+#define COUNTING_COUNTER(name, dsc)    STAMCOUNTER Stat ## name
+#include "counters.h"
     /* Stuff from boot.c */
-    BOOTPClient bootp_clients[NB_ADDR];
+    void *pbootp_clients;
     const char *bootp_filename;
     /* Stuff from if.c */
     int if_mtu, if_mru;
@@ -83,8 +122,13 @@ typedef struct NATState
     int if_maxlinkhdr;
     int if_queued;
     int if_thresh;
+#ifndef VBOX_WITH_SLIRP_BSD_MBUF
     struct mbuf if_fastq;
     struct mbuf if_batchq;
+#else
+    struct if_queue if_fastq;
+    struct if_queue if_batchq;
+#endif
     struct mbuf *next_m;
     /* Stuff from icmp.c */
     struct icmpstat_t icmpstat;
@@ -99,6 +143,15 @@ typedef struct NATState
     int mbuf_alloced, mbuf_max;
     int msize;
     struct mbuf m_freelist, m_usedlist;
+#ifndef VBOX_WITH_SLIRP_BSD_MBUF
+    struct mbuf_zone_list mbuf_zone_head;
+    RTCRITSECT cs_mbuf_zone;
+    int fmbuf_water_line;
+    int mbuf_water_line_limit;
+    int mbuf_zone_count;
+    int fmbuf_water_warn_sent; 
+    uint32_t tsmbuf_water_warn_sent;
+#endif
     /* Stuff from slirp.c */
     void *pvUser;
     uint32_t curtime;
@@ -126,11 +179,10 @@ typedef struct NATState
     struct in_addr tftp_server;
     struct in_addr loopback_addr;
     uint32_t netmask;
-#ifndef VBOX_WITHOUT_SLIRP_CLIENT_ETHER
+#ifndef VBOX_WITH_NAT_SERVICE
     uint8_t client_ethaddr[6];
-#else
-    const uint8_t *slirp_ethaddr;
 #endif
+    const uint8_t *slirp_ethaddr;
     struct ex_list *exec_list;
     char slirp_hostname[33];
     bool fPassDomain;
@@ -193,7 +245,42 @@ typedef struct NATState
 # define VBOX_SOCKET_EVENT (pData->phEvents[VBOX_SOCKET_EVENT_INDEX])
     HANDLE phEvents[VBOX_EVENT_COUNT];
 #endif
-
+#ifdef VBOX_WITH_SLIRP_BSD_MBUF
+# ifdef zone_mbuf
+#  undef zone_mbuf
+# endif
+    uma_zone_t zone_mbuf;
+# ifdef zone_clust
+#  undef zone_clust
+# endif
+    uma_zone_t zone_clust;
+# ifdef zone_pack
+#  undef zone_pack
+# endif
+    uma_zone_t zone_pack;
+# ifdef zone_jumbop
+#  undef zone_jumbop
+# endif
+    uma_zone_t zone_jumbop;
+# ifdef zone_jumbo9
+#  undef zone_jumbo9
+# endif
+    uma_zone_t zone_jumbo9;
+# ifdef zone_jumbo16
+#  undef zone_jumbo16
+# endif
+    uma_zone_t zone_jumbo16;
+# ifdef zone_ext_refcnt
+#  undef zone_ext_refcnt
+    int nmbclusters;                    /* limits number of mbuf clusters */
+    int nmbjumbop;                      /* limits number of page size jumbo clusters */
+    int nmbjumbo9;                      /* limits number of 9k jumbo clusters */
+    int nmbjumbo16;                     /* limits number of 16k jumbo clusters */
+    struct mbstat mbstat;
+# endif
+    uma_zone_t zone_ext_refcnt;
+#endif
+    int use_host_resolver;
     /* from dnsproxy/dnsproxy.h*/
     unsigned int authoritative_port;
     unsigned int authoritative_timeout;
@@ -225,18 +312,17 @@ typedef struct NATState
     /* this field control behaviour of DHCP server */
     bool use_dns_proxy;
 
-#ifdef VBOX_WITH_SLIRP_ALIAS
     LIST_HEAD(RT_NOTHING, libalias) instancehead;
     struct libalias *proxy_alias;
-#endif
-
-#define PROFILE_COUNTER(name, dsc)     STAMPROFILE Stat ## name
-#define COUNTING_COUNTER(name, dsc)    STAMCOUNTER Stat ## name
-
-#include "counters.h"
-
-#undef PROFILE_COUNTER
-#undef COUNTING_COUNTER
+    struct libalias *dns_alias;
+    LIST_HEAD(handler_chain, proto_handler) handler_chain;
+    struct port_forward_rule_list port_forward_rule_head;
+    int port_forwarding_activated;
+    struct arp_cache_head arp_cache;
+    /*libalis modules' handlers*/
+    struct proto_handler *ftp_module;
+    struct proto_handler *nbt_module;
+    struct proto_handler *dns_module;
 
 } NATState;
 
@@ -280,7 +366,6 @@ typedef struct NATState
 
 
 #define bootp_filename pData->bootp_filename
-#define bootp_clients pData->bootp_clients
 
 #define if_mtu pData->if_mtu
 #define if_mru pData->if_mru
@@ -314,6 +399,8 @@ typedef struct NATState
 #define our_addr pData->our_addr
 #ifndef VBOX_SLIRP_ALIAS
 # define alias_addr pData->alias_addr
+#else
+# define handler_chain pData->handler_chain
 #endif
 #define special_addr pData->special_addr
 #define dns_addr pData->dns_addr
@@ -349,8 +436,6 @@ typedef struct NATState
 #define queue_udp_label udb
 #define VBOX_X2(x) x
 #define VBOX_X(x) VBOX_X2(x)
-#define VBOX_STR2(x) #x
-#define VBOX_STR(x) VBOX_STR2(x)
 
 #ifdef VBOX_WITH_SLIRP_MT
 
@@ -669,8 +754,53 @@ typedef struct NATState
 #define sock_query pData->sock_query
 #define sock_answer pData->sock_answer
 
-#ifdef VBOX_WITH_SLIRP_ALIAS
-# define instancehead pData->instancehead
+#define instancehead pData->instancehead
+
+#ifdef VBOX_WITH_SLIRP_BSD_MBUF
+# define nmbclusters    pData->nmbclusters
+# define nmbjumbop  pData->nmbjumbop
+# define nmbjumbo9  pData->nmbjumbo9
+# define nmbjumbo16 pData->nmbjumbo16
+# define mbstat pData->mbstat
+# include "ext.h"
+# undef zone_mbuf
+# undef zone_clust
+# undef zone_pack
+# undef zone_jumbop
+# undef zone_jumbo9
+# undef zone_jumbo16
+# undef zone_ext_refcnt
+static inline uma_zone_t slirp_zone_pack(PNATState pData)
+{
+    return pData->zone_pack;
+}
+static inline uma_zone_t slirp_zone_jumbop(PNATState pData)
+{
+    return pData->zone_jumbop;
+}
+static inline uma_zone_t slirp_zone_jumbo9(PNATState pData)
+{
+    return pData->zone_jumbo9;
+}
+static inline uma_zone_t slirp_zone_jumbo16(PNATState pData)
+{
+    return pData->zone_jumbo16;
+}
+static inline uma_zone_t slirp_zone_ext_refcnt(PNATState pData)
+{
+    return pData->zone_ext_refcnt;
+}
+static inline uma_zone_t slirp_zone_mbuf(PNATState pData)
+{
+    return pData->zone_mbuf;
+}
+static inline uma_zone_t slirp_zone_clust(PNATState pData)
+{
+    return pData->zone_clust;
+}
+#ifndef VBOX_SLIRP_BSD
+# define m_adj(m, len) m_adj(pData, (m), (len))
+#endif
 #endif
 
 #endif /* !___slirp_state_h */

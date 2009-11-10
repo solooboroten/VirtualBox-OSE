@@ -1,4 +1,4 @@
-/* $Id: PGMAllGst.h 20374 2009-06-08 00:43:21Z vboxsync $ */
+/* $Id: PGMAllGst.h 23853 2009-10-19 11:33:30Z vboxsync $ */
 /** @file
  * VBox - Page Manager, Guest Paging Template - All context code.
  */
@@ -42,10 +42,10 @@ RT_C_DECLS_END
  *
  * @returns VBox status.
  * @param   pVCpu       The VMCPU handle.
- * @param   GCPtr       Guest Context virtual address of the page. Page aligned!
+ * @param   GCPtr       Guest Context virtual address of the page.
  * @param   pfFlags     Where to store the flags. These are X86_PTE_*, even for big pages.
  * @param   pGCPhys     Where to store the GC physical address of the page.
- *                      This is page aligned. The fact that the
+ *                      This is page aligned!
  */
 PGM_GST_DECL(int, GetPage)(PVMCPU pVCpu, RTGCPTR GCPtr, uint64_t *pfFlags, PRTGCPHYS pGCPhys)
 {
@@ -178,6 +178,8 @@ PGM_GST_DECL(int, ModifyPage)(PVMCPU pVCpu, RTGCPTR GCPtr, size_t cb, uint64_t f
 #if PGM_GST_TYPE == PGM_TYPE_32BIT \
  || PGM_GST_TYPE == PGM_TYPE_PAE \
  || PGM_GST_TYPE == PGM_TYPE_AMD64
+
+    Assert((cb & PAGE_OFFSET_MASK) == 0);
 
     PVM pVM = pVCpu->CTX_SUFF(pVM);
     for (;;)
@@ -483,7 +485,7 @@ PGM_GST_DECL(bool, HandlerVirtualUpdate)(PVM pVM, uint32_t cr4)
     pgmLock(pVM);
     STAM_PROFILE_START(&pVM->pgm.s.CTX_MID_Z(Stat,SyncCR3HandlerVirtualUpdate), a);
 
-    for (unsigned i=0;i<pVM->cCPUs;i++)
+    for (VMCPUID i = 0; i < pVM->cCpus; i++)
     {
         PGMHVUSTATE State;
         PVMCPU      pVCpu = &pVM->aCpus[i];
@@ -508,7 +510,7 @@ PGM_GST_DECL(bool, HandlerVirtualUpdate)(PVM pVM, uint32_t cr4)
         Log(("HandlerVirtualUpdate: resets bits\n"));
         RTAvlroGCPtrDoWithAll(&pVM->pgm.s.CTX_SUFF(pTrees)->VirtHandlers, true, pgmHandlerVirtualResetOne, pVM);
 
-        for (unsigned i=0;i<pVM->cCPUs;i++)
+        for (VMCPUID i = 0; i < pVM->cCpus; i++)
         {
             PVMCPU pVCpu = &pVM->aCpus[i];
             pVCpu->pgm.s.fSyncFlags &= ~PGM_SYNC_UPDATE_PAGE_BIT_VIRTUAL;

@@ -12,6 +12,7 @@
 # Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
 # Clara, CA 95054 USA or visit http://www.sun.com if you need
 # additional information or have any questions.
+#
 
 import sys
 
@@ -21,7 +22,6 @@ glx_functions = [
 "UseXFont",
 #"GetDriverConfig",
 "GetProcAddress",
-"FreeMemoryMESA",
 "QueryExtension",
 "IsDirect",
 "DestroyGLXPbufferSGIX",
@@ -33,7 +33,6 @@ glx_functions = [
 "SwapBuffers",
 "CreateNewContext",
 "SelectEventSGIX",
-"QueryContextInfoEXT",
 "GetCurrentDrawable",
 "ChooseFBConfig",
 "WaitGL",
@@ -41,37 +40,29 @@ glx_functions = [
 "CreatePixmap",
 "GetSelectedEventSGIX",
 "GetCurrentReadDrawable",
-"ImportContextEXT",
-"GetContextIDEXT",
 "GetCurrentDisplay",
 "QueryServerString",
 "CreateWindow",
 "SelectEvent",
 "GetVisualFromFBConfigSGIX",
-"MakeCurrentReadSGI",
 "GetFBConfigFromVisualSGIX",
 "QueryDrawable",
 "CreateContext",
 "GetConfig",
 "CreateGLXPbufferSGIX",
-"AllocateMemoryMESA",
-"GetMemoryOffsetMESA",
 "CreatePbuffer",
 "ChooseFBConfigSGIX",
 "WaitX",
 "GetVisualFromFBConfig",
-"CreateGLXPixmapMESA",
 #"GetScreenDriver",
 "GetFBConfigAttrib",
 "GetCurrentContext",
 "GetClientString",
-"GetCurrentDisplayEXT",
 "DestroyPixmap",
 "MakeCurrent",
 "DestroyContext",
 "GetProcAddressARB",
 "GetSelectedEvent",
-"FreeContextEXT",
 "DestroyPbuffer",
 "DestroyWindow",
 "DestroyGLXPixmap",
@@ -79,7 +70,17 @@ glx_functions = [
 "ChooseVisual",
 "MakeContextCurrent",
 "QueryExtensionsString",
-"GetFBConfigAttribSGIX"
+"GetFBConfigAttribSGIX",
+"FreeMemoryMESA",
+"QueryContextInfoEXT",
+"ImportContextEXT",
+"GetContextIDEXT",
+"MakeCurrentReadSGI",
+"AllocateMemoryMESA",
+"GetMemoryOffsetMESA",
+"CreateGLXPixmapMESA",
+"GetCurrentDisplayEXT",
+"FreeContextEXT"
 ];
 
 print '%include "iprt/asmdefs.mac"'

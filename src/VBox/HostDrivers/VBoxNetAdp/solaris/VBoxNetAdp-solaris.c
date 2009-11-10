@@ -1,4 +1,4 @@
-/* $Id: VBoxNetAdp-solaris.c 17803 2009-03-13 10:39:08Z vboxsync $ */
+/* $Id: VBoxNetAdp-solaris.c 22285 2009-08-17 11:17:01Z vboxsync $ */
 /** @file
  * VBoxNetAdapter - Network Adapter Driver (Host), Solaris Specific Code.
  */
@@ -22,10 +22,6 @@
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
-#if defined(DEBUG_ramshankar) && !defined(LOG_ENABLED)
-# define LOG_ENABLED
-#endif
-
 #define LOG_GROUP LOG_GROUP_NET_ADP_DRV
 #include <VBox/log.h>
 #include <VBox/err.h>
@@ -62,6 +58,13 @@
 /** The module descriptions as seen in 'modinfo'. */
 #define DEVICE_DESC_DRV          "VirtualBox NetAdp"
 #define VBOXNETADP_MTU           1500
+
+#if defined(DEBUG_ramshankar)
+# undef Log
+# define Log        LogRel
+# undef LogFlow
+# define LogFlow    LogRel
+#endif
 
 static int VBoxNetAdpSolarisAttach(dev_info_t *pDip, ddi_attach_cmd_t enmCmd);
 static int VBoxNetAdpSolarisDetach(dev_info_t *pDip, ddi_detach_cmd_t enmCmd);
@@ -426,8 +429,8 @@ static int VBoxNetAdpSolarisDetach(dev_info_t *pDip, ddi_detach_cmd_t enmCmd)
 
 static int vboxNetAdpSolarisGenerateMac(PRTMAC pMac)
 {
-    pMac->au8[0] = 0x00;
-    pMac->au8[1] = 0x08;
+    pMac->au8[0] = 0x08;
+    pMac->au8[1] = 0x00;
     pMac->au8[2] = 0x27;
     RTRandBytes(&pMac->au8[3], 3);
     LogFlow((DEVICE_NAME ":VBoxNetAdpSolarisGenerateMac Generated %.*Rhxs\n", sizeof(RTMAC), &pMac));
@@ -452,6 +455,7 @@ static int vboxNetAdpSolarisSetMacAddress(gld_mac_info_t *pMacInfo, unsigned cha
 
 static int vboxNetAdpSolarisSend(gld_mac_info_t *pMacInfo, mblk_t *pMsg)
 {
+    freemsg(pMsg);
     return GLD_SUCCESS;
 }
 

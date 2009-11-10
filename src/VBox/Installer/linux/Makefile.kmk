@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 20946 2009-06-25 15:09:03Z vboxsync $
+# $Id: Makefile.kmk 23889 2009-10-19 20:58:07Z vboxsync $
 ## @file
 # Makefile for the Linux installer.
 #
@@ -76,10 +76,10 @@ linux-misc_MODE = a+r,u+w
 linux-misc_SOURCES = \
 	$(PATH_ROOT)/src/VBox/Frontends/VirtualBox/images/$(if $(VBOX_OSE),OSE,NonOSE)/VirtualBox_32px.png=>VBox.png \
 	$(if $(VBOX_OSE),,$(VBOX_BRAND_LICENSE_TXT)=>LICENSE) \
-	$(if $(VBOX_WITH_QTGUI),$(PATH_linux-misc)/VirtualBox.desktop,)
-linux-misc_CLEAN = $(PATH_linux-misc)/VirtualBox.desktop
+	$(if $(VBOX_WITH_QTGUI),$(PATH_linux-misc)/virtualbox.desktop,)
+linux-misc_CLEAN = $(PATH_linux-misc)/virtualbox.desktop
 
-$$(PATH_linux-misc)/VirtualBox.desktop: $(PATH_SUB_CURRENT)/VirtualBox.desktop $(VBOX_VERSION_STAMP) | $$(dir $$@)
+$$(PATH_linux-misc)/virtualbox.desktop: $(PATH_SUB_CURRENT)/virtualbox.desktop $(VBOX_VERSION_STAMP) | $$(dir $$@)
 	$(call MSG_GENERATE,,$@,$<)
 ifdef VBOX_PATH_PACKAGE_DOCS
 	$(QUIET)$(SED) -e "s+\$$VBOX_DOC_PATH+$(VBOX_PATH_PACKAGE_DOCS)+" --output $@ $<
@@ -112,7 +112,6 @@ VBOX_LNX_STRIP_BIN = \
 		VBoxNetDHCP $(if $(VBOX_WITH_HARDENING),VBoxNetDHCP.so,) \
 		VBoxNetAdpCtl \
 		VBoxSVC \
-		VBoxSettings.so \
 		VBoxXPCOM.so \
 		VBoxXPCOMC.so \
 		VBoxXPCOMIPCD \
@@ -158,7 +157,7 @@ ifdef VBOX_WITH_QTGUI
  	$(if $(VBOX_WITH_HARDENING),VirtualBox.so) \
 	$(if $(VBOX_WITH_DEBUGGER_GUI),VBoxDbg.so)
  VBOX_LNX_NO_STRIP += \
-	VirtualBox.desktop \
+	virtualbox.desktop \
 	$(VBOX_LICENSE_FILES) \
  	$(if $(VBOX_WITH_QT4_SUN),$(notdir $(wildcard $(PATH_BIN)/lib*VBox*)),) \
 	$(if $(VBOX_WITH_QT4_SUN),accessible/libqtaccessiblewidgets.so,) \
@@ -174,8 +173,13 @@ endif
 # Documentation
 ifdef VBOX_WITH_DOCS_PACKING
  VBOX_LNX_NO_STRIP += \
-	VirtualBox.chm UserManual.pdf \
-	$(foreach f,$(VBOX_MANUAL_ADD_LANGUAGES),VirtualBox_$(f).chm UserManual_$(f).pdf)
+	UserManual.pdf \
+	$(foreach f,$(VBOX_MANUAL_ADD_LANGUAGES),UserManual_$(f).pdf)
+ ifdef VBOX_WITH_DOCS_CHM
+  VBOX_LNX_NO_STRIP += \
+  	VirtualBox.chm \
+	$(foreach f,$(VBOX_MANUAL_ADD_LANGUAGES),VirtualBox_$(f).chm)
+ endif
  VBOX_LNX_STRIP_BIN += \
 	$(if $(VBOX_WITH_KCHMVIEWER),kchmviewer,)
 endif
@@ -232,6 +236,12 @@ ifdef VBOX_WITH_WEBSERVICES
 	webtest
 endif
 
+# EFI firmware
+ifdef VBOX_WITH_EFIFW_FROM_BUILD_SERVER
+  VBOX_LNX_NO_STRIP += \
+	vboxefi.fv
+endif
+
 #
 # All the bin files that goes into the archives.
 #
@@ -253,6 +263,7 @@ $(PATH_BIN)/$(VBOX_LNX_PACKAGE_NAME): \
 		$(if $(VBOX_OSE),,$(VBOX_BRAND_LICENSE_TXT)) \
 		$(VBOX_LNX_INST_OUT_DIR)/vboxdrv.sh \
 		$(VBOX_LNX_INST_OUT_DIR)/install.sh \
+		$(VBOX_PATH_LNX_INST_SRC)/vboxdrv-pardus.py \
 		$(VBOX_PATH_LNX_INST_SRC)/uninstall.sh \
 		$(wildcard $(PATH_BIN)/src/*) \
 		$(wildcard $(PATH_BIN)/src/*/*) \
@@ -264,6 +275,7 @@ $(PATH_BIN)/$(VBOX_LNX_PACKAGE_NAME): \
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_PATH_LNX_INST_SRC)/deffiles             $(VBOX_LNX_INST_STAGE_DIR)/
 	$(QUIET)$(if $(VBOX_OSE),,$(INSTALL) -m 0644 $(VBOX_BRAND_LICENSE_TXT)    $(VBOX_LNX_INST_STAGE_DIR)/LICENSE)
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_LNX_INST_OUT_DIR)/vboxdrv.sh            $(VBOX_LNX_INST_STAGE_DIR)/
+	$(QUIET)$(INSTALL) -m 0755 $(VBOX_PATH_LNX_INST_SRC)/vboxdrv-pardus.py            $(VBOX_LNX_INST_STAGE_DIR)/
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_LNX_INST_OUT_DIR)/install.sh            $(VBOX_LNX_INST_STAGE_DIR)/
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_PATH_LNX_INST_SRC)/uninstall.sh         $(VBOX_LNX_INST_STAGE_DIR)/
 	$(QUIET)$(RM) -f $@
@@ -274,6 +286,7 @@ $(PATH_BIN)/$(VBOX_LNX_PACKAGE_NAME): \
 $(VBOX_LNX_INST_OUT_DIR)/vboxdrv.sh: $(VBOX_PATH_LNX_INST_SRC)/vboxdrv.sh.in | $$(dir $$@)
 	$(QUIET)$(SED_EXT) \
 		-e "s|%NOLSB%|yes|g" \
+		-e "s|%DEBIAN%||g" \
 		-e "s|%PACKAGE%|virtualbox|g" \
 		--output $@ \
 		$<

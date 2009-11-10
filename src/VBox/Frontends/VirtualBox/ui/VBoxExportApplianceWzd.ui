@@ -9,7 +9,7 @@
  available from http://www.virtualbox.org. This file is free software;
  you can redistribute it and/or modify it under the terms of the GNU
  General Public License (GPL) as published by the Free Software
- Foundation, in version 2 as it comes in the &quot;COPYING&quot; file of the
+ Foundation, in version 2 as it comes in the "COPYING" file of the
  VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 
@@ -80,7 +80,7 @@
             <string/>
            </property>
            <property name="pixmap">
-            <pixmap resource="../VirtualBox.qrc">:/vmw_ovf_import.png</pixmap>
+            <pixmap resource="../VirtualBox1.qrc">:/vmw_ovf_import.png</pixmap>
            </property>
            <property name="alignment">
             <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
@@ -227,7 +227,7 @@ p, li { white-space: pre-wrap; }
             <string/>
            </property>
            <property name="pixmap">
-            <pixmap resource="../VirtualBox.qrc">:/vmw_ovf_import.png</pixmap>
+            <pixmap resource="../VirtualBox1.qrc">:/vmw_ovf_import.png</pixmap>
            </property>
            <property name="alignment">
             <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
@@ -394,7 +394,7 @@ p, li { white-space: pre-wrap; }
             <string/>
            </property>
            <property name="pixmap">
-            <pixmap resource="../VirtualBox.qrc">:/vmw_ovf_import.png</pixmap>
+            <pixmap resource="../VirtualBox1.qrc">:/vmw_ovf_import.png</pixmap>
            </property>
            <property name="alignment">
             <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
@@ -570,7 +570,7 @@ p, li { white-space: pre-wrap; }
             <string/>
            </property>
            <property name="pixmap">
-            <pixmap resource="../VirtualBox.qrc">:/vmw_ovf_import.png</pixmap>
+            <pixmap resource="../VirtualBox1.qrc">:/vmw_ovf_import.png</pixmap>
            </property>
            <property name="alignment">
             <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
@@ -800,8 +800,7 @@ p, li { white-space: pre-wrap; }
   <tabstop>mBtnCancel4</tabstop>
  </tabstops>
  <resources>
-  <include location="../VirtualBox.qrc"/>
-  <include location="../VirtualBox.qrc"/>
+  <include location="../VirtualBox1.qrc"/>
  </resources>
  <connections/>
 </ui>

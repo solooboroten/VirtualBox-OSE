@@ -55,7 +55,7 @@ public:
               uint32_t u32FixedHeight = ~(uint32_t)0, uint32_t u32FixedBPP = ~(uint32_t)0);
     virtual ~VBoxSDLFB();
 
-    static void init(bool fShowSDLConfig);
+    static bool init(bool fShowSDLConfig);
     static void uninit();
 
 #ifdef RT_OS_WINDOWS
@@ -70,24 +70,8 @@ public:
             delete this;
         return cnt;
     }
-    STDMETHOD(QueryInterface) (REFIID riid , void **ppObj)
-    {
-        if (riid == IID_IUnknown)
-        {
-            *ppObj = this;
-            AddRef();
-            return S_OK;
-        }
-        if (riid == IID_IFramebuffer)
-        {
-            *ppObj = this;
-            AddRef();
-            return S_OK;
-        }
-        *ppObj = NULL;
-        return E_NOINTERFACE;
-    }
 #endif
+    VBOX_SCRIPTABLE_DISPATCH_IMPL(IFramebuffer)
 
     NS_DECL_ISUPPORTS
 
@@ -241,24 +225,8 @@ public:
             delete this;
         return cnt;
     }
-    STDMETHOD(QueryInterface) (REFIID riid , void **ppObj)
-    {
-        if (riid == IID_IUnknown)
-        {
-            *ppObj = this;
-            AddRef();
-            return S_OK;
-        }
-        if (riid == IID_IFramebuffer)
-        {
-            *ppObj = this;
-            AddRef();
-            return S_OK;
-        }
-        *ppObj = NULL;
-        return E_NOINTERFACE;
-    }
 #endif
+    VBOX_SCRIPTABLE_DISPATCH_IMPL(IFramebuffer)
 
     NS_DECL_ISUPPORTS
 

@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceVMInfo.cpp 19637 2009-05-12 14:54:10Z vboxsync $ */
+/* $Id: VBoxServiceVMInfo.cpp 24512 2009-11-09 15:37:36Z vboxsync $ */
 /** @file
  * VBoxVMInfo - Virtual machine (guest) information for the host.
  */
@@ -33,10 +33,10 @@
 # define __STDC_LIMIT_MACROS
 # include <arpa/inet.h>
 # include <errno.h>
-# include <net/if.h>
 # include <netinet/in.h>
 # include <sys/ioctl.h>
 # include <sys/socket.h>
+# include <net/if.h>
 # include <unistd.h>
 # include <utmp.h>
 # ifdef RT_OS_SOLARIS
@@ -51,7 +51,8 @@
 #include <iprt/system.h>
 #include <iprt/time.h>
 #include <iprt/assert.h>
-#include <VBox/VBoxGuest.h>
+#include <VBox/version.h>
+#include <VBox/VBoxGuestLib.h>
 #include "VBoxServiceInternal.h"
 #include "VBoxServiceUtils.h"
 
@@ -66,13 +67,13 @@ static RTSEMEVENTMULTI g_VMInfoEvent = NIL_RTSEMEVENTMULTI;
 /** The guest property service client ID. */
 static uint32_t g_VMInfoGuestPropSvcClientID = 0;
 /** Number of logged in users in OS. */
-static uint32_t g_VMInfoLoggedInUsers = 0;
+static uint32_t g_VMInfoLoggedInUsers = UINT32_MAX;
 #ifdef RT_OS_WINDOWS
 /** Function prototypes for dynamic loading. */
 fnWTSGetActiveConsoleSessionId g_pfnWTSGetActiveConsoleSessionId = NULL;
 /** External functions. */
-extern int VboxServiceWinGetAddsVersion(uint32_t uiClientID);
-extern int VboxServiceWinGetComponentVersions(uint32_t uiClientID);
+extern int VBoxServiceWinGetAddsVersion(uint32_t uiClientID);
+extern int VBoxServiceWinGetComponentVersions(uint32_t uiClientID);
 #endif
 
 
@@ -109,11 +110,11 @@ static DECLCALLBACK(int) VBoxServiceVMInfoInit(void)
         g_VMInfoInterval = 10 * 1000;
 
     int rc = RTSemEventMultiCreate(&g_VMInfoEvent);
-    AssertRC(rc);
+    AssertRCReturn(rc, rc);
 
 #ifdef RT_OS_WINDOWS
     /* Get function pointers. */
-    HMODULE hKernel32 = LoadLibrary(_T("kernel32"));
+    HMODULE hKernel32 = LoadLibrary("kernel32");
     if (NULL != hKernel32)
     {
         g_pfnWTSGetActiveConsoleSessionId = (fnWTSGetActiveConsoleSessionId)GetProcAddress(hKernel32, "WTSGetActiveConsoleSessionId");
@@ -122,13 +123,13 @@ static DECLCALLBACK(int) VBoxServiceVMInfoInit(void)
 #endif
 
     rc = VbglR3GuestPropConnect(&g_VMInfoGuestPropSvcClientID);
-    if (!RT_SUCCESS(rc))
-    {
-        VBoxServiceError("Failed to connect to the guest property service! Error: %Rrc\n", rc);
-    }
+    if (RT_SUCCESS(rc))
+        VBoxServiceVerbose(3, "Property Service Client ID: %#x\n", g_VMInfoGuestPropSvcClientID);
     else
     {
-        VBoxServiceVerbose(3, "Property Service Client ID: %ld\n", g_VMInfoGuestPropSvcClientID);
+        VBoxServiceError("Failed to connect to the guest property service! Error: %Rrc\n", rc);
+        RTSemEventMultiDestroy(g_VMInfoEvent);
+        g_VMInfoEvent = NIL_RTSEMEVENTMULTI;
     }
 
     return rc;
@@ -157,23 +158,28 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
     /* First get information that won't change while the OS is running. */
     char szInfo[256] = {0};
     rc = RTSystemQueryOSInfo(RTSYSOSINFO_PRODUCT, szInfo, sizeof(szInfo));
-    VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, "GuestInfo/OS/Product", szInfo);
+    VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/Product", "%s", szInfo);
 
     rc = RTSystemQueryOSInfo(RTSYSOSINFO_RELEASE, szInfo, sizeof(szInfo));
-    VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, "GuestInfo/OS/Release", szInfo);
+    VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/Release", "%s", szInfo);
 
     rc = RTSystemQueryOSInfo(RTSYSOSINFO_VERSION, szInfo, sizeof(szInfo));
-    VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, "GuestInfo/OS/Version", szInfo);
+    VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/Version", "%s", szInfo);
 
     rc = RTSystemQueryOSInfo(RTSYSOSINFO_SERVICE_PACK, szInfo, sizeof(szInfo));
-    VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, "GuestInfo/OS/ServicePack", szInfo);
+    VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/ServicePack", "%s", szInfo);
 
     /* Retrieve version information about Guest Additions and installed files (components). */
 #ifdef RT_OS_WINDOWS
-    rc = VboxServiceWinGetAddsVersion(g_VMInfoGuestPropSvcClientID);
-    rc = VboxServiceWinGetComponentVersions(g_VMInfoGuestPropSvcClientID);
+    rc = VBoxServiceWinGetAddsVersion(g_VMInfoGuestPropSvcClientID);
+    rc = VBoxServiceWinGetComponentVersions(g_VMInfoGuestPropSvcClientID);
 #else
-    /** @todo */
+    /* VBoxServiceGetAddsVersion !RT_OS_WINDOWS */
+    VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestAdd/Version", "%s", VBOX_VERSION_STRING);
+
+    char szRevision[32];
+    RTStrPrintf(szRevision, sizeof(szRevision), "%u", VBOX_SVN_REV);
+    VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestAdd/Revision", "%s", szRevision);
 #endif
 
     /* Now enter the loop retrieving runtime data continuously. */
@@ -185,6 +191,7 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
         char szUserList[4096] = {0};
 
 #ifdef RT_OS_WINDOWS
+# ifndef TARGET_NT4
         PLUID pSessions = NULL;
         ULONG ulCount = 0;
         NTSTATUS r = 0;
@@ -203,14 +210,14 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
         }
 
         PLUID pLuid = NULL;
-        DWORD dwNumOfProcLUIDs = VboxServiceVMInfoWinGetLUIDsFromProcesses(&pLuid);
+        DWORD dwNumOfProcLUIDs = VBoxServiceVMInfoWinGetLUIDsFromProcesses(&pLuid);
 
         VBOXSERVICEVMINFOUSER userInfo;
         ZeroMemory (&userInfo, sizeof(VBOXSERVICEVMINFOUSER));
 
         for (int i = 0; i<(int)ulCount; i++)
         {
-            if (VboxServiceVMInfoWinIsLoggedIn(&userInfo, &pSessions[i], pLuid, dwNumOfProcLUIDs))
+            if (VBoxServiceVMInfoWinIsLoggedIn(&userInfo, &pSessions[i], pLuid, dwNumOfProcLUIDs))
             {
                 if (uiUserCount > 0)
                     strcat (szUserList, ",");
@@ -227,22 +234,34 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
             ::LocalFree (pLuid);
 
         ::LsaFreeReturnBuffer(pSessions);
+# endif /* TARGET_NT4 */
+#elif defined(RT_OS_FREEBSD)
+        /** @todo FreeBSD: Port logged on user info retrival. */
+#elif defined(RT_OS_OS2)
+        /** @todo OS/2: Port logged on (LAN/local/whatever) user info retrival. */
 #else
-        utmp* ut_user;
         rc = utmpname(UTMP_FILE);
+# ifdef RT_OS_SOLARIS
+        if (rc != 1)
+# else
         if (rc != 0)
+# endif
         {
-            VBoxServiceError("Could not set  UTMP file! Error: %ld", errno);
+            VBoxServiceError("Could not set UTMP file! Error: %ld\n", errno);
         }
         setutent();
-        while ((ut_user=getutent()))
+        utmp *ut_user;
+        while ((ut_user = getutent()))
         {
             /* Make sure we don't add user names which are not
              * part of type USER_PROCESS and don't add same users twice. */
-            if (   (ut_user->ut_type == USER_PROCESS)
-                && (strstr(szUserList, ut_user->ut_user) == NULL))
+            if (   ut_user->ut_type == USER_PROCESS
+                && strstr(szUserList, ut_user->ut_user) == NULL)
             {
-                /** @todo Do we really want to filter out double user names? (Same user logged in twice) */
+                /** @todo Do we really want to filter out double user names? (Same user logged in twice)
+                 *  bird: If we do, then we must add checks for buffer overflows here!  */
+                /** @todo r=bird: strstr will filtering out users with similar names. For
+                 *        example: smith, smithson, joesmith and bobsmith */
                 if (uiUserCount > 0)
                     strcat(szUserList, ",");
                 strcat(szUserList, ut_user->ut_user);
@@ -252,18 +271,21 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
         endutent();
 #endif /* !RT_OS_WINDOWS */
 
-        VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, "GuestInfo/OS/LoggedInUsersList", (uiUserCount > 0) ? szUserList : NULL);
-        VboxServiceWritePropInt(g_VMInfoGuestPropSvcClientID, "GuestInfo/OS/LoggedInUsers", uiUserCount);
-        if (g_VMInfoLoggedInUsers != uiUserCount || g_VMInfoLoggedInUsers == INT32_MAX)
+        if (uiUserCount > 0)
+            VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/LoggedInUsersList", "%s", szUserList);
+        else
+            VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/LoggedInUsersList", NULL);
+        VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/LoggedInUsers", "%u", uiUserCount);
+        if (g_VMInfoLoggedInUsers != uiUserCount || g_VMInfoLoggedInUsers == UINT32_MAX)
         {
             /* Update this property ONLY if there is a real change from no users to
              * users or vice versa. The only exception is that the initialization
-             * of a_pCtx->cUsers forces an update, but only once. This ensures
-             * consistent property settings even if the VM aborted previously. */
+             * forces an update, but only once. This ensures consistent property
+             * settings even if the VM aborted previously. */
             if (uiUserCount == 0)
-                VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, "GuestInfo/OS/NoLoggedInUsers", "true");
-            else if (g_VMInfoLoggedInUsers == 0 || uiUserCount == INT32_MAX)
-                VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, "GuestInfo/OS/NoLoggedInUsers", "false");
+                VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/NoLoggedInUsers", "true");
+            else if (g_VMInfoLoggedInUsers == 0)
+                VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/NoLoggedInUsers", "false");
         }
         g_VMInfoLoggedInUsers = uiUserCount;
 
@@ -316,12 +338,11 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
         ifreq *ifreqitem = NULL;
         nNumInterfaces = ifcfg.ifc_len / sizeof(ifreq);
 #endif
-        char szPropPath [FILENAME_MAX] = {0};
-        char szTemp [FILENAME_MAX] = {0};
+        char szPropPath [FILENAME_MAX];
         int iCurIface = 0;
 
-        RTStrPrintf(szPropPath, sizeof(szPropPath), "GuestInfo/Net/Count");
-        VboxServiceWritePropInt(g_VMInfoGuestPropSvcClientID, szPropPath, (nNumInterfaces > 1 ? nNumInterfaces-1 : 0));
+        VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/Net/Count", "%d",
+                              nNumInterfaces > 1 ? nNumInterfaces-1 : 0);
 
         /** @todo Use GetAdaptersInfo() and GetAdapterAddresses (IPv4 + IPv6) for more information. */
         for (int i = 0; i < nNumInterfaces; ++i)
@@ -345,8 +366,8 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
             pAddress = ((sockaddr_in *)&ifrequest[i].ifr_addr);
 #endif
             Assert(pAddress);
-            RTStrPrintf(szPropPath, sizeof(szPropPath), "GuestInfo/Net/%d/V4/IP", iCurIface);
-            VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, szPropPath, inet_ntoa(pAddress->sin_addr));
+            RTStrPrintf(szPropPath, sizeof(szPropPath), "/VirtualBox/GuestInfo/Net/%d/V4/IP", iCurIface);
+            VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, szPropPath, "%s", inet_ntoa(pAddress->sin_addr));
 
 #ifdef RT_OS_WINDOWS
             pAddress = (sockaddr_in *) & (InterfaceList[i].iiBroadcastAddress);
@@ -358,8 +379,8 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
             }
             pAddress = (sockaddr_in *)&ifrequest[i].ifr_broadaddr;
 #endif
-            RTStrPrintf(szPropPath, sizeof(szPropPath), "GuestInfo/Net/%d/V4/Broadcast", iCurIface);
-            VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, szPropPath, inet_ntoa(pAddress->sin_addr));
+            RTStrPrintf(szPropPath, sizeof(szPropPath), "/VirtualBox/GuestInfo/Net/%d/V4/Broadcast", iCurIface);
+            VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, szPropPath, "%s", inet_ntoa(pAddress->sin_addr));
 
 #ifdef RT_OS_WINDOWS
             pAddress = (sockaddr_in *)&(InterfaceList[i].iiNetmask);
@@ -369,23 +390,19 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
                 VBoxServiceError("Failed to ioctl(SIOCGIFBRDADDR) on socket: Error %d\n", errno);
                 return -1;
             }
- #ifdef RT_OS_SOLARIS
+ #if defined(RT_OS_FREEBSD) || defined(RT_OS_OS2) || defined(RT_OS_SOLARIS)
             pAddress = (sockaddr_in *)&ifrequest[i].ifr_addr;
  #else
             pAddress = (sockaddr_in *)&ifrequest[i].ifr_netmask;
  #endif
 
 #endif
-            RTStrPrintf(szPropPath, sizeof(szPropPath), "GuestInfo/Net/%d/V4/Netmask", iCurIface);
-            VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, szPropPath, inet_ntoa(pAddress->sin_addr));
+            RTStrPrintf(szPropPath, sizeof(szPropPath), "/VirtualBox/GuestInfo/Net/%d/V4/Netmask", iCurIface);
+            VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, szPropPath, "%s", inet_ntoa(pAddress->sin_addr));
 
-             if (nFlags & IFF_UP)
-                RTStrPrintf(szTemp, sizeof(szTemp), "Up");
-            else
-                RTStrPrintf(szTemp, sizeof(szTemp), "Down");
-
-            RTStrPrintf(szPropPath, sizeof(szPropPath), "GuestInfo/Net/%d/Status", iCurIface);
-            VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, szPropPath, szTemp);
+            RTStrPrintf(szPropPath, sizeof(szPropPath), "/VirtualBox/GuestInfo/Net/%d/Status", iCurIface);
+            VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, szPropPath,
+                                  nFlags & IFF_UP ? "Up" : "Down");
 
             iCurIface++;
         }
@@ -436,25 +453,31 @@ static DECLCALLBACK(void) VBoxServiceVMInfoTerm(void)
 {
     int rc;
 
-    /** @todo temporary solution: Zap all values which are not valid
-     *        anymore when VM goes down (reboot/shutdown ). Needs to
-     *        be replaced with "temporary properties" later. */
-    rc = VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, "GuestInfo/OS/LoggedInUsersList", NULL);
-    rc = VboxServiceWritePropInt(g_VMInfoGuestPropSvcClientID, "GuestInfo/OS/LoggedInUsers", 0);
-    if (g_VMInfoLoggedInUsers > 0)
-        VboxServiceWriteProp(g_VMInfoGuestPropSvcClientID, "GuestInfo/OS/NoLoggedInUsers", "true");
-
-    const char *apszPat[1] = { "/VirtualBox/GuestInfo/Net/*" };
-    rc = VbglR3GuestPropDelSet(g_VMInfoGuestPropSvcClientID, &apszPat[0], RT_ELEMENTS(apszPat));
-    rc = VboxServiceWritePropInt(g_VMInfoGuestPropSvcClientID, "GuestInfo/Net/Count", 0);
-
-    /* Disconnect from guest properties service. */
-    rc = VbglR3GuestPropDisconnect(g_VMInfoGuestPropSvcClientID);
-    if (RT_FAILURE(rc))
-        VBoxServiceError("Failed to disconnect from guest property service! Error: %Rrc\n", rc);
-
     if (g_VMInfoEvent != NIL_RTSEMEVENTMULTI)
     {
+        /** @todo temporary solution: Zap all values which are not valid
+         *        anymore when VM goes down (reboot/shutdown ). Needs to
+         *        be replaced with "temporary properties" later.
+         *
+         *  @todo r=bird: This code isn't called on non-Windows systems. We need
+         *        a more formal way of shutting down the service for that to work.
+         */
+        rc = VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/LoggedInUsersList", NULL);
+        rc = VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/LoggedInUsers", "%d", 0);
+        if (g_VMInfoLoggedInUsers > 0)
+            VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/OS/NoLoggedInUsers", "true");
+
+        const char *apszPat[1] = { "/VirtualBox/GuestInfo/Net/*" };
+        rc = VbglR3GuestPropDelSet(g_VMInfoGuestPropSvcClientID, &apszPat[0], RT_ELEMENTS(apszPat));
+        rc = VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestInfo/Net/Count", "%d", 0);
+
+        /* Disconnect from guest properties service. */
+        rc = VbglR3GuestPropDisconnect(g_VMInfoGuestPropSvcClientID);
+        if (RT_FAILURE(rc))
+            VBoxServiceError("Failed to disconnect from guest property service! Error: %Rrc\n", rc);
+        g_VMInfoGuestPropSvcClientID = 0;
+
+
         RTSemEventMultiDestroy(g_VMInfoEvent);
         g_VMInfoEvent = NIL_RTSEMEVENTMULTI;
     }

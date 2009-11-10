@@ -1,11 +1,10 @@
+/* $Revision: 23916 $ */
 /** @file
- *
- * VBoxGuestLib - A support library for VirtualBox guest additions:
- * Generic VMMDev request management
+ * VBoxGuestLibR0 - Generic VMMDev request management.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -20,16 +19,81 @@
  * additional information or have any questions.
  */
 
-#include <VBox/VBoxGuestLib.h>
 #include "VBGLInternal.h"
 #include <iprt/asm.h>
-#include <iprt/string.h>
 #include <iprt/assert.h>
+#include <iprt/string.h>
+
+DECLVBGL(int) VbglGRVerify (const VMMDevRequestHeader *pReq, size_t cbReq)
+{
+    if (!pReq || cbReq < sizeof (VMMDevRequestHeader))
+    {
+        dprintf(("VbglGRVerify: Invalid parameter: pReq = %p, cbReq = %d\n", pReq, cbReq));
+        return VERR_INVALID_PARAMETER;
+    }
+
+    if (pReq->size > cbReq)
+    {
+        dprintf(("VbglGRVerify: request size %d > buffer size %d\n", pReq->size, cbReq));
+        return VERR_INVALID_PARAMETER;
+    }
+
+    /* The request size must correspond to the request type. */
+    size_t cbReqExpected = vmmdevGetRequestSize(pReq->requestType);
+
+    if (cbReq < cbReqExpected)
+    {
+        dprintf(("VbglGRVerify: buffer size %d < expected size %d\n", cbReq, cbReqExpected));
+        return VERR_INVALID_PARAMETER;
+    }
+
+    if (cbReqExpected == cbReq)
+    {
+        /* This is most likely a fixed size request, and in this case the request size
+         * must be also equal to the expected size.
+         */
+        if (pReq->size != cbReqExpected)
+        {
+            dprintf(("VbglGRVerify: request size %d != expected size %d\n", pReq->size, cbReqExpected));
+            return VERR_INVALID_PARAMETER;
+        }
+
+        return VINF_SUCCESS;
+    }
+
+    /* This can be a variable size request. Check the request type and limit the size
+     * to VMMDEV_MAX_VMMDEVREQ_SIZE, which is max size supported by the host. 
+     */
+    if (   pReq->requestType == VMMDevReq_LogString
+        || pReq->requestType == VMMDevReq_VideoSetVisibleRegion
+        || pReq->requestType == VMMDevReq_SetPointerShape
+#ifdef VBOX_WITH_64_BITS_GUESTS
+        || pReq->requestType == VMMDevReq_HGCMCall32
+        || pReq->requestType == VMMDevReq_HGCMCall64
+#else
+        || pReq->requestType == VMMDevReq_HGCMCall
+#endif /* VBOX_WITH_64_BITS_GUESTS */
+        || pReq->requestType == VMMDevReq_ChangeMemBalloon)
+    {
+        if (cbReq > VMMDEV_MAX_VMMDEVREQ_SIZE)
+        {
+            dprintf(("VbglGRVerify: VMMDevReq_LogString: buffer size %d too big\n", cbReq));
+            return VERR_BUFFER_OVERFLOW; /* @todo is this error code ok? */
+        }
+    }
+    else
+    {
+        dprintf(("VbglGRVerify: request size %d > buffer size %d\n", pReq->size, cbReq));
+        return VERR_IO_BAD_LENGTH; /* @todo is this error code ok? */
+    }
+
+    return VINF_SUCCESS;
+}
 
 DECLVBGL(int) VbglGRAlloc (VMMDevRequestHeader **ppReq, uint32_t cbSize, VMMDevRequestType reqType)
 {
     VMMDevRequestHeader *pReq;
-    int rc = VbglEnter ();
+    int rc = vbglR0Enter ();
 
     if (RT_FAILURE(rc))
         return rc;
@@ -66,7 +130,7 @@ DECLVBGL(int) VbglGRAlloc (VMMDevRequestHeader **ppReq, uint32_t cbSize, VMMDevR
 DECLVBGL(int) VbglGRPerform (VMMDevRequestHeader *pReq)
 {
     RTCCPHYS physaddr;
-    int rc = VbglEnter ();
+    int rc = vbglR0Enter ();
 
     if (RT_FAILURE(rc))
         return rc;
@@ -82,7 +146,7 @@ DECLVBGL(int) VbglGRPerform (VMMDevRequestHeader *pReq)
     }
     else
     {
-        ASMOutU32(g_vbgldata.portVMMDev + PORT_VMMDEV_REQUEST_OFFSET, (uint32_t)physaddr);
+        ASMOutU32(g_vbgldata.portVMMDev + VMMDEV_PORT_OFF_REQUEST, (uint32_t)physaddr);
         /* Make the compiler aware that the host has changed memory. */
         ASMCompilerBarrier();
         rc = pReq->rc;
@@ -92,10 +156,11 @@ DECLVBGL(int) VbglGRPerform (VMMDevRequestHeader *pReq)
 
 DECLVBGL(void) VbglGRFree (VMMDevRequestHeader *pReq)
 {
-    int rc = VbglEnter ();
+    int rc = vbglR0Enter ();
 
     if (RT_FAILURE(rc))
         return;
 
     VbglPhysHeapFree (pReq);
 }
+

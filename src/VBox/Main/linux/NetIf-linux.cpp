@@ -1,4 +1,4 @@
-/* $Id: NetIf-linux.cpp 20481 2009-06-11 19:30:12Z vboxsync $ */
+/* $Id: NetIf-linux.cpp 23203 2009-09-22 06:13:09Z vboxsync $ */
 /** @file
  * Main - NetIfList, Linux implementation.
  */
@@ -52,20 +52,23 @@ static int getDefaultIfaceName(char *pszName)
     int  iTmp;
     int  iFlags;
 
-    while (fgets(szBuf, sizeof(szBuf)-1, fp))
+    if (fp)
     {
-        int n = sscanf(szBuf, "%16s %128s %128s %X %d %d %d %128s %d %d %d\n",
-                   szIfName, szAddr, szGateway, &iFlags, &iTmp, &iTmp, &iTmp,
-                   szMask, &iTmp, &iTmp, &iTmp);
-        if (n < 10 || !(iFlags & RTF_UP))
-            continue;
-
-        if (strcmp(szAddr, "00000000") == 0 && strcmp(szMask, "00000000") == 0)
+        while (fgets(szBuf, sizeof(szBuf)-1, fp))
         {
-            fclose(fp);
-            strncpy(pszName, szIfName, 16);
-            pszName[16] = 0;
-            return VINF_SUCCESS;
+            int n = sscanf(szBuf, "%16s %128s %128s %X %d %d %d %128s %d %d %d\n",
+                           szIfName, szAddr, szGateway, &iFlags, &iTmp, &iTmp, &iTmp,
+                           szMask, &iTmp, &iTmp, &iTmp);
+            if (n < 10 || !(iFlags & RTF_UP))
+                continue;
+
+            if (strcmp(szAddr, "00000000") == 0 && strcmp(szMask, "00000000") == 0)
+            {
+                fclose(fp);
+                strncpy(pszName, szIfName, 16);
+                pszName[16] = 0;
+                return VINF_SUCCESS;
+            }
         }
     }
     return VERR_INTERNAL_ERROR;
@@ -73,7 +76,8 @@ static int getDefaultIfaceName(char *pszName)
 
 static int getInterfaceInfo(int iSocket, const char *pszName, PNETIFINFO pInfo)
 {
-    memset(pInfo, 0, sizeof(*pInfo));
+    // Zeroing out pInfo is a bad idea as it should contain both short and long names at this point.
+    //memset(pInfo, 0, sizeof(*pInfo));
     struct ifreq Req;
     memset(&Req, 0, sizeof(Req));
     strncpy(Req.ifr_name, pszName, sizeof(Req.ifr_name) - 1);
@@ -150,7 +154,7 @@ static int getInterfaceInfo(int iSocket, const char *pszName, PNETIFINFO pInfo)
     return VINF_SUCCESS;
 }
 
-int NetIfList(std::list <ComObjPtr <HostNetworkInterface> > &list)
+int NetIfList(std::list <ComObjPtr<HostNetworkInterface> > &list)
 {
     char szDefaultIface[256];
     int rc = getDefaultIfaceName(szDefaultIface);

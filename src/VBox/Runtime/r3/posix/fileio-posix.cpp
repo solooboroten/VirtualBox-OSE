@@ -1,4 +1,4 @@
-/* $Id: fileio-posix.cpp 19346 2009-05-05 00:39:14Z vboxsync $ */
+/* $Id: fileio-posix.cpp 24001 2009-10-22 20:23:22Z vboxsync $ */
 /** @file
  * IPRT - File I/O, POSIX.
  */
@@ -89,22 +89,33 @@ extern int futimes(int __fd, __const struct timeval __tvp[2]) __THROW;
 #endif
 
 
-RTR3DECL(int)  RTFileOpen(PRTFILE pFile, const char *pszFilename, unsigned fOpen)
+RTDECL(bool) RTFileExists(const char *pszPath)
+{
+    bool fRc = false;
+    char *pszNativePath;
+    int rc = rtPathToNative(&pszNativePath, pszPath);
+    if (RT_SUCCESS(rc))
+    {
+        struct stat s;
+        fRc = !stat(pszNativePath, &s)
+            && S_ISREG(s.st_mode);
+
+        rtPathFreeNative(pszNativePath);
+    }
+
+    LogFlow(("RTFileExists(%p={%s}): returns %RTbool\n", pszPath, pszPath, fRc));
+    return fRc;
+}
+
+
+RTR3DECL(int) RTFileOpen(PRTFILE pFile, const char *pszFilename, uint32_t fOpen)
 {
     /*
      * Validate input.
      */
-    if (!VALID_PTR(pFile))
-    {
-        AssertMsgFailed(("Invalid pFile %p\n", pFile));
-        return VERR_INVALID_PARAMETER;
-    }
+    AssertPtrReturn(pFile, VERR_INVALID_POINTER);
     *pFile = NIL_RTFILE;
-    if (!VALID_PTR(pszFilename))
-    {
-        AssertMsgFailed(("Invalid pszFilename %p\n", pszFilename));
-        return VERR_INVALID_PARAMETER;
-    }
+    AssertPtrReturn(pszFilename, VERR_INVALID_POINTER);
 
     /*
      * Merge forced open flags and validate them.
@@ -147,6 +158,11 @@ RTR3DECL(int)  RTFileOpen(PRTFILE pFile, const char *pszFilename, unsigned fOpen
     if (fOpen & RTFILE_O_ASYNC_IO)
         fOpenMode |= O_DIRECT;
 #endif
+#if defined(O_DIRECT) && (defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD))
+    /* Disable the kernel cache. */
+    if (fOpen & RTFILE_O_NO_CACHE)
+        fOpenMode |= O_DIRECT;
+#endif
 
     /* create/truncate file */
     switch (fOpen & RTFILE_O_ACTION_MASK)
@@ -161,9 +177,15 @@ RTR3DECL(int)  RTFileOpen(PRTFILE pFile, const char *pszFilename, unsigned fOpen
 
     switch (fOpen & RTFILE_O_ACCESS_MASK)
     {
-        case RTFILE_O_READ:             fOpenMode |= O_RDONLY; break;
-        case RTFILE_O_WRITE:            fOpenMode |= O_WRONLY; break;
-        case RTFILE_O_READWRITE:        fOpenMode |= O_RDWR; break;
+        case RTFILE_O_READ:
+            fOpenMode |= O_RDONLY; /* RTFILE_O_APPEND is ignored. */
+            break;
+        case RTFILE_O_WRITE:
+            fOpenMode |= fOpen & RTFILE_O_APPEND ? O_APPEND | O_WRONLY : O_WRONLY;
+            break;
+        case RTFILE_O_READWRITE:
+            fOpenMode |= fOpen & RTFILE_O_APPEND ? O_APPEND | O_RDWR   : O_RDWR;
+            break;
         default:
             AssertMsgFailed(("RTFileOpen received an invalid RW value, fOpen=%#x\n", fOpen));
             return VERR_INVALID_PARAMETER;
@@ -203,11 +225,27 @@ RTR3DECL(int)  RTFileOpen(PRTFILE pFile, const char *pszFilename, unsigned fOpen
 #endif
             ||  fcntl(fh, F_SETFD, FD_CLOEXEC) >= 0)
         {
-            *pFile = (RTFILE)fh;
-            Assert((int)*pFile == fh);
-            LogFlow(("RTFileOpen(%p:{%RTfile}, %p:{%s}, %#x): returns %Rrc\n",
-                     pFile, *pFile, pszFilename, pszFilename, fOpen, rc));
-            return VINF_SUCCESS;
+#if defined(RT_OS_SOLARIS) || defined(RT_OS_DARWIN)
+            iErr = 0;
+            /* Switch direct I/O on now if requested */
+# if defined(RT_OS_SOLARIS) && !defined(IN_GUEST)
+            if (fOpen & RTFILE_O_NO_CACHE)
+                iErr = directio(fh, DIRECTIO_ON);
+# elif defined(RT_OS_DARWIN)
+            if (fOpen & RTFILE_O_NO_CACHE)
+                iErr = fcntl(fh, F_NOCACHE, 1);
+# endif
+            if (iErr < 0)
+                iErr = errno;
+            else
+#endif
+            {
+                *pFile = (RTFILE)fh;
+                Assert((int)*pFile == fh);
+                LogFlow(("RTFileOpen(%p:{%RTfile}, %p:{%s}, %#x): returns %Rrc\n",
+                         pFile, *pFile, pszFilename, pszFilename, fOpen, rc));
+                return VINF_SUCCESS;
+            }
         }
         iErr = errno;
         close(fh);

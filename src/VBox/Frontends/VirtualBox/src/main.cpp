@@ -36,6 +36,7 @@
 
 #ifdef Q_WS_X11
 #include <QFontDatabase>
+#include <iprt/env.h>
 #endif
 
 #include <QCleanlooksStyle>
@@ -44,6 +45,11 @@
 #include <QLocale>
 #include <QTranslator>
 
+#ifdef Q_WS_X11
+# include <X11/Xlib.h>
+#endif
+
+#include <iprt/buildconfig.h>
 #include <iprt/err.h>
 #include <iprt/initterm.h>
 #include <iprt/process.h>
@@ -62,13 +68,7 @@
 /* XXX Temporarily. Don't rely on ther user to hack the Makefile himsef! */
 QString g_QStrHintLinuxNoMemory = QApplication::tr(
   "This error means that the kernel driver was either not able to "
-  "allocate enough memory or that some mapping operation failed.<br/><br/>"
-  "There are known problems with Linux 2.6.29. If you are running "
-  "such a kernel, please edit /usr/src/vboxdrv-*/Makefile and enable "
-  "<i>VBOX_USE_INSERT_PAGE = 1</i>. After that, re-compile the kernel "
-  "module by executing<br/><br/>"
-  "  <font color=blue>'/etc/init.d/vboxdrv setup'</font><br/><br/>"
-  "as root."
+  "allocate enough memory or that some mapping operation failed."
   );
 
 QString g_QStrHintLinuxNoDriver = QApplication::tr(
@@ -157,23 +157,31 @@ void bt_sighandler (int sig, siginfo_t *info, void *secret) {
 
 #endif /* DEBUG && X11 && LINUX*/
 
-#if defined(RT_OS_DARWIN) && defined(RT_ARCH_AMD64)
+#if defined(RT_OS_DARWIN)
 # include <dlfcn.h>
 # include <sys/mman.h>
 # include <iprt/asm.h>
+# include <iprt/system.h>
 
 /** Really ugly hack to shut up a silly check in AppKit. */
 static void ShutUpAppKit(void)
 {
-    /*
-     * Find issetguid() and make it always return 0 by modifying the code.
-     */
-    void *addr = dlsym(RTLD_DEFAULT, "issetugid");
-    int rc = mprotect((void *)((uintptr_t)addr & ~(uintptr_t)0xfff), 0x2000, PROT_WRITE|PROT_READ|PROT_EXEC);
-    if (!rc)
-        ASMAtomicWriteU32((volatile uint32_t *)addr, 0xccc3c031); /* xor eax, eax; ret; int3 */
+    /* Check for Snow Leopard or higher */
+    char szInfo[64];
+    int rc = RTSystemQueryOSInfo (RTSYSOSINFO_RELEASE, szInfo, sizeof(szInfo));
+    if (RT_SUCCESS (rc) &&
+        szInfo[0] == '1') /* higher than 1x.x.x */
+    {
+        /*
+         * Find issetguid() and make it always return 0 by modifying the code.
+         */
+        void *addr = dlsym(RTLD_DEFAULT, "issetugid");
+        int rc = mprotect((void *)((uintptr_t)addr & ~(uintptr_t)0xfff), 0x2000, PROT_WRITE|PROT_READ|PROT_EXEC);
+        if (!rc)
+            ASMAtomicWriteU32((volatile uint32_t *)addr, 0xccc3c031); /* xor eax, eax; ret; int3 */
+    }
 }
-#endif /* DARWIN + AMD64 */
+#endif /* DARWIN */
 
 static void QtMessageOutput (QtMsgType type, const char *msg)
 {
@@ -207,7 +215,6 @@ static void QtMessageOutput (QtMsgType type, const char *msg)
     }
 }
 
-#ifndef Q_WS_WIN
 /**
  * Show all available command line parameters.
  */
@@ -242,7 +249,7 @@ static void showHelp()
     dflt = "image";
 #endif
 
-    RTPrintf("Sun VirtualBox Graphical User Interface "VBOX_VERSION_STRING"\n"
+    RTPrintf("Sun VirtualBox Graphical User Interface %s\n"
             "(C) 2005-2009 Sun Microsystems, Inc.\n"
             "All rights reserved.\n"
             "\n"
@@ -264,15 +271,16 @@ static void showHelp()
             "  VBOX_GUI_NO_DEBUGGER       disable the GUI debug menu and debug windows\n"
 # endif
             "\n",
+            RTBldCfgVersion(),
             mode.toLatin1().constData(),
             dflt.toLatin1().constData());
+    /** @todo Show this as a dialog on windows. */
 }
-#endif
 
 extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
 {
     LogFlowFuncEnter();
-# if defined(RT_OS_DARWIN) && defined(RT_ARCH_AMD64)
+# if defined(RT_OS_DARWIN)
     ShutUpAppKit();
 # endif
 
@@ -289,7 +297,6 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
     HRESULT hrc = COMBase::InitializeCOM();
 #endif
 
-#ifndef Q_WS_WIN
     int i;
     for (i=0; i<argc; i++)
         if (   !strcmp(argv[i], "-h")
@@ -300,7 +307,6 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
             showHelp();
             return 0;
         }
-#endif
 
 #if defined(DEBUG) && defined(Q_WS_X11) && defined(RT_OS_LINUX)
     /* install our signal handler to backtrace the call stack */
@@ -325,21 +331,59 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
 
     /* scope the QIApplication variable */
     {
+#ifdef Q_WS_X11
+        /* Qt has a complex algorithm for selecting the right visual which
+         * doesn't always seem to work.  So we naively choose a visual - the
+         * default one - ourselves and pass that to Qt.  This means that we
+         * also have to open the display ourselves.
+         * We check the Qt parameter list and handle Qt's -display argument
+         * ourselves, since we open the display connection.  We also check the
+         * to see if the user has passed Qt's -visual parameter, and if so we
+         * assume that the user wants Qt to handle visual selection after all,
+         * and don't supply a visual. */
+        char *pszDisplay = NULL;
+        bool useDefaultVisual = true;
+        for (int i = 0; i < argc; ++i)
+        {
+            if (!::strcmp(argv[i], "-display") && (i + 1 < argc))
+            /* What if it isn't?  Rely on QApplication to complain? */
+            {
+                pszDisplay = argv[i + 1];
+                ++i;
+            }
+            else if (!::strcmp(argv[i], "-visual"))
+                useDefaultVisual = false;
+        }
+        Display *pDisplay = XOpenDisplay(pszDisplay);
+        if (!pDisplay)
+        {
+            RTPrintf(pszDisplay ? "Failed to open the X11 display \"%s\"!\n"
+                                : "Failed to open the X11 display!\n",
+                     pszDisplay);
+            return 0;
+        }
+        Visual *pVisual =   useDefaultVisual
+                          ? DefaultVisual(pDisplay, DefaultScreen(pDisplay))
+                          : NULL;
+        /* Now create the application object */
+        QIApplication a (pDisplay, argc, argv, (Qt::HANDLE) pVisual);
+#else /* Q_WS_X11 */
         QIApplication a (argc, argv);
+#endif /* Q_WS_X11 */
 
         /* Qt4.3 version has the QProcess bug which freezing the application
          * for 30 seconds. This bug is internally used at initialization of
          * Cleanlooks style. So we have to change this style to another one.
          * See http://trolltech.com/developer/task-tracker/index_html?id=179200&method=entry
          * for details. */
-        if (QString (qVersion()).startsWith ("4.3") &&
+        if (VBoxGlobal::qtRTVersionString().startsWith ("4.3") &&
             qobject_cast <QCleanlooksStyle*> (QApplication::style()))
             QApplication::setStyle (new QPlastiqueStyle);
 
 #ifdef Q_OS_SOLARIS
         /* Solaris have some issue with cleanlooks style which leads to application
          * crash in case of using it on Qt4.4 version, lets make the same substitute */
-        if (QString (qVersion()).startsWith ("4.4") &&
+        if (VBoxGlobal::qtRTVersionString().startsWith ("4.4") &&
             qobject_cast <QCleanlooksStyle*> (QApplication::style()))
             QApplication::setStyle (new QPlastiqueStyle);
 #endif
@@ -395,24 +439,13 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
 
 #ifdef Q_WS_X11
         /* version check (major.minor are sensitive, fix number is ignored) */
-        QString ver_str = QString::fromLatin1 (QT_VERSION_STR);
-        QString ver_str_base = ver_str.section ('.', 0, 1);
-        QString rt_ver_str = QString::fromLatin1 (qVersion());
-        uint ver =
-            (ver_str.section ('.', 0, 0).toInt() << 16) +
-            (ver_str.section ('.', 1, 1).toInt() << 8) +
-            ver_str.section ('.', 2, 2).toInt();
-        uint rt_ver =
-            (rt_ver_str.section ('.', 0, 0).toInt() << 16) +
-            (rt_ver_str.section ('.', 1, 1).toInt() << 8) +
-            rt_ver_str.section ('.', 2, 2).toInt();
-        if (rt_ver < (ver & 0xFFFF00))
+        if (VBoxGlobal::qtRTVersion() < (VBoxGlobal::qtCTVersion() & 0xFFFF00))
         {
             QString msg =
                 QApplication::tr ("Executable <b>%1</b> requires Qt %2.x, found Qt %3.")
                                   .arg (qAppName())
-                                  .arg (ver_str_base)
-                                  .arg (rt_ver_str);
+                                  .arg (VBoxGlobal::qtCTVersionString().section ('.', 0, 1))
+                                  .arg (VBoxGlobal::qtRTVersionString());
             QMessageBox::critical (
                 0, QApplication::tr ("Incompatible Qt Library Error"),
                 msg, QMessageBox::Abort, 0);
@@ -445,6 +478,8 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
 #endif
 #endif
 
+            vboxProblem().checkForMountedWrongUSB();
+
             VBoxGlobalSettings settings = vboxGlobal().settings();
             /* Process known keys */
             bool noSelector = settings.isFeatureActive ("noSelector");
@@ -467,11 +502,15 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
             }
             else
             {
-#ifndef DEBUG
+#ifdef VBOX_BLEEDING_EDGE
+                vboxProblem().showBEBWarning();
+#else
+# ifndef DEBUG
                 /* Check for BETA version */
                 QString vboxVersion (vboxGlobal().virtualBox().GetVersion());
                 if (vboxVersion.contains ("BETA"))
                     vboxProblem().showBETAWarning();
+# endif
 #endif
 
                 vboxGlobal().setMainWindow (&vboxGlobal().selectorWnd());
@@ -528,8 +567,11 @@ int main (int argc, char **argv, char **envp)
     bool fInitSUPLib = false;
     for (int i = 1; i < argc; i++)
     {
-        if (    !::strcmp(argv[i], "--startvm")
-            ||  !::strcmp(argv[i], "-startvm"))
+        /* NOTE: the check here must match the corresponding check for the
+         * options to start a VM in hardenedmain.cpp and VBoxGlobal.cpp exactly,
+         * otherwise there will be weird error messages. */
+        if (   !::strcmp(argv[i], "--startvm")
+            || !::strcmp(argv[i], "-startvm"))
         {
             fInitSUPLib = true;
             break;
@@ -544,6 +586,13 @@ int main (int argc, char **argv, char **envp)
     if (RT_FAILURE(rc))
     {
         QApplication a (argc, &argv[0]);
+#ifdef Q_OS_SOLARIS
+        /* Solaris have some issue with cleanlooks style which leads to application
+         * crash in case of using it on Qt4.4 version, lets make the same substitute */
+        if (VBoxGlobal::qtRTVersionString().startsWith ("4.4") &&
+            qobject_cast <QCleanlooksStyle*> (QApplication::style()))
+            QApplication::setStyle (new QPlastiqueStyle);
+#endif
         QString msgTitle = QApplication::tr ("VirtualBox - Runtime Error");
         QString msgText = "<html>";
 
@@ -571,7 +620,7 @@ int main (int argc, char **argv, char **envp)
                 msgText += g_QStrHintLinuxWrongDriverVersion;
 # else
                 msgText += g_QStrHintOtherWrongDriverVersion;
-# endif 
+# endif
                 break;
             default:
                 msgText += QApplication::tr (
@@ -602,7 +651,7 @@ int main (int argc, char **argv, char **envp)
  */
 extern "C" DECLEXPORT(void) TrustedError (const char *pszWhere, SUPINITOP enmWhat, int rc, const char *pszMsgFmt, va_list va)
 {
-# if defined(RT_OS_DARWIN) && defined(RT_ARCH_AMD64)
+# if defined(RT_OS_DARWIN)
     ShutUpAppKit();
 # endif
 

@@ -68,21 +68,21 @@ extern const QUuid QUuid_null;
 /** Common namespace for all enums */
 struct VBoxDefs
 {
-    /** Media type. */
-    enum MediaType
+    /** Medium type. */
+    enum MediumType
     {
-        MediaType_Invalid,
-        MediaType_HardDisk,
-        MediaType_DVD,
-        MediaType_Floppy,
-        MediaType_All
+        MediumType_Invalid,
+        MediumType_HardDisk,
+        MediumType_DVD,
+        MediumType_Floppy,
+        MediumType_All
     };
 
     /** VM display rendering mode. */
     enum RenderMode
     {
         InvalidRenderMode, TimerMode, QImageMode, SDLMode, DDRAWMode, Quartz2DMode
-#ifdef VBOX_WITH_VIDEOHWACCEL
+#ifdef VBOX_GUI_USE_QGL
         , QGLMode
 #endif
     };
@@ -128,7 +128,7 @@ struct VBoxDefs
 #endif
         AddVDMUrlsEventType,
         ChangeDockIconUpdateEventType
-#ifdef VBOX_WITH_VIDEOHWACCEL
+#ifdef VBOX_GUI_USE_QGL
         ,
         VHWACommandProcessType
 #endif
@@ -150,6 +150,7 @@ struct VBoxDefs
     static const char* GUI_FirstRun;
     static const char* GUI_SaveMountedAtRuntime;
     static const char* GUI_ShowMiniToolBar;
+    static const char* GUI_MiniToolBarAlignment;
     static const char* GUI_MiniToolBarAutoHide;
     static const char* GUI_LastCloseAction;
     static const char* GUI_SuppressMessages;

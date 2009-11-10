@@ -1,4 +1,4 @@
-/* $Id: initterm-r0drv-nt.cpp 19990 2009-05-25 10:40:06Z vboxsync $ */
+/* $Id: initterm-r0drv-nt.cpp 24034 2009-10-23 13:04:13Z vboxsync $ */
 /** @file
  * IPRT - Initialization & Termination, R0 Driver, NT.
  */
@@ -56,6 +56,14 @@ RTCPUSET                    g_rtMpNtCpuSet;
 PFNMYEXSETTIMERRESOLUTION   g_pfnrtNtExSetTimerResolution;
 /** KeFlushQueuedDpcs, introduced in XP. */
 PFNMYKEFLUSHQUEUEDDPCS      g_pfnrtNtKeFlushQueuedDpcs;
+/** HalRequestIpi, introduced in ??. */
+PFNHALREQUESTIPI            g_pfnrtNtHalRequestIpi;
+/** HalSendSoftwareInterrupt */
+PFNHALSENDSOFTWAREINTERRUPT g_pfnrtNtHalSendSoftwareInterrupt;
+/** SendIpi handler based on Windows version */
+PFNRTSENDIPI                g_pfnrtSendIpi;
+/** KeIpiGenericCall - Windows Server 2003+ only */
+PFNRTKEIPIGENERICCALL       g_pfnrtKeIpiGenericCall;
 
 /** Offset of the _KPRCB::QuantumEnd field. 0 if not found. */
 uint32_t                    g_offrtNtPbQuantumEnd;
@@ -71,10 +79,21 @@ int rtR0InitNative(void)
     /*
      * Init the Nt cpu set.
      */
+#ifdef IPRT_TARGET_NT4
+    KAFFINITY ActiveProcessors = (UINT64_C(1) << KeNumberProcessors) - UINT64_C(1);
+#else
     KAFFINITY ActiveProcessors = KeQueryActiveProcessors();
+#endif
     RTCpuSetEmpty(&g_rtMpNtCpuSet);
     RTCpuSetFromU64(&g_rtMpNtCpuSet, ActiveProcessors);
 
+#ifdef IPRT_TARGET_NT4
+    g_pfnrtNtExSetTimerResolution = NULL;
+    g_pfnrtNtKeFlushQueuedDpcs = NULL;
+    g_pfnrtNtHalRequestIpi = NULL;
+    g_pfnrtNtHalSendSoftwareInterrupt = NULL;
+    g_pfnrtKeIpiGenericCall = NULL;
+#else
     /*
      * Initialize the function pointers.
      */
@@ -85,6 +104,16 @@ int rtR0InitNative(void)
     RtlInitUnicodeString(&RoutineName, L"KeFlushQueuedDpcs");
     g_pfnrtNtKeFlushQueuedDpcs = (PFNMYKEFLUSHQUEUEDDPCS)MmGetSystemRoutineAddress(&RoutineName);
 
+    RtlInitUnicodeString(&RoutineName, L"HalRequestIpi");
+    g_pfnrtNtHalRequestIpi = (PFNHALREQUESTIPI)MmGetSystemRoutineAddress(&RoutineName);
+
+    RtlInitUnicodeString(&RoutineName, L"HalSendSoftwareInterrupt");
+    g_pfnrtNtHalSendSoftwareInterrupt = (PFNHALSENDSOFTWAREINTERRUPT)MmGetSystemRoutineAddress(&RoutineName);
+
+    RtlInitUnicodeString(&RoutineName, L"KeIpiGenericCall");
+    g_pfnrtKeIpiGenericCall = (PFNRTKEIPIGENERICCALL)MmGetSystemRoutineAddress(&RoutineName);
+#endif
+
     /*
      * Get some info that might come in handy below.
      */
@@ -93,6 +122,25 @@ int rtR0InitNative(void)
     ULONG BuildNumber  = 0;
     BOOLEAN fChecked = PsGetVersion(&MajorVersion, &MinorVersion, &BuildNumber, NULL);
 
+    g_pfnrtSendIpi = rtMpSendIpiDummy;
+#ifndef IPRT_TARGET_NT4
+    if (    g_pfnrtNtHalRequestIpi
+        &&  MajorVersion == 6
+        &&  MinorVersion == 0)
+    {
+        /* Vista or Windows Server 2008 */
+        g_pfnrtSendIpi = rtMpSendIpiVista;
+    }
+    else
+    if (    g_pfnrtNtHalSendSoftwareInterrupt
+        &&  MajorVersion == 6
+        &&  MinorVersion == 1)
+    {
+        /* Windows 7 or Windows Server 2008 R2 */
+        g_pfnrtSendIpi = rtMpSendIpiWin7;
+    }
+    /* Windows XP should send always send an IPI -> VERIFY */
+#endif
     KIRQL OldIrql;
     KeRaiseIrql(DISPATCH_LEVEL, &OldIrql); /* make sure we stay on the same cpu */
 

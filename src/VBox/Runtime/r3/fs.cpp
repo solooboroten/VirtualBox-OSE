@@ -1,4 +1,4 @@
-/* $Id: fs.cpp 19171 2009-04-24 15:35:54Z vboxsync $ */
+/* $Id: fs.cpp 24287 2009-11-03 12:34:11Z vboxsync $ */
 /** @file
  * IPRT - File System.
  */
@@ -35,6 +35,11 @@
 #ifndef RT_OS_WINDOWS
 # define RTTIME_INCL_TIMESPEC
 # include <sys/time.h>
+# include <sys/param.h>
+# ifndef DEV_BSIZE
+#  include <sys/stat.h>
+#  define DEV_BSIZE S_BLKSIZE /** @todo bird: add DEV_BSIZE to sys/param.h on OS/2. */
+# endif
 #endif
 
 #include <iprt/fs.h>
@@ -73,9 +78,9 @@ RTFMODE rtFsModeFromDos(RTFMODE fMode, const char *pszName, size_t cbName)
             /* check for executable extension. */
             const char *pszExt = &pszName[cbName - 3];
             char szExt[4];
-            szExt[0] = tolower(pszExt[0]);
-            szExt[1] = tolower(pszExt[1]);
-            szExt[2] = tolower(pszExt[2]);
+            szExt[0] = RT_C_TO_LOWER(pszExt[0]);
+            szExt[1] = RT_C_TO_LOWER(pszExt[1]);
+            szExt[2] = RT_C_TO_LOWER(pszExt[2]);
             szExt[3] = '\0';
             if (    !memcmp(szExt, "exe", 4)
                 ||  !memcmp(szExt, "bat", 4)
@@ -195,7 +200,7 @@ bool rtFsModeIsValidPermissions(RTFMODE fMode)
 void rtFsConvertStatToObjInfo(PRTFSOBJINFO pObjInfo, const struct stat *pStat, const char *pszName, unsigned cbName)
 {
     pObjInfo->cbObject    = pStat->st_size;
-    pObjInfo->cbAllocated = pStat->st_size;
+    pObjInfo->cbAllocated = pStat->st_blocks * DEV_BSIZE;
 
 #ifdef HAVE_STAT_NSEC
     RTTimeSpecAddNano(RTTimeSpecSetSeconds(&pObjInfo->AccessTime,       pStat->st_atime),     pStat->st_atimensec);

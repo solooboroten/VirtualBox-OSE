@@ -1,4 +1,4 @@
-/* $Id: VMEmt.cpp 20961 2009-06-26 08:45:18Z vboxsync $ */
+/* $Id: VMEmt.cpp 23190 2009-09-21 14:18:30Z vboxsync $ */
 /** @file
  * VM - Virtual Machine, The Emulation Thread.
  */
@@ -118,7 +118,7 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
                  * Service execute in any EMT request.
                  */
                 rc = VMR3ReqProcessU(pUVM, VMCPUID_ANY);
-                Log(("vmR3EmulationThread: Req rc=%Rrc, VM state %d -> %d\n", rc, enmBefore, pUVM->pVM ? pUVM->pVM->enmVMState : VMSTATE_CREATING));
+                Log(("vmR3EmulationThread: Req rc=%Rrc, VM state %s -> %s\n", rc, VMR3GetStateName(enmBefore), pUVM->pVM ? VMR3GetStateName(pUVM->pVM->enmVMState) : "CREATING"));
             }
             else if (pUVCpu->vm.s.pReqs)
             {
@@ -126,7 +126,7 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
                  * Service execute in specific EMT request.
                  */
                 rc = VMR3ReqProcessU(pUVM, pUVCpu->idCpu);
-                Log(("vmR3EmulationThread: Req (cpu=%u) rc=%Rrc, VM state %d -> %d\n", pUVCpu->idCpu, rc, enmBefore, pUVM->pVM ? pUVM->pVM->enmVMState : VMSTATE_CREATING));
+                Log(("vmR3EmulationThread: Req (cpu=%u) rc=%Rrc, VM state %s -> %s\n", pUVCpu->idCpu, rc, VMR3GetStateName(enmBefore), pUVM->pVM ? VMR3GetStateName(pUVM->pVM->enmVMState) : "CREATING"));
             }
             else
             {
@@ -157,15 +157,19 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
                 rc = VINF_EM_TERMINATE;
                 break;
             }
+
             if (VM_FF_ISPENDING(pVM, VM_FF_EMT_RENDEZVOUS))
-                VMMR3EmtRendezvousFF(pVM, &pVM->aCpus[idCpu]);
-            if (pUVM->vm.s.pReqs)
+            {
+                rc = VMMR3EmtRendezvousFF(pVM, &pVM->aCpus[idCpu]);
+                Log(("vmR3EmulationThread: Rendezvous rc=%Rrc, VM state %s -> %s\n", rc, VMR3GetStateName(enmBefore), VMR3GetStateName(pVM->enmVMState)));
+            }
+            else if (pUVM->vm.s.pReqs)
             {
                 /*
                  * Service execute in any EMT request.
                  */
                 rc = VMR3ReqProcessU(pUVM, VMCPUID_ANY);
-                Log(("vmR3EmulationThread: Req rc=%Rrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
+                Log(("vmR3EmulationThread: Req rc=%Rrc, VM state %s -> %s\n", rc, VMR3GetStateName(enmBefore), VMR3GetStateName(pVM->enmVMState)));
             }
             else if (pUVCpu->vm.s.pReqs)
             {
@@ -173,7 +177,7 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
                  * Service execute in specific EMT request.
                  */
                 rc = VMR3ReqProcessU(pUVM, pUVCpu->idCpu);
-                Log(("vmR3EmulationThread: Req (cpu=%u) rc=%Rrc, VM state %d -> %d\n", pUVCpu->idCpu, rc, enmBefore, pVM->enmVMState));
+                Log(("vmR3EmulationThread: Req (cpu=%u) rc=%Rrc, VM state %s -> %s\n", pUVCpu->idCpu, rc, VMR3GetStateName(enmBefore), VMR3GetStateName(pVM->enmVMState)));
             }
             else if (VM_FF_ISSET(pVM, VM_FF_DBGF))
             {
@@ -181,16 +185,16 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
                  * Service the debugger request.
                  */
                 rc = DBGFR3VMMForcedAction(pVM);
-                Log(("vmR3EmulationThread: Dbg rc=%Rrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
+                Log(("vmR3EmulationThread: Dbg rc=%Rrc, VM state %s -> %s\n", rc, VMR3GetStateName(enmBefore), VMR3GetStateName(pVM->enmVMState)));
             }
-            else if (VM_FF_TESTANDCLEAR(pVM, VM_FF_RESET_BIT))
+            else if (VM_FF_TESTANDCLEAR(pVM, VM_FF_RESET))
             {
                 /*
                  * Service a delayed reset request.
                  */
                 rc = VMR3Reset(pVM);
                 VM_FF_CLEAR(pVM, VM_FF_RESET);
-                Log(("vmR3EmulationThread: Reset rc=%Rrc, VM state %d -> %d\n", rc, enmBefore, pVM->enmVMState));
+                Log(("vmR3EmulationThread: Reset rc=%Rrc, VM state %s -> %s\n", rc, VMR3GetStateName(enmBefore), VMR3GetStateName(pVM->enmVMState)));
             }
             else
             {
@@ -223,16 +227,15 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
         if (    RT_SUCCESS(rc)
             &&  pUVM->pVM)
         {
-            PVM     pVM  = pUVM->pVM;
-            PVMCPU pVCpu = &pVM->aCpus[idCpu];
+            PVM     pVM   = pUVM->pVM;
+            PVMCPU  pVCpu = &pVM->aCpus[idCpu];
             if (    pVM->enmVMState == VMSTATE_RUNNING
                 &&  VMCPUSTATE_IS_STARTED(VMCPU_GET_STATE(pVCpu)))
             {
                 rc = EMR3ExecuteVM(pVM, pVCpu);
                 Log(("vmR3EmulationThread: EMR3ExecuteVM() -> rc=%Rrc, enmVMState=%d\n", rc, pVM->enmVMState));
-                if (   EMGetState(pVCpu) == EMSTATE_GURU_MEDITATION
-                    && pVM->enmVMState == VMSTATE_RUNNING)
-                    vmR3SetState(pVM, VMSTATE_GURU_MEDITATION);
+                if (EMGetState(pVCpu) == EMSTATE_GURU_MEDITATION)
+                    vmR3SetGuruMeditation(pVM);
             }
         }
 
@@ -240,21 +243,25 @@ int vmR3EmulationThreadWithId(RTTHREAD ThreadSelf, PUVMCPU pUVCpu, VMCPUID idCpu
 
 
     /*
-     * Exiting.
+     * Cleanup and exit.
+     * If EMT(0) called VMR3Destroy, EMT(0) will do all the terminating here.
      */
     Log(("vmR3EmulationThread: Terminating emulation thread! Thread=%#x pUVM=%p rc=%Rrc enmBefore=%d enmVMState=%d\n",
          ThreadSelf, pUVM, rc, enmBefore, pUVM->pVM ? pUVM->pVM->enmVMState : VMSTATE_TERMINATED));
-    if (pUVM->vm.s.fEMTDoesTheCleanup)
+    if (    pUVM->vm.s.fEMTDoesTheCleanup
+        &&  idCpu == 0)
     {
         Log(("vmR3EmulationThread: executing delayed Destroy\n"));
         Assert(pUVM->pVM);
         vmR3Destroy(pUVM->pVM);
-        vmR3DestroyFinalBitFromEMT(pUVM);
+        vmR3DestroyFinalBitFromEMT(pUVM, idCpu);
+        /* The pUVM structure is now invliad. */
+        pUVCpu = NULL;
+        pUVM = NULL;
     }
     else
     {
-        vmR3DestroyFinalBitFromEMT(pUVM);
-
+        vmR3DestroyFinalBitFromEMT(pUVM, idCpu);
         pUVCpu->vm.s.NativeThreadEMT = NIL_RTNATIVETHREAD;
     }
     Log(("vmR3EmulationThread: EMT is terminated.\n"));
@@ -1095,12 +1102,12 @@ VMMR3DECL(int) VMR3WaitU(PUVMCPU pUVCpu)
 /**
  * Rendezvous callback that will be called once.
  *
- * @returns VBox status code.
+ * @returns VBox strict status code.
  * @param   pVM                 VM handle.
  * @param   pVCpu               The VMCPU handle for the calling EMT.
  * @param   pvUser              The new g_aHaltMethods index.
  */
-static DECLCALLBACK(int) vmR3SetHaltMethodCallback(PVM pVM, PVMCPU pVCpu, void *pvUser)
+static DECLCALLBACK(VBOXSTRICTRC) vmR3SetHaltMethodCallback(PVM pVM, PVMCPU pVCpu, void *pvUser)
 {
     PUVM        pUVM = pVM->pUVM;
     uintptr_t   i    = (uintptr_t)pvUser;

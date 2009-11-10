@@ -1,4 +1,4 @@
-/* $Id: VMMR0.cpp 20984 2009-06-26 15:21:07Z vboxsync $ */
+/* $Id: VMMR0.cpp 23468 2009-10-01 11:19:07Z vboxsync $ */
 /** @file
  * VMM - Host Context Ring 0.
  */
@@ -338,9 +338,6 @@ static void vmmR0RecordRC(PVM pVM, PVMCPU pVCpu, int rc)
         case VINF_EM_RAW_RING_SWITCH_INT:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetRingSwitchInt);
             break;
-        case VINF_EM_RAW_EXCEPTION_PRIVILEGED:
-            STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetExceptionPrivilege);
-            break;
         case VINF_EM_RAW_STALE_SELECTOR:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetStaleSelector);
             break;
@@ -467,11 +464,11 @@ static void vmmR0RecordRC(PVM pVM, PVMCPU pVCpu, int rc)
         case VINF_PGM_CHANGE_MODE:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetPGMChangeMode);
             break;
-        case VINF_EM_RAW_EMULATE_INSTR_HLT:
-            STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetEmulHlt);
-            break;
         case VINF_EM_PENDING_REQUEST:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetPendingRequest);
+            break;
+        case VINF_EM_HWACCM_PATCH_TPR_INSTR:
+            STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetPatchTPR);
             break;
         default:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetMisc);
@@ -514,7 +511,7 @@ VMMR0DECL(int) VMMR0EntryInt(PVM pVM, VMMR0OPERATION enmOperation, void *pvArg)
  */
 VMMR0DECL(void) VMMR0EntryFast(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperation)
 {
-    if (RT_UNLIKELY(idCpu >= pVM->cCPUs))
+    if (RT_UNLIKELY(idCpu >= pVM->cCpus))
         return;
     PVMCPU pVCpu = &pVM->aCpus[idCpu];
 
@@ -533,7 +530,7 @@ VMMR0DECL(void) VMMR0EntryFast(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperati
                 int         rc;
                 bool        fVTxDisabled;
 
-                if (RT_UNLIKELY(pVM->cCPUs > 1))
+                if (RT_UNLIKELY(pVM->cCpus > 1))
                 {
                     pVCpu->vmm.s.iLastGZRc = VERR_RAW_MODE_INVALID_SMP;
                     return;
@@ -730,9 +727,9 @@ static int vmmR0EntryExWorker(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperatio
             return VERR_INVALID_POINTER;
         }
 
-        if (RT_UNLIKELY(idCpu >= pVM->cCPUs && idCpu != NIL_VMCPUID))
+        if (RT_UNLIKELY(idCpu >= pVM->cCpus && idCpu != NIL_VMCPUID))
         {
-            SUPR0Printf("vmmR0EntryExWorker: Invalid idCpu (%u vs cCPUs=%u)\n", idCpu, pVM->cCPUs);
+            SUPR0Printf("vmmR0EntryExWorker: Invalid idCpu (%u vs cCpus=%u)\n", idCpu, pVM->cCpus);
             return VERR_INVALID_PARAMETER;
         }
     }
@@ -820,7 +817,7 @@ static int vmmR0EntryExWorker(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperatio
             return HWACCMR0EnableAllCpus(pVM);
 
         /*
-         * Setup the hardware accelerated raw-mode session.
+         * Setup the hardware accelerated session.
          */
         case VMMR0_DO_HWACC_SETUP_VM:
         {
@@ -1092,7 +1089,7 @@ VMMR0DECL(int) VMMR0EntryEx(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperation,
      */
     if (    VALID_PTR(pVM)
         &&  pVM->pVMR0
-        &&  idCpu < pVM->cCPUs)
+        &&  idCpu < pVM->cCpus)
     {
         switch (enmOperation)
         {

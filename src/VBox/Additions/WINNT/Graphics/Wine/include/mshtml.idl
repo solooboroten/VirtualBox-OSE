@@ -101,6 +101,26 @@ typedef enum _SELECTION_TYPE {
     SELECTION_TYPE_Max = 2147483647
 } SELECTION_TYPE;
 
+[
+    odl,
+    oleautomation,
+    dual,
+    uuid(3051049b-98b5-11cf-bb82-00aa00bdce0b)
+]
+interface IHTMLDOMConstructor : IDispatch
+{
+    [propget, id(DISPID_IHTMLDOMCONSTRUCTOR_CONSTRUCTOR), hidden]
+    HRESULT constructor([retval, out] IDispatch* * p);
+
+    HRESULT LookupGetter([in] BSTR propname, [retval, out] VARIANT* ppDispHandler);
+
+    HRESULT LookupSetter([in] BSTR propname, [retval, out] VARIANT* ppDispHandler);
+
+    HRESULT DefineGetter([in] BSTR propname, [in] VARIANT* pdispHandler);
+
+    HRESULT DefineSetter([in] BSTR propname, [in] VARIANT* pdispHandler);
+}
+
 interface IHTMLDocument2;
 interface IHTMLStyleSheetsCollection;
 interface IHTMLFrameBase;
@@ -5386,6 +5406,41 @@ interface IHTMLStyleSheetRule : IDispatch
     HRESULT readOnly([retval, out] VARIANT_BOOL *p);
 }
 
+[
+    hidden,
+    uuid(3050f50e-98b5-11cf-bb82-00aa00bdce0b)
+]
+dispinterface DispHTMLStyleSheetRule
+{
+properties:
+methods:
+    [propput, id(DISPID_IHTMLSTYLESHEETRULE_SELECTORTEXT)]
+    void selectorText(BSTR v);
+
+    [propget, id(DISPID_IHTMLSTYLESHEETRULE_SELECTORTEXT)]
+    BSTR selectorText();
+
+    [propget, id(DISPID_IHTMLSTYLESHEETRULE_STYLE), nonbrowsable]
+    IHTMLRuleStyle* style();
+
+    [propget, id(DISPID_IHTMLSTYLESHEETRULE_READONLY)]
+    VARIANT_BOOL readOnly();
+
+    [propget, id(DISPID_IHTMLDOMCONSTRUCTOR_CONSTRUCTOR), hidden]
+    IDispatch* constructor();
+}
+
+[
+    noncreatable,
+    uuid(3050f3ce-98b5-11cf-bb82-00aa00bdce0b)
+]
+coclass HTMLStyleSheetRule
+{
+    [default]           dispinterface DispHTMLStyleSheetRule;
+                        interface IHTMLStyleSheetRule;
+                        interface IHTMLDOMConstructor;
+}
+
 /*****************************************************************************
  *    IHTMLStyleSheetRulesCollection interface
  */
@@ -5407,6 +5462,35 @@ interface IHTMLStyleSheetRulesCollection : IDispatch
 }
 
 [
+    hidden,
+    uuid(3050f52f-98b5-11cf-bb82-00aa00bdce0b)
+]
+dispinterface DispHTMLStyleSheetRulesCollection
+{
+properties:
+methods:
+    [propget, id(DISPID_IHTMLSTYLESHEETRULESCOLLECTION_LENGTH)]
+    long length();
+
+    [id(DISPID_IHTMLSTYLESHEETRULESCOLLECTION_ITEM)]
+    IHTMLStyleSheetRule* item([in] long index);
+
+    [propget, id(DISPID_IHTMLDOMCONSTRUCTOR_CONSTRUCTOR), hidden]
+    IDispatch* constructor();
+}
+
+[
+    noncreatable,
+    uuid(3050f3cd-98b5-11cf-bb82-00aa00bdce0b)
+]
+coclass HTMLStyleSheetRulesCollection
+{
+    [default]           dispinterface DispHTMLStyleSheetRulesCollection;
+                        interface IHTMLStyleSheetRulesCollection;
+                        interface IHTMLDOMConstructor;
+}
+
+[
     odl,
     oleautomation,
     dual,
@@ -5420,6 +5504,34 @@ interface IHTMLStyleSheetPage : IDispatch
     [propget, id(DISPID_IHTMLSTYLESHEETPAGE_PSEUDOCLASS)]
     HRESULT pseudoClass([retval, out] BSTR *p);
 }
+
+[
+    hidden,
+    uuid(3050f540-98b5-11cf-bb82-00aa00bdce0b)
+]
+dispinterface DispHTMLStyleSheetPage
+{
+properties:
+methods:
+    [propget, id(DISPID_IHTMLSTYLESHEETPAGE_SELECTOR)]
+    BSTR selector();
+
+    [propget, id(DISPID_IHTMLSTYLESHEETPAGE_PSEUDOCLASS)]
+    BSTR pseudoClass();
+
+    [propget, id(DISPID_IHTMLDOMCONSTRUCTOR_CONSTRUCTOR), hidden]
+    IDispatch* constructor();
+}
+[
+    noncreatable,
+    uuid(3050f7ef-98b5-11cf-bb82-00aa00bdce0b)
+]
+coclass HTMLStyleSheetPage
+{
+    [default]           dispinterface DispHTMLStyleSheetPage;
+                        interface IHTMLStyleSheetPage;
+                        interface IHTMLDOMConstructor;
+};
 
 [
     odl,
@@ -5436,6 +5548,35 @@ interface IHTMLStyleSheetPagesCollection : IDispatch
     HRESULT item(
         [in] LONG index,
         [retval, out] IHTMLStyleSheetPage **ppHTMLStyleSheetPage);
+}
+
+[
+    hidden,
+    uuid(3050f543-98b5-11cf-bb82-00aa00bdce0b)
+]
+dispinterface DispHTMLStyleSheetPagesCollection
+{
+properties:
+methods:
+    [propget, id(DISPID_IHTMLSTYLESHEETPAGESCOLLECTION_LENGTH)]
+    long length();
+
+    [id(DISPID_IHTMLSTYLESHEETPAGESCOLLECTION_ITEM)]
+    IHTMLStyleSheetPage* item([in] long index);
+
+    [propget, id(DISPID_IHTMLDOMCONSTRUCTOR_CONSTRUCTOR), hidden]
+    IDispatch* constructor();
+}
+
+[
+    noncreatable,
+    uuid(3050f7f1-98b5-11cf-bb82-00aa00bdce0b)
+]
+coclass HTMLStyleSheetPagesCollection
+{
+    [default]           dispinterface DispHTMLStyleSheetPagesCollection;
+                        interface IHTMLStyleSheetPagesCollection;
+                        interface IHTMLDOMConstructor;
 }
 
 /*****************************************************************************
@@ -9625,6 +9766,21 @@ interface IHTMLOptionElement : IDispatch
     HRESULT form([retval, out] IHTMLFormElement **p);
 }
 
+[
+    odl,
+    oleautomation,
+    dual,
+    uuid(3050f820-98b5-11cf-bb82-00aa00bdce0b)
+]
+interface IHTMLOptionElement3 : IDispatch
+{
+    [propput, id(DISPID_IHTMLOPTIONELEMENT3_LABEL), displaybind, bindable]
+    HRESULT label([in] BSTR v);
+
+    [propget, id(DISPID_IHTMLOPTIONELEMENT3_LABEL), displaybind, bindable]
+    HRESULT label([retval, out] BSTR * p);
+}
+
 /*****************************************************************************
  *    IHTMLOptionElementFactory interface
  */
@@ -10534,6 +10690,27 @@ methods:
 
     [propget, id(DISPID_IHTMLOPTIONELEMENT3_LABEL), displaybind, bindable]
     BSTR label();
+}
+
+[
+    noncreatable,
+    uuid(3050f24d-98b5-11cf-bb82-00aa00bdce0b)
+]
+coclass HTMLOptionElement
+{
+    [default]           dispinterface DispHTMLOptionElement;
+    [source, default]   dispinterface HTMLElementEvents;
+    [source]            dispinterface HTMLElementEvents2;
+                        interface IHTMLElement;
+                        interface IHTMLElement2;
+                        interface IHTMLElement3;
+                        interface IHTMLElement4;
+                        interface IHTMLUniqueName;
+                        interface IHTMLDOMNode;
+                        interface IHTMLDOMNode2;
+                        interface IHTMLDatabinding;
+                        interface IHTMLOptionElement;
+                        interface IHTMLOptionElement3;
 }
 
 /*****************************************************************************
@@ -13004,7 +13181,7 @@ interface IOmNavigator : IDispatch
     [propget, id(DISPID_IOMNAVIGATOR_SYSTEMLANGUAGE)]
     HRESULT systemLanguage([retval, out] BSTR *p);
 
-    [propget, id(DISPID_IOMNAVIGATOR_BROWSERLANGUAGE)]
+    [propget, id(DISPID_IOMNAVIGATOR_BROWSERLANGUAGE), hidden]
     HRESULT browserLanguage([retval, out] BSTR *p);
 
     [propget, id(DISPID_IOMNAVIGATOR_USERLANGUAGE)]
@@ -13016,7 +13193,7 @@ interface IOmNavigator : IDispatch
     [propget, id(DISPID_IOMNAVIGATOR_APPMINORVERSION)]
     HRESULT appMinorVersion([retval, out] BSTR *p);
 
-    [propget, id(DISPID_IOMNAVIGATOR_CONNECTIONSPEED)]
+    [propget, id(DISPID_IOMNAVIGATOR_CONNECTIONSPEED), hidden]
     HRESULT connectionSpeed([retval, out] LONG *p);
 
     [propget, id(DISPID_IOMNAVIGATOR_ONLINE)]
@@ -13026,13 +13203,89 @@ interface IOmNavigator : IDispatch
     HRESULT userProfile([retval, out] IHTMLOpsProfile **p);
 }
 
+/*****************************************************************************
+ *    DispHTMLNavigator dispinterface
+ */
+[
+    hidden,
+    uuid(3050f54c-98b5-11cf-bb82-00aa00bdce0b)
+]
+dispinterface DispHTMLNavigator
+{
+properties:
+methods:
+    [propget, id(DISPID_IOMNAVIGATOR_APPCODENAME)]
+    BSTR appCodeName();
+
+    [propget, id(DISPID_IOMNAVIGATOR_APPNAME)]
+    BSTR appName();
+
+    [propget, id(DISPID_IOMNAVIGATOR_APPVERSION)]
+    BSTR appVersion();
+
+    [propget, id(DISPID_IOMNAVIGATOR_USERAGENT)]
+    BSTR userAgent();
+
+    [id(DISPID_IOMNAVIGATOR_JAVAENABLED)]
+    VARIANT_BOOL javaEnabled();
+
+    [id(DISPID_IOMNAVIGATOR_TAINTENABLED)]
+    VARIANT_BOOL taintEnabled();
+
+    [propget, id(DISPID_IOMNAVIGATOR_MIMETYPES)]
+    IHTMLMimeTypesCollection *mimeTypes();
+
+    [propget, id(DISPID_IOMNAVIGATOR_PLUGINS)]
+    IHTMLPluginsCollection *plugins();
+
+    [propget, id(DISPID_IOMNAVIGATOR_COOKIEENABLED)]
+    VARIANT_BOOL cookieEnabled();
+
+    [propget, id(DISPID_IOMNAVIGATOR_OPSPROFILE)]
+    IHTMLOpsProfile *opsProfile();
+
+    [id(DISPID_IOMNAVIGATOR_TOSTRING)]
+    BSTR toString();
+
+    [propget, id(DISPID_IOMNAVIGATOR_CPUCLASS)]
+    BSTR cpuClass();
+
+    [propget, id(DISPID_IOMNAVIGATOR_SYSTEMLANGUAGE)]
+    BSTR systemLanguage();
+
+    [propget, id(DISPID_IOMNAVIGATOR_BROWSERLANGUAGE), hidden]
+    BSTR browserLanguage();
+
+    [propget, id(DISPID_IOMNAVIGATOR_USERLANGUAGE)]
+    BSTR userLanguage();
+
+    [propget, id(DISPID_IOMNAVIGATOR_PLATFORM)]
+    BSTR platform();
+
+    [propget, id(DISPID_IOMNAVIGATOR_APPMINORVERSION)]
+    BSTR appMinorVersion();
+
+    [propget, id(DISPID_IOMNAVIGATOR_CONNECTIONSPEED), hidden]
+    LONG connectionSpeed();
+
+    [propget, id(DISPID_IOMNAVIGATOR_ONLINE)]
+    VARIANT_BOOL onLine();
+
+    [propget, id(DISPID_IOMNAVIGATOR_USERPROFILE)]
+    IHTMLOpsProfile *userProfile();
+
+    [propget, id(DISPID_IHTMLDOMCONSTRUCTOR_CONSTRUCTOR), hidden]
+    IDispatch *constructor();
+}
+
 [
     noncreatable,
     uuid(FECEAAA6-8405-11cf-8BA1-00AA00476DA6)
 ]
 coclass HTMLNavigator
 {
-    [default]           interface IOmNavigator;
+    [default]  dispinterface DispHTMLNavigator;
+               interface IOmNavigator;
 }
 
 /*****************************************************************************
@@ -13107,13 +13360,89 @@ interface IHTMLLocation : IDispatch
     HRESULT toString([retval, out] BSTR *String);
 }
 
+/*****************************************************************************
+ *    DispHTMLLocation dispinterface
+ */
+[
+    hidden,
+    uuid(3050f54e-98b5-11cf-bb82-00aa00bdce0b)
+]
+dispinterface DispHTMLLocation
+{
+properties:
+methods:
+    [propput, id(DISPID_IHTMLLOCATION_HREF)]
+    void href(BSTR v);
+
+    [propget, id(DISPID_IHTMLLOCATION_HREF)]
+    BSTR href();
+
+    [propput, id(DISPID_IHTMLLOCATION_PROTOCOL)]
+    void protocol(BSTR v);
+
+    [propget, id(DISPID_IHTMLLOCATION_PROTOCOL)]
+    BSTR protocol();
+
+    [propput, id(DISPID_IHTMLLOCATION_HOST)]
+    void host(BSTR v);
+
+    [propget, id(DISPID_IHTMLLOCATION_HOST)]
+    BSTR host();
+
+    [propput, id(DISPID_IHTMLLOCATION_HOSTNAME)]
+    void hostname(BSTR v);
+
+    [propget, id(DISPID_IHTMLLOCATION_HOSTNAME)]
+    BSTR hostname();
+
+    [propput, id(DISPID_IHTMLLOCATION_PORT)]
+    void port(BSTR v);
+
+    [propget, id(DISPID_IHTMLLOCATION_PORT)]
+    BSTR port();
+
+    [propput, id(DISPID_IHTMLLOCATION_PATHNAME)]
+    void pathname(BSTR v);
+
+    [propget, id(DISPID_IHTMLLOCATION_PATHNAME)]
+    BSTR pathname();
+
+    [propput, id(DISPID_IHTMLLOCATION_SEARCH)]
+    void search(BSTR v);
+
+    [propget, id(DISPID_IHTMLLOCATION_SEARCH)]
+    BSTR search();
+
+    [propput, id(DISPID_IHTMLLOCATION_HASH)]
+    void hash(BSTR v);
+
+    [propget, id(DISPID_IHTMLLOCATION_HASH)]
+    BSTR hash();
+
+    [id(DISPID_IHTMLLOCATION_RELOAD)]
+    void reload([in, defaultvalue(0)] VARIANT_BOOL flag);
+
+    [id(DISPID_IHTMLLOCATION_REPLACE)]
+    void replace([in] BSTR bstr);
+
+    [id(DISPID_IHTMLLOCATION_ASSIGN)]
+    void assign([in] BSTR bstr);
+
+    [id(DISPID_IHTMLLOCATION_TOSTRING)]
+    BSTR toString();
+
+    [propget, id(DISPID_IHTMLDOMCONSTRUCTOR_CONSTRUCTOR), hidden]
+    IDispatch *constructor();
+}
+
 [
     noncreatable,
     uuid(163BB1E1-6E00-11cf-837A-48DC04C10000)
 ]
 coclass HTMLLocation
 {
-    [default]           interface IHTMLLocation;
+    [default]  dispinterface DispHTMLLocation;
+               interface IHTMLLocation;
 }
 
 [

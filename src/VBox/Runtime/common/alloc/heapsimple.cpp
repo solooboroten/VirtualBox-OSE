@@ -1,4 +1,4 @@
-/* $Id: heapsimple.cpp 18603 2009-04-01 15:44:08Z vboxsync $ */
+/* $Id: heapsimple.cpp 22281 2009-08-17 08:04:06Z vboxsync $ */
 /** @file
  * IPRT - A Simple Heap.
  */
@@ -33,13 +33,9 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #define LOG_GROUP RTLOGGROUP_DEFAULT
-
-#if defined(IN_GUEST_R0) && defined(RT_OS_LINUX) && defined(IN_MODULE)
-/* should come first to prevent warnings about duplicate definitions of PAGE_* */
-# include "the-linux-kernel.h"
-#endif
-
 #include <iprt/heap.h>
+#include "internal/iprt.h"
+
 #include <iprt/assert.h>
 #include <iprt/asm.h>
 #include <iprt/string.h>
@@ -147,7 +143,7 @@ typedef struct RTHEAPSIMPLEINTERNAL
 {
     /** The typical magic (RTHEAPSIMPLE_MAGIC). */
     size_t                  uMagic;
-    /** The heap size. (This structure is not included!) */
+    /** The heap size. (This structure is included!) */
     size_t                  cbHeap;
     /** Pointer to the end of the heap. */
     void                   *pvEnd;
@@ -288,7 +284,7 @@ static void rtHeapSimpleFreeBlock(PRTHEAPSIMPLEINTERNAL pHeapInt, PRTHEAPSIMPLEB
 /**
  * Initializes the heap.
  *
- * @returns IPRT status code on success.
+ * @returns IPRT status code.
  * @param   pHeap       Where to store the heap anchor block on success.
  * @param   pvMemory    Pointer to the heap memory.
  * @param   cbMemory    The size of the heap memory.
@@ -348,6 +344,73 @@ RTDECL(int) RTHeapSimpleInit(PRTHEAPSIMPLE pHeap, void *pvMemory, size_t cbMemor
 #endif
     return VINF_SUCCESS;
 }
+RT_EXPORT_SYMBOL(RTHeapSimpleInit);
+
+
+/** 
+ * Relocater the heap internal structures after copying it to a new location. 
+ *  
+ * This can be used when loading a saved heap. 
+ *  
+ * @returns IPRT status code. 
+ * @param   hHeap       Heap handle that has already been adjusted by to the new
+ *                      location.  That is to say, when calling
+ *                      RTHeapSimpleInit, the caller must note the offset of the
+ *                      returned heap handle into the heap memory.  This offset
+ *                      must be used when calcuating the handle value for the
+ *                      new location.  The offset may in some cases not be zero!
+ * @param   offDelta    The delta between the new and old location, i.e. what 
+ *                      should be added to the internal pointers.
+ */
+RTDECL(int) RTHeapSimpleRelocate(RTHEAPSIMPLE hHeap, uintptr_t offDelta)
+{
+    PRTHEAPSIMPLEINTERNAL   pHeapInt = hHeap;
+    PRTHEAPSIMPLEFREE       pCur;
+
+    /*
+     * Validate input.
+     */
+    AssertPtrReturn(pHeapInt, VERR_INVALID_HANDLE);
+    AssertReturn(pHeapInt->uMagic == RTHEAPSIMPLE_MAGIC, VERR_INVALID_HANDLE);
+    AssertMsgReturn((uintptr_t)pHeapInt - (uintptr_t)pHeapInt->pvEnd + pHeapInt->cbHeap == offDelta, 
+                    ("offDelta=%p, expected=%p\n", offDelta, (uintptr_t)pHeapInt->pvEnd - pHeapInt->cbHeap - (uintptr_t)pHeapInt), 
+                    VERR_INVALID_PARAMETER);
+
+    /*
+     * Relocate the heap anchor block.
+     */
+#define RELOCATE_IT(var, type, offDelta)    do { if (RT_UNLIKELY((var) != NULL)) { (var) = (type)((uintptr_t)(var) + offDelta); } } while (0)
+    RELOCATE_IT(pHeapInt->pvEnd,     void *,            offDelta);
+    RELOCATE_IT(pHeapInt->pFreeHead, PRTHEAPSIMPLEFREE, offDelta);
+    RELOCATE_IT(pHeapInt->pFreeTail, PRTHEAPSIMPLEFREE, offDelta);
+
+    /*
+     * Walk the heap blocks.
+     */
+    for (pCur = (PRTHEAPSIMPLEFREE)(pHeapInt + 1); 
+         pCur && (uintptr_t)pCur < (uintptr_t)pHeapInt->pvEnd; 
+         pCur = (PRTHEAPSIMPLEFREE)pCur->Core.pNext)
+    {
+        RELOCATE_IT(pCur->Core.pNext, PRTHEAPSIMPLEBLOCK,    offDelta);
+        RELOCATE_IT(pCur->Core.pPrev, PRTHEAPSIMPLEBLOCK,    offDelta);
+        RELOCATE_IT(pCur->Core.pHeap, PRTHEAPSIMPLEINTERNAL, offDelta);
+        if (RTHEAPSIMPLEBLOCK_IS_FREE(&pCur->Core))
+        {
+            RELOCATE_IT(pCur->pNext, PRTHEAPSIMPLEFREE, offDelta);
+            RELOCATE_IT(pCur->pPrev, PRTHEAPSIMPLEFREE, offDelta);
+        }
+    }
+#undef RELOCATE_IT
+
+#ifdef RTHEAPSIMPLE_STRICT
+    /*
+     * Give it a once over before we return.
+     */
+    rtHeapSimpleAssertAll(pHeapInt);
+#endif
+    return VINF_SUCCESS; 
+}
+RT_EXPORT_SYMBOL(RTHeapSimpleRelocate);
 
 
 
@@ -396,6 +459,7 @@ RTDECL(void *) RTHeapSimpleAlloc(RTHEAPSIMPLE Heap, size_t cb, size_t cbAlignmen
     }
     return NULL;
 }
+RT_EXPORT_SYMBOL(RTHeapSimpleAlloc);
 
 
 /**
@@ -444,6 +508,7 @@ RTDECL(void *) RTHeapSimpleAllocZ(RTHEAPSIMPLE Heap, size_t cb, size_t cbAlignme
     }
     return NULL;
 }
+RT_EXPORT_SYMBOL(RTHeapSimpleAllocZ);
 
 
 /**
@@ -664,6 +729,7 @@ RTDECL(void) RTHeapSimpleFree(RTHEAPSIMPLE Heap, void *pv)
      */
     rtHeapSimpleFreeBlock(pHeapInt, pBlock);
 }
+RT_EXPORT_SYMBOL(RTHeapSimpleFree);
 
 
 /**
@@ -859,6 +925,7 @@ RTDECL(size_t) RTHeapSimpleSize(RTHEAPSIMPLE Heap, void *pv)
             - (uintptr_t)pBlock- sizeof(RTHEAPSIMPLEBLOCK);
     return cbBlock;
 }
+RT_EXPORT_SYMBOL(RTHeapSimpleSize);
 
 
 /**
@@ -884,6 +951,7 @@ RTDECL(size_t) RTHeapSimpleGetHeapSize(RTHEAPSIMPLE Heap)
     ASSERT_ANCHOR(pHeapInt);
     return pHeapInt->cbHeap;
 }
+RT_EXPORT_SYMBOL(RTHeapSimpleGetHeapSize);
 
 
 /**
@@ -908,6 +976,7 @@ RTDECL(size_t) RTHeapSimpleGetFreeSize(RTHEAPSIMPLE Heap)
     ASSERT_ANCHOR(pHeapInt);
     return pHeapInt->cbFree;
 }
+RT_EXPORT_SYMBOL(RTHeapSimpleGetFreeSize);
 
 
 /**
@@ -940,10 +1009,5 @@ RTDECL(void) RTHeapSimpleDump(RTHEAPSIMPLE Heap, PFNRTHEAPSIMPLEPRINTF pfnPrintf
     }
     pfnPrintf("**** Done dumping Heap %p ****\n", Heap);
 }
+RT_EXPORT_SYMBOL(RTHeapSimpleDump);
 
-
-#if defined(IN_GUEST_R0) && defined(RT_OS_LINUX) && defined(IN_MODULE)
-EXPORT_SYMBOL(RTHeapSimpleAlloc);
-EXPORT_SYMBOL(RTHeapSimpleInit);
-EXPORT_SYMBOL(RTHeapSimpleFree);
-#endif

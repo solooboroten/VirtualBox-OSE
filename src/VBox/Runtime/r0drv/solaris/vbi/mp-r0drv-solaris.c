@@ -1,4 +1,4 @@
-/* $Id: mp-r0drv-solaris.c 19391 2009-05-05 17:26:18Z vboxsync $ */
+/* $Id: mp-r0drv-solaris.c 24386 2009-11-05 14:17:10Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, Ring-0 Driver, Solaris.
  */
@@ -32,13 +32,15 @@
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
-#include "the-solaris-kernel.h"
-
+#include "../the-solaris-kernel.h"
+#include "internal/iprt.h"
 #include <iprt/mp.h>
 #include <iprt/cpuset.h>
-#include <iprt/err.h>
+
 #include <iprt/asm.h>
+#include <iprt/err.h>
 #include "r0drv/mp-r0drv.h"
+
 
 
 RTDECL(bool) RTMpIsCpuWorkPending(void)
@@ -73,7 +75,17 @@ RTDECL(RTCPUID) RTMpGetMaxCpuId(void)
 
 RTDECL(bool) RTMpIsCpuOnline(RTCPUID idCpu)
 {
+    /*
+     * We cannot query CPU status recursively, check cpu member from cached set.
+     */
+    if (idCpu >= vbi_cpu_count())
+        return false;
+
+    return RTCpuSetIsMember(&g_rtMpSolarisCpuSet, idCpu);
+
+#if 0
     return idCpu < vbi_cpu_count() && vbi_cpu_online(idCpu);
+#endif
 }
 
 
@@ -107,6 +119,13 @@ RTDECL(RTCPUID) RTMpGetCount(void)
 
 RTDECL(PRTCPUSET) RTMpGetOnlineSet(PRTCPUSET pSet)
 {
+    /*
+     * We cannot query CPU status recursively, return the cached set.
+     */
+    *pSet = g_rtMpSolarisCpuSet;
+    return pSet;
+
+#if 0
     RTCPUID idCpu;
 
     RTCpuSetEmpty(pSet);
@@ -118,11 +137,17 @@ RTDECL(PRTCPUSET) RTMpGetOnlineSet(PRTCPUSET pSet)
     } while (idCpu-- > 0);
 
     return pSet;
+#endif
 }
 
 
 RTDECL(RTCPUID) RTMpGetOnlineCount(void)
 {
+    RTCPUSET Set;
+    RTMpGetOnlineSet(&Set);
+    return RTCpuSetCount(&Set);
+
+#if 0
     int c;
     int cnt = 0;
 
@@ -132,6 +157,7 @@ RTDECL(RTCPUID) RTMpGetOnlineCount(void)
             ++cnt;
     }
     return cnt;
+#endif
 }
 
 
@@ -159,6 +185,7 @@ static int rtmpOnAllSolarisWrapper(void *uArg, void *uIgnored1, void *uIgnored2)
 RTDECL(int) RTMpOnAll(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2)
 {
     RTMPARGS Args;
+    RT_ASSERT_INTS_ON();
 
     Args.pfnWorker = pfnWorker;
     Args.pvUser1 = pvUser1;
@@ -202,6 +229,7 @@ RTDECL(int) RTMpOnOthers(PFNRTMPWORKER pfnWorker, void *pvUser1, void *pvUser2)
 {
     int rc;
     RTMPARGS Args;
+    RT_ASSERT_INTS_ON();
 
     /* The caller is supposed to have disabled preemption, but take no chances. */
     vbi_preempt_disable();
@@ -248,6 +276,7 @@ RTDECL(int) RTMpOnSpecific(RTCPUID idCpu, PFNRTMPWORKER pfnWorker, void *pvUser1
 {
     int rc;
     RTMPARGS Args;
+    RT_ASSERT_INTS_ON();
 
     if (idCpu >= vbi_cpu_count())
         return VERR_CPU_NOT_FOUND;

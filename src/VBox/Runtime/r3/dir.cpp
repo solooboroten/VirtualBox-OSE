@@ -1,4 +1,4 @@
-/* $Id: dir.cpp 19212 2009-04-27 13:56:45Z vboxsync $ */
+/* $Id: dir.cpp 21675 2009-07-17 12:18:30Z vboxsync $ */
 /** @file
  * IPRT - Directory Manipulation.
  */
@@ -51,8 +51,8 @@
 #include <iprt/err.h>
 #include <iprt/assert.h>
 #include <iprt/uni.h>
-#include "internal/fs.h"
 #include "internal/dir.h"
+#include "internal/path.h"
 
 
 static DECLCALLBACK(bool) rtDirFilterWinNtMatch(PRTDIR pDir, const char *pszName);
@@ -700,9 +700,15 @@ RTDECL(int) RTDirOpenFiltered(PRTDIR *ppDir, const char *pszPath, RTDIRFILTER en
     /*
      * Find the last component, i.e. where the filter criteria starts and the dir name ends.
      */
-    const char *pszFilter = enmFilter != RTDIRFILTER_NONE
-        ? RTPathFilename(pszPath)
-        : NULL;
+    const char *pszFilter;
+    if (enmFilter == RTDIRFILTER_NONE)
+        pszFilter = NULL;
+    else
+    {
+        pszFilter = RTPathFilename(pszPath);
+        if (!pszFilter) /* trailing slash => directory to read => no filter. */
+            enmFilter = RTDIRFILTER_NONE;
+    }
 
     /*
      * Call worker common with RTDirOpen which will verify the path, allocate
@@ -771,7 +777,7 @@ RTDECL(int) RTDirRemoveRecursive(const char *pszPath)
             rc = VINF_SUCCESS;
 
         RTDirClose(pDir);
-        rc = RTDirRemove(szAbsPath);    
+        rc = RTDirRemove(szAbsPath);
     }
 
     LogFlow(("RTDirRemoveRecursive(%p:{%s}): returns %Rrc\n", pszPath, pszPath, rc));

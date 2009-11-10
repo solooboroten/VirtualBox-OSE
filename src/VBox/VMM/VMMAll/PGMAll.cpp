@@ -1,4 +1,4 @@
-/* $Id: PGMAll.cpp 21059 2009-06-30 09:24:20Z vboxsync $ */
+/* $Id: PGMAll.cpp 24206 2009-10-30 16:09:56Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor - All context code.
  */
@@ -402,7 +402,7 @@ VMMDECL(int) PGMTrap0eHandler(PVMCPU pVCpu, RTGCUINT uErr, PCPUMCTXCORE pRegFram
 {
     PVM pVM = pVCpu->CTX_SUFF(pVM);
 
-    LogFlow(("PGMTrap0eHandler: uErr=%RGu pvFault=%RGv eip=%04x:%RGv\n", uErr, pvFault, pRegFrame->cs, (RTGCPTR)pRegFrame->rip));
+    Log(("PGMTrap0eHandler: uErr=%RGu pvFault=%RGv eip=%04x:%RGv\n", uErr, pvFault, pRegFrame->cs, (RTGCPTR)pRegFrame->rip));
     STAM_PROFILE_START(&pVCpu->pgm.s.StatRZTrap0e, a);
     STAM_STATS({ pVCpu->pgm.s.CTX_SUFF(pStatTrap0eAttribution) = NULL; } );
 
@@ -459,10 +459,12 @@ VMMDECL(int) PGMTrap0eHandler(PVMCPU pVCpu, RTGCUINT uErr, PCPUMCTXCORE pRegFram
 
 # ifdef IN_RING0
     /* Note: hack alert for difficult to reproduce problem. */
-    if (    pVM->cCPUs > 1
-        &&  rc == VERR_PAGE_TABLE_NOT_PRESENT)
+    if (    rc == VERR_PAGE_TABLE_NOT_PRESENT           /* seen with UNI & SMP */
+        ||  rc == VERR_PAGE_DIRECTORY_PTR_NOT_PRESENT   /* seen with SMP */
+        ||  rc == VERR_PAGE_MAP_LEVEL4_NOT_PRESENT)     /* precaution */
     {
-        Log(("WARNING: Unexpected VERR_PAGE_TABLE_NOT_PRESENT for page fault at %RGv error code %x (rip=%RGv)\n", pvFault, uErr, pRegFrame->rip));
+        Log(("WARNING: Unexpected VERR_PAGE_TABLE_NOT_PRESENT (%d) for page fault at %RGv error code %x (rip=%RGv)\n", rc, pvFault, uErr, pRegFrame->rip));
+        /* Some kind of inconsistency in the SMP case; it's safe to just execute the instruction again; not sure about single VCPU VMs though. */
         rc = VINF_SUCCESS;
     }
 # endif
@@ -1700,6 +1702,15 @@ VMMDECL(int) PGMFlushTLB(PVMCPU pVCpu, uint64_t cr3, bool fGlobal)
     }
     else
     {
+# ifdef PGMPOOL_WITH_OPTIMIZED_DIRTY_PT
+        PPGMPOOL pPool = pVM->pgm.s.CTX_SUFF(pPool);
+        if (pPool->cDirtyPages)
+        {
+            pgmLock(pVM);
+            pgmPoolResetDirtyPages(pVM);
+            pgmUnlock(pVM);
+        }
+# endif
         /*
          * Check if we have a pending update of the CR3 monitoring.
          */
@@ -2053,6 +2064,17 @@ VMMDECL(const char *) PGMGetModeName(PGMMODE enmMode)
     }
 }
 
+
+/**
+ * Check if any pgm pool pages are marked dirty (not monitored)
+ *
+ * @returns bool locked/not locked
+ * @param   pVM         The VM to operate on.
+ */
+VMMDECL(bool) PGMHasDirtyPages(PVM pVM)
+{
+    return pVM->pgm.s.CTX_SUFF(pPool)->cDirtyPages != 0;
+}
 
 /**
  * Check if the PGM lock is currently taken.
@@ -2508,7 +2530,7 @@ VMMDECL(unsigned) PGMAssertNoMappingConflicts(PVM pVM)
     unsigned cErrors = 0;
 
     /* Only applies to raw mode -> 1 VPCU */
-    Assert(pVM->cCPUs == 1);
+    Assert(pVM->cCpus == 1);
     PVMCPU pVCpu = &pVM->aCpus[0];
 
     /*

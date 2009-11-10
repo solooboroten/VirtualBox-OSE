@@ -1,4 +1,4 @@
-/* $Id: memobj-r0drv-os2.cpp 20525 2009-06-13 20:13:33Z vboxsync $ */
+/* $Id: memobj-r0drv-os2.cpp 23610 2009-10-07 21:22:10Z vboxsync $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, OS/2.
  */
@@ -241,7 +241,7 @@ int rtR0MemObjNativeEnterPhys(PPRTR0MEMOBJINTERNAL ppMem, RTHCPHYS Phys, size_t 
 }
 
 
-int rtR0MemObjNativeLockUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3Ptr, size_t cb, RTR0PROCESS R0Process)
+int rtR0MemObjNativeLockUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3Ptr, size_t cb, uint32_t fAccess, RTR0PROCESS R0Process)
 {
     AssertMsgReturn(R0Process == RTR0ProcHandleSelf(), ("%p != %p\n", R0Process, RTR0ProcHandleSelf()), VERR_NOT_SUPPORTED);
 
@@ -253,7 +253,8 @@ int rtR0MemObjNativeLockUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3Ptr, size_t c
 
     /* lock it. */
     ULONG cPagesRet = cPages;
-    int rc = KernVMLock(VMDHL_LONG | VMDHL_WRITE, (void *)R3Ptr, cb, &pMemOs2->Lock, &pMemOs2->aPages[0], &cPagesRet);
+    int rc = KernVMLock(VMDHL_LONG | (fAccess & RTMEM_PROT_WRITE ? VMDHL_WRITE : 0),
+                        (void *)R3Ptr, cb, &pMemOs2->Lock, &pMemOs2->aPages[0], &cPagesRet);
     if (!rc)
     {
         rtR0MemObjFixPageList(&pMemOs2->aPages[0], cPages, cPagesRet);
@@ -268,7 +269,7 @@ int rtR0MemObjNativeLockUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3Ptr, size_t c
 }
 
 
-int rtR0MemObjNativeLockKernel(PPRTR0MEMOBJINTERNAL ppMem, void *pv, size_t cb)
+int rtR0MemObjNativeLockKernel(PPRTR0MEMOBJINTERNAL ppMem, void *pv, size_t cb, uint32_t fAccess)
 {
     /* create the object. */
     const ULONG cPages = cb >> PAGE_SHIFT;
@@ -278,7 +279,8 @@ int rtR0MemObjNativeLockKernel(PPRTR0MEMOBJINTERNAL ppMem, void *pv, size_t cb)
 
     /* lock it. */
     ULONG cPagesRet = cPages;
-    int rc = KernVMLock(VMDHL_LONG | VMDHL_WRITE, pv, cb, &pMemOs2->Lock, &pMemOs2->aPages[0], &cPagesRet);
+    int rc = KernVMLock(VMDHL_LONG | (fAccess & RTMEM_PROT_WRITE ? VMDHL_WRITE : 0),
+                        pv, cb, &pMemOs2->Lock, &pMemOs2->aPages[0], &cPagesRet);
     if (!rc)
     {
         rtR0MemObjFixPageList(&pMemOs2->aPages[0], cPages, cPagesRet);
@@ -309,6 +311,13 @@ int rtR0MemObjNativeMapKernel(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, 
     AssertMsgReturn(!offSub && !cbSub, ("%#x %#x\n", offSub, cbSub), VERR_NOT_SUPPORTED);
     AssertMsgReturn(pvFixed == (void *)-1, ("%p\n", pvFixed), VERR_NOT_SUPPORTED);
 
+    /*
+     * Check that the specified alignment is supported.
+     */
+    if (uAlignment > PAGE_SIZE)
+        return VERR_NOT_SUPPORTED;
+
+
 /** @todo finish the implementation. */
 
     int rc;
@@ -330,7 +339,6 @@ int rtR0MemObjNativeMapKernel(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, 
             if (!pvR0)
             {
                 /* no ring-0 mapping, so allocate a mapping in the process. */
-                AssertMsgReturn(uAlignment == PAGE_SIZE, ("%#zx\n", uAlignment), VERR_NOT_SUPPORTED);
                 AssertMsgReturn(fProt & RTMEM_PROT_WRITE, ("%#x\n", fProt), VERR_NOT_SUPPORTED);
                 Assert(!pMemToMapOs2->Core.u.Phys.fAllocated);
                 ULONG ulPhys = pMemToMapOs2->Core.u.Phys.PhysBase;
@@ -382,6 +390,8 @@ int rtR0MemObjNativeMapUser(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, RT
 {
     AssertMsgReturn(R0Process == RTR0ProcHandleSelf(), ("%p != %p\n", R0Process, RTR0ProcHandleSelf()), VERR_NOT_SUPPORTED);
     AssertMsgReturn(R3PtrFixed == (RTR3PTR)-1, ("%p\n", R3PtrFixed), VERR_NOT_SUPPORTED);
+    if (uAlignment > PAGE_SIZE)
+        return VERR_NOT_SUPPORTED;
 
     int rc;
     void *pvR0;
@@ -404,7 +414,6 @@ int rtR0MemObjNativeMapUser(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, RT
             if (!pvR0)
             {
                 /* no ring-0 mapping, so allocate a mapping in the process. */
-                AssertMsgReturn(uAlignment == PAGE_SIZE, ("%#zx\n", uAlignment), VERR_NOT_SUPPORTED);
                 AssertMsgReturn(fProt & RTMEM_PROT_WRITE, ("%#x\n", fProt), VERR_NOT_SUPPORTED);
                 Assert(!pMemToMapOs2->Core.u.Phys.fAllocated);
                 ULONG ulPhys = pMemToMapOs2->Core.u.Phys.PhysBase;

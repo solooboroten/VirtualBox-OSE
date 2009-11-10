@@ -241,8 +241,9 @@ static int vbsfPathCheck(const char *pUtf8Path, size_t cbPath)
     return rc;
 }
 
-static int vbsfBuildFullPath (SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLSTRING *pPath,
-                              uint32_t cbPath, char **ppszFullPath, uint32_t *pcbFullPathRoot, bool fWildCard = false)
+static int vbsfBuildFullPath (SHFLCLIENTDATA *pClient, SHFLROOT root, PSHFLSTRING pPath,
+                              uint32_t cbPath, char **ppszFullPath, uint32_t *pcbFullPathRoot,
+                              bool fWildCard = false, bool fPreserveLastComponent = false)
 {
     int rc = VINF_SUCCESS;
 
@@ -264,7 +265,7 @@ static int vbsfBuildFullPath (SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLSTRING
         char *utf8Root;
 
         /* Verify that the path is under the root directory. */
-        rc = vbsfPathCheck((char *)&pPath->String.utf8[0], pPath->u16Length);
+        rc = vbsfPathCheck((const char *)&pPath->String.utf8[0], pPath->u16Length);
 
         if (RT_SUCCESS (rc))
         {
@@ -457,11 +458,11 @@ static int vbsfBuildFullPath (SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLSTRING
             &&  !vbsfIsGuestMappingCaseSensitive(root))
         {
             RTFSOBJINFO info;
-            char *pszWildCardComponent = NULL;
+            char *pszLastComponent = NULL;
 
-            if (fWildCard)
+            if (fWildCard || fPreserveLastComponent)
             {
-                /* strip off the last path component, that contains the wildcard(s) */
+                /* strip off the last path component, that has to be preserved: contains the wildcard(s) or a 'rename' target. */
                 uint32_t len = (uint32_t)strlen(pszFullPath);
                 char    *src = pszFullPath + len - 1;
 
@@ -487,10 +488,10 @@ static int vbsfBuildFullPath (SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLSTRING
                         temp++;
                     }
 
-                    if (fHaveWildcards)
+                    if (fHaveWildcards || fPreserveLastComponent)
                     {
-                        pszWildCardComponent = src;
-                        *pszWildCardComponent = 0;
+                        pszLastComponent = src;
+                        *pszLastComponent = 0;
                     }
                 }
             }
@@ -580,8 +581,8 @@ static int vbsfBuildFullPath (SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLSTRING
                     rc = VERR_FILE_NOT_FOUND;
 
             }
-            if (pszWildCardComponent)
-                *pszWildCardComponent = RTPATH_DELIMITER;
+            if (pszLastComponent)
+                *pszLastComponent = RTPATH_DELIMITER;
 
             /* might be a new file so don't fail here! */
             rc = VINF_SUCCESS;
@@ -607,9 +608,9 @@ static void vbsfFreeFullPath (char *pszFullPath)
  * @param  fMode      file attibutes
  * @retval pfOpen     iprt create flags
  */
-static int vbsfConvertFileOpenFlags(unsigned fShflFlags, RTFMODE fMode, SHFLHANDLE handleInitial, unsigned *pfOpen)
+static int vbsfConvertFileOpenFlags(unsigned fShflFlags, RTFMODE fMode, SHFLHANDLE handleInitial, uint32_t *pfOpen)
 {
-    unsigned fOpen = 0;
+    uint32_t fOpen = 0;
     int rc = VINF_SUCCESS;
 
     if (   (fMode & RTFS_DOS_MASK) != 0
@@ -682,6 +683,11 @@ static int vbsfConvertFileOpenFlags(unsigned fShflFlags, RTFMODE fMode, SHFLHAND
             Log(("FLAG: SHFL_CF_ACCESS_READWRITE\n"));
             break;
         }
+    }
+
+    if (fShflFlags & SHFL_CF_ACCESS_APPEND)
+    {
+        fOpen |= RTFILE_O_APPEND;
     }
 
     switch (BIT_FLAG(fShflFlags, SHFL_CF_ACCESS_MASK_ATTR))
@@ -841,7 +847,7 @@ static int vbsfOpenFile (const char *pszPath, SHFLCREATEPARMS *pParms)
     SHFLHANDLE      handle = SHFL_HANDLE_NIL;
     SHFLFILEHANDLE *pHandle = 0;
     /* Open or create a file. */
-    unsigned fOpen = 0;
+    uint32_t fOpen = 0;
     bool fNoError = false;
     static int cErrors;
 
@@ -1444,8 +1450,8 @@ int vbsfFlush(SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLHANDLE Handle)
     return rc;
 }
 
-int vbsfDirList(SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLHANDLE Handle, SHFLSTRING *pPath, uint32_t flags, uint32_t *pcbBuffer, uint8_t *pBuffer,
-                uint32_t *pIndex, uint32_t *pcFiles)
+int vbsfDirList(SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLHANDLE Handle, SHFLSTRING *pPath, uint32_t flags,
+                uint32_t *pcbBuffer, uint8_t *pBuffer, uint32_t *pIndex, uint32_t *pcFiles)
 {
     SHFLFILEHANDLE *pHandle = (SHFLFILEHANDLE *)vbsfQueryHandle(Handle, SHFL_HF_TYPE_DIR);
     PRTDIRENTRYEX  pDirEntry = 0, pDirEntryOrg;
@@ -1742,9 +1748,9 @@ static int vbsfSetFileInfo(SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLHANDLE Ha
             RTFMODE fMode = pSFDEntry->Attr.fMode;
 
 #ifndef RT_OS_WINDOWS
-            /* don't allow to clear the own bit, otherwise the guest wouldn't be
-             * able to access this file anymore */
-            if (fMode)
+            /* Don't allow the guest to clear the own bit, otherwise the guest wouldn't be
+             * able to access this file anymore. Only for guests, which set the UNIX mode. */
+            if (fMode & RTFS_UNIX_MASK)
                 fMode |= RTFS_UNIX_IRUSR;
 #endif
 
@@ -2068,7 +2074,7 @@ int vbsfRename(SHFLCLIENTDATA *pClient, SHFLROOT root, SHFLSTRING *pSrc, SHFLSTR
     if (rc != VINF_SUCCESS)
         return rc;
 
-    rc = vbsfBuildFullPath (pClient, root, pDest, pDest->u16Size, &pszFullPathDest, NULL);
+    rc = vbsfBuildFullPath (pClient, root, pDest, pDest->u16Size, &pszFullPathDest, NULL, false, true);
     if (RT_SUCCESS (rc))
     {
         Log(("Rename %s to %s\n", pszFullPathSrc, pszFullPathDest));

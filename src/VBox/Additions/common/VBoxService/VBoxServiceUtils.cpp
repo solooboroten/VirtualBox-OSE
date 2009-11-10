@@ -1,5 +1,4 @@
-
-/* $Id: VBoxServiceUtils.cpp 19644 2009-05-12 15:29:22Z vboxsync $ */
+/* $Id: VBoxServiceUtils.cpp 23655 2009-10-09 15:51:35Z vboxsync $ */
 /** @file
  * VBoxServiceUtils - Some utility functions.
  */
@@ -25,80 +24,65 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #ifdef RT_OS_WINDOWS
-#include <windows.h>
+# include <Windows.h>
 #endif
 
 #include <iprt/assert.h>
 #include <iprt/mem.h>
 #include <iprt/string.h>
 
-#include <VBox/VBoxGuest.h>
+#include <VBox/VBoxGuestLib.h>
 #include "VBoxServiceInternal.h"
 
 
 #ifdef VBOX_WITH_GUEST_PROPS
-int VboxServiceWriteProp(uint32_t uiClientID, const char *pszKey, const char *pszValue)
+/**
+ * Wrapper around VbglR3GuestPropWriteValue that does value formatting and
+ * logging.
+ *
+ * @returns VBox status code. Errors will be logged.
+ *
+ * @param   u32ClientId     The HGCM client ID for the guest property session.
+ * @param   pszName         The property name.
+ * @param   pszValueFormat  The property format string.  If this is NULL then
+ *                          the property will be removed.
+ * @param   ...             Format arguments.
+ */
+int VBoxServiceWritePropF(uint32_t u32ClientId, const char *pszName, const char *pszValueFormat, ...)
 {
-    int rc = VINF_SUCCESS;
-    Assert(pszKey);
-    /* Not checking for a valid pszValue is intentional. */
-
-    char szKeyTemp [FILENAME_MAX] = {0};
-    char *pszValueTemp = NULL;
-
-    /* Append base path. */
-    RTStrPrintf(szKeyTemp, sizeof(szKeyTemp), "/VirtualBox/%s", pszKey); /** @todo r=bird: Why didn't you hardcode this into the strings before calling this function? */
-
-    if (pszValue != NULL)
+    int rc;
+    if (pszValueFormat != NULL)
     {
-        rc = RTStrCurrentCPToUtf8(&pszValueTemp, pszValue);
-        if (!RT_SUCCESS(rc)) 
-        {
-            VBoxServiceError("vboxVMInfoThread: Failed to convert the value name \"%s\" to Utf8! Error: %Rrc\n", pszValue, rc);
-            goto cleanup;
-        }
+        /** @todo Log the value as well? just copy the guts of
+         *        VbglR3GuestPropWriteValueV. */
+        VBoxServiceVerbose(3, "Writing guest property \"%s\"\n", pszName);
+        va_list va;
+        va_start(va, pszValueFormat);
+        rc = VbglR3GuestPropWriteValueV(u32ClientId, pszName, pszValueFormat, va);
+        va_end(va);
+        if (RT_FAILURE(rc))
+             VBoxServiceError("Error writing guest property \"%s\" (rc=%Rrc)\n", pszName, rc);
     }
-
-    rc = VbglR3GuestPropWriteValue(uiClientID, szKeyTemp, ((pszValue == NULL) || (0 == strlen(pszValue))) ? NULL : pszValueTemp);
-    if (!RT_SUCCESS(rc))
-    {
-        VBoxServiceError("Failed to store the property \"%s\"=\"%s\"! ClientID: %d, Error: %Rrc\n", szKeyTemp, pszValueTemp, uiClientID, rc);
-        goto cleanup;
-    }
-
-    if ((pszValueTemp != NULL) && (strlen(pszValueTemp) > 0))
-        VBoxServiceVerbose(3, "Property written: %s = %s\n", szKeyTemp, pszValueTemp);
     else
-        VBoxServiceVerbose(3, "Property deleted: %s\n", szKeyTemp);
-
-cleanup:
-
-    RTStrFree(pszValueTemp);
+    {
+        rc = VbglR3GuestPropWriteValue(u32ClientId, pszName, NULL);
+        if (RT_FAILURE(rc))
+            VBoxServiceError("Error removing guest property \"%s\" (rc=%Rrc)\n", pszName, rc);
+    }
     return rc;
-}
-
-
-int VboxServiceWritePropInt(uint32_t uiClientID, const char *pszKey, int32_t iValue)
-{
-    Assert(pszKey);
-
-    char szBuffer[32] = {0};
-    RTStrPrintf(szBuffer, sizeof(szBuffer), "%ld", iValue);
-    return VboxServiceWriteProp(uiClientID, pszKey, szBuffer);
 }
 #endif /* VBOX_WITH_GUEST_PROPS */
 
 
 #ifdef RT_OS_WINDOWS
-/** @todo Use TCHAR here instead of LPC*STR crap. */
-BOOL VboxServiceGetFileString(LPCWSTR pszFileName, 
-                              LPWSTR pszBlock, 
-                              LPWSTR pszString, 
+BOOL VBoxServiceGetFileString(const char* pszFileName,
+                              char* pszBlock,
+                              char* pszString,
                               PUINT puiSize)
 {
     DWORD dwHandle, dwLen = 0;
     UINT uiDataLen = 0;
-    LPTSTR lpData = NULL;
+    char* lpData = NULL;
     UINT uiValueLen = 0;
     LPTSTR lpValue = NULL;
     BOOL bRet = FALSE;
@@ -115,7 +99,7 @@ BOOL VboxServiceGetFileString(LPCWSTR pszFileName,
 
     if (!dwLen)
     {
-        VBoxServiceError("No file information found! File = %ls, Error: %ld\n", pszFileName, GetLastError());
+        VBoxServiceError("No file information found! File = %s, Error: %ld\n", pszFileName, GetLastError());
         return FALSE;
     }
 
@@ -130,7 +114,7 @@ BOOL VboxServiceGetFileString(LPCWSTR pszFileName,
     {
         if((bRet = VerQueryValue(lpData, pszBlock, (LPVOID*)&lpValue, (PUINT)&uiValueLen)))
         {
-            UINT uiSize = uiValueLen * sizeof(TCHAR);
+            UINT uiSize = uiValueLen * sizeof(char);
 
             if(uiSize > *puiSize)
                 uiSize = *puiSize;
@@ -147,10 +131,10 @@ BOOL VboxServiceGetFileString(LPCWSTR pszFileName,
 }
 
 
-BOOL VboxServiceGetFileVersion(LPCWSTR pszFileName,
-                               DWORD* pdwMajor, 
-                               DWORD* pdwMinor, 
-                               DWORD* pdwBuildNumber, 
+BOOL VBoxServiceGetFileVersion(const char* pszFileName,
+                               DWORD* pdwMajor,
+                               DWORD* pdwMinor,
+                               DWORD* pdwBuildNumber,
                                DWORD* pdwRevisionNumber)
 {
     DWORD dwHandle, dwLen = 0;
@@ -170,17 +154,15 @@ BOOL VboxServiceGetFileVersion(LPCWSTR pszFileName,
     dwLen = GetFileVersionInfoSize(pszFileName, &dwHandle);
 
     /* Try own fields defined in block "\\StringFileInfo\\040904b0\\FileVersion". */
-    TCHAR szValueUTF16[_MAX_PATH] = {0};
-    char szValueUTF8[_MAX_PATH] = {0};
-    char *pszValueUTF8  = szValueUTF8;
+    char szValue[_MAX_PATH] = {0};
+    char *pszValue  = szValue;
     UINT uiSize = _MAX_PATH;
     int r = 0;
 
-    bRet = VboxServiceGetFileString(pszFileName, TEXT("\\StringFileInfo\\040904b0\\FileVersion"), szValueUTF16, &uiSize);
+    bRet = VBoxServiceGetFileString(pszFileName, "\\StringFileInfo\\040904b0\\FileVersion", szValue, &uiSize);
     if (bRet)
     {
-        r = RTUtf16ToUtf8Ex(szValueUTF16, uiSize, &pszValueUTF8, _MAX_PATH, NULL);
-        sscanf(szValueUTF8, "%ld.%ld.%ld.%ld", pdwMajor, pdwMinor, pdwBuildNumber, pdwRevisionNumber);
+        sscanf(pszValue, "%ld.%ld.%ld.%ld", pdwMajor, pdwMinor, pdwBuildNumber, pdwRevisionNumber);
     }
     else if (dwLen > 0)
     {
@@ -194,7 +176,7 @@ BOOL VboxServiceGetFileVersion(LPCWSTR pszFileName,
 
         if (GetFileVersionInfo(pszFileName, dwHandle, dwLen, lpData))
         {
-            if((bRet = VerQueryValue(lpData, TEXT("\\"), (LPVOID*)&pFileInfo, (PUINT)&BufLen)))
+            if((bRet = VerQueryValue(lpData, "\\", (LPVOID*)&pFileInfo, (PUINT)&BufLen)))
             {
                 *pdwMajor = HIWORD(pFileInfo->dwFileVersionMS);
                 *pdwMinor = LOWORD(pFileInfo->dwFileVersionMS);
@@ -211,19 +193,18 @@ BOOL VboxServiceGetFileVersion(LPCWSTR pszFileName,
 }
 
 
-BOOL VboxServiceGetFileVersionString(LPCWSTR pszPath, LPCWSTR pszFileName, char* pszVersion, UINT uiSize)
+BOOL VBoxServiceGetFileVersionString(const char* pszPath, const char* pszFileName, char* pszVersion, UINT uiSize)
 {
     BOOL bRet = FALSE;
-    TCHAR szFullPath[_MAX_PATH] = {0};
-    TCHAR szValueUTF16[_MAX_PATH] = {0};
-    char szValueUTF8[_MAX_PATH] = {0};
+    char szFullPath[_MAX_PATH] = {0};
+    char szValue[_MAX_PATH] = {0};
     int r = 0;
 
-    swprintf(szFullPath, 4096, TEXT("%s\\%s"), pszPath, pszFileName); /** @todo here as well. */
+    RTStrPrintf(szFullPath, 4096, "%s\\%s", pszPath, pszFileName);
 
     DWORD dwMajor, dwMinor, dwBuild, dwRev;
 
-    bRet = VboxServiceGetFileVersion(szFullPath, &dwMajor, &dwMinor, &dwBuild, &dwRev);
+    bRet = VBoxServiceGetFileVersion(szFullPath, &dwMajor, &dwMinor, &dwBuild, &dwRev);
     if (bRet)
         RTStrPrintf(pszVersion, uiSize, "%ld.%ld.%ldr%ld", dwMajor, dwMinor, dwBuild, dwRev);
     else
@@ -232,3 +213,4 @@ BOOL VboxServiceGetFileVersionString(LPCWSTR pszPath, LPCWSTR pszFileName, char*
     return bRet;
 }
 #endif /* !RT_OS_WINDOWS */
+

@@ -1,4 +1,4 @@
-/* $Id: VBoxService-win.cpp 19374 2009-05-05 13:23:32Z vboxsync $ */
+/* $Id: VBoxService-win.cpp 23139 2009-09-18 15:15:58Z vboxsync $ */
 /** @file
  * VBoxService - Guest Additions Service Skeleton, Windows Specific Parts.
  */
@@ -24,7 +24,8 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #include <iprt/assert.h>
-#include <VBox/VBoxGuest.h>
+#include <iprt/err.h>
+#include <VBox/VBoxGuestLib.h>
 #include "VBoxServiceInternal.h"
 
 #include <Windows.h>
@@ -65,10 +66,14 @@ DWORD VBoxServiceWinAddAceToObjectsSecurityDescriptor (LPTSTR pszObjName,
 
     /* Get a pointer to the existing DACL. */
     dwRes = GetNamedSecurityInfo(pszObjName, ObjectType,
-          DACL_SECURITY_INFORMATION,
-          NULL, NULL, &pOldDACL, NULL, &pSD);
-    if (ERROR_SUCCESS != dwRes) {
-        VBoxServiceError("GetNamedSecurityInfo: Error %u\n", dwRes);
+                                 DACL_SECURITY_INFORMATION,
+                                 NULL, NULL, &pOldDACL, NULL, &pSD);
+    if (ERROR_SUCCESS != dwRes) 
+    {
+        if (dwRes == ERROR_FILE_NOT_FOUND)
+            VBoxServiceError("AddAceToObjectsSecurityDescriptor: Object not found/installed: %s\n", pszObjName);
+        else
+            VBoxServiceError("AddAceToObjectsSecurityDescriptor: GetNamedSecurityInfo: Error %u\n", dwRes);
         goto Cleanup;
     }
 
@@ -82,20 +87,23 @@ DWORD VBoxServiceWinAddAceToObjectsSecurityDescriptor (LPTSTR pszObjName,
 
     /* Create a new ACL that merges the new ACE into the existing DACL. */
     dwRes = SetEntriesInAcl(1, &ea, pOldDACL, &pNewDACL);
-    if (ERROR_SUCCESS != dwRes)  {
-        VBoxServiceError("SetEntriesInAcl: Error %u\n", dwRes);
+    if (ERROR_SUCCESS != dwRes)  
+    {
+        VBoxServiceError("AddAceToObjectsSecurityDescriptor: SetEntriesInAcl: Error %u\n", dwRes);
         goto Cleanup;
     }
 
     /* Attach the new ACL as the object's DACL. */
     dwRes = SetNamedSecurityInfo(pszObjName, ObjectType,
-          DACL_SECURITY_INFORMATION,
-          NULL, NULL, pNewDACL, NULL);
-    if (ERROR_SUCCESS != dwRes)  {
-        VBoxServiceError("SetNamedSecurityInfo: Error %u\n", dwRes);
+                                 DACL_SECURITY_INFORMATION,
+                                 NULL, NULL, pNewDACL, NULL);
+    if (ERROR_SUCCESS != dwRes)  
+    {
+        VBoxServiceError("AddAceToObjectsSecurityDescriptor: SetNamedSecurityInfo: Error %u\n", dwRes);
         goto Cleanup;
     }
 
+    /** @todo get rid of that spaghetti jump ... */
 Cleanup:
 
     if(pSD != NULL)
@@ -193,7 +201,7 @@ int VBoxServiceWinUninstall ()
     else
     {
         HKEY hKey = NULL;
-        if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, _T("SYSTEM\\CurrentControlSet\\Services\\EventLog\\System"), 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS) {
+        if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\EventLog\\System", 0, KEY_ALL_ACCESS, &hKey) == ERROR_SUCCESS) {
             RegDeleteKey(hKey, VBOXSERVICE_NAME);
             RegCloseKey(hKey);
         }
@@ -211,6 +219,7 @@ int VBoxServiceWinStart()
 {
     int rc = VINF_SUCCESS;
 
+#ifndef TARGET_NT4
     /* Create a well-known SID for the "Builtin Users" group. */
     PSID pBuiltinUsersSID = NULL;
     SID_IDENTIFIER_AUTHORITY SIDAuthWorld = SECURITY_LOCAL_SID_AUTHORITY;
@@ -223,7 +232,7 @@ int VBoxServiceWinStart()
         VBoxServiceError("AllocateAndInitializeSid: Error %u\n", GetLastError());
     }
     else
-    {  
+    {
         DWORD dwRes = VBoxServiceWinAddAceToObjectsSecurityDescriptor (TEXT("\\\\.\\VBoxMiniRdrDN"),
                                                                        SE_FILE_OBJECT,
                                                                        (LPTSTR)pBuiltinUsersSID,
@@ -231,11 +240,19 @@ int VBoxServiceWinStart()
                                                                        FILE_GENERIC_READ | FILE_GENERIC_WRITE,
                                                                        SET_ACCESS,
                                                                        NO_INHERITANCE);
-        if (dwRes != 0)
+        if (dwRes != ERROR_SUCCESS)
         {
-            rc = VERR_ACCESS_DENIED; /* Need to add some better code later. */
+            if (dwRes == ERROR_FILE_NOT_FOUND)
+            {
+                /* If we don't find our "VBoxMiniRdrDN" (for Shared Folders) object above,
+                   don't report an error; it just might be not installed. Otherwise this
+                   would cause the SCM to hang on starting up the service. */
+                rc = VINF_SUCCESS;
+            }
+            else rc = RTErrConvertFromWin32(dwRes);
         }
     }
+#endif
 
     if (RT_SUCCESS(rc))
     {
@@ -260,14 +277,22 @@ int VBoxServiceWinStart()
     return rc;
 }
 
+#ifdef TARGET_NT4
+VOID WINAPI VBoxServiceWinCtrlHandler (DWORD dwControl)
+#else
 DWORD WINAPI VBoxServiceWinCtrlHandler (DWORD dwControl,
                                         DWORD dwEventType,
                                         LPVOID lpEventData,
                                         LPVOID lpContext)
+#endif
 {
     DWORD rc = NO_ERROR;
 
-    VBoxServiceVerbose(2, "Control handler: Control=%ld, EventType=%ld\n", dwControl, dwEventType);
+    VBoxServiceVerbose(2, "Control handler: Control=%ld\n", dwControl);
+#ifndef TARGET_NT4
+    VBoxServiceVerbose(2, "Control handler: EventType=%ld\n", dwEventType);
+#endif
+
     switch (dwControl)
     {
 
@@ -288,9 +313,9 @@ DWORD WINAPI VBoxServiceWinCtrlHandler (DWORD dwControl,
 
     case SERVICE_CONTROL_SESSIONCHANGE:     /* Only Win XP and up. */
 
+#ifndef TARGET_NT4
         switch (dwEventType)
         {
-
         /*case WTS_SESSION_LOGON:
             VBoxServiceVerbose(2, "A user has logged on to the session.\n");
             break;
@@ -298,10 +323,10 @@ DWORD WINAPI VBoxServiceWinCtrlHandler (DWORD dwControl,
         case WTS_SESSION_LOGOFF:
             VBoxServiceVerbose(2, "A user has logged off from the session.\n");
             break;*/
-
         default:
             break;
         }
+#endif /* TARGET_NT4 */
         break;
 
     default:
@@ -310,7 +335,10 @@ DWORD WINAPI VBoxServiceWinCtrlHandler (DWORD dwControl,
         rc = ERROR_CALL_NOT_IMPLEMENTED;
         break;
     }
+
+#ifndef TARGET_NT4
     return rc;
+#endif
 }
 
 void WINAPI VBoxServiceWinMain (DWORD argc, LPTSTR *argv)
@@ -318,7 +346,11 @@ void WINAPI VBoxServiceWinMain (DWORD argc, LPTSTR *argv)
     int rc = VINF_SUCCESS;
 
     VBoxServiceVerbose(2, "Registering service control handler ...\n");
+#ifdef TARGET_NT4
+    g_hWinServiceStatus = RegisterServiceCtrlHandler (VBOXSERVICE_NAME, VBoxServiceWinCtrlHandler);
+#else
     g_hWinServiceStatus = RegisterServiceCtrlHandlerEx (VBOXSERVICE_NAME, VBoxServiceWinCtrlHandler, NULL);
+#endif
 
     if (NULL == g_hWinServiceStatus)
     {
@@ -337,7 +369,7 @@ void WINAPI VBoxServiceWinMain (DWORD argc, LPTSTR *argv)
             break;
         }
     }
-    else 
+    else
     {
         VBoxServiceVerbose(2, "Service control handler registered.\n");
 

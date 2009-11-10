@@ -55,6 +55,13 @@ bool VBoxVMSettingsGeneral::is64BitOSTypeSelected() const
     return mOSTypeSelector->type().GetIs64Bit();
 }
 
+#ifdef VBOX_WITH_VIDEOHWACCEL
+bool VBoxVMSettingsGeneral::isWindowsOSTypeSelected() const
+{
+    return mOSTypeSelector->type().GetFamilyId() == "Windows";
+}
+#endif
+
 void VBoxVMSettingsGeneral::getFrom (const CMachine &aMachine)
 {
     mMachine = aMachine;
@@ -72,6 +79,11 @@ void VBoxVMSettingsGeneral::getFrom (const CMachine &aMachine)
     /* Show Mini ToolBar in fullscreen/seamless */
     QString showMiniToolBar = mMachine.GetExtraData (VBoxDefs::GUI_ShowMiniToolBar);
     mCbShowToolBar->setChecked (showMiniToolBar != "no");
+
+    /* Show Mini ToolBar at top */
+    QString miniToolBarAlignment = mMachine.GetExtraData (VBoxDefs::GUI_MiniToolBarAlignment);
+    mCbToolBarAlignment->setChecked (miniToolBarAlignment == "top");
+    mCbToolBarAlignment->setEnabled (mCbShowToolBar->isChecked());
 
     /* Snapshot folder */
     mPsSnapshot->setPath (aMachine.GetSnapshotFolder());
@@ -103,6 +115,10 @@ void VBoxVMSettingsGeneral::putBackTo()
     /* Show Mini ToolBar in fullscreen/seamless */
     mMachine.SetExtraData (VBoxDefs::GUI_ShowMiniToolBar,
                            mCbShowToolBar->isChecked() ? "yes" : "no");
+
+    /* Show Mini ToolBar at top */
+    mMachine.SetExtraData (VBoxDefs::GUI_MiniToolBarAlignment,
+                           mCbToolBarAlignment->isChecked() ? "top" : "bottom");
 
     /* Saved state folder */
     if (mPsSnapshot->isModified())

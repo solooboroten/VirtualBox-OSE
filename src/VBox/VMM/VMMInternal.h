@@ -1,4 +1,4 @@
-/* $Id: VMMInternal.h 20992 2009-06-26 18:20:27Z vboxsync $ */
+/* $Id: VMMInternal.h 23487 2009-10-01 14:57:14Z vboxsync $ */
 /** @file
  * VMM - Internal header file.
  */
@@ -138,7 +138,7 @@ typedef struct VMMR0JMPBUF
     uint32_t                    ebp;
     uint32_t                    esp;
     uint32_t                    eip;
-    uint32_t                    u32Padding;
+    uint32_t                    eflags;
 #endif
 #if HC_ARCH_BITS == 64
     uint64_t                    rbx;
@@ -165,6 +165,7 @@ typedef struct VMMR0JMPBUF
     uint128_t                   xmm14;
     uint128_t                   xmm15;
 # endif
+    uint64_t                    rflags;
 #endif
     /** @} */
 
@@ -287,6 +288,8 @@ typedef struct VMM
 
     /** @name EMT Rendezvous
      * @{ */
+    /** Semaphore to wait on upon entering ordered execution. */
+    R3PTRTYPE(PRTSEMEVENT)      pahEvtRendezvousEnterOrdered;
     /** Semaphore to wait on upon entering for one-by-one execution. */
     RTSEMEVENT                  hEvtRendezvousEnterOneByOne;
     /** Semaphore to wait on upon entering for all-at-once execution. */
@@ -313,6 +316,10 @@ typedef struct VMM
     volatile uint32_t           u32RendezvousLock;
     /** @} */
 
+#if HC_ARCH_BITS == 32
+    uint32_t                    u32Alignment; /**< Alignment padding. */
+#endif
+
     /** Buffer for storing the standard assertion message for a ring-0 assertion.
      * Used for saving the assertion message text for the release log and guru
      * meditation dump. */
@@ -331,7 +338,6 @@ typedef struct VMM
     STAMCOUNTER                 StatRZRetGuestTrap;
     STAMCOUNTER                 StatRZRetRingSwitch;
     STAMCOUNTER                 StatRZRetRingSwitchInt;
-    STAMCOUNTER                 StatRZRetExceptionPrivilege;
     STAMCOUNTER                 StatRZRetStaleSelector;
     STAMCOUNTER                 StatRZRetIRETTrap;
     STAMCOUNTER                 StatRZRetEmulate;
@@ -363,8 +369,8 @@ typedef struct VMM
     STAMCOUNTER                 StatRZRetCallRing3;
     STAMCOUNTER                 StatRZRetPATMDuplicateFn;
     STAMCOUNTER                 StatRZRetPGMChangeMode;
-    STAMCOUNTER                 StatRZRetEmulHlt;
     STAMCOUNTER                 StatRZRetPendingRequest;
+    STAMCOUNTER                 StatRZRetPatchTPR;
     STAMCOUNTER                 StatRZCallPDMLock;
     STAMCOUNTER                 StatRZCallLogFlush;
     STAMCOUNTER                 StatRZCallPDMQueueFlush;

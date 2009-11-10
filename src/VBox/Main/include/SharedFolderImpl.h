@@ -30,9 +30,9 @@ class Console;
 class VirtualBox;
 
 class ATL_NO_VTABLE SharedFolder :
-    public VirtualBoxBaseNEXT,
-    public VirtualBoxSupportErrorInfoImpl <SharedFolder, ISharedFolder>,
-    public VirtualBoxSupportTranslation <SharedFolder>,
+    public VirtualBoxBase,
+    public VirtualBoxSupportErrorInfoImpl<SharedFolder, ISharedFolder>,
+    public VirtualBoxSupportTranslation<SharedFolder>,
     VBOX_SCRIPTABLE_IMPL(ISharedFolder)
 {
 public:
@@ -58,8 +58,6 @@ public:
         COM_INTERFACE_ENTRY  (ISharedFolder)
         COM_INTERFACE_ENTRY2 (IDispatch, ISharedFolder)
     END_COM_MAP()
-
-    NS_DECL_ISUPPORTS
 
     DECLARE_EMPTY_CTOR_DTOR (SharedFolder)
 
@@ -103,9 +101,9 @@ private:
     VirtualBoxBaseWithChildrenNEXT *const mParent;
 
     /* weak parents (only one of them is not null) */
-    const ComObjPtr <Machine, ComWeakRef> mMachine;
-    const ComObjPtr <Console, ComWeakRef> mConsole;
-    const ComObjPtr <VirtualBox, ComWeakRef> mVirtualBox;
+    const ComObjPtr<Machine, ComWeakRef> mMachine;
+    const ComObjPtr<Console, ComWeakRef> mConsole;
+    const ComObjPtr<VirtualBox, ComWeakRef> mVirtualBox;
 
     Data m;
 };

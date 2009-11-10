@@ -318,10 +318,16 @@ GLboolean crVBoxServerInit(void)
     return GL_TRUE;
 }
 
-void crVBoxServerAddClient(uint32_t u32ClientID)
+int32_t crVBoxServerAddClient(uint32_t u32ClientID)
 {
-    CRClient *newClient = (CRClient *) crCalloc(sizeof(CRClient));
-    
+    CRClient *newClient;
+
+    if (cr_server.numClients>=CR_MAX_CLIENTS)
+    {
+        return VERR_MAX_THRDS_REACHED;
+    }
+
+    newClient = (CRClient *) crCalloc(sizeof(CRClient));    
     crDebug("crServer: AddClient u32ClientID=%d", u32ClientID);
 
     newClient->spu_id = 0;
@@ -335,6 +341,8 @@ void crVBoxServerAddClient(uint32_t u32ClientID)
     cr_server.clients[cr_server.numClients++] = newClient;
 
     crServerAddToRunQueue(newClient);
+
+    return VINF_SUCCESS;
 }
 
 void crVBoxServerRemoveClient(uint32_t u32ClientID)
@@ -362,7 +370,7 @@ void crVBoxServerRemoveClient(uint32_t u32ClientID)
     crServerDeleteClient(pClient);
 }
 
-void crVBoxServerClientWrite(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t cbBuffer)
+int32_t crVBoxServerClientWrite(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t cbBuffer)
 {
     CRClient *pClient;
     int32_t i;
@@ -379,6 +387,8 @@ void crVBoxServerClientWrite(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t cb
     }
     pClient = cr_server.clients[i];
     CRASSERT(pClient);
+
+    if (!pClient->conn->vMajor) return VERR_NOT_SUPPORTED;
 
     CRASSERT(pBuffer);
 
@@ -435,6 +445,8 @@ void crVBoxServerClientWrite(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t cb
     crStateResetCurrentPointers(&cr_server.current);
 
     CRASSERT(!pClient->conn->allow_redir_ptr || crNetNumMessages(pClient->conn)==0);
+
+    return VINF_SUCCESS;
 }
 
 int32_t crVBoxServerClientRead(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t *pcbBuffer)
@@ -454,6 +466,8 @@ int32_t crVBoxServerClientRead(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t 
     }
     pClient = cr_server.clients[i];
     CRASSERT(pClient);
+
+    if (!pClient->conn->vMajor) return VERR_NOT_SUPPORTED;
 
     if (pClient->conn->cbHostBuffer > *pcbBuffer)
     {
@@ -477,6 +491,33 @@ int32_t crVBoxServerClientRead(uint32_t u32ClientID, uint8_t *pBuffer, uint32_t 
     }
     
     return VINF_SUCCESS;
+}
+
+int32_t crVBoxServerClientSetVersion(uint32_t u32ClientID, uint32_t vMajor, uint32_t vMinor)
+{
+    CRClient *pClient;
+    int32_t i;
+
+    for (i = 0; i < cr_server.numClients; i++)
+    {
+        if (cr_server.clients[i] && cr_server.clients[i]->conn 
+            && cr_server.clients[i]->conn->u32ClientID==u32ClientID) 
+        {
+            break;
+        }
+    }
+    pClient = cr_server.clients[i];
+    CRASSERT(pClient);
+
+    pClient->conn->vMajor = vMajor;
+    pClient->conn->vMinor = vMinor;
+
+    if (vMajor != CR_PROTOCOL_VERSION_MAJOR
+        || vMinor != CR_PROTOCOL_VERSION_MINOR)
+    {
+        return VERR_NOT_SUPPORTED;
+    }
+    else return VINF_SUCCESS;
 }
 
 int
@@ -559,7 +600,15 @@ static void crVBoxServerSaveContextStateCB(unsigned long key, void *data1, void 
 #ifdef CR_STATE_NO_TEXTURE_IMAGE_STORE
     if (cr_server.curClient)
     {
-        crServerDispatchMakeCurrent(cr_server.curClient->currentWindow, 0, pContext->id);
+        unsigned long id;
+        if (!crHashtableGetDataKey(cr_server.contextTable, pContext, &id))
+        {
+            crWarning("No client id for server ctx %d", pContext->id);
+        }
+        else
+        {
+            crServerDispatchMakeCurrent(cr_server.curClient->currentWindow, 0, id);
+        }
     }
 #endif
 
@@ -667,6 +716,12 @@ DECLEXPORT(int32_t) crVBoxServerSaveState(PSSMHANDLE pSSM)
             rc = SSMR3PutU32(pSSM, pClient->conn->u32ClientID);
             AssertRCReturn(rc, rc);
 
+            rc = SSMR3PutU32(pSSM, pClient->conn->vMajor);
+            AssertRCReturn(rc, rc);
+
+            rc = SSMR3PutU32(pSSM, pClient->conn->vMinor);
+            AssertRCReturn(rc, rc);
+
             rc = SSMR3PutMem(pSSM, pClient, sizeof(*pClient));
             AssertRCReturn(rc, rc);
 
@@ -693,7 +748,7 @@ DECLEXPORT(int32_t) crVBoxServerSaveState(PSSMHANDLE pSSM)
     return VINF_SUCCESS;
 }
 
-DECLEXPORT(int32_t) crVBoxServerLoadState(PSSMHANDLE pSSM)
+DECLEXPORT(int32_t) crVBoxServerLoadState(PSSMHANDLE pSSM, uint32_t version)
 {
     int32_t  rc, i;
     uint32_t ui, uiNumElems;
@@ -817,6 +872,15 @@ DECLEXPORT(int32_t) crVBoxServerLoadState(PSSMHANDLE pSSM)
             AssertRCReturn(rc, rc);
             /* If this assert fires, then we should search correct client in the list first*/
             CRASSERT(ui == pClient->conn->u32ClientID);
+
+            if (version>=4)
+            {
+                rc = SSMR3GetU32(pSSM, &pClient->conn->vMajor);
+                AssertRCReturn(rc, rc);
+
+                rc = SSMR3GetU32(pSSM, &pClient->conn->vMinor);
+                AssertRCReturn(rc, rc);
+            }
 
             rc = SSMR3GetMem(pSSM, &client, sizeof(client));
             CRASSERT(rc == VINF_SUCCESS);

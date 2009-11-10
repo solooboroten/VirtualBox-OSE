@@ -1,4 +1,4 @@
-/* $Id: PGMAllMap.cpp 20865 2009-06-23 19:27:16Z vboxsync $ */
+/* $Id: PGMAllMap.cpp 22890 2009-09-09 23:11:31Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor - All context code.
  */
@@ -221,7 +221,7 @@ void pgmMapSetShadowPDEs(PVM pVM, PPGMMAPPING pMap, unsigned iNewPDE)
     Log4(("pgmMapSetShadowPDEs new pde %x (mappings enabled %d)\n", iNewPDE, pgmMapAreMappingsEnabled(&pVM->pgm.s)));
 
     if (    !pgmMapAreMappingsEnabled(&pVM->pgm.s)
-        ||  pVM->cCPUs > 1)
+        ||  pVM->cCpus > 1)
         return;
 
     /* This only applies to raw mode where we only support 1 VCPU. */
@@ -319,13 +319,13 @@ void pgmMapSetShadowPDEs(PVM pVM, PPGMMAPPING pMap, unsigned iNewPDE)
                 else if (pShwPaePd->a[iPaePde].u & PGM_PDFLAGS_MAPPING)
                 {
                     Assert(PGMGetGuestMode(pVCpu) >= PGMMODE_PAE); /** @todo We may hit this during reset, will fix later. */
-                    AssertFatalMsg(   (pShwPaePd->a[iPaePde].u & X86_PDE_PG_MASK) == pMap->aPTs[i].HCPhysPaePT0
+                    AssertFatalMsg(   (pShwPaePd->a[iPaePde].u & X86_PDE_PAE_PG_MASK) == pMap->aPTs[i].HCPhysPaePT0
                                    || !PGMMODE_WITH_PAGING(PGMGetGuestMode(pVCpu)),
-                                   ("%RX64 vs %RX64\n", pShwPaePd->a[iPaePde+1].u & X86_PDE_PG_MASK, pMap->aPTs[i].HCPhysPaePT0));
+                                   ("%RX64 vs %RX64\n", pShwPaePd->a[iPaePde+1].u & X86_PDE_PAE_PG_MASK, pMap->aPTs[i].HCPhysPaePT0));
                     Assert(pShwPaePd->a[iPaePde+1].u & PGM_PDFLAGS_MAPPING);
-                    AssertFatalMsg(   (pShwPaePd->a[iPaePde+1].u & X86_PDE_PG_MASK) == pMap->aPTs[i].HCPhysPaePT1
+                    AssertFatalMsg(   (pShwPaePd->a[iPaePde+1].u & X86_PDE_PAE_PG_MASK) == pMap->aPTs[i].HCPhysPaePT1
                                    || !PGMMODE_WITH_PAGING(PGMGetGuestMode(pVCpu)),
-                                   ("%RX64 vs %RX64\n", pShwPaePd->a[iPaePde+1].u & X86_PDE_PG_MASK, pMap->aPTs[i].HCPhysPaePT1));
+                                   ("%RX64 vs %RX64\n", pShwPaePd->a[iPaePde+1].u & X86_PDE_PAE_PG_MASK, pMap->aPTs[i].HCPhysPaePT1));
                 }
 #endif
 
@@ -338,7 +338,7 @@ void pgmMapSetShadowPDEs(PVM pVM, PPGMMAPPING pMap, unsigned iNewPDE)
                     &&  !(pShwPaePd->a[iPaePde].u & PGM_PDFLAGS_MAPPING))
                 {
                     Assert(!(pShwPaePd->a[iPaePde].u & PGM_PDFLAGS_MAPPING));
-                    pgmPoolFree(pVM, pShwPaePd->a[iPaePde].u & X86_PDE_PG_MASK, pPoolPagePd->idx, iPaePde);
+                    pgmPoolFree(pVM, pShwPaePd->a[iPaePde].u & X86_PDE_PAE_PG_MASK, pPoolPagePd->idx, iPaePde);
                 }
                 pShwPaePd->a[iPaePde].u = PGM_PDFLAGS_MAPPING | X86_PDE_P | X86_PDE_A | X86_PDE_RW | X86_PDE_US
                                         | pMap->aPTs[i].HCPhysPaePT0;
@@ -389,7 +389,7 @@ void pgmMapClearShadowPDEs(PVM pVM, PPGMPOOLPAGE pShwPageCR3, PPGMMAPPING pMap, 
     Log(("pgmMapClearShadowPDEs: old pde %x (cPTs=%x) (mappings enabled %d) fDeactivateCR3=%RTbool\n", iOldPDE, pMap->cPTs, pgmMapAreMappingsEnabled(&pVM->pgm.s), fDeactivateCR3));
 
     if (    !pgmMapAreMappingsEnabled(&pVM->pgm.s)
-        ||  pVM->cCPUs > 1)
+        ||  pVM->cCpus > 1)
         return;
 
     Assert(pShwPageCR3);
@@ -601,7 +601,7 @@ VMMDECL(void) PGMMapCheck(PVM pVM)
     if (!pgmMapAreMappingsEnabled(&pVM->pgm.s))
         return;
 
-    Assert(pVM->cCPUs == 1);
+    Assert(pVM->cCpus == 1);
 
     /* This only applies to raw mode where we only support 1 VCPU. */
     PVMCPU pVCpu = VMMGetCpu0(pVM);
@@ -635,7 +635,7 @@ int pgmMapActivateCR3(PVM pVM, PPGMPOOLPAGE pShwPageCR3)
      * Can skip this if mappings are disabled.
      */
     if (    !pgmMapAreMappingsEnabled(&pVM->pgm.s)
-        ||  pVM->cCPUs > 1)
+        ||  pVM->cCpus > 1)
         return VINF_SUCCESS;
 
     /* Note. A log flush (in RC) can cause problems when called from MapCR3 (inconsistent state will trigger assertions). */
@@ -671,7 +671,7 @@ int pgmMapDeactivateCR3(PVM pVM, PPGMPOOLPAGE pShwPageCR3)
      * Can skip this if mappings are disabled.
      */
     if (    !pgmMapAreMappingsEnabled(&pVM->pgm.s)
-        ||  pVM->cCPUs > 1)
+        ||  pVM->cCpus > 1)
         return VINF_SUCCESS;
 
     Assert(pShwPageCR3);
@@ -704,7 +704,7 @@ VMMDECL(bool) PGMMapHasConflicts(PVM pVM)
     if (pVM->pgm.s.fMappingsFixed)
         return false;
 
-    Assert(pVM->cCPUs == 1);
+    Assert(pVM->cCpus == 1);
 
     /* This only applies to raw mode where we only support 1 VCPU. */
     PVMCPU pVCpu = &pVM->aCpus[0];
@@ -800,7 +800,7 @@ VMMDECL(int) PGMMapResolveConflicts(PVM pVM)
     if (pVM->pgm.s.fMappingsFixed)
         return VINF_SUCCESS;
 
-    Assert(pVM->cCPUs == 1);
+    Assert(pVM->cCpus == 1);
 
     /* This only applies to raw mode where we only support 1 VCPU. */
     PVMCPU pVCpu = &pVM->aCpus[0];

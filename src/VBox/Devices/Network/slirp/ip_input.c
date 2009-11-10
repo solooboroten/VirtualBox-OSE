@@ -44,9 +44,7 @@
 
 #include <slirp.h>
 #include "ip_icmp.h"
-#ifdef VBOX_WITH_SLIRP_ALIAS
-# include "alias.h"
-#endif
+#include "alias.h"
 
 
 /*
@@ -67,6 +65,26 @@ ip_init(PNATState pData)
     tcp_init(pData);
 }
 
+static struct libalias *select_alias(PNATState pData, struct mbuf* m)
+{
+    struct libalias *la = pData->proxy_alias;
+    struct udphdr *udp = NULL;
+    struct ip *pip = NULL;
+
+#ifndef VBOX_WITH_SLIRP_BSD_MBUF
+    if (m->m_la)
+        return m->m_la;
+#else
+    struct m_tag *t;
+    if (t = m_tag_find(m, PACKET_TAG_ALIAS, NULL) != 0)
+    {
+        return (struct libalias *)&t[1];
+    }
+#endif
+
+    return la;
+}
+
 /*
  * Ip input routine.  Checksum and byte swap header.  If fragmented
  * try to reassemble.  Process options.  Pass to next level.
@@ -76,6 +94,9 @@ ip_input(PNATState pData, struct mbuf *m)
 {
     register struct ip *ip;
     int hlen = 0;
+    int mlen = 0;
+
+    STAM_PROFILE_START(&pData->StatIP_input, a);
 
     DEBUG_CALL("ip_input");
     DEBUG_ARG("m = %lx", (long)m);
@@ -84,18 +105,24 @@ ip_input(PNATState pData, struct mbuf *m)
     Log2(("ip_dst=%R[IP4](len:%d) m_len = %d\n", &ip->ip_dst, ntohs(ip->ip_len), m->m_len));
 
     ipstat.ips_total++;
-#ifdef VBOX_WITH_SLIRP_ALIAS
     {
         int rc;
-        rc = LibAliasIn(m->m_la ? m->m_la : pData->proxy_alias, mtod(m, char *), 
-            m->m_len);
+        STAM_PROFILE_START(&pData->StatALIAS_input, a);
+        rc = LibAliasIn(select_alias(pData, m), mtod(m, char *), m->m_len);
+        STAM_PROFILE_STOP(&pData->StatALIAS_input, a);
         Log2(("NAT: LibAlias return %d\n", rc));
+        if (m->m_len != ntohs(ip->ip_len))
+        {
+            m->m_len = ntohs(ip->ip_len);
+        }
     }
-#endif
 
-    if (m->m_len < sizeof(struct ip))
+    mlen = m->m_len;
+
+    if (mlen < sizeof(struct ip))
     {
         ipstat.ips_toosmall++;
+        STAM_PROFILE_STOP(&pData->StatIP_input, a);
         return;
     }
 
@@ -134,6 +161,7 @@ ip_input(PNATState pData, struct mbuf *m)
         ipstat.ips_badlen++;
         goto bad;
     }
+
     NTOHS(ip->ip_id);
     NTOHS(ip->ip_off);
 
@@ -143,13 +171,14 @@ ip_input(PNATState pData, struct mbuf *m)
      * Trim mbufs if longer than we expect.
      * Drop packet if shorter than we expect.
      */
-    if (m->m_len < ip->ip_len)
+    if (mlen < ip->ip_len)
     {
         ipstat.ips_tooshort++;
         goto bad;
     }
+
     /* Should drop packet if mbuf too long? hmmm... */
-    if (m->m_len > ip->ip_len)
+    if (mlen > ip->ip_len)
         m_adj(m, ip->ip_len - m->m_len);
 
     /* check ip_ttl for a correct ICMP reply */
@@ -167,15 +196,17 @@ ip_input(PNATState pData, struct mbuf *m)
      * if the packet was previously fragmented,
      * but it's not worth the time; just let them time out.)
      *
-     * XXX This should fail, don't fragment yet
      */
     if (ip->ip_off & (IP_MF | IP_OFFMASK))
     {
         m = ip_reass(pData, m);
         if (m == NULL)
-            return;
+        {
+             STAM_PROFILE_STOP(&pData->StatIP_input, a);
+             return;
+        }
         ip = mtod(m, struct ip *);
-        hlen = ip->ip_len;
+        hlen = ip->ip_hl << 2;
     }
     else
         ip->ip_len -= hlen;
@@ -199,11 +230,13 @@ ip_input(PNATState pData, struct mbuf *m)
             ipstat.ips_noproto++;
             m_free(pData, m);
     }
+    STAM_PROFILE_STOP(&pData->StatIP_input, a);
     return;
 bad:
-    Log2(("NAT: IP datagram to %R[IP4] with size(%d) claimed as bad\n", 
+    Log2(("NAT: IP datagram to %R[IP4] with size(%d) claimed as bad\n",
         &ip->ip_dst, ip->ip_len));
     m_freem(pData, m);
+    STAM_PROFILE_STOP(&pData->StatIP_input, a);
     return;
 }
 
@@ -341,7 +374,11 @@ found:
         fp->ipq_nfrags++;
     }
 
+#ifndef VBOX_WITH_SLIRP_BSD_MBUF
 #define GETIP(m)    ((struct ip*)(MBUF_IP_HEADER(m)))
+#else
+#define GETIP(m)    ((struct ip*)((m)->m_pkthdr.header))
+#endif
 
 
     /*
@@ -442,7 +479,8 @@ found:
      */
     q = fp->ipq_frags;
     ip = GETIP(q);
-    if (next + (ip->ip_hl << 2) > IP_MAXPACKET)
+    hlen = ip->ip_hl << 2;
+    if (next + hlen > IP_MAXPACKET)
     {
         ipstat.ips_fragdropped += fp->ipq_nfrags;
         ip_freef(pData, head, fp);
@@ -460,26 +498,31 @@ found:
         nq = q->m_nextpkt;
         q->m_nextpkt = NULL;
         m_cat(pData, m, q);
+
+        m->m_len += hlen;
+        m->m_data -= hlen;
+        ip = mtod(m, struct ip *); /*update ip pointer */
+        hlen = ip->ip_hl << 2;
+        m->m_len -= hlen;
+        m->m_data += hlen;
     }
+    m->m_len += hlen;
+    m->m_data -= hlen;
 
     /*
      * Create header for new ip packet by modifying header of first
      * packet;  dequeue and discard fragment reassembly header.
      * Make header visible.
      */
-#if 0
-    ip->ip_len = (ip->ip_hl << 2) + next;
-#else
+
     ip->ip_len = next;
-#endif
     ip->ip_src = fp->ipq_src;
     ip->ip_dst = fp->ipq_dst;
     TAILQ_REMOVE(head, fp, ipq_list);
     nipq--;
     RTMemFree(fp);
 
-    m->m_len += (ip->ip_hl << 2);
-    m->m_data -= (ip->ip_hl << 2);
+    Assert((ip->ip_len == next));
     /* some debugging cruft by sklower, below, will go away soon */
 #if 0
     if (m->m_flags & M_PKTHDR)    /* XXX this should be done elsewhere */

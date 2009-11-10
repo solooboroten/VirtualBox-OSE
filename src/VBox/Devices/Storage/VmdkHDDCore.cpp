@@ -1,4 +1,4 @@
-/* $Id: VmdkHDDCore.cpp 21060 2009-06-30 09:57:42Z vboxsync $ */
+/* $Id: VmdkHDDCore.cpp 24256 2009-11-02 14:28:08Z vboxsync $ */
 /** @file
  * VMDK Disk image, Core Code.
  */
@@ -23,7 +23,7 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_VD_VMDK
-#include "VBoxHDD-Internal.h"
+#include <VBox/VBoxHDD-Plugin.h>
 #include <VBox/err.h>
 
 #include <VBox/log.h>
@@ -581,8 +581,8 @@ static int vmdkFileOpen(PVMDKIMAGE pImage, PVMDKFILE *ppVmdkFile,
         rc = pImage->pInterfaceAsyncIOCallbacks->pfnOpen(pImage->pInterfaceAsyncIO->pvUser,
                                                          pszFilename,
                                                          pImage->uOpenFlags & VD_OPEN_FLAGS_READONLY
-                                                           ? true
-                                                           : false,
+                                                           ? VD_INTERFACEASYNCIO_OPEN_FLAGS_READONLY
+                                                           : 0,
                                                          NULL,
                                                          &pVmdkFile->pStorage);
         pVmdkFile->fAsyncIO = true;
@@ -699,10 +699,13 @@ DECLINLINE(int) vmdkFileWriteAt(PVMDKFILE pVmdkFile,
  */
 DECLINLINE(int) vmdkFileGetSize(PVMDKFILE pVmdkFile, uint64_t *pcbSize)
 {
+    PVMDKIMAGE pImage = pVmdkFile->pImage;
+
     if (pVmdkFile->fAsyncIO)
     {
-        AssertMsgFailed(("TODO\n"));
-        return 0;
+        return pImage->pInterfaceAsyncIOCallbacks->pfnGetSize(pImage->pInterfaceAsyncIO->pvUser,
+                                                              pVmdkFile->pStorage,
+                                                              pcbSize);
     }
     else
         return RTFileGetSize(pVmdkFile->File, pcbSize);
@@ -713,10 +716,13 @@ DECLINLINE(int) vmdkFileGetSize(PVMDKFILE pVmdkFile, uint64_t *pcbSize)
  */
 DECLINLINE(int) vmdkFileSetSize(PVMDKFILE pVmdkFile, uint64_t cbSize)
 {
+    PVMDKIMAGE pImage = pVmdkFile->pImage;
+
     if (pVmdkFile->fAsyncIO)
     {
-        AssertMsgFailed(("TODO\n"));
-        return VERR_NOT_SUPPORTED;
+        return pImage->pInterfaceAsyncIOCallbacks->pfnSetSize(pImage->pInterfaceAsyncIO->pvUser,
+                                                              pVmdkFile->pStorage,
+                                                              cbSize);
     }
     else
         return RTFileSetSize(pVmdkFile->File, cbSize);
@@ -3649,7 +3655,7 @@ static int vmdkCreateRegularImage(PVMDKIMAGE pImage, uint64_t cbSize,
         pExtent->enmAccess = VMDKACCESS_READWRITE;
         pExtent->fUncleanShutdown = true;
         pExtent->cNominalSectors = VMDK_BYTE2SECTOR(cbExtent);
-        pExtent->uSectorOffset = VMDK_BYTE2SECTOR(cbOffset);
+        pExtent->uSectorOffset = 0;
         pExtent->fMetaDirty = true;
 
         if (!(uImageFlags & VD_IMAGE_FLAGS_FIXED))
@@ -4383,7 +4389,7 @@ static int vmdkAllocGrain(PVMDKGTCACHE pCache, PVMDKEXTENT pExtent,
 
 
 /** @copydoc VBOXHDDBACKEND::pfnCheckIfValid */
-static int vmdkCheckIfValid(const char *pszFilename)
+static int vmdkCheckIfValid(const char *pszFilename, PVDINTERFACE pVDIfsDisk)
 {
     LogFlowFunc(("pszFilename=\"%s\"\n", pszFilename));
     int rc = VINF_SUCCESS;
@@ -4409,7 +4415,7 @@ static int vmdkCheckIfValid(const char *pszFilename)
     pImage->pFiles = NULL;
     pImage->pGTCache = NULL;
     pImage->pDescData = NULL;
-    pImage->pVDIfsDisk = NULL;
+    pImage->pVDIfsDisk = pVDIfsDisk;
     /** @todo speed up this test open (VD_OPEN_FLAGS_INFO) by skipping as
      * much as possible in vmdkOpenImage. */
     rc = vmdkOpenImage(pImage, VD_OPEN_FLAGS_INFO | VD_OPEN_FLAGS_READONLY);
@@ -5681,14 +5687,14 @@ static void vmdkDump(void *pBackendData)
     AssertPtr(pImage);
     if (pImage)
     {
-        RTLogPrintf("Header: Geometry PCHS=%u/%u/%u LCHS=%u/%u/%u cbSector=%llu\n",
+        pImage->pInterfaceErrorCallbacks->pfnMessage(pImage->pInterfaceError->pvUser, "Header: Geometry PCHS=%u/%u/%u LCHS=%u/%u/%u cbSector=%llu\n",
                     pImage->PCHSGeometry.cCylinders, pImage->PCHSGeometry.cHeads, pImage->PCHSGeometry.cSectors,
                     pImage->LCHSGeometry.cCylinders, pImage->LCHSGeometry.cHeads, pImage->LCHSGeometry.cSectors,
                     VMDK_BYTE2SECTOR(pImage->cbSize));
-        RTLogPrintf("Header: uuidCreation={%RTuuid}\n", &pImage->ImageUuid);
-        RTLogPrintf("Header: uuidModification={%RTuuid}\n", &pImage->ModificationUuid);
-        RTLogPrintf("Header: uuidParent={%RTuuid}\n", &pImage->ParentUuid);
-        RTLogPrintf("Header: uuidParentModification={%RTuuid}\n", &pImage->ParentModificationUuid);
+        pImage->pInterfaceErrorCallbacks->pfnMessage(pImage->pInterfaceError->pvUser, "Header: uuidCreation={%RTuuid}\n", &pImage->ImageUuid);
+        pImage->pInterfaceErrorCallbacks->pfnMessage(pImage->pInterfaceError->pvUser, "Header: uuidModification={%RTuuid}\n", &pImage->ModificationUuid);
+        pImage->pInterfaceErrorCallbacks->pfnMessage(pImage->pInterfaceError->pvUser, "Header: uuidParent={%RTuuid}\n", &pImage->ParentUuid);
+        pImage->pInterfaceErrorCallbacks->pfnMessage(pImage->pInterfaceError->pvUser, "Header: uuidParentModification={%RTuuid}\n", &pImage->ParentModificationUuid);
     }
 }
 
@@ -5802,9 +5808,9 @@ static int vmdkAsyncRead(void *pvBackendData, uint64_t uOffset, size_t cbRead,
             goto out;
         }
 
-        /* Clip write range to remain in this extent. */
+        /* Clip read range to remain in this extent. */
         cbToRead = RT_MIN(cbRead, VMDK_SECTOR2BYTE(pExtent->uSectorOffset + pExtent->cNominalSectors - uSectorExtentRel));
-        /* Clip write range to remain into current data segment. */
+        /* Clip read range to remain into current data segment. */
         cbToRead = RT_MIN(cbToRead, cbLeftInCurrentSegment);
 
         switch (pExtent->enmType)
@@ -5813,7 +5819,7 @@ static int vmdkAsyncRead(void *pvBackendData, uint64_t uOffset, size_t cbRead,
             case VMDKETYPE_FLAT:
             {
                 /* Check for enough room first. */
-                if (RT_LIKELY(cSegments >= pImage->cSegments))
+                if (RT_UNLIKELY(cSegments >= pImage->cSegments))
                 {
                     /* We reached maximum, resize array. Try to realloc memory first. */
                     PPDMDATASEG paSegmentsNew = (PPDMDATASEG)RTMemRealloc(pImage->paSegments, (cSegments + 10)*sizeof(PDMDATASEG));
@@ -5941,7 +5947,7 @@ static int vmdkAsyncWrite(void *pvBackendData, uint64_t uOffset, size_t cbWrite,
             case VMDKETYPE_FLAT:
             {
                 /* Check for enough room first. */
-                if (RT_LIKELY(cSegments >= pImage->cSegments))
+                if (RT_UNLIKELY(cSegments >= pImage->cSegments))
                 {
                     /* We reached maximum, resize array. Try to realloc memory first. */
                     PPDMDATASEG paSegmentsNew = (PPDMDATASEG)RTMemRealloc(pImage->paSegments, (cSegments + 10)*sizeof(PDMDATASEG));

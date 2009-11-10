@@ -158,6 +158,12 @@ icmpstats(PNATState pData)
 void
 mbufstats(PNATState pData)
 {
+#ifndef VBOX_WITH_SLIRP_BSD_MBUF
+    /*
+     * (vvl) this static code can't work with mbuf zone anymore 
+     * @todo: make statistic correct
+     */
+#if 0
     struct mbuf *m;
     int i;
 
@@ -177,6 +183,8 @@ mbufstats(PNATState pData)
         i++;
     lprint("  %6d mbufs on used list\n",  i);
     lprint("  %6d mbufs queued as packets\n\n", if_queued);
+#endif
+#endif
 }
 
 void
@@ -193,7 +201,7 @@ sockstats(PNATState pData)
 
     QSOCKET_FOREACH(so, so_next, tcp)
     /* { */
-        n = sprintf(buff, "tcp[%s]", so->so_tcpcb?tcpstates[so->so_tcpcb->t_state]:"NONE");
+        n = RTStrPrintf(buff, sizeof(buff), "tcp[%s]", so->so_tcpcb?tcpstates[so->so_tcpcb->t_state]:"NONE");
         while (n < 17)
             buff[n++] = ' ';
         buff[17] = 0;
@@ -207,7 +215,7 @@ sockstats(PNATState pData)
 
     QSOCKET_FOREACH(so, so_next, udp)
     /* { */
-        n = sprintf(buff, "udp[%d sec]", (so->so_expire - curtime) / 1000);
+        n = RTStrPrintf(buff, sizeof(buff), "udp[%d sec]", (so->so_expire - curtime) / 1000);
         while (n < 17)
             buff[n++] = ' ';
         buff[17] = 0;
@@ -246,9 +254,9 @@ print_ether_address(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput,
 
     AssertReturn(strcmp(pszType, "ether") == 0, 0);
     if (ether != NULL)
-        return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0, 
+        return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0,
             "[ether %hhx:%hhx:%hhx:%hhx:%hhx:%hhx]",
-            ether[0], ether[1], ether[2], 
+            ether[0], ether[1], ether[2],
             ether[3], ether[4], ether[5]);
     else
         return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0, "[ether null]");
@@ -268,17 +276,17 @@ print_socket(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput,
     int status = 0;
 
     AssertReturn(strcmp(pszType, "natsock") == 0, 0);
-    if (so == NULL) 
-        return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0, 
+    if (so == NULL)
+        return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0,
                 "socket is null");
-    if (so->so_state == SS_NOFDREF || so->s == -1) 
-        return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0, 
+    if (so->so_state == SS_NOFDREF || so->s == -1)
+        return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0,
                 "socket(%d) SS_NODREF",so->s);
     status = getsockname(so->s, &addr, &socklen);
 
     if(status != 0 || addr.sa_family != AF_INET)
     {
-        return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0, 
+        return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0,
                 "socket(%d) is invalid(probably closed)",so->s);
     }
 
@@ -287,8 +295,8 @@ print_socket(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput,
     return RTStrFormat(pfnOutput, pvArgOutput, NULL, 0, "socket %4d:(proto:%u) "
             "state=%04x ip=" IP4_ADDR_PRINTF_FORMAT ":%d "
             "name=" IP4_ADDR_PRINTF_FORMAT ":%d",
-            so->s, so->so_type, so->so_state, IP4_ADDR_PRINTF_DECOMP(ip), 
-            ntohs(so->so_fport), 
+            so->s, so->so_type, so->so_state, IP4_ADDR_PRINTF_DECOMP(ip),
+            ntohs(so->so_fport),
             IP4_ADDR_PRINTF_DECOMP(ntohl(in_addr->sin_addr.s_addr)),
             ntohs(in_addr->sin_port));
 }
@@ -306,7 +314,7 @@ print_networkevents(PFNRTSTROUTPUT pfnOutput, void *pvArgOutput,
 
     AssertReturn(strcmp(pszType, "natwinnetevents") == 0, 0);
 
-    cb += RTStrFormat(pfnOutput, pvArgOutput, NULL, 0, "events=%02x (", 
+    cb += RTStrFormat(pfnOutput, pvArgOutput, NULL, 0, "events=%02x (",
             pNetworkEvents->lNetworkEvents);
 # define DO_BIT(bit) \
     if (pNetworkEvents->lNetworkEvents & FD_ ## bit)                        \
@@ -351,7 +359,7 @@ debug_init()
     if (!g_fFormatRegistered)
     {
         /*
-         * XXX(r - frank): Move this to IPRT using RTNETADDRIPV4. 
+         * XXX(r - frank): Move this to IPRT using RTNETADDRIPV4.
          * Use the specifier %RNAipv4.
          */
         rc = RTStrFormatTypeRegister("IP4", print_ipv4_address, NULL);
@@ -360,7 +368,7 @@ debug_init()
         AssertRC(rc);
         rc = RTStrFormatTypeRegister("natsock", print_socket, NULL);
         AssertRC(rc);
-        rc = RTStrFormatTypeRegister("natwinnetevents", 
+        rc = RTStrFormatTypeRegister("natwinnetevents",
             print_networkevents, NULL);
         AssertRC(rc);
         g_fFormatRegistered = 1;

@@ -1,4 +1,4 @@
-/* $Id: NetworkAdapterImpl.h 19239 2009-04-28 13:19:14Z vboxsync $ */
+/* $Id: NetworkAdapterImpl.h 23223 2009-09-22 15:50:03Z vboxsync $ */
 
 /** @file
  *
@@ -29,10 +29,15 @@
 class Machine;
 class GuestOSType;
 
+namespace settings
+{
+    struct NetworkAdapter;
+}
+
 class ATL_NO_VTABLE NetworkAdapter :
-    public VirtualBoxBaseNEXT,
-    public VirtualBoxSupportErrorInfoImpl <NetworkAdapter, INetworkAdapter>,
-    public VirtualBoxSupportTranslation <NetworkAdapter>,
+    public VirtualBoxBase,
+    public VirtualBoxSupportErrorInfoImpl<NetworkAdapter, INetworkAdapter>,
+    public VirtualBoxSupportTranslation<NetworkAdapter>,
     VBOX_SCRIPTABLE_IMPL(INetworkAdapter)
 {
 public:
@@ -87,8 +92,6 @@ public:
         COM_INTERFACE_ENTRY2 (IDispatch, INetworkAdapter)
     END_COM_MAP()
 
-    NS_DECL_ISUPPORTS
-
     DECLARE_EMPTY_CTOR_DTOR (NetworkAdapter)
 
     HRESULT FinalConstruct();
@@ -133,8 +136,8 @@ public:
 
     // public methods only for internal purposes
 
-    HRESULT loadSettings (const settings::Key &aAdapterNode);
-    HRESULT saveSettings (settings::Key &aAdapterNode);
+    HRESULT loadSettings(const settings::NetworkAdapter &data);
+    HRESULT saveSettings(settings::NetworkAdapter &data);
 
     bool isModified() { AutoWriteLock alock (this); return mData.isBackedUp(); }
     bool isReallyModified() { AutoWriteLock alock (this); return mData.hasActualChanges(); }
@@ -156,8 +159,8 @@ private:
     void detach();
     void generateMACAddress();
 
-    const ComObjPtr <Machine, ComWeakRef> mParent;
-    const ComObjPtr <NetworkAdapter> mPeer;
+    const ComObjPtr<Machine, ComWeakRef> mParent;
+    const ComObjPtr<NetworkAdapter> mPeer;
 
     Backupable <Data> mData;
 };

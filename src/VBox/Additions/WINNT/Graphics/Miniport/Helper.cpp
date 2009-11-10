@@ -62,7 +62,7 @@ BOOLEAN vboxQueryDisplayRequest(uint32_t *xres, uint32_t *yres, uint32_t *bpp)
 {
     BOOLEAN bRC = FALSE;
 
-    dprintf(("VBoxVideo::vboxQueryDisplayRequest: xres = %p, yres = %p bpp = %p\n", xres, yres, bpp));
+    dprintf(("VBoxVideo::vboxQueryDisplayRequest: xres = 0x%p, yres = 0x%p bpp = 0x%p\n", xres, yres, bpp));
 
     VMMDevDisplayChangeRequest *req = NULL;
 
@@ -192,7 +192,7 @@ static BOOLEAN vboxQueryPointerPosInternal (uint16_t *pointerXPos, uint16_t *poi
 
         if (RT_SUCCESS(rc) && RT_SUCCESS(req->header.rc))
         {
-            if (req->mouseFeatures & VBOXGUEST_MOUSE_HOST_CAN_ABSOLUTE)
+            if (req->mouseFeatures & VMMDEV_MOUSE_HOST_CAN_ABSOLUTE)
             {
                 if (pointerXPos)
                 {
@@ -261,8 +261,14 @@ winVersion_t vboxQueryWinVersion()
 
     dprintf(("VBoxVideo::vboxQueryWinVersion: running on Windows NT version %d.%d, build %d\n",
              majorVersion, minorVersion, buildNumber));
-
-    if (majorVersion >= 5)
+    if(majorVersion == 6)
+    {
+        if (minorVersion == 1)
+            winVersion = WIN7;
+        else if (minorVersion == 0)
+            winVersion = WINVISTA; /* Or Windows Server 2008. */
+    }
+    else if (majorVersion == 5)
     {
         if (minorVersion >= 1)
         {
@@ -271,11 +277,12 @@ winVersion_t vboxQueryWinVersion()
         {
             winVersion = WIN2K;
         }
-    } else
-    if (majorVersion == 4)
+    }
+    else if (majorVersion == 4)
     {
         winVersion = WINNT4;
-    } else
+    }
+    else
     {
         dprintf(("VBoxVideo::vboxQueryWinVersion: NT4 required!\n"));
     }

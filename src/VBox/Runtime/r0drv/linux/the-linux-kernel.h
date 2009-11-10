@@ -1,4 +1,4 @@
-/* $Id: the-linux-kernel.h 15851 2009-01-08 10:30:27Z vboxsync $ */
+/* $Id: the-linux-kernel.h 23717 2009-10-13 10:16:38Z vboxsync $ */
 /** @file
  * IPRT - Include all necessary headers for the Linux kernel.
  */
@@ -81,6 +81,7 @@
 #include <linux/pagemap.h>
 #include <linux/slab.h>
 #include <linux/time.h>
+#include <linux/sched.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 7)
 # include <linux/jiffies.h>
 #endif
@@ -265,10 +266,6 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
     } while (0)
 #endif
 
-#ifndef PAGE_OFFSET_MASK
-# define PAGE_OFFSET_MASK (PAGE_SIZE - 1)
-#endif
-
 /** @def ONE_MSEC_IN_JIFFIES
  * The number of jiffies that make up 1 millisecond. Must be at least 1! */
 #if HZ <= 1000
@@ -302,6 +299,15 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
 # define IPRT_DEBUG_SEMS_ADDRESS(addr)  ( ((long)(addr) & (long)~UINT64_C(0xfffffff000000000)) )
 #else
 # define IPRT_DEBUG_SEMS_ADDRESS(addr)  ( (long)(addr) )
+#endif
+
+/*
+ * There are some conflicting defines in iprt/param.h, sort them out here.
+ */
+#ifndef ___iprt_param_h
+# undef PAGE_SIZE
+# undef PAGE_OFFSET_MASK
+# include <iprt/param.h>
 #endif
 
 #endif

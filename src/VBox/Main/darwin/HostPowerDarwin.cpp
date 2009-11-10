@@ -41,7 +41,7 @@ HostPowerServiceDarwin::HostPowerServiceDarwin (VirtualBox *aVirtualBox)
     int rc = RTThreadCreate (&mThread, HostPowerServiceDarwin::powerChangeNotificationThread, this, 65536,
                              RTTHREADTYPE_IO, RTTHREADFLAGS_WAITABLE, "MainPower");
 
-    if (RT_FAILURE (rc))
+    if (RT_FAILURE(rc))
         LogFlow (("RTThreadCreate failed with %Rrc\n", rc));
 }
 
@@ -232,7 +232,7 @@ void HostPowerServiceDarwin::checkBatteryCriticalLevel (bool *pfCriticalChanged)
                     mCritical != critical &&
                     pfCriticalChanged)
                     *pfCriticalChanged = true;
-                Log (("checkBatteryCriticalLevel: Remains: %.0f%% Critical: %d Critical State Changed: %d\n", remCapacity, critical, pfCriticalChanged?*pfCriticalChanged:-1));
+                Log (("checkBatteryCriticalLevel: Remains: %d.%d%% Critical: %d Critical State Changed: %d\n", (int)remCapacity, (int)(remCapacity * 10) % 10, critical, pfCriticalChanged?*pfCriticalChanged:-1));
             }
         }
     }

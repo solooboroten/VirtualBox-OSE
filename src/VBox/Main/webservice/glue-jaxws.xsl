@@ -7,7 +7,7 @@
         a Java wrapper that allows client code to use the
         webservice in an object-oriented way.
 
-     Copyright (C) 2006-2008 Sun Microsystems, Inc.
+     Copyright (C) 2008-2009 Sun Microsystems, Inc.
 
      This file is part of VirtualBox Open Source Edition (OSE), as
      available from http://www.virtualbox.org. This file is free software;
@@ -111,9 +111,6 @@
       <xsl:when test="$collPrefix and //interface[@name=$origname]/@wsmap='managed'">
          <xsl:value-of select="concat($G_virtualBoxPackage, concat('.', $name))" />
       </xsl:when>
-     <xsl:when test="//interface[@name=$name]/@wsmap='struct' or //interface[@name=$origname]/@wsmap='struct'">
-       <xsl:value-of select="concat($G_virtualBoxPackage,  concat('.', $name))" />
-     </xsl:when>
      <xsl:when test="//interface[@name=$name]">
        <xsl:value-of select="concat($G_virtualBoxPackage2,  concat('.', $name))" />
      </xsl:when>
@@ -177,8 +174,11 @@
   <xsl:param name="name" />
   <xsl:param name="type" />
   <xsl:param name="safearray" />
+  <xsl:param name="forceelem" />
 
-  <xsl:if test="$safearray">
+  <xsl:variable name="needarray" select="($safearray='yes') and not($forceelem='yes')" />
+
+  <xsl:if test="$needarray">
     <xsl:value-of select="'List&lt;'" />
   </xsl:if>
 
@@ -190,6 +190,9 @@
       <xsl:value-of select="$javatypefield" />
     </xsl:when>
     <xsl:when test="$type='$unknown'">String</xsl:when>
+    <xsl:when test="//interface[@name=$type]/@wsmap='struct'">
+      <xsl:value-of select="concat($G_virtualBoxPackage, '.', $type)" />
+    </xsl:when>
     <xsl:when test="//interface[@name=$type]/@wsmap='managed'">String</xsl:when>
     <xsl:otherwise>
       <xsl:call-template name="fullClassName">
@@ -198,7 +201,7 @@
       </xsl:call-template>
     </xsl:otherwise>
   </xsl:choose>
-  <xsl:if test="$safearray">
+  <xsl:if test="$needarray">
     <xsl:value-of select="'&gt;'" />
   </xsl:if>
 </xsl:template>
@@ -209,17 +212,9 @@
   <xsl:param name="value"/>
   <xsl:param name="idltype"/>
   <xsl:param name="safearray"/>
+  <xsl:variable name="isstruct"
+                select="//interface[@name=$idltype]/@wsmap='struct'" />
   <xsl:choose>
-    <xsl:when test="$idltype='uuid'">
-      <xsl:choose>
-        <xsl:when test="$safearray">
-          <xsl:value-of select="concat('Helper.uuidWrap(',$value,')')" />
-        </xsl:when>
-        <xsl:otherwise>
-          <xsl:value-of select="concat('UUID.fromString(',$value,')')" />
-        </xsl:otherwise>
-      </xsl:choose>
-    </xsl:when>
     <xsl:when test="//collection[@name=$idltype]">
       <xsl:variable name="elemtype">
         <xsl:call-template name="typeIdl2Glue">
@@ -242,12 +237,6 @@
     </xsl:when>
     <xsl:when test="//interface[@name=$idltype] or $idltype='$unknown'">
       <xsl:choose>
-        <xsl:when test="//interface[@name=$idltype]/@wsmap='struct' and $safearray='yes'">
-          <xsl:value-of select="concat('/* 2 */', $value)" />
-        </xsl:when>
-        <xsl:when test="//interface[@name=$idltype]/@wsmap='struct'">
-          <xsl:value-of select="$value" />
-        </xsl:when>
         <xsl:when test="$safearray='yes'">
           <xsl:variable name="elemtype">
             <xsl:call-template name="typeIdl2Glue">
@@ -259,7 +248,23 @@
               <xsl:with-param name="forceelem" select="'yes'" />
             </xsl:call-template>
           </xsl:variable>
-          <xsl:value-of select="concat('Helper.wrap(',$elemtype, '.class, port, ', $value,')')"/>
+          <xsl:choose>
+            <xsl:when test="$isstruct">
+              <xsl:variable name="javagettertype">
+                <xsl:call-template name="typeIdl2Java">
+                  <xsl:with-param name="method" select="$methodname" />
+                  <xsl:with-param name="name" select="$value" />
+                  <xsl:with-param name="type" select="$idltype" />
+                  <xsl:with-param name="safearray" select="$safearray" />
+                  <xsl:with-param name="forceelem" select="'yes'" />
+                </xsl:call-template>
+              </xsl:variable>
+              <xsl:value-of select="concat('Helper.wrap2(',$elemtype, '.class, ', $javagettertype, '.class, port, ', $value,')')"/>
+            </xsl:when>
+            <xsl:otherwise>
+              <xsl:value-of select="concat('Helper.wrap(',$elemtype, '.class, port, ', $value,')')"/>
+            </xsl:otherwise>
+          </xsl:choose>
         </xsl:when>
         <xsl:otherwise>
            <xsl:variable name="gluetype">
@@ -271,8 +276,15 @@
                <xsl:with-param name="safearray" select="$safearray" />
              </xsl:call-template>
            </xsl:variable>
-           <!-- if the MOR string is empty, that means NULL, so return NULL instead of an object then -->
-           <xsl:value-of select="concat('(', $value, '.length() > 0) ? new ', $gluetype, '(', $value,', port) : null')" />
+           <xsl:choose>
+             <xsl:when test="$isstruct">
+               <xsl:value-of select="concat('(', $value, ' != null) ? new ', $gluetype, '(', $value,', port) : null')" />
+             </xsl:when>
+              <xsl:otherwise>
+                <!-- if the MOR string is empty, that means NULL, so return NULL instead of an object then -->
+                <xsl:value-of select="concat('(', $value, '.length() > 0) ? new ', $gluetype, '(', $value,', port) : null')" />
+              </xsl:otherwise>
+           </xsl:choose>
         </xsl:otherwise>
       </xsl:choose>
     </xsl:when>
@@ -281,6 +293,84 @@
     </xsl:otherwise>
   </xsl:choose>
 </xsl:template>
+
+<xsl:template name="genStructWrapper">
+  <xsl:param name="ifname" select="@name" />
+
+  <xsl:value-of select="concat('    private ', $G_virtualBoxPackage,'.',$ifname, ' real;&#10;')"/>
+  <xsl:value-of select="'    private VboxPortType port;&#10;&#10;'"/>
+
+   <xsl:value-of select="concat('    public ', $ifname, '(', $G_virtualBoxPackage,'.',$ifname,' real, VboxPortType port) {&#10;      this.real = real; &#10;      this.port = port;  &#10;    }&#10;')"/>
+  <xsl:for-each select="attribute">
+    <xsl:variable name="attrname"><xsl:value-of select="@name" /></xsl:variable>
+    <xsl:variable name="attrtype"><xsl:value-of select="@type" /></xsl:variable>
+    <xsl:variable name="attrreadonly"><xsl:value-of select="@readonly" /></xsl:variable>
+    <xsl:variable name="attrsafearray"><xsl:value-of select="@safearray" /></xsl:variable>
+     <xsl:choose>
+       <xsl:when test="$attrreadonly='yes'">
+         <xsl:value-of select="concat('&#10;    // read-only attribute ', $ifname, '::', $attrname, ' of type ', $attrtype, '&#10;')" />
+
+       </xsl:when>
+       <xsl:otherwise>
+         <xsl:value-of select="concat('&#10;    // read/write attribute ', $ifname, '::', $attrname, ' of type ', $attrtype, '&#10;')" />
+       </xsl:otherwise>
+     </xsl:choose>
+
+     <!-- emit getter method -->
+     <xsl:variable name="gettername">
+       <xsl:choose>
+         <!-- Stupid, but boolean getters called isFoo(), not getFoo() -->
+         <xsl:when test="$attrtype = 'boolean'">
+           <xsl:variable name="capsname">
+             <xsl:call-template name="capitalize">
+               <xsl:with-param name="str" select="$attrname" />
+             </xsl:call-template>
+           </xsl:variable>
+           <xsl:value-of select="concat('is', $capsname)" />
+         </xsl:when>
+         <xsl:otherwise>
+           <xsl:call-template name="makeGetterName">
+             <xsl:with-param name="attrname" select="$attrname" />
+           </xsl:call-template>
+         </xsl:otherwise>
+       </xsl:choose>
+     </xsl:variable>
+     <xsl:variable name="gluegettertype">
+       <xsl:call-template name="typeIdl2Glue">
+         <xsl:with-param name="ifname" select="$ifname" />
+         <xsl:with-param name="method" select="$gettername" />
+         <xsl:with-param name="name" select="$attrname" />
+         <xsl:with-param name="type" select="$attrtype" />
+         <xsl:with-param name="safearray" select="@safearray" />
+       </xsl:call-template>
+     </xsl:variable>
+     <xsl:variable name="javagettertype">
+       <xsl:call-template name="typeIdl2Java">
+         <xsl:with-param name="ifname" select="$ifname" />
+         <xsl:with-param name="method" select="$gettername" />
+         <xsl:with-param name="name" select="$attrname" />
+         <xsl:with-param name="type" select="$attrtype" />
+         <xsl:with-param name="safearray" select="@safearray" />
+       </xsl:call-template>
+     </xsl:variable>
+     <xsl:value-of select="concat('    public ', $gluegettertype, ' ', $gettername, '() {&#10;')" />
+     <xsl:value-of select="concat('            ', $javagettertype, ' retVal = real.', $gettername, '();&#10;')" />
+     <xsl:variable name="wrapped">
+       <xsl:call-template name="cookOutParam">
+         <xsl:with-param name="ifname" select="$ifname" />
+         <xsl:with-param name="method" select="$gettername" />
+         <xsl:with-param name="value" select="'retVal'" />
+         <xsl:with-param name="idltype" select="$attrtype" />
+         <xsl:with-param name="safearray" select="@safearray" />
+       </xsl:call-template>
+     </xsl:variable>
+     <xsl:value-of select="concat('            return ', $wrapped, ';&#10;')" />
+     <xsl:text>    }&#10;</xsl:text>
+
+  </xsl:for-each>
+
+</xsl:template>
+
 
 <xsl:template name="emitArgInMethodImpl">
   <xsl:param name="paramname" select="@name" />
@@ -303,9 +393,6 @@
           </xsl:choose>
         </xsl:otherwise>
       </xsl:choose>
-    </xsl:when>
-    <xsl:when test="$paramtype='uuid'">
-      <xsl:value-of select="concat($paramname, '.toString()')" />
     </xsl:when>
     <xsl:otherwise>
       <xsl:value-of select="$paramname" />
@@ -415,7 +502,6 @@ public class IUnknown
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.UUID;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 
@@ -441,12 +527,25 @@ class Helper {
         }
     }
 
-    public static List<UUID> uuidWrap(List<String> uuidVals) {
-         List<UUID> ret = new ArrayList<UUID>(uuidVals.size());
-         for (String uuid : uuidVals) {
-              ret.add(UUID.fromString(uuid));
-         }
-         return ret;
+    public static <T1, T2> List<T1> wrap2(Class<T1> wrapperClass1, Class<T2> wrapperClass2, VboxPortType pt, List<T2> thisPtrs) {
+        try {
+            if(thisPtrs==null)  return Collections.emptyList();
+
+            Constructor<T1> c = wrapperClass1.getConstructor(wrapperClass2, VboxPortType.class);
+            List<T1> ret = new ArrayList<T1>(thisPtrs.size());
+            for (T2 thisPtr : thisPtrs) {
+                ret.add(c.newInstance(thisPtr,pt));
+            }
+            return ret;
+        } catch (NoSuchMethodException e) {
+            throw new AssertionError(e);
+        } catch (InstantiationException e) {
+            throw new AssertionError(e);
+        } catch (IllegalAccessException e) {
+            throw new AssertionError(e);
+        } catch (InvocationTargetException e) {
+            throw new AssertionError(e);
+        }
     }
 
     public static <T extends IUnknown> List<String> unwrap(List<T> thisPtrs) {
@@ -475,7 +574,6 @@ import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
-import java.util.UUID;
 import javax.xml.namespace.QName;
 import javax.xml.ws.BindingProvider;
 import javax.xml.ws.Holder;
@@ -534,11 +632,15 @@ class PortPool
     synchronized VboxPortType getPort()
     {
         VboxPortType port = null;
+        int ttl = 0;
+
         for (VboxPortType cur: known.keySet())
         {
-            if (known.get(cur) == 0)
+            int value = known.get(cur);
+            if ((value & 0x10000) == 0)
             {
                 port = cur;
+                ttl = value & 0xffff;
                 break;
             }
         }
@@ -554,20 +656,35 @@ class PortPool
                                                 "vboxService"));
             }
             port = svc.getVboxServicePort();
+            // reuse this object 0x10 times
+            ttl = 0x10;
         }
-        known.put(port, new Integer(1));
+        // mark as used
+        known.put(port, new Integer(0x10000 | ttl));
         return port;
     }
 
     synchronized void releasePort(VboxPortType port)
     {
-        Integer val =  known.get(port);
+        Integer val = known.get(port);
         if (val == null || val == 0)
         {
             // know you not
             return;
         }
-        known.put(port, val - 1);
+
+        int v = val;
+        int ttl = v & 0xffff;
+        // decrement TTL, and throw away port if used too much times
+        if (--ttl <= 0)
+        {
+            known.remove(port);
+        }
+        else
+        {
+            v = ttl; // set new TTL and clear busy bit
+            known.put(port, v);
+        }
     }
 }
 
@@ -604,30 +721,51 @@ public class IWebsessionManager {
     public void connect(String url)
     {
         this.port = pool.getPort();
-        ((BindingProvider)port).getRequestContext().
-                put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY, url);
+
+         try {
+          ((BindingProvider)port).getRequestContext().
+                 put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY, url);
+         }  catch (Throwable t) {
+             if (this.port != null)
+                pool.releasePort(this.port);
+             // we have to throw smth derived from RuntimeException
+             throw new WebServiceException(t);
+          }
     }
 
     public void connect(String url, Map<String, Object> requestContext, Map<String, Object> responseContext)
     {
          this.port = pool.getPort();
 
-         ((BindingProvider)port).getRequestContext();
-         if (requestContext != null)
+         try {
+           ((BindingProvider)port).getRequestContext();
+           if (requestContext != null)
                ((BindingProvider)port).getRequestContext().putAll(requestContext);
 
-         if (responseContext != null)
+           if (responseContext != null)
                ((BindingProvider)port).getResponseContext().putAll(responseContext);
 
-         ((BindingProvider)port).getRequestContext().
+           ((BindingProvider)port).getRequestContext().
                 put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY, url);
+          } catch (Throwable t) {
+             if (this.port != null)
+                pool.releasePort(port);
+             // we have to throw smth derived from RuntimeException
+             throw new WebServiceException(t);
+          }
     }
 
 
     public void disconnect(IVirtualBox refIVirtualBox)
     {
-        logoff(refIVirtualBox);
-        pool.releasePort(port);
+        try {
+           logoff(refIVirtualBox);
+        } finally {
+           if (this.port != null) {
+             pool.releasePort(this.port);
+             this.port = null;
+           }
+        }
     }
 
     public void cleanupUnused()
@@ -792,29 +930,28 @@ public class IWebsessionManager {
     <xsl:variable name="wsmap" select="@wsmap" />
     <xsl:variable name="wscpp" select="@wscpp" />
 
-    <xsl:if test="not($wsmap='suppress') and not($wsmap='struct') and not ($wsmap='global')">
+    <xsl:if test="not($wsmap='suppress') and not ($wsmap='global')">
       <xsl:call-template name="startFile">
         <xsl:with-param name="file" select="concat($filename, '.java')" />
       </xsl:call-template>
 
       <xsl:text>import java.math.BigInteger;&#10;</xsl:text>
       <xsl:text>import java.util.List;&#10;</xsl:text>
-      <xsl:text>import java.util.UUID;&#10;</xsl:text>
       <xsl:text>import javax.xml.ws.Holder;&#10;</xsl:text>
       <xsl:text>import javax.xml.ws.WebServiceException;&#10;</xsl:text>
 
       <xsl:choose>
         <xsl:when test="$wsmap='struct'">
-
           <xsl:value-of select="concat('public class ', $ifname, ' {&#10;&#10;')" />
-
+           <xsl:call-template name="genStructWrapper">
+             <xsl:with-param name="name" select="$ifname" />
+           </xsl:call-template>
         </xsl:when>
 
         <xsl:otherwise>
-
           <xsl:variable name="extends" select="//interface[@name=$ifname]/@extends" />
           <xsl:choose>
-            <xsl:when test="($extends = '$unknown') or ($extends = '$dispatched')">
+            <xsl:when test="($extends = '$unknown') or ($extends = '$dispatched') or ($extends = '$errorinfo')">
               <xsl:value-of select="concat('public class ', $ifname, ' extends IUnknown {&#10;&#10;')" />
             </xsl:when>
             <xsl:when test="//interface[@name=$extends]">

@@ -32,23 +32,28 @@
 #define ___VBox_HostService_VBoxCrOpenGLSvc_h
 
 #include <VBox/types.h>
-#include <VBox/VBoxGuest.h>
+#include <VBox/VMMDev.h>
+#include <VBox/VBoxGuest2.h>
 #include <VBox/hgcmsvc.h>
 
 /* crOpenGL host functions */
 #define SHCRGL_HOST_FN_SET_FRAMEBUFFER (1)
 #define SHCRGL_HOST_FN_SET_VISIBLE_REGION (5)
+#define SHCRGL_HOST_FN_SET_VM (7)
 /* crOpenGL guest functions */
 #define SHCRGL_GUEST_FN_WRITE       (2)
 #define SHCRGL_GUEST_FN_READ        (3)
 #define SHCRGL_GUEST_FN_WRITE_READ  (4)
+#define SHCRGL_GUEST_FN_SET_VERSION (6)
 
 /* Parameters count */
 #define SHCRGL_CPARMS_SET_FRAMEBUFFER (1)
+#define SHCRGL_CPARMS_SET_VM (1)
 #define SHCRGL_CPARMS_SET_VISIBLE_REGION (2)
 #define SHCRGL_CPARMS_WRITE      (1)
 #define SHCRGL_CPARMS_READ       (2)
 #define SHCRGL_CPARMS_WRITE_READ (3)
+#define SHCRGL_CPARMS_SET_VERSION (2)
 
 /**
  * SHCRGL_GUEST_FN_WRITE
@@ -101,7 +106,24 @@ typedef struct
      * Count of bytes written to writeback buffer
      */
     HGCMFunctionParameter   cbWriteback;
-    
+
 } CRVBOXHGCMWRITEREAD;
+
+/** GUEST_FN_SET_VERSION Parameters structure. */
+typedef struct
+{
+    VBoxGuestHGCMCallInfo   hdr;
+
+    /** 32bit, in
+     *  Major version
+     */
+    HGCMFunctionParameter   vMajor;
+
+    /** 32bit, in
+     *  Minor version
+     */
+    HGCMFunctionParameter   vMinor;
+
+} CRVBOXHGCMSETVERSION;
 
 #endif

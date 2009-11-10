@@ -1,4 +1,4 @@
-/* $Id: AudioAdapterImpl.h 19239 2009-04-28 13:19:14Z vboxsync $ */
+/* $Id: AudioAdapterImpl.h 23223 2009-09-22 15:50:03Z vboxsync $ */
 
 /** @file
  *
@@ -28,10 +28,15 @@
 
 class Machine;
 
+namespace settings
+{
+    struct AudioAdapter;
+}
+
 class ATL_NO_VTABLE AudioAdapter :
-    public VirtualBoxBaseNEXT,
-    public VirtualBoxSupportErrorInfoImpl <AudioAdapter, IAudioAdapter>,
-    public VirtualBoxSupportTranslation <AudioAdapter>,
+    public VirtualBoxBase,
+    public VirtualBoxSupportErrorInfoImpl<AudioAdapter, IAudioAdapter>,
+    public VirtualBoxSupportTranslation<AudioAdapter>,
     VBOX_SCRIPTABLE_IMPL(IAudioAdapter)
 {
 public:
@@ -65,8 +70,6 @@ public:
         COM_INTERFACE_ENTRY(IDispatch)
     END_COM_MAP()
 
-    NS_DECL_ISUPPORTS
-
     DECLARE_EMPTY_CTOR_DTOR (AudioAdapter)
 
     HRESULT FinalConstruct();
@@ -87,8 +90,8 @@ public:
 
     // public methods only for internal purposes
 
-    HRESULT loadSettings (const settings::Key &aMachineNode);
-    HRESULT saveSettings (settings::Key &aMachineNode);
+    HRESULT loadSettings(const settings::AudioAdapter &data);
+    HRESULT saveSettings(settings::AudioAdapter &data);
 
     bool isModified() { AutoWriteLock alock (this); return mData.isBackedUp(); }
     bool isReallyModified() { AutoWriteLock alock (this); return mData.hasActualChanges(); }
@@ -106,8 +109,8 @@ public:
 
 private:
 
-    const ComObjPtr <Machine, ComWeakRef> mParent;
-    const ComObjPtr <AudioAdapter> mPeer;
+    const ComObjPtr<Machine, ComWeakRef> mParent;
+    const ComObjPtr<AudioAdapter> mPeer;
 
     Backupable <Data> mData;
 };

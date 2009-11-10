@@ -251,7 +251,7 @@ bool VBoxProblemReporter::showModalProgressDialog (
     VBoxProgressDialog progressDlg (aProgress, aTitle, aMinDuration, aParent);
 
     /* run the dialog with the 100 ms refresh interval */
-    progressDlg.run (100);
+    progressDlg.run (350);
 
     return true;
 }
@@ -341,6 +341,32 @@ void VBoxProblemReporter::cannotDeleteFile (const QString& path, QWidget *aParen
              .arg (path));
 }
 
+void VBoxProblemReporter::checkForMountedWrongUSB() const
+{
+#ifdef RT_OS_LINUX
+    QFile file ("/proc/mounts");
+    if (file.exists() && file.open (QIODevice::ReadOnly | QIODevice::Text))
+    {
+        QStringList contents;
+        for (;;)
+        {
+            QByteArray line = file.readLine();
+            if (line.isEmpty())
+                break;
+            contents << line;
+        }
+        QStringList grep1 (contents.filter ("/sys/bus/usb/drivers"));
+        QStringList grep2 (grep1.filter ("usbfs"));
+        if (!grep2.isEmpty())
+            message (mainWindowShown(), Warning,
+                     tr ("You seem to have the USBFS filesystem mounted at /sys/bus/usb/drivers. "
+                         "We strongly recommend that you change this, as it is a severe mis-configuration of "
+                         "your system which could cause USB devices to fail in unexpected ways."),
+                     "checkForMountedWrongUSB");
+    }
+#endif
+}
+
 // Special Problem handlers
 /////////////////////////////////////////////////////////////////////////////
 
@@ -349,6 +375,14 @@ void VBoxProblemReporter::showBETAWarning()
     message
         (0, Warning,
          tr ("You are running a prerelease version of VirtualBox. "
+             "This version is not suitable for production use."));
+}
+
+void VBoxProblemReporter::showBEBWarning()
+{
+    message
+        (0, Warning,
+         tr ("You are running an EXPERIMENTAL build of VirtualBox. "
              "This version is not suitable for production use."));
 }
 
@@ -795,85 +829,69 @@ void VBoxProblemReporter::cannotSetSnapshotFolder (const CMachine &aMachine,
         formatErrorInfo (aMachine));
 }
 
-bool VBoxProblemReporter::askAboutSnapshotAndStateDiscarding()
+bool VBoxProblemReporter::askAboutSnapshotRestoring (const QString &aSnapshotName)
 {
     return messageOkCancel (mainWindowShown(), Question,
-        tr ("<p>Are you sure you wish to delete the selected snapshot "
-            "and saved state?</p>"),
-        "confirmSnapshotAndStateDiscarding" /* aAutoConfirmId */,
-        tr ("Discard"), tr ("Cancel"));
+        tr ("<p>Are you sure you want to restore snapshot <b>%1</b>? "
+            "This will cause you to lose your current machine state, which cannot be recovered.</p>")
+            .arg (aSnapshotName),
+        /* Do NOT allow this message to be disabled! */
+        NULL /* aAutoConfirmId */,
+        tr ("Restore"), tr ("Cancel"));
 }
 
-void VBoxProblemReporter::cannotDiscardSnapshot (const CConsole &aConsole,
+bool VBoxProblemReporter::askAboutSnapshotDeleting (const QString &aSnapshotName)
+{
+    return messageOkCancel (mainWindowShown(), Question,
+        tr ("<p>Are you sure you wish to delete the selected snapshot <b>%1</b>?</p>")
+            .arg (aSnapshotName),
+        /* Do NOT allow this message to be disabled! */
+        NULL /* aAutoConfirmId */,
+        tr ("Delete"), tr ("Cancel"));
+}
+
+void VBoxProblemReporter::cannotRestoreSnapshot (const CConsole &aConsole,
                                                  const QString &aSnapshotName)
 {
     message (mainWindowShown(), Error,
-        tr ("Failed to discard the snapshot <b>%1</b> of the virtual "
-            "machine <b>%2</b>.")
+        tr ("Failed to restore the snapshot <b>%1</b> of the virtual machine <b>%2</b>.")
             .arg (aSnapshotName)
             .arg (CConsole (aConsole).GetMachine().GetName()),
         formatErrorInfo (aConsole));
 }
 
-void VBoxProblemReporter::cannotDiscardSnapshot (const CProgress &aProgress,
+void VBoxProblemReporter::cannotRestoreSnapshot (const CProgress &aProgress,
                                                  const QString &aSnapshotName)
 {
     CConsole console (CProgress (aProgress).GetInitiator());
 
     message (mainWindowShown(), Error,
-        tr ("Failed to discard the snapshot <b>%1</b> of the virtual "
-            "machine <b>%2</b>.")
+        tr ("Failed to restore the snapshot <b>%1</b> of the virtual machine <b>%2</b>.")
             .arg (aSnapshotName)
             .arg (console.GetMachine().GetName()),
         formatErrorInfo (aProgress.GetErrorInfo()));
 }
 
-void VBoxProblemReporter::cannotDiscardCurrentState (const CConsole &console)
+void VBoxProblemReporter::cannotDeleteSnapshot (const CConsole &aConsole,
+                                                const QString &aSnapshotName)
 {
-    message (
-        mainWindowShown(),
-        Error,
-        tr ("Failed to discard the current state of the virtual "
-            "machine <b>%1</b>.")
-            .arg (CConsole (console).GetMachine().GetName()),
-        formatErrorInfo (console));
+    message (mainWindowShown(), Error,
+        tr ("Failed to delete the snapshot <b>%1</b> of the virtual machine <b>%2</b>.")
+            .arg (aSnapshotName)
+            .arg (CConsole (aConsole).GetMachine().GetName()),
+        formatErrorInfo (aConsole));
 }
 
-void VBoxProblemReporter::cannotDiscardCurrentState (const CProgress &progress)
+void VBoxProblemReporter::cannotDeleteSnapshot (const CProgress &aProgress,
+                                                const QString &aSnapshotName)
 {
-    CConsole console (CProgress (progress).GetInitiator());
+    CConsole console (CProgress (aProgress).GetInitiator());
 
-    message (
-        mainWindowShown(),
-        Error,
-        tr ("Failed to discard the current state of the virtual "
-            "machine <b>%1</b>.")
+    message (mainWindowShown(), Error,
+        tr ("Failed to delete the snapshot <b>%1</b> of the virtual machine <b>%2</b>.")
+            .arg (aSnapshotName)
             .arg (console.GetMachine().GetName()),
-        formatErrorInfo (progress.GetErrorInfo()));
-}
-
-void VBoxProblemReporter::cannotDiscardCurrentSnapshotAndState (const CConsole &console)
-{
-    message (
-        mainWindowShown(),
-        Error,
-        tr ("Failed to discard the current snapshot and the current state "
-            "of the virtual machine <b>%1</b>.")
-            .arg (CConsole (console).GetMachine().GetName()),
-        formatErrorInfo (console));
-}
-
-void VBoxProblemReporter::cannotDiscardCurrentSnapshotAndState (const CProgress &progress)
-{
-    CConsole console (CProgress (progress).GetInitiator());
-
-    message (
-        mainWindowShown(),
-        Error,
-        tr ("Failed to discard the current snapshot and the current state "
-            "of the virtual machine <b>%1</b>.")
-            .arg (console.GetMachine().GetName()),
-        formatErrorInfo (progress.GetErrorInfo()));
+        formatErrorInfo (aProgress.GetErrorInfo()));
 }
 
 void VBoxProblemReporter::cannotFindMachineByName (const CVirtualBox &vbox,
@@ -976,7 +994,7 @@ bool VBoxProblemReporter::confirmReleaseMedium (QWidget *aParent,
             "<nobr><b>%2</b></nobr>?</p>"
             "<p>This will detach it from the "
             "following virtual machine(s): <b>%3</b>.</p>")
-            .arg (toAccusative (aMedium.type()))
+            .arg (mediumToAccusative (aMedium.type()))
             .arg (aMedium.location())
             .arg (aUsage),
         0 /* aAutoConfirmId */,
@@ -991,12 +1009,12 @@ bool VBoxProblemReporter::confirmRemoveMedium (QWidget *aParent,
     QString msg =
         tr ("<p>Are you sure you want to remove the %1 "
             "<nobr><b>%2</b></nobr> from the list of known media?</p>")
-            .arg (toAccusative (aMedium.type()))
+            .arg (mediumToAccusative (aMedium.type()))
             .arg (aMedium.location());
 
-    if (aMedium.type() == VBoxDefs::MediaType_HardDisk)
+    if (aMedium.type() == VBoxDefs::MediumType_HardDisk)
     {
-        if (aMedium.state() == KMediaState_Inaccessible)
+        if (aMedium.state() == KMediumState_Inaccessible)
             msg +=
                 tr ("Note that this hard disk is inaccessible so that its "
                     "storage unit cannot be deleted right now.");
@@ -1052,15 +1070,15 @@ int VBoxProblemReporter::confirmDeleteHardDiskStorage (
 }
 
 void VBoxProblemReporter::cannotDeleteHardDiskStorage (QWidget *aParent,
-                                                       const CHardDisk &aHD,
+                                                       const CMedium &aHD,
                                                        const CProgress &aProgress)
 {
-    /* below, we use CHardDisk (aHD) to preserve current error info
+    /* below, we use CMedium (aHD) to preserve current error info
      * for formatErrorInfo() */
 
     message (aParent, Error,
         tr ("Failed to delete the storage unit of the hard disk <b>%1</b>.")
-            .arg (CHardDisk (aHD).GetLocation()),
+            .arg (CMedium (aHD).GetLocation()),
         !aHD.isOk() ? formatErrorInfo (aHD) :
         !aProgress.isOk() ? formatErrorInfo (aProgress) :
         formatErrorInfo (aProgress.GetErrorInfo()));
@@ -1090,26 +1108,42 @@ int VBoxProblemReporter::confirmChangeAddControllerSlots (QWidget *aParent) cons
         tr ("Change", "hard disk"));
 }
 
-int VBoxProblemReporter::confirmRunNewHDWzdOrVDM (QWidget* aParent)
+int VBoxProblemReporter::confirmRunNewHDWzdOrVDM (KDeviceType aDeviceType)
 {
-    return message (aParent, Info,
-        tr ("<p>There are no unused hard disks available for the newly created "
-            "attachment.</p>"
-            "<p>Press the <b>Create</b> button to start the <i>New Virtual "
-            "Disk</i> wizard and create a new hard disk, or press the "
-            "<b>Select</b> button to open the <i>Virtual Media Manager</i> "
-            "and select what to do.</p>"),
-        0, /* aAutoConfirmId */
-        QIMessageBox::Yes,
-        QIMessageBox::No | QIMessageBox::Default,
-        QIMessageBox::Cancel | QIMessageBox::Escape,
-        tr ("&Create", "hard disk"),
-        tr ("Select", "hard disk"));
+    switch (aDeviceType)
+    {
+        case KDeviceType_HardDisk:
+            return message (QApplication::activeWindow(), Info,
+                            tr ("<p>There are no unused mediums available for the newly "
+                                "created attachment.</p>"
+                                "<p>Press the <b>Create</b> button to start the <i>New "
+                                "Virtual Disk</i> wizard and create a new medium, "
+                                "or press the <b>Select</b> button to open the <i>Virtual "
+                                "Media Manager</i> and select what to do.</p>"),
+                            0, /* aAutoConfirmId */
+                            QIMessageBox::Yes,
+                            QIMessageBox::No | QIMessageBox::Default,
+                            QIMessageBox::Cancel | QIMessageBox::Escape,
+                            tr ("&Create", "medium"),
+                            tr ("&Select", "medium"));
+        default:
+            return message (QApplication::activeWindow(), Info,
+                            tr ("<p>There are no unused mediums available for the newly "
+                                "created attachment.</p>"
+                                "<p>Press the <b>Select</b> button to open the <i>Virtual "
+                                "Media Manager</i> and select what to do.</p>"),
+                            0, /* aAutoConfirmId */
+                            QIMessageBox::No | QIMessageBox::Default,
+                            QIMessageBox::Cancel | QIMessageBox::Escape,
+                            0,
+                            tr ("&Select", "medium"));
+    }
+    return QIMessageBox::Cancel;
 }
 
 void VBoxProblemReporter::cannotCreateHardDiskStorage (
     QWidget *aParent, const CVirtualBox &aVBox, const QString &aLocation,
-    const CHardDisk &aHD, const CProgress &aProgress)
+    const CMedium &aHD, const CProgress &aProgress)
 {
     message (aParent, Error,
         tr ("Failed to create the hard disk storage <nobr><b>%1</b>.</nobr>")
@@ -1120,71 +1154,83 @@ void VBoxProblemReporter::cannotCreateHardDiskStorage (
         formatErrorInfo (aProgress.GetErrorInfo()));
 }
 
-void VBoxProblemReporter::cannotAttachHardDisk (
-    QWidget *aParent, const CMachine &aMachine, const QString &aLocation,
-    KStorageBus aBus, LONG aChannel, LONG aDevice)
+void VBoxProblemReporter::cannotAttachDevice (QWidget *aParent, const CMachine &aMachine,
+                                              VBoxDefs::MediumType aType, const QString &aLocation,
+                                              KStorageBus aBus, LONG aChannel, LONG aDevice)
 {
+    QString what (deviceToAccusative (aType));
+    if (!aLocation.isNull())
+        what += QString (" (<nobr><b>%1</b></nobr>)").arg (aLocation);
+
     message (aParent, Error,
-        tr ("Failed to attach the hard disk <nobr><b>%1</b></nobr> "
-            "to the slot <i>%2</i> of the machine <b>%3</b>.")
-            .arg (aLocation)
-            .arg (vboxGlobal().toFullString (aBus, aChannel, aDevice))
-            .arg (CMachine (aMachine).GetName()),
-        formatErrorInfo (aMachine));
+             tr ("Failed to attach the %1 to the slot <i>%2</i> of the machine <b>%3</b>.")
+                 .arg (what)
+                 .arg (vboxGlobal().toString (StorageSlot (aBus, aChannel, aDevice)))
+                 .arg (CMachine (aMachine).GetName()),
+             formatErrorInfo (aMachine));
 }
 
-void VBoxProblemReporter::cannotDetachHardDisk (
-    QWidget *aParent, const CMachine &aMachine, const QString &aLocation,
-    KStorageBus aBus, LONG aChannel, LONG aDevice)
+void VBoxProblemReporter::cannotDetachDevice (QWidget *aParent, const CMachine &aMachine,
+                                              VBoxDefs::MediumType aType, const QString &aLocation,
+                                              KStorageBus aBus, LONG aChannel, LONG aDevice)
 {
+    QString what (deviceToAccusative (aType));
+    if (!aLocation.isNull())
+        what += QString (" (<nobr><b>%1</b></nobr>)").arg (aLocation);
+
     message (aParent, Error,
-        tr ("Failed to detach the hard disk <nobr><b>%1</b></nobr> "
-            "from the slot <i>%2</i> of the machine <b>%3</b>.")
-            .arg (aLocation)
-            .arg (vboxGlobal().toFullString (aBus, aChannel, aDevice))
-            .arg (CMachine (aMachine).GetName()),
-         formatErrorInfo (aMachine));
+             tr ("Failed to detach the %1 from the slot <i>%2</i> of the machine <b>%3</b>.")
+                 .arg (what)
+                 .arg (vboxGlobal().toString (StorageSlot (aBus, aChannel, aDevice)))
+                 .arg (CMachine (aMachine).GetName()),
+             formatErrorInfo (aMachine));
 }
 
-void VBoxProblemReporter::
-cannotMountMedium (QWidget *aParent, const CMachine &aMachine,
-                   const VBoxMedium &aMedium, const COMResult &aResult)
+int VBoxProblemReporter::cannotRemountMedium (QWidget *aParent, const CMachine &aMachine,
+                                              const VBoxMedium &aMedium, bool aMount, bool aRetry)
 {
     /** @todo (translation-related): the gender of "the" in translations
      * will depend on the gender of aMedium.type(). */
-    message (aParent, Error,
-        tr ("Failed to mount the %1 <nobr><b>%2</b></nobr> "
-            "to the machine <b>%3</b>.")
-            .arg (toAccusative (aMedium.type()))
-            .arg (aMedium.location())
+    QString text;
+    if (aMount)
+    {
+        text = tr ("Unable to mount the %1 <nobr><b>%2</b></nobr> to the machine <b>%3</b>.");
+        if (aRetry) text += tr (" Would you like to forcedly mount this medium?");
+    }
+    else
+    {
+        text = tr ("Unable to unmount the %1 <nobr><b>%2</b></nobr> from the machine <b>%3</b>.");
+        if (aRetry) text += tr (" Would you like to forcedly unmount this medium?");
+    }
+    if (aRetry)
+    {
+        return messageOkCancel (aParent, Question, text
+            .arg (mediumToAccusative (aMedium.type(), aMedium.isHostDrive()))
+            .arg (aMedium.isHostDrive() ? aMedium.name() : aMedium.location())
             .arg (CMachine (aMachine).GetName()),
-      formatErrorInfo (aResult));
-}
-
-void VBoxProblemReporter::
-cannotUnmountMedium (QWidget *aParent, const CMachine &aMachine,
-                     const VBoxMedium &aMedium, const COMResult &aResult)
-{
-    /** @todo (translation-related): the gender of "the" in translations
-     * will depend on the gender of aMedium.type(). */
-    message (aParent, Error,
-        tr ("Failed to unmount the %1 <nobr><b>%2</b></nobr> "
-            "from the machine <b>%3</b>.")
-            .arg (toAccusative (aMedium.type()))
-            .arg (aMedium.location())
+            formatErrorInfo (aMachine),
+            0 /* Auto Confirm ID */,
+            tr ("Force Unmount"));
+    }
+    else
+    {
+        return message (aParent, Error, text
+            .arg (mediumToAccusative (aMedium.type(), aMedium.isHostDrive()))
+            .arg (aMedium.isHostDrive() ? aMedium.name() : aMedium.location())
             .arg (CMachine (aMachine).GetName()),
-      formatErrorInfo (aResult));
+            formatErrorInfo (aMachine));
+    }
 }
 
 void VBoxProblemReporter::cannotOpenMedium (
     QWidget *aParent, const CVirtualBox &aVBox,
-    VBoxDefs::MediaType aType, const QString &aLocation)
+    VBoxDefs::MediumType aType, const QString &aLocation)
 {
     /** @todo (translation-related): the gender of "the" in translations
      * will depend on the gender of aMedium.type(). */
     message (aParent, Error,
         tr ("Failed to open the %1 <nobr><b>%2</b></nobr>.")
-            .arg (toAccusative (aType))
+            .arg (mediumToAccusative (aType))
             .arg (aLocation),
         formatErrorInfo (aVBox));
 }
@@ -1196,9 +1242,17 @@ void VBoxProblemReporter::cannotCloseMedium (
      * will depend on the gender of aMedium.type(). */
     message (aParent, Error,
         tr ("Failed to close the %1 <nobr><b>%2</b></nobr>.")
-            .arg (toAccusative (aMedium.type()))
+            .arg (mediumToAccusative (aMedium.type()))
             .arg (aMedium.location()),
         formatErrorInfo (aResult));
+}
+
+void VBoxProblemReporter::cannotEjectDrive()
+{
+    message (mainWindowShown(), Warning,
+             tr ("Failed to eject the disk from the virtual drive. "
+                 "The drive may be locked by the guest operating system. "
+                 "Please check this and try again."));
 }
 
 void VBoxProblemReporter::cannotOpenSession (const CSession &session)
@@ -1440,6 +1494,16 @@ void VBoxProblemReporter::cannotDownloadGuestAdditions (const QString &aURL,
              tr ("<p>Failed to download the VirtualBox Guest Additions CD "
                  "image from <nobr><a href=\"%1\">%2</a>.</nobr></p><p>%3</p>")
                  .arg (aURL).arg (aURL).arg (aReason));
+}
+
+void VBoxProblemReporter::cannotMountGuestAdditions (const QString &aMachineName)
+{
+    message (&vboxGlobal().consoleWnd(), Error,
+             tr ("<p>Could not attach the VirtualBox Guest Additions "
+                 "installer to the virtual machine <b>%1</b>, as the machine "
+                 "has no CD/DVD-ROM drives. Please add a drive using the "
+                 "storage page of the virtual machine settings dialog.</p>")
+                 .arg (aMachineName));
 }
 
 bool VBoxProblemReporter::confirmDownloadAdditions (const QString &aURL,
@@ -1742,26 +1806,21 @@ bool VBoxProblemReporter::remindAboutInaccessibleMedia()
 }
 
 /**
- * Shows a list of auto-converted files and asks the user to either Save, Backup
- * or Cancel to leave them as is and exit VirtualBox.
+ * Shows user a proposal to either convert configuration files or
+ * Exit the application leaving all as already is.
  *
- * @param aFormatVersion    Recent settings file format version.
- * @param aFileList         List of auto-converted files (may use Qt HTML).
- * @param aAfterRefresh     @true when called after the VM refresh.
+ * @param aFileList      List of files for auto-convertion (may use Qt HTML).
+ * @param aAfterRefresh  @true when called after the VM refresh.
  *
- * @return QIMessageBox::Yes (Save), QIMessageBox::No (Backup),
- *         QIMessageBox::Cancel (Exit)
+ * @return QIMessageBox::Ok (Save + Backup), QIMessageBox::Cancel (Exit)
  */
-int VBoxProblemReporter::warnAboutAutoConvertedSettings (const QString &aFormatVersion,
-                                                         const QString &aFileList,
-                                                         bool aAfterRefresh)
+int VBoxProblemReporter::warnAboutSettingsAutoConversion (const QString &aFileList,
+                                                          bool aAfterRefresh)
 {
-    /* The aAfterRefresh parameter says if an item which was inaccessible is
-       become accessible after a refresh. For the time beeing we present the
-       old message dialog. This case should be rather unlikly. */
     if (!aAfterRefresh)
     {
-        int rc = message (mainWindowShown(), Info,
+        /* Common variant for all VMs */
+        return message (mainWindowShown(), Info,
             tr ("<p>Your existing VirtualBox settings files will be automatically "
                 "converted from the old format to a new format necessary for the "
                 "new version of VirtualBox.</p>"
@@ -1773,76 +1832,26 @@ int VBoxProblemReporter::warnAboutAutoConvertedSettings (const QString &aFormatV
             QIMessageBox::Cancel | QIMessageBox::Escape,
             0,
             0,
-            tr ("E&xit", "warnAboutAutoConvertedSettings message box"));
-
-        if (rc == QIMessageBox::Cancel)
-            return QIMessageBox::Cancel;
-
-        /* We backup in any case */
-        return QIMessageBox::No;
-
-#if 0
-        int rc = message (mainWindowShown(), Info,
-            tr ("<p>Your existing VirtualBox settings files were automatically "
+            tr ("E&xit", "warnAboutSettingsAutoConversion message box"));
+    }
+    else
+    {
+        /* Particular VM variant */
+        return message (mainWindowShown(), Info,
+            tr ("<p>The following VirtualBox settings files will be automatically "
                 "converted from the old format to a new format necessary for the "
                 "new version of VirtualBox.</p>"
-                "<p>Press <b>OK</b> to start VirtualBox now or press <b>More</b> if "
-                "you want to get more information about what files were converted "
-                "and access additional actions.</p>"
-                "<p>Press <b>Exit</b> to terminate the VirtualBox "
-                "application without saving the results of the conversion to "
-                "disk.</p>"),
+                "<p>Press <b>OK</b> to start VirtualBox now or press <b>Exit</b> if "
+                "you want to terminate the VirtualBox "
+                "application without any further actions.</p>"),
+            QString ("<!--EOM-->%1").arg (aFileList),
             NULL /* aAutoConfirmId */,
             QIMessageBox::Ok | QIMessageBox::Default,
-            QIMessageBox::No,
             QIMessageBox::Cancel | QIMessageBox::Escape,
             0,
-            tr ("&More", "warnAboutAutoConvertedSettings message box"),
-            tr ("E&xit", "warnAboutAutoConvertedSettings message box"));
-
-        /* in the simplest case we backup */
-        if (rc == QIMessageBox::Ok)
-            return QIMessageBox::No;
-
-        if (rc == QIMessageBox::Cancel)
-            return QIMessageBox::Cancel;
-#endif
+            0,
+            tr ("E&xit", "warnAboutSettingsAutoConversion message box"));
     }
-
-    return message (mainWindowShown(), Info,
-        tr ("<p>The following VirtualBox settings files have been "
-            "automatically converted to the new settings file format "
-            "version <b>%1</b>.</p>"
-            "<p>However, the results of the conversion were not saved back "
-            "to disk yet. Please press:</p>"
-            "<ul>"
-            "<li><b>Backup</b> to create backup copies of the settings files in "
-            "the old format before saving them in the new format;</li>"
-            "<li><b>Overwrite</b> to save all auto-converted files without "
-            "creating backup copies (it will not be possible to use these "
-            "settings files with an older version of VirtualBox "
-            "afterwards);</li>"
-            "%2"
-            "</ul>"
-            "<p>It is recommended to always select <b>Backup</b> because in "
-            "this case it will be possible to go back to the previous "
-            "version of VirtualBox (if necessary) without losing your current "
-            "settings. See the VirtualBox Manual for more information about "
-            "downgrading.</p>")
-            .arg (aFormatVersion)
-            .arg (aAfterRefresh ? QString::null :
-                  tr ("<li><b>Exit</b> to terminate VirtualBox without saving "
-                      "the results of the conversion to disk.</li>")),
-        QString ("<!--EOM-->%1").arg (aFileList),
-        NULL /* aAutoConfirmId */,
-        QIMessageBox::Yes,
-        aAfterRefresh ? (QIMessageBox::No | QIMessageBox::Default | QIMessageBox::Escape) :
-                        (QIMessageBox::No | QIMessageBox::Default),
-        aAfterRefresh ? 0 : (QIMessageBox::Cancel | QIMessageBox::Escape),
-        tr ("O&verwrite", "warnAboutAutoConvertedSettings message box"),
-        tr ("&Backup", "warnAboutAutoConvertedSettings message box"),
-        aAfterRefresh ? QString::null :
-            tr ("E&xit", "warnAboutAutoConvertedSettings message box"));
 }
 
 /**
@@ -2201,15 +2210,35 @@ void VBoxProblemReporter::showRuntimeError (const CConsole &aConsole, bool fatal
 }
 
 /* static */
-QString VBoxProblemReporter::toAccusative (VBoxDefs::MediaType aType)
+QString VBoxProblemReporter::mediumToAccusative (VBoxDefs::MediumType aType, bool aIsHostDrive /* = false */)
 {
     QString type =
-        aType == VBoxDefs::MediaType_HardDisk ?
-            tr ("hard disk", "failed to close ...") :
-        aType == VBoxDefs::MediaType_DVD ?
-            tr ("CD/DVD image", "failed to close ...") :
-        aType == VBoxDefs::MediaType_Floppy ?
-            tr ("floppy image", "failed to close ...") :
+        aType == VBoxDefs::MediumType_HardDisk ?
+            tr ("hard disk", "failed to mount ...") :
+        aType == VBoxDefs::MediumType_DVD && aIsHostDrive ?
+            tr ("CD/DVD", "failed to mount ... host-drive") :
+        aType == VBoxDefs::MediumType_DVD && !aIsHostDrive ?
+            tr ("CD/DVD image", "failed to mount ...") :
+        aType == VBoxDefs::MediumType_Floppy && aIsHostDrive ?
+            tr ("floppy", "failed to mount ... host-drive") :
+        aType == VBoxDefs::MediumType_Floppy && !aIsHostDrive ?
+            tr ("floppy image", "failed to mount ...") :
+        QString::null;
+
+    Assert (!type.isNull());
+    return type;
+}
+
+/* static */
+QString VBoxProblemReporter::deviceToAccusative (VBoxDefs::MediumType aType)
+{
+    QString type =
+        aType == VBoxDefs::MediumType_HardDisk ?
+            tr ("hard disk", "failed to attach ...") :
+        aType == VBoxDefs::MediumType_DVD ?
+            tr ("CD/DVD device", "failed to attach ...") :
+        aType == VBoxDefs::MediumType_Floppy ?
+            tr ("floppy device", "failed to close ...") :
         QString::null;
 
     Assert (!type.isNull());
@@ -2360,8 +2389,18 @@ void VBoxProblemReporter::showHelpWebDialog()
 void VBoxProblemReporter::showHelpAboutDialog()
 {
     CVirtualBox vbox = vboxGlobal().virtualBox();
-    QString fullVersion (QString ("%1 r%2").arg (vbox.GetVersion())
-                                          .arg (vbox.GetRevision()));
+    QString fullVersion ;
+    if (vboxGlobal().brandingIsActive())
+    {
+        fullVersion = (QString ("%1 r%2 - %3").arg (vbox.GetVersion())
+                                              .arg (vbox.GetRevision())
+                                              .arg (vboxGlobal().brandingGetKey("Name")));
+    }
+    else
+    {
+        fullVersion = (QString ("%1 r%2").arg (vbox.GetVersion())
+                                         .arg (vbox.GetRevision()));
+    }
     AssertWrapperOk (vbox);
 
     // this (QWidget*) cast is necessary to work around a gcc-3.2 bug */

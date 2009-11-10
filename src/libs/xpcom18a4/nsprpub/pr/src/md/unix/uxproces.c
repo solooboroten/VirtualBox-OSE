@@ -159,6 +159,9 @@ _MD_unix_terminate_waitpid_daemon(void)
 static PRStatus _MD_InitProcesses(void);
 #if !defined(_PR_NATIVE_THREADS)
 static void pr_InstallSigchldHandler(void);
+#ifdef VBOX
+static void (*old_sig_handler)(int) = NULL;
+#endif /* VBOX */
 #endif
 
 static PRProcess *
@@ -670,7 +673,15 @@ static void WaitPidDaemonThread(void *unused)
 
 	while (1) {
 	    do {
+#ifdef VBOX
+	        /*
+	         * make sure we wait only for child of our group
+	         * to ensure we do not interfere with RT
+	         */
+	        pid = waitpid((pid_t) 0, &status, 0);
+#else
 	        pid = waitpid((pid_t) -1, &status, 0);
+#endif
 	    } while ((pid_t) -1 == pid && EINTR == errno);
 
             /*
@@ -760,7 +771,15 @@ static void WaitPidDaemonThread(void *unused)
 
 	while (1) {
 	    do {
+#ifdef VBOX
+	        /*
+	         * make sure we wait only for child of our group
+	         * to ensure we do not interfere with RT
+	         */
+	        pid = waitpid((pid_t) 0, &status, WNOHANG);
+#else
 	        pid = waitpid((pid_t) -1, &status, WNOHANG);
+#endif
 	    } while ((pid_t) -1 == pid && EINTR == errno);
 	    if (0 == pid) break;
 	    if ((pid_t) -1 == pid) {
@@ -796,6 +815,11 @@ static void pr_SigchldHandler(int sig)
 #endif
 
     errno = errnoCopy;
+#ifdef VBOX
+    /** @todo: check if the sig handler fix is proper here */
+    if(old_sig_handler && old_sig_handler != SIG_IGN)
+        old_sig_handler(sig);
+#endif /* VBOX */
 }
 
 static void pr_InstallSigchldHandler()
@@ -812,6 +836,9 @@ static void pr_InstallSigchldHandler()
     act.sa_flags = SA_NOCLDSTOP | SA_RESTART;
     rv = sigaction(SIGCHLD, &act, &oact);
     PR_ASSERT(0 == rv);
+#ifdef VBOX
+    old_sig_handler = oact.sa_handler;
+#endif /* VBOX */
     /* Make sure we are not overriding someone else's SIGCHLD handler */
 #ifndef _PR_SHARE_CLONES
     PR_ASSERT(oact.sa_handler == SIG_DFL);

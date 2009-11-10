@@ -27,6 +27,7 @@
 
 #include <iprt/cdefs.h>
 
+/** @todo Use the-nt-kernel.h and keep the messy stuff all in one place? */
 #ifdef IN_RING0
 # if (_MSC_VER >= 1400) && !defined(VBOX_WITH_PATCHED_DDK)
 #  include <iprt/asm.h>
@@ -51,13 +52,15 @@ RT_C_DECLS_END
 #endif
 
 #include <iprt/spinlock.h>
+#include <iprt/memobj.h>
 
+#include <VBox/VMMDev.h>
 #include <VBox/VBoxGuest.h>
+
 
 /*******************************************************************************
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
-
 
 /* debug printf */
 # define OSDBGPRINT(a) DbgPrint a
@@ -177,6 +180,9 @@ typedef struct VBOXGUESTDEVEXT
     PVOID hypervisorMapping;
     // size in bytes of the hypervisor mapping
     ULONG hypervisorMappingSize;
+
+    /* Patch memory object. */
+    RTR0MEMOBJ PatchMemObj;
 
     /* Physical address and length of VMMDev memory */
     PHYSICAL_ADDRESS memoryAddress;

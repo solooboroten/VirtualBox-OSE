@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 20998 2009-06-26 23:01:02Z vboxsync $
+# $Id: Makefile.kmk 24061 2009-10-25 23:54:32Z vboxsync $
 ## @file
 # Top-level makefile for the VMM.
 #
@@ -54,6 +54,10 @@ endif
 ifdef VBOX_WITH_PDM_ASYNC_COMPLETION
  VMMR3_DEFS    += VBOX_WITH_PDM_ASYNC_COMPLETION
 endif
+ifdef VBOX_WITH_LIVE_MIGRATION
+ VMMR3_DEFS    += VBOX_WITH_LIVE_MIGRATION
+endif
+VMMR3_DEFS.darwin = VMM_R0_SWITCH_STACK
 VMMR3_DEFS.darwin.x86 = \
 	VBOX_WITH_2X_4GB_ADDR_SPACE   VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R3 \
 	VBOX_WITH_HYBRID_32BIT_KERNEL VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R3
@@ -73,6 +77,7 @@ VMMR3_SOURCES   = \
 	DBGFAddr.cpp \
 	DBGFAddrSpace.cpp \
 	DBGFBp.cpp \
+	DBGFCpu.cpp \
 	DBGFDisas.cpp \
 	DBGFInfo.cpp \
 	DBGFLog.cpp \
@@ -81,6 +86,8 @@ VMMR3_SOURCES   = \
 	DBGFStack.cpp \
 	DBGFSym.cpp \
 	EM.cpp \
+	EMRaw.cpp \
+	EMHwaccm.cpp \
 	IOM.cpp \
 	GMM.cpp \
 	MM.cpp \
@@ -103,6 +110,7 @@ VMMR3_SOURCES   = \
 	PGMMap.cpp \
 	PGMPhys.cpp \
 	PGMPool.cpp \
+	PGMSavedState.cpp \
 	SELM.cpp \
 	SSM.cpp \
 	STAM.cpp \
@@ -164,7 +172,10 @@ endif
 ifdef VBOX_WITH_PDM_ASYNC_COMPLETION
  VMMR3_SOURCES += \
  	PDMAsyncCompletion.cpp \
- 	PDMAsyncCompletionFile.cpp
+ 	PDMAsyncCompletionFile.cpp \
+ 	PDMAsyncCompletionFileFailsafe.cpp \
+ 	PDMAsyncCompletionFileNormal.cpp \
+ 	PDMAsyncCompletionFileCache.cpp
 endif
 
 VMMR3_SOURCES.x86 += \
@@ -180,6 +191,11 @@ VMMR3_SOURCES.amd64 = \
 VMMR3_SOURCES.darwin.x86 += \
 	VMMSwitcher/AMD64ToPAE.asm
 
+# SSM wish to know the build type, host os and arch.
+SSM.cpp_DEFS +=	\
+	KBUILD_TYPE=\"$(KBUILD_TYPE)\" \
+	KBUILD_TARGET=\"$(KBUILD_TARGET)\" \
+	KBUILD_TARGET_ARCH=\"$(KBUILD_TARGET_ARCH)\"
 
 #
 # The VMM DLL.
@@ -303,6 +319,7 @@ ifdef VBOX_WITH_VMI
  VMMGC_DEFS    += VBOX_WITH_VMI
 endif
 ifeq ($(KBUILD_TARGET_ARCH),x86)
+ VMMGC_DEFS.darwin = VMM_R0_SWITCH_STACK
  VMMGC_DEFS.darwin = \
  	VBOX_WITH_2X_4GB_ADDR_SPACE   VBOX_WITH_2X_4GB_ADDR_SPACE_IN_RC \
  	VBOX_WITH_HYBRID_32BIT_KERNEL VBOX_WITH_HYBRID_32BIT_KERNEL_IN_RC
@@ -413,6 +430,7 @@ endif
 ifdef VBOX_WITH_MULTI_CORE
  VMMR0_DEFS    += VBOX_WITH_MULTI_CORE
 endif
+VMMR0_DEFS.darwin = VMM_R0_SWITCH_STACK
 VMMR0_DEFS.darwin.x86 = \
 	VBOX_WITH_2X_4GB_ADDR_SPACE   VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0 \
 	VBOX_WITH_HYBRID_32BIT_KERNEL VBOX_WITH_HYBRID_32BIT_KERNEL_IN_R0

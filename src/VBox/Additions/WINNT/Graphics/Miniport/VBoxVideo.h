@@ -39,7 +39,6 @@ RT_C_DECLS_BEGIN
 #include "video.h"
 RT_C_DECLS_END
 
-
 #define VBE_DISPI_IOPORT_INDEX          0x01CE
 #define VBE_DISPI_IOPORT_DATA           0x01CF
 #define VBE_DISPI_INDEX_ID              0x0
@@ -50,10 +49,6 @@ RT_C_DECLS_END
 #define VBE_DISPI_INDEX_VIRT_WIDTH      0x6
 #define VBE_DISPI_INDEX_VIRT_HEIGHT     0x7
 #define VBE_DISPI_INDEX_VBOX_VIDEO      0xa
-#ifdef VBOX_WITH_HGSMI
-#define VBE_DISPI_INDEX_VBVA_HOST       0xb
-#define VBE_DISPI_INDEX_VBVA_GUEST      0xc
-#endif /* VBOX_WITH_HGSMI */
 
 #define VBE_DISPI_ID2                   0xB0C2
 /* The VBOX interface id. Indicates support for VBE_DISPI_INDEX_VBOX_VIDEO. */
@@ -68,6 +63,11 @@ RT_C_DECLS_END
 #define VBE_DISPI_TOTAL_VIDEO_MEMORY_MB 4
 #define VBE_DISPI_TOTAL_VIDEO_MEMORY_KB	        (VBE_DISPI_TOTAL_VIDEO_MEMORY_MB * 1024)
 #define VBE_DISPI_TOTAL_VIDEO_MEMORY_BYTES      (VBE_DISPI_TOTAL_VIDEO_MEMORY_KB * 1024)
+
+#ifdef VBOX_WITH_HGSMI
+#define VGA_PORT_HGSMI_HOST  0x3b0
+#define VGA_PORT_HGSMI_GUEST 0x3d0
+#endif /* VBOX_WITH_HGSMI */
 
 typedef struct _DEVICE_EXTENSION
 {
@@ -115,6 +115,8 @@ typedef struct _DEVICE_EXTENSION
                                                 */
 #ifdef VBOX_WITH_HGSMI
            volatile HGSMIHOSTFLAGS * pHostFlags; /* HGSMI host flags */
+           volatile bool bHostCmdProcessing;
+           PSPIN_LOCK pSynchLock;
 #endif
 
            PVOID pvAdapterInformation;         /* The pointer to the last 4K of VRAM.
@@ -122,6 +124,8 @@ typedef struct _DEVICE_EXTENSION
                                                 */
 
            ULONG ulMaxFrameBufferSize;         /* The size of the VRAM allocated for the a single framebuffer. */
+
+           BOOLEAN fMouseHidden;               /* Has the mouse cursor been hidden by the guest? */
 
 #ifndef VBOX_WITH_HGSMI
            ULONG ulDisplayInformationSize;     /* The size of the Display information, which is at offset:
@@ -138,8 +142,14 @@ typedef struct _DEVICE_EXTENSION
 
            HGSMIHEAP hgsmiAdapterHeap;
 
-           volatile bool bPollingStop;
-           RTTHREAD PollingThread;
+           /* The IO Port Number for host commands. */
+           RTIOPORT IOPortHost;
+
+           /* The IO Port Number for guest commands. */
+           RTIOPORT IOPortGuest;
+
+           /* Video Port API dynamically picked up at runtime for binary backwards compatibility with older NT versions */
+           VBOXVIDEOPORTPROCS VideoPortProcs;
 #endif /* VBOX_WITH_HGSMI */
        } primary;
 
@@ -153,6 +163,16 @@ typedef struct _DEVICE_EXTENSION
    HGSMIAREA areaDisplay;                      /* Entire VRAM chunk for this display device. */
 #endif /* VBOX_WITH_HGSMI */
 } DEVICE_EXTENSION, *PDEVICE_EXTENSION;
+
+#define DEV_MOUSE_HIDDEN(dev) ((dev)->pPrimary->u.primary.fMouseHidden)
+#define DEV_SET_MOUSE_HIDDEN(dev)   \
+do { \
+    (dev)->pPrimary->u.primary.fMouseHidden = TRUE; \
+} while (0)
+#define DEV_SET_MOUSE_SHOWN(dev)   \
+do { \
+    (dev)->pPrimary->u.primary.fMouseHidden = FALSE; \
+} while (0)
 
 extern "C"
 {
@@ -173,6 +193,11 @@ BOOLEAN VBoxVideoInitialize(PVOID HwDeviceExtension);
 BOOLEAN VBoxVideoStartIO(
    PVOID HwDeviceExtension,
    PVIDEO_REQUEST_PACKET RequestPacket);
+
+#if defined(VBOX_WITH_HGSMI) && defined(VBOX_WITH_VIDEOHWACCEL)
+BOOLEAN VBoxVideoInterrupt(PVOID  HwDeviceExtension);
+#endif
+
 
 BOOLEAN VBoxVideoResetHW(
    PVOID HwDeviceExtension,
@@ -248,7 +273,35 @@ void VBoxUnmapAdapterMemory (PDEVICE_EXTENSION PrimaryExtension,
 void VBoxComputeFrameBufferSizes (PDEVICE_EXTENSION PrimaryExtension);
 
 #ifdef VBOX_WITH_HGSMI
-BOOLEAN VBoxHGSMIIsSupported (void);
+
+/*
+ * Host and Guest port IO helpers.
+ */
+DECLINLINE(void) VBoxHGSMIHostWrite(PDEVICE_EXTENSION PrimaryExtension, ULONG data)
+{
+    VideoPortWritePortUlong((PULONG)PrimaryExtension->pPrimary->u.primary.IOPortHost, data);
+}
+
+DECLINLINE(ULONG) VBoxHGSMIHostRead(PDEVICE_EXTENSION PrimaryExtension)
+{
+    return VideoPortReadPortUlong((PULONG)PrimaryExtension->pPrimary->u.primary.IOPortHost);
+}
+
+DECLINLINE(void) VBoxHGSMIGuestWrite(PDEVICE_EXTENSION PrimaryExtension, ULONG data)
+{
+    VideoPortWritePortUlong((PULONG)PrimaryExtension->pPrimary->u.primary.IOPortGuest, data);
+}
+
+DECLINLINE(ULONG) VBoxHGSMIGuestRead(PDEVICE_EXTENSION PrimaryExtension)
+{
+    return VideoPortReadPortUlong((PULONG)PrimaryExtension->pPrimary->u.primary.IOPortGuest);
+}
+
+BOOLEAN VBoxHGSMIIsSupported (PDEVICE_EXTENSION PrimaryExtension);
+
+void VBoxSetupVideoPortFunctions(PDEVICE_EXTENSION PrimaryExtension,
+                                VBOXVIDEOPORTPROCS *pCallbacks,
+                                PVIDEO_PORT_CONFIG_INFO pConfigInfo);
 
 VOID VBoxSetupDisplaysHGSMI (PDEVICE_EXTENSION PrimaryExtension,
                              PVIDEO_PORT_CONFIG_INFO pConfigInfo,
@@ -256,7 +309,6 @@ VOID VBoxSetupDisplaysHGSMI (PDEVICE_EXTENSION PrimaryExtension,
 BOOLEAN vboxUpdatePointerShape (PDEVICE_EXTENSION PrimaryExtension,
                                 PVIDEO_POINTER_ATTRIBUTES pointerAttr,
                                 uint32_t cbLength);
-
 DECLCALLBACK(void) hgsmiHostCmdComplete (HVBOXVIDEOHGSMI hHGSMI, struct _VBVAHOSTCMD * pCmd);
 DECLCALLBACK(int) hgsmiHostCmdRequest (HVBOXVIDEOHGSMI hHGSMI, uint8_t u8Channel, struct _VBVAHOSTCMD ** ppCmd);
 
@@ -264,6 +316,14 @@ DECLCALLBACK(int) hgsmiHostCmdRequest (HVBOXVIDEOHGSMI hHGSMI, uint8_t u8Channel
 int vboxVBVAChannelDisplayEnable(PDEVICE_EXTENSION PrimaryExtension,
         int iDisplay, /* negative would mean this is a miniport handler */
         uint8_t u8Channel);
+
+VOID VBoxVideoHGSMIDpc(
+    IN PVOID  HwDeviceExtension,
+    IN PVOID  Context
+    );
+
+void HGSMIClearIrq (PDEVICE_EXTENSION PrimaryExtension);
+
 #endif /* VBOX_WITH_HGSMI */
 } /* extern "C" */
 

@@ -1,4 +1,4 @@
-/* $Id: HWACCMInternal.h 21001 2009-06-26 23:18:11Z vboxsync $ */
+/* $Id: HWACCMInternal.h 24243 2009-11-02 10:24:15Z vboxsync $ */
 /** @file
  * HWACCM - Internal header file.
  */
@@ -33,6 +33,7 @@
 #include <iprt/memobj.h>
 #include <iprt/cpuset.h>
 #include <iprt/mp.h>
+#include <iprt/avl.h>
 
 #if HC_ARCH_BITS == 64 || defined(VBOX_WITH_HYBRID_32BIT_KERNEL) || defined (VBOX_WITH_64_BITS_GUESTS)
 /* Enable 64 bits guest support. */
@@ -43,6 +44,17 @@
 #define HWACCM_VMX_EMULATE_REALMODE
 #define HWACCM_VTX_WITH_EPT
 #define HWACCM_VTX_WITH_VPID
+
+
+#if 0
+/* Seeing somewhat random behaviour on my Nehalem system with auto-save of guest MSRs;
+ * for some strange reason the CPU doesn't save the MSRs during the VM-exit.
+ * Clearly visible with a dual VCPU configured OpenSolaris 200906 live cd VM.
+ *
+ * Note: change the assembly files when enabling this! (remove the manual auto load/save)
+ */
+#define VBOX_WITH_AUTO_MSR_LOAD_RESTORE
+#endif
 
 RT_C_DECLS_BEGIN
 
@@ -130,9 +142,18 @@ RT_C_DECLS_BEGIN
 /** Total guest mapped memory needed. */
 #define HWACCM_VTX_TOTAL_DEVHEAP_MEM        (HWACCM_EPT_IDENTITY_PG_TABLE_SIZE + HWACCM_VTX_TSS_SIZE)
 
+/* Enable for TPR guest patching. */
+#define VBOX_HWACCM_WITH_GUEST_PATCHING
+
 /** HWACCM SSM version
  */
+#ifdef VBOX_HWACCM_WITH_GUEST_PATCHING
+#define HWACCM_SSM_VERSION                  5
+#define HWACCM_SSM_VERSION_NO_PATCHING      4
+#else
 #define HWACCM_SSM_VERSION                  4
+#define HWACCM_SSM_VERSION_NO_PATCHING      4
+#endif
 #define HWACCM_SSM_VERSION_2_0_X            3
 
 /* Per-cpu information. (host) */
@@ -157,16 +178,55 @@ typedef struct
 } HWACCM_CPUINFO;
 typedef HWACCM_CPUINFO *PHWACCM_CPUINFO;
 
-/* VT-x capability qword. */
-typedef union
+typedef enum
 {
-    struct
-    {
-        uint32_t        disallowed0;
-        uint32_t        allowed1;
-    } n;
-    uint64_t            u;
-} VMX_CAPABILITY;
+    HWACCMPENDINGIO_INVALID = 0,
+    HWACCMPENDINGIO_PORT_READ,
+    HWACCMPENDINGIO_PORT_WRITE,
+    HWACCMPENDINGIO_STRING_READ,
+    HWACCMPENDINGIO_STRING_WRITE,
+    /** The usual 32-bit paranoia. */
+    HWACCMPENDINGIO_32BIT_HACK   = 0x7fffffff
+} HWACCMPENDINGIO;
+
+
+typedef enum
+{
+    HWACCMTPRINSTR_INVALID,
+    HWACCMTPRINSTR_READ,
+    HWACCMTPRINSTR_READ_SHR4,
+    HWACCMTPRINSTR_WRITE_REG,
+    HWACCMTPRINSTR_WRITE_IMM,
+    HWACCMTPRINSTR_JUMP_REPLACEMENT,
+    /** The usual 32-bit paranoia. */
+    HWACCMTPRINSTR_32BIT_HACK   = 0x7fffffff
+} HWACCMTPRINSTR;
+
+typedef struct
+{
+    /** The key is the address of patched instruction. (32 bits GC ptr) */
+    AVLOU32NODECORE         Core;
+    /** Original opcode. */
+    uint8_t                 aOpcode[16];
+    /** Instruction size. */
+    uint32_t                cbOp;
+    /** Replacement opcode. */
+    uint8_t                 aNewOpcode[16];
+    /** Replacement instruction size. */
+    uint32_t                cbNewOp;
+    /** Instruction type. */
+    HWACCMTPRINSTR          enmType;
+    /** Source operand. */
+    uint32_t                uSrcOperand;
+    /** Destination operand. */
+    uint32_t                uDstOperand;
+    /** Number of times the instruction caused a fault. */
+    uint32_t                cFaults;
+    /** Patch address of the jump replacement. */
+    RTGCPTR32               pJumpTarget;
+} HWACCMTPRPATCH;
+/** Pointer to HWACCMTPRPATCH. */
+typedef HWACCMTPRPATCH *PHWACCMTPRPATCH;
 
 /**
  * Switcher function, HC to RC.
@@ -202,9 +262,15 @@ typedef struct HWACCM
     /** Set if an IO-APIC is configured for this VM. */
     bool                        fHasIoApic;
 
-    /** Explicit alignment padding to make 32-bit gcc align u64RegisterMask
-     *  naturally. */
-    bool                        padding[2];
+    /** Set when TPR patching is allowed. */
+    bool                        fTRPPatchingAllowed;
+
+    /** Set when we initialize VT-x or AMD-V once for all CPUs. */
+    bool                        fGlobalInit;
+
+    /** Set when TPR patching is active. */
+    bool                        fTPRPatchingActive;
+    bool                        u8Alignment[7];
 
     /** And mask for copying register contents. */
     uint64_t                    u64RegisterMask;
@@ -215,6 +281,14 @@ typedef struct HWACCM
     /** The maximum number of resumes loops allowed in ring-0 (safety precaution).
      * This number is set much higher when RTThreadPreemptIsPending is reliable. */
     uint32_t                    cMaxResumeLoops;
+
+    /** Guest allocated memory for patching purposes. */
+    RTGCPTR                     pGuestPatchMem;
+    /** Current free pointer inside the patch block. */
+    RTGCPTR                     pFreeGuestPatchMem;
+    /** Size of the guest patch memory block. */
+    uint32_t                    cbGuestPatchMem;
+    uint32_t                    uPadding1;
 
 #if HC_ARCH_BITS == 32 && defined(VBOX_ENABLE_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
     /** 32 to 64 bits switcher entrypoint. */
@@ -266,13 +340,6 @@ typedef struct HWACCM
         RTHCPHYS                    pAPICPhys;
         /** Virtual address of the APIC physical page (serves for filtering accesses). */
         R0PTRTYPE(uint8_t *)        pAPIC;
-
-        /** R0 memory object for the MSR bitmap (1 page). */
-        RTR0MEMOBJ                  pMemObjMSRBitmap;
-        /** Physical address of the MSR bitmap (1 page). */
-        RTHCPHYS                    pMSRBitmapPhys;
-        /** Virtual address of the MSR bitmap (1 page). */
-        R0PTRTYPE(uint8_t *)        pMSRBitmap;
 
         /** R0 memory object for the MSR entry load page (guest MSRs). */
         RTR0MEMOBJ                  pMemObjMSREntryLoad;
@@ -338,9 +405,7 @@ typedef struct HWACCM
         bool                        fEnabled;
         /** Set if erratum 170 affects the AMD cpu. */
         bool                        fAlwaysFlushTLB;
-        /** Explicit alignment padding to make 32-bit gcc align u64RegisterMask
-         *  naturally. */
-        bool                        padding[1];
+        bool                        u8Alignment;
 
         /** R0 memory object for the IO bitmap (12kb). */
         RTR0MEMOBJ                  pMemObjIOBitmap;
@@ -349,19 +414,19 @@ typedef struct HWACCM
         /** Virtual address of the IO bitmap. */
         R0PTRTYPE(void *)           pIOBitmap;
 
-        /** R0 memory object for the MSR bitmap (8kb). */
-        RTR0MEMOBJ                  pMemObjMSRBitmap;
-        /** Physical address of the MSR bitmap (8kb). */
-        RTHCPHYS                    pMSRBitmapPhys;
-        /** Virtual address of the MSR bitmap. */
-        R0PTRTYPE(void *)           pMSRBitmap;
-
         /** SVM revision. */
         uint32_t                    u32Rev;
 
         /** SVM feature bits from cpuid 0x8000000a */
         uint32_t                    u32Features;
     } svm;
+
+    /**
+     * AVL tree with all patches (active or disabled) sorted by guest instruction address
+     */
+    AVLOU32TREE                     PatchTree;
+    uint32_t                        cPatches;
+    HWACCMTPRPATCH                  aPatches[64];
 
     struct
     {
@@ -374,6 +439,12 @@ typedef struct HWACCM
 
     /** HWACCMR0Init was run */
     bool                    fHWACCMR0Init;
+    bool                    u8Alignment1[7];
+
+    STAMCOUNTER             StatTPRPatchSuccess;
+    STAMCOUNTER             StatTPRPatchFailure;
+    STAMCOUNTER             StatTPRReplaceSuccess;
+    STAMCOUNTER             StatTPRReplaceFailure;
 } HWACCM;
 /** Pointer to HWACCM VM instance data. */
 typedef HWACCM *PHWACCM;
@@ -467,29 +538,41 @@ typedef struct HWACCMCPU
     /** Set when we're using VT-x or AMD-V at that moment. */
     bool                        fActive;
 
+    /** Set when the TLB has been checked until we return from the world switch. */
+    volatile uint8_t            fCheckedTLBFlush;
+    uint8_t                     bAlignment[3];
+
     /** HWACCM_CHANGED_* flags. */
     RTUINT                      fContextUseFlags;
 
-    /* Id of the last cpu we were executing code on (NIL_RTCPUID for the first time) */
+    /** Id of the last cpu we were executing code on (NIL_RTCPUID for the first time) */
     RTCPUID                     idLastCpu;
 
-    /* TLB flush count */
+    /** TLB flush count */
     RTUINT                      cTLBFlushes;
 
-    /* Current ASID in use by the VM */
+    /** Current ASID in use by the VM */
     RTUINT                      uCurrentASID;
+
+    /** World switch exit counter. */ 
+    volatile uint32_t           cWorldSwitchExit;
+    uint32_t                    u32Alignment;
 
     struct
     {
-        /** R0 memory object for the VM control structure (VMCS). */
-        RTR0MEMOBJ                  pMemObjVMCS;
         /** Physical address of the VM control structure (VMCS). */
         RTHCPHYS                    pVMCSPhys;
+        /** R0 memory object for the VM control structure (VMCS). */
+        RTR0MEMOBJ                  pMemObjVMCS;
         /** Virtual address of the VM control structure (VMCS). */
         R0PTRTYPE(void *)           pVMCS;
 
         /** Ring 0 handlers for VT-x. */
         PFNHWACCMVMXSTARTVM         pfnStartVM;
+
+#if HC_ARCH_BITS == 32
+        uint32_t                    u32Alignment;
+#endif
 
         /** Current VMX_VMCS_CTRL_PROC_EXEC_CONTROLS. */
         uint64_t                    proc_ctls;
@@ -497,10 +580,10 @@ typedef struct HWACCMCPU
         /** Current VMX_VMCS_CTRL_PROC_EXEC2_CONTROLS. */
         uint64_t                    proc_ctls2;
 
-        /** R0 memory object for the virtual APIC page for TPR caching. */
-        RTR0MEMOBJ                  pMemObjVAPIC;
         /** Physical address of the virtual APIC page for TPR caching. */
         RTHCPHYS                    pVAPICPhys;
+        /** R0 memory object for the virtual APIC page for TPR caching. */
+        RTR0MEMOBJ                  pMemObjVAPIC;
         /** Virtual address of the virtual APIC page for TPR caching. */
         R0PTRTYPE(uint8_t *)        pVAPIC;
 
@@ -511,6 +594,36 @@ typedef struct HWACCMCPU
 
         /** Current EPTP. */
         RTHCPHYS                    GCPhysEPTP;
+
+        /** Physical address of the MSR bitmap (1 page). */
+        RTHCPHYS                    pMSRBitmapPhys;
+        /** R0 memory object for the MSR bitmap (1 page). */
+        RTR0MEMOBJ                  pMemObjMSRBitmap;
+        /** Virtual address of the MSR bitmap (1 page). */
+        R0PTRTYPE(uint8_t *)        pMSRBitmap;
+
+#ifdef VBOX_WITH_AUTO_MSR_LOAD_RESTORE
+        /** Physical address of the guest MSR load area (1 page). */
+        RTHCPHYS                    pGuestMSRPhys;
+        /** R0 memory object for the guest MSR load area (1 page). */
+        RTR0MEMOBJ                  pMemObjGuestMSR;
+        /** Virtual address of the guest MSR load area (1 page). */
+        R0PTRTYPE(uint8_t *)        pGuestMSR;
+
+        /** Physical address of the MSR load area (1 page). */
+        RTHCPHYS                    pHostMSRPhys;
+        /** R0 memory object for the MSR load area (1 page). */
+        RTR0MEMOBJ                  pMemObjHostMSR;
+        /** Virtual address of the MSR load area (1 page). */
+        R0PTRTYPE(uint8_t *)        pHostMSR;
+#endif /* VBOX_WITH_AUTO_MSR_LOAD_RESTORE */
+
+        /* Number of automatically loaded/restored MSRs. */
+        uint32_t                    cCachedMSRs;
+        uint32_t                    uAlignement;
+
+        /* Last use TSC offset value. (cached) */
+        uint64_t                    u64TSCOffset;
 
         /** VMCS cache. */
         VMCSCACHE                   VMCSCache;
@@ -560,6 +673,12 @@ typedef struct HWACCMCPU
         /** Ring 0 handlers for VT-x. */
         PFNHWACCMSVMVMRUN           pfnVMRun;
 
+        /** R0 memory object for the MSR bitmap (8kb). */
+        RTR0MEMOBJ                  pMemObjMSRBitmap;
+        /** Physical address of the MSR bitmap (8kb). */
+        RTHCPHYS                    pMSRBitmapPhys;
+        /** Virtual address of the MSR bitmap. */
+        R0PTRTYPE(void *)           pMSRBitmap;
     } svm;
 
     /** Event injection state. */
@@ -581,6 +700,25 @@ typedef struct HWACCMCPU
 
         uint64_t                cr0;
     } EmulateIoBlock;
+
+    struct
+    {
+        /* Pending IO operation type. */
+        HWACCMPENDINGIO         enmType;
+        uint32_t                uPadding;
+        RTGCPTR                 GCPtrRip;
+        RTGCPTR                 GCPtrRipNext;
+        union
+        {
+            struct
+            {
+                unsigned        uPort;
+                unsigned        uAndVal;
+                unsigned        cbSize;
+            } Port;
+            uint64_t            aRaw[2];
+        } s;
+    } PendingIO;
 
     /** Currenty shadow paging mode. */
     PGMMODE                 enmShadowMode;
@@ -622,6 +760,9 @@ typedef struct HWACCMCPU
 #if HC_ARCH_BITS == 32 && defined(VBOX_ENABLE_64_BITS_GUESTS) && !defined(VBOX_WITH_HYBRID_32BIT_KERNEL)
     STAMPROFILEADV          StatWorldSwitch3264;
 #endif
+    STAMPROFILEADV          StatPoke;
+    STAMPROFILEADV          StatSpinPoke;
+    STAMPROFILEADV          StatSpinPokeFailed;
 
     STAMCOUNTER             StatIntInject;
 
@@ -684,6 +825,7 @@ typedef struct HWACCMCPU
 
     STAMCOUNTER             StatTSCOffset;
     STAMCOUNTER             StatTSCIntercept;
+    STAMCOUNTER             StatTSCInterceptOverFlow;
 
     STAMCOUNTER             StatExitReasonNPF;
     STAMCOUNTER             StatDRxArmed;
@@ -710,10 +852,10 @@ VMMR0DECL(PHWACCM_CPUINFO) HWACCMR0GetCurrentCpuEx(RTCPUID idCpu);
 
 #ifdef VBOX_STRICT
 VMMR0DECL(void) HWACCMDumpRegs(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
-VMMR0DECL(void) HWACCMR0DumpDescriptor(PX86DESCHC  Desc, RTSEL Sel, const char *pszMsg);
+VMMR0DECL(void) HWACCMR0DumpDescriptor(PCX86DESCHC pDesc, RTSEL Sel, const char *pszMsg);
 #else
-#define HWACCMDumpRegs(a, b ,c)             do { } while (0)
-#define HWACCMR0DumpDescriptor(a, b, c)     do { } while (0)
+# define HWACCMDumpRegs(a, b ,c)            do { } while (0)
+# define HWACCMR0DumpDescriptor(a, b, c)    do { } while (0)
 #endif
 
 /* Dummy callback handlers. */

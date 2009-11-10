@@ -1,4 +1,4 @@
-/* $Id: semmutex-linux.cpp 8651 2008-05-07 12:16:29Z vboxsync $ */
+/* $Id: semmutex-linux.cpp 22959 2009-09-11 13:45:44Z vboxsync $ */
 /** @file
  * IPRT - Mutex Semaphore, Linux  (2.6.x+).
  */
@@ -37,6 +37,7 @@
 #include <iprt/thread.h>
 #include <iprt/asm.h>
 #include <iprt/err.h>
+#include <iprt/time.h>
 #include "internal/magics.h"
 #include "internal/strict.h"
 
@@ -172,10 +173,12 @@ static int rtsemMutexRequest(RTSEMMUTEX MutexSem, unsigned cMillies, bool fAutoR
      */
     struct timespec ts;
     struct timespec *pTimeout = NULL;
+    uint64_t u64End = 0; /* shut up gcc */
     if (cMillies != RT_INDEFINITE_WAIT)
     {
         ts.tv_sec  = cMillies / 1000;
         ts.tv_nsec = (cMillies % 1000) * 1000000;
+        u64End = RTTimeSystemNanoTS() + cMillies * 1000000;
         pTimeout = &ts;
     }
 
@@ -224,6 +227,19 @@ static int rtsemMutexRequest(RTSEMMUTEX MutexSem, unsigned cMillies, bool fAutoR
                 /* this shouldn't happen! */
                 AssertMsgFailed(("rc=%ld errno=%d\n", rc, errno));
                 return RTErrConvertFromErrno(rc);
+            }
+
+            /* adjust the relative timeout */
+            if (pTimeout)
+            {
+                int64_t i64Diff = u64End - RTTimeSystemNanoTS();
+                if (i64Diff < 1000)
+                {
+                    rc = VERR_TIMEOUT;
+                    break;
+                }
+                ts.tv_sec  = i64Diff / 1000000000;
+                ts.tv_nsec = i64Diff % 1000000000;
             }
         }
 

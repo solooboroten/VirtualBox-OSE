@@ -1,4 +1,4 @@
-/* $Id: helpers.h 10800 2008-07-22 09:00:07Z vboxsync $ */
+/* $Id: helpers.h 23858 2009-10-19 12:04:39Z vboxsync $ */
 /** @file
  * helpers - Guest Additions Service helper functions header
  */
@@ -31,6 +31,7 @@
 #endif /* !DEBUG_DISPLAY_CHANGE */
 
 void resizeRect(RECTL *paRects, unsigned nRects, unsigned iPrimary, unsigned iResized, int NewWidth, int NewHeight);
+int showBalloonTip (HINSTANCE hInst, HWND hWnd, UINT uID, const char *pszMsg, const char *pszTitle, UINT uTimeout, DWORD dwInfoFlags);
 
 #endif /* !___VBOXTRAY_HELPERS_H */
 

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 19644 2009-05-12 15:29:22Z vboxsync $
+# $Id: Makefile.kmk 24287 2009-11-03 12:34:11Z vboxsync $
 ## @file
 # Sub-Makefile for the Cross Platform Guest Addition Services.
 #
@@ -22,19 +22,24 @@
 SUB_DEPTH = ../../../../..
 include	$(KBUILD_PATH)/subheader.kmk
 
-if "$(KBUILD_HOST)" != "os2" || defined(VBOX_WITH_OS2_ADDITIONS)
- PROGRAMS += VBoxService
-endif
+#
+# Target lists.
+#
+PROGRAMS += VBoxService
+PROGRAMS.win.x86 += VBoxServiceNT
 
 #
-# VBoxService.exe
+# VBoxService
 #
 VBoxService_TEMPLATE      = VBOXGUESTR3EXE
 VBoxService_DEFS          = VBOXSERVICE_TIMESYNC
-VBoxService_DEFS.win     += _WIN32_WINNT=0x0501 _UNICODE UNICODE
+VBoxService_DEFS.win     += _WIN32_WINNT=0x0501
 VBoxService_DEFS.os2      = VBOX_WITH_HGCM VBOXSERVICE_CLIPBOARD
 ifdef VBOX_WITH_GUEST_PROPS
  VBoxService_DEFS        += VBOX_WITH_GUEST_PROPS VBOXSERVICE_VMINFO
+ if1of ($(KBUILD_TARGET), win)
+  VBoxService_DEFS       += VBOX_WITH_HGCM VBOXSERVICE_EXEC
+ endif
 endif
 VBoxService_SOURCES       = \
 	VBoxService.cpp \
@@ -42,9 +47,13 @@ VBoxService_SOURCES       = \
 	VBoxServiceUtils.cpp
 ifdef VBOX_WITH_GUEST_PROPS
  VBoxService_SOURCES.win  = \
-	VBoxServiceVMInfo-win.cpp
+ 	VBoxServiceVMInfo-win.cpp
  VBoxService_SOURCES     += \
-	VBoxServiceVMInfo.cpp
+ 	VBoxServiceVMInfo.cpp
+ if1of ($(KBUILD_TARGET), win)
+  VBoxService_SOURCES    += \
+	VBoxServiceExec.cpp
+ endif
 endif
 VBoxService_SOURCES.win  += \
 	VBoxService-win.rc \
@@ -65,7 +74,20 @@ ifdef VBOX_WITH_GUEST_PROPS
 	nsl
 endif
 
+#
+# VBoxServiceNT - NT4 version of VBoxService.
+#
+VBoxServiceNT_TEMPLATE    = VBOXGUESTR3EXE
+VBoxServiceNT_EXTENDS     = VBoxService
+VBoxServiceNT_DEFS.win    = _WIN32_WINNT=0x0400 TARGET_NT4
+
+#VBoxServiceVMInfo.cpp uses VBOX_SVN_REV.
+VBoxServiceVMInfo.cpp_DEFS = VBOX_SVN_REV=$(VBOX_SVN_REV)
+VBoxServiceVMInfo.cpp_DEPS = $(VBOX_SVN_REV_KMK)
+
+#
 # The icon is configurable.
+#
 VBoxService-win.rc_INCS = $(PATH_VBoxService)
 VBoxService-win.rc_DEPS = $(PATH_VBoxService)/VBoxService-win-icon.rc
 VBoxService-win.rc_CLEAN = $(PATH_VBoxService)/VBoxService-win-icon.rc

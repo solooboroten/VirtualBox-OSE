@@ -1,4 +1,4 @@
-/* $Id: string.cpp 19384 2009-05-05 15:24:54Z vboxsync $ */
+/* $Id: string.cpp 22736 2009-09-03 11:32:59Z vboxsync $ */
 /** @file
  * IPRT - String Manipulation.
  */
@@ -33,6 +33,8 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #include <iprt/string.h>
+#include "internal/iprt.h"
+
 #include <iprt/alloc.h>
 #include <iprt/assert.h>
 #include <iprt/err.h>
@@ -51,6 +53,7 @@ RTDECL(void)  RTStrFree(char *pszString)
     if (pszString)
         RTMemTmpFree(pszString);
 }
+RT_EXPORT_SYMBOL(RTStrFree);
 
 
 /**
@@ -61,13 +64,14 @@ RTDECL(void)  RTStrFree(char *pszString)
  */
 RTDECL(char *) RTStrDup(const char *pszString)
 {
-    Assert(VALID_PTR(pszString));
+    AssertPtr(pszString);
     size_t cch = strlen(pszString) + 1;
     char *psz = (char *)RTMemAlloc(cch);
     if (psz)
         memcpy(psz, pszString, cch);
     return psz;
 }
+RT_EXPORT_SYMBOL(RTStrDup);
 
 
 /**
@@ -80,8 +84,8 @@ RTDECL(char *) RTStrDup(const char *pszString)
  */
 RTDECL(int)  RTStrDupEx(char **ppszString, const char *pszString)
 {
-    Assert(VALID_PTR(ppszString));
-    Assert(VALID_PTR(pszString));
+    AssertPtr(ppszString);
+    AssertPtr(pszString);
 
     size_t cch = strlen(pszString) + 1;
     char *psz = (char *)RTMemAlloc(cch);
@@ -93,4 +97,31 @@ RTDECL(int)  RTStrDupEx(char **ppszString, const char *pszString)
     }
     return VERR_NO_MEMORY;
 }
+RT_EXPORT_SYMBOL(RTStrDupEx);
+
+
+/**
+ * Allocates a new copy of the given UTF-8 substring.
+ *
+ * @returns Pointer to the allocated UTF-8 substring.
+ * @param   pszString       UTF-8 string to duplicate.
+ * @param   cchMax          The max number of chars to duplicate, not counting
+ *                          the terminator.
+ */
+RTDECL(char *) RTStrDupN(const char *pszString, size_t cchMax)
+{
+    AssertPtr(pszString);
+    char  *pszEnd = (char *)memchr(pszString, '\0', cchMax);
+    size_t cch    = pszEnd ? (uintptr_t)pszEnd - (uintptr_t)pszString : cchMax;
+    char  *pszDst = (char *)RTMemAlloc(cch);
+    if (pszDst)
+    {
+        memcpy(pszDst, pszString, cch);
+        pszDst[cch] = '\0';
+    }
+    return pszDst;
+}
+RT_EXPORT_SYMBOL(RTStrDupN);
+
+
 

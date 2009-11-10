@@ -1,4 +1,4 @@
-/* $Id: memobj-r0drv-darwin.cpp 20525 2009-06-13 20:13:33Z vboxsync $ */
+/* $Id: memobj-r0drv-darwin.cpp 23610 2009-10-07 21:22:10Z vboxsync $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, Darwin.
  */
@@ -33,7 +33,7 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #include "the-darwin-kernel.h"
-
+#include "internal/iprt.h"
 #include <iprt/memobj.h>
 
 #include <iprt/alloc.h>
@@ -44,7 +44,6 @@
 #include <iprt/process.h>
 #include <iprt/string.h>
 #include <iprt/thread.h>
-
 #include "internal/memobj.h"
 
 /*#define USE_VM_MAP_WIRE - may re-enable later when non-mapped allocations are added. */
@@ -619,7 +618,11 @@ int rtR0MemObjNativeEnterPhys(PPRTR0MEMOBJINTERNAL ppMem, RTHCPHYS Phys, size_t 
                                                                              kIODirectionInOut, NULL /*task*/);
         if (pMemDesc)
         {
-            Assert(Phys == pMemDesc->getPhysicalAddress());
+#ifdef __LP64__ /* Grumble! */
+            Assert(Phys == pMemDesc->getPhysicalSegment(0, 0));
+#else
+            Assert(Phys == pMemDesc->getPhysicalSegment64(0, 0));
+#endif
 
             /*
              * Create the IPRT memory object.
@@ -651,13 +654,16 @@ int rtR0MemObjNativeEnterPhys(PPRTR0MEMOBJINTERNAL ppMem, RTHCPHYS Phys, size_t 
  *
  * @return IPRT status code.
  *
- * @param ppMem     Where to store the memory object pointer.
- * @param pv        First page.
- * @param cb        Number of bytes.
- * @param Task      The task \a pv and \a cb refers to.
+ * @param   ppMem           Where to store the memory object pointer.
+ * @param   pv              First page.
+ * @param   cb              Number of bytes.
+ * @param   fAccess         The desired access, a combination of RTMEM_PROT_READ
+ *                          and RTMEM_PROT_WRITE.
+ * @param   Task            The task \a pv and \a cb refers to.
  */
-static int rtR0MemObjNativeLock(PPRTR0MEMOBJINTERNAL ppMem, void *pv, size_t cb, task_t Task)
+static int rtR0MemObjNativeLock(PPRTR0MEMOBJINTERNAL ppMem, void *pv, size_t cb, uint32_t fAccess, task_t Task)
 {
+    NOREF(fAccess);
 #ifdef USE_VM_MAP_WIRE
     vm_map_t Map = get_task_map(Task);
     Assert(Map);
@@ -725,15 +731,15 @@ static int rtR0MemObjNativeLock(PPRTR0MEMOBJINTERNAL ppMem, void *pv, size_t cb,
 }
 
 
-int rtR0MemObjNativeLockUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3Ptr, size_t cb, RTR0PROCESS R0Process)
+int rtR0MemObjNativeLockUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3Ptr, size_t cb, uint32_t fAccess, RTR0PROCESS R0Process)
 {
-    return rtR0MemObjNativeLock(ppMem, (void *)R3Ptr, cb, (task_t)R0Process);
+    return rtR0MemObjNativeLock(ppMem, (void *)R3Ptr, cb, fAccess, (task_t)R0Process);
 }
 
 
-int rtR0MemObjNativeLockKernel(PPRTR0MEMOBJINTERNAL ppMem, void *pv, size_t cb)
+int rtR0MemObjNativeLockKernel(PPRTR0MEMOBJINTERNAL ppMem, void *pv, size_t cb, uint32_t fAccess)
 {
-    return rtR0MemObjNativeLock(ppMem, pv, cb, kernel_task);
+    return rtR0MemObjNativeLock(ppMem, pv, cb, fAccess, kernel_task);
 }
 
 
@@ -753,6 +759,12 @@ int rtR0MemObjNativeMapKernel(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, 
                               unsigned fProt, size_t offSub, size_t cbSub)
 {
     AssertReturn(pvFixed == (void *)-1, VERR_NOT_SUPPORTED);
+
+    /*
+     * Check that the specified alignment is supported.
+     */
+    if (uAlignment > PAGE_SIZE)
+        return VERR_NOT_SUPPORTED;
 
     /*
      * Must have a memory descriptor that we can map.
@@ -850,7 +862,12 @@ int rtR0MemObjNativeMapKernel(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, 
 
 int rtR0MemObjNativeMapUser(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJ pMemToMap, RTR3PTR R3PtrFixed, size_t uAlignment, unsigned fProt, RTR0PROCESS R0Process)
 {
+    /*
+     * Check for unsupported things.
+     */
     AssertReturn(R3PtrFixed == (RTR3PTR)-1, VERR_NOT_SUPPORTED);
+    if (uAlignment > PAGE_SIZE)
+        return VERR_NOT_SUPPORTED;
 
     /*
      * Must have a memory descriptor.

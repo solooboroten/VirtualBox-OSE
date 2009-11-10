@@ -81,7 +81,7 @@ const int XKeyRelease = KeyRelease;
 #endif // Q_WS_X11
 
 #if defined (Q_WS_MAC)
-# include "VBoxDockIconPreview.h"
+# include "DockIconPreview.h"
 # include "DarwinKeyboard.h"
 # ifdef QT_MAC_USE_COCOA
 #  include "darwin/VBoxCocoaApplication.h"
@@ -342,12 +342,12 @@ private:
 class MediaDriveChangeEvent : public QEvent
 {
 public:
-    MediaDriveChangeEvent (VBoxDefs::MediaType aType)
+    MediaDriveChangeEvent (VBoxDefs::MediumType aType)
         : QEvent ((QEvent::Type) VBoxDefs::MediaDriveChangeEventType)
         , mType (aType) {}
-    VBoxDefs::MediaType type() const { return mType; }
+    VBoxDefs::MediumType type() const { return mType; }
 private:
-    VBoxDefs::MediaType mType;
+    VBoxDefs::MediumType mType;
 };
 
 /** Menu activation event */
@@ -460,22 +460,8 @@ public:
             delete this;
         return cnt;
     }
-    STDMETHOD(QueryInterface) (REFIID riid , void **ppObj)
-    {
-        if (riid == IID_IUnknown) {
-            *ppObj = this;
-            AddRef();
-            return S_OK;
-        }
-        if (riid == IID_IConsoleCallback) {
-            *ppObj = this;
-            AddRef();
-            return S_OK;
-        }
-        *ppObj = NULL;
-        return E_NOINTERFACE;
-    }
 #endif
+    VBOX_SCRIPTABLE_DISPATCH_IMPL(IConsoleCallback)
 
     STDMETHOD(OnMousePointerShapeChange) (BOOL visible, BOOL alpha,
                                           ULONG xhot, ULONG yhot,
@@ -529,22 +515,6 @@ public:
         return S_OK;
     }
 
-    STDMETHOD(OnDVDDriveChange)()
-    {
-        LogFlowFunc (("DVD Drive changed\n"));
-        QApplication::postEvent (mView,
-            new MediaDriveChangeEvent (VBoxDefs::MediaType_DVD));
-        return S_OK;
-    }
-
-    STDMETHOD(OnFloppyDriveChange)()
-    {
-        LogFlowFunc (("Floppy Drive changed\n"));
-        QApplication::postEvent (mView,
-            new MediaDriveChangeEvent (VBoxDefs::MediaType_Floppy));
-        return S_OK;
-    }
-
     STDMETHOD(OnNetworkAdapterChange) (INetworkAdapter *aNetworkAdapter)
     {
         QApplication::postEvent (mView,
@@ -557,6 +527,26 @@ public:
         /* @todo */
         //QApplication::postEvent (mView,
         //    new StorageControllerChangeEvent ());
+        return S_OK;
+    }
+
+    STDMETHOD(OnMediumChange)(IMediumAttachment *aMediumAttachment)
+    {
+        CMediumAttachment att(aMediumAttachment);
+        switch (att.GetType())
+        {
+            case KDeviceType_Floppy:
+                QApplication::postEvent(mView,
+                    new MediaDriveChangeEvent(VBoxDefs::MediumType_Floppy));
+                break;
+            case KDeviceType_DVD:
+                QApplication::postEvent(mView,
+                    new MediaDriveChangeEvent(VBoxDefs::MediumType_DVD));
+                break;
+            default:
+                /* @todo later add hard disk change as well */
+                break;
+        }
         return S_OK;
     }
 
@@ -573,6 +563,11 @@ public:
     }
 
     STDMETHOD(OnVRDPServerChange)()
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnRemoteDisplayInfoChange)()
     {
         return S_OK;
     }
@@ -709,6 +704,9 @@ public:
 VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
                                   const CConsole &console,
                                   VBoxDefs::RenderMode rm,
+#ifdef VBOX_WITH_VIDEOHWACCEL
+                                  bool accelerate2DVideo,
+#endif
                                   QWidget *parent)
     : QAbstractScrollArea (parent)
     , mMainWnd (mainWnd)
@@ -725,6 +723,7 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     , mIgnoreMainwndResize (true)
     , mAutoresizeGuest (false)
     , mIgnoreFrameBufferResize (false)
+    , mIgnoreGuestResize (false)
     , mDoResize (false)
     , mGuestSupportsGraphics (false)
     , mNumLock (false)
@@ -733,6 +732,9 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     , muNumLockAdaptionCnt (2)
     , muCapsLockAdaptionCnt (2)
     , mode (rm)
+#ifdef VBOX_WITH_VIDEOHWACCEL
+    , mAccelerate2DVideo(accelerate2DVideo)
+#endif
 #if defined(Q_WS_WIN)
     , mAlphaCursor (NULL)
 #endif
@@ -746,7 +748,8 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
 #endif
     , mDesktopGeo (DesktopGeo_Invalid)
     , mPassCAD (false)
-    , mHideHostPointer (false)
+      /* Don't show a hardware pointer until we have one to show */
+    , mHideHostPointer (true)
 {
     Assert (!mConsole.isNull() &&
             !mConsole.GetDisplay().isNull() &&
@@ -784,11 +787,18 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     /* No frame around the view */
     setFrameStyle (QFrame::NoFrame);
 
-#ifndef VBOX_WITH_VIDEOHWACCEL
-    VBoxViewport *pViewport = new VBoxViewport (this);
+#ifdef VBOX_GUI_USE_QGL
+    QWidget *pViewport;
+    switch (mode)
+    {
+        case VBoxDefs::QGLMode:
+            pViewport = new VBoxGLWidget (this, this);
+            break;
+        default:
+            pViewport = new VBoxViewport (this);
+    }
 #else
-//    /* TODO: temporary always use VBoxGLWidget for debugging */
-    VBoxGLWidget *pViewport = new VBoxGLWidget (this);
+    VBoxViewport *pViewport = new VBoxViewport (this);
 #endif
     setViewport (pViewport);
 //    pViewport->vboxDoInit();
@@ -810,7 +820,8 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
 
 #ifdef Q_WS_X11
     /* initialize the X keyboard subsystem */
-    initXKeyboard (QX11Info::display());
+    initMappedX11Keyboard(QX11Info::display(),
+            vboxGlobal().settings().publicProperty ("GUI/RemapScancodes"));
 #endif
 
     ::memset (mPressedKeys, 0, sizeof (mPressedKeys));
@@ -830,10 +841,17 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
         case VBoxDefs::QGLMode:
             mFrameBuf = new VBoxQGLFrameBuffer (this);
             break;
+//        case VBoxDefs::QGLOverlayMode:
+//            mFrameBuf = new VBoxQGLOverlayFrameBuffer (this);
+//            break;
 #endif
 #if defined (VBOX_GUI_USE_QIMAGE)
         case VBoxDefs::QImageMode:
-            mFrameBuf = new VBoxQImageFrameBuffer (this);
+            mFrameBuf =
+#ifdef VBOX_WITH_VIDEOHWACCEL
+                    mAccelerate2DVideo ? new VBoxOverlayFrameBuffer<VBoxQImageFrameBuffer>(this) :
+#endif
+                    new VBoxQImageFrameBuffer (this);
             break;
 #endif
 #if defined (VBOX_GUI_USE_SDL)
@@ -846,7 +864,11 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
              * i386 and segfaults on x86_64. */
             XFlush(QX11Info::display());
 # endif
-            mFrameBuf = new VBoxSDLFrameBuffer (this);
+            mFrameBuf =
+#if defined(VBOX_WITH_VIDEOHWACCEL) && defined(DEBUG_misha) /* not tested yet */
+                    mAccelerate2DVideo ? new VBoxOverlayFrameBuffer<VBoxSDLFrameBuffer> (this) :
+#endif
+                    new VBoxSDLFrameBuffer (this);
             /*
              *  disable scrollbars because we cannot correctly draw in a
              *  scrolled window using SDL
@@ -865,7 +887,11 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
             /* Indicate that we are doing all
              * drawing stuff ourself */
             pViewport->setAttribute (Qt::WA_PaintOnScreen);
-            mFrameBuf = new VBoxQuartz2DFrameBuffer (this);
+            mFrameBuf =
+#ifdef VBOX_WITH_VIDEOHWACCEL
+                    mAccelerate2DVideo ? new VBoxOverlayFrameBuffer<VBoxQuartz2DFrameBuffer> (this) :
+#endif
+            	    new VBoxQuartz2DFrameBuffer (this);
             break;
 #endif
         default:
@@ -1144,16 +1170,17 @@ void VBoxConsoleView::setMouseIntegrationEnabled (bool enabled)
      * mode until it's shape is set to the guest cursor shape in
      * OnMousePointerShapeChange event handler.
      *
-     * This is necessary to avoid double-cursor issue when both the
-     * guest and the host cursors are displayed in one place one-above-one.
+     * This is necessary to avoid double-cursor issues where both the
+     * guest and the host cursors are displayed in one place, one above the
+     * other.
      *
-     * This is a workaround because the correct decision is to notify
+     * This is a workaround because the correct decision would be to notify
      * the Guest Additions about we are entering the mouse integration
      * mode. The GuestOS should hide it's cursor to allow using of
      * host cursor for the guest's manipulation.
      *
-     * This notification is not possible right now due to there is
-     * no the required API. */
+     * This notification is not always possible though, as not all guests
+     * support switching to a hardware pointer on demand. */
     if (enabled)
         viewport()->setCursor (QCursor (Qt::BlankCursor));
 
@@ -1232,6 +1259,12 @@ bool VBoxConsoleView::event (QEvent *e)
 
             case VBoxDefs::ResizeEventType:
             {
+                /* Some situations require initial VGA Resize Request
+                 * to be ignored at all, leaving previous framebuffer,
+                 * console widget and vm window size preserved. */
+                if (mIgnoreGuestResize)
+                    return true;
+
                 bool oldIgnoreMainwndResize = mIgnoreMainwndResize;
                 mIgnoreMainwndResize = true;
 
@@ -1247,19 +1280,23 @@ bool VBoxConsoleView::event (QEvent *e)
                  * http://trolltech.com/developer/task-tracker/index_html?id=206165&method=entry
                  * for details. */
                 QCursor cursor;
-                if (!mHideHostPointer)
-                    cursor = viewport()->cursor();
-                else
+                if (shouldHideHostPointer())
                     cursor = QCursor (Qt::BlankCursor);
+                else
+                    cursor = viewport()->cursor();
                 mFrameBuf->resizeEvent (re);
                 viewport()->setCursor (cursor);
 #else
                 mFrameBuf->resizeEvent (re);
-                if (!mHideHostPointer)
-                    viewport()->unsetCursor();
-                else
+                if (shouldHideHostPointer())
                     viewport()->setCursor (QCursor (Qt::BlankCursor));
+                else
+                    viewport()->unsetCursor();
 #endif
+
+#ifdef Q_WS_MAC
+                mDockIconPreview->setOriginalSize (re->width(), re->height());
+#endif /* Q_WS_MAC */
 
                 /* This event appears in case of guest video was changed
                  * for somehow even without video resolution change.
@@ -1336,6 +1373,14 @@ bool VBoxConsoleView::event (QEvent *e)
                 return true;
             }
 
+#ifdef VBOX_WITH_VIDEOHWACCEL
+            case VBoxDefs::VHWACommandProcessType:
+            {
+                mFrameBuf->doProcessVHWACommand(e);
+                return true;
+            }
+#endif
+
             case VBoxDefs::SetRegionEventType:
             {
                 VBoxSetRegionEvent *sre = (VBoxSetRegionEvent*) e;
@@ -1377,7 +1422,9 @@ bool VBoxConsoleView::event (QEvent *e)
                     if (mMouseAbsolute)
                     {
                         CMouse mouse = mConsole.GetMouse();
-                        mouse.PutMouseEventAbsolute (-1, -1, 0, 0);
+                        mouse.PutMouseEventAbsolute (-1, -1, 0,
+                                                     0 /* Horizontal wheel */,
+                                                     0);
                         captureMouse (false, false);
                     }
                     else
@@ -1387,6 +1434,8 @@ bool VBoxConsoleView::event (QEvent *e)
                 }
                 if (me->needsHostCursor())
                     mMainWnd->setMouseIntegrationLocked (false);
+                else
+                    mMainWnd->setMouseIntegrationLocked (true);
                 return true;
             }
 
@@ -1699,14 +1748,6 @@ bool VBoxConsoleView::event (QEvent *e)
                 return true;
             }
 #endif
-#ifdef VBOX_WITH_VIDEOHWACCEL
-            case VBoxDefs::VHWACommandProcessType:
-            {
-                VBoxVHWACommandProcessEvent *cmde = (VBoxVHWACommandProcessEvent *)e;
-                mFrameBuf->doProcessVHWACommand(cmde->command());
-                return true;
-            }
-#endif
             default:
                 break;
         }
@@ -1714,6 +1755,18 @@ bool VBoxConsoleView::event (QEvent *e)
 
     return QAbstractScrollArea::event (e);
 }
+
+#ifdef VBOX_WITH_VIDEOHWACCEL
+void VBoxConsoleView::scrollContentsBy (int dx, int dy)
+{
+    if (mAttached && mFrameBuf)
+    {
+        mFrameBuf->viewportScrolled(dx, dy);
+    }
+    QAbstractScrollArea::scrollContentsBy (dx, dy);
+}
+#endif
+
 
 bool VBoxConsoleView::eventFilter (QObject *watched, QEvent *e)
 {
@@ -1765,6 +1818,12 @@ bool VBoxConsoleView::eventFilter (QObject *watched, QEvent *e)
             {
                 if (mMouseCaptured)
                     updateMouseClipping();
+#ifdef VBOX_WITH_VIDEOHWACCEL
+                if (mFrameBuf)
+                {
+                    mFrameBuf->viewportResized((QResizeEvent*)e);
+                }
+#endif
                 break;
             }
             default:
@@ -1908,8 +1967,18 @@ bool VBoxConsoleView::winLowKeyboardEvent (UINT msg, const KBDLLHOOKSTRUCT &even
      * the VK_LCONTROL vkey with curious 0x21D scan code (seems to be necessary
      * to specially treat ALT_GR to enter additional chars to regular apps).
      * These events are definitely unwanted in VM, so filter them out. */
+    /* Note (michael): it also sometimes sends the VK_CAPITAL vkey with scan
+     * code 0x23a. If this is not passed through then it is impossible to
+     * cancel CapsLock on a French keyboard.  I didn't find any other examples
+     * of these strange events.  Let's hope we are not missing anything else
+     * of importance! */
     if (hasFocus() && (event.scanCode & ~0xFF))
-        return true;
+    {
+        if (event.vkCode == VK_CAPITAL)
+            return false;
+        else
+            return true;
+    }
 
     if (!mKbdCaptured)
         return false;
@@ -2049,7 +2118,7 @@ bool VBoxConsoleView::winEvent (MSG *aMsg, long* /* aResult */)
 
     /* These special keys have to be handled by Windows as well to update the
      * internal modifier state and to enable/disable the keyboard LED */
-    if (vkey == VK_NUMLOCK || vkey == VK_CAPITAL)
+    if (vkey == VK_NUMLOCK || vkey == VK_CAPITAL || vkey == VK_LSHIFT || vkey == VK_RSHIFT)
         return false;
 
     return result;
@@ -2528,6 +2597,14 @@ void VBoxConsoleView::fixModifierState (LONG *codes, uint *count)
         muCapsLockAdaptionCnt--;
         codes[(*count)++] = 0x3a;
         codes[(*count)++] = 0x3a | 0x80;
+        /* Some keyboard layouts require shift to be pressed to break
+         * capslock.  For simplicity, only do this if shift is not
+         * already held down. */
+        if (mCapsLock && !(mPressedKeys [0x2a] & IsKeyPressed))
+        {
+            codes[(*count)++] = 0x2a;
+            codes[(*count)++] = 0x2a | 0x80;
+        }
     }
 
 #elif defined(Q_WS_WIN32)
@@ -2543,6 +2620,14 @@ void VBoxConsoleView::fixModifierState (LONG *codes, uint *count)
         muCapsLockAdaptionCnt--;
         codes[(*count)++] = 0x3a;
         codes[(*count)++] = 0x3a | 0x80;
+        /* Some keyboard layouts require shift to be pressed to break
+         * capslock.  For simplicity, only do this if shift is not
+         * already held down. */
+        if (mCapsLock && !(mPressedKeys [0x2a] & IsKeyPressed))
+        {
+            codes[(*count)++] = 0x2a;
+            codes[(*count)++] = 0x2a | 0x80;
+        }
     }
 
 #elif defined (Q_WS_MAC)
@@ -2553,6 +2638,14 @@ void VBoxConsoleView::fixModifierState (LONG *codes, uint *count)
         muCapsLockAdaptionCnt--;
         codes[(*count)++] = 0x3a;
         codes[(*count)++] = 0x3a | 0x80;
+        /* Some keyboard layouts require shift to be pressed to break
+         * capslock.  For simplicity, only do this if shift is not
+         * already held down. */
+        if (mCapsLock && !(mPressedKeys [0x2a] & IsKeyPressed))
+        {
+            codes[(*count)++] = 0x2a;
+            codes[(*count)++] = 0x2a | 0x80;
+        }
     }
 
 #else
@@ -2958,14 +3051,19 @@ bool VBoxConsoleView::mouseEvent (int aType, const QPoint &aPos, const QPoint &a
                                   Qt::MouseButtons aButtons, Qt::KeyboardModifiers aModifiers,
                                   int aWheelDelta, Qt::Orientation aWheelDir)
 {
-#if 0
-    char buf [256];
-    sprintf (buf,
-             "MOUSE: type=%03d x=%03d y=%03d btn=%03d btns=%08X mod=%08X "
-             "wdelta=%03d wdir=%03d",
-             aType, aPos.x(), aPos.y(), aButtons, aModifiers,
-             aWheelDelta, aWheelDir);
-    mMainWnd->statusBar()->message (buf);
+#if 1
+
+    LogRel3(("%s: type=%03d x=%03d y=%03d btns=%08X wdelta=%03d wdir=%s\n",
+             __PRETTY_FUNCTION__ , aType, aPos.x(), aPos.y(),
+               (aButtons & Qt::LeftButton ? 1 : 0)
+             | (aButtons & Qt::RightButton ? 2 : 0)
+             | (aButtons & Qt::MidButton ? 4 : 0)
+             | (aButtons & Qt::XButton1 ? 8 : 0)
+             | (aButtons & Qt::XButton2 ? 16 : 0),
+             aWheelDelta,
+               aWheelDir == Qt::Horizontal ? "Horizontal"
+             : aWheelDir == Qt::Vertical ? "Vertical" : "Unknown"));
+    Q_UNUSED (aModifiers);
 #else
     Q_UNUSED (aModifiers);
 #endif
@@ -2977,6 +3075,10 @@ bool VBoxConsoleView::mouseEvent (int aType, const QPoint &aPos, const QPoint &a
         state |= KMouseButtonState_RightButton;
     if (aButtons & Qt::MidButton)
         state |= KMouseButtonState_MiddleButton;
+    if (aButtons & Qt::XButton1)
+        state |= KMouseButtonState_XButton1;
+    if (aButtons & Qt::XButton2)
+        state |= KMouseButtonState_XButton2;
 
 #ifdef Q_WS_MAC
     /* Simulate the right click on
@@ -2987,14 +3089,17 @@ bool VBoxConsoleView::mouseEvent (int aType, const QPoint &aPos, const QPoint &a
         state = KMouseButtonState_RightButton;
 #endif /* Q_WS_MAC */
 
-    int wheel = 0;
+    int wheelVertical = 0;
+    int wheelHorizontal = 0;
     if (aWheelDir == Qt::Vertical)
     {
         /* the absolute value of wheel delta is 120 units per every wheel
          * move; positive deltas correspond to counterclockwize rotations
          * (usually up), negative -- to clockwize (usually down). */
-        wheel = - (aWheelDelta / 120);
+        wheelVertical = - (aWheelDelta / 120);
     }
+    else if (aWheelDir == Qt::Horizontal)
+        wheelHorizontal = aWheelDelta / 120;
 
     if (mMouseCaptured)
     {
@@ -3006,7 +3111,7 @@ bool VBoxConsoleView::mouseEvent (int aType, const QPoint &aPos, const QPoint &a
         CMouse mouse = mConsole.GetMouse();
         mouse.PutMouseEvent (aGlobalPos.x() - mLastPos.x(),
                              aGlobalPos.y() - mLastPos.y(),
-                             wheel, state);
+                             wheelVertical, wheelHorizontal, state);
 
 #if defined (Q_WS_MAC)
         /*
@@ -3144,13 +3249,13 @@ bool VBoxConsoleView::mouseEvent (int aType, const QPoint &aPos, const QPoint &a
 
             QPoint cpnt = viewportToContents (aPos);
             if (cpnt.x() < 0) cpnt.setX (0);
-            else if (cpnt.x() >= cw) cpnt.setX (cw - 1);
+            else if (cpnt.x() > cw) cpnt.setX (cw);
             if (cpnt.y() < 0) cpnt.setY (0);
-            else if (cpnt.y() >= ch) cpnt.setY (ch - 1);
+            else if (cpnt.y() > ch) cpnt.setY (ch);
 
             CMouse mouse = mConsole.GetMouse();
-            mouse.PutMouseEventAbsolute (cpnt.x() + 1, cpnt.y() + 1,
-                                         wheel, state);
+            mouse.PutMouseEventAbsolute (cpnt.x(), cpnt.y(), wheelVertical,
+                                         wheelHorizontal, state);
             return true; /* stop further event handling */
         }
         else
@@ -3203,6 +3308,7 @@ void VBoxConsoleView::onStateChange (KMachineState state)
     switch (state)
     {
         case KMachineState_Paused:
+        case KMachineState_TeleportingPausedVM: /** @todo Live Migration: Check out this */
         {
             if (mode != VBoxDefs::TimerMode && mFrameBuf)
             {
@@ -3237,7 +3343,9 @@ void VBoxConsoleView::onStateChange (KMachineState state)
         }
         case KMachineState_Running:
         {
-            if (mLastState == KMachineState_Paused)
+            if (   mLastState == KMachineState_Paused
+                || mLastState == KMachineState_TeleportingPausedVM
+               )
             {
                 if (mode != VBoxDefs::TimerMode && mFrameBuf)
                 {
@@ -3425,7 +3533,7 @@ void VBoxConsoleView::captureMouse (bool aCapture, bool aEmitSignal /* = true */
 #endif
         /* release mouse buttons */
         CMouse mouse = mConsole.GetMouse();
-        mouse.PutMouseEvent (0, 0, 0, 0);
+        mouse.PutMouseEvent (0, 0, 0, 0 /* Horizontal wheel */, 0);
     }
 
     mMouseCaptured = aCapture;
@@ -3840,7 +3948,9 @@ void VBoxConsoleView::setPointerShape (MousePointerChangeEvent *me)
 # warning "port me"
 
 #endif
-        if (!ok)
+        if (ok)
+            mLastCursor = viewport()->cursor();
+        else
             viewport()->unsetCursor();
     }
     else
@@ -3850,11 +3960,7 @@ void VBoxConsoleView::setPointerShape (MousePointerChangeEvent *me)
          */
         if (me->isVisible())
         {
-            /*
-             * We're supposed to make the last shape we got visible.
-             * We don't support that for now...
-             */
-            /// @todo viewport()->setCursor (QCursor());
+            viewport()->setCursor (mLastCursor);
         }
         else
         {
@@ -4138,7 +4244,11 @@ void VBoxConsoleView::updateDockOverlay()
     if (mDockIconEnabled &&
         (mLastState == KMachineState_Running ||
          mLastState == KMachineState_Paused ||
+         mLastState == KMachineState_Teleporting ||
+         mLastState == KMachineState_LiveSnapshotting ||
          mLastState == KMachineState_Restoring ||
+         mLastState == KMachineState_TeleportingPausedVM ||
+         mLastState == KMachineState_TeleportingIn ||
          mLastState == KMachineState_Saving))
         updateDockIcon();
     else

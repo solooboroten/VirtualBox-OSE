@@ -1,4 +1,4 @@
-/* $Id: VFSExplorerImpl.cpp 20963 2009-06-26 09:35:27Z vboxsync $ */
+/* $Id: VFSExplorerImpl.cpp 23327 2009-09-25 11:36:00Z vboxsync $ */
 /** @file
  *
  * IVFSExplorer COM class implementations.
@@ -24,6 +24,8 @@
 #include <iprt/path.h>
 #include <iprt/file.h>
 #include <iprt/s3.h>
+
+#include <VBox/com/array.h>
 
 #include <VBox/param.h>
 #include <VBox/version.h>
@@ -242,7 +244,7 @@ int VFSExplorer::TaskVFSExplorer::uploadProgress(unsigned uPercent, void *pvUser
         pTask->progress->COMGETTER(Canceled)(&fCanceled);
         if (fCanceled)
             return -1;
-        pTask->progress->setCurrentOperationProgress(uPercent);
+        pTask->progress->SetCurrentOperationProgress(uPercent);
     }
     return VINF_SUCCESS;
 }
@@ -289,7 +291,7 @@ HRESULT VFSExplorer::updateFS(TaskVFSExplorer *aTask)
             throw setError(VBOX_E_FILE_ERROR, tr ("Can't open directory '%s' (%Rrc)"), pszPath, vrc);
 
         if(aTask->progress)
-            aTask->progress->setCurrentOperationProgress(33);
+            aTask->progress->SetCurrentOperationProgress(33);
         RTDIRENTRY entry;
         while (RT_SUCCESS(vrc))
         {
@@ -303,7 +305,7 @@ HRESULT VFSExplorer::updateFS(TaskVFSExplorer *aTask)
             }
         }
         if(aTask->progress)
-            aTask->progress->setCurrentOperationProgress(66);
+            aTask->progress->SetCurrentOperationProgress(66);
     }
     catch(HRESULT aRC)
     {
@@ -317,7 +319,7 @@ HRESULT VFSExplorer::updateFS(TaskVFSExplorer *aTask)
         RTDirClose(pDir);
 
     if(aTask->progress)
-        aTask->progress->setCurrentOperationProgress(99);
+        aTask->progress->SetCurrentOperationProgress(99);
 
     /* Assign the result on success (this clears the old list) */
     if (rc == S_OK)
@@ -345,7 +347,7 @@ HRESULT VFSExplorer::deleteFS(TaskVFSExplorer *aTask)
 
     HRESULT rc = S_OK;
 
-    float fPercentStep = 100.0 / aTask->filenames.size();
+    float fPercentStep = 100.0f / aTask->filenames.size();
     try
     {
         char szPath[RTPATH_MAX];
@@ -362,7 +364,7 @@ HRESULT VFSExplorer::deleteFS(TaskVFSExplorer *aTask)
             if (RT_FAILURE(vrc))
                 throw setError(VBOX_E_FILE_ERROR, tr ("Can't delete file '%s' (%Rrc)"), szPath, vrc);
             if(aTask->progress)
-                aTask->progress->setCurrentOperationProgress(fPercentStep * i);
+                aTask->progress->SetCurrentOperationProgress((ULONG)(fPercentStep * i));
         }
     }
     catch(HRESULT aRC)
@@ -420,7 +422,7 @@ HRESULT VFSExplorer::updateS3(TaskVFSExplorer *aTask)
         else
         {
             PCRTS3KEYENTRY pKeys = NULL;
-            vrc = RTS3GetBucketKeys(hS3, m->strBucket, &pKeys);
+            vrc = RTS3GetBucketKeys(hS3, m->strBucket.c_str(), &pKeys);
             if (RT_FAILURE(vrc))
                 throw setError(E_FAIL, tr ("Can't get keys for bucket (%Rrc)"), vrc);
 
@@ -469,7 +471,7 @@ HRESULT VFSExplorer::deleteS3(TaskVFSExplorer *aTask)
     HRESULT rc = S_OK;
 
     RTS3 hS3 = NULL;
-    float fPercentStep = 100.0 / aTask->filenames.size();
+    float fPercentStep = 100.0f / aTask->filenames.size();
     try
     {
         int vrc = RTS3Create(&hS3, m->strUsername.c_str(), m->strPassword.c_str(), m->strHostname.c_str(), "virtualbox-agent/"VBOX_VERSION_STRING);
@@ -488,7 +490,7 @@ HRESULT VFSExplorer::deleteS3(TaskVFSExplorer *aTask)
             if (RT_FAILURE(vrc))
                 throw setError(VBOX_E_FILE_ERROR, tr ("Can't delete file '%s' (%Rrc)"), (*it).c_str(), vrc);
             if(aTask->progress)
-                aTask->progress->setCurrentOperationProgress(fPercentStep * i);
+                aTask->progress->SetCurrentOperationProgress((ULONG)(fPercentStep * i));
         }
     }
     catch(HRESULT aRC)
@@ -605,7 +607,6 @@ STDMETHODIMP VFSExplorer::EntryList(ComSafeArrayOut(BSTR, aNames), ComSafeArrayO
 STDMETHODIMP VFSExplorer::Exists(ComSafeArrayIn(IN_BSTR, aNames), ComSafeArrayOut(BSTR, aExists))
 {
     CheckComArgSafeArrayNotNull(aNames);
-    CheckComArgSafeArrayNotNull(aExists);
 
     AutoCaller autoCaller(this);
     CheckComRCReturnRC(autoCaller.rc());
@@ -623,10 +624,11 @@ STDMETHODIMP VFSExplorer::Exists(ComSafeArrayIn(IN_BSTR, aNames), ComSafeArrayOu
         const VFSExplorer::Data::DirEntry &entry = (*it);
         for (size_t a=0; a < sfaNames.size(); ++a)
         {
-            if (entry.name == RTPathFilename(Utf8Str(sfaNames[a])))
+            if (entry.name == RTPathFilename(Utf8Str(sfaNames[a]).c_str()))
             {
                 BSTR name;
-                Bstr(sfaNames[a]).cloneTo(&name);
+                Bstr tmp(sfaNames[a]); /* gcc-3.3 cruft */
+                tmp.cloneTo(&name);
                 listExists.push_back(name);
             }
         }

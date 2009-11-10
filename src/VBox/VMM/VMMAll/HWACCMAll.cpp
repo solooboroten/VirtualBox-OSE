@@ -1,4 +1,4 @@
-/* $Id: HWACCMAll.cpp 20981 2009-06-26 15:03:24Z vboxsync $ */
+/* $Id: HWACCMAll.cpp 23553 2009-10-05 11:38:47Z vboxsync $ */
 /** @file
  * HWACCM - All contexts.
  */
@@ -58,6 +58,7 @@ void hwaccmQueueInvlPage(PVMCPU pVCpu, RTGCPTR GCVirt)
 #if 1
     VMCPU_FF_SET(pVCpu, VMCPU_FF_TLB_FLUSH);
 #else
+    Be very careful when activating this code!
     if (iPage == RT_ELEMENTS(pVCpu->hwaccm.s.TlbShootdown.aPages))
         VMCPU_FF_SET(pVCpu, VMCPU_FF_TLB_FLUSH);
     else
@@ -103,6 +104,57 @@ VMMDECL(int) HWACCMFlushTLB(PVMCPU pVCpu)
     return VINF_SUCCESS;
 }
 
+#ifdef IN_RING0
+/**
+ * Dummy RTMpOnSpecific handler since RTMpPokeCpu couldn't be used. 
+ *
+ */
+static DECLCALLBACK(void) hwaccmFlushHandler(RTCPUID idCpu, void *pvUser1, void *pvUser2)
+{
+    return;
+}
+
+/**
+ * Wrapper for RTMpPokeCpu to deal with VERR_NOT_SUPPORTED
+ *
+ */
+void hwaccmMpPokeCpu(PVMCPU pVCpu, RTCPUID idHostCpu)
+{
+    uint32_t cWorldSwitchExit = pVCpu->hwaccm.s.cWorldSwitchExit;
+
+    STAM_PROFILE_ADV_START(&pVCpu->hwaccm.s.StatPoke, x);
+    int rc = RTMpPokeCpu(idHostCpu);
+    STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatPoke, x);
+    /* Not implemented on some platforms (Darwin, Linux kernel < 2.6.19); fall back to a less efficient implementation (broadcast). */
+    if (rc == VERR_NOT_SUPPORTED)
+    {
+        STAM_PROFILE_ADV_START(&pVCpu->hwaccm.s.StatSpinPoke, z);
+        /* synchronous. */
+        RTMpOnSpecific(idHostCpu, hwaccmFlushHandler, 0, 0);
+        STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatSpinPoke, z);
+    }
+    else
+    {
+        if (rc == VINF_SUCCESS)
+            STAM_PROFILE_ADV_START(&pVCpu->hwaccm.s.StatSpinPoke, z);
+        else
+            STAM_PROFILE_ADV_START(&pVCpu->hwaccm.s.StatSpinPokeFailed, z);
+            
+        /* Spin until the VCPU has switched back. */
+        while (     VMCPU_GET_STATE(pVCpu) == VMCPUSTATE_STARTED_EXEC
+               &&   pVCpu->hwaccm.s.fCheckedTLBFlush
+               &&   cWorldSwitchExit == pVCpu->hwaccm.s.cWorldSwitchExit)
+        {
+            ASMNopPause();
+        }
+        if (rc == VINF_SUCCESS)
+            STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatSpinPoke, z);
+        else
+            STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatSpinPokeFailed, z);
+    }
+}
+#endif
+
 #ifndef IN_RC
 /**
  * Invalidates a guest page on all VCPUs.
@@ -115,7 +167,7 @@ VMMDECL(int) HWACCMInvalidatePageOnAllVCpus(PVM pVM, RTGCPTR GCPtr)
 {
     VMCPUID idCurCpu = VMMGetCpuId(pVM);
 
-    for (unsigned idCpu = 0; idCpu < pVM->cCPUs; idCpu++)
+    for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
     {
         PVMCPU pVCpu = &pVM->aCpus[idCpu];
 
@@ -126,13 +178,14 @@ VMMDECL(int) HWACCMInvalidatePageOnAllVCpus(PVM pVM, RTGCPTR GCPtr)
         else
         {
             hwaccmQueueInvlPage(pVCpu, GCPtr);
-            if (VMCPU_GET_STATE(pVCpu) == VMCPUSTATE_STARTED_EXEC)
+            if (    VMCPU_GET_STATE(pVCpu) == VMCPUSTATE_STARTED_EXEC
+                &&  pVCpu->hwaccm.s.fCheckedTLBFlush)
             {
                 STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatTlbShootdown);
 #ifdef IN_RING0
                 RTCPUID idHostCpu = pVCpu->hwaccm.s.idEnteredCpu;
                 if (idHostCpu != NIL_RTCPUID)
-                    RTMpPokeCpu(idHostCpu);
+                    hwaccmMpPokeCpu(pVCpu, idHostCpu);
 #else
                 VMR3NotifyCpuFFU(pVCpu->pUVCpu, VMNOTIFYFF_FLAGS_POKE);
 #endif
@@ -145,6 +198,7 @@ VMMDECL(int) HWACCMInvalidatePageOnAllVCpus(PVM pVM, RTGCPTR GCPtr)
     return VINF_SUCCESS;
 }
 
+
 /**
  * Flush the TLBs of all VCPUs
  *
@@ -153,26 +207,31 @@ VMMDECL(int) HWACCMInvalidatePageOnAllVCpus(PVM pVM, RTGCPTR GCPtr)
  */
 VMMDECL(int) HWACCMFlushTLBOnAllVCpus(PVM pVM)
 {
-    if (pVM->cCPUs == 1)
+    if (pVM->cCpus == 1)
         return HWACCMFlushTLB(&pVM->aCpus[0]);
 
     VMCPUID idThisCpu = VMMGetCpuId(pVM);
 
-    for (unsigned idCpu = 0; idCpu < pVM->cCPUs; idCpu++)
+    for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
     {
         PVMCPU pVCpu = &pVM->aCpus[idCpu];
+
+        /* Nothing to do if a TLB flush is already pending; the VCPU should have already been poked if it were active */
+        if (VMCPU_FF_ISSET(pVCpu, VMCPU_FF_TLB_FLUSH))
+            continue;
 
         VMCPU_FF_SET(pVCpu, VMCPU_FF_TLB_FLUSH);
         if (idThisCpu == idCpu)
             continue;
 
-        if (VMCPU_GET_STATE(pVCpu) == VMCPUSTATE_STARTED_EXEC)
+        if (    VMCPU_GET_STATE(pVCpu) == VMCPUSTATE_STARTED_EXEC
+            &&  pVCpu->hwaccm.s.fCheckedTLBFlush)
         {
             STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatTlbShootdownFlush);
 #ifdef IN_RING0
             RTCPUID idHostCpu = pVCpu->hwaccm.s.idEnteredCpu;
             if (idHostCpu != NIL_RTCPUID)
-                RTMpPokeCpu(idHostCpu);
+                hwaccmMpPokeCpu(pVCpu, idHostCpu);
 #else
             VMR3NotifyCpuFFU(pVCpu->pUVCpu, VMNOTIFYFF_FLAGS_POKE);
 #endif
@@ -230,7 +289,7 @@ VMMDECL(int) HWACCMInvalidatePhysPage(PVM pVM, RTGCPHYS GCPhys)
     {
         VMCPUID idThisCpu = VMMGetCpuId(pVM);
 
-        for (unsigned idCpu = 0; idCpu < pVM->cCPUs; idCpu++)
+        for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
         {
             PVMCPU pVCpu = &pVM->aCpus[idCpu];
 
@@ -241,16 +300,17 @@ VMMDECL(int) HWACCMInvalidatePhysPage(PVM pVM, RTGCPHYS GCPhys)
             }
 
             VMCPU_FF_SET(pVCpu, VMCPU_FF_TLB_FLUSH);
-            if (VMCPU_GET_STATE(pVCpu) == VMCPUSTATE_STARTED_EXEC)
+            if (    VMCPU_GET_STATE(pVCpu) == VMCPUSTATE_STARTED_EXEC
+                &&  pVCpu->hwaccm.s.fCheckedTLBFlush)
             {
                 STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatTlbShootdownFlush);
-    #ifdef IN_RING0
+# ifdef IN_RING0
                 RTCPUID idHostCpu = pVCpu->hwaccm.s.idEnteredCpu;
                 if (idHostCpu != NIL_RTCPUID)
-                    RTMpPokeCpu(idHostCpu);
-    #else
+                    hwaccmMpPokeCpu(pVCpu, idHostCpu);
+# else
                 VMR3NotifyCpuFFU(pVCpu->pUVCpu, VMNOTIFYFF_FLAGS_POKE);
-    #endif
+# endif
             }
             else
                 STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatFlushTLBManual);

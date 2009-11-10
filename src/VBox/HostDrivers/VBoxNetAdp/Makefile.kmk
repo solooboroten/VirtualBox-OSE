@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 18973 2009-04-17 06:59:16Z vboxsync $
+# $Id: Makefile.kmk 23526 2009-10-03 17:55:49Z vboxsync $
 ## @file
 # Sub-Makefile for the Network Adapter Driver (VBoxNetAdp).
 #
@@ -23,7 +23,7 @@ SUB_DEPTH = ../../../..
 include	$(KBUILD_PATH)/subheader.kmk
 
 
-if1of ($(KBUILD_TARGET), solaris darwin linux)
+if1of ($(KBUILD_TARGET), solaris darwin linux freebsd)
 #
 # VBoxNetAdp - Virtual Network Adapter
 # Note! On Solaris the name has to be <= 8 chars long.
@@ -34,6 +34,7 @@ VBoxNetAdp_TEMPLATE         = VBOXR0DRV
 VBoxNetAdp_INST = $(INST_VBOXNETADP)$(if $(eq $(KBUILD_TARGET),darwin),Contents/MacOS/)
 VBoxNetAdp_NAME.solaris     = vboxnet
 VBoxNetAdp_NAME.linux       = vboxnetadp
+VBoxNetAdp_NAME.freebsd     = vboxnetadp
 VBoxNetAdp_NOINST.linux     = true
 VBoxNetAdp_DEPS.solaris    += $(VBOX_SVN_REV_KMK)
 VBoxNetAdp_DEFS             = IN_RT_R0 VBOX_SVN_REV=$(VBOX_SVN_REV) IN_SUP_STATIC
@@ -45,17 +46,19 @@ VBoxNetAdp_INCS.linux   := \
 VBoxNetAdp_INCS             = \
 	.
 VBoxNetAdp_SOURCES.darwin   = \
-	darwin/VBoxNetAdp-darwin.cpp
+	darwin/VBoxNetAdp-darwin.cpp \
+	VBoxNetAdp.c
 VBoxNetAdp_SOURCES.solaris  = \
 	solaris/VBoxNetAdp-solaris.c
 VBoxNetAdp_SOURCES.linux   = \
 	linux/VBoxNetAdp-linux.c \
 	VBoxNetAdp.c
+VBoxNetAdp_SOURCES.freebsd   = \
+	freebsd/VBoxNetAdp-freebsd.c \
+	VBoxNetAdp.c
 VBoxNetAdp_SOURCES          =
 #VBoxNetAdp_SOURCES          = \
 #	VBoxNetAdp.c
-VBoxNetAdp_LIBS.solaris    += \
-	$(PATH_LIB)/RuntimeR0Drv$(VBOX_SUFF_LIB)
 VBoxNetAdp_LIBS            += \
 	$(PATH_LIB)/SUPR0IdcClient$(VBOX_SUFF_LIB)
  endif
@@ -148,6 +151,33 @@ $$(PATH_VBoxNetAdp-src)/dkms.conf: \
 	$(QUIET)$(SED) -e "s;_VERSION_;${VBOX_VERSION_STRING};g" --output $@ $<
 
 endif # linux
+
+ifeq ($(KBUILD_TARGET),freebsd)
+ #
+ # Install source files for compliation on FreeBSD.
+ # files_vboxnetadp defines VBOX_VBOXNETADP_SOURCES.
+ #
+ include $(PATH_SUB_CURRENT)/freebsd/files_vboxnetadp
+ INSTALLS += VBoxNetAdp-src
+ VBoxNetAdp-src_INST    = bin/src/vboxnetadp/
+ VBoxNetAdp-src_MODE    = a+r,u+w
+ VBoxNetAdp-src_SOURCES = $(subst ",,$(VBOX_VBOXNETADP_SOURCES)) #"
+ VBoxNetAdp-src_SOURCES+= \
+	$(PATH_VBoxNetAdp-src)/Makefile
+ VBoxNetAdp-src_CLEAN   = \
+	$(PATH_VBoxNetAdp-src)/Makefile	\
+
+$$(PATH_VBoxNetAdp-src)/Makefile: \
+		$(PATH_SUB_CURRENT)/freebsd/Makefile \
+		$$(if $$(eq $$(VBoxNetAdp/freebsd/Makefile_VBOX_HARDENED),$$(VBOX_WITH_HARDENING)),,FORCE) \
+		| $$(dir $$@)
+ifndef VBOX_WITH_HARDENING
+	$(QUIET)$(SED) -e "s;-DVBOX_WITH_HARDENING;;g" --output $@ $<
+else
+	$(QUIET)$(CP) -f $< $@
+endif
+
+endif # freebsd
 
 include	$(KBUILD_PATH)/subfooter.kmk
 

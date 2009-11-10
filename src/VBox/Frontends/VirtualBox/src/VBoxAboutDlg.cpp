@@ -21,18 +21,35 @@
  */
 
 #include "VBoxAboutDlg.h"
+#include "VBoxGlobal.h"
+
+#include <iprt/path.h>
 
 /* Qt includes */
-#include <QPainter>
+#include <QDir>
 #include <QEvent>
+#include <QPainter>
 
 VBoxAboutDlg::VBoxAboutDlg (QWidget* aParent, const QString &aVersion)
     : QIWithRetranslateUI2 <QIDialog> (aParent, Qt::CustomizeWindowHint |
                                        Qt::WindowTitleHint | Qt::WindowSystemMenuHint),
-    mVersion (aVersion),
-    mBgImage (":/about.png")
+    mVersion (aVersion)
 {
     retranslateUi();
+
+    QString sPath (":/about.png");
+    /* Branding: Use a custom about splash picture if set */
+    QString sSplash = vboxGlobal().brandingGetKey ("UI/AboutSplash");
+    if (vboxGlobal().brandingIsActive() && !sSplash.isEmpty())
+    {
+        char szExecPath[1024];
+        RTPathExecDir (szExecPath, 1024);
+        QString tmpPath = QString ("%1/%2").arg (szExecPath).arg (sSplash);
+        if (QFile::exists (tmpPath))
+            sPath = tmpPath;
+    }
+
+    mBgImage.load (sPath);
 }
 
 bool VBoxAboutDlg::event (QEvent *aEvent)
@@ -46,7 +63,11 @@ void VBoxAboutDlg::retranslateUi()
 {
     setWindowTitle (tr ("VirtualBox - About"));
     QString aboutText =  tr ("VirtualBox Graphical User Interface");
+#ifdef VBOX_BLEEDING_EDGE
+    QString versionText = "EXPERIMENTAL build %1 - " + QString(VBOX_BLEEDING_EDGE);
+#else
     QString versionText = tr ("Version %1");
+#endif
 #if VBOX_OSE
     mAboutText = aboutText + " " + versionText.arg (mVersion) + "\n" +
                  QString ("%1 2004-2009 Sun Microsystems, Inc.").arg (QChar (0xa9));
@@ -61,7 +82,14 @@ void VBoxAboutDlg::paintEvent (QPaintEvent * /* aEvent */)
     QPainter painter (this);
     painter.drawPixmap (0, 0, mBgImage);
     painter.setFont (font());
-    painter.setPen (Qt::white);
+
+    /* Branding: Set a different text color (because splash also could be white),
+                 otherwise use white as default color */
+    QString sColor = vboxGlobal().brandingGetKey("UI/AboutTextColor");
+    if (!sColor.isEmpty())
+        painter.setPen (QColor(sColor).name());
+    else
+        painter.setPen (Qt::white);
 #if VBOX_OSE
     painter.drawText (QRect (0, 400, 600, 32),
                       Qt::AlignCenter | Qt::AlignVCenter | Qt::TextWordWrap,

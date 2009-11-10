@@ -729,7 +729,7 @@
         <translation>&amp;Дељене фасцикле...</translation>
     </message>
     <message>
-        <source>Open the dialog to operate on shared folders</source>
+        <source>Create or modify shared folders</source>
         <translation>Отвори дијалог за рад са дељене фасцикле</translation>
     </message>
     <message>
@@ -888,7 +888,7 @@
         <translation>&lt;br&gt;&lt;nobr&gt;&lt;b&gt;Нема монтираног медија&lt;/b&gt;&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of virtual hard disks:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
+        <source>&lt;qt&gt;&lt;nobr&gt;Indicates activity on the virtual hard disks:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
         <comment>HDD tooltip</comment>
         <translation>&lt;qt&gt;&lt;nobr&gt;Показује активност виртуелних хард дискова:&lt;/nobr&gt;%1&lt;/qt&gt;</translation>
     </message>

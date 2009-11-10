@@ -1,5 +1,5 @@
 /** @file
- * X86 (and AMD64) Structures and Definitions.
+ * X86 (and AMD64) Structures and Definitions (VMM,++).
  *
  * x86.mac is generated from this file by running 'kmk incs' in the root.
  */
@@ -203,15 +203,17 @@ typedef struct X86CPUIDFEATECX
     /** Bit 0 - SSE3 - Supports SSE3 or not. */
     unsigned    u1SSE3 : 1;
     /** Reserved. */
-    unsigned    u2Reserved1 : 2;
+    unsigned    u1Reserved1 : 1;
+    /** Bit 2 - DS Area 64-bit layout. */
+    unsigned    u1DTE64 : 1;
     /** Bit 3 - MONITOR - Supports MONITOR/MWAIT. */
     unsigned    u1Monitor : 1;
     /** Bit 4 - CPL-DS - CPL Qualified Debug Store. */
     unsigned    u1CPLDS : 1;
     /** Bit 5 - VMX - Virtual Machine Technology. */
     unsigned    u1VMX : 1;
-    /** Reserved. */
-    unsigned    u1Reserved2 : 1;
+    /** Bit 6 - SMX: Safer Mode Extensions. */
+    unsigned    u1SMX : 1;
     /** Bit 7 - EST - Enh. SpeedStep Tech. */
     unsigned    u1EST : 1;
     /** Bit 8 - TM2 - Terminal Monitor 2. */
@@ -220,15 +222,40 @@ typedef struct X86CPUIDFEATECX
     unsigned    u1SSSE3 : 1;
     /** Bit 10 - CNTX-ID - L1 Context ID. */
     unsigned    u1CNTXID : 1;
-    /** Reserved. */
-    unsigned    u2Reserved4 : 2;
+    /** Bit 11 - FMA. */
+    unsigned    u1FMA : 1;
+    /** Bit 12 - Reserved. */
+    unsigned    u1Reserved2 : 1;
     /** Bit 13 - CX16 - CMPXCHG16B. */
     unsigned    u1CX16 : 1;
     /** Bit 14 - xTPR Update Control. Processor supports changing IA32_MISC_ENABLES[bit 23]. */
     unsigned    u1TPRUpdate : 1;
+    /** Bit 15 - PDCM - Perf/Debug Capability MSR. */
+    unsigned    u1PDCM : 1;
     /** Reserved. */
-    unsigned    u17Reserved5 : 17;
-
+    unsigned    u2Reserved3 : 2;
+    /** Bit 18 - Direct Cache Access. */
+    unsigned    u1DCA : 1;
+    /** Bit 19 - SSE4_1 - Supports SSE4_1 or not. */
+    unsigned    u1SSE4_1 : 1;
+    /** Bit 20 - SSE4_2 - Supports SSE4_2 or not. */
+    unsigned    u1SSE4_2 : 1;
+    /** Bit 21 - x2APIC. */
+    unsigned    u1x2APIC : 1;
+    /** Bit 22 - MOVBE - Supports MOVBE. */
+    unsigned    u1MOVBE : 1;
+    /** Bit 23 - POPCNT - Supports POPCNT. */
+    unsigned    u1POPCNT : 1;
+    /** Bit 24 - Reserved. */
+    unsigned    u1Reserved4 : 1;
+    /** Bit 25 - AES. */
+    unsigned    u1AES : 1;
+    /** Bit 26 - XSAVE - Supports XSAVE. */
+    unsigned    u1XSAVE : 1;
+    /** Bit 27 - OSXSAVE - Supports OSXSAVE. */
+    unsigned    u1OSXSAVE : 1;
+    /** Reserved. */
+    unsigned    u4Reserved5 : 4;
 } X86CPUIDFEATECX;
 /** Pointer to CPUID Feature Information - ECX. */
 typedef X86CPUIDFEATECX *PX86CPUIDFEATECX;
@@ -331,12 +358,18 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
  */
 /** ECX Bit 0 - SSE3 - Supports SSE3 or not. */
 #define X86_CPUID_FEATURE_ECX_SSE3      RT_BIT(0)
+/** ECX Bit 1 - PCLMUL - PCLMULQDQ support (for AES-GCM). */
+#define X86_CPUID_FEATURE_ECX_PCLMUL    RT_BIT(1)
+/** ECX Bit 2 - DTES64 - DS Area 64-bit Layout. */
+#define X86_CPUID_FEATURE_ECX_DTES64    RT_BIT(2)
 /** ECX Bit 3 - MONITOR - Supports MONITOR/MWAIT. */
 #define X86_CPUID_FEATURE_ECX_MONITOR   RT_BIT(3)
 /** ECX Bit 4 - CPL-DS - CPL Qualified Debug Store. */
 #define X86_CPUID_FEATURE_ECX_CPLDS     RT_BIT(4)
 /** ECX Bit 5 - VMX - Virtual Machine Technology. */
 #define X86_CPUID_FEATURE_ECX_VMX       RT_BIT(5)
+/** ECX Bit 6 - SMX - Safer Mode Extensions. */
+#define X86_CPUID_FEATURE_ECX_SMX       RT_BIT(6)
 /** ECX Bit 7 - EST - Enh. SpeedStep Tech. */
 #define X86_CPUID_FEATURE_ECX_EST       RT_BIT(7)
 /** ECX Bit 8 - TM2 - Terminal Monitor 2. */
@@ -345,14 +378,34 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define X86_CPUID_FEATURE_ECX_SSSE3     RT_BIT(9)
 /** ECX Bit 10 - CNTX-ID - L1 Context ID. */
 #define X86_CPUID_FEATURE_ECX_CNTXID    RT_BIT(10)
+/** ECX Bit 12 - FMA. */
+#define X86_CPUID_FEATURE_ECX_FMA       RT_BIT(12)
 /** ECX Bit 13 - CX16 - CMPXCHG16B. */
 #define X86_CPUID_FEATURE_ECX_CX16      RT_BIT(13)
 /** ECX Bit 14 - xTPR Update Control. Processor supports changing IA32_MISC_ENABLES[bit 23]. */
 #define X86_CPUID_FEATURE_ECX_TPRUPDATE RT_BIT(14)
+/** ECX Bit 15 - PDCM - Perf/Debug Capability MSR. */
+#define X86_CPUID_FEATURE_ECX_PDCM      RT_BIT(15)
+/** ECX Bit 18 - DCA - Direct Cache Access. */
+#define X86_CPUID_FEATURE_ECX_DCA       RT_BIT(18)
+/** ECX Bit 19 - SSE4_1 - Supports SSE4_1 or not. */
+#define X86_CPUID_FEATURE_ECX_SSE4_1    RT_BIT(19)
+/** ECX Bit 20 - SSE4_2 - Supports SSE4_2 or not. */
+#define X86_CPUID_FEATURE_ECX_SSE4_2    RT_BIT(20)
 /** ECX Bit 21 - x2APIC support. */
 #define X86_CPUID_FEATURE_ECX_X2APIC    RT_BIT(21)
-/** ECX Bit 23 - POPCOUNT instruction. */
-#define X86_CPUID_FEATURE_ECX_POPCOUNT  RT_BIT(23)
+/** ECX Bit 22 - MOVBE instruction. */
+#define X86_CPUID_FEATURE_ECX_MOVBE     RT_BIT(22)
+/** ECX Bit 23 - POPCNT instruction. */
+#define X86_CPUID_FEATURE_ECX_POPCNT    RT_BIT(23)
+/** ECX Bit 25 - AES instructions. */
+#define X86_CPUID_FEATURE_ECX_AES       RT_BIT(25)
+/** ECX Bit 26 - XSAVE instruction. */
+#define X86_CPUID_FEATURE_ECX_XSAVE     RT_BIT(26)
+/** ECX Bit 27 - OSXSAVE instruction. */
+#define X86_CPUID_FEATURE_ECX_OSXSAVE   RT_BIT(27)
+/** ECX Bit 28 - AVX. */
+#define X86_CPUID_FEATURE_ECX_AVX       RT_BIT(28)
 
 
 /** Bit 0 - FPU - x87 FPU on Chip. */
@@ -421,9 +474,9 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
  * @{
  */
 /** Bit 0 - FPU - x87 FPU on Chip. */
-#define X86_CPUID_AMD_FEATURE_EDX_FPU   RT_BIT(0)
+#define X86_CPUID_AMD_FEATURE_EDX_FPU       RT_BIT(0)
 /** Bit 1 - VME - Virtual 8086 Mode Enhancements. */
-#define X86_CPUID_AMD_FEATURE_EDX_VME    RT_BIT(1)
+#define X86_CPUID_AMD_FEATURE_EDX_VME       RT_BIT(1)
 /** Bit 2 - DE - Debugging extensions. */
 #define X86_CPUID_AMD_FEATURE_EDX_DE        RT_BIT(2)
 /** Bit 3 - PSE - Page Size Extension. */
@@ -495,6 +548,10 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define X86_CPUID_AMD_FEATURE_ECX_3DNOWPRF  RT_BIT(8)
 /** Bit 9 - OSVW - AMD OS visible workaround. */
 #define X86_CPUID_AMD_FEATURE_ECX_OSVW      RT_BIT(9)
+/** Bit 10 - IBS - Instruct based sampling. */
+#define X86_CPUID_AMD_FEATURE_ECX_IBS       RT_BIT(10)
+/** Bit 11 - SSE5 - SSE5 instruction support. */
+#define X86_CPUID_AMD_FEATURE_ECX_SSE5      RT_BIT(11)
 /** Bit 12 - SKINIT - AMD SKINIT: SKINIT, STGI, and DEV support. */
 #define X86_CPUID_AMD_FEATURE_ECX_SKINIT    RT_BIT(12)
 /** Bit 13 - WDT - AMD Watchdog timer support. */
@@ -784,6 +841,9 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 /** Machine Check Global Control Register. */
 #define MSR_IA32_MCP_CTRL                   0x17B
 
+/** Trace/Profile Resource Control (R/W) */
+#define MSR_IA32_DEBUGCTL                   0x1D9
+
 /* Page Attribute Table. */
 #define MSR_IA32_CR_PAT                     0x277
 
@@ -825,6 +885,8 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define MSR_IA32_VMX_PROCBASED_CTLS2        0x48B
 /** EPT capabilities. */
 #define MSR_IA32_VMX_EPT_CAPS               0x48C
+/** DS Save Area (R/W). */
+#define MSR_IA32_DS_AREA                    0x600
 /** X2APIC MSR ranges. */
 #define MSR_IA32_APIC_START                 0x800
 #define MSR_IA32_APIC_END                   0x900
@@ -874,6 +936,8 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define MSR_K7_PERFCTR1                     0xc0010005
 #define MSR_K7_PERFCTR2                     0xc0010006
 #define MSR_K7_PERFCTR3                     0xc0010007
+
+#define MSR_K8_HWCR                         0xc0010015
 
 /** K8 LSTAR - Long mode SYSCALL target (RIP). */
 #define MSR_K8_LSTAR                        0xc0000082
@@ -2219,22 +2283,38 @@ typedef X86DESC64 *PX86DESC64;
 /** Pointer to const descriptor table entry. */
 typedef const X86DESC64 *PCX86DESC64;
 
-#if HC_ARCH_BITS == 64
-typedef X86DESC64   X86DESCHC;
-typedef X86DESC64   *PX86DESCHC;
-#else
-typedef X86DESC     X86DESCHC;
-typedef X86DESC     *PX86DESCHC;
-#endif
-
 /** @def X86DESC64_BASE
  * Return the base of a 64-bit descriptor.
  */
-#define X86DESC64_BASE(desc) \
+#define X86DESC64_BASE(desc) /*ASM-NOINC*/ \
         (  ((uint64_t)((desc).Gen.u32BaseHigh3) << 32) \
          | ((uint32_t)((desc).Gen.u8BaseHigh2)  << 24) \
          | (           (desc).Gen.u8BaseHigh1   << 16) \
          | (           (desc).Gen.u16BaseLow         ) )
+
+
+
+/** @name Host system descriptor table entry - Use with care!
+ * @{ */
+/** Host system descriptor table entry. */
+#if HC_ARCH_BITS == 64
+typedef X86DESC64   X86DESCHC;
+#else
+typedef X86DESC     X86DESCHC;
+#endif
+/** Pointer to a host system descriptor table entry. */
+#if HC_ARCH_BITS == 64
+typedef PX86DESC64  PX86DESCHC;
+#else
+typedef PX86DESC    PX86DESCHC;
+#endif
+/** Pointer to a const host system descriptor table entry. */
+#if HC_ARCH_BITS == 64
+typedef PCX86DESC64 PCX86DESCHC;
+#else
+typedef PCX86DESC   PCX86DESCHC;
+#endif
+/** @} */
 
 
 /** @name Selector Descriptor Types.
@@ -2502,19 +2582,6 @@ AssertCompileSize(X86TSS64, 136);
  * The shift used to convert a selector from and to index an index (C).
  */
 #define X86_SEL_SHIFT       3
-
-/**
- * The shift used to convert a selector from and to index an index (C).
- */
-#define AMD64_SEL_SHIFT     4
-
-/** @def X86_SEL_SHIFT_HC
- * This is for use with X86DESCHC. */
-#if HC_ARCH_BITS == 64
-#define X86_SEL_SHIFT_HC    AMD64_SEL_SHIFT
-#else
-#define X86_SEL_SHIFT_HC    X86_SEL_SHIFT
-#endif
 
 /**
  * The mask used to mask off the table indicator and CPL of an selector.

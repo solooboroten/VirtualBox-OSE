@@ -85,7 +85,7 @@ tcp_slowtimo(PNATState pData)
     if (ip == 0)
         return;
     QSOCKET_FOREACH(ip, ipnxt, tcp)
-    /* { */ 
+    /* { */
         ipnxt = ip->so_next;
         tp = sototcpcb(ip);
         if (tp == 0)
@@ -163,6 +163,7 @@ tcp_timers(PNATState pData, register struct tcpcb *tp, int timer)
          * to a longer retransmit interval and retransmit one segment.
          */
         case TCPT_REXMT:
+            STAM_COUNTER_INC(&pData->StatTCP_retransmit);
             /*
              * XXX If a packet has timed out, then remove all the queued
              * packets for that session.

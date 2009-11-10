@@ -26,6 +26,7 @@
 #include "VBoxVRDP.h"
 #include "VBoxStatistics.h"
 #include "VBoxMemBalloon.h"
+#include "VBoxHostVersion.h"
 #include <VBoxHook.h>
 #include "resource.h"
 #include <malloc.h>
@@ -214,6 +215,36 @@ static void vboxStopServices (VBOXSERVICEENV *pEnv, VBOXSERVICEINFO *pTable)
 }
 
 
+/** Attempt to force Windows to reload the cursor image by attaching to the
+ * thread of the window currently under the mouse, hiding the cursor and
+ * showing it again.  This could fail to work in any number of ways (no
+ * window under the cursor, the cursor has moved to a different window while
+ * we are processing), but we just accept this, as the cursor will be reloaded
+ * at some point anyway. */
+void VBoxServiceReloadCursor(void)
+{
+    LogFlowFunc(("\n"));
+    POINT mousePos;
+    HWND hWin;
+    DWORD hThread, hCurrentThread;
+
+    GetCursorPos(&mousePos);
+    hWin = WindowFromPoint(mousePos);
+    if (hWin)
+    {
+        hThread = GetWindowThreadProcessId(hWin, NULL);
+        hCurrentThread = GetCurrentThreadId();
+        if (hCurrentThread != hThread)
+            AttachThreadInput(hCurrentThread, hThread, TRUE);
+    }
+    ShowCursor(false);
+    ShowCursor(true);
+    if (hWin && (hCurrentThread != hThread))
+        AttachThreadInput(hCurrentThread, hThread, FALSE);
+    LogFlowFunc(("exiting\n"));
+}
+
+
 void WINAPI VBoxServiceStart(void)
 {
     Log(("VBoxTray: Leaving service main function"));
@@ -263,22 +294,19 @@ void WINAPI VBoxServiceStart(void)
         if (!gToolWindow)
             status = GetLastError();
         else
-        {
-            /* move the window beneach the mouse pointer so that we get access to it */
-            POINT mousePos;
-            GetCursorPos(&mousePos);
-            SetWindowPos(gToolWindow, HWND_TOPMOST, mousePos.x - 10, mousePos.y - 10, 0, 0,
-                         SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOCOPYBITS | SWP_NOREDRAW | SWP_NOSIZE);
-            /* change the mouse pointer so that we can go for a hardware shape */
-            SetCursor(LoadCursor(NULL, IDC_APPSTARTING));
-            SetCursor(LoadCursor(NULL, IDC_ARROW));
-            /* move back our tool window */
-            SetWindowPos(gToolWindow, HWND_TOPMOST, -200, -200, 0, 0,
-                         SWP_NOACTIVATE | SWP_HIDEWINDOW | SWP_NOCOPYBITS | SWP_NOREDRAW | SWP_NOSIZE);
-        }
+            VBoxServiceReloadCursor();
     }
 
     Log(("VBoxTray: Window Handle = %p, Status = %p\n", gToolWindow, status));
+
+    OSVERSIONINFO           info;
+    DWORD                   dwMajorVersion = 5; /* default XP */
+    info.dwOSVersionInfoSize = sizeof(info);
+    if (GetVersionEx(&info))
+    {
+        Log(("VBoxTray: Windows version major %d minor %d\n", info.dwMajorVersion, info.dwMinorVersion));
+        dwMajorVersion = info.dwMajorVersion;
+    }
 
     if (status == NO_ERROR)
     {
@@ -291,9 +319,7 @@ void WINAPI VBoxServiceStart(void)
 
         /* We need to setup a security descriptor to allow other processes modify access to the seamless notification event semaphore */
         SECURITY_ATTRIBUTES     SecAttr;
-        OSVERSIONINFO           info;
         char                    secDesc[SECURITY_DESCRIPTOR_MIN_LENGTH];
-        DWORD                   dwMajorVersion = 5; /* default XP */
         BOOL                    ret;
 
         SecAttr.nLength              = sizeof(SecAttr);
@@ -303,13 +329,6 @@ void WINAPI VBoxServiceStart(void)
         ret = SetSecurityDescriptorDacl(SecAttr.lpSecurityDescriptor, TRUE, 0, FALSE);
         if (!ret)
             Log(("VBoxTray: SetSecurityDescriptorDacl failed with %d\n", GetLastError()));
-
-        info.dwOSVersionInfoSize = sizeof(info);
-        if (GetVersionEx(&info))
-        {
-            Log(("VBoxTray: Windows version major %d minor %d\n", info.dwMajorVersion, info.dwMinorVersion));
-            dwMajorVersion = info.dwMajorVersion;
-        }
 
         /* For Vista and up we need to change the integrity of the security descriptor too */
         if (dwMajorVersion >= 6)
@@ -385,15 +404,14 @@ void WINAPI VBoxServiceStart(void)
 
     /* prepare the system tray icon */
     NOTIFYICONDATA ndata;
-    memset (&ndata, 0, sizeof (ndata));
+    RT_ZERO (ndata);
     ndata.cbSize           = NOTIFYICONDATA_V1_SIZE; // sizeof(NOTIFYICONDATA);
     ndata.hWnd             = gToolWindow;
-    ndata.uID              = 2000;
+    ndata.uID              = ID_TRAYICON;
     ndata.uFlags           = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    ndata.uCallbackMessage = WM_USER;
+    ndata.uCallbackMessage = WM_VBOX_TRAY;
     ndata.hIcon            = LoadIcon(gInstance, MAKEINTRESOURCE(IDI_VIRTUALBOX));
     sprintf(ndata.szTip, "Sun VirtualBox Guest Additions %d.%d.%dr%d", VBOX_VERSION_MAJOR, VBOX_VERSION_MINOR, VBOX_VERSION_BUILD, VBOX_SVN_REV);
-
     Log(("VBoxTray: ndata.hWnd %08X, ndata.hIcon = %p\n", ndata.hWnd, ndata.hIcon));
 
     /* Boost thread priority to make sure we wake up early for seamless window notifications (not sure if it actually makes any difference though) */
@@ -453,14 +471,28 @@ void WINAPI VBoxServiceStart(void)
             {
                 fTrayIconCreated = Shell_NotifyIcon(NIM_ADD, &ndata);
                 Log(("VBoxTray: fTrayIconCreated = %d, err %08X\n", fTrayIconCreated, GetLastError ()));
+
+                /* We're ready to create the tooltip balloon. */
+                if (fTrayIconCreated && dwMajorVersion >= 5)
+                {
+                    /* Check in 10 seconds (@todo make seconds configurable) ... */
+                    SetTimer(gToolWindow,
+                             WM_VBOX_CHECK_HOSTVERSION,
+                             10000, /* 10 seconds */
+                             NULL   /* no timerproc */);
+                }
             }
         }
     }
 
     Log(("VBoxTray: Returned from main loop, exiting ...\n"));
 
-    /* remove the system tray icon */
+    /* remove the system tray icon and refresh system tray */
     Shell_NotifyIcon(NIM_DELETE, &ndata);
+    HWND hTrayWnd = FindWindow("Shell_TrayWnd", NULL); /* We assume we only have one tray atm */
+    HWND hTrayNotifyWnd = FindWindowEx(hTrayWnd, 0, "TrayNotifyWnd", NULL);
+    if (hTrayNotifyWnd)
+        SendMessage(hTrayNotifyWnd, WM_PAINT, 0, NULL);
 
     Log(("VBoxTray: waiting for display change thread ...\n"));
 
@@ -489,7 +521,7 @@ void WINAPI VBoxServiceStart(void)
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
     /* Do not use a global namespace ("Global\\") for mutex name here, will blow up NT4 compatibility! */
-    HANDLE hMutexAppRunning = CreateMutex (NULL, FALSE, "VBoxTray");
+    HANDLE hMutexAppRunning = CreateMutex(NULL, FALSE, "VBoxTray");
     if (   (hMutexAppRunning != NULL)
         && (GetLastError() == ERROR_ALREADY_EXISTS))
     {
@@ -516,7 +548,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     /* Release instance mutex. */
     if (hMutexAppRunning != NULL) {
-        CloseHandle (hMutexAppRunning);
+        CloseHandle(hMutexAppRunning);
         hMutexAppRunning = NULL;
     }
 
@@ -535,6 +567,35 @@ LRESULT CALLBACK VBoxToolWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             break;
 
         case WM_DESTROY:
+            KillTimer(gToolWindow, WM_VBOX_CHECK_HOSTVERSION);
+            break;
+
+        case WM_TIMER:
+            switch (wParam)
+            {
+                case WM_VBOX_CHECK_HOSTVERSION:
+                    if (RT_SUCCESS(VBoxCheckHostVersion()))
+                    {
+                        /* After successful run we don't need to check again. */
+                        KillTimer(gToolWindow, WM_VBOX_CHECK_HOSTVERSION);
+                    }
+                    return 0;
+
+                default:
+                    break;
+            }
+
+            break;
+
+        case WM_VBOX_TRAY:
+            switch (lParam)
+            {
+                case WM_LBUTTONDBLCLK:
+                    break;
+
+                case WM_RBUTTONDOWN:
+                    break;
+            }
             break;
 
         case WM_VBOX_INSTALL_SEAMLESS_HOOK:

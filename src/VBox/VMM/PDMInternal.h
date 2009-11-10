@@ -1,4 +1,4 @@
-/* $Id: PDMInternal.h 21035 2009-06-29 15:45:43Z vboxsync $ */
+/* $Id: PDMInternal.h 24127 2009-10-28 10:16:22Z vboxsync $ */
 /** @file
  * PDM - Internal header file.
  */
@@ -29,6 +29,7 @@
 #include <VBox/stam.h>
 #include <VBox/vusb.h>
 #include <VBox/pdmasynccompletion.h>
+#include <iprt/assert.h>
 #include <iprt/critsect.h>
 #ifdef IN_RING3
 # include <iprt/thread.h>
@@ -124,9 +125,16 @@ typedef struct PDMDEVINSINT
     RCPTRTYPE(struct PCIDevice *)   pPciDeviceRC;
     /** RC pointer to associated PCI bus structure. */
     RCPTRTYPE(PPDMPCIBUS)           pPciBusRC;
-    /** Alignment padding. */
-    RTRCPTR                         Alignment1;
+
+    /** Flags, see PDMDEVINSINT_FLAGS_XXX. */
+    uint32_t                        fIntFlags;
 } PDMDEVINSINT;
+
+/** @name PDMDEVINSINT::fIntFlags
+ * @{ */
+/** Used by pdmR3Load to mark device instances it found in the saved state. */
+#define PDMDEVINSINT_FLAGS_FOUND         RT_BIT_32(0)
+/** @} */
 
 
 /**
@@ -214,10 +222,8 @@ typedef struct PDMCRITSECTINT
     PVMR0                           pVMR0;
     /** Pointer to the VM - GCPtr. */
     PVMRC                           pVMRC;
-#if HC_ARCH_BITS == 64
     /** Alignment padding. */
     uint32_t                        padding;
-#endif
     /** Event semaphore that is scheduled to be signaled upon leaving the
      * critical section. This is Ring-3 only of course. */
     RTSEMEVENT                      EventToSignal;
@@ -232,6 +238,8 @@ typedef struct PDMCRITSECTINT
     /** Profiling the time the section is locked. */
     STAMPROFILEADV                  StatLocked;
 } PDMCRITSECTINT;
+AssertCompileMemberAlignment(PDMCRITSECTINT, StatContentionRZLock, 8);
+/** Pointer to private critical section data. */
 typedef PDMCRITSECTINT *PPDMCRITSECTINT;
 
 /** Indicates that the critical section is queued for unlock.
@@ -429,6 +437,8 @@ typedef struct PDMAPIC
     /** @copydoc PDMAPICREG::pfnBusDeliverR3 */
     DECLR3CALLBACKMEMBER(int,       pfnBusDeliverR3,(PPDMDEVINS pDevIns, uint8_t u8Dest, uint8_t u8DestMode, uint8_t u8DeliveryMode,
                                                      uint8_t iVector, uint8_t u8Polarity, uint8_t u8TriggerMode));
+    /** @copydoc PDMAPICREG::pfnLocalInterruptR3 */
+    DECLR3CALLBACKMEMBER(int,       pfnLocalInterruptR3,(PPDMDEVINS pDevIns, uint8_t u8Pin, uint8_t u8Level));
 
     /** Pointer to the APIC device instance - R0 Ptr. */
     PPDMDEVINSR0                    pDevInsR0;
@@ -451,6 +461,8 @@ typedef struct PDMAPIC
     /** @copydoc PDMAPICREG::pfnBusDeliverR3 */
     DECLR0CALLBACKMEMBER(int,       pfnBusDeliverR0,(PPDMDEVINS pDevIns, uint8_t u8Dest, uint8_t u8DestMode, uint8_t u8DeliveryMode,
                                                      uint8_t iVector, uint8_t u8Polarity, uint8_t u8TriggerMode));
+    /** @copydoc PDMAPICREG::pfnLocalInterruptR3 */
+    DECLR0CALLBACKMEMBER(int,       pfnLocalInterruptR0,(PPDMDEVINS pDevIns, uint8_t u8Pin, uint8_t u8Level));
 
     /** Pointer to the APIC device instance - RC Ptr. */
     PPDMDEVINSRC                    pDevInsRC;
@@ -473,6 +485,10 @@ typedef struct PDMAPIC
     /** @copydoc PDMAPICREG::pfnBusDeliverR3 */
     DECLRCCALLBACKMEMBER(int,       pfnBusDeliverRC,(PPDMDEVINS pDevIns, uint8_t u8Dest, uint8_t u8DestMode, uint8_t u8DeliveryMode,
                                                      uint8_t iVector, uint8_t u8Polarity, uint8_t u8TriggerMode));
+    /** @copydoc PDMAPICREG::pfnLocalInterruptR3 */
+    DECLRCCALLBACKMEMBER(int,       pfnLocalInterruptRC,(PPDMDEVINS pDevIns, uint8_t u8Pin, uint8_t u8Level));
+    RTRCPTR                         RCPtrAlignment;
+
 } PDMAPIC;
 
 
@@ -699,14 +715,36 @@ typedef struct PDMQUEUE
     PVMRC                           pVMRC;
     /** LIFO of pending items - GC. */
     RCPTRTYPE(PPDMQUEUEITEMCORE) volatile pPendingRC;
+
     /** Item size (bytes). */
-    RTUINT                          cbItem;
+    uint32_t                        cbItem;
     /** Number of items in the queue. */
-    RTUINT                          cItems;
+    uint32_t                        cItems;
     /** Index to the free head (where we insert). */
     uint32_t volatile               iFreeHead;
     /** Index to the free tail (where we remove). */
     uint32_t volatile               iFreeTail;
+
+    /** Unqiue queue name. */
+    R3PTRTYPE(const char *)         pszName;
+#if HC_ARCH_BITS == 32
+    RTR3PTR                         Alignment1;
+#endif
+    /** Stat: Times PDMQueueAlloc fails. */
+    STAMCOUNTER                     StatAllocFailures;
+    /** Stat: PDMQueueInsert calls. */
+    STAMCOUNTER                     StatInsert;
+    /** Stat: Queue flushes. */
+    STAMCOUNTER                     StatFlush;
+    /** Stat: Queue flushes with pending items left over. */
+    STAMCOUNTER                     StatFlushLeftovers;
+#ifdef VBOX_WITH_STATISTICS
+    /** State: Profiling the flushing. */
+    STAMPROFILE                     StatFlushPrf;
+    /** State: Pending items. */
+    uint32_t volatile               cStatPending;
+    uint32_t volatile               cAlignment;
+#endif
 
     /** Array of pointers to free items. Variable size. */
     struct PDMQUEUEFREEITEM
@@ -722,6 +760,21 @@ typedef struct PDMQUEUE
 #endif
     }                               aFreeItems[1];
 } PDMQUEUE;
+
+/** @name PDM::fQueueFlushing
+ * @{ */
+/** Indicating that an queue insert has been performed. */
+#define PDM_QUEUE_FLUSH_FLAG_ACTIVE         RT_BIT_32(PDM_QUEUE_FLUSH_FLAG_ACTIVE_BIT)
+/** The bit number for PDM_QUEUE_FLUSH_FLAG_ACTIVE_BIT.  */
+#define PDM_QUEUE_FLUSH_FLAG_ACTIVE_BIT     0
+/** Indicating there are pending items.
+ * This is make sure we don't miss inserts happening during flushing. The FF
+ * cannot be used for this since it has to be cleared immediately to prevent
+ * other EMTs from spinning. */
+#define PDM_QUEUE_FLUSH_FLAG_PENDING        RT_BIT_32(PDM_QUEUE_FLUSH_FLAG_PENDING_BIT)
+/** The bit number for PDM_QUEUE_FLUSH_FLAG_PENDING.  */
+#define PDM_QUEUE_FLUSH_FLAG_PENDING_BIT    1
+/** }@  */
 
 
 /**
@@ -874,8 +927,7 @@ typedef struct PDM
     R0PTRTYPE(PPDMQUEUE)            pDevHlpQueueR0;
     /** Queue in which devhlp tasks are queued for R3 execution - RC Ptr. */
     RCPTRTYPE(PPDMQUEUE)            pDevHlpQueueRC;
-
-    RTUINT                          uPadding1; /**< Alignment padding. */
+    RTRCPTR                         uPadding1; /**< Alignment padding. */
 
     /** Linked list of timer driven PDM queues. */
     R3PTRTYPE(struct PDMQUEUE *)    pQueuesTimer;
@@ -887,8 +939,9 @@ typedef struct PDM
     /** Pointer to the queue which should be manually flushed - RC Ptr.
      * Only touched by EMT. */
     RCPTRTYPE(struct PDMQUEUE *)    pQueueFlushRC;
-    /** Set if we're currently checking queues to prevent other VCPUs from doing the same concurrently. */
-    volatile uint32_t               fQueueFlushing;
+    /** Bitmask controlling the queue flushing.
+     * See PDM_QUEUE_FLUSH_FLAG_ACTIVE and PDM_QUEUE_FLUSH_FLAG_PENDING. */
+    uint32_t volatile               fQueueFlushing;
 
     /** Head of the PDM Thread list. (singly linked) */
     R3PTRTYPE(PPDMTHREAD)           pThreads;
@@ -907,6 +960,10 @@ typedef struct PDM
      * @{ */
     /** Pointer to the heap base (MMIO2 ring-3 mapping). NULL if not registered. */
     RTR3PTR                         pvVMMDevHeap;
+#if HC_ARCH_BITS == 32
+    /** Alignment padding. */
+    uint32_t                        u32Padding2;
+#endif
     /** The heap size. */
     RTUINT                          cbVMMDevHeap;
     /** Free space. */
@@ -928,6 +985,9 @@ typedef struct PDM
     /** Number of times a critical section leave requesed needed to be queued for ring-3 execution. */
     STAMCOUNTER                     StatQueuedCritSectLeaves;
 } PDM;
+AssertCompileMemberAlignment(PDM, GCPhysVMMDevHeap, sizeof(RTGCPHYS));
+AssertCompileMemberAlignment(PDM, CritSect, 8);
+AssertCompileMemberAlignment(PDM, StatQueuedCritSectLeaves, 8);
 /** Pointer to PDM VM instance data. */
 typedef PDM *PPDM;
 
@@ -1003,8 +1063,8 @@ int         pdmR3UsbRegisterHub(PVM pVM, PPDMDRVINS pDrvIns, uint32_t fVersions,
 int         pdmR3UsbVMInitComplete(PVM pVM);
 
 int         pdmR3DrvInit(PVM pVM);
-int         pdmR3DrvDetach(PPDMDRVINS pDrvIns);
-void        pdmR3DrvDestroyChain(PPDMDRVINS pDrvIns);
+int         pdmR3DrvDetach(PPDMDRVINS pDrvIns, uint32_t fFlags);
+void        pdmR3DrvDestroyChain(PPDMDRVINS pDrvIns, uint32_t fFlags);
 PPDMDRV     pdmR3DrvLookup(PVM pVM, const char *pszName);
 
 int         pdmR3LdrInitU(PUVM pUVM);

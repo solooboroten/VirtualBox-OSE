@@ -23,6 +23,7 @@
 #include "VBoxGINA.h"
 
 #include <VBox/VBoxGuest.h>
+#include <VBox/VMMDev.h>
 #include <iprt/string.h>
 
 /* the credentials */
@@ -51,9 +52,9 @@ HANDLE getVBoxDriver(void)
 
 void credentialsReset(void)
 {
-    memset(g_Username, '\0', sizeof(g_Username));
-    memset(g_Password, '\0', sizeof(g_Password));
-    memset(g_Domain, '\0', sizeof(g_Domain));
+    RT_ZERO(g_Username);
+    RT_ZERO(g_Password);
+    RT_ZERO(g_Domain);
 }
 
 bool credentialsAvailable(void)
@@ -74,7 +75,7 @@ bool credentialsAvailable(void)
         return false;
     }
     bool fAvailable = ((vmmreqCredentials.u32Flags & VMMDEV_CREDENTIALS_PRESENT) != 0);
-    Log(("VBoxGINA::credentialsAvailable: fAvailable: %d\n", fAvailable));
+    /*Log(("VBoxGINA::credentialsAvailable: fAvailable: %d\n", fAvailable));*/
     return fAvailable;
 }
 

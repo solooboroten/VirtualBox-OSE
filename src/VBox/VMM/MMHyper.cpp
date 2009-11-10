@@ -1,4 +1,4 @@
-/* $Id: MMHyper.cpp 20874 2009-06-24 02:19:29Z vboxsync $ */
+/* $Id: MMHyper.cpp 22890 2009-09-09 23:11:31Z vboxsync $ */
 /** @file
  * MM - Memory Manager - Hypervisor Memory Area.
  */
@@ -79,8 +79,8 @@ int mmR3HyperInit(PVM pVM)
     int rc = CFGMR3QueryU32(CFGMR3GetChild(CFGMR3GetRoot(pVM), "MM"), "cbHyperHeap", &cbHyperHeap);
     if (rc == VERR_CFGM_NO_PARENT || rc == VERR_CFGM_VALUE_NOT_FOUND)
     {
-        if (pVM->cCPUs > 1)
-            cbHyperHeap = _2M + pVM->cCPUs * _64K;
+        if (pVM->cCpus > 1)
+            cbHyperHeap = _2M + pVM->cCpus * _64K;
         else
             cbHyperHeap = VMMIsHwVirtExtForced(pVM)
                         ? 640*_1K
@@ -108,13 +108,13 @@ int mmR3HyperInit(PVM pVM)
         /*
          * Map the VM structure into the hypervisor space.
          */
-        AssertRelease(pVM->cbSelf == RT_UOFFSETOF(VM, aCpus[pVM->cCPUs]));
+        AssertRelease(pVM->cbSelf == RT_UOFFSETOF(VM, aCpus[pVM->cCpus]));
         RTGCPTR GCPtr;
         rc = MMR3HyperMapPages(pVM, pVM, pVM->pVMR0, RT_ALIGN_Z(pVM->cbSelf, PAGE_SIZE) >> PAGE_SHIFT, pVM->paVMPagesR3, "VM", &GCPtr);
         if (RT_SUCCESS(rc))
         {
             pVM->pVMRC = (RTRCPTR)GCPtr;
-            for (uint32_t i = 0; i < pVM->cCPUs; i++)
+            for (VMCPUID i = 0; i < pVM->cCpus; i++)
                 pVM->aCpus[i].pVMRC = pVM->pVMRC;
 
             /* Reserve a page for fencing. */
@@ -319,7 +319,7 @@ static DECLCALLBACK(bool) mmR3HyperRelocateCallback(PVM pVM, RTGCPTR GCPtrOld, R
              */
             RTGCINTPTR offDelta = GCPtrNew - GCPtrOld;
             pVM->pVMRC                          += offDelta;
-            for (uint32_t i = 0; i < pVM->cCPUs; i++)
+            for (VMCPUID i = 0; i < pVM->cCpus; i++)
                 pVM->aCpus[i].pVMRC              = pVM->pVMRC;
 
             pVM->mm.s.pvHyperAreaGC             += offDelta;
@@ -874,7 +874,35 @@ static int mmR3HyperHeapMap(PVM pVM, PMMHYPERHEAP pHeap, PRTGCPTR ppHeapGC)
  */
 VMMR3DECL(int) MMR3HyperAllocOnceNoRel(PVM pVM, size_t cb, unsigned uAlignment, MMTAG enmTag, void **ppv)
 {
+    return MMR3HyperAllocOnceNoRelEx(pVM, cb, uAlignment, enmTag, 0/*fFlags*/, ppv);
+}
+
+
+/**
+ * Allocates memory in the Hypervisor (GC VMM) area which never will
+ * be freed and doesn't have any offset based relation to other heap blocks.
+ *
+ * The latter means that two blocks allocated by this API will not have the
+ * same relative position to each other in GC and HC. In short, never use
+ * this API for allocating nodes for an offset based AVL tree!
+ *
+ * The returned memory is of course zeroed.
+ *
+ * @returns VBox status code.
+ * @param   pVM         The VM to operate on.
+ * @param   cb          Number of bytes to allocate.
+ * @param   uAlignment  Required memory alignment in bytes.
+ *                      Values are 0,8,16,32 and PAGE_SIZE.
+ *                      0 -> default alignment, i.e. 8 bytes.
+ * @param   enmTag      The statistics tag.
+ * @param   fFlags      Flags, see MMHYPER_AONR_FLAGS_KERNEL_MAPPING.
+ * @param   ppv         Where to store the address to the allocated memory.
+ * @remark  This is assumed not to be used at times when serialization is required.
+ */
+VMMR3DECL(int) MMR3HyperAllocOnceNoRelEx(PVM pVM, size_t cb, unsigned uAlignment, MMTAG enmTag, uint32_t fFlags, void **ppv)
+{
     AssertMsg(cb >= 8, ("Hey! Do you really mean to allocate less than 8 bytes?! cb=%d\n", cb));
+    Assert(!(fFlags & ~(MMHYPER_AONR_FLAGS_KERNEL_MAPPING)));
 
     /*
      * Choose between allocating a new chunk of HMA memory
@@ -883,9 +911,13 @@ VMMR3DECL(int) MMR3HyperAllocOnceNoRel(PVM pVM, size_t cb, unsigned uAlignment, 
      */
     if (   (   cb < _64K
             && (   uAlignment != PAGE_SIZE
-               || cb < 48*_1K))
-        ||  VMR3GetState(pVM) != VMSTATE_CREATING)
+                || cb < 48*_1K)
+            && !(fFlags & MMHYPER_AONR_FLAGS_KERNEL_MAPPING)
+           )
+        ||  VMR3GetState(pVM) != VMSTATE_CREATING
+       )
     {
+        Assert(!(fFlags & MMHYPER_AONR_FLAGS_KERNEL_MAPPING));
         int rc = MMHyperAlloc(pVM, cb, uAlignment, enmTag, ppv);
         if (    rc != VERR_MM_HYPER_NO_MEMORY
             ||  cb <= 8*_1K)
@@ -895,6 +927,14 @@ VMMR3DECL(int) MMR3HyperAllocOnceNoRel(PVM pVM, size_t cb, unsigned uAlignment, 
             return rc;
         }
     }
+
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+    /*
+     * Set MMHYPER_AONR_FLAGS_KERNEL_MAPPING if we're in going to execute in ring-0.
+     */
+    if (VMMIsHwVirtExtForced(pVM))
+        fFlags |= MMHYPER_AONR_FLAGS_KERNEL_MAPPING;
+#endif
 
     /*
      * Validate alignment.
@@ -926,20 +966,17 @@ VMMR3DECL(int) MMR3HyperAllocOnceNoRel(PVM pVM, size_t cb, unsigned uAlignment, 
     int rc = SUPR3PageAllocEx(cPages,
                               0 /*fFlags*/,
                               &pvPages,
-#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
-                              VMMIsHwVirtExtForced(pVM) ? &pvR0 : NULL,
-#else
-                              NULL,
-#endif
+                              fFlags & MMHYPER_AONR_FLAGS_KERNEL_MAPPING ? &pvR0 : NULL,
                               paPages);
     if (RT_SUCCESS(rc))
     {
+        if (!(fFlags & MMHYPER_AONR_FLAGS_KERNEL_MAPPING))
 #ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
-        if (!VMMIsHwVirtExtForced(pVM))
             pvR0 = NIL_RTR0PTR;
 #else
-        pvR0 = (uintptr_t)pvPages;
+            pvR0 = (RTR0PTR)pvPages;
 #endif
+
         memset(pvPages, 0, cbAligned);
 
         RTGCPTR GCPtr;
@@ -1062,11 +1099,9 @@ VMMR3DECL(int) MMR3HyperSetGuard(PVM pVM, void *pvStart, size_t cb, bool fSet)
      *       protection stuff isn't possible to implement on all platforms.
      */
     uint8_t    *pbR3  = (uint8_t *)pLookup->u.Locked.pvR3;
-#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
-    RTR0PTR     R0Ptr = VMMIsHwVirtExtForced(pVM) ? pLookup->u.Locked.pvR0 : NIL_RTR0PTR;
-#else
-    RTR0PTR     R0Ptr = NIL_RTR0PTR; /* ring-0 and ring-3 uses the same mapping. */
-#endif
+    RTR0PTR     R0Ptr = pLookup->u.Locked.pvR0 != (uintptr_t)pLookup->u.Locked.pvR3
+                      ? pLookup->u.Locked.pvR0
+                      : NIL_RTR0PTR;
     uint32_t    off   = (uint32_t)((uint8_t *)pvStart - pbR3);
     int         rc;
     if (fSet)

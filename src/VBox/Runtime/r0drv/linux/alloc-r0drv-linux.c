@@ -1,4 +1,4 @@
-/* $Id: alloc-r0drv-linux.c 13665 2008-10-29 17:42:51Z vboxsync $ */
+/* $Id: alloc-r0drv-linux.c 22531 2009-08-27 15:17:53Z vboxsync $ */
 /** @file
  * IPRT - Memory Allocation, Ring-0 Driver, Linux.
  */
@@ -33,6 +33,8 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #include "the-linux-kernel.h"
+#include "internal/iprt.h"
+
 #include <iprt/mem.h>
 #include <iprt/assert.h>
 #include "r0drv/alloc-r0drv.h"
@@ -104,6 +106,7 @@ RTR0DECL(int) RTR0MemExecDonate(void *pvMemory, size_t cb)
     }
     return rc;
 }
+RT_EXPORT_SYMBOL(RTR0MemExecDonate);
 #endif /* RTMEMALLOC_EXEC_HEAP */
 
 
@@ -235,10 +238,17 @@ RTR0DECL(void *) RTMemContAlloc(PRTCCPHYS pPhys, size_t cb)
     cb = RT_ALIGN_Z(cb, PAGE_SIZE);
     cPages = cb >> PAGE_SHIFT;
     cOrder = CalcPowerOf2Order(cPages);
-#ifdef RT_ARCH_AMD64 /** @todo check out if there is a correct way of getting memory below 4GB (physically). */
-    paPages = alloc_pages(GFP_DMA, cOrder);
+#if (defined(RT_ARCH_AMD64) || defined(CONFIG_X86_PAE)) && defined(GFP_DMA32)
+    /* ZONE_DMA32: 0-4GB */
+    paPages = alloc_pages(GFP_DMA32, cOrder);
+    if (!paPages)
+#endif
+#ifdef RT_ARCH_AMD64
+        /* ZONE_DMA; 0-16MB */
+        paPages = alloc_pages(GFP_DMA, cOrder);
 #else
-    paPages = alloc_pages(GFP_USER, cOrder);
+        /* ZONE_NORMAL: 0-896MB */
+        paPages = alloc_pages(GFP_USER, cOrder);
 #endif
     if (paPages)
     {
@@ -271,6 +281,7 @@ RTR0DECL(void *) RTMemContAlloc(PRTCCPHYS pPhys, size_t cb)
 
     return NULL;
 }
+RT_EXPORT_SYMBOL(RTMemContAlloc);
 
 
 /**
@@ -311,4 +322,5 @@ RTR0DECL(void) RTMemContFree(void *pv, size_t cb)
         __free_pages(paPages, cOrder);
     }
 }
+RT_EXPORT_SYMBOL(RTMemContFree);
 

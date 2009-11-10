@@ -49,6 +49,8 @@
 #include <QDesktopWidget>
 #include <QToolButton>
 
+#include <iprt/buildconfig.h>
+
 // VBoxVMDetailsView class
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -500,7 +502,7 @@ VBoxSelectorWnd (VBoxSelectorWnd **aSelf, QWidget* aParent,
     /* Make non-possible to activate list elements by single click,
      * this hack should disable the current possibility to do it if present */
     if (mVMListView->style()->styleHint (QStyle::SH_ItemView_ActivateItemOnSingleClick, 0, mVMListView))
-        mVMListView->setStyleSheet ("activate-on-singleclick");
+        mVMListView->setStyleSheet ("activate-on-singleclick : 0");
 
     leftVLayout->addWidget (mVMListView);
 
@@ -904,18 +906,18 @@ void VBoxSelectorWnd::vmDelete (const QString &aUuid /*= QUuid_null*/)
                 return;
             CMachine machine = session.GetMachine();
             /* Detach all attached Hard Disks */
-            CHardDiskAttachmentVector vec = machine.GetHardDiskAttachments();
+            CMediumAttachmentVector vec = machine.GetMediumAttachments();
             for (int i = 0; i < vec.size(); ++ i)
             {
-                CHardDiskAttachment hda = vec [i];
+                CMediumAttachment hda = vec [i];
                 const QString ctlName = hda.GetController();
 
-                machine.DetachHardDisk(ctlName, hda.GetPort(), hda.GetDevice());
+                machine.DetachDevice(ctlName, hda.GetPort(), hda.GetDevice());
                 if (!machine.isOk())
                 {
                     CStorageController ctl = machine.GetStorageControllerByName(ctlName);
-                    vboxProblem().cannotDetachHardDisk (this, machine,
-                        vboxGlobal().getMedium (CMedium (hda.GetHardDisk())).location(),
+                    vboxProblem().cannotDetachDevice (this, machine, VBoxDefs::MediumType_HardDisk,
+                        vboxGlobal().getMedium (CMedium (hda.GetMedium())).location(),
                         ctl.GetBus(), hda.GetPort(), hda.GetDevice());
                 }
             }
@@ -979,8 +981,11 @@ void VBoxSelectorWnd::vmStart (const QString &aUuid /*= QUuid_null*/)
         return;
     }
 
-    AssertMsg (item->state() < KMachineState_Running,
-               ("Machine must be PoweredOff/Saved/Aborted"));
+    AssertMsg (   item->state() == KMachineState_PoweredOff
+               || item->state() == KMachineState_Saved
+               || item->state() == KMachineState_Teleported
+               || item->state() == KMachineState_Aborted
+               , ("Machine must be PoweredOff/Saved/Aborted (%d)", item->state()));
 
     QString id = item->id();
     CVirtualBox vbox = vboxGlobal().virtualBox();
@@ -1001,11 +1006,12 @@ void VBoxSelectorWnd::vmStart (const QString &aUuid /*= QUuid_null*/)
     QString env;
 #if defined (Q_WS_X11)
     /* make sure the VM process will start on the same display as the Selector */
-    {
-        const char *display = RTEnvGet ("DISPLAY");
-        if (display)
-            env.sprintf ("DISPLAY=%s", display);
-    }
+    const char *display = RTEnvGet ("DISPLAY");
+    if (display)
+        env.append(QString("DISPLAY=%1\n").arg(display));
+    const char *xauth = RTEnvGet ("XAUTHORITY");
+    if (xauth)
+        env.append(QString("XAUTHORITY=%1\n").arg(xauth));
 #endif
 
     CProgress progress = vbox.OpenRemoteSession (session, id, "GUI/Qt", env);
@@ -1115,7 +1121,7 @@ void VBoxSelectorWnd::vmRefresh (const QString &aUuid /*= QUuid_null*/)
                    true /* aDescription */);
 
     if (!oldAccessible && item->accessible())
-        vboxGlobal().checkForAutoConvertedSettingsAfterRefresh();
+        fileExit();
 }
 
 void VBoxSelectorWnd::vmShowLogs (const QString &aUuid /*= QUuid_null*/)
@@ -1285,10 +1291,20 @@ bool VBoxSelectorWnd::eventFilter (QObject *aObject, QEvent *aEvent)
 void VBoxSelectorWnd::retranslateUi()
 {
 #ifdef VBOX_OSE
-    setWindowTitle (tr ("VirtualBox OSE"));
+    QString title (tr ("VirtualBox OSE"));
 #else
-    setWindowTitle (tr ("Sun VirtualBox"));
+    QString title (tr ("Sun VirtualBox"));
 #endif
+
+#ifdef VBOX_BLEEDING_EDGE
+    title += QString(" EXPERIMENTAL build ")
+          +  QString(RTBldCfgVersion())
+          +  QString(" r")
+          +  QString(RTBldCfgRevisionStr())
+          +  QString(" - "VBOX_BLEEDING_EDGE);
+#endif
+
+    setWindowTitle (title);
 
     mVmTabWidget->setTabText (mVmTabWidget->indexOf (mVmDetailsView), tr ("&Details"));
     /* note: Snapshots and Details tabs are changed dynamically by
@@ -1443,19 +1459,19 @@ void VBoxSelectorWnd::vmListViewCurrentChanged (bool aRefreshDetails,
         mVmConfigAction->setEnabled (modifyEnabled);
         mVmDeleteAction->setEnabled (modifyEnabled);
         mVmDiscardAction->setEnabled (state == KMachineState_Saved && !running);
-        mVmPauseAction->setEnabled (state == KMachineState_Running ||
-                                   state == KMachineState_Paused);
+        mVmPauseAction->setEnabled (   state == KMachineState_Running
+                                    || state == KMachineState_Teleporting
+                                    || state == KMachineState_LiveSnapshotting
+                                    || state == KMachineState_Paused
+                                    || state == KMachineState_TeleportingPausedVM /** @todo Live Migration: does this make sense? */
+                                   );
 
         /* change the Start button text accordingly */
-        if (state >= KMachineState_Running)
-        {
-            mVmStartAction->setText (tr ("S&how"));
-            mVmStartAction->setStatusTip (
-                tr ("Switch to the window of the selected virtual machine"));
-
-            mVmStartAction->setEnabled (item->canSwitchTo());
-        }
-        else
+        if (   state == KMachineState_PoweredOff
+            || state == KMachineState_Saved
+            || state == KMachineState_Teleported
+            || state == KMachineState_Aborted
+           )
         {
             mVmStartAction->setText (tr ("S&tart"));
             mVmStartAction->setStatusTip (
@@ -1463,9 +1479,19 @@ void VBoxSelectorWnd::vmListViewCurrentChanged (bool aRefreshDetails,
 
             mVmStartAction->setEnabled (!running);
         }
+        else
+        {
+            mVmStartAction->setText (tr ("S&how"));
+            mVmStartAction->setStatusTip (
+                tr ("Switch to the window of the selected virtual machine"));
+
+            mVmStartAction->setEnabled (item->canSwitchTo());
+        }
 
         /* change the Pause/Resume button text accordingly */
-        if (state == KMachineState_Paused)
+        if (   state == KMachineState_Paused
+            || state == KMachineState_TeleportingPausedVM /*?*/
+           )
         {
             mVmPauseAction->setText (tr ("R&esume"));
             mVmPauseAction->setShortcut (QKeySequence ("Ctrl+P"));
@@ -1591,7 +1617,7 @@ void VBoxSelectorWnd::mediumEnumFinished (const VBoxMediaList &list)
         /* look for at least one inaccessible media */
         VBoxMediaList::const_iterator it;
         for (it = list.begin(); it != list.end(); ++ it)
-            if ((*it).state() == KMediaState_Inaccessible)
+            if ((*it).state() == KMediumState_Inaccessible)
                 break;
 
         if (it != list.end() && vboxProblem().remindAboutInaccessibleMedia())
@@ -1853,26 +1879,36 @@ void VBoxTrayIcon::showSubMenu ()
         mVmDiscardAction->setEnabled (s == KMachineState_Saved && !running);
 
         /* Change the Start button text accordingly */
-        if (s >= KMachineState_Running)
-        {
-            mVmStartAction->setText (VBoxVMListView::tr ("S&how"));
-            mVmStartAction->setStatusTip (
-                  VBoxVMListView::tr ("Switch to the window of the selected virtual machine"));
-            mVmStartAction->setEnabled (pItem->canSwitchTo());
-        }
-        else
+        if (   s == KMachineState_PoweredOff
+            || s == KMachineState_Saved
+            || s == KMachineState_Teleported
+            || s == KMachineState_Aborted
+           )
         {
             mVmStartAction->setText (VBoxVMListView::tr ("S&tart"));
             mVmStartAction->setStatusTip (
                   VBoxVMListView::tr ("Start the selected virtual machine"));
             mVmStartAction->setEnabled (!running);
         }
+        else
+        {
+            mVmStartAction->setText (VBoxVMListView::tr ("S&how"));
+            mVmStartAction->setStatusTip (
+                  VBoxVMListView::tr ("Switch to the window of the selected virtual machine"));
+            mVmStartAction->setEnabled (pItem->canSwitchTo());
+        }
 
         /* Change the Pause/Resume button text accordingly */
-        mVmPauseAction->setEnabled (s == KMachineState_Running ||
-                                    s == KMachineState_Paused);
+        mVmPauseAction->setEnabled (   s == KMachineState_Running
+                                    || s == KMachineState_Teleporting
+                                    || s == KMachineState_LiveSnapshotting
+                                    || s == KMachineState_Paused
+                                    || s == KMachineState_TeleportingPausedVM
+                                   );
 
-        if (s == KMachineState_Paused)
+        if (   s == KMachineState_Paused
+            || s == KMachineState_TeleportingPausedVM /*?*/
+           )
         {
             mVmPauseAction->setText (VBoxVMListView::tr ("R&esume"));
             mVmPauseAction->setStatusTip (

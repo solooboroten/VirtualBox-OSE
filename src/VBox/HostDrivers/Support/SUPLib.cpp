@@ -1,4 +1,4 @@
-/* $Id: SUPLib.cpp 20866 2009-06-23 19:33:23Z vboxsync $ */
+/* $Id: SUPLib.cpp 23725 2009-10-13 13:44:46Z vboxsync $ */
 /** @file
  * VirtualBox Support Library - Common code.
  */
@@ -148,6 +148,18 @@ static int supLoadModule(const char *pszFilename, const char *pszModule, const c
 static DECLCALLBACK(int) supLoadModuleResolveImport(RTLDRMOD hLdrMod, const char *pszModule, const char *pszSymbol, unsigned uSymbol, RTUINTPTR *pValue, void *pvUser);
 
 
+/** Touch a range of pages. */
+DECLINLINE(void) supR3TouchPages(void *pv, size_t cPages)
+{
+    uint32_t volatile *pu32 = (uint32_t volatile *)pv;
+    while (cPages-- > 0)
+    {
+        ASMAtomicCmpXchgU32(pu32, 0, 0);
+        pu32 += PAGE_SIZE / sizeof(uint32_t);
+    }
+}
+
+
 SUPR3DECL(int) SUPR3Install(void)
 {
     return suplibOsInstall();
@@ -259,16 +271,16 @@ SUPR3DECL(int) SUPR3Init(PSUPDRVSESSION *ppSession)
         CookieReq.Hdr.rc = VERR_INTERNAL_ERROR;
         strcpy(CookieReq.u.In.szMagic, SUPCOOKIE_MAGIC);
         CookieReq.u.In.u32ReqVersion = SUPDRV_IOC_VERSION;
-        const uint32_t MinVersion = (SUPDRV_IOC_VERSION & 0xffff0000) == 0x000d0000
-                                  ?  0x000d0001
-                                  :  SUPDRV_IOC_VERSION & 0xffff0000;
-        CookieReq.u.In.u32MinVersion = MinVersion;
+        const uint32_t uMinVersion = (SUPDRV_IOC_VERSION & 0xffff0000) == 0x00100001
+                                   ?  0x00100001
+                                   :  SUPDRV_IOC_VERSION & 0xffff0000;
+        CookieReq.u.In.u32MinVersion = uMinVersion;
         rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_COOKIE, &CookieReq, SUP_IOCTL_COOKIE_SIZE);
         if (    RT_SUCCESS(rc)
             &&  RT_SUCCESS(CookieReq.Hdr.rc))
         {
             if (    (CookieReq.u.Out.u32SessionVersion & 0xffff0000) == (SUPDRV_IOC_VERSION & 0xffff0000)
-                &&  CookieReq.u.Out.u32SessionVersion >= MinVersion)
+                &&  CookieReq.u.Out.u32SessionVersion >= uMinVersion)
             {
                 /*
                  * Query the functions.
@@ -335,7 +347,7 @@ SUPR3DECL(int) SUPR3Init(PSUPDRVSESSION *ppSession)
             else
             {
                 LogRel(("Support driver version mismatch: SessionVersion=%#x DriverVersion=%#x ClientVersion=%#x MinVersion=%#x\n",
-                        CookieReq.u.Out.u32SessionVersion, CookieReq.u.Out.u32DriverVersion, SUPDRV_IOC_VERSION, MinVersion));
+                        CookieReq.u.Out.u32SessionVersion, CookieReq.u.Out.u32DriverVersion, SUPDRV_IOC_VERSION, uMinVersion));
                 rc = VERR_VM_DRIVER_VERSION_MISMATCH;
             }
         }
@@ -400,62 +412,63 @@ static int supInitFake(PSUPDRVSESSION *ppSession)
         { "SUPR0MemFree",                           0xefef000a },
         { "SUPR0Printf",                            0xefef000b },
         { "SUPR0GetPagingMode",                     0xefef000c },
-        { "SUPR0EnableVTx",                         0xefef000c },
-        { "RTMemAlloc",                             0xefef000d },
-        { "RTMemAllocZ",                            0xefef000e },
-        { "RTMemFree",                              0xefef000f },
-        { "RTR0MemObjAddress",                      0xefef0010 },
-        { "RTR0MemObjAddressR3",                    0xefef0011 },
-        { "RTR0MemObjAllocPage",                    0xefef0012 },
-        { "RTR0MemObjAllocPhysNC",                  0xefef0013 },
-        { "RTR0MemObjAllocLow",                     0xefef0014 },
-        { "RTR0MemObjEnterPhys",                    0xefef0014 },
-        { "RTR0MemObjFree",                         0xefef0015 },
-        { "RTR0MemObjGetPagePhysAddr",              0xefef0016 },
-        { "RTR0MemObjMapUser",                      0xefef0017 },
-        { "RTR0MemObjMapKernel",                    0xefef0017 },
-        { "RTR0MemObjMapKernelEx",                  0xefef0017 },
-        { "RTProcSelf",                             0xefef0038 },
-        { "RTR0ProcHandleSelf",                     0xefef0039 },
-        { "RTSemEventCreate",                       0xefef0018 },
-        { "RTSemEventSignal",                       0xefef0019 },
-        { "RTSemEventWait",                         0xefef001a },
-        { "RTSemEventWaitNoResume",                 0xefef001b },
-        { "RTSemEventDestroy",                      0xefef001c },
-        { "RTSemEventMultiCreate",                  0xefef001d },
-        { "RTSemEventMultiSignal",                  0xefef001e },
-        { "RTSemEventMultiReset",                   0xefef001f },
-        { "RTSemEventMultiWait",                    0xefef0020 },
-        { "RTSemEventMultiWaitNoResume",            0xefef0021 },
-        { "RTSemEventMultiDestroy",                 0xefef0022 },
-        { "RTSemFastMutexCreate",                   0xefef0023 },
-        { "RTSemFastMutexDestroy",                  0xefef0024 },
-        { "RTSemFastMutexRequest",                  0xefef0025 },
-        { "RTSemFastMutexRelease",                  0xefef0026 },
-        { "RTSpinlockCreate",                       0xefef0027 },
-        { "RTSpinlockDestroy",                      0xefef0028 },
-        { "RTSpinlockAcquire",                      0xefef0029 },
-        { "RTSpinlockRelease",                      0xefef002a },
-        { "RTSpinlockAcquireNoInts",                0xefef002b },
-        { "RTSpinlockReleaseNoInts",                0xefef002c },
-        { "RTTimeNanoTS",                           0xefef002d },
-        { "RTTimeMillieTS",                         0xefef002e },
-        { "RTTimeSystemNanoTS",                     0xefef002f },
-        { "RTTimeSystemMillieTS",                   0xefef0030 },
-        { "RTThreadNativeSelf",                     0xefef0031 },
-        { "RTThreadSleep",                          0xefef0032 },
-        { "RTThreadYield",                          0xefef0033 },
-        { "RTLogDefaultInstance",                   0xefef0034 },
-        { "RTLogRelDefaultInstance",                0xefef0035 },
-        { "RTLogSetDefaultInstanceThread",          0xefef0036 },
-        { "RTLogLogger",                            0xefef0037 },
-        { "RTLogLoggerEx",                          0xefef0038 },
-        { "RTLogLoggerExV",                         0xefef0039 },
-        { "AssertMsg1",                             0xefef003a },
-        { "AssertMsg2",                             0xefef003b },
-        { "RTAssertMsg1",                           0xefef003c },
-        { "RTAssertMsg2",                           0xefef003d },
-        { "RTAssertMsg2V",                          0xefef003e },
+        { "SUPR0EnableVTx",                         0xefef000e },
+        { "RTMemAlloc",                             0xefef000f },
+        { "RTMemAllocZ",                            0xefef0010 },
+        { "RTMemFree",                              0xefef0011 },
+        { "RTR0MemObjAddress",                      0xefef0012 },
+        { "RTR0MemObjAddressR3",                    0xefef0013 },
+        { "RTR0MemObjAllocPage",                    0xefef0014 },
+        { "RTR0MemObjAllocPhysNC",                  0xefef0015 },
+        { "RTR0MemObjAllocLow",                     0xefef0016 },
+        { "RTR0MemObjEnterPhys",                    0xefef0017 },
+        { "RTR0MemObjFree",                         0xefef0018 },
+        { "RTR0MemObjGetPagePhysAddr",              0xefef0019 },
+        { "RTR0MemObjMapUser",                      0xefef001a },
+        { "RTR0MemObjMapKernel",                    0xefef001b },
+        { "RTR0MemObjMapKernelEx",                  0xefef001c },
+        { "RTProcSelf",                             0xefef001d },
+        { "RTR0ProcHandleSelf",                     0xefef001e },
+        { "RTSemEventCreate",                       0xefef001f },
+        { "RTSemEventSignal",                       0xefef0020 },
+        { "RTSemEventWait",                         0xefef0021 },
+        { "RTSemEventWaitNoResume",                 0xefef0022 },
+        { "RTSemEventDestroy",                      0xefef0023 },
+        { "RTSemEventMultiCreate",                  0xefef0024 },
+        { "RTSemEventMultiSignal",                  0xefef0025 },
+        { "RTSemEventMultiReset",                   0xefef0026 },
+        { "RTSemEventMultiWait",                    0xefef0027 },
+        { "RTSemEventMultiWaitNoResume",            0xefef0028 },
+        { "RTSemEventMultiDestroy",                 0xefef0029 },
+        { "RTSemFastMutexCreate",                   0xefef002a },
+        { "RTSemFastMutexDestroy",                  0xefef002b },
+        { "RTSemFastMutexRequest",                  0xefef002c },
+        { "RTSemFastMutexRelease",                  0xefef002d },
+        { "RTSpinlockCreate",                       0xefef002e },
+        { "RTSpinlockDestroy",                      0xefef002f },
+        { "RTSpinlockAcquire",                      0xefef0030 },
+        { "RTSpinlockRelease",                      0xefef0031 },
+        { "RTSpinlockAcquireNoInts",                0xefef0032 },
+        { "RTSpinlockReleaseNoInts",                0xefef0033 },
+        { "RTTimeNanoTS",                           0xefef0034 },
+        { "RTTimeMillieTS",                         0xefef0035 },
+        { "RTTimeSystemNanoTS",                     0xefef0036 },
+        { "RTTimeSystemMillieTS",                   0xefef0037 },
+        { "RTThreadNativeSelf",                     0xefef0038 },
+        { "RTThreadSleep",                          0xefef0039 },
+        { "RTThreadYield",                          0xefef003a },
+        { "RTLogDefaultInstance",                   0xefef003b },
+        { "RTLogRelDefaultInstance",                0xefef003c },
+        { "RTLogSetDefaultInstanceThread",          0xefef003d },
+        { "RTLogLogger",                            0xefef003e },
+        { "RTLogLoggerEx",                          0xefef003f },
+        { "RTLogLoggerExV",                         0xefef0040 },
+        { "AssertMsg1",                             0xefef0041 },
+        { "AssertMsg2",                             0xefef0042 },
+        { "RTAssertMsg1",                           0xefef0043 },
+        { "RTAssertMsg2",                           0xefef0044 },
+        { "RTAssertMsg2V",                          0xefef0045 },
+        { "SUPR0QueryVTCaps",                       0xefef0046 },
     };
 
     /* fake r0 functions. */
@@ -1059,6 +1072,9 @@ SUPR3DECL(int) SUPR3PageAllocEx(size_t cPages, uint32_t fFlags, void **ppvPages,
                         paPages[iPage].Phys = pReq->u.Out.aPages[iPage];
                         Assert(!(paPages[iPage].Phys & ~X86_PTE_PAE_PG_MASK));
                     }
+#ifdef RT_OS_DARWIN /* HACK ALERT! */
+                supR3TouchPages(pReq->u.Out.pvR3, cPages);
+#endif
             }
             else if (   rc == VERR_NOT_SUPPORTED
                      && !pR0Ptr)
@@ -1244,6 +1260,9 @@ SUPR3DECL(void *) SUPR3ContAlloc(size_t cPages, PRTR0PTR pR0Ptr, PRTHCPHYS pHCPh
         *pHCPhys = Req.u.Out.HCPhys;
         if (pR0Ptr)
             *pR0Ptr = Req.u.Out.pvR0;
+#ifdef RT_OS_DARWIN /* HACK ALERT! */
+        supR3TouchPages(Req.u.Out.pvR3, cPages);
+#endif
         return Req.u.Out.pvR3;
     }
 
@@ -1341,6 +1360,9 @@ SUPR3DECL(int) SUPR3LowAlloc(size_t cPages, void **ppvPages, PRTR0PTR ppvPagesR0
                     Assert(!(paPages[iPage].Phys & ~X86_PTE_PAE_PG_MASK));
                     Assert(paPages[iPage].Phys <= UINT32_C(0xfffff000));
                 }
+#ifdef RT_OS_DARWIN /* HACK ALERT! */
+            supR3TouchPages(pReq->u.Out.pvR3, cPages);
+#endif
         }
         RTMemTmpFree(pReq);
     }
@@ -2031,6 +2053,48 @@ SUPR3DECL(int) SUPR3HardenedLdrLoadAppPriv(const char *pszFilename, PRTLDRMOD ph
     rc = SUPR3HardenedLdrLoad(szPath, phLdrMod);
 
     LogFlow(("SUPR3HardenedLdrLoadAppPriv: returns %Rrc\n", rc));
+    return rc;
+}
+
+
+SUPR3DECL(int) SUPR3QueryVTxSupported(void)
+{
+#ifdef RT_OS_LINUX
+    return suplibOsQueryVTxSupported();
+#else
+    return VINF_SUCCESS;
+#endif
+}
+
+
+SUPR3DECL(int) SUPR3QueryVTCaps(uint32_t *pfCaps)
+{
+    AssertPtrReturn(pfCaps, VERR_INVALID_POINTER);
+
+    *pfCaps = 0;
+
+    /* fake */
+    if (RT_UNLIKELY(g_u32FakeMode))
+        return VINF_SUCCESS;
+
+    /*
+     * Issue IOCtl to the SUPDRV kernel module.
+     */
+    SUPVTCAPS Req;
+    Req.Hdr.u32Cookie = g_u32Cookie;
+    Req.Hdr.u32SessionCookie = g_u32SessionCookie;
+    Req.Hdr.cbIn = SUP_IOCTL_VT_CAPS_SIZE_IN;
+    Req.Hdr.cbOut = SUP_IOCTL_VT_CAPS_SIZE_OUT;
+    Req.Hdr.fFlags = SUPREQHDR_FLAGS_DEFAULT;
+    Req.Hdr.rc = VERR_INTERNAL_ERROR;
+    Req.u.Out.Caps = 0;
+    int rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_VT_CAPS, &Req, SUP_IOCTL_VT_CAPS_SIZE);
+    if (RT_SUCCESS(rc))
+    {
+        rc = Req.Hdr.rc;
+        if (RT_SUCCESS(rc))
+            *pfCaps = Req.u.Out.Caps;
+    }
     return rc;
 }
 

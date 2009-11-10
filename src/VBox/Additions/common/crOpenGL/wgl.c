@@ -521,7 +521,7 @@ BOOL WINAPI wglGetPixelFormatAttribivEXT_prox
                 pValues[i] = WGL_TYPE_RGBA_ARB;
                 break;
             case WGL_COLOR_BITS_ARB:
-                pValues[i] = 24;
+                pValues[i] = 32;
                 break;
             case WGL_RED_BITS_ARB:
             case WGL_GREEN_BITS_ARB:
@@ -637,7 +637,7 @@ BOOL WINAPI wglGetPixelFormatAttribfvEXT_prox
                 pValues[i] = WGL_TYPE_RGBA_ARB;
                 break;
             case WGL_COLOR_BITS_ARB:
-                pValues[i] = 24.f;
+                pValues[i] = 32.f;
                 break;
             case WGL_RED_BITS_ARB:
             case WGL_GREEN_BITS_ARB:
@@ -696,12 +696,26 @@ BOOL WINAPI wglGetPixelFormatAttribfvEXT_prox
     return 1;
 }
 
-const GLubyte * WINAPI wglGetExtensionsStringEXT_prox( HDC hdc )
+BOOL WINAPI wglSwapIntervalEXT_prox(int interval)
 {
-    static GLubyte *retval = "WGL_EXT_pixel_format WGL_ARB_pixel_format WGL_ARB_multisample";
-
-    (void) hdc;
-
-    return retval;
+    return TRUE;
 }
 
+int  WINAPI wglGetSwapIntervalEXT_prox()
+{
+    return 1;
+}
+
+static GLubyte *gsz_wgl_extensions = "WGL_EXT_pixel_format WGL_ARB_pixel_format WGL_ARB_multisample";
+
+const GLubyte * WINAPI wglGetExtensionsStringEXT_prox()
+{
+    return gsz_wgl_extensions;
+}
+
+const GLubyte * WINAPI wglGetExtensionsStringARB_prox(HDC hdc)
+{
+    (void) hdc;
+
+    return gsz_wgl_extensions;
+}

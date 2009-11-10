@@ -1,4 +1,4 @@
-/* $Id: VBoxManageDisk.cpp 21038 2009-06-29 15:57:12Z vboxsync $ */
+/* $Id: VBoxManageDisk.cpp 24258 2009-11-02 14:38:50Z vboxsync $ */
 /** @file
  * VBoxManage - The disk delated commands.
  */
@@ -58,7 +58,7 @@ static DECLCALLBACK(void) handleVDError(void *pvUser, int rc, RT_SRC_POS_DECL, c
 }
 
 
-static int parseDiskVariant(const char *psz, HardDiskVariant_T *pDiskVariant)
+static int parseDiskVariant(const char *psz, MediumVariant_T *pDiskVariant)
 {
     int rc = VINF_SUCCESS;
     unsigned DiskVariant = (unsigned)(*pDiskVariant);
@@ -75,19 +75,19 @@ static int parseDiskVariant(const char *psz, HardDiskVariant_T *pDiskVariant)
             // Parsing is intentionally inconsistent: "standard" resets the
             // variant, whereas the other flags are cumulative.
             if (!RTStrNICmp(psz, "standard", len))
-                DiskVariant = HardDiskVariant_Standard;
+                DiskVariant = MediumVariant_Standard;
             else if (   !RTStrNICmp(psz, "fixed", len)
                      || !RTStrNICmp(psz, "static", len))
-                DiskVariant |= HardDiskVariant_Fixed;
+                DiskVariant |= MediumVariant_Fixed;
             else if (!RTStrNICmp(psz, "Diff", len))
-                DiskVariant |= HardDiskVariant_Diff;
+                DiskVariant |= MediumVariant_Diff;
             else if (!RTStrNICmp(psz, "split2g", len))
-                DiskVariant |= HardDiskVariant_VmdkSplit2G;
+                DiskVariant |= MediumVariant_VmdkSplit2G;
             else if (   !RTStrNICmp(psz, "stream", len)
                      || !RTStrNICmp(psz, "streamoptimized", len))
-                DiskVariant |= HardDiskVariant_VmdkStreamOptimized;
+                DiskVariant |= MediumVariant_VmdkStreamOptimized;
             else if (!RTStrNICmp(psz, "esx", len))
-                DiskVariant |= HardDiskVariant_VmdkESX;
+                DiskVariant |= MediumVariant_VmdkESX;
             else
                 rc = VERR_PARSE_ERROR;
         }
@@ -98,20 +98,20 @@ static int parseDiskVariant(const char *psz, HardDiskVariant_T *pDiskVariant)
     }
 
     if (RT_SUCCESS(rc))
-        *pDiskVariant = (HardDiskVariant_T)DiskVariant;
+        *pDiskVariant = (MediumVariant_T)DiskVariant;
     return rc;
 }
 
-static int parseDiskType(const char *psz, HardDiskType_T *pDiskType)
+static int parseDiskType(const char *psz, MediumType_T *pDiskType)
 {
     int rc = VINF_SUCCESS;
-    HardDiskType_T DiskType = HardDiskType_Normal;
+    MediumType_T DiskType = MediumType_Normal;
     if (!RTStrICmp(psz, "normal"))
-        DiskType = HardDiskType_Normal;
+        DiskType = MediumType_Normal;
     else if (!RTStrICmp(psz, "immutable"))
-        DiskType = HardDiskType_Immutable;
+        DiskType = MediumType_Immutable;
     else if (!RTStrICmp(psz, "writethrough"))
-        DiskType = HardDiskType_Writethrough;
+        DiskType = MediumType_Writethrough;
     else
         rc = VERR_PARSE_ERROR;
 
@@ -177,10 +177,10 @@ int handleCreateHardDisk(HandlerArg *a)
     Bstr filename;
     uint64_t sizeMB = 0;
     Bstr format = "VDI";
-    HardDiskVariant_T DiskVariant = HardDiskVariant_Standard;
+    MediumVariant_T DiskVariant = MediumVariant_Standard;
     Bstr comment;
     bool fRemember = false;
-    HardDiskType_T DiskType = HardDiskType_Normal;
+    MediumType_T DiskType = MediumType_Normal;
 
     int c;
     RTGETOPTUNION ValueUnion;
@@ -206,8 +206,8 @@ int handleCreateHardDisk(HandlerArg *a)
             case 'F':   // --static ("fixed"/"flat")
             {
                 unsigned uDiskVariant = (unsigned)DiskVariant;
-                uDiskVariant |= HardDiskVariant_Fixed;
-                DiskVariant = (HardDiskVariant_T)uDiskVariant;
+                uDiskVariant |= MediumVariant_Fixed;
+                DiskVariant = (MediumVariant_T)uDiskVariant;
                 break;
             }
 
@@ -228,7 +228,7 @@ int handleCreateHardDisk(HandlerArg *a)
             case 't':   // --type
                 vrc = parseDiskType(ValueUnion.psz, &DiskType);
                 if (    RT_FAILURE(vrc)
-                    ||  (DiskType != HardDiskType_Normal && DiskType != HardDiskType_Writethrough))
+                    ||  (DiskType != MediumType_Normal && DiskType != MediumType_Writethrough))
                     return errorArgument("Invalid hard disk type '%s'", ValueUnion.psz);
                 break;
 
@@ -253,10 +253,25 @@ int handleCreateHardDisk(HandlerArg *a)
     }
 
     /* check the outcome */
-    if (!filename || (sizeMB == 0))
+    if (   !filename
+        || sizeMB == 0)
         return errorSyntax(USAGE_CREATEHD, "Parameters --filename and --size are required");
 
-    ComPtr<IHardDisk> hardDisk;
+    /* check for filename extension */
+    Utf8Str strName(filename);
+    if (!RTPathHaveExt(strName.c_str()))
+    {
+        Utf8Str strFormat(format);
+        if (strFormat.compare("vmdk", iprt::MiniString::CaseInsensitive) == 0)
+            strName.append(".vmdk");
+        else if (strFormat.compare("vhd", iprt::MiniString::CaseInsensitive) == 0)
+            strName.append(".vhd");
+        else
+            strName.append(".vdi");
+        filename = Bstr(strName);
+    }
+
+    ComPtr<IMedium> hardDisk;
     CHECK_ERROR(a->virtualBox, CreateHardDisk(format, filename, hardDisk.asOutParam()));
     if (SUCCEEDED(rc) && hardDisk)
     {
@@ -293,9 +308,9 @@ int handleCreateHardDisk(HandlerArg *a)
                     Bstr uuid;
                     CHECK_ERROR(hardDisk, COMGETTER(Id)(uuid.asOutParam()));
 
-                    if (DiskType == HardDiskType_Writethrough)
+                    if (DiskType == MediumType_Writethrough)
                     {
-                        CHECK_ERROR(hardDisk, COMSETTER(Type)(HardDiskType_Writethrough));
+                        CHECK_ERROR(hardDisk, COMSETTER(Type)(MediumType_Writethrough));
                     }
 
                     RTPrintf("Disk image created. UUID: %s\n", Utf8Str(uuid).raw());
@@ -345,8 +360,8 @@ int handleModifyHardDisk(HandlerArg *a)
 {
     HRESULT rc;
     int vrc;
-    ComPtr<IHardDisk> hardDisk;
-    HardDiskType_T DiskType;
+    ComPtr<IMedium> hardDisk;
+    MediumType_T DiskType;
     bool AutoReset = false;
     bool fModifyDiskType = false, fModifyAutoReset = false, fModifyCompact = false;;
     const char *FilenameOrUuid = NULL;
@@ -424,7 +439,7 @@ int handleModifyHardDisk(HandlerArg *a)
         /* hard disk must be registered */
         if (SUCCEEDED(rc) && hardDisk)
         {
-            HardDiskType_T hddType;
+            MediumType_T hddType;
             CHECK_ERROR(hardDisk, COMGETTER(Type)(&hddType));
 
             if (hddType != DiskType)
@@ -517,11 +532,11 @@ int handleCloneHardDisk(HandlerArg *a)
     int vrc;
     Bstr src, dst;
     Bstr format;
-    HardDiskVariant_T DiskVariant = HardDiskVariant_Standard;
+    MediumVariant_T DiskVariant = MediumVariant_Standard;
     bool fExisting = false;
     bool fRemember = false;
     bool fSetDiskType = false;
-    HardDiskType_T DiskType = HardDiskType_Normal;
+    MediumType_T DiskType = MediumType_Normal;
 
     int c;
     RTGETOPTUNION ValueUnion;
@@ -539,8 +554,8 @@ int handleCloneHardDisk(HandlerArg *a)
             case 'F':   // --static
             {
                 unsigned uDiskVariant = (unsigned)DiskVariant;
-                uDiskVariant |= HardDiskVariant_Fixed;
-                DiskVariant = (HardDiskVariant_T)uDiskVariant;
+                uDiskVariant |= MediumVariant_Fixed;
+                DiskVariant = (MediumVariant_T)uDiskVariant;
                 break;
             }
 
@@ -595,11 +610,11 @@ int handleCloneHardDisk(HandlerArg *a)
         return errorSyntax(USAGE_CLONEHD, "Mandatory UUID or input file parameter missing");
     if (dst.isEmpty())
         return errorSyntax(USAGE_CLONEHD, "Mandatory output file parameter missing");
-    if (fExisting && (!format.isEmpty() || DiskVariant != HardDiskType_Normal))
+    if (fExisting && (!format.isEmpty() || DiskVariant != MediumType_Normal))
         return errorSyntax(USAGE_CLONEHD, "Specified options which cannot be used with --existing");
 
-    ComPtr<IHardDisk> srcDisk;
-    ComPtr<IHardDisk> dstDisk;
+    ComPtr<IMedium> srcDisk;
+    ComPtr<IMedium> dstDisk;
     bool fSrcUnknown = false;
     bool fDstUnknown = false;
 
@@ -615,7 +630,7 @@ int handleCloneHardDisk(HandlerArg *a)
         if (rc == VBOX_E_FILE_ERROR)
         {
             char szFilenameAbs[RTPATH_MAX] = "";
-            int vrc = RTPathAbs(Utf8Str(src), szFilenameAbs, sizeof(szFilenameAbs));
+            int vrc = RTPathAbs(Utf8Str(src).c_str(), szFilenameAbs, sizeof(szFilenameAbs));
             if (RT_FAILURE(vrc))
             {
                 RTPrintf("Cannot convert filename \"%s\" to absolute path\n", Utf8Str(src).raw());
@@ -649,7 +664,7 @@ int handleCloneHardDisk(HandlerArg *a)
                 if (rc == VBOX_E_FILE_ERROR)
                 {
                     char szFilenameAbs[RTPATH_MAX] = "";
-                    int vrc = RTPathAbs(Utf8Str(dst), szFilenameAbs, sizeof(szFilenameAbs));
+                    int vrc = RTPathAbs(Utf8Str(dst).c_str(), szFilenameAbs, sizeof(szFilenameAbs));
                     if (RT_FAILURE(vrc))
                     {
                         RTPrintf("Cannot convert filename \"%s\" to absolute path\n", Utf8Str(dst).raw());
@@ -667,8 +682,8 @@ int handleCloneHardDisk(HandlerArg *a)
             if (SUCCEEDED(rc))
             {
                 /* Perform accessibility check now. */
-                MediaState_T state;
-                CHECK_ERROR_BREAK(dstDisk, COMGETTER(State)(&state));
+                MediumState_T state;
+                CHECK_ERROR_BREAK(dstDisk, RefreshState(&state));
             }
             CHECK_ERROR_BREAK(dstDisk, COMGETTER(Format) (format.asOutParam()));
         }
@@ -759,7 +774,7 @@ int handleConvertFromRaw(int argc, char *argv[])
                 break;
 
             case 'm':   // --variant
-                HardDiskVariant_T DiskVariant;
+                MediumVariant_T DiskVariant;
                 rc = parseDiskVariant(ValueUnion.psz, &DiskVariant);
                 if (RT_FAILURE(rc))
                     return errorArgument("Invalid hard disk variant '%s'", ValueUnion.psz);
@@ -813,6 +828,7 @@ int handleConvertFromRaw(int argc, char *argv[])
     vdInterfaceErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
     vdInterfaceErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
     vdInterfaceErrorCallbacks.pfnError     = handleVDError;
+    vdInterfaceErrorCallbacks.pfnMessage   = NULL;
 
     rc = VDInterfaceAdd(&vdInterfaceError, "VBoxManage_IError", VDINTERFACETYPE_ERROR,
                         &vdInterfaceErrorCallbacks, NULL, &pVDIfs);
@@ -823,7 +839,7 @@ int handleConvertFromRaw(int argc, char *argv[])
     if (fReadFromStdIn)
         File = 0;
     else
-        rc = RTFileOpen(&File, srcfilename, RTFILE_O_OPEN | RTFILE_O_READ | RTFILE_O_DENY_WRITE);
+        rc = RTFileOpen(&File, srcfilename, RTFILE_O_READ | RTFILE_O_OPEN | RTFILE_O_DENY_WRITE);
     if (RT_FAILURE(rc))
     {
         RTPrintf("File=\"%s\" open error: %Rrf\n", srcfilename, rc);
@@ -948,7 +964,7 @@ int handleAddiSCSIDisk(HandlerArg *a)
     Bstr password;
     Bstr comment;
     bool fIntNet = false;
-    HardDiskType_T DiskType = HardDiskType_Normal;
+    MediumType_T DiskType = MediumType_Normal;
 
     int c;
     RTGETOPTUNION ValueUnion;
@@ -1027,7 +1043,7 @@ int handleAddiSCSIDisk(HandlerArg *a)
 
     do
     {
-        ComPtr<IHardDisk> hardDisk;
+        ComPtr<IMedium> hardDisk;
         /** @todo move the location stuff to Main, which can use pfnComposeName
          * from the disk backends to construct the location properly. Also do
          * not use slashes to separate the parts, as otherwise only the last
@@ -1094,7 +1110,7 @@ int handleAddiSCSIDisk(HandlerArg *a)
             SetProperties (ComSafeArrayAsInParam (names),
                            ComSafeArrayAsInParam (values)));
 
-        if (DiskType != HardDiskType_Normal)
+        if (DiskType != MediumType_Normal)
         {
             CHECK_ERROR(hardDisk, COMSETTER(Type)(DiskType));
         }
@@ -1155,7 +1171,7 @@ int handleShowHardDiskInfo(HandlerArg *a)
     if (!FilenameOrUuid)
         return errorSyntax(USAGE_SHOWHDINFO, "Disk name or UUID required");
 
-    ComPtr<IHardDisk> hardDisk;
+    ComPtr<IMedium> hardDisk;
     bool unknown = false;
     /* first guess is that it's a UUID */
     Bstr uuid(FilenameOrUuid);
@@ -1198,11 +1214,11 @@ int handleShowHardDiskInfo(HandlerArg *a)
         /* check for accessibility */
         /// @todo NEWMEDIA check accessibility of all parents
         /// @todo NEWMEDIA print the full state value
-        MediaState_T state;
-        CHECK_ERROR_BREAK (hardDisk, COMGETTER(State)(&state));
-        RTPrintf("Accessible:           %s\n", state != MediaState_Inaccessible ? "yes" : "no");
+        MediumState_T state;
+        CHECK_ERROR_BREAK (hardDisk, RefreshState(&state));
+        RTPrintf("Accessible:           %s\n", state != MediumState_Inaccessible ? "yes" : "no");
 
-        if (state == MediaState_Inaccessible)
+        if (state == MediumState_Inaccessible)
         {
             Bstr err;
             CHECK_ERROR_BREAK (hardDisk, COMGETTER(LastAccessError)(err.asOutParam()));
@@ -1223,24 +1239,24 @@ int handleShowHardDiskInfo(HandlerArg *a)
         hardDisk->COMGETTER(Size)(&actualSize);
         RTPrintf("Current size on disk: %llu MBytes\n", actualSize >> 20);
 
-        ComPtr <IHardDisk> parent;
+        ComPtr <IMedium> parent;
         hardDisk->COMGETTER(Parent) (parent.asOutParam());
 
-        HardDiskType_T type;
+        MediumType_T type;
         hardDisk->COMGETTER(Type)(&type);
         const char *typeStr = "unknown";
         switch (type)
         {
-            case HardDiskType_Normal:
+            case MediumType_Normal:
                 if (!parent.isNull())
                     typeStr = "normal (differencing)";
                 else
                     typeStr = "normal (base)";
                 break;
-            case HardDiskType_Immutable:
+            case MediumType_Immutable:
                 typeStr = "immutable";
                 break;
-            case HardDiskType_Writethrough:
+            case MediumType_Writethrough:
                 typeStr = "writethrough";
                 break;
         }
@@ -1315,7 +1331,7 @@ int handleOpenMedium(HandlerArg *a)
         CMD_FLOPPY
     } cmd = CMD_NONE;
     const char *Filename = NULL;
-    HardDiskType_T DiskType = HardDiskType_Normal;
+    MediumType_T DiskType = MediumType_Normal;
     bool fDiskType = false;
     bool fSetImageId = false;
     bool fSetParentId = false;
@@ -1407,7 +1423,7 @@ int handleOpenMedium(HandlerArg *a)
      * chance to clean up the API semantics. */
     if (cmd == CMD_DISK)
     {
-        ComPtr<IHardDisk> hardDisk;
+        ComPtr<IMedium> hardDisk;
         Bstr ImageIdStr = BstrFmt("%RTuuid", &ImageId);
         Bstr ParentIdStr = BstrFmt("%RTuuid", &ParentId);
         rc = a->virtualBox->OpenHardDisk(Bstr(Filename), AccessMode_ReadWrite, fSetImageId, ImageIdStr, fSetParentId, ParentIdStr, hardDisk.asOutParam());
@@ -1427,7 +1443,7 @@ int handleOpenMedium(HandlerArg *a)
         if (SUCCEEDED(rc) && hardDisk)
         {
             /* change the type if requested */
-            if (DiskType != HardDiskType_Normal)
+            if (DiskType != MediumType_Normal)
             {
                 CHECK_ERROR(hardDisk, COMSETTER(Type)(DiskType));
             }
@@ -1437,7 +1453,7 @@ int handleOpenMedium(HandlerArg *a)
     {
         if (fDiskType || fSetImageId || fSetParentId)
             return errorSyntax(USAGE_OPENMEDIUM, "Invalid option for DVD images");
-        ComPtr<IDVDImage> dvdImage;
+        ComPtr<IMedium> dvdImage;
         rc = a->virtualBox->OpenDVDImage(Bstr(Filename), Bstr(), dvdImage.asOutParam());
         if (rc == VBOX_E_FILE_ERROR)
         {
@@ -1457,7 +1473,7 @@ int handleOpenMedium(HandlerArg *a)
     {
         if (fDiskType || fSetImageId || fSetParentId)
             return errorSyntax(USAGE_OPENMEDIUM, "Invalid option for floppy images");
-        ComPtr<IFloppyImage> floppyImage;
+        ComPtr<IMedium> floppyImage;
          rc = a->virtualBox->OpenFloppyImage(Bstr(Filename), Bstr(), floppyImage.asOutParam());
         if (rc == VBOX_E_FILE_ERROR)
         {
@@ -1557,7 +1573,7 @@ int handleCloseMedium(HandlerArg *a)
 
     if (cmd == CMD_DISK)
     {
-        ComPtr<IHardDisk> hardDisk;
+        ComPtr<IMedium> hardDisk;
         rc = a->virtualBox->GetHardDisk(uuid, hardDisk.asOutParam());
         /* not a UUID or not registered? Then it must be a filename */
         if (!hardDisk)
@@ -1572,7 +1588,7 @@ int handleCloseMedium(HandlerArg *a)
     else
     if (cmd == CMD_DVD)
     {
-        ComPtr<IDVDImage> dvdImage;
+        ComPtr<IMedium> dvdImage;
         rc = a->virtualBox->GetDVDImage(uuid, dvdImage.asOutParam());
         /* not a UUID or not registered? Then it must be a filename */
         if (!dvdImage)
@@ -1587,7 +1603,7 @@ int handleCloseMedium(HandlerArg *a)
     else
     if (cmd == CMD_FLOPPY)
     {
-        ComPtr<IFloppyImage> floppyImage;
+        ComPtr<IMedium> floppyImage;
         rc = a->virtualBox->GetFloppyImage(uuid, floppyImage.asOutParam());
         /* not a UUID or not registered? Then it must be a filename */
         if (!floppyImage)

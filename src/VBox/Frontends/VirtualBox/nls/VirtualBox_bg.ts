@@ -706,7 +706,7 @@
         <translation>&amp;Споделени папки...</translation>
     </message>
     <message>
-        <source>Open the dialog to operate on shared folders</source>
+        <source>Create or modify shared folders</source>
         <translation>Отваряне на диалог за опериране със споделени папки</translation>
     </message>
     <message>
@@ -865,7 +865,7 @@
         <translation>&lt;br&gt;&lt;nobr&gt;&lt;b&gt;Няма монтиран диск&lt;/b&gt;&lt;/nobr&gt;</translation>
     </message>
     <message>
-        <source>&lt;qt&gt;&lt;nobr&gt;Indicates the activity of virtual hard disks:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
+        <source>&lt;qt&gt;&lt;nobr&gt;Indicates activity on the virtual hard disks:&lt;/nobr&gt;%1&lt;/qt&gt;</source>
         <comment>HDD tooltip</comment>
         <translation>&lt;qt&gt;&lt;nobr&gt;Показва активността на виртуалните твърди дискове:&lt;/nobr&gt;%1&lt;/qt&gt;</translation>
     </message>

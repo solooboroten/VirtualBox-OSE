@@ -1,4 +1,4 @@
-/* $Id: VBoxService.cpp 19532 2009-05-08 14:53:35Z vboxsync $ */
+/* $Id: VBoxService.cpp 23029 2009-09-15 11:52:38Z vboxsync $ */
 /** @file
  * VBoxService - Guest Additions Service Skeleton.
  */
@@ -37,7 +37,7 @@
 #include <iprt/asm.h>
 #include <iprt/path.h>
 #include <VBox/log.h>
-#include <VBox/VBoxGuest.h>
+#include <VBox/VBoxGuestLib.h>
 #include "VBoxServiceInternal.h"
 
 
@@ -82,7 +82,10 @@ static struct
     { &g_Clipboard, NIL_RTTHREAD, false, false, false, true },
 #endif
 #ifdef VBOXSERVICE_VMINFO
-    { &g_VMInfo, NIL_RTTHREAD, false, false, false, true },
+    { &g_VMInfo,    NIL_RTTHREAD, false, false, false, true },
+#endif
+#ifdef VBOXSERVICE_EXEC
+    { &g_Exec,      NIL_RTTHREAD, false, false, false, true },
 #endif
 };
 
@@ -189,9 +192,9 @@ void VBoxServiceVerbose(int iLevel, const char *pszFormat, ...)
         RTStrmPrintfV(g_pStdOut, pszFormat, va);
         va_end(va);
 
-#if 0 /* enable after 2.2 */
-        Log(("%s: %N", g_pszProgName, pszFormat, &va));
-#endif
+        va_start(va, pszFormat);
+        LogRel(("%s: %N", g_pszProgName, pszFormat, &va));
+        va_end(va);
     }
 }
 
@@ -277,14 +280,17 @@ int VBoxServiceStartServices(unsigned iMain)
      */
     VBoxServiceVerbose(2, "Initializing services ...\n");
     for (unsigned j = 0; j < RT_ELEMENTS(g_aServices); j++)
-    {
-        rc = g_aServices[j].pDesc->pfnInit();
-        if (RT_FAILURE(rc))
+        if (g_aServices[j].fEnabled)
         {
-            VBoxServiceError("Service '%s' failed pre-init: %Rrc\n", g_aServices[j].pDesc->pszName);
-            return rc;
+
+            rc = g_aServices[j].pDesc->pfnInit();
+            if (RT_FAILURE(rc))
+            {
+                VBoxServiceError("Service '%s' failed to initialize: %Rrc\n",
+                                 g_aServices[j].pDesc->pszName, rc);
+                return rc;
+            }
         }
-    }
 
     /*
      * Start the service(s).
@@ -317,7 +323,10 @@ int VBoxServiceStartServices(unsigned iMain)
         /* The final service runs in the main thread. */
         VBoxServiceVerbose(1, "Starting '%s' in the main thread\n", g_aServices[iMain].pDesc->pszName);
         rc = g_aServices[iMain].pDesc->pfnWorker(&g_fShutdown);
-        VBoxServiceError("Service '%s' stopped unexpected; rc=%Rrc\n", g_aServices[iMain].pDesc->pszName, rc);
+        if (rc != VINF_SUCCESS) /* Only complain if service returned an error. Otherwise the service is a one-timer. */
+        {
+            VBoxServiceError("Service '%s' stopped unexpected; rc=%Rrc\n", g_aServices[iMain].pDesc->pszName, rc);
+        }
     }
 
     /* Should never get here. */
@@ -341,15 +350,16 @@ int VBoxServiceStopServices(void)
         if (g_aServices[j].fStarted)
             g_aServices[j].pDesc->pfnStop();
     for (unsigned j = 0; j < RT_ELEMENTS(g_aServices); j++)
-    {
-        if (g_aServices[j].Thread != NIL_RTTHREAD)
+        if (g_aServices[j].fEnabled)
         {
-            int rc = RTThreadWait(g_aServices[j].Thread, 30*1000, NULL);
-            if (RT_FAILURE(rc))
-                VBoxServiceError("Service '%s' failed to stop. (%Rrc)\n", g_aServices[j].pDesc->pszName, rc);
+            if (g_aServices[j].Thread != NIL_RTTHREAD)
+            {
+                int rc = RTThreadWait(g_aServices[j].Thread, 30*1000, NULL);
+                if (RT_FAILURE(rc))
+                    VBoxServiceError("Service '%s' failed to stop. (%Rrc)\n", g_aServices[j].pDesc->pszName, rc);
+            }
+            g_aServices[j].pDesc->pfnTerm();
         }
-        g_aServices[j].pDesc->pfnTerm();
-    }
 
     VBoxServiceVerbose(2, "Stopping services returned: rc=%Rrc\n", rc);
     return rc;
@@ -391,7 +401,7 @@ int main(int argc, char **argv)
      * Parse the arguments.
      */
     bool fDaemonize = true;
-    bool fDaemonzied = false;
+    bool fDaemonized = false;
     for (int i = 1; i < argc; i++)
     {
         const char *psz = argv[i];
@@ -422,7 +432,7 @@ int main(int argc, char **argv)
 #endif
             else if (MATCHES("daemonized"))
             {
-                fDaemonzied = true;
+                fDaemonized = true;
                 continue;
             }
             else
@@ -508,7 +518,6 @@ int main(int argc, char **argv)
             }
         } while (psz && *++psz);
     }
-
     /*
      * Check that at least one service is enabled.
      */
@@ -525,10 +534,12 @@ int main(int argc, char **argv)
     if (RT_FAILURE(rc))
         return VBoxServiceError("VbglR3Init failed with rc=%Rrc.\n", rc);
 
+    VBoxServiceVerbose(0, "Started. Verbose level = %d\n", g_cVerbosity);
+
     /*
      * Daemonize if requested.
      */
-    if (fDaemonize && !fDaemonzied)
+    if (fDaemonize && !fDaemonized)
     {
 #ifdef RT_OS_WINDOWS
         /** @todo Should do something like VBoxSVC here, OR automatically re-register
@@ -545,7 +556,8 @@ int main(int argc, char **argv)
          */
         VBoxServiceVerbose(2, "Starting service dispatcher ...\n");
         if (!StartServiceCtrlDispatcher(&g_aServiceTable[0]))
-            return VBoxServiceError("StartServiceCtrlDispatcher: %u\n", GetLastError());
+            return VBoxServiceError("StartServiceCtrlDispatcher: %u. Please start %s with option -f (foreground)!",
+                                    GetLastError(), g_pszProgName);
         /* Service now lives in the control dispatcher registered above. */
 #else
         VBoxServiceVerbose(1, "Daemonizing...\n");
@@ -582,6 +594,7 @@ int main(int argc, char **argv)
     }
 #endif
 
+    VBoxServiceVerbose(0, "Ended.\n");
     return RT_SUCCESS(rc) ? 0 : 1;
 }
 

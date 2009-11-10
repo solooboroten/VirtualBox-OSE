@@ -1,4 +1,4 @@
-/* $Id: PGMAllHandler.cpp 20808 2009-06-23 08:43:53Z vboxsync $ */
+/* $Id: PGMAllHandler.cpp 23121 2009-09-18 11:12:52Z vboxsync $ */
 /** @file
  * PGM - Page Manager / Monitor, Access Handlers.
  */
@@ -167,7 +167,7 @@ VMMDECL(int) PGMHandlerPhysicalRegisterEx(PVM pVM, PGMPHYSHANDLERTYPE enmType, R
         if (rc == VINF_PGM_SYNC_CR3)
             rc = VINF_PGM_GCPHYS_ALIASED;
         pgmUnlock(pVM);
-        HWACCMFlushTLBOnAllVCpus(pVM);
+        PGM_INVL_ALL_VCPU_TLBS(pVM);
 #ifndef IN_RING3
         REMNotifyHandlerPhysicalRegister(pVM, enmType, GCPhys, GCPhysLast - GCPhys + 1, !!pfnHandlerR3);
 #else
@@ -222,7 +222,7 @@ static int pgmHandlerPhysicalSetRamFlagsAndFlushShadowPTs(PVM pVM, PPGMPHYSHANDL
         {
             PGM_PAGE_SET_HNDL_PHYS_STATE(pPage, uState);
 
-            int rc2 = pgmPoolTrackFlushGCPhys(pVM, pPage, &fFlushTLBs);
+            int rc2 = pgmPoolTrackUpdateGCPhys(pVM, pPage, false /* allow updates of PTEs (instead of flushing) */, &fFlushTLBs);
             if (rc2 != VINF_SUCCESS && rc == VINF_SUCCESS)
                 rc = rc2;
         }
@@ -272,7 +272,7 @@ VMMDECL(int)  PGMHandlerPhysicalDeregister(PVM pVM, RTGCPHYS GCPhys)
         pgmHandlerPhysicalDeregisterNotifyREM(pVM, pCur);
         MMHyperFree(pVM, pCur);
         pgmUnlock(pVM);
-        HWACCMFlushTLBOnAllVCpus(pVM);
+        PGM_INVL_ALL_VCPU_TLBS(pVM);
         return VINF_SUCCESS;
     }
     pgmUnlock(pVM);
@@ -555,7 +555,7 @@ VMMDECL(int) PGMHandlerPhysicalModify(PVM pVM, RTGCPHYS GCPhysCurrent, RTGCPHYS 
                     REMR3NotifyHandlerPhysicalModify(pVM, enmType, GCPhysCurrent, GCPhys,
                                                      GCPhysLast, fHasHCHandler, fRestoreAsRAM);
 #endif
-                    HWACCMFlushTLBOnAllVCpus(pVM);
+                    PGM_INVL_ALL_VCPU_TLBS(pVM);
                     Log(("PGMHandlerPhysicalModify: GCPhysCurrent=%RGp -> GCPhys=%RGp GCPhysLast=%RGp\n",
                          GCPhysCurrent, GCPhys, GCPhysLast));
                     return VINF_SUCCESS;
@@ -850,7 +850,7 @@ VMMDECL(int)  PGMHandlerPhysicalReset(PVM pVM, RTGCPHYS GCPhys)
                      * Set the flags and flush shadow PT entries.
                      */
                     rc = pgmHandlerPhysicalSetRamFlagsAndFlushShadowPTs(pVM, pCur, pRam);
-                    HWACCMFlushTLBOnAllVCpus(pVM);
+                    PGM_INVL_ALL_VCPU_TLBS(pVM);
                 }
 
                 rc = VINF_SUCCESS;
@@ -925,9 +925,6 @@ VMMDECL(int)  PGMHandlerPhysicalPageTempOff(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS G
             AssertReturnStmt(RT_SUCCESS_NP(rc), pgmUnlock(pVM), rc);
             PGM_PAGE_SET_HNDL_PHYS_STATE(pPage, PGM_PAGE_HNDL_PHYS_STATE_DISABLED);
             pgmUnlock(pVM);
-#ifndef IN_RC
-            HWACCMInvalidatePhysPage(pVM, GCPhysPage);
-#endif
             return VINF_SUCCESS;
         }
         pgmUnlock(pVM);
@@ -1047,9 +1044,6 @@ VMMDECL(int)  PGMHandlerPhysicalPageAlias(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCP
             LogFlow(("PGMHandlerPhysicalPageAlias: => %R[pgmpage]\n", pPage));
 
             pgmUnlock(pVM);
-#ifndef IN_RC
-            HWACCMInvalidatePhysPage(pVM, GCPhysPage);
-#endif
             return VINF_SUCCESS;
         }
 
@@ -1149,9 +1143,6 @@ VMMDECL(int)  PGMHandlerPhysicalPageAliasHC(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS G
             PGM_PAGE_SET_HNDL_PHYS_STATE(pPage, PGM_PAGE_HNDL_PHYS_STATE_DISABLED);
             LogFlow(("PGMHandlerPhysicalPageAliasHC: => %R[pgmpage]\n", pPage));
             pgmUnlock(pVM);
-#ifndef IN_RC
-            HWACCMInvalidatePhysPage(pVM, GCPhysPage);
-#endif
             return VINF_SUCCESS;
         }
         pgmUnlock(pVM);
@@ -1550,7 +1541,7 @@ static DECLCALLBACK(int) pgmHandlerVirtualVerifyOne(PAVLROGCPTRNODECORE pNode, v
     RTGCUINTPTR   GCPtr = (RTGCUINTPTR)pVirt->Core.Key;
     for (unsigned iPage = 0; iPage < pVirt->cPages; iPage++, GCPtr += PAGE_SIZE)
     {
-        for (unsigned i=0;i<pVM->cCPUs;i++)
+        for (VMCPUID i = 0; i < pVM->cCpus; i++)
         {
             PVMCPU pVCpu = &pVM->aCpus[i];
 

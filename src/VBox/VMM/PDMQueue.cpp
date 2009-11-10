@@ -1,4 +1,4 @@
-/* $Id: PDMQueue.cpp 21039 2009-06-29 15:57:39Z vboxsync $ */
+/* $Id: PDMQueue.cpp 21847 2009-07-28 14:35:04Z vboxsync $ */
 /** @file
  * PDM Queue - Transport data and tasks to EMT and R3.
  */
@@ -56,9 +56,11 @@ static DECLCALLBACK(void)   pdmR3QueueTimer(PVM pVM, PTMTIMER pTimer, void *pvUs
  * @param   cMilliesInterval    Number of milliseconds between polling the queue.
  *                              If 0 then the emulation thread will be notified whenever an item arrives.
  * @param   fRZEnabled          Set if the queue will be used from RC/R0 and need to be allocated from the hyper heap.
+ * @param   pszName             The queue name. Unique. Not copied.
  * @param   ppQueue             Where to store the queue handle.
  */
-static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval, bool fRZEnabled, PPDMQUEUE *ppQueue)
+static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval, bool fRZEnabled,
+                            const char *pszName, PPDMQUEUE *ppQueue)
 {
     /*
      * Validate input.
@@ -94,6 +96,7 @@ static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMil
     pQueue->pVMR3 = pVM;
     pQueue->pVMR0 = fRZEnabled ? pVM->pVMR0 : NIL_RTR0PTR;
     pQueue->pVMRC = fRZEnabled ? pVM->pVMRC : NIL_RTRCPTR;
+    pQueue->pszName = pszName;
     pQueue->cMilliesInterval = cMilliesInterval;
     //pQueue->pTimer = NULL;
     pQueue->cbItem = cbItem;
@@ -173,6 +176,20 @@ static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMil
         pdmUnlock(pVM);
     }
 
+    /*
+     * Register the statistics.
+     */
+    STAMR3RegisterF(pVM, &pQueue->cbItem,               STAMTYPE_U32,     STAMVISIBILITY_ALWAYS, STAMUNIT_BYTES,        "Item size.",                       "/PDM/Queue/%s/cbItem",         pQueue->pszName);
+    STAMR3RegisterF(pVM, &pQueue->cItems,               STAMTYPE_U32,     STAMVISIBILITY_ALWAYS, STAMUNIT_COUNT,        "Queue size.",                      "/PDM/Queue/%s/cItems",         pQueue->pszName);
+    STAMR3RegisterF(pVM, &pQueue->StatAllocFailures,    STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS, STAMUNIT_OCCURENCES,   "PDMQueueAlloc failures.",          "/PDM/Queue/%s/AllocFailures",  pQueue->pszName);
+    STAMR3RegisterF(pVM, &pQueue->StatInsert,           STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS, STAMUNIT_CALLS,        "Calls to PDMQueueInsert.",         "/PDM/Queue/%s/Insert",         pQueue->pszName);
+    STAMR3RegisterF(pVM, &pQueue->StatFlush,            STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS, STAMUNIT_CALLS,        "Calls to pdmR3QueueFlush.",        "/PDM/Queue/%s/Flush",          pQueue->pszName);
+    STAMR3RegisterF(pVM, &pQueue->StatFlushLeftovers,   STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS, STAMUNIT_OCCURENCES,   "Left over items after flush.",     "/PDM/Queue/%s/FlushLeftovers", pQueue->pszName);
+#ifdef VBOX_WITH_STATISTICS
+    STAMR3RegisterF(pVM, &pQueue->StatFlushPrf,         STAMTYPE_PROFILE, STAMVISIBILITY_ALWAYS, STAMUNIT_CALLS,        "Profiling pdmR3QueueFlush.",       "/PDM/Queue/%s/FlushPrf",       pQueue->pszName);
+    STAMR3RegisterF(pVM, (void *)&pQueue->cStatPending, STAMTYPE_U32,     STAMVISIBILITY_ALWAYS, STAMUNIT_COUNT,        "Pending items.",                   "/PDM/Queue/%s/Pending",        pQueue->pszName);
+#endif
+
     *ppQueue = pQueue;
     return VINF_SUCCESS;
 }
@@ -190,14 +207,15 @@ static int pdmR3QueueCreate(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMil
  *                              If 0 then the emulation thread will be notified whenever an item arrives.
  * @param   pfnCallback         The consumer function.
  * @param   fRZEnabled          Set if the queue must be usable from RC/R0.
+ * @param   pszName             The queue name. Unique. Not copied.
  * @param   ppQueue             Where to store the queue handle on success.
  * @thread  Emulation thread only.
  */
 VMMR3DECL(int) PDMR3QueueCreateDevice(PVM pVM, PPDMDEVINS pDevIns, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
-                                      PFNPDMQUEUEDEV pfnCallback, bool fRZEnabled, PPDMQUEUE *ppQueue)
+                                      PFNPDMQUEUEDEV pfnCallback, bool fRZEnabled, const char *pszName, PPDMQUEUE *ppQueue)
 {
-    LogFlow(("PDMR3QueueCreateDevice: pDevIns=%p cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p fRZEnabled=%RTbool\n",
-             pDevIns, cbItem, cItems, cMilliesInterval, pfnCallback, fRZEnabled));
+    LogFlow(("PDMR3QueueCreateDevice: pDevIns=%p cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p fRZEnabled=%RTbool pszName=%s\n",
+             pDevIns, cbItem, cItems, cMilliesInterval, pfnCallback, fRZEnabled, pszName));
 
     /*
      * Validate input.
@@ -213,7 +231,7 @@ VMMR3DECL(int) PDMR3QueueCreateDevice(PVM pVM, PPDMDEVINS pDevIns, RTUINT cbItem
      * Create the queue.
      */
     PPDMQUEUE pQueue;
-    int rc = pdmR3QueueCreate(pVM, cbItem, cItems, cMilliesInterval, fRZEnabled, &pQueue);
+    int rc = pdmR3QueueCreate(pVM, cbItem, cItems, cMilliesInterval, fRZEnabled, pszName, &pQueue);
     if (RT_SUCCESS(rc))
     {
         pQueue->enmType = PDMQUEUETYPE_DEV;
@@ -239,14 +257,15 @@ VMMR3DECL(int) PDMR3QueueCreateDevice(PVM pVM, PPDMDEVINS pDevIns, RTUINT cbItem
  * @param   cMilliesInterval    Number of milliseconds between polling the queue.
  *                              If 0 then the emulation thread will be notified whenever an item arrives.
  * @param   pfnCallback         The consumer function.
+ * @param   pszName             The queue name. Unique. Not copied.
  * @param   ppQueue             Where to store the queue handle on success.
  * @thread  Emulation thread only.
  */
 VMMR3DECL(int) PDMR3QueueCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
-                                      PFNPDMQUEUEDRV pfnCallback, PPDMQUEUE *ppQueue)
+                                      PFNPDMQUEUEDRV pfnCallback, const char *pszName, PPDMQUEUE *ppQueue)
 {
-    LogFlow(("PDMR3QueueCreateDriver: pDrvIns=%p cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p\n",
-             pDrvIns, cbItem, cItems, cMilliesInterval, pfnCallback));
+    LogFlow(("PDMR3QueueCreateDriver: pDrvIns=%p cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p pszName=%s\n",
+             pDrvIns, cbItem, cItems, cMilliesInterval, pfnCallback, pszName));
 
     /*
      * Validate input.
@@ -262,7 +281,7 @@ VMMR3DECL(int) PDMR3QueueCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, RTUINT cbItem
      * Create the queue.
      */
     PPDMQUEUE pQueue;
-    int rc = pdmR3QueueCreate(pVM, cbItem, cItems, cMilliesInterval, false, &pQueue);
+    int rc = pdmR3QueueCreate(pVM, cbItem, cItems, cMilliesInterval, false, pszName, &pQueue);
     if (RT_SUCCESS(rc))
     {
         pQueue->enmType = PDMQUEUETYPE_DRV;
@@ -288,14 +307,15 @@ VMMR3DECL(int) PDMR3QueueCreateDriver(PVM pVM, PPDMDRVINS pDrvIns, RTUINT cbItem
  *                              If 0 then the emulation thread will be notified whenever an item arrives.
  * @param   pfnCallback         The consumer function.
  * @param   fRZEnabled          Set if the queue must be usable from RC/R0.
+ * @param   pszName             The queue name. Unique. Not copied.
  * @param   ppQueue             Where to store the queue handle on success.
  * @thread  Emulation thread only.
  */
 VMMR3DECL(int) PDMR3QueueCreateInternal(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval,
-                                        PFNPDMQUEUEINT pfnCallback, bool fRZEnabled, PPDMQUEUE *ppQueue)
+                                        PFNPDMQUEUEINT pfnCallback, bool fRZEnabled, const char *pszName, PPDMQUEUE *ppQueue)
 {
-    LogFlow(("PDMR3QueueCreateInternal: cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p fRZEnabled=%RTbool\n",
-             cbItem, cItems, cMilliesInterval, pfnCallback, fRZEnabled));
+    LogFlow(("PDMR3QueueCreateInternal: cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p fRZEnabled=%RTbool pszName=%s\n",
+             cbItem, cItems, cMilliesInterval, pfnCallback, fRZEnabled, pszName));
 
     /*
      * Validate input.
@@ -311,7 +331,7 @@ VMMR3DECL(int) PDMR3QueueCreateInternal(PVM pVM, RTUINT cbItem, RTUINT cItems, u
      * Create the queue.
      */
     PPDMQUEUE pQueue;
-    int rc = pdmR3QueueCreate(pVM, cbItem, cItems, cMilliesInterval, fRZEnabled, &pQueue);
+    int rc = pdmR3QueueCreate(pVM, cbItem, cItems, cMilliesInterval, fRZEnabled, pszName, &pQueue);
     if (RT_SUCCESS(rc))
     {
         pQueue->enmType = PDMQUEUETYPE_INTERNAL;
@@ -336,12 +356,13 @@ VMMR3DECL(int) PDMR3QueueCreateInternal(PVM pVM, RTUINT cbItem, RTUINT cItems, u
  *                              If 0 then the emulation thread will be notified whenever an item arrives.
  * @param   pfnCallback         The consumer function.
  * @param   pvUser              The user argument to the consumer function.
+ * @param   pszName             The queue name. Unique. Not copied.
  * @param   ppQueue             Where to store the queue handle on success.
  * @thread  Emulation thread only.
  */
-VMMR3DECL(int) PDMR3QueueCreateExternal(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval, PFNPDMQUEUEEXT pfnCallback, void *pvUser, PPDMQUEUE *ppQueue)
+VMMR3DECL(int) PDMR3QueueCreateExternal(PVM pVM, RTUINT cbItem, RTUINT cItems, uint32_t cMilliesInterval, PFNPDMQUEUEEXT pfnCallback, void *pvUser, const char *pszName, PPDMQUEUE *ppQueue)
 {
-    LogFlow(("PDMR3QueueCreateExternal: cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p\n", cbItem, cItems, cMilliesInterval, pfnCallback));
+    LogFlow(("PDMR3QueueCreateExternal: cbItem=%d cItems=%d cMilliesInterval=%d pfnCallback=%p pszName=%s\n", cbItem, cItems, cMilliesInterval, pfnCallback, pszName));
 
     /*
      * Validate input.
@@ -357,7 +378,7 @@ VMMR3DECL(int) PDMR3QueueCreateExternal(PVM pVM, RTUINT cbItem, RTUINT cItems, u
      * Create the queue.
      */
     PPDMQUEUE pQueue;
-    int rc = pdmR3QueueCreate(pVM, cbItem, cItems, cMilliesInterval, false, &pQueue);
+    int rc = pdmR3QueueCreate(pVM, cbItem, cItems, cMilliesInterval, false, pszName, &pQueue);
     if (RT_SUCCESS(rc))
     {
         pQueue->enmType = PDMQUEUETYPE_EXTERNAL;
@@ -437,6 +458,20 @@ VMMR3DECL(int) PDMR3QueueDestroy(PPDMQUEUE pQueue)
     pQueue->pNext = NULL;
     pQueue->pVMR3 = NULL;
     pdmUnlock(pVM);
+
+    /*
+     * Deregister statistics.
+     */
+    STAMR3Deregister(pVM, &pQueue->cbItem);
+    STAMR3Deregister(pVM, &pQueue->cbItem);
+    STAMR3Deregister(pVM, &pQueue->StatAllocFailures);
+    STAMR3Deregister(pVM, &pQueue->StatInsert);
+    STAMR3Deregister(pVM, &pQueue->StatFlush);
+    STAMR3Deregister(pVM, &pQueue->StatFlushLeftovers);
+#ifdef VBOX_WITH_STATISTICS
+    STAMR3Deregister(pVM, &pQueue->StatFlushPrf);
+    STAMR3Deregister(pVM, (void *)&pQueue->cStatPending);
+#endif
 
     /*
      * Destroy the timer and free it.
@@ -626,47 +661,30 @@ VMMR3DECL(void) PDMR3QueueFlushAll(PVM pVM)
     VM_ASSERT_EMT(pVM);
     LogFlow(("PDMR3QueuesFlush:\n"));
 
+    /*
+     * Only let one EMT flushing queues at any one time to queue preserve order
+     * and to avoid wasting time. The FF is always cleared here, because it's
+     * only used to get someones attention. Queue inserts occuring during the
+     * flush are caught using the pending bit.
+     *
+     * Note. The order in which the FF and pending bit are set and cleared is important.
+     */
     VM_FF_CLEAR(pVM, VM_FF_PDM_QUEUES);
-
-check_queue:
-    /* Prevent other VCPUs from flushing queues at the same time; we'll never flush an item twice, but the order might change. */
-    if (ASMAtomicCmpXchgU32(&pVM->pdm.s.fQueueFlushing, 1, 0))
+    if (!ASMAtomicBitTestAndSet(&pVM->pdm.s.fQueueFlushing, PDM_QUEUE_FLUSH_FLAG_ACTIVE_BIT))
     {
-        /* Use atomic test and clear to prevent useless checks; pdmR3QueueFlush is SMP safe. */
+        ASMAtomicBitClear(&pVM->pdm.s.fQueueFlushing, PDM_QUEUE_FLUSH_FLAG_PENDING_BIT);
         do
         {
+            VM_FF_CLEAR(pVM, VM_FF_PDM_QUEUES);
             for (PPDMQUEUE pCur = pVM->pdm.s.pQueuesForced; pCur; pCur = pCur->pNext)
-            {
                 if (    pCur->pPendingR3
                     ||  pCur->pPendingR0
                     ||  pCur->pPendingRC)
-                {
-                    if (    pdmR3QueueFlush(pCur)
-                        &&  (   pCur->pPendingR3
-                             || pCur->pPendingR0))
-                        /* new items arrived while flushing. */
-                        pdmR3QueueFlush(pCur);
-                }
-            }
-        }
-        while (VM_FF_TESTANDCLEAR(pVM, VM_FF_PDM_QUEUES_BIT));
+                    pdmR3QueueFlush(pCur);
+        } while (   ASMAtomicBitTestAndClear(&pVM->pdm.s.fQueueFlushing, PDM_QUEUE_FLUSH_FLAG_PENDING_BIT)
+                 || VM_FF_ISPENDING(pVM, VM_FF_PDM_QUEUES));
 
-        ASMAtomicXchgU32(&pVM->pdm.s.fQueueFlushing, 0);
-
-        /* Check if we missed anything. */
-        for (PPDMQUEUE pCur = pVM->pdm.s.pQueuesForced; pCur; pCur = pCur->pNext)
-        {
-            if (    pCur->pPendingR3
-                ||  pCur->pPendingR0
-                ||  pCur->pPendingRC)
-            {
-                VM_FF_SET(pVM, VM_FF_PDM_QUEUES);
-                break;
-            }
-        }
-        if (VM_FF_TESTANDCLEAR(pVM, VM_FF_PDM_QUEUES))
-            goto check_queue;
-           
+        ASMAtomicBitClear(&pVM->pdm.s.fQueueFlushing, PDM_QUEUE_FLUSH_FLAG_ACTIVE_BIT);
     }
 }
 
@@ -680,6 +698,8 @@ check_queue:
  */
 static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
 {
+    STAM_PROFILE_START(&pQueue->StatFlushPrf,p);
+
     /*
      * Get the lists.
      */
@@ -690,7 +710,7 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
     if (    !pItems
         &&  !pItemsRC
         &&  !pItemsR0)
-        /* Somebody was racing us. */
+        /* Somebody may be racing us ... never mind. */
         return true;
 
     /*
@@ -739,10 +759,10 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
         case PDMQUEUETYPE_DEV:
             while (pItems)
             {
+                if (!pQueue->u.Dev.pfnCallback(pQueue->u.Dev.pDevIns, pItems))
+                    break;
                 pCur = pItems;
                 pItems = pItems->pNextR3;
-                if (!pQueue->u.Dev.pfnCallback(pQueue->u.Dev.pDevIns, pCur))
-                    break;
                 pdmR3QueueFree(pQueue, pCur);
             }
             break;
@@ -750,10 +770,10 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
         case PDMQUEUETYPE_DRV:
             while (pItems)
             {
+                if (!pQueue->u.Drv.pfnCallback(pQueue->u.Drv.pDrvIns, pItems))
+                    break;
                 pCur = pItems;
                 pItems = pItems->pNextR3;
-                if (!pQueue->u.Drv.pfnCallback(pQueue->u.Drv.pDrvIns, pCur))
-                    break;
                 pdmR3QueueFree(pQueue, pCur);
             }
             break;
@@ -761,10 +781,10 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
         case PDMQUEUETYPE_INTERNAL:
             while (pItems)
             {
+                if (!pQueue->u.Int.pfnCallback(pQueue->pVMR3, pItems))
+                    break;
                 pCur = pItems;
                 pItems = pItems->pNextR3;
-                if (!pQueue->u.Int.pfnCallback(pQueue->pVMR3, pCur))
-                    break;
                 pdmR3QueueFree(pQueue, pCur);
             }
             break;
@@ -772,10 +792,10 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
         case PDMQUEUETYPE_EXTERNAL:
             while (pItems)
             {
+                if (!pQueue->u.Ext.pfnCallback(pQueue->u.Ext.pvUser, pItems))
+                    break;
                 pCur = pItems;
                 pItems = pItems->pNextR3;
-                if (!pQueue->u.Ext.pfnCallback(pQueue->u.Ext.pvUser, pCur))
-                    break;
                 pdmR3QueueFree(pQueue, pCur);
             }
             break;
@@ -791,34 +811,42 @@ static bool pdmR3QueueFlush(PPDMQUEUE pQueue)
     if (pItems)
     {
         /*
-         * Shit, no!
-         *      1. Insert pCur.
-         *      2. Reverse the list.
-         *      3. Insert the LIFO at the tail of the pending list.
+         * Reverse the list.
          */
-        pCur->pNextR3 = pItems;
-        pItems = pCur;
-
-        //pCur = pItems;
+        pCur = pItems;
         pItems = NULL;
         while (pCur)
         {
             PPDMQUEUEITEMCORE pInsert = pCur;
-            pCur = pCur->pNextR3;
+            pCur = pInsert->pNextR3;
             pInsert->pNextR3 = pItems;
             pItems = pInsert;
         }
 
-        if (!ASMAtomicCmpXchgPtr((void * volatile *)&pQueue->pPendingR3, pItems, NULL))
+        /*
+         * Insert the list at the tail of the pending list.
+         */
+        for (;;)
         {
-            pCur = pQueue->pPendingR3;
-            while (pCur->pNextR3)
-                pCur = pCur->pNextR3;
-            pCur->pNextR3 = pItems;
+            if (ASMAtomicCmpXchgPtr((void * volatile *)&pQueue->pPendingR3, pItems, NULL))
+                break;
+            PPDMQUEUEITEMCORE pPending = (PPDMQUEUEITEMCORE)ASMAtomicXchgPtr((void * volatile *)&pQueue->pPendingR3, NULL);
+            if (pPending)
+            {
+                pCur = pPending;
+                while (pCur->pNextR3)
+                    pCur = pCur->pNextR3;
+                pCur->pNextR3 = pItems;
+                pItems = pPending;
+            }
         }
+
+        STAM_REL_COUNTER_INC(&pQueue->StatFlushLeftovers);
+        STAM_PROFILE_STOP(&pQueue->StatFlushPrf,p);
         return false;
     }
 
+    STAM_PROFILE_STOP(&pQueue->StatFlushPrf,p);
     return true;
 }
 
@@ -838,6 +866,9 @@ VMMR3DECL(void) PDMR3QueueFlushWorker(PVM pVM, PPDMQUEUE pQueue)
 {
     Assert(pVM->pdm.s.pQueueFlushR0 || pVM->pdm.s.pQueueFlushRC || pQueue);
     VM_ASSERT_EMT(pVM);
+
+    /** @todo This will clash with PDMR3QueueFlushAll (guest SMP)! */
+    Assert(!(pVM->pdm.s.fQueueFlushing & PDM_QUEUE_FLUSH_FLAG_ACTIVE));
 
     /*
      * Flush the queue.
@@ -895,6 +926,7 @@ DECLINLINE(void) pdmR3QueueFree(PPDMQUEUE pQueue, PPDMQUEUEITEMCORE pItem)
 
     if (!ASMAtomicCmpXchgU32(&pQueue->iFreeHead, iNext, i))
         AssertMsgFailed(("huh? i=%d iNext=%d iFreeHead=%d iFreeTail=%d\n", i, iNext, pQueue->iFreeHead, pQueue->iFreeTail));
+    STAM_STATS({ ASMAtomicDecU32(&pQueue->cStatPending); });
 }
 
 

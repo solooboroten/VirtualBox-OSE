@@ -38,7 +38,6 @@
 # error You must include port.h before all other headers
 #endif
 
-#define _FILE_OFFSET_BITS 64
 #define _GNU_SOURCE  /* for pread/pwrite */
 #include <fcntl.h>
 #include <math.h>
@@ -212,29 +211,6 @@ struct statvfs
 #ifndef M_PI_2
 #define M_PI_2 1.570796326794896619
 #endif
-
-
-/* Macros to define assembler functions somewhat portably */
-
-#if defined(__GNUC__) && !defined(__INTERIX) && !defined(__MINGW32__) && !defined(__CYGWIN__) && !defined(__APPLE__)
-# define __ASM_GLOBAL_FUNC(name,code) \
-      __asm__( ".text\n\t" \
-               ".align 4\n\t" \
-               ".globl " __ASM_NAME(#name) "\n\t" \
-               __ASM_FUNC(#name) "\n" \
-               __ASM_NAME(#name) ":\n\t" \
-               code \
-               "\n\t.previous" );
-#else  /* defined(__GNUC__) && !defined(__MINGW32__) && !defined(__APPLE__)  */
-# define __ASM_GLOBAL_FUNC(name,code) \
-      void __asm_dummy_##name(void) { \
-          asm( ".align 4\n\t" \
-               ".globl " __ASM_NAME(#name) "\n\t" \
-               __ASM_FUNC(#name) "\n" \
-               __ASM_NAME(#name) ":\n\t" \
-               code ); \
-      }
-#endif  /* __GNUC__ */
 
 
 /****************************************************************
@@ -449,6 +425,22 @@ extern inline int interlocked_xchg_add( int *dest, int incr )
     return ret;
 }
 
+#ifdef __x86_64__
+extern inline unsigned char interlocked_cmpxchg128( __int64 *dest, __int64 xchg_high,
+                                                    __int64 xchg_low, __int64 *compare );
+extern inline unsigned char interlocked_cmpxchg128( __int64 *dest, __int64 xchg_high,
+                                                    __int64 xchg_low, __int64 *compare )
+{
+    unsigned char ret;
+    __asm__ __volatile__( "lock cmpxchg16b %0; setz %b2"
+                          : "=m" (dest[0]), "=m" (dest[1]), "=r" (ret),
+                            "=a" (compare[0]), "=d" (compare[1])
+                          : "m" (dest[0]), "m" (dest[1]), "3" (compare[0]), "4" (compare[1]),
+                            "c" (xchg_high), "b" (xchg_low) );
+    return ret;
+}
+#endif
+
 #else  /* __GNUC__ */
 
 extern int interlocked_cmpxchg( int *dest, int xchg, int compare );
@@ -457,6 +449,10 @@ extern __int64 interlocked_cmpxchg64( __int64 *dest, __int64 xchg, __int64 compa
 extern int interlocked_xchg( int *dest, int val );
 extern void *interlocked_xchg_ptr( void **dest, void *val );
 extern int interlocked_xchg_add( int *dest, int incr );
+#ifdef _WIN64
+extern unsigned char interlocked_cmpxchg128( __int64 *dest, __int64 xchg_high,
+                                             __int64 xchg_low, __int64 *compare );
+#endif
 
 #endif  /* __GNUC__ */
 

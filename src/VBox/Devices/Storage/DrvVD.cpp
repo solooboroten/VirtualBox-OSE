@@ -1,4 +1,4 @@
-/* $Id: DrvVD.cpp 20374 2009-06-08 00:43:21Z vboxsync $ */
+/* $Id: DrvVD.cpp 23950 2009-10-21 19:25:12Z vboxsync $ */
 /** @file
  * DrvVD - Generic VBox disk media driver.
  */
@@ -208,29 +208,33 @@ static DECLCALLBACK(void) drvvdAsyncTaskCompleted(PPDMDRVINS pDrvIns, void *pvTe
 {
     PVBOXDISK pThis = PDMINS_2_DATA(pDrvIns, PVBOXDISK);
     PDRVVDSTORAGEBACKEND pStorageBackend = (PDRVVDSTORAGEBACKEND)pvTemplateUser;
-    int rc = VINF_VD_ASYNC_IO_FINISHED;
-    void *pvCallerUser = NULL;
 
     if (pStorageBackend->fSyncIoPending)
     {
-        pStorageBackend->fSyncIoPending;
+        pStorageBackend->fSyncIoPending = false;
         RTSemEventSignal(pStorageBackend->EventSem);
     }
-    else if (pStorageBackend->pfnCompleted)
-        rc = pStorageBackend->pfnCompleted(pvUser, &pvCallerUser);
     else
-        pvCallerUser = pvUser;
-
-    if (rc == VINF_VD_ASYNC_IO_FINISHED)
     {
-        rc = pThis->pDrvMediaAsyncPort->pfnTransferCompleteNotify(pThis->pDrvMediaAsyncPort, pvCallerUser);
-        AssertRC(rc);
+        int rc = VINF_VD_ASYNC_IO_FINISHED;
+        void *pvCallerUser = NULL;
+
+        if (pStorageBackend->pfnCompleted)
+            rc = pStorageBackend->pfnCompleted(pvUser, &pvCallerUser);
+        else
+            pvCallerUser = pvUser;
+
+        if (rc == VINF_VD_ASYNC_IO_FINISHED)
+        {
+            rc = pThis->pDrvMediaAsyncPort->pfnTransferCompleteNotify(pThis->pDrvMediaAsyncPort, pvCallerUser);
+            AssertRC(rc);
+        }
+        else
+            AssertMsg(rc == VERR_VD_ASYNC_IO_IN_PROGRESS, ("Invalid return code from disk backend rc=%Rrc\n", rc));
     }
-    else
-        AssertMsg(rc == VERR_VD_ASYNC_IO_IN_PROGRESS, ("Invalid return code from disk backend rc=%Rrc\n", rc));
 }
 
-static DECLCALLBACK(int) drvvdAsyncIOOpen(void *pvUser, const char *pszLocation, bool fReadonly,
+static DECLCALLBACK(int) drvvdAsyncIOOpen(void *pvUser, const char *pszLocation, unsigned uOpenFlags,
                                           PFNVDCOMPLETED pfnCompleted, void **ppStorage)
 {
     PVBOXDISK pDrvVD = (PVBOXDISK)pvUser;
@@ -242,7 +246,7 @@ static DECLCALLBACK(int) drvvdAsyncIOOpen(void *pvUser, const char *pszLocation,
         pStorageBackend->fSyncIoPending = false;
         pStorageBackend->pfnCompleted   = pfnCompleted;
 
-        int rc = RTSemEventCreate(&pStorageBackend->EventSem);
+        rc = RTSemEventCreate(&pStorageBackend->EventSem);
         if (RT_SUCCESS(rc))
         {
             rc = PDMDrvHlpPDMAsyncCompletionTemplateCreate(pDrvVD->pDrvIns, &pStorageBackend->pTemplate,
@@ -250,7 +254,7 @@ static DECLCALLBACK(int) drvvdAsyncIOOpen(void *pvUser, const char *pszLocation,
             if (RT_SUCCESS(rc))
             {
                 rc = PDMR3AsyncCompletionEpCreateForFile(&pStorageBackend->pEndpoint, pszLocation,
-                                                         fReadonly
+                                                         uOpenFlags & VD_INTERFACEASYNCIO_OPEN_FLAGS_READONLY
                                                          ? PDMACEP_FILE_FLAGS_READ_ONLY | PDMACEP_FILE_FLAGS_CACHING
                                                          : PDMACEP_FILE_FLAGS_CACHING,
                                                          pStorageBackend->pTemplate);
@@ -291,6 +295,14 @@ static DECLCALLBACK(int) drvvdAsyncIOGetSize(void *pvUser, void *pStorage, uint6
     PDRVVDSTORAGEBACKEND pStorageBackend = (PDRVVDSTORAGEBACKEND)pStorage;
 
     return PDMR3AsyncCompletionEpGetSize(pStorageBackend->pEndpoint, pcbSize);
+}
+
+static DECLCALLBACK(int) drvvdAsyncIOSetSize(void *pvUser, void *pStorage, uint64_t cbSize)
+{
+    PVBOXDISK pDrvVD = (PVBOXDISK)pvUser;
+    PDRVVDSTORAGEBACKEND pStorageBackend = (PDRVVDSTORAGEBACKEND)pStorage;
+
+    return VERR_NOT_SUPPORTED;
 }
 
 static DECLCALLBACK(int) drvvdAsyncIOReadSync(void *pvUser, void *pStorage, uint64_t uOffset,
@@ -788,15 +800,11 @@ static DECLCALLBACK(void *) drvvdQueryInterface(PPDMIBASE pInterface,
 /**
  * Construct a VBox disk media driver instance.
  *
- * @returns VBox status.
- * @param   pDrvIns     The driver instance data.
- *                      If the registration structure is needed, pDrvIns->pDrvReg points to it.
- * @param   pCfgHandle  Configuration node handle for the driver. Use this to obtain the configuration
- *                      of the driver instance. It's also found in pDrvIns->pCfgHandle as it's expected
- *                      to be used frequently in this function.
+ * @copydoc FNPDMDRVCONSTRUCT
  */
 static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
-                                        PCFGMNODE pCfgHandle)
+                                        PCFGMNODE pCfgHandle,
+                                        uint32_t fFlags)
 {
     LogFlow(("%s:\n", __FUNCTION__));
     PVBOXDISK pThis = PDMINS_2_DATA(pDrvIns, PVBOXDISK);
@@ -837,6 +845,7 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
     pThis->VDIErrorCallbacks.cbSize       = sizeof(VDINTERFACEERROR);
     pThis->VDIErrorCallbacks.enmInterface = VDINTERFACETYPE_ERROR;
     pThis->VDIErrorCallbacks.pfnError     = drvvdErrorCallback;
+    pThis->VDIErrorCallbacks.pfnMessage   = NULL;
 
     rc = VDInterfaceAdd(&pThis->VDIError, "DrvVD_VDIError", VDINTERFACETYPE_ERROR,
                         &pThis->VDIErrorCallbacks, pDrvIns, &pThis->pVDIfsDisk);
@@ -848,6 +857,7 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
     pThis->VDIAsyncIOCallbacks.pfnOpen                 = drvvdAsyncIOOpen;
     pThis->VDIAsyncIOCallbacks.pfnClose                = drvvdAsyncIOClose;
     pThis->VDIAsyncIOCallbacks.pfnGetSize              = drvvdAsyncIOGetSize;
+    pThis->VDIAsyncIOCallbacks.pfnSetSize              = drvvdAsyncIOSetSize;
     pThis->VDIAsyncIOCallbacks.pfnReadSync             = drvvdAsyncIOReadSync;
     pThis->VDIAsyncIOCallbacks.pfnWriteSync            = drvvdAsyncIOWriteSync;
     pThis->VDIAsyncIOCallbacks.pfnFlushSync            = drvvdAsyncIOFlushSync;
@@ -873,44 +883,6 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
 
     /* Try to attach async media port interface above.*/
     pThis->pDrvMediaAsyncPort = (PPDMIMEDIAASYNCPORT)pDrvIns->pUpBase->pfnQueryInterface(pDrvIns->pUpBase, PDMINTERFACE_MEDIA_ASYNC_PORT);
-
-    /*
-     * Attach the async transport driver below if the device above us implements the
-     * async interface.
-     */
-    if (pThis->pDrvMediaAsyncPort)
-    {
-        /* Try to attach the driver. */
-        PPDMIBASE pBase;
-
-        rc = pDrvIns->pDrvHlp->pfnAttach(pDrvIns, &pBase);
-        if (rc == VERR_PDM_NO_ATTACHED_DRIVER)
-        {
-            /*
-             * Though the device supports async I/O there is no transport driver
-             * which processes async requests.
-             * Revert to non async I/O.
-             */
-            rc = VINF_SUCCESS;
-            pThis->pDrvMediaAsyncPort = NULL;
-            pThis->fAsyncIOSupported = false;
-        }
-        else if (RT_FAILURE(rc))
-        {
-            AssertMsgFailed(("Failed to attach async transport driver below rc=%Rrc\n", rc));
-        }
-        else
-        {
-            /*
-             * The device supports async I/O and we successfully attached the transport driver.
-             * Indicate that async I/O is supported for now as we check if the image backend supports
-             * it later.
-             */
-            pThis->fAsyncIOSupported = true;
-
-            /** @todo: Use PDM async completion manager */
-        }
-    }
 
     /*
      * Validate configuration and find all parent images.
@@ -1044,6 +1016,9 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
         }
     }
 
+    if (pThis->pDrvMediaAsyncPort)
+        pThis->fAsyncIOSupported = true;
+
     while (pCurNode && RT_SUCCESS(rc))
     {
         /* Allocate per-image data. */
@@ -1088,7 +1063,7 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
             uOpenFlags = VD_OPEN_FLAGS_NORMAL;
         if (fHonorZeroWrites)
             uOpenFlags |= VD_OPEN_FLAGS_HONOR_ZEROES;
-        if (pThis->pDrvMediaAsyncPort)
+        if (pThis->fAsyncIOSupported)
             uOpenFlags |= VD_OPEN_FLAGS_ASYNC_IO;
 
         /* Try to open backend in asyc I/O mode first. */
@@ -1096,6 +1071,7 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
         if (rc == VERR_NOT_SUPPORTED)
         {
             /* Seems async I/O is not supported by the backend, open in normal mode. */
+            pThis->fAsyncIOSupported = false;
             uOpenFlags &= ~VD_OPEN_FLAGS_ASYNC_IO;
             rc = VDOpen(pThis->pDisk, pszFormat, pszName, uOpenFlags, pImage->pVDIfsImage);
         }
@@ -1136,62 +1112,19 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
 
     if (RT_FAILURE(rc))
     {
-        if (VALID_PTR(pThis->pDisk))
-        {
-            VDDestroy(pThis->pDisk);
-            pThis->pDisk = NULL;
-        }
-        drvvdFreeImages(pThis);
         if (VALID_PTR(pszName))
             MMR3HeapFree(pszName);
         if (VALID_PTR(pszFormat))
             MMR3HeapFree(pszFormat);
-
-        return rc;
+        /* drvvdDestruct does the rest. */
     }
     else
     {
-        /*
-         * Check if every opened image supports async I/O.
-         * If not we revert to non async I/O.
-         */
-        if (pThis->fAsyncIOSupported)
-        {
-            for (unsigned i = 0; i < VDGetCount(pThis->pDisk); i++)
-            {
-                VDBACKENDINFO vdBackendInfo;
-
-                rc = VDBackendInfoSingle(pThis->pDisk, i, &vdBackendInfo);
-                AssertRC(rc);
-
-                if (vdBackendInfo.uBackendCaps & VD_CAP_ASYNC)
-                {
-                    /*
-                     * Backend indicates support for at least some files.
-                     * Check if current file is supported with async I/O)
-                     */
-                    rc = VDImageIsAsyncIOSupported(pThis->pDisk, i, &pThis->fAsyncIOSupported);
-                    AssertRC(rc);
-
-                    /*
-                     * Check if current image is supported.
-                     * If not we can stop checking because
-                     * at least one does not support it.
-                     */
-                    if (!pThis->fAsyncIOSupported)
-                        break;
-                }
-                else
-                {
-                    pThis->fAsyncIOSupported = false;
-                    break;
-                }
-            }
-        }
-
         /* Switch to runtime error facility. */
         pThis->fErrorUseRuntime = true;
     }
+
+    /* else: drvvdDestruct cleans up. */
 
     LogFlow(("%s: returns %Rrc\n", __FUNCTION__, rc));
     return rc;
@@ -1210,6 +1143,11 @@ static DECLCALLBACK(void) drvvdDestruct(PPDMDRVINS pDrvIns)
     PVBOXDISK pThis = PDMINS_2_DATA(pDrvIns, PVBOXDISK);
     LogFlow(("%s:\n", __FUNCTION__));
 
+    if (VALID_PTR(pThis->pDisk))
+    {
+        VDDestroy(pThis->pDisk);
+        pThis->pDisk = NULL;
+    }
     drvvdFreeImages(pThis);
 }
 
@@ -1306,8 +1244,15 @@ const PDMDRVREG g_DrvVD =
     drvvdSuspend,
     /* pfnResume */
     drvvdResume,
+    /* pfnAttach */
+    NULL,
     /* pfnDetach */
     NULL,
     /* pfnPowerOff */
-    drvvdPowerOff
+    drvvdPowerOff,
+    /* pfnSoftReset */
+    NULL,
+    /* u32EndVersion */
+    PDM_DRVREG_VERSION
 };
+

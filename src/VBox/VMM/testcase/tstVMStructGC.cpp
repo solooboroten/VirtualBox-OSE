@@ -1,4 +1,4 @@
-/* $Id: tstVMStructGC.cpp 20875 2009-06-24 02:29:17Z vboxsync $ */
+/* $Id: tstVMStructGC.cpp 23558 2009-10-05 12:10:15Z vboxsync $ */
 /** @file
  * tstVMMStructGC - Generate structure member and size checks from the GC perspective.
  *
@@ -52,6 +52,7 @@ AssertCompileSize(RTHCPHYS, 8);
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
+#define IN_TSTVMSTRUCTGC 1
 #include <VBox/cfgm.h>
 #include <VBox/cpum.h>
 #include <VBox/mm.h>
@@ -395,6 +396,11 @@ int main()
     GEN_CHECK_OFF(PDMQUEUE, pPendingRC);
     GEN_CHECK_OFF(PDMQUEUE, iFreeHead);
     GEN_CHECK_OFF(PDMQUEUE, iFreeTail);
+    GEN_CHECK_OFF(PDMQUEUE, pszName);
+    GEN_CHECK_OFF(PDMQUEUE, StatAllocFailures);
+    GEN_CHECK_OFF(PDMQUEUE, StatInsert);
+    GEN_CHECK_OFF(PDMQUEUE, StatFlush);
+    GEN_CHECK_OFF(PDMQUEUE, StatFlushLeftovers);
     GEN_CHECK_OFF(PDMQUEUE, aFreeItems);
     GEN_CHECK_OFF(PDMQUEUE, aFreeItems[1]);
     GEN_CHECK_OFF(PDMQUEUE, aFreeItems[0].pItemR3);
@@ -481,6 +487,8 @@ int main()
 #ifdef VBOX_WITH_STATISTICS
     GEN_CHECK_OFF(PGMCPU, pStatTrap0eAttributionR0);
     GEN_CHECK_OFF(PGMCPU, pStatTrap0eAttributionRC);
+    GEN_CHECK_OFF(PGMCPU, StatSyncPtPD);
+    GEN_CHECK_OFF(PGMCPU, StatR3Prefetch);
 #endif
     GEN_CHECK_OFF(PGM, offVM);
     GEN_CHECK_OFF(PGM, offVCpuPGM);
@@ -604,7 +612,10 @@ int main()
     GEN_CHECK_OFF(PGMVIRTHANDLER, cPages);
     GEN_CHECK_OFF(PGMVIRTHANDLER, aPhysToVirt);
     GEN_CHECK_SIZE(PGMPAGE);
-    GEN_CHECK_OFF(PGMPAGE, HCPhysX);
+    GEN_CHECK_OFF(PGMPAGE, HCPhysAndPageID);
+    GEN_CHECK_OFF(PGMPAGE, cReadLocksY);
+    GEN_CHECK_OFF(PGMPAGE, cWriteLocksY);
+    GEN_CHECK_OFF(PGMPAGE, u16TrackingY);
     GEN_CHECK_SIZE(PGMRAMRANGE);
     GEN_CHECK_OFF(PGMRAMRANGE, pNextR3);
     GEN_CHECK_OFF(PGMRAMRANGE, pNextR0);
@@ -907,6 +918,7 @@ int main()
     GEN_CHECK_OFF(VMM, cYieldResumeMillies);
     GEN_CHECK_OFF(VMM, cYieldEveryMillies);
     GEN_CHECK_OFF(VMM, CritSectSync);
+    GEN_CHECK_OFF(VMM, pahEvtRendezvousEnterOrdered);
     GEN_CHECK_OFF(VMM, hEvtRendezvousEnterOneByOne);
     GEN_CHECK_OFF(VMM, hEvtMulRendezvousEnterAllAtOnce);
     GEN_CHECK_OFF(VMM, hEvtMulRendezvousDone);

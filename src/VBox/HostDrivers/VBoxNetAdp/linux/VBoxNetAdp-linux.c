@@ -1,4 +1,4 @@
-/* $Id: VBoxNetAdp-linux.c 20802 2009-06-23 06:32:16Z vboxsync $ */
+/* $Id: VBoxNetAdp-linux.c 23068 2009-09-16 12:59:18Z vboxsync $ */
 /** @file
  * VBoxNetAdp - Virtual Network Adapter Driver (Host), Linux Specific Code.
  */
@@ -71,21 +71,6 @@ static int VBoxNetAdpLinuxIOCtl(struct inode *pInode, struct file *pFilp, unsign
 /*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
-#ifdef RT_ARCH_AMD64
-/**
- * Memory for the executable memory heap (in IPRT).
- */
-extern uint8_t g_abExecMemory[4096]; /* cannot donate less than one page */
-__asm__(".section execmemory, \"awx\", @progbits\n\t"
-        ".align 32\n\t"
-        ".globl g_abExecMemory\n"
-        "g_abExecMemory:\n\t"
-        ".zero 4096\n\t"
-        ".type g_abExecMemory, @object\n\t"
-        ".size g_abExecMemory, 4096\n\t"
-        ".text\n\t");
-#endif
-
 module_init(VBoxNetAdpLinuxInit);
 module_exit(VBoxNetAdpLinuxUnload);
 
@@ -93,9 +78,7 @@ MODULE_AUTHOR("Sun Microsystems, Inc.");
 MODULE_DESCRIPTION("VirtualBox Network Adapter Driver");
 MODULE_LICENSE("GPL");
 #ifdef MODULE_VERSION
-# define xstr(s) str(s)
-# define str(s)  #s
-MODULE_VERSION(VBOX_VERSION_STRING " (" xstr(INTNETTRUNKIFPORT_VERSION) ")");
+MODULE_VERSION(VBOX_VERSION_STRING " (" RT_XSTR(INTNETTRUNKIFPORT_VERSION) ")");
 #endif
 
 /**
@@ -273,39 +256,39 @@ static int VBoxNetAdpLinuxClose(struct inode *pInode, struct file *pFilp)
 static int VBoxNetAdpLinuxIOCtl(struct inode *pInode, struct file *pFilp, unsigned int uCmd, unsigned long ulArg)
 {
     VBOXNETADPREQ Req;
-    PVBOXNETADP pAdp = NULL;
-    int rc = VINF_SUCCESS;
-    uint32_t cbReq =  _IOC_SIZE(uCmd);
+    PVBOXNETADP pAdp;
+    int rc;
 
-    Log(("VBoxNetAdpLinuxIOCtl: param len %#x; uCmd=%#x; add=%#x\n", cbReq, uCmd, VBOXNETADP_CTL_ADD));
-    if (RT_UNLIKELY(_IOC_SIZE(uCmd) != sizeof(Req)))
+    Log(("VBoxNetAdpLinuxIOCtl: param len %#x; uCmd=%#x; add=%#x\n", _IOC_SIZE(uCmd), uCmd, VBOXNETADP_CTL_ADD));
+    if (RT_UNLIKELY(_IOC_SIZE(uCmd) != sizeof(Req))) /* paraonia */
     {
-        Log(("VBoxNetAdpLinuxIOCtl: bad ioctl sizeof(Req)=%#x _IOC_SIZE=%#x; uCmd=%#x.\n", sizeof(Req), cbReq, uCmd));
+        Log(("VBoxNetAdpLinuxIOCtl: bad ioctl sizeof(Req)=%#x _IOC_SIZE=%#x; uCmd=%#x.\n", sizeof(Req), _IOC_SIZE(uCmd), uCmd));
         return -EINVAL;
     }
+
     switch (uCmd)
     {
         case VBOXNETADP_CTL_ADD:
             Log(("VBoxNetAdpLinuxIOCtl: _IOC_DIR(uCmd)=%#x; IOC_OUT=%#x\n", _IOC_DIR(uCmd), IOC_OUT));
-            if (uCmd & IOC_OUT)
+            rc = vboxNetAdpCreate(&pAdp);
+            if (RT_FAILURE(rc))
             {
-                rc = vboxNetAdpCreate(&pAdp);
-                if (RT_SUCCESS(rc))
-                {
-                    if (cbReq < sizeof(VBOXNETADPREQ))
-                    {
-                        printk(KERN_ERR "VBoxNetAdpLinuxIOCtl: param len %#x < req size %#zx; uCmd=%#x\n", cbReq, sizeof(VBOXNETADPREQ), uCmd);
-                        return -EINVAL;
-                    }
-                    strncpy(Req.szName, pAdp->szName, sizeof(Req.szName));
-                    if (RT_UNLIKELY(copy_to_user((void *)ulArg, &Req, sizeof(Req))))
-                    {
-                        /* this is really bad! */
-                        printk(KERN_ERR "VBoxNetAdpLinuxIOCtl: copy_to_user(%#lx,,%#zx); uCmd=%#x!\n", ulArg, sizeof(Req), uCmd);
-                        rc = -EFAULT;
-                    }
-                }
+                Log(("VBoxNetAdpLinuxIOCtl: vboxNetAdpCreate -> %Rrc\n", rc));
+                return -EINVAL;
             }
+
+            Assert(strlen(pAdp->szName) < sizeof(Req.szName));
+            strncpy(Req.szName, pAdp->szName, sizeof(Req.szName) - 1);
+            Req.szName[sizeof(Req.szName) - 1] = '\0';
+
+            if (RT_UNLIKELY(copy_to_user((void *)ulArg, &Req, sizeof(Req))))
+            {
+                /* this is really bad! */
+                /** @todo remove the adapter again? */
+                printk(KERN_ERR "VBoxNetAdpLinuxIOCtl: copy_to_user(%#lx,,%#zx); uCmd=%#x!\n", ulArg, sizeof(Req), uCmd);
+                return -EFAULT;
+            }
+            Log(("VBoxNetAdpLinuxIOCtl: Successfully added '%s'\n", Req.szName));
             break;
 
         case VBOXNETADP_CTL_REMOVE:
@@ -315,21 +298,29 @@ static int VBoxNetAdpLinuxIOCtl(struct inode *pInode, struct file *pFilp, unsign
                 return -EFAULT;
             }
             Log(("VBoxNetAdpLinuxIOCtl: Remove %s\n", Req.szName));
+
             pAdp = vboxNetAdpFindByName(Req.szName);
-            if (pAdp)
-                rc = vboxNetAdpDestroy(pAdp);
-            else
-                rc = VERR_NOT_FOUND;
+            if (!pAdp)
+            {
+                Log(("VBoxNetAdpLinuxIOCtl: '%s' not found\n", Req.szName));
+                return -EINVAL;
+            }
+
+            rc = vboxNetAdpDestroy(pAdp);
+            if (RT_FAILURE(rc))
+            {
+                Log(("VBoxNetAdpLinuxIOCtl: vboxNetAdpDestroy('%s') -> %Rrc\n", Req.szName, rc));
+                return -EINVAL;
+            }
+            Log(("VBoxNetAdpLinuxIOCtl: Successfully removed '%s'\n", Req.szName));
             break;
 
         default:
             printk(KERN_ERR "VBoxNetAdpLinuxIOCtl: unknown command %x.\n", uCmd);
-            rc = VERR_INVALID_PARAMETER;
-            break;
+            return -EINVAL;
     }
 
-    Log(("VBoxNetAdpLinuxIOCtl: rc=%Vrc\n", rc));
-    return RT_SUCCESS(rc) ? 0 : -EINVAL;
+    return 0;
 }
 
 int  vboxNetAdpOsInit(PVBOXNETADP pThis)
@@ -358,14 +349,6 @@ static int __init VBoxNetAdpLinuxInit(void)
     rc = RTR0Init(0);
     if (RT_SUCCESS(rc))
     {
-#ifdef RT_ARCH_AMD64
-        rc = RTR0MemExecDonate(&g_abExecMemory[0], sizeof(g_abExecMemory));
-        printk(KERN_DEBUG "VBoxNetAdp: dbg - g_abExecMemory=%p\n", (void *)&g_abExecMemory[0]);
-        if (RT_FAILURE(rc))
-        {
-            printk(KERN_WARNING "VBoxNetAdp: failed to donate exec memory, no logging will be available.\n");
-        }
-#endif
         Log(("VBoxNetAdpLinuxInit\n"));
 
         rc = vboxNetAdpInit();
@@ -416,3 +399,4 @@ static void __exit VBoxNetAdpLinuxUnload(void)
 
     Log(("VBoxNetFltLinuxUnload - done\n"));
 }
+

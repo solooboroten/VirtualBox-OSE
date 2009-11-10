@@ -1,9 +1,10 @@
 /** @file
- *
- * VBoxGuest -- VirtualBox Win 2000/XP guest video driver
+ * VBoxGraphics - VirtualBox Win 2000/XP guest video driver.
  *
  * Display driver entry points.
- *
+ */
+
+/*
  * Copyright (C) 2006-2007 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
@@ -22,6 +23,7 @@
 #ifndef __VBOXIOCTL__H
 #define __VBOXIOCTL__H
 
+#include <VBox/VMMDev.h>
 #include <VBox/VBoxGuest.h>
 
 #ifdef VBOX_WITH_HGSMI
@@ -57,6 +59,9 @@
 
 #define IOCTL_VIDEO_HGSMI_HANDLER_DISABLE \
     CTL_CODE(FILE_DEVICE_VIDEO, 0x433, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_VIDEO_HGSMI_QUERY_PORTPROCS \
+    CTL_CODE(FILE_DEVICE_VIDEO, 0x434, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #endif /* VBOX_WITH_HGSMI */
 
@@ -116,8 +121,11 @@ typedef struct _QUERYHGSMIRESULT
     /* Size of the display information area. */
     uint32_t u32DisplayInfoSize;
 
-    /* Minimum size of the VBAV buffer. */
+    /* Minimum size of the VBVA buffer. */
     uint32_t u32MinVBVABufferSize;
+
+    /* IO port to submit guest HGSMI commands. */
+    RTIOPORT IOPortGuestCommand;
 } QUERYHGSMIRESULT;
 
 /**
@@ -130,6 +138,15 @@ typedef struct _HGSMIQUERYCALLBACKS
     PFNVBOXVIDEOHGSMICOMPLETION pfnCompletionHandler;
     PFNVBOXVIDEOHGSMICOMMANDS   pfnRequestCommandsHandler;
 } HGSMIQUERYCALLBACKS;
+
+/**
+ * Data returned by IOCTL_VIDEO_HGSMI_QUERY_PORTPROCS
+ */
+typedef struct _HGSMIQUERYCPORTPROCS
+{
+    PVOID pContext;
+    VBOXVIDEOPORTPROCS VideoPortProcs;
+} HGSMIQUERYCPORTPROCS;
 
 /**
  * Data returned by IOCTL_VIDEO_HGSMI_HANDLER_ENABLE.

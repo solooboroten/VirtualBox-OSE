@@ -101,6 +101,8 @@ __FBSDID("$FreeBSD: src/sys/netinet/libalias/alias_ftp.c,v 1.29.2.1.4.1 2009/04/
 # include <slirp.h>
 # include "alias_local.h"
 # include "alias_mod.h"
+# define isspace(ch)    RT_C_IS_SPACE(ch)
+# define isdigit(ch)    RT_C_IS_DIGIT(ch)
 #endif /* VBOX */
 
 #define FTP_CONTROL_PORT_NUMBER 21
@@ -142,32 +144,34 @@ struct proto_handler handlers[] = {
     { EOH }
 };
 #else /* !VBOX */
-static struct proto_handler handlers[2];
+#define handlers pData->ftp_module
 #endif /* VBOX */
 
 #ifndef VBOX
 static int
 mod_handler(module_t mod, int type, void *data)
 #else
-static int ftp_alias_handler(int type);
+static int ftp_alias_handler(PNATState pData, int type);
 
 int
-ftp_alias_load(void)
+ftp_alias_load(PNATState pData)
 {
-    return ftp_alias_handler(MOD_LOAD);
+    return ftp_alias_handler(pData, MOD_LOAD);
 }
 
 int
-ftp_alias_unload(void)
+ftp_alias_unload(PNATState pData)
 {
-    return ftp_alias_handler(MOD_UNLOAD);
+    return ftp_alias_handler(pData, MOD_UNLOAD);
 }
 static int
-ftp_alias_handler(int type)
+ftp_alias_handler(PNATState pData, int type)
 #endif
 {
     int error;
 #ifdef VBOX
+    if (handlers == NULL)
+        handlers = RTMemAllocZ(2 * sizeof(struct proto_handler));
     handlers[0].pri = 80;
     handlers[0].dir = OUT;
     handlers[0].proto = TCP;
@@ -179,11 +183,21 @@ ftp_alias_handler(int type)
     switch (type) {   
     case MOD_LOAD:
         error = 0;
+#ifdef VBOX
+        LibAliasAttachHandlers(pData, handlers);
+#else
         LibAliasAttachHandlers(handlers);
+#endif
         break;
     case MOD_UNLOAD:
         error = 0;
+#ifdef VBOX
+        LibAliasDetachHandlers(pData, handlers);
+        RTMemFree(handlers);
+        handlers = NULL;
+#else
         LibAliasDetachHandlers(handlers);
+#endif
         break;
     default:
         error = EINVAL;
@@ -663,24 +677,45 @@ NewFtpMessage(struct libalias *la, struct ip *pip,
 
                 if (ftp_message_type == FTP_PORT_COMMAND) {
                     /* Generate PORT command string. */
+#ifndef VBOX
                     sprintf(stemp, "PORT %d,%d,%d,%d,%d,%d\r\n",
                         a1, a2, a3, a4, p1, p2);
+#else
+                    RTStrPrintf(stemp, sizeof(stemp), "PORT %d,%d,%d,%d,%d,%d\r\n",
+                        a1, a2, a3, a4, p1, p2);
+#endif
                 } else {
                     /* Generate 227 reply string. */
+#ifndef VBOX
                     sprintf(stemp,
                         "227 Entering Passive Mode (%d,%d,%d,%d,%d,%d)\r\n",
                         a1, a2, a3, a4, p1, p2);
+#else
+                    RTStrPrintf(stemp, sizeof(stemp),
+                        "227 Entering Passive Mode (%d,%d,%d,%d,%d,%d)\r\n",
+                        a1, a2, a3, a4, p1, p2);
+#endif
                 }
                 break;
             case FTP_EPRT_COMMAND:
                 /* Generate EPRT command string. */
+#ifndef VBOX
                 sprintf(stemp, "EPRT |1|%d.%d.%d.%d|%d|\r\n",
                     a1, a2, a3, a4, ntohs(alias_port));
+#else
+                RTStrPrintf(stemp, sizeof(stemp), "EPRT |1|%d.%d.%d.%d|%d|\r\n",
+                    a1, a2, a3, a4, ntohs(alias_port));
+#endif
                 break;
             case FTP_229_REPLY:
                 /* Generate 229 reply string. */
+#ifndef VBOX
                 sprintf(stemp, "229 Entering Extended Passive Mode (|||%d|)\r\n",
                     ntohs(alias_port));
+#else
+                RTStrPrintf(stemp, sizeof(stemp), "229 Entering Extended Passive Mode (|||%d|)\r\n",
+                    ntohs(alias_port));
+#endif
                 break;
             }
 

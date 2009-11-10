@@ -1,4 +1,4 @@
-/* $Id: vboxhgcm.c 18508 2009-03-29 02:44:49Z vboxsync $ */
+/* $Id: vboxhgcm.c 21776 2009-07-23 14:13:41Z vboxsync $ */
 
 /** @file
  * VBox HGCM connection
@@ -40,7 +40,11 @@
 #include "cr_threads.h"
 #include "net_internals.h"
 
-#include <VBox/VBoxGuest.h>
+#if 1 /** @todo Try use the Vbgl interface instead of talking directly to the driver? */
+# include <VBox/VBoxGuest.h>
+#else
+# include <VBox/VBoxGuestLib.h>
+#endif
 #include <VBox/HostServices/VBoxCrOpenGLSvc.h>
 
 typedef struct {
@@ -146,12 +150,12 @@ static bool _crVBoxHGCMWriteBytes(CRConnection *conn, const void *buf, uint32_t 
  * @param   pvData      Data pointer
  * @param   cbData      Data size
  */
-/*@todo use vbglR3DoIOCtl here instead */
+/** @todo use vbglR3DoIOCtl here instead */
 static int crVBoxHGCMCall(void *pvData, unsigned cbData)
 {
 #ifdef IN_GUEST
 
-#ifdef RT_OS_WINDOWS
+# ifdef RT_OS_WINDOWS
     DWORD cbReturned;
 
     if (DeviceIoControl (g_crvboxhgcm.hGuestDrv,
@@ -165,25 +169,36 @@ static int crVBoxHGCMCall(void *pvData, unsigned cbData)
     }
     crDebug("vboxCall failed with %x\n", GetLastError());
     return VERR_NOT_SUPPORTED;
-#else
-# ifdef RT_OS_SOLARIS
+# else
+    int rc;
+#  ifdef RT_OS_SOLARIS
     VBGLBIGREQ Hdr;
     Hdr.u32Magic = VBGLBIGREQ_MAGIC;
     Hdr.cbData = cbData;
     Hdr.pvDataR3 = pvData;
-#  if HC_ARCH_BITS == 32
+#   if HC_ARCH_BITS == 32
     Hdr.u32Padding = 0;
+#   endif
+    rc = ioctl(g_crvboxhgcm.iGuestDrv, VBOXGUEST_IOCTL_HGCM_CALL(cbData), &Hdr);
+#  else
+    rc = ioctl(g_crvboxhgcm.iGuestDrv, VBOXGUEST_IOCTL_HGCM_CALL(cbData), pvData);
 #  endif
-    if (ioctl(g_crvboxhgcm.iGuestDrv, VBOXGUEST_IOCTL_HGCM_CALL(cbData), &Hdr) >= 0)
-# else
-    if (ioctl(g_crvboxhgcm.iGuestDrv, VBOXGUEST_IOCTL_HGCM_CALL(cbData), pvData) >= 0)
-# endif
+#  ifdef RT_OS_LINUX
+    if (rc == 0)
+#  else
+    if (rc >= 0)
+#  endif
     {
         return VINF_SUCCESS;
     }
-    crWarning("vboxCall failed with %x\n", errno);
+#  ifdef RT_OS_LINUX
+    if (rc >= 0) /* positive values are negated VBox error status codes. */
+        crWarning("vboxCall failed with VBox status code %d\n", -rc);
+    else
+#  endif
+        crWarning("vboxCall failed with %x\n", errno);
     return VERR_NOT_SUPPORTED;
-#endif /*#ifdef RT_OS_WINDOWS*/
+# endif /*#ifdef RT_OS_WINDOWS*/
 
 #else /*#ifdef IN_GUEST*/
     crError("crVBoxHGCMCall called on host side!");
@@ -322,14 +337,14 @@ static void crVBoxHGCMWriteExact(CRConnection *conn, const void *buf, unsigned i
     CRVBOXHGCMWRITE parms;
     int rc;
 
-    parms.hdr.result      = VINF_SUCCESS;
+    parms.hdr.result      = VERR_WRONG_ORDER;
     parms.hdr.u32ClientID = conn->u32ClientID;
     parms.hdr.u32Function = SHCRGL_GUEST_FN_WRITE;
     parms.hdr.cParms      = SHCRGL_CPARMS_WRITE;
 
     parms.pBuffer.type                   = VMMDevHGCMParmType_LinAddr_In;
     parms.pBuffer.u.Pointer.size         = len;
-    parms.pBuffer.u.Pointer.u.linearAddr = (VMMDEVHYPPTR) buf;
+    parms.pBuffer.u.Pointer.u.linearAddr = (uintptr_t) buf;
 
     rc = crVBoxHGCMCall(&parms, sizeof(parms));
 
@@ -344,7 +359,7 @@ static void crVBoxHGCMReadExact( CRConnection *conn, const void *buf, unsigned i
     CRVBOXHGCMREAD parms;
     int rc;
 
-    parms.hdr.result      = VINF_SUCCESS;
+    parms.hdr.result      = VERR_WRONG_ORDER;
     parms.hdr.u32ClientID = conn->u32ClientID;
     parms.hdr.u32Function = SHCRGL_GUEST_FN_READ;
     parms.hdr.cParms      = SHCRGL_CPARMS_READ;
@@ -352,7 +367,7 @@ static void crVBoxHGCMReadExact( CRConnection *conn, const void *buf, unsigned i
     CRASSERT(!conn->pBuffer); //make sure there's no data to process
     parms.pBuffer.type                   = VMMDevHGCMParmType_LinAddr_Out;
     parms.pBuffer.u.Pointer.size         = conn->cbHostBufferAllocated;
-    parms.pBuffer.u.Pointer.u.linearAddr = (VMMDEVHYPPTR) conn->pHostBuffer;
+    parms.pBuffer.u.Pointer.u.linearAddr = (uintptr_t) conn->pHostBuffer;
 
     parms.cbBuffer.type      = VMMDevHGCMParmType_32bit;
     parms.cbBuffer.u.value32 = 0;
@@ -387,7 +402,7 @@ crVBoxHGCMWriteReadExact(CRConnection *conn, const void *buf, unsigned int len, 
     CRVBOXHGCMWRITEREAD parms;
     int rc;
 
-    parms.hdr.result      = VINF_SUCCESS;
+    parms.hdr.result      = VERR_WRONG_ORDER;
     parms.hdr.u32ClientID = conn->u32ClientID;
     parms.hdr.u32Function = SHCRGL_GUEST_FN_WRITE_READ;
     parms.hdr.cParms      = SHCRGL_CPARMS_WRITE_READ;
@@ -396,19 +411,19 @@ crVBoxHGCMWriteReadExact(CRConnection *conn, const void *buf, unsigned int len, 
     {
         parms.pBuffer.type                   = VMMDevHGCMParmType_LinAddr_In;
         parms.pBuffer.u.Pointer.size         = len;
-        parms.pBuffer.u.Pointer.u.linearAddr = (VMMDEVHYPPTR) buf;
+        parms.pBuffer.u.Pointer.u.linearAddr = (uintptr_t) buf;
     }
-    /*else //@todo it fails badly, have to check why
+    /*else ///@todo it fails badly, have to check why. bird: This fails because buf isn't a physical address?
     {
         parms.pBuffer.type                 = VMMDevHGCMParmType_PhysAddr;
         parms.pBuffer.u.Pointer.size       = len;
-        parms.pBuffer.u.Pointer.u.physAddr = (VMMDEVHYPPHYS32) buf;
+        parms.pBuffer.u.Pointer.u.physAddr = (uintptr_t) buf;
     }*/
 
     CRASSERT(!conn->pBuffer); //make sure there's no data to process
     parms.pWriteback.type                   = VMMDevHGCMParmType_LinAddr_Out;
     parms.pWriteback.u.Pointer.size         = conn->cbHostBufferAllocated;
-    parms.pWriteback.u.Pointer.u.linearAddr = (VMMDEVHYPPTR) conn->pHostBuffer;
+    parms.pWriteback.u.Pointer.u.linearAddr = (uintptr_t) conn->pHostBuffer;
 
     parms.cbWriteback.type      = VMMDevHGCMParmType_32bit;
     parms.cbWriteback.u.value32 = 0;
@@ -506,14 +521,14 @@ static void crVBoxHGCMPollHost(CRConnection *conn)
 
     CRASSERT(!conn->pBuffer);
 
-    parms.hdr.result      = VINF_SUCCESS;
+    parms.hdr.result      = VERR_WRONG_ORDER;
     parms.hdr.u32ClientID = conn->u32ClientID;
     parms.hdr.u32Function = SHCRGL_GUEST_FN_READ;
     parms.hdr.cParms      = SHCRGL_CPARMS_READ;
 
     parms.pBuffer.type                   = VMMDevHGCMParmType_LinAddr_Out;
     parms.pBuffer.u.Pointer.size         = conn->cbHostBufferAllocated;
-    parms.pBuffer.u.Pointer.u.linearAddr = (VMMDEVHYPPTR) conn->pHostBuffer;
+    parms.pBuffer.u.Pointer.u.linearAddr = (uintptr_t) conn->pHostBuffer;
 
     parms.cbBuffer.type      = VMMDevHGCMParmType_32bit;
     parms.cbBuffer.u.value32 = 0;
@@ -666,6 +681,36 @@ static void crVBoxHGCMAccept( CRConnection *conn, const char *hostname, unsigned
 #endif
 }
 
+static int crVBoxHGCMSetVersion(CRConnection *conn, unsigned int vMajor, unsigned int vMinor)
+{
+    CRVBOXHGCMSETVERSION parms;
+    int rc;
+
+    parms.hdr.result      = VERR_WRONG_ORDER;
+    parms.hdr.u32ClientID = conn->u32ClientID;
+    parms.hdr.u32Function = SHCRGL_GUEST_FN_SET_VERSION;
+    parms.hdr.cParms      = SHCRGL_CPARMS_SET_VERSION;
+
+    parms.vMajor.type      = VMMDevHGCMParmType_32bit;
+    parms.vMajor.u.value32 = CR_PROTOCOL_VERSION_MAJOR;
+    parms.vMinor.type      = VMMDevHGCMParmType_32bit;
+    parms.vMinor.u.value32 = CR_PROTOCOL_VERSION_MINOR;
+
+    rc = crVBoxHGCMCall(&parms, sizeof(parms));
+
+    if (RT_FAILURE(rc) || RT_FAILURE(parms.hdr.result))
+    {
+        crWarning("Host doesn't accept our version %d.%d. Make sure you have appropriate additions installed!",
+                  parms.vMajor.u.value32, parms.vMinor.u.value32);
+        return FALSE;
+    }
+
+    conn->vMajor = CR_PROTOCOL_VERSION_MAJOR;
+    conn->vMinor = CR_PROTOCOL_VERSION_MINOR;
+
+    return TRUE;
+}
+
 /**
  * The function that actually connects.  This should only be called by clients,
  * guests in vbox case.
@@ -739,6 +784,8 @@ static int crVBoxHGCMDoConnect( CRConnection *conn )
         {
             conn->u32ClientID = info.u32ClientID;
             crDebug("HGCM connect was successful: client id =0x%x\n", conn->u32ClientID);
+
+            return crVBoxHGCMSetVersion(conn, CR_PROTOCOL_VERSION_MAJOR, CR_PROTOCOL_VERSION_MINOR);
         }
         else
         {

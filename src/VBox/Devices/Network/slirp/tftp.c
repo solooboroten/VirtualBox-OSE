@@ -136,8 +136,8 @@ static int tftp_send_oack(PNATState pData,
     m->m_data += sizeof(struct udpiphdr);
 
     tp->tp_op = htons(TFTP_OACK);
-    n += sprintf((char *)tp->x.tp_buf + n, "%s", key) + 1;
-    n += sprintf((char *)tp->x.tp_buf + n, "%u", value) + 1;
+    n += RTStrPrintf((char *)tp->x.tp_buf + n, M_FREEROOM(m), "%s", key) + 1;
+    n += RTStrPrintf((char *)tp->x.tp_buf + n, M_FREEROOM(m), "%u", value) + 1;
 
     saddr.sin_addr = recv_tp->ip.ip_dst;
     saddr.sin_port = recv_tp->udp.uh_dport;
@@ -186,11 +186,11 @@ static int tftp_send_error(PNATState pData,
 
     nobytes = 2;
 
-    m->m_len = sizeof(struct tftp_t) 
+    m->m_len = sizeof(struct tftp_t)
              - 514
-             + 3 
+             + 3
              + strlen(msg)
-             - sizeof(struct ip) 
+             - sizeof(struct ip)
              - sizeof(struct udphdr);
 
     udp_output2(pData, NULL, m, &saddr, &daddr, IPTOS_LOWDELAY);
@@ -241,9 +241,9 @@ static int tftp_send_data(PNATState pData,
         return -1;
     }
 
-    m->m_len = sizeof(struct tftp_t) 
-             - (512 - nobytes) 
-             - sizeof(struct ip) 
+    m->m_len = sizeof(struct tftp_t)
+             - (512 - nobytes)
+             - sizeof(struct ip)
              - sizeof(struct udphdr);
 
     udp_output2(pData, NULL, m, &saddr, &daddr, IPTOS_LOWDELAY);

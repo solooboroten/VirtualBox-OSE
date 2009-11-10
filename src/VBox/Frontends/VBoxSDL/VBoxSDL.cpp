@@ -271,24 +271,8 @@ public:
             delete this;
         return cnt;
     }
-    STDMETHOD(QueryInterface)(REFIID riid , void **ppObj)
-    {
-        if (riid == IID_IUnknown)
-        {
-            *ppObj = this;
-            AddRef();
-            return S_OK;
-        }
-        if (riid == IID_IVirtualBoxCallback)
-        {
-            *ppObj = this;
-            AddRef();
-            return S_OK;
-        }
-        *ppObj = NULL;
-        return E_NOINTERFACE;
-    }
 #endif
+    VBOX_SCRIPTABLE_DISPATCH_IMPL(IVirtualBoxCallback)
 
     NS_DECL_ISUPPORTS
 
@@ -342,7 +326,7 @@ public:
         return S_OK;
     }
 
-    STDMETHOD(OnMediaRegistered) (IN_BSTR mediaId, DeviceType_T mediaType,
+    STDMETHOD(OnMediumRegistered)(IN_BSTR mediaId, DeviceType_T mediaType,
                                   BOOL registered)
     {
         NOREF (mediaId);
@@ -418,24 +402,8 @@ public:
             delete this;
         return cnt;
     }
-    STDMETHOD(QueryInterface)(REFIID riid , void **ppObj)
-    {
-        if (riid == IID_IUnknown)
-        {
-            *ppObj = this;
-            AddRef();
-            return S_OK;
-        }
-        if (riid == IID_IConsoleCallback)
-        {
-            *ppObj = this;
-            AddRef();
-            return S_OK;
-        }
-        *ppObj = NULL;
-        return E_NOINTERFACE;
-    }
 #endif
+    VBOX_SCRIPTABLE_DISPATCH_IMPL(IConsoleCallback)
 
     NS_DECL_ISUPPORTS
 
@@ -494,8 +462,10 @@ public:
         SDL_Event event = {0};
 
         if (     machineState == MachineState_Aborted
+            ||   machineState == MachineState_Teleported
             ||  (machineState == MachineState_Saved      && !m_fIgnorePowerOffEvents)
-            ||  (machineState == MachineState_PoweredOff && !m_fIgnorePowerOffEvents))
+            ||  (machineState == MachineState_PoweredOff && !m_fIgnorePowerOffEvents)
+           )
         {
             /*
              * We have to inform the SDL thread that the application has be terminated
@@ -503,8 +473,8 @@ public:
             event.type      = SDL_USEREVENT;
             event.user.type = SDL_USER_EVENT_TERMINATE;
             event.user.code = machineState == MachineState_Aborted
-                                           ? VBOXSDL_TERM_ABEND
-                                           : VBOXSDL_TERM_NORMAL;
+                            ? VBOXSDL_TERM_ABEND
+                            : VBOXSDL_TERM_NORMAL;
         }
         else
         {
@@ -520,16 +490,6 @@ public:
     }
 
     STDMETHOD(OnAdditionsStateChange)()
-    {
-        return S_OK;
-    }
-
-    STDMETHOD(OnDVDDriveChange)()
-    {
-        return S_OK;
-    }
-
-    STDMETHOD(OnFloppyDriveChange)()
     {
         return S_OK;
     }
@@ -554,6 +514,11 @@ public:
         return S_OK;
     }
 
+    STDMETHOD(OnRemoteDisplayInfoChange)()
+    {
+        return S_OK;
+    }
+
     STDMETHOD(OnUSBControllerChange)()
     {
         return S_OK;
@@ -571,6 +536,11 @@ public:
     }
 
     STDMETHOD(OnStorageControllerChange) ()
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnMediumChange)(IMediumAttachment * /*aMediumAttachment*/)
     {
         return S_OK;
     }
@@ -633,20 +603,26 @@ public:
     {
         switch (machineState)
         {
-            case MachineState_Null:                return "<null>";
-            case MachineState_Running:             return "Running";
-            case MachineState_Restoring:           return "Restoring";
-            case MachineState_Starting:            return "Starting";
-            case MachineState_PoweredOff:          return "PoweredOff";
-            case MachineState_Saved:               return "Saved";
-            case MachineState_Aborted:             return "Aborted";
-            case MachineState_Stopping:            return "Stopping";
-            case MachineState_Paused:              return "Paused";
-            case MachineState_Stuck:               return "Stuck";
-            case MachineState_Saving:              return "Saving";
-            case MachineState_Discarding:          return "Discarding";
-            case MachineState_SettingUp:           return "SettingUp";
-            default:                               return "no idea";
+            case MachineState_Null:                 return "<null>";
+            case MachineState_PoweredOff:           return "PoweredOff";
+            case MachineState_Saved:                return "Saved";
+            case MachineState_Teleported:           return "Teleported";
+            case MachineState_Aborted:              return "Aborted";
+            case MachineState_Running:              return "Running";
+            case MachineState_Teleporting:          return "Teleporting";
+            case MachineState_LiveSnapshotting:     return "LiveSnapshotting";
+            case MachineState_Paused:               return "Paused";
+            case MachineState_Stuck:                return "GuruMeditation";
+            case MachineState_Starting:             return "Starting";
+            case MachineState_Stopping:             return "Stopping";
+            case MachineState_Saving:               return "Saving";
+            case MachineState_Restoring:            return "Restoring";
+            case MachineState_TeleportingPausedVM:  return "TeleportingPausedVM";
+            case MachineState_TeleportingIn:        return "TeleportingIn";
+            case MachineState_RestoringSnapshot:    return "RestoringSnapshot";
+            case MachineState_DeletingSnapshot:     return "DeletingSnapshot";
+            case MachineState_SettingUp:            return "SettingUp";
+            default:                                return "no idea";
         }
     }
 
@@ -694,7 +670,7 @@ static void show_usage()
              "  --evdevkeymap            Use evdev keycode map\n"
 #endif
 #ifdef VBOX_WITH_VRDP
-             "  --vrdp <port>            Listen for VRDP connections on port (default if not specified)\n"
+             "  --vrdp <ports>           Listen for VRDP connections on one of specified ports (default if not specified)\n"
 #endif
              "  --discardstate           Discard saved state (if present) and revert to last snapshot (if present)\n"
 #ifdef VBOX_SECURELABEL
@@ -803,166 +779,6 @@ void signal_handler_SIGINT(int sig)
 }
 #endif /* VBOXSDL_WITH_X11 */
 
-enum ConvertSettings
-{
-    ConvertSettings_No      = 0,
-    ConvertSettings_Yes     = 1,
-    ConvertSettings_Backup  = 2,
-    ConvertSettings_Ignore  = 3,
-};
-
-/**
- * Checks if any of the settings files were auto-converted and informs the
- * user if so.
- *
- * @return @false if the program should terminate and @true otherwise.
- *
- * @note The function is taken from VBoxManage.cpp almost unchanged (except the
- *       help text).
- */
-static bool checkForAutoConvertedSettings (ComPtr<IVirtualBox> virtualBox,
-                                           ComPtr<ISession> session,
-                                           ConvertSettings fConvertSettings)
-{
-    /* return early if nothing to do */
-    if (fConvertSettings == ConvertSettings_Ignore)
-        return true;
-
-    HRESULT rc;
-
-    do
-    {
-        Bstr formatVersion;
-        CHECK_ERROR_BREAK(virtualBox, COMGETTER(SettingsFormatVersion) (formatVersion.asOutParam()));
-
-        bool isGlobalConverted = false;
-        std::list <ComPtr <IMachine> > cvtMachines;
-        std::list <Utf8Str> fileList;
-        Bstr version;
-        Bstr filePath;
-
-        com::SafeIfaceArray <IMachine> machines;
-        CHECK_ERROR_BREAK(virtualBox, COMGETTER(Machines)(ComSafeArrayAsOutParam (machines)));
-
-        for (size_t i = 0; i < machines.size(); ++ i)
-        {
-            BOOL accessible;
-            CHECK_ERROR_BREAK(machines[i], COMGETTER(Accessible) (&accessible));
-            if (!accessible)
-                continue;
-
-            CHECK_ERROR_BREAK(machines[i], COMGETTER(SettingsFileVersion) (version.asOutParam()));
-
-            if (version != formatVersion)
-            {
-                cvtMachines.push_back (machines[i]);
-                Bstr filePath;
-                CHECK_ERROR_BREAK(machines[i], COMGETTER(SettingsFilePath) (filePath.asOutParam()));
-                fileList.push_back (Utf8StrFmt ("%ls  (%ls)", filePath.raw(),
-                                                version.raw()));
-            }
-        }
-
-        if (FAILED(rc))
-            break;
-
-        CHECK_ERROR_BREAK(virtualBox, COMGETTER(SettingsFileVersion) (version.asOutParam()));
-        if (version != formatVersion)
-        {
-            isGlobalConverted = true;
-            CHECK_ERROR_BREAK(virtualBox, COMGETTER(SettingsFilePath) (filePath.asOutParam()));
-            fileList.push_back (Utf8StrFmt ("%ls  (%ls)", filePath.raw(),
-                                            version.raw()));
-        }
-
-        if (fileList.size() > 0)
-        {
-            switch (fConvertSettings)
-            {
-                case ConvertSettings_No:
-                {
-                    RTPrintf (
-"WARNING! The following VirtualBox settings files have been automatically\n"
-"converted to the new settings file format version '%ls':\n"
-"\n",
-                              formatVersion.raw());
-
-                    for (std::list <Utf8Str>::const_iterator f = fileList.begin();
-                         f != fileList.end(); ++ f)
-                        RTPrintf ("  %S\n", (*f).raw());
-                    RTPrintf (
-"\n"
-"The current command was aborted to prevent overwriting the above settings\n"
-"files with the results of the auto-conversion without your permission.\n"
-"Please add one of the following command line switches to the VBoxSDL command\n"
-"line and repeat the command:\n"
-"\n"
-"  --convertSettings       - to save all auto-converted files (it will not\n"
-"                            be possible to use these settings files with an\n"
-"                            older version of VirtualBox in the future);\n"
-"  --convertSettingsBackup - to create backup copies of the settings files in\n"
-"                            the old format before saving them in the new format;\n"
-"  --convertSettingsIgnore - to not save the auto-converted settings files.\n"
-"\n"
-"Note that if you use --convertSettingsIgnore, the auto-converted settings files\n"
-"will be implicitly saved in the new format anyway once you change a setting or\n"
-"start a virtual machine, but NO backup copies will be created in this case.\n");
-                    return false;
-                }
-                case ConvertSettings_Yes:
-                case ConvertSettings_Backup:
-                {
-                    break;
-                }
-                default:
-                    AssertFailedReturn (false);
-            }
-
-            for (std::list <ComPtr <IMachine> >::const_iterator m = cvtMachines.begin();
-                 m != cvtMachines.end(); ++ m)
-            {
-                Bstr id;
-                CHECK_ERROR_BREAK((*m), COMGETTER(Id) (id.asOutParam()));
-
-                /* open a session for the VM */
-                CHECK_ERROR_BREAK (virtualBox, OpenSession (session, id));
-
-                ComPtr <IMachine> sm;
-                CHECK_ERROR_BREAK(session, COMGETTER(Machine) (sm.asOutParam()));
-
-                Bstr bakFileName;
-                if (fConvertSettings == ConvertSettings_Backup)
-                    CHECK_ERROR (sm, SaveSettingsWithBackup (bakFileName.asOutParam()));
-                else
-                    CHECK_ERROR (sm, SaveSettings());
-
-                session->Close();
-
-                if (FAILED(rc))
-                    break;
-            }
-
-            if (FAILED(rc))
-                break;
-
-            if (isGlobalConverted)
-            {
-                Bstr bakFileName;
-                if (fConvertSettings == ConvertSettings_Backup)
-                    CHECK_ERROR (virtualBox, SaveSettingsWithBackup (bakFileName.asOutParam()));
-                else
-                    CHECK_ERROR (virtualBox, SaveSettings());
-            }
-
-            if (FAILED(rc))
-                break;
-        }
-    }
-    while (0);
-
-    return SUCCEEDED (rc);
-}
-
 /** entry point */
 extern "C"
 DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
@@ -1040,13 +856,18 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     }
 
     HRESULT rc;
+    int vrc;
     Guid uuid;
     char *vmName = NULL;
     DeviceType_T bootDevice = DeviceType_Null;
     uint32_t memorySize = 0;
     uint32_t vramSize = 0;
-    VBoxSDLCallback *callback = NULL;
-    VBoxSDLConsoleCallback *consoleCallback = NULL;
+    VBoxSDLCallback *cbVBoxImpl = NULL;
+    /* wrapper around above object */
+    ComPtr<IVirtualBoxCallback> callback;
+    VBoxSDLConsoleCallback *cbConsoleImpl = NULL;
+    ComPtr<IConsoleCallback> consoleCallback;
+
     bool fFullscreen = false;
     bool fResizable = true;
 #ifdef USE_XPCOM_QUEUE_THREAD
@@ -1056,7 +877,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     char *cdromFile = NULL;
     char *fdaFile   = NULL;
 #ifdef VBOX_WITH_VRDP
-    int portVRDP = ~0;
+    const char *portVRDP = NULL;
 #endif
     bool fDiscardState = false;
 #ifdef VBOX_SECURELABEL
@@ -1072,7 +893,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     unsigned fRawR3 = ~0U;
     unsigned fPATM  = ~0U;
     unsigned fCSAM  = ~0U;
-    TSBool_T fHWVirt = TSBool_Default;
+    unsigned fHWVirt = ~0U;
     uint32_t u32WarpDrive = 0;
 #endif
 #ifdef VBOX_WIN32_UI
@@ -1198,24 +1019,13 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         break;
     }
 
-    // create the event queue
-    // (here it is necessary only to process remaining XPCOM/IPC events
-    // after the session is closed)
-    /// @todo
-//    EventQueue eventQ;
-
-#ifdef USE_XPCOM_QUEUE_THREAD
-    nsCOMPtr<nsIEventQueue> eventQ;
-    NS_GetMainEventQ(getter_AddRefs(eventQ));
-#endif /* USE_XPCOM_QUEUE_THREAD */
+    EventQueue* eventQ = com::EventQueue::getMainEventQueue();
 
     /* Get the number of network adapters */
     ULONG NetworkAdapterCount = 0;
     ComPtr <ISystemProperties> sysInfo;
     virtualBox->COMGETTER(SystemProperties) (sysInfo.asOutParam());
     sysInfo->COMGETTER (NetworkAdapterCount) (&NetworkAdapterCount);
-
-    ConvertSettings fConvertSettings = ConvertSettings_No;
 
     // command line argument parsing stuff
     for (int curArg = 1; curArg < argc; curArg++)
@@ -1475,19 +1285,14 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
                  || !strcmp(argv[curArg], "-vrdp"))
         {
             // start with the standard VRDP port
-            portVRDP = 0;
+            portVRDP = "0";
 
             // is there another argument
             if (argc > (curArg + 1))
             {
-                // check if the next argument is a number
-                int port = atoi(argv[curArg + 1]);
-                if (port > 0)
-                {
-                    curArg++;
-                    portVRDP = port;
-                    LogFlow(("Using non standard VRDP port %d\n", portVRDP));
-                }
+                curArg++;
+                portVRDP = argv[curArg];
+                LogFlow(("Using non standard VRDP port %s\n", portVRDP));
             }
         }
 #endif /* VBOX_WITH_VRDP */
@@ -1586,10 +1391,10 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             fCSAM = false;
         else if (   !strcmp(argv[curArg], "--hwvirtex")
                  || !strcmp(argv[curArg], "-hwvirtex"))
-            fHWVirt = TSBool_True;
+            fHWVirt = true;
         else if (   !strcmp(argv[curArg], "--nohwvirtex")
                  || !strcmp(argv[curArg], "-nohwvirtex"))
-            fHWVirt = TSBool_False;
+            fHWVirt = false;
         else if (   !strcmp(argv[curArg], "--warpdrive")
                  || !strcmp(argv[curArg], "-warpdrive"))
         {
@@ -1633,15 +1438,6 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             }
             gHostKeyMod = atoi(argv[curArg]);
         }
-        else if (   !strcmp(argv[curArg], "--convertSettings")
-                 || !strcmp(argv[curArg], "-convertSettings"))
-            fConvertSettings = ConvertSettings_Yes;
-        else if (   !strcmp(argv[curArg], "--convertSettingsBackup")
-                 || !strcmp(argv[curArg], "-convertSettingsBackup"))
-            fConvertSettings = ConvertSettings_Backup;
-        else if (   !strcmp(argv[curArg], "--convertSettingsIgnore")
-                 || !strcmp(argv[curArg], "-convertSettingsIgnore"))
-            fConvertSettings = ConvertSettings_Ignore;
         /* just show the help screen */
         else
         {
@@ -1653,10 +1449,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             return 1;
         }
     }
-    if (FAILED (rc))
-        break;
-
-    if (!checkForAutoConvertedSettings (virtualBox, session, fConvertSettings))
+    if (FAILED(rc))
         break;
 
     /*
@@ -1686,8 +1479,8 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     }
 
     /* create SDL event semaphore */
-    rc = RTSemEventCreate(&g_EventSemSDLEvents);
-    AssertReleaseRC(rc);
+    vrc = RTSemEventCreate(&g_EventSemSDLEvents);
+    AssertReleaseRC(vrc);
 
     rc = virtualBox->OpenSession(session, uuid.toUtf16());
     if (FAILED(rc))
@@ -1732,11 +1525,11 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         /*
          * Strategy: iterate through all registered hard disk
          * and see if one of them points to the same file. If
-         * so, assign it. If not, register a new image and assing
+         * so, assign it. If not, register a new image and assign
          * it to the VM.
          */
         Bstr hdaFileBstr = hdaFile;
-        ComPtr<IHardDisk> hardDisk;
+        ComPtr<IMedium> hardDisk;
         virtualBox->FindHardDisk(hdaFileBstr, hardDisk.asOutParam());
         if (!hardDisk)
         {
@@ -1751,9 +1544,43 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
              * Go and attach it!
              */
             Bstr uuid;
+            Bstr storageCtlName;
             hardDisk->COMGETTER(Id)(uuid.asOutParam());
-            gMachine->DetachHardDisk(Bstr("IDE"), 0, 0);
-            gMachine->AttachHardDisk(uuid, Bstr("IDE"), 0, 0);
+
+            /* get the first IDE controller to attach the harddisk to
+             * and if there is none, add one temporarily
+             */
+            {
+                ComPtr<IStorageController> storageCtl;
+                com::SafeIfaceArray<IStorageController> aStorageControllers;
+                CHECK_ERROR (gMachine, COMGETTER(StorageControllers)(ComSafeArrayAsOutParam(aStorageControllers)));
+                for (size_t i = 0; i < aStorageControllers.size(); ++ i)
+                {
+                    StorageBus_T storageBus = StorageBus_Null;
+
+                    CHECK_ERROR (aStorageControllers[i], COMGETTER(Bus)(&storageBus));
+                    if (storageBus == StorageBus_IDE)
+                    {
+                        storageCtl = aStorageControllers[i];
+                        break;
+                    }
+                }
+
+                if (storageCtl)
+                {
+                    CHECK_ERROR (storageCtl, COMGETTER(Name)(storageCtlName.asOutParam()));
+                    gMachine->DetachDevice(storageCtlName, 0, 0);
+                }
+                else
+                {
+                    storageCtlName = "IDE Controller";
+                    CHECK_ERROR (gMachine, AddStorageController(storageCtlName,
+                                                                StorageBus_IDE,
+                                                                storageCtl.asOutParam()));
+                }
+            }
+
+            gMachine->AttachDevice(storageCtlName, 0, 0, DeviceType_HardDisk, uuid);
             /// @todo why is this attachment saved?
         }
         else
@@ -1769,58 +1596,83 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     if (fdaFile)
     do
     {
-        ComPtr<IFloppyDrive> drive;
-        CHECK_ERROR_BREAK (gMachine, COMGETTER(FloppyDrive)(drive.asOutParam()));
+        ComPtr<IMedium> floppyMedium;
 
-        /*
-         * First special case 'none' to unmount
-         */
-        if (!strcmp (fdaFile, "none"))
+        /* unmount? */
+        if (!strcmp(fdaFile, "none"))
         {
-            CHECK_ERROR_BREAK (drive, Unmount());
-            break;
+            /* nothing to do, NULL object will cause unmount */
         }
-
-        Bstr medium = fdaFile;
-        bool done = false;
-
-        /* Assume it's a host drive name */
+        else
         {
+            Bstr medium = fdaFile;
+
+            /* Assume it's a host drive name */
             ComPtr <IHost> host;
-            CHECK_ERROR_BREAK (virtualBox, COMGETTER(Host)(host.asOutParam()));
-            com::SafeIfaceArray <IHostFloppyDrive> coll;
-            CHECK_ERROR_BREAK (host, COMGETTER(FloppyDrives)(ComSafeArrayAsOutParam(coll)));
-            ComPtr <IHostFloppyDrive> hostDrive;
-            rc = host->FindHostFloppyDrive (medium, hostDrive.asOutParam());
-            if (SUCCEEDED (rc))
+            CHECK_ERROR_BREAK(virtualBox, COMGETTER(Host)(host.asOutParam()));
+            rc = host->FindHostFloppyDrive(medium, floppyMedium.asOutParam());
+            if (FAILED(rc))
             {
-                done = true;
-                CHECK_ERROR_BREAK (drive, CaptureHostDrive (hostDrive));
+                /* try to find an existing one */
+                rc = virtualBox->FindFloppyImage(medium, floppyMedium.asOutParam());
+                if (FAILED(rc))
+                {
+                    /* try to add to the list */
+                    RTPrintf("Adding floppy image '%S'...\n", fdaFile);
+                    CHECK_ERROR_BREAK(virtualBox, OpenFloppyImage(medium, Bstr(),
+                                                                  floppyMedium.asOutParam()));
+                }
             }
         }
 
-        /* Must be an image */
-        if (!done)
+        Bstr id;
+        Bstr storageCtlName;
+        floppyMedium->COMGETTER(Id)(id.asOutParam());
+
+        /* get the first floppy controller to attach the floppy to
+         * and if there is none, add one temporarily
+         */
         {
-            /* try to find an existing one */
-            ComPtr<IFloppyImage> image;
-            rc = virtualBox->FindFloppyImage (medium, image.asOutParam());
-            if (FAILED (rc))
+            ComPtr<IStorageController> storageCtl;
+            com::SafeIfaceArray<IStorageController> aStorageControllers;
+            CHECK_ERROR (gMachine, COMGETTER(StorageControllers)(ComSafeArrayAsOutParam(aStorageControllers)));
+            for (size_t i = 0; i < aStorageControllers.size(); ++ i)
             {
-                /* try to add to the list */
-                RTPrintf ("Adding floppy image '%S'...\n", fdaFile);
-                CHECK_ERROR_BREAK (virtualBox, OpenFloppyImage (medium, Bstr(),
-                                                                image.asOutParam()));
+                StorageBus_T storageBus = StorageBus_Null;
+
+                CHECK_ERROR (aStorageControllers[i], COMGETTER(Bus)(&storageBus));
+                if (storageBus == StorageBus_Floppy)
+                {
+                    storageCtl = aStorageControllers[i];
+                    break;
+                }
             }
 
-            /* attach */
-            Bstr uuid;
-            image->COMGETTER(Id)(uuid.asOutParam());
-            CHECK_ERROR_BREAK (drive, MountImage (uuid));
+            if (storageCtl)
+            {
+                ComPtr<IMediumAttachment> floppyAttachment;
+
+                CHECK_ERROR (storageCtl, COMGETTER(Name)(storageCtlName.asOutParam()));
+                rc = gMachine->GetMediumAttachment(storageCtlName, 0, 0, floppyAttachment.asOutParam());
+                if (FAILED(rc))
+                    CHECK_ERROR (gMachine, AttachDevice(storageCtlName, 0, 0,
+                                                        DeviceType_Floppy, NULL));
+            }
+            else
+            {
+                storageCtlName = "Floppy Controller";
+                CHECK_ERROR (gMachine, AddStorageController(storageCtlName,
+                                                            StorageBus_Floppy,
+                                                            storageCtl.asOutParam()));
+                CHECK_ERROR (gMachine, AttachDevice(storageCtlName, 0, 0,
+                                                    DeviceType_Floppy, NULL));
+            }
         }
+
+        CHECK_ERROR (gMachine, MountMedium(storageCtlName, 0, 0, id, FALSE /* aForce */));
     }
     while (0);
-    if (FAILED (rc))
+    if (FAILED(rc))
         goto leave;
 
     /*
@@ -1829,58 +1681,82 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     if (cdromFile)
     do
     {
-        ComPtr<IDVDDrive> drive;
-        CHECK_ERROR_BREAK (gMachine, COMGETTER(DVDDrive)(drive.asOutParam()));
+        ComPtr<IMedium> dvdMedium;
 
-        /*
-         * First special case 'none' to unmount
-         */
-        if (!strcmp (cdromFile, "none"))
+        /* unmount? */
+        if (!strcmp(cdromFile, "none"))
         {
-            CHECK_ERROR_BREAK (drive, Unmount());
-            break;
+            /* nothing to do, NULL object will cause unmount */
         }
-
-        Bstr medium = cdromFile;
-        bool done = false;
-
-        /* Assume it's a host drive name */
+        else
         {
+            Bstr medium = cdromFile;
+
+            /* Assume it's a host drive name */
             ComPtr <IHost> host;
-            CHECK_ERROR_BREAK (virtualBox, COMGETTER(Host)(host.asOutParam()));
-            SafeIfaceArray <IHostDVDDrive> coll;
-            CHECK_ERROR_BREAK (host, COMGETTER(DVDDrives)(ComSafeArrayAsOutParam(coll)));
-            ComPtr <IHostDVDDrive> hostDrive;
-            rc = host->FindHostDVDDrive (medium, hostDrive.asOutParam());
-            if (SUCCEEDED (rc))
+            CHECK_ERROR_BREAK(virtualBox, COMGETTER(Host)(host.asOutParam()));
+            rc = host->FindHostDVDDrive(medium,dvdMedium.asOutParam());
+            if (FAILED(rc))
             {
-                done = true;
-                CHECK_ERROR_BREAK (drive, CaptureHostDrive (hostDrive));
+                /* try to find an existing one */
+                rc = virtualBox->FindDVDImage(medium, dvdMedium.asOutParam());
+                if (FAILED(rc))
+                {
+                    /* try to add to the list */
+                    RTPrintf("Adding ISO image '%S'...\n", cdromFile);
+                    CHECK_ERROR_BREAK(virtualBox, OpenDVDImage(medium, Bstr(),
+                                                               dvdMedium.asOutParam()));
+                }
             }
         }
 
-        /* Must be an image */
-        if (!done)
+        Bstr id;
+        Bstr storageCtlName;
+        dvdMedium->COMGETTER(Id)(id.asOutParam());
+
+        /* get the first IDE controller to attach the DVD Drive to
+         * and if there is none, add one temporarily
+         */
         {
-            /* try to find an existing one */
-            ComPtr <IDVDImage> image;
-            rc = virtualBox->FindDVDImage (medium, image.asOutParam());
-            if (FAILED (rc))
+            ComPtr<IStorageController> storageCtl;
+            com::SafeIfaceArray<IStorageController> aStorageControllers;
+            CHECK_ERROR (gMachine, COMGETTER(StorageControllers)(ComSafeArrayAsOutParam(aStorageControllers)));
+            for (size_t i = 0; i < aStorageControllers.size(); ++ i)
             {
-                /* try to add to the list */
-                RTPrintf ("Adding ISO image '%S'...\n", cdromFile);
-                CHECK_ERROR_BREAK (virtualBox, OpenDVDImage (medium, Bstr(),
-                                                             image.asOutParam()));
+                StorageBus_T storageBus = StorageBus_Null;
+
+                CHECK_ERROR (aStorageControllers[i], COMGETTER(Bus)(&storageBus));
+                if (storageBus == StorageBus_IDE)
+                {
+                    storageCtl = aStorageControllers[i];
+                    break;
+                }
             }
 
-            /* attach */
-            Bstr uuid;
-            image->COMGETTER(Id)(uuid.asOutParam());
-            CHECK_ERROR_BREAK (drive, MountImage (uuid));
+            if (storageCtl)
+            {
+                ComPtr<IMediumAttachment> dvdAttachment;
+
+                CHECK_ERROR (storageCtl, COMGETTER(Name)(storageCtlName.asOutParam()));
+                gMachine->DetachDevice(storageCtlName, 1, 0);
+                CHECK_ERROR (gMachine, AttachDevice(storageCtlName, 1, 0,
+                                                    DeviceType_DVD, NULL));
+            }
+            else
+            {
+                storageCtlName = "IDE Controller";
+                CHECK_ERROR (gMachine, AddStorageController(storageCtlName,
+                                                            StorageBus_IDE,
+                                                            storageCtl.asOutParam()));
+                CHECK_ERROR (gMachine, AttachDevice(storageCtlName, 1, 0,
+                                                    DeviceType_DVD, NULL));
+            }
         }
+
+        CHECK_ERROR(gMachine, MountMedium(storageCtlName, 1, 0, id, FALSE /*aForce */));
     }
     while (0);
-    if (FAILED (rc))
+    if (FAILED(rc))
         goto leave;
 
     if (fDiscardState)
@@ -1904,7 +1780,11 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         if (cSnapshots)
         {
             gProgress = NULL;
-            CHECK_ERROR(gConsole, DiscardCurrentState(gProgress.asOutParam()));
+
+            ComPtr<ISnapshot> pCurrentSnapshot;
+            CHECK_ERROR_BREAK(gMachine, COMGETTER(CurrentSnapshot)(pCurrentSnapshot.asOutParam()));
+
+            CHECK_ERROR(gConsole, RestoreSnapshot(pCurrentSnapshot, gProgress.asOutParam()));
             rc = gProgress->WaitForCompletion(-1);
         }
     }
@@ -1967,7 +1847,8 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
 #endif
 
     /* static initialization of the SDL stuff */
-    VBoxSDLFB::init(fShowSDLConfig);
+    if (!VBoxSDLFB::init(fShowSDLConfig))
+        goto leave;
 
     gMachine->COMGETTER(MonitorCount)(&gcMonitors);
     if (gcMonitors > 64)
@@ -2008,31 +1889,30 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             goto leave;
         }
         /* load the SDL_ttf library and get the required imports */
-        int rcVBox;
-        rcVBox = RTLdrLoad(LIBSDL_TTF_NAME, &gLibrarySDL_ttf);
-        if (RT_SUCCESS(rcVBox))
-            rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_Init", (void**)&pTTF_Init);
-        if (RT_SUCCESS(rcVBox))
-            rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_OpenFont", (void**)&pTTF_OpenFont);
-        if (RT_SUCCESS(rcVBox))
-            rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_RenderUTF8_Solid", (void**)&pTTF_RenderUTF8_Solid);
-        if (RT_SUCCESS(rcVBox))
+        vrc = RTLdrLoad(LIBSDL_TTF_NAME, &gLibrarySDL_ttf);
+        if (RT_SUCCESS(vrc))
+            vrc = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_Init", (void**)&pTTF_Init);
+        if (RT_SUCCESS(vrc))
+            vrc = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_OpenFont", (void**)&pTTF_OpenFont);
+        if (RT_SUCCESS(vrc))
+            vrc = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_RenderUTF8_Solid", (void**)&pTTF_RenderUTF8_Solid);
+        if (RT_SUCCESS(vrc))
         {
             /* silently ignore errors here */
-            rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_RenderUTF8_Blended", (void**)&pTTF_RenderUTF8_Blended);
-            if (RT_FAILURE(rcVBox))
+            vrc = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_RenderUTF8_Blended", (void**)&pTTF_RenderUTF8_Blended);
+            if (RT_FAILURE(vrc))
                 pTTF_RenderUTF8_Blended = NULL;
-            rcVBox = VINF_SUCCESS;
+            vrc = VINF_SUCCESS;
         }
-        if (RT_SUCCESS(rcVBox))
-            rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_CloseFont", (void**)&pTTF_CloseFont);
-        if (RT_SUCCESS(rcVBox))
-            rcVBox = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_Quit", (void**)&pTTF_Quit);
-        if (RT_SUCCESS(rcVBox))
-            rcVBox = gpFramebuffer[0]->initSecureLabel(SECURE_LABEL_HEIGHT, secureLabelFontFile, secureLabelPointSize, secureLabelFontOffs);
-        if (RT_FAILURE(rcVBox))
+        if (RT_SUCCESS(vrc))
+            vrc = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_CloseFont", (void**)&pTTF_CloseFont);
+        if (RT_SUCCESS(vrc))
+            vrc = RTLdrGetSymbol(gLibrarySDL_ttf, "TTF_Quit", (void**)&pTTF_Quit);
+        if (RT_SUCCESS(vrc))
+            vrc = gpFramebuffer[0]->initSecureLabel(SECURE_LABEL_HEIGHT, secureLabelFontFile, secureLabelPointSize, secureLabelFontOffs);
+        if (RT_FAILURE(vrc))
         {
-            RTPrintf("Error: could not initialize secure labeling: rc = %Rrc\n", rcVBox);
+            RTPrintf("Error: could not initialize secure labeling: rc = %Rrc\n", vrc);
             goto leave;
         }
         Bstr key = VBOXSDL_SECURELABEL_EXTRADATA;
@@ -2055,11 +1935,12 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     signal(SIGSEGV, signal_handler_SIGINT);
 #endif
 
+
     for (ULONG i = 0; i < gcMonitors; i++)
     {
         // register our framebuffer
         rc = gDisplay->SetFramebuffer(i, gpFramebuffer[i]);
-        if (rc != S_OK)
+        if (FAILED(rc))
         {
             RTPrintf("Error: could not register framebuffer object!\n");
             goto leave;
@@ -2071,19 +1952,23 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     }
 
     // register a callback for global events
-    callback = new VBoxSDLCallback();
-    callback->AddRef();
+    cbVBoxImpl = new VBoxSDLCallback();
+    rc = createCallbackWrapper((IVirtualBoxCallback*)cbVBoxImpl, callback.asOutParam());
+    if (FAILED(rc))
+        goto leave;
     virtualBox->RegisterCallback(callback);
 
     // register a callback for machine events
-    consoleCallback = new VBoxSDLConsoleCallback();
-    consoleCallback->AddRef();
+    cbConsoleImpl = new VBoxSDLConsoleCallback();
+    rc = createCallbackWrapper((IConsoleCallback*)cbConsoleImpl, consoleCallback.asOutParam());
+    if (FAILED(rc))
+        goto leave;
     gConsole->RegisterCallback(consoleCallback);
     // until we've tried to to start the VM, ignore power off events
-    consoleCallback->ignorePowerOffEvents(true);
+    cbConsoleImpl->ignorePowerOffEvents(true);
 
 #ifdef VBOX_WITH_VRDP
-    if (portVRDP != ~0)
+    if (portVRDP)
     {
         rc = gMachine->COMGETTER(VRDPServer)(gVrdpServer.asOutParam());
         AssertMsg((rc == S_OK) && gVrdpServer, ("Could not get VRDP Server! rc = 0x%x\n", rc));
@@ -2092,7 +1977,8 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             // has a non standard VRDP port been requested?
             if (portVRDP > 0)
             {
-                rc = gVrdpServer->COMSETTER(Port)(portVRDP);
+                Bstr bstr = portVRDP;
+                rc = gVrdpServer->COMSETTER(Ports)(bstr);
                 if (rc != S_OK)
                 {
                     RTPrintf("Error: could not set VRDP port! rc = 0x%x\n", rc);
@@ -2148,9 +2034,9 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         }
         gMachineDebugger->COMSETTER(CSAMEnabled)(fCSAM);
     }
-    if (fHWVirt != TSBool_Default)
+    if (fHWVirt != ~0U)
     {
-        gMachine->COMSETTER(HWVirtExEnabled)(fHWVirt);
+        gMachine->SetHWVirtExProperty(HWVirtExPropertyType_Enabled, fHWVirt);
     }
     if (u32WarpDrive != 0)
     {
@@ -2239,7 +2125,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
      * event storm might arrive. Stupid SDL has a ridiculously small
      * event queue buffer!
      */
-    startXPCOMEventQueueThread(eventQ->GetEventQueueSelectFD());
+    startXPCOMEventQueueThread(eventQ->getSelectFD());
 #endif /* USE_XPCOM_QUEUE_THREAD */
 
     /* termination flag */
@@ -2261,7 +2147,10 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         rc = gMachine->COMGETTER(State)(&machineState);
         if (    rc == S_OK
             &&  (   machineState == MachineState_Starting
-                 || machineState == MachineState_Restoring))
+                 || machineState == MachineState_Restoring
+                 || machineState == MachineState_TeleportingIn
+                )
+            )
         {
             /*
              * wait for the next event. This is uncritical as
@@ -2320,7 +2209,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
                     case SDL_USER_EVENT_XPCOM_EVENTQUEUE:
                     {
                         LogFlow(("SDL_USER_EVENT_XPCOM_EVENTQUEUE: processing XPCOM event queue...\n"));
-                        eventQ->ProcessPendingEvents();
+                        eventQ->processEventQueue(0);
                         signalXPCOMEventQueueThread();
                         break;
                     }
@@ -2352,9 +2241,13 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
 
             }
         }
+        eventQ->processEventQueue(0);
     } while (   rc == S_OK
              && (   machineState == MachineState_Starting
-                 || machineState == MachineState_Restoring));
+                 || machineState == MachineState_Restoring
+                 || machineState == MachineState_TeleportingIn
+                )
+            );
 
     /* kill the timer again */
     SDL_RemoveTimer(sdlTimer);
@@ -2377,7 +2270,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
 
     // accept power off events from now on because we're running
     // note that there's a possible race condition here...
-    consoleCallback->ignorePowerOffEvents(false);
+    cbConsoleImpl->ignorePowerOffEvents(false);
 
     rc = gConsole->COMGETTER(Keyboard)(gKeyboard.asOutParam());
     if (!gKeyboard)
@@ -2407,7 +2300,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         char szBuf[32];
         const char *pcszLf = "\n";
         RTFILE PidFile;
-        RTFileOpen(&PidFile, gpszPidFile, RTFILE_O_WRITE | RTFILE_O_CREATE_REPLACE);
+        RTFileOpen(&PidFile, gpszPidFile, RTFILE_O_WRITE | RTFILE_O_CREATE_REPLACE | RTFILE_O_DENY_NONE);
         RTStrFormatNumber(szBuf, RTProcSelf(), 10, 0, 0, 0);
         RTFileWrite(PidFile, szBuf, strlen(szBuf), NULL);
         RTFileWrite(PidFile, pcszLf, strlen(pcszLf), NULL);
@@ -2787,7 +2680,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             case SDL_USER_EVENT_XPCOM_EVENTQUEUE:
             {
                 LogFlow(("SDL_USER_EVENT_XPCOM_EVENTQUEUE: processing XPCOM event queue...\n"));
-                eventQ->ProcessPendingEvents();
+                eventQ->processEventQueue(0);
                 signalXPCOMEventQueueThread();
                 break;
             }
@@ -2888,9 +2781,14 @@ leave:
      * Turn off the VM if it's running
      */
     if (   gConsole
-        && machineState == MachineState_Running)
+        && (   machineState == MachineState_Running
+            || machineState == MachineState_Teleporting
+            || machineState == MachineState_LiveSnapshotting
+            /** @todo power off paused VMs too? */
+           )
+       )
     {
-        consoleCallback->ignorePowerOffEvents(true);
+        cbConsoleImpl->ignorePowerOffEvents(true);
         ComPtr <IProgress> progress;
         CHECK_ERROR_BREAK(gConsole, PowerDown(progress.asOutParam()));
         CHECK_ERROR_BREAK (progress, WaitForCompletion (-1));
@@ -2934,8 +2832,12 @@ leave:
     if (gpDefaultCursor)
     {
 # ifdef VBOXSDL_WITH_X11
-        Cursor pDefaultTempX11Cursor = *(Cursor*)gpDefaultCursor->wm_cursor;
-        *(Cursor*)gpDefaultCursor->wm_cursor = gpDefaultOrigX11Cursor;
+        Cursor pDefaultTempX11Cursor = 0;
+        if (gfXCursorEnabled)
+        {
+            pDefaultTempX11Cursor = *(Cursor*)gpDefaultCursor->wm_cursor;
+            *(Cursor*)gpDefaultCursor->wm_cursor = gpDefaultOrigX11Cursor;
+        }
 # endif /* VBOXSDL_WITH_X11 */
         SDL_SetCursor(gpDefaultCursor);
 # if defined(VBOXSDL_WITH_X11) && !defined(VBOX_WITHOUT_XCURSOR)
@@ -2997,12 +2899,6 @@ leave:
     LogFlow(("Releasing machine, session...\n"));
     gMachine = NULL;
     session = NULL;
-    LogFlow(("Releasing callback handlers...\n"));
-    if (callback)
-        callback->Release();
-    if (consoleCallback)
-        consoleCallback->Release();
-
     LogFlow(("Releasing VirtualBox object...\n"));
     virtualBox = NULL;
 
@@ -4181,11 +4077,14 @@ static void SendMouseEvent(VBoxSDLFB *fb, int dz, int down, int button)
              */
             gMouse->PutMouseEventAbsolute(x + 1 - xMin + xOrigin,
                                           y + 1 - yMin + yOrigin,
-                                          dz, buttons | tmp_button);
+                                          dz, 0 /* horizontal scroll wheel */,
+                                          buttons | tmp_button);
         }
         else
         {
-            gMouse->PutMouseEvent(0, 0, dz, buttons | tmp_button);
+            gMouse->PutMouseEvent(0, 0, dz,
+                                  0 /* horizontal scroll wheel */,
+                                  buttons | tmp_button);
         }
     }
 
@@ -4200,11 +4099,11 @@ static void SendMouseEvent(VBoxSDLFB *fb, int dz, int down, int button)
          */
         gMouse->PutMouseEventAbsolute(x + 1 - xMin + xOrigin,
                                       y + 1 - yMin + yOrigin,
-                                      dz, buttons);
+                                      dz, 0 /* Horizontal wheel */, buttons);
     }
     else
     {
-        gMouse->PutMouseEvent(x, y, dz, buttons);
+        gMouse->PutMouseEvent(x, y, dz, 0 /* Horizontal wheel */, buttons);
     }
 }
 
@@ -4450,6 +4349,17 @@ static void UpdateTitlebar(TitlebarMode mode, uint32_t u32User)
                 else
                     RTStrPrintf(szTitle + strlen(szTitle), sizeof(szTitle) - strlen(szTitle),
                                 " - Restoring...");
+            }
+            else if (machineState == MachineState_TeleportingIn)
+            {
+                ULONG cPercentNow;
+                HRESULT rc = gProgress->COMGETTER(Percent)(&cPercentNow);
+                if (SUCCEEDED(rc))
+                    RTStrPrintf(szTitle + strlen(szTitle), sizeof(szTitle) - strlen(szTitle),
+                                " - Teleporting %d%%...", (int)cPercentNow);
+                else
+                    RTStrPrintf(szTitle + strlen(szTitle), sizeof(szTitle) - strlen(szTitle),
+                                " - Teleporting...");
             }
             /* ignore other states, we could already be in running or aborted state */
             break;
@@ -4829,7 +4739,7 @@ static void HandleGuestCapsChanged(void)
         // Actually switch to absolute coordinates
         if (gfGrabbed)
             InputGrabEnd();
-        gMouse->PutMouseEventAbsolute(-1, -1, 0, 0);
+        gMouse->PutMouseEventAbsolute(-1, -1, 0, 0, 0);
     }
 }
 
@@ -4872,10 +4782,13 @@ static int HandleHostKey(const SDL_KeyboardEvent *pEv)
              */
             MachineState_T machineState;
             gMachine->COMGETTER(State)(&machineState);
-            if (machineState == MachineState_Running)
+            bool fPauseIt = machineState == MachineState_Running
+                         || machineState == MachineState_Teleporting
+                         || machineState == MachineState_LiveSnapshotting;
+            if (fPauseIt)
                 gConsole->Pause();
             SetFullscreen(!gpFramebuffer[0]->getFullscreen());
-            if (machineState == MachineState_Running)
+            if (fPauseIt)
                 gConsole->Resume();
 
             /*
@@ -4896,7 +4809,10 @@ static int HandleHostKey(const SDL_KeyboardEvent *pEv)
 
             MachineState_T machineState;
             gMachine->COMGETTER(State)(&machineState);
-            if (machineState == MachineState_Running)
+            if (   machineState == MachineState_Running
+                || machineState == MachineState_Teleporting
+                || machineState == MachineState_LiveSnapshotting
+               )
             {
                 if (gfGrabbed)
                     InputGrabEnd();

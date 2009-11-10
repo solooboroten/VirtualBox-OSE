@@ -105,6 +105,9 @@ echo 'i space=./vbox.space' >> prototype
 if test -f "./vbox.copyright"; then
     echo 'i copyright=./vbox.copyright' >> prototype
 fi
+if test -f "./vbox.depend"; then
+    echo 'i depend=./vbox.depend' >> prototype
+fi
 
 # Create relative hardlinks
 cd "$VBOX_INSTALLED_DIR"
@@ -130,7 +133,10 @@ fi
 
 # Exclude directories to not cause install-time conflicts with existing system directories
 cd "$PKG_BASE_DIR"
-find . ! -type d | $VBOX_GGREP -v -E 'prototype|makepackage.sh|vbox.pkginfo|postinstall.sh|preremove.sh|ReadMe.txt|vbox.space|vbox.copyright|VirtualBoxKern' | pkgproto >> prototype
+find . ! -type d | $VBOX_GGREP -v -E 'prototype|makepackage.sh|vbox.pkginfo|postinstall.sh|checkinstall.sh|preremove.sh|ReadMe.txt|vbox.space|vbox.depend|vbox.copyright|VirtualBoxKern' | pkgproto >> prototype
+
+# Include only opt/VirtualBox and subdirectories as we want uninstall to clean up directory structure as well
+find . -type d | $VBOX_GGREP -E 'opt/VirtualBox' | pkgproto >> prototype
 
 # fix up file permissions (owner/group)
 # don't grok for class-specific files (like sed, if any)
@@ -156,6 +162,10 @@ filelist_fixup prototype '$3 == "platform/i86pc/kernel/drv/amd64/vboxnet"'      
 # USBMonitor vboxusbmon
 filelist_fixup prototype '$3 == "platform/i86pc/kernel/drv/vboxusbmon"'                                '$6 = "sys"'
 filelist_fixup prototype '$3 == "platform/i86pc/kernel/drv/amd64/vboxusbmon"'                          '$6 = "sys"'
+
+# USB Client vboxusb
+filelist_fixup prototype '$3 == "platform/i86pc/kernel/drv/vboxusb"'                                   '$6 = "sys"'
+filelist_fixup prototype '$3 == "platform/i86pc/kernel/drv/amd64/vboxusb"'                             '$6 = "sys"'
 
 # hardening requires some executables to be marked setuid.
 if test -n "$HARDENED"; then

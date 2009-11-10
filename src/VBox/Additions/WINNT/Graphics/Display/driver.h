@@ -40,6 +40,9 @@
 #include "../Miniport/vboxioctl.h"
 
 #include <VBox/VBoxVideo.h>
+#ifdef VBOX_WITH_VIDEOHWACCEL
+#include <iprt/asm.h>
+#endif
 
 /* Forward declaration. */
 struct _PDEV;
@@ -96,7 +99,7 @@ typedef struct
 #ifdef VBOX_WITH_VIDEOHWACCEL
 typedef struct _VBOXVHWAREGION
 {
-    RECT DirtyMem;
+    RECTL Rect;
     bool bValid;
 }VBOXVHWAREGION, *PVBOXVHWAREGION;
 
@@ -105,13 +108,22 @@ typedef struct _VBOXVHWASURFDESC
     VBOXVHWA_SURFHANDLE hHostHandle;
     volatile uint32_t cPendingBltsSrc;
     volatile uint32_t cPendingBltsDst;
-    volatile uint32_t cPendingFlips;
-    uint32_t cBitsPerPixel;
+    volatile uint32_t cPendingFlipsCurr;
+    volatile uint32_t cPendingFlipsTarg;
+#ifdef DEBUG
+    volatile uint32_t cFlipsCurr;
+    volatile uint32_t cFlipsTarg;
+#endif
+//    uint32_t cBitsPerPixel;
+    bool bVisible;
+    VBOXVHWAREGION UpdatedMemRegion;
+    VBOXVHWAREGION NonupdatedMemRegion;
 }VBOXVHWASURFDESC, *PVBOXVHWASURFDESC;
 
 typedef struct _VBOXVHWAINFO
 {
     uint32_t caps;
+    uint32_t caps2;
     uint32_t colorKeyCaps;
     uint32_t stretchCaps;
     uint32_t surfaceCaps;
@@ -196,6 +208,11 @@ struct  _PDEV
     HVBOXVIDEOHGSMI hMpHGSMI; /* context handler passed to miniport HGSMI callbacks */
     PFNVBOXVIDEOHGSMICOMPLETION pfnHGSMICommandComplete; /* called to complete the command we receive from the miniport */
     PFNVBOXVIDEOHGSMICOMMANDS   pfnHGSMIRequestCommands; /* called to requests the commands posted to us from the host */
+
+    RTIOPORT IOPortGuestCommand;
+
+    PVOID pVideoPortContext;
+    VBOXVIDEOPORTPROCS VideoPortProcs;
 #endif /* VBOX_WITH_HGSMI */
 
 #ifdef VBOX_WITH_VIDEOHWACCEL
@@ -217,12 +234,6 @@ typedef struct
 extern HSEMAPHORE ghsemHwBuffer;
 #endif /* !VBOX_WITH_HGSMI */
 
-
-#ifdef VBOX_WITH_HGSMI
-#define VBE_DISPI_IOPORT_INDEX          0x01CE
-#define VBE_DISPI_IOPORT_DATA           0x01CF
-#define VBE_DISPI_INDEX_VBVA_GUEST      0xc
-#endif /* VBOX_WITH_HGSMI */
 
 extern BOOL  g_bOnNT40;
 
@@ -291,12 +302,42 @@ void vboxVBVAHostCommandComplete(PPDEV ppdev, VBVAHOSTCMD * pCmd);
 typedef DECLCALLBACK(void) FNVBOXVHWACMDCOMPLETION(PPDEV ppdev, VBOXVHWACMD * pCmd, void * pContext);
 typedef FNVBOXVHWACMDCOMPLETION *PFNVBOXVHWACMDCOMPLETION;
 
+void vboxVHWARectUnited(RECTL * pDst, RECTL * pRect1, RECTL * pRect2);
+bool vboxVHWARectIsEmpty(RECTL * pRect);
+bool vboxVHWARectIntersect(RECTL * pRect1, RECTL * pRect2);
+bool vboxVHWARectInclude(RECTL * pRect1, RECTL * pRect2);
+bool vboxVHWARegionIntersects(PVBOXVHWAREGION pReg, RECTL * pRect);
+bool vboxVHWARegionIncludes(PVBOXVHWAREGION pReg, RECTL * pRect);
+bool vboxVHWARegionIncluded(PVBOXVHWAREGION pReg, RECTL * pRect);
+void vboxVHWARegionSet(PVBOXVHWAREGION pReg, RECTL * pRect);
+void vboxVHWARegionAdd(PVBOXVHWAREGION pReg, RECTL * pRect);
+void vboxVHWARegionInit(PVBOXVHWAREGION pReg);
+void vboxVHWARegionClear(PVBOXVHWAREGION pReg);
+bool vboxVHWARegionValid(PVBOXVHWAREGION pReg);
+void vboxVHWARegionTrySubstitute(PVBOXVHWAREGION pReg, const RECTL *pRect);
+
 VBOXVHWACMD* vboxVHWACommandCreate (PPDEV ppdev, VBOXVHWACMD_TYPE enmCmd, VBOXVHWACMD_LENGTH cbCmd);
 void vboxVHWACommandFree (PPDEV ppdev, VBOXVHWACMD* pCmd);
+DECLINLINE(void) vbvaVHWACommandRelease (PPDEV ppdev, VBOXVHWACMD* pCmd)
+{
+    uint32_t cRefs = ASMAtomicDecU32(&pCmd->cRefs);
+    Assert(cRefs < UINT32_MAX / 2);
+    if(!cRefs)
+    {
+        vboxVHWACommandFree(ppdev, pCmd);
+    }
+}
+
+DECLINLINE(void) vbvaVHWACommandRetain (PPDEV ppdev, VBOXVHWACMD* pCmd)
+{
+    ASMAtomicIncU32(&pCmd->cRefs);
+}
+
 BOOL vboxVHWACommandSubmit (PPDEV ppdev, VBOXVHWACMD* pCmd);
 void vboxVHWACommandSubmitAsynch (PPDEV ppdev, VBOXVHWACMD* pCmd, PFNVBOXVHWACMDCOMPLETION pfnCompletion, void * pContext);
-void vboxVHWACommandSubmitAsynchByEvent (PPDEV ppdev, VBOXVHWACMD* pCmd, PEVENT pEvent);
+void vboxVHWACommandSubmitAsynchByEvent (PPDEV ppdev, VBOXVHWACMD* pCmd, VBOXPEVENT pEvent);
 void vboxVHWACommandCheckHostCmds(PPDEV ppdev);
+void vboxVHWACommandSubmitAsynchAndComplete (PPDEV ppdev, VBOXVHWACMD* pCmd);
 
 int vboxVHWAInitHostInfo1(PPDEV ppdev);
 int vboxVHWAInitHostInfo2(PPDEV ppdev, DWORD *pFourCC);
@@ -321,9 +362,19 @@ uint32_t vboxVHWASupportedDDCEYCAPS(uint32_t caps);
 uint32_t vboxVHWAToDDBLTs(uint32_t caps);
 uint32_t vboxVHWAFromDDBLTs(uint32_t caps);
 
+uint32_t vboxVHWAFromDDCAPS2(uint32_t caps);
+uint32_t vboxVHWAToDDCAPS2(uint32_t caps);
+
 void vboxVHWAFromDDBLTFX(VBOXVHWA_BLTFX *pVHWABlt, DDBLTFX *pDdBlt);
 
 void vboxVHWAFromDDCOLORKEY(VBOXVHWA_COLORKEY *pVHWACKey, DDCOLORKEY  *pDdCKey);
+
+uint32_t vboxVHWAFromDDOVERs(uint32_t caps);
+uint32_t vboxVHWAToDDOVERs(uint32_t caps);
+uint32_t vboxVHWAFromDDCKEYs(uint32_t caps);
+uint32_t vboxVHWAToDDCKEYs(uint32_t caps);
+
+void vboxVHWAFromDDOVERLAYFX(VBOXVHWA_OVERLAYFX *pVHWAOverlay, DDOVERLAYFX *pDdOverlay);
 
 uint32_t vboxVHWAFromDDCAPS(uint32_t caps);
 uint32_t vboxVHWAToDDCAPS(uint32_t caps);

@@ -1,4 +1,4 @@
-/* $Id: fileio-win.cpp 19186 2009-04-26 09:05:32Z vboxsync $ */
+/* $Id: fileio-win.cpp 24341 2009-11-04 15:23:59Z vboxsync $ */
 /** @file
  * IPRT - File I/O, native implementation for the Windows host platform.
  */
@@ -68,7 +68,7 @@
  * @param   poffNew     Where to store the new file offset. NULL allowed.
  * @param   uMethod     Seek method. (The windows one!)
  */
-inline bool MySetFilePointer(RTFILE File, uint64_t offSeek, uint64_t *poffNew, unsigned uMethod)
+DECLINLINE(bool) MySetFilePointer(RTFILE File, uint64_t offSeek, uint64_t *poffNew, unsigned uMethod)
 {
     bool            fRc;
     LARGE_INTEGER   off;
@@ -150,7 +150,7 @@ RTR3DECL(RTHCINTPTR) RTFileToNative(RTFILE File)
 }
 
 
-RTR3DECL(int)  RTFileOpen(PRTFILE pFile, const char *pszFilename, unsigned fOpen)
+RTR3DECL(int) RTFileOpen(PRTFILE pFile, const char *pszFilename, uint32_t fOpen)
 {
     /*
      * Validate input.
@@ -201,27 +201,40 @@ RTR3DECL(int)  RTFileOpen(PRTFILE pFile, const char *pszFilename, unsigned fOpen
     DWORD dwDesiredAccess;
     switch (fOpen & RTFILE_O_ACCESS_MASK)
     {
-        case RTFILE_O_READ:        dwDesiredAccess = GENERIC_READ; break;
-        case RTFILE_O_WRITE:       dwDesiredAccess = GENERIC_WRITE; break;
-        case RTFILE_O_READWRITE:   dwDesiredAccess = GENERIC_READ | GENERIC_WRITE; break;
+        case RTFILE_O_READ:
+            dwDesiredAccess = FILE_GENERIC_READ; /* RTFILE_O_APPEND is ignored. */
+            break;
+        case RTFILE_O_WRITE:
+            dwDesiredAccess = fOpen & RTFILE_O_APPEND
+                            ? FILE_GENERIC_WRITE & ~FILE_WRITE_DATA
+                            : FILE_GENERIC_WRITE;
+            break;
+        case RTFILE_O_READWRITE:
+            dwDesiredAccess = fOpen & RTFILE_O_APPEND
+                            ? FILE_GENERIC_READ | (FILE_GENERIC_WRITE & ~FILE_WRITE_DATA)
+                            : FILE_GENERIC_READ | FILE_GENERIC_WRITE;
+            break;
         default:
             AssertMsgFailed(("Impossible fOpen=%#x\n", fOpen));
             return VERR_INVALID_PARAMETER;
     }
+    if (dwCreationDisposition == TRUNCATE_EXISTING)
+        /* Required for truncating the file (see MSDN), it is *NOT* part of FILE_GENERIC_WRITE. */
+        dwDesiredAccess |= GENERIC_WRITE;
 
     /* RTFileSetMode needs following rights as well. */
     switch (fOpen & RTFILE_O_ACCESS_ATTR_MASK)
     {
-        case RTFILE_O_ACCESS_ATTR_READ:      dwDesiredAccess |= FILE_READ_ATTRIBUTES | SYNCHRONIZE; break;
+        case RTFILE_O_ACCESS_ATTR_READ:      dwDesiredAccess |= FILE_READ_ATTRIBUTES  | SYNCHRONIZE; break;
         case RTFILE_O_ACCESS_ATTR_WRITE:     dwDesiredAccess |= FILE_WRITE_ATTRIBUTES | SYNCHRONIZE; break;
         case RTFILE_O_ACCESS_ATTR_READWRITE: dwDesiredAccess |= FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | SYNCHRONIZE; break;
         default:
             /* Attributes access is the same as the file access. */
             switch (fOpen & RTFILE_O_ACCESS_MASK)
             {
-                case RTFILE_O_READ:      dwDesiredAccess |= FILE_READ_ATTRIBUTES | SYNCHRONIZE; break;
-                case RTFILE_O_WRITE:     dwDesiredAccess |= FILE_WRITE_ATTRIBUTES | SYNCHRONIZE; break;
-                case RTFILE_O_READWRITE: dwDesiredAccess |= FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | SYNCHRONIZE; break;
+                case RTFILE_O_READ:          dwDesiredAccess |= FILE_READ_ATTRIBUTES  | SYNCHRONIZE; break;
+                case RTFILE_O_WRITE:         dwDesiredAccess |= FILE_WRITE_ATTRIBUTES | SYNCHRONIZE; break;
+                case RTFILE_O_READWRITE:     dwDesiredAccess |= FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | SYNCHRONIZE; break;
                 default:
                     AssertMsgFailed(("Impossible fOpen=%#x\n", fOpen));
                     return VERR_INVALID_PARAMETER;
@@ -229,7 +242,6 @@ RTR3DECL(int)  RTFileOpen(PRTFILE pFile, const char *pszFilename, unsigned fOpen
     }
 
     DWORD dwShareMode;
-    Assert(RTFILE_O_DENY_READWRITE == RTFILE_O_DENY_ALL && !RTFILE_O_DENY_NONE);
     switch (fOpen & RTFILE_O_DENY_MASK)
     {
         case RTFILE_O_DENY_NONE:                                dwShareMode = FILE_SHARE_READ | FILE_SHARE_WRITE; break;
@@ -262,6 +274,11 @@ RTR3DECL(int)  RTFileOpen(PRTFILE pFile, const char *pszFilename, unsigned fOpen
         dwFlagsAndAttributes |= FILE_FLAG_WRITE_THROUGH;
     if (fOpen & RTFILE_O_ASYNC_IO)
         dwFlagsAndAttributes |= FILE_FLAG_OVERLAPPED;
+    if (fOpen & RTFILE_O_NO_CACHE)
+    {
+        dwFlagsAndAttributes |= FILE_FLAG_NO_BUFFERING;
+        dwDesiredAccess &= ~FILE_APPEND_DATA;
+    }
 
     /*
      * Open/Create the file.

@@ -1,4 +1,4 @@
-/* $Id: EMAll.cpp 20682 2009-06-18 11:07:33Z vboxsync $ */
+/* $Id: EMAll.cpp 22493 2009-08-26 22:22:16Z vboxsync $ */
 /** @file
  * EM - Execution Monitor(/Manager) - All contexts
  */
@@ -69,8 +69,10 @@
 /* Used to pass information during instruction disassembly. */
 typedef struct
 {
-    PVM     pVM;
-    PVMCPU  pVCpu;
+    PVM         pVM;
+    PVMCPU      pVCpu;
+    RTGCPTR     GCPtr;
+    uint8_t     aOpcode[8];
 } EMDISSTATE, *PEMDISSTATE;
 
 /*******************************************************************************
@@ -124,7 +126,23 @@ DECLCALLBACK(int) EMReadBytes(RTUINTPTR pSrc, uint8_t *pDest, unsigned cb, void 
     PVMCPU        pVCpu  = pState->pVCpu;
 
 # ifdef IN_RING0
-    int rc = PGMPhysSimpleReadGCPtr(pVCpu, pDest, pSrc, cb);
+    int rc;
+
+    if (    pState->GCPtr
+        &&  pSrc + cb <= pState->GCPtr + sizeof(pState->aOpcode))
+    {
+        unsigned offset = pSrc - pState->GCPtr;
+
+        Assert(pSrc >= pState->GCPtr);
+
+        for (unsigned i=0; i<cb; i++)
+        {
+            pDest[i] = pState->aOpcode[offset + i];
+        }
+        return VINF_SUCCESS;
+    }
+
+    rc = PGMPhysSimpleReadGCPtr(pVCpu, pDest, pSrc, cb);
     AssertMsgRC(rc, ("PGMPhysSimpleReadGCPtr failed for pSrc=%RGv cb=%x rc=%d\n", pSrc, cb, rc));
 # else /* IN_RING3 */
     if (!PATMIsPatchGCAddr(pVM, pSrc))
@@ -134,7 +152,7 @@ DECLCALLBACK(int) EMReadBytes(RTUINTPTR pSrc, uint8_t *pDest, unsigned cb, void 
     }
     else
     {
-        for (uint32_t i = 0; i < cb; i++)
+        for (unsigned i = 0; i < cb; i++)
         {
             uint8_t opcode;
             if (RT_SUCCESS(PATMR3QueryOpcode(pVM, (RTGCPTR)pSrc + i, &opcode)))
@@ -152,6 +170,11 @@ DECLINLINE(int) emDisCoreOne(PVM pVM, PVMCPU pVCpu, PDISCPUSTATE pDis, RTGCUINTP
 
     State.pVM   = pVM;
     State.pVCpu = pVCpu;
+    int rc = PGMPhysSimpleReadGCPtr(pVCpu, &State.aOpcode, InstrGC, sizeof(State.aOpcode));
+    if (RT_SUCCESS(rc))
+        State.GCPtr = InstrGC;
+    else
+        State.GCPtr = NIL_RTGCPTR;
 
     return DISCoreOneEx(InstrGC, pDis->mode, EMReadBytes, &State, pDis, pOpsize);
 }
@@ -212,14 +235,22 @@ VMMDECL(int) EMInterpretDisasOne(PVM pVM, PVMCPU pVCpu, PCCPUMCTXCORE pCtxCore, 
  */
 VMMDECL(int) EMInterpretDisasOneEx(PVM pVM, PVMCPU pVCpu, RTGCUINTPTR GCPtrInstr, PCCPUMCTXCORE pCtxCore, PDISCPUSTATE pDis, unsigned *pcbInstr)
 {
+    int rc;
+
 #ifndef IN_RC
     EMDISSTATE State;
 
     State.pVM   = pVM;
     State.pVCpu = pVCpu;
+
+    rc = PGMPhysSimpleReadGCPtr(pVCpu, &State.aOpcode, GCPtrInstr, sizeof(State.aOpcode));
+    if (RT_SUCCESS(rc))
+        State.GCPtr = GCPtrInstr;
+    else
+        State.GCPtr = NIL_RTGCPTR;
 #endif
 
-    int rc = DISCoreOneEx(GCPtrInstr, SELMGetCpuModeFromSelector(pVM, pCtxCore->eflags, pCtxCore->cs, (PCPUMSELREGHID)&pCtxCore->csHid),
+    rc = DISCoreOneEx(GCPtrInstr, SELMGetCpuModeFromSelector(pVM, pCtxCore->eflags, pCtxCore->cs, (PCPUMSELREGHID)&pCtxCore->csHid),
 #ifdef IN_RC
                           NULL, NULL,
 #else
@@ -329,16 +360,16 @@ VMMDECL(int) EMInterpretInstructionCPU(PVM pVM, PVMCPU pVCpu, PDISCPUSTATE pDis,
  * @param   cbOp        The size of the instruction.
  * @remark  This may raise exceptions.
  */
-VMMDECL(int) EMInterpretPortIO(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pCtxCore, PDISCPUSTATE pDis, uint32_t cbOp)
+VMMDECL(VBOXSTRICTRC) EMInterpretPortIO(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pCtxCore, PDISCPUSTATE pDis, uint32_t cbOp)
 {
     /*
      * Hand it on to IOM.
      */
 #ifdef IN_RC
-    int rc = IOMGCIOPortHandler(pVM, pCtxCore, pDis);
-    if (IOM_SUCCESS(rc))
+    VBOXSTRICTRC rcStrict = IOMGCIOPortHandler(pVM, pCtxCore, pDis);
+    if (IOM_SUCCESS(rcStrict))
         pCtxCore->rip += cbOp;
-    return rc;
+    return rcStrict;
 #else
     AssertReleaseMsgFailed(("not implemented\n"));
     return VERR_NOT_IMPLEMENTED;
@@ -1953,7 +1984,7 @@ VMMDECL(int) EMInterpretCpuId(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame)
     /* cpuid clears the high dwords of the affected 64 bits registers. */
     pRegFrame->rax = 0;
     pRegFrame->rbx = 0;
-    pRegFrame->rcx = 0;
+    pRegFrame->rcx &= UINT64_C(0x00000000ffffffff);
     pRegFrame->rdx = 0;
 
     /* Note: operates the same in 64 and non-64 bits mode. */

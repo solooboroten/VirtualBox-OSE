@@ -1,4 +1,4 @@
-/* $Id: server.cpp 20630 2009-06-16 13:55:38Z vboxsync $ */
+/* $Id: server.cpp 23973 2009-10-22 12:34:22Z vboxsync $ */
 /** @file
  * XPCOM server process (VBoxSVC) start point.
  */
@@ -77,16 +77,11 @@
 #include <ApplianceImpl.h>
 #include <SnapshotImpl.h>
 #include <MediumImpl.h>
-#include <HardDiskImpl.h>
-#include <HardDiskFormatImpl.h>
+#include <MediumFormatImpl.h>
 #include <ProgressImpl.h>
-#include <DVDDriveImpl.h>
-#include <FloppyDriveImpl.h>
 #include <VRDPServerImpl.h>
 #include <SharedFolderImpl.h>
 #include <HostImpl.h>
-#include <HostDVDDriveImpl.h>
-#include <HostFloppyDriveImpl.h>
 #include <HostNetworkInterfaceImpl.h>
 #include <GuestOSTypeImpl.h>
 #include <NetworkAdapterImpl.h>
@@ -129,37 +124,20 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI(SnapshotMachine, IMachine)
 NS_DECL_CLASSINFO(Snapshot)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Snapshot, ISnapshot)
 
-NS_DECL_CLASSINFO(DVDImage)
-NS_IMPL_THREADSAFE_ISUPPORTS2_AMBIGUOUS_CI(DVDImage,
-                                           IMedium, ImageMediumBase,
-                                           IDVDImage, DVDImage)
-NS_DECL_CLASSINFO(FloppyImage)
-NS_IMPL_THREADSAFE_ISUPPORTS2_AMBIGUOUS_CI(FloppyImage,
-                                           IMedium, ImageMediumBase,
-                                           IFloppyImage, FloppyImage)
+NS_DECL_CLASSINFO(Medium)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Medium, IMedium)
 
-NS_DECL_CLASSINFO(HardDisk)
-NS_IMPL_THREADSAFE_ISUPPORTS2_AMBIGUOUS_CI(HardDisk,
-                                           IMedium, MediumBase,
-                                           IHardDisk, HardDisk)
+NS_DECL_CLASSINFO(MediumFormat)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(MediumFormat, IMediumFormat)
 
-NS_DECL_CLASSINFO(HardDiskFormat)
-NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HardDiskFormat, IHardDiskFormat)
-
-NS_DECL_CLASSINFO(HardDiskAttachment)
-NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HardDiskAttachment, IHardDiskAttachment)
+NS_DECL_CLASSINFO(MediumAttachment)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI(MediumAttachment, IMediumAttachment)
 
 NS_DECL_CLASSINFO(Progress)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Progress, IProgress)
 
 NS_DECL_CLASSINFO(CombinedProgress)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(CombinedProgress, IProgress)
-
-NS_DECL_CLASSINFO(DVDDrive)
-NS_IMPL_THREADSAFE_ISUPPORTS1_CI(DVDDrive, IDVDDrive)
-
-NS_DECL_CLASSINFO(FloppyDrive)
-NS_IMPL_THREADSAFE_ISUPPORTS1_CI(FloppyDrive, IFloppyDrive)
 
 NS_DECL_CLASSINFO(SharedFolder)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(SharedFolder, ISharedFolder)
@@ -171,12 +149,6 @@ NS_IMPL_THREADSAFE_ISUPPORTS1_CI(VRDPServer, IVRDPServer)
 
 NS_DECL_CLASSINFO(Host)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(Host, IHost)
-
-NS_DECL_CLASSINFO(HostDVDDrive)
-NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HostDVDDrive, IHostDVDDrive)
-
-NS_DECL_CLASSINFO(HostFloppyDrive)
-NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HostFloppyDrive, IHostFloppyDrive)
 
 NS_DECL_CLASSINFO(HostNetworkInterface)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI(HostNetworkInterface, IHostNetworkInterface)
@@ -268,15 +240,15 @@ public:
      */
     nsresult postTo (nsIEventQueue *aEventQ)
     {
-        AssertReturn (mEv.that == NULL, NS_ERROR_FAILURE);
-        AssertReturn (aEventQ, NS_ERROR_FAILURE);
+        AssertReturn(mEv.that == NULL, NS_ERROR_FAILURE);
+        AssertReturn(aEventQ, NS_ERROR_FAILURE);
         nsresult rv = aEventQ->InitEvent (&mEv.e, NULL,
                                           eventHandler, eventDestructor);
-        if (NS_SUCCEEDED (rv))
+        if (NS_SUCCEEDED(rv))
         {
             mEv.that = this;
             rv = aEventQ->PostEvent (&mEv.e);
-            if (NS_SUCCEEDED (rv))
+            if (NS_SUCCEEDED(rv))
                 return rv;
         }
         delete this;
@@ -357,7 +329,7 @@ public:
 
                 int vrc = RTTimerLRStart (sTimer, uint64_t (VBoxSVC_ShutdownDelay) * 1000000);
                 AssertRC (vrc);
-                timerStarted = SUCCEEDED (vrc);
+                timerStarted = SUCCEEDED(vrc);
             }
             else
             {
@@ -475,11 +447,11 @@ public:
         LogFlowFunc (("\n"));
 
         /* create a critsect to protect object construction */
-        if (RT_FAILURE (RTCritSectInit (&sLock)))
+        if (RT_FAILURE(RTCritSectInit (&sLock)))
             return NS_ERROR_OUT_OF_MEMORY;
 
         int vrc = RTTimerLRCreateEx (&sTimer, 0, 0, ShutdownTimer, NULL);
-        if (RT_FAILURE (vrc))
+        if (RT_FAILURE(vrc))
         {
             LogFlowFunc (("Failed to create a timer! (vrc=%Rrc)\n", vrc));
             return NS_ERROR_FAILURE;
@@ -695,10 +667,10 @@ nsresult
 NS_NewGenericFactoryEx (nsIGenericFactory **result,
                         const nsModuleComponentInfoEx *info)
 {
-    AssertReturn (result, NS_ERROR_INVALID_POINTER);
+    AssertReturn(result, NS_ERROR_INVALID_POINTER);
 
     nsresult rv = NS_NewGenericFactory (result, info);
-    if (NS_SUCCEEDED (rv) && info && info->mFactoryConstructor)
+    if (NS_SUCCEEDED(rv) && info && info->mFactoryConstructor)
     {
         rv = info->mFactoryConstructor();
         if (NS_FAILED (rv))
@@ -721,14 +693,14 @@ RegisterSelfComponents (nsIComponentRegistrar *registrar,
 {
     nsresult rc = NS_OK;
     const nsModuleComponentInfoEx *info = components;
-    for (PRUint32 i = 0; i < count && NS_SUCCEEDED (rc); i++, info++)
+    for (PRUint32 i = 0; i < count && NS_SUCCEEDED(rc); i++, info++)
     {
         /* skip components w/o a constructor */
         if (!info->mConstructor) continue;
         /* create a new generic factory for a component and register it */
         nsIGenericFactory *factory;
         rc = NS_NewGenericFactoryEx (&factory, info);
-        if (NS_SUCCEEDED (rc))
+        if (NS_SUCCEEDED(rc))
         {
             rc = registrar->RegisterFactory (info->mCID,
                                              info->mDescription,
@@ -1090,7 +1062,7 @@ int main (int argc, char **argv)
         {
             char szBuf[32];
             const char *lf = "\n";
-            RTFileOpen(&pidFile, pszPidFile, RTFILE_O_WRITE | RTFILE_O_CREATE_REPLACE);
+            RTFileOpen(&pidFile, pszPidFile, RTFILE_O_WRITE | RTFILE_O_CREATE_REPLACE | RTFILE_O_DENY_NONE);
             RTStrFormatNumber(szBuf, getpid(), 10, 0, 0, 0);
             RTFileWrite(pidFile, szBuf, strlen(szBuf), NULL);
             RTFileWrite(pidFile, lf, strlen(lf), NULL);

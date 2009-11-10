@@ -32,6 +32,7 @@
 
 #ifdef VBOX_WITH_HGSMI
 #include <iprt/asm.h>
+#include <VBox/log.h>
 #include <VBox/HGSMI/HGSMI.h>
 #include <VBox/HGSMI/HGSMIChSetup.h>
 #endif
@@ -118,29 +119,49 @@ static void vboxInitVBoxVideo (PPDEV ppdev, const VIDEO_MEMORY_INFORMATION *pMem
         Assert(!err);
         if(!err)
         {
-            HGSMIHANDLERENABLE HandlerReg;
-            RtlZeroMemory(&HandlerReg, sizeof(HandlerReg));
+            HGSMIQUERYCPORTPROCS PortProcs;
+            RtlZeroMemory(&PortProcs, sizeof(PortProcs));
 
             ppdev->hMpHGSMI = Callbacks.hContext;
             ppdev->pfnHGSMICommandComplete = Callbacks.pfnCompletionHandler;
             ppdev->pfnHGSMIRequestCommands = Callbacks.pfnRequestCommandsHandler;
 
-            HandlerReg.u8Channel = HGSMI_CH_VBVA;
             err = EngDeviceIoControl(ppdev->hDriver,
-                    IOCTL_VIDEO_HGSMI_HANDLER_ENABLE,
-                    &HandlerReg,
-                    sizeof(HandlerReg),
+                    IOCTL_VIDEO_HGSMI_QUERY_PORTPROCS,
                     NULL,
                     0,
+                    &PortProcs,
+                    sizeof(PortProcs),
                     &returnedDataLength);
             Assert(!err);
+            if(!err)
+            {
+                HGSMIHANDLERENABLE HandlerReg;
+                RtlZeroMemory(&HandlerReg, sizeof(HandlerReg));
+
+                ppdev->pVideoPortContext = PortProcs.pContext;
+                ppdev->VideoPortProcs = PortProcs.VideoPortProcs;
+
+                HandlerReg.u8Channel = HGSMI_CH_VBVA;
+                err = EngDeviceIoControl(ppdev->hDriver,
+                        IOCTL_VIDEO_HGSMI_HANDLER_ENABLE,
+                        &HandlerReg,
+                        sizeof(HandlerReg),
+                        NULL,
+                        0,
+                        &returnedDataLength);
+#ifdef DEBUG_misha
+                Assert(!err);
+#endif
+                /* this is not fatal, just means Video 2D acceleration will not be supported */
+                err = 0;
+            }
         }
 
         if(err)
         {
             ppdev->bHGSMISupported = FALSE;
         }
-
     }
 #endif /* VBOX_WITH_HGSMI */
 
@@ -243,7 +264,10 @@ static void vboxInitVBoxVideo (PPDEV ppdev, const VIDEO_MEMORY_INFORMATION *pMem
         int rc = HGSMIHeapSetup (&ppdev->hgsmiDisplayHeap,
                                  (uint8_t *)ppdev->pjScreen + ppdev->layout.offDisplayInformation + sizeof (HGSMIHOSTFLAGS),
                                  ppdev->layout.cbDisplayInformation - sizeof (HGSMIHOSTFLAGS),
-                                 ppdev->layout.offDisplayInformation + sizeof (HGSMIHOSTFLAGS));
+                                 info.areaDisplay.offBase + ppdev->layout.offDisplayInformation + sizeof (HGSMIHOSTFLAGS));
+
+        DISPDBG((0, "VBoxDISP::vboxInitVBoxVideo: offBase 0x%x\n",
+                 info.areaDisplay.offBase));
 
         if (RT_FAILURE (rc))
         {
@@ -254,33 +278,7 @@ static void vboxInitVBoxVideo (PPDEV ppdev, const VIDEO_MEMORY_INFORMATION *pMem
         }
         else
         {
-#if 0
-            /* Inform the host about the HGSMIHOSTEVENTS location. */
-            void *p = HGSMIHeapAlloc (&ppdev->hgsmiDisplayHeap,
-                                      sizeof (HGSMI_BUFFER_LOCATION),
-                                      HGSMI_CH_HGSMI,
-                                      HGSMI_CC_HOST_FLAGS_LOCATION);
-
-            if (!p)
-            {
-                DISPDBG((0, "VBoxDISP::vboxInitVBoxVideo: HGSMIHeapAlloc failed\n"));
-                rc = VERR_NO_MEMORY;
-            }
-            else
-            {
-                HGSMIOFFSET offBuffer = HGSMIHeapBufferOffset (&ppdev->hgsmiDisplayHeap,
-                                                               p);
-
-                ((HGSMI_BUFFER_LOCATION *)p)->offLocation = ppdev->layout.offDisplayInformation;
-                ((HGSMI_BUFFER_LOCATION *)p)->cbLocation = sizeof (HGSMIHOSTFLAGS);
-
-                /* Submit the buffer to the host. */
-                ASMOutU16 (VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_VBVA_GUEST);
-                ASMOutU32 (VBE_DISPI_IOPORT_DATA, offBuffer);
-
-                HGSMIHeapFree (&ppdev->hgsmiDisplayHeap, p);
-            }
-#endif
+            ppdev->IOPortGuestCommand = info.IOPortGuestCommand;
         }
     }
 #endif /* VBOX_WITH_HGSMI */
@@ -518,7 +516,8 @@ BOOL bInitSURF(PPDEV ppdev, BOOL bFirst)
         if (ppdev->bHGSMISupported)
         {
             /* Enable VBVA for this video mode. */
-            vboxVbvaEnable (ppdev);
+            ppdev->bHGSMISupported = vboxVbvaEnable (ppdev);
+            LogRel(("VBoxDisp[%d]: VBVA %senabled\n", ppdev->iDevice, ppdev->bHGSMISupported? "": "not "));
         }
 #endif /* VBOX_WITH_HGSMI */
     }

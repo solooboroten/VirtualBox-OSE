@@ -492,92 +492,128 @@ PyObject *LogConsoleMessage(PyObject *self, PyObject *args)
 }
 
 #ifdef VBOX
-static nsIEventQueue* g_mainEventQ = nsnull;
 
-static PyObject* 
+#  include <VBox/com/EventQueue.h>
+#  include <iprt/err.h>
+
+static PyObject*
 PyXPCOMMethod_WaitForEvents(PyObject *self, PyObject *args)
 {
   PRInt32 aTimeout;
 
   if (!PyArg_ParseTuple(args, "i", &aTimeout))
-    return NULL;
+    return NULL; /** @todo throw exception */
 
-  nsIEventQueue* q = g_mainEventQ;
-  PRBool hasEvents = PR_FALSE;
-  nsresult rc;
-  PRInt32 fd, result = 0;
-
-  if (q == nsnull) 
-    return NULL;
-
-  if (aTimeout == 0)
-    goto ok;
-
-  rc = q->PendingEvents(&hasEvents);
-  if (NS_FAILED (rc))
-    return NULL;
-
-  if (hasEvents)
-    goto ok;
-  
-  fd = q->GetEventQueueSelectFD();
-  if (fd < 0 && aTimeout < 0)
-  {
-    /* fallback */
-    PLEvent *pEvent = NULL;
-    rc = q->WaitForEvent(&pEvent);
-    if (NS_SUCCEEDED(rc))
-      q->HandleEvent(pEvent);
-    goto ok;
-  }
-
-  /* Cannot perform timed wait otherwise */
-  if (fd < 0)
-#ifdef RT_OS_DARWIN
-      /** 
-       * @todo: maybe need some way to implement timed wait on Darwin,
-       *        just return immediately instead
-       */
-      goto ok;
-#else
+  int rc;
+  com::EventQueue* aEventQ = com::EventQueue::getMainEventQueue();
+  NS_WARN_IF_FALSE(aEventQ != nsnull, "Null main event queue");
+  if (!aEventQ)
       return NULL;
-#endif
-  
-  {
-    fd_set fdsetR, fdsetE;
-    struct timeval tv;
-    
-    FD_ZERO(&fdsetR);
-    FD_SET(fd, &fdsetR);
 
-    fdsetE = fdsetR;
-    if (aTimeout > 0)
-      {
-        tv.tv_sec = (PRInt64)aTimeout / 1000;
-        tv.tv_usec = ((PRInt64)aTimeout % 1000) * 1000;
-      }
-    
-    /** @todo: What to do for XPCOM platforms w/o select() ? */
-    Py_BEGIN_ALLOW_THREADS;
-    int n = select(fd + 1, &fdsetR, NULL, &fdsetE, aTimeout < 0 ? NULL : &tv);
-    result = (n == 0) ?  1 :  0;
-    Py_END_ALLOW_THREADS;
-  }
- ok:
-  q->ProcessPendingEvents();
+  Py_BEGIN_ALLOW_THREADS
+  rc = aEventQ->processEventQueue(aTimeout < 0 ? RT_INDEFINITE_WAIT : (uint32_t)aTimeout);
+  Py_END_ALLOW_THREADS
+  if (RT_SUCCESS(rc))
+      return PyInt_FromLong(0);
 
-  return PyInt_FromLong(result);
+  if (   rc == VERR_TIMEOUT
+      || rc == VERR_INTERRUPTED)
+      return PyInt_FromLong(1);
+
+  return NULL; /** @todo throw correct exception */
+}
+
+static PyObject*
+PyXPCOMMethod_InterruptWait(PyObject *self, PyObject *args)
+{
+  com::EventQueue* aEventQ = com::EventQueue::getMainEventQueue();
+  NS_WARN_IF_FALSE(aEventQ != nsnull, "Null main event queue");
+  if (!aEventQ)
+      return NULL;
+
+  aEventQ->interruptEventQueueProcessing();
+
+  return PyInt_FromLong(0);
 }
 
 static void deinitVBoxPython();
 
-static PyObject* 
+static PyObject*
 PyXPCOMMethod_DeinitCOM(PyObject *self, PyObject *args)
 {
-  deinitVBoxPython();
-  return PyInt_FromLong(0);
+    Py_BEGIN_ALLOW_THREADS;
+    deinitVBoxPython();
+    Py_END_ALLOW_THREADS;
+    return PyInt_FromLong(0);
 }
-#endif
+
+static NS_DEFINE_CID(kEventQueueServiceCID, NS_EVENTQUEUESERVICE_CID);
+
+static PyObject*
+PyXPCOMMethod_AttachThread(PyObject *self, PyObject *args)
+{
+    nsresult rv;
+    PRInt32  result = 0;
+    nsCOMPtr<nsIEventQueueService> eqs;
+
+    // Create the Event Queue for this thread...
+    Py_BEGIN_ALLOW_THREADS;
+    eqs =
+      do_GetService(kEventQueueServiceCID, &rv);
+    Py_END_ALLOW_THREADS;
+    if (NS_FAILED(rv))
+    {
+      result = 1;
+      goto done;
+    }
+
+    Py_BEGIN_ALLOW_THREADS;
+    rv = eqs->CreateThreadEventQueue();
+    Py_END_ALLOW_THREADS;
+    if (NS_FAILED(rv))
+    {
+      result = 2;
+      goto done;
+    }
+
+ done:
+    /** @todo: better throw an exception on error */
+    return PyInt_FromLong(result);
+}
+
+static PyObject*
+PyXPCOMMethod_DetachThread(PyObject *self, PyObject *args)
+{
+    nsresult rv;
+    PRInt32  result = 0;
+    nsCOMPtr<nsIEventQueueService> eqs;
+
+    // Destroy the Event Queue for this thread...
+    Py_BEGIN_ALLOW_THREADS;
+    eqs =
+      do_GetService(kEventQueueServiceCID, &rv);
+    Py_END_ALLOW_THREADS;
+    if (NS_FAILED(rv))
+    {
+      result = 1;
+      goto done;
+    }
+
+    Py_BEGIN_ALLOW_THREADS;
+    rv = eqs->DestroyThreadEventQueue();
+    Py_END_ALLOW_THREADS;
+    if (NS_FAILED(rv))
+    {
+      result = 2;
+      goto done;
+    }
+
+ done:
+    /** @todo: better throw an exception on error */
+    return PyInt_FromLong(result);
+}
+
+#endif /* VBOX */
 
 extern PYXPCOM_EXPORT PyObject *PyXPCOMMethod_IID(PyObject *self, PyObject *args);
 
@@ -606,7 +642,10 @@ static struct PyMethodDef xpcom_methods[]=
 	{"GetVariantValue", PyXPCOMMethod_GetVariantValue, 1},
 #ifdef VBOX
         {"WaitForEvents", PyXPCOMMethod_WaitForEvents, 1},
-        {"DeinitCOM", PyXPCOMMethod_DeinitCOM, 1},
+        {"InterruptWait", PyXPCOMMethod_InterruptWait, 1},
+        {"DeinitCOM",     PyXPCOMMethod_DeinitCOM, 1},
+        {"AttachThread",  PyXPCOMMethod_AttachThread, 1},
+        {"DetachThread",  PyXPCOMMethod_DetachThread, 1},
 #endif
 	// These should no longer be used - just use the logging.getLogger('pyxpcom')...
 	{ NULL }
@@ -744,22 +783,14 @@ initVBoxPython() {
 
     rc = com::Initialize();
 
-    if (NS_SUCCEEDED(rc))
-    {
-      NS_GetMainEventQ (&g_mainEventQ);
-    }
-
     init_xpcom();
   }
 }
 
-static 
+static
 void deinitVBoxPython()
 {
-
-  if (g_mainEventQ)
-    NS_RELEASE(g_mainEventQ); 
-  
   com::Shutdown();
 }
-#endif
+
+#endif /* VBOX_PYXPCOM */

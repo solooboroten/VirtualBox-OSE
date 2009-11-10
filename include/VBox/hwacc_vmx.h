@@ -1,5 +1,5 @@
 /** @file
- * HWACCM - VMX Structures and Definitions.
+ * HWACCM - VMX Structures and Definitions. (VMM)
  */
 
 /*
@@ -377,9 +377,42 @@ typedef enum
     /** 32bit hackishness. */
     VMX_FLUSH_32BIT_HACK                        = 0x7fffffff
 } VMX_FLUSH;
+/** @} */
+
+/** @name MSR load/store elements
+ * @{
+ */
+#pragma pack(1)
+typedef struct
+{
+    uint32_t    u32IndexMSR;
+    uint32_t    u32Reserved;
+    uint64_t    u64Value;
+} VMXMSR;
+#pragma pack()
+/** Pointer to an MSR load/store element. */
+typedef VMXMSR *PVMXMSR;
+/** Pointer to a const MSR load/store element. */
+typedef const VMXMSR *PCVMXMSR;
 
 /** @} */
 
+
+/** @name VT-x capability qword
+ * @{
+ */
+#pragma pack(1)
+typedef union
+{
+    struct
+    {
+        uint32_t        disallowed0;
+        uint32_t        allowed1;
+    } n;
+    uint64_t            u;
+} VMX_CAPABILITY;
+#pragma pack()
+/** @} */
 
 /** @name VMX Basic Exit Reasons.
  * @{
@@ -1072,6 +1105,22 @@ typedef enum
 #define VMX_EXIT_QUALIFICATION_CRX_ACCESS_READ         1
 #define VMX_EXIT_QUALIFICATION_CRX_ACCESS_CLTS         2
 #define VMX_EXIT_QUALIFICATION_CRX_ACCESS_LMSW         3
+/** @} */
+
+/** @name VMX_EXIT_QUALIFICATION_TASK_SWITCH
+ * @{
+ */
+#define VMX_EXIT_QUALIFICATION_TASK_SWITCH_SELECTOR(a)  (a & 0xffff)
+#define VMX_EXIT_QUALIFICATION_TASK_SWITCH_TYPE(a)      ((a >> 30)& 0x3)
+/** Task switch caused by a call instruction. */
+#define VMX_EXIT_QUALIFICATION_TASK_SWITCH_TYPE_CALL    0
+/** Task switch caused by an iret instruction. */
+#define VMX_EXIT_QUALIFICATION_TASK_SWITCH_TYPE_IRET    1
+/** Task switch caused by a jmp instruction. */
+#define VMX_EXIT_QUALIFICATION_TASK_SWITCH_TYPE_JMP     2
+/** Task switch caused by an interrupt gate. */
+#define VMX_EXIT_QUALIFICATION_TASK_SWITCH_TYPE_IDT     3
+
 /** @} */
 
 

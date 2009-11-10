@@ -1,4 +1,4 @@
-/* $Id: VMMSwitcher.cpp 20864 2009-06-23 19:19:42Z vboxsync $ */
+/* $Id: VMMSwitcher.cpp 24009 2009-10-23 08:25:56Z vboxsync $ */
 /** @file
  * VMM - The Virtual Machine Monitor, World Switcher(s).
  */
@@ -557,13 +557,13 @@ static void vmmR3SwitcherGenericRelocate(PVM pVM, PVMMSWITCHERDEF pSwitcher, RTR
             }
 
             /*
-             * Insert relative jump to specified target it SYSENTER isn't used by the host.
+             * Insert relative jump to specified target it SYSCALL isn't used by the host.
              */
             case FIX_NO_SYSCALL_JMP:
             {
                 uint32_t offTrg = *u.pu32++;
                 Assert(offTrg < pSwitcher->cbCode);
-                if (!CPUMIsHostUsingSysEnter(pVM))
+                if (!CPUMIsHostUsingSysCall(pVM))
                 {
                     *uSrc.pu8++ = 0xe9; /* jmp rel32 */
                     *uSrc.pu32++ = offTrg - (offSrc + 5);
@@ -776,7 +776,7 @@ static void vmmR3SwitcherGenericRelocate(PVM pVM, PVMMSWITCHERDEF pSwitcher, RTR
             else
             {
                 RTLogPrintf("  %04x: %02x '%c' (nowhere)\n",
-                            offCode, pu8CodeR3[offCode], isprint(pu8CodeR3[offCode]) ? pu8CodeR3[offCode] : ' ');
+                            offCode, pu8CodeR3[offCode], RT_C_IS_PRINT(pu8CodeR3[offCode]) ? pu8CodeR3[offCode] : ' ');
                 offCode++;
                 continue;
             }
@@ -813,7 +813,7 @@ static void vmmR3SwitcherGenericRelocate(PVM pVM, PVMMSWITCHERDEF pSwitcher, RTR
                 else
                 {
                     RTLogPrintf("  %04x: %02x '%c'\n",
-                                offCode, pu8CodeR3[offCode], isprint(pu8CodeR3[offCode]) ? pu8CodeR3[offCode] : ' ');
+                                offCode, pu8CodeR3[offCode], RT_C_IS_PRINT(pu8CodeR3[offCode]) ? pu8CodeR3[offCode] : ' ');
                     cbInstr = 1;
                 }
                 offCode += cbInstr;

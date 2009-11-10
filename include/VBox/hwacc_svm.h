@@ -1,5 +1,5 @@
 /** @file
- * HWACCM - SVM Structures and Definitions.
+ * HWACCM - SVM Structures and Definitions. (VMM)
  */
 
 /*
@@ -48,6 +48,7 @@
 #define AMD_CPUID_SVM_FEATURE_EDX_SVM_LOCK                  RT_BIT(2)
 #define AMD_CPUID_SVM_FEATURE_EDX_NRIP_SAVE                 RT_BIT(3)
 #define AMD_CPUID_SVM_FEATURE_EDX_SSE_3_5_DISABLE           RT_BIT(9)
+#define AMD_CPUID_SVM_FEATURE_EDX_PAUSE_FILTER              RT_BIT(10)
 /** @} */
 
 
@@ -252,6 +253,19 @@
 
 /** @} */
 
+
+/** @name SVM_VMCB.u64ExitInfo2
+ * @{
+ */
+/** Set to 1 if the task switch was caused by an IRET; else cleared to 0. */
+#define SVM_EXIT2_TASK_SWITCH_IRET                  RT_BIT_64(36)
+/** Set to 1 if the task switch was caused by a far jump; else cleared to 0. */
+#define SVM_EXIT2_TASK_SWITCH_JMP                   RT_BIT_64(38)
+/** Set to 1 if the task switch has an error code; else cleared to 0. */
+#define SVM_EXIT2_TASK_SWITCH_HAS_ERROR_CODE        RT_BIT_64(44)
+/** The value of EFLAGS.RF that would be saved in the outgoing TSS if the task switch were not intercepted. */
+#define SVM_EXIT2_TASK_SWITCH_EFLAGS_RF             RT_BIT_64(48)
+/** @} */
 
 /** @name SVM_VMCB.ctrl.u32InterceptCtrl1
  * @{

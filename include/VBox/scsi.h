@@ -1,5 +1,5 @@
 /** @file
- * VirtualBox - SCSI declarations.
+ * VirtualBox - SCSI declarations. (DEV,+)
  */
 
 /*
@@ -121,6 +121,14 @@ typedef enum SCSICMD
     SCSI_WRITE_6                        = 0x0a,
     SCSI_LOG_SENSE                      = 0x4d
 } SCSICMD;
+
+/**
+ * Service action in opcoe identifiers
+ */
+typedef enum SCSISVCACTIONIN
+{
+    SCSI_SVC_ACTION_IN_READ_CAPACITY_16 = 0x10
+} SCSISVCACTIONIN;
 
 /* Mode page codes for mode sense/select commands. */
 #define SCSI_MODEPAGE_ERROR_RECOVERY   0x01

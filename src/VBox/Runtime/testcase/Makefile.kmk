@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 20647 2009-06-16 21:58:09Z vboxsync $
+# $Id: Makefile.kmk 24352 2009-11-04 18:49:05Z vboxsync $
 ## @file
 # Sub-Makefile for the IPRT testcases.
 #
@@ -54,12 +54,15 @@ PROGRAMS += \
 	tstRTCidr \
 	tstRTCritSect \
 	tstDeadlock \
+	tstRTDigest \
 	tstDir \
 	tstDir-2 \
 	tstDir-3 \
 	tstEnv \
 	tstErrUnique \
 	tstFile \
+	tstFileAio \
+	tstFileAppend-1 \
 	tstFileLock \
 	tstFork \
 	tstGetOpt \
@@ -74,6 +77,7 @@ PROGRAMS += \
 	tstLog \
 	tstMemAutoPtr \
 	tstRTMemPool \
+	tstRTR0MemUserKernelDriver \
 	tstMove \
 	tstMp-1 \
 	tstNoCrt-1 \
@@ -83,10 +87,12 @@ PROGRAMS += \
 	tstRand \
 	tstRTFsQueries \
 	tstR0ThreadPreemptionDriver \
+	tstRTS3 \
 	tstSems \
+	tstSemEvent \
 	tstSemPingPong \
 	tstRTStrCache \
-	tstStrFormat \
+	tstRTStrFormat \
 	tstStrSimplePattern \
 	tstStrToNum \
 	tstSystemQueryOsInfo \
@@ -124,19 +130,11 @@ PROGRAMS.darwin += \
 SYSMODS += \
 	tstLdrObj \
 	tstLdrObjR0 \
+	tstRTR0MemUserKernel \
 	tstR0ThreadPreemption
 if1of ($(VBOX_LDR_FMT)), lx pe)
 LIBRARIES += \
 	tstLdr-4Imp
-endif
-ifdef RT_ASYNC_IO_CODE
-PROGRAMS += \
-	tstFileAio
-endif
-
-if defined(VBOX_WITH_LIBXML2_IN_VBOXRT)
-PROGRAMS += \
-	tstRTS3
 endif
 
 
@@ -170,6 +168,8 @@ tstRTCritSectW32_DEFS = TRY_WIN32_CRIT
 
 tstDeadlock_SOURCES = tstDeadlock.cpp
 
+tstRTDigest_SOURCES = tstRTDigest.cpp
+
 tstDir_SOURCES = tstDir.cpp
 
 tstDir-2_SOURCES = tstDir-2.cpp
@@ -184,6 +184,8 @@ tstErrUnique_INCS = $(IPRT_OUT_DIR)/
 tstErrUnique.cpp_DEPS = $(IPRT_OUT_DIR)/errmsgdata.h
 
 tstFile_SOURCES = tstFile.cpp
+
+tstFileAppend-1_SOURCES = tstFileAppend-1.cpp
 
 tstFileAppendWin-1_SOURCES = tstFileAppendWin-1.cpp
 
@@ -294,6 +296,18 @@ tstMemAutoPtr_SOURCES = tstMemAutoPtr.cpp
 tstRTMemPool_TEMPLATE = VBOXR3TSTEXE
 tstRTMemPool_SOURCES = tstRTMemPool.cpp
 
+tstRTR0MemUserKernel_TEMPLATE = VBOXR0
+tstRTR0MemUserKernel_INST = $(INST_TESTCASE)
+tstRTR0MemUserKernel_DEFS = IN_RT_R0
+tstRTR0MemUserKernel_SYSSUFF = .r0
+tstRTR0MemUserKernel_SOURCES = tstRTR0MemUserKernel.cpp
+tstRTR0MemUserKernel_LIBS = $(PATH_LIB)/RuntimeR0$(VBOX_SUFF_LIB)
+if1of ($(VBOX_LDR_FMT), pe lx)
+ tstRTR0MemUserKernel_LIBS += $(PATH_LIB)/SUPR0$(VBOX_SUFF_LIB)
+endif
+
+tstRTR0MemUserKernelDriver_SOURCES = tstRTR0MemUserKernelDriver.cpp
+
 tstMove_SOURCES = tstMove.cpp
 
 tstMp-1_SOURCES = tstMp-1.cpp
@@ -342,6 +356,8 @@ tstRTS3_SOURCES = tstRTS3.cpp
 
 tstSemMutex_SOURCES = tstSemMutex.cpp
 
+tstSemEvent_SOURCES = tstSemEvent.cpp
+
 tstSemRW_SOURCES = tstSemRW.cpp
 
 tstSemPingPong_SOURCES = tstSemPingPong.cpp
@@ -351,7 +367,7 @@ tstSems_SOURCES = tstSems.cpp
 tstRTStrCache_TEMPLATE = VBOXR3TSTEXE
 tstRTStrCache_SOURCES = tstRTStrCache.cpp
 
-tstStrFormat_SOURCES = tstStrFormat.cpp
+tstRTStrFormat_SOURCES = tstRTStrFormat.cpp
 
 tstStrSimplePattern_SOURCES = tstStrSimplePattern.cpp
 
