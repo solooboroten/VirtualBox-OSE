@@ -1,4 +1,4 @@
-/* $Id: tstVMStructGC.cpp 23558 2009-10-05 12:10:15Z vboxsync $ */
+/* $Id: tstVMStructGC.cpp 24730 2009-11-17 16:51:03Z vboxsync $ */
 /** @file
  * tstVMMStructGC - Generate structure member and size checks from the GC perspective.
  *

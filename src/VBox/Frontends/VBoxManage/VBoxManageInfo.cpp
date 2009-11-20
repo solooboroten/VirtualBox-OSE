@@ -1,4 +1,4 @@
-/* $Id: VBoxManageInfo.cpp 24416 2009-11-05 21:17:56Z vboxsync $ */
+/* $Id: VBoxManageInfo.cpp 24601 2009-11-11 19:33:28Z vboxsync $ */
 /** @file
  * VBoxManage - The 'showvminfo' command and helper routines.
  */

@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl.h 24493 2009-11-09 11:59:49Z vboxsync $ */
+/* $Id: ConsoleImpl.h 24703 2009-11-16 15:50:47Z vboxsync $ */
 
 /** @file
  *

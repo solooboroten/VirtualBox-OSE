@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tstStrToVer.cpp 24658 2009-11-14 23:31:36Z vboxsync $ */
 /** @file
  * IPRT Testcase - String To Version Number Conversion.
  */

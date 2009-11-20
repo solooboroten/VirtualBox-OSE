@@ -1,6 +1,6 @@
 #! /bin/sh
 # Sun VirtualBox
-# Linux Additions X11 setup init script ($Revision: 24531 $)
+# Linux Additions X11 setup init script ($Revision: 24739 $)
 #
 
 #

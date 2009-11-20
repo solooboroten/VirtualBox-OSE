@@ -1,4 +1,4 @@
-/* $Id: VBoxVideoHGSMI.cpp 23255 2009-09-23 12:38:37Z vboxsync $ */
+/* $Id: VBoxVideoHGSMI.cpp 24709 2009-11-17 09:41:15Z vboxsync $ */
 /** @file
  * VirtualBox Video miniport driver for NT/2k/XP - HGSMI related functions.
  */

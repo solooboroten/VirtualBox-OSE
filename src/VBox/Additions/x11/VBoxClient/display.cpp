@@ -1,4 +1,4 @@
-/* $Id: display.cpp 24069 2009-10-26 12:38:01Z vboxsync $ */
+/* $Id: display.cpp 24776 2009-11-18 23:38:40Z vboxsync $ */
 /** @file
  * X11 guest client - display management.
  */

@@ -1,4 +1,4 @@
-/* $Id: DevPcBios.h 21874 2009-07-30 12:12:23Z vboxsync $ */
+/* $Id: DevPcBios.h 24707 2009-11-16 18:08:54Z vboxsync $ */
 /** @file
  * DevPcBios - PC BIOS Device, header shared with the BIOS code.
  */

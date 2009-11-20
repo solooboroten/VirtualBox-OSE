@@ -1,4 +1,4 @@
-/* $Id: PDMDevice.cpp 24272 2009-11-02 16:44:27Z vboxsync $ */
+/* $Id: PDMDevice.cpp 24730 2009-11-17 16:51:03Z vboxsync $ */
 /** @file
  * PDM - Pluggable Device and Driver Manager, Device parts.
  */
