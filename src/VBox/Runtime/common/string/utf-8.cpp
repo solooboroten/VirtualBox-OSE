@@ -1,4 +1,4 @@
-/* $Id: utf-8.cpp 21791 2009-07-25 17:10:57Z vboxsync $ */
+/* $Id: utf-8.cpp $ */
 /** @file
  * IPRT - UTF-8 Decoding.
  */

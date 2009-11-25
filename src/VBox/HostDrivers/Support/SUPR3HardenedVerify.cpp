@@ -1,4 +1,4 @@
-/* $Id: SUPR3HardenedVerify.cpp 22196 2009-08-12 08:44:00Z vboxsync $ */
+/* $Id: SUPR3HardenedVerify.cpp $ */
 /** @file
  * VirtualBox Support Library - Verification of Hardened Installation.
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxManage.cpp 24493 2009-11-09 11:59:49Z vboxsync $ */
+/* $Id: VBoxManage.cpp $ */
 /** @file
  * VBoxManage - VirtualBox's command-line interface.
  */

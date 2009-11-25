@@ -1,4 +1,4 @@
-/** $Id: VBoxSFFile.cpp 3655 2007-07-16 18:47:26Z vboxsync $ */
+/** $Id: VBoxSFFile.cpp $ */
 /** @file
  * VBoxSF - OS/2 Shared Folders, the file level IFS EPs.
  */

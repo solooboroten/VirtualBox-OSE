@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceUtils.cpp 23655 2009-10-09 15:51:35Z vboxsync $ */
+/* $Id: VBoxServiceUtils.cpp $ */
 /** @file
  * VBoxServiceUtils - Some utility functions.
  */

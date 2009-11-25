@@ -1,4 +1,4 @@
-# $Id: Config.kmk 24802 2009-11-19 16:35:54Z vboxsync $
+# $Id: Config.kmk $
 ## @file
 # The global build configuration file for VBox.
 #
@@ -3843,7 +3843,7 @@ endif
 SVN                    ?= svn$(HOSTSUFF_EXE)
 VBOX_SVN_REV_KMK        = $(PATH_OUT)/revision.kmk
 ifndef VBOX_SVN_REV
- VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 24802 $  )
+ VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 55271 $  )
  VBOX_SVN_DEP          := $(wildcard $(PATH_ROOT)/.svn/entries)
  ifeq ($(which $(SVN)),)
   VBOX_SVN_DEP         :=

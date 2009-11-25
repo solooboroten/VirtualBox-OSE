@@ -1,4 +1,4 @@
-/* $Id: tstHeapSimple.cpp 22273 2009-08-14 23:00:51Z vboxsync $ */
+/* $Id: tstHeapSimple.cpp $ */
 /** @file
  * IPRT Testcase - Simple Heap.
  */

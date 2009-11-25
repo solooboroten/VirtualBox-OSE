@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceUtils.h 23575 2009-10-06 08:23:38Z vboxsync $ */
+/* $Id: VBoxServiceUtils.h $ */
 /** @file
  * VBoxServiceUtils - Guest Additions Services (Utilities).
  */

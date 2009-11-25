@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: VBoxManageControlVM.cpp $ */
 /** @file
  * VBoxManage - VirtualBox's command-line interface.
  */

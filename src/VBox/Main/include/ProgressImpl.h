@@ -1,4 +1,4 @@
-/* $Id: ProgressImpl.h 23827 2009-10-16 15:50:35Z vboxsync $ */
+/* $Id: ProgressImpl.h $ */
 /** @file
  *
  * VirtualBox COM class implementation

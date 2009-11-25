@@ -1,4 +1,4 @@
-/* $Id: DBGFSym.cpp 24009 2009-10-23 08:25:56Z vboxsync $ */
+/* $Id: DBGFSym.cpp $ */
 /** @file
  * DBGF - Debugger Facility, Symbol Management.
  */

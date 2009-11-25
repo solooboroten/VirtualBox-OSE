@@ -1,4 +1,4 @@
-# $Id: CommonFetch.kmk 23473 2009-10-01 11:58:12Z vboxsync $
+# $Id: CommonFetch.kmk $
 ## @file
 # Common Fetch.
 # Included by both Makefile.kmk and Makefile-ose.kmk.

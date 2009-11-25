@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 23632 2009-10-08 21:00:20Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the FreeBSD installer.
 #

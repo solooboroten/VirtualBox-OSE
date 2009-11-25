@@ -1,4 +1,4 @@
-/* $Id: DevFwCommon.h 24706 2009-11-16 17:57:20Z vboxsync $ */
+/* $Id: DevFwCommon.h $ */
 /** @file
  * DevFwCommon - shared header for code common between different firmware types (EFI, BIOS).   
  */

@@ -1,4 +1,4 @@
-/* $Id: ConsoleImplTeleporter.cpp 24770 2009-11-18 18:16:21Z vboxsync $ */
+/* $Id: ConsoleImplTeleporter.cpp $ */
 /** @file
  * VBox Console COM Class implementation, The Teleporter Part.
  */

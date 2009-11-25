@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: message.cpp $ */
 /** @file
  * IPRT - Error reporting to standard error.
  */

@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 24604 2009-11-12 10:52:38Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the Solaris installer.
 #

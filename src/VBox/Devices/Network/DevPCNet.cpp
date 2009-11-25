@@ -1,4 +1,4 @@
-/* $Id: DevPCNet.cpp 24455 2009-11-06 15:46:29Z vboxsync $ */
+/* $Id: DevPCNet.cpp $ */
 /** @file
  * DevPCNet - AMD PCnet-PCI II / PCnet-FAST III (Am79C970A / Am79C973) Ethernet Controller Emulation.
  *

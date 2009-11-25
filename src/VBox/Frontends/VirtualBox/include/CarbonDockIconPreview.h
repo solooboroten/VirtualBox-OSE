@@ -1,4 +1,4 @@
-/* $Id: CarbonDockIconPreview.h 24377 2009-11-05 11:18:52Z vboxsync $ */
+/* $Id: CarbonDockIconPreview.h $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

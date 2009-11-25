@@ -1,5 +1,5 @@
 #ifdef VBOX
-/* $Id: DevVGA.cpp 24714 2009-11-17 10:45:20Z vboxsync $ */
+/* $Id: DevVGA.cpp $ */
 /** @file
  * DevVGA - VBox VGA/VESA device.
  */

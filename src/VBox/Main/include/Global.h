@@ -1,4 +1,4 @@
-/* $Id: Global.h 24618 2009-11-12 17:52:33Z vboxsync $ */
+/* $Id: Global.h $ */
 
 /** @file
  *

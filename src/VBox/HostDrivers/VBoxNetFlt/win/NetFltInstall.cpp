@@ -1,4 +1,4 @@
-/* $Id: NetFltInstall.cpp 24518 2009-11-09 16:05:42Z vboxsync $ */
+/* $Id: NetFltInstall.cpp $ */
 /** @file
  * NetFltInstall - VBoxNetFlt installer command line tool
  */
