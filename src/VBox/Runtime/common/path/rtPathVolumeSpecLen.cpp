@@ -1,4 +1,4 @@
-/* $Id: rtPathVolumeSpecLen.cpp $ */
+/* $Id: rtPathVolumeSpecLen.cpp 21678 2009-07-17 12:37:53Z vboxsync $ */
 /** @file
  * IPRT - rtPathVolumeSpecLen
  */

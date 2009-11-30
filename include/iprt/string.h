@@ -1051,32 +1051,30 @@ RTDECL(bool) RTStrSimplePatternMultiMatch(const char *pszPatterns, size_t cchPat
                                           const char *pszString, size_t cchString,
                                           size_t *poffPattern);
 
+/**
+ * Compares two version strings RTStrICmp fashion.
+ *
+ * The version string is split up into sections at punctuation, spaces,
+ * underscores, dashes and pluss signs.  The sections are then split up into
+ * numeric and string sub-sections.  Finally, the sub-sections are compared
+ * in a numeric or case insesntivie fashion depending on what they are.
+ *
+ * The following strings are considered to be equal: "1.0.0", "1.00.0", "1.0",
+ * "1".  These aren't: "1.0.0r993", "1.0", "1.0r993", "1.0_Beta3", "1.1"
+ *
+ * @returns < 0 if the first string less than the second string.
+ * @returns 0 if the first string identical to the second string.
+ * @returns > 0 if the first string greater than the second string.
+ *
+ * @param   pszVer1     First version string to compare.
+ * @param   pszVer2     Second version string to compare first version with.
+ */
+RTDECL(int) RTStrVersionCompare(const char *pszVer1, const char *pszVer2);
+
 
 /** @defgroup rt_str_conv   String To/From Number Conversions
  * @ingroup grp_rt_str
  * @{ */
-
-/**
- * Compares two version strings and returns the result. The version string has
- * to be made of at least one number section, each section delimited by a ".",
- * e.g. "123.45.67". Trailing zeros at the beginning and non-digits in a section
- * will be skipped, so "12.foo006" becomes "12.6".
- *
- * @returns iprt status code.
- *          Warnings are used to indicate convertion problems.
- * @retval  VWRN_NUMBER_TOO_BIG
- * @retval  VWRN_TRAILING_CHARS
- * @retval  VWRN_TRAILING_SPACES
- * @retval  VINF_SUCCESS
- * @retval  VERR_NO_MEMORY
- * @retval  VERR_NO_DIGITS
- *
- * @param   pszVer1     First version string to compare.
- * @param   pszVer2     First version string to compare.
- * @param   pui8Res     Pointer uint8_t value where to store the comparison result:
- *                      0 if equal, 1 if pszVer1 is greater, 2 if pszVer2 is greater.
- */
-RTDECL(int) RTStrVersionCompare(const char *pszVer1, const char *pszVer2, uint8_t *pui8Res);
 
 /**
  * Converts a string representation of a number to a 64-bit unsigned number.

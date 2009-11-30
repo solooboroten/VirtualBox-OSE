@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 25059 2009-11-27 18:17:44Z vboxsync $
 ## @file
 # Sub-Makefile for the IPRT testcases.
 #
@@ -67,7 +67,8 @@ PROGRAMS += \
 	tstFork \
 	tstGetOpt \
 	tstHandleTable \
-	tstHeapSimple \
+	tstRTHeapOffset \
+	tstRTHeapSimple \
 	tstInlineAsm \
 	tstLdr \
 	tstLdr-2 \
@@ -95,7 +96,7 @@ PROGRAMS += \
 	tstRTStrFormat \
 	tstStrSimplePattern \
 	tstStrToNum \
-	tstStrToVer \
+	tstRTStrVersion \
 	tstSystemQueryOsInfo \
 	tstRTTemp \
 	tstTermCallbacks \
@@ -200,7 +201,11 @@ tstGetOpt_SOURCES = tstGetOpt.cpp
 
 tstHandleTable_SOURCES = tstHandleTable.cpp
 
-tstHeapSimple_SOURCES = tstHeapSimple.cpp
+tstRTHeapOffset_TEMPLATE = VBOXR3TSTEXE
+tstRTHeapOffset_SOURCES = tstRTHeapOffset.cpp
+
+tstRTHeapSimple_TEMPLATE = VBOXR3TSTEXE
+tstRTHeapSimple_SOURCES = tstRTHeapSimple.cpp
 
 tstIoCtl_SOURCES = tstIoCtl.cpp
 
@@ -374,7 +379,8 @@ tstStrSimplePattern_SOURCES = tstStrSimplePattern.cpp
 
 tstStrToNum_SOURCES = tstStrToNum.cpp
 
-tstStrToVer_SOURCES = tstStrToVer.cpp
+tstRTStrVersion_TEMPLATE = VBOXR3TSTEXE
+tstRTStrVersion_SOURCES = tstRTStrVersion.cpp
 
 tstSystemQueryOsInfo_SOURCES = tstSystemQueryOsInfo.cpp
 

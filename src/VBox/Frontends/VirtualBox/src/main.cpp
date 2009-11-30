@@ -297,8 +297,7 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
     HRESULT hrc = COMBase::InitializeCOM();
 #endif
 
-    int i;
-    for (i=0; i<argc; i++)
+    for (int i=0; i<argc; i++)
         if (   !strcmp(argv[i], "-h")
             || !strcmp(argv[i], "-?")
             || !strcmp(argv[i], "-help")
@@ -509,7 +508,13 @@ extern "C" DECLEXPORT(int) TrustedMain (int argc, char **argv, char ** /*envp*/)
                 /* Check for BETA version */
                 QString vboxVersion (vboxGlobal().virtualBox().GetVersion());
                 if (vboxVersion.contains ("BETA"))
-                    vboxProblem().showBETAWarning();
+                {
+                    /* Allow to prevent this message */
+                    QString str = vboxGlobal().virtualBox().
+                        GetExtraData (VBoxDefs::GUI_PreventBetaWarning);
+                    if (str != vboxVersion)
+                        vboxProblem().showBETAWarning();
+                }
 # endif
 #endif
 

@@ -1,4 +1,4 @@
-/* $Id: DisplayImpl.cpp $ */
+/* $Id: DisplayImpl.cpp 25069 2009-11-28 10:17:22Z vboxsync $ */
 
 /** @file
  *
@@ -107,6 +107,10 @@ HRESULT Display::FinalConstruct()
     AssertRC (rc);
     mfu32PendingVideoAccelDisable = false;
 #endif /* VBOX_WITH_OLD_VBVA_LOCK */
+
+#ifdef VBOX_WITH_HGSMI
+    mu32UpdateVBVAFlags = 0;
+#endif
 
     return S_OK;
 }
@@ -240,10 +244,10 @@ static int displayMakePNG(uint8_t *pu8Data, uint32_t cx, uint32_t cy,
 {
     int rc = VINF_SUCCESS;
 
-    uint8_t *pu8Bitmap = NULL;
-    uint32_t cbBitmap = 0;
-    uint32_t cxBitmap = 0;
-    uint32_t cyBitmap = 0;
+    uint8_t * volatile pu8Bitmap = NULL; /* gcc setjmp  warning */
+    uint32_t volatile cbBitmap = 0; /* gcc setjmp warning */
+    uint32_t volatile cxBitmap = 0; /* gcc setjmp warning */
+    uint32_t volatile cyBitmap = 0; /* gcc setjmp warning */
 
     if (cx < kMaxSizePNG && cy < kMaxSizePNG)
     {
@@ -613,6 +617,7 @@ HRESULT Display::init (Console *aParent)
         maFramebuffers[ul].fVBVAEnabled = false;
         maFramebuffers[ul].cVBVASkipUpdate = 0;
         memset (&maFramebuffers[ul].vbvaSkippedRect, 0, sizeof (maFramebuffers[ul].vbvaSkippedRect));
+        maFramebuffers[ul].pVBVAHostFlags = NULL;
 #endif /* VBOX_WITH_HGSMI */
     }
 
@@ -1181,6 +1186,49 @@ static void vbvaSetMemoryFlags (VBVAMEMORY *pVbvaMemory,
     }
 }
 
+#ifdef VBOX_WITH_HGSMI
+static void vbvaSetMemoryFlagsHGSMI (unsigned uScreenId,
+                                     uint32_t fu32SupportedOrders,
+                                     bool fVideoAccelVRDP,
+                                     DISPLAYFBINFO *pFBInfo)
+{
+    LogFlowFunc(("HGSMI[%d]: %p\n", uScreenId, pFBInfo->pVBVAHostFlags));
+
+    if (pFBInfo->pVBVAHostFlags)
+    {
+        uint32_t fu32HostEvents = VBOX_VIDEO_INFO_HOST_EVENTS_F_VRDP_RESET;
+
+        if (pFBInfo->fVBVAEnabled)
+        {
+            fu32HostEvents |= VBVA_F_MODE_ENABLED;
+
+            if (fVideoAccelVRDP)
+            {
+                fu32HostEvents |= VBVA_F_MODE_VRDP;
+            }
+        }
+
+        ASMAtomicOrU32(&pFBInfo->pVBVAHostFlags->u32HostEvents, fu32HostEvents);
+        ASMAtomicWriteU32(&pFBInfo->pVBVAHostFlags->u32SupportedOrders, fu32SupportedOrders);
+
+        LogFlowFunc(("    fu32HostEvents = 0x%08X, fu32SupportedOrders = 0x%08X\n", fu32HostEvents, fu32SupportedOrders));
+    }
+}
+
+static void vbvaSetMemoryFlagsAllHGSMI (uint32_t fu32SupportedOrders,
+                                        bool fVideoAccelVRDP,
+                                        DISPLAYFBINFO *paFBInfos,
+                                        unsigned cFBInfos)
+{
+    unsigned uScreenId;
+
+    for (uScreenId = 0; uScreenId < cFBInfos; uScreenId++)
+    {
+        vbvaSetMemoryFlagsHGSMI(uScreenId, fu32SupportedOrders, fVideoAccelVRDP, &paFBInfos[uScreenId]);
+    }
+}
+#endif /* VBOX_WITH_HGSMI */
+
 bool Display::VideoAccelAllowed (void)
 {
     return true;
@@ -1338,6 +1386,8 @@ int Display::VideoAccelEnable (bool fEnable, VBVAMEMORY *pVbvaMemory)
  */
 void Display::VideoAccelVRDP (bool fEnable)
 {
+    LogFlowFunc(("fEnable = %d\n", fEnable));
+
 #ifdef VBOX_WITH_OLD_VBVA_LOCK
     vbvaLock();
 #endif /* VBOX_WITH_OLD_VBVA_LOCK */
@@ -1359,6 +1409,10 @@ void Display::VideoAccelVRDP (bool fEnable)
         mfu32SupportedOrders = 0;
 
         vbvaSetMemoryFlags (mpVbvaMemory, mfVideoAccelEnabled, mfVideoAccelVRDP, mfu32SupportedOrders, maFramebuffers, mcMonitors);
+#ifdef VBOX_WITH_HGSMI
+        /* Here is VRDP-IN thread. Process the request in vbvaUpdateBegin under DevVGA lock on an EMT. */
+        ASMAtomicIncU32(&mu32UpdateVBVAFlags);
+#endif /* VBOX_WITH_HGSMI */
 
         LogRel(("VBVA: VRDP acceleration has been disabled.\n"));
     }
@@ -1374,6 +1428,10 @@ void Display::VideoAccelVRDP (bool fEnable)
         mfu32SupportedOrders = ~0;
 
         vbvaSetMemoryFlags (mpVbvaMemory, mfVideoAccelEnabled, mfVideoAccelVRDP, mfu32SupportedOrders, maFramebuffers, mcMonitors);
+#ifdef VBOX_WITH_HGSMI
+        /* Here is VRDP-IN thread. Process the request in vbvaUpdateBegin under DevVGA lock on an EMT. */
+        ASMAtomicIncU32(&mu32UpdateVBVAFlags);
+#endif /* VBOX_WITH_HGSMI */
 
         LogRel(("VBVA: VRDP acceleration has been requested.\n"));
     }
@@ -3122,7 +3180,7 @@ DECLCALLBACK(void) Display::displayVHWACommandProcess(PPDMIDISPLAYCONNECTOR pInt
 #endif
 
 #ifdef VBOX_WITH_HGSMI
-DECLCALLBACK(int) Display::displayVBVAEnable(PPDMIDISPLAYCONNECTOR pInterface, unsigned uScreenId)
+DECLCALLBACK(int) Display::displayVBVAEnable(PPDMIDISPLAYCONNECTOR pInterface, unsigned uScreenId, PVBVAHOSTFLAGS pHostFlags)
 {
     LogFlowFunc(("uScreenId %d\n", uScreenId));
 
@@ -3130,6 +3188,9 @@ DECLCALLBACK(int) Display::displayVBVAEnable(PPDMIDISPLAYCONNECTOR pInterface, u
     Display *pThis = pDrv->pDisplay;
 
     pThis->maFramebuffers[uScreenId].fVBVAEnabled = true;
+    pThis->maFramebuffers[uScreenId].pVBVAHostFlags = pHostFlags;
+
+    vbvaSetMemoryFlagsHGSMI(uScreenId, pThis->mfu32SupportedOrders, pThis->mfVideoAccelVRDP, &pThis->maFramebuffers[uScreenId]);
 
     return VINF_SUCCESS;
 }
@@ -3142,6 +3203,10 @@ DECLCALLBACK(void) Display::displayVBVADisable(PPDMIDISPLAYCONNECTOR pInterface,
     Display *pThis = pDrv->pDisplay;
 
     pThis->maFramebuffers[uScreenId].fVBVAEnabled = false;
+
+    vbvaSetMemoryFlagsHGSMI(uScreenId, 0, false, &pThis->maFramebuffers[uScreenId]);
+
+    pThis->maFramebuffers[uScreenId].pVBVAHostFlags = NULL;
 }
 
 DECLCALLBACK(void) Display::displayVBVAUpdateBegin(PPDMIDISPLAYCONNECTOR pInterface, unsigned uScreenId)
@@ -3151,6 +3216,12 @@ DECLCALLBACK(void) Display::displayVBVAUpdateBegin(PPDMIDISPLAYCONNECTOR pInterf
     PDRVMAINDISPLAY pDrv = PDMIDISPLAYCONNECTOR_2_MAINDISPLAY(pInterface);
     Display *pThis = pDrv->pDisplay;
     DISPLAYFBINFO *pFBInfo = &pThis->maFramebuffers[uScreenId];
+
+    if (ASMAtomicReadU32(&pThis->mu32UpdateVBVAFlags) > 0)
+    {
+        vbvaSetMemoryFlagsAllHGSMI(pThis->mfu32SupportedOrders, pThis->mfVideoAccelVRDP, pThis->maFramebuffers, pThis->mcMonitors);
+        ASMAtomicDecU32(&pThis->mu32UpdateVBVAFlags);
+    }
 
     if (RT_LIKELY(pFBInfo->u32ResizeStatus == ResizeStatus_Void))
     {
@@ -3183,7 +3254,14 @@ DECLCALLBACK(void) Display::displayVBVAUpdateProcess(PPDMIDISPLAYCONNECTOR pInte
 
     if (RT_LIKELY(pFBInfo->cVBVASkipUpdate == 0))
     {
-         pThis->mParent->consoleVRDPServer()->SendUpdate (uScreenId, pCmd, cbCmd);
+        if (pFBInfo->fDefaultFormat)
+        {
+            pDrv->pUpPort->pfnUpdateDisplayRect (pDrv->pUpPort, pCmd->x, pCmd->y, pCmd->w, pCmd->h);
+            pThis->handleDisplayUpdate (pCmd->x + pFBInfo->xOrigin,
+                                        pCmd->y + pFBInfo->yOrigin, pCmd->w, pCmd->h);
+        }
+
+        pThis->mParent->consoleVRDPServer()->SendUpdate (uScreenId, pCmd, cbCmd);
     }
 }
 

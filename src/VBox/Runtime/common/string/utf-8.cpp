@@ -1,4 +1,4 @@
-/* $Id: utf-8.cpp $ */
+/* $Id: utf-8.cpp 25000 2009-11-26 14:22:44Z vboxsync $ */
 /** @file
  * IPRT - UTF-8 Decoding.
  */
@@ -1159,7 +1159,7 @@ RTDECL(char *) RTStrPrevCp(const char *pszStart, const char *psz)
         while (     (const unsigned char *)pszStart < puch
                &&   !(uMask & 1))
         {
-            unsigned uch = *--puch;
+            uch = *--puch;
             if ((uch & 0xc0) != 0x80)
             {
                 RTStrAssertMsgReturn((uch & (uMask >> 1)) == (uMask & 0xff),

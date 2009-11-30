@@ -1,4 +1,4 @@
-/* $Id: packspu_framebuffer.c $ */
+/* $Id: packspu_framebuffer.c 23694 2009-10-12 13:46:26Z vboxsync $ */
 
 /** @file
  * VBox OpenGL FBO related functions

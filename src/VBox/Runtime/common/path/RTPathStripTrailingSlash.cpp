@@ -1,4 +1,4 @@
-/* $Id: RTPathStripTrailingSlash.cpp $ */
+/* $Id: RTPathStripTrailingSlash.cpp 21673 2009-07-17 12:10:10Z vboxsync $ */
 /** @file
  * IPRT - RTPathSTripTrailingSlash
  */

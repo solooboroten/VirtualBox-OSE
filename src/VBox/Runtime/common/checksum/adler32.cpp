@@ -1,4 +1,4 @@
-/* $Id: adler32.cpp $ */
+/* $Id: adler32.cpp 21914 2009-07-31 12:09:58Z vboxsync $ */
 /** @file
  * IPRT - Adler-32
  */

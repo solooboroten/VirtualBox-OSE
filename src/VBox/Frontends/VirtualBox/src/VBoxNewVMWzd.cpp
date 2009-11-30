@@ -20,7 +20,9 @@
  * additional information or have any questions.
  */
 
+/* VBox includes */
 #include "VBoxNewVMWzd.h"
+#include "VBoxVMSettingsHD.h"
 #include "VBoxUtils.h"
 #include "VBoxGlobal.h"
 #include "VBoxProblemReporter.h"
@@ -352,8 +354,8 @@ bool VBoxNewVMWzd::constructMachine()
     }
 
     /* Create default storage controllers */
-    QString ideCtrName ("IDE Controller");
-    QString floppyCtrName ("Floppy Controller");
+    QString ideCtrName = VBoxVMSettingsHD::tr ("IDE Controller");
+    QString floppyCtrName = VBoxVMSettingsHD::tr ("Floppy Controller");
     KStorageBus ideBus = KStorageBus_IDE;
     KStorageBus floppyBus = KStorageBus_Floppy;
     mMachine.AddStorageController (ideCtrName, ideBus);

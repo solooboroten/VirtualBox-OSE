@@ -1,4 +1,4 @@
-/* $Id: DockIconPreview.h $ */
+/* $Id: DockIconPreview.h 24377 2009-11-05 11:18:52Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

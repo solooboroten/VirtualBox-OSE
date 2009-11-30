@@ -1,4 +1,4 @@
-/* $Id: SUPUninstall.cpp $ */
+/* $Id: SUPUninstall.cpp 22077 2009-08-07 16:01:57Z vboxsync $ */
 /** @file
  * SUPUninstall - Driver Uninstall.
  */

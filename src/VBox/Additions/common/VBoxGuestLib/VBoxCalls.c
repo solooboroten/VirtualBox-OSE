@@ -1,4 +1,4 @@
-/* $Revision: 49961 $ */
+/* $Revision: 21511 $ */
 /** @file
  * VBoxGuestLibR0 - Central calls.
  */

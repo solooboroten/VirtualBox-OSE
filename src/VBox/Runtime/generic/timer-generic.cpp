@@ -1,4 +1,4 @@
-/** $Id: timer-generic.cpp $ */
+/** $Id: timer-generic.cpp 21337 2009-07-07 14:58:27Z vboxsync $ */
 /** @file
  * IPRT - Timers, Generic.
  */

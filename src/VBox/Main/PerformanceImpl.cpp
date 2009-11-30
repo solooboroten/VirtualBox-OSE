@@ -1,4 +1,4 @@
-/* $Id: PerformanceImpl.cpp $ */
+/* $Id: PerformanceImpl.cpp 25035 2009-11-27 01:51:42Z vboxsync $ */
 
 /** @file
  *
@@ -494,7 +494,7 @@ void PerformanceCollector::unregisterBaseMetricsFor (const ComPtr<IUnknown> &aOb
         if ((*it)->associatedWith(aObject))
         {
             delete *it;
-            m.baseMetrics.erase(it++);
+            it = m.baseMetrics.erase(it);
         }
         else
             ++it;
@@ -515,7 +515,7 @@ void PerformanceCollector::unregisterMetricsFor (const ComPtr<IUnknown> &aObject
         if ((*it)->associatedWith(aObject))
         {
             delete *it;
-            m.metrics.erase(it++);
+            it = m.metrics.erase(it);
         }
         else
             ++it;

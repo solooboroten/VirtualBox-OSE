@@ -1,4 +1,4 @@
-/* $Id: RTErrConvertFromErrno.cpp $ */
+/* $Id: RTErrConvertFromErrno.cpp 23528 2009-10-03 17:57:25Z vboxsync $ */
 /** @file
  * IPRT - Convert errno to iprt status codes.
  */

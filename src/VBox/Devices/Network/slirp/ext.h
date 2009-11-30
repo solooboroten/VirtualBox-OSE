@@ -1,4 +1,4 @@
-/** $Id: ext.h $ */
+/** $Id: ext.h 23154 2009-09-19 11:02:11Z vboxsync $ */
 /** @file
  * some externals helpers
  */

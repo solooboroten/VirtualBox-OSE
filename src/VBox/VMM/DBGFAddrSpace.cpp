@@ -1,4 +1,4 @@
-/* $Id: DBGFAddrSpace.cpp $ */
+/* $Id: DBGFAddrSpace.cpp 22112 2009-08-09 20:14:32Z vboxsync $ */
 /** @file
  * DBGF - Debugger Facility, Address Space Management.
  */

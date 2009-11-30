@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxImpl.h $ */
+/* $Id: VirtualBoxImpl.h 24858 2009-11-23 09:56:20Z vboxsync $ */
 
 /** @file
  *

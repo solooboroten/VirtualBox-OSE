@@ -1,4 +1,4 @@
-/** $Id: counters.h $ */
+/** $Id: counters.h 23462 2009-10-01 05:42:19Z vboxsync $ */
 /** @file
  * Counters macro invocation template.
  *

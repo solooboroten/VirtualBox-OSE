@@ -483,8 +483,8 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
         { "-startvm", 's', RTGETOPT_REQ_STRING },
         { "--startvm", 's', RTGETOPT_REQ_STRING },
 #ifdef VBOX_WITH_VRDP
-        { "-vrdpport", 'p', RTGETOPT_REQ_UINT32 },
-        { "--vrdpport", 'p', RTGETOPT_REQ_UINT32 },
+        { "-vrdpport", 'p', RTGETOPT_REQ_STRING },
+        { "--vrdpport", 'p', RTGETOPT_REQ_STRING },
         { "-vrdpaddress", 'a', RTGETOPT_REQ_STRING },
         { "--vrdpaddress", 'a', RTGETOPT_REQ_STRING },
         { "-vrdp", 'v', RTGETOPT_REQ_STRING },
@@ -658,11 +658,12 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
         return rc;
     }
 
+    ComPtr<IVirtualBox> virtualBox;
+    ComPtr<ISession> session;
+    bool fSessionOpened = false;
+
     do
     {
-        ComPtr<IVirtualBox> virtualBox;
-        ComPtr<ISession> session;
-
         rc = virtualBox.createLocalObject(CLSID_VirtualBox);
         if (FAILED(rc))
             RTPrintf("VBoxHeadless: ERROR: failed to create the VirtualBox object!\n");
@@ -707,6 +708,7 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
 
         // open a session
         CHECK_ERROR_BREAK(virtualBox, OpenSession (session, id));
+        fSessionOpened = true;
 
         /* get the console */
         ComPtr <IConsole> console;
@@ -761,7 +763,7 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
         }
         if (rc != S_OK)
         {
-            return -1;
+            break;
         }
 #endif /* defined(VBOX_FFMPEG) */
 
@@ -779,14 +781,18 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
                 continue;
             }
 #endif /* defined(VBOX_FFMPEG) */
-            VRDPFramebuffer *pFramebuffer = new VRDPFramebuffer ();
-            if (!pFramebuffer)
+            VRDPFramebuffer *pVRDPFramebuffer = new VRDPFramebuffer ();
+            if (!pVRDPFramebuffer)
             {
                 RTPrintf("Error: could not create framebuffer object %d\n", uScreenId);
-                return -1;
+                break;
             }
-            pFramebuffer->AddRef();
-            display->SetFramebuffer(uScreenId, pFramebuffer);
+            pVRDPFramebuffer->AddRef();
+            display->SetFramebuffer(uScreenId, pVRDPFramebuffer);
+        }
+        if (uScreenId < cMonitors)
+        {
+            break;
         }
 #endif
 
@@ -954,7 +960,11 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
 #endif /* defined(VBOX_FFMPEG) */
 
         /* we don't have to disable VRDP here because we don't save the settings of the VM */
+    }
+    while (0);
 
+    if (fSessionOpened)
+    {
         /*
          * Close the session. This will also uninitialize the console and
          * unregister the callback we've registered before.
@@ -962,7 +972,10 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
         Log (("VBoxHeadless: Closing the session...\n"));
         session->Close();
     }
-    while (0);
+
+    /* Must be before com::Shutdown */
+    session.setNull();
+    virtualBox.setNull();
 
     com::Shutdown();
 

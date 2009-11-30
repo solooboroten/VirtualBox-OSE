@@ -1,4 +1,4 @@
-/* $Id: CSAMInternal.h $ */
+/* $Id: CSAMInternal.h 23770 2009-10-14 15:47:54Z vboxsync $ */
 /** @file
  * CSAM - Internal header file.
  */

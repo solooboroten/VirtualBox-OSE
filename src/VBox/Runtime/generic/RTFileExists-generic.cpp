@@ -1,4 +1,4 @@
-/* $Id: RTFileExists-generic.cpp $ */
+/* $Id: RTFileExists-generic.cpp 23302 2009-09-24 17:00:38Z vboxsync $ */
 /** @file
  * IPRT - RTFileExists, generic implementation.
  */

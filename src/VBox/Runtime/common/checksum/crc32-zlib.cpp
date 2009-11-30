@@ -1,4 +1,4 @@
-/* $Id: crc32-zlib.cpp $ */
+/* $Id: crc32-zlib.cpp 21920 2009-07-31 15:44:32Z vboxsync $ */
 /** @file
  * IPRT - CRC-32 on top of zlib (very fast).
  */

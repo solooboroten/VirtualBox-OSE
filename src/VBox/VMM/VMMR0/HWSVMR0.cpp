@@ -1,4 +1,4 @@
-/* $Id: HWSVMR0.cpp $ */
+/* $Id: HWSVMR0.cpp 24994 2009-11-26 12:09:48Z vboxsync $ */
 /** @file
  * HWACCM SVM - Host Context Ring 0.
  */
@@ -1438,17 +1438,17 @@ ResumeExecution:
        any other register (yet). */
     if (   !pCtx->csHid.Attr.n.u1Granularity
         &&  pCtx->csHid.Attr.n.u1Present
-        &&  pCtx->csHid.u32Limit > UINT32_C(0xffff))
+        &&  pCtx->csHid.u32Limit > UINT32_C(0xfffff))
     {
         Assert((pCtx->csHid.u32Limit & 0xfff) == 0xfff);
         pCtx->csHid.Attr.n.u1Granularity = 1;
     }
 #define SVM_ASSERT_SEL_GRANULARITY(reg) \
-        AssertMsg(!pCtx->reg##Hid.Attr.n.u1Present \
+        AssertMsg(   !pCtx->reg##Hid.Attr.n.u1Present \
                   || (   pCtx->reg##Hid.Attr.n.u1Granularity \
                       ? (pCtx->reg##Hid.u32Limit & 0xfff) == 0xfff \
-                      :  pCtx->reg##Hid.u32Limit <= 0xffff), \
-                  ("%#x\n", pCtx->reg##Hid.u32Limit))
+                      :  pCtx->reg##Hid.u32Limit <= 0xfffff), \
+                  ("%#x %#x %#llx\n", pCtx->reg##Hid.u32Limit, pCtx->reg##Hid.Attr.u, pCtx->reg##Hid.u64Base))
     SVM_ASSERT_SEL_GRANULARITY(ss);
     SVM_ASSERT_SEL_GRANULARITY(cs);
     SVM_ASSERT_SEL_GRANULARITY(ds);

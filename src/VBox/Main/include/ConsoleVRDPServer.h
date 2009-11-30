@@ -1,4 +1,4 @@
-/* $Id: ConsoleVRDPServer.h $ */
+/* $Id: ConsoleVRDPServer.h 23643 2009-10-09 12:23:32Z vboxsync $ */
 
 /** @file
  *

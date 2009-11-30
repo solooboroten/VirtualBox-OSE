@@ -1,4 +1,4 @@
-/* $Id: DevParallel.cpp $ */
+/* $Id: DevParallel.cpp 24265 2009-11-02 15:21:30Z vboxsync $ */
 /** @file
  * DevParallel - Parallel (Port) Device Emulation.
  *

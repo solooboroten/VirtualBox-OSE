@@ -1,4 +1,4 @@
-/* $Id: tstVBoxControl.cpp $ */
+/* $Id: tstVBoxControl.cpp 22562 2009-08-28 17:58:24Z vboxsync $ */
 /** @file
  * VBoxControl - Guest Additions Command Line Management Interface, test case
  */

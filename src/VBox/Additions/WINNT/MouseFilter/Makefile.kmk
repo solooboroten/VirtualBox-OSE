@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk $
+# $Id: Makefile.kmk 23846 2009-10-19 08:51:33Z vboxsync $
 ## @file
 # Sub-Makefile for the VirtualBox Windows Guest mouse filter driver.
 #

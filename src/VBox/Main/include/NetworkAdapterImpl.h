@@ -1,4 +1,4 @@
-/* $Id: NetworkAdapterImpl.h $ */
+/* $Id: NetworkAdapterImpl.h 25098 2009-11-30 10:01:05Z vboxsync $ */
 
 /** @file
  *
@@ -44,11 +44,11 @@ public:
 
     struct Data
     {
-        Data()
-            : mSlot (0), mEnabled (FALSE)
-            , mAttachmentType (NetworkAttachmentType_Null)
-            ,  mCableConnected (TRUE), mLineSpeed (0), mTraceEnabled (FALSE)
-            , mHostInterface ("") /* cannot be null */
+        Data() : mSlot(0), mEnabled(FALSE),
+                 mAttachmentType(NetworkAttachmentType_Null),
+                 mCableConnected(TRUE), mLineSpeed(0), mTraceEnabled(FALSE),
+                 mHostInterface("") /* cannot be null */,
+                 mNATNetwork("") /* cannot be null */
         {}
 
         bool operator== (const Data &that) const
@@ -146,11 +146,6 @@ public:
     void copyFrom (NetworkAdapter *aThat);
     void applyDefaults (GuestOSType *aOsType);
 
-    // public methods for internal purposes only
-    // (ensure there is a caller and a read lock before calling them!)
-
-    const Backupable <Data> &data() const { return mData; }
-
     // for VirtualBoxSupportErrorInfoImpl
     static const wchar_t *getComponentName() { return L"NetworkAdapter"; }
 
@@ -162,7 +157,7 @@ private:
     const ComObjPtr<Machine, ComWeakRef> mParent;
     const ComObjPtr<NetworkAdapter> mPeer;
 
-    Backupable <Data> mData;
+    Backupable<Data> mData;
 };
 
 #endif // ____H_NETWORKADAPTER

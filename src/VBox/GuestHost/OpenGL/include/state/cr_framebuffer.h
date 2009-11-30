@@ -1,4 +1,4 @@
-/* $Id: cr_framebuffer.h $ */
+/* $Id: cr_framebuffer.h 23694 2009-10-12 13:46:26Z vboxsync $ */
 
 /** @file
  * VBox crOpenGL: FBO related state info

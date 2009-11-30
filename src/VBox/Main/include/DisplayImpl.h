@@ -1,4 +1,4 @@
-/* $Id: DisplayImpl.h $ */
+/* $Id: DisplayImpl.h 25069 2009-11-28 10:17:22Z vboxsync $ */
 
 /** @file
  *
@@ -88,6 +88,7 @@ typedef struct _DISPLAYFBINFO
        int32_t xRight;
        int32_t yBottom;
     } vbvaSkippedRect;
+    PVBVAHOSTFLAGS pVBVAHostFlags;
 #endif /* VBOX_WITH_HGSMI */
 } DISPLAYFBINFO;
 
@@ -285,7 +286,7 @@ private:
 #endif
 
 #ifdef VBOX_WITH_HGSMI
-    static DECLCALLBACK(int)  displayVBVAEnable(PPDMIDISPLAYCONNECTOR pInterface, unsigned uScreenId);
+    static DECLCALLBACK(int)  displayVBVAEnable(PPDMIDISPLAYCONNECTOR pInterface, unsigned uScreenId, PVBVAHOSTFLAGS pHostFlags);
     static DECLCALLBACK(void) displayVBVADisable(PPDMIDISPLAYCONNECTOR pInterface, unsigned uScreenId);
     static DECLCALLBACK(void) displayVBVAUpdateBegin(PPDMIDISPLAYCONNECTOR pInterface, unsigned uScreenId);
     static DECLCALLBACK(void) displayVBVAUpdateProcess(PPDMIDISPLAYCONNECTOR pInterface, unsigned uScreenId, const PVBVACMDHDR pCmd, size_t cbCmd);
@@ -359,6 +360,10 @@ private:
     int videoAccelEnable (bool fEnable, VBVAMEMORY *pVbvaMemory);
     void videoAccelFlush (void);
 #endif /* VBOX_WITH_OLD_VBVA_LOCK */
+
+#ifdef VBOX_WITH_HGSMI
+    volatile uint32_t mu32UpdateVBVAFlags;
+#endif
 };
 
 void gdImageCopyResampled (uint8_t *dst, uint8_t *src,

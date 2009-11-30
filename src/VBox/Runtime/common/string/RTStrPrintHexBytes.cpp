@@ -1,4 +1,4 @@
-/* $Id: RTStrPrintHexBytes.cpp $ */
+/* $Id: RTStrPrintHexBytes.cpp 23507 2009-10-02 12:02:02Z vboxsync $ */
 /** @file
  * IPRT - RTStrPrintHexBytes.
  */

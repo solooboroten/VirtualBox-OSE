@@ -1,4 +1,4 @@
-/* $Id: initterm-r0drv-solaris.c $ */
+/* $Id: initterm-r0drv-solaris.c 24386 2009-11-05 14:17:10Z vboxsync $ */
 /** @file
  * IPRT - Initialization & Termination, R0 Driver, Solaris.
  */

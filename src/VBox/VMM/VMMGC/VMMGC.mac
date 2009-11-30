@@ -1,4 +1,4 @@
-; $Id: VMMGC.mac $
+; $Id: VMMGC.mac 24680 2009-11-15 17:21:42Z vboxsync $
 ;; @file
 ; VMMGC - Raw-mode Context Assembly Macros.
 ;

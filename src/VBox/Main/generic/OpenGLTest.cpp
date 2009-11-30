@@ -1,4 +1,4 @@
-/* $Id: OpenGLTest.cpp $ */
+/* $Id: OpenGLTest.cpp 24788 2009-11-19 13:09:59Z vboxsync $ */
 /** @file
  * VBox host opengl support test - generic implementation.
  */

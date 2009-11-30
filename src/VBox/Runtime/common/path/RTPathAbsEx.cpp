@@ -1,4 +1,4 @@
-/* $Id: RTPathAbsEx.cpp $ */
+/* $Id: RTPathAbsEx.cpp 24221 2009-10-30 22:20:40Z vboxsync $ */
 /** @file
  * IPRT - RTPathAbsEx
  */

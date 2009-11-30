@@ -1,4 +1,4 @@
-/* $Id: ldrPE.h $ */
+/* $Id: ldrPE.h 24106 2009-10-27 03:30:45Z vboxsync $ */
 /** @file
  * IPRT - Windows NT PE Structures and Constants.
  */
