@@ -1,4 +1,4 @@
-/* $Id: vbox.c 25052 2009-11-27 15:01:37Z vboxsync $ */
+/* $Id: vbox.c $ */
 /** @file
  * Display - VirtualBox Win 2000/XP guest display driver, support functions.
  */
@@ -779,7 +779,7 @@ void vboxVHWACommandCheckHostCmds(PPDEV ppdev)
 {
     VBVAHOSTCMD * pCmd, * pNextCmd;
     int rc = ppdev->pfnHGSMIRequestCommands(ppdev->hMpHGSMI, HGSMI_CH_VBVA, &pCmd);
-    Assert(RT_SUCCESS(rc));
+    /* don't assert here, otherwise NT4 will be unhappy */
     if(RT_SUCCESS(rc))
     {
         for(;pCmd; pCmd = pNextCmd)
@@ -815,8 +815,7 @@ BOOL vboxVHWACommandSubmit (PPDEV ppdev, VBOXVHWACMD* pCmd)
 {
     VBOXPEVENT pEvent;
     VBOXVP_STATUS rc = ppdev->VideoPortProcs.pfnCreateEvent(ppdev->pVideoPortContext, VBOXNOTIFICATION_EVENT, NULL, &pEvent);
-    Assert(rc == VBOXNO_ERROR);
-
+    /* don't assert here, otherwise NT4 will be unhappy */
     if(rc == VBOXNO_ERROR)
     {
         pCmd->Flags |= VBOXVHWACMD_FLAG_GH_ASYNCH_IRQ;
