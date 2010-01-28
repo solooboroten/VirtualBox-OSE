@@ -162,8 +162,8 @@ Machine::HWData::HWData()
     mAccelerate2DVideoEnabled = false;
     mMonitorCount = 1;
     mHWVirtExEnabled = true;
-    mHWVirtExNestedPagingEnabled = false;
-    mHWVirtExVPIDEnabled = false;
+    mHWVirtExNestedPagingEnabled = true;
+    mHWVirtExVPIDEnabled = true;
 #if defined(RT_OS_DARWIN) || defined(RT_OS_WINDOWS)
     mHWVirtExExclusive = false;
 #else
@@ -3295,6 +3295,18 @@ STDMETHODIMP Machine::GetSnapshot (IN_BSTR aId, ISnapshot **aSnapshot)
     AutoReadLock alock(this);
 
     Guid uuid(aId);
+    /* Todo: fix this properly by perhaps introducing an isValid method for the Guid class */
+    if (    aId
+        &&  uuid.isEmpty())
+    {
+        RTUUID uuidTemp;
+        /* Either it's a null UUID or the conversion failed. (null uuid has a special meaning in findSnapshot) */
+        if (RT_FAILURE(RTUuidFromUtf16(&uuidTemp, aId)))
+            return setError(E_FAIL,
+                            tr("Could not find a snapshot with UUID {%ls}"),
+                            aId);
+    }
+
     ComObjPtr<Snapshot> snapshot;
 
     HRESULT rc = findSnapshot(uuid, snapshot, true /* aSetError */);
@@ -5538,9 +5550,14 @@ void Machine::uninitDataAndChildObjects()
 
     if (mType == IsMachine)
     {
-        /* reset some important fields of mData */
+        // clean up the snapshots list (Snapshot::uninit() will handle the snapshot's children recursively)
+        if (mData->mFirstSnapshot)
+        {
+            mData->mFirstSnapshot->uninit();
+            mData->mFirstSnapshot.setNull();
+        }
+
         mData->mCurrentSnapshot.setNull();
-        mData->mFirstSnapshot.setNull();
     }
 
     /* free data structures (the essential mData structure is not freed here

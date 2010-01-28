@@ -38,7 +38,9 @@
 # include <sys/socket.h>
 # include <net/if.h>
 # include <unistd.h>
-# include <utmp.h>
+# ifndef RT_OS_FREEBSD /* The header does not exist anymore since FreeBSD 9-current */
+#  include <utmp.h>
+# endif
 # ifdef RT_OS_SOLARIS
 #  include <sys/sockio.h>
 # endif
@@ -218,15 +220,17 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
             return 1;
         }
 
-        PLUID pLuid = NULL;
-        DWORD dwNumOfProcLUIDs = VBoxServiceVMInfoWinGetLUIDsFromProcesses(&pLuid);
+        PVBOXSERVICEVMINFOPROC pProcs;
+        DWORD dwNumProcs;
+        rc = VBoxServiceVMInfoWinProcessesEnumerate(&pProcs, &dwNumProcs);
 
-        VBOXSERVICEVMINFOUSER userInfo;
-        ZeroMemory (&userInfo, sizeof(VBOXSERVICEVMINFOUSER));
-
-        for (int i = 0; i<(int)ulCount; i++)
+        for (ULONG i=0; i<ulCount; i++)
         {
-            if (VBoxServiceVMInfoWinIsLoggedIn(&userInfo, &pSessions[i], pLuid, dwNumOfProcLUIDs))
+            VBOXSERVICEVMINFOUSER userInfo;
+            ZeroMemory (&userInfo, sizeof(VBOXSERVICEVMINFOUSER));
+
+            if (   VBoxServiceVMInfoWinIsLoggedIn(&userInfo, &pSessions[i])
+                && VBoxServiceVMInfoWinSessionGetProcessCount(&pSessions[i], pProcs, dwNumProcs) > 0)
             {
                 if (uiUserCount > 0)
                     strcat (szUserList, ",");
@@ -239,9 +243,7 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
             }
         }
 
-        if (NULL != pLuid)
-            ::LocalFree (pLuid);
-
+        VBoxServiceVMInfoWinProcessesFree(pProcs);
         ::LsaFreeReturnBuffer(pSessions);
 # endif /* TARGET_NT4 */
 #elif defined(RT_OS_FREEBSD)
