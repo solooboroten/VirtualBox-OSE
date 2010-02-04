@@ -633,13 +633,7 @@ void Machine::uninit()
     LogFlowThisFunc(("initFailed()=%d\n", autoUninitSpan.initFailed()));
     LogFlowThisFunc(("mRegistered=%d\n", mData->mRegistered));
 
-    /* Enter this object lock because there may be a SessionMachine instance
-     * somewhere around, that shares our data and lock but doesn't use our
-     * addCaller()/removeCaller(), and it may be also accessing the same data
-     * members. mParent lock is necessary as well because of
-     * SessionMachine::uninit(), etc.
-     */
-    AutoMultiWriteLock2 alock (mParent, this);
+    AutoMultiWriteLock2 alock(mParent, this);
 
     if (!mData->mSession.mMachine.isNull())
     {
@@ -655,16 +649,14 @@ void Machine::uninit()
          * after we return from this method (it expects the Machine instance is
          * still valid). We'll call it ourselves below.
          */
-        LogWarningThisFunc(("Session machine is not NULL (%p), "
-                             "the direct session is still open!\n",
-                             (SessionMachine *) mData->mSession.mMachine));
+        LogWarningThisFunc(("Session machine is not NULL (%p), the direct session is still open!\n",
+                            (SessionMachine*)mData->mSession.mMachine));
 
-        if (Global::IsOnlineOrTransient (mData->mMachineState))
+        if (Global::IsOnlineOrTransient(mData->mMachineState))
         {
             LogWarningThisFunc(("Setting state to Aborted!\n"));
             /* set machine state using SessionMachine reimplementation */
-            static_cast <Machine *> (mData->mSession.mMachine)
-                ->setMachineState (MachineState_Aborted);
+            static_cast<Machine*>(mData->mSession.mMachine)->setMachineState (MachineState_Aborted);
         }
 
         /*
@@ -673,7 +665,7 @@ void Machine::uninit()
          */
         mData->mSession.mMachine->uninit();
         /* SessionMachine::uninit() must set mSession.mMachine to null */
-        Assert (mData->mSession.mMachine.isNull());
+        Assert(mData->mSession.mMachine.isNull());
     }
 
     /* the lock is no more necessary (SessionMachine is uninitialized) */
@@ -3296,8 +3288,9 @@ STDMETHODIMP Machine::GetSnapshot (IN_BSTR aId, ISnapshot **aSnapshot)
 
     Guid uuid(aId);
     /* Todo: fix this properly by perhaps introducing an isValid method for the Guid class */
-    if (    aId
-        &&  uuid.isEmpty())
+    if (    (aId)
+        &&  (*aId != '\0')      // an empty Bstr means "get root snapshot", so don't fail on that
+        &&  (uuid.isEmpty()))
     {
         RTUUID uuidTemp;
         /* Either it's a null UUID or the conversion failed. (null uuid has a special meaning in findSnapshot) */
@@ -4847,24 +4840,10 @@ HRESULT Machine::openExistingSession (IInternalSessionControl *aControl)
 
     ComAssertRet (!mData->mSession.mDirectControl.isNull(), E_FAIL);
 
-    /*
-     *  Get the console from the direct session (note that we don't leave the
-     *  lock here because GetRemoteConsole must not call us back).
-     */
-    ComPtr<IConsole> console;
-    HRESULT rc = mData->mSession.mDirectControl->
-                     GetRemoteConsole (console.asOutParam());
-    if (FAILED (rc))
-    {
-        /* The failure may occur w/o any error info (from RPC), so provide one */
-        return setError (VBOX_E_VM_ERROR,
-            tr ("Failed to get a console object from the direct session (%Rrc)"), rc);
-    }
-
-    ComAssertRet (!console.isNull(), E_FAIL);
-
-    ComObjPtr<SessionMachine> sessionMachine = mData->mSession.mMachine;
-    AssertReturn(!sessionMachine.isNull(), E_FAIL);
+    // copy member variables before leaving lock
+    ComPtr<IInternalSessionControl> pDirectControl = mData->mSession.mDirectControl;
+    ComObjPtr<SessionMachine> pSessionMachine = mData->mSession.mMachine;
+    AssertReturn(!pSessionMachine.isNull(), E_FAIL);
 
     /*
      *  Leave the lock before calling the client process. It's safe here
@@ -4874,9 +4853,21 @@ HRESULT Machine::openExistingSession (IInternalSessionControl *aControl)
      */
     alock.leave();
 
+    // get the console from the direct session (this is a remote call)
+    ComPtr<IConsole> pConsole;
+    LogFlowThisFunc(("Calling GetRemoteConsole()...\n"));
+    HRESULT rc = pDirectControl->GetRemoteConsole(pConsole.asOutParam());
+    LogFlowThisFunc(("GetRemoteConsole() returned %08X\n", rc));
+    if (FAILED (rc))
+        /* The failure may occur w/o any error info (from RPC), so provide one */
+        return setError (VBOX_E_VM_ERROR,
+            tr ("Failed to get a console object from the direct session (%Rrc)"), rc);
+
+    ComAssertRet(!pConsole.isNull(), E_FAIL);
+
     /* attach the remote session to the machine */
     LogFlowThisFunc(("Calling AssignRemoteMachine()...\n"));
-    rc = aControl->AssignRemoteMachine (sessionMachine, console);
+    rc = aControl->AssignRemoteMachine(pSessionMachine, pConsole);
     LogFlowThisFunc(("AssignRemoteMachine() returned %08X\n", rc));
 
     /* The failure may occur w/o any error info (from RPC), so provide one */
@@ -4898,7 +4889,7 @@ HRESULT Machine::openExistingSession (IInternalSessionControl *aControl)
     }
 
     /* store the control in the list */
-    mData->mSession.mRemoteControls.push_back (aControl);
+    mData->mSession.mRemoteControls.push_back(aControl);
 
     LogFlowThisFuncLeave();
     return S_OK;
@@ -9716,7 +9707,7 @@ HRESULT SessionMachine::onSharedFolderChange()
  *  Returns @c true if this machine's USB controller reports it has a matching
  *  filter for the given USB device and @c false otherwise.
  *
- *  @note Locks this object for reading.
+ *  @note Caller must have requested machine write lock.
  */
 bool SessionMachine::hasMatchingUSBFilter (const ComObjPtr<HostUSBDevice> &aDevice, ULONG *aMaskedIfs)
 {
@@ -9726,7 +9717,7 @@ bool SessionMachine::hasMatchingUSBFilter (const ComObjPtr<HostUSBDevice> &aDevi
     if (!autoCaller.isOk())
         return false;
 
-    AutoReadLock alock(this);
+    AssertReturn(isWriteLockOnCurrentThread(), false);
 
 #ifdef VBOX_WITH_USB
     switch (mData->mMachineState)

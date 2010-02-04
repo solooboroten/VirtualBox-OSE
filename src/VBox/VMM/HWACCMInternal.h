@@ -376,6 +376,9 @@ typedef struct HWACCM
         /** Host CR4 value (set by ring-0 VMX init) */
         uint64_t                    hostCR4;
 
+        /** Host EFER value (set by ring-0 VMX init) */
+        uint64_t                    hostEFER;
+
         /** VMX MSR values */
         struct
         {

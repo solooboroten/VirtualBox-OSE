@@ -176,8 +176,8 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
     if (RT_SUCCESS(rc))
     {
         /* Write information to host. */
-        rc = VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestAdd/Revision", "%s", pszAddVer);
-        rc = VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestAdd/Version", "%s", pszAddRev);
+        rc = VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestAdd/Version", "%s", pszAddVer);
+        rc = VBoxServiceWritePropF(g_VMInfoGuestPropSvcClientID, "/VirtualBox/GuestAdd/Revision", "%s", pszAddRev);
         RTStrFree(pszAddVer);
         RTStrFree(pszAddRev);
     }
@@ -227,6 +227,9 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
         for (ULONG i=0; i<ulCount; i++)
         {
             VBOXSERVICEVMINFOUSER userInfo;
+            /* Leave the memory clearing *inside* the loop as VBoxServiceVMInfoWinIsLoggedIn
+             * assumes the memory reserved for strings is zeroed.
+             */
             ZeroMemory (&userInfo, sizeof(VBOXSERVICEVMINFOUSER));
 
             if (   VBoxServiceVMInfoWinIsLoggedIn(&userInfo, &pSessions[i])
