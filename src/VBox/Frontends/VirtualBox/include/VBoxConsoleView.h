@@ -241,6 +241,7 @@ private:
     void setDesktopGeoHint (int aWidth, int aHeight);
     void calculateDesktopGeometry();
     void maybeRestrictMinimumSize();
+    QRect availableGeometry() const;
 
     VBoxConsoleWnd *mMainWnd;
 
@@ -257,6 +258,7 @@ private:
     bool mMouseIntegration : 1;
     QPoint mLastPos;
     QPoint mCapturedPos;
+    int m_iLastMouseWheelDelta;
 
     bool mDisableAutoCapture : 1;
 

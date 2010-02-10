@@ -468,7 +468,7 @@ HRESULT DVDDrive::loadSettings (const settings::Key &aMachineNode)
             rc = CaptureHostDrive (drive);
             CheckComRCReturnRC (rc);
         }
-        else if (rc == E_INVALIDARG)
+        else if (rc == VBOX_E_OBJECT_NOT_FOUND)
         {
             /* the host DVD drive is not currently available. we
              * assume it will be available later and create an

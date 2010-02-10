@@ -2003,6 +2003,7 @@ DECLCALLBACK(int) pgmPoolClearAll(PVM pVM, PVMCPU pVCpu, void *pvUser)
                 case PGMPOOLKIND_PAE_PT_FOR_PAE_2MB:
                 case PGMPOOLKIND_32BIT_PT_FOR_PHYS:
                 case PGMPOOLKIND_PAE_PT_FOR_PHYS:
+                case PGMPOOLKIND_EPT_PT_FOR_PHYS:
                 {
 #ifdef PGMPOOL_WITH_USER_TRACKING
                     if (pPage->cPresent)
@@ -2090,6 +2091,9 @@ DECLCALLBACK(int) pgmPoolClearAll(PVM pVM, PVMCPU pVCpu, void *pvUser)
         pVCpu->pgm.s.fSyncFlags &= ~PGM_SYNC_CLEAR_PGM_POOL;
     }
 
+    /* Flush job finished. */
+    VM_FF_CLEAR(pVM, VM_FF_PGM_POOL_FLUSH_PENDING);
+
     pPool->cPresent = 0;
     pgmUnlock(pVM);
     PGM_INVL_ALL_VCPU_TLBS(pVM);
@@ -2131,6 +2135,13 @@ int pgmPoolSyncCR3(PVMCPU pVCpu)
     {
         LogFlow(("SyncCR3: PGM_SYNC_CLEAR_PGM_POOL is set -> VINF_PGM_SYNC_CR3\n"));
         VMCPU_FF_SET(pVCpu, VMCPU_FF_PGM_SYNC_CR3); /** @todo no need to do global sync, right? */
+
+        /* Make sure all other VCPUs return to ring 3. */
+        if (pVM->cCPUs > 1)
+        {
+            VM_FF_SET(pVM, VM_FF_PGM_POOL_FLUSH_PENDING);
+            PGM_INVL_ALL_VCPU_TLBS(pVM);
+        }
         return VINF_PGM_SYNC_CR3;
     }
 # endif /* !IN_RING3 */

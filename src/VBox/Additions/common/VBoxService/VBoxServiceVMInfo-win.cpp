@@ -208,35 +208,34 @@ BOOL VBoxServiceVMInfoWinIsLoggedIn(VBOXSERVICEVMINFOUSER* a_pUserInfo,
         /* Get the user name. */
         usBuffer = (sessionData->UserName).Buffer;
         iLength = (sessionData->UserName).Length;
-        if (iLength > sizeof(a_pUserInfo->szUser) - sizeof(TCHAR))   /* -sizeof(TCHAR) because we have to add the terminating null char at the end later. */
+        if (iLength > sizeof(a_pUserInfo->szUser) - sizeof(WCHAR))   /* -sizeof(WCHAR) because we have to add the terminating null char at the end later. */
         {
             VBoxServiceVerbose(0, "User name too long (%d bytes) for buffer! Name will be truncated.\n", iLength);
-            iLength = sizeof(a_pUserInfo->szUser) - sizeof(TCHAR);
+            iLength = sizeof(a_pUserInfo->szUser) - sizeof(WCHAR);
         }
         wcsncpy (a_pUserInfo->szUser, usBuffer, iLength);
-        wcscat (a_pUserInfo->szUser, L"");      /* Add terminating null char. */
 
         /* Get authentication package. */
         usBuffer = (sessionData->AuthenticationPackage).Buffer;
         iLength = (sessionData->AuthenticationPackage).Length;
-        if (iLength > sizeof(a_pUserInfo->szAuthenticationPackage) - sizeof(TCHAR))   /* -sizeof(TCHAR) because we have to add the terminating null char at the end later. */
+        if (iLength > sizeof(a_pUserInfo->szAuthenticationPackage) - sizeof(WCHAR))   /* -sizeof(WCHAR) because we have to add the terminating null char at the end later. */
         {
             VBoxServiceVerbose(0, "Authentication pkg name too long (%d bytes) for buffer! Name will be truncated.\n", iLength);
-            iLength = sizeof(a_pUserInfo->szAuthenticationPackage) - sizeof(TCHAR);
+            iLength = sizeof(a_pUserInfo->szAuthenticationPackage) - sizeof(WCHAR);
         }
-        wcsncpy (a_pUserInfo->szAuthenticationPackage, usBuffer, iLength);
-        wcscat (a_pUserInfo->szAuthenticationPackage, L"");     /* Add terminating null char. */
+        if (iLength)
+            wcsncpy (a_pUserInfo->szAuthenticationPackage, usBuffer, iLength);
 
         /* Get logon domain. */
         usBuffer = (sessionData->LogonDomain).Buffer;
         iLength = (sessionData->LogonDomain).Length;
-        if (iLength > sizeof(a_pUserInfo->szLogonDomain) - sizeof(TCHAR))   /* -sizeof(TCHAR) because we have to add the terminating null char at the end later. */
+        if (iLength > sizeof(a_pUserInfo->szLogonDomain) - sizeof(WCHAR))   /* -sizeof(WCHAR) because we have to add the terminating null char at the end later. */
         {
             VBoxServiceVerbose(0, "Logon domain name too long (%d bytes) for buffer! Name will be truncated.\n", iLength);
-            iLength = sizeof(a_pUserInfo->szLogonDomain) - sizeof(TCHAR);
+            iLength = sizeof(a_pUserInfo->szLogonDomain) - sizeof(WCHAR);
         }
-        wcsncpy (a_pUserInfo->szLogonDomain, usBuffer, iLength);
-        wcscat (a_pUserInfo->szLogonDomain, L"");       /* Add terminating null char. */
+        if (iLength)
+            wcsncpy (a_pUserInfo->szLogonDomain, usBuffer, iLength);
 
         /* Only handle users which can login interactively or logged in remotely over native RDP. */
         if (   (((SECURITY_LOGON_TYPE)sessionData->LogonType == Interactive)
@@ -380,7 +379,7 @@ int VBoxServiceWinGetAddsVersion(uint32_t uiClientID)
         if ((rc != ERROR_SUCCESS) && (rc != ERROR_FILE_NOT_FOUND))
         {
             VBoxServiceError("Failed to query registry key (install directory)! Error: %Rrc\n", rc);
-        }    
+        }
         else
         {
             /* Flip slashes. */
@@ -401,9 +400,9 @@ int VBoxServiceWinGetAddsVersion(uint32_t uiClientID)
     }
 
     /* Write information to host. */
-    rc = VBoxServiceWritePropF(uiClientID, "/VirtualBox/GuestAdd/InstallDir", szInstDir);
-    rc = VBoxServiceWritePropF(uiClientID, "/VirtualBox/GuestAdd/Revision", szRev);
-    rc = VBoxServiceWritePropF(uiClientID, "/VirtualBox/GuestAdd/Version", szVer);
+    rc = VBoxServiceWritePropF(uiClientID, "/VirtualBox/GuestAdd/InstallDir", "%s", szInstDir);
+    rc = VBoxServiceWritePropF(uiClientID, "/VirtualBox/GuestAdd/Revision", "%s", szRev);
+    rc = VBoxServiceWritePropF(uiClientID, "/VirtualBox/GuestAdd/Version", "%s", szVer);
 
     if (NULL != hKey)
         RegCloseKey(hKey);
@@ -494,7 +493,7 @@ int VBoxServiceWinGetComponentVersions(uint32_t uiClientID)
     {
         rc = VBoxServiceGetFileVersionString(pTable->pszFilePath, pTable->pszFileName, szVer, sizeof(szVer));
         RTStrPrintf(szPropPath, sizeof(szPropPath), "/VirtualBox/GuestAdd/Components/%s", pTable->pszFileName);
-        rc = VBoxServiceWritePropF(uiClientID, szPropPath, szVer);
+        rc = VBoxServiceWritePropF(uiClientID, szPropPath, "%s", szVer);
         pTable++;
     }
 

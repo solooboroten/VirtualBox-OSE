@@ -104,6 +104,186 @@ private:
 };
 
 /**
+ * Callback handler for VirtualBox events
+ */
+class VirtualBoxCallback :
+  VBOX_SCRIPTABLE_IMPL(IVirtualBoxCallback)
+{
+public:
+    VirtualBoxCallback()
+    {
+#ifndef VBOX_WITH_XPCOM
+        refcnt = 0;
+#endif
+        mfNoLoggedInUsers = true;
+    }
+
+    virtual ~VirtualBoxCallback()
+    {
+    }
+
+#ifndef VBOX_WITH_XPCOM
+    STDMETHOD_(ULONG, AddRef)()
+    {
+        return ::InterlockedIncrement(&refcnt);
+    }
+    STDMETHOD_(ULONG, Release)()
+    {
+        long cnt = ::InterlockedDecrement(&refcnt);
+        if (cnt == 0)
+            delete this;
+        return cnt;
+    }
+    STDMETHOD(QueryInterface)(REFIID riid , void **ppObj)
+    {
+        if (riid == IID_IUnknown)
+        {
+            *ppObj = this;
+            AddRef();
+            return S_OK;
+        }
+        if (riid == IID_IVirtualBoxCallback)
+        {
+            *ppObj = this;
+            AddRef();
+            return S_OK;
+        }
+        *ppObj = NULL;
+        return E_NOINTERFACE;
+    }
+#endif
+
+    NS_DECL_ISUPPORTS
+
+    STDMETHOD(OnMachineStateChange)(IN_BSTR machineId, MachineState_T state)
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnMachineDataChange)(IN_BSTR machineId)
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnExtraDataCanChange)(IN_BSTR machineId, IN_BSTR key, IN_BSTR value,
+                                    BSTR *error, BOOL *changeAllowed)
+    {
+        /* we never disagree */
+        if (!changeAllowed)
+            return E_INVALIDARG;
+        *changeAllowed = TRUE;
+        return S_OK;
+    }
+
+    STDMETHOD(OnExtraDataChange)(IN_BSTR machineId, IN_BSTR key, IN_BSTR value)
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnMediaRegistered)(IN_BSTR mediaId, DeviceType_T mediaType,
+                                  BOOL registered)
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnMachineRegistered)(IN_BSTR machineId, BOOL registered)
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnSessionStateChange)(IN_BSTR machineId, SessionState_T state)
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnSnapshotTaken) (IN_BSTR aMachineId, IN_BSTR aSnapshotId)
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnSnapshotDiscarded) (IN_BSTR aMachineId, IN_BSTR aSnapshotId)
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnSnapshotChange) (IN_BSTR aMachineId, IN_BSTR aSnapshotId)
+    {
+        return S_OK;
+    }
+
+    STDMETHOD(OnGuestPropertyChange)(IN_BSTR machineId, IN_BSTR key, IN_BSTR value, IN_BSTR flags)
+    {
+#ifdef VBOX_WITH_GUEST_PROPS
+        Utf8Str utf8Key = key;
+        if (utf8Key == "/VirtualBox/GuestInfo/OS/NoLoggedInUsers")
+        {
+            /* Check if the "disconnect on logout feature" is enabled. */
+            BOOL fDisconnectOnGuestLogout = FALSE;
+            ComPtr <IMachine> machine;
+            HRESULT hrc = S_OK;
+
+            if (gConsole)
+            {
+                hrc = gConsole->COMGETTER(Machine)(machine.asOutParam());
+                if (SUCCEEDED(hrc) && machine)
+                {
+                    Bstr value;
+                    hrc = machine->GetExtraData(Bstr("VRDP/DisconnectOnGuestLogout"), value.asOutParam());
+                    if (SUCCEEDED(hrc) && value == "1")
+                    {
+                        fDisconnectOnGuestLogout = TRUE;
+                    }
+                }
+            }
+
+            if (fDisconnectOnGuestLogout)
+            {
+                Utf8Str utf8Value = value;
+                if (utf8Value == "true")
+                {
+                    if (!mfNoLoggedInUsers) /* Only if the property really changes. */
+                    {
+                        mfNoLoggedInUsers = true;
+
+                        /* If there is a VRDP connection, drop it. */
+                        ComPtr<IRemoteDisplayInfo> info;
+                        hrc = gConsole->COMGETTER(RemoteDisplayInfo)(info.asOutParam());
+                        if (SUCCEEDED(hrc) && info)
+                        {
+                            ULONG cClients = 0;
+                            hrc = info->COMGETTER(NumberOfClients)(&cClients);
+                            if (SUCCEEDED(hrc) && cClients > 0)
+                            {
+                                ComPtr <IVRDPServer> vrdpServer;
+                                hrc = machine->COMGETTER(VRDPServer)(vrdpServer.asOutParam());
+                                if (SUCCEEDED(hrc) && vrdpServer)
+                                {
+                                    vrdpServer->COMSETTER(Enabled)(FALSE);
+                                    vrdpServer->COMSETTER(Enabled)(TRUE);
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    mfNoLoggedInUsers = false;
+                }
+            }
+        }
+#endif /* VBOX_WITH_GUEST_PROPS */
+        return S_OK;
+    }
+
+private:
+#ifndef VBOX_WITH_XPCOM
+    long refcnt;
+#endif
+
+    bool mfNoLoggedInUsers;
+};
+
+/**
  *  Callback handler for machine events.
  */
 class ConsoleCallback : VBOX_SCRIPTABLE_IMPL(IConsoleCallback)
@@ -278,6 +458,8 @@ private:
 };
 
 #ifdef VBOX_WITH_XPCOM
+NS_DECL_CLASSINFO (VirtualBoxCallback)
+NS_IMPL_THREADSAFE_ISUPPORTS1_CI (VirtualBoxCallback, IVirtualBoxCallback)
 NS_DECL_CLASSINFO (ConsoleCallback)
 NS_IMPL_THREADSAFE_ISUPPORTS1_CI (ConsoleCallback, IConsoleCallback)
 #endif
@@ -441,10 +623,9 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
     RTEnvUnset("DISPLAY");
 
     LogFlow (("VBoxHeadless STARTED.\n"));
-    RTPrintf ("VirtualBox Headless Interface %s\n"
-              "(C) 2008-2009 Sun Microsystems, Inc.\n"
-              "All rights reserved.\n\n",
-              VBOX_VERSION_STRING);
+    RTPrintf (VBOX_PRODUCT " Headless Interface " VBOX_VERSION_STRING "\n"
+              "(C) 2008-" VBOX_C_YEAR " " VBOX_VENDOR "\n"
+              "All rights reserved.\n\n");
 
     Bstr id;
     /* the below cannot be Bstr because on Linux Bstr doesn't work until XPCOM (nsMemory) is initialized */
@@ -648,11 +829,12 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
         return rc;
     }
 
+    ComPtr<IVirtualBox> virtualBox;
+    ComPtr<ISession> session;
+    bool fSessionOpened = false;
+
     do
     {
-        ComPtr<IVirtualBox> virtualBox;
-        ComPtr<ISession> session;
-
         rc = virtualBox.createLocalObject(CLSID_VirtualBox);
         if (FAILED(rc))
             RTPrintf("VBoxHeadless: ERROR: failed to create the VirtualBox object!\n");
@@ -697,6 +879,7 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
 
         // open a session
         CHECK_ERROR_BREAK(virtualBox, OpenSession (session, id));
+        fSessionOpened = true;
 
         /* get the console */
         ComPtr <IConsole> console;
@@ -751,7 +934,7 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
         }
         if (rc != S_OK)
         {
-            return -1;
+            break;
         }
 #endif /* defined(VBOX_FFMPEG) */
 
@@ -773,10 +956,14 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
             if (!pFramebuffer)
             {
                 RTPrintf("Error: could not create framebuffer object %d\n", uScreenId);
-                return -1;
+                break;
             }
             pFramebuffer->AddRef();
             display->SetFramebuffer(uScreenId, pFramebuffer);
+        }
+        if (uScreenId < cMonitors)
+        {
+            break;
         }
 #endif
 
@@ -832,6 +1019,14 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
         gSession = session;
         gConsole = console;
         gEventQ = &eventQ;
+
+        /* VirtualBox callback registration. */
+        VirtualBoxCallback *vboxCallback = new VirtualBoxCallback();
+        vboxCallback->AddRef();
+        CHECK_ERROR(virtualBox, RegisterCallback(vboxCallback));
+        vboxCallback->Release();
+        if (FAILED (rc))
+            break;
 
         /* register a callback for machine events */
         {
@@ -950,7 +1145,14 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
 #endif /* defined(VBOX_FFMPEG) */
 
         /* we don't have to disable VRDP here because we don't save the settings of the VM */
+    }
+    while (0);
 
+    /* No more access to the 'console' object, which will be uninitialized by the next session->Close call. */
+    gConsole = NULL;
+
+    if (fSessionOpened)
+    {
         /*
          * Close the session. This will also uninitialize the console and
          * unregister the callback we've registered before.
@@ -958,7 +1160,10 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
         Log (("VBoxHeadless: Closing the session...\n"));
         session->Close();
     }
-    while (0);
+
+    /* Must be before com::Shutdown */
+    session.setNull();
+    virtualBox.setNull();
 
     com::Shutdown();
 

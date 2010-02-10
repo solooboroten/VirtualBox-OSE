@@ -756,10 +756,10 @@ static void ataAsyncIODumpRequests(PATACONTROLLER pCtl)
                 LogRel(("new transfer request, iIf=%d iBeginTransfer=%d iSourceSink=%d cbTotalTransfer=%d uTxDir=%d\n", pCtl->aAsyncIORequests[curr].u.t.iIf, pCtl->aAsyncIORequests[curr].u.t.iBeginTransfer, pCtl->aAsyncIORequests[curr].u.t.iSourceSink, pCtl->aAsyncIORequests[curr].u.t.cbTotalTransfer, pCtl->aAsyncIORequests[curr].u.t.uTxDir));
                 break;
             case ATA_AIO_DMA:
-                LogRel(("dma transfer finished\n"));
+                LogRel(("dma transfer continuation\n"));
                 break;
             case ATA_AIO_PIO:
-                LogRel(("pio transfer finished\n"));
+                LogRel(("pio transfer continuation\n"));
                 break;
             case ATA_AIO_RESET_ASSERTED:
                 LogRel(("reset asserted request\n"));
@@ -3450,6 +3450,7 @@ static void ataResetDevice(ATADevState *s)
     s->iIOBufferPIODataEnd = 0;
     s->iBeginTransfer = ATAFN_BT_NULL;
     s->iSourceSink = ATAFN_SS_NULL;
+    s->fDMA = false;
     s->fATAPITransfer = false;
     s->uATATransferMode = ATA_MODE_UDMA | 2; /* PIIX3 supports only up to UDMA2 */
 
@@ -4639,7 +4640,7 @@ static DECLCALLBACK(int) ataAsyncIOLoop(RTTHREAD ThreadSelf, void *pvUser)
                         Log2(("%s: Ctl#%d: calling source/sink function\n", __FUNCTION__, ATACONTROLLER_IDX(pCtl)));
                         fRedo = g_apfnSourceSinkFuncs[s->iSourceSink](s);
                         pCtl->fRedo = fRedo;
-                        if (RT_UNLIKELY(fRedo))
+                        if (RT_UNLIKELY(fRedo && !pCtl->fReset))
                         {
                             /* Operation failed at the initial transfer, restart
                              * everything from scratch by resending the current
@@ -4746,7 +4747,7 @@ static DECLCALLBACK(int) ataAsyncIOLoop(RTTHREAD ThreadSelf, void *pvUser)
                 }
                 ataDMATransfer(pCtl);
 
-                if (RT_UNLIKELY(pCtl->fRedo))
+                if (RT_UNLIKELY(pCtl->fRedo && !pCtl->fReset))
                 {
                     LogRel(("PIIX3 ATA: Ctl#%d: redo DMA operation\n", ATACONTROLLER_IDX(pCtl)));
                     ataAsyncIOPutRequest(pCtl, &ataDMARequest);
@@ -4791,7 +4792,7 @@ static DECLCALLBACK(int) ataAsyncIOLoop(RTTHREAD ThreadSelf, void *pvUser)
                     Log2(("%s: Ctl#%d: calling source/sink function\n", __FUNCTION__, ATACONTROLLER_IDX(pCtl)));
                     fRedo = g_apfnSourceSinkFuncs[s->iSourceSink](s);
                     pCtl->fRedo = fRedo;
-                    if (RT_UNLIKELY(fRedo))
+                    if (RT_UNLIKELY(fRedo && !pCtl->fReset))
                     {
                         LogRel(("PIIX3 ATA: Ctl#%d: redo PIO operation\n", ATACONTROLLER_IDX(pCtl)));
                         ataAsyncIOPutRequest(pCtl, &ataPIORequest);
@@ -4866,6 +4867,10 @@ static DECLCALLBACK(int) ataAsyncIOLoop(RTTHREAD ThreadSelf, void *pvUser)
             case ATA_AIO_RESET_CLEARED:
                 pCtl->uAsyncIOState = ATA_AIO_NEW;
                 pCtl->fReset = false;
+                /* Ensure that half-completed transfers are not redone. A reset
+                 * cancels the entire transfer, so continuing is wrong. */
+                pCtl->fRedo = false;
+                pCtl->fRedoDMALastDesc = false;
                 LogRel(("PIIX3 ATA: Ctl#%d: finished processing RESET\n",
                         ATACONTROLLER_IDX(pCtl)));
                 for (uint32_t i = 0; i < RT_ELEMENTS(pCtl->aIfs); i++)
@@ -4895,6 +4900,8 @@ static DECLCALLBACK(int) ataAsyncIOLoop(RTTHREAD ThreadSelf, void *pvUser)
                     }
                     else
                     {
+                        /* Stop any pending DMA transfer. */
+                        s->fDMA = false;
                         ataPIOTransferStop(s);
                         ataUnsetStatus(s, ATA_STAT_BUSY | ATA_STAT_DRQ | ATA_STAT_SEEK | ATA_STAT_ERR);
                         ataSetStatus(s, ATA_STAT_READY);

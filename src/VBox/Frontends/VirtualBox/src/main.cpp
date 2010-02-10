@@ -54,6 +54,8 @@
 #include <iprt/process.h>
 #include <iprt/stream.h>
 #include <VBox/err.h>
+#include <VBox/version.h>
+
 #ifdef VBOX_WITH_HARDENING
 # include <VBox/sup.h>
 #endif
@@ -241,8 +243,8 @@ static void showHelp()
     dflt = "image";
 #endif
 
-    RTPrintf("Sun VirtualBox Graphical User Interface "VBOX_VERSION_STRING"\n"
-            "(C) 2005-2009 Sun Microsystems, Inc.\n"
+    RTPrintf(VBOX_PRODUCT " Graphical User Interface "VBOX_VERSION_STRING"\n"
+            "(C) 2005-" VBOX_C_YEAR " " VBOX_VENDOR "\n"
             "All rights reserved.\n"
             "\n"
             "Usage:\n"
@@ -602,7 +604,7 @@ int main (int argc, char **argv, char **envp)
                 msgText += g_QStrHintLinuxWrongDriverVersion;
 # else
                 msgText += g_QStrHintOtherWrongDriverVersion;
-# endif 
+# endif
                 break;
             default:
                 msgText += QApplication::tr (

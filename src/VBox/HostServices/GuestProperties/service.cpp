@@ -153,6 +153,8 @@ private:
     typedef Service SELF;
     /** HGCM helper functions. */
     PVBOXHGCMSVCHELPERS mpHelpers;
+    /** Global flags for the service */
+    ePropFlags meGlobalFlags;
     /** The property list */
     PropertyList mProperties;
     /** The list of property changes for guest notifications */
@@ -219,10 +221,34 @@ private:
         return rc;
     }
 
+    /**
+     * Check whether we have permission to change a property.
+     *
+     * @returns Strict VBox status code.
+     * @retval  VINF_SUCCESS if we do.
+     * @retval  VERR_PERMISSION_DENIED if the value is read-only for the requesting
+     *          side.
+     * @retval  VINF_PERMISSION_DENIED if the side is globally marked read-only.
+     *
+     * @param   eFlags   the flags on the property in question
+     * @param   isGuest  is the guest or the host trying to make the change?
+     */
+    int checkPermission(ePropFlags eFlags, bool isGuest)
+    {
+        if (eFlags & (isGuest ? RDONLYGUEST : RDONLYHOST))
+            return VERR_PERMISSION_DENIED;
+        if (isGuest && (meGlobalFlags & RDONLYGUEST))
+            return VINF_PERMISSION_DENIED;
+        return VINF_SUCCESS;
+    }
+
 public:
     explicit Service(PVBOXHGCMSVCHELPERS pHelpers)
-        : mpHelpers(pHelpers), mfExitThread(false), mpfnHostCallback(NULL),
-          mpvHostData(NULL)
+        : mpHelpers(pHelpers)
+        , meGlobalFlags(NILFLAG)
+        , mfExitThread(false)
+        , mpfnHostCallback(NULL)
+        , mpvHostData(NULL)
     {
         int rc = RTReqCreateQueue(&mReqQueue);
 #ifndef VBOX_GUEST_PROP_TEST_NOTHREAD
@@ -484,16 +510,12 @@ int Service::setPropertyBlock(uint32_t cParms, VBOXHGCMSVCPARM paParms[])
     {
         ++itEnd;
         for (unsigned i = 0; ppNames[i] != NULL; ++i)
-        {
-            bool found = false;
-            for (PropertyList::iterator it = mProperties.begin();
-                !found && it != itEnd; ++it)
+            for (PropertyList::iterator it = mProperties.begin(); it != itEnd; ++it)
                 if (it->mName.compare(ppNames[i]) == 0)
                 {
-                    found = true;
                     mProperties.erase(it);
+                    break;
                 }
-        }
     }
 
     /*
@@ -642,51 +664,47 @@ int Service::setProperty(uint32_t cParms, VBOXHGCMSVCPARM paParms[], bool isGues
                                      RTSTR_VALIDATE_ENCODING_ZERO_TERMINATED);
     if ((3 == cParms) && RT_SUCCESS(rc))
         rc = validateFlags(pcszFlags, &fFlags);
-
-    /*
-     * If the property already exists, check its flags to see if we are allowed
-     * to change it.
-     */
-    PropertyList::iterator it;
-    bool found = false;
     if (RT_SUCCESS(rc))
+    {
+        /*
+         * If the property already exists, check its flags to see if we are allowed
+         * to change it.
+         */
+        PropertyList::iterator it;
+        bool found = false;
         for (it = mProperties.begin(); it != mProperties.end(); ++it)
             if (it->mName.compare(pcszName) == 0)
             {
                 found = true;
                 break;
             }
-    if (RT_SUCCESS(rc) && found)
-        if (   (isGuest && (it->mFlags & RDONLYGUEST))
-            || (!isGuest && (it->mFlags & RDONLYHOST))
-           )
-            rc = VERR_PERMISSION_DENIED;
 
-    /*
-     * Set the actual value
-     */
-    if (RT_SUCCESS(rc))
-    {
-        if (found)
+        rc = checkPermission(found ? (ePropFlags)it->mFlags : NILFLAG,
+                             isGuest);
+        if (rc == VINF_SUCCESS)
         {
-            it->mValue = pcszValue;
-            it->mTimestamp = u64TimeNano;
-            it->mFlags = fFlags;
+            /*
+             * Set the actual value
+             */
+            if (found)
+            {
+                it->mValue = pcszValue;
+                it->mTimestamp = u64TimeNano;
+                it->mFlags = fFlags;
+            }
+            else  /* This can throw.  No problem as we have nothing to roll back. */
+                mProperties.push_back(Property(pcszName, pcszValue, u64TimeNano, fFlags));
+
+            /*
+             * Send a notification to the host and return.
+             */
+            // if (isGuest)  /* Notify the host even for properties that the host
+            //                * changed.  Less efficient, but ensures consistency. */
+                doNotifications(pcszName, u64TimeNano);
+            Log2(("Set string %s, rc=%Rrc, value=%s\n", pcszName, rc, pcszValue));
         }
-        else  /* This can throw.  No problem as we have nothing to roll back. */
-            mProperties.push_back(Property(pcszName, pcszValue, u64TimeNano, fFlags));
     }
 
-    /*
-     * Send a notification to the host and return.
-     */
-    if (RT_SUCCESS(rc))
-    {
-        // if (isGuest)  /* Notify the host even for properties that the host
-        //                * changed.  Less efficient, but ensures consistency. */
-            doNotifications(pcszName, u64TimeNano);
-        Log2(("Set string %s, rc=%Rrc, value=%s\n", pcszName, rc, pcszValue));
-    }
     LogFlowThisFunc(("rc = %Rrc\n", rc));
     return rc;
 }
@@ -705,7 +723,7 @@ int Service::setProperty(uint32_t cParms, VBOXHGCMSVCPARM paParms[], bool isGues
 int Service::delProperty(uint32_t cParms, VBOXHGCMSVCPARM paParms[], bool isGuest)
 {
     int rc = VINF_SUCCESS;
-    const char *pcszName;
+    const char *pcszName = NULL;        /* shut up gcc */
     uint32_t cbName;
 
     LogFlowThisFunc(("\n"));
@@ -717,41 +735,39 @@ int Service::delProperty(uint32_t cParms, VBOXHGCMSVCPARM paParms[], bool isGues
         || RT_FAILURE(paParms[0].getPointer ((const void **) &pcszName,
                                              &cbName))  /* name */
        )
+        rc = validateName(pcszName, cbName);
+    else
         rc = VERR_INVALID_PARAMETER;
     if (RT_SUCCESS(rc))
-        rc = validateName(pcszName, cbName);
-
-    /*
-     * If the property exists, check its flags to see if we are allowed
-     * to change it.
-     */
-    PropertyList::iterator it;
-    bool found = false;
-    if (RT_SUCCESS(rc))
+    {
+        /*
+         * If the property exists, check its flags to see if we are allowed
+         * to change it.
+         */
+        PropertyList::iterator it;
+        bool found = false;
         for (it = mProperties.begin(); it != mProperties.end(); ++it)
             if (it->mName.compare(pcszName) == 0)
             {
                 found = true;
+                rc = checkPermission((ePropFlags)it->mFlags, isGuest);
                 break;
             }
-    if (RT_SUCCESS(rc) && found)
-        if (   (isGuest && (it->mFlags & RDONLYGUEST))
-            || (!isGuest && (it->mFlags & RDONLYHOST))
-           )
-            rc = VERR_PERMISSION_DENIED;
 
-    /*
-     * And delete the property if all is well.
-     */
-    if (RT_SUCCESS(rc) && found)
-    {
-        RTTIMESPEC time;
-        uint64_t u64Timestamp = RTTimeSpecGetNano(RTTimeNow(&time));
-        mProperties.erase(it);
-        // if (isGuest)  /* Notify the host even for properties that the host
-        //                * changed.  Less efficient, but ensures consistency. */
-            doNotifications(pcszName, u64Timestamp);
+        /*
+         * And delete the property if all is well.
+         */
+        if (rc == VINF_SUCCESS && found)
+        {
+            RTTIMESPEC time;
+            uint64_t u64Timestamp = RTTimeSpecGetNano(RTTimeNow(&time));
+            mProperties.erase(it);
+            // if (isGuest)  /* Notify the host even for properties that the host
+            //                * changed.  Less efficient, but ensures consistency. */
+                doNotifications(pcszName, u64Timestamp);
+        }
     }
+
     LogFlowThisFunc(("rc = %Rrc\n", rc));
     return rc;
 }
@@ -1027,11 +1043,11 @@ void Service::doNotifications(const char *pszProperty, uint64_t u64Timestamp)
                 it->mParms[0].getPointer((void **) &pszPatterns, &cchPatterns);
                 if (prop.Matches(pszPatterns))
                 {
-                    GuestCall call = *it;
-                    int rc2 = getNotificationWriteOut(call.mParms, prop);
+                    GuestCall curCall = *it;
+                    int rc2 = getNotificationWriteOut(curCall.mParms, prop);
                     if (RT_SUCCESS(rc2))
-                        rc2 = call.mRc;
-                    mpHelpers->pfnCallComplete (call.mHandle, rc2);
+                        rc2 = curCall.mRc;
+                    mpHelpers->pfnCallComplete(curCall.mHandle, rc2);
                     it = mGuestWaiters.erase(it);
                 }
                 else
@@ -1268,6 +1284,20 @@ int Service::hostCall (uint32_t eFunction, uint32_t cParms, VBOXHGCMSVCPARM paPa
             case ENUM_PROPS_HOST:
                 LogFlowFunc(("ENUM_PROPS\n"));
                 rc = enumProps(cParms, paParms);
+                break;
+
+            /* The host wishes to flush all pending notification */
+            case SET_GLOBAL_FLAGS_HOST:
+                LogFlowFunc(("SET_GLOBAL_FLAGS_HOST\n"));
+                if (cParms == 1)
+                {
+                    uint32_t eFlags;
+                    rc = paParms[0].getUInt32(&eFlags);
+                    if (RT_SUCCESS(rc))
+                        meGlobalFlags = (ePropFlags)eFlags;
+                }
+                else
+                    rc = VERR_INVALID_PARAMETER;
                 break;
 
             default:

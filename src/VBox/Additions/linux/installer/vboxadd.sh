@@ -35,6 +35,11 @@ BUILDVBOXADD=`/bin/ls /usr/src/vboxadd*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
 BUILDVBOXVFS=`/bin/ls /usr/src/vboxvfs*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
 BUILDVBOXVIDEO=`/bin/ls /usr/src/vboxvideo*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
 LOG="/var/log/vboxadd-install.log"
+MODPROBE=/sbin/modprobe
+
+if $MODPROBE -c | grep -q '^allow_unsupported_modules  *0'; then
+  MODPROBE="$MODPROBE --allow-unsupported-modules"
+fi
 
 if [ -f /etc/arch-release ]; then
     system=arch
@@ -179,7 +184,7 @@ start()
             fail "Cannot remove $userdev"
         }
 
-        modprobe vboxadd >/dev/null 2>&1 || {
+        $MODPROBE vboxadd >/dev/null 2>&1 || {
             fail "modprobe vboxadd failed"
         }
         sleep .5
@@ -231,7 +236,7 @@ start()
 
     if [ -n "$BUILDVBOXVFS" ]; then
         running_vboxvfs || {
-            modprobe vboxvfs > /dev/null 2>&1 || {
+            $MODPROBE vboxvfs > /dev/null 2>&1 || {
                 if dmesg | grep "vboxConnect failed" > /dev/null 2>&1; then
                     fail_msg
                     echo "Unable to start shared folders support.  Make sure that your VirtualBox build"

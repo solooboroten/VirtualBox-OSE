@@ -1,4 +1,4 @@
-/* $Rev: 52819 $ */
+/* $Rev: 55983 $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Linux specifics.
  */
@@ -490,12 +490,14 @@ static int __init VBoxDrvLinuxInit(void)
             /* performance counter generates NMI and is not masked? */
             if ((GET_APIC_DELIVERY_MODE(v) == APIC_MODE_NMI) && !(v & APIC_LVT_MASKED))
             {
-# if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31) && defined(CONFIG_PERF_COUNTERS)
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31) \
+     && (defined(CONFIG_PERF_COUNTERS) || defined(CONFIG_PERF_EVENTS))
                 /* 2.6.31+: The performance counter framework will initialize the LVTPC
                  * vector as NMI. We can't disable the framework but the kernel loader
                  * script will do 'echo 2 > /proc/sys/kernel/perf_counter_paranoid'
                  * which hopefilly prevents any usage of hardware performance counters
-                 * and therefore triggering of NMIs. */
+                 * and therefore triggering of NMIs.
+                 * 2.6.32+: CONFIG_PERF_COUNTERS => CONFIG_PERF_EVENTS */
                 printk(KERN_ERR DEVICE_NAME
                        ": Warning: 2.6.31+ kernel detected. Most likely the hwardware performance\n"
                                 DEVICE_NAME
@@ -529,7 +531,8 @@ nmi_activated:
     }
 # if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 19)
     printk(KERN_DEBUG DEVICE_NAME ": Successfully done.\n");
-#  if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31) && defined(CONFIG_PERF_COUNTERS)
+#  if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 31) \
+      && (defined(CONFIG_PERF_COUNTERS) || defined(CONFIG_PERF_EVENTS))
 no_error:
 #  endif
 # endif /* >= 2.6.19 */

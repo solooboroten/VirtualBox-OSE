@@ -766,6 +766,26 @@ int Console::VRDPClientLogon (uint32_t u32ClientId, const char *pszUser, const c
     updateGuestPropertiesVRDPLogon (u32ClientId, pszUser, pszDomain);
 #endif /* VBOX_WITH_GUEST_PROPS */
 
+    /* Check if the successfully verified credentials are to be sent to the guest. */
+    BOOL fProvideGuestCredentials = FALSE;
+
+    Bstr value;
+    hrc = mMachine->GetExtraData(Bstr("VRDP/ProvideGuestCredentials"), value.asOutParam());
+    if (SUCCEEDED(hrc) && value == "1")
+    {
+        fProvideGuestCredentials = TRUE;
+    }
+
+    if (   fProvideGuestCredentials
+        && mVMMDev)
+    {
+        uint32_t u32GuestFlags = VMMDEV_SETCREDENTIALS_GUESTLOGON;
+
+        int rc = mVMMDev->getVMMDevPort()->pfnSetCredentials(mVMMDev->getVMMDevPort(),
+                     pszUser, pszPassword, pszDomain, u32GuestFlags);
+        AssertRC(rc);
+    }
+
     return VINF_SUCCESS;
 }
 
@@ -1911,7 +1931,7 @@ STDMETHODIMP Console::SaveState (IProgress **aProgress)
 
 STDMETHODIMP Console::AdoptSavedState (IN_BSTR aSavedStateFile)
 {
-    CheckComArgNotNull(aSavedStateFile);
+    CheckComArgStrNotEmptyOrNull(aSavedStateFile);
 
     AutoCaller autoCaller (this);
     CheckComRCReturnRC (autoCaller.rc());

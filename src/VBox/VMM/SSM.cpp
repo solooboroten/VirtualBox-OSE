@@ -167,6 +167,26 @@ typedef struct SSMHANDLE
     unsigned        cbGCPtr;
     /** Whether cbGCPtr is fixed or settable. */
     bool            fFixedGCPtrSize;
+    union
+    {
+        /** Read data. */
+        struct
+        {
+            /** @name Header info (set after calling ssmR3Validate)
+             * @{ */
+            /** The major version number. */
+            uint16_t        u16VerMajor;
+            /** The minor version number. */
+            uint16_t        u16VerMinor;
+            /** The build number. */
+            uint32_t        u32VerBuild;
+            /** The SVN revision. */
+            uint32_t        u32SvnRev;
+            /** 32 or 64 depending on the host. */
+            uint8_t         cHostBits;
+            /** @} */
+        } Read;
+    } u;
 } SSMHANDLE;
 
 
@@ -1612,6 +1632,11 @@ VMMR3DECL(int) SSMR3Load(PVM pVM, const char *pszFilename, SSMAFTER enmAfter, PF
             Handle.cbGCPtr = Hdr.cbGCPtr;
             Handle.fFixedGCPtrSize = true;
         }
+        Handle.u.Read.u16VerMajor = Hdr.u16VerMajor;
+        Handle.u.Read.u16VerMinor = Hdr.u16VerMinor;
+        Handle.u.Read.u32VerBuild = Hdr.u32VerBuild;
+        Handle.u.Read.u32SvnRev   = Hdr.u32SvnRev;
+        Handle.u.Read.cHostBits   = Hdr.cHostBits;
 
         if (Handle.cbFileHdr == sizeof(Hdr))
             LogRel(("SSM: File header: Format %.4s, VirtualBox Version %u.%u.%u r%u, %u-bit host, cbGCPhys=%u, cbGCPtr=%u\n",
@@ -1621,7 +1646,6 @@ VMMR3DECL(int) SSMR3Load(PVM pVM, const char *pszFilename, SSMAFTER enmAfter, PF
         else
             LogRel(("SSM: File header: Format %.4s, %u-bit host, cbGCPhys=%u, cbGCPtr=%u\n" ,
                     &Hdr.achMagic[sizeof(SSMFILEHDR_MAGIC_BASE)-1], Hdr.cHostBits, Hdr.cbGCPhys, Hdr.cbGCPtr));
-
 
         /*
          * Clear the per unit flags.
@@ -3531,5 +3555,71 @@ VMMR3DECL(SSMAFTER) SSMR3HandleGetAfter(PSSMHANDLE pSSM)
 VMMR3DECL(uint64_t) SSMR3HandleGetUnitOffset(PSSMHANDLE pSSM)
 {
     return pSSM->offUnit;
+}
+
+
+/**
+ * Get the VirtualBox SVN revision that created the saved state.
+ *
+ * @returns The revision number on success.
+ *          form.  If we don't know, it's 0.
+ * @param   pSSM            The saved state handle.
+ *
+ * @remarks This method should ONLY be used for hacks when loading OLDER saved
+ *          state that have data layout or semantical changes without the
+ *          compulsory version number change.  Be VERY careful with this
+ *          function since it will return different values for OSE builds!
+ */
+VMMR3DECL(uint32_t)     SSMR3HandleRevision(PSSMHANDLE pSSM)
+{
+    if (pSSM->enmOp >= SSMSTATE_LOAD_PREP)
+        return pSSM->u.Read.u32SvnRev;
+    return VMMGetSvnRev();
+}
+
+
+/**
+ * Gets the VirtualBox version that created the saved state.
+ *
+ * @returns VBOX_FULL_VERSION style version number.
+ *          Returns UINT32_MAX if unknown or somehow out of range.
+ *
+ * @param   pSSM            The saved state handle.
+ *
+ * @remarks This method should ONLY be used for hacks when loading OLDER saved
+ *          state that have data layout or semantical changes without the
+ *          compulsory version number change.
+ */
+VMMR3DECL(uint32_t)     SSMR3HandleVersion(PSSMHANDLE pSSM)
+{
+    if (pSSM->enmOp >= SSMSTATE_LOAD_PREP)
+    {
+        if (    !pSSM->u.Read.u16VerMajor
+            &&  !pSSM->u.Read.u16VerMinor
+            &&  !pSSM->u.Read.u32VerBuild)
+            return UINT32_MAX;
+        AssertReturn(pSSM->u.Read.u16VerMajor <=   0xff, UINT32_MAX);
+        AssertReturn(pSSM->u.Read.u16VerMinor <=   0xff, UINT32_MAX);
+        AssertReturn(pSSM->u.Read.u32VerBuild <= 0xffff, UINT32_MAX);
+        return VBOX_FULL_VERSION_MAKE(pSSM->u.Read.u16VerMajor, pSSM->u.Read.u16VerMinor, pSSM->u.Read.u32VerBuild);
+    }
+    return VBOX_FULL_VERSION;
+}
+
+
+/**
+ * Get the host OS and architecture where the saved state was created.
+ *
+ * @returns Pointer to a read only string.  When known, this is on the os.arch
+ *          form.  If we don't know, it's an empty string.
+ * @param   pSSM            The saved state handle.
+ *
+ * @remarks This method should ONLY be used for hacks when loading OLDER saved
+ *          state that have data layout or semantical changes without the
+ *          compulsory version number change.
+ */
+VMMR3DECL(const char *) SSMR3HandleHostOSAndArch(PSSMHANDLE pSSM)
+{
+    return "";
 }
 

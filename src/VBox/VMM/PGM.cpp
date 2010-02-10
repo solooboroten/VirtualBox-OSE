@@ -641,7 +641,6 @@ static PGMMODE            pgmR3CalcShadowMode(PVM pVM, PGMMODE enmGuestMode, SUP
 #ifdef VBOX_WITH_DEBUGGER
 /** @todo Convert the first two commands to 'info' items. */
 static DECLCALLBACK(int)  pgmR3CmdRam(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs, PDBGCVAR pResult);
-static DECLCALLBACK(int)  pgmR3CmdMap(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs, PDBGCVAR pResult);
 static DECLCALLBACK(int)  pgmR3CmdError(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs, PDBGCVAR pResult);
 static DECLCALLBACK(int)  pgmR3CmdSync(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs, PDBGCVAR pResult);
 static DECLCALLBACK(int)  pgmR3CmdSyncAlways(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs, PDBGCVAR pResult);
@@ -667,7 +666,6 @@ static const DBGCCMD    g_aCmds[] =
 {
     /* pszCmd,  cArgsMin, cArgsMax, paArgDesc,          cArgDescs,                  pResultDesc,        fFlags,     pfnHandler          pszSyntax,          ....pszDescription */
     { "pgmram",        0, 0,        NULL,               0,                          NULL,               0,          pgmR3CmdRam,        "",                     "Display the ram ranges." },
-    { "pgmmap",        0, 0,        NULL,               0,                          NULL,               0,          pgmR3CmdMap,        "",                     "Display the mapping ranges." },
     { "pgmsync",       0, 0,        NULL,               0,                          NULL,               0,          pgmR3CmdSync,       "",                     "Sync the CR3 page." },
     { "pgmerror",      0, 1,        &g_aPgmErrorArgs[0],1,                          NULL,               0,          pgmR3CmdError,      "",                     "Enables inject runtime of errors into parts of PGM." },
     { "pgmerroroff",   0, 1,        &g_aPgmErrorArgs[0],1,                          NULL,               0,          pgmR3CmdError,      "",                     "Disables inject runtime errors into parts of PGM." },
@@ -2131,11 +2129,13 @@ VMMR3DECL(void) PGMR3Reset(PVM pVM)
     /*
      * Unfix any fixed mappings and disable CR3 monitoring.
      */
-    pVM->pgm.s.fMappingsFixed    = false;
-    pVM->pgm.s.GCPtrMappingFixed = 0;
-    pVM->pgm.s.cbMappingFixed    = 0;
+    pVM->pgm.s.fMappingsFixed         = false;
+    pVM->pgm.s.fMappingsFixedRestored = false;
+    pVM->pgm.s.GCPtrMappingFixed      = NIL_RTGCPTR;
+    pVM->pgm.s.cbMappingFixed         = 0;
 
-    /* Exit the guest paging mode before the pgm pool gets reset.
+    /*
+     * Exit the guest paging mode before the pgm pool gets reset.
      * Important to clean up the amd64 case.
      */
     for (unsigned i=0;i<pVM->cCPUs;i++)
@@ -2395,7 +2395,10 @@ static DECLCALLBACK(int) pgmR3Save(PVM pVM, PSSMHANDLE pSSM)
     /*
      * Save basic data (required / unaffected by relocation).
      */
+    bool const fMappingsFixed  = pVM->pgm.s.fMappingsFixed;
+    pVM->pgm.s.fMappingsFixed |= pVM->pgm.s.fMappingsFixedRestored;
     SSMR3PutStruct(pSSM, pPGM, &s_aPGMFields[0]);
+    pVM->pgm.s.fMappingsFixed  = fMappingsFixed;
 
     for (i=0;i<pVM->cCPUs;i++)
     {
@@ -2708,54 +2711,27 @@ static int pgmR3LoadLocked(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version)
     }
 
     /*
-     * The guest mappings.
+     * The guest mappings - skipped now, see re-fixation in the caller.
      */
     uint32_t i = 0;
     for (;; i++)
     {
-        /* Check the seqence number / separator. */
-        rc = SSMR3GetU32(pSSM, &u32Sep);
+        rc = SSMR3GetU32(pSSM, &u32Sep);        /* seqence number */
         if (RT_FAILURE(rc))
             return rc;
         if (u32Sep == ~0U)
             break;
-        if (u32Sep != i)
-        {
-            AssertMsgFailed(("u32Sep=%#x (last)\n", u32Sep));
-            return VERR_SSM_DATA_UNIT_FORMAT_CHANGED;
-        }
+        AssertMsgReturn(u32Sep == i, ("u32Sep=%#x i=%#x\n", u32Sep, i), VERR_SSM_DATA_UNIT_FORMAT_CHANGED);
 
-        /* get the mapping details. */
         char szDesc[256];
-        szDesc[0] = '\0';
         rc = SSMR3GetStrZ(pSSM, szDesc, sizeof(szDesc));
         if (RT_FAILURE(rc))
             return rc;
-        RTGCPTR GCPtr;
-        SSMR3GetGCPtr(pSSM, &GCPtr);
-        RTGCPTR cPTs;
-        rc = SSMR3GetGCUIntPtr(pSSM, &cPTs);
+        RTGCPTR GCPtrIgnore;
+        SSMR3GetGCPtr(pSSM, &GCPtrIgnore);      /* GCPtr */
+        rc = SSMR3GetGCPtr(pSSM, &GCPtrIgnore); /* cPTs  */
         if (RT_FAILURE(rc))
             return rc;
-
-        /* find matching range. */
-        PPGMMAPPING pMapping;
-        for (pMapping = pPGM->pMappingsR3; pMapping; pMapping = pMapping->pNextR3)
-            if (    pMapping->cPTs == cPTs
-                &&  !strcmp(pMapping->pszDesc, szDesc))
-                break;
-        AssertLogRelMsgReturn(pMapping, ("Couldn't find mapping: cPTs=%#x szDesc=%s (GCPtr=%RGv)\n",
-                                         cPTs, szDesc, GCPtr),
-                              VERR_SSM_LOAD_CONFIG_MISMATCH);
-
-        /* relocate it. */
-        if (pMapping->GCPtr != GCPtr)
-        {
-            AssertMsg((GCPtr >> X86_PD_SHIFT << X86_PD_SHIFT) == GCPtr, ("GCPtr=%RGv\n", GCPtr));
-            pgmR3MapRelocate(pVM, pMapping, pMapping->GCPtr, GCPtr);
-        }
-        else
-            Log(("pgmR3Load: '%s' needed no relocation (%RGv)\n", szDesc, GCPtr));
     }
 
     /*
@@ -3037,6 +3013,14 @@ static DECLCALLBACK(int) pgmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
 
         pgmR3HandlerPhysicalUpdateAll(pVM);
 
+        /*
+         * Change the paging mode and restore PGMCPU::GCPhysCR3.
+         * (The latter requires the CPUM state to be restored already.)
+         */
+        if (CPUMR3IsStateRestorePending(pVM))
+            return VMSetError(pVM, VERR_WRONG_ORDER, RT_SRC_POS,
+                              N_("PGM was unexpectedly restored before CPUM"));
+
         for (unsigned i=0;i<pVM->cCPUs;i++)
         {
             PVMCPU pVCpu = &pVM->aCpus[i];
@@ -3057,6 +3041,62 @@ static DECLCALLBACK(int) pgmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
             else
                 GCPhysCR3 = (GCPhysCR3 & X86_CR3_PAGE_MASK);
             pVCpu->pgm.s.GCPhysCR3 = GCPhysCR3;
+        }
+
+        /*
+         * Try re-fixate the guest mappings.
+         */
+        pVM->pgm.s.fMappingsFixedRestored = false;
+        if (   pVM->pgm.s.fMappingsFixed
+            && pgmMapAreMappingsEnabled(&pVM->pgm.s))
+        {
+            RTGCPTR     GCPtrFixed    = pVM->pgm.s.GCPtrMappingFixed;
+            uint32_t    cbFixed       = pVM->pgm.s.cbMappingFixed;
+            pVM->pgm.s.fMappingsFixed = false;
+
+            uint32_t    cbRequired;
+            int rc2 = PGMR3MappingsSize(pVM, &cbRequired); AssertRC(rc2);
+            if (   RT_SUCCESS(rc2)
+                && cbRequired > cbFixed)
+                rc2 = VERR_OUT_OF_RANGE;
+            if (RT_SUCCESS(rc2))
+                rc2 = pgmR3MappingsFixInternal(pVM, GCPtrFixed, cbFixed);
+            if (RT_FAILURE(rc2))
+            {
+                LogRel(("PGM: Unable to re-fixate the guest mappings at %RGv-%RGv: rc=%Rrc (cbRequired=%#x)\n",
+                        GCPtrFixed, GCPtrFixed + cbFixed, rc2, cbRequired));
+                pVM->pgm.s.fMappingsFixed         = false;
+                pVM->pgm.s.fMappingsFixedRestored = true;
+                pVM->pgm.s.GCPtrMappingFixed      = GCPtrFixed;
+                pVM->pgm.s.cbMappingFixed         = cbFixed;
+            }
+        }
+        else
+        {
+            /* We used to set fixed + disabled while we only use disabled now,
+               so wipe the state to avoid any confusion. */
+            pVM->pgm.s.fMappingsFixed    = false;
+            pVM->pgm.s.GCPtrMappingFixed = NIL_RTGCPTR;
+            pVM->pgm.s.cbMappingFixed    = 0;
+        }
+
+        /*
+         * If we have floating mappings, do a CR3 sync now to make sure the HMA
+         * doesn't conflict with guest code / data and thereby cause trouble
+         * when restoring other components like PATM.
+         */
+        if (pgmMapAreMappingsFloating(&pVM->pgm.s))
+        {
+            PVMCPU pVCpu = &pVM->aCpus[0];
+            rc = PGMSyncCR3(pVCpu, CPUMGetGuestCR0(pVCpu), CPUMGetGuestCR3(pVCpu),  CPUMGetGuestCR4(pVCpu), true);
+            if (RT_FAILURE(rc))
+                return VMSetError(pVM, VERR_WRONG_ORDER, RT_SRC_POS,
+                                  N_("PGMSyncCR3 failed unexpectedly with rc=%Rrc"), rc);
+
+            /* Make sure to re-sync before executing code. */
+            VMCPU_FF_SET(pVCpu, VMCPU_FF_PGM_SYNC_CR3_NON_GLOBAL);
+            VMCPU_FF_SET(pVCpu, VMCPU_FF_PGM_SYNC_CR3);
+            pVCpu->pgm.s.fSyncFlags |= PGM_SYNC_UPDATE_PAGE_BIT_VIRTUAL;
         }
     }
 
@@ -4751,50 +4791,6 @@ static DECLCALLBACK(int) pgmR3CmdRam(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pV
         rc = pCmdHlp->pfnPrintf(pCmdHlp, NULL,
             "%RGp - %RGp  %p\n",
             pRam->GCPhys, pRam->GCPhysLast, pRam->pvR3);
-        if (RT_FAILURE(rc))
-            return rc;
-    }
-
-    return VINF_SUCCESS;
-}
-
-
-/**
- * The '.pgmmap' command.
- *
- * @returns VBox status.
- * @param   pCmd        Pointer to the command descriptor (as registered).
- * @param   pCmdHlp     Pointer to command helper functions.
- * @param   pVM         Pointer to the current VM (if any).
- * @param   paArgs      Pointer to (readonly) array of arguments.
- * @param   cArgs       Number of arguments in the array.
- */
-static DECLCALLBACK(int) pgmR3CmdMap(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs, PDBGCVAR pResult)
-{
-    /*
-     * Validate input.
-     */
-    if (!pVM)
-        return pCmdHlp->pfnPrintf(pCmdHlp, NULL, "error: The command requires a VM to be selected.\n");
-    if (!pVM->pgm.s.pMappingsR3)
-        return pCmdHlp->pfnPrintf(pCmdHlp, NULL, "Sorry, no mappings are registered.\n");
-
-    /*
-     * Print message about the fixedness of the mappings.
-     */
-    int rc = pCmdHlp->pfnPrintf(pCmdHlp, NULL, pVM->pgm.s.fMappingsFixed ? "The mappings are FIXED.\n" : "The mappings are FLOATING.\n");
-    if (RT_FAILURE(rc))
-        return rc;
-
-    /*
-     * Dump the ranges.
-     */
-    PPGMMAPPING pCur;
-    for (pCur = pVM->pgm.s.pMappingsR3; pCur; pCur = pCur->pNextR3)
-    {
-        rc = pCmdHlp->pfnPrintf(pCmdHlp, NULL,
-            "%08x - %08x %s\n",
-            pCur->GCPtr, pCur->GCPtrLast, pCur->pszDesc);
         if (RT_FAILURE(rc))
             return rc;
     }

@@ -1027,29 +1027,53 @@ ResumeExecution:
 #endif
 
     /* Check for pending actions that force us to go back to ring 3. */
-#ifdef DEBUG
-    /* Intercept X86_XCPT_DB if stepping is enabled */
-    if (!DBGFIsStepping(pVCpu))
-#endif
+    if (    VM_FF_ISPENDING(pVM, VM_FF_HWACCM_TO_R3_MASK | VM_FF_REQUEST | VM_FF_PGM_POOL_FLUSH_PENDING)
+        ||  VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_HWACCM_TO_R3_MASK | VMCPU_FF_PGM_SYNC_CR3 | VMCPU_FF_PGM_SYNC_CR3_NON_GLOBAL | VMCPU_FF_REQUEST))
     {
-        if (    VM_FF_ISPENDING(pVM, VM_FF_HWACCM_TO_R3_MASK)
-            ||  VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_HWACCM_TO_R3_MASK))
+        /* Check if a sync operation is pending. */
+        if (VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_PGM_SYNC_CR3 | VMCPU_FF_PGM_SYNC_CR3_NON_GLOBAL))
         {
-            VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_TO_R3);
-            STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatSwitchToR3);
+            rc = PGMSyncCR3(pVCpu, pCtx->cr0, pCtx->cr3, pCtx->cr4, VMCPU_FF_ISSET(pVCpu, VMCPU_FF_PGM_SYNC_CR3));
+            AssertRC(rc);
+            if (rc != VINF_SUCCESS)
+            {
+                Log(("Pending pool sync is forcing us back to ring 3; rc=%d\n", rc));
+                goto end;
+            }
+        }
+
+#ifdef DEBUG
+        /* Intercept X86_XCPT_DB if stepping is enabled */
+        if (!DBGFIsStepping(pVCpu))
+#endif
+        {
+            if (    VM_FF_ISPENDING(pVM, VM_FF_HWACCM_TO_R3_MASK)
+                ||  VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_HWACCM_TO_R3_MASK))
+            {
+                VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_TO_R3);
+                STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatSwitchToR3);
+                STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatEntry, x);
+                rc = RT_UNLIKELY(VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY)) ? VINF_EM_NO_MEMORY : VINF_EM_RAW_TO_R3;
+                goto end;
+            }
+        }
+
+        /* Pending request packets might contain actions that need immediate attention, such as pending hardware interrupts. */
+        if (    VM_FF_ISPENDING(pVM, VM_FF_REQUEST)
+            ||  VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_REQUEST))
+        {
             STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatEntry, x);
-            rc = RT_UNLIKELY(VM_FF_ISPENDING(pVM, VM_FF_PGM_NO_MEMORY)) ? VINF_EM_NO_MEMORY : VINF_EM_RAW_TO_R3;
+            rc = VINF_EM_PENDING_REQUEST;
             goto end;
         }
-    }
 
-    /* Pending request packets might contain actions that need immediate attention, such as pending hardware interrupts. */
-    if (    VM_FF_ISPENDING(pVM, VM_FF_REQUEST)
-        ||  VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_REQUEST))
-    {
-        STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatEntry, x);
-        rc = VINF_EM_PENDING_REQUEST;
-        goto end;
+        /* Check if a pgm pool flush is in progress. */
+        if (VM_FF_ISPENDING(pVM, VM_FF_PGM_POOL_FLUSH_PENDING))
+        {
+            STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatEntry, x);
+            rc = VINF_PGM_POOL_FLUSH_PENDING;
+            goto end;
+        }
     }
 
 #ifdef VBOX_WITH_VMMR0_DISABLE_PREEMPTION
@@ -1445,6 +1469,29 @@ ResumeExecution:
     SVM_READ_SELREG(FS, fs);
     SVM_READ_SELREG(GS, gs);
 
+    /* Correct the hidden CS granularity flag.  Haven't seen it being wrong in
+       any other register (yet). */
+    if (   !pCtx->csHid.Attr.n.u1Granularity
+        &&  pCtx->csHid.Attr.n.u1Present
+        &&  pCtx->csHid.u32Limit > UINT32_C(0xfffff))
+    {
+        Assert((pCtx->csHid.u32Limit & 0xfff) == 0xfff);
+        pCtx->csHid.Attr.n.u1Granularity = 1;
+    }
+#define SVM_ASSERT_SEL_GRANULARITY(reg) \
+        AssertMsg(   !pCtx->reg##Hid.Attr.n.u1Present \
+                  || (   pCtx->reg##Hid.Attr.n.u1Granularity \
+                      ? (pCtx->reg##Hid.u32Limit & 0xfff) == 0xfff \
+                      :  pCtx->reg##Hid.u32Limit <= 0xfffff), \
+                  ("%#x %#x %#llx\n", pCtx->reg##Hid.u32Limit, pCtx->reg##Hid.Attr.u, pCtx->reg##Hid.u64Base))
+    SVM_ASSERT_SEL_GRANULARITY(ss);
+    SVM_ASSERT_SEL_GRANULARITY(cs);
+    SVM_ASSERT_SEL_GRANULARITY(ds);
+    SVM_ASSERT_SEL_GRANULARITY(es);
+    SVM_ASSERT_SEL_GRANULARITY(fs);
+    SVM_ASSERT_SEL_GRANULARITY(gs);
+#undef  SVM_ASSERT_SEL_GRANULARITY
+
     /* Remaining guest CPU context: TR, IDTR, GDTR, LDTR; must sync everything otherwise we can get out of sync when jumping to ring 3. */
     SVM_READ_SELREG(LDTR, ldtr);
     SVM_READ_SELREG(TR, tr);
@@ -1690,7 +1737,6 @@ ResumeExecution:
                 STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatExitShadowPF);
 
                 TRPMResetTrap(pVCpu);
-
                 STAM_PROFILE_ADV_STOP(&pVCpu->hwaccm.s.StatExit1, x);
                 goto ResumeExecution;
             }
@@ -2012,19 +2058,6 @@ ResumeExecution:
             break;
         default:
             AssertFailed();
-        }
-        /* Check if a sync operation is pending. */
-        if (    rc == VINF_SUCCESS /* don't bother if we are going to ring 3 anyway */
-            &&  VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_PGM_SYNC_CR3 | VMCPU_FF_PGM_SYNC_CR3_NON_GLOBAL))
-        {
-            rc = PGMSyncCR3(pVCpu, pCtx->cr0, pCtx->cr3, pCtx->cr4, VMCPU_FF_ISSET(pVCpu, VMCPU_FF_PGM_SYNC_CR3));
-            AssertRC(rc);
-
-            STAM_COUNTER_INC(&pVCpu->hwaccm.s.StatFlushTLBCRxChange);
-
-            /* Must be set by PGMSyncCR3 */
-            AssertMsg(rc == VINF_SUCCESS || rc == VINF_PGM_SYNC_CR3 || PGMGetGuestMode(pVCpu) <= PGMMODE_PROTECTED || pVCpu->hwaccm.s.fForceTLBFlush,
-                      ("rc=%Rrc mode=%d fForceTLBFlush=%RTbool\n", rc, PGMGetGuestMode(pVCpu), pVCpu->hwaccm.s.fForceTLBFlush));
         }
         if (rc == VINF_SUCCESS)
         {
@@ -2662,12 +2695,8 @@ static int svmR0InterpretInvlPg(PVMCPU pVCpu, PDISCPUSTATE pCpu, PCPUMCTXCORE pR
      */
     rc = PGMInvalidatePage(pVCpu, addr);
     if (RT_SUCCESS(rc))
-    {
-        /* Manually invalidate the page for the VM's TLB. */
-        Log(("SVMR0InvlpgA %RGv ASID=%d\n", addr, uASID));
-        SVMR0InvlpgA(addr, uASID);
         return VINF_SUCCESS;
-    }
+
     AssertRC(rc);
     return rc;
 }
@@ -2709,9 +2738,8 @@ static int svmR0InterpretInvpg(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, ui
                 Assert(cbOp == pDis->opsize);
                 rc = svmR0InterpretInvlPg(pVCpu, pDis, pRegFrame, uASID);
                 if (RT_SUCCESS(rc))
-                {
                     pRegFrame->rip += cbOp; /* Move on to the next instruction. */
-                }
+
                 return rc;
             }
         }

@@ -464,6 +464,9 @@ static void vmmR0RecordRC(PVM pVM, PVMCPU pVCpu, int rc)
         case VINF_PGM_CHANGE_MODE:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetPGMChangeMode);
             break;
+        case VINF_PGM_POOL_FLUSH_PENDING:
+            STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetPGMFlushPending);
+            break;
         case VINF_EM_PENDING_REQUEST:
             STAM_COUNTER_INC(&pVM->vmm.s.StatRZRetPendingRequest);
             break;
@@ -533,6 +536,7 @@ VMMR0DECL(void) VMMR0EntryFast(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperati
                 if (RT_UNLIKELY(pVM->cCPUs > 1))
                 {
                     pVCpu->vmm.s.iLastGZRc = VERR_RAW_MODE_INVALID_SMP;
+                    ASMSetFlags(uFlags);
                     return;
                 }
 
@@ -540,6 +544,7 @@ VMMR0DECL(void) VMMR0EntryFast(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperati
                 if (RT_UNLIKELY(!PGMGetHyperCR3(pVCpu)))
                 {
                     pVCpu->vmm.s.iLastGZRc = VERR_PGM_NO_CR3_SHADOW_ROOT;
+                    ASMSetFlags(uFlags);
                     return;
                 }
 #endif
@@ -549,6 +554,7 @@ VMMR0DECL(void) VMMR0EntryFast(PVM pVM, VMCPUID idCpu, VMMR0OPERATION enmOperati
                 if (RT_FAILURE(rc))
                 {
                     pVCpu->vmm.s.iLastGZRc = rc;
+                    ASMSetFlags(uFlags);
                     return;
                 }
 

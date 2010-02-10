@@ -289,6 +289,9 @@ DevicesR3_SOURCES       = \
 ifdef VBOX_DYNAMIC_NET_ATTACH
  DevicesR3_DEFS += VBOX_DYNAMIC_NET_ATTACH
 endif
+ifdef VBOX_BIOS_DMI_FALLBACK
+ DevicesR3_DEFS += VBOX_BIOS_DMI_FALLBACK
+endif
 
 ifdef VBOX_WITH_E1000
  DevicesR3_DEFS        += VBOX_WITH_E1000
@@ -756,6 +759,21 @@ define def_vbox_slirp_cflags
  endif
 endef
 $(foreach file,$(VBOX_SLIRP_SOURCES),$(eval $(call def_vbox_slirp_cflags, Network)))
+
+define def_vbox_usb_cflags
+#  $(file)_DEFS += \
+#      RTMEM_WRAP_TO_EF_APIS
+endef
+$(foreach file, \
+  USB/DrvVUSBRootHub.cpp \
+  USB/VUSBDevice.cpp \
+  USB/VUSBReadAhead.cpp \
+  USB/VUSBUrb.cpp \
+  USB/DevOHCI.cpp \
+  USB/DevEHCI.cpp \
+  USB/USBProxyDevice.cpp \
+  USB/linux/USBProxyDevice-linux.cpp \
+  ,$(eval $(call def_vbox_usb_cflags)))
 
 ifdef VBOX_WITH_SLIRP_ALIAS
 Drivers_SOURCES += $(VBOX_SLIRP_ALIAS_SOURCES)

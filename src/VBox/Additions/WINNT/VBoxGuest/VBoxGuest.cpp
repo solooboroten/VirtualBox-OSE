@@ -125,14 +125,25 @@ ULONG DriverEntry(PDRIVER_OBJECT pDrvObj, PUNICODE_STRING pRegPath)
     ULONG minorVersion;
     ULONG buildNumber;
     PsGetVersion(&majorVersion, &minorVersion, &buildNumber, NULL);
-    dprintf(("VBoxGuest::DriverEntry: running on Windows NT version %d.%d, build %d\n", majorVersion, minorVersion, buildNumber));
+    dprintf(("VBoxGuest::DriverEntry: Running on Windows NT version %d.%d, build %d\n", majorVersion, minorVersion, buildNumber));
 #ifdef DEBUG
     testVBoxGuest();
 #endif
     switch (majorVersion)
     {
-        case 6:
-            winVersion = WINVISTA;
+        case 6: /* Windows Vista or Windows 7 (based on minor ver) */
+            switch (minorVersion)
+            {
+                case 0: /* Note: Also could be Windows 2008 Server! */
+                    winVersion = WINVISTA;
+                    break;
+                case 1: /* Note: Also could be Windows 2008 Server R2! */
+                    winVersion = WIN7;
+                    break;
+                default:
+                    dprintf(("VBoxGuest::DriverEntry: Unknown version of Windows, refusing!\n"));
+                    return STATUS_DRIVER_UNABLE_TO_LOAD;
+            }
             break;
         case 5:
             switch (minorVersion)
@@ -147,7 +158,7 @@ ULONG DriverEntry(PDRIVER_OBJECT pDrvObj, PUNICODE_STRING pRegPath)
                     winVersion = WIN2K;
                     break;
                 default:
-                    dprintf(("VBoxGuest::DriverEntry: unknown version of Windows, refusing!\n"));
+                    dprintf(("VBoxGuest::DriverEntry: Unknown version of Windows, refusing!\n"));
                     return STATUS_DRIVER_UNABLE_TO_LOAD;
             }
             break;
@@ -155,7 +166,7 @@ ULONG DriverEntry(PDRIVER_OBJECT pDrvObj, PUNICODE_STRING pRegPath)
             winVersion = WINNT4;
             break;
         default:
-            dprintf(("VBoxGuest::DriverEntry: NT4 required!\n"));
+            dprintf(("VBoxGuest::DriverEntry: At least Windows NT4 required!\n"));
             return STATUS_DRIVER_UNABLE_TO_LOAD;
     }
 
@@ -171,7 +182,7 @@ ULONG DriverEntry(PDRIVER_OBJECT pDrvObj, PUNICODE_STRING pRegPath)
     pDrvObj->MajorFunction[IRP_MJ_READ]               = VBoxGuestNotSupportedStub;
     pDrvObj->MajorFunction[IRP_MJ_WRITE]              = VBoxGuestNotSupportedStub;
 #ifdef TARGET_NT4
-    rc = ntCreateDevice(pDrvObj, NULL, pRegPath);
+    rc = ntCreateDevice(pDrvObj, NULL /* pDevObj */, pRegPath);
 #else
     pDrvObj->MajorFunction[IRP_MJ_PNP]                = VBoxGuestPnP;
     pDrvObj->MajorFunction[IRP_MJ_POWER]              = VBoxGuestPower;
@@ -308,7 +319,10 @@ void VBoxGuestUnload(PDRIVER_OBJECT pDrvObj)
 
 #ifdef VBOX_WITH_HGCM
     if (pDevExt->SessionSpinlock != NIL_RTSPINLOCK)
-        RTSpinlockDestroy(pDevExt->SessionSpinlock);
+    {
+        int rc2 = RTSpinlockDestroy(pDevExt->SessionSpinlock);
+        dprintf(("VBoxGuest::VBoxGuestUnload: spinlock destroyed with rc=%Rrc\n", rc2));
+    }
 #endif
     IoDeleteDevice(pDrvObj->DeviceObject);
 #endif
@@ -1825,7 +1839,7 @@ VOID unreserveHypervisorMemory(PVBOXGUESTDEVEXT pDevExt)
             {
                 dprintf(("VBoxGuest::reserveHypervisorMemory: VMMDevReq_DeregisterPatchMemory error!"
                             "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
-                /* We intentially leak the memory object here as there still could 
+                /* We intentially leak the memory object here as there still could
                  * be references to it!!!
                  */
             }

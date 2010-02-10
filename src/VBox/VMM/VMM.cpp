@@ -251,9 +251,9 @@ static int vmmR3InitStacks(PVM pVM)
         PVMCPU pVCpu = &pVM->aCpus[idCpu];
 
 #ifdef VBOX_STRICT_VMM_STACK
-        rc = MMR3HyperAllocOnceNoRelEx(pVM, PAGE_SIZE + VMM_STACK_SIZE + PAGE_SIZE, 
+        rc = MMR3HyperAllocOnceNoRelEx(pVM, PAGE_SIZE + VMM_STACK_SIZE + PAGE_SIZE,
 #else
-        rc = MMR3HyperAllocOnceNoRelEx(pVM, VMM_STACK_SIZE, 
+        rc = MMR3HyperAllocOnceNoRelEx(pVM, VMM_STACK_SIZE,
 #endif
                                        PAGE_SIZE, MM_TAG_VMM, fFlags, (void **)&pVCpu->vmm.s.pbEMTStackR3);
         if (RT_SUCCESS(rc))
@@ -387,6 +387,7 @@ static void vmmR3InitRegisterStats(PVM pVM)
     STAM_REG(pVM, &pVM->vmm.s.StatRZRetInterruptPending,    STAMTYPE_COUNTER, "/VMM/RZRet/InterruptPending",    STAMUNIT_OCCURENCES, "Number of VINF_EM_RAW_INTERRUPT_PENDING returns.");
     STAM_REG(pVM, &pVM->vmm.s.StatRZRetPATMDuplicateFn,     STAMTYPE_COUNTER, "/VMM/RZRet/PATMDuplicateFn",     STAMUNIT_OCCURENCES, "Number of VINF_PATM_DUPLICATE_FUNCTION returns.");
     STAM_REG(pVM, &pVM->vmm.s.StatRZRetPGMChangeMode,       STAMTYPE_COUNTER, "/VMM/RZRet/PGMChangeMode",       STAMUNIT_OCCURENCES, "Number of VINF_PGM_CHANGE_MODE returns.");
+    STAM_REG(pVM, &pVM->vmm.s.StatRZRetPGMFlushPending,     STAMTYPE_COUNTER, "/VMM/RZRet/PGMFlushPending",     STAMUNIT_OCCURENCES, "Number of VINF_PGM_POOL_FLUSH_PENDING returns.");
     STAM_REG(pVM, &pVM->vmm.s.StatRZRetPendingRequest,      STAMTYPE_COUNTER, "/VMM/RZRet/PendingRequest",      STAMUNIT_OCCURENCES, "Number of VINF_EM_PENDING_REQUEST returns.");
     STAM_REG(pVM, &pVM->vmm.s.StatRZRetPatchTPR,            STAMTYPE_COUNTER, "/VMM/RZRet/PatchTPR",            STAMUNIT_OCCURENCES, "Number of VINF_EM_HWACCM_PATCH_TPR_INSTR returns.");
     STAM_REG(pVM, &pVM->vmm.s.StatRZRetCallRing3,           STAMTYPE_COUNTER, "/VMM/RZCallR3/Misc",             STAMUNIT_OCCURENCES, "Number of Other ring-3 calls.");
@@ -961,7 +962,22 @@ static DECLCALLBACK(int) vmmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t u32Version
     int rc = SSMR3GetRCPtr(pSSM, &RCPtrESP);
     if (RT_FAILURE(rc))
         return rc;
-    SSMR3GetMem(pSSM, pVM->aCpus[0].vmm.s.pbEMTStackR3, VMM_STACK_SIZE);
+#ifdef RT_OS_DARWIN /* The 3.1 version of the data unit addresses this
+                       problem.  See no reason for backporting it atm. */
+    if (   SSMR3HandleVersion(pSSM)  >= VBOX_FULL_VERSION_MAKE(3,0,0)
+        && SSMR3HandleVersion(pSSM)  <  VBOX_FULL_VERSION_MAKE(3,1,0)
+        && SSMR3HandleRevision(pSSM) >= 48858
+        && (   !strcmp(SSMR3HandleHostOSAndArch(pSSM), "darwin.x86")
+            || !strcmp(SSMR3HandleHostOSAndArch(pSSM), "") )
+       )
+        SSMR3GetMem(pSSM, pVM->aCpus[0].vmm.s.pbEMTStackR3, 16384);
+    else
+        SSMR3GetMem(pSSM, pVM->aCpus[0].vmm.s.pbEMTStackR3, 8192);
+    AssertCompile(VMM_STACK_SIZE == 16384);
+#else
+    SSMR3GetMem(pSSM, pVM->aCpus[0].vmm.s.pbEMTStackR3, 8192);
+    AssertCompile(VMM_STACK_SIZE == 8192);
+#endif
 
     /* Restore the VMCPU states. VCPU 0 is always started. */
     VMCPU_SET_STATE(&pVM->aCpus[0], VMCPUSTATE_STARTED);

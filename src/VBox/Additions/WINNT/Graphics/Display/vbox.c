@@ -764,6 +764,7 @@ void vboxVHWACommandCheckHostCmds(PPDEV ppdev)
 {
     VBVAHOSTCMD * pCmd;
     int rc = ppdev->pfnHGSMIRequestCommands(ppdev->hMpHGSMI, HGSMI_CH_VBVA, &pCmd);
+    /* don't assert here, otherwise NT4 will be unhappy */
     if(RT_SUCCESS(rc))
     {
         for(; pCmd; pCmd = pCmd->u.pNext)
@@ -794,8 +795,7 @@ BOOL vboxVHWACommandSubmit (PPDEV ppdev, VBOXVHWACMD* pCmd)
 {
     PEVENT pEvent;
     BOOL brc = EngCreateEvent(&pEvent);
-    Assert(brc);
-
+    /* don't assert here, otherwise NT4 will be unhappy */
     if(brc)
     {
         vboxVHWACommandSubmitAsynchByEvent (ppdev, pCmd, pEvent);
