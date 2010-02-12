@@ -2802,6 +2802,16 @@ void VBoxConsoleWnd::unlockActionsSwitch()
     }
     mConsole->setMouseCoalescingEnabled (true);
 #endif
+
+#ifdef Q_WS_X11
+    if (vboxGlobal().isKWinManaged() && !mIsSeamless && !mIsFullscreen)
+    {
+        /* Workaround for a KWin bug to let console window to exit
+         * seamless mode correctly. */
+        setWindowFlags(Qt::Window);
+        setVisible(true);
+    }
+#endif
 }
 
 void VBoxConsoleWnd::mtExitMode()
@@ -3505,6 +3515,7 @@ bool VBoxConsoleWnd::toggleFullscreenMode (bool aOn, bool aSeamless)
     if (wasHidden)
         hide();
 #endif
+
     return true;
 }
 
