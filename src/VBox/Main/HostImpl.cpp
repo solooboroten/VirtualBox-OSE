@@ -711,7 +711,11 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces) (ComSafeArrayOut (IHostNetworkIn
     if (ComSafeArrayOutIsNull (aNetworkInterfaces))
         return E_POINTER;
 
-    AutoWriteLock alock (this);
+    /* The code is so hideously complicated that I can't tell whether the
+     * host object lock is really needed. It was taken here, and as the
+     * VirtualBox (mParent) is taken as well below nested deep down that
+     * would be a lock order violation. */
+    AutoMultiWriteLock2 alock(mParent, this);
     CHECK_READY();
 
     std::list <ComObjPtr <HostNetworkInterface> > list;
@@ -1269,7 +1273,8 @@ Host::CreateHostOnlyNetworkInterface (IHostNetworkInterface **aHostNetworkInterf
     CheckComArgOutPointerValid(aHostNetworkInterface);
     CheckComArgOutPointerValid(aProgress);
 
-    AutoWriteLock alock (this);
+    /* No need to lock anything. If there ever will - watch out, the function
+     * called below grabs the VirtualBox lock. */
     CHECK_READY();
 
     int r = NetIfCreateHostOnlyNetworkInterface (mParent, aHostNetworkInterface, aProgress);
@@ -1289,7 +1294,9 @@ Host::RemoveHostOnlyNetworkInterface (IN_BSTR aId,
     CheckComArgOutPointerValid(aHostNetworkInterface);
     CheckComArgOutPointerValid(aProgress);
 
-    AutoWriteLock alock (this);
+    /* No need to lock anything, the code below does not touch the state
+     * of the host object. If that ever changes then check for lock order
+     * violations with the called functions. */
     CHECK_READY();
 
     /* first check whether an interface with the given name already exists */
@@ -1637,7 +1644,7 @@ HRESULT Host::onUSBDeviceFilterChange (HostUSBDeviceFilter *aFilter,
  */
 void Host::getUSBFilters(Host::USBDeviceFilterList *aGlobalFilters, VirtualBox::SessionMachineVector *aMachines)
 {
-    AutoWriteLock alock (this);
+    AutoMultiLock2 alock(mParent->rlock(), this->wlock());
 
     mParent->getOpenedMachines (*aMachines);
     *aGlobalFilters = mUSBDeviceFilters;

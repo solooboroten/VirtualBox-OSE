@@ -656,9 +656,9 @@ void slirp_term(PNATState pData)
 
     slirp_link_down(pData);
     slirp_release_dns_list(pData);
+#ifdef VBOX_WITH_SLIRP_ALIAS
     ftp_alias_unload(pData);
     nbt_alias_unload(pData);
-#ifdef VBOX_WITH_SLIRP_ALIAS
     while(!LIST_EMPTY(&instancehead))
     {
         struct libalias *la = LIST_FIRST(&instancehead);

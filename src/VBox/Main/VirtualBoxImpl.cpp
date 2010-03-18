@@ -991,6 +991,10 @@ STDMETHODIMP VirtualBox::RegisterMachine (IMachine *aMachine)
     AutoCaller machCaller (machine);
     ComAssertComRCRetRC (machCaller.rc());
 
+    /* At this point the children lock MUST be released, as the code
+     * below locks many objects which are higher in the lock order. */
+    chLock.unlock();
+
     rc = registerMachine (machine);
 
     /* fire an event */

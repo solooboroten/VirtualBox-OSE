@@ -1,4 +1,4 @@
-/* $Rev: 55983 $ */
+/* $Rev: 58764 $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Linux specifics.
  */
@@ -224,8 +224,10 @@ static struct miscdevice gMiscDevice =
 # if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30)
 static struct dev_pm_ops gPlatformPMOps =
 {
-    .suspend = VBoxDrvSuspend,
-    .resume = VBoxDrvResume,
+    .suspend = VBoxDrvSuspend,  /* before entering deep sleep */
+    .resume  = VBoxDrvResume,   /* after wakeup from deep sleep */
+    .freeze  = VBoxDrvSuspend,  /* before creating hibernation image */
+    .restore = VBoxDrvResume,   /* after wakeing up from hibernation */
 };
 # endif
 
@@ -234,7 +236,7 @@ static struct platform_driver gPlatformDriver =
     .probe = VBoxDrvProbe,
 # if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 30)
     .suspend = VBoxDrvSuspend,
-    .resume = VBoxDrvResume,
+    .resume  = VBoxDrvResume,
 # endif
     /** @todo .shutdown? */
     .driver =

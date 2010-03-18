@@ -227,9 +227,9 @@ public:
                 hrc = gConsole->COMGETTER(Machine)(machine.asOutParam());
                 if (SUCCEEDED(hrc) && machine)
                 {
-                    Bstr value;
-                    hrc = machine->GetExtraData(Bstr("VRDP/DisconnectOnGuestLogout"), value.asOutParam());
-                    if (SUCCEEDED(hrc) && value == "1")
+                    Bstr value1;
+                    hrc = machine->GetExtraData(Bstr("VRDP/DisconnectOnGuestLogout"), value1.asOutParam());
+                    if (SUCCEEDED(hrc) && value1 == "1")
                     {
                         fDisconnectOnGuestLogout = TRUE;
                     }
@@ -832,6 +832,7 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
     ComPtr<IVirtualBox> virtualBox;
     ComPtr<ISession> session;
     bool fSessionOpened = false;
+    VirtualBoxCallback *vboxCallback = NULL;
 
     do
     {
@@ -1012,21 +1013,10 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
             machineDebugger->COMSETTER(CSAMEnabled)(fCSAM);
         }
 
-        /* create an event queue */
-        EventQueue eventQ;
-
         /* initialize global references */
         gSession = session;
         gConsole = console;
-        gEventQ = &eventQ;
-
-        /* VirtualBox callback registration. */
-        VirtualBoxCallback *vboxCallback = new VirtualBoxCallback();
-        vboxCallback->AddRef();
-        CHECK_ERROR(virtualBox, RegisterCallback(vboxCallback));
-        vboxCallback->Release();
-        if (FAILED (rc))
-            break;
+        gEventQ = com::EventQueue::getMainEventQueue();
 
         /* register a callback for machine events */
         {
@@ -1121,6 +1111,14 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
             }
         }
 
+        /* VirtualBox callback registration. */
+        vboxCallback = new VirtualBoxCallback();
+        vboxCallback->AddRef();
+        CHECK_ERROR(virtualBox, RegisterCallback(vboxCallback));
+        vboxCallback->Release();
+        if (FAILED(rc))
+            break;
+
 #ifdef VBOX_WITH_SAVESTATE_ON_SIGNAL
         signal(SIGINT, SaveState);
         signal(SIGTERM, SaveState);
@@ -1130,8 +1128,8 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
 
         Event *e;
 
-        while (eventQ.waitForEvent (&e) && e)
-            eventQ.handleEvent (e);
+        while (gEventQ->waitForEvent (&e) && e)
+          gEventQ->handleEvent (e);
 
         Log (("VBoxHeadless: event loop has terminated...\n"));
 
@@ -1147,6 +1145,14 @@ extern "C" DECLEXPORT (int) TrustedMain (int argc, char **argv, char **envp)
         /* we don't have to disable VRDP here because we don't save the settings of the VM */
     }
     while (0);
+
+    /* VirtualBox callback unregistration. */
+    if (vboxCallback)
+    {
+        vboxCallback->AddRef();
+        CHECK_ERROR(virtualBox, UnregisterCallback(vboxCallback));
+        vboxCallback->Release();
+    }
 
     /* No more access to the 'console' object, which will be uninitialized by the next session->Close call. */
     gConsole = NULL;

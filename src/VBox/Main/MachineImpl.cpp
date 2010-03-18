@@ -3719,16 +3719,25 @@ HRESULT Machine::openSession(IInternalSessionControl *aControl)
         NOREF(unk);
     }
 
+    ComObjPtr<Progress> pProgress;
     if (mData->mSession.mProgress)
     {
-        /* finalize the progress after setting the state, for consistency */
+        /* Finalize the progress after setting the state, for consistency.
+         * Note that we must not trigger a progress object destruction,
+         * since that would try to lock the VirtualBox object for writing,
+         * and that is a lock order violation. So postpone potential
+         * destruction until after the Machine lock is released below. */
         mData->mSession.mProgress->notifyComplete(rc);
+        pProgress = mData->mSession.mProgress;
         mData->mSession.mProgress.setNull();
     }
 
     /* Leave the lock since SessionMachine::uninit() locks VirtualBox which
-     * would break the lock order */
+     * would break the lock order. Likewise for the Progress object. */
     alock.leave();
+
+    /* Delayed from above to maintain correct lock order. */
+    pProgress.setNull();
 
     /* uninitialize the created session machine on failure */
     if (FAILED(rc))
@@ -4237,7 +4246,8 @@ bool Machine::checkForSpawnFailure()
         mData->mSession.mRemoteControls.clear();
         mData->mSession.mState = SessionState_Closed;
 
-        /* finalize the progress after setting the state, for consistency */
+        /* Finalize the progress after setting the state, for consistency.
+         * Safe, because the VirtualBox object lock is already taken above. */
         if (!mData->mSession.mProgress.isNull())
         {
             mData->mSession.mProgress->notifyComplete(rc);
@@ -8634,6 +8644,7 @@ void SessionMachine::uninit (Uninit::Reason aReason)
         Assert (mData->mSession.mState == SessionState_Closing);
         Assert (!mData->mSession.mProgress.isNull());
 
+        /* Safe, because the VirtualBox object lock is already taken above. */
         mData->mSession.mProgress->notifyComplete (S_OK);
         mData->mSession.mProgress.setNull();
     }

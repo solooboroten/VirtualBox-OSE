@@ -1202,16 +1202,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         break;
     }
 
-    // create the event queue
-    // (here it is necessary only to process remaining XPCOM/IPC events
-    // after the session is closed)
-    /// @todo
-//    EventQueue eventQ;
-
-#ifdef USE_XPCOM_QUEUE_THREAD
-    nsCOMPtr<nsIEventQueue> eventQ;
-    NS_GetMainEventQ(getter_AddRefs(eventQ));
-#endif /* USE_XPCOM_QUEUE_THREAD */
+    EventQueue* eventQ = com::EventQueue::getMainEventQueue();
 
     /* Get the number of network adapters */
     ULONG NetworkAdapterCount = 0;
@@ -2249,7 +2240,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
      * event storm might arrive. Stupid SDL has a ridiculously small
      * event queue buffer!
      */
-    startXPCOMEventQueueThread(eventQ->GetEventQueueSelectFD());
+    startXPCOMEventQueueThread(eventQ->getSelectFD());
 #endif /* USE_XPCOM_QUEUE_THREAD */
 
     /* termination flag */
@@ -2330,7 +2321,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
                     case SDL_USER_EVENT_XPCOM_EVENTQUEUE:
                     {
                         LogFlow(("SDL_USER_EVENT_XPCOM_EVENTQUEUE: processing XPCOM event queue...\n"));
-                        eventQ->ProcessPendingEvents();
+                        eventQ->processEventQueue(0);
                         signalXPCOMEventQueueThread();
                         break;
                     }
@@ -2362,6 +2353,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
 
             }
         }
+        eventQ->processEventQueue(0);
     } while (   rc == S_OK
              && (   machineState == MachineState_Starting
                  || machineState == MachineState_Restoring));
@@ -2797,7 +2789,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             case SDL_USER_EVENT_XPCOM_EVENTQUEUE:
             {
                 LogFlow(("SDL_USER_EVENT_XPCOM_EVENTQUEUE: processing XPCOM event queue...\n"));
-                eventQ->ProcessPendingEvents();
+                eventQ->processEventQueue(0);
                 signalXPCOMEventQueueThread();
                 break;
             }
@@ -4378,16 +4370,11 @@ static void UpdateTitlebar(TitlebarMode mode, uint32_t u32User)
     char szPrevTitle[1024];
     strcpy(szPrevTitle, szTitle);
 
-
-    strcpy(szTitle, VBOX_PRODUCT " - ");
-
     Bstr name;
     gMachine->COMGETTER(Name)(name.asOutParam());
-    if (name)
-        strcat(szTitle, Utf8Str(name).raw());
-    else
-        strcat(szTitle, "<noname>");
 
+    RTStrPrintf(szTitle, sizeof(szTitle), "%s - " VBOX_PRODUCT,
+                name ? Utf8Str(name).raw() : "<noname>");
 
     /* which mode are we in? */
     switch (mode)
@@ -4397,15 +4384,15 @@ static void UpdateTitlebar(TitlebarMode mode, uint32_t u32User)
             MachineState_T machineState;
             gMachine->COMGETTER(State)(&machineState);
             if (machineState == MachineState_Paused)
-                strcat(szTitle, " - [Paused]");
+                RTStrPrintf(szTitle + strlen(szTitle), sizeof(szTitle) - strlen(szTitle), " - [Paused]");
 
             if (gfGrabbed)
-                strcat(szTitle, " - [Input captured]");
+                RTStrPrintf(szTitle + strlen(szTitle), sizeof(szTitle) - strlen(szTitle), " - [Input captured]");
 
+#if defined(DEBUG) || defined(VBOX_WITH_STATISTICS)
             // do we have a debugger interface
             if (gMachineDebugger)
             {
-#if defined(DEBUG) || defined(VBOX_WITH_STATISTICS)
                 // query the machine state
                 BOOL recompileSupervisor = FALSE;
                 BOOL recompileUser = FALSE;
@@ -4433,13 +4420,8 @@ static void UpdateTitlebar(TitlebarMode mode, uint32_t u32User)
                     RTStrPrintf(psz, &szTitle[sizeof(szTitle)] - psz, " WD=%d%%]", virtualTimeRate);
                 else
                     RTStrPrintf(psz, &szTitle[sizeof(szTitle)] - psz, "]");
-#else
-                BOOL hwVirtEnabled = FALSE;
-                gMachineDebugger->COMGETTER(HWVirtExEnabled)(&hwVirtEnabled);
-                RTStrPrintf(szTitle + strlen(szTitle), sizeof(szTitle) - strlen(szTitle),
-                            "%s", hwVirtEnabled ? " (HWVirtEx)" : "");
-#endif /* DEBUG */
             }
+#endif /* DEBUG || VBOX_WITH_STATISTICS */
             break;
         }
 
@@ -4451,7 +4433,8 @@ static void UpdateTitlebar(TitlebarMode mode, uint32_t u32User)
             MachineState_T machineState;
             gMachine->COMGETTER(State)(&machineState);
             if (machineState == MachineState_Starting)
-                strcat(szTitle, " - Starting...");
+                RTStrPrintf(szTitle + strlen(szTitle), sizeof(szTitle) - strlen(szTitle),
+                            " - Starting...");
             else if (machineState == MachineState_Restoring)
             {
                 ULONG cPercentNow;

@@ -209,15 +209,20 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
             return 1;
         }
 
-        PLUID pLuid = NULL;
-        DWORD dwNumOfProcLUIDs = VBoxServiceVMInfoWinGetLUIDsFromProcesses(&pLuid);
+        PVBOXSERVICEVMINFOPROC pProcs;
+        DWORD dwNumProcs;
+        rc = VBoxServiceVMInfoWinProcessesEnumerate(&pProcs, &dwNumProcs);
 
-        for (int i = 0; i<(int)ulCount; i++)
+        for (ULONG i=0; i<ulCount; i++)
         {
             VBOXSERVICEVMINFOUSER userInfo;
+            /* Leave the memory clearing *inside* the loop as VBoxServiceVMInfoWinIsLoggedIn
+             * assumes the memory reserved for strings is zeroed.
+             */
             ZeroMemory (&userInfo, sizeof(VBOXSERVICEVMINFOUSER));
 
-            if (VBoxServiceVMInfoWinIsLoggedIn(&userInfo, &pSessions[i], pLuid, dwNumOfProcLUIDs))
+            if (   VBoxServiceVMInfoWinIsLoggedIn(&userInfo, &pSessions[i])
+                && VBoxServiceVMInfoWinSessionGetProcessCount(&pSessions[i], pProcs, dwNumProcs))
             {
                 if (uiUserCount > 0)
                     strcat (szUserList, ",");
@@ -230,9 +235,7 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
             }
         }
 
-        if (NULL != pLuid)
-            ::LocalFree (pLuid);
-
+        VBoxServiceVMInfoWinProcessesFree(pProcs);
         ::LsaFreeReturnBuffer(pSessions);
  #endif /* TARGET_NT4 */
 #elif defined(RT_OS_FREEBSD)

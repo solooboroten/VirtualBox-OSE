@@ -224,7 +224,6 @@ static DECLCALLBACK(int) drvNATRecvWakeup(PPDMDRVINS pDrvIns, PPDMTHREAD pThread
     int rc = RTSemEventSignal(pThis->EventRecv);
 
     STAM_COUNTER_INC(&pThis->StatNATRecvWakeups);
-    AssertReleaseRC(rc);
     return VINF_SUCCESS;
 }
 
@@ -320,7 +319,7 @@ static void drvNATNotifyNATThread(PDRVNAT pThis)
     /* kick WSAWaitForMultipleEvents */
     rc = WSASetEvent(pThis->hWakeupEvent);
 #endif
-    AssertReleaseRC(rc);
+    AssertRC(rc);
 }
 
 

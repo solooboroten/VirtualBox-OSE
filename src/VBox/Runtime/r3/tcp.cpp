@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2010 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -129,6 +129,14 @@ typedef struct RTTCPSERVER
     void                       *pvUser;
 } RTTCPSERVER;
 
+typedef union RTSOCKADDRUNION
+{
+    struct sockaddr     Addr;
+    struct sockaddr_in  Ipv4;
+#ifdef IPRT_WITH_TCPIP_V6
+    struct sockaddr_in6 Ipv6;
+#endif
+} RTSOCKADDRUNION;
 
 /*******************************************************************************
 *   Internal Functions                                                         *
@@ -138,6 +146,7 @@ static int rtTcpServerListen(PRTTCPSERVER pServer);
 static void rcTcpServerListenCleanup(PRTTCPSERVER pServer);
 static void rtTcpServerDestroyServerSock(RTSOCKET SockServer, const char *pszMsg);
 static int rtTcpClose(RTSOCKET Sock, const char *pszMsg);
+static int  rtTcpConvertAddress(RTSOCKADDRUNION *pSrc, size_t cbSrc, PRTNETADDR pAddr);
 
 
 
@@ -837,6 +846,68 @@ RTR3DECL(int)  RTTcpSelectOne(RTSOCKET Sock, unsigned cMillies)
         return VINF_SUCCESS;
     if (rc == 0)
         return VERR_TIMEOUT;
+    return rtTcpError();
+}
+
+
+static int rtTcpConvertAddress(RTSOCKADDRUNION *pSrc, size_t cbSrc, PRTNETADDR pAddr)
+{
+    /*
+     * Convert the address.
+     */
+    if (   cbSrc == sizeof(struct sockaddr_in)
+        && pSrc->Addr.sa_family == AF_INET)
+    {
+        RT_ZERO(*pAddr);
+        pAddr->enmType      = RTNETADDRTYPE_IPV4;
+        pAddr->uPort        = RT_N2H_U16(pSrc->Ipv4.sin_port);
+        pAddr->uAddr.IPv4.u = pSrc->Ipv4.sin_addr.s_addr;
+    }
+#ifdef IPRT_WITH_TCPIP_V6
+    else if (   cbSrc == sizeof(struct sockaddr_in6)
+             && pSrc->Addr.sa_family == AF_INET6)
+    {
+        RT_ZERO(*pAddr);
+        pAddr->enmType            = RTNETADDRTYPE_IPV6;
+        pAddr->uPort              = RT_N2H_U16(pSrc->Ipv6.sin6_port);
+        pAddr->uAddr.IPv6.au32[0] = pSrc->Ipv6.sin6_addr.s6_addr32[0];
+        pAddr->uAddr.IPv6.au32[1] = pSrc->Ipv6.sin6_addr.s6_addr32[1];
+        pAddr->uAddr.IPv6.au32[2] = pSrc->Ipv6.sin6_addr.s6_addr32[2];
+        pAddr->uAddr.IPv6.au32[3] = pSrc->Ipv6.sin6_addr.s6_addr32[3];
+    }
+#endif
+    else
+        return VERR_NET_ADDRESS_FAMILY_NOT_SUPPORTED;
+    return VINF_SUCCESS;
+}
+
+
+RTR3DECL(int) RTTcpGetLocalAddress(RTSOCKET Sock, PRTNETADDR pAddr)
+{
+    RTSOCKADDRUNION u;
+#ifdef RT_OS_WINDOWS
+    int             cbAddr = sizeof(u);
+#else
+    socklen_t       cbAddr = sizeof(u);
+#endif
+    RT_ZERO(u);
+    if (!getsockname(Sock, &u.Addr, &cbAddr))
+        return rtTcpConvertAddress(&u, cbAddr, pAddr);
+    return rtTcpError();
+}
+
+
+RTR3DECL(int) RTTcpGetPeerAddress(RTSOCKET Sock, PRTNETADDR pAddr)
+{
+    RTSOCKADDRUNION u;
+#ifdef RT_OS_WINDOWS
+    int             cbAddr = sizeof(u);
+#else
+    socklen_t       cbAddr = sizeof(u);
+#endif
+    RT_ZERO(u);
+    if (!getpeername(Sock, &u.Addr, &cbAddr))
+        return rtTcpConvertAddress(&u, cbAddr, pAddr);
     return rtTcpError();
 }
 

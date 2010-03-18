@@ -687,6 +687,8 @@ HRESULT HardDisk::FinalConstruct()
     mm.vdIfCallsTcpNet.pfnRead = RTTcpRead;
     mm.vdIfCallsTcpNet.pfnWrite = RTTcpWrite;
     mm.vdIfCallsTcpNet.pfnFlush = RTTcpFlush;
+    mm.vdIfCallsTcpNet.pfnGetLocalAddress = RTTcpGetLocalAddress;
+    mm.vdIfCallsTcpNet.pfnGetPeerAddress = RTTcpGetPeerAddress;
 
     /* Initialize the per-disk interface chain */
     int vrc;

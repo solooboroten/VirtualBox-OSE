@@ -1,8 +1,8 @@
-virtualbox-ose (3.0.14~beta-1) unstable; urgency=low
+virtualbox-ose (3.0.14) unstable; urgency=low
 
   * rebuild Debian package
 
- -- Sun Microsystems, Inc. <info@virtualbox.org>  Mon, 08 Feb 2010 18:00:00 +0100
+ -- Sun Microsystems, Inc. <info@virtualbox.org>  Thu, 18 Mar 2010 14:00:00 +0100
 
 virtualbox-ose (3.0.12) unstable; urgency=low
 

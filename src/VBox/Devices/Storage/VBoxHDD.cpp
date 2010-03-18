@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2008 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2010 Sun Microsystems, Inc.
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -1827,7 +1827,7 @@ VBOXDDU_DECL(int) VDMerge(PVBOXHDD pDisk, unsigned nImageFrom,
                 rc = pImageTo->Backend->pfnGetUuid(pImageTo->pvBackendData,
                                                    &Uuid);
                 AssertRC(rc);
-                rc = pImageFrom->Backend->pfnSetParentUuid(pImageFrom->pNext,
+                rc = pImageFrom->Backend->pfnSetParentUuid(pImageFrom->pNext->pvBackendData,
                                                            &Uuid);
                 AssertRC(rc);
             }
@@ -2112,7 +2112,10 @@ VBOXDDU_DECL(int) VDCopy(PVBOXHDD pDiskFrom, unsigned nImage, PVBOXHDD pDiskTo,
 
         if (RT_SUCCESS(rc))
         {
-            pImageTo->Backend->pfnSetModificationUuid(pImageTo->pvBackendData, &ImageModificationUuid);
+            /* Only set modification UUID if it is non-null, since the source
+             * backend might not provide a valid modification UUID. */
+            if (!RTUuidIsNull(&ImageModificationUuid))
+                pImageTo->Backend->pfnSetModificationUuid(pImageTo->pvBackendData, &ImageModificationUuid);
             /** @todo double-check this - it makes little sense to copy over the parent modification uuid,
              * as the destination image can have a totally different parent. */
 #if 0

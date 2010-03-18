@@ -1413,6 +1413,7 @@ static int buslogicProcessCommand(PBUSLOGIC pBusLogic)
             pReply->fHostWideSCSI = true;
             pReply->fHostUltraSCSI = true;
             pReply->u16ScatterGatherLimit = 8192;
+            pBusLogic->regStatus |= BUSLOGIC_REGISTER_STATUS_INITIALIZATION_REQUIRED;
 
             break;
         }
@@ -1576,10 +1577,6 @@ static int buslogicRegisterRead(PBUSLOGIC pBusLogic, unsigned iRegister, uint32_
         case BUSLOGIC_REGISTER_INTERRUPT:
         {
             *pu32 = pBusLogic->regInterrupt;
-#if 0
-            if (pBusLogic->uOperationCode == BUSLOGICCOMMAND_DISABLE_HOST_ADAPTER_INTERRUPT)
-                rc = PDMDeviceDBGFStop(pBusLogic->CTX_SUFF(pDevIns), RT_SRC_POS, "Interrupt disable command\n");
-#endif
             break;
         }
         case BUSLOGIC_REGISTER_GEOMETRY:
@@ -1631,7 +1628,7 @@ static int buslogicRegisterWrite(PBUSLOGIC pBusLogic, unsigned iRegister, uint8_
         case BUSLOGIC_REGISTER_COMMAND:
         {
             /* Fast path for mailbox execution command. */
-            if ((uVal == BUSLOGICCOMMAND_EXECUTE_MAILBOX_COMMAND) && (pBusLogic->uOperationCode = 0xff))
+            if ((uVal == BUSLOGICCOMMAND_EXECUTE_MAILBOX_COMMAND) && (pBusLogic->uOperationCode == 0xff))
             {
                 ASMAtomicIncU32(&pBusLogic->cMailboxesReady);
                 if (!ASMAtomicXchgBool(&pBusLogic->fNotificationSend, true))

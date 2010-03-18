@@ -1994,7 +1994,14 @@ PGM_BTH_DECL(int, SyncPage)(PVMCPU pVCpu, GSTPDE PdeSrc, RTGCPTR GCPtrPage, unsi
     Assert(pPDDst);
     PdeDst = pPDDst->a[iPDDst];
 # endif
-    AssertMsg(PdeDst.n.u1Present, ("%#llx\n", (uint64_t)PdeDst.u));
+    /* In the guest SMP case we could have blocked while another VCPU reused this page table. */
+    if (!PdeDst.n.u1Present)
+    {
+        AssertMsg(pVM->cCPUs > 1, ("Unexpected missing PDE %RX64\n", (uint64_t)PdeDst.u));
+        Log(("CPU%d: SyncPage: Pde at %RGv changed behind our back!\n", GCPtrPage));
+        return VINF_SUCCESS;    /* force the instruction to be executed again. */
+    }
+
     PPGMPOOLPAGE  pShwPage = pgmPoolGetPage(pPool, PdeDst.u & SHW_PDE_PG_MASK);
     PSHWPT        pPTDst   = (PSHWPT)PGMPOOL_PAGE_2_PTR(pVM, pShwPage);
 
@@ -4425,7 +4432,7 @@ PGM_BTH_DECL(int, MapCR3)(PVMCPU pVCpu, RTGCPHYS GCPhysCR3)
 #  endif
 
     /* Clean up the old CR3 root. */
-    if (    pOldShwPageCR3 
+    if (    pOldShwPageCR3
         &&  pOldShwPageCR3 != pNewShwPageCR3    /* @todo can happen due to incorrect syncing between REM & PGM; find the real cause */)
     {
         Assert(pOldShwPageCR3->enmKind != PGMPOOLKIND_FREE);

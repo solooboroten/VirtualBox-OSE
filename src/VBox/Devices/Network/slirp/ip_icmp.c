@@ -181,7 +181,11 @@ icmp_find_original_mbuf(PNATState pData, struct ip *ip)
             {
                 m0 = icm->im_m;
                 ip0 = mtod(m0, struct ip *);
-                AssertRelease(ip0->ip_p == IPPROTO_ICMP);
+                if (ip0->ip_p != IPPROTO_ICMP)
+                {
+                    /* try next item */
+                    continue;
+                }
                 icp0 = (struct icmp *)((char *)ip0 + (ip0->ip_hl << 2));
                 if (  (   (icp->icmp_type != ICMP_ECHO && ip->ip_src.s_addr == ip0->ip_dst.s_addr)
                        || (icp->icmp_type == ICMP_ECHO && ip->ip_dst.s_addr == ip0->ip_dst.s_addr))
@@ -526,10 +530,11 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
     /* make a copy */
     if (!(m = m_get(pData)))
         goto end_error;                    /* get mbuf */
+
     {
         int new_m_size;
         m->m_data += if_maxlinkhdr;
-        new_m_size = sizeof(struct ip) + ICMP_MINLEN + msrc->m_len + ICMP_MAXDATALEN;
+        new_m_size = if_maxlinkhdr + sizeof(struct ip) + ICMP_MINLEN + msrc->m_len + ICMP_MAXDATALEN;
         if (new_m_size > m->m_size)
             m_inc(m, new_m_size);
     }

@@ -472,20 +472,16 @@ STDMETHODIMP MediumBase::UnlockWrite (MediaState_T *aState)
 
 STDMETHODIMP MediumBase::Close()
 {
-    AutoMayUninitSpan mayUninitSpan (this);
-    CheckComRCReturnRC (mayUninitSpan.rc());
-
-    if (mayUninitSpan.alreadyInProgress())
-        return S_OK;
-
     /* unregisterWithVirtualBox() is assumed to always need a write mVirtualBox
-     * lock as it is intenede to modify its internal structires. Also, we want
+     * lock as it is intended to modify its internal structures. Also, we want
      * to unregister ourselves atomically after detecting that closure is
      * possible to make sure that we don't do that after another thread has done
      * VirtualBox::find*() but before it starts using us (provided that it holds
-     * a mVirtualBox lock of course). */
-
-    AutoWriteLock vboxLock (mVirtualBox);
+     * a mVirtualBox lock of course). Additionally get the hard disk tree lock,
+     * which is technically only needed for hard disks, but there is no clean
+     * way of getting this lock here to protect the hard disk tree. */
+    AutoMultiWriteLock2 alock(mVirtualBox->lockHandle(),
+                              mVirtualBox->hardDiskTreeLockHandle());
 
     bool wasCreated = true;
 
@@ -519,8 +515,9 @@ STDMETHODIMP MediumBase::Close()
         CheckComRCReturnRC (rc);
     }
 
-    /* cause uninit() to happen on success */
-    mayUninitSpan.acceptUninit();
+    /* Keep the locks held, as otherwise the consistency of the medium tree
+     * cannot be guaranteed. Just continue with uninitialization. */
+    uninit();
 
     return S_OK;
 }

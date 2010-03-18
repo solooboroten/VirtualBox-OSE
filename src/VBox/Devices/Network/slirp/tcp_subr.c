@@ -749,7 +749,7 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
                 laddr = htonl((n1 << 24) | (n2 << 16) | (n3 << 8) | (n4));
                 lport = htons((n5 << 8) | (n6));
 
-                if ((so = solisten(pData, 0, laddr, lport, SS_FACCEPTONCE)) == NULL)
+                if ((so = solisten(pData, 0, 0, laddr, lport, SS_FACCEPTONCE)) == NULL)
                     return 1;
 
                 n6 = ntohs(so->so_fport);
@@ -788,7 +788,7 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
                 laddr = htonl((n1 << 24) | (n2 << 16) | (n3 << 8) | (n4));
                 lport = htons((n5 << 8) | (n6));
 
-                if ((so = solisten(pData, 0, laddr, lport, SS_FACCEPTONCE)) == NULL)
+                if ((so = solisten(pData, 0, 0, laddr, lport, SS_FACCEPTONCE)) == NULL)
                     return 1;
 
                 n6 = ntohs(so->so_fport);
@@ -828,7 +828,7 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
             }
             if (   m->m_data[m->m_len-1] == '\0'
                 && lport != 0
-                && (so = solisten(pData, 0, so->so_laddr.s_addr,
+                && (so = solisten(pData, 0, 0, so->so_laddr.s_addr,
                                   htons(lport), SS_FACCEPTONCE)) != NULL)
                 m->m_len = sprintf(m->m_data, "%d", ntohs(so->so_fport))+1;
             return 1;
@@ -844,7 +844,7 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
             /* The %256s is for the broken mIRC */
             if (sscanf(bptr, "DCC CHAT %256s %u %u", buff, &laddr, &lport) == 3)
             {
-                if ((so = solisten(pData, 0, htonl(laddr),
+                if ((so = solisten(pData, 0, 0, htonl(laddr),
                                    htons(lport), SS_FACCEPTONCE)) == NULL)
                     return 1;
 
@@ -855,7 +855,7 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
             }
             else if (sscanf(bptr, "DCC SEND %256s %u %u %u", buff, &laddr, &lport, &n1) == 4)
             {
-                if ((so = solisten(pData, 0, htonl(laddr), htons(lport), SS_FACCEPTONCE)) == NULL)
+                if ((so = solisten(pData, 0, 0, htonl(laddr), htons(lport), SS_FACCEPTONCE)) == NULL)
                     return 1;
 
                 m->m_len = bptr - m->m_data; /* Adjust length */
@@ -865,7 +865,7 @@ tcp_emu(PNATState pData, struct socket *so, struct mbuf *m)
             }
             else if (sscanf(bptr, "DCC MOVE %256s %u %u %u", buff, &laddr, &lport, &n1) == 4)
             {
-                if ((so = solisten(pData, 0, htonl(laddr), htons(lport), SS_FACCEPTONCE)) == NULL)
+                if ((so = solisten(pData, 0, 0, htonl(laddr), htons(lport), SS_FACCEPTONCE)) == NULL)
                     return 1;
 
                 m->m_len = bptr - m->m_data; /* Adjust length */
