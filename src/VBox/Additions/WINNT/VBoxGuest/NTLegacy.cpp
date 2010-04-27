@@ -2,7 +2,7 @@
  *
  * VBoxGuest -- VirtualBox Win32 guest support driver
  *
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -11,10 +11,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 // enable backdoor logging
@@ -57,12 +53,14 @@ static void                freeDeviceResources(PDRIVER_OBJECT pDrvObj, PDEVICE_O
 NTSTATUS ntCreateDevice(PDRIVER_OBJECT pDrvObj, PDEVICE_OBJECT pDevObj, PUNICODE_STRING pRegPath)
 {
     ULONG busNumber, slotNumber;
-//    ULONG i;
     NTSTATUS rc = STATUS_SUCCESS;
 
-    dprintf(("VBoxGuest::ntCreateDevice: entered\n"));
+    dprintf(("VBoxGuest::ntCreateDevice: entered, pDrvObj=%x, pDevObj=%x, pRegPath=%x\n",
+        pDrvObj, pDevObj, pRegPath));
 
-    // find our virtual PCI device
+    /*
+     * Find our virtual PCI device
+     */
     rc = findPCIDevice(&busNumber, (PCI_SLOT_NUMBER*)&slotNumber);
     if (!NT_SUCCESS(rc))
     {
@@ -100,7 +98,7 @@ NTSTATUS ntCreateDevice(PDRIVER_OBJECT pDrvObj, PDEVICE_OBJECT pDevObj, PUNICODE
     PVBOXGUESTDEVEXT pDevExt = (PVBOXGUESTDEVEXT)deviceObject->DeviceExtension;
     RtlZeroMemory(pDevExt, sizeof(VBOXGUESTDEVEXT));
 
-    if (pDevObj)
+    if (pDevObj) /* pDevObj always is NULL at the moment, so don't attach to the driver stack */
     {
         pDevExt->nextLowerDriver = IoAttachDeviceToDeviceStack(deviceObject, pDevObj);
         if (pDevExt->nextLowerDriver == NULL)
@@ -110,22 +108,26 @@ NTSTATUS ntCreateDevice(PDRIVER_OBJECT pDrvObj, PDEVICE_OBJECT pDevObj, PUNICODE
             IoDeleteDevice(deviceObject);
             return STATUS_NO_SUCH_DEVICE;
         }
+        dprintf(("VBoxGuest::ntCreateDevice: device attached to stack\n"));
+    }
 
 #ifdef VBOX_WITH_HGCM
-        int rc2 = RTSpinlockCreate(&pDevExt->SessionSpinlock);
-        if (RT_FAILURE(rc2))
-        {
-            dprintf(("VBoxGuest::ntCreateDevice: RTSpinlockCreate failed\n"));
-            IoDetachDevice(pDevExt->nextLowerDriver);
-            IoDeleteSymbolicLink(&DosName);
-            IoDeleteDevice(deviceObject);
-            return STATUS_DRIVER_UNABLE_TO_LOAD;
-        }
-#endif
+    /* Create global spinlock for all driver sessions */
+    int rc2 = RTSpinlockCreate(&pDevExt->SessionSpinlock);
+    if (RT_FAILURE(rc2))
+    {
+        dprintf(("VBoxGuest::ntCreateDevice: RTSpinlockCreate failed\n"));
+        IoDetachDevice(pDevExt->nextLowerDriver);
+        IoDeleteSymbolicLink(&DosName);
+        IoDeleteDevice(deviceObject);
+        return STATUS_DRIVER_UNABLE_TO_LOAD;
     }
-    // store a reference to ourself
+    dprintf(("VBoxGuest::ntCreateDevice: spinlock created\n"));
+#endif
+
+    /* Store a reference to ourself */
     pDevExt->deviceObject = deviceObject;
-    // store bus and slot number we've queried before
+    /* Store bus and slot number we've queried before */
     pDevExt->busNumber = busNumber;
     pDevExt->slotNumber = slotNumber;
 

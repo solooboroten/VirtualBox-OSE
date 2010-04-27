@@ -24,7 +24,7 @@
         <translation></translation>
     </message>
     <message>
-        <source>Sun Microsystems, Inc.</source>
+        <source>Oracle Corporation</source>
         <comment>Comma-separated list of translators</comment>
         <translation>Vincenzo Reale, Ciro Mattia Gonano</translation>
     </message>
@@ -557,7 +557,7 @@ Versione %1</translation>
     </message>
 </context>
 <context>
-    <name>VBoxAdditionsDownloader</name>
+    <name>UIDownloaderAdditions</name>
     <message>
         <source>Cancel</source>
         <translation>Annulla</translation>
@@ -1741,7 +1741,7 @@ Versione %1</translation>
     </message>
 </context>
 <context>
-    <name>VBoxDownloaderWgt</name>
+    <name>UIDownloader</name>
     <message>
         <source>Cancel</source>
         <translation type="obsolete">Annulla</translation>
@@ -1795,7 +1795,7 @@ Versione %1</translation>
     </message>
 </context>
 <context>
-    <name>VBoxExportApplianceWzd</name>
+    <name>UIExportApplianceWzd</name>
     <message>
         <source>Select a file to export into</source>
         <translation>Seleziona un file per l&apos;esportazione</translation>
@@ -2058,6 +2058,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>&amp;Dock Icon Realtime Preview</source>
         <translation>Anteprima in tempo reale &amp;dell&apos;icona del pannello</translation>
+    </message>
+    <message>
+        <source>&amp;Auto show Dock and Menubar in fullscreen</source>
+        <translation>Mostr&amp;a automaticamente il pannello e la barra dei menu a schermo intero</translation>
     </message>
 </context>
 <context>
@@ -3480,7 +3484,7 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Taking Live Snapshot</source>
         <comment>MachineState</comment>
-        <translation type="unfinished"></translation>
+        <translation>Acquisizione istantanea a caldo</translation>
     </message>
     <message>
         <source>Teleporting Paused VM</source>
@@ -3515,7 +3519,7 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>IDE Primary Slave</source>
         <comment>New Storage UI : Slot Name</comment>
-        <translation>IDE slave secondario</translation>
+        <translation>IDE slave primario</translation>
     </message>
     <message>
         <source>IDE Secondary Master</source>
@@ -3624,6 +3628,52 @@ p, li { white-space: pre-wrap; }
         <source>This base hard disk is indirectly attached using the following differencing hard disk:</source>
         <comment>medium</comment>
         <translation>Questo disco fisso di base è collegato indirettamente utilizzando il seguente disco differenziale:</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n year(s)</source>
+        <translation>
+            <numerusform>%n anno</numerusform>
+            <numerusform>%n anni</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n month(s)</source>
+        <translation>
+            <numerusform>%n mese</numerusform>
+            <numerusform>%n mesi</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation>
+            <numerusform>%n giorno</numerusform>
+            <numerusform>%n giorni</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation>
+            <numerusform>%n ora</numerusform>
+            <numerusform>%n ore</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minute(s)</source>
+        <translation>
+            <numerusform>%n minuto</numerusform>
+            <numerusform>%n minuti</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n second(s)</source>
+        <translation>
+            <numerusform>%n secondo</numerusform>
+            <numerusform>%n secondi</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>(CD/DVD)</source>
+        <translation>(CD/DVD)</translation>
     </message>
 </context>
 <context>
@@ -4213,7 +4263,7 @@ la lingua a quella predefinita di sistema.&lt;/qt&gt;
     </message>
 </context>
 <context>
-    <name>VBoxImportApplianceWzd</name>
+    <name>UIImportApplianceWzd</name>
     <message>
         <source>Select an appliance to import</source>
         <translation>Seleziona un&apos;applicazione virtuale da importare</translation>
@@ -4276,7 +4326,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxImportLicenseViewer</name>
+    <name>UIImportLicenseViewer</name>
     <message>
         <source>&lt;b&gt;The virtual system &quot;%1&quot; requires that you agree to the terms and conditions of the software license agreement shown below.&lt;/b&gt;&lt;br /&gt;&lt;br /&gt;Click &lt;b&gt;Agree&lt;/b&gt; to continue or click &lt;b&gt;Disagree&lt;/b&gt; to cancel the import.</source>
         <translation>&lt;b&gt;Il sistema virtuale &quot;%1&quot; richiede l&apos;accettazione dei termini e delle condizioni dell&apos;accordo di licenza software mostrato in seguito.&lt;/b&gt;&lt;br /&gt;&lt;br /&gt;Fai clic su &lt;b&gt;Accetto&lt;/b&gt; per continuare o su &lt;b&gt;Non accetto&lt;/b&gt; per annullare l&apos;importazione.</translation>
@@ -4611,7 +4661,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxNewHDWzd</name>
+    <name>UINewHDWzd</name>
     <message>
         <source>Create New Virtual Disk</source>
         <translation>Crea un nuovo disco virtuale</translation>
@@ -4830,7 +4880,7 @@ alla velocità di scrittura del tuo disco rigido.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
-    <name>VBoxNewVMWzd</name>
+    <name>UINewVMWzd</name>
     <message>
         <source>Create New Virtual Machine</source>
         <translation>Crea una nuova macchina virtuale</translation>
@@ -6169,6 +6219,15 @@ questo passo e collegare hard disk più tardi tramite Impostazioni della MV.&lt;
         <comment>failed to close ...</comment>
         <translation>dispositivo floppy</translation>
     </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to delete the CD/DVD-ROM device?&lt;/p&gt;&lt;p&gt;You will not be able to mount any CDs or ISO images or install the Guest Additions without it!&lt;/p&gt;</source>
+        <translation>&lt;p&gt;Sei sicuro di voler eliminare il dispositivo CD/DVD-ROM?&lt;/p&gt;&lt;p&gt;Senza non potrai montare alcun CD o immagine ISO o installare le Guest Additions!&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>&amp;Remove</source>
+        <comment>medium</comment>
+        <translation>&amp;Rimuovi</translation>
+    </message>
 </context>
 <context>
     <name>VBoxProgressDialog</name>
@@ -6182,55 +6241,55 @@ questo passo e collegare hard disk più tardi tramite Impostazioni della MV.&lt;
     </message>
     <message>
         <source>%1 days, %2 hours remaining</source>
-        <translation>%1 giorni, %2 ore rimanenti</translation>
+        <translation type="obsolete">%1 giorni, %2 ore rimanenti</translation>
     </message>
     <message>
         <source>%1 days, %2 minutes remaining</source>
-        <translation>%1 giorni, %2 minuti rimanenti</translation>
+        <translation type="obsolete">%1 giorni, %2 minuti rimanenti</translation>
     </message>
     <message>
         <source>%1 days remaining</source>
-        <translation>%1 giorni rimanenti</translation>
+        <translation type="obsolete">%1 giorni rimanenti</translation>
     </message>
     <message>
         <source>1 day, %1 hours remaining</source>
-        <translation>1 giorno, %1 ore rimanenti</translation>
+        <translation type="obsolete">1 giorno, %1 ore rimanenti</translation>
     </message>
     <message>
         <source>1 day, %1 minutes remaining</source>
-        <translation>1 giorno, %1 minuti rimanenti</translation>
+        <translation type="obsolete">1 giorno, %1 minuti rimanenti</translation>
     </message>
     <message>
         <source>1 day remaining</source>
-        <translation>1 giorno rimanente</translation>
+        <translation type="obsolete">1 giorno rimanente</translation>
     </message>
     <message>
         <source>%1 hours, %2 minutes remaining</source>
-        <translation>%1 ore, %2 minuti rimanenti</translation>
+        <translation type="obsolete">%1 ore, %2 minuti rimanenti</translation>
     </message>
     <message>
         <source>1 hour, %1 minutes remaining</source>
-        <translation>1 ora, %1 minuti rimanenti</translation>
+        <translation type="obsolete">1 ora, %1 minuti rimanenti</translation>
     </message>
     <message>
         <source>1 hour remaining</source>
-        <translation>1 ora rimanente</translation>
+        <translation type="obsolete">1 ora rimanente</translation>
     </message>
     <message>
         <source>%1 minutes remaining</source>
-        <translation>%1 minuti rimanenti</translation>
+        <translation type="obsolete">%1 minuti rimanenti</translation>
     </message>
     <message>
         <source>1 minute, %2 seconds remaining</source>
-        <translation>1 minuto, %2 secondi rimanenti</translation>
+        <translation type="obsolete">1 minuto, %2 secondi rimanenti</translation>
     </message>
     <message>
         <source>1 minute remaining</source>
-        <translation>1 minuto rimanente</translation>
+        <translation type="obsolete">1 minuto rimanente</translation>
     </message>
     <message>
         <source>%1 seconds remaining</source>
-        <translation>%1 secondi rimanenti</translation>
+        <translation type="obsolete">%1 secondi rimanenti</translation>
     </message>
     <message>
         <source>A few seconds remaining</source>
@@ -6243,6 +6302,16 @@ questo passo e collegare hard disk più tardi tramite Impostazioni della MV.&lt;
     <message>
         <source>Cancel the current operation</source>
         <translation>Annulla l&apos;operazione corrente</translation>
+    </message>
+    <message>
+        <source>%1, %2 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1, %2&quot;</comment>
+        <translation>%1, %2 rimanente</translation>
+    </message>
+    <message>
+        <source>%1 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1&quot;</comment>
+        <translation>%1 rimanente</translation>
     </message>
 </context>
 <context>
@@ -7128,28 +7197,28 @@ per accedervi da un sistema Linux. Questa funzionalità richiede Guest Additions
     </message>
     <message numerus="yes">
         <source> (%n day(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n giorno fa)</numerusform>
             <numerusform> (%n giorni fa)</numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source> (%n hour(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n ora fa)</numerusform>
             <numerusform> (%n ore fa)</numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source> (%n minute(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n minuto fa)</numerusform>
             <numerusform> (%n minuti fa)</numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source> (%n second(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n secondo fa)</numerusform>
             <numerusform> (%n secondi fa)</numerusform>
         </translation>
@@ -7169,6 +7238,10 @@ per accedervi da un sistema Linux. Questa funzionalità richiede Guest Additions
     <message>
         <source>Delete the selected snapshot of the virtual machine</source>
         <translation>Elimina l&apos;istantanea selezionata della macchina virtuale</translation>
+    </message>
+    <message>
+        <source> (%1 ago)</source>
+        <translation> (%1 fa)</translation>
     </message>
 </context>
 <context>
@@ -7219,6 +7292,13 @@ per accedervi da un sistema Linux. Questa funzionalità richiede Guest Additions
     <message>
         <source>Cancel</source>
         <translation type="obsolete">Annulla</translation>
+    </message>
+    <message numerus="yes">
+        <source>Warning: You are taking a snapshot of a running machine which has %n immutable image(s) attached to it. As long as you are working from this snapshot the immutable image(s) will not be reset to avoid loss of data.</source>
+        <translation>
+            <numerusform>Avviso: stai acquisendo un&apos;istantanea di una macchina in esecuzione che ha un&apos;immagine non modificabile collegata. Fino a quando lavorerari con questa istantanea, l&apos;immagine non modificabile non sarà ripristinata per evitare perdite di dati.</numerusform>
+            <numerusform>Avviso: stai acquisendo un&apos;istantanea di una macchina in esecuzione che ha %n immagini non modificabili collegate. Fino a quando lavorerari con questa istantanea, le immagini non modificabili non saranno ripristinate per evitare perdite di dati.</numerusform>
+        </translation>
     </message>
 </context>
 <context>
@@ -7545,7 +7625,7 @@ qualsiasi valore.&lt;/qt&gt;</translation>
     </message>
 </context>
 <context>
-    <name>VBoxVMFirstRunWzd</name>
+    <name>UIFirstRunWzd</name>
     <message>
         <source>First Run Wizard</source>
         <translation>Assistente di primo avvio</translation>

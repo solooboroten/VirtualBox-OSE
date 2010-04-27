@@ -1,10 +1,10 @@
-/* $Revision: 23916 $ */
+/* $Revision: 28800 $ */
 /** @file
  * VBoxGuestLibR0 - Generic VMMDev request management.
  */
 
 /*
- * Copyright (C) 2006-2009 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -14,9 +14,14 @@
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
+ * The contents of this file may alternatively be used under the terms
+ * of the Common Development and Distribution License Version 1.0
+ * (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+ * VirtualBox OSE distribution, in which case the provisions of the
+ * CDDL are applicable instead of those of the GPL.
+ *
+ * You may elect to license modified versions of this file under the
+ * terms and conditions of either the GPL or the CDDL or both.
  */
 
 #include "VBGLInternal.h"
@@ -62,7 +67,7 @@ DECLVBGL(int) VbglGRVerify (const VMMDevRequestHeader *pReq, size_t cbReq)
     }
 
     /* This can be a variable size request. Check the request type and limit the size
-     * to VMMDEV_MAX_VMMDEVREQ_SIZE, which is max size supported by the host. 
+     * to VMMDEV_MAX_VMMDEVREQ_SIZE, which is max size supported by the host.
      */
     if (   pReq->requestType == VMMDevReq_LogString
         || pReq->requestType == VMMDevReq_VideoSetVisibleRegion

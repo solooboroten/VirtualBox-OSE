@@ -1,10 +1,10 @@
 #! /bin/sh
 # Sun VirtualBox
-# Linux Additions kernel module init script ($Revision: 25038 $)
+# Linux Additions kernel module init script ($Revision: 28800 $)
 #
 
 #
-# Copyright (C) 2006-2009 Sun Microsystems, Inc.
+# Copyright (C) 2006-2009 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -14,13 +14,9 @@
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 #
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
-#
 
 
-# chkconfig: 35 30 70
+# chkconfig: 357 30 70
 # description: VirtualBox Linux Additions kernel modules
 #
 ### BEGIN INIT INFO
@@ -38,6 +34,28 @@ BUILDVBOXGUEST=`/bin/ls /usr/src/vboxguest*/build_in_tmp 2>/dev/null|cut -d' ' -
 BUILDVBOXVFS=`/bin/ls /usr/src/vboxvfs*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
 BUILDVBOXVIDEO=`/bin/ls /usr/src/vboxvideo*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
 LOG="/var/log/vboxadd-install.log"
+MODPROBE=/sbin/modprobe
+
+if $MODPROBE -c | grep -q '^allow_unsupported_modules  *0'; then
+  MODPROBE="$MODPROBE --allow-unsupported-modules"
+fi
+
+# Check architecture
+cpu=`uname -m`;
+case "$cpu" in
+  i[3456789]86|x86)
+    cpu="x86"
+    lib_path="/usr/lib"
+    ;;
+  x86_64|amd64)
+    cpu="amd64"
+    if test -d "/usr/lib64"; then
+      lib_path="/usr/lib64"
+    else
+      lib_path="/usr/lib"
+    fi
+    ;;
+esac
 
 if [ -f /etc/arch-release ]; then
     system=arch
@@ -187,7 +205,7 @@ start()
             fail "Cannot remove $userdev"
         }
 
-        modprobe vboxguest >/dev/null 2>&1 || {
+        $MODPROBE vboxguest >/dev/null 2>&1 || {
             fail "modprobe vboxguest failed"
         }
         sleep .5
@@ -239,7 +257,7 @@ start()
 
     if [ -n "$BUILDVBOXVFS" ]; then
         running_vboxvfs || {
-            modprobe vboxvfs > /dev/null 2>&1 || {
+            $MODPROBE vboxvfs > /dev/null 2>&1 || {
                 if dmesg | grep "vboxConnect failed" > /dev/null 2>&1; then
                     fail_msg
                     echo "Unable to start shared folders support.  Make sure that your VirtualBox build"
@@ -377,7 +395,10 @@ setup()
     fi
 
     # Put mount.vboxsf in the right place
-    ln -sf /usr/lib/$PACKAGE/mount.vboxsf /sbin
+    ln -sf "$lib_path/$PACKAGE/mount.vboxsf" /sbin
+    # At least Fedora 11 and Fedora 12 demand on the correct security context when
+    # executing this command from service scripts. Shouldn't hurt for other distributions.
+    chcon -u system_u -t mount_exec_t "$lib_path/$PACKAGE/mount.vboxsf" > /dev/null 2>&1
 
     succ_msg
     if running_vboxguest || running_vboxadd; then

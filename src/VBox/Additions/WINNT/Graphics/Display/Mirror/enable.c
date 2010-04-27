@@ -1,6 +1,6 @@
 /******************************Module*Header*******************************\
 *
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -9,10 +9,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
 */
 /*
 * Based in part on Microsoft DDK sample code
@@ -98,8 +94,8 @@ PDRVENABLEDATA pded)
 // Future graphic's engine may break calls down to old driver format.
 
     if (cj >= sizeof(ULONG))
-	// DDI_DRIVER_VERSION is now out-dated. See winddi.h
-	// DDI_DRIVER_VERSION_NT4 is equivalent to the old DDI_DRIVER_VERSION
+    // DDI_DRIVER_VERSION is now out-dated. See winddi.h
+    // DDI_DRIVER_VERSION_NT4 is equivalent to the old DDI_DRIVER_VERSION
         pded->iDriverVersion = DDI_DRIVER_VERSION_NT4;
 
     return(TRUE);
@@ -159,7 +155,7 @@ HANDLE      hDriver)        // Handle to base driver
         DISPDBG((0,"DISP DrvEnablePDEV failed\n"));
         goto error_free;
     }
-    
+
     // Copy the devinfo into the engine buffer.
 
     memcpy(pDevInfo, &DevInfo, min(sizeof(DEVINFO), cjDevInfo));
@@ -209,7 +205,7 @@ DHPDEV dhpdev)
 {
    PPDEV ppdev = (PPDEV) dhpdev;
    DISPDBG((0,"DrvDisablePDEV\n"));
-   
+
    EngDeletePalette(ppdev->hpalDefault);
 
    EngFreeMem(dhpdev);
@@ -263,12 +259,12 @@ DHPDEV dhpdev)
         ulBitmapType = BMF_32BPP;
         flHooks = HOOKS_BMF32BPP;
     }
-    
+
     flHooks |= flGlobalHooks;
 
-    mirrorsize = (ULONG)(sizeof(MIRRSURF) + 
+    mirrorsize = (ULONG)(sizeof(MIRRSURF) +
                          ppdev->lDeltaScreen * sizl.cy);
-    
+
     mirrsurf = (MIRRSURF *) EngAllocMem(FL_ZERO_MEMORY,
                                         mirrorsize,
                                         0x4D495252);
@@ -276,8 +272,8 @@ DHPDEV dhpdev)
         RIP("DISP DrvEnableSurface failed EngAllocMem\n");
         return(FALSE);
     }
-    
-    
+
+
     dhsurf = (DHSURF) mirrsurf;
 
 //    dhsurf = (DHSURF) ppdev;
@@ -309,7 +305,7 @@ DHPDEV dhpdev)
     mirrsurf->bIsScreen = TRUE;
 
     DISPDBG((0,"DrvEnableSurface OK\n"));
-    
+
     return(hsurf);
 }
 
@@ -328,7 +324,7 @@ DHPDEV dhpdev)
     DISPDBG((0,"DrvDisableSurface:\n"));
 
     EngDeleteSurface( ppdev->hsurfEng );
-    
+
     // deallocate MIRRSURF structure.
 
     EngFreeMem( ppdev->pvTmpBuffer );

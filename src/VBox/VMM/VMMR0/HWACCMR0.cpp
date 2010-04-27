@@ -1,10 +1,10 @@
-/* $Id: HWACCMR0.cpp 24848 2009-11-22 01:29:32Z vboxsync $ */
+/* $Id: HWACCMR0.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * HWACCM - Host Context Ring 0.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 
@@ -25,17 +21,14 @@
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_HWACCM
 #include <VBox/hwaccm.h>
+#include <VBox/pgm.h>
 #include "HWACCMInternal.h"
 #include <VBox/vm.h>
 #include <VBox/x86.h>
 #include <VBox/hwacc_vmx.h>
 #include <VBox/hwacc_svm.h>
-#include <VBox/pgm.h>
-#include <VBox/pdm.h>
 #include <VBox/err.h>
 #include <VBox/log.h>
-#include <VBox/selm.h>
-#include <VBox/iom.h>
 #include <iprt/assert.h>
 #include <iprt/asm.h>
 #include <iprt/cpuset.h>
@@ -88,6 +81,9 @@ static struct
 
         /** Host CR4 value (set by ring-0 VMX init) */
         uint64_t                    hostCR4;
+
+        /** Host EFER value (set by ring-0 VMX init) */
+        uint64_t                    hostEFER;
 
         /** VMX MSR values */
         struct
@@ -148,7 +144,8 @@ static struct
  */
 VMMR0DECL(int) HWACCMR0Init(void)
 {
-    int        rc;
+    int     rc;
+    bool    fAMDVPresent = false;
 
     memset(&HWACCMR0Globals, 0, sizeof(HWACCMR0Globals));
     HWACCMR0Globals.enmHwAccmState = HWACCMSTATE_UNINITIALIZED;
@@ -268,6 +265,7 @@ VMMR0DECL(int) HWACCMR0Init(void)
                         if (!HWACCMR0Globals.vmx.fUsingSUPR0EnableVTx)
                         {
                             HWACCMR0Globals.vmx.hostCR4             = ASMGetCR4();
+                            HWACCMR0Globals.vmx.hostEFER            = ASMRdMsr(MSR_K6_EFER);
 
                             rc = RTR0MemObjAllocCont(&pScatchMemObj, 1 << PAGE_SHIFT, true /* executable R0 mapping */);
                             if (RT_FAILURE(rc))
@@ -353,6 +351,11 @@ VMMR0DECL(int) HWACCMR0Init(void)
                 int     aRc[RTCPUSET_MAX_CPUS];
                 RTCPUID idCpu = 0;
 
+                fAMDVPresent = true;
+
+                /* Query AMD features. */
+                ASMCpuId(0x8000000A, &HWACCMR0Globals.svm.u32Rev, &HWACCMR0Globals.uMaxASID, &u32Dummy, &HWACCMR0Globals.svm.u32Features);
+
                 /* We need to check if AMD-V has been properly initialized on all CPUs. Some BIOSes might do a poor job. */
                 memset(aRc, 0, sizeof(aRc));
                 rc = RTMpOnAll(HWACCMR0InitCPU, (void *)u32VendorEBX, aRc);
@@ -367,8 +370,6 @@ VMMR0DECL(int) HWACCMR0Init(void)
 #endif
                 if (RT_SUCCESS(rc))
                 {
-                    /* Query AMD features. */
-                    ASMCpuId(0x8000000A, &HWACCMR0Globals.svm.u32Rev, &HWACCMR0Globals.uMaxASID, &u32Dummy, &HWACCMR0Globals.svm.u32Features);
                     /* Read the HWCR msr for diagnostics. */
                     HWACCMR0Globals.svm.msrHWCR    = ASMRdMsr(MSR_K8_HWCR);
                     HWACCMR0Globals.svm.fSupported = true;
@@ -399,7 +400,7 @@ VMMR0DECL(int) HWACCMR0Init(void)
         HWACCMR0Globals.pfnSetupVM          = VMXR0SetupVM;
     }
     else
-    if (HWACCMR0Globals.svm.fSupported)
+    if (fAMDVPresent)
     {
         HWACCMR0Globals.pfnEnterSession     = SVMR0Enter;
         HWACCMR0Globals.pfnLeaveSession     = SVMR0Leave;
@@ -477,7 +478,7 @@ VMMR0DECL(int) HWACCMR0Term(void)
         if (!HWACCMR0Globals.vmx.fUsingSUPR0EnableVTx)
         {
             rc = RTPowerNotificationDeregister(hwaccmR0PowerCallback, 0);
-            Assert(RT_SUCCESS(rc));
+            AssertRC(rc);
         }
         else
             rc = VINF_SUCCESS;
@@ -898,6 +899,7 @@ VMMR0DECL(int) HWACCMR0InitVM(PVM pVM)
 
     pVM->hwaccm.s.vmx.msr.feature_ctrl      = HWACCMR0Globals.vmx.msr.feature_ctrl;
     pVM->hwaccm.s.vmx.hostCR4               = HWACCMR0Globals.vmx.hostCR4;
+    pVM->hwaccm.s.vmx.hostEFER              = HWACCMR0Globals.vmx.hostEFER;
     pVM->hwaccm.s.vmx.msr.vmx_basic_info    = HWACCMR0Globals.vmx.msr.vmx_basic_info;
     pVM->hwaccm.s.vmx.msr.vmx_pin_ctls      = HWACCMR0Globals.vmx.msr.vmx_pin_ctls;
     pVM->hwaccm.s.vmx.msr.vmx_proc_ctls     = HWACCMR0Globals.vmx.msr.vmx_proc_ctls;
@@ -1089,6 +1091,10 @@ VMMR0DECL(int) HWACCMR0Enter(PVM pVM, PVMCPU pVCpu)
         AssertRCReturn(rc, rc);
     }
 
+#ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
+    bool fStartedSet = PGMDynMapStartOrMigrateAutoSet(pVCpu);
+#endif
+
     rc  = HWACCMR0Globals.pfnEnterSession(pVM, pVCpu, pCpu);
     AssertRC(rc);
     /* We must save the host context here (VT-x) as we might be rescheduled on a different cpu after a long jump back to ring 3. */
@@ -1097,14 +1103,13 @@ VMMR0DECL(int) HWACCMR0Enter(PVM pVM, PVMCPU pVCpu)
     rc |= HWACCMR0Globals.pfnLoadGuestState(pVM, pVCpu, pCtx);
     AssertRC(rc);
 
-    /* keep track of the CPU owning the VMCS for debugging scheduling weirdness and ring-3 calls. */
-    if (RT_SUCCESS(rc))
-    {
 #ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
-        PGMDynMapMigrateAutoSet(pVCpu);
+    if (fStartedSet)
+        PGMDynMapReleaseAutoSet(pVCpu);
 #endif
-    }
-    else
+
+    /* keep track of the CPU owning the VMCS for debugging scheduling weirdness and ring-3 calls. */
+    if (RT_FAILURE(rc))
         pVCpu->hwaccm.s.idEnteredCpu = NIL_RTCPUID;
     return rc;
 }
@@ -1143,6 +1148,15 @@ VMMR0DECL(int) HWACCMR0Leave(PVM pVM, PVMCPU pVCpu)
     }
 
     rc = HWACCMR0Globals.pfnLeaveSession(pVM, pVCpu, pCtx);
+
+    /* We don't pass on invlpg information to the recompiler for nested paging guests, so we must make sure the recompiler flushes its TLB
+     * the next time it executes code.
+     */
+    if (    pVM->hwaccm.s.fNestedPaging
+        &&  CPUMIsGuestInPagedProtectedModeEx(pCtx))
+    {
+        CPUMSetChangedFlags(pVCpu, CPUM_CHANGED_GLOBAL_TLB_FLUSH);
+    }
 
     /* keep track of the CPU owning the VMCS for debugging scheduling weirdness and ring-3 calls. */
 #ifdef RT_STRICT
@@ -1392,7 +1406,7 @@ VMMR0DECL(int) HWACCMR0EnterSwitcher(PVM pVM, bool *pfVTxDisabled)
 
     if (    HWACCMR0Globals.enmHwAccmState != HWACCMSTATE_ENABLED
         ||  !HWACCMR0Globals.vmx.fSupported /* no such issues with AMD-V */
-        ||  !pVM->hwaccm.s.fGlobalInit      /* Local init implies the CPU is currently not in VMX root mode. */)
+        ||  !HWACCMR0Globals.fGlobalInit    /* Local init implies the CPU is currently not in VMX root mode. */)
         return VINF_SUCCESS;    /* nothing to do */
 
     switch(VMMGetSwitcher(pVM))
@@ -1440,7 +1454,7 @@ VMMR0DECL(int) HWACCMR0LeaveSwitcher(PVM pVM, bool fVTxDisabled)
 
     Assert(   HWACCMR0Globals.enmHwAccmState == HWACCMSTATE_ENABLED
            && HWACCMR0Globals.vmx.fSupported
-           && pVM->hwaccm.s.fGlobalInit);
+           && HWACCMR0Globals.fGlobalInit);
 
     PHWACCM_CPUINFO pCpu = HWACCMR0GetCurrentCpu();
     void           *pvPageCpu;

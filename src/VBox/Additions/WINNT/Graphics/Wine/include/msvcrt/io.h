@@ -5,6 +5,7 @@
  * Modified for Wine use by Jon Griffiths and Francois Gouget.
  * This file is in the public domain.
  */
+
 /*
  * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
  * other than GPL or LGPL is available it will apply instead, Sun elects to use only
@@ -53,7 +54,7 @@ struct _finddatai64_t
   time_t time_create;
   time_t time_access;
   time_t time_write;
-  __int64        size;
+  __int64 DECLSPEC_ALIGN(8) size;
   char           name[260];
 };
 #endif /* _FINDDATA_T_DEFINED */
@@ -74,7 +75,7 @@ struct _wfinddatai64_t {
   time_t  time_create;
   time_t  time_access;
   time_t  time_write;
-  __int64         size;
+  __int64 DECLSPEC_ALIGN(8) size;
   wchar_t name[260];
 };
 #endif /* _WFINDDATA_T_DEFINED */

@@ -1,10 +1,10 @@
-/* $Id: PGMSavedState.cpp 24876 2009-11-23 16:07:22Z vboxsync $ */
+/* $Id: PGMSavedState.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor, The Saved State Part.
  */
 
 /*
- * Copyright (C) 2006-2009 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 
@@ -27,9 +23,11 @@
 #include <VBox/pgm.h>
 #include <VBox/stam.h>
 #include <VBox/ssm.h>
-#include <VBox/pdm.h>
+#include <VBox/pdmdrv.h>
+#include <VBox/pdmdev.h>
 #include "PGMInternal.h"
 #include <VBox/vm.h>
+#include "PGMInline.h"
 
 #include <VBox/param.h>
 #include <VBox/err.h>
@@ -46,8 +44,11 @@
 /*******************************************************************************
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
-/** Saved state data unit version. */
-#define PGM_SAVED_STATE_VERSION                 11
+/** Saved state data unit version.
+ * @todo remove the guest mappings from the saved state at next version change! */
+#define PGM_SAVED_STATE_VERSION                 12
+/** Saved state before the balloon change. */
+#define PGM_SAVED_STATE_VERSION_PRE_BALLOON     11
 /** Saved state data unit version used during 3.1 development, misses the RAM
  *  config. */
 #define PGM_SAVED_STATE_VERSION_NO_RAM_CFG      10
@@ -110,8 +111,8 @@ typedef struct
     RTGCPTR                         GCPtrMappingFixed;
     /** A20 gate mask.
      * Our current approach to A20 emulation is to let REM do it and don't bother
-     * anywhere else. The interesting Guests will be operating with it enabled anyway.
-     * But whould need arrise, we'll subject physical addresses to this mask. */
+     * anywhere else. The interesting guests will be operating with it enabled anyway.
+     * But should the need arise, we'll subject physical addresses to this mask. */
     RTGCPHYS                        GCPhysA20Mask;
     /** A20 gate state - boolean! */
     bool                            fA20Enabled;
@@ -124,7 +125,17 @@ typedef struct
 *   Global Variables                                                           *
 *******************************************************************************/
 /** PGM fields to save/load. */
+
 static const SSMFIELD s_aPGMFields[] =
+{
+    SSMFIELD_ENTRY(         PGM, fMappingsFixed),
+    SSMFIELD_ENTRY_GCPTR(   PGM, GCPtrMappingFixed),
+    SSMFIELD_ENTRY(         PGM, cbMappingFixed),
+    SSMFIELD_ENTRY(         PGM, cBalloonedPages),
+    SSMFIELD_ENTRY_TERM()
+};
+
+static const SSMFIELD s_aPGMFieldsPreBalloon[] =
 {
     SSMFIELD_ENTRY(         PGM, fMappingsFixed),
     SSMFIELD_ENTRY_GCPTR(   PGM, GCPtrMappingFixed),
@@ -200,7 +211,7 @@ static int pgmR3PrepRomPages(PVM pVM)
             if (!(pRom->fFlags & PGMPHYS_ROM_FLAGS_SHADOWED))
             {
                 if (PGMROMPROT_IS_ROM(pRom->aPages[iPage].enmProt))
-                    pRom->aPages[iPage].LiveSave.fWrittenTo = !PGM_PAGE_IS_ZERO(&pRom->aPages[iPage].Shadow);
+                    pRom->aPages[iPage].LiveSave.fWrittenTo = !PGM_PAGE_IS_ZERO(&pRom->aPages[iPage].Shadow) && !PGM_PAGE_IS_BALLOONED(&pRom->aPages[iPage].Shadow);
                 else
                 {
                     RTGCPHYS GCPhys = pRom->GCPhys + ((RTGCPHYS)iPage << PAGE_SHIFT);
@@ -208,9 +219,9 @@ static int pgmR3PrepRomPages(PVM pVM)
                     int rc = pgmPhysGetPageWithHintEx(&pVM->pgm.s, GCPhys, &pPage, &pRamHint);
                     AssertLogRelMsgRC(rc, ("%Rrc GCPhys=%RGp\n", rc, GCPhys));
                     if (RT_SUCCESS(rc))
-                        pRom->aPages[iPage].LiveSave.fWrittenTo = !PGM_PAGE_IS_ZERO(pPage);
+                        pRom->aPages[iPage].LiveSave.fWrittenTo = !PGM_PAGE_IS_ZERO(pPage) && !PGM_PAGE_IS_BALLOONED(pPage);
                     else
-                        pRom->aPages[iPage].LiveSave.fWrittenTo = !PGM_PAGE_IS_ZERO(&pRom->aPages[iPage].Shadow);
+                        pRom->aPages[iPage].LiveSave.fWrittenTo = !PGM_PAGE_IS_ZERO(&pRom->aPages[iPage].Shadow) && !PGM_PAGE_IS_BALLOONED(&pRom->aPages[iPage].Shadow);
                 }
             }
         }
@@ -281,12 +292,14 @@ static int pgmR3LoadRomRanges(PVM pVM, PSSMHANDLE pSSM)
         if (id == UINT8_MAX)
         {
             for (PPGMROMRANGE pRom = pVM->pgm.s.pRomRangesR3; pRom; pRom = pRom->pNextR3)
-                AssertLogRelMsg(pRom->idSavedState != UINT8_MAX, ("%s\n", pRom->pszDesc));
+                AssertLogRelMsg(pRom->idSavedState != UINT8_MAX,
+                                ("The \"%s\" ROM was not found in the saved state. Probably due to some misconfiguration\n",
+                                 pRom->pszDesc));
             return VINF_SUCCESS;        /* the end */
         }
         AssertLogRelReturn(id != 0, VERR_SSM_DATA_UNIT_FORMAT_CHANGED);
 
-        char szDevName[RT_SIZEOFMEMB(PDMDEVREG, szDeviceName)];
+        char szDevName[RT_SIZEOFMEMB(PDMDEVREG, szName)];
         rc = SSMR3GetStrZ(pSSM, szDevName, sizeof(szDevName));
         AssertLogRelRCReturn(rc, rc);
 
@@ -403,7 +416,8 @@ static int pgmR3SaveRomVirginPages(PVM pVM, PSSMHANDLE pSSM, bool fLiveSave)
             /* Get the page bits. (Cannot use pgmPhysGCPhys2CCPtrInternalReadOnly here!) */
             int rc = VINF_SUCCESS;
             char abPage[PAGE_SIZE];
-            if (!PGM_PAGE_IS_ZERO(pPage))
+            if (    !PGM_PAGE_IS_ZERO(pPage)
+                &&  !PGM_PAGE_IS_BALLOONED(pPage))
             {
                 void const *pvPage;
                 rc = pgmPhysPageMapReadOnly(pVM, pPage, GCPhys, &pvPage);
@@ -487,7 +501,7 @@ static int pgmR3SaveShadowedRomPages(PVM pVM, PSSMHANDLE pSSM, bool fLiveSave, b
                     PGMROMPROT  enmProt = pRomPage->enmProt;
                     RTGCPHYS    GCPhys  = pRom->GCPhys + ((RTGCPHYS)iPage << PAGE_SHIFT);
                     PPGMPAGE    pPage   = PGMROMPROT_IS_ROM(enmProt) ? &pRomPage->Shadow : pgmPhysGetPage(&pVM->pgm.s, GCPhys);
-                    bool        fZero   = PGM_PAGE_IS_ZERO(pPage);
+                    bool        fZero   = PGM_PAGE_IS_ZERO(pPage) || PGM_PAGE_IS_BALLOONED(pPage);
                     int         rc      = VINF_SUCCESS;
                     if (!fZero)
                     {
@@ -623,7 +637,7 @@ static int pgmR3SaveMmio2Ranges(PVM pVM, PSSMHANDLE pSSM)
     {
         pMmio2->idSavedState = id;
         SSMR3PutU8(pSSM, id);
-        SSMR3PutStrZ(pSSM, pMmio2->pDevInsR3->pDevReg->szDeviceName);
+        SSMR3PutStrZ(pSSM, pMmio2->pDevInsR3->pReg->szName);
         SSMR3PutU32(pSSM, pMmio2->pDevInsR3->iInstance);
         SSMR3PutU8(pSSM, pMmio2->iRegion);
         SSMR3PutStrZ(pSSM, pMmio2->RamRange.pszDesc);
@@ -668,7 +682,7 @@ static int pgmR3LoadMmio2Ranges(PVM pVM, PSSMHANDLE pSSM)
         }
         AssertLogRelReturn(id != 0, VERR_SSM_DATA_UNIT_FORMAT_CHANGED);
 
-        char szDevName[RT_SIZEOFMEMB(PDMDEVREG, szDeviceName)];
+        char szDevName[RT_SIZEOFMEMB(PDMDEVREG, szName)];
         rc = SSMR3GetStrZ(pSSM, szDevName, sizeof(szDevName));
         AssertLogRelRCReturn(rc, rc);
 
@@ -694,7 +708,7 @@ static int pgmR3LoadMmio2Ranges(PVM pVM, PSSMHANDLE pSSM)
             if (    pMmio2->idSavedState == UINT8_MAX
                 &&  pMmio2->iRegion == iRegion
                 &&  pMmio2->pDevInsR3->iInstance == uInstance
-                &&  !strcmp(pMmio2->pDevInsR3->pDevReg->szDeviceName, szDevName))
+                &&  !strcmp(pMmio2->pDevInsR3->pReg->szName, szDevName))
             {
                 pMmio2->idSavedState = id;
                 break;
@@ -815,14 +829,13 @@ static void pgmR3ScanMmio2Pages(PVM pVM, uint32_t uPass)
     for (PPGMMMIO2RANGE pMmio2 = pVM->pgm.s.pMmio2RangesR3; pMmio2; pMmio2 = pMmio2->pNextR3)
     {
         PPGMLIVESAVEMMIO2PAGE paLSPages = pMmio2->paLSPages;
-        uint8_t const  *pbPage = (uint8_t const *)pMmio2->RamRange.pvR3;
-        uint32_t        cPages = pMmio2->RamRange.cb >> PAGE_SHIFT;
+        uint32_t              cPages    = pMmio2->RamRange.cb >> PAGE_SHIFT;
         pgmUnlock(pVM);
 
-        for (uint32_t iPage = 0; iPage < cPages; iPage++, pbPage += PAGE_SIZE)
+        for (uint32_t iPage = 0; iPage < cPages; iPage++)
         {
             uint8_t const *pbPage = (uint8_t const *)pMmio2->pvR3 + iPage * PAGE_SIZE;
-            pgmR3ScanMmio2Page(pVM,pbPage, &paLSPages[iPage]);
+            pgmR3ScanMmio2Page(pVM, pbPage, &paLSPages[iPage]);
         }
 
         pgmLock(pVM);
@@ -1059,7 +1072,8 @@ static int pgmR3PrepRamPages(PVM pVM)
                     switch (PGM_PAGE_GET_TYPE(pPage))
                     {
                         case PGMPAGETYPE_RAM:
-                            if (PGM_PAGE_IS_ZERO(pPage))
+                            if (    PGM_PAGE_IS_ZERO(pPage)
+                                ||  PGM_PAGE_IS_BALLOONED(pPage))
                             {
                                 paLSPages[iPage].fZero   = 1;
                                 paLSPages[iPage].fShared = 0;
@@ -1227,7 +1241,7 @@ static void pgmR3StateVerifyCrc32ForPage(void const *pvPage, PPGMRAMRANGE pCur, 
     if (paLSPages[iPage].u32Crc != UINT32_MAX)
     {
         uint32_t u32Crc = RTCrc32(pvPage, PAGE_SIZE);
-        Assert(!PGM_PAGE_IS_ZERO(&pCur->aPages[iPage]) || u32Crc == PGM_STATE_CRC32_ZERO_PAGE);
+        Assert((!PGM_PAGE_IS_ZERO(&pCur->aPages[iPage]) && !PGM_PAGE_IS_BALLOONED(&pCur->aPages[iPage])) || u32Crc == PGM_STATE_CRC32_ZERO_PAGE);
         AssertMsg(paLSPages[iPage].u32Crc == u32Crc,
                   ("%08x != %08x for %RGp %R[pgmpage]\n", paLSPages[iPage].u32Crc, u32Crc,
                    pCur->GCPhys + ((RTGCPHYS)iPage << PAGE_SHIFT), &pCur->aPages[iPage]));
@@ -1392,6 +1406,23 @@ static void pgmR3ScanRamPages(PVM pVM, bool fFinalPass)
                                 }
                                 break;
 
+                            case PGM_PAGE_STATE_BALLOONED:
+                                if (!paLSPages[iPage].fZero)
+                                {
+                                    if (!paLSPages[iPage].fDirty)
+                                    {
+                                        paLSPages[iPage].fDirty = 1;
+                                        pVM->pgm.s.LiveSave.Ram.cReadyPages--;
+                                        pVM->pgm.s.LiveSave.Ram.cDirtyPages++;
+                                    }
+                                    paLSPages[iPage].fZero = 1;
+                                    paLSPages[iPage].fShared = 0;
+#ifdef PGMLIVESAVERAMPAGE_WITH_CRC32
+                                    paLSPages[iPage].u32Crc = PGM_STATE_CRC32_ZERO_PAGE;
+#endif
+                                }
+                                break;
+
                             case PGM_PAGE_STATE_SHARED:
                                 if (!paLSPages[iPage].fShared)
                                 {
@@ -1505,7 +1536,7 @@ static int pgmR3SaveRamPages(PVM pVM, PSSMHANDLE pSSM, bool fLiveSave, uint32_t 
                     }
 
                     /*
-                     * Only save pages that hasn't changed since last scan and are dirty.
+                     * Only save pages that haven't changed since last scan and are dirty.
                      */
                     if (    uPass != SSM_PASS_FINAL
                         &&  paLSPages)
@@ -1549,7 +1580,7 @@ static int pgmR3SaveRamPages(PVM pVM, PSSMHANDLE pSSM, bool fLiveSave, uint32_t 
                      */
                     int         rc;
                     RTGCPHYS    GCPhys = pCur->GCPhys + ((RTGCPHYS)iPage << PAGE_SHIFT);
-                    bool        fZero  = PGM_PAGE_IS_ZERO(&pCur->aPages[iPage]);
+                    bool        fZero  = PGM_PAGE_IS_ZERO(&pCur->aPages[iPage]) || PGM_PAGE_IS_BALLOONED(&pCur->aPages[iPage]);
 
                     if (!fZero)
                     {
@@ -1939,13 +1970,13 @@ static DECLCALLBACK(int) pgmR3SaveExec(PVM pVM, PSSMHANDLE pSSM)
     /*
      * Save basic data (required / unaffected by relocation).
      */
+    bool const fMappingsFixed  = pVM->pgm.s.fMappingsFixed;
+    pVM->pgm.s.fMappingsFixed |= pVM->pgm.s.fMappingsFixedRestored;
     SSMR3PutStruct(pSSM, pPGM, &s_aPGMFields[0]);
+    pVM->pgm.s.fMappingsFixed  = fMappingsFixed;
 
     for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
-    {
-        PVMCPU pVCpu = &pVM->aCpus[idCpu];
-        SSMR3PutStruct(pSSM, &pVCpu->pgm.s, &s_aPGMCpuFields[0]);
-    }
+        SSMR3PutStruct(pSSM, &pVM->aCpus[idCpu].pgm.s, &s_aPGMCpuFields[0]);
 
     /*
      * The guest mappings.
@@ -2085,7 +2116,8 @@ static int pgmR3LoadPageZeroOld(PVM pVM, uint8_t uType, PPGMPAGE pPage, RTGCPHYS
         return VERR_SSM_UNEXPECTED_DATA;
 
     /* I think this should be sufficient. */
-    if (!PGM_PAGE_IS_ZERO(pPage))
+    if (    !PGM_PAGE_IS_ZERO(pPage)
+        &&  !PGM_PAGE_IS_BALLOONED(pPage))
         return VERR_SSM_UNEXPECTED_DATA;
 
     NOREF(pVM);
@@ -2520,7 +2552,8 @@ static int pgmR3LoadMemory(PVM pVM, PSSMHANDLE pSSM, uint32_t uPass)
                 {
                     case PGM_STATE_REC_RAM_ZERO:
                     {
-                        if (PGM_PAGE_IS_ZERO(pPage))
+                        if (    PGM_PAGE_IS_ZERO(pPage)
+                            ||  PGM_PAGE_IS_BALLOONED(pPage))
                             break;
                         /** @todo implement zero page replacing. */
                         AssertLogRelMsgReturn(PGM_PAGE_GET_STATE(pPage) == PGM_PAGE_STATE_ALLOCATED, ("GCPhys=%RGp %R[pgmpage]\n", GCPhys, pPage), VERR_INTERNAL_ERROR_5);
@@ -2688,7 +2721,8 @@ static int pgmR3LoadMemory(PVM pVM, PSSMHANDLE pSSM, uint32_t uPass)
                 switch (u8 & ~PGM_STATE_REC_FLAG_ADDR)
                 {
                     case PGM_STATE_REC_ROM_SHW_ZERO:
-                        if (PGM_PAGE_IS_ZERO(pRealPage))
+                        if (    PGM_PAGE_IS_ZERO(pRealPage)
+                            ||  PGM_PAGE_IS_BALLOONED(pRealPage))
                             break;
                         /** @todo implement zero page replacing. */
                         /* fall thru */
@@ -2752,7 +2786,11 @@ static int pgmR3LoadFinalLocked(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion)
      */
     if (uVersion >= PGM_SAVED_STATE_VERSION_3_0_0)
     {
-        rc = SSMR3GetStruct(pSSM, pPGM, &s_aPGMFields[0]);
+        if (uVersion > PGM_SAVED_STATE_VERSION_PRE_BALLOON)
+            rc = SSMR3GetStruct(pSSM, pPGM, &s_aPGMFields[0]);
+        else
+            rc = SSMR3GetStruct(pSSM, pPGM, &s_aPGMFieldsPreBalloon[0]);
+
         AssertLogRelRCReturn(rc, rc);
 
         for (VMCPUID i = 0; i < pVM->cCpus; i++)
@@ -2786,7 +2824,7 @@ static int pgmR3LoadFinalLocked(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion)
         SSMR3GetU32(pSSM,       &pPGM->cbMappingFixed);
 
         uint32_t cbRamSizeIgnored;
-        rc = SSMR3GetU32(pSSM, &cbRamSizeIgnored);
+        rc = SSMR3GetU32(pSSM,  &cbRamSizeIgnored);
         if (RT_FAILURE(rc))
             return rc;
         SSMR3GetGCPhys(pSSM,    &pVM->aCpus[0].pgm.s.GCPhysA20Mask);
@@ -2811,65 +2849,27 @@ static int pgmR3LoadFinalLocked(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion)
     }
 
     /*
-     * The guest mappings.
+     * The guest mappings - skipped now, see re-fixation in the caller.
      */
     uint32_t i = 0;
     for (;; i++)
     {
-        /* Check the seqence number / separator. */
-        rc = SSMR3GetU32(pSSM, &u32Sep);
+        rc = SSMR3GetU32(pSSM, &u32Sep);        /* seqence number */
         if (RT_FAILURE(rc))
             return rc;
         if (u32Sep == ~0U)
             break;
-        if (u32Sep != i)
-        {
-            AssertMsgFailed(("u32Sep=%#x (last)\n", u32Sep));
-            return VERR_SSM_DATA_UNIT_FORMAT_CHANGED;
-        }
+        AssertMsgReturn(u32Sep == i, ("u32Sep=%#x i=%#x\n", u32Sep, i), VERR_SSM_DATA_UNIT_FORMAT_CHANGED);
 
-        /* get the mapping details. */
         char szDesc[256];
-        szDesc[0] = '\0';
         rc = SSMR3GetStrZ(pSSM, szDesc, sizeof(szDesc));
         if (RT_FAILURE(rc))
             return rc;
-        RTGCPTR GCPtr;
-        SSMR3GetGCPtr(pSSM, &GCPtr);
-        RTGCPTR cPTs;
-        rc = SSMR3GetGCUIntPtr(pSSM, &cPTs);
+        RTGCPTR GCPtrIgnore;
+        SSMR3GetGCPtr(pSSM, &GCPtrIgnore);      /* GCPtr */
+        rc = SSMR3GetGCPtr(pSSM, &GCPtrIgnore); /* cPTs  */
         if (RT_FAILURE(rc))
             return rc;
-
-        /* find matching range. */
-        PPGMMAPPING pMapping;
-        for (pMapping = pPGM->pMappingsR3; pMapping; pMapping = pMapping->pNextR3)
-        {
-            if (    pMapping->cPTs == cPTs
-                &&  !strcmp(pMapping->pszDesc, szDesc))
-                break;
-#ifdef DEBUG_sandervl
-            if (    !strcmp(szDesc, "Hypervisor Memory Area")
-                &&  HWACCMIsEnabled(pVM))
-                break;
-#endif
-        }
-        if (!pMapping)
-            return SSMR3SetCfgError(pSSM, RT_SRC_POS, N_("Couldn't find mapping: cPTs=%#x szDesc=%s (GCPtr=%RGv)"),
-                                    cPTs, szDesc, GCPtr);
-
-        /* relocate it. */
-        if (    pMapping->GCPtr != GCPtr
-#ifdef DEBUG_sandervl
-             && !(!strcmp(szDesc, "Hypervisor Memory Area") && HWACCMIsEnabled(pVM))
-#endif
-           )
-        {
-            AssertMsg((GCPtr >> X86_PD_SHIFT << X86_PD_SHIFT) == GCPtr, ("GCPtr=%RGv\n", GCPtr));
-            pgmR3MapRelocate(pVM, pMapping, pMapping->GCPtr, GCPtr);
-        }
-        else
-            Log(("pgmR3Load: '%s' needed no relocation (%RGv)\n", szDesc, GCPtr));
     }
 
     /*
@@ -2893,9 +2893,18 @@ static int pgmR3LoadFinalLocked(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion)
                 return rc;
         }
 
-        return pgmR3LoadMemory(pVM, pSSM, SSM_PASS_FINAL);
+        rc = pgmR3LoadMemory(pVM, pSSM, SSM_PASS_FINAL);
     }
-    return pgmR3LoadMemoryOld(pVM, pSSM, uVersion);
+    else
+        rc = pgmR3LoadMemoryOld(pVM, pSSM, uVersion);
+
+    /* Refresh balloon accounting. */
+    if (pVM->pgm.s.cBalloonedPages)
+    {
+        rc = GMMR3BalloonedPages(pVM, GMMBALLOONACTION_INFLATE, pVM->pgm.s.cBalloonedPages);
+        AssertRC(rc);
+    }
+    return rc;
 }
 
 
@@ -2918,8 +2927,10 @@ static DECLCALLBACK(int) pgmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, 
      */
     if (   (   uPass != SSM_PASS_FINAL
             && uVersion != PGM_SAVED_STATE_VERSION
+            && uVersion != PGM_SAVED_STATE_VERSION_PRE_BALLOON
             && uVersion != PGM_SAVED_STATE_VERSION_NO_RAM_CFG)
         || (   uVersion != PGM_SAVED_STATE_VERSION
+            && uVersion != PGM_SAVED_STATE_VERSION_PRE_BALLOON
             && uVersion != PGM_SAVED_STATE_VERSION_NO_RAM_CFG
             && uVersion != PGM_SAVED_STATE_VERSION_3_0_0
             && uVersion != PGM_SAVED_STATE_VERSION_2_2_2
@@ -2972,20 +2983,25 @@ static DECLCALLBACK(int) pgmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, 
                 PVMCPU pVCpu = &pVM->aCpus[i];
                 VMCPU_FF_SET(pVCpu, VMCPU_FF_PGM_SYNC_CR3_NON_GLOBAL);
                 VMCPU_FF_SET(pVCpu, VMCPU_FF_PGM_SYNC_CR3);
-
                 pVCpu->pgm.s.fSyncFlags |= PGM_SYNC_UPDATE_PAGE_BIT_VIRTUAL;
             }
 
             pgmR3HandlerPhysicalUpdateAll(pVM);
 
+            /*
+             * Change the paging mode and restore PGMCPU::GCPhysCR3.
+             * (The latter requires the CPUM state to be restored already.)
+             */
+            if (CPUMR3IsStateRestorePending(pVM))
+                return SSMR3SetLoadError(pSSM, VERR_WRONG_ORDER, RT_SRC_POS,
+                                         N_("PGM was unexpectedly restored before CPUM"));
+
             for (VMCPUID i = 0; i < pVM->cCpus; i++)
             {
                 PVMCPU pVCpu = &pVM->aCpus[i];
 
-                /*
-                 * Change the paging mode.
-                 */
                 rc = PGMR3ChangeMode(pVM, pVCpu, pVCpu->pgm.s.enmGuestMode);
+                AssertLogRelRCReturn(rc, rc);
 
                 /* Restore pVM->pgm.s.GCPhysCR3. */
                 Assert(pVCpu->pgm.s.GCPhysCR3 == NIL_RTGCPHYS);
@@ -2998,6 +3014,62 @@ static DECLCALLBACK(int) pgmR3Load(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, 
                 else
                     GCPhysCR3 = (GCPhysCR3 & X86_CR3_PAGE_MASK);
                 pVCpu->pgm.s.GCPhysCR3 = GCPhysCR3;
+            }
+
+            /*
+             * Try re-fixate the guest mappings.
+             */
+            pVM->pgm.s.fMappingsFixedRestored = false;
+            if (   pVM->pgm.s.fMappingsFixed
+                && pgmMapAreMappingsEnabled(&pVM->pgm.s))
+            {
+                RTGCPTR     GCPtrFixed    = pVM->pgm.s.GCPtrMappingFixed;
+                uint32_t    cbFixed       = pVM->pgm.s.cbMappingFixed;
+                pVM->pgm.s.fMappingsFixed = false;
+
+                uint32_t    cbRequired;
+                int rc2 = PGMR3MappingsSize(pVM, &cbRequired); AssertRC(rc2);
+                if (   RT_SUCCESS(rc2)
+                    && cbRequired > cbFixed)
+                    rc2 = VERR_OUT_OF_RANGE;
+                if (RT_SUCCESS(rc2))
+                    rc2 = pgmR3MappingsFixInternal(pVM, GCPtrFixed, cbFixed);
+                if (RT_FAILURE(rc2))
+                {
+                    LogRel(("PGM: Unable to re-fixate the guest mappings at %RGv-%RGv: rc=%Rrc (cbRequired=%#x)\n",
+                            GCPtrFixed, GCPtrFixed + cbFixed, rc2, cbRequired));
+                    pVM->pgm.s.fMappingsFixed         = false;
+                    pVM->pgm.s.fMappingsFixedRestored = true;
+                    pVM->pgm.s.GCPtrMappingFixed      = GCPtrFixed;
+                    pVM->pgm.s.cbMappingFixed         = cbFixed;
+                }
+            }
+            else
+            {
+                /* We used to set fixed + disabled while we only use disabled now,
+                   so wipe the state to avoid any confusion. */
+                pVM->pgm.s.fMappingsFixed    = false;
+                pVM->pgm.s.GCPtrMappingFixed = NIL_RTGCPTR;
+                pVM->pgm.s.cbMappingFixed    = 0;
+            }
+
+            /*
+             * If we have floating mappings, do a CR3 sync now to make sure the HMA
+             * doesn't conflict with guest code / data and thereby cause trouble
+             * when restoring other components like PATM.
+             */
+            if (pgmMapAreMappingsFloating(&pVM->pgm.s))
+            {
+                PVMCPU pVCpu = &pVM->aCpus[0];
+                rc = PGMSyncCR3(pVCpu, CPUMGetGuestCR0(pVCpu), CPUMGetGuestCR3(pVCpu),  CPUMGetGuestCR4(pVCpu), true);
+                if (RT_FAILURE(rc))
+                    return SSMR3SetLoadError(pSSM, VERR_WRONG_ORDER, RT_SRC_POS,
+                                             N_("PGMSyncCR3 failed unexpectedly with rc=%Rrc"), rc);
+
+                /* Make sure to re-sync before executing code. */
+                VMCPU_FF_SET(pVCpu, VMCPU_FF_PGM_SYNC_CR3_NON_GLOBAL);
+                VMCPU_FF_SET(pVCpu, VMCPU_FF_PGM_SYNC_CR3);
+                pVCpu->pgm.s.fSyncFlags |= PGM_SYNC_UPDATE_PAGE_BIT_VIRTUAL;
             }
         }
     }

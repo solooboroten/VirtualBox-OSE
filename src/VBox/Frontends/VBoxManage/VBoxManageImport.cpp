@@ -1,10 +1,10 @@
-/* $Id: VBoxManageImport.cpp 24998 2009-11-26 13:22:55Z vboxsync $ */
+/* $Id: VBoxManageImport.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * VBoxManage - The appliance-related commands.
  */
 
 /*
- * Copyright (C) 2009 Sun Microsystems, Inc.
+ * Copyright (C) 2009 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 #ifndef VBOX_ONLY_DOCS
@@ -46,6 +42,7 @@
 #include <iprt/file.h>
 
 #include <VBox/log.h>
+#include <VBox/param.h>
 
 #include "VBoxManage.h"
 using namespace com;
@@ -93,6 +90,9 @@ static const RTGETOPTDEF g_aImportApplianceOptions[] =
     { "-ostype",                'o', RTGETOPT_REQ_STRING },     // deprecated
     { "--vmname",               'V', RTGETOPT_REQ_STRING },
     { "-vmname",                'V', RTGETOPT_REQ_STRING },     // deprecated
+    { "--memory",               'm', RTGETOPT_REQ_STRING },
+    { "-memory",                'm', RTGETOPT_REQ_STRING },     // deprecated
+    { "--cpus",                 'c', RTGETOPT_REQ_STRING },
     { "--description",          'd', RTGETOPT_REQ_STRING },
     { "--eula",                 'L', RTGETOPT_REQ_STRING },
     { "-eula",                  'L', RTGETOPT_REQ_STRING },     // deprecated
@@ -124,7 +124,8 @@ int handleImportAppliance(HandlerArg *arg)
     RTGETOPTUNION ValueUnion;
     RTGETOPTSTATE GetState;
     // start at 0 because main() has hacked both the argc and argv given to us
-    RTGetOptInit(&GetState, arg->argc, arg->argv, g_aImportApplianceOptions, RT_ELEMENTS(g_aImportApplianceOptions), 0, 0 /* fFlags */);
+    RTGetOptInit(&GetState, arg->argc, arg->argv, g_aImportApplianceOptions, RT_ELEMENTS(g_aImportApplianceOptions),
+                 0, RTGETOPTINIT_FLAGS_NO_STD_OPTS);
     while ((c = RTGetOpt(&GetState, &ValueUnion)))
     {
         switch (c)
@@ -170,6 +171,12 @@ int handleImportAppliance(HandlerArg *arg)
                 if (ulCurVsys == (uint32_t)-1)
                     return errorSyntax(USAGE_IMPORTAPPLIANCE, "Option \"%s\" requires preceding --vsys argument.", GetState.pDef->pszLong);
                 mapArgsMapsPerVsys[ulCurVsys]["memory"] = ValueUnion.psz;
+                break;
+
+            case 'c':   // --cpus
+                if (ulCurVsys == (uint32_t)-1)
+                    return errorSyntax(USAGE_IMPORTAPPLIANCE, "Option \"%s\" requires preceding --vsys argument.", GetState.pDef->pszLong);
+                mapArgsMapsPerVsys[ulCurVsys]["cpus"] = ValueUnion.psz;
                 break;
 
             case 'u':   // --unit
@@ -452,8 +459,26 @@ int handleImportAppliance(HandlerArg *arg)
                         break;
 
                         case VirtualSystemDescriptionType_CPU:
-                            RTPrintf("%2u: Number of CPUs (ignored): %ls\n",
-                                     a, aVboxValues[a]);
+                            if (findArgValue(strOverride, pmapArgs, "cpus"))
+                            {
+                                uint32_t cCPUs;
+                                if (    strOverride.toInt(cCPUs) == VINF_SUCCESS
+                                     && cCPUs >= VMM_MIN_CPU_COUNT
+                                     && cCPUs <= VMM_MAX_CPU_COUNT
+                                   )
+                                {
+                                    bstrFinalValue = strOverride;
+                                    RTPrintf("%2u: No. of CPUs specified with --cpus: %ls\n",
+                                             a, bstrFinalValue.raw());
+                                }
+                                else
+                                    return errorSyntax(USAGE_IMPORTAPPLIANCE,
+                                                       "Argument to --cpus option must be a number greater than %d and less than %d.",
+                                                       VMM_MIN_CPU_COUNT - 1, VMM_MAX_CPU_COUNT + 1);
+                            }
+                            else
+                                RTPrintf("%2u: Number of CPUs: %ls\n    (change with \"--vsys %u --cpus <n>\")\n",
+                                         a, bstrFinalValue.raw(), i);
                         break;
 
                         case VirtualSystemDescriptionType_Memory:
@@ -713,7 +738,7 @@ int handleExportAppliance(HandlerArg *a)
         RTGETOPTSTATE GetState;
         // start at 0 because main() has hacked both the argc and argv given to us
         RTGetOptInit(&GetState, a->argc, a->argv, g_aExportOptions,
-                     RT_ELEMENTS(g_aExportOptions), 0, 0 /* fFlags */);
+                     RT_ELEMENTS(g_aExportOptions), 0, RTGETOPTINIT_FLAGS_NO_STD_OPTS);
 
         Utf8Str strProductUrl;
         while ((c = RTGetOpt(&GetState, &ValueUnion)))

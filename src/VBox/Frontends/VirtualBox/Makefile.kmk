@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 24672 2009-11-15 15:37:25Z vboxsync $
+# $Id: Makefile.kmk 28800 2010-04-27 08:22:32Z vboxsync $
 ## @file
 # Makefile for the VirtualBox Qt GUI.
 #
 
 #
-# Copyright (C) 2006-2009 Sun Microsystems, Inc.
+# Copyright (C) 2006-2010 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
 # Foundation, in version 2 as it comes in the "COPYING" file of the
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
-#
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
 #
 
 SUB_DEPTH = ../../../..
@@ -28,16 +24,29 @@ include $(KBUILD_PATH)/subheader.kmk
 VBOX_VIRTUALBOX4_SRC := $(PATH_SUB_CURRENT)
 VBOX_VIRTUALBOX4_OUT_DIR := $(PATH_TARGET)/VirtualBox/misc
 
-VBOX_WITH_REGISTRATION := 1
+# VBOX_WITH_REGISTRATION := 1
 
 # Ask the user to register at Sun. If this setting is disabled the user can
 # still register using the menu if desired.
-VBOX_WITH_REGISTRATION_REQUEST := 1
+# VBOX_WITH_REGISTRATION_REQUEST := 1
+
+# For now this should be disabled in any case
+ifdef VBOX_WITH_REGISTRATION
+ VBOX_WITH_REGISTRATION=
+endif
+ifdef VBOX_WITH_REGISTRATION_REQUEST
+ VBOX_WITH_REGISTRATION_REQUEST=
+endif
 
 # Show the update notifier dialog during startup. If this setting is disabled
 # the user can still update using the menu if desired.
 VBOX_WITH_UPDATE_REQUEST := 1
 
+# Build new VirtualBox FE/Qt4 GUI runtime core.
+# Currently its not used, you can build it for developing purposes.
+VBOX_WITH_NEW_RUNTIME_CORE := 1
+# Force the usage of the new runtime core for the single monitor case also.
+VBOX_FORCE_NEW_RUNTIME_CORE_ALWAYS := 1
 
 #
 # The targets.
@@ -112,10 +121,7 @@ OTHER_CLEAN += \
 VirtualBoxHardened_TEMPLATE = VBOXR3HARDENEDEXE
 VirtualBoxHardened_SOURCES = src/hardenedmain.cpp
 VirtualBoxHardened_NAME = VirtualBox
-ifeq ($(KBUILD_TARGET),darwin) ## @todo use .darwin when ticket 36 has been fixed.
- #VirtualBoxHardened_INST.darwin = $(INST_BIN)VirtualBox $(INST_BIN)VirtualBoxVM
- VirtualBoxHardened_INST = $(INST_BIN)VirtualBox $(INST_BIN)VirtualBoxVM
-endif
+VirtualBoxHardened_INST.darwin = $(INST_BIN)VirtualBox $(INST_BIN)VirtualBoxVM
 
 
 #
@@ -133,10 +139,7 @@ USES += qt4
 VirtualBox_TEMPLATE := $(if $(VBOX_WITH_HARDENING),VBOXQT4GUI,VBOXQT4GUIEXE)
 VirtualBox_NAME = VirtualBox
 ifndef VBOX_WITH_HARDENING      # For the launch trick we need different inode numbers.
- ifeq ($(KBUILD_TARGET),darwin) ## @todo use .darwin when ticket 36 has been fixed.
-  #VirtualBox_INST.darwin = $(INST_BIN)VirtualBox $(INST_BIN)VirtualBoxVM
-  VirtualBox_INST = $(INST_BIN)VirtualBox $(INST_BIN)VirtualBoxVM
- endif
+ VirtualBox_INST.darwin = $(INST_BIN)VirtualBox $(INST_BIN)VirtualBoxVM
 endif
 VirtualBox_SDKS.win = WINPSDK DXSDK
 ifeq ($(filter-out freebsd linux netbsd openbsd os2,$(KBUILD_TARGET)),) # X11 + os2 ## @todo solaris
@@ -161,10 +164,14 @@ VirtualBox_DEFS.openbsd   = VBOX_GUI_USE_QIMAGE VBOX_GUI_USE_SDL
 VirtualBox_DEFS.solaris   = VBOX_GUI_USE_QIMAGE #VBOX_GUI_USE_SDL
 VirtualBox_DEFS.win       = VBOX_GUI_USE_QIMAGE UNICODE QT_DLL
 VirtualBox_DEFS.win.amd64 = VBOX_WITHOUT_QHTTP
-## @todo VBOX_WITH_HACKED_QT doesn't apply to Qt4, so why is this still here?
-VirtualBox_DEFS.darwin.x86 += VBOX_WITH_HACKED_QT
 ifdef VBOX_WITH_ICHAT_THEATER
  VirtualBox_DEFS.darwin += VBOX_WITH_ICHAT_THEATER
+endif
+ifdef VBOX_WITH_NEW_RUNTIME_CORE
+ VirtualBox_DEFS += VBOX_WITH_NEW_RUNTIME_CORE
+ ifdef VBOX_FORCE_NEW_RUNTIME_CORE_ALWAYS
+  VirtualBox_DEFS += VBOX_FORCE_NEW_RUNTIME_CORE_ALWAYS
+ endif
 endif
 ifneq ($(KBUILD_TYPE),release)
  # non-release builds has some extra features.
@@ -178,7 +185,8 @@ VirtualBox_DEFS          += \
 	$(if $(VBOX_WITH_PULSE),VBOX_WITH_PULSE) \
 	$(if $(VBOX_WITH_SOLARIS_OSS),VBOX_WITH_SOLARIS_OSS) \
 	$(if $(VBOX_WITH_E1000),VBOX_WITH_E1000) \
-	$(if $(VBOX_WITH_NETFLT)$(eq $(KBUILD_TARGET),freebsd),VBOX_WITH_NETFLT)
+	$(if $(VBOX_WITH_NETFLT)$(eq $(KBUILD_TARGET),freebsd),VBOX_WITH_NETFLT) \
+	$(if $(VBOX_WITH_VDE),VBOX_WITH_VDE)
 ifdef VBOX_WITH_DEBUGGER_GUI
  VirtualBox_DEFS        += VBOX_WITH_DEBUGGER_GUI
  if "$(KBUILD_TYPE)" != "release"
@@ -206,12 +214,46 @@ VirtualBox_src/main.cpp_DEFS += \
     VBOX_BLEEDING_EDGE=\"$(VBOX_BLEEDING_EDGE)\"
 endif
 
-VirtualBox_INCS           = \
-	./include \
+
+VBOX_GUI_INC_DIRS = \
+	./src \
+	./src/globals \
+	./src/extensions \
+	./src/settings \
+	./src/settings/global \
+	./src/settings/vm \
+	./src/wizards/newvm \
+	./src/wizards/newhd \
+	./src/wizards/firstrun \
+	./src/wizards/exportappliance \
+	./src/wizards/importappliance \
+	./src/widgets \
+	./src/X11 \
+	./src/darwin
+ifdef VBOX_WITH_NEW_RUNTIME_CORE
+VBOX_GUI_INC_DIRS += \
+    ./src/runtime \
+	./src/runtime/normal \
+	./src/runtime/fullscreen \
+	./src/runtime/seamless
+endif
+
+ifdef VBOX_WITH_REGISTRATION
+ VBOX_GUI_INC_DIRS += \
+	./src/wizards/registration
+endif
+
+VirtualBox_INCS = \
+	$(VBOX_GUI_INC_DIRS) \
 	$(PATH_VirtualBox)/include
 
 # Necessary for the hdd backend enumeration
 VirtualBox_LIBS = $(LIB_DDU)
+
+# This library is required for multi-monitor support
+VirtualBox_LIBS.linux += Xinerama
+VirtualBox_LIBS.solaris += Xinerama
+VirtualBox_LIBS.freebsd += Xinerama
 
 ifdef VBOX_WITH_VIDEOHWACCEL
 # Necessary for save state support
@@ -227,8 +269,12 @@ else
   VirtualBox_LDFLAGS.win += /SUBSYSTEM:console
  endif
 endif
-# r=bird: what is -lz doing here? it belongs in LIBS.
-VirtualBox_LDFLAGS.darwin = -lz \
+
+if defined(VBOX_WITH_VIDEOHWACCEL) || defined(VBOX_GUI_USE_QGL)
+ VirtualBox_LDFLAGS.win += /DelayLoad:QtOpenGLVBox4.dll /DelayLoad:OPENGL32.dll
+endif
+
+VirtualBox_LDFLAGS.darwin = \
 	-framework IOKit -framework AppKit -framework ApplicationServices -framework Foundation -framework Carbon \
 	$(if $(VBOX_WITH_HARDENING),-install_name $(VBOX_DYLD_EXECUTABLE_PATH)/VirtualBox.dylib)
 VirtualBox_LDFLAGS.darwin.x86 = -framework QuickTime
@@ -255,212 +301,289 @@ endif
 
 # Headers containing definitions of classes that use the Q_OBJECT macro.
 VirtualBox_QT_MOCHDRS = \
-	include/QIHttp.h \
-	include/QIWidgetValidator.h \
-	include/QIHotKeyEdit.h \
-	include/QIStatusBar.h \
-	include/QIStateIndicator.h \
-	include/QIRichToolButton.h \
-	include/QIArrowButtonPress.h \
-	include/QIArrowButtonSwitch.h \
-	include/QIArrowSplitter.h \
-	include/QIMessageBox.h \
-	include/QILabel.h \
-	include/QILabelSeparator.h \
-	include/QIAbstractWizard.h \
-	include/QIListView.h \
-	include/QITreeWidget.h \
-	include/QIMainDialog.h \
-	include/QIDialog.h \
-	include/QIFileDialog.h \
-	include/QIAdvancedSlider.h \
-	include/QISplitter.h \
-	include/QITreeView.h \
-	include/QIToolButton.h \
-	include/VBoxFilePathSelectorWidget.h \
-	include/VBoxOSTypeSelectorButton.h \
-	include/VBoxOSTypeSelectorWidget.h \
-	include/VBoxLineTextEdit.h \
-	include/VBoxUtils.h \
-	include/VBoxGlobalSettings.h \
-	include/VBoxGlobal.h \
-	include/VBoxVMListView.h \
-	include/VBoxMediaComboBox.h \
-	include/VBoxSelectorWnd.h \
-	include/VBoxConsoleWnd.h \
-	include/VBoxConsoleView.h \
-	include/VBoxMiniToolBar.h \
-	include/VBoxProblemReporter.h \
-	include/VBoxProgressDialog.h \
-	include/VBoxDownloaderWgt.h \
-	include/VBoxAboutDlg.h \
-	include/VBoxCloseVMDlg.h \
-	include/VBoxNewVMWzd.h \
-	include/VBoxNewHDWzd.h \
-	include/VBoxVMFirstRunWzd.h \
-	include/VBoxRegistrationDlg.h \
-	include/VBoxUpdateDlg.h \
-	include/VBoxSnapshotDetailsDlg.h \
-	include/VBoxVMInformationDlg.h \
-	include/VBoxTakeSnapshotDlg.h \
-	include/VBoxSnapshotsWgt.h \
-	include/VBoxVMLogViewer.h \
-	include/VBoxMediaManagerDlg.h \
-	include/VBoxSettingsUtils.h \
-	include/VBoxVMSettingsGeneral.h \
-	include/VBoxVMSettingsSystem.h \
-	include/VBoxVMSettingsDisplay.h \
-	include/VBoxVMSettingsHD.h \
-	include/VBoxVMSettingsAudio.h \
-	include/VBoxVMSettingsNetwork.h \
-	include/VBoxVMSettingsSerial.h \
-	include/VBoxVMSettingsParallel.h \
-	include/VBoxVMSettingsUSB.h \
-	include/VBoxVMSettingsUSBFilterDetails.h \
-	include/VBoxVMSettingsSF.h \
-	include/VBoxVMSettingsSFDetails.h \
-	include/VBoxGLSettingsGeneral.h \
-	include/VBoxGLSettingsInput.h \
-	include/VBoxGLSettingsUpdate.h \
-	include/VBoxGLSettingsLanguage.h \
-	include/VBoxGLSettingsNetwork.h \
-	include/VBoxGLSettingsNetworkDetails.h \
-	include/VBoxSettingsDialog.h \
-	include/VBoxSettingsDialogSpecific.h \
-	include/VBoxSettingsPage.h \
-	include/VBoxSettingsSelector.h \
-	include/VBoxApplianceEditorWgt.h \
-	include/VBoxImportApplianceWgt.h \
-	include/VBoxImportApplianceWzd.h \
-	include/VBoxExportApplianceWgt.h \
-	include/VBoxExportApplianceWzd.h \
-	include/VBoxSpecialControls.h
+	src/VBoxAboutDlg.h \
+	src/VBoxCloseVMDlg.h \
+	src/VBoxConsoleView.h \
+	src/VBoxConsoleWnd.h \
+	src/VBoxGlobalSettings.h \
+	src/VBoxMediaManagerDlg.h \
+	src/VBoxSelectorWnd.h \
+	src/VBoxSnapshotDetailsDlg.h \
+	src/VBoxSnapshotsWgt.h \
+	src/VBoxTakeSnapshotDlg.h \
+	src/VBoxUpdateDlg.h \
+	src/VBoxVMInformationDlg.h \
+	src/VBoxVMListView.h \
+	src/VBoxVMLogViewer.h \
+	src/globals/VBoxGlobal.h \
+	src/globals/VBoxProblemReporter.h \
+	src/globals/VBoxUtils.h \
+	src/extensions/QIAdvancedSlider.h \
+	src/extensions/QIArrowButtonPress.h \
+	src/extensions/QIArrowButtonSwitch.h \
+	src/extensions/QIArrowSplitter.h \
+	src/extensions/QIDialog.h \
+	src/extensions/QIFileDialog.h \
+	src/extensions/QIHotKeyEdit.h \
+	src/extensions/QIHttp.h \
+	src/extensions/QILabel.h \
+	src/extensions/QILabelSeparator.h \
+	src/extensions/QIListView.h \
+	src/extensions/QIMainDialog.h \
+	src/extensions/QIMessageBox.h \
+	src/extensions/QIRichToolButton.h \
+	src/extensions/QISplitter.h \
+	src/extensions/QIStateIndicator.h \
+	src/extensions/QIStatusBar.h \
+	src/extensions/QIToolButton.h \
+	src/extensions/QITreeView.h \
+	src/extensions/QITreeWidget.h \
+	src/extensions/QIWidgetValidator.h \
+	src/extensions/QIWizard.h \
+	src/settings/VBoxSettingsDialog.h \
+	src/settings/VBoxSettingsDialogSpecific.h \
+	src/settings/VBoxSettingsPage.h \
+	src/settings/VBoxSettingsSelector.h \
+	src/settings/global/VBoxGLSettingsGeneral.h \
+	src/settings/global/VBoxGLSettingsInput.h \
+	src/settings/global/VBoxGLSettingsUpdate.h \
+	src/settings/global/VBoxGLSettingsLanguage.h \
+	src/settings/global/VBoxGLSettingsNetwork.h \
+	src/settings/global/VBoxGLSettingsNetworkDetails.h \
+	src/settings/vm/VBoxVMSettingsGeneral.h \
+	src/settings/vm/VBoxVMSettingsSystem.h \
+	src/settings/vm/VBoxVMSettingsDisplay.h \
+	src/settings/vm/VBoxVMSettingsHD.h \
+	src/settings/vm/VBoxVMSettingsAudio.h \
+	src/settings/vm/VBoxVMSettingsNetwork.h \
+	src/settings/vm/VBoxVMSettingsSerial.h \
+	src/settings/vm/VBoxVMSettingsParallel.h \
+	src/settings/vm/VBoxVMSettingsUSB.h \
+	src/settings/vm/VBoxVMSettingsUSBFilterDetails.h \
+	src/settings/vm/VBoxVMSettingsSF.h \
+	src/settings/vm/VBoxVMSettingsSFDetails.h \
+	src/wizards/newvm/UINewVMWzd.h \
+	src/wizards/newhd/UINewHDWzd.h \
+	src/wizards/firstrun/UIFirstRunWzd.h \
+	src/wizards/exportappliance/UIExportApplianceWzd.h \
+	src/wizards/importappliance/UIImportApplianceWzd.h \
+	src/widgets/VBoxApplianceEditorWgt.h \
+	src/widgets/VBoxBootTable.h \
+	src/widgets/UIDownloader.h \
+	src/widgets/UIDownloaderAdditions.h \
+	src/widgets/UIDownloaderUserManual.h \
+	src/widgets/VBoxExportApplianceWgt.h \
+	src/widgets/VBoxFilePathSelectorWidget.h \
+	src/widgets/VBoxImportApplianceWgt.h \
+	src/widgets/VBoxLineTextEdit.h \
+	src/widgets/VBoxMediaComboBox.h \
+	src/widgets/VBoxMiniToolBar.h \
+	src/widgets/VBoxOSTypeSelectorButton.h \
+	src/widgets/VBoxOSTypeSelectorWidget.h \
+	src/widgets/VBoxProgressDialog.h \
+	src/widgets/VBoxSpecialControls.h \
+	src/widgets/VBoxWarningPane.h
+ifdef VBOX_WITH_NEW_RUNTIME_CORE
+VirtualBox_QT_MOCHDRS += \
+	src/runtime/UISession.h \
+	src/runtime/UIActionsPool.h \
+	src/runtime/UIIndicatorsPool.h \
+	src/runtime/UIMachine.h \
+	src/runtime/UIMachineLogic.h \
+	src/runtime/UIMachineView.h \
+	src/runtime/UIMultiScreenLayout.h \
+	src/runtime/normal/UIMachineLogicNormal.h \
+	src/runtime/normal/UIMachineWindowNormal.h \
+	src/runtime/normal/UIMachineViewNormal.h \
+	src/runtime/fullscreen/UIMachineLogicFullscreen.h \
+	src/runtime/fullscreen/UIMachineWindowFullscreen.h \
+	src/runtime/fullscreen/UIMachineViewFullscreen.h \
+	src/runtime/seamless/UIMachineLogicSeamless.h \
+	src/runtime/seamless/UIMachineWindowSeamless.h \
+	src/runtime/seamless/UIMachineViewSeamless.h
+endif
+
+ifdef VBOX_WITH_REGISTRATION
+ VirtualBox_QT_MOCHDRS += \
+	src/wizards/registration/UIRegistrationWzd.h
+endif
 
 # Sources containing local definitions of classes that use the Q_OBJECT macro.
 VirtualBox_QT_MOCSRCS = \
 	src/VBoxSelectorWnd.cpp \
-	src/VBoxConsoleWnd.cpp \
 	src/VBoxMediaManagerDlg.cpp
+ifdef VBOX_WITH_NEW_RUNTIME_CORE
+VirtualBox_QT_MOCSRCS += \
+	src/runtime/UIActionsPool.cpp \
+	src/runtime/UIMachineMenuBar.cpp \
+	src/runtime/UIIndicatorsPool.cpp \
+	src/runtime/UIMachine.cpp \
+	src/runtime/UIMachineLogic.cpp
+endif
 ifdef VBOX_WITH_XPCOM
  VirtualBox_QT_MOCSRCS += \
-	src/COMDefs.cpp
+	src/globals/COMDefs.cpp
 endif
 ifeq ($(KBUILD_TARGET),win)
 VirtualBox_QT_MOCSRCS += \
-	src/QIFileDialog.cpp
+	src/extensions/QIFileDialog.cpp
+endif
+
+ifdef VBOX_WITH_REGISTRATION
+ VirtualBox_QT_MOCSRCS += \
+	src/wizards/registration/UIRegistrationWzd.cpp
 endif
 
 VirtualBox_SOURCES = \
 	src/main.cpp \
-	src/COMDefs.cpp \
-	src/QIWidgetValidator.cpp \
-	src/QIHotKeyEdit.cpp \
-	src/QIStateIndicator.cpp \
-	src/QIStatusBar.cpp \
-	src/QIRichToolButton.cpp \
-	src/QIArrowButtonSwitch.cpp \
-	src/QIArrowButtonPress.cpp \
-	src/QIArrowSplitter.cpp \
-	src/QIMessageBox.cpp \
-	src/QILabel.cpp \
-	src/QILabelSeparator.cpp \
-	src/QIAbstractWizard.cpp \
-	src/QIDialog.cpp \
-	src/QIFileDialog.cpp \
-	src/QIAdvancedSlider.cpp \
-	src/QIDialogButtonBox.cpp \
-	src/QIListView.cpp \
-	src/QITreeWidget.cpp \
-	src/QIMainDialog.cpp \
-	src/QILineEdit.cpp \
-	src/QISplitter.cpp \
-	src/QITreeView.cpp \
-	src/VBoxGuestRAMSlider.cpp \
-	src/VBoxFilePathSelectorWidget.cpp \
-	src/VBoxOSTypeSelectorButton.cpp \
-	src/VBoxOSTypeSelectorWidget.cpp \
-	src/VBoxLineTextEdit.cpp \
-	src/VBoxDefs.cpp \
-	src/VBoxGlobalSettings.cpp \
-	src/VBoxGlobal.cpp \
-	src/VBoxMediaComboBox.cpp \
-	src/VBoxProblemReporter.cpp \
-	src/VBoxProgressDialog.cpp \
-	src/VBoxHelpActions.cpp \
-	src/VBoxSelectorWnd.cpp \
-	src/VBoxConsoleView.cpp \
-	src/VBoxConsoleWnd.cpp \
-	src/VBoxMiniToolBar.cpp \
-	src/VBoxDownloaderWgt.cpp \
-	src/VBoxVMListView.cpp \
-	src/VBoxFrameBuffer.cpp \
 	src/VBoxAboutDlg.cpp \
 	src/VBoxCloseVMDlg.cpp \
-	src/VBoxNewVMWzd.cpp \
-	src/VBoxNewHDWzd.cpp \
-	src/VBoxVMFirstRunWzd.cpp \
-	src/VBoxRegistrationDlg.cpp \
-	src/VBoxUpdateDlg.cpp \
-	src/VBoxSnapshotDetailsDlg.cpp \
-	src/VBoxVMInformationDlg.cpp \
-	src/VBoxTakeSnapshotDlg.cpp \
-	src/VBoxSnapshotsWgt.cpp \
-	src/VBoxVMLogViewer.cpp \
-	src/VBoxVMSettingsGeneral.cpp \
-	src/VBoxVMSettingsSystem.cpp \
-	src/VBoxVMSettingsDisplay.cpp \
-	src/VBoxVMSettingsHD.cpp \
-	src/VBoxVMSettingsAudio.cpp \
-	src/VBoxVMSettingsNetwork.cpp \
-	src/VBoxVMSettingsSerial.cpp \
-	src/VBoxVMSettingsParallel.cpp \
-	src/VBoxVMSettingsUSB.cpp \
-	src/VBoxVMSettingsUSBFilterDetails.cpp \
-	src/VBoxVMSettingsSF.cpp \
-	src/VBoxVMSettingsSFDetails.cpp \
-	src/VBoxGLSettingsGeneral.cpp \
-	src/VBoxGLSettingsInput.cpp \
-	src/VBoxGLSettingsUpdate.cpp \
-	src/VBoxGLSettingsLanguage.cpp \
-	src/VBoxGLSettingsNetwork.cpp \
-	src/VBoxGLSettingsNetworkDetails.cpp \
-	src/VBoxSettingsDialog.cpp \
-	src/VBoxSettingsDialogSpecific.cpp \
-	src/VBoxSettingsSelector.cpp \
+	src/VBoxConsoleView.cpp \
+	src/VBoxConsoleWnd.cpp \
+	src/VBoxFrameBuffer.cpp \
+	src/VBoxGlobalSettings.cpp \
+	src/VBoxHelpActions.cpp \
 	src/VBoxMediaManagerDlg.cpp \
 	src/VBoxMedium.cpp \
-	src/VBoxApplianceEditorWgt.cpp \
-	src/VBoxImportApplianceWgt.cpp \
-	src/VBoxImportApplianceWzd.cpp \
-	src/VBoxExportApplianceWgt.cpp \
-	src/VBoxExportApplianceWzd.cpp \
-	src/VBoxSpecialControls.cpp
+	src/VBoxSelectorWnd.cpp \
+	src/VBoxSnapshotDetailsDlg.cpp \
+	src/VBoxSnapshotsWgt.cpp \
+	src/VBoxTakeSnapshotDlg.cpp \
+	src/VBoxUpdateDlg.cpp \
+	src/VBoxVMInformationDlg.cpp \
+	src/VBoxVMListView.cpp \
+	src/VBoxVMLogViewer.cpp \
+	src/globals/COMDefs.cpp \
+	src/globals/VBoxDefs.cpp \
+	src/globals/VBoxGlobal.cpp \
+	src/globals/VBoxProblemReporter.cpp \
+	src/extensions/QIAdvancedSlider.cpp \
+	src/extensions/QIArrowButtonPress.cpp \
+	src/extensions/QIArrowButtonSwitch.cpp \
+	src/extensions/QIArrowSplitter.cpp \
+	src/extensions/QIDialog.cpp \
+	src/extensions/QIDialogButtonBox.cpp \
+	src/extensions/QIFileDialog.cpp \
+	src/extensions/QIHotKeyEdit.cpp \
+	src/extensions/QILabel.cpp \
+	src/extensions/QILabelSeparator.cpp \
+	src/extensions/QILineEdit.cpp \
+	src/extensions/QIListView.cpp \
+	src/extensions/QIMainDialog.cpp \
+	src/extensions/QIMessageBox.cpp \
+	src/extensions/QIRichToolButton.cpp \
+	src/extensions/QISplitter.cpp \
+	src/extensions/QIStateIndicator.cpp \
+	src/extensions/QIStatusBar.cpp \
+	src/extensions/QITreeView.cpp \
+	src/extensions/QITreeWidget.cpp \
+	src/extensions/QIWidgetValidator.cpp \
+	src/extensions/QIWizard.cpp \
+	src/settings/VBoxSettingsDialog.cpp \
+	src/settings/VBoxSettingsDialogSpecific.cpp \
+	src/settings/VBoxSettingsSelector.cpp \
+	src/settings/global/VBoxGLSettingsGeneral.cpp \
+	src/settings/global/VBoxGLSettingsInput.cpp \
+	src/settings/global/VBoxGLSettingsUpdate.cpp \
+	src/settings/global/VBoxGLSettingsLanguage.cpp \
+	src/settings/global/VBoxGLSettingsNetwork.cpp \
+	src/settings/global/VBoxGLSettingsNetworkDetails.cpp \
+	src/settings/vm/VBoxVMSettingsGeneral.cpp \
+	src/settings/vm/VBoxVMSettingsSystem.cpp \
+	src/settings/vm/VBoxVMSettingsDisplay.cpp \
+	src/settings/vm/VBoxVMSettingsHD.cpp \
+	src/settings/vm/VBoxVMSettingsAudio.cpp \
+	src/settings/vm/VBoxVMSettingsNetwork.cpp \
+	src/settings/vm/VBoxVMSettingsSerial.cpp \
+	src/settings/vm/VBoxVMSettingsParallel.cpp \
+	src/settings/vm/VBoxVMSettingsUSB.cpp \
+	src/settings/vm/VBoxVMSettingsUSBFilterDetails.cpp \
+	src/settings/vm/VBoxVMSettingsSF.cpp \
+	src/settings/vm/VBoxVMSettingsSFDetails.cpp \
+	src/wizards/newvm/UINewVMWzd.cpp \
+	src/wizards/newhd/UINewHDWzd.cpp \
+	src/wizards/firstrun/UIFirstRunWzd.cpp \
+	src/wizards/exportappliance/UIExportApplianceWzd.cpp \
+	src/wizards/importappliance/UIImportApplianceWzd.cpp \
+	src/widgets/VBoxApplianceEditorWgt.cpp \
+	src/widgets/VBoxBootTable.cpp \
+	src/widgets/UIDownloader.cpp \
+	src/widgets/UIDownloaderAdditions.cpp \
+	src/widgets/UIDownloaderUserManual.cpp \
+	src/widgets/VBoxExportApplianceWgt.cpp \
+	src/widgets/VBoxFilePathSelectorWidget.cpp \
+	src/widgets/VBoxGuestRAMSlider.cpp \
+	src/widgets/VBoxImportApplianceWgt.cpp \
+	src/widgets/VBoxLineTextEdit.cpp \
+	src/widgets/VBoxMediaComboBox.cpp \
+	src/widgets/VBoxMiniToolBar.cpp \
+	src/widgets/VBoxOSTypeSelectorButton.cpp \
+	src/widgets/VBoxOSTypeSelectorWidget.cpp \
+	src/widgets/VBoxProgressDialog.cpp \
+	src/widgets/VBoxSpecialControls.cpp \
+	src/widgets/VBoxWarningPane.cpp
+ifdef VBOX_WITH_NEW_RUNTIME_CORE
+VirtualBox_SOURCES += \
+	src/runtime/UISession.cpp \
+	src/runtime/UIActionsPool.cpp \
+	src/runtime/UIIndicatorsPool.cpp \
+	src/runtime/UIFrameBuffer.cpp \
+	src/runtime/UIFrameBufferQGL.cpp \
+	src/runtime/UIFrameBufferQImage.cpp \
+	src/runtime/UIFrameBufferSDL.cpp \
+	src/runtime/UIMachine.cpp \
+	src/runtime/UIMachineLogic.cpp \
+	src/runtime/UIMachineWindow.cpp \
+	src/runtime/UIMachineView.cpp \
+	src/runtime/UIMachineMenuBar.cpp \
+	src/runtime/UIMultiScreenLayout.cpp \
+	src/runtime/normal/UIMachineLogicNormal.cpp \
+	src/runtime/normal/UIMachineWindowNormal.cpp \
+	src/runtime/normal/UIMachineViewNormal.cpp \
+	src/runtime/fullscreen/UIMachineLogicFullscreen.cpp \
+	src/runtime/fullscreen/UIMachineWindowFullscreen.cpp \
+	src/runtime/fullscreen/UIMachineViewFullscreen.cpp \
+	src/runtime/seamless/UIMachineLogicSeamless.cpp \
+	src/runtime/seamless/UIMachineWindowSeamless.cpp \
+	src/runtime/seamless/UIMachineViewSeamless.cpp
+VirtualBox_SOURCES.win += \
+	src/runtime/UIFrameBufferDirectDraw.cpp
+VirtualBox_SOURCES.darwin += \
+	src/runtime/UIFrameBufferQuartz2D.cpp \
+	src/darwin/UIAbstractDockIconPreview.cpp \
+	src/darwin/UICocoaDockIconPreview.mm
+endif
 
 ifeq ($(filter-out freebsd linux netbsd openbsd solaris,$(KBUILD_TARGET)),) # X11
  ifndef VBOX_OSE
   VirtualBox_QT_MOCHDRS += \
-  	include/VBoxLicenseViewer.h
+ 	src/VBoxLicenseViewer.h
   VirtualBox_SOURCES += \
-  	src/VBoxLicenseViewer.cpp
+ 	src/VBoxLicenseViewer.cpp
  else
   VirtualBox_VBOX_EXTRA_NLS_SOURCES += \
-    include/VBoxLicenseViewer.h \
-  	src/VBoxLicenseViewer.cpp
+ 	src/VBoxLicenseViewer.h \
+ 	src/VBoxLicenseViewer.cpp
  endif
  VirtualBox_SOURCES += \
  	src/X11/XKeyboard-new.cpp \
-	src/VBoxX11Helper.cpp
+ 	src/X11/VBoxX11Helper.cpp
 else
  VirtualBox_VBOX_EXTRA_NLS_SOURCES += \
-    include/VBoxLicenseViewer.h \
-  	src/VBoxLicenseViewer.cpp
+ 	src/VBoxLicenseViewer.h \
+ 	src/VBoxLicenseViewer.cpp
+endif
+
+ifdef VBOX_WITH_REGISTRATION
+ VirtualBox_SOURCES += \
+	src/wizards/registration/UIRegistrationWzd.cpp
 endif
 
 VirtualBox_SOURCES.win += \
 	src/VBoxFBDDRAW.cpp \
 	src/win/VirtualBox.rc
 
-VirtualBox_SOURCES.darwin = \
+VirtualBox_SOURCES.darwin += \
 	src/darwin/DarwinKeyboard.cpp \
 	src/darwin/VBoxUtils-darwin.cpp \
 	src/darwin/AbstractDockIconPreview.cpp \
@@ -476,15 +599,14 @@ ifdef VBOX_WITH_COCOA_QT
  VirtualBox_SOURCES.darwin += \
  	src/darwin/VBoxCocoaApplication.m \
  	src/darwin/VBoxUtils-darwin-cocoa.mm \
-	src/darwin/VBoxCocoaSpecialControls.mm \
-	src/darwin/CocoaDockIconPreview.mm
+ 	src/darwin/VBoxCocoaSpecialControls.mm \
+ 	src/darwin/CocoaDockIconPreview.mm
  VirtualBox_QT_MOCHDRS.darwin = \
-	include/VBoxCocoaSpecialControls.h
-
+ 	src/darwin/VBoxCocoaSpecialControls.h
 else
  VirtualBox_SOURCES.darwin += \
  	src/darwin/VBoxUtils-darwin-carbon.cpp \
-	src/darwin/CarbonDockIconPreview.cpp
+ 	src/darwin/CarbonDockIconPreview.cpp
 endif
 
 if defined(VBOX_WITH_VIDEOHWACCEL) || defined(VBOX_GUI_USE_QGL)
@@ -503,7 +625,7 @@ endif
 
 # Import QDesigner UI sources and translations from VBoxUI.pro.
 ifndef VBOX_WITH_REGISTRATION
- FORMS := $(filter-out ui/VBoxRegistrationDlg.ui,$(FORMS))
+ FORMS := $(filter-out src/wizards/registration/UIRegistrationWzdPage1.ui,$(FORMS))
 endif
 $(eval VirtualBox_SOURCES += $(FORMS))
 
@@ -512,11 +634,18 @@ VirtualBox_SOURCES += VirtualBox1.qrc
 VirtualBox1.qrc_RCCFLAGS = -name BASIC1
 VirtualBox_SOURCES += VirtualBox2.qrc
 VirtualBox2.qrc_RCCFLAGS = -name BASIC2
+ifeq ($(KBUILD_TARGET),darwin)
+ VirtualBox_SOURCES += VirtualBoxMac.qrc
+ VirtualBoxMac.qrc_RCCFLAGS = -name MAC
+else
+ VirtualBox_SOURCES += VirtualBoxOther.qrc
+ VirtualBoxOther.qrc_RCCFLAGS = -name OTHER
+endif
 VirtualBox_SOURCES += $(VBOX_VIRTUALBOX4_OUT_DIR)/VirtualBoxBrand.qrc
 $(VBOX_VIRTUALBOX4_OUT_DIR)/VirtualBoxBrand.qrc_RCCFLAGS = -name BRAND
 if defined(VBOX_WITH_VIDEOHWACCEL) || defined(VBOX_GUI_USE_QGL)
-VirtualBox_SOURCES += VirtualBoxShaders.qrc
-VirtualBoxShaders.qrc_RCCFLAGS = -name SHADERS
+ VirtualBox_SOURCES += VirtualBoxShaders.qrc
+ VirtualBoxShaders.qrc_RCCFLAGS = -name SHADERS
 endif
 
 # Import the translation source from VBoxUI.pro and add the qt_xx_YY counterparts
@@ -533,7 +662,7 @@ VirtualBox_QT_TRANSLATIONS_INST = $(INST_BIN)nls/
 #  more generic -Wno-extra
 # bird: What about $(if $(VBOX_GCC_Wno-missing-base-class-initializer),$(VBOX_GCC_Wno-missing-base-class-initializer),$(VBOX_GCC_Wno-extra))?
 ifdef VBOX_WITH_XPCOM
- VirtualBox_src/COMDefs.cpp_CXXFLAGS  = $(VBOX_GCC_Wno-extra)
+ VirtualBox_src/globals/COMDefs.cpp_CXXFLAGS  = $(VBOX_GCC_Wno-extra)
 endif
 
 
@@ -555,11 +684,11 @@ $$(PATH_VirtualBox)/include/COMWrappers \
 +| $$(PATH_VirtualBox)/include/COMWrappers.h \
 +| $$(PATH_VirtualBox)/include/COMWrappers.cpp: \
 		$(VBOX_XIDL_FILE) \
-		$(VBOX_VIRTUALBOX4_SRC)/include/COMWrappers.xsl \
+		$(VBOX_VIRTUALBOX4_SRC)/src/globals/COMWrappers.xsl \
 		| $$(dir $$@)
 	$(call MSG_GENERATE,VirtualBox,$<,$@)
 	$(QUIET)$(RM) -f $@ $@.tmp $@.h $@.cpp
-	$(QUIET)$(VBOX_XSLTPROC) -o $@ $(VBOX_VIRTUALBOX4_SRC)/include/COMWrappers.xsl $<
+	$(QUIET)$(VBOX_XSLTPROC) -o $@ $(VBOX_VIRTUALBOX4_SRC)/src/globals/COMWrappers.xsl $<
 
 	$(QUIET)$(SED) -e '1,/\/\/ wrapper definitions/ !d' \
 		--output $@.tmp $@
@@ -588,28 +717,115 @@ testwrappers:: $$(PATH_VirtualBox)/include/COMWrappers.h
 #
 VirtualBox_BLDDIRS       += $(VBOX_VIRTUALBOX4_OUT_DIR)
 VirtualBox_CLEAN         += $(VBOX_VIRTUALBOX4_OUT_DIR)/VirtualBoxBrand.qrc
-if "$(KBUILD_HOST)" == "win" ## @todo remove when kBuild ticket #52 has been fixed and deployed.
- VBOX_DRIVE_HACK := $(firstword $(subst :, ,$(PATH_ROOT))):
-else
- VBOX_DRIVE_HACK :=
-endif
 $(VBOX_VIRTUALBOX4_OUT_DIR)/VirtualBoxBrand.qrc: \
 		$(VBOX_VIRTUALBOX4_SRC)/VirtualBoxBrand.qrc \
 		| $$(dir $$@)
 	$(call MSG_GENERATE,VirtualBox,$<,$@)
 	$(QUIET)$(SED) \
-		-e 's;@VBOX_ABOUT_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_ABOUT_PNG));g' \
-		-e 's;@VBOX_ABOUT_16PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_ABOUT_16PX_PNG));g' \
-		-e 's;@VBOX_VBOX_16PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_16PX_PNG));g' \
-		-e 's;@VBOX_VBOX_20PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_20PX_PNG));g' \
-		-e 's;@VBOX_VBOX_32PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_32PX_PNG));g' \
-		-e 's;@VBOX_VBOX_40PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_40PX_PNG));g' \
-		-e 's;@VBOX_VBOX_48PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_48PX_PNG));g' \
-		-e 's;@VBOX_VBOX_64PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_VBOX_64PX_PNG));g' \
-		-e 's;@VBOX_CUBE_42PX_PNG@;$(subst $(VBOX_DRIVE_HACK),,$(VBOX_BRAND_GUI_CUBE_42PX_PNG));g' \
+		-e 's;@VBOX_ABOUT_PNG@;$(VBOX_BRAND_GUI_ABOUT_PNG);g' \
+		-e 's;@VBOX_ABOUT_16PX_PNG@;$(VBOX_BRAND_GUI_ABOUT_16PX_PNG);g' \
+		-e 's;@VBOX_VBOX_16PX_PNG@;$(VBOX_BRAND_GUI_VBOX_16PX_PNG);g' \
+		-e 's;@VBOX_VBOX_20PX_PNG@;$(VBOX_BRAND_GUI_VBOX_20PX_PNG);g' \
+		-e 's;@VBOX_VBOX_32PX_PNG@;$(VBOX_BRAND_GUI_VBOX_32PX_PNG);g' \
+		-e 's;@VBOX_VBOX_40PX_PNG@;$(VBOX_BRAND_GUI_VBOX_40PX_PNG);g' \
+		-e 's;@VBOX_VBOX_48PX_PNG@;$(VBOX_BRAND_GUI_VBOX_48PX_PNG);g' \
+		-e 's;@VBOX_VBOX_64PX_PNG@;$(VBOX_BRAND_GUI_VBOX_64PX_PNG);g' \
+		-e 's;@VBOX_CUBE_42PX_PNG@;$(VBOX_BRAND_GUI_CUBE_42PX_PNG);g' \
 		--output $@ \
 		$<
 
+
+#
+# Precompiled header - non-functional atm.
+#
+ifdef VBOX_WITH_PRECOMPILED_HEADERS
+VirtualBox_INCS          <= $(VirtualBox_0_OUTDIR)/include
+VirtualBox_DEFS          += VBOX_WITH_PRECOMPILED_HEADERS
+VirtualBox_CXXFLAGS      += -Winvalid-pch -fpch-preprocess
+VirtualBox_INTERMEDIATES += $(VirtualBox_0_OUTDIR)/include/precomp.h.gch
+
+tstx: $$(VirtualBox_0_OUTDIR)/include/precomp.h.gch
+
+$$(VirtualBox_0_OUTDIR)/include/precomp.h.gch: \
+		$(PATH_SUB_CURRENT)/src/precomp.h \
+		$$(VirtualBox_0_OUTDIR)/include/COMWrappers.h \
+		$$(filter %.gen.h, $$(VirtualBox_INTERMEDIATES) ) \
+		$(VBOX_PATH_SDK)/bindings/xpcom/include/VirtualBox_XPCOM.h \
+		| $$(dir $$@)
+	time 'g++-4.0' \
+		'-c' \
+		'-g' \
+		$(if-expr "$(KBUILD_TYPE)" == "debug", , -O2 ) \
+		'-pipe' \
+		'-Wall' \
+		'-Wextra' \
+		'-Wno-missing-field-initializers' \
+		'-Wno-trigraphs' \
+		'-frtti' \
+		'-fno-exceptions' \
+		'-Wno-non-virtual-dtor' \
+		'-Wno-long-long' \
+		\
+		'-fshort-wchar' \
+		'-fno-strict-aliasing' \
+		'-fvisibility=hidden' \
+		'-DVBOX_HAVE_VISIBILITY_HIDDEN' \
+		'-DRT_USE_VISIBILITY_DEFAULT' \
+		'-fvisibility-inlines-hidden' \
+		'-Winvalid-pch' \
+		'-fpch-preprocess' \
+		\
+		'-F$(PATH_SDK_QT4)/Frameworks' \
+		'-mmacosx-version-min=10.5' \
+		'-isysroot' \
+		'/Developer/SDKs/MacOSX10.5.sdk' \
+		'-m32' \
+		\
+		$(foreach inc,$(VirtualBox_INCS),\$(NL)$(TAB)-I$(inc)) \
+		'-I$(PATH_ROOT)/include' \
+		'-I$(PATH_OUT)' \
+		'-DVBOX' \
+		'-DVBOX_WITH_DEBUGGER' \
+		'-DVBOX_WITH_64_BITS_GUESTS' \
+		$(if-expr "$(KBUILD_TYPE)" == "debug", '-DDEBUG' '-DDEBUG_bird' '-DDEBUG_USERNAME=bird' '-DVBOX_CHECK_STATE' ,) \
+		'-DRT_OS_DARWIN' \
+		'-D__DARWIN__' \
+		'-DRT_ARCH_X86' \
+		'-D__X86__' \
+		'-DIN_RING3' \
+		'-DQT_NO_DEBUG' \
+		'-DQT_THREAD_SUPPORT' \
+		'-DQT_SHARED' \
+		'-DHAVE_CONFIG_H' \
+		'-DHC_ARCH_BITS=32' \
+		'-DGC_ARCH_BITS=64' \
+		'-DVBOX_WITH_XPCOM' \
+		'-DVBOX_GUI_SEPARATE_VM_PROCESS' \
+		'-DVBOX_WITH_REGISTRATION' \
+		'-DVBOX_WITH_REGISTRATION_REQUEST' \
+		'-DVBOX_WITH_UPDATE_REQUEST' \
+		'-DVBOX_WITH_ALSA' \
+		'-DVBOX_WITH_PULSE' \
+		'-DVBOX_WITH_E1000' \
+		'-DVBOX_WITH_NETFLT' \
+		'-DVBOX_WITH_DEBUGGER_GUI' \
+		$(if-expr "$(KBUILD_TYPE)" != "release", '-DVBOX_WITH_DEBUGGER_GUI_MENU', ) \
+		'-DVBOX_WITH_VIDEOHWACCEL' \
+		'-DVBOX_GUI_USE_QGL' \
+		'-DVBOX_WITH_VIRTIO' \
+		'-DVBOX_WITH_PRECOMPILED_HEADERS' \
+		'-DVBOX_DARWIN_USE_NATIVE_CONTROLS' \
+		'-DQT_CORE_LIB' \
+		'-DQT_GUI_LIB' \
+		'-DQT_NETWORK_LIB' \
+		'-DQT_OPENGL_LIB' \
+		'-DMAC_OS_X_VERSION_MIN_REQUIRED=1050' \
+		'-DMAC_OS_X_VERSION_MAX_ALLOWED=1050' \
+		'-DVBOX_GUI_USE_QUARTZ2D' \
+		'-DVBOX_GUI_USE_QIMAGE' \
+		'-DVBOX_WITHOUT_QHTTP' \
+		'-o' $@ $<
+endif
 
 ifeq ($(KBUILD_TARGET),win)
 #
@@ -634,7 +850,7 @@ ifeq ($(KBUILD_TARGET),darwin)
 INSTALLS += VirtualBox.lproj
 VirtualBox.lproj_INST = $(INST_VIRTUALBOX)Contents/Resources/
 VirtualBox.lproj_MODE = 755
-VirtualBox.lproj_DIRS := $(addsuffix .lproj,$(VBOX_APPROVED_GUI_LANGUAGES_ALL))
+VirtualBox.lproj_DIRS := $(addsuffix .lproj,$(VBOX_APPROVED_GUI_LANGUAGES))
 
 #
 # On OS X (darwin) we need to install icon resources and compulsory bundle contents.
@@ -656,6 +872,9 @@ $$(PATH_VirtualBox.app)/Info.plist: $(PATH_SUB_CURRENT)/src/darwin/Info.plist $(
 		-e 's/@VBOX_VERSION_MAJOR@/$(VBOX_VERSION_MAJOR)/g' \
 		-e 's/@VBOX_VERSION_MINOR@/$(VBOX_VERSION_MINOR)/g' \
 		-e 's/@VBOX_VERSION_BUILD@/$(VBOX_VERSION_BUILD)/g' \
+		-e 's/@VBOX_VENDOR@/$(VBOX_VENDOR)/g' \
+		-e 's/@VBOX_PRODUCT@/$(VBOX_PRODUCT)/g' \
+		-e 's/@VBOX_C_YEAR@/$(VBOX_C_YEAR)/g' \
 		$< > $@
 
 INSTALLS += VirtualBoxVM.app
@@ -676,6 +895,9 @@ $$(PATH_VirtualBoxVM.app)/VM-Info.plist: $(PATH_SUB_CURRENT)/src/darwin/VM-Info.
 		-e 's/@VBOX_VERSION_MAJOR@/$(VBOX_VERSION_MAJOR)/g' \
 		-e 's/@VBOX_VERSION_MINOR@/$(VBOX_VERSION_MINOR)/g' \
 		-e 's/@VBOX_VERSION_BUILD@/$(VBOX_VERSION_BUILD)/g' \
+		-e 's/@VBOX_VENDOR@/$(VBOX_VENDOR)/g' \
+		-e 's/@VBOX_PRODUCT@/$(VBOX_PRODUCT)/g' \
+		-e 's/@VBOX_C_YEAR@/$(VBOX_C_YEAR)/g' \
 		--output $@ $<
 endif # darwin
 
@@ -687,11 +909,6 @@ if defined(VBOX_WITH_VIDEOHWACCEL)
   LIBRARIES += VBoxOGL2D
   VBoxOGL2D_TEMPLATE = VBOXR3STATIC
   VBoxOGL2D_USES = qt4
-#  VBoxOGL2D_QTTOOL = QT4
-#  VBoxOGL2D_MOCTOOL = QT4
-#  VBoxOGL2D_UICTOOL = QT4
-#  VBoxOGL2D_RCCTOOL = QT4
-#  VBoxOGL2D_LRCTOOL = QT4
   VBoxOGL2D_SDKS = QT4
   VBoxOGL2D_DEFS = IN_RING3 QT_NO_DEBUG QT_THREAD_SUPPORT QT_SHARED HAVE_CONFIG_H $(ARCH_BITS_DEFS) VBOX_WITH_VIDEOHWACCEL VBOX_GUI_USE_QGL
   VBoxOGL2D_QT_MODULES += OpenGL
@@ -741,13 +958,32 @@ include $(KBUILD_PATH)/subfooter.kmk
 # before a new product release. VirtualBox_xx_YY.ts is a template for new
 # languages and should never be actually translated or installed.
 #
-updatenls:: \
-		$(filter-out %.qrc,$(VirtualBox_SOURCES) $(VirtualBox_VBOX_EXTRA_NLS_SOURCES)) \
-		$(wildcard include/*.h)
+# For Qt >= 4.6.0 it maybe necessary to add -I $(VBOX_GUI_INC_DIRS) to the
+# lupdate call
+#
+updatenls:: makeallnls nls/VirtualBox_en.ts
+
+makeallnls:: \
+		$(foreach header,$(VBOX_GUI_INC_DIRS),$(wildcard $(header)/*.h)) \
+		$(filter-out %.qrc,$(VirtualBox_SOURCES) $(VirtualBox_VBOX_EXTRA_NLS_SOURCES))
 	$(call MSG_L1,lupdate all languages (nls/*.ts))
 	$(QUIET)$(TOOL_QT4_LUPDATE) \
 		$^ \
 		-ts \
-		$(filter-out nls/qt_%.ts,$(VirtualBox_QT_TRANSLATIONS)) \
+		$(filter-out nls/VirtualBox_en.ts,$(filter-out nls/qt_%.ts,$(VirtualBox_QT_TRANSLATIONS))) \
 		nls/VirtualBox_xx_YY.ts
+
+# Create the English translation file. This is something special cause it will
+# contain the plural forms only.
+nls/VirtualBox_en.ts: \
+		$(foreach header,$(VBOX_GUI_INC_DIRS),$(wildcard $(header)/*.h)) \
+		$(filter-out %.qrc,$(VirtualBox_SOURCES) $(VirtualBox_VBOX_EXTRA_NLS_SOURCES))
+	$(call MSG_L1,lupdate $@)
+	$(QUIET)$(TOOL_QT4_LUPDATE) \
+		$^ \
+		-ts \
+		$@
+	$(QUIET)$(SED) -n -i -e \
+		'/<context>/,/<\/context>/!p;/<context>/h;/<name>/H;/<message numerus="yes">/,/<\/message>/H;/<\/context>/{H;x;/<message/p}' \
+	$@
 

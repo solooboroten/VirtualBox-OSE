@@ -36,13 +36,12 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d_texture);
 
-#define GLINFO_LOCATION (*gl_info)
-
 static void texture_internal_preload(IWineD3DBaseTexture *iface, enum WINED3DSRGB srgb)
 {
     /* Override the IWineD3DResource PreLoad method. */
     IWineD3DTextureImpl *This = (IWineD3DTextureImpl *)iface;
-    IWineD3DDeviceImpl *device = This->resource.wineD3DDevice;
+    IWineD3DDeviceImpl *device = This->resource.device;
+    struct wined3d_context *context = NULL;
     unsigned int i;
     BOOL srgb_mode;
     BOOL *dirty;
@@ -71,9 +70,9 @@ static void texture_internal_preload(IWineD3DBaseTexture *iface, enum WINED3DSRG
 
     if (!device->isInDraw)
     {
-        /* ActivateContext sets isInDraw to TRUE when loading a pbuffer into a texture,
+        /* context_acquire() sets isInDraw to TRUE when loading a pbuffer into a texture,
          * thus no danger of recursive calls. */
-        ActivateContext(device, NULL, CTXUSAGE_RESOURCELOAD);
+        context = context_acquire(device, NULL, CTXUSAGE_RESOURCELOAD);
     }
 
     if (This->resource.format_desc->format == WINED3DFMT_P8_UINT
@@ -106,6 +105,8 @@ static void texture_internal_preload(IWineD3DBaseTexture *iface, enum WINED3DSRG
         TRACE("(%p) Texture not dirty, nothing to do.\n", iface);
     }
 
+    if (context) context_release(context);
+
     /* No longer dirty. */
     *dirty = FALSE;
 }
@@ -134,13 +135,9 @@ static void texture_cleanup(IWineD3DTextureImpl *This)
     basetexture_cleanup((IWineD3DBaseTexture *)This);
 }
 
-#undef GLINFO_LOCATION
-
 /* *******************************************
    IWineD3DTexture IUnknown parts follow
    ******************************************* */
-
-#define GLINFO_LOCATION This->resource.wineD3DDevice->adapter->gl_info
 
 static HRESULT WINAPI IWineD3DTextureImpl_QueryInterface(IWineD3DTexture *iface, REFIID riid, LPVOID *ppobj)
 {
@@ -183,10 +180,6 @@ static ULONG WINAPI IWineD3DTextureImpl_Release(IWineD3DTexture *iface) {
 /* ****************************************************
    IWineD3DTexture IWineD3DResource parts follow
    **************************************************** */
-static HRESULT WINAPI IWineD3DTextureImpl_GetDevice(IWineD3DTexture *iface, IWineD3DDevice** ppDevice) {
-    return resource_get_device((IWineD3DResource *)iface, ppDevice);
-}
-
 static HRESULT WINAPI IWineD3DTextureImpl_SetPrivateData(IWineD3DTexture *iface, REFGUID refguid, CONST void* pData, DWORD SizeOfData, DWORD Flags) {
     return resource_set_private_data((IWineD3DResource *)iface, refguid, pData, SizeOfData, Flags);
 }
@@ -417,7 +410,6 @@ static const IWineD3DTextureVtbl IWineD3DTexture_Vtbl =
     IWineD3DTextureImpl_Release,
     /* IWineD3DResource */
     IWineD3DTextureImpl_GetParent,
-    IWineD3DTextureImpl_GetDevice,
     IWineD3DTextureImpl_SetPrivateData,
     IWineD3DTextureImpl_GetPrivateData,
     IWineD3DTextureImpl_FreePrivateData,
@@ -451,7 +443,7 @@ HRESULT texture_init(IWineD3DTextureImpl *texture, UINT width, UINT height, UINT
         IUnknown *parent, const struct wined3d_parent_ops *parent_ops)
 {
     const struct wined3d_gl_info *gl_info = &device->adapter->gl_info;
-    const struct GlPixelFormatDesc *format_desc = getFormatDescEntry(format, gl_info);
+    const struct wined3d_format_desc *format_desc = getFormatDescEntry(format, gl_info);
     UINT pow2_width, pow2_height;
     UINT tmp_w, tmp_h;
     unsigned int i;
@@ -587,7 +579,7 @@ HRESULT texture_init(IWineD3DTextureImpl *texture, UINT width, UINT height, UINT
         /* Use the callback to create the texture surface. */
         hr = IWineD3DDeviceParent_CreateSurface(device->device_parent, parent, tmp_w, tmp_h, format_desc->format,
                 usage, pool, i, WINED3DCUBEMAP_FACE_POSITIVE_X, &texture->surfaces[i]);
-        if (FAILED(hr) || ((IWineD3DSurfaceImpl *)texture->surfaces[i])->Flags & SFLAG_OVERSIZE)
+        if (FAILED(hr))
         {
             FIXME("Failed to create surface %p, hr %#x\n", texture, hr);
             texture->surfaces[i] = NULL;

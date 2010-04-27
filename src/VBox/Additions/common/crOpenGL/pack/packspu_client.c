@@ -191,12 +191,11 @@ packspu_ArrayElement( GLint index )
         GET_CONTEXT(ctx);
         CRClientState *clientState = &(ctx->clientState->client);
 
-        /*Note the comment in packspu_LockArraysEXT*/
-        if (clientState->array.locked && !clientState->array.synced)
-        {
-            crPackLockArraysEXT(clientState->array.lockFirst, clientState->array.lockCount);
-            clientState->array.synced = GL_TRUE;
-        }
+        /* LockArraysEXT can not be executed between glBegin/glEnd pair, it also
+         * leads to vertexpointers being adjusted on the host side between glBegin/glEnd calls which
+         * produces unpredictable results. Locking is done before the glBegin call instead.
+         */
+        CRASSERT(!clientState->array.locked || clientState->array.synced);
 
         /* Send the DrawArrays command over the wire */
         if (pack_spu.swap)
@@ -406,23 +405,51 @@ void PACKSPU_APIENTRY packspu_DisableVertexAttribArrayARB(GLuint index)
 
 void PACKSPU_APIENTRY packspu_Enable( GLenum cap )
 {
-    crStateEnable(cap);
+    if (cap!=GL_LIGHT_MODEL_TWO_SIDE)
+    {
+        crStateEnable(cap);
 
-    if (pack_spu.swap)
-        crPackEnableSWAP(cap);
+        if (pack_spu.swap)
+            crPackEnableSWAP(cap);
+        else
+            crPackEnable(cap);
+    }
     else
-        crPackEnable(cap);
+    {
+        static int g_glmts1_warn=0;
+        if (!g_glmts1_warn)
+        {
+            crWarning("glEnable(GL_LIGHT_MODEL_TWO_SIDE) converted to valid glLightModeli(GL_LIGHT_MODEL_TWO_SIDE,1)");
+            g_glmts1_warn=1;
+        }
+        crStateLightModeli(GL_LIGHT_MODEL_TWO_SIDE, 1);
+        crPackLightModeli(GL_LIGHT_MODEL_TWO_SIDE, 1);
+    }
 }
 
 
 void PACKSPU_APIENTRY packspu_Disable( GLenum cap )
 {
-    crStateDisable(cap);
+    if (cap!=GL_LIGHT_MODEL_TWO_SIDE)
+    {
+        crStateDisable(cap);
 
-    if (pack_spu.swap)
-        crPackDisableSWAP(cap);
+        if (pack_spu.swap)
+            crPackDisableSWAP(cap);
+        else
+            crPackDisable(cap);
+    }
     else
-        crPackDisable(cap);
+    {
+        static int g_glmts0_warn=0;
+        if (!g_glmts0_warn)
+        {
+            crWarning("glDisable(GL_LIGHT_MODEL_TWO_SIDE) converted to valid glLightModeli(GL_LIGHT_MODEL_TWO_SIDE,0)");
+            g_glmts0_warn=1;
+        }
+        crStateLightModeli(GL_LIGHT_MODEL_TWO_SIDE, 0);
+        crPackLightModeli(GL_LIGHT_MODEL_TWO_SIDE, 0);
+    }
 }
 
 GLboolean PACKSPU_APIENTRY packspu_IsEnabled(GLenum cap)
@@ -463,7 +490,7 @@ void PACKSPU_APIENTRY packspu_LockArraysEXT(GLint first, GLint count)
         crStateLockArraysEXT(first, count);
         /*Note: this is a workaround for quake3 based apps.
           It's modifying vertex data between glLockArraysEXT and glDrawElements calls,
-          so we'd pass data to host right before the glDrawSomething call.
+          so we'd pass data to host right before the glDrawSomething or glBegin call.
         */
         /*crPackLockArraysEXT(first, count);*/
     } 

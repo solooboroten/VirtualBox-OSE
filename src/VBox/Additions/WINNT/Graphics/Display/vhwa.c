@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: vhwa.c 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * VBoxGuest -- VirtualBox Win 2000/XP guest display driver
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2009 Sun Microsystems, Inc.
+ * Copyright (C) 2009 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -15,10 +15,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 #include "driver.h"
 #include "dd.h"
@@ -78,7 +74,8 @@ void vboxVHWASurfDescFree(PVBOXVHWASURFDESC pDesc)
         )
 
 #define VBOXVHWA_SUPPORTED_PF ( \
-        VBOXVHWA_PF_RGB \
+        VBOXVHWA_PF_PALETTEINDEXED8 \
+        | VBOXVHWA_PF_RGB \
         | VBOXVHWA_PF_RGBTOYUV \
         | VBOXVHWA_PF_YUV \
         | VBOXVHWA_PF_FOURCC \
@@ -136,14 +133,6 @@ void vboxVHWASurfDescFree(PVBOXVHWASURFDESC pDesc)
         | VBOXVHWA_OVER_KEYSRCOVERRIDE \
         | VBOXVHWA_OVER_SHOW \
         )
-
-void vboxVHWAInit()
-{
-}
-
-void vboxVHWATerm()
-{
-}
 
 uint32_t vboxVHWAUnsupportedDDCAPS(uint32_t caps)
 {

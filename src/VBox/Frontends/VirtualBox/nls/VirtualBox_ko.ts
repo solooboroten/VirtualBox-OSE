@@ -24,7 +24,7 @@
         <translation></translation>
     </message>
     <message>
-        <source>Sun Microsystems, Inc.</source>
+        <source>Oracle Corporation</source>
         <comment>Comma-separated list of translators</comment>
         <translation>Park Shinjo</translation>
     </message>
@@ -431,7 +431,7 @@
     </message>
 </context>
 <context>
-    <name>VBoxAdditionsDownloader</name>
+    <name>UIDownloaderAdditions</name>
     <message>
         <source>Cancel</source>
         <translation>취소</translation>
@@ -1118,7 +1118,7 @@
     </message>
 </context>
 <context>
-    <name>VBoxDownloaderWgt</name>
+    <name>UIDownloader</name>
     <message>
         <source>The download process has been cancelled by the user.</source>
         <translation>사용자가 다운로드 과정을 취소했습니다.</translation>
@@ -1132,7 +1132,7 @@
     </message>
 </context>
 <context>
-    <name>VBoxExportApplianceWzd</name>
+    <name>UIExportApplianceWzd</name>
     <message>
         <source>Select a file to export into</source>
         <translation>내보낼 파일 선택하기</translation>
@@ -1397,6 +1397,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>&amp;Dock Icon Realtime Preview</source>
         <translation>실시간으로 독 아이콘 갱신하기(&amp;D)</translation>
+    </message>
+    <message>
+        <source>&amp;Auto show Dock and Menubar in fullscreen</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -2850,6 +2854,46 @@ p, li { white-space: pre-wrap; }
         <comment>medium</comment>
         <translation type="unfinished"></translation>
     </message>
+    <message numerus="yes">
+        <source>%n year(s)</source>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n month(s)</source>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minute(s)</source>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n second(s)</source>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>(CD/DVD)</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>VBoxGlobalSettings</name>
@@ -2885,7 +2929,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxImportApplianceWzd</name>
+    <name>UIImportApplianceWzd</name>
     <message>
         <source>Select an appliance to import</source>
         <translation>가져올 가상 시스템 선택하기</translation>
@@ -2948,7 +2992,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxImportLicenseViewer</name>
+    <name>UIImportLicenseViewer</name>
     <message>
         <source>&lt;b&gt;The virtual system &quot;%1&quot; requires that you agree to the terms and conditions of the software license agreement shown below.&lt;/b&gt;&lt;br /&gt;&lt;br /&gt;Click &lt;b&gt;Agree&lt;/b&gt; to continue or click &lt;b&gt;Disagree&lt;/b&gt; to cancel the import.</source>
         <translation>&lt;b&gt;가상 시스템 &quot;%1&quot;을(를) 사용하려면 아래의 라이선스 조항에 동의해야 합니다.&lt;/b&gt;&lt;br /&gt;&lt;br /&gt;&lt;b&gt;동의합니다&lt;/b&gt; 단추를 누르면 계속 진행하며, &lt;b&gt;동의하지 않습니다&lt;/b&gt; 단추를 누르면 가져오지 않습니다.</translation>
@@ -3232,7 +3276,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxNewHDWzd</name>
+    <name>UINewHDWzd</name>
     <message>
         <source>Create New Virtual Disk</source>
         <translation>새 가상 디스크 만들기</translation>
@@ -3347,7 +3391,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxNewVMWzd</name>
+    <name>UINewVMWzd</name>
     <message>
         <source>Create New Virtual Machine</source>
         <translation>새 가상 머신 만들기</translation>
@@ -4402,6 +4446,15 @@ p, li { white-space: pre-wrap; }
         <comment>failed to close ...</comment>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to delete the CD/DVD-ROM device?&lt;/p&gt;&lt;p&gt;You will not be able to mount any CDs or ISO images or install the Guest Additions without it!&lt;/p&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Remove</source>
+        <comment>medium</comment>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>VBoxProgressDialog</name>
@@ -4414,58 +4467,6 @@ p, li { white-space: pre-wrap; }
         <translation type="obsolete">남은 시간: %1</translation>
     </message>
     <message>
-        <source>%1 days, %2 hours remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>%1 days, %2 minutes remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>%1 days remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>1 day, %1 hours remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>1 day, %1 minutes remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>1 day remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>%1 hours, %2 minutes remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>1 hour, %1 minutes remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>1 hour remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>%1 minutes remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>1 minute, %2 seconds remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>1 minute remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>%1 seconds remaining</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>A few seconds remaining</source>
         <translation type="unfinished"></translation>
     </message>
@@ -4475,6 +4476,16 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>Cancel the current operation</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1, %2 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1, %2&quot;</comment>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%1 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1&quot;</comment>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -4952,30 +4963,6 @@ p, li { white-space: pre-wrap; }
         <source> (%1)</source>
         <translation type="unfinished"></translation>
     </message>
-    <message numerus="yes">
-        <source> (%n day(s) ago)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-        </translation>
-    </message>
-    <message numerus="yes">
-        <source> (%n hour(s) ago)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-        </translation>
-    </message>
-    <message numerus="yes">
-        <source> (%n minute(s) ago)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-        </translation>
-    </message>
-    <message numerus="yes">
-        <source> (%n second(s) ago)</source>
-        <translation type="unfinished">
-            <numerusform></numerusform>
-        </translation>
-    </message>
     <message>
         <source>&amp;Restore Snapshot</source>
         <translation type="unfinished"></translation>
@@ -4990,6 +4977,10 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>Delete the selected snapshot of the virtual machine</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source> (%1 ago)</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -5017,6 +5008,12 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Snapshot &amp;Description</source>
         <translation>스냅샷 설명(&amp;D)</translation>
+    </message>
+    <message numerus="yes">
+        <source>Warning: You are taking a snapshot of a running machine which has %n immutable image(s) attached to it. As long as you are working from this snapshot the immutable image(s) will not be reset to avoid loss of data.</source>
+        <translation type="unfinished">
+            <numerusform></numerusform>
+        </translation>
     </message>
 </context>
 <context>
@@ -5189,7 +5186,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxVMFirstRunWzd</name>
+    <name>UIFirstRunWzd</name>
     <message>
         <source>First Run Wizard</source>
         <translation>처음 실행 마법사</translation>

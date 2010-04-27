@@ -1,10 +1,10 @@
-/* $Id: CPUMInternal.h 23794 2009-10-15 11:50:03Z vboxsync $ */
+/* $Id: CPUMInternal.h 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * CPUM - Internal header file.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 #ifndef ___CPUMInternal_h
@@ -301,7 +297,10 @@ typedef struct CPUM
     bool                    fRawEntered;
     /** Synthetic CPU type? */
     bool                    fSyntheticCpu;
-    uint8_t                 abPadding[2 + (HC_ARCH_BITS == 64) * 4];
+    /** Indiciates that a state restore is pending.
+     * This is used to verify load order dependencies (PGM). */
+    bool                    fPendingRestore;
+    uint8_t                 abPadding[1 + (HC_ARCH_BITS == 64) * 4];
 
     /** The standard set of CpuId leafs. */
     CPUMCPUID               aGuestCpuIdStd[6];

@@ -1,10 +1,10 @@
-/* $Id: $ */
+/* $Id: VBoxRestore.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * VBoxRestore - Restore notification.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 #define _WIN32_WINNT 0x0500
 #include <windows.h>
@@ -32,7 +28,7 @@ typedef struct _VBOXRESTORECONTEXT
 {
     const VBOXSERVICEENV *pEnv;
 
-    BOOL  fRDPState;
+    DWORD  fRDPState;
 } VBOXRESTORECONTEXT;
 
 
@@ -44,7 +40,7 @@ int VBoxRestoreInit(const VBOXSERVICEENV *pEnv, void **ppInstance, bool *pfStart
     Log(("VBoxRestoreInit\n"));
 
     gCtx.pEnv      = pEnv;
-    gCtx.fRDPState = FALSE;
+    gCtx.fRDPState = ERROR_NOT_SUPPORTED;
 
     VBoxRestoreCheckVRDP();
 
@@ -67,22 +63,20 @@ void VBoxRestoreSession()
 
 void VBoxRestoreCheckVRDP()
 {
-    HDC  hdc;
-    BOOL ret;
-
+    DWORD ret;
+    VBOXDISPIFESCAPE escape = {0};
+    escape.escapeCode = VBOXESC_ISVRDPACTIVE;
     /* Check VRDP activity */
-    hdc = GetDC(HWND_DESKTOP);
 
     /* send to display driver */
-    ret = ExtEscape(hdc, VBOXESC_ISVRDPACTIVE, 0, NULL, 0, NULL);
+    ret = VBoxDispIfEscape(&gCtx.pEnv->dispIf, &escape, 0);
     Log(("VBoxRestoreSession -> VRDP activate state = %d\n", ret));
-    ReleaseDC(HWND_DESKTOP, hdc);
 
     if (ret != gCtx.fRDPState)
     {
         DWORD cbReturned;
 
-        if (!DeviceIoControl (gCtx.pEnv->hDriver, (ret) ? VBOXGUEST_IOCTL_ENABLE_VRDP_SESSION : VBOXGUEST_IOCTL_DISABLE_VRDP_SESSION, NULL, 0, NULL, 0, &cbReturned, NULL))
+        if (!DeviceIoControl (gCtx.pEnv->hDriver, ret == NO_ERROR ? VBOXGUEST_IOCTL_ENABLE_VRDP_SESSION : VBOXGUEST_IOCTL_DISABLE_VRDP_SESSION, NULL, 0, NULL, 0, &cbReturned, NULL))
         {
             Log(("VBoxRestoreThread: DeviceIOControl(CtlMask) failed, SeamlessChangeThread exited\n"));
         }
@@ -165,5 +159,4 @@ unsigned __stdcall VBoxRestoreThread(void *pInstance)
     Log(("VBoxRestoreThread: finished seamless change request thread\n"));
     return 0;
 }
-
 

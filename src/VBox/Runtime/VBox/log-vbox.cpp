@@ -1,10 +1,10 @@
-/* $Id: log-vbox.cpp 22479 2009-08-26 17:11:30Z vboxsync $ */
+/* $Id: log-vbox.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * VirtualBox Runtime - Logging configuration.
  */
 
 /*
- * Copyright (C) 2006-2009 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2009 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -22,10 +22,6 @@
  *
  * You may elect to license modified versions of this file under the
  * terms and conditions of either the GPL or the CDDL or both.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 /** @page pg_rtlog      Runtime - Logging
@@ -135,6 +131,12 @@
 #  include <Windows.h>
 # elif defined(RT_OS_LINUX)
 #  include <unistd.h>
+# elif defined(RT_OS_FREEBSD)
+#  include <sys/param.h>
+#  include <sys/sysctl.h>
+#  include <sys/user.h>
+#  include <stdlib.h>
+#  include <unistd.h>
 # elif defined(RT_OS_SOLARIS)
 #  define _STRUCTURED_PROC 1
 #  undef _FILE_OFFSET_BITS /* procfs doesn't like this */
@@ -157,6 +159,7 @@
 # include <iprt/path.h>
 # include <iprt/process.h>
 # include <iprt/string.h>
+# include <iprt/mem.h>
 # include <stdio.h>
 #endif
 
@@ -339,12 +342,8 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
             fclose(pFile);
         }
 
-#  elif defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD)
-#   ifdef RT_OS_LINUX
+#  elif defined(RT_OS_LINUX)
         FILE *pFile = fopen("/proc/self/cmdline", "r");
-#   else /* RT_OS_FREEBSD: */
-        FILE *pFile = fopen("/proc/curproc/cmdline", "r");
-#   endif
         if (pFile)
         {
             /* braindead */
@@ -369,6 +368,40 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
             if (!fNew)
                 RTLogLoggerEx(pLogger, 0, ~0U, "\n");
             fclose(pFile);
+        }
+
+#  elif defined(RT_OS_FREEBSD)
+        /* Retrieve the required length first */
+        int aiName[4];
+        aiName[0] = CTL_KERN;
+        aiName[1] = KERN_PROC;
+        aiName[2] = KERN_PROC_ARGS;     /* Introduced in FreeBSD 4.0 */
+        aiName[3] = getpid();
+        size_t cchArgs = 0;
+        int rcBSD = sysctl(aiName, RT_ELEMENTS(aiName), NULL, &cchArgs, NULL, 0);
+        if (cchArgs > 0)
+        {
+            char *pszArgFileBuf = (char *)RTMemAllocZ(cchArgs + 1 /* Safety */);
+            if (pszArgFileBuf)
+            {
+                /* Retrieve the argument list */
+                rcBSD = sysctl(aiName, RT_ELEMENTS(aiName), pszArgFileBuf, &cchArgs, NULL, 0);
+                if (!rcBSD)
+                {
+                    unsigned    iArg = 0;
+                    size_t      off = 0;
+                    while (off < cchArgs)
+                    {
+                        size_t cchArg = strlen(&pszArgFileBuf[off]);
+                        RTLogLoggerEx(pLogger, 0, ~0U, "Arg[%u]: %s\n", iArg, &pszArgFileBuf[off]);
+
+                        /* advance */
+                        off += cchArg + 1;
+                        iArg++;
+                    }
+                }
+                RTMemFree(pszArgFileBuf);
+            }
         }
 
 #  elif defined(RT_OS_L4) || defined(RT_OS_OS2) || defined(RT_OS_DARWIN)
@@ -421,6 +454,11 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
 # if defined(DEBUG_aleksey)  /* Guest ring-0 as well */
         RTLogGroupSettings(pLogger, "+net_adp_drv.e.l.f+net_flt_drv.e.l.l2.l3.l4.f");
         RTLogFlags(pLogger, "enabled unbuffered");
+        pLogger->fDestFlags |= RTLOGDEST_DEBUGGER | RTLOGDEST_STDOUT;
+# endif
+# if defined(DEBUG_andy)  /* Guest ring-0 as well */
+        RTLogGroupSettings(pLogger, "+all.e.l.f");
+        RTLogFlags(pLogger, "enabled unbuffered pid tid");
         pLogger->fDestFlags |= RTLOGDEST_DEBUGGER | RTLOGDEST_STDOUT;
 # endif
 # if 0 /* defined(DEBUG_misha) */ /* Guest ring-0 as well */

@@ -1,10 +1,10 @@
-/* $Id: SUPR3HardenedMain.cpp 19924 2009-05-22 21:52:47Z vboxsync $ */
+/* $Id: SUPR3HardenedMain.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * VirtualBox Support Library - Hardened main().
  */
 
 /*
- * Copyright (C) 2006-2008 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2008 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -22,10 +22,6 @@
  *
  * You may elect to license modified versions of this file under the
  * terms and conditions of either the GPL or the CDDL or both.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 /*******************************************************************************
@@ -66,6 +62,9 @@
 #  ifndef CAP_TO_MASK
 #   define CAP_TO_MASK(cap) RT_BIT(cap)
 #  endif
+# elif defined(RT_OS_FREEBSD)
+#  include <sys/param.h>
+#  include <sys/sysctl.h>
 # elif defined(RT_OS_SOLARIS)
 #  include <priv.h>
 # endif
@@ -136,6 +135,7 @@ static gid_t g_gid;
 static uint32_t g_uCaps;
 # endif
 #endif
+
 
 /*******************************************************************************
 *   Internal Functions                                                         *
@@ -320,12 +320,25 @@ static void supR3HardenedGetFullExePath(void)
 #if defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD) || defined(RT_OS_SOLARIS)
 # ifdef RT_OS_LINUX
     int cchLink = readlink("/proc/self/exe", &g_szSupLibHardenedExePath[0], sizeof(g_szSupLibHardenedExePath) - 1);
+
 # elif defined(RT_OS_SOLARIS)
     char szFileBuf[PATH_MAX + 1];
     sprintf(szFileBuf, "/proc/%ld/path/a.out", (long)getpid());
     int cchLink = readlink(szFileBuf, &g_szSupLibHardenedExePath[0], sizeof(g_szSupLibHardenedExePath) - 1);
-# else /* RT_OS_FREEBSD: */
-    int cchLink = readlink("/proc/curproc/file", &g_szSupLibHardenedExePath[0], sizeof(g_szSupLibHardenedExePath) - 1);
+
+# else /* RT_OS_FREEBSD */
+    int aiName[4];
+    aiName[0] = CTL_KERN;
+    aiName[1] = KERN_PROC;
+    aiName[2] = KERN_PROC_PATHNAME;
+    aiName[3] = getpid();
+
+    size_t cbPath = sizeof(g_szSupLibHardenedExePath);
+    if (sysctl(aiName, RT_ELEMENTS(aiName), g_szSupLibHardenedExePath, &cbPath, NULL, 0) < 0)
+        supR3HardenedFatal("supR3HardenedExecDir: sysctl failed\n");
+    g_szSupLibHardenedExePath[sizeof(g_szSupLibHardenedExePath) - 1] = '\0';
+    int cchLink = strlen(g_szSupLibHardenedExePath); /* paranoid? can't we use cbPath? */
+
 # endif
     if (cchLink < 0 || cchLink == sizeof(g_szSupLibHardenedExePath) - 1)
         supR3HardenedFatal("supR3HardenedExecDir: couldn't read \"%s\", errno=%d cchLink=%d\n",
@@ -617,7 +630,8 @@ static void supR3HardenedMainGrabCapabilites(void)
 #  ifdef USE_LIB_PCAP
         /* XXX cap_net_bind_service */
         if (!cap_set_proc(cap_from_text("all-eip cap_net_raw+ep")))
-            prctl(PR_SET_KEEPCAPS, /*keep=*/1, 0, 0, 0);
+            prctl(PR_SET_KEEPCAPS, 1 /*keep=*/, 0, 0, 0);
+        prctl(PR_SET_DUMPABLE, 1 /*dump*/, 0, 0, 0);
 #  else
         cap_user_header_t hdr = (cap_user_header_t)alloca(sizeof(*hdr));
         cap_user_data_t   cap = (cap_user_data_t)alloca(sizeof(*cap));
@@ -627,7 +641,8 @@ static void supR3HardenedMainGrabCapabilites(void)
         cap->effective = g_uCaps;
         cap->permitted = g_uCaps;
         if (!capset(hdr, cap))
-            prctl(PR_SET_KEEPCAPS, /*keep=*/1, 0, 0, 0);
+            prctl(PR_SET_KEEPCAPS, 1 /*keep*/, 0, 0, 0);
+        prctl(PR_SET_DUMPABLE, 1 /*dump*/, 0, 0, 0);
 #  endif /* !USE_LIB_PCAP */
     }
 
@@ -1067,5 +1082,4 @@ DECLHIDDEN(int) SUPR3HardenedMain(const char *pszProgName, uint32_t fFlags, int 
     PFNSUPTRUSTEDMAIN pfnTrustedMain = supR3HardenedMainGetTrustedMain(pszProgName);
     return pfnTrustedMain(argc, argv, envp);
 }
-
 

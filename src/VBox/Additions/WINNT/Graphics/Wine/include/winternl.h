@@ -416,6 +416,20 @@ typedef enum _FILE_INFORMATION_CLASS {
     FileNetworkOpenInformation,
     FileAttributeTagInformation,
     FileTrackingInformation,
+    FileIdBothDirectoryInformation,
+    FileIdFullDirectoryInformation,
+    FileValidDataLengthInformation,
+    FileShortNameInformation = 40,
+    /* 41, 42, 43 undocumented */
+    FileSfioReserveInformation = 44,
+    FileSfioVolumeInformation = 45,
+    FileHardLinkInformation = 46,
+    /* 47 undocumented */
+    FileNormalizedNameInformation = 48,
+    /* 49 undocumented */
+    FileIdGlobalTxDirectoryInformation = 50,
+    /* 51, 52, 53 undocumented */
+    FileStandardLinkInformation = 54,
     FileMaximumInformation
 } FILE_INFORMATION_CLASS, *PFILE_INFORMATION_CLASS;
 
@@ -449,6 +463,22 @@ typedef struct _FILE_FULL_DIRECTORY_INFORMATION {
 } FILE_FULL_DIRECTORY_INFORMATION, *PFILE_FULL_DIRECTORY_INFORMATION,
   FILE_FULL_DIR_INFORMATION, *PFILE_FULL_DIR_INFORMATION;
 
+typedef struct _FILE_ID_FULL_DIRECTORY_INFORMATION {
+    ULONG               NextEntryOffset;
+    ULONG               FileIndex;
+    LARGE_INTEGER       CreationTime;
+    LARGE_INTEGER       LastAccessTime;
+    LARGE_INTEGER       LastWriteTime;
+    LARGE_INTEGER       ChangeTime;
+    LARGE_INTEGER       EndOfFile;
+    LARGE_INTEGER       AllocationSize;
+    ULONG               FileAttributes;
+    ULONG               FileNameLength;
+    ULONG               EaSize;
+    LARGE_INTEGER       FileId;
+    WCHAR               FileName[ANYSIZE_ARRAY];
+} FILE_ID_FULL_DIRECTORY_INFORMATION, *PFILE_ID_FULL_DIRECTORY_INFORMATION;
+
 typedef struct _FILE_BOTH_DIRECTORY_INFORMATION {
     ULONG               NextEntryOffset;
     ULONG               FileIndex;
@@ -466,6 +496,24 @@ typedef struct _FILE_BOTH_DIRECTORY_INFORMATION {
     WCHAR               FileName[ANYSIZE_ARRAY];
 } FILE_BOTH_DIRECTORY_INFORMATION, *PFILE_BOTH_DIRECTORY_INFORMATION,
   FILE_BOTH_DIR_INFORMATION, *PFILE_BOTH_DIR_INFORMATION;
+
+typedef struct _FILE_ID_BOTH_DIRECTORY_INFORMATION {
+    ULONG               NextEntryOffset;
+    ULONG               FileIndex;
+    LARGE_INTEGER       CreationTime;
+    LARGE_INTEGER       LastAccessTime;
+    LARGE_INTEGER       LastWriteTime;
+    LARGE_INTEGER       ChangeTime;
+    LARGE_INTEGER       EndOfFile;
+    LARGE_INTEGER       AllocationSize;
+    ULONG               FileAttributes;
+    ULONG               FileNameLength;
+    ULONG               EaSize;
+    CHAR                ShortNameLength;
+    WCHAR               ShortName[12];
+    LARGE_INTEGER       FileId;
+    WCHAR               FileName[ANYSIZE_ARRAY];
+} FILE_ID_BOTH_DIRECTORY_INFORMATION, *PFILE_ID_BOTH_DIRECTORY_INFORMATION;
 
 typedef struct _FILE_BASIC_INFORMATION {
     LARGE_INTEGER CreationTime;
@@ -623,7 +671,8 @@ typedef enum _FSINFOCLASS {
 typedef enum _KEY_INFORMATION_CLASS {
     KeyBasicInformation,
     KeyNodeInformation,
-    KeyFullInformation
+    KeyFullInformation,
+    KeyNameInformation
 } KEY_INFORMATION_CLASS;
 
 typedef enum _KEY_VALUE_INFORMATION_CLASS {
@@ -769,6 +818,7 @@ typedef enum _THREADINFOCLASS {
     ThreadPriorityBoost,
     ThreadSetTlsArrayAddress,
     ThreadIsIoPending,
+    ThreadHideFromDebugger,
     MaxThreadInfoClass
 } THREADINFOCLASS;
 
@@ -842,174 +892,6 @@ typedef enum
     UNC_DOT_PATH           /* "//." */
 } DOS_PATHNAME_TYPE;
 
-/***********************************************************************
- * IA64 specific types and data structures
- */
-
-#ifdef __ia64__
-
-typedef struct _FRAME_POINTERS {
-  ULONGLONG MemoryStackFp;
-  ULONGLONG BackingStoreFp;
-} FRAME_POINTERS, *PFRAME_POINTERS;
-
-#define UNWIND_HISTORY_TABLE_SIZE 12
-
-typedef struct _UNWIND_HISTORY_TABLE_ENTRY {
-  ULONG64 ImageBase;
-  ULONG64 Gp;
-  PRUNTIME_FUNCTION FunctionEntry;
-} UNWIND_HISTORY_TABLE_ENTRY, *PUNWIND_HISTORY_TABLE_ENTRY;
-
-typedef struct _UNWIND_HISTORY_TABLE {
-  ULONG Count;
-  UCHAR Search;
-  ULONG64 LowAddress;
-  ULONG64 HighAddress;
-  UNWIND_HISTORY_TABLE_ENTRY Entry[UNWIND_HISTORY_TABLE_SIZE];
-} UNWIND_HISTORY_TABLE, *PUNWIND_HISTORY_TABLE;
-
-typedef struct _KNONVOLATILE_CONTEXT_POINTERS
-{
-    PFLOAT128  FltS0;
-    PFLOAT128  FltS1;
-    PFLOAT128  FltS2;
-    PFLOAT128  FltS3;
-    PFLOAT128  HighFloatingContext[10];
-    PFLOAT128  FltS4;
-    PFLOAT128  FltS5;
-    PFLOAT128  FltS6;
-    PFLOAT128  FltS7;
-    PFLOAT128  FltS8;
-    PFLOAT128  FltS9;
-    PFLOAT128  FltS10;
-    PFLOAT128  FltS11;
-    PFLOAT128  FltS12;
-    PFLOAT128  FltS13;
-    PFLOAT128  FltS14;
-    PFLOAT128  FltS15;
-    PFLOAT128  FltS16;
-    PFLOAT128  FltS17;
-    PFLOAT128  FltS18;
-    PFLOAT128  FltS19;
-    PULONGLONG IntS0;
-    PULONGLONG IntS1;
-    PULONGLONG IntS2;
-    PULONGLONG IntS3;
-    PULONGLONG IntSp;
-    PULONGLONG IntS0Nat;
-    PULONGLONG IntS1Nat;
-    PULONGLONG IntS2Nat;
-    PULONGLONG IntS3Nat;
-    PULONGLONG IntSpNat;
-    PULONGLONG Preds;
-    PULONGLONG BrRp;
-    PULONGLONG BrS0;
-    PULONGLONG BrS1;
-    PULONGLONG BrS2;
-    PULONGLONG BrS3;
-    PULONGLONG BrS4;
-    PULONGLONG ApUNAT;
-    PULONGLONG ApLC;
-    PULONGLONG ApEC;
-    PULONGLONG RsPFS;
-    PULONGLONG StFSR;
-    PULONGLONG StFIR;
-    PULONGLONG StFDR;
-    PULONGLONG Cflag;
-} KNONVOLATILE_CONTEXT_POINTERS, *PKNONVOLATILE_CONTEXT_POINTERS;
-
-ULONGLONG WINAPI RtlVirtualUnwind(ULONGLONG,ULONGLONG,RUNTIME_FUNCTION*,CONTEXT*,BOOLEAN*,FRAME_POINTERS*,KNONVOLATILE_CONTEXT_POINTERS*);
-
-#endif /* defined(__ia64__) */
-
-/***********************************************************************
- * x86-64 specific types and data structures
- */
-
-#ifdef __x86_64__
-
-#define UNWIND_HISTORY_TABLE_SIZE 12
-
-typedef struct _UNWIND_HISTORY_TABLE_ENTRY
-{
-    ULONG64 ImageBase;
-    PRUNTIME_FUNCTION FunctionEntry;
-} UNWIND_HISTORY_TABLE_ENTRY, *PUNWIND_HISTORY_TABLE_ENTRY;
-
-#define UNWIND_HISTORY_TABLE_NONE 0
-#define UNWIND_HISTORY_TABLE_GLOBAL 1
-#define UNWIND_HISTORY_TABLE_LOCAL 2
-
-typedef struct _UNWIND_HISTORY_TABLE
-{
-    ULONG Count;
-    UCHAR Search;
-    ULONG64 LowAddress;
-    ULONG64 HighAddress;
-    UNWIND_HISTORY_TABLE_ENTRY Entry[UNWIND_HISTORY_TABLE_SIZE];
-} UNWIND_HISTORY_TABLE, *PUNWIND_HISTORY_TABLE;
-
-typedef struct _KNONVOLATILE_CONTEXT_POINTERS
-{
-    union
-    {
-        PM128A FloatingContext[16];
-        struct
-        {
-            PM128A Xmm0;
-            PM128A Xmm1;
-            PM128A Xmm2;
-            PM128A Xmm3;
-            PM128A Xmm4;
-            PM128A Xmm5;
-            PM128A Xmm6;
-            PM128A Xmm7;
-            PM128A Xmm8;
-            PM128A Xmm9;
-            PM128A Xmm10;
-            PM128A Xmm11;
-            PM128A Xmm12;
-            PM128A Xmm13;
-            PM128A Xmm14;
-            PM128A Xmm15;
-        } DUMMYSTRUCTNAME;
-    } DUMMYUNIONNAME1;
-
-    union
-    {
-        PULONG64 IntegerContext[16];
-        struct
-        {
-            PULONG64 Rax;
-            PULONG64 Rcx;
-            PULONG64 Rdx;
-            PULONG64 Rbx;
-            PULONG64 Rsp;
-            PULONG64 Rbp;
-            PULONG64 Rsi;
-            PULONG64 Rdi;
-            PULONG64 R8;
-            PULONG64 R9;
-            PULONG64 R10;
-            PULONG64 R11;
-            PULONG64 R12;
-            PULONG64 R13;
-            PULONG64 R14;
-            PULONG64 R15;
-        } DUMMYSTRUCTNAME;
-    } DUMMYUNIONNAME2;
-} KNONVOLATILE_CONTEXT_POINTERS, *PKNONVOLATILE_CONTEXT_POINTERS;
-
-PVOID WINAPI RtlVirtualUnwind(ULONG,ULONG64,ULONG64,RUNTIME_FUNCTION*,CONTEXT*,PVOID*,ULONG64*,KNONVOLATILE_CONTEXT_POINTERS*);
-
-#define UNW_FLAG_NHANDLER  0
-#define UNW_FLAG_EHANDLER  1
-#define UNW_FLAG_UHANDLER  2
-#define UNW_FLAG_CHAININFO 4
-
-#endif  /* __x86_64 */
-
 
 /***********************************************************************
  * Types and data structures
@@ -1075,6 +957,11 @@ typedef struct _KEY_FULL_INFORMATION
     ULONG         MaxValueDataLen;
     WCHAR         Class[1];
 } KEY_FULL_INFORMATION, *PKEY_FULL_INFORMATION;
+
+typedef struct _KEY_NAME_INFORMATION {
+    ULONG         NameLength;
+    WCHAR         Name[1];
+} KEY_NAME_INFORMATION, *PKEY_NAME_INFORMATION;
 
 typedef struct _KEY_VALUE_ENTRY
 {
@@ -1246,8 +1133,81 @@ typedef struct _SYSTEM_CPU_INFORMATION {
 
 /* System Information Class 0x02 */
 
+/* Documented in "Windows NT/2000 Native API Reference" by Gary Nebbett. */
 typedef struct _SYSTEM_PERFORMANCE_INFORMATION {
-    BYTE Reserved1[312];
+    LARGE_INTEGER IdleTime;
+    LARGE_INTEGER ReadTransferCount;
+    LARGE_INTEGER WriteTransferCount;
+    LARGE_INTEGER OtherTransferCount;
+    ULONG ReadOperationCount;
+    ULONG WriteOperationCount;
+    ULONG OtherOperationCount;
+    ULONG AvailablePages;
+    ULONG TotalCommittedPages;
+    ULONG TotalCommitLimit;
+    ULONG PeakCommitment;
+    ULONG PageFaults;
+    ULONG WriteCopyFaults;
+    ULONG TransitionFaults;
+    ULONG Reserved1;
+    ULONG DemandZeroFaults;
+    ULONG PagesRead;
+    ULONG PageReadIos;
+    ULONG Reserved2[2];
+    ULONG PagefilePagesWritten;
+    ULONG PagefilePageWriteIos;
+    ULONG MappedFilePagesWritten;
+    ULONG MappedFilePageWriteIos;
+    ULONG PagedPoolUsage;
+    ULONG NonPagedPoolUsage;
+    ULONG PagedPoolAllocs;
+    ULONG PagedPoolFrees;
+    ULONG NonPagedPoolAllocs;
+    ULONG NonPagedPoolFrees;
+    ULONG TotalFreeSystemPtes;
+    ULONG SystemCodePage;
+    ULONG TotalSystemDriverPages;
+    ULONG TotalSystemCodePages;
+    ULONG SmallNonPagedLookasideListAllocateHits;
+    ULONG SmallPagedLookasideListAllocateHits;
+    ULONG Reserved3;
+    ULONG MmSystemCachePage;
+    ULONG PagedPoolPage;
+    ULONG SystemDriverPage;
+    ULONG FastReadNoWait;
+    ULONG FastReadWait;
+    ULONG FastReadResourceMiss;
+    ULONG FastReadNotPossible;
+    ULONG FastMdlReadNoWait;
+    ULONG FastMdlReadWait;
+    ULONG FastMdlReadResourceMiss;
+    ULONG FastMdlReadNotPossible;
+    ULONG MapDataNoWait;
+    ULONG MapDataWait;
+    ULONG MapDataNoWaitMiss;
+    ULONG MapDataWaitMiss;
+    ULONG PinMappedDataCount;
+    ULONG PinReadNoWait;
+    ULONG PinReadWait;
+    ULONG PinReadNoWaitMiss;
+    ULONG PinReadWaitMiss;
+    ULONG CopyReadNoWait;
+    ULONG CopyReadWait;
+    ULONG CopyReadNoWaitMiss;
+    ULONG CopyReadWaitMiss;
+    ULONG MdlReadNoWait;
+    ULONG MdlReadWait;
+    ULONG MdlReadNoWaitMiss;
+    ULONG MdlReadWaitMiss;
+    ULONG ReadAheadIos;
+    ULONG LazyWriteIos;
+    ULONG LazyWritePages;
+    ULONG DataFlushes;
+    ULONG DataPages;
+    ULONG ContextSwitches;
+    ULONG FirstLevelTbFills;
+    ULONG SecondLevelTbFills;
+    ULONG SystemCalls;
 } SYSTEM_PERFORMANCE_INFORMATION, *PSYSTEM_PERFORMANCE_INFORMATION;
 
 /* System Information Class 0x03 */
@@ -1624,9 +1584,7 @@ typedef struct _RTL_HANDLE_TABLE
 #define FILE_PIPE_SERVER_END            0x00000001
 #define FILE_PIPE_CLIENT_END            0x00000000
 
-#if (_WIN32_WINNT >= 0x0501)
 #define INTERNAL_TS_ACTIVE_CONSOLE_ID ( *((volatile ULONG*)(0x7ffe02d8)) )
-#endif /* (_WIN32_WINNT >= 0x0501) */
 
 #define LOGONID_CURRENT    ((ULONG)-1)
 
@@ -1688,6 +1646,38 @@ typedef void (NTAPI *RTL_WAITORTIMERCALLBACKFUNC)(PVOID,BOOLEAN); /* FIXME: not 
 #define SE_CREATE_GLOBAL_PRIVILEGE       30L
 #define SE_MAX_WELL_KNOWN_PRIVILEGE      SE_CREATE_GLOBAL_PRIVILEGE
 
+/* NtGlobalFlag bits */
+#define FLG_STOP_ON_EXCEPTION            0x00000001
+#define FLG_SHOW_LDR_SNAPS               0x00000002
+#define FLG_DEBUG_INITIAL_COMMAND        0x00000004
+#define FLG_STOP_ON_HUNG_GUI             0x00000008
+#define FLG_HEAP_ENABLE_TAIL_CHECK       0x00000010
+#define FLG_HEAP_ENABLE_FREE_CHECK       0x00000020
+#define FLG_HEAP_VALIDATE_PARAMETERS     0x00000040
+#define FLG_HEAP_VALIDATE_ALL            0x00000080
+#define FLG_APPLICATION_VERIFIER         0x00000100
+#define FLG_POOL_ENABLE_TAGGING          0x00000400
+#define FLG_HEAP_ENABLE_TAGGING          0x00000800
+#define FLG_USER_STACK_TRACE_DB          0x00001000
+#define FLG_KERNEL_STACK_TRACE_DB        0x00002000
+#define FLG_MAINTAIN_OBJECT_TYPELIST     0x00004000
+#define FLG_HEAP_ENABLE_TAG_BY_DLL       0x00008000
+#define FLG_DISABLE_STACK_EXTENSION      0x00010000
+#define FLG_ENABLE_CSRDEBUG              0x00020000
+#define FLG_ENABLE_KDEBUG_SYMBOL_LOAD    0x00040000
+#define FLG_DISABLE_PAGE_KERNEL_STACKS   0x00080000
+#define FLG_ENABLE_SYSTEM_CRIT_BREAKS    0x00100000
+#define FLG_HEAP_DISABLE_COALESCING      0x00200000
+#define FLG_ENABLE_CLOSE_EXCEPTIONS      0x00400000
+#define FLG_ENABLE_EXCEPTION_LOGGING     0x00800000
+#define FLG_ENABLE_HANDLE_TYPE_TAGGING   0x01000000
+#define FLG_HEAP_PAGE_ALLOCS             0x02000000
+#define FLG_DEBUG_INITIAL_COMMAND_EX     0x04000000
+#define FLG_DISABLE_DBGPRINT             0x08000000
+#define FLG_CRITSEC_EVENT_CREATION       0x10000000
+#define FLG_LDR_TOP_DOWN                 0x20000000
+#define FLG_ENABLE_HANDLE_EXCEPTIONS     0x40000000
+#define FLG_DISABLE_PROTDLLS             0x80000000
 
 /* Rtl*Registry* functions structs and defines */
 #define RTL_REGISTRY_ABSOLUTE             0
@@ -1736,7 +1726,7 @@ typedef struct _KEY_MULTIPLE_VALUE_INFORMATION
 
 typedef VOID (CALLBACK *PRTL_OVERLAPPED_COMPLETION_ROUTINE)(DWORD,DWORD,LPVOID);
 
-typedef VOID (*PTIMER_APC_ROUTINE) ( PVOID, ULONG, LONG );
+typedef VOID (CALLBACK *PTIMER_APC_ROUTINE) ( PVOID, ULONG, LONG );
 
 typedef enum _EVENT_TYPE {
   NotificationEvent,
@@ -1993,6 +1983,7 @@ NTSYSAPI void      WINAPI LdrInitializeThunk(void*,ULONG_PTR,ULONG_PTR,ULONG_PTR
 NTSYSAPI NTSTATUS  WINAPI LdrLoadDll(LPCWSTR, DWORD, const UNICODE_STRING*, HMODULE*);
 NTSYSAPI NTSTATUS  WINAPI LdrLockLoaderLock(ULONG,ULONG*,ULONG*);
 IMAGE_BASE_RELOCATION * WINAPI LdrProcessRelocationBlock(void*,UINT,USHORT*,INT_PTR);
+NTSYSAPI NTSTATUS  WINAPI LdrQueryImageFileExecutionOptions(const UNICODE_STRING*,LPCWSTR,ULONG,void*,ULONG,ULONG*);
 NTSYSAPI NTSTATUS  WINAPI LdrQueryProcessModuleInformation(SYSTEM_MODULE_INFORMATION*, ULONG, ULONG*);
 NTSYSAPI void      WINAPI LdrShutdownProcess(void);
 NTSYSAPI void      WINAPI LdrShutdownThread(void);
@@ -2022,7 +2013,7 @@ NTSYSAPI NTSTATUS  WINAPI NtCompleteConnectPort(HANDLE);
 NTSYSAPI NTSTATUS  WINAPI NtConnectPort(PHANDLE,PUNICODE_STRING,PSECURITY_QUALITY_OF_SERVICE,PLPC_SECTION_WRITE,PLPC_SECTION_READ,PULONG,PVOID,PULONG);
 NTSYSAPI NTSTATUS  WINAPI NtContinue(PCONTEXT,BOOLEAN);
 NTSYSAPI NTSTATUS  WINAPI NtCreateDirectoryObject(PHANDLE,ACCESS_MASK,POBJECT_ATTRIBUTES);
-NTSYSAPI NTSTATUS  WINAPI NtCreateEvent(PHANDLE,ACCESS_MASK,const OBJECT_ATTRIBUTES *,BOOLEAN,BOOLEAN);
+NTSYSAPI NTSTATUS  WINAPI NtCreateEvent(PHANDLE,ACCESS_MASK,const OBJECT_ATTRIBUTES *,EVENT_TYPE,BOOLEAN);
 NTSYSAPI NTSTATUS  WINAPI NtCreateEventPair(PHANDLE,ACCESS_MASK,POBJECT_ATTRIBUTES);
 NTSYSAPI NTSTATUS  WINAPI NtCreateFile(PHANDLE,ACCESS_MASK,POBJECT_ATTRIBUTES,PIO_STATUS_BLOCK,PLARGE_INTEGER,ULONG,ULONG,ULONG,ULONG,PVOID,ULONG);
 NTSYSAPI NTSTATUS  WINAPI NtCreateIoCompletion(PHANDLE,ACCESS_MASK,POBJECT_ATTRIBUTES,ULONG);
@@ -2360,9 +2351,11 @@ NTSYSAPI NTSTATUS  WINAPI RtlGetGroupSecurityDescriptor(PSECURITY_DESCRIPTOR,PSI
 NTSYSAPI NTSTATUS  WINAPI RtlGetLastNtStatus(void);
 NTSYSAPI DWORD     WINAPI RtlGetLastWin32Error(void);
 NTSYSAPI DWORD     WINAPI RtlGetLongestNtPathLength(void);
+NTSYSAPI ULONG     WINAPI RtlGetNtGlobalFlags(void);
 NTSYSAPI BOOLEAN   WINAPI RtlGetNtProductType(LPDWORD);
 NTSYSAPI NTSTATUS  WINAPI RtlGetOwnerSecurityDescriptor(PSECURITY_DESCRIPTOR,PSID *,PBOOLEAN);
 NTSYSAPI ULONG     WINAPI RtlGetProcessHeaps(ULONG,HANDLE*);
+NTSYSAPI DWORD     WINAPI RtlGetThreadErrorMode(void);
 NTSYSAPI NTSTATUS  WINAPI RtlGetSaclSecurityDescriptor(PSECURITY_DESCRIPTOR,PBOOLEAN,PACL *,PBOOLEAN);
 NTSYSAPI NTSTATUS  WINAPI RtlGetVersion(RTL_OSVERSIONINFOEXW*);
 NTSYSAPI NTSTATUS  WINAPI RtlGUIDFromString(PUNICODE_STRING,GUID*);
@@ -2420,6 +2413,7 @@ NTSYSAPI BOOLEAN   WINAPI RtlPrefixString(const STRING*,const STRING*,BOOLEAN);
 NTSYSAPI BOOLEAN   WINAPI RtlPrefixUnicodeString(const UNICODE_STRING*,const UNICODE_STRING*,BOOLEAN);
 NTSYSAPI NTSTATUS  WINAPI RtlQueryAtomInAtomTable(RTL_ATOM_TABLE,RTL_ATOM,ULONG*,ULONG*,WCHAR*,ULONG*);
 NTSYSAPI NTSTATUS  WINAPI RtlQueryEnvironmentVariable_U(PWSTR,PUNICODE_STRING,PUNICODE_STRING);
+NTSYSAPI NTSTATUS  WINAPI RtlQueryHeapInformation(HANDLE,HEAP_INFORMATION_CLASS,PVOID,SIZE_T,PSIZE_T);
 NTSYSAPI NTSTATUS  WINAPI RtlQueryInformationAcl(PACL,LPVOID,DWORD,ACL_INFORMATION_CLASS);
 NTSYSAPI NTSTATUS  WINAPI RtlQueryInformationActivationContext(ULONG,HANDLE,PVOID,ULONG,PVOID,SIZE_T,SIZE_T*);
 NTSYSAPI NTSTATUS  WINAPI RtlQueryProcessDebugInformation(ULONG,ULONG,PDEBUG_BUFFER);
@@ -2453,6 +2447,7 @@ NTSYSAPI NTSTATUS  WINAPI RtlSetIoCompletionCallback(HANDLE,PRTL_OVERLAPPED_COMP
 NTSYSAPI void      WINAPI RtlSetLastWin32Error(DWORD);
 NTSYSAPI void      WINAPI RtlSetLastWin32ErrorAndNtStatusFromNtStatus(NTSTATUS);
 NTSYSAPI NTSTATUS  WINAPI RtlSetSaclSecurityDescriptor(PSECURITY_DESCRIPTOR,BOOLEAN,PACL,BOOLEAN);
+NTSYSAPI NTSTATUS  WINAPI RtlSetThreadErrorMode(DWORD,LPDWORD);
 NTSYSAPI NTSTATUS  WINAPI RtlSetTimeZoneInformation(const RTL_TIME_ZONE_INFORMATION*);
 NTSYSAPI SIZE_T    WINAPI RtlSizeHeap(HANDLE,ULONG,const void*);
 NTSYSAPI NTSTATUS  WINAPI RtlStringFromGUID(REFGUID,PUNICODE_STRING);

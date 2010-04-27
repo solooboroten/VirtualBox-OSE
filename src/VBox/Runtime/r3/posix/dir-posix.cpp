@@ -1,10 +1,10 @@
-/* $Id: dir-posix.cpp 21672 2009-07-17 12:07:16Z vboxsync $ */
+/* $Id: dir-posix.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * IPRT - Directory manipulation, POSIX.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -22,10 +22,6 @@
  *
  * You may elect to license modified versions of this file under the
  * terms and conditions of either the GPL or the CDDL or both.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 
@@ -37,17 +33,22 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/fcntl.h>
+#include <fcntl.h>
 #include <dirent.h>
 #include <stdio.h>
 
 #include <iprt/dir.h>
-#include <iprt/path.h>
-#include <iprt/alloc.h>
+#include "internal/iprt.h"
+
 #include <iprt/alloca.h>
-#include <iprt/string.h>
 #include <iprt/assert.h>
 #include <iprt/err.h>
 #include <iprt/log.h>
+#include <iprt/mem.h>
+#include <iprt/param.h>
+#include <iprt/path.h>
+#include <iprt/string.h>
 #include "internal/dir.h"
 #include "internal/fs.h"
 #include "internal/path.h"
@@ -133,6 +134,41 @@ RTDECL(int) RTDirRemove(const char *pszPath)
     }
 
     LogFlow(("RTDirRemove(%p={%s}): returns %Rrc\n", pszPath, pszPath, rc));
+    return rc;
+}
+
+
+RTDECL(int) RTDirFlush(const char *pszPath)
+{
+    /*
+     * Linux: The fsync() man page hints at this being required for ensuring
+     * consistency between directory and file in case of a crash.
+     *
+     * Solaris: No mentioned is made of directories on the fsync man page.
+     * While rename+fsync will do what we want on ZFS, the code needs more
+     * careful studying wrt whether the directory entry of a new file is
+     * implicitly synced when the file is synced (it's very likely for ZFS).
+     *
+     * FreeBSD: The FFS fsync code seems to flush the directory entry as well
+     * in some cases.  Don't know exactly what's up with rename, but from the
+     * look of things fsync(dir) should work.
+     */
+    int rc;
+#ifdef O_DIRECTORY
+    int fd = open(pszPath, O_RDONLY | O_DIRECTORY, 0);
+#else
+    int fd = open(pszPath, O_RDONLY, 0);
+#endif
+    if (fd >= 0)
+    {
+        if (fsync(fd) == 0)
+            rc = VINF_SUCCESS;
+        else
+            rc = RTErrConvertFromErrno(errno);
+        close(fd);
+    }
+    else
+        rc = RTErrConvertFromErrno(errno);
     return rc;
 }
 
@@ -388,7 +424,7 @@ static void rtDirSetDummyInfo(PRTFSOBJINFO pInfo, RTDIRENTRYTYPE enmType)
 }
 
 
-RTDECL(int) RTDirReadEx(PRTDIR pDir, PRTDIRENTRYEX pDirEntry, size_t *pcbDirEntry, RTFSOBJATTRADD enmAdditionalAttribs)
+RTDECL(int) RTDirReadEx(PRTDIR pDir, PRTDIRENTRYEX pDirEntry, size_t *pcbDirEntry, RTFSOBJATTRADD enmAdditionalAttribs, uint32_t fFlags)
 {
     /*
      * Validate and digest input.
@@ -400,6 +436,7 @@ RTDECL(int) RTDirReadEx(PRTDIR pDir, PRTDIRENTRYEX pDirEntry, size_t *pcbDirEntr
                     &&  enmAdditionalAttribs <= RTFSOBJATTRADD_LAST,
                     ("Invalid enmAdditionalAttribs=%p\n", enmAdditionalAttribs),
                     VERR_INVALID_PARAMETER);
+    AssertMsgReturn(RTPATH_F_IS_VALID(fFlags, 0), ("%#x\n", fFlags), VERR_INVALID_PARAMETER);
     size_t cbDirEntry = sizeof(*pDirEntry);
     if (pcbDirEntry)
     {
@@ -447,7 +484,7 @@ RTDECL(int) RTDirReadEx(PRTDIR pDir, PRTDIRENTRYEX pDirEntry, size_t *pcbDirEntr
             {
                 memcpy(pszNamePath, pDir->pszPath, pDir->cchPath);
                 memcpy(pszNamePath + pDir->cchPath, pszName, cchName + 1);
-                rc = RTPathQueryInfo(pszNamePath, &pDirEntry->Info, enmAdditionalAttribs);
+                rc = RTPathQueryInfoEx(pszNamePath, &pDirEntry->Info, enmAdditionalAttribs, fFlags);
             }
             else
                 rc = VERR_NO_MEMORY;

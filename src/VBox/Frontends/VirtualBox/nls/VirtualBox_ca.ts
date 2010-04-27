@@ -24,7 +24,7 @@
         <translation></translation>
     </message>
     <message>
-        <source>Sun Microsystems, Inc.</source>
+        <source>Oracle Corporation</source>
         <comment>Comma-separated list of translators</comment>
         <translation>Vicent Fornés, Pau Iranzo &lt;info@somgnu.cat&gt;.</translation>
     </message>
@@ -557,7 +557,7 @@ Versió %1</translation>
     </message>
 </context>
 <context>
-    <name>VBoxAdditionsDownloader</name>
+    <name>UIDownloaderAdditions</name>
     <message>
         <source>Cancel</source>
         <translation>Cancel·la</translation>
@@ -1652,7 +1652,7 @@ Versió %1</translation>
     </message>
 </context>
 <context>
-    <name>VBoxDownloaderWgt</name>
+    <name>UIDownloader</name>
     <message>
         <source>Cancel</source>
         <translation type="obsolete">Cancel·la</translation>
@@ -1694,7 +1694,7 @@ Versió %1</translation>
     </message>
 </context>
 <context>
-    <name>VBoxExportApplianceWzd</name>
+    <name>UIExportApplianceWzd</name>
     <message>
         <source>Select a file to export into</source>
         <translation>Seleccioneu un fitxer al qual s&apos;exportarà</translation>
@@ -1963,6 +1963,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>&amp;Show System Tray Icon</source>
         <translation>&amp;Mostra la icona a la safata del sistema</translation>
+    </message>
+    <message>
+        <source>&amp;Auto show Dock and Menubar in fullscreen</source>
+        <translation>&amp;Mostra el dock automàticament i la barra de menú al mode de pantalla completa</translation>
     </message>
 </context>
 <context>
@@ -3525,6 +3529,58 @@ p, li { white-space: pre-wrap; }
         <comment>medium</comment>
         <translation>Aquest disc dur base es connecta indirectament fent servir el disc dur diferenciat següent:</translation>
     </message>
+    <message numerus="yes">
+        <source>%n year(s)</source>
+        <translation>
+            <numerusform>%n any</numerusform>
+            <numerusform>%n anys</numerusform>
+            <numerusform>%n anys</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n month(s)</source>
+        <translation>
+            <numerusform>%n mes</numerusform>
+            <numerusform>%n mesos</numerusform>
+            <numerusform>%n mesos</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation>
+            <numerusform>%n dia</numerusform>
+            <numerusform>%n dies</numerusform>
+            <numerusform>%n dies</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation>
+            <numerusform>%n hora</numerusform>
+            <numerusform>%n hores</numerusform>
+            <numerusform>%n hores</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minute(s)</source>
+        <translation>
+            <numerusform>%n minut</numerusform>
+            <numerusform>%n minuts</numerusform>
+            <numerusform>%n minuts</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n second(s)</source>
+        <translation>
+            <numerusform>%n segon</numerusform>
+            <numerusform>%n segons</numerusform>
+            <numerusform>%n segons</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>(CD/DVD)</source>
+        <translation>(CD/DVD)</translation>
+    </message>
 </context>
 <context>
     <name>VBoxGlobalSettings</name>
@@ -4092,7 +4148,7 @@ un disc dur per connectar a la ranura remarcada actualment.&lt;/a&gt;</translati
     </message>
 </context>
 <context>
-    <name>VBoxImportApplianceWzd</name>
+    <name>UIImportApplianceWzd</name>
     <message>
         <source>Select an appliance to import</source>
         <translation>Seleccioneu una aplicació virtual per importar</translation>
@@ -4155,7 +4211,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxImportLicenseViewer</name>
+    <name>UIImportLicenseViewer</name>
     <message>
         <source>&lt;b&gt;The virtual system &quot;%1&quot; requires that you agree to the terms and conditions of the software license agreement shown below.&lt;/b&gt;&lt;br /&gt;&lt;br /&gt;Click &lt;b&gt;Agree&lt;/b&gt; to continue or click &lt;b&gt;Disagree&lt;/b&gt; to cancel the import.</source>
         <translation>&lt;b&gt;El sistema virtual &quot;%1&quot; requreix l&apos;acceptació dels termes i condicions de l&apos;acord de llicència del programari que es mostra.&lt;/b&gt;&lt;br /&gt;&lt;br /&gt;Premeu &lt;b&gt;Hi estic d&apos;acord&lt;/b&gt; per continuar o &lt;b&gt;No hi estic d&apos;acord&lt;/b&gt; per a cancel·lar la importació.</translation>
@@ -4482,7 +4538,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxNewHDWzd</name>
+    <name>UINewHDWzd</name>
     <message>
         <source>Create New Virtual Disk</source>
         <translation>Crea un disc virtual nou</translation>
@@ -4712,7 +4768,7 @@ l&apos;eficiència d&apos;escriptura del disc dur físic.&lt;/p&gt;</translation
     </message>
 </context>
 <context>
-    <name>VBoxNewVMWzd</name>
+    <name>UINewVMWzd</name>
     <message>
         <source>Create New Virtual Machine</source>
         <translation>Crea una màquina virtual nova</translation>
@@ -6051,6 +6107,15 @@ pas i connectar discos durs més endavant, fent servir el diàleg de configuraci
         <comment>failed to close ...</comment>
         <translation>disquetera</translation>
     </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to delete the CD/DVD-ROM device?&lt;/p&gt;&lt;p&gt;You will not be able to mount any CDs or ISO images or install the Guest Additions without it!&lt;/p&gt;</source>
+        <translation>&lt;p&gt;Segur que voleu eliminar el dispositiu de CD/DVD?&lt;/p&gt;&lt;p&gt;No podreu muntar cap CD o imatges iso ni tampoc instal·lar les Guest Additions sense ell.&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>&amp;Remove</source>
+        <comment>medium</comment>
+        <translation>&amp;Elimina</translation>
+    </message>
 </context>
 <context>
     <name>VBoxProgressDialog</name>
@@ -6064,55 +6129,55 @@ pas i connectar discos durs més endavant, fent servir el diàleg de configuraci
     </message>
     <message>
         <source>%1 days, %2 hours remaining</source>
-        <translation>Resten %1 dies i %2 hores</translation>
+        <translation type="obsolete">Resten %1 dies i %2 hores</translation>
     </message>
     <message>
         <source>%1 days, %2 minutes remaining</source>
-        <translation>Resten %1 dies i %2 minuts</translation>
+        <translation type="obsolete">Resten %1 dies i %2 minuts</translation>
     </message>
     <message>
         <source>%1 days remaining</source>
-        <translation>Resten %1 dies</translation>
+        <translation type="obsolete">Resten %1 dies</translation>
     </message>
     <message>
         <source>1 day, %1 hours remaining</source>
-        <translation>Resta 1 dia i %1 hores</translation>
+        <translation type="obsolete">Resta 1 dia i %1 hores</translation>
     </message>
     <message>
         <source>1 day, %1 minutes remaining</source>
-        <translation>Resta 1 dia i %1 minuts</translation>
+        <translation type="obsolete">Resta 1 dia i %1 minuts</translation>
     </message>
     <message>
         <source>1 day remaining</source>
-        <translation>Resta 1 dia</translation>
+        <translation type="obsolete">Resta 1 dia</translation>
     </message>
     <message>
         <source>%1 hours, %2 minutes remaining</source>
-        <translation>Resten %1 hores i %2 minuts</translation>
+        <translation type="obsolete">Resten %1 hores i %2 minuts</translation>
     </message>
     <message>
         <source>1 hour, %1 minutes remaining</source>
-        <translation>Resta 1 hora i %1 minuts</translation>
+        <translation type="obsolete">Resta 1 hora i %1 minuts</translation>
     </message>
     <message>
         <source>1 hour remaining</source>
-        <translation>Resta 1 hora</translation>
+        <translation type="obsolete">Resta 1 hora</translation>
     </message>
     <message>
         <source>%1 minutes remaining</source>
-        <translation>Resten %1 minuts</translation>
+        <translation type="obsolete">Resten %1 minuts</translation>
     </message>
     <message>
         <source>1 minute, %2 seconds remaining</source>
-        <translation>Resten 1 minut i %2 segons</translation>
+        <translation type="obsolete">Resten 1 minut i %2 segons</translation>
     </message>
     <message>
         <source>1 minute remaining</source>
-        <translation>Resta 1 minut</translation>
+        <translation type="obsolete">Resta 1 minut</translation>
     </message>
     <message>
         <source>%1 seconds remaining</source>
-        <translation>Resten %1 segons</translation>
+        <translation type="obsolete">Resten %1 segons</translation>
     </message>
     <message>
         <source>A few seconds remaining</source>
@@ -6125,6 +6190,16 @@ pas i connectar discos durs més endavant, fent servir el diàleg de configuraci
     <message>
         <source>Cancel the current operation</source>
         <translation>Cancel·la l&apos;operació actual</translation>
+    </message>
+    <message>
+        <source>%1, %2 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1, %2&quot;</comment>
+        <translation>Resta %1, %2</translation>
+    </message>
+    <message>
+        <source>%1 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1&quot;</comment>
+        <translation>Resta %1</translation>
     </message>
 </context>
 <context>
@@ -6944,7 +7019,7 @@ per accedir a ella des d&apos;un sistema Linux. Aquesta característica requerei
     </message>
     <message numerus="yes">
         <source> (%n day(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (fa %n dia)</numerusform>
             <numerusform> (fa %n dies)</numerusform>
             <numerusform> (fa %n dies)</numerusform>
@@ -6952,7 +7027,7 @@ per accedir a ella des d&apos;un sistema Linux. Aquesta característica requerei
     </message>
     <message numerus="yes">
         <source> (%n hour(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (fa %n hora)</numerusform>
             <numerusform> (fa %n hores)</numerusform>
             <numerusform> (fa %n hores)</numerusform>
@@ -6960,7 +7035,7 @@ per accedir a ella des d&apos;un sistema Linux. Aquesta característica requerei
     </message>
     <message numerus="yes">
         <source> (%n minute(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (fa %n minut)</numerusform>
             <numerusform> (fa %n minuts)</numerusform>
             <numerusform> (fa %n minuts)</numerusform>
@@ -6968,7 +7043,7 @@ per accedir a ella des d&apos;un sistema Linux. Aquesta característica requerei
     </message>
     <message numerus="yes">
         <source> (%n second(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (fa %n segon)</numerusform>
             <numerusform> (fa %n segons)</numerusform>
             <numerusform> (fa %n segons)</numerusform>
@@ -6989,6 +7064,10 @@ per accedir a ella des d&apos;un sistema Linux. Aquesta característica requerei
     <message>
         <source>Delete the selected snapshot of the virtual machine</source>
         <translation>Elimina la captura seleccionada de la màquina virtual</translation>
+    </message>
+    <message>
+        <source> (%1 ago)</source>
+        <translation> (fa %1)</translation>
     </message>
 </context>
 <context>
@@ -7035,6 +7114,14 @@ per accedir a ella des d&apos;un sistema Linux. Aquesta característica requerei
     <message>
         <source>Take Snapshot of Virtual Machine</source>
         <translation>Fes una captura de la màquina virtual</translation>
+    </message>
+    <message numerus="yes">
+        <source>Warning: You are taking a snapshot of a running machine which has %n immutable image(s) attached to it. As long as you are working from this snapshot the immutable image(s) will not be reset to avoid loss of data.</source>
+        <translation>
+            <numerusform>Avís: esteu fent una captura d&apos;una màquina que té %n imatge immutable connectada. Mentre treballeu amb aquesta captura, la imatge immutable no es reiniciarà per evitar la pèrdua de dades.</numerusform>
+            <numerusform>Avís: esteu fent una captura d&apos;una màquina que té %n imatge immutables connectades. Mentre treballeu amb aquesta captura, les imatges immutables no es reiniciaran per evitar la pèrdua de dades.</numerusform>
+            <numerusform>Avís: esteu fent una captura d&apos;una màquina que té %n imatge immutables connectades. Mentre treballeu amb aquesta captura, les imatges immutables no es reiniciaran per evitar la pèrdua de dades.</numerusform>
+        </translation>
     </message>
 </context>
 <context>
@@ -7377,7 +7464,7 @@ o a ambdòs (&lt;i&gt;Qualsevol&lt;/i&gt;).&lt;/qt&gt;</translation>
     </message>
 </context>
 <context>
-    <name>VBoxVMFirstRunWzd</name>
+    <name>UIFirstRunWzd</name>
     <message>
         <source>&amp;CD/DVD-ROM Device</source>
         <translation>Dispositiu &amp;CD/DVD</translation>

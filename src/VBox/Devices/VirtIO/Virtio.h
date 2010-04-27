@@ -1,11 +1,10 @@
-/* $Id: Virtio.h 25007 2009-11-26 14:48:54Z vboxsync $ */
+/* $Id: Virtio.h 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * Virtio.h - Virtio Declarations
- *
  */
 
 /*
- * Copyright (C) 2009 Sun Microsystems, Inc.
+ * Copyright (C) 2009 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -14,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 #ifndef ___VBox_Virtio_h
@@ -161,6 +156,12 @@ enum VirtioDeviceType
     VIRTIO_32BIT_HACK = 0x7fffffff
 };
 
+
+/**
+ * The state of the VirtIO PCI device
+ *
+ * @implements  PDMILEDPORTS
+ */
 struct VPCIState_st
 {
     PDMCRITSECT            cs;      /**< Critical section - what is it protecting? */
@@ -171,8 +172,11 @@ struct VPCIState_st
     uint32_t               padding1;
 #endif
 
+    /** Status LUN: Base interface. */
     PDMIBASE               IBase;
-    PDMILEDPORTS           ILeds;                               /**< LED interface */
+    /** Status LUN: LED port interface. */
+    PDMILEDPORTS           ILeds;
+    /** Status LUN: LED connector (peer). */
     R3PTRTYPE(PPDMILEDCONNECTORS) pLedsConnector;
 
     PPDMDEVINSR3           pDevInsR3;                   /**< Device instance - R3. */
@@ -211,6 +215,8 @@ struct VPCIState_st
     STAMPROFILEADV         StatIOWriteHC;
     STAMCOUNTER            StatIntsRaised;
     STAMCOUNTER            StatIntsSkipped;
+    STAMPROFILE            StatCsGC;
+    STAMPROFILE            StatCsHC;
 #endif /* VBOX_WITH_STATISTICS */
 };
 typedef struct VPCIState_st VPCISTATE;
@@ -222,7 +228,7 @@ typedef uint32_t (*PFNGETHOSTMINIMALFEATURES)(void *pState);
 typedef void     (*PFNSETHOSTFEATURES)(void *pState, uint32_t uFeatures);
 typedef int      (*PFNGETCONFIG)(void *pState, uint32_t port, uint32_t cb, void *data);
 typedef int      (*PFNSETCONFIG)(void *pState, uint32_t port, uint32_t cb, void *data);
-typedef void     (*PFNRESET)(void *pState);
+typedef int      (*PFNRESET)(void *pState);
 typedef void     (*PFNREADY)(void *pState);
 /*****************************************************************************/
 
@@ -260,21 +266,29 @@ int   vpciConstruct(PPDMDEVINS pDevIns, VPCISTATE *pState,
 int   vpciDestruct(VPCISTATE* pState);
 void  vpciRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta);
 void  vpciReset(PVPCISTATE pState);
-void *vpciQueryInterface(struct PDMIBASE *pInterface,
-                         PDMINTERFACE enmInterface);
+void *vpciQueryInterface(struct PDMIBASE *pInterface, const char *pszIID);
 PVQUEUE vpciAddQueue(VPCISTATE* pState, unsigned uSize,
                      void (*pfnCallback)(void *pvState, PVQUEUE pQueue),
                      const char *pcszName);
 
-
+#define VPCI_CS
 DECLINLINE(int) vpciCsEnter(VPCISTATE *pState, int iBusyRc)
 {
-    return PDMCritSectEnter(&pState->cs, iBusyRc);
+#ifdef VPCI_CS
+    STAM_PROFILE_START(&pState->CTXSUFF(StatCs), a);
+    int rc = PDMCritSectEnter(&pState->cs, iBusyRc);
+    STAM_PROFILE_STOP(&pState->CTXSUFF(StatCs), a);
+    return rc;
+#else
+    return VINF_SUCCESS;
+#endif
 }
 
 DECLINLINE(void) vpciCsLeave(VPCISTATE *pState)
 {
+#ifdef VPCI_CS
     PDMCritSectLeave(&pState->cs);
+#endif
 }
 
 void vringSetNotification(PVPCISTATE pState, PVRING pVRing, bool fEnabled);

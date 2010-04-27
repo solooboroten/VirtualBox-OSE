@@ -1,10 +1,10 @@
-/* $Id: the-linux-kernel.h 24956 2009-11-25 14:26:50Z vboxsync $ */
+/* $Id: the-linux-kernel.h 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * IPRT - Include all necessary headers for the Linux kernel.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -22,10 +22,6 @@
  *
  * You may elect to license modified versions of this file under the
  * terms and conditions of either the GPL or the CDDL or both.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 #ifndef ___the_linux_kernel_h
@@ -38,7 +34,9 @@
 #include <iprt/types.h>
 #define bool linux_bool
 
-#include <linux/autoconf.h>
+#ifndef AUTOCONF_INCLUDED
+# include <linux/autoconf.h>
+#endif
 #include <linux/version.h>
 
 /* We only support 2.4 and 2.6 series kernels */
@@ -201,9 +199,9 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
 /*
  * This sucks soooo badly on x86! Why don't they export __PAGE_KERNEL_EXEC so PAGE_KERNEL_EXEC would be usable?
  */
-#if defined(RT_ARCH_AMD64)
+#if   LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 8) && defined(RT_ARCH_AMD64)
 # define MY_PAGE_KERNEL_EXEC    PAGE_KERNEL_EXEC
-#elif defined(PAGE_KERNEL_EXEC) && defined(CONFIG_X86_PAE)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 8) && defined(PAGE_KERNEL_EXEC) && defined(CONFIG_X86_PAE)
 # ifdef __PAGE_KERNEL_EXEC
    /* >= 2.6.27 */
 #  define MY_PAGE_KERNEL_EXEC   __pgprot(cpu_has_pge ? __PAGE_KERNEL_EXEC | _PAGE_GLOBAL : __PAGE_KERNEL_EXEC)
@@ -315,6 +313,28 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
 # define IPRT_DEBUG_SEMS_ADDRESS(addr)  ( ((long)(addr) & (long)~UINT64_C(0xfffffff000000000)) )
 #else
 # define IPRT_DEBUG_SEMS_ADDRESS(addr)  ( (long)(addr) )
+#endif
+
+/**
+ * Puts semaphore info into the task_struct::comm field if IPRT_DEBUG_SEMS is
+ * defined.
+ */
+#ifdef IPRT_DEBUG_SEMS
+# define IPRT_DEBUG_SEMS_STATE(pThis, chState) \
+    snprintf(current->comm, TASK_COMM_LEN, "%c%lx", (chState), IPRT_DEBUG_SEMS_ADDRESS(pThis));
+#else
+# define IPRT_DEBUG_SEMS_STATE(pThis, chState)  do {  } while (0)
+#endif
+
+/**
+ * Puts semaphore info into the task_struct::comm field if IPRT_DEBUG_SEMS is
+ * defined.
+ */
+#ifdef IPRT_DEBUG_SEMS
+# define IPRT_DEBUG_SEMS_STATE_RC(pThis, chState, rc) \
+    snprintf(current->comm, TASK_COMM_LEN, "%c%lx:%d", (chState), IPRT_DEBUG_SEMS_ADDRESS(pThis), rc);
+#else
+# define IPRT_DEBUG_SEMS_STATE_RC(pThis, chState, rc)  do {  } while (0)
 #endif
 
 /*

@@ -1,6 +1,6 @@
 /******************************Module*Header*******************************\
 *
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -9,10 +9,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
 */
 /*
 * Based in part on Microsoft DDK sample code
@@ -130,7 +126,9 @@ typedef struct _VBOXVHWAINFO
     uint32_t numOverlays;
     uint32_t numFourCC;
     HGSMIOFFSET FourCC;
+    ULONG_PTR offVramBase;
     BOOLEAN bVHWAEnabled;
+    BOOLEAN bVHWAInited;
 } VBOXVHWAINFO;
 #endif
 
@@ -296,6 +294,11 @@ void drvLoadEng (void);
 void vboxVBVAHostCommandComplete(PPDEV ppdev, VBVAHOSTCMD * pCmd);
 
  #ifdef VBOX_WITH_VIDEOHWACCEL
+
+DECLINLINE(uint64_t) vboxVHWAVramOffsetFromPDEV(PPDEV pDev, ULONG_PTR offPdev)
+{
+    return (uint64_t)(pDev->vhwaInfo.offVramBase + offPdev);
+}
 
 #define VBOXDD_CHECKFLAG(_v, _f) ((_v) & (_f)) == (_f)
 
@@ -465,8 +468,8 @@ BOOL vrdpReportOrderGeneric (PPDEV ppdev,
     do { \
         if (!(expr)) \
         { \
-            AssertMsg1(#expr, __LINE__, __FILE__, __PRETTY_FUNCTION__); \
-            AssertMsg2("!!!\n"); \
+            RTAssertMsg1Weak(#expr, __LINE__, __FILE__, __PRETTY_FUNCTION__); \
+            RTAssertMsg2Weak("!!!\n"); \
         } \
     } while (0)
 #else

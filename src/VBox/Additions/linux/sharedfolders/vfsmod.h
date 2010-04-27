@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 #ifndef VFSMOD_H
@@ -24,6 +20,11 @@
 
 #include "the-linux-kernel.h"
 #include "version-generated.h"
+#include "product-generated.h"
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 0)
+# include <linux/backing-dev.h>
+#endif
 
 #include "VBoxCalls.h"
 #include "vbsfmount.h"
@@ -39,6 +40,9 @@ struct sf_glob_info {
         int fmode;
         int dmask;
         int fmask;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 0)
+        struct backing_dev_info bdi;
+#endif
 };
 
 /* per-inode information */
@@ -49,6 +53,9 @@ struct sf_inode_info {
         int force_restat;
         /* file structure, only valid between open() and release() */
         struct file *file;
+        /* handle valid if a file was created with sf_create_aux until it will
+         * be opened with sf_reg_open() */
+        SHFLHANDLE handle;
 };
 
 struct sf_dir_info {
@@ -107,6 +114,10 @@ sf_dir_info_alloc (void);
 extern int
 sf_dir_read_all (struct sf_glob_info *sf_g, struct sf_inode_info *sf_i,
                  struct sf_dir_info *sf_d, SHFLHANDLE handle);
+extern int
+sf_init_backing_dev (struct sf_glob_info *sf_g, const char *name);
+extern void
+sf_done_backing_dev (struct sf_glob_info *sf_g);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION (2, 6, 0)
 #define STRUCT_STATFS  struct statfs

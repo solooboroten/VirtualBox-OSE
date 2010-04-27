@@ -1,10 +1,10 @@
-/* $Id: CPUM.cpp 24999 2009-11-26 13:36:37Z vboxsync $ */
+/* $Id: CPUM.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * CPUM - CPU Monitor / Manager.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 /** @page pg_cpum CPUM - CPU Monitor / Manager
@@ -42,7 +38,6 @@
 #include <VBox/cpum.h>
 #include <VBox/cpumdis.h>
 #include <VBox/pgm.h>
-#include <VBox/pdm.h>
 #include <VBox/mm.h>
 #include <VBox/selm.h>
 #include <VBox/dbgf.h>
@@ -103,7 +98,9 @@ static CPUMCPUVENDOR cpumR3DetectVendor(uint32_t uEAX, uint32_t uEBX, uint32_t u
 static int cpumR3CpuIdInit(PVM pVM);
 static DECLCALLBACK(int)  cpumR3LiveExec(PVM pVM, PSSMHANDLE pSSM, uint32_t uPass);
 static DECLCALLBACK(int)  cpumR3SaveExec(PVM pVM, PSSMHANDLE pSSM);
+static DECLCALLBACK(int)  cpumR3LoadPrep(PVM pVM, PSSMHANDLE pSSM);
 static DECLCALLBACK(int)  cpumR3LoadExec(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass);
+static DECLCALLBACK(int)  cpumR3LoadDone(PVM pVM, PSSMHANDLE pSSM);
 static DECLCALLBACK(void) cpumR3InfoAll(PVM pVM, PCDBGFINFOHLP pHlp, const char *pszArgs);
 static DECLCALLBACK(void) cpumR3InfoGuest(PVM pVM, PCDBGFINFOHLP pHlp, const char *pszArgs);
 static DECLCALLBACK(void) cpumR3InfoGuestInstr(PVM pVM, PCDBGFINFOHLP pHlp, const char *pszArgs);
@@ -213,7 +210,7 @@ VMMR3DECL(int) CPUMR3Init(PVM pVM)
     int rc = SSMR3RegisterInternal(pVM, "cpum", 1, CPUM_SAVED_STATE_VERSION, sizeof(CPUM),
                                    NULL, cpumR3LiveExec, NULL,
                                    NULL, cpumR3SaveExec, NULL,
-                                   NULL, cpumR3LoadExec, NULL);
+                                   cpumR3LoadPrep, cpumR3LoadExec, cpumR3LoadDone);
     if (RT_FAILURE(rc))
         return rc;
 
@@ -440,7 +437,7 @@ static int cpumR3CpuIdInit(PVM pVM)
                                        //| X86_CPUID_FEATURE_ECX_VMX   - not virtualized.
                                        //| X86_CPUID_FEATURE_ECX_EST   - no extended speed step.
                                        //| X86_CPUID_FEATURE_ECX_TM2   - no thermal monitor 2.
-                                       //| X86_CPUID_FEATURE_ECX_SSSE3 - no SSSE3 support
+                                         | X86_CPUID_FEATURE_ECX_SSSE3
                                        //| X86_CPUID_FEATURE_ECX_CNTXID - no L1 context id (MSR++).
                                        //| X86_CPUID_FEATURE_ECX_CX16  - no cmpxchg16b
                                        /* ECX Bit 14 - xTPR Update Control. Processor supports changing IA32_MISC_ENABLES[bit 23]. */
@@ -562,8 +559,8 @@ static int cpumR3CpuIdInit(PVM pVM)
      */
     pCPUM->aGuestCpuIdStd[1].ebx &= 0x0000ffff;
 #ifdef VBOX_WITH_MULTI_CORE
-    if (    pVM->cCpus > 1
-        &&  pCPUM->enmGuestCpuVendor != CPUMCPUVENDOR_SYNTHETIC)
+    if (    pCPUM->enmGuestCpuVendor != CPUMCPUVENDOR_SYNTHETIC
+        &&  pVM->cCpus > 1)
     {
         /* If CPUID Fn0000_0001_EDX[HTT] = 1 then LogicalProcessorCount is the number of threads per CPU core times the number of CPU cores per processor */
         pCPUM->aGuestCpuIdStd[1].ebx |= (pVM->cCpus << 16);
@@ -620,6 +617,30 @@ static int cpumR3CpuIdInit(PVM pVM)
         pCPUM->aGuestCpuIdStd[5].eax = pCPUM->aGuestCpuIdStd[5].ebx = 0;
 
     pCPUM->aGuestCpuIdStd[5].ecx = pCPUM->aGuestCpuIdStd[5].edx = 0;
+    /** @cfgm{/CPUM/MWaitExtensions, boolean, false}
+     * Expose MWAIT extended features to the guest.
+     * For now we expose just MWAIT break on interrupt feature (bit 1)
+     */
+    bool fMWaitExtensions;
+    rc = CFGMR3QueryBoolDef(pCpumCfg, "MWaitExtensions", &fMWaitExtensions, false); AssertRCReturn(rc, rc);
+    if (fMWaitExtensions)
+    {
+        pCPUM->aGuestCpuIdStd[5].ecx = X86_CPUID_MWAIT_ECX_EXT | X86_CPUID_MWAIT_ECX_BREAKIRQIF0;
+        /* @todo: for now we just expose host's MWAIT C-states, although conceptually
+           it shall be part of our power management virtualization model */
+#if 0
+        /* MWAIT sub C-states */
+        pCPUM->aGuestCpuIdStd[5].edx =
+                (0 << 0)  /* 0 in C0 */ |
+                (2 << 4)  /* 2 in C1 */ |
+                (2 << 8)  /* 2 in C2 */ |
+                (2 << 12) /* 2 in C3 */ |
+                (0 << 16) /* 0 in C4 */
+                ;
+#endif
+    }
+    else
+        pCPUM->aGuestCpuIdStd[5].ecx = pCPUM->aGuestCpuIdStd[5].edx = 0;
 
     /*
      * Determine the default.
@@ -735,14 +756,6 @@ static int cpumR3CpuIdInit(PVM pVM)
         pCPUM->aGuestCpuIdExt[i] = pCPUM->GuestCpuIdDef;
 
     /*
-     * Workaround for missing cpuid(0) patches when leaf 4 returns GuestCpuIdDef:
-     * If we miss to patch a cpuid(0).eax then Linux tries to determine the number
-     * of processors from (cpuid(4).eax >> 26) + 1.
-     */
-    if (pVM->cCpus == 1)
-        pCPUM->aGuestCpuIdStd[4].eax = 0;
-
-    /*
      * Centaur stuff (VIA).
      *
      * The important part here (we think) is to make sure the 0xc0000000
@@ -824,9 +837,33 @@ VMMR3DECL(void) CPUMR3Relocate(PVM pVM)
         PVMCPU pVCpu = &pVM->aCpus[i];
         pVCpu->cpum.s.pHyperCoreRC = MMHyperCCToRC(pVM, pVCpu->cpum.s.pHyperCoreR3);
         Assert(pVCpu->cpum.s.pHyperCoreRC != NIL_RTRCPTR);
+
     }
 }
 
+
+/**
+ * Apply late CPUM property changes based on the fHWVirtEx setting
+ *
+ * @param   pVM                 The VM to operate on.
+ * @param   fHWVirtExEnabled    HWVirtEx enabled/disabled
+ */
+VMMR3DECL(void) CPUMR3SetHWVirtEx(PVM pVM, bool fHWVirtExEnabled)
+{
+    /*
+     * Workaround for missing cpuid(0) patches when leaf 4 returns GuestCpuIdDef:
+     * If we miss to patch a cpuid(0).eax then Linux tries to determine the number
+     * of processors from (cpuid(4).eax >> 26) + 1.
+     *
+     * Note: this code is obsolete, but let's keep it here for reference.
+     *       Purpose is valid when we artifically cap the max std id to less than 4.
+     */
+    if (!fHWVirtExEnabled)
+    {
+        Assert(pVM->cpum.s.aGuestCpuIdStd[4].eax == 0);
+        pVM->cpum.s.aGuestCpuIdStd[4].eax = 0;
+    }
+}
 
 /**
  * Terminates the CPUM.
@@ -869,9 +906,17 @@ VMMR3DECL(int) CPUMR3TermCPU(PVM pVM)
     return 0;
 }
 
+
+/**
+ * Resets a virtual CPU.
+ *
+ * Used by CPUMR3Reset and CPU hot plugging.
+ *
+ * @param   pVCpu               The virtual CPU handle.
+ */
 VMMR3DECL(void) CPUMR3ResetCpu(PVMCPU pVCpu)
 {
-    /* @todo anything different for VCPU > 0? */
+    /** @todo anything different for VCPU > 0? */
     PCPUMCTX pCtx = CPUMQueryGuestCtxPtr(pVCpu);
 
     /*
@@ -946,6 +991,7 @@ VMMR3DECL(void) CPUMR3ResetCpu(PVMCPU pVCpu)
     */
     pCtx->msrEFER                   = 0;
 }
+
 
 /**
  * Resets the CPU.
@@ -1074,16 +1120,16 @@ static int cpumR3LoadCpuId(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion)
             if (fStrictCpuIdChecks) \
                 return SSMR3SetLoadError(pSSM, VERR_SSM_LOAD_CPUID_MISMATCH, RT_SRC_POS, \
                                          N_(#bit " mismatch: host=%d saved=%d"), \
-                                         aHostRaw##set [1].reg & (bit), aRaw##set [1].reg & (bit) ); \
+                                         !!(aHostRaw##set [1].reg & (bit)), !!(aRaw##set [1].reg & (bit)) ); \
             LogRel(("CPUM: " #bit" differs: host=%d saved=%d\n", \
-                    aHostRaw##set [1].reg & (bit), aRaw##set [1].reg & (bit) )); \
+                    !!(aHostRaw##set [1].reg & (bit)), !!(aRaw##set [1].reg & (bit)) )); \
         } \
     } while (0)
 #define CPUID_RAW_FEATURE_WRN(set, reg, bit) \
     do { \
         if ((aHostRaw##set [1].reg & bit) != (aRaw##set [1].reg & bit)) \
             LogRel(("CPUM: " #bit" differs: host=%d saved=%d\n", \
-                    aHostRaw##set [1].reg & (bit), aRaw##set [1].reg & (bit) )); \
+                    !!(aHostRaw##set [1].reg & (bit)), !!(aRaw##set [1].reg & (bit)) )); \
     } while (0)
 #define CPUID_RAW_FEATURE_IGN(set, reg, bit) do { } while (0)
 
@@ -1304,7 +1350,7 @@ static int cpumR3LoadCpuId(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion)
      * This can be skipped.
      */
     bool fStrictCpuIdChecks;
-    CFGMR3QueryBoolDef(CFGMR3GetChild(CFGMR3GetRoot(pVM), "CPUM"), "StrictCpuIdChecks", &fStrictCpuIdChecks, false);
+    CFGMR3QueryBoolDef(CFGMR3GetChild(CFGMR3GetRoot(pVM), "CPUM"), "StrictCpuIdChecks", &fStrictCpuIdChecks, true);
 
 
 
@@ -1866,13 +1912,17 @@ static void cpumR3LoadCPUM1_6(PVM pVM, CPUMCTX_VER1_6 *pCpumctx16)
 
 
 /**
- * Execute state load operation.
- *
- * @returns VBox status code.
- * @param   pVM             VM Handle.
- * @param   pSSM            SSM operation handle.
- * @param   uVersion        Data layout version.
- * @param   uPass           The data pass.
+ * @copydoc FNSSMINTLOADPREP
+ */
+static DECLCALLBACK(int) cpumR3LoadPrep(PVM pVM, PSSMHANDLE pSSM)
+{
+    pVM->cpum.s.fPendingRestore = true;
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * @copydoc FNSSMINTLOADEXEC
  */
 static DECLCALLBACK(int) cpumR3LoadExec(PVM pVM, PSSMHANDLE pSSM, uint32_t uVersion, uint32_t uPass)
 {
@@ -1951,6 +2001,8 @@ static DECLCALLBACK(int) cpumR3LoadExec(PVM pVM, PSSMHANDLE pSSM, uint32_t uVers
         }
     }
 
+    pVM->cpum.s.fPendingRestore = false;
+
     /*
      * Guest CPUIDs.
      */
@@ -1988,7 +2040,7 @@ static DECLCALLBACK(int) cpumR3LoadExec(PVM pVM, PSSMHANDLE pSSM, uint32_t uVers
      * Check that the basic cpuid id information is unchanged.
      */
     /** @todo we should check the 64 bits capabilities too! */
-    uint32_t au32CpuId[8] = {0};
+    uint32_t au32CpuId[8] = {0,0,0,0, 0,0,0,0};
     ASMCpuId(0, &au32CpuId[0], &au32CpuId[1], &au32CpuId[2], &au32CpuId[3]);
     ASMCpuId(1, &au32CpuId[4], &au32CpuId[5], &au32CpuId[6], &au32CpuId[7]);
     uint32_t au32CpuIdSaved[8];
@@ -2068,6 +2120,37 @@ static DECLCALLBACK(int) cpumR3LoadExec(PVM pVM, PSSMHANDLE pSSM, uint32_t uVers
     }
 
     return rc;
+}
+
+
+/**
+ * @copydoc FNSSMINTLOADPREP
+ */
+static DECLCALLBACK(int) cpumR3LoadDone(PVM pVM, PSSMHANDLE pSSM)
+{
+    if (RT_FAILURE(SSMR3HandleGetStatus(pSSM)))
+        return VINF_SUCCESS;
+
+    /* just check this since we can. */ /** @todo Add a SSM unit flag for indicating that it's mandatory during a restore.  */
+    if (pVM->cpum.s.fPendingRestore)
+    {
+        LogRel(("CPUM: Missing state!\n"));
+        return VERR_INTERNAL_ERROR_2;
+    }
+
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Checks if the CPUM state restore is still pending.
+ *
+ * @returns true / false.
+ * @param   pVM                 The VM handle.
+ */
+VMMDECL(bool) CPUMR3IsStateRestorePending(PVM pVM)
+{
+    return pVM->cpum.s.fPendingRestore;
 }
 
 
@@ -3461,7 +3544,7 @@ VMMR3DECL(void) CPUMR3DisasmInstr(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx, RTGCPTR 
  */
 VMMR3DECL(void) CPUMR3SaveEntryCtx(PVM pVM)
 {
-    /* @todo SMP support!! */
+    /** @todo SMP support!! */
     pVM->cpum.s.GuestEntry = *CPUMQueryGuestCtxPtr(VMMGetCpu(pVM));
 }
 

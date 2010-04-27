@@ -4,7 +4,7 @@
 #
 # Guest Additions X11 config update script
 #
-# Copyright (C) 2006-2009 Sun Microsystems, Inc.
+# Copyright (C) 2006-2009 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -14,20 +14,17 @@
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 #
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
-#
 
-my $use_hal = 0;
+my $auto_mouse = 0;
 my $new_mouse = 0;
 my $no_bak = 0;
+my $old_mouse_dev = "/dev/psaux";
 
 foreach $arg (@ARGV)
 {
-    if (lc($arg) eq "--usehal")
+    if (lc($arg) eq "--autoMouse")
     {
-        $use_hal = 1;
+        $auto_mouse = 1;
     }
     elsif (lc($arg) eq "--newmouse")
     {
@@ -37,12 +34,17 @@ foreach $arg (@ARGV)
     {
         $no_bak = 1;
     }
+    elsif (lc($arg) eq "--nopsaux")
+    {
+        $old_mouse_dev = "/dev/input/mice";
+    }
     else
     {
         my $cfg = $arg;
         my $CFG;
         my $xkbopts = "";
         my $kb_driver = "";
+        my $layout_kb = "";
         if (open(CFG, $cfg))
         {
             my $TMP;
@@ -103,16 +105,17 @@ $xkbopts  Option       "Protocol" "Standard"
   Option       "CoreKeyboard"
 EndSection
 EOF
+               $layout_kb = "  InputDevice  \"Keyboard[0]\" \"CoreKeyboard\"\n"
             }
 
-            if (!$use_hal && !$new_mouse) {
+            if (!$auto_mouse && !$new_mouse) {
                 print TMP <<EOF;
 
 Section "InputDevice"
   Identifier  "Mouse[1]"
   Driver      "vboxmouse"
   Option      "Buttons" "9"
-  Option      "Device" "/dev/input/mice"
+  Option      "Device" "$old_mouse_dev"
   Option      "Name" "VirtualBox Mouse"
   Option      "Protocol" "explorerps/2"
   Option      "Vendor" "Sun Microsystems Inc"
@@ -122,7 +125,7 @@ EndSection
 
 Section "ServerLayout"
   Identifier   "Layout[all]"
-  InputDevice  "Mouse[1]" "CorePointer"
+$layout_kb  InputDevice  "Mouse[1]" "CorePointer"
   Option       "Clone" "off"
   Option       "Xinerama" "off"
   Screen       "Screen[0]"
@@ -130,7 +133,7 @@ EndSection
 EOF
             }
 
-            if (!$use_hal && $new_mouse) {
+            if (!$auto_mouse && $new_mouse) {
                 print TMP <<EOF;
 
 Section "InputDevice"
@@ -156,6 +159,7 @@ EndSection
 
 Section "ServerLayout"
   Identifier   "Layout[all]"
+  InputDevice  "Keyboard[0]" "CoreKeyboard"
   InputDevice  "Mouse[1]" "CorePointer"
   InputDevice  "Mouse[2]" "SendCoreEvents"
   Option       "Clone" "off"

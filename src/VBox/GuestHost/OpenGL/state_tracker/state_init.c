@@ -46,6 +46,9 @@ crStateAllocShared(void)
 static void
 DeleteTextureCallback(void *texObj)
 {
+#ifndef IN_GUEST
+    diff_api.DeleteTextures(1, &((CRTextureObj *)texObj)->name);
+#endif
     crStateDeleteTextureObject((CRTextureObj *) texObj);
 }
 
@@ -76,6 +79,8 @@ crStateCreateContextId(int i, const CRLimitsState *limits,
     int j;
     int node32 = i >> 5;
     int node = i & 0x1f;
+
+    ctx->pImage = NULL;
 
     ctx->id = i;
     ctx->flush_func = NULL;
@@ -193,6 +198,7 @@ crStateFreeContext(CRContext *ctx)
     crStateFreeShared(ctx->shared);
     crStateFramebufferObjectDestroy(ctx);
     crStateGLSLDestroy(ctx);
+    if (ctx->pImage) crFree(ctx->pImage);
     crFree( ctx );
 }
 

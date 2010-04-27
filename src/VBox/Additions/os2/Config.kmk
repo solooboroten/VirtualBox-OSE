@@ -1,10 +1,10 @@
-# $Id: Config.kmk 23463 2009-10-01 07:43:10Z vboxsync $
+# $Id: Config.kmk 28800 2010-04-27 08:22:32Z vboxsync $
 ## @file
 # OpenSSL kBuild Configuration file.
 #
 
 #
-# Copyright (C) 2006-2007 Sun Microsystems, Inc.
+# Copyright (C) 2006-2007 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
 # Foundation, in version 2 as it comes in the "COPYING" file of the
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
-#
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
 #
 
 ifdef VBOX_ADDITIONS_OS2_CONFIG_KMK_INCLUDED
@@ -32,7 +28,7 @@ endif
 ## FIXME
 PATH_DDKVIDEO = D:/dev/ddk/200402/video
 PATH_DDKBASE  = D:/dev/ddk/200402/base
- 
+
 #
 # Template for VAC308 Gradd stuff.
 #
@@ -56,14 +52,14 @@ TEMPLATE_VBOXOS2VAC308_CFLAGS  += /Oi+               # Turn on function inlining
 TEMPLATE_VBOXOS2VAC308_CFLAGS  += /Ge-               # Use the version of the runtime library that assumes a DLL is being built. (_DLL_InitTerm++)
 TEMPLATE_VBOXOS2VAC308_CFLAGS := $(strip $(TEMPLATE_VBOXOS2VAC308_CFLAGS))
 TEMPLATE_VBOXOS2VAC308_CXXFLAGS = $(VBoxGradd_CFLAGS)
-						 
+
 TEMPLATE_VBOXOS2VAC308_LDFLAGS += -B"/Nologo"        # Quiet! (ILINK308.kmk?)
 TEMPLATE_VBOXOS2VAC308_LDFLAGS += -B"/Debug"         # Debug info (ILINK308.kmk?)
 TEMPLATE_VBOXOS2VAC308_LDFLAGS += -B"/Map"           # Generate map file (ILINK308.kmk?)
 TEMPLATE_VBOXOS2VAC308_LDFLAGS += -B"/Linenumbers"   # Map file with linenumbers.
 TEMPLATE_VBOXOS2VAC308_LDFLAGS += -B"/Exepack:2"     # Compress the file using exepack 2.
 TEMPLATE_VBOXOS2VAC308_LDFLAGS += -B"/Alignment:32"  # Pack LX pages on 32 byte boundraries (default is 512 bytes).
-TEMPLATE_VBOXOS2VAC308_LDFLAGS += -B"/NoDefaultLibrarySearch" 
+TEMPLATE_VBOXOS2VAC308_LDFLAGS += -B"/NoDefaultLibrarySearch"
 TEMPLATE_VBOXOS2VAC308_LDFLAGS := $(strip $(TEMPLATE_VBOXOS2VAC308_LDFLAGS))
 
 TEMPLATE_VBOXOS2VAC308_INCS = \

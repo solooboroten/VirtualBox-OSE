@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 23452 2009-09-30 20:33:08Z vboxsync $
+# $Id: Makefile.kmk 28800 2010-04-27 08:22:32Z vboxsync $
 ## @file
 # Makefile for the Wine D3D related dlls for VirtualBox.
 #
 
 #
-# Copyright (C) 2009 Sun Microsystems, Inc.
+# Copyright (C) 2009 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
 # Foundation, in version 2 as it comes in the "COPYING" file of the
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
-#
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
 #
 
 
@@ -136,7 +132,6 @@ wined3d_INCS         := $(PATH_SUB_CURRENT)/include
 wined3d_SOURCES      := \
     wined3d/arb_program_shader.c \
     wined3d/ati_fragment_shader.c \
-    wined3d/baseshader.c \
 	wined3d/basetexture.c \
 	wined3d/buffer.c \
     wined3d/clipper.c \
@@ -149,9 +144,9 @@ wined3d_SOURCES      := \
     wined3d/glsl_shader.c \
     wined3d/nvidia_texture_shader.c \
     wined3d/palette.c \
-    wined3d/pixelshader.c \
     wined3d/query.c \
     wined3d/resource.c \
+	wined3d/shader.c \
 	wined3d/shader_sm1.c \
 	wined3d/shader_sm4.c \
     wined3d/state.c \
@@ -165,7 +160,6 @@ wined3d_SOURCES      := \
     wined3d/texture.c \
     wined3d/utils.c \
     wined3d/vertexdeclaration.c \
-    wined3d/vertexshader.c \
 	wined3d/view.c \
     wined3d/volume.c \
     wined3d/volumetexture.c \
@@ -196,8 +190,6 @@ VBoxD3D8_SOURCES      := \
     d3d8/directx.c \
     d3d8/indexbuffer.c \
     d3d8/pixelshader.c \
-    d3d8/resource.c \
-    d3d8/stateblock.c \
     d3d8/surface.c \
     d3d8/swapchain.c \
     d3d8/texture.c \

@@ -523,6 +523,10 @@ static void switch_tss(int tss_selector,
         stl_kernel(env->tr.base + (0x28 + 7 * 4), EDI);
         for(i = 0; i < 6; i++)
             stw_kernel(env->tr.base + (0x48 + i * 4), env->segs[i].selector);
+#ifdef VBOX
+        /* Must store the ldt as it gets reloaded and might have been changed. */
+        stw_kernel(env->tr.base + 0x60, env->ldt.selector);
+#endif
 #if defined(VBOX) && defined(DEBUG)
         printf("TSS 32 bits switch\n");
         printf("Saving CS=%08X\n", env->segs[R_CS].selector);
@@ -541,6 +545,10 @@ static void switch_tss(int tss_selector,
         stw_kernel(env->tr.base + (0x12 + 7 * 2), EDI);
         for(i = 0; i < 4; i++)
             stw_kernel(env->tr.base + (0x22 + i * 4), env->segs[i].selector);
+#ifdef VBOX
+        /* Must store the ldt as it gets reloaded and might have been changed. */
+        stw_kernel(env->tr.base + 0x2a, env->ldt.selector);
+#endif
     }
 
     /* now if an exception occurs, it will occurs in the next task
@@ -3817,7 +3825,6 @@ void helper_wrmsr(void)
 void helper_rdmsr(void)
 {
     uint64_t val;
-
     helper_svm_check_intercept_param(SVM_EXIT_MSR, 0);
 
     switch((uint32_t)ECX) {
@@ -3845,12 +3852,21 @@ void helper_rdmsr(void)
     case MSR_VM_HSAVE_PA:
         val = env->vm_hsave;
         break;
+#ifdef VBOX
+    case MSR_IA32_PERF_STATUS:
+    case MSR_IA32_PLATFORM_INFO:
+    case MSR_IA32_FSB_CLOCK_STS:
+    case MSR_IA32_THERM_STATUS:
+        val = CPUMGetGuestMsr(env->pVCpu, (uint32_t)ECX);
+        break;
+#else
     case MSR_IA32_PERF_STATUS:
         /* tsc_increment_by_tick */
         val = 1000ULL;
         /* CPU multiplier */
-        val |= (((uint64_t)4ULL) << 40);
+        val |= ((uint64_t)4ULL << 40);
         break;
+#endif
 #ifdef TARGET_X86_64
     case MSR_LSTAR:
         val = env->lstar;
@@ -5361,8 +5377,13 @@ void helper_hlt(int next_eip_addend)
 
 void helper_monitor(target_ulong ptr)
 {
+#ifdef VBOX
+    if ((uint32_t)ECX > 1)
+        raise_exception(EXCP0D_GPF);
+#else
     if ((uint32_t)ECX != 0)
         raise_exception(EXCP0D_GPF);
+#endif
     /* XXX: store address ? */
     helper_svm_check_intercept_param(SVM_EXIT_MONITOR, 0);
 }

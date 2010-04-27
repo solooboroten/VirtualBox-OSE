@@ -26,6 +26,7 @@
  * that LGPLv2 or any later version may be used, or where a choice of which version
  * of the LGPL is applied is otherwise unspecified.
  */
+
 #ifndef MAPITAGS_H
 #define MAPITAGS_H
 
@@ -461,6 +462,7 @@
 #define PR_AB_PROVIDER_ID PROP_TAG(PT_BINARY,0x3615)
 #define PR_DEFAULT_VIEW_ENTRYID PROP_TAG(PT_BINARY,0x3616)
 #define PR_ASSOC_CONTENT_COUNT PROP_TAG(PT_I4,0x3617)
+#define PR_IPM_DRAFTS_ENTRYID PROP_TAG(PT_BINARY,0x36D7)
 #define PR_ATTACHMENT_X400_PARAMETERS PROP_TAG(PT_BINARY,0x3700)
 #define PR_ATTACH_DATA_OBJ PROP_TAG(PT_OBJECT,0x3701)
 #define PR_ATTACH_DATA_BIN PROP_TAG(PT_BINARY,0x3701)

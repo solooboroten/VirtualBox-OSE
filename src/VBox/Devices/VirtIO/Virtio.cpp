@@ -1,11 +1,10 @@
-/* $Id: Virtio.cpp 25007 2009-11-26 14:48:54Z vboxsync $ */
+/* $Id: Virtio.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * Virtio - Virtio Common Functions (VRing, VQueue, Virtio PCI)
- *
  */
 
 /*
- * Copyright (C) 2009 Sun Microsystems, Inc.
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -14,16 +13,13 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 
 #define LOG_GROUP LOG_GROUP_DEV_VIRTIO
 
 #include <iprt/param.h>
+#include <iprt/uuid.h>
 #include <VBox/pdmdev.h>
 #include "Virtio.h"
 
@@ -219,7 +215,7 @@ void vqueueNotify(PVPCISTATE pState, PVQUEUE pQueue)
     {
         int rc = vpciRaiseInterrupt(pState, VERR_INTERNAL_ERROR, VPCI_ISR_QUEUE);
         if (RT_FAILURE(rc))
-            Log(("%s vqueueNotify: Failed to raise an interrupt (%Vrc).\n", INSTANCE(pState), rc));
+            Log(("%s vqueueNotify: Failed to raise an interrupt (%Rrc).\n", INSTANCE(pState), rc));
     }
     else
     {
@@ -257,9 +253,9 @@ void vpciReset(PVPCISTATE pState)
  */
 int vpciRaiseInterrupt(VPCISTATE *pState, int rcBusy, uint8_t u8IntCause)
 {
-    int rc = vpciCsEnter(pState, rcBusy);
-    if (RT_UNLIKELY(rc != VINF_SUCCESS))
-        return rc;
+    // int rc = vpciCsEnter(pState, rcBusy);
+    // if (RT_UNLIKELY(rc != VINF_SUCCESS))
+    //     return rc;
 
     STAM_COUNTER_INC(&pState->StatIntsRaised);
     LogFlow(("%s vpciRaiseInterrupt: u8IntCause=%x\n",
@@ -267,7 +263,7 @@ int vpciRaiseInterrupt(VPCISTATE *pState, int rcBusy, uint8_t u8IntCause)
 
     pState->uISR |= u8IntCause;
     PDMDevHlpPCISetIrq(pState->CTX_SUFF(pDevIns), 0, 1);
-    vpciCsLeave(pState);
+    // vpciCsLeave(pState);
     return VINF_SUCCESS;
 }
 
@@ -313,6 +309,22 @@ int vpciIOPortIn(PPDMDEVINS         pDevIns,
     int         rc     = VINF_SUCCESS;
     const char *szInst = INSTANCE(pState);
     STAM_PROFILE_ADV_START(&pState->CTXSUFF(StatIORead), a);
+
+    /*
+     * We probably do not need to enter critical section when reading registers
+     * as the most of them are either constant or being changed during
+     * initialization only, the exception being ISR which can be raced by all
+     * threads but I see no big harm in it. It also happens to be the most read
+     * register as it gets read in interrupt handler. By dropping cs protection
+     * here we gain the ability to deliver RX packets to the guest while TX is
+     * holding cs transmitting queued packets.
+     *
+    rc = vpciCsEnter(pState, VINF_IOM_HC_IOPORT_READ);
+    if (RT_UNLIKELY(rc != VINF_SUCCESS))
+    {
+        STAM_PROFILE_ADV_STOP(&pState->CTXSUFF(StatIORead), a);
+        return rc;
+        }*/
 
     port -= pState->addrIOPort;
     switch (port)
@@ -361,7 +373,7 @@ int vpciIOPortIn(PPDMDEVINS         pDevIns,
             else
             {
                 *pu32 = 0xFFFFFFFF;
-                rc = PDMDeviceDBGFStop(pDevIns, RT_SRC_POS, "%s vpciIOPortIn: "
+                rc = PDMDevHlpDBGFStop(pDevIns, RT_SRC_POS, "%s vpciIOPortIn: "
                                        "no valid port at offset port=%RTiop "
                                        "cb=%08x\n", szInst, port, cb);
             }
@@ -370,6 +382,7 @@ int vpciIOPortIn(PPDMDEVINS         pDevIns,
     Log3(("%s vpciIOPortIn:  At %RTiop in  %0*x\n",
           szInst, port, cb*2, *pu32));
     STAM_PROFILE_ADV_STOP(&pState->CTXSUFF(StatIORead), a);
+    //vpciCsLeave(pState);
     return rc;
 }
 
@@ -443,7 +456,7 @@ int vpciIOPortOut(PPDMDEVINS                pDevIns,
             if (u32)
                 vqueueInit(&pState->Queues[pState->uQueueSelector], u32);
             else
-                pfnReset(pState);
+                rc = pfnReset(pState);
             break;
 
         case VPCI_QUEUE_SEL:
@@ -461,7 +474,14 @@ int vpciIOPortOut(PPDMDEVINS                pDevIns,
             u32 &= 0xFFFF;
             if (u32 < pState->nQueues)
                 if (pState->Queues[u32].VRing.addrDescriptors)
-                    pState->Queues[u32].pfnCallback(pState, &pState->Queues[u32]);
+                {
+                    // rc = vpciCsEnter(pState, VERR_SEM_BUSY);
+                    // if (RT_LIKELY(rc == VINF_SUCCESS))
+                    // {
+                        pState->Queues[u32].pfnCallback(pState, &pState->Queues[u32]);
+                    //     vpciCsLeave(pState);
+                    // }
+                }
                 else
                     Log(("%s The queue (#%d) being notified has not been initialized.\n",
                          INSTANCE(pState), u32));
@@ -479,7 +499,7 @@ int vpciIOPortOut(PPDMDEVINS                pDevIns,
             pState->uStatus = u32;
             /* Writing 0 to the status port triggers device reset. */
             if (u32 == 0)
-                pfnReset(pState);
+                rc = pfnReset(pState);
             else if (fHasBecomeReady)
                 pfnReady(pState);
             break;
@@ -488,7 +508,7 @@ int vpciIOPortOut(PPDMDEVINS                pDevIns,
             if (port >= VPCI_CONFIG)
                 rc = pfnSetConfig(pState, port - VPCI_CONFIG, cb, &u32);
             else
-                rc = PDMDeviceDBGFStop(pDevIns, RT_SRC_POS, "%s vpciIOPortOut: no valid port at offset port=%RTiop cb=%08x\n", szInst, port, cb);
+                rc = PDMDevHlpDBGFStop(pDevIns, RT_SRC_POS, "%s vpciIOPortOut: no valid port at offset port=%RTiop cb=%08x\n", szInst, port, cb);
             break;
     }
 
@@ -497,27 +517,18 @@ int vpciIOPortOut(PPDMDEVINS                pDevIns,
 }
 
 #ifdef IN_RING3
+
 /**
- * Provides interfaces to the driver.
- *
- * @returns Pointer to interface. NULL if the interface is not supported.
- * @param   pInterface          Pointer to this interface structure.
- * @param   enmInterface        The requested interface identification.
- * @thread  EMT
+ * @interface_method_impl{PDMIBASE,pfnQueryInterface}
  */
-void *vpciQueryInterface(struct PDMIBASE *pInterface, PDMINTERFACE enmInterface)
+void *vpciQueryInterface(struct PDMIBASE *pInterface, const char *pszIID)
 {
-    VPCISTATE *pState = IFACE_TO_STATE(pInterface, IBase);
-    Assert(&pState->IBase == pInterface);
-    switch (enmInterface)
-    {
-        case PDMINTERFACE_BASE:
-            return &pState->IBase;
-        case PDMINTERFACE_LED_PORTS:
-            return &pState->ILeds;
-        default:
-            return NULL;
-    }
+    VPCISTATE *pThis = IFACE_TO_STATE(pInterface, IBase);
+    Assert(&pThis->IBase == pInterface);
+
+    PDMIBASE_RETURN_INTERFACE(pszIID, PDMIBASE, &pThis->IBase);
+    PDMIBASE_RETURN_INTERFACE(pszIID, PDMILEDPORTS, &pThis->ILeds);
+    return NULL;
 }
 
 /**
@@ -803,7 +814,7 @@ DECLCALLBACK(int) vpciConstruct(PPDMDEVINS pDevIns, VPCISTATE *pState,
     pState->ILeds.pfnQueryStatusLed = vpciQueryStatusLed;
 
     /* Initialize critical section. */
-    rc = PDMDevHlpCritSectInit(pDevIns, &pState->cs, pState->szInstance);
+    rc = PDMDevHlpCritSectInit(pDevIns, &pState->cs, RT_SRC_POS, "%s", pState->szInstance);
     if (RT_FAILURE(rc))
         return rc;
 
@@ -819,7 +830,7 @@ DECLCALLBACK(int) vpciConstruct(PPDMDEVINS pDevIns, VPCISTATE *pState,
     rc = PDMDevHlpDriverAttach(pDevIns, PDM_STATUS_LUN, &pState->IBase, &pBase, "Status Port");
     if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc, N_("Failed to attach the status LUN"));
-    pState->pLedsConnector = (PPDMILEDCONNECTORS)pBase->pfnQueryInterface(pBase, PDMINTERFACE_LED_CONNECTORS);
+    pState->pLedsConnector = PDMIBASE_QUERY_INTERFACE(pBase, PDMILEDCONNECTORS);
 
     pState->nQueues = nQueues;
 
@@ -830,6 +841,8 @@ DECLCALLBACK(int) vpciConstruct(PPDMDEVINS pDevIns, VPCISTATE *pState,
     PDMDevHlpSTAMRegisterF(pDevIns, &pState->StatIOWriteHC,          STAMTYPE_PROFILE, STAMVISIBILITY_ALWAYS, STAMUNIT_TICKS_PER_CALL, "Profiling IO writes in HC",     vpciCounter(pcszNameFmt, "IO/WriteHC"), iInstance);
     PDMDevHlpSTAMRegisterF(pDevIns, &pState->StatIntsRaised,         STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS, STAMUNIT_OCCURENCES,     "Number of raised interrupts",   vpciCounter(pcszNameFmt, "Interrupts/Raised"), iInstance);
     PDMDevHlpSTAMRegisterF(pDevIns, &pState->StatIntsSkipped,        STAMTYPE_COUNTER, STAMVISIBILITY_ALWAYS, STAMUNIT_OCCURENCES,     "Number of skipped interrupts",   vpciCounter(pcszNameFmt, "Interrupts/Skipped"), iInstance);
+    PDMDevHlpSTAMRegisterF(pDevIns, &pState->StatCsGC,               STAMTYPE_PROFILE, STAMVISIBILITY_ALWAYS, STAMUNIT_TICKS_PER_CALL, "Profiling CS wait in GC",      vpciCounter(pcszNameFmt, "Cs/CsGC"), iInstance);
+    PDMDevHlpSTAMRegisterF(pDevIns, &pState->StatCsHC,               STAMTYPE_PROFILE, STAMVISIBILITY_ALWAYS, STAMUNIT_TICKS_PER_CALL, "Profiling CS wait in HC",      vpciCounter(pcszNameFmt, "Cs/CsHC"), iInstance);
 #endif /* VBOX_WITH_STATISTICS */
 
     return rc;
@@ -849,7 +862,7 @@ int vpciDestruct(VPCISTATE* pState)
 
     if (PDMCritSectIsInitialized(&pState->cs))
         PDMR3CritSectDelete(&pState->cs);
-    
+
     return VINF_SUCCESS;
 }
 
@@ -906,7 +919,6 @@ PVQUEUE vpciAddQueue(VPCISTATE* pState, unsigned uSize,
 
     return pQueue;
 }
-
 
 #endif /* IN_RING3 */
 

@@ -28,15 +28,6 @@
 # of the LGPL is applied is otherwise unspecified.
 #
 
-#
-# Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
-# other than GPL or LGPL is available it will apply instead, Sun elects to use only
-# the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
-# a choice of LGPL license versions is made available with the language indicating
-# that LGPLv2 or any later version may be used, or where a choice of which version
-# of the LGPL is applied is otherwise unspecified.
-#
-
 use strict;
 
 # base directory for ftp.unicode.org files
@@ -185,20 +176,20 @@ my %special_categories =
 my %directions =
 (
     "L"   => 1,    # Left-to-Right
-    "LRE" => 11,   # Left-to-Right Embedding
-    "LRO" => 11,   # Left-to-Right Override
+    "LRE" => 15,   # Left-to-Right Embedding
+    "LRO" => 15,   # Left-to-Right Override
     "R"   => 2,    # Right-to-Left
-    "AL"  => 2,    # Right-to-Left Arabic
-    "RLE" => 11,   # Right-to-Left Embedding
-    "RLO" => 11,   # Right-to-Left Override
-    "PDF" => 11,   # Pop Directional Format
+    "AL"  => 12,   # Right-to-Left Arabic
+    "RLE" => 15,   # Right-to-Left Embedding
+    "RLO" => 15,   # Right-to-Left Override
+    "PDF" => 15,   # Pop Directional Format
     "EN"  => 3,    # European Number
     "ES"  => 4,    # European Number Separator
     "ET"  => 5,    # European Number Terminator
     "AN"  => 6,    # Arabic Number
     "CS"  => 7,    # Common Number Separator
-    "NSM" => 0,    # Non-Spacing Mark
-    "BN"  => 0,    # Boundary Neutral
+    "NSM" => 13,   # Non-Spacing Mark
+    "BN"  => 14,   # Boundary Neutral
     "B"   => 8,    # Paragraph Separator
     "S"   => 9,    # Segment Separator
     "WS"  => 10,   # Whitespace

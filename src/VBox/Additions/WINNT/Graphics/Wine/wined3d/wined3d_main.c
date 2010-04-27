@@ -38,6 +38,22 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(d3d);
 
+struct wined3d_wndproc
+{
+    HWND window;
+    WNDPROC proc;
+    IWineD3DDeviceImpl *device;
+};
+
+struct wined3d_wndproc_table
+{
+    struct wined3d_wndproc *entries;
+    unsigned int count;
+    unsigned int size;
+};
+
+static struct wined3d_wndproc_table wndproc_table;
+
 int num_lock = 0;
 void (*CDECL wine_tsx11_lock_ptr)(void) = NULL;
 void (*CDECL wine_tsx11_unlock_ptr)(void) = NULL;
@@ -59,36 +75,37 @@ wined3d_settings_t wined3d_settings =
     VS_HW,          /* Hardware by default */
     PS_HW,          /* Hardware by default */
     TRUE,           /* Use of GLSL enabled by default */
-    ORM_FBO,        /* Use FBOs to do offscreen rendering */
+    ORM_BACKBUFFER, /* Use Backbuffer to do offscreen rendering */
     RTL_READTEX,    /* Default render target locking method */
     PCI_VENDOR_NONE,/* PCI Vendor ID */
     PCI_DEVICE_NONE,/* PCI Device ID */
     0,              /* The default of memory is set in FillGLCaps */
     NULL,           /* No wine logo by default */
-    FALSE           /* Disable multisampling for now due to Nvidia driver bugs which happens for some users */
+    FALSE,          /* Disable multisampling for now due to Nvidia driver bugs which happens for some users */
+    FALSE,          /* No strict draw ordering. */
 };
 
-IWineD3D* WINAPI WineDirect3DCreate(UINT dxVersion, IUnknown *parent) {
-    IWineD3DImpl* object;
+IWineD3D * WINAPI WineDirect3DCreate(UINT version, IUnknown *parent)
+{
+    IWineD3DImpl *object;
+    HRESULT hr;
 
-    object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(IWineD3DImpl));
-    object->lpVtbl = &IWineD3D_Vtbl;
-    object->dxVersion = dxVersion;
-    object->ref = 1;
-    object->parent = parent;
-
-    if (!InitAdapters(object))
+    object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
+    if (!object)
     {
-        WARN("Failed to initialize direct3d adapters, Direct3D will not be available\n");
-        if (dxVersion > 7)
-        {
-            ERR("Direct3D%d is not available without opengl\n", dxVersion);
-            HeapFree(GetProcessHeap(), 0, object);
-            return NULL;
-        }
+        ERR("Failed to allocate wined3d object memory.\n");
+        return NULL;
     }
 
-    TRACE("Created WineD3D object @ %p for d3d%d support\n", object, dxVersion);
+    hr = wined3d_init(object, version, parent);
+    if (FAILED(hr))
+    {
+        WARN("Failed to initialize wined3d object, hr %#x.\n", hr);
+        HeapFree(GetProcessHeap(), 0, object);
+        return NULL;
+    }
+
+    TRACE("Created wined3d object %p for d3d%d support.\n", object, version);
 
     return (IWineD3D *)object;
 }
@@ -113,7 +130,7 @@ static void CDECL wined3d_do_nothing(void)
 {
 }
 
-static BOOL wined3d_init(HINSTANCE hInstDLL)
+static BOOL wined3d_dll_init(HINSTANCE hInstDLL)
 {
     DWORD wined3d_context_tls_idx;
     HMODULE mod;
@@ -229,11 +246,6 @@ static BOOL wined3d_init(HINSTANCE hInstDLL)
                 TRACE("Using the backbuffer for offscreen rendering\n");
                 wined3d_settings.offscreen_rendering_mode = ORM_BACKBUFFER;
             }
-            else if (!strcmp(buffer,"pbuffer"))
-            {
-                TRACE("Using PBuffers for offscreen rendering\n");
-                wined3d_settings.offscreen_rendering_mode = ORM_PBUFFER;
-            }
             else if (!strcmp(buffer,"fbo"))
             {
                 TRACE("Using FBOs for offscreen rendering\n");
@@ -317,6 +329,12 @@ static BOOL wined3d_init(HINSTANCE hInstDLL)
                 wined3d_settings.allow_multisampling = TRUE;
             }
         }
+        if (!get_config_key(hkey, appkey, "StrictDrawOrdering", buffer, size)
+                && !strcmp(buffer,"enabled"))
+        {
+            TRACE("Enforcing strict draw ordering.\n");
+            wined3d_settings.strict_draw_ordering = TRUE;
+        }
     }
     if (wined3d_settings.vs_mode == VS_HW)
         TRACE("Allow HW vertex shaders\n");
@@ -331,15 +349,23 @@ static BOOL wined3d_init(HINSTANCE hInstDLL)
     return TRUE;
 }
 
-static BOOL wined3d_destroy(HINSTANCE hInstDLL)
+static BOOL wined3d_dll_destroy(HINSTANCE hInstDLL)
 {
     DWORD wined3d_context_tls_idx = context_get_tls_idx();
+    unsigned int i;
 
     if (!TlsFree(wined3d_context_tls_idx))
     {
         DWORD err = GetLastError();
         ERR("Failed to free context TLS index, err %#x.\n", err);
     }
+
+    for (i = 0; i < wndproc_table.count; ++i)
+    {
+        struct wined3d_wndproc *entry = &wndproc_table.entries[i];
+        SetWindowLongPtrW(entry->window, GWLP_WNDPROC, (LONG_PTR)entry->proc);
+    }
+    HeapFree(GetProcessHeap(), 0, wndproc_table.entries);
 
     HeapFree(GetProcessHeap(), 0, wined3d_settings.logo);
     UnregisterClassA(WINED3D_OPENGL_WINDOW_CLASS_NAME, hInstDLL);
@@ -357,6 +383,104 @@ void WINAPI wined3d_mutex_unlock(void)
     LeaveCriticalSection(&wined3d_cs);
 }
 
+static struct wined3d_wndproc *wined3d_find_wndproc(HWND window)
+{
+    unsigned int i;
+
+    for (i = 0; i < wndproc_table.count; ++i)
+    {
+        if (wndproc_table.entries[i].window == window)
+        {
+            return &wndproc_table.entries[i];
+        }
+    }
+
+    return NULL;
+}
+
+static LRESULT CALLBACK wined3d_wndproc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    struct wined3d_wndproc *entry;
+    IWineD3DDeviceImpl *device;
+    WNDPROC proc;
+
+    wined3d_mutex_lock();
+    entry = wined3d_find_wndproc(window);
+
+    if (!entry)
+    {
+        wined3d_mutex_unlock();
+        ERR("Window %p is not registered with wined3d.\n", window);
+        return DefWindowProcW(window, message, wparam, lparam);
+    }
+
+    device = entry->device;
+    proc = entry->proc;
+    wined3d_mutex_unlock();
+
+    return device_process_message(device, window, message, wparam, lparam, proc);
+}
+
+BOOL wined3d_register_window(HWND window, IWineD3DDeviceImpl *device)
+{
+    struct wined3d_wndproc *entry;
+
+    wined3d_mutex_lock();
+
+    if (wndproc_table.size == wndproc_table.count)
+    {
+        unsigned int new_size = max(1, wndproc_table.size * 2);
+        struct wined3d_wndproc *new_entries;
+
+        if (!wndproc_table.entries) new_entries = HeapAlloc(GetProcessHeap(), 0, new_size * sizeof(*new_entries));
+        else new_entries = HeapReAlloc(GetProcessHeap(), 0, wndproc_table.entries, new_size * sizeof(*new_entries));
+
+        if (!new_entries)
+        {
+            wined3d_mutex_unlock();
+            ERR("Failed to grow table.\n");
+            return FALSE;
+        }
+
+        wndproc_table.entries = new_entries;
+        wndproc_table.size = new_size;
+    }
+
+    entry = &wndproc_table.entries[wndproc_table.count++];
+    entry->window = window;
+    entry->proc = (WNDPROC)SetWindowLongPtrW(window, GWLP_WNDPROC, (LONG_PTR)wined3d_wndproc);
+    entry->device = device;
+
+    wined3d_mutex_unlock();
+
+    return TRUE;
+}
+
+void wined3d_unregister_window(HWND window)
+{
+    unsigned int i;
+
+    wined3d_mutex_lock();
+    for (i = 0; i < wndproc_table.count; ++i)
+    {
+        if (wndproc_table.entries[i].window == window)
+        {
+            struct wined3d_wndproc *entry = &wndproc_table.entries[i];
+            struct wined3d_wndproc *last = &wndproc_table.entries[--wndproc_table.count];
+
+            if (GetWindowLongPtrW(window, GWLP_WNDPROC) == (LONG_PTR)wined3d_wndproc)
+                SetWindowLongPtrW(window, GWLP_WNDPROC, (LONG_PTR)entry->proc);
+            if (entry != last) *entry = *last;
+            wined3d_mutex_unlock();
+
+            return;
+        }
+    }
+    wined3d_mutex_unlock();
+
+    ERR("Window %p is not registered with wined3d.\n", window);
+}
+
 /* At process attach */
 BOOL WINAPI DllMain(HINSTANCE hInstDLL, DWORD fdwReason, LPVOID lpv)
 {
@@ -365,10 +489,10 @@ BOOL WINAPI DllMain(HINSTANCE hInstDLL, DWORD fdwReason, LPVOID lpv)
     switch (fdwReason)
     {
         case DLL_PROCESS_ATTACH:
-            return wined3d_init(hInstDLL);
+            return wined3d_dll_init(hInstDLL);
 
         case DLL_PROCESS_DETACH:
-            return wined3d_destroy(hInstDLL);
+            return wined3d_dll_destroy(hInstDLL);
 
         case DLL_THREAD_DETACH:
         {

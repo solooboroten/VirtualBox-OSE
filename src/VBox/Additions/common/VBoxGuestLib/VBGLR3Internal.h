@@ -1,10 +1,10 @@
-/* $Id: VBGLR3Internal.h 22970 2009-09-12 11:53:35Z vboxsync $ */
+/* $Id: VBGLR3Internal.h 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 support library for the guest additions, Internal header.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -14,9 +14,14 @@
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
+ * The contents of this file may alternatively be used under the terms
+ * of the Common Development and Distribution License Version 1.0
+ * (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+ * VirtualBox OSE distribution, in which case the provisions of the
+ * CDDL are applicable instead of those of the GPL.
+ *
+ * You may elect to license modified versions of this file under the
+ * terms and conditions of either the GPL or the CDDL or both.
  */
 
 #ifndef ___VBGLR3Internal_h
@@ -28,6 +33,15 @@
 #include <VBox/VMMDev.h>
 #include <VBox/VBoxGuest.h>
 #include <VBox/VBoxGuestLib.h>
+
+#ifdef VBOX_VBGLR3_XFREE86
+/* Rather than try to resolve all the header file conflicts, I will just
+   prototype what we need here. */
+typedef unsigned long xf86size_t;
+extern "C" xf86size_t xf86strlen(const char*);
+# undef strlen
+# define strlen xf86strlen
+#endif /* VBOX_VBGLR3_XFREE86 */
 
 RT_C_DECLS_BEGIN
 

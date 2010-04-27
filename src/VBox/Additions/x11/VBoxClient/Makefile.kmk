@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 23941 2009-10-21 15:40:36Z vboxsync $
+# $Id: Makefile.kmk 28800 2010-04-27 08:22:32Z vboxsync $
 ## @file
 # Sub-Makefile for the VirtualBox Guest Addition X11 Client.
 #
 
 #
-# Copyright (C) 2006-2007 Sun Microsystems, Inc.
+# Copyright (C) 2006-2007 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
 # Foundation, in version 2 as it comes in the "COPYING" file of the
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
-#
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
 #
 
 SUB_DEPTH = ../../../../..
@@ -43,11 +39,16 @@ VBoxClient_LIBPATH = \
 	$(VBOX_LIBPATH32_X11)
 VBoxClient_LIBS.freebsd = \
 	iconv
+VBoxClient_LIBS.linux = \
+	dl
+VBoxClient_LIBS.solaris = \
+	dl
 VBoxClient_LIBS = \
 	$(VBOX_LIB_IPRT_GUEST_R3) \
 	$(VBOX_LIB_VBGL_R3) \
 	$(VBOX_LIB_IPRT_GUEST_R3) \
 	X11 \
+	Xrandr \
 	Xt
 # These are static replacements for gcc-specific parts of libstdc++
 VBoxClient_LIBS += \

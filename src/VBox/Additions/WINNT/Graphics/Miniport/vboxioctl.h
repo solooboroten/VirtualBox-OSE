@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -14,10 +14,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 #ifndef __VBOXIOCTL__H
@@ -62,6 +58,9 @@
 
 #define IOCTL_VIDEO_HGSMI_QUERY_PORTPROCS \
     CTL_CODE(FILE_DEVICE_VIDEO, 0x434, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+#define IOCTL_VIDEO_VHWA_QUERY_INFO \
+    CTL_CODE(FILE_DEVICE_VIDEO, 0x435, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #endif /* VBOX_WITH_HGSMI */
 
@@ -165,6 +164,13 @@ typedef struct _HGSMIHANDLERDISABLE
 {
     uint8_t u8Channel;
 } HGSMIHANDLERDISABLE;
+
+# ifdef VBOX_WITH_VIDEOHWACCEL
+typedef struct _VHWAQUERYINFO
+{
+    ULONG_PTR offVramBase;
+} VHWAQUERYINFO;
+# endif
 
 #endif /* VBOX_WITH_HGSMI */
 #pragma pack()

@@ -1,10 +1,10 @@
-/* $Id: dir-win.cpp 23298 2009-09-24 16:38:05Z vboxsync $ */
+/* $Id: dir-win.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * IPRT - Directory, win32.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -22,10 +22,6 @@
  *
  * You may elect to license modified versions of this file under the
  * terms and conditions of either the GPL or the CDDL or both.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 
@@ -124,6 +120,12 @@ RTDECL(int) RTDirRemove(const char *pszPath)
 
     LogFlow(("RTDirRemove(%p:{%s}): returns %Rrc\n", pszPath, pszPath, rc));
     return rc;
+}
+
+
+RTDECL(int) RTDirFlush(const char *pszPath)
+{
+    return VERR_NOT_SUPPORTED;
 }
 
 
@@ -309,8 +311,10 @@ RTDECL(int) RTDirRead(PRTDIR pDir, PRTDIRENTRY pDirEntry, size_t *pcbDirEntry)
 }
 
 
-RTDECL(int) RTDirReadEx(PRTDIR pDir, PRTDIRENTRYEX pDirEntry, size_t *pcbDirEntry, RTFSOBJATTRADD enmAdditionalAttribs)
+RTDECL(int) RTDirReadEx(PRTDIR pDir, PRTDIRENTRYEX pDirEntry, size_t *pcbDirEntry, RTFSOBJATTRADD enmAdditionalAttribs, uint32_t fFlags)
 {
+    /** @todo Symlinks: Find[First|Next]FileW will return info about
+        the link, so RTPATH_F_FOLLOW_LINK is not handled correctly. */
     /*
      * Validate input.
      */
@@ -330,6 +334,7 @@ RTDECL(int) RTDirReadEx(PRTDIR pDir, PRTDIRENTRYEX pDirEntry, size_t *pcbDirEntr
         AssertMsgFailed(("Invalid enmAdditionalAttribs=%p\n", enmAdditionalAttribs));
         return VERR_INVALID_PARAMETER;
     }
+    AssertMsgReturn(RTPATH_F_IS_VALID(fFlags, 0), ("%#x\n", fFlags), VERR_INVALID_PARAMETER);
     size_t cbDirEntry = sizeof(*pDirEntry);
     if (pcbDirEntry)
     {

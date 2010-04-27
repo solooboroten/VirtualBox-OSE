@@ -24,7 +24,7 @@
         <translation></translation>
     </message>
     <message>
-        <source>Sun Microsystems, Inc.</source>
+        <source>Oracle Corporation</source>
         <comment>Comma-separated list of translators</comment>
         <translation>Lars Sarauw Hansen, Jeppe Fihl Toustrup</translation>
     </message>
@@ -413,7 +413,7 @@
     </message>
 </context>
 <context>
-    <name>VBoxAdditionsDownloader</name>
+    <name>UIDownloaderAdditions</name>
     <message>
         <source>Cancel</source>
         <translation>Annullér</translation>
@@ -1102,7 +1102,7 @@
     </message>
 </context>
 <context>
-    <name>VBoxDownloaderWgt</name>
+    <name>UIDownloader</name>
     <message>
         <source>The download process has been cancelled by the user.</source>
         <translation>Filhentning annulleret af bruger.</translation>
@@ -1116,7 +1116,7 @@
     </message>
 </context>
 <context>
-    <name>VBoxExportApplianceWzd</name>
+    <name>UIExportApplianceWzd</name>
     <message>
         <source>Select a file to export into</source>
         <translation>Vælg den fil, der skal eksporteres til</translation>
@@ -1377,6 +1377,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>&amp;Dock Icon Realtime Preview</source>
         <translation>&amp;Dock-ikon viser indhold af VM</translation>
+    </message>
+    <message>
+        <source>&amp;Auto show Dock and Menubar in fullscreen</source>
+        <translation>&amp;Automatisk visning af Dok &amp;&amp; Menubjælke i fuldskærm</translation>
     </message>
 </context>
 <context>
@@ -2782,6 +2786,52 @@ p, li { white-space: pre-wrap; }
         <comment>medium</comment>
         <translation>Denne harddisk er indirekte tilsluttet gennem ændrings-harddisken:</translation>
     </message>
+    <message numerus="yes">
+        <source>%n year(s)</source>
+        <translation>
+            <numerusform>%n år</numerusform>
+            <numerusform>%n år</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n month(s)</source>
+        <translation>
+            <numerusform>%n måned</numerusform>
+            <numerusform>%n måneder</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation>
+            <numerusform>%n dag</numerusform>
+            <numerusform>%n dage</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation>
+            <numerusform>%n time</numerusform>
+            <numerusform>%n timer</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minute(s)</source>
+        <translation>
+            <numerusform>%n minut</numerusform>
+            <numerusform>%n minutter</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n second(s)</source>
+        <translation>
+            <numerusform>%n sekund</numerusform>
+            <numerusform>%n sekunder</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>(CD/DVD)</source>
+        <translation>(CD/DVD)</translation>
+    </message>
 </context>
 <context>
     <name>VBoxGlobalSettings</name>
@@ -2817,7 +2867,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxImportApplianceWzd</name>
+    <name>UIImportApplianceWzd</name>
     <message>
         <source>Select an appliance to import</source>
         <translation>Vælg det Prækonfigurerede system, der skal importeres</translation>
@@ -2880,7 +2930,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxImportLicenseViewer</name>
+    <name>UIImportLicenseViewer</name>
     <message>
         <source>&lt;b&gt;The virtual system &quot;%1&quot; requires that you agree to the terms and conditions of the software license agreement shown below.&lt;/b&gt;&lt;br /&gt;&lt;br /&gt;Click &lt;b&gt;Agree&lt;/b&gt; to continue or click &lt;b&gt;Disagree&lt;/b&gt; to cancel the import.</source>
         <translation>&lt;b&gt;Det virtuelle system &quot;%1&quot; kræver at du accepterer betingelserne i software-licensaftalen vist herunder.&lt;/b&gt;&lt;br /&gt;&lt;br /&gt;Vælg &lt;b&gt;Acceptér&lt;/b&gt; for at fortsætte eller &lt;b&gt;Afvis&lt;/b&gt; for at annullere importen.</translation>
@@ -3164,7 +3214,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxNewHDWzd</name>
+    <name>UINewHDWzd</name>
     <message>
         <source>Create New Virtual Disk</source>
         <translation>Opret ny virtuel disk</translation>
@@ -3279,7 +3329,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxNewVMWzd</name>
+    <name>UINewVMWzd</name>
     <message>
         <source>Create New Virtual Machine</source>
         <translation>Opret ny virtuel maskine</translation>
@@ -4320,6 +4370,15 @@ p, li { white-space: pre-wrap; }
         <comment>failed to close ...</comment>
         <translation>diskettedrev</translation>
     </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to delete the CD/DVD-ROM device?&lt;/p&gt;&lt;p&gt;You will not be able to mount any CDs or ISO images or install the Guest Additions without it!&lt;/p&gt;</source>
+        <translation>&lt;p&gt;Er du sikker på at du vil fjerne CD/DVD-drevet?&lt;/p&gt;&lt;p&gt;Du vil ikke kunne montere CD/ISO-aftryk eller installere Gæstetilføjelserne uden det!&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>&amp;Remove</source>
+        <comment>medium</comment>
+        <translation>&amp;Fje&amp;rn</translation>
+    </message>
 </context>
 <context>
     <name>VBoxProgressDialog</name>
@@ -4329,55 +4388,55 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>%1 days, %2 hours remaining</source>
-        <translation>%1 dage, %2 timer tilbage</translation>
+        <translation type="obsolete">%1 dage, %2 timer tilbage</translation>
     </message>
     <message>
         <source>%1 days, %2 minutes remaining</source>
-        <translation>%1 dage, %2 minutter tilbage</translation>
+        <translation type="obsolete">%1 dage, %2 minutter tilbage</translation>
     </message>
     <message>
         <source>%1 days remaining</source>
-        <translation>%1 dage tilbage</translation>
+        <translation type="obsolete">%1 dage tilbage</translation>
     </message>
     <message>
         <source>1 day, %1 hours remaining</source>
-        <translation>1 dag, %1 timer tilbage</translation>
+        <translation type="obsolete">1 dag, %1 timer tilbage</translation>
     </message>
     <message>
         <source>1 day, %1 minutes remaining</source>
-        <translation>1 dag, %1 minutter tilbage</translation>
+        <translation type="obsolete">1 dag, %1 minutter tilbage</translation>
     </message>
     <message>
         <source>1 day remaining</source>
-        <translation>1 dag tilbage</translation>
+        <translation type="obsolete">1 dag tilbage</translation>
     </message>
     <message>
         <source>%1 hours, %2 minutes remaining</source>
-        <translation>%1 timer, %2 minutter tilbage</translation>
+        <translation type="obsolete">%1 timer, %2 minutter tilbage</translation>
     </message>
     <message>
         <source>1 hour, %1 minutes remaining</source>
-        <translation>1 time, %1 minutter tilbage</translation>
+        <translation type="obsolete">1 time, %1 minutter tilbage</translation>
     </message>
     <message>
         <source>1 hour remaining</source>
-        <translation>1 time tilbage</translation>
+        <translation type="obsolete">1 time tilbage</translation>
     </message>
     <message>
         <source>%1 minutes remaining</source>
-        <translation>%1 minutter tilbage</translation>
+        <translation type="obsolete">%1 minutter tilbage</translation>
     </message>
     <message>
         <source>1 minute, %2 seconds remaining</source>
-        <translation>1 minut, %2 sekunder tilbage</translation>
+        <translation type="obsolete">1 minut, %2 sekunder tilbage</translation>
     </message>
     <message>
         <source>1 minute remaining</source>
-        <translation>1 minut tilbage</translation>
+        <translation type="obsolete">1 minut tilbage</translation>
     </message>
     <message>
         <source>%1 seconds remaining</source>
-        <translation>%1 sekunder tilbage</translation>
+        <translation type="obsolete">%1 sekunder tilbage</translation>
     </message>
     <message>
         <source>A few seconds remaining</source>
@@ -4394,6 +4453,16 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Cancel the current operation</source>
         <translation>Annullerer den igangværende handling</translation>
+    </message>
+    <message>
+        <source>%1, %2 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1, %2&quot;</comment>
+        <translation>%1, %2 tilbage</translation>
+    </message>
+    <message>
+        <source>%1 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1&quot;</comment>
+        <translation>%1 tilbage</translation>
     </message>
 </context>
 <context>
@@ -4850,28 +4919,28 @@ p, li { white-space: pre-wrap; }
     </message>
     <message numerus="yes">
         <source> (%n day(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n dag(e) siden)</numerusform>
             <numerusform></numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source> (%n hour(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n time(r) siden)</numerusform>
             <numerusform></numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source> (%n minute(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n minut(ter) siden)</numerusform>
             <numerusform></numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source> (%n second(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n sekund(er) siden)</numerusform>
             <numerusform></numerusform>
         </translation>
@@ -4891,6 +4960,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Delete the selected snapshot of the virtual machine</source>
         <translation>Slet det valgte øjebliksbillede af den virtuelle maskine</translation>
+    </message>
+    <message>
+        <source> (%1 ago)</source>
+        <translation> (%1 siden)</translation>
     </message>
 </context>
 <context>
@@ -4917,6 +4990,13 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Snapshot &amp;Description</source>
         <translation>Beskrivelse af øjebliksbille&amp;de</translation>
+    </message>
+    <message numerus="yes">
+        <source>Warning: You are taking a snapshot of a running machine which has %n immutable image(s) attached to it. As long as you are working from this snapshot the immutable image(s) will not be reset to avoid loss of data.</source>
+        <translation>
+            <numerusform>Advarsel: Du tager et øjebliksbillede af en kørende maskine, som har %n skrivebeskyttet aftryk tilsluttet. Så længe du arbejder på dette øjebliksbillede vil det skrivebeskyttede aftryk ikke blive nulstillet for at undgå tab af data.</numerusform>
+            <numerusform>Advarsel: Du tager et øjebliksbillede af en kørende maskine, som har %n skrivebeskyttede aftryk tilsluttet. Så længe du arbejder på dette øjebliksbillede vil de skrivebeskyttede aftryk ikke blive nulstillet for at undgå tab af data.</numerusform>
+        </translation>
     </message>
 </context>
 <context>
@@ -5089,7 +5169,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxVMFirstRunWzd</name>
+    <name>UIFirstRunWzd</name>
     <message>
         <source>First Run Wizard</source>
         <translation>Guide til 1.gang</translation>

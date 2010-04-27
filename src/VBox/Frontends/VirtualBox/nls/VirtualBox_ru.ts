@@ -24,9 +24,9 @@
         <translation></translation>
     </message>
     <message>
-        <source>Sun Microsystems, Inc.</source>
+        <source>Oracle Corporation</source>
         <comment>Comma-separated list of translators</comment>
-        <translation>Sun Microsystems, Inc., Igor Gorbounov, Egor Morozov</translation>
+        <translation>Oracle Corporation, Igor Gorbounov, Egor Morozov</translation>
     </message>
 </context>
 <context>
@@ -431,7 +431,7 @@
     </message>
 </context>
 <context>
-    <name>VBoxAdditionsDownloader</name>
+    <name>UIDownloaderAdditions</name>
     <message>
         <source>Cancel</source>
         <translation>Отмена</translation>
@@ -1122,7 +1122,7 @@
     </message>
 </context>
 <context>
-    <name>VBoxDownloaderWgt</name>
+    <name>UIDownloader</name>
     <message>
         <source>The download process has been cancelled by the user.</source>
         <translation>Скачивание файла было отменено пользователем.</translation>
@@ -1136,7 +1136,7 @@
     </message>
 </context>
 <context>
-    <name>VBoxExportApplianceWzd</name>
+    <name>UIExportApplianceWzd</name>
     <message>
         <source>Select a file to export into</source>
         <translation>Укажите имя файла для экспорта конфигурации</translation>
@@ -1401,6 +1401,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>&amp;Dock Icon Realtime Preview</source>
         <translation>Обновлять иконку &amp;дока</translation>
+    </message>
+    <message>
+        <source>&amp;Auto show Dock and Menubar in fullscreen</source>
+        <translation>&amp;Показывать Док и Менюбар в режиме полного экрана</translation>
     </message>
 </context>
 <context>
@@ -2883,6 +2887,58 @@ p, li { white-space: pre-wrap; }
         <comment>medium</comment>
         <translation>Этот базовый жёсткий диск косвенно подсоединен с помощью следующего разностного диска:</translation>
     </message>
+    <message numerus="yes">
+        <source>%n year(s)</source>
+        <translation>
+            <numerusform>%n год</numerusform>
+            <numerusform>%n года</numerusform>
+            <numerusform>%n лет</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n month(s)</source>
+        <translation>
+            <numerusform>%n месяц</numerusform>
+            <numerusform>%n месяца</numerusform>
+            <numerusform>%n месяцев</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation>
+            <numerusform>%n день</numerusform>
+            <numerusform>%n дня</numerusform>
+            <numerusform>%n дней</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation>
+            <numerusform>%n час</numerusform>
+            <numerusform>%n часа</numerusform>
+            <numerusform>%n часов</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minute(s)</source>
+        <translation>
+            <numerusform>%n минута</numerusform>
+            <numerusform>%n минуты</numerusform>
+            <numerusform>%n минут</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n second(s)</source>
+        <translation>
+            <numerusform>%n секунда</numerusform>
+            <numerusform>%n секунды</numerusform>
+            <numerusform>%n секунд</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>(CD/DVD)</source>
+        <translation>(CD/DVD)</translation>
+    </message>
 </context>
 <context>
     <name>VBoxGlobalSettings</name>
@@ -2918,7 +2974,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxImportApplianceWzd</name>
+    <name>UIImportApplianceWzd</name>
     <message>
         <source>Select an appliance to import</source>
         <translation>Укажите файл конфигурации для импорта</translation>
@@ -2981,7 +3037,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxImportLicenseViewer</name>
+    <name>UIImportLicenseViewer</name>
     <message>
         <source>&lt;b&gt;The virtual system &quot;%1&quot; requires that you agree to the terms and conditions of the software license agreement shown below.&lt;/b&gt;&lt;br /&gt;&lt;br /&gt;Click &lt;b&gt;Agree&lt;/b&gt; to continue or click &lt;b&gt;Disagree&lt;/b&gt; to cancel the import.</source>
         <translation>&lt;b&gt;Виртуальной системе &quot;%1&quot; требуется, что бы Вы приняли постановления и условия лицензионного соглашения на программное обеспечение, указанные далее.&lt;/b&gt;&lt;br /&gt;&lt;br /&gt;Нажмите &lt;b&gt;Согласен&lt;/b&gt; для продолжения либо &lt;b&gt;Отказываюсь&lt;/b&gt; для отмены импорта.</translation>
@@ -3300,7 +3356,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxNewHDWzd</name>
+    <name>UINewHDWzd</name>
     <message>
         <source>Create New Virtual Disk</source>
         <translation>Создать новый виртуальный диск</translation>
@@ -3415,7 +3471,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxNewVMWzd</name>
+    <name>UINewVMWzd</name>
     <message>
         <source>Create New Virtual Machine</source>
         <translation>Создать новую виртуальную машину</translation>
@@ -4486,6 +4542,15 @@ p, li { white-space: pre-wrap; }
         <comment>failed to close ...</comment>
         <translation type="unfinished">привод гибких дисков</translation>
     </message>
+    <message>
+        <source>&lt;p&gt;Are you sure you want to delete the CD/DVD-ROM device?&lt;/p&gt;&lt;p&gt;You will not be able to mount any CDs or ISO images or install the Guest Additions without it!&lt;/p&gt;</source>
+        <translation>&lt;p&gt;Вы уверены, что хотите удалить виртуальный привод оптических дисков?&lt;/p&gt;&lt;p&gt;Без такого устройства у Вас не будет возможности подключать привод оптических дисков основного компьютера или образ оптического диска к виртуальной машине. Кроме того, Вы не сможете установить дополнения гостевой операционной системы!&lt;/p&gt;</translation>
+    </message>
+    <message>
+        <source>&amp;Remove</source>
+        <comment>medium</comment>
+        <translation>&amp;Удалить</translation>
+    </message>
 </context>
 <context>
     <name>VBoxProgressDialog</name>
@@ -4499,59 +4564,59 @@ p, li { white-space: pre-wrap; }
     </message>
     <message>
         <source>%1 days, %2 hours remaining</source>
-        <translation type="unfinished">Осталось дней: %1, часов: %2</translation>
+        <translation type="obsolete">Осталось дней: %1, часов: %2</translation>
     </message>
     <message>
         <source>%1 days, %2 minutes remaining</source>
-        <translation type="unfinished">Осталось дней: %1, минут: %2</translation>
+        <translation type="obsolete">Осталось дней: %1, минут: %2</translation>
     </message>
     <message>
         <source>%1 days remaining</source>
-        <translation type="unfinished">Осталось дней: %1</translation>
+        <translation type="obsolete">Осталось дней: %1</translation>
     </message>
     <message>
         <source>1 day, %1 hours remaining</source>
-        <translation type="unfinished">Осталось дней: 1, часов: %1</translation>
+        <translation type="obsolete">Осталось дней: 1, часов: %1</translation>
     </message>
     <message>
         <source>1 day, %1 minutes remaining</source>
-        <translation type="unfinished">Осталось дней: 1, минут: %1</translation>
+        <translation type="obsolete">Осталось дней: 1, минут: %1</translation>
     </message>
     <message>
         <source>1 day remaining</source>
-        <translation type="unfinished">Остался 1 день</translation>
+        <translation type="obsolete">Остался 1 день</translation>
     </message>
     <message>
         <source>%1 hours, %2 minutes remaining</source>
-        <translation type="unfinished">Осталось часов: %1, минут: %2</translation>
+        <translation type="obsolete">Осталось часов: %1, минут: %2</translation>
     </message>
     <message>
         <source>1 hour, %1 minutes remaining</source>
-        <translation type="unfinished">Осталось часов: 1, минут: %1</translation>
+        <translation type="obsolete">Осталось часов: 1, минут: %1</translation>
     </message>
     <message>
         <source>1 hour remaining</source>
-        <translation type="unfinished">Остался 1 час</translation>
+        <translation type="obsolete">Остался 1 час</translation>
     </message>
     <message>
         <source>%1 minutes remaining</source>
-        <translation type="unfinished">Осталось минут: %1</translation>
+        <translation type="obsolete">Осталось минут: %1</translation>
     </message>
     <message>
         <source>1 minute, %2 seconds remaining</source>
-        <translation type="unfinished">Осталось минут: 1, секунд: %2</translation>
+        <translation type="obsolete">Осталось минут: 1, секунд: %2</translation>
     </message>
     <message>
         <source>1 minute remaining</source>
-        <translation type="unfinished">Осталась 1 минута</translation>
+        <translation type="obsolete">Осталась 1 минута</translation>
     </message>
     <message>
         <source>%1 seconds remaining</source>
-        <translation type="unfinished">Осталось секунд: %1</translation>
+        <translation type="obsolete">Осталось секунд: %1</translation>
     </message>
     <message>
         <source>A few seconds remaining</source>
-        <translation type="unfinished">Осталось несколько секунд</translation>
+        <translation>Осталось несколько секунд</translation>
     </message>
     <message>
         <source>Canceling...</source>
@@ -4560,6 +4625,16 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Cancel the current operation</source>
         <translation>Отменить текущую операцию</translation>
+    </message>
+    <message>
+        <source>%1, %2 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1, %2&quot;</comment>
+        <translation>Времени осталось: %1, %2</translation>
+    </message>
+    <message>
+        <source>%1 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1&quot;</comment>
+        <translation>Времени осталось: %1</translation>
     </message>
 </context>
 <context>
@@ -5034,7 +5109,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message numerus="yes">
         <source> (%n day(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n день назад)</numerusform>
             <numerusform> (%n дня назад)</numerusform>
             <numerusform> (%n дней назад)</numerusform>
@@ -5042,7 +5117,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message numerus="yes">
         <source> (%n hour(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n час назад)</numerusform>
             <numerusform> (%n часа назад)</numerusform>
             <numerusform> (%n часов назад)</numerusform>
@@ -5050,7 +5125,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message numerus="yes">
         <source> (%n minute(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n минута назад)</numerusform>
             <numerusform> (%n минуты назад)</numerusform>
             <numerusform> (%n минут назад)</numerusform>
@@ -5058,7 +5133,7 @@ p, li { white-space: pre-wrap; }
     </message>
     <message numerus="yes">
         <source> (%n second(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (%n секунда назад)</numerusform>
             <numerusform> (%n секунды назад)</numerusform>
             <numerusform> (%n секунд назад)</numerusform>
@@ -5079,6 +5154,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Delete the selected snapshot of the virtual machine</source>
         <translation>Удалить выбранный снимок виртуальной машины</translation>
+    </message>
+    <message>
+        <source> (%1 ago)</source>
+        <translation> (%1 назад)</translation>
     </message>
 </context>
 <context>
@@ -5105,6 +5184,14 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>Snapshot &amp;Description</source>
         <translation>О&amp;писание снимка</translation>
+    </message>
+    <message numerus="yes">
+        <source>Warning: You are taking a snapshot of a running machine which has %n immutable image(s) attached to it. As long as you are working from this snapshot the immutable image(s) will not be reset to avoid loss of data.</source>
+        <translation>
+            <numerusform>Предупреждение: Вы собираетесь взять снимок машины, активной в данный момент и имеющей %n неизменяемый образ, подсоединённый к ней. До тех пор пока Вы работаете в данном снимке, неизменяемый образ не будет сброшен, дабы не допустить потерю данных.</numerusform>
+            <numerusform>Предупреждение: Вы собираетесь взять снимок машины, активной в данный момент и имеющей %n неизменяемых образа, подсоединённых к ней. До тех пор пока Вы работаете в данном снимке, неизменяемые образы не будут сброшены, дабы не допустить потерю данных.</numerusform>
+            <numerusform>Предупреждение: Вы собираетесь взять снимок машины, активной в данный момент и имеющей %n неизменяемых образов, подсоединённых к ней. До тех пор пока Вы работаете в данном снимке, неизменяемые образы не будут сброшены, дабы не допустить потерю данных.</numerusform>
+        </translation>
     </message>
 </context>
 <context>
@@ -5277,7 +5364,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxVMFirstRunWzd</name>
+    <name>UIFirstRunWzd</name>
     <message>
         <source>First Run Wizard</source>
         <translation>Мастер первого запуска</translation>

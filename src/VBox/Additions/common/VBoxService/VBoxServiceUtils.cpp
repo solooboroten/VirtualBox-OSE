@@ -1,10 +1,10 @@
-/* $Id: VBoxServiceUtils.cpp 24866 2009-11-23 12:49:24Z vboxsync $ */
+/* $Id: VBoxServiceUtils.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * VBoxServiceUtils - Some utility functions.
  */
 
 /*
- * Copyright (C) 2009 Sun Microsystems, Inc.
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 
@@ -25,8 +21,9 @@
 *******************************************************************************/
 #ifdef RT_OS_WINDOWS
 # include <Windows.h>
+# include <iprt/param.h>
+# include <iprt/path.h>
 #endif
-
 #include <iprt/assert.h>
 #include <iprt/mem.h>
 #include <iprt/string.h>
@@ -34,8 +31,118 @@
 #include <VBox/VBoxGuestLib.h>
 #include "VBoxServiceInternal.h"
 
-
 #ifdef VBOX_WITH_GUEST_PROPS
+
+/**
+ * Reads a guest property.
+ *
+ * @returns VBox status code, fully bitched.
+ *
+ * @param   u32ClientId         The HGCM client ID for the guest property session.
+ * @param   pszPropName         The property name.
+ * @param   ppszValue           Where to return the value.  This is always set
+ *                              to NULL.  Free it using RTStrFree().
+ * @param   ppszFlags           Where to return the value flags. Free it
+ *                              using RTStrFree().  Optional.
+ * @param   puTimestamp         Where to return the timestamp.  This is only set
+ *                              on success.  Optional.
+ */
+int VBoxServiceReadProp(uint32_t u32ClientId, const char *pszPropName, char **ppszValue, char **ppszFlags, uint64_t *puTimestamp)
+{
+    uint32_t    cbBuf = _1K;
+    void       *pvBuf = NULL;
+    int         rc;
+
+    *ppszValue = NULL;
+
+    for (unsigned cTries = 0; cTries < 10; cTries++)
+    {
+        /*
+         * (Re-)Allocate the buffer and try read the property.
+         */
+        RTMemFree(pvBuf);
+        pvBuf = RTMemAlloc(cbBuf);
+        if (!pvBuf)
+        {
+            VBoxServiceError("Guest Property: Failed to allocate %zu bytes\n", cbBuf);
+            rc = VERR_NO_MEMORY;
+            break;
+        }
+        char    *pszValue;
+        char    *pszFlags;
+        uint64_t uTimestamp;
+        rc = VbglR3GuestPropRead(u32ClientId, pszPropName,
+                                 pvBuf, cbBuf,
+                                 &pszValue, &uTimestamp, &pszFlags, NULL);
+        if (RT_FAILURE(rc))
+        {
+            if (rc == VERR_BUFFER_OVERFLOW)
+            {
+                /* try again with a bigger buffer. */
+                cbBuf *= 2;
+                continue;
+            }
+            if (rc == VERR_NOT_FOUND)
+                VBoxServiceVerbose(2, "Guest Property: %s not found\n", pszPropName);
+            else
+                VBoxServiceError("Guest Property: Failed to query \"%s\": %Rrc\n", pszPropName, rc);
+            break;
+        }
+
+        VBoxServiceVerbose(2, "Guest Property: Read \"%s\" = \"%s\", timestamp %RU64n\n",
+                           pszPropName, pszValue, uTimestamp);
+        *ppszValue = RTStrDup(pszValue);
+        if (!*ppszValue)
+        {
+            VBoxServiceError("Guest Property: RTStrDup failed for \"%s\"\n", pszValue);
+            rc = VERR_NO_MEMORY;
+            break;
+        }
+
+        if (puTimestamp)
+            *puTimestamp = uTimestamp;
+        if (ppszFlags)
+            *ppszFlags = RTStrDup(pszFlags);
+        break; /* done */
+    }
+
+    RTMemFree(pvBuf);
+    return rc;
+}
+
+
+/**
+ * Reads a guest property as a 32-bit value.
+ *
+ * @returns VBox status code, fully bitched.
+ *
+ * @param   u32ClientId         The HGCM client ID for the guest property session.
+ * @param   pszPropName         The property name.
+ * @param   pu32                Where to store the 32-bit value.
+ *
+ */
+int VBoxServiceReadPropUInt32(uint32_t u32ClientId, const char *pszPropName, uint32_t *pu32, uint32_t u32Min, uint32_t u32Max)
+{
+    char *pszValue;
+    int rc = VBoxServiceReadProp(u32ClientId, pszPropName, &pszValue,
+        NULL /* ppszFlags */, NULL /* puTimestamp */);
+    if (RT_SUCCESS(rc))
+    {
+        AssertPtr(pu32);
+        char *pszNext;
+        rc = RTStrToUInt32Ex(pszValue, &pszNext, 0, pu32);
+        if (   RT_SUCCESS(rc)
+            && (*pu32 < u32Min || *pu32 > u32Max))
+        {
+            rc = VBoxServiceError("The guest property value %s = %RU32 is out of range [%RU32..%RU32].\n",
+                                  pszPropName, *pu32, u32Min, u32Max);
+        }
+        RTStrFree(pszValue);
+    }
+    return rc;
+}
+
+
 /**
  * Wrapper around VbglR3GuestPropWriteValue that does value formatting and
  * logging.
@@ -45,178 +152,180 @@
  * @param   u32ClientId     The HGCM client ID for the guest property session.
  * @param   pszName         The property name.
  * @param   pszValueFormat  The property format string.  If this is NULL then
- *                          the property will be removed.
+ *                          the property will be deleted (if possible).
  * @param   ...             Format arguments.
  */
 int VBoxServiceWritePropF(uint32_t u32ClientId, const char *pszName, const char *pszValueFormat, ...)
 {
+    AssertPtr(pszName);
     int rc;
     if (pszValueFormat != NULL)
     {
-        /** @todo Log the value as well? just copy the guts of
-         *        VbglR3GuestPropWriteValueV. */
-        VBoxServiceVerbose(3, "Writing guest property \"%s\"\n", pszName);
         va_list va;
+        va_start(va, pszValueFormat);
+        VBoxServiceVerbose(3, "Writing guest property \"%s\" = \"%N\"\n", pszName, pszValueFormat, &va);
+        va_end(va);
+
         va_start(va, pszValueFormat);
         rc = VbglR3GuestPropWriteValueV(u32ClientId, pszName, pszValueFormat, va);
         va_end(va);
+
         if (RT_FAILURE(rc))
              VBoxServiceError("Error writing guest property \"%s\" (rc=%Rrc)\n", pszName, rc);
     }
     else
     {
+        VBoxServiceVerbose(3, "Deleting guest property \"%s\"\n", pszName);
         rc = VbglR3GuestPropWriteValue(u32ClientId, pszName, NULL);
         if (RT_FAILURE(rc))
-            VBoxServiceError("Error removing guest property \"%s\" (rc=%Rrc)\n", pszName, rc);
+            VBoxServiceError("Error deleting guest property \"%s\" (rc=%Rrc)\n", pszName, rc);
     }
     return rc;
 }
+
 #endif /* VBOX_WITH_GUEST_PROPS */
-
-
 #ifdef RT_OS_WINDOWS
-/** @todo return an iprt status code instead of BOOL */
-BOOL VBoxServiceGetFileString(const char* pszFileName,
-                              char* pszBlock,
-                              char* pszString,
-                              PUINT puiSize)
+
+/**
+ * Helper for VBoxServiceGetFileVersion and attemps to read and parse
+ * FileVersion.
+ *
+ * @returns Success indicator.
+ */
+static bool VBoxServiceGetFileVersionOwn(LPSTR pVerData,
+                                         PDWORD pdwMajor,
+                                         PDWORD pdwMinor,
+                                         PDWORD pdwBuildNumber,
+                                         PDWORD pdwRevisionNumber)
 {
-    DWORD dwHandle, dwLen = 0;
-    UINT uiDataLen = 0;
-    char* lpData = NULL;
-    UINT uiValueLen = 0;
-    LPTSTR lpValue = NULL;
-    BOOL bRet = FALSE;
+    UINT    cchStrValue = 0;
+    LPTSTR  pStrValue   = NULL;
+    if (!VerQueryValueA(pVerData, "\\StringFileInfo\\040904b0\\FileVersion", (LPVOID *)&pStrValue, &cchStrValue))
+        return false;
 
-    Assert(pszFileName);
-    Assert(pszBlock);
-    Assert(pszString);
-    Assert(puiSize > 0);
+    /** @todo r=bird: get rid of this. Avoid sscanf like the plague! */
+    if (sscanf(pStrValue, "%ld.%ld.%ld.%ld", pdwMajor, pdwMinor, pdwBuildNumber, pdwRevisionNumber) != 4)
+        return false;
 
-    /* The VS_FIXEDFILEINFO structure contains version information about a file.
-       This information is language and code page independent. */
-    VS_FIXEDFILEINFO *pFileInfo = NULL;
-    dwLen = GetFileVersionInfoSize(pszFileName, &dwHandle);
-
-    if (!dwLen)
-    {
-        /* Don't print this to release log -- this confuses people if a file
-         * isn't present because it's optional / was not installed intentionally. */
-        VBoxServiceVerbose(3, "No file information found! File = %s, Error: %Rrc\n",
-            pszFileName, RTErrConvertFromWin32(GetLastError()));
-        return FALSE;
-    }
-
-    lpData = (LPTSTR) RTMemTmpAlloc(dwLen);
-    if (!lpData)
-    {
-        VBoxServiceError("Could not allocate temp buffer for file string lookup!\n");
-        return FALSE;
-    }
-
-    if (GetFileVersionInfo(pszFileName, dwHandle, dwLen, lpData))
-    {
-        if((bRet = VerQueryValue(lpData, pszBlock, (LPVOID*)&lpValue, (PUINT)&uiValueLen)))
-        {
-            UINT uiSize = uiValueLen * sizeof(char);
-
-            if(uiSize > *puiSize)
-                uiSize = *puiSize;
-
-            ZeroMemory(pszString, *puiSize);
-            memcpy(pszString, lpValue, uiSize);
-        }
-        else VBoxServiceVerbose(3, "No file string value for \"%s\" in file \"%s\" available!\n", pszBlock, pszFileName);
-    }
-    else VBoxServiceVerbose(3, "No file version table for file \"%s\" available!\n", pszFileName);
-
-    RTMemFree(lpData);
-    return bRet;
+    return true;
 }
 
 
-/** @todo return an iprt status code instead of BOOL */
-BOOL VBoxServiceGetFileVersion(const char* pszFileName,
-                               DWORD* pdwMajor,
-                               DWORD* pdwMinor,
-                               DWORD* pdwBuildNumber,
-                               DWORD* pdwRevisionNumber)
+/**
+ * Worker for VBoxServiceGetFileVersionString.
+ *
+ * @returns VBox status code.
+ * @param   pszFilename         ASCII & ANSI & UTF-8 compliant name.
+ */
+static int VBoxServiceGetFileVersion(const char *pszFilename,
+                                     PDWORD pdwMajor,
+                                     PDWORD pdwMinor,
+                                     PDWORD pdwBuildNumber,
+                                     PDWORD pdwRevisionNumber)
 {
-    DWORD dwHandle, dwLen = 0;
-    UINT BufLen = 0;
-    LPTSTR lpData = NULL;
-    BOOL bRet = FALSE;
+    int rc;
 
-    Assert(pszFileName);
-    Assert(pdwMajor);
-    Assert(pdwMinor);
-    Assert(pdwBuildNumber);
-    Assert(pdwRevisionNumber);
+    *pdwMajor = *pdwMinor = *pdwBuildNumber = *pdwRevisionNumber = 0;
 
-    /* The VS_FIXEDFILEINFO structure contains version information about a file.
-       This information is language and code page independent. */
-    VS_FIXEDFILEINFO *pFileInfo = NULL;
-    dwLen = GetFileVersionInfoSize(pszFileName, &dwHandle);
-
-    /* Try own fields defined in block "\\StringFileInfo\\040904b0\\FileVersion". */
-    char szValue[_MAX_PATH] = {0};
-    char *pszValue  = szValue;
-    UINT uiSize = _MAX_PATH;
-    int r = 0;
-
-    bRet = VBoxServiceGetFileString(pszFileName, "\\StringFileInfo\\040904b0\\FileVersion", szValue, &uiSize);
-    if (bRet)
+    /*
+     * Get the file version info.
+     */
+    DWORD dwHandleIgnored;
+    DWORD cbVerData = GetFileVersionInfoSizeA(pszFilename, &dwHandleIgnored);
+    if (cbVerData)
     {
-        sscanf(pszValue, "%ld.%ld.%ld.%ld", pdwMajor, pdwMinor, pdwBuildNumber, pdwRevisionNumber);
-    }
-    else if (dwLen > 0)
-    {
-        /* Try regular fields - this maybe is not file provided by VBox! */
-        lpData = (LPTSTR) RTMemTmpAlloc(dwLen);
-        if (!lpData)
+        LPTSTR pVerData = (LPTSTR)RTMemTmpAllocZ(cbVerData);
+        if (pVerData)
         {
-            VBoxServiceError("Could not allocate temp buffer for file version string!\n");
-            return FALSE;
-        }
-
-        if (GetFileVersionInfo(pszFileName, dwHandle, dwLen, lpData))
-        {
-            if((bRet = VerQueryValue(lpData, "\\", (LPVOID*)&pFileInfo, (PUINT)&BufLen)))
+            if (GetFileVersionInfoA(pszFilename, dwHandleIgnored, cbVerData, pVerData))
             {
-                *pdwMajor = HIWORD(pFileInfo->dwFileVersionMS);
-                *pdwMinor = LOWORD(pFileInfo->dwFileVersionMS);
-                *pdwBuildNumber = HIWORD(pFileInfo->dwFileVersionLS);
-                *pdwRevisionNumber = LOWORD(pFileInfo->dwFileVersionLS);
-                bRet = TRUE;
+                /*
+                 * Try query and parse the FileVersion string our selves first
+                 * since this will give us the correct revision number when
+                 * it goes beyond the range of an uint16_t / WORD.
+                 */
+                if (VBoxServiceGetFileVersionOwn(pVerData, pdwMajor, pdwMinor, pdwBuildNumber, pdwRevisionNumber))
+                    rc = VINF_SUCCESS;
+                else
+                {
+                    /* Fall back on VS_FIXEDFILEINFO */
+                    UINT                 cbFileInfoIgnored = 0;
+                    VS_FIXEDFILEINFO    *pFileInfo = NULL;
+                    if (VerQueryValue(pVerData, "\\", (LPVOID *)&pFileInfo, &cbFileInfoIgnored))
+                    {
+                        *pdwMajor          = HIWORD(pFileInfo->dwFileVersionMS);
+                        *pdwMinor          = LOWORD(pFileInfo->dwFileVersionMS);
+                        *pdwBuildNumber    = HIWORD(pFileInfo->dwFileVersionLS);
+                        *pdwRevisionNumber = LOWORD(pFileInfo->dwFileVersionLS);
+                        rc = VINF_SUCCESS;
+                    }
+                    else
+                    {
+                        rc = RTErrConvertFromWin32(GetLastError());
+                        VBoxServiceVerbose(3, "No file version value for file \"%s\" available! (%d / rc=%Rrc)\n",
+                                           pszFilename,  GetLastError(), rc);
+                    }
+                }
             }
-            else VBoxServiceVerbose(3, "No file version value for file \"%s\" available!\n", pszFileName);
+            else
+            {
+                rc = RTErrConvertFromWin32(GetLastError());
+                VBoxServiceVerbose(0, "GetFileVersionInfo(%s) -> %u / %Rrc\n", pszFilename, GetLastError(), rc);
+            }
+
+            RTMemTmpFree(pVerData);
         }
-        else VBoxServiceVerbose(3, "No file version struct for file \"%s\" available!\n", pszFileName);
-
-        RTMemFree(lpData);
+        else
+        {
+            VBoxServiceVerbose(0, "Failed to allocate %u byte for file version info for '%s'\n", cbVerData, pszFilename);
+            rc = VERR_NO_TMP_MEMORY;
+        }
     }
-    return bRet;
-}
-
-
-BOOL VBoxServiceGetFileVersionString(const char* pszPath, const char* pszFileName, char* pszVersion, UINT uiSize)
-{
-    BOOL bRet = FALSE;
-    char szFullPath[_MAX_PATH] = {0};
-    char szValue[_MAX_PATH] = {0};
-    int r = 0;
-
-    RTStrPrintf(szFullPath, 4096, "%s\\%s", pszPath, pszFileName);
-
-    DWORD dwMajor, dwMinor, dwBuild, dwRev;
-
-    bRet = VBoxServiceGetFileVersion(szFullPath, &dwMajor, &dwMinor, &dwBuild, &dwRev);
-    if (bRet)
-        RTStrPrintf(pszVersion, uiSize, "%ld.%ld.%ldr%ld", dwMajor, dwMinor, dwBuild, dwRev);
     else
-        RTStrPrintf(pszVersion, uiSize, "-");
-
-    return bRet;
+    {
+        rc = RTErrConvertFromWin32(GetLastError());
+        VBoxServiceVerbose(3, "GetFileVersionInfoSize(%s) -> %u / %Rrc\n", pszFilename, GetLastError(), rc);
+    }
+    return rc;
 }
-#endif /* !RT_OS_WINDOWS */
+
+
+/**
+ * Gets a re-formatted version string from the VS_FIXEDFILEINFO table.
+ *
+ * @returns VBox status code.  The output buffer is always valid and the status
+ *          code can safely be ignored.
+ *
+ * @param   pszPath         The base path.
+ * @param   pszFilaname     The filename.
+ * @param   pszVersion      Where to return the version string.
+ * @param   cbVersion       The size of the version string buffer. This MUST be
+ *                          at least 2 bytes!
+ */
+int VBoxServiceGetFileVersionString(const char *pszPath, const char *pszFilename,
+                                    char *pszVersion, size_t cbVersion)
+{
+    /*
+     * We will ALWAYS return with a valid output buffer.
+     */
+    AssertReturn(cbVersion >= 2, VERR_BUFFER_OVERFLOW);
+    pszVersion[0] = '-';
+    pszVersion[1] = '\0';
+
+    /*
+     * Create the path and query the bits.
+     */
+    char szFullPath[RTPATH_MAX];
+    int rc = RTPathJoin(szFullPath, sizeof(szFullPath), pszPath, pszFilename);
+    if (RT_SUCCESS(rc))
+    {
+        DWORD dwMajor, dwMinor, dwBuild, dwRev;
+        rc = VBoxServiceGetFileVersion(szFullPath, &dwMajor, &dwMinor, &dwBuild, &dwRev);
+        if (RT_SUCCESS(rc))
+            RTStrPrintf(pszVersion, cbVersion, "%u.%u.%ur%u", dwMajor, dwMinor, dwBuild, dwRev);
+    }
+    return rc;
+}
+
+#endif /* RT_OS_WINDOWS */
 

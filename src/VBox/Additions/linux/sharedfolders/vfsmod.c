@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -19,10 +19,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 /**
@@ -46,8 +42,8 @@
 
 // #define wchar_t linux_wchar_t
 
-MODULE_DESCRIPTION ("Host file system access VFS for VirtualBox");
-MODULE_AUTHOR ("Sun Microsystems, Inc.");
+MODULE_DESCRIPTION (VBOX_PRODUCT " VFS Module for Host File System Access");
+MODULE_AUTHOR (VBOX_VENDOR);
 MODULE_LICENSE ("GPL");
 #ifdef MODULE_VERSION
 MODULE_VERSION(VBOX_VERSION_STRING " (interface " RT_XSTR(VMMDEV_VERSION) ")");
@@ -239,6 +235,7 @@ sf_read_super_aux (struct super_block *sb, void *data, int flags)
                 goto fail1;
         }
 
+        sf_i->handle = SHFL_HANDLE_NIL;
         sf_i->path = kmalloc (sizeof (SHFLSTRING) + 1, GFP_KERNEL);
         if (!sf_i->path) {
                 err = -ENOMEM;
@@ -286,6 +283,12 @@ sf_read_super_aux (struct super_block *sb, void *data, int flags)
                 goto fail3;
         }
 
+        if (sf_init_backing_dev(sf_g, info->name)) {
+                err = -EINVAL;
+                LogFunc(("could not init bdi\n"));
+                goto fail4;
+        }
+
         sf_init_inode (sf_g, iroot, &fsinfo);
         SET_INODE_INFO (iroot, sf_i);
 
@@ -297,13 +300,15 @@ sf_read_super_aux (struct super_block *sb, void *data, int flags)
         if (!droot) {
                 err = -ENOMEM;  /* XXX */
                 LogFunc(("d_alloc_root failed\n"));
-                goto fail4;
+                goto fail5;
         }
 
         sb->s_root = droot;
         SET_GLOB_INFO (sb, sf_g);
         return 0;
 
+ fail5:
+        sf_done_backing_dev(sf_g);
  fail4:
         iput (iroot);
  fail3:
@@ -371,6 +376,7 @@ sf_put_super (struct super_block *sb)
 
         sf_g = GET_GLOB_INFO (sb);
         BUG_ON (!sf_g);
+        sf_done_backing_dev(sf_g);
         sf_glob_free (sf_g);
 }
 

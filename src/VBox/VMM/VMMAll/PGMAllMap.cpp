@@ -1,10 +1,10 @@
-/* $Id: PGMAllMap.cpp 22890 2009-09-09 23:11:31Z vboxsync $ */
+/* $Id: PGMAllMap.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor - All context code.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 /*******************************************************************************
@@ -24,11 +20,12 @@
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_PGM
 #include <VBox/pgm.h>
-#include "PGMInternal.h"
+#include "../PGMInternal.h"
 #include <VBox/vm.h>
-#include <iprt/assert.h>
-#include <iprt/asm.h>
+#include "../PGMInline.h"
 #include <VBox/err.h>
+#include <iprt/asm.h>
+#include <iprt/assert.h>
 
 
 /**
@@ -388,6 +385,9 @@ void pgmMapClearShadowPDEs(PVM pVM, PPGMPOOLPAGE pShwPageCR3, PPGMMAPPING pMap, 
 {
     Log(("pgmMapClearShadowPDEs: old pde %x (cPTs=%x) (mappings enabled %d) fDeactivateCR3=%RTbool\n", iOldPDE, pMap->cPTs, pgmMapAreMappingsEnabled(&pVM->pgm.s), fDeactivateCR3));
 
+    /*
+     * Skip this if disabled or if it doesn't apply.
+     */
     if (    !pgmMapAreMappingsEnabled(&pVM->pgm.s)
         ||  pVM->cCpus > 1)
         return;
@@ -601,9 +601,8 @@ VMMDECL(void) PGMMapCheck(PVM pVM)
     if (!pgmMapAreMappingsEnabled(&pVM->pgm.s))
         return;
 
-    Assert(pVM->cCpus == 1);
-
     /* This only applies to raw mode where we only support 1 VCPU. */
+    Assert(pVM->cCpus == 1);
     PVMCPU pVCpu = VMMGetCpu0(pVM);
     Assert(pVCpu->pgm.s.CTX_SUFF(pShwPageCR3));
 
@@ -632,14 +631,15 @@ VMMDECL(void) PGMMapCheck(PVM pVM)
 int pgmMapActivateCR3(PVM pVM, PPGMPOOLPAGE pShwPageCR3)
 {
     /*
-     * Can skip this if mappings are disabled.
+     * Skip this if disabled or if it doesn't apply.
      */
     if (    !pgmMapAreMappingsEnabled(&pVM->pgm.s)
         ||  pVM->cCpus > 1)
         return VINF_SUCCESS;
 
-    /* Note. A log flush (in RC) can cause problems when called from MapCR3 (inconsistent state will trigger assertions). */
-    Log4(("pgmMapActivateCR3: fixed mappings=%d idxShwPageCR3=%#x\n", pVM->pgm.s.fMappingsFixed, pShwPageCR3 ? pShwPageCR3->idx : NIL_PGMPOOL_IDX));
+    /* Note! This might not be logged successfully in RC because we usually
+             cannot flush the log at this point. */
+    Log4(("pgmMapActivateCR3: fixed mappings=%RTbool idxShwPageCR3=%#x\n", pVM->pgm.s.fMappingsFixed, pShwPageCR3 ? pShwPageCR3->idx : NIL_PGMPOOL_IDX));
 
 #ifdef VBOX_STRICT
     PVMCPU pVCpu = VMMGetCpu0(pVM);
@@ -668,7 +668,7 @@ int pgmMapActivateCR3(PVM pVM, PPGMPOOLPAGE pShwPageCR3)
 int pgmMapDeactivateCR3(PVM pVM, PPGMPOOLPAGE pShwPageCR3)
 {
     /*
-     * Can skip this if mappings are disabled.
+     * Skip this if disabled or if it doesn't apply.
      */
     if (    !pgmMapAreMappingsEnabled(&pVM->pgm.s)
         ||  pVM->cCpus > 1)
@@ -701,7 +701,7 @@ VMMDECL(bool) PGMMapHasConflicts(PVM pVM)
     /*
      * Can skip this if mappings are safely fixed.
      */
-    if (pVM->pgm.s.fMappingsFixed)
+    if (!pgmMapAreMappingsFloating(&pVM->pgm.s))
         return false;
 
     Assert(pVM->cCpus == 1);
@@ -787,25 +787,21 @@ VMMDECL(bool) PGMMapHasConflicts(PVM pVM)
 
 
 /**
- * Checks and resolves (ring 3 only) guest conflicts with VMM GC mappings.
+ * Checks and resolves (ring 3 only) guest conflicts with the guest mappings.
  *
  * @returns VBox status.
  * @param   pVM                 The virtual machine.
  */
-VMMDECL(int) PGMMapResolveConflicts(PVM pVM)
+int pgmMapResolveConflicts(PVM pVM)
 {
-    /*
-     * Can skip this if mappings are safely fixed.
-     */
-    if (pVM->pgm.s.fMappingsFixed)
-        return VINF_SUCCESS;
-
-    Assert(pVM->cCpus == 1);
+    /* The caller is expected to check these two conditions. */
+    Assert(!pVM->pgm.s.fMappingsFixed);
+    Assert(!pVM->pgm.s.fMappingsDisabled);
 
     /* This only applies to raw mode where we only support 1 VCPU. */
-    PVMCPU pVCpu = &pVM->aCpus[0];
-
-    PGMMODE const enmGuestMode = PGMGetGuestMode(pVCpu);
+    Assert(pVM->cCpus == 1);
+    PVMCPU          pVCpu        = &pVM->aCpus[0];
+    PGMMODE const   enmGuestMode = PGMGetGuestMode(pVCpu);
     Assert(enmGuestMode <= PGMMODE_PAE_NX);
 
     if (enmGuestMode == PGMMODE_32_BIT)

@@ -126,10 +126,6 @@ ULONG WINAPI IWineD3DBaseSurfaceImpl_AddRef(IWineD3DSurface *iface) {
 /* ****************************************************
    IWineD3DSurface IWineD3DResource parts follow
    **************************************************** */
-HRESULT WINAPI IWineD3DBaseSurfaceImpl_GetDevice(IWineD3DSurface *iface, IWineD3DDevice** ppDevice) {
-    return resource_get_device((IWineD3DResource *)iface, ppDevice);
-}
-
 HRESULT WINAPI IWineD3DBaseSurfaceImpl_SetPrivateData(IWineD3DSurface *iface, REFGUID refguid, CONST void* pData, DWORD SizeOfData, DWORD Flags) {
     return resource_set_private_data((IWineD3DResource *)iface, refguid, pData, SizeOfData, Flags);
 }
@@ -175,11 +171,8 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_GetContainer(IWineD3DSurface* iface, REFI
     }
 
     /* Standalone surfaces return the device as container. */
-    if (This->container) {
-        container = This->container;
-    } else {
-        container = (IWineD3DBase *)This->resource.wineD3DDevice;
-    }
+    if (This->container) container = This->container;
+    else container = (IWineD3DBase *)This->resource.device;
 
     TRACE("Relaying to QueryInterface\n");
     return IUnknown_QueryInterface(container, riid, ppContainer);
@@ -203,9 +196,9 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_GetDesc(IWineD3DSurface *iface, WINED3DSU
     return WINED3D_OK;
 }
 
-HRESULT WINAPI IWineD3DBaseSurfaceImpl_GetBltStatus(IWineD3DSurface *iface, DWORD Flags) {
-    IWineD3DSurfaceImpl *This = (IWineD3DSurfaceImpl *)iface;
-    TRACE("(%p)->(%x)\n", This, Flags);
+HRESULT WINAPI IWineD3DBaseSurfaceImpl_GetBltStatus(IWineD3DSurface *iface, DWORD Flags)
+{
+    TRACE("iface %p, flags %#x.\n", iface, Flags);
 
     switch (Flags)
     {
@@ -342,7 +335,7 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_GetPalette(IWineD3DSurface *iface, IWineD
 
 DWORD WINAPI IWineD3DBaseSurfaceImpl_GetPitch(IWineD3DSurface *iface) {
     IWineD3DSurfaceImpl *This = (IWineD3DSurfaceImpl *) iface;
-    const struct GlPixelFormatDesc *format_desc = This->resource.format_desc;
+    const struct wined3d_format_desc *format_desc = This->resource.format_desc;
     DWORD ret;
     TRACE("(%p)\n", This);
 
@@ -355,7 +348,7 @@ DWORD WINAPI IWineD3DBaseSurfaceImpl_GetPitch(IWineD3DSurface *iface) {
     }
     else
     {
-        unsigned char alignment = This->resource.wineD3DDevice->surface_alignment;
+        unsigned char alignment = This->resource.device->surface_alignment;
         ret = This->resource.format_desc->byte_count * This->currentDesc.Width;  /* Bytes / row */
         ret = (ret + alignment - 1) & ~(alignment - 1);
     }
@@ -413,9 +406,8 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_GetOverlayPosition(IWineD3DSurface *iface
 
 HRESULT WINAPI IWineD3DBaseSurfaceImpl_UpdateOverlayZOrder(IWineD3DSurface *iface, DWORD Flags, IWineD3DSurface *Ref) {
     IWineD3DSurfaceImpl *This = (IWineD3DSurfaceImpl *) iface;
-    IWineD3DSurfaceImpl *RefImpl = (IWineD3DSurfaceImpl *) Ref;
 
-    FIXME("(%p)->(%08x,%p) Stub!\n", This, Flags, RefImpl);
+    FIXME("iface %p, flags %#x, ref %p stub!\n", iface, Flags, Ref);
 
     if(!(This->resource.usage & WINED3DUSAGE_OVERLAY))
     {
@@ -519,8 +511,8 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_SetContainer(IWineD3DSurface *iface, IWin
 
 HRESULT WINAPI IWineD3DBaseSurfaceImpl_SetFormat(IWineD3DSurface *iface, WINED3DFORMAT format) {
     IWineD3DSurfaceImpl *This = (IWineD3DSurfaceImpl *)iface;
-    const struct GlPixelFormatDesc *format_desc = getFormatDescEntry(format,
-            &This->resource.wineD3DDevice->adapter->gl_info);
+    const struct wined3d_format_desc *format_desc = getFormatDescEntry(format,
+            &This->resource.device->adapter->gl_info);
 
     if (This->resource.format_desc->format != WINED3DFMT_UNKNOWN)
     {
@@ -530,7 +522,7 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_SetFormat(IWineD3DSurface *iface, WINED3D
 
     TRACE("(%p) : Setting texture format to (%d,%s)\n", This, format, debug_d3dformat(format));
 
-    This->resource.size = surface_calculate_size(format_desc, This->resource.wineD3DDevice->surface_alignment,
+    This->resource.size = surface_calculate_size(format_desc, This->resource.device->surface_alignment,
             This->pow2Width, This->pow2Height);
 
     This->Flags |= (WINED3DFMT_D16_LOCKABLE == format) ? SFLAG_LOCKABLE : 0;
@@ -544,7 +536,7 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_SetFormat(IWineD3DSurface *iface, WINED3D
 
 HRESULT IWineD3DBaseSurfaceImpl_CreateDIBSection(IWineD3DSurface *iface) {
     IWineD3DSurfaceImpl *This = (IWineD3DSurfaceImpl *)iface;
-    const struct GlPixelFormatDesc *format_desc = This->resource.format_desc;
+    const struct wined3d_format_desc *format_desc = This->resource.format_desc;
     int extraline = 0;
     SYSTEM_INFO sysInfo;
     BITMAPINFO* b_info;
@@ -759,6 +751,55 @@ static void convert_a8r8g8b8_x8r8g8b8(const BYTE *src, BYTE *dst,
     }
 }
 
+static inline BYTE cliptobyte(int x)
+{
+    return (BYTE) ((x < 0) ? 0 : ((x > 255) ? 255 : x));
+}
+
+static void convert_yuy2_x8r8g8b8(const BYTE *src, BYTE *dst,
+        DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h)
+{
+    unsigned int x, y;
+    int c2, d, e, r2 = 0, g2 = 0, b2 = 0;
+
+    TRACE("Converting %ux%u pixels, pitches %u %u\n", w, h, pitch_in, pitch_out);
+
+    for (y = 0; y < h; ++y)
+    {
+        const BYTE *src_line = src + y * pitch_in;
+        DWORD *dst_line = (DWORD *)(dst + y * pitch_out);
+        for (x = 0; x < w; ++x)
+        {
+            /* YUV to RGB conversion formulas from http://en.wikipedia.org/wiki/YUV:
+             *     C = Y - 16; D = U - 128; E = V - 128;
+             *     R = cliptobyte((298 * C + 409 * E + 128) >> 8);
+             *     G = cliptobyte((298 * C - 100 * D - 208 * E + 128) >> 8);
+             *     B = cliptobyte((298 * C + 516 * D + 128) >> 8);
+             * Two adjacent YUY2 pixels are stored as four bytes: Y0 U Y1 V .
+             * U and V are shared between the pixels.
+             */
+            if (!(x & 1))         /* for every even pixel, read new U and V */
+            {
+                d = (int) src_line[1] - 128;
+                e = (int) src_line[3] - 128;
+                r2 = 409 * e + 128;
+                g2 = - 100 * d - 208 * e + 128;
+                b2 = 516 * d + 128;
+            }
+            c2 = 298 * ((int) src_line[0] - 16);
+            dst_line[x] = 0xff000000
+                | cliptobyte((c2 + r2) >> 8) << 16    /* red   */
+                | cliptobyte((c2 + g2) >> 8) << 8     /* green */
+                | cliptobyte((c2 + b2) >> 8);         /* blue  */
+                /* Scale RGB values to 0..255 range,
+                 * then clip them if still not in range (may be negative),
+                 * then shift them within DWORD if necessary.
+                 */
+            src_line += 2;
+        }
+    }
+}
+
 struct d3dfmt_convertor_desc {
     WINED3DFORMAT from, to;
     void (*convert)(const BYTE *src, BYTE *dst, DWORD pitch_in, DWORD pitch_out, unsigned int w, unsigned int h);
@@ -769,6 +810,7 @@ static const struct d3dfmt_convertor_desc convertors[] =
     {WINED3DFMT_R32_FLOAT,      WINED3DFMT_R16_FLOAT,       convert_r32_float_r16_float},
     {WINED3DFMT_B5G6R5_UNORM,   WINED3DFMT_B8G8R8X8_UNORM,  convert_r5g6b5_x8r8g8b8},
     {WINED3DFMT_B8G8R8A8_UNORM, WINED3DFMT_B8G8R8X8_UNORM,  convert_a8r8g8b8_x8r8g8b8},
+    {WINED3DFMT_YUY2,           WINED3DFMT_B8G8R8X8_UNORM,  convert_yuy2_x8r8g8b8},
 };
 
 static inline const struct d3dfmt_convertor_desc *find_convertor(WINED3DFORMAT from, WINED3DFORMAT to)
@@ -806,7 +848,7 @@ static IWineD3DSurfaceImpl *surface_convert_format(IWineD3DSurfaceImpl *source, 
         return NULL;
     }
 
-    IWineD3DDevice_CreateSurface((IWineD3DDevice *)source->resource.wineD3DDevice, source->currentDesc.Width,
+    IWineD3DDevice_CreateSurface((IWineD3DDevice *)source->resource.device, source->currentDesc.Width,
             source->currentDesc.Height, to_fmt, TRUE /* lockable */, TRUE /* discard  */, 0 /* level */, &ret,
             0 /* usage */, WINED3DPOOL_SCRATCH, WINED3DMULTISAMPLE_NONE /* TODO: Multisampled conversion */,
             0 /* MultiSampleQuality */, IWineD3DSurface_GetImplType((IWineD3DSurface *) source),
@@ -926,7 +968,7 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_Blt(IWineD3DSurface *iface, const RECT *D
     HRESULT     ret = WINED3D_OK;
     WINED3DLOCKED_RECT  dlock, slock;
     int bpp, srcheight, srcwidth, dstheight, dstwidth, width;
-    const struct GlPixelFormatDesc *sEntry, *dEntry;
+    const struct wined3d_format_desc *sEntry, *dEntry;
     int x, y;
     const BYTE *sbuf;
     BYTE *dbuf;
@@ -1569,7 +1611,7 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_BltFast(IWineD3DSurface *iface, DWORD dst
     RECT                lock_src, lock_dst, lock_union;
     const BYTE          *sbuf;
     BYTE                *dbuf;
-    const struct GlPixelFormatDesc *sEntry, *dEntry;
+    const struct wined3d_format_desc *sEntry, *dEntry;
 
     if (TRACE_ON(d3d_surface))
     {
@@ -1711,6 +1753,14 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_BltFast(IWineD3DSurface *iface, DWORD dst
     if (trans & (WINEDDBLTFAST_SRCCOLORKEY | WINEDDBLTFAST_DESTCOLORKEY))
     {
         DWORD keylow, keyhigh;
+        DWORD mask = Src->resource.format_desc->red_mask |
+                     Src->resource.format_desc->green_mask |
+                     Src->resource.format_desc->blue_mask;
+
+        /* For some 8-bit formats like L8 and P8 color masks don't make sense */
+        if(!mask && bpp==1)
+            mask = 0xff;
+
         TRACE("Color keyed copy\n");
         if (trans & WINEDDBLTFAST_SRCCOLORKEY)
         {
@@ -1732,7 +1782,7 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_BltFast(IWineD3DSurface *iface, DWORD dst
         for (y = 0; y < h; y++) { \
         for (x = 0; x < w; x++) { \
         tmp = s[x]; \
-        if (tmp < keylow || tmp > keyhigh) d[x] = tmp; \
+        if ((tmp & mask) < keylow || (tmp & mask) > keyhigh) d[x] = tmp; \
     } \
         s = (const type *)((const BYTE *)s + slock.Pitch); \
         d = (type *)((BYTE *)d + dlock.Pitch); \
@@ -1842,7 +1892,7 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_LockRect(IWineD3DSurface *iface, WINED3DL
     }
     else
     {
-        const struct GlPixelFormatDesc *format_desc = This->resource.format_desc;
+        const struct wined3d_format_desc *format_desc = This->resource.format_desc;
 
         TRACE("Lock Rect (%p) = l %d, t %d, r %d, b %d\n",
               pRect, pRect->left, pRect->top, pRect->right, pRect->bottom);
@@ -1875,7 +1925,6 @@ HRESULT WINAPI IWineD3DBaseSurfaceImpl_LockRect(IWineD3DSurface *iface, WINED3DL
 
 void WINAPI IWineD3DBaseSurfaceImpl_BindTexture(IWineD3DSurface *iface, BOOL srgb) {
     ERR("Should not be called on base texture\n");
-    return;
 }
 
 /* TODO: think about moving this down to resource? */

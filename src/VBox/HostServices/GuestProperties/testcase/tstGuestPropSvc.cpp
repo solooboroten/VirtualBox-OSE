@@ -1,11 +1,11 @@
-/* $Id: tstGuestPropSvc.cpp 16337 2009-01-28 21:03:49Z vboxsync $ */
+/* $Id: tstGuestPropSvc.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  *
  * Testcase for the guest property service.
  */
 
 /*
- * Copyright (C) 2008 Sun Microsystems, Inc.
+ * Copyright (C) 2008 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -14,10 +14,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 /*******************************************************************************
@@ -397,6 +393,57 @@ int testEnumPropsHost(VBOXHGCMSVCFNTABLE *ptable)
     return rc;
 }
 
+/**
+ * Set a property by calling the service
+ * @returns the status returned by the call to the service
+ *
+ * @param   pTable      the service instance handle
+ * @param   pcszName    the name of the property to set
+ * @param   pcszValue   the value to set the property to
+ * @param   pcszFlags   the flag string to set if one of the SET_PROP[_HOST]
+ *                      commands is used
+ * @param   isHost      whether the SET_PROP[_VALUE]_HOST commands should be
+ *                      used, rather than the guest ones
+ * @param   useSetProp  whether SET_PROP[_HOST] should be used rather than
+ *                      SET_PROP_VALUE[_HOST]
+ */
+int doSetProperty(VBOXHGCMSVCFNTABLE *pTable, const char *pcszName,
+                  const char *pcszValue, const char *pcszFlags, bool isHost,
+                  bool useSetProp)
+{
+    VBOXHGCMCALLHANDLE_TYPEDEF callHandle = { VINF_SUCCESS };
+    int command = SET_PROP_VALUE;
+    if (isHost)
+    {
+        if (useSetProp)
+            command = SET_PROP_HOST;
+        else
+            command = SET_PROP_VALUE_HOST;
+    }
+    else if (useSetProp)
+        command = SET_PROP;
+    VBOXHGCMSVCPARM paParms[3];
+    /* Work around silly constant issues - we ought to allow passing
+     * constant strings in the hgcm parameters. */
+    char szName[MAX_NAME_LEN];
+    char szValue[MAX_VALUE_LEN];
+    char szFlags[MAX_FLAGS_LEN];
+    RTStrPrintf(szName, sizeof(szName), "%s", pcszName);
+    RTStrPrintf(szValue, sizeof(szValue), "%s", pcszValue);
+    RTStrPrintf(szFlags, sizeof(szFlags), "%s", pcszFlags);
+    paParms[0].setPointer (szName, (uint32_t)strlen(szName) + 1);
+    paParms[1].setPointer (szValue, (uint32_t)strlen(szValue) + 1);
+    paParms[2].setPointer (szFlags, (uint32_t)strlen(szFlags) + 1);
+    if (isHost)
+        callHandle.rc = pTable->pfnHostCall(pTable->pvService, command,
+                                            useSetProp ? 3 : 2, paParms);
+    else
+        pTable->pfnCall(pTable->pvService, &callHandle, 0, NULL, command,
+                        useSetProp ? 3 : 2, paParms);
+    return callHandle.rc;
+}
+
+
 /** Array of properties for testing SET_PROP_HOST and _GUEST. */
 static const struct
 {
@@ -435,56 +482,59 @@ setProperties[] =
 int testSetProp(VBOXHGCMSVCFNTABLE *pTable)
 {
     int rc = VINF_SUCCESS;
-    VBOXHGCMCALLHANDLE_TYPEDEF callHandle = { VINF_SUCCESS };
     RTPrintf("Testing the SET_PROP, SET_PROP_VALUE, SET_PROP_HOST and SET_PROP_VALUE_HOST calls.\n");
     for (unsigned i = 0; RT_SUCCESS(rc) && (setProperties[i].pcszName != NULL);
          ++i)
     {
-        int command = SET_PROP_VALUE;
-        if (setProperties[i].isHost)
-        {
-            if (setProperties[i].useSetProp)
-                command = SET_PROP_HOST;
-            else
-                command = SET_PROP_VALUE_HOST;
-        }
-        else if (setProperties[i].useSetProp)
-            command = SET_PROP;
-        VBOXHGCMSVCPARM paParms[3];
-        /* Work around silly constant issues - we ought to allow passing
-         * constant strings in the hgcm parameters. */
-        char szName[MAX_NAME_LEN];
-        char szValue[MAX_VALUE_LEN];
-        char szFlags[MAX_FLAGS_LEN];
-        RTStrPrintf(szName, sizeof(szName), "%s", setProperties[i].pcszName);
-        RTStrPrintf(szValue, sizeof(szValue), "%s", setProperties[i].pcszValue);
-        RTStrPrintf(szFlags, sizeof(szFlags), "%s", setProperties[i].pcszFlags);
-        paParms[0].setPointer (szName, (uint32_t)strlen(szName) + 1);
-        paParms[1].setPointer (szValue, (uint32_t)strlen(szValue) + 1);
-        paParms[2].setPointer (szFlags, (uint32_t)strlen(szFlags) + 1);
-        if (setProperties[i].isHost)
-            callHandle.rc = pTable->pfnHostCall(pTable->pvService, command,
-                                                setProperties[i].useSetProp
-                                                    ? 3 : 2, paParms);
-        else
-            pTable->pfnCall(pTable->pvService, &callHandle, 0, NULL, command,
-                            setProperties[i].useSetProp ? 3 : 2, paParms);
-        if (setProperties[i].isAllowed && RT_FAILURE(callHandle.rc))
-        {
+        rc = doSetProperty(pTable, setProperties[i].pcszName,
+                           setProperties[i].pcszValue,
+                           setProperties[i].pcszFlags,
+                           setProperties[i].isHost,
+                           setProperties[i].useSetProp);
+        if (setProperties[i].isAllowed && RT_FAILURE(rc))
             RTPrintf("Setting property '%s' failed with rc=%Rrc.\n",
-                     setProperties[i].pcszName, callHandle.rc);
-            rc = callHandle.rc;
-        }
+                     setProperties[i].pcszName, rc);
         else if (   !setProperties[i].isAllowed
-                 && (callHandle.rc != VERR_PERMISSION_DENIED)
-                )
+                 && (rc != VERR_PERMISSION_DENIED))
         {
             RTPrintf("Setting property '%s' returned %Rrc instead of VERR_PERMISSION_DENIED.\n",
-                     setProperties[i].pcszName, callHandle.rc);
-            rc = VERR_UNRESOLVED_ERROR;
+                     setProperties[i].pcszName, rc);
+            rc = VERR_IPE_UNEXPECTED_STATUS;
         }
+        else
+            rc = VINF_SUCCESS;
     }
     return rc;
+}
+
+/**
+ * Delete a property by calling the service
+ * @returns the status returned by the call to the service
+ *
+ * @param   pTable    the service instance handle
+ * @param   pcszName  the name of the property to delete
+ * @param   isHost    whether the DEL_PROP_HOST command should be used, rather
+ *                    than the guest one
+ */
+int doDelProp(VBOXHGCMSVCFNTABLE *pTable, const char *pcszName, bool isHost)
+{
+    VBOXHGCMCALLHANDLE_TYPEDEF callHandle = { VINF_SUCCESS };
+    int command = DEL_PROP;
+    if (isHost)
+        command = DEL_PROP_HOST;
+    VBOXHGCMSVCPARM paParms[1];
+    /* Work around silly constant issues - we ought to allow passing
+     * constant strings in the hgcm parameters. */
+    char szName[MAX_NAME_LEN];
+    RTStrPrintf(szName, sizeof(szName), "%s", pcszName);
+    paParms[0].setPointer (szName, (uint32_t)strlen(szName) + 1);
+    if (isHost)
+        callHandle.rc = pTable->pfnHostCall(pTable->pvService, command,
+                                            1, paParms);
+    else
+        pTable->pfnCall(pTable->pvService, &callHandle, 0, NULL, command,
+                        1, paParms);
+    return callHandle.rc;
 }
 
 /** Array of properties for testing DEL_PROP_HOST and _GUEST. */
@@ -518,40 +568,25 @@ delProperties[] =
 int testDelProp(VBOXHGCMSVCFNTABLE *pTable)
 {
     int rc = VINF_SUCCESS;
-    VBOXHGCMCALLHANDLE_TYPEDEF callHandle = { VINF_SUCCESS };
     RTPrintf("Testing the DEL_PROP and DEL_PROP_HOST calls.\n");
     for (unsigned i = 0; RT_SUCCESS(rc) && (delProperties[i].pcszName != NULL);
          ++i)
     {
-        int command = DEL_PROP;
-        if (delProperties[i].isHost)
-            command = DEL_PROP_HOST;
-        VBOXHGCMSVCPARM paParms[1];
-        /* Work around silly constant issues - we ought to allow passing
-         * constant strings in the hgcm parameters. */
-        char szName[MAX_NAME_LEN];
-        RTStrPrintf(szName, sizeof(szName), "%s", delProperties[i].pcszName);
-        paParms[0].setPointer (szName, (uint32_t)strlen(szName) + 1);
-        if (delProperties[i].isHost)
-            callHandle.rc = pTable->pfnHostCall(pTable->pvService, command,
-                                                1, paParms);
-        else
-            pTable->pfnCall(pTable->pvService, &callHandle, 0, NULL, command,
-                            1, paParms);
-        if (delProperties[i].isAllowed && RT_FAILURE(callHandle.rc))
-        {
+        rc = doDelProp(pTable, delProperties[i].pcszName,
+                       delProperties[i].isHost);
+        if (delProperties[i].isAllowed && RT_FAILURE(rc))
             RTPrintf("Deleting property '%s' failed with rc=%Rrc.\n",
-                     delProperties[i].pcszName, callHandle.rc);
-            rc = callHandle.rc;
-        }
+                     delProperties[i].pcszName, rc);
         else if (   !delProperties[i].isAllowed
-                 && (callHandle.rc != VERR_PERMISSION_DENIED)
+                 && (rc != VERR_PERMISSION_DENIED)
                 )
         {
             RTPrintf("Deleting property '%s' returned %Rrc instead of VERR_PERMISSION_DENIED.\n",
-                     delProperties[i].pcszName, callHandle.rc);
-            rc = VERR_UNRESOLVED_ERROR;
+                     delProperties[i].pcszName, rc);
+            rc = VERR_IPE_UNEXPECTED_STATUS;
         }
+        else
+            rc = VINF_SUCCESS;
     }
     return rc;
 }
@@ -622,7 +657,7 @@ int testGetProp(VBOXHGCMSVCFNTABLE *pTable)
         {
             RTPrintf("Getting property '%s' returned %Rrc instead of VERR_NOT_FOUND.\n",
                      getProperties[i].pcszName, rc2);
-            rc = VERR_UNRESOLVED_ERROR;
+            rc = VERR_IPE_UNEXPECTED_STATUS;
         }
         if (RT_SUCCESS(rc) && getProperties[i].exists)
         {
@@ -812,6 +847,194 @@ int testAsyncNotification(VBOXHGCMSVCFNTABLE *pTable)
     return rc;
 }
 
+/** Array of properties for testing SET_PROP_HOST and _GUEST with the
+ * READONLYGUEST global flag set. */
+static const struct
+{
+    /** Property name */
+    const char *pcszName;
+    /** Property value */
+    const char *pcszValue;
+    /** Property flags */
+    const char *pcszFlags;
+    /** Should this be set as the host or the guest? */
+    bool isHost;
+    /** Should we use SET_PROP or SET_PROP_VALUE? */
+    bool useSetProp;
+    /** Should this succeed or be rejected with VERR_ (NOT VINF_!)
+     * PERMISSION_DENIED?  The global check is done after the property one. */
+    bool isAllowed;
+}
+setPropertiesROGuest[] =
+{
+    { "Red", "Stop!", "transient", false, true, true },
+    { "Amber", "Caution!", "", false, false, true },
+    { "Green", "Go!", "readonly", true, true, true },
+    { "Blue", "What on earth...?", "", true, false, true },
+    { "/test/name", "test", "", false, true, true },
+    { "TEST NAME", "test", "", true, true, true },
+    { "Green", "gone out...", "", false, false, false },
+    { "Green", "gone out....", "", true, false, false },
+    { NULL, NULL, NULL, false, false, true }
+};
+
+/**
+ * Set the global flags value by calling the service
+ * @returns the status returned by the call to the service
+ *
+ * @param   pTable  the service instance handle
+ * @param   eFlags  the flags to set
+ */
+int doSetGlobalFlags(VBOXHGCMSVCFNTABLE *pTable, ePropFlags eFlags)
+{
+    VBOXHGCMSVCPARM paParm;
+    paParm.setUInt32(eFlags);
+    int rc = pTable->pfnHostCall(pTable->pvService, SET_GLOBAL_FLAGS_HOST,
+                                 1, &paParm);
+    if (RT_FAILURE(rc))
+    {
+        char szFlags[MAX_FLAGS_LEN];
+        if (RT_FAILURE(writeFlags(eFlags, szFlags)))
+            RTPrintf("Failed to set the global flags.\n");
+        else
+            RTPrintf("Failed to set the global flags \"%s\".\n",
+                     szFlags);
+    }
+    return rc;
+}
+
+/**
+ * Test the SET_PROP, SET_PROP_VALUE, SET_PROP_HOST and SET_PROP_VALUE_HOST
+ * functions.
+ * @returns iprt status value to indicate whether the test went as expected.
+ * @note    prints its own diagnostic information to stdout.
+ */
+int testSetPropROGuest(VBOXHGCMSVCFNTABLE *pTable)
+{
+    int rc = VINF_SUCCESS;
+    RTPrintf("Testing the SET_PROP, SET_PROP_VALUE, SET_PROP_HOST and SET_PROP_VALUE_HOST calls with READONLYGUEST set globally.\n");
+    rc = VBoxHGCMSvcLoad(pTable);
+    if (RT_FAILURE(rc))
+        RTPrintf("Failed to start the HGCM service.\n");
+    if (RT_SUCCESS(rc))
+        rc = doSetGlobalFlags(pTable, RDONLYGUEST);
+    for (unsigned i = 0; RT_SUCCESS(rc) && (setPropertiesROGuest[i].pcszName != NULL);
+         ++i)
+    {
+        rc = doSetProperty(pTable, setPropertiesROGuest[i].pcszName,
+                           setPropertiesROGuest[i].pcszValue,
+                           setPropertiesROGuest[i].pcszFlags,
+                           setPropertiesROGuest[i].isHost,
+                           setPropertiesROGuest[i].useSetProp);
+        if (setPropertiesROGuest[i].isAllowed && RT_FAILURE(rc))
+            RTPrintf("Setting property '%s' to '%s' failed with rc=%Rrc.\n",
+                     setPropertiesROGuest[i].pcszName,
+                     setPropertiesROGuest[i].pcszValue, rc);
+        else if (   !setPropertiesROGuest[i].isAllowed
+                 && (rc != VERR_PERMISSION_DENIED))
+        {
+            RTPrintf("Setting property '%s' to '%s' returned %Rrc instead of VERR_PERMISSION_DENIED.\n",
+                     setPropertiesROGuest[i].pcszName,
+                     setPropertiesROGuest[i].pcszValue, rc);
+            rc = VERR_IPE_UNEXPECTED_STATUS;
+        }
+        else if (   !setPropertiesROGuest[i].isHost
+                 && setPropertiesROGuest[i].isAllowed
+                 && (rc != VINF_PERMISSION_DENIED))
+        {
+            RTPrintf("Setting property '%s' to '%s' returned %Rrc instead of VINF_PERMISSION_DENIED.\n",
+                     setPropertiesROGuest[i].pcszName,
+                     setPropertiesROGuest[i].pcszValue, rc);
+            rc = VERR_IPE_UNEXPECTED_STATUS;
+        }
+        else
+            rc = VINF_SUCCESS;
+    }
+    if (RT_FAILURE(pTable->pfnUnload(pTable->pvService)))
+        RTPrintf("Failed to unload the HGCM service.\n");
+    return rc;
+}
+
+/** Array of properties for testing DEL_PROP_HOST and _GUEST with
+ * READONLYGUEST set globally. */
+static const struct
+{
+    /** Property name */
+    const char *pcszName;
+    /** Should this be deleted as the host (or the guest)? */
+    bool isHost;
+    /** Should this property be created first?  (As host, obviously) */
+    bool shouldCreate;
+    /** And with what flags? */
+    const char *pcszFlags;
+    /** Should this succeed or be rejected with VERR_ (NOT VINF_!)
+     * PERMISSION_DENIED?  The global check is done after the property one. */
+    bool isAllowed;
+}
+delPropertiesROGuest[] =
+{
+    { "Red", true, true, "", true },
+    { "Amber", false, true, "", true },
+    { "Red2", true, false, "", true },
+    { "Amber2", false, false, "", true },
+    { "Red3", true, true, "READONLY", false },
+    { "Amber3", false, true, "READONLY", false },
+    { "Red4", true, true, "RDONLYHOST", false },
+    { "Amber4", false, true, "RDONLYHOST", true },
+    { NULL, false, false, "", false }
+};
+
+/**
+ * Test the DEL_PROP, and DEL_PROP_HOST functions.
+ * @returns iprt status value to indicate whether the test went as expected.
+ * @note    prints its own diagnostic information to stdout.
+ */
+int testDelPropROGuest(VBOXHGCMSVCFNTABLE *pTable)
+{
+    int rc = VINF_SUCCESS;
+    RTPrintf("Testing the DEL_PROP and DEL_PROP_HOST calls with RDONLYGUEST set globally.\n");
+    rc = VBoxHGCMSvcLoad(pTable);
+    if (RT_FAILURE(rc))
+        RTPrintf("Failed to start the HGCM service.\n");
+    if (RT_SUCCESS(rc))
+        rc = doSetGlobalFlags(pTable, RDONLYGUEST);
+    for (unsigned i = 0;    RT_SUCCESS(rc)
+                         && (delPropertiesROGuest[i].pcszName != NULL); ++i)
+    {
+        if (RT_SUCCESS(rc) && delPropertiesROGuest[i].shouldCreate)
+            rc = doSetProperty(pTable, delPropertiesROGuest[i].pcszName,
+                               "none", delPropertiesROGuest[i].pcszFlags,
+                               true, true);
+        rc = doDelProp(pTable, delPropertiesROGuest[i].pcszName,
+                       delPropertiesROGuest[i].isHost);
+        if (delPropertiesROGuest[i].isAllowed && RT_FAILURE(rc))
+            RTPrintf("Deleting property '%s' failed with rc=%Rrc.\n",
+                     delPropertiesROGuest[i].pcszName, rc);
+        else if (   !delPropertiesROGuest[i].isAllowed
+                 && (rc != VERR_PERMISSION_DENIED)
+                )
+        {
+            RTPrintf("Deleting property '%s' returned %Rrc instead of VERR_PERMISSION_DENIED.\n",
+                     delPropertiesROGuest[i].pcszName, rc);
+            rc = VERR_IPE_UNEXPECTED_STATUS;
+        }
+        else if (   !delPropertiesROGuest[i].isHost
+                 && delPropertiesROGuest[i].shouldCreate
+                 && delPropertiesROGuest[i].isAllowed
+                 && (rc != VINF_PERMISSION_DENIED))
+        {
+            RTPrintf("Deleting property '%s' as guest returned %Rrc instead of VINF_PERMISSION_DENIED.\n",
+                     delPropertiesROGuest[i].pcszName, rc);
+            rc = VERR_IPE_UNEXPECTED_STATUS;
+        }
+        else
+            rc = VINF_SUCCESS;
+    }
+    if (RT_FAILURE(pTable->pfnUnload(pTable->pvService)))
+        RTPrintf("Failed to unload the HGCM service.\n");
+    return rc;
+}
+
 int main(int argc, char **argv)
 {
     VBOXHGCMSVCFNTABLE svcTable;
@@ -824,7 +1047,7 @@ int main(int argc, char **argv)
     /* The function is inside the service, not HGCM. */
     if (RT_FAILURE(VBoxHGCMSvcLoad(&svcTable)))
     {
-        RTPrintf("Failed to start HGCM service.\n");
+        RTPrintf("Failed to start the HGCM service.\n");
         return 1;
     }
     if (RT_FAILURE(testSetPropsHost(&svcTable)))
@@ -845,6 +1068,15 @@ int main(int argc, char **argv)
     if (RT_FAILURE(testGetProp(&svcTable)))
         return 1;
     if (RT_FAILURE(testGetNotification(&svcTable)))
+        return 1;
+    if (RT_FAILURE(svcTable.pfnUnload(svcTable.pvService)))
+    {
+        RTPrintf("Failed to unload the HGCM service.\n");
+        return 1;
+    }
+    if (RT_FAILURE(testSetPropROGuest(&svcTable)))
+        return 1;
+    if (RT_FAILURE(testDelPropROGuest(&svcTable)))
         return 1;
     RTPrintf("tstGuestPropSvc: SUCCEEDED.\n");
     return 0;

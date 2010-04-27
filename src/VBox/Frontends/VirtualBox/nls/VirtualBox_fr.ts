@@ -24,9 +24,9 @@
         <translation></translation>
     </message>
     <message>
-        <source>Sun Microsystems, Inc.</source>
+        <source>Oracle Corporation</source>
         <comment>Comma-separated list of translators</comment>
-        <translation>Jean-Jacques Sarton, Sun Microsystems, Inc.</translation>
+        <translation>Jean-Jacques Sarton, Oracle Corporation</translation>
     </message>
 </context>
 <context>
@@ -574,7 +574,7 @@ Version %1</source>
     </message>
 </context>
 <context>
-    <name>VBoxAdditionsDownloader</name>
+    <name>UIDownloaderAdditions</name>
     <message>
         <source>Cancel</source>
         <translation>Annuler</translation>
@@ -1480,7 +1480,7 @@ Version %1</source>
     </message>
 </context>
 <context>
-    <name>VBoxDownloaderWgt</name>
+    <name>UIDownloader</name>
     <message>
         <source>Cancel</source>
         <translation type="obsolete">Annuler</translation>
@@ -1522,7 +1522,7 @@ Version %1</source>
     </message>
 </context>
 <context>
-    <name>VBoxExportApplianceWzd</name>
+    <name>UIExportApplianceWzd</name>
     <message>
         <source>Select a file to export into</source>
         <translation>Choisissez un fichier cible pour l&apos;exportation</translation>
@@ -1815,6 +1815,10 @@ p, li { white-space: pre-wrap; }
     <message>
         <source>&amp;Dock Icon Realtime Preview</source>
         <translation>&amp;Icône Dock aperçu temps réel</translation>
+    </message>
+    <message>
+        <source>&amp;Auto show Dock and Menubar in fullscreen</source>
+        <translation>Démasquer &amp;automatiquement le Dock et la barre des menu en mode plein écran</translation>
     </message>
 </context>
 <context>
@@ -3393,6 +3397,52 @@ p, li { white-space: pre-wrap; }
         <comment>medium</comment>
         <translation>Ce disque dur de base est connecté indirectement à travers le disque dur dérivé suivant :</translation>
     </message>
+    <message numerus="yes">
+        <source>%n year(s)</source>
+        <translation>
+            <numerusform>%n an</numerusform>
+            <numerusform>%n ans</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n month(s)</source>
+        <translation>
+            <numerusform>%n mois</numerusform>
+            <numerusform>%n mois</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n day(s)</source>
+        <translation>
+            <numerusform>%n jour</numerusform>
+            <numerusform>%n jours</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hour(s)</source>
+        <translation>
+            <numerusform>%n heure</numerusform>
+            <numerusform>%n heures</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minute(s)</source>
+        <translation>
+            <numerusform>%n minute</numerusform>
+            <numerusform>%n minutes</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <source>%n second(s)</source>
+        <translation>
+            <numerusform>%n seconde</numerusform>
+            <numerusform>%n secondes</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>(CD/DVD)</source>
+        <translation>(périphérique optique)</translation>
+    </message>
 </context>
 <context>
     <name>VBoxGlobalSettings</name>
@@ -3512,7 +3562,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxImportApplianceWzd</name>
+    <name>UIImportApplianceWzd</name>
     <message>
         <source>Select an appliance to import</source>
         <translation>Choisissez une application virtuelle à importer</translation>
@@ -3595,7 +3645,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxImportLicenseViewer</name>
+    <name>UIImportLicenseViewer</name>
     <message>
         <source>Software License Agreement</source>
         <translation>Contrat de licence logiciel</translation>
@@ -3922,7 +3972,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxNewHDWzd</name>
+    <name>UINewHDWzd</name>
     <message>
         <source>Create New Virtual Disk</source>
         <translation>Créer un nouveau disque virtuel</translation>
@@ -4085,7 +4135,7 @@ p, li { white-space: pre-wrap; }
     </message>
 </context>
 <context>
-    <name>VBoxNewVMWzd</name>
+    <name>UINewVMWzd</name>
     <message>
         <source>Create New Virtual Machine</source>
         <translation>Créer un nouvelle machine virtuelle</translation>
@@ -5323,55 +5373,55 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
     <message>
         <source>%1 days, %2 hours remaining</source>
-        <translation>%1 jours et %2 heures restants</translation>
+        <translation type="obsolete">%1 jours et %2 heures restants</translation>
     </message>
     <message>
         <source>%1 days, %2 minutes remaining</source>
-        <translation>%1 jours et %2 minutes restants</translation>
+        <translation type="obsolete">%1 jours et %2 minutes restants</translation>
     </message>
     <message>
         <source>%1 days remaining</source>
-        <translation>%1 jours restants</translation>
+        <translation type="obsolete">%1 jours restants</translation>
     </message>
     <message>
         <source>1 day, %1 hours remaining</source>
-        <translation>1 jour et %1 heures restants</translation>
+        <translation type="obsolete">1 jour et %1 heures restants</translation>
     </message>
     <message>
         <source>1 day, %1 minutes remaining</source>
-        <translation>1 jour et %1 minutes restants</translation>
+        <translation type="obsolete">1 jour et %1 minutes restants</translation>
     </message>
     <message>
         <source>1 day remaining</source>
-        <translation>1 jour restant</translation>
+        <translation type="obsolete">1 jour restant</translation>
     </message>
     <message>
         <source>%1 hours, %2 minutes remaining</source>
-        <translation>%1 heures et %2 minutes restants</translation>
+        <translation type="obsolete">%1 heures et %2 minutes restants</translation>
     </message>
     <message>
         <source>1 hour, %1 minutes remaining</source>
-        <translation>1 heure et %1 minutes restants</translation>
+        <translation type="obsolete">1 heure et %1 minutes restants</translation>
     </message>
     <message>
         <source>1 hour remaining</source>
-        <translation>1 heure restante</translation>
+        <translation type="obsolete">1 heure restante</translation>
     </message>
     <message>
         <source>%1 minutes remaining</source>
-        <translation>%1 minutes restantes</translation>
+        <translation type="obsolete">%1 minutes restantes</translation>
     </message>
     <message>
         <source>1 minute, %2 seconds remaining</source>
-        <translation>1 minute et %2 secondes restantes</translation>
+        <translation type="obsolete">1 minute et %2 secondes restantes</translation>
     </message>
     <message>
         <source>1 minute remaining</source>
-        <translation>1 minute restante</translation>
+        <translation type="obsolete">1 minute restante</translation>
     </message>
     <message>
         <source>%1 seconds remaining</source>
-        <translation>%1 secondes restantes</translation>
+        <translation type="obsolete">%1 secondes restantes</translation>
     </message>
     <message>
         <source>A few seconds remaining</source>
@@ -5384,6 +5434,16 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     <message>
         <source>Cancel the current operation</source>
         <translation>Annuller l&apos;operation actuelle</translation>
+    </message>
+    <message>
+        <source>%1, %2 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1, %2&quot;</comment>
+        <translation>Temps restant: %1 %2</translation>
+    </message>
+    <message>
+        <source>%1 remaining</source>
+        <comment>You may wish to translate this more like &quot;Time remaining: %1&quot;</comment>
+        <translation>Temps restant: %1</translation>
     </message>
 </context>
 <context>
@@ -5894,31 +5954,35 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
     <message numerus="yes">
         <source> (%n day(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (il y a %n jour)</numerusform>
             <numerusform> (il y a %n jours)</numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source> (%n hour(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (il y a %n heure)</numerusform>
             <numerusform> (il y a %n heures)</numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source> (%n minute(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (il y a %n minutes)</numerusform>
             <numerusform> (il y a %n minutes)</numerusform>
         </translation>
     </message>
     <message numerus="yes">
         <source> (%n second(s) ago)</source>
-        <translation>
+        <translation type="obsolete">
             <numerusform> (il y a %n seconde)</numerusform>
             <numerusform> (il y a %n secondes)</numerusform>
         </translation>
+    </message>
+    <message>
+        <source> (%1 ago)</source>
+        <translation> (il y a %1)</translation>
     </message>
 </context>
 <context>
@@ -5952,6 +6016,13 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     <message>
         <source>Snapshot &amp;Description</source>
         <translation>&amp;Description de l&apos;instantané</translation>
+    </message>
+    <message numerus="yes">
+        <source>Warning: You are taking a snapshot of a running machine which has %n immutable image(s) attached to it. As long as you are working from this snapshot the immutable image(s) will not be reset to avoid loss of data.</source>
+        <translation>
+            <numerusform>Avertissement: vous êtes en train de saisir un instantané d&apos;une machine en cours d&apos;exécution avec %n image disque immuable connecté. Tant que vous travaillez sous cet instantané, l&apos;image ne sera pas réinitialisé pour éviter la perte de donnés.</numerusform>
+            <numerusform>Avertissement: vous êtes en train de saisir un instantané d&apos;une machine en cours d&apos;exécution avec %n images disque immuable connecté. Tant que vous travaillez sous cet instantané, les image ne sera pas réinitialisé pour éviter la perte de donnés.</numerusform>
+        </translation>
     </message>
 </context>
 <context>
@@ -6140,7 +6211,7 @@ Pour que la souris soit capturée, cliquer dans la fenêtre de la machine virtue
     </message>
 </context>
 <context>
-    <name>VBoxVMFirstRunWzd</name>
+    <name>UIFirstRunWzd</name>
     <message>
         <source>First Run Wizard</source>
         <translation>Assistant du premier lancement</translation>

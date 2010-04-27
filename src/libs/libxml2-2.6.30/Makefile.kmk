@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 24225 2009-10-30 22:40:31Z vboxsync $
+# $Id: Makefile.kmk 28800 2010-04-27 08:22:32Z vboxsync $
 ## @file
 # Sub-Makefile for the libxml2 library.
 #
 
 #
-# Copyright (C) 2007 Sun Microsystems, Inc.
+# Copyright (C) 2007 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
 # Foundation, in version 2 as it comes in the "COPYING" file of the
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
-#
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
 #
 
 SUB_DEPTH = ../../..
@@ -29,6 +25,9 @@ VBox-libxml2_DEFS           = _REENTRANT # the latter triggers thread support, s
 VBox-libxml2_DEFS.win       = WIN32 _WINDOWS _MBCS _CRT_SECURE_NO_DEPRECATE _CRT_NONSTDC_NO_DEPRECATE \
                               LIBXML_STATIC_FOR_DLL HAVE_WIN32_THREADS HAVE_ZLIB_H
 VBox-libxml2_CFLAGS.win.amd64 = -wd4267
+ifn1of ($(KBUILD_TARGET), win)
+ VBox-libxml2_CFLAGS        = -Wno-format-security
+endif
 VBox-libxml2_INCS           = include
 VBox-libxml2_SOURCES        = \
 	c14n.c \

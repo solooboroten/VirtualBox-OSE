@@ -666,6 +666,8 @@ DECL_WINELIB_TYPE_AW(LPMIDIOUTCAPS2)
 #define MOD_SQSYNTH     3  /* square wave internal synth */
 #define MOD_FMSYNTH     4  /* FM internal synth */
 #define MOD_MAPPER      5  /* MIDI mapper */
+#define MOD_WAVETABLE   6  /* hardware watetable internal synth */
+#define MOD_SWSYNTH     7  /* software synth */
 
 #define MIDICAPS_VOLUME		0x0001  /* supports volume control */
 #define MIDICAPS_LRVOLUME	0x0002  /* separate left-right volume control */
@@ -727,6 +729,7 @@ typedef struct midihdr_tag {
     DWORD	dwFlags;
     struct midihdr_tag *lpNext;
     DWORD_PTR	reserved;
+    /* Win 32 extended the structure with these 2 fields */
     DWORD	dwOffset;
     DWORD_PTR	dwReserved[8];
 } MIDIHDR, *LPMIDIHDR;
@@ -1818,7 +1821,7 @@ YIELDPROC       WINAPI  mciGetYieldProc(MCIDEVICEID,DWORD*);
 
 #define MCI_USER_MESSAGES               (0x400 + DRV_MCI_FIRST)
 
-#define MCI_ALL_DEVICE_ID               0xFFFF
+#define MCI_ALL_DEVICE_ID               0xFFFFFFFF
 
 #define MCI_DEVTYPE_VCR                 (MCI_STRING_OFFSET + 1)
 #define MCI_DEVTYPE_VIDEODISC           (MCI_STRING_OFFSET + 2)

@@ -1,10 +1,10 @@
-/* $Id: VBoxGuestR3Lib.cpp 22575 2009-08-30 20:02:08Z vboxsync $ */
+/* $Id: VBoxGuestR3Lib.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, Core.
  */
 
 /*
- * Copyright (C) 2007 Sun Microsystems, Inc.
+ * Copyright (C) 2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -14,9 +14,14 @@
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
+ * The contents of this file may alternatively be used under the terms
+ * of the Common Development and Distribution License Version 1.0
+ * (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+ * VirtualBox OSE distribution, in which case the provisions of the
+ * CDDL are applicable instead of those of the GPL.
+ *
+ * You may elect to license modified versions of this file under the
+ * terms and conditions of either the GPL or the CDDL or both.
  */
 
 
@@ -89,9 +94,7 @@ static uint32_t volatile g_cInits = 0;
 static int vbglR3Init(const char *pszDeviceName)
 {
     uint32_t cInits = ASMAtomicIncU32(&g_cInits);
-#ifndef VBOX_VBGLR3_XFREE86
     Assert(cInits > 0);
-#endif
     if (cInits > 1)
     {
         /*
@@ -203,6 +206,7 @@ static int vbglR3Init(const char *pszDeviceName)
 
 #endif
 
+#ifndef VBOX_VBGLR3_XFREE86
     /*
      * Create release logger
      */
@@ -214,6 +218,7 @@ static int vbglR3Init(const char *pszDeviceName)
     /* This may legitimately fail if we are using the mini-runtime. */
     if (RT_SUCCESS(rc2))
         RTLogRelSetDefaultInstance(pReleaseLogger);
+#endif
 
     return VINF_SUCCESS;
 }

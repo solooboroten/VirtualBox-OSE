@@ -1,3 +1,4 @@
+/* $Id: VBoxConsoleView.cpp 28849 2010-04-27 17:23:12Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -5,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 22006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 22006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -14,12 +15,11 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
+#ifdef VBOX_WITH_PRECOMPILED_HEADERS
+# include "precomp.h"
+#else  /* !VBOX_WITH_PRECOMPILED_HEADERS */
 #include <VBox/VBoxVideo.h>
 
 #include "VBoxConsoleView.h"
@@ -41,6 +41,8 @@
 #include <QStatusBar>
 #include <QPainter>
 #include <QBitmap>
+
+#endif /* !VBOX_WITH_PRECOMPILED_HEADERS */ /** @todo Move this further down! Requires some cleanup below though, so later. */
 
 #ifdef Q_WS_WIN
 // VBox/cdefs.h defines these:
@@ -85,10 +87,9 @@ const int XKeyRelease = KeyRelease;
 # include "DarwinKeyboard.h"
 # ifdef QT_MAC_USE_COCOA
 #  include "darwin/VBoxCocoaApplication.h"
-# elif defined(VBOX_WITH_HACKED_QT)
-#  include "QIApplication.h"
-# endif
-# include <Carbon/Carbon.h>
+# else /* QT_MAC_USE_COCOA */
+#  include <Carbon/Carbon.h>
+# endif /* !QT_MAC_USE_COCOA */
 # include <VBox/err.h>
 #endif /* defined (Q_WS_MAC) */
 
@@ -137,15 +138,10 @@ bool VBoxConsoleView::darwinEventHandlerProc (const void *pvCocoaEvent,
     if (eventClass != 'cute')
         ::VBoxCocoaApplication_printEvent ("view: ", pvCocoaEvent);
 #endif
-
-    /*
-     * Not sure but this seems an triggered event if the spotlight searchbar is
-     * displayed. So flag that the host key isn't pressed alone.
-     */
-    if (   eventClass == 'cgs '
-        && view->mIsHostkeyPressed
-        && ::GetEventKind (inEvent) == 0x15)
-        view->mIsHostkeyAlone = false;
+    /* Check if this is an application key combo. In that case we will not pass
+       the event to the guest, but let the host process it. */
+    if (VBoxCocoaApplication_isApplicationCommand(pvCocoaEvent))
+        return false;
 
     /*
      * All keyboard class events needs to be handled.
@@ -155,23 +151,11 @@ bool VBoxConsoleView::darwinEventHandlerProc (const void *pvCocoaEvent,
         if (view->darwinKeyboardEvent (pvCocoaEvent, inEvent))
             return true;
     }
-    /*
-     * Command-H and Command-Q aren't properly disabled yet, and it's still
-     * possible to use the left command key to invoke them when the keyboard
-     * is captured. We discard the events these if the keyboard is captured
-     * as a half measure to prevent unexpected behaviour. However, we don't
-     * get any key down/up events, so these combinations are dead to the guest...
-     */
-    else if (eventClass == kEventClassCommand)
-    {
-        if (view->mKbdCaptured)
-            return true;
-    }
     /* Pass the event along. */
     return false;
 }
 
-# elif !defined (VBOX_WITH_HACKED_QT)
+# else /* QT_MAC_USE_COCOA */
 /**
  *  Event handler callback for Mac OS X.
  */
@@ -204,7 +188,7 @@ pascal OSStatus VBoxConsoleView::darwinEventHandlerProc (EventHandlerCallRef inH
      * Command-H and Command-Q aren't properly disabled yet, and it's still
      * possible to use the left command key to invoke them when the keyboard
      * is captured. We discard the events these if the keyboard is captured
-     * as a half measure to prevent unexpected behaviour. However, we don't
+     * as a half measure to prevent unexpected behavior. However, we don't
      * get any key down/up events, so these combinations are dead to the guest...
      */
     else if (eventClass == kEventClassCommand)
@@ -214,38 +198,7 @@ pascal OSStatus VBoxConsoleView::darwinEventHandlerProc (EventHandlerCallRef inH
     }
     return ::CallNextEventHandler (inHandlerCallRef, inEvent);
 }
-
-# else /* VBOX_WITH_HACKED_QT */
-/**
- *  Event handler callback for Mac OS X.
- */
-/* static */
-bool VBoxConsoleView::macEventFilter (EventRef inEvent, void *inUserData)
-{
-    VBoxConsoleView *view = static_cast<VBoxConsoleView *> (inUserData);
-    UInt32 eventClass = ::GetEventClass (inEvent);
-    UInt32 eventKind = ::GetEventKind (inEvent);
-
-    /* For debugging events */
-    /*
-    if (!(eventClass == 'cute'))
-        ::darwinDebugPrintEvent ("view: ", inEvent);
-    */
-
-    /* Not sure but this seems an triggered event if the spotlight searchbar is
-     * displayed. So flag that the host key isn't pressed alone. */
-    if (eventClass == 'cgs ' && eventKind == 0x15 &&
-        view->mIsHostkeyPressed)
-        view->mIsHostkeyAlone = false;
-
-    if (eventClass == kEventClassKeyboard)
-    {
-        if (view->darwinKeyboardEvent (NULL, inEvent))
-            return true;
-    }
-    return false;
-}
-# endif /* VBOX_WITH_HACKED_QT */
+# endif /* !QT_MAC_USE_COCOA */
 
 #endif /* Q_WS_MAC */
 
@@ -289,14 +242,17 @@ private:
 class MouseCapabilityEvent : public QEvent
 {
 public:
-    MouseCapabilityEvent (bool supportsAbsolute, bool needsHostCursor) :
+    MouseCapabilityEvent (bool supportsAbsolute, bool supportsRelative, bool needsHostCursor) :
         QEvent ((QEvent::Type) VBoxDefs::MouseCapabilityEventType),
         can_abs (supportsAbsolute),
+        can_rel (supportsRelative),
         needs_host_cursor (needsHostCursor) {}
     bool supportsAbsolute() const { return can_abs; }
+    bool supportsRelative() const { return can_rel; }
     bool needsHostCursor() const { return needs_host_cursor; }
 private:
     bool can_abs;
+    bool can_rel;
     bool needs_host_cursor;
 };
 
@@ -475,10 +431,11 @@ public:
         return S_OK;
     }
 
-    STDMETHOD(OnMouseCapabilityChange)(BOOL supportsAbsolute, BOOL needsHostCursor)
+    STDMETHOD(OnMouseCapabilityChange)(BOOL supportsAbsolute, BOOL supportsRelative, BOOL needsHostCursor)
     {
         QApplication::postEvent (mView,
                                  new MouseCapabilityEvent (supportsAbsolute,
+                                                           supportsRelative,
                                                            needsHostCursor));
         return S_OK;
     }
@@ -547,6 +504,13 @@ public:
                 /* @todo later add hard disk change as well */
                 break;
         }
+        return S_OK;
+    }
+
+    STDMETHOD(OnCPUChange)(ULONG aCPU, BOOL aRemove)
+    {
+        NOREF(aCPU);
+        NOREF(aRemove);
         return S_OK;
     }
 
@@ -715,8 +679,11 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     , mAttached (false)
     , mKbdCaptured (false)
     , mMouseCaptured (false)
-    , mMouseAbsolute (false)
+    , mMouseCanAbsolute (false)
+    , mMouseCanRelative (true)
+    , mMouseNeedsHostCursor (false)
     , mMouseIntegration (true)
+    , m_iLastMouseWheelDelta(0)
     , mDisableAutoCapture (false)
     , mIsHostkeyPressed (false)
     , mIsHostkeyAlone (false)
@@ -739,7 +706,7 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     , mAlphaCursor (NULL)
 #endif
 #if defined(Q_WS_MAC)
-# if !defined (VBOX_WITH_HACKED_QT) && !defined (QT_MAC_USE_COCOA)
+# ifndef QT_MAC_USE_COCOA
     , mDarwinEventHandlerRef (NULL)
 # endif
     , mDarwinKeyModifiers (0)
@@ -758,13 +725,10 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
 
 #ifdef Q_WS_MAC
     /* Overlay logo for the dock icon */
-    //mVirtualBoxLogo = ::darwinToCGImageRef ("VirtualBox_cube_42px.png");
     QString osTypeId = mConsole.GetGuest().GetOSTypeId();
     mDockIconPreview = new VBoxDockIconPreview (mMainWnd, vboxGlobal().vmGuestOSTypeIcon (osTypeId));
 
-# ifdef QT_MAC_USE_COCOA
-    /** @todo Carbon -> Cocoa */
-# else /* !QT_MAC_USE_COCOA */
+# ifndef QT_MAC_USE_COCOA
     /* Install the event handler which will proceed external window handling */
     EventHandlerUPP eventHandler = ::NewEventHandlerUPP (::darwinOverlayWindowHandler);
     EventTypeSpec eventTypes[] =
@@ -787,12 +751,12 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
     /* No frame around the view */
     setFrameStyle (QFrame::NoFrame);
 
-#ifdef VBOX_GUI_USE_QGL
+#ifdef VBOX_GUI_USE_QGLFB
     QWidget *pViewport;
     switch (mode)
     {
         case VBoxDefs::QGLMode:
-            pViewport = new VBoxGLWidget (this, this);
+            pViewport = new VBoxGLWidget (mConsole, this, NULL);
             break;
         default:
             pViewport = new VBoxViewport (this);
@@ -837,7 +801,7 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
 
     switch (mode)
     {
-#if defined (VBOX_GUI_USE_QGL)
+#if defined (VBOX_GUI_USE_QGLFB)
         case VBoxDefs::QGLMode:
             mFrameBuf = new VBoxQGLFrameBuffer (this);
             break;
@@ -849,7 +813,9 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
         case VBoxDefs::QImageMode:
             mFrameBuf =
 #ifdef VBOX_WITH_VIDEOHWACCEL
-                    mAccelerate2DVideo ? new VBoxOverlayFrameBuffer<VBoxQImageFrameBuffer>(this) :
+                    /* these two additional template args is a workaround to this [VBox|UI] duplication
+                     * @todo: they are to be removed once VBox stuff is gone */
+                    mAccelerate2DVideo ? new VBoxOverlayFrameBuffer<VBoxQImageFrameBuffer, VBoxConsoleView, VBoxResizeEvent> (this, &mainWnd->session(), 0) :
 #endif
                     new VBoxQImageFrameBuffer (this);
             break;
@@ -866,7 +832,9 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
 # endif
             mFrameBuf =
 #if defined(VBOX_WITH_VIDEOHWACCEL) && defined(DEBUG_misha) /* not tested yet */
-                    mAccelerate2DVideo ? new VBoxOverlayFrameBuffer<VBoxSDLFrameBuffer> (this) :
+                    /* these two additional template args is a workaround to this [VBox|UI] duplication
+                     * @todo: they are to be removed once VBox stuff is gone */
+                    mAccelerate2DVideo ? new VBoxOverlayFrameBuffer<VBoxSDLFrameBuffer, VBoxConsoleView, VBoxResizeEvent> (this, &mainWnd->session(), 0) :
 #endif
                     new VBoxSDLFrameBuffer (this);
             /*
@@ -889,9 +857,11 @@ VBoxConsoleView::VBoxConsoleView (VBoxConsoleWnd *mainWnd,
             pViewport->setAttribute (Qt::WA_PaintOnScreen);
             mFrameBuf =
 #ifdef VBOX_WITH_VIDEOHWACCEL
-                    mAccelerate2DVideo ? new VBoxOverlayFrameBuffer<VBoxQuartz2DFrameBuffer> (this) :
+                    /* these two additional template args is a workaround to this [VBox|UI] duplication
+                     * @todo: they are to be removed once VBox stuff is gone */
+                    mAccelerate2DVideo ? new VBoxOverlayFrameBuffer<VBoxQuartz2DFrameBuffer, VBoxConsoleView, VBoxResizeEvent> (this, &mainWnd->session(), 0) :
 #endif
-            	    new VBoxQuartz2DFrameBuffer (this);
+                    new VBoxQuartz2DFrameBuffer (this);
             break;
 #endif
         default:
@@ -1163,7 +1133,7 @@ void VBoxConsoleView::setMouseIntegrationEnabled (bool enabled)
     if (mMouseIntegration == enabled)
         return;
 
-    if (mMouseAbsolute)
+    if (mMouseCanAbsolute)
         captureMouse (!enabled, false);
 
     /* Hiding host cursor in case we are entering mouse integration
@@ -1182,14 +1152,27 @@ void VBoxConsoleView::setMouseIntegrationEnabled (bool enabled)
      * This notification is not always possible though, as not all guests
      * support switching to a hardware pointer on demand. */
     if (enabled)
-        viewport()->setCursor (QCursor (Qt::BlankCursor));
+    {
+        mHideHostPointer = true;
+        updateHostCursor();
+    }
 
     mMouseIntegration = enabled;
 
     emitMouseStateChanged();
 }
 
-void VBoxConsoleView::setAutoresizeGuest (bool on)
+void VBoxConsoleView::updateHostCursor()
+{
+    if (!mMouseIntegration && !mMouseCaptured)
+        viewport()->unsetCursor();
+    else if (mMouseCaptured || (mMouseCanAbsolute && mHideHostPointer))
+        viewport()->setCursor(Qt::BlankCursor);
+    else
+        viewport()->setCursor(mLastCursor);
+}
+
+void VBoxConsoleView::setAutoresizeGuest (bool on, bool doHint)
 {
     if (mAutoresizeGuest != on)
     {
@@ -1197,7 +1180,7 @@ void VBoxConsoleView::setAutoresizeGuest (bool on)
 
         maybeRestrictMinimumSize();
 
-        if (mGuestSupportsGraphics && mAutoresizeGuest)
+        if (mGuestSupportsGraphics && mAutoresizeGuest && doHint)
             doResizeHint();
     }
 }
@@ -1269,12 +1252,12 @@ bool VBoxConsoleView::event (QEvent *e)
                 mIgnoreMainwndResize = true;
 
                 VBoxResizeEvent *re = (VBoxResizeEvent *) e;
-                LogFlow (("VBoxDefs::ResizeEventType: %d x %d x %d bpp\n",
-                          re->width(), re->height(), re->bitsPerPixel()));
-#ifdef DEBUG_michael
-                LogRel (("Resize event from guest: %d x %d x %d bpp\n",
-                         re->width(), re->height(), re->bitsPerPixel()));
-#endif
+                LogRelFlowFunc (("VBoxDefs::ResizeEventType: %d x %d x %d bpp\n",
+                                 re->width(), re->height(),
+                                 re->bitsPerPixel()));
+
+                bool notifyMainWnd = mFrameBuf->width() != re->width()
+                        || mFrameBuf->height() != re->height();
 
                 /* Store the new size to prevent unwanted resize hints being
                  * sent back. */
@@ -1283,20 +1266,13 @@ bool VBoxConsoleView::event (QEvent *e)
 
                 /* restoreOverrideCursor() is broken in Qt 4.4.0 if WA_PaintOnScreen
                  * widgets are present. This is the case on linux with SDL. As
-                 * workaround we save/restore the arrow cursor manually. See
+                 * workaround we restore the arrow cursor manually after the resize. See
                  * http://trolltech.com/developer/task-tracker/index_html?id=206165&method=entry
                  * for details.
-                 *
-                 * Moreover the current cursor, which could be set by the guest,
-                 * should be restored after resize.
                  */
                 QCursor cursor;
-                if (shouldHideHostPointer())
-                    cursor = QCursor (Qt::BlankCursor);
-                else
-                    cursor = viewport()->cursor();
                 mFrameBuf->resizeEvent (re);
-                viewport()->setCursor (cursor);
+                updateHostCursor();
 
 #ifdef Q_WS_MAC
                 mDockIconPreview->setOriginalSize (re->width(), re->height());
@@ -1362,6 +1338,9 @@ bool VBoxConsoleView::event (QEvent *e)
                     mIgnoreFrameBufferResize = false;
                 }
 
+                if (notifyMainWnd)
+                    mMainWnd->onDisplayResize (re->width(), re->height());
+
                 return true;
             }
 
@@ -1405,7 +1384,7 @@ bool VBoxConsoleView::event (QEvent *e)
                 /* change cursor shape only when mouse integration is
                  * supported (change mouse shape type event may arrive after
                  * mouse capability change that disables integration */
-                if (mMouseAbsolute)
+                if (mMouseCanAbsolute)
                     setPointerShape (me);
                 else
                     /* Note: actually we should still remember the requested
@@ -1417,12 +1396,12 @@ bool VBoxConsoleView::event (QEvent *e)
             case VBoxDefs::MouseCapabilityEventType:
             {
                 MouseCapabilityEvent *me = (MouseCapabilityEvent *) e;
-                if (mMouseAbsolute != me->supportsAbsolute())
+                if (mMouseCanAbsolute != me->supportsAbsolute())
                 {
-                    mMouseAbsolute = me->supportsAbsolute();
+                    mMouseCanAbsolute = me->supportsAbsolute();
                     /* correct the mouse capture state and reset the cursor
                      * to the default shape if necessary */
-                    if (mMouseAbsolute)
+                    if (mMouseCanAbsolute)
                     {
                         CMouse mouse = mConsole.GetMouse();
                         mouse.PutMouseEventAbsolute (-1, -1, 0,
@@ -1430,12 +1409,13 @@ bool VBoxConsoleView::event (QEvent *e)
                                                      0);
                         captureMouse (false, false);
                     }
-                    else
-                        viewport()->unsetCursor();
+                    updateHostCursor();
                     emitMouseStateChanged();
-                    vboxProblem().remindAboutMouseIntegration (mMouseAbsolute);
+                    vboxProblem().remindAboutMouseIntegration (mMouseCanAbsolute);
                 }
-                if (me->needsHostCursor())
+                mMouseCanRelative = me->supportsRelative();
+                mMouseNeedsHostCursor = me->needsHostCursor();
+                if (!me->supportsRelative() || me->needsHostCursor())
                     mMainWnd->setMouseIntegrationLocked (false);
                 else
                     mMainWnd->setMouseIntegrationLocked (true);
@@ -1783,6 +1763,7 @@ bool VBoxConsoleView::eventFilter (QObject *watched, QEvent *e)
             case QEvent::MouseButtonRelease:
             {
                 QMouseEvent *me = (QMouseEvent *) e;
+                m_iLastMouseWheelDelta = 0;
                 if (mouseEvent (me->type(), me->pos(), me->globalPos(),
                                 me->buttons(), me->modifiers(),
                                 0, Qt::Horizontal))
@@ -1792,17 +1773,31 @@ bool VBoxConsoleView::eventFilter (QObject *watched, QEvent *e)
             case QEvent::Wheel:
             {
                 QWheelEvent *we = (QWheelEvent *) e;
+                /* There are pointing devices which send smaller values for the
+                 * delta than 120. Here we sum them up until we are greater
+                 * than 120. This allows to have finer control over the speed
+                 * acceleration & enables such devices to send a valid wheel
+                 * event to our guest mouse device at all. */
+                int iDelta = 0;
+                m_iLastMouseWheelDelta += we->delta();
+                if (qAbs(m_iLastMouseWheelDelta) >= 120)
+                {
+                    iDelta = m_iLastMouseWheelDelta;
+                    m_iLastMouseWheelDelta = m_iLastMouseWheelDelta % 120;
+                }
                 if (mouseEvent (we->type(), we->pos(), we->globalPos(),
 #ifdef QT_MAC_USE_COCOA
                                 /* Qt Cocoa is buggy. It always reports a left
                                  * button pressed when the mouse wheel event
-                                 * occurs. */
-                                0,
+                                 * occurs. A workaround is to ask the
+                                 * application which buttons are pressed
+                                 * currently. */
+                                QApplication::mouseButtons(),
 #else /* QT_MAC_USE_COCOA */
                                 we->buttons(),
 #endif /* QT_MAC_USE_COCOA */
                                 we->modifiers(),
-                                we->delta(), we->orientation()))
+                                iDelta, we->orientation()))
                     return true; /* stop further event handling */
                 break;
             }
@@ -2284,11 +2279,18 @@ bool VBoxConsoleView::x11Event (XEvent *event)
     {
         /* We have to handle XFocusOut right here as this event is not passed
          * to VBoxConsoleView::event(). Handling this event is important for
-         * releasing the keyboard before the screen saver gets active. */
+         * releasing the keyboard before the screen saver gets active.
+         *
+         * See public ticket #3894: Apparently this makes problems with newer
+         * versions of Qt and this hack is probably not necessary anymore.
+         * So disable it for Qt >= 4.5.0. */
         case XFocusOut:
         case XFocusIn:
             if (isRunning())
-                focusEvent (event->type == XFocusIn);
+            {
+                if (VBoxGlobal::qtRTVersion() < ((4 << 16) | (5 << 8) | 0))
+                    focusEvent (event->type == XFocusIn);
+            }
             return false;
         case XKeyPress:
         case XKeyRelease:
@@ -2344,7 +2346,14 @@ bool VBoxConsoleView::x11Event (XEvent *event)
             flags |= KeyPrint;
             break;
         case XK_Pause:
-            flags |= KeyPause;
+            if (event->xkey.state & ControlMask) /* Break */
+            {
+                ks = XK_Break;
+                flags |= KeyExtended;
+                scan = 0x46;
+            }
+            else
+                flags |= KeyPause;
             break;
     }
 
@@ -2371,6 +2380,16 @@ bool VBoxConsoleView::darwinKeyboardEvent (const void *pvCocoaEvent, EventRef in
         /* convert keycode to set 1 scan code. */
         UInt32 keyCode = ~0U;
         ::GetEventParameter (inEvent, kEventParamKeyCode, typeUInt32, NULL, sizeof (keyCode), NULL, &keyCode);
+        /* The usb keyboard driver translates these codes to different virtual
+         * key codes depending of the keyboard type. There are ANSI, ISO, JIS
+         * and unknown. For European keyboards (ISO) the key 0xa and 0x32 have
+         * to be switched. Here we are doing this at runtime, cause the user
+         * can have more than one keyboard (of different type), where he may
+         * switch at will all the time. Default is the ANSI standard as defined
+         * in g_aDarwinToSet1. */
+//        if (   (keyCode == 0xa || keyCode == 0x32)
+//            && KBGetLayoutType(LMGetKbdType()) == kKeyboardISO)
+//            keyCode = 0x3c - keyCode;
         unsigned scanCode = ::DarwinKeycodeToSet1Scancode (keyCode);
         if (scanCode)
         {
@@ -2467,7 +2486,7 @@ void VBoxConsoleView::darwinGrabKeyboardEvents (bool fGrab)
         ::VBoxCocoaApplication_setCallback (UINT32_MAX, /** @todo fix mask */
                                             VBoxConsoleView::darwinEventHandlerProc, this);
 
-# elif !defined (VBOX_WITH_HACKED_QT)
+# else /* QT_MAC_USE_COCOA */
         EventTypeSpec eventTypes[6];
         eventTypes[0].eventClass = kEventClassKeyboard;
         eventTypes[0].eventKind  = kEventRawKeyDown;
@@ -2490,10 +2509,7 @@ void VBoxConsoleView::darwinGrabKeyboardEvents (bool fGrab)
         ::InstallApplicationEventHandler (eventHandler, RT_ELEMENTS (eventTypes), &eventTypes[0],
                                           this, &mDarwinEventHandlerRef);
         ::DisposeEventHandlerUPP (eventHandler);
-
-# else  /* VBOX_WITH_HACKED_QT */
-        ((QIApplication *)qApp)->setEventFilter (VBoxConsoleView::macEventFilter, this);
-# endif /* VBOX_WITH_HACKED_QT */
+# endif /* !QT_MAC_USE_COCOA */
 
         ::DarwinGrabKeyboard (false);
     }
@@ -2503,15 +2519,13 @@ void VBoxConsoleView::darwinGrabKeyboardEvents (bool fGrab)
 # ifdef QT_MAC_USE_COCOA
         ::VBoxCocoaApplication_unsetCallback (UINT32_MAX, /** @todo fix mask */
                                               VBoxConsoleView::darwinEventHandlerProc, this);
-# elif !defined(VBOX_WITH_HACKED_QT)
+# else /* !QT_MAC_USE_COCOA */
         if (mDarwinEventHandlerRef)
         {
             ::RemoveEventHandler (mDarwinEventHandlerRef);
             mDarwinEventHandlerRef = NULL;
         }
-# else  /* VBOX_WITH_HACKED_QT */
-        ((QIApplication *)qApp)->setEventFilter (NULL, NULL);
-# endif /* VBOX_WITH_HACKED_QT */
+# endif /* !QT_MAC_USE_COCOA */
     }
 }
 
@@ -2547,7 +2561,7 @@ void VBoxConsoleView::focusEvent (bool aHasFocus,
 //      properly support it, we need to know when *all* mouse buttons are
 //      released after we got focus, and grab the mouse only after then.
 //      btw, the similar would be good the for keyboard auto-capture, too.
-//            if (!(mMouseAbsolute && mMouseIntegration))
+//            if (!(mMouseCanAbsolute && mMouseIntegration))
 //                captureMouse (true);
         }
 
@@ -2673,7 +2687,7 @@ void VBoxConsoleView::fixModifierState (LONG *codes, uint *count)
  */
 void VBoxConsoleView::toggleFSMode (const QSize &aSize)
 {
-    if ((mGuestSupportsGraphics && mAutoresizeGuest) ||
+    if (mAutoresizeGuest ||
         mMainWnd->isTrueSeamless() ||
         mMainWnd->isTrueFullscreen())
     {
@@ -2817,7 +2831,7 @@ bool VBoxConsoleView::keyEvent (int aKey, uint8_t aScan, int aFlags,
                 if (isRunning() && mKbdCaptured)
                 {
                     captureKbd (false);
-                    if (!(mMouseAbsolute && mMouseIntegration))
+                    if (!(mMouseCanAbsolute && mMouseIntegration))
                         captureMouse (false);
                 }
 
@@ -2927,7 +2941,7 @@ bool VBoxConsoleView::keyEvent (int aKey, uint8_t aScan, int aFlags,
                         if (ok)
                         {
                             captureKbd (!captured, false);
-                            if (!(mMouseAbsolute && mMouseIntegration))
+                            if (!(mMouseCanAbsolute && mMouseIntegration))
                             {
 #ifdef Q_WS_X11
                                 /* make sure that pending FocusOut events from the
@@ -3239,7 +3253,7 @@ bool VBoxConsoleView::mouseEvent (int aType, const QPoint &aPos, const QPoint &a
             }
         }
 
-        if (mMouseAbsolute && mMouseIntegration)
+        if (mMouseCanAbsolute && mMouseIntegration)
         {
             int cw = contentsWidth(), ch = contentsHeight();
             int vw = visibleWidth(), vh = visibleHeight();
@@ -3260,13 +3274,14 @@ bool VBoxConsoleView::mouseEvent (int aType, const QPoint &aPos, const QPoint &a
 
             QPoint cpnt = viewportToContents (aPos);
             if (cpnt.x() < 0) cpnt.setX (0);
-            else if (cpnt.x() > cw) cpnt.setX (cw);
+            else if (cpnt.x() > cw - 1) cpnt.setX (cw - 1);
             if (cpnt.y() < 0) cpnt.setY (0);
-            else if (cpnt.y() > ch) cpnt.setY (ch);
+            else if (cpnt.y() > ch - 1) cpnt.setY (ch - 1);
 
             CMouse mouse = mConsole.GetMouse();
-            mouse.PutMouseEventAbsolute (cpnt.x(), cpnt.y(), wheelVertical,
-                                         wheelHorizontal, state);
+            mouse.PutMouseEventAbsolute (cpnt.x() + 1, cpnt.y() + 1,
+                                         wheelVertical, wheelHorizontal,
+                                         state);
             return true; /* stop further event handling */
         }
         else
@@ -3333,7 +3348,7 @@ void VBoxConsoleView::onStateChange (KMachineState state)
                  */
                 QImage shot = QImage (mFrameBuf->width(), mFrameBuf->height(), QImage::Format_RGB32);
                 CDisplay dsp = mConsole.GetDisplay();
-                dsp.TakeScreenShot (shot.bits(), shot.width(), shot.height());
+                dsp.TakeScreenShot (0, shot.bits(), shot.width(), shot.height());
                 /*
                  *  TakeScreenShot() may fail if, e.g. the Paused notification
                  *  was delivered after the machine execution was resumed. It's
@@ -3476,12 +3491,12 @@ void VBoxConsoleView::captureKbd (bool aCapture, bool aEmitSignal /* = true */)
 #if defined (Q_WS_WIN32)
     /**/
 #elif defined (Q_WS_X11)
-	if (aCapture)
-		XGrabKey (QX11Info::display(), AnyKey, AnyModifier,
+    if (aCapture)
+        XGrabKey (QX11Info::display(), AnyKey, AnyModifier,
                   window()->winId(), False,
                   GrabModeAsync, GrabModeAsync);
-	else
-		XUngrabKey (QX11Info::display(),  AnyKey, AnyModifier,
+    else
+        XUngrabKey (QX11Info::display(),  AnyKey, AnyModifier,
                     window()->winId());
 #elif defined (Q_WS_MAC)
     if (aCapture)
@@ -3703,7 +3718,7 @@ void VBoxConsoleView::updateMouseClipping()
 
     if (mMouseCaptured)
     {
-        viewport()->setCursor (QCursor (Qt::BlankCursor));
+        updateHostCursor();
 #ifdef Q_WS_WIN32
         QRect r = viewport()->rect();
         r.moveTopLeft (viewport()->mapToGlobal (QPoint (0, 0)));
@@ -3718,7 +3733,7 @@ void VBoxConsoleView::updateMouseClipping()
 #endif
         /* return the cursor to where it was when we captured it and show it */
         QCursor::setPos (mCapturedPos);
-        viewport()->unsetCursor();
+        updateHostCursor();
     }
 }
 
@@ -3848,7 +3863,7 @@ void VBoxConsoleView::setPointerShape (MousePointerChangeEvent *me)
             Assert (hAlphaCursor);
             if (hAlphaCursor)
             {
-                viewport()->setCursor (QCursor (hAlphaCursor));
+                mLastCursor = QCursor (hAlphaCursor);
                 ok = true;
                 if (mAlphaCursor)
                     DestroyIcon (mAlphaCursor);
@@ -3911,7 +3926,7 @@ void VBoxConsoleView::setPointerShape (MousePointerChangeEvent *me)
             Assert (cur);
             if (cur)
             {
-                viewport()->setCursor (QCursor (cur));
+                mLastCursor = QCursor (cur);
                 ok = true;
             }
 
@@ -3954,7 +3969,7 @@ void VBoxConsoleView::setPointerShape (MousePointerChangeEvent *me)
         /* Set the new cursor */
         QCursor cursor (QPixmap::fromImage (image),
                         me->xHot(), me->yHot());
-        viewport()->setCursor (cursor);
+        mLastCursor = cursor;
         ok = true;
         NOREF (srcShapePtrScan);
 
@@ -3963,26 +3978,15 @@ void VBoxConsoleView::setPointerShape (MousePointerChangeEvent *me)
 # warning "port me"
 
 #endif
-        if (ok)
-            mLastCursor = viewport()->cursor();
-        else
-            viewport()->unsetCursor();
+        if (!ok)
+            mLastCursor = QCursor();  /* in practice this is equivalent to
+                                       * unsetCursor() */
+        mHideHostPointer = false;
     }
     else
-    {
-        /*
-         * We did not get any shape data
-         */
-        if (me->isVisible())
-        {
-            viewport()->setCursor (mLastCursor);
-        }
-        else
-        {
-            viewport()->setCursor (Qt::BlankCursor);
-        }
-    }
-    mHideHostPointer = !me->isVisible();
+        /* The visiblity flag is only interpreted if there is no shape */
+        mHideHostPointer = !me->isVisible();
+    updateHostCursor();
 }
 
 inline QRgb qRgbIntensity (QRgb rgb, int mul, int div)
@@ -4021,7 +4025,7 @@ void VBoxConsoleView::dimImage (QImage &img)
 
 void VBoxConsoleView::doResizeHint (const QSize &aToSize)
 {
-    if (mGuestSupportsGraphics && mAutoresizeGuest)
+    if (mAutoresizeGuest)
     {
         /* If this slot is invoked directly then use the passed size
          * otherwise get the available size for the guest display.
@@ -4153,7 +4157,7 @@ void VBoxConsoleView::calculateDesktopGeometry()
          * screen, this will exclude space taken up by desktop taskbars
          * and things, but this is unfortunately not true for the more
          * complex case of a desktop spanning multiple screens. */
-        QRect desktop = QApplication::desktop()->availableGeometry (this);
+        QRect desktop = availableGeometry();
         /* The area taken up by the console window on the desktop,
          * including window frame, title and menu bar and whatnot. */
         QRect frame = mMainWnd->frameGeometry();
@@ -4192,6 +4196,13 @@ void VBoxConsoleView::maybeRestrictMinimumSize()
         else
             setMinimumSize (0, 0);
     }
+}
+
+QRect VBoxConsoleView::availableGeometry() const
+{
+    return mMainWnd->isWindowFullScreen() ?
+           QApplication::desktop()->screenGeometry(this) :
+           QApplication::desktop()->availableGeometry(this);
 }
 
 int VBoxConsoleView::contentsWidth() const
@@ -4271,7 +4282,9 @@ void VBoxConsoleView::updateDockOverlay()
          mLastState == KMachineState_Restoring ||
          mLastState == KMachineState_TeleportingPausedVM ||
          mLastState == KMachineState_TeleportingIn ||
-         mLastState == KMachineState_Saving))
+         mLastState == KMachineState_Saving ||
+         mLastState == KMachineState_DeletingSnapshotOnline ||
+         mLastState == KMachineState_DeletingSnapshotPaused))
         updateDockIcon();
     else
         mDockIconPreview->updateDockOverlay();

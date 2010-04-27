@@ -6,7 +6,7 @@
 #
 
 #
-# Copyright (C) 2006-2007 Sun Microsystems, Inc.
+# Copyright (C) 2006-2010 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -16,55 +16,66 @@
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 #
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
-#
 
 TEMPLATE	= app
 LANGUAGE	= C++
 
 FORMS = \
-    ui/VBoxCloseVMDlg.ui \
-    ui/VBoxMediaManagerDlg.ui \
-    ui/VBoxSettingsDialog.ui \
-    ui/VBoxNewHDWzd.ui \
-    ui/VBoxNewVMWzd.ui \
-    ui/VBoxRegistrationDlg.ui \
-    ui/VBoxUpdateDlg.ui \
-    ui/VBoxSnapshotDetailsDlg.ui \
-    ui/VBoxSnapshotsWgt.ui \
-    ui/VBoxTakeSnapshotDlg.ui \
-    ui/VBoxVMFirstRunWzd.ui \
-    ui/VBoxVMInformationDlg.ui \
-    ui/VBoxVMLogViewer.ui \
-    ui/VBoxVMSettingsGeneral.ui \
-    ui/VBoxVMSettingsSystem.ui \
-    ui/VBoxVMSettingsDisplay.ui \
-    ui/VBoxVMSettingsHD.ui \
-    ui/VBoxVMSettingsAudio.ui \
-    ui/VBoxVMSettingsNetwork.ui \
-    ui/VBoxVMSettingsSerial.ui \
-    ui/VBoxVMSettingsParallel.ui \
-    ui/VBoxVMSettingsUSB.ui \
-    ui/VBoxVMSettingsUSBFilterDetails.ui \
-    ui/VBoxVMSettingsSF.ui \
-    ui/VBoxVMSettingsSFDetails.ui \
-    ui/VBoxGLSettingsGeneral.ui \
-    ui/VBoxGLSettingsInput.ui \
-    ui/VBoxGLSettingsUpdate.ui \
-    ui/VBoxGLSettingsLanguage.ui \
-    ui/VBoxGLSettingsNetwork.ui \
-    ui/VBoxGLSettingsNetworkDetails.ui \
-    ui/VBoxApplianceEditorWgt.ui \
-    ui/VBoxImportApplianceWzd.ui \
-    ui/VBoxExportApplianceWzd.ui
+    src/VBoxCloseVMDlg.ui \
+    src/VBoxVMInformationDlg.ui \
+    src/VBoxMediaManagerDlg.ui \
+    src/VBoxSnapshotDetailsDlg.ui \
+    src/VBoxSnapshotsWgt.ui \
+    src/VBoxTakeSnapshotDlg.ui \
+    src/VBoxUpdateDlg.ui \
+    src/VBoxVMLogViewer.ui \
+    src/settings/VBoxSettingsDialog.ui \
+    src/settings/vm/VBoxVMSettingsGeneral.ui \
+    src/settings/vm/VBoxVMSettingsSystem.ui \
+    src/settings/vm/VBoxVMSettingsDisplay.ui \
+    src/settings/vm/VBoxVMSettingsHD.ui \
+    src/settings/vm/VBoxVMSettingsAudio.ui \
+    src/settings/vm/VBoxVMSettingsNetwork.ui \
+    src/settings/vm/VBoxVMSettingsSerial.ui \
+    src/settings/vm/VBoxVMSettingsParallel.ui \
+    src/settings/vm/VBoxVMSettingsUSB.ui \
+    src/settings/vm/VBoxVMSettingsUSBFilterDetails.ui \
+    src/settings/vm/VBoxVMSettingsSF.ui \
+    src/settings/vm/VBoxVMSettingsSFDetails.ui \
+    src/settings/global/VBoxGLSettingsGeneral.ui \
+    src/settings/global/VBoxGLSettingsInput.ui \
+    src/settings/global/VBoxGLSettingsUpdate.ui \
+    src/settings/global/VBoxGLSettingsLanguage.ui \
+    src/settings/global/VBoxGLSettingsNetwork.ui \
+    src/settings/global/VBoxGLSettingsNetworkDetails.ui \
+    src/wizards/newvm/UINewVMWzdPage1.ui \
+    src/wizards/newvm/UINewVMWzdPage2.ui \
+    src/wizards/newvm/UINewVMWzdPage3.ui \
+    src/wizards/newvm/UINewVMWzdPage4.ui \
+    src/wizards/newvm/UINewVMWzdPage5.ui \
+    src/wizards/newhd/UINewHDWzdPage1.ui \
+    src/wizards/newhd/UINewHDWzdPage2.ui \
+    src/wizards/newhd/UINewHDWzdPage3.ui \
+    src/wizards/newhd/UINewHDWzdPage4.ui \
+    src/wizards/firstrun/UIFirstRunWzdPage1.ui \
+    src/wizards/firstrun/UIFirstRunWzdPage2.ui \
+    src/wizards/firstrun/UIFirstRunWzdPage3.ui \
+    src/wizards/exportappliance/UIExportApplianceWzdPage1.ui \
+    src/wizards/exportappliance/UIExportApplianceWzdPage2.ui \
+    src/wizards/exportappliance/UIExportApplianceWzdPage3.ui \
+    src/wizards/exportappliance/UIExportApplianceWzdPage4.ui \
+    src/wizards/importappliance/UIImportApplianceWzdPage1.ui \
+    src/wizards/importappliance/UIImportApplianceWzdPage2.ui \
+    src/wizards/registration/UIRegistrationWzdPage1.ui \
+    src/widgets/VBoxApplianceEditorWgt.ui
 
 TRANSLATIONS = \
+	nls/VirtualBox_en.ts \
 	nls/VirtualBox_el.ts \
 	nls/VirtualBox_tr.ts \
 	nls/VirtualBox_id.ts \
 	nls/VirtualBox_ca.ts \
+	nls/VirtualBox_ca_VA.ts \
 	nls/VirtualBox_sk.ts \
 	nls/VirtualBox_eu.ts \
 	nls/VirtualBox_nl.ts \

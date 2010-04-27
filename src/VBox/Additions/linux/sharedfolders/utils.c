@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -15,10 +15,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 #include "vfsmod.h"
@@ -27,7 +23,6 @@
 
 /* #define USE_VMALLOC */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 0)
 /*
  * sf_reg_aops and sf_backing_dev_info are just quick implementations to make
  * sendfile work. For more information have a look at
@@ -38,18 +33,6 @@
  *
  *   http://pserver.samba.org/samba/ftp/cifs-cvs/samplefs.tar.gz
  */
-
-static struct backing_dev_info sf_backing_dev_info = {
-        .ra_pages      = 0, /* No readahead */
-# if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 12)
-        .capabilities  = BDI_CAP_MAP_DIRECT    /* MAP_SHARED */
-                       | BDI_CAP_MAP_COPY      /* MAP_PRIVATE */
-                       | BDI_CAP_READ_MAP      /* can be mapped for reading */
-                       | BDI_CAP_WRITE_MAP     /* can be mapped for writing */
-                       | BDI_CAP_EXEC_MAP,     /* can be mapped for execution */
-# endif
-};
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 0) */
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION (2, 6, 0)
 static void
@@ -120,7 +103,7 @@ sf_init_inode (struct sf_glob_info *sf_g, struct inode *inode,
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 0)
         inode->i_mapping->a_ops = &sf_reg_aops;
-        inode->i_mapping->backing_dev_info = &sf_backing_dev_info;
+        inode->i_mapping->backing_dev_info = &sf_g->bdi;
 #endif
 
         if (is_dir) {
@@ -170,7 +153,7 @@ sf_stat (const char *caller, struct sf_glob_info *sf_g,
 
         RT_ZERO(params);
         params.CreateFlags = SHFL_CF_LOOKUP | SHFL_CF_ACT_FAIL_IF_NEW;
-        LogFunc(("calling vboxCallCreate, file %s, flags %#x\n",
+        LogFunc(("sf_stat: calling vboxCallCreate, file %s, flags %#x\n",
                  path->String.utf8, params.CreateFlags));
         rc = vboxCallCreate (&client_handle, &sf_g->map, path, &params);
         if (RT_FAILURE (rc)) {
@@ -304,7 +287,7 @@ sf_setattr (struct dentry *dentry, struct iattr *iattr)
             params.CreateFlags |= SHFL_CF_ACCESS_WRITE;
 
         rc = vboxCallCreate (&client_handle, &sf_g->map, sf_i->path, &params);
-        if (VBOX_FAILURE (rc)) {
+        if (RT_FAILURE (rc)) {
                 LogFunc(("vboxCallCreate(%s) failed rc=%Rrc\n",
                         sf_i->path->String.utf8, rc));
                 err = -RTErrConvertToErrno(rc);
@@ -354,7 +337,7 @@ sf_setattr (struct dentry *dentry, struct iattr *iattr)
             rc = vboxCallFSInfo(&client_handle, &sf_g->map, params.Handle,
                                 SHFL_INFO_SET | SHFL_INFO_FILE, &cbBuffer,
                                 (PSHFLDIRINFO)&info);
-            if (VBOX_FAILURE (rc)) {
+            if (RT_FAILURE (rc)) {
                 LogFunc(("vboxCallFSInfo(%s, FILE) failed rc=%Rrc\n",
                         sf_i->path->String.utf8, rc));
                 err = -RTErrConvertToErrno(rc);
@@ -370,7 +353,7 @@ sf_setattr (struct dentry *dentry, struct iattr *iattr)
             rc = vboxCallFSInfo(&client_handle, &sf_g->map, params.Handle,
                                 SHFL_INFO_SET | SHFL_INFO_SIZE, &cbBuffer,
                                 (PSHFLDIRINFO)&info);
-            if (VBOX_FAILURE (rc)) {
+            if (RT_FAILURE (rc)) {
                 LogFunc(("vboxCallFSInfo(%s, SIZE) failed rc=%Rrc\n",
                         sf_i->path->String.utf8, rc));
                 err = -RTErrConvertToErrno(rc);
@@ -379,7 +362,7 @@ sf_setattr (struct dentry *dentry, struct iattr *iattr)
         }
 
         rc = vboxCallClose (&client_handle, &sf_g->map, params.Handle);
-        if (VBOX_FAILURE (rc))
+        if (RT_FAILURE (rc))
         {
                 LogFunc(("vboxCallClose(%s) failed rc=%Rrc\n",
                       sf_i->path->String.utf8, rc));
@@ -389,7 +372,7 @@ sf_setattr (struct dentry *dentry, struct iattr *iattr)
 
 fail1:
         rc = vboxCallClose (&client_handle, &sf_g->map, params.Handle);
-        if (VBOX_FAILURE (rc))
+        if (RT_FAILURE (rc))
         {
                 LogFunc(("vboxCallClose(%s) failed rc=%Rrc\n",
                       sf_i->path->String.utf8, rc));
@@ -811,3 +794,34 @@ int sf_get_volume_info(struct super_block *sb, STRUCT_STATFS *stat)
 struct dentry_operations sf_dentry_ops = {
         .d_revalidate = sf_dentry_revalidate
 };
+
+int sf_init_backing_dev(struct sf_glob_info *sf_g, const char *name)
+{
+    int rc = 0;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 0)
+    sf_g->bdi.ra_pages = 0; /* No readahead */
+# if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 12)
+    sf_g->bdi.capabilities  = BDI_CAP_MAP_DIRECT    /* MAP_SHARED */
+                            | BDI_CAP_MAP_COPY      /* MAP_PRIVATE */
+                            | BDI_CAP_READ_MAP      /* can be mapped for reading */
+                            | BDI_CAP_WRITE_MAP     /* can be mapped for writing */
+                            | BDI_CAP_EXEC_MAP;     /* can be mapped for execution */
+# endif /* >= 2.6.12 */
+# if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 24)
+    rc = bdi_init(&sf_g->bdi);
+#  if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 26)
+    if (!rc)
+        rc = bdi_register(&sf_g->bdi, NULL, "vboxvfs-%s", name);
+#  endif /* >= 2.6.26 */
+# endif /* >= 2.6.24 */
+#endif /* >= 2.6.0 */
+    return rc;
+}
+
+void sf_done_backing_dev(struct sf_glob_info *sf_g)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION (2, 6, 24)
+    bdi_destroy(&sf_g->bdi); /* includes bdi_unregister() */
+#endif
+}

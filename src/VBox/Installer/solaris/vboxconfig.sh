@@ -1,10 +1,10 @@
 #!/bin/sh
-# $Id: vboxconfig.sh 24947 2009-11-25 12:12:26Z vboxsync $
+# $Id: vboxconfig.sh 28800 2010-04-27 08:22:32Z vboxsync $
 
 # Sun VirtualBox
 # VirtualBox Configuration Script, Solaris host.
 #
-# Copyright (C) 2009 Sun Microsystems, Inc.
+# Copyright (C) 2009 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
 # Foundation, in version 2 as it comes in the "COPYING" file of the
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
-#
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
 #
 
 
@@ -29,6 +25,7 @@ HOST_OS_MAJORVERSION=`uname -r`
 HOST_OS_MINORVERSION=`uname -v | sed -e "s/snv_//" -e "s/[^0-9]//"`
 
 DIR_VBOXBASE=/opt/VirtualBox
+DIR_CONF="/platform/i86pc/kernel/drv"
 DIR_MOD_32="/platform/i86pc/kernel/drv"
 DIR_MOD_64=$DIR_MOD_32/amd64
 
@@ -42,6 +39,7 @@ BIN_BOOTADM=/sbin/bootadm
 BIN_SVCADM=/usr/sbin/svcadm
 BIN_SVCCFG=/usr/sbin/svccfg
 BIN_IFCONFIG=/sbin/ifconfig
+BIN_ID=/usr/bin/id
 
 # "vboxdrv" is also used in sed lines here (change those as well if it ever changes)
 MOD_VBOXDRV=vboxdrv
@@ -49,6 +47,7 @@ DESC_VBOXDRV="Host"
 
 MOD_VBOXNET=vboxnet
 DESC_VBOXNET="NetAdapter"
+MOD_VBOXNET_INST=32
 
 MOD_VBOXFLT=vboxflt
 DESC_VBOXFLT="NetFilter"
@@ -106,7 +105,7 @@ check_bin_path()
         exit 1
     fi
 
-    if test !  -x "$1"; then
+    if test ! -x "$1"; then
         errorprint "$1 missing or is not an executable"
         exit 1
     fi
@@ -120,7 +119,9 @@ find_bins()
     # Search only for binaries that might be in different locations
     BIN_IFCONFIG=`which ifconfig 2> /dev/null`
     BIN_SVCS=`which svcs 2> /dev/null`
+    BIN_ID=`which id 2> /dev/null`
 
+    check_bin_path "$BIN_ID"
     check_bin_path "$BIN_ADDDRV"
     check_bin_path "$BIN_REMDRV"
     check_bin_path "$BIN_MODLOAD"
@@ -138,18 +139,10 @@ find_bins()
 # !! failure is always fatal
 check_root()
 {
-    idbin=/usr/xpg4/bin/id
-    if test ! -x "$idbin"; then
-        found=`which id 2> /dev/null`
-        if test ! -x "$found"; then
-            errorprint "Failed to find a suitable user id executable."
-            exit 1
-        else
-            idbin=$found
-        fi
-    fi
-
-    if test `$idbin -u` -ne 0; then
+    # Don't use "-u" option as some id binaries don't support it, instead
+    # rely on "uid=101(username) gid=10(groupname) groups=10(staff)" output
+    curuid=`$BIN_ID | cut -f 2 -d '=' | cut -f 1 -d '('`
+    if test "$curuid" -ne 0; then
         errorprint "This script must be run with administrator privileges."
         exit 1
     fi
@@ -197,7 +190,9 @@ module_added()
         exit 1
     fi
 
-    loadentry=`cat /etc/name_to_major | grep $1`
+    # Add a space at end of module name to make sure we have a perfect match to avoid
+    # any substring matches: e.g "vboxusb" & "vboxusbmon"
+    loadentry=`cat /etc/name_to_major | grep "$1 "`
     if test -z "$loadentry"; then
         return 1
     fi
@@ -214,8 +209,8 @@ module_loaded()
     fi
 
     modname=$1
-    # modinfo should now work properly since we prevent module autounloading
-    loadentry=`$BIN_MODINFO | grep $modname`
+    # modinfo should now work properly since we prevent module autounloading.
+    loadentry=`$BIN_MODINFO | grep "$modname "`
     if test -z "$loadentry"; then
         return 1
     fi
@@ -305,13 +300,13 @@ unload_module()
     modname=$1
     moddesc=$2
     fatal=$3
-    modid=`$BIN_MODINFO | grep $modname | cut -f 1 -d ' ' `
+    modid=`$BIN_MODINFO | grep "$modname " | cut -f 1 -d ' ' `
     if test -n "$modid"; then
         $BIN_MODUNLOAD -i $modid
         if test $? -eq 0; then
             subprint "Unloaded: $moddesc module"
         else
-            subprint "Unloading: $moddesc  ...FAILED!"
+            subprint "Unloading: $moddesc module ...FAILED!"
             if test "$fatal" = "$FATALOP"; then
                 exit 1
             fi
@@ -351,12 +346,17 @@ load_module()
 # !! failure is always fatal
 install_drivers()
 {
-    if test -n "_HARDENED_"; then
-        add_driver "$MOD_VBOXDRV" "$DESC_VBOXDRV" "$FATALOP" "not-$NULLOP" "'* 0600 root sys'"
+    if test -f "$DIR_CONF/vboxdrv.conf"; then
+        if test -n "_HARDENED_"; then
+            add_driver "$MOD_VBOXDRV" "$DESC_VBOXDRV" "$FATALOP" "not-$NULLOP" "'* 0600 root sys'"
+        else
+            add_driver "$MOD_VBOXDRV" "$DESC_VBOXDRV" "$FATALOP" "not-$NULLOP" "'* 0666 root sys'"
+        fi
+        load_module "drv/$MOD_VBOXDRV" "$DESC_VBOXDRV" "$FATALOP"
     else
-        add_driver "$MOD_VBOXDRV" "$DESC_VBOXDRV" "$FATALOP" "not-$NULLOP" "'* 0666 root sys'"
+        errorprint "Extreme error! Missing $DIR_CONF/vboxdrv.conf, aborting."
+        return 1
     fi
-    load_module "drv/$MOD_VBOXDRV" "$DESC_VBOXDRV" "$FATALOP"
 
     # Add vboxdrv to devlink.tab
     sed -e '/name=vboxdrv/d' /etc/devlink.tab > /etc/devlink.vbox
@@ -368,20 +368,20 @@ install_drivers()
 
     if test $? -eq 0 && test -h "/dev/vboxdrv"; then
 
-        if test -f /platform/i86pc/kernel/drv/vboxnet.conf; then
+        if test -f "$DIR_CONF/vboxnet.conf"; then
             add_driver "$MOD_VBOXNET" "$DESC_VBOXNET" "$FATALOP"
             load_module "drv/$MOD_VBOXNET" "$DESC_VBOXNET" "$FATALOP"
         fi
 
-        if test -f /platform/i86pc/kernel/drv/vboxflt.conf; then
+        if test -f "$DIR_CONF/vboxflt.conf"; then
             add_driver "$MOD_VBOXFLT" "$DESC_VBOXFLT" "$FATALOP"
             load_module "drv/$MOD_VBOXFLT" "$DESC_VBOXFLT" "$FATALOP"
         fi
 
-        if test -f /platform/i86pc/kernel/drv/vboxusbmon.conf && test "$HOST_OS_MAJORVERSION" != "5.10"; then
+        if test -f "$DIR_CONF/vboxusbmon.conf" && test "$HOST_OS_MAJORVERSION" != "5.10"; then
             # For VirtualBox 3.1 the new USB code requires Nevada > 123
             if test "$HOST_OS_MINORVERSION" -gt 123; then
-                add_driver "$MOD_VBOXUSBMON" "$DESC_VBOXUSBMON" "$FATALOP"
+                add_driver "$MOD_VBOXUSBMON" "$DESC_VBOXUSBMON" "$FATALOP" "not-$NULLOP" "'* 0666 root sys'"
                 load_module "drv/$MOD_VBOXUSBMON" "$DESC_VBOXUSBMON" "$FATALOP"
 
                 # Add vboxusbmon to devlink.tab
@@ -400,7 +400,7 @@ install_drivers()
                 # This driver is special, we need it in the boot-archive but since there is no
                 # USB device to attach to now (it's done at runtime) it will fail to attach so
                 # redirect attaching failure output to /dev/null
-                if test -f /platform/i86pc/kernel/drv/vboxusb.conf; then
+                if test -f "$DIR_CONF/vboxusb.conf"; then
                     add_driver "$MOD_VBOXUSB" "$DESC_VBOXUSB" "$FATALOP" "$NULLOP"
                     load_module "drv/$MOD_VBOXUSB" "$DESC_VBOXUSB" "$FATALOP"
                 fi
@@ -470,6 +470,14 @@ remove_drivers()
         mv -f $nwambackupfile $nwamfile
     fi
 
+    # remove netmask configuration
+    nmaskfile=/etc/netmasks
+    nmaskbackupfile=$nmaskfile.vbox
+    if test -f "$nmaskfile"; then
+        sed -e '/#VirtualBox_SectionStart/,/#VirtualBox_SectionEnd/d' $nmaskfile > $nmaskbackupfile
+        mv -f $nmaskbackupfile $nmaskfile
+    fi
+
     return 0
 }
 
@@ -534,29 +542,34 @@ cleanup_install()
         fi
     fi
 
-    # unplumb vboxnet0
-    vboxnetup=`$BIN_IFCONFIG vboxnet0 >/dev/null 2>&1`
-    if test "$?" -eq 0; then
-        $BIN_IFCONFIG vboxnet0 unplumb
-        if test "$?" -ne 0; then
-            errorprint "VirtualBox NetAdapter 'vboxnet0' couldn't be unplumbed (probably in use)."
-            if test "$fatal" = "$FATALOP"; then
-                exit 1
+    # unplumb all vboxnet instances
+    inst=0
+    while test $inst -ne $MOD_VBOXNET_INST; do
+        vboxnetup=`$BIN_IFCONFIG vboxnet$inst >/dev/null 2>&1`
+        if test "$?" -eq 0; then
+            $BIN_IFCONFIG vboxnet$inst unplumb
+            if test "$?" -ne 0; then
+                errorprint "VirtualBox NetAdapter 'vboxnet$inst' couldn't be unplumbed (probably in use)."
+                if test "$fatal" = "$FATALOP"; then
+                    exit 1
+                fi
             fi
         fi
-    fi
 
-    # unplumb vboxnet0 ipv6
-    vboxnetup=`$BIN_IFCONFIG vboxnet0 inet6 >/dev/null 2>&1`
-    if test "$?" -eq 0; then
-        $BIN_IFCONFIG vboxnet0 inet6 unplumb
-        if test "$?" -ne 0; then
-            errorprint "VirtualBox NetAdapter 'vboxnet0' IPv6 couldn't be unplumbed (probably in use)."
-            if test "$fatal" = "$FATALOP"; then
-                exit 1
+        # unplumb vboxnet0 ipv6
+        vboxnetup=`$BIN_IFCONFIG vboxnet$inst inet6 >/dev/null 2>&1`
+        if test "$?" -eq 0; then
+            $BIN_IFCONFIG vboxnet$inst inet6 unplumb
+            if test "$?" -ne 0; then
+                errorprint "VirtualBox NetAdapter 'vboxnet$inst' IPv6 couldn't be unplumbed (probably in use)."
+                if test "$fatal" = "$FATALOP"; then
+                    exit 1
+                fi
             fi
         fi
-    fi
+
+        inst=`expr $inst + 1`
+    done
 }
 
 
@@ -568,13 +581,21 @@ postinstall()
     install_drivers
 
     if test "$?" -eq 0; then
-        if test -f /platform/i86pc/kernel/drv/vboxnet.conf; then
+        if test -f "$DIR_CONF/vboxnet.conf"; then
             # nwam/dhcpagent fix
             nwamfile=/etc/nwam/llp
             nwambackupfile=$nwamfile.vbox
             if test -f "$nwamfile"; then
                 sed -e '/vboxnet/d' $nwamfile > $nwambackupfile
-                echo "vboxnet0	static 192.168.56.1" >> $nwambackupfile
+
+                # add all vboxnet instances as static to nwam
+                inst=0
+                networkn=56
+                while test $inst -ne 1; do
+                    echo "vboxnet$inst	static 192.168.$networkn.1" >> $nwambackupfile
+                    inst=`expr $inst + 1`
+                    networkn=`expr $networkn + 1`
+                done
                 mv -f $nwambackupfile $nwamfile
             fi
 
@@ -582,6 +603,23 @@ postinstall()
             $BIN_IFCONFIG vboxnet0 plumb up
             if test "$?" -eq 0; then
                 $BIN_IFCONFIG vboxnet0 192.168.56.1 netmask 255.255.255.0 up
+
+                # add the netmask to stay persistent across host reboots
+                nmaskfile=/etc/netmasks
+                nmaskbackupfile=$nmaskfile.vbox
+                if test -f $nmaskfile; then
+                    sed -e '/#VirtualBox_SectionStart/,/#VirtualBox_SectionEnd/d' $nmaskfile > $nmaskbackupfile
+                    echo "#VirtualBox_SectionStart" >> $nmaskbackupfile
+                    inst=0
+                    networkn=56
+                    while test $inst -ne 1; do
+                        echo "192.168.$networkn.0 255.255.255.0" >> $nmaskbackupfile
+                        inst=`expr $inst + 1`
+                        networkn=`expr $networkn + 1`
+                    done
+                    echo "#VirtualBox_SectionEnd" >> $nmaskbackupfile
+                    mv -f $nmaskbackupfile $nmaskfile
+                fi
             else
                 # Should this be fatal?
                 warnprint "Failed to bring up vboxnet0!!"
@@ -655,7 +693,7 @@ postinstall()
 
         return 0
     else
-        errorprint "Failed to update boot-archive"
+        errorprint "Failed to install drivers"
         exit 666
     fi
     return 1
@@ -688,7 +726,7 @@ find_bins
 while test $# -gt 0;
 do
     case "$1" in
-        --postinstall | --preremove | --installdrivers | --removedrivers)
+        --postinstall | --preremove | --installdrivers | --removedrivers | --setupdrivers)
             drvop="$1"
             ;;
         --fatal)
@@ -699,6 +737,10 @@ do
             ;;
         --ips)
             ISIPS="$IPSOP"
+            ;;
+        --altkerndir)
+            # Use alternate kernel driver config folder (dev only)
+            DIR_CONF="/usr/kernel/drv"
             ;;
         *)
             break
@@ -721,6 +763,10 @@ case "$drvop" in
     ;;
 --removedrivers)
     remove_drivers "$fatal"
+    ;;
+--setupdrivers)
+    remove_drivers "$fatal"
+    install_drivers
     ;;
 *)
     errorprint "Invalid operation $drvop"

@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -12,10 +12,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 #include <malloc.h>
@@ -83,6 +79,8 @@ unsigned nextAdjacentRectYN (RECTL *paRects, unsigned nRects, unsigned iRect)
 
 void resizeRect(RECTL *paRects, unsigned nRects, unsigned iPrimary, unsigned iResized, int NewWidth, int NewHeight)
 {
+    DDCLOG(("nRects %d, iPrimary %d, iResized %d, NewWidth %d, NewHeight %d\n", nRects, iPrimary, iResized, NewWidth, NewHeight));
+
     RECTL *paNewRects = (RECTL *)alloca (sizeof (RECTL) * nRects);
     memcpy (paNewRects, paRects, sizeof (RECTL) * nRects);
     paNewRects[iResized].right += NewWidth - (paNewRects[iResized].right - paNewRects[iResized].left);
@@ -112,7 +110,7 @@ void resizeRect(RECTL *paRects, unsigned nRects, unsigned iPrimary, unsigned iRe
          */
         int delta = paNewRects[iRect].right - paNewRects[iNextRect].left;
 
-        if (delta > 0)
+        if (delta != 0)
         {
             DDCLOG(("XP intersection right %d left %d, diff %d\n",
                      paNewRects[iRect].right, paNewRects[iNextRect].left,
@@ -140,7 +138,7 @@ void resizeRect(RECTL *paRects, unsigned nRects, unsigned iPrimary, unsigned iRe
          */
         int delta = paNewRects[iRect].left - paNewRects[iNextRect].right;
 
-        if (delta < 0)
+        if (delta != 0)
         {
             DDCLOG(("XN intersection left %d right %d, diff %d\n",
                      paNewRects[iRect].left, paNewRects[iNextRect].right,
@@ -168,7 +166,7 @@ void resizeRect(RECTL *paRects, unsigned nRects, unsigned iPrimary, unsigned iRe
          */
         int delta = paNewRects[iRect].bottom - paNewRects[iNextRect].top;
 
-        if (delta > 0)
+        if (delta != 0)
         {
             DDCLOG(("YP intersection bottom %d top %d, diff %d\n",
                      paNewRects[iRect].bottom, paNewRects[iNextRect].top,
@@ -196,7 +194,7 @@ void resizeRect(RECTL *paRects, unsigned nRects, unsigned iPrimary, unsigned iRe
          */
         int delta = paNewRects[iRect].top - paNewRects[iNextRect].bottom;
 
-        if (delta < 0)
+        if (delta != 0)
         {
             DDCLOG(("YN intersection top %d bottom %d, diff %d\n",
                      paNewRects[iRect].top, paNewRects[iNextRect].bottom,

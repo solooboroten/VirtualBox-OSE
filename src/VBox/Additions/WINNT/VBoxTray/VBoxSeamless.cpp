@@ -1,10 +1,10 @@
-/* $Id: $ */
+/* $Id: VBoxSeamless.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * VBoxSeamless - Seamless windows
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 #define _WIN32_WINNT 0x0500
 #include <windows.h>
@@ -37,14 +33,16 @@ typedef struct _VBOXSEAMLESSCONTEXT
     BOOL    (* pfnVBoxInstallHook)(HMODULE hDll);
     BOOL    (* pfnVBoxRemoveHook)();
 
-    LPRGNDATA lpRgnData;
+    PVBOXDISPIFESCAPE lpEscapeData;
 } VBOXSEAMLESSCONTEXT;
 
 typedef struct
 {
     HDC     hdc;
     HRGN    hrgn;
+#ifndef MMSEAMLESS
     RECT    rect;
+#endif
 } VBOX_ENUM_PARAM, *PVBOX_ENUM_PARAM;
 
 static VBOXSEAMLESSCONTEXT gCtx = {0};
@@ -143,10 +141,10 @@ void VBoxSeamlessRemoveHook()
     if (gCtx.pfnVBoxRemoveHook)
         gCtx.pfnVBoxRemoveHook();
 
-    if (gCtx.lpRgnData)
+    if (gCtx.lpEscapeData)
     {
-        free(gCtx.lpRgnData);
-        gCtx.lpRgnData = NULL;
+        free(gCtx.lpEscapeData);
+        gCtx.lpEscapeData = NULL;
     }
 }
 
@@ -164,9 +162,15 @@ BOOL CALLBACK VBoxEnumFunc(HWND hwnd, LPARAM lParam)
 
     Log(("VBoxEnumFunc %x\n", hwnd));
     /* Only visible windows that are present on the desktop are interesting here */
+#ifndef MMSEAMLESS
     if (    GetWindowRect(hwnd, &rectWindow)
         &&  IntersectRect(&rectVisible, &lpParam->rect, &rectWindow))
     {
+#else
+    if (GetWindowRect(hwnd, &rectWindow))
+    {
+        rectVisible = rectWindow;
+#endif
         char szWindowText[256];
         szWindowText[0] = 0;
         GetWindowText(hwnd, szWindowText, sizeof(szWindowText));
@@ -226,8 +230,10 @@ void VBoxSeamlessCheckWindows()
     param.hdc       = GetDC(HWND_DESKTOP);
     param.hrgn      = 0;
 
+#ifndef MMSEAMLESS
     GetWindowRect(GetDesktopWindow(), &param.rect);
     Log(("VBoxRecheckVisibleWindows desktop=%x rect (%d,%d) (%d,%d)\n", GetDesktopWindow(), param.rect.left, param.rect.top, param.rect.right, param.rect.bottom));
+#endif
     EnumWindows(VBoxEnumFunc, (LPARAM)&param);
 
     if (param.hrgn)
@@ -237,9 +243,11 @@ void VBoxSeamlessCheckWindows()
         cbSize = GetRegionData(param.hrgn, 0, NULL);
         if (cbSize)
         {
-            LPRGNDATA lpRgnData = (LPRGNDATA)malloc(cbSize);
-            if (lpRgnData)
+            PVBOXDISPIFESCAPE lpEscapeData = (PVBOXDISPIFESCAPE)malloc(VBOXDISPIFESCAPE_SIZE(cbSize));
+            if (lpEscapeData)
             {
+                lpEscapeData->escapeCode = VBOXESC_SETVISIBLEREGION;
+                LPRGNDATA lpRgnData = VBOXDISPIFESCAPE_DATA(lpEscapeData, RGNDATA);
                 memset(lpRgnData, 0, cbSize);
                 cbSize = GetRegionData(param.hrgn, cbSize, lpRgnData);
                 if (cbSize)
@@ -253,22 +261,23 @@ void VBoxSeamlessCheckWindows()
                         Log(("visible rect (%d,%d)(%d,%d)\n", lpRect[i].left, lpRect[i].top, lpRect[i].right, lpRect[i].bottom));
                     }
 #endif
-                    if (    !gCtx.lpRgnData
-                        ||  (gCtx.lpRgnData->rdh.dwSize + gCtx.lpRgnData->rdh.nRgnSize != cbSize)
-                        ||  memcmp(gCtx.lpRgnData, lpRgnData, cbSize))
+                    LPRGNDATA lpCtxRgnData = VBOXDISPIFESCAPE_DATA(gCtx.lpEscapeData, RGNDATA);
+                    if (    !gCtx.lpEscapeData
+                        ||  (lpCtxRgnData->rdh.dwSize + lpCtxRgnData->rdh.nRgnSize != cbSize)
+                        ||  memcmp(lpCtxRgnData, lpRgnData, cbSize))
                     {
                         /* send to display driver */
-                        ExtEscape(param.hdc, VBOXESC_SETVISIBLEREGION, cbSize, (LPCSTR)lpRgnData, 0, NULL);
+                        VBoxDispIfEscape(&gCtx.pEnv->dispIf, lpEscapeData, cbSize);
 
-                        if (gCtx.lpRgnData)
-                            free(gCtx.lpRgnData);
-                        gCtx.lpRgnData = lpRgnData;
+                        if (gCtx.lpEscapeData)
+                            free(gCtx.lpEscapeData);
+                        gCtx.lpEscapeData = lpEscapeData;
                     }
                     else
                         Log(("Visible rectangles haven't changed; ignore\n"));
                 }
-                if (lpRgnData != gCtx.lpRgnData)
-                    free(lpRgnData);
+                if (lpEscapeData != gCtx.lpEscapeData)
+                    free(lpEscapeData);
             }
         }
 

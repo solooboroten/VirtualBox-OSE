@@ -1,6 +1,6 @@
 /******************************Module*Header*******************************\
 *
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -9,10 +9,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
 */
 /*
 * Based in part on Microsoft DDK sample code
@@ -110,17 +106,17 @@ DEVINFO *pDevInfo)
     // Fill in the GDIINFO data structure with the information returned from
     // the kernel driver.
     //
-    
+
     ppdev->ulMode = 0;
     ppdev->cxScreen = pDevMode->dmPelsWidth;
     ppdev->cyScreen = pDevMode->dmPelsHeight;
     ppdev->ulBitCount = pDevMode->dmBitsPerPel;
     ppdev->lDeltaScreen = 0;
-    
+
     ppdev->flRed = 0x00FF0000;
     ppdev->flGreen = 0x000FF00;
     ppdev->flBlue = 0x00000FF;
-    
+
     pGdiInfo->ulVersion    = GDI_DRIVER_VERSION;
     pGdiInfo->ulTechnology = DT_RASDISPLAY;
     pGdiInfo->ulHorzSize   = 0;
@@ -131,7 +127,7 @@ DEVINFO *pDevInfo)
     pGdiInfo->ulPanningHorzRes = 0;
     pGdiInfo->ulPanningVertRes = 0;
     pGdiInfo->cBitsPixel       = 8;
-    pGdiInfo->cPlanes          = 1; 
+    pGdiInfo->cPlanes          = 1;
     pGdiInfo->ulVRefresh       = 1;       // not used
     pGdiInfo->ulBltAlignment   = 1;     // We don't have accelerated screen-
                                         //   to-screen blts, and any
@@ -257,7 +253,7 @@ DEVINFO *pDevInfo)
     // distributed color values.
 
     red = 0, green = 0, blue = 0;
-    
+
     for (i = NUMPALRESERVED; i < NUMPALCOLORS; i++) {
         palColors[i][0] = red;
         palColors[i][1] = green;
@@ -272,7 +268,7 @@ DEVINFO *pDevInfo)
     if (ppdev->ulBitCount == 8)
     {
     pDevInfo->hpalDefault = ppdev->hpalDefault =
-       
+
                   EngCreatePalette(PAL_INDEXED,
                                    NUMPALCOLORS,     // cColors
                                    (ULONG*)&palColors[0],       // pulColors
@@ -286,11 +282,9 @@ DEVINFO *pDevInfo)
                 EngCreatePalette(PAL_BITFIELDS, 0,NULL,
                                  ppdev->flRed,ppdev->flBlue,ppdev->flGreen);
     }
-    
+
     DISPDBG((0,"bInitPDEV OK\n"));
-    
+
     return(TRUE);
 }
-
-
 

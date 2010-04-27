@@ -68,6 +68,11 @@ typedef struct _KEVENT {
   DISPATCHER_HEADER  Header;
 } KEVENT, *PKEVENT, *RESTRICTED_POINTER PRKEVENT;
 
+typedef struct _KSEMAPHORE {
+  DISPATCHER_HEADER  Header;
+  LONG Limit;
+} KSEMAPHORE, *PKSEMAPHORE, *PRKSEMAPHORE;
+
 typedef struct _KDPC {
   CSHORT  Type;
   UCHAR  Number;
@@ -138,7 +143,7 @@ typedef struct _IO_TIMER *PIO_TIMER;
 typedef struct _IO_TIMER_ROUTINE *PIO_TIMER_ROUTINE;
 typedef struct _ETHREAD *PETHREAD;
 typedef struct _FREE_FUNCTION *PFREE_FUNCTION;
-typedef struct _KTHREAD *PKTHREAD;
+typedef struct _KTHREAD *PKTHREAD, *PRKTHREAD;
 typedef struct _EPROCESS *PEPROCESS;
 typedef struct _ERESOURCE *PERESOURCE;
 typedef struct _IO_WORKITEM *PIO_WORKITEM;
@@ -427,7 +432,7 @@ typedef struct _IRP {
         struct {
           PVOID  DriverContext[4];
         } DUMMYSTRUCTNAME;
-      } DUMMYUNIONNAME;
+      } DUMMYUNIONNAME1;
       PETHREAD  Thread;
       PCHAR  AuxiliaryBuffer;
       struct {
@@ -435,7 +440,7 @@ typedef struct _IRP {
         union {
           struct _IO_STACK_LOCATION  *CurrentStackLocation;
           ULONG  PacketType;
-        } DUMMYUNIONNAME;
+        } DUMMYUNIONNAME2;
       } DUMMYSTRUCTNAME;
       struct _FILE_OBJECT  *OriginalFileObject;
     } Overlay;
@@ -692,6 +697,29 @@ typedef enum _BUS_QUERY_ID_TYPE {
   BusQueryInstanceID,
   BusQueryDeviceSerialNumber
 } BUS_QUERY_ID_TYPE, *PBUS_QUERY_ID_TYPE;
+
+typedef enum {
+  DevicePropertyDeviceDescription,
+  DevicePropertyHardwareID,
+  DevicePropertyCompatibleIDs,
+  DevicePropertyBootConfiguration,
+  DevicePropertyBootConfigurationTranslated,
+  DevicePropertyClassName,
+  DevicePropertyClassGuid,
+  DevicePropertyDriverKeyName,
+  DevicePropertyManufacturer,
+  DevicePropertyFriendlyName,
+  DevicePropertyLocationInformation,
+  DevicePropertyPhysicalDeviceObjectName,
+  DevicePropertyBusTypeGuid,
+  DevicePropertyLegacyBusType,
+  DevicePropertyBusNumber,
+  DevicePropertyEnumeratorName,
+  DevicePropertyAddress,
+  DevicePropertyUINumber,
+  DevicePropertyInstallState,
+  DevicePropertyRemovalPolicy
+} DEVICE_REGISTRY_PROPERTY;
 
 typedef enum _DEVICE_TEXT_TYPE {
   DeviceTextDescription,
@@ -1025,7 +1053,23 @@ typedef enum _MM_SYSTEM_SIZE
 
 NTSTATUS WINAPI ObCloseHandle(IN HANDLE handle);
 
-#define IoGetCurrentIrpStackLocation(_Irp) ((_Irp)->Tail.Overlay.CurrentStackLocation)
+#ifdef NONAMELESSUNION
+# ifdef NONAMELESSSTRUCT
+#  define IoGetCurrentIrpStackLocation(_Irp) ((_Irp)->Tail.Overlay.s.u2.CurrentStackLocation)
+#  define IoGetNextIrpStackLocation(_Irp) ((_Irp)->Tail.Overlay.s.u2.CurrentStackLocation - 1)
+# else
+#  define IoGetCurrentIrpStackLocation(_Irp) ((_Irp)->Tail.Overlay.u2.CurrentStackLocation)
+#  define IoGetNextIrpStackLocation(_Irp) ((_Irp)->Tail.Overlay.u2.CurrentStackLocation - 1)
+# endif
+#else
+# ifdef NONAMELESSSTRUCT
+#  define IoGetCurrentIrpStackLocation(_Irp) ((_Irp)->Tail.Overlay.s.CurrentStackLocation)
+#  define IoGetNextIrpStackLocation(_Irp) ((_Irp)->Tail.Overlay.s.CurrentStackLocation - 1)
+# else
+#  define IoGetCurrentIrpStackLocation(_Irp) ((_Irp)->Tail.Overlay.CurrentStackLocation)
+#  define IoGetNextIrpStackLocation(_Irp) ((_Irp)->Tail.Overlay.CurrentStackLocation - 1)
+# endif
+#endif
 
 #define KernelMode 0
 #define UserMode   1
@@ -1049,7 +1093,10 @@ void      WINAPI ExFreePool(PVOID);
 void      WINAPI ExFreePoolWithTag(PVOID,ULONG);
 
 NTSTATUS  WINAPI IoAllocateDriverObjectExtension(PDRIVER_OBJECT,PVOID,ULONG,PVOID*);
+PVOID     WINAPI IoAllocateErrorLogEntry(PVOID,UCHAR);
 PIRP      WINAPI IoAllocateIrp(CCHAR,BOOLEAN);
+NTSTATUS  WINAPI IoCallDriver(DEVICE_OBJECT*,IRP*);
+VOID      WINAPI IoCompleteRequest(IRP*,UCHAR);
 NTSTATUS  WINAPI IoCreateDevice(DRIVER_OBJECT*,ULONG,UNICODE_STRING*,DEVICE_TYPE,ULONG,BOOLEAN,DEVICE_OBJECT**);
 NTSTATUS  WINAPI IoCreateDriver(UNICODE_STRING*,PDRIVER_INITIALIZE);
 NTSTATUS  WINAPI IoCreateSymbolicLink(UNICODE_STRING*,UNICODE_STRING*);
@@ -1059,6 +1106,7 @@ NTSTATUS  WINAPI IoDeleteSymbolicLink(UNICODE_STRING*);
 void      WINAPI IoFreeIrp(IRP*);
 PEPROCESS WINAPI IoGetCurrentProcess(void);
 NTSTATUS  WINAPI IoGetDeviceObjectPointer(UNICODE_STRING*,ACCESS_MASK,PFILE_OBJECT*,PDEVICE_OBJECT*);
+NTSTATUS  WINAPI IoGetDeviceProperty(PDEVICE_OBJECT,DEVICE_REGISTRY_PROPERTY,ULONG,PVOID,PULONG);
 PVOID     WINAPI IoGetDriverObjectExtension(PDRIVER_OBJECT,PVOID);
 PDEVICE_OBJECT WINAPI IoGetRelatedDeviceObject(PFILE_OBJECT);
 void      WINAPI IoInitializeIrp(IRP*,USHORT,CCHAR);
@@ -1067,8 +1115,14 @@ PKTHREAD  WINAPI KeGetCurrentThread(void);
 void      WINAPI KeQuerySystemTime(LARGE_INTEGER*);
 void      WINAPI KeQueryTickCount(LARGE_INTEGER*);
 ULONG     WINAPI KeQueryTimeIncrement(void);
+LONG      WINAPI KeReleaseSemaphore(PRKSEMAPHORE,KPRIORITY,LONG,BOOLEAN);
+LONG      WINAPI KeResetEvent(PRKEVENT);
+LONG      WINAPI KeSetEvent(PRKEVENT,KPRIORITY,BOOLEAN);
+KPRIORITY WINAPI KeSetPriorityThread(PKTHREAD,KPRIORITY);
 
+PVOID     WINAPI MmAllocateContiguousMemory(SIZE_T,PHYSICAL_ADDRESS);
 PVOID     WINAPI MmAllocateNonCachedMemory(SIZE_T);
+PMDL      WINAPI MmAllocatePagesForMdl(PHYSICAL_ADDRESS,PHYSICAL_ADDRESS,PHYSICAL_ADDRESS,SIZE_T);
 void      WINAPI MmFreeNonCachedMemory(PVOID,SIZE_T);
 MM_SYSTEMSIZE WINAPI MmQuerySystemSize(void);
 

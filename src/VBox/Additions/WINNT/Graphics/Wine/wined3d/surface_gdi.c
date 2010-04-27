@@ -249,7 +249,8 @@ IWineGDISurfaceImpl_Flip(IWineD3DSurface *iface,
         return WINEDDERR_NOTFLIPPABLE;
     }
 
-    hr = IWineD3DSwapChain_Present((IWineD3DSwapChain *) swapchain, NULL, NULL, 0, NULL, 0);
+    hr = IWineD3DSwapChain_Present((IWineD3DSwapChain *)swapchain,
+            NULL, NULL, swapchain->win_handle, NULL, 0);
     IWineD3DSwapChain_Release((IWineD3DSwapChain *) swapchain);
     return hr;
 }
@@ -305,9 +306,9 @@ const char* filename)
     FILE* f = NULL;
     UINT y = 0, x = 0;
     IWineD3DSurfaceImpl *This = (IWineD3DSurfaceImpl *)iface;
+    const struct wined3d_format_desc *format_desc = This->resource.format_desc;
     static char *output = NULL;
     static UINT size = 0;
-    const struct GlPixelFormatDesc *format_desc = This->resource.format_desc;
 
     if (This->pow2Width > size) {
         output = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, This->pow2Width * 3);
@@ -438,7 +439,7 @@ static HRESULT WINAPI IWineGDISurfaceImpl_GetDC(IWineD3DSurface *iface, HDC *pHD
         } else {
             IWineD3DSurfaceImpl *dds_primary;
             IWineD3DSwapChainImpl *swapchain;
-            swapchain = (IWineD3DSwapChainImpl *)This->resource.wineD3DDevice->swapchains[0];
+            swapchain = (IWineD3DSwapChainImpl *)This->resource.device->swapchains[0];
             dds_primary = (IWineD3DSurfaceImpl *)swapchain->frontBuffer;
             if (dds_primary && dds_primary->palette)
                 pal = dds_primary->palette->palents;
@@ -655,7 +656,6 @@ const IWineD3DSurfaceVtbl IWineGDISurface_Vtbl =
     IWineGDISurfaceImpl_Release,
     /* IWineD3DResource */
     IWineD3DBaseSurfaceImpl_GetParent,
-    IWineD3DBaseSurfaceImpl_GetDevice,
     IWineD3DBaseSurfaceImpl_SetPrivateData,
     IWineD3DBaseSurfaceImpl_GetPrivateData,
     IWineD3DBaseSurfaceImpl_FreePrivateData,

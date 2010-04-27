@@ -148,20 +148,20 @@ __declspec(naked) int wine_call_on_stack( int (*func)(void *), void *arg, void *
 #elif defined(__x86_64__) && defined(__GNUC__)
 __ASM_GLOBAL_FUNC( wine_call_on_stack,
                    "pushq %rbp\n\t"
-                   ".cfi_adjust_cfa_offset 8\n\t"
-                   ".cfi_rel_offset %rbp,0\n\t"
+                   __ASM_CFI(".cfi_adjust_cfa_offset 8\n\t")
+                   __ASM_CFI(".cfi_rel_offset %rbp,0\n\t")
                    "movq %rsp,%rbp\n\t"
-                   ".cfi_def_cfa_register %rbp\n\t"
+                   __ASM_CFI(".cfi_def_cfa_register %rbp\n\t")
                    "movq %rdi,%rax\n\t" /* func */
                    "movq %rsi,%rdi\n\t" /* arg */
                    "andq $~15,%rdx\n\t" /* stack */
                    "movq %rdx,%rsp\n\t"
                    "callq *%rax\n\t"    /* call func */
                    "movq %rbp,%rsp\n\t"
-                   ".cfi_def_cfa_register %rsp\n\t"
+                   __ASM_CFI(".cfi_def_cfa_register %rsp\n\t")
                    "popq %rbp\n\t"
-                   ".cfi_adjust_cfa_offset -8\n\t"
-                   ".cfi_same_value %rbp\n\t"
+                   __ASM_CFI(".cfi_adjust_cfa_offset -8\n\t")
+                   __ASM_CFI(".cfi_same_value %rbp\n\t")
                    "ret")
 #elif defined(__powerpc__) && defined(__GNUC__)
 __ASM_GLOBAL_FUNC( wine_call_on_stack,
@@ -180,6 +180,20 @@ __ASM_GLOBAL_FUNC( wine_call_on_stack,
                    "lwz 0, 4(1)\n\t"    /* fetch return address */
                    "mtlr 0\n\t"         /* return address -> lr */
                    "blr")               /* return */
+#elif defined(__arm__)
+__ASM_GLOBAL_FUNC( wine_call_on_stack,
+                   "str r14, [r13, #4]\n\t"     /* save return address on stack */
+                   "sub r2, r2, #16\n\t"        /* reserve space on new stack */
+                   "str r13, [r2, #12]\n\t"     /* store old sp */
+                   "mov r3, r0\n\t"             /* func */
+                   "mov r0, r1\n\t"             /* arg */
+                   "mov r13, r2\n\t"            /* stack */
+                   "mov r2, #0\n\t"             /* zero */
+                   "str r2, [r13]\n\t"          /* bottom of stack */
+                   "sub r13, r13, #16\n\t"      /* create a frame for this function */
+                   "blx r3\n\t"                 /* call func */
+                   "ldr r13, [r13, #28]\n\t"    /* fetch old sp */
+                   "ldr r15, [r13, #4]")        /* fetch return address and return */
 #else
 #error You must implement wine_switch_to_stack for your platform
 #endif

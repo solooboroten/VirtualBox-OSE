@@ -1,10 +1,10 @@
-/* $Id: VBoxServiceVMInfo-win.cpp 24686 2009-11-16 10:14:48Z vboxsync $ */
+/* $Id: VBoxServiceVMInfo-win.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
- * VBoxVMInfo-win - Virtual machine (guest) information for the host.
+ * VBoxService - Virtual Machine Information for the Host, Windows specifics.
  */
 
 /*
- * Copyright (C) 2009 Sun Microsystems, Inc.
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 
@@ -24,9 +20,9 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #include <windows.h>
-#include <Ntsecapi.h>
 #include <wtsapi32.h>       /* For WTS* calls. */
 #include <psapi.h>          /* EnumProcesses. */
+#include <Ntsecapi.h>       /* Needed for process security information. */
 
 #include <iprt/assert.h>
 #include <iprt/mem.h>
@@ -43,379 +39,466 @@
 /*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
-#ifndef TARGET_NT4
- /** Function prototypes for dynamic loading. */
- extern fnWTSGetActiveConsoleSessionId g_pfnWTSGetActiveConsoleSessionId;
- /** The vminfo interval (millseconds). */
- uint32_t g_VMInfoLoggedInUsersCount = 0;
-#endif
+/** Function prototypes for dynamic loading. */
+PFNWTSGETACTIVECONSOLESESSIONID g_pfnWTSGetActiveConsoleSessionId = NULL;
 
 
 #ifndef TARGET_NT4
-/* Function GetLUIDsFromProcesses() written by Stefan Kuhr. */
-DWORD VBoxServiceVMInfoWinGetLUIDsFromProcesses(PLUID *ppLuid)
+
+/**
+ * Fills in more data for a process.
+ *
+ * @returns VBox status code.
+ * @param   pProc           The process structure to fill data into.
+ * @param   tkClass         The kind of token information to get.
+ */
+static int VBoxServiceVMInfoWinProcessesGetTokenInfo(PVBOXSERVICEVMINFOPROC pProc,
+                                                     TOKEN_INFORMATION_CLASS tkClass)
 {
-    DWORD dwSize, dwSize2, dwIndex ;
-    LPDWORD lpdwPIDs ;
-    DWORD dwLastError = ERROR_SUCCESS;
+    AssertPtr(pProc);
+    HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pProc->id);
+    if (h == NULL)
+        return RTErrConvertFromWin32(GetLastError());
 
-    if (!ppLuid)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return 0L;
+     int    rc = VERR_NO_MEMORY;
+     HANDLE hToken;
+     if (OpenProcessToken(h, TOKEN_QUERY, &hToken))
+     {
+         void *pvTokenInfo = NULL;
+         DWORD dwTokenInfoSize;
+         switch (tkClass)
+         {
+             case TokenStatistics:
+                 dwTokenInfoSize = sizeof(TOKEN_STATISTICS);
+                 pvTokenInfo = RTMemAlloc(dwTokenInfoSize);
+                 break;
+
+             /** @todo Implement more token classes here. */
+
+             default:
+                 VBoxServiceError("Token class not implemented: %ld", tkClass);
+                 rc = VERR_NOT_IMPLEMENTED;
+                 break;
+         }
+
+         if (pvTokenInfo)
+         {
+             DWORD dwRetLength;
+             if (GetTokenInformation(hToken, tkClass, pvTokenInfo, dwTokenInfoSize, &dwRetLength))
+             {
+                 switch (tkClass)
+                 {
+                     case TokenStatistics:
+                     {
+                         TOKEN_STATISTICS *pStats = (TOKEN_STATISTICS*)pvTokenInfo;
+                         pProc->luid = pStats->AuthenticationId;
+                         /** @todo Add more information of TOKEN_STATISTICS as needed. */
+                         break;
+                     }
+
+                     default:
+                         /* Should never get here! */
+                         break;
+                 }
+                 rc = VINF_SUCCESS;
+             }
+             else
+                 rc = RTErrConvertFromWin32(GetLastError());
+             RTMemFree(pvTokenInfo);
+         }
+         CloseHandle(hToken);
     }
-
-    /* Call the PSAPI function EnumProcesses to get all of the
-       ProcID's currently in the system.
-       NOTE: In the documentation, the third parameter of
-       EnumProcesses is named cbNeeded, which implies that you
-       can call the function once to find out how much space to
-       allocate for a buffer and again to fill the buffer.
-       This is not the case. The cbNeeded parameter returns
-       the number of PIDs returned, so if your buffer size is
-       zero cbNeeded returns zero.
-       NOTE: The "HeapAlloc" loop here ensures that we
-       actually allocate a buffer large enough for all the
-       PIDs in the system. */
-    dwSize2 = 256 * sizeof(DWORD);
-
-    lpdwPIDs = NULL;
-    do
-    {
-        if (lpdwPIDs)
-        {
-            HeapFree(GetProcessHeap(), 0, lpdwPIDs) ;
-            dwSize2 *= 2;
-        }
-        lpdwPIDs = (unsigned long *)HeapAlloc(GetProcessHeap(), 0, dwSize2);
-        if (lpdwPIDs == NULL)
-            return 0L; // Last error will be that of HeapAlloc
-
-        if (!EnumProcesses( lpdwPIDs, dwSize2, &dwSize))
-        {
-            DWORD dw = GetLastError();
-            HeapFree(GetProcessHeap(), 0, lpdwPIDs);
-            SetLastError(dw);
-            return 0L;
-        }
-    }
-    while (dwSize == dwSize2);
-
-    /* At this point we have an array of the PIDs at the
-       time of the last EnumProcesses invocation. We will
-       allocate an array of LUIDs passed back via the out
-       param ppLuid of exactly the number of PIDs. We will
-       only fill the first n values of this array, with n
-       being the number of unique LUIDs found in these PIDs. */
-
-    /* How many ProcIDs did we get? */
-    dwSize /= sizeof(DWORD);
-    dwSize2 = 0L; /* Our return value of found luids. */
-
-    *ppLuid = (LUID *)LocalAlloc(LPTR, dwSize*sizeof(LUID));
-    if (!(*ppLuid))
-    {
-        dwLastError = GetLastError();
-        goto CLEANUP;
-    }
-    for (dwIndex = 0; dwIndex < dwSize; dwIndex++)
-    {
-        (*ppLuid)[dwIndex].LowPart =0L;
-        (*ppLuid)[dwIndex].HighPart=0;
-
-        /* Open the process (if we can... security does not
-           permit every process in the system). */
-        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION,FALSE, lpdwPIDs[dwIndex]);
-        if ( hProcess != NULL )
-        {
-            HANDLE hAccessToken;
-            if (OpenProcessToken(hProcess, TOKEN_QUERY, &hAccessToken))
-            {
-                TOKEN_STATISTICS ts;
-                DWORD dwSize;
-                if (GetTokenInformation(hAccessToken, TokenStatistics, &ts, sizeof ts, &dwSize))
-                {
-                    DWORD dwTmp = 0L;
-                    BOOL bFound = FALSE;
-                    for (;dwTmp<dwSize2 && !bFound;dwTmp++)
-                        bFound = (*ppLuid)[dwTmp].HighPart == ts.AuthenticationId.HighPart &&
-                                 (*ppLuid)[dwTmp].LowPart == ts.AuthenticationId.LowPart;
-
-                    if (!bFound)
-                        (*ppLuid)[dwSize2++] = ts.AuthenticationId;
-                }
-                CloseHandle(hAccessToken);
-            }
-
-            CloseHandle(hProcess);
-        }
-
-        /* We don't really care if OpenProcess or OpenProcessToken fail or succeed, because
-           there are quite a number of system processes we cannot open anyway, not even as SYSTEM. */
-    }
-
-    CLEANUP:
-
-    if (lpdwPIDs)
-        HeapFree(GetProcessHeap(), 0, lpdwPIDs);
-
-    if (ERROR_SUCCESS !=dwLastError)
-        SetLastError(dwLastError);
-
-    return dwSize2;
+    else
+        rc = RTErrConvertFromWin32(GetLastError());
+    CloseHandle(h);
+    return rc;
 }
 
-BOOL VBoxServiceVMInfoWinIsLoggedIn(VBOXSERVICEVMINFOUSER* a_pUserInfo,
-                                    PLUID a_pSession,
-                                    PLUID a_pLuid,
-                                    DWORD a_dwNumOfProcLUIDs)
+
+/**
+ * Enumerate all the processes in the system and get the logon user IDs for
+ * them.
+ *
+ * @returns VBox status code.
+ * @param   ppaProcs    Where to return the process snapshot.  This must be
+ *                      freed by calling VBoxServiceVMInfoWinProcessesFree.
+ *
+ * @param   pcProcs     Where to store the returned process count.
+ */
+int VBoxServiceVMInfoWinProcessesEnumerate(PVBOXSERVICEVMINFOPROC *ppaProcs, PDWORD pcProcs)
 {
-    BOOL bLoggedIn = FALSE;
-    BOOL bFoundUser = FALSE;
-    PSECURITY_LOGON_SESSION_DATA sessionData = NULL;
-    NTSTATUS r = 0;
-    WCHAR *usBuffer = NULL;
-    int iLength = 0;
+    AssertPtr(ppaProcs);
+    AssertPtr(pcProcs);
 
-    if (!a_pSession)
-        return FALSE;
-
-    r = LsaGetLogonSessionData (a_pSession, &sessionData);
-    if (r != STATUS_SUCCESS)
+    /*
+     * Call EnumProcesses with an increasingly larger buffer until it all fits
+     * or we think something is screwed up.
+     */
+    DWORD   cProcesses  = 64;
+    PDWORD  paPids      = NULL;
+    int     rc          = VINF_SUCCESS;
+    do
     {
-        VBoxServiceError("LsaGetLogonSessionData failed, LSA error %lu\n", LsaNtStatusToWinError(r));
+        /* Allocate / grow the buffer first. */
+        cProcesses *= 2;
+        void *pvNew = RTMemRealloc(paPids, cProcesses * sizeof(DWORD));
+        if (!pvNew)
+        {
+            rc = VERR_NO_MEMORY;
+            break;
+        }
+        paPids = (PDWORD)pvNew;
 
-        if (sessionData)
-            LsaFreeReturnBuffer(sessionData);
+        /* Query the processes. Not the cbRet == buffer size means there could be more work to be done. */
+        DWORD cbRet;
+        if (!EnumProcesses(paPids, cProcesses * sizeof(DWORD), &cbRet))
+        {
+            rc = RTErrConvertFromWin32(GetLastError());
+            break;
+        }
+        if (cbRet < cProcesses * sizeof(DWORD))
+        {
+            cProcesses = cbRet / sizeof(DWORD);
+            break;
+        }
+    } while (cProcesses <= 32768); /* Should be enough; see: http://blogs.technet.com/markrussinovich/archive/2009/07/08/3261309.aspx */
+    if (RT_SUCCESS(rc))
+    {
+        /*
+         * Allocate out process structures and fill data into them.
+         * We currently only try lookup their LUID's.
+         */
+        PVBOXSERVICEVMINFOPROC paProcs;
+        paProcs = (PVBOXSERVICEVMINFOPROC)RTMemAllocZ(cProcesses * sizeof(VBOXSERVICEVMINFOPROC));
+        if (paProcs)
+        {
+            for (DWORD i = 0; i < cProcesses; i++)
+            {
+                paProcs[i].id = paPids[i];
+                rc = VBoxServiceVMInfoWinProcessesGetTokenInfo(&paProcs[i], TokenStatistics);
+                if (RT_FAILURE(rc))
+                {
+                    /* Because some processes cannot be opened/parsed on
+                       Windows, we should not consider to be this an error here. */
+                    rc = VINF_SUCCESS;
+                }
+            }
 
-        return FALSE;
+            /* Save number of processes */
+            if (RT_SUCCESS(rc))
+            {
+                *pcProcs  = cProcesses;
+                *ppaProcs = paProcs;
+            }
+            else
+                RTMemFree(paProcs);
+        }
+        else
+            rc = VERR_NO_MEMORY;
     }
 
-    if (!sessionData)
+    RTMemFree(paPids);
+    return rc;
+}
+
+/**
+ * Frees the process structures returned by
+ * VBoxServiceVMInfoWinProcessesEnumerate() before.
+ *
+ * @param   paProcs     What
+ */
+void VBoxServiceVMInfoWinProcessesFree(PVBOXSERVICEVMINFOPROC paProcs)
+{
+    RTMemFree(paProcs);
+}
+
+/**
+ * Determins whether the specified session has processes on the system.
+ *
+ * @returns true if it has, false if it doesn't.
+ * @param   pSession        The session.
+ * @param   paProcs         The process snapshot.
+ * @param   cProcs          The number of processes in the snaphot.
+ */
+bool VBoxServiceVMInfoWinSessionHasProcesses(PLUID pSession, VBOXSERVICEVMINFOPROC const *paProcs, DWORD cProcs)
+{
+    AssertPtr(pSession);
+
+    if (!cProcs) /* To be on the safe side. */
+        return false;
+    AssertPtr(paProcs);
+
+    PSECURITY_LOGON_SESSION_DATA pSessionData = NULL;
+    NTSTATUS rcNt = LsaGetLogonSessionData(pSession, &pSessionData);
+    if (rcNt != STATUS_SUCCESS)
+    {
+        VBoxServiceError("Could not get logon session data! rcNt=%#x", rcNt);
+        return false;
+    }
+    AssertPtrReturn(pSessionData, false);
+
+    /*
+     * Even if a user seems to be logged in, it could be a stale/orphaned logon
+     * session. So check if we have some processes bound to it by comparing the
+     * session <-> process LUIDs.
+     */
+    for (DWORD i = 0; i < cProcs; i++)
+    {
+        /*VBoxServiceVerbose(3, "%ld:%ld <-> %ld:%ld\n",
+                             paProcs[i].luid.HighPart, paProcs[i].luid.LowPart,
+                             pSessionData->LogonId.HighPart, pSessionData->LogonId.LowPart);*/
+        if (   paProcs[i].luid.HighPart == pSessionData->LogonId.HighPart
+            && paProcs[i].luid.LowPart  == pSessionData->LogonId.LowPart)
+        {
+            VBoxServiceVerbose(3, "Users: Session %ld:%ld has active processes\n",
+                               pSessionData->LogonId.HighPart, pSessionData->LogonId.LowPart);
+            LsaFreeReturnBuffer(pSessionData);
+            return true;
+        }
+    }
+    LsaFreeReturnBuffer(pSessionData);
+    return false;
+}
+
+
+/**
+ * Save and noisy string copy.
+ *
+ * @param   pwszDst             Destination buffer.
+ * @param   cbDst               Size in bytes - not WCHAR count!
+ * @param   pSrc                Source string.
+ * @param   pszWhat             What this is. For the log.
+ */
+static void VBoxServiceVMInfoWinSafeCopy(PWCHAR pwszDst, size_t cbDst, LSA_UNICODE_STRING const *pSrc, const char *pszWhat)
+{
+    Assert(RT_ALIGN(cbDst, sizeof(WCHAR)) == cbDst);
+
+    size_t cbCopy = pSrc->Length;
+    if (cbCopy + sizeof(WCHAR) > cbDst)
+    {
+        VBoxServiceVerbose(0, "%s is too long - %u bytes, buffer %u bytes! It will be truncated.\n",
+                           pszWhat, cbCopy, cbDst);
+        cbCopy = cbDst - sizeof(WCHAR);
+    }
+    if (cbCopy)
+        memcpy(pwszDst, pSrc->Buffer, cbCopy);
+    pwszDst[cbCopy / sizeof(WCHAR)] = '\0';
+}
+
+
+/**
+ * Detects whether a user is logged on based on the enumerated processes.
+ *
+ * @returns true if logged in, false if not (or error).
+ * @param   a_pUserInfo     Where to return the user information.
+ * @param   a_pSession      The session to check.
+ */
+bool VBoxServiceVMInfoWinIsLoggedIn(PVBOXSERVICEVMINFOUSER a_pUserInfo, PLUID a_pSession)
+{
+    if (!a_pSession)
+        return false;
+
+    PSECURITY_LOGON_SESSION_DATA pSessionData = NULL;
+    NTSTATUS rcNt = LsaGetLogonSessionData(a_pSession, &pSessionData);
+    if (rcNt != STATUS_SUCCESS)
+    {
+        VBoxServiceError("LsaGetLogonSessionData failed, LSA error %#x\n", LsaNtStatusToWinError(rcNt));
+        if (pSessionData)
+            LsaFreeReturnBuffer(pSessionData);
+        return false;
+    }
+    if (!pSessionData)
     {
         VBoxServiceError("Invalid logon session data.\n");
-        return FALSE;
+        return false;
     }
-
     VBoxServiceVerbose(3, "Users: Session data: Name = %ls, Len = %d, SID = %s, LogonID = %d,%d\n",
-        (sessionData->UserName).Buffer, (sessionData->UserName).Length, (sessionData->Sid != NULL) ? "1" : "0", sessionData->LogonId.HighPart, sessionData->LogonId.LowPart);
+                       pSessionData->UserName.Buffer,
+                       pSessionData->UserName.Length,
+                       pSessionData->Sid != NULL ? "1" : "0",
+                       pSessionData->LogonId.HighPart, pSessionData->LogonId.LowPart);
 
-    if ((sessionData->UserName.Buffer != NULL) &&
-        (sessionData->Sid != NULL) &&
-        (sessionData->LogonId.LowPart != 0))
+    bool fFoundUser = false;
+    if (   pSessionData->UserName.Buffer != NULL
+        && pSessionData->Sid != NULL
+        && pSessionData->LogonId.LowPart != 0)
     {
-        /* Get the user name. */
-        usBuffer = (sessionData->UserName).Buffer;
-        iLength = (sessionData->UserName).Length;
-        if (iLength > sizeof(a_pUserInfo->szUser) - sizeof(TCHAR))   /* -sizeof(TCHAR) because we have to add the terminating null char at the end later. */
+        /*
+         * Copy out the data.
+         */
+        VBoxServiceVMInfoWinSafeCopy(a_pUserInfo->wszUser, sizeof(a_pUserInfo->wszUser),
+                                     &pSessionData->UserName, "User name");
+        VBoxServiceVMInfoWinSafeCopy(a_pUserInfo->wszAuthenticationPackage, sizeof(a_pUserInfo->wszAuthenticationPackage),
+                                     &pSessionData->AuthenticationPackage, "Authentication pkg name");
+        VBoxServiceVMInfoWinSafeCopy(a_pUserInfo->wszLogonDomain, sizeof(a_pUserInfo->wszLogonDomain),
+                                     &pSessionData->LogonDomain, "Logon domain name");
+
+
+        /*
+         * Only handle users which can login interactively or logged in
+         * remotely over native RDP.
+         */
+        /** @todo r=bird: Whey don't we check this before copying the data? */
+        if (   (   (SECURITY_LOGON_TYPE)pSessionData->LogonType == Interactive
+                || (SECURITY_LOGON_TYPE)pSessionData->LogonType == RemoteInteractive)
+            &&  pSessionData->Sid != NULL)
         {
-            VBoxServiceVerbose(0, "User name too long (%d bytes) for buffer! Name will be truncated.\n", iLength);
-            iLength = sizeof(a_pUserInfo->szUser) - sizeof(TCHAR);
-        }
-        wcsncpy (a_pUserInfo->szUser, usBuffer, iLength);
-        wcscat (a_pUserInfo->szUser, L"");      /* Add terminating null char. */
-
-        /* Get authentication package. */
-        usBuffer = (sessionData->AuthenticationPackage).Buffer;
-        iLength = (sessionData->AuthenticationPackage).Length;
-        if (iLength > sizeof(a_pUserInfo->szAuthenticationPackage) - sizeof(TCHAR))   /* -sizeof(TCHAR) because we have to add the terminating null char at the end later. */
-        {
-            VBoxServiceVerbose(0, "Authentication pkg name too long (%d bytes) for buffer! Name will be truncated.\n", iLength);
-            iLength = sizeof(a_pUserInfo->szAuthenticationPackage) - sizeof(TCHAR);
-        }
-        wcsncpy (a_pUserInfo->szAuthenticationPackage, usBuffer, iLength);
-        wcscat (a_pUserInfo->szAuthenticationPackage, L"");     /* Add terminating null char. */
-
-        /* Get logon domain. */
-        usBuffer = (sessionData->LogonDomain).Buffer;
-        iLength = (sessionData->LogonDomain).Length;
-        if (iLength > sizeof(a_pUserInfo->szLogonDomain) - sizeof(TCHAR))   /* -sizeof(TCHAR) because we have to add the terminating null char at the end later. */
-        {
-            VBoxServiceVerbose(0, "Logon domain name too long (%d bytes) for buffer! Name will be truncated.\n", iLength);
-            iLength = sizeof(a_pUserInfo->szLogonDomain) - sizeof(TCHAR);
-        }
-        wcsncpy (a_pUserInfo->szLogonDomain, usBuffer, iLength);
-        wcscat (a_pUserInfo->szLogonDomain, L"");       /* Add terminating null char. */
-
-        /* Only handle users which can login interactively or logged in remotely over native RDP. */
-        if (   (((SECURITY_LOGON_TYPE)sessionData->LogonType == Interactive)
-             || ((SECURITY_LOGON_TYPE)sessionData->LogonType == RemoteInteractive))
-             && (sessionData->Sid != NULL))
-        {
-            TCHAR szOwnerName [_MAX_PATH] = { 0 };
-            DWORD dwOwnerNameSize = _MAX_PATH;
-
-            TCHAR szDomainName [_MAX_PATH] = { 0 };
-            DWORD dwDomainNameSize = _MAX_PATH;
-
-            SID_NAME_USE ownerType;
-
+            TCHAR           szOwnerName[_MAX_PATH]  = { 0 };
+            DWORD           dwOwnerNameSize         = sizeof(szOwnerName);
+            TCHAR           szDomainName[_MAX_PATH] = { 0 };
+            DWORD           dwDomainNameSize        = sizeof(szDomainName);
+            SID_NAME_USE    enmOwnerType            = SidTypeInvalid;
             if (LookupAccountSid(NULL,
-                                 sessionData->Sid,
+                                 pSessionData->Sid,
                                  szOwnerName,
                                  &dwOwnerNameSize,
                                  szDomainName,
                                  &dwDomainNameSize,
-                                 &ownerType))
+                                 &enmOwnerType))
             {
                 VBoxServiceVerbose(3, "Account User=%ls, Session=%ld, LUID=%ld,%ld, AuthPkg=%ls, Domain=%ls\n",
-                     a_pUserInfo->szUser, sessionData->Session, sessionData->LogonId.HighPart, sessionData->LogonId.LowPart, a_pUserInfo->szAuthenticationPackage, a_pUserInfo->szLogonDomain);
+                                   a_pUserInfo->wszUser, pSessionData->Session, pSessionData->LogonId.HighPart,
+                                   pSessionData->LogonId.LowPart, a_pUserInfo->wszAuthenticationPackage,
+                                   a_pUserInfo->wszLogonDomain);
 
+#if 1 /** @todo If we don't use this, drop it? */
                 /* The session ID increments/decrements on Vista often! So don't compare
                    the session data SID with the current SID here. */
                 DWORD dwActiveSession = 0;
                 if (g_pfnWTSGetActiveConsoleSessionId != NULL)            /* Check terminal session ID. */
                     dwActiveSession = g_pfnWTSGetActiveConsoleSessionId();
-
                 /*VBoxServiceVerbose(3, ("Users: Current active session ID: %ld\n", dwActiveSession));*/
+#endif
 
-                if (SidTypeUser == ownerType)
+                if (enmOwnerType == SidTypeUser)
                 {
-                    char* pBuffer = NULL;
-                    DWORD dwBytesRet = 0;
-                    int iState = 0;
-
-                    if (WTSQuerySessionInformation(     /* Detect RDP sessions as well. */
-                        WTS_CURRENT_SERVER_HANDLE,
-                        WTS_CURRENT_SESSION,
-                        WTSConnectState,
-                        &pBuffer,
-                        &dwBytesRet))
+                    /* Detect RDP sessions as well. */
+                    LPTSTR  pBuffer = NULL;
+                    DWORD   cbRet   = 0;
+                    int     iState  = 0;
+                    if (WTSQuerySessionInformation(WTS_CURRENT_SERVER_HANDLE,
+                                                   WTS_CURRENT_SESSION,
+                                                   WTSConnectState,
+                                                   &pBuffer,
+                                                   &cbRet))
                     {
-                        /*VBoxServiceVerbose(3, ("Users: WTSQuerySessionInformation returned %ld bytes, p=%p, state=%d\n", dwBytesRet, pBuffer, pBuffer != NULL ? (INT)*pBuffer : -1));*/
-                        if(dwBytesRet)
+                        /*VBoxServiceVerbose(3, ("Users: WTSQuerySessionInformation returned %ld bytes, p=%p, state=%d\n", cbRet, pBuffer, pBuffer != NULL ? (INT)*pBuffer : -1));*/
+                        if(cbRet)
                             iState = *pBuffer;
 
-                        if (    (iState == WTSActive)           /* User logged on to WinStation. */
-                             || (iState == WTSShadow)           /* Shadowing another WinStation. */
-                             || (iState == WTSDisconnected))    /* WinStation logged on without client. */
+                        if (    iState == WTSActive           /* User logged on to WinStation. */
+                             || iState == WTSShadow           /* Shadowing another WinStation. */
+                             || iState == WTSDisconnected)    /* WinStation logged on without client. */
                         {
                             /** @todo On Vista and W2K, always "old" user name are still
                              *        there. Filter out the old one! */
-                            VBoxServiceVerbose(3, "Users: Account User=%ls is logged in via TCS/RDP. State=%d\n", a_pUserInfo->szUser, iState);
-                            bFoundUser = TRUE;
+                            VBoxServiceVerbose(3, "Users: Account User=%ls is logged in via TCS/RDP. State=%d\n",
+                                               a_pUserInfo->wszUser, iState);
+                            fFoundUser = true;
                         }
+
+                        if (pBuffer)
+                            WTSFreeMemory(pBuffer);
                     }
                     else
                     {
-                        /* Terminal services don't run (for example in W2K, nothing to worry about ...). */
-                        /* ... or is on Vista fast user switching page! */
-                        bFoundUser = TRUE;
-                    }
-
-                    if (pBuffer)
-                        WTSFreeMemory(pBuffer);
-
-                    /* A user logged in, but it could be a stale/orphaned logon session. */
-                    BOOL bFoundInLUIDs = FALSE;
-                    for (DWORD dwIndex = 0; dwIndex < a_dwNumOfProcLUIDs; dwIndex++)
-                    {
-                        if (   (a_pLuid[dwIndex].HighPart == sessionData->LogonId.HighPart)
-                            && (a_pLuid[dwIndex].LowPart == sessionData->LogonId.LowPart))
-                        {
-                            bLoggedIn = TRUE;
-                            VBoxServiceVerbose(3, "User \"%ls\" is logged in!\n", a_pUserInfo->szUser);
-                            break;
-                        }
+                        /*
+                         * Terminal services don't run (for example in W2K,
+                         * nothing to worry about ...).  ... or is on the Vista
+                         * fast user switching page!
+                         */
+                        fFoundUser = true;
                     }
                 }
             }
         }
     }
 
-    LsaFreeReturnBuffer(sessionData);
-    return bLoggedIn;
+    LsaFreeReturnBuffer(pSessionData);
+    return fFoundUser;
 }
 
 #endif /* TARGET_NT4 */
 
-int VBoxServiceWinGetComponentVersions(uint32_t uiClientID)
+int VBoxServiceWinGetComponentVersions(uint32_t uClientID)
 {
     int rc;
-    char szVer[_MAX_PATH] = {0};
-    char szPropPath[_MAX_PATH] = {0};
     char szSysDir[_MAX_PATH] = {0};
     char szWinDir[_MAX_PATH] = {0};
     char szDriversDir[_MAX_PATH + 32] = {0};
 
+    /* ASSUME: szSysDir and szWinDir and derivatives are always ASCII compatible. */
     GetSystemDirectory(szSysDir, _MAX_PATH);
     GetWindowsDirectory(szWinDir, _MAX_PATH);
-    RTStrPrintf(szDriversDir, (_MAX_PATH + 32), "%s\\drivers", szSysDir);
+    RTStrPrintf(szDriversDir, sizeof(szDriversDir), "%s\\drivers", szSysDir);
 #ifdef RT_ARCH_AMD64
     char szSysWowDir[_MAX_PATH + 32] = {0};
-    RTStrPrintf(szSysWowDir, (_MAX_PATH + 32), "%s\\SysWow64", szWinDir);
+    RTStrPrintf(szSysWowDir, sizeof(szSysWowDir), "%s\\SysWow64", szWinDir);
 #endif
 
     /* The file information table. */
 #ifndef TARGET_NT4
-    VBOXSERVICEVMINFOFILE vboxFileInfoTable[] =
+    const VBOXSERVICEVMINFOFILE aVBoxFiles[] =
     {
-        { szSysDir, "VBoxControl.exe", },
-        { szSysDir, "VBoxHook.dll", },
-        { szSysDir, "VBoxDisp.dll", },
-        { szSysDir, "VBoxMRXNP.dll", },
-        { szSysDir, "VBoxService.exe", },
-        { szSysDir, "VBoxTray.exe", },
-        { szSysDir, "VBoxGINA.dll", },
-        { szSysDir, "VBoxCredProv.dll", },
+        { szSysDir, "VBoxControl.exe" },
+        { szSysDir, "VBoxHook.dll" },
+        { szSysDir, "VBoxDisp.dll" },
+        { szSysDir, "VBoxMRXNP.dll" },
+        { szSysDir, "VBoxService.exe" },
+        { szSysDir, "VBoxTray.exe" },
+        { szSysDir, "VBoxGINA.dll" },
+        { szSysDir, "VBoxCredProv.dll" },
 
  /* On 64-bit we don't yet have the OpenGL DLLs in native format.
     So just enumerate the 32-bit files in the SYSWOW directory. */
- #ifdef RT_ARCH_AMD64
-        { szSysWowDir, "VBoxOGLarrayspu.dll", },
-        { szSysWowDir, "VBoxOGLcrutil.dll", },
-        { szSysWowDir, "VBoxOGLerrorspu.dll", },
-        { szSysWowDir, "VBoxOGLpackspu.dll", },
-        { szSysWowDir, "VBoxOGLpassthroughspu.dll", },
-        { szSysWowDir, "VBoxOGLfeedbackspu.dll", },
-        { szSysWowDir, "VBoxOGL.dll", },
- #else
-        { szSysDir, "VBoxOGLarrayspu.dll", },
-        { szSysDir, "VBoxOGLcrutil.dll", },
-        { szSysDir, "VBoxOGLerrorspu.dll", },
-        { szSysDir, "VBoxOGLpackspu.dll", },
-        { szSysDir, "VBoxOGLpassthroughspu.dll", },
-        { szSysDir, "VBoxOGLfeedbackspu.dll", },
-        { szSysDir, "VBoxOGL.dll", },
- #endif
+# ifdef RT_ARCH_AMD64
+        { szSysWowDir, "VBoxOGLarrayspu.dll" },
+        { szSysWowDir, "VBoxOGLcrutil.dll" },
+        { szSysWowDir, "VBoxOGLerrorspu.dll" },
+        { szSysWowDir, "VBoxOGLpackspu.dll" },
+        { szSysWowDir, "VBoxOGLpassthroughspu.dll" },
+        { szSysWowDir, "VBoxOGLfeedbackspu.dll" },
+        { szSysWowDir, "VBoxOGL.dll" },
+# else  /* !RT_ARCH_AMD64 */
+        { szSysDir, "VBoxOGLarrayspu.dll" },
+        { szSysDir, "VBoxOGLcrutil.dll" },
+        { szSysDir, "VBoxOGLerrorspu.dll" },
+        { szSysDir, "VBoxOGLpackspu.dll" },
+        { szSysDir, "VBoxOGLpassthroughspu.dll" },
+        { szSysDir, "VBoxOGLfeedbackspu.dll" },
+        { szSysDir, "VBoxOGL.dll" },
+# endif /* !RT_ARCH_AMD64 */
 
-        { szDriversDir, "VBoxGuest.sys", },
-        { szDriversDir, "VBoxMouse.sys", },
-        { szDriversDir, "VBoxSF.sys",    },
-        { szDriversDir, "VBoxVideo.sys", },
-
-        {
-            NULL
-        }
+        { szDriversDir, "VBoxGuest.sys" },
+        { szDriversDir, "VBoxMouse.sys" },
+        { szDriversDir, "VBoxSF.sys"    },
+        { szDriversDir, "VBoxVideo.sys" },
     };
-#else /* File lookup for NT4. */
-    VBOXSERVICEVMINFOFILE vboxFileInfoTable[] =
+
+#else  /* TARGET_NT4 */
+    const VBOXSERVICEVMINFOFILE aVBoxFiles[] =
     {
-        { szSysDir, "VBoxControl.exe", },
-        { szSysDir, "VBoxHook.dll", },
-        { szSysDir, "VBoxDisp.dll", },
-        { szSysDir, "VBoxService.exe", },
-        { szSysDir, "VBoxTray.exe", },
+        { szSysDir, "VBoxControl.exe" },
+        { szSysDir, "VBoxHook.dll" },
+        { szSysDir, "VBoxDisp.dll" },
+        { szSysDir, "VBoxService.exe" },
+        { szSysDir, "VBoxTray.exe" },
 
-        { szDriversDir, "VBoxGuestNT.sys", },
-        { szDriversDir, "VBoxMouseNT.sys", },
-        { szDriversDir, "VBoxVideo.sys", },
-
-        {
-            NULL
-        }
+        { szDriversDir, "VBoxGuestNT.sys" },
+        { szDriversDir, "VBoxMouseNT.sys" },
+        { szDriversDir, "VBoxVideo.sys" },
     };
-#endif
+#endif /* TARGET_NT4 */
 
-    PVBOXSERVICEVMINFOFILE pTable = vboxFileInfoTable;
-    Assert(pTable);
-    while (pTable->pszFileName)
+    for (unsigned i = 0; i < RT_ELEMENTS(aVBoxFiles); i++)
     {
-        rc = VBoxServiceGetFileVersionString(pTable->pszFilePath, pTable->pszFileName, szVer, sizeof(szVer));
-        RTStrPrintf(szPropPath, sizeof(szPropPath), "/VirtualBox/GuestAdd/Components/%s", pTable->pszFileName);
-        rc = VBoxServiceWritePropF(uiClientID, szPropPath, "%s", szVer);
-        pTable++;
+        char szVer[128];
+        VBoxServiceGetFileVersionString(aVBoxFiles[i].pszFilePath, aVBoxFiles[i].pszFileName, szVer, sizeof(szVer));
+        char szPropPath[256];
+        RTStrPrintf(szPropPath, sizeof(szPropPath), "/VirtualBox/GuestAdd/Components/%s", aVBoxFiles[i].pszFileName);
+        rc = VBoxServiceWritePropF(uClientID, szPropPath, "%s", szVer);
     }
 
     return VINF_SUCCESS;
 }
+

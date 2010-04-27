@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 23452 2009-09-30 20:33:08Z vboxsync $
+# $Id: Makefile.kmk 28800 2010-04-27 08:22:32Z vboxsync $
 ## @file
 # Sub-Makefile for VBoxVideo.
 #
 
 #
-# Copyright (C) 2006-2007 Sun Microsystems, Inc.
+# Copyright (C) 2006-2007 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
 # Foundation, in version 2 as it comes in the "COPYING" file of the
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
-#
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
 #
 
 SUB_DEPTH = ../../../../../..
@@ -35,6 +31,13 @@ ifdef VBOX_SIGN_ADDITIONS # (See the parent makefile.)
  VBoxVideo_NOINST     = true
 endif
 VBoxVideo_DEFS        = LOG_TO_BACKDOOR VBOX_WITH_8BPP_MODES
+ifdef VBOX_WITH_HGSMI
+ VBoxVideo_DEFS      += VBOX_WITH_HGSMI
+endif
+ifdef VBOX_WITH_VIDEOHWACCEL
+ VBoxVideo_DEFS      += VBOX_WITH_VIDEOHWACCEL
+endif
+VBoxVideo_DEFS        += VBOX_WITH_MULTIMONITOR_FIX
 #VBoxVideo_DEFS        += LOG_ENABLED
 VBoxVideo_INCS        = ../../include
 VBoxVideo_LDFLAGS.x86   = /Entry:DriverEntry@8
@@ -44,6 +47,10 @@ VBoxVideo_SOURCES     = \
 	Helper.cpp \
 	VBoxVideo.def \
 	VBoxVideo.rc
+ifdef VBOX_WITH_HGSMI
+ VBoxVideo_SOURCES   += \
+	VBoxVideoHGSMI.cpp
+endif
 VBoxVideo_LIBS.x86    = \
 	$(PATH_SDK_W2K3DDK_LIB)/exsup.lib
 VBoxVideo_LIBS        = \
@@ -52,18 +59,65 @@ VBoxVideo_LIBS        = \
 	$(PATH_SDK_W2K3DDK_LIB)/hal.lib \
 	$(VBOX_LIB_VBGL_R0) \
 	$(VBOX_LIB_IPRT_GUEST_R0_NT4)
-
 ifdef VBOX_WITH_HGSMI
-VBoxVideo_SOURCES     += \
-	VBoxVideoHGSMI.cpp
-VBoxVideo_LIBS         += \
+ VBoxVideo_LIBS      += \
 	$(VBOX_PATH_ADDITIONS_LIB)/HGSMIGuestR0Lib$(VBOX_SUFF_LIB)
-VBoxVideo_DEFS += VBOX_WITH_HGSMI
 endif
 
-ifdef VBOX_WITH_VIDEOHWACCEL
-VBoxVideo_DEFS += VBOX_WITH_VIDEOHWACCEL
-endif
+
+
+ifdef VBOXWDDM
+ #
+ # VBoxVideoWddm
+ #
+ SYSMODS += VBoxVideoWddm
+ VBoxVideoWddm_TEMPLATE    = VBOXGUESTR0
+ ifdef VBOX_SIGN_ADDITIONS # (See the parent makefile.)
+  VBoxVideoWddm_NOINST     = true
+ endif
+
+ VBoxVideoWddm_SDKS=WINDDKWLH
+ VBoxVideoWddm_DEFS       += VBOX_WITH_8BPP_MODES
+ VBoxVideoWddm_DEFS       += VBOX_WITH_HGSMI VBOXWDDM VBOXVDMA
+ ifdef VBOX_WITH_VIDEOHWACCEL
+  VBoxVideoWddm_DEFS      += VBOX_WITH_VIDEOHWACCEL
+ endif
+ ifdef VBOXWDDM_WITH_VBVA
+  VBoxVideoWddm_DEFS      += VBOXWDDM_WITH_VBVA
+  ifdef VBOXVDMA_WITH_VBVA
+   VBoxVideoWddm_DEFS     += VBOXVDMA_WITH_VBVA
+  endif
+ endif
+ VBoxVideoWddm_DEFS       += LOG_ENABLED
+ #VBoxVideoWddm_DEFS       += LOG_TO_BACKDOOR
+ VBoxVideoWddm_INCS       += ../../include
+ VBoxVideoWddm_LDFLAGS.x86 += /Entry:DriverEntry@8
+ VBoxVideoWddm_LDFLAGS.amd64 += /Entry:DriverEntry
+ VBoxVideoWddm_SOURCES     = \
+ 	VBoxVideoHGSMI.cpp \
+ 	VBoxVideo.cpp \
+    Helper.cpp \
+ 	wddm/VBoxVideoWddm.cpp \
+	wddm/VBoxVideoVidPn.cpp \
+	wddm/VBoxVideoVdma.cpp \
+	wddm/VBoxVideoShgsmi.cpp \
+ 	wddm/VBoxVideoWddm.rc
+ ifdef VBOXWDDM_WITH_VBVA
+  VBoxVideoWddm_SOURCES   += \
+    wddm/VBoxVideoVbva.cpp
+ endif
+ VBoxVideoWddm_LIBS.x86   = \
+ 	$(PATH_SDK_WINDDKWLH_LIB)/bufferoverflowk.lib
+ #VBoxVideoWddm_LIBS.x86   += \
+ #	$(PATH_SDK_WINDDKWLH_LIB)/exsup.lib
+ VBoxVideoWddm_LIBS        = \
+ 	$(PATH_SDK_WINDDKWLH_LIB)/ntoskrnl.lib \
+ 	$(PATH_SDK_WINDDKWLH_LIB)/hal.lib \
+ 	$(PATH_SDK_WINDDKWLH_LIB)/displib.lib \
+ 	$(VBOX_LIB_VBGL_R0) \
+ 	$(VBOX_LIB_IPRT_GUEST_R0_NT4) \
+ 	$(VBOX_PATH_ADDITIONS_LIB)/HGSMIGuestR0Lib$(VBOX_SUFF_LIB)
+endif # VBOXWDDM
 
 include	$(KBUILD_PATH)/subfooter.kmk
 

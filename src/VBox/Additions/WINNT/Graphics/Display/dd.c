@@ -2,7 +2,7 @@
 
 /******************************Module*Header**********************************\
 *
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -11,10 +11,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
 */
 /*
 * Based in part on Microsoft DDK sample code
@@ -107,8 +103,6 @@ BOOL APIENTRY DrvGetDirectDrawInfo(
     if (!(pvmList && pdwFourCC))
     {
 #ifdef VBOX_WITH_VIDEOHWACCEL
-        vboxVHWAInit();
-
         memset(pHalInfo, 0, sizeof(DD_HALINFO));
         pHalInfo->dwSize    = sizeof(DD_HALINFO);
 
@@ -224,12 +218,6 @@ BOOL APIENTRY DrvGetDirectDrawInfo(
 #ifdef VBOX_WITH_VIDEOHWACCEL
     if(pDev->vhwaInfo.bVHWAEnabled)
     {
-//        // TODO: filter out hw-unsupported fourccs
-//#define FOURCC_YUV422  (MAKEFOURCC('Y','U','Y','2'))
-//#define FOURCC_YUV411  (MAKEFOURCC('Y','4','1','1'))
-//
-//        static DWORD fourCC[] =  { FOURCC_YUV422, FOURCC_YUV411 };  // The FourCC's we support
-
         *pdwNumFourCCCodes = pDev->vhwaInfo.numFourCC;
 
         if (pdwFourCC && pDev->vhwaInfo.numFourCC)
@@ -664,7 +652,7 @@ DWORD APIENTRY DdCreateSurface(PDD_CREATESURFACEDATA  lpCreateSurface)
 
             if (lpSurfaceLocal->ddsCaps.dwCaps & DDSCAPS_PRIMARYSURFACE)
             {
-                pBody->SurfInfo.offSurface = 0;
+                pBody->SurfInfo.offSurface = vboxVHWAVramOffsetFromPDEV(pDev, 0);
             }
             else
             {
@@ -679,13 +667,13 @@ DWORD APIENTRY DdCreateSurface(PDD_CREATESURFACEDATA  lpCreateSurface)
                 Assert(pCmd->rc == VINF_SUCCESS);
                 if(pCmd->rc == VINF_SUCCESS)
                 {
-                	uint32_t surfSizeX = pBody->SurfInfo.sizeX;
-                	uint32_t surfSizeY = pBody->SurfInfo.sizeY;
+                    uint32_t surfSizeX = pBody->SurfInfo.sizeX;
+                    uint32_t surfSizeY = pBody->SurfInfo.sizeY;
                     pDesc->hHostHandle = pBody->SurfInfo.hSurf;
                     if(!!(lpSurfaceLocal->ddsCaps.dwCaps & DDSCAPS_OVERLAY)
-                    		&& !!(lpSurfaceLocal->ddsCaps.dwCaps & DDSCAPS_VISIBLE))
+                            && !!(lpSurfaceLocal->ddsCaps.dwCaps & DDSCAPS_VISIBLE))
                     {
-                    	pDesc->bVisible = true;
+                        pDesc->bVisible = true;
                     }
                     lpSurfaceGlobal->dwReserved1 = (ULONG_PTR)pDesc;
                     lPitch = pBody->SurfInfo.pitch;
@@ -1087,7 +1075,7 @@ DWORD APIENTRY DdLock(PDD_LOCKDATA lpLock)
                 VBOXVHWACMD_SURF_LOCK * pBody = VBOXVHWACMD_BODY(pCmd, VBOXVHWACMD_SURF_LOCK);
                 memset(pBody, 0, sizeof(VBOXVHWACMD_SURF_LOCK));
 
-                pBody->u.in.offSurface = (uint64_t)lpSurfaceGlobal->fpVidMem;
+                pBody->u.in.offSurface = vboxVHWAVramOffsetFromPDEV(pDev, lpSurfaceGlobal->fpVidMem);
 
 //            if (lpLock->bHasRect)
 //            {
@@ -1470,7 +1458,7 @@ DWORD APIENTRY DdSetColorKey(PDD_SETCOLORKEYDATA  lpSetColorKey)
         PVBOXVHWASURFDESC pDesc = (PVBOXVHWASURFDESC)lpSurfaceGlobal->dwReserved1;
         memset(pBody, 0, sizeof(VBOXVHWACMD_SURF_COLORKEY_SET));
 
-        pBody->u.in.offSurface = (uint64_t)lpSurfaceGlobal->fpVidMem;
+        pBody->u.in.offSurface = vboxVHWAVramOffsetFromPDEV(pDev, lpSurfaceGlobal->fpVidMem);
         pBody->u.in.hSurf = pDesc->hHostHandle;
         pBody->u.in.flags = vboxVHWAFromDDCKEYs(lpSetColorKey->dwFlags);
         vboxVHWAFromDDCOLORKEY(&pBody->u.in.CKey, &lpSetColorKey->ckNew);
@@ -1513,8 +1501,8 @@ DWORD APIENTRY DdBlt(PDD_BLTDATA  lpBlt)
             PVBOXVHWASURFDESC pDestDesc = (PVBOXVHWASURFDESC)lpDestSurfaceGlobal->dwReserved1;
             memset(pBody, 0, sizeof(VBOXVHWACMD_SURF_BLT));
 
-            pBody->u.in.offSrcSurface = (uint64_t)lpSrcSurfaceGlobal->fpVidMem;
-            pBody->u.in.offDstSurface = (uint64_t)lpDestSurfaceGlobal->fpVidMem;
+            pBody->u.in.offSrcSurface = vboxVHWAVramOffsetFromPDEV(pDev, lpSrcSurfaceGlobal->fpVidMem);
+            pBody->u.in.offDstSurface = vboxVHWAVramOffsetFromPDEV(pDev, lpDestSurfaceGlobal->fpVidMem);
 
             pBody->u.in.hDstSurf = pDestDesc->hHostHandle;
             vboxVHWAFromRECTL(&pBody->u.in.dstRect, &lpBlt->rDest);
@@ -1606,8 +1594,8 @@ DWORD APIENTRY DdFlip(PDD_FLIPDATA  lpFlip)
 
         memset(pBody, 0, sizeof(VBOXVHWACMD_SURF_FLIP));
 
-        pBody->u.in.offCurrSurface = (uint64_t)lpCurrSurfaceGlobal->fpVidMem;
-        pBody->u.in.offTargSurface = (uint64_t)lpTargSurfaceGlobal->fpVidMem;
+        pBody->u.in.offCurrSurface = vboxVHWAVramOffsetFromPDEV(pDev, lpCurrSurfaceGlobal->fpVidMem);
+        pBody->u.in.offTargSurface = vboxVHWAVramOffsetFromPDEV(pDev, lpTargSurfaceGlobal->fpVidMem);
 
         pBody->u.in.hTargSurf = pTargDesc->hHostHandle;
         pBody->u.in.hCurrSurf = pCurrDesc->hHostHandle;
@@ -1775,8 +1763,8 @@ DWORD APIENTRY DdSetOverlayPosition(PDD_SETOVERLAYPOSITIONDATA  lpSetOverlayPosi
 
         memset(pBody, 0, sizeof(VBOXVHWACMD_SURF_OVERLAY_SETPOSITION));
 
-        pBody->u.in.offSrcSurface = (uint64_t)lpSrcSurfaceGlobal->fpVidMem;
-        pBody->u.in.offDstSurface = (uint64_t)lpDestSurfaceGlobal->fpVidMem;
+        pBody->u.in.offSrcSurface = vboxVHWAVramOffsetFromPDEV(pDev, lpSrcSurfaceGlobal->fpVidMem);
+        pBody->u.in.offDstSurface = vboxVHWAVramOffsetFromPDEV(pDev, lpDestSurfaceGlobal->fpVidMem);
 
         pBody->u.in.hDstSurf = pDestDesc->hHostHandle;
         pBody->u.in.hSrcSurf = pSrcDesc->hHostHandle;
@@ -1816,7 +1804,7 @@ DWORD APIENTRY DdUpdateOverlay(PDD_UPDATEOVERLAYDATA  lpUpdateOverlay)
 
         memset(pBody, 0, sizeof(VBOXVHWACMD_SURF_OVERLAY_UPDATE));
 
-        pBody->u.in.offSrcSurface = (uint64_t)lpSrcSurfaceGlobal->fpVidMem;
+        pBody->u.in.offSrcSurface = vboxVHWAVramOffsetFromPDEV(pDev, lpSrcSurfaceGlobal->fpVidMem);
 
         pBody->u.in.hSrcSurf = pSrcDesc->hHostHandle;
 
@@ -1846,7 +1834,7 @@ DWORD APIENTRY DdUpdateOverlay(PDD_UPDATEOVERLAYDATA  lpUpdateOverlay)
             DD_SURFACE_GLOBAL* lpDestSurfaceGlobal = lpDestSurfaceLocal->lpGbl;
             PVBOXVHWASURFDESC pDestDesc = (PVBOXVHWASURFDESC)lpDestSurfaceGlobal->dwReserved1;
             pBody->u.in.hDstSurf = pDestDesc->hHostHandle;
-            pBody->u.in.offDstSurface = (uint64_t)lpDestSurfaceGlobal->fpVidMem;
+            pBody->u.in.offDstSurface = vboxVHWAVramOffsetFromPDEV(pDev, lpDestSurfaceGlobal->fpVidMem);
         }
 
         vboxVHWACommandSubmitAsynchAndComplete(pDev, pCmd);
@@ -2008,7 +1996,6 @@ static BYTE ropListNT[] =
 
 static DWORD rops[DD_ROP_SPACE] = { 0 };
 
-#if 1
 static bool
 getDDHALInfo(
     PPDEV pDev,
@@ -2037,75 +2024,25 @@ getDDHALInfo(
         }
     }
 
-//                                | DDCAPS_READSCANLINE
-
-
     pHALInfo->ddCaps.ddsCaps.dwCaps |= vboxVHWAToDDSCAPS(pDev->vhwaInfo.surfaceCaps);
 
-//disabled
-//    pHALInfo->ddCaps.dwCaps |= DDCAPS_3D           |
-//                               DDCAPS_BLTDEPTHFILL;
-//
-//    pHALInfo->ddCaps.ddsCaps.dwCaps |= DDSCAPS_3DDEVICE |
-//                                       DDSCAPS_ZBUFFER |
-//                                       DDSCAPS_ALPHA;
     pHALInfo->ddCaps.dwCaps2 = vboxVHWAToDDCAPS2(pDev->vhwaInfo.caps2);
 
-
-
-//#if DX7_TEXMANAGEMENT
-    // We need to set this bit up in order to be able to do
-    // out own texture management
-//    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_CANMANAGETEXTURE;
-//#if DX8_DDI
-//    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_CANMANAGERESOURCE;
-//#endif
-//#endif
-
-//#if DX8_DDI
-    // We need to flag we can run in windowed mode, otherwise we
-    // might get restricted by apps to run in fullscreen only
-//    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_CANRENDERWINDOWED;
-
-    // Also permit surfaces wider than the display buffer.
-//    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_WIDESURFACES;
-//#endif
-
-//#if DX8_DDI
-    // We need to flag we support dynamic textures. That is , apps can
-        // lock with high frequency video memory textures without paying a
-        // penalty for it. Since on this sample driver we only support
-        // linear memory formats for textures we don't need to do anything
-        // else for this support. Otherwise we would have to keep two surfaces
-        // for textures created with the DDSCAPS2_HINTDYNAMIC hint in order
-        // to efficiently do the linear<->swizzled transformation or keep the
-        // texture permanantly in an unswizzled state.
-//        pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_DYNAMICTEXTURES;
-    #if DX9_DDI
-        // Notice that dynamic textures MUST be supported in order to instantiate a DX9 device
-    #endif // DX9_DDI
-//#endif
-
-//    pHALInfo->ddCaps.dwFXCaps = 0;
-
-    // P3RX can do:
-    // 1. Stretching/Shrinking
-    // 2. YUV->RGB conversion
-    // 3. Mirroring in X and Y
-    // 4. ColorKeying from a source color and a source color space
     if(VBOXVHWA_CAP(pDev, VBOXVHWA_CAPS_BLT)
             && VBOXVHWA_CAP(pDev, VBOXVHWA_CAPS_BLTSTRETCH))
     {
         // Special effects caps
         //TODO: filter them out
         pHALInfo->ddCaps.dwFXCaps |= DDFXCAPS_BLTSTRETCHY  |
-                                    DDFXCAPS_BLTSTRETCHX  |
-                                    DDFXCAPS_BLTSTRETCHYN |
-                                    DDFXCAPS_BLTSTRETCHXN |
-                                    DDFXCAPS_BLTSHRINKY   |
-                                    DDFXCAPS_BLTSHRINKX   |
-                                    DDFXCAPS_BLTSHRINKYN  |
-                                    DDFXCAPS_BLTSHRINKXN;
+                                    DDFXCAPS_BLTSTRETCHX   |
+                                    DDFXCAPS_BLTSTRETCHYN  |
+                                    DDFXCAPS_BLTSTRETCHXN  |
+                                    DDFXCAPS_BLTSHRINKY    |
+                                    DDFXCAPS_BLTSHRINKX    |
+                                    DDFXCAPS_BLTSHRINKYN   |
+                                    DDFXCAPS_BLTSHRINKXN   |
+                                    DDFXCAPS_BLTARITHSTRETCHY
+                                    ;
 
         //        DDFXCAPS_BLTARITHSTRETCHY
         //        DDFXCAPS_BLTARITHSTRETCHYN
@@ -2120,13 +2057,14 @@ getDDHALInfo(
         // Special effects caps
         //TODO: filter them out
         pHALInfo->ddCaps.dwFXCaps |= DDFXCAPS_OVERLAYSTRETCHY  |
-                                    DDFXCAPS_OVERLAYSTRETCHX  |
-                                    DDFXCAPS_OVERLAYSTRETCHYN |
-                                    DDFXCAPS_OVERLAYSTRETCHXN |
-                                    DDFXCAPS_OVERLAYSHRINKY   |
-                                    DDFXCAPS_OVERLAYSHRINKX   |
-                                    DDFXCAPS_OVERLAYSHRINKYN  |
-                                    DDFXCAPS_OVERLAYSHRINKXN;
+                                    DDFXCAPS_OVERLAYSTRETCHX   |
+                                    DDFXCAPS_OVERLAYSTRETCHYN  |
+                                    DDFXCAPS_OVERLAYSTRETCHXN  |
+                                    DDFXCAPS_OVERLAYSHRINKY    |
+                                    DDFXCAPS_OVERLAYSHRINKX    |
+                                    DDFXCAPS_OVERLAYSHRINKYN   |
+                                    DDFXCAPS_OVERLAYSHRINKXN   |
+                                    DDFXCAPS_OVERLAYARITHSTRETCHY;
 
         //        DDFXCAPS_OVERLAYARITHSTRETCHY
         //        DDFXCAPS_OVERLAYARITHSTRETCHYN
@@ -2135,81 +2073,21 @@ getDDHALInfo(
 
     }
 
-//    if(VBOXVHWA_CAP(pDev, VBOXVHWA_CAPS_BLT)
-//            && VBOXVHWA_CAP(pDev, VBOXVHWA_CAPS_BLTFOURCC))
-//    {
-//        pHALInfo->ddCaps.dwCaps |= DDCAPS_BLTFOURCC;
-//
-//        // Enable copy blts between Four CC formats for DShow acceleration
-//        pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_COPYFOURCC;
-//    }
+    pHALInfo->ddCaps.dwCKeyCaps = vboxVHWAToDDCKEYCAPS(pDev->vhwaInfo.colorKeyCaps);
 
-//    if((VBOXVHWA_CAP(pDev, VBOXVHWA_CAPS_BLT) || VBOXVHWA_CAP(pDev, VBOXVHWA_CAPS_OVERLAY))
-//            && VBOXVHWA_CAP(pDev, VBOXVHWA_CAPS_COLORKEY))
-    {
-        pHALInfo->ddCaps.dwCKeyCaps = vboxVHWAToDDCKEYCAPS(pDev->vhwaInfo.colorKeyCaps);
-    }
-
-//    pHALInfo->ddCaps.dwSVBCaps = DDCAPS_BLT;
-
-//    // We can do a texture from sysmem to video mem.
-//    pHALInfo->ddCaps.dwSVBCKeyCaps |= DDCKEYCAPS_DESTBLT         |
-//                                     DDCKEYCAPS_DESTBLTCLRSPACE;
     pHALInfo->ddCaps.dwSVBFXCaps = 0;
 
-//    // Fill in the sysmem->vidmem rops (only can copy);
-//    for( i=0;i<DD_ROP_SPACE;i++ )
-//    {
-//        pHALInfo->ddCaps.dwSVBRops[i] = rops[i];
-//    }
 
-
-
-//disabled
-//    pHALInfo->ddCaps.ddsCaps.dwCaps |= DDSCAPS_TEXTURE;
-
-//#if DX7_STEREO
-//    // Report the stereo capability back to runtime
-//    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_STEREO;
-//    pHALInfo->ddCaps.dwSVCaps = DDSVCAPS_STEREOSEQUENTIAL;
-//#endif
-
-    // Z Buffer is only 16 Bits
-//    pHALInfo->ddCaps.dwZBufferBitDepths = DDBD_16;
-//    pHALInfo->ddCaps.ddsCaps.dwCaps |= DDSCAPS_MIPMAP;
-
+    if(VBOXVHWA_CAP(pDev, VBOXVHWA_CAPS_OVERLAY)) /* no overlay support for now */
     {
-//#ifdef SUPPORT_VIDEOPORT
-//        // We support 1 video port.  Must set CurrVideoPorts to 0
-//        // We can't do interleaved bobbing yet - maybe in the future.
-//        pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_VIDEOPORT            |
-//                                    DDCAPS2_CANBOBNONINTERLEAVED;
-//
-//        pHALInfo->ddCaps.dwMaxVideoPorts = 1;
-//        pHALInfo->ddCaps.dwCurrVideoPorts = 0;
-//
-//
-//#endif // SUPPORT_VIDEOPORT
+        // Overlay is free to use.
+        pHALInfo->ddCaps.dwMaxVisibleOverlays = pDev->vhwaInfo.numOverlays;
+        pHALInfo->ddCaps.dwCurrVisibleOverlays = 0;
 
-        if(VBOXVHWA_CAP(pDev, VBOXVHWA_CAPS_OVERLAY)) /* no overlay support for now */
-        {
-            // Overlay is free to use.
-            pHALInfo->ddCaps.dwMaxVisibleOverlays = pDev->vhwaInfo.numOverlays;
-            pHALInfo->ddCaps.dwCurrVisibleOverlays = 0;
-
-            // Indicates that Perm3 has no stretch ratio limitation
-            pHALInfo->ddCaps.dwMinOverlayStretch = 1;
-            pHALInfo->ddCaps.dwMaxOverlayStretch = 32000;
-        }
+        // Indicates that Perm3 has no stretch ratio limitation
+        pHALInfo->ddCaps.dwMinOverlayStretch = 1;
+        pHALInfo->ddCaps.dwMaxOverlayStretch = 32000;
     }
-
-//#ifdef W95_DDRAW
-//#ifdef USE_DD_CONTROL_COLOR
-//    // Enable colour control asc brightness, contrast, gamma.
-//    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_COLORCONTROLPRIMARY;
-//#endif
-//#endif
-
 
     // Won't do Video-Sys mem Blits.
     pHALInfo->ddCaps.dwVSBCaps = 0;
@@ -2229,313 +2107,8 @@ getDDHALInfo(
         pHALInfo->ddCaps.dwSSBRops[i] = 0;
     }
 
-    //
-    // bit depths supported for alpha and Z
-    //
-//    pHALInfo->ddCaps.dwAlphaBltConstBitDepths = DDBD_2 |
-//                                                DDBD_4 |
-//                                                DDBD_8;
-//
-//    pHALInfo->ddCaps.dwAlphaBltPixelBitDepths = DDBD_1 |
-//                                                DDBD_8;
-//    pHALInfo->ddCaps.dwAlphaBltSurfaceBitDepths = DDBD_1 |
-//                                                  DDBD_2 |
-//                                                  DDBD_4 |
-//                                                  DDBD_8;
-
-//disabled
-//    // No alpha blending for overlays, so I'm not sure what these should be.
-//    // Because we support 32bpp overlays, it's just that you can't use the
-//    // alpha bits for blending. Pass.
-//    pHALInfo->ddCaps.dwAlphaBltConstBitDepths = DDBD_2 |
-//                                                DDBD_4 |
-//                                                DDBD_8;
-//
-//    pHALInfo->ddCaps.dwAlphaBltPixelBitDepths = DDBD_1 |
-//                                                DDBD_8;
-//
-//    pHALInfo->ddCaps.dwAlphaBltSurfaceBitDepths = DDBD_1 |
-//                                                  DDBD_2 |
-//                                                  DDBD_4 |
-//                                                  DDBD_8;
-
-
-//Reenable:    // For DX5 and beyond we support this new informational callback.
-//    pHALInfo->GetDriverInfo = DdGetDriverInfo;
-//    pHALInfo->dwFlags |= DDHALINFO_GETDRIVERINFOSET;
-//
-//#if DX8_DDI
-//    // Flag our support for a new class of GUIDs that may come through
-//    // GetDriverInfo for DX8 drivers. (This support will be compulsory)
-//    pHALInfo->dwFlags |= DDHALINFO_GETDRIVERINFO2;
-//#endif DX8_DDI
-
     return true;
 } // getDDHALInfo
-#else
-bool
-getDDHALInfo2(
-    PPDEV pDev,
-    DD_HALINFO* pHALInfo)
-{
-    int i;
-
-#if 0
-    /* TODO: only enable features supported by the host backend & host hw
-     * for now this just combines all caps we might use */
-
-    // Setup the ROPS we do.
-    setupRops( ropListNT,
-                 rops,
-                 sizeof(ropListNT)/sizeof(ropListNT[0]));
-
-    // The most basic DirectDraw functionality
-    pHALInfo->ddCaps.dwCaps |=   DDCAPS_BLT
-                                 | DDCAPS_BLTQUEUE
-                                 | DDCAPS_BLTCOLORFILL
-//                                | DDCAPS_READSCANLINE
-                                ;
-#endif
-    pHALInfo->ddCaps.ddsCaps.dwCaps |=   DDSCAPS_OFFSCREENPLAIN
-                                         | DDSCAPS_PRIMARYSURFACE
-                                         | DDSCAPS_FLIP;
-#if 0
-    pHALInfo->ddCaps.dwCaps |= DDCAPS_3D           |
-                               DDCAPS_BLTDEPTHFILL;
-
-    pHALInfo->ddCaps.ddsCaps.dwCaps |= DDSCAPS_3DDEVICE |
-                                       DDSCAPS_ZBUFFER |
-                                       DDSCAPS_ALPHA;
-#endif
-    pHALInfo->ddCaps.dwCaps2 = 0;
-
-//#if DX7_TEXMANAGEMENT
-    // We need to set this bit up in order to be able to do
-    // out own texture management
-//    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_CANMANAGETEXTURE;
-//#if DX8_DDI
-//    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_CANMANAGERESOURCE;
-//#endif
-//#endif
-
-//#if DX8_DDI
-    // We need to flag we can run in windowed mode, otherwise we
-    // might get restricted by apps to run in fullscreen only
-    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_CANRENDERWINDOWED;
-//#endif
-
-//#if DX8_DDI
-    // We need to flag we support dynamic textures. That is , apps can
-        // lock with high frequency video memory textures without paying a
-        // penalty for it. Since on this sample driver we only support
-        // linear memory formats for textures we don't need to do anything
-        // else for this support. Otherwise we would have to keep two surfaces
-        // for textures created with the DDSCAPS2_HINTDYNAMIC hint in order
-        // to efficiently do the linear<->swizzled transformation or keep the
-        // texture permanantly in an unswizzled state.
-//        pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_DYNAMICTEXTURES;
-    #if DX9_DDI
-        // Notice that dynamic textures MUST be supported in order to instantiate a DX9 device
-    #endif // DX9_DDI
-//#endif
-
-//    pHALInfo->ddCaps.dwFXCaps = 0;
-
-    // P3RX can do:
-    // 1. Stretching/Shrinking
-    // 2. YUV->RGB conversion
-    // 3. Mirroring in X and Y
-    // 4. ColorKeying from a source color and a source color space
-    pHALInfo->ddCaps.dwCaps |=
-#if 0
-        DDCAPS_BLTSTRETCH
-                               | DDCAPS_BLTFOURCC
-                               |
-#endif
-                               DDCAPS_COLORKEY
-//                               | DDCAPS_CANBLTSYSMEM
-                               ;
-#if 0
-    // Special effects caps
-    pHALInfo->ddCaps.dwFXCaps |= DDFXCAPS_BLTSTRETCHY  |
-                                DDFXCAPS_BLTSTRETCHX  |
-                                DDFXCAPS_BLTSTRETCHYN |
-                                DDFXCAPS_BLTSTRETCHXN |
-                                DDFXCAPS_BLTSHRINKY   |
-                                DDFXCAPS_BLTSHRINKX   |
-                                DDFXCAPS_BLTSHRINKYN  |
-                                DDFXCAPS_BLTSHRINKXN;
-
-    // ColorKey caps
-    pHALInfo->ddCaps.dwCKeyCaps |= DDCKEYCAPS_SRCBLT         |
-                                  DDCKEYCAPS_SRCBLTCLRSPACE |
-                                  DDCKEYCAPS_DESTBLT        |
-                                  DDCKEYCAPS_DESTBLTCLRSPACE;
-#endif
-//    pHALInfo->ddCaps.dwSVBCaps = DDCAPS_BLT;
-
-//    // We can do a texture from sysmem to video mem.
-//    pHALInfo->ddCaps.dwSVBCKeyCaps |= DDCKEYCAPS_DESTBLT         |
-//                                     DDCKEYCAPS_DESTBLTCLRSPACE;
-    pHALInfo->ddCaps.dwSVBFXCaps = 0;
-
-//    // Fill in the sysmem->vidmem rops (only can copy);
-//    for( i=0;i<DD_ROP_SPACE;i++ )
-//    {
-//        pHALInfo->ddCaps.dwSVBRops[i] = rops[i];
-//    }
-#if 0
-    //mirroring with blitting
-    pHALInfo->ddCaps.dwFXCaps |= DDFXCAPS_BLTMIRRORUPDOWN  |
-                                DDFXCAPS_BLTMIRRORLEFTRIGHT;
-
-    pHALInfo->ddCaps.dwCKeyCaps |=  DDCKEYCAPS_SRCBLTCLRSPACEYUV;
-
-    pHALInfo->ddCaps.ddsCaps.dwCaps |= DDSCAPS_TEXTURE;
-#endif
-//#if DX7_STEREO
-//    // Report the stereo capability back to runtime
-//    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_STEREO;
-//    pHALInfo->ddCaps.dwSVCaps = DDSVCAPS_STEREOSEQUENTIAL;
-//#endif
-
-    // Z Buffer is only 16 Bits
-//    pHALInfo->ddCaps.dwZBufferBitDepths = DDBD_16;
-//    pHALInfo->ddCaps.ddsCaps.dwCaps |= DDSCAPS_MIPMAP;
-
-        pHALInfo->ddCaps.ddsCaps.dwCaps |= DDSCAPS_LOCALVIDMEM;
-
-    {
-//#ifdef SUPPORT_VIDEOPORT
-//        // We support 1 video port.  Must set CurrVideoPorts to 0
-//        // We can't do interleaved bobbing yet - maybe in the future.
-//        pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_VIDEOPORT            |
-//                                    DDCAPS2_CANBOBNONINTERLEAVED;
-//
-//        pHALInfo->ddCaps.dwMaxVideoPorts = 1;
-//        pHALInfo->ddCaps.dwCurrVideoPorts = 0;
-//
-//
-//#endif // SUPPORT_VIDEOPORT
-
-
-        {
-            // Overlay is free to use.
-            pHALInfo->ddCaps.dwMaxVisibleOverlays = 1;
-            pHALInfo->ddCaps.dwCurrVisibleOverlays = 0;
-
-            pHALInfo->ddCaps.dwCaps |=  DDCAPS_OVERLAY          |
-                                        DDCAPS_OVERLAYFOURCC    |
-                                        DDCAPS_OVERLAYSTRETCH   |
-                                        DDCAPS_COLORKEYHWASSIST |
-                                        DDCAPS_OVERLAYCANTCLIP;
-
-            pHALInfo->ddCaps.dwCKeyCaps |= DDCKEYCAPS_SRCOVERLAY           |
-                                           DDCKEYCAPS_SRCOVERLAYONEACTIVE  |
-                                           DDCKEYCAPS_SRCOVERLAYYUV        |
-                                           DDCKEYCAPS_DESTOVERLAY          |
-                                           DDCKEYCAPS_DESTOVERLAYONEACTIVE |
-                                           DDCKEYCAPS_DESTOVERLAYYUV;
-
-            pHALInfo->ddCaps.ddsCaps.dwCaps |= DDSCAPS_OVERLAY;
-
-            pHALInfo->ddCaps.dwFXCaps |= DDFXCAPS_OVERLAYSHRINKX   |
-                                         DDFXCAPS_OVERLAYSHRINKXN  |
-                                         DDFXCAPS_OVERLAYSHRINKY   |
-                                         DDFXCAPS_OVERLAYSHRINKYN  |
-                                         DDFXCAPS_OVERLAYSTRETCHX  |
-                                         DDFXCAPS_OVERLAYSTRETCHXN |
-                                         DDFXCAPS_OVERLAYSTRETCHY  |
-                                         DDFXCAPS_OVERLAYSTRETCHYN;
-
-            // Indicates that Perm3 has no stretch ratio limitation
-            pHALInfo->ddCaps.dwMinOverlayStretch = 1;
-            pHALInfo->ddCaps.dwMaxOverlayStretch = 32000;
-        }
-    }
-
-//#ifdef W95_DDRAW
-//#ifdef USE_DD_CONTROL_COLOR
-//    // Enable colour control asc brightness, contrast, gamma.
-//    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_COLORCONTROLPRIMARY;
-//#endif
-//#endif
-
-    // Also permit surfaces wider than the display buffer.
-    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_WIDESURFACES;
-#if 0
-    // Enable copy blts betweemn Four CC formats for DShow acceleration
-    pHALInfo->ddCaps.dwCaps2 |= DDCAPS2_COPYFOURCC;
-#endif
-    // Won't do Video-Sys mem Blits.
-    pHALInfo->ddCaps.dwVSBCaps = 0;
-    pHALInfo->ddCaps.dwVSBCKeyCaps = 0;
-    pHALInfo->ddCaps.dwVSBFXCaps = 0;
-    for( i=0;i<DD_ROP_SPACE;i++ )
-    {
-        pHALInfo->ddCaps.dwVSBRops[i] = 0;
-    }
-
-    // Won't do Sys-Sys mem Blits
-    pHALInfo->ddCaps.dwSSBCaps = 0;
-    pHALInfo->ddCaps.dwSSBCKeyCaps = 0;
-    pHALInfo->ddCaps.dwSSBFXCaps = 0;
-    for( i=0;i<DD_ROP_SPACE;i++ )
-    {
-        pHALInfo->ddCaps.dwSSBRops[i] = 0;
-    }
-
-    //
-    // bit depths supported for alpha and Z
-    //
-//    pHALInfo->ddCaps.dwAlphaBltConstBitDepths = DDBD_2 |
-//                                                DDBD_4 |
-//                                                DDBD_8;
-//
-//    pHALInfo->ddCaps.dwAlphaBltPixelBitDepths = DDBD_1 |
-//                                                DDBD_8;
-//    pHALInfo->ddCaps.dwAlphaBltSurfaceBitDepths = DDBD_1 |
-//                                                  DDBD_2 |
-//                                                  DDBD_4 |
-//                                                  DDBD_8;
-#if 0
-    // No alpha blending for overlays, so I'm not sure what these should be.
-    // Because we support 32bpp overlays, it's just that you can't use the
-    // alpha bits for blending. Pass.
-    pHALInfo->ddCaps.dwAlphaBltConstBitDepths = DDBD_2 |
-                                                DDBD_4 |
-                                                DDBD_8;
-
-    pHALInfo->ddCaps.dwAlphaBltPixelBitDepths = DDBD_1 |
-                                                DDBD_8;
-
-    pHALInfo->ddCaps.dwAlphaBltSurfaceBitDepths = DDBD_1 |
-                                                  DDBD_2 |
-                                                  DDBD_4 |
-                                                  DDBD_8;
-
-    //
-    // ROPS supported
-    //
-    for( i=0;i<DD_ROP_SPACE;i++ )
-    {
-        pHALInfo->ddCaps.dwRops[i] = rops[i];
-    }
-#endif
-//Reenable:    // For DX5 and beyond we support this new informational callback.
-//    pHALInfo->GetDriverInfo = DdGetDriverInfo;
-//    pHALInfo->dwFlags |= DDHALINFO_GETDRIVERINFOSET;
-//
-//#if DX8_DDI
-//    // Flag our support for a new class of GUIDs that may come through
-//    // GetDriverInfo for DX8 drivers. (This support will be compulsory)
-//    pHALInfo->dwFlags |= DDHALINFO_GETDRIVERINFO2;
-//#endif DX8_DDI
-
-    return true;
-} // getDDHALInfo
-
-#endif
 
 static DECLCALLBACK(void) vboxVHWASurfBltCompletion(PPDEV ppdev, VBOXVHWACMD * pCmd, void * pContext)
 {

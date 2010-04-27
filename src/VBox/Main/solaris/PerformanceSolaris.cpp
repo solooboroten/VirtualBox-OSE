@@ -1,4 +1,4 @@
-/* $Id: PerformanceSolaris.cpp 14948 2008-12-03 15:06:30Z vboxsync $ */
+/* $Id: PerformanceSolaris.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2008 Sun Microsystems, Inc.
+ * Copyright (C) 2008 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -15,10 +15,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 #undef _FILE_OFFSET_BITS
@@ -52,6 +48,7 @@ public:
 private:
     kstat_ctl_t *mKC;
     kstat_t     *mSysPages;
+    kstat_t     *mZFSCache;
 };
 
 CollectorHAL *createHAL()
@@ -62,7 +59,10 @@ CollectorHAL *createHAL()
 // Collector HAL for Solaris
 
 
-CollectorSolaris::CollectorSolaris() : mKC(0), mSysPages(0)
+CollectorSolaris::CollectorSolaris()
+    : mKC(0),
+      mSysPages(0),
+      mZFSCache(0)
 {
     if ((mKC = kstat_open()) == 0)
     {
@@ -74,6 +74,11 @@ CollectorSolaris::CollectorSolaris() : mKC(0), mSysPages(0)
     {
         Log(("kstat_lookup(system_pages) -> %d\n", errno));
         return;
+    }
+
+    if ((mZFSCache = kstat_lookup(mKC, "zfs", 0, "arcstats")) == 0)
+    {
+        Log(("kstat_lookup(system_pages) -> %d\n", errno));
     }
 }
 
@@ -179,6 +184,20 @@ int CollectorSolaris::getHostMemoryUsage(ULONG *total, ULONG *used, ULONG *avail
         return VERR_INTERNAL_ERROR;
     }
     *available = kn->value.ul * (PAGE_SIZE/1024);
+
+    if (kstat_read(mKC, mZFSCache, 0) != -1)
+    {
+        if (mZFSCache)
+        {
+            if ((kn = (kstat_named_t *)kstat_data_lookup(mZFSCache, "size")))
+                *available += (kn->value.ul / 1024);
+            else
+                Log(("kstat_data_lookup(size) -> %d\n", errno));
+        }
+        else
+            Log(("mZFSCache missing.\n"));
+    }
+
     if ((kn = (kstat_named_t *)kstat_data_lookup(mSysPages, "physmem")) == 0)
     {
         Log(("kstat_data_lookup(physmem) -> %d\n", errno));
@@ -192,9 +211,7 @@ int CollectorSolaris::getHostMemoryUsage(ULONG *total, ULONG *used, ULONG *avail
 int CollectorSolaris::getProcessMemoryUsage(RTPROCESS process, ULONG *used)
 {
     int rc = VINF_SUCCESS;
-    char *pszName;
-    pid_t pid2;
-    char buf[80]; /* @todo: this should be tied to max allowed proc name. */
+    char *pszName = NULL;
     psinfo_t psinfo;
 
     RTStrAPrintf(&pszName, "/proc/%d/psinfo", process);

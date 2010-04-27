@@ -1,10 +1,10 @@
-/* $Id: VBoxCocoaApplication.m 23463 2009-10-01 07:43:10Z vboxsync $ */
+/* $Id: VBoxCocoaApplication.m 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * VBoxCocoaApplication - NSApplication subclass for handling -sendEvent.
  */
 
 /*
- * Copyright (C) 2009 Sun Microsystems, Inc.
+ * Copyright (C) 2009 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 /*******************************************************************************
@@ -339,6 +335,45 @@ const char *VBoxCocoaApplication_eventTypeName(unsigned long eEvtType)
     }
 }
 
+/**
+ * Check for some default application key combinations a Mac user expect, like
+ * CMD+Q or CMD+H.
+ *
+ * @returns true if such a key combo was hit, false otherwise.
+ * @param   eEvtType        The Cocoa event type.
+ */
+bool VBoxCocoaApplication_isApplicationCommand(const void *pvEvent)
+{
+    NSEvent     *pEvent = (NSEvent *)pvEvent;
+    NSEventType  eEvtType = [pEvent type];
+    bool         fGlobalHotkey = false;
+
+    switch (eEvtType)
+    {
+        case NSKeyDown:
+        case NSKeyUp:
+        {
+            NSUInteger fEvtMask = [pEvent modifierFlags];
+            unsigned short KeyCode = [pEvent keyCode];
+            if (   ((fEvtMask & (NX_NONCOALSESCEDMASK | NX_COMMANDMASK | NX_DEVICELCMDKEYMASK)) == (NX_NONCOALSESCEDMASK | NX_COMMANDMASK | NX_DEVICELCMDKEYMASK))  // L+CMD
+                || ((fEvtMask & (NX_NONCOALSESCEDMASK | NX_COMMANDMASK | NX_DEVICERCMDKEYMASK)) == (NX_NONCOALSESCEDMASK | NX_COMMANDMASK | NX_DEVICERCMDKEYMASK))) // R+CMD
+            {
+                if (   KeyCode == 0x0c  // CMD+Q (Quit)
+                    || KeyCode == 0x04) // CMD+H (Hide)
+                    fGlobalHotkey = true;
+            } 
+            else if (   ((fEvtMask & (NX_NONCOALSESCEDMASK | NX_ALTERNATEMASK | NX_DEVICELALTKEYMASK | NX_COMMANDMASK | NX_DEVICELCMDKEYMASK)) == (NX_NONCOALSESCEDMASK | NX_ALTERNATEMASK | NX_DEVICELALTKEYMASK | NX_COMMANDMASK | NX_DEVICELCMDKEYMASK)) // L+ALT+CMD
+                     || ((fEvtMask & (NX_NONCOALSESCEDMASK | NX_ALTERNATEMASK | NX_DEVICERCMDKEYMASK | NX_COMMANDMASK | NX_DEVICERCMDKEYMASK)) == (NX_NONCOALSESCEDMASK | NX_ALTERNATEMASK | NX_DEVICERCMDKEYMASK | NX_COMMANDMASK | NX_DEVICERCMDKEYMASK))) // R+ALT+CMD
+            {
+                if (KeyCode == 0x04)    // ALT+CMD+H (Hide-Others)
+                    fGlobalHotkey = true;
+            }
+            break;
+        }
+        default: break;
+    }
+    return fGlobalHotkey;
+}
 
 /**
  * Debug helper function for dumping a Cocoa event to stdout.

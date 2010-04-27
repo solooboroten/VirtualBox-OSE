@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2009 Sun Microsystems, Inc.
+ * Copyright (C) 2009 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -14,10 +14,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 #define _GNU_SOURCE 1
@@ -139,14 +135,11 @@ vboxPatchMesaExport(const char* psFuncName, const void *pStart, const void *pEnd
     int rv;
     void *alPatch;
     void *pMesaEntry;
-#ifdef RT_ARCH_AMD64
     char patch[5];
     void *shift;
-#endif
 
 #ifndef VBOX_NO_MESA_PATCH_REPORTS
-    crDebug("");
-    crDebug("vboxPatchMesaExport: %s", psFuncName);
+    crDebug("\nvboxPatchMesaExport: %s", psFuncName);
 #endif
 
     pMesaEntry = dlsym(RTLD_DEFAULT, psFuncName);
@@ -171,14 +164,16 @@ vboxPatchMesaExport(const char* psFuncName, const void *pStart, const void *pEnd
         int rv;
 
         rv = dladdr1(pStart, &dlip1, (void**)&sym1, RTLD_DL_SYMENT);
-        if (!rv || !sym)
+        if (!rv || !sym1)
         {
             crError("Failed to get size for %p", pStart);
             return;
         }
 
         pEnd = pStart + sym1->st_size;
+#ifndef VBOX_NO_MESA_PATCH_REPORTS
         crDebug("VBox Entry: %p, start: %p(%s:%s), size: %i", pStart, dlip1.dli_saddr, dlip1.dli_fname, dlip1.dli_sname, sym1->st_size);
+#endif
     }
 #endif
 
@@ -187,10 +182,11 @@ vboxPatchMesaExport(const char* psFuncName, const void *pStart, const void *pEnd
     crDebug("Vbox code: start: %p, end %p, size: %i", pStart, pEnd, pEnd-pStart);
 #endif
 
+#ifndef VBOX_OGL_GLX_USE_CSTUBS
     if (sym->st_size<(pEnd-pStart))
+#endif
     {
-#ifdef RT_ARCH_AMD64
-        /* Try to insert 5 bytes jmpq to our stub code */
+        /* Try to insert 5 bytes jmp/jmpq to our stub code */
 
     	if (5>(pEnd-pStart))
         {
@@ -198,17 +194,22 @@ vboxPatchMesaExport(const char* psFuncName, const void *pStart, const void *pEnd
             return;
         }
 
-        shift = pStart-(dlip.dli_saddr+5);
+        shift = (void*)((intptr_t)pStart-((intptr_t)dlip.dli_saddr+5));
 # ifndef VBOX_NO_MESA_PATCH_REPORTS
-        crDebug("Size is small, inserting jmpq with shift %p instead", shift);
+        crDebug("Inserting jmp[q] with shift %p instead", shift);
 # endif
 
-        if ( ((((long)shift)&0x00000000) != 0) 
-             && ((((long)shift)&0x00000000) != 0xFFFFFFFF00000000))
+#ifdef RT_ARCH_AMD64
         {
-            crDebug("Can't patch offset is too big.(%s)", psFuncName);
-            return;
+            int64_t offset = (intptr_t)shift;
+
+            if (offset>INT32_MAX || offset<INT32_MIN)
+            {
+                crDebug("Can't patch offset is too big.(%s)", psFuncName);
+                return;
+            }
         }
+#endif
 
         patch[0] = 0xE9;
         patch[1] = ((char*)&shift)[0];
@@ -221,10 +222,6 @@ vboxPatchMesaExport(const char* psFuncName, const void *pStart, const void *pEnd
 # endif
         pStart = &patch[0];
         pEnd = &patch[5];
-#else
-        crDebug("Can't patch size too small.(%s)", psFuncName);
-        return;
-#endif //ifdef RT_ARCH_AMD64
     }
 
     /* Get aligned start adress we're going to patch*/

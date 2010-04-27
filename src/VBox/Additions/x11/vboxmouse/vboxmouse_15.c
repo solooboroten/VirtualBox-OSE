@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -12,10 +12,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  * --------------------------------------------------------------------
  *
  * This code is based on evdev.c from X.Org with the following copyright
@@ -59,6 +55,8 @@
 #include <errno.h>
 #include <fcntl.h>
 
+#include "product-generated.h"
+
 static void
 VBoxReadInput(InputInfoPtr pInfo)
 {
@@ -73,6 +71,12 @@ VBoxReadInput(InputInfoPtr pInfo)
 #endif
         &&  RT_SUCCESS(VbglR3GetMouseStatus(&fFeatures, &cx, &cy))
         && (fFeatures & VMMDEV_MOUSE_HOST_CAN_ABSOLUTE))
+#if ABI_XINPUT_VERSION == SET_ABI_VERSION(2, 0)
+        /* Bug in the 1.4 X server series - conversion_proc was no longer
+         * called, but the server didn't yet do the conversion itself. */
+        cx = (cx * screenInfo.screens[0]->width) / 65535;
+        cy = (cy * screenInfo.screens[0]->height) / 65535;
+#endif
         /* send absolute movement */
         xf86PostMotionEvent(pInfo->dev, 1, 0, 2, cx, cy);
 }
@@ -89,54 +93,51 @@ VBoxInit(DeviceIntPtr device)
     CARD8 map[2] = { 0, 1 };
     Atom axis_labels[2] = { 0, 0 };
     Atom button_labels[2] = { 0, 0 };
-    InputInfoPtr pInfo;
-
-    pInfo = device->public.devicePrivate;
-    if (!InitValuatorClassDeviceStruct(device, 2,
+    if (!InitPointerDeviceStruct((DevicePtr)device, map, 2,
+#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
+                                 button_labels,
+#endif
 #if GET_ABI_MAJOR(ABI_XINPUT_VERSION) < 2
-                                       miPointerGetMotionEvents,
-                                       miPointerGetMotionBufferSize(),
+                                 miPointerGetMotionEvents, VBoxPtrCtrlProc,
+                                 miPointerGetMotionBufferSize()
 #elif GET_ABI_MAJOR(ABI_XINPUT_VERSION) < 3
-                                       GetMotionHistory,
-                                       GetMotionHistorySize(),
-#elif GET_ABI_MAJOR(ABI_XINPUT_VERSION) < 7
-                                       GetMotionHistorySize(),
-#elif GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
-                                       axis_labels,
-                                       GetMotionHistorySize(),
+                                 GetMotionHistory, VBoxPtrCtrlProc,
+                                 GetMotionHistorySize(), 2 /* Number of axes */
+
+#elif GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 3
+                                 VBoxPtrCtrlProc, GetMotionHistorySize(),
+								 2 /* Number of axes */
 #else
 # error Unsupported version of X.Org
 #endif
-                                       Absolute))
-        return !Success;
-
-    /* Pretend we have buttons so the server accepts us as a pointing device. */
-    if (!InitButtonClassDeviceStruct(device, 2, /* number of buttons */
 #if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
-                                     button_labels,
+                                 , axis_labels
 #endif
-                                     map))
-        return !Success;
-    if (!InitPtrFeedbackClassDeviceStruct(device, VBoxPtrCtrlProc))
+                                 ))
         return !Success;
 
     /* Tell the server about the range of axis values we report */
+#if ABI_XINPUT_VERSION <= SET_ABI_VERSION(2, 0)
+    xf86InitValuatorAxisStruct(device, 0, 0, -1, 1, 0, 1);
+    xf86InitValuatorAxisStruct(device, 1, 0, -1, 1, 0, 1);
+#else
     xf86InitValuatorAxisStruct(device, 0,
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
+# if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
                                axis_labels[0],
-#endif
+# endif
                                0 /* min X */, 65536 /* max X */,
                                10000, 0, 10000);
-    xf86InitValuatorDefaults(device, 0);
 
     xf86InitValuatorAxisStruct(device, 1,
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
+# if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
                                axis_labels[1],
-#endif
+# endif
                                0 /* min Y */, 65536 /* max Y */,
                                10000, 0, 10000);
+#endif
+    xf86InitValuatorDefaults(device, 0);
     xf86InitValuatorDefaults(device, 1);
-    xf86MotionHistoryAllocate(pInfo);
+    xf86MotionHistoryAllocate(device->public.devicePrivate);
 
     return Success;
 }
@@ -213,7 +214,6 @@ VBoxProbe(InputInfoPtr pInfo)
     return Success;
 }
 
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) < 2
 static Bool
 VBoxConvert(InputInfoPtr pInfo, int first, int num, int v0, int v1, int v2,
             int v3, int v4, int v5, int *x, int *y)
@@ -225,7 +225,6 @@ VBoxConvert(InputInfoPtr pInfo, int first, int num, int v0, int v1, int v2,
     } else
         return FALSE;
 }
-#endif
 
 static InputInfoPtr
 VBoxPreInit(InputDriverPtr drv, IDevPtr dev, int flags)
@@ -243,9 +242,7 @@ VBoxPreInit(InputDriverPtr drv, IDevPtr dev, int flags)
     pInfo->conf_idev = dev;
     /* Unlike evdev, we set this unconditionally, as we don't handle keyboards. */
     pInfo->type_name = XI_MOUSE;
-#if GET_ABI_MAJOR(ABI_XINPUT_VERSION) < 2
     pInfo->conversion_proc = VBoxConvert;
-#endif
     pInfo->flags = XI86_POINTER_CAPABLE | XI86_SEND_DRAG_EVENTS |
             XI86_ALWAYS_CORE;
 
@@ -301,7 +298,7 @@ VBoxPlug(pointer module,
 static XF86ModuleVersionInfo VBoxVersionRec =
 {
     "vboxmouse",
-    "Sun Microsystems Inc.",
+    VBOX_VENDOR,
     MODINFOSTRING1,
     MODINFOSTRING2,
     0, /* Missing from SDK: XORG_VERSION_CURRENT, */

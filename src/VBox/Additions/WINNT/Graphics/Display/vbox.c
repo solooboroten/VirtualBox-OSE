@@ -1,10 +1,10 @@
-/* $Id: vbox.c 25052 2009-11-27 15:01:37Z vboxsync $ */
+/* $Id: vbox.c 28800 2010-04-27 08:22:32Z vboxsync $ */
 /** @file
  * Display - VirtualBox Win 2000/XP guest display driver, support functions.
  */
 
 /*
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -13,10 +13,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 #include "driver.h"
@@ -769,7 +765,7 @@ static void vboxVBVAHostCommandHanlder(PPDEV ppdev, VBVAHOSTCMD * pCmd)
 # endif
         default:
         {
-        	Assert(0);
+            Assert(0);
             vboxVBVAHostCommandComplete(ppdev, pCmd);
         }
     }
@@ -779,12 +775,12 @@ void vboxVHWACommandCheckHostCmds(PPDEV ppdev)
 {
     VBVAHOSTCMD * pCmd, * pNextCmd;
     int rc = ppdev->pfnHGSMIRequestCommands(ppdev->hMpHGSMI, HGSMI_CH_VBVA, &pCmd);
-    Assert(RT_SUCCESS(rc));
+    /* don't assert here, otherwise NT4 will be unhappy */
     if(RT_SUCCESS(rc))
     {
         for(;pCmd; pCmd = pNextCmd)
         {
-        	pNextCmd = pCmd->u.pNext;
+            pNextCmd = pCmd->u.pNext;
             vboxVBVAHostCommandHanlder(ppdev, pCmd);
         }
     }
@@ -815,8 +811,7 @@ BOOL vboxVHWACommandSubmit (PPDEV ppdev, VBOXVHWACMD* pCmd)
 {
     VBOXPEVENT pEvent;
     VBOXVP_STATUS rc = ppdev->VideoPortProcs.pfnCreateEvent(ppdev->pVideoPortContext, VBOXNOTIFICATION_EVENT, NULL, &pEvent);
-    Assert(rc == VBOXNO_ERROR);
-
+    /* don't assert here, otherwise NT4 will be unhappy */
     if(rc == VBOXNO_ERROR)
     {
         pCmd->Flags |= VBOXVHWACMD_FLAG_GH_ASYNCH_IRQ;
@@ -1063,6 +1058,31 @@ int vboxVHWADisable(PPDEV ppdev)
     vboxVHWACommandCheckHostCmds(ppdev);
 
     return rc;
+}
+
+void vboxVHWAInit(PPDEV ppdev)
+{
+    VHWAQUERYINFO info;
+    DWORD returnedDataLength;
+    DWORD err;
+
+    memset(&info, 0, sizeof (info));
+
+    err = EngDeviceIoControl(ppdev->hDriver,
+            IOCTL_VIDEO_VHWA_QUERY_INFO,
+            NULL,
+            0,
+            &info,
+            sizeof(info),
+            &returnedDataLength);
+    Assert(!err);
+    if(!err)
+    {
+        ppdev->vhwaInfo.offVramBase = info.offVramBase;
+        ppdev->vhwaInfo.bVHWAInited = TRUE;
+    }
+    else
+        ppdev->vhwaInfo.bVHWAInited = FALSE;
 }
 
 # endif

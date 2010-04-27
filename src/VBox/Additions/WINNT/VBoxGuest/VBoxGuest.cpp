@@ -2,7 +2,7 @@
  *
  * VBoxGuest -- VirtualBox Win32 guest support driver
  *
- * Copyright (C) 2006-2007 Sun Microsystems, Inc.
+ * Copyright (C) 2006-2007 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -11,10 +11,6 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
- * Clara, CA 95054 USA or visit http://www.sun.com if you need
- * additional information or have any questions.
  */
 
 // enable backdoor logging
@@ -182,7 +178,7 @@ ULONG DriverEntry(PDRIVER_OBJECT pDrvObj, PUNICODE_STRING pRegPath)
     pDrvObj->MajorFunction[IRP_MJ_READ]               = VBoxGuestNotSupportedStub;
     pDrvObj->MajorFunction[IRP_MJ_WRITE]              = VBoxGuestNotSupportedStub;
 #ifdef TARGET_NT4
-    rc = ntCreateDevice(pDrvObj, NULL, pRegPath);
+    rc = ntCreateDevice(pDrvObj, NULL /* pDevObj */, pRegPath);
 #else
     pDrvObj->MajorFunction[IRP_MJ_PNP]                = VBoxGuestPnP;
     pDrvObj->MajorFunction[IRP_MJ_POWER]              = VBoxGuestPower;
@@ -319,7 +315,10 @@ void VBoxGuestUnload(PDRIVER_OBJECT pDrvObj)
 
 #ifdef VBOX_WITH_HGCM
     if (pDevExt->SessionSpinlock != NIL_RTSPINLOCK)
-        RTSpinlockDestroy(pDevExt->SessionSpinlock);
+    {
+        int rc2 = RTSpinlockDestroy(pDevExt->SessionSpinlock);
+        dprintf(("VBoxGuest::VBoxGuestUnload: spinlock destroyed with rc=%Rrc\n", rc2));
+    }
 #endif
     IoDeleteDevice(pDrvObj->DeviceObject);
 #endif
@@ -538,10 +537,10 @@ static bool CtlGuestFilterMask (uint32_t u32OrMask, uint32_t u32NotMask)
         req->u32NotMask = u32NotMask;
 
         rc = VbglGRPerform (&req->header);
-        if (RT_FAILURE (rc) || RT_FAILURE (req->header.rc))
+        if (RT_FAILURE (rc))
         {
             dprintf (("VBoxGuest::VBoxGuestDeviceControl: error issuing request to VMMDev! "
-                      "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+                      "rc = %Rrc\n", rc));
         }
         else
         {
@@ -554,18 +553,19 @@ static bool CtlGuestFilterMask (uint32_t u32OrMask, uint32_t u32NotMask)
 }
 
 #ifdef VBOX_WITH_MANAGEMENT
-static int VBoxGuestSetBalloonSize(PVBOXGUESTDEVEXT pDevExt, uint32_t u32BalloonSize)
+static int VBoxGuestSetBalloonSize(PVBOXGUESTDEVEXT pDevExt, uint32_t cBalloonChunks)
 {
     VMMDevChangeMemBalloon *req = NULL;
     int rc = VINF_SUCCESS;
+    uint32_t i;
 
-    if (u32BalloonSize > pDevExt->MemBalloon.cMaxBalloons)
+    if (cBalloonChunks > pDevExt->MemBalloon.cMaxBalloonChunks)
     {
-        AssertMsgFailed(("VBoxGuestSetBalloonSize illegal balloon size %d (max=%d)\n", u32BalloonSize, pDevExt->MemBalloon.cMaxBalloons));
+        AssertMsgFailed(("VBoxGuestSetBalloonSize illegal balloon size %d (max=%d)\n", cBalloonChunks, pDevExt->MemBalloon.cMaxBalloonChunks));
         return VERR_INVALID_PARAMETER;
     }
 
-    if (u32BalloonSize == pDevExt->MemBalloon.cBalloons)
+    if (cBalloonChunks == pDevExt->MemBalloon.cBalloonChunks)
         return VINF_SUCCESS;    /* nothing to do */
 
     /* Allocate request packet */
@@ -573,12 +573,10 @@ static int VBoxGuestSetBalloonSize(PVBOXGUESTDEVEXT pDevExt, uint32_t u32Balloon
     if (RT_FAILURE(rc))
         return rc;
 
-    vmmdevInitRequest(&req->header, VMMDevReq_ChangeMemBalloon);
-
-    if (u32BalloonSize > pDevExt->MemBalloon.cBalloons)
+    if (cBalloonChunks > pDevExt->MemBalloon.cBalloonChunks)
     {
         /* inflate */
-        for (uint32_t i=pDevExt->MemBalloon.cBalloons;i<u32BalloonSize;i++)
+        for (i = pDevExt->MemBalloon.cBalloonChunks; i < cBalloonChunks; i++)
         {
 #ifndef TARGET_NT4
             /*
@@ -637,17 +635,17 @@ static int VBoxGuestSetBalloonSize(PVBOXGUESTDEVEXT pDevExt, uint32_t u32Balloon
 
             /* Copy manually as RTGCPHYS is always 64 bits */
             for (uint32_t j=0;j<VMMDEV_MEMORY_BALLOON_CHUNK_PAGES;j++)
-                req->aPhysPage[j] = pPageDesc[j];
+                req->aPhysPage[j] = pPageDesc[j] << PAGE_SHIFT; /* PFN_NUMBER is physical page nr, so shift left by 12 to get the physical address */
 
             req->header.size = RT_OFFSETOF(VMMDevChangeMemBalloon, aPhysPage[VMMDEV_MEMORY_BALLOON_CHUNK_PAGES]);
             req->cPages      = VMMDEV_MEMORY_BALLOON_CHUNK_PAGES;
             req->fInflate    = true;
 
             rc = VbglGRPerform(&req->header);
-            if (RT_FAILURE(rc) || RT_FAILURE(req->header.rc))
+            if (RT_FAILURE(rc))
             {
-                dprintf(("VBoxGuest::VBoxGuestSetBalloonSize: error issuing request to VMMDev!"
-                         "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+                dprintf(("VBoxGuest::VBoxGuestSetBalloonSize: error issuing request to VMMDev! "
+                         "rc = %Rrc\n", rc));
 
 #ifndef TARGET_NT4
                 MmFreePagesFromMdl(pMdl);
@@ -666,16 +664,16 @@ static int VBoxGuestSetBalloonSize(PVBOXGUESTDEVEXT pDevExt, uint32_t u32Balloon
                 dprintf(("VBoxGuest::VBoxGuestSetBalloonSize %d MB added chunk at %x\n", i, pvBalloon));
 #endif
                 pDevExt->MemBalloon.paMdlMemBalloon[i] = pMdl;
-                pDevExt->MemBalloon.cBalloons++;
+                pDevExt->MemBalloon.cBalloonChunks++;
             }
         }
     }
     else
     {
         /* deflate */
-        for (uint32_t _i=pDevExt->MemBalloon.cBalloons;_i>u32BalloonSize;_i--)
+        for (i = pDevExt->MemBalloon.cBalloonChunks; i > cBalloonChunks; i--)
         {
-            uint32_t index = _i - 1;
+            uint32_t index = i - 1;
             PMDL  pMdl = pDevExt->MemBalloon.paMdlMemBalloon[index];
 
             Assert(pMdl);
@@ -688,17 +686,17 @@ static int VBoxGuestSetBalloonSize(PVBOXGUESTDEVEXT pDevExt, uint32_t u32Balloon
                 PPFN_NUMBER pPageDesc = MmGetMdlPfnArray(pMdl);
 
                 /* Copy manually as RTGCPHYS is always 64 bits */
-                for (uint32_t j=0;j<VMMDEV_MEMORY_BALLOON_CHUNK_PAGES;j++)
-                    req->aPhysPage[j] = pPageDesc[j];
+                for (uint32_t j = 0; j < VMMDEV_MEMORY_BALLOON_CHUNK_PAGES; j++)
+                    req->aPhysPage[j] = pPageDesc[j] << PAGE_SHIFT; /* PFN_NUMBER is physical page nr, so shift left by 12 to get the physical address */
 
                 req->header.size = RT_OFFSETOF(VMMDevChangeMemBalloon, aPhysPage[VMMDEV_MEMORY_BALLOON_CHUNK_PAGES]);
                 req->cPages      = VMMDEV_MEMORY_BALLOON_CHUNK_PAGES;
                 req->fInflate    = false;
 
                 rc = VbglGRPerform(&req->header);
-                if (RT_FAILURE(rc) || RT_FAILURE(req->header.rc))
+                if (RT_FAILURE(rc))
                 {
-                    AssertMsgFailed(("VBoxGuest::VBoxGuestSetBalloonSize: error issuing request to VMMDev! rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+                    AssertMsgFailed(("VBoxGuest::VBoxGuestSetBalloonSize: error issuing request to VMMDev! rc = %Rrc\n", rc));
                     break;
                 }
 
@@ -715,11 +713,11 @@ static int VBoxGuestSetBalloonSize(PVBOXGUESTDEVEXT pDevExt, uint32_t u32Balloon
 #endif
 
                 pDevExt->MemBalloon.paMdlMemBalloon[index] = NULL;
-                pDevExt->MemBalloon.cBalloons--;
+                pDevExt->MemBalloon.cBalloonChunks--;
             }
         }
     }
-    Assert(pDevExt->MemBalloon.cBalloons <= pDevExt->MemBalloon.cMaxBalloons);
+    Assert(pDevExt->MemBalloon.cBalloonChunks <= pDevExt->MemBalloon.cMaxBalloonChunks);
 
 end:
     VbglGRFree(&req->header);
@@ -734,37 +732,36 @@ static int VBoxGuestQueryMemoryBalloon(PVBOXGUESTDEVEXT pDevExt, ULONG *pMemBall
     dprintf(("VBoxGuestQueryMemoryBalloon\n"));
 
     int rc = VbglGRAlloc((VMMDevRequestHeader **)&req, sizeof(VMMDevGetMemBalloonChangeRequest), VMMDevReq_GetMemBalloonChangeRequest);
-    vmmdevInitRequest(&req->header, VMMDevReq_GetMemBalloonChangeRequest);
-    req->eventAck = VMMDEV_EVENT_BALLOON_CHANGE_REQUEST;
 
     if (RT_SUCCESS(rc))
     {
+        req->eventAck = VMMDEV_EVENT_BALLOON_CHANGE_REQUEST;
         rc = VbglGRPerform(&req->header);
 
-        if (RT_FAILURE(rc) || RT_FAILURE(req->header.rc))
+        if (RT_FAILURE(rc))
         {
-            dprintf(("VBoxGuest::VBoxGuestDeviceControl VBOXGUEST_IOCTL_CTL_CHECK_BALLOON: error issuing request to VMMDev!"
-                     "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+            dprintf(("VBoxGuest::VBoxGuestDeviceControl VBOXGUEST_IOCTL_CHECK_BALLOON: error issuing request to VMMDev! "
+                     "rc = %Rrc\n", rc));
         }
         else
         {
             if (!pDevExt->MemBalloon.paMdlMemBalloon)
             {
-                pDevExt->MemBalloon.cMaxBalloons = req->u32PhysMemSize;
-                pDevExt->MemBalloon.paMdlMemBalloon = (PMDL *)ExAllocatePool(PagedPool, req->u32PhysMemSize * sizeof(PMDL));
+                pDevExt->MemBalloon.cMaxBalloonChunks = req->cPhysMemChunks;
+                pDevExt->MemBalloon.paMdlMemBalloon = (PMDL *)ExAllocatePool(PagedPool, req->cPhysMemChunks * sizeof(PMDL));
                 Assert(pDevExt->MemBalloon.paMdlMemBalloon);
                 if (!pDevExt->MemBalloon.paMdlMemBalloon)
                     return VERR_NO_MEMORY;
             }
-            Assert(pDevExt->MemBalloon.cMaxBalloons == req->u32PhysMemSize);
+            Assert(pDevExt->MemBalloon.cMaxBalloonChunks == req->cPhysMemChunks);
 
-            rc = VBoxGuestSetBalloonSize(pDevExt, req->u32BalloonSize);
+            rc = VBoxGuestSetBalloonSize(pDevExt, req->cBalloonChunks);
             /* ignore out of memory failures */
             if (rc == VERR_NO_MEMORY)
                 rc = VINF_SUCCESS;
 
             if (pMemBalloonSize)
-                *pMemBalloonSize = pDevExt->MemBalloon.cBalloons;
+                *pMemBalloonSize = pDevExt->MemBalloon.cBalloonChunks;
         }
 
         VbglGRFree(&req->header);
@@ -778,8 +775,8 @@ void VBoxInitMemBalloon(PVBOXGUESTDEVEXT pDevExt)
 #ifdef VBOX_WITH_MANAGEMENT
     ULONG dummy;
 
-    pDevExt->MemBalloon.cBalloons       = 0;
-    pDevExt->MemBalloon.cMaxBalloons    = 0;
+    pDevExt->MemBalloon.cBalloonChunks = 0;
+    pDevExt->MemBalloon.cMaxBalloonChunks = 0;
     pDevExt->MemBalloon.paMdlMemBalloon = NULL;
 
     VBoxGuestQueryMemoryBalloon(pDevExt, &dummy);
@@ -796,7 +793,7 @@ void VBoxCleanupMemBalloon(PVBOXGUESTDEVEXT pDevExt)
         ExFreePool(pDevExt->MemBalloon.paMdlMemBalloon);
         pDevExt->MemBalloon.paMdlMemBalloon = NULL;
     }
-    Assert(pDevExt->MemBalloon.cBalloons == 0);
+    Assert(pDevExt->MemBalloon.cBalloonChunks == 0);
 #endif
 }
 
@@ -993,10 +990,10 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
                 memcpy((void*)req, (void*)pBuf, requestHeader->size);
                 rc = VbglGRPerform(req);
 
-                if (RT_FAILURE(rc) || RT_FAILURE(req->rc))
+                if (RT_FAILURE(rc))
                 {
                     dprintf(("VBoxGuest::VBoxGuestDeviceControl VBOXGUEST_IOCTL_VMMREQUEST: Error issuing request to VMMDev! "
-                             "rc = %d, VMMDev rc = %Rrc\n", rc, req->rc));
+                             "rc = %Rrc\n", rc));
                     Status = STATUS_UNSUCCESSFUL;
                 }
                 else
@@ -1378,27 +1375,30 @@ NTSTATUS VBoxGuestDeviceControl(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 #endif
 
 #ifdef VBOX_WITH_MANAGEMENT
-        case VBOXGUEST_IOCTL_CTL_CHECK_BALLOON_MASK:
+        case VBOXGUEST_IOCTL_CHECK_BALLOON:
         {
-            ULONG *pMemBalloonSize = (ULONG *) pBuf;
+            VBoxGuestCheckBalloonInfo *pInfo = (VBoxGuestCheckBalloonInfo *)pBuf;
 
-            if (pStack->Parameters.DeviceIoControl.OutputBufferLength != sizeof(ULONG))
+            if (pStack->Parameters.DeviceIoControl.OutputBufferLength != sizeof(VBoxGuestCheckBalloonInfo))
             {
                 dprintf(("VBoxGuest::VBoxGuestDeviceControl: OutputBufferLength %d != sizeof(ULONG) %d\n",
-                         pStack->Parameters.DeviceIoControl.OutputBufferLength, sizeof(ULONG)));
+                         pStack->Parameters.DeviceIoControl.OutputBufferLength, sizeof(VBoxGuestCheckBalloonInfo)));
                 Status = STATUS_INVALID_PARAMETER;
                 break;
             }
 
-            int rc = VBoxGuestQueryMemoryBalloon(pDevExt, pMemBalloonSize);
+            ULONG cMemoryBalloonChunks;
+            int rc = VBoxGuestQueryMemoryBalloon(pDevExt, &cMemoryBalloonChunks);
             if (RT_FAILURE(rc))
             {
-                dprintf(("VBOXGUEST_IOCTL_CTL_CHECK_BALLOON: vbox rc = %Rrc\n", rc));
+                dprintf(("VBOXGUEST_IOCTL_CHECK_BALLOON: vbox rc = %Rrc\n", rc));
                 Status = STATUS_UNSUCCESSFUL;
             }
             else
             {
                 cbOut = pStack->Parameters.DeviceIoControl.OutputBufferLength;
+                pInfo->cBalloonChunks = cMemoryBalloonChunks;
+                pInfo->fHandleInR3 = false;
             }
             break;
         }
@@ -1471,10 +1471,10 @@ NTSTATUS VBoxGuestShutdown(PDEVICE_OBJECT pDevObj, PIRP pIrp)
 
         int rc = VbglGRPerform (&req->header);
 
-        if (RT_FAILURE(rc) || RT_FAILURE(req->header.rc))
+        if (RT_FAILURE(rc))
         {
-            dprintf(("VBoxGuest::PowerStateRequest: error performing request to VMMDev."
-                      "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+            dprintf(("VBoxGuest::PowerStateRequest: error performing request to VMMDev! "
+                     "rc = %Rrc\n", rc));
         }
     }
 
@@ -1570,7 +1570,7 @@ BOOLEAN VBoxGuestIsrHandler(PKINTERRUPT interrupt, PVOID serviceContext)
         VMMDevEvents *req = pDevExt->irqAckEvents;
 
         rc = VbglGRPerform (&req->header);
-        if (RT_SUCCESS(rc) && RT_SUCCESS(req->header.rc))
+        if (RT_SUCCESS(rc))
         {
             dprintf(("VBoxGuest::VBoxGuestIsrHandler: acknowledge events succeeded %#x\n",
                      req->events));
@@ -1582,8 +1582,7 @@ BOOLEAN VBoxGuestIsrHandler(PKINTERRUPT interrupt, PVOID serviceContext)
         {
             /* This can't be actually. This is sign of a serious problem. */
             dprintf(("VBoxGuest::VBoxGuestIsrHandler: "
-                     "acknowledge events failed rc = %d, header rc = %d\n",
-                     rc, req->header.rc));
+                     "acknowledge events failed rc = %Rrc\n", rc));
         }
 
         /* Mark IRQ as taken, there were events for us. */
@@ -1736,7 +1735,7 @@ VOID reserveHypervisorMemory(PVBOXGUESTDEVEXT pDevExt)
 
         rc = VbglGRPerform (&req->header);
 
-        if (RT_SUCCESS(rc) && RT_SUCCESS(req->header.rc))
+        if (RT_SUCCESS(rc))
         {
             hypervisorSize = req->hypervisorSize;
 
@@ -1779,15 +1778,15 @@ VOID reserveHypervisorMemory(PVBOXGUESTDEVEXT pDevExt)
             /* issue request */
             rc = VbglGRPerform (&req->header);
 
-            if (RT_FAILURE(rc) || RT_FAILURE(req->header.rc))
+            if (RT_FAILURE(rc))
             {
-                dprintf(("VBoxGuest::reserveHypervisorMemory: error communicating physical address to VMMDev!"
-                         "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+                dprintf(("VBoxGuest::reserveHypervisorMemory: error communicating physical address to VMMDev! "
+                         "rc = %Rrc\n", rc));
             }
         }
         else
         {
-            dprintf(("VBoxGuest::reserveHypervisorMemory: request failed with rc %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+            dprintf(("VBoxGuest::reserveHypervisorMemory: request failed with rc = %Rrc\n", rc));
         }
         VbglGRFree (&req->header);
     }
@@ -1807,17 +1806,17 @@ VOID reserveHypervisorMemory(PVBOXGUESTDEVEXT pDevExt)
                 req->pPatchMem = (RTGCPTR)(uintptr_t)RTR0MemObjAddress(pDevExt->PatchMemObj);
 
                 rc = VbglGRPerform (&req->header);
-                if (RT_FAILURE(rc) || RT_FAILURE(req->header.rc))
+                if (RT_FAILURE(rc))
                 {
-                    dprintf(("VBoxGuest::reserveHypervisorMemory: VMMDevReq_RegisterPatchMemory error!"
-                                "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+                    dprintf(("VBoxGuest::reserveHypervisorMemory: VMMDevReq_RegisterPatchMemory error! "
+                             "rc = %Rrc\n", rc));
                     RTR0MemObjFree(pDevExt->PatchMemObj, true);
                     pDevExt->PatchMemObj = NULL;
                 }
             }
             else
             {
-                dprintf(("VBoxGuest::reserveHypervisorMemory: RTR0MemObjAllocPage failed with rc %d\n", rc));
+                dprintf(("VBoxGuest::reserveHypervisorMemory: RTR0MemObjAllocPage failed with rc = %Rrc\n", rc));
             }
             VbglGRFree (&req->header);
         }
@@ -1845,10 +1844,10 @@ VOID unreserveHypervisorMemory(PVBOXGUESTDEVEXT pDevExt)
             req->pPatchMem  = (RTGCPTR)(uintptr_t)RTR0MemObjAddress(pDevExt->PatchMemObj);
 
             rc = VbglGRPerform (&req->header);
-            if (RT_FAILURE(rc) || RT_FAILURE(req->header.rc))
+            if (RT_FAILURE(rc))
             {
-                dprintf(("VBoxGuest::reserveHypervisorMemory: VMMDevReq_DeregisterPatchMemory error!"
-                            "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+                dprintf(("VBoxGuest::reserveHypervisorMemory: VMMDevReq_DeregisterPatchMemory error! "
+                         "rc = %Rrc\n", rc));
                 /* We intentially leak the memory object here as there still could
                  * be references to it!!!
                  */
@@ -1874,10 +1873,10 @@ VOID unreserveHypervisorMemory(PVBOXGUESTDEVEXT pDevExt)
 
         rc = VbglGRPerform (&req->header);
 
-        if (RT_FAILURE(rc) || RT_FAILURE(req->header.rc))
+        if (RT_FAILURE(rc))
         {
-            dprintf(("VBoxGuest::unreserveHypervisorMemory: error communicating physical address to VMMDev!"
-                     "rc = %d, VMMDev rc = %Rrc\n", rc, req->header.rc));
+            dprintf(("VBoxGuest::unreserveHypervisorMemory: error communicating physical address to VMMDev! "
+                     "rc = %Rrc\n", rc));
         }
 
         VbglGRFree (&req->header);
