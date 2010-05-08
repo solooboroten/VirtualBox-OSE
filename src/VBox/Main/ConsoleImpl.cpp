@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl.cpp 28835 2010-04-27 14:46:23Z vboxsync $ */
+/* $Id: ConsoleImpl.cpp 29224 2010-05-07 15:49:10Z vboxsync $ */
 /** @file
  * VBox Console COM Class implementation
  */
@@ -240,6 +240,140 @@ struct VMSaveTask : public VMProgressTask
     MachineState_T mLastMachineState;
     ComPtr<IProgress> mServerProgress;
 };
+
+// ConsoleCallbackRegistration
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Registered IConsoleCallback, used by Console::CallbackList and
+ * Console::mCallbacks.
+ *
+ * In addition to keeping the interface pointer this also keeps track of the
+ * methods that asked to not be called again.  The latter is for reducing
+ * unnecessary IPC.
+ */
+class ConsoleCallbackRegistration
+{
+public:
+    ComPtr<IConsoleCallback> ptrICb;
+    /** Bitmap of disabled callback methods, that is methods that has return
+     * VBOX_E_DONT_CALL_AGAIN. */
+    uint32_t                    bmDisabled;
+    /** Callback bit indexes (for bmDisabled). */
+    typedef enum
+    {
+        kOnMousePointerShapeChange = 0,
+        kOnMouseCapabilityChange,
+        kOnKeyboardLedsChange,
+        kOnStateChange,
+        kOnAdditionsStateChange,
+        kOnNetworkAdapterChange,
+        kOnSerialPortChange,
+        kOnParallelPortChange,
+        kOnStorageControllerChange,
+        kOnMediumChange,
+        kOnCPUChange,
+        kOnVRDPServerChange,
+        kOnRemoteDisplayInfoChange,
+        kOnUSBControllerChange,
+        kOnUSBDeviceStateChange,
+        kOnSharedFolderChange,
+        kOnRuntimeError,
+        kOnCanShowWindow,
+        kOnShowWindow
+    } CallbackBit;
+
+    ConsoleCallbackRegistration(IConsoleCallback *pIConsoleCallback)
+        : ptrICb(pIConsoleCallback), bmDisabled(0)
+    {
+        /* nothing */
+    }
+
+    ~ConsoleCallbackRegistration()
+    {
+       /* nothing */
+    }
+
+    /** Equal operator for std::find. */
+    bool operator==(const ConsoleCallbackRegistration &rThat) const
+    {
+        return this->ptrICb == rThat.ptrICb;
+    }
+
+    /**
+     * Checks if the callback is wanted, i.e. if the method hasn't yet returned
+     * VBOX_E_DONT_CALL_AGAIN.
+     * @returns @c true if it is wanted, @c false if not.
+     * @param   enmBit      The callback, be sure to get this one right!
+     */
+    inline bool isWanted(CallbackBit enmBit) const
+    {
+        return !ASMBitTest(&bmDisabled, enmBit);
+    }
+
+    /**
+     * Called in response to VBOX_E_DONT_CALL_AGAIN.
+     * @param   enmBit      The callback, be sure to get this one right!
+     */
+    inline void setDontCallAgain(CallbackBit enmBit)
+    {
+        ASMAtomicBitSet(&bmDisabled, enmBit);
+    }
+
+    /**
+     * Handle a callback return code, picking up VBOX_E_DONT_CALL_AGAIN.
+     *
+     * @returns hrc or S_OK if VBOX_E_DONT_CALL_AGAIN.
+     * @param   enmBit      The callback, be sure to get this one right!
+     * @param   hrc         The status code returned by the callback.
+     */
+    inline HRESULT handleResult(CallbackBit enmBit, HRESULT hrc)
+    {
+        if (hrc == VBOX_E_DONT_CALL_AGAIN)
+        {
+            setDontCallAgain(enmBit);
+            hrc = S_OK;
+        }
+        return hrc;
+    }
+};
+
+/**
+ * Macro for iterating the callback list (Console::mCallbacks) and invoking the
+ * given method on each entry.
+ *
+ * This handles VBOX_E_DONT_CALL_AGAIN as well as removing dead interfaces
+ * which.  This makes the code a big and clunky, thus this macro.  It may make
+ * debugging and selective logging a bit of a pain, but duplicating this code
+ * some seventeen times is much more of a pain.
+ *
+ * The caller must hold the console object lock - read or write, we don't care.
+ * The caller must be a Console method - the console members accessible thru the
+ * 'this' pointer.
+ *
+ * @param   CallbackMethod      The callback method, like OnKeyboardLedsChange.
+ * @param   Args                The method arguments enclosed in parentheses.
+ */
+#define CONSOLE_DO_CALLBACKS(CallbackMethod, Args) \
+    do \
+    { \
+        CallbackList::iterator it = this->mCallbacks.begin(); \
+        while (it != this->mCallbacks.end()) \
+        { \
+            if (it->isWanted(ConsoleCallbackRegistration::k ## CallbackMethod)) \
+            { \
+                HRESULT hrc = it->ptrICb-> CallbackMethod Args; \
+                hrc = it->handleResult(ConsoleCallbackRegistration::k ## CallbackMethod, hrc); \
+                if (FAILED_DEAD_INTERFACE(hrc)) \
+                { \
+                    it = this->mCallbacks.erase(it); \
+                    continue; \
+                } \
+            } \
+            ++it; \
+        } \
+    } while (0)
+
 
 // constructor / destructor
 /////////////////////////////////////////////////////////////////////////////
@@ -2621,11 +2755,7 @@ Console::CreateSharedFolder(IN_BSTR aName, IN_BSTR aHostPath, BOOL aWritable)
     mSharedFolders.insert(std::make_pair(aName, sharedFolder));
 
     /* notify console callbacks after the folder is added to the list */
-    {
-        CallbackList::iterator it = mCallbacks.begin();
-        while (it != mCallbacks.end())
-            (*it++)->OnSharedFolderChange(Scope_Session);
-    }
+    CONSOLE_DO_CALLBACKS(OnSharedFolderChange,(Scope_Session));
 
     return rc;
 }
@@ -2682,11 +2812,7 @@ STDMETHODIMP Console::RemoveSharedFolder(IN_BSTR aName)
     mSharedFolders.erase(aName);
 
     /* notify console callbacks after the folder is removed to the list */
-    {
-        CallbackList::iterator it = mCallbacks.begin();
-        while (it != mCallbacks.end())
-            (*it++)->OnSharedFolderChange(Scope_Session);
-    }
+    CONSOLE_DO_CALLBACKS(OnSharedFolderChange,(Scope_Session));
 
     return rc;
 }
@@ -2876,13 +3002,13 @@ STDMETHODIMP Console::RegisterCallback(IConsoleCallback *aCallback)
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-#if 0 /** @todo r=bird,r=pritesh: must check that the interface id match correct or we might screw up with old code! */
-    void *dummy;
-    HRESULT hrc = aCallback->QueryInterface(NS_GET_IID(IConsoleCallback), &dummy);
+    /* Query the interface we associate with IConsoleCallback as the caller
+       might've been compiled against a different SDK. */
+    void *pvCallback;
+    HRESULT hrc = aCallback->QueryInterface(COM_IIDOF(IConsoleCallback), &pvCallback);
     if (FAILED(hrc))
-        return hrc;
-    aCallback->Release();
-#endif
+        return setError(hrc, tr("Incompatible IConsoleCallback interface - version mismatch?"));
+    aCallback = (IConsoleCallback *)pvCallback;
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
@@ -2916,6 +3042,8 @@ STDMETHODIMP Console::RegisterCallback(IConsoleCallback *aCallback)
      * machine state is a) not actually changed on callback registration
      * and b) can be always queried from Console. */
 
+    /* Drop the reference we got via QueryInterface. */
+    aCallback->Release();
     return S_OK;
 }
 
@@ -3151,7 +3279,7 @@ HRESULT Console::doMediumChange(IMediumAttachment *aMediumAttachment, bool fForc
  *
  * @thread  EMT
  */
-DECLCALLBACK(int) Console::changeRemovableMedium(Console *pThis,
+DECLCALLBACK(int) Console::changeRemovableMedium(Console *pConsole,
                                                  const char *pcszDevice,
                                                  unsigned uInstance,
                                                  StorageBus_T enmBus,
@@ -3159,15 +3287,15 @@ DECLCALLBACK(int) Console::changeRemovableMedium(Console *pThis,
                                                  IMediumAttachment *aMediumAtt,
                                                  bool fForce)
 {
-    LogFlowFunc(("pThis=%p uInstance=%u pszDevice=%p:{%s} enmBus=%u, aMediumAtt=%p, fForce=%d\n",
-                 pThis, uInstance, pcszDevice, enmBus, fForce));
+    LogFlowFunc(("pConsole=%p uInstance=%u pszDevice=%p:{%s} enmBus=%u, aMediumAtt=%p, fForce=%d\n",
+                 pConsole, uInstance, pcszDevice, enmBus, fForce));
 
-    AssertReturn(pThis, VERR_INVALID_PARAMETER);
+    AssertReturn(pConsole, VERR_INVALID_PARAMETER);
 
-    AutoCaller autoCaller(pThis);
+    AutoCaller autoCaller(pConsole);
     AssertComRCReturn(autoCaller.rc(), VERR_ACCESS_DENIED);
 
-    PVM pVM = pThis->mpVM;
+    PVM pVM = pConsole->mpVM;
 
     /*
      * Suspend the VM first.
@@ -3184,9 +3312,9 @@ DECLCALLBACK(int) Console::changeRemovableMedium(Console *pThis,
         {
             LogFlowFunc(("Suspending the VM...\n"));
             /* disable the callback to prevent Console-level state change */
-            pThis->mVMStateChangeCallbackDisabled = true;
+            pConsole->mVMStateChangeCallbackDisabled = true;
             int rc = VMR3Suspend(pVM);
-            pThis->mVMStateChangeCallbackDisabled = false;
+            pConsole->mVMStateChangeCallbackDisabled = false;
             AssertRCReturn(rc, rc);
             fResume = true;
             break;
@@ -3214,16 +3342,21 @@ DECLCALLBACK(int) Console::changeRemovableMedium(Console *pThis,
     int rc = VINF_SUCCESS;
     int rcRet = VINF_SUCCESS;
 
-    rcRet = Console::configMediumAttachment(pCtlInst, pcszDevice, uInstance,
-                                            enmBus, enmIoBackend,
-                                            false /* fSetupMerge */,
-                                            0 /* uMergeSource */,
-                                            0 /* uMergeTarget */,
-                                            aMediumAtt, pThis->mMachineState,
-                                            NULL /* phrc */,
-                                            true /* fAttachDetach */,
-                                            fForce /* fForceUnmount */,
-                                            pVM, NULL /* paLedDevType */);
+    rcRet = pConsole->configMediumAttachment(pCtlInst,
+                                             pcszDevice,
+                                             uInstance,
+                                             enmBus,
+                                             enmIoBackend,
+                                             false /* fSetupMerge */,
+                                             0 /* uMergeSource */,
+                                             0 /* uMergeTarget */,
+                                             aMediumAtt,
+                                             pConsole->mMachineState,
+                                             NULL /* phrc */,
+                                             true /* fAttachDetach */,
+                                             fForce /* fForceUnmount */,
+                                             pVM,
+                                             NULL /* paLedDevType */);
     /** @todo this dumps everything attached to this device instance, which
      * is more than necessary. Dumping the changed LUN would be enough. */
     CFGMR3Dump(pCtlInst);
@@ -3235,14 +3368,14 @@ DECLCALLBACK(int) Console::changeRemovableMedium(Console *pThis,
     {
         LogFlowFunc(("Resuming the VM...\n"));
         /* disable the callback to prevent Console-level state change */
-        pThis->mVMStateChangeCallbackDisabled = true;
+        pConsole->mVMStateChangeCallbackDisabled = true;
         rc = VMR3Resume(pVM);
-        pThis->mVMStateChangeCallbackDisabled = false;
+        pConsole->mVMStateChangeCallbackDisabled = false;
         AssertRC(rc);
         if (RT_FAILURE(rc))
         {
             /* too bad, we failed. try to sync the console state with the VMM state */
-            vmstateChangeCallback(pVM, VMSTATE_SUSPENDED, enmVMState, pThis);
+            vmstateChangeCallback(pVM, VMSTATE_SUSPENDED, enmVMState, pConsole);
         }
         /// @todo (r=dmik) if we failed with drive mount, then the VMR3Resume
         // error (if any) will be hidden from the caller. For proper reporting
@@ -3377,11 +3510,7 @@ HRESULT Console::onNetworkAdapterChange(INetworkAdapter *aNetworkAdapter, BOOL c
 
     /* notify console callbacks on success */
     if (SUCCEEDED(rc))
-    {
-        CallbackList::iterator it = mCallbacks.begin();
-        while (it != mCallbacks.end())
-            (*it++)->OnNetworkAdapterChange(aNetworkAdapter);
-    }
+        CONSOLE_DO_CALLBACKS(OnNetworkAdapterChange,(aNetworkAdapter));
 
     LogFlowThisFunc(("Leaving rc=%#x\n", rc));
     return rc;
@@ -3597,11 +3726,7 @@ HRESULT Console::onSerialPortChange(ISerialPort *aSerialPort)
 
     /* notify console callbacks on success */
     if (SUCCEEDED(rc))
-    {
-        CallbackList::iterator it = mCallbacks.begin();
-        while (it != mCallbacks.end())
-            (*it++)->OnSerialPortChange(aSerialPort);
-    }
+        CONSOLE_DO_CALLBACKS(OnSerialPortChange,(aSerialPort));
 
     LogFlowThisFunc(("Leaving rc=%#x\n", rc));
     return rc;
@@ -3635,11 +3760,7 @@ HRESULT Console::onParallelPortChange(IParallelPort *aParallelPort)
 
     /* notify console callbacks on success */
     if (SUCCEEDED(rc))
-    {
-        CallbackList::iterator it = mCallbacks.begin();
-        while (it != mCallbacks.end())
-            (*it++)->OnParallelPortChange(aParallelPort);
-    }
+        CONSOLE_DO_CALLBACKS(OnParallelPortChange,(aParallelPort));
 
     LogFlowThisFunc(("Leaving rc=%#x\n", rc));
     return rc;
@@ -3673,11 +3794,7 @@ HRESULT Console::onStorageControllerChange()
 
     /* notify console callbacks on success */
     if (SUCCEEDED(rc))
-    {
-        CallbackList::iterator it = mCallbacks.begin();
-        while (it != mCallbacks.end())
-            (*it++)->OnStorageControllerChange();
-    }
+        CONSOLE_DO_CALLBACKS(OnStorageControllerChange,());
 
     LogFlowThisFunc(("Leaving rc=%#x\n", rc));
     return rc;
@@ -3711,11 +3828,7 @@ HRESULT Console::onMediumChange(IMediumAttachment *aMediumAttachment, BOOL aForc
 
     /* notify console callbacks on success */
     if (SUCCEEDED(rc))
-    {
-        CallbackList::iterator it = mCallbacks.begin();
-        while (it != mCallbacks.end())
-            (*it++)->OnMediumChange(aMediumAttachment);
-    }
+        CONSOLE_DO_CALLBACKS(OnMediumChange,(aMediumAttachment));
 
     LogFlowThisFunc(("Leaving rc=%#x\n", rc));
     return rc;
@@ -3752,11 +3865,7 @@ HRESULT Console::onCPUChange(ULONG aCPU, BOOL aRemove)
 
     /* notify console callbacks on success */
     if (SUCCEEDED(rc))
-    {
-        CallbackList::iterator it = mCallbacks.begin();
-        while (it != mCallbacks.end())
-            (*it++)->OnCPUChange(aCPU, aRemove);
-    }
+        CONSOLE_DO_CALLBACKS(OnCPUChange,(aCPU, aRemove));
 
     LogFlowThisFunc(("Leaving rc=%#x\n", rc));
     return rc;
@@ -3817,11 +3926,7 @@ HRESULT Console::onVRDPServerChange()
 
     /* notify console callbacks on success */
     if (SUCCEEDED(rc))
-    {
-        CallbackList::iterator it = mCallbacks.begin();
-        while (it != mCallbacks.end())
-            (*it++)->OnVRDPServerChange();
-    }
+        CONSOLE_DO_CALLBACKS(OnVRDPServerChange,());
 
     return rc;
 }
@@ -3836,9 +3941,7 @@ void Console::onRemoteDisplayInfoChange()
 
     AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
 
-    CallbackList::iterator it = mCallbacks.begin();
-    while (it != mCallbacks.end())
-        (*it++)->OnRemoteDisplayInfoChange();
+    CONSOLE_DO_CALLBACKS(OnRemoteDisplayInfoChange,());
 }
 
 
@@ -3876,11 +3979,7 @@ HRESULT Console::onUSBControllerChange()
 
     /* notify console callbacks on success */
     if (SUCCEEDED(rc))
-    {
-        CallbackList::iterator it = mCallbacks.begin();
-        while (it != mCallbacks.end())
-            (*it++)->OnUSBControllerChange();
-    }
+        CONSOLE_DO_CALLBACKS(OnUSBControllerChange,());
 
     return rc;
 }
@@ -3904,10 +4003,10 @@ HRESULT Console::onSharedFolderChange(BOOL aGlobal)
     /* notify console callbacks on success */
     if (SUCCEEDED(rc))
     {
-        CallbackList::iterator it = mCallbacks.begin();
-        while (it != mCallbacks.end())
-            (*it++)->OnSharedFolderChange(aGlobal ? (Scope_T)Scope_Global
-                                                  : (Scope_T)Scope_Machine);
+        if (aGlobal)
+            CONSOLE_DO_CALLBACKS(OnSharedFolderChange,(Scope_Global));
+        else
+            CONSOLE_DO_CALLBACKS(OnSharedFolderChange,(Scope_Machine));
     }
 
     return rc;
@@ -4291,12 +4390,6 @@ HRESULT Console::onlineMergeMedium(IMediumAttachment *aMediumAttachment,
     int vrc = VINF_SUCCESS;
     PVM pVM = mpVM;
 
-/// @todo handling the list of children to reparent is not yet done, get out
-    com::SafeIfaceArray<IMedium> sfaToReparent(ComSafeArrayInArg(aChildrenToReparent));
-    if (sfaToReparent.size() > 0)
-        return setError(E_NOTIMPL,
-                        tr("Cannot do online merging yet which involves adjusting the UUID of dependent media."));
-
     /* We will need to release the lock before doing the actual merge */
     AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
 
@@ -4589,10 +4682,7 @@ void Console::onMousePointerShapeChange(bool fVisible, bool fAlpha,
 
     mCallbackData.mpsc.valid = true;
 
-    CallbackList::iterator it = mCallbacks.begin();
-    while (it != mCallbacks.end())
-        (*it++)->OnMousePointerShapeChange(fVisible, fAlpha, xHot, yHot,
-                                           width, height, (BYTE *) pShape);
+    CONSOLE_DO_CALLBACKS(OnMousePointerShapeChange,(fVisible, fAlpha, xHot, yHot, width, height, (BYTE *) pShape));
 
 #if 0
     LogFlowThisFuncLeave();
@@ -4619,12 +4709,7 @@ void Console::onMouseCapabilityChange(BOOL supportsAbsolute, BOOL supportsRelati
     mCallbackData.mcc.needsHostCursor = needsHostCursor;
     mCallbackData.mcc.valid = true;
 
-    CallbackList::iterator it = mCallbacks.begin();
-    while (it != mCallbacks.end())
-    {
-        Log2(("Console::onMouseCapabilityChange: calling %p\n", (void*)*it));
-        (*it++)->OnMouseCapabilityChange(supportsAbsolute, supportsRelative, needsHostCursor);
-    }
+    CONSOLE_DO_CALLBACKS(OnMouseCapabilityChange,(supportsAbsolute, supportsRelative, needsHostCursor));
 }
 
 /**
@@ -4636,10 +4721,7 @@ void Console::onStateChange(MachineState_T machineState)
     AssertComRCReturnVoid(autoCaller.rc());
 
     AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    CallbackList::iterator it = mCallbacks.begin();
-    while (it != mCallbacks.end())
-        (*it++)->OnStateChange(machineState);
+    CONSOLE_DO_CALLBACKS(OnStateChange,(machineState));
 }
 
 /**
@@ -4651,10 +4733,7 @@ void Console::onAdditionsStateChange()
     AssertComRCReturnVoid(autoCaller.rc());
 
     AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    CallbackList::iterator it = mCallbacks.begin();
-    while (it != mCallbacks.end())
-        (*it++)->OnAdditionsStateChange();
+    CONSOLE_DO_CALLBACKS(OnAdditionsStateChange,());
 }
 
 /**
@@ -4691,9 +4770,7 @@ void Console::onKeyboardLedsChange(bool fNumLock, bool fCapsLock, bool fScrollLo
     mCallbackData.klc.scrollLock = fScrollLock;
     mCallbackData.klc.valid = true;
 
-    CallbackList::iterator it = mCallbacks.begin();
-    while (it != mCallbacks.end())
-        (*it++)->OnKeyboardLedsChange(fNumLock, fCapsLock, fScrollLock);
+    CONSOLE_DO_CALLBACKS(OnKeyboardLedsChange,(fNumLock, fCapsLock, fScrollLock));
 }
 
 /**
@@ -4706,10 +4783,7 @@ void Console::onUSBDeviceStateChange(IUSBDevice *aDevice, bool aAttached,
     AssertComRCReturnVoid(autoCaller.rc());
 
     AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    CallbackList::iterator it = mCallbacks.begin();
-    while (it != mCallbacks.end())
-        (*it++)->OnUSBDeviceStateChange(aDevice, aAttached, aError);
+    CONSOLE_DO_CALLBACKS(OnUSBDeviceStateChange,(aDevice, aAttached, aError));
 }
 
 /**
@@ -4721,10 +4795,7 @@ void Console::onRuntimeError(BOOL aFatal, IN_BSTR aErrorID, IN_BSTR aMessage)
     AssertComRCReturnVoid(autoCaller.rc());
 
     AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    CallbackList::iterator it = mCallbacks.begin();
-    while (it != mCallbacks.end())
-        (*it++)->OnRuntimeError(aFatal, aErrorID, aMessage);
+    CONSOLE_DO_CALLBACKS(OnRuntimeError,(aFatal, aErrorID, aMessage));
 }
 
 /**
@@ -4742,19 +4813,26 @@ HRESULT Console::onShowWindow(BOOL aCheck, BOOL *aCanShow, ULONG64 *aWinId)
     AssertComRCReturnRC(autoCaller.rc());
 
     AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    HRESULT rc = S_OK;
     CallbackList::iterator it = mCallbacks.begin();
-
     if (aCheck)
     {
         while (it != mCallbacks.end())
         {
-            BOOL canShow = FALSE;
-            rc = (*it++)->OnCanShowWindow(&canShow);
-            AssertComRC(rc);
-            if (FAILED(rc) || !canShow)
-                return rc;
+            if (it->isWanted(ConsoleCallbackRegistration::kOnCanShowWindow))
+            {
+                BOOL canShow = FALSE;
+                HRESULT hrc = it->ptrICb->OnCanShowWindow(&canShow);
+                hrc = it->handleResult(ConsoleCallbackRegistration::kOnCanShowWindow, hrc);
+                if (FAILED_DEAD_INTERFACE(hrc))
+                {
+                    it = this->mCallbacks.erase(it);
+                    continue;
+                }
+                AssertComRC(hrc);
+                if (FAILED(hrc) || !canShow)
+                    return hrc;
+            }
+            ++it;
         }
         *aCanShow = TRUE;
     }
@@ -4762,15 +4840,26 @@ HRESULT Console::onShowWindow(BOOL aCheck, BOOL *aCanShow, ULONG64 *aWinId)
     {
         while (it != mCallbacks.end())
         {
-            ULONG64 winId = 0;
-            rc = (*it++)->OnShowWindow(&winId);
-            AssertComRC(rc);
-            if (FAILED(rc))
-                return rc;
-            /* only one callback may return non-null winId */
-            Assert(*aWinId == 0 || winId == 0);
-            if (*aWinId == 0)
-                *aWinId = winId;
+            if (it->isWanted(ConsoleCallbackRegistration::kOnShowWindow))
+            {
+                ULONG64 winId = 0;
+                HRESULT hrc = it->ptrICb->OnShowWindow(&winId);
+                hrc = it->handleResult(ConsoleCallbackRegistration::kOnCanShowWindow, hrc);
+                if (FAILED_DEAD_INTERFACE(hrc))
+                {
+                    it = this->mCallbacks.erase(it);
+                    continue;
+                }
+                AssertComRC(hrc);
+                if (FAILED(hrc))
+                    return hrc;
+
+                /* only one callback may return non-null winId */
+                Assert(*aWinId == 0 || winId == 0);
+                if (*aWinId == 0)
+                    *aWinId = winId;
+            }
+            ++it;
         }
     }
 
@@ -7463,7 +7552,8 @@ DECLCALLBACK(int) Console::powerUpThread(RTTHREAD Thread, void *pvUser)
  * @return  VBox status code.
  */
 /* static */
-DECLCALLBACK(int) Console::reconfigureMediumAttachment(PVM pVM,
+DECLCALLBACK(int) Console::reconfigureMediumAttachment(Console *pConsole,
+                                                       PVM pVM,
                                                        const char *pcszDevice,
                                                        unsigned uInstance,
                                                        StorageBus_T enmBus,
@@ -7497,13 +7587,20 @@ DECLCALLBACK(int) Console::reconfigureMediumAttachment(PVM pVM,
     AssertReturn(pCtlInst, VERR_INTERNAL_ERROR);
 
     /* Update the device instance configuration. */
-    rc = Console::configMediumAttachment(pCtlInst, pcszDevice, uInstance,
-                                         enmBus, enmIoBackend,
-                                         fSetupMerge, uMergeSource,
-                                         uMergeTarget, aMediumAtt,
-                                         aMachineState, phrc,
+    rc = pConsole->configMediumAttachment(pCtlInst,
+                                         pcszDevice,
+                                         uInstance,
+                                         enmBus,
+                                         enmIoBackend,
+                                         fSetupMerge,
+                                         uMergeSource,
+                                         uMergeTarget,
+                                         aMediumAtt,
+                                         aMachineState,
+                                         phrc,
                                          true /* fAttachDetach */,
-                                         false /* fForceUnmount */, pVM,
+                                         false /* fForceUnmount */,
+                                         pVM,
                                          NULL /* paLedDevType */);
     /** @todo this dumps everything attached to this device instance, which
      * is more than necessary. Dumping the changed LUN would be enough. */

@@ -9,7 +9,7 @@
         VirtualBox.xidl. This Python file represents our
         web service API. Depends on WSDL file for actual SOAP bindings.
 
-     Copyright (C) 2008 Oracle Corporation
+     Copyright (C) 2008-2010 Oracle Corporation
 
      This file is part of VirtualBox Open Source Edition (OSE), as
      available from http://www.virtualbox.org. This file is free software;
@@ -107,7 +107,7 @@
    def <xsl:value-of select="$fname"/>(self, value):
        req=<xsl:value-of select="$ifname"/>_<xsl:value-of select="$fname"/>RequestMsg()
        req._this=self.handle
-       if type(value) in [int, bool, basestring]:
+       if type(value) in [int, bool, basestring, str]:
             req._<xsl:value-of select="$attrname"/> = value
        else:
             req._<xsl:value-of select="$attrname"/> = value.handle

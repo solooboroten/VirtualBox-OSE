@@ -1,5 +1,4 @@
-
-/* $Id: VBoxServiceControl.cpp 28833 2010-04-27 14:42:14Z vboxsync $ */
+/* $Id: VBoxServiceControl.cpp 29202 2010-05-07 12:38:59Z vboxsync $ */
 /** @file
  * VBoxServiceControl - Host-driven Guest Control.
  */
@@ -81,16 +80,21 @@ static DECLCALLBACK(int) VBoxServiceControlInit(void)
 
     rc = VbglR3GuestCtrlConnect(&g_GuestControlSvcClientID);
     if (RT_SUCCESS(rc))
+    {
         VBoxServiceVerbose(3, "Control: Service Client ID: %#x\n", g_GuestControlSvcClientID);
+
+        /* Init thread list. */
+        RTListInit(&g_GuestControlExecThreads);
+    }
     else
     {
-        VBoxServiceError("Control: Failed to connect to the guest control service! Error: %Rrc\n", rc);
+        if (rc == VERR_HGCM_SERVICE_NOT_FOUND) /* Host service is not available; that's not fatal. */
+            VBoxServiceVerbose(0, "Guest control service is not available\n");
+        else
+            VBoxServiceError("Control: Failed to connect to the guest control service! Error: %Rrc\n", rc);
         RTSemEventMultiDestroy(g_hControlEvent);
         g_hControlEvent = NIL_RTSEMEVENTMULTI;
     }
-
-    /* Init thread list. */
-    RTListInit(&g_GuestControlExecThreads);
     return rc;
 }
 
@@ -147,7 +151,7 @@ static int VBoxServiceControlHandleCmdStartProcess(uint32_t u32ClientId, uint32_
                                            szUser, szPassword, uTimeLimitMS);
     }
 
-    VBoxServiceVerbose(4, "Control: VBoxServiceControlHandleCmdStartProcess returned with %Rrc\n", rc);
+    VBoxServiceVerbose(3, "Control: VBoxServiceControlHandleCmdStartProcess returned with %Rrc\n", rc);
     return rc;
 }
 
@@ -210,7 +214,7 @@ static int VBoxServiceControlHandleCmdGetOutput(uint32_t u32ClientId, uint32_t u
         else
             rc = VERR_NOT_FOUND; /* PID not found! */
     }
-    VBoxServiceVerbose(4, "Control: VBoxServiceControlHandleCmdGetOutput returned with %Rrc\n", rc);
+    VBoxServiceVerbose(3, "Control: VBoxServiceControlHandleCmdGetOutput returned with %Rrc\n", rc);
     return rc;
 }
 
@@ -236,18 +240,19 @@ DECLCALLBACK(int) VBoxServiceControlWorker(bool volatile *pfShutdown)
     {
         uint32_t uMsg;
         uint32_t uNumParms;
-        VBoxServiceVerbose(4, "Control: Waiting for host msg ...\n");
+        VBoxServiceVerbose(3, "Control: Waiting for host msg ...\n");
         rc = VbglR3GuestCtrlGetHostMsg(g_GuestControlSvcClientID, &uMsg, &uNumParms, 1000 /* 1s timeout */);
-        if (rc == VERR_TOO_MUCH_DATA)
+        if (RT_FAILURE(rc))
         {
-            VBoxServiceVerbose(3, "Control: Message requires %ld parameters, but only 2 supplied -- retrying request ...\n", uNumParms);
-            rc = VINF_SUCCESS;
+            if (rc == VERR_TOO_MUCH_DATA)
+            {
+                VBoxServiceVerbose(3, "Control: Message requires %ld parameters, but only 2 supplied -- retrying request ...\n", uNumParms);
+                rc = VINF_SUCCESS; /* Try to get "real" message in next block below. */
+            }
+            else
+                VBoxServiceVerbose(3, "Control: Getting host message failed with %Rrc\n", rc); /* VERR_GEN_IO_FAILURE seems to be normal if ran  into timeout. */
         }
-        else if (rc == VERR_TIMEOUT)
-        {
-            VBoxServiceVerbose(3, "Control: Wait timed out, waiting for next round ...\n");
-            RTThreadSleep(100);
-        }
+
         if (RT_SUCCESS(rc))
         {
             VBoxServiceVerbose(3, "Control: Msg=%u (%u parms) retrieved\n", uMsg, uNumParms);
@@ -271,29 +276,15 @@ DECLCALLBACK(int) VBoxServiceControlWorker(bool volatile *pfShutdown)
                 VBoxServiceVerbose(3, "Control: Message was processed with rc=%Rrc\n", rc);
         }
 
-        /*
-         * Block for a while.
-         *
-         * The event semaphore takes care of ignoring interruptions and it
-         * allows us to implement service wakeup later.
-         */
+        /* Do we need to shutdown? */
         if (*pfShutdown)
         {
             rc = 0;
             break;
         }
-        int rc2 = RTSemEventMultiWait(g_hControlEvent, g_ControlInterval);
-        if (*pfShutdown)
-        {
-            rc = 0;
-            break;
-        }
-        if (rc2 != VERR_TIMEOUT && RT_FAILURE(rc2))
-        {
-            VBoxServiceError("Control: RTSemEventMultiWait failed; rc2=%Rrc\n", rc2);
-            rc = rc2;
-            break;
-        }
+
+        /* Let's sleep for a bit and let others run ... */
+        RTThreadYield();
     }
 
     RTSemEventMultiDestroy(g_hControlEvent);
@@ -351,7 +342,7 @@ static DECLCALLBACK(void) VBoxServiceControlTerm(void)
         RTMemFree(pNode);
 
         if (pNext && RTListNodeIsLast(&g_GuestControlExecThreads, &pNext->Node))
-              break;
+            break;
 
         pNode = pNext;
     }

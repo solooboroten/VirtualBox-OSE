@@ -1,4 +1,4 @@
-/* $Id: VBoxManageModifyVM.cpp 28836 2010-04-27 15:08:21Z vboxsync $ */
+/* $Id: VBoxManageModifyVM.cpp 29218 2010-05-07 14:52:27Z vboxsync $ */
 /** @file
  * VBoxManage - Implementation of modifyvm command.
  */
@@ -111,6 +111,9 @@ enum
     MODIFYVM_HOSTONLYADAPTER,
     MODIFYVM_INTNET,
     MODIFYVM_NATNET,
+#ifdef VBOX_WITH_VDE
+    MODIFYVM_VDENET,
+#endif
     MODIFYVM_NATBINDIP,
     MODIFYVM_NATSETTINGS,
     MODIFYVM_NATPF,
@@ -150,8 +153,6 @@ enum
     MODIFYVM_TELEPORTER_PASSWORD,
     MODIFYVM_HARDWARE_UUID,
     MODIFYVM_HPET,
-    MODIFYVM_IOMGR,
-    MODIFYVM_IOBACKEND,
     MODIFYVM_IOCACHE,
     MODIFYVM_IOCACHESIZE,
     MODIFYVM_IOBANDWIDTHMAX
@@ -219,6 +220,9 @@ static const RTGETOPTDEF g_aModifyVMOptions[] =
     { "--hostonlyadapter",          MODIFYVM_HOSTONLYADAPTER,           RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
     { "--intnet",                   MODIFYVM_INTNET,                    RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
     { "--natnet",                   MODIFYVM_NATNET,                    RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
+#ifdef VBOX_WITH_VDE
+    { "--vdenet",                   MODIFYVM_VDENET,                    RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
+#endif
     { "--natbindip",                MODIFYVM_NATBINDIP,                 RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
     { "--natsettings",              MODIFYVM_NATSETTINGS,               RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
     { "--natpf",                    MODIFYVM_NATPF,                     RTGETOPT_REQ_STRING | RTGETOPT_FLAG_INDEX },
@@ -258,8 +262,6 @@ static const RTGETOPTDEF g_aModifyVMOptions[] =
     { "--teleporterpassword",       MODIFYVM_TELEPORTER_PASSWORD,       RTGETOPT_REQ_STRING },
     { "--hardwareuuid",             MODIFYVM_HARDWARE_UUID,             RTGETOPT_REQ_STRING },
     { "--hpet",                     MODIFYVM_HPET,                      RTGETOPT_REQ_BOOL_ONOFF },
-    { "--iomgr",                    MODIFYVM_IOMGR,                     RTGETOPT_REQ_STRING },
-    { "--iobackend",                MODIFYVM_IOBACKEND,                 RTGETOPT_REQ_STRING },
     { "--iocache",                  MODIFYVM_IOCACHE,                   RTGETOPT_REQ_BOOL_ONOFF },
     { "--iocachesize",              MODIFYVM_IOCACHESIZE,               RTGETOPT_REQ_UINT32 },
     { "--iobandwidthmax",           MODIFYVM_IOBANDWIDTHMAX,            RTGETOPT_REQ_UINT32 },
@@ -1190,6 +1192,14 @@ int handleModifyVM(HandlerArg *a)
                     CHECK_ERROR(nic, AttachToHostOnlyInterface());
                 }
 #endif
+#ifdef VBOX_WITH_VDE
+                else if (!strcmp(ValueUnion.psz, "vde"))
+                {
+
+                    CHECK_ERROR(nic, COMSETTER(Enabled)(TRUE));
+                    CHECK_ERROR(nic, AttachToVDE());
+                }
+#endif
                 else
                 {
                     errorArgument("Invalid type '%s' specfied for NIC %u", ValueUnion.psz, GetOptState.uIndex);
@@ -1248,6 +1258,25 @@ int handleModifyVM(HandlerArg *a)
                 break;
             }
 
+#ifdef VBOX_WITH_VDE
+            case MODIFYVM_VDENET:
+            {
+                ComPtr<INetworkAdapter> nic;
+
+                CHECK_ERROR_BREAK(machine, GetNetworkAdapter(GetOptState.uIndex - 1, nic.asOutParam()));
+                ASSERT(nic);
+
+                if (!strcmp(ValueUnion.psz, "default"))
+                {
+                    CHECK_ERROR(nic, COMSETTER(VDENetwork)(NULL));
+                }
+                else
+                {
+                    CHECK_ERROR(nic, COMSETTER(VDENetwork)(Bstr(ValueUnion.psz)));
+                }
+                break;
+            }
+#endif
             case MODIFYVM_NATNET:
             {
                 ComPtr<INetworkAdapter> nic;
@@ -1973,34 +2002,6 @@ int handleModifyVM(HandlerArg *a)
             case MODIFYVM_HPET:
             {
                 CHECK_ERROR(machine, COMSETTER(HpetEnabled)(ValueUnion.f));
-                break;
-            }
-
-            case MODIFYVM_IOMGR:
-            {
-                if (!strcmp(ValueUnion.psz, "simple"))
-                    CHECK_ERROR(machine, COMSETTER(IoMgr)(IoMgrType_Simple));
-                else if (!strcmp(ValueUnion.psz, "async"))
-                    CHECK_ERROR(machine, COMSETTER(IoMgr)(IoMgrType_Async));
-                else
-                {
-                    errorArgument("Invalid --iomgr argument '%s'", ValueUnion.psz);
-                    rc = E_FAIL;
-                }
-                break;
-            }
-
-            case MODIFYVM_IOBACKEND:
-            {
-                if (!strcmp(ValueUnion.psz, "buffered"))
-                    CHECK_ERROR(machine, COMSETTER(IoBackend)(IoBackendType_Buffered));
-                else if (!strcmp(ValueUnion.psz, "unbuffered"))
-                    CHECK_ERROR(machine, COMSETTER(IoBackend)(IoBackendType_Unbuffered));
-                else
-                {
-                    errorArgument("Invalid --iobackend argument '%s'", ValueUnion.psz);
-                    rc = E_FAIL;
-                }
                 break;
             }
 

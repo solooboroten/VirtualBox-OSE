@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.cpp 28851 2010-04-27 17:41:05Z vboxsync $ */
+/* $Id: MachineImpl.cpp 29225 2010-05-07 16:01:34Z vboxsync $ */
 
 /** @file
  * Implementation of IMachine in VBoxSVC.
@@ -206,8 +206,6 @@ Machine::HWData::HWData()
     for (size_t i = 0; i < RT_ELEMENTS(mCPUAttached); i++)
         mCPUAttached[i] = false;
 
-    mIoMgrType     = IoMgrType_Async;
-    mIoBackendType = IoBackendType_Unbuffered;
     mIoCacheEnabled = true;
     mIoCacheSize    = 5; /* 5MB */
     mIoBandwidthMax = 0; /* Unlimited */
@@ -1465,6 +1463,16 @@ STDMETHODIMP Machine::COMSETTER(MemoryBalloonSize)(ULONG memoryBalloonSize)
 #endif
 }
 
+STDMETHODIMP Machine::COMGETTER(SharedPagingEnabled) (BOOL *enabled)
+{
+    return E_NOTIMPL;
+}
+
+STDMETHODIMP Machine::COMSETTER(SharedPagingEnabled) (BOOL enabled)
+{
+    return E_NOTIMPL;
+}
+
 STDMETHODIMP Machine::COMGETTER(Accelerate3DEnabled)(BOOL *enabled)
 {
     if (!enabled)
@@ -2546,76 +2554,6 @@ STDMETHODIMP Machine::COMSETTER(RTCUseUTC)(BOOL aEnabled)
     return S_OK;
 }
 
-STDMETHODIMP Machine::COMGETTER(IoMgr)(IoMgrType_T *aIoMgrType)
-{
-    CheckComArgOutPointerValid(aIoMgrType);
-
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    *aIoMgrType = mHWData->mIoMgrType;
-
-    return S_OK;
-}
-
-STDMETHODIMP Machine::COMSETTER(IoMgr)(IoMgrType_T aIoMgrType)
-{
-    if (   aIoMgrType != IoMgrType_Async
-        && aIoMgrType != IoMgrType_Simple)
-        return E_INVALIDARG;
-
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    HRESULT rc = checkStateDependency(MutableStateDep);
-    if (FAILED(rc)) return rc;
-
-    setModified(IsModified_MachineData);
-    mHWData.backup();
-    mHWData->mIoMgrType = aIoMgrType;
-
-    return S_OK;
-}
-
-STDMETHODIMP Machine::COMGETTER(IoBackend)(IoBackendType_T *aIoBackendType)
-{
-    CheckComArgOutPointerValid(aIoBackendType);
-
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    *aIoBackendType = mHWData->mIoBackendType;
-
-    return S_OK;
-}
-
-STDMETHODIMP Machine::COMSETTER(IoBackend)(IoBackendType_T aIoBackendType)
-{
-    if (   aIoBackendType != IoBackendType_Buffered
-        && aIoBackendType != IoBackendType_Unbuffered)
-        return E_INVALIDARG;
-
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    HRESULT rc = checkStateDependency(MutableStateDep);
-    if (FAILED(rc)) return rc;
-
-    setModified(IsModified_MachineData);
-    mHWData.backup();
-    mHWData->mIoBackendType = aIoBackendType;
-
-    return S_OK;
-}
-
 STDMETHODIMP Machine::COMGETTER(IoCacheEnabled)(BOOL *aEnabled)
 {
     CheckComArgOutPointerValid(aEnabled);
@@ -2841,6 +2779,7 @@ STDMETHODIMP Machine::AttachDevice(IN_BSTR aControllerName,
     Guid uuid(aId);
 
     ComObjPtr<Medium> medium;
+
     switch (aType)
     {
         case DeviceType_HardDisk:
@@ -3132,7 +3071,10 @@ STDMETHODIMP Machine::AttachDevice(IN_BSTR aControllerName,
 
         /* Apply the normal locking logic to the entire chain. */
         MediumLockList *pMediumLockList(new MediumLockList());
-        rc = diff->createMediumLockList(true, medium, *pMediumLockList);
+        rc = diff->createMediumLockList(true, /* fFailIfInaccessible */
+                                        true /* fMediumWritable -- really? @todo r=dj*/ ,
+                                        medium,
+                                        *pMediumLockList);
         if (FAILED(rc)) return rc;
         rc = pMediumLockList->Lock();
         if (FAILED(rc))
@@ -5870,9 +5812,25 @@ bool Machine::checkForSpawnFailure()
                            &status);
 
     if (vrc != VERR_PROCESS_RUNNING)
-        rc = setError(E_FAIL,
-                      tr("Virtual machine '%ls' has terminated unexpectedly during startup"),
-                      getName().raw());
+    {
+        if (RT_SUCCESS(vrc) && status.enmReason == RTPROCEXITREASON_NORMAL)
+            rc = setError(E_FAIL,
+                          tr("Virtual machine '%ls' has terminated unexpectedly during startup with exit code %d"),
+                          getName().raw(), status.iStatus);
+        else if (RT_SUCCESS(vrc) && status.enmReason == RTPROCEXITREASON_SIGNAL)
+            rc = setError(E_FAIL,
+                          tr("Virtual machine '%ls' has terminated unexpectedly during startup because of signal %d"),
+                          getName().raw(), status.iStatus);
+        else if (RT_SUCCESS(vrc) && status.enmReason == RTPROCEXITREASON_ABEND)
+            rc = setError(E_FAIL,
+                          tr("Virtual machine '%ls' has terminated abnormally"),
+                          getName().raw(), status.iStatus);
+        else
+            rc = setError(E_FAIL,
+                          tr("Virtual machine '%ls' has terminated unexpectedly during startup (%Rrc)"),
+                          getName().raw(), rc);
+    }
+
 #endif
 
     if (FAILED(rc))
@@ -6890,8 +6848,6 @@ HRESULT Machine::loadHardware(const settings::Hardware &data)
         mHWData->mMemoryBalloonSize = data.ulMemoryBalloonSize;
 
         // IO settings
-        mHWData->mIoMgrType = data.ioSettings.ioMgrType;
-        mHWData->mIoBackendType = data.ioSettings.ioBackendType;
         mHWData->mIoCacheEnabled = data.ioSettings.fIoCacheEnabled;
         mHWData->mIoCacheSize = data.ioSettings.ulIoCacheSize;
         mHWData->mIoBandwidthMax = data.ioSettings.ulIoBandwidthMax;
@@ -7315,8 +7271,22 @@ HRESULT Machine::getMediumAttachmentsOfController(CBSTR aName,
          it != mMediaData->mAttachments.end();
          ++it)
     {
-        if ((*it)->getControllerName() == aName)
-            atts.push_back(*it);
+        const ComObjPtr<MediumAttachment> &pAtt = *it;
+
+        // should never happen, but deal with NULL pointers in the list.
+        AssertStmt(!pAtt.isNull(), continue);
+
+        // getControllerName() needs caller+read lock
+        AutoCaller autoAttCaller(pAtt);
+        if (FAILED(autoAttCaller.rc()))
+        {
+            atts.clear();
+            return autoAttCaller.rc();
+        }
+        AutoReadLock attLock(pAtt COMMA_LOCKVAL_SRC_POS);
+
+        if (pAtt->getControllerName() == aName)
+            atts.push_back(pAtt);
     }
 
     return S_OK;
@@ -7949,8 +7919,6 @@ HRESULT Machine::saveHardware(settings::Hardware &data)
         data.ulMemoryBalloonSize = mHWData->mMemoryBalloonSize;
 
         // IO settings
-        data.ioSettings.ioMgrType = mHWData->mIoMgrType;
-        data.ioSettings.ioBackendType = mHWData->mIoBackendType;
         data.ioSettings.fIoCacheEnabled = !!mHWData->mIoCacheEnabled;
         data.ioSettings.ulIoCacheSize = mHWData->mIoCacheSize;
         data.ioSettings.ulIoBandwidthMax = mHWData->mIoBandwidthMax;
@@ -8234,7 +8202,9 @@ HRESULT Machine::createImplicitDiffs(const Bstr &aFolder,
                     Assert(pMedium);
 
                     MediumLockList *pMediumLockList(new MediumLockList());
-                    rc = pMedium->createMediumLockList(false, NULL,
+                    rc = pMedium->createMediumLockList(true, /* fFailIfInaccessible */
+                                                       false,
+                                                       NULL,
                                                        *pMediumLockList);
                     if (FAILED(rc))
                     {
@@ -10848,8 +10818,12 @@ HRESULT SessionMachine::lockMedia()
         // attached later.
         if (pMedium != NULL)
         {
-            mrc = pMedium->createMediumLockList(devType != DeviceType_DVD,
-                                                NULL, *pMediumLockList);
+            bool fIsReadOnlyImage = (   devType == DeviceType_DVD
+                                     || devType == DeviceType_Floppy);
+            mrc = pMedium->createMediumLockList(!fIsReadOnlyImage /* fFailIfInaccessible */,
+                                                fIsReadOnlyImage, /* fReadOnly */
+                                                NULL,
+                                                *pMediumLockList);
             if (FAILED(mrc))
             {
                 delete pMediumLockList;

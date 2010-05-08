@@ -33,6 +33,7 @@
 #include <VBox/x86.h>
 #include <VBox/hwacc_vmx.h>
 #include <VBox/VMMDev.h> /* for VMMDEVSHAREDREGIONDESC */
+#include <VBox/gmm.h> /* for PGMMREGISTERSHAREDMODULEREQ */
 
 RT_C_DECLS_BEGIN
 
@@ -431,6 +432,7 @@ VMMDECL(void) PGMSetLargePageUsage(PVM pVM, bool fUseLargePages);
  */
 VMMR0DECL(int)      PGMR0PhysAllocateHandyPages(PVM pVM, PVMCPU pVCpu);
 VMMR0DECL(int)      PGMR0PhysAllocateLargeHandyPage(PVM pVM, PVMCPU pVCpu);
+VMMR0DECL(int)      PGMR0SharedModuleCheck(PVM pVM, PVMCPU pVCpu, PGMMREGISTERSHAREDMODULEREQ pReq);
 VMMR0DECL(int)      PGMR0Trap0eHandlerNestedPaging(PVM pVM, PVMCPU pVCpu, PGMMODE enmShwPagingMode, RTGCUINT uErr, PCPUMCTXCORE pRegFrame, RTGCPHYS pvFault);
 # ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
 VMMR0DECL(int)      PGMR0DynMapInit(void);
@@ -566,7 +568,6 @@ VMMR3DECL(int)      PGMR3DbgScanVirtual(PVM pVM, PVMCPU pVCpu, RTGCPTR GCPtr, RT
  * @{ */
 VMMR3DECL(int)     PGMR3SharedModuleRegister(PVM pVM, char *pszModuleName, char *pszVersion, RTGCPTR GCBaseAddr, uint32_t cbModule, unsigned cRegions, VMMDEVSHAREDREGIONDESC *pRegions);
 VMMR3DECL(int)     PGMR3SharedModuleUnregister(PVM pVM, char *pszModuleName, char *pszVersion, RTGCPTR GCBaseAddr, uint32_t cbModule);
-VMMR3DECL(int)     PGMR3SharedModuleCheck(PVM pVM);
 /** @} */
 
 /** @} */

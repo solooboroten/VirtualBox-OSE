@@ -181,6 +181,8 @@ crServerDispatchWindowDestroy( GLint window )
     if (cr_server.currentWindow == window)
     {
         cr_server.currentWindow = -1;
+        crServerRedirMuralFBO(mural, GL_FALSE);
+        crServerDeleteMuralFBO(mural);
     }
 
     crHashtableDelete(cr_server.pWindowCreateInfoTable, window, crServerCreateInfoDeleteCB);
@@ -210,10 +212,7 @@ crServerDispatchWindowSize( GLint window, GLint width, GLint height )
 
     crServerCheckMuralGeometry(mural);
 
-    if (!mural->bUseFBO)
-    {
-        cr_server.head_spu->dispatch_table.WindowSize(mural->spuWindow, width, height);
-    }
+    cr_server.head_spu->dispatch_table.WindowSize(mural->spuWindow, width, height);
 }
 
 

@@ -1,4 +1,4 @@
-/* $Id: UIMachineView.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: UIMachineView.cpp 29219 2010-05-07 14:58:50Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -613,9 +613,7 @@ void UIMachineView::prepareFrameBuffer()
             m_pFrameBuffer->AddRef();
         }
 
-#ifdef VBOX_WITH_VIDEOHWACCEL
         /* always perform SetFramebuffer to ensure 3D gets notified */
-#endif
         display.SetFramebuffer(m_uScreenId, CFramebuffer(m_pFrameBuffer));
     }
 }
@@ -1236,6 +1234,9 @@ void UIMachineView::sltMachineStateChanged()
                 /* Fully repaint to pick up m_pauseShot: */
                 viewport()->repaint();
             }
+            /* reuse the focus event handler to uncapture everything */
+            if (hasFocus())
+                focusEvent (false /* aHasFocus*/, false /* aReleaseHostKey */);
             break;
         }
         case KMachineState_Stuck:

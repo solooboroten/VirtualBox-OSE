@@ -1,4 +1,4 @@
-/* $Id: VBoxGlobal.cpp 28854 2010-04-27 19:41:12Z vboxsync $ */
+/* $Id: VBoxGlobal.cpp 29214 2010-05-07 14:02:57Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -422,7 +422,7 @@ public:
         Q_UNUSED (id);
         Q_UNUSED (type);
         Q_UNUSED (registered);
-        return S_OK;
+        return VBOX_E_DONT_CALL_AGAIN;
     }
 
     STDMETHOD(OnMachineRegistered) (IN_BSTR id, BOOL registered)
@@ -468,7 +468,7 @@ public:
                                       IN_BSTR /* value */,
                                       IN_BSTR /* flags */)
     {
-        return S_OK;
+        return VBOX_E_DONT_CALL_AGAIN;
     }
 
 private:
@@ -1889,7 +1889,7 @@ QString VBoxGlobal::detailsReport (const CMachine &aMachine, bool aWithLinks)
     static const char *sSectionItemTpl1 =
         "<tr><td width=40%><nobr><i>%1</i></nobr></td><td/><td/></tr>";
     static const char *sSectionItemTpl2 =
-        "<tr><td width=40%><nobr>%1:</nobr></td><td/><td>%2</td></tr>";
+        "<tr><td width=40%><nobr>%1</nobr></td><td/><td>%2</td></tr>";
     static const char *sSectionItemTpl3 =
         "<tr><td width=40%><nobr>%1</nobr></td><td/><td/></tr>";
 
@@ -2067,30 +2067,52 @@ QString VBoxGlobal::detailsReport (const CMachine &aMachine, bool aWithLinks)
 
         QString item;
 
+        /* Iterate over the all machine controllers: */
         CStorageControllerVector controllers = aMachine.GetStorageControllers();
-        foreach (const CStorageController &controller, controllers)
+        for (int i = 0; i < controllers.size(); ++i)
         {
-            item += QString (sSectionItemTpl3).arg (controller.GetName());
+            /* Get current controller: */
+            const CStorageController &controller = controllers[i];
+            /* Add controller information: */
+            item += QString(sSectionItemTpl3).arg(controller.GetName());
             ++ rows;
 
-            CMediumAttachmentVector attachments = aMachine.GetMediumAttachmentsOfController (controller.GetName());
-            foreach (const CMediumAttachment &attachment, attachments)
+            /* Populate sorted map with attachments information: */
+            QMap<StorageSlot,QString> attachmentsMap;
+            CMediumAttachmentVector attachments = aMachine.GetMediumAttachmentsOfController(controller.GetName());
+            for (int j = 0; j < attachments.size(); ++j)
             {
-                CMedium medium = attachment.GetMedium();
-                if (attachment.isOk())
-                {
-                    /* Append 'device slot name' with 'device type name' for CD/DVD devices only */
-                    QString strDeviceType = attachment.GetType() == KDeviceType_DVD ? tr("(CD/DVD)") : QString();
-                    if (!strDeviceType.isNull()) strDeviceType.prepend(' ');
-                    item += QString (sSectionItemTpl2)
-                            .arg (QString ("&nbsp;&nbsp;") +
-                                  toString (StorageSlot (controller.GetBus(),
-                                                         attachment.GetPort(),
-                                                         attachment.GetDevice())) +
-                                  strDeviceType)
-                            .arg (details (medium, false));
-                    ++ rows;
-                }
+                /* Get current attachment: */
+                const CMediumAttachment &attachment = attachments[j];
+                /* Prepare current storage slot: */
+                StorageSlot attachmentSlot(controller.GetBus(), attachment.GetPort(), attachment.GetDevice());
+                /* Append 'device slot name' with 'device type name' for CD/DVD devices only: */
+                QString strDeviceType = attachment.GetType() == KDeviceType_DVD ? tr("(CD/DVD)") : QString();
+                if (!strDeviceType.isNull())
+                    strDeviceType.prepend(' ');
+                /* Prepare current medium object: */
+                const CMedium &medium = attachment.GetMedium();
+                /* Prepare information about current medium & attachment: */
+                QString strAttachmentInfo = !attachment.isOk() ? QString() :
+                                            QString(sSectionItemTpl2)
+                                            .arg(QString("&nbsp;&nbsp;") +
+                                                 toString(StorageSlot(controller.GetBus(),
+                                                                      attachment.GetPort(),
+                                                                      attachment.GetDevice())) + strDeviceType)
+                                            .arg(details(medium, false));
+                /* Insert that attachment into map: */
+                if (!strAttachmentInfo.isNull())
+                    attachmentsMap.insert(attachmentSlot, strAttachmentInfo);
+            }
+
+            /* Iterate over the sorted map with attachments information: */
+            QMapIterator<StorageSlot,QString> it(attachmentsMap);
+            while (it.hasNext())
+            {
+                /* Add controller information: */
+                it.next();
+                item += it.value();
+                ++rows;
             }
         }
 
@@ -3062,6 +3084,7 @@ void VBoxGlobal::retranslateUi()
     mDiskTypes [KMediumType_Normal] =           tr ("Normal", "DiskType");
     mDiskTypes [KMediumType_Immutable] =        tr ("Immutable", "DiskType");
     mDiskTypes [KMediumType_Writethrough] =     tr ("Writethrough", "DiskType");
+    mDiskTypes [KMediumType_Shareable] =        tr ("Shareable", "DiskType");
     mDiskTypes_Differencing =                   tr ("Differencing", "DiskType");
 
     mVRDPAuthTypes [KVRDPAuthType_Null] =       tr ("Null", "VRDPAuthType");
@@ -4491,32 +4514,30 @@ QWidget *VBoxGlobal::findWidget (QWidget *aParent, const char *aName,
     if (aParent == NULL)
     {
         QWidgetList list = QApplication::topLevelWidgets();
-        QWidget* w = NULL;
-        foreach(w, list)
+        foreach(QWidget *w, list)
         {
             if ((!aName || strcmp (w->objectName().toAscii().constData(), aName) == 0) &&
                 (!aClassName || strcmp (w->metaObject()->className(), aClassName) == 0))
-                break;
+                return w;
             if (aRecursive)
             {
                 w = findWidget (w, aName, aClassName, aRecursive);
                 if (w)
-                    break;
+                    return w;
             }
         }
-        return w;
+        return NULL;
     }
 
     /* Find the first children of aParent with the appropriate properties.
      * Please note that this call is recursivly. */
     QList<QWidget *> list = qFindChildren<QWidget *> (aParent, aName);
-    QWidget *child = NULL;
-    foreach(child, list)
+    foreach(QWidget *child, list)
     {
         if (!aClassName || strcmp (child->metaObject()->className(), aClassName) == 0)
-            break;
+            return child;
     }
-    return child;
+    return NULL;
 }
 
 /**
@@ -5223,6 +5244,10 @@ void VBoxGlobal::init()
             if (++i < argc)
                 vm_render_mode_str = qApp->argv() [i];
         }
+        else if (!::strcmp (arg, "--no-startvm-errormsgbox"))
+        {
+            mShowStartVMErrors = false;
+        }
 #ifdef VBOX_WITH_DEBUGGER_GUI
         else if (!::strcmp (arg, "-dbg") || !::strcmp (arg, "--dbg"))
         {
@@ -5261,10 +5286,6 @@ void VBoxGlobal::init()
         else if (!::strcmp (arg, "--start-running"))
         {
             mStartPaused = false;
-        }
-        else if (!::strcmp (arg, "--no-startvm-errormsgbox"))
-        {
-            mShowStartVMErrors = false;
         }
 #endif
         /** @todo add an else { msgbox(syntax error); exit(1); } here, pretty please... */

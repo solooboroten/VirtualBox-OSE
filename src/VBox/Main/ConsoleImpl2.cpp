@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl2.cpp 28835 2010-04-27 14:46:23Z vboxsync $ */
+/* $Id: ConsoleImpl2.cpp 29227 2010-05-07 16:18:58Z vboxsync $ */
 /** @file
  * VBox Console COM Class implementation
  *
@@ -301,11 +301,10 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
 
     int             rc;
     HRESULT         hrc;
-    BSTR            str = NULL;
+    Bstr            bstr;
 
-#define STR_FREE()  do { if (str) { SysFreeString(str); str = NULL; } } while (0)
-#define RC_CHECK()  do { if (RT_FAILURE(rc)) { AssertMsgFailed(("rc=%Rrc\n", rc));  STR_FREE(); return rc;                   } } while (0)
-#define H()         do { if (FAILED(hrc))    { AssertMsgFailed(("hrc=%Rhrc\n", hrc)); STR_FREE(); return VERR_GENERAL_FAILURE; } } while (0)
+#define RC_CHECK()  do { if (RT_FAILURE(rc)) { AssertMsgFailed(("rc=%Rrc\n", rc));  return rc;                   } } while (0)
+#define H()         do { if (FAILED(hrc))    { AssertMsgFailed(("hrc=%Rhrc\n", hrc)); return VERR_GENERAL_FAILURE; } } while (0)
 
     /*
      * Get necessary objects and frequently used parameters.
@@ -322,10 +321,9 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     ComPtr<IBIOSSettings> biosSettings;
     hrc = pMachine->COMGETTER(BIOSSettings)(biosSettings.asOutParam());             H();
 
-    hrc = pMachine->COMGETTER(HardwareUUID)(&str);                                  H();
+    hrc = pMachine->COMGETTER(HardwareUUID)(bstr.asOutParam());                                  H();
     RTUUID HardwareUuid;
-    rc = RTUuidFromUtf16(&HardwareUuid, str);                                       RC_CHECK();
-    STR_FREE();
+    rc = RTUuidFromUtf16(&HardwareUuid, bstr.raw());                                       RC_CHECK();
 
     ULONG cRamMBs;
     hrc = pMachine->COMGETTER(MemorySize)(&cRamMBs);                                H();
@@ -362,8 +360,8 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     /*
      * Set the root (and VMM) level values.
      */
-    hrc = pMachine->COMGETTER(Name)(&str);                                          H();
-    rc = CFGMR3InsertStringW(pRoot, "Name",                 str);                   RC_CHECK();
+    hrc = pMachine->COMGETTER(Name)(bstr.asOutParam());                             H();
+    rc = CFGMR3InsertStringW(pRoot, "Name",                 bstr.raw());            RC_CHECK();
     rc = CFGMR3InsertBytes(pRoot,   "UUID", &HardwareUuid, sizeof(HardwareUuid));   RC_CHECK();
     rc = CFGMR3InsertInteger(pRoot, "RamSize",              cbRam);                 RC_CHECK();
     rc = CFGMR3InsertInteger(pRoot, "RamHoleSize",          cbRamHole);             RC_CHECK();
@@ -376,7 +374,6 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     rc = CFGMR3InsertInteger(pRoot, "PATMEnabled",          1);     /* boolean */   RC_CHECK();
     rc = CFGMR3InsertInteger(pRoot, "CSAMEnabled",          1);     /* boolean */   RC_CHECK();
 #endif
-    STR_FREE();
 
     /* cpuid leaf overrides. */
     static uint32_t const s_auCpuIdRanges[] =
@@ -553,28 +550,6 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     PCFGMNODE pPDMAcFile;
     rc = CFGMR3InsertNode(pPDM, "AsyncCompletion", &pPDMAc);                        RC_CHECK();
     rc = CFGMR3InsertNode(pPDMAc, "File", &pPDMAcFile);                             RC_CHECK();
-
-    /* I/O manager type */
-    IoMgrType_T ioMgrType;
-    hrc = pMachine->COMGETTER(IoMgr)(&ioMgrType);                                   H();
-    if (ioMgrType == IoMgrType_Async)
-        rc = CFGMR3InsertString(pPDMAcFile, "IoMgr", "Async");
-    else if (ioMgrType == IoMgrType_Simple)
-        rc = CFGMR3InsertString(pPDMAcFile, "IoMgr", "Simple");
-    else
-        rc = VERR_INVALID_PARAMETER;
-    RC_CHECK();
-
-    /* I/O backend type */
-    IoBackendType_T ioBackendType;
-    hrc = pMachine->COMGETTER(IoBackend)(&ioBackendType);                           H();
-    if (ioBackendType == IoBackendType_Buffered)
-        rc = CFGMR3InsertString(pPDMAcFile, "FileBackend", "Buffered");
-    else if (ioBackendType == IoBackendType_Unbuffered)
-        rc = CFGMR3InsertString(pPDMAcFile, "FileBackend", "NonBuffered");
-    else
-        rc = VERR_INVALID_PARAMETER;
-    RC_CHECK();
 
     /* Builtin I/O cache */
     BOOL fIoCache = true;
@@ -863,14 +838,12 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
     {
         char szExtraDataKey[sizeof("CustomVideoModeXX")];
         RTStrPrintf(szExtraDataKey, sizeof(szExtraDataKey), "CustomVideoMode%u", iMode);
-        hrc = pMachine->GetExtraData(Bstr(szExtraDataKey), &str);                   H();
-        if (!str || !*str)
+        hrc = pMachine->GetExtraData(Bstr(szExtraDataKey), bstr.asOutParam());     H();
+        if (bstr.isEmpty())
             break;
-        rc = CFGMR3InsertStringW(pCfg, szExtraDataKey, str);                        RC_CHECK();
-        STR_FREE();
+        rc = CFGMR3InsertStringW(pCfg, szExtraDataKey, bstr.raw());                RC_CHECK();
         ++cModes;
     }
-    STR_FREE();
     rc = CFGMR3InsertInteger(pCfg,  "CustomVideoModes", cModes);                    RC_CHECK();
 
     /* VESA height reduction */
@@ -991,30 +964,21 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         Bstr deviceProps;
         hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiDeviceProps"), deviceProps.asOutParam()); H();
         /* Get GOP mode settings */
-        STR_FREE();
         uint32_t u32GopMode = UINT32_MAX;
-        hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiGopMode"), &str); H();
-        if (str && *str)
-        {
-            u32GopMode = Utf8Str(str).toUInt32();
-        }
-        /* UGA mode settings */
-        STR_FREE();
-        uint32_t u32UgaHorisontal = 0;
-        hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiUgaHorizontalResolution"), &str); H();
-        if (str && *str)
-        {
-            u32UgaHorisontal = Utf8Str(str).toUInt32();
-        }
+        hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiGopMode"), bstr.asOutParam()); H();
+        if (!bstr.isEmpty())
+            u32GopMode = Utf8Str(bstr).toUInt32();
 
-        STR_FREE();
+        /* UGA mode settings */
+        uint32_t u32UgaHorisontal = 0;
+        hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiUgaHorizontalResolution"), bstr.asOutParam()); H();
+        if (!bstr.isEmpty())
+            u32UgaHorisontal = Utf8Str(bstr).toUInt32();
+
         uint32_t u32UgaVertical = 0;
-        hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiUgaVerticalResolution"), &str); H();
-        if (str && *str)
-        {
-            u32UgaVertical = Utf8Str(str).toUInt32();
-        }
-        STR_FREE();
+        hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/EfiUgaVerticalResolution"), bstr.asOutParam()); H();
+        if (!bstr.isEmpty())
+            u32UgaVertical = Utf8Str(bstr).toUInt32();
 
         /*
          * EFI subtree.
@@ -1258,18 +1222,21 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
 
         for (size_t j = 0; j < atts.size(); ++j)
         {
-            rc = Console::configMediumAttachment(pCtlInst, pszCtrlDev,
-                                                 ulInstance, enmBus, enmIoBackend,
-                                                 false /* fSetupMerge */,
-                                                 0 /* uMergeSource */,
-                                                 0 /* uMergeTarget */,
-                                                 atts[j],
-                                                 pConsole->mMachineState,
-                                                 NULL /* phrc */,
-                                                 false /* fAttachDetach */,
-                                                 false /* fForceUnmount */,
-                                                 NULL /* pVM */,
-                                                 paLedDevType);                                 RC_CHECK();
+            rc = pConsole->configMediumAttachment(pCtlInst,
+                                                  pszCtrlDev,
+                                                  ulInstance,
+                                                  enmBus,
+                                                  enmIoBackend,
+                                                  false /* fSetupMerge */,
+                                                  0 /* uMergeSource */,
+                                                  0 /* uMergeTarget */,
+                                                  atts[j],
+                                                  pConsole->mMachineState,
+                                                  NULL /* phrc */,
+                                                  false /* fAttachDetach */,
+                                                  false /* fForceUnmount */,
+                                                  NULL /* pVM */,
+                                                  paLedDevType);                                 RC_CHECK();
         }
         H();
     }
@@ -1510,7 +1477,7 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         rc = CFGMR3InsertInteger(pCfg,   "IOBase", ulIOBase);                       RC_CHECK();
         BOOL  fServer;
         hrc = serialPort->COMGETTER(Server)(&fServer);                              H();
-        hrc = serialPort->COMGETTER(Path)(&str);                                    H();
+        hrc = serialPort->COMGETTER(Path)(bstr.asOutParam());                       H();
         PortMode_T eHostMode;
         hrc = serialPort->COMGETTER(HostMode)(&eHostMode);                          H();
         if (eHostMode != PortMode_Disconnected)
@@ -1522,14 +1489,14 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                 rc = CFGMR3InsertNode(pLunL0,    "AttachedDriver", &pLunL1);        RC_CHECK();
                 rc = CFGMR3InsertString(pLunL1,  "Driver", "NamedPipe");            RC_CHECK();
                 rc = CFGMR3InsertNode(pLunL1,    "Config", &pLunL2);                RC_CHECK();
-                rc = CFGMR3InsertStringW(pLunL2, "Location", str);                  RC_CHECK();
+                rc = CFGMR3InsertStringW(pLunL2, "Location", bstr.raw());           RC_CHECK();
                 rc = CFGMR3InsertInteger(pLunL2, "IsServer", fServer);              RC_CHECK();
             }
             else if (eHostMode == PortMode_HostDevice)
             {
                 rc = CFGMR3InsertString(pLunL0,  "Driver", "Host Serial");          RC_CHECK();
                 rc = CFGMR3InsertNode(pLunL0,    "Config", &pLunL1);                RC_CHECK();
-                rc = CFGMR3InsertStringW(pLunL1, "DevicePath", str);                RC_CHECK();
+                rc = CFGMR3InsertStringW(pLunL1, "DevicePath", bstr.raw());         RC_CHECK();
             }
             else if (eHostMode == PortMode_RawFile)
             {
@@ -1537,10 +1504,9 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
                 rc = CFGMR3InsertNode(pLunL0,    "AttachedDriver", &pLunL1);        RC_CHECK();
                 rc = CFGMR3InsertString(pLunL1,  "Driver", "RawFile");              RC_CHECK();
                 rc = CFGMR3InsertNode(pLunL1,    "Config", &pLunL2);                RC_CHECK();
-                rc = CFGMR3InsertStringW(pLunL2, "Location", str);                  RC_CHECK();
+                rc = CFGMR3InsertStringW(pLunL2, "Location", bstr.raw());           RC_CHECK();
             }
         }
-        STR_FREE();
     }
 
     /*
@@ -1571,9 +1537,8 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         rc = CFGMR3InsertNode(pInst,     "LUN#0", &pLunL0);                         RC_CHECK();
         rc = CFGMR3InsertString(pLunL0,  "Driver", "HostParallel");                 RC_CHECK();
         rc = CFGMR3InsertNode(pLunL0,    "AttachedDriver", &pLunL1);                RC_CHECK();
-        hrc = parallelPort->COMGETTER(Path)(&str);                                  H();
-        rc = CFGMR3InsertStringW(pLunL1,  "DevicePath", str);                       RC_CHECK();
-        STR_FREE();
+        hrc = parallelPort->COMGETTER(Path)(bstr.asOutParam());                     H();
+        rc = CFGMR3InsertStringW(pLunL1,  "DevicePath", bstr.raw());                RC_CHECK();
     }
 
     /*
@@ -1744,9 +1709,8 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
             }
 #endif
         }
-        hrc = pMachine->COMGETTER(Name)(&str);                                      H();
-        rc = CFGMR3InsertStringW(pCfg, "StreamName", str);                          RC_CHECK();
-        STR_FREE();
+        hrc = pMachine->COMGETTER(Name)(bstr.asOutParam());                         H();
+        rc = CFGMR3InsertStringW(pCfg, "StreamName", bstr.raw());                   RC_CHECK();
     }
 
     /*
@@ -2236,7 +2200,6 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
         }
     }
 
-#undef STR_FREE
 #undef H
 #undef RC_CHECK
 
@@ -2270,24 +2233,28 @@ DECLCALLBACK(int) Console::configConstructor(PVM pVM, void *pvConsole)
 }
 
 /* static */
-int Console::configMediumAttachment(PCFGMNODE pCtlInst, const char *pcszDevice,
-                                    unsigned uInstance, StorageBus_T enmBus,
+int Console::configMediumAttachment(PCFGMNODE pCtlInst,
+                                    const char *pcszDevice,
+                                    unsigned uInstance,
+                                    StorageBus_T enmBus,
                                     IoBackendType_T enmIoBackend,
-                                    bool fSetupMerge, unsigned uMergeSource,
+                                    bool fSetupMerge,
+                                    unsigned uMergeSource,
                                     unsigned uMergeTarget,
                                     IMediumAttachment *pMediumAtt,
                                     MachineState_T aMachineState,
-                                    HRESULT *phrc, bool fAttachDetach,
-                                    bool fForceUnmount, PVM pVM,
+                                    HRESULT *phrc,
+                                    bool fAttachDetach,
+                                    bool fForceUnmount,
+                                    PVM pVM,
                                     DeviceType_T *paLedDevType)
 {
     int rc = VINF_SUCCESS;
     HRESULT hrc;
-    BSTR str = NULL;
+    Bstr    bstr;
 
-#define STR_FREE()  do { if (str) { SysFreeString(str); str = NULL; } } while (0)
-#define RC_CHECK()  do { if (RT_FAILURE(rc)) { AssertMsgFailed(("rc=%Rrc\n", rc));  STR_FREE(); return rc;                   } } while (0)
-#define H()         do { if (FAILED(hrc))    { AssertMsgFailed(("hrc=%Rhrc\n", hrc)); STR_FREE(); return VERR_GENERAL_FAILURE; } } while (0)
+#define RC_CHECK()  do { if (RT_FAILURE(rc)) { AssertMsgFailed(("rc=%Rrc\n", rc));  return rc;                   } } while (0)
+#define H()         do { if (FAILED(hrc))    { AssertMsgFailed(("hrc=%Rhrc\n", hrc)); return VERR_GENERAL_FAILURE; } } while (0)
 
     LONG lDev;
     hrc = pMediumAtt->COMGETTER(Device)(&lDev);                         H();
@@ -2356,9 +2323,15 @@ int Console::configMediumAttachment(PCFGMNODE pCtlInst, const char *pcszDevice,
     hrc = pMediumAtt->COMGETTER(Medium)(pMedium.asOutParam());          H();
     BOOL fPassthrough;
     hrc = pMediumAtt->COMGETTER(Passthrough)(&fPassthrough);            H();
-    rc = Console::configMedium(pLunL0, !!fPassthrough, lType,
-                               enmIoBackend, fSetupMerge, uMergeSource,
-                               uMergeTarget, pMedium, aMachineState,
+    rc = Console::configMedium(pLunL0,
+                               !!fPassthrough,
+                               lType,
+                               enmIoBackend,
+                               fSetupMerge,
+                               uMergeSource,
+                               uMergeTarget,
+                               pMedium,
+                               aMachineState,
                                phrc);                                   RC_CHECK();
 
     if (fAttachDetach)
@@ -2375,26 +2348,29 @@ int Console::configMediumAttachment(PCFGMNODE pCtlInst, const char *pcszDevice,
     if (paLedDevType)
         paLedDevType[uLUN] = lType;
 
-#undef STR_FREE
 #undef H
 #undef RC_CHECK
 
     return VINF_SUCCESS;;
 }
 
-int Console::configMedium(PCFGMNODE pLunL0, bool fPassthrough,
-                          DeviceType_T enmType, IoBackendType_T enmIoBackend,
-                          bool fSetupMerge, unsigned uMergeSource,
-                          unsigned uMergeTarget, IMedium *pMedium,
-                          MachineState_T aMachineState, HRESULT *phrc)
+int Console::configMedium(PCFGMNODE pLunL0,
+                          bool fPassthrough,
+                          DeviceType_T enmType,
+                          IoBackendType_T enmIoBackend,
+                          bool fSetupMerge,
+                          unsigned uMergeSource,
+                          unsigned uMergeTarget,
+                          IMedium *pMedium,
+                          MachineState_T aMachineState,
+                          HRESULT *phrc)
 {
     int rc = VINF_SUCCESS;
     HRESULT hrc;
-    BSTR str = NULL;
+    Bstr bstr;
 
-#define STR_FREE()  do { if (str) { SysFreeString(str); str = NULL; } } while (0)
-#define RC_CHECK()  do { if (RT_FAILURE(rc)) { AssertMsgFailed(("rc=%Rrc\n", rc));  STR_FREE(); return rc;                   } } while (0)
-#define H()         do { if (FAILED(hrc))    { AssertMsgFailed(("hrc=%Rhrc\n", hrc)); STR_FREE(); if (phrc) *phrc = hrc; return VERR_GENERAL_FAILURE; } } while (0)
+#define RC_CHECK()  do { if (RT_FAILURE(rc)) { AssertMsgFailed(("rc=%Rrc\n", rc));  return rc;                   } } while (0)
+#define H()         do { if (FAILED(hrc))    { AssertMsgFailed(("hrc=%Rhrc\n", hrc)); if (phrc) *phrc = hrc; return VERR_GENERAL_FAILURE; } } while (0)
 
     PCFGMNODE pLunL1 = NULL;
     PCFGMNODE pCfg = NULL;
@@ -2413,9 +2389,8 @@ int Console::configMedium(PCFGMNODE pLunL0, bool fPassthrough,
             rc = CFGMR3InsertString(pLunL0, "Driver", "HostDVD");                       RC_CHECK();
             rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                             RC_CHECK();
 
-            hrc = pMedium->COMGETTER(Location)(&str);                                   H();
-            rc = CFGMR3InsertStringW(pCfg, "Path", str);                                RC_CHECK();
-            STR_FREE();
+            hrc = pMedium->COMGETTER(Location)(bstr.asOutParam());                      H();
+            rc = CFGMR3InsertStringW(pCfg, "Path", bstr.raw());                         RC_CHECK();
 
             rc = CFGMR3InsertInteger(pCfg, "Passthrough", fPassthrough);                RC_CHECK();
         }
@@ -2424,9 +2399,8 @@ int Console::configMedium(PCFGMNODE pLunL0, bool fPassthrough,
             rc = CFGMR3InsertString(pLunL0, "Driver", "HostFloppy");                    RC_CHECK();
             rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                             RC_CHECK();
 
-            hrc = pMedium->COMGETTER(Location)(&str);                                   H();
-            rc = CFGMR3InsertStringW(pCfg, "Path", str);                                RC_CHECK();
-            STR_FREE();
+            hrc = pMedium->COMGETTER(Location)(bstr.asOutParam());                      H();
+            rc = CFGMR3InsertStringW(pCfg, "Path", bstr.raw());                         RC_CHECK();
         }
     }
     else
@@ -2449,6 +2423,36 @@ int Console::configMedium(PCFGMNODE pLunL0, bool fPassthrough,
                 rc = CFGMR3InsertInteger(pCfg, "Mountable", 0);                         RC_CHECK();
         }
 
+        if (    pMedium
+             && (    enmType == DeviceType_DVD
+                  || enmType == DeviceType_Floppy
+           ))
+        {
+            // if this medium represents an ISO image and this image is inaccessible,
+            // the ignore it instead of causing a failure; this can happen when we
+            // restore a VM state and the ISO has disappeared, e.g. because the Guest
+            // Additions were mounted and the user upgraded VirtualBox. Previously
+            // we failed on startup, but that's not good because the only way out then
+            // would be to discard the VM state...
+            MediumState_T mediumState;
+            rc = pMedium->RefreshState(&mediumState);
+            RC_CHECK();
+            if (mediumState == MediumState_Inaccessible)
+            {
+                Bstr loc;
+                rc = pMedium->COMGETTER(Location)(loc.asOutParam());
+                if (FAILED(rc)) return rc;
+
+                setVMRuntimeErrorCallbackF(mpVM,
+                                           this,
+                                           0,
+                                           "DvdOrFloppyImageInaccessible",
+                                           "The medium '%ls' is inaccessible and is being ignored. You may want to fix the media attachments in the virtual machine settings",
+                                           loc.raw());
+                pMedium = NULL;
+            }
+        }
+
         if (pMedium)
         {
             /* Start with length of parent chain, as the list is reversed */
@@ -2466,13 +2470,11 @@ int Console::configMedium(PCFGMNODE pLunL0, bool fPassthrough,
             rc = CFGMR3InsertString(pLunL1, "Driver", "VD");                            RC_CHECK();
             rc = CFGMR3InsertNode(pLunL1, "Config", &pCfg);                             RC_CHECK();
 
-            hrc = pMedium->COMGETTER(Location)(&str);                                   H();
-            rc = CFGMR3InsertStringW(pCfg, "Path", str);                                RC_CHECK();
-            STR_FREE();
+            hrc = pMedium->COMGETTER(Location)(bstr.asOutParam());                      H();
+            rc = CFGMR3InsertStringW(pCfg, "Path", bstr.raw());                         RC_CHECK();
 
-            hrc = pMedium->COMGETTER(Format)(&str);                                     H();
-            rc = CFGMR3InsertStringW(pCfg, "Format", str);                              RC_CHECK();
-            STR_FREE();
+            hrc = pMedium->COMGETTER(Format)(bstr.asOutParam());                        H();
+            rc = CFGMR3InsertStringW(pCfg, "Format", bstr.raw());                       RC_CHECK();
 
             /* DVDs are always readonly */
             if (enmType == DeviceType_DVD)
@@ -2549,13 +2551,11 @@ int Console::configMedium(PCFGMNODE pLunL0, bool fPassthrough,
 
                 PCFGMNODE pCur;
                 rc = CFGMR3InsertNode(pParent, "Parent", &pCur);                        RC_CHECK();
-                hrc = pMedium->COMGETTER(Location)(&str);                               H();
-                rc = CFGMR3InsertStringW(pCur, "Path", str);                            RC_CHECK();
-                STR_FREE();
+                hrc = pMedium->COMGETTER(Location)(bstr.asOutParam());                  H();
+                rc = CFGMR3InsertStringW(pCur, "Path", bstr.raw());                     RC_CHECK();
 
-                hrc = pMedium->COMGETTER(Format)(&str);                                 H();
-                rc = CFGMR3InsertStringW(pCur, "Format", str);                          RC_CHECK();
-                STR_FREE();
+                hrc = pMedium->COMGETTER(Format)(bstr.asOutParam());                    H();
+                rc = CFGMR3InsertStringW(pCur, "Format", bstr.raw());                   RC_CHECK();
 
                 if (fSetupMerge)
                 {
@@ -2608,7 +2608,6 @@ int Console::configMedium(PCFGMNODE pLunL0, bool fPassthrough,
         }
     }
 
-#undef STR_FREE
 #undef H
 #undef RC_CHECK
 
@@ -2643,11 +2642,10 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
 
     int rc = VINF_SUCCESS;
     HRESULT hrc;
-    BSTR str = NULL;
+    Bstr bstr;
 
-#define STR_FREE()  do { if (str) { SysFreeString(str); str = NULL; } } while (0)
-#define RC_CHECK()  do { if (RT_FAILURE(rc)) { AssertMsgFailed(("rc=%Rrc\n", rc));  STR_FREE(); return rc;                   } } while (0)
-#define H()         do { if (FAILED(hrc))    { AssertMsgFailed(("hrc=%Rhrc\n", hrc)); STR_FREE(); return VERR_GENERAL_FAILURE; } } while (0)
+#define RC_CHECK()  do { if (RT_FAILURE(rc)) { AssertMsgFailed(("rc=%Rrc\n", rc));  return rc;                   } } while (0)
+#define H()         do { if (FAILED(hrc))    { AssertMsgFailed(("hrc=%Rhrc\n", hrc)); return VERR_GENERAL_FAILURE; } } while (0)
 
     /*
      * Locking the object before doing VMR3* calls is quite safe here, since
@@ -2699,12 +2697,11 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
             rc = CFGMR3InsertNode(pInst, "LUN#0", &pLunL0);                 RC_CHECK();
             rc = CFGMR3InsertString(pLunL0, "Driver", "NetSniffer");        RC_CHECK();
             rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                 RC_CHECK();
-            hrc = aNetworkAdapter->COMGETTER(TraceFile)(&str);              H();
-            if (str) /* check convention for indicating default file. */
+            hrc = aNetworkAdapter->COMGETTER(TraceFile)(bstr.asOutParam()); H();
+            if (!bstr.isEmpty()) /* check convention for indicating default file. */
             {
-                rc = CFGMR3InsertStringW(pCfg, "File", str);                RC_CHECK();
+                rc = CFGMR3InsertStringW(pCfg, "File", bstr.raw());         RC_CHECK();
             }
-            STR_FREE();
         }
     }
     else if (fAttachDetach && !fSniffer)
@@ -2723,12 +2720,11 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
         rc = CFGMR3InsertNode(pInst, "LUN#0", &pLunL0);                 RC_CHECK();
         rc = CFGMR3InsertString(pLunL0, "Driver", "NetSniffer");        RC_CHECK();
         rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                 RC_CHECK();
-        hrc = aNetworkAdapter->COMGETTER(TraceFile)(&str);              H();
-        if (str) /* check convention for indicating default file. */
+        hrc = aNetworkAdapter->COMGETTER(TraceFile)(bstr.asOutParam()); H();
+        if (!bstr.isEmpty()) /* check convention for indicating default file. */
         {
-            rc = CFGMR3InsertStringW(pCfg, "File", str);                RC_CHECK();
+            rc = CFGMR3InsertStringW(pCfg, "File", bstr.raw());         RC_CHECK();
         }
-        STR_FREE();
     }
 
     Bstr networkName, trunkName, trunkType;
@@ -2755,20 +2751,18 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
             rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);             RC_CHECK();
 
             /* Configure TFTP prefix and boot filename. */
-            hrc = virtualBox->COMGETTER(HomeFolder)(&str);              H();
-            if (str && *str)
+            hrc = virtualBox->COMGETTER(HomeFolder)(bstr.asOutParam()); H();
+            if (!bstr.isEmpty())
             {
-                rc = CFGMR3InsertStringF(pCfg, "TFTPPrefix", "%ls%c%s", str, RTPATH_DELIMITER, "TFTP"); RC_CHECK();
+                rc = CFGMR3InsertStringF(pCfg, "TFTPPrefix", "%ls%c%s", bstr.raw(), RTPATH_DELIMITER, "TFTP"); RC_CHECK();
             }
-            STR_FREE();
-            hrc = pMachine->COMGETTER(Name)(&str);                      H();
-            rc = CFGMR3InsertStringF(pCfg, "BootFile", "%ls.pxe", str); RC_CHECK();
-            STR_FREE();
+            hrc = pMachine->COMGETTER(Name)(bstr.asOutParam());         H();
+            rc = CFGMR3InsertStringF(pCfg, "BootFile", "%ls.pxe", bstr.raw()); RC_CHECK();
 
-            hrc = natDriver->COMGETTER(Network)(&str);                  H();
-            if (str)
+            hrc = natDriver->COMGETTER(Network)(bstr.asOutParam());     H();
+            if (!bstr.isEmpty())
             {
-                rc = CFGMR3InsertStringW(pCfg, "Network", str);         RC_CHECK();
+                rc = CFGMR3InsertStringW(pCfg, "Network", bstr.raw());  RC_CHECK();
             }
             else
             {
@@ -2776,13 +2770,11 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
                 hrc = aNetworkAdapter->COMGETTER(Slot)(&uSlot);         H();
                 rc = CFGMR3InsertStringF(pCfg, "Network", "10.0.%d.0/24", uSlot+2); RC_CHECK();
             }
-            STR_FREE();
-            hrc = natDriver->COMGETTER(HostIP)(&str);                   H();
-            if (str)
+            hrc = natDriver->COMGETTER(HostIP)(bstr.asOutParam());      H();
+            if (!bstr.isEmpty())
             {
-                rc = CFGMR3InsertStringW(pCfg, "BindIP", str);          RC_CHECK();
+                rc = CFGMR3InsertStringW(pCfg, "BindIP", bstr.raw());   RC_CHECK();
             }
-            STR_FREE();
             ULONG mtu = 0;
             ULONG sockSnd = 0;
             ULONG sockRcv = 0;
@@ -2809,25 +2801,22 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
             {
                 rc = CFGMR3InsertInteger(pCfg, "TcpSnd", tcpSnd);        RC_CHECK();
             }
-            STR_FREE();
-            hrc = natDriver->COMGETTER(TftpPrefix)(&str);                H();
-            if (str)
+            hrc = natDriver->COMGETTER(TftpPrefix)(bstr.asOutParam());   H();
+            if (!bstr.isEmpty())
             {
                 rc = CFGMR3RemoveValue(pCfg, "TFTPPrefix");              RC_CHECK();
-                rc = CFGMR3InsertStringW(pCfg, "TFTPPrefix", str);       RC_CHECK();
+                rc = CFGMR3InsertStringW(pCfg, "TFTPPrefix", bstr);       RC_CHECK();
             }
-            STR_FREE();
-            hrc = natDriver->COMGETTER(TftpBootFile)(&str);              H();
-            if (str)
+            hrc = natDriver->COMGETTER(TftpBootFile)(bstr.asOutParam());              H();
+            if (!bstr.isEmpty())
             {
                 rc = CFGMR3RemoveValue(pCfg, "BootFile");                RC_CHECK();
-                rc = CFGMR3InsertStringW(pCfg, "BootFile", str);         RC_CHECK();
+                rc = CFGMR3InsertStringW(pCfg, "BootFile", bstr);         RC_CHECK();
             }
-            STR_FREE();
-            hrc = natDriver->COMGETTER(TftpNextServer)(&str);            H();
-            if (str)
+            hrc = natDriver->COMGETTER(TftpNextServer)(bstr.asOutParam()); H();
+            if (!bstr.isEmpty())
             {
-                rc = CFGMR3InsertStringW(pCfg, "NextServer", str);       RC_CHECK();
+                rc = CFGMR3InsertStringW(pCfg, "NextServer", bstr);       RC_CHECK();
             }
             BOOL fDnsFlag;
             hrc = natDriver->COMGETTER(DnsPassDomain)(&fDnsFlag);        H();
@@ -3053,14 +3042,13 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
                                                       HifName.raw());
             }
 
-            hrc = hostInterface->COMGETTER(Id)(&str);
+            hrc = hostInterface->COMGETTER(Id)(bstr.asOutParam());
             if (FAILED(hrc))
             {
                 LogRel(("NetworkAttachmentType_Bridged: COMGETTER(Id) failed, hrc (0x%x)", hrc));
                 H();
             }
-            Guid hostIFGuid(str);
-            STR_FREE();
+            Guid hostIFGuid(bstr);
 
             INetCfg              *pNc;
             ComPtr<INetCfgComponent> pAdaptorComponent;
@@ -3364,8 +3352,8 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
 
         case NetworkAttachmentType_Internal:
         {
-            hrc = aNetworkAdapter->COMGETTER(InternalNetwork)(&str);    H();
-            if (str && *str)
+            hrc = aNetworkAdapter->COMGETTER(InternalNetwork)(bstr.asOutParam());    H();
+            if (!bstr.isEmpty())
             {
                 if (fSniffer)
                 {
@@ -3379,12 +3367,11 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
                 }
                 rc = CFGMR3InsertString(pLunL0, "Driver", "IntNet");    RC_CHECK();
                 rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);         RC_CHECK();
-                rc = CFGMR3InsertStringW(pCfg, "Network", str);         RC_CHECK();
+                rc = CFGMR3InsertStringW(pCfg, "Network", bstr);         RC_CHECK();
                 rc = CFGMR3InsertInteger(pCfg, "TrunkType", kIntNetTrunkType_WhateverNone); RC_CHECK();
-                networkName = str;
+                networkName = bstr;
                 trunkType = Bstr(TRUNKTYPE_WHATEVER);
             }
-            STR_FREE();
             break;
         }
 
@@ -3448,14 +3435,13 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
                                   N_("Interface ('%ls') is not a Host-Only Adapter interface"),
                                   HifName.raw());
 
-            hrc = hostInterface->COMGETTER(Id)(&str);
+            hrc = hostInterface->COMGETTER(Id)(bstr.asOutParam());
             if (FAILED(hrc))
             {
                 LogRel(("NetworkAttachmentType_HostOnly: COMGETTER(Id) failed, hrc (0x%x)\n", hrc));
                 H();
             }
-            Guid hostIFGuid(str);
-            STR_FREE();
+            Guid hostIFGuid(bstr);
 
             INetCfg *pNc;
             ComPtr<INetCfgComponent> pAdaptorComponent;
@@ -3591,16 +3577,15 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
 #if defined(VBOX_WITH_VDE)
         case NetworkAttachmentType_VDE:
         {
-            hrc = aNetworkAdapter->COMGETTER(VDENetwork)(&str);    H();
+            hrc = aNetworkAdapter->COMGETTER(VDENetwork)(bstr.asOutParam());    H();
             rc = CFGMR3InsertNode(pInst, "LUN#0", &pLunL0);        RC_CHECK();
             rc = CFGMR3InsertString(pLunL0, "Driver", "VDE");      RC_CHECK();
             rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);        RC_CHECK();
-            if (str && *str)
+            if (!bstr.isEmpty())
             {
-                rc = CFGMR3InsertStringW(pCfg, "Network", str);    RC_CHECK();
-                networkName = str;
+                rc = CFGMR3InsertStringW(pCfg, "Network", bstr);    RC_CHECK();
+                networkName = bstr;
             }
-            STR_FREE();
             break;
         }
 #endif
@@ -3680,7 +3665,6 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
 
     meAttachmentType[uInstance] = eAttachmentType;
 
-#undef STR_FREE
 #undef H
 #undef RC_CHECK
 

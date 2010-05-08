@@ -12,6 +12,15 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+ *
+ * The contents of this file may alternatively be used under the terms
+ * of the Common Development and Distribution License Version 1.0
+ * (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+ * VirtualBox OSE distribution, in which case the provisions of the
+ * CDDL are applicable instead of those of the GPL.
+ *
+ * You may elect to license modified versions of this file under the
+ * terms and conditions of either the GPL or the CDDL or both.
  */
 
 #include <stddef.h>
@@ -33,7 +42,8 @@ struct vde_open_args
 };
 
 /** The file name of the DBus library */
-#define RT_RUNTIME_LOADER_LIB_NAME "libvdeplug.so.2"
+#define VBOX_LIB_VDE_PLUG_NAME "libvdeplug.so.2"
+#define RT_RUNTIME_LOADER_LIB_NAME VBOX_LIB_VDE_PLUG_NAME
 
 /** The name of the loader function */
 #define RT_RUNTIME_LOADER_FUNCTION DrvVDELoadVDEPlug

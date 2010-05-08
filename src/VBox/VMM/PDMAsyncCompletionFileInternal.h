@@ -1,4 +1,4 @@
-/* $Id: PDMAsyncCompletionFileInternal.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: PDMAsyncCompletionFileInternal.h 29215 2010-05-07 14:18:57Z vboxsync $ */
 /** @file
  * PDM Async I/O - Transport data asynchronous in R3 using EMT.
  */
@@ -359,6 +359,8 @@ typedef struct PDMACFILECACHEGLOBAL
     /** List of all endpoints using this cache. */
     RTLISTNODE        ListEndpoints;
 #ifdef VBOX_WITH_STATISTICS
+    /** Alignment */
+    uint32_t         u32Alignment;
     /** Hit counter. */
     STAMCOUNTER      cHits;
     /** Partial hit counter. */
@@ -379,6 +381,9 @@ typedef struct PDMACFILECACHEGLOBAL
     STAMCOUNTER      StatBuffersReused;
 #endif
 } PDMACFILECACHEGLOBAL;
+#ifdef VBOX_WITH_STATISTICS
+AssertCompileMemberAlignment(PDMACFILECACHEGLOBAL, cHits, sizeof(uint64_t));
+#endif
 
 /**
  * Per endpoint cache data.
@@ -391,10 +396,6 @@ typedef struct PDMACFILEENDPOINTCACHE
     RTSEMRW                              SemRWEntries;
     /** Pointer to the gobal cache data */
     PPDMACFILECACHEGLOBAL                pCache;
-    /** Number of writes outstanding. */
-    volatile uint32_t                    cWritesOutstanding;
-    /** Handle of the flush request if one is active */
-    volatile PPDMASYNCCOMPLETIONTASKFILE pTaskFlush;
     /** Lock protecting the dirty entries list. */
     RTSPINLOCK                           LockList;
     /** List of dirty but not committed entries for this endpoint. */
@@ -402,12 +403,13 @@ typedef struct PDMACFILEENDPOINTCACHE
     /** Node of the cache endpoint list. */
     RTLISTNODE                           NodeCacheEndpoint;
 #ifdef VBOX_WITH_STATISTICS
-    /** Alignment */
-    bool                                 afAlignment[3];
     /** Number of times a write was deferred because the cache entry was still in progress */
     STAMCOUNTER                          StatWriteDeferred;
 #endif
 } PDMACFILEENDPOINTCACHE, *PPDMACFILEENDPOINTCACHE;
+#ifdef VBOX_WITH_STATISTICS
+AssertCompileMemberAlignment(PDMACFILEENDPOINTCACHE, StatWriteDeferred, sizeof(uint64_t));
+#endif
 
 /**
  * Backend type for the endpoint.
@@ -449,6 +451,9 @@ typedef struct PDMASYNCCOMPLETIONEPCLASSFILE
     uint32_t                            cReqsOutstandingMax;
     /** Bitmask for checking the alignment of a buffer. */
     RTR3UINTPTR                         uBitmaskAlignment;
+#ifdef VBOX_WITH_STATISTICS
+    uint32_t                            u32Alignment;
+#endif
     /** Global cache data. */
     PDMACFILECACHEGLOBAL                Cache;
     /** Flag whether the out of resources warning was printed already. */
@@ -458,6 +463,9 @@ typedef struct PDMASYNCCOMPLETIONEPCLASSFILE
 } PDMASYNCCOMPLETIONEPCLASSFILE;
 /** Pointer to the endpoint class data. */
 typedef PDMASYNCCOMPLETIONEPCLASSFILE *PPDMASYNCCOMPLETIONEPCLASSFILE;
+#ifdef VBOX_WITH_STATISTICS
+AssertCompileMemberAlignment(PDMASYNCCOMPLETIONEPCLASSFILE, Cache, sizeof(uint64_t));
+#endif
 
 typedef enum PDMACEPFILEBLOCKINGEVENT
 {
@@ -542,6 +550,8 @@ typedef struct PDMASYNCCOMPLETIONENDPOINTFILE
     PPDMACTASKFILE                         pFlushReq;
 
 #ifdef VBOX_WITH_STATISTICS
+    /** Alignment */
+    uint32_t                               u32Alignment;
     /** Time spend in a read. */
     STAMPROFILEADV                         StatRead;
     /** Time spend in a write. */
@@ -556,6 +566,8 @@ typedef struct PDMASYNCCOMPLETIONENDPOINTFILE
     bool                                   fCaching;
     /** Flag whether the file was opened readonly. */
     bool                                   fReadonly;
+    /** Flag whether the host supports the async flush API. */
+    bool                                   fAsyncFlushSupported;
     /** Flag whether a blocking event is pending and needs
      * processing by the I/O manager. */
     bool                                   fBlockingEventPending;
@@ -604,6 +616,9 @@ typedef struct PDMASYNCCOMPLETIONENDPOINTFILE
 } PDMASYNCCOMPLETIONENDPOINTFILE;
 /** Pointer to the endpoint class data. */
 typedef PDMASYNCCOMPLETIONENDPOINTFILE *PPDMASYNCCOMPLETIONENDPOINTFILE;
+#ifdef VBOX_WITH_STATISTICS
+AssertCompileMemberAlignment(PDMASYNCCOMPLETIONENDPOINTFILE, StatRead, sizeof(uint64_t));
+#endif
 
 /** Request completion function */
 typedef DECLCALLBACK(void)   FNPDMACTASKCOMPLETED(PPDMACTASKFILE pTask, void *pvUser, int rc);
