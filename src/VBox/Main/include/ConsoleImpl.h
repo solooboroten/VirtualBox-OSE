@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl.h 29224 2010-05-07 15:49:10Z vboxsync $ */
+/* $Id: ConsoleImpl.h 29385 2010-05-11 18:05:44Z vboxsync $ */
 /** @file
  * VBox Console COM Class definition
  */
@@ -174,7 +174,7 @@ public:
     HRESULT onStorageControllerChange();
     HRESULT onMediumChange(IMediumAttachment *aMediumAttachment, BOOL aForce);
     HRESULT onCPUChange(ULONG aCPU, BOOL aRemove);
-    HRESULT onVRDPServerChange();
+    HRESULT onVRDPServerChange(BOOL aRestart);
     HRESULT onUSBControllerChange();
     HRESULT onSharedFolderChange(BOOL aGlobal);
     HRESULT onUSBDeviceAttach(IUSBDevice *aDevice, IVirtualBoxErrorInfo *aError, ULONG aMaskedIfs);
@@ -633,7 +633,7 @@ private:
         cLedScsi    = 16,
         iLedSas     = iLedScsi + cLedScsi,
         cLedSas     = 8,
-        cLedStorage = cLedFloppy + cLedIde + cLedSata + cLedScsi + cLedSas,
+        cLedStorage = cLedFloppy + cLedIde + cLedSata + cLedScsi + cLedSas
     };
     DeviceType_T maStorageDevType[cLedStorage];
     PPDMLED      mapStorageLeds[cLedStorage];

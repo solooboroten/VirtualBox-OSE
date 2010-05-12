@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl.cpp 29224 2010-05-07 15:49:10Z vboxsync $ */
+/* $Id: ConsoleImpl.cpp 29363 2010-05-11 15:12:07Z vboxsync $ */
 /** @file
  * VBox Console COM Class implementation
  */
@@ -3105,10 +3105,11 @@ const char *Console::convertControllerTypeToDev(StorageControllerType_T enmCtrlT
     switch (enmCtrlType)
     {
         case StorageControllerType_LsiLogic:
-        case StorageControllerType_LsiLogicSas:
             return "lsilogicscsi";
         case StorageControllerType_BusLogic:
             return "buslogic";
+        case StorageControllerType_LsiLogicSas:
+            return "lsilogicsas";
         case StorageControllerType_IntelAhci:
             return "ahci";
         case StorageControllerType_PIIX3:
@@ -3876,7 +3877,7 @@ HRESULT Console::onCPUChange(ULONG aCPU, BOOL aRemove)
  *
  * @note Locks this object for writing.
  */
-HRESULT Console::onVRDPServerChange()
+HRESULT Console::onVRDPServerChange(BOOL aRestart)
 {
     AutoCaller autoCaller(this);
     AssertComRCReturnRC(autoCaller.rc());
@@ -3897,31 +3898,34 @@ HRESULT Console::onVRDPServerChange()
         rc = mVRDPServer->COMGETTER(Enabled)(&vrdpEnabled);
         ComAssertComRCRetRC(rc);
 
-        /* VRDP server may call this Console object back from other threads (VRDP INPUT or OUTPUT). */
-        alock.leave();
-
-        if (vrdpEnabled)
+        if (aRestart)
         {
-            // If there was no VRDP server started the 'stop' will do nothing.
-            // However if a server was started and this notification was called,
-            // we have to restart the server.
-            mConsoleVRDPServer->Stop();
+            /* VRDP server may call this Console object back from other threads (VRDP INPUT or OUTPUT). */
+            alock.leave();
 
-            if (RT_FAILURE(mConsoleVRDPServer->Launch()))
+            if (vrdpEnabled)
             {
-                rc = E_FAIL;
+                // If there was no VRDP server started the 'stop' will do nothing.
+                // However if a server was started and this notification was called,
+                // we have to restart the server.
+                mConsoleVRDPServer->Stop();
+
+                if (RT_FAILURE(mConsoleVRDPServer->Launch()))
+                {
+                    rc = E_FAIL;
+                }
+                else
+                {
+                    mConsoleVRDPServer->EnableConnections();
+                }
             }
             else
             {
-                mConsoleVRDPServer->EnableConnections();
+                mConsoleVRDPServer->Stop();
             }
-        }
-        else
-        {
-            mConsoleVRDPServer->Stop();
-        }
 
-        alock.enter();
+            alock.enter();
+        }
     }
 
     /* notify console callbacks on success */
@@ -4481,7 +4485,8 @@ HRESULT Console::onlineMergeMedium(IMediumAttachment *aMediumAttachment,
     vrc = VMR3ReqCallWait(pVM,
                           VMCPUID_ANY,
                           (PFNRT)reconfigureMediumAttachment,
-                          11,
+                          12,
+                          this,
                           pVM,
                           pcszDevice,
                           uInstance,
@@ -4555,7 +4560,8 @@ HRESULT Console::onlineMergeMedium(IMediumAttachment *aMediumAttachment,
     vrc = VMR3ReqCallWait(pVM,
                           VMCPUID_ANY,
                           (PFNRT)reconfigureMediumAttachment,
-                          11,
+                          12,
+                          this,
                           pVM,
                           pcszDevice,
                           uInstance,
@@ -7539,6 +7545,7 @@ DECLCALLBACK(int) Console::powerUpThread(RTTHREAD Thread, void *pvUser)
 /**
  * Reconfigures a medium attachment (part of taking or deleting an online snapshot).
  *
+ * @param   pConsole      Reference to the console object.
  * @param   pVM           The VM handle.
  * @param   lInstance     The instance of the controller.
  * @param   pcszDevice    The name of the controller type.
@@ -7588,20 +7595,20 @@ DECLCALLBACK(int) Console::reconfigureMediumAttachment(Console *pConsole,
 
     /* Update the device instance configuration. */
     rc = pConsole->configMediumAttachment(pCtlInst,
-                                         pcszDevice,
-                                         uInstance,
-                                         enmBus,
-                                         enmIoBackend,
-                                         fSetupMerge,
-                                         uMergeSource,
-                                         uMergeTarget,
-                                         aMediumAtt,
-                                         aMachineState,
-                                         phrc,
-                                         true /* fAttachDetach */,
-                                         false /* fForceUnmount */,
-                                         pVM,
-                                         NULL /* paLedDevType */);
+                                          pcszDevice,
+                                          uInstance,
+                                          enmBus,
+                                          enmIoBackend,
+                                          fSetupMerge,
+                                          uMergeSource,
+                                          uMergeTarget,
+                                          aMediumAtt,
+                                          aMachineState,
+                                          phrc,
+                                          true /* fAttachDetach */,
+                                          false /* fForceUnmount */,
+                                          pVM,
+                                          NULL /* paLedDevType */);
     /** @todo this dumps everything attached to this device instance, which
      * is more than necessary. Dumping the changed LUN would be enough. */
     CFGMR3Dump(pCtlInst);
@@ -7774,7 +7781,8 @@ DECLCALLBACK(int) Console::fntTakeSnapshotWorker(RTTHREAD Thread, void *pvUser)
                 vrc = VMR3ReqCallWait(that->mpVM,
                                       VMCPUID_ANY,
                                       (PFNRT)reconfigureMediumAttachment,
-                                      11,
+                                      12,
+                                      that,
                                       that->mpVM,
                                       pcszDevice,
                                       lInstance,

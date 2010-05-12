@@ -1,4 +1,4 @@
-/* $Id: GuestImpl.cpp 29225 2010-05-07 16:01:34Z vboxsync $ */
+/* $Id: GuestImpl.cpp 29309 2010-05-10 15:44:55Z vboxsync $ */
 
 /** @file
  *
@@ -207,12 +207,12 @@ STDMETHODIMP Guest::COMGETTER(SupportsGraphics) (BOOL *aSupportsGraphics)
     return S_OK;
 }
 
-STDMETHODIMP Guest::COMGETTER(SharedPagingEnabled) (BOOL *enabled)
+STDMETHODIMP Guest::COMGETTER(PageFusionEnabled) (BOOL *enabled)
 {
     return E_NOTIMPL;
 }
 
-STDMETHODIMP Guest::COMSETTER(SharedPagingEnabled) (BOOL enabled)
+STDMETHODIMP Guest::COMSETTER(PageFusionEnabled) (BOOL enabled)
 {
     return E_NOTIMPL;
 }
@@ -788,7 +788,7 @@ STDMETHODIMP Guest::ExecuteProcess(IN_BSTR aCommand, ULONG aFlags,
             com::SafeArray<IN_BSTR> args(ComSafeArrayInArg(aArguments));
             uNumArgs = args.size();
             papszArgv = (char**)RTMemAlloc(sizeof(char*) * (uNumArgs + 1));
-            AssertReturn(papszArgv, VERR_NO_MEMORY);
+            AssertReturn(papszArgv, E_OUTOFMEMORY);
             for (unsigned i = 0; RT_SUCCESS(vrc) && i < uNumArgs; i++)
                 vrc = RTStrAPrintf(&papszArgv[i], "%s", Utf8Str(args[i]).raw());
             papszArgv[uNumArgs] = NULL;

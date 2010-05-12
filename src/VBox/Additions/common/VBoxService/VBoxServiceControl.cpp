@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceControl.cpp 29202 2010-05-07 12:38:59Z vboxsync $ */
+/* $Id: VBoxServiceControl.cpp 29345 2010-05-11 12:22:48Z vboxsync $ */
 /** @file
  * VBoxServiceControl - Host-driven Guest Control.
  */
@@ -88,8 +88,13 @@ static DECLCALLBACK(int) VBoxServiceControlInit(void)
     }
     else
     {
-        if (rc == VERR_HGCM_SERVICE_NOT_FOUND) /* Host service is not available; that's not fatal. */
-            VBoxServiceVerbose(0, "Guest control service is not available\n");
+        /* If the service was not found, we disable this service without
+           causing VBoxService to fail. */
+        if (rc == VERR_HGCM_SERVICE_NOT_FOUND) /* Host service is not available. */
+        {
+            VBoxServiceVerbose(0, "Control: Guest control service is not available\n");
+            rc = VERR_SERVICE_DISABLED;
+        }
         else
             VBoxServiceError("Control: Failed to connect to the guest control service! Error: %Rrc\n", rc);
         RTSemEventMultiDestroy(g_hControlEvent);

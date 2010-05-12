@@ -1,4 +1,4 @@
-/* $Id: GMM.cpp 29201 2010-05-07 12:24:54Z vboxsync $ */
+/* $Id: GMM.cpp 29424 2010-05-12 15:11:09Z vboxsync $ */
 /** @file
  * GMM - Global Memory Manager, ring-3 request wrappers.
  */
@@ -383,14 +383,14 @@ GMMR3DECL(int)  GMMR3SeedChunk(PVM pVM, RTR3PTR pvR3)
 GMMR3DECL(int) GMMR3RegisterSharedModule(PVM pVM, PGMMREGISTERSHAREDMODULEREQ pReq)
 {
     pReq->Hdr.u32Magic  = SUPVMMR0REQHDR_MAGIC;
-    pReq->Hdr.cbReq     = sizeof(*pReq);
+    pReq->Hdr.cbReq     = RT_OFFSETOF(GMMREGISTERSHAREDMODULEREQ, aRegions[pReq->cRegions]);
     return VMMR3CallR0(pVM, VMMR0_DO_GMM_REGISTER_SHARED_MODULE, 0, &pReq->Hdr);
 }
 
 /**
  * @see GMMR0RegisterSharedModule
  */
-GMMR3DECL(int) GMMR3UnregisterSharedModule(PVM pVM, PGMMREGISTERSHAREDMODULEREQ pReq)
+GMMR3DECL(int) GMMR3UnregisterSharedModule(PVM pVM, PGMMUNREGISTERSHAREDMODULEREQ pReq)
 {
     pReq->Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
     pReq->Hdr.cbReq = sizeof(*pReq);
@@ -403,4 +403,12 @@ GMMR3DECL(int) GMMR3UnregisterSharedModule(PVM pVM, PGMMREGISTERSHAREDMODULEREQ 
 GMMR3DECL(int) GMMR3ResetSharedModules(PVM pVM)
 {
     return VMMR3CallR0(pVM, VMMR0_DO_GMM_RESET_SHARED_MODULES, 0, NULL);
+}
+
+/**
+ * @see GMMR0CheckSharedModules
+ */
+GMMR3DECL(int)  GMMR3CheckSharedModules(PVM pVM)
+{
+    return VMMR3CallR0(pVM, VMMR0_DO_GMM_CHECK_SHARED_MODULES, 0, NULL);
 }

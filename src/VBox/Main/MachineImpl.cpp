@@ -1,5 +1,4 @@
-/* $Id: MachineImpl.cpp 29225 2010-05-07 16:01:34Z vboxsync $ */
-
+/* $Id: MachineImpl.cpp 29422 2010-05-12 14:08:52Z vboxsync $ */
 /** @file
  * Implementation of IMachine in VBoxSVC.
  */
@@ -1463,13 +1462,15 @@ STDMETHODIMP Machine::COMSETTER(MemoryBalloonSize)(ULONG memoryBalloonSize)
 #endif
 }
 
-STDMETHODIMP Machine::COMGETTER(SharedPagingEnabled) (BOOL *enabled)
+STDMETHODIMP Machine::COMGETTER(PageFusionEnabled) (BOOL *enabled)
 {
+    NOREF(enabled);
     return E_NOTIMPL;
 }
 
-STDMETHODIMP Machine::COMSETTER(SharedPagingEnabled) (BOOL enabled)
+STDMETHODIMP Machine::COMSETTER(PageFusionEnabled) (BOOL enabled)
 {
+    NOREF(enabled);
     return E_NOTIMPL;
 }
 
@@ -2764,16 +2765,16 @@ STDMETHODIMP Machine::AttachDevice(IN_BSTR aControllerName,
         {
             AutoReadLock mediumLock(pMedium COMMA_LOCKVAL_SRC_POS);
             return setError(VBOX_E_OBJECT_IN_USE,
-                            tr("Medium '%s' is already attached to device slot %d on port %d of controller '%ls' of this virtual machine"),
+                            tr("Medium '%s' is already attached to port %d, device %d of controller '%ls' of this virtual machine"),
                             pMedium->getLocationFull().raw(),
-                            aDevice,
                             aControllerPort,
+                            aDevice,
                             aControllerName);
         }
         else
             return setError(VBOX_E_OBJECT_IN_USE,
-                            tr("Device is already attached to slot %d on port %d of controller '%ls' of this virtual machine"),
-                            aDevice, aControllerPort, aControllerName);
+                            tr("Device is already attached to port %d, device %d of controller '%ls' of this virtual machine"),
+                            aControllerPort, aDevice, aControllerName);
     }
 
     Guid uuid(aId);
@@ -3071,8 +3072,8 @@ STDMETHODIMP Machine::AttachDevice(IN_BSTR aControllerName,
 
         /* Apply the normal locking logic to the entire chain. */
         MediumLockList *pMediumLockList(new MediumLockList());
-        rc = diff->createMediumLockList(true, /* fFailIfInaccessible */
-                                        true /* fMediumWritable -- really? @todo r=dj*/ ,
+        rc = diff->createMediumLockList(true /* fFailIfInaccessible */,
+                                        true /* fMediumLockWrite */,
                                         medium,
                                         *pMediumLockList);
         if (FAILED(rc)) return rc;
@@ -4651,13 +4652,16 @@ static void freeSavedDisplayScreenshot(uint8_t *pu8Data)
     RTMemFree(pu8Data);
 }
 
-STDMETHODIMP Machine::QuerySavedThumbnailSize(ULONG *aSize, ULONG *aWidth, ULONG *aHeight)
+STDMETHODIMP Machine::QuerySavedThumbnailSize(ULONG aScreenId, ULONG *aSize, ULONG *aWidth, ULONG *aHeight)
 {
     LogFlowThisFunc(("\n"));
 
     CheckComArgNotNull(aSize);
     CheckComArgNotNull(aWidth);
     CheckComArgNotNull(aHeight);
+
+    if (aScreenId != 0)
+        return E_NOTIMPL;
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
@@ -4685,13 +4689,16 @@ STDMETHODIMP Machine::QuerySavedThumbnailSize(ULONG *aSize, ULONG *aWidth, ULONG
     return S_OK;
 }
 
-STDMETHODIMP Machine::ReadSavedThumbnailToArray(BOOL aBGR, ULONG *aWidth, ULONG *aHeight, ComSafeArrayOut(BYTE, aData))
+STDMETHODIMP Machine::ReadSavedThumbnailToArray(ULONG aScreenId, BOOL aBGR, ULONG *aWidth, ULONG *aHeight, ComSafeArrayOut(BYTE, aData))
 {
     LogFlowThisFunc(("\n"));
 
     CheckComArgNotNull(aWidth);
     CheckComArgNotNull(aHeight);
     CheckComArgOutSafeArrayPointerValid(aData);
+
+    if (aScreenId != 0)
+        return E_NOTIMPL;
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
@@ -4744,13 +4751,16 @@ STDMETHODIMP Machine::ReadSavedThumbnailToArray(BOOL aBGR, ULONG *aWidth, ULONG 
     return S_OK;
 }
 
-STDMETHODIMP Machine::QuerySavedScreenshotPNGSize(ULONG *aSize, ULONG *aWidth, ULONG *aHeight)
+STDMETHODIMP Machine::QuerySavedScreenshotPNGSize(ULONG aScreenId, ULONG *aSize, ULONG *aWidth, ULONG *aHeight)
 {
     LogFlowThisFunc(("\n"));
 
     CheckComArgNotNull(aSize);
     CheckComArgNotNull(aWidth);
     CheckComArgNotNull(aHeight);
+
+    if (aScreenId != 0)
+        return E_NOTIMPL;
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
@@ -4778,13 +4788,16 @@ STDMETHODIMP Machine::QuerySavedScreenshotPNGSize(ULONG *aSize, ULONG *aWidth, U
     return S_OK;
 }
 
-STDMETHODIMP Machine::ReadSavedScreenshotPNGToArray(ULONG *aWidth, ULONG *aHeight, ComSafeArrayOut(BYTE, aData))
+STDMETHODIMP Machine::ReadSavedScreenshotPNGToArray(ULONG aScreenId, ULONG *aWidth, ULONG *aHeight, ComSafeArrayOut(BYTE, aData))
 {
     LogFlowThisFunc(("\n"));
 
     CheckComArgNotNull(aWidth);
     CheckComArgNotNull(aHeight);
     CheckComArgOutSafeArrayPointerValid(aData);
+
+    if (aScreenId != 0)
+        return E_NOTIMPL;
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
@@ -8202,8 +8215,8 @@ HRESULT Machine::createImplicitDiffs(const Bstr &aFolder,
                     Assert(pMedium);
 
                     MediumLockList *pMediumLockList(new MediumLockList());
-                    rc = pMedium->createMediumLockList(true, /* fFailIfInaccessible */
-                                                       false,
+                    rc = pMedium->createMediumLockList(true /* fFailIfInaccessible */,
+                                                       false /* fMediumLockWrite */,
                                                        NULL,
                                                        *pMediumLockList);
                     if (FAILED(rc))
@@ -8914,7 +8927,7 @@ void Machine::rollback(bool aNotify)
             that->onSharedFolderChange();
 
         if (flModifications & IsModified_VRDPServer)
-            that->onVRDPServerChange();
+            that->onVRDPServerChange(/* aRestart */ TRUE);
         if (flModifications & IsModified_USB)
             that->onUSBControllerChange();
 
@@ -9122,6 +9135,7 @@ void Machine::copyFrom(Machine *aThat)
 }
 
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
+
 void Machine::registerMetrics(PerformanceCollector *aCollector, Machine *aMachine, RTPROCESS pid)
 {
     pm::CollectorHAL *hal = aCollector->getHAL();
@@ -9230,7 +9244,7 @@ void Machine::registerMetrics(PerformanceCollector *aCollector, Machine *aMachin
     aCollector->registerMetric(new pm::Metric(guestCpuMem, guestPagedTotal, new pm::AggregateAvg()));
     aCollector->registerMetric(new pm::Metric(guestCpuMem, guestPagedTotal, new pm::AggregateMin()));
     aCollector->registerMetric(new pm::Metric(guestCpuMem, guestPagedTotal, new pm::AggregateMax()));
-};
+}
 
 void Machine::unregisterMetrics(PerformanceCollector *aCollector, Machine *aMachine)
 {
@@ -9239,7 +9253,8 @@ void Machine::unregisterMetrics(PerformanceCollector *aCollector, Machine *aMach
 
     if (mGuestHAL)
         delete mGuestHAL;
-};
+}
+
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
 
@@ -10550,7 +10565,7 @@ HRESULT SessionMachine::onCPUChange(ULONG aCPU, BOOL aRemove)
 /**
  *  @note Locks this object for reading.
  */
-HRESULT SessionMachine::onVRDPServerChange()
+HRESULT SessionMachine::onVRDPServerChange(BOOL aRestart)
 {
     LogFlowThisFunc(("\n"));
 
@@ -10567,7 +10582,7 @@ HRESULT SessionMachine::onVRDPServerChange()
     if (!directControl)
         return S_OK;
 
-    return directControl->OnVRDPServerChange();
+    return directControl->OnVRDPServerChange(aRestart);
 }
 
 /**
@@ -10818,10 +10833,10 @@ HRESULT SessionMachine::lockMedia()
         // attached later.
         if (pMedium != NULL)
         {
-            bool fIsReadOnlyImage = (   devType == DeviceType_DVD
-                                     || devType == DeviceType_Floppy);
-            mrc = pMedium->createMediumLockList(!fIsReadOnlyImage /* fFailIfInaccessible */,
-                                                fIsReadOnlyImage, /* fReadOnly */
+            bool fIsReadOnlyImage = (devType == DeviceType_DVD);
+            bool fIsVitalImage = (devType == DeviceType_HardDisk);
+            mrc = pMedium->createMediumLockList(fIsVitalImage /* fFailIfInaccessible */,
+                                                !fIsReadOnlyImage /* fMediumLockWrite */,
                                                 NULL,
                                                 *pMediumLockList);
             if (FAILED(mrc))
