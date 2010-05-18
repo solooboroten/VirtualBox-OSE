@@ -28,6 +28,8 @@
 #include <VBox/VBoxGuestLib.h>
 
 #include "VBoxDispD3D.h"
+#include "VBoxDispD3DCmn.h"
+#include "../../Miniport/wddm/VBoxVideoIf.h"
 
 #ifdef VBOXWDDMDISP_DEBUG
 # include <stdio.h>
@@ -44,33 +46,18 @@ BOOL WINAPI DllMain(HINSTANCE hInstance,
     {
         case DLL_PROCESS_ATTACH:
         {
-            /* there __try __except are just to ensure the library does not assertion fail in case VBoxGuest is not present
-             * and VbglR3Init / VbglR3Term assertion fail */
-            __try
-            {
-//                LogRel(("VBoxDispD3D: DLL loaded.\n"));
-                RTR3Init();
-//                VbglR3Init();
-            }
-            __except (EXCEPTION_CONTINUE_EXECUTION)
-            {
-            }
+            RTR3Init();
 
+            vboxVDbgPrint(("VBoxDispD3D: DLL loaded.\n"));
+
+//                VbglR3Init();
             break;
         }
 
         case DLL_PROCESS_DETACH:
         {
-            /* there __try __except are just to ensure the library does not assertion fail in case VBoxGuest is not present
-             * and VbglR3Init / VbglR3Term assertion fail */
-//            __try
-//            {
-//                LogRel(("VBoxDispD3D: DLL unloaded.\n"));
+            vboxVDbgPrint(("VBoxDispD3D: DLL unloaded.\n"));
 //                VbglR3Term();
-//            }
-//            __except (EXCEPTION_CONTINUE_EXECUTION)
-//            {
-//            }
             /// @todo RTR3Term();
             break;
         }
@@ -86,23 +73,112 @@ static HRESULT APIENTRY vboxWddmDispGetCaps (HANDLE hAdapter, CONST D3DDDIARG_GE
     vboxVDbgPrint(("==> "__FUNCTION__", hAdapter(0x%p), caps type(%d)\n", hAdapter, pData->Type));
 
     HRESULT hr = S_OK;
+    PVBOXWDDMDISP_ADAPTER pAdapter = (PVBOXWDDMDISP_ADAPTER)hAdapter;
 
     switch (pData->Type)
     {
         case D3DDDICAPS_DDRAW:
+        {
+            AssertBreakpoint();
             Assert(pData->DataSize >= sizeof (DDRAW_CAPS));
             if (pData->DataSize >= sizeof (DDRAW_CAPS))
+            {
                 memset(pData->pData, 0, sizeof (DDRAW_CAPS));
+#ifdef VBOX_WITH_VIDEOHWACCEL
+                VBOXWDDM_QI_2D_1 Query;
+                Query.hdr.enmType = VBOXWDDM_QI_TYPE_2D_1;
+                VBOXVHWA_VERSION_INIT(&Query.Info.u.in.guestVersion);
+                D3DDDICB_QUERYADAPTERINFO DdiQuery;
+                DdiQuery.PrivateDriverDataSize = sizeof(Query);
+                DdiQuery.pPrivateDriverData = &Query;
+                hr = pAdapter->RtCallbacks.pfnQueryAdapterInfoCb(pAdapter->hAdapter, &DdiQuery);
+                Assert(hr == S_OK);
+                if (hr == S_OK)
+                {
+                    if (Query.hdr.rc == VINF_SUCCESS)
+                    {
+                        /* query succeeded, check the results */
+                        if (Query.Info.u.out.cfgFlags == VBOXVHWA_CFG_ENABLED)
+                        {
+                            /* 2D is enabled*/
+                            DDRAW_CAPS *pCaps = (DDRAW_CAPS*)pData->pData;
+                            /* overlay supported */
+                            if (Query.Info.u.out.surfaceCaps & VBOXVHWA_SCAPS_OVERLAY)
+                            {
+                                if (Query.Info.u.out.caps & VBOXVHWA_CAPS_COLORKEY)
+                                {
+                                    pCaps->Caps = DDRAW_CAPS_COLORKEY;
+                                }
+                            }
+
+                            /* @todo: feel the caps from here */
+                        }
+                    }
+                }
+#endif
+            }
             else
                 hr = E_INVALIDARG;
             break;
+        }
         case D3DDDICAPS_DDRAW_MODE_SPECIFIC:
+        {
+            AssertBreakpoint();
             Assert(pData->DataSize >= sizeof (DDRAW_MODE_SPECIFIC_CAPS));
             if (pData->DataSize >= sizeof (DDRAW_MODE_SPECIFIC_CAPS))
-                memset(pData->pData, 0, sizeof (DDRAW_MODE_SPECIFIC_CAPS));
+            {
+                DDRAW_MODE_SPECIFIC_CAPS * pCaps = (DDRAW_MODE_SPECIFIC_CAPS*)pData->pData;
+                memset(&pCaps->Caps /* do not cleanup the first "Head" field,
+                                    zero starting with the one following "Head", i.e. Caps */,
+                        0, sizeof (DDRAW_MODE_SPECIFIC_CAPS) - RT_OFFSETOF(DDRAW_MODE_SPECIFIC_CAPS, Caps));
+#ifdef VBOX_WITH_VIDEOHWACCEL
+                VBOXWDDM_QI_2D_1 Query;
+                Query.hdr.enmType = VBOXWDDM_QI_TYPE_2D_1;
+                VBOXVHWA_VERSION_INIT(&Query.Info.u.in.guestVersion);
+                D3DDDICB_QUERYADAPTERINFO DdiQuery;
+                DdiQuery.PrivateDriverDataSize = sizeof(Query);
+                DdiQuery.pPrivateDriverData = &Query;
+                hr = pAdapter->RtCallbacks.pfnQueryAdapterInfoCb(pAdapter->hAdapter, &DdiQuery);
+                Assert(hr == S_OK);
+                if (hr == S_OK)
+                {
+                    if (Query.hdr.rc == VINF_SUCCESS)
+                    {
+                        /* query succeeded, check the results */
+                        if (Query.Info.u.out.cfgFlags == VBOXVHWA_CFG_ENABLED)
+                        {
+                            /* 2D is enabled*/
+                            if (Query.Info.u.out.surfaceCaps & VBOXVHWA_SCAPS_OVERLAY)
+                            {
+                                /* overlay supported */
+                                pCaps->Caps = MODE_CAPS_OVERLAY | MODE_CAPS_OVERLAYSTRETCH;
+                                if (Query.Info.u.out.caps & VBOXVHWA_CAPS_COLORKEY)
+                                {
+                                    if (Query.Info.u.out.colorKeyCaps & VBOXVHWA_CKEYCAPS_DESTOVERLAY)
+                                    {
+                                        pCaps->CKeyCaps |= MODE_CKEYCAPS_DESTOVERLAY
+                                                | MODE_CKEYCAPS_DESTOVERLAYYUV /* ?? */;
+                                    }
+                                }
+
+                                pCaps->FxCaps = MODE_FXCAPS_OVERLAYSHRINKX
+                                        | MODE_FXCAPS_OVERLAYSHRINKY
+                                        | MODE_FXCAPS_OVERLAYSTRETCHX
+                                        | MODE_FXCAPS_OVERLAYSTRETCHY;
+
+                                pCaps->MaxVisibleOverlays = Query.Info.u.out.numOverlays;
+                                pCaps->MinOverlayStretch = 1;
+                                pCaps->MaxOverlayStretch = 32000;
+                            }
+                        }
+                    }
+                }
+#endif
+            }
             else
                 hr = E_INVALIDARG;
             break;
+        }
         case D3DDDICAPS_GETFORMATCOUNT:
             *((uint32_t*)pData->pData) = 0;
             break;
@@ -127,12 +203,28 @@ static HRESULT APIENTRY vboxWddmDispGetCaps (HANDLE hAdapter, CONST D3DDDIARG_GE
                 hr = E_INVALIDARG;
             break;
         case D3DDDICAPS_GETD3D9CAPS:
+        {
             Assert(pData->DataSize >= sizeof (D3DCAPS9));
             if (pData->DataSize >= sizeof (D3DCAPS9))
+            {
+                if (pAdapter->pD3D9If)
+                {
+                    hr = pAdapter->pD3D9If->GetDeviceCaps(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, (D3DCAPS9*)pData->pData);
+                    Assert(hr == S_OK);
+                    if (hr == S_OK)
+                        break;
+
+                    vboxVDbgPrintR((__FUNCTION__": GetDeviceCaps hr(%d)\n", hr));
+                    /* let's fall back to the 3D disabled case */
+                    hr = S_OK;
+                }
+
                 memset(pData->pData, 0, sizeof (D3DCAPS9));
+            }
             else
                 hr = E_INVALIDARG;
             break;
+        }
         case D3DDDICAPS_GETGAMMARAMPCAPS:
             *((uint32_t*)pData->pData) = 0;
             break;
@@ -1037,7 +1129,7 @@ static HRESULT APIENTRY vboxWddmDispCreateDevice (IN HANDLE hAdapter, IN D3DDDIA
 
     vboxVDbgPrint(("<== "__FUNCTION__", hAdapter(0x%p)\n", hAdapter));
 
-    return E_FAIL;
+    return S_OK;
 }
 
 static HRESULT APIENTRY vboxWddmDispCloseAdapter (IN HANDLE hAdapter)
@@ -1046,7 +1138,15 @@ static HRESULT APIENTRY vboxWddmDispCloseAdapter (IN HANDLE hAdapter)
 
 //    AssertBreakpoint();
 
-    RTMemFree(hAdapter);
+    PVBOXWDDMDISP_ADAPTER pAdapter = (PVBOXWDDMDISP_ADAPTER)hAdapter;
+    if (pAdapter->pD3D9If)
+    {
+        HRESULT hr = pAdapter->pD3D9If->Release();
+        Assert(hr == S_OK);
+        VBoxDispD3DClose(&pAdapter->D3D);
+    }
+
+    RTMemFree(pAdapter);
 
     vboxVDbgPrint(("<== "__FUNCTION__", hAdapter(0x%p)\n", hAdapter));
 
@@ -1059,28 +1159,53 @@ HRESULT APIENTRY OpenAdapter (__inout D3DDDIARG_OPENADAPTER*  pOpenData)
 
 //    AssertBreakpoint();
 
+    HRESULT hr = S_OK;
     PVBOXWDDMDISP_ADAPTER pAdapter = (PVBOXWDDMDISP_ADAPTER)RTMemAllocZ(sizeof (VBOXWDDMDISP_ADAPTER));
     Assert(pAdapter);
-    if (!pAdapter)
+    if (pAdapter)
+    {
+        pAdapter->hAdapter = pOpenData->hAdapter;
+        pAdapter->uIfVersion = pOpenData->Interface;
+        pAdapter->uRtVersion= pOpenData->Version;
+        pAdapter->RtCallbacks = *pOpenData->pAdapterCallbacks;
+
+        pOpenData->hAdapter = pAdapter;
+        pOpenData->pAdapterFuncs->pfnGetCaps = vboxWddmDispGetCaps;
+        pOpenData->pAdapterFuncs->pfnCreateDevice = vboxWddmDispCreateDevice;
+        pOpenData->pAdapterFuncs->pfnCloseAdapter = vboxWddmDispCloseAdapter;
+        pOpenData->DriverVersion = D3D_UMD_INTERFACE_VERSION;
+
+        /* try enable the 3D */
+        hr = VBoxDispD3DOpen(&pAdapter->D3D);
+        Assert(hr == S_OK);
+        if (hr == S_OK)
+        {
+            hr = pAdapter->D3D.pfnDirect3DCreate9Ex(D3D_SDK_VERSION, &pAdapter->pD3D9If);
+            Assert(hr == S_OK);
+            if (hr == S_OK)
+            {
+                vboxVDbgPrint(("<== "__FUNCTION__", SUCCESS 3D Enabled, pAdapter (0x%p)\n", pAdapter));
+                return S_OK;
+            }
+            else
+                vboxVDbgPrintR((__FUNCTION__": pfnDirect3DCreate9Ex failed, hr (%d)\n", hr));
+        }
+        else
+            vboxVDbgPrintR((__FUNCTION__": VBoxDispD3DOpen failed, hr (%d)\n", hr));
+
+        vboxVDbgPrint(("<== "__FUNCTION__", SUCCESS 3D DISABLED, pAdapter (0x%p)\n", pAdapter));
+        return S_OK;
+//        RTMemFree(pAdapter);
+    }
+    else
     {
         vboxVDbgPrintR((__FUNCTION__": RTMemAllocZ returned NULL\n"));
-        return E_OUTOFMEMORY;
+        hr = E_OUTOFMEMORY;
     }
 
-    pAdapter->hAdapter = pOpenData->hAdapter;
-    pAdapter->uIfVersion = pOpenData->Interface;
-    pAdapter->uRtVersion= pOpenData->Version;
-    pAdapter->RtCallbacks = *pOpenData->pAdapterCallbacks;
+    vboxVDbgPrint(("<== "__FUNCTION__", FAILURE, hr (%d)\n", hr));
 
-    pOpenData->hAdapter = pAdapter;
-    pOpenData->pAdapterFuncs->pfnGetCaps = vboxWddmDispGetCaps;
-    pOpenData->pAdapterFuncs->pfnCreateDevice = vboxWddmDispCreateDevice;
-    pOpenData->pAdapterFuncs->pfnCloseAdapter = vboxWddmDispCloseAdapter;
-    pOpenData->DriverVersion = D3D_UMD_INTERFACE_VERSION;
-
-    vboxVDbgPrint(("<== "__FUNCTION__", pAdapter(0x%p)\n", pAdapter));
-
-    return S_OK;
+    return hr;
 }
 
 #ifdef VBOXWDDMDISP_DEBUG
