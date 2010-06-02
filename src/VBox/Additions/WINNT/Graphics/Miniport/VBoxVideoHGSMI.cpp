@@ -1,4 +1,4 @@
-/* $Id: VBoxVideoHGSMI.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxVideoHGSMI.cpp 29883 2010-05-30 19:27:02Z vboxsync $ */
 /** @file
  * VirtualBox Video miniport driver for NT/2k/XP - HGSMI related functions.
  */
@@ -380,6 +380,22 @@ static int vbvaInitInfoDisplay (PDEVICE_EXTENSION PrimaryExtension, void *pvCont
     AssertFailed ();
     return VERR_INTERNAL_ERROR;
 }
+#else
+int vbvaInitInfoCaps (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
+{
+    VBVACAPS *pCaps = (VBVACAPS*)pvData;
+    pCaps->rc = VERR_NOT_IMPLEMENTED;
+    pCaps->fCaps = VBVACAPS_COMPLETEGCMD_BY_IOREAD | VBVACAPS_IRQ;
+    return VINF_SUCCESS;
+}
+
+
+int vbvaFinalizeInfoCaps (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
+{
+    VBVACAPS *pCaps = (VBVACAPS*)pvData;
+    AssertRC(pCaps->rc);
+    return pCaps->rc;
+}
 #endif
 
 static int vbvaInitInfoHeap (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
@@ -435,6 +451,16 @@ static int vboxSetupAdapterInfoHGSMI (PDEVICE_EXTENSION PrimaryExtension)
         /* in case of WDDM we do not control the framebuffer location,
          * i.e. it is assigned by Video Memory Manager,
          * The FB information should be passed to guest from our DxgkDdiSetVidPnSourceAddress callback */
+
+        /* Inform about caps */
+        rc = vboxCallVBVA (PrimaryExtension,
+                               VBVA_INFO_CAPS,
+                               sizeof (VBVACAPS),
+                               vbvaInitInfoCaps,
+                               vbvaFinalizeInfoCaps,
+                               NULL);
+        AssertRC(rc);
+        if (RT_SUCCESS (rc))
 #endif
         {
             /* Report the host heap location. */
@@ -1018,6 +1044,56 @@ VOID VBoxSetupDisplaysHGSMI(PDEVICE_EXTENSION PrimaryExtension,
     dprintf(("VBoxVideo::VBoxSetupDisplays: finished\n"));
 }
 
+#ifdef VBOXWDDM
+int VBoxFreeDisplaysHGSMI(PDEVICE_EXTENSION PrimaryExtension)
+{
+    int rc = VINF_SUCCESS;
+    for (int i = PrimaryExtension->cSources-1; i >= 0; --i)
+    {
+        rc = vboxVbvaDisable(PrimaryExtension, &PrimaryExtension->aSources[i].Vbva);
+        AssertRC(rc);
+        if (RT_SUCCESS(rc))
+        {
+            rc = vboxVbvaDestroy(PrimaryExtension, &PrimaryExtension->aSources[i].Vbva);
+            AssertRC(rc);
+            if (RT_FAILURE(rc))
+            {
+                /* @todo: */
+            }
+        }
+    }
+
+    rc = vboxVdmaDisable(PrimaryExtension, &PrimaryExtension->u.primary.Vdma);
+    AssertRC(rc);
+    if (RT_SUCCESS(rc))
+    {
+        rc = vboxVdmaDestroy(PrimaryExtension, &PrimaryExtension->u.primary.Vdma);
+        AssertRC(rc);
+        if (RT_SUCCESS(rc))
+        {
+            /*rc = */VBoxUnmapAdapterMemory(PrimaryExtension, &PrimaryExtension->u.primary.pvMiniportHeap, PrimaryExtension->u.primary.cbMiniportHeap);
+/*
+            AssertRC(rc);
+            if (RT_SUCCESS(rc))
+*/
+            {
+                HGSMIHeapDestroy(&PrimaryExtension->u.primary.hgsmiAdapterHeap);
+
+                /* Map the adapter information. It will be needed for HGSMI IO. */
+                /*rc = */VBoxUnmapAdapterMemory(PrimaryExtension, &PrimaryExtension->u.primary.pvAdapterInformation, VBVA_ADAPTER_INFORMATION_SIZE);
+/*
+                AssertRC(rc);
+                if (RT_FAILURE(rc))
+                    drprintf((__FUNCTION__"VBoxUnmapAdapterMemory PrimaryExtension->u.primary.pvAdapterInformation failed, rc(%d)\n", rc));
+*/
+
+            }
+        }
+    }
+
+    return rc;
+}
+#endif
 
 /*
  * Send the pointer shape to the host.

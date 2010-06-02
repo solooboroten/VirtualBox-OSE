@@ -16,8 +16,25 @@
 #define ___VBoxDispD3D_h___
 
 #include "VBoxDispD3DIf.h"
+#include "../../Miniport/wddm/VBoxVideoIf.h"
 
 #include <iprt/cdefs.h>
+
+#ifdef VBOX_WITH_VIDEOHWACCEL
+typedef struct VBOXDISPVHWA_INFO
+{
+    VBOXVHWA_INFO Settings;
+}VBOXDISPVHWA_INFO;
+
+/* represents settings secific to
+ * display device (head) on the multiple-head graphics card
+ * currently used for 2D (overlay) only since in theory its settings
+ * can differ per each frontend's framebuffer. */
+typedef struct VBOXWDDMDISP_HEAD
+{
+    VBOXDISPVHWA_INFO Vhwa;
+} VBOXWDDMDISP_HEAD;
+#endif
 
 typedef struct VBOXWDDMDISP_ADAPTER
 {
@@ -27,7 +44,21 @@ typedef struct VBOXWDDMDISP_ADAPTER
     VBOXDISPD3D D3D;
     IDirect3D9Ex * pD3D9If;
     D3DDDI_ADAPTERCALLBACKS RtCallbacks;
+    uint32_t cFormstOps;
+    FORMATOP *paFormstOps;
+    uint32_t cSurfDescs;
+    DDSURFACEDESC *paSurfDescs;
+#ifdef VBOX_WITH_VIDEOHWACCEL
+    uint32_t cHeads;
+    VBOXWDDMDISP_HEAD aHeads[1];
+#endif
 } VBOXWDDMDISP_ADAPTER, *PVBOXWDDMDISP_ADAPTER;
+
+typedef struct VBOXWDDMDISP_CONTEXT
+{
+    struct VBOXWDDMDISP_DEVICE *pDevice;
+    D3DDDICB_CREATECONTEXT ContextInfo;
+} VBOXWDDMDISP_CONTEXT, *PVBOXWDDMDISP_CONTEXT;
 
 typedef struct VBOXWDDMDISP_DEVICE
 {
@@ -39,7 +70,27 @@ typedef struct VBOXWDDMDISP_DEVICE
     VOID *pvCmdBuffer;
     UINT cbCmdBuffer;
     D3DDDI_CREATEDEVICEFLAGS fFlags;
+    VBOXWDDMDISP_CONTEXT DefaultContext;
 } VBOXWDDMDISP_DEVICE, *PVBOXWDDMDISP_DEVICE;
+
+typedef struct VBOXWDDMDISP_ALLOCATION
+{
+    D3DKMT_HANDLE hAllocation;
+    VBOXWDDM_ALLOC_TYPE enmType;
+    CONST VOID* pvMem;
+    VBOXWDDM_SURFACE_DESC SurfDesc;
+} VBOXWDDMDISP_ALLOCATION, *PVBOXWDDMDISP_ALLOCATION;
+
+typedef struct VBOXWDDMDISP_RESOURCE
+{
+    HANDLE hResource;
+    D3DKMT_HANDLE hKMResource;
+    PVBOXWDDMDISP_DEVICE pDevice;
+    uint32_t fFlags;
+    VBOXWDDM_RC_DESC RcDesc;
+    UINT cAllocations;
+    VBOXWDDMDISP_ALLOCATION aAllocations[1];
+} VBOXWDDMDISP_RESOURCE, *PVBOXWDDMDISP_RESOURCE;
 
 DECLINLINE(bool) vboxDispD3DIs3DEnabled(VBOXWDDMDISP_ADAPTER * pAdapter)
 {
