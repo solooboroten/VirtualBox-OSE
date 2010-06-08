@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 29452 2010-05-13 21:04:58Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the Wine D3D related dlls for VirtualBox.
 #

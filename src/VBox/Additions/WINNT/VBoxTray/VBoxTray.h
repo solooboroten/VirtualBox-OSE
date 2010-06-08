@@ -1,4 +1,4 @@
-/* $Id: VBoxTray.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxTray.h $ */
 /** @file
  * VBoxTray - Guest Additions Tray, Internal Header.
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxHostVersion.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxHostVersion.cpp $ */
 /** @file
  * VBoxHostVersion - Checks the host's VirtualBox version and notifies
  *                   the user in case of an update.

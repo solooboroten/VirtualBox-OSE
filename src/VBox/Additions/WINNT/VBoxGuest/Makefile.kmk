@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 29059 2010-05-05 09:07:22Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for VBoxGuest (Windows Guest Additions Driver).
 #

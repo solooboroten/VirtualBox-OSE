@@ -1,4 +1,4 @@
-/* $Id: vbox.c 29260 2010-05-09 18:51:24Z vboxsync $ */
+/* $Id: vbox.c $ */
 /** @file
  * Display - VirtualBox Win 2000/XP guest display driver, support functions.
  */
