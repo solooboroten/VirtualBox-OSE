@@ -672,7 +672,9 @@ HRESULT Medium::FinalConstruct()
     m->vdIfCallsTcpNet.pfnSelectOne = RTTcpSelectOne;
     m->vdIfCallsTcpNet.pfnRead = RTTcpRead;
     m->vdIfCallsTcpNet.pfnWrite = RTTcpWrite;
+    m->vdIfCallsTcpNet.pfnSgWrite = RTTcpSgWrite;
     m->vdIfCallsTcpNet.pfnFlush = RTTcpFlush;
+    m->vdIfCallsTcpNet.pfnSetSendCoalescing = RTTcpSetSendCoalescing;
     m->vdIfCallsTcpNet.pfnGetLocalAddress = RTTcpGetLocalAddress;
     m->vdIfCallsTcpNet.pfnGetPeerAddress = RTTcpGetPeerAddress;
 
@@ -1900,6 +1902,9 @@ STDMETHODIMP Medium::UnlockWrite(MediumState_T *aState)
 
 STDMETHODIMP Medium::Close()
 {
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
     // we're accessing parent/child and backrefs, so lock the tree first, then ourselves
     AutoMultiWriteLock2 multilock(&m->pVirtualBox->getMediaTreeLockHandle(),
                                   this->lockHandle()
@@ -1940,6 +1945,9 @@ STDMETHODIMP Medium::Close()
 
     // make a copy of VirtualBox pointer which gets nulled by uninit()
     ComObjPtr<VirtualBox> pVirtualBox(m->pVirtualBox);
+
+    // leave the AutoCaller, as otherwise uninit() will simply hang
+    autoCaller.release();
 
     /* Keep the locks held until after uninit, as otherwise the consistency
      * of the medium tree cannot be guaranteed. */
@@ -2328,7 +2336,7 @@ STDMETHODIMP Medium::CloneTo(IMedium *aTarget,
             delete pSourceMediumLockList;
             delete pTargetMediumLockList;
             throw setError(rc,
-                           tr("Failed to lock source media '%ls'"),
+                           tr("Failed to lock source media '%s'"),
                            getLocationFull().raw());
         }
         rc = pTargetMediumLockList->Lock();
@@ -2337,7 +2345,7 @@ STDMETHODIMP Medium::CloneTo(IMedium *aTarget,
             delete pSourceMediumLockList;
             delete pTargetMediumLockList;
             throw setError(rc,
-                           tr("Failed to lock target media '%ls'"),
+                           tr("Failed to lock target media '%s'"),
                            pTarget->getLocationFull().raw());
         }
 
@@ -2416,7 +2424,7 @@ STDMETHODIMP Medium::Compact(IProgress **aProgress)
         {
             delete pMediumLockList;
             throw setError(rc,
-                           tr("Failed to lock media when compacting '%ls'"),
+                           tr("Failed to lock media when compacting '%s'"),
                            getLocationFull().raw());
         }
 
@@ -2511,7 +2519,7 @@ STDMETHODIMP Medium::Reset(IProgress **aProgress)
         {
             delete pMediumLockList;
             throw setError(rc,
-                           tr("Failed to lock media when resetting '%ls'"),
+                           tr("Failed to lock media when resetting '%s'"),
                            getLocationFull().raw());
         }
 
@@ -3130,6 +3138,9 @@ HRESULT Medium::createMediumLockList(bool fFailIfInaccessible,
                                      Medium *pToBeParent,
                                      MediumLockList &mediumLockList)
 {
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
     HRESULT rc = S_OK;
 
     /* we access parent medium objects */
@@ -3846,6 +3857,9 @@ HRESULT Medium::deleteStorage(ComObjPtr<Progress> *aProgress,
 {
     AssertReturn(aProgress != NULL || aWait == true, E_FAIL);
 
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
     HRESULT rc = S_OK;
     ComObjPtr<Progress> pProgress;
     Medium::Task *pTask = NULL;
@@ -3933,7 +3947,7 @@ HRESULT Medium::deleteStorage(ComObjPtr<Progress> *aProgress,
         {
             delete pMediumLockList;
             throw setError(rc,
-                           tr("Failed to lock media when deleting '%ls'"),
+                           tr("Failed to lock media when deleting '%s'"),
                            getLocationFull().raw());
         }
 
@@ -4495,7 +4509,7 @@ HRESULT Medium::prepareMergeTo(const ComObjPtr<Medium> &pTarget,
             {
                 AutoReadLock alock(pTarget COMMA_LOCKVAL_SRC_POS);
                 throw setError(rc,
-                               tr("Failed to lock media when merging to '%ls'"),
+                               tr("Failed to lock media when merging to '%s'"),
                                pTarget->getLocationFull().raw());
             }
         }
@@ -4607,6 +4621,9 @@ HRESULT Medium::mergeTo(const ComObjPtr<Medium> &pTarget,
 
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoCaller targetCaller(pTarget);
+    AssertComRCReturnRC(targetCaller.rc());
 
     HRESULT rc = S_OK;
     ComObjPtr <Progress> pProgress;

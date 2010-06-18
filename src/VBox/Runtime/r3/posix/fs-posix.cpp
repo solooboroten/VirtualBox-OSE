@@ -31,6 +31,13 @@
 #define LOG_GROUP RTLOGGROUP_FS
 #include <sys/statvfs.h>
 #include <errno.h>
+#include <stdio.h>
+#ifdef RT_OS_LINUX
+# include <mntent.h>
+#endif
+#ifdef RT_OS_DARWIN
+# include <sys/mount.h>
+#endif
 
 #include <iprt/fs.h>
 #include "internal/iprt.h"
@@ -162,3 +169,95 @@ RTR3DECL(int) RTFsQueryProperties(const char *pszFsPath, PRTFSPROPERTIES pProper
     return VINF_SUCCESS;
 }
 
+
+RTR3DECL(int) RTFsQueryType(const char *pszFsPath, uint32_t *pu32Type)
+{
+    /*
+     * Validate input.
+     */
+    AssertMsgReturn(VALID_PTR(pszFsPath) && *pszFsPath, ("%p", pszFsPath), VERR_INVALID_PARAMETER);
+
+    /*
+     * Convert the path and query the stats.
+     * We're simply return the device id.
+     */
+    char const *pszNativeFsPath;
+    int rc = rtPathToNative(&pszNativeFsPath, pszFsPath, NULL);
+    if (RT_SUCCESS(rc))
+    {
+        *pu32Type = RTFS_FS_TYPE_UNKNOWN;
+
+        struct stat Stat;
+        if (!stat(pszNativeFsPath, &Stat))
+        {
+#if defined(RT_OS_LINUX)
+            FILE *mounted = setmntent("/proc/mounts", "r");
+            if (!mounted)
+                mounted = setmntent("/etc/mtab", "r");
+            if (mounted)
+            {
+                char szBuf[1024];
+                struct stat mntStat;
+                struct mntent mntEnt;
+                while (getmntent_r(mounted, &mntEnt, szBuf, sizeof(szBuf)))
+                {
+                    if (!stat(mntEnt.mnt_dir, &mntStat))
+                    {
+                        if (mntStat.st_dev == Stat.st_dev)
+                        {
+                            if (!strcmp("ext4", mntEnt.mnt_type))
+                                *pu32Type = RTFS_FS_TYPE_EXT4;
+                            else if (!strcmp("ext3", mntEnt.mnt_type))
+                                *pu32Type = RTFS_FS_TYPE_EXT3;
+                            else if (!strcmp("ext2", mntEnt.mnt_type))
+                                *pu32Type = RTFS_FS_TYPE_EXT2;
+                            else if (   !strcmp("vfat", mntEnt.mnt_type)
+                                     || !strcmp("msdos", mntEnt.mnt_type))
+                                *pu32Type = RTFS_FS_TYPE_FAT;
+                            else if (!strcmp("tmpfs", mntEnt.mnt_type))
+                                *pu32Type = RTFS_FS_TYPE_TMPFS;
+                            else if (!strcmp("hfsplus", mntEnt.mnt_type))
+                                *pu32Type = RTFS_FS_TYPE_HFS;
+                            else
+                            {
+                                /* sometimes there are more than one entry for the same partition */
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+                }
+                endmntent(mounted);
+            }
+#elif defined(RT_OS_SOLARIS)
+            if (!strcmp("zfs", Stat.st_fstype))
+                *pu32Type = RTFS_FS_TYPE_ZFS;
+#elif defined(RT_OS_DARWIN)
+            struct statfs statfsBuf;
+            if (!statfs(pszNativeFsPath, &statfsBuf))
+            {
+                if (!strcmp("hfs", statfsBuf.f_fstypename))
+                    *pu32Type = RTFS_FS_TYPE_HFS;
+                else if (   !strcmp("fat", statfsBuf.f_fstypename)
+                         || !strcmp("msdos", statfsBuf.f_fstypename))
+                    *pu32Type = RTFS_FS_TYPE_FAT;
+                else if (!strcmp("ntfs", statfsBuf.f_fstypename))
+                    *pu32Type = RTFS_FS_TYPE_NTFS;
+                else if (!strcmp("autofs", statfsBuf.f_fstypename))
+                    *pu32Type = RTFS_FS_TYPE_AUTOFS;
+                else if (!strcmp("devfs", statfsBuf.f_fstypename))
+                    *pu32Type = RTFS_FS_TYPE_DEVFS;
+                else if (!strcmp("nfs", statfsBuf.f_fstypename))
+                    *pu32Type = RTFS_FS_TYPE_NFS;
+            }
+            else
+                rc = RTErrConvertFromErrno(errno);
+#endif
+        }
+        else
+            rc = RTErrConvertFromErrno(errno);
+        rtPathFreeNative(pszNativeFsPath, pszFsPath);
+    }
+
+    return rc;
+}

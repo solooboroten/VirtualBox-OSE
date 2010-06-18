@@ -749,6 +749,13 @@ void UISession::powerUp()
 # endif
 #endif
 
+#ifdef VBOX_WITH_VIDEOHWACCEL
+    LogRel(("2D video acceleration is %s.\n",
+           machine.GetAccelerate2DVideoEnabled() && VBoxGlobal::isAcceleration2DVideoAvailable()
+                 ? "enabled"
+                 : "disabled"));
+#endif
+
     /* Warn listeners about machine was started: */
     emit sigMachineStarted();
 }
