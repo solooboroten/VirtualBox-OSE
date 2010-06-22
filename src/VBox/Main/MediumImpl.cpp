@@ -1442,11 +1442,9 @@ STDMETHODIMP Medium::COMSETTER(Type)(MediumType_T aType)
 
     m->type = aType;
 
+    // save the global settings; for that we should hold only the VirtualBox lock
     mlock.release();
-
-    // saveSettings needs vbox lock
     AutoWriteLock alock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
-
     HRESULT rc = m->pVirtualBox->saveSettings();
 
     return rc;
@@ -1571,11 +1569,9 @@ STDMETHODIMP Medium::COMSETTER(AutoReset)(BOOL aAutoReset)
     {
         m->autoReset = !!aAutoReset;
 
+        // save the global settings; for that we should hold only the VirtualBox lock
         mlock.release();
-
-        // saveSettings needs vbox lock
         AutoWriteLock alock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
-
         return m->pVirtualBox->saveSettings();
     }
 
@@ -2013,9 +2009,8 @@ STDMETHODIMP Medium::SetProperty(IN_BSTR aName, IN_BSTR aValue)
     else
         it->second = aValue;
 
+    // save the global settings; for that we should hold only the VirtualBox lock
     mlock.release();
-
-    // saveSettings needs vbox lock
     AutoWriteLock alock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
     HRESULT rc = m->pVirtualBox->saveSettings();
 
@@ -2178,7 +2173,7 @@ STDMETHODIMP Medium::DeleteStorage(IProgress **aProgress)
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
     bool fNeedsSaveSettings = false;
-    ComObjPtr <Progress> pProgress;
+    ComObjPtr<Progress> pProgress;
 
     HRESULT rc = deleteStorage(&pProgress,
                                false /* aWait */,
@@ -5209,11 +5204,9 @@ HRESULT Medium::taskCreateBaseHandler(Medium::CreateBaseTask &task)
                                NULL,
                                task.mVDOperationIfaces);
             if (RT_FAILURE(vrc))
-            {
                 throw setError(E_FAIL,
                             tr("Could not create the hard disk storage unit '%s'%s"),
                             location.raw(), vdError(vrc).raw());
-            }
 
             size = VDGetFileSize(hdd, 0);
             logicalSize = VDGetSize(hdd, 0) / _1M;
@@ -5432,10 +5425,15 @@ HRESULT Medium::taskCreateDiffHandler(Medium::CreateDiffTask &task)
             unconst(pTarget->m->id).clear();
     }
 
+    // deregister the task registered in createDiffStorage()
+    Assert(m->numCreateDiffTasks != 0);
+    --m->numCreateDiffTasks;
+
     if (task.isAsync())
     {
         if (fNeedsSaveSettings)
         {
+            // save the global settings; for that we should hold only the VirtualBox lock
             mediaLock.release();
             AutoWriteLock vboxlock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
             m->pVirtualBox->saveSettings();
@@ -5445,10 +5443,6 @@ HRESULT Medium::taskCreateDiffHandler(Medium::CreateDiffTask &task)
         // synchronous mode: report save settings result to caller
         if (task.m_pfNeedsSaveSettings)
             *task.m_pfNeedsSaveSettings = fNeedsSaveSettings;
-
-    /* deregister the task registered in createDiffStorage() */
-    Assert(m->numCreateDiffTasks != 0);
-    --m->numCreateDiffTasks;
 
     /* Note that in sync mode, it's the caller's responsibility to
      * unlock the hard disk */
@@ -5726,6 +5720,7 @@ HRESULT Medium::taskMergeHandler(Medium::MergeTask &task)
     if (task.isAsync())
     {
         // in asynchronous mode, save settings now
+        // for that we should hold only the VirtualBox lock
         AutoWriteLock vboxlock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
         m->pVirtualBox->saveSettings();
     }

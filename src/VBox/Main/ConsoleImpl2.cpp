@@ -2420,17 +2420,18 @@ int Console::configMediumAttachment(PCFGMNODE pCtlInst,
             ComPtr<IMachine> pMachine = machine();
             hrc = pMachine->COMGETTER(SnapshotFolder)(strSnap.asOutParam());            H();
             Utf8Str utfSnap = Utf8Str(strSnap);
-            uint32_t typeFile, typeSnap;
-            rc = RTFsQueryType(utfFile.c_str(), &typeFile);
+            RTFSTYPE enmFsTypeFile;
+            RTFSTYPE enmFsTypeSnap;
+            rc = RTFsQueryType(utfFile.c_str(), &enmFsTypeFile);
             if (RT_SUCCESS(rc))
-                rc = RTFsQueryType(utfSnap.c_str(), &typeSnap);
+                rc = RTFsQueryType(utfSnap.c_str(), &enmFsTypeSnap);
             ULONG64 u64Size;
             hrc = pMedium->COMGETTER(LogicalSize)(&u64Size);                            H();
             u64Size *= _1M;
             if (RT_SUCCESS(rc))
             {
 #ifdef RT_OS_WINDOWS
-                if (   typeFile == RTFS_FS_TYPE_FAT
+                if (   enmFsTypeFile == RTFSTYPE_FAT
                     && u64Size >= _4G)
                 {
                     const char *pszUnit;
@@ -2445,11 +2446,11 @@ int Console::configMediumAttachment(PCFGMNODE pCtlInst,
                            strFile.raw(), u64Print, pszUnit);
                 }
 #else /* !RT_OS_WINDOWS */
-                if (   typeFile == RTFS_FS_TYPE_FAT
-                    || typeFile == RTFS_FS_TYPE_EXT
-                    || typeFile == RTFS_FS_TYPE_EXT2
-                    || typeFile == RTFS_FS_TYPE_EXT3
-                    || typeFile == RTFS_FS_TYPE_EXT4)
+                if (   enmFsTypeFile == RTFSTYPE_FAT
+                    || enmFsTypeFile == RTFSTYPE_EXT
+                    || enmFsTypeFile == RTFSTYPE_EXT2
+                    || enmFsTypeFile == RTFSTYPE_EXT3
+                    || enmFsTypeFile == RTFSTYPE_EXT4)
                 {
                     RTFILE file;
                     rc = RTFileOpen(&file, utfFile.c_str(), RTFILE_O_READ | RTFILE_O_OPEN | RTFILE_O_DENY_NONE);
@@ -2485,9 +2486,9 @@ int Console::configMediumAttachment(PCFGMNODE pCtlInst,
                  * Snapshot folder:
                  * Here we test only for a FAT partition as we had to create a dummy file otherwise
                  */
-                if (   typeSnap == RTFS_FS_TYPE_FAT
+                if (   enmFsTypeSnap == RTFSTYPE_FAT
                     && u64Size >= _4G
-                    && !mfSnapshotFolderWarningShown)
+                    && !mfSnapshotFolderSizeWarningShown)
                 {
                     const char *pszUnit;
                     uint64_t u64Print = formatDiskSize(u64Size, &pszUnit);
@@ -2510,32 +2511,54 @@ int Console::configMediumAttachment(PCFGMNODE pCtlInst,
 #endif
                             strSnap.raw(), strFile.raw(), u64Print, pszUnit);
                     /* Show this particular warning only once */
-                    mfSnapshotFolderWarningShown = true;
+                    mfSnapshotFolderSizeWarningShown = true;
                 }
 
 #ifdef RT_OS_LINUX
                 /*
                  * Ext4 bug: Check if the host I/O cache is disabled and the disk image is located
                  *           on an ext4 partition. Later we have to check the Linux kernel version!
+                 * This bug apparently applies to the XFS file system as well.
                  */
                 if (   (uCaps & MediumFormatCapabilities_Asynchronous)
                     && !fUseHostIOCache
-                    && (   typeFile == RTFS_FS_TYPE_EXT4
-                        || typeSnap == RTFS_FS_TYPE_EXT4))
+                    && (   enmFsTypeFile == RTFSTYPE_EXT4
+                        || enmFsTypeFile == RTFSTYPE_XFS))
                 {
                     setVMRuntimeErrorCallbackF(pVM, this, 0,
                             "Ext4PartitionDetected",
                             N_("The host I/O cache for at least one controller is disabled "
-                               "but the medium '%ls' or the snapshot folder for this VM "
-                               "is located on an ext4 partition. There is a known Linux "
+                               "and the medium '%ls' for this VM "
+                               "is located on an %s partition. There is a known Linux "
                                "kernel bug which can lead to the corruption of the virtual "
                                "disk image under these conditions.\n"
                                "Either enable the host I/O cache permanently in the VM "
                                "settings or put the disk image and the snapshot folder "
                                "onto a different file system.\n"
                                "The host I/O cache will now be enabled for this medium"),
-                            strFile.raw());
+                            strFile.raw(), enmFsTypeFile == RTFSTYPE_EXT4 ? "ext4" : "xfs");
                     fUseHostIOCache = true;
+                }
+                else if (   (uCaps & MediumFormatCapabilities_Asynchronous)
+                         && !fUseHostIOCache
+                         && (   enmFsTypeSnap == RTFSTYPE_EXT4
+                             || enmFsTypeSnap == RTFSTYPE_XFS)
+                         && !mfSnapshotFolderExt4WarningShown)
+                {
+                    setVMRuntimeErrorCallbackF(pVM, this, 0,
+                            "Ext4PartitionDetected",
+                            N_("The host I/O cache for at least one controller is disabled "
+                               "and the snapshot folder for this VM "
+                               "is located on an %s partition. There is a known Linux "
+                               "kernel bug which can lead to the corruption of the virtual "
+                               "disk image under these conditions.\n"
+                               "Either enable the host I/O cache permanently in the VM "
+                               "settings or put the disk image and the snapshot folder "
+                               "onto a different file system.\n"
+                               "The host I/O cache will now be enabled for this medium"),
+                            enmFsTypeSnap == RTFSTYPE_EXT4 ? "ext4" : "xfs");
+                    fUseHostIOCache = true;
+                    mfSnapshotFolderExt4WarningShown = true;
                 }
 #endif
             }
