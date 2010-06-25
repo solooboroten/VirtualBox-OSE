@@ -2866,7 +2866,7 @@ STDMETHODIMP Console::TakeSnapshot(IN_BSTR aName,
         {
             ++cOperations;
 
-            // assume that creating a diff image takes as long as saving a 1 MB state
+            // assume that creating a diff image takes as long as saving a 1MB state
             // (note, the same value must be used in SessionMachine::BeginTakingSnapshot() on the server!)
             ulTotalOperationsWeight += 1;
         }
@@ -5058,6 +5058,24 @@ HRESULT Console::consoleInitReleaseLog(const ComPtr<IMachine> aMachine)
         host->COMGETTER(MemoryAvailable)(&cMbHostRamAvail);
         RTLogRelLogger(loggerRelease, 0, ~0U, "Host RAM: %uMB RAM, available: %uMB\n",
                        cMbHostRam, cMbHostRamAvail);
+
+#if defined(RT_OS_WINDOWS) && HC_ARCH_BITS == 32
+        /* @todo move this in RT, but too lazy now */
+        uint32_t maxRAMArch;
+        SYSTEM_INFO sysInfo;
+        GetSystemInfo(&sysInfo);
+
+        if (sysInfo.lpMaximumApplicationAddress >= (LPVOID)0xC0000000)   /* 3.0 GB */
+            maxRAMArch = UINT32_C(2560);
+        else
+        if (sysInfo.lpMaximumApplicationAddress > (LPVOID)0xA0000000)    /* 2.5 GB */
+            maxRAMArch = UINT32_C(2048);
+        else
+            maxRAMArch = UINT32_C(1500);
+
+        RTLogRelLogger(loggerRelease, 0, ~0U, "Maximum user application address: 0x%p\n", sysInfo.lpMaximumApplicationAddress);
+        RTLogRelLogger(loggerRelease, 0, ~0U, "Maximum allowed guest RAM size:   %dMB\n", maxRAMArch);
+#endif
 
         /* the package type is interesting for Linux distributions */
         char szExecName[RTPATH_MAX];
