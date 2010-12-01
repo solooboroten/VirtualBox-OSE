@@ -91,6 +91,7 @@ RT_C_DECLS_END
 #ifdef VBOX_WITH_HGSMI
 #define VBE_DISPI_ID_HGSMI              0xBE01
 #endif /* VBOX_WITH_HGSMI */
+#define VBE_DISPI_ID_ANYX               0xBE02
 #define VBE_DISPI_DISABLED              0x00
 #define VBE_DISPI_ENABLED               0x01
 #define VBE_DISPI_LFB_ENABLED           0x40
@@ -303,6 +304,7 @@ typedef struct _DEVICE_EXTENSION
     * */
    VBOXWDDM_SOURCE aSources[VBOX_VIDEO_MAX_SCREENS];
 #endif
+   BOOLEAN fAnyX;   /* Unrestricted horizontal resolution flag. */
 } DEVICE_EXTENSION, *PDEVICE_EXTENSION;
 
 #ifndef VBOXWDDM
