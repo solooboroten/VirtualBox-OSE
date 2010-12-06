@@ -1,8 +1,8 @@
 #!/bin/sh
-# Sun VirtualBox
+#
 # VirtualBox preremove script for Solaris.
 #
-# Copyright (C) 2007-2009 Oracle Corporation
+# Copyright (C) 2007-2010 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -16,12 +16,12 @@
 currentzone=`zonename`
 if test "$currentzone" = "global"; then
     echo "Removing VirtualBox services and drivers..."
-    /opt/VirtualBox/vboxconfig.sh --preremove
+    ${PKG_INSTALL_ROOT:=/}/opt/VirtualBox/vboxconfig.sh --preremove
     if test "$?" -eq 0; then
         echo "Done."
         exit 0
     fi
-    echo "Failed."
+    echo 1>&2 "## Failed."
     exit 1
 fi
 

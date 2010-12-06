@@ -131,38 +131,31 @@ typedef FNEMULATELOCKPARAM3    *PFNEMULATELOCKPARAM3;
  */
 #define EMIsRawRing0Enabled(pVM) ((pVM)->fRawR0Enabled)
 
-VMMDECL(void)       EMSetInhibitInterruptsPC(PVMCPU pVCpu, RTGCUINTPTR PC);
-VMMDECL(RTGCUINTPTR) EMGetInhibitInterruptsPC(PVMCPU pVCpu);
-VMMDECL(int)        EMInterpretDisasOne(PVM pVM, PVMCPU pVCpu, PCCPUMCTXCORE pCtxCore, PDISCPUSTATE pCpu, unsigned *pcbInstr);
-VMMDECL(int)        EMInterpretDisasOneEx(PVM pVM, PVMCPU pVCpu, RTGCUINTPTR GCPtrInstr, PCCPUMCTXCORE pCtxCore,
-                                          PDISCPUSTATE pDISState, unsigned *pcbInstr);
-VMMDECL(int)        EMInterpretInstruction(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, uint32_t *pcbSize);
-VMMDECL(int)        EMInterpretInstructionCPUEx(PVM pVM, PVMCPU pVCpu, PDISCPUSTATE pDISState, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, uint32_t *pcbSize, EMCODETYPE enmCodeType);
-VMMDECL(int)        EMInterpretCpuId(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
-VMMDECL(int)        EMInterpretRdtsc(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
-VMMDECL(int)        EMInterpretRdpmc(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
-VMMDECL(int)        EMInterpretRdtscp(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
-VMMDECL(int)        EMInterpretInvlpg(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, RTGCPTR pAddrGC);
-VMMDECL(int)        EMInterpretIret(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
-VMMDECL(int)        EMInterpretMWait(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
-VMMDECL(int)        EMInterpretMonitor(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
-VMMDECL(int)        EMInterpretDRxWrite(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t DestRegDrx, uint32_t SrcRegGen);
-VMMDECL(int)        EMInterpretDRxRead(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t DestRegGen, uint32_t SrcRegDrx);
-VMMDECL(int)        EMInterpretCRxWrite(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t DestRegCrx, uint32_t SrcRegGen);
-VMMDECL(int)        EMInterpretCRxRead(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t DestRegGen, uint32_t SrcRegCrx);
-VMMDECL(int)        EMInterpretLMSW(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint16_t u16Data);
-VMMDECL(int)        EMInterpretCLTS(PVM pVM, PVMCPU pVCpu);
+VMMDECL(void)           EMSetInhibitInterruptsPC(PVMCPU pVCpu, RTGCUINTPTR PC);
+VMMDECL(RTGCUINTPTR)    EMGetInhibitInterruptsPC(PVMCPU pVCpu);
+VMMDECL(int)            EMInterpretDisasOne(PVM pVM, PVMCPU pVCpu, PCCPUMCTXCORE pCtxCore, PDISCPUSTATE pCpu, unsigned *pcbInstr);
+VMMDECL(int)            EMInterpretDisasOneEx(PVM pVM, PVMCPU pVCpu, RTGCUINTPTR GCPtrInstr, PCCPUMCTXCORE pCtxCore,
+                                              PDISCPUSTATE pDISState, unsigned *pcbInstr);
+VMMDECL(VBOXSTRICTRC)   EMInterpretInstruction(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, uint32_t *pcbSize);
+VMMDECL(VBOXSTRICTRC)   EMInterpretInstructionCPU(PVM pVM, PVMCPU pVCpu, PDISCPUSTATE pDISState, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, EMCODETYPE enmCodeType, uint32_t *pcbSize);
+VMMDECL(int)            EMInterpretCpuId(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
+VMMDECL(int)            EMInterpretRdtsc(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
+VMMDECL(int)            EMInterpretRdpmc(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
+VMMDECL(int)            EMInterpretRdtscp(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
+VMMDECL(VBOXSTRICTRC)   EMInterpretInvlpg(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, RTGCPTR pAddrGC);
+VMMDECL(int)            EMInterpretIret(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
+VMMDECL(VBOXSTRICTRC)   EMInterpretMWait(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
+VMMDECL(int)            EMInterpretMonitor(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
+VMMDECL(int)            EMInterpretDRxWrite(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t DestRegDrx, uint32_t SrcRegGen);
+VMMDECL(int)            EMInterpretDRxRead(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t DestRegGen, uint32_t SrcRegDrx);
+VMMDECL(int)            EMInterpretCRxWrite(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t DestRegCrx, uint32_t SrcRegGen);
+VMMDECL(int)            EMInterpretCRxRead(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t DestRegGen, uint32_t SrcRegCrx);
+VMMDECL(int)            EMInterpretLMSW(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint16_t u16Data);
+VMMDECL(int)            EMInterpretCLTS(PVM pVM, PVMCPU pVCpu);
 VMMDECL(VBOXSTRICTRC)   EMInterpretPortIO(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pCtxCore, PDISCPUSTATE pCpu, uint32_t cbOp);
-VMMDECL(int)        EMInterpretRdmsr(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
-VMMDECL(int)        EMInterpretWrmsr(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
-VMMDECL(bool)       EMShouldContinueAfterHalt(PVMCPU pVCpu, PCPUMCTX pCtx);
-
-/* Wrap EMInterpretInstructionCPUEx for supervisor code only interpretation.
- */
-inline int EMInterpretInstructionCPU(PVM pVM, PVMCPU pVCpu, PDISCPUSTATE pDISState, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, uint32_t *pcbSize)
-{
-    return EMInterpretInstructionCPUEx(pVM, pVCpu, pDISState, pRegFrame, pvFault, pcbSize, EMCODETYPE_SUPERVISOR);
-}
+VMMDECL(int)            EMInterpretRdmsr(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
+VMMDECL(int)            EMInterpretWrmsr(PVM pVM, PVMCPU pVCpu, PCPUMCTXCORE pRegFrame);
+VMMDECL(bool)           EMShouldContinueAfterHalt(PVMCPU pVCpu, PCPUMCTX pCtx);
 
 /** @name Assembly routines
  * @{ */
@@ -186,6 +179,8 @@ VMMDECL(uint32_t)   EMEmulateCmpXchg(void *pvParam1, uint64_t *pu32Param2, uint6
 VMMDECL(uint32_t)   EMEmulateLockCmpXchg(void *pvParam1, uint64_t *pu64Param2, uint64_t u64Param3, size_t cbSize);
 VMMDECL(uint32_t)   EMEmulateCmpXchg8b(void *pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
 VMMDECL(uint32_t)   EMEmulateLockCmpXchg8b(void *pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX);
+VMMDECL(uint32_t)   EMEmulateXAdd(void *pvParam1, void *pvParam2, size_t cbOp);
+VMMDECL(uint32_t)   EMEmulateLockXAdd(void *pvParam1, void *pvParam2, size_t cbOp);
 /** @} */
 
 /** @name REM locking routines
@@ -202,18 +197,14 @@ VMMDECL(int)        EMTryEnterRemLock(PVM pVM);
  * @{
  */
 VMMR3DECL(int)      EMR3Init(PVM pVM);
-VMMR3DECL(int)      EMR3InitCPU(PVM pVM);
 VMMR3DECL(void)     EMR3Relocate(PVM pVM);
 VMMR3DECL(void)     EMR3ResetCpu(PVMCPU pVCpu);
 VMMR3DECL(void)     EMR3Reset(PVM pVM);
 VMMR3DECL(int)      EMR3Term(PVM pVM);
-VMMR3DECL(int)      EMR3TermCPU(PVM pVM);
 VMMR3DECL(DECLNORETURN(void)) EMR3FatalError(PVMCPU pVCpu, int rc);
 VMMR3DECL(int)      EMR3ExecuteVM(PVM pVM, PVMCPU pVCpu);
 VMMR3DECL(int)      EMR3CheckRawForcedActions(PVM pVM, PVMCPU pVCpu);
 VMMR3DECL(int)      EMR3Interpret(PVM pVM);
-
-VMMR3DECL(void)     EMR3ReleaseOwnedLocks(PVM pVM);
 
 /**
  * Command argument for EMR3RawSetMode().
@@ -247,12 +238,6 @@ VMMR3DECL(int)      EMR3RawSetMode(PVM pVM, EMRAWMODE enmMode);
  * @{
  */
 VMMRCDECL(int)      EMGCTrap(PVM pVM, unsigned uTrap, PCPUMCTXCORE pRegFrame);
-VMMRCDECL(uint32_t) EMGCEmulateLockCmpXchg(RTRCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize, uint32_t *pEflags);
-VMMRCDECL(uint32_t) EMGCEmulateCmpXchg(RTRCPTR pu32Param1, uint32_t *pu32Param2, uint32_t u32Param3, size_t cbSize, uint32_t *pEflags);
-VMMRCDECL(uint32_t) EMGCEmulateLockCmpXchg8b(RTRCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX, uint32_t *pEflags);
-VMMRCDECL(uint32_t) EMGCEmulateCmpXchg8b(RTRCPTR pu32Param1, uint32_t *pEAX, uint32_t *pEDX, uint32_t uEBX, uint32_t uECX, uint32_t *pEflags);
-VMMRCDECL(uint32_t) EMGCEmulateLockXAdd(RTRCPTR pu32Param1, uint32_t *pu32Param2, size_t cbSize, uint32_t *pEflags);
-VMMRCDECL(uint32_t) EMGCEmulateXAdd(RTRCPTR pu32Param1, uint32_t *pu32Param2, size_t cbSize, uint32_t *pEflags);
 /** @} */
 #endif /* IN_RC */
 

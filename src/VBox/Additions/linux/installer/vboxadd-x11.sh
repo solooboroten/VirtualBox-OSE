@@ -1,10 +1,10 @@
 #! /bin/sh
-# Sun VirtualBox
-# Linux Additions X11 setup init script ($Revision: 29612 $)
+#
+# Linux Additions X11 setup init script ($Revision: 33430 $)
 #
 
 #
-# Copyright (C) 2006-2009 Oracle Corporation
+# Copyright (C) 2006-2010 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -312,17 +312,25 @@ setup()
 
     echo
     case $x_version in
-        1.8.99.* )
+        1.9.99.* )
             echo "Warning: unsupported pre-release version of X.Org Server installed.  Not"
             echo "installing the X.Org drivers."
             dox11config=""
+            ;;
+        1.8.99.* | 1.9.* )
+            begin "Installing X.Org Server 1.9 modules"
+            vboxvideo_src=vboxvideo_drv_19.so
+            vboxmouse_src=vboxmouse_drv_19.so
+            doxorgconfd="true"
+            # Fedora 14 looks likely to ship without vboxvideo detection
+            # test "$system" = "redhat" || setupxorgconf=""
             ;;
         1.7.99.* | 1.8.* )
             begin "Installing X.Org Server 1.8 modules"
             vboxvideo_src=vboxvideo_drv_18.so
             vboxmouse_src=vboxmouse_drv_18.so
             doxorgconfd="true"
-            # Fedora 13 looks likely to ship without vboxvideo detection
+            # Fedora 13 shipped without vboxvideo detection
             test "$system" = "redhat" || setupxorgconf=""
             ;;
         1.6.99.* | 1.7.* )
@@ -432,7 +440,7 @@ setup()
                     if grep -q "VirtualBox generated" "$i"; then
                         generated="$generated  `printf "$i\n"`"
                     else
-                        "$lib_dir/x11config-new.pl" $newmouse $automouse $nopsaux "$i"
+                        "$lib_dir/x11config.sh" $newmouse $automouse $nopsaux "$i"
                     fi
                     configured="true"
                 fi
@@ -446,7 +454,7 @@ setup()
             nobak="/etc/X11/xorg.vbox.nobak"
             if test -z "$configured"; then
                 touch "$main_cfg"
-                "$lib_dir/x11config-new.pl" $newmouse $automouse $nopsaux --noBak "$main_cfg"
+                "$lib_dir/x11config.sh" $newmouse $automouse $nopsaux --noBak "$main_cfg"
                 touch "$nobak"
             fi
         fi
@@ -469,12 +477,14 @@ setup()
                 # This is normally silent.  I have purposely not redirected
                 # error output as I want to know if something goes wrong,
                 # particularly if the command syntax ever changes.
-                udevadm trigger --action=change
+                udevadm trigger --action=change --subsystem-match=misc --subsystem-match=input
             fi
             test -d /usr/share/X11/xorg.conf.d &&
                 install -o 0 -g 0 -m 0644 "$share_dir/50-vboxmouse.conf" /usr/share/X11/xorg.conf.d
             test -d /usr/lib/X11/xorg.conf.d &&
                 install -o 0 -g 0 -m 0644 "$share_dir/50-vboxmouse.conf" /usr/lib/X11/xorg.conf.d
+            test -d /etc/X11/xorg.conf.d &&
+                install -o 0 -g 0 -m 0644 "$share_dir/50-vboxmouse.conf" /etc/X11/xorg.conf.d
         fi
         succ_msg
         test -n "$generated" &&
@@ -523,6 +533,15 @@ EOF
     then
         rm -f /usr/lib/dri/vboxvideo_dri.so
         ln -s $LIB/VBoxOGL.so /usr/lib/dri/vboxvideo_dri.so
+    fi
+    if [ -d /usr/lib64/xorg/modules/dri ]
+    then
+        rm -f /usr/lib64/xorg/modules/dri/vboxvideo_dri.so
+        ln -s $LIB/VBoxOGL.so /usr/lib64/xorg/modules/dri/vboxvideo_dri.so
+    elif [ -d /usr/lib/xorg/modules/dri ]
+    then
+        rm -f /usr/lib/xorg/modules/dri/vboxvideo_dri.so
+        ln -s $LIB/VBoxOGL.so /usr/lib/xorg/modules/dri/vboxvideo_dri.so
     fi
 
     # And set up VBoxClient to start when the X session does
@@ -606,7 +625,7 @@ EOF
     # Remove other files
     rm /etc/hal/fdi/policy/90-vboxguest.fdi 2>/dev/null
     rm /etc/udev/rules.d/70-xorg-vboxmouse.rules 2>/dev/null
-    udevadm trigger --action=change 2>/dev/null
+    udevadm trigger --action=change --subsystem-match=misc --subsystem-match=input 2>/dev/null
     rm /usr/lib/X11/xorg.conf.d/50-vboxmouse.conf 2>/dev/null
     rm /usr/share/X11/xorg.conf.d/50-vboxmouse.conf 2>/dev/null
     rm /usr/share/xserver-xorg/pci/vboxvideo.ids 2>/dev/null

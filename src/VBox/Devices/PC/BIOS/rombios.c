@@ -26,17 +26,18 @@
 
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
  * of the LGPL is applied is otherwise unspecified.
  */
+
 // ROM BIOS for use with Bochs/Plex86/QEMU emulation environment
 
 
-// ROM BIOS compatability entry points:
+// ROM BIOS compatibility entry points:
 // ===================================
 // $e05b ; POST Entry Point
 // $e2c3 ; NMI Handler Entry Point
@@ -81,7 +82,7 @@
 //   - Current code is only able to boot mono-session cds
 //   - Current code can not boot and emulate a hard-disk
 //     the bios will panic otherwise
-//   - Current code also use memory in EBDA segement.
+//   - Current code also use memory in EBDA segment.
 //   - I used cmos byte 0x3D to store extended information on boot-device
 //   - Code has to be modified modified to handle multiple cdrom drives
 //   - Here are the cdrom boot failure codes:
@@ -244,7 +245,8 @@
 // define this if you want to make PCIBIOS working on a specific bridge only
 // undef enables PCIBIOS when at least one PCI device is found
 // i440FX is emulated by Bochs and QEMU
-#define PCI_FIXED_HOST_BRIDGE 0x12378086 ;; i440FX PCI bridge
+#define PCI_FIXED_HOST_BRIDGE_1  0x12378086 ;; i440FX PCI bridge
+#define PCI_FIXED_HOST_BRIDGE_2  0x244e8086 ;; ICH9 PCI bridge
 
 // #20  is dec 20
 // #$20 is hex 20 = 32
@@ -784,7 +786,7 @@ typedef struct {
   typedef struct {
     unsigned char filler1[0x3D];
 
-    // FDPT - Can be splitted in data members if needed
+    // FDPT - Can be split into data members if needed
     unsigned char fdpt0[0x10];
     unsigned char fdpt1[0x10];
 
@@ -1014,7 +1016,7 @@ static char bios_prefix_string[] = "BIOS: ";
 /* Do not use build timestamps in this string. Otherwise even rebuilding the
  * very same code will lead to compare errors when restoring saved state. */
 static char bios_cvs_version_string[] = "VirtualBox " VBOX_VERSION_STRING;
-#define BIOS_COPYRIGHT_STRING "Sun VirtualBox BIOS"
+#define BIOS_COPYRIGHT_STRING "Oracle VM VirtualBox BIOS"
 #else /* !VBOX */
 static char bios_cvs_version_string[] = "$Revision: 1.176 $ $Date: 2006/12/30 17:13:17 $";
 
@@ -1840,7 +1842,7 @@ keyboard_init()
     outb(0x64,0xa8);
 
     /* ------------------- keyboard side ------------------------*/
-    /* reset kerboard and self test  (keyboard side) */
+    /* reset keyboard and self test  (keyboard side) */
     outb(0x60, 0xff);
 
     /* Wait until buffer is empty */
@@ -1937,7 +1939,7 @@ keyboard_panic(status)
 
 //--------------------------------------------------------------------------
 // shutdown_status_panic
-//   called when the shutdown statsu is not implemented, displays the status
+//   called when the shutdown status is not implemented, displays the status
 //--------------------------------------------------------------------------
   void
 shutdown_status_panic(status)
@@ -1963,16 +1965,8 @@ print_bios_banner()
   write_word(0x0040,0x0072, 0);
   if (warm_boot == 0x1234)
     return;
-#if !defined(DEBUG) || defined(DEBUG_sunlover)
   /* show graphical logo */
   show_logo();
-#else
-  /* set text mode */
-  ASM_START
-  mov  ax, #0x0003
-  int  #0x10
-  ASM_END
-#endif /* !DEBUG */
 #else /* !VBOX */
   printf(BX_APPNAME" BIOS - build: %s\n%s\nOptions: ",
     BIOS_BUILD_DATE, bios_cvs_version_string);
@@ -2236,7 +2230,7 @@ debugger_off()
 #define ATA_CB_DC_SRST   0x04  // soft reset
 #define ATA_CB_DC_NIEN   0x02  // disable interrupts
 
-// Most mandtory and optional ATA commands (from ATA-3),
+// Most mandatory and optional ATA commands (from ATA-3),
 #define ATA_CMD_CFA_ERASE_SECTORS            0xC0
 #define ATA_CMD_CFA_REQUEST_EXT_ERR_CODE     0x03
 #define ATA_CMD_CFA_TRANSLATE_SECTOR         0x87
@@ -2980,12 +2974,12 @@ ata_in_no_adjust:
 
 ata_in_16:
         rep
-          insw ;; CX words transfered from port(DX) to ES:[DI]
+          insw ;; CX words transferred from port(DX) to ES:[DI]
         jmp ata_in_done
 
 ata_in_32:
         rep
-          insd ;; CX dwords transfered from port(DX) to ES:[DI]
+          insd ;; CX dwords transferred from port(DX) to ES:[DI]
 
 ata_in_done:
         mov  _ata_cmd_data_in.offset + 2[bp], di
@@ -3173,13 +3167,13 @@ ata_out_no_adjust:
 ata_out_16:
         seg ES
         rep
-          outsw ;; CX words transfered from port(DX) to ES:[SI]
+          outsw ;; CX words transferred from port(DX) to ES:[SI]
         jmp ata_out_done
 
 ata_out_32:
         seg ES
         rep
-          outsd ;; CX dwords transfered from port(DX) to ES:[SI]
+          outsd ;; CX dwords transferred from port(DX) to ES:[SI]
 
 ata_out_done:
         mov  _ata_cmd_data_out.offset + 2[bp], si
@@ -3332,7 +3326,7 @@ ASM_START
 
       seg ES
       rep
-        outsw ;; CX words transfered from port(DX) to ES:[SI]
+        outsw ;; CX words transferred from port(DX) to ES:[SI]
 
       pop  bp
 ASM_END
@@ -3472,12 +3466,12 @@ ata_packet_no_before:
 
 ata_packet_in_16:
         rep
-          insw ;; CX words transfered tp port(DX) to ES:[DI]
+          insw ;; CX words transferred tp port(DX) to ES:[DI]
         jmp ata_packet_after
 
 ata_packet_in_32:
         rep
-          insd ;; CX dwords transfered to port(DX) to ES:[DI]
+          insd ;; CX dwords transferred to port(DX) to ES:[DI]
 
 ata_packet_after:
         mov  cx, _ata_cmd_packet.lafter + 2[bp]
@@ -3536,6 +3530,7 @@ ASM_END
 // Start of ATA/ATAPI generic functions
 // ---------------------------------------------------------------------------
 
+#if 0   // currently unused
   Bit16u
 atapi_get_sense(device)
   Bit16u device;
@@ -3583,6 +3578,7 @@ atapi_is_ready(device)
     }
   return 0;
 }
+#endif
 
   Bit16u
 atapi_is_cdrom(device)
@@ -4657,6 +4653,7 @@ int15_function32(regs, ES, DS, FLAGS)
   Bit32u  extra_lowbits_memory_size=0;
   Bit16u  CX,DX;
   Bit8u   extra_highbits_memory_size=0;
+  Bit32u  mcfgStart, mcfgSize;
 
 BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
 
@@ -4750,11 +4747,14 @@ ASM_END
                 extra_highbits_memory_size = inb_cmos(0x5d);
 #endif /* !VBOX */
 
+                mcfgStart = 0;
+                mcfgSize  = 0;
+
                 switch(regs.u.r16.bx)
                 {
                     case 0:
                         set_e820_range(ES, regs.u.r16.di,
-#ifndef VBOX /** @todo Upstream sugggests the following, needs checking. (see next as well) */
+#ifndef VBOX /** @todo Upstream suggests the following, needs checking. (see next as well) */
                                        0x0000000L, 0x0009f000L, 0, 0, 1);
 #else
                                        0x0000000L, 0x0009fc00L, 0, 0, 1);
@@ -4763,7 +4763,7 @@ ASM_END
                         break;
                     case 1:
                         set_e820_range(ES, regs.u.r16.di,
-#ifndef VBOX /** @todo Upstream sugggests the following, needs checking. (see next as well) */
+#ifndef VBOX /** @todo Upstream suggests the following, needs checking. (see next as well) */
                                        0x0009f000L, 0x000a0000L, 0, 0, 2);
 #else
                                        0x0009fc00L, 0x000a0000L, 0, 0, 2);
@@ -4815,12 +4815,27 @@ ASM_END
 #endif
                         set_e820_range(ES, regs.u.r16.di,
                                        0xfffc0000L, 0x00000000L, 0, 0, 2);
-                        if (extra_highbits_memory_size || extra_lowbits_memory_size)
+                        if (mcfgStart != 0)
                             regs.u.r32.ebx = 6;
+                        else
+                        {
+                            if (extra_highbits_memory_size || extra_lowbits_memory_size)
+                                regs.u.r32.ebx = 7;
+                            else
+                                regs.u.r32.ebx = 0;
+                        }
+                        break;
+                     case 6:
+                        /* PCI MMIO config space (MCFG) */
+                        set_e820_range(ES, regs.u.r16.di,
+                                       mcfgStart, mcfgStart + mcfgSize, 0, 0, 2);
+
+                        if (extra_highbits_memory_size || extra_lowbits_memory_size)
+                            regs.u.r32.ebx = 7;
                         else
                             regs.u.r32.ebx = 0;
                         break;
-                    case 6:
+                    case 7:
 #ifdef VBOX /* Don't succeeded if no memory above 4 GB.  */
                         /* Mapping of memory above 4 GB if present.
                            Note: set_e820_range needs do no borrowing in the
@@ -4831,11 +4846,11 @@ ASM_END
                                            0x00000000L, extra_lowbits_memory_size,
                                            1 /*GB*/, extra_highbits_memory_size + 1 /*GB*/, 1);
                             regs.u.r32.ebx = 0;
-                            break;
                         }
+                        break;
                         /* fall thru */
 #else  /* !VBOX */
-                        /* Maping of memory above 4 GB */
+                        /* Mapping of memory above 4 GB */
                         set_e820_range(ES, regs.u.r16.di, 0x00000000L,
                         extra_lowbits_memory_size, 1, extra_highbits_memory_size
                                        + 1, 1);
@@ -6834,7 +6849,7 @@ i13_f02_no_adjust:
         mov  dx, #0x01f0  ;; AT data read port
 
         rep
-          insw ;; CX words transfered from port(DX) to ES:[DI]
+          insw ;; CX words transferred from port(DX) to ES:[DI]
 
 i13_f02_done:
         ;; store real DI register back to temp bx
@@ -6975,7 +6990,7 @@ i13_f03_no_adjust:
 
         seg ES
         rep
-          outsw ;; CX words tranfered from ES:[SI] to port(DX)
+          outsw ;; CX words transferred from ES:[SI] to port(DX)
 
         ;; store real SI register back to temp bx
         push bp
@@ -8355,7 +8370,7 @@ Bit8u bseqnr;
 
   // if BX_ELTORITO_BOOT is not defined, old behavior
   //   check bit 5 in CMOS reg 0x2d.  load either 0x00 or 0x80 into DL
-  //   in preparation for the intial INT 13h (0=floppy A:, 0x80=C:)
+  //   in preparation for the initial INT 13h (0=floppy A:, 0x80=C:)
   //     0: system boot sequence, first drive C: then A:
   //     1: system boot sequence, first drive A: then C:
   // else BX_ELTORITO_BOOT is defined
@@ -8968,6 +8983,7 @@ carry_set:
 ;   - make all called C function get the same parameters list
 ;
 int13_relocated:
+  cld   ;; we will be doing some string I/O
 
 #if BX_ELTORITO_BOOT
   ;; check for an eltorito function
@@ -9686,7 +9702,7 @@ timer_tick_post:
   ;; divided down by 65536 to 18.2hz.
   ;;
   ;; 14,318,180 Hz clock
-  ;;   /3 = 4,772,726 Hz fed to orginal 5Mhz CPU
+  ;;   /3 = 4,772,726 Hz fed to original 5Mhz CPU
   ;;   /4 = 1,193,181 Hz fed to timer
   ;;   /65536 (maximum timer count) = 18.20650736 ticks/second
   ;; 1 second = 18.20650736 ticks
@@ -9699,7 +9715,7 @@ timer_tick_post:
   ;;           (BcdToBin(minutes) * 1092.3904)
   ;;           (BcdToBin(hours)   * 65543.427)
   ;; To get a little more accuracy, since Im using integer
-  ;; arithmatic, I use:
+  ;; arithmetic, I use:
   ;;   ticks = (BcdToBin(seconds) * 18206507) / 1000000 +
   ;;           (BcdToBin(minutes) * 10923904) / 10000 +
   ;;           (BcdToBin(hours)   * 65543427) / 1000
@@ -9827,19 +9843,29 @@ bios32_entry_point:
   pushfd
   cmp eax, #0x49435024 ;; "$PCI"
   jne unknown_service
+
+#ifdef PCI_FIXED_HOST_BRIDGE_1
   mov eax, #0x80000000
   mov dx, #0x0cf8
   out dx, eax
   mov dx, #0x0cfc
   in  eax, dx
-#ifdef PCI_FIXED_HOST_BRIDGE
-  cmp eax, #PCI_FIXED_HOST_BRIDGE
-  jne unknown_service
-#else
-  ;; say ok if a device is present
-  cmp eax, #0xffffffff
-  je unknown_service
+  cmp eax, #PCI_FIXED_HOST_BRIDGE_1
+  je device_ok
 #endif
+
+#ifdef PCI_FIXED_HOST_BRIDGE_2
+  /* 0x1e << 11 */
+  mov eax, #0x8000f000
+  mov dx, #0x0cf8
+  out dx, eax
+  mov dx, #0x0cfc
+  in  eax, dx
+  cmp eax, #PCI_FIXED_HOST_BRIDGE_2
+  je device_ok
+#endif
+  jmp unknown_service
+device_ok:
   mov ebx, #0x000f0000
   mov ecx, #0
   mov edx, #pcibios_protected
@@ -10018,18 +10044,25 @@ use16 386
 pcibios_real:
   push eax
   push dx
+#ifdef PCI_FIXED_HOST_BRIDGE_1
   mov eax, #0x80000000
   mov dx, #0x0cf8
   out dx, eax
   mov dx, #0x0cfc
   in  eax, dx
-#ifdef PCI_FIXED_HOST_BRIDGE
-  cmp eax, #PCI_FIXED_HOST_BRIDGE
-  je  pci_present
-#else
-  ;; say ok if a device is present
-  cmp eax, #0xffffffff
-  jne  pci_present
+  cmp eax, #PCI_FIXED_HOST_BRIDGE_1
+  je pci_present
+#endif
+
+#ifdef PCI_FIXED_HOST_BRIDGE_2
+  /* 0x1e << 11 */
+  mov eax, #0x8000f000
+  mov dx, #0x0cf8
+  out dx, eax
+  mov dx, #0x0cfc
+  in  eax, dx
+  cmp eax, #PCI_FIXED_HOST_BRIDGE_2
+  je pci_present
 #endif
   pop dx
   pop eax
@@ -10243,11 +10276,7 @@ pci_routing_table_structure:
   db 0x24, 0x50, 0x49, 0x52  ;; "$PIR" signature
   db 0, 1 ;; version
 #ifdef VBOX
-#if 0
   dw 32 + (30 * 16) ;; table size
-#else
-  dw 32 + (20 * 16) ;; table size
-#endif
 #else /* !VBOX */
   dw 32 + (6 * 16) ;; table size
 #endif /* !VBOX */
@@ -11357,7 +11386,7 @@ post_default_ints:
   loop post_default_ints
 
   ;; set vector 0x79 to zero
-  ;; this is used by 'gardian angel' protection system
+  ;; this is used by 'guardian angel' protection system
   SET_INT_VECTOR(0x79, #0, #0)
 
   ;; base memory in K 40:13 (word)
@@ -11460,7 +11489,7 @@ post_default_ints:
   mov dx, #0x278 ; Parallel I/O address, port 2
   call detect_parport
   shl bx, #0x0e
-  mov ax, 0x410   ; Equipment word bits 14..15 determing # parallel ports
+  mov ax, 0x410   ; Equipment word bits 14..15 determine # parallel ports
   and ax, #0x3fff
   or  ax, bx ; set number of parallel ports
   mov 0x410, ax
@@ -11479,7 +11508,7 @@ post_default_ints:
   mov dx, #0x02e8 ; Serial I/O address, port 4
   call detect_serial
   shl bx, #0x09
-  mov ax, 0x410   ; Equipment word bits 9..11 determing # serial ports
+  mov ax, 0x410   ; Equipment word bits 9..11 determine # serial ports
   and ax, #0xf1ff
   or  ax, bx ; set number of serial port
   mov 0x410, ax

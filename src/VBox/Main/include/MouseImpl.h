@@ -1,4 +1,4 @@
-/* $Id: MouseImpl.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: MouseImpl.h 33758 2010-11-04 10:30:19Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation
  */
@@ -21,6 +21,9 @@
 #include "VirtualBoxBase.h"
 #include "ConsoleEvents.h"
 #include "ConsoleImpl.h"
+#ifndef VBOXBFE_WITHOUT_COM
+#include "EventImpl.h"
+#endif
 #include <VBox/pdmdrv.h>
 
 /** Maximum number of devices supported */
@@ -28,36 +31,15 @@ enum { MOUSE_MAX_DEVICES = 3 };
 /** Mouse driver instance data. */
 typedef struct DRVMAINMOUSE DRVMAINMOUSE, *PDRVMAINMOUSE;
 
-/** Simple mouse event class. */
-class MouseEvent
-{
-public:
-    MouseEvent() : dx(0), dy(0), dz(0), dw(0), state(-1) {}
-    MouseEvent(int32_t _dx, int32_t _dy, int32_t _dz, int32_t _dw, int32_t _state) :
-        dx(_dx), dy(_dy), dz(_dz), dw(_dw), state(_state) {}
-    bool isValid()
-    {
-        return state != -1;
-    }
-    /* Note: dw is the horizontal scroll wheel */
-    int32_t dx, dy, dz, dw;
-    int32_t state;
-};
-// template instantiation
-typedef ConsoleEventBuffer<MouseEvent> MouseEventBuffer;
-
 class ATL_NO_VTABLE Mouse :
     public VirtualBoxBase
 #ifndef VBOXBFE_WITHOUT_COM
-    ,
-    public VirtualBoxSupportErrorInfoImpl<Mouse, IMouse>,
-    public VirtualBoxSupportTranslation<Mouse>,
-    VBOX_SCRIPTABLE_IMPL(IMouse)
+    , VBOX_SCRIPTABLE_IMPL(IMouse)
 #endif
 {
 public:
 
-    VIRTUALBOXBASE_ADD_ERRORINFO_SUPPORT (Mouse)
+    VIRTUALBOXBASE_ADD_ERRORINFO_SUPPORT(Mouse, IMouse)
 
     DECLARE_NOT_AGGREGATABLE(Mouse)
 
@@ -88,9 +70,9 @@ public:
                              LONG buttonState);
     STDMETHOD(PutMouseEventAbsolute)(LONG x, LONG y, LONG dz, LONG dw,
                                      LONG buttonState);
-
-    // for VirtualBoxSupportErrorInfoImpl
-    static const wchar_t *getComponentName() { return L"Mouse"; }
+#ifndef VBOXBFE_WITHOUT_COM
+    STDMETHOD(COMGETTER(EventSource)) (IEventSource ** aEventSource);
+#endif
 
     static const PDMDRVREG  DrvReg;
 
@@ -99,15 +81,10 @@ public:
         return mParent;
     }
 
-    // for VMMDevInterface
-    void onVMMDevCanAbsChange(bool)
+    /** notify the front-end of guest capability changes */
+    void onVMMDevGuestCapsChange(uint32_t fCaps)
     {
-        sendMouseCapsNotifications();
-    }
-
-    void onVMMDevNeedsHostChange(bool needsHost)
-    {
-        fVMMDevNeedsHostCursor = needsHost;
+        mfVMMDevGuestCaps = fCaps;
         sendMouseCapsNotifications();
     }
 
@@ -118,17 +95,24 @@ private:
     static DECLCALLBACK(int)    drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uint32_t fFlags);
     static DECLCALLBACK(void)   drvDestruct(PPDMDRVINS pDrvIns);
 
-    HRESULT getVMMDevMouseCaps(uint32_t *pfCaps);
-    HRESULT setVMMDevMouseCaps(uint32_t fCaps);
+    HRESULT updateVMMDevMouseCaps(uint32_t fCapsAdded, uint32_t fCapsRemoved);
     HRESULT reportRelEventToMouseDev(int32_t dx, int32_t dy, int32_t dz,
                                  int32_t dw, uint32_t fButtons);
     HRESULT reportAbsEventToMouseDev(uint32_t mouseXAbs, uint32_t mouseYAbs,
                                  int32_t dz, int32_t dw, uint32_t fButtons);
     HRESULT reportAbsEventToVMMDev(uint32_t mouseXAbs, uint32_t mouseYAbs);
-    HRESULT convertDisplayWidth(LONG x, uint32_t *pcX);
-    HRESULT convertDisplayHeight(LONG y, uint32_t *pcY);
+    HRESULT reportAbsEvent(uint32_t mouseXAbs, uint32_t mouseYAbs,
+                           int32_t dz, int32_t dw, uint32_t fButtons,
+                           bool fUsesVMMDevEvent);
+    HRESULT convertDisplayRes(LONG x, LONG y, uint32_t *pcX, uint32_t *pcY);
 
+    void getDeviceCaps(bool *pfAbs, bool *pfRel);
     void sendMouseCapsNotifications(void);
+    bool guestNeedsHostCursor(void);
+    bool vmmdevCanAbs(void);
+    bool deviceCanAbs(void);
+    bool supportsAbs(void);
+    bool supportsRel(void);
 
 #ifdef VBOXBFE_WITHOUT_COM
     Console *mParent;
@@ -138,12 +122,15 @@ private:
     /** Pointer to the associated mouse driver. */
     struct DRVMAINMOUSE    *mpDrv[MOUSE_MAX_DEVICES];
 
-    LONG uHostCaps;
-    bool fVMMDevCanAbs;
-    bool fVMMDevNeedsHostCursor;
-    uint32_t mLastAbsX;
-    uint32_t mLastAbsY;
-    uint32_t mLastButtons;
+    uint32_t mfVMMDevGuestCaps;  /** We cache this to avoid access races */
+    uint32_t mcLastAbsX;
+    uint32_t mcLastAbsY;
+    uint32_t mfLastButtons;
+
+#ifndef VBOXBFE_WITHOUT_COM
+    const ComObjPtr<EventSource> mEventSource;
+    VBoxEventDesc                mMouseEvent;
+#endif
 };
 
 #ifdef VBOXBFE_WITHOUT_COM

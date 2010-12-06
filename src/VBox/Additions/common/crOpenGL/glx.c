@@ -12,6 +12,7 @@
 #include "cr_string.h"
 #include "stub.h"
 #include "dri_glx.h"
+#include "GL/internal/glcore.h"
 
 #include <X11/Xregion.h>
 
@@ -456,8 +457,10 @@ VBOXGLXTAG(glXChooseVisual)( Display *dpy, int screen, int *attribList )
     if (!useRGBA)
         return NULL;
 
+    XLOCK(dpy);
     searchvis.visualid = XVisualIDFromVisual(DefaultVisual(dpy, screen));
     pret = XGetVisualInfo(dpy, VisualIDMask, &searchvis, &nvisuals);
+    XUNLOCK(dpy);
       
     if (nvisuals!=1) crWarning("glXChooseVisual: XGetVisualInfo returned %i visuals for %x", nvisuals, (unsigned int) searchvis.visualid);
     if (pret)
@@ -629,6 +632,24 @@ DECLEXPORT(void) VBOXGLXTAG(glXDestroyContext)( Display *dpy, GLXContext ctx )
     stubDestroyContext( (unsigned long) ctx );
 }
 
+typedef struct _stubFindPixmapParms_t {
+    ContextInfo *pCtx;
+    GLX_Pixmap_t *pGlxPixmap;
+    GLXDrawable draw;
+} stubFindPixmapParms_t;
+
+static void stubFindPixmapCB(unsigned long key, void *data1, void *data2)
+{
+    ContextInfo *pCtx = (ContextInfo *) data1;
+    stubFindPixmapParms_t *pParms = (stubFindPixmapParms_t *) data2;
+    GLX_Pixmap_t *pGlxPixmap = (GLX_Pixmap_t *) crHashtableSearch(pCtx->pGLXPixmapsHash, (unsigned int) pParms->draw);
+
+    if (pGlxPixmap)
+    {
+        pParms->pCtx = pCtx;
+        pParms->pGlxPixmap = pGlxPixmap;
+    }
+}
 
 DECLEXPORT(Bool) VBOXGLXTAG(glXMakeCurrent)( Display *dpy, GLXDrawable drawable, GLXContext ctx )
 {
@@ -638,12 +659,35 @@ DECLEXPORT(Bool) VBOXGLXTAG(glXMakeCurrent)( Display *dpy, GLXDrawable drawable,
 
     /*crDebug("glXMakeCurrent(%p, 0x%x, 0x%x)", (void *) dpy, (int) drawable, (int) ctx);*/
 
+    /*check if passed drawable is GLXPixmap and not X Window*/
+    if (drawable)
+    {
+        GLX_Pixmap_t *pGlxPixmap = (GLX_Pixmap_t *) crHashtableSearch(stub.pGLXPixmapsHash, (unsigned int) drawable);
+
+        if (!pGlxPixmap)
+        {
+            stubFindPixmapParms_t parms;
+            parms.pGlxPixmap = NULL;
+            parms.draw = drawable;
+            crHashtableWalk(stub.contextTable, stubFindPixmapCB, &parms);
+            pGlxPixmap = parms.pGlxPixmap;
+        }
+
+        if (pGlxPixmap)
+        {
+            /*@todo*/
+            crWarning("Unimplemented glxMakeCurrent call with GLXPixmap passed, unexpected things might happen.");
+        }
+    }
+
     if (ctx && drawable) {
         context = (ContextInfo *) crHashtableSearch(stub.contextTable, (unsigned long) ctx);
         window = stubGetWindowInfo(dpy, drawable);
 
         if (context && context->type == UNDECIDED) {
+            XLOCK(dpy);
             XSync(dpy, 0); /* sync to force window creation on the server */
+            XUNLOCK(dpy);
         }
     }
     else {
@@ -662,13 +706,8 @@ DECLEXPORT(Bool) VBOXGLXTAG(glXMakeCurrent)( Display *dpy, GLXDrawable drawable,
 
 DECLEXPORT(GLXPixmap) VBOXGLXTAG(glXCreateGLXPixmap)( Display *dpy, XVisualInfo *vis, Pixmap pixmap )
 {
-    (void) dpy;
-    (void) vis;
-    (void) pixmap;
-
     stubInit();
-    crWarning( "Unsupported GLX Call: glXCreateGLXPixmap()" );
-    return (GLXPixmap) 0;
+    return VBOXGLXTAG(glXCreatePixmap)(dpy, (GLXFBConfig)vis->visualid, pixmap, NULL);
 }
 
 DECLEXPORT(void) VBOXGLXTAG(glXDestroyGLXPixmap)( Display *dpy, GLXPixmap pix )
@@ -821,7 +860,7 @@ DECLEXPORT(int) VBOXGLXTAG(glXGetConfig)( Display *dpy, XVisualInfo *vis, int at
           -- jw
         */
         case GLX_X_VISUAL_TYPE:
-          crWarning ("Ignoring Unsuported GLX Call: glxGetConfig with attrib 0x%x", attrib);
+          crWarning ("Ignoring Unsupported GLX Call: glxGetConfig with attrib 0x%x", attrib);
           break;
 #endif 
 
@@ -953,7 +992,7 @@ DECLEXPORT(int) VBOXGLXTAG(glXGetConfig)( Display *dpy, XVisualInfo *vis, int at
           -- jw
         */
         case GLX_X_VISUAL_TYPE:
-          crWarning ("Ignoring Unsuported GLX Call: glxGetConfig with attrib 0x%x", attrib);
+          crWarning ("Ignoring Unsupported GLX Call: glxGetConfig with attrib 0x%x", attrib);
           break;
 #endif 
 
@@ -1027,10 +1066,100 @@ DECLEXPORT(Bool) VBOXGLXTAG(glXQueryVersion)( Display *dpy, int *major, int *min
     return 1;
 }
 
+static XErrorHandler oldErrorHandler;
+static unsigned char lastXError = Success;
+
+static int 
+errorHandler (Display *dpy, XErrorEvent *e)
+{
+    lastXError = e->error_code;
+    return 0;
+}
+
 DECLEXPORT(void) VBOXGLXTAG(glXSwapBuffers)( Display *dpy, GLXDrawable drawable )
 {
-    const WindowInfo *window = stubGetWindowInfo(dpy, drawable);
+    WindowInfo *window = stubGetWindowInfo(dpy, drawable);
     stubSwapBuffers( window, 0 );
+
+#ifdef VBOX_TEST_MEGOO
+    if (!stub.bXExtensionsChecked)
+    {
+        stubCheckXExtensions(window);
+    }
+
+    if (!stub.bHaveXComposite)
+    {
+        return;
+    }
+
+    {
+        Pixmap p;
+        XWindowAttributes attr;
+
+        XLOCK(dpy);
+        XGetWindowAttributes(dpy, window->drawable, &attr);
+        if (attr.override_redirect)
+        {
+            XUNLOCK(dpy);
+            return;
+        }
+
+        crLockMutex(&stub.mutex);
+
+        XSync(dpy, false);
+        oldErrorHandler = XSetErrorHandler(errorHandler);
+        /*@todo this creates new pixmap for window every call*/
+        /*p = XCompositeNameWindowPixmap(dpy, window->drawable);*/
+        XSync(dpy, false);
+        XSetErrorHandler(oldErrorHandler);
+        XUNLOCK(dpy);
+
+        if (lastXError==Success)
+        {
+            char *data, *imgdata;
+            GC gc;
+            XImage *image;
+            XVisualInfo searchvis, *pret;
+            int nvisuals;
+            XGCValues gcValues;
+            int i, rowsize;
+
+            XLOCK(dpy);
+
+            searchvis.visualid = attr.visual->visualid;
+            pret = XGetVisualInfo(dpy, VisualIDMask, &searchvis, &nvisuals);
+            if (nvisuals!=1) crWarning("XGetVisualInfo returned %i visuals for %x", nvisuals, (unsigned int) searchvis.visualid);
+            CRASSERT(pret);
+
+            gc = XCreateGC(dpy, window->drawable, 0, &gcValues);
+            if (!gc) crWarning("Failed to create gc!");                
+            
+            data = crCalloc(window->width * window->height * 4);
+            imgdata = crCalloc(window->width * window->height * 4);
+            CRASSERT(data && imgdata);
+            stub.spu->dispatch_table.ReadPixels(0, 0, window->width, window->height, GL_RGBA, GL_UNSIGNED_BYTE, data);
+            /*y-invert image*/
+            rowsize = 4*window->width;
+            for (i=0; i<window->height; ++i)
+            {
+                crMemcpy(imgdata+rowsize*i, data+rowsize*(window->height-i-1), rowsize);
+            }
+            crFree(data);
+
+            XSync(dpy, false);
+            image = XCreateImage(dpy, attr.visual, pret->depth, ZPixmap, 0, imgdata, window->width, window->height, 32, 0);
+            XPutImage(dpy, window->drawable, gc, image, 0, 0, 0, 0, window->width, window->height);
+
+            XFree(pret);
+            /*XFreePixmap(dpy, p);*/
+            XFreeGC(dpy, gc);
+            XDestroyImage(image);
+            XUNLOCK(dpy);
+        }
+        lastXError=Success;
+        crUnlockMutex(&stub.mutex);
+    }
+#endif
 }
 
 #ifndef VBOX_NO_NATIVEGL
@@ -1095,7 +1224,7 @@ DECLEXPORT(const char *) VBOXGLXTAG(glXQueryExtensionsString)( Display *dpy, int
 {
     /* XXX maybe also advertise GLX_SGIS_multisample? */
 
-    static const char *retval = "GLX_ARB_multisample GLX_EXT_texture_from_pixmap GLX_SGIX_fbconfig";
+    static const char *retval = "GLX_ARB_multisample GLX_EXT_texture_from_pixmap GLX_SGIX_fbconfig GLX_ARB_get_proc_address";
 
     (void) dpy;
     (void) screen;
@@ -1117,7 +1246,7 @@ DECLEXPORT(const char *) VBOXGLXTAG(glXGetClientString)( Display *dpy, int name 
             break;
 
         case GLX_VERSION:
-            retval  = "1.2 Chromium";
+            retval  = "1.3 Chromium";
             break;
 
         case GLX_EXTENSIONS:
@@ -1145,7 +1274,7 @@ DECLEXPORT(const char *) VBOXGLXTAG(glXQueryServerString)( Display *dpy, int scr
             break;
 
         case GLX_VERSION:
-            retval  = "1.2 Chromium";
+            retval  = "1.3 Chromium";
             break;
 
         case GLX_EXTENSIONS:
@@ -1228,12 +1357,7 @@ DECLEXPORT(GLXFBConfigSGIX *)
 VBOXGLXTAG(glXChooseFBConfigSGIX)(Display *dpy, int screen,
                                   int *attrib_list, int *nelements)
 {
-    (void) dpy;
-    (void) screen;
-    (void) attrib_list;
-    (void) nelements;
-    crWarning("glXChooseFBConfigSGIX not implemented by Chromium");
-    return NULL;
+    return VBOXGLXTAG(glXChooseFBConfig)(dpy, screen, attrib_list, nelements);
 }
 
 DECLEXPORT(GLXPixmap) 
@@ -1241,11 +1365,8 @@ VBOXGLXTAG(glXCreateGLXPixmapWithConfigSGIX)(Display *dpy,
                                              GLXFBConfig config,
                                              Pixmap pixmap)
 {
-    (void) dpy;
-    (void) config;
-    (void) pixmap;
-    crWarning("glXCreateGLXPixmapWithConfigSGIX not implemented by Chromium");
-    return 0;    }
+    return VBOXGLXTAG(glXCreatePixmap)(dpy, config, pixmap, NULL);
+}
 
 DECLEXPORT(GLXContext) 
 VBOXGLXTAG(glXCreateContextWithConfigSGIX)(Display *dpy, GLXFBConfig config,
@@ -1253,45 +1374,182 @@ VBOXGLXTAG(glXCreateContextWithConfigSGIX)(Display *dpy, GLXFBConfig config,
                                            GLXContext share_list,
                                            Bool direct)
 {
-    (void) dpy;
-    (void) config;
-    (void) render_type;
-    (void) share_list;
-    (void) direct;
-    crWarning("glXCreateContextWithConfigSGIX not implemented by Chromium");
-    return NULL;
+    if (render_type!=GLX_RGBA_TYPE_SGIX)
+    {
+        crWarning("glXCreateContextWithConfigSGIX: Unsupported render type %i", render_type);
+        return NULL;
+    }
+    else
+    {
+        XVisualInfo *vis;
+        GLXContext ret;
+
+        vis = VBOXGLXTAG(glXGetVisualFromFBConfigSGIX)(dpy, config);
+        if (!vis)
+        {
+            crWarning("glXCreateContextWithConfigSGIX: no visuals for %p", config);
+            return NULL;
+        }
+        ret =  VBOXGLXTAG(glXCreateContext)(dpy, vis, share_list, direct);
+        XFree(vis);
+        return ret;
+    }
 }
 
 DECLEXPORT(XVisualInfo *) 
 VBOXGLXTAG(glXGetVisualFromFBConfigSGIX)(Display *dpy,
                                          GLXFBConfig config)
 {
-    (void) dpy;
-    (void) config;
-    crWarning("glXGetVisualFromFBConfigSGIX not implemented by Chromium");
-    return NULL;
+    return VBOXGLXTAG(glXGetVisualFromFBConfig)(dpy, config);
 }
 
 DECLEXPORT(GLXFBConfigSGIX)
 VBOXGLXTAG(glXGetFBConfigFromVisualSGIX)(Display *dpy, XVisualInfo *vis)
 {
-    (void) dpy;
-    (void) vis;
-    crWarning("glXGetFBConfigFromVisualSGIX not implemented by Chromium");
-    return NULL;
+    if (!vis)
+    {
+        return NULL;
+    }
+    /*Note: Caller is supposed to call XFree on returned value, so can't just return (GLXFBConfig)vis->visualid*/
+    return (GLXFBConfigSGIX) VBOXGLXTAG(glXGetVisualFromFBConfig)(dpy, (GLXFBConfig)vis->visualid);
 }
 
 /*
  * GLX 1.3 functions
  */
-DECLEXPORT(GLXFBConfig *) 
+DECLEXPORT(GLXFBConfig *)
 VBOXGLXTAG(glXChooseFBConfig)(Display *dpy, int screen, ATTRIB_TYPE *attrib_list, int *nelements)
 {
-    (void) dpy;
-    (void) screen;
-    (void) attrib_list;
-    (void) nelements;
-    crWarning("glXChooseFBConfig not implemented by Chromium");
+    ATTRIB_TYPE *attrib;
+    intptr_t fbconfig = 0;
+
+    stubInit();
+
+    if (!attrib_list)
+    {
+        return VBOXGLXTAG(glXGetFBConfigs)(dpy, screen, nelements);
+    }
+
+    for (attrib = attrib_list; *attrib != None; attrib++)
+    {
+        switch (*attrib)
+        {
+            case GLX_FBCONFIG_ID:
+                fbconfig = attrib[1];
+                attrib++;
+                break;
+
+            case GLX_BUFFER_SIZE:
+                /* this is for color-index visuals, which we don't support */
+                goto err_exit;
+                attrib++;
+                break;
+
+            case GLX_LEVEL:
+                if (attrib[1] != 0)
+                    goto err_exit;
+                attrib++;
+                break;
+
+            case GLX_AUX_BUFFERS:
+                if (attrib[1] != 0)
+                    goto err_exit;
+                attrib++;
+                break;
+
+            case GLX_DOUBLEBUFFER: /* @todo, check if we support it */
+                attrib++;
+                break;
+
+            case GLX_STEREO:
+                if (attrib[1] != 0)
+                    goto err_exit;
+                attrib++;
+                break;
+
+            case GLX_RED_SIZE:
+            case GLX_GREEN_SIZE:
+            case GLX_BLUE_SIZE:
+            case GLX_ALPHA_SIZE:
+                if (attrib[1] > 8)
+                    goto err_exit;
+                attrib++;
+                break;
+
+            case GLX_DEPTH_SIZE:
+                if (attrib[1] > 16)
+                    goto err_exit;
+                attrib++;
+                break;
+
+            case GLX_STENCIL_SIZE:
+                if (attrib[1] > 8)
+                    goto err_exit;
+                attrib++;
+                break;
+
+            case GLX_ACCUM_RED_SIZE:
+            case GLX_ACCUM_GREEN_SIZE:
+            case GLX_ACCUM_BLUE_SIZE:
+            case GLX_ACCUM_ALPHA_SIZE:
+                if (attrib[1] > 16)
+                    goto err_exit;
+                attrib++;
+                break;
+
+            case GLX_X_RENDERABLE:
+            case GLX_CONFIG_CAVEAT:
+                attrib++;
+                break;
+
+            case GLX_RENDER_TYPE:
+                if (attrib[1]!=GLX_RGBA_BIT)
+                    goto err_exit;
+                attrib++;
+                break;
+
+            case GLX_DRAWABLE_TYPE:
+                if (attrib[1]!=GLX_WINDOW_BIT)
+                    goto err_exit;
+                attrib++;
+                break;
+
+            case GLX_X_VISUAL_TYPE:
+            case GLX_TRANSPARENT_TYPE_EXT:
+            case GLX_TRANSPARENT_INDEX_VALUE_EXT:
+            case GLX_TRANSPARENT_RED_VALUE_EXT:
+            case GLX_TRANSPARENT_GREEN_VALUE_EXT:
+            case GLX_TRANSPARENT_BLUE_VALUE_EXT:
+            case GLX_TRANSPARENT_ALPHA_VALUE_EXT:
+                /* ignore */
+                crWarning("glXChooseVisual: ignoring attribute 0x%x", *attrib);
+                attrib++;
+                break;
+
+                break;
+            default:
+                crWarning( "glXChooseVisual: bad attrib=0x%x, ignoring", *attrib );
+                attrib++;
+                break;
+        }
+    }
+
+    if (fbconfig)
+    {
+        GLXFBConfig *pGLXFBConfigs;
+
+        *nelements = 1;
+        pGLXFBConfigs = (GLXFBConfig *) crAlloc(*nelements * sizeof(GLXFBConfig));
+        pGLXFBConfigs[0] = (GLXFBConfig)fbconfig;
+        return pGLXFBConfigs;
+    }
+    else
+    {
+        return VBOXGLXTAG(glXGetFBConfigs)(dpy, screen, nelements);
+    }
+
+err_exit:
+    crWarning("glXChooseFBConfig returning NULL, due to attrib=0x%x, next=0x%x", attrib[0], attrib[1]);
     return NULL;
 }
 
@@ -1337,6 +1595,30 @@ VBOXGLXTAG(glXCreatePixmap)(Display *dpy, GLXFBConfig config, Pixmap pixmap, con
     GLX_Pixmap_t *pGlxPixmap;
     (void) dpy;
     (void) config;
+
+#if 0
+    {
+        int x, y;
+        unsigned int w, h;
+        unsigned int border;
+        unsigned int depth;
+        Window root;
+
+        crDebug("glXCreatePixmap called for %lu", pixmap);
+
+        XLOCK(dpy);
+        if (!XGetGeometry(dpy, pixmap, &root, &x, &y, &w, &h, &border, &depth))
+        {
+            XSync(dpy, False);
+            if (!XGetGeometry(dpy, pixmap, &root, &x, &y, &w, &h, &border, &depth))
+            {
+                crDebug("fail");
+            }
+        }
+        crDebug("root: %lu, [%i,%i %u,%u]", root, x, y, w, h);
+        XUNLOCK(dpy);
+    }
+#endif
 
     pGlxPixmap = crCalloc(sizeof(GLX_Pixmap_t));
     if (!pGlxPixmap)
@@ -1403,13 +1685,8 @@ VBOXGLXTAG(glXCreateWindow)(Display *dpy, GLXFBConfig config, Window win, ATTRIB
 {
     GLXFBConfig *realcfg;
     int nconfigs;
-    //XVisualInfo *vis;
-    (void) dpy;
     (void) config;
-    (void) win;
-    (void) attrib_list;
-    //crWarning("glXCreateWindow not implemented by Chromium");
-    //vis = VBOXGLXTAG(glXGetVisualFromFBConfig)(config);
+
     if (stub.wsInterface.glXGetFBConfigs)
     {
         realcfg = stub.wsInterface.glXGetFBConfigs(dpy, 0, &nconfigs);
@@ -1425,8 +1702,12 @@ VBOXGLXTAG(glXCreateWindow)(Display *dpy, GLXFBConfig config, Window win, ATTRIB
     }
     else
     {
-        crWarning("glXCreateWindow stub.wsInterface.glXChooseFBConfig==NULL");
-        return 0;
+        if (attrib_list && *attrib_list!=None)
+        {
+            crWarning("Non empty attrib list in glXCreateWindow");
+            return 0;
+        }
+        return (GLXWindow)win;
     }
 }
 
@@ -1439,57 +1720,64 @@ DECLEXPORT(void) VBOXGLXTAG(glXDestroyPbuffer)(Display *dpy, GLXPbuffer pbuf)
 
 DECLEXPORT(void) VBOXGLXTAG(glXDestroyPixmap)(Display *dpy, GLXPixmap pixmap)
 {
-    GLX_Pixmap_t *pGlxPixmap;
+    stubFindPixmapParms_t parms;
 
-    if (!stub.currentContext)
+    if (crHashtableSearch(stub.pGLXPixmapsHash, (unsigned int) pixmap))
     {
-        crWarning("glXDestroyPixmap failed, no current context");
+        /*it's valid but never used glxpixmap, so simple free stored ptr*/
+        crHashtableDelete(stub.pGLXPixmapsHash, (unsigned int) pixmap, crFree);
+        return;
+    }
+    else
+    {
+        /*it's either invalid glxpixmap or one which was already initialized, so it's stored in appropriate ctx hash*/
+        parms.pCtx = NULL;
+        parms.pGlxPixmap = NULL;
+        parms.draw = pixmap;
+        crHashtableWalk(stub.contextTable, stubFindPixmapCB, &parms);
+    }
+
+    if (!parms.pGlxPixmap)
+    {
+        crWarning("glXDestroyPixmap called for unknown glxpixmap 0x%x", (unsigned int) pixmap);
         return;
     }
 
-    pGlxPixmap = (GLX_Pixmap_t *) crHashtableSearch(stub.currentContext->pGLXPixmapsHash, (unsigned int) pixmap);
-
-    if (pGlxPixmap)
+    XLOCK(dpy);
+    if (parms.pGlxPixmap->gc)
     {
-        if (pGlxPixmap->gc)
-        {
-            XFreeGC(dpy, pGlxPixmap->gc);
-        }
-
-        if (pGlxPixmap->hShmPixmap>0)
-        {
-            XFreePixmap(dpy, pGlxPixmap->hShmPixmap);
-        }
-
-        if (pGlxPixmap->hDamage>0)
-        {
-            //crDebug("Destroy: Damage for drawable 0x%x, handle 0x%x", (unsigned int) pixmap, (unsigned int) pGlxPixmap->damage);
-            XDamageDestroy(stub.currentContext->damageDpy, pGlxPixmap->hDamage);
-        }
-
-        if (pGlxPixmap->pDamageRegion)
-        {
-            XDestroyRegion(pGlxPixmap->pDamageRegion);
-        }
-
-        crHashtableDelete(stub.currentContext->pGLXPixmapsHash, (unsigned int) pixmap, crFree);
+        XFreeGC(dpy, parms.pGlxPixmap->gc);
     }
-    /*else
+
+    if (parms.pGlxPixmap->hShmPixmap>0)
     {
-        crWarning("glXDestroyPixmap called for unknown glxpixmap 0x%x", (unsigned int) pixmap);
-    }*/
+        XFreePixmap(dpy, parms.pGlxPixmap->hShmPixmap);
+    }
+    XUNLOCK(dpy);
+
+    if (parms.pGlxPixmap->hDamage>0)
+    {
+        //crDebug("Destroy: Damage for drawable 0x%x, handle 0x%x", (unsigned int) pixmap, (unsigned int) parms.pGlxPixmap->damage);
+        XDamageDestroy(parms.pCtx->damageDpy, parms.pGlxPixmap->hDamage);
+    }
+
+    if (parms.pGlxPixmap->pDamageRegion)
+    {
+        XDestroyRegion(parms.pGlxPixmap->pDamageRegion);
+    }
+
+    crHashtableDelete(parms.pCtx->pGLXPixmapsHash, (unsigned int) pixmap, crFree);
 }
 
 DECLEXPORT(void) VBOXGLXTAG(glXDestroyWindow)(Display *dpy, GLXWindow win)
 {
     (void) dpy;
     (void) win;
-    crWarning("glXDestroyWindow not implemented by Chromium");
+    /*crWarning("glXDestroyWindow not implemented by Chromium");*/
 }
 
 DECLEXPORT(GLXDrawable) VBOXGLXTAG(glXGetCurrentReadDrawable)(void)
 {
-    //crWarning("glXGetCurrentReadDrawable not implemented by Chromium");
     return currentReadDrawable;
 }
 
@@ -1599,6 +1887,9 @@ DECLEXPORT(int) VBOXGLXTAG(glXGetFBConfigAttrib)(Display *dpy, GLXFBConfig confi
         case GLX_SAMPLES:
             *value = 1;
             break;
+        case GLX_FRAMEBUFFER_SRGB_CAPABLE_EXT:
+            *value = 0;
+            break;
         default:
             crDebug("glXGetFBConfigAttrib: unknown attribute=0x%x", attribute); 
             XFree(pVisual);
@@ -1636,7 +1927,9 @@ DECLEXPORT(GLXFBConfig *) VBOXGLXTAG(glXGetFBConfigs)(Display *dpy, int screen, 
 
     /*@todo doesn't really list all the common visuals, have to use some static list*/
     searchvis.screen = screen;
+    XLOCK(dpy);
     pVisuals = XGetVisualInfo(dpy, VisualScreenMask, &searchvis, nelements);
+    XUNLOCK(dpy);
 
     if (*nelements)
         pGLXFBConfigs = crAlloc(*nelements * sizeof(GLXFBConfig));
@@ -1663,7 +1956,9 @@ DECLEXPORT(GLXFBConfig *) VBOXGLXTAG(glXGetFBConfigs)(Display *dpy, int screen, 
     GLXFBConfig *pGLXFBConfigs = crAlloc(sizeof(GLXFBConfig));
 
     *nelements = 1;
+    XLOCK(dpy);
     *pGLXFBConfigs = (GLXFBConfig) XVisualIDFromVisual(DefaultVisual(dpy, screen));
+    XUNLOCK(dpy);
 
     crDebug("glXGetFBConfigs returned %i configs", *nelements);
     for (i=0; i<*nelements; ++i)
@@ -1705,16 +2000,32 @@ DECLEXPORT(XVisualInfo *) VBOXGLXTAG(glXGetVisualFromFBConfig)(Display *dpy, GLX
         }
     }
     */
-
     {
         XVisualInfo temp, *pret;
         int nret;
 
         temp.visualid = (VisualID)config;
+        XLOCK(dpy);
         pret = XGetVisualInfo(dpy, VisualIDMask, &temp, &nret);
+        XUNLOCK(dpy);
         
-        if (nret!=1) crWarning("XGetVisualInfo returned %i visuals for %p", nret, config);
+        if (nret!=1)
+        {
+            crWarning("XGetVisualInfo returned %i visuals for %p", nret, config);
+            /* Hack for glut based apps.
+               We fail to patch first call to glXChooseFBConfigSGIX, which ends up in the mesa's fbconfigs being passed to this function later.
+            */
+            if (!nret && config)
+            {
+                temp.visualid = (VisualID) ((__GLcontextModes*)config)->visualID;
+                XLOCK(dpy);
+                pret = XGetVisualInfo(dpy, VisualIDMask, &temp, &nret);
+                XUNLOCK(dpy);
+                crWarning("Retry with %#x returned %i visuals", ((__GLcontextModes*)config)->visualID, nret);
+            }
+        }
         //crDebug("glXGetVisualFromFBConfig(cfg/visid==0x%x): depth=%i", (int) config, pret->depth);
+//crDebug("here");
         return pret;
     }
 
@@ -1724,11 +2035,6 @@ DECLEXPORT(XVisualInfo *) VBOXGLXTAG(glXGetVisualFromFBConfig)(Display *dpy, GLX
 
 DECLEXPORT(Bool) VBOXGLXTAG(glXMakeContextCurrent)(Display *display, GLXDrawable draw, GLXDrawable read, GLXContext ctx)
 {
-    (void) display;
-    (void) draw;
-    (void) read;
-    (void) ctx;
-    //crWarning("glXMakeContextCurrent not implemented by Chromium");
     currentReadDrawable = read;
     return VBOXGLXTAG(glXMakeCurrent)(display, draw, ctx);
 }
@@ -1780,24 +2086,28 @@ static void stubInitXSharedMemory(Display *dpy)
     stub.bShmInitFailed = GL_TRUE;
 
     /* Check for extension and pixmaps format */
-
+    XLOCK(dpy);
     if (!XShmQueryExtension(dpy))
     {
         crWarning("No XSHM extension");
+        XUNLOCK(dpy);
         return;
     }
 
     if (!XShmQueryVersion(dpy, &vma, &vmi, &pixmaps) || !pixmaps)
     {
         crWarning("XSHM extension doesn't support pixmaps");
+        XUNLOCK(dpy);
         return;
     }
 
     if (XShmPixmapFormat(dpy)!=ZPixmap)
     {
         crWarning("XSHM extension doesn't support ZPixmap format");
+        XUNLOCK(dpy);
         return;
     }
+    XUNLOCK(dpy);
 
     /* Alloc shared memory, so far using hardcoded value...could fail for bigger displays one day */
     stub.xshmSI.readOnly = false;
@@ -1816,14 +2126,16 @@ static void stubInitXSharedMemory(Display *dpy)
         return;
     }
 
-
+    XLOCK(dpy);
     if (!XShmAttach(dpy, &stub.xshmSI))
     {
         crWarning("XSHM Failed to attach shared segment to XServer");
         shmctl(stub.xshmSI.shmid, IPC_RMID, 0);
         shmdt(stub.xshmSI.shmaddr);
+        XUNLOCK(dpy);
         return;
     }
+    XUNLOCK(dpy);
 
     stub.bShmInitFailed = GL_FALSE;
     crInfo("Using XSHM for GLX_EXT_texture_from_pixmap");
@@ -1847,7 +2159,7 @@ static void stubInitXDamageExtension(ContextInfo *pContext)
 
     pContext->damageInitFailed = True;
 
-    /* Open second xserver connection to make sure we'd recieve all the xdamage messages 
+    /* Open second xserver connection to make sure we'd receive all the xdamage messages 
      * and those wouldn't be eaten by application even queue */
     pContext->damageDpy = XOpenDisplay(DisplayString(pContext->dpy));
 
@@ -1914,12 +2226,14 @@ static GLX_Pixmap_t* stubInitGlxPixmap(GLX_Pixmap_t* pCreateInfoPixmap, Display 
 
     CRASSERT(pContext && pCreateInfoPixmap);
 
+    XLOCK(dpy);
     if (!XGetGeometry(dpy, (Pixmap)draw, &root, &x, &y, &w, &h, &border, &depth))
     {
         XSync(dpy, False);
         if (!XGetGeometry(dpy, (Pixmap)draw, &root, &x, &y, &w, &h, &border, &depth))
         {
             crWarning("stubInitGlxPixmap failed in call to XGetGeometry for 0x%x", (int) draw);
+            XUNLOCK(dpy);
             return NULL;
         }
     }
@@ -1928,6 +2242,7 @@ static GLX_Pixmap_t* stubInitGlxPixmap(GLX_Pixmap_t* pCreateInfoPixmap, Display 
     if (!pGlxPixmap)
     {
         crWarning("stubInitGlxPixmap failed to allocate memory");
+        XUNLOCK(dpy);
         return NULL;
     }
 
@@ -1964,6 +2279,7 @@ static GLX_Pixmap_t* stubInitGlxPixmap(GLX_Pixmap_t* pCreateInfoPixmap, Display 
         pGlxPixmap->gc = NULL;
         pGlxPixmap->hShmPixmap = 0;
     }
+    XUNLOCK(dpy);
 
     stubInitXDamageExtension(pContext);
 
@@ -2035,10 +2351,12 @@ static void stubXshmUpdateWholeImage(Display *dpy, GLXDrawable draw, GLX_Pixmap_
     }
     else
     {
+        XLOCK(dpy);
         XCopyArea(dpy, (Pixmap)draw, pGlxPixmap->hShmPixmap, pGlxPixmap->gc, 
                   pGlxPixmap->x, pGlxPixmap->y, pGlxPixmap->w, pGlxPixmap->h, 0, 0);
         /* Have to make sure XCopyArea is processed */
         XSync(dpy, False);
+        XUNLOCK(dpy);
         stub.spu->dispatch_table.TexImage2D(pGlxPixmap->target, 0, pGlxPixmap->format, pGlxPixmap->w, pGlxPixmap->h, 0, 
                                             GL_BGRA, GL_UNSIGNED_BYTE, stub.xshmSI.shmaddr);
         /*crDebug("Sync texture for drawable 0x%x(dmg handle 0x%x) [%i,%i,%i,%i]", 
@@ -2077,10 +2395,12 @@ static void stubXshmUpdateImageRect(Display *dpy, GLXDrawable draw, GLX_Pixmap_t
     {
         GLint origUnpackRowLength;
 
+        XLOCK(dpy);
         XCopyArea(dpy, (Pixmap)draw, pGlxPixmap->hShmPixmap, pGlxPixmap->gc, 
                   pRect->x, pRect->y, pRect->width, pRect->height, 0, 0);
         /* Have to make sure XCopyArea is processed */
         XSync(dpy, False);
+        XUNLOCK(dpy);
 
         /* Save original value, doesn't cause sync as it's reported by state tracker*/
         if (pRect->width!=pGlxPixmap->w)
@@ -2158,7 +2478,9 @@ DECLEXPORT(void) VBOXGLXTAG(glXBindTexImageEXT)(Display *dpy, GLXDrawable draw, 
     {
         /* Sync connections, note that order of syncs is important here.
          * First make sure client commands are finished, then make sure we get all the damage events back*/
+        XLOCK(dpy);
         XSync(dpy, False);
+        XUNLOCK(dpy);
         XSync(stub.currentContext->damageDpy, False);
 
         while (XPending(stub.currentContext->damageDpy))
@@ -2178,7 +2500,9 @@ DECLEXPORT(void) VBOXGLXTAG(glXBindTexImageEXT)(Display *dpy, GLXDrawable draw, 
         /*@todo add damage support here too*/
         XImage *pxim;
 
+        XLOCK(dpy);
         pxim = XGetImage(dpy, (Pixmap)draw, pGlxPixmap->x, pGlxPixmap->y, pGlxPixmap->w, pGlxPixmap->h, AllPlanes, ZPixmap);
+        XUNLOCK(dpy);
         /*if (pxim)
         {
             if (!ptextable)

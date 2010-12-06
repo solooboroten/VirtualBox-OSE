@@ -94,6 +94,8 @@ typedef struct VMCPU
     PVMR3                   pVMR3;
     /** Ring-0 Host Context VM Pointer. */
     PVMR0                   pVMR0;
+    /** Alignment padding. */
+    RTR0PTR                 pvR0Padding;
     /** Raw-mode Context VM Pointer. */
     PVMRC                   pVMRC;
     /** The CPU ID.
@@ -101,19 +103,25 @@ typedef struct VMCPU
     VMCPUID                 idCpu;
     /** The native thread handle. */
     RTNATIVETHREAD          hNativeThread;
+    /** The native R0 thread handle. (different from the R3 handle!) */
+    RTNATIVETHREAD          hNativeThreadR0;
     /** Which host CPU ID is this EMT running on.
      * Only valid when in RC or HWACCMR0 with scheduling disabled. */
     RTCPUID volatile        idHostCpu;
+    /** State data for use by ad hoc profiling. */
+    uint32_t                uAdHoc;
+    /** Profiling samples for use by ad hoc profiling. */
+    STAMPROFILEADV          aStatAdHoc[8];
 
     /** Align the next bit on a 64-byte boundary and make sure it starts at the same
      *  offset in both 64-bit and 32-bit builds.
      *
-     * @remarks The aligments of the members that are larger than 48 bytes should be
+     * @remarks The alignments of the members that are larger than 48 bytes should be
      *          64-byte for cache line reasons. structs containing small amounts of
      *          data could be lumped together at the end with a < 64 byte padding
      *          following it (to grow into and align the struct size).
      *   */
-    uint8_t                 abAlignment1[HC_ARCH_BITS == 32 ? 28 : 12];
+    uint8_t                 abAlignment1[HC_ARCH_BITS == 32 ? 16+64 : 56];
 
     /** CPUM part. */
     union
@@ -139,7 +147,7 @@ typedef struct VMCPU
 #ifdef ___EMInternal_h
         struct EMCPU        s;
 #endif
-        uint8_t             padding[1408];      /* multiple of 64 */
+        uint8_t             padding[1472];      /* multiple of 64 */
     } em;
 
     /** TRPM part. */
@@ -157,7 +165,7 @@ typedef struct VMCPU
 #ifdef ___TMInternal_h
         struct TMCPU        s;
 #endif
-        uint8_t             padding[64];        /* multiple of 64 */
+        uint8_t             padding[384];       /* multiple of 64 */
     } tm;
 
     /** VMM part. */
@@ -197,8 +205,10 @@ typedef struct VMCPU
         uint8_t             padding[64];        /* multiple of 64 */
     } dbgf;
 
-    /** Align the following members on page boundrary. */
-    uint8_t                 abAlignment2[768];
+#if 0
+    /** Align the following members on page boundary. */
+    uint8_t                 abAlignment2[32];
+#endif
 
     /** PGM part. */
     union
@@ -206,7 +216,7 @@ typedef struct VMCPU
 #ifdef ___PGMInternal_h
         struct PGMCPU       s;
 #endif
-        uint8_t             padding[32*1024];   /* multiple of 4096 */
+        uint8_t             padding[4096];      /* multiple of 4096 */
     } pgm;
 
 } VMCPU;
@@ -269,14 +279,17 @@ typedef struct VMCPU
 /** This action forces the VM to service pending requests from other
  * thread or requests which must be executed in another context. */
 #define VM_FF_REQUEST                       RT_BIT_32(9)
-/** Terminate the VM immediately. */
-#define VM_FF_TERMINATE                     RT_BIT_32(10)
+/** Check for VM state changes and take appropriate action. */
+#define VM_FF_CHECK_VM_STATE                RT_BIT_32(VM_FF_CHECK_VM_STATE_BIT)
+/** The bit number for VM_FF_CHECK_VM_STATE. */
+#define VM_FF_CHECK_VM_STATE_BIT            10
 /** Reset the VM. (postponed) */
 #define VM_FF_RESET                         RT_BIT_32(VM_FF_RESET_BIT)
 /** The bit number for VM_FF_RESET. */
 #define VM_FF_RESET_BIT                     11
 /** EMT rendezvous in VMM. */
 #define VM_FF_EMT_RENDEZVOUS                RT_BIT_32(VM_FF_EMT_RENDEZVOUS_BIT)
+/** The bit number for VM_FF_EMT_RENDEZVOUS. */
 #define VM_FF_EMT_RENDEZVOUS_BIT            12
 
 /** PGM needs to allocate handy pages. */
@@ -302,7 +315,7 @@ typedef struct VMCPU
 /** This action forces the VM to check any pending interrups on the PIC. */
 #define VMCPU_FF_INTERRUPT_PIC              RT_BIT_32(1)
 /** This action forces the VM to schedule and run pending timer (TM).
- * @remarks Don't move - PATM compatability.  */
+ * @remarks Don't move - PATM compatibility.  */
 #define VMCPU_FF_TIMER                      RT_BIT_32(2)
 /** This action forces the VM to check any pending NMIs. */
 #define VMCPU_FF_INTERRUPT_NMI_BIT          3
@@ -327,7 +340,7 @@ typedef struct VMCPU
 #define VMCPU_FF_TLB_FLUSH                  RT_BIT_32(VMCPU_FF_TLB_FLUSH_BIT)
 /** The bit number for VMCPU_FF_TLB_FLUSH. */
 #define VMCPU_FF_TLB_FLUSH_BIT              19
-/** Check the interupt and trap gates */
+/** Check the interrupt and trap gates */
 #define VMCPU_FF_TRPM_SYNC_IDT              RT_BIT_32(20)
 /** Check Guest's TSS ring 0 stack */
 #define VMCPU_FF_SELM_SYNC_TSS              RT_BIT_32(21)
@@ -345,18 +358,19 @@ typedef struct VMCPU
 #define VMCPU_FF_TO_R3                      RT_BIT_32(28)
 
 /** Externally VM forced actions. Used to quit the idle/wait loop. */
-#define VM_FF_EXTERNAL_SUSPENDED_MASK           (VM_FF_TERMINATE | VM_FF_DBGF | VM_FF_REQUEST | VM_FF_EMT_RENDEZVOUS)
+#define VM_FF_EXTERNAL_SUSPENDED_MASK           (VM_FF_CHECK_VM_STATE | VM_FF_DBGF | VM_FF_REQUEST | VM_FF_EMT_RENDEZVOUS)
 /** Externally VMCPU forced actions. Used to quit the idle/wait loop. */
 #define VMCPU_FF_EXTERNAL_SUSPENDED_MASK        (VMCPU_FF_REQUEST)
 
 /** Externally forced VM actions. Used to quit the idle/wait loop. */
-#define VM_FF_EXTERNAL_HALTED_MASK              (VM_FF_TERMINATE | VM_FF_DBGF | VM_FF_REQUEST | VM_FF_PDM_QUEUES | VM_FF_PDM_DMA | VM_FF_EMT_RENDEZVOUS)
+#define VM_FF_EXTERNAL_HALTED_MASK              (  VM_FF_CHECK_VM_STATE | VM_FF_DBGF | VM_FF_REQUEST \
+                                                 | VM_FF_PDM_QUEUES | VM_FF_PDM_DMA | VM_FF_EMT_RENDEZVOUS)
 /** Externally forced VMCPU actions. Used to quit the idle/wait loop. */
 #define VMCPU_FF_EXTERNAL_HALTED_MASK           (VMCPU_FF_INTERRUPT_APIC | VMCPU_FF_INTERRUPT_PIC | VMCPU_FF_REQUEST | VMCPU_FF_TIMER)
 
 /** High priority VM pre-execution actions. */
-#define VM_FF_HIGH_PRIORITY_PRE_MASK            (  VM_FF_TERMINATE | VM_FF_DBGF | VM_FF_TM_VIRTUAL_SYNC | VM_FF_DEBUG_SUSPEND \
-                                                 | VM_FF_PGM_NEED_HANDY_PAGES | VM_FF_PGM_NO_MEMORY | VM_FF_EMT_RENDEZVOUS)
+#define VM_FF_HIGH_PRIORITY_PRE_MASK            (  VM_FF_CHECK_VM_STATE | VM_FF_DBGF | VM_FF_TM_VIRTUAL_SYNC \
+                                                 | VM_FF_DEBUG_SUSPEND | VM_FF_PGM_NEED_HANDY_PAGES | VM_FF_PGM_NO_MEMORY | VM_FF_EMT_RENDEZVOUS)
 /** High priority VMCPU pre-execution actions. */
 #define VMCPU_FF_HIGH_PRIORITY_PRE_MASK         (  VMCPU_FF_TIMER | VMCPU_FF_INTERRUPT_APIC | VMCPU_FF_INTERRUPT_PIC | VMCPU_FF_PGM_SYNC_CR3 \
                                                  | VMCPU_FF_PGM_SYNC_CR3_NON_GLOBAL | VMCPU_FF_SELM_SYNC_TSS | VMCPU_FF_TRPM_SYNC_IDT \
@@ -374,7 +388,8 @@ typedef struct VMCPU
 #define VMCPU_FF_HIGH_PRIORITY_POST_MASK        (VMCPU_FF_PDM_CRITSECT|VMCPU_FF_CSAM_PENDING_ACTION)
 
 /** Normal priority VM post-execution actions. */
-#define VM_FF_NORMAL_PRIORITY_POST_MASK         (VM_FF_TERMINATE | VM_FF_DBGF | VM_FF_RESET | VM_FF_PGM_NO_MEMORY | VM_FF_EMT_RENDEZVOUS)
+#define VM_FF_NORMAL_PRIORITY_POST_MASK         (  VM_FF_CHECK_VM_STATE | VM_FF_DBGF | VM_FF_RESET \
+                                                 | VM_FF_PGM_NO_MEMORY | VM_FF_EMT_RENDEZVOUS)
 /** Normal priority VMCPU post-execution actions. */
 #define VMCPU_FF_NORMAL_PRIORITY_POST_MASK      (VMCPU_FF_CSAM_SCAN_PAGE)
 
@@ -460,10 +475,10 @@ typedef struct VMCPU
 /** @def VMCPU_FF_ISSET
  * Checks if a force action flag is set for the given VCPU.
  *
- * @param   pVCpu     VMCPU Handle.
+ * @param   pVCpu   VMCPU Handle.
  * @param   fFlag   The flag to check.
  */
-#define VMCPU_FF_ISSET(pVCpu, fFlag)  (((pVCpu)->fLocalForcedActions & (fFlag)) == (fFlag))
+#define VMCPU_FF_ISSET(pVCpu, fFlag)        (((pVCpu)->fLocalForcedActions & (fFlag)) == (fFlag))
 
 /** @def VM_FF_ISPENDING
  * Checks if one or more force action in the specified set is pending.
@@ -699,6 +714,8 @@ typedef struct VM
     uint32_t                    hSelf;
     /** Number of virtual CPUs. */
     uint32_t                    cCpus;
+    /** CPU excution cap (1-100) */
+    uint32_t                    uCpuExecutionCap;
 
     /** Size of the VM structure including the VMCPU array. */
     uint32_t                    cbSelf;
@@ -707,7 +724,7 @@ typedef struct VM
     uint32_t                    offVMCPU;
 
     /** Reserved; alignment. */
-    uint32_t                    u32Reserved[6];
+    uint32_t                    u32Reserved[5];
 
     /** @name Public VMM Switcher APIs
      * @{ */
@@ -777,8 +794,8 @@ typedef struct VM
     /** Hardware VM support is required and non-optional.
      * This is initialized together with the rest of the VM structure. */
     bool                        fHwVirtExtForced;
-    /** PARAV enabled flag. */
-    bool                        fPARAVEnabled;
+    /** Set when this VM is the master FT node. */
+    bool                        fFaultTolerantMaster;
     /** Large page enabled flag. */
     bool                        fUseLargePages;
     /** @} */
@@ -813,7 +830,7 @@ typedef struct VM
     STAMPROFILEADV              StatSwitcherLldt;
     STAMPROFILEADV              StatSwitcherTSS;
 
-    /** Padding - the unions must be aligned on a 64 bytes boundrary and the unions
+    /** Padding - the unions must be aligned on a 64 bytes boundary and the unions
      *  must start at the same offset on both 64-bit and 32-bit hosts. */
     uint8_t                     abAlignment1[HC_ARCH_BITS == 32 ? 48 : 24];
 
@@ -931,7 +948,7 @@ typedef struct VM
 #ifdef ___TMInternal_h
         struct TM   s;
 #endif
-        uint8_t     padding[2112];      /* multiple of 64 */
+        uint8_t     padding[2176];      /* multiple of 64 */
     } tm;
 
     /** DBGF part. */
@@ -951,6 +968,15 @@ typedef struct VM
 #endif
         uint8_t     padding[128];        /* multiple of 64 */
     } ssm;
+
+    /** FTM part. */
+    union
+    {
+#ifdef ___FTMInternal_h
+        struct FTM  s;
+#endif
+        uint8_t     padding[512];        /* multiple of 64 */
+    } ftm;
 
     /** REM part. */
     union
@@ -981,22 +1007,13 @@ typedef struct VM
         uint8_t     padding[8];         /* multiple of 8 */
     } cfgm;
 
-    /** PARAV part. */
-    union
-    {
-#ifdef ___PARAVInternal_h
-        struct PARAV s;
-#endif
-        uint8_t     padding[24];        /* multiple of 8 */
-    } parav;
-
-    /** Padding for aligning the cpu array on a page boundrary. */
-    uint8_t         abAlignment2[2056];
+    /** Padding for aligning the cpu array on a page boundary. */
+    uint8_t         abAlignment2[1502];
 
     /* ---- end small stuff ---- */
 
     /** VMCPU array for the configured number of virtual CPUs.
-     * Must be aligned on a page boundrary for TLB hit reasons as well as
+     * Must be aligned on a page boundary for TLB hit reasons as well as
      * alignment of VMCPU members. */
     VMCPU           aCpus[1];
 } VM;

@@ -22,8 +22,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -90,9 +90,11 @@ HRESULT WINAPI IWineD3DBaseSwapChainImpl_GetFrontBufferData(IWineD3DSwapChain *i
     start.x = 0;
     start.y = 0;
 
+#ifndef VBOX_WITH_WDDM
     if (This->presentParms.Windowed) {
         MapWindowPoints(This->win_handle, NULL, &start, 1);
     }
+#endif
 
     IWineD3DSurface_BltFast(pDestSurface, start.x, start.y, This->frontBuffer, NULL, 0);
     return WINED3D_OK;
@@ -101,6 +103,15 @@ HRESULT WINAPI IWineD3DBaseSwapChainImpl_GetFrontBufferData(IWineD3DSwapChain *i
 HRESULT WINAPI IWineD3DBaseSwapChainImpl_GetBackBuffer(IWineD3DSwapChain *iface, UINT iBackBuffer, WINED3DBACKBUFFER_TYPE Type, IWineD3DSurface **ppBackBuffer) {
 
     IWineD3DSwapChainImpl *This = (IWineD3DSwapChainImpl *)iface;
+
+#ifdef VBOX_WITH_WDDM
+    if (iBackBuffer == ~0UL)
+    {
+        *ppBackBuffer = This->frontBuffer;
+        if(*ppBackBuffer) IWineD3DSurface_AddRef(*ppBackBuffer);
+        return WINED3D_OK;
+    }
+#endif
 
     if (iBackBuffer > This->presentParms.BackBufferCount - 1) {
         TRACE("Back buffer count out of range\n");

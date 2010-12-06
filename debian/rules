@@ -41,7 +41,8 @@ moddir   := $(current)/debian/modules
 prefix   := $(current)/debian/$(verpkg)
 arch     := $(shell dpkg --print-architecture)
 verfile  := $(builddir)/version-generated.mk
-ose      := 1
+ose      := $(if $(OSE),1,$(if $(wildcard $(vboxroot)/src/VBox/RDP/server),,1))
+svnrev   := 0
 NOMODS   ?= $(ose)
 NOQT     ?= $(HEADLESS)
 NOWEBSVC ?= $(ose)
@@ -59,19 +60,10 @@ ifneq ($(STAGEDISO),)
  endif
 endif
 
-# Hack: Xandros is actually Debian/sarge ... :(
-ifneq ($(wildcard /etc/xandros-desktop-version),)
- debrel  := _xandros4.1
-else
-ifneq ($(wildcard /etc/univention),)
- debrel  := _ucs1.3
-else
- debrel  := $(if $(shell which lsb_release),_$(shell lsb_release -si)_$(shell lsb_release -sc),unknown)
-endif
-endif
+debrel  := $(if $(shell which lsb_release),_$(shell lsb_release -si)_$(shell lsb_release -sc),unknown)
 
 # shipping Linux kernel modules with bleeding-edge releases doesn't make sense
-instmod := $(if $(filter _Ubuntu_karmic _Debian_sid,$(debrel)),,1)
+instmod := $(if $(filter _Ubuntu_lucid _Debian_sid,$(debrel)),,1)
 
 # Locations of custom built Qt libraries (see below)
 qtstdc5  := /home/vbox/Qt-4.4.3-stdc++5-$(arch)
@@ -79,15 +71,8 @@ qtstdc6  := /home/vbox/Qt-4.4.3-stdc++6-$(arch)
 
 cfg_flags := $(if $(NOQT),--disable-qt,) \
 	     $(if $(ose),--ose,) $(if $(LINUX),--with-linux=$(LINUX),) \
-	     $(if $(filter _Ubuntu_dapper,$(debrel)),--with-gcc=gcc-3.4 --with-g++=g++-3.4,) \
-	     $(if $(filter _Ubuntu_gutsy,$(debrel)),--with-gcc=gcc-4.2 --with-g++=g++-4.2,) \
-	     $(if $(filter _xandros4.1 _ucs1.3 _Debian_sarge _Ubuntu_dapper,$(debrel)),--build-libxml2,) \
-	     $(if $(filter _xandros4.1 _ucs1.3 _Debian_sarge _Ubuntu_dapper,$(debrel)),--build-libxslt,) \
 	     $(if $(filter _Debian_etch,$(debrel)),$(if $(ose),,--build-libcurl),) \
-	     $(if $(filter _Debian_sarge _xandros4.1 _ucs1.3,$(debrel)),--with-qt4-dir=$(qtstdc5)) \
-	     $(if $(filter _Debian_etch _Ubuntu_dapper _Ubuntu_edgy _Ubuntu_feisty _Ubuntu_gutsy _Ubuntu_hardy,$(debrel)),--with-qt4-dir=$(qtstdc6)) \
-	     $(if $(filter _xandros4.1 _ucs1.3,$(debrel)),--disable-sdl-ttf,) \
-	     $(if $(filter _Debian_sarge _Ubuntu_dapper _Ubuntu_edgy _xandros4.1 _ucs1.3,$(debrel)),--disable-pulse,) \
+	     $(if $(filter _Debian_etch _Ubuntu_hardy,$(debrel)),--with-qt4-dir=$(qtstdc6)) \
 	     $(if $(HEADLESS),--build-headless,) \
 	     $(if $(DEBUG),--build-debug,) \
 	     $(if $(NOWINE),,--setup-wine) \
@@ -100,15 +85,14 @@ bld_flags := AUTOCFG=$(current)/debian/AutoConfig.kmk \
 	     VBOX_DO_STRIP_MODULES= \
 	     VBOX_WITH_MULTIVERSION_PYTHON= \
 	     VBOX_PATH_PACKAGE_DOCS="\"/usr/share/doc/$(verpkg)\"" \
+	     $(if $(ose),,VBOX_WITH_DOCS_CHM=1) \
+	     VBOX_SVN_REV=$(svnrev) \
 	     $(if $(NODOCS),VBOX_WITH_DOCS= ,)\
 	     $(if $(VERBOSE),--print-directory KBUILD_VERBOSE=2,--no-print-directory) \
 	     $(if $(STAGEDISO),VBOX_WITHOUT_ADDITIONS=1,) \
 	     $(if $(BLEEDING_EDGE),VBOX_BLEEDING_EDGE=$(BLEEDING_EDGE),) \
-	     $(if $(filter _Debian_sarge _xandros4.1 _ucs1.3,$(debrel)),VBOX_LD_as_needed= ,) \
 	     $(if $(filter _Debian_etch _Ubuntu_hardy,$(debrel)),,VBOX_WITH_SYSFS_BY_DEFAULT=1)
 
-# Ubuntu dapper: gcc-4.0 does not work with recompiler, use gcc-3.4 instead
-# Ubuntu gutsy:  gcc-4.1 does not work for the webservices, use gcc-4.2 instead
 configure: debian/configure-stamp
 debian/configure-stamp:
 	dh_testdir
@@ -125,7 +109,10 @@ debian/build-stamp $(verfile):
 	$(if $(STAGEDISO),cp $(STAGEDISO)/VBoxGuestAdditions.iso $(builddir)/bin/additions,)
 	. debian/env.sh && kmk -C $(vboxroot) $(bld_flags) \
 	    VBOX_NO_LINUX_RUN_INSTALLER=1 \
+	    VBOX_LNX_ADD_ARCHIVE.x86=$(builddir)/bin/additions/VBoxGuestAdditions-x86-r$(svnrev).tar.bz2 \
+	    VBOX_LNX_ADD_ARCHIVE.amd64=$(builddir)/bin/additions/VBoxGuestAdditions-amd64-r$(svnrev).tar.bz2 \
 	    VBOX_PATH_ADDITIONS.linux.x86=$(builddir)/bin/additions \
+	    VBOX_PATH_ADDITIONS.linux.amd64=$(builddir)/bin/additions \
 	    packing
 	touch debian/build-stamp
 
@@ -161,10 +148,12 @@ debian/modules-stamp: debian/build-stamp
 clean:
 	dh_testdir
 	dh_testroot
-	rm -f debian/preinst debian/postinst
-	rm -f debian/$(package).init debian/vboxdrv.init
+	rm -f debian/preinst debian/postinst debian/prerm
+	rm -f debian/$(package).init debian/vboxdrv.init debian/vboxweb-service.init
 	rm -f debian/AutoConfig.kmk debian/configure.log debian/env.sh
 	rm -f debian/modules-stamp debian/build-stamp debian/configure-stamp
+	rm -f debian/virtualbox-*.substvars debian/virtualbox*.debhelper
+	rm -f debian/$(verpkg).mime
 	rm -rf $(builddir) $(moddir)
 	dh_clean
 
@@ -188,6 +177,15 @@ binary binary-arch binary-indep: build $(if $(NOMODS),,modules)
 	$(if $(NOQT),,mv $(archdir)/virtualbox.desktop \
 	   $(prefix)/usr/share/applications/virtualbox.desktop)
 	install -d -g 0 -o 0 $(prefix)/usr/share/pixmaps
+	install -d -g 0 -o 0 $(prefix)/usr/share/icons/hicolor
+	cd $(archdir)/icons; for i in *; do \
+	    install -d -g 0 -o 0 $(prefix)/usr/share/icons/hicolor/$$i/mimetypes; \
+	    mv $$i/* $(prefix)/usr/share/icons/hicolor/$$i/mimetypes; \
+	    rmdir $$i; \
+	done
+	rmdir $(archdir)/icons
+	install -d -g 0 -o 0 $(prefix)/usr/lib/$(package)/ExtensionPacks
+	mv $(archdir)/virtualbox.xml debian/$(verpkg).sharedmimeinfo
 	install -d -g 0 -o 0 $(prefix)/usr/share/lintian/overrides
 	sed \
 	    -e 's|%VERPKG%|$(verpkg)|g' \
@@ -218,8 +216,10 @@ binary binary-arch binary-indep: build $(if $(NOMODS),,modules)
 	mv $(archdir)/sdk $(prefix)/usr/lib/$(package)
 	install -D -g 0 -o 0 -m 644 debian/VBox.sh $(prefix)/usr/bin/VBox
 	mv $(archdir)/VBoxSysInfo.sh $(prefix)/usr/share/$(package)
+	mv $(archdir)/VBoxCreateUSBNode.sh $(prefix)/usr/share/$(package)
 	for i in VBoxManage VBoxSVC $(if $(HEADLESS),,VBoxSDL) \
 	    $(if $(NOQT),,VirtualBox) VBoxHeadless \
+	    VBoxExtPackHelperApp \
 	    $(if $(NOWEBSVC),,vboxwebsrv webtest); do \
 	    mv $(archdir)/$$i $(prefix)/usr/lib/$(package); done
 	mv $(archdir)/VBoxTunctl $(prefix)/usr/bin
@@ -237,42 +237,57 @@ ifeq ($(ose),)
 	$(if $(NOQT),,mv $(archdir)/kchmviewer $(prefix)/usr/lib/$(package))
 	dh_installdocs \
 	    $(archdir)/UserManual*.pdf $(archdir)/VirtualBox*.chm \
-	    LICENSE
-	rm $(addprefix $(archdir)/,UserManual*.pdf VirtualBox*.chm LICENSE)
+	    $(addprefix $(archdir)/, $(if $(HEADLESS),,License-*.html) LICENSE)
+	rm $(addprefix $(archdir)/,UserManual*.pdf VirtualBox*.chm \
+	    LICENSE $(if $(HEADLESS),,License-*.html))
 	for i in rdesktop-vrdp.tar.gz additions/VBoxGuestAdditions.iso; do \
 	    mv $(archdir)/$$i $(prefix)/usr/share/$(package); done
-	rmdir $(archdir)/additions
+	$(if $(HEADLESS),,mv $(archdir)/rdesktop-vrdp $(prefix)/usr/bin)
+	$(if $(HEADLESS),,mv $(archdir)/rdesktop-vrdp-keymaps $(prefix)/usr/share/$(package))
 	if [ -d $(archdir)/accessible ]; then mv $(archdir)/accessible $(prefix)/usr/lib/virtualbox; fi
 else
-	dh_installdocs
+	dh_installdocs \
+	    $(archdir)/UserManual*.pdf
+	rm $(addprefix $(archdir)/,UserManual*.pdf)
+	for i in additions/VBoxGuestAdditions.iso; do \
+	    mv $(archdir)/$$i $(prefix)/usr/share/$(package); done
 endif
+	rmdir $(archdir)/additions
 	rmdir $(archdir)
 	rmdir $(prefix)/opt
 	dh_link \
 	    $(if $(NOQT),,usr/bin/VBox          usr/bin/VirtualBox) \
+	    $(if $(NOQT),,usr/bin/VBox          usr/bin/virtualbox) \
 	    usr/bin/VBox                        usr/bin/VBoxManage \
+	    usr/bin/VBox                        usr/bin/vboxmanage \
 	    $(if $(HEADLESS),,usr/bin/VBox      usr/bin/VBoxSDL) \
+	    $(if $(HEADLESS),,usr/bin/VBox      usr/bin/vboxsdl) \
 	    $(if $(ose),,usr/bin/VBox           usr/bin/VBoxVRDP) \
 	    usr/bin/VBox                        usr/bin/VBoxHeadless \
+	    usr/bin/VBox                        usr/bin/vboxheadless \
 	    $(if $(NOWEBSVC),,usr/bin/VBox      usr/bin/vboxwebsrv) \
-	    usr/share/virtualbox/src/vboxdrv    usr/src/vboxdrv-$(ver) \
-	    usr/share/virtualbox/src/vboxnetflt usr/src/vboxnetflt-$(ver) \
-	    usr/share/virtualbox/src/vboxnetadp usr/src/vboxnetadp-$(ver)
+	    usr/share/virtualbox/src/vboxhost   usr/src/vboxhost-$(ver)
 	dh_desktop
-	dh_installmenu
 	$(if $(NOMODS),,dh_installmodules)
 	sed \
-	    -e 's|%NOLSB%|$(if $(filter _Debian_sarge ucs1.3,$(debrel)),yes,)|g' \
+	    -e 's|%NOLSB%||g' \
 	    -e 's|%DEBIAN%|yes|g' \
 	    -e 's|%PACKAGE%|virtualbox|g' \
-	    src/VBox/Installer/linux/vboxdrv.sh.in > debian/vboxdrv.init
-	dh_installinit --name=vboxdrv
+	    $(vboxroot)/src/VBox/Installer/linux/vboxdrv.sh.in > debian/vboxdrv.init
+	dh_installinit --name=vboxdrv --noscripts
+	sed \
+	    -e 's|%NOLSB%||g' \
+	    -e 's|%DEBIAN%|yes|g' \
+	    -e 's|%PACKAGE%|virtualbox|g' \
+	    $(vboxroot)/src/VBox/Installer/linux/vboxweb-service.sh.in > debian/vboxweb-service.init
+	dh_installinit --name=vboxweb-service --noscripts
 	cat debian/preinst.in | sed -e 's|%VER%|$(ver)|g' > debian/preinst
+	cat debian/prerm.in | sed -e 's|%VER%|$(ver)|g' > debian/prerm
 	cat debian/postinst.in | sed -e 's|%VER%|$(ver)|g' > debian/postinst
-	if [ "$(debrel)" = "_Ubuntu_dapper" -o "$(debrel)" = "_Debian_sarge" ]; then \
-	    cat debian/postrm.dapper > debian/postrm; fi
 	dh_installdebconf
 	dh_installchangelogs
+	dh_installmenu
+	dh_installmime
 	dh_link
 ifeq ($(DEBUG),)
 	dh_strip --keep-debug --exclude=libQtCoreVBox.so.4 --exclude=libQtGuiVBox.so.4 --exclude=libQtNetworkVBox.so.4 --exclude=libQtOpenGLVBox.so.4 --exclude=libqtaccessiblewidgets.so
@@ -301,7 +316,7 @@ endif
 	  -Valsa=$(if $(HEADLESS),,libasound2) \
 	  -Vpulse=$(if $(HEADLESS),,libpulse0) \
 	  -Vsdlttf=$(if $(HEADLESS),,libsdl-ttf2.0-0) \
-	  -Vdkms=$(if $(filter _Ubuntu_gutsy _Ubuntu_hardy _Ubuntu_intrepid _Ubuntu_jaunty _Ubuntu_karmic,$(debrel)),dkms,)
+	  -Vdkms=$(if $(filter _Debian_etch _Debian_lenny,$(debrel)),,dkms)
 	dh_md5sums
 	dh_builddeb --destdir $(pkgdir)
 endif

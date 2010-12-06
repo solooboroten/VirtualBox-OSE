@@ -110,10 +110,29 @@ GLint crServerDispatchCreateContextEx(const char *dpyName, GLint visualBits, GLi
     return retVal;
 }
 
+static int crServerRemoveClientContext(CRClient *pClient, GLint ctx)
+{
+    int pos;
+
+    for (pos = 0; pos < CR_MAX_CONTEXTS; ++pos)
+    {
+        if (pClient->contextList[pos] == ctx)
+        {
+            pClient->contextList[pos] = 0;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void SERVER_DISPATCH_APIENTRY
 crServerDispatchDestroyContext( GLint ctx )
 {
     CRContext *crCtx;
+    int32_t client;
+    CRClientNode *pNode;
+    int found=false;
 
     crCtx = (CRContext *) crHashtableSearch(cr_server.contextTable, ctx);
     if (!crCtx) {
@@ -129,51 +148,61 @@ crServerDispatchDestroyContext( GLint ctx )
 
     if (cr_server.curClient)
     {
-        int32_t pos;
-
         /* If we delete our current context, default back to the null context */
         if (cr_server.curClient->currentCtx == crCtx) {
             cr_server.curClient->currentContextNumber = -1;
             cr_server.curClient->currentCtx = cr_server.DummyContext;
         }
 
-        for (pos = 0; pos < CR_MAX_CONTEXTS; ++pos)
-            if (cr_server.curClient->contextList[pos] == ctx)
-            {
-                cr_server.curClient->contextList[pos] = 0;
-                break;
-            }
+        found = crServerRemoveClientContext(cr_server.curClient, ctx);
 
         /*Some application call destroy context not in a thread where it was created...have do deal with it.*/
-        if (CR_MAX_CONTEXTS==pos)
+        if (!found)
         {
-            int32_t client;
-
             for (client=0; client<cr_server.numClients; ++client)
             {
                 if (cr_server.clients[client]==cr_server.curClient)
                     continue;
 
-                for (pos = 0; pos < CR_MAX_CONTEXTS; ++pos)
-                    if (cr_server.clients[client]->contextList[pos] == ctx)
-                    {
-                        cr_server.clients[client]->contextList[pos] = 0;
-                        break;
-                    }
+                found = crServerRemoveClientContext(cr_server.clients[client], ctx);
 
-                if (pos<CR_MAX_CONTEXTS)
-                {
-                    if (cr_server.clients[client]->currentCtx == crCtx)
-                    {
-                        cr_server.clients[client]->currentContextNumber = -1;
-                        cr_server.clients[client]->currentCtx = cr_server.DummyContext;
-                    }
-                    break;
-                }
+                if (found) break;
             }
         }
 
-        CRASSERT(pos<CR_MAX_CONTEXTS);
+        if (!found)
+        {
+            pNode=cr_server.pCleanupClient;
+
+            while (pNode && !found)
+            {
+                found = crServerRemoveClientContext(pNode->pClient, ctx);
+                pNode = pNode->next;
+            }
+        }
+
+        CRASSERT(found);
+    }
+
+    /*Make sure this context isn't active in other clients*/
+    for (client=0; client<cr_server.numClients; ++client)
+    {
+        if (cr_server.clients[client]->currentCtx == crCtx)
+        {
+            cr_server.clients[client]->currentContextNumber = -1;
+            cr_server.clients[client]->currentCtx = cr_server.DummyContext;
+        }
+    }
+
+    pNode=cr_server.pCleanupClient;
+    while (pNode)
+    {
+        if (pNode->pClient->currentCtx == crCtx)
+        {
+            pNode->pClient->currentContextNumber = -1;
+            pNode->pClient->currentCtx = cr_server.DummyContext;
+        }
+        pNode = pNode->next;
     }
 }
 
@@ -186,15 +215,11 @@ crServerDispatchMakeCurrent( GLint window, GLint nativeWindow, GLint context )
 
     if (context >= 0 && window >= 0) {
         mural = (CRMuralInfo *) crHashtableSearch(cr_server.muralTable, window);
-        if (!mural && window == MAGIC_OFFSET &&
-                !cr_server.clients[0]->conn->actual_network) {
-            /* We're reading from a file and not a real network connection so
-             * we have to fudge the window id here.
-             */
-            window = 0;
-            mural = (CRMuralInfo *) crHashtableSearch(cr_server.muralTable, 0);
+        if (!mural)
+        {
+            crWarning("CRServer: invalid window %d passed to crServerDispatchMakeCurrent()");
+            return;
         }
-        CRASSERT(mural);
 
         /* Update the state tracker's current context */
         ctx = (CRContext *) crHashtableSearch(cr_server.contextTable, context);

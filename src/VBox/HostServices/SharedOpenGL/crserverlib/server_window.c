@@ -116,16 +116,41 @@ crServerDispatchWindowCreateEx(const char *dpyName, GLint visBits, GLint preload
     return windowID;
 }
 
+static int crServerRemoveClientWindow(CRClient *pClient, GLint window)
+{
+    int pos;
+
+    for (pos = 0; pos < CR_MAX_WINDOWS; ++pos)
+    {
+        if (pClient->windowList[pos] == window)
+        {
+            pClient->windowList[pos] = 0;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void SERVER_DISPATCH_APIENTRY
 crServerDispatchWindowDestroy( GLint window )
 {
     CRMuralInfo *mural;
-    int pos;
+    int32_t client;
+    CRClientNode *pNode;
+    int found=false;
 
     mural = (CRMuralInfo *) crHashtableSearch(cr_server.muralTable, window);
     if (!mural) {
          crWarning("CRServer: invalid window %d passed to WindowDestroy()", window);
          return;
+    }
+
+    if (cr_server.currentWindow == window)
+    {
+        cr_server.currentWindow = -1;
+        crServerRedirMuralFBO(mural, GL_FALSE);
+        crServerDeleteMuralFBO(mural);
     }
 
     crDebug("CRServer: Destroying window %d (spu window %d)", window, mural->spuWindow);
@@ -139,50 +164,55 @@ crServerDispatchWindowDestroy( GLint window )
             cr_server.curClient->currentWindow = -1;
         }
 
-        for (pos = 0; pos < CR_MAX_WINDOWS; ++pos)
-            if (cr_server.curClient->windowList[pos] == window)
-            {
-                cr_server.curClient->windowList[pos] = 0;
-                break;
-            }
+        found = crServerRemoveClientWindow(cr_server.curClient, window);
 
         /*Same as with contexts, some apps destroy it not in a thread where it was created*/
-        if (CR_MAX_WINDOWS==pos)
+        if (!found)
         {
-            int32_t client;
-
             for (client=0; client<cr_server.numClients; ++client)
             {
                 if (cr_server.clients[client]==cr_server.curClient)
                     continue;
 
-                for (pos = 0; pos < CR_MAX_WINDOWS; ++pos)
-                    if (cr_server.clients[client]->windowList[pos] == window)
-                    {
-                        cr_server.clients[client]->windowList[pos] = 0;
-                        break;
-                    }
+                found = crServerRemoveClientWindow(cr_server.clients[client], window);
 
-                if (pos<CR_MAX_WINDOWS)
-                {
-                    if (cr_server.clients[client]->currentMural == mural)
-                    {
-                        cr_server.clients[client]->currentMural = NULL;
-                        cr_server.clients[client]->currentWindow = -1;
-                    }
-                    break;
-                }
+                if (found) break;
             }
         }
 
-        CRASSERT(pos<CR_MAX_WINDOWS);
+        if (!found)
+        {
+            pNode=cr_server.pCleanupClient;
+
+            while (pNode && !found)
+            {
+                found = crServerRemoveClientWindow(pNode->pClient, window);
+                pNode = pNode->next;
+            }
+        }
+
+        CRASSERT(found);
     }
 
-    if (cr_server.currentWindow == window)
+    /*Make sure this window isn't active in other clients*/
+    for (client=0; client<cr_server.numClients; ++client)
     {
-        cr_server.currentWindow = -1;
-        crServerRedirMuralFBO(mural, GL_FALSE);
-        crServerDeleteMuralFBO(mural);
+        if (cr_server.clients[client]->currentMural == mural)
+        {
+            cr_server.clients[client]->currentMural = NULL;
+            cr_server.clients[client]->currentWindow = -1;
+        }
+    }
+
+    pNode=cr_server.pCleanupClient;
+    while (pNode)
+    {
+        if (pNode->pClient->currentMural == mural)
+        {
+            pNode->pClient->currentMural = NULL;
+            pNode->pClient->currentWindow = -1;
+        }
+        pNode = pNode->next;
     }
 
     crHashtableDelete(cr_server.pWindowCreateInfoTable, window, crServerCreateInfoDeleteCB);

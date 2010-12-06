@@ -1,4 +1,4 @@
-# $Id: .scm-settings 26562 2010-02-16 01:05:49Z vboxsync $
+# $Id: .scm-settings 33676 2010-11-02 09:48:24Z vboxsync $
 ## @file
 # Top level source code massager settings.
 #
@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright (C) 2010 Sun Microsystems, Inc.
+# Copyright (C) 2010 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -19,10 +19,6 @@
 # Foundation, in version 2 as it comes in the "COPYING" file of the
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
-#
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
 #
 
 
@@ -66,8 +62,10 @@
 --filter-out-dirs  "*/src/VBox/GuestHost/OpenGL/*/."
 --filter-out-dirs  "*/src/VBox/Devices/PC/Etherboot-src/*/."
 --filter-out-dirs  "*/src/VBox/Devices/EFI/Firmware2/VBoxPkg/Include/*/."
+--filter-out-dirs  "*/src/VBox/Devices/EFI/Firmware2/VBoxPkg/VBoxIdeBusDxe/."
+--filter-out-dirs  "*/src/VBox/Devices/EFI/Firmware2/VBoxPkg/VBoxIdeControllerDxe/."
 --filter-out-dirs  "*/src/VBox/Devices/Network/lwip/."
---filter-out-dirs  "*/src/VBox/Devices/Storage/VBoxHDDFormats/StorageCraft/*/."
+--filter-out-dirs  "*/src/VBox/Storage/VDFormats/StorageCraft/*/."
 --filter-out-dirs  "*/src/VBox/RDP/client/."
 --filter-out-dirs  "*/src/recompiler/tests/."
 

@@ -21,8 +21,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -461,9 +461,13 @@ static BOOL     WINAPI  IDirect3DDevice9Impl_ShowCursor(LPDIRECT3DDEVICE9EX ifac
 
     return ret;
 }
-
+#ifdef VBOX_WITH_WDDM
+static HRESULT IDirect3DDevice9Impl_DoCreateAdditionalSwapChain(IDirect3DDevice9Ex *iface,
+        D3DPRESENT_PARAMETERS *present_parameters, IDirect3DSwapChain9 **swapchain)
+#else
 static HRESULT WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_CreateAdditionalSwapChain(IDirect3DDevice9Ex *iface,
         D3DPRESENT_PARAMETERS *present_parameters, IDirect3DSwapChain9 **swapchain)
+#endif
 {
     IDirect3DDevice9Impl *This = (IDirect3DDevice9Impl *)iface;
     IDirect3DSwapChain9Impl *object;
@@ -492,6 +496,35 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_CreateAdditionalSwa
 
     return D3D_OK;
 }
+
+#ifdef VBOX_WITH_WDDM
+static HRESULT WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_CreateAdditionalSwapChain(IDirect3DDevice9Ex *iface,
+        D3DPRESENT_PARAMETERS *present_parameters, IDirect3DSwapChain9 **swapchain)
+{
+    IDirect3DDevice9Impl *This = (IDirect3DDevice9Impl *)iface;
+    IDirect3DSwapChain9Impl *newSwapchain;
+    HRESULT hr = IDirect3DDevice9Impl_DoCreateAdditionalSwapChain(iface, present_parameters, &newSwapchain);
+    if (FAILED(hr))
+    {
+        ERR("Failed to create additional swapchain, hr %#x.\n", hr);
+        return hr;
+    }
+
+    /* add swapchain to the swapchain list */
+    wined3d_mutex_lock();
+    hr = IWineD3DDevice_AddSwapChain(This->WineD3DDevice, newSwapchain->wineD3DSwapChain);
+    wined3d_mutex_unlock();
+    if (FAILED(hr))
+    {
+        ERR("Failed to add additional swapchain, hr %#x.\n", hr);
+        IUnknown_Release(newSwapchain);
+        return hr;
+    }
+
+    *swapchain = (IDirect3DSwapChain9 *)newSwapchain;
+    return D3D_OK;
+}
+#endif
 
 static HRESULT WINAPI reset_enum_callback(IWineD3DResource *resource, void *data) {
     BOOL *resources_ok = data;
@@ -712,10 +745,113 @@ static void WINAPI IDirect3DDevice9Impl_GetGammaRamp(LPDIRECT3DDEVICE9EX iface, 
     wined3d_mutex_unlock();
 }
 
+#ifdef VBOX_WITH_WDDM
+//#pragma comment(linker, "/export:VBoxWineExD3DDev9Flush=_VBoxWineExD3DDev9Flush@4")
+
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9Flush(IDirect3DDevice9Ex *iface)
+{
+    IDirect3DDevice9Impl *This = (IDirect3DDevice9Impl *)iface;
+    HRESULT hr;
+
+    TRACE("iface %p, Flush\n", iface);
+
+    wined3d_mutex_lock();
+    hr = IWineD3DDevice_Flush(This->WineD3DDevice);
+    wined3d_mutex_unlock();
+
+    return hr;
+}
+
+//#pragma comment(linker, "/export:VBoxWineExD3DDev9CreateTexture=_VBoxWineExD3DDev9CreateTexture@40")
+
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9CreateTexture(IDirect3DDevice9Ex *iface,
+        UINT width, UINT height, UINT levels, DWORD usage, D3DFORMAT format,
+        D3DPOOL pool, IDirect3DTexture9 **texture, HANDLE *shared_handle,
+        void *pvClientMem) /* <- extension arg to pass in the client memory buffer,
+                            *    applicable ONLY for SYSMEM textures */
+{
+    IDirect3DDevice9Impl *This = (IDirect3DDevice9Impl *)iface;
+    IDirect3DTexture9Impl *object;
+    HRESULT hr;
+
+    TRACE("iface %p, width %u, height %u, levels %u, usage %#x, format %#x, pool %#x, texture %p, shared_handle %p.\n",
+            iface, width, height, levels, usage, format, pool, texture, shared_handle);
+
+    object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
+    if (!object)
+    {
+        ERR("Failed to allocate texture memory.\n");
+        return D3DERR_OUTOFVIDEOMEMORY;
+    }
+
+    hr = texture_init(object, This, width, height, levels, usage, format, pool
+        , shared_handle
+        , pvClientMem
+            );
+    if (FAILED(hr))
+    {
+        WARN("Failed to initialize texture, hr %#x.\n", hr);
+        HeapFree(GetProcessHeap(), 0, object);
+        return hr;
+    }
+
+    TRACE("Created texture %p.\n", object);
+    *texture = (IDirect3DTexture9 *)object;
+
+    return D3D_OK;
+}
+
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9Update(IDirect3DDevice9Ex *iface, D3DPRESENT_PARAMETERS * pParams, IDirect3DDevice9Ex **outIface)
+{
+    IDirect3DDevice9_AddRef(iface);
+    *outIface = iface;
+    return D3D_OK;
+}
+
+VBOXWINEEX_DECL(HRESULT) VBoxWineExD3DDev9CreateCubeTexture(IDirect3DDevice9Ex *iface,
+            UINT edge_length, UINT levels, DWORD usage, D3DFORMAT format,
+            D3DPOOL pool, IDirect3DCubeTexture9 **texture, HANDLE *shared_handle,
+            void *pvClientMem) /* <- extension arg to pass in the client memory buffer,
+                                *    applicable ONLY for SYSMEM textures */
+{
+    IDirect3DDevice9Impl *This = (IDirect3DDevice9Impl *)iface;
+    IDirect3DCubeTexture9Impl *object;
+    HRESULT hr;
+
+    TRACE("iface %p, edge_length %u, levels %u, usage %#x, format %#x, pool %#x, texture %p, shared_handle %p.\n",
+            iface, edge_length, levels, usage, format, pool, texture, shared_handle);
+
+    object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
+    if (!object)
+    {
+        ERR("Failed to allocate cube texture memory.\n");
+        return D3DERR_OUTOFVIDEOMEMORY;
+    }
+
+    hr = cubetexture_init(object, This, edge_length, levels, usage, format, pool, shared_handle, pvClientMem);
+    if (FAILED(hr))
+    {
+        WARN("Failed to initialize cube texture, hr %#x.\n", hr);
+        HeapFree(GetProcessHeap(), 0, object);
+        return hr;
+    }
+
+    TRACE("Created cube texture %p.\n", object);
+    *texture = (IDirect3DCubeTexture9 *)object;
+
+    return D3D_OK;
+}
+
+#endif
+
 static HRESULT WINAPI IDirect3DDevice9Impl_CreateTexture(IDirect3DDevice9Ex *iface,
         UINT width, UINT height, UINT levels, DWORD usage, D3DFORMAT format,
         D3DPOOL pool, IDirect3DTexture9 **texture, HANDLE *shared_handle)
 {
+#ifdef VBOX_WITH_WDDM
+    return VBoxWineExD3DDev9CreateTexture(iface, width, height, levels, usage, format,
+            pool, texture, shared_handle, NULL);
+#else
     IDirect3DDevice9Impl *This = (IDirect3DDevice9Impl *)iface;
     IDirect3DTexture9Impl *object;
     HRESULT hr;
@@ -742,6 +878,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateTexture(IDirect3DDevice9Ex *ifa
     *texture = (IDirect3DTexture9 *)object;
 
     return D3D_OK;
+#endif
 }
 
 static HRESULT WINAPI IDirect3DDevice9Impl_CreateVolumeTexture(IDirect3DDevice9Ex *iface,
@@ -782,6 +919,10 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateCubeTexture(IDirect3DDevice9Ex 
         UINT edge_length, UINT levels, DWORD usage, D3DFORMAT format, D3DPOOL pool,
         IDirect3DCubeTexture9 **texture, HANDLE *shared_handle)
 {
+#ifdef VBOX_WITH_WDDM
+    return VBoxWineExD3DDev9CreateCubeTexture(iface, edge_length, levels, usage, format,
+            pool, texture, shared_handle, NULL);
+#else
     IDirect3DDevice9Impl *This = (IDirect3DDevice9Impl *)iface;
     IDirect3DCubeTexture9Impl *object;
     HRESULT hr;
@@ -808,6 +949,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateCubeTexture(IDirect3DDevice9Ex 
     *texture = (IDirect3DCubeTexture9 *)object;
 
     return D3D_OK;
+#endif
 }
 
 static HRESULT WINAPI IDirect3DDevice9Impl_CreateVertexBuffer(IDirect3DDevice9Ex *iface, UINT size, DWORD usage,
@@ -874,7 +1016,12 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateIndexBuffer(IDirect3DDevice9Ex 
 
 static HRESULT IDirect3DDevice9Impl_CreateSurface(LPDIRECT3DDEVICE9EX iface, UINT Width, UINT Height,
         D3DFORMAT Format, BOOL Lockable, BOOL Discard, UINT Level, IDirect3DSurface9 **ppSurface,
-        UINT Usage, D3DPOOL Pool, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality)
+        UINT Usage, D3DPOOL Pool, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        )
 {
     IDirect3DDevice9Impl *This = (IDirect3DDevice9Impl *)iface;
     IDirect3DSurface9Impl *object;
@@ -893,7 +1040,12 @@ static HRESULT IDirect3DDevice9Impl_CreateSurface(LPDIRECT3DDEVICE9EX iface, UIN
     }
 
     hr = surface_init(object, This, Width, Height, Format, Lockable, Discard,
-            Level, Usage, Pool, MultiSample, MultisampleQuality);
+            Level, Usage, Pool, MultiSample, MultisampleQuality
+#ifdef VBOX_WITH_WDDM
+            , shared_handle
+            , pvClientMem
+#endif
+            );
     if (FAILED(hr))
     {
         WARN("Failed to initialize surface, hr %#x.\n", hr);
@@ -919,7 +1071,12 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateRenderTarget(IDirect3DDevice9Ex
             Lockable, ppSurface, pSharedHandle);
 
     hr = IDirect3DDevice9Impl_CreateSurface(iface, Width, Height, Format, Lockable, FALSE /* Discard */,
-            0 /* Level */, ppSurface, D3DUSAGE_RENDERTARGET, D3DPOOL_DEFAULT, MultiSample, MultisampleQuality);
+            0 /* Level */, ppSurface, D3DUSAGE_RENDERTARGET, D3DPOOL_DEFAULT, MultiSample, MultisampleQuality
+#ifdef VBOX_WITH_WDDM
+            , pSharedHandle
+            , NULL
+#endif
+            );
 
     return hr;
 }
@@ -936,7 +1093,12 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_CreateDepthStencilSurface(LPDIRECT3
             Discard, ppSurface, pSharedHandle);
 
     hr = IDirect3DDevice9Impl_CreateSurface(iface, Width, Height, Format, TRUE /* Lockable */, Discard,
-            0 /* Level */, ppSurface, D3DUSAGE_DEPTHSTENCIL, D3DPOOL_DEFAULT, MultiSample, MultisampleQuality);
+            0 /* Level */, ppSurface, D3DUSAGE_DEPTHSTENCIL, D3DPOOL_DEFAULT, MultiSample, MultisampleQuality
+#ifdef VBOX_WITH_WDDM
+            , pSharedHandle
+            , NULL
+#endif
+            );
 
     return hr;
 }
@@ -1071,7 +1233,12 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_CreateOffscreenPlainSurface(LPDIREC
         */
     hr = IDirect3DDevice9Impl_CreateSurface(iface, Width, Height, Format, TRUE /* Lockable */, FALSE /* Discard */,
             0 /* Level */, ppSurface, 0 /* Usage (undefined/none) */, (WINED3DPOOL)Pool, D3DMULTISAMPLE_NONE,
-            0 /* MultisampleQuality */);
+            0 /* MultisampleQuality */
+#ifdef VBOX_WITH_WDDM
+            , pSharedHandle
+            , NULL
+#endif
+            );
 
     return hr;
 }
@@ -2629,7 +2796,12 @@ static void STDMETHODCALLTYPE device_parent_WineD3DDeviceCreated(IWineD3DDeviceP
 
 static HRESULT STDMETHODCALLTYPE device_parent_CreateSurface(IWineD3DDeviceParent *iface,
         IUnknown *superior, UINT width, UINT height, WINED3DFORMAT format, DWORD usage,
-        WINED3DPOOL pool, UINT level, WINED3DCUBEMAP_FACES face, IWineD3DSurface **surface)
+        WINED3DPOOL pool, UINT level, WINED3DCUBEMAP_FACES face, IWineD3DSurface **surface
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        )
 {
     struct IDirect3DDevice9Impl *This = device_from_device_parent(iface);
     IDirect3DSurface9Impl *d3d_surface;
@@ -2645,7 +2817,12 @@ static HRESULT STDMETHODCALLTYPE device_parent_CreateSurface(IWineD3DDeviceParen
 
     hr = IDirect3DDevice9Impl_CreateSurface((IDirect3DDevice9Ex *)This, width, height,
             d3dformat_from_wined3dformat(format), lockable, FALSE /* Discard */, level,
-            (IDirect3DSurface9 **)&d3d_surface, usage, pool, D3DMULTISAMPLE_NONE, 0 /* MultisampleQuality */);
+            (IDirect3DSurface9 **)&d3d_surface, usage, pool, D3DMULTISAMPLE_NONE, 0 /* MultisampleQuality */
+#ifdef VBOX_WITH_WDDM
+            , shared_handle
+            , pvClientMem
+#endif
+            );
     if (FAILED(hr))
     {
         ERR("(%p) CreateSurface failed, returning %#x\n", iface, hr);
@@ -2792,8 +2969,13 @@ static HRESULT STDMETHODCALLTYPE device_parent_CreateSwapChain(IWineD3DDevicePar
     local_parameters.FullScreen_RefreshRateInHz = present_parameters->FullScreen_RefreshRateInHz;
     local_parameters.PresentationInterval = present_parameters->PresentationInterval;
 
+#ifdef VBOX_WITH_WDDM
+    hr = IDirect3DDevice9Impl_DoCreateAdditionalSwapChain((IDirect3DDevice9Ex *)This,
+            &local_parameters, (IDirect3DSwapChain9 **)&d3d_swapchain);
+#else
     hr = IDirect3DDevice9Impl_CreateAdditionalSwapChain((IDirect3DDevice9Ex *)This,
             &local_parameters, (IDirect3DSwapChain9 **)&d3d_swapchain);
+#endif
     if (FAILED(hr))
     {
         ERR("(%p) CreateAdditionalSwapChain failed, returning %#x\n", iface, hr);

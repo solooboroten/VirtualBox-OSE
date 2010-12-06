@@ -1,4 +1,4 @@
-/* $Id: UINewHDWzd.cpp 29730 2010-05-21 12:48:19Z vboxsync $ */
+/* $Id: UINewHDWzd.cpp 34479 2010-11-29 16:44:03Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -17,15 +17,17 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-/* Global includes */
-#include <QFileDialog>
-#include <QRegExpValidator>
-
 /* Local includes */
+#include "UIIconPool.h"
 #include "UINewHDWzd.h"
 #include "VBoxGlobal.h"
 #include "VBoxProblemReporter.h"
+
+/* Global includes */
 #include "iprt/path.h"
+#include <QFileDialog>
+#include <QRegExpValidator>
+
 
 UINewHDWzd::UINewHDWzd(QWidget *pParent) : QIWizard(pParent)
 {
@@ -71,24 +73,22 @@ void UINewHDWzd::setRecommendedSize(qulonglong uSize)
     setField("initialSize", uSize);
 }
 
-QString UINewHDWzd::composeFullFileName(const QString &strFileName)
+void UINewHDWzd::setDefaultPath(const QString &strDefaultPath)
 {
-    CVirtualBox vbox = vboxGlobal().virtualBox();
-    QString strHomeFolder = vbox.GetHomeFolder();
-    QString strDefaultFolder = vbox.GetSystemProperties().GetDefaultHardDiskFolder();
+    m_strDefaultPath = strDefaultPath;
+}
 
+QString UINewHDWzd::absoluteFilePath(const QString &strFileName)
+{
+    /* Wrap file-info around received file name: */
     QFileInfo fi(strFileName);
-    if (fi.fileName() == strFileName)
+    /* If there is no path info at all or its relative: */
+    if (fi.fileName() == strFileName || fi.isRelative())
     {
-        /* No path info at all, use strDefaultFolder */
-        fi = QFileInfo(strDefaultFolder, strFileName);
+        /* Resolve path on the basis of m_strDefaultPath: */
+        fi = QFileInfo(m_strDefaultPath, strFileName);
     }
-    else if (fi.isRelative())
-    {
-        /* Resolve relatively to strHomeFolder */
-        fi = QFileInfo(strHomeFolder, strFileName);
-    }
-
+    /* Return full absolute hard disk file path: */
     return QDir::toNativeSeparators(fi.absoluteFilePath());
 }
 
@@ -190,8 +190,8 @@ UINewHDWzdPage3::UINewHDWzdPage3()
     , m_strLocation(QString())
     , m_uInitialSize(2 * _1K)
     , m_uCurrentSize(0)
-    , m_uMinVDISize(4)
-    , m_uMaxVDISize(vboxGlobal().virtualBox().GetSystemProperties().GetMaxVDISize())
+    , m_uMinVDISize(_4M)
+    , m_uMaxVDISize(vboxGlobal().virtualBox().GetSystemProperties().GetInfoVDSize())
     , m_iSliderScale(0)
 {
     /* Decorate page */
@@ -228,19 +228,19 @@ UINewHDWzdPage3::UINewHDWzdPage3()
     m_pSizeSlider->setSingleStep(m_iSliderScale / 8);
     m_pSizeSlider->setTickInterval(0);
     m_pSizeSlider->setMinimum(sizeMBToSlider(m_uMinVDISize, m_iSliderScale));
-    m_pSizeSlider->setMaximum(sizeMBToSlider (m_uMaxVDISize, m_iSliderScale));
-    m_pSizeMin->setText(vboxGlobal().formatSize(m_uMinVDISize * _1M));
-    m_pSizeMax->setText(vboxGlobal().formatSize(m_uMaxVDISize * _1M));
+    m_pSizeSlider->setMaximum(sizeMBToSlider(m_uMaxVDISize, m_iSliderScale));
+    m_pSizeMin->setText(vboxGlobal().formatSize(m_uMinVDISize));
+    m_pSizeMax->setText(vboxGlobal().formatSize(m_uMaxVDISize));
 
     /* Attach button icon */
-    m_pLocationSelector->setIcon(vboxGlobal().iconSet(":/select_file_16px.png", "select_file_dis_16px.png"));
+    m_pLocationSelector->setIcon(UIIconPool::iconSet(":/select_file_16px.png",
+                                                     "select_file_dis_16px.png"));
 
     /* Setup page connections */
     connect(m_pLocationEditor, SIGNAL(textChanged(const QString &)), this, SLOT(onLocationEditorTextChanged(const QString &)));
     connect(m_pLocationSelector, SIGNAL(clicked()), this, SLOT(onSelectLocationButtonClicked()));
     connect(m_pSizeSlider, SIGNAL(valueChanged(int)), this, SLOT(onSizeSliderValueChanged(int)));
     connect(m_pSizeEditor, SIGNAL(textChanged(const QString &)), this, SLOT(onSizeEditorTextChanged(const QString &)));
-    connect(this, SIGNAL(sigToUpdateSizeEditor(const QString &)), m_pSizeEditor, SLOT(setText(const QString &)));
 }
 
 void UINewHDWzdPage3::retranslateUi()
@@ -283,7 +283,7 @@ bool UINewHDWzdPage3::isComplete() const
 
 bool UINewHDWzdPage3::validatePage()
 {
-    QString location = UINewHDWzd::composeFullFileName(m_strLocation);
+    QString location = qobject_cast<UINewHDWzd*>(wizard())->absoluteFilePath(m_strLocation);
     if (QFileInfo(location).exists())
     {
         vboxProblem().sayCannotOverwriteHardDiskStorage(this, location);
@@ -306,24 +306,28 @@ void UINewHDWzdPage3::onLocationEditorTextChanged(const QString &strText)
 
 void UINewHDWzdPage3::onSelectLocationButtonClicked()
 {
-    /* Set the first parent directory that exists as the current */
-    QFileInfo fullFilePath(UINewHDWzd::composeFullFileName(m_strLocation));
-    QDir folder = fullFilePath.path();
-    QString fileName = fullFilePath.fileName();
+    /* Get parent wizard: */
+    UINewHDWzd *pWizard = qobject_cast<UINewHDWzd*>(wizard());
 
+    /* Get current folder and filename: */
+    QFileInfo fullFilePath(pWizard->absoluteFilePath(m_strLocation));
+    QDir folder = fullFilePath.path();
+    QString strFileName = fullFilePath.fileName();
+
+    /* Set the first parent foler that exists as the current: */
     while (!folder.exists() && !folder.isRoot())
         folder = QFileInfo(folder.absolutePath()).dir();
 
+    /* But if it doesn't exists at all: */
     if (!folder.exists() || folder.isRoot())
     {
-        CVirtualBox vbox = vboxGlobal().virtualBox();
-        folder = vbox.GetSystemProperties().GetDefaultHardDiskFolder();
-        if (!folder.exists())
-            folder = vbox.GetHomeFolder();
+        /* Use recommended one folder: */
+        QFileInfo defaultFilePath(pWizard->absoluteFilePath(strFileName));
+        folder = defaultFilePath.path();
     }
 
     QString selected = QFileDialog::getSaveFileName(this, tr("Select a file for the new hard disk image file"),
-                                                    folder.absoluteFilePath(fileName), tr("Hard disk images (*.vdi)"));
+                                                    folder.absoluteFilePath(strFileName), tr("Hard disk images (*.vdi)"));
 
     if (!selected.isEmpty())
     {
@@ -340,9 +344,11 @@ void UINewHDWzdPage3::onSizeSliderValueChanged(int iValue)
     /* Update currently stored size: */
     m_uCurrentSize = sliderToSizeMB(iValue, m_iSliderScale);
     /* Update tooltip: */
-    updateSizeToolTip(m_uCurrentSize * _1M);
-    /* Notify size-editor about size is changed: */
-    emit sigToUpdateSizeEditor(vboxGlobal().formatSize(m_uCurrentSize * _1M));
+    updateSizeToolTip(m_uCurrentSize);
+    /* Notify size-editor about size had changed preventing callback: */
+    m_pSizeEditor->blockSignals(true);
+    m_pSizeEditor->setText(vboxGlobal().formatSize(m_uCurrentSize));
+    m_pSizeEditor->blockSignals(false);
     /* Notify wizard sub-system about complete status changed: */
     emit completeChanged();
 }
@@ -350,13 +356,15 @@ void UINewHDWzdPage3::onSizeSliderValueChanged(int iValue)
 void UINewHDWzdPage3::onSizeEditorTextChanged(const QString &strValue)
 {
     /* Update currently stored size: */
-    m_uCurrentSize = vboxGlobal().parseSize(strValue) / _1M;
+    m_uCurrentSize = vboxGlobal().parseSize(strValue);
     /* Update tooltip: */
-    updateSizeToolTip(m_uCurrentSize * _1M);
-    /* Notify size-slider about size is changed but prevent callback: */
-    blockSignals(true);
+    updateSizeToolTip(m_uCurrentSize);
+    /* Notify size-slider about size had changed preventing callback: */
+    m_pSizeSlider->blockSignals(true);
     m_pSizeSlider->setValue(sizeMBToSlider(m_uCurrentSize, m_iSliderScale));
-    blockSignals(false);
+    m_pSizeSlider->blockSignals(false);
+    /* Notify wizard sub-system about complete status changed: */
+    emit completeChanged();
 }
 
 QString UINewHDWzdPage3::toFileName(const QString &strName)
@@ -441,9 +449,9 @@ void UINewHDWzdPage4::retranslateUi()
     QString summary;
 
     QString type = field("type").toString();
-    QString location = UINewHDWzd::composeFullFileName(field("location").toString());
-    QString sizeFormatted = VBoxGlobal::formatSize(field("currentSize").toULongLong() * _1M);
-    QString sizeUnformatted = tr("%1 B").arg(field("currentSize").toULongLong() * _1M);
+    QString location = qobject_cast<UINewHDWzd*>(wizard())->absoluteFilePath(field("location").toString());
+    QString sizeFormatted = VBoxGlobal::formatSize(field("currentSize").toULongLong());
+    QString sizeUnformatted = tr("%1 B").arg(field("currentSize").toULongLong());
 
     summary += QString
     (
@@ -483,22 +491,22 @@ bool UINewHDWzdPage4::validatePage()
 bool UINewHDWzdPage4::createHardDisk()
 {
     KMediumVariant variant = KMediumVariant_Standard;
-    QString loc = field("location").toString();
+    QString location = qobject_cast<UINewHDWzd*>(wizard())->absoluteFilePath(field("location").toString());
     qulonglong size = field("currentSize").toULongLong();
     bool isFixed = field("fixed").toBool();
 
-    AssertReturn(!loc.isNull(), false);
+    AssertReturn(!location.isNull(), false);
     AssertReturn(size > 0, false);
 
     CVirtualBox vbox = vboxGlobal().virtualBox();
 
     CProgress progress;
 
-    CMedium hardDisk = vbox.CreateHardDisk(QString("VDI"), loc);
+    CMedium hardDisk = vbox.CreateHardDisk(QString("VDI"), location);
 
     if (!vbox.isOk())
     {
-        vboxProblem().cannotCreateHardDiskStorage(this, vbox, loc, hardDisk, progress);
+        vboxProblem().cannotCreateHardDiskStorage(this, vbox, location, hardDisk, progress);
         return false;
     }
 
@@ -509,18 +517,18 @@ bool UINewHDWzdPage4::createHardDisk()
 
     if (!hardDisk.isOk())
     {
-        vboxProblem().cannotCreateHardDiskStorage(this, vbox, loc, hardDisk, progress);
+        vboxProblem().cannotCreateHardDiskStorage(this, vbox, location, hardDisk, progress);
         return false;
     }
 
-    vboxProblem().showModalProgressDialog(progress, windowTitle(), parentWidget());
+    vboxProblem().showModalProgressDialog(progress, windowTitle(), "", parentWidget());
 
     if (progress.GetCanceled())
         return false;
 
     if (!progress.isOk() || progress.GetResultCode() != 0)
     {
-        vboxProblem().cannotCreateHardDiskStorage(this, vbox, loc, hardDisk, progress);
+        vboxProblem().cannotCreateHardDiskStorage(this, vbox, location, hardDisk, progress);
         return false;
     }
 

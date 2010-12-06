@@ -35,6 +35,7 @@
 
 #include "../Miniport/vboxioctl.h"
 
+#include <VBox/VBoxVideoGuest.h>
 #include <VBox/VBoxVideo.h>
 #ifdef VBOX_WITH_VIDEOHWACCEL
 #include <iprt/asm.h>
@@ -167,21 +168,11 @@ struct  _PDEV
     BOOL    bSupportDCI;                // Does the miniport support DCI?
     FLONG   flHooks;
 
-#ifndef VBOX_WITH_HGSMI
-    VBVAENABLERESULT vbva;
-    uint32_t         u32VRDPResetFlag;
-#endif /* !VBOX_WITH_HGSMI */
-    BOOL             fHwBufferOverflow;
-    VBVARECORD       *pRecord;
     VRDPBC           cache;
 
     ULONG cSSB;                 // Number of active saved screen bits records in the following array.
     SSB aSSB[4];                // LIFO type stack for saved screen areas.
 
-#ifndef VBOX_WITH_HGSMI
-    VBOXDISPLAYINFO *pInfo;
-    BOOLEAN bVBoxVideoSupported;
-#endif /* !VBOX_WITH_HGSMI */
     ULONG iDevice;
     VRAMLAYOUT layout;
 
@@ -198,20 +189,16 @@ struct  _PDEV
     } ddLock;
 #endif /* VBOX_WITH_DDRAW */
 
-#ifdef VBOX_WITH_HGSMI
     BOOLEAN bHGSMISupported;
-    HGSMIHEAP hgsmiDisplayHeap;
-    VBVABUFFER *pVBVA; /* Pointer to the pjScreen + layout->offVBVABuffer. NULL if VBVA is not enabled. */
+    HGSMIGUESTCOMMANDCONTEXT guestCtx;
+    VBVABUFFERCONTEXT vbvaCtx;
 
     HVBOXVIDEOHGSMI hMpHGSMI; /* context handler passed to miniport HGSMI callbacks */
     PFNVBOXVIDEOHGSMICOMPLETION pfnHGSMICommandComplete; /* called to complete the command we receive from the miniport */
     PFNVBOXVIDEOHGSMICOMMANDS   pfnHGSMIRequestCommands; /* called to requests the commands posted to us from the host */
 
-    RTIOPORT IOPortGuestCommand;
-
     PVOID pVideoPortContext;
     VBOXVIDEOPORTPROCS VideoPortProcs;
-#endif /* VBOX_WITH_HGSMI */
 
 #ifdef VBOX_WITH_VIDEOHWACCEL
     VBOXVHWAINFO vhwaInfo;
@@ -227,10 +214,6 @@ typedef struct
 } OPENGL_INFO, *POPENGL_INFO;
 #endif
 
-#ifndef VBOX_WITH_HGSMI
-/* The global semaphore handle for all driver instances. */
-extern HSEMAPHORE ghsemHwBuffer;
-#endif /* !VBOX_WITH_HGSMI */
 
 
 extern BOOL  g_bOnNT40;
@@ -269,31 +252,20 @@ typedef struct _CLIPRECTS {
 
 typedef struct _VRDPCLIPRECTS
 {
-    RECTL rclDstOrig; /* Original bounding rectancle. */
+    RECTL rclDstOrig; /* Original bounding rectangle. */
     RECTL rclDst;     /* Bounding rectangle of all rects. */
     CLIPRECTS rects;  /* Rectangles to update. */
 } VRDPCLIPRECTS;
 
-
-BOOL vboxVbvaEnable (PPDEV ppdev);
-void vboxVbvaDisable (PPDEV ppdev);
-
-BOOL vboxHwBufferBeginUpdate (PPDEV ppdev);
-void vboxHwBufferEndUpdate (PPDEV ppdev);
-
-BOOL vboxWrite (PPDEV ppdev, const void *pv, uint32_t cb);
-
-BOOL vboxOrderSupported (PPDEV ppdev, unsigned code);
 
 void VBoxProcessDisplayInfo(PPDEV ppdev);
 void VBoxUpdateDisplayInfo (PPDEV ppdev);
 
 void drvLoadEng (void);
 
-#ifdef VBOX_WITH_HGSMI
 void vboxVBVAHostCommandComplete(PPDEV ppdev, VBVAHOSTCMD * pCmd);
 
- #ifdef VBOX_WITH_VIDEOHWACCEL
+#ifdef VBOX_WITH_VIDEOHWACCEL
 
 DECLINLINE(uint64_t) vboxVHWAVramOffsetFromPDEV(PPDEV pDev, ULONG_PTR offPdev)
 {
@@ -396,7 +368,6 @@ void vboxVHWASurfDescFree(PVBOXVHWASURFDESC pDesc);
 int vboxVHWAEnable(PPDEV ppdev);
 int vboxVHWADisable(PPDEV ppdev);
 
- #endif
 #endif
 
 BOOL bIsScreenSurface (SURFOBJ *pso);

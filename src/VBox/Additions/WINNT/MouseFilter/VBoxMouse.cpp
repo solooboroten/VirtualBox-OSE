@@ -470,7 +470,12 @@ Routine Description:
     // different functions, but we know that Context is an event that needs
     // to be set.
     //
-    KeSetEvent(event, 0, FALSE);
+    // If the lower driver didn't return STATUS_PENDING, we don't need to
+    // set the event because we won't be waiting on it.
+    // This optimization avoids grabbing the dispatcher lock and improves perf.
+    //
+    if (Irp->PendingReturned == TRUE)
+        KeSetEvent(event, 0, FALSE);
 
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
@@ -560,7 +565,7 @@ Considerations:
     If you are creating another device object (to communicate with user mode
     via IOCTLs), then this function must act differently based on the intended
     device object.  If the IRP is being sent to the solitary device object, then
-    this function should just complete the IRP (becuase there is no more stack
+    this function should just complete the IRP (because there is no more stack
     locations below it).  If the IRP is being sent to the PnP built stack, then
     the IRP should be passed down the stack.
 
@@ -840,13 +845,16 @@ Return Value:
                &event,
                Executive, // Waiting for reason of a driver
                KernelMode, // Waiting in kernel mode
-               FALSE, // No allert
+               FALSE, // No alert
                NULL); // No timeout
+
+            // Transfer the status from the IOSB
+            status = Irp->IoStatus.Status;
         }
 
         dprintf(("VBoxMouse_PnP: Status: %x, irp status: %x\n", Irp->IoStatus.Status));
 
-        if (NT_SUCCESS(status) && NT_SUCCESS(Irp->IoStatus.Status)) {
+        if (NT_SUCCESS(status)) {
             devExt->Started = TRUE;
             devExt->Removed = FALSE;
             devExt->SurpriseRemoved = FALSE;
@@ -854,10 +862,9 @@ Return Value:
 
         //
         // We must now complete the IRP, since we stopped it in the
-        // completetion routine with MORE_PROCESSING_REQUIRED.
+        // completion routine with MORE_PROCESSING_REQUIRED.
         //
         Irp->IoStatus.Status = status;
-        Irp->IoStatus.Information = 0;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
         break;
@@ -1022,7 +1029,7 @@ Arguments:
     ContinueProcessing - If TRUE, i8042prt will proceed with normal processing of
                          the interrupt.  If FALSE, i8042prt will return from the
                          interrupt after this function returns.  Also, if FALSE,
-                         it is this functions responsibilityt to report the input
+                         it is this functions responsibility to report the input
                          packet via the function provided in the hook IOCTL or via
                          queueing a DPC within this driver and calling the
                          service callback function acquired from the connect IOCTL
@@ -1113,7 +1120,7 @@ Return Value:
 
         if (RT_SUCCESS(rc))
         {
-            if (req->mouseFeatures & VMMDEV_MOUSE_HOST_CAN_ABSOLUTE)
+            if (req->mouseFeatures & VMMDEV_MOUSE_HOST_WANTS_ABSOLUTE)
             {
                 PMOUSE_INPUT_DATA inputData = InputDataStart;
                 while (inputData < InputDataEnd)

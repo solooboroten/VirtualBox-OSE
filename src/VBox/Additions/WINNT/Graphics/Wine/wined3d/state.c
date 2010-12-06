@@ -26,8 +26,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -4532,7 +4532,11 @@ static void vertexdeclaration(DWORD state, IWineD3DStateBlockImpl *stateblock, s
         if (useVertexShaderFunction)
         {
             GLfloat yoffset = -(63.0f / 64.0f) / stateblock->viewport.Height;
+#if !defined(VBOX_WITH_WDDM) || !defined(DEBUG_leo)
             device->posFixup[1] = context->render_offscreen ? -1.0f : 1.0f;
+#else
+            device->posFixup[1] = context->render_offscreen ? -1.0f : 1.0f;
+#endif
             device->posFixup[3] = device->posFixup[1] * yoffset;
         }
     }

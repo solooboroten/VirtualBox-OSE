@@ -1,4 +1,4 @@
-/* $Id: tstRTFsQueries.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: tstRTFsQueries.cpp 30365 2010-06-22 12:08:20Z vboxsync $ */
 /** @file
  * IPRT Testcase - RTFs Queries..
  */
@@ -73,6 +73,16 @@ int main(int argc, char **argv)
         if (RT_FAILURE(rc))
         {
             RTPrintf("tstRTFsQueries: RTFsQuerySizes(nop) failed, rc=%Rrc\n", rc);
+            cErrors++;
+        }
+
+        RTFSTYPE enmType;
+        rc = RTFsQueryType(argv[i], &enmType);
+        if (RT_SUCCESS(rc))
+            RTPrintf("tstRTFsQueries: file system type is '%s'\n", RTFsTypeName(enmType));
+        else
+        {
+            RTPrintf("tstRTFsQueries: RTFsQueryType failed, rc=%Rrc\n", rc);
             cErrors++;
         }
 

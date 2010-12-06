@@ -1,4 +1,4 @@
-/* $Id: VMMAll.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VMMAll.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * VMM All Contexts.
  */
@@ -25,7 +25,8 @@
 #include <VBox/vm.h>
 #include <VBox/vmm.h>
 #include <VBox/param.h>
-#include <VBox/hwaccm.h>
+#include <iprt/thread.h>
+#include <iprt/mp.h>
 
 
 /**
@@ -35,19 +36,16 @@
  * by a push/ret/whatever does it become writable.)
  *
  * @returns bottom of the stack.
- * @param   pVM         The VM handle.
+ * @param   pVCpu       The VMCPU handle.
  */
-VMMDECL(RTRCPTR) VMMGetStackRC(PVM pVM)
+VMMDECL(RTRCPTR) VMMGetStackRC(PVMCPU pVCpu)
 {
-    PVMCPU pVCpu = VMMGetCpu(pVM);
-    Assert(pVCpu);
-
     return (RTRCPTR)pVCpu->vmm.s.pbEMTStackBottomRC;
 }
 
 
 /**
- * Gets the ID virtual of the virtual CPU assoicated with the calling thread.
+ * Gets the ID virtual of the virtual CPU associated with the calling thread.
  *
  * @returns The CPU ID. NIL_VMCPUID if the thread isn't an EMT.
  *
@@ -61,7 +59,34 @@ VMMDECL(VMCPUID) VMMGetCpuId(PVM pVM)
 #elif defined(IN_RING0)
     if (pVM->cCpus == 1)
         return 0;
-    return HWACCMR0GetVMCPUId(pVM);
+
+    /* Search first by host cpu id (most common case)
+     * and then by native thread id (page fusion case).
+     */
+    /* RTMpCpuId had better be cheap. */
+    RTCPUID idHostCpu = RTMpCpuId();
+
+    /** @todo optimize for large number of VCPUs when that becomes more common. */
+    for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
+    {
+        PVMCPU pVCpu = &pVM->aCpus[idCpu];
+
+        if (pVCpu->idHostCpu == idHostCpu)
+            return pVCpu->idCpu;
+    }
+
+    /* RTThreadGetNativeSelf had better be cheap. */
+    RTNATIVETHREAD hThread = RTThreadNativeSelf();
+
+    /** @todo optimize for large number of VCPUs when that becomes more common. */
+    for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
+    {
+        PVMCPU pVCpu = &pVM->aCpus[idCpu];
+
+        if (pVCpu->hNativeThreadR0 == hThread)
+            return pVCpu->idCpu;
+    }
+    return NIL_VMCPUID;
 
 #else /* RC: Always EMT(0) */
     return 0;
@@ -83,12 +108,40 @@ VMMDECL(PVMCPU) VMMGetCpu(PVM pVM)
     if (idCpu == NIL_VMCPUID)
         return NULL;
     Assert(idCpu < pVM->cCpus);
-    return &pVM->aCpus[VMR3GetVMCPUId(pVM)];
+    return &pVM->aCpus[idCpu];
 
 #elif defined(IN_RING0)
     if (pVM->cCpus == 1)
         return &pVM->aCpus[0];
-    return HWACCMR0GetVMCPU(pVM);
+
+    /* Search first by host cpu id (most common case)
+     * and then by native thread id (page fusion case).
+     */
+
+    /* RTMpCpuId had better be cheap. */
+    RTCPUID idHostCpu = RTMpCpuId();
+
+    /** @todo optimize for large number of VCPUs when that becomes more common. */
+    for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
+    {
+        PVMCPU pVCpu = &pVM->aCpus[idCpu];
+
+        if (pVCpu->idHostCpu == idHostCpu)
+            return pVCpu;
+    }
+
+    /* RTThreadGetNativeSelf had better be cheap. */
+    RTNATIVETHREAD hThread = RTThreadNativeSelf();
+
+    /** @todo optimize for large number of VCPUs when that becomes more common. */
+    for (VMCPUID idCpu = 0; idCpu < pVM->cCpus; idCpu++)
+    {
+        PVMCPU pVCpu = &pVM->aCpus[idCpu];
+
+        if (pVCpu->hNativeThreadR0 == hThread)
+            return pVCpu;
+    }
+    return NULL;
 
 #else /* RC: Always EMT(0) */
     return &pVM->aCpus[0];

@@ -19,13 +19,14 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
  * of the LGPL is applied is otherwise unspecified.
  */
+
 #ifndef CPU_ALL_H
 #define CPU_ALL_H
 
@@ -1087,7 +1088,7 @@ extern int use_icount;
 #define CPU_INTERRUPT_FIQ    0x10 /* Fast interrupt pending.  */
 #define CPU_INTERRUPT_HALT   0x20 /* CPU halt wanted */
 #define CPU_INTERRUPT_SMI    0x40 /* (x86 only) SMI interrupt pending */
-#define CPU_INTERRUPT_DEBUG  0x80 /* Debug event occured.  */
+#define CPU_INTERRUPT_DEBUG  0x80 /* Debug event occurred.  */
 #define CPU_INTERRUPT_VIRQ   0x100 /* virtual interrupt pending.  */
 #define CPU_INTERRUPT_NMI    0x200 /* NMI pending. */
 
@@ -1192,7 +1193,7 @@ extern uint8_t *phys_ram_dirty;
 
 /* MMIO pages are identified by a combination of an IO device index and
    3 flags.  The ROMD code stores the page ram offset in iotlb entry,
-   so only a limited number of ids are avaiable.  */
+   so only a limited number of ids are available.  */
 
 #define IO_MEM_SHIFT       3
 #define IO_MEM_NB_ENTRIES  (1 << (TARGET_PAGE_BITS  - IO_MEM_SHIFT))

@@ -19,13 +19,14 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
  * of the LGPL is applied is otherwise unspecified.
  */
+
 #define DATA_SIZE (1 << SHIFT)
 
 #if DATA_SIZE == 8
@@ -113,7 +114,7 @@ DATA_TYPE REGPARM glue(glue(__ld, SUFFIX), MMUSUFFIX)(target_ulong addr,
 #else
 /* Load helpers invoked from generated code, and TCG makes an assumption
    that valid value takes the whole register, why gcc after 4.3 may
-   use only lower part of register for smaller types. So force promoution. */
+   use only lower part of register for smaller types. So force promotion. */
 DATA_TYPE_PROMOTED REGPARM
 glue(glue(__ld, SUFFIX), MMUSUFFIX)(target_ulong addr,
                                     int mmu_idx)

@@ -1,4 +1,4 @@
-/* $Id: ip_input.c 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: ip_input.c 34103 2010-11-16 11:18:55Z vboxsync $ */
 /** @file
  * NAT - IP input.
  */
@@ -90,14 +90,9 @@ static struct libalias *select_alias(PNATState pData, struct mbuf* m)
     struct udphdr *udp = NULL;
     struct ip *pip = NULL;
 
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-    if (m->m_la)
-        return m->m_la;
-#else
     struct m_tag *t;
     if ((t = m_tag_find(m, PACKET_TAG_ALIAS, NULL)) != 0)
         return (struct libalias *)&t[1];
-#endif
 
     return la;
 }
@@ -115,17 +110,15 @@ ip_input(PNATState pData, struct mbuf *m)
 
     STAM_PROFILE_START(&pData->StatIP_input, a);
 
-    DEBUG_CALL("ip_input");
-    DEBUG_ARG("m = %lx", (long)m);
+    LogFlow(("ip_input: m = %lx\n", (long)m));
     ip = mtod(m, struct ip *);
-    Log2(("ip_dst=%R[IP4](len:%d) m_len = %d", &ip->ip_dst, RT_N2H_U16(ip->ip_len), m->m_len));
     Log2(("ip_dst=%R[IP4](len:%d) m_len = %d\n", &ip->ip_dst, RT_N2H_U16(ip->ip_len), m->m_len));
 
     ipstat.ips_total++;
     {
         int rc;
         STAM_PROFILE_START(&pData->StatALIAS_input, b);
-        rc = LibAliasIn(select_alias(pData, m), mtod(m, char *), m->m_len);
+        rc = LibAliasIn(select_alias(pData, m), mtod(m, char *), m_length(m, NULL));
         STAM_PROFILE_STOP(&pData->StatALIAS_input, b);
         Log2(("NAT: LibAlias return %d\n", rc));
         if (m->m_len != RT_N2H_U16(ip->ip_len))
@@ -145,7 +138,7 @@ ip_input(PNATState pData, struct mbuf *m)
     if (ip->ip_v != IPVERSION)
     {
         ipstat.ips_badvers++;
-        goto bad;
+        goto bad_free_m;
     }
 
     hlen = ip->ip_hl << 2;
@@ -154,7 +147,7 @@ ip_input(PNATState pData, struct mbuf *m)
     {
         /* min header length */
         ipstat.ips_badhlen++;                     /* or packet too short */
-        goto bad;
+        goto bad_free_m;
     }
 
     /* keep ip header intact for ICMP reply
@@ -164,7 +157,7 @@ ip_input(PNATState pData, struct mbuf *m)
     if (cksum(m, hlen))
     {
         ipstat.ips_badsum++;
-        goto bad;
+        goto bad_free_m;
     }
 
     /*
@@ -174,7 +167,7 @@ ip_input(PNATState pData, struct mbuf *m)
     if (ip->ip_len < hlen)
     {
         ipstat.ips_badlen++;
-        goto bad;
+        goto bad_free_m;
     }
 
     NTOHS(ip->ip_id);
@@ -189,7 +182,7 @@ ip_input(PNATState pData, struct mbuf *m)
     if (mlen < ip->ip_len)
     {
         ipstat.ips_tooshort++;
-        goto bad;
+        goto bad_free_m;
     }
 
     /* Should drop packet if mbuf too long? hmmm... */
@@ -200,7 +193,7 @@ ip_input(PNATState pData, struct mbuf *m)
     if (ip->ip_ttl==0 || ip->ip_ttl == 1)
     {
         icmp_error(pData, m, ICMP_TIMXCEED, ICMP_TIMXCEED_INTRANS, 0, "ttl");
-        goto bad;
+        goto bad_free_m;
     }
 
     ip->ip_ttl--;
@@ -248,7 +241,7 @@ ip_input(PNATState pData, struct mbuf *m)
     STAM_PROFILE_STOP(&pData->StatIP_input, a);
     return;
 
-bad:
+bad_free_m:
     Log2(("NAT: IP datagram to %R[IP4] with size(%d) claimed as bad\n",
         &ip->ip_dst, ip->ip_len));
     m_freem(pData, m);
@@ -390,12 +383,7 @@ found:
         fp->ipq_nfrags++;
     }
 
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-#define GETIP(m)    ((struct ip*)(MBUF_IP_HEADER(m)))
-#else
 #define GETIP(m)    ((struct ip*)((m)->m_pkthdr.header))
-#endif
-
 
     /*
      * Find a segment which begins after this one does.
@@ -589,7 +577,7 @@ ip_slowtimo(PNATState pData)
      * additional loop see (see ip_input.c in FreeBSD tree)
      */
     int i;
-    DEBUG_CALL("ip_slowtimo");
+    LogFlow(("ip_slowtimo:\n"));
     for (i = 0; i < IPREASS_NHASH; i++)
     {
         for(fp = TAILQ_FIRST(&ipq[i]); fp;)

@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -30,8 +30,9 @@
 #include <VBox/gvmm.h>
 #include <VBox/sup.h>
 #include <VBox/VMMDev.h> /* for VMMDEVSHAREDREGIONDESC */
-#include <VBox/feature.h>
+#include <VBox/param.h>
 #include <iprt/avl.h>
+
 RT_C_DECLS_BEGIN
 
 /** @defgroup   grp_gmm     GMM - The Global Memory Manager
@@ -293,18 +294,15 @@ GMMR0DECL(int)  GMMR0AllocateLargePage(PVM pVM, VMCPUID idCpu, uint32_t cbPage, 
 GMMR0DECL(int)  GMMR0FreePages(PVM pVM, VMCPUID idCpu, uint32_t cPages, PGMMFREEPAGEDESC paPages, GMMACCOUNT enmAccount);
 GMMR0DECL(int)  GMMR0FreeLargePage(PVM pVM, VMCPUID idCpu, uint32_t idPage);
 GMMR0DECL(int)  GMMR0BalloonedPages(PVM pVM, VMCPUID idCpu, GMMBALLOONACTION enmAction, uint32_t cBalloonedPages);
-GMMR0DECL(int)  GMMR0MapUnmapChunk(PVM pVM, VMCPUID idCpu, uint32_t idChunkMap, uint32_t idChunkUnmap, PRTR3PTR ppvR3);
+GMMR0DECL(int)  GMMR0MapUnmapChunk(PVM pVM, uint32_t idChunkMap, uint32_t idChunkUnmap, PRTR3PTR ppvR3);
 GMMR0DECL(int)  GMMR0SeedChunk(PVM pVM, VMCPUID idCpu, RTR3PTR pvR3);
 GMMR0DECL(int)  GMMR0RegisterSharedModule(PVM pVM, VMCPUID idCpu, VBOXOSFAMILY enmGuestOS, char *pszModuleName, char *pszVersion, RTGCPTR GCBaseAddr, uint32_t cbModule, unsigned cRegions, VMMDEVSHAREDREGIONDESC *pRegions);
 GMMR0DECL(int)  GMMR0UnregisterSharedModule(PVM pVM, VMCPUID idCpu, char *pszModuleName, char *pszVersion, RTGCPTR GCBaseAddr, uint32_t cbModule);
 GMMR0DECL(int)  GMMR0UnregisterAllSharedModules(PVM pVM, VMCPUID idCpu);
-GMMR0DECL(int) GMMR0CheckSharedModules(PVM pVM, PVMCPU pVCpu);
+GMMR0DECL(int)  GMMR0CheckSharedModules(PVM pVM, PVMCPU pVCpu);
 GMMR0DECL(int)  GMMR0ResetSharedModules(PVM pVM, VMCPUID idCpu);
-#ifdef LOG_ENABLED
-GMMR0DECL(int) GMMR0CheckSharedModulesStart(PVM pVM);
-GMMR0DECL(int) GMMR0CheckSharedModulesEnd(PVM pVM);
-#endif
-
+GMMR0DECL(int)  GMMR0CheckSharedModulesStart(PVM pVM);
+GMMR0DECL(int)  GMMR0CheckSharedModulesEnd(PVM pVM);
 
 /**
  * Request buffer for GMMR0InitialReservationReq / VMMR0_DO_GMM_INITIAL_RESERVATION.
@@ -447,7 +445,7 @@ typedef struct GMMMAPUNMAPCHUNKREQ
 /** Pointer to a GMMR0MapUnmapChunkReq / VMMR0_DO_GMM_MAP_UNMAP_CHUNK request buffer. */
 typedef GMMMAPUNMAPCHUNKREQ *PGMMMAPUNMAPCHUNKREQ;
 
-GMMR0DECL(int)  GMMR0MapUnmapChunkReq(PVM pVM, VMCPUID idCpu, PGMMMAPUNMAPCHUNKREQ pReq);
+GMMR0DECL(int)  GMMR0MapUnmapChunkReq(PVM pVM, PGMMMAPUNMAPCHUNKREQ pReq);
 
 
 /**
@@ -561,7 +559,7 @@ typedef struct GMMSHAREDPAGEDESC
 /** Pointer to a GMMSHAREDPAGEDESC. */
 typedef GMMSHAREDPAGEDESC *PGMMSHAREDPAGEDESC;
 
-GMMR0DECL(int) GMMR0SharedModuleCheckRange(PGVM pGVM, PGMMSHAREDMODULE pModule, unsigned idxRegion, unsigned cPages, PGMMSHAREDPAGEDESC paPageDesc);
+GMMR0DECL(int) GMMR0SharedModuleCheckPage(PGVM pGVM, PGMMSHAREDMODULE pModule, unsigned idxRegion, unsigned idxPage, PGMMSHAREDPAGEDESC pPageDesc);
 
 /**
  * Request buffer for GMMR0UnregisterSharedModuleReq / VMMR0_DO_GMM_UNREGISTER_SHARED_MODULE.
@@ -587,6 +585,25 @@ typedef GMMUNREGISTERSHAREDMODULEREQ *PGMMUNREGISTERSHAREDMODULEREQ;
 
 GMMR0DECL(int) GMMR0UnregisterSharedModuleReq(PVM pVM, VMCPUID idCpu, PGMMUNREGISTERSHAREDMODULEREQ pReq);
 
+#if defined(VBOX_STRICT) && HC_ARCH_BITS == 64
+/**
+ * Request buffer for GMMR0FindDuplicatePageReq / VMMR0_DO_GMM_FIND_DUPLICATE_PAGE.
+ * @see GMMR0FindDuplicatePage.
+ */
+typedef struct GMMFINDDUPLICATEPAGEREQ
+{
+    /** The header. */
+    SUPVMMR0REQHDR              Hdr;
+    /** Page id. */
+    uint32_t                    idPage;
+    /** Duplicate flag (out) */
+    bool                        fDuplicate;
+} GMMFINDDUPLICATEPAGEREQ;
+/** Pointer to a GMMR0FindDuplicatePageReq / VMMR0_DO_GMM_FIND_DUPLICATE_PAGE request buffer. */
+typedef GMMFINDDUPLICATEPAGEREQ *PGMMFINDDUPLICATEPAGEREQ;
+
+GMMR0DECL(int) GMMR0FindDuplicatePageReq(PVM pVM, PGMMFINDDUPLICATEPAGEREQ pReq);
+#endif /* VBOX_STRICT && HC_ARCH_BITS == 64 */
 
 #ifdef IN_RING3
 /** @defgroup grp_gmm_r3    The Global Memory Manager Ring-3 API Wrappers
@@ -615,6 +632,11 @@ GMMR3DECL(int)  GMMR3RegisterSharedModule(PVM pVM, PGMMREGISTERSHAREDMODULEREQ p
 GMMR3DECL(int)  GMMR3UnregisterSharedModule(PVM pVM, PGMMUNREGISTERSHAREDMODULEREQ pReq);
 GMMR3DECL(int)  GMMR3CheckSharedModules(PVM pVM);
 GMMR3DECL(int)  GMMR3ResetSharedModules(PVM pVM);
+
+# if defined(VBOX_STRICT) && HC_ARCH_BITS == 64
+GMMR3DECL(bool) GMMR3IsDuplicatePage(PVM pVM, uint32_t idPage);
+# endif
+
 /** @} */
 #endif /* IN_RING3 */
 

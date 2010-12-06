@@ -18,8 +18,8 @@
 */
 
 /*
- * Sun GPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle GPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the General Public License version 2 (GPLv2) at this time for any software where
  * a choice of GPL license versions is made available with the language indicating
  * that GPLv2 or any later version may be used, or where a choice of which version
@@ -125,7 +125,11 @@ printer_create(uint32 device_id, uint32 access, uint32 share_mode, uint32 dispos
 	}
 	else
 	{
+#ifdef VBOX
+		snprintf(cmd, sizeof(cmd), "lpr -P %s", pprinter_data->printer);
+#else
 		sprintf(cmd, "lpr -P %s", pprinter_data->printer);
+#endif
 		pprinter_data->printer_fp = popen(cmd, "w");
 	}
 

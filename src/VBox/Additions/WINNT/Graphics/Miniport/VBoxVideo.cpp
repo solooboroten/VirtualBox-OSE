@@ -14,8 +14,11 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-#include "VBoxVideo.h"
+#include "VBoxVideo-win.h"
 #include "Helper.h"
+#ifdef VBOX_WITH_WDDM
+#include "wddm/VBoxVideoMisc.h"
+#endif
 
 #include <iprt/log.h>
 #include <VBox/VMMDev.h>
@@ -39,65 +42,80 @@ static WCHAR VBoxDACType[] = L"Integrated RAMDAC";
 static WCHAR VBoxAdapterString[] = L"VirtualBox Video Adapter";
 static WCHAR VBoxBiosString[] = L"Version 0xB0C2 or later";
 
+VIDEO_ACCESS_RANGE  VGARanges[] = {
+    { 0x000003B0, 0x00000000, 0x0000000C, 1, 1, 1, 0 }, /* 0x3B0-0x3BB */
+    { 0x000003C0, 0x00000000, 0x00000020, 1, 1, 1, 0 }, /* 0x3C0-0x3DF */
+    { 0x000A0000, 0x00000000, 0x00020000, 0, 0, 1, 0 }, /* 0xA0000-0xBFFFF */
+};
 /*
  * Globals for the last custom resolution set. This is important
  * for system startup so that we report the last currently set
  * custom resolution and Windows can use it again.
  */
 #ifndef VBOX_WITH_MULTIMONITOR_FIX
-ULONG gCustomXRes = 0;
-ULONG gCustomYRes = 0;
-ULONG gCustomBPP  = 0;
+uint32_t gCustomXRes = 0;
+uint32_t gCustomYRes = 0;
+uint32_t gCustomBPP  = 0;
 #endif /* !VBOX_WITH_MULTIMONITOR_FIX */
+
+/*******************************************************************************
+*   Structures and Typedefs                                                    *
+*******************************************************************************/
+
+#ifndef VBOX_WITH_WDDM
+typedef struct _DEVICE_EXTENSION * VBOXCMNREG;
+#else
+typedef HANDLE VBOXCMNREG;
+#endif
+
+/*******************************************************************************
+*   Internal Functions                                                         *
+*******************************************************************************/
 
 int vboxVbvaEnable (PDEVICE_EXTENSION pDevExt, ULONG ulEnable, VBVAENABLERESULT *pVbvaResult);
 
-#ifndef VBOXWDDM
-ULONG DriverEntry(IN PVOID Context1, IN PVOID Context2)
-{
-    VIDEO_HW_INITIALIZATION_DATA InitData;
-    ULONG rc;
+static VP_STATUS VBoxVideoFindAdapter(
+   IN PVOID HwDeviceExtension,
+   IN PVOID HwContext,
+   IN PWSTR ArgumentString,
+   IN OUT PVIDEO_PORT_CONFIG_INFO ConfigInfo,
+   OUT PUCHAR Again);
 
-    dprintf(("VBoxVideo::DriverEntry. Built %s %s\n", __DATE__, __TIME__));
+static BOOLEAN VBoxVideoInitialize(PVOID HwDeviceExtension);
 
-    VideoPortZeroMemory(&InitData, sizeof(VIDEO_HW_INITIALIZATION_DATA));
-    InitData.HwInitDataSize = sizeof(VIDEO_HW_INITIALIZATION_DATA);
-    InitData.HwFindAdapter = VBoxVideoFindAdapter;
-    InitData.HwInitialize = VBoxVideoInitialize;
-#if defined(VBOX_WITH_HGSMI) && defined(VBOX_WITH_VIDEOHWACCEL)
-    InitData.HwInterrupt = VBoxVideoInterrupt;
-#else
-    InitData.HwInterrupt = NULL;
+static BOOLEAN VBoxVideoStartIO(
+   PVOID HwDeviceExtension,
+   PVIDEO_REQUEST_PACKET RequestPacket);
+
+#ifdef VBOX_WITH_VIDEOHWACCEL
+static BOOLEAN VBoxVideoInterrupt(PVOID  HwDeviceExtension);
 #endif
-    InitData.HwStartIO = VBoxVideoStartIO;
-    InitData.HwResetHw = VBoxVideoResetHW;
-    InitData.HwDeviceExtensionSize = 0;
-    // nowhere documented but without the following line, NT4 SP0 will choke
-    InitData.AdapterInterfaceType = PCIBus;
-    InitData.HwGetPowerState = VBoxVideoGetPowerState;
-    InitData.HwSetPowerState = VBoxVideoSetPowerState;
-    InitData.HwGetVideoChildDescriptor = VBoxVideoGetChildDescriptor;
-    InitData.HwDeviceExtensionSize = sizeof(DEVICE_EXTENSION);
 
-    // our DDK is at the Win2k3 level so we have to take special measures
-    // for backwards compatibility
-    switch (vboxQueryWinVersion())
-    {
-        case WINNT4:
-            dprintf(("VBoxVideo::DriverEntry: WINNT4\n"));
-            InitData.HwInitDataSize = SIZE_OF_NT4_VIDEO_HW_INITIALIZATION_DATA;
-            break;
-        case WIN2K:
-            dprintf(("VBoxVideo::DriverEntry: WIN2K\n"));
-            InitData.HwInitDataSize = SIZE_OF_W2K_VIDEO_HW_INITIALIZATION_DATA;
-            break;
-    }
-    rc = VideoPortInitialize(Context1, Context2, &InitData, NULL);
 
-    dprintf(("VBoxVideo::DriverEntry: returning with rc = 0x%x\n", rc));
-    return rc;
-}
+static BOOLEAN VBoxVideoResetHW(
+   PVOID HwDeviceExtension,
+   ULONG Columns,
+   ULONG Rows);
 
+static VP_STATUS VBoxVideoGetPowerState(
+   PVOID HwDeviceExtension,
+   ULONG HwId,
+   PVIDEO_POWER_MANAGEMENT VideoPowerControl);
+
+static VP_STATUS VBoxVideoSetPowerState(
+   PVOID HwDeviceExtension,
+   ULONG HwId,
+   PVIDEO_POWER_MANAGEMENT VideoPowerControl);
+
+static VP_STATUS VBoxVideoGetChildDescriptor(
+   PVOID HwDeviceExtension,
+   PVIDEO_CHILD_ENUM_INFO ChildEnumInfo,
+   PVIDEO_CHILD_TYPE VideoChildType,
+   PUCHAR pChildDescriptor,
+   PULONG pUId,
+   PULONG pUnused);
+
+#ifndef VBOX_WITH_WDDM
 /*+++
 
 Routine Description:
@@ -129,8 +147,9 @@ Return Value:
     and return no error, else if the value is non-zero return an error.
 
 ---*/
-VP_STATUS VBoxRegistryCallback(PVOID HwDeviceExtension, PVOID Context,
-                               PWSTR ValueName, PVOID ValueData, ULONG ValueLength)
+static VP_STATUS VBoxRegistryCallback(PVOID HwDeviceExtension, PVOID Context,
+                                      PWSTR ValueName, PVOID ValueData,
+                                      ULONG ValueLength)
 {
     //dprintf(("VBoxVideo::VBoxRegistryCallback: Context: %p, ValueName: %S, ValueData: %p, ValueLength: %d\n",
     //         Context, ValueName, ValueData, ValueLength));
@@ -145,19 +164,1224 @@ VP_STATUS VBoxRegistryCallback(PVOID HwDeviceExtension, PVOID Context,
     else
         return ERROR_INVALID_PARAMETER;
 }
+#endif /* #ifndef VBOX_WITH_WDDM */
 
-VP_STATUS VBoxVideoCmnRegQueryDword(IN VBOXCMNREG Reg, PWSTR pName, uint32_t *pVal)
+static VP_STATUS VBoxVideoCmnRegQueryDword(IN VBOXCMNREG Reg, PWSTR pName, uint32_t *pVal)
 {
+#ifndef VBOX_WITH_WDDM
     return VideoPortGetRegistryParameters(Reg, pName, FALSE, VBoxRegistryCallback, pVal);
+#else
+    if(!Reg)
+        return ERROR_INVALID_PARAMETER;
+    NTSTATUS Status = vboxWddmRegQueryValueDword(Reg, pName, (PDWORD)pVal);
+    return Status == STATUS_SUCCESS ? NO_ERROR : ERROR_INVALID_PARAMETER;
+#endif
 }
 
-VP_STATUS VBoxVideoCmnRegSetDword(IN VBOXCMNREG Reg, PWSTR pName, uint32_t Val)
+static VP_STATUS VBoxVideoCmnRegSetDword(IN VBOXCMNREG Reg, PWSTR pName, uint32_t Val)
 {
+#ifndef VBOX_WITH_WDDM
     return VideoPortSetRegistryParameters(Reg, pName, &Val, sizeof(Val));
+#else
+    if(!Reg)
+        return ERROR_INVALID_PARAMETER;
+    NTSTATUS Status = vboxWddmRegSetValueDword(Reg, pName, Val);
+    return Status == STATUS_SUCCESS ? NO_ERROR : ERROR_INVALID_PARAMETER;
+#endif
 }
 
-#endif /* #ifndef VBOXWDDM */
+static VP_STATUS VBoxVideoCmnRegInit(IN PDEVICE_EXTENSION pDeviceExtension, OUT VBOXCMNREG *pReg)
+{
+#ifndef VBOX_WITH_WDDM
+    *pReg = pDeviceExtension->pPrimary;
+    return NO_ERROR;
+#else
+    WCHAR Buf[512];
+    ULONG cbBuf = sizeof(Buf);
+    NTSTATUS Status = vboxWddmRegQueryDrvKeyName(pDeviceExtension, cbBuf, Buf, &cbBuf);
+    Assert(Status == STATUS_SUCCESS);
+    if (Status == STATUS_SUCCESS)
+    {
+        Status = vboxWddmRegOpenKey(pReg, Buf, GENERIC_READ | GENERIC_WRITE);
+        Assert(Status == STATUS_SUCCESS);
+        if(Status == STATUS_SUCCESS)
+            return NO_ERROR;
+    }
 
+    /* fall-back to make the subsequent VBoxVideoCmnRegXxx calls treat the fail accordingly
+     * basically needed to make as less modifications to the current XPDM code as possible */
+    *pReg = NULL;
+
+    return ERROR_INVALID_PARAMETER;
+#endif
+}
+
+static VP_STATUS VBoxVideoCmnRegFini(IN VBOXCMNREG Reg)
+{
+#ifndef VBOX_WITH_WDDM
+    return NO_ERROR;
+#else
+    if(!Reg)
+        return ERROR_INVALID_PARAMETER;
+
+    NTSTATUS Status = ZwClose(Reg);
+    return Status == STATUS_SUCCESS ? NO_ERROR : ERROR_INVALID_PARAMETER;
+#endif
+}
+
+void VBoxVideoCmnSignalEvent(PVBOXVIDEO_COMMON pCommon, uint64_t pvEvent)
+{
+    PDEVICE_EXTENSION PrimaryExtension = commonToPrimaryExt(pCommon);
+#ifndef VBOX_WITH_WDDM
+    PEVENT pEvent = (PEVENT)pvEvent;
+    PrimaryExtension->u.primary.VideoPortProcs.pfnSetEvent(PrimaryExtension,
+                                                           pEvent);
+#else
+    PKEVENT pEvent = (PKEVENT)pvEvent;
+    KeSetEvent(pEvent, 0, FALSE);
+#endif
+}
+
+
+#define MEM_TAG 'HVBV'
+
+void *VBoxVideoCmnMemAllocDriver(PVBOXVIDEO_COMMON pCommon, size_t cb)
+{
+    ULONG Tag = MEM_TAG;
+#ifndef VBOX_WITH_WDDM
+    PDEVICE_EXTENSION PrimaryExtension = commonToPrimaryExt(pCommon);
+    return PrimaryExtension->u.primary.VideoPortProcs.pfnAllocatePool(PrimaryExtension, (VBOXVP_POOL_TYPE)VpNonPagedPool, cb, Tag);
+#else
+    return ExAllocatePoolWithTag(NonPagedPool, cb, Tag);
+#endif
+}
+
+
+void VBoxVideoCmnMemFreeDriver(PVBOXVIDEO_COMMON pCommon, void *pv)
+{
+#ifndef VBOX_WITH_WDDM
+    PDEVICE_EXTENSION PrimaryExtension = commonToPrimaryExt(pCommon);
+    PrimaryExtension->u.primary.VideoPortProcs.pfnFreePool(PrimaryExtension,
+                                                           pv);
+#else
+    ExFreePool(pv);
+#endif
+}
+
+static VOID VBoxVideoCmnMemZero(PVOID pvMem, ULONG cbMem)
+{
+#ifndef VBOX_WITH_WDDM
+    VideoPortZeroMemory(pvMem, cbMem);
+#else
+    memset(pvMem, 0, cbMem);
+#endif
+}
+
+
+#ifndef VBOX_WITH_WDDM
+static void VBoxSetupVideoPortFunctions(PDEVICE_EXTENSION PrimaryExtension,
+                                VBOXVIDEOPORTPROCS *pCallbacks,
+                                PVIDEO_PORT_CONFIG_INFO pConfigInfo);
+
+ULONG DriverEntry(IN PVOID Context1, IN PVOID Context2)
+{
+    VIDEO_HW_INITIALIZATION_DATA InitData;
+    ULONG rc;
+
+    dprintf(("VBoxVideo::DriverEntry. Built %s %s\n", __DATE__, __TIME__));
+
+    VideoPortZeroMemory(&InitData, sizeof(VIDEO_HW_INITIALIZATION_DATA));
+    InitData.HwInitDataSize = sizeof(VIDEO_HW_INITIALIZATION_DATA);
+    InitData.HwFindAdapter = VBoxVideoFindAdapter;
+    InitData.HwInitialize = VBoxVideoInitialize;
+#ifdef VBOX_WITH_VIDEOHWACCEL
+    InitData.HwInterrupt = VBoxVideoInterrupt;
+#else
+    InitData.HwInterrupt = NULL;
+#endif
+    InitData.HwStartIO = VBoxVideoStartIO;
+    InitData.HwResetHw = VBoxVideoResetHW;
+    InitData.HwDeviceExtensionSize = 0;
+    // nowhere documented but without the following line, NT4 SP0 will choke
+    InitData.AdapterInterfaceType = PCIBus;
+    InitData.HwGetPowerState = VBoxVideoGetPowerState;
+    InitData.HwSetPowerState = VBoxVideoSetPowerState;
+    InitData.HwGetVideoChildDescriptor = VBoxVideoGetChildDescriptor;
+    InitData.HwDeviceExtensionSize = sizeof(DEVICE_EXTENSION);
+    // report legacy VGA resource ranges
+    InitData.HwLegacyResourceList  = VGARanges;
+    InitData.HwLegacyResourceCount = sizeof(VGARanges) / sizeof(VGARanges[0]);
+
+    // our DDK is at the Win2k3 level so we have to take special measures
+    // for backwards compatibility
+    switch (vboxQueryWinVersion())
+    {
+        case WINNT4:
+            dprintf(("VBoxVideo::DriverEntry: WINNT4\n"));
+            InitData.HwInitDataSize = SIZE_OF_NT4_VIDEO_HW_INITIALIZATION_DATA;
+            break;
+        case WIN2K:
+            dprintf(("VBoxVideo::DriverEntry: WIN2K\n"));
+            InitData.HwInitDataSize = SIZE_OF_W2K_VIDEO_HW_INITIALIZATION_DATA;
+            break;
+    }
+    rc = VideoPortInitialize(Context1, Context2, &InitData, NULL);
+
+    dprintf(("VBoxVideo::DriverEntry: returning with rc = 0x%x\n", rc));
+    return rc;
+}
+#endif
+
+#ifdef VBOX_WITH_GENERIC_MULTIMONITOR
+
+/* builds a g_VBoxWddmVideoResolutions given VideoModes info */
+static int vboxVideoBuildResolutionTable(VIDEO_MODE_INFORMATION *VideoModes, uint32_t cNumVideoModes, SIZE *pResolutions, uint32_t * pcResolutions)
+{
+    uint32_t cResolutionsArray = *pcResolutions;
+    uint32_t cResolutions = 0;
+    int rc = VINF_SUCCESS;
+
+    /* we don't care about the efficiency at this time */
+    for (uint32_t i = 0; i < cNumVideoModes; ++i)
+    {
+        VIDEO_MODE_INFORMATION *pMode = &VideoModes[i];
+        bool bFound = false;
+        for (uint32_t j = 0; j < cResolutions; ++j)
+        {
+            if (pResolutions[j].cx == pMode->VisScreenWidth
+                    && pResolutions[j].cy == pMode->VisScreenHeight)
+            {
+                bFound = true;
+                break;
+            }
+        }
+
+        if (!bFound)
+        {
+            if (cResolutions >= cResolutionsArray)
+            {
+                rc = VERR_BUFFER_OVERFLOW;
+                break;
+            }
+
+            pResolutions[cResolutions].cx = pMode->VisScreenWidth;
+            pResolutions[cResolutions].cy = pMode->VisScreenHeight;
+            ++cResolutions;
+        }
+    }
+
+    *pcResolutions = cResolutions;
+    return rc;
+}
+
+/* On the driver startup this is initialized from registry (replaces gCustom*). */
+static VIDEO_MODE_INFORMATION CustomVideoModes[64] = { 0 };
+
+static bool vboxVideoIsVideoModeSupported(PDEVICE_EXTENSION DeviceExtension, int iDisplay, ULONG vramSize,
+        uint32_t xres, uint32_t yres, uint32_t bpp)
+{
+    static uint32_t xresNoVRAM = 0;
+    static uint32_t yresNoVRAM = 0;
+    static uint32_t bppNoVRAM = 0;
+    if (!((   xres
+            && yres
+            && (   (bpp == 16)
+#ifdef VBOX_WITH_8BPP_MODES
+                || (bpp == 8)
+#endif
+                || (bpp == 24)
+                || (bpp == 32)))
+        && (xres * yres * (bpp / 8) < vramSize)))
+    {
+        dprintf(("VBoxVideo: invalid parameters for special mode: (xres = %d, yres = %d, bpp = %d, vramSize = %d)\n",
+                         xres, yres, bpp, vramSize));
+        if (xres * yres * (bpp / 8) >= vramSize
+                    && (xres != xresNoVRAM || yres != yresNoVRAM || bpp != bppNoVRAM))
+        {
+            LogRel(("VBoxVideo: not enough VRAM for video mode %dx%dx%dbpp. Available: %d bytes. Required: more than %d bytes.\n",
+                            xres, yres, bpp, vramSize, xres * yres * (bpp / 8)));
+            xresNoVRAM = xres;
+            yresNoVRAM = yres;
+            bppNoVRAM = bpp;
+        }
+        return false;
+    }
+
+    /* does the host like that mode? */
+    if (!vboxLikesVideoMode(iDisplay, xres, yres, bpp))
+    {
+        dprintf(("VBoxVideo: host does not like special mode: (xres = %d, yres = %d, bpp = %d)\n",
+                 xres, yres, bpp));
+        return false;
+    }
+
+    return true;
+}
+
+/*
+ * @return index for the changed mode, or -1 of none
+ */
+static int vboxVideoUpdateCustomVideoModes(PDEVICE_EXTENSION DeviceExtension, VBOXCMNREG Reg)
+{
+    uint32_t xres = 0, yres = 0, bpp = 0, display = 0;
+    if (!vboxQueryDisplayRequest(&xres, &yres, &bpp, &display)
+        && (xres || yres || bpp))
+        return -1;
+
+    if (display > RT_ELEMENTS(CustomVideoModes))
+        return -1;
+
+#ifndef VBOX_WITH_WDDM
+    dprintf(("VBoxVideo: adding custom video mode as #%d, current mode: %d \n", gNumVideoModes + 1, DeviceExtension->CurrentMode));
+    /* handle the startup case */
+    if (DeviceExtension->CurrentMode == 0)
+#else
+    if (!commonFromDeviceExt(DeviceExtension)->cDisplays || !DeviceExtension->aSources[0].pPrimaryAllocation)
+#endif
+    {
+        /* Use the stored custom resolution values only if nothing was read from host.
+         * The custom mode might be not valid anymore and would block any hints from host.
+         */
+        if (!xres)
+            xres = CustomVideoModes[display].VisScreenWidth;
+        if (!yres)
+            yres = CustomVideoModes[display].VisScreenHeight;
+        if (!bpp)
+            bpp  = CustomVideoModes[display].BitsPerPlane;
+        dprintf(("VBoxVideo: using stored custom resolution %dx%dx%d for %d\n", xres, yres, bpp, display));
+    }
+
+    /* round down to multiple of 8 if necessary */
+    if (!DeviceExtension->fAnyX) {
+        if ((xres & 0xfff8) != xres)
+            dprintf(("VBoxVideo: rounding down xres from %d to %d\n", xres, xres & 0xfff8));
+        xres &= 0xfff8;
+    }
+
+        /* take the current values for the fields that are not set */
+#ifndef VBOX_WITH_WDDM
+    if (DeviceExtension->CurrentMode != 0)
+    {
+        if (!xres)
+            xres = DeviceExtension->CurrentModeWidth;
+        if (!yres)
+            yres = DeviceExtension->CurrentModeHeight;
+        if (!bpp)
+            bpp  = DeviceExtension->CurrentModeBPP;
+    }
+#else
+    if (commonFromDeviceExt(DeviceExtension)->cDisplays && DeviceExtension->aSources[0].pPrimaryAllocation)
+    {
+        if (!xres)
+            xres = DeviceExtension->aSources[0].pPrimaryAllocation->SurfDesc.width;
+        if (!yres)
+            yres = DeviceExtension->aSources[0].pPrimaryAllocation->SurfDesc.height;
+        if (!bpp)
+            bpp  = DeviceExtension->aSources[0].pPrimaryAllocation->SurfDesc.bpp;
+    }
+#endif
+
+    /* Use a default value. */
+    if (!bpp)
+        bpp = 32;
+
+#ifndef VBOX_WITH_WDDM
+    ULONG vramSize = DeviceExtension->pPrimary->u.primary.ulMaxFrameBufferSize;
+#else
+    ULONG vramSize = vboxWddmVramCpuVisibleSegmentSize(DeviceExtension);
+    /* at least two surfaces will be needed: primary & shadow */
+    vramSize /= 2 * DeviceExtension->u.primary.commonInfo.cDisplays;
+#endif
+
+    if (!vboxVideoIsVideoModeSupported(DeviceExtension, display, vramSize, xres, yres, bpp))
+    {
+        return -1;
+    }
+
+    dprintf(("VBoxVideo: setting special mode to xres = %d, yres = %d, bpp = %d, display = %d\n", xres, yres, bpp, display));
+    /*
+     * Build mode entry.
+     * Note that we do not apply the y offset for the custom mode. It is
+     * only used for the predefined modes that the user can configure in
+     * the display properties dialog.
+     */
+    CustomVideoModes[display].Length                       = sizeof(VIDEO_MODE_INFORMATION);
+    CustomVideoModes[display].ModeIndex                    = display + 1; /* ensure it is not zero, zero means the mode is loaded from registry and needs verification */
+    CustomVideoModes[display].VisScreenWidth               = xres;
+    CustomVideoModes[display].VisScreenHeight              = yres;
+    CustomVideoModes[display].ScreenStride                 = xres * (bpp / 8);
+    CustomVideoModes[display].NumberOfPlanes               = 1;
+    CustomVideoModes[display].BitsPerPlane                 = bpp;
+    CustomVideoModes[display].Frequency                    = 60;
+    CustomVideoModes[display].XMillimeter                  = 320;
+    CustomVideoModes[display].YMillimeter                  = 240;
+
+    switch (bpp)
+    {
+#ifdef VBOX_WITH_8BPP_MODES
+        case 8:
+            CustomVideoModes[display].NumberRedBits        = 6;
+            CustomVideoModes[display].NumberGreenBits      = 6;
+            CustomVideoModes[display].NumberBlueBits       = 6;
+            CustomVideoModes[display].RedMask              = 0;
+            CustomVideoModes[display].GreenMask            = 0;
+            CustomVideoModes[display].BlueMask             = 0;
+            break;
+#endif
+        case 16:
+            CustomVideoModes[display].NumberRedBits        = 5;
+            CustomVideoModes[display].NumberGreenBits      = 6;
+            CustomVideoModes[display].NumberBlueBits       = 5;
+            CustomVideoModes[display].RedMask              = 0xF800;
+            CustomVideoModes[display].GreenMask            = 0x7E0;
+            CustomVideoModes[display].BlueMask             = 0x1F;
+            break;
+        case 24:
+            CustomVideoModes[display].NumberRedBits        = 8;
+            CustomVideoModes[display].NumberGreenBits      = 8;
+            CustomVideoModes[display].NumberBlueBits       = 8;
+            CustomVideoModes[display].RedMask              = 0xFF0000;
+            CustomVideoModes[display].GreenMask            = 0xFF00;
+            CustomVideoModes[display].BlueMask             = 0xFF;
+            break;
+        case 32:
+            CustomVideoModes[display].NumberRedBits        = 8;
+            CustomVideoModes[display].NumberGreenBits      = 8;
+            CustomVideoModes[display].NumberBlueBits       = 8;
+            CustomVideoModes[display].RedMask              = 0xFF0000;
+            CustomVideoModes[display].GreenMask            = 0xFF00;
+            CustomVideoModes[display].BlueMask             = 0xFF;
+            break;
+    }
+    CustomVideoModes[display].AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+#ifdef VBOX_WITH_8BPP_MODES
+    if (bpp == 8)
+        CustomVideoModes[display].AttributeFlags          |= VIDEO_MODE_PALETTE_DRIVEN | VIDEO_MODE_MANAGED_PALETTE;
+#endif
+    CustomVideoModes[display].VideoMemoryBitmapWidth       = xres;
+    CustomVideoModes[display].VideoMemoryBitmapHeight      = yres;
+    CustomVideoModes[display].DriverSpecificAttributeFlags = 0;
+
+    VP_STATUS status = 0;
+
+    /* Save the custom mode for this display. */
+    if (display)
+    {
+        /* Name without a suffix */
+        status = VBoxVideoCmnRegSetDword(Reg, L"CustomXRes", xres);
+        if (status != NO_ERROR)
+            dprintf(("VBoxVideo: error %d writing CustomXRes\n", status));
+        status = VBoxVideoCmnRegSetDword(Reg, L"CustomYRes", yres);
+        if (status != NO_ERROR)
+            dprintf(("VBoxVideo: error %d writing CustomYRes\n", status));
+        status = VBoxVideoCmnRegSetDword(Reg, L"CustomBPP", bpp);
+        if (status != NO_ERROR)
+            dprintf(("VBoxVideo: error %d writing CustomBPP\n", status));
+    }
+    else
+    {
+        wchar_t keyname[32];
+        swprintf(keyname, L"CustomXRes%d", display);
+        status = VBoxVideoCmnRegSetDword(Reg, keyname, xres);
+        if (status != NO_ERROR)
+            dprintf(("VBoxVideo: error %d writing CustomXRes%d\n", status, display));
+        swprintf(keyname, L"CustomYRes%d", display);
+        status = VBoxVideoCmnRegSetDword(Reg, keyname, yres);
+        if (status != NO_ERROR)
+            dprintf(("VBoxVideo: error %d writing CustomYRes%d\n", status, display));
+        swprintf(keyname, L"CustomBPP%d", display);
+        status = VBoxVideoCmnRegSetDword(Reg, keyname, bpp);
+        if (status != NO_ERROR)
+            dprintf(("VBoxVideo: error %d writing CustomBPP%d\n", status, display));
+    }
+
+    return display;
+}
+
+#ifdef VBOX_WITH_WDDM
+
+static bool vboxVideoModesMatch(const VIDEO_MODE_INFORMATION *pMode1, const VIDEO_MODE_INFORMATION *pMode2)
+{
+    return pMode1->VisScreenHeight == pMode2->VisScreenHeight
+            && pMode1->VisScreenWidth == pMode2->VisScreenWidth
+            && pMode1->BitsPerPlane == pMode2->BitsPerPlane;
+}
+
+int vboxVideoModeFind(const VIDEO_MODE_INFORMATION *pModes, int cModes, const VIDEO_MODE_INFORMATION *pM)
+{
+    for (int i = 0; i < cModes; ++i)
+    {
+        const VIDEO_MODE_INFORMATION *pMode = &pModes[i];
+        if (vboxVideoModesMatch(pMode, pM))
+            return i;
+    }
+    return -1;
+}
+
+static DECLINLINE(int) vboxVideoCheckModeAdd(VIDEO_MODE_INFORMATION *pModes, int *pcNumModes, int *piPreferred)
+{
+    const int cNumModes = *pcNumModes;
+    for (int i = 0; i < cNumModes; ++i)
+    {
+        if (vboxVideoModesMatch(&pModes[i], &pModes[cNumModes]))
+        {
+            if (piPreferred && *piPreferred == cNumModes)
+            {
+                *piPreferred = i;
+            }
+            return i;
+        }
+    }
+    ++(*pcNumModes);
+    return cNumModes;
+}
+
+static bool vboxVideoModeAdjustCheckSupported(PDEVICE_EXTENSION pDevExt, int iDisplay, VIDEO_MODE_INFORMATION *pMode)
+{
+    /* round down to multiple of 8 if necessary */
+    if (!pDevExt->fAnyX) {
+        if ((pMode->VisScreenWidth & 0xfff8) != pMode->VisScreenWidth)
+            dprintf(("VBoxVideo: rounding down xres from %d to %d\n", pMode->VisScreenWidth, pMode->VisScreenWidth & 0xfff8));
+        pMode->VisScreenWidth &= 0xfff8;
+    }
+
+    if (vboxLikesVideoMode(iDisplay, pMode->VisScreenWidth, pMode->VisScreenHeight, pMode->BitsPerPlane))
+        return true;
+    return false;
+}
+
+static int vboxVideoModeAdd(VIDEO_MODE_INFORMATION *pModes, uint32_t cModes, uint32_t *pcNumModes, const VIDEO_MODE_INFORMATION *pMode)
+{
+    const uint32_t cNumModes = *pcNumModes;
+    for (uint32_t i = 0; i < cNumModes; ++i)
+    {
+        if (vboxVideoModesMatch(&pModes[i], pMode))
+        {
+            return (int)i;
+        }
+    }
+
+    if (cNumModes < cModes)
+    {
+        pModes[cNumModes] = *pMode;
+        pModes[cNumModes].ModeIndex = cNumModes;
+        ++(*pcNumModes);
+        return (int)cNumModes;
+    }
+
+    return -1;
+}
+
+
+# define VBOXVIDEOMODE_ADDED(_aModes, _pcModes, _piPreferred) vboxVideoCheckModeAdd(_aModes, _pcModes, _piPreferred)
+#else
+# define VBOXVIDEOMODE_ADDED(_aModes, _pcModes, _piPreferred) ((*(_pcModes))++)
+#endif
+
+static void vboxVideoInitMode(VIDEO_MODE_INFORMATION *pVideoMode, ULONG xres, ULONG yres, ULONG bpp, ULONG index, ULONG yoffset)
+{
+    /*
+     * Build mode entry.
+     */
+    memset(pVideoMode, 0, sizeof(VIDEO_MODE_INFORMATION));
+
+    pVideoMode->Length                       = sizeof(VIDEO_MODE_INFORMATION);
+    pVideoMode->ModeIndex                    = index;
+    pVideoMode->VisScreenWidth               = xres;
+    pVideoMode->VisScreenHeight              = yres - yoffset;
+    pVideoMode->ScreenStride                 = xres * ((bpp + 7) / 8);
+    pVideoMode->NumberOfPlanes               = 1;
+    pVideoMode->BitsPerPlane                 = bpp;
+    pVideoMode->Frequency                    = 60;
+    pVideoMode->XMillimeter                  = 320;
+    pVideoMode->YMillimeter                  = 240;
+    switch (bpp)
+    {
+#ifdef VBOX_WITH_8BPP_MODES
+        case 8:
+            pVideoMode->NumberRedBits        = 6;
+            pVideoMode->NumberGreenBits      = 6;
+            pVideoMode->NumberBlueBits       = 6;
+            pVideoMode->RedMask              = 0;
+            pVideoMode->GreenMask            = 0;
+            pVideoMode->BlueMask             = 0;
+            break;
+#endif
+        case 16:
+            pVideoMode->NumberRedBits        = 5;
+            pVideoMode->NumberGreenBits      = 6;
+            pVideoMode->NumberBlueBits       = 5;
+            pVideoMode->RedMask              = 0xF800;
+            pVideoMode->GreenMask            = 0x7E0;
+            pVideoMode->BlueMask             = 0x1F;
+            break;
+        case 24:
+            pVideoMode->NumberRedBits        = 8;
+            pVideoMode->NumberGreenBits      = 8;
+            pVideoMode->NumberBlueBits       = 8;
+            pVideoMode->RedMask              = 0xFF0000;
+            pVideoMode->GreenMask            = 0xFF00;
+            pVideoMode->BlueMask             = 0xFF;
+            break;
+        case 32:
+            pVideoMode->NumberRedBits        = 8;
+            pVideoMode->NumberGreenBits      = 8;
+            pVideoMode->NumberBlueBits       = 8;
+            pVideoMode->RedMask              = 0xFF0000;
+            pVideoMode->GreenMask            = 0xFF00;
+            pVideoMode->BlueMask             = 0xFF;
+            break;
+    }
+    pVideoMode->AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+#ifdef VBOX_WITH_8BPP_MODES
+    if (bpp == 8)
+        pVideoMode->AttributeFlags          |= VIDEO_MODE_PALETTE_DRIVEN | VIDEO_MODE_MANAGED_PALETTE;
+#endif
+    pVideoMode->VideoMemoryBitmapWidth       = xres;
+    pVideoMode->VideoMemoryBitmapHeight      = yres - yoffset;
+    pVideoMode->DriverSpecificAttributeFlags = 0;
+}
+
+static int vboxVideoBuildModesTable(PDEVICE_EXTENSION DeviceExtension, int iDisplay,
+        VIDEO_MODE_INFORMATION * VideoModes, uint32_t * pcVideoModes, int32_t * pPreferrableMode)
+{
+    int iPreferredVideoMode = 0;
+    int cNumVideoModes = 0;
+    int cModesTable = *pcVideoModes;
+    int rc = VINF_SUCCESS;
+
+    VBOXCMNREG Reg;
+    VBoxVideoCmnRegInit(DeviceExtension, &Reg);
+
+    /* the resolution matrix */
+    struct
+    {
+        uint16_t xRes;
+        uint16_t yRes;
+    } resolutionMatrix[] =
+    {
+        /* standard modes */
+        { 640,   480 },
+        { 800,   600 },
+        { 1024,  768 },
+        { 1152,  864 },
+        { 1280,  960 },
+        { 1280, 1024 },
+        { 1400, 1050 },
+        { 1600, 1200 },
+        { 1920, 1440 },
+#ifndef VBOX_WITH_WDDM
+        /* multi screen modes with 1280x1024 */
+        { 2560, 1024 },
+        { 3840, 1024 },
+        { 5120, 1024 },
+        /* multi screen modes with 1600x1200 */
+        { 3200, 1200 },
+        { 4800, 1200 },
+        { 6400, 1200 },
+#endif
+    };
+    size_t matrixSize = sizeof(resolutionMatrix) / sizeof(resolutionMatrix[0]);
+
+    /* there are 4 color depths: 8, 16, 24 and 32bpp and we reserve 50% of the modes for other sources */
+    size_t maxModesPerColorDepth = cModesTable / 2 / 4;
+
+    /* size of the VRAM in bytes */
+
+#ifndef VBOX_WITH_WDDM
+    ULONG vramSize = DeviceExtension->pPrimary->u.primary.ulMaxFrameBufferSize;
+#else
+    ULONG vramSize = vboxWddmVramCpuVisibleSegmentSize(DeviceExtension);
+    /* at least two surfaces will be needed: primary & shadow */
+    vramSize /= 2 * DeviceExtension->u.primary.commonInfo.cDisplays;
+#endif
+
+    size_t numModesCurrentColorDepth;
+    size_t matrixIndex;
+    VP_STATUS status = 0;
+
+    do
+    {
+        /* Always add 800x600 video modes. Windows XP+ needs at least 800x600 resolution
+         * and fallbacks to 800x600x4bpp VGA mode if the driver did not report suitable modes.
+         * This resolution could be rejected by a low resolution host (netbooks, etc).
+         */
+        int cBytesPerPixel;
+        for (cBytesPerPixel = 1; cBytesPerPixel <= 4; cBytesPerPixel++)
+        {
+            int cBitsPerPixel = cBytesPerPixel * 8; /* 8, 16, 24, 32 */
+
+    #ifndef VBOX_WITH_8BPP_MODES
+            if (cBitsPerPixel == 8)
+            {
+                 continue;
+            }
+    #endif /* !VBOX_WITH_8BPP_MODES */
+
+            /* does the mode fit into the VRAM? */
+            if (800 * 600 * cBytesPerPixel > (LONG)vramSize)
+            {
+                continue;
+            }
+
+            if (cModesTable <= cNumVideoModes)
+            {
+                rc = VERR_BUFFER_OVERFLOW;
+                break;
+            }
+
+            VideoModes[cNumVideoModes].Length                       = sizeof(VIDEO_MODE_INFORMATION);
+            VideoModes[cNumVideoModes].ModeIndex                    = cNumVideoModes + 1;
+            VideoModes[cNumVideoModes].VisScreenWidth               = 800;
+            VideoModes[cNumVideoModes].VisScreenHeight              = 600;
+            VideoModes[cNumVideoModes].ScreenStride                 = 800 * cBytesPerPixel;
+            VideoModes[cNumVideoModes].NumberOfPlanes               = 1;
+            VideoModes[cNumVideoModes].BitsPerPlane                 = cBitsPerPixel;
+            VideoModes[cNumVideoModes].Frequency                    = 60;
+            VideoModes[cNumVideoModes].XMillimeter                  = 320;
+            VideoModes[cNumVideoModes].YMillimeter                  = 240;
+            switch (cBytesPerPixel)
+            {
+                case 1:
+                {
+                    VideoModes[cNumVideoModes].NumberRedBits                = 6;
+                    VideoModes[cNumVideoModes].NumberGreenBits              = 6;
+                    VideoModes[cNumVideoModes].NumberBlueBits               = 6;
+                    VideoModes[cNumVideoModes].RedMask                      = 0;
+                    VideoModes[cNumVideoModes].GreenMask                    = 0;
+                    VideoModes[cNumVideoModes].BlueMask                     = 0;
+                    VideoModes[cNumVideoModes].AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN |
+                                                                              VIDEO_MODE_PALETTE_DRIVEN | VIDEO_MODE_MANAGED_PALETTE;
+                } break;
+                case 2:
+                {
+                    VideoModes[cNumVideoModes].NumberRedBits                = 5;
+                    VideoModes[cNumVideoModes].NumberGreenBits              = 6;
+                    VideoModes[cNumVideoModes].NumberBlueBits               = 5;
+                    VideoModes[cNumVideoModes].RedMask                      = 0xF800;
+                    VideoModes[cNumVideoModes].GreenMask                    = 0x7E0;
+                    VideoModes[cNumVideoModes].BlueMask                     = 0x1F;
+                    VideoModes[cNumVideoModes].AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+                } break;
+                case 3:
+                {
+                    VideoModes[cNumVideoModes].NumberRedBits                = 8;
+                    VideoModes[cNumVideoModes].NumberGreenBits              = 8;
+                    VideoModes[cNumVideoModes].NumberBlueBits               = 8;
+                    VideoModes[cNumVideoModes].RedMask                      = 0xFF0000;
+                    VideoModes[cNumVideoModes].GreenMask                    = 0xFF00;
+                    VideoModes[cNumVideoModes].BlueMask                     = 0xFF;
+                    VideoModes[cNumVideoModes].AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+                } break;
+                default:
+                case 4:
+                {
+                    VideoModes[cNumVideoModes].NumberRedBits                = 8;
+                    VideoModes[cNumVideoModes].NumberGreenBits              = 8;
+                    VideoModes[cNumVideoModes].NumberBlueBits               = 8;
+                    VideoModes[cNumVideoModes].RedMask                      = 0xFF0000;
+                    VideoModes[cNumVideoModes].GreenMask                    = 0xFF00;
+                    VideoModes[cNumVideoModes].BlueMask                     = 0xFF;
+                    VideoModes[cNumVideoModes].AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+                    iPreferredVideoMode = cNumVideoModes;
+                } break;
+            }
+            VideoModes[cNumVideoModes].VideoMemoryBitmapWidth       = 800;
+            VideoModes[cNumVideoModes].VideoMemoryBitmapHeight      = 600;
+            VideoModes[cNumVideoModes].DriverSpecificAttributeFlags = 0;
+
+            /* a new mode has been filled in */
+            ++cNumVideoModes;
+        }
+
+        if (RT_FAILURE(rc))
+            break;
+
+        /*
+         * Query the y-offset from the host
+         */
+        ULONG yOffset = vboxGetHeightReduction();
+
+#ifdef VBOX_WITH_8BPP_MODES
+        /*
+         * 8 bit video modes
+         */
+        numModesCurrentColorDepth = 0;
+        matrixIndex = 0;
+        while (numModesCurrentColorDepth < maxModesPerColorDepth)
+        {
+            /* are there any modes left in the matrix? */
+            if (matrixIndex >= matrixSize)
+                break;
+
+            /* does the mode fit into the VRAM? */
+            if (resolutionMatrix[matrixIndex].xRes * resolutionMatrix[matrixIndex].yRes * 1 > (LONG)vramSize)
+            {
+                ++matrixIndex;
+                continue;
+            }
+
+            if (yOffset == 0 && resolutionMatrix[matrixIndex].xRes == 800 && resolutionMatrix[matrixIndex].yRes == 600)
+            {
+                /* This mode was already added. */
+                ++matrixIndex;
+                continue;
+            }
+
+            /* does the host like that mode? */
+            if (!vboxLikesVideoMode(iDisplay, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 8))
+            {
+                ++matrixIndex;
+                continue;
+            }
+
+            if (cModesTable <= cNumVideoModes)
+            {
+                rc = VERR_BUFFER_OVERFLOW;
+                break;
+            }
+
+            VideoModes[cNumVideoModes].Length                       = sizeof(VIDEO_MODE_INFORMATION);
+            VideoModes[cNumVideoModes].ModeIndex                    = cNumVideoModes + 1;
+            VideoModes[cNumVideoModes].VisScreenWidth               = resolutionMatrix[matrixIndex].xRes;
+            VideoModes[cNumVideoModes].VisScreenHeight              = resolutionMatrix[matrixIndex].yRes - yOffset;
+            VideoModes[cNumVideoModes].ScreenStride                 = resolutionMatrix[matrixIndex].xRes * 1;
+            VideoModes[cNumVideoModes].NumberOfPlanes               = 1;
+            VideoModes[cNumVideoModes].BitsPerPlane                 = 8;
+            VideoModes[cNumVideoModes].Frequency                    = 60;
+            VideoModes[cNumVideoModes].XMillimeter                  = 320;
+            VideoModes[cNumVideoModes].YMillimeter                  = 240;
+            VideoModes[cNumVideoModes].NumberRedBits                = 6;
+            VideoModes[cNumVideoModes].NumberGreenBits              = 6;
+            VideoModes[cNumVideoModes].NumberBlueBits               = 6;
+            VideoModes[cNumVideoModes].RedMask                      = 0;
+            VideoModes[cNumVideoModes].GreenMask                    = 0;
+            VideoModes[cNumVideoModes].BlueMask                     = 0;
+            VideoModes[cNumVideoModes].AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN |
+                                                                      VIDEO_MODE_PALETTE_DRIVEN | VIDEO_MODE_MANAGED_PALETTE;
+            VideoModes[cNumVideoModes].VideoMemoryBitmapWidth       = resolutionMatrix[matrixIndex].xRes;
+            VideoModes[cNumVideoModes].VideoMemoryBitmapHeight      = resolutionMatrix[matrixIndex].yRes - yOffset;
+            VideoModes[cNumVideoModes].DriverSpecificAttributeFlags = 0;
+
+            /* a new mode has been filled in */
+            ++cNumVideoModes;
+            ++numModesCurrentColorDepth;
+            /* advance to the next mode matrix entry */
+            ++matrixIndex;
+        }
+
+        if (RT_FAILURE(rc))
+            break;
+
+#endif /* VBOX_WITH_8BPP_MODES */
+
+        /*
+         * 16 bit video modes
+         */
+        numModesCurrentColorDepth = 0;
+        matrixIndex = 0;
+        while (numModesCurrentColorDepth < maxModesPerColorDepth)
+        {
+            /* are there any modes left in the matrix? */
+            if (matrixIndex >= matrixSize)
+                break;
+
+            /* does the mode fit into the VRAM? */
+            if (resolutionMatrix[matrixIndex].xRes * resolutionMatrix[matrixIndex].yRes * 2 > (LONG)vramSize)
+            {
+                ++matrixIndex;
+                continue;
+            }
+
+            if (yOffset == 0 && resolutionMatrix[matrixIndex].xRes == 800 && resolutionMatrix[matrixIndex].yRes == 600)
+            {
+                /* This mode was already added. */
+                ++matrixIndex;
+                continue;
+            }
+
+            /* does the host like that mode? */
+            if (!vboxLikesVideoMode(iDisplay, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 16))
+            {
+                ++matrixIndex;
+                continue;
+            }
+
+            if (cModesTable <= cNumVideoModes)
+            {
+                rc = VERR_BUFFER_OVERFLOW;
+                break;
+            }
+
+            VideoModes[cNumVideoModes].Length                       = sizeof(VIDEO_MODE_INFORMATION);
+            VideoModes[cNumVideoModes].ModeIndex                    = cNumVideoModes + 1;
+            VideoModes[cNumVideoModes].VisScreenWidth               = resolutionMatrix[matrixIndex].xRes;
+            VideoModes[cNumVideoModes].VisScreenHeight              = resolutionMatrix[matrixIndex].yRes - yOffset;
+            VideoModes[cNumVideoModes].ScreenStride                 = resolutionMatrix[matrixIndex].xRes * 2;
+            VideoModes[cNumVideoModes].NumberOfPlanes               = 1;
+            VideoModes[cNumVideoModes].BitsPerPlane                 = 16;
+            VideoModes[cNumVideoModes].Frequency                    = 60;
+            VideoModes[cNumVideoModes].XMillimeter                  = 320;
+            VideoModes[cNumVideoModes].YMillimeter                  = 240;
+            VideoModes[cNumVideoModes].NumberRedBits                = 5;
+            VideoModes[cNumVideoModes].NumberGreenBits              = 6;
+            VideoModes[cNumVideoModes].NumberBlueBits               = 5;
+            VideoModes[cNumVideoModes].RedMask                      = 0xF800;
+            VideoModes[cNumVideoModes].GreenMask                    = 0x7E0;
+            VideoModes[cNumVideoModes].BlueMask                     = 0x1F;
+            VideoModes[cNumVideoModes].AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+            VideoModes[cNumVideoModes].VideoMemoryBitmapWidth       = resolutionMatrix[matrixIndex].xRes;
+            VideoModes[cNumVideoModes].VideoMemoryBitmapHeight      = resolutionMatrix[matrixIndex].yRes - yOffset;
+            VideoModes[cNumVideoModes].DriverSpecificAttributeFlags = 0;
+
+            /* a new mode has been filled in */
+            ++cNumVideoModes;
+            ++numModesCurrentColorDepth;
+            /* advance to the next mode matrix entry */
+            ++matrixIndex;
+        }
+
+        if (RT_FAILURE(rc))
+            break;
+
+        /*
+         * 24 bit video modes
+         */
+        numModesCurrentColorDepth = 0;
+        matrixIndex = 0;
+        while (numModesCurrentColorDepth < maxModesPerColorDepth)
+        {
+            /* are there any modes left in the matrix? */
+            if (matrixIndex >= matrixSize)
+                break;
+
+            /* does the mode fit into the VRAM? */
+            if (resolutionMatrix[matrixIndex].xRes * resolutionMatrix[matrixIndex].yRes * 3 > (LONG)vramSize)
+            {
+                ++matrixIndex;
+                continue;
+            }
+
+            if (yOffset == 0 && resolutionMatrix[matrixIndex].xRes == 800 && resolutionMatrix[matrixIndex].yRes == 600)
+            {
+                /* This mode was already added. */
+                ++matrixIndex;
+                continue;
+            }
+
+            /* does the host like that mode? */
+            if (!vboxLikesVideoMode(iDisplay, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 24))
+            {
+                ++matrixIndex;
+                continue;
+            }
+
+            if (cModesTable <= cNumVideoModes)
+            {
+                rc = VERR_BUFFER_OVERFLOW;
+                break;
+            }
+
+            VideoModes[cNumVideoModes].Length                       = sizeof(VIDEO_MODE_INFORMATION);
+            VideoModes[cNumVideoModes].ModeIndex                    = cNumVideoModes + 1;
+            VideoModes[cNumVideoModes].VisScreenWidth               = resolutionMatrix[matrixIndex].xRes;
+            VideoModes[cNumVideoModes].VisScreenHeight              = resolutionMatrix[matrixIndex].yRes - yOffset;
+            VideoModes[cNumVideoModes].ScreenStride                 = resolutionMatrix[matrixIndex].xRes * 3;
+            VideoModes[cNumVideoModes].NumberOfPlanes               = 1;
+            VideoModes[cNumVideoModes].BitsPerPlane                 = 24;
+            VideoModes[cNumVideoModes].Frequency                    = 60;
+            VideoModes[cNumVideoModes].XMillimeter                  = 320;
+            VideoModes[cNumVideoModes].YMillimeter                  = 240;
+            VideoModes[cNumVideoModes].NumberRedBits                = 8;
+            VideoModes[cNumVideoModes].NumberGreenBits              = 8;
+            VideoModes[cNumVideoModes].NumberBlueBits               = 8;
+            VideoModes[cNumVideoModes].RedMask                      = 0xFF0000;
+            VideoModes[cNumVideoModes].GreenMask                    = 0xFF00;
+            VideoModes[cNumVideoModes].BlueMask                     = 0xFF;
+            VideoModes[cNumVideoModes].AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+            VideoModes[cNumVideoModes].VideoMemoryBitmapWidth       = resolutionMatrix[matrixIndex].xRes;
+            VideoModes[cNumVideoModes].VideoMemoryBitmapHeight      = resolutionMatrix[matrixIndex].yRes - yOffset;
+            VideoModes[cNumVideoModes].DriverSpecificAttributeFlags = 0;
+
+            /* a new mode has been filled in */
+            ++cNumVideoModes;
+            ++numModesCurrentColorDepth;
+            /* advance to the next mode matrix entry */
+            ++matrixIndex;
+        }
+
+        if (RT_FAILURE(rc))
+            break;
+
+        /*
+         * 32 bit video modes
+         */
+        numModesCurrentColorDepth = 0;
+        matrixIndex = 0;
+        while (numModesCurrentColorDepth < maxModesPerColorDepth)
+        {
+            /* are there any modes left in the matrix? */
+            if (matrixIndex >= matrixSize)
+                break;
+
+            /* does the mode fit into the VRAM? */
+            if (resolutionMatrix[matrixIndex].xRes * resolutionMatrix[matrixIndex].yRes * 4 > (LONG)vramSize)
+            {
+                ++matrixIndex;
+                continue;
+            }
+
+            if (yOffset == 0 && resolutionMatrix[matrixIndex].xRes == 800 && resolutionMatrix[matrixIndex].yRes == 600)
+            {
+                /* This mode was already added. */
+                ++matrixIndex;
+                continue;
+            }
+
+            /* does the host like that mode? */
+            if (!vboxLikesVideoMode(iDisplay, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 32))
+            {
+                ++matrixIndex;
+                continue;
+            }
+
+            if (cModesTable <= cNumVideoModes)
+            {
+                rc = VERR_BUFFER_OVERFLOW;
+                break;
+            }
+
+            VideoModes[cNumVideoModes].Length                       = sizeof(VIDEO_MODE_INFORMATION);
+            VideoModes[cNumVideoModes].ModeIndex                    = cNumVideoModes + 1;
+            VideoModes[cNumVideoModes].VisScreenWidth               = resolutionMatrix[matrixIndex].xRes;
+            VideoModes[cNumVideoModes].VisScreenHeight              = resolutionMatrix[matrixIndex].yRes - yOffset;
+            VideoModes[cNumVideoModes].ScreenStride                 = resolutionMatrix[matrixIndex].xRes * 4;
+            VideoModes[cNumVideoModes].NumberOfPlanes               = 1;
+            VideoModes[cNumVideoModes].BitsPerPlane                 = 32;
+            VideoModes[cNumVideoModes].Frequency                    = 60;
+            VideoModes[cNumVideoModes].XMillimeter                  = 320;
+            VideoModes[cNumVideoModes].YMillimeter                  = 240;
+            VideoModes[cNumVideoModes].NumberRedBits                = 8;
+            VideoModes[cNumVideoModes].NumberGreenBits              = 8;
+            VideoModes[cNumVideoModes].NumberBlueBits               = 8;
+            VideoModes[cNumVideoModes].RedMask                      = 0xFF0000;
+            VideoModes[cNumVideoModes].GreenMask                    = 0xFF00;
+            VideoModes[cNumVideoModes].BlueMask                     = 0xFF;
+            VideoModes[cNumVideoModes].AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+            VideoModes[cNumVideoModes].VideoMemoryBitmapWidth       = resolutionMatrix[matrixIndex].xRes;
+            VideoModes[cNumVideoModes].VideoMemoryBitmapHeight      = resolutionMatrix[matrixIndex].yRes - yOffset;
+            VideoModes[cNumVideoModes].DriverSpecificAttributeFlags = 0;
+
+            /* a new mode has been filled in */
+            ++cNumVideoModes;
+            ++numModesCurrentColorDepth;
+            /* advance to the next mode matrix entry */
+            ++matrixIndex;
+        }
+
+        if (RT_FAILURE(rc))
+            break;
+
+        /*
+         * Next, check the registry for additional modes
+         */
+        int curKeyNo = 0;
+        int fPreferredSet = 0;
+        do
+        {
+            wchar_t keyname[24];
+            uint32_t xres, yres, bpp = 0;
+            swprintf(keyname, L"CustomMode%dWidth", curKeyNo);
+            status = VBoxVideoCmnRegQueryDword(Reg, keyname, &xres);
+            /* upon the first error, we give up */
+            if (status != NO_ERROR)
+                break;
+            swprintf(keyname, L"CustomMode%dHeight", curKeyNo);
+            status = VBoxVideoCmnRegQueryDword(Reg, keyname, &yres);
+            /* upon the first error, we give up */
+            if (status != NO_ERROR)
+                break;
+            swprintf(keyname, L"CustomMode%dBPP", curKeyNo);
+            status = VBoxVideoCmnRegQueryDword(Reg, keyname, &bpp);
+            /* upon the first error, we give up */
+            if (status != NO_ERROR)
+                break;
+
+            dprintf(("VBoxVideo: custom mode %u returned: xres = %u, yres = %u, bpp = %u\n",
+                     curKeyNo, xres, yres, bpp));
+
+            /* first test: do the values make sense? */
+            if (   (xres > (1 << 16))
+                || (yres > (1 << 16))
+                || (   (bpp != 16)
+                    && (bpp != 24)
+                    && (bpp != 32)))
+                break;
+
+            /* round down width to be a multiple of 8 if necessary */
+            if (!DeviceExtension->fAnyX)
+                xres &= 0xFFF8;
+
+            /* second test: does it fit within our VRAM? */
+            if (xres * yres * (bpp / 8) > vramSize)
+                break;
+
+            /* third test: does the host like the video mode? */
+            if (!vboxLikesVideoMode(iDisplay, xres, yres, bpp))
+                break;
+
+            if (cModesTable <= cNumVideoModes)
+            {
+                rc = VERR_BUFFER_OVERFLOW;
+                break;
+            }
+
+            dprintf(("VBoxVideo: adding mode from registry: xres = %d, yres = %d, bpp = %d\n", xres, yres, bpp));
+
+            if (!fPreferredSet)
+            {
+                iPreferredVideoMode = cNumVideoModes;
+                fPreferredSet = 1;
+            }
+
+            /*
+             * Build mode entry.
+             * Note that we have to apply the y offset for the custom mode.
+             */
+            VideoModes[cNumVideoModes].Length                       = sizeof(VIDEO_MODE_INFORMATION);
+            VideoModes[cNumVideoModes].ModeIndex                    = cNumVideoModes + 1;
+            VideoModes[cNumVideoModes].VisScreenWidth               = xres;
+            VideoModes[cNumVideoModes].VisScreenHeight              = yres - yOffset;
+            VideoModes[cNumVideoModes].ScreenStride                 = xres * (bpp / 8);
+            VideoModes[cNumVideoModes].NumberOfPlanes               = 1;
+            VideoModes[cNumVideoModes].BitsPerPlane                 = bpp;
+            VideoModes[cNumVideoModes].Frequency                    = 60;
+            VideoModes[cNumVideoModes].XMillimeter                  = 320;
+            VideoModes[cNumVideoModes].YMillimeter                  = 240;
+            switch (bpp)
+            {
+                case 16:
+                    VideoModes[cNumVideoModes].NumberRedBits        = 5;
+                    VideoModes[cNumVideoModes].NumberGreenBits      = 6;
+                    VideoModes[cNumVideoModes].NumberBlueBits       = 5;
+                    VideoModes[cNumVideoModes].RedMask              = 0xF800;
+                    VideoModes[cNumVideoModes].GreenMask            = 0x7E0;
+                    VideoModes[cNumVideoModes].BlueMask             = 0x1F;
+                    break;
+                case 24:
+                    VideoModes[cNumVideoModes].NumberRedBits        = 8;
+                    VideoModes[cNumVideoModes].NumberGreenBits      = 8;
+                    VideoModes[cNumVideoModes].NumberBlueBits       = 8;
+                    VideoModes[cNumVideoModes].RedMask              = 0xFF0000;
+                    VideoModes[cNumVideoModes].GreenMask            = 0xFF00;
+                    VideoModes[cNumVideoModes].BlueMask             = 0xFF;
+                    break;
+                case 32:
+                    VideoModes[cNumVideoModes].NumberRedBits        = 8;
+                    VideoModes[cNumVideoModes].NumberGreenBits      = 8;
+                    VideoModes[cNumVideoModes].NumberBlueBits       = 8;
+                    VideoModes[cNumVideoModes].RedMask              = 0xFF0000;
+                    VideoModes[cNumVideoModes].GreenMask            = 0xFF00;
+                    VideoModes[cNumVideoModes].BlueMask             = 0xFF;
+                    /* 32-bit mode is more preferable, select it if not yet */
+                    if (fPreferredSet < 2)
+                    {
+                        iPreferredVideoMode = cNumVideoModes;
+                        fPreferredSet = 2;
+                    }
+                    break;
+            }
+            VideoModes[cNumVideoModes].AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+            VideoModes[cNumVideoModes].VideoMemoryBitmapWidth       = xres;
+            VideoModes[cNumVideoModes].VideoMemoryBitmapHeight      = yres - yOffset;
+            VideoModes[cNumVideoModes].DriverSpecificAttributeFlags = 0;
+
+            VBOXVIDEOMODE_ADDED(VideoModes, &cNumVideoModes, &iPreferredVideoMode);
+
+            /* next run */
+            curKeyNo++;
+            /* only support 128 modes for now */
+            if (curKeyNo >= 128)
+                break;
+
+        } while(1);
+
+        if (RT_FAILURE(rc))
+            break;
+
+        /*
+         * Now we ask the host for a display change request. If there's one,
+         * this will be appended as a special mode so that it can be used by
+         * the Additions service process. The mode table is guaranteed to have
+         * two spare entries for this mode (alternating index thus 2).
+         *
+         * ... or ...
+         *
+         * Also we check if we got an user-stored custom resolution in the adapter
+         * registry key add it to the modes table.
+         */
+
+        /* Add custom resolutions for each display and then for the display change request, if exists.
+         */
+        vboxVideoUpdateCustomVideoModes(DeviceExtension, Reg);
+        /* check if the mode is verified */
+        if (!CustomVideoModes[iDisplay].ModeIndex)
+        {
+            /* the mode is loaded from registry and not verified yet */
+            if (vboxVideoIsVideoModeSupported(DeviceExtension, iDisplay, vramSize,
+                    CustomVideoModes[iDisplay].VideoMemoryBitmapWidth,
+                    CustomVideoModes[iDisplay].VideoMemoryBitmapHeight,
+                    CustomVideoModes[iDisplay].BitsPerPlane))
+            {
+                CustomVideoModes[iDisplay].ModeIndex = iDisplay;
+            }
+        }
+
+
+        if (CustomVideoModes[iDisplay].ModeIndex)
+        {
+            if (cModesTable <= cNumVideoModes)
+            {
+                rc = VERR_BUFFER_OVERFLOW;
+                break;
+            }
+            CustomVideoModes[iDisplay].ModeIndex = cNumVideoModes;
+            VideoModes[cNumVideoModes] = CustomVideoModes[iDisplay];
+            iPreferredVideoMode = cNumVideoModes;
+
+            VBOXVIDEOMODE_ADDED(VideoModes, &cNumVideoModes, &iPreferredVideoMode);
+
+            for (UINT i = 32; i >= 8; i/=2 )
+            {
+                if (cModesTable <= cNumVideoModes)
+                {
+                    rc = VERR_BUFFER_OVERFLOW;
+                    break;
+                }
+
+                if (VideoModes[iPreferredVideoMode].BitsPerPlane != i)
+                {
+                    vboxVideoInitMode(&VideoModes[cNumVideoModes],
+                            VideoModes[iPreferredVideoMode].VisScreenWidth,
+                            VideoModes[iPreferredVideoMode].VisScreenHeight,
+                            i /* bpp*/ ,
+                            cNumVideoModes /* index*/,
+                            0 /* yoffset*/);
+                    VBOXVIDEOMODE_ADDED(VideoModes, &cNumVideoModes, NULL);
+                }
+            }
+        }
+
+    } while(0);
+
+    *pcVideoModes = cNumVideoModes;
+    *pPreferrableMode = iPreferredVideoMode;
+
+    VBoxVideoCmnRegFini(Reg);
+
+    return rc;
+}
+#else /* if !(defined VBOX_WITH_GENERIC_MULTIMONITOR) */
 /*
  * Global list of supported standard video modes. It will be
  * filled dynamically.
@@ -243,52 +1467,6 @@ static void initVideoModeInformation(VIDEO_MODE_INFORMATION *pVideoMode, ULONG x
 }
 #endif /* VBOX_WITH_MULTIMONITOR_FIX */
 
-#ifdef VBOXWDDM
-/* preferred mode index */
-static uint32_t gPreferredVideoMode = 0;
-
-static D3DKMDT_2DREGION g_VBoxWddmVideoResolutions[RT_ELEMENTS(VideoModes)];
-static uint32_t g_VBoxWddmNumResolutions;
-
-DECLINLINE(int) vboxWddmRectComparator(const D3DKMDT_2DREGION *pReg1, const D3DKMDT_2DREGION *pReg2)
-{
-    int tmp = pReg1->cx - pReg2->cx;
-    if(tmp)
-        return tmp;
-    tmp = pReg1->cy - pReg2->cy;
-    return tmp;
-}
-
-/* builds a g_VBoxWddmVideoResolutions given VideoModes info */
-VOID vboxWddmBuildResolutionTable()
-{
-    g_VBoxWddmNumResolutions = 0;
-
-    /* we don't care about the efficiency at this time */
-    for (uint32_t i = 0; i < gNumVideoModes; ++i)
-    {
-        VIDEO_MODE_INFORMATION *pMode = &VideoModes[i];
-        bool bFound = false;
-        for (uint32_t j = 0; j < g_VBoxWddmNumResolutions; ++j)
-        {
-            if (g_VBoxWddmVideoResolutions[j].cx == pMode->VisScreenWidth
-                    && g_VBoxWddmVideoResolutions[j].cy == pMode->VisScreenHeight)
-            {
-                bFound = true;
-                break;
-            }
-        }
-
-        if (!bFound)
-        {
-            Assert(g_VBoxWddmNumResolutions < RT_ELEMENTS(g_VBoxWddmVideoResolutions));
-            g_VBoxWddmVideoResolutions[g_VBoxWddmNumResolutions].cx = pMode->VisScreenWidth;
-            g_VBoxWddmVideoResolutions[g_VBoxWddmNumResolutions].cy = pMode->VisScreenHeight;
-            ++g_VBoxWddmNumResolutions;
-        }
-    }
-}
-#endif
 
 static uint32_t g_xresNoVRAM = 0, g_yresNoVRAM = 0, g_bppNoVRAM = 0;
 
@@ -324,6 +1502,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
         { 1400, 1050 },
         { 1600, 1200 },
         { 1920, 1440 },
+#ifndef VBOX_WITH_WDDM
         /* multi screen modes with 1280x1024 */
         { 2560, 1024 },
         { 3840, 1024 },
@@ -332,6 +1511,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
         { 3200, 1200 },
         { 4800, 1200 },
         { 6400, 1200 },
+#endif
     };
     size_t matrixSize = sizeof(resolutionMatrix) / sizeof(resolutionMatrix[0]);
 
@@ -340,14 +1520,12 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
 
     /* size of the VRAM in bytes */
 
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
     ULONG vramSize = DeviceExtension->pPrimary->u.primary.ulMaxFrameBufferSize;
 #else
     ULONG vramSize = vboxWddmVramCpuVisibleSegmentSize(DeviceExtension);
-#ifndef VBOXWDDM_RENDER_FROM_SHADOW
     /* at least two surfaces will be needed: primary & shadow */
-    vramSize /= 2;
-#endif
+    vramSize /= 2 * DeviceExtension->u.primary.commonInfo.cDisplays;
 
     gPreferredVideoMode = 0;
 #endif
@@ -433,7 +1611,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
                 VideoModes[gNumVideoModes].GreenMask                    = 0xFF00;
                 VideoModes[gNumVideoModes].BlueMask                     = 0xFF;
                 VideoModes[gNumVideoModes].AttributeFlags               = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
                 gPreferredVideoMode = gNumVideoModes;
 #endif
             } break;
@@ -478,7 +1656,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
         }
 
         /* does the host like that mode? */
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
         if (!vboxLikesVideoMode(DeviceExtension->iDevice, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 8))
 #else
         if (!vboxLikesVideoMode(0 /* @todo: */, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 8))
@@ -544,7 +1722,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
         }
 
         /* does the host like that mode? */
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
         if (!vboxLikesVideoMode(DeviceExtension->iDevice, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 16))
 #else
         if (!vboxLikesVideoMode(0 /* @todo: */, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 16))
@@ -609,7 +1787,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
         }
 
         /* does the host like that mode? */
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
         if (!vboxLikesVideoMode(DeviceExtension->iDevice, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 24))
 #else
         if (!vboxLikesVideoMode(0, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 24))
@@ -673,7 +1851,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
         }
 
         /* does the host like that mode? */
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
         if (!vboxLikesVideoMode(DeviceExtension->iDevice, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 32))
 #else
         if (!vboxLikesVideoMode(0, resolutionMatrix[matrixIndex].xRes, resolutionMatrix[matrixIndex].yRes - yOffset, 32))
@@ -715,7 +1893,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
      * Next, check the registry for additional modes
      */
     int curKeyNo = 0;
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
     int fPreferredSet = 0;
 #endif
     do
@@ -753,15 +1931,16 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
                 && (bpp != 32)))
             break;
 
-        /* round down width to be a multiple of 8 */
-        xres &= 0xFFF8;
+        /* round down width to be a multiple of 8 if necessary */
+        if (!DeviceExtension->fAnyX)
+            xres &= 0xFFF8;
 
         /* second test: does it fit within our VRAM? */
         if (xres * yres * (bpp / 8) > vramSize)
             break;
 
         /* third test: does the host like the video mode? */
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
         if (!vboxLikesVideoMode(DeviceExtension->iDevice, xres, yres, bpp))
 #else
         if (!vboxLikesVideoMode(0, xres, yres, bpp))
@@ -770,7 +1949,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
 
         dprintf(("VBoxVideo: adding mode from registry: xres = %d, yres = %d, bpp = %d\n", xres, yres, bpp));
 
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
         if (!fPreferredSet)
         {
             gPreferredVideoMode = gNumVideoModes;
@@ -816,7 +1995,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
                 VideoModes[gNumVideoModes].RedMask              = 0xFF0000;
                 VideoModes[gNumVideoModes].GreenMask            = 0xFF00;
                 VideoModes[gNumVideoModes].BlueMask             = 0xFF;
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
                 /* 32-bit mode is more preferable, select it if not yet */
                 if (fPreferredSet < 2)
                 {
@@ -884,7 +2063,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
      * Reinsert custom video modes for all displays.
      */
     int iCustomMode;
-    for (iCustomMode = 0; iCustomMode < DeviceExtension->pPrimary->u.primary.cDisplays; iCustomMode++)
+    for (iCustomMode = 0; iCustomMode < commonFromDeviceExt(DeviceExtension)->cDisplays; iCustomMode++)
     {
         if (fDisplayChangeRequest && iCustomMode == display)
         {
@@ -936,12 +2115,12 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
     if (fDisplayChangeRequest || DeviceExtension->CurrentMode == 0)
 #endif /* VBOX_WITH_MULTIMONITOR_FIX */
     {
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
         dprintf(("VBoxVideo: adding custom video mode as #%d, current mode: %d \n", gNumVideoModes + 1, DeviceExtension->CurrentMode));
         /* handle the startup case */
         if (DeviceExtension->CurrentMode == 0)
 #else
-        if (!DeviceExtension->cSources || !DeviceExtension->aSources[0].pPrimaryAllocation)
+        if (!commonFromDeviceExt(DeviceExtension)->cDisplays || !DeviceExtension->aSources[0].pPrimaryAllocation)
 #endif
         {
             /* Use the stored custom resolution values only if nothing was read from host.
@@ -965,12 +2144,14 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
             dprintf(("VBoxVideo: using stored custom resolution %dx%dx%d for %d\n", xres, yres, bpp, DeviceExtension->iDevice));
 #endif /* VBOX_WITH_MULTIMONITOR_FIX */
         }
-        /* round down to multiple of 8 */
-        if ((xres & 0xfff8) != xres)
-            dprintf(("VBoxVideo: rounding down xres from %d to %d\n", xres, xres & 0xfff8));
-        xres &= 0xfff8;
+        /* round down to multiple of 8 if necessary */
+        if (!DeviceExtension->fAnyX) {
+            if ((xres & 0xfff8) != xres)
+                dprintf(("VBoxVideo: rounding down xres from %d to %d\n", xres, xres & 0xfff8));
+            xres &= 0xfff8;
+        }
         /* take the current values for the fields that are not set */
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
         if (DeviceExtension->CurrentMode != 0)
         {
             if (!xres)
@@ -981,7 +2162,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
                 bpp  = DeviceExtension->CurrentModeBPP;
         }
 #else
-        if (DeviceExtension->cSources && DeviceExtension->aSources[0].pPrimaryAllocation)
+        if (commonFromDeviceExt(DeviceExtension)->cDisplays && DeviceExtension->aSources[0].pPrimaryAllocation)
         {
             if (!xres)
                 xres = DeviceExtension->aSources[0].pPrimaryAllocation->SurfDesc.width;
@@ -997,7 +2178,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
             bpp = 32;
 
         /* does the host like that mode? */
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
         if (vboxLikesVideoMode(DeviceExtension->iDevice, xres, yres, bpp))
 #else
         if (vboxLikesVideoMode(0, xres, yres, bpp))
@@ -1037,10 +2218,10 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
                 }
                 BOOLEAN fAlternatedIndex = FALSE;
 #endif /* VBOX_WITH_MULTIMONITOR_FIX */
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
                 if (DeviceExtension->CurrentMode != 0)
 #else
-                if (DeviceExtension->cSources && DeviceExtension->aSources[0].pPrimaryAllocation)
+                if (commonFromDeviceExt(DeviceExtension)->cDisplays && DeviceExtension->aSources[0].pPrimaryAllocation)
 #endif
 #ifndef VBOX_WITH_MULTIMONITOR_FIX
                 {
@@ -1071,7 +2252,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
 #ifdef VBOX_WITH_MULTIMONITOR_FIX
                 dprintf(("VBoxVideo: fNewInvocation = %d, fAlternatedIndex = %d\n", fNewInvocation, fAlternatedIndex));
 #endif /* VBOX_WITH_MULTIMONITOR_FIX */
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
                 /* assign host-supplied as the most preferable */
                 gPreferredVideoMode = gNumVideoModes;
 #endif
@@ -1143,10 +2324,10 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
                 ++gNumVideoModes;
 
                 /* for the startup case, we need this mode twice due to the alternating mode number */
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
                 if (DeviceExtension->CurrentMode == 0)
 #else
-                if (!DeviceExtension->cSources || !DeviceExtension->aSources[0].pPrimaryAllocation)
+                if (!commonFromDeviceExt(DeviceExtension)->cDisplays || !DeviceExtension->aSources[0].pPrimaryAllocation)
 #endif
                 {
                     dprintf(("VBoxVideo: making a copy of the custom mode as #%d\n", gNumVideoModes + 1));
@@ -1230,7 +2411,7 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
 #if defined(LOG_ENABLED)
     {
         int i;
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
         dprintf(("VBoxVideo: VideoModes (CurrentMode = %d, last #%d)\n", DeviceExtension->CurrentMode, gNumVideoModes));
 #endif
         for (i = 0; i < RT_ELEMENTS(VideoModes); i++)
@@ -1247,69 +2428,90 @@ VOID VBoxBuildModesTable(PDEVICE_EXTENSION DeviceExtension)
     }
 #endif
 
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
     vboxWddmBuildResolutionTable();
 #endif
 
     VBoxVideoCmnRegFini(Reg);
 }
 
-#ifdef VBOXWDDM
-static bool g_bModesTableInitialized = false;
+#endif
+
+#ifdef VBOX_WITH_WDDM
 /**
  * Helper function to dynamically build our table of standard video
  * modes. We take the amount of VRAM and create modes with standard
  * geometries until we've either reached the maximum number of modes
  * or the available VRAM does not allow for additional modes.
  */
-VOID VBoxWddmGetModesTable(PDEVICE_EXTENSION DeviceExtension, bool bRebuildTable,
-        VIDEO_MODE_INFORMATION ** ppModes, uint32_t * pcModes, int32_t * pPreferrableMode,
-        D3DKMDT_2DREGION **ppResolutions, uint32_t * pcResolutions)
+
+AssertCompile(sizeof (SIZE) == sizeof (D3DKMDT_2DREGION));
+AssertCompile(RT_OFFSETOF(SIZE, cx) == RT_OFFSETOF(D3DKMDT_2DREGION, cx));
+AssertCompile(RT_OFFSETOF(SIZE, cy) == RT_OFFSETOF(D3DKMDT_2DREGION, cy));
+static VOID vboxWddmBuildVideoModesInfo(PDEVICE_EXTENSION DeviceExtension, D3DDDI_VIDEO_PRESENT_TARGET_ID VidPnTargetId,
+        PVBOXWDDM_VIDEOMODES_INFO pModes, VIDEO_MODE_INFORMATION *paAddlModes, UINT cAddlModes)
 {
-    if(bRebuildTable || !g_bModesTableInitialized)
+    pModes->cModes = RT_ELEMENTS(pModes->aModes);
+    pModes->cResolutions = RT_ELEMENTS(pModes->aResolutions);
+    vboxVideoBuildModesTable(DeviceExtension, VidPnTargetId, pModes->aModes, &pModes->cModes, &pModes->iPreferredMode);
+    for (UINT i = 0; i < cAddlModes; ++i)
     {
-        VBoxBuildModesTable(DeviceExtension);
-        g_bModesTableInitialized = true;
+        if (vboxVideoModeAdjustCheckSupported(DeviceExtension, VidPnTargetId, &paAddlModes[i]))
+        {
+            int iDx = vboxVideoModeAdd(pModes->aModes, RT_ELEMENTS(pModes->aModes), &pModes->cModes, &paAddlModes[i]);
+            Assert(iDx >= 0);
+            if (iDx >= 0)
+                pModes->iPreferredMode = iDx;
+        }
     }
+#if 0
+    if (pModes->cPrevModes == pModes->cModes)
+    {
+        Assert(pModes->cModes < RT_ELEMENTS(pModes->aModes));
+        if (pModes->cModes < RT_ELEMENTS(pModes->aModes))
+        {
+            ULONG w = pModes->aModes[0].VisScreenWidth;
+            ULONG h = pModes->aModes[0].VisScreenHeight;
+            w += 8;
+            h += 8;
 
-    *ppModes = VideoModes;
-    *pcModes = gNumVideoModes;
-    *pPreferrableMode = (int32_t)gPreferredVideoMode;
-    *ppResolutions = g_VBoxWddmVideoResolutions;
-    *pcResolutions = g_VBoxWddmNumResolutions;
+            if (vboxWddmFillMode(&pModes->aModes[pModes->cModes], D3DDDIFMT_A8R8G8B8, w, h))
+            {
+                pModes->aModes[pModes->cModes].ModeIndex = pModes->cModes;
+                ++pModes->cModes;
+            }
+            else
+            {
+                Assert(0);
+            }
+        }
+        VIDEO_MODE_INFORMATION TmpMode = pModes->aModes[1];
+        pModes->aModes[1] = pModes->aModes[2];
+        pModes->aModes[2] = TmpMode;
+    }
+#endif
+    pModes->cPrevModes = pModes->cModes;
+    vboxVideoBuildResolutionTable(pModes->aModes, pModes->cModes, (SIZE*)((void*)pModes->aResolutions), &pModes->cResolutions);
 }
 
-VOID VBoxWddmInvalidateModesTable(PDEVICE_EXTENSION DeviceExtension)
+NTSTATUS vboxWddmGetModesForResolution(VIDEO_MODE_INFORMATION *pAllModes, uint32_t cAllModes, int iSearchPreferredMode,
+        const D3DKMDT_2DREGION *pResolution, VIDEO_MODE_INFORMATION * pModes, uint32_t cModes, uint32_t *pcModes, int32_t *piPreferrableMode)
 {
-    g_bModesTableInitialized = false;
-}
-
-NTSTATUS VBoxWddmGetModesForResolution(PDEVICE_EXTENSION DeviceExtension, bool bRebuildTable,
-        D3DKMDT_2DREGION *pResolution,
-        VIDEO_MODE_INFORMATION * pModes, uint32_t cModes, uint32_t *pcModes, int32_t *piPreferrableMode)
-{
-    VIDEO_MODE_INFORMATION *pAllModes;
-    uint32_t cAllModes, cAllResolutions;
-    int32_t iPreferrableMode;
-    D3DKMDT_2DREGION *pAllResolutions;
-    VBoxWddmGetModesTable(DeviceExtension, bRebuildTable,
-            &pAllModes, &cAllModes, &iPreferrableMode,
-            &pAllResolutions, &cAllResolutions);
     NTSTATUS Status = STATUS_SUCCESS;
     uint32_t cFound = 0;
     int iFoundPreferrableMode = -1;
     for (uint32_t i = 0; i < cAllModes; ++i)
     {
         VIDEO_MODE_INFORMATION *pCur = &pAllModes[i];
-        if (pResolution->cx == pAllModes[i].VisScreenWidth
-                        && pResolution->cy == pAllModes[i].VisScreenHeight)
+        if (pResolution->cx == pCur->VisScreenWidth
+                        && pResolution->cy == pCur->VisScreenHeight)
         {
             if (pModes && cModes > cFound)
                 memcpy(&pModes[cFound], pCur, sizeof (VIDEO_MODE_INFORMATION));
             else
                 Status = STATUS_BUFFER_TOO_SMALL;
 
-            if (i == (uint32_t)iPreferrableMode)
+            if (i == iSearchPreferredMode)
                 iFoundPreferrableMode = cFound;
 
             ++cFound;
@@ -1325,51 +2527,298 @@ NTSTATUS VBoxWddmGetModesForResolution(PDEVICE_EXTENSION DeviceExtension, bool b
     return Status;
 }
 
+int vboxWddmVideoResolutionFind(const D3DKMDT_2DREGION *pResolutions, int cResolutions, const D3DKMDT_2DREGION *pRes)
+{
+    for (int i = 0; i < cResolutions; ++i)
+    {
+        const D3DKMDT_2DREGION *pResolution = &pResolutions[i];
+        if (pResolution->cx == pRes->cx && pResolution->cy == pRes->cy)
+            return i;
+    }
+    return -1;
+}
+
+bool vboxWddmVideoResolutionsMatch(const D3DKMDT_2DREGION *pResolutions1, const D3DKMDT_2DREGION *pResolutions2, int cResolutions)
+{
+    for (int i = 0; i < cResolutions; ++i)
+    {
+        const D3DKMDT_2DREGION * pRes1 = &pResolutions1[i];
+        int j = 0;
+        for (;j < cResolutions; ++j)
+        {
+            const D3DKMDT_2DREGION * pRes2 = &pResolutions2[j];
+            if (pRes1->cx == pRes2->cx && pRes1->cy == pRes2->cy)
+                break;
+        }
+
+        if (j == cResolutions)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool vboxWddmVideoModesMatch(const VIDEO_MODE_INFORMATION *pModes1, const VIDEO_MODE_INFORMATION *pModes2, int cModes)
+{
+    for (int i = 0; i < cModes; ++i)
+    {
+        const VIDEO_MODE_INFORMATION *pM1 = &pModes1[i];
+        int j = 0;
+        for (;j < cModes; ++j)
+        {
+            const VIDEO_MODE_INFORMATION *pM2 = &pModes2[j];
+
+            if (pM1->VisScreenHeight == pM2->VisScreenHeight
+                    && pM1->VisScreenWidth == pM2->VisScreenWidth
+                    && pM1->BitsPerPlane == pM2->BitsPerPlane)
+                break;
+        }
+
+        if (j == cModes)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+D3DDDIFORMAT vboxWddmCalcPixelFormat(const VIDEO_MODE_INFORMATION *pInfo)
+{
+    switch (pInfo->BitsPerPlane)
+    {
+        case 32:
+            if(!(pInfo->AttributeFlags & VIDEO_MODE_PALETTE_DRIVEN) && !(pInfo->AttributeFlags & VIDEO_MODE_MANAGED_PALETTE))
+            {
+                if (pInfo->RedMask == 0xFF0000 && pInfo->GreenMask == 0xFF00 && pInfo->BlueMask == 0xFF)
+                    return D3DDDIFMT_A8R8G8B8;
+                drprintf((__FUNCTION__": unsupported format: bpp(%d), rmask(%d), gmask(%d), bmask(%d)\n", pInfo->BitsPerPlane, pInfo->RedMask, pInfo->GreenMask, pInfo->BlueMask));
+                AssertBreakpoint();
+            }
+            else
+            {
+                drprintf((__FUNCTION__": unsupported AttributeFlags(0x%x)\n", pInfo->AttributeFlags));
+                AssertBreakpoint();
+            }
+            break;
+        case 24:
+            if(!(pInfo->AttributeFlags & VIDEO_MODE_PALETTE_DRIVEN) && !(pInfo->AttributeFlags & VIDEO_MODE_MANAGED_PALETTE))
+            {
+                if (pInfo->RedMask == 0xFF0000 && pInfo->GreenMask == 0xFF00 && pInfo->BlueMask == 0xFF)
+                    return D3DDDIFMT_R8G8B8;
+                drprintf((__FUNCTION__": unsupported format: bpp(%d), rmask(%d), gmask(%d), bmask(%d)\n", pInfo->BitsPerPlane, pInfo->RedMask, pInfo->GreenMask, pInfo->BlueMask));
+                AssertBreakpoint();
+            }
+            else
+            {
+                drprintf((__FUNCTION__": unsupported AttributeFlags(0x%x)\n", pInfo->AttributeFlags));
+                AssertBreakpoint();
+            }
+            break;
+        case 16:
+            if(!(pInfo->AttributeFlags & VIDEO_MODE_PALETTE_DRIVEN) && !(pInfo->AttributeFlags & VIDEO_MODE_MANAGED_PALETTE))
+            {
+                if (pInfo->RedMask == 0xF800 && pInfo->GreenMask == 0x7E0 && pInfo->BlueMask == 0x1F)
+                    return D3DDDIFMT_R5G6B5;
+                drprintf((__FUNCTION__": unsupported format: bpp(%d), rmask(%d), gmask(%d), bmask(%d)\n", pInfo->BitsPerPlane, pInfo->RedMask, pInfo->GreenMask, pInfo->BlueMask));
+                AssertBreakpoint();
+            }
+            else
+            {
+                drprintf((__FUNCTION__": unsupported AttributeFlags(0x%x)\n", pInfo->AttributeFlags));
+                AssertBreakpoint();
+            }
+            break;
+        case 8:
+            if((pInfo->AttributeFlags & VIDEO_MODE_PALETTE_DRIVEN) && (pInfo->AttributeFlags & VIDEO_MODE_MANAGED_PALETTE))
+            {
+                return D3DDDIFMT_P8;
+            }
+            else
+            {
+                drprintf((__FUNCTION__": unsupported AttributeFlags(0x%x)\n", pInfo->AttributeFlags));
+                AssertBreakpoint();
+            }
+            break;
+        default:
+            drprintf((__FUNCTION__": unsupported bpp(%d)\n", pInfo->BitsPerPlane));
+            AssertBreakpoint();
+            break;
+    }
+
+    return D3DDDIFMT_UNKNOWN;
+}
+
+bool vboxWddmFillMode(VIDEO_MODE_INFORMATION *pInfo, D3DDDIFORMAT enmFormat, ULONG w, ULONG h)
+{
+    pInfo->VisScreenWidth = w;
+    pInfo->VisScreenHeight = h;
+    pInfo->VideoMemoryBitmapWidth = w;
+    pInfo->VideoMemoryBitmapHeight = h;
+    pInfo->XMillimeter = 320;
+    pInfo->YMillimeter = 240;
+
+    switch (enmFormat)
+    {
+        case D3DDDIFMT_A8R8G8B8:
+            pInfo->AttributeFlags = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+            pInfo->BitsPerPlane = 32;
+            pInfo->RedMask = 0xFF0000;
+            pInfo->GreenMask = 0xFF00;
+            pInfo->BlueMask = 0xFF;
+            pInfo->ScreenStride = pInfo->VisScreenWidth * pInfo->BitsPerPlane / 8;
+            return true;
+        case D3DDDIFMT_R8G8B8:
+            pInfo->AttributeFlags = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+            pInfo->BitsPerPlane = 24;
+            pInfo->RedMask = 0xFF0000;
+            pInfo->GreenMask = 0xFF00;
+            pInfo->BlueMask = 0xFF;
+            pInfo->ScreenStride = pInfo->VisScreenWidth * pInfo->BitsPerPlane / 8;
+            return true;
+        case D3DDDIFMT_R5G6B5:
+            pInfo->AttributeFlags = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN;
+            pInfo->BitsPerPlane = 16;
+            pInfo->RedMask = 0xF800;
+            pInfo->GreenMask = 0x7E0;
+            pInfo->BlueMask = 0x1F;
+            pInfo->ScreenStride = pInfo->VisScreenWidth * pInfo->BitsPerPlane / 8;
+            return true;
+        case D3DDDIFMT_P8:
+            pInfo->AttributeFlags = VIDEO_MODE_GRAPHICS | VIDEO_MODE_COLOR | VIDEO_MODE_NO_OFF_SCREEN | VIDEO_MODE_PALETTE_DRIVEN | VIDEO_MODE_MANAGED_PALETTE;
+            pInfo->BitsPerPlane = 8;
+            pInfo->RedMask = 0;
+            pInfo->GreenMask = 0;
+            pInfo->BlueMask = 0;
+            pInfo->ScreenStride = pInfo->VisScreenWidth * pInfo->BitsPerPlane / 8;
+            return true;
+        default:
+            drprintf((__FUNCTION__": unsupported enmFormat(%d)\n", enmFormat));
+            AssertBreakpoint();
+            break;
+    }
+
+    return false;
+}
+
+static VBOXWDDM_VIDEOMODES_INFO g_aVBoxVideoModeInfos[VBOX_VIDEO_MAX_SCREENS] = {0};
+
+PVBOXWDDM_VIDEOMODES_INFO vboxWddmGetVideoModesInfo(PDEVICE_EXTENSION DeviceExtension, D3DDDI_VIDEO_PRESENT_TARGET_ID VidPnTargetId)
+{
+    Assert(VidPnTargetId < (D3DDDI_VIDEO_PRESENT_TARGET_ID)commonFromDeviceExt(DeviceExtension)->cDisplays);
+    if (VidPnTargetId >= (D3DDDI_VIDEO_PRESENT_TARGET_ID)commonFromDeviceExt(DeviceExtension)->cDisplays)
+    {
+        return NULL;
+    }
+
+    PVBOXWDDM_VIDEOMODES_INFO pInfo = &g_aVBoxVideoModeInfos[VidPnTargetId];
+
+    if (!pInfo->cModes)
+    {
+        vboxWddmBuildVideoModesInfo(DeviceExtension, VidPnTargetId, pInfo, NULL, 0);
+        Assert(pInfo->cModes);
+    }
+
+    return pInfo;
+}
+
+PVBOXWDDM_VIDEOMODES_INFO vboxWddmGetAllVideoModesInfos(PDEVICE_EXTENSION DeviceExtension)
+{
+    /* ensure all modes are initialized */
+    for (int i = 0; i < commonFromDeviceExt(DeviceExtension)->cDisplays; ++i)
+    {
+        vboxWddmGetVideoModesInfo(DeviceExtension, (D3DDDI_VIDEO_PRESENT_TARGET_ID)i);
+    }
+
+    return g_aVBoxVideoModeInfos;
+}
+
+VOID vboxWddmInvalidateVideoModesInfo(PDEVICE_EXTENSION DeviceExtension)
+{
+    for (UINT i = 0; i < RT_ELEMENTS(g_aVBoxVideoModeInfos); ++i)
+    {
+        g_aVBoxVideoModeInfos[i].cModes = 0;
+    }
+}
+
+PVBOXWDDM_VIDEOMODES_INFO vboxWddmUpdateVideoModesInfo(PDEVICE_EXTENSION DeviceExtension, PVBOXWDDM_RECOMMENDVIDPN pVidPnInfo)
+{
+    vboxWddmInvalidateVideoModesInfo(DeviceExtension);
+
+    if (pVidPnInfo)
+    {
+        for (UINT i = 0; i < pVidPnInfo->cScreenInfos; ++i)
+        {
+            PVBOXWDDM_RECOMMENDVIDPN_SCREEN_INFO pScreenInfo = &pVidPnInfo->aScreenInfos[i];
+            Assert(pScreenInfo->Id < (DWORD)commonFromDeviceExt(DeviceExtension)->cDisplays);
+            if (pScreenInfo->Id < (DWORD)commonFromDeviceExt(DeviceExtension)->cDisplays)
+            {
+                PVBOXWDDM_VIDEOMODES_INFO pInfo = &g_aVBoxVideoModeInfos[pScreenInfo->Id];
+                VIDEO_MODE_INFORMATION ModeInfo = {0};
+                D3DDDIFORMAT enmFormat;
+                switch (pScreenInfo->BitsPerPixel)
+                {
+                    case 32:
+                        enmFormat = D3DDDIFMT_A8R8G8B8;
+                        break;
+                    case 24:
+                        enmFormat = D3DDDIFMT_R8G8B8;
+                        break;
+                    case 16:
+                        enmFormat = D3DDDIFMT_R5G6B5;
+                        break;
+                    case 8:
+                        enmFormat = D3DDDIFMT_P8;
+                        break;
+                    default:
+                        Assert(0);
+                        enmFormat = D3DDDIFMT_UNKNOWN;
+                        break;
+                }
+                if (enmFormat != D3DDDIFMT_UNKNOWN)
+                {
+                    if (vboxWddmFillMode(&ModeInfo, enmFormat, pScreenInfo->Width, pScreenInfo->Height))
+                    {
+                        vboxWddmBuildVideoModesInfo(DeviceExtension, pScreenInfo->Id, pInfo, &ModeInfo, 1);
+                    }
+                    else
+                    {
+                        Assert(0);
+                    }
+                }
+            }
+        }
+    }
+
+    /* ensure we have all the rest populated */
+    vboxWddmGetAllVideoModesInfos(DeviceExtension);
+    return g_aVBoxVideoModeInfos;
+}
+
 #else
 
 /* Computes the size of a framebuffer. DualView has a few framebuffers of the computed size. */
 void VBoxComputeFrameBufferSizes (PDEVICE_EXTENSION PrimaryExtension)
 {
-#ifndef VBOX_WITH_HGSMI
-    ULONG ulAvailable = PrimaryExtension->u.primary.cbVRAM
-                        - PrimaryExtension->u.primary.cbMiniportHeap
-                        - VBOX_VIDEO_ADAPTER_INFORMATION_SIZE;
-#else
-    ULONG ulAvailable = PrimaryExtension->u.primary.cbVRAM
-                        - PrimaryExtension->u.primary.cbMiniportHeap
+    ULONG ulAvailable = commonFromDeviceExt(PrimaryExtension)->cbVRAM
+                        - commonFromDeviceExt(PrimaryExtension)->cbMiniportHeap
                         - VBVA_ADAPTER_INFORMATION_SIZE;
-#endif /* VBOX_WITH_HGSMI */
 
     /* Size of a framebuffer. */
 
-    ULONG ulSize = ulAvailable / PrimaryExtension->u.primary.cDisplays;
+    ULONG ulSize = ulAvailable / commonFromDeviceExt(PrimaryExtension)->cDisplays;
 
     /* Align down to 4096 bytes. */
     ulSize &= ~0xFFF;
 
     dprintf(("VBoxVideo::VBoxComputeFrameBufferSizes: cbVRAM = 0x%08X, cDisplays = %d, ulSize = 0x%08X, ulSize * cDisplays = 0x%08X, slack = 0x%08X\n",
-             PrimaryExtension->u.primary.cbVRAM, PrimaryExtension->u.primary.cDisplays,
-             ulSize, ulSize * PrimaryExtension->u.primary.cDisplays,
-             ulAvailable - ulSize * PrimaryExtension->u.primary.cDisplays));
+             commonFromDeviceExt(PrimaryExtension)->cbVRAM, commonFromDeviceExt(PrimaryExtension)->cDisplays,
+             ulSize, ulSize * commonFromDeviceExt(PrimaryExtension)->cDisplays,
+             ulAvailable - ulSize * commonFromDeviceExt(PrimaryExtension)->cDisplays));
 
-#ifndef VBOX_WITH_HGSMI
-    if (ulSize > VBOX_VIDEO_DISPLAY_INFORMATION_SIZE)
-    {
-        /* Compute the size of the framebuffer. */
-        ulSize -= VBOX_VIDEO_DISPLAY_INFORMATION_SIZE;
-    }
-    else
-    {
-        /* Should not really get here. But still do it safely. */
-        ulSize = 0;
-    }
-#endif /* !VBOX_WITH_HGSMI */
 
     /* Update the primary info. */
     PrimaryExtension->u.primary.ulMaxFrameBufferSize     = ulSize;
-#ifndef VBOX_WITH_HGSMI
-    PrimaryExtension->u.primary.ulDisplayInformationSize = VBOX_VIDEO_DISPLAY_INFORMATION_SIZE;
-#endif /* !VBOX_WITH_HGSMI */
 
     /* Update the per extension info. */
     PDEVICE_EXTENSION Extension = PrimaryExtension;
@@ -1383,12 +2832,7 @@ void VBoxComputeFrameBufferSizes (PDEVICE_EXTENSION PrimaryExtension)
         dprintf(("VBoxVideo::VBoxComputeFrameBufferSizes: [%d] ulFrameBufferOffset 0x%08X\n",
                  Extension->iDevice, ulFrameBufferOffset));
 
-#ifndef VBOX_WITH_HGSMI
-        ulFrameBufferOffset += PrimaryExtension->u.primary.ulMaxFrameBufferSize
-                               + PrimaryExtension->u.primary.ulDisplayInformationSize;
-#else
         ulFrameBufferOffset += PrimaryExtension->u.primary.ulMaxFrameBufferSize;
-#endif /* VBOX_WITH_HGSMI */
 
         Extension = Extension->pNext;
     }
@@ -1396,8 +2840,9 @@ void VBoxComputeFrameBufferSizes (PDEVICE_EXTENSION PrimaryExtension)
 
 #endif
 
-int VBoxMapAdapterMemory (PDEVICE_EXTENSION PrimaryExtension, void **ppv, ULONG ulOffset, ULONG ulSize)
+int VBoxMapAdapterMemory (PVBOXVIDEO_COMMON pCommon, void **ppv, uint32_t ulOffset, uint32_t ulSize)
 {
+    PDEVICE_EXTENSION PrimaryExtension = commonToPrimaryExt(pCommon);
     dprintf(("VBoxVideo::VBoxMapAdapterMemory 0x%08X[0x%X]\n", ulOffset, ulSize));
 
     if (!ulSize)
@@ -1412,7 +2857,7 @@ int VBoxMapAdapterMemory (PDEVICE_EXTENSION PrimaryExtension, void **ppv, ULONG 
     PVOID VideoRamBase = NULL;
     ULONG VideoRamLength = ulSize;
     VP_STATUS Status;
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
     ULONG inIoSpace = 0;
 
     Status = VideoPortMapMemory (PrimaryExtension, FrameBuffer,
@@ -1441,13 +2886,35 @@ int VBoxMapAdapterMemory (PDEVICE_EXTENSION PrimaryExtension, void **ppv, ULONG 
     return Status;
 }
 
-void VBoxUnmapAdapterMemory (PDEVICE_EXTENSION PrimaryExtension, void **ppv, ULONG ulSize)
+bool VBoxSyncToVideoIRQ(PVBOXVIDEO_COMMON pCommon, PFNVIDEOIRQSYNC pfnSync,
+                        void *pvUser)
 {
-    dprintf(("VBoxVideo::VBoxMapAdapterMemory\n"));
+    PDEVICE_EXTENSION PrimaryExtension = commonToPrimaryExt(pCommon);
+    PMINIPORT_SYNCHRONIZE_ROUTINE pfnSyncMiniport;
+    pfnSyncMiniport = (PMINIPORT_SYNCHRONIZE_ROUTINE) pfnSync;
+#ifndef VBOX_WITH_WDDM
+    return !!VideoPortSynchronizeExecution(PrimaryExtension, VpMediumPriority,
+                                           pfnSyncMiniport, pvUser);
+#else
+    BOOLEAN fRet;
+    DXGKCB_SYNCHRONIZE_EXECUTION pfnDxgkCbSync =
+        PrimaryExtension->u.primary.DxgkInterface.DxgkCbSynchronizeExecution;
+    HANDLE hDev = PrimaryExtension->u.primary.DxgkInterface.DeviceHandle;
+    NTSTATUS ntStatus = pfnDxgkCbSync(hDev, pfnSyncMiniport, pvUser, 0, &fRet);
+    AssertReturn(ntStatus == STATUS_SUCCESS, false);
+    return !!fRet;
+#endif
+}
+
+void VBoxUnmapAdapterMemory (PVBOXVIDEO_COMMON pCommon, void **ppv)
+{
+    dprintf(("VBoxVideo::VBoxUnmapAdapterMemory\n"));
+
+    PDEVICE_EXTENSION PrimaryExtension = commonToPrimaryExt(pCommon);
 
     if (*ppv)
     {
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
         VideoPortUnmapMemory(PrimaryExtension, *ppv, NULL);
 #else
         NTSTATUS ntStatus = PrimaryExtension->u.primary.DxgkInterface.DxgkCbUnmapMemory(PrimaryExtension->u.primary.DxgkInterface.DeviceHandle,
@@ -1459,211 +2926,151 @@ void VBoxUnmapAdapterMemory (PDEVICE_EXTENSION PrimaryExtension, void **ppv, ULO
     *ppv = NULL;
 }
 
-#ifndef VBOX_WITH_HGSMI
 
-# ifdef VBOXWDDM
-/* sanity check */
-#  error WDDM is supported only for HGSMI-based driver
-# endif
-
-static void vboxQueryConf (PDEVICE_EXTENSION PrimaryExtension, uint32_t u32Index, ULONG *pulValue)
+void vboxVideoInitCustomVideoModes(PDEVICE_EXTENSION pDevExt)
 {
-    dprintf(("VBoxVideo::vboxQueryConf: u32Index = %d\n", u32Index));
+    VP_STATUS status;
+    VBOXCMNREG Reg;
 
-    typedef struct _VBOXVIDEOQCONF32
+    VBoxVideoCmnRegInit(pDevExt, &Reg);
+
+    dprintf(("VBoxVideo::vboxVideoInitCustomVideoModes\n"));
+
+#ifndef VBOX_WITH_MULTIMONITOR_FIX
+    /*
+     * Get the last custom resolution
+     */
+    status = VBoxVideoCmnRegQueryDword(Reg, L"CustomXRes", &gCustomXRes);
+    if (status != NO_ERROR)
+        gCustomXRes = 0;
+
+    status = VBoxVideoCmnRegQueryDword(Reg, L"CustomYRes", &gCustomYRes);
+    if (status != NO_ERROR)
+        gCustomYRes = 0;
+    status = VBoxVideoCmnRegQueryDword(Reg, L"CustomBPP", &gCustomBPP);
+    if (status != NO_ERROR)
+        gCustomBPP = 0;
+
+   dprintf(("VBoxVideo: got stored custom resolution %dx%dx%d\n", gCustomXRes, gCustomYRes, gCustomBPP));
+#else
+    /* Initialize all custom modes to the 800x600x32. */
+    initVideoModeInformation(&CustomVideoModes[0], 800, 600, 32, 0, 0);
+
+    int iCustomMode;
+    for (iCustomMode = 1; iCustomMode < RT_ELEMENTS(CustomVideoModes); iCustomMode++)
     {
-        VBOXVIDEOINFOHDR hdrQuery;
-        VBOXVIDEOINFOQUERYCONF32 query;
-        VBOXVIDEOINFOHDR hdrEnd;
-    } VBOXVIDEOQCONF32;
-
-    VBOXVIDEOQCONF32 *p = (VBOXVIDEOQCONF32 *)PrimaryExtension->u.primary.pvAdapterInformation;
-
-    p->hdrQuery.u8Type     = VBOX_VIDEO_INFO_TYPE_QUERY_CONF32;
-    p->hdrQuery.u8Reserved = 0;
-    p->hdrQuery.u16Length  = sizeof (VBOXVIDEOINFOQUERYCONF32);
-
-    p->query.u32Index = u32Index;
-    p->query.u32Value = 0;
-
-    p->hdrEnd.u8Type     = VBOX_VIDEO_INFO_TYPE_END;
-    p->hdrEnd.u8Reserved = 0;
-    p->hdrEnd.u16Length  = 0;
-
-    /* Let the host to process the commands. */
-    VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_VBOX_VIDEO);
-    VideoPortWritePortUlong((PULONG)VBE_DISPI_IOPORT_DATA, VBOX_VIDEO_INTERPRET_ADAPTER_MEMORY);
-
-    *pulValue = (ULONG)p->query.u32Value;
-
-    dprintf(("VBoxVideo::vboxQueryConf: u32Value = %d\n", p->query.u32Value));
-}
-
-static void vboxSetupAdapterInfo (PDEVICE_EXTENSION PrimaryExtension)
-{
-    dprintf(("VBoxVideo::vboxSetupAdapterInfo\n"));
-
-    VBOXVIDEOINFOHDR *pHdr;
-
-    uint8_t *pu8 = (uint8_t *)PrimaryExtension->u.primary.pvAdapterInformation;
-
-    PDEVICE_EXTENSION Extension = PrimaryExtension;
-    while (Extension)
-    {
-        pHdr = (VBOXVIDEOINFOHDR *)pu8;
-        pu8 += sizeof (VBOXVIDEOINFOHDR);
-
-        pHdr->u8Type     = VBOX_VIDEO_INFO_TYPE_DISPLAY;
-        pHdr->u8Reserved = 0;
-        pHdr->u16Length  = sizeof (VBOXVIDEOINFODISPLAY);
-
-        VBOXVIDEOINFODISPLAY *pDisplay = (VBOXVIDEOINFODISPLAY *)pu8;
-        pu8 += sizeof (VBOXVIDEOINFODISPLAY);
-
-        pDisplay->u32Index           = Extension->iDevice;
-        pDisplay->u32Offset          = Extension->ulFrameBufferOffset;
-        pDisplay->u32FramebufferSize = PrimaryExtension->u.primary.ulMaxFrameBufferSize;
-        pDisplay->u32InformationSize = PrimaryExtension->u.primary.ulDisplayInformationSize;
-
-        Extension = Extension->pNext;
+        CustomVideoModes[iCustomMode] = CustomVideoModes[0];
     }
 
-
-    /* The heap description. */
-    pHdr = (VBOXVIDEOINFOHDR *)pu8;
-    pu8 += sizeof (VBOXVIDEOINFOHDR);
-
-    pHdr->u8Type     = VBOX_VIDEO_INFO_TYPE_NV_HEAP;
-    pHdr->u8Reserved = 0;
-    pHdr->u16Length  = sizeof (VBOXVIDEOINFONVHEAP);
-
-    VBOXVIDEOINFONVHEAP *pHeap = (VBOXVIDEOINFONVHEAP *)pu8;
-    pu8 += sizeof (VBOXVIDEOINFONVHEAP);
-
-    pHeap->u32HeapOffset = PrimaryExtension->u.primary.cbVRAM
-                           - PrimaryExtension->u.primary.cbMiniportHeap
-                           - VBOX_VIDEO_ADAPTER_INFORMATION_SIZE;
-    pHeap->u32HeapSize = PrimaryExtension->u.primary.cbMiniportHeap;
-
-
-    /* The END marker. */
-    pHdr = (VBOXVIDEOINFOHDR *)pu8;
-    pu8 += sizeof (VBOXVIDEOINFOHDR);
-
-    pHdr->u8Type     = VBOX_VIDEO_INFO_TYPE_END;
-    pHdr->u8Reserved = 0;
-    pHdr->u16Length  = 0;
-
-    /* Inform the host about the display configuration. */
-    VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_VBOX_VIDEO);
-    VideoPortWritePortUlong((PULONG)VBE_DISPI_IOPORT_DATA, VBOX_VIDEO_INTERPRET_ADAPTER_MEMORY);
-
-    dprintf(("VBoxVideo::vboxSetupAdapterInfo finished\n"));
-}
-
-/**
- * Helper function to register secondary displays (DualView). Note that this will not
- * be available on pre-XP versions, and some editions on XP will fail because they are
- * intentionally crippled.
- */
-VOID VBoxSetupDisplays(PDEVICE_EXTENSION PrimaryExtension, PVIDEO_PORT_CONFIG_INFO pConfigInfo, ULONG AdapterMemorySize)
-{
-    VP_STATUS rc = NO_ERROR;
-
-    dprintf(("VBoxVideo::VBoxSetupDisplays: PrimaryExtension = %p\n",
-             PrimaryExtension));
-
-    /* Preinitialize the primary extension. */
-    PrimaryExtension->pNext                              = NULL;
-    PrimaryExtension->pPrimary                           = PrimaryExtension;
-    PrimaryExtension->iDevice                            = 0;
-    PrimaryExtension->ulFrameBufferOffset                = 0;
-    PrimaryExtension->ulFrameBufferSize                  = 0;
-    PrimaryExtension->u.primary.ulVbvaEnabled            = 0;
-    PrimaryExtension->u.primary.bVBoxVideoSupported      = FALSE;
-    PrimaryExtension->u.primary.cDisplays                = 1;
-    PrimaryExtension->u.primary.cbVRAM                   = AdapterMemorySize;
-    PrimaryExtension->u.primary.cbMiniportHeap           = 0;
-    PrimaryExtension->u.primary.pvMiniportHeap           = NULL;
-    PrimaryExtension->u.primary.pvAdapterInformation     = NULL;
-    PrimaryExtension->u.primary.ulMaxFrameBufferSize     = 0;
-    PrimaryExtension->u.primary.ulDisplayInformationSize = 0;
-
-    /* Verify whether the HW supports VirtualBox extensions. */
-    VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_ID);
-    VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_DATA,  VBE_DISPI_ID_VBOX_VIDEO);
-
-    if (VideoPortReadPortUshort((PUSHORT)VBE_DISPI_IOPORT_DATA) == VBE_DISPI_ID_VBOX_VIDEO)
+    /* Load stored custom resolution from the registry. */
+    for (iCustomMode = 0;
+#ifdef VBOX_WITH_WDDM
+            iCustomMode < commonFromDeviceExt(pDevExt)->cDisplays;
+#else
+            iCustomMode < commonFromDeviceExt(pDevExt)->cDisplays;
+#endif
+            iCustomMode++)
     {
-        PrimaryExtension->u.primary.bVBoxVideoSupported = TRUE;
-    }
-
-    dprintf(("VBoxVideo::VBoxSetupDisplays: bVBoxVideoSupported = %d\n",
-             PrimaryExtension->u.primary.bVBoxVideoSupported));
-
-    if (PrimaryExtension->u.primary.bVBoxVideoSupported)
-    {
-        /* Map the adapter information. It will be needed to query some configuration values. */
-        rc = VBoxMapAdapterMemory (PrimaryExtension,
-                                   &PrimaryExtension->u.primary.pvAdapterInformation,
-                                   PrimaryExtension->u.primary.cbVRAM - VBOX_VIDEO_ADAPTER_INFORMATION_SIZE,
-                                   VBOX_VIDEO_ADAPTER_INFORMATION_SIZE
-                                  );
-        if (rc != NO_ERROR)
-        {
-            dprintf(("VBoxVideo::VBoxSetupDisplays: VBoxMapAdapterMemory pvAdapterInfoirrmation failed rc = %d\n",
-                     rc));
-
-            PrimaryExtension->u.primary.bVBoxVideoSupported = FALSE;
-        }
-    }
-
-    /* Setup the non-volatile heap and the adapter memory. */
-    if (PrimaryExtension->u.primary.bVBoxVideoSupported)
-    {
-        /* Query the size of the non-volatile heap. */
-        ULONG cbMiniportHeap = 0;
-        vboxQueryConf (PrimaryExtension, VBOX_VIDEO_QCI32_OFFSCREEN_HEAP_SIZE, &cbMiniportHeap);
-
-        /* Do not allow too big heap. 50% of VRAM should be enough. */
-        ULONG cbMiniportHeapMaxSize = AdapterMemorySize / 2 - VBOX_VIDEO_ADAPTER_INFORMATION_SIZE;
-
-        if (cbMiniportHeap > cbMiniportHeapMaxSize)
-        {
-            cbMiniportHeap = cbMiniportHeapMaxSize;
-        }
-
-        /* Round up to 4096. */
-        PrimaryExtension->u.primary.cbMiniportHeap = (cbMiniportHeap + 0xFFF) & ~0xFFF;
-
-        dprintf(("VBoxVideo::VBoxSetupDisplays: cbMiniportHeap = 0x%08X, PrimaryExtension->u.primary.cbMiniportHeap = 0x%08X, cbMiniportHeapMaxSize = 0x%08X\n",
-                 cbMiniportHeap, PrimaryExtension->u.primary.cbMiniportHeap, cbMiniportHeapMaxSize));
-
-        /* Map the heap region and the adapter information area.
-         *
-         * Note: the heap will be used by display drivers, possibly by a few instances
-         *       in multimonitor configuration, but the memory is mapped here ones.
-         *       It is assumed that all display drivers and the miniport has the SAME
-         *       virtual address space.
-         *
+        /*
+         * Get the last custom resolution
          */
-        rc = VBoxMapAdapterMemory (PrimaryExtension,
-                                   &PrimaryExtension->u.primary.pvMiniportHeap,
-                                   PrimaryExtension->u.primary.cbVRAM
-                                   - VBOX_VIDEO_ADAPTER_INFORMATION_SIZE
-                                   - PrimaryExtension->u.primary.cbMiniportHeap,
-                                   PrimaryExtension->u.primary.cbMiniportHeap
-                                  );
+        uint32_t CustomXRes = 0, CustomYRes = 0, CustomBPP = 0;
 
-        if (rc != NO_ERROR)
+        if (iCustomMode == 0)
         {
-            PrimaryExtension->u.primary.cbMiniportHeap = 0;
-            PrimaryExtension->u.primary.bVBoxVideoSupported = FALSE;
+            /* Name without a suffix */
+            status = VBoxVideoCmnRegQueryDword(Reg, L"CustomXRes", &CustomXRes);
+            if (status != NO_ERROR)
+                CustomXRes = 0;
+            status = VBoxVideoCmnRegQueryDword(Reg, L"CustomYRes", &CustomYRes);
+            if (status != NO_ERROR)
+                CustomYRes = 0;
+            status = VBoxVideoCmnRegQueryDword(Reg, L"CustomBPP", &CustomBPP);
+            if (status != NO_ERROR)
+                CustomBPP = 0;
+        }
+        else
+        {
+            wchar_t keyname[32];
+            swprintf(keyname, L"CustomXRes%d", iCustomMode);
+            status = VBoxVideoCmnRegQueryDword(Reg, keyname, &CustomXRes);
+            if (status != NO_ERROR)
+                CustomXRes = 0;
+            swprintf(keyname, L"CustomYRes%d", iCustomMode);
+            status = VBoxVideoCmnRegQueryDword(Reg, keyname, &CustomYRes);
+            if (status != NO_ERROR)
+                CustomYRes = 0;
+            swprintf(keyname, L"CustomBPP%d", iCustomMode);
+            status = VBoxVideoCmnRegQueryDword(Reg, keyname, &CustomBPP);
+            if (status != NO_ERROR)
+                CustomBPP = 0;
+        }
+
+        dprintf(("VBoxVideo: got stored custom resolution[%d] %dx%dx%d\n", iCustomMode, CustomXRes, CustomYRes, CustomBPP));
+
+        if (CustomXRes || CustomYRes || CustomBPP)
+        {
+            if (CustomXRes == 0)
+            {
+                CustomXRes = CustomVideoModes[iCustomMode].VisScreenWidth;
+            }
+            if (CustomYRes == 0)
+            {
+                CustomYRes = CustomVideoModes[iCustomMode].VisScreenHeight;
+            }
+            if (CustomBPP == 0)
+            {
+                CustomBPP = CustomVideoModes[iCustomMode].BitsPerPlane;
+            }
+
+            initVideoModeInformation(&CustomVideoModes[iCustomMode], CustomXRes, CustomYRes, CustomBPP, 0, 0);
         }
     }
+#endif /* VBOX_WITH_MULTIMONITOR_FIX */
 
-    /* Check whether the guest supports multimonitors. */
-    if (PrimaryExtension->u.primary.bVBoxVideoSupported)
+    VBoxVideoCmnRegFini(Reg);
+}
+
+#ifndef VBOX_WITH_WDDM
+DECLCALLBACK(int) vbvaInitInfoDisplay (void *pvData, struct VBVAINFOVIEW *p,
+                                       uint32_t cViews)
+{
+    PDEVICE_EXTENSION PrimaryExtension = (PDEVICE_EXTENSION) pvData;
+
+    unsigned i;
+    PDEVICE_EXTENSION Extension;
+
+    for (i = 0, Extension = PrimaryExtension; i < cViews && Extension;
+         i++, Extension = Extension->pNext)
+    {
+        p[i].u32ViewIndex     = Extension->iDevice;
+        p[i].u32ViewOffset    = Extension->ulFrameBufferOffset;
+        p[i].u32ViewSize      = PrimaryExtension->u.primary.ulMaxFrameBufferSize;
+
+        /* How much VRAM should be reserved for the guest drivers to use VBVA. */
+        const uint32_t cbReservedVRAM = VBVA_DISPLAY_INFORMATION_SIZE + VBVA_MIN_BUFFER_SIZE;
+
+        p[i].u32MaxScreenSize = p[i].u32ViewSize > cbReservedVRAM?
+                                    p[i].u32ViewSize - cbReservedVRAM:
+                                    0;
+    }
+
+    if (i == commonFromDeviceExt(PrimaryExtension)->cDisplays && Extension == NULL)
+    {
+        return VINF_SUCCESS;
+    }
+
+    AssertFailed ();
+    return VERR_INTERNAL_ERROR;
+}
+
+
+static VOID VBoxCreateDisplaysXPDM(PDEVICE_EXTENSION PrimaryExtension,
+                                   PVIDEO_PORT_CONFIG_INFO pConfigInfo)
+{
+    VP_STATUS rc;
+
+    if (commonFromDeviceExt(PrimaryExtension)->bHGSMI)
     {
         typedef VP_STATUS (*PFNCREATESECONDARYDISPLAY)(PVOID, PVOID *, ULONG);
         PFNCREATESECONDARYDISPLAY pfnCreateSecondaryDisplay = NULL;
@@ -1677,24 +3084,15 @@ VOID VBoxSetupDisplays(PDEVICE_EXTENSION PrimaryExtension, PVIDEO_PORT_CONFIG_IN
                                                                         (PUCHAR)"VideoPortCreateSecondaryDisplay");
         }
 
-        if (pfnCreateSecondaryDisplay != NULL)
+        if (!pfnCreateSecondaryDisplay)
+            commonFromDeviceExt(PrimaryExtension)->cDisplays = 1;
+        else
         {
-            /* Query the configured number of displays. */
-            ULONG cDisplays = 0;
-            vboxQueryConf (PrimaryExtension, VBOX_VIDEO_QCI32_MONITOR_COUNT, &cDisplays);
-
-            dprintf(("VBoxVideo::VBoxSetupDisplays: cDisplays = %d\n",
-                     cDisplays));
-
-            if (cDisplays == 0 || cDisplays > VBOX_VIDEO_MAX_SCREENS)
-            {
-                /* Host reported some bad value. Continue in the 1 screen mode. */
-                cDisplays = 1;
-            }
-
             PDEVICE_EXTENSION pPrev = PrimaryExtension;
 
             ULONG iDisplay;
+            ULONG cDisplays = commonFromDeviceExt(PrimaryExtension)->cDisplays;
+            commonFromDeviceExt(PrimaryExtension)->cDisplays = 1;
             for (iDisplay = 1; iDisplay < cDisplays; iDisplay++)
             {
                PDEVICE_EXTENSION SecondaryExtension = NULL;
@@ -1720,36 +3118,40 @@ VOID VBoxSetupDisplays(PDEVICE_EXTENSION PrimaryExtension, PVIDEO_PORT_CONFIG_IN
                pPrev = SecondaryExtension;
 
                /* Take the successfully created display into account. */
-               PrimaryExtension->u.primary.cDisplays++;
+               commonFromDeviceExt(PrimaryExtension)->cDisplays++;
             }
-
-            /* Failure to create secondary displays is not fatal */
-            rc = NO_ERROR;
         }
+
+        /* Failure to create secondary displays is not fatal */
+        rc = NO_ERROR;
     }
 
     /* Now when the number of monitors is known and extensions are created,
      * calculate the layout of framebuffers.
      */
     VBoxComputeFrameBufferSizes (PrimaryExtension);
+    /* in case of WDDM we do not control the framebuffer location,
+     * i.e. it is assigned by Video Memory Manager,
+     * The FB information should be passed to guest from our
+     * DxgkDdiSetVidPnSourceAddress callback */
 
-    if (PrimaryExtension->u.primary.bVBoxVideoSupported)
+    if (commonFromDeviceExt(PrimaryExtension)->bHGSMI)
     {
-        /* Setup the information for the host. */
-        vboxSetupAdapterInfo (PrimaryExtension);
-    }
-    else
-    {
-        /* Unmap the memory if VBoxVideo is not supported. */
-        VBoxUnmapAdapterMemory (PrimaryExtension, &PrimaryExtension->u.primary.pvMiniportHeap, PrimaryExtension->u.primary.cbMiniportHeap);
-        VBoxUnmapAdapterMemory (PrimaryExtension, &PrimaryExtension->u.primary.pvAdapterInformation, VBOX_VIDEO_ADAPTER_INFORMATION_SIZE);
-    }
+        if (RT_SUCCESS(rc))
+        {
+            rc = VBoxHGSMISendViewInfo(&commonFromDeviceExt(PrimaryExtension)->guestCtx,
+                                   commonFromDeviceExt(PrimaryExtension)->cDisplays,
+                                   vbvaInitInfoDisplay,
+                                   (void *) PrimaryExtension);
+            AssertRC(rc);
+        }
 
-    dprintf(("VBoxVideo::VBoxSetupDisplays: finished\n"));
+        if (RT_FAILURE (rc))
+        {
+            commonFromDeviceExt(PrimaryExtension)->bHGSMI = FALSE;
+        }
+    }
 }
-#endif /* !VBOX_WITH_HGSMI */
-
-#ifndef VBOXWDDM
 
 VP_STATUS VBoxVideoFindAdapter(IN PVOID HwDeviceExtension,
                                IN PVOID HwContext, IN PWSTR ArgumentString,
@@ -1759,23 +3161,10 @@ VP_STATUS VBoxVideoFindAdapter(IN PVOID HwDeviceExtension,
    VP_STATUS rc;
    USHORT DispiId;
    ULONG AdapterMemorySize = VBE_DISPI_TOTAL_VIDEO_MEMORY_BYTES;
-   VIDEO_ACCESS_RANGE AccessRanges[] =
-   {
-      {
-         {0, VBE_DISPI_LFB_PHYSICAL_ADDRESS},
-         VBE_DISPI_TOTAL_VIDEO_MEMORY_BYTES,
-         0,
-         FALSE,
-         FALSE,
-         0
-      }
-   };
 
    dprintf(("VBoxVideo::VBoxVideoFindAdapter %p\n", HwDeviceExtension));
 
-#ifdef VBOX_WITH_HGSMI
    VBoxSetupVideoPortFunctions((PDEVICE_EXTENSION)HwDeviceExtension, &((PDEVICE_EXTENSION)HwDeviceExtension)->u.primary.VideoPortProcs, ConfigInfo);
-#endif
 
    VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_ID);
    VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_DATA, VBE_DISPI_ID2);
@@ -1822,84 +3211,71 @@ VP_STATUS VBoxVideoFindAdapter(IN PVOID HwDeviceExtension,
          L"HardwareInformation.BiosString",
          VBoxBiosString,
          sizeof(VBoxBiosString));
-#ifdef VBOX_WITH_HGSMI
-      if (VBoxHGSMIIsSupported ((PDEVICE_EXTENSION)HwDeviceExtension))
+
+      dprintf(("VBoxVideo::VBoxVideoFindAdapter: calling VideoPortGetAccessRanges\n"));
+
+      VIDEO_ACCESS_RANGE tmpRanges[4];
+      ULONG slot = 0;
+
+      VideoPortZeroMemory(tmpRanges, sizeof(tmpRanges));
+
+      /* need to call VideoPortGetAccessRanges to ensure interrupt info in ConfigInfo gets set up */
+      VP_STATUS status;
+      if (vboxQueryWinVersion() == WINNT4)
       {
-          dprintf(("VBoxVideo::VBoxVideoFindAdapter: calling VideoPortGetAccessRanges\n"));
-
-          ((PDEVICE_EXTENSION)HwDeviceExtension)->u.primary.IOPortHost = (RTIOPORT)VGA_PORT_HGSMI_HOST;
-          ((PDEVICE_EXTENSION)HwDeviceExtension)->u.primary.IOPortGuest = (RTIOPORT)VGA_PORT_HGSMI_GUEST;
-
-          VIDEO_ACCESS_RANGE tmpRanges[4];
-          ULONG slot = 0;
-
-          VideoPortZeroMemory(tmpRanges, sizeof(tmpRanges));
-
-          /* need to call VideoPortGetAccessRanges to ensure interrupt info in ConfigInfo gets set up */
-          VP_STATUS status;
-          if (vboxQueryWinVersion() == WINNT4)
-          {
-              /* NT crashes if either of 'vendorId, 'deviceId' or 'slot' parameters is NULL,
-               * and needs PCI ids for a successful VideoPortGetAccessRanges call.
-               */
-              ULONG vendorId = 0x80EE;
-              ULONG deviceId = 0xBEEF;
-              status = VideoPortGetAccessRanges(HwDeviceExtension,
-                                                0,
-                                                NULL,
-                                                sizeof (tmpRanges)/sizeof (tmpRanges[0]),
-                                                tmpRanges,
-                                                &vendorId,
-                                                &deviceId,
-                                                &slot);
-          }
-          else
-          {
-              status = VideoPortGetAccessRanges(HwDeviceExtension,
-                                                0,
-                                                NULL,
-                                                sizeof (tmpRanges)/sizeof (tmpRanges[0]),
-                                                tmpRanges,
-                                                NULL,
-                                                NULL,
-                                                &slot);
-          }
-          dprintf(("VBoxVideo::VBoxVideoFindAdapter: VideoPortGetAccessRanges status 0x%x\n", status));
-
-          /* no matter what we get with VideoPortGetAccessRanges, we assert the default ranges */
+          /* NT crashes if either of 'vendorId, 'deviceId' or 'slot' parameters is NULL,
+           * and needs PCI ids for a successful VideoPortGetAccessRanges call.
+           */
+          ULONG vendorId = 0x80EE;
+          ULONG deviceId = 0xBEEF;
+          status = VideoPortGetAccessRanges(HwDeviceExtension,
+                                            0,
+                                            NULL,
+                                            sizeof (tmpRanges)/sizeof (tmpRanges[0]),
+                                            tmpRanges,
+                                            &vendorId,
+                                            &deviceId,
+                                            &slot);
       }
-#endif /* VBOX_WITH_HGSMI */
-      rc = VideoPortVerifyAccessRanges(HwDeviceExtension, 1, AccessRanges);
-      dprintf(("VBoxVideo::VBoxVideoFindAdapter: VideoPortVerifyAccessRanges returned 0x%x\n", rc));
-      // @todo for some reason, I get an ERROR_INVALID_PARAMETER from NT4 SP0
-      // It does not seem to like getting me these port addresses. So I just
-      // pretend success to make the driver work.
-      rc = NO_ERROR;
+      else
+      {
+          status = VideoPortGetAccessRanges(HwDeviceExtension,
+                                            0,
+                                            NULL,
+                                            sizeof (tmpRanges)/sizeof (tmpRanges[0]),
+                                            tmpRanges,
+                                            NULL,
+                                            NULL,
+                                            &slot);
+      }
+      dprintf(("VBoxVideo::VBoxVideoFindAdapter: VideoPortGetAccessRanges status 0x%x\n", status));
 
-#ifndef VBOX_WITH_HGSMI
-      /* Initialize VBoxGuest library */
-      rc = VbglInit ();
-
-      dprintf(("VBoxVideo::VBoxVideoFindAdapter: VbglInit returned 0x%x\n", rc));
-
-      /* Setup the Device Extension and if possible secondary displays. */
-      VBoxSetupDisplays((PDEVICE_EXTENSION)HwDeviceExtension, ConfigInfo, AdapterMemorySize);
-#else
       /* Initialize VBoxGuest library, which is used for requests which go through VMMDev. */
       rc = VbglInit ();
+      dprintf(("VBoxVideo::VBoxVideoFindAdapter: VbglInit returned 0x%x\n", rc));
 
+      /* Preinitialize the primary extension.
+       */
+      ((PDEVICE_EXTENSION)HwDeviceExtension)->pNext                   = NULL;
+      ((PDEVICE_EXTENSION)HwDeviceExtension)->pPrimary                = (PDEVICE_EXTENSION)HwDeviceExtension;
+      ((PDEVICE_EXTENSION)HwDeviceExtension)->iDevice                 = 0;
+      ((PDEVICE_EXTENSION)HwDeviceExtension)->ulFrameBufferOffset     = 0;
+      ((PDEVICE_EXTENSION)HwDeviceExtension)->ulFrameBufferSize       = 0;
+      ((PDEVICE_EXTENSION)HwDeviceExtension)->u.primary.ulVbvaEnabled = 0;
+      VBoxVideoCmnMemZero(&((PDEVICE_EXTENSION)HwDeviceExtension)->areaDisplay, sizeof(HGSMIAREA));
       /* Guest supports only HGSMI, the old VBVA via VMMDev is not supported. Old
        * code will be ifdef'ed and later removed.
        * The host will however support both old and new interface to keep compatibility
        * with old guest additions.
        */
-      VBoxSetupDisplaysHGSMI((PDEVICE_EXTENSION)HwDeviceExtension, ConfigInfo, AdapterMemorySize);
+      VBoxSetupDisplaysHGSMI(commonFromDeviceExt((PDEVICE_EXTENSION)HwDeviceExtension),
+                             AdapterMemorySize, 0);
 
-      if (((PDEVICE_EXTENSION)HwDeviceExtension)->u.primary.bHGSMI)
+      if (commonFromDeviceExt((PDEVICE_EXTENSION)HwDeviceExtension)->bHGSMI)
       {
           LogRel(("VBoxVideo: using HGSMI\n"));
+          VBoxCreateDisplaysXPDM((PDEVICE_EXTENSION)HwDeviceExtension, ConfigInfo);
       }
-#endif /* VBOX_WITH_HGSMI */
 
       // pretend success to make the driver work.
       rc = NO_ERROR;
@@ -1920,141 +3296,39 @@ VP_STATUS VBoxVideoFindAdapter(IN PVOID HwDeviceExtension,
  */
 BOOLEAN VBoxVideoInitialize(PVOID HwDeviceExtension)
 {
-    VP_STATUS status;
-
     dprintf(("VBoxVideo::VBoxVideoInitialize\n"));
 
     PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)HwDeviceExtension;
+    USHORT DispiId;
 
     /* Initialize the request pointer. */
     pDevExt->u.primary.pvReqFlush = NULL;
 
-#ifndef VBOX_WITH_MULTIMONITOR_FIX
-    /*
-     * Get the last custom resolution
-     */
-    status = VideoPortGetRegistryParameters(HwDeviceExtension,
-                                            L"CustomXRes",
-                                            FALSE,
-                                            VBoxRegistryCallback,
-                                            &gCustomXRes);
-    if (status != NO_ERROR)
-        gCustomXRes = 0;
-    status = VideoPortGetRegistryParameters(HwDeviceExtension,
-                                            L"CustomYRes",
-                                            FALSE,
-                                            VBoxRegistryCallback,
-                                            &gCustomYRes);
-    if (status != NO_ERROR)
-        gCustomYRes = 0;
-    status = VideoPortGetRegistryParameters(HwDeviceExtension,
-                                            L"CustomBPP",
-                                            FALSE,
-                                            VBoxRegistryCallback,
-                                            &gCustomBPP);
-    if (status != NO_ERROR)
-        gCustomBPP = 0;
+    /* Check if the chip restricts horizontal resolution or not. */
+    VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_ID);
+    VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_DATA, VBE_DISPI_ID_ANYX);
+    DispiId = VideoPortReadPortUshort((PUSHORT)VBE_DISPI_IOPORT_DATA);
+    if (DispiId == VBE_DISPI_ID_ANYX)
+        pDevExt->fAnyX = TRUE;
+    else
+        pDevExt->fAnyX = FALSE;
 
-   dprintf(("VBoxVideo: got stored custom resolution %dx%dx%d\n", gCustomXRes, gCustomYRes, gCustomBPP));
-#else
-    /* Initialize all custom modes to the 800x600x32. */
-    initVideoModeInformation(&CustomVideoModes[0], 800, 600, 32, 0, 0);
-
-    int iCustomMode;
-    for (iCustomMode = 1; iCustomMode < RT_ELEMENTS(CustomVideoModes); iCustomMode++)
-    {
-        CustomVideoModes[iCustomMode] = CustomVideoModes[0];
-    }
-
-    /* Load stored custom resolution from the registry. */
-    PDEVICE_EXTENSION DeviceExtension = (PDEVICE_EXTENSION)HwDeviceExtension;
-    for (iCustomMode = 0; iCustomMode < DeviceExtension->pPrimary->u.primary.cDisplays; iCustomMode++)
-    {
-        /*
-         * Get the last custom resolution
-         */
-        ULONG CustomXRes = 0, CustomYRes = 0, CustomBPP = 0;
-
-        if (iCustomMode == 0)
-        {
-            /* Name without a suffix */
-            status = VideoPortGetRegistryParameters(HwDeviceExtension,
-                                                    L"CustomXRes",
-                                                    FALSE,
-                                                    VBoxRegistryCallback,
-                                                    &CustomXRes);
-            if (status != NO_ERROR)
-                CustomXRes = 0;
-            status = VideoPortGetRegistryParameters(HwDeviceExtension,
-                                                    L"CustomYRes",
-                                                    FALSE,
-                                                    VBoxRegistryCallback,
-                                                    &CustomYRes);
-            if (status != NO_ERROR)
-                CustomYRes = 0;
-            status = VideoPortGetRegistryParameters(HwDeviceExtension,
-                                                    L"CustomBPP",
-                                                    FALSE,
-                                                    VBoxRegistryCallback,
-                                                    &CustomBPP);
-            if (status != NO_ERROR)
-                CustomBPP = 0;
-        }
-        else
-        {
-            wchar_t keyname[32];
-            swprintf(keyname, L"CustomXRes%d", iCustomMode);
-            status = VideoPortGetRegistryParameters(HwDeviceExtension,
-                                                    keyname,
-                                                    FALSE,
-                                                    VBoxRegistryCallback,
-                                                    &CustomXRes);
-            if (status != NO_ERROR)
-                CustomXRes = 0;
-            swprintf(keyname, L"CustomYRes%d", iCustomMode);
-            status = VideoPortGetRegistryParameters(HwDeviceExtension,
-                                                    keyname,
-                                                    FALSE,
-                                                    VBoxRegistryCallback,
-                                                    &CustomYRes);
-            if (status != NO_ERROR)
-                CustomYRes = 0;
-            swprintf(keyname, L"CustomBPP%d", iCustomMode);
-            status = VideoPortGetRegistryParameters(HwDeviceExtension,
-                                                    keyname,
-                                                    FALSE,
-                                                    VBoxRegistryCallback,
-                                                    &CustomBPP);
-            if (status != NO_ERROR)
-                CustomBPP = 0;
-        }
-
-        dprintf(("VBoxVideo: got stored custom resolution[%d] %dx%dx%d\n", iCustomMode, CustomXRes, CustomYRes, CustomBPP));
-
-        if (CustomXRes || CustomYRes || CustomBPP)
-        {
-            if (CustomXRes == 0)
-            {
-                CustomXRes = CustomVideoModes[iCustomMode].VisScreenWidth;
-            }
-            if (CustomYRes == 0)
-            {
-                CustomYRes = CustomVideoModes[iCustomMode].VisScreenHeight;
-            }
-            if (CustomBPP == 0)
-            {
-                CustomBPP = CustomVideoModes[iCustomMode].BitsPerPlane;
-            }
-
-            initVideoModeInformation(&CustomVideoModes[iCustomMode], CustomXRes, CustomYRes, CustomBPP, 0, 0);
-        }
-    }
-#endif /* VBOX_WITH_MULTIMONITOR_FIX */
+    vboxVideoInitCustomVideoModes(pDevExt);
 
    return TRUE;
 }
 
-# if defined(VBOX_WITH_HGSMI) && defined(VBOX_WITH_VIDEOHWACCEL)
+# ifdef VBOX_WITH_VIDEOHWACCEL
+
+static VOID VBoxVideoHGSMIDpc(
+    IN PVOID  HwDeviceExtension,
+    IN PVOID  Context
+    )
+{
+    PDEVICE_EXTENSION PrimaryExtension = (PDEVICE_EXTENSION)HwDeviceExtension;
+
+    VBoxHGSMIProcessHostQueue(&commonFromDeviceExt(PrimaryExtension)->hostCtx);
+}
 
 BOOLEAN VBoxVideoInterrupt(PVOID  HwDeviceExtension)
 {
@@ -2062,27 +3336,27 @@ BOOLEAN VBoxVideoInterrupt(PVOID  HwDeviceExtension)
     PDEVICE_EXTENSION PrimaryExtension = devExt->pPrimary;
     if (PrimaryExtension)
     {
-        if (PrimaryExtension->u.primary.pHostFlags) /* If HGSMI is enabled at all. */
+        if (commonFromDeviceExt(PrimaryExtension)->hostCtx.pfHostFlags) /* If HGSMI is enabled at all. */
         {
-            uint32_t flags = PrimaryExtension->u.primary.pHostFlags->u32HostFlags;
+            uint32_t flags = commonFromDeviceExt(PrimaryExtension)->hostCtx.pfHostFlags->u32HostFlags;
             if((flags & HGSMIHOSTFLAGS_IRQ) != 0)
             {
                 if((flags & HGSMIHOSTFLAGS_COMMANDS_PENDING) != 0)
                 {
                     /* schedule a DPC*/
-                    BOOLEAN bResult = PrimaryExtension->u.primary.VideoPortProcs.pfnQueueDpc(PrimaryExtension, VBoxVideoHGSMIDpc, (PVOID)1);
+                    BOOLEAN bResult = PrimaryExtension->u.primary.VideoPortProcs.pfnQueueDpc(PrimaryExtension, VBoxVideoHGSMIDpc, NULL);
                     Assert(bResult);
                 }
                 /* clear the IRQ */
-                HGSMIClearIrq (PrimaryExtension);
+                VBoxHGSMIClearIrq(&commonFromDeviceExt(PrimaryExtension)->hostCtx);
                 return TRUE;
             }
         }
     }
     return FALSE;
 }
-# endif /* #if defined(VBOX_WITH_HGSMI) && defined(VBOX_WITH_VIDEOHWACCEL) */
-#endif  /* #ifndef VBOXWDDM */
+# endif /* #ifdef VBOX_WITH_VIDEOHWACCEL */
+#endif  /* #ifndef VBOX_WITH_WDDM */
 /**
  * Send a request to the host to make the absolute pointer visible
  */
@@ -2092,7 +3366,7 @@ static BOOLEAN ShowPointer(PVOID HwDeviceExtension)
 
     /* Use primary device extension, because the show pointer request should be processed
      * in vboxUpdatePointerShape regardless of the device. */
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
     PDEVICE_EXTENSION PrimaryExtension = ((PDEVICE_EXTENSION)HwDeviceExtension)->pPrimary;
 #else
     PDEVICE_EXTENSION PrimaryExtension = (PDEVICE_EXTENSION)HwDeviceExtension;
@@ -2108,11 +3382,7 @@ static BOOLEAN ShowPointer(PVOID HwDeviceExtension)
          */
         PointerAttributes.Enable = VBOX_MOUSE_POINTER_VISIBLE;
 
-#ifndef VBOX_WITH_HGSMI
-        Result = vboxUpdatePointerShape(&PointerAttributes, sizeof (PointerAttributes));
-#else
-        Result = vboxUpdatePointerShape(PrimaryExtension, &PointerAttributes, sizeof (PointerAttributes));
-#endif /* VBOX_WITH_HGSMI */
+        Result = vboxUpdatePointerShapeWrap(commonFromDeviceExt(PrimaryExtension), &PointerAttributes, sizeof (PointerAttributes));
 
         if (Result)
             DEV_SET_MOUSE_SHOWN(PrimaryExtension);
@@ -2122,7 +3392,7 @@ static BOOLEAN ShowPointer(PVOID HwDeviceExtension)
     return Result;
 }
 
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
 /**
  * VBoxVideoStartIO
  *
@@ -2360,11 +3630,7 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
                  */
                 PointerAttributes.Enable = 0;
 
-#ifndef VBOX_WITH_HGSMI
-                Result = vboxUpdatePointerShape(&PointerAttributes, sizeof (PointerAttributes));
-#else
-                Result = vboxUpdatePointerShape((PDEVICE_EXTENSION)HwDeviceExtension, &PointerAttributes, sizeof (PointerAttributes));
-#endif /* VBOX_WITH_HGSMI */
+                Result = vboxUpdatePointerShapeWrap(commonFromDeviceExt((PDEVICE_EXTENSION)HwDeviceExtension), &PointerAttributes, sizeof (PointerAttributes));
 
                 if (Result)
                     DEV_SET_MOUSE_HIDDEN((PDEVICE_EXTENSION)HwDeviceExtension);
@@ -2409,11 +3675,7 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
                          pPointerAttributes->Row));
                 dprintf(("\tBytes attached: %d\n", RequestPacket->InputBufferLength - sizeof(VIDEO_POINTER_ATTRIBUTES)));
 #endif
-#ifndef VBOX_WITH_HGSMI
-                Result = vboxUpdatePointerShape(pPointerAttributes, RequestPacket->InputBufferLength);
-#else
-                Result = vboxUpdatePointerShape((PDEVICE_EXTENSION)HwDeviceExtension, pPointerAttributes, RequestPacket->InputBufferLength);
-#endif /* VBOX_WITH_HGSMI */
+                Result = vboxUpdatePointerShapeWrap(commonFromDeviceExt((PDEVICE_EXTENSION)HwDeviceExtension), pPointerAttributes, RequestPacket->InputBufferLength);
                 if (!Result)
                     dprintf(("VBoxVideo::VBoxVideoStartIO: Could not set hardware pointer -> fallback\n"));
             } else
@@ -2530,45 +3792,12 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
         case IOCTL_VIDEO_INTERPRET_DISPLAY_MEMORY:
         {
             dprintf(("VBoxVideo::VBoxVideoStartIO: IOCTL_VIDEO_INTERPRET_DISPLAY_MEMORY\n"));
-
-            if (pDevExt->pPrimary->u.primary.bVBoxVideoSupported)
-            {
-                /* The display driver must have prepared the monitor information. */
-                VideoPortWritePortUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_VBOX_VIDEO);
-                VideoPortWritePortUlong((PULONG)VBE_DISPI_IOPORT_DATA, VBOX_VIDEO_INTERPRET_DISPLAY_MEMORY_BASE + pDevExt->iDevice);
-            }
-            else
-            {
-                RequestPacket->StatusBlock->Status = ERROR_INVALID_FUNCTION;
-            }
-            Result = pDevExt->pPrimary->u.primary.bVBoxVideoSupported;
+            /* Pre-HGSMI IOCTL */
+            RequestPacket->StatusBlock->Status = ERROR_INVALID_FUNCTION;
+            Result = false;
             break;
         }
 
-#ifndef VBOX_WITH_HGSMI
-        case IOCTL_VIDEO_QUERY_DISPLAY_INFO:
-        {
-            dprintf(("VBoxVideo::VBoxVideoStartIO: IOCTL_VIDEO_QUERY_DISPLAY_INFO\n"));
-
-            if (RequestPacket->OutputBufferLength < sizeof(QUERYDISPLAYINFORESULT))
-            {
-                dprintf(("VBoxVideo::VBoxVideoStartIO: Output buffer too small: %d needed: %d!!!\n",
-                         RequestPacket->OutputBufferLength, sizeof(QUERYDISPLAYINFORESULT)));
-                RequestPacket->StatusBlock->Status = ERROR_INSUFFICIENT_BUFFER;
-                return FALSE;
-            }
-
-            QUERYDISPLAYINFORESULT *pDispInfo = (QUERYDISPLAYINFORESULT *)RequestPacket->OutputBuffer;
-
-            pDispInfo->iDevice = pDevExt->iDevice;
-            pDispInfo->u32DisplayInfoSize = pDevExt->pPrimary->u.primary.ulDisplayInformationSize;
-
-            RequestPacket->StatusBlock->Information = sizeof(QUERYDISPLAYINFORESULT);
-            Result = TRUE;
-
-            break;
-        }
-#endif /* !VBOX_WITH_HGSMI */
 
         case IOCTL_VIDEO_VBVA_ENABLE:
         {
@@ -2655,7 +3884,6 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
             return FALSE;
         }
 
-#ifdef VBOX_WITH_HGSMI
         case IOCTL_VIDEO_QUERY_HGSMI_INFO:
         {
             dprintf(("VBoxVideo::VBoxVideoStartIO: IOCTL_VIDEO_QUERY_HGSMI_INFO\n"));
@@ -2668,7 +3896,7 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
                 return FALSE;
             }
 
-            if (!pDevExt->pPrimary->u.primary.bHGSMI)
+            if (!commonFromDeviceExt(pDevExt)->bHGSMI)
             {
                 RequestPacket->StatusBlock->Status = ERROR_INVALID_FUNCTION;
                 return FALSE;
@@ -2685,7 +3913,7 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
             pInfo->u32DisplayInfoSize   = VBVA_DISPLAY_INFORMATION_SIZE;
             pInfo->u32MinVBVABufferSize = VBVA_MIN_BUFFER_SIZE;
 
-            pInfo->IOPortGuestCommand = pDevExt->pPrimary->u.primary.IOPortGuest;
+            pInfo->IOPortGuestCommand = commonFromDeviceExt(pDevExt)->guestCtx.port;
 
             RequestPacket->StatusBlock->Information = sizeof(QUERYHGSMIRESULT);
             Result = TRUE;
@@ -2704,7 +3932,7 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
                 return FALSE;
             }
 
-            if (!pDevExt->pPrimary->u.primary.bHGSMI)
+            if (!commonFromDeviceExt(pDevExt)->bHGSMI)
             {
                 RequestPacket->StatusBlock->Status = ERROR_INVALID_FUNCTION;
                 return FALSE;
@@ -2712,7 +3940,7 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
 
             HGSMIQUERYCALLBACKS *pInfo = (HGSMIQUERYCALLBACKS *)RequestPacket->OutputBuffer;
 
-            pInfo->hContext = pDevExt;
+            pInfo->hContext = commonFromDeviceExt(pDevExt);
             pInfo->pfnCompletionHandler = hgsmiHostCmdComplete;
             pInfo->pfnRequestCommandsHandler = hgsmiHostCmdRequest;
 
@@ -2732,7 +3960,7 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
                 return FALSE;
             }
 
-            if (!pDevExt->pPrimary->u.primary.bHGSMI)
+            if (!commonFromDeviceExt(pDevExt)->bHGSMI)
             {
                 RequestPacket->StatusBlock->Status = ERROR_INVALID_FUNCTION;
                 return FALSE;
@@ -2758,7 +3986,7 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
                 return FALSE;
             }
 
-            if (!pDevExt->pPrimary->u.primary.bHGSMI)
+            if (!commonFromDeviceExt(pDevExt)->bHGSMI)
             {
                 RequestPacket->StatusBlock->Status = ERROR_INVALID_FUNCTION;
                 return FALSE;
@@ -2766,7 +3994,7 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
 
             HGSMIHANDLERENABLE *pInfo = (HGSMIHANDLERENABLE *)RequestPacket->InputBuffer;
 
-            int rc = vboxVBVAChannelDisplayEnable(pDevExt->pPrimary,
+            int rc = vboxVBVAChannelDisplayEnable(commonFromDeviceExt(pDevExt),
                     pDevExt->iDevice,
                     pInfo->u8Channel);
             if(RT_FAILURE(rc))
@@ -2779,7 +4007,7 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
         case IOCTL_VIDEO_HGSMI_HANDLER_DISABLE:
         {
             /* TODO: implement */
-            if (!pDevExt->pPrimary->u.primary.bHGSMI)
+            if (!commonFromDeviceExt(pDevExt)->bHGSMI)
             {
                 RequestPacket->StatusBlock->Status = ERROR_INVALID_FUNCTION;
                 return FALSE;
@@ -2797,7 +4025,7 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
                 return FALSE;
             }
 
-            if (!pDevExt->pPrimary->u.primary.bHGSMI)
+            if (!commonFromDeviceExt(pDevExt)->bHGSMI)
             {
                 RequestPacket->StatusBlock->Status = ERROR_INVALID_FUNCTION;
                 return FALSE;
@@ -2810,7 +4038,6 @@ BOOLEAN VBoxVideoStartIO(PVOID HwDeviceExtension,
             break;
         }
 # endif
-#endif /* VBOX_WITH_HGSMI */
         default:
             dprintf(("VBoxVideo::VBoxVideoStartIO: Unsupported %p, fn %d(0x%x)\n",
                       RequestPacket->IoControlCode,
@@ -2859,8 +4086,10 @@ BOOLEAN VBoxVideoResetHW(PVOID HwDeviceExtension, ULONG Columns, ULONG Rows)
 
     VbglTerminate ();
 
-    VBoxUnmapAdapterMemory (pDevExt, &pDevExt->u.primary.pvMiniportHeap, pDevExt->u.primary.cbMiniportHeap);
-    VBoxUnmapAdapterMemory (pDevExt, &pDevExt->u.primary.pvAdapterInformation, VBVA_ADAPTER_INFORMATION_SIZE);
+    VBoxFreeDisplaysHGSMI(commonFromDeviceExt(pDevExt));
+    /** @note using this callback instead of doing things manually adds an
+     *        additional call to HGSMIHeapDestroy().  I assume that call was
+     *        merely forgotton in the first place. */
 
     return TRUE;
 }
@@ -2888,7 +4117,7 @@ VP_STATUS VBoxVideoSetPowerState(PVOID HwDeviceExtension, ULONG HwId,
     dprintf(("VBoxVideo::VBoxVideoSetPowerState\n"));
     return NO_ERROR;
 }
-#endif /* #ifndef VBOXWDDM */
+#endif /* #ifndef VBOX_WITH_WDDM */
 
 /**
  * VBoxVideoSetGraphicsCap
@@ -2924,46 +4153,38 @@ BOOLEAN FASTCALL VBoxVideoSetGraphicsCap(BOOLEAN isEnabled)
 
 BOOLEAN FASTCALL VBoxVideoSetCurrentModePerform(PDEVICE_EXTENSION DeviceExtension,
         USHORT width, USHORT height, USHORT bpp
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
         , ULONG offDisplay
 #endif
         )
 {
-    /* set the mode characteristics */
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_XRES);
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_DATA, width);
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_YRES);
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_DATA, height);
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_BPP);
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_DATA, bpp);
-    /* enable the mode */
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_ENABLE);
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_DATA, VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED);
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
     /* encode linear offDisplay to xOffset & yOffset to ensure offset fits USHORT */
     ULONG cbLine = VBOXWDDM_ROUNDBOUND(((width * bpp) + 7) / 8, 4);
     ULONG xOffset = offDisplay % cbLine;
+    if (bpp == 4)
+    {
+        xOffset <<= 1;
+    }
+    else
+    {
+        Assert(!(xOffset%((bpp + 7) >> 3)));
+        xOffset /= ((bpp + 7) >> 3);
+    }
     ULONG yOffset = offDisplay / cbLine;
     Assert(xOffset <= 0xffff);
     Assert(yOffset <= 0xffff);
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_X_OFFSET);
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_DATA, (USHORT)xOffset);
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_Y_OFFSET);
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_DATA, (USHORT)yOffset);
+#else
+    ULONG xOffset = 0, yOffset = 0;
 #endif
+    VBoxVideoSetModeRegisters(width, height, width, bpp, (uint16_t)xOffset,
+                              (uint16_t)yOffset);
     /** @todo read from the port to see if the mode switch was successful */
-
-    /* Tell the host that we now support graphics in the additions.
-     * @todo: Keep old behaviour, because VBoxVideoResetDevice is called on every graphics
-     *        mode switch and causes an OFF/ON sequence which is not handled by frontends
-     *        (for example Qt GUI debug build asserts when seamless is being enabled).
-     */
-    // VBoxVideoSetGraphicsCap(TRUE);
 
     return TRUE;
 }
 
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
 
 /**
  * VBoxVideoSetCurrentMode
@@ -3055,12 +4276,7 @@ BOOLEAN FASTCALL VBoxVideoMapVideoMemory(PDEVICE_EXTENSION DeviceExtension,
     FrameBuffer.QuadPart = VBE_DISPI_LFB_PHYSICAL_ADDRESS + DeviceExtension->ulFrameBufferOffset;
 
     MapInformation->VideoRamBase = RequestedAddress->RequestedVirtualAddress;
-#ifndef VBOX_WITH_HGSMI
-    MapInformation->VideoRamLength = DeviceExtension->pPrimary->u.primary.ulMaxFrameBufferSize
-                                     + DeviceExtension->pPrimary->u.primary.ulDisplayInformationSize;
-#else
     MapInformation->VideoRamLength = DeviceExtension->pPrimary->u.primary.ulMaxFrameBufferSize;
-#endif /* VBOX_WITH_HGSMI */
 
     Status = VideoPortMapMemory(DeviceExtension, FrameBuffer,
        &MapInformation->VideoRamLength, &inIoSpace,
@@ -3076,12 +4292,10 @@ BOOLEAN FASTCALL VBoxVideoMapVideoMemory(PDEVICE_EXTENSION DeviceExtension,
 
         /* Save the new framebuffer size */
         DeviceExtension->ulFrameBufferSize = MapInformation->FrameBufferLength;
-#ifdef VBOX_WITH_HGSMI
         HGSMIAreaInitialize (&DeviceExtension->areaDisplay,
                              MapInformation->FrameBufferBase,
                              MapInformation->FrameBufferLength,
                              DeviceExtension->ulFrameBufferOffset);
-#endif /* VBOX_WITH_HGSMI */
         return TRUE;
     }
 
@@ -3098,9 +4312,7 @@ BOOLEAN FASTCALL VBoxVideoUnmapVideoMemory(PDEVICE_EXTENSION DeviceExtension,
                                            PVIDEO_MEMORY VideoMemory, PSTATUS_BLOCK StatusBlock)
 {
     dprintf(("VBoxVideo::VBoxVideoUnmapVideoMemory\n"));
-#ifdef VBOX_WITH_HGSMI
     HGSMIAreaClear (&DeviceExtension->areaDisplay);
-#endif /* VBOX_WITH_HGSMI */
     VideoPortUnmapMemory(DeviceExtension, VideoMemory->RequestedVirtualAddress, NULL);
     return TRUE;
 }
@@ -3161,7 +4373,7 @@ BOOLEAN FASTCALL VBoxVideoQueryCurrentMode(PDEVICE_EXTENSION DeviceExtension,
 
     return TRUE;
 }
-#endif /* ifndef VBOXWDDM */
+#endif /* ifndef VBOX_WITH_WDDM */
 /*
  * VBoxVideoSetColorRegisters
  *
@@ -3187,16 +4399,16 @@ BOOLEAN FASTCALL VBoxVideoSetColorRegisters(
         Entry < ColorLookUpTable->NumEntries + ColorLookUpTable->FirstEntry;
         Entry++)
    {
-      VBoxVideoCmnPortWriteUchar((PUCHAR)0x03c8, (UCHAR)Entry);
-      VBoxVideoCmnPortWriteUchar((PUCHAR)0x03c9, ColorLookUpTable->LookupTable[Entry].RgbArray.Red);
-      VBoxVideoCmnPortWriteUchar((PUCHAR)0x03c9, ColorLookUpTable->LookupTable[Entry].RgbArray.Green);
-      VBoxVideoCmnPortWriteUchar((PUCHAR)0x03c9, ColorLookUpTable->LookupTable[Entry].RgbArray.Blue);
+      VBoxVideoCmnPortWriteUchar(0x03c8, (UCHAR)Entry);
+      VBoxVideoCmnPortWriteUchar(0x03c9, ColorLookUpTable->LookupTable[Entry].RgbArray.Red);
+      VBoxVideoCmnPortWriteUchar(0x03c9, ColorLookUpTable->LookupTable[Entry].RgbArray.Green);
+      VBoxVideoCmnPortWriteUchar(0x03c9, ColorLookUpTable->LookupTable[Entry].RgbArray.Blue);
    }
 
    return TRUE;
 }
 
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
 
 VP_STATUS VBoxVideoGetChildDescriptor(
    PVOID HwDeviceExtension,
@@ -3213,7 +4425,7 @@ VP_STATUS VBoxVideoGetChildDescriptor(
 
     if (ChildEnumInfo->ChildIndex > 0)
     {
-        if ((int)ChildEnumInfo->ChildIndex <= pDevExt->pPrimary->u.primary.cDisplays)
+        if ((int)ChildEnumInfo->ChildIndex <= commonFromDeviceExt(pDevExt)->cDisplays)
         {
             *VideoChildType = Monitor;
             *pUId = ChildEnumInfo->ChildIndex;
@@ -3224,6 +4436,147 @@ VP_STATUS VBoxVideoGetChildDescriptor(
 
     return ERROR_NO_MORE_DEVICES;
 }
+
+
+#ifndef VBOX_WITH_WDDM
+VP_STATUS vboxWaitForSingleObjectVoid(IN PVOID  HwDeviceExtension, IN PVOID  Object, IN PLARGE_INTEGER  Timeout  OPTIONAL)
+{
+    return ERROR_INVALID_FUNCTION;
+}
+
+LONG vboxSetEventVoid(IN PVOID  HwDeviceExtension, IN PEVENT  pEvent)
+{
+    return 0;
+}
+
+VOID vboxClearEventVoid (IN PVOID  HwDeviceExtension, IN PEVENT  pEvent)
+{
+}
+
+VP_STATUS vboxCreateEventVoid(IN PVOID  HwDeviceExtension, IN ULONG  EventFlag, IN PVOID  Unused, OUT PEVENT  *ppEvent)
+{
+    return ERROR_INVALID_FUNCTION;
+}
+
+VP_STATUS vboxDeleteEventVoid(IN PVOID  HwDeviceExtension, IN PEVENT  pEvent)
+{
+    return ERROR_INVALID_FUNCTION;
+}
+
+PVOID vboxAllocatePoolVoid(IN PVOID  HwDeviceExtension, IN VBOXVP_POOL_TYPE  PoolType, IN size_t  NumberOfBytes, IN ULONG  Tag)
+{
+    return NULL;
+}
+
+VOID vboxFreePoolVoid(IN PVOID  HwDeviceExtension, IN PVOID  Ptr)
+{
+}
+
+BOOLEAN vboxQueueDpcVoid(IN PVOID  HwDeviceExtension, IN PMINIPORT_DPC_ROUTINE  CallbackRoutine, IN PVOID  Context)
+{
+    return FALSE;
+}
+
+void VBoxSetupVideoPortFunctions(PDEVICE_EXTENSION PrimaryExtension, VBOXVIDEOPORTPROCS *pCallbacks, PVIDEO_PORT_CONFIG_INFO pConfigInfo)
+{
+    memset(pCallbacks, 0, sizeof(VBOXVIDEOPORTPROCS));
+
+    if (vboxQueryWinVersion() <= WINNT4)
+    {
+        /* VideoPortGetProcAddress is available for >= win2k */
+        pCallbacks->pfnWaitForSingleObject = vboxWaitForSingleObjectVoid;
+        pCallbacks->pfnSetEvent = vboxSetEventVoid;
+        pCallbacks->pfnClearEvent = vboxClearEventVoid;
+        pCallbacks->pfnCreateEvent = vboxCreateEventVoid;
+        pCallbacks->pfnDeleteEvent = vboxDeleteEventVoid;
+        pCallbacks->pfnAllocatePool = vboxAllocatePoolVoid;
+        pCallbacks->pfnFreePool = vboxFreePoolVoid;
+        pCallbacks->pfnQueueDpc = vboxQueueDpcVoid;
+        return;
+    }
+
+    pCallbacks->pfnWaitForSingleObject = (PFNWAITFORSINGLEOBJECT)(pConfigInfo->VideoPortGetProcAddress)
+            (PrimaryExtension,
+             (PUCHAR)"VideoPortWaitForSingleObject");
+    Assert(pCallbacks->pfnWaitForSingleObject);
+
+    pCallbacks->pfnSetEvent = (PFNSETEVENT)(pConfigInfo->VideoPortGetProcAddress)
+            (PrimaryExtension,
+             (PUCHAR)"VideoPortSetEvent");
+    Assert(pCallbacks->pfnSetEvent);
+
+    pCallbacks->pfnClearEvent = (PFNCLEAREVENT)(pConfigInfo->VideoPortGetProcAddress)
+            (PrimaryExtension,
+             (PUCHAR)"VideoPortClearEvent");
+    Assert(pCallbacks->pfnClearEvent);
+
+    pCallbacks->pfnCreateEvent = (PFNCREATEEVENT)(pConfigInfo->VideoPortGetProcAddress)
+            (PrimaryExtension,
+             (PUCHAR)"VideoPortCreateEvent");
+    Assert(pCallbacks->pfnCreateEvent);
+
+    pCallbacks->pfnDeleteEvent = (PFNDELETEEVENT)(pConfigInfo->VideoPortGetProcAddress)
+            (PrimaryExtension,
+             (PUCHAR)"VideoPortDeleteEvent");
+    Assert(pCallbacks->pfnDeleteEvent);
+
+    if(pCallbacks->pfnWaitForSingleObject
+            && pCallbacks->pfnSetEvent
+            && pCallbacks->pfnClearEvent
+            && pCallbacks->pfnCreateEvent
+            && pCallbacks->pfnDeleteEvent)
+    {
+        pCallbacks->fSupportedTypes |= VBOXVIDEOPORTPROCS_EVENT;
+    }
+    else
+    {
+        pCallbacks->pfnWaitForSingleObject = vboxWaitForSingleObjectVoid;
+        pCallbacks->pfnSetEvent = vboxSetEventVoid;
+        pCallbacks->pfnClearEvent = vboxClearEventVoid;
+        pCallbacks->pfnCreateEvent = vboxCreateEventVoid;
+        pCallbacks->pfnDeleteEvent = vboxDeleteEventVoid;
+    }
+
+    pCallbacks->pfnAllocatePool = (PFNALLOCATEPOOL)(pConfigInfo->VideoPortGetProcAddress)
+            (PrimaryExtension,
+             (PUCHAR)"VideoPortAllocatePool");
+    Assert(pCallbacks->pfnAllocatePool);
+
+    pCallbacks->pfnFreePool = (PFNFREEPOOL)(pConfigInfo->VideoPortGetProcAddress)
+            (PrimaryExtension,
+             (PUCHAR)"VideoPortFreePool");
+    Assert(pCallbacks->pfnFreePool);
+
+    if(pCallbacks->pfnAllocatePool
+            && pCallbacks->pfnFreePool)
+    {
+        pCallbacks->fSupportedTypes |= VBOXVIDEOPORTPROCS_POOL;
+    }
+    else
+    {
+        pCallbacks->pfnAllocatePool = vboxAllocatePoolVoid;
+        pCallbacks->pfnFreePool = vboxFreePoolVoid;
+    }
+
+    pCallbacks->pfnQueueDpc = (PFNQUEUEDPC)(pConfigInfo->VideoPortGetProcAddress)
+            (PrimaryExtension,
+             (PUCHAR)"VideoPortQueueDpc");
+    Assert(pCallbacks->pfnQueueDpc);
+
+    if(pCallbacks->pfnQueueDpc)
+    {
+        pCallbacks->fSupportedTypes |= VBOXVIDEOPORTPROCS_DPC;
+    }
+    else
+    {
+        pCallbacks->pfnQueueDpc = vboxQueueDpcVoid;
+    }
+
+#ifdef DEBUG_misha
+    Assert(pCallbacks->fSupportedTypes & VBOXVIDEOPORTPROCS_EVENT);
+#endif
+}
+#endif
 
 
 static DECLCALLBACK(void) vboxVbvaFlush (void *pvFlush)

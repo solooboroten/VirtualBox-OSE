@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceControl.cpp 29594 2010-05-18 07:45:58Z vboxsync $ */
+/* $Id: VBoxServiceControl.cpp 34406 2010-11-26 16:45:34Z vboxsync $ */
 /** @file
  * VBoxServiceControl - Host-driven Guest Control.
  */
@@ -35,7 +35,7 @@ using namespace guestControl;
 /*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
-/** The control interval (millseconds). */
+/** The control interval (milliseconds). */
 uint32_t g_ControlInterval = 0;
 /** The semaphore we're blocking on. */
 static RTSEMEVENTMULTI      g_hControlEvent = NIL_RTSEMEVENTMULTI;
@@ -104,117 +104,6 @@ static DECLCALLBACK(int) VBoxServiceControlInit(void)
 }
 
 
-static int VBoxServiceControlHandleCmdStartProcess(uint32_t u32ClientId, uint32_t uNumParms)
-{
-    uint32_t uContextID;
-    char szCmd[_1K];
-    uint32_t uFlags;
-    char szArgs[_1K];
-    uint32_t uNumArgs;
-    char szEnv[_64K];
-    uint32_t cbEnv = sizeof(szEnv);
-    uint32_t uNumEnvVars;
-    char szUser[128];
-    char szPassword[128];
-    uint32_t uTimeLimitMS;
-
-    if (uNumParms != 11)
-        return VERR_INVALID_PARAMETER;
-
-    int rc = VbglR3GuestCtrlExecGetHostCmd(u32ClientId,
-                                           uNumParms,
-                                           &uContextID,
-                                           /* Command */
-                                           szCmd,      sizeof(szCmd),
-                                           /* Flags */
-                                           &uFlags,
-                                           /* Arguments */
-                                           szArgs,     sizeof(szArgs), &uNumArgs,
-                                           /* Environment */
-                                           szEnv, &cbEnv, &uNumEnvVars,
-                                           /* Credentials */
-                                           szUser,     sizeof(szUser),
-                                           szPassword, sizeof(szPassword),
-                                           /* Timelimit */
-                                           &uTimeLimitMS);
-    if (RT_FAILURE(rc))
-    {
-        VBoxServiceError("Control: Failed to retrieve exec start command! Error: %Rrc\n", rc);
-    }
-    else
-    {
-        rc = VBoxServiceControlExecProcess(uContextID, szCmd, uFlags, szArgs, uNumArgs,
-                                           szEnv, cbEnv, uNumEnvVars,
-                                           szUser, szPassword, uTimeLimitMS);
-    }
-
-    VBoxServiceVerbose(3, "Control: VBoxServiceControlHandleCmdStartProcess returned with %Rrc\n", rc);
-    return rc;
-}
-
-
-static int VBoxServiceControlHandleCmdGetOutput(uint32_t u32ClientId, uint32_t uNumParms)
-{
-    uint32_t uContextID;
-    uint32_t uPID;
-    uint32_t uHandleID;
-    uint32_t uFlags;
-
-    int rc = VbglR3GuestCtrlExecGetHostCmdOutput(u32ClientId, uNumParms,
-                                                 &uContextID, &uPID, &uHandleID, &uFlags);
-    if (RT_FAILURE(rc))
-    {
-        VBoxServiceError("Control: Failed to retrieve exec output command! Error: %Rrc\n", rc);
-    }
-    else
-    {
-        /* Let's have a look if we have a running process with PID = uPID ... */
-        PVBOXSERVICECTRLTHREAD pNode;
-        bool fFound = false;
-        RTListForEach(&g_GuestControlExecThreads, pNode, VBOXSERVICECTRLTHREAD, Node)
-        {
-            if (   pNode->fStarted
-                && pNode->enmType == VBoxServiceCtrlThreadDataExec)
-            {
-                PVBOXSERVICECTRLTHREADDATAEXEC pData = (PVBOXSERVICECTRLTHREADDATAEXEC)pNode->pvData;
-                if (pData && pData->uPID == uPID)
-                {
-                    fFound = true;
-                    break;
-                }
-            }
-        }
-
-        if (fFound)
-        {
-            PVBOXSERVICECTRLTHREADDATAEXEC pData = (PVBOXSERVICECTRLTHREADDATAEXEC)pNode->pvData;
-            AssertPtr(pData);
-
-            const uint32_t cbSize = _4K;
-            uint32_t cbRead = cbSize;
-            uint8_t *pBuf = (uint8_t*)RTMemAlloc(cbSize);
-            if (pBuf)
-            {
-                rc = VBoxServiceControlExecReadPipeBufferContent(&pData->stdOut, pBuf, cbSize, &cbRead);
-                if (RT_SUCCESS(rc))
-                {
-                    /* cbRead now contains actual size. */
-                    rc = VbglR3GuestCtrlExecSendOut(u32ClientId, uContextID, uPID, 0 /* handle ID */, 0 /* flags */,
-                                                    pBuf, cbRead);
-                }
-                RTMemFree(pBuf);
-            }
-            else
-                rc = VERR_NO_MEMORY;
-        }
-        else
-            rc = VERR_NOT_FOUND; /* PID not found! */
-    }
-    VBoxServiceVerbose(3, "Control: VBoxServiceControlHandleCmdGetOutput returned with %Rrc\n", rc);
-    return rc;
-}
-
-
 /** @copydoc VBOXSERVICE::pfnWorker */
 DECLCALLBACK(int) VBoxServiceControlWorker(bool volatile *pfShutdown)
 {
@@ -254,16 +143,20 @@ DECLCALLBACK(int) VBoxServiceControlWorker(bool volatile *pfShutdown)
             VBoxServiceVerbose(3, "Control: Msg=%u (%u parms) retrieved\n", uMsg, uNumParms);
             switch(uMsg)
             {
-                case GETHOSTMSG_EXEC_HOST_CANCEL_WAIT:
+                case HOST_CANCEL_PENDING_WAITS:
                     VBoxServiceVerbose(3, "Control: Host asked us to quit ...\n");
                     break;
 
-                case GETHOSTMSG_EXEC_START_PROCESS:
-                    rc = VBoxServiceControlHandleCmdStartProcess(g_GuestControlSvcClientID, uNumParms);
+                case HOST_EXEC_CMD:
+                    rc = VBoxServiceControlExecHandleCmdStartProcess(g_GuestControlSvcClientID, uNumParms);
                     break;
 
-                case GETHOSTMSG_EXEC_GET_OUTPUT:
-                    rc = VBoxServiceControlHandleCmdGetOutput(g_GuestControlSvcClientID, uNumParms);
+                case HOST_EXEC_SET_INPUT:
+                    rc = VBoxServiceControlExecHandleCmdSetInput(g_GuestControlSvcClientID, uNumParms);
+                    break;
+
+                case HOST_EXEC_GET_OUTPUT:
+                    rc = VBoxServiceControlExecHandleCmdGetOutput(g_GuestControlSvcClientID, uNumParms);
                     break;
 
                 default:
@@ -278,7 +171,7 @@ DECLCALLBACK(int) VBoxServiceControlWorker(bool volatile *pfShutdown)
 
         /* Do we need to shutdown? */
         if (   *pfShutdown
-            || uMsg == GETHOSTMSG_EXEC_HOST_CANCEL_WAIT)
+            || uMsg == HOST_CANCEL_PENDING_WAITS)
         {
             rc = VINF_SUCCESS;
             break;
@@ -305,7 +198,7 @@ static DECLCALLBACK(void) VBoxServiceControlStop(void)
 
     /*
      * Ask the host service to cancel all pending requests so that we can
-     * shutdown properly here. 
+     * shutdown properly here.
      */
     if (g_GuestControlSvcClientID)
     {
@@ -340,7 +233,7 @@ static DECLCALLBACK(void) VBoxServiceControlTerm(void)
         /* Destroy thread specific data. */
         switch (pNode->enmType)
         {
-            case VBoxServiceCtrlThreadDataExec:
+            case kVBoxServiceCtrlThreadDataExec:
                 VBoxServiceControlExecDestroyThreadData((PVBOXSERVICECTRLTHREADDATAEXEC)pNode->pvData);
                 break;
 
@@ -350,15 +243,16 @@ static DECLCALLBACK(void) VBoxServiceControlTerm(void)
     }
 
     /* Finally destroy thread list. */
-    pNode = RTListNodeGetFirst(&g_GuestControlExecThreads, VBOXSERVICECTRLTHREAD, Node);
+    pNode = RTListGetFirst(&g_GuestControlExecThreads, VBOXSERVICECTRLTHREAD, Node);
     while (pNode)
     {
         PVBOXSERVICECTRLTHREAD pNext = RTListNodeGetNext(&pNode->Node, VBOXSERVICECTRLTHREAD, Node);
+        bool fLast = RTListNodeIsLast(&g_GuestControlExecThreads, &pNode->Node);
 
         RTListNodeRemove(&pNode->Node);
         RTMemFree(pNode);
 
-        if (pNext && RTListNodeIsLast(&g_GuestControlExecThreads, &pNext->Node))
+        if (fLast)
             break;
 
         pNode = pNext;

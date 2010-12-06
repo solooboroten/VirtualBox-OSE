@@ -23,8 +23,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -2019,6 +2019,7 @@ void find_ps_compile_args(IWineD3DPixelShaderImpl *shader,
     memset(args, 0, sizeof(*args)); /* FIXME: Make sure all bits are set. */
     args->srgb_correction = stateblock->renderState[WINED3DRS_SRGBWRITEENABLE] ? 1 : 0;
     args->np2_fixup = 0;
+    args->t_mirror = 0;
 
     for (i = 0; i < MAX_FRAGMENT_SAMPLERS; ++i)
     {
@@ -2035,6 +2036,11 @@ void find_ps_compile_args(IWineD3DPixelShaderImpl *shader,
         if (!texture->baseTexture.pow2Matrix_identity)
         {
             args->np2_fixup |= (1 << i);
+        }
+
+        if (texture->baseTexture.t_mirror)
+        {
+            args->t_mirror |= (1 << i);
         }
     }
     if (shader->baseShader.reg_maps.shader_version.major >= 3)

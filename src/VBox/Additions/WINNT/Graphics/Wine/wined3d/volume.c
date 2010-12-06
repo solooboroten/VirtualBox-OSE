@@ -22,8 +22,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -407,7 +407,11 @@ HRESULT volume_init(IWineD3DVolumeImpl *volume, IWineD3DDeviceImpl *device, UINT
     volume->lpVtbl = &IWineD3DVolume_Vtbl;
 
     hr = resource_init((IWineD3DResource *)volume, WINED3DRTYPE_VOLUME, device,
-            width * height * depth * format_desc->byte_count, usage, format_desc, pool, parent, parent_ops);
+            width * height * depth * format_desc->byte_count, usage, format_desc, pool, parent, parent_ops
+#ifdef VBOX_WITH_WDDM
+            , NULL, NULL
+#endif
+            );
     if (FAILED(hr))
     {
         WARN("Failed to initialize resource, returning %#x.\n", hr);

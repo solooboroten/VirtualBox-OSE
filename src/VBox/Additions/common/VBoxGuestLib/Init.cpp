@@ -1,4 +1,4 @@
-/* $Revision: 28800 $ */
+/* $Revision: 34066 $ */
 /** @file
  * VBoxGuestLibR0 - Library initialization.
  */
@@ -73,7 +73,7 @@ static void vbglR0QueryHostVersion (void)
  * because these values are provided by the VBoxGuest driver and it might
  * be loaded later than other drivers.
  *
- * The VbglEnter checks the current library status, tries to retrive these
+ * The VbglEnter checks the current library status, tries to retrieve these
  * values and fails if they are unavailable.
  *
  */
@@ -251,11 +251,11 @@ DECLVBGL(int) VbglInit (void)
 
 DECLVBGL(void) VbglTerminate (void)
 {
-    vbglTerminateCommon ();
-
 # ifdef VBOX_WITH_HGCM
     vbglR0HGCMTerminate ();
 # endif
+
+    vbglTerminateCommon ();
 
     return;
 }

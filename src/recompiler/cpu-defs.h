@@ -19,13 +19,14 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
  * of the LGPL is applied is otherwise unspecified.
  */
+
 #ifndef CPU_DEFS_H
 #define CPU_DEFS_H
 
@@ -129,7 +130,7 @@ typedef struct CPUTLBEntry {
     target_ulong addr_write;
     target_ulong addr_code;
       /* Addend to virtual address to get physical address.  IO accesses
-       use the correcponding iotlb value.  */
+       use the corresponding iotlb value.  */
 #if TARGET_PHYS_ADDR_BITS == 64
     /* on i386 Linux make sure it is aligned */
     target_phys_addr_t addend __attribute__((aligned(8)));

@@ -125,31 +125,16 @@ ULONG APIENTRY DrvEscape(SURFOBJ *pso, ULONG iEsc, ULONG cjIn, PVOID pvIn, ULONG
     {
         ULONG ret = 0;
 
-#ifndef VBOX_WITH_HGSMI
-        if (ppdev && ppdev->pInfo && vboxHwBufferBeginUpdate (ppdev))
+        if (ppdev && ppdev->vbvaCtx.pVBVA)
         {
-            if (ppdev->vbva.pVbvaMemory->fu32ModeFlags
-                & VBVA_F_MODE_VRDP)
+            if (ppdev->vbvaCtx.pVBVA->hostFlags.u32HostEvents & VBVA_F_MODE_VRDP)
             {
                 ret = 1;
             }
-            DISPDBG((0, "VBOXESC_ISVRDPACTIVE -> %d (%x)\n", ret, ppdev->vbva.pVbvaMemory->fu32ModeFlags));
-            vboxHwBufferEndUpdate (ppdev);
+            DISPDBG((0, "VBOXESC_ISVRDPACTIVE -> %d (%x)\n", ret, ppdev->vbvaCtx.pVBVA->hostFlags.u32HostEvents));
         }
         else
             DISPDBG((0, "VBOXESC_ISVRDPACTIVE -> 0\n"));
-#else
-        if (ppdev && ppdev->pVBVA)
-        {
-            if (ppdev->pVBVA->hostFlags.u32HostEvents & VBVA_F_MODE_VRDP)
-            {
-                ret = 1;
-            }
-            DISPDBG((0, "VBOXESC_ISVRDPACTIVE -> %d (%x)\n", ret, ppdev->pVBVA->hostFlags.u32HostEvents));
-        }
-        else
-            DISPDBG((0, "VBOXESC_ISVRDPACTIVE -> 0\n"));
-#endif  /* VBOX_WITH_HGSMI */
         return ret;
     }
 
@@ -325,9 +310,6 @@ static ULONG gflHooks = 0;
 #define HOOKS_BMF24BPP gflHooks
 #define HOOKS_BMF32BPP gflHooks
 
-#ifndef VBOX_WITH_HGSMI
-HSEMAPHORE ghsemHwBuffer = 0;
-#endif /* !VBOX_WITH_HGSMI */
 
 /******************************Public*Routine******************************\
 * DrvEnableDriver
@@ -378,12 +360,6 @@ BOOL DrvEnableDriver(ULONG iEngineVersion, ULONG cj, PDRVENABLEDATA pded)
             DDI_DRIVER_VERSION_NT5:
             DDI_DRIVER_VERSION_NT4;
 
-#ifndef VBOX_WITH_HGSMI
-    if (!ghsemHwBuffer)
-    {
-        ghsemHwBuffer = EngCreateSemaphore ();
-    }
-#endif /* !VBOX_WITH_HGSMI */
 
     return(TRUE);
 }
@@ -400,13 +376,6 @@ VOID DrvDisableDriver(VOID)
 {
     DISPDBG((0, "VBoxDisp::DrvDisableDriver called.\n"));
 
-#ifndef VBOX_WITH_HGSMI
-    if (ghsemHwBuffer)
-    {
-        EngDeleteSemaphore (ghsemHwBuffer);
-        ghsemHwBuffer = NULL;
-    }
-#endif /* !VBOX_WITH_HGSMI */
 
     return;
 }
@@ -662,10 +631,10 @@ HSURF DrvEnableSurface(DHPDEV dhpdev)
     psurf->ppdev        = ppdev;
 
     //
-    // On NT4.0 we create a GDI managed bitmap as the primay surface. But
+    // On NT4.0 we create a GDI managed bitmap as the primary surface. But
     // on NT5.0 we create a device managed primary.
     //
-    // On NT4.0 we still use our driver's accleration capabilities by
+    // On NT4.0 we still use our driver's acceleration capabilities by
     // doing a trick with EngLockSurface on the GDI managed primary.
     //
 
@@ -717,7 +686,7 @@ HSURF DrvEnableSurface(DHPDEV dhpdev)
 
         //
         // Jam in the value of dhsurf into screen SURFOBJ. We do this to
-        // make sure the driver acclerates Drv calls we hook and not
+        // make sure the driver accelerates Drv calls we hook and not
         // punt them back to GDI as the SURFOBJ's dhsurf = 0.
         //
         ppdev->psoScreenBitmap = EngLockSurface(hsurf);
@@ -938,10 +907,12 @@ BOOL DrvAssertMode(DHPDEV dhpdev, BOOL bEnable)
         vboxVHWADisable(ppdev);
 #endif
 
-#ifdef VBOX_WITH_HGSMI
         /* Free the driver's VBVA resources. */
-        vboxVbvaDisable ((PPDEV) dhpdev);
-#endif
+        if (ppdev->bHGSMISupported)
+        {
+            PPDEV ppdev = (PPDEV) dhpdev;
+            VBoxVBVADisable(&ppdev->vbvaCtx, &ppdev->guestCtx, -1);
+        }
 
         //
         // We must give up the display.
@@ -1140,18 +1111,6 @@ PVOID pvData)
     switch(iType)
     {
         case DN_DEVICE_ORIGIN:
-#ifndef VBOX_WITH_HGSMI
-            ppdev->ptlDevOrg = *(PPOINTL)pvData;
-            DISPDBG((3, "DN_DEVICE_ORIGIN: %d, %d (PSO = %p, pInfo = %p)\n", ppdev->ptlDevOrg.x,
-                     ppdev->ptlDevOrg.y, pso, ppdev->pInfo));
-            if (ppdev->pInfo)
-            {
-                ppdev->pInfo->screen.xOrigin = ppdev->ptlDevOrg.x;
-                ppdev->pInfo->screen.yOrigin = ppdev->ptlDevOrg.y;
-                VBoxProcessDisplayInfo(ppdev);
-            }
-            break;
-#else
         {
             POINTL ptlDevOrg = *(PPOINTL)pvData;
             DISPDBG((3, "DN_DEVICE_ORIGIN: current @%d,%d, new @%d,%d, (PSO = %p)\n", ppdev->ptlDevOrg.x,
@@ -1162,7 +1121,6 @@ PVOID pvData)
                 VBoxProcessDisplayInfo(ppdev);
             }
          } break;
-#endif /* VBOX_WITH_HGSMI */
         case DN_DRAWING_BEGIN:
             DISPDBG((3, "DN_DRAWING_BEGIN (PSO = %p)\n", pso));
             break;

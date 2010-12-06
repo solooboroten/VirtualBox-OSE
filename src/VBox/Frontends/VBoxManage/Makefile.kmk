@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 29555 2010-05-17 14:37:48Z vboxsync $
+# $Id: Makefile.kmk 34587 2010-12-01 20:30:02Z vboxsync $
 ## @file
 # Sub-Makefile for VBoxManage (the cli frontend).
 #
@@ -24,36 +24,13 @@ ifdef VBOX_ONLY_DOCS
  VBoxManage_DEFS      += VBOX_ONLY_DOCS
  VBoxManage_SOURCES = \
 	VBoxManage.cpp \
- 	VBoxManageHelp.cpp
+ 	VBoxManageHelp.cpp \
+ 	$(if $(VBOX_WITH_GUEST_PROPS),VBoxManageGuestProp.cpp) \
+	$(if $(VBOX_WITH_GUEST_CONTROL),VBoxManageGuestCtrl.cpp)
  VBoxManage_LIBS      += $(LIB_RUNTIME)
 else # !VBOX_ONLY_DOCS
  VBoxManage_TEMPLATE   = VBOXMAINCLIENTEXE
- VBoxManage_DEFS      += \
- 	$(if $(VBOX_WITH_VBOXSDL), VBOX_WITH_VBOXSDL) \
- 	$(if $(VBOX_WITH_VRDP), VBOX_WITH_VRDP) \
- 	$(if $(VBOX_WITH_HEADLESS), VBOX_WITH_HEADLESS) \
- 	$(if $(VBOX_WITH_ALSA), VBOX_WITH_ALSA) \
- 	$(if $(VBOX_WITH_SOLARIS_OSS), VBOX_WITH_SOLARIS_OSS) \
- 	$(if $(VBOX_WITH_PULSE),VBOX_WITH_PULSE) \
- 	$(if $(VBOX_WITH_E1000),VBOX_WITH_E1000) \
- 	$(if $(VBOX_WITH_VIRTIO),VBOX_WITH_VIRTIO) \
- 	$(if $(VBOX_WITH_AHCI), VBOX_WITH_AHCI) \
- 	$(if $(VBOX_WITH_SCSI), VBOX_WITH_SCSI) \
- 	$(if $(VBOX_WITH_GUEST_PROPS),VBOX_WITH_GUEST_PROPS) \
- 	$(if $(VBOX_WITH_GUEST_CONTROL),VBOX_WITH_GUEST_CONTROL) \
- 	$(if $(VBOX_WITH_HOSTNETIF_API), VBOX_WITH_HOSTNETIF_API) \
- 	$(if $(VBOX_WITH_VDE), VBOX_WITH_VDE) \
-	$(if $(VBOX_WITH_HGCM), VBOX_WITH_HGCM)
  VBoxManage_DEFS.win   = _WIN32_WINNT=0x0500
- ifdef VBOX_DYNAMIC_NET_ATTACH
-  VBoxManage_DEFS += VBOX_DYNAMIC_NET_ATTACH
- endif
- ifdef VBOX_WITH_NETFLT
-  VBoxManage_DEFS += VBOX_WITH_NETFLT
- endif
- ifdef VBOX_WITH_VIDEOHWACCEL
-  VBoxManage_DEFS += VBOX_WITH_VIDEOHWACCEL
- endif
  VBoxManage_SOURCES = \
  	VBoxManage.cpp \
  	VBoxInternalManage.cpp \
@@ -64,7 +41,7 @@ else # !VBOX_ONLY_DOCS
 	$(if $(VBOX_WITH_GUEST_CONTROL),VBoxManageGuestCtrl.cpp) \
  	VBoxManageHelp.cpp \
  	VBoxManageHostonly.cpp \
- 	VBoxManageImport.cpp \
+ 	VBoxManageAppliance.cpp \
  	VBoxManageInfo.cpp \
  	VBoxManageList.cpp \
  	VBoxManageMetrics.cpp \
@@ -72,8 +49,29 @@ else # !VBOX_ONLY_DOCS
  	VBoxManageModifyVM.cpp \
  	VBoxManageSnapshot.cpp \
  	VBoxManageStorageController.cpp \
- 	VBoxManageUSB.cpp
+ 	VBoxManageUSB.cpp \
+ 	VBoxManageBandwidthControl.cpp
 endif # !VBOX_ONLY_DOCS
+
+VBoxManage_DEFS      += \
+ 	$(if $(VBOX_WITH_AHCI), VBOX_WITH_AHCI) \
+ 	$(if $(VBOX_WITH_ALSA), VBOX_WITH_ALSA) \
+	$(if $(VBOX_WITH_COPYTOGUEST),VBOX_WITH_COPYTOGUEST) \
+ 	$(if $(VBOX_WITH_E1000),VBOX_WITH_E1000) \
+ 	$(if $(VBOX_WITH_GUEST_CONTROL),VBOX_WITH_GUEST_CONTROL) \
+ 	$(if $(VBOX_WITH_GUEST_PROPS),VBOX_WITH_GUEST_PROPS) \
+ 	$(if $(VBOX_WITH_HEADLESS), VBOX_WITH_HEADLESS) \
+	$(if $(VBOX_WITH_HGCM), VBOX_WITH_HGCM) \
+ 	$(if $(VBOX_WITH_HOSTNETIF_API), VBOX_WITH_HOSTNETIF_API) \
+	$(if $(VBOX_WITH_NETFLT), VBOX_WITH_NETFLT) \
+ 	$(if $(VBOX_WITH_PULSE),VBOX_WITH_PULSE) \
+ 	$(if $(VBOX_WITH_SCSI), VBOX_WITH_SCSI) \
+ 	$(if $(VBOX_WITH_SOLARIS_OSS), VBOX_WITH_SOLARIS_OSS) \
+ 	$(if $(VBOX_WITH_VBOXSDL), VBOX_WITH_VBOXSDL) \
+ 	$(if $(VBOX_WITH_VDE), VBOX_WITH_VDE) \
+	$(if $(VBOX_WITH_VIDEOHWACCEL), VBOX_WITH_VIDEOHWACCEL) \
+ 	$(if $(VBOX_WITH_VIRTIO),VBOX_WITH_VIRTIO)
+
 ifneq ($(KBUILD_TARGET),win)
  # Workaround for buggy gcc-4.3 compilers, see
  #

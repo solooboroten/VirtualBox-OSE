@@ -1,5 +1,5 @@
 /*
- *  Save/restore host registrs.
+ *  Save/restore host registers.
  *
  *  Copyright (c) 2007 CodeSourcery
  *
@@ -19,15 +19,15 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
  * of the LGPL is applied is otherwise unspecified.
  */
 
-/* The GCC global register vairable extension is used to reserve some
+/* The GCC global register variable extension is used to reserve some
    host registers for use by dyngen.  However only the core parts of the
    translation engine are compiled with these settings.  We must manually
    save/restore these registers when called from regular code.

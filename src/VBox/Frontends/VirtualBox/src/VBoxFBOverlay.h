@@ -185,6 +185,7 @@ public:
     uint32_t lower() const {return mLower; }
 
     bool operator==(const VBoxVHWAColorKey & other) const { return mUpper == other.mUpper && mLower == other.mLower; }
+    bool operator!=(const VBoxVHWAColorKey & other) const { return !(*this == other); }
 private:
     uint32_t mUpper;
     uint32_t mLower;
@@ -231,7 +232,7 @@ public:
     uint32_t fourcc() const {return mDataFormat;}
     uint32_t bitsPerPixel() const { return mBitsPerPixel; }
     uint32_t bitsPerPixelTex() const { return mBitsPerPixelTex; }
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
     uint32_t bitsPerPixelMem() const { return mBitsPerPixelMem; }
 #endif
     void pixel2Normalized(uint32_t pix, float *r, float *g, float *b) const;
@@ -269,7 +270,7 @@ private:
 
     uint32_t mBitsPerPixel;
     uint32_t mBitsPerPixelTex;
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
     uint32_t mBitsPerPixelMem;
 #endif
     uint32_t mWidthCompression;
@@ -317,6 +318,9 @@ public:
     int toYTex(int y) {return y/mColorFormat.heightCompression();}
     ulong memSize(){ return mBytesPerLine * mRect.height(); }
     uint32_t bytesPerLine() {return mBytesPerLine; }
+#ifdef DEBUG_misha
+    void dbgDump();
+#endif
 
 protected:
     virtual void doUpdate(uchar * pAddress, const QRect * pRect);
@@ -524,6 +528,11 @@ public:
     const VBoxVHWAColorKey* dstCKey() { return mpDstCKey; }
     const VBoxVHWAColorKey* srcCKey() { return mpSrcCKey; }
     bool notIntersectedMode() { return mbNotIntersected; }
+
+#ifdef DEBUG_misha
+    void dbgDump();
+#endif
+
 protected:
     static int setCKey(class VBoxVHWAGlProgramVHWA * pProgram, const VBoxVHWAColorFormat * pFormat, const VBoxVHWAColorKey * pCKey, bool bDst);
 
@@ -983,7 +992,7 @@ public:
 
 typedef std::list <VBoxVHWASurfaceBase*> SurfList;
 typedef std::list <VBoxVHWASurfList*> OverlayList;
-typedef std::list <struct _VBOXVHWACMD *> VHWACommandList;
+typedef std::list <struct VBOXVHWACMD *> VHWACommandList;
 
 class VBoxVHWASurfList
 {
@@ -1174,7 +1183,7 @@ public:
         bNewEvent(false)
     {}
 
-    void setVHWACmd(struct _VBOXVHWACMD * pCmd)
+    void setVHWACmd(struct VBOXVHWACMD * pCmd)
     {
         mType = VBOXVHWA_PIPECMD_VHWA;
         u.mpCmd = pCmd;
@@ -1200,7 +1209,7 @@ public:
             setPaintCmd(*((QRect*)pvData));
             break;
         case VBOXVHWA_PIPECMD_VHWA:
-            setVHWACmd((struct _VBOXVHWACMD *)pvData);
+            setVHWACmd((struct VBOXVHWACMD *)pvData);
             break;
         case VBOXVHWA_PIPECMD_FUNC:
             setFunc(*((VBOXVHWAFUNCCALLBACKINFO *)pvData));
@@ -1216,7 +1225,7 @@ public:
 
     VBOXVHWA_PIPECMD_TYPE type() const {return mType;}
     const QRect & rect() const {return mRect;}
-    struct _VBOXVHWACMD * vhwaCmd() const {return u.mpCmd;}
+    struct VBOXVHWACMD * vhwaCmd() const {return u.mpCmd;}
     const VBOXVHWAFUNCCALLBACKINFO & func() const {return u.mFuncCallback; }
 
     VBoxVHWACommandElement * mpNext;
@@ -1224,7 +1233,7 @@ private:
     VBOXVHWA_PIPECMD_TYPE mType;
     union
     {
-        struct _VBOXVHWACMD * mpCmd;
+        struct VBOXVHWACMD * mpCmd;
         VBOXVHWAFUNCCALLBACKINFO mFuncCallback;
     }u;
     QRect                 mRect;
@@ -1317,6 +1326,8 @@ public:
         return NULL;
     }
 
+
+
     const VBoxVHWACommandElement * contentsRo (const VBoxVHWACommandElement **ppLast) const
     {
         if (ppLast)
@@ -1325,6 +1336,7 @@ public:
     }
 
     bool isEmpty() const { return !mpLast; }
+
 private:
     VBoxVHWACommandElement *mpFirst;
     VBoxVHWACommandElement *mpLast;
@@ -1367,6 +1379,7 @@ class VBoxVHWARefCounter
 #define VBOXVHWA_INIFITE_WAITCOUNT (~0U)
 public:
     VBoxVHWARefCounter() : m_cRefs(0) {}
+    VBoxVHWARefCounter(uint32_t cRefs) : m_cRefs(cRefs) {}
     void inc() { ASMAtomicIncU32(&m_cRefs); }
     uint32_t dec()
     {
@@ -1417,6 +1430,12 @@ public:
             class VBoxVHWACommandElement * pFirst2Free, VBoxVHWACommandElement * pLast2Free);
     void reset(class VBoxVHWACommandElement ** ppHead, class VBoxVHWACommandElement ** ppTail);
     void setNotifyObject(QObject *pNotifyObject);
+    int loadExec (struct SSMHANDLE * pSSM, uint32_t u32Version, void *pvVRAM);
+    void saveExec (struct SSMHANDLE * pSSM, void *pvVRAM);
+    void disable();
+    void enable();
+    void lock();
+    void unlock();
 #ifdef DEBUG_misha
     void checkConsistence(uint32_t cEvents2Submit = 0, const VBoxVHWACommandElementPipe *pPipe = NULL);
 #endif
@@ -1427,6 +1446,7 @@ private:
     VBoxVHWARefCounter m_NotifyObjectRefs;
     bool mbNewEvent;
     bool mbProcessingList;
+    uint32_t mcDisabled;
     VBoxVHWACommandElementStack mFreeElements;
     VBoxVHWACommandElement mElementsBuffer[2048];
 };
@@ -1482,22 +1502,23 @@ public:
     static void vhwaSaveExecVoid(struct SSMHANDLE * pSSM);
     static int vhwaLoadExec(VHWACommandList * pCmdList, struct SSMHANDLE * pSSM, uint32_t u32Version);
 
-    int vhwaSurfaceCanCreate(struct _VBOXVHWACMD_SURF_CANCREATE *pCmd);
-    int vhwaSurfaceCreate(struct _VBOXVHWACMD_SURF_CREATE *pCmd);
-#ifdef VBOXWDDM
-    int vhwaSurfaceGetInfo(struct _VBOXVHWACMD_SURF_GETINFO *pCmd);
+    int vhwaSurfaceCanCreate(struct VBOXVHWACMD_SURF_CANCREATE *pCmd);
+    int vhwaSurfaceCreate(struct VBOXVHWACMD_SURF_CREATE *pCmd);
+#ifdef VBOX_WITH_WDDM
+    int vhwaSurfaceGetInfo(struct VBOXVHWACMD_SURF_GETINFO *pCmd);
 #endif
-    int vhwaSurfaceDestroy(struct _VBOXVHWACMD_SURF_DESTROY *pCmd);
-    int vhwaSurfaceLock(struct _VBOXVHWACMD_SURF_LOCK *pCmd);
-    int vhwaSurfaceUnlock(struct _VBOXVHWACMD_SURF_UNLOCK *pCmd);
-    int vhwaSurfaceBlt(struct _VBOXVHWACMD_SURF_BLT *pCmd);
-    int vhwaSurfaceFlip(struct _VBOXVHWACMD_SURF_FLIP *pCmd);
-    int vhwaSurfaceOverlayUpdate(struct _VBOXVHWACMD_SURF_OVERLAY_UPDATE *pCmf);
-    int vhwaSurfaceOverlaySetPosition(struct _VBOXVHWACMD_SURF_OVERLAY_SETPOSITION *pCmd);
-    int vhwaSurfaceColorkeySet(struct _VBOXVHWACMD_SURF_COLORKEY_SET *pCmd);
-    int vhwaQueryInfo1(struct _VBOXVHWACMD_QUERYINFO1 *pCmd);
-    int vhwaQueryInfo2(struct _VBOXVHWACMD_QUERYINFO2 *pCmd);
-    int vhwaConstruct(struct _VBOXVHWACMD_HH_CONSTRUCT *pCmd);
+    int vhwaSurfaceDestroy(struct VBOXVHWACMD_SURF_DESTROY *pCmd);
+    int vhwaSurfaceLock(struct VBOXVHWACMD_SURF_LOCK *pCmd);
+    int vhwaSurfaceUnlock(struct VBOXVHWACMD_SURF_UNLOCK *pCmd);
+    int vhwaSurfaceBlt(struct VBOXVHWACMD_SURF_BLT *pCmd);
+    int vhwaSurfaceFlip(struct VBOXVHWACMD_SURF_FLIP *pCmd);
+    int vhwaSurfaceColorFill(struct VBOXVHWACMD_SURF_COLORFILL *pCmd);
+    int vhwaSurfaceOverlayUpdate(struct VBOXVHWACMD_SURF_OVERLAY_UPDATE *pCmf);
+    int vhwaSurfaceOverlaySetPosition(struct VBOXVHWACMD_SURF_OVERLAY_SETPOSITION *pCmd);
+    int vhwaSurfaceColorkeySet(struct VBOXVHWACMD_SURF_COLORKEY_SET *pCmd);
+    int vhwaQueryInfo1(struct VBOXVHWACMD_QUERYINFO1 *pCmd);
+    int vhwaQueryInfo2(struct VBOXVHWACMD_QUERYINFO2 *pCmd);
+    int vhwaConstruct(struct VBOXVHWACMD_HH_CONSTRUCT *pCmd);
 
     void *vramBase() { return mpvVRAM; }
     uint32_t vramSize() { return mcbVRAM; }
@@ -1600,7 +1621,7 @@ private:
     static int vhwaLoadOverlayData(VHWACommandList * pCmdList, struct SSMHANDLE * pSSM, uint32_t u32Version);
     static int vhwaLoadVHWAEnable(VHWACommandList * pCmdList);
 
-    void vhwaDoSurfaceOverlayUpdate(VBoxVHWASurfaceBase *pDstSurf, VBoxVHWASurfaceBase *pSrcSurf, struct _VBOXVHWACMD_SURF_OVERLAY_UPDATE *pCmd);
+    void vhwaDoSurfaceOverlayUpdate(VBoxVHWASurfaceBase *pDstSurf, VBoxVHWASurfaceBase *pSrcSurf, struct VBOXVHWACMD_SURF_OVERLAY_UPDATE *pCmd);
 #endif
 
     VBoxVHWADisplay mDisplay;
@@ -1701,8 +1722,8 @@ class VBoxVHWATextureImageFBO : public T
 {
 public:
     VBoxVHWATextureImageFBO(const QRect &size, const VBoxVHWAColorFormat &format, class VBoxVHWAGlProgramMngr * aMgr, VBOXVHWAIMG_TYPE flags) :
-            T(size, format, aMgr, flags & (~VBOXVHWAIMG_FBO)),
-            mFBOTex(size, VBoxVHWAColorFormat(32, 0xff0000, 0xff00, 0xff), aMgr, (flags & (~VBOXVHWAIMG_FBO)) | VBOXVHWAIMG_LINEAR),
+            T(size, format, aMgr, flags & (~(VBOXVHWAIMG_FBO | VBOXVHWAIMG_LINEAR))),
+            mFBOTex(size, VBoxVHWAColorFormat(32, 0xff0000, 0xff00, 0xff), aMgr, (flags & (~VBOXVHWAIMG_FBO))),
             mpvFBOTexMem(NULL)
     {
     }
@@ -1777,7 +1798,7 @@ public:
 
     void updateAttachment(QWidget *pViewport, QObject *pPostEventObject);
 
-    int onVHWACommand (struct _VBOXVHWACMD * pCommand);
+    int onVHWACommand (struct VBOXVHWACMD * pCommand);
 
     void onVHWACommandEvent (QEvent * pEvent);
 
@@ -1841,7 +1862,7 @@ public:
     int vhwaLoadExec (struct SSMHANDLE * pSSM, uint32_t u32Version);
     void vhwaSaveExec (struct SSMHANDLE * pSSM);
 private:
-    int vhwaSurfaceUnlock (struct _VBOXVHWACMD_SURF_UNLOCK *pCmd);
+    int vhwaSurfaceUnlock (struct VBOXVHWACMD_SURF_UNLOCK *pCmd);
 
     void repaintMain();
     void repaintOverlay()
@@ -1893,7 +1914,7 @@ private:
     void vboxCheckUpdateOverlay (const QRect & rect);
     VBoxVHWACommandElement * processCmdList (VBoxVHWACommandElement * pCmd, bool bFirst);
 
-    int vhwaConstruct (struct _VBOXVHWACMD_HH_CONSTRUCT *pCmd);
+    int vhwaConstruct (struct VBOXVHWACMD_HH_CONSTRUCT *pCmd);
 
     int reset();
 
@@ -1943,13 +1964,13 @@ public:
           mOverlay(pView->viewport(), pView, aSession, id),
           mpView (pView)
     {
-        /* synch with framebuffer */
+        /* sync with framebuffer */
         mOverlay.onResizeEventPostprocess (VBoxFBSizeInfo(this), QPoint(mpView->contentsX(), mpView->contentsY()));
     }
 
     STDMETHOD(ProcessVHWACommand)(BYTE *pCommand)
     {
-        return mOverlay.onVHWACommand ((struct _VBOXVHWACMD*)pCommand);
+        return mOverlay.onVHWACommand ((struct VBOXVHWACMD*)pCommand);
     }
 
     void doProcessVHWACommand (QEvent * pEvent)
@@ -2047,4 +2068,3 @@ private:
 #endif
 
 #endif /* #ifndef __VBoxFBOverlay_h__ */
-

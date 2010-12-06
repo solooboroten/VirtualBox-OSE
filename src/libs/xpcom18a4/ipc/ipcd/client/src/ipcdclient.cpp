@@ -288,17 +288,17 @@ ProcessPendingQ(const nsID &aTarget)
 // WaitTarget enables support for multiple threads blocking on the same
 // message target.  the selector is called while inside the target's monitor.
 
-typedef PRBool (* ipcMessageSelector)(
+typedef nsresult (* ipcMessageSelector)(
   void *arg,
   ipcTargetData *td,
   const ipcMessage *msg
 );
 
 // selects any
-static PRBool
+static nsresult
 DefaultSelector(void *arg, ipcTargetData *td, const ipcMessage *msg)
 {
-  return PR_TRUE;
+  return NS_OK;
 }
 
 static nsresult
@@ -378,20 +378,37 @@ WaitTarget(const nsID           &aTarget,
       if (!lastChecked->TestFlag(IPC_MSG_FLAG_IN_PROCESS))
       {
         lastChecked->SetFlag(IPC_MSG_FLAG_IN_PROCESS);
-        PRBool accepted = (aSelector)(aArg, td, lastChecked);
+        nsresult acceptedRV = (aSelector)(aArg, td, lastChecked);
         lastChecked->ClearFlag(IPC_MSG_FLAG_IN_PROCESS);
 
-        if (accepted)
+        if (acceptedRV != IPC_WAIT_NEXT_MESSAGE)
         {
-          // remove from pending queue
-          if (beforeLastChecked)
-            td->pendingQ.RemoveAfter(beforeLastChecked);
-          else
-            td->pendingQ.RemoveFirst();
-          lastChecked->mNext = nsnull;
+          if (acceptedRV == NS_OK)
+          {
+            // remove from pending queue
+            if (beforeLastChecked)
+              td->pendingQ.RemoveAfter(beforeLastChecked);
+            else
+              td->pendingQ.RemoveFirst();
 
-          *aMsg = lastChecked;
-          break;
+            lastChecked->mNext = nsnull;
+            *aMsg = lastChecked;
+            break;
+          }
+          else /* acceptedRV == IPC_DISCARD_MESSAGE */
+          {
+            ipcMessage *nextToCheck = lastChecked->mNext;
+
+            // discard from pending queue
+            if (beforeLastChecked)
+              td->pendingQ.DeleteAfter(beforeLastChecked);
+            else
+              td->pendingQ.DeleteFirst();
+
+            lastChecked = nextToCheck;
+
+            continue;
+          }
         }
       }
 
@@ -410,8 +427,8 @@ WaitTarget(const nsID           &aTarget,
       /* Special client liveness check if there is no message to process.
        * This is necessary as there might be several threads waiting for
        * a message from a single client, and only one gets the DOWN msg. */
-      PRBool alive = (aSelector)(aArg, td, NULL);
-      if (!alive)
+      nsresult aliveRV = (aSelector)(aArg, td, NULL);
+      if (aliveRV != IPC_WAIT_NEXT_MESSAGE)
       {
         *aMsg = NULL;
         break;
@@ -584,8 +601,8 @@ static nsresult nsresult_from_ipcm_result(PRInt32 status)
   {
     case IPCM_ERROR_GENERIC:        rv = NS_ERROR_FAILURE; break;
     case IPCM_ERROR_INVALID_ARG:    rv = NS_ERROR_INVALID_ARG; break;
+    case IPCM_ERROR_NO_CLIENT:      rv = NS_ERROR_CALL_FAILED; break;
     // TODO: select better mapping for the below codes
-    case IPCM_ERROR_NO_CLIENT:
     case IPCM_ERROR_NO_SUCH_DATA:
     case IPCM_ERROR_ALREADY_EXISTS: rv = NS_ERROR_FAILURE; break;
     default:                        NS_ASSERTION(PR_FALSE, "No conversion");
@@ -597,15 +614,15 @@ static nsresult nsresult_from_ipcm_result(PRInt32 status)
 /* ------------------------------------------------------------------------- */
 
 // selects the next IPCM message with matching request index
-static PRBool
+static nsresult
 WaitIPCMResponseSelector(void *arg, ipcTargetData *td, const ipcMessage *msg)
 {
 #ifdef VBOX
   if (!msg)
-    return PR_TRUE;
+    return IPC_WAIT_NEXT_MESSAGE;
 #endif /* VBOX */
   PRUint32 requestIndex = *(PRUint32 *) arg;
-  return IPCM_GetRequestIndex(msg) == requestIndex;
+  return IPCM_GetRequestIndex(msg) == requestIndex ? NS_OK : IPC_WAIT_NEXT_MESSAGE;
 }
 
 // wait for an IPCM response message.  if responseMsg is null, then it is
@@ -928,7 +945,7 @@ struct WaitMessageSelectorData
   PRBool               senderDead;
 };
 
-static PRBool WaitMessageSelector(void *arg, ipcTargetData *td, const ipcMessage *msg)
+static nsresult WaitMessageSelector(void *arg, ipcTargetData *td, const ipcMessage *msg)
 {
   WaitMessageSelectorData *data = (WaitMessageSelectorData *) arg;
 #ifdef VBOX
@@ -943,11 +960,9 @@ static PRBool WaitMessageSelector(void *arg, ipcTargetData *td, const ipcMessage
 
     nsresult rv = obs->OnMessageAvailable(IPC_SENDER_ANY, nsID(), 0, 0);
     if (rv != IPC_WAIT_NEXT_MESSAGE)
-    {
       data->senderDead = PR_TRUE;
-      return PR_FALSE;
-    }
-    return PR_TRUE;
+
+    return rv;
   }
 #endif /* VBOX */
 
@@ -974,7 +989,7 @@ static PRBool WaitMessageSelector(void *arg, ipcTargetData *td, const ipcMessage
             // definitely fail with the NS_ERROR_xxx result.
 
             data->senderDead = PR_TRUE;
-            return PR_TRUE; // consume the message
+            return IPC_DISCARD_MESSAGE; // consume the message
           }
           else
           {
@@ -989,10 +1004,9 @@ static PRBool WaitMessageSelector(void *arg, ipcTargetData *td, const ipcMessage
 
             nsresult rv = obs->OnMessageAvailable(status->ClientID(), nsID(), 0, 0);
             if (rv != IPC_WAIT_NEXT_MESSAGE)
-            {
               data->senderDead = PR_TRUE;
-              return PR_TRUE; // consume the message
-            }
+
+            return IPC_DISCARD_MESSAGE; // consume the message
           }
         }
 #ifdef VBOX
@@ -1018,10 +1032,10 @@ static PRBool WaitMessageSelector(void *arg, ipcTargetData *td, const ipcMessage
              * from this client. Don't declare the connection as dead in
              * this case. A client ID wraparound can't falsely trigger
              * this, since the waiting thread would have hit the liveness
-             * check in the mean time. Also, DO NOT consume the message,
-             * otherwise it gets passed to the DConnect message handling
-             * without any further checks. IPCM messages are automatically
-             * discarded if they are left unclaimed. */
+             * check in the mean time. We MUST consume the message, otherwise
+             * IPCM messages pile up as long as there is a pending call, which
+             * can lead to severe processing overhead. */
+            return IPC_DISCARD_MESSAGE; // consume the message
           }
         }
 #endif /* VBOX */
@@ -1030,7 +1044,7 @@ static PRBool WaitMessageSelector(void *arg, ipcTargetData *td, const ipcMessage
       default:
         NS_NOTREACHED("unexpected message");
     }
-    return PR_FALSE; // continue iterating
+    return IPC_WAIT_NEXT_MESSAGE; // continue iterating
   }
 
   nsresult rv = IPC_WAIT_NEXT_MESSAGE;
@@ -1050,7 +1064,7 @@ static PRBool WaitMessageSelector(void *arg, ipcTargetData *td, const ipcMessage
   }
 
   // stop iterating if we got a match that the observer accepted.
-  return rv != IPC_WAIT_NEXT_MESSAGE;
+  return rv != IPC_WAIT_NEXT_MESSAGE ? NS_OK : IPC_WAIT_NEXT_MESSAGE;
 }
 
 nsresult
@@ -1201,6 +1215,7 @@ IPC_SpawnDaemon(const char *path)
   PRFileDesc *readable = nsnull, *writable = nsnull;
   PRProcessAttr *attr = nsnull;
   nsresult rv = NS_ERROR_FAILURE;
+  PRFileDesc *devNull;
   char *const argv[] = { (char *const) path, nsnull };
   char c;
 
@@ -1218,11 +1233,21 @@ IPC_SpawnDaemon(const char *path)
     goto end;
 
   if (PR_ProcessAttrSetInheritableFD(attr, writable, IPC_STARTUP_PIPE_NAME) != PR_SUCCESS)
+  goto end;
+
+  devNull = PR_Open("/dev/null", PR_RDWR, 0);
+  if (!devNull)
     goto end;
+
+  PR_ProcessAttrSetStdioRedirect(attr, PR_StandardInput, devNull);
+  PR_ProcessAttrSetStdioRedirect(attr, PR_StandardOutput, devNull);
+  PR_ProcessAttrSetStdioRedirect(attr, PR_StandardError, devNull);
 
   if (PR_CreateProcessDetached(path, argv, nsnull, attr) != PR_SUCCESS)
     goto end;
 
+  // Close /dev/null
+  PR_Close(devNull);
   // close the child end of the pipe in order to get notification on unexpected
   // child termination instead of being infinitely blocked in PR_Read().
   PR_Close(writable);
@@ -1332,7 +1357,7 @@ IPC_OnMessageAvailable(ipcMessage *msg)
     LOG(("got message for target: %s\n", targetStr));
     nsMemory::Free(targetStr);
 
-    IPC_LogBinary((const PRUint8 *) msg->Data(), msg->DataLen());
+//     IPC_LogBinary((const PRUint8 *) msg->Data(), msg->DataLen());
   }
 #endif
 

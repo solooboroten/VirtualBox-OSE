@@ -24,8 +24,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -867,6 +867,19 @@ static void quirk_fbo_tex_update(struct wined3d_gl_info *gl_info)
     gl_info->quirks |= WINED3D_QUIRK_FBO_TEX_UPDATE;
 }
 
+static BOOL match_ati_hd4800(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
+        enum wined3d_gl_vendor gl_vendor, enum wined3d_pci_vendor card_vendor, enum wined3d_pci_device device)
+{
+    if (card_vendor != HW_VENDOR_ATI) return FALSE;
+    if (device == CARD_ATI_RADEON_HD4800) return TRUE;
+    return FALSE;
+}
+
+static void quirk_fullsize_blit(struct wined3d_gl_info *gl_info)
+{
+    gl_info->quirks |= WINED3D_QUIRK_FULLSIZE_BLIT;
+}
+
 struct driver_quirk
 {
     BOOL (*match)(const struct wined3d_gl_info *gl_info, const char *gl_renderer,
@@ -950,6 +963,11 @@ static const struct driver_quirk quirk_table[] =
         match_fbo_tex_update,
         quirk_fbo_tex_update,
         "FBO rebind for attachment updates"
+    },
+    {
+        match_ati_hd4800,
+        quirk_fullsize_blit,
+        "Fullsize blit"
     },
 };
 
@@ -1260,7 +1278,9 @@ static enum wined3d_pci_vendor wined3d_guess_card_vendor(const char *gl_vendor_s
 static enum wined3d_pci_device select_card_nvidia_binary(const struct wined3d_gl_info *gl_info,
         const char *gl_renderer, unsigned int *vidmem)
 {
+#ifndef VBOX_WITH_WDDM
     if (WINE_D3D10_CAPABLE(gl_info))
+#endif
     {
         /* Geforce 200 - highend */
         if (strstr(gl_renderer, "GTX 280")
@@ -1515,7 +1535,9 @@ static enum wined3d_pci_device select_card_ati_binary(const struct wined3d_gl_in
      *
      * Beware: renderer string do not match exact card model,
      * eg HD 4800 is returned for multiple cards, even for RV790 based ones. */
+#ifndef VBOX_WITH_WDDM
     if (WINE_D3D10_CAPABLE(gl_info))
+#endif
     {
         /* Radeon EG CYPRESS XT / PRO HD5800 - highend */
         if (strstr(gl_renderer, "HD 5800")          /* Radeon EG CYPRESS HD58xx generic renderer string */
@@ -2180,6 +2202,10 @@ static BOOL IWineD3DImpl_FillGLCaps(struct wined3d_adapter *adapter)
     TRACE_(d3d_caps)("GL_Extensions reported:\n");
 
     gl_info->supported[WINED3D_GL_EXT_NONE] = TRUE;
+
+#ifdef VBOX_WITH_WDDM
+    gl_info->supported[VBOX_SHARED_CONTEXTS] = TRUE;
+#endif
 
     while (*GL_Extensions)
     {
@@ -5074,7 +5100,7 @@ static BOOL InitAdapters(IWineD3DImpl *This)
     if(!mod_gl) {
 #ifdef USE_WIN32_OPENGL
 #define USE_GL_FUNC(pfn) pfn = (void*)GetProcAddress(mod_gl, #pfn);
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
         BOOL (APIENTRY *pDrvValidateVersion)(DWORD) DECLSPEC_HIDDEN;
         mod_gl = LoadLibraryA("VBoxOGL.dll");
 #else
@@ -5084,7 +5110,7 @@ static BOOL InitAdapters(IWineD3DImpl *This)
             ERR("Can't load opengl32.dll!\n");
             goto nogl_adapter;
         }
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
         /* init properly */
         pDrvValidateVersion = (void*)GetProcAddress(mod_gl, "DrvValidateVersion");
         if(!pDrvValidateVersion) {

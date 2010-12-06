@@ -59,20 +59,20 @@ public:
     }
 
     STDMETHOD(GetTypeInfo)(UINT iInfo, LCID Lcid, ITypeInfo **ppTypeInfo)
-	{
+    {
         return idi::GetTypeInfo(iInfo, Lcid, ppTypeInfo);
-	}
+    }
 
-	STDMETHOD(GetIDsOfNames)(REFIID rIID, LPOLESTR *papwszNames, UINT cNames, LCID Lcid, DISPID *paDispIDs)
-	{
+    STDMETHOD(GetIDsOfNames)(REFIID rIID, LPOLESTR *papwszNames, UINT cNames, LCID Lcid, DISPID *paDispIDs)
+    {
         return idi::GetIDsOfNames(rIID, papwszNames, cNames, Lcid, paDispIDs);
-	}
+    }
 
-	STDMETHOD(Invoke)(DISPID idDispMember, REFIID rIID, LCID Lcid, WORD fw, DISPPARAMS *pDispParams,
+    STDMETHOD(Invoke)(DISPID idDispMember, REFIID rIID, LCID Lcid, WORD fw, DISPPARAMS *pDispParams,
                       VARIANT *pVarResult, EXCEPINFO *pExcepInfo, UINT *piErrArg)
-	{
-		return idi::Invoke(idDispMember, rIID, Lcid, fw, pDispParams, pVarResult, pExcepInfo, piErrArg);
-	}
+    {
+        return idi::Invoke(idDispMember, rIID, Lcid, fw, pDispParams, pVarResult, pExcepInfo, piErrArg);
+    }
 
 #else // defined(VBOX_WITH_XPCOM)
 
@@ -82,11 +82,15 @@ public:
 
 #endif
 
-    VirtualBoxErrorInfo() : mResultCode(S_OK) {}
+    VirtualBoxErrorInfo()
+        : m_resultCode(S_OK)
+    {}
 
     // public initializer/uninitializer for internal purposes only
-    HRESULT init(HRESULT aResultCode, const GUID &aIID,
-                 CBSTR aComponent, CBSTR aText,
+    HRESULT init(HRESULT aResultCode,
+                 const GUID &aIID,
+                 const char *pcszComponent,
+                 const Utf8Str &strText,
                  IVirtualBoxErrorInfo *aNext = NULL);
 
     // IVirtualBoxErrorInfo properties
@@ -105,10 +109,10 @@ private:
                             const char * /* b */,
                             void *       /* c */) { return rc; }
 
-    HRESULT mResultCode;
-    Bstr mText;
-    Guid mIID;
-    Bstr mComponent;
+    HRESULT m_resultCode;
+    Utf8Str m_strText;
+    Guid    m_IID;
+    Utf8Str m_strComponent;
     ComPtr<IVirtualBoxErrorInfo> mNext;
 };
 

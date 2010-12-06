@@ -1,4 +1,4 @@
-/* $Id: CSAMGC.cpp 29250 2010-05-09 17:53:58Z vboxsync $ */
+/* $Id: CSAMGC.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * CSAM - Guest OS Code Scanning and Analysis Manager - Any Context
  */
@@ -57,7 +57,7 @@
  * @param   pvFault     The fault address (cr2).
  * @param   pvRange     The base address of the handled virtual range.
  * @param   offRange    The offset of the access into this range.
- *                      (If it's a EIP range this's the EIP, if not it's pvFault.)
+ *                      (If it's a EIP range this is the EIP, if not it's pvFault.)
  */
 VMMRCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
 {
@@ -85,7 +85,7 @@ VMMRCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTX
         /*
          * Make this particular page R/W.
          */
-        rc = PGMShwModifyPage(pVCpu, pvFault, 1, X86_PTE_RW, ~(uint64_t)X86_PTE_RW);
+        rc = PGMShwMakePageWritable(pVCpu, pvFault, PGM_MK_PG_IS_WRITE_FAULT);
         AssertMsgRC(rc, ("PGMShwModifyPage -> rc=%Rrc\n", rc));
         ASMInvalidatePage((void *)(uintptr_t)pvFault);
         return VINF_SUCCESS;
@@ -126,7 +126,7 @@ VMMRCDECL(int) CSAMGCCodePageWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTX
      * Make this particular page R/W. The VM_FF_CSAM_FLUSH_DIRTY_PAGE handler will reset it to readonly again.
      */
     Log(("CSAMGCCodePageWriteHandler: enabled r/w for page %RGv\n", pvFault));
-    rc = PGMShwModifyPage(pVCpu, pvFault, 1, X86_PTE_RW, ~(uint64_t)X86_PTE_RW);
+    rc = PGMShwMakePageWritable(pVCpu, pvFault, PGM_MK_PG_IS_WRITE_FAULT);
     AssertMsgRC(rc, ("PGMShwModifyPage -> rc=%Rrc\n", rc));
     ASMInvalidatePage((void *)(uintptr_t)pvFault);
 

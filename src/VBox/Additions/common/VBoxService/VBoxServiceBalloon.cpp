@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceBalloon.cpp 29543 2010-05-17 14:01:31Z vboxsync $ */
+/* $Id: VBoxServiceBalloon.cpp 32813 2010-09-29 11:50:19Z vboxsync $ */
 /** @file
  * VBoxService - Memory Ballooning.
  */
@@ -304,6 +304,7 @@ static DECLCALLBACK(int) VBoxServiceBalloonInit(void)
  */
 uint32_t VBoxServiceBalloonQueryPages(uint32_t cbPage)
 {
+    Assert(cbPage > 0);
     return g_cMemBalloonChunks * (VMMDEV_MEMORY_BALLOON_CHUNK_SIZE / cbPage);
 }
 
@@ -375,7 +376,7 @@ DECLCALLBACK(int) VBoxServiceBalloonWorker(bool volatile *pfShutdown)
             break;
         if (rc2 != VERR_TIMEOUT && RT_FAILURE(rc2))
         {
-            VBoxServiceError("RTSemEventMultiWait failed; rc2=%Rrc\n", rc2);
+            VBoxServiceError("VBoxServiceBalloonWorker: RTSemEventMultiWait failed; rc2=%Rrc\n", rc2);
             rc = rc2;
             break;
         }

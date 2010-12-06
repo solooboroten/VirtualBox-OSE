@@ -1,4 +1,4 @@
-/* $Id: DHCPServerImpl.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: DHCPServerImpl.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2008 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -21,6 +21,8 @@
 #include "DHCPServerImpl.h"
 #include "AutoCaller.h"
 #include "Logging.h"
+
+#include <iprt/cpp/utils.h>
 
 #include <VBox/settings.h>
 
@@ -149,11 +151,12 @@ STDMETHODIMP DHCPServer::COMSETTER(Enabled) (BOOL aEnabled)
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    /* VirtualBox::saveSettings() needs a write lock */
-    AutoMultiWriteLock2 alock(mVirtualBox, this COMMA_LOCKVAL_SRC_POS);
-
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
     m.enabled = aEnabled;
 
+    // save the global settings; for that we should hold only the VirtualBox lock
+    alock.release();
+    AutoWriteLock vboxLock(mVirtualBox COMMA_LOCKVAL_SRC_POS);
     HRESULT rc = mVirtualBox->saveSettings();
 
     return rc;
@@ -217,20 +220,21 @@ STDMETHODIMP DHCPServer::SetConfiguration (IN_BSTR aIPAddress, IN_BSTR aNetworkM
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    /* VirtualBox::saveSettings() needs a write lock */
-    AutoMultiWriteLock2 alock(mVirtualBox, this COMMA_LOCKVAL_SRC_POS);
-
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
     m.IPAddress = aIPAddress;
     m.networkMask = aNetworkMask;
     m.lowerIP = aLowerIP;
     m.upperIP = aUpperIP;
 
+    // save the global settings; for that we should hold only the VirtualBox lock
+    alock.release();
+    AutoWriteLock vboxLock(mVirtualBox COMMA_LOCKVAL_SRC_POS);
     return mVirtualBox->saveSettings();
 }
 
 STDMETHODIMP DHCPServer::Start(IN_BSTR aNetworkName, IN_BSTR aTrunkName, IN_BSTR aTrunkType)
 {
-    /* Silently ignore attepmts to run disabled servers. */
+    /* Silently ignore attempts to run disabled servers. */
     if (!m.enabled)
         return S_OK;
 
@@ -245,7 +249,7 @@ STDMETHODIMP DHCPServer::Start(IN_BSTR aNetworkName, IN_BSTR aTrunkName, IN_BSTR
     Guid guid;
     guid.create();
     RTStrPrintf (strMAC, sizeof(strMAC), "08:00:27:%02X:%02X:%02X",
-                 guid.ptr()->au8[0], guid.ptr()->au8[1], guid.ptr()->au8[2]);
+                 guid.raw()->au8[0], guid.raw()->au8[1], guid.raw()->au8[2]);
     m.dhcp.setOption(DHCPCFG_MACADDRESS, strMAC, true);
     m.dhcp.setOption(DHCPCFG_IPADDRESS,  Utf8Str(m.IPAddress), true);
     //        DHCPCFG_LEASEDB,

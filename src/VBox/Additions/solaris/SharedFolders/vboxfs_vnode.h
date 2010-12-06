@@ -1,4 +1,4 @@
-/* $Id: vboxfs_vnode.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: vboxfs_vnode.h 31691 2010-08-16 12:59:23Z vboxsync $ */
 /** @file
  * VirtualBox File System for Solaris Guests, VNode header.
  */
@@ -13,6 +13,15 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+ *
+ * The contents of this file may alternatively be used under the terms
+ * of the Common Development and Distribution License Version 1.0
+ * (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+ * VirtualBox OSE distribution, in which case the provisions of the
+ * CDDL are applicable instead of those of the GPL.
+ *
+ * You may elect to license modified versions of this file under the
+ * terms and conditions of either the GPL or the CDDL or both.
  */
 
 #ifndef ___VBoxFS_node_Solaris_h
@@ -47,6 +56,10 @@ typedef struct sfnode {
 	uint16_t	sf_children;	/* number of children sfnodes */
 	uint8_t		sf_type;	/* VDIR or VREG */
 	uint8_t		sf_is_stale;	/* this is stale and should be purged */
+	sffs_stat_t	sf_stat;	/* cached file attrs for this node */
+	uint64_t	sf_stat_time;	/* last-modified time of sf_stat */
+	sffs_dirents_t	*sf_dir_list;	/* list of entries for this directory */
+	sffs_stats_t	*sf_dir_stats;	/* file attrs for the above entries */
 } sfnode_t;
 
 #define VN2SFN(vp) ((sfnode_t *)(vp)->v_data)
@@ -55,7 +68,7 @@ typedef struct sfnode {
 extern int sffs_vnode_init(void);
 extern void sffs_vnode_fini(void);
 extern sfnode_t *sfnode_make(struct sffs_data *, char *, vtype_t, sfp_file_t *,
- sfnode_t *parent);
+    sfnode_t *parent, sffs_stat_t *, uint64_t stat_time);
 extern vnode_t *sfnode_get_vnode(sfnode_t *);
 
 /*

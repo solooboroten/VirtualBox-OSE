@@ -26,8 +26,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -439,7 +439,7 @@ static HRESULT WINAPI IWineGDISurfaceImpl_GetDC(IWineD3DSurface *iface, HDC *pHD
         } else {
             IWineD3DSurfaceImpl *dds_primary;
             IWineD3DSwapChainImpl *swapchain;
-            swapchain = (IWineD3DSwapChainImpl *)This->resource.device->swapchains[0];
+            swapchain = (IWineD3DSwapChainImpl *)This->resource.device->swapchains[This->resource.device->NumberOfSwapChains-1];
             dds_primary = (IWineD3DSurfaceImpl *)swapchain->frontBuffer;
             if (dds_primary && dds_primary->palette)
                 pal = dds_primary->palette->palents;

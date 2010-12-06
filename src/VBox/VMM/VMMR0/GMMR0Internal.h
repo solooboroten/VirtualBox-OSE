@@ -1,4 +1,4 @@
-/* $Id: GMMR0Internal.h 29424 2010-05-12 15:11:09Z vboxsync $ */
+/* $Id: GMMR0Internal.h 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * GMM - The Global Memory Manager, Internal Header.
  */
@@ -29,13 +29,14 @@ typedef struct GMMVMSIZES
     /** The number of pages of base memory.
      * This is the sum of RAM, ROMs and handy pages. */
     uint64_t        cBasePages;
-    /** The number of pages for the shadow pool. (Can be sequeezed for memory.) */
+    /** The number of pages for the shadow pool. (Can be squeezed for memory.) */
     uint32_t        cShadowPages;
     /** The number of pages for fixed allocations like MMIO2 and the hyper heap. */
     uint32_t        cFixedPages;
 } GMMVMSIZES;
 /** Pointer to a GMMVMSIZES. */
 typedef GMMVMSIZES *PGMMVMSIZES;
+
 
 /**
  * Shared module registration info (per VM)
@@ -51,7 +52,13 @@ typedef struct GMMSHAREDMODULEPERVM
     /** Set if another VM registered a different shared module at the same base address. */
     bool                        fCollision;
     /** Alignment. */
-    bool                        bAlignment[7];
+    bool                        bAlignment[3];
+
+    /** Number of included region descriptors */
+    uint32_t                    cRegions;
+
+    /** Shared region descriptor(s). */
+    GMMSHAREDREGIONDESC         aRegions[1];
 } GMMSHAREDMODULEPERVM;
 /** Pointer to a GMMSHAREDMODULEPERVM. */
 typedef GMMSHAREDMODULEPERVM *PGMMSHAREDMODULEPERVM;
@@ -71,10 +78,10 @@ typedef struct GMMPERVM
     uint64_t            cPrivatePages;
     /** The current number of shared pages. */
     uint64_t            cSharedPages;
-    /** The current over-comitment policy. */
+    /** The current over-commitment policy. */
     GMMOCPOLICY         enmPolicy;
     /** The VM priority for arbitrating VMs in low and out of memory situation.
-     * Like which VMs to start sequeezing first. */
+     * Like which VMs to start squeezing first. */
     GMMPRIORITY         enmPriority;
 
     /** The current number of ballooned pages. */

@@ -23,8 +23,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -38,7 +38,12 @@ WINE_DEFAULT_DEBUG_CHANNEL(d3d);
 
 HRESULT resource_init(IWineD3DResource *iface, WINED3DRESOURCETYPE resource_type,
         IWineD3DDeviceImpl *device, UINT size, DWORD usage, const struct wined3d_format_desc *format_desc,
-        WINED3DPOOL pool, IUnknown *parent, const struct wined3d_parent_ops *parent_ops)
+        WINED3DPOOL pool, IUnknown *parent, const struct wined3d_parent_ops *parent_ops
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        )
 {
     struct IWineD3DResourceClass *resource = &((IWineD3DResourceImpl *)iface)->resource;
 
@@ -54,30 +59,51 @@ HRESULT resource_init(IWineD3DResource *iface, WINED3DRESOURCETYPE resource_type
     resource->parent_ops = parent_ops;
     list_init(&resource->privateData);
 
-    if (size)
+#ifdef VBOX_WITH_WDDM
+    if (pool == WINED3DPOOL_SYSTEMMEM && pvClientMem)
     {
-        resource->heapMemory = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size + RESOURCE_ALIGNMENT);
-        if (!resource->heapMemory)
-        {
-            ERR("Out of memory!\n");
-            return WINED3DERR_OUTOFVIDEOMEMORY;
-        }
-    }
-    else
-    {
+        resource->allocatedMemory = pvClientMem;
         resource->heapMemory = NULL;
     }
-    resource->allocatedMemory = (BYTE *)(((ULONG_PTR)resource->heapMemory + (RESOURCE_ALIGNMENT - 1)) & ~(RESOURCE_ALIGNMENT - 1));
+    else
+#endif
+    {
+#ifdef VBOX_WITH_WDDM
+        if (pool == WINED3DPOOL_DEFAULT && shared_handle)
+        {
+            resource->sharerc_handle = *shared_handle;
+            resource->sharerc_flags = VBOXSHRC_F_SHARED;
+            if (*shared_handle)
+                resource->sharerc_flags |= VBOXSHRC_F_SHARED_OPENED;
+        }
+#endif
+        if (size)
+        {
+            resource->heapMemory = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size + RESOURCE_ALIGNMENT);
+            if (!resource->heapMemory)
+            {
+                ERR("Out of memory!\n");
+                return WINED3DERR_OUTOFVIDEOMEMORY;
+            }
+        }
+        else
+        {
+            resource->heapMemory = NULL;
+        }
+        resource->allocatedMemory = (BYTE *)(((ULONG_PTR)resource->heapMemory + (RESOURCE_ALIGNMENT - 1)) & ~(RESOURCE_ALIGNMENT - 1));
+    }
 
     /* Check that we have enough video ram left */
     if (pool == WINED3DPOOL_DEFAULT)
     {
+#ifndef VBOX_WITH_WDDM
         if (size > IWineD3DDevice_GetAvailableTextureMem((IWineD3DDevice *)device))
         {
             ERR("Out of adapter memory\n");
             HeapFree(GetProcessHeap(), 0, resource->heapMemory);
             return WINED3DERR_OUTOFVIDEOMEMORY;
         }
+#endif
         WineD3DAdapterChangeGLRam(device, size);
     }
 

@@ -23,8 +23,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -266,7 +266,7 @@ static const struct wined3d_sm1_opcode_info vs_opcode_table[] =
     {WINED3D_SM1_OP_REP,      0, 1, WINED3DSIH_REP,          WINED3D_SHADER_VERSION(2,0), -1                         },
     {WINED3D_SM1_OP_ENDREP,   0, 0, WINED3DSIH_ENDREP,       WINED3D_SHADER_VERSION(2,0), -1                         },
     {WINED3D_SM1_OP_IF,       0, 1, WINED3DSIH_IF,           WINED3D_SHADER_VERSION(2,0), -1                         },
-    {WINED3D_SM1_OP_IFC,      0, 2, WINED3DSIH_IFC,          WINED3D_SHADER_VERSION(2,1), -1                         },
+    {WINED3D_SM1_OP_IFC,      0, 2, WINED3DSIH_IFC,          WINED3D_SHADER_VERSION(2,0), -1                         },
     {WINED3D_SM1_OP_ELSE,     0, 0, WINED3DSIH_ELSE,         WINED3D_SHADER_VERSION(2,0), -1                         },
     {WINED3D_SM1_OP_ENDIF,    0, 0, WINED3DSIH_ENDIF,        WINED3D_SHADER_VERSION(2,0), -1                         },
     {WINED3D_SM1_OP_BREAK,    0, 0, WINED3DSIH_BREAK,        WINED3D_SHADER_VERSION(2,1), -1                         },

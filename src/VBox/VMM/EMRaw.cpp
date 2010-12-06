@@ -1,4 +1,4 @@
-/* $Id: EMRaw.cpp 29329 2010-05-11 10:18:30Z vboxsync $ */
+/* $Id: EMRaw.cpp 32956 2010-10-06 16:06:53Z vboxsync $ */
 /** @file
  * EM - Execution Monitor / Manager - software virtualization
  */
@@ -53,6 +53,7 @@
 #include <VBox/pdmqueue.h>
 #include <VBox/patm.h>
 #include "EMInternal.h"
+#include "include/internal/em.h"
 #include <VBox/vm.h>
 #include <VBox/cpumdis.h>
 #include <VBox/dis.h>
@@ -182,11 +183,11 @@ int emR3RawResumeHyper(PVM pVM, PVMCPU pVCpu)
     /*
      * Resume execution.
      */
-    CPUMRawEnter(pVCpu, NULL);
+    CPUMR3RawEnter(pVCpu, NULL);
     CPUMSetHyperEFlags(pVCpu, CPUMGetHyperEFlags(pVCpu) | X86_EFL_RF);
     rc = VMMR3ResumeHyper(pVM, pVCpu);
     Log(("emR3RawResumeHyper: cs:eip=%RTsel:%RGr efl=%RGr - returned from GC with rc=%Rrc\n", pCtx->cs, pCtx->eip, pCtx->eflags, rc));
-    rc = CPUMRawLeave(pVCpu, NULL, rc);
+    rc = CPUMR3RawLeave(pVCpu, NULL, rc);
     VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_RESUME_GUEST_MASK);
 
     /*
@@ -243,7 +244,7 @@ int emR3RawStep(PVM pVM, PVMCPU pVCpu)
      * Single step.
      * We do not start time or anything, if anything we should just do a few nanoseconds.
      */
-    CPUMRawEnter(pVCpu, NULL);
+    CPUMR3RawEnter(pVCpu, NULL);
     do
     {
         if (pVCpu->em.s.enmState == EMSTATE_DEBUG_HYPER)
@@ -256,7 +257,7 @@ int emR3RawStep(PVM pVM, PVMCPU pVCpu)
 #endif
     } while (   rc == VINF_SUCCESS
              || rc == VINF_EM_RAW_INTERRUPT);
-    rc = CPUMRawLeave(pVCpu, NULL, rc);
+    rc = CPUMR3RawLeave(pVCpu, NULL, rc);
     VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_RESUME_GUEST_MASK);
 
     /*
@@ -689,7 +690,7 @@ static int emR3RawGuestTrap(PVM pVM, PVMCPU pVCpu)
                 AssertRC(rc);
 
                 uint32_t opsize;
-                rc = EMInterpretInstructionCPU(pVM, pVCpu, &cpu, CPUMCTX2CORE(pCtx), 0, &opsize);
+                rc = VBOXSTRICTRC_TODO(EMInterpretInstructionCPU(pVM, pVCpu, &cpu, CPUMCTX2CORE(pCtx), 0, EMCODETYPE_SUPERVISOR, &opsize));
                 if (RT_SUCCESS(rc))
                 {
                     pCtx->rip += cpu.opsize;
@@ -1183,7 +1184,7 @@ static int emR3RawPrivileged(PVM pVM, PVMCPU pVCpu)
                     }
 #endif
 
-                    rc = EMInterpretInstructionCPU(pVM, pVCpu, &Cpu, CPUMCTX2CORE(pCtx), 0, &size);
+                    rc = VBOXSTRICTRC_TODO(EMInterpretInstructionCPU(pVM, pVCpu, &Cpu, CPUMCTX2CORE(pCtx), 0, EMCODETYPE_SUPERVISOR, &size));
                     if (RT_SUCCESS(rc))
                     {
                         pCtx->rip += Cpu.opsize;
@@ -1476,7 +1477,7 @@ int emR3RawExecute(PVM pVM, PVMCPU pVCpu, bool *pfFFDone)
          * be modified a bit and some of the state components (IF, SS/CS RPL,
          * and perhaps EIP) needs to be stored with PATM.
          */
-        rc = CPUMRawEnter(pVCpu, NULL);
+        rc = CPUMR3RawEnter(pVCpu, NULL);
         if (rc != VINF_SUCCESS)
         {
             STAM_PROFILE_ADV_STOP(&pVCpu->em.s.StatRAWEntry, b);
@@ -1499,7 +1500,7 @@ int emR3RawExecute(PVM pVM, PVMCPU pVCpu, bool *pfFFDone)
                 rc = emR3RawForcedActions(pVM, pVCpu, pCtx);
                 if (rc != VINF_SUCCESS)
                 {
-                    rc = CPUMRawLeave(pVCpu, NULL, rc);
+                    rc = CPUMR3RawLeave(pVCpu, NULL, rc);
                     break;
                 }
             }
@@ -1527,9 +1528,20 @@ int emR3RawExecute(PVM pVM, PVMCPU pVCpu, bool *pfFFDone)
          * Execute the code.
          */
         STAM_PROFILE_ADV_STOP(&pVCpu->em.s.StatRAWEntry, b);
-        STAM_PROFILE_START(&pVCpu->em.s.StatRAWExec, c);
-        rc = VMMR3RawRunGC(pVM, pVCpu);
-        STAM_PROFILE_STOP(&pVCpu->em.s.StatRAWExec, c);
+        if (RT_LIKELY(EMR3IsExecutionAllowed(pVM, pVCpu)))
+        {
+            STAM_PROFILE_START(&pVCpu->em.s.StatRAWExec, c);
+            rc = VMMR3RawRunGC(pVM, pVCpu);
+            STAM_PROFILE_STOP(&pVCpu->em.s.StatRAWExec, c);
+        }
+        else
+        {
+            /* Give up this time slice; virtual time continues */
+            STAM_REL_PROFILE_ADV_START(&pVCpu->em.s.StatCapped, u);
+            RTThreadSleep(5);
+            STAM_REL_PROFILE_ADV_STOP(&pVCpu->em.s.StatCapped, u);
+            rc = VINF_SUCCESS;
+        }
         STAM_PROFILE_ADV_START(&pVCpu->em.s.StatRAWTail, d);
 
         LogFlow(("RR0-E: %08X ESP=%08X IF=%d VMFlags=%x PIF=%d CPL=%d\n", pCtx->eip, pCtx->esp, pCtx->eflags.Bits.u1IF, pGCState->uVMFlags, pGCState->fPIF, (pCtx->ss & X86_SEL_RPL)));
@@ -1541,7 +1553,7 @@ int emR3RawExecute(PVM pVM, PVMCPU pVCpu, bool *pfFFDone)
          * Restore the real CPU state and deal with high priority post
          * execution FFs before doing anything else.
          */
-        rc = CPUMRawLeave(pVCpu, NULL, rc);
+        rc = CPUMR3RawLeave(pVCpu, NULL, rc);
         VMCPU_FF_CLEAR(pVCpu, VMCPU_FF_RESUME_GUEST_MASK);
         if (    VM_FF_ISPENDING(pVM, VM_FF_HIGH_PRIORITY_POST_MASK)
             ||  VMCPU_FF_ISPENDING(pVCpu, VMCPU_FF_HIGH_PRIORITY_POST_MASK))

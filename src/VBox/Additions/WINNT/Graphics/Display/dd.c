@@ -1175,26 +1175,26 @@ DWORD APIENTRY DdUnlock(PDD_UNLOCKDATA lpUnlock)
 //        vboxVHWACommandCheckHostCmds(pDev);
         if(!!(lpSurfaceLocal->ddsCaps.dwCaps & DDSCAPS_PRIMARYSURFACE)
                 && pDesc->UpdatedMemRegion.bValid
-                && vboxHwBufferBeginUpdate (pDev))
+                && VBoxVBVABufferBeginUpdate(&pDev->vbvaCtx, &pDev->guestCtx))
         {
             vbvaReportDirtyRect (pDev, &pDesc->UpdatedMemRegion.Rect);
 
-            if (  pDev->pVBVA->hostFlags.u32HostEvents
+            if (  pDev->vbvaCtx.pVBVA->hostFlags.u32HostEvents
                 & VBOX_VIDEO_INFO_HOST_EVENTS_F_VRDP_RESET)
             {
                 vrdpReset (pDev);
 
-                pDev->pVBVA->hostFlags.u32HostEvents &=
+                pDev->vbvaCtx.pVBVA->hostFlags.u32HostEvents &=
                           ~VBOX_VIDEO_INFO_HOST_EVENTS_F_VRDP_RESET;
             }
 
-            if (pDev->pVBVA->hostFlags.u32HostEvents
+            if (pDev->vbvaCtx.pVBVA->hostFlags.u32HostEvents
                 & VBVA_F_MODE_VRDP)
             {
                 vrdpReportDirtyRect (pDev, &pDesc->UpdatedMemRegion.Rect);
             }
 
-            vboxHwBufferEndUpdate (pDev);
+            VBoxVBVABufferEndUpdate(&pDev->vbvaCtx);
 
             lpUnlock->ddRVal = DD_OK;
         }
@@ -1244,51 +1244,28 @@ DWORD APIENTRY DdUnlock(PDD_UNLOCKDATA lpUnlock)
     {
         DISPDBG((0, "%d,%d %dx%d\n", pDev->ddLock.rArea.left, pDev->ddLock.rArea.top, pDev->ddLock.rArea.right - pDev->ddLock.rArea.left, pDev->ddLock.rArea.bottom - pDev->ddLock.rArea.top));
 
-#ifndef VBOX_WITH_HGSMI
-        if (pDev->pInfo && vboxHwBufferBeginUpdate (pDev))
+        if (   pDev->bHGSMISupported
+            && VBoxVBVABufferBeginUpdate(&pDev->vbvaCtx, &pDev->guestCtx))
         {
             vbvaReportDirtyRect (pDev, &pDev->ddLock.rArea);
 
-            if (  pDev->pInfo->hostEvents.fu32Events
+            if (  pDev->vbvaCtx.pVBVA->hostFlags.u32HostEvents
                 & VBOX_VIDEO_INFO_HOST_EVENTS_F_VRDP_RESET)
             {
                 vrdpReset (pDev);
 
-                pDev->pInfo->hostEvents.fu32Events &=
+                pDev->vbvaCtx.pVBVA->hostFlags.u32HostEvents &=
                           ~VBOX_VIDEO_INFO_HOST_EVENTS_F_VRDP_RESET;
             }
 
-            if (pDev->vbva.pVbvaMemory->fu32ModeFlags
+            if (pDev->vbvaCtx.pVBVA->hostFlags.u32HostEvents
                 & VBVA_F_MODE_VRDP)
             {
                 vrdpReportDirtyRect (pDev, &pDev->ddLock.rArea);
             }
 
-            vboxHwBufferEndUpdate (pDev);
+            VBoxVBVABufferEndUpdate(&pDev->vbvaCtx);
         }
-#else
-        if (pDev->bHGSMISupported && vboxHwBufferBeginUpdate (pDev))
-        {
-            vbvaReportDirtyRect (pDev, &pDev->ddLock.rArea);
-
-            if (  pDev->pVBVA->hostFlags.u32HostEvents
-                & VBOX_VIDEO_INFO_HOST_EVENTS_F_VRDP_RESET)
-            {
-                vrdpReset (pDev);
-
-                pDev->pVBVA->hostFlags.u32HostEvents &=
-                          ~VBOX_VIDEO_INFO_HOST_EVENTS_F_VRDP_RESET;
-            }
-
-            if (pDev->pVBVA->hostFlags.u32HostEvents
-                & VBVA_F_MODE_VRDP)
-            {
-                vrdpReportDirtyRect (pDev, &pDev->ddLock.rArea);
-            }
-
-            vboxHwBufferEndUpdate (pDev);
-        }
-#endif /* VBOX_WITH_HGSMI */
 
         pDev->ddLock.bLocked = FALSE;
     }
@@ -1823,7 +1800,7 @@ DWORD APIENTRY DdUpdateOverlay(PDD_UPDATEOVERLAYDATA  lpUpdateOverlay)
             pSrcDesc->bVisible = true;
             if(pSrcDesc->UpdatedMemRegion.bValid)
             {
-                pBody->u.in.xUpdatedSrcMemValid = 1;
+                pBody->u.in.xFlags = VBOXVHWACMD_SURF_OVERLAY_UPDATE_F_SRCMEMRECT;
                 vboxVHWAFromRECTL(&pBody->u.in.xUpdatedSrcMemRect, &pSrcDesc->UpdatedMemRegion.Rect);
                 vboxVHWARegionClear(&pSrcDesc->UpdatedMemRegion);
             }

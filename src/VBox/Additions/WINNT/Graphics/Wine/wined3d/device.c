@@ -27,8 +27,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -801,7 +801,12 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreateStateBlock(IWineD3DDevice *iface,
 static HRESULT WINAPI IWineD3DDeviceImpl_CreateSurface(IWineD3DDevice *iface, UINT Width, UINT Height,
         WINED3DFORMAT Format, BOOL Lockable, BOOL Discard, UINT Level, IWineD3DSurface **ppSurface,
         DWORD Usage, WINED3DPOOL Pool, WINED3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality,
-        WINED3DSURFTYPE Impl, IUnknown *parent, const struct wined3d_parent_ops *parent_ops)
+        WINED3DSURFTYPE Impl, IUnknown *parent, const struct wined3d_parent_ops *parent_ops
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        )
 {
     IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *)iface;
     IWineD3DSurfaceImpl *object;
@@ -827,7 +832,12 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreateSurface(IWineD3DDevice *iface, UI
     }
 
     hr = surface_init(object, Impl, This->surface_alignment, Width, Height, Level, Lockable,
-            Discard, MultiSample, MultisampleQuality, This, Usage, Format, Pool, parent, parent_ops);
+            Discard, MultiSample, MultisampleQuality, This, Usage, Format, Pool, parent, parent_ops
+#ifdef VBOX_WITH_WDDM
+            , shared_handle
+            , pvClientMem
+#endif
+            );
     if (FAILED(hr))
     {
         WARN("Failed to initialize surface, returning %#x.\n", hr);
@@ -867,7 +877,12 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreateRendertargetView(IWineD3DDevice *
 
 static HRESULT WINAPI IWineD3DDeviceImpl_CreateTexture(IWineD3DDevice *iface,
         UINT Width, UINT Height, UINT Levels, DWORD Usage, WINED3DFORMAT Format, WINED3DPOOL Pool,
-        IWineD3DTexture **ppTexture, IUnknown *parent, const struct wined3d_parent_ops *parent_ops)
+        IWineD3DTexture **ppTexture, IUnknown *parent, const struct wined3d_parent_ops *parent_ops
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        )
 {
     IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *)iface;
     IWineD3DTextureImpl *object;
@@ -885,7 +900,12 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreateTexture(IWineD3DDevice *iface,
         return WINED3DERR_OUTOFVIDEOMEMORY;
     }
 
-    hr = texture_init(object, Width, Height, Levels, This, Usage, Format, Pool, parent, parent_ops);
+    hr = texture_init(object, Width, Height, Levels, This, Usage, Format, Pool, parent, parent_ops
+#ifdef VBOX_WITH_WDDM
+            , shared_handle
+            , pvClientMem
+#endif
+            );
     if (FAILED(hr))
     {
         WARN("Failed to initialize texture, returning %#x\n", hr);
@@ -970,7 +990,12 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreateVolume(IWineD3DDevice *iface, UIN
 
 static HRESULT WINAPI IWineD3DDeviceImpl_CreateCubeTexture(IWineD3DDevice *iface, UINT EdgeLength, UINT Levels,
         DWORD Usage, WINED3DFORMAT Format, WINED3DPOOL Pool, IWineD3DCubeTexture **ppCubeTexture,
-        IUnknown *parent, const struct wined3d_parent_ops *parent_ops)
+        IUnknown *parent, const struct wined3d_parent_ops *parent_ops
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        )
 {
     IWineD3DDeviceImpl      *This = (IWineD3DDeviceImpl *)iface;
     IWineD3DCubeTextureImpl *object; /** NOTE: impl ref allowed since this is a create function **/
@@ -984,7 +1009,13 @@ static HRESULT WINAPI IWineD3DDeviceImpl_CreateCubeTexture(IWineD3DDevice *iface
         return WINED3DERR_OUTOFVIDEOMEMORY;
     }
 
-    hr = cubetexture_init(object, EdgeLength, Levels, This, Usage, Format, Pool, parent, parent_ops);
+    hr = cubetexture_init(object, EdgeLength, Levels, This, Usage, Format, Pool, parent, parent_ops
+#ifdef VBOX_WITH_WDDM
+            , shared_handle
+            , pvClientMem
+#endif
+        );
+
     if (FAILED(hr))
     {
         WARN("Failed to initialize cubetexture, returning %#x\n", hr);
@@ -1419,9 +1450,15 @@ static void IWineD3DDeviceImpl_LoadLogo(IWineD3DDeviceImpl *This, const char *fi
         bm.bmHeight = 32;
     }
 
+#ifdef VBOX_WITH_WDDM
+    hr = IWineD3DDevice_CreateSurface((IWineD3DDevice *)This, bm.bmWidth, bm.bmHeight, WINED3DFMT_B5G6R5_UNORM, TRUE,
+            FALSE, 0, &This->logo_surface, 0, WINED3DPOOL_DEFAULT, WINED3DMULTISAMPLE_NONE, 0, SURFACE_OPENGL,
+            NULL, &wined3d_null_parent_ops, NULL, NULL);
+#else
     hr = IWineD3DDevice_CreateSurface((IWineD3DDevice *)This, bm.bmWidth, bm.bmHeight, WINED3DFMT_B5G6R5_UNORM, TRUE,
             FALSE, 0, &This->logo_surface, 0, WINED3DPOOL_DEFAULT, WINED3DMULTISAMPLE_NONE, 0, SURFACE_OPENGL,
             NULL, &wined3d_null_parent_ops);
+#endif
     if(FAILED(hr)) {
         ERR("Wine logo requested, but failed to create surface\n");
         goto out;
@@ -5721,7 +5758,9 @@ void stretch_rect_fbo(IWineD3DDevice *iface, IWineD3DSurface *src_surface, const
     const struct wined3d_gl_info *gl_info;
     struct wined3d_context *context;
     GLenum gl_filter;
+#ifndef VBOX_WITH_WDDM
     POINT offset = {0, 0};
+#endif
     RECT src_rect, dst_rect;
 
     TRACE("(%p) : src_surface %p, src_rect_in %p, dst_surface %p, dst_rect_in %p, filter %s (0x%08x)\n",
@@ -5770,16 +5809,27 @@ void stretch_rect_fbo(IWineD3DDevice *iface, IWineD3DSurface *src_surface, const
 
         TRACE("Source surface %p is onscreen\n", src_surface);
 
+#ifndef VBOX_WITH_WDDM
         if(buffer == GL_FRONT) {
             RECT windowsize;
             UINT h;
+
             ClientToScreen(context->win_handle, &offset);
             GetClientRect(context->win_handle, &windowsize);
             h = windowsize.bottom - windowsize.top;
+#ifdef DEBUG_leo
+            if (offset.x!=0 || offset.y!=0 || h!=((IWineD3DSurfaceImpl *)src_surface)->currentDesc.Height)
+            {
+                DebugBreak();
+            }
+#endif
             src_rect.left -= offset.x; src_rect.right -=offset.x;
             src_rect.top =  offset.y + h - src_rect.top;
             src_rect.bottom =  offset.y + h - src_rect.bottom;
-        } else {
+        }
+        else
+#endif
+        {
             src_rect.top = ((IWineD3DSurfaceImpl *)src_surface)->currentDesc.Height - src_rect.top;
             src_rect.bottom = ((IWineD3DSurfaceImpl *)src_surface)->currentDesc.Height - src_rect.bottom;
         }
@@ -5806,16 +5856,26 @@ void stretch_rect_fbo(IWineD3DDevice *iface, IWineD3DSurface *src_surface, const
 
         TRACE("Destination surface %p is onscreen\n", dst_surface);
 
+#ifndef VBOX_WITH_WDDM
         if(buffer == GL_FRONT) {
             RECT windowsize;
             UINT h;
             ClientToScreen(context->win_handle, &offset);
             GetClientRect(context->win_handle, &windowsize);
             h = windowsize.bottom - windowsize.top;
+#ifdef DEBUG_leo
+            if (offset.x!=0 || offset.y!=0 || h!=((IWineD3DSurfaceImpl *)src_surface)->currentDesc.Height)
+            {
+                DebugBreak();
+            }
+#endif
             dst_rect.left -= offset.x; dst_rect.right -=offset.x;
             dst_rect.top =  offset.y + h - dst_rect.top;
             dst_rect.bottom =  offset.y + h - dst_rect.bottom;
-        } else {
+        }
+        else
+#endif
+        {
             /* Screen coords = window coords, surface height = window height */
             dst_rect.top = ((IWineD3DSurfaceImpl *)dst_surface)->currentDesc.Height - dst_rect.top;
             dst_rect.bottom = ((IWineD3DSurfaceImpl *)dst_surface)->currentDesc.Height - dst_rect.bottom;
@@ -6269,7 +6329,11 @@ static BOOL is_display_mode_supported(IWineD3DDeviceImpl *This, const WINED3DPRE
     return FALSE;
 }
 
-static void delete_opengl_contexts(IWineD3DDevice *iface, IWineD3DSwapChainImpl *swapchain)
+static void delete_opengl_contexts(IWineD3DDevice *iface
+#ifndef VBOX_WITH_WDDM
+        , IWineD3DSwapChainImpl *swapchain
+#endif
+        )
 {
     IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *) iface;
     const struct wined3d_gl_info *gl_info;
@@ -6308,9 +6372,11 @@ static void delete_opengl_contexts(IWineD3DDevice *iface, IWineD3DSwapChainImpl 
     {
         context_destroy(This, This->contexts[0]);
     }
+#ifndef VBOX_WITH_WDDM
     HeapFree(GetProcessHeap(), 0, swapchain->context);
     swapchain->context = NULL;
     swapchain->num_contexts = 0;
+#endif
 }
 
 static HRESULT create_primary_opengl_context(IWineD3DDevice *iface, IWineD3DSwapChainImpl *swapchain)
@@ -6320,6 +6386,7 @@ static HRESULT create_primary_opengl_context(IWineD3DDevice *iface, IWineD3DSwap
     HRESULT hr;
     IWineD3DSurfaceImpl *target;
 
+#ifndef VBOX_WITH_WDDM
     /* Recreate the primary swapchain's context */
     swapchain->context = HeapAlloc(GetProcessHeap(), 0, sizeof(*swapchain->context));
     if (!swapchain->context)
@@ -6327,17 +6394,22 @@ static HRESULT create_primary_opengl_context(IWineD3DDevice *iface, IWineD3DSwap
         ERR("Failed to allocate memory for swapchain context array.\n");
         return E_OUTOFMEMORY;
     }
+#endif
 
     target = (IWineD3DSurfaceImpl *)(swapchain->backBuffer ? swapchain->backBuffer[0] : swapchain->frontBuffer);
     if (!(context = context_create(swapchain, target, swapchain->ds_format)))
     {
         WARN("Failed to create context.\n");
+#ifndef VBOX_WITH_WDDM
         HeapFree(GetProcessHeap(), 0, swapchain->context);
+#endif
         return E_FAIL;
     }
 
+#ifndef VBOX_WITH_WDDM
     swapchain->context[0] = context;
     swapchain->num_contexts = 1;
+#endif
     create_dummy_textures(This);
     context_release(context);
 
@@ -6372,8 +6444,10 @@ err:
     destroy_dummy_textures(This, context->gl_info);
     context_release(context);
     context_destroy(This, context);
+#ifndef VBOX_WITH_WDDM
     HeapFree(GetProcessHeap(), 0, swapchain->context);
     swapchain->num_contexts = 0;
+#endif
     return hr;
 }
 
@@ -6384,6 +6458,11 @@ static HRESULT WINAPI IWineD3DDeviceImpl_Reset(IWineD3DDevice* iface, WINED3DPRE
     BOOL DisplayModeChanged = FALSE;
     WINED3DDISPLAYMODE mode;
     TRACE("(%p)\n", This);
+
+#ifdef VBOX_WITH_WDDM
+    /* todo: implement multi-swapchain handlling!!! */
+    Assert(0);
+#endif
 
     hr = IWineD3DDevice_GetSwapChain(iface, 0, (IWineD3DSwapChain **) &swapchain);
     if(FAILED(hr)) {
@@ -6472,7 +6551,11 @@ static HRESULT WINAPI IWineD3DDeviceImpl_Reset(IWineD3DDevice* iface, WINED3DPRE
     IWineD3DStateBlock_Release((IWineD3DStateBlock *)This->updateStateBlock);
     IWineD3DStateBlock_Release((IWineD3DStateBlock *)This->stateBlock);
 
-    delete_opengl_contexts(iface, swapchain);
+    delete_opengl_contexts(iface
+#ifndef VBOX_WITH_WDDM
+            , swapchain
+#endif
+            );
 
     if(pPresentationParameters->Windowed) {
         mode.Width = swapchain->orig_width;
@@ -6810,6 +6893,89 @@ static HRESULT WINAPI IWineD3DDeviceImpl_GetSurfaceFromDC(IWineD3DDevice *iface,
     return WINED3DERR_INVALIDCALL;
 }
 
+#ifdef VBOX_WITH_WDDM
+static HRESULT WINAPI IWineD3DDeviceImpl_Flush(IWineD3DDevice *iface)
+{
+    IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *) iface;
+    struct wined3d_context *context;
+    int i;
+    for (i = 0; i < This->numContexts; ++i)
+    {
+        context = This->contexts[i];
+        if (context_acquire_context(context, NULL, CTXUSAGE_RESOURCELOAD, TRUE))
+        {
+            Assert(context->valid);
+            wglFlush();
+            context_release(context);
+        }
+        else
+        {
+            WARN("Invalid context, skipping flush.\n");
+        }
+    }
+    return WINED3D_OK;
+}
+
+static HRESULT WINAPI IWineD3DDeviceImpl_AddSwapChain(IWineD3DDevice *iface, IWineD3DSwapChain *swapchain)
+{
+    IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *) iface;
+    VOID *pvNewBuf = HeapReAlloc(GetProcessHeap(), 0, This->swapchains, (This->NumberOfSwapChains + 1) * sizeof(IWineD3DSwapChain *));
+    if(!pvNewBuf) {
+        ERR("Out of memory!\n");
+        return E_OUTOFMEMORY;
+    }
+    This->swapchains = (IWineD3DSwapChain **)pvNewBuf;
+    This->swapchains[This->NumberOfSwapChains] = swapchain;
+    ++This->NumberOfSwapChains;
+    return WINED3D_OK;
+}
+
+static HRESULT WINAPI IWineD3DDeviceImpl_RemoveSwapChain(IWineD3DDevice *iface, IWineD3DSwapChain *swapchain)
+{
+    IWineD3DDeviceImpl *This = (IWineD3DDeviceImpl *) iface;
+    int i;
+    for (i = 0; i < This->NumberOfSwapChains; ++i)
+    {
+        if (This->swapchains[i] == swapchain)
+        {
+            break;
+        }
+    }
+
+    if (i == This->NumberOfSwapChains)
+    {
+        WARN("swapchain 0x%p is not part of device 0x%p\n", swapchain, iface);
+        return E_INVALIDARG;
+    }
+
+    --This->NumberOfSwapChains;
+    if (This->NumberOfSwapChains)
+    {
+        IWineD3DSwapChain **pvNewBuf = (IWineD3DSwapChain **)HeapAlloc(GetProcessHeap(), 0, (This->NumberOfSwapChains) * sizeof(IWineD3DSwapChain *));
+        if(!pvNewBuf) {
+            ERR("Out of memory!\n");
+            return E_OUTOFMEMORY;
+        }
+        if (i) {
+            memcpy (pvNewBuf, This->swapchains, i*sizeof(IWineD3DSwapChain *));
+        }
+        if (i < This->NumberOfSwapChains) {
+            memcpy (pvNewBuf + i, This->swapchains +i+1, (This->NumberOfSwapChains - i)*sizeof(IWineD3DSwapChain *));
+        }
+
+        This->swapchains = (IWineD3DSwapChain *)pvNewBuf;
+    }
+    else
+    {
+        while (This->numContexts)
+        {
+            context_destroy(This, This->contexts[0]);
+        }
+    }
+    return WINED3D_OK;
+}
+#endif
+
 /**********************************************************
  * IWineD3DDevice VTbl follows
  **********************************************************/
@@ -6962,6 +7128,12 @@ static const IWineD3DDeviceVtbl IWineD3DDevice_Vtbl =
     IWineD3DDeviceImpl_GetSurfaceFromDC,
     IWineD3DDeviceImpl_AcquireFocusWindow,
     IWineD3DDeviceImpl_ReleaseFocusWindow,
+#ifdef VBOX_WITH_WDDM
+    /* VBox WDDM extensions */
+    IWineD3DDeviceImpl_Flush,
+    IWineD3DDeviceImpl_AddSwapChain,
+    IWineD3DDeviceImpl_RemoveSwapChain,
+#endif
 };
 
 HRESULT device_init(IWineD3DDeviceImpl *device, IWineD3DImpl *wined3d,
@@ -7068,7 +7240,11 @@ void get_drawable_size_fbo(struct wined3d_context *context, UINT *width, UINT *h
 
 void get_drawable_size_backbuffer(struct wined3d_context *context, UINT *width, UINT *height)
 {
+#ifdef VBOX_WITH_WDDM
+    IWineD3DSwapChainImpl *swapchain = context->currentSwapchain;
+#else
     IWineD3DSwapChainImpl *swapchain = context->swapchain;
+#endif
     /* The drawable size of a backbuffer / aux buffer offscreen target is the size of the
      * current context's drawable, which is the size of the back buffer of the swapchain
      * the active context belongs to. */

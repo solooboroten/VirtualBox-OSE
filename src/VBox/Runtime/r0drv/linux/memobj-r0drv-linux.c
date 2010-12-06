@@ -1,4 +1,4 @@
-/* $Revision: 29027 $ */
+/* $Revision: 33642 $ */
 /** @file
  * IPRT - Ring-0 Memory Objects, Linux.
  */
@@ -78,7 +78,7 @@ typedef struct RTR0MEMOBJLNX
     /** Set if the allocation is contiguous.
      * This means it has to be given back as one chunk. */
     bool                fContiguous;
-    /** Set if we've vmap'ed thed memory into ring-0. */
+    /** Set if we've vmap'ed the memory into ring-0. */
     bool                fMappedToRing0;
     /** The pages in the apPages array. */
     size_t              cPages;
@@ -174,7 +174,7 @@ static pgprot_t rtR0MemObjLinuxConvertProt(unsigned fProt, bool fKernel)
  * @param   ppMemLnx    Where to store the memory object pointer.
  * @param   enmType     The object type.
  * @param   cb          The number of bytes to allocate.
- * @param   uAlignment  The alignment of the phyiscal memory.
+ * @param   uAlignment  The alignment of the physical memory.
  *                      Only valid if fContiguous == true, ignored otherwise.
  * @param   fFlagsLnx   The page allocation flags (GPFs).
  * @param   fContiguous Whether the allocation must be contiguous.
@@ -194,6 +194,18 @@ static int rtR0MemObjLinuxAllocPages(PRTR0MEMOBJLNX *ppMemLnx, RTR0MEMOBJTYPE en
     if (!pMemLnx)
         return VERR_NO_MEMORY;
     pMemLnx->cPages = cPages;
+
+     if (cPages > 255)
+     {
+# ifdef __GFP_NORETRY
+        /* Not available in Linux 2.4.0 */
+        fFlagsLnx |= __GFP_NORETRY;
+# endif
+# ifdef __GFP_NOMEMALLOC
+        /* Introduced with Linux 2.6.12: Don't use emergency reserves */
+        fFlagsLnx |= __GFP_NOMEMALLOC;
+# endif
+     }
 
     /*
      * Allocate the pages.
@@ -273,12 +285,12 @@ static int rtR0MemObjLinuxAllocPages(PRTR0MEMOBJLNX *ppMemLnx, RTR0MEMOBJTYPE en
          * Check for alignment constraints. The physical address of memory allocated with
          * alloc_pages(flags, order) is always 2^(PAGE_SHIFT+order)-aligned.
          */
-        if (RT_UNLIKELY(page_to_phys(pMemLnx->apPages[0]) & ~(uAlignment - 1)))
+        if (RT_UNLIKELY(page_to_phys(pMemLnx->apPages[0]) & (uAlignment - 1)))
         {
             /*
              * This should never happen!
              */
-            printk("rtR0MemObjLinuxAllocPages(cb=%ld, uAlignment=%ld): alloc_pages(..., %d) returned physical memory at %lu!\n",
+            printk("rtR0MemObjLinuxAllocPages(cb=0x%lx, uAlignment=0x%lx): alloc_pages(..., %d) returned physical memory at 0x%lx!\n",
                     (unsigned long)cb, (unsigned long)uAlignment, rtR0MemObjLinuxOrder(cPages), (unsigned long)page_to_phys(pMemLnx->apPages[0]));
             rtR0MemObjLinuxFreePages(pMemLnx);
             return VERR_NO_MEMORY;
@@ -694,7 +706,7 @@ static int rtR0MemObjLinuxAllocPhysSub(PPRTR0MEMOBJINTERNAL ppMem, RTR0MEMOBJTYP
 
     /*
      * There are two clear cases and that's the <=16MB and anything-goes ones.
-     * When the physical address limit is somewhere inbetween those two we'll
+     * When the physical address limit is somewhere in-between those two we'll
      * just have to try, starting with HIGHUSER and working our way thru the
      * different types, hoping we'll get lucky.
      *
@@ -797,7 +809,7 @@ int rtR0MemObjNativeLockUser(PPRTR0MEMOBJINTERNAL ppMem, RTR3PTR R3Ptr, size_t c
         /*
          * Get user pages.
          */
-        rc = get_user_pages(pTask,                  /* Task for fault acounting. */
+        rc = get_user_pages(pTask,                  /* Task for fault accounting. */
                             pTask->mm,              /* Whose pages. */
                             R3Ptr,                  /* Where from. */
                             cPages,                 /* How many pages. */

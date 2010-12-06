@@ -1,4 +1,4 @@
-; $Id: PAEand32Bit.mac 28800 2010-04-27 08:22:32Z vboxsync $
+; $Id: PAEand32Bit.mac 33935 2010-11-10 15:37:02Z vboxsync $
 ;; @file
 ; VMM - World Switchers, template for PAE and 32-Bit.
 ;
@@ -21,6 +21,7 @@
 ;* Header Files                                                                *
 ;*******************************************************************************
 %include "VBox/asmdefs.mac"
+%include "VBox/apic.mac"
 %include "VBox/x86.mac"
 %include "VBox/cpum.mac"
 %include "VBox/stam.mac"
@@ -136,6 +137,64 @@ BEGINPROC vmmR0HostToGuestAsm
     pushfd
     pop     dword [edx + CPUMCPU.Host.eflags]
 
+    ; Block Local APIC NMI vectors
+    xor     edi, edi
+
+%ifdef VBOX_WITH_VMMR0_DISABLE_LAPIC_NMI
+    mov     esi, edx
+    CPUM_FROM_CPUMCPU(edx)
+    mov     ebx, [edx + CPUM.pvApicBase]
+    or      ebx, ebx
+    jz      htg_noapic
+    mov     eax, [ebx + APIC_REG_LVT_LINT0]
+    mov     ecx, eax
+    and     ecx, (APIC_REG_LVT_MASKED | APIC_REG_LVT_MODE_MASK)
+    cmp     ecx, APIC_REG_LVT_MODE_NMI
+    jne     htg_nolint0
+    or      edi, 0x01
+    or      eax, APIC_REG_LVT_MASKED
+    mov     [ebx + APIC_REG_LVT_LINT0], eax
+    mov     eax, [ebx + APIC_REG_LVT_LINT0] ; write completion
+htg_nolint0:
+    mov     eax, [ebx + APIC_REG_LVT_LINT1]
+    mov     ecx, eax
+    and     ecx, (APIC_REG_LVT_MASKED | APIC_REG_LVT_MODE_MASK)
+    cmp     ecx, APIC_REG_LVT_MODE_NMI
+    jne     htg_nolint1
+    or      edi, 0x02
+    or      eax, APIC_REG_LVT_MASKED
+    mov     [ebx + APIC_REG_LVT_LINT1], eax
+    mov     eax, [ebx + APIC_REG_LVT_LINT1] ; write completion
+htg_nolint1:
+    mov     eax, [ebx + APIC_REG_LVT_PC]
+    mov     ecx, eax
+    and     ecx, (APIC_REG_LVT_MASKED | APIC_REG_LVT_MODE_MASK)
+    cmp     ecx, APIC_REG_LVT_MODE_NMI
+    jne     htg_nopc
+    or      edi, 0x04
+    or      eax, APIC_REG_LVT_MASKED
+    mov     [ebx + APIC_REG_LVT_PC], eax
+    mov     eax, [ebx + APIC_REG_LVT_PC] ; write completion
+htg_nopc:
+    mov     eax, [ebx + APIC_REG_VERSION]
+    shr     eax, 16
+    cmp     al, 5
+    jb      htg_notherm
+    mov     eax, [ebx + APIC_REG_LVT_THMR]
+    mov     ecx, eax
+    and     ecx, (APIC_REG_LVT_MASKED | APIC_REG_LVT_MODE_MASK)
+    cmp     ecx, APIC_REG_LVT_MODE_NMI
+    jne     htg_notherm
+    or      edi, 0x08
+    or      eax, APIC_REG_LVT_MASKED
+    mov     [ebx + APIC_REG_LVT_THMR], eax
+    mov     eax, [ebx + APIC_REG_LVT_THMR] ; write completion
+htg_notherm:
+    mov     [edx + CPUM.fApicDisVectors], edi
+htg_noapic:
+    mov     edx, esi
+%endif
+
     FIXUP FIX_NO_SYSENTER_JMP, 0, htg_no_sysenter - NAME(Start) ; this will insert a jmp htg_no_sysenter if host doesn't use sysenter.
     ; save MSR_IA32_SYSENTER_CS register.
     mov     ecx, MSR_IA32_SYSENTER_CS
@@ -198,7 +257,7 @@ htg_debug_regs_no:
     ;
     and     eax, X86_CR4_MCE | X86_CR4_PSE | X86_CR4_PAE | X86_CR4_VMXE
     mov     ecx, [edx + CPUMCPU.Guest.cr4]
-    ;; @todo Switcher cleanup: Determin base CR4 during CPUMR0Init / VMMR3SelectSwitcher putting it
+    ;; @todo Switcher cleanup: Determine base CR4 during CPUMR0Init / VMMR3SelectSwitcher putting it
     ;                          in CPUMCPU.Hyper.cr4 (which isn't currently being used). That should
     ;                          simplify this operation a bit (and improve locality of the data).
 
@@ -837,7 +896,7 @@ GLOBALNAME HCExitTarget
     and     al, 0F8h                                ; mask away TI and RPL bits, get descriptor offset.
     add     eax, [edx + CPUMCPU.Host.gdtr + 2]         ; eax <- GDTR.address + descriptor offset.
     mov     ecx, [eax + 4]                          ; ecx <- 2nd descriptor dword
-    mov     ebx, ecx                                ; save orginal value
+    mov     ebx, ecx                                ; save original value
     and     ecx, ~0200h                             ; clear busy flag (2nd type2 bit)
     mov     [eax + 4], ecx                          ; not using xchg here is paranoia..
     ltr     word [edx + CPUMCPU.Host.tr]
@@ -918,7 +977,7 @@ ALIGNCODE(16)
 gth_fpu_no:
 
     ; Control registers.
-    ; Would've liked to have these highere up in case of crashes, but
+    ; Would've liked to have these higher up in case of crashes, but
     ; the fpu stuff must be done before we restore cr0.
     mov     ecx, [edx + CPUMCPU.Host.cr4]
     mov     cr4, ecx
@@ -933,6 +992,31 @@ gth_fpu_no:
     jz short gth_debug_regs_no
     jmp     gth_debug_regs_restore
 gth_debug_regs_no:
+
+%ifdef VBOX_WITH_VMMR0_DISABLE_LAPIC_NMI
+    mov     esi, edx
+    CPUM_FROM_CPUMCPU(edx)
+    ; Restore blocked Local APIC NMI vectors
+    mov     ebx, [edx + CPUM.pvApicBase]
+    mov     ecx, [edx + CPUM.fApicDisVectors]
+    mov     edx, esi
+    shr     ecx, 1
+    jnc     gth_nolint0
+    and     dword [ebx + APIC_REG_LVT_LINT0], ~APIC_REG_LVT_MASKED
+gth_nolint0:
+    shr     ecx, 1
+    jnc     gth_nolint1
+    and     dword [ebx + APIC_REG_LVT_LINT1], ~APIC_REG_LVT_MASKED
+gth_nolint1:
+    shr     ecx, 1
+    jnc     gth_nopc
+    and     dword [ebx + APIC_REG_LVT_PC], ~APIC_REG_LVT_MASKED
+gth_nopc:
+    shr     ecx, 1
+    jnc     gth_notherm
+    and     dword [ebx + APIC_REG_LVT_THMR], ~APIC_REG_LVT_MASKED
+gth_notherm:
+%endif
 
     ; restore general registers.
     mov     eax, edi                    ; restore return code. eax = return code !!

@@ -1,10 +1,10 @@
 #! /bin/sh
-# Sun VirtualBox
-# Linux Additions kernel module init script ($Revision: 29016 $)
+#
+# Linux Additions kernel module init script ($Revision: 32388 $)
 #
 
 #
-# Copyright (C) 2006-2009 Oracle Corporation
+# Copyright (C) 2006-2010 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -30,9 +30,10 @@
 
 PATH=$PATH:/bin:/sbin:/usr/sbin
 PACKAGE=VBoxGuestAdditions
-BUILDVBOXGUEST=`/bin/ls /usr/src/vboxguest*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
-BUILDVBOXSF=`/bin/ls /usr/src/vboxsf*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
-BUILDVBOXVIDEO=`/bin/ls /usr/src/vboxvideo*/build_in_tmp 2>/dev/null|cut -d' ' -f1`
+BUILDVBOXGUEST=`/bin/ls /usr/src/vboxguest*/vboxguest/build_in_tmp 2>/dev/null|cut -d' ' -f1`
+BUILDVBOXSF=`/bin/ls /usr/src/vboxguest*/vboxsf/build_in_tmp 2>/dev/null|cut -d' ' -f1`
+BUILDVBOXVIDEO=`/bin/ls /usr/src/vboxvideo*/vboxvideo/build_in_tmp 2>/dev/null|cut -d' ' -f1`
+DODKMS=`/bin/ls /usr/src/vboxguest*/do_dkms 2>/dev/null|cut -d' ' -f1`
 LOG="/var/log/vboxadd-install.log"
 MODPROBE=/sbin/modprobe
 
@@ -166,6 +167,26 @@ dev=/dev/vboxguest
 userdev=/dev/vboxuser
 owner=vboxadd
 group=1
+
+test_sane_kernel_dir()
+{
+    KERN_VER=`uname -r`
+    KERN_DIR="/lib/modules/$KERN_VER/build"
+    if [ -d "$KERN_DIR" ]; then
+        KERN_REL=`make -sC $KERN_DIR --no-print-directory kernelrelease 2>/dev/null || true`
+        if [ -z "$KERN_REL" -o "x$KERN_REL" = "x$KERN_VER" ]; then
+            return 0
+        fi
+    fi
+    printf "\nThe headers for the current running kernel were not found. If the following\nmodule compilation fails then this could be the reason.\n"
+    if [ "$system" = "redhat" ]; then
+        printf "The missing package can be probably installed with\nyum install kernel-devel-$KERN_VER\n"
+    elif [ "$system" = "suse" ]; then
+        printf "The missing package can be probably installed with\nzypper install kernel-$KERN_VER\n"
+    elif [ "$system" = "debian" ]; then
+        printf "The missing package can be probably installed with\napt-get install linux-headers-$KERN_VER\n"
+    fi
+}
 
 fail()
 {
@@ -308,6 +329,9 @@ restart()
 setup()
 {
     # don't stop the old modules here -- they might be in use
+    begin "Uninstalling old VirtualBox DKMS kernel modules"
+    $DODKMS uninstall > $LOG
+    succ_msg
     if find /lib/modules/`uname -r` -name "vboxvideo\.*" 2>/dev/null|grep -q vboxvideo; then
         begin "Removing old VirtualBox vboxvideo kernel module"
         find /lib/modules/`uname -r` -name "vboxvideo\.*" 2>/dev/null|xargs rm -f 2>/dev/null
@@ -324,42 +348,53 @@ setup()
         succ_msg
     fi
     begin "Building the VirtualBox Guest Additions kernel modules"
+    test_sane_kernel_dir
+
     if ! sh /usr/share/$PACKAGE/test/build_in_tmp \
-        --no-dkms --no-print-directory > $LOG 2>&1; then
-        fail "`printf "Your system does not seem to be set up to build kernel modules.\nLook at $LOG to find out what went wrong"`"
+        --no-print-directory >> $LOG 2>&1; then
+        fail_msg
+        printf "Your system does not seem to be set up to build kernel modules.\nLook at $LOG to find out what went wrong.  Once you have corrected it, you can\nrun\n\n  /etc/init.d/vboxadd setup\n\nto build them."
+        BUILDVBOXGUEST=""
+        BUILDVBOXSF=""
+        BUILDVBOXVIDEO=""
+    else
+        if ! sh /usr/share/$PACKAGE/test_drm/build_in_tmp \
+            --no-print-directory >> $LOG 2>&1; then
+            printf "\nYour guest system does not seem to have sufficient OpenGL support to enable\naccelerated 3D effects (this requires Linux 2.6.27 or later in the guest\nsystem).  This Guest Additions feature will be disabled.\n\n"
+            BUILDVBOXVIDEO=""
+        fi
     fi
     echo
-    if ! sh /usr/share/$PACKAGE/test_drm/build_in_tmp \
-        --no-dkms --no-print-directory >> $LOG 2>&1; then
-        printf "\nYour guest system does not seem to have sufficient OpenGL support to enable\naccelerated 3D effects (this requires Linux 2.6.27 or later in the guest\nsystem).  This Guest Additions feature will be disabled.\n\n"
-        BUILDVBOXVIDEO=""
-    fi
-    begin "Building the main Guest Additions module"
-    if ! $BUILDVBOXGUEST \
-        --save-module-symvers /tmp/vboxguest-Module.symvers \
-        --no-print-directory install >> $LOG 2>&1; then
-        fail "Look at $LOG to find out what went wrong"
-    fi
-    succ_msg
-    if [ -n "$BUILDVBOXSF" ]; then
-        begin "Building the shared folder support module"
-        if ! $BUILDVBOXSF \
-            --use-module-symvers /tmp/vboxguest-Module.symvers \
-            --no-print-directory install >> $LOG 2>&1; then
-            fail "Look at $LOG to find out what went wrong"
+    if ! $DODKMS install >> $LOG 2>&1; then
+        if [ -n "$BUILDVBOXGUEST" ]; then
+            begin "Building the main Guest Additions module"
+            if ! $BUILDVBOXGUEST \
+                --save-module-symvers /tmp/vboxguest-Module.symvers \
+                --no-print-directory install >> $LOG 2>&1; then
+                fail "Look at $LOG to find out what went wrong"
+            fi
+            succ_msg
         fi
-        succ_msg
-    fi
-    if [ -n "$BUILDVBOXVIDEO" ]; then
-        begin "Building the OpenGL support module"
-        if ! $BUILDVBOXVIDEO \
-            --use-module-symvers /tmp/vboxguest-Module.symvers \
-            --no-print-directory install >> $LOG 2>&1; then
-            fail "Look at $LOG to find out what went wrong"
+        if [ -n "$BUILDVBOXSF" ]; then
+            begin "Building the shared folder support module"
+            if ! $BUILDVBOXSF \
+                --use-module-symvers /tmp/vboxguest-Module.symvers \
+                --no-print-directory install >> $LOG 2>&1; then
+                fail "Look at $LOG to find out what went wrong"
+            fi
+            succ_msg
         fi
-        succ_msg
+        if [ -n "$BUILDVBOXVIDEO" ]; then
+            begin "Building the OpenGL support module"
+            if ! $BUILDVBOXVIDEO \
+                --use-module-symvers /tmp/vboxguest-Module.symvers \
+                --no-print-directory install >> $LOG 2>&1; then
+                fail "Look at $LOG to find out what went wrong"
+            fi
+            succ_msg
+        fi
+        depmod
     fi
-    depmod
 
     begin "Doing non-kernel setup of the Guest Additions"
     echo "Creating user for the Guest Additions." >> $LOG
@@ -368,6 +403,11 @@ setup()
     useradd -d /var/run/vboxadd -g 1 -r -s /bin/false vboxadd >/dev/null 2>&1
     # And for the others, we choose a UID ourselves
     useradd -d /var/run/vboxadd -g 1 -u 501 -o -s /bin/false vboxadd >/dev/null 2>&1
+
+    # Add a group "vboxsf" for Shared Folders access
+    # All users which want to access the auto-mounted Shared Folders have to
+    # be added to this group.
+    groupadd -f vboxsf >/dev/null 2>&1
 
     # Create udev description file
     if [ -d /etc/udev/rules.d ]; then
@@ -402,10 +442,12 @@ setup()
     chcon -u system_u -t mount_exec_t "$lib_path/$PACKAGE/mount.vboxsf" > /dev/null 2>&1
 
     succ_msg
-    if running_vboxguest || running_vboxadd; then
-        printf "You should restart your guest to make sure the new modules are actually used\n\n"
-    else
-        start
+    if [ -n "$BUILDVBOXGUEST" ]; then
+        if running_vboxguest || running_vboxadd; then
+            printf "You should restart your guest to make sure the new modules are actually used\n\n"
+        else
+            start
+        fi
     fi
 }
 

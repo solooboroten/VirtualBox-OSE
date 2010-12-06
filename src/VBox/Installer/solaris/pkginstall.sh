@@ -1,13 +1,14 @@
 #!/bin/sh
 ## @file
-# Sun VirtualBox - VirtualBox postinstall script for Solaris.
+#
+# VirtualBox postinstall script for Solaris.
 #
 # If you just installed VirtualBox using IPS/pkg(5), you should run this
 # script once to avoid rebooting the system before using VirtualBox.
 #
 
 #
-# Copyright (C) 2009 Oracle Corporation
+# Copyright (C) 2009-2010 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -28,14 +29,15 @@ else
     ISIPS=""
 fi
 
-/opt/VirtualBox/vboxconfig.sh --preremove --fatal "$ISIPS"
+# If PKG_INSTALL_ROOT is undefined or NULL, redefine to '/' and carry on.
+${PKG_INSTALL_ROOT:=/}/opt/VirtualBox/vboxconfig.sh --preremove --fatal "$ISIPS"
 
 if test "$?" -eq 0; then
     echo "Installing new ones..."
-    /opt/VirtualBox/vboxconfig.sh --postinstall
+    $PKG_INSTALL_ROOT/opt/VirtualBox/vboxconfig.sh --postinstall
     rc=$?
     if test "$rc" -ne 0; then
-        echo "Completed but with errors."
+        echo 1>&2 "## Completed but with errors."
         rc=1
     else
         if test "$1" != "--srv4"; then
@@ -43,7 +45,7 @@ if test "$?" -eq 0; then
         fi
     fi
 else
-    echo "## ERROR!! Failed to remove older/partially installed bits."
+    echo 1>&2 "## ERROR!! Failed to remove older/partially installed bits."
     rc=1
 fi
 

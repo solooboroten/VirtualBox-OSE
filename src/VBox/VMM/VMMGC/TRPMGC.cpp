@@ -1,4 +1,4 @@
-/* $Id: TRPMGC.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: TRPMGC.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * TRPM - The Trap Monitor, Guest Context
  */
@@ -100,7 +100,7 @@ VMMRCDECL(void) TRPMGCHyperReturnToHost(PVM pVM, int rc)
  * @param   pvFault     The fault address (cr2).
  * @param   pvRange     The base address of the handled virtual range.
  * @param   offRange    The offset of the access into this range.
- *                      (If it's a EIP range this's the EIP, if not it's pvFault.)
+ *                      (If it's a EIP range this is the EIP, if not it's pvFault.)
  */
 VMMRCDECL(int) trpmRCGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
 {
@@ -162,7 +162,7 @@ VMMRCDECL(int) trpmRCGuestIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTX
  * @param   pvFault     The fault address (cr2).
  * @param   pvRange     The base address of the handled virtual range.
  * @param   offRange    The offset of the access into this range.
- *                      (If it's a EIP range this's the EIP, if not it's pvFault.)
+ *                      (If it's a EIP range this is the EIP, if not it's pvFault.)
  */
 VMMRCDECL(int) trpmRCShadowIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
 {
@@ -174,7 +174,8 @@ VMMRCDECL(int) trpmRCShadowIDTWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCT
      * to simply ignore the writes and pretend success.
      */
     RTGCPTR PC;
-    int rc = SELMValidateAndConvertCSAddr(pVM, pRegFrame->eflags, pRegFrame->ss, pRegFrame->cs, &pRegFrame->csHid, (RTGCPTR)pRegFrame->eip, &PC);
+    int rc = SELMValidateAndConvertCSAddr(pVM, pRegFrame->eflags, pRegFrame->ss, pRegFrame->cs, &pRegFrame->csHid,
+                                          (RTGCPTR)pRegFrame->eip, &PC);
     if (rc == VINF_SUCCESS)
     {
         DISCPUSTATE Cpu;

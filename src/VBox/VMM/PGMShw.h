@@ -1,4 +1,4 @@
-/* $Id: PGMShw.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: PGMShw.h 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * VBox - Page Manager / Monitor, Shadow Paging Template.
  */
@@ -78,10 +78,10 @@
 # define SHW_POOL_ROOT_IDX      PGMPOOL_IDX_NESTED_ROOT      /* do not use! exception is real mode & protected mode without paging. */
 
 #else
-# define SHWPT                  X86PTPAE
-# define PSHWPT                 PX86PTPAE
-# define SHWPTE                 X86PTEPAE
-# define PSHWPTE                PX86PTEPAE
+# define SHWPT                  PGMSHWPTPAE
+# define PSHWPT                 PPGMSHWPTPAE
+# define SHWPTE                 PGMSHWPTEPAE
+# define PSHWPTE                PPGMSHWPTEPAE
 # define SHWPD                  X86PDPAE
 # define PSHWPD                 PX86PDPAE
 # define SHWPDE                 X86PDEPAE
@@ -122,7 +122,7 @@ PGM_SHW_DECL(int, Exit)(PVMCPU pVCpu);
 
 /* all */
 PGM_SHW_DECL(int, GetPage)(PVMCPU pVCpu, RTGCPTR GCPtr, uint64_t *pfFlags, PRTHCPHYS pHCPhys);
-PGM_SHW_DECL(int, ModifyPage)(PVMCPU pVCpu, RTGCPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask);
+PGM_SHW_DECL(int, ModifyPage)(PVMCPU pVCpu, RTGCPTR GCPtr, size_t cb, uint64_t fFlags, uint64_t fMask, uint32_t fOpFlags);
 RT_C_DECLS_END
 
 
@@ -187,12 +187,14 @@ PGM_SHW_DECL(int, Enter)(PVMCPU pVCpu, bool fIs64BitsPagingMode)
     PVM          pVM       = pVCpu->pVMR3;
     PPGMPOOL     pPool     = pVM->pgm.s.CTX_SUFF(pPool);
 
-    Assert(HWACCMIsNestedPagingActive(pVM));
+    Assert(HWACCMIsNestedPagingActive(pVM) == pVM->pgm.s.fNestedPaging);
+    Assert(pVM->pgm.s.fNestedPaging);
     Assert(!pVCpu->pgm.s.pShwPageCR3R3);
 
     pgmLock(pVM);
 
-    int rc = pgmPoolAlloc(pVM, GCPhysCR3, PGMPOOLKIND_ROOT_NESTED, PGMPOOL_IDX_NESTED_ROOT, GCPhysCR3 >> PAGE_SHIFT, &pNewShwPageCR3, true /* lock page */);
+    int rc = pgmPoolAllocEx(pVM, GCPhysCR3, PGMPOOLKIND_ROOT_NESTED, PGMPOOLACCESS_DONTCARE, PGMPOOL_IDX_NESTED_ROOT,
+                            GCPhysCR3 >> PAGE_SHIFT, true /*fLockPage*/, &pNewShwPageCR3);
     AssertFatalRC(rc);
 
     pVCpu->pgm.s.iShwUser      = PGMPOOL_IDX_NESTED_ROOT;
@@ -215,7 +217,7 @@ PGM_SHW_DECL(int, Enter)(PVMCPU pVCpu, bool fIs64BitsPagingMode)
  *
  * @returns VBox status code.
  * @param   pVCpu       The VMCPU to operate on.
- * @param   offDelta    The reloation offset.
+ * @param   offDelta    The relocation offset.
  */
 PGM_SHW_DECL(int, Relocate)(PVMCPU pVCpu, RTGCPTR offDelta)
 {
@@ -244,8 +246,12 @@ PGM_SHW_DECL(int, Exit)(PVMCPU pVCpu)
 
         pgmLock(pVM);
 
-        /* Mark the page as unlocked; allow flushing again. */
-        pgmPoolUnlockPage(pPool, pVCpu->pgm.s.CTX_SUFF(pShwPageCR3));
+        /* Do *not* unlock this page as we have two of them floating around in the 32-bit host & 64-bit guest case.
+         * We currently assert when you try to free one of them; don't bother to really allow this.
+         *
+         * Note that this is two nested paging root pages max. This isn't a leak. They are reused.
+         */
+        /* pgmPoolUnlockPage(pPool, pVCpu->pgm.s.CTX_SUFF(pShwPageCR3)); */
 
         pgmPoolFreeByPage(pPool, pVCpu->pgm.s.CTX_SUFF(pShwPageCR3), pVCpu->pgm.s.iShwUser, pVCpu->pgm.s.iShwUserTable);
         pVCpu->pgm.s.pShwPageCR3R3 = 0;

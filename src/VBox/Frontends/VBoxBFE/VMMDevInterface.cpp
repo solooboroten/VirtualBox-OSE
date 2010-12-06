@@ -1,4 +1,4 @@
-/* $Id: VMMDevInterface.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VMMDevInterface.cpp 33758 2010-11-04 10:30:19Z vboxsync $ */
 /** @file
  * VBox frontends: Basic Frontend (BFE):
  * Implementation of VMMDev: driver interface to VMM device
@@ -56,7 +56,7 @@
 typedef struct DRVMAINVMMDEV
 {
     /** Pointer to the VMMDev object. */
-    VMMDev                     *pVMMDev;
+    VMMDev                      *pVMMDev;
     /** Pointer to the driver instance structure. */
     PPDMDRVINS                  pDrvIns;
     /** Pointer to the VMMDev port interface of the driver/device above us. */
@@ -107,14 +107,27 @@ PPDMIVMMDEVPORT VMMDev::getVMMDevPort()
 
 
 /**
- * Report guest OS version.
+ * Reports Guest Additions status.
+ * Called whenever the Additions issue a guest status report request or the VM is reset.
+ *
+ * @param   pInterface          Pointer to this interface.
+ * @param   guestInfo           Pointer to guest information structure
+ * @thread  The emulation thread.
+ */
+DECLCALLBACK(void) VMMDev::UpdateGuestStatus(PPDMIVMMDEVCONNECTOR pInterface, const VBoxGuestStatus *guestStatus)
+{
+    return;
+}
+
+/**
+ * Report guest information.
  * Called whenever the Additions issue a guest version report request.
  *
  * @param   pInterface          Pointer to this interface.
  * @param   guestInfo           Pointer to guest information structure
  * @thread  The emulation thread.
  */
-DECLCALLBACK(void) VMMDev::UpdateGuestVersion(PPDMIVMMDEVCONNECTOR pInterface, VBoxGuestInfo *guestInfo)
+DECLCALLBACK(void) VMMDev::UpdateGuestInfo(PPDMIVMMDEVCONNECTOR pInterface, const VBoxGuestInfo *guestInfo)
 {
     return;
 }
@@ -142,21 +155,16 @@ DECLCALLBACK(void) VMMDev::UpdateGuestCapabilities(PPDMIVMMDEVCONNECTOR pInterfa
  * @param   newCapabilities     New capabilities.
  * @thread  The emulation thread.
  */
-DECLCALLBACK(void) VMMDev::UpdateMouseCapabilities(PPDMIVMMDEVCONNECTOR pInterface, uint32_t newCapabilities)
+DECLCALLBACK(void) VMMDev::UpdateMouseCapabilities(PPDMIVMMDEVCONNECTOR pInterface, uint32_t fNewCaps)
 {
     /*
      * Tell the console interface about the event so that it can notify its consumers.
      */
 
     if (gMouse)
-    {
-        gMouse->onVMMDevCanAbsChange(!!(newCapabilities & VMMDEV_MOUSE_GUEST_CAN_ABSOLUTE));
-        gMouse->onVMMDevNeedsHostChange(!!(newCapabilities & VMMDEV_MOUSE_GUEST_NEEDS_HOST_CURSOR));
-    }
+        gMouse->onVMMDevGuestCapsChange(fNewCaps & VMMDEV_MOUSE_GUEST_MASK);
     if (gConsole)
-    {
         gConsole->resetCursor();
-    }
 }
 
 
@@ -233,6 +241,16 @@ DECLCALLBACK(int) VMMDev::GetHeightReduction(PPDMIVMMDEVCONNECTOR pInterface, ui
         return VERR_INVALID_PARAMETER;
     /* XXX hard-coded */
     *heightReduction = 18;
+    return VINF_SUCCESS;
+}
+
+DECLCALLBACK(int) VMMDev::QueryBalloonSize(PPDMIVMMDEVCONNECTOR pInterface, uint32_t *pu32BalloonSize)
+{
+    PDRVMAINVMMDEV pDrv = PDMIVMMDEVCONNECTOR_2_MAINVMMDEV(pInterface);
+    (void)pDrv;
+
+    AssertPtr(pu32BalloonSize);
+    *pu32BalloonSize = 0;
     return VINF_SUCCESS;
 }
 
@@ -374,7 +392,8 @@ DECLCALLBACK(int) VMMDev::drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uint3
      */
     pDrvIns->IBase.pfnQueryInterface            = VMMDev::drvQueryInterface;
 
-    pData->Connector.pfnUpdateGuestVersion      = VMMDev::UpdateGuestVersion;
+    pData->Connector.pfnUpdateGuestStatus       = VMMDev::UpdateGuestStatus;
+    pData->Connector.pfnUpdateGuestInfo         = VMMDev::UpdateGuestInfo;
     pData->Connector.pfnUpdateGuestCapabilities = VMMDev::UpdateGuestCapabilities;
     pData->Connector.pfnUpdateMouseCapabilities = VMMDev::UpdateMouseCapabilities;
     pData->Connector.pfnUpdatePointerShape      = VMMDev::UpdatePointerShape;
@@ -384,6 +403,7 @@ DECLCALLBACK(int) VMMDev::drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uint3
     pData->Connector.pfnGetHeightReduction      = VMMDev::GetHeightReduction;
     pData->Connector.pfnSetVisibleRegion        = iface_SetVisibleRegion;
     pData->Connector.pfnQueryVisibleRegion      = iface_QueryVisibleRegion;
+    pData->Connector.pfnQueryBalloonSize        = VMMDev::QueryBalloonSize;
 
 #ifdef VBOX_WITH_HGCM
     if (fActivateHGCM())

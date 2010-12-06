@@ -1,4 +1,4 @@
-/* $Id: thread-posix.cpp 29250 2010-05-09 17:53:58Z vboxsync $ */
+/* $Id: thread-posix.cpp 34628 2010-12-02 17:00:04Z vboxsync $ */
 /** @file
  * IPRT - Threads, POSIX.
  */
@@ -56,8 +56,8 @@
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
 #ifndef IN_GUEST
-/** The signal we're using for RTThreadPoke. */
-# define RTTHREAD_POSIX_POKE_SIG    SIGUSR2
+/** Includes RTThreadPoke. */
+# define RTTHREAD_POSIX_WITH_POKE
 #endif
 
 
@@ -66,9 +66,10 @@
 *******************************************************************************/
 /** The pthread key in which we store the pointer to our own PRTTHREAD structure. */
 static pthread_key_t    g_SelfKey;
-#ifdef RTTHREAD_POSIX_POKE_SIG
-/** Set if we can poke a thread, clear if we cannot. */
-static bool             g_fCanPokeThread;
+#ifdef RTTHREAD_POSIX_WITH_POKE
+/** The signal we use for poking threads.
+ * This is set to -1 if no available signal was found. */
+static int              g_iSigPokeThread = -1;
 #endif
 
 
@@ -90,37 +91,52 @@ int rtThreadNativeInit(void)
     if (rc)
         return VERR_NO_TLS_FOR_SELF;
 
-#ifdef RTTHREAD_POSIX_POKE_SIG
+#ifdef RTTHREAD_POSIX_WITH_POKE
     /*
      * Try register the dummy signal handler for RTThreadPoke.
+     * Avoid SIGRTMIN thru SIGRTMIN+2 because of LinuxThreads.
      */
-    g_fCanPokeThread = false;
-    struct sigaction SigActOld;
-    if (!sigaction(RTTHREAD_POSIX_POKE_SIG, NULL, &SigActOld))
+    static const int s_aiSigCandidates[] =
     {
-        if (   SigActOld.sa_handler == SIG_DFL
-            || SigActOld.sa_handler == rtThreadPosixPokeSignal)
-        {
-            struct sigaction SigAct;
-            memset(&SigAct, '\0', sizeof(SigAct));
-            SigAct.sa_handler = rtThreadPosixPokeSignal;
-            sigfillset(&SigAct.sa_mask);
-            SigAct.sa_flags = 0;
+# ifdef SIGRTMAX
+        SIGRTMAX-3,
+        SIGRTMAX-2,
+        SIGRTMAX-1,
+# endif
+# ifndef RT_OS_SOLARIS
+        SIGUSR2,
+# endif
+        SIGWINCH
+    };
 
-            /* ASSUMES no sigaction race... (lazy bird) */
-            if (!sigaction(RTTHREAD_POSIX_POKE_SIG, &SigAct, NULL))
-                g_fCanPokeThread = true;
-            else
+    g_iSigPokeThread = -1;
+    for (unsigned iSig = 0; iSig < RT_ELEMENTS(s_aiSigCandidates); iSig++)
+    {
+        struct sigaction SigActOld;
+        if (!sigaction(s_aiSigCandidates[iSig], NULL, &SigActOld))
+        {
+            if (   SigActOld.sa_handler == SIG_DFL
+                || SigActOld.sa_handler == rtThreadPosixPokeSignal)
             {
+                struct sigaction SigAct;
+                RT_ZERO(SigAct);
+                SigAct.sa_handler = rtThreadPosixPokeSignal;
+                SigAct.sa_flags   = 0;
+                sigfillset(&SigAct.sa_mask);
+
+                /* ASSUMES no sigaction race... (lazy bird) */
+                if (!sigaction(s_aiSigCandidates[iSig], &SigAct, NULL))
+                {
+                    g_iSigPokeThread = s_aiSigCandidates[iSig];
+                    break;
+                }
                 AssertMsgFailed(("rc=%Rrc errno=%d\n", RTErrConvertFromErrno(errno), errno));
-                pthread_key_delete(g_SelfKey);
-                g_SelfKey = 0;
             }
         }
+        else
+            AssertMsgFailed(("rc=%Rrc errno=%d\n", RTErrConvertFromErrno(errno), errno));
     }
-    else
-        AssertMsgFailed(("rc=%Rrc errno=%d\n", RTErrConvertFromErrno(errno), errno));
-#endif /* RTTHREAD_POSIX_POKE_SIG */
+#endif /* RTTHREAD_POSIX_WITH_POKE */
     return rc;
 }
 
@@ -144,7 +160,7 @@ static void rtThreadKeyDestruct(void *pvValue)
 }
 
 
-#ifdef RTTHREAD_POSIX_POKE_SIG
+#ifdef RTTHREAD_POSIX_WITH_POKE
 /**
  * Dummy signal handler for the poke signal.
  *
@@ -152,7 +168,7 @@ static void rtThreadKeyDestruct(void *pvValue)
  */
 static void rtThreadPosixPokeSignal(int iSignal)
 {
-    Assert(iSignal == RTTHREAD_POSIX_POKE_SIG);
+    Assert(iSignal == g_iSigPokeThread);
     NOREF(iSignal);
 }
 #endif
@@ -175,15 +191,22 @@ int rtThreadNativeAdopt(PRTTHREADINT pThread)
     sigemptyset(&SigSet);
     sigaddset(&SigSet, SIGALRM);
     sigprocmask(SIG_BLOCK, &SigSet, NULL);
-#ifdef RTTHREAD_POSIX_POKE_SIG
-    if (g_fCanPokeThread)
-        siginterrupt(RTTHREAD_POSIX_POKE_SIG, 1);
+#ifdef RTTHREAD_POSIX_WITH_POKE
+    if (g_iSigPokeThread != -1)
+        siginterrupt(g_iSigPokeThread, 1);
 #endif
 
     int rc = pthread_setspecific(g_SelfKey, pThread);
     if (!rc)
         return VINF_SUCCESS;
     return VERR_FAILED_TO_SET_SELF_TLS;
+}
+
+
+void rtThreadNativeDestroy(PRTTHREADINT pThread)
+{
+    if (pThread == (PRTTHREADINT)pthread_getspecific(g_SelfKey))
+        pthread_setspecific(g_SelfKey, NULL);
 }
 
 
@@ -211,9 +234,9 @@ static void *rtThreadNativeMain(void *pvArgs)
     sigemptyset(&SigSet);
     sigaddset(&SigSet, SIGALRM);
     sigprocmask(SIG_BLOCK, &SigSet, NULL);
-#ifdef RTTHREAD_POSIX_POKE_SIG
-    if (g_fCanPokeThread)
-        siginterrupt(RTTHREAD_POSIX_POKE_SIG, 1);
+#ifdef RTTHREAD_POSIX_WITH_POKE
+    if (g_iSigPokeThread != -1)
+        siginterrupt(g_iSigPokeThread, 1);
 #endif
 
     int rc = pthread_setspecific(g_SelfKey, pThread);
@@ -366,16 +389,17 @@ RTR3DECL(int) RTThreadSetAffinity(uint64_t u64Mask)
 }
 
 
-#ifdef RTTHREAD_POSIX_POKE_SIG
+#ifdef RTTHREAD_POSIX_WITH_POKE
 RTDECL(int) RTThreadPoke(RTTHREAD hThread)
 {
     AssertReturn(hThread != RTThreadSelf(), VERR_INVALID_PARAMETER);
     PRTTHREADINT pThread = rtThreadGet(hThread);
     AssertReturn(pThread, VERR_INVALID_HANDLE);
+
     int rc;
-    if (g_fCanPokeThread)
+    if (g_iSigPokeThread != -1)
     {
-        rc = pthread_kill((pthread_t)(uintptr_t)pThread->Core.Key, RTTHREAD_POSIX_POKE_SIG);
+        rc = pthread_kill((pthread_t)(uintptr_t)pThread->Core.Key, g_iSigPokeThread);
         rc = RTErrConvertFromErrno(rc);
     }
     else
@@ -386,3 +410,18 @@ RTDECL(int) RTThreadPoke(RTTHREAD hThread)
 }
 #endif
 
+RTR3DECL(int) RTThreadGetExecutionTimeMilli(uint64_t *pKernelTime, uint64_t *pUserTime)
+{
+#ifndef RT_OS_DARWIN
+    struct timespec ts;
+    int rc = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    if (rc)
+        return RTErrConvertFromErrno(rc);
+
+    *pKernelTime = 0;
+    *pUserTime = (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    return VINF_SUCCESS;
+#else
+    return VERR_NOT_IMPLEMENTED;
+#endif
+}

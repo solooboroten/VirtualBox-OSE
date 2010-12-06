@@ -19,13 +19,14 @@
  */
 
 /*
- * Sun GPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle GPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the General Public License version 2 (GPLv2) at this time for any software where
  * a choice of GPL license versions is made available with the language indicating
  * that GPLv2 or any later version may be used, or where a choice of which version
  * of the GPL is applied is otherwise unspecified.
  */
+
 #define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
@@ -2209,7 +2210,7 @@ void test_sse_comi(double a1, double b1)
 }
 
 /* Force %xmm0 usage to avoid the case where both register index are 0
-   to test intruction decoding more extensively */
+   to test instruction decoding more extensively */
 #define CVT_OP_XMM2MMX(op)\
 {\
     asm volatile (#op " %1, %0" : "=y" (r.q[0]) : "x" (a.dq) \

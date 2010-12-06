@@ -72,7 +72,9 @@ class UIImportApplianceWzd : public QIWizard
 
 public:
 
-    UIImportApplianceWzd(QWidget *pParent);
+    UIImportApplianceWzd(const QString &strFile = "", QWidget *pParent = 0);
+
+    bool isValid() const;
 
 protected:
 

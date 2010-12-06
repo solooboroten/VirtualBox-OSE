@@ -1,6 +1,6 @@
-/* $Id: RTStrCopyEx.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: RTStrCopyEx.cpp 33678 2010-11-02 10:30:46Z vboxsync $ */
 /** @file
- * IPRT - RTStrCopy.
+ * IPRT - RTStrCopyEx.
  */
 
 /*
@@ -34,7 +34,7 @@
 
 RTDECL(int) RTStrCopyEx(char *pszDst, size_t cbDst, const char *pszSrc, size_t cchMaxSrc)
 {
-    const char *pszSrcEol = (const char *)memchr(pszSrc, '\0', cchMaxSrc);
+    const char *pszSrcEol = RTStrEnd(pszSrc, cchMaxSrc);
     size_t      cchSrc    = pszSrcEol ? (size_t)(pszSrcEol - pszSrc) : cchMaxSrc;
     if (RT_LIKELY(cchSrc < cbDst))
     {

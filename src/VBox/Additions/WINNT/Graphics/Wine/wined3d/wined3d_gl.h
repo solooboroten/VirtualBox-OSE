@@ -44,8 +44,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -1841,6 +1841,10 @@ typedef enum wined3d_gl_extension
     /* WGL extensions */
     WGL_ARB_PIXEL_FORMAT,
     WGL_WINE_PIXEL_FORMAT_PASSTHROUGH,
+
+#ifdef VBOX_WITH_WDDM
+    VBOX_SHARED_CONTEXTS,
+#endif
     /* Internally used */
     WINE_NORMALIZED_TEXRECT,
 
@@ -3768,6 +3772,18 @@ typedef BOOL (WINAPI *WINED3D_PFNWGLCHOOSEPIXELFORMATARBPROC)(HDC hdc, const int
 typedef BOOL (WINAPI *WINED3D_PFNWGLSETPIXELFORMATWINE)(HDC hdc, int iPixelFormat,
         const PIXELFORMATDESCRIPTOR *ppfd);
 
+#ifdef VBOX_WITH_WDDM
+#define GL_SHARE_CONTEXT_RESOURCES_CR 0x8B27
+typedef void (WINE_GLAPI *PGLFNCHROMIUMPARAMETERUCR)(GLenum param, GLint value);
+
+# define VBOXWDDM_GL_EXT_FUNCS_GEN \
+        USE_GL_FUNC(PGLFNCHROMIUMPARAMETERUCR, \
+                glChromiumParameteriCR,                VBOX_SHARED_CONTEXTS,            NULL) \
+
+#else
+# define VBOXWDDM_GL_EXT_FUNCS_GEN
+#endif
+
 #define GL_EXT_FUNCS_GEN \
     /* GL_APPLE_fence */ \
     USE_GL_FUNC(PGLFNGENFENCESAPPLEPROC, \
@@ -4493,7 +4509,8 @@ typedef BOOL (WINAPI *WINED3D_PFNWGLSETPIXELFORMATWINE)(HDC hdc, int iPixelForma
     USE_GL_FUNC(PGLXFNGETVIDEOSYNCSGIPROC, \
             glXGetVideoSyncSGI,                         SGI_VIDEO_SYNC,                 NULL) \
     USE_GL_FUNC(PGLXFNWAITVIDEOSYNCSGIPROC, \
-            glXWaitVideoSyncSGI,                        SGI_VIDEO_SYNC,                 NULL)
+            glXWaitVideoSyncSGI,                        SGI_VIDEO_SYNC,                 NULL) \
+    VBOXWDDM_GL_EXT_FUNCS_GEN
 
 #define WGL_EXT_FUNCS_GEN \
     USE_GL_FUNC(WINED3D_PFNWGLGETEXTENSIONSSTRINGARBPROC,       wglGetExtensionsStringARB,      0, NULL) \

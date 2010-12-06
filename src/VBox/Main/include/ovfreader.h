@@ -1,4 +1,4 @@
-/* $Id: ovfreader.h 29925 2010-05-31 18:33:15Z vboxsync $ */
+/* $Id: ovfreader.h 34501 2010-11-30 12:30:30Z vboxsync $ */
 /** @file
  * OVF reader declarations.
  *
@@ -33,7 +33,8 @@ namespace ovf
 ////////////////////////////////////////////////////////////////////////////////
 
 enum CIMOSType_T
-{   CIMOSType_CIMOS_Unknown = 0,
+{
+    CIMOSType_CIMOS_Unknown = 0,
     CIMOSType_CIMOS_Other   = 1,
     CIMOSType_CIMOS_MACOS   = 2,
     CIMOSType_CIMOS_ATTUNIX = 3,
@@ -135,7 +136,16 @@ enum CIMOSType_T
     CIMOSType_CIMOS_Linux_2_6_x = 99,
     CIMOSType_CIMOS_Linux_2_6_x_64  = 100,
     CIMOSType_CIMOS_Linux_64    = 101,
-    CIMOSType_CIMOS_Other_64    = 102
+    CIMOSType_CIMOS_Other_64    = 102,
+    // types added with CIM 2.25.0 follow:
+    CIMOSType_CIMOS_WindowsServer2008R2 = 103,
+    CIMOSType_CIMOS_VMwareESXi = 104,
+    CIMOSType_CIMOS_Windows7 = 105,
+    CIMOSType_CIMOS_CentOS = 106,
+    CIMOSType_CIMOS_CentOS_64 = 107,
+    CIMOSType_CIMOS_OracleEnterpriseLinux = 108,
+    CIMOSType_CIMOS_OracleEnterpriseLinux_64 = 109,
+    CIMOSType_CIMOS_eComStation = 110
 };
 
 
@@ -215,7 +225,7 @@ struct VirtualHardwareItem
                                         // package shall be deployed on the same network. The abstract network connection name shall be
                                         // listed in the NetworkSection at the outermost envelope level." We ignore this and only set up
                                         // a network adapter depending on the network name.
-    iprt::MiniString strAddress;                 // "Device-specific. For an Ethernet adapter, this specifies the MAC address."
+    iprt::MiniString strAddress;        // "Device-specific. For an Ethernet adapter, this specifies the MAC address."
     int32_t lAddress;                   // strAddress as an integer, if applicable.
     iprt::MiniString strAddressOnParent;         // "For a device, this specifies its location on the controller."
     iprt::MiniString strAllocationUnits;         // "Specifies the units of allocation used. For example, “byte * 2^20”."
@@ -314,6 +324,8 @@ struct VirtualSystem
 
     CIMOSType_T         cimos;
     iprt::MiniString    strCimosDesc;           // readable description of the cimos type in the case of cimos = 0/1/102
+    iprt::MiniString    strTypeVbox;            // optional type from @vbox:ostype attribute (VirtualBox 4.0 or higher)
+
     iprt::MiniString    strVirtualSystemType;   // generic hardware description; OVF says this can be something like "vmx-4" or "xen";
                                                 // VMware Workstation 6.5 is "vmx-07"
 
@@ -350,7 +362,8 @@ struct VirtualSystem
                         *pelmVboxMachine;
 
     VirtualSystem()
-        : ullMemorySize(0),
+        : cimos(CIMOSType_CIMOS_Unknown),
+          ullMemorySize(0),
           cCPUs(1),
           fHasFloppyDrive(false),
           fHasCdromDrive(false),
@@ -392,6 +405,7 @@ struct VirtualSystem
 class OVFReader
 {
 public:
+    OVFReader(const void *pvBuf, size_t cbSize, const iprt::MiniString &path);
     OVFReader(const iprt::MiniString &path);
 
     // Data fields
@@ -402,6 +416,7 @@ public:
 private:
     xml::Document               m_doc;
 
+    void parse();
     void LoopThruSections(const xml::ElementNode *pReferencesElem, const xml::ElementNode *pCurElem);
     void HandleDiskSection(const xml::ElementNode *pReferencesElem, const xml::ElementNode *pSectionElem);
     void HandleNetworkSection(const xml::ElementNode *pSectionElem);

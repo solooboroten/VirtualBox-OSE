@@ -21,8 +21,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -46,6 +46,10 @@
 
 #include "d3d9.h"
 #include "wine/wined3d.h"
+
+#ifdef VBOX_WITH_WDDM
+#include "../vbox/VBoxWineEx.h"
+#endif
 
 /* ===========================================================================
    Internal use
@@ -315,7 +319,12 @@ typedef struct IDirect3DSurface9Impl
 
 HRESULT surface_init(IDirect3DSurface9Impl *surface, IDirect3DDevice9Impl *device,
         UINT width, UINT height, D3DFORMAT format, BOOL lockable, BOOL discard, UINT level,
-        DWORD usage, D3DPOOL pool, D3DMULTISAMPLE_TYPE multisample_type, DWORD multisample_quality) DECLSPEC_HIDDEN;
+        DWORD usage, D3DPOOL pool, D3DMULTISAMPLE_TYPE multisample_type, DWORD multisample_quality
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        ) DECLSPEC_HIDDEN;
 
 /* ---------------------- */
 /* IDirect3DVertexBuffer9 */
@@ -404,7 +413,12 @@ typedef struct IDirect3DCubeTexture9Impl
 }  IDirect3DCubeTexture9Impl;
 
 HRESULT cubetexture_init(IDirect3DCubeTexture9Impl *texture, IDirect3DDevice9Impl *device,
-        UINT edge_length, UINT levels, DWORD usage, D3DFORMAT format, D3DPOOL pool) DECLSPEC_HIDDEN;
+        UINT edge_length, UINT levels, DWORD usage, D3DFORMAT format, D3DPOOL pool
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        ) DECLSPEC_HIDDEN;
 
 /* ----------------- */
 /* IDirect3DTexture9 */
@@ -427,7 +441,12 @@ typedef struct IDirect3DTexture9Impl
 } IDirect3DTexture9Impl;
 
 HRESULT texture_init(IDirect3DTexture9Impl *texture, IDirect3DDevice9Impl *device,
-        UINT width, UINT height, UINT levels, DWORD usage, D3DFORMAT format, D3DPOOL pool) DECLSPEC_HIDDEN;
+        UINT width, UINT height, UINT levels, DWORD usage, D3DFORMAT format, D3DPOOL pool
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        ) DECLSPEC_HIDDEN;
 
 /* ----------------------- */
 /* IDirect3DVolumeTexture9 */

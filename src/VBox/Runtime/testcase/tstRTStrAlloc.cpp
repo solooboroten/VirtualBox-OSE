@@ -1,6 +1,6 @@
-/* $Id: tstRTStrAlloc.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: tstRTStrAlloc.cpp 33285 2010-10-21 09:41:51Z vboxsync $ */
 /** @file
- * IPRT Testcase - String allocation APIs and related manimuplators.
+ * IPRT Testcase - String allocation APIs and related manipulators.
  */
 
 /*
@@ -42,7 +42,7 @@ static void tst1(void)
 {
     RTTestISub("Basics");
     char *psz;
-    int rc;
+    int rc = VINF_SUCCESS;
 
     /* RTStrAlloc */
     RTTESTI_CHECK(psz = RTStrAlloc(0));

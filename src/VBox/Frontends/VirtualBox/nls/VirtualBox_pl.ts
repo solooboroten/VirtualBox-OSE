@@ -666,61 +666,61 @@
     </message>
     <message>
         <source>Enter &amp;Fullscreen Mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Włącz &amp;tryb pełnoekranowy</translation>
     </message>
     <message>
         <source>Exit &amp;Fullscreen Mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Opuść &amp;tryb pełnoekranowy</translation>
     </message>
     <message>
         <source>Switch to normal mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Przełącza do trybu normalnego</translation>
     </message>
     <message>
         <source>Enter Seam&amp;less Mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Włącz t&amp;ryb zintegrowany</translation>
     </message>
     <message>
         <source>Exit Seam&amp;less Mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Opuść t&amp;ryb zintegrowany</translation>
     </message>
     <message>
         <source>Enable &amp;Guest Display Auto-resize</source>
-        <translation type="unfinished"></translation>
+        <translation>Włącz automatyczne skalowanie ekranu &amp;gościa</translation>
     </message>
     <message>
         <source>Disable &amp;Guest Display Auto-resize</source>
-        <translation type="unfinished"></translation>
+        <translation>Wyłącz automatyczne skalowanie ekranu &amp;gościa</translation>
     </message>
     <message>
         <source>Disable automatic resize of the guest display when the window is resized</source>
-        <translation type="unfinished"></translation>
+        <translation>Wyłącza skalowanie ekranu gościa przy zmianie rozmiaru okna</translation>
     </message>
     <message>
         <source>&amp;Enable Remote Display</source>
-        <translation type="unfinished"></translation>
+        <translation>Włącz &amp;zdalny pulpit</translation>
     </message>
     <message>
         <source>Enable remote desktop (RDP) connections to this machine</source>
-        <translation type="unfinished"></translation>
+        <translation>Włącza zdalne połączenia RDP do tej maszyny</translation>
     </message>
     <message>
         <source>&amp;Disable Remote Display</source>
-        <translation type="unfinished"></translation>
+        <translation>Wyłącz &amp;zdalny pulpit</translation>
     </message>
     <message>
         <source>Disable remote desktop (RDP) connections to this machine</source>
-        <translation type="unfinished"></translation>
+        <translation>Wyłącza zdalne połączenia RDP do tej maszyny</translation>
     </message>
     <message>
         <source>Enable &amp;Logging...</source>
         <comment>debug action</comment>
-        <translation type="unfinished"></translation>
+        <translation>Włącz &amp;logowanie...</translation>
     </message>
     <message>
         <source>Disable &amp;Logging...</source>
         <comment>debug action</comment>
-        <translation type="unfinished"></translation>
+        <translation>Wyłącz &amp;logowanie...</translation>
     </message>
 </context>
 <context>
@@ -2274,7 +2274,7 @@ Będzie ona używana przez wszystkie moduły VirtualBox, aby móc rozróżnić t
     </message>
     <message>
         <source>Boot Hard &amp;Disk</source>
-        <translation type="unfinished"></translation>
+        <translation>Startowy &amp;dysk twardy</translation>
     </message>
 </context>
 <context>
@@ -2551,7 +2551,7 @@ Wersja %1</translation>
     </message>
     <message>
         <source>Hard Disk Controller (SAS)</source>
-        <translation type="unfinished"></translation>
+        <translation>Kontroler dysków SAS</translation>
     </message>
 </context>
 <context>
@@ -3731,7 +3731,7 @@ Wersja %1</translation>
     </message>
 </context>
 <context>
-    <name>VBoxGLSettingsGeneral</name>
+    <name>UIGlobalSettingsGeneral</name>
     <message>
         <source>Displays the path to the default VDI folder. This folder is used, if not explicitly specified otherwise, when adding existing or creating new virtual hard disks.</source>
         <translation type="obsolete">Zawiera ścieżkę do domyślnego katalogu z obrazami dysków VDI. Katalog ten będzie użyty w przypadku, gdy nie zostanie wybrany inny podczas dodawania istniejących bądź tworzenia nowych wirtualnych dysków twardych.</translation>
@@ -3809,7 +3809,7 @@ Wersja %1</translation>
     </message>
 </context>
 <context>
-    <name>VBoxGLSettingsLanguage</name>
+    <name>UIGlobalSettingsLanguage</name>
     <message>
         <source> (built-in)</source>
         <comment>Language</comment>
@@ -3864,7 +3864,7 @@ Wersja %1</translation>
     </message>
 </context>
 <context>
-    <name>VBoxGLSettingsNetwork</name>
+    <name>UIGlobalSettingsNetwork</name>
     <message>
         <source>%1 network</source>
         <comment>&lt;adapter name&gt; network</comment>
@@ -4009,7 +4009,7 @@ Wersja %1</translation>
     </message>
 </context>
 <context>
-    <name>VBoxGLSettingsNetworkDetails</name>
+    <name>UIGlobalSettingsNetworkDetails</name>
     <message>
         <source>Host-only Network Details</source>
         <translation>Szczegóły sieci izolowanej (host-only)</translation>
@@ -4104,7 +4104,7 @@ Wersja %1</translation>
     </message>
 </context>
 <context>
-    <name>VBoxGLSettingsUpdate</name>
+    <name>UIGlobalSettingsUpdate</name>
     <message>
         <source>When checked, the application will periodically connect to the VirtualBox website and check whether a new VirtualBox version is available.</source>
         <translation>Po zaznaczeniu tej opcji aplikacja będzie okresowo łączyć się ze stroną internetową VirtualBox i sprawdzać, czy jest dostępna nowa wersja VirtualBox.</translation>
@@ -5478,12 +5478,12 @@ Wersja %1</translation>
     <message>
         <source>Unknown device</source>
         <comment>USB device details</comment>
-        <translation type="unfinished"></translation>
+        <translation>Nieznane urządzenie</translation>
     </message>
     <message>
         <source>SAS Port %1</source>
         <comment>New Storage UI : Slot Name</comment>
-        <translation type="unfinished"></translation>
+        <translation>Port SAS %1</translation>
     </message>
 </context>
 <context>
@@ -7462,7 +7462,7 @@ języka ustawiony jako domyślny dla systemu.&lt;/qt&gt;
     </message>
 </context>
 <context>
-    <name>VBoxProgressDialog</name>
+    <name>UIProgressDialog</name>
     <message>
         <source>&amp;Cancel</source>
         <translation>&amp;Anuluj</translation>
@@ -7922,12 +7922,12 @@ języka ustawiony jako domyślny dla systemu.&lt;/qt&gt;
     <message>
         <source>&amp;File</source>
         <comment>Mac OS X version</comment>
-        <translation type="unfinished">&amp;Plik</translation>
+        <translation>&amp;Plik</translation>
     </message>
     <message>
         <source>&amp;File</source>
         <comment>Non Mac OS X version</comment>
-        <translation type="unfinished">&amp;Plik</translation>
+        <translation>&amp;Plik</translation>
     </message>
 </context>
 <context>
@@ -8871,7 +8871,7 @@ Puste pole sprawi, że filtr zadziała dla jakiejkolwiek wartości.&lt;/qt&gt;</
     </message>
 </context>
 <context>
-    <name>VBoxVMListView</name>
+    <name>UIVMListView</name>
     <message>
         <source>Inaccessible</source>
         <translation>Niedostępna</translation>
@@ -9232,7 +9232,7 @@ Puste pole sprawi, że filtr zadziała dla jakiejkolwiek wartości.&lt;/qt&gt;</
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsAudio</name>
+    <name>UIMachineSettingsAudio</name>
     <message>
         <source>When checked, a virtual PCI audio card will be plugged into the virtual machine and will communicate with the host audio system using the specified driver.</source>
         <translation>Podłącza wirtualną kartę dźwiękową PCI do maszyny wirtualnej przy użyciu wybranego z listy sterownika, umożliwiającego komunikację z kartą dźwiękową gospodarza.</translation>
@@ -9318,7 +9318,7 @@ Puste pole sprawi, że filtr zadziała dla jakiejkolwiek wartości.&lt;/qt&gt;</
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsDisplay</name>
+    <name>UIMachineSettingsDisplay</name>
     <message>
         <source>you have assigned less than &lt;b&gt;%1&lt;/b&gt; of video memory which is the minimum amount required to switch the virtual machine to fullscreen or seamless mode.</source>
         <translation>przydzielono mniej niż &lt;b&gt;%1&lt;/b&gt; pamięci wideo, co jest minimum wymaganym aby przełączyć maszynę wirtualną do trybu pełnoekranowego lub zintegrowanego.</translation>
@@ -10405,7 +10405,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsGeneral</name>
+    <name>UIMachineSettingsGeneral</name>
     <message>
         <source>&lt;qt&gt;%1&amp;nbsp;MB&lt;/qt&gt;</source>
         <translation type="obsolete">&lt;qt&gt;%1&amp;nbsp;MB&lt;/qt&gt;</translation>
@@ -10636,7 +10636,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsHD</name>
+    <name>UIMachineSettingsStorage</name>
     <message>
         <source>No hard disk is selected for &lt;i&gt;%1&lt;/i&gt;</source>
         <translation type="obsolete">Nie wybrano dysku twardego dla &lt;i&gt;%1&lt;/i&gt;</translation>
@@ -10935,7 +10935,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsNetwork</name>
+    <name>UIMachineSettingsNetwork</name>
     <message>
         <source>Select TAP setup application</source>
         <translation type="obsolete">Wybierz aplikację (skrypt) konfigurującą interfejs sieciowy TAP</translation>
@@ -11106,7 +11106,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsNetworkDetails</name>
+    <name>UIMachineSettingsNetworkDetails</name>
     <message>
         <source>no bridged network adapter is selected</source>
         <translation type="obsolete">nie wybrano karty sieci mostkowanej</translation>
@@ -11193,14 +11193,14 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsNetworkPage</name>
+    <name>UIMachineSettingsNetworkPage</name>
     <message>
         <source>Internal network name is not set</source>
         <translation type="obsolete">Nazwa sieci wewnętrznej nie została ustawiona</translation>
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsParallel</name>
+    <name>UIMachineSettingsParallel</name>
     <message>
         <source>Port %1</source>
         <comment>parallel ports</comment>
@@ -11256,7 +11256,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsParallelPage</name>
+    <name>UIMachineSettingsParallelPage</name>
     <message>
         <source>Duplicate port number selected </source>
         <translation>Wybrano powtarzający się numer portu </translation>
@@ -11271,7 +11271,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsSF</name>
+    <name>UIMachineSettingsSF</name>
     <message>
         <source>&amp;Add New Shared Folder</source>
         <translation type="obsolete">&amp;Dodaj nowy współdzielony katalog</translation>
@@ -11350,7 +11350,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsSFDetails</name>
+    <name>UIMachineSettingsSFDetails</name>
     <message>
         <source>Add Share</source>
         <translation>Dodaje współdzielony katalog</translation>
@@ -11389,7 +11389,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsSerial</name>
+    <name>UIMachineSettingsSerial</name>
     <message>
         <source>Port %1</source>
         <comment>serial ports</comment>
@@ -11465,7 +11465,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsSerialPage</name>
+    <name>UIMachineSettingsSerialPage</name>
     <message>
         <source>Duplicate port number selected </source>
         <translation>Wybrano powtarzający się numer portu </translation>
@@ -11480,7 +11480,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsSystem</name>
+    <name>UIMachineSettingsSystem</name>
     <message>
         <source>you have assigned more than &lt;b&gt;%1%&lt;/b&gt; of your computer&apos;s memory (&lt;b&gt;%2&lt;/b&gt;) to the virtual machine. Not enough memory is left for your host operating system. Please select a smaller amount.</source>
         <translation>maszynie wirtualnej przydzielono więcej niż &lt;b&gt;%1%&lt;/b&gt; pamięci tego komputera (&lt;b&gt;%2&lt;/b&gt;). Nie pozostało dość pamięci dla systemu operacyjnego gospodarza. Proszę wybrać mniejszy rozmiar.</translation>
@@ -11649,7 +11649,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsUSB</name>
+    <name>UIMachineSettingsUSB</name>
     <message>
         <source>&amp;Add Empty Filter</source>
         <translation>Dodaj &amp;pusty filtr</translation>
@@ -11733,7 +11733,7 @@ makes the guest see an audio card, however every access to it will be ignored.&l
     </message>
 </context>
 <context>
-    <name>VBoxVMSettingsUSBFilterDetails</name>
+    <name>UIMachineSettingsUSBFilterDetails</name>
     <message>
         <source>Any</source>
         <comment>remote</comment>

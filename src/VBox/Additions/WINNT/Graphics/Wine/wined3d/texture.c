@@ -23,8 +23,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -440,7 +440,12 @@ static const IWineD3DTextureVtbl IWineD3DTexture_Vtbl =
 
 HRESULT texture_init(IWineD3DTextureImpl *texture, UINT width, UINT height, UINT levels,
         IWineD3DDeviceImpl *device, DWORD usage, WINED3DFORMAT format, WINED3DPOOL pool,
-        IUnknown *parent, const struct wined3d_parent_ops *parent_ops)
+        IUnknown *parent, const struct wined3d_parent_ops *parent_ops
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        )
 {
     const struct wined3d_gl_info *gl_info = &device->adapter->gl_info;
     const struct wined3d_format_desc *format_desc = getFormatDescEntry(format, gl_info);
@@ -507,7 +512,11 @@ HRESULT texture_init(IWineD3DTextureImpl *texture, UINT width, UINT height, UINT
     texture->lpVtbl = &IWineD3DTexture_Vtbl;
 
     hr = basetexture_init((IWineD3DBaseTextureImpl *)texture, levels, WINED3DRTYPE_TEXTURE,
-            device, 0, usage, format_desc, pool, parent, parent_ops);
+            device, 0, usage, format_desc, pool, parent, parent_ops
+#ifdef VBOX_WITH_WDDM
+            , shared_handle, pvClientMem
+#endif
+        );
     if (FAILED(hr))
     {
         WARN("Failed to initialize basetexture, returning %#x.\n", hr);
@@ -576,9 +585,21 @@ HRESULT texture_init(IWineD3DTextureImpl *texture, UINT width, UINT height, UINT
     tmp_h = height;
     for (i = 0; i < texture->baseTexture.levels; ++i)
     {
+#ifdef VBOX_WITH_WDDM
+        /* Use the callback to create the texture surface. */
+        hr = IWineD3DDeviceParent_CreateSurface(device->device_parent, parent, tmp_w, tmp_h, format_desc->format,
+                usage, pool, i, WINED3DCUBEMAP_FACE_POSITIVE_X, &texture->surfaces[i]
+                , NULL /* <- we first create a surface in an everage "non-shared" fashion and initialize its share properties later (see below)
+                        * this is done this way because the surface does not have its parent (texture) setup properly
+                        * thus we can not initialize texture at this stage */
+                , pvClientMem);
+
+#else
         /* Use the callback to create the texture surface. */
         hr = IWineD3DDeviceParent_CreateSurface(device->device_parent, parent, tmp_w, tmp_h, format_desc->format,
                 usage, pool, i, WINED3DCUBEMAP_FACE_POSITIVE_X, &texture->surfaces[i]);
+#endif
+
         if (FAILED(hr))
         {
             FIXME("Failed to create surface %p, hr %#x\n", texture, hr);
@@ -595,6 +616,45 @@ HRESULT texture_init(IWineD3DTextureImpl *texture, UINT width, UINT height, UINT
         tmp_h = max(1, tmp_h >> 1);
     }
     texture->baseTexture.internal_preload = texture_internal_preload;
+
+#ifdef VBOX_WITH_WDDM
+    if (VBOXSHRC_IS_SHARED(texture))
+    {
+        Assert(shared_handle);
+        VBOXSHRC_SET_INITIALIZED(texture);
+        for (i = 0; i < texture->baseTexture.levels; ++i)
+        {
+            VBOXSHRC_COPY_SHAREDATA((IWineD3DSurfaceImpl*)texture->surfaces[i], texture);
+        }
+#ifdef DEBUG
+        for (i = 0; i < texture->baseTexture.levels; ++i)
+        {
+            Assert(!((IWineD3DSurfaceImpl*)texture->surfaces[i])->texture_name);
+        }
+#endif
+        IWineD3DSurface_LoadLocation(texture->surfaces[0], SFLAG_INTEXTURE, NULL);
+        if (!VBOXSHRC_IS_SHARED_OPENED(texture))
+        {
+            Assert(!(*shared_handle));
+            *shared_handle = VBOXSHRC_GET_SHAREHANDLE(texture);
+        }
+        else
+        {
+            Assert(*shared_handle);
+            Assert(*shared_handle == VBOXSHRC_GET_SHAREHANDLE(texture));
+        }
+#ifdef DEBUG
+        for (i = 0; i < texture->baseTexture.levels; ++i)
+        {
+            Assert((*shared_handle) == ((IWineD3DSurfaceImpl*)texture->surfaces[i])->texture_name);
+        }
+#endif
+    }
+    else
+    {
+        Assert(!shared_handle);
+    }
+#endif
 
     return WINED3D_OK;
 }

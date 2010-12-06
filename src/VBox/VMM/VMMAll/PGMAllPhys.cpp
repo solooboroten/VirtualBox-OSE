@@ -1,4 +1,4 @@
-/* $Id: PGMAllPhys.cpp 29250 2010-05-09 17:53:58Z vboxsync $ */
+/* $Id: PGMAllPhys.cpp 33771 2010-11-04 14:56:18Z vboxsync $ */
 /** @file
  * PGM - Page Manager and Monitor, Physical Memory Addressing.
  */
@@ -53,7 +53,7 @@
  * \#PF Handler callback for physical memory accesses without a RC/R0 handler.
  * This simply pushes everything to the HC handler.
  *
- * @returns VBox status code (appropritate for trap handling and GC return).
+ * @returns VBox status code (appropriate for trap handling and GC return).
  * @param   pVM         VM Handle.
  * @param   uErrorCode  CPU Error code.
  * @param   pRegFrame   Trap register frame.
@@ -71,7 +71,7 @@ VMMDECL(int) pgmPhysHandlerRedirectToHC(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCO
  * \#PF Handler callback for Guest ROM range write access.
  * We simply ignore the writes or fall back to the recompiler if we don't support the instruction.
  *
- * @returns VBox status code (appropritate for trap handling and GC return).
+ * @returns VBox status code (appropriate for trap handling and GC return).
  * @param   pVM         VM Handle.
  * @param   uErrorCode  CPU Error code.
  * @param   pRegFrame   Trap register frame.
@@ -109,7 +109,7 @@ VMMDECL(int) pgmPhysRomWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE p
                      * adding this kind of detection to DIS or EM. */
                     case OP_MOV:
                         pRegFrame->rip += cbOp;
-                        STAM_COUNTER_INC(&pVCpu->pgm.s.StatRZGuestROMWriteHandled);
+                        STAM_COUNTER_INC(&pVCpu->pgm.s.CTX_SUFF(pStats)->StatRZGuestROMWriteHandled);
                         return VINF_SUCCESS;
                 }
             }
@@ -135,7 +135,7 @@ VMMDECL(int) pgmPhysRomWriteHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE p
                                   VERR_INTERNAL_ERROR);
     }
 
-    STAM_COUNTER_INC(&pVCpu->pgm.s.StatRZGuestROMWriteUnhandled);
+    STAM_COUNTER_INC(&pVCpu->pgm.s.CTX_SUFF(pStats)->StatRZGuestROMWriteUnhandled);
     return VINF_EM_RAW_EMULATE_INSTR;
 }
 
@@ -220,7 +220,7 @@ VMMDECL(int) PGMPhysGCPhys2HCPhys(PVM pVM, RTGCPHYS GCPhys, PRTHCPHYS pHCPhys)
 VMMDECL(void) PGMPhysInvalidatePageMapTLB(PVM pVM)
 {
     pgmLock(pVM);
-    STAM_COUNTER_INC(&pVM->pgm.s.StatPageMapTlbFlushes);
+    STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->StatPageMapTlbFlushes);
     /* Clear the shared R0/R3 TLB completely. */
     for (unsigned i = 0; i < RT_ELEMENTS(pVM->pgm.s.PhysTlbHC.aEntries); i++)
     {
@@ -229,7 +229,7 @@ VMMDECL(void) PGMPhysInvalidatePageMapTLB(PVM pVM)
         pVM->pgm.s.PhysTlbHC.aEntries[i].pMap = 0;
         pVM->pgm.s.PhysTlbHC.aEntries[i].pv = 0;
     }
-    /* @todo clear the RC TLB whenever we add it. */
+    /** @todo clear the RC TLB whenever we add it. */
     pgmUnlock(pVM);
 }
 
@@ -243,7 +243,7 @@ VMMDECL(void) PGMPhysInvalidatePageMapTLBEntry(PVM pVM, RTGCPHYS GCPhys)
 {
     Assert(PGMIsLocked(pVM));
 
-    STAM_COUNTER_INC(&pVM->pgm.s.StatPageMapTlbFlushEntry);
+    STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->StatPageMapTlbFlushEntry);
     /* Clear the shared R0/R3 TLB entry. */
 #ifdef IN_RC
     unsigned idx = PGM_PAGER3MAPTLB_IDX(GCPhys);
@@ -385,11 +385,21 @@ int pgmPhysAllocPage(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys)
     if (    PGMIsUsingLargePages(pVM)
         &&  PGM_PAGE_GET_TYPE(pPage) == PGMPAGETYPE_RAM)
     {
-        int rc = pgmPhysAllocLargePage(pVM, GCPhys);
-        if (rc == VINF_SUCCESS)
-            return rc;
+        RTGCPHYS GCPhysBase = GCPhys & X86_PDE2M_PAE_PG_MASK;
+        PPGMPAGE pBasePage;
 
-        /* fall back to 4kb pages. */
+        int rc = pgmPhysGetPageEx(&pVM->pgm.s, GCPhysBase, &pBasePage);
+        AssertRCReturn(rc, rc);     /* paranoia; can't happen. */
+        if (PGM_PAGE_GET_PDE_TYPE(pBasePage) == PGM_PAGE_PDE_TYPE_DONTCARE)
+        {
+            rc = pgmPhysAllocLargePage(pVM, GCPhys);
+            if (rc == VINF_SUCCESS)
+                return rc;
+        }
+        /* Mark the base as type page table, so we don't check over and over again. */
+        PGM_PAGE_SET_PDE_TYPE(pBasePage, PGM_PAGE_PDE_TYPE_PT);
+
+        /* fall back to 4KB pages. */
     }
 # endif
 
@@ -398,7 +408,7 @@ int pgmPhysAllocPage(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys)
      * When VBOX_WITH_NEW_LAZY_PAGE_ALLOC isn't defined, there shouldn't be any.
      */
     bool fFlushTLBs = false;
-    int rc = pgmPoolTrackFlushGCPhys(pVM, GCPhys, pPage, &fFlushTLBs);
+    int rc = pgmPoolTrackUpdateGCPhys(pVM, GCPhys, pPage, true /*fFlushTLBs*/, &fFlushTLBs);
     AssertMsgReturn(rc == VINF_SUCCESS || rc == VINF_PGM_SYNC_CR3, ("%Rrc\n", rc), RT_FAILURE(rc) ? rc : VERR_IPE_UNEXPECTED_STATUS);
 
     /*
@@ -437,13 +447,13 @@ int pgmPhysAllocPage(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys)
 
     if (PGM_PAGE_IS_SHARED(pPage))
     {
+        /* Mark this shared page for freeing/dereferencing. */
         pVM->pgm.s.aHandyPages[iHandyPage].idSharedPage = PGM_PAGE_GET_PAGEID(pPage);
         Assert(PGM_PAGE_GET_PAGEID(pPage) != NIL_GMM_PAGEID);
-        VM_FF_SET(pVM, VM_FF_PGM_NEED_HANDY_PAGES);
 
         Log(("PGM: Replaced shared page %#x at %RGp with %#x / %RHp\n", PGM_PAGE_GET_PAGEID(pPage),
              GCPhys, pVM->pgm.s.aHandyPages[iHandyPage].idPage, HCPhys));
-        STAM_COUNTER_INC(&pVM->pgm.s.CTX_MID_Z(Stat,PageReplaceShared));
+        STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,PageReplaceShared));
         pVM->pgm.s.cSharedPages--;
 
         /* Grab the address of the page so we can make a copy later on. */
@@ -453,9 +463,8 @@ int pgmPhysAllocPage(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys)
     else
     {
         Log2(("PGM: Replaced zero page %RGp with %#x / %RHp\n", GCPhys, pVM->pgm.s.aHandyPages[iHandyPage].idPage, HCPhys));
-        STAM_COUNTER_INC(&pVM->pgm.s.StatRZPageReplaceZero);
+        STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->StatRZPageReplaceZero);
         pVM->pgm.s.cZeroPages--;
-        Assert(pVM->pgm.s.aHandyPages[iHandyPage].idSharedPage == NIL_GMM_PAGEID);
     }
 
     /*
@@ -471,14 +480,13 @@ int pgmPhysAllocPage(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys)
     /* Copy the shared page contents to the replacement page. */
     if (pvSharedPage)
     {
-        void *pvNewPage;
-
         /* Get the virtual address of the new page. */
+        void *pvNewPage;
         rc = pgmPhysGCPhys2CCPtrInternal(pVM, pPage, GCPhys, &pvNewPage);
         AssertRC(rc);
         if (rc == VINF_SUCCESS)
         {
-            /** todo write ASMMemCopy */
+            /** @todo todo write ASMMemCopyPage */
             memcpy(pvNewPage, pvSharedPage, PAGE_SIZE);
         }
     }
@@ -614,7 +622,7 @@ int pgmPhysIsValidLargePage(PVM pVM, RTGCPHYS GCPhys, PPGMPAGE pLargePage)
         return VERR_PGM_INVALID_LARGE_PAGE_RANGE;
     }
 
-    STAM_PROFILE_START(&pVM->pgm.s.CTX_MID_Z(Stat,IsValidLargePage), a);
+    STAM_PROFILE_START(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,IsValidLargePage), a);
     /* Check all remaining pages in the 2 MB range. */
     GCPhys += PAGE_SIZE;
     for (i = 1; i < _2M/PAGE_SIZE; i++)
@@ -634,7 +642,7 @@ int pgmPhysIsValidLargePage(PVM pVM, RTGCPHYS GCPhys, PPGMPAGE pLargePage)
 
         GCPhys += PAGE_SIZE;
     }
-    STAM_PROFILE_STOP(&pVM->pgm.s.CTX_MID_Z(Stat,IsValidLargePage), a);
+    STAM_PROFILE_STOP(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,IsValidLargePage), a);
 
     if (i == _2M/PAGE_SIZE)
     {
@@ -739,17 +747,11 @@ int pgmPhysPageMapByPageID(PVM pVM, uint32_t idPage, RTHCPHYS HCPhys, void **ppv
     const uint32_t idChunk = idPage >> GMM_CHUNKID_SHIFT;
     AssertReturn(idChunk != NIL_GMM_CHUNKID, VERR_INVALID_PARAMETER);
 
-#ifdef IN_RC
+#if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
     /*
      * Map it by HCPhys.
      */
-    return PGMDynMapHCPage(pVM, HCPhys, ppv);
-
-#elif defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
-    /*
-     * Map it by HCPhys.
-     */
-    return pgmR0DynMapHCPageInlined(&pVM->pgm.s, HCPhys, ppv);
+    return pgmRZDynMapHCPageInlined(VMMGetCpu(pVM), HCPhys, ppv  RTLOG_COMMA_SRC_POS);
 
 #else
     /*
@@ -759,12 +761,12 @@ int pgmPhysPageMapByPageID(PVM pVM, uint32_t idPage, RTHCPHYS HCPhys, void **ppv
     PPGMCHUNKR3MAPTLBE pTlbe = &pVM->pgm.s.ChunkR3Map.Tlb.aEntries[PGM_CHUNKR3MAPTLB_IDX(idChunk)];
     if (pTlbe->idChunk == idChunk)
     {
-        STAM_COUNTER_INC(&pVM->pgm.s.CTX_MID_Z(Stat,ChunkR3MapTlbHits));
+        STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,ChunkR3MapTlbHits));
         pMap = pTlbe->pChunk;
     }
     else
     {
-        STAM_COUNTER_INC(&pVM->pgm.s.CTX_MID_Z(Stat,ChunkR3MapTlbMisses));
+        STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,ChunkR3MapTlbMisses));
 
         /*
          * Find the chunk, map it if necessary.
@@ -825,11 +827,7 @@ static int pgmPhysPageMapCommon(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, PPPGMP
     *ppMap = NULL;
     RTHCPHYS HCPhys = PGM_PAGE_GET_HCPHYS(pPage);
     Assert(HCPhys != pVM->pgm.s.HCPhysZeroPg);
-# ifdef VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0
-    pgmR0DynMapHCPageInlined(&pVM->pgm.s, HCPhys, ppv);
-# else
-    PGMDynMapHCPage(pVM, HCPhys, ppv);
-# endif
+    pgmRZDynMapHCPageInlined(VMMGetCpu(pVM), HCPhys, ppv RTLOG_COMMA_SRC_POS);
     return VINF_SUCCESS;
 
 #else /* IN_RING3 || IN_RING0 */
@@ -877,12 +875,12 @@ static int pgmPhysPageMapCommon(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, PPPGMP
     PPGMCHUNKR3MAPTLBE pTlbe = &pVM->pgm.s.ChunkR3Map.Tlb.aEntries[PGM_CHUNKR3MAPTLB_IDX(idChunk)];
     if (pTlbe->idChunk == idChunk)
     {
-        STAM_COUNTER_INC(&pVM->pgm.s.CTX_MID_Z(Stat,ChunkR3MapTlbHits));
+        STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,ChunkR3MapTlbHits));
         pMap = pTlbe->pChunk;
     }
     else
     {
-        STAM_COUNTER_INC(&pVM->pgm.s.CTX_MID_Z(Stat,ChunkR3MapTlbMisses));
+        STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,ChunkR3MapTlbMisses));
 
         /*
          * Find the chunk, map it if necessary.
@@ -1021,10 +1019,9 @@ int pgmPhysPageMapReadOnly(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void const 
 int pgmPhysPageLoadIntoTlb(PPGM pPGM, RTGCPHYS GCPhys)
 {
     Assert(PGMIsLocked(PGM2VM(pPGM)));
-    STAM_COUNTER_INC(&pPGM->CTX_MID_Z(Stat,PageMapTlbMisses));
 
     /*
-     * Find the ram range.
+     * Find the ram range and page and hand it over to the with-page function.
      * 99.8% of requests are expected to be in the first range.
      */
     PPGMRAMRANGE pRam = pPGM->CTX_SUFF(pRamRanges);
@@ -1035,42 +1032,15 @@ int pgmPhysPageLoadIntoTlb(PPGM pPGM, RTGCPHYS GCPhys)
         {
             pRam = pRam->CTX_SUFF(pNext);
             if (!pRam)
+            {
+                STAM_COUNTER_INC(&pPGM->CTX_SUFF(pStats)->CTX_MID_Z(Stat,PageMapTlbMisses));
                 return VERR_PGM_INVALID_GC_PHYSICAL_ADDRESS;
+            }
             off = GCPhys - pRam->GCPhys;
         } while (off >= pRam->cb);
     }
 
-    /*
-     * Map the page.
-     * Make a special case for the zero page as it is kind of special.
-     */
-    PPGMPAGE pPage = &pRam->aPages[off >> PAGE_SHIFT];
-    PPGMPAGEMAPTLBE pTlbe = &pPGM->CTXSUFF(PhysTlb).aEntries[PGM_PAGEMAPTLB_IDX(GCPhys)];
-    if (    !PGM_PAGE_IS_ZERO(pPage)
-        &&  !PGM_PAGE_IS_BALLOONED(pPage))
-    {
-        void *pv;
-        PPGMPAGEMAP pMap;
-        int rc = pgmPhysPageMapCommon(PGM2VM(pPGM), pPage, GCPhys, &pMap, &pv);
-        if (RT_FAILURE(rc))
-            return rc;
-        pTlbe->pMap = pMap;
-        pTlbe->pv = pv;
-        Assert(!((uintptr_t)pTlbe->pv & PAGE_OFFSET_MASK));
-    }
-    else
-    {
-        Assert(PGM_PAGE_GET_HCPHYS(pPage) == pPGM->HCPhysZeroPg);
-        pTlbe->pMap = NULL;
-        pTlbe->pv = pPGM->CTXALLSUFF(pvZeroPg);
-    }
-#ifdef PGM_WITH_PHYS_TLB
-    pTlbe->GCPhys = GCPhys & X86_PTE_PAE_PG_MASK;
-#else
-    pTlbe->GCPhys = NIL_RTGCPHYS;
-#endif
-    pTlbe->pPage  = pPage;
-    return VINF_SUCCESS;
+    return pgmPhysPageLoadIntoTlbWithPage(pPGM, &pRam->aPages[off >> PAGE_SHIFT], GCPhys);
 }
 
 
@@ -1089,7 +1059,7 @@ int pgmPhysPageLoadIntoTlb(PPGM pPGM, RTGCPHYS GCPhys)
 int pgmPhysPageLoadIntoTlbWithPage(PPGM pPGM, PPGMPAGE pPage, RTGCPHYS GCPhys)
 {
     Assert(PGMIsLocked(PGM2VM(pPGM)));
-    STAM_COUNTER_INC(&pPGM->CTX_MID_Z(Stat,PageMapTlbMisses));
+    STAM_COUNTER_INC(&pPGM->CTX_SUFF(pStats)->CTX_MID_Z(Stat,PageMapTlbMisses));
 
     /*
      * Map the page.
@@ -1115,7 +1085,11 @@ int pgmPhysPageLoadIntoTlbWithPage(PPGM pPGM, PPGMPAGE pPage, RTGCPHYS GCPhys)
         pTlbe->pv = pPGM->CTXALLSUFF(pvZeroPg);
     }
 #ifdef PGM_WITH_PHYS_TLB
-    pTlbe->GCPhys = GCPhys & X86_PTE_PAE_PG_MASK;
+    if (    PGM_PAGE_GET_TYPE(pPage) < PGMPAGETYPE_ROM_SHADOW
+        ||  PGM_PAGE_GET_TYPE(pPage) > PGMPAGETYPE_ROM)
+        pTlbe->GCPhys = GCPhys & X86_PTE_PAE_PG_MASK;
+    else
+        pTlbe->GCPhys = NIL_RTGCPHYS; /* ROM: Problematic because of the two pages. :-/ */
 #else
     pTlbe->GCPhys = NIL_RTGCPHYS;
 #endif
@@ -1163,7 +1137,14 @@ int pgmPhysGCPhys2CCPtrInternal(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void *
      * Get the mapping address.
      */
 #if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
-    *ppv = pgmDynMapHCPageOff(&pVM->pgm.s, PGM_PAGE_GET_HCPHYS(pPage) | (GCPhys & PAGE_OFFSET_MASK));
+    void *pv;
+    rc = pgmRZDynMapHCPageInlined(VMMGetCpu(pVM),
+                                  PGM_PAGE_GET_HCPHYS(pPage),
+                                  &pv
+                                  RTLOG_COMMA_SRC_POS);
+    if (RT_FAILURE(rc))
+        return rc;
+    *ppv = (void *)((uintptr_t)pv | (uintptr_t)(GCPhys & PAGE_OFFSET_MASK));
 #else
     PPGMPAGEMAPTLBE pTlbe;
     rc = pgmPhysPageQueryTlbeWithPage(&pVM->pgm.s, pPage, GCPhys, &pTlbe);
@@ -1201,7 +1182,14 @@ int pgmPhysGCPhys2CCPtrInternalReadOnly(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys
      * Get the mapping address.
      */
 #if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
-    *ppv = pgmDynMapHCPageOff(&pVM->pgm.s, PGM_PAGE_GET_HCPHYS(pPage) | (GCPhys & PAGE_OFFSET_MASK)); /** @todo add a read only flag? */
+    void *pv;
+    int rc = pgmRZDynMapHCPageInlined(VMMGetCpu(pVM),
+                                      PGM_PAGE_GET_HCPHYS(pPage),
+                                      &pv
+                                      RTLOG_COMMA_SRC_POS); /** @todo add a read only flag? */
+    if (RT_FAILURE(rc))
+        return rc;
+    *ppv = (void *)((uintptr_t)pv | (uintptr_t)(GCPhys & PAGE_OFFSET_MASK));
 #else
     PPGMPAGEMAPTLBE pTlbe;
     int rc = pgmPhysPageQueryTlbeWithPage(&pVM->pgm.s, pPage, GCPhys, &pTlbe);
@@ -1244,34 +1232,45 @@ int pgmPhysGCPhys2CCPtrInternalReadOnly(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys
  */
 VMMDECL(int) PGMPhysGCPhys2CCPtr(PVM pVM, RTGCPHYS GCPhys, void **ppv, PPGMPAGEMAPLOCK pLock)
 {
-#if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
+    int rc = pgmLock(pVM);
+    AssertRCReturn(rc, rc);
 
+#if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
     /*
      * Find the page and make sure it's writable.
      */
     PPGMPAGE pPage;
-    int rc = pgmPhysGetPageEx(&pVM->pgm.s, GCPhys, &pPage);
+    rc = pgmPhysGetPageEx(&pVM->pgm.s, GCPhys, &pPage);
     if (RT_SUCCESS(rc))
     {
         if (RT_UNLIKELY(PGM_PAGE_GET_STATE(pPage) != PGM_PAGE_STATE_ALLOCATED))
             rc = pgmPhysPageMakeWritable(pVM, pPage, GCPhys);
         if (RT_SUCCESS(rc))
         {
-            *ppv = pgmDynMapHCPageOff(&pVM->pgm.s, PGM_PAGE_GET_HCPHYS(pPage) | (GCPhys & PAGE_OFFSET_MASK)); /** @todo add a read only flag? */
-# if 0
-            pLock->pvMap = 0;
-            pLock->pvPage = pPage;
-# else
-            pLock->u32Dummy = UINT32_MAX;
-# endif
             AssertMsg(rc == VINF_SUCCESS || rc == VINF_PGM_SYNC_CR3 /* not returned */, ("%Rrc\n", rc));
-            rc = VINF_SUCCESS;
+
+            PVMCPU pVCpu = VMMGetCpu(pVM);
+            void  *pv;
+            rc = pgmRZDynMapHCPageInlined(pVCpu,
+                                          PGM_PAGE_GET_HCPHYS(pPage),
+                                          &pv
+                                          RTLOG_COMMA_SRC_POS);
+            if (RT_SUCCESS(rc))
+            {
+                AssertRCSuccess(rc);
+
+                pv = (void *)((uintptr_t)pv | (uintptr_t)(GCPhys & PAGE_OFFSET_MASK));
+                *ppv = pv;
+                pLock->pvPage = pv;
+                pLock->pVCpu  = pVCpu;
+            }
         }
     }
 
 #else  /* IN_RING3 || IN_RING0 */
-    int rc = pgmLock(pVM);
-    AssertRCReturn(rc, rc);
+    /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */
+    /** @todo : This can be dangerous if abused for more than one page; the ring-3 mapping is only valid for ranges that do NOT cross a chunk boundary.   */
+    /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */
 
     /*
      * Query the Physical TLB entry for the page (may fail).
@@ -1324,8 +1323,8 @@ VMMDECL(int) PGMPhysGCPhys2CCPtr(PVM pVM, RTGCPHYS GCPhys, void **ppv, PPGMPAGEM
         }
     }
 
-    pgmUnlock(pVM);
 #endif /* IN_RING3 || IN_RING0 */
+    pgmUnlock(pVM);
     return rc;
 }
 
@@ -1356,34 +1355,44 @@ VMMDECL(int) PGMPhysGCPhys2CCPtr(PVM pVM, RTGCPHYS GCPhys, void **ppv, PPGMPAGEM
  */
 VMMDECL(int) PGMPhysGCPhys2CCPtrReadOnly(PVM pVM, RTGCPHYS GCPhys, void const **ppv, PPGMPAGEMAPLOCK pLock)
 {
-#if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
+    int rc = pgmLock(pVM);
+    AssertRCReturn(rc, rc);
 
+#if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
     /*
      * Find the page and make sure it's readable.
      */
     PPGMPAGE pPage;
-    int rc = pgmPhysGetPageEx(&pVM->pgm.s, GCPhys, &pPage);
+    rc = pgmPhysGetPageEx(&pVM->pgm.s, GCPhys, &pPage);
     if (RT_SUCCESS(rc))
     {
         if (RT_UNLIKELY(PGM_PAGE_IS_MMIO(pPage)))
             rc = VERR_PGM_PHYS_PAGE_RESERVED;
         else
         {
-            *ppv = pgmDynMapHCPageOff(&pVM->pgm.s, PGM_PAGE_GET_HCPHYS(pPage) | (GCPhys & PAGE_OFFSET_MASK)); /** @todo add a read only flag? */
-# if 0
-            pLock->pvMap = 0;
-            pLock->pvPage = pPage;
-# else
-            pLock->u32Dummy = UINT32_MAX;
-# endif
-            AssertMsg(rc == VINF_SUCCESS || rc == VINF_PGM_SYNC_CR3 /* not returned */, ("%Rrc\n", rc));
-            rc = VINF_SUCCESS;
+            PVMCPU pVCpu = VMMGetCpu(pVM);
+            void  *pv;
+            rc = pgmRZDynMapHCPageInlined(pVCpu,
+                                          PGM_PAGE_GET_HCPHYS(pPage),
+                                          &pv
+                                          RTLOG_COMMA_SRC_POS); /** @todo add a read only flag? */
+            if (RT_SUCCESS(rc))
+            {
+                AssertRCSuccess(rc);
+
+                pv = (void *)((uintptr_t)pv | (uintptr_t)(GCPhys & PAGE_OFFSET_MASK));
+                *ppv = pv;
+                pLock->pvPage = pv;
+                pLock->pVCpu  = pVCpu;
+            }
         }
     }
 
 #else  /* IN_RING3 || IN_RING0 */
-    int rc = pgmLock(pVM);
-    AssertRCReturn(rc, rc);
+
+    /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */
+    /** @todo : This can be dangerous if abused for more than one page; the ring-3 mapping is only valid for ranges that do NOT cross a chunk boundary.   */
+    /* !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! */
 
     /*
      * Query the Physical TLB entry for the page (may fail).
@@ -1426,8 +1435,8 @@ VMMDECL(int) PGMPhysGCPhys2CCPtrReadOnly(PVM pVM, RTGCPHYS GCPhys, void const **
         }
     }
 
-    pgmUnlock(pVM);
 #endif /* IN_RING3 || IN_RING0 */
+    pgmUnlock(pVM);
     return rc;
 }
 
@@ -1516,11 +1525,13 @@ VMMDECL(int) PGMPhysGCPtr2CCPtrReadOnly(PVMCPU pVCpu, RTGCPTR GCPtr, void const 
 VMMDECL(void) PGMPhysReleasePageMappingLock(PVM pVM, PPGMPAGEMAPLOCK pLock)
 {
 #if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
-    /* currently nothing to do here. */
-    Assert(pLock->u32Dummy == UINT32_MAX);
-    pLock->u32Dummy = 0;
+    Assert(pLock->pvPage != NULL);
+    Assert(pLock->pVCpu == VMMGetCpu(pVM));
+    PGM_DYNMAP_UNUSED_HINT(pLock->pVCpu, pLock->pvPage);
+    pLock->pVCpu  = NULL;
+    pLock->pvPage = NULL;
 
-#else   /* IN_RING3 */
+#else
     PPGMPAGEMAP pMap       = (PPGMPAGEMAP)pLock->pvMap;
     PPGMPAGE    pPage      = (PPGMPAGE)(pLock->uPageAndType & ~PGMPAGEMAPLOCK_TYPE_MASK);
     bool        fWriteLock = (pLock->uPageAndType & PGMPAGEMAPLOCK_TYPE_MASK) == PGMPAGEMAPLOCK_TYPE_WRITE;
@@ -1628,7 +1639,7 @@ VMMDECL(int) PGMPhysGCPhys2R3Ptr(PVM pVM, RTGCPHYS GCPhys, RTUINT cbRange, PRTR3
  *
  * @returns The R3Ptr, NIL_RTR3PTR on failure.
  * @param   pVM         The VM handle.
- * @param   GCPhys      The GC Physical addresss.
+ * @param   GCPhys      The GC Physical address.
  * @param   cbRange     Physical range.
  *
  * @deprecated  Avoid when possible.
@@ -1680,30 +1691,6 @@ VMMDECL(int) PGMPhysGCPtr2HCPhys(PVMCPU pVCpu, RTGCPTR GCPtr, PRTHCPHYS pHCPhys)
     int rc = PGM_GST_PFN(GetPage,pVCpu)(pVCpu, (RTGCUINTPTR)GCPtr, NULL, &GCPhys);
     if (RT_SUCCESS(rc))
         rc = PGMPhysGCPhys2HCPhys(pVM, GCPhys | ((RTGCUINTPTR)GCPtr & PAGE_OFFSET_MASK), pHCPhys);
-    return rc;
-}
-
-
-/**
- * Converts a guest pointer to a R3 pointer.
- *
- * This uses the current CR3/CR0/CR4 of the guest.
- *
- * @returns VBox status code.
- * @param   pVCpu       The VMCPU Handle
- * @param   GCPtr       The guest pointer to convert.
- * @param   pR3Ptr      Where to store the R3 virtual address.
- *
- * @deprecated Don't use this.
- */
-VMMDECL(int) PGMPhysGCPtr2R3Ptr(PVMCPU pVCpu, RTGCPTR GCPtr, PRTR3PTR pR3Ptr)
-{
-    PVM pVM = pVCpu->CTX_SUFF(pVM);
-    VM_ASSERT_EMT(pVM); /* no longer safe for use outside the EMT thread! */
-    RTGCPHYS GCPhys;
-    int rc = PGM_GST_PFN(GetPage,pVCpu)(pVCpu, (RTGCUINTPTR)GCPtr, NULL, &GCPhys);
-    if (RT_SUCCESS(rc))
-        rc = PGMPhysGCPhys2R3Ptr(pVM, GCPhys | ((RTGCUINTPTR)GCPtr & PAGE_OFFSET_MASK), 1 /* we always stay within one page */, pR3Ptr);
     return rc;
 }
 
@@ -1784,7 +1771,7 @@ static int pgmPhysReadHandler(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void *pv
     if (PGM_PAGE_GET_HNDL_PHYS_STATE(pPage) == PGM_PAGE_HNDL_PHYS_STATE_ALL)
     {
 #ifdef IN_RING3
-        pPhys = (PPGMPHYSHANDLER)RTAvlroGCPhysRangeGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
+        pPhys = pgmHandlerPhysicalLookup(pVM, GCPhys);
         AssertReleaseMsg(pPhys, ("GCPhys=%RGp cb=%#x\n", GCPhys, cb));
         Assert(GCPhys >= pPhys->Core.Key && GCPhys <= pPhys->Core.KeyLast);
         Assert((pPhys->Core.Key     & PAGE_OFFSET_MASK) == 0);
@@ -1802,7 +1789,7 @@ static int pgmPhysReadHandler(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void *pv
         rc = pfnHandler(pVM, GCPhys, (void *)pvSrc, pvBuf, cb, PGMACCESSTYPE_READ, pvUser);
         pgmLock(pVM);
 # ifdef VBOX_WITH_STATISTICS
-        pPhys = (PPGMPHYSHANDLER)RTAvlroGCPhysRangeGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
+        pPhys = pgmHandlerPhysicalLookup(pVM, GCPhys);
         if (pPhys)
             STAM_PROFILE_STOP(&pPhys->Stat, h);
 # else
@@ -1886,8 +1873,8 @@ VMMDECL(int) PGMPhysRead(PVM pVM, RTGCPHYS GCPhys, void *pvBuf, size_t cbRead)
     AssertMsgReturn(cbRead > 0, ("don't even think about reading zero bytes!\n"), VINF_SUCCESS);
     LogFlow(("PGMPhysRead: %RGp %d\n", GCPhys, cbRead));
 
-    STAM_COUNTER_INC(&pVM->pgm.s.CTX_MID_Z(Stat,PhysRead));
-    STAM_COUNTER_ADD(&pVM->pgm.s.CTX_MID_Z(Stat,PhysReadBytes), cbRead);
+    STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,PhysRead));
+    STAM_COUNTER_ADD(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,PhysReadBytes), cbRead);
 
     pgmLock(pVM);
 
@@ -2013,7 +2000,7 @@ static int pgmPhysWriteHandler(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void co
     if (    !PGM_PAGE_HAS_ACTIVE_VIRTUAL_HANDLERS(pPage)
         ||  PGM_PAGE_IS_MMIO(pPage) /* screw virtual handlers on MMIO pages */)
     {
-        PPGMPHYSHANDLER pCur = (PPGMPHYSHANDLER)RTAvlroGCPhysRangeGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
+        PPGMPHYSHANDLER pCur = pgmHandlerPhysicalLookup(pVM, GCPhys);
         if (pCur)
         {
             Assert(GCPhys >= pCur->Core.Key && GCPhys <= pCur->Core.KeyLast);
@@ -2047,7 +2034,7 @@ static int pgmPhysWriteHandler(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void co
                 rc = pfnHandler(pVM, GCPhys, pvDst, (void *)pvBuf, cbRange, PGMACCESSTYPE_WRITE, pvUser);
                 pgmLock(pVM);
 # ifdef VBOX_WITH_STATISTICS
-                pCur = (PPGMPHYSHANDLER)RTAvlroGCPhysRangeGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
+                pCur = pgmHandlerPhysicalLookup(pVM, GCPhys);
                 if (pCur)
                     STAM_PROFILE_STOP(&pCur->Stat, h);
 # else
@@ -2076,7 +2063,7 @@ static int pgmPhysWriteHandler(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void co
     }
     /*
      * A virtual handler without any interfering physical handlers.
-     * Hopefully it'll conver the whole write.
+     * Hopefully it'll convert the whole write.
      */
     else if (!PGM_PAGE_HAS_ACTIVE_PHYSICAL_HANDLERS(pPage))
     {
@@ -2200,7 +2187,7 @@ static int pgmPhysWriteHandler(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void co
 
         if (fMorePhys && !pPhys)
         {
-            pPhys = (PPGMPHYSHANDLER)RTAvlroGCPhysRangeGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
+            pPhys = pgmHandlerPhysicalLookup(pVM, GCPhys);
             if (pPhys)
             {
                 offPhys = 0;
@@ -2259,7 +2246,7 @@ static int pgmPhysWriteHandler(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void co
             rc = pfnHandler(pVM, GCPhys, pvDst, (void *)pvBuf, cbRange, PGMACCESSTYPE_WRITE, pvUser);
             pgmLock(pVM);
 # ifdef VBOX_WITH_STATISTICS
-            pPhys = (PPGMPHYSHANDLER)RTAvlroGCPhysRangeGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
+            pPhys = pgmHandlerPhysicalLookup(pVM, GCPhys);
             if (pPhys)
                 STAM_PROFILE_STOP(&pPhys->Stat, h);
 # else
@@ -2328,7 +2315,7 @@ static int pgmPhysWriteHandler(PVM pVM, PPGMPAGE pPage, RTGCPHYS GCPhys, void co
             rc = pfnHandler(pVM, GCPhys, pvDst, (void *)pvBuf, cbRange, PGMACCESSTYPE_WRITE, pvUser);
             pgmLock(pVM);
 # ifdef VBOX_WITH_STATISTICS
-            pPhys = (PPGMPHYSHANDLER)RTAvlroGCPhysRangeGet(&pVM->pgm.s.CTX_SUFF(pTrees)->PhysHandlers, GCPhys);
+            pPhys = pgmHandlerPhysicalLookup(pVM, GCPhys);
             if (pPhys)
                 STAM_PROFILE_STOP(&pPhys->Stat, h);
 # else
@@ -2401,8 +2388,8 @@ VMMDECL(int) PGMPhysWrite(PVM pVM, RTGCPHYS GCPhys, const void *pvBuf, size_t cb
     AssertMsgReturn(cbWrite > 0, ("don't even think about writing zero bytes!\n"), VINF_SUCCESS);
     LogFlow(("PGMPhysWrite: %RGp %d\n", GCPhys, cbWrite));
 
-    STAM_COUNTER_INC(&pVM->pgm.s.CTX_MID_Z(Stat,PhysWrite));
-    STAM_COUNTER_ADD(&pVM->pgm.s.CTX_MID_Z(Stat,PhysWriteBytes), cbWrite);
+    STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,PhysWrite));
+    STAM_COUNTER_ADD(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,PhysWriteBytes), cbWrite);
 
     pgmLock(pVM);
 
@@ -2662,8 +2649,8 @@ VMMDECL(int) PGMPhysSimpleReadGCPtr(PVMCPU pVCpu, void *pvDst, RTGCPTR GCPtrSrc,
     if (!cb)
         return VINF_SUCCESS;
 
-    STAM_COUNTER_INC(&pVM->pgm.s.CTX_MID_Z(Stat,PhysSimpleRead));
-    STAM_COUNTER_ADD(&pVM->pgm.s.CTX_MID_Z(Stat,PhysSimpleReadBytes), cb);
+    STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,PhysSimpleRead));
+    STAM_COUNTER_ADD(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,PhysSimpleReadBytes), cb);
 
     /* Take the PGM lock here, because many called functions take the lock for a very short period. That's counter-productive
      * when many VCPUs are fighting for the lock.
@@ -2752,8 +2739,8 @@ VMMDECL(int) PGMPhysSimpleWriteGCPtr(PVMCPU pVCpu, RTGCPTR GCPtrDst, const void 
     if (!cb)
         return VINF_SUCCESS;
 
-    STAM_COUNTER_INC(&pVM->pgm.s.CTX_MID_Z(Stat,PhysSimpleWrite));
-    STAM_COUNTER_ADD(&pVM->pgm.s.CTX_MID_Z(Stat,PhysSimpleWriteBytes), cb);
+    STAM_COUNTER_INC(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,PhysSimpleWrite));
+    STAM_COUNTER_ADD(&pVM->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,PhysSimpleWriteBytes), cb);
 
     /* map the 1st page */
     void *pvDst;
@@ -3109,7 +3096,7 @@ VMMDECL(int) PGMPhysInterpretedRead(PVMCPU pVCpu, PCPUMCTXCORE pCtxCore, void *p
         {
             /** @todo we should check reserved bits ... */
             void *pvSrc;
-            rc = PGM_GCPHYS_2_PTR(pVM, GCPhys, &pvSrc);
+            rc = PGM_GCPHYS_2_PTR_V2(pVM, pVCpu, GCPhys, &pvSrc);
             switch (rc)
             {
                 case VINF_SUCCESS:
@@ -3151,7 +3138,7 @@ VMMDECL(int) PGMPhysInterpretedRead(PVMCPU pVCpu, PCPUMCTXCORE pCtxCore, void *p
             /** @todo we should check reserved bits ... */
             AssertMsgFailed(("cb=%d cb1=%d cb2=%d GCPtrSrc=%RGv\n", cb, cb1, cb2, GCPtrSrc));
             void *pvSrc1;
-            rc = PGM_GCPHYS_2_PTR(pVM, GCPhys1, &pvSrc1);
+            rc = PGM_GCPHYS_2_PTR_V2(pVM, pVCpu, GCPhys1, &pvSrc1);
             switch (rc)
             {
                 case VINF_SUCCESS:
@@ -3165,7 +3152,7 @@ VMMDECL(int) PGMPhysInterpretedRead(PVMCPU pVCpu, PCPUMCTXCORE pCtxCore, void *p
             }
 
             void *pvSrc2;
-            rc = PGM_GCPHYS_2_PTR(pVM, GCPhys2, &pvSrc2);
+            rc = PGM_GCPHYS_2_PTR_V2(pVM, pVCpu, GCPhys2, &pvSrc2);
             switch (rc)
             {
                 case VINF_SUCCESS:
@@ -3284,6 +3271,7 @@ VMMDECL(int) PGMPhysInterpretedReadNoHandlers(PVMCPU pVCpu, PCPUMCTXCORE pCtxCor
                         Log(("PGMPhysInterpretedReadNoHandlers: pvDst=%p pvSrc=%p (%RGv) cb=%d\n",
                                pvDst, (const uint8_t *)pvSrc + (GCPtrSrc & PAGE_OFFSET_MASK), GCPtrSrc, cb));
                         memcpy(pvDst, (const uint8_t *)pvSrc + (GCPtrSrc & PAGE_OFFSET_MASK), cb);
+                        PGMPhysReleasePageMappingLock(pVM, &Lock);
                         break;
                     case VERR_PGM_PHYS_PAGE_RESERVED:
                     case VERR_PGM_INVALID_GC_PHYSICAL_ADDRESS:
@@ -3294,7 +3282,6 @@ VMMDECL(int) PGMPhysInterpretedReadNoHandlers(PVMCPU pVCpu, PCPUMCTXCORE pCtxCor
                         AssertReturn(RT_FAILURE(rc), VERR_IPE_UNEXPECTED_INFO_STATUS);
                         return rc;
                 }
-                PGMPhysReleasePageMappingLock(pVM, &Lock);
 
                 if (!(fFlags & X86_PTE_A))
                 {
@@ -3452,6 +3439,9 @@ VMMDECL(int) PGMPhysInterpretedWriteNoHandlers(PVMCPU pVCpu, PCPUMCTXCORE pCtxCo
      * 3. Do the write operation.
      * 4. Set access bits if required.
      */
+    /** @todo Since this method is frequently used by EMInterpret or IOM
+     *        upon a write fault to an write access monitored page, we can
+     *        reuse the guest page table walking from the \#PF code. */
     int rc;
     unsigned cb1 = PAGE_SIZE - (GCPtrDst & PAGE_OFFSET_MASK);
     if (cb <= cb1)
@@ -3616,3 +3606,19 @@ VMMDECL(int) PGMPhysInterpretedWriteNoHandlers(PVMCPU pVCpu, PCPUMCTXCORE pCtxCo
     return rc;
 }
 
+/**
+ * Return the page type of the specified physical address
+ *
+ * @param   pVM             VM Handle.
+ * @param   GCPhys          Guest physical address
+ */
+VMMDECL(PGMPAGETYPE) PGMPhysGetPageType(PVM pVM, RTGCPHYS GCPhys)
+{
+    PPGMPAGE pPage;
+
+    pPage = pgmPhysGetPage(&pVM->pgm.s, GCPhys);
+    if (pPage)
+        return (PGMPAGETYPE)PGM_PAGE_GET_TYPE(pPage);
+
+    return PGMPAGETYPE_INVALID;
+}

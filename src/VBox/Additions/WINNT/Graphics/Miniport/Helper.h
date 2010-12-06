@@ -30,44 +30,45 @@ typedef enum
 
 extern "C"
 {
-BOOLEAN vboxQueryDisplayRequest(uint32_t *xres, uint32_t *yres, uint32_t *bpp, uint32_t *pDisplayId);
-BOOLEAN vboxLikesVideoMode(uint32_t display, uint32_t width, uint32_t height, uint32_t bpp);
-ULONG vboxGetHeightReduction();
-BOOLEAN vboxQueryPointerPos(uint16_t *pointerXPos, uint16_t *pointerYPos);
-BOOLEAN vboxQueryHostWantsAbsolute();
+bool vboxQueryDisplayRequest(uint32_t *xres, uint32_t *yres, uint32_t *bpp, uint32_t *pDisplayId);
+bool vboxLikesVideoMode(uint32_t display, uint32_t width, uint32_t height, uint32_t bpp);
+uint32_t vboxGetHeightReduction();
+bool vboxQueryPointerPos(uint16_t *pointerXPos, uint16_t *pointerYPos);
+bool vboxQueryHostWantsAbsolute();
 winVersion_t vboxQueryWinVersion();
-#ifndef VBOX_WITH_HGSMI
-BOOLEAN vboxUpdatePointerShape(PVIDEO_POINTER_ATTRIBUTES pointerAttr, uint32_t cbLength);
-#endif /* !VBOX_WITH_HGSMI */
 
-#include "vboxioctl.h"
+// #include "vboxioctl.h"
 
-int vboxVbvaEnable (ULONG ulEnable, VBVAENABLERESULT *pVbvaResult);
+// int vboxVbvaEnable (ULONG ulEnable, VBVAENABLERESULT *pVbvaResult);
 }
 
 
 /* debug printf */
+/** @todo replace this with normal IPRT guest logging */
+#ifdef RT_OS_WINDOWS
 # define OSDBGPRINT(a) DbgPrint a
+#else
+# define OSDBGPRINT(a) do { } while(0)
+#endif
 
-/* dprintf */
-#if (defined(DEBUG) && !defined(NO_LOGGING)) || defined(LOG_ENABLED)
-# ifdef LOG_TO_BACKDOOR
-#  include <VBox/log.h>
-#  define dprintf(a) RTLogBackdoorPrintf a
-# else
-#  define dprintf(a) OSDBGPRINT(a)
-# endif
-/* flow log */
-# define dfprintf dprintf
+#ifdef LOG_TO_BACKDOOR
+# include <VBox/log.h>
+# define dDoPrintf(a) RTLogBackdoorPrintf a
+#else
+# define dDoPrintf(a) OSDBGPRINT(a)
+#endif
+
 /* release log */
-# define drprintf dprintf
+# define drprintf dDoPrintf
+/* flow log */
+# define dfprintf(a) do {} while (0)
+/* basic debug log */
+#if (defined(DEBUG) && !defined(NO_LOGGING)) || defined(LOG_ENABLED)
+# define dprintf dDoPrintf
 #else
 # define dprintf(a) do {} while (0)
-/* flow log */
-# define dfprintf dprintf
-/* release log */
-# define drprintf dprintf
 #endif
+
 
 /* dprintf2 - extended logging. */
 #if 0

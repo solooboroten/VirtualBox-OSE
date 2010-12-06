@@ -1,4 +1,4 @@
-/* $Id: PATMGC.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: PATMGC.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * PATM - Dynamic Guest OS Patching Manager - Guest Context
  */
@@ -47,14 +47,14 @@
 /**
  * \#PF Virtual Handler callback for Guest access a page monitored by PATM
  *
- * @returns VBox status code (appropritate for trap handling and GC return).
+ * @returns VBox status code (appropriate for trap handling and GC return).
  * @param   pVM         VM Handle.
  * @param   uErrorCode   CPU Error code.
  * @param   pRegFrame   Trap register frame.
  * @param   pvFault     The fault address (cr2).
  * @param   pvRange     The base address of the handled virtual range.
  * @param   offRange    The offset of the access into this range.
- *                      (If it's a EIP range this's the EIP, if not it's pvFault.)
+ *                      (If it's a EIP range this is the EIP, if not it's pvFault.)
  */
 VMMRCDECL(int) PATMGCMonitorPage(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPTR pvRange, uintptr_t offRange)
 {
@@ -100,7 +100,7 @@ VMMRCDECL(int) PATMGCHandleWriteToPatchPage(PVM pVM, PCPUMCTXCORE pRegFrame, RTR
 
 #ifdef LOG_ENABLED
     if (pPatchPage)
-        Log(("PATMIsWriteToPatchPage: Found page %RRv for write to %RRv %d bytes (page low:high %RRv:%RRv\n", pPatchPage->Core.Key, GCPtr, cbWrite, pPatchPage->pLowestAddrGC, pPatchPage->pHighestAddrGC));
+        Log(("PATMGCHandleWriteToPatchPage: Found page %RRv for write to %RRv %d bytes (page low:high %RRv:%RRv\n", pPatchPage->Core.Key, GCPtr, cbWrite, pPatchPage->pLowestAddrGC, pPatchPage->pHighestAddrGC));
 #endif
 
     if (pPatchPage)
@@ -291,6 +291,7 @@ VMMDECL(int) PATMGCHandleIllegalInstrTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
 
                     /* We are no longer executing PATM code; set PIF again. */
                     pVM->patm.s.CTXSUFF(pGCState)->fPIF = 1;
+                    PGMRZDynMapReleaseAutoSet(VMMGetCpu0(pVM));
                     CPUMGCCallV86Code(pRegFrame);
                     /* does not return */
                 }
@@ -520,7 +521,8 @@ VMMDECL(int) PATMHandleInt3PatchTrap(PVM pVM, PCPUMCTXCORE pRegFrame)
                 return VINF_EM_RAW_EMULATE_INSTR;
             }
 
-            rc = EMInterpretInstructionCPU(pVM, VMMGetCpu0(pVM), &cpu, pRegFrame, 0 /* not relevant here */, &size);
+            rc = EMInterpretInstructionCPU(pVM, VMMGetCpu0(pVM), &cpu, pRegFrame, 0 /* not relevant here */,
+                                           EMCODETYPE_SUPERVISOR, &size);
             if (rc != VINF_SUCCESS)
             {
                 Log(("EMInterpretInstructionCPU failed with %Rrc\n", rc));

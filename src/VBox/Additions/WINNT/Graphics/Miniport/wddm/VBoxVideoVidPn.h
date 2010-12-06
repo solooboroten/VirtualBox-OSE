@@ -17,7 +17,7 @@
 #define VBOXVDPN_C_DISPLAY_HBLANK_SIZE 200
 #define VBOXVDPN_C_DISPLAY_VBLANK_SIZE 180
 
-NTSTATUS vboxVidPnCheckTopology(const D3DKMDT_HVIDPN hDesiredVidPn,
+NTSTATUS vboxVidPnCheckTopology(struct _DEVICE_EXTENSION* pDevExt, const D3DKMDT_HVIDPN hDesiredVidPn,
         D3DKMDT_HVIDPNTOPOLOGY hVidPnTopology, const DXGK_VIDPNTOPOLOGY_INTERFACE* pVidPnTopologyInterface,
         BOOLEAN *pbSupported);
 
@@ -40,47 +40,45 @@ NTSTATUS vboxVidPnCheckTargetModeSet(const D3DKMDT_HVIDPN hDesiredVidPn,
 typedef struct VBOXVIDPNCOFUNCMODALITY
 {
     NTSTATUS Status;
+    struct _DEVICE_EXTENSION* pDevExt;
+    const DXGK_VIDPN_INTERFACE* pVidPnInterface;
     CONST DXGKARG_ENUMVIDPNCOFUNCMODALITY* pEnumCofuncModalityArg;
-    /* legacy mode information populated by the common XPDM-WDDM layer */
-    uint32_t cModes;
-    int iPreferredMode;
-    VIDEO_MODE_INFORMATION *pModes;
-    uint32_t cResolutions;
-    D3DKMDT_2DREGION *pResolutions;
+    PVBOXWDDM_VIDEOMODES_INFO pInfos;
 } VBOXVIDPNCOFUNCMODALITY, *PVBOXVIDPNCOFUNCMODALITY;
 
 typedef struct VBOXVIDPNCOMMIT
 {
     NTSTATUS Status;
+    struct _DEVICE_EXTENSION* pDevExt;
+    const DXGK_VIDPN_INTERFACE* pVidPnInterface;
     CONST DXGKARG_COMMITVIDPN* pCommitVidPnArg;
 } VBOXVIDPNCOMMIT, *PVBOXVIDPNCOMMIT;
 
 /* !!!NOTE: The callback is responsible for releasing the path */
-typedef DECLCALLBACK(BOOLEAN) FNVBOXVIDPNENUMPATHS(struct _DEVICE_EXTENSION* pDevExt, const D3DKMDT_HVIDPN hDesiredVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface,
-        D3DKMDT_HVIDPNTOPOLOGY hVidPnTopology, const DXGK_VIDPNTOPOLOGY_INTERFACE* pVidPnTopologyInterface,
+typedef DECLCALLBACK(BOOLEAN) FNVBOXVIDPNENUMPATHS(D3DKMDT_HVIDPNTOPOLOGY hVidPnTopology, const DXGK_VIDPNTOPOLOGY_INTERFACE* pVidPnTopologyInterface,
         const D3DKMDT_VIDPN_PRESENT_PATH *pNewVidPnPresentPathInfo, PVOID pContext);
 typedef FNVBOXVIDPNENUMPATHS *PFNVBOXVIDPNENUMPATHS;
 
 /* !!!NOTE: The callback is responsible for releasing the source mode info */
-typedef DECLCALLBACK(BOOLEAN) FNVBOXVIDPNENUMSOURCEMODES(struct _DEVICE_EXTENSION* pDevExt, const D3DKMDT_HVIDPN hDesiredVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface,
-        D3DKMDT_HVIDPNSOURCEMODESET hNewVidPnSourceModeSet, const DXGK_VIDPNSOURCEMODESET_INTERFACE *pVidPnSourceModeSetInterface,
+typedef DECLCALLBACK(BOOLEAN) FNVBOXVIDPNENUMSOURCEMODES(D3DKMDT_HVIDPNSOURCEMODESET hNewVidPnSourceModeSet, const DXGK_VIDPNSOURCEMODESET_INTERFACE *pVidPnSourceModeSetInterface,
         const D3DKMDT_VIDPN_SOURCE_MODE *pNewVidPnSourceModeInfo, PVOID pContext);
 typedef FNVBOXVIDPNENUMSOURCEMODES *PFNVBOXVIDPNENUMSOURCEMODES;
 
 /* !!!NOTE: The callback is responsible for releasing the target mode info */
-typedef DECLCALLBACK(BOOLEAN) FNVBOXVIDPNENUMTARGETMODES(struct _DEVICE_EXTENSION* pDevExt, const D3DKMDT_HVIDPN hDesiredVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface,
-        D3DKMDT_HVIDPNTARGETMODESET hNewVidPnTargetModeSet, const DXGK_VIDPNTARGETMODESET_INTERFACE *pVidPnTargetModeSetInterface,
+typedef DECLCALLBACK(BOOLEAN) FNVBOXVIDPNENUMTARGETMODES(D3DKMDT_HVIDPNTARGETMODESET hNewVidPnTargetModeSet, const DXGK_VIDPNTARGETMODESET_INTERFACE *pVidPnTargetModeSetInterface,
         const D3DKMDT_VIDPN_TARGET_MODE *pNewVidPnTargetModeInfo, PVOID pContext);
 typedef FNVBOXVIDPNENUMTARGETMODES *PFNVBOXVIDPNENUMTARGETMODES;
 
 /* !!!NOTE: The callback is responsible for releasing the source mode info */
-typedef DECLCALLBACK(BOOLEAN) FNVBOXVIDPNENUMMONITORSOURCEMODES(struct _DEVICE_EXTENSION* pDevExt, D3DKMDT_HMONITORSOURCEMODESET hMonitorSMS, CONST DXGK_MONITORSOURCEMODESET_INTERFACE *pMonitorSMSIf,
+typedef DECLCALLBACK(BOOLEAN) FNVBOXVIDPNENUMMONITORSOURCEMODES(D3DKMDT_HMONITORSOURCEMODESET hMonitorSMS, CONST DXGK_MONITORSOURCEMODESET_INTERFACE *pMonitorSMSIf,
         CONST D3DKMDT_MONITOR_SOURCE_MODE *pMonitorSMI, PVOID pContext);
 typedef FNVBOXVIDPNENUMMONITORSOURCEMODES *PFNVBOXVIDPNENUMMONITORSOURCEMODES;
 
+typedef DECLCALLBACK(BOOLEAN) FNVBOXVIDPNENUMTARGETSFORSOURCE(PDEVICE_EXTENSION pDevExt, D3DKMDT_HVIDPNTOPOLOGY hVidPnTopology, const DXGK_VIDPNTOPOLOGY_INTERFACE* pVidPnTopologyInterface,
+        CONST D3DDDI_VIDEO_PRESENT_SOURCE_ID VidPnSourceId, D3DDDI_VIDEO_PRESENT_TARGET_ID VidPnTargetId, SIZE_T cTgtPaths, PVOID pContext);
+typedef FNVBOXVIDPNENUMTARGETSFORSOURCE *PFNVBOXVIDPNENUMTARGETSFORSOURCE;
 
-DECLCALLBACK(BOOLEAN) vboxVidPnCofuncModalityPathEnum(struct _DEVICE_EXTENSION* pDevExt, const D3DKMDT_HVIDPN hDesiredVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface,
-        D3DKMDT_HVIDPNTOPOLOGY hVidPnTopology, const DXGK_VIDPNTOPOLOGY_INTERFACE* pVidPnTopologyInterface,
+DECLCALLBACK(BOOLEAN) vboxVidPnCofuncModalityPathEnum(D3DKMDT_HVIDPNTOPOLOGY hVidPnTopology, const DXGK_VIDPNTOPOLOGY_INTERFACE* pVidPnTopologyInterface,
         const D3DKMDT_VIDPN_PRESENT_PATH *pNewVidPnPresentPathInfo, PVOID pContext);
 
 DECLCALLBACK(BOOLEAN) vboxVidPnCofuncModalitySourceModeEnum(struct _DEVICE_EXTENSION* pDevExt, const D3DKMDT_HVIDPN hDesiredVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface,
@@ -91,26 +89,26 @@ DECLCALLBACK(BOOLEAN) vboxVidPnCofuncModalityTargetModeEnum(struct _DEVICE_EXTEN
         D3DKMDT_HVIDPNTARGETMODESET hNewVidPnTargetModeSet, const DXGK_VIDPNTARGETMODESET_INTERFACE *pVidPnTargetModeSetInterface,
         const D3DKMDT_VIDPN_TARGET_MODE *pNewVidPnTargetModeInfo, PVOID pContext);
 
-DECLCALLBACK(BOOLEAN) vboxVidPnCommitPathEnum(struct _DEVICE_EXTENSION* pDevExt, const D3DKMDT_HVIDPN hDesiredVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface,
-        D3DKMDT_HVIDPNTOPOLOGY hVidPnTopology, const DXGK_VIDPNTOPOLOGY_INTERFACE* pVidPnTopologyInterface,
+DECLCALLBACK(BOOLEAN) vboxVidPnCommitPathEnum(D3DKMDT_HVIDPNTOPOLOGY hVidPnTopology, const DXGK_VIDPNTOPOLOGY_INTERFACE* pVidPnTopologyInterface,
         const D3DKMDT_VIDPN_PRESENT_PATH *pNewVidPnPresentPathInfo, PVOID pContext);
 
 NTSTATUS vboxVidPnCommitSourceModeForSrcId(struct _DEVICE_EXTENSION* pDevExt, const D3DKMDT_HVIDPN hDesiredVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface, D3DDDI_VIDEO_PRESENT_SOURCE_ID srcId, struct VBOXWDDM_ALLOCATION *pAllocation);
 
-NTSTATUS vboxVidPnEnumPaths(struct _DEVICE_EXTENSION* pDevExt, const D3DKMDT_HVIDPN hDesiredVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface,
-        D3DKMDT_HVIDPNTOPOLOGY hVidPnTopology, const DXGK_VIDPNTOPOLOGY_INTERFACE* pVidPnTopologyInterface,
+NTSTATUS vboxVidPnEnumPaths(D3DKMDT_HVIDPNTOPOLOGY hVidPnTopology, const DXGK_VIDPNTOPOLOGY_INTERFACE* pVidPnTopologyInterface,
         PFNVBOXVIDPNENUMPATHS pfnCallback, PVOID pContext);
 
-NTSTATUS vboxVidPnEnumSourceModes(struct _DEVICE_EXTENSION* pDevExt, const D3DKMDT_HVIDPN hDesiredVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface,
-        D3DKMDT_HVIDPNSOURCEMODESET hNewVidPnSourceModeSet, const DXGK_VIDPNSOURCEMODESET_INTERFACE *pVidPnSourceModeSetInterface,
+NTSTATUS vboxVidPnEnumSourceModes(D3DKMDT_HVIDPNSOURCEMODESET hNewVidPnSourceModeSet, const DXGK_VIDPNSOURCEMODESET_INTERFACE *pVidPnSourceModeSetInterface,
         PFNVBOXVIDPNENUMSOURCEMODES pfnCallback, PVOID pContext);
 
-NTSTATUS vboxVidPnEnumTargetModes(struct _DEVICE_EXTENSION* pDevExt, const D3DKMDT_HVIDPN hDesiredVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface,
-        D3DKMDT_HVIDPNTARGETMODESET hNewVidPnTargetModeSet, const DXGK_VIDPNTARGETMODESET_INTERFACE *pVidPnTargetModeSetInterface,
+NTSTATUS vboxVidPnEnumTargetModes(D3DKMDT_HVIDPNTARGETMODESET hNewVidPnTargetModeSet, const DXGK_VIDPNTARGETMODESET_INTERFACE *pVidPnTargetModeSetInterface,
         PFNVBOXVIDPNENUMTARGETMODES pfnCallback, PVOID pContext);
 
-NTSTATUS vboxVidPnEnumMonitorSourceModes(struct _DEVICE_EXTENSION* pDevExt, D3DKMDT_HMONITORSOURCEMODESET hMonitorSMS, CONST DXGK_MONITORSOURCEMODESET_INTERFACE *pMonitorSMSIf,
+NTSTATUS vboxVidPnEnumMonitorSourceModes(D3DKMDT_HMONITORSOURCEMODESET hMonitorSMS, CONST DXGK_MONITORSOURCEMODESET_INTERFACE *pMonitorSMSIf,
         PFNVBOXVIDPNENUMMONITORSOURCEMODES pfnCallback, PVOID pContext);
+
+NTSTATUS vboxVidPnEnumTargetsForSource(PDEVICE_EXTENSION pDevExt, D3DKMDT_HVIDPNTOPOLOGY hVidPnTopology, const DXGK_VIDPNTOPOLOGY_INTERFACE* pVidPnTopologyInterface,
+        CONST D3DDDI_VIDEO_PRESENT_SOURCE_ID VidPnSourceId,
+        PFNVBOXVIDPNENUMTARGETSFORSOURCE pfnCallback, PVOID pContext);
 
 NTSTATUS vboxVidPnPopulateMonitorSourceModeInfoFromLegacy(struct _DEVICE_EXTENSION* pDevExt,
         D3DKMDT_MONITOR_SOURCE_MODE *pMonitorSourceMode,
@@ -118,11 +116,19 @@ NTSTATUS vboxVidPnPopulateMonitorSourceModeInfoFromLegacy(struct _DEVICE_EXTENSI
         D3DKMDT_MONITOR_CAPABILITIES_ORIGIN enmOrigin,
         BOOLEAN bPreferred);
 
-NTSTATUS vboxVidPnCreatePopulateVidPnFromLegacy(struct _DEVICE_EXTENSION* pDevExt, D3DKMDT_HVIDPN hVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface,
-        VIDEO_MODE_INFORMATION *pModes, uint32_t cModes, int iPreferredMomde,
-        D3DKMDT_2DREGION *pResolutions, uint32_t cResolutions);
+NTSTATUS vboxVidPnCreatePopulateVidPnFromLegacy(PDEVICE_EXTENSION pDevExt, D3DKMDT_HVIDPN hVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface,
+        VIDEO_MODE_INFORMATION *pModes, uint32_t cModes, int iPreferredMode,
+        D3DKMDT_2DREGION *pResolutions, uint32_t cResolutions,
+        const D3DDDI_VIDEO_PRESENT_SOURCE_ID srcId, const D3DDDI_VIDEO_PRESENT_TARGET_ID tgtId);
 
 NTSTATUS vboxVidPnCheckAddMonitorModes(struct _DEVICE_EXTENSION* pDevExt,
         D3DDDI_VIDEO_PRESENT_TARGET_ID targetId, D3DKMDT_MONITOR_CAPABILITIES_ORIGIN enmOrigin,
         D3DKMDT_2DREGION *pResolutions, uint32_t cResolutions, int32_t iPreferred);
+
+NTSTATUS vboxVidPnCofuncModalityForPath(PVBOXVIDPNCOFUNCMODALITY pCbContext,
+        D3DDDI_VIDEO_PRESENT_SOURCE_ID VidPnSourceId, D3DDDI_VIDEO_PRESENT_TARGET_ID VidPnTargetId,
+        BOOLEAN bModesAllowed);
+
+void vboxVidPnDumpVidPn(const char * pPrefix, PDEVICE_EXTENSION pDevExt, D3DKMDT_HVIDPN hVidPn, const DXGK_VIDPN_INTERFACE* pVidPnInterface, const char * pSuffix);
+void vboxVidPnDumpCofuncModalityArg(const char *pPrefix, CONST DXGKARG_ENUMVIDPNCOFUNCMODALITY* CONST  pEnumCofuncModalityArg, const char *pSuffix);
 #endif /* #ifndef ___VBoxVideoVidPn_h___ */

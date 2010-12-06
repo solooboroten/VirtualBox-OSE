@@ -1,4 +1,4 @@
-/* $Id: string.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: string.cpp 33805 2010-11-05 17:17:16Z vboxsync $ */
 
 /** @file
  *
@@ -33,10 +33,10 @@ const OLECHAR g_achEmptyBstr[3] = { 0, 0, 0 };
 const BSTR g_bstrEmpty = (BSTR)(&g_achEmptyBstr[2]);
 
 /* static */
-const Bstr Bstr::Null; /* default ctor is OK */
+const Bstr Bstr::Empty; /* default ctor is OK */
 
 /* static */
-const Utf8Str Utf8Str::Null; /* default ctor is OK */
+const Utf8Str Utf8Str::Empty; /* default ctor is OK */
 
 #if defined (VBOX_WITH_XPCOM)
 void Utf8Str::cloneTo(char **pstr) const
@@ -49,99 +49,98 @@ void Utf8Str::cloneTo(char **pstr) const
 }
 #endif
 
-Utf8Str& Utf8Str::toLower()
+Utf8Str& Utf8Str::stripTrailingSlash()
 {
     if (length())
-        ::RTStrToLower(m_psz);
-    return *this;
-}
-
-Utf8Str& Utf8Str::toUpper()
-{
-    if (length())
-        ::RTStrToUpper(m_psz);
-    return *this;
-}
-
-void Utf8Str::stripTrailingSlash()
-{
-    RTPathStripTrailingSlash(m_psz);
-    jolt();
-}
-
-void Utf8Str::stripFilename()
-{
-    RTPathStripFilename(m_psz);
-    jolt();
-}
-
-void Utf8Str::stripExt()
-{
-    RTPathStripExt(m_psz);
-    jolt();
-}
-
-struct FormatData
-{
-    static const size_t CacheIncrement = 256;
-    size_t size;
-    size_t pos;
-    char *cache;
-};
-
-void Utf8StrFmt::init(const char *format, va_list args)
-{
-    if (!format)
-        return;
-
-    // assume an extra byte for a terminating zero
-    size_t fmtlen = strlen(format) + 1;
-
-    FormatData data;
-    data.size = FormatData::CacheIncrement;
-    if (fmtlen >= FormatData::CacheIncrement)
-        data.size += fmtlen;
-    data.pos = 0;
-    data.cache = (char*)::RTMemTmpAllocZ(data.size);
-
-    size_t n = ::RTStrFormatV(strOutput, &data, NULL, NULL, format, args);
-
-    AssertMsg(n == data.pos,
-              ("The number of bytes formatted doesn't match: %d and %d!", n, data.pos));
-    NOREF(n);
-
-    // finalize formatting
-    data.cache[data.pos] = 0;
-    (*static_cast<Utf8Str*>(this)) = data.cache;
-    ::RTMemTmpFree(data.cache);
-}
-
-// static
-DECLCALLBACK(size_t) Utf8StrFmt::strOutput(void *pvArg, const char *pachChars,
-                                           size_t cbChars)
-{
-    Assert(pvArg);
-    FormatData &data = *(FormatData *) pvArg;
-
-    if (!(pachChars == NULL && cbChars == 0))
     {
-        Assert(pachChars);
-
-        // append to cache (always assume an extra byte for a terminating zero)
-        size_t needed = cbChars + 1;
-        if (data.pos + needed > data.size)
-        {
-            data.size += FormatData::CacheIncrement;
-            if (needed >= FormatData::CacheIncrement)
-                data.size += needed;
-            data.cache = (char*)::RTMemRealloc(data.cache, data.size);
-        }
-        strncpy(data.cache + data.pos, pachChars, cbChars);
-        data.pos += cbChars;
+        ::RTPathStripTrailingSlash(m_psz);
+        jolt();
     }
-
-    return cbChars;
+    return *this;
 }
 
+Utf8Str& Utf8Str::stripFilename()
+{
+    if (length())
+    {
+        RTPathStripFilename(m_psz);
+        jolt();
+    }
+    return *this;
+}
+
+Utf8Str& Utf8Str::stripPath()
+{
+    if (length())
+    {
+        char *pszName = ::RTPathFilename(m_psz);
+        if (pszName)
+        {
+            size_t cchName = length() - (pszName - m_psz);
+            memmove(m_psz, pszName, cchName + 1);
+            jolt();
+        }
+        else
+            cleanup();
+    }
+    return *this;
+}
+
+Utf8Str& Utf8Str::stripExt()
+{
+    if (length())
+    {
+        RTPathStripExt(m_psz);
+        jolt();
+    }
+    return *this;
+}
+
+/**
+ * Internal function used in Utf8Str copy constructors and assignment when
+ * copying from a UTF-16 string.
+ *
+ * As with the iprt::ministring::copyFrom() variants, this unconditionally
+ * sets the members to a copy of the given other strings and makes
+ * no assumptions about previous contents. This can therefore be used
+ * both in copy constructors, when member variables have no defined
+ * value, and in assignments after having called cleanup().
+ *
+ * This variant converts from a UTF-16 string, most probably from
+ * a Bstr assignment.
+ *
+ * @param s
+ */
+void Utf8Str::copyFrom(CBSTR s)
+{
+    if (s && *s)
+    {
+        int vrc = RTUtf16ToUtf8Ex((PRTUTF16)s,      // PCRTUTF16 pwszString
+                                  RTSTR_MAX,        // size_t cwcString: translate entire string
+                                  &m_psz,           // char **ppsz: output buffer
+                                  0,                // size_t cch: if 0, func allocates buffer in *ppsz
+                                  &m_cch);          // size_t *pcch: receives the size of the output string, excluding the terminator.
+        if (RT_FAILURE(vrc))
+        {
+            if (    vrc == VERR_NO_STR_MEMORY
+                 || vrc == VERR_NO_MEMORY
+               )
+                throw std::bad_alloc();
+
+            // @todo what do we do with bad input strings? throw also? for now just keep an empty string
+            m_cch = 0;
+            m_cbAllocated = 0;
+            m_psz = NULL;
+        }
+        else
+            m_cbAllocated = m_cch + 1;
+    }
+    else
+    {
+        m_cch = 0;
+        m_cbAllocated = 0;
+        m_psz = NULL;
+    }
+}
 
 } /* namespace com */

@@ -3,10 +3,10 @@
  *  :tabSize=2:indentSize=2:noTabs=true:
  *  :folding=explicit:collapseFolds=1:
  *
- *  Sun VirtualBox Settings Schema
+ *  Oracle VM VirtualBox Settings Schema
  *  Common definitions
 
-     Copyright (C) 2004-2009 Oracle Corporation
+     Copyright (C) 2004-2010 Oracle Corporation
 
      This file is part of VirtualBox Open Source Edition (OSE), as
      available from http://www.virtualbox.org. This file is free software;
@@ -27,8 +27,8 @@
 
 <xsd:annotation>
   <xsd:documentation xml:lang="en">
-    Sun VirtualBox Settings Schema (common definitions).
-    Copyright (c) 2004-2009 Sun Microsystems, Inc.
+    Oracle VM VirtualBox Settings Schema (common definitions).
+    Copyright (c) 2004-2010 Oracle Corporation
   </xsd:documentation>
 </xsd:annotation>
 
@@ -203,11 +203,12 @@
     <xsd:enumeration value="QNX"/>
     <xsd:enumeration value="MacOS"/>
     <xsd:enumeration value="MacOS_64"/>
+    <xsd:enumeration value="JRockitVE"/>
   </xsd:restriction>
 </xsd:simpleType>
 
 
-<xsd:simpleType name="TVRDPAuthType">
+<xsd:simpleType name="TAuthType">
   <xsd:restriction base="xsd:string">
     <xsd:enumeration value="Null"/>
     <xsd:enumeration value="Guest"/>
@@ -355,8 +356,9 @@
   <xsd:attribute name="defaultMachineFolder" type="TLocalFile"/>
   <xsd:attribute name="defaultHardDiskFolder" type="TLocalFile"/>
   <xsd:attribute name="defaultHardDiskFormat" type="TNonEmptyString"/>
-  <xsd:attribute name="remoteDisplayAuthLibrary" type="TLocalFile"/>
+  <xsd:attribute name="VRDEAuthLibrary" type="TLocalFile"/>
   <xsd:attribute name="webServiceAuthLibrary" type="TLocalFile"/>
+  <xsd:attribute name="defaultVRDELibrary" type="TLocalFile"/>
   <xsd:attribute name="HWVirtExEnabled" type="xsd:boolean"/>
   <xsd:attribute name="LogHistoryCount" type="xsd:unsignedInt" default="3"/>
 </xsd:complexType>
@@ -539,9 +541,7 @@
 
 <xsd:complexType name="TRemoteDisplay">
   <xsd:attribute name="enabled" type="xsd:boolean" use="required"/>
-  <xsd:attribute name="port" type="xsd:token" default="0"/>
-  <xsd:attribute name="netAddress" type="xsd:token" default=""/>
-  <xsd:attribute name="authType" type="TVRDPAuthType" default="Null"/>
+  <xsd:attribute name="authType" type="TAuthType" default="Null"/>
   <xsd:attribute name="authTimeout" type="xsd:unsignedInt" default="5000"/>
   <xsd:attribute name="allowMultiConnection" type="xsd:boolean" default="false"/>
   <xsd:attribute name="reuseSingleConnection" type="xsd:boolean" default="false"/>

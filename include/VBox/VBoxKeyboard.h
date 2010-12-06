@@ -1,8 +1,5 @@
 /** @file
- *
- * VBox frontends: Qt GUI ("VirtualBox"):
- * X11 keyboard driver interface
- *
+ * Frontends/Common - X11 keyboard driver interface.
  */
 
 /*
@@ -22,16 +19,16 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
  * of the LGPL is applied is otherwise unspecified.
  */
 
-#ifndef __H_KEYBOARD
-#define __H_KEYBOARD
+#ifndef ___VBox_VBoxKeyboard_h
+#define ___VBox_VBoxKeyboard_h
 
 #include <X11/Xlib.h>
 
@@ -44,13 +41,13 @@
 #endif
 #ifdef VBOX_HAVE_VISIBILITY_HIDDEN
 extern CCALL __attribute__((visibility("default"))) unsigned *X11DRV_getKeyc2scan(void);
-extern CCALL __attribute__((visibility("default"))) unsigned X11DRV_InitKeyboard(Display *dpy, unsigned *byLayoutOK, unsigned *byTypeOK, int (*remapScancodes)[2]);
+extern CCALL __attribute__((visibility("default"))) unsigned X11DRV_InitKeyboard(Display *dpy, unsigned *byLayoutOK, unsigned *byTypeOK, unsigned *byXkbOK, int (*remapScancodes)[2]);
 extern CCALL __attribute__((visibility("default"))) unsigned X11DRV_KeyEvent(Display *dpy, KeyCode code);
 #else
 extern CCALL unsigned *X11DRV_getKeyc2scan(void);
-extern CCALL unsigned X11DRV_InitKeyboard(Display *dpy, unsigned *byLayoutOK, unsigned *byTypeOK, int (*remapScancodes)[2]);
+extern CCALL unsigned X11DRV_InitKeyboard(Display *dpy, unsigned *byLayoutOK, unsigned *byTypeOK, unsigned *byXkbOK, int (*remapScancodes)[2]);
 extern CCALL unsigned X11DRV_KeyEvent(Display *dpy, KeyCode code);
 #endif
 
-#endif /* __H_KEYBOARD */
+#endif
 

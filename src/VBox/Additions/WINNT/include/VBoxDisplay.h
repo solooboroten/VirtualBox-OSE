@@ -15,14 +15,24 @@
 #ifndef __VBoxDisplay_h__
 #define __VBoxDisplay_h__
 
+#include <iprt/types.h>
+#include <iprt/assert.h>
+
 #define VBOXESC_SETVISIBLEREGION            0xABCD9001
 #define VBOXESC_ISVRDPACTIVE                0xABCD9002
-#ifdef VBOXWDDM
+#ifdef VBOX_WITH_WDDM
 # define VBOXESC_REINITVIDEOMODES           0xABCD9003
+# define VBOXESC_GETVBOXVIDEOCMCMD          0xABCD9004
+# define VBOXESC_DBGPRINT                   0xABCD9005
+# define VBOXESC_SCREENLAYOUT               0xABCD9006
+# define VBOXESC_SWAPCHAININFO              0xABCD9007
+# define VBOXESC_UHGSMI_ALLOCATE            0xABCD9008
+# define VBOXESC_UHGSMI_DEALLOCATE          0xABCD9009
+# define VBOXESC_UHGSMI_SUBMIT              0xABCD900A
 
 typedef struct
 {
-    ULONG Id;
+    DWORD Id;
     DWORD Width;
     DWORD Height;
     DWORD BitsPerPixel;
@@ -35,12 +45,17 @@ typedef struct
 } VBOXWDDM_RECOMMENDVIDPN, *PVBOXWDDM_RECOMMENDVIDPN;
 
 #define VBOXWDDM_RECOMMENDVIDPN_SIZE(_c) (RT_OFFSETOF(VBOXWDDM_RECOMMENDVIDPN, aScreenInfos[_c]))
-#endif /* #ifdef VBOXWDDM */
+
+#endif /* #ifdef VBOX_WITH_WDDM */
 
 typedef struct VBOXDISPIFESCAPE
 {
-    int escapeCode;
+    int32_t escapeCode;
+    uint32_t u32CmdSpecific;
 } VBOXDISPIFESCAPE, *PVBOXDISPIFESCAPE;
+
+/* ensure command body is always 8-byte-aligned*/
+AssertCompile((sizeof (VBOXDISPIFESCAPE) & 7) == 0);
 
 #define VBOXDISPIFESCAPE_DATA_OFFSET() ((sizeof (VBOXDISPIFESCAPE) + 7) & ~7)
 #define VBOXDISPIFESCAPE_DATA(_pHead, _t) ( (_t*)(((uint8_t*)(_pHead)) + VBOXDISPIFESCAPE_DATA_OFFSET()))

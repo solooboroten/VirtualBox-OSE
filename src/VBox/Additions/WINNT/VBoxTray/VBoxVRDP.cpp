@@ -1,10 +1,10 @@
-/* $Id: VBoxVRDP.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxVRDP.cpp 33966 2010-11-11 10:32:07Z vboxsync $ */
 /** @file
  * VBoxVRDP - VBox VRDP connection notification
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -19,11 +19,11 @@
 #define _WIN32_WINNT 0x0501
 #include <windows.h>
 #include "VBoxTray.h"
+#include "VBoxHelpers.h"
 #include "VBoxVRDP.h"
 #include <VBox/VMMDev.h>
 #include <VBoxGuestInternal.h>
 #include <iprt/assert.h>
-#include "helpers.h"
 
 
 /* The guest receives VRDP_ACTIVE/VRDP_INACTIVE notifications.
@@ -333,7 +333,7 @@ unsigned __stdcall VBoxVRDPThread(void *pInstance)
         waitEvent.u32EventMaskIn = VMMDEV_EVENT_VRDP;
         if (DeviceIoControl(gVBoxDriver, VBOXGUEST_IOCTL_WAITEVENT, &waitEvent, sizeof(waitEvent), &waitEvent, sizeof(waitEvent), &cbReturned, NULL))
         {
-            Log(("VBoxTray: VBoxVRDPThread: DeviceIOControl succeded\n"));
+            Log(("VBoxTray: VBoxVRDPThread: DeviceIOControl succeeded\n"));
 
             /* are we supposed to stop? */
             if (WaitForSingleObject(pCtx->pEnv->hStopEvent, 0) == WAIT_OBJECT_0)

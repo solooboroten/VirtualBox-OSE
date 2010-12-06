@@ -21,8 +21,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -397,7 +397,12 @@ static const struct wined3d_parent_ops d3d9_texture_wined3d_parent_ops =
 };
 
 HRESULT texture_init(IDirect3DTexture9Impl *texture, IDirect3DDevice9Impl *device,
-        UINT width, UINT height, UINT levels, DWORD usage, D3DFORMAT format, D3DPOOL pool)
+        UINT width, UINT height, UINT levels, DWORD usage, D3DFORMAT format, D3DPOOL pool
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        )
 {
     HRESULT hr;
 
@@ -405,9 +410,18 @@ HRESULT texture_init(IDirect3DTexture9Impl *texture, IDirect3DDevice9Impl *devic
     texture->ref = 1;
 
     wined3d_mutex_lock();
+#ifdef VBOX_WITH_WDDM
+    hr = IWineD3DDevice_CreateTexture(device->WineD3DDevice, width, height, levels,
+            usage & WINED3DUSAGE_MASK, wined3dformat_from_d3dformat(format), pool,
+            &texture->wineD3DTexture, (IUnknown *)texture, &d3d9_texture_wined3d_parent_ops
+            , shared_handle
+            , pvClientMem);
+#else
     hr = IWineD3DDevice_CreateTexture(device->WineD3DDevice, width, height, levels,
             usage & WINED3DUSAGE_MASK, wined3dformat_from_d3dformat(format), pool,
             &texture->wineD3DTexture, (IUnknown *)texture, &d3d9_texture_wined3d_parent_ops);
+#endif
+
     wined3d_mutex_unlock();
     if (FAILED(hr))
     {

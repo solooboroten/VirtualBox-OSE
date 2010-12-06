@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 29488 2010-05-14 17:05:43Z vboxsync $
+# $Id: Makefile.kmk 34686 2010-12-03 11:06:34Z vboxsync $
 ## @file
 # Sub-Makefile for VBoxDisp.dll.
 #
@@ -46,6 +46,9 @@ VBoxDisp_SOURCES     = \
 	vrdpbmp.c \
 	vrdptext.c \
 	vbox.c \
+	$(PATH_ROOT)/src/VBox/Additions/common/VBoxVideo/HGSMIBase.cpp \
+	$(PATH_ROOT)/src/VBox/Additions/common/VBoxVideo/VBVABase.cpp \
+	$(PATH_ROOT)/src/VBox/Additions/common/VBoxVideo/Modesetting.cpp \
 	VBoxDisp.def \
 	VBoxDisp.rc
 
@@ -56,15 +59,10 @@ VBoxDisp_LDFLAGS.x86   = /Entry:DrvEnableDriver@12
 VBoxDisp_LDFLAGS.amd64 = /Entry:DrvEnableDriver
 VBoxDisp_LIBS = \
 	$(PATH_SDK_W2K3DDK_LIB)/win32k.lib \
-	$(VBOX_LIB_IPRT_GUEST_R0)
-
-ifdef VBOX_WITH_HGSMI
-VBoxDisp_LIBS         += \
+	$(VBOX_LIB_IPRT_GUEST_R0) \
 	$(VBOX_PATH_ADDITIONS_LIB)/HGSMIGuestR0Lib$(VBOX_SUFF_LIB)
-VBoxDisp_DEFS += VBOX_WITH_HGSMI
-endif
 
-ifdef VBOXWDDM
+ifdef VBOX_WITH_WDDM
 
  ifeq ($(KBUILD_TARGET_ARCH), amd64)
   $(warning VBoxVideoD3D: make it 32bit for 64bit builds)
@@ -75,15 +73,36 @@ DLLS += VBoxDispD3D
 VBoxDispD3D_NOINST = true
  endif
 VBoxDispD3D_TEMPLATE = VBOXGUESTR3DLL
-VBoxDispD3D_DEFS     = UNICODE _UNICODE
+VBoxDispD3D_DEFS     = UNICODE _UNICODE VBOX_WITH_WDDM VBOXWDDMDISP
+# VBoxDispD3D_DEFS    += VBOXDISPMP_TEST
+ifdef VBOXWDDM_WITH_VBVA
+VBoxDispD3D_DEFS    += VBOXWDDM_WITH_VBVA
+endif
+
 ifdef VBOX_WITH_VIDEOHWACCEL
  VBoxDispD3D_DEFS   += VBOX_WITH_VIDEOHWACCEL
+endif
+ifdef VBOX_WDDMDISP_WITH_PROFILE
+ VBoxDispD3D_DEFS   += VBOX_WDDMDISP_WITH_PROFILE
+endif
+ifdef VBOXWDDM_TEST_UHGSMI
+ VBoxDispD3D_DEFS   += VBOXWDDM_TEST_UHGSMI
 endif
 VBoxDispD3D_SOURCES  = \
 	wddm/VBoxDispD3D.cpp \
     wddm/VBoxDispD3DIf.cpp \
+    wddm/VBoxDispCm.cpp \
+    wddm/VBoxDispMp.cpp \
+    wddm/VBoxScreen.cpp \
+    wddm/VBoxDispMpTst.cpp \
 	wddm/VBoxDispD3D.def \
 	wddm/VBoxDispD3D.rc
+#ifdef VBOX_WITH_CRHGSMI
+#VBoxDispD3D_SOURCES += \
+#    wddm/VBoxUhgsmiDisp.cpp \
+#    wddm/VBoxUhgsmiKmt.cpp
+#VBoxDispD3D_DEFS   += VBOX_WITH_CRHGSMI
+#endif
 VBoxDispD3D_LIBS     = \
 	$(VBOX_LIB_IPRT_GUEST_R3) \
 	$(VBOX_LIB_VBGL_R3)
@@ -96,6 +115,39 @@ VBoxDispD3D64_EXTENDS  = VBoxDispD3D
 VBoxDispD3D64_SOURCES  = $(subst VBoxDispD3D.def,VBoxDispD3D64.def,$(VBoxDispD3D_SOURCES))
  endif
 endif
+
+ifdef VBOX_WITH_CRHGSMI
+#
+# VBoxCrHgsmi
+#
+LIBRARIES += VBoxCrHgsmi
+VBoxCrHgsmi_TEMPLATE    = VBOXGUESTR3LIB
+VBoxCrHgsmi_DEFS        = UNICODE _UNICODE VBOX_WITH_CRHGSMI IN_VBOXCRHGSMI VBOX_WITH_WDDM VBOX_WITH_VDMA
+VBoxCrHgsmi_SOURCES     = \
+	wddm/VBoxCrHgsmi.cpp \
+	wddm/VBoxUhgsmiKmt.cpp
+VBoxCrHgsmi_SDKS        = WINDDKWLH
+endif
+
+ifdef VBOXVIDEOWINDBG
+DLLS += vbvdbg
+vbvdbg_TEMPLATE = VBOXR3STATIC
+vbvdbg_DEFS     = UNICODE _UNICODE
+vbvdbg_SOURCES  = \
+	wddm/dbg/VBoxVideoWinDbg.cpp \
+	wddm/dbg/VBoxVideoWinDbg.def
+vbvdbg_SDKS     = WINDDKWLH
+
+PROGRAMS += tstMvWnd
+tstMvWnd_TEMPLATE = VBOXR3EXE
+tstMvWnd_DEFS = UNICODE _UNICODE
+tstMvWnd_SOURCES  = \
+	wddm/dbg/tstMvWnd.cpp
+tstMvWnd_LIBS  = \
+        $(LIB_RUNTIME)
+tstMvWnd_LDFLAGS.win = /SUBSYSTEM:windows
+endif
+
 
 include	$(KBUILD_PATH)/subfooter.kmk
 

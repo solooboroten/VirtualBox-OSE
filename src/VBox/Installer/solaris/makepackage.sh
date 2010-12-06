@@ -1,6 +1,6 @@
 #!/bin/sh
 ## @file
-# Sun VirtualBox
+#
 # VirtualBox package creation script, Solaris hosts.
 #
 
@@ -53,7 +53,7 @@ VBOX_SVN_REV=$4
 VBOX_PKGNAME=SUNWvbox
 VBOX_GGREP=/usr/sfw/bin/ggrep
 VBOX_AWK=/usr/bin/awk
-VBOX_GTAR=/usr/sfw/bin/gtar
+#VBOX_GTAR=/usr/sfw/bin/gtar
 
 # check for GNU grep we use which might not ship with all Solaris
 if test ! -f "$VBOX_GGREP" && test ! -h "$VBOX_GGREP"; then
@@ -62,10 +62,10 @@ if test ! -f "$VBOX_GGREP" && test ! -h "$VBOX_GGREP"; then
 fi
 
 # check for GNU tar we use which might not ship with all Solaris
-if test ! -f "$VBOX_GTAR" && test ! -h "$VBOX_GTAR"; then
-    echo "## GNU tar not found in $VBOX_GTAR."
-    exit 1
-fi
+#if test ! -f "$VBOX_GTAR" && test ! -h "$VBOX_GTAR"; then
+#    echo "## GNU tar not found in $VBOX_GTAR."
+#    exit 1
+#fi
 
 # bail out on non-zero exit status
 set -e
@@ -75,6 +75,12 @@ set -e
 filelist_fixup()
 {
   "$VBOX_AWK" 'NF == 6 && '"$2"' { '"$3"' } { print }' "$1" > "tmp-$1"
+  mv -f "tmp-$1" "$1"
+}
+
+dirlist_fixup()
+{
+  "$VBOX_AWK" 'NF == 6 && $1 == "d" && '"$2"' { '"$3"' } { print }' "$1" > "tmp-$1"
   mv -f "tmp-$1" "$1"
 }
 
@@ -131,8 +137,9 @@ fi
 cd "$PKG_BASE_DIR"
 find . ! -type d | $VBOX_GGREP -v -E 'prototype|makepackage.sh|vbox.pkginfo|postinstall.sh|checkinstall.sh|preremove.sh|ReadMe.txt|vbox.space|vbox.depend|vbox.copyright|VirtualBoxKern' | pkgproto >> prototype
 
-# Include only opt/VirtualBox and subdirectories as we want uninstall to clean up directory structure as well
-find . -type d | $VBOX_GGREP -E 'opt/VirtualBox' | pkgproto >> prototype
+# Include opt/VirtualBox and subdirectories as we want uninstall to clean up directory structure.
+# Inlcude var/svc for manifest class action script does not create them.
+find . -type d | $VBOX_GGREP -E 'opt/VirtualBox|var/svc/manifest/application/virtualbox' | pkgproto >> prototype
 
 # fix up file permissions (owner/group)
 # don't grok for class-specific files (like sed, if any)
@@ -166,6 +173,14 @@ filelist_fixup prototype '$3 == "platform/i86pc/kernel/drv/amd64/vboxusbmon"'   
 filelist_fixup prototype '$3 == "platform/i86pc/kernel/drv/vboxusb"'                                   '$6 = "sys"'
 filelist_fixup prototype '$3 == "platform/i86pc/kernel/drv/amd64/vboxusb"'                             '$6 = "sys"'
 
+# Manifest class action scripts
+filelist_fixup prototype '$3 == "var/svc/manifest/application/virtualbox/virtualbox-webservice.xml"'    '$2 = "manifest";$6 = "sys"'
+filelist_fixup prototype '$3 == "var/svc/manifest/application/virtualbox/virtualbox-zoneaccess.xml"'    '$2 = "manifest";$6 = "sys"'
+
+# Use 'root' as group so as to match attributes with the previous installation and prevent a conflict. Otherwise pkgadd bails out thinking
+# we're violating directory attributes of another (non existing) package
+dirlist_fixup prototype  '$3 == "var/svc/manifest/application/virtualbox"'                              '$6 = "root"'
+
 # hardening requires some executables to be marked setuid.
 if test -n "$HARDENED"; then
     $VBOX_AWK 'NF == 6 \
@@ -196,6 +211,14 @@ $VBOX_AWK 'NF == 6 \
    { $4 = "4755" } { print }' prototype > prototype2
 mv -f prototype2 prototype
 
+# Our package is a non-relocatable package. pkgadd will take care of "relocating" them when they are used for
+# remote installations using $PKG_INSTALL_ROOT and not $BASEDIR. Seems this little subtlety led to it's own page:
+# http://docs.sun.com/app/docs/doc/820-4042/package-2?a=view
+filelist_fixup prototype  '$2 == "none"'                              '$3="/"$3'
+filelist_fixup prototype  '$2 == "manifest"'                          '$3="/"$3'
+symlink_fixup  prototype  '$2 == "none"'                              '$3="/"$3'
+hardlink_fixup prototype  '$2 == "none"'                              '$3="/"$3'
+
 echo " --- start of prototype  ---"
 cat prototype
 echo " --- end of prototype --- "
@@ -210,16 +233,16 @@ pkgmk -p $VBOXPKG_TIMESTAMP -o -r .
 pkgtrans -s -o /var/spool/pkg "`pwd`/$VBOX_PKGFILE" "$VBOX_PKGNAME"
 
 # $5 if exist would contain the path to the VBI package to include in the .tar.gz
-if [ -f LICENSE ]; then
-    VBOX_LICENSEFILE=LICENSE
-fi
-if test -f "$5"; then
-    $VBOX_GTAR zcvf "$VBOX_ARCHIVE" $VBOX_LICENSEFILE "$VBOX_PKGFILE" "$5" autoresponse ReadMe.txt
-else
-    $VBOX_GTAR zcvf "$VBOX_ARCHIVE" $VBOX_LICENSEFILE "$VBOX_PKGFILE" autoresponse ReadMe.txt
-fi
+#if [ -f LICENSE ]; then
+#    VBOX_LICENSEFILE=LICENSE
+#fi
+#if test -f "$5"; then
+#    $VBOX_GTAR zcvf "$VBOX_ARCHIVE" $VBOX_LICENSEFILE "$VBOX_PKGFILE" "$5" autoresponse ReadMe.txt
+#else
+#    $VBOX_GTAR zcvf "$VBOX_ARCHIVE" $VBOX_LICENSEFILE "$VBOX_PKGFILE" autoresponse ReadMe.txt
+#fi
 
-echo "## Packaging and transfer completed successfully!"
+echo "## Package file created successfully!"
 rm -rf "/var/spool/pkg/$VBOX_PKGNAME"
 
 exit $?

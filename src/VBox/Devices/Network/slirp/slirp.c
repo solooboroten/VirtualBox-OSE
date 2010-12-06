@@ -1,4 +1,4 @@
-/* $Id: slirp.c 29946 2010-06-01 12:53:39Z vboxsync $ */
+/* $Id: slirp.c 34235 2010-11-22 11:44:41Z vboxsync $ */
 /** @file
  * NAT - slirp glue.
  */
@@ -285,25 +285,25 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
     ret = pData->pfGetAdaptersAddresses(AF_INET, 0, NULL /* reserved */, pAdapterAddr, &size);
     if (ret != ERROR_BUFFER_OVERFLOW)
     {
-        LogRel(("NAT: error %lu occurred on capacity detection operation\n", ret));
+        Log(("NAT: error %lu occurred on capacity detection operation\n", ret));
         return -1;
     }
     if (size == 0)
     {
-        LogRel(("NAT: Win socket API returns non capacity\n"));
+        Log(("NAT: Win socket API returns non capacity\n"));
         return -1;
     }
 
     pAdapterAddr = RTMemAllocZ(size);
     if (!pAdapterAddr)
     {
-        LogRel(("NAT: No memory available \n"));
+        Log(("NAT: No memory available\n"));
         return -1;
     }
     ret = pData->pfGetAdaptersAddresses(AF_INET, 0, NULL /* reserved */, pAdapterAddr, &size);
     if (ret != ERROR_SUCCESS)
     {
-        LogRel(("NAT: error %lu occurred on fetching adapters info\n", ret));
+        Log(("NAT: error %lu occurred on fetching adapters info\n", ret));
         RTMemFree(pAdapterAddr);
         return -1;
     }
@@ -329,12 +329,12 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
             pDns = RTMemAllocZ(sizeof(struct dns_entry));
             if (!pDns)
             {
-                LogRel(("NAT: Can't allocate buffer for DNS entry\n"));
+                Log(("NAT: Can't allocate buffer for DNS entry\n"));
                 RTMemFree(pAdapterAddr);
                 return VERR_NO_MEMORY;
             }
 
-            LogRel(("NAT: adding %R[IP4] to DNS server list\n", &InAddr));
+            Log(("NAT: adding %R[IP4] to DNS server list\n", &InAddr));
             if ((InAddr.s_addr & RT_H2N_U32_C(IN_CLASSA_NET)) == RT_N2H_U32_C(INADDR_LOOPBACK & IN_CLASSA_NET))
                 pDns->de_addr.s_addr = RT_H2N_U32(RT_N2H_U32(pData->special_addr.s_addr) | CTL_ALIAS);
             else
@@ -369,13 +369,13 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
                 pDomain = RTMemAllocZ(sizeof(struct dns_domain_entry));
                 if (!pDomain)
                 {
-                    LogRel(("NAT: not enough memory\n"));
+                    Log(("NAT: not enough memory\n"));
                     RTStrFree(pszSuffix);
                     RTMemFree(pAdapterAddr);
                     return VERR_NO_MEMORY;
                 }
                 pDomain->dd_pszDomain = pszSuffix;
-                LogRel(("NAT: adding domain name %s to search list\n", pDomain->dd_pszDomain));
+                Log(("NAT: adding domain name %s to search list\n", pDomain->dd_pszDomain));
                 LIST_INSERT_HEAD(&pData->pDomainList, pDomain, dd_list);
             }
         }
@@ -420,7 +420,7 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
     char buff2[256];
     RTFILE f;
     int cNameserversFound = 0;
-    int fWarnTooManyDnsServers = 0;
+    bool fWarnTooManyDnsServers = false;
     struct in_addr tmp_addr;
     int rc;
     size_t bytes;
@@ -473,10 +473,10 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
     {
         struct dns_entry *pDns = NULL;
         if (   cNameserversFound == 4
-            && fWarnTooManyDnsServers == 0
+            && !fWarnTooManyDnsServers
             && sscanf(buff, "nameserver%*[ \t]%255s", buff2) == 1)
         {
-            fWarnTooManyDnsServers = 1;
+            fWarnTooManyDnsServers = true;
             LogRel(("NAT: too many nameservers registered.\n"));
         }
         if (   sscanf(buff, "nameserver%*[ \t]%255s", buff2) == 1
@@ -489,7 +489,7 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
             pDns = RTMemAllocZ(sizeof (struct dns_entry));
             if (!pDns)
             {
-                LogRel(("can't alloc memory for DNS entry\n"));
+                Log(("can't alloc memory for DNS entry\n"));
                 return -1;
             }
 
@@ -523,11 +523,11 @@ static int get_dns_addr_domain(PNATState pData, bool fVerbose,
                 pDomain = RTMemAllocZ(sizeof(struct dns_domain_entry));
                 if (!pDomain)
                 {
-                    LogRel(("NAT: not enought memory to add domain list\n"));
+                    Log(("NAT: not enought memory to add domain list\n"));
                     return VERR_NO_MEMORY;
                 }
                 pDomain->dd_pszDomain = RTStrDup(tok);
-                LogRel(("NAT: adding domain name %s to search list\n", pDomain->dd_pszDomain));
+                Log(("NAT: adding domain name %s to search list\n", pDomain->dd_pszDomain));
                 LIST_INSERT_HEAD(&pData->pDomainList, pDomain, dd_list);
             }
         }
@@ -616,7 +616,7 @@ int slirp_init(PNATState *ppData, uint32_t u32NetAddr, uint32_t u32Netmask,
     rc = bootp_dhcp_init(pData);
     if (rc != 0)
     {
-        LogRel(("NAT: DHCP server initialization was failed\n"));
+        Log(("NAT: DHCP server initialization was failed\n"));
         return VINF_NAT_DNS;
     }
     debug_init();
@@ -625,11 +625,7 @@ int slirp_init(PNATState *ppData, uint32_t u32NetAddr, uint32_t u32Netmask,
     icmp_init(pData);
 
     /* Initialise mbufs *after* setting the MTU */
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-    m_init(pData);
-#else
     mbuf_init(pData);
-#endif
 
     pData->special_addr.s_addr = u32NetAddr;
     pData->slirp_ethaddr = &special_ethaddr[0];
@@ -647,7 +643,7 @@ int slirp_init(PNATState *ppData, uint32_t u32NetAddr, uint32_t u32Netmask,
     }
     if (i32AliasMode & ~(PKT_ALIAS_LOG|PKT_ALIAS_SAME_PORTS|PKT_ALIAS_PROXY_ONLY))
     {
-        LogRel(("NAT: alias mode %x is ignored\n", i32AliasMode));
+        Log(("NAT: alias mode %x is ignored\n", i32AliasMode));
         i32AliasMode = 0;
     }
     pData->i32AliasMode = i32AliasMode;
@@ -658,7 +654,7 @@ int slirp_init(PNATState *ppData, uint32_t u32NetAddr, uint32_t u32Netmask,
         pData->proxy_alias = LibAliasInit(pData, NULL);
         if (pData->proxy_alias == NULL)
         {
-            LogRel(("NAT: LibAlias default rule wasn't initialized\n"));
+            Log(("NAT: LibAlias default rule wasn't initialized\n"));
             AssertMsgFailed(("NAT: LibAlias default rule wasn't initialized\n"));
         }
         flags = LibAliasSetMode(pData->proxy_alias, 0, 0);
@@ -794,6 +790,7 @@ void slirp_term(PNATState pData)
 #ifdef RT_OS_WINDOWS
     WSACleanup();
 #endif
+#ifndef VBOX_WITH_SLIRP_BSD_SBUF
 #ifdef LOG_ENABLED
     Log(("\n"
          "NAT statistics\n"
@@ -808,6 +805,7 @@ void slirp_term(PNATState pData)
     Log(("\n"
          "\n"
          "\n"));
+#endif
 #endif
     RTMemFree(pData);
 }
@@ -898,20 +896,6 @@ void slirp_select_fill(PNATState pData, int *pnfds, struct pollfd *polls)
 #if !defined(RT_OS_WINDOWS)
         so->so_poll_index = -1;
 #endif
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-        if (pData->fmbuf_water_line == 1)
-        {
-            if (mbuf_alloced < pData->mbuf_water_line_limit/2)
-            {
-                pData->fmbuf_water_warn_sent = 0;
-                pData->fmbuf_water_line = 0;
-            }
-# ifndef RT_OS_WINDOWS
-            poll_index = 0;
-# endif
-            goto done;
-        }
-#endif /* !VBOX_WITH_SLIRP_BSD_MBUF */
         STAM_COUNTER_INC(&pData->StatTCP);
 
         /*
@@ -955,7 +939,7 @@ void slirp_select_fill(PNATState pData, int *pnfds, struct pollfd *polls)
          * Set for writing if we are connected, can send more, and
          * we have something to send
          */
-        if (CONN_CANFSEND(so) && so->so_rcv.sb_cc)
+        if (CONN_CANFSEND(so) && SBUF_LEN(&so->so_rcv))
         {
             STAM_COUNTER_INC(&pData->StatTCPHot);
             TCP_ENGAGE_EVENT1(so, writefds);
@@ -965,7 +949,8 @@ void slirp_select_fill(PNATState pData, int *pnfds, struct pollfd *polls)
          * Set for reading (and urgent data) if we are connected, can
          * receive more, and we have room for it XXX /2 ?
          */
-        if (CONN_CANFRCV(so) && (so->so_snd.sb_cc < (so->so_snd.sb_datalen/2)))
+        /* @todo: vvl - check which predicat here will be more useful here in rerm of new sbufs. */
+        if (CONN_CANFRCV(so) && (SBUF_LEN(&so->so_snd) < (SBUF_SIZE(&so->so_snd)/2)))
         {
             STAM_COUNTER_INC(&pData->StatTCPHot);
             TCP_ENGAGE_EVENT2(so, readfds, xfds);
@@ -982,20 +967,6 @@ void slirp_select_fill(PNATState pData, int *pnfds, struct pollfd *polls)
     QSOCKET_FOREACH(so, so_next, udp)
     /* { */
 
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-        if (pData->fmbuf_water_line == 1)
-        {
-            if (mbuf_alloced < pData->mbuf_water_line_limit/2)
-            {
-                pData->fmbuf_water_line = 0;
-                pData->fmbuf_water_warn_sent = 0;
-            }
-# ifndef RT_OS_WINDOWS
-            poll_index = 0;
-# endif
-            goto done;
-        }
-#endif /* !VBOX_WITH_SLIRP_BSD_MBUF */
         STAM_COUNTER_INC(&pData->StatUDP);
 #if !defined(RT_OS_WINDOWS)
         so->so_poll_index = -1;
@@ -1123,17 +1094,6 @@ void slirp_select_poll(PNATState pData, struct pollfd *polls, int ndfs)
      */
     QSOCKET_FOREACH(so, so_next, tcp)
     /* { */
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-        if (pData->fmbuf_water_line == 1)
-        {
-            if (mbuf_alloced < pData->mbuf_water_line_limit/2)
-            {
-                pData->fmbuf_water_line = 0;
-                pData->fmbuf_water_warn_sent = 0;
-            }
-            goto done;
-        }
-#endif
 
 #ifdef VBOX_WITH_SLIRP_MT
         if (   so->so_state & SS_NOFDREF
@@ -1235,12 +1195,18 @@ void slirp_select_poll(PNATState pData, struct pollfd *polls, int ndfs)
                     TCP_OUTPUT(pData, sototcpcb(so));
                 else
                 {
-                    Log2(("%R[natsock] errno %d:%s\n", so, errno, strerror(errno)));
+                    Log2(("%R[natsock] errno %d (%s)\n", so, errno, strerror(errno)));
                     break;
                 }
             }
             /* mark the socket for termination _after_ it was drained */
             so->so_close = 1;
+            /* No idea about Windows but on Posix, POLLHUP means that we can't send more.
+             * Actually in the specific error scenario, POLLERR is set as well. */
+#ifndef RT_OS_WINDOWS
+            if (CHECK_FD_SET(so, NetworkEvents, rderr))
+                sofcantsendmore(so);
+#endif
             CONTINUE(tcp);
         }
 
@@ -1354,17 +1320,6 @@ void slirp_select_poll(PNATState pData, struct pollfd *polls, int ndfs)
      */
      QSOCKET_FOREACH(so, so_next, udp)
      /* { */
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-        if (pData->fmbuf_water_line == 1)
-        {
-            if (mbuf_alloced < pData->mbuf_water_line_limit/2)
-            {
-                pData->fmbuf_water_line = 0;
-                pData->fmbuf_water_warn_sent = 0;
-            }
-            goto done;
-        }
-#endif
 #ifdef VBOX_WITH_SLIRP_MT
         if (   so->so_state & SS_NOFDREF
             && so->so_deleted == 1)
@@ -1407,13 +1362,6 @@ void slirp_select_poll(PNATState pData, struct pollfd *polls, int ndfs)
     }
 
 done:
-#if 0
-    /*
-     * See if we can start outputting
-     */
-    if (if_queued && link_up)
-        if_start(pData);
-#endif
 
     STAM_PROFILE_STOP(&pData->StatPoll, a);
 }
@@ -1437,6 +1385,9 @@ struct arphdr
 };
 AssertCompileSize(struct arphdr, 28);
 
+/**
+ * @note This function will free m!
+ */
 static void arp_input(PNATState pData, struct mbuf *m)
 {
     struct ethhdr *eh;
@@ -1457,44 +1408,25 @@ static void arp_input(PNATState pData, struct mbuf *m)
     switch (ar_op)
     {
         case ARPOP_REQUEST:
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-            mr = m_get(pData);
-
-            reh = mtod(mr, struct ethhdr *);
-            memcpy(reh->h_source, eh->h_source, ETH_ALEN); /* XXX: if_encap will swap src and dst*/
-            Log4(("NAT: arp:%R[ether]->%R[ether]\n",
-                reh->h_source, reh->h_dest));
-            Log4(("NAT: arp: %R[IP4]\n", &tip));
-
-            mr->m_data += if_maxlinkhdr;
-            mr->m_len = sizeof(struct arphdr);
-            rah = mtod(mr, struct arphdr *);
-#else
             mr = m_getcl(pData, M_NOWAIT, MT_HEADER, M_PKTHDR);
-            if (mr == NULL)
-                return;
+            if (!mr)
+                break;
             reh = mtod(mr, struct ethhdr *);
             mr->m_data += ETH_HLEN;
             rah = mtod(mr, struct arphdr *);
             mr->m_len = sizeof(struct arphdr);
-            Assert(mr);
             memcpy(reh->h_source, eh->h_source, ETH_ALEN); /* XXX: if_encap will swap src and dst*/
-#endif
+            if (   0
 #ifdef VBOX_WITH_NAT_SERVICE
-            if (tip == pData->special_addr.s_addr)
-                goto arp_ok;
+                || (tip == pData->special_addr.s_addr)
 #endif
-            if ((htip & pData->netmask) == RT_N2H_U32(pData->special_addr.s_addr))
+                || (   ((htip & pData->netmask) == RT_N2H_U32(pData->special_addr.s_addr))
+                    && (   CTL_CHECK(htip, CTL_DNS)
+                        || CTL_CHECK(htip, CTL_ALIAS)
+                        || CTL_CHECK(htip, CTL_TFTP))
+                    )
+                )
             {
-                if (   CTL_CHECK(htip, CTL_DNS)
-                    || CTL_CHECK(htip, CTL_ALIAS)
-                    || CTL_CHECK(htip, CTL_TFTP))
-                    goto arp_ok;
-                m_freem(pData, m);
-                m_freem(pData, mr);
-                return;
-
-         arp_ok:
                 rah->ar_hrd = RT_H2N_U16_C(1);
                 rah->ar_pro = RT_H2N_U16_C(ETH_P_IP);
                 rah->ar_hln = ETH_ALEN;
@@ -1515,39 +1447,31 @@ static void arp_input(PNATState pData, struct mbuf *m)
                 memcpy(rah->ar_tha, ah->ar_sha, ETH_ALEN);
                 memcpy(rah->ar_tip, ah->ar_sip, 4);
                 if_encap(pData, ETH_P_ARP, mr, ETH_ENCAP_URG);
-                m_freem(pData, m);
             }
+            else
+                m_freem(pData, mr);
+
             /* Gratuitous ARP */
             if (  *(uint32_t *)ah->ar_sip == *(uint32_t *)ah->ar_tip
                 && memcmp(ah->ar_tha, broadcast_ethaddr, ETH_ALEN) == 0
                 && memcmp(eh->h_dest, broadcast_ethaddr, ETH_ALEN) == 0)
             {
-                /* we've received anounce about address asignment
-                 * Let's do ARP cache update
+                /* We've received an announce about address assignment,
+                 * let's do an ARP cache update
                  */
-                if (slirp_arp_cache_update(pData, *(uint32_t *)ah->ar_tip, &eh->h_dest[0]) == 0)
-                {
-                    m_freem(pData, mr);
-                    m_freem(pData, m);
-                    break;
-                }
-                slirp_arp_cache_add(pData, *(uint32_t *)ah->ar_tip, &eh->h_dest[0]);
+                slirp_arp_cache_update_or_add(pData, *(uint32_t *)ah->ar_tip, &eh->h_dest[0]);
             }
             break;
 
         case ARPOP_REPLY:
-            if (slirp_arp_cache_update(pData, *(uint32_t *)ah->ar_sip, &ah->ar_sha[0]) == 0)
-            {
-                m_freem(pData, m);
-                break;
-            }
-            slirp_arp_cache_add(pData, *(uint32_t *)ah->ar_sip, ah->ar_sha);
-            m_freem(pData, m);
+            slirp_arp_cache_update_or_add(pData, *(uint32_t *)ah->ar_sip, &ah->ar_sha[0]);
             break;
 
         default:
             break;
     }
+
+    m_freem(pData, m);
 }
 
 /**
@@ -1566,7 +1490,7 @@ void slirp_input(PNATState pData, struct mbuf *m, size_t cbBuf)
     m->m_len = cbBuf;
     if (cbBuf < ETH_HLEN)
     {
-        LogRel(("NAT: packet having size %d has been ignored\n", m->m_len));
+        Log(("NAT: packet having size %d has been ignored\n", m->m_len));
         m_freem(pData, m);
         return;
     }
@@ -1586,19 +1510,8 @@ void slirp_input(PNATState pData, struct mbuf *m, size_t cbBuf)
              * the first outgoing connection gets an incorrect timestamp. */
             updtime(pData);
             m_adj(m, ETH_HLEN);
-#ifdef VBOX_WITH_SLIRP_BSD_MBUF
             M_ASSERTPKTHDR(m);
             m->m_pkthdr.header = mtod(m, void *);
-#else /* !VBOX_WITH_SLIRP_BSD_MBUF */
-            if (   pData->fmbuf_water_line
-                && pData->fmbuf_water_warn_sent == 0
-                && (curtime - pData->tsmbuf_water_warn_sent) > 500)
-            {
-                icmp_error(pData, m, ICMP_SOURCEQUENCH, 0, 0, "Out of resources!!!");
-                pData->fmbuf_water_warn_sent = 1;
-                pData->tsmbuf_water_warn_sent = curtime;
-            }
-#endif /* !VBOX_WITH_SLIRP_BSD_MBUF */
             ip_input(pData, m);
             break;
 
@@ -1621,30 +1534,24 @@ void slirp_input(PNATState pData, struct mbuf *m, size_t cbBuf)
         activate_port_forwarding(pData, au8Ether);
 }
 
-/* output the IP packet to the ethernet device */
+/**
+ * Output the IP packet to the ethernet device.
+ *
+ * @note This function will free m!
+ */
 void if_encap(PNATState pData, uint16_t eth_proto, struct mbuf *m, int flags)
 {
     struct ethhdr *eh;
     uint8_t *buf = NULL;
+    uint8_t *mbuf = NULL;
     size_t mlen = 0;
     STAM_PROFILE_START(&pData->StatIF_encap, a);
 
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-    m->m_data -= if_maxlinkhdr;
-    m->m_len += ETH_HLEN;
-    eh = mtod(m, struct ethhdr *);
-
-    if (MBUF_HEAD(m) != m->m_data)
-    {
-        LogRel(("NAT: ethernet detects corruption of the packet"));
-        AssertMsgFailed(("!!Ethernet frame corrupted!!"));
-    }
-#else
     M_ASSERTPKTHDR(m);
     m->m_data -= ETH_HLEN;
     m->m_len += ETH_HLEN;
     eh = mtod(m, struct ethhdr *);
-#endif
+    mlen = m->m_len;
 
     if (memcmp(eh->h_source, special_ethaddr, ETH_ALEN) != 0)
     {
@@ -1658,31 +1565,22 @@ void if_encap(PNATState pData, uint16_t eth_proto, struct mbuf *m, int flags)
             goto done;
         }
     }
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-    mlen = m->m_len;
-#else
-    mlen = m_length(m, NULL);
-    buf = RTMemAlloc(mlen);
-    if (buf == NULL)
+    /*
+     * we're processing the chain, that isn't not expected.
+     */
+    Assert((!m->m_next));
+    if (m->m_next)
     {
-        LogRel(("NAT: Can't alloc memory for outgoing buffer\n"));
+        Log(("NAT: if_encap's recived the chain, dropping...\n"));
         m_freem(pData, m);
         goto done;
     }
-#endif
+    mbuf = mtod(m, uint8_t *);
     eh->h_proto = RT_H2N_U16(eth_proto);
-#ifdef VBOX_WITH_SLIRP_BSD_MBUF
-    m_copydata(m, 0, mlen, (char *)buf);
     if (flags & ETH_ENCAP_URG)
-        slirp_urg_output(pData->pvUser, m, buf, mlen);
+        slirp_urg_output(pData->pvUser, m, mbuf, mlen);
     else
-        slirp_output(pData->pvUser, m, buf, mlen);
-#else
-    if (flags & ETH_ENCAP_URG)
-        slirp_urg_output(pData->pvUser, m, mtod(m, const uint8_t *), mlen);
-    else
-        slirp_output(pData->pvUser, m, mtod(m, const uint8_t *), mlen);
-#endif
+        slirp_output(pData->pvUser, m, mbuf, mlen);
 done:
     STAM_PROFILE_STOP(&pData->StatIF_encap, a);
 }
@@ -1757,13 +1655,15 @@ static void activate_port_forwarding(PNATState pData, const uint8_t *h_source)
         }
 
 #if !defined(VBOX_WITH_NAT_SERVICE)
-        if (rule->guest_addr.s_addr != guest_addr)
+        if (   rule->guest_addr.s_addr != guest_addr
+            && rule->guest_addr.s_addr != INADDR_ANY)
             continue;
+        if (rule->guest_addr.s_addr == INADDR_ANY)
+            rule->guest_addr.s_addr = guest_addr;
 #endif
 
         LogRel(("NAT: set redirect %s host port %d => guest port %d @ %R[IP4]\n",
-               (rule->proto == IPPROTO_UDP?"UDP":"TCP"),
-               rule->host_port, rule->guest_port, &guest_addr));
+               rule->proto == IPPROTO_UDP ? "UDP" : "TCP", rule->host_port, rule->guest_port, &guest_addr));
 
         if (rule->proto == IPPROTO_UDP)
             so = udp_listen(pData, rule->bind_ip.s_addr, RT_H2N_U16(rule->host_port), guest_addr,
@@ -1803,6 +1703,7 @@ static void activate_port_forwarding(PNATState pData, const uint8_t *h_source)
 
         so->so_la = lib;
         rule->activated = 1;
+        rule->so = so;
         pData->cRedirectionsActive++;
         continue;
 
@@ -1827,11 +1728,23 @@ static void activate_port_forwarding(PNATState pData, const uint8_t *h_source)
  * could get it from VM configuration in DrvNAT or Service, the idea is activating
  * corresponding port-forwarding
  */
-int slirp_redir(PNATState pData, int is_udp, struct in_addr host_addr, int host_port,
+int slirp_add_redirect(PNATState pData, int is_udp, struct in_addr host_addr, int host_port,
                 struct in_addr guest_addr, int guest_port, const uint8_t *ethaddr)
 {
     struct port_forward_rule *rule = NULL;
-    Assert(memcmp(ethaddr, zerro_ethaddr, ETH_ALEN) == 0);
+    Assert(ethaddr);
+    LIST_FOREACH(rule, &pData->port_forward_rule_head, list)
+    {
+        if (   rule->proto == (is_udp ? IPPROTO_UDP : IPPROTO_TCP)
+            && rule->host_port == host_port
+            && rule->bind_ip.s_addr == host_addr.s_addr
+            && rule->guest_port == guest_port
+#ifndef VBOX_WITH_NAT_SERVICE
+            && rule->guest_addr.s_addr == guest_addr.s_addr
+#endif
+            )
+                return 0; /* rule has been already registered */
+    }
 
     rule = RTMemAllocZ(sizeof(struct port_forward_rule));
     if (rule == NULL)
@@ -1848,6 +1761,42 @@ int slirp_redir(PNATState pData, int is_udp, struct in_addr host_addr, int host_
     /* @todo add mac address */
     LIST_INSERT_HEAD(&pData->port_forward_rule_head, rule, list);
     pData->cRedirectionsStored++;
+    /* activate port-forwarding if guest has already got assigned IP */
+    if (memcmp(ethaddr, zerro_ethaddr, ETH_ALEN))
+        activate_port_forwarding(pData, ethaddr);
+    return 0;
+}
+
+int slirp_remove_redirect(PNATState pData, int is_udp, struct in_addr host_addr, int host_port,
+                struct in_addr guest_addr, int guest_port)
+{
+    struct port_forward_rule *rule = NULL;
+    LIST_FOREACH(rule, &pData->port_forward_rule_head, list)
+    {
+        if (   rule->proto == (is_udp ? IPPROTO_UDP : IPPROTO_TCP)
+            && rule->host_port == host_port
+            && rule->guest_port == guest_port
+            && rule->bind_ip.s_addr == host_addr.s_addr
+#ifndef VBOX_WITH_NAT_SERVICE
+            && rule->guest_addr.s_addr == guest_addr.s_addr
+#endif
+            && rule->activated)
+        {
+            LogRel(("NAT: remove redirect %s host port %d => guest port %d @ %R[IP4]\n",
+                   rule->proto == IPPROTO_UDP ? "UDP" : "TCP", rule->host_port, rule->guest_port, &guest_addr));
+
+            LibAliasUninit(rule->so->so_la);
+            if (is_udp)
+                udp_detach(pData, rule->so);
+            else
+                tcp_close(pData, sototcpcb(rule->so));
+            LIST_REMOVE(rule, list);
+            RTMemFree(rule);
+            pData->cRedirectionsStored--;
+            break;
+        }
+
+    }
     return 0;
 }
 
@@ -1916,19 +1865,19 @@ void *slirp_get_queue(PNATState pData)
 
 void slirp_set_dhcp_TFTP_prefix(PNATState pData, const char *tftpPrefix)
 {
-    Log2(("tftp_prefix:%s\n", tftpPrefix));
+    Log2(("tftp_prefix: %s\n", tftpPrefix));
     tftp_prefix = tftpPrefix;
 }
 
 void slirp_set_dhcp_TFTP_bootfile(PNATState pData, const char *bootFile)
 {
-    Log2(("bootFile:%s\n", bootFile));
+    Log2(("bootFile: %s\n", bootFile));
     bootp_filename = bootFile;
 }
 
 void slirp_set_dhcp_next_server(PNATState pData, const char *next_server)
 {
-    Log2(("next_server:%s\n", next_server));
+    Log2(("next_server: %s\n", next_server));
     if (next_server == NULL)
         pData->tftp_server.s_addr = RT_H2N_U32(RT_N2H_U32(pData->special_addr.s_addr) | CTL_TFTP);
     else
@@ -2047,14 +1996,10 @@ void slirp_arp_who_has(PNATState pData, uint32_t dst)
     struct ethhdr *ehdr;
     struct arphdr *ahdr;
 
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-    m = m_get(pData);
-#else
     m = m_getcl(pData, M_NOWAIT, MT_HEADER, M_PKTHDR);
-#endif
     if (m == NULL)
     {
-        LogRel(("NAT: Can't alloc mbuf for ARP request\n"));
+        Log(("NAT: Can't alloc mbuf for ARP request\n"));
         return;
     }
     ehdr = mtod(m, struct ethhdr *);
@@ -2069,15 +2014,10 @@ void slirp_arp_who_has(PNATState pData, uint32_t dst)
     *(uint32_t *)ahdr->ar_sip = RT_H2N_U32(RT_N2H_U32(pData->special_addr.s_addr) | CTL_ALIAS);
     memset(ahdr->ar_tha, 0xff, ETH_ALEN); /*broadcast*/
     *(uint32_t *)ahdr->ar_tip = dst;
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-    m->m_data += if_maxlinkhdr;
-    m->m_len = sizeof(struct arphdr);
-#else
     /* warn!!! should falls in mbuf minimal size */
     m->m_len = sizeof(struct arphdr) + ETH_HLEN;
     m->m_data += ETH_HLEN;
     m->m_len -= ETH_HLEN;
-#endif
     if_encap(pData, ETH_P_ARP, m, ETH_ENCAP_URG);
 }
 
@@ -2113,7 +2053,7 @@ void slirp_arp_cache_add(PNATState pData, uint32_t ip, const uint8_t *ether)
     ac = RTMemAllocZ(sizeof(struct arp_cache_entry));
     if (ac == NULL)
     {
-        LogRel(("NAT: Can't allocate arp cache entry\n"));
+        Log(("NAT: Can't allocate arp cache entry\n"));
         return;
     }
     ac->ip = ip;
@@ -2121,7 +2061,6 @@ void slirp_arp_cache_add(PNATState pData, uint32_t ip, const uint8_t *ether)
     LIST_INSERT_HEAD(&pData->arp_cache, ac, list);
 }
 
-#ifdef VBOX_WITH_SLIRP_BSD_MBUF
 void slirp_set_mtu(PNATState pData, int mtu)
 {
     if (mtu < 20 || mtu >= 16000)
@@ -2129,7 +2068,45 @@ void slirp_set_mtu(PNATState pData, int mtu)
         LogRel(("NAT: mtu(%d) is out of range (20;16000] mtu forcely assigned to 1500\n", mtu));
         mtu = 1500;
     }
+    /* MTU is maximum transition unit on */
     if_mtu =
     if_mru = mtu;
 }
-#endif
+
+/**
+ * Info handler.
+ */
+void slirp_info(PNATState pData, PCDBGFINFOHLP pHlp, const char *pszArgs)
+{
+    struct socket *so, *so_next;
+    struct arp_cache_entry *ac;
+    struct port_forward_rule *rule;
+
+    pHlp->pfnPrintf(pHlp, "NAT parameters: MTU=%d\n", if_mtu);
+    pHlp->pfnPrintf(pHlp, "NAT TCP ports:\n");
+    QSOCKET_FOREACH(so, so_next, tcp)
+    /* { */
+        pHlp->pfnPrintf(pHlp, " %R[natsock]\n", so);
+    }
+
+    pHlp->pfnPrintf(pHlp, "NAT UDP ports:\n");
+    QSOCKET_FOREACH(so, so_next, udp)
+    /* { */
+        pHlp->pfnPrintf(pHlp, " %R[natsock]\n", so);
+    }
+
+    pHlp->pfnPrintf(pHlp, "NAT ARP cache:\n");
+    LIST_FOREACH(ac, &pData->arp_cache, list)
+    {
+        pHlp->pfnPrintf(pHlp, " %R[IP4] %R[ether]\n", &ac->ip, &ac->ether);
+    }
+
+    pHlp->pfnPrintf(pHlp, "NAT rules:\n");
+    LIST_FOREACH(rule, &pData->port_forward_rule_head, list)
+    {
+        pHlp->pfnPrintf(pHlp, " %s %d => %R[IP4]:%d %c\n",
+                        rule->proto == IPPROTO_UDP ? "UDP" : "TCP",
+                        rule->host_port, &rule->guest_addr.s_addr, rule->guest_port,
+                        rule->activated ? ' ' : '*');
+    }
+}

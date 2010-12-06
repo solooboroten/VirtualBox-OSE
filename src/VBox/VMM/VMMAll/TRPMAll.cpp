@@ -1,4 +1,4 @@
-/* $Id: TRPMAll.cpp 29250 2010-05-09 17:53:58Z vboxsync $ */
+/* $Id: TRPMAll.cpp 31402 2010-08-05 12:28:18Z vboxsync $ */
 /** @file
  * TRPM - Trap Monitor - Any Context.
  */
@@ -31,12 +31,12 @@
 #include <VBox/err.h>
 #include <VBox/x86.h>
 #include <VBox/em.h>
-
 #include <VBox/log.h>
 #include <iprt/assert.h>
 #include <iprt/asm.h>
 #include <iprt/asm-amd64-x86.h>
 #include <iprt/param.h>
+#include <include/internal/pgm.h>
 
 
 
@@ -357,7 +357,8 @@ VMMDECL(void) TRPMRestoreTrap(PVMCPU pVCpu)
  * @param   iOrgTrap    The original trap.
  * @internal
  */
-VMMDECL(int) TRPMForwardTrap(PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t iGate, uint32_t opsize, TRPMERRORCODE enmError, TRPMEVENT enmType, int32_t iOrgTrap)
+VMMDECL(int) TRPMForwardTrap(PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t iGate, uint32_t opsize,
+                             TRPMERRORCODE enmError, TRPMEVENT enmType, int32_t iOrgTrap)
 {
 #ifdef TRPM_FORWARD_TRAPS_IN_GC
     PVM pVM = pVCpu->CTX_SUFF(pVM);
@@ -691,7 +692,9 @@ VMMDECL(int) TRPMForwardTrap(PVMCPU pVCpu, PCPUMCTXCORE pRegFrame, uint32_t iGat
                     if (iOrgTrap >= 0 && iOrgTrap < (int)RT_ELEMENTS(pVM->trpm.s.aStatGCTraps))
                         STAM_PROFILE_ADV_STOP(&pVM->trpm.s.aStatGCTraps[iOrgTrap], o);
 
-                    CPUMGCCallGuestTrapHandler(pRegFrame, GuestIdte.Gen.u16SegSel | 1, pVM->trpm.s.aGuestTrapHandler[iGate], eflags.u32, ss_r0, (RTRCPTR)esp_r0);
+                    PGMRZDynMapReleaseAutoSet(pVCpu);
+                    CPUMGCCallGuestTrapHandler(pRegFrame, GuestIdte.Gen.u16SegSel | 1, pVM->trpm.s.aGuestTrapHandler[iGate],
+                                               eflags.u32, ss_r0, (RTRCPTR)esp_r0);
                     /* does not return */
 #else
                     /* Turn off interrupts for interrupt gates. */

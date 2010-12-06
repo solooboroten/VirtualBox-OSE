@@ -1,4 +1,4 @@
-/* $Id: VMMDev.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VMMDev.h 30776 2010-07-12 08:05:23Z vboxsync $ */
 /** @file
  * VBox frontends: Basic Frontend (BFE):
  * Declaration of VMMDev: driver interface to VMM device
@@ -43,7 +43,8 @@ public:
     int hgcmHostCall (const char *pszServiceName, uint32_t u32Function, uint32_t cParms, PVBOXHGCMSVCPARM paParms);
 
 private:
-    static DECLCALLBACK(void)   UpdateGuestVersion(PPDMIVMMDEVCONNECTOR pInterface, VBoxGuestInfo *guestInfo);
+    static DECLCALLBACK(void)   UpdateGuestStatus(PPDMIVMMDEVCONNECTOR pInterface, const VBoxGuestStatus *guestStatus);
+    static DECLCALLBACK(void)   UpdateGuestInfo(PPDMIVMMDEVCONNECTOR pInterface, const VBoxGuestInfo *guestInfo);
     static DECLCALLBACK(void)   UpdateGuestCapabilities(PPDMIVMMDEVCONNECTOR pInterface, uint32_t newCapabilities);
     static DECLCALLBACK(void)   UpdateMouseCapabilities(PPDMIVMMDEVCONNECTOR pInterface, uint32_t newCapabilities);
     static DECLCALLBACK(void)   UpdatePointerShape(PPDMIVMMDEVCONNECTOR pInterface, bool fVisible, bool fAlpha,
@@ -53,6 +54,7 @@ private:
     static DECLCALLBACK(int)    VideoModeSupported(PPDMIVMMDEVCONNECTOR pInterface, uint32_t display, uint32_t width, uint32_t height,
                                                    uint32_t bpp, bool *fSupported);
     static DECLCALLBACK(int)    GetHeightReduction(PPDMIVMMDEVCONNECTOR pInterface, uint32_t *heightReduction);
+    static DECLCALLBACK(int)    QueryBalloonSize(PPDMIVMMDEVCONNECTOR pInterface, uint32_t *pu32BalloonSize);
 
     static DECLCALLBACK(void *) drvQueryInterface(PPDMIBASE pInterface, const char *pszIID);
     static DECLCALLBACK(int)    drvConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg, uint32_t fFlags);

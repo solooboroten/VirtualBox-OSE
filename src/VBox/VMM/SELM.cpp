@@ -1,4 +1,4 @@
-/* $Id: SELM.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: SELM.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * SELM - The Selector Manager.
  */
@@ -248,7 +248,7 @@ VMMR3DECL(int) SELMR3InitFinalize(PVM pVM)
 {
     /** @cfgm{/DoubleFault,bool,false}
      * Enables catching of double faults in the raw-mode context VMM code.  This can
-     * be used when the tripple faults or hangs occure and one suspect an unhandled
+     * be used when the triple faults or hangs occur and one suspect an unhandled
      * double fault.  This is not enabled by default because it means making the
      * hyper selectors writeable for all supervisor code, including the guest's.
      * The double fault is a task switch and thus requires write access to the GDT
@@ -402,7 +402,7 @@ VMMR3DECL(void) SELMR3Relocate(PVM pVM)
          */
         CPUMSetHyperGDTR(pVCpu, MMHyperR3ToRC(pVM, paGdt), SELM_GDT_ELEMENTS * sizeof(paGdt[0]) - 1);
 
-        /** @todo selector relocations should be a seperate operation? */
+        /** @todo selector relocations should be a separate operation? */
         CPUMSetHyperCS(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_CS]);
         CPUMSetHyperDS(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS]);
         CPUMSetHyperES(pVCpu, pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS]);
@@ -423,7 +423,7 @@ VMMR3DECL(void) SELMR3Relocate(PVM pVM)
     /* Current TSS */
     pVM->selm.s.Tss.cr3     = PGMGetHyperCR3(pVCpu);
     pVM->selm.s.Tss.ss0     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
-    pVM->selm.s.Tss.esp0    = VMMGetStackRC(pVM);
+    pVM->selm.s.Tss.esp0    = VMMGetStackRC(pVCpu);
     pVM->selm.s.Tss.cs      = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_CS];
     pVM->selm.s.Tss.ds      = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
     pVM->selm.s.Tss.es      = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
@@ -433,7 +433,7 @@ VMMR3DECL(void) SELMR3Relocate(PVM pVM)
     pVM->selm.s.TssTrap08.cr3    = PGMGetInterRCCR3(pVM, pVCpu);                   /* this should give use better survival chances. */
     pVM->selm.s.TssTrap08.ss0    = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
     pVM->selm.s.TssTrap08.ss     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_DS];
-    pVM->selm.s.TssTrap08.esp0   = VMMGetStackRC(pVM) - PAGE_SIZE / 2;  /* upper half can be analysed this way. */
+    pVM->selm.s.TssTrap08.esp0   = VMMGetStackRC(pVCpu) - PAGE_SIZE / 2;  /* upper half can be analysed this way. */
     pVM->selm.s.TssTrap08.esp    = pVM->selm.s.TssTrap08.esp0;
     pVM->selm.s.TssTrap08.ebp    = pVM->selm.s.TssTrap08.esp0;
     pVM->selm.s.TssTrap08.cs     = pVM->selm.s.aHyperSel[SELM_HYPER_SEL_CS];
@@ -452,7 +452,8 @@ VMMR3DECL(void) SELMR3Relocate(PVM pVM)
     pVM->selm.s.TssTrap08.offIoBitmap = sizeof(VBOXTSS);
     /* TRPM will be updating the eip */
 
-    if (!pVM->selm.s.fDisableMonitoring)
+    if (    !pVM->selm.s.fDisableMonitoring
+        &&  !VMMIsHwVirtExtForced(pVM))
     {
         /*
          * Update shadow GDT/LDT/TSS write access handlers.
@@ -1103,7 +1104,7 @@ VMMR3DECL(int) SELMR3UpdateFromCPUM(PVM pVM, PVMCPU pVCpu)
          */
 
         /*
-         * First, determin the current LDT selector.
+         * First, determine the current LDT selector.
          */
         RTSEL SelLdt = CPUMGetGuestLDTR(pVCpu);
         if ((SelLdt & X86_SEL_MASK) == 0)
@@ -1850,7 +1851,7 @@ VMMR3DECL(bool) SELMR3CheckTSS(PVM pVM)
         uint32_t cr4 = CPUMGetGuestCR4(pVCpu);
         int rc = PGMPhysSimpleReadGCPtr(pVCpu, &Tss, GCPtrTss, RT_OFFSETOF(VBOXTSS, IntRedirBitmap));
         AssertReturn(   rc == VINF_SUCCESS
-                        /* Happends early in XP boot during page table switching. */
+                        /* Happens early in XP boot during page table switching. */
                      || (   (rc == VERR_PAGE_TABLE_NOT_PRESENT || rc == VERR_PAGE_NOT_PRESENT)
                          && !(CPUMGetGuestEFlags(pVCpu) & X86_EFL_IF)),
                      false);
@@ -1951,7 +1952,7 @@ VMMDECL(int) SELMGetLDTFromSel(PVM pVM, RTSEL SelLdt, PRTGCPTR ppvLdt, unsigned 
     if (RT_FAILURE(rc))
     {
         /* fatal */
-        AssertMsgFailed(("Can't read LDT descriptor for selector=%04X\n", SelLdt));
+        Log(("Can't read LDT descriptor for selector=%04X\n", SelLdt));
         return VERR_SELECTOR_NOT_PRESENT;
     }
 

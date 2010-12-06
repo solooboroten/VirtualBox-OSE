@@ -1,4 +1,4 @@
-/* $Id: slirp.h 29656 2010-05-19 06:05:09Z vboxsync $ */
+/* $Id: slirp.h 34103 2010-11-16 11:18:55Z vboxsync $ */
 /** @file
  * NAT - slirp (declarations/defines).
  */
@@ -77,6 +77,16 @@ typedef int socklen_t;
 # include <sys/timeb.h>
 # include <iphlpapi.h>
 
+/* We don't want the errno.h versions of these error defines. */
+# if defined(_MSC_VER) && _MSC_VER >= 1600
+#  include <errno.h>
+#  undef EWOULDBLOCK
+#  undef EINPROGRESS
+#  undef ENOTCONN
+#  undef EHOSTUNREACH
+#  undef ENETUNREACH
+#  undef ECONNREFUSED
+# endif
 # define EWOULDBLOCK WSAEWOULDBLOCK
 # define EINPROGRESS WSAEINPROGRESS
 # define ENOTCONN WSAENOTCONN
@@ -247,9 +257,9 @@ int inet_aton (const char *cp, struct in_addr *ia);
 #include "udp.h"
 #include "icmp_var.h"
 #include "mbuf.h"
+#include "if.h"
 #include "sbuf.h"
 #include "socket.h"
-#include "if.h"
 #include "main.h"
 #include "misc.h"
 #include "ctl.h"
@@ -285,13 +295,9 @@ void if_start (PNATState);
 int get_dns_addr(PNATState pData, struct in_addr *pdns_addr);
 
 /* cksum.c */
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-int cksum(struct mbuf *m, int len);
-#else
 typedef uint16_t u_short;
 typedef unsigned int u_int;
 #include "in_cksum.h"
-#endif
 
 /* if.c */
 void if_init (PNATState);
@@ -382,7 +388,7 @@ int sscanf(const char *s, const char *format, ...);
 #if defined(VBOX_SLIRP_ALIAS) || defined(VBOX_SLIRP_BSD)
 
 # define ip_next(ip) (void *)((uint8_t *)(ip) + ((ip)->ip_hl << 2))
-# define udp_next(udp) (void *)((uint8_t *)&((struct udphdr *)(udp))[1] )
+# define udp_next(udp) (void *)((uint8_t *)&((struct udphdr *)(udp))[1])
 # define bcopy(src, dst, len) memcpy((dst), (src), (len))
 # define bcmp(a1, a2, len) memcmp((a1), (a2), (len))
 # define NO_FW_PUNCH
@@ -418,7 +424,6 @@ int sscanf(const char *s, const char *format, ...);
 # include "ext.h"
 #endif /*VBOX_SLIRP_ALIAS*/
 
-#ifdef VBOX_WITH_SLIRP_BSD_MBUF
 /**
  * @todo might be useful to make it configurable, especially in terms of Intnet behind NAT
  */
@@ -445,7 +450,6 @@ struct dummy_req
 
 void mbuf_init(void *);
 # define cksum(m, len) in_cksum_skip((m), (len), 0)
-#endif
 
 int ftp_alias_load(PNATState);
 int ftp_alias_unload(PNATState);
@@ -455,5 +459,20 @@ int dns_alias_load(PNATState);
 int dns_alias_unload(PNATState);
 int slirp_arp_lookup_ip_by_ether(PNATState, const uint8_t *, uint32_t *);
 int slirp_arp_lookup_ether_by_ip(PNATState, uint32_t, uint8_t *);
+
+static inline size_t slirp_size(PNATState pData)
+{
+        if (if_mtu < MSIZE)
+            return MCLBYTES;
+        else if (if_mtu < MCLBYTES)
+            return MCLBYTES;
+        else if (if_mtu < MJUM9BYTES)
+            return MJUM9BYTES;
+        else if (if_mtu < MJUM16BYTES)
+            return MJUM16BYTES;
+        else
+            AssertMsgFailed(("Unsupported size"));
+        return 0;
+}
 #endif
 

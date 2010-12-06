@@ -1,4 +1,4 @@
-/* $Id: CPUMAllRegs.cpp 29250 2010-05-09 17:53:58Z vboxsync $ */
+/* $Id: CPUMAllRegs.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * CPUM - CPU Monitor(/Manager) - Getters and Setters.
  */
@@ -23,6 +23,8 @@
 #include <VBox/cpum.h>
 #include <VBox/patm.h>
 #include <VBox/dbgf.h>
+#include <VBox/pdm.h>
+#include <VBox/pgm.h>
 #include <VBox/mm.h>
 #include "CPUMInternal.h"
 #include <VBox/vm.h>
@@ -523,7 +525,7 @@ VMMDECL(int) CPUMSetGuestCR0(PVMCPU pVCpu, uint64_t cr0)
      * Check if we need to change hypervisor CR0 because
      * of math stuff.
      */
-    if (    (cr0                 & (X86_CR0_TS | X86_CR0_EM | X86_CR0_MP))
+    if (    (cr0                     & (X86_CR0_TS | X86_CR0_EM | X86_CR0_MP))
         !=  (pVCpu->cpum.s.Guest.cr0 & (X86_CR0_TS | X86_CR0_EM | X86_CR0_MP)))
     {
         if (!(pVCpu->cpum.s.fUseFlags & CPUM_USED_FPU))
@@ -558,7 +560,7 @@ VMMDECL(int) CPUMSetGuestCR0(PVMCPU pVCpu, uint64_t cr0)
              * the guest flags.
              */
             uint32_t HyperCR0 = ASMGetCR0();
-            AssertMsg(     (HyperCR0             & (X86_CR0_TS | X86_CR0_EM | X86_CR0_MP))
+            AssertMsg(     (HyperCR0                 & (X86_CR0_TS | X86_CR0_EM | X86_CR0_MP))
                       ==   (pVCpu->cpum.s.Guest.cr0  & (X86_CR0_TS | X86_CR0_EM | X86_CR0_MP)),
                       ("%#x %#x\n", HyperCR0, pVCpu->cpum.s.Guest.cr0));
             HyperCR0 &= ~(X86_CR0_TS | X86_CR0_EM | X86_CR0_MP);
@@ -573,7 +575,7 @@ VMMDECL(int) CPUMSetGuestCR0(PVMCPU pVCpu, uint64_t cr0)
      * Check for changes causing TLB flushes (for REM).
      * The caller is responsible for calling PGM when appropriate.
      */
-    if (    (cr0                 & (X86_CR0_PG | X86_CR0_WP | X86_CR0_PE))
+    if (    (cr0                     & (X86_CR0_PG | X86_CR0_WP | X86_CR0_PE))
         !=  (pVCpu->cpum.s.Guest.cr0 & (X86_CR0_PG | X86_CR0_WP | X86_CR0_PE)))
         pVCpu->cpum.s.fChanged |= CPUM_CHANGED_GLOBAL_TLB_FLUSH;
     pVCpu->cpum.s.fChanged |= CPUM_CHANGED_CR0;
@@ -600,7 +602,7 @@ VMMDECL(int) CPUMSetGuestCR3(PVMCPU pVCpu, uint64_t cr3)
 
 VMMDECL(int) CPUMSetGuestCR4(PVMCPU pVCpu, uint64_t cr4)
 {
-    if (    (cr4                 & (X86_CR4_PGE | X86_CR4_PAE | X86_CR4_PSE))
+    if (    (cr4                     & (X86_CR4_PGE | X86_CR4_PAE | X86_CR4_PSE))
         !=  (pVCpu->cpum.s.Guest.cr4 & (X86_CR4_PGE | X86_CR4_PAE | X86_CR4_PSE)))
         pVCpu->cpum.s.fChanged |= CPUM_CHANGED_GLOBAL_TLB_FLUSH;
     pVCpu->cpum.s.fChanged |= CPUM_CHANGED_CR4;
@@ -729,71 +731,114 @@ VMMDECL(void) CPUMSetGuestEFER(PVMCPU pVCpu, uint64_t val)
 }
 
 
-VMMDECL(uint64_t)  CPUMGetGuestMsr(PVMCPU pVCpu, unsigned idMsr)
+/**
+ * Query an MSR.
+ *
+ * The caller is responsible for checking privilege if the call is the result
+ * of a RDMSR instruction.  We'll do the rest.
+ *
+ * @retval  VINF_SUCCESS on success.
+ * @retval  VERR_CPUM_RAISE_GP_0 on failure (invalid MSR), the caller is
+ *          expected to take the appropriate actions. @a *puValue is set to 0.
+ * @param   pVCpu               The virtual CPU to operate on.
+ * @param   idMsr               The MSR.
+ * @param   puValue             Where to return the value..
+ *
+ * @remarks This will always return the right values, even when we're in the
+ *          recompiler.
+ */
+VMMDECL(int) CPUMQueryGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t *puValue)
 {
-    uint64_t u64 = 0;
-    uint8_t  u8Multiplier = 4;
+    /*
+     * If we don't indicate MSR support in the CPUID feature bits, indicate
+     * that a #GP(0) should be raised.
+     */
+    if (!(pVCpu->CTX_SUFF(pVM)->cpum.s.aGuestCpuIdStd[1].edx & X86_CPUID_FEATURE_EDX_MSR))
+    {
+        *puValue = 0;
+        return VERR_CPUM_RAISE_GP_0;
+    }
 
+    int rc = VINF_SUCCESS;
+    uint8_t const u8Multiplier = 4;
     switch (idMsr)
     {
         case MSR_IA32_TSC:
-            u64 = TMCpuTickGet(pVCpu);
+            *puValue = TMCpuTickGet(pVCpu);
+            break;
+
+        case MSR_IA32_APICBASE:
+            rc = PDMApicGetBase(pVCpu->CTX_SUFF(pVM), puValue);
+            if (RT_SUCCESS(rc))
+                rc = VINF_SUCCESS;
+            else
+            {
+                *puValue = 0;
+                rc = VERR_CPUM_RAISE_GP_0;
+            }
             break;
 
         case MSR_IA32_CR_PAT:
-            u64 = pVCpu->cpum.s.Guest.msrPAT;
+            *puValue = pVCpu->cpum.s.Guest.msrPAT;
             break;
 
         case MSR_IA32_SYSENTER_CS:
-            u64 = pVCpu->cpum.s.Guest.SysEnter.cs;
+            *puValue = pVCpu->cpum.s.Guest.SysEnter.cs;
             break;
 
         case MSR_IA32_SYSENTER_EIP:
-            u64 = pVCpu->cpum.s.Guest.SysEnter.eip;
+            *puValue = pVCpu->cpum.s.Guest.SysEnter.eip;
             break;
 
         case MSR_IA32_SYSENTER_ESP:
-            u64 = pVCpu->cpum.s.Guest.SysEnter.esp;
+            *puValue = pVCpu->cpum.s.Guest.SysEnter.esp;
             break;
 
         case MSR_K6_EFER:
-            u64 = pVCpu->cpum.s.Guest.msrEFER;
+            *puValue = pVCpu->cpum.s.Guest.msrEFER;
             break;
 
         case MSR_K8_SF_MASK:
-            u64 = pVCpu->cpum.s.Guest.msrSFMASK;
+            *puValue = pVCpu->cpum.s.Guest.msrSFMASK;
             break;
 
         case MSR_K6_STAR:
-            u64 = pVCpu->cpum.s.Guest.msrSTAR;
+            *puValue = pVCpu->cpum.s.Guest.msrSTAR;
             break;
 
         case MSR_K8_LSTAR:
-            u64 = pVCpu->cpum.s.Guest.msrLSTAR;
+            *puValue = pVCpu->cpum.s.Guest.msrLSTAR;
             break;
 
         case MSR_K8_CSTAR:
-            u64 = pVCpu->cpum.s.Guest.msrCSTAR;
+            *puValue = pVCpu->cpum.s.Guest.msrCSTAR;
+            break;
+
+        case MSR_K8_FS_BASE:
+            *puValue = pVCpu->cpum.s.Guest.fsHid.u64Base;
+            break;
+
+        case MSR_K8_GS_BASE:
+            *puValue = pVCpu->cpum.s.Guest.gsHid.u64Base;
             break;
 
         case MSR_K8_KERNEL_GS_BASE:
-            u64 = pVCpu->cpum.s.Guest.msrKERNELGSBASE;
+            *puValue = pVCpu->cpum.s.Guest.msrKERNELGSBASE;
             break;
 
         case MSR_K8_TSC_AUX:
-            u64 = pVCpu->cpum.s.GuestMsr.msr.tscAux;
+            *puValue = pVCpu->cpum.s.GuestMsr.msr.tscAux;
             break;
 
         case MSR_IA32_PERF_STATUS:
-            /** @todo: could really be not exactly correct, maybe use host's values */
-            /* Keep consistent with helper_rdmsr() in REM */
-            u64 =     (1000ULL                      /* TSC increment by tick */)
-                    | ((uint64_t)u8Multiplier << 24 /* CPU multiplier (aka bus ratio) min */       )
-                    | ((uint64_t)u8Multiplier << 40 /* CPU multiplier (aka bus ratio) max */       );
+            /** @todo could really be not exactly correct, maybe use host's values */
+            *puValue = UINT64_C(1000)                 /* TSC increment by tick */
+                     | ((uint64_t)u8Multiplier << 24) /* CPU multiplier (aka bus ratio) min */
+                     | ((uint64_t)u8Multiplier << 40) /* CPU multiplier (aka bus ratio) max */;
             break;
 
-        case  MSR_IA32_FSB_CLOCK_STS:
-            /**
+        case MSR_IA32_FSB_CLOCK_STS:
+            /*
              * Encoded as:
              * 0 - 266
              * 1 - 133
@@ -801,55 +846,231 @@ VMMDECL(uint64_t)  CPUMGetGuestMsr(PVMCPU pVCpu, unsigned idMsr)
              * 3 - return 166
              * 5 - return 100
              */
-            u64 = (2 << 4);
+            *puValue = (2 << 4);
             break;
 
         case MSR_IA32_PLATFORM_INFO:
-            u64 =     ((u8Multiplier)<<8              /* Flex ratio max */)
-                    | ((uint64_t)u8Multiplier << 40   /* Flex ratio min */ );
+            *puValue = (u8Multiplier << 8)            /* Flex ratio max */
+                     | ((uint64_t)u8Multiplier << 40) /* Flex ratio min */;
             break;
 
         case MSR_IA32_THERM_STATUS:
-            /* CPU temperature reltive to TCC, to actually activate, CPUID leaf 6 EAX[0] must be set */
-            u64 = (1 << 31) /* validity bit */ |
-                  (20 << 16) /* degrees till TCC */;
+            /* CPU temperature relative to TCC, to actually activate, CPUID leaf 6 EAX[0] must be set */
+            *puValue = ( 1 << 31) /* validity bit */
+                     | (20 << 16) /* degrees till TCC */;
             break;
 
         case MSR_IA32_MISC_ENABLE:
 #if 0
             /* Needs to be tested more before enabling. */
-            u64 = pVCpu->cpum.s.GuestMsr.msr.miscEnable;
+            *puValue = pVCpu->cpum.s.GuestMsr.msr.miscEnable;
 #else
-            u64 = 0;
+            *puValue = 0;
 #endif
             break;
 
-        /* fs & gs base skipped on purpose as the current context might not be up-to-date. */
+#if 0 /*def IN_RING0 */
+        case MSR_IA32_PLATFORM_ID:
+        case MSR_IA32_BIOS_SIGN_ID:
+            if (CPUMGetCPUVendor(pVM) == CPUMCPUVENDOR_INTEL)
+            {
+                /* Available since the P6 family. VT-x implies that this feature is present. */
+                if (idMsr == MSR_IA32_PLATFORM_ID)
+                    *puValue = ASMRdMsr(MSR_IA32_PLATFORM_ID);
+                else if (idMsr == MSR_IA32_BIOS_SIGN_ID)
+                    *puValue = ASMRdMsr(MSR_IA32_BIOS_SIGN_ID);
+                break;
+            }
+            /* no break */
+#endif
+
         default:
-            AssertFailed();
+            /* In X2APIC specification this range is reserved for APIC control. */
+            if (    idMsr >= MSR_IA32_APIC_START
+                &&  idMsr <  MSR_IA32_APIC_END)
+            {
+                rc = PDMApicReadMSR(pVCpu->CTX_SUFF(pVM), pVCpu->idCpu, idMsr, puValue);
+                if (RT_SUCCESS(rc))
+                    rc = VINF_SUCCESS;
+                else
+                {
+                    *puValue = 0;
+                    rc = VERR_CPUM_RAISE_GP_0;
+                }
+            }
+            else
+            {
+                *puValue = 0;
+                rc = VERR_CPUM_RAISE_GP_0;
+            }
             break;
     }
-    return u64;
+
+    return rc;
 }
 
-VMMDECL(void) CPUMSetGuestMsr(PVMCPU pVCpu, unsigned idMsr, uint64_t valMsr)
+
+/**
+ * Sets the MSR.
+ *
+ * The caller is responsible for checking privilege if the call is the result
+ * of a WRMSR instruction.  We'll do the rest.
+ *
+ * @retval  VINF_SUCCESS on success.
+ * @retval  VERR_CPUM_RAISE_GP_0 on failure, the caller is expected to take the
+ *          appropriate actions.
+ *
+ * @param   pVCpu       The virtual CPU to operate on.
+ * @param   idMsr       The MSR id.
+ * @param   uValue      The value to set.
+ *
+ * @remarks Everyone changing MSR values, including the recompiler, shall do it
+ *          by calling this method.  This makes sure we have current values and
+ *          that we trigger all the right actions when something changes.
+ */
+VMMDECL(int) CPUMSetGuestMsr(PVMCPU pVCpu, uint32_t idMsr, uint64_t uValue)
 {
-    /* On purpose only a limited number of MSRs; use the emulation function to update the others. */
+    /*
+     * If we don't indicate MSR support in the CPUID feature bits, indicate
+     * that a #GP(0) should be raised.
+     */
+    if (!(pVCpu->CTX_SUFF(pVM)->cpum.s.aGuestCpuIdStd[1].edx & X86_CPUID_FEATURE_EDX_MSR))
+        return VERR_CPUM_RAISE_GP_0;
+
+    int rc = VINF_SUCCESS;
     switch (idMsr)
     {
-        case MSR_K8_TSC_AUX:
-            pVCpu->cpum.s.GuestMsr.msr.tscAux = valMsr;
+        case MSR_IA32_MISC_ENABLE:
+            pVCpu->cpum.s.GuestMsr.msr.miscEnable = uValue;
             break;
 
-        case MSR_IA32_MISC_ENABLE:
-            pVCpu->cpum.s.GuestMsr.msr.miscEnable = valMsr;
+        case MSR_IA32_TSC:
+            TMCpuTickSet(pVCpu->CTX_SUFF(pVM), pVCpu, uValue);
+            break;
+
+        case MSR_IA32_APICBASE:
+            rc = PDMApicSetBase(pVCpu->CTX_SUFF(pVM), uValue);
+            if (rc != VINF_SUCCESS)
+                rc = VERR_CPUM_RAISE_GP_0;
+            break;
+
+        case MSR_IA32_CR_PAT:
+            pVCpu->cpum.s.Guest.msrPAT      = uValue;
+            break;
+
+        case MSR_IA32_SYSENTER_CS:
+            pVCpu->cpum.s.Guest.SysEnter.cs = uValue & 0xffff; /* 16 bits selector */
+            break;
+
+        case MSR_IA32_SYSENTER_EIP:
+            pVCpu->cpum.s.Guest.SysEnter.eip = uValue;
+            break;
+
+        case MSR_IA32_SYSENTER_ESP:
+            pVCpu->cpum.s.Guest.SysEnter.esp = uValue;
+            break;
+
+        case MSR_K6_EFER:
+        {
+            PVM             pVM          = pVCpu->CTX_SUFF(pVM);
+            uint64_t const  uOldEFER     = pVCpu->cpum.s.Guest.msrEFER;
+            uint32_t const  fExtFeatures = pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001
+                                         ? pVM->cpum.s.aGuestCpuIdExt[1].edx
+                                         : 0;
+            uint64_t        fMask        = 0;
+
+            /* Filter out those bits the guest is allowed to change. (e.g. LMA is read-only) */
+            if (fExtFeatures & X86_CPUID_AMD_FEATURE_EDX_NX)
+                fMask |= MSR_K6_EFER_NXE;
+            if (fExtFeatures & X86_CPUID_AMD_FEATURE_EDX_LONG_MODE)
+                fMask |= MSR_K6_EFER_LME;
+            if (fExtFeatures & X86_CPUID_AMD_FEATURE_EDX_SEP)
+                fMask |= MSR_K6_EFER_SCE;
+            if (fExtFeatures & X86_CPUID_AMD_FEATURE_EDX_FFXSR)
+                fMask |= MSR_K6_EFER_FFXSR;
+
+            /* Check for illegal MSR_K6_EFER_LME transitions: not allowed to change LME if
+               paging is enabled. (AMD Arch. Programmer's Manual Volume 2: Table 14-5) */
+            if (    (uOldEFER & MSR_K6_EFER_LME) != (uValue & fMask & MSR_K6_EFER_LME)
+                &&  (pVCpu->cpum.s.Guest.cr0 & X86_CR0_PG))
+            {
+                Log(("Illegal MSR_K6_EFER_LME change: paging is enabled!!\n"));
+                return VERR_CPUM_RAISE_GP_0;
+            }
+
+            /* There are a few more: e.g. MSR_K6_EFER_LMSLE */
+            AssertMsg(!(uValue & ~(MSR_K6_EFER_NXE | MSR_K6_EFER_LME | MSR_K6_EFER_LMA /* ignored anyway */ | MSR_K6_EFER_SCE | MSR_K6_EFER_FFXSR)),
+                      ("Unexpected value %RX64\n", uValue));
+            pVCpu->cpum.s.Guest.msrEFER = (uOldEFER & ~fMask) | (uValue & fMask);
+
+            /* AMD64 Architecture Programmer's Manual: 15.15 TLB Control; flush the TLB
+               if MSR_K6_EFER_NXE, MSR_K6_EFER_LME or MSR_K6_EFER_LMA are changed. */
+            if (   (uOldEFER                    & (MSR_K6_EFER_NXE | MSR_K6_EFER_LME | MSR_K6_EFER_LMA))
+                != (pVCpu->cpum.s.Guest.msrEFER & (MSR_K6_EFER_NXE | MSR_K6_EFER_LME | MSR_K6_EFER_LMA)))
+            {
+                /// @todo PGMFlushTLB(pVCpu, cr3, true /*fGlobal*/);
+                HWACCMFlushTLB(pVCpu);
+
+                /* Notify PGM about NXE changes. */
+                if (   (uOldEFER                    & MSR_K6_EFER_NXE)
+                    != (pVCpu->cpum.s.Guest.msrEFER & MSR_K6_EFER_NXE))
+                    PGMNotifyNxeChanged(pVCpu, !(uOldEFER & MSR_K6_EFER_NXE));
+            }
+            break;
+        }
+
+        case MSR_K8_SF_MASK:
+            pVCpu->cpum.s.Guest.msrSFMASK       = uValue;
+            break;
+
+        case MSR_K6_STAR:
+            pVCpu->cpum.s.Guest.msrSTAR         = uValue;
+            break;
+
+        case MSR_K8_LSTAR:
+            pVCpu->cpum.s.Guest.msrLSTAR        = uValue;
+            break;
+
+        case MSR_K8_CSTAR:
+            pVCpu->cpum.s.Guest.msrCSTAR        = uValue;
+            break;
+
+        case MSR_K8_FS_BASE:
+            pVCpu->cpum.s.Guest.fsHid.u64Base   = uValue;
+            break;
+
+        case MSR_K8_GS_BASE:
+            pVCpu->cpum.s.Guest.gsHid.u64Base   = uValue;
+            break;
+
+        case MSR_K8_KERNEL_GS_BASE:
+            pVCpu->cpum.s.Guest.msrKERNELGSBASE = uValue;
+            break;
+
+        case MSR_K8_TSC_AUX:
+            pVCpu->cpum.s.GuestMsr.msr.tscAux   = uValue;
             break;
 
         default:
-            AssertFailed();
+            /* In X2APIC specification this range is reserved for APIC control. */
+            if (    idMsr >= MSR_IA32_APIC_START
+                &&  idMsr <  MSR_IA32_APIC_END)
+            {
+                rc = PDMApicWriteMSR(pVCpu->CTX_SUFF(pVM), pVCpu->idCpu, idMsr, uValue);
+                if (rc != VINF_SUCCESS)
+                    rc = VERR_CPUM_RAISE_GP_0;
+            }
+            else
+            {
+                /* We should actually trigger a #GP here, but don't as that might cause more trouble. */
+                /** @todo rc = VERR_CPUM_RAISE_GP_0 */
+                Log(("CPUMSetGuestMsr: Unknown MSR %#x attempted set to %#llx\n", idMsr, uValue));
+            }
             break;
     }
+    return rc;
 }
+
 
 VMMDECL(RTGCPTR) CPUMGetGuestIDTR(PVMCPU pVCpu, uint16_t *pcbLimit)
 {
@@ -933,6 +1154,16 @@ VMMDECL(uint64_t) CPUMGetGuestCR4(PVMCPU pVCpu)
 }
 
 
+VMMDECL(uint64_t) CPUMGetGuestCR8(PVMCPU pVCpu)
+{
+    uint64_t u64;
+    int rc = CPUMGetGuestCRx(pVCpu, USE_REG_CR8, &u64);
+    if (RT_FAILURE(rc))
+        u64 = 0;
+    return u64;
+}
+
+
 VMMDECL(void) CPUMGetGuestGDTR(PVMCPU pVCpu, PVBOXGDTR pGDTR)
 {
     *pGDTR = pVCpu->cpum.s.Guest.gdtr;
@@ -1005,7 +1236,6 @@ VMMDECL(uint32_t) CPUMGetGuestEFlags(PVMCPU pVCpu)
 }
 
 
-///@todo: crx should be an array
 VMMDECL(int) CPUMGetGuestCRx(PVMCPU pVCpu, unsigned iReg, uint64_t *pValue)
 {
     switch (iReg)
@@ -1013,15 +1243,33 @@ VMMDECL(int) CPUMGetGuestCRx(PVMCPU pVCpu, unsigned iReg, uint64_t *pValue)
         case USE_REG_CR0:
             *pValue = pVCpu->cpum.s.Guest.cr0;
             break;
+
         case USE_REG_CR2:
             *pValue = pVCpu->cpum.s.Guest.cr2;
             break;
+
         case USE_REG_CR3:
             *pValue = pVCpu->cpum.s.Guest.cr3;
             break;
+
         case USE_REG_CR4:
             *pValue = pVCpu->cpum.s.Guest.cr4;
             break;
+
+        case USE_REG_CR8:
+        {
+            uint8_t u8Tpr;
+            int rc = PDMApicGetTPR(pVCpu, &u8Tpr, NULL /*pfPending*/);
+            if (RT_FAILURE(rc))
+            {
+                AssertMsg(rc == VERR_PDM_NO_APIC_INSTANCE, ("%Rrc\n", rc));
+                *pValue = 0;
+                return rc;
+            }
+            *pValue = u8Tpr >> 4; /* bits 7-4 contain the task priority that go in cr8, bits 3-0*/
+            break;
+        }
+
         default:
             return VERR_INVALID_PARAMETER;
     }
@@ -1379,9 +1627,11 @@ VMMDECL(void) CPUMSetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
         case CPUMCPUIDFEATURE_RDTSCP:
         {
             if (    pVM->cpum.s.aGuestCpuIdExt[0].eax < 0x80000001
-                ||  !(ASMCpuId_EDX(0x80000001) & X86_CPUID_AMD_FEATURE_EDX_RDTSCP))
+                ||  !(ASMCpuId_EDX(0x80000001) & X86_CPUID_AMD_FEATURE_EDX_RDTSCP)
+                ||  pVM->cpum.s.u8PortableCpuIdLevel > 0)
             {
-                LogRel(("WARNING: Can't turn on RDTSCP when the host doesn't support it!!\n"));
+                if (!pVM->cpum.s.u8PortableCpuIdLevel)
+                    LogRel(("WARNING: Can't turn on RDTSCP when the host doesn't support it!!\n"));
                 return;
             }
 
@@ -1419,6 +1669,12 @@ VMMDECL(bool) CPUMGetGuestCpuIdFeature(PVM pVM, CPUMCPUIDFEATURE enmFeature)
             if (pVM->cpum.s.aGuestCpuIdStd[0].eax >= 1)
                 return !!(pVM->cpum.s.aGuestCpuIdStd[1].edx & X86_CPUID_FEATURE_EDX_PAE);
             break;
+        }
+
+        case CPUMCPUIDFEATURE_NXE:
+        {
+            if (pVM->cpum.s.aGuestCpuIdExt[0].eax >= 0x80000001)
+                return !!(pVM->cpum.s.aGuestCpuIdExt[1].edx & X86_CPUID_AMD_FEATURE_EDX_NX);
         }
 
         case CPUMCPUIDFEATURE_RDTSCP:
@@ -1599,7 +1855,7 @@ VMMDECL(int) CPUMSetGuestDRx(PVMCPU pVCpu, uint32_t iReg, uint64_t Value)
 
 
 /**
- * Recalculates the hypvervisor DRx register values based on
+ * Recalculates the hypervisor DRx register values based on
  * current guest registers and DBGF breakpoints.
  *
  * This is called whenever a guest DRx register is modified and when DBGF
@@ -1845,151 +2101,7 @@ VMMDECL(bool) CPUMIsGuestInPAEMode(PVMCPU pVCpu)
 }
 
 
-
-#ifndef IN_RING0  /** @todo I don't think we need this in R0, so move it to CPUMAll.cpp? */
-
-/**
- * Transforms the guest CPU state to raw-ring mode.
- *
- * This function will change the any of the cs and ss register with DPL=0 to DPL=1.
- *
- * @returns VBox status. (recompiler failure)
- * @param   pVCpu       The VMCPU handle.
- * @param   pCtxCore    The context core (for trap usage).
- * @see     @ref pg_raw
- */
-VMMDECL(int) CPUMRawEnter(PVMCPU pVCpu, PCPUMCTXCORE pCtxCore)
-{
-    PVM pVM = pVCpu->CTX_SUFF(pVM);
-
-    Assert(!pVM->cpum.s.fRawEntered);
-    if (!pCtxCore)
-        pCtxCore = CPUMCTX2CORE(&pVCpu->cpum.s.Guest);
-
-    /*
-     * Are we in Ring-0?
-     */
-    if (    pCtxCore->ss && (pCtxCore->ss & X86_SEL_RPL) == 0
-        &&  !pCtxCore->eflags.Bits.u1VM)
-    {
-        /*
-         * Enter execution mode.
-         */
-        PATMRawEnter(pVM, pCtxCore);
-
-        /*
-         * Set CPL to Ring-1.
-         */
-        pCtxCore->ss |= 1;
-        if (pCtxCore->cs && (pCtxCore->cs & X86_SEL_RPL) == 0)
-            pCtxCore->cs |= 1;
-    }
-    else
-    {
-        AssertMsg((pCtxCore->ss & X86_SEL_RPL) >= 2 || pCtxCore->eflags.Bits.u1VM,
-                  ("ring-1 code not supported\n"));
-        /*
-         * PATM takes care of IOPL and IF flags for Ring-3 and Ring-2 code as well.
-         */
-        PATMRawEnter(pVM, pCtxCore);
-    }
-
-    /*
-     * Assert sanity.
-     */
-    AssertMsg((pCtxCore->eflags.u32 & X86_EFL_IF), ("X86_EFL_IF is clear\n"));
-    AssertReleaseMsg(   pCtxCore->eflags.Bits.u2IOPL < (unsigned)(pCtxCore->ss & X86_SEL_RPL)
-                     || pCtxCore->eflags.Bits.u1VM,
-                     ("X86_EFL_IOPL=%d CPL=%d\n", pCtxCore->eflags.Bits.u2IOPL, pCtxCore->ss & X86_SEL_RPL));
-    Assert((pVCpu->cpum.s.Guest.cr0 & (X86_CR0_PG | X86_CR0_WP | X86_CR0_PE)) == (X86_CR0_PG | X86_CR0_PE | X86_CR0_WP));
-    pCtxCore->eflags.u32        |= X86_EFL_IF; /* paranoia */
-
-    pVM->cpum.s.fRawEntered = true;
-    return VINF_SUCCESS;
-}
-
-
-/**
- * Transforms the guest CPU state from raw-ring mode to correct values.
- *
- * This function will change any selector registers with DPL=1 to DPL=0.
- *
- * @returns Adjusted rc.
- * @param   pVCpu       The VMCPU handle.
- * @param   rc          Raw mode return code
- * @param   pCtxCore    The context core (for trap usage).
- * @see     @ref pg_raw
- */
-VMMDECL(int) CPUMRawLeave(PVMCPU pVCpu, PCPUMCTXCORE pCtxCore, int rc)
-{
-    PVM pVM = pVCpu->CTX_SUFF(pVM);
-
-    /*
-     * Don't leave if we've already left (in GC).
-     */
-    Assert(pVM->cpum.s.fRawEntered);
-    if (!pVM->cpum.s.fRawEntered)
-        return rc;
-    pVM->cpum.s.fRawEntered = false;
-
-    PCPUMCTX pCtx = &pVCpu->cpum.s.Guest;
-    if (!pCtxCore)
-        pCtxCore = CPUMCTX2CORE(pCtx);
-    Assert(pCtxCore->eflags.Bits.u1VM || (pCtxCore->ss & X86_SEL_RPL));
-    AssertMsg(pCtxCore->eflags.Bits.u1VM || pCtxCore->eflags.Bits.u2IOPL < (unsigned)(pCtxCore->ss & X86_SEL_RPL),
-              ("X86_EFL_IOPL=%d CPL=%d\n", pCtxCore->eflags.Bits.u2IOPL, pCtxCore->ss & X86_SEL_RPL));
-
-    /*
-     * Are we executing in raw ring-1?
-     */
-    if (    (pCtxCore->ss & X86_SEL_RPL) == 1
-        &&  !pCtxCore->eflags.Bits.u1VM)
-    {
-        /*
-         * Leave execution mode.
-         */
-        PATMRawLeave(pVM, pCtxCore, rc);
-        /* Not quite sure if this is really required, but shouldn't harm (too much anyways). */
-        /** @todo See what happens if we remove this. */
-        if ((pCtxCore->ds & X86_SEL_RPL) == 1)
-            pCtxCore->ds &= ~X86_SEL_RPL;
-        if ((pCtxCore->es & X86_SEL_RPL) == 1)
-            pCtxCore->es &= ~X86_SEL_RPL;
-        if ((pCtxCore->fs & X86_SEL_RPL) == 1)
-            pCtxCore->fs &= ~X86_SEL_RPL;
-        if ((pCtxCore->gs & X86_SEL_RPL) == 1)
-            pCtxCore->gs &= ~X86_SEL_RPL;
-
-        /*
-         * Ring-1 selector => Ring-0.
-         */
-        pCtxCore->ss &= ~X86_SEL_RPL;
-        if ((pCtxCore->cs & X86_SEL_RPL) == 1)
-            pCtxCore->cs &= ~X86_SEL_RPL;
-    }
-    else
-    {
-        /*
-         * PATM is taking care of the IOPL and IF flags for us.
-         */
-        PATMRawLeave(pVM, pCtxCore, rc);
-        if (!pCtxCore->eflags.Bits.u1VM)
-        {
-            /** @todo See what happens if we remove this. */
-            if ((pCtxCore->ds & X86_SEL_RPL) == 1)
-                pCtxCore->ds &= ~X86_SEL_RPL;
-            if ((pCtxCore->es & X86_SEL_RPL) == 1)
-                pCtxCore->es &= ~X86_SEL_RPL;
-            if ((pCtxCore->fs & X86_SEL_RPL) == 1)
-                pCtxCore->fs &= ~X86_SEL_RPL;
-            if ((pCtxCore->gs & X86_SEL_RPL) == 1)
-                pCtxCore->gs &= ~X86_SEL_RPL;
-        }
-    }
-
-    return rc;
-}
-
+#ifndef IN_RING0
 /**
  * Updates the EFLAGS while we're in raw-mode.
  *
@@ -2001,15 +2113,15 @@ VMMDECL(void) CPUMRawSetEFlags(PVMCPU pVCpu, PCPUMCTXCORE pCtxCore, uint32_t efl
 {
     PVM pVM = pVCpu->CTX_SUFF(pVM);
 
-    if (!pVM->cpum.s.fRawEntered)
+    if (!pVCpu->cpum.s.fRawEntered)
     {
         pCtxCore->eflags.u32 = eflags;
         return;
     }
     PATMRawSetEFlags(pVM, pCtxCore, eflags);
 }
-
 #endif /* !IN_RING0 */
+
 
 /**
  * Gets the EFLAGS while we're in raw-mode.
@@ -2025,31 +2137,10 @@ VMMDECL(uint32_t) CPUMRawGetEFlags(PVMCPU pVCpu, PCPUMCTXCORE pCtxCore)
 #else
     PVM pVM = pVCpu->CTX_SUFF(pVM);
 
-    if (!pVM->cpum.s.fRawEntered)
+    if (!pVCpu->cpum.s.fRawEntered)
         return pCtxCore->eflags.u32;
     return PATMRawGetEFlags(pVM, pCtxCore);
 #endif
-}
-
-
-/**
- * Gets and resets the changed flags (CPUM_CHANGED_*).
- * Only REM should call this function.
- *
- * @returns The changed flags.
- * @param   pVCpu       The VMCPU handle.
- */
-VMMDECL(unsigned) CPUMGetAndClearChangedFlagsREM(PVMCPU pVCpu)
-{
-    unsigned fFlags = pVCpu->cpum.s.fChanged;
-    pVCpu->cpum.s.fChanged = 0;
-    /** @todo change the switcher to use the fChanged flags. */
-    if (pVCpu->cpum.s.fUseFlags & CPUM_USED_FPU_SINCE_REM)
-    {
-        fFlags |= CPUM_CHANGED_FPU_REM;
-        pVCpu->cpum.s.fUseFlags &= ~CPUM_USED_FPU_SINCE_REM;
-    }
-    return fFlags;
 }
 
 
@@ -2160,7 +2251,7 @@ VMMDECL(bool) CPUMIsHyperDebugStateActive(PVMCPU pVCpu)
 
 
 /**
- * Mark the guest's debug state as inactive
+ * Mark the guest's debug state as inactive.
  *
  * @returns boolean
  * @param   pVM         VM handle.
@@ -2172,7 +2263,7 @@ VMMDECL(void) CPUMDeactivateGuestDebugState(PVMCPU pVCpu)
 
 
 /**
- * Mark the hypervisor's debug state as inactive
+ * Mark the hypervisor's debug state as inactive.
  *
  * @returns boolean
  * @param   pVM         VM handle.
@@ -2183,14 +2274,18 @@ VMMDECL(void) CPUMDeactivateHyperDebugState(PVMCPU pVCpu)
 }
 
 /**
- * Checks if the hidden selector registers are valid
+ * Checks if the hidden selector registers are valid for the specified CPU.
+ *
  * @returns true if they are.
  * @returns false if not.
- * @param   pVM     The VM handle.
+ * @param   pVCpu     The VM handle.
  */
-VMMDECL(bool) CPUMAreHiddenSelRegsValid(PVM pVM)
+VMMDECL(bool) CPUMAreHiddenSelRegsValid(PVMCPU pVCpu)
 {
-    return HWACCMIsEnabled(pVM);
+    bool const fRc = !(pVCpu->cpum.s.fChanged & CPUM_CHANGED_HIDDEN_SEL_REGS_INVALID);
+    Assert(fRc || !HWACCMIsEnabled(pVCpu->CTX_SUFF(pVM)));
+    Assert(!pVCpu->cpum.s.fRemEntered);
+    return fRc;
 }
 
 
@@ -2206,7 +2301,7 @@ VMMDECL(uint32_t) CPUMGetGuestCPL(PVMCPU pVCpu, PCPUMCTXCORE pCtxCore)
 {
     uint32_t cpl;
 
-    if (CPUMAreHiddenSelRegsValid(pVCpu->CTX_SUFF(pVM)))
+    if (CPUMAreHiddenSelRegsValid(pVCpu))
     {
         /*
          * The hidden CS.DPL register is always equal to the CPL, it is
@@ -2216,7 +2311,12 @@ VMMDECL(uint32_t) CPUMGetGuestCPL(PVMCPU pVCpu, PCPUMCTXCORE pCtxCore)
          * at SS. (ACP2 regression during install after a far call to ring 2)
          */
         if (RT_LIKELY(pVCpu->cpum.s.Guest.cr0 & X86_CR0_PE))
-            cpl = pCtxCore->ssHid.Attr.n.u2Dpl;
+        {
+            if (!pCtxCore->eflags.Bits.u1VM)
+                cpl = pCtxCore->ssHid.Attr.n.u2Dpl;
+            else
+                cpl = 3; /* REM doesn't set DPL=3 in V8086 mode. See #5130. */
+        }
         else
             cpl = 0;  /* CPL set to 3 for VT-x real-mode emulation. */
     }

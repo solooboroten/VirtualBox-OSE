@@ -7,7 +7,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -52,67 +52,49 @@
         switch(0) { case 0: case (a): ; } \
     } while (0)
 
-struct opts
-{
-    int  uid;
-    int  gid;
-    int  ttl;
-    int  dmode;
-    int  fmode;
-    int  dmask;
-    int  fmask;
-    int  ronly;
-    int  noexec;
-    int  nodev;
-    int  nosuid;
-    int  remount;
-    char nls_name[MAX_NLS_NAME];
-    char *convertcp;
-};
-
 #define PANIC_ATTR __attribute ((noreturn, __format__ (__printf__, 1, 2)))
 
 static void PANIC_ATTR
-panic (const char *fmt, ...)
+panic(const char *fmt, ...)
 {
     va_list ap;
 
-    va_start (ap, fmt);
-    vfprintf (stderr, fmt, ap);
-    va_end (ap);
-    exit (EXIT_FAILURE);
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    exit(EXIT_FAILURE);
 }
 
 static void PANIC_ATTR
-panic_err (const char *fmt, ...)
+panic_err(const char *fmt, ...)
 {
     va_list ap;
     int errno_code = errno;
 
-    va_start (ap, fmt);
-    vfprintf (stderr, fmt, ap);
-    va_end (ap);
-    fprintf (stderr, ": %s\n", strerror (errno_code));
-    exit (EXIT_FAILURE);
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fprintf(stderr, ": %s\n", strerror(errno_code));
+    exit(EXIT_FAILURE);
 }
 
 static int
-safe_atoi (const char *s, size_t size, int base)
+safe_atoi(const char *s, size_t size, int base)
 {
     char *endptr;
-    long long int val = strtoll (s, &endptr, base);
+    long long int val = strtoll(s, &endptr, base);
 
     if (val < INT_MIN || val > INT_MAX || endptr < s + size)
     {
         errno = ERANGE;
-        panic_err ("could not convert %.*s to integer, result = %d",
+        panic_err("could not convert %.*s to integer, result = %d",
                    (int)size, s, (int) val);
     }
-    return (int) val;
+    return (int)val;
 }
 
 static void
-process_mount_opts (const char *s, struct opts *opts)
+process_mount_opts(const char *s, struct vbsf_mount_opts *opts)
 {
     const char *next = s;
     size_t len;
@@ -179,10 +161,10 @@ process_mount_opts (const char *s, struct opts *opts)
         size_t key_len, val_len;
 
         s = next;
-        next = strchr (s, ',');
+        next = strchr(s, ',');
         if (!next)
         {
-            len = strlen (s);
+            len = strlen(s);
         }
         else
         {
@@ -219,7 +201,7 @@ process_mount_opts (const char *s, struct opts *opts)
                 {
                     if (!(val && *val))
                     {
-                        panic ("%.*s requires an argument (i.e. %.*s=<arg>)\n",
+                        panic("%.*s requires an argument (i.e. %.*s=<arg>)\n",
                                (int)len, s, (int)len, s);
                     }
                 }
@@ -255,45 +237,45 @@ process_mount_opts (const char *s, struct opts *opts)
                     break;
                 case HOUID:
                     /** @todo convert string to id. */
-                    opts->uid = safe_atoi (val, val_len, 10);
+                    opts->uid = safe_atoi(val, val_len, 10);
                     break;
                 case HOGID:
                     /** @todo convert string to id. */
-                    opts->gid = safe_atoi (val, val_len, 10);
+                    opts->gid = safe_atoi(val, val_len, 10);
                     break;
                 case HOTTL:
-                    opts->ttl = safe_atoi (val, val_len, 10);
+                    opts->ttl = safe_atoi(val, val_len, 10);
                     break;
                 case HODMODE:
-                    opts->dmode = safe_atoi (val, val_len, 8);
+                    opts->dmode = safe_atoi(val, val_len, 8);
                     break;
                 case HOFMODE:
-                    opts->fmode = safe_atoi (val, val_len, 8);
+                    opts->fmode = safe_atoi(val, val_len, 8);
                     break;
                 case HOUMASK:
-                    opts->dmask = opts->fmask = safe_atoi (val, val_len, 8);
+                    opts->dmask = opts->fmask = safe_atoi(val, val_len, 8);
                     break;
                 case HODMASK:
-                    opts->dmask = safe_atoi (val, val_len, 8);
+                    opts->dmask = safe_atoi(val, val_len, 8);
                     break;
                 case HOFMASK:
-                    opts->fmask = safe_atoi (val, val_len, 8);
+                    opts->fmask = safe_atoi(val, val_len, 8);
                     break;
                 case HOIOCHARSET:
-                    if (val_len + 1 > sizeof (opts->nls_name))
+                    if (val_len + 1 > sizeof(opts->nls_name))
                     {
-                        panic ("iocharset name too long\n");
+                        panic("iocharset name too long\n");
                     }
-                    memcpy (opts->nls_name, val, val_len);
+                    memcpy(opts->nls_name, val, val_len);
                     opts->nls_name[val_len] = 0;
                     break;
                 case HOCONVERTCP:
-                    opts->convertcp = malloc (val_len + 1);
+                    opts->convertcp = malloc(val_len + 1);
                     if (!opts->convertcp)
                     {
-                        panic_err ("could not allocate memory");
+                        panic_err("could not allocate memory");
                     }
-                    memcpy (opts->convertcp, val, val_len);
+                    memcpy(opts->convertcp, val, val_len);
                     opts->convertcp[val_len] = 0;
                     break;
                 case HONOAUTO:
@@ -307,108 +289,43 @@ process_mount_opts (const char *s, struct opts *opts)
 
         if (!handler->name)
         {
-            fprintf (stderr, "unknown mount option `%.*s'\n", (int)len, s);
-            fprintf (stderr, "valid options:\n");
+            fprintf(stderr, "unknown mount option `%.*s'\n", (int)len, s);
+            fprintf(stderr, "valid options:\n");
 
             for (handler = handlers; handler->name; ++handler)
             {
                 if (handler->desc)
-                    fprintf (stderr, "  %-10s%s %s\n", handler->name,
+                    fprintf(stderr, "  %-10s%s %s\n", handler->name,
                          handler->has_arg ? "=<arg>" : "", handler->desc);
             }
-            exit (EXIT_FAILURE);
+            exit(EXIT_FAILURE);
         }
     }
 }
 
 static void
-complete (char *host_name, char *mount_point,
-          unsigned long flags, struct opts *opts)
-{
-    FILE *f, *m;
-    char *buf;
-    size_t size;
-    struct mntent e;
-
-    m = open_memstream (&buf, &size);
-    if (!m)
-        panic_err ("could not update mount table (failed to create memstream)");
-
-    if (opts->uid)
-        fprintf (m, "uid=%d,", opts->uid);
-    if (opts->gid)
-        fprintf (m, "gid=%d,", opts->gid);
-    if (opts->ttl)
-        fprintf (m, "ttl=%d,", opts->ttl);
-    if (*opts->nls_name)
-        fprintf (m, "iocharset=%s,", opts->nls_name);
-    if (flags & MS_NOSUID)
-        fprintf (m, "%s,", MNTOPT_NOSUID);
-    if (flags & MS_RDONLY)
-        fprintf (m, "%s,", MNTOPT_RO);
-    else
-        fprintf (m, "%s,", MNTOPT_RW);
-
-    fclose (m);
-
-    if (size > 0)
-        buf[size - 1] = 0;
-    else
-        buf = "defaults";
-
-    f = setmntent (MOUNTED, "a+");
-    if (!f)
-        panic_err ("could not open mount table for update");
-
-    e.mnt_fsname = host_name;
-    e.mnt_dir = mount_point;
-    e.mnt_type = "vboxsf";
-    e.mnt_opts = buf;
-    e.mnt_freq = 0;
-    e.mnt_passno = 0;
-
-    if (addmntent (f, &e))
-    {
-        if (size > 0)
-        {
-            memset (buf, 0, size);
-            free (buf);
-        }
-        panic_err ("could not add an entry to the mount table");
-    }
-
-    endmntent (f);
-
-    if (size > 0)
-    {
-        memset (buf, 0, size);
-        free (buf);
-    }
-}
-
-static void
-convertcp (char *in_codeset, char *host_name, struct vbsf_mount_info_new *info)
+convertcp(char *in_codeset, char *host_name, struct vbsf_mount_info_new *info)
 {
     char *i = host_name;
     char *o = info->name;
-    size_t ib = strlen (host_name);
-    size_t ob = sizeof (info->name) - 1;
+    size_t ib = strlen(host_name);
+    size_t ob = sizeof(info->name) - 1;
     iconv_t cd;
 
-    cd = iconv_open ("UTF-8", in_codeset);
+    cd = iconv_open("UTF-8", in_codeset);
     if (cd == (iconv_t) -1)
     {
-        panic_err ("could not convert share name, iconv_open `%s' failed",
+        panic_err("could not convert share name, iconv_open `%s' failed",
                    in_codeset);
     }
 
     while (ib)
     {
-        size_t c = iconv (cd, &i, &ib, &o, &ob);
+        size_t c = iconv(cd, &i, &ib, &o, &ob);
         if (c == (size_t) -1)
         {
-            panic_err ("could not convert share name(%s) at %d",
-                       host_name, (int)(strlen (host_name) - ib));
+            panic_err("could not convert share name(%s) at %d",
+                      host_name, (int)(strlen (host_name) - ib));
         }
     }
     *o = 0;
@@ -425,13 +342,13 @@ static void __attribute ((noreturn)) usage(char *name)
     printf("Usage: %s [OPTIONS] NAME MOUNTPOINT\n"
            "Mount the VirtualBox shared folder NAME from the host system to MOUNTPOINT.\n"
            "\n"
-           "  -w                    mount the shared folder writably (the default)\n"
+           "  -w                    mount the shared folder writable (the default)\n"
            "  -r                    mount the shared folder read-only\n"
            "  -n                    do not create an mtab entry\n"
            "  -o OPTION[,OPTION...] use the mount options specified\n"
            "\n", name);
     printf("Available mount options are:\n"
-           "     rw                 mount writably (the default)\n"
+           "     rw                 mount writable (the default)\n"
            "     ro                 mount read only\n"
            "     uid=UID            set the default file owner user id to UID\n"
            "     gid=GID            set the default file owner group id to GID\n"
@@ -460,7 +377,7 @@ main (int argc, char **argv)
     char *host_name;
     char *mount_point;
     struct vbsf_mount_info_new mntinf;
-    struct opts opts =
+    struct vbsf_mount_opts opts =
     {
         0,     /* uid */
         0,     /* gid */
@@ -484,8 +401,8 @@ main (int argc, char **argv)
     mntinf.signature[2] = VBSF_MOUNT_SIGNATURE_BYTE_2;
     mntinf.length       = sizeof(mntinf);
 
-    if (getuid ())
-        panic ("Only root can mount shared folders from the host.\n");
+    if (getuid())
+        panic("Only root can mount shared folders from the host.\n");
 
     if (!argv[0])
         argv[0] = "mount.vboxsf";
@@ -494,12 +411,12 @@ main (int argc, char **argv)
     CT_ASSERT(sizeof(uid_t) == sizeof(int));
     CT_ASSERT(sizeof(gid_t) == sizeof(int));
 
-    while ((c = getopt (argc, argv, "rwno:h")) != -1)
+    while ((c = getopt(argc, argv, "rwno:h")) != -1)
     {
         switch (c)
         {
             default:
-                fprintf (stderr, "unknown option `%c:%#x'\n", c, c);
+                fprintf(stderr, "unknown option `%c:%#x'\n", c, c);
             case '?':
             case 'h':
                 usage(argv[0]);
@@ -512,7 +429,7 @@ main (int argc, char **argv)
                 opts.ronly = 0;
 
             case 'o':
-                process_mount_opts (optarg, &opts);
+                process_mount_opts(optarg, &opts);
                 break;
 
             case 'n':
@@ -528,19 +445,19 @@ main (int argc, char **argv)
     mount_point = argv[optind + 1];
 
     if (opts.convertcp)
-        convertcp (opts.convertcp, host_name, &mntinf);
+        convertcp(opts.convertcp, host_name, &mntinf);
     else
     {
-        if (strlen (host_name) > MAX_HOST_NAME - 1)
-            panic ("host name is too big\n");
+        if (strlen(host_name) > MAX_HOST_NAME - 1)
+            panic("host name is too big\n");
 
-        strcpy (mntinf.name, host_name);
+        strcpy(mntinf.name, host_name);
     }
 
-    if (strlen (opts.nls_name) > MAX_NLS_NAME - 1)
-        panic ("%s: the character set name for I/O is too long.\n", argv[0]);
+    if (strlen(opts.nls_name) > MAX_NLS_NAME - 1)
+        panic("%s: the character set name for I/O is too long.\n", argv[0]);
 
-    strcpy (mntinf.nls_name, opts.nls_name);
+    strcpy(mntinf.nls_name, opts.nls_name);
 
     if (opts.ronly)
         flags |= MS_RDONLY;
@@ -557,7 +474,12 @@ main (int argc, char **argv)
     mntinf.dmask = opts.dmask;
     mntinf.fmask = opts.fmask;
 
-    err = mount (NULL, mount_point, "vboxsf", flags, &mntinf);
+    /*
+     * Note: When adding and/or modifying parameters of the vboxsf mounting
+     *       options you also would have to adjust VBoxServiceAutoMount.cpp
+     *       to keep this code here slick without having VbglR3.
+     */
+    err = mount(NULL, mount_point, "vboxsf", flags, &mntinf);
     if (err == -1 && errno == EPROTO)
     {
         /* Sometimes the mount utility messes up the share name.  Try to
@@ -572,9 +494,9 @@ main (int argc, char **argv)
             while (host_name[cchCWD] == '/')
                 ++cchCWD;
             /* We checked before that we have enough space */
-            strcpy (mntinf.name, host_name + cchCWD);
+            strcpy(mntinf.name, host_name + cchCWD);
         }
-        err = mount (NULL, mount_point, "vboxsf", flags, &mntinf);
+        err = mount(NULL, mount_point, "vboxsf", flags, &mntinf);
     }
     if (err == -1 && errno == EPROTO)
     {
@@ -586,13 +508,36 @@ main (int argc, char **argv)
         mntinf_old.uid = mntinf.uid;
         mntinf_old.gid = mntinf.gid;
         mntinf_old.ttl = mntinf.ttl;
-        err = mount (NULL, mount_point, "vboxsf", flags, &mntinf_old);
+        err = mount(NULL, mount_point, "vboxsf", flags, &mntinf_old);
     }
     if (err)
-        panic_err ("%s: mounting failed with the error", argv[0]);
+        panic_err("%s: mounting failed with the error", argv[0]);
 
     if (!nomtab)
-        complete (host_name, mount_point, flags, &opts);
+    {
+        err = vbsfmount_complete(host_name, mount_point, flags, &opts);
+        switch (err)
+        {
+            case 0: /* Success. */
+                break;
 
-    exit (EXIT_SUCCESS);
+            case 1:
+                panic_err("%s: Could not update mount table (failed to create memstream).", argv[0]);
+                break;
+
+            case 2:
+                panic_err("%s: Could not open mount table for update.", argv[0]);
+                break;
+
+            case 3:
+                panic_err("%s: Could not add an entry to the mount table.", argv[0]);
+                break;
+
+            default:
+                panic_err("%s: Unknown error while completing mount operation: %d", argv[0], err);
+                break;
+        }
+    }
+
+    exit(EXIT_SUCCESS);
 }

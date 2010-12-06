@@ -1,4 +1,4 @@
-/* $Id: VBoxTray.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxTray.h 34080 2010-11-15 17:18:03Z vboxsync $ */
 /** @file
  * VBoxTray - Guest Additions Tray, Internal Header.
  */
@@ -32,71 +32,35 @@
 #include <VBox/VBoxGuest.h> /** @todo use the VbglR3 interface! */
 #include <VBox/VBoxGuestLib.h>
 #include <VBoxDisplay.h>
-#ifdef VBOXWDDM
-# include <d3dkmthk.h>
-#endif
 
-#define WM_VBOX_RESTORED                WM_APP + 1
-#define WM_VBOX_CHECK_VRDP              WM_APP + 2
-#define WM_VBOX_CHECK_HOSTVERSION       WM_APP + 3
-#define WM_VBOX_TRAY                    WM_APP + 4
+#include "VBoxDispIf.h"
 
-#define ID_TRAYICON                     2000
+/*
+ * Windows messsages.
+ */
 
-typedef enum
-{
-    VBOXDISPIF_MODE_UNKNOWN  = 0,
-    VBOXDISPIF_MODE_XPDM_NT4 = 1,
-    VBOXDISPIF_MODE_XPDM
-#ifdef VBOXWDDM
-    , VBOXDISPIF_MODE_WDDM
-#endif
-} VBOXDISPIF_MODE;
-/* display driver interface abstraction for XPDM & WDDM
- * with WDDM we can not use ExtEscape to communicate with our driver
- * because we do not have XPDM display driver any more, i.e. escape requests are handled by cdd
- * that knows nothing about us
- * NOTE: DispIf makes no checks whether the display driver is actually a VBox driver,
- * it just switches between using different backend OS API based on the VBoxDispIfSwitchMode call
- * It's caller's responsibility to initiate it to work in the correct mode */
-typedef struct VBOXDISPIF
-{
-    VBOXDISPIF_MODE enmMode;
-    /* with WDDM the approach is to call into WDDM miniport driver via PFND3DKMT API provided by the GDI,
-     * The PFND3DKMT is supposed to be used by the OpenGL ICD according to MSDN, so this approach is a bit hacky */
-    union
-    {
-        struct
-        {
-            LONG (WINAPI * pfnChangeDisplaySettingsEx)(LPCSTR lpszDeviceName, LPDEVMODE lpDevMode, HWND hwnd, DWORD dwflags, LPVOID lParam);
-        } xpdm;
-#ifdef VBOXWDDM
-        struct
-        {
-            /* open adapter */
-            PFND3DKMT_OPENADAPTERFROMHDC pfnD3DKMTOpenAdapterFromHdc;
-            PFND3DKMT_OPENADAPTERFROMGDIDISPLAYNAME pfnD3DKMTOpenAdapterFromGdiDisplayName;
-            /* close adapter */
-            PFND3DKMT_CLOSEADAPTER pfnD3DKMTCloseAdapter;
-            /* escape */
-            PFND3DKMT_ESCAPE pfnD3DKMTEscape;
-            /* auto resize support */
-            PFND3DKMT_INVALIDATEACTIVEVIDPN pfnD3DKMTInvalidateActiveVidPn;
-        } wddm;
-#endif
-    } modeData;
-} VBOXDISPIF, *PVBOXDISPIF;
-typedef const struct VBOXDISPIF *PCVBOXDISPIF;
+/**
+ * General VBoxTray messages.
+ */
+#define WM_VBOXTRAY_TRAY_ICON                   WM_APP + 40
+/**
+ * VM/VMMDev related messsages.
+ */
+#define WM_VBOXTRAY_VM_RESTORED                 WM_APP + 100
+/**
+ * VRDP messages.
+ */
+#define WM_VBOXTRAY_VRDP_CHECK                  WM_APP + 301
 
-/* initializes the DispIf
- * Initially the DispIf is configured to work in XPDM mode
- * call VBoxDispIfSwitchMode to switch the mode to WDDM */
-DWORD VBoxDispIfInit(PVBOXDISPIF pIf);
-DWORD VBoxDispIfSwitchMode(PVBOXDISPIF pIf, VBOXDISPIF_MODE enmMode, VBOXDISPIF_MODE *penmOldMode);
-DECLINLINE(VBOXDISPIF_MODE) VBoxDispGetMode(PVBOXDISPIF pIf) { return pIf->enmMode; }
-DWORD VBoxDispIfTerm(PVBOXDISPIF pIf);
-DWORD VBoxDispIfEscape(PCVBOXDISPIF const pIf, PVBOXDISPIFESCAPE pEscape, int cbData);
-DWORD VBoxDispIfResize(PCVBOXDISPIF const pIf, ULONG Id, DWORD Width, DWORD Height, DWORD BitsPerPixel);
+
+/* The tray icon's ID. */
+#define ID_TRAYICON                             2000
+
+
+/*
+ * Timer IDs.
+ */
+#define TIMERID_VBOXTRAY_CHECK_HOSTVERSION      1000
 
 /* The environment information for services. */
 typedef struct _VBOXSERVICEENV
@@ -117,17 +81,28 @@ typedef struct _VBOXSERVICEINFO
     void     (* pfnDestroy)          (const VBOXSERVICEENV *pEnv, void *pInstance);
 
     /* Variables. */
-    HANDLE hThread;
-    void  *pInstance;
-    bool   fStarted;
-
+    HANDLE   hThread;
+    void    *pInstance;
+    bool     fStarted;
 } VBOXSERVICEINFO;
 
+/* Globally unique (system wide) message registration. */
+typedef struct _VBOXGLOBALMESSAGE
+{
+    /** Message name. */
+    char    *pszName;
+    /** Function pointer for handling the message. */
+    int      (* pfnHandler)          (WPARAM wParam, LPARAM lParam);
+
+    /* Variables. */
+
+    /** Message ID;
+     *  to be filled in when registering the actual message. */
+    UINT     uMsgID;
+} VBOXGLOBALMESSAGE, *PVBOXGLOBALMESSAGE;
 
 extern HWND         gToolWindow;
 extern HINSTANCE    gInstance;
-
-extern void VBoxServiceReloadCursor(void);
 
 #endif /* !___VBOXTRAY_H */
 

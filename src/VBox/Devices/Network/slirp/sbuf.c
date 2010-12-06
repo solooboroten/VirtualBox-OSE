@@ -1,4 +1,4 @@
-/* $Id: sbuf.c 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: sbuf.c 34103 2010-11-16 11:18:55Z vboxsync $ */
 /** @file
  * NAT - sbuf implemenation.
  */
@@ -25,6 +25,7 @@
  */
 
 #include <slirp.h>
+#ifndef VBOX_WITH_SLIRP_BSD_SBUF
 
 /* Done as a macro in socket.h */
 /* int
@@ -108,25 +109,16 @@ void
 sbappend(PNATState pData, struct socket *so, struct mbuf *m)
 {
     int ret = 0;
-#ifdef VBOX_WITH_SLIRP_BSD_MBUF
     int mlen = 0;
     caddr_t buf = NULL;
-#endif
 
     STAM_PROFILE_START(&pData->StatIOSBAppend_pf, a);
-    DEBUG_CALL("sbappend");
-    DEBUG_ARG("so = %lx", (long)so);
-    DEBUG_ARG("m = %lx", (long)m);
-    DEBUG_ARG("m->m_len = %d", m ? m->m_len : 0);
+    LogFlow(("sbappend: so = %lx, m = %lx, m->m_len = %d\n", (long)so, (long)m, m ? m->m_len : 0));
 
     STAM_COUNTER_INC(&pData->StatIOSBAppend);
     /* Shouldn't happen, but...  e.g. foreign host closes connection */
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-    if (m->m_len <= 0)
-#else
     mlen = m_length(m, NULL);
     if (mlen <= 0)
-#endif
     {
         STAM_COUNTER_INC(&pData->StatIOSBAppend_zm);
         goto done;
@@ -140,7 +132,7 @@ sbappend(PNATState pData, struct socket *so, struct mbuf *m)
     if (so->so_urgc)
     {
         sbappendsb(pData, &so->so_rcv, m);
-        m_free(pData, m);
+        m_freem(pData, m);
         sosendoob(so);
         return;
     }
@@ -149,22 +141,25 @@ sbappend(PNATState pData, struct socket *so, struct mbuf *m)
      * We only write if there's nothing in the buffer,
      * ottherwise it'll arrive out of order, and hence corrupt
      */
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-    if(!so->so_rcv.sb_cc)
-        ret = send(so->s, m->m_data, m->m_len, 0);
-#else
-    buf = RTMemAlloc(mlen);
-    if (buf == NULL)
+    if (m->m_next)
     {
-        ret = 0;
-        goto no_sent;
+        buf = RTMemAlloc(mlen);
+        if (buf == NULL)
+        {
+            ret = 0;
+            goto no_sent;
+        }
+        m_copydata(m, 0, mlen, buf);
     }
-    m_copydata(m, 0, mlen, buf);
+    else
+        buf = mtod(m, char *);
+
     if(!so->so_rcv.sb_cc)
         ret = send(so->s, buf, mlen, 0);
-    RTMemFree(buf);
+
+    if (m->m_next)
+        RTMemFree(buf);
 no_sent:
-#endif
 
     if (ret <= 0)
     {
@@ -179,23 +174,14 @@ no_sent:
         STAM_PROFILE_STOP(&pData->StatIOSBAppend_pf_wf, a);
         goto done;
     }
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-    else if (ret != m->m_len)
-#else
     else if (ret != mlen)
-#endif
     {
         STAM_COUNTER_INC(&pData->StatIOSBAppend_wp);
         /*
          * Something was written, but not everything..
          * sbappendsb the rest
          */
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-        m->m_len -= ret;
-        m->m_data += ret;
-#else
         m_adj(m, ret);
-#endif
         sbappendsb(pData, &so->so_rcv, m);
         STAM_PROFILE_STOP(&pData->StatIOSBAppend_pf_wp, a);
         goto done;
@@ -204,7 +190,7 @@ no_sent:
     STAM_COUNTER_INC(&pData->StatIOSBAppend_wa);
     STAM_PROFILE_STOP(&pData->StatIOSBAppend_pf_wa, a);
 done:
-    m_free(pData, m);
+    m_freem(pData, m);
 }
 
 /*
@@ -216,11 +202,7 @@ sbappendsb(PNATState pData, struct sbuf *sb, struct mbuf *m)
 {
     int len, n,  nn;
 
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-    len = m->m_len;
-#else
     len = m_length(m, NULL);
-#endif
 
     STAM_COUNTER_INC(&pData->StatIOSBAppendSB);
     if (sb->sb_wptr < sb->sb_rptr)
@@ -229,11 +211,7 @@ sbappendsb(PNATState pData, struct sbuf *sb, struct mbuf *m)
         n = sb->sb_rptr - sb->sb_wptr;
         if (n > len)
             n = len;
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-        memcpy(sb->sb_wptr, m->m_data, n);
-#else
         m_copydata(m, 0, n, sb->sb_wptr);
-#endif
     }
     else
     {
@@ -242,11 +220,7 @@ sbappendsb(PNATState pData, struct sbuf *sb, struct mbuf *m)
         n = sb->sb_data + sb->sb_datalen - sb->sb_wptr;
         if (n > len)
             n = len;
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-        memcpy(sb->sb_wptr, m->m_data, n);
-#else
         m_copydata(m, 0, n, sb->sb_wptr);
-#endif
         len -= n;
         if (len)
         {
@@ -254,11 +228,7 @@ sbappendsb(PNATState pData, struct sbuf *sb, struct mbuf *m)
             nn = sb->sb_rptr - sb->sb_data;
             if (nn > len)
                 nn = len;
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-            memcpy(sb->sb_data, m->m_data+n, nn);
-#else
             m_copydata(m, n, nn, sb->sb_data);
-#endif
             n += nn;
         }
     }
@@ -304,4 +274,84 @@ sbcopy(struct sbuf *sb, int off, int len, char *to)
             memcpy(to+off, sb->sb_data, len);
     }
 }
+#else /* VBOX_WITH_SLIRP_BSD_SBUF */
+void
+sbappend (PNATState pData, struct socket *so, struct mbuf *m)
+{
+    int ret = 0;
+    int mlen = 0;
+    caddr_t buf = NULL;
 
+    STAM_PROFILE_START(&pData->StatIOSBAppend_pf, a);
+    LogFlow(("sbappend: so = %lx, m = %lx, m->m_len = %d\n", (long)so, (long)m, m ? m->m_len : 0));
+
+    STAM_COUNTER_INC(&pData->StatIOSBAppend);
+    mlen = m_length(m, NULL);
+    if (mlen <= 0)
+    {
+        STAM_COUNTER_INC(&pData->StatIOSBAppend_zm);
+        goto done;
+    }
+
+    /*
+     * We only write if there's nothing in the buffer,
+     * ottherwise it'll arrive out of order, and hence corrupt
+     */
+    buf = RTMemAlloc(mlen);
+    if (buf == NULL)
+    {
+        ret = 0;
+        goto no_sent;
+    }
+    m_copydata(m, 0, mlen, buf);
+
+    /*
+     * If there is urgent data, call sosendoob
+     * if not all was sent, sowrite will take care of the rest
+     * (The rest of this function is just an optimisation)
+     */
+    if (so->so_urgc)
+    {
+        sbuf_bcpy(&so->so_rcv, buf, mlen);
+        RTMemFree(buf);
+        m_free(pData, m);
+        sosendoob(so);
+        return;
+    }
+
+    if(!sbuf_len(&so->so_rcv))
+        ret = send(so->s, buf, mlen, 0);
+no_sent:
+
+    if (ret <= 0)
+    {
+        STAM_COUNTER_INC(&pData->StatIOSBAppend_wf);
+        /*
+         * Nothing was written
+         * It's possible that the socket has closed, but
+         * we don't need to check because if it has closed,
+         * it will be detected in the normal way by soread()
+         */
+        sbuf_bcpy(&so->so_rcv, buf, mlen);
+        STAM_PROFILE_STOP(&pData->StatIOSBAppend_pf_wf, a);
+        goto done;
+    }
+    else if (ret != mlen)
+    {
+        STAM_COUNTER_INC(&pData->StatIOSBAppend_wp);
+        /*
+         * Something was written, but not everything..
+         * sbappendsb the rest
+         */
+        sbuf_bcpy(&so->so_rcv, &buf[ret + 1], mlen - ret);
+        STAM_PROFILE_STOP(&pData->StatIOSBAppend_pf_wp, a);
+        goto done;
+    } /* else */
+    /* Whatever happened, we free the mbuf */
+    STAM_COUNTER_INC(&pData->StatIOSBAppend_wa);
+    STAM_PROFILE_STOP(&pData->StatIOSBAppend_pf_wa, a);
+done:
+    RTMemFree(buf);
+    m_freem(pData, m);
+}
+#endif

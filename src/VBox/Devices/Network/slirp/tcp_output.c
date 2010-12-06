@@ -1,4 +1,4 @@
-/* $Id: tcp_output.c 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: tcp_output.c 34103 2010-11-16 11:18:55Z vboxsync $ */
 /** @file
  * NAT - TCP output.
  */
@@ -99,12 +99,9 @@ tcp_output(PNATState pData, register struct tcpcb *tp)
     u_char opt[MAX_TCPOPTLEN];
     unsigned optlen, hdrlen;
     int idle, sendalot;
-#ifdef VBOX_WITH_SLIRP_BSD_MBUF
     int size;
-#endif
 
-    DEBUG_CALL("tcp_output");
-    DEBUG_ARG("tp = %lx", (long )tp);
+    LogFlow(("tcp_output: tp = %lx\n", (long)tp));
 
     /*
      * Determine length of data that should be transmitted,
@@ -128,7 +125,7 @@ again:
 
     flags = tcp_outflags[tp->t_state];
 
-    DEBUG_MISC((dfd, " --- tcp_output flags = 0x%x\n",flags));
+    Log2((" --- tcp_output flags = 0x%x\n", flags));
 
     /*
      * If in persist timeout with window of 0, send 1 byte.
@@ -156,7 +153,7 @@ again:
              * to send then the probe will be the FIN
              * itself.
              */
-            if (off < so->so_snd.sb_cc)
+            if (off < SBUF_LEN(&so->so_snd))
                 flags &= ~TH_FIN;
             win = 1;
         }
@@ -167,7 +164,7 @@ again:
         }
     }
 
-    len = min(so->so_snd.sb_cc, win) - off;
+    len = min(SBUF_LEN(&so->so_snd), win) - off;
     if (len < 0)
     {
         /*
@@ -192,7 +189,7 @@ again:
         len = tp->t_maxseg;
         sendalot = 1;
     }
-    if (SEQ_LT(tp->snd_nxt + len, tp->snd_una + so->so_snd.sb_cc))
+    if (SEQ_LT(tp->snd_nxt + len, tp->snd_una + SBUF_LEN(&so->so_snd)))
         flags &= ~TH_FIN;
 
     win = sbspace(&so->so_rcv);
@@ -212,7 +209,7 @@ again:
         if (len == tp->t_maxseg)
             goto send;
         if ((1 || idle || tp->t_flags & TF_NODELAY) &&
-                len + off >= so->so_snd.sb_cc)
+                len + off >= SBUF_LEN(&so->so_snd))
             goto send;
         if (tp->t_force)
             goto send;
@@ -242,7 +239,7 @@ again:
 
         if (adv >= (long) (2 * tp->t_maxseg))
             goto send;
-        if (2 * adv >= (long) so->so_rcv.sb_datalen)
+        if (2 * adv >= (long) SBUF_SIZE(&so->so_rcv))
             goto send;
     }
 
@@ -286,7 +283,7 @@ again:
      * if window is nonzero, transmit what we can,
      * otherwise force out a byte.
      */
-    if (   so->so_snd.sb_cc
+    if (   SBUF_LEN(&so->so_snd)
         && tp->t_timer[TCPT_REXMT] == 0
         && tp->t_timer[TCPT_PERSIST] == 0)
     {
@@ -392,9 +389,6 @@ send:
             tcpstat.tcps_sndbyte += len;
         }
 
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-        m = m_get(pData);
-#else
         size = MCLBYTES;
         if ((len + hdrlen + ETH_HLEN) < MSIZE)
             size = MCLBYTES;
@@ -407,7 +401,6 @@ send:
         else
             AssertMsgFailed(("Unsupported size"));
         m = m_getjcl(pData, M_NOWAIT, MT_HEADER, M_PKTHDR, size);
-#endif
         if (m == NULL)
         {
 /*          error = ENOBUFS; */
@@ -415,9 +408,7 @@ send:
             goto out;
         }
         m->m_data += if_maxlinkhdr;
-#ifdef VBOX_WITH_SLIRP_BSD_MBUF
         m->m_pkthdr.header = mtod(m, void *);
-#endif
         m->m_len = hdrlen;
 
         /*
@@ -428,8 +419,12 @@ send:
         if (len <= MHLEN - hdrlen - max_linkhdr)
         {
 #endif
+#ifndef VBOX_WITH_SLIRP_BSD_SBUF
             sbcopy(&so->so_snd, off, (int) len, mtod(m, caddr_t) + hdrlen);
             m->m_len += len;
+#else
+            m_copyback(pData, m, hdrlen, len, sbuf_data(&so->so_snd) + off);
+#endif
 #if 0
         }
         else
@@ -445,7 +440,7 @@ send:
          * give data to the user when a buffer fills or
          * a PUSH comes in.)
          */
-        if (off + len == so->so_snd.sb_cc)
+        if (off + len == SBUF_LEN(&so->so_snd))
             flags |= TH_PUSH;
     }
     else
@@ -459,15 +454,6 @@ send:
         else
             tcpstat.tcps_sndwinup++;
 
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-        m = m_get(pData);
-        if (m == NULL)
-        {
-/*          error = ENOBUFS; */
-            error = 1;
-            goto out;
-        }
-#else
         if ((hdrlen + ETH_HLEN) < MSIZE)
         {
             size = MCLBYTES;
@@ -489,7 +475,6 @@ send:
             AssertMsgFailed(("Unsupported size"));
         }
         m = m_getjcl(pData, M_NOWAIT, MT_HEADER, M_PKTHDR, size);
-#endif
         if (m == NULL)
         {
 /*          error = ENOBUFS; */
@@ -497,9 +482,7 @@ send:
             goto out;
         }
         m->m_data += if_maxlinkhdr;
-#ifdef VBOX_WITH_SLIRP_BSD_MBUF
         m->m_pkthdr.header = mtod(m, void *);
-#endif
         m->m_len = hdrlen;
     }
 
@@ -544,7 +527,7 @@ send:
      * Calculate receive window.  Don't shrink window,
      * but avoid silly window syndrome.
      */
-    if (win < (long)(so->so_rcv.sb_datalen / 4) && win < (long)tp->t_maxseg)
+    if (win < (long)(SBUF_SIZE(&so->so_rcv) / 4) && win < (long)tp->t_maxseg)
         win = 0;
     if (win > (long)TCP_MAXWIN << tp->rcv_scale)
         win = (long)TCP_MAXWIN << tp->rcv_scale;
@@ -647,12 +630,8 @@ send:
      * to handle ttl and tos; we could keep them in
      * the template, but need a way to checksum without them.
      */
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-    Assert(m->m_len == (hdrlen + len));
-#else
     M_ASSERTPKTHDR(m);
     m->m_pkthdr.header = mtod(m, void *);
-#endif
     m->m_len = hdrlen + len; /* XXX Needed? m_len should be correct */
 
     {
@@ -665,10 +644,6 @@ send:
 #if 0
         error = ip_output(m, tp->t_inpcb->inp_options, &tp->t_inpcb->inp_route,
                          so->so_options & SO_DONTROUTE, 0);
-#endif
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-        if(so->so_la != NULL)
-            m->m_la = so->so_la;
 #endif
         error = ip_output(pData, so, m);
 

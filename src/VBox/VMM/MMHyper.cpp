@@ -1,4 +1,4 @@
-/* $Id: MMHyper.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: MMHyper.cpp 33998 2010-11-11 14:52:22Z vboxsync $ */
 /** @file
  * MM - Memory Manager - Hypervisor Memory Area.
  */
@@ -28,6 +28,7 @@
 #include <VBox/err.h>
 #include <VBox/param.h>
 #include <VBox/log.h>
+#include <include/internal/pgm.h>
 #include <iprt/alloc.h>
 #include <iprt/assert.h>
 #include <iprt/string.h>
@@ -43,10 +44,37 @@ static int mmR3HyperHeapMap(PVM pVM, PMMHYPERHEAP pHeap, PRTGCPTR ppHeapGC);
 static DECLCALLBACK(void) mmR3HyperInfoHma(PVM pVM, PCDBGFINFOHLP pHlp, const char *pszArgs);
 
 
+DECLINLINE(uint32_t) mmR3ComputeHyperHeapSize(PVM pVM, bool fCanUseLargerHeap)
+{
+    bool fHwVirtExtForced = VMMIsHwVirtExtForced(pVM);
+
+    /* Newer chipset allows for much more devices, putting additional pressure on hyperheap */
+    /* @todo: maybe base hyperheap size upon number of devices attached too */
+    if (fCanUseLargerHeap)
+        return _2M + pVM->cCpus * 2 * _64K;
+
+    if (pVM->cCpus > 1)
+        return _1M + pVM->cCpus * 2 * _64K;
+
+    if (fHwVirtExtForced)
+    {
+        uint64_t cbRam = 0;
+        CFGMR3QueryU64(CFGMR3GetRoot(pVM), "RamSize", &cbRam);
+
+        /* Need a bit more space for large memory guests. (@todo: only for shadow paging!) */
+        if (cbRam >= _4G)
+            return _1M;
+        else
+            return 640 * _1K;
+    }
+    else
+        /* Size must be kept like this for saved state compatibility (only for raw mode though). */
+        return 1280*_1K;
+}
 
 
 /**
- * Initializes the hypvervisor related MM stuff without
+ * Initializes the hypervisor related MM stuff without
  * calling down to PGM.
  *
  * PGM is not initialized at this  point, PGM relies on
@@ -71,19 +99,13 @@ int mmR3HyperInit(PVM pVM)
      *        depending on whether VT-x/AMD-V is enabled or not! Don't waste
      *        precious kernel space on heap for the PATM.
      */
-    uint32_t cbHyperHeap;
-    int rc = CFGMR3QueryU32(CFGMR3GetChild(CFGMR3GetRoot(pVM), "MM"), "cbHyperHeap", &cbHyperHeap);
-    if (rc == VERR_CFGM_NO_PARENT || rc == VERR_CFGM_VALUE_NOT_FOUND)
-    {
-        if (pVM->cCpus > 1)
-            cbHyperHeap = _2M + pVM->cCpus * _64K;
-        else
-            cbHyperHeap = VMMIsHwVirtExtForced(pVM)
-                        ? 640*_1K
-                        : 1280*_1K;
-    }
-    else
-        AssertLogRelRCReturn(rc, rc);
+    PCFGMNODE pMM = CFGMR3GetChild(CFGMR3GetRoot(pVM), "MM");
+    bool fCanUseLargerHeap = false;
+    int rc = CFGMR3QueryBoolDef(pMM, "CanUseLargerHeap", &fCanUseLargerHeap, false);
+    uint32_t cbHyperHeap = mmR3ComputeHyperHeapSize(pVM, fCanUseLargerHeap);
+    rc = CFGMR3QueryU32Def(pMM, "cbHyperHeap", &cbHyperHeap, cbHyperHeap);
+    AssertLogRelRCReturn(rc, rc);
+
     cbHyperHeap = RT_ALIGN_32(cbHyperHeap, PAGE_SIZE);
     LogRel(("MM: cbHyperHeap=%#x (%u)\n", cbHyperHeap, cbHyperHeap));
 
@@ -483,8 +505,8 @@ VMMR3DECL(int) MMR3HyperMapGCPhys(PVM pVM, RTGCPHYS GCPhys, size_t cb, const cha
  * @param   pVM         Pointer to the shared VM structure.
  * @param   pDevIns     The device owning the MMIO2 memory.
  * @param   iRegion     The region.
- * @param   off         The offset into the region. Will be rounded down to closest page boundrary.
- * @param   cb          The number of bytes to map. Will be rounded up to the closest page boundrary.
+ * @param   off         The offset into the region. Will be rounded down to closest page boundary.
+ * @param   cb          The number of bytes to map. Will be rounded up to the closest page boundary.
  * @param   pszDesc     Mapping description.
  * @param   pRCPtr      Where to store the RC address.
  */
@@ -682,7 +704,7 @@ VMMR3DECL(int) MMR3HyperReserve(PVM pVM, unsigned cb, const char *pszDesc, PRTGC
  *
  * @return VBox status code.
  * @param   pVM         The VM handle.
- * @param   cb          Size of the memory. Will be rounded up to neares page.
+ * @param   cb          Size of the memory. Will be rounded up to nearest page.
  * @param   pszDesc     The description of the memory.
  * @param   pGCPtr      Where to store the GC address.
  * @param   ppLookup    Where to store the pointer to the lookup record.
@@ -1076,7 +1098,7 @@ DECLINLINE(PMMLOOKUPHYPER) mmR3HyperLookupR3(PVM pVM, void *pvR3)
  * @param   pvStart             The hyper heap page address. Must be page
  *                              aligned.
  * @param   cb                  The number of bytes. Must be page aligned.
- * @param   fSet                Wheter to set or unset guard page status.
+ * @param   fSet                Whether to set or unset guard page status.
  */
 VMMR3DECL(int) MMR3HyperSetGuard(PVM pVM, void *pvStart, size_t cb, bool fSet)
 {
@@ -1167,6 +1189,90 @@ VMMR3DECL(RTHCPHYS) MMR3HyperHCVirt2HCPhys(PVM pVM, void *pvR3)
 }
 
 
+/**
+ * Implements the return case of MMR3HyperQueryInfoFromHCPhys.
+ *
+ * @returns VINF_SUCCESS, VINF_BUFFER_OVERFLOW.
+ * @param   pVM                 The VM handle.
+ * @param   HCPhys              The host physical address to look for.
+ * @param   pLookup             The HMA lookup entry corresponding to HCPhys.
+ * @param   pszWhat             Where to return the description.
+ * @param   cbWhat              Size of the return buffer.
+ * @param   pcbAlloc            Where to return the size of whatever it is.
+ */
+static int mmR3HyperQueryInfoFromHCPhysFound(PVM pVM, RTHCPHYS HCPhys, PMMLOOKUPHYPER pLookup,
+                                             char *pszWhat, size_t cbWhat, uint32_t *pcbAlloc)
+{
+    *pcbAlloc = pLookup->cb;
+    int rc = RTStrCopy(pszWhat, cbWhat, pLookup->pszDesc);
+    return rc == VERR_BUFFER_OVERFLOW ? VINF_BUFFER_OVERFLOW : rc;
+}
+
+
+/**
+ * Scans the HMA for the physical page and reports back a description if found.
+ *
+ * @returns VINF_SUCCESS, VINF_BUFFER_OVERFLOW, VERR_NOT_FOUND.
+ * @param   pVM                 The VM handle.
+ * @param   HCPhys              The host physical address to look for.
+ * @param   pszWhat             Where to return the description.
+ * @param   cbWhat              Size of the return buffer.
+ * @param   pcbAlloc            Where to return the size of whatever it is.
+ */
+VMMR3_INT_DECL(int) MMR3HyperQueryInfoFromHCPhys(PVM pVM, RTHCPHYS HCPhys, char *pszWhat, size_t cbWhat, uint32_t *pcbAlloc)
+{
+    RTHCPHYS        HCPhysPage = HCPhys & ~(RTHCPHYS)PAGE_OFFSET_MASK;
+    PMMLOOKUPHYPER  pLookup    = (PMMLOOKUPHYPER)((uint8_t *)pVM->mm.s.pHyperHeapR3 + pVM->mm.s.offLookupHyper);
+    for (;;)
+    {
+        switch (pLookup->enmType)
+        {
+            case MMLOOKUPHYPERTYPE_LOCKED:
+            {
+                uint32_t i = pLookup->cb >> PAGE_SHIFT;
+                while (i-- > 0)
+                    if (pLookup->u.Locked.paHCPhysPages[i] == HCPhysPage)
+                        return mmR3HyperQueryInfoFromHCPhysFound(pVM, HCPhys, pLookup, pszWhat, cbWhat, pcbAlloc);
+                break;
+            }
+
+            case MMLOOKUPHYPERTYPE_HCPHYS:
+            {
+                if (pLookup->u.HCPhys.HCPhys - HCPhysPage < pLookup->cb)
+                    return mmR3HyperQueryInfoFromHCPhysFound(pVM, HCPhys, pLookup, pszWhat, cbWhat, pcbAlloc);
+                break;
+            }
+
+            case MMLOOKUPHYPERTYPE_MMIO2:
+            case MMLOOKUPHYPERTYPE_GCPHYS:
+            case MMLOOKUPHYPERTYPE_DYNAMIC:
+            {
+                /* brute force. */
+                uint32_t i = pLookup->cb >> PAGE_SHIFT;
+                while (i-- > 0)
+                {
+                    RTGCPTR     GCPtr = pLookup->off + pVM->mm.s.pvHyperAreaGC;
+                    RTHCPHYS    HCPhysCur;
+                    int rc = PGMMapGetPage(pVM, GCPtr, NULL, &HCPhysCur);
+                    if (RT_SUCCESS(rc) && HCPhysCur == HCPhysPage)
+                        return mmR3HyperQueryInfoFromHCPhysFound(pVM, HCPhys, pLookup, pszWhat, cbWhat, pcbAlloc);
+                }
+                break;
+            }
+            default:
+                AssertMsgFailed(("enmType=%d\n", pLookup->enmType));
+                break;
+        }
+
+        /* next */
+        if ((unsigned)pLookup->offNext == NIL_OFFSET)
+            break;
+        pLookup = (PMMLOOKUPHYPER)((uint8_t *)pLookup + pLookup->offNext);
+    }
+    return VERR_NOT_FOUND;
+}
+
+
 #if 0 /* unused, not implemented */
 /**
  * Convert hypervisor HC physical address to HC virtual address.
@@ -1221,19 +1327,6 @@ VMMR3DECL(int) MMR3HyperReadGCVirt(PVM pVM, void *pvDst, RTGCPTR GCPtr, size_t c
     if (GCPtr - pVM->mm.s.pvHyperAreaGC >= pVM->mm.s.cbHyperArea)
         return VERR_INVALID_POINTER;
     return PGMR3MapRead(pVM, pvDst, GCPtr, cb);
-}
-
-/**
- * Release the MM hypervisor heap lock if owned by the current VCPU
- *
- * @param   pVM         The VM to operate on.
- */
-VMMR3DECL(void) MMR3ReleaseOwnedLocks(PVM pVM)
-{
-    PMMHYPERHEAP pHeap = pVM->mm.s.CTX_SUFF(pHyperHeap);
-
-    while (pHeap && PDMCritSectIsOwner(&pHeap->Lock))
-        PDMCritSectLeave(&pHeap->Lock);
 }
 
 
@@ -1312,4 +1405,3 @@ static DECLCALLBACK(void) mmR3HyperInfoHma(PVM pVM, PCDBGFINFOHLP pHlp, const ch
         pLookup = (PMMLOOKUPHYPER)((uint8_t *)pLookup + pLookup->offNext);
     }
 }
-

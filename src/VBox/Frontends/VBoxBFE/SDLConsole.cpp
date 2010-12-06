@@ -39,6 +39,7 @@
 #include <VBox/param.h>
 #include <VBox/pdm.h>
 #include <VBox/log.h>
+#include <VBox/version.h>
 #include <iprt/path.h>
 #include <iprt/string.h>
 #include <iprt/initterm.h>
@@ -1312,7 +1313,7 @@ void SDLConsole::updateTitlebar()
     char pszTitle[1024];
 
     RTStrPrintf(pszTitle, sizeof(pszTitle),
-                "Sun VirtualBox%s%s",
+                VBOX_PRODUCT "%s%s",
                 g_uProgressPercent == ~0U && machineState == VMSTATE_SUSPENDED ? " - [Paused]" : "",
                 mfInputGrab                                                    ? " - [Input captured]": "");
 
@@ -1344,7 +1345,7 @@ void SDLConsole::updateTitlebar()
     }
 #endif /* DEBUG */
 
-    SDL_WM_SetCaption(pszTitle, "Sun vXM VirtualBox");
+    SDL_WM_SetCaption(pszTitle, VBOX_PRODUCT);
 }
 
 /**
@@ -1355,8 +1356,8 @@ void SDLConsole::updateTitlebarProgress(const char *pszStr, int iPercent)
 {
     char szTitle[256];
     AssertMsg(iPercent >= 0 && iPercent <= 100, ("%d\n", iPercent));
-    RTStrPrintf(szTitle, sizeof(szTitle), "Sun VirtualBox - %s %d%%...", pszStr, iPercent);
-    SDL_WM_SetCaption(szTitle, "Sun VirtualBox");
+    RTStrPrintf(szTitle, sizeof(szTitle), VBOX_PRODUCT " - %s %d%%...", pszStr, iPercent);
+    SDL_WM_SetCaption(szTitle, VBOX_PRODUCT);
 }
 
 /**
@@ -1397,7 +1398,7 @@ void SDLConsole::setPointerShape (const PointerShapeChangeData *data)
         bi.bV5Planes = 1;
         bi.bV5BitCount = 32;
         bi.bV5Compression = BI_BITFIELDS;
-        // specifiy a supported 32 BPP alpha format for Windows XP
+        // specify a supported 32 BPP alpha format for Windows XP
         bi.bV5RedMask   = 0x00FF0000;
         bi.bV5GreenMask = 0x0000FF00;
         bi.bV5BlueMask  = 0x000000FF;

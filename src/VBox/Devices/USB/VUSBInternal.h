@@ -1,4 +1,4 @@
-/* $Id: VUSBInternal.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VUSBInternal.h 32010 2010-08-26 16:51:26Z vboxsync $ */
 /** @file
  * Virtual USB - Internal header.
  *
@@ -27,6 +27,7 @@
 #include <VBox/types.h>
 #include <VBox/vusb.h>
 #include <VBox/stam.h>
+#include <iprt/assert.h>
 
 RT_C_DECLS_BEGIN
 
@@ -352,6 +353,9 @@ typedef struct VUSBROOTHUB
 
     /** Chain of devices attached to this hub. */
     PVUSBDEV                pDevices;
+#if HC_ARCH_BITS == 32
+//    uint32_t                Alignment0;
+#endif
     /** Availability Bitmap. */
     VUSBPORTBITMAP          Bitmap;
 
@@ -364,6 +368,9 @@ typedef struct VUSBROOTHUB
     /** Version of the attached Host Controller. */
     uint32_t                fHcVersions;
 #ifdef VBOX_WITH_STATISTICS
+#if HC_ARCH_BITS == 32
+    uint32_t                Alignment1; /**< Counters must be 64-bit aligned. */
+#endif
     VUSBROOTHUBTYPESTATS    Total;
     VUSBROOTHUBTYPESTATS    aTypes[VUSBXFERTYPE_MSG];
     STAMCOUNTER             StatIsocReqPkts;
@@ -389,10 +396,26 @@ typedef struct VUSBROOTHUB
     STAMPROFILE             StatSubmitUrb;
 #endif
 } VUSBROOTHUB;
+AssertCompileMemberAlignment(VUSBROOTHUB, IRhConnector, 8);
+AssertCompileMemberAlignment(VUSBROOTHUB, Bitmap, 8);
+AssertCompileMemberAlignment(VUSBROOTHUB, CritSect, 8);
+#ifdef VBOX_WITH_STATISTICS
+AssertCompileMemberAlignment(VUSBROOTHUB, Total, 8);
+#endif
 
 /** Converts a pointer to VUSBROOTHUB::IRhConnector to a PVUSBROOTHUB. */
 #define VUSBIROOTHUBCONNECTOR_2_VUSBROOTHUB(pInterface) (PVUSBROOTHUB)( (uintptr_t)(pInterface) - RT_OFFSETOF(VUSBROOTHUB, IRhConnector) )
 
+/**
+ * URB cancellation modes
+ */
+typedef enum CANCELMODE
+{
+    /** complete the URB with an error (CRC). */
+    CANCELMODE_FAIL = 0,
+    /** do not change the URB contents. */
+    CANCELMODE_UNDO
+} CANCELMODE;
 
 /* @} */
 
@@ -403,7 +426,7 @@ typedef struct VUSBROOTHUB
 int  vusbUrbSubmit(PVUSBURB pUrb);
 void vusbUrbTrace(PVUSBURB pUrb, const char *pszMsg, bool fComplete);
 void vusbUrbDoReapAsync(PVUSBURB pHead, RTMSINTERVAL cMillies);
-void vusbUrbCancel(PVUSBURB pUrb);
+void vusbUrbCancel(PVUSBURB pUrb, CANCELMODE mode);
 void vusbUrbRipe(PVUSBURB pUrb);
 void vusbUrbCompletionRh(PVUSBURB pUrb);
 

@@ -1,10 +1,10 @@
-# $Revision: 29056 $
+# $Revision: 33184 $
 ## @file
 # VirtualBox Guest Additions Module Makefile.
 #
 
 #
-# Copyright (C) 2006-2009 Oracle Corporation
+# Copyright (C) 2006-2010 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -63,6 +63,7 @@ override MODULE = vboxguest
 OBJS   = \
 	VBoxGuest-linux.o \
 	VBoxGuest.o \
+	VBoxGuest2.o \
 	GenericRequest.o \
 	HGCMInternal.o \
 	Init.o \
@@ -113,9 +114,14 @@ OBJS   = \
 	common/string/strformattype.o \
 	common/string/strprintf.o \
 	common/string/strtonum.o \
+	common/time/time.o \
 	generic/RTAssertShouldPanic-generic.o \
         generic/RTLogWriteStdErr-stub-generic.o \
         generic/RTLogWriteStdOut-stub-generic.o \
+	generic/RTSemEventWait-2-ex-generic.o \
+	generic/RTSemEventWaitNoResume-2-ex-generic.o \
+	generic/RTSemEventMultiWait-2-ex-generic.o \
+	generic/RTSemEventMultiWaitNoResume-2-ex-generic.o \
 	VBox/log-vbox.o \
 	VBox/logbackdoor.o
 ifeq ($(BUILD_TARGET_ARCH),x86)
@@ -219,6 +225,7 @@ ifndef INCL
   KBUILD_EXTMOD := $(shell pwd)
  endif
  INCL    += $(addprefix -I$(KBUILD_EXTMOD),/ /include /r0drv/linux)
+ INCL    += $(addprefix -I$(KBUILD_EXTMOD)/vboxguest,/ /include /r0drv/linux)
  export INCL
 endif
 KFLAGS   := -D__KERNEL__ -DMODULE \
@@ -282,6 +289,7 @@ install: $(MODULE)
 endif # eq($(MAKECMDGOALS),clean)
 
 clean:
-	for f in . linux r0drv r0drv/linux r0drv/generic VBox common/err common/string common/log generic common/math/gcc; \
+	for f in . linux r0drv generic r0drv/linux r0drv/generic VBox \
+	    common/alloc common/err common/log common/math/gcc common/misc common/string common/time; \
             do rm -f $$f/*.o $$f/.*.cmd $$f/.*.flags; done
 	rm -rf .vboxguest* .tmp_ver* vboxguest.* Module.symvers Modules.symvers modules.order

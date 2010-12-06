@@ -1,4 +1,4 @@
-/* $Id: CPUMInternal.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: CPUMInternal.h 33935 2010-11-10 15:37:02Z vboxsync $ */
 /** @file
  * CPUM - Internal header file.
  */
@@ -256,8 +256,8 @@ typedef CPUMHOSTCTX *PCPUMHOSTCTX;
  */
 typedef struct CPUM
 {
-    /* Offset from CPUM to CPUMCPU for the first CPU. */
-    uint32_t                ulOffCPUMCPU;
+    /** Offset from CPUM to CPUMCPU for the first CPU. */
+    uint32_t                offCPUMCPU0;
 
     /** Use flags.
      * These flags indicates which CPU features the host uses.
@@ -281,9 +281,9 @@ typedef struct CPUM
         uint32_t            ecx;
     } CPUFeaturesExt;
 
-    /* Host CPU manufacturer. */
+    /** Host CPU manufacturer. */
     CPUMCPUVENDOR           enmHostCpuVendor;
-    /* Guest CPU manufacturer. */
+    /** Guest CPU manufacturer. */
     CPUMCPUVENDOR           enmGuestCpuVendor;
 
     /** CR4 mask */
@@ -293,14 +293,14 @@ typedef struct CPUM
         uint32_t            OrMask;
     } CR4;
 
-    /** Have we entered rawmode? */
-    bool                    fRawEntered;
     /** Synthetic CPU type? */
     bool                    fSyntheticCpu;
-    /** Indiciates that a state restore is pending.
+    /** The (more) portable CPUID level.  */
+    uint8_t                 u8PortableCpuIdLevel;
+    /** Indicates that a state restore is pending.
      * This is used to verify load order dependencies (PGM). */
     bool                    fPendingRestore;
-    uint8_t                 abPadding[1 + (HC_ARCH_BITS == 64) * 4];
+    uint8_t                 abPadding[HC_ARCH_BITS == 64 ? 5 : 1];
 
     /** The standard set of CpuId leafs. */
     CPUMCPUID               aGuestCpuIdStd[6];
@@ -312,12 +312,17 @@ typedef struct CPUM
     CPUMCPUID               GuestCpuIdDef;
 
 #if HC_ARCH_BITS == 32
-    /** Align the next member, and thereby the structure, on a 64-byte boundrary. */
     uint8_t                 abPadding2[4];
 #endif
 
+#ifdef VBOX_WITH_VMMR0_DISABLE_LAPIC_NMI
+    RTHCPTR                 pvApicBase;
+    uint32_t                fApicDisVectors;
+    uint8_t                 abPadding3[HC_ARCH_BITS == 32 ? 56 : 52];
+#endif
+
     /**
-     * Guest context on raw mode entry.
+     * Guest context on raw mode entry. 64-byte aligned!
      * This a debug feature, see CPUMR3SaveEntryCtx.
      */
     CPUMCTX                 GuestEntry;
@@ -332,13 +337,13 @@ typedef struct CPUMCPU
 {
     /**
      * Hypervisor context.
-     * Aligned on a 64-byte boundrary.
+     * Aligned on a 64-byte boundary.
      */
     CPUMCTX                 Hyper;
 
     /**
      * Saved host context. Only valid while inside GC.
-     * Aligned on a 64-byte boundrary.
+     * Aligned on a 64-byte boundary.
      */
     CPUMHOSTCTX             Host;
 
@@ -349,13 +354,13 @@ typedef struct CPUMCPU
 
     /**
      * Guest context.
-     * Aligned on a 64-byte boundrary.
+     * Aligned on a 64-byte boundary.
      */
     CPUMCTX                 Guest;
 
     /**
      * Guest context - misc MSRs
-     * Aligned on a 64-byte boundrary.
+     * Aligned on a 64-byte boundary.
      */
     CPUMCTXMSR              GuestMsr;
 
@@ -378,14 +383,20 @@ typedef struct CPUMCPU
      */
     uint32_t                fChanged;
 
-    /* Offset to CPUM. (subtract from the pointer to get to CPUM) */
-    uint32_t                ulOffCPUM;
+    /** Offset from CPUM to CPUMCPU. */
+    uint32_t                offCPUM;
 
-    /* Temporary storage for the return code of the function called in the 32-64 switcher. */
+    /** Temporary storage for the return code of the function called in the
+     * 32-64 switcher. */
     uint32_t                u32RetCode;
 
-    /** Align the next member, and thereby the structure, on a 64-byte boundrary. */
-    uint8_t                 abPadding2[HC_ARCH_BITS == 32 ? 36 : 28];
+    /** Have we entered raw-mode? */
+    bool                    fRawEntered;
+    /** Have we entered the recompiler? */
+    bool                    fRemEntered;
+
+    /** Align the structure on a 64-byte boundary. */
+    uint8_t                 abPadding2[HC_ARCH_BITS == 32 ? 34 : 26];
 } CPUMCPU, *PCPUMCPU;
 /** Pointer to the CPUMCPU instance data residing in the shared VMCPU structure. */
 typedef CPUMCPU *PCPUMCPU;

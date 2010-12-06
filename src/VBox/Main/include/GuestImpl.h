@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -19,6 +19,7 @@
 #define ____H_GUESTIMPL
 
 #include "VirtualBoxBase.h"
+#include <iprt/list.h>
 #include <VBox/ostypes.h>
 
 #ifdef VBOX_WITH_GUEST_CONTROL
@@ -47,12 +48,11 @@ class Progress;
 #endif
 
 class ATL_NO_VTABLE Guest :
-    public VirtualBoxSupportErrorInfoImpl<Guest, IGuest>,
-    public VirtualBoxSupportTranslation<Guest>,
     public VirtualBoxBase,
     VBOX_SCRIPTABLE_IMPL(IGuest)
 {
 public:
+    VIRTUALBOXBASE_ADD_ERRORINFO_SUPPORT(Guest, IGuest)
 
     DECLARE_NOT_AGGREGATABLE(Guest)
 
@@ -69,103 +69,131 @@ public:
     HRESULT FinalConstruct();
     void FinalRelease();
 
-    // public initializer/uninitializer for internal purposes only
+    // Public initializer/uninitializer for internal purposes only
     HRESULT init (Console *aParent);
     void uninit();
 
     // IGuest properties
     STDMETHOD(COMGETTER(OSTypeId)) (BSTR *aOSTypeId);
-    STDMETHOD(COMGETTER(AdditionsActive)) (BOOL *aAdditionsActive);
+    STDMETHOD(COMGETTER(AdditionsRunLevel)) (AdditionsRunLevelType_T *aRunLevel);
     STDMETHOD(COMGETTER(AdditionsVersion)) (BSTR *aAdditionsVersion);
+    /** @todo Remove later by replacing it by AdditionsFeatureAvailable(). */
     STDMETHOD(COMGETTER(SupportsSeamless)) (BOOL *aSupportsSeamless);
     STDMETHOD(COMGETTER(SupportsGraphics)) (BOOL *aSupportsGraphics);
+#if 0
+    /** @todo Will replace SupportsSeamless, SupportsGraphics, ... */
+    STDMETHOD(COMGETTER(AdditionsFeatureAvailable)) (LONG64 aFeature, BOOL *aActive, BOOL *aAvailable);
+#endif
     STDMETHOD(COMGETTER(MemoryBalloonSize)) (ULONG *aMemoryBalloonSize);
     STDMETHOD(COMSETTER(MemoryBalloonSize)) (ULONG aMemoryBalloonSize);
-    STDMETHOD(COMGETTER(PageFusionEnabled)) (BOOL *aPageFusionEnabled);
-    STDMETHOD(COMSETTER(PageFusionEnabled)) (BOOL aPageFusionEnabled);
     STDMETHOD(COMGETTER(StatisticsUpdateInterval)) (ULONG *aUpdateInterval);
     STDMETHOD(COMSETTER(StatisticsUpdateInterval)) (ULONG aUpdateInterval);
 
     // IGuest methods
+    STDMETHOD(GetAdditionsStatus)(AdditionsRunLevelType_T aLevel, BOOL *aActive);
     STDMETHOD(SetCredentials)(IN_BSTR aUserName, IN_BSTR aPassword,
                               IN_BSTR aDomain, BOOL aAllowInteractiveLogon);
     STDMETHOD(ExecuteProcess)(IN_BSTR aCommand, ULONG aFlags,
                               ComSafeArrayIn(IN_BSTR, aArguments), ComSafeArrayIn(IN_BSTR, aEnvironment),
                               IN_BSTR aUserName, IN_BSTR aPassword,
                               ULONG aTimeoutMS, ULONG *aPID, IProgress **aProgress);
-    STDMETHOD(GetProcessOutput)(ULONG aPID, ULONG aFlags, ULONG aTimeoutMS, ULONG64 aSize, ComSafeArrayOut(BYTE, aData));
+    STDMETHOD(GetProcessOutput)(ULONG aPID, ULONG aFlags, ULONG aTimeoutMS, LONG64 aSize, ComSafeArrayOut(BYTE, aData));
+    STDMETHOD(SetProcessInput)(ULONG aPID, ULONG aFlags, ComSafeArrayIn(BYTE, aData), ULONG *aBytesWritten);
     STDMETHOD(GetProcessStatus)(ULONG aPID, ULONG *aExitCode, ULONG *aFlags, ULONG *aStatus);
+    STDMETHOD(CopyToGuest)(IN_BSTR aSource, IN_BSTR aDest, IN_BSTR aUserName, IN_BSTR aPassword, ULONG aFlags, IProgress **aProgress);
+    STDMETHOD(CreateDirectory)(IN_BSTR aDirectory, IN_BSTR aUserName, IN_BSTR aPassword, ULONG aMode, ULONG aFlags, IProgress **aProgress);
     STDMETHOD(InternalGetStatistics)(ULONG *aCpuUser, ULONG *aCpuKernel, ULONG *aCpuIdle,
                                      ULONG *aMemTotal, ULONG *aMemFree, ULONG *aMemBalloon, ULONG *aMemShared, ULONG *aMemCache,
                                      ULONG *aPageTotal, ULONG *aMemAllocTotal, ULONG *aMemFreeTotal, ULONG *aMemBalloonTotal, ULONG *aMemSharedTotal);
+    STDMETHOD(UpdateGuestAdditions)(IN_BSTR aSource, ULONG aFlags, IProgress **aProgress);
 
-    // public methods that are not in IDL
-    void setAdditionsVersion (Bstr aVersion, VBOXOSTYPE aOsType);
-
-    void setSupportsSeamless (BOOL aSupportsSeamless);
-
-    void setSupportsGraphics (BOOL aSupportsGraphics);
-
-    HRESULT SetStatistic(ULONG aCpuId, GUESTSTATTYPE enmType, ULONG aVal);
-
-    // for VirtualBoxSupportErrorInfoImpl
-    static const wchar_t *getComponentName() { return L"Guest"; }
-
+    // Public methods that are not in IDL (only called internally).
+    HRESULT executeProcessInternal(IN_BSTR aCommand, ULONG aFlags,
+                                   ComSafeArrayIn(IN_BSTR, aArguments), ComSafeArrayIn(IN_BSTR, aEnvironment),
+                                   IN_BSTR aUserName, IN_BSTR aPassword,
+                                   ULONG aTimeoutMS, ULONG *aPID, IProgress **aProgress, int *pRC);
+    HRESULT createDirectoryInternal(IN_BSTR aDirectory, IN_BSTR aUserName, IN_BSTR aPassword,
+                                    ULONG aMode, ULONG aFlags, IProgress **aProgress, int *pRC);
+    void setAdditionsInfo(Bstr aInterfaceVersion, VBOXOSTYPE aOsType);
+    void setAdditionsInfo2(Bstr aAdditionsVersion, Bstr aVersionName, Bstr aRevision);
+    void setAdditionsStatus(VBoxGuestStatusFacility Facility, VBoxGuestStatusCurrent Status, ULONG ulFlags);
+    void setSupportedFeatures(uint32_t fCaps, uint32_t fActive);
+    HRESULT setStatistic(ULONG aCpuId, GUESTSTATTYPE enmType, ULONG aVal);
+    BOOL isPageFusionEnabled();
 # ifdef VBOX_WITH_GUEST_CONTROL
     /** Static callback for handling guest notifications. */
     static DECLCALLBACK(int) doGuestCtrlNotification(void *pvExtension, uint32_t u32Function, void *pvParms, uint32_t cbParms);
 # endif
+    static HRESULT setErrorStatic(HRESULT aResultCode,
+                                  const Utf8Str &aText)
+    {
+        return setErrorInternal(aResultCode, getStaticClassIID(), getStaticComponentName(), aText, false, true);
+    }
 
 private:
 
-# ifdef VBOX_WITH_GUEST_CONTROL
+    // Internal tasks
+    struct TaskGuest; /* Worker thread helper. */
+#ifdef VBOX_WITH_GUEST_CONTROL
+    HRESULT taskUpdateGuestAdditions(TaskGuest *aTask);
+
     struct CallbackContext
     {
-        uint32_t                    mContextID;
         eVBoxGuestCtrlCallbackType  mType;
+        /** Pointer to user-supplied data. */
         void                       *pvData;
+        /** Size of user-supplied data. */
         uint32_t                    cbData;
-        /** Atomic flag whether callback was called. */
-        volatile bool               fCalled;
         /** Pointer to user-supplied IProgress. */
         ComObjPtr<Progress>         pProgress;
     };
-    typedef std::list< CallbackContext > CallbackList;
-    typedef std::list< CallbackContext >::iterator CallbackListIter;
-    typedef std::list< CallbackContext >::const_iterator CallbackListIterConst;
+    /*
+     * The map key is the context ID.
+     */
+    typedef std::map< uint32_t, CallbackContext > CallbackMap;
+    typedef std::map< uint32_t, CallbackContext >::iterator CallbackMapIter;
+    typedef std::map< uint32_t, CallbackContext >::const_iterator CallbackMapIterConst;
 
     struct GuestProcess
     {
-        uint32_t                    mPID;
         uint32_t                    mStatus;
         uint32_t                    mFlags;
         uint32_t                    mExitCode;
     };
-    typedef std::list< GuestProcess > GuestProcessList;
-    typedef std::list< GuestProcess >::iterator GuestProcessIter;
-    typedef std::list< GuestProcess >::const_iterator GuestProcessIterConst;
+    /*
+     * The map key is the PID (process identifier).
+     */
+    typedef std::map< uint32_t, GuestProcess > GuestProcessMap;
+    typedef std::map< uint32_t, GuestProcess >::iterator GuestProcessMapIter;
+    typedef std::map< uint32_t, GuestProcess >::const_iterator GuestProcessMapIterConst;
+
+    int directoryEntryAppend(const char *pszPath, PRTLISTNODE pList);
+    int directoryRead(const char *pszDirectory, const char *pszFilter, ULONG uFlags, ULONG *pcObjects, PRTLISTNODE pList);
 
     int prepareExecuteEnv(const char *pszEnv, void **ppvList, uint32_t *pcbList, uint32_t *pcEnv);
     /** Handler for guest execution control notifications. */
     int notifyCtrlClientDisconnected(uint32_t u32Function, PCALLBACKDATACLIENTDISCONNECTED pData);
     int notifyCtrlExecStatus(uint32_t u32Function, PCALLBACKDATAEXECSTATUS pData);
     int notifyCtrlExecOut(uint32_t u32Function, PCALLBACKDATAEXECOUT pData);
-    CallbackListIter getCtrlCallbackContextByID(uint32_t u32ContextID);
-    GuestProcessIter getProcessByPID(uint32_t u32PID);
-    void destroyCtrlCallbackContext(CallbackListIter it);
+    int notifyCtrlExecInStatus(uint32_t u32Function, PCALLBACKDATAEXECINSTATUS pData);
+    CallbackMapIter getCtrlCallbackContextByID(uint32_t u32ContextID);
+    GuestProcessMapIter getProcessByPID(uint32_t u32PID);
+    void destroyCtrlCallbackContext(CallbackMapIter it);
     uint32_t addCtrlCallbackContext(eVBoxGuestCtrlCallbackType enmType, void *pvData, uint32_t cbData, Progress* pProgress);
 # endif
 
     struct Data
     {
-        Data() : mAdditionsActive (FALSE), mSupportsSeamless (FALSE),
+        Data() : mAdditionsRunLevel (AdditionsRunLevelType_None),
+                 mSupportsSeamless (FALSE),
                  mSupportsGraphics (FALSE) {}
 
-        Bstr  mOSTypeId;
-        BOOL  mAdditionsActive;
-        Bstr  mAdditionsVersion;
-        BOOL  mSupportsSeamless;
-        BOOL  mSupportsGraphics;
+        Bstr                    mOSTypeId;
+        AdditionsRunLevelType_T mAdditionsRunLevel;
+        Bstr                    mAdditionsVersion;
+        Bstr                    mInterfaceVersion;
+        BOOL                    mSupportsSeamless;
+        BOOL                    mSupportsGraphics;
     };
 
     ULONG mMemoryBalloonSize;
@@ -181,8 +209,8 @@ private:
     HGCMSVCEXTHANDLE  mhExtCtrl;
 
     volatile uint32_t mNextContextID;
-    CallbackList mCallbackList;
-    GuestProcessList mGuestProcessList;
+    CallbackMap mCallbackMap;
+    GuestProcessMap mGuestProcessMap;
 # endif
 };
 

@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -53,7 +53,7 @@
  * Current mappings and root identifiers are saved when VM is saved.
  *
  * Guest may use any of these mappings. Full path information
- * about an object on a mapping consists of the root indentifier and
+ * about an object on a mapping consists of the root identifier and
  * a full path of object.
  *
  * Guest IFS connects to the service and calls SHFL_FN_QUERY_MAP
@@ -309,8 +309,8 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                 uint32_t cbMappings    = paParms[2].u.pointer.size;
 
                 /* Verify parameters values. */
-                if (   (fu32Flags & ~SHFL_MF_UTF8) != 0
-                    || cbMappings / sizeof (SHFLMAPPING) < cMappings
+                if (   (fu32Flags & ~SHFL_MF_MASK) != 0
+                    || cbMappings / sizeof (SHFLMAPPING) != cMappings
                    )
                 {
                     rc = VERR_INVALID_PARAMETER;
@@ -319,15 +319,19 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                 {
                     /* Execute the function. */
                     if (fu32Flags & SHFL_MF_UTF8)
-                    {
                         pClient->fu32Flags |= SHFL_CF_UTF8;
-                    }
+                    if (fu32Flags & SHFL_MF_AUTOMOUNT)
+                        pClient->fu32Flags |= SHFL_MF_AUTOMOUNT;
 
-                    rc = vbsfMappingsQuery (pClient, pMappings, &cMappings);
-
+                    rc = vbsfMappingsQuery(pClient, pMappings, &cMappings);
                     if (RT_SUCCESS(rc))
                     {
-                        /* Update parameters.*/
+                        /* Report that there are more mappings to get if
+                         * handed in buffer is too small. */
+                        if (paParms[1].u.uint32 < cMappings)
+                            rc = VINF_BUFFER_OVERFLOW;
+
+                        /* Update parameters. */
                         paParms[1].u.uint32 = cMappings;
                     }
                 }
@@ -345,8 +349,8 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
             {
                 rc = VERR_INVALID_PARAMETER;
             }
-            else if (   paParms[0].type != VBOX_HGCM_SVC_PARM_32BIT /* root */
-                     || paParms[1].type != VBOX_HGCM_SVC_PARM_PTR     /* name */
+            else if (   paParms[0].type != VBOX_HGCM_SVC_PARM_32BIT /* Root. */
+                     || paParms[1].type != VBOX_HGCM_SVC_PARM_PTR   /* Name. */
                     )
             {
                 rc = VERR_INVALID_PARAMETER;
@@ -365,12 +369,12 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                 else
                 {
                     /* Execute the function. */
-                    rc = vbsfMappingsQueryName (pClient, root, pString);
+                    rc = vbsfMappingsQueryName(pClient, root, pString);
 
                     if (RT_SUCCESS(rc))
                     {
                         /* Update parameters.*/
-                        ; /* none */
+                        ; /* None. */
                     }
                 }
             }
@@ -775,6 +779,54 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
             break;
         }
 
+        /* Read symlink destination */
+        case SHFL_FN_READLINK:
+        {
+            Log(("svcCall: SHFL_FN_READLINK\n"));
+
+            /* Verify parameter count and types. */
+            if (cParms != SHFL_CPARMS_READLINK)
+            {
+                rc = VERR_INVALID_PARAMETER;
+            }
+            else
+            if (   paParms[0].type != VBOX_HGCM_SVC_PARM_32BIT   /* root */
+                || paParms[1].type != VBOX_HGCM_SVC_PARM_PTR     /* path */
+                || paParms[2].type != VBOX_HGCM_SVC_PARM_PTR     /* buffer */
+                    )
+            {
+                rc = VERR_INVALID_PARAMETER;
+            }
+            else
+            {
+                /* Fetch parameters. */
+                SHFLROOT  root     = (SHFLROOT)paParms[0].u.uint32;
+                SHFLSTRING *pPath  = (SHFLSTRING *)paParms[1].u.pointer.addr;
+                uint32_t cbPath    = paParms[1].u.pointer.size;
+                uint8_t   *pBuffer = (uint8_t *)paParms[2].u.pointer.addr;
+                uint32_t  cbBuffer = paParms[2].u.pointer.size;
+
+                /* Verify parameters values. */
+                if (!ShflStringIsValidOrNull(pPath, paParms[1].u.pointer.size))
+                {
+                    rc = VERR_INVALID_PARAMETER;
+                }
+                else
+                {
+                    /* Execute the function. */
+                    rc = vbsfReadLink (pClient, root, pPath, cbPath, pBuffer, cbBuffer);
+
+                    if (RT_SUCCESS(rc))
+                    {
+                        /* Update parameters.*/
+                        ; /* none */
+                    }
+                }
+            }
+
+            break;
+        }
+
         /* Legacy interface */
         case SHFL_FN_MAP_FOLDER_OLD:
         {
@@ -823,10 +875,10 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
         {
             Log(("svcCall: SHFL_FN_MAP_FOLDER\n"));
             if (BIT_FLAG(pClient->fu32Flags, SHFL_CF_UTF8))
-                LogRel(("SharedFolders host service: request to map folder %S\n",
+                LogRel(("SharedFolders host service: request to map folder '%S'\n",
                         ((PSHFLSTRING)paParms[0].u.pointer.addr)->String.utf8));
             else
-                LogRel(("SharedFolders host service: request to map folder %lS\n",
+                LogRel(("SharedFolders host service: request to map folder '%lS'\n",
                         ((PSHFLSTRING)paParms[0].u.pointer.addr)->String.ucs2));
 
             /* Verify parameter count and types. */
@@ -997,7 +1049,6 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
                 else
                 {
                     /* Execute the function. */
-
                     rc = vbsfRemove (pClient, root, pPath, cbPath, flags);
                     if (RT_SUCCESS(rc))
                     {
@@ -1109,6 +1160,61 @@ static DECLCALLBACK(void) svcCall (void *, VBOXHGCMCALLHANDLE callHandle, uint32
             break;
         }
 
+        case SHFL_FN_SYMLINK:
+        {
+            Log(("svnCall: SHFL_FN_SYMLINK\n"));
+            /* Verify parameter count and types. */
+            if (cParms != SHFL_CPARMS_SYMLINK)
+            {
+                rc = VERR_INVALID_PARAMETER;
+            }
+            else
+            if (   paParms[0].type != VBOX_HGCM_SVC_PARM_32BIT   /* root */
+                || paParms[1].type != VBOX_HGCM_SVC_PARM_PTR     /* newPath */
+                || paParms[2].type != VBOX_HGCM_SVC_PARM_PTR     /* oldPath */
+                || paParms[3].type != VBOX_HGCM_SVC_PARM_PTR     /* info */
+                    )
+            {
+                rc = VERR_INVALID_PARAMETER;
+            }
+            else
+            {
+                /* Fetch parameters. */
+                SHFLROOT     root     = (SHFLROOT)paParms[0].u.uint32;
+                SHFLSTRING  *pNewPath = (SHFLSTRING *)paParms[1].u.pointer.addr;
+                SHFLSTRING  *pOldPath = (SHFLSTRING *)paParms[2].u.pointer.addr;
+                RTFSOBJINFO *pInfo    = (RTFSOBJINFO *)paParms[3].u.pointer.addr;
+                uint32_t     cbInfo   = paParms[3].u.pointer.size;
+
+                /* Verify parameters values. */
+                if (    !ShflStringIsValid(pNewPath, paParms[1].u.pointer.size)
+                    ||  !ShflStringIsValid(pOldPath, paParms[2].u.pointer.size)
+                    ||  (cbInfo != sizeof(RTFSOBJINFO))
+                   )
+                {
+                    rc = VERR_INVALID_PARAMETER;
+                }
+                else
+                {
+                    /* Execute the function. */
+                    rc = vbsfSymlink (pClient, root, pNewPath, pOldPath, pInfo);
+                    if (RT_SUCCESS(rc))
+                    {
+                        /* Update parameters.*/
+                        ; /* none */
+                    }
+                }
+            }
+        }
+        break;
+
+        case SHFL_FN_SET_SYMLINKS:
+        {
+            pClient->fu32Flags |= SHFL_CF_SYMLINKS;
+            rc = VINF_SUCCESS;
+            break;
+        }
+
         default:
         {
             rc = VERR_NOT_IMPLEMENTED;
@@ -1155,20 +1261,24 @@ static DECLCALLBACK(int) svcHostCall (void *, uint32_t u32Function, uint32_t cPa
     {
         Log(("svcCall: SHFL_FN_ADD_MAPPING\n"));
         LogRel(("SharedFolders host service: adding host mapping.\n"));
-        LogRel(("    Host path %lS, map name %lS, writable %d\n",
+        LogRel(("    Host path '%lS', map name '%lS', %s\n",
                 ((SHFLSTRING *)paParms[0].u.pointer.addr)->String.ucs2,
                 ((SHFLSTRING *)paParms[1].u.pointer.addr)->String.ucs2,
-                paParms[2].u.uint32));
+                paParms[2].u.uint32 ? "writable" : "read-only"));
 
         /* Verify parameter count and types. */
-        if (cParms != SHFL_CPARMS_ADD_MAPPING)
+        if (   (cParms != SHFL_CPARMS_ADD_MAPPING)
+            && (cParms != SHFL_CPARMS_ADD_MAPPING2) /* With auto-mount flag. */
+           )
         {
             rc = VERR_INVALID_PARAMETER;
         }
         else if (   paParms[0].type != VBOX_HGCM_SVC_PARM_PTR     /* host folder name */
                  || paParms[1].type != VBOX_HGCM_SVC_PARM_PTR     /* guest map name */
                  || paParms[2].type != VBOX_HGCM_SVC_PARM_32BIT   /* fWritable */
-                )
+                 /* With auto-mount flag? */
+                 || (   cParms == SHFL_CPARMS_ADD_MAPPING2
+                     && paParms[3].type != VBOX_HGCM_SVC_PARM_32BIT))
         {
             rc = VERR_INVALID_PARAMETER;
         }
@@ -1178,6 +1288,11 @@ static DECLCALLBACK(int) svcHostCall (void *, uint32_t u32Function, uint32_t cPa
             SHFLSTRING *pFolderName = (SHFLSTRING *)paParms[0].u.pointer.addr;
             SHFLSTRING *pMapName    = (SHFLSTRING *)paParms[1].u.pointer.addr;
             uint32_t fWritable      = paParms[2].u.uint32;
+            uint32_t fAutoMount     = 0; /* Disabled by default. */
+
+            /* Handle auto-mount flag if present. */
+            if (cParms == SHFL_CPARMS_ADD_MAPPING2)
+                fAutoMount = paParms[3].u.uint32;
 
             /* Verify parameters values. */
             if (    !ShflStringIsValid(pFolderName, paParms[0].u.pointer.size)
@@ -1189,8 +1304,7 @@ static DECLCALLBACK(int) svcHostCall (void *, uint32_t u32Function, uint32_t cPa
             else
             {
                 /* Execute the function. */
-                rc = vbsfMappingsAdd (pFolderName, pMapName, fWritable);
-
+                rc = vbsfMappingsAdd(pFolderName, pMapName, fWritable, fAutoMount);
                 if (RT_SUCCESS(rc))
                 {
                     /* Update parameters.*/
@@ -1205,7 +1319,7 @@ static DECLCALLBACK(int) svcHostCall (void *, uint32_t u32Function, uint32_t cPa
     case SHFL_FN_REMOVE_MAPPING:
     {
         Log(("svcCall: SHFL_FN_REMOVE_MAPPING\n"));
-        LogRel(("SharedFolders host service: removing host mapping %lS\n",
+        LogRel(("SharedFolders host service: removing host mapping '%lS'\n",
                 ((SHFLSTRING *)paParms[0].u.pointer.addr)->String.ucs2));
 
         /* Verify parameter count and types. */

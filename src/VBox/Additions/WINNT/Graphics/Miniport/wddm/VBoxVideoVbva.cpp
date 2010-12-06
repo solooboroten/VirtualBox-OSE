@@ -15,13 +15,13 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-#include "../VBoxVideo.h"
+#include "../VBoxVideo-win.h"
 #include "../Helper.h"
 
 static int vboxVBVAInformHost (PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO * pVbva, BOOL bEnable)
 {
     int rc = VERR_NO_MEMORY;
-    void *p = vboxHGSMIBufferAlloc (pDevExt,
+    void *p = VBoxHGSMIBufferAlloc (&commonFromDeviceExt(pDevExt)->guestCtx,
                                   sizeof (VBVAENABLE_EX),
                                   HGSMI_CH_VBVA,
                                   VBVA_ENABLE);
@@ -42,7 +42,7 @@ static int vboxVBVAInformHost (PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO * pVbva, 
         pEnable->u32Offset = (uint32_t)pVbva->offVBVA;
         pEnable->i32Result = VERR_NOT_SUPPORTED;
 
-        vboxHGSMIBufferSubmit (pDevExt, p);
+        VBoxHGSMIBufferSubmit (&commonFromDeviceExt(pDevExt)->guestCtx, p);
 
         if (bEnable)
         {
@@ -52,7 +52,7 @@ static int vboxVBVAInformHost (PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO * pVbva, 
         else
             rc = VINF_SUCCESS;
 
-        vboxHGSMIBufferFree (pDevExt, p);
+        VBoxHGSMIBufferFree (&commonFromDeviceExt(pDevExt)->guestCtx, p);
     }
     return rc;
 }
@@ -102,7 +102,10 @@ int vboxVbvaDisable (PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO *pVbva)
 int vboxVbvaCreate(PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO *pVbva, ULONG offBuffer, ULONG cbBuffer, D3DDDI_VIDEO_PRESENT_SOURCE_ID srcId)
 {
     memset(pVbva, 0, sizeof(VBOXVBVAINFO));
-    int rc = VBoxMapAdapterMemory (pDevExt,
+
+    KeInitializeSpinLock(&pVbva->Lock);
+
+    int rc = VBoxMapAdapterMemory (commonFromDeviceExt(pDevExt),
                                        (void**)&pVbva->pVBVA,
                                        offBuffer,
                                        cbBuffer);
@@ -121,16 +124,8 @@ int vboxVbvaCreate(PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO *pVbva, ULONG offBuff
 int vboxVbvaDestroy(PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO *pVbva)
 {
     int rc = VINF_SUCCESS;
-    /*rc = */VBoxUnmapAdapterMemory(pDevExt, (void**)&pVbva->pVBVA, pVbva->cbVBVA);
-/*
-    AssertRC(rc);
-    if (RT_SUCCESS(rc))
-*/
-        memset(pVbva, 0, sizeof(VBOXVBVAINFO));
-/*
-    else
-        drprintf((__FUNCTION__": VBoxUnmapAdapterMemory failed, rc (%d)\n", rc));
-*/
+    VBoxUnmapAdapterMemory(commonFromDeviceExt(pDevExt), (void**)&pVbva->pVBVA);
+    memset(pVbva, 0, sizeof(VBOXVBVAINFO));
     return rc;
 }
 
@@ -147,7 +142,7 @@ static uint32_t vboxHwBufferAvail (const VBVABUFFER *pVBVA)
 static void vboxHwBufferFlush (PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO *pVbva)
 {
     /* Issue the flush command. */
-    void *p = vboxHGSMIBufferAlloc (pDevExt,
+    void *p = VBoxHGSMIBufferAlloc (&commonFromDeviceExt(pDevExt)->guestCtx,
                               sizeof (VBVAFLUSH),
                               HGSMI_CH_VBVA,
                               VBVA_FLUSH);
@@ -162,9 +157,9 @@ static void vboxHwBufferFlush (PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO *pVbva)
 
         pFlush->u32Reserved = 0;
 
-        vboxHGSMIBufferSubmit (pDevExt, p);
+        VBoxHGSMIBufferSubmit (&commonFromDeviceExt(pDevExt)->guestCtx, p);
 
-        vboxHGSMIBufferFree (pDevExt, p);
+        VBoxHGSMIBufferFree (&commonFromDeviceExt(pDevExt)->guestCtx, p);
     }
 
     return;
@@ -342,14 +337,14 @@ int vboxWrite (PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO *pVbva, const void *pv, u
 }
 
 
-int vboxVbvaReportDirtyRect (PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO *pVbva, RECT *pRectOrig)
+int vboxVbvaReportDirtyRect (PDEVICE_EXTENSION pDevExt, PVBOXWDDM_SOURCE pSrc, RECT *pRectOrig)
 {
         VBVACMDHDR hdr;
 
         RECT rect = *pRectOrig;
 
-        if (rect.left < 0) rect.left = 0;
-        if (rect.top < 0) rect.top = 0;
+//        if (rect.left < 0) rect.left = 0;
+//        if (rect.top < 0) rect.top = 0;
 //        if (rect.right > (int)ppdev->cxScreen) rect.right = ppdev->cxScreen;
 //        if (rect.bottom > (int)ppdev->cyScreen) rect.bottom = ppdev->cyScreen;
 
@@ -358,10 +353,10 @@ int vboxVbvaReportDirtyRect (PDEVICE_EXTENSION pDevExt, VBOXVBVAINFO *pVbva, REC
         hdr.w = (uint16_t)(rect.right - rect.left);
         hdr.h = (uint16_t)(rect.bottom - rect.top);
 
-//        hdr.x += (int16_t)ppdev->ptlDevOrg.x;
-//        hdr.y += (int16_t)ppdev->ptlDevOrg.y;
+        hdr.x += (int16_t)pSrc->VScreenPos.x;
+        hdr.y += (int16_t)pSrc->VScreenPos.y;
 
-        return vboxWrite (pDevExt, pVbva, &hdr, sizeof(hdr));
+        return vboxWrite (pDevExt, &pSrc->Vbva, &hdr, sizeof(hdr));
 }
 
 #ifdef VBOXVDMA_WITH_VBVA

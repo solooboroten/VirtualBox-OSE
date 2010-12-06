@@ -1,4 +1,4 @@
-/* $Id: VBoxFilePathSelectorWidget.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxFilePathSelectorWidget.cpp 33778 2010-11-04 15:25:25Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -17,20 +17,22 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-/* VBox includes */
-#include "VBoxFilePathSelectorWidget.h"
-#include "VBoxGlobal.h"
+/* Local includes */
 #include "QIFileDialog.h"
 #include "QILabel.h"
 #include "QILineEdit.h"
+#include "UIIconPool.h"
+#include "VBoxFilePathSelectorWidget.h"
+#include "VBoxGlobal.h"
 
-/* Qt includes */
+/* Global includes */
+#include <iprt/assert.h>
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
 #include <QDir>
-#include <QFileIconProvider>
 #include <QFocusEvent>
+#include <QHBoxLayout>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTimer>
@@ -63,7 +65,6 @@ static int differFrom (const QString &aS1, const QString &aS2)
 
 VBoxFilePathSelectorWidget::VBoxFilePathSelectorWidget (QWidget *aParent)
     : QIWithRetranslateUI<QComboBox> (aParent)
-    , mIconProvider (new QFileIconProvider())
     , mCopyAction (new QAction (this))
     , mMode (Mode_Folder)
     , mHomeDir (QDir::current().absolutePath())
@@ -78,8 +79,8 @@ VBoxFilePathSelectorWidget::VBoxFilePathSelectorWidget (QWidget *aParent)
     insertItem (ResetId, "");
 
     /* Attaching known icons */
-    setItemIcon (SelectId, VBoxGlobal::iconSet (":/select_file_16px.png"));
-    setItemIcon (ResetId, VBoxGlobal::iconSet (":/eraser_16px.png"));
+    setItemIcon(SelectId, UIIconPool::iconSet(":/select_file_16px.png"));
+    setItemIcon(ResetId, UIIconPool::iconSet(":/eraser_16px.png"));
 
     /* Setup context menu */
     addAction (mCopyAction);
@@ -104,7 +105,6 @@ VBoxFilePathSelectorWidget::VBoxFilePathSelectorWidget (QWidget *aParent)
 
 VBoxFilePathSelectorWidget::~VBoxFilePathSelectorWidget()
 {
-    delete mIconProvider;
 }
 
 void VBoxFilePathSelectorWidget::setMode (Mode aMode)
@@ -155,7 +155,7 @@ void VBoxFilePathSelectorWidget::setResetEnabled (bool aEnabled)
     else if (aEnabled && count() - 1 == ResetId - 1)
     {
         insertItem (ResetId, "");
-        setItemIcon (ResetId, VBoxGlobal::iconSet (":/eraser_16px.png"));
+        setItemIcon(ResetId, UIIconPool::iconSet(":/eraser_16px.png"));
     }
     retranslateUi();
 }
@@ -210,7 +210,7 @@ QString VBoxFilePathSelectorWidget::defaultSaveExt() const
  *
  * May be used in @c activated() signal handlers to distinguish between
  * non-path items like "Other..." or "Reset" that get temporarily activated
- * when performing the corresponding actiojn and the item that contains a
+ * when performing the corresponding action and the item that contains a
  * real selected file/folder path.
  */
 bool VBoxFilePathSelectorWidget::isPathSelected() const
@@ -412,9 +412,9 @@ void VBoxFilePathSelectorWidget::selectPath()
 QIcon VBoxFilePathSelectorWidget::defaultIcon() const
 {
     if (mMode == Mode_Folder)
-        return mIconProvider->icon (QFileIconProvider::Folder);
+        return vboxGlobal().icon(QFileIconProvider::Folder);
     else
-        return mIconProvider->icon (QFileIconProvider::File);
+        return vboxGlobal().icon(QFileIconProvider::File);
 }
 
 QString VBoxFilePathSelectorWidget::fullPath (bool aAbsolute /* = true */) const
@@ -547,7 +547,7 @@ void VBoxFilePathSelectorWidget::refreshText()
 
         /* Attach corresponding icon */
         setItemIcon (PathId, QFileInfo (mPath).exists() ?
-                             mIconProvider->icon (QFileInfo (mPath)) :
+                             vboxGlobal().icon(QFileInfo (mPath)) :
                              defaultIcon());
 
         /* Set the tooltip */

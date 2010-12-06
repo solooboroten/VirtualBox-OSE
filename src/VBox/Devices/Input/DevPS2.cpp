@@ -1,4 +1,4 @@
-/* $Id: DevPS2.cpp 28909 2010-04-29 16:34:17Z vboxsync $ */
+/* $Id: DevPS2.cpp 34371 2010-11-25 14:12:51Z vboxsync $ */
 /** @file
  * DevPS2 - PS/2 keyboard & mouse controller device.
  */
@@ -281,8 +281,6 @@ static const unsigned char ps2_raw_keycode[128] = {
 #ifndef VBOX_DEVICE_STRUCT_TESTCASE
 
 /* update irq and KBD_STAT_[MOUSE_]OBF */
-/* XXX: not generating the irqs if KBD_MODE_DISABLE_KBD is set may be
-   incorrect, but it avoids having to simulate exact delays */
 static void kbd_update_irq(KBDState *s)
 {
     KBDQueue *q = &s->queue;
@@ -292,7 +290,7 @@ static void kbd_update_irq(KBDState *s)
 
     irq1_level = 0;
     irq12_level = 0;
-    
+
     /* Determine new OBF state, but only if OBF is clear. If OBF was already
      * set, we cannot risk changing the event type after an ISR potentially
      * started executing! Only kbd_read_data() clears the OBF bits.
@@ -315,10 +313,10 @@ static void kbd_update_irq(KBDState *s)
         {
             if (s->mode & KBD_MODE_MOUSE_INT)
                 irq12_level = 1;
-        } 
-        else 
+        }
+        else
         {   /* KBD_STAT_OBF set but KBD_STAT_MOUSE_OBF isn't. */
-            if ((s->mode & KBD_MODE_KBD_INT) && !(s->mode & KBD_MODE_DISABLE_KBD))
+            if (s->mode & KBD_MODE_KBD_INT)
                 irq1_level = 1;
         }
     }
@@ -494,7 +492,7 @@ static int kbd_write_command(void *opaque, uint32_t addr, uint32_t val)
         /* ignore that - I don't know what is its use */
         break;
     /* Make OS/2 happy. */
-    /* The 8042 RAM is readble using commands 0x20 thru 0x3f, and writable
+    /* The 8042 RAM is readable using commands 0x20 thru 0x3f, and writable
        by 0x60 thru 0x7f. Now days only the firs byte, the mode, is used.
        We'll ignore the writes (0x61..7f) and return 0 for all the reads
        just to make some OS/2 debug stuff a bit happier. */
@@ -680,8 +678,7 @@ static void kbd_mouse_set_reported_buttons(KBDState *s, unsigned fButtons, unsig
 }
 
 /**
- * Send a single relative packet in 3-byte PS/2 format, optionally with our
- * packed button protocol extension, to the PS/2 controller.
+ * Send a single relative packet in 3-byte PS/2 format to the PS/2 controller.
  * @param  s               keyboard state object
  * @param  dx              relative X value, must be between -256 and +255
  * @param  dy              relative y value, must be between -256 and +255
@@ -726,34 +723,36 @@ static void kbd_mouse_send_imps2_byte4(KBDState *s, bool fToCmdQueue)
 static void kbd_mouse_send_imex_byte4(KBDState *s, bool fToCmdQueue)
 {
     int aux = fToCmdQueue ? 1 : 2;
+    int dz1 = 0, dw1 = 0;
+    unsigned fButtonsHigh = s->mouse_buttons & 0x18;
 
-    if (s->mouse_dw)
+    if (s->mouse_dw > 0)
+        dw1 = 1;
+    else if (s->mouse_dw < 0)
+        dw1 = -1;
+    else if (s->mouse_dz > 0)
+        dz1 = 1;
+    else if (s->mouse_dz < 0)
+        dz1 = -1;
+    if (s->mouse_dw && s->mouse_flags & MOUSE_REPORT_HORIZONTAL)
     {
-        int dw1 = s->mouse_dw < 0 ? RT_MAX(s->mouse_dw, -31)
-                                  : RT_MIN(s->mouse_dw, 32);
         LogRel3(("%s: dw1=%d\n", __PRETTY_FUNCTION__, dw1));
-        s->mouse_dw -= dw1;
         kbd_queue(s, 0x40 | (dw1 & 0x3f), aux);
-    }
-    else if (s->mouse_flags & MOUSE_REPORT_HORIZONTAL && s->mouse_dz)
-    {
-        int dz1 = s->mouse_dz < 0 ? RT_MAX(s->mouse_dz, -31)
-                                  : RT_MIN(s->mouse_dz, 32);
-        LogRel3(("%s: dz1=%d\n", __PRETTY_FUNCTION__, dz1));
-        s->mouse_dz -= dz1;
-        kbd_queue(s, 0x80 | (dz1 & 0x3f), aux);
     }
     else
     {
-        int dz1 = s->mouse_dz < 0 ? RT_MAX(s->mouse_dz, -7)
-                                  : RT_MIN(s->mouse_dz, 8);
-        unsigned fButtonsHigh = s->mouse_buttons & 0x18;
-        LogRel3(("%s: dz1=%d fButtonsHigh=0x%x\n",
-                 __PRETTY_FUNCTION__, dz1, fButtonsHigh));
-        s->mouse_dz -= dz1;
+        LogRel3(("%s: dz1=%d, dw1=%d, fButtonsHigh=0x%x\n",
+                 __PRETTY_FUNCTION__, dz1, dw1, fButtonsHigh));
+        unsigned u4Low =   dw1 > 0 ? 9 /* -7 & 0xf */
+                         : dw1 < 0 ? 7
+                         : dz1 > 0 ? 1
+                         : dz1 < 0 ? 0xf /* -1 & 0xf */
+                         : 0;
         kbd_mouse_set_reported_buttons(s, fButtonsHigh, 0x18);
-        kbd_queue(s, (dz1 & 0x0f) | (fButtonsHigh << 1), aux);
+        kbd_queue(s, (fButtonsHigh << 1) | u4Low, aux);
     }
+    s->mouse_dz -= dz1;
+    s->mouse_dw -= dw1;
 }
 
 /**
@@ -805,8 +804,7 @@ static void pc_kbd_mouse_event(void *opaque, int dx, int dy, int dz, int dw,
     if (   (s->mouse_type == MOUSE_PROT_IMPS2)
         || (s->mouse_type == MOUSE_PROT_IMEX))
         s->mouse_dz += dz;
-    if (   (   (s->mouse_type == MOUSE_PROT_IMEX)
-            && s->mouse_flags & MOUSE_REPORT_HORIZONTAL))
+    if (s->mouse_type == MOUSE_PROT_IMEX)
         s->mouse_dw += dw;
     s->mouse_buttons = buttons_state;
     if (!(s->mouse_status & MOUSE_STATUS_REMOTE))
@@ -1486,7 +1484,8 @@ static DECLCALLBACK(void)  kbdReset(PPDMDEVINS pDevIns)
 
     kbd_reset(pThis);
     /* Activate the PS/2 keyboard by default. */
-    pThis->Keyboard.pDrv->pfnSetActive(pThis->Keyboard.pDrv, true);
+    if (pThis->Keyboard.pDrv)
+        pThis->Keyboard.pDrv->pfnSetActive(pThis->Keyboard.pDrv, true);
 }
 
 
@@ -1695,7 +1694,7 @@ static DECLCALLBACK(void)  kbdDetach(PPDMDEVINS pDevIns, unsigned iLUN, uint32_t
 /**
  * @copydoc FNPDMDEVRELOCATE
  */
-static DECLCALLBACK(void) kdbRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
+static DECLCALLBACK(void) kbdRelocate(PPDMDEVINS pDevIns, RTGCINTPTR offDelta)
 {
     KBDState   *pThis = PDMINS_2_DATA(pDevIns, KBDState *);
     pThis->pDevInsRC = PDMDEVINS_2_RCPTR(pDevIns);
@@ -1846,7 +1845,7 @@ const PDMDEVREG g_DevicePS2KeyboardMouse =
     /* pfnDestruct */
     kbdDestruct,
     /* pfnRelocate */
-    kdbRelocate,
+    kbdRelocate,
     /* pfnIOCtl */
     NULL,
     /* pfnPowerOn */

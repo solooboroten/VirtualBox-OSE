@@ -1,4 +1,4 @@
-/* $Id: HostImpl.cpp 29945 2010-06-01 12:49:25Z vboxsync $ */
+/* $Id: HostImpl.cpp 33777 2010-11-04 15:20:35Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */
@@ -17,6 +17,9 @@
 
 #define __STDC_LIMIT_MACROS
 #define __STDC_CONSTANT_MACROS
+
+// for some reason Windows burns in sdk\...\winsock.h if this isn't included first
+#include "VBox/com/ptr.h"
 
 #include "HostImpl.h"
 
@@ -61,9 +64,9 @@
 # include <errno.h>
 # include <limits.h>
 # include <stdio.h>
-# ifdef VBOX_SOLARIS_NSL_RESOLVED
-#  include <libdevinfo.h>
-# endif
+# include <libdevinfo.h>
+# include <sys/mkdev.h>
+# include <sys/scsi/generic/inquiry.h>
 # include <net/if.h>
 # include <sys/socket.h>
 # include <sys/sockio.h>
@@ -81,6 +84,19 @@
 extern "C" char *getfullrawname(char *);
 # endif
 # include "solaris/DynLoadLibSolaris.h"
+
+/**
+ * Solaris DVD drive list as returned by getDVDInfoFromDevTree().
+ */
+typedef struct SOLARISDVD
+{
+    struct SOLARISDVD *pNext;
+    char szDescription[512];
+    char szRawDiskPath[PATH_MAX];
+} SOLARISDVD;
+/** Pointer to a Solaris DVD descriptor. */
+typedef SOLARISDVD *PSOLARISDVD;
+
 #endif /* RT_OS_SOLARIS */
 
 #ifdef RT_OS_WINDOWS
@@ -136,10 +152,11 @@ extern bool is3DAccelerationSupported();
 #include <VBox/settings.h>
 #include <VBox/sup.h>
 
+#include "VBox/com/MultiResult.h"
+
 #include <stdio.h>
 
 #include <algorithm>
-
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -150,9 +167,13 @@ extern bool is3DAccelerationSupported();
 struct Host::Data
 {
     Data()
+        :
 #ifdef VBOX_WITH_USB
-        : usbListsLock(LOCKCLASS_USBLIST)
+          usbListsLock(LOCKCLASS_USBLIST),
 #endif
+          drivesLock(LOCKCLASS_LISTOFMEDIA),
+          fDVDDrivesListBuilt(false),
+          fFloppyDrivesListBuilt(false)
     {};
 
     VirtualBox              *pParent;
@@ -166,6 +187,13 @@ struct Host::Data
     /** Pointer to the USBProxyService object. */
     USBProxyService         *pUSBProxyService;
 #endif /* VBOX_WITH_USB */
+
+    // list of host drives; lazily created by getDVDDrives() and getFloppyDrives()
+    WriteLockHandle         drivesLock;                 // protects the below two lists and the bools
+    MediaList               llDVDDrives,
+                            llFloppyDrives;
+    bool                    fDVDDrivesListBuilt,
+                            fFloppyDrivesListBuilt;
 
 #if defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD)
     /** Object with information about host drives */
@@ -226,7 +254,7 @@ HRESULT Host::init(VirtualBox *aParent)
 # elif defined (RT_OS_LINUX)
     m->pUSBProxyService = new USBProxyServiceLinux(this);
 # elif defined (RT_OS_OS2)
-    m->pUSBProxyService = new USBProxyServiceOs2 (this);
+    m->pUSBProxyService = new USBProxyServiceOs2(this);
 # elif defined (RT_OS_SOLARIS)
     m->pUSBProxyService = new USBProxyServiceSolaris(this);
 # elif defined (RT_OS_WINDOWS)
@@ -402,13 +430,13 @@ STDMETHODIMP Host::COMGETTER(DVDDrives)(ComSafeArrayOut(IMedium *, aDrives))
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock alock(m->drivesLock COMMA_LOCKVAL_SRC_POS);
 
-    MediaList list;
-    HRESULT rc = getDVDDrives(list);
+    MediaList *pList;
+    HRESULT rc = getDrives(DeviceType_DVD, true /* fRefresh */, pList);
     if (SUCCEEDED(rc))
     {
-        SafeIfaceArray<IMedium> array(list);
+        SafeIfaceArray<IMedium> array(*pList);
         array.detachTo(ComSafeArrayOutArg(aDrives));
     }
 
@@ -428,13 +456,13 @@ STDMETHODIMP Host::COMGETTER(FloppyDrives)(ComSafeArrayOut(IMedium *, aDrives))
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+    AutoWriteLock alock(m->drivesLock COMMA_LOCKVAL_SRC_POS);
 
-    MediaList list;
-    HRESULT rc = getFloppyDrives(list);
+    MediaList *pList;
+    HRESULT rc = getDrives(DeviceType_Floppy, true /* fRefresh */, pList);
     if (SUCCEEDED(rc))
     {
-        SafeIfaceArray<IMedium> collection(list);
+        SafeIfaceArray<IMedium> collection(*pList);
         collection.detachTo(ComSafeArrayOutArg(aDrives));
     }
 
@@ -500,7 +528,7 @@ STDMETHODIMP Host::COMGETTER(NetworkInterfaces)(ComSafeArrayOut(IHostNetworkInte
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    std::list <ComObjPtr<HostNetworkInterface> > list;
+    std::list<ComObjPtr<HostNetworkInterface> > list;
 
 # ifdef VBOX_WITH_HOSTNETIF_API
     int rc = NetIfList(list);
@@ -1025,6 +1053,7 @@ STDMETHODIMP Host::CreateHostOnlyNetworkInterface(IHostNetworkInterface **aHostN
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
+#ifdef VBOX_WITH_HOSTNETIF_API
     /* No need to lock anything. If there ever will - watch out, the function
      * called below grabs the VirtualBox lock. */
 
@@ -1033,6 +1062,9 @@ STDMETHODIMP Host::CreateHostOnlyNetworkInterface(IHostNetworkInterface **aHostN
         return S_OK;
 
     return r == VERR_NOT_IMPLEMENTED ? E_NOTIMPL : E_FAIL;
+#else
+    return E_NOTIMPL;
+#endif
 }
 
 STDMETHODIMP Host::RemoveHostOnlyNetworkInterface(IN_BSTR aId,
@@ -1043,6 +1075,7 @@ STDMETHODIMP Host::RemoveHostOnlyNetworkInterface(IN_BSTR aId,
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
+#ifdef VBOX_WITH_HOSTNETIF_API
     /* No need to lock anything, the code below does not touch the state
      * of the host object. If that ever changes then check for lock order
      * violations with the called functions. */
@@ -1057,11 +1090,14 @@ STDMETHODIMP Host::RemoveHostOnlyNetworkInterface(IN_BSTR aId,
                             Guid (aId).raw());
     }
 
-    int r = NetIfRemoveHostOnlyNetworkInterface(m->pParent, Guid(aId), aProgress);
+    int r = NetIfRemoveHostOnlyNetworkInterface(m->pParent, Guid(aId).ref(), aProgress);
     if (RT_SUCCESS(r))
         return S_OK;
 
     return r == VERR_NOT_IMPLEMENTED ? E_NOTIMPL : E_FAIL;
+#else
+    return E_NOTIMPL;
+#endif
 }
 
 STDMETHODIMP Host::CreateUSBDeviceFilter(IN_BSTR aName,
@@ -1142,8 +1178,9 @@ STDMETHODIMP Host::InsertUSBDeviceFilter(ULONG aPosition,
         pFilter->getId() = m->pUSBProxyService->insertFilter(&pFilter->getData().mUSBFilter);
     }
 
-    /* save the global settings */
+    // save the global settings; for that we should hold only the VirtualBox lock
     alock.release();
+    AutoWriteLock vboxLock(m->pParent COMMA_LOCKVAL_SRC_POS);
     return rc = m->pParent->saveSettings();
 #else
     /* Note: The GUI depends on this method returning E_NOTIMPL with no
@@ -1197,8 +1234,9 @@ STDMETHODIMP Host::RemoveUSBDeviceFilter(ULONG aPosition)
         filter->getId() = NULL;
     }
 
-    /* save the global settings */
+    // save the global settings; for that we should hold only the VirtualBox lock
     alock.release();
+    AutoWriteLock vboxLock(m->pParent COMMA_LOCKVAL_SRC_POS);
     return rc = m->pParent->saveSettings();
 #else
     /* Note: The GUI depends on this method returning E_NOTIMPL with no
@@ -1340,6 +1378,7 @@ STDMETHODIMP Host::FindHostNetworkInterfaceById(IN_BSTR id, IHostNetworkInterfac
 STDMETHODIMP Host::FindHostNetworkInterfacesOfType(HostNetworkInterfaceType_T type,
                                                    ComSafeArrayOut(IHostNetworkInterface *, aNetworkInterfaces))
 {
+#ifdef VBOX_WITH_HOSTNETIF_API
     std::list <ComObjPtr<HostNetworkInterface> > allList;
     int rc = NetIfList(allList);
     if (RT_FAILURE(rc))
@@ -1366,6 +1405,9 @@ STDMETHODIMP Host::FindHostNetworkInterfacesOfType(HostNetworkInterfaceType_T ty
     filteredNetworkInterfaces.detachTo(ComSafeArrayOutArg(aNetworkInterfaces));
 
     return S_OK;
+#else
+    return E_NOTIMPL;
+#endif
 }
 
 STDMETHODIMP Host::FindUSBDeviceByAddress(IN_BSTR aAddress,
@@ -1392,9 +1434,9 @@ STDMETHODIMP Host::FindUSBDeviceByAddress(IN_BSTR aAddress,
         }
     }
 
-    return setErrorNoLog (VBOX_E_OBJECT_NOT_FOUND, tr (
-        "Could not find a USB device with address '%ls'"),
-        aAddress);
+    return setErrorNoLog(VBOX_E_OBJECT_NOT_FOUND,
+                         tr("Could not find a USB device with address '%ls'"),
+                         aAddress);
 
 #else   /* !VBOX_WITH_USB */
     NOREF(aAddress);
@@ -1450,7 +1492,6 @@ HRESULT Host::loadSettings(const settings::Host &data)
 
     AutoMultiWriteLock2 alock(this->lockHandle(), &m->usbListsLock COMMA_LOCKVAL_SRC_POS);
 
-
     for (settings::USBDeviceFiltersList::const_iterator it = data.llUSBDeviceFilters.begin();
          it != data.llUSBDeviceFilters.end();
          ++it)
@@ -1483,7 +1524,8 @@ HRESULT Host::saveSettings(settings::Host &data)
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    AutoReadLock alock(&m->usbListsLock COMMA_LOCKVAL_SRC_POS);
+    AutoReadLock alock1(this COMMA_LOCKVAL_SRC_POS);
+    AutoReadLock alock2(&m->usbListsLock COMMA_LOCKVAL_SRC_POS);
 
     data.llUSBDeviceFilters.clear();
 
@@ -1503,11 +1545,181 @@ HRESULT Host::saveSettings(settings::Host &data)
     return S_OK;
 }
 
-HRESULT Host::getDVDDrives(MediaList &list)
+/**
+ * Sets the given pointer to point to the static list of DVD or floppy
+ * drives in the Host instance data, depending on the @a mediumType
+ * parameter.
+ *
+ * This builds the list on the first call; it adds or removes host drives
+ * that may have changed if fRefresh == true.
+ *
+ * The caller must hold the m->drivesLock write lock before calling this.
+ * To protect the list to which the caller's pointer points, the caller
+ * must also hold that lock.
+ *
+ * @param mediumType Must be DeviceType_Floppy or DeviceType_DVD.
+ * @param fRefresh Whether to refresh the host drives list even if this is not the first call.
+ * @param pll Caller's pointer which gets set to the static list of host drives.
+ * @return
+ */
+HRESULT Host::getDrives(DeviceType_T mediumType,
+                        bool fRefresh,
+                        MediaList *&pll)
+{
+    HRESULT rc = S_OK;
+    Assert(m->drivesLock.isWriteLockOnCurrentThread());
+
+    MediaList llNew;
+    MediaList *pllCached;
+    bool *pfListBuilt = NULL;
+
+    switch (mediumType)
+    {
+        case DeviceType_DVD:
+            if (!m->fDVDDrivesListBuilt || fRefresh)
+            {
+                rc = buildDVDDrivesList(llNew);
+                if (FAILED(rc))
+                    return rc;
+                pfListBuilt = &m->fDVDDrivesListBuilt;
+            }
+            pllCached = &m->llDVDDrives;
+        break;
+
+        case DeviceType_Floppy:
+            if (!m->fFloppyDrivesListBuilt || fRefresh)
+            {
+                rc = buildFloppyDrivesList(llNew);
+                if (FAILED(rc))
+                    return rc;
+                pfListBuilt = &m->fFloppyDrivesListBuilt;
+            }
+            pllCached = &m->llFloppyDrives;
+        break;
+
+        default:
+            return E_INVALIDARG;
+    }
+
+    if (pfListBuilt)
+    {
+        // a list was built in llNew above:
+        if (!*pfListBuilt)
+        {
+            // this was the first call (instance bool is still false): then just copy the whole list and return
+            *pllCached = llNew;
+            // and mark the instance data as "built"
+            *pfListBuilt = true;
+        }
+        else
+        {
+            // list was built, and this was a subsequent call: then compare the old and the new lists
+
+            // remove drives from the cached list which are no longer present
+            for (MediaList::iterator itCached = pllCached->begin();
+                 itCached != pllCached->end();
+                 ++itCached)
+            {
+                Medium *pCached = *itCached;
+                const Utf8Str strLocationCached = pCached->getLocationFull();
+                bool fFound = false;
+                for (MediaList::iterator itNew = llNew.begin();
+                     itNew != llNew.end();
+                     ++itNew)
+                {
+                    Medium *pNew = *itNew;
+                    const Utf8Str strLocationNew = pNew->getLocationFull();
+                    if (strLocationNew == strLocationCached)
+                    {
+                        fFound = true;
+                        break;
+                    }
+                }
+                if (!fFound)
+                    itCached = pllCached->erase(itCached);
+            }
+
+            // add drives to the cached list that are not on there yet
+            for (MediaList::iterator itNew = llNew.begin();
+                 itNew != llNew.end();
+                 ++itNew)
+            {
+                Medium *pNew = *itNew;
+                const Utf8Str strLocationNew = pNew->getLocationFull();
+                bool fFound = false;
+                for (MediaList::iterator itCached = pllCached->begin();
+                     itCached != pllCached->end();
+                     ++itCached)
+                {
+                    Medium *pCached = *itCached;
+                    const Utf8Str strLocationCached = pCached->getLocationFull();
+                    if (strLocationNew == strLocationCached)
+                    {
+                        fFound = true;
+                        break;
+                    }
+                }
+
+                if (!fFound)
+                    pllCached->push_back(pNew);
+            }
+        }
+    }
+
+    // return cached list to caller
+    pll = pllCached;
+
+    return rc;
+}
+
+/**
+ * Goes through the list of host drives that would be returned by getDrives()
+ * and looks for a host drive with the given UUID. If found, it sets pMedium
+ * to that drive; otherwise returns VBOX_E_OBJECT_NOT_FOUND.
+ *
+ * @param mediumType Must be DeviceType_DVD or DeviceType_Floppy.
+ * @param uuid Medium UUID of host drive to look for.
+ * @param fRefresh Whether to refresh the host drives list (see getDrives())
+ * @param pMedium Medium object, if found…
+ * @return VBOX_E_OBJECT_NOT_FOUND if not found, or S_OK if found, or errors from getDrives().
+ */
+HRESULT Host::findHostDrive(DeviceType_T mediumType,
+                            const Guid &uuid,
+                            bool fRefresh,
+                            ComObjPtr<Medium> &pMedium)
+{
+    MediaList *pllMedia;
+
+    AutoWriteLock wlock(m->drivesLock COMMA_LOCKVAL_SRC_POS);
+    HRESULT rc = getDrives(mediumType, fRefresh, pllMedia);
+    if (SUCCEEDED(rc))
+    {
+        for (MediaList::iterator it = pllMedia->begin();
+             it != pllMedia->end();
+             ++it)
+        {
+            Medium *pThis = *it;
+            if (pThis->getId() == uuid)
+            {
+                pMedium = pThis;
+                return S_OK;
+            }
+        }
+    }
+
+    return VBOX_E_OBJECT_NOT_FOUND;
+}
+
+/**
+ * Called from getDrives() to build the DVD drives list.
+ * @param pll
+ * @return
+ */
+HRESULT Host::buildDVDDrivesList(MediaList &list)
 {
     HRESULT rc = S_OK;
 
-    Assert(isWriteLockOnCurrentThread());
+    Assert(m->drivesLock.isWriteLockOnCurrentThread());
 
     try
     {
@@ -1536,43 +1748,8 @@ HRESULT Host::getDVDDrives(MediaList &list)
 # ifdef VBOX_USE_LIBHAL
         if (!getDVDInfoFromHal(list))
 # endif
-        // Not all Solaris versions ship with libhal.
-        // So use a fallback approach similar to Linux.
         {
-            if (RTEnvExistEx(RTENV_DEFAULT, "VBOX_CDROM"))
-            {
-                char *cdromEnv = RTEnvDupEx(RTENV_DEFAULT, "VBOX_CDROM");
-                char *saveStr = NULL;
-                char *cdromDrive = NULL;
-                if (cdromEnv)
-                    cdromDrive = strtok_r(cdromEnv, ":", &saveStr);
-                while (cdromDrive)
-                {
-                    if (validateDevice(cdromDrive, true))
-                    {
-                        ComObjPtr<Medium> hostDVDDriveObj;
-                        hostDVDDriveObj.createObject();
-                        hostDVDDriveObj->init(m->pParent, DeviceType_DVD, Bstr(cdromDrive));
-                        list.push_back(hostDVDDriveObj);
-                    }
-                    cdromDrive = strtok_r(NULL, ":", &saveStr);
-                }
-                RTStrFree(cdromEnv);
-            }
-            else
-            {
-                // this might work on Solaris version older than Nevada.
-                if (validateDevice("/cdrom/cdrom0", true))
-                {
-                    ComObjPtr<Medium> hostDVDDriveObj;
-                    hostDVDDriveObj.createObject();
-                    hostDVDDriveObj->init(m->pParent, DeviceType_DVD, Bstr("cdrom/cdrom0"));
-                    list.push_back(hostDVDDriveObj);
-                }
-
-                // check the mounted drives
-                parseMountTable(MNTTAB, list);
-            }
+            getDVDInfoFromDevTree(list);
         }
 
 #elif defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD)
@@ -1581,8 +1758,8 @@ HRESULT Host::getDVDDrives(MediaList &list)
                 SUCCEEDED(rc) && it != m->hostDrives.DVDEnd(); ++it)
             {
                 ComObjPtr<Medium> hostDVDDriveObj;
-                Bstr location(it->mDevice);
-                Bstr description(it->mDescription);
+                Utf8Str location(it->mDevice);
+                Utf8Str description(it->mDescription);
                 if (SUCCEEDED(rc))
                     rc = hostDVDDriveObj.createObject();
                 if (SUCCEEDED(rc))
@@ -1616,16 +1793,15 @@ HRESULT Host::getDVDDrives(MediaList &list)
 }
 
 /**
- * Internal implementation for COMGETTER(FloppyDrives) which can be called
- * from elsewhere. Caller must hold the Host object write lock!
+ * Called from getDrives() to build the floppy drives list.
  * @param list
  * @return
  */
-HRESULT Host::getFloppyDrives(MediaList &list)
+HRESULT Host::buildFloppyDrivesList(MediaList &list)
 {
     HRESULT rc = S_OK;
 
-    Assert(isWriteLockOnCurrentThread());
+    Assert(m->drivesLock.isWriteLockOnCurrentThread());
 
     try
     {
@@ -1655,8 +1831,8 @@ HRESULT Host::getFloppyDrives(MediaList &list)
                 SUCCEEDED(rc) && it != m->hostDrives.FloppyEnd(); ++it)
             {
                 ComObjPtr<Medium> hostFloppyDriveObj;
-                Bstr location(it->mDevice);
-                Bstr description(it->mDescription);
+                Utf8Str location(it->mDevice);
+                Utf8Str description(it->mDescription);
                 if (SUCCEEDED(rc))
                     rc = hostFloppyDriveObj.createObject();
                 if (SUCCEEDED(rc))
@@ -1761,7 +1937,9 @@ HRESULT Host::onUSBDeviceFilterChange(HostUSBDeviceFilter *aFilter,
         }
 
         // save the global settings... yeah, on every single filter property change
+        // for that we should hold only the VirtualBox lock
         alock.release();
+        AutoWriteLock vboxLock(m->pParent COMMA_LOCKVAL_SRC_POS);
         return m->pParent->saveSettings();
     }
 
@@ -1789,6 +1967,159 @@ void Host::getUSBFilters(Host::USBDeviceFilterList *aGlobalFilters)
 ////////////////////////////////////////////////////////////////////////////////
 
 #if defined(RT_OS_SOLARIS) && defined(VBOX_USE_LIBHAL)
+
+/**
+ * Helper function to get the slice number from a device path
+ *
+ * @param   pszDevLinkPath      Pointer to a device path (/dev/(r)dsk/c7d1t0d0s3 etc.)
+ * @returns Pointer to the slice portion of the given path.
+ */
+static char *solarisGetSliceFromPath(const char *pszDevLinkPath)
+{
+    char *pszFound = NULL;
+    char *pszSlice = strrchr(pszDevLinkPath, 's');
+    char *pszDisk  = strrchr(pszDevLinkPath, 'd');
+    if (pszSlice && pszSlice > pszDisk)
+        pszFound = pszSlice;
+    else
+        pszFound = pszDisk;
+
+    if (pszFound && RT_C_IS_DIGIT(pszFound[1]))
+        return pszFound;
+
+    return NULL;
+}
+
+/**
+ * Walk device links and returns an allocated path for the first one in the snapshot.
+ *
+ * @param   DevLink     Handle to the device link being walked.
+ * @param   pvArg       Opaque data containing the pointer to the path.
+ * @returns Pointer to an allocated device path string.
+ */
+static int solarisWalkDevLink(di_devlink_t DevLink, void *pvArg)
+{
+    char **ppszPath = (char **)pvArg;
+    *ppszPath = strdup(di_devlink_path(DevLink));
+    return DI_WALK_TERMINATE;
+}
+
+/**
+ * Walk all devices in the system and enumerate CD/DVD drives.
+ * @param   Node        Handle to the current node.
+ * @param   pvArg       Opaque data (holds list pointer).
+ * @returns Solaris specific code whether to continue walking or not.
+ */
+static int solarisWalkDeviceNodeForDVD(di_node_t Node, void *pvArg)
+{
+    PSOLARISDVD *ppDrives = (PSOLARISDVD *)pvArg;
+
+    /*
+     * Check for "removable-media" or "hotpluggable" instead of "SCSI" so that we also include USB CD-ROMs.
+     * As unfortunately the Solaris drivers only export these common properties.
+     */
+    int *pInt = NULL;
+    if (   di_prop_lookup_ints(DDI_DEV_T_ANY, Node, "removable-media", &pInt) >= 0
+        || di_prop_lookup_ints(DDI_DEV_T_ANY, Node, "hotpluggable", &pInt) >= 0)
+    {
+        if (di_prop_lookup_ints(DDI_DEV_T_ANY, Node, "inquiry-device-type", &pInt) > 0
+            && (   *pInt == DTYPE_RODIRECT                                              /* CDROM */
+                || *pInt == DTYPE_OPTICAL))                                             /* Optical Drive */
+        {
+            char *pszProduct = NULL;
+            if (di_prop_lookup_strings(DDI_DEV_T_ANY, Node, "inquiry-product-id", &pszProduct) > 0)
+            {
+                char *pszVendor = NULL;
+                if (di_prop_lookup_strings(DDI_DEV_T_ANY, Node, "inquiry-vendor-id", &pszVendor) > 0)
+                {
+                    /*
+                     * Found a DVD drive, we need to scan the minor nodes to find the correct
+                     * slice that represents the whole drive. "s2" is always the whole drive for CD/DVDs.
+                     */
+                    int Major = di_driver_major(Node);
+                    di_minor_t Minor = DI_MINOR_NIL;
+                    di_devlink_handle_t DevLink = di_devlink_init(NULL /* name */, 0 /* flags */);
+                    if (DevLink)
+                    {
+                        while ((Minor = di_minor_next(Node, Minor)) != DI_MINOR_NIL)
+                        {
+                            dev_t Dev = di_minor_devt(Minor);
+                            if (   Major != (int)major(Dev)
+                                || di_minor_spectype(Minor) == S_IFBLK
+                                || di_minor_type(Minor) != DDM_MINOR)
+                            {
+                                continue;
+                            }
+
+                            char *pszMinorPath = di_devfs_minor_path(Minor);
+                            if (!pszMinorPath)
+                                continue;
+
+                            char *pszDevLinkPath = NULL;
+                            di_devlink_walk(DevLink, NULL, pszMinorPath, DI_PRIMARY_LINK, &pszDevLinkPath, solarisWalkDevLink);
+                            di_devfs_path_free(pszMinorPath);
+
+                            if (pszDevLinkPath)
+                            {
+                                char *pszSlice = solarisGetSliceFromPath(pszDevLinkPath);
+                                if (   pszSlice && !strcmp(pszSlice, "s2")
+                                    && !strncmp(pszDevLinkPath, "/dev/rdsk", sizeof("/dev/rdsk") - 1))   /* We want only raw disks */
+                                {
+                                    /*
+                                     * We've got a fully qualified DVD drive. Add it to the list.
+                                     */
+                                    PSOLARISDVD pDrive = (PSOLARISDVD)RTMemAllocZ(sizeof(SOLARISDVD));
+                                    if (RT_LIKELY(pDrive))
+                                    {
+                                        RTStrPrintf(pDrive->szDescription, sizeof(pDrive->szDescription), "%s %s", pszVendor, pszProduct);
+                                        RTStrCopy(pDrive->szRawDiskPath, sizeof(pDrive->szRawDiskPath), pszDevLinkPath);
+                                        if (*ppDrives)
+                                            pDrive->pNext = *ppDrives;
+                                        *ppDrives = pDrive;
+
+                                        /* We're not interested in any of the other slices, stop minor nodes traversal. */
+                                        free(pszDevLinkPath);
+                                        break;
+                                    }
+                                }
+                                free(pszDevLinkPath);
+                            }
+                        }
+                        di_devlink_fini(&DevLink);
+                    }
+                }
+            }
+        }
+    }
+    return DI_WALK_CONTINUE;
+}
+
+/**
+ * Solaris specific function to enumerate CD/DVD drives via the device tree.
+ * Works on Solaris 10 as well as OpenSolaris without depending on libhal.
+ */
+void Host::getDVDInfoFromDevTree(std::list<ComObjPtr<Medium> > &list)
+{
+    PSOLARISDVD pDrives = NULL;
+    di_node_t RootNode = di_init("/", DINFOCPYALL);
+    if (RootNode != DI_NODE_NIL)
+        di_walk_node(RootNode, DI_WALK_CLDFIRST, &pDrives, solarisWalkDeviceNodeForDVD);
+
+    di_fini(RootNode);
+
+    while (pDrives)
+    {
+        ComObjPtr<Medium> hostDVDDriveObj;
+        hostDVDDriveObj.createObject();
+        hostDVDDriveObj->init(m->pParent, DeviceType_DVD, Bstr(pDrives->szRawDiskPath), Bstr(pDrives->szDescription));
+        list.push_back(hostDVDDriveObj);
+
+        void *pvDrive = pDrives;
+        pDrives = pDrives->pNext;
+        RTMemFree(pvDrive);
+    }
+}
+
 /* Solaris hosts, loading libhal at runtime */
 
 /**
@@ -2270,7 +2601,7 @@ bool Host::validateDevice(const char *deviceNode, bool isCDROM)
 
 #ifdef VBOX_WITH_USB
 /**
- *  Checks for the presense and status of the USB Proxy Service.
+ *  Checks for the presence and status of the USB Proxy Service.
  *  Returns S_OK when the Proxy is present and OK, VBOX_E_HOST_ERROR (as a
  *  warning) if the proxy service is not available due to the way the host is
  *  configured (at present, that means that usbfs and hal/DBus are not
@@ -2297,10 +2628,9 @@ HRESULT Host::checkUSBProxyService()
          * USB proxy service could not start. */
 
         if (m->pUSBProxyService->getLastError() == VERR_FILE_NOT_FOUND)
-            return setWarning (E_FAIL,
-                tr ("Could not load the Host USB Proxy Service (%Rrc). "
-                    "The service might not be installed on the host computer"),
-                m->pUSBProxyService->getLastError());
+            return setWarning(E_FAIL,
+                              tr("Could not load the Host USB Proxy Service (%Rrc). The service might not be installed on the host computer"),
+                              m->pUSBProxyService->getLastError());
         if (m->pUSBProxyService->getLastError() == VINF_SUCCESS)
 #ifdef RT_OS_LINUX
             return setWarning (VBOX_E_HOST_ERROR,

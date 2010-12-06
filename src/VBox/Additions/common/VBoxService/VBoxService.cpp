@@ -1,4 +1,4 @@
-/* $Id: VBoxService.cpp 29817 2010-05-26 13:54:41Z vboxsync $ */
+/* $Id: VBoxService.cpp 34273 2010-11-23 10:14:46Z vboxsync $ */
 /** @file
  * VBoxService - Guest Additions Service Skeleton.
  */
@@ -27,6 +27,12 @@
 #include <errno.h>
 #ifndef RT_OS_WINDOWS
 # include <signal.h>
+# ifdef RT_OS_OS2
+#  define pthread_sigmask sigprocmask
+# endif
+#endif
+#ifdef RT_OS_FREEBSD
+# include <pthread.h>
 #endif
 
 #include "product-generated.h"
@@ -101,8 +107,11 @@ static struct
 # endif
     { &g_VMStatistics, NIL_RTTHREAD, false, false, false, true },
 #endif
-#ifdef VBOX_WITH_PAGE_SHARING
+#if defined(VBOX_WITH_PAGE_SHARING) && defined(RT_OS_WINDOWS)
     { &g_PageSharing, NIL_RTTHREAD, false, false, false, true },
+#endif
+#ifdef VBOX_WITH_SHARED_FOLDERS
+    { &g_AutoMount, NIL_RTTHREAD, false, false, false, true },
 #endif
 };
 
@@ -126,7 +135,7 @@ static int VBoxServiceUsage(void)
     RTPrintf("\n"
              "Options:\n"
              "    -i | --interval         The default interval.\n"
-             "    -f | --foreground       Don't daemonzie the program. For debugging.\n"
+             "    -f | --foreground       Don't daemonize the program. For debugging.\n"
              "    -v | --verbose          Increment the verbosity level. For debugging.\n"
              "    -h | -? | --help        Show this message and exit with status 1.\n"
              );
@@ -211,7 +220,6 @@ void VBoxServiceVerbose(int iLevel, const char *pszFormat, ...)
         va_start(va, pszFormat);
         RTStrmPrintfV(g_pStdOut, pszFormat, va);
         va_end(va);
-
         va_start(va, pszFormat);
         LogRel(("%s: %N", g_pszProgName, pszFormat, &va));
         va_end(va);
@@ -247,7 +255,7 @@ int VBoxServiceArgUInt32(int argc, char **argv, const char *psz, int *pi, uint32
     if (RT_FAILURE(rc) || *pszNext)
         return VBoxServiceSyntax("Failed to convert interval '%s' to a number.\n", psz);
     if (*pu32 < u32Min || *pu32 > u32Max)
-        return VBoxServiceSyntax("The timesync interval of %RU32 secconds is out of range [%RU32..%RU32].\n",
+        return VBoxServiceSyntax("The timesync interval of %RU32 seconds is out of range [%RU32..%RU32].\n",
                                  *pu32, u32Min, u32Max);
     return 0;
 }
@@ -437,6 +445,13 @@ void VBoxServiceMainWait(void)
 {
     int rc;
 
+    /* Report the host that we're up and running! */
+    rc = VbglR3ReportAdditionsStatus(VBoxGuestStatusFacility_VBoxService,
+                                     VBoxGuestStatusCurrent_Active,
+                                     0); /* Flags; not used. */
+    if (RT_FAILURE(rc))
+        VBoxServiceError("Failed to report Guest Additions status to the host! rc=%Rrc\n", rc);
+
 #ifdef RT_OS_WINDOWS
     /*
      * Wait for the semaphore to be signalled.
@@ -488,36 +503,65 @@ void VBoxServiceMainWait(void)
 
 int main(int argc, char **argv)
 {
-    int rc = VINF_SUCCESS;
     /*
      * Init globals and such.
      */
     RTR3Init();
 
+    g_pszProgName = RTPathFilename(argv[0]);
+
+    int rc;
+#ifdef VBOXSERVICE_TOOLBOX
+    if (argc > 1)
+    {
+        /*
+         * Run toolbox code before all other stuff, especially before checking the global
+         * mutex because VBoxService might spawn itself to execute some commands.
+         */
+        int iExitCode;
+        if (VBoxServiceToolboxMain(argc - 1, &argv[1], &iExitCode))
+            return iExitCode;
+    }
+#endif
+
     /*
-     * Connect to the kernel part before daemonizing so we can fail
-     * and complain if there is some kind of problem. We need to initialize
-     * the guest lib *before* we do the pre-init just in case one of services
-     * needs do to some initial stuff with it.
+     * Connect to the kernel part before daemonizing so we can fail and
+     * complain if there is some kind of problem.  We need to initialize the
+     * guest lib *before* we do the pre-init just in case one of services needs
+     * do to some initial stuff with it.
      */
     VBoxServiceVerbose(2, "Calling VbgR3Init()\n");
     rc = VbglR3Init();
     if (RT_FAILURE(rc))
         return VBoxServiceError("VbglR3Init failed with rc=%Rrc.\n", rc);
 
-    /* Do pre-init of services. */
-    g_pszProgName = RTPathFilename(argv[0]);
+#ifdef RT_OS_WINDOWS
+    /*
+     * Check if we're the specially spawned VBoxService.exe process that
+     * handles page fusion.  This saves an extra executable.
+     */
+    if (    argc == 2
+        &&  !strcmp(argv[1], "--pagefusionfork"))
+        return VBoxServicePageSharingInitFork();
+#endif
+
+    /*
+     * Do pre-init of services.
+     */
     for (unsigned j = 0; j < RT_ELEMENTS(g_aServices); j++)
     {
         rc = g_aServices[j].pDesc->pfnPreInit();
         if (RT_FAILURE(rc))
-            return VBoxServiceError("Service '%s' failed pre-init: %Rrc\n", g_aServices[j].pDesc->pszName);
+            return VBoxServiceError("Service '%s' failed pre-init: %Rrc\n", g_aServices[j].pDesc->pszName, rc);
     }
-
 #ifdef RT_OS_WINDOWS
-    /* Make sure only one instance of VBoxService runs at a time. Create a global mutex for that.
-       Do not use a global namespace ("Global\\") for mutex name here, will blow up NT4 compatibility! */
-    HANDLE hMutexAppRunning = CreateMutex (NULL, FALSE, VBOXSERVICE_NAME);
+    /*
+     * Make sure only one instance of VBoxService runs at a time.  Create a
+     * global mutex for that.  Do not use a global namespace ("Global\\") for
+     * mutex name here, will blow up NT4 compatibility!
+     */
+    /** @todo r=bird: Use Global\\ prefix or this serves no purpose on terminal servers. */
+    HANDLE hMutexAppRunning = CreateMutex(NULL, FALSE, VBOXSERVICE_NAME);
     if (   hMutexAppRunning != NULL
         && GetLastError() == ERROR_ALREADY_EXISTS)
     {
@@ -526,6 +570,11 @@ int main(int argc, char **argv)
         /* Close the mutex for this application instance. */
         CloseHandle(hMutexAppRunning);
         hMutexAppRunning = NULL;
+
+        /** @todo r=bird: How does this cause us to terminate?  Btw. Why do
+         *        we do this before parsing parameters?  'VBoxService --help'
+         *        and 'VBoxService --version' won't work now when the service
+         *        is running... */
     }
 #endif
 

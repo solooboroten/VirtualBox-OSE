@@ -1,4 +1,4 @@
-/* $Id: VBoxVideoHGSMI.cpp 29883 2010-05-30 19:27:02Z vboxsync $ */
+/* $Id: VBoxVideoHGSMI.cpp 34491 2010-11-29 22:05:59Z vboxsync $ */
 /** @file
  * VirtualBox Video miniport driver for NT/2k/XP - HGSMI related functions.
  */
@@ -15,6 +15,7 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
+#include <string.h>
 
 #include "VBoxVideo.h"
 #include "Helper.h"
@@ -26,681 +27,6 @@
 #include <VBox/VBoxGuest.h>
 #include <VBox/VBoxVideo.h>
 
-#include <VBoxDisplay.h>
-
-#include "vboxioctl.h"
-
-#define MEM_TAG 'HVBV'
-
-void HGSMINotifyHostCmdComplete (PDEVICE_EXTENSION PrimaryExtension, HGSMIOFFSET offt)
-{
-    VBoxHGSMIHostWrite(PrimaryExtension, offt);
-}
-
-void HGSMIClearIrq (PDEVICE_EXTENSION PrimaryExtension)
-{
-    VBoxHGSMIHostWrite(PrimaryExtension, HGSMIOFFSET_VOID);
-}
-
-static void HGSMIHostCmdComplete (PDEVICE_EXTENSION PrimaryExtension, void * pvMem)
-{
-    HGSMIOFFSET offMem = HGSMIPointerToOffset (&PrimaryExtension->u.primary.areaHostHeap, HGSMIBufferHeaderFromData (pvMem));
-    Assert(offMem != HGSMIOFFSET_VOID);
-    if(offMem != HGSMIOFFSET_VOID)
-    {
-        HGSMINotifyHostCmdComplete (PrimaryExtension, offMem);
-    }
-}
-
-static void hgsmiHostCmdProcess(PDEVICE_EXTENSION PrimaryExtension, HGSMIOFFSET offBuffer)
-{
-    int rc = HGSMIBufferProcess (&PrimaryExtension->u.primary.areaHostHeap,
-                                &PrimaryExtension->u.primary.channels,
-                                offBuffer);
-    Assert(!RT_FAILURE(rc));
-    if(RT_FAILURE(rc))
-    {
-        /* failure means the command was not submitted to the handler for some reason
-         * it's our responsibility to notify its completion in this case */
-        HGSMINotifyHostCmdComplete(PrimaryExtension, offBuffer);
-    }
-    /* if the cmd succeeded it's responsibility of the callback to complete it */
-}
-
-static HGSMIOFFSET hgsmiGetHostBuffer (PDEVICE_EXTENSION PrimaryExtension)
-{
-    return VBoxHGSMIHostRead(PrimaryExtension);
-}
-
-static void hgsmiHostCommandQueryProcess (PDEVICE_EXTENSION PrimaryExtension)
-{
-    HGSMIOFFSET offset = hgsmiGetHostBuffer (PrimaryExtension);
-    Assert(offset != HGSMIOFFSET_VOID);
-    if(offset != HGSMIOFFSET_VOID)
-    {
-        hgsmiHostCmdProcess(PrimaryExtension, offset);
-    }
-}
-
-#define VBOX_HGSMI_LOCK(_pe, _plock, _dpc, _pold) \
-    do { \
-        if(_dpc) \
-        { \
-            VBoxVideoCmnSpinLockAcquireAtDpcLevel(_pe, _plock); \
-        } \
-        else \
-        {\
-            VBoxVideoCmnSpinLockAcquire(_pe, _plock, _pold); \
-        }\
-    } while(0)
-
-#define VBOX_HGSMI_UNLOCK(_pe, _plock, _dpc, _pold) \
-    do { \
-        if(_dpc) \
-        { \
-            VBoxVideoCmnSpinLockReleaseFromDpcLevel(_pe, _plock); \
-        } \
-        else \
-        {\
-            VBoxVideoCmnSpinLockRelease(_pe, _plock, _pold); \
-        }\
-    } while(0)
-
-VOID VBoxVideoHGSMIDpc(
-    IN PVOID  HwDeviceExtension,
-    IN PVOID  Context
-    )
-{
-    PDEVICE_EXTENSION PrimaryExtension = (PDEVICE_EXTENSION)HwDeviceExtension;
-    uint32_t flags = (uint32_t)Context;
-    bool bProcessing = false;
-    VBOXVCMNIRQL OldIrql;
-    /* we check if another thread is processing the queue and exit if so */
-    do
-    {
-        bool bLock = false;
-        if(!(PrimaryExtension->u.primary.pHostFlags->u32HostFlags & HGSMIHOSTFLAGS_COMMANDS_PENDING))
-        {
-            if(!bProcessing)
-            {
-                break;
-            }
-            VBOX_HGSMI_LOCK(PrimaryExtension, &PrimaryExtension->u.primary.pSynchLock, flags, &OldIrql);
-            if(!(PrimaryExtension->u.primary.pHostFlags->u32HostFlags & HGSMIHOSTFLAGS_COMMANDS_PENDING))
-            {
-                Assert(PrimaryExtension->u.primary.bHostCmdProcessing);
-                PrimaryExtension->u.primary.bHostCmdProcessing = false;
-                VBOX_HGSMI_UNLOCK(PrimaryExtension, &PrimaryExtension->u.primary.pSynchLock, flags, OldIrql);
-                break;
-            }
-            VBOX_HGSMI_UNLOCK(PrimaryExtension, &PrimaryExtension->u.primary.pSynchLock, flags, OldIrql);
-        }
-        else
-        {
-            if(!bProcessing)
-            {
-                VBOX_HGSMI_LOCK(PrimaryExtension, &PrimaryExtension->u.primary.pSynchLock, flags, &OldIrql);
-                if(!(PrimaryExtension->u.primary.pHostFlags->u32HostFlags & HGSMIHOSTFLAGS_COMMANDS_PENDING)
-                        || PrimaryExtension->u.primary.bHostCmdProcessing)
-                {
-                    VBOX_HGSMI_UNLOCK(PrimaryExtension, &PrimaryExtension->u.primary.pSynchLock, flags, OldIrql);
-                    break;
-                }
-                Assert(!PrimaryExtension->u.primary.bHostCmdProcessing);
-                PrimaryExtension->u.primary.bHostCmdProcessing = true;
-                VBOX_HGSMI_UNLOCK(PrimaryExtension, &PrimaryExtension->u.primary.pSynchLock, flags, OldIrql);
-                bProcessing = true;
-            }
-        }
-
-        Assert(bProcessing);
-        Assert(PrimaryExtension->u.primary.bHostCmdProcessing);
-        Assert((PrimaryExtension->u.primary.pHostFlags->u32HostFlags & HGSMIHOSTFLAGS_COMMANDS_PENDING) != 0);
-        bProcessing = true;
-
-        hgsmiHostCommandQueryProcess (PrimaryExtension);
-    } while(true/*!PrimaryExtension->u.primary.bPollingStop*/);
-}
-
-/* Detect whether HGSMI is supported by the host. */
-BOOLEAN VBoxHGSMIIsSupported (PDEVICE_EXTENSION PrimaryExtension)
-{
-    USHORT DispiId;
-
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_ID);
-    VBoxVideoCmnPortWriteUshort((PUSHORT)VBE_DISPI_IOPORT_DATA, VBE_DISPI_ID_HGSMI);
-
-    DispiId = VBoxVideoCmnPortReadUshort((PUSHORT)VBE_DISPI_IOPORT_DATA);
-
-    return (DispiId == VBE_DISPI_ID_HGSMI);
-}
-
-typedef int FNHGSMICALLINIT (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData);
-typedef FNHGSMICALLINIT *PFNHGSMICALLINIT;
-
-typedef int FNHGSMICALLFINALIZE (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData);
-typedef FNHGSMICALLFINALIZE *PFNHGSMICALLFINALIZE;
-
-void* vboxHGSMIBufferAlloc(PDEVICE_EXTENSION PrimaryExtension,
-                         HGSMISIZE cbData,
-                         uint8_t u8Ch,
-                         uint16_t u16Op)
-{
-#ifdef VBOXWDDM
-    /* @todo: add synchronization */
-#endif
-    return HGSMIHeapAlloc (&PrimaryExtension->u.primary.hgsmiAdapterHeap, cbData, u8Ch, u16Op);
-}
-
-void vboxHGSMIBufferFree (PDEVICE_EXTENSION PrimaryExtension, void *pvBuffer)
-{
-#ifdef VBOXWDDM
-    /* @todo: add synchronization */
-#endif
-    HGSMIHeapFree (&PrimaryExtension->u.primary.hgsmiAdapterHeap, pvBuffer);
-}
-
-int vboxHGSMIBufferSubmit (PDEVICE_EXTENSION PrimaryExtension, void *pvBuffer)
-{
-    /* Initialize the buffer and get the offset for port IO. */
-    HGSMIOFFSET offBuffer = HGSMIHeapBufferOffset (&PrimaryExtension->u.primary.hgsmiAdapterHeap, pvBuffer);
-
-    Assert(offBuffer != HGSMIOFFSET_VOID);
-    if (offBuffer != HGSMIOFFSET_VOID)
-    {
-        /* Submit the buffer to the host. */
-        VBoxHGSMIGuestWrite(PrimaryExtension, offBuffer);
-        return VINF_SUCCESS;
-    }
-
-    return VERR_INVALID_PARAMETER;
-}
-
-static int vboxCallChannel (PDEVICE_EXTENSION PrimaryExtension,
-                         uint8_t u8Ch,
-                         uint16_t u16Op,
-                         HGSMISIZE cbData,
-                         PFNHGSMICALLINIT pfnInit,
-                         PFNHGSMICALLFINALIZE pfnFinalize,
-                         void *pvContext)
-{
-    int rc = VINF_SUCCESS;
-
-    /* Allocate the IO buffer. */
-#ifndef VBOXWDDM
-    if (PrimaryExtension->pPrimary != PrimaryExtension)
-    {
-        dprintf(("VBoxVideo::vboxCallChannel: not primary extension %p!!!\n", PrimaryExtension));
-        return VERR_INVALID_PARAMETER;
-    }
-#endif
-
-    void *p = HGSMIHeapAlloc (&PrimaryExtension->u.primary.hgsmiAdapterHeap, cbData, u8Ch, u16Op);
-
-    if (!p)
-    {
-        rc = VERR_NO_MEMORY;
-    }
-    else
-    {
-        /* Prepare data to be sent to the host. */
-        if (pfnInit)
-        {
-            rc = pfnInit (PrimaryExtension, pvContext, p);
-        }
-
-        if (RT_SUCCESS (rc))
-        {
-            /* Initialize the buffer and get the offset for port IO. */
-            HGSMIOFFSET offBuffer = HGSMIHeapBufferOffset (&PrimaryExtension->u.primary.hgsmiAdapterHeap,
-                                                           p);
-
-            /* Submit the buffer to the host. */
-            VBoxHGSMIGuestWrite(PrimaryExtension, offBuffer);
-
-            if (pfnFinalize)
-            {
-                rc = pfnFinalize (PrimaryExtension, pvContext, p);
-            }
-        }
-        else
-        {
-            AssertFailed ();
-            rc = VERR_INTERNAL_ERROR;
-        }
-
-        /* Free the IO buffer. */
-        HGSMIHeapFree (&PrimaryExtension->u.primary.hgsmiAdapterHeap, p);
-    }
-
-    return rc;
-}
-
-static int vboxCallVBVA (PDEVICE_EXTENSION PrimaryExtension,
-                         uint16_t u16Op,
-                         HGSMISIZE cbData,
-                         PFNHGSMICALLINIT pfnInit,
-                         PFNHGSMICALLFINALIZE pfnFinalize,
-                         void *pvContext)
-{
-    return vboxCallChannel (PrimaryExtension,
-                            HGSMI_CH_VBVA,
-                            u16Op,
-                            cbData,
-                            pfnInit,
-                            pfnFinalize,
-                            pvContext);
-}
-
-typedef struct _QUERYCONFCTX
-{
-    uint32_t u32Index;
-    ULONG *pulValue;
-} QUERYCONFCTX;
-
-static int vbvaInitQueryConf (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
-{
-    NOREF (PrimaryExtension);
-
-    QUERYCONFCTX *pCtx = (QUERYCONFCTX *)pvContext;
-    VBVACONF32 *p = (VBVACONF32 *)pvData;
-
-    p->u32Index = pCtx->u32Index;
-    p->u32Value = 0;
-
-    return VINF_SUCCESS;
-}
-
-static int vbvaFinalizeQueryConf (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
-{
-    NOREF (PrimaryExtension);
-
-    QUERYCONFCTX *pCtx = (QUERYCONFCTX *)pvContext;
-    VBVACONF32 *p = (VBVACONF32 *)pvData;
-
-    if (pCtx->pulValue)
-    {
-        *pCtx->pulValue = p->u32Value;
-    }
-
-    dprintf(("VBoxVideo::vboxQueryConf: u32Value = %d\n", p->u32Value));
-    return VINF_SUCCESS;
-}
-
-static int vboxQueryConfHGSMI (PDEVICE_EXTENSION PrimaryExtension, uint32_t u32Index, ULONG *pulValue)
-{
-    dprintf(("VBoxVideo::vboxQueryConf: u32Index = %d\n", u32Index));
-
-    QUERYCONFCTX context;
-
-    context.u32Index = u32Index;
-    context.pulValue = pulValue;
-
-    int rc = vboxCallVBVA (PrimaryExtension,
-                           VBVA_QUERY_CONF32,
-                           sizeof (VBVACONF32),
-                           vbvaInitQueryConf,
-                           vbvaFinalizeQueryConf,
-                           &context);
-
-    dprintf(("VBoxVideo::vboxQueryConf: rc = %d\n", rc));
-
-    return rc;
-}
-#ifndef VBOXWDDM
-static int vbvaInitInfoDisplay (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
-{
-    NOREF (pvContext);
-    VBVAINFOVIEW *p = (VBVAINFOVIEW *)pvData;
-
-    int i;
-    PDEVICE_EXTENSION Extension;
-
-    for (i = 0, Extension = PrimaryExtension;
-         i < PrimaryExtension->u.primary.cDisplays && Extension;
-         i++, Extension = Extension->pNext)
-    {
-        p[i].u32ViewIndex     = Extension->iDevice;
-        p[i].u32ViewOffset    = Extension->ulFrameBufferOffset;
-        p[i].u32ViewSize      = PrimaryExtension->u.primary.ulMaxFrameBufferSize;
-
-        /* How much VRAM should be reserved for the guest drivers to use VBVA. */
-        const uint32_t cbReservedVRAM = VBVA_DISPLAY_INFORMATION_SIZE + VBVA_MIN_BUFFER_SIZE;
-
-        p[i].u32MaxScreenSize = p[i].u32ViewSize > cbReservedVRAM?
-                                    p[i].u32ViewSize - cbReservedVRAM:
-                                    0;
-    }
-
-    if (i == PrimaryExtension->u.primary.cDisplays && Extension == NULL)
-    {
-        return VINF_SUCCESS;
-    }
-
-    AssertFailed ();
-    return VERR_INTERNAL_ERROR;
-}
-#else
-int vbvaInitInfoCaps (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
-{
-    VBVACAPS *pCaps = (VBVACAPS*)pvData;
-    pCaps->rc = VERR_NOT_IMPLEMENTED;
-    pCaps->fCaps = VBVACAPS_COMPLETEGCMD_BY_IOREAD | VBVACAPS_IRQ;
-    return VINF_SUCCESS;
-}
-
-
-int vbvaFinalizeInfoCaps (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
-{
-    VBVACAPS *pCaps = (VBVACAPS*)pvData;
-    AssertRC(pCaps->rc);
-    return pCaps->rc;
-}
-#endif
-
-static int vbvaInitInfoHeap (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
-{
-    NOREF (pvContext);
-    VBVAINFOHEAP *p = (VBVAINFOHEAP *)pvData;
-
-    p->u32HeapOffset = PrimaryExtension->u.primary.cbVRAM
-                       - PrimaryExtension->u.primary.cbMiniportHeap
-                       - VBVA_ADAPTER_INFORMATION_SIZE;
-    p->u32HeapSize = PrimaryExtension->u.primary.cbMiniportHeap;
-
-    return VINF_SUCCESS;
-}
-
-static int hgsmiInitFlagsLocation (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
-{
-    NOREF (pvContext);
-    HGSMIBUFFERLOCATION *p = (HGSMIBUFFERLOCATION *)pvData;
-
-    p->offLocation = PrimaryExtension->u.primary.cbVRAM - sizeof (HGSMIHOSTFLAGS);
-    p->cbLocation = sizeof (HGSMIHOSTFLAGS);
-
-    return VINF_SUCCESS;
-}
-
-
-static int vboxSetupAdapterInfoHGSMI (PDEVICE_EXTENSION PrimaryExtension)
-{
-    dprintf(("VBoxVideo::vboxSetupAdapterInfo\n"));
-
-    /* setup the flags first to ensure they are initialized by the time the host heap is ready */
-    int rc = vboxCallChannel(PrimaryExtension,
-            HGSMI_CH_HGSMI,
-            HGSMI_CC_HOST_FLAGS_LOCATION,
-                       sizeof (HGSMIBUFFERLOCATION),
-                       hgsmiInitFlagsLocation,
-                       NULL,
-                       NULL);
-    AssertRC(rc);
-    if(RT_SUCCESS (rc))
-    {
-#ifndef VBOXWDDM
-        rc = vboxCallVBVA (PrimaryExtension,
-                               VBVA_INFO_VIEW,
-                               sizeof (VBVAINFOVIEW) * PrimaryExtension->u.primary.cDisplays,
-                               vbvaInitInfoDisplay,
-                               NULL,
-                               NULL);
-        AssertRC(rc);
-        if (RT_SUCCESS (rc))
-#else
-        /* in case of WDDM we do not control the framebuffer location,
-         * i.e. it is assigned by Video Memory Manager,
-         * The FB information should be passed to guest from our DxgkDdiSetVidPnSourceAddress callback */
-
-        /* Inform about caps */
-        rc = vboxCallVBVA (PrimaryExtension,
-                               VBVA_INFO_CAPS,
-                               sizeof (VBVACAPS),
-                               vbvaInitInfoCaps,
-                               vbvaFinalizeInfoCaps,
-                               NULL);
-        AssertRC(rc);
-        if (RT_SUCCESS (rc))
-#endif
-        {
-            /* Report the host heap location. */
-            rc = vboxCallVBVA (PrimaryExtension,
-                               VBVA_INFO_HEAP,
-                               sizeof (VBVAINFOHEAP),
-                               vbvaInitInfoHeap,
-                               NULL,
-                               NULL);
-            AssertRC(rc);
-        }
-    }
-
-
-    dprintf(("VBoxVideo::vboxSetupAdapterInfo finished rc = %d\n", rc));
-
-    return rc;
-}
-
-#ifndef VBOXWDDM
-VP_STATUS vboxWaitForSingleObjectVoid(IN PVOID  HwDeviceExtension, IN PVOID  Object, IN PLARGE_INTEGER  Timeout  OPTIONAL)
-{
-    return ERROR_INVALID_FUNCTION;
-}
-
-LONG vboxSetEventVoid(IN PVOID  HwDeviceExtension, IN PEVENT  pEvent)
-{
-    return 0;
-}
-
-VOID vboxClearEventVoid (IN PVOID  HwDeviceExtension, IN PEVENT  pEvent)
-{
-}
-
-VP_STATUS vboxCreateEventVoid(IN PVOID  HwDeviceExtension, IN ULONG  EventFlag, IN PVOID  Unused, OUT PEVENT  *ppEvent)
-{
-    return ERROR_INVALID_FUNCTION;
-}
-
-VP_STATUS vboxDeleteEventVoid(IN PVOID  HwDeviceExtension, IN PEVENT  pEvent)
-{
-    return ERROR_INVALID_FUNCTION;
-}
-
-VP_STATUS vboxCreateSpinLockVoid (IN PVOID  HwDeviceExtension, OUT PSPIN_LOCK  *SpinLock)
-{
-    return ERROR_INVALID_FUNCTION;
-}
-
-VP_STATUS vboxDeleteSpinLockVoid (IN PVOID  HwDeviceExtension, IN PSPIN_LOCK  SpinLock)
-{
-    return ERROR_INVALID_FUNCTION;
-}
-
-VOID vboxAcquireSpinLockVoid (IN PVOID  HwDeviceExtension, IN PSPIN_LOCK  SpinLock, OUT PUCHAR  OldIrql)
-{
-}
-
-VOID vboxReleaseSpinLockVoid (IN PVOID  HwDeviceExtension, IN PSPIN_LOCK  SpinLock, IN UCHAR  NewIrql)
-{
-}
-
-VOID vboxAcquireSpinLockAtDpcLevelVoid (IN PVOID  HwDeviceExtension, IN PSPIN_LOCK  SpinLock)
-{
-}
-
-VOID vboxReleaseSpinLockFromDpcLevelVoid (IN PVOID  HwDeviceExtension, IN PSPIN_LOCK  SpinLock)
-{
-}
-
-PVOID vboxAllocatePoolVoid(IN PVOID  HwDeviceExtension, IN VBOXVP_POOL_TYPE  PoolType, IN size_t  NumberOfBytes, IN ULONG  Tag)
-{
-    return NULL;
-}
-
-VOID vboxFreePoolVoid(IN PVOID  HwDeviceExtension, IN PVOID  Ptr)
-{
-}
-
-BOOLEAN vboxQueueDpcVoid(IN PVOID  HwDeviceExtension, IN PMINIPORT_DPC_ROUTINE  CallbackRoutine, IN PVOID  Context)
-{
-    return FALSE;
-}
-
-void VBoxSetupVideoPortFunctions(PDEVICE_EXTENSION PrimaryExtension, VBOXVIDEOPORTPROCS *pCallbacks, PVIDEO_PORT_CONFIG_INFO pConfigInfo)
-{
-    memset(pCallbacks, 0, sizeof(VBOXVIDEOPORTPROCS));
-
-    if (vboxQueryWinVersion() <= WINNT4)
-    {
-        /* VideoPortGetProcAddress is available for >= win2k */
-        pCallbacks->pfnWaitForSingleObject = vboxWaitForSingleObjectVoid;
-        pCallbacks->pfnSetEvent = vboxSetEventVoid;
-        pCallbacks->pfnClearEvent = vboxClearEventVoid;
-        pCallbacks->pfnCreateEvent = vboxCreateEventVoid;
-        pCallbacks->pfnDeleteEvent = vboxDeleteEventVoid;
-        pCallbacks->pfnCreateSpinLock = vboxCreateSpinLockVoid;
-        pCallbacks->pfnDeleteSpinLock = vboxDeleteSpinLockVoid;
-        pCallbacks->pfnAcquireSpinLock = vboxAcquireSpinLockVoid;
-        pCallbacks->pfnReleaseSpinLock = vboxReleaseSpinLockVoid;
-        pCallbacks->pfnAcquireSpinLockAtDpcLevel = vboxAcquireSpinLockAtDpcLevelVoid;
-        pCallbacks->pfnReleaseSpinLockFromDpcLevel = vboxReleaseSpinLockFromDpcLevelVoid;
-        pCallbacks->pfnAllocatePool = vboxAllocatePoolVoid;
-        pCallbacks->pfnFreePool = vboxFreePoolVoid;
-        pCallbacks->pfnQueueDpc = vboxQueueDpcVoid;
-        return;
-    }
-
-    pCallbacks->pfnWaitForSingleObject = (PFNWAITFORSINGLEOBJECT)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortWaitForSingleObject");
-    Assert(pCallbacks->pfnWaitForSingleObject);
-
-    pCallbacks->pfnSetEvent = (PFNSETEVENT)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortSetEvent");
-    Assert(pCallbacks->pfnSetEvent);
-
-    pCallbacks->pfnClearEvent = (PFNCLEAREVENT)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortClearEvent");
-    Assert(pCallbacks->pfnClearEvent);
-
-    pCallbacks->pfnCreateEvent = (PFNCREATEEVENT)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortCreateEvent");
-    Assert(pCallbacks->pfnCreateEvent);
-
-    pCallbacks->pfnDeleteEvent = (PFNDELETEEVENT)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortDeleteEvent");
-    Assert(pCallbacks->pfnDeleteEvent);
-
-    if(pCallbacks->pfnWaitForSingleObject
-            && pCallbacks->pfnSetEvent
-            && pCallbacks->pfnClearEvent
-            && pCallbacks->pfnCreateEvent
-            && pCallbacks->pfnDeleteEvent)
-    {
-        pCallbacks->fSupportedTypes |= VBOXVIDEOPORTPROCS_EVENT;
-    }
-    else
-    {
-        pCallbacks->pfnWaitForSingleObject = vboxWaitForSingleObjectVoid;
-        pCallbacks->pfnSetEvent = vboxSetEventVoid;
-        pCallbacks->pfnClearEvent = vboxClearEventVoid;
-        pCallbacks->pfnCreateEvent = vboxCreateEventVoid;
-        pCallbacks->pfnDeleteEvent = vboxDeleteEventVoid;
-    }
-
-    pCallbacks->pfnCreateSpinLock = (PFNCREATESPINLOCK)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortCreateSpinLock");
-    Assert(pCallbacks->pfnCreateSpinLock);
-
-    pCallbacks->pfnDeleteSpinLock = (PFNDELETESPINLOCK)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortDeleteSpinLock");
-    Assert(pCallbacks->pfnDeleteSpinLock);
-
-    pCallbacks->pfnAcquireSpinLock = (PFNACQUIRESPINLOCK)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortAcquireSpinLock");
-    Assert(pCallbacks->pfnAcquireSpinLock);
-
-    pCallbacks->pfnReleaseSpinLock = (PFNRELEASESPINLOCK)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortReleaseSpinLock");
-    Assert(pCallbacks->pfnReleaseSpinLock);
-
-    pCallbacks->pfnAcquireSpinLockAtDpcLevel = (PFNACQUIRESPINLOCKATDPCLEVEL)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortAcquireSpinLockAtDpcLevel");
-    Assert(pCallbacks->pfnAcquireSpinLockAtDpcLevel);
-
-    pCallbacks->pfnReleaseSpinLockFromDpcLevel = (PFNRELEASESPINLOCKFROMDPCLEVEL)(pConfigInfo->VideoPortGetProcAddress)
-                (PrimaryExtension,
-                 (PUCHAR)"VideoPortReleaseSpinLockFromDpcLevel");
-    Assert(pCallbacks->pfnReleaseSpinLockFromDpcLevel);
-
-    if(pCallbacks->pfnCreateSpinLock
-            && pCallbacks->pfnDeleteSpinLock
-            && pCallbacks->pfnAcquireSpinLock
-            && pCallbacks->pfnReleaseSpinLock
-            && pCallbacks->pfnAcquireSpinLockAtDpcLevel
-            && pCallbacks->pfnReleaseSpinLockFromDpcLevel)
-    {
-        pCallbacks->fSupportedTypes |= VBOXVIDEOPORTPROCS_SPINLOCK;
-    }
-    else
-    {
-        pCallbacks->pfnCreateSpinLock = vboxCreateSpinLockVoid;
-        pCallbacks->pfnDeleteSpinLock = vboxDeleteSpinLockVoid;
-        pCallbacks->pfnAcquireSpinLock = vboxAcquireSpinLockVoid;
-        pCallbacks->pfnReleaseSpinLock = vboxReleaseSpinLockVoid;
-        pCallbacks->pfnAcquireSpinLockAtDpcLevel = vboxAcquireSpinLockAtDpcLevelVoid;
-        pCallbacks->pfnReleaseSpinLockFromDpcLevel = vboxReleaseSpinLockFromDpcLevelVoid;
-    }
-
-    pCallbacks->pfnAllocatePool = (PFNALLOCATEPOOL)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortAllocatePool");
-    Assert(pCallbacks->pfnAllocatePool);
-
-    pCallbacks->pfnFreePool = (PFNFREEPOOL)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortFreePool");
-    Assert(pCallbacks->pfnFreePool);
-
-    if(pCallbacks->pfnAllocatePool
-            && pCallbacks->pfnFreePool)
-    {
-        pCallbacks->fSupportedTypes |= VBOXVIDEOPORTPROCS_POOL;
-    }
-    else
-    {
-        pCallbacks->pfnAllocatePool = vboxAllocatePoolVoid;
-        pCallbacks->pfnFreePool = vboxFreePoolVoid;
-    }
-
-    pCallbacks->pfnQueueDpc = (PFNQUEUEDPC)(pConfigInfo->VideoPortGetProcAddress)
-            (PrimaryExtension,
-             (PUCHAR)"VideoPortQueueDpc");
-    Assert(pCallbacks->pfnQueueDpc);
-
-    if(pCallbacks->pfnQueueDpc)
-    {
-        pCallbacks->fSupportedTypes |= VBOXVIDEOPORTPROCS_DPC;
-    }
-    else
-    {
-        pCallbacks->pfnQueueDpc = vboxQueueDpcVoid;
-    }
-
-#ifdef DEBUG_misha
-    Assert(pCallbacks->fSupportedTypes & VBOXVIDEOPORTPROCS_EVENT);
-    Assert(pCallbacks->fSupportedTypes & VBOXVIDEOPORTPROCS_SPINLOCK);
-#endif
-}
-#endif
 
 /**
  * Helper function to register secondary displays (DualView). Note that this will not
@@ -710,112 +36,70 @@ void VBoxSetupVideoPortFunctions(PDEVICE_EXTENSION PrimaryExtension, VBOXVIDEOPO
  * HGSMI variant is a bit different because it uses only HGSMI interface (VBVA channel)
  * to talk to the host.
  */
-VOID VBoxSetupDisplaysHGSMI(PDEVICE_EXTENSION PrimaryExtension,
-#ifndef VBOXWDDM
-        PVIDEO_PORT_CONFIG_INFO pConfigInfo,
-#endif
-        ULONG AdapterMemorySize)
+void VBoxSetupDisplaysHGSMI(PVBOXVIDEO_COMMON pCommon,
+                            uint32_t AdapterMemorySize, uint32_t fCaps)
 {
-    VP_STATUS rc = NO_ERROR;
+    /** @todo I simply converted this from Windows error codes.  That is wrong,
+     * but we currently freely mix and match those (failure == rc > 0) and iprt
+     * ones (failure == rc < 0) anyway.  This needs to be fully reviewed and
+     * fixed. */
+    int rc = VINF_SUCCESS;
+    uint32_t offVRAMBaseMapping, cbMapping, offGuestHeapMemory, cbGuestHeapMemory,
+             offHostFlags, offVRAMHostArea, cbHostArea;
+    Log(("VBoxVideo::VBoxSetupDisplays: pCommon = %p\n", pCommon));
 
-    dprintf(("VBoxVideo::VBoxSetupDisplays: PrimaryExtension = %p\n",
-             PrimaryExtension));
-
-    /* Preinitialize the primary extension.
-     * Note: bVBoxVideoSupported is set to FALSE, because HGSMI is active instead.
-     */
-    PrimaryExtension->pNext                              = NULL;
-#ifndef VBOXWDDM
-    PrimaryExtension->pPrimary                           = PrimaryExtension;
-    PrimaryExtension->iDevice                            = 0;
-    PrimaryExtension->ulFrameBufferOffset                = 0;
-    PrimaryExtension->ulFrameBufferSize                  = 0;
-#endif
-    PrimaryExtension->u.primary.ulVbvaEnabled            = 0;
-    PrimaryExtension->u.primary.bVBoxVideoSupported      = FALSE;
-#ifndef VBOXWDDM
-    PrimaryExtension->u.primary.cDisplays                = 1;
-#endif
-    PrimaryExtension->u.primary.cbVRAM                   = AdapterMemorySize;
-    PrimaryExtension->u.primary.cbMiniportHeap           = 0;
-    PrimaryExtension->u.primary.pvMiniportHeap           = NULL;
-    PrimaryExtension->u.primary.pvAdapterInformation     = NULL;
-    PrimaryExtension->u.primary.ulMaxFrameBufferSize     = 0;
-    PrimaryExtension->u.primary.bHGSMI                   = VBoxHGSMIIsSupported (PrimaryExtension);
-    VBoxVideoCmnMemZero(&PrimaryExtension->u.primary.areaHostHeap, sizeof(HGSMIAREA));
-    VBoxVideoCmnMemZero(&PrimaryExtension->areaDisplay, sizeof(HGSMIAREA));
-
-    if (PrimaryExtension->u.primary.IOPortGuest == 0)
+    memset(pCommon, 0, sizeof(*pCommon));
+    pCommon->cbVRAM    = AdapterMemorySize;
+    pCommon->cDisplays = 1;
+    pCommon->bHGSMI    = VBoxHGSMIIsSupported ();
+    /* Why does this use VBoxVideoCmnMemZero?  The MSDN docs say that it should
+     * only be used on mapped display adapter memory.  Done with memset above. */
+    // VBoxVideoCmnMemZero(&pCommon->areaHostHeap, sizeof(HGSMIAREA));
+    if (pCommon->bHGSMI)
     {
-        PrimaryExtension->u.primary.bHGSMI = false;
-    }
+        VBoxHGSMIGetBaseMappingInfo(pCommon->cbVRAM, &offVRAMBaseMapping,
+                                    &cbMapping, &offGuestHeapMemory,
+                                    &cbGuestHeapMemory, &offHostFlags);
 
-    if (PrimaryExtension->u.primary.bHGSMI)
-    {
         /* Map the adapter information. It will be needed for HGSMI IO. */
-        rc = VBoxMapAdapterMemory (PrimaryExtension,
-                                   &PrimaryExtension->u.primary.pvAdapterInformation,
-                                   PrimaryExtension->u.primary.cbVRAM - VBVA_ADAPTER_INFORMATION_SIZE,
-                                   VBVA_ADAPTER_INFORMATION_SIZE
-                                  );
-        if (rc != NO_ERROR)
+        /** @todo all callers of VBoxMapAdapterMemory expect it to use iprt
+         * error codes, but it doesn't. */
+        rc = VBoxMapAdapterMemory (pCommon, &pCommon->pvAdapterInformation,
+                                   offVRAMBaseMapping, cbMapping);
+        if (RT_FAILURE(rc))
         {
-            dprintf(("VBoxVideo::VBoxSetupDisplays: VBoxMapAdapterMemory pvAdapterInfoirrmation failed rc = %d\n",
+            Log(("VBoxVideo::VBoxSetupDisplays: VBoxMapAdapterMemory pvAdapterInfoirrmation failed rc = %d\n",
                      rc));
 
-            PrimaryExtension->u.primary.bHGSMI = FALSE;
+            pCommon->bHGSMI = false;
         }
         else
         {
-            /* Setup a HGSMI heap within the adapter information area. */
-            rc = HGSMIHeapSetup (&PrimaryExtension->u.primary.hgsmiAdapterHeap,
-                                 PrimaryExtension->u.primary.pvAdapterInformation,
-                                 VBVA_ADAPTER_INFORMATION_SIZE - sizeof(HGSMIHOSTFLAGS),
-                                 PrimaryExtension->u.primary.cbVRAM - VBVA_ADAPTER_INFORMATION_SIZE,
-                                 false /*fOffsetBased*/);
+            /* Setup an HGSMI heap within the adapter information area. */
+            rc = VBoxHGSMISetupGuestContext(&pCommon->guestCtx,
+                                            pCommon->pvAdapterInformation,
+                                            cbGuestHeapMemory,
+                                              offVRAMBaseMapping
+                                            + offGuestHeapMemory);
 
-            if (RT_FAILURE (rc))
+            if (RT_FAILURE(rc))
             {
-                dprintf(("VBoxVideo::VBoxSetupDisplays: HGSMIHeapSetup failed rc = %d\n",
+                Log(("VBoxVideo::VBoxSetupDisplays: HGSMIHeapSetup failed rc = %d\n",
                          rc));
 
-                PrimaryExtension->u.primary.bHGSMI = FALSE;
-            }
-            else
-            {
-                    PrimaryExtension->u.primary.pHostFlags = (HGSMIHOSTFLAGS*)(((uint8_t*)PrimaryExtension->u.primary.pvAdapterInformation)
-                                                            + VBVA_ADAPTER_INFORMATION_SIZE - sizeof(HGSMIHOSTFLAGS));
+                pCommon->bHGSMI = false;
             }
         }
     }
 
     /* Setup the host heap and the adapter memory. */
-    if (PrimaryExtension->u.primary.bHGSMI)
+    if (pCommon->bHGSMI)
     {
-        /* The miniport heap is used for the host buffers. */
-        ULONG cbMiniportHeap = 0;
-        vboxQueryConfHGSMI (PrimaryExtension, VBOX_VBVA_CONF32_HOST_HEAP_SIZE, &cbMiniportHeap);
-
-        if (cbMiniportHeap != 0)
+        VBoxHGSMIGetHostAreaMapping(&pCommon->guestCtx, pCommon->cbVRAM,
+                                    offVRAMBaseMapping, &offVRAMHostArea,
+                                    &cbHostArea);
+        if (cbHostArea)
         {
-            /* Do not allow too big heap. No more than 25% of VRAM is allowed. */
-            ULONG cbMiniportHeapMaxSize = AdapterMemorySize / 4;
-
-            if (cbMiniportHeapMaxSize >= VBVA_ADAPTER_INFORMATION_SIZE)
-            {
-                cbMiniportHeapMaxSize -= VBVA_ADAPTER_INFORMATION_SIZE;
-            }
-
-            if (cbMiniportHeap > cbMiniportHeapMaxSize)
-            {
-                cbMiniportHeap = cbMiniportHeapMaxSize;
-            }
-
-            /* Round up to 4096 bytes. */
-            PrimaryExtension->u.primary.cbMiniportHeap = (cbMiniportHeap + 0xFFF) & ~0xFFF;
-
-            dprintf(("VBoxVideo::VBoxSetupDisplays: cbMiniportHeap = 0x%08X, PrimaryExtension->u.primary.cbMiniportHeap = 0x%08X, cbMiniportHeapMaxSize = 0x%08X\n",
-                     cbMiniportHeap, PrimaryExtension->u.primary.cbMiniportHeap, cbMiniportHeapMaxSize));
 
             /* Map the heap region.
              *
@@ -823,405 +107,75 @@ VOID VBoxSetupDisplaysHGSMI(PDEVICE_EXTENSION PrimaryExtension,
              *       The miniport driver is responsible for reading FIFO and notifying
              *       display drivers.
              */
-            rc = VBoxMapAdapterMemory (PrimaryExtension,
-                                       &PrimaryExtension->u.primary.pvMiniportHeap,
-                                       PrimaryExtension->u.primary.cbVRAM
-                                       - VBVA_ADAPTER_INFORMATION_SIZE
-                                       - PrimaryExtension->u.primary.cbMiniportHeap,
-                                       PrimaryExtension->u.primary.cbMiniportHeap
-                                      );
-            if (rc != NO_ERROR)
+            pCommon->cbMiniportHeap = cbHostArea;
+            rc = VBoxMapAdapterMemory (pCommon, &pCommon->pvMiniportHeap,
+                                       offVRAMHostArea, cbHostArea);
+            if (RT_FAILURE(rc))
             {
-                PrimaryExtension->u.primary.pvMiniportHeap = NULL;
-                PrimaryExtension->u.primary.cbMiniportHeap = 0;
-                PrimaryExtension->u.primary.bHGSMI = FALSE;
+                pCommon->pvMiniportHeap = NULL;
+                pCommon->cbMiniportHeap = 0;
+                pCommon->bHGSMI = false;
             }
             else
-            {
-                HGSMIOFFSET offBase = PrimaryExtension->u.primary.cbVRAM
-                                      - VBVA_ADAPTER_INFORMATION_SIZE
-                                      - PrimaryExtension->u.primary.cbMiniportHeap;
-
-                /* Init the host hap area. Buffers from the host will be placed there. */
-                HGSMIAreaInitialize (&PrimaryExtension->u.primary.areaHostHeap,
-                                     PrimaryExtension->u.primary.pvMiniportHeap,
-                                     PrimaryExtension->u.primary.cbMiniportHeap,
-                                     offBase);
-            }
+                VBoxHGSMISetupHostContext(&pCommon->hostCtx,
+                                          pCommon->pvAdapterInformation,
+                                          offHostFlags,
+                                          pCommon->pvMiniportHeap,
+                                          offVRAMHostArea, cbHostArea);
         }
         else
         {
             /* Host has not requested a heap. */
-            PrimaryExtension->u.primary.pvMiniportHeap = NULL;
-            PrimaryExtension->u.primary.cbMiniportHeap = 0;
+            pCommon->pvMiniportHeap = NULL;
+            pCommon->cbMiniportHeap = 0;
+        }
+    }
+
+    if (pCommon->bHGSMI)
+    {
+        /* Setup the information for the host. */
+        rc = VBoxHGSMISendHostCtxInfo(&pCommon->guestCtx,
+                                      offVRAMBaseMapping + offHostFlags,
+                                      fCaps, offVRAMHostArea,
+                                      pCommon->cbMiniportHeap);
+
+        if (RT_FAILURE(rc))
+        {
+            pCommon->bHGSMI = false;
         }
     }
 
     /* Check whether the guest supports multimonitors. */
-    if (PrimaryExtension->u.primary.bHGSMI)
-    {
-#ifndef VBOXWDDM
-        typedef VP_STATUS (*PFNCREATESECONDARYDISPLAY)(PVOID, PVOID *, ULONG);
-        PFNCREATESECONDARYDISPLAY pfnCreateSecondaryDisplay = NULL;
+    if (pCommon->bHGSMI)
+        /* Query the configured number of displays. */
+        pCommon->cDisplays = VBoxHGSMIGetMonitorCount(&pCommon->guestCtx);
 
-        /* Dynamically query the VideoPort import to be binary compatible across Windows versions */
-        if (vboxQueryWinVersion() > WINNT4)
-        {
-            /* This bluescreens on NT4, hence the above version check */
-            pfnCreateSecondaryDisplay = (PFNCREATESECONDARYDISPLAY)(pConfigInfo->VideoPortGetProcAddress)
-                                                                       (PrimaryExtension,
-                                                                        (PUCHAR)"VideoPortCreateSecondaryDisplay");
-        }
+    if (!pCommon->bHGSMI)
+        VBoxFreeDisplaysHGSMI(pCommon);
 
-        if (pfnCreateSecondaryDisplay != NULL)
-#endif
-        {
-            /* Query the configured number of displays. */
-            ULONG cDisplays = 0;
-            vboxQueryConfHGSMI (PrimaryExtension, VBOX_VBVA_CONF32_MONITOR_COUNT, &cDisplays);
-
-            dprintf(("VBoxVideo::VBoxSetupDisplays: cDisplays = %d\n",
-                     cDisplays));
-
-            if (cDisplays == 0 || cDisplays > VBOX_VIDEO_MAX_SCREENS)
-            {
-                /* Host reported some bad value. Continue in the 1 screen mode. */
-                cDisplays = 1;
-            }
-
-#ifndef VBOXWDDM
-            PDEVICE_EXTENSION pPrev = PrimaryExtension;
-
-            ULONG iDisplay;
-            for (iDisplay = 1; iDisplay < cDisplays; iDisplay++)
-            {
-               PDEVICE_EXTENSION SecondaryExtension = NULL;
-               rc = pfnCreateSecondaryDisplay (PrimaryExtension, (PVOID*)&SecondaryExtension, VIDEO_DUALVIEW_REMOVABLE);
-
-               dprintf(("VBoxVideo::VBoxSetupDisplays: VideoPortCreateSecondaryDisplay returned %#x, SecondaryExtension = %p\n",
-                        rc, SecondaryExtension));
-
-               if (rc != NO_ERROR)
-               {
-                   break;
-               }
-
-               SecondaryExtension->pNext                = NULL;
-               SecondaryExtension->pPrimary             = PrimaryExtension;
-               SecondaryExtension->iDevice              = iDisplay;
-               SecondaryExtension->ulFrameBufferOffset  = 0;
-               SecondaryExtension->ulFrameBufferSize    = 0;
-               SecondaryExtension->u.secondary.bEnabled = FALSE;
-
-               /* Update the list pointers. */
-               pPrev->pNext = SecondaryExtension;
-               pPrev = SecondaryExtension;
-
-               /* Take the successfully created display into account. */
-               PrimaryExtension->u.primary.cDisplays++;
-            }
-#else
-            /* simply store the number of monitors, we will deal with VidPN stuff later */
-            PrimaryExtension->cSources = cDisplays;
-#endif
-        }
-
-        /* Failure to create secondary displays is not fatal */
-        rc = NO_ERROR;
-    }
-
-#ifndef VBOXWDDM
-    /* Now when the number of monitors is known and extensions are created,
-     * calculate the layout of framebuffers.
-     */
-    VBoxComputeFrameBufferSizes (PrimaryExtension);
-#endif
-
-    if (PrimaryExtension->u.primary.bHGSMI)
-    {
-        /* Setup the information for the host. */
-        rc = vboxSetupAdapterInfoHGSMI (PrimaryExtension);
-
-        if (RT_FAILURE (rc))
-        {
-            PrimaryExtension->u.primary.bHGSMI = FALSE;
-        }
-    }
-
-#ifdef VBOXWDDM
-    if (PrimaryExtension->u.primary.bHGSMI)
-    {
-        ULONG ulAvailable = PrimaryExtension->u.primary.cbVRAM
-                            - PrimaryExtension->u.primary.cbMiniportHeap
-                            - VBVA_ADAPTER_INFORMATION_SIZE;
-
-        ULONG ulSize = ulAvailable / 2;
-
-        if (ulSize > VBOXWDDM_C_VDMA_BUFFER_SIZE)
-            ulSize = VBOXWDDM_C_VDMA_BUFFER_SIZE;
-
-        /* Align down to 4096 bytes. */
-        ulSize &= ~0xFFF;
-        ULONG offset = ulAvailable - ulSize;
-
-        Assert(!(offset & 0xFFF));
-
-        rc = vboxVdmaCreate (PrimaryExtension, &PrimaryExtension->u.primary.Vdma, offset, ulSize);
-        AssertRC(rc);
-        if (RT_SUCCESS(rc))
-        {
-            /* can enable it right away since the host does not need any screen/FB info
-             * for basic DMA functionality */
-            rc = vboxVdmaEnable(PrimaryExtension, &PrimaryExtension->u.primary.Vdma);
-            AssertRC(rc);
-            if (RT_FAILURE(rc))
-                vboxVdmaDestroy(PrimaryExtension, &PrimaryExtension->u.primary.Vdma);
-        }
-
-#ifdef VBOXWDDM_RENDER_FROM_SHADOW
-        if (RT_SUCCESS(rc))
-        {
-            ulAvailable = offset;
-            ulSize = ulAvailable / 2;
-            ulSize /= PrimaryExtension->cSources;
-            Assert(ulSize > VBVA_MIN_BUFFER_SIZE);
-            if (ulSize > VBVA_MIN_BUFFER_SIZE)
-            {
-                ULONG ulRatio = ulSize/VBVA_MIN_BUFFER_SIZE;
-                ulRatio >>= 4; /* /= 16; */
-                if (ulRatio)
-                    ulSize = VBVA_MIN_BUFFER_SIZE * ulRatio;
-                else
-                    ulSize = VBVA_MIN_BUFFER_SIZE;
-            }
-            else
-            {
-                /* todo: ?? */
-            }
-
-            ulSize &= ~0xFFF;
-            Assert(ulSize);
-
-            Assert(ulSize * PrimaryExtension->cSources < ulAvailable);
-
-            for (int i = PrimaryExtension->cSources-1; i >= 0; --i)
-            {
-                offset -= ulSize;
-                rc = vboxVbvaCreate(PrimaryExtension, &PrimaryExtension->aSources[i].Vbva, offset, ulSize, i);
-                AssertRC(rc);
-                if (RT_SUCCESS(rc))
-                {
-                    rc = vboxVbvaEnable(PrimaryExtension, &PrimaryExtension->aSources[i].Vbva);
-                    AssertRC(rc);
-                    if (RT_FAILURE(rc))
-                    {
-                        /* @todo: de-initialize */
-                    }
-                }
-            }
-        }
-#endif
-
-        if (RT_FAILURE(rc))
-            PrimaryExtension->u.primary.bHGSMI = FALSE;
-    }
-#endif
-
-    if (!PrimaryExtension->u.primary.bHGSMI)
-    {
-        /* Unmap the memory if VBoxVideo is not supported. */
-        VBoxUnmapAdapterMemory (PrimaryExtension, &PrimaryExtension->u.primary.pvMiniportHeap, PrimaryExtension->u.primary.cbMiniportHeap);
-        VBoxUnmapAdapterMemory (PrimaryExtension, &PrimaryExtension->u.primary.pvAdapterInformation, VBVA_ADAPTER_INFORMATION_SIZE);
-
-        HGSMIHeapDestroy (&PrimaryExtension->u.primary.hgsmiAdapterHeap);
-    }
-
-    if (PrimaryExtension->u.primary.bHGSMI)
-    {
-        VBoxVideoCmnSpinLockCreate(PrimaryExtension, &PrimaryExtension->u.primary.pSynchLock);
-    }
-
-    dprintf(("VBoxVideo::VBoxSetupDisplays: finished\n"));
+    Log(("VBoxVideo::VBoxSetupDisplays: finished\n"));
 }
 
-#ifdef VBOXWDDM
-int VBoxFreeDisplaysHGSMI(PDEVICE_EXTENSION PrimaryExtension)
+static bool VBoxUnmapAdpInfoCallback(void *pvCommon)
 {
-    int rc = VINF_SUCCESS;
-    for (int i = PrimaryExtension->cSources-1; i >= 0; --i)
-    {
-        rc = vboxVbvaDisable(PrimaryExtension, &PrimaryExtension->aSources[i].Vbva);
-        AssertRC(rc);
-        if (RT_SUCCESS(rc))
-        {
-            rc = vboxVbvaDestroy(PrimaryExtension, &PrimaryExtension->aSources[i].Vbva);
-            AssertRC(rc);
-            if (RT_FAILURE(rc))
-            {
-                /* @todo: */
-            }
-        }
-    }
+    PVBOXVIDEO_COMMON pCommon = (PVBOXVIDEO_COMMON)pvCommon;
 
-    rc = vboxVdmaDisable(PrimaryExtension, &PrimaryExtension->u.primary.Vdma);
-    AssertRC(rc);
-    if (RT_SUCCESS(rc))
-    {
-        rc = vboxVdmaDestroy(PrimaryExtension, &PrimaryExtension->u.primary.Vdma);
-        AssertRC(rc);
-        if (RT_SUCCESS(rc))
-        {
-            /*rc = */VBoxUnmapAdapterMemory(PrimaryExtension, &PrimaryExtension->u.primary.pvMiniportHeap, PrimaryExtension->u.primary.cbMiniportHeap);
-/*
-            AssertRC(rc);
-            if (RT_SUCCESS(rc))
-*/
-            {
-                HGSMIHeapDestroy(&PrimaryExtension->u.primary.hgsmiAdapterHeap);
-
-                /* Map the adapter information. It will be needed for HGSMI IO. */
-                /*rc = */VBoxUnmapAdapterMemory(PrimaryExtension, &PrimaryExtension->u.primary.pvAdapterInformation, VBVA_ADAPTER_INFORMATION_SIZE);
-/*
-                AssertRC(rc);
-                if (RT_FAILURE(rc))
-                    drprintf((__FUNCTION__"VBoxUnmapAdapterMemory PrimaryExtension->u.primary.pvAdapterInformation failed, rc(%d)\n", rc));
-*/
-
-            }
-        }
-    }
-
-    return rc;
-}
-#endif
-
-/*
- * Send the pointer shape to the host.
- */
-typedef struct _MOUSEPOINTERSHAPECTX
-{
-    VIDEO_POINTER_ATTRIBUTES *pPointerAttr;
-    uint32_t cbData;
-    int32_t i32Result;
-} MOUSEPOINTERSHAPECTX;
-
-static int vbvaInitMousePointerShape (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
-{
-    NOREF (PrimaryExtension);
-
-    MOUSEPOINTERSHAPECTX *pCtx = (MOUSEPOINTERSHAPECTX *)pvContext;
-    VBVAMOUSEPOINTERSHAPE *p = (VBVAMOUSEPOINTERSHAPE *)pvData;
-
-    /* Will be updated by the host. */
-    p->i32Result = VINF_SUCCESS;
-
-    /* We have our custom flags in the field */
-    p->fu32Flags = pCtx->pPointerAttr->Enable & 0x0000FFFF;
-
-    p->u32HotX   = (pCtx->pPointerAttr->Enable >> 16) & 0xFF;
-    p->u32HotY   = (pCtx->pPointerAttr->Enable >> 24) & 0xFF;
-    p->u32Width  = pCtx->pPointerAttr->Width;
-    p->u32Height = pCtx->pPointerAttr->Height;
-
-    if (p->fu32Flags & VBOX_MOUSE_POINTER_SHAPE)
-    {
-        /* If shape is supplied, then alway create the pointer visible.
-         * See comments in 'vboxUpdatePointerShape'
-         */
-        p->fu32Flags |= VBOX_MOUSE_POINTER_VISIBLE;
-
-        /* Copy the actual pointer data. */
-        memcpy (p->au8Data, pCtx->pPointerAttr->Pixels, pCtx->cbData);
-    }
-
-    return VINF_SUCCESS;
+    pCommon->hostCtx.pfHostFlags = NULL;
+    return true;
 }
 
-static int vbvaFinalizeMousePointerShape (PDEVICE_EXTENSION PrimaryExtension, void *pvContext, void *pvData)
+void VBoxFreeDisplaysHGSMI(PVBOXVIDEO_COMMON pCommon)
 {
-    NOREF (PrimaryExtension);
+    VBoxUnmapAdapterMemory(pCommon, &pCommon->pvMiniportHeap);
+    HGSMIHeapDestroy(&pCommon->guestCtx.heapCtx);
 
-    MOUSEPOINTERSHAPECTX *pCtx = (MOUSEPOINTERSHAPECTX *)pvContext;
-    VBVAMOUSEPOINTERSHAPE *p = (VBVAMOUSEPOINTERSHAPE *)pvData;
-
-    pCtx->i32Result = p->i32Result;
-
-    return VINF_SUCCESS;
+    /* Unmap the adapter information needed for HGSMI IO. */
+    VBoxSyncToVideoIRQ(pCommon, VBoxUnmapAdpInfoCallback, pCommon);
+    VBoxUnmapAdapterMemory(pCommon, &pCommon->pvAdapterInformation);
 }
 
-BOOLEAN vboxUpdatePointerShape (PDEVICE_EXTENSION DeviceExtension,
-                                PVIDEO_POINTER_ATTRIBUTES pointerAttr,
-                                uint32_t cbLength)
-{
-#ifndef VBOXWDDM
-    PDEVICE_EXTENSION PrimaryExtension = DeviceExtension->pPrimary;
 
-    /* In multimonitor case the HW mouse pointer is the same on all screens,
-     * and Windows calls each display driver with the same pointer data: visible for
-     * the screen where the pointer is and invisible for other screens.
-     *
-     * This driver passes the shape to the host only from primary screen and makes
-     * the pointer always visible (in vbvaInitMousePointerShape).
-     *
-     * The simple solution makes it impossible to create the shape and keep the mouse
-     * pointer invisible. New shapes will be created visible.
-     * But:
-     * 1) VBox frontends actually ignore the visibility flag if VBOX_MOUSE_POINTER_SHAPE
-     *    is set and always create new pointers visible.
-     * 2) Windows uses DrvMovePointer to hide the pointer, which will still work.
-     */
-
-    if (DeviceExtension->iDevice != PrimaryExtension->iDevice)
-    {
-        dprintf(("vboxUpdatePointerShape: ignore non primary device %d(%d)\n",
-                 DeviceExtension->iDevice, PrimaryExtension->iDevice));
-        /* Success. */
-        return TRUE;
-    }
-#else
-    PDEVICE_EXTENSION PrimaryExtension = DeviceExtension;
-#endif
-
-    uint32_t cbData = 0;
-
-    if (pointerAttr->Enable & VBOX_MOUSE_POINTER_SHAPE)
-    {
-        /* Size of the pointer data: sizeof (AND mask) + sizeof (XOR_MASK) */
-        cbData = ((((pointerAttr->Width + 7) / 8) * pointerAttr->Height + 3) & ~3)
-                 + pointerAttr->Width * 4 * pointerAttr->Height;
-    }
-
-#ifndef DEBUG_misha
-    dprintf(("vboxUpdatePointerShape: cbData %d, %dx%d\n",
-             cbData, pointerAttr->Width, pointerAttr->Height));
-#endif
-
-    if (cbData > cbLength - sizeof(VIDEO_POINTER_ATTRIBUTES))
-    {
-        dprintf(("vboxUpdatePointerShape: calculated pointer data size is too big (%d bytes, limit %d)\n",
-                 cbData, cbLength - sizeof(VIDEO_POINTER_ATTRIBUTES)));
-        return FALSE;
-    }
-
-    MOUSEPOINTERSHAPECTX ctx;
-
-    ctx.pPointerAttr = pointerAttr;
-    ctx.cbData = cbData;
-    ctx.i32Result = VERR_NOT_SUPPORTED;
-
-    int rc = vboxCallVBVA (PrimaryExtension,
-                           VBVA_MOUSE_POINTER_SHAPE,
-                           sizeof (VBVAMOUSEPOINTERSHAPE) + cbData,
-                           vbvaInitMousePointerShape,
-                           vbvaFinalizeMousePointerShape,
-                           &ctx);
-#ifndef DEBUG_misha
-    dprintf(("VBoxVideo::vboxMousePointerShape: rc %d, i32Result = %d\n", rc, ctx.i32Result));
-#endif
-
-    return RT_SUCCESS(rc) && RT_SUCCESS(ctx.i32Result);
-}
-
+#ifndef VBOX_WITH_WDDM
 typedef struct _VBVAMINIPORT_CHANNELCONTEXT
 {
     PFNHGSMICHANNELHANDLER pfnChannelHandler;
@@ -1230,84 +184,38 @@ typedef struct _VBVAMINIPORT_CHANNELCONTEXT
 
 typedef struct _VBVADISP_CHANNELCONTEXT
 {
-    struct _VBVAHOSTCMD * pFirstCmd;
-    struct _VBVAHOSTCMD * pLastCmd;
-    VBOXVCMNSPIN_LOCK pSynchLock;
-#ifdef DEBUG
-    int cCmds;
-#endif
+    /** The generic command handler builds up a list of commands - in reverse
+     * order! - here */
+    VBVAHOSTCMD *pCmd;
     bool bValid;
 }VBVADISP_CHANNELCONTEXT;
 
-#ifdef DEBUG
-void dbgCheckListLocked(const VBVADISP_CHANNELCONTEXT *pList, struct _VBVAHOSTCMD * pCmd)
-{
-    int counter = 0;
-    for(struct _VBVAHOSTCMD * pCur = pList->pFirstCmd; pCur; pCur=pCur->u.pNext)
-    {
-        Assert(pCur != pCmd);
-        if(pCur == pList->pLastCmd)
-        {
-            Assert(pCur->u.pNext == NULL);
-        }
-        if(pCur->u.pNext == NULL)
-        {
-            Assert(pCur == pList->pLastCmd);
-        }
-        counter++;
-    }
-
-    Assert(counter == pList->cCmds);
-}
-
-void dbgCheckList(PDEVICE_EXTENSION PrimaryExtension, VBVADISP_CHANNELCONTEXT *pList, struct _VBVAHOSTCMD * pCmd)
-{
-    VBOXVCMNIRQL oldIrql;
-    VBoxVideoCmnSpinLockAcquire(PrimaryExtension, &pList->pSynchLock, &oldIrql);
-
-    dbgCheckListLocked(pList, pCmd);
-
-    VBoxVideoCmnSpinLockRelease(PrimaryExtension, &pList->pSynchLock, oldIrql);
-}
-
-#define DBG_CHECKLIST_LOCKED(_pl, pc) dbgCheckListLocked(_pl, pc)
-#define DBG_CHECKLIST(_pe, _pl, pc) dbgCheckList(_pe, _pl, pc)
-
-#else
-#define DBG_CHECKLIST_LOCKED(_pl, pc) do{}while(0)
-#define DBG_CHECKLIST(_pe, _pl, pc) do{}while(0)
-#endif
-
-
 typedef struct _VBVA_CHANNELCONTEXTS
 {
-    PDEVICE_EXTENSION PrimaryExtension;
+    PVBOXVIDEO_COMMON pCommon;
     uint32_t cUsed;
     uint32_t cContexts;
     VBVAMINIPORT_CHANNELCONTEXT mpContext;
     VBVADISP_CHANNELCONTEXT aContexts[1];
 }VBVA_CHANNELCONTEXTS;
 
-static int vboxVBVADeleteChannelContexts(PDEVICE_EXTENSION PrimaryExtension, VBVA_CHANNELCONTEXTS * pContext)
+static int vboxVBVADeleteChannelContexts(PVBOXVIDEO_COMMON pCommon,
+                                         VBVA_CHANNELCONTEXTS * pContext)
 {
-    VBoxVideoCmnMemFree(PrimaryExtension,pContext);
+    VBoxVideoCmnMemFreeDriver(pCommon, pContext);
     return VINF_SUCCESS;
 }
 
-static int vboxVBVACreateChannelContexts(PDEVICE_EXTENSION PrimaryExtension, VBVA_CHANNELCONTEXTS ** ppContext)
+static int vboxVBVACreateChannelContexts(PVBOXVIDEO_COMMON pCommon, VBVA_CHANNELCONTEXTS ** ppContext)
 {
-#ifndef VBOXWDDM
-    uint32_t cDisplays = (uint32_t)PrimaryExtension->u.primary.cDisplays;
-#else
-    uint32_t cDisplays = (uint32_t)PrimaryExtension->cSources;
-#endif
+    uint32_t cDisplays = (uint32_t)pCommon->cDisplays;
     const size_t size = RT_OFFSETOF(VBVA_CHANNELCONTEXTS, aContexts[cDisplays]);
-    VBVA_CHANNELCONTEXTS * pContext = (VBVA_CHANNELCONTEXTS*)VBoxVideoCmnMemAllocNonPaged(PrimaryExtension, size, MEM_TAG);
+    VBVA_CHANNELCONTEXTS * pContext = (VBVA_CHANNELCONTEXTS*)VBoxVideoCmnMemAllocDriver(pCommon, size);
     if(pContext)
     {
         memset(pContext, 0, size);
         pContext->cContexts = cDisplays;
-        pContext->PrimaryExtension = PrimaryExtension;
+        pContext->pCommon = pCommon;
         *ppContext = pContext;
         return VINF_SUCCESS;
     }
@@ -1327,48 +235,51 @@ static VBVADISP_CHANNELCONTEXT* vboxVBVAFindHandlerInfo(VBVA_CHANNELCONTEXTS *pC
     return NULL;
 }
 
-#ifndef VBOXWDDM
-DECLCALLBACK(void) hgsmiHostCmdComplete (HVBOXVIDEOHGSMI hHGSMI, struct _VBVAHOSTCMD * pCmd)
+DECLCALLBACK(void) hgsmiHostCmdComplete (HVBOXVIDEOHGSMI hHGSMI, struct VBVAHOSTCMD * pCmd)
 {
-    PDEVICE_EXTENSION PrimaryExtension = ((PDEVICE_EXTENSION)hHGSMI)->pPrimary;
-    HGSMIHostCmdComplete (PrimaryExtension, pCmd);
+    PHGSMIHOSTCOMMANDCONTEXT pCtx = &((PVBOXVIDEO_COMMON)hHGSMI)->hostCtx;
+    VBoxHGSMIHostCmdComplete(pCtx, pCmd);
 }
 
-DECLCALLBACK(int) hgsmiHostCmdRequest (HVBOXVIDEOHGSMI hHGSMI, uint8_t u8Channel, struct _VBVAHOSTCMD ** ppCmd)
+/** Reverses a NULL-terminated linked list of VBVAHOSTCMD structures. */
+static VBVAHOSTCMD *vboxVBVAReverseList(VBVAHOSTCMD *pList)
+{
+    VBVAHOSTCMD *pFirst = NULL;
+    while (pList)
+    {
+        VBVAHOSTCMD *pNext = pList;
+        pList = pList->u.pNext;
+        pNext->u.pNext = pFirst;
+        pFirst = pNext;
+    }
+    return pFirst;
+}
+
+DECLCALLBACK(int) hgsmiHostCmdRequest (HVBOXVIDEOHGSMI hHGSMI, uint8_t u8Channel, uint32_t iDevice, struct VBVAHOSTCMD ** ppCmd)
 {
 //    if(display < 0)
 //        return VERR_INVALID_PARAMETER;
     if(!ppCmd)
         return VERR_INVALID_PARAMETER;
 
-    PDEVICE_EXTENSION pDevExt = (PDEVICE_EXTENSION)hHGSMI;
-    PDEVICE_EXTENSION PrimaryExtension = pDevExt->pPrimary;
+    PHGSMIHOSTCOMMANDCONTEXT pCtx = &((PVBOXVIDEO_COMMON)hHGSMI)->hostCtx;
 
     /* pick up the host commands */
-    VBoxVideoHGSMIDpc(PrimaryExtension, NULL);
+    VBoxHGSMIProcessHostQueue(pCtx);
 
-    HGSMICHANNEL * pChannel = HGSMIChannelFindById (&PrimaryExtension->u.primary.channels, u8Channel);
+    HGSMICHANNEL *pChannel = HGSMIChannelFindById (&pCtx->channels, u8Channel);
     if(pChannel)
     {
         VBVA_CHANNELCONTEXTS * pContexts = (VBVA_CHANNELCONTEXTS *)pChannel->handler.pvHandler;
-        VBVADISP_CHANNELCONTEXT *pDispContext = vboxVBVAFindHandlerInfo(pContexts, pDevExt->iDevice);
+        VBVADISP_CHANNELCONTEXT *pDispContext = vboxVBVAFindHandlerInfo(pContexts, iDevice);
         Assert(pDispContext);
         if(pDispContext)
         {
-            UCHAR oldIrql;
-            VBoxVideoCmnSpinLockAcquire(PrimaryExtension, &pDispContext->pSynchLock, &oldIrql);
-
-            DBG_CHECKLIST_LOCKED(pDispContext, NULL);
-
-            *ppCmd = pDispContext->pFirstCmd;
-            pDispContext->pFirstCmd = NULL;
-            pDispContext->pLastCmd = NULL;
-#ifdef DEBUG
-            pDispContext->cCmds = 0;
-#endif
-            VBoxVideoCmnSpinLockRelease(PrimaryExtension, &pDispContext->pSynchLock, oldIrql);
-
-            DBG_CHECKLIST(PrimaryExtension, pDispContext, NULL);
+            VBVAHOSTCMD *pCmd;
+            do
+                pCmd = ASMAtomicReadPtrT(&pDispContext->pCmd, VBVAHOSTCMD *);
+            while (!ASMAtomicCmpXchgPtr(&pDispContext->pCmd, NULL, pCmd));
+            *ppCmd = vboxVBVAReverseList(pCmd);
 
             return VINF_SUCCESS;
         }
@@ -1376,7 +287,7 @@ DECLCALLBACK(int) hgsmiHostCmdRequest (HVBOXVIDEOHGSMI hHGSMI, uint8_t u8Channel
 
     return VERR_INVALID_PARAMETER;
 }
-#endif
+
 
 static DECLCALLBACK(int) vboxVBVAChannelGenericHandler(void *pvHandler, uint16_t u16ChannelInfo, void *pvBuffer, HGSMISIZE cbBuffer)
 {
@@ -1404,20 +315,27 @@ static DECLCALLBACK(int) vboxVBVAChannelGenericHandler(void *pvHandler, uint16_t
                     {
                         case VBVAHG_DISPLAY_CUSTOM:
                         {
+#if 0  /* Never taken */
                             if(pLast)
                             {
                                 pLast->u.pNext = pCur;
                                 pLast = pCur;
                             }
                             else
+#endif
                             {
                                 pFirst = pCur;
                                 pLast = pCur;
                             }
                             Assert(!pCur->u.Data);
+#if 0  /* Who is supposed to set pNext? */
                             //TODO: use offset here
                             pCur = pCur->u.pNext;
                             Assert(!pCur);
+#else
+                            Assert(!pCur->u.pNext);
+                            pCur = NULL;
+#endif
                             Assert(pFirst);
                             Assert(pFirst == pLast);
                             break;
@@ -1425,37 +343,34 @@ static DECLCALLBACK(int) vboxVBVAChannelGenericHandler(void *pvHandler, uint16_t
                         case VBVAHG_EVENT:
                         {
                             VBVAHOSTCMDEVENT *pEventCmd = VBVAHOSTCMD_BODY(pCur, VBVAHOSTCMDEVENT);
-#ifndef VBOXWDDM
-                            PEVENT pEvent = (PEVENT)pEventCmd->pEvent;
-                            pCallbacks->PrimaryExtension->u.primary.VideoPortProcs.pfnSetEvent(
-                                    pCallbacks->PrimaryExtension,
-                                    pEvent);
-#else
-                            PKEVENT pEvent = (PKEVENT)pEventCmd->pEvent;
-                            KeSetEvent(pEvent, 0, FALSE);
-#endif
+                            VBoxVideoCmnSignalEvent(pCallbacks->pCommon, pEventCmd->pEvent);
                         }
                         default:
                         {
-                            DBG_CHECKLIST(pCallbacks->PrimaryExtension, pHandler, pCur);
                             Assert(u16ChannelInfo==VBVAHG_EVENT);
                             Assert(!pCur->u.Data);
+#if 0  /* pLast has been asserted to be NULL, and who should set pNext? */
                             //TODO: use offset here
                             if(pLast)
                                 pLast->u.pNext = pCur->u.pNext;
                             VBVAHOSTCMD * pNext = pCur->u.pNext;
                             pCur->u.pNext = NULL;
-                            HGSMIHostCmdComplete(pCallbacks->PrimaryExtension, pCur);
+#else
+                            Assert(!pCur->u.pNext);
+#endif
+                            VBoxHGSMIHostCmdComplete(&pCallbacks->pCommon->hostCtx, pCur);
+#if 0  /* pNext is NULL, and the other things have already been asserted */
                             pCur = pNext;
                             Assert(!pCur);
                             Assert(!pFirst);
                             Assert(pFirst == pLast);
+#else
+                            pCur = NULL;
+#endif
                             break;
                         }
                     }
                 }
-
-                DBG_CHECKLIST(pCallbacks->PrimaryExtension, pHandler, pFirst);
 
                 /* we do not support lists currently */
                 Assert(pFirst == pLast);
@@ -1467,32 +382,13 @@ static DECLCALLBACK(int) vboxVBVAChannelGenericHandler(void *pvHandler, uint16_t
                 if(pFirst)
                 {
                     Assert(pLast);
-                    UCHAR oldIrql;
-                    VBoxVideoCmnSpinLockAcquire(pCallbacks->PrimaryExtension,
-                                                &pHandler->pSynchLock,
-                                                &oldIrql);
-
-                    DBG_CHECKLIST_LOCKED(pHandler, pFirst);
-
-                    if(pHandler->pLastCmd)
+                    VBVAHOSTCMD *pCmd;
+                    do
                     {
-                        pHandler->pLastCmd->u.pNext = pFirst;
-                        Assert(pHandler->pFirstCmd);
+                        pCmd = ASMAtomicReadPtrT(&pHandler->pCmd, VBVAHOSTCMD *);
+                        pFirst->u.pNext = pCmd;
                     }
-                    else
-                    {
-                        Assert(!pHandler->pFirstCmd);
-                        pHandler->pFirstCmd = pFirst;
-                    }
-                    pHandler->pLastCmd = pLast;
-#ifdef DEBUG
-                    pHandler->cCmds++;
-#endif
-                    DBG_CHECKLIST_LOCKED(pHandler, NULL);
-
-                    VBoxVideoCmnSpinLockRelease(pCallbacks->PrimaryExtension,
-                                                &pHandler->pSynchLock,
-                                                oldIrql);
+                    while (!ASMAtomicCmpXchgPtr(&pHandler->pCmd, pFirst, pCmd));
                 }
                 else
                 {
@@ -1514,21 +410,21 @@ static DECLCALLBACK(int) vboxVBVAChannelGenericHandler(void *pvHandler, uint16_t
         }
     }
     /* no handlers were found, need to complete the command here */
-    HGSMIHostCmdComplete(pCallbacks->PrimaryExtension, pvBuffer);
+    VBoxHGSMIHostCmdComplete(&pCallbacks->pCommon->hostCtx, pvBuffer);
     return VINF_SUCCESS;
 }
 
 static HGSMICHANNELHANDLER g_OldHandler;
 
-int vboxVBVAChannelDisplayEnable(PDEVICE_EXTENSION PrimaryExtension,
+int vboxVBVAChannelDisplayEnable(PVBOXVIDEO_COMMON pCommon,
         int iDisplay, /* negative would mean this is a miniport handler */
         uint8_t u8Channel)
 {
     VBVA_CHANNELCONTEXTS * pContexts;
-    HGSMICHANNEL * pChannel = HGSMIChannelFindById (&PrimaryExtension->u.primary.channels, u8Channel);
+    HGSMICHANNEL * pChannel = HGSMIChannelFindById (&pCommon->hostCtx.channels, u8Channel);
     if(!pChannel)
     {
-        int rc = vboxVBVACreateChannelContexts(PrimaryExtension, &pContexts);
+        int rc = vboxVBVACreateChannelContexts(pCommon, &pContexts);
         if(RT_FAILURE(rc))
         {
             return rc;
@@ -1546,23 +442,16 @@ int vboxVBVAChannelDisplayEnable(PDEVICE_EXTENSION PrimaryExtension,
 #ifdef DEBUGVHWASTRICT
         Assert(!pDispContext->bValid);
 #endif
-        Assert(!pDispContext->pFirstCmd);
-        Assert(!pDispContext->pLastCmd);
+        Assert(!pDispContext->pCmd);
         if(!pDispContext->bValid)
         {
             pDispContext->bValid = true;
-            pDispContext->pFirstCmd = NULL;
-            pDispContext->pLastCmd= NULL;
-#ifdef DEBUG
-            pDispContext->cCmds = 0;
-#endif
-
-            VBoxVideoCmnSpinLockCreate(PrimaryExtension, &pDispContext->pSynchLock);
+            pDispContext->pCmd = NULL;
 
             int rc = VINF_SUCCESS;
             if(!pChannel)
             {
-                rc = HGSMIChannelRegister (&PrimaryExtension->u.primary.channels,
+                rc = HGSMIChannelRegister (&pCommon->hostCtx.channels,
                                            u8Channel,
                                            "VGA Miniport HGSMI channel",
                                            vboxVBVAChannelGenericHandler,
@@ -1580,11 +469,12 @@ int vboxVBVAChannelDisplayEnable(PDEVICE_EXTENSION PrimaryExtension,
 
     if(!pChannel)
     {
-        vboxVBVADeleteChannelContexts(PrimaryExtension, pContexts);
+        vboxVBVADeleteChannelContexts(pCommon, pContexts);
     }
 
     return VERR_GENERAL_FAILURE;
 }
+#endif /* !VBOX_WITH_WDDM */
 
 /** @todo Mouse pointer position to be read from VMMDev memory, address of the memory region
  * can be queried from VMMDev via an IOCTL. This VMMDev memory region will contain

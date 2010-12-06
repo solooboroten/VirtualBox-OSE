@@ -205,6 +205,7 @@ class PlatformMSCOM:
             import win32api
             from win32con import DUPLICATE_SAME_ACCESS
             from win32api import GetCurrentThread,GetCurrentThreadId,DuplicateHandle,GetCurrentProcess
+            import threading
             pid = GetCurrentProcess()
             self.tid = GetCurrentThreadId()
             handle = DuplicateHandle(pid, GetCurrentThread(), pid, 0, 0, DUPLICATE_SAME_ACCESS)
@@ -216,7 +217,8 @@ class PlatformMSCOM:
             DispatchBaseClass.__dict__['__setattr__'] = CustomSetAttr
             win32com.client.gencache.EnsureDispatch('VirtualBox.Session')
             win32com.client.gencache.EnsureDispatch('VirtualBox.VirtualBox')
-            win32com.client.gencache.EnsureDispatch('VirtualBox.CallbackWrapper')
+            self.oIntCv = threading.Condition()
+            self.fInterrupted = False;
 
     def getSessionObject(self, vbox):
         import win32com
@@ -245,7 +247,7 @@ class PlatformMSCOM:
         import pythoncom
         pythoncom.CoUninitialize()
 
-    def createCallback(self, iface, impl, arg):
+    def createListener(self, impl, arg):
         d = {}
         d['BaseClass'] = impl
         d['arg'] = arg
@@ -254,50 +256,77 @@ class PlatformMSCOM:
         str += "import win32com.server.util\n"
         str += "import pythoncom\n"
 
-        str += "class "+iface+"Impl(BaseClass):\n"
-        str += "   _com_interfaces_ = ['"+iface+"']\n"
+        str += "class ListenerImpl(BaseClass):\n"
+        str += "   _com_interfaces_ = ['IEventListener']\n"
         str += "   _typelib_guid_ = tlb_guid\n"
         str += "   _typelib_version_ = 1, 0\n"
         str += "   _reg_clsctx_ = pythoncom.CLSCTX_INPROC_SERVER\n"
         # Maybe we'd better implement Dynamic invoke policy, to be more flexible here
         str += "   _reg_policy_spec_ = 'win32com.server.policy.EventHandlerPolicy'\n"
 
-        # generate capitalized version of callback methods -
-        # that's how Python COM looks them up
-        for m in dir(impl):
-           if m.startswith("on"):
-             str += "   "+ComifyName(m)+"=BaseClass."+m+"\n"
-
+        # capitalized version of listener method
+        str += "   HandleEvent=BaseClass.handleEvent\n"
         str += "   def __init__(self): BaseClass.__init__(self, arg)\n"
-        str += "result = win32com.client.Dispatch('VirtualBox.CallbackWrapper')\n"
-        str += "result.SetLocalObject(win32com.server.util.wrap("+iface+"Impl()))\n"
+        str += "result = win32com.server.util.wrap(ListenerImpl())\n"
         exec (str,d,d)
         return d['result']
 
     def waitForEvents(self, timeout):
         from win32api import GetCurrentThreadId
+        from win32event import INFINITE
         from win32event import MsgWaitForMultipleObjects, \
                                QS_ALLINPUT, WAIT_TIMEOUT, WAIT_OBJECT_0
         from pythoncom import PumpWaitingMessages
+        import types
 
+        if not isinstance(timeout, types.IntType):
+            raise TypeError("The timeout argument is not an integer")
         if (self.tid != GetCurrentThreadId()):
             raise Exception("wait for events from the same thread you inited!")
 
-        rc = MsgWaitForMultipleObjects(self.handles, 0, timeout, QS_ALLINPUT)
+        if timeout < 0:     cMsTimeout = INFINITE
+        else:               cMsTimeout = timeout
+        rc = MsgWaitForMultipleObjects(self.handles, 0, cMsTimeout, QS_ALLINPUT)
         if rc >= WAIT_OBJECT_0 and rc < WAIT_OBJECT_0+len(self.handles):
             # is it possible?
-            pass
+            rc = 2;
         elif rc==WAIT_OBJECT_0 + len(self.handles):
             # Waiting messages
             PumpWaitingMessages()
+            rc = 0;
         else:
             # Timeout
-            pass
+            rc = 1;
+
+        # check for interruption
+        self.oIntCv.acquire()
+        if self.fInterrupted:
+            self.fInterrupted = False
+            rc = 1;
+        self.oIntCv.release()
+
+        return rc;
 
     def interruptWaitEvents(self):
+        """
+        Basically a python implementation of EventQueue::postEvent().
+
+        The magic value must be in sync with the C++ implementation or this
+        won't work.
+
+        Note that because of this method we cannot easily make use of a
+        non-visible Window to handle the message like we would like to do.
+        """
         from win32api import PostThreadMessage
         from win32con import WM_USER
-        PostThreadMessage(self.tid, WM_USER, None, None)
+        self.oIntCv.acquire()
+        self.fInterrupted = True
+        self.oIntCv.release()
+        try:
+            PostThreadMessage(self.tid, WM_USER, None, 0xf241b819)
+        except:
+            return False;
+        return True;
 
     def deinit(self):
         import pythoncom
@@ -310,6 +339,9 @@ class PlatformMSCOM:
         pythoncom.CoUninitialize()
         pass
 
+    def queryInterface(self, obj, klazzName):
+        from win32com.client import CastTo
+        return CastTo(obj, klazzName)
 
 class PlatformXPCOM:
     def __init__(self, params):
@@ -343,37 +375,39 @@ class PlatformXPCOM:
         import xpcom
         xpcom._xpcom.DetachThread()
 
-    def createCallback(self, iface, impl, arg):
+    def createListener(self, impl, arg):
         d = {}
         d['BaseClass'] = impl
         d['arg'] = arg
         str = ""
         str += "import xpcom.components\n"
-        str += "class "+iface+"Impl(BaseClass):\n"
-        str += "   _com_interfaces_ = xpcom.components.interfaces."+iface+"\n"
+        str += "class ListenerImpl(BaseClass):\n"
+        str += "   _com_interfaces_ = xpcom.components.interfaces.IEventListener\n"
         str += "   def __init__(self): BaseClass.__init__(self, arg)\n"
-        str += "result = xpcom.components.classes['@virtualbox.org/CallbackWrapper;1'].createInstance()\n"
-        str += "result.setLocalObject("+iface+"Impl())\n"
+        str += "result = ListenerImpl()\n"
         exec (str,d,d)
         return d['result']
 
     def waitForEvents(self, timeout):
         import xpcom
-        xpcom._xpcom.WaitForEvents(timeout)
+        return xpcom._xpcom.WaitForEvents(timeout)
 
     def interruptWaitEvents(self):
         import xpcom
-        xpcom._xpcom.InterruptWait()
+        return xpcom._xpcom.InterruptWait()
 
     def deinit(self):
         import xpcom
         xpcom._xpcom.DeinitCOM()
 
+    def queryInterface(self, obj, klazzName):
+        import xpcom.components
+        return obj.queryInterface(getattr(xpcom.components.interfaces, klazzName))
+
 class PlatformWEBSERVICE:
     def __init__(self, params):
         sys.path.append(os.path.join(VboxSdkDir,'bindings', 'webservice', 'python', 'lib'))
-        # not really needed, but just fail early if misconfigured
-        import VirtualBox_services
+        #import VirtualBox_services
         import VirtualBox_wrappers
         from VirtualBox_wrappers import IWebsessionManager2
 
@@ -433,22 +467,32 @@ class PlatformWEBSERVICE:
     def deinitPerThread(self):
         pass
 
-    def createCallback(self, iface, impl, arg):
-        raise Exception("no callbacks for webservices")
+    def createListener(self, impl, arg):
+        raise Exception("no active listeners for webservices")
 
     def waitForEvents(self, timeout):
         # Webservices cannot do that yet
-        pass
+        return 2;
 
     def interruptWaitEvents(self, timeout):
         # Webservices cannot do that yet
-        pass
+        return False;
 
     def deinit(self):
         try:
            disconnect()
         except:
            pass
+
+    def queryInterface(self, obj, klazzName):
+        d = {}
+        d['obj'] = obj
+        str = ""
+        str += "from VirtualBox_wrappers import "+klazzName+"\n"
+        str += "result = "+klazzName+"(obj.mgr,obj.handle)\n"
+        # wrong, need to test if class indeed implements this interface
+        exec (str,d,d)
+        return d['result']
 
 class SessionManager:
     def __init__(self, mgr):
@@ -508,28 +552,48 @@ class VirtualBoxManager:
     def initPerThread(self):
         self.platform.initPerThread()
 
-    def openMachineSession(self, machineId):
+    def openMachineSession(self, mach, permitSharing = True):
          session = self.mgr.getSessionObject(self.vbox)
-         try:
-             self.vbox.openExistingSession(session, machineId)
-         except:
-             self.vbox.openSession(session, machineId)
+         if permitSharing:
+             type = self.constants.LockType_Shared
+         else:
+             type = self.constants.LockType_Write
+         mach.lockMachine(session, type)
          return session
 
     def closeMachineSession(self, session):
         if session is not None:
-            session.close()
+            session.unlockMachine()
 
     def deinitPerThread(self):
         self.platform.deinitPerThread()
 
-    def createCallback(self, iface, impl, arg):
-        return self.platform.createCallback(iface, impl, arg)
+    def createListener(self, impl, arg = None):
+        return self.platform.createListener(impl, arg)
 
     def waitForEvents(self, timeout):
+        """
+        Wait for events to arrive and process them.
+
+        The timeout is in milliseconds.  A negative value means waiting for
+        ever, while 0 does not wait at all.
+
+        Returns 0 if events was processed.
+        Returns 1 if timed out or interrupted in some way.
+        Returns 2 on error (like not supported for web services).
+
+        Raises an exception if the calling thread is not the main thread (the one
+        that initialized VirtualBoxManager) or if the time isn't an integer.
+        """
         return self.platform.waitForEvents(timeout)
 
     def interruptWaitEvents(self):
+        """
+        Interrupt a waitForEvents call.
+        This is normally called from a worker thread.
+
+        Returns True on success, False on failure.
+        """
         return self.platform.interruptWaitEvents()
 
     def getPerfCollector(self, vbox):
@@ -542,3 +606,6 @@ class VirtualBoxManager:
     def getSdkDir(self):
         global VboxSdkDir
         return VboxSdkDir
+
+    def queryInterface(self, obj, klazzName):
+        return self.platform.queryInterface(obj, klazzName)

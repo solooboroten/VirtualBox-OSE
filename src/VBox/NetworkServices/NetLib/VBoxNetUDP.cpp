@@ -1,4 +1,4 @@
-/* $Id: VBoxNetUDP.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxNetUDP.cpp 31272 2010-08-02 09:11:22Z vboxsync $ */
 /** @file
  * VBoxNetUDP - IntNet UDP Client Routines.
  */
@@ -122,7 +122,7 @@ void *VBoxNetUDPMatch(PINTNETBUF pBuf, unsigned uDstPort, PCRTMAC pDstMac, uint3
      * are set correctly (they are usually set to 0).
      */
     if (pGso)
-        PDMNetGsoPrepForDirectUse(pGso, (void *)pvFrame, cbFrame, false /*fPayloadChecksum*/);
+        PDMNetGsoPrepForDirectUse(pGso, (void *)pvFrame, cbFrame, PDMNETCSUMTYPE_NONE);
 
     /*
      * IP validation and matching.

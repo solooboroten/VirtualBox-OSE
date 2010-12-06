@@ -101,9 +101,6 @@ VMMR0DECL(int)          HWACCMR0EnableAllCpus(PVM pVM);
 VMMR0DECL(int)          HWACCMR0EnterSwitcher(PVM pVM, bool *pfVTxDisabled);
 VMMR0DECL(int)          HWACCMR0LeaveSwitcher(PVM pVM, bool fVTxDisabled);
 
-VMMR0DECL(PVMCPU)       HWACCMR0GetVMCPU(PVM pVM);
-VMMR0DECL(VMCPUID)      HWACCMR0GetVMCPUId(PVM pVM);
-
 VMMR0DECL(void)         HWACCMR0SavePendingIOPortWrite(PVMCPU pVCpu, RTGCPTR GCPtrRip, RTGCPTR GCPtrRipNext, unsigned uPort, unsigned uAndVal, unsigned cbSize);
 VMMR0DECL(void)         HWACCMR0SavePendingIOPortRead(PVMCPU pVCpu, RTGCPTR GCPtrRip, RTGCPTR GCPtrRipNext, unsigned uPort, unsigned uAndVal, unsigned cbSize);
 
@@ -118,11 +115,10 @@ VMMR0DECL(void)         HWACCMR0SavePendingIOPortRead(PVMCPU pVCpu, RTGCPTR GCPt
  */
 VMMR3DECL(bool)         HWACCMR3IsEventPending(PVMCPU pVCpu);
 VMMR3DECL(int)          HWACCMR3Init(PVM pVM);
-VMMR3DECL(int)          HWACCMR3InitCPU(PVM pVM);
+VMMR3_INT_DECL(int)     HWACCMR3InitCompleted(PVM pVM, VMINITCOMPLETED enmWhat);
 VMMR3DECL(int)          HWACCMR3InitFinalizeR0(PVM pVM);
 VMMR3DECL(void)         HWACCMR3Relocate(PVM pVM);
 VMMR3DECL(int)          HWACCMR3Term(PVM pVM);
-VMMR3DECL(int)          HWACCMR3TermCPU(PVM pVM);
 VMMR3DECL(void)         HWACCMR3Reset(PVM pVM);
 VMMR3DECL(void)         HWACCMR3ResetCpu(PVMCPU pVCpu);
 VMMR3DECL(void)         HWACCMR3CheckError(PVM pVM, int iStatusCode);
@@ -141,6 +137,7 @@ VMMR3DECL(int)          HWACMMR3EnablePatching(PVM pVM, RTGCPTR pPatchMem, unsig
 VMMR3DECL(int)          HWACMMR3DisablePatching(PVM pVM, RTGCPTR pPatchMem, unsigned cbPatchMem);
 VMMR3DECL(int)          HWACCMR3PatchTprInstr(PVM pVM, PVMCPU pVCpu, PCPUMCTX pCtx);
 VMMR3DECL(bool)         HWACCMR3IsRescheduleRequired(PVM pVM, PCPUMCTX pCtx);
+VMMR3DECL(bool)         HWACCMR3IsVmxPreemptionTimerUsed(PVM pVM);
 
 /** @} */
 #endif /* IN_RING3 */

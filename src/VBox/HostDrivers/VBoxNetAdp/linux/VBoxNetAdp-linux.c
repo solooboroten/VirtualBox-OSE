@@ -1,4 +1,4 @@
-/* $Id: VBoxNetAdp-linux.c 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxNetAdp-linux.c 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * VBoxNetAdp - Virtual Network Adapter Driver (Host), Linux Specific Code.
  */
@@ -60,7 +60,13 @@ static void VBoxNetAdpLinuxUnload(void);
 
 static int VBoxNetAdpLinuxOpen(struct inode *pInode, struct file *pFilp);
 static int VBoxNetAdpLinuxClose(struct inode *pInode, struct file *pFilp);
-static int VBoxNetAdpLinuxIOCtl(struct inode *pInode, struct file *pFilp, unsigned int uCmd, unsigned long ulArg);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
+static int VBoxNetAdpLinuxIOCtl(struct inode *pInode, struct file *pFilp,
+                                unsigned int uCmd, unsigned long ulArg);
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36) */
+static long VBoxNetAdpLinuxIOCtlUnlocked(struct file *pFilp,
+                                         unsigned int uCmd, unsigned long ulArg);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36) */
 
 /*******************************************************************************
 *   Global Variables                                                           *
@@ -83,7 +89,11 @@ static struct file_operations gFileOpsVBoxNetAdp =
     owner:      THIS_MODULE,
     open:       VBoxNetAdpLinuxOpen,
     release:    VBoxNetAdpLinuxClose,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
     ioctl:      VBoxNetAdpLinuxIOCtl,
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36) */
+    unlocked_ioctl: VBoxNetAdpLinuxIOCtlUnlocked,
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36) */
 };
 
 /** The miscdevice structure. */
@@ -176,15 +186,24 @@ int vboxNetAdpOsCreate(PVBOXNETADP pThis, PCRTMAC pMACAddress)
     {
         int err;
 
-        memcpy(pNetDev->dev_addr, pMACAddress, ETH_ALEN);
-        Log2(("vboxNetAdpOsCreate: pNetDev->dev_addr = %.6Rhxd\n", pNetDev->dev_addr));
-        err = register_netdev(pNetDev);
-        if (!err)
+        if (pNetDev->dev_addr)
         {
-            strncpy(pThis->szName, pNetDev->name, VBOXNETADP_MAX_NAME_LEN);
-            pThis->u.s.pNetDev = pNetDev;
-            Log2(("vboxNetAdpOsCreate: pThis=%p pThis->szName = %p\n", pThis, pThis->szName));
-            return VINF_SUCCESS;
+            memcpy(pNetDev->dev_addr, pMACAddress, ETH_ALEN);
+            Log2(("vboxNetAdpOsCreate: pNetDev->dev_addr = %.6Rhxd\n", pNetDev->dev_addr));
+            err = register_netdev(pNetDev);
+            if (!err)
+            {
+                strncpy(pThis->szName, pNetDev->name, sizeof(pThis->szName));
+                pThis->szName[sizeof(pThis->szName) - 1] = '\0';
+                pThis->u.s.pNetDev = pNetDev;
+                Log2(("vboxNetAdpOsCreate: pThis=%p pThis->szName = %p\n", pThis, pThis->szName));
+                return VINF_SUCCESS;
+            }
+        }
+        else
+        {
+            LogRel(("VBoxNetAdp: failed to set MAC address (dev->dev_addr == NULL)\n"));
+            err = EFAULT;
         }
         free_netdev(pNetDev);
         rc = RTErrConvertFromErrno(err);
@@ -246,14 +265,20 @@ static int VBoxNetAdpLinuxClose(struct inode *pInode, struct file *pFilp)
  * @param   uCmd        The function specified to ioctl().
  * @param   ulArg       The argument specified to ioctl().
  */
-static int VBoxNetAdpLinuxIOCtl(struct inode *pInode, struct file *pFilp, unsigned int uCmd, unsigned long ulArg)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
+static int VBoxNetAdpLinuxIOCtl(struct inode *pInode, struct file *pFilp,
+                                unsigned int uCmd, unsigned long ulArg)
+#else /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36) */
+static long VBoxNetAdpLinuxIOCtlUnlocked(struct file *pFilp,
+                                         unsigned int uCmd, unsigned long ulArg)
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 36) */
 {
     VBOXNETADPREQ Req;
     PVBOXNETADP pAdp;
     int rc;
 
     Log(("VBoxNetAdpLinuxIOCtl: param len %#x; uCmd=%#x; add=%#x\n", _IOC_SIZE(uCmd), uCmd, VBOXNETADP_CTL_ADD));
-    if (RT_UNLIKELY(_IOC_SIZE(uCmd) != sizeof(Req))) /* paraonia */
+    if (RT_UNLIKELY(_IOC_SIZE(uCmd) != sizeof(Req))) /* paranoia */
     {
         Log(("VBoxNetAdpLinuxIOCtl: bad ioctl sizeof(Req)=%#x _IOC_SIZE=%#x; uCmd=%#x.\n", sizeof(Req), _IOC_SIZE(uCmd), uCmd));
         return -EINVAL;
@@ -360,7 +385,7 @@ static int __init VBoxNetAdpLinuxInit(void)
             LogRel(("VBoxNetAdp: failed to register vboxnet0 device (rc=%d)\n", rc));
     }
     else
-        LogRel(("VBoxNetFlt: failed to initialize IPRT (rc=%d)\n", rc));
+        LogRel(("VBoxNetAdp: failed to initialize IPRT (rc=%d)\n", rc));
 
     return -RTErrConvertToErrno(rc);
 }
@@ -374,7 +399,7 @@ static int __init VBoxNetAdpLinuxInit(void)
 static void __exit VBoxNetAdpLinuxUnload(void)
 {
     int rc;
-    Log(("VBoxNetFltLinuxUnload\n"));
+    Log(("VBoxNetAdpLinuxUnload\n"));
 
     /*
      * Undo the work done during start (in reverse order).
@@ -390,6 +415,6 @@ static void __exit VBoxNetAdpLinuxUnload(void)
 
     RTR0Term();
 
-    Log(("VBoxNetFltLinuxUnload - done\n"));
+    Log(("VBoxNetAdpLinuxUnload - done\n"));
 }
 

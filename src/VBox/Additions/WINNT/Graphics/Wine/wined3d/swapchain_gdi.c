@@ -22,8 +22,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -79,7 +79,9 @@ static void WINAPI IWineGDISwapChainImpl_Destroy(IWineD3DSwapChain *iface)
         IWineD3DDevice_SetDisplayMode((IWineD3DDevice *)This->device, 0, &mode);
     }
 
+#ifndef VBOX_WITH_WDDM
     HeapFree(GetProcessHeap(), 0, This->context);
+#endif
     HeapFree(GetProcessHeap(), 0, This);
 }
 
@@ -270,5 +272,5 @@ const IWineD3DSwapChainVtbl IWineGDISwapChain_Vtbl =
     IWineD3DBaseSwapChainImpl_GetDisplayMode,
     IWineD3DBaseSwapChainImpl_GetPresentParameters,
     IWineD3DBaseSwapChainImpl_SetGammaRamp,
-    IWineD3DBaseSwapChainImpl_GetGammaRamp
+    IWineD3DBaseSwapChainImpl_GetGammaRamp,
 };

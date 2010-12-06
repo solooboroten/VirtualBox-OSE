@@ -42,11 +42,16 @@ public:
     void setRecommendedName(const QString &strName);
     void setRecommendedSize(qulonglong uSize);
 
-    static QString composeFullFileName(const QString &strFileName);
+    void setDefaultPath(const QString &strPath);
+    QString absoluteFilePath(const QString &strFileName);
 
 protected:
 
     void retranslateUi();
+
+private:
+
+    QString m_strDefaultPath;
 };
 
 class UINewHDWzdPage1 : public QIWizardPage, public Ui::UINewHDWzdPage1
@@ -107,10 +112,6 @@ class UINewHDWzdPage3 : public QIWizardPage, public Ui::UINewHDWzdPage3
 public:
 
     UINewHDWzdPage3();
-
-signals:
-
-    void sigToUpdateSizeEditor(const QString &strNewSize);
 
 protected:
 

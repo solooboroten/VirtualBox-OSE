@@ -23,7 +23,7 @@
 #include <QBasicTimer>
 
 /* Local includes */
-#include "VBoxToolBar.h"
+#include "UIToolBar.h"
 
 /* Global forwards */
 class QLabel;
@@ -33,7 +33,7 @@ class QMenu;
  *  The VBoxMiniToolBar class is a toolbar shown inside full screen mode or seamless mode.
  *  It supports auto hiding and animated sliding up/down.
  */
-class VBoxMiniToolBar : public VBoxToolBar
+class VBoxMiniToolBar : public UIToolBar
 {
     Q_OBJECT;
 
@@ -58,6 +58,7 @@ public:
 
 signals:
 
+    void minimizeAction();
     void exitAction();
     void closeAction();
     void geometryUpdated();
@@ -83,6 +84,7 @@ private:
 
     QAction *m_pAutoHideAction;
     QLabel *m_pDisplayLabel;
+    QAction *m_pMinimizeAction;
     QAction *m_pRestoreAction;
     QAction *m_pCloseAction;
 
@@ -111,7 +113,7 @@ private:
     /* Tool-bar alignment */
     Alignment m_alignment;
 
-    /* Wether to animate showing/hiding the toolbar */
+    /* Whether to animate showing/hiding the toolbar */
     bool m_fAnimated;
 
     /* Interval (in milli seconds) for scrolling the toolbar, default is 20 msec */

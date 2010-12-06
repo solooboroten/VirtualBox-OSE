@@ -211,7 +211,10 @@ static const char *crExtensions =
     "GL_ARB_fragment_shader "
 #endif
 #ifdef CR_EXT_texture_sRGB
-    "CR_EXT_texture_sRGB "
+    "GL_EXT_texture_sRGB "
+#endif
+#ifdef CR_EXT_framebuffer_blit
+    "GL_EXT_framebuffer_blit "
 #endif
 	"";
 

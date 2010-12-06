@@ -1,10 +1,10 @@
-/* $Id: VBoxManageMetrics.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxManageMetrics.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * VBoxManage - The 'metrics' command.
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -44,25 +44,28 @@ using namespace com;
 static char *toBaseMetricNames(const char *metricList)
 {
     char *newList = (char*)RTMemAlloc(strlen(metricList) + 1);
-    int cSlashes = 0;
-    bool fSkip = false;
-    const char *src = metricList;
-    char c, *dst = newList;
-    while ((c = *src++))
-        if (c == ':')
-            fSkip = true;
-        else if (c == '/' && ++cSlashes == 2)
-            fSkip = true;
-        else if (c == ',')
-        {
-            fSkip = false;
-            cSlashes = 0;
-            *dst++ = c;
-        }
-        else
-            if (!fSkip)
+    if (newList)
+    {
+        int cSlashes = 0;
+        bool fSkip = false;
+        const char *src = metricList;
+        char c, *dst = newList;
+        while ((c = *src++))
+            if (c == ':')
+                fSkip = true;
+            else if (c == '/' && ++cSlashes == 2)
+                fSkip = true;
+            else if (c == ',')
+            {
+                fSkip = false;
+                cSlashes = 0;
                 *dst++ = c;
-    *dst = 0;
+            }
+            else
+                if (!fSkip)
+                    *dst++ = c;
+        *dst = 0;
+    }
     return newList;
 }
 
@@ -110,7 +113,8 @@ static int parseFilterParameters(int argc, char *argv[],
         else
         {
             ComPtr <IMachine> machine;
-            rc = aVirtualBox->FindMachine(Bstr(argv[0]), machine.asOutParam());
+            rc = aVirtualBox->FindMachine(Bstr(argv[0]).raw(),
+                                          machine.asOutParam());
             if (SUCCEEDED (rc))
             {
                 retObjects.reset(1);
@@ -175,12 +179,12 @@ static void listAffectedMetrics(ComPtr<IVirtualBox> aVirtualBox,
     }
     else
     {
-        RTPrintf("No metrics match the specified filter!\n");
+        RTMsgError("No metrics match the specified filter!");
     }
 }
 
 /**
- * list                                                               *
+ * list
  */
 static int handleMetricsList(int argc, char *argv[],
                              ComPtr<IVirtualBox> aVirtualBox,
@@ -231,7 +235,7 @@ static int handleMetricsList(int argc, char *argv[],
 }
 
 /**
- * Metics setup
+ * Metrics setup
  */
 static int handleMetricsSetup(int argc, char *argv[],
                               ComPtr<IVirtualBox> aVirtualBox,
@@ -464,8 +468,8 @@ static int handleMetricsCollect(int argc, char *argv[],
 
     if (isDetached)
     {
-        RTPrintf("Warning! The background process holding collected metrics will shutdown\n"
-                 "in few seconds, discarding all collected data and parameters.\n");
+        RTMsgWarning("The background process holding collected metrics will shutdown\n"
+                     "in few seconds, discarding all collected data and parameters.");
         return 0;
     }
 

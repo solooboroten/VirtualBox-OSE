@@ -1,10 +1,10 @@
-/* $Id: VMMGuruMeditation.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VMMGuruMeditation.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * VMM - The Virtual Machine Monitor, Guru Meditation Code.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -55,15 +55,21 @@ typedef struct VMMR3FATALDUMPINFOHLP
     /** The release logger instance. */
     PRTLOGGER   pRelLogger;
     /** The saved release logger flags. */
-    RTUINT      fRelLoggerFlags;
+    uint32_t    fRelLoggerFlags;
     /** The logger instance. */
     PRTLOGGER   pLogger;
     /** The saved logger flags. */
-    RTUINT      fLoggerFlags;
+    uint32_t    fLoggerFlags;
     /** The saved logger destination flags. */
-    RTUINT      fLoggerDestFlags;
+    uint32_t    fLoggerDestFlags;
     /** Whether to output to stderr or not. */
     bool        fStdErr;
+    /** Whether we're still recording the summary or not. */
+    bool        fRecSummary;
+    /** Buffer for the summary. */
+    char        szSummary[4096-2];
+    /** The current summary offset. */
+    size_t      offSummary;
 } VMMR3FATALDUMPINFOHLP, *PVMMR3FATALDUMPINFOHLP;
 /** Pointer to a VMMR3FATALDUMPINFOHLP structure. */
 typedef const VMMR3FATALDUMPINFOHLP *PCVMMR3FATALDUMPINFOHLP;
@@ -94,7 +100,7 @@ static DECLCALLBACK(void) vmmR3FatalDumpInfoHlp_pfnPrintf(PCDBGFINFOHLP pHlp, co
  */
 static DECLCALLBACK(void) vmmR3FatalDumpInfoHlp_pfnPrintfV(PCDBGFINFOHLP pHlp, const char *pszFormat, va_list args)
 {
-    PCVMMR3FATALDUMPINFOHLP pMyHlp = (PCVMMR3FATALDUMPINFOHLP)pHlp;
+    PVMMR3FATALDUMPINFOHLP pMyHlp = (PVMMR3FATALDUMPINFOHLP)pHlp;
 
     if (pMyHlp->pRelLogger)
     {
@@ -116,6 +122,19 @@ static DECLCALLBACK(void) vmmR3FatalDumpInfoHlp_pfnPrintfV(PCDBGFINFOHLP pHlp, c
         va_copy(args2, args);
         RTStrmPrintfV(g_pStdErr, pszFormat, args);
         va_end(args2);
+    }
+    if (pMyHlp->fRecSummary)
+    {
+        size_t cchLeft = sizeof(pMyHlp->szSummary) - pMyHlp->offSummary;
+        if (cchLeft > 1)
+        {
+            va_list args2;
+            va_copy(args2, args);
+            size_t cch = RTStrPrintfV(&pMyHlp->szSummary[pMyHlp->offSummary], cchLeft, pszFormat, args);
+            va_end(args2);
+            Assert(cch <= cchLeft);
+            pMyHlp->offSummary += cch;
+        }
     }
 }
 
@@ -160,12 +179,18 @@ static void vmmR3FatalDumpInfoHlpInit(PVMMR3FATALDUMPINFOHLP pHlp)
     /*
      * Check if we need write to stderr.
      */
-#ifdef DEBUG_sandervl
-    pHlp->fStdErr = false; /* takes too long to display here */
-#else
     pHlp->fStdErr = (!pHlp->pRelLogger || !(pHlp->pRelLogger->fDestFlags & (RTLOGDEST_STDOUT | RTLOGDEST_STDERR)))
                  && (!pHlp->pLogger || !(pHlp->pLogger->fDestFlags & (RTLOGDEST_STDOUT | RTLOGDEST_STDERR)));
+#ifdef DEBUG_sandervl
+    pHlp->fStdErr = false; /* takes too long to display here */
 #endif
+
+    /*
+     * Init the summary recording.
+     */
+    pHlp->fRecSummary  = true;
+    pHlp->offSummary   = 0;
+    pHlp->szSummary[0] = '\0';
 }
 
 
@@ -209,15 +234,7 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
     vmmR3FatalDumpInfoHlpInit(&Hlp);
 
     /* Release owned locks to make sure other VCPUs can continue in case they were waiting for one. */
-#if 1
     PDMR3CritSectLeaveAll(pVM);
-#else
-    MMR3ReleaseOwnedLocks(pVM);
-    PGMR3ReleaseOwnedLocks(pVM);
-    PDMR3ReleaseOwnedLocks(pVM);
-    IOMR3ReleaseOwnedLocks(pVM);
-    EMR3ReleaseOwnedLocks(pVM);
-#endif
 
     /*
      * Header.
@@ -257,7 +274,6 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
                 ||  !*pszMsg2
                 ||  strchr(pszMsg2, '\0')[-1] != '\n')
                 pHlp->pfnPrintf(pHlp, "\n");
-            pHlp->pfnPrintf(pHlp, "!!\n");
             /* fall thru */
         }
         case VERR_TRPM_DONT_PANIC:
@@ -295,71 +311,177 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
                                 u8TrapNo, uErrorCode, uCR2, CPUMGetGuestRIP(pVCpu), enmType);
 
             /*
-             * The hypervisor dump is not relevant when we're in VT-x/AMD-V mode.
+             * Dump the relevant hypervisor registers and stack.
              */
             if (HWACCMIsEnabled(pVM))
             {
-                pHlp->pfnPrintf(pHlp, "\n");
-#if defined(RT_OS_WINDOWS) && HC_ARCH_BITS == 32
-                /* Callstack. */
-                PCDBGFSTACKFRAME pFirstFrame;
-                DBGFADDRESS eip, ebp, esp;
-
-                eip.fFlags   = DBGFADDRESS_FLAGS_RING0 | DBGFADDRESS_FLAGS_VALID;
-#if HC_ARCH_BITS == 64
-                eip.FlatPtr = eip.off = pVCpu->vmm.s.CallRing3JmpBufR0.rip;
-#else
-                eip.FlatPtr = eip.off = pVCpu->vmm.s.CallRing3JmpBufR0.eip;
-#endif
-                eip.Sel      = DBGF_SEL_FLAT;
-                ebp.fFlags   = DBGFADDRESS_FLAGS_RING0 | DBGFADDRESS_FLAGS_VALID;
-                ebp.FlatPtr  = ebp.off = pVCpu->vmm.s.CallRing3JmpBufR0.SavedEbp;
-                ebp.Sel      = DBGF_SEL_FLAT;
-                esp.fFlags   = DBGFADDRESS_FLAGS_RING0 | DBGFADDRESS_FLAGS_VALID;
-                esp.Sel      = DBGF_SEL_FLAT;
-                esp.FlatPtr  = esp.off = pVCpu->vmm.s.CallRing3JmpBufR0.SavedEsp;
-
-                rc2 = DBGFR3StackWalkBeginEx(pVM, pVCpu->idCpu, DBGFCODETYPE_RING0, &ebp, &esp, &eip,
-                                             DBGFRETURNTYPE_INVALID, &pFirstFrame);
-                if (RT_SUCCESS(rc2))
+                if (   rcErr == VERR_VMM_RING0_ASSERTION /* fInRing3Call has already been cleared here. */
+                    || pVCpu->vmm.s.CallRing3JmpBufR0.fInRing3Call)
                 {
+                    /* Dump the jmpbuf.  */
                     pHlp->pfnPrintf(pHlp,
                                     "!!\n"
-                                    "!! Call Stack:\n"
-                                    "!!\n"
-                                    "EBP      Ret EBP  Ret CS:EIP    Arg0     Arg1     Arg2     Arg3     CS:EIP        Symbol [line]\n");
-                    for (PCDBGFSTACKFRAME pFrame = pFirstFrame;
-                         pFrame;
-                         pFrame = DBGFR3StackWalkNext(pFrame))
+                                    "!! CallRing3JmpBuf:\n"
+                                    "!!\n");
+                    pHlp->pfnPrintf(pHlp,
+                                    "SavedEsp=%RHv SavedEbp=%RHv SpResume=%RHv SpCheck=%RHv\n",
+                                    pVCpu->vmm.s.CallRing3JmpBufR0.SavedEsp,
+                                    pVCpu->vmm.s.CallRing3JmpBufR0.SavedEbp,
+                                    pVCpu->vmm.s.CallRing3JmpBufR0.SpResume,
+                                    pVCpu->vmm.s.CallRing3JmpBufR0.SpCheck);
+                    pHlp->pfnPrintf(pHlp,
+                                    "pvSavedStack=%RHv cbSavedStack=%#x  fInRing3Call=%RTbool\n",
+                                    pVCpu->vmm.s.CallRing3JmpBufR0.pvSavedStack,
+                                    pVCpu->vmm.s.CallRing3JmpBufR0.cbSavedStack,
+                                    pVCpu->vmm.s.CallRing3JmpBufR0.fInRing3Call);
+                    pHlp->pfnPrintf(pHlp,
+                                    "cbUsedMax=%#x cbUsedAvg=%#x cbUsedTotal=%#llx cUsedTotal=%#llx\n",
+                                    pVCpu->vmm.s.CallRing3JmpBufR0.cbUsedMax,
+                                    pVCpu->vmm.s.CallRing3JmpBufR0.cbUsedAvg,
+                                    pVCpu->vmm.s.CallRing3JmpBufR0.cbUsedTotal,
+                                    pVCpu->vmm.s.CallRing3JmpBufR0.cUsedTotal);
+
+                    /* Dump the resume register frame on the stack. */
+                    PRTHCUINTPTR pBP;
+#ifdef VMM_R0_SWITCH_STACK
+                    pBP = (PRTHCUINTPTR)&pVCpu->vmm.s.pbEMTStackR3[  pVCpu->vmm.s.CallRing3JmpBufR0.SavedEbp
+                                                                   - MMHyperCCToR0(pVM, pVCpu->vmm.s.pbEMTStackR3)];
+#else
+                    pBP = (PRTHCUINTPTR)&pVCpu->vmm.s.pbEMTStackR3[  pVCpu->vmm.s.CallRing3JmpBufR0.cbSavedStack
+                                                                   - pVCpu->vmm.s.CallRing3JmpBufR0.SpCheck
+                                                                   + pVCpu->vmm.s.CallRing3JmpBufR0.SavedEbp];
+#endif
+#if HC_ARCH_BITS == 32
+                    pHlp->pfnPrintf(pHlp,
+                                    "eax=volatile ebx=%08x ecx=volatile edx=volatile esi=%08x edi=%08x\n"
+                                    "eip=%08x esp=%08x ebp=%08x efl=%08x\n"
+                                    ,
+                                    pBP[-3], pBP[-2], pBP[-1],
+                                    pBP[1], pVCpu->vmm.s.CallRing3JmpBufR0.SavedEbp - 8, pBP[0], pBP[-4]);
+#else
+# ifdef RT_OS_WINDOWS
+                    pHlp->pfnPrintf(pHlp,
+                                    "rax=volatile         rbx=%016RX64 rcx=volatile         rdx=volatile\n"
+                                    "rsi=%016RX64 rdi=%016RX64  r8=volatile          r9=volatile        \n"
+                                    "r10=volatile         r11=volatile         r12=%016RX64 r13=%016RX64\n"
+                                    "r14=%016RX64 r15=%016RX64\n"
+                                    "rip=%016RX64 rsp=%016RX64 rbp=%016RX64 rfl=%08RX64\n"
+                                    ,
+                                    pBP[-7],
+                                    pBP[-6], pBP[-5],
+                                    pBP[-4], pBP[-3],
+                                    pBP[-2], pBP[-1],
+                                    pBP[1], pVCpu->vmm.s.CallRing3JmpBufR0.SavedEbp - 16, pBP[0], pBP[-8]);
+# else
+                    pHlp->pfnPrintf(pHlp,
+                                    "rax=volatile         rbx=%016RX64 rcx=volatile         rdx=volatile\n"
+                                    "rsi=volatile         rdi=volatile          r8=volatile          r9=volatile        \n"
+                                    "r10=volatile         r11=volatile         r12=%016RX64 r13=%016RX64\n"
+                                    "r14=%016RX64 r15=%016RX64\n"
+                                    "rip=%016RX64 rsp=%016RX64 rbp=%016RX64 rflags=%08RX64\n"
+                                    ,
+                                    pBP[-5],
+                                    pBP[-4], pBP[-3],
+                                    pBP[-2], pBP[-1],
+                                    pBP[1], pVCpu->vmm.s.CallRing3JmpBufR0.SavedEbp - 16, pBP[0], pBP[-6]);
+# endif
+#endif
+
+                    /* Callstack. */
+                    DBGFADDRESS pc;
+                    pc.fFlags    = DBGFADDRESS_FLAGS_RING0 | DBGFADDRESS_FLAGS_VALID;
+#if HC_ARCH_BITS == 64
+                    pc.FlatPtr   = pc.off = pVCpu->vmm.s.CallRing3JmpBufR0.rip;
+#else
+                    pc.FlatPtr   = pc.off = pVCpu->vmm.s.CallRing3JmpBufR0.eip;
+#endif
+                    pc.Sel       = DBGF_SEL_FLAT;
+
+                    DBGFADDRESS ebp;
+                    ebp.fFlags   = DBGFADDRESS_FLAGS_RING0 | DBGFADDRESS_FLAGS_VALID;
+                    ebp.FlatPtr  = ebp.off = pVCpu->vmm.s.CallRing3JmpBufR0.SavedEbp;
+                    ebp.Sel      = DBGF_SEL_FLAT;
+
+                    DBGFADDRESS esp;
+                    esp.fFlags   = DBGFADDRESS_FLAGS_RING0 | DBGFADDRESS_FLAGS_VALID;
+                    esp.Sel      = DBGF_SEL_FLAT;
+                    esp.FlatPtr  = esp.off = pVCpu->vmm.s.CallRing3JmpBufR0.SavedEsp;
+
+                    PCDBGFSTACKFRAME pFirstFrame;
+                    rc2 = DBGFR3StackWalkBeginEx(pVM, pVCpu->idCpu, DBGFCODETYPE_RING0, &ebp, &esp, &pc,
+                                                 DBGFRETURNTYPE_INVALID, &pFirstFrame);
+                    if (RT_SUCCESS(rc2))
                     {
                         pHlp->pfnPrintf(pHlp,
-                                        "%08RX32 %08RX32 %04RX32:%08RX32 %08RX32 %08RX32 %08RX32 %08RX32",
-                                        (uint32_t)pFrame->AddrFrame.off,
-                                        (uint32_t)pFrame->AddrReturnFrame.off,
-                                        (uint32_t)pFrame->AddrReturnPC.Sel,
-                                        (uint32_t)pFrame->AddrReturnPC.off,
-                                        pFrame->Args.au32[0],
-                                        pFrame->Args.au32[1],
-                                        pFrame->Args.au32[2],
-                                        pFrame->Args.au32[3]);
-                        pHlp->pfnPrintf(pHlp, " %RTsel:%08RGv", pFrame->AddrPC.Sel, pFrame->AddrPC.off);
-                        if (pFrame->pSymPC)
+                                        "!!\n"
+                                        "!! Call Stack:\n"
+                                        "!!\n");
+#if HC_ARCH_BITS == 32
+                        pHlp->pfnPrintf(pHlp, "EBP      Ret EBP  Ret CS:EIP    Arg0     Arg1     Arg2     Arg3     CS:EIP        Symbol [line]\n");
+#else
+                        pHlp->pfnPrintf(pHlp, "RBP              Ret RBP          Ret RIP          RIP              Symbol [line]\n");
+#endif
+                        for (PCDBGFSTACKFRAME pFrame = pFirstFrame;
+                             pFrame;
+                             pFrame = DBGFR3StackWalkNext(pFrame))
                         {
-                            RTGCINTPTR offDisp = pFrame->AddrPC.FlatPtr - pFrame->pSymPC->Value;
-                            if (offDisp > 0)
-                                pHlp->pfnPrintf(pHlp, " %s+%llx", pFrame->pSymPC->szName, (int64_t)offDisp);
-                            else if (offDisp < 0)
-                                pHlp->pfnPrintf(pHlp, " %s-%llx", pFrame->pSymPC->szName, -(int64_t)offDisp);
-                            else
-                                pHlp->pfnPrintf(pHlp, " %s", pFrame->pSymPC->szName);
+#if HC_ARCH_BITS == 32
+                            pHlp->pfnPrintf(pHlp,
+                                            "%RHv %RHv %04RX32:%RHv %RHv %RHv %RHv %RHv",
+                                            (RTHCUINTPTR)pFrame->AddrFrame.off,
+                                            (RTHCUINTPTR)pFrame->AddrReturnFrame.off,
+                                            (RTHCUINTPTR)pFrame->AddrReturnPC.Sel,
+                                            (RTHCUINTPTR)pFrame->AddrReturnPC.off,
+                                            pFrame->Args.au32[0],
+                                            pFrame->Args.au32[1],
+                                            pFrame->Args.au32[2],
+                                            pFrame->Args.au32[3]);
+                            pHlp->pfnPrintf(pHlp, " %RTsel:%08RHv", pFrame->AddrPC.Sel, pFrame->AddrPC.off);
+#else
+                            pHlp->pfnPrintf(pHlp,
+                                            "%RHv %RHv %RHv %RHv",
+                                            (RTHCUINTPTR)pFrame->AddrFrame.off,
+                                            (RTHCUINTPTR)pFrame->AddrReturnFrame.off,
+                                            (RTHCUINTPTR)pFrame->AddrReturnPC.off,
+                                            (RTHCUINTPTR)pFrame->AddrPC.off);
+#endif
+                            if (pFrame->pSymPC)
+                            {
+                                RTGCINTPTR offDisp = pFrame->AddrPC.FlatPtr - pFrame->pSymPC->Value;
+                                if (offDisp > 0)
+                                    pHlp->pfnPrintf(pHlp, " %s+%llx", pFrame->pSymPC->szName, (int64_t)offDisp);
+                                else if (offDisp < 0)
+                                    pHlp->pfnPrintf(pHlp, " %s-%llx", pFrame->pSymPC->szName, -(int64_t)offDisp);
+                                else
+                                    pHlp->pfnPrintf(pHlp, " %s", pFrame->pSymPC->szName);
+                            }
+                            if (pFrame->pLinePC)
+                                pHlp->pfnPrintf(pHlp, " [%s @ 0i%d]", pFrame->pLinePC->szFilename, pFrame->pLinePC->uLineNo);
+                            pHlp->pfnPrintf(pHlp, "\n");
                         }
-                        if (pFrame->pLinePC)
-                            pHlp->pfnPrintf(pHlp, " [%s @ 0i%d]", pFrame->pLinePC->szFilename, pFrame->pLinePC->uLineNo);
-                        pHlp->pfnPrintf(pHlp, "\n");
+                        DBGFR3StackWalkEnd(pFirstFrame);
                     }
-                    DBGFR3StackWalkEnd(pFirstFrame);
+
+                    /* raw stack */
+                    Hlp.fRecSummary = false;
+                    pHlp->pfnPrintf(pHlp,
+                                    "!!\n"
+                                    "!! Raw stack (mind the direction). \n"
+                                    "!! pbEMTStackR0=%RHv pbEMTStackBottomR0=%RHv VMM_STACK_SIZE=%#x\n"
+                                    "!! pbEmtStackR3=%p\n"
+                                    "!!\n"
+                                    "%.*Rhxd\n",
+                                    MMHyperCCToR0(pVM, pVCpu->vmm.s.pbEMTStackR3),
+                                    MMHyperCCToR0(pVM, pVCpu->vmm.s.pbEMTStackR3) + VMM_STACK_SIZE,
+                                    VMM_STACK_SIZE,
+                                    pVCpu->vmm.s.pbEMTStackR3,
+                                    VMM_STACK_SIZE, pVCpu->vmm.s.pbEMTStackR3);
                 }
-#endif /* defined(RT_OS_WINDOWS) && HC_ARCH_BITS == 32 */
+                else
+                {
+                    pHlp->pfnPrintf(pHlp,
+                                    "!! Skipping ring-0 registers and stack, rcErr=%Rrc\n", rcErr);
+                }
             }
             else
             {
@@ -398,7 +520,8 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
 
                 /* Disassemble the instruction. */
                 char szInstr[256];
-                rc2 = DBGFR3DisasInstrEx(pVM, pVCpu->idCpu, 0, 0, DBGF_DISAS_FLAGS_CURRENT_HYPER, &szInstr[0], sizeof(szInstr), NULL);
+                rc2 = DBGFR3DisasInstrEx(pVM, pVCpu->idCpu, 0, 0, DBGF_DISAS_FLAGS_CURRENT_HYPER | DBGF_DISAS_FLAGS_DEFAULT_MODE,
+                                         &szInstr[0], sizeof(szInstr), NULL);
                 if (RT_SUCCESS(rc2))
                     pHlp->pfnPrintf(pHlp,
                                     "!! %s\n", szInstr);
@@ -454,6 +577,7 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
                 }
 
                 /* raw stack */
+                Hlp.fRecSummary = false;
                 pHlp->pfnPrintf(pHlp,
                                 "!!\n"
                                 "!! Raw stack (mind the direction). pbEMTStackRC=%RRv pbEMTStackBottomRC=%RRv\n"
@@ -471,6 +595,7 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
         }
 
     } /* switch (rcErr) */
+    Hlp.fRecSummary = false;
 
 
     /*
@@ -490,17 +615,9 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
         { "cpumhost",       "verbose" },
         { "mode",           "all" },
         { "cpuid",          "verbose" },
-        { "gdt",            NULL },
-        { "ldt",            NULL },
-        //{ "tss",            NULL },
-        { "ioport",         NULL },
-        { "mmio",           NULL },
-        { "phys",           NULL },
-        //{ "pgmpd",          NULL }, - doesn't always work at init time...
+        { "handlers",       "phys virt hyper stats" },
         { "timers",         NULL },
         { "activetimers",   NULL },
-        { "handlers",       "phys virt hyper stats" },
-        { "cfgm",           NULL },
     };
     for (unsigned i = 0; i < RT_ELEMENTS(aInfo); i++)
     {
@@ -514,20 +631,34 @@ VMMR3DECL(void) VMMR3FatalDump(PVM pVM, PVMCPU pVCpu, int rcErr)
         DBGFR3Info(pVM, aInfo[i].pszInfo, aInfo[i].pszArgs, pHlp);
     }
 
+    /* All other info items */
+    DBGFR3InfoMulti(pVM,
+                    "*",
+                    "mappings|hma|cpum|cpumguest|cpumguestinstr|cpumhyper|cpumhost|mode|cpuid"
+                    "|pgmpd|pgmcr3|timers|activetimers|handlers|help",
+                    "!!\n"
+                    "!! {%s}\n"
+                    "!!\n",
+                    pHlp);
+
+
     /* done */
     pHlp->pfnPrintf(pHlp,
                     "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
 
 
     /*
+     * Repeat the summary to stderr so we don't have to scroll half a mile up.
+     */
+    if (Hlp.szSummary[0])
+        RTStrmPrintf(g_pStdErr,
+                     "%s"
+                     "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n",
+                     Hlp.szSummary);
+
+    /*
      * Delete the output instance (flushing and restoring of flags).
      */
     vmmR3FatalDumpInfoHlpDelete(&Hlp);
-
-    /*
-     * Reset the ring-0 long jump buffer and stack.
-     */
-    /** @todo reset the R0 for the calling virtual cpu. We'll assert (luckily) in
-     *        PGMPhys.cpp otherwise. */
 }
 

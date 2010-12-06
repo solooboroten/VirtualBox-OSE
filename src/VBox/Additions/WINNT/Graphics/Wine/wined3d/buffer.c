@@ -23,8 +23,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -1472,7 +1472,11 @@ HRESULT buffer_init(struct wined3d_buffer *buffer, IWineD3DDeviceImpl *device,
     buffer->vtbl = &wined3d_buffer_vtbl;
 
     hr = resource_init((IWineD3DResource *)buffer, WINED3DRTYPE_BUFFER,
-            device, size, usage, format_desc, pool, parent, parent_ops);
+            device, size, usage, format_desc, pool, parent, parent_ops
+#ifdef VBOX_WITH_WDDM
+            , NULL, NULL /* <- no need this info here so far */
+#endif
+            );
     if (FAILED(hr))
     {
         WARN("Failed to initialize resource, hr %#x\n", hr);

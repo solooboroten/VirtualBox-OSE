@@ -541,7 +541,7 @@ Return Value:
 
                     if (RT_SUCCESS(rc))
                     {
-                        if (req->mouseFeatures & VMMDEV_MOUSE_HOST_CAN_ABSOLUTE)
+                        if (req->mouseFeatures & VMMDEV_MOUSE_HOST_WANTS_ABSOLUTE)
                         {
                             // make it an absolute move
                             deviceExtension->MouseExtension.CurrentInput.Flags = MOUSE_MOVE_ABSOLUTE;
@@ -607,7 +607,7 @@ Return Value:
 
                     if (RT_SUCCESS(rc))
                     {
-                        if (req->mouseFeatures & VMMDEV_MOUSE_HOST_CAN_ABSOLUTE)
+                        if (req->mouseFeatures & VMMDEV_MOUSE_HOST_WANTS_ABSOLUTE)
                         {
                             // make it an absolute move
                             deviceExtension->MouseExtension.CurrentInput.Flags = MOUSE_MOVE_ABSOLUTE;
@@ -2068,7 +2068,7 @@ Return Value:
     // this mouse provides no data to allow the driver to determine
     // when the first byte of a packet is received -- if the driver
     // doesn't process all interrupts from the start, there is no
-    // way to keep MouseExtension.InputState in synch with hardware
+    // way to keep MouseExtension.InputState in sync with hardware
     // reality.
     //
 

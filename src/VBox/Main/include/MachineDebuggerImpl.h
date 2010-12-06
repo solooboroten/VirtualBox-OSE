@@ -1,4 +1,4 @@
-/* $Id: MachineDebuggerImpl.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: MachineDebuggerImpl.h 31698 2010-08-16 15:00:05Z vboxsync $ */
 
 /** @file
  *
@@ -26,13 +26,11 @@ class Console;
 
 class ATL_NO_VTABLE MachineDebugger :
     public VirtualBoxBase,
-    public VirtualBoxSupportErrorInfoImpl<MachineDebugger, IMachineDebugger>,
-    public VirtualBoxSupportTranslation<MachineDebugger>,
     VBOX_SCRIPTABLE_IMPL(IMachineDebugger)
 {
 public:
 
-    VIRTUALBOXBASE_ADD_ERRORINFO_SUPPORT (MachineDebugger)
+    VIRTUALBOXBASE_ADD_ERRORINFO_SUPPORT (MachineDebugger, IMachineDebugger)
 
     DECLARE_NOT_AGGREGATABLE (MachineDebugger)
 
@@ -72,7 +70,7 @@ public:
     STDMETHOD(COMGETTER(PAEEnabled)) (BOOL *aEnabled);
     STDMETHOD(COMGETTER(VirtualTimeRate)) (ULONG *aPct);
     STDMETHOD(COMSETTER(VirtualTimeRate)) (ULONG aPct);
-    STDMETHOD(COMGETTER(VM)) (ULONG64 *aVm);
+    STDMETHOD(COMGETTER(VM)) (LONG64 *aVm);
     STDMETHOD(InjectNMI)();
 
     // IMachineDebugger methods
@@ -83,9 +81,6 @@ public:
 
     // "public-private methods"
     void flushQueuedSettings();
-
-    // for VirtualBoxSupportErrorInfoImpl
-    static const wchar_t *getComponentName() { return L"MachineDebugger"; }
 
 private:
     // private methods

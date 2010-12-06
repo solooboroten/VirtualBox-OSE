@@ -52,6 +52,9 @@
 #ifndef _VBOXVIDEO_H_
 #define _VBOXVIDEO_H_
 
+#include <VBox/VBoxVideoGuest.h>
+#include <VBox/VBoxVideo.h>
+
 #ifdef DEBUG
 
 #define TRACE_ENTRY() \
@@ -93,6 +96,7 @@ if (!(expr)) \
 
 #define BOOL_STR(a) ((a) ? "TRUE" : "FALSE")
 
+#include <VBox/Hardware/VBoxVideoVBE.h>
 #include <VBox/VMMDev.h>
 
 /* All drivers should typically include these */
@@ -123,22 +127,6 @@ if (!(expr)) \
 
 /* ShadowFB support */
 #include "shadowfb.h"
-
-/* VBox video related defines */
-
-#define VBE_DISPI_IOPORT_INDEX          0x01CE
-#define VBE_DISPI_IOPORT_DATA           0x01CF
-#define VBE_DISPI_INDEX_ID              0x0
-#define VBE_DISPI_INDEX_XRES            0x1
-#define VBE_DISPI_INDEX_YRES            0x2
-#define VBE_DISPI_INDEX_BPP             0x3
-#define VBE_DISPI_INDEX_ENABLE          0x4
-#define VBE_DISPI_INDEX_VIRT_WIDTH      0x6
-#define VBE_DISPI_INDEX_VIRT_HEIGHT     0x7
-#define VBE_DISPI_ID2                   0xB0C2
-#define VBE_DISPI_DISABLED              0x00
-#define VBE_DISPI_ENABLED               0x01
-#define VBE_DISPI_LFB_ENABLED           0x40
 
 /* Dga definitions */
 #include "dgaproc.h"
@@ -182,11 +170,10 @@ extern void GlxSetVisualConfigs(int nconfigs, __GLXvisualConfig *configs,
 
 /*XXX*/
 
-typedef struct _VBOXRec
+typedef struct VBOXRec
 {
-    vbeInfoPtr pVbe;
+    vbeInfoPtr pVbe;  /** @todo do the VBE bits ourselves? */
     EntityInfoPtr pEnt;
-    VbeInfoBlock *vbeInfo;
 #ifdef PCIACCESS
     struct pci_device *pciInfo;
     struct pci_device *vmmDevInfo;
@@ -194,9 +181,11 @@ typedef struct _VBOXRec
     pciVideoPtr pciInfo;
     PCITAG pciTag;
 #endif
-    CARD16 maxBytesPerScanline;
-    unsigned long mapPhys, mapOff, mapSize;	/* video memory */
-    void *base, *VGAbase;
+    void *base;
+    /** The amount of VRAM available for use as a framebuffer */
+    unsigned long cbFramebuffer;
+    /** The current line size in bytes */
+    uint32_t cbLine;
     CARD8 *state, *pstate;	/* SVGA state */
     int statePage, stateSize, stateMode;
     CARD32 *savedPal;
@@ -208,15 +197,8 @@ typedef struct _VBOXRec
     /** Is access to the framebuffer currently allowed? */
     Bool accessEnabled;
     OptionInfoPtr Options;
-    IOADDRESS ioBase;
-    /** The width of the last resolution set, used to avoid resetting modes */
-    int cLastWidth;
-    /** The height of the last resolution set */
-    int cLastHeight;
-    VMMDevReqMousePointer *reqp;
+    /** @todo we never actually free this */
     xf86CursorInfoPtr pCurs;
-    size_t pointerHeaderSize;
-    size_t pointerSize;
     Bool useDevice;
     Bool forceSWCursor;
     /** Do we know that the guest can handle absolute co-ordinates? */
@@ -224,10 +206,25 @@ typedef struct _VBOXRec
     /** Are we currently switched to a virtual terminal?  If so, it is not
      * safe to touch the hardware. */
     Bool vtSwitch;
-    Bool useVbva;
-    int viewportX, viewportY;
-    VMMDevMemory *pVMMDevMemory;
-    VBVAMEMORY *pVbvaMemory;
+    /** Does this host support sending graphics commands using HGSMI? */
+    Bool fHaveHGSMI;
+    /** Number of screens attached */
+    uint32_t cScreens;
+    /** Position information for each virtual screen for the purposes of
+     * sending dirty rectangle information to the right one. */
+    RTRECT2 aScreenLocation[VBOX_VIDEO_MAX_SCREENS];
+#ifdef VBOXVIDEO_13
+    /** The virtual crtcs */
+    struct _xf86Crtc *paCrtcs[VBOX_VIDEO_MAX_SCREENS];
+    struct _xf86Output *paOutputs[VBOX_VIDEO_MAX_SCREENS];
+#endif
+    /** Offsets of VBVA buffers in video RAM */
+    uint32_t aoffVBVABuffer[VBOX_VIDEO_MAX_SCREENS];
+    /** Context information about the VBVA buffers for each screen */
+    struct VBVABUFFERCONTEXT aVbvaCtx[VBOX_VIDEO_MAX_SCREENS];
+    /** HGSMI guest heap context */
+    HGSMIGUESTCOMMANDCONTEXT guestCtx;
+    Bool fAnyX;   /* Unrestricted horizontal resolution flag. */
 #ifdef VBOX_DRI
     Bool useDRI;
     int cVisualConfigs;
@@ -244,7 +241,7 @@ extern void vbox_close (ScrnInfoPtr pScrn, VBOXPtr pVBox);
 extern Bool vbox_device_available(VBOXPtr pVBox);
 
 extern Bool vboxEnableVbva(ScrnInfoPtr pScrn);
-extern Bool vboxDisableVbva(ScrnInfoPtr pScrn);
+extern void vboxDisableVbva(ScrnInfoPtr pScrn);
 
 extern Bool vboxEnableGraphicsCap(VBOXPtr pVBox);
 extern Bool vboxDisableGraphicsCap(VBOXPtr pVBox);
@@ -267,6 +264,10 @@ extern Bool VBOXDRIScreenInit(int scrnIndex, ScreenPtr pScreen, VBOXPtr pVBox);
 extern Bool VBOXDRIFinishScreenInit(ScreenPtr pScreen);
 extern void VBOXDRIUpdateStride(ScrnInfoPtr pScrn, VBOXPtr pVBox);
 extern void VBOXDRICloseScreen(ScreenPtr pScreen, VBOXPtr pVBox);
+
+/* Xinerama stuff */
+#define VBOXRAMA_MAJOR_VERSION 1
+#define VBOXRAMA_MINOR_VERSION 0
 
 #endif /* _VBOXVIDEO_H_ */
 

@@ -15,20 +15,20 @@
 
 // enable backdoor logging
 //#define LOG_ENABLED
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
 extern "C"
 {
 # include <ntddk.h>
 }
 #else
-# include "VBoxVideo.h"
+# include "VBoxVideo-win.h"
 #endif
 
 #include <VBox/err.h>
 
 #include <VBox/VBoxGuestLib.h>
 
-#ifndef VBOXWDDM
+#ifndef VBOX_WITH_WDDM
 /* the video miniport headers not compatible with the NT DDK headers */
 typedef struct _VIDEO_POINTER_ATTRIBUTES
 {
@@ -43,7 +43,7 @@ typedef struct _VIDEO_POINTER_ATTRIBUTES
 } VIDEO_POINTER_ATTRIBUTES, *PVIDEO_POINTER_ATTRIBUTES;
 #define VIDEO_MODE_COLOR_POINTER  0x04 // 1 if a color hardware pointer is
                                        // supported.
-#endif /* #ifndef VBOXWDDM */
+#endif /* #ifndef VBOX_WITH_WDDM */
 
 #include "Helper.h"
 
@@ -64,9 +64,9 @@ bool g_bVBoxVDbgBreakFv = false;
 #pragma alloc_text(PAGE, vboxQueryHostWantsAbsolute)
 #pragma alloc_text(PAGE, vboxQueryWinVersion)
 
-BOOLEAN vboxQueryDisplayRequest(uint32_t *xres, uint32_t *yres, uint32_t *bpp, uint32_t *pDisplayId)
+bool vboxQueryDisplayRequest(uint32_t *xres, uint32_t *yres, uint32_t *bpp, uint32_t *pDisplayId)
 {
-    BOOLEAN bRC = FALSE;
+    bool bRC = FALSE;
 
     dprintf(("VBoxVideo::vboxQueryDisplayRequest: xres = 0x%p, yres = 0x%p bpp = 0x%p\n", xres, yres, bpp));
 
@@ -110,9 +110,9 @@ BOOLEAN vboxQueryDisplayRequest(uint32_t *xres, uint32_t *yres, uint32_t *bpp, u
     return bRC;
 }
 
-BOOLEAN vboxLikesVideoMode(uint32_t display, uint32_t width, uint32_t height, uint32_t bpp)
+bool vboxLikesVideoMode(uint32_t display, uint32_t width, uint32_t height, uint32_t bpp)
 {
-    BOOLEAN bRC = FALSE;
+    bool bRC = FALSE;
 
     VMMDevVideoModeSupportedRequest2 *req2 = NULL;
 
@@ -138,7 +138,7 @@ BOOLEAN vboxLikesVideoMode(uint32_t display, uint32_t width, uint32_t height, ui
         }
         else
         {
-            /* Retry using old inteface. */
+            /* Retry using old interface. */
             AssertCompile(sizeof(VMMDevVideoModeSupportedRequest2) >= sizeof(VMMDevVideoModeSupportedRequest));
             VMMDevVideoModeSupportedRequest *req = (VMMDevVideoModeSupportedRequest *)req2;
             req->header.size        = sizeof(VMMDevVideoModeSupportedRequest);
@@ -170,9 +170,9 @@ BOOLEAN vboxLikesVideoMode(uint32_t display, uint32_t width, uint32_t height, ui
     return bRC;
 }
 
-ULONG vboxGetHeightReduction()
+uint32_t vboxGetHeightReduction()
 {
-    ULONG retHeight = 0;
+    uint32_t retHeight = 0;
 
     dprintf(("VBoxVideo::vboxGetHeightReduction\n"));
 
@@ -188,7 +188,7 @@ ULONG vboxGetHeightReduction()
         rc = VbglGRPerform(&req->header);
         if (RT_SUCCESS(rc))
         {
-            retHeight = (ULONG)req->heightReduction;
+            retHeight = req->heightReduction;
         }
         else
         {
@@ -202,9 +202,9 @@ ULONG vboxGetHeightReduction()
     return retHeight;
 }
 
-static BOOLEAN vboxQueryPointerPosInternal (uint16_t *pointerXPos, uint16_t *pointerYPos)
+static bool vboxQueryPointerPosInternal (uint16_t *pointerXPos, uint16_t *pointerYPos)
 {
-    BOOLEAN bRC = FALSE;
+    bool bRC = FALSE;
 
     /* Activate next line only when really needed; floods the log very quickly! */
     /*dprintf(("VBoxVideo::vboxQueryPointerPosInternal: pointerXPos = %p, pointerYPos = %p\n", pointerXPos, pointerYPos));*/
@@ -223,7 +223,7 @@ static BOOLEAN vboxQueryPointerPosInternal (uint16_t *pointerXPos, uint16_t *poi
 
         if (RT_SUCCESS(rc))
         {
-            if (req->mouseFeatures & VMMDEV_MOUSE_HOST_CAN_ABSOLUTE)
+            if (req->mouseFeatures & VMMDEV_MOUSE_HOST_WANTS_ABSOLUTE)
             {
                 if (pointerXPos)
                 {
@@ -254,11 +254,11 @@ static BOOLEAN vboxQueryPointerPosInternal (uint16_t *pointerXPos, uint16_t *poi
  * Return the current absolute mouse position in normalized format
  * (between 0 and 0xFFFF).
  *
- * @returns BOOLEAN     success indicator
+ * @returns bool        success indicator
  * @param   pointerXPos address of result variable for x pos
  * @param   pointerYPos address of result variable for y pos
  */
-BOOLEAN vboxQueryPointerPos(uint16_t *pointerXPos, uint16_t *pointerYPos)
+bool vboxQueryPointerPos(uint16_t *pointerXPos, uint16_t *pointerYPos)
 {
     if (!pointerXPos || !pointerYPos)
     {
@@ -271,9 +271,9 @@ BOOLEAN vboxQueryPointerPos(uint16_t *pointerXPos, uint16_t *pointerYPos)
 /**
  * Returns whether the host wants us to take absolute coordinates.
  *
- * @returns BOOLEAN TRUE if the host wants to send absolute coordinates.
+ * @returns bool TRUE if the host wants to send absolute coordinates.
  */
-BOOLEAN vboxQueryHostWantsAbsolute (void)
+bool vboxQueryHostWantsAbsolute (void)
 {
     return vboxQueryPointerPosInternal (NULL, NULL);
 }
@@ -319,80 +319,3 @@ winVersion_t vboxQueryWinVersion()
     }
     return winVersion;
 }
-
-#ifndef VBOX_WITH_HGSMI
-/**
- * Sends the pointer shape to the VMMDev
- *
- * @returns success indicator
- * @param pointerAttr pointer description
- */
-BOOLEAN vboxUpdatePointerShape(PVIDEO_POINTER_ATTRIBUTES pointerAttr, uint32_t cbLength)
-{
-    uint32_t cbData = 0;
-
-    if (pointerAttr->Enable & VBOX_MOUSE_POINTER_SHAPE)
-    {
-         cbData = ((((pointerAttr->Width + 7) / 8) * pointerAttr->Height + 3) & ~3)
-                  + pointerAttr->Width * 4 * pointerAttr->Height;
-    }
-
-    if (cbData > cbLength - sizeof(VIDEO_POINTER_ATTRIBUTES))
-    {
-        dprintf(("vboxUpdatePointerShape: calculated pointer data size is too big (%d bytes, limit %d)\n",
-                 cbData, cbLength - sizeof(VIDEO_POINTER_ATTRIBUTES)));
-        return FALSE;
-    }
-
-    BOOLEAN bRC = FALSE;
-
-    VMMDevReqMousePointer *req = NULL;
-
-    int rc = VbglGRAlloc ((VMMDevRequestHeader **)&req, sizeof (VMMDevReqMousePointer) + cbData, VMMDevReq_SetPointerShape);
-
-    if (RT_FAILURE(rc))
-    {
-        dprintf(("VBoxVideo::vboxUpdatePointerShape: ERROR allocating request, rc = %Rrc\n", rc));
-    }
-    else
-    {
-        /* Activate next line only when really needed; floods the log very quickly! */
-        /*dprintf(("VBoxVideo::vboxUpdatePointerShape: req->u32Version = %08X\n", req->header.version));*/
-
-        /* We have our custom flags in the field */
-        req->fFlags = pointerAttr->Enable & 0xFFFF;
-
-        /* Even if pointer is invisible, we have to pass following data,
-         * so host could create the pointer with initial status - invisible
-         */
-        req->xHot   = (pointerAttr->Enable >> 16) & 0xFF;
-        req->yHot   = (pointerAttr->Enable >> 24) & 0xFF;
-        req->width  = pointerAttr->Width;
-        req->height = pointerAttr->Height;
-
-        if (req->fFlags & VBOX_MOUSE_POINTER_SHAPE)
-        {
-            /* copy the actual pointer data */
-            memcpy (req->pointerData, pointerAttr->Pixels, cbData);
-        }
-
-        rc = VbglGRPerform (&req->header);
-
-        if (RT_SUCCESS(rc))
-        {
-            bRC = TRUE;
-        }
-        else
-        {
-            dprintf(("VBoxVideo::vboxUpdatePointerShape: ERROR querying mouse capabilities from VMMDev. "
-                     "rc = %Rrc\n", rc));
-        }
-
-        dprintf(("VBoxVideo::vboxUpdatePointerShape: req->u32Version = %08X\n", req->header.version));
-
-        VbglGRFree (&req->header);
-    }
-
-    return bRC;
-}
-#endif /* VBOX_WITH_HGSMI */

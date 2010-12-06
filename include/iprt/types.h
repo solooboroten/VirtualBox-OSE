@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -99,6 +99,18 @@
 #  include <linux/types.h>
 #  include <linux/stddef.h>
 #  undef uintptr_t
+#  ifdef __GNUC__
+#   if (__GNUC__ * 100 + __GNUC_MINOR__) <= 400
+     /*
+      * <linux/compiler-gcc{3,4}.h> does
+      *   #define __inline__  __inline__ __attribute__((always_inline))
+      * in some older Linux kernels. Forcing inlining will fail for some RTStrA*
+      * functions with gcc <= 4.0 due to passing variable argument lists.
+      */
+#    undef __inline__
+#    define __inline__ __inline__
+#   endif
+#  endif
 #  undef false
 #  undef true
 #  undef bool
@@ -463,6 +475,22 @@ typedef int64_t         RTINTPTR;
 typedef RTINTPTR       *PRTINTPTR;
 /** Pointer const to signed integer which can contain both GC and HC pointers. */
 typedef const RTINTPTR *PCRTINTPTR;
+/** The maximum value the RTINTPTR type can hold. */
+#if (HC_ARCH_BITS == 32 && GC_ARCH_BITS == 32)
+# define RTINTPTR_MAX   INT32_MAX
+#elif (HC_ARCH_BITS == 64 || GC_ARCH_BITS == 64)
+# define RTINTPTR_MAX   INT64_MAX
+#else
+#  error Unsupported HC_ARCH_BITS and/or GC_ARCH_BITS values.
+#endif
+/** The minimum value the RTINTPTR type can hold. */
+#if (HC_ARCH_BITS == 32 && GC_ARCH_BITS == 32)
+# define RTINTPTR_MIN   INT32_MIN
+#elif (HC_ARCH_BITS == 64 || GC_ARCH_BITS == 64)
+# define RTINTPTR_MIN   INT64_MIN
+#else
+#  error Unsupported HC_ARCH_BITS and/or GC_ARCH_BITS values.
+#endif
 
 /** Unsigned integer which can contain both GC and HC pointers. */
 #if (HC_ARCH_BITS == 32 && GC_ARCH_BITS == 32)
@@ -518,6 +546,29 @@ typedef uint32_t        RTDEV;
 /** Pointer to a device unix number. */
 typedef RTDEV          *PRTDEV;
 
+/** @name RTDEV Macros
+ * @{  */
+/**
+ * Our makedev macro.
+ * @returns RTDEV
+ * @param   uMajor          The major device number.
+ * @param   uMinor          The minor device number.
+ */
+#define RTDEV_MAKE(uMajor, uMinor)      ((RTDEV)( ((RTDEV)(uMajor) << 24) | (uMinor & UINT32_C(0x00ffffff)) ))
+/**
+ * Get the major device node number from an RTDEV type.
+ * @returns The major device number of @a uDev
+ * @param   uDev            The device number.
+ */
+#define RTDEV_MAJOR(uDev)               ((uDev) >> 24)
+/**
+ * Get the minor device node number from an RTDEV type.
+ * @returns The minor device number of @a uDev
+ * @param   uDev            The device number.
+ */
+#define RTDEV_MINOR(uDev)               ((uDev) & UINT32_C(0x00ffffff))
+/** @}  */
+
 /** i-node number. */
 typedef uint64_t        RTINODE;
 /** Pointer to a i-node number. */
@@ -529,7 +580,7 @@ typedef uint32_t        RTUID;
 typedef RTUID          *PRTUID;
 /** NIL user id.
  * @todo check this for portability! */
-#define NIL_RTUID       (~(RTUID)0);
+#define NIL_RTUID       (~(RTUID)0)
 
 /** Group id. */
 typedef uint32_t        RTGID;
@@ -537,7 +588,7 @@ typedef uint32_t        RTGID;
 typedef RTGID          *PRTGID;
 /** NIL group id.
  * @todo check this for portability! */
-#define NIL_RTGID       (~(RTGID)0);
+#define NIL_RTGID       (~(RTGID)0)
 
 /** I/O Port. */
 typedef uint16_t        RTIOPORT;
@@ -1171,6 +1222,19 @@ typedef RTCCINTREG const       *PCRTCCINTREG;
 /** @} */
 
 
+/** Pointer to a critical section. */
+typedef struct RTCRITSECT                          *PRTCRITSECT;
+/** Pointer to a const critical section. */
+typedef const struct RTCRITSECT                    *PCRTCRITSECT;
+
+
+/** Condition variable handle. */
+typedef R3PTRTYPE(struct RTCONDVARINTERNAL *)       RTCONDVAR;
+/** Pointer to a condition variable handle. */
+typedef RTCONDVAR                                  *PRTCONDVAR;
+/** Nil condition variable handle. */
+#define NIL_RTCONDVAR                               0
+
 /** File handle. */
 typedef RTUINT                                      RTFILE;
 /** Pointer to file handle. */
@@ -1320,6 +1384,13 @@ typedef RTSOCKET                                   *PRTSOCKET;
 /** Nil socket handle. */
 #define NIL_RTSOCKET                                ((RTSOCKET)0)
 
+/** Pointer to a RTTCPSERVER handle. */
+typedef struct RTTCPSERVER                         *PRTTCPSERVER;
+/** Pointer to a RTTCPSERVER handle. */
+typedef PRTTCPSERVER                               *PPRTTCPSERVER;
+/** Nil RTTCPSERVER handle. */
+#define NIL_RTTCPSERVER                            ((PRTTCPSERVER)0)
+
 /** Thread handle.*/
 typedef R3R0PTRTYPE(struct RTTHREADINT *)           RTTHREAD;
 /** Pointer to thread handle. */
@@ -1415,6 +1486,13 @@ typedef RTDBGMOD                                   *PRTDBGMOD;
 /** NIL debug module handle. */
 #define NIL_RTDBGMOD                                ((RTDBGMOD)0)
 
+/** Manifest handle. */
+typedef struct RTMANIFESTINT                       *RTMANIFEST;
+/** Pointer to a manifest handle. */
+typedef RTMANIFEST                                 *PRTMANIFEST;
+/** NIL manifest handle. */
+#define NIL_RTMANIFEST                              ((RTMANIFEST)~(uintptr_t)0)
+
 /** Memory pool handle. */
 typedef R3R0PTRTYPE(struct RTMEMPOOLINT *)          RTMEMPOOL;
 /** Pointer to a memory pool handle. */
@@ -1432,6 +1510,57 @@ typedef RTSTRCACHE                                 *PRTSTRCACHE;
 #define NIL_RTSTRCACHE                              ((RTSTRCACHE)0)
 /** The default string cache handle. */
 #define RTSTRCACHE_DEFAULT                          ((RTSTRCACHE)-2)
+
+
+/** Virtual Filesystem handle. */
+typedef struct RTVFSINTERNAL                       *RTVFS;
+/** Pointer to a VFS handle. */
+typedef RTVFS                                      *PRTVFS;
+/** A NIL VFS handle. */
+#define NIL_RTVFS                                   ((RTVFS)~(uintptr_t)0)
+
+/** Virtual Filesystem base object handle. */
+typedef struct RTVFSOBJINTERNAL                    *RTVFSOBJ;
+/** Pointer to a VFS base object handle. */
+typedef RTVFSOBJ                                   *PRTVFSOBJ;
+/** A NIL VFS base object handle. */
+#define NIL_RTVFSOBJ                                ((RTVFSOBJ)~(uintptr_t)0)
+
+/** Virtual Filesystem directory handle. */
+typedef struct RTVFSDIRINTERNAL                    *RTVFSDIR;
+/** Pointer to a VFS directory handle. */
+typedef RTVFSDIR                                   *PRTVFSDIR;
+/** A NIL VFS directory handle. */
+#define NIL_RTVFSDIR                                ((RTVFSDIR)~(uintptr_t)0)
+
+/** Virtual Filesystem filesystem stream handle. */
+typedef struct RTVFSFSSTREAMINTERNAL               *RTVFSFSSTREAM;
+/** Pointer to a VFS filesystem stream handle. */
+typedef RTVFSFSSTREAM                              *PRTVFSFSSTREAM;
+/** A NIL VFS filesystem stream handle. */
+#define NIL_RTVFSFSSTREAM                           ((RTVFSFSSTREAM)~(uintptr_t)0)
+
+/** Virtual Filesystem I/O stream handle. */
+typedef struct RTVFSIOSTREAMINTERNAL               *RTVFSIOSTREAM;
+/** Pointer to a VFS I/O stream handle. */
+typedef RTVFSIOSTREAM                              *PRTVFSIOSTREAM;
+/** A NIL VFS I/O stream handle. */
+#define NIL_RTVFSIOSTREAM                           ((RTVFSIOSTREAM)~(uintptr_t)0)
+
+/** Virtual Filesystem file handle. */
+typedef struct RTVFSFILEINTERNAL                   *RTVFSFILE;
+/** Pointer to a VFS file handle. */
+typedef RTVFSFILE                                  *PRTVFSFILE;
+/** A NIL VFS file handle. */
+#define NIL_RTVFSFILE                               ((RTVFSFILE)~(uintptr_t)0)
+
+/** Virtual Filesystem symbolic link handle. */
+typedef struct RTVFSSYMLINKINTERNAL                *RTVFSSYMLINK;
+/** Pointer to a VFS symbolic link handle. */
+typedef RTVFSSYMLINK                               *PRTVFSSYMLINK;
+/** A NIL VFS symbolic link handle. */
+#define NIL_RTVFSSYMLINK                            ((RTVFSSYMLINK)~(uintptr_t)0)
+
 
 /**
  * Handle type.
@@ -1496,6 +1625,27 @@ typedef RTHANDLE const *PCRTHANDLE;
 
 
 /**
+ * Standard handles.
+ *
+ * @remarks These have the correct file descriptor values for unixy systems and
+ *          can be used directly in code specific to those platforms.
+ */
+typedef enum RTHANDLESTD
+{
+    /** Invalid standard handle. */
+    RTHANDLESTD_INVALID = -1,
+    /** The standard input handle. */
+    RTHANDLESTD_INPUT = 0,
+    /** The standard output handle. */
+    RTHANDLESTD_OUTPUT,
+    /** The standard error handle. */
+    RTHANDLESTD_ERROR,
+    /** The typical 32-bit type hack. */
+    RTHANDLESTD_32BIT_HACK = 0x7fffffff
+} RTHANDLESTD;
+
+
+/**
  * UUID data type.
  *
  * @note IPRT defines that the first three integers in the @c Gen struct
@@ -1545,11 +1695,17 @@ typedef struct RTZIPDECOMP *PRTZIPDECOMP;
 /**
  * Unicode Code Point.
  */
-typedef uint32_t        RTUNICP;
+typedef uint32_t            RTUNICP;
 /** Pointer to an Unicode Code Point. */
-typedef RTUNICP        *PRTUNICP;
+typedef RTUNICP            *PRTUNICP;
 /** Pointer to an Unicode Code Point. */
-typedef const RTUNICP  *PCRTUNICP;
+typedef const RTUNICP      *PCRTUNICP;
+/** Max value a RTUNICP type can hold. */
+#define RTUNICP_MAX         ( ~(RTUNICP)0 )
+/** Invalid code point.
+ * This is returned when encountered invalid encodings or invalid
+ * unicode code points. */
+#define RTUNICP_INVALID     ( UINT32_C(0xfffffffe) )
 
 
 /**
@@ -1586,7 +1742,7 @@ typedef FNRTPROGRESS *PFNRTPROGRESS;
 
 
 /**
- * Rectangle data type.
+ * Rectangle data type, double point.
  */
 typedef struct RTRECT
 {
@@ -1599,10 +1755,36 @@ typedef struct RTRECT
     /** bottom Y coordinate. (exclusive) */
     int32_t     yBottom;
 } RTRECT;
-/** Pointer to a rectangle. */
+/** Pointer to a double point rectangle. */
 typedef RTRECT *PRTRECT;
-/** Pointer to a const rectangle. */
+/** Pointer to a const double point rectangle. */
 typedef const RTRECT *PCRTRECT;
+
+
+/**
+ * Rectangle data type, point + size.
+ */
+typedef struct RTRECT2
+{
+    /** X coordinate.
+     * Unless stated otherwise, this is the top left corner. */
+    int32_t     x;
+    /** Y coordinate.
+     * Unless stated otherwise, this is the top left corner.  */
+    int32_t     y;
+    /** The width.
+     * Unless stated otherwise, this is to the right of (x,y) and will not
+     * be a negative number. */
+    int32_t     cx;
+    /** The height.
+     * Unless stated otherwise, this is down from (x,y) and will not be a
+     * negative number. */
+    int32_t     cy;
+} RTRECT2;
+/** Pointer to a point + size rectangle. */
+typedef RTRECT2 *PRTRECT2;
+/** Pointer to a const point + size rectangle. */
+typedef const RTRECT2 *PCRTRECT2;
 
 
 /**

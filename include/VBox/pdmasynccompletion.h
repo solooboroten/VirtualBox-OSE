@@ -1,4 +1,4 @@
-/* $Id: pdmasynccompletion.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: pdmasynccompletion.h 34586 2010-12-01 20:08:49Z vboxsync $ */
 /** @file
  * PDM - Pluggable Device Manager, Async I/O Completion. (VMM)
  */
@@ -230,6 +230,12 @@ VMMR3DECL(int) PDMR3AsyncCompletionEpCreateForFile(PPPDMASYNCCOMPLETIONENDPOINT 
 #define PDMACEP_FILE_FLAGS_READ_ONLY    RT_BIT_32(0)
 /** whether file content should be cached by the endpoint. */
 #define PDMACEP_FILE_FLAGS_CACHING      RT_BIT_32(1)
+/** Whether the file should not be write protected.
+ * The default is to protect the file against writes by other processes
+ * when opened in read/write mode to prevent data corruption by
+ * concurrent access which can occur if the local writeback cache is enabled.
+ */
+#define PDMACEP_FILE_FLAGS_DONT_LOCK    RT_BIT_32(2)
 /** @} */
 
 /**
@@ -321,6 +327,17 @@ VMMR3DECL(int) PDMR3AsyncCompletionEpSetSize(PPDMASYNCCOMPLETIONENDPOINT pEndpoi
                                              uint64_t cbSize);
 
 /**
+ * Assigns or removes a bandwidth control manager to/from the endpoint.
+ *
+ * @returns VBox status code.
+ * @param   pEndpoint       The endpoint.
+ * @param   pcszBwMgr       The identifer of the new bandwidth manager to assign
+ *                          or NULL to remove the current one.
+ */
+VMMR3DECL(int) PDMR3AsyncCompletionEpSetBwMgr(PPDMASYNCCOMPLETIONENDPOINT pEndpoint,
+                                              const char *pcszBwMgr);
+
+/**
  * Cancels a async completion task.
  *
  * If you want to use this method, you have to take great create to make sure
@@ -332,6 +349,16 @@ VMMR3DECL(int) PDMR3AsyncCompletionEpSetSize(PPDMASYNCCOMPLETIONENDPOINT pEndpoi
  * @param   pTask           The Task to cancel.
  */
 VMMR3DECL(int) PDMR3AsyncCompletionTaskCancel(PPDMASYNCCOMPLETIONTASK pTask);
+
+/**
+ * Changes the limit of a bandwidth manager for file endpoints to the given value.
+ *
+ * @returns VBox status code.
+ * @param   pVM             Pointer to the shared VM structure.
+ * @param   pcszBwMgr       The identifer of the bandwidth manager to change.
+ * @param   cbMaxNew        The new maximum for the bandwidth manager in bytes/sec.
+ */
+VMMR3DECL(int) PDMR3AsyncCompletionBwMgrSetMaxForFile(PVM pVM, const char *pcszBwMgr, uint32_t cbMaxNew);
 
 /** @} */
 

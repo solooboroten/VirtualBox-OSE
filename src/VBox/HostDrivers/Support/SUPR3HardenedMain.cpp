@@ -1,10 +1,10 @@
-/* $Id: SUPR3HardenedMain.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: SUPR3HardenedMain.cpp 34701 2010-12-03 14:49:53Z vboxsync $ */
 /** @file
  * VirtualBox Support Library - Hardened main().
  */
 
 /*
- * Copyright (C) 2006-2008 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -118,7 +118,7 @@ typedef FNRTR3INITEX *PFNRTR3INITEX;
 *******************************************************************************/
 /** The pre-init data we pass on to SUPR3 (residing in VBoxRT). */
 static SUPPREINITDATA g_SupPreInitData;
-/** The progam executable path. */
+/** The program executable path. */
 static char g_szSupLibHardenedExePath[RTPATH_MAX];
 /** The program directory path. */
 static char g_szSupLibHardenedDirPath[RTPATH_MAX];
@@ -466,7 +466,7 @@ DECLHIDDEN(void)   supR3HardenedFatalMsgV(const char *pszWhere, SUPINITOP enmWha
      * Now try resolve and call the TrustedError entry point if we can
      * find it.  We'll fork before we attempt this because that way the
      * session management in main will see us exiting immediately (if
-     * it's invovled with us).
+     * it's involved with us).
      */
 #if !defined(RT_OS_WINDOWS) && !defined(RT_OS_OS2)
     int pid = fork();
@@ -648,34 +648,37 @@ static void supR3HardenedMainGrabCapabilites(void)
 
 # elif defined(RT_OS_SOLARIS)
     /*
-     * Add net_icmpaccess privilege to permitted, effective and inheritable privileges
-     * before dropping root privileges.
+     * Add net_icmpaccess privilege to permitted, effective and inheritable
+     * privileges before dropping root privileges. Skip this hacky code for
+     * real root, as it removes lots of privileges due to the harcoded set.
      */
-    priv_set_t *pPrivSet = priv_str_to_set("basic", ",", NULL);
-    if (pPrivSet)
+    if (getuid() != 0)
     {
-        priv_addset(pPrivSet, PRIV_NET_ICMPACCESS);
-        int rc = setppriv(PRIV_SET, PRIV_INHERITABLE, pPrivSet);
-        if (!rc)
+        priv_set_t *pPrivSet = priv_str_to_set("basic", ",", NULL);
+        if (pPrivSet)
         {
-            rc = setppriv(PRIV_SET, PRIV_PERMITTED, pPrivSet);
+            priv_addset(pPrivSet, PRIV_NET_ICMPACCESS);
+            int rc = setppriv(PRIV_SET, PRIV_INHERITABLE, pPrivSet);
             if (!rc)
             {
-                rc = setppriv(PRIV_SET, PRIV_EFFECTIVE, pPrivSet);
-                if (rc)
-                    supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set effectives privilege set.\n");
+                rc = setppriv(PRIV_SET, PRIV_PERMITTED, pPrivSet);
+                if (!rc)
+                {
+                    rc = setppriv(PRIV_SET, PRIV_EFFECTIVE, pPrivSet);
+                    if (rc)
+                        supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set effective privilege set.\n");
+                }
+                else
+                    supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set permitted privilege set.\n");
             }
             else
-                supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set permitted privilege set.\n");
+                supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set inheritable privilege set.\n");
+
+            priv_freeset(pPrivSet);
         }
         else
-            supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set inheritable privilege set.\n");
-
-        priv_freeset(pPrivSet);
+            supR3HardenedError(-1, false, "SUPR3HardenedMain: failed to get basic privilege set.\n");
     }
-    else
-        supR3HardenedError(-1, false, "SUPR3HardenedMain: failed to get basic privilege set.\n");
-
 # endif
 }
 
@@ -732,7 +735,7 @@ static void supR3HardenedMainDropPrivileges(void)
     gid_t egid, rgid, sgid;
 # if defined(RT_OS_DARWIN)
     /* The really great thing here is that setreuid isn't available on
-       OS X 10.4, libc emulates it. While 10.4 have a sligtly different and
+       OS X 10.4, libc emulates it. While 10.4 have a slightly different and
        non-standard setuid implementation compared to 10.5, the following
        works the same way with both version since we're super user (10.5 req).
        The following will set all three variants of the group and user IDs. */

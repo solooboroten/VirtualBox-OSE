@@ -1,10 +1,10 @@
-/* $Id: VBoxManageDHCPServer.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxManageDHCPServer.cpp 33489 2010-10-27 10:31:41Z vboxsync $ */
 /** @file
  * VBoxManage - Implementation of dhcpserver command.
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -26,9 +26,6 @@
 #include <VBox/com/EventQueue.h>
 
 #include <VBox/com/VirtualBox.h>
-
-#include <vector>
-#include <list>
 #endif /* !VBOX_ONLY_DOCS */
 
 #include <iprt/cidr.h>
@@ -51,7 +48,7 @@ typedef enum enMainOpCodes
 {
     OP_ADD = 1000,
     OP_REMOVE,
-    OP_MODIFY,
+    OP_MODIFY
 } OPCODE;
 
 static const RTGETOPTDEF g_aDHCPIPOptions[]
@@ -113,7 +110,7 @@ static int handleOp(HandlerArg *a, OPCODE enmCode, int iStart, int *pcProcessed)
                 if(pNetName)
                     return errorSyntax(USAGE_DHCPSERVER, "You can only specify --netname once.");
                 else if (pIfName)
-                    return errorSyntax(USAGE_DHCPSERVER, "You can either use a --netname or --ifname for identifying the dhcp server.");
+                    return errorSyntax(USAGE_DHCPSERVER, "You can either use a --netname or --ifname for identifying the DHCP server.");
                 else
                 {
                     pNetName = ValueUnion.psz;
@@ -123,7 +120,7 @@ static int handleOp(HandlerArg *a, OPCODE enmCode, int iStart, int *pcProcessed)
                 if(pIfName)
                     return errorSyntax(USAGE_DHCPSERVER, "You can only specify --ifname once.");
                 else if (pNetName)
-                    return errorSyntax(USAGE_DHCPSERVER, "You can either use a --netname or --ipname for identifying the dhcp server.");
+                    return errorSyntax(USAGE_DHCPSERVER, "You can either use a --netname or --ipname for identifying the DHCP server.");
                 else
                 {
                     pIfName = ValueUnion.psz;
@@ -198,7 +195,7 @@ static int handleOp(HandlerArg *a, OPCODE enmCode, int iStart, int *pcProcessed)
     }
 
     if(! pNetName && !pIfName)
-        return errorSyntax(USAGE_DHCPSERVER, "You need to specify either --netname or --ifname to identify the dhcp server");
+        return errorSyntax(USAGE_DHCPSERVER, "You need to specify either --netname or --ifname to identify the DHCP server");
 
     if(enmCode != OP_REMOVE)
     {
@@ -226,12 +223,12 @@ static int handleOp(HandlerArg *a, OPCODE enmCode, int iStart, int *pcProcessed)
 
         ComPtr<IHostNetworkInterface> hif;
         CHECK_ERROR(host, FindHostNetworkInterfaceByName(Bstr(pIfName).mutableRaw(), hif.asOutParam()));
-        if(FAILED(rc))
-            return errorArgument("could not find interface '%s'", pIfName);
+        if (FAILED(rc))
+            return errorArgument("Could not find interface '%s'", pIfName);
 
         CHECK_ERROR(hif, COMGETTER(NetworkName) (NetName.asOutParam()));
-        if(FAILED(rc))
-            return errorArgument("could not get network name for the interface '%s'", pIfName);
+        if (FAILED(rc))
+            return errorArgument("Could not get network name for the interface '%s'", pIfName);
     }
     else
     {
@@ -242,16 +239,16 @@ static int handleOp(HandlerArg *a, OPCODE enmCode, int iStart, int *pcProcessed)
     rc = a->virtualBox->FindDHCPServerByNetworkName(NetName.mutableRaw(), svr.asOutParam());
     if(enmCode == OP_ADD)
     {
-        if(SUCCEEDED(rc))
-            return errorArgument("dhcp server already exists");
+        if (SUCCEEDED(rc))
+            return errorArgument("DHCP server already exists");
 
         CHECK_ERROR(a->virtualBox, CreateDHCPServer(NetName.mutableRaw(), svr.asOutParam()));
-        if(FAILED(rc))
-            return errorArgument("failed to create server");
+        if (FAILED(rc))
+            return errorArgument("Failed to create the DHCP server");
     }
-    else if(FAILED(rc))
+    else if (FAILED(rc))
     {
-        return errorArgument("dhcp server does not exist");
+        return errorArgument("DHCP server does not exist");
     }
 
     if(enmCode != OP_REMOVE)
@@ -260,7 +257,7 @@ static int handleOp(HandlerArg *a, OPCODE enmCode, int iStart, int *pcProcessed)
         {
             CHECK_ERROR(svr, SetConfiguration (Bstr(pIp).mutableRaw(), Bstr(pNetmask).mutableRaw(), Bstr(pLowerIp).mutableRaw(), Bstr(pUpperIp).mutableRaw()));
             if(FAILED(rc))
-                return errorArgument("failed to set configuration");
+                return errorArgument("Failed to set configuration");
         }
 
         if(enable >= 0)
@@ -272,7 +269,7 @@ static int handleOp(HandlerArg *a, OPCODE enmCode, int iStart, int *pcProcessed)
     {
         CHECK_ERROR(a->virtualBox, RemoveDHCPServer(svr));
         if(FAILED(rc))
-            return errorArgument("failed to remove server");
+            return errorArgument("Failed to remove server");
     }
 
     return 0;
@@ -281,36 +278,19 @@ static int handleOp(HandlerArg *a, OPCODE enmCode, int iStart, int *pcProcessed)
 
 int handleDHCPServer(HandlerArg *a)
 {
-    int result = 0;
     if (a->argc < 1)
         return errorSyntax(USAGE_DHCPSERVER, "Not enough parameters");
 
-    for (int i = 0; i < a->argc; i++)
-    {
-        if (strcmp(a->argv[i], "modify") == 0)
-        {
-            int cProcessed;
-            result = handleOp(a, OP_MODIFY, i+1, &cProcessed);
-            break;
-        }
-        else if (strcmp(a->argv[i], "add") == 0)
-        {
-            int cProcessed;
-            result = handleOp(a, OP_ADD, i+1, &cProcessed);
-            break;
-        }
-        else if (strcmp(a->argv[i], "remove") == 0)
-        {
-            int cProcessed;
-            result = handleOp(a, OP_REMOVE, i+1, &cProcessed);
-            break;
-        }
-        else
-        {
-            result = errorSyntax(USAGE_DHCPSERVER, "Invalid parameter '%s'", Utf8Str(a->argv[i]).raw());
-            break;
-        }
-    }
+    int result;
+    int cProcessed;
+    if (strcmp(a->argv[0], "modify") == 0)
+        result = handleOp(a, OP_MODIFY, 1, &cProcessed);
+    else if (strcmp(a->argv[0], "add") == 0)
+        result = handleOp(a, OP_ADD, 1, &cProcessed);
+    else if (strcmp(a->argv[0], "remove") == 0)
+        result = handleOp(a, OP_REMOVE, 1, &cProcessed);
+    else
+        result = errorSyntax(USAGE_DHCPSERVER, "Invalid parameter '%s'", Utf8Str(a->argv[0]).c_str());
 
     return result;
 }

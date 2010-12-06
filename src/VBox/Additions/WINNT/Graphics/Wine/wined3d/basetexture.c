@@ -23,8 +23,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -38,12 +38,27 @@ WINE_DEFAULT_DEBUG_CHANNEL(d3d_texture);
 
 HRESULT basetexture_init(IWineD3DBaseTextureImpl *texture, UINT levels, WINED3DRESOURCETYPE resource_type,
         IWineD3DDeviceImpl *device, UINT size, DWORD usage, const struct wined3d_format_desc *format_desc,
-        WINED3DPOOL pool, IUnknown *parent, const struct wined3d_parent_ops *parent_ops)
+        WINED3DPOOL pool, IUnknown *parent, const struct wined3d_parent_ops *parent_ops
+#ifdef VBOX_WITH_WDDM
+        , HANDLE *shared_handle
+        , void *pvClientMem
+#endif
+        )
 {
     HRESULT hr;
 
+    if (levels > MAX_MIP_LEVELS)
+    {
+        WARN("Too many texture levels %d", levels);
+        return WINED3DERR_INVALIDCALL;
+    }
+
     hr = resource_init((IWineD3DResource *)texture, resource_type, device,
-            size, usage, format_desc, pool, parent, parent_ops);
+            size, usage, format_desc, pool, parent, parent_ops
+#ifdef VBOX_WITH_WDDM
+            , shared_handle, pvClientMem
+#endif
+            );
     if (FAILED(hr))
     {
         WARN("Failed to initialize resource, returning %#x\n", hr);
@@ -57,6 +72,11 @@ HRESULT basetexture_init(IWineD3DBaseTextureImpl *texture, UINT levels, WINED3DR
     texture->baseTexture.texture_srgb.dirty = TRUE;
     texture->baseTexture.is_srgb = FALSE;
     texture->baseTexture.pow2Matrix_identity = TRUE;
+#if defined(VBOX_WITH_WDDM) && defined(DEBUG_leo)
+    texture->baseTexture.t_mirror = FALSE;
+#else
+    texture->baseTexture.t_mirror = FALSE;
+#endif
 
     if (texture->resource.format_desc->Flags & WINED3DFMT_FLAG_FILTERING)
     {
@@ -257,7 +277,22 @@ HRESULT basetexture_bind(IWineD3DBaseTexture *iface, BOOL srgb, BOOL *set_surfac
     /* Generate a texture name if we don't already have one */
     if (gl_tex->name == 0) {
         *set_surface_desc = TRUE;
-        glGenTextures(1, &gl_tex->name);
+#ifdef VBOX_WITH_WDDM
+        if (VBOXSHRC_IS_SHARED_OPENED(This))
+        {
+            gl_tex->name = VBOXSHRC_GET_SHAREHANDLE(This);
+        }
+        else
+#endif
+        {
+            glGenTextures(1, &gl_tex->name);
+#ifdef VBOX_WITH_WDDM
+            if (VBOXSHRC_IS_SHARED(This))
+            {
+                VBOXSHRC_SET_SHAREHANDLE(This, gl_tex->name);
+            }
+#endif
+        }
         checkGLcall("glGenTextures");
         TRACE("Generated texture %d\n", gl_tex->name);
         if (This->resource.pool == WINED3DPOOL_DEFAULT) {

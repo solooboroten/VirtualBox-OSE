@@ -1,4 +1,4 @@
-/* $Id: VBoxGuestR3LibGuestProp.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxGuestR3LibGuestProp.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * VBoxGuestR3Lib - Ring-3 Support Library for VirtualBox guest additions, guest properties.
  */
@@ -29,9 +29,10 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #include <iprt/string.h>
-#include <iprt/mem.h>
+#ifndef VBOX_VBGLR3_XFREE86
+# include <iprt/mem.h>
+#endif
 #include <iprt/assert.h>
-#include <iprt/cpp/autores.h>
 #include <iprt/stdarg.h>
 #include <VBox/log.h>
 #include <VBox/HostServices/GuestPropertySvc.h>
@@ -47,6 +48,41 @@ extern "C" char* xf86strcpy(char*,const char*);
 extern "C" void* xf86memchr(const void*,int,xf86size_t);
 # undef memchr
 # define memchr xf86memchr
+extern "C" void* xf86memset(const void*,int,xf86size_t);
+# undef memset
+# define memset xf86memset
+
+# undef RTSTrEnd
+# define RTStrEnd xf86RTStrEnd
+
+DECLINLINE(char const *) RTStrEnd(char const *pszString, size_t cchMax)
+{
+    /* Avoid potential issues with memchr seen in glibc. */
+    if (cchMax > RTSTR_MEMCHR_MAX)
+    {
+        char const *pszRet = (char const *)memchr(pszString, '\0', RTSTR_MEMCHR_MAX);
+        if (RT_LIKELY(pszRet))
+            return pszRet;
+        pszString += RTSTR_MEMCHR_MAX;
+        cchMax    -= RTSTR_MEMCHR_MAX;
+    }
+    return (char const *)memchr(pszString, '\0', cchMax);
+}
+
+DECLINLINE(char *) RTStrEnd(char *pszString, size_t cchMax)
+{
+    /* Avoid potential issues with memchr seen in glibc. */
+    if (cchMax > RTSTR_MEMCHR_MAX)
+    {
+        char *pszRet = (char *)memchr(pszString, '\0', RTSTR_MEMCHR_MAX);
+        if (RT_LIKELY(pszRet))
+            return pszRet;
+        pszString += RTSTR_MEMCHR_MAX;
+        cchMax    -= RTSTR_MEMCHR_MAX;
+    }
+    return (char *)memchr(pszString, '\0', cchMax);
+}
+
 #endif /* VBOX_VBGLR3_XFREE86 */
 
 /*******************************************************************************
@@ -85,7 +121,7 @@ VBGLR3DECL(int) VbglR3GuestPropConnect(uint32_t *pu32ClientId)
     Info.Loc.type = VMMDevHGCMLoc_LocalHost_Existing;
     RT_ZERO(Info.Loc.u);
     strcpy(Info.Loc.u.host.achName, "VBoxGuestPropSvc");
-    Info.u32ClientID = UINT32_MAX;  /* try make valgrid shut up. */
+    Info.u32ClientID = UINT32_MAX;  /* try make valgrind shut up. */
 
     int rc = vbglR3DoIOCtl(VBOXGUEST_IOCTL_HGCM_CONNECT, &Info, sizeof(Info));
     if (RT_SUCCESS(rc))
@@ -322,13 +358,13 @@ VBGLR3DECL(int) VbglR3GuestPropRead(uint32_t u32ClientId, const char *pszName,
      * Buffer layout: Value\0Flags\0.
      *
      * If the caller cares about any of these strings, make sure things are
-     * propertly terminated (paranoia).
+     * properly terminated (paranoia).
      */
     if (    RT_SUCCESS(rc)
         &&  (ppszValue != NULL || ppszFlags != NULL))
     {
         /* Validate / skip 'Name'. */
-        char *pszFlags = (char *)memchr(pvBuf, '\0', cbBuf) + 1;
+        char *pszFlags = RTStrEnd((char *)pvBuf, cbBuf) + 1;
         AssertPtrReturn(pszFlags, VERR_TOO_MUCH_DATA);
         if (ppszValue)
             *ppszValue = (char *)pvBuf;
@@ -336,8 +372,8 @@ VBGLR3DECL(int) VbglR3GuestPropRead(uint32_t u32ClientId, const char *pszName,
         if (ppszFlags)
         {
             /* Validate 'Flags'. */
-            void *pvEos = memchr(pszFlags, '\0', cbBuf - (pszFlags - (char *)pvBuf));
-            AssertPtrReturn(pvEos, VERR_TOO_MUCH_DATA);
+            char *pszEos = RTStrEnd(pszFlags, cbBuf - (pszFlags - (char *)pvBuf));
+            AssertPtrReturn(pszEos, VERR_TOO_MUCH_DATA);
             *ppszFlags = pszFlags;
         }
     }
@@ -617,7 +653,7 @@ VBGLR3DECL(int) VbglR3GuestPropEnum(uint32_t u32ClientId,
     {
         /*
          * Transfer ownership of the buffer to the handle structure and
-         * call VbglR3GuestPropEnumNext to retriev the first entry.
+         * call VbglR3GuestPropEnumNext to retrieve the first entry.
          */
         Handle->pchNext = Handle->pchBuf = Buf.release();
         Handle->pchBufEnd = Handle->pchBuf + cchBuf;
@@ -684,13 +720,13 @@ VBGLR3DECL(int) VbglR3GuestPropEnumNext(PVBGLR3GUESTPROPENUM pHandle,
     char *pchEnd  = pHandle->pchBufEnd;     /* End of buffer, for size calculations. */
 
     char *pszName      = pchNext;
-    char *pszValue     = pchNext = (char *)memchr(pchNext, '\0', pchEnd - pchNext) + 1;
+    char *pszValue     = pchNext = RTStrEnd(pchNext, pchEnd - pchNext) + 1;
     AssertPtrReturn(pchNext, VERR_PARSE_ERROR);  /* 0x1 is also an invalid pointer :) */
 
-    char *pszTimestamp = pchNext = (char *)memchr(pchNext, '\0', pchEnd - pchNext) + 1;
+    char *pszTimestamp = pchNext = RTStrEnd(pchNext, pchEnd - pchNext) + 1;
     AssertPtrReturn(pchNext, VERR_PARSE_ERROR);
 
-    char *pszFlags     = pchNext = (char *)memchr(pchNext, '\0', pchEnd - pchNext) + 1;
+    char *pszFlags     = pchNext = RTStrEnd(pchNext, pchEnd - pchNext) + 1;
     AssertPtrReturn(pchNext, VERR_PARSE_ERROR);
 
     /*
@@ -700,7 +736,7 @@ VBGLR3DECL(int) VbglR3GuestPropEnumNext(PVBGLR3GUESTPROPENUM pHandle,
     uint64_t u64Timestamp;
     if (*pszName != '\0')
     {
-        pchNext = (char *)memchr(pchNext, '\0', pchEnd - pchNext) + 1;
+        pchNext = RTStrEnd(pchNext, pchEnd - pchNext) + 1;
         AssertPtrReturn(pchNext, VERR_PARSE_ERROR);
 
         /* Convert the timestamp string into a number. */
@@ -873,20 +909,19 @@ VBGLR3DECL(int) VbglR3GuestPropWait(uint32_t u32ClientId,
      * Buffer layout: Name\0Value\0Flags\0.
      *
      * If the caller cares about any of these strings, make sure things are
-     * propertly terminated (paranoia).
+     * properly terminated (paranoia).
      */
     if (    RT_SUCCESS(rc)
         &&  (ppszName != NULL || ppszValue != NULL || ppszFlags != NULL))
     {
         /* Validate / skip 'Name'. */
-        char *pszValue = (char *)memchr(pvBuf, '\0', cbBuf) + 1;
+        char *pszValue = RTStrEnd((char *)pvBuf, cbBuf) + 1;
         AssertPtrReturn(pszValue, VERR_TOO_MUCH_DATA);
         if (ppszName)
             *ppszName = (char *)pvBuf;
 
         /* Validate / skip 'Value'. */
-        char *pszFlags = (char *)memchr(pszValue, '\0',
-                                        cbBuf - (pszValue - (char *)pvBuf)) + 1;
+        char *pszFlags = RTStrEnd(pszValue, cbBuf - (pszValue - (char *)pvBuf)) + 1;
         AssertPtrReturn(pszFlags, VERR_TOO_MUCH_DATA);
         if (ppszValue)
             *ppszValue = pszValue;
@@ -894,8 +929,8 @@ VBGLR3DECL(int) VbglR3GuestPropWait(uint32_t u32ClientId,
         if (ppszFlags)
         {
             /* Validate 'Flags'. */
-            void *pvEos = memchr(pszFlags, '\0', cbBuf - (pszFlags - (char *)pvBuf));
-            AssertPtrReturn(pvEos, VERR_TOO_MUCH_DATA);
+            char *pszEos = RTStrEnd(pszFlags, cbBuf - (pszFlags - (char *)pvBuf));
+            AssertPtrReturn(pszEos, VERR_TOO_MUCH_DATA);
             *ppszFlags = pszFlags;
         }
     }

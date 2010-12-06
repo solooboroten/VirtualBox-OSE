@@ -1,4 +1,4 @@
-/* $Id: FramebufferVNC.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: FramebufferVNC.h 31698 2010-08-16 15:00:05Z vboxsync $ */
 /** @file
  * VBox Remote Desktop Protocol - VNC server interface.
  */
@@ -42,7 +42,8 @@ public:
     }
     STDMETHOD_(ULONG, Release)() {
         long cnt = ::InterlockedDecrement (&refcnt);
-        if (cnt == 0) delete this;
+        if (cnt == 0)
+            delete this;
         return cnt;
     }
 #endif
@@ -51,7 +52,8 @@ public:
     NS_DECL_ISUPPORTS
 
     // public methods only for internal purposes
-    HRESULT init ();
+    HRESULT init (const char *pszName);
+    void enableAbsMouse(bool fEnable);
 
     STDMETHOD(COMGETTER(Width))(ULONG *width);
     STDMETHOD(COMGETTER(Height))(ULONG *height);
@@ -64,7 +66,7 @@ public:
     STDMETHOD(COMGETTER(UsesGuestVRAM)) (BOOL *usesGuestVRAM);
     STDMETHOD(COMGETTER(HeightReduction)) (ULONG *heightReduction);
     STDMETHOD(COMGETTER(Overlay)) (IFramebufferOverlay **aOverlay);
-    STDMETHOD(COMGETTER(WinId)) (ULONG64 *winId);
+    STDMETHOD(COMGETTER(WinId)) (LONG64 *winId);
 
     STDMETHOD(NotifyUpdate)(ULONG x, ULONG y, ULONG w, ULONG h);
     STDMETHOD(RequestResize)(ULONG aScreenId, ULONG pixelFormat, BYTE *vram,
@@ -102,6 +104,8 @@ private:
     void kbdPutCode(int code);
     void kbdPutCode(int code, int down);
     void kbdPutCodeShift(int shift, int code, int down);
+
+    bool fAbsMouseEnabled;
 
     ULONG mWidth, mHeight;
 

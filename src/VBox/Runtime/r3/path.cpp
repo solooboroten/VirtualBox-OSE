@@ -1,4 +1,4 @@
-/* $Id: path.cpp 28916 2010-04-29 18:13:54Z vboxsync $ */
+/* $Id: path.cpp 33454 2010-10-26 09:51:53Z vboxsync $ */
 /** @file
  * IPRT - Path Manipulation.
  */
@@ -46,7 +46,7 @@ RTDECL(int) RTPathExecDir(char *pszPath, size_t cchPath)
      * Calc the length and check if there is space before copying.
      */
     size_t cch = g_cchrtProcDir;
-    if (cch <= cchPath)
+    if (cch < cchPath)
     {
         memcpy(pszPath, g_szrtProcExePath, cch);
         pszPath[cch] = '\0';
@@ -187,3 +187,15 @@ RTDECL(int) RTPathTemp(char *pszPath, size_t cchPath)
     return VINF_SUCCESS;
 }
 
+
+RTR3DECL(int) RTPathGetMode(const char *pszPath, PRTFMODE pfMode)
+{
+    AssertPtrReturn(pfMode, VERR_INVALID_POINTER);
+
+    RTFSOBJINFO ObjInfo;
+    int rc = RTPathQueryInfoEx(pszPath, &ObjInfo, RTFSOBJATTRADD_NOTHING, RTPATH_F_FOLLOW_LINK);
+    if (RT_SUCCESS(rc))
+        *pfMode = ObjInfo.Attr.fMode;
+
+    return rc;
+}

@@ -1,8 +1,6 @@
-/* $Id: keyboard.c 29654 2010-05-18 21:37:32Z vboxsync $ */
+/* $Id: keyboard.c 33656 2010-11-01 14:18:11Z vboxsync $ */
 /** @file
- *
- * VBox frontends: Qt GUI ("VirtualBox"):
- * X11 keyboard handler library
+ * VBox/Frontends/Common - X11 keyboard handler library.
  */
 
 /* This code is originally from the Wine project. */
@@ -33,8 +31,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -43,6 +41,7 @@
 
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
+#include <X11/XKBlib.h>
 #include <X11/Xlib.h>
 #include <X11/Xresource.h>
 #include <X11/Xutil.h>
@@ -107,7 +106,7 @@ unsigned X11DRV_KeyEvent(Display *display, KeyCode code)
     unsigned scan;
     KeySym keysym = XKeycodeToKeysym(display, code, 0);
     scan = 0;
-    if (keysym != 0)  /* otherwise, keycode not used */
+    if (keyc2scan[code] == 0 && keysym != 0)
     {
         if ((keysym >> 8) == 0xFF)          /* non-character key */
             scan = nonchar_key_scan[keysym & 0xff];
@@ -120,8 +119,8 @@ unsigned X11DRV_KeyEvent(Display *display, KeyCode code)
         else if (keysym == 0xFE03)          /* ISO level3 shift, aka AltGr */
             scan = 0x138;
     }
-    if (keysym != 0 && scan == 0)
-            scan = keyc2scan[code];
+    if (keyc2scan[code])
+        scan = keyc2scan[code];
 
     return scan;
 }
@@ -269,7 +268,7 @@ X11DRV_KEYBOARD_DetectLayout (Display *display, unsigned min_keycode,
  * identical to non-Dvorak layouts, but with the keys in a different order.
  * To deal with this, we compare the different candidate layouts to see in
  * which one the X11 keycodes would be most sequential and hope that they
- * really are layed out more or less sequentially.
+ * really are arranged more or less sequentially.
  *
  * The actual detection of the current layout is done in the sub-function
  * X11DRV_KEYBOARD_DetectLayout.  Once we have determined the layout, since we
@@ -528,12 +527,57 @@ X11DRV_InitKeyboardByType(Display *display)
     cMap = findHostKBInList(&hostKB, main_keyboard_type_list,
                                   sizeof(main_keyboard_type_list)
                                 / sizeof(main_keyboard_type_list[0]));
+#ifdef DEBUG
+    /* Assertion */
+    if (sizeof(keyc2scan) != sizeof(main_keyboard_type_scans[cMap]))
+    {
+        printf("ERROR: keyc2scan array size doesn't match main_keyboard_type_scans[]!\n");
+        return 0;
+    }
+#endif
     if (cMap >= 0)
     {
-        memcpy(keyc2scan, main_keyboard_type_scans[cMap], KEYC2SCAN_SIZE);
+        memcpy(keyc2scan, main_keyboard_type_scans[cMap], sizeof(keyc2scan));
         return 1;
     }
     return 0;
+}
+
+/**
+ * Checks for the XKB extension, and if it is found initialises the X11 keycode
+ * to XT scan code mapping by looking at the XKB names for each keycode.
+ */
+static unsigned
+X11DRV_InitKeyboardByXkb(Display *pDisplay)
+{
+    int major = XkbMajorVersion, minor = XkbMinorVersion;
+    XkbDescPtr pKBDesc;
+    if (!XkbLibraryVersion(&major, &minor))
+        return 0;
+    if (!XkbQueryExtension(pDisplay, NULL, NULL, &major, &minor, NULL))
+        return 0;
+    pKBDesc = XkbGetKeyboard(pDisplay, XkbAllComponentsMask, XkbUseCoreKbd);
+    if (!pKBDesc)
+        return 0;
+    if (XkbGetNames(pDisplay, XkbKeyNamesMask, pKBDesc) != Success)
+        return 0;
+    {
+        unsigned i, j;
+
+        memset(keyc2scan, 0, sizeof(keyc2scan));
+        for (i = pKBDesc->min_key_code; i < pKBDesc->max_key_code; ++i)
+            for (j = 0; j < sizeof(xkbMap) / sizeof(xkbMap[0]); ++j)
+                if (!memcmp(xkbMap[j].cszName,
+                            &pKBDesc->names->keys->name[i * XKB_NAME_SIZE],
+                            XKB_NAME_SIZE))
+                {
+                    keyc2scan[i] = xkbMap[j].uScan;
+                    break;
+                }
+    }
+    XkbFreeNames(pKBDesc, XkbKeyNamesMask, True);
+    XkbFreeKeyboard(pKBDesc, XkbAllComponentsMask, True);
+    return 1;
 }
 
 /**
@@ -559,13 +603,16 @@ X11DRV_InitKeyboardByType(Display *display)
  *                           succeeded, and to 0 otherwise
  * @param   byTypeOK         diagnostic - set to one if detection by type
  *                           succeeded, and to 0 otherwise
+ * @param   byXkbOK          diagnostic - set to one if detection using XKB
+ *                           succeeded, and to 0 otherwise
  * @param   remapScancode    array of tuples that remap the keycode (first
  *                           part) to a scancode (second part)
  */
-unsigned X11DRV_InitKeyboard(Display *display, unsigned *byLayoutOK, unsigned *byTypeOK, int (*remapScancodes)[2])
+unsigned X11DRV_InitKeyboard(Display *display, unsigned *byLayoutOK,
+                             unsigned *byTypeOK, unsigned *byXkbOK,
+                             int (*remapScancodes)[2])
 {
-    unsigned byLayout;
-    unsigned byType;
+    unsigned byLayout, byType, byXkb;
 
     byLayout = X11DRV_InitKeyboardByLayout(display);
     if (byLayoutOK)
@@ -575,13 +622,17 @@ unsigned X11DRV_InitKeyboard(Display *display, unsigned *byLayoutOK, unsigned *b
     if (byTypeOK)
         *byTypeOK = byType;
 
+    byXkb = X11DRV_InitKeyboardByXkb(display);
+    if (byXkbOK)
+        *byXkbOK = byXkb;
+
     /* Remap keycodes after initialization. Remapping stops after an
        identity mapping is seen */
     if (remapScancodes != NULL)
         for (; (*remapScancodes)[0] != (*remapScancodes)[1]; remapScancodes++)
             keyc2scan[(*remapScancodes)[0]] = (*remapScancodes)[1];
 
-    return (byLayout || byType) ? 1 : 0;
+    return (byLayout || byType || byXkb) ? 1 : 0;
 }
 
 /**

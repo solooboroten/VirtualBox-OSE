@@ -1,4 +1,4 @@
-/* $Id: UIMachineLogic.cpp 29915 2010-05-31 15:26:55Z vboxsync $ */
+/* $Id: UIMachineLogic.cpp 34728 2010-12-06 10:40:42Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -17,37 +17,34 @@
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
 
-/* Global includes */
-#include <QDir>
-#include <QFileInfo>
-#include <QDesktopWidget>
-#include <QTimer>
-
 /* Local includes */
 #include "COMDefs.h"
+#include "QIFileDialog.h"
+#include "UIActionsPool.h"
+#include "UIDownloaderAdditions.h"
+#include "UIIconPool.h"
+#include "UIKeyboardHandler.h"
+#include "UIMouseHandler.h"
+#include "UIMachineLogic.h"
+#include "UIMachineLogicFullscreen.h"
+#include "UIMachineLogicNormal.h"
+#include "UIMachineLogicSeamless.h"
+#include "UIMachineLogicScale.h"
+#include "UIMachineView.h"
+#include "UIMachineWindow.h"
+#include "UISession.h"
+#include "VBoxGlobal.h"
 #include "VBoxProblemReporter.h"
-
-#include "VBoxMediaManagerDlg.h"
 #include "VBoxTakeSnapshotDlg.h"
 #include "VBoxVMInformationDlg.h"
-#include "VBoxVMSettingsNetwork.h"
-#include "VBoxVMSettingsSF.h"
-#include "UIDownloaderAdditions.h"
+#include "UIMachineSettingsNetwork.h"
+#include "UIMachineSettingsSF.h"
 #ifdef Q_WS_MAC
 # include "DockIconPreview.h"
+# include "UIExtraDataEventHandler.h"
 #endif /* Q_WS_MAC */
 
-#include "QIFileDialog.h"
-
-#include "UISession.h"
-#include "UIActionsPool.h"
-#include "UIMachineLogic.h"
-#include "UIMachineLogicNormal.h"
-#include "UIMachineLogicFullscreen.h"
-#include "UIMachineLogicSeamless.h"
-#include "UIMachineWindow.h"
-#include "UIMachineView.h"
-
+/* Global includes */
 #include <iprt/path.h>
 #include <VBox/VMMDev.h>
 
@@ -59,6 +56,11 @@
 # include <XKeyboard.h>
 # include <QX11Info>
 #endif /* Q_WS_X11 */
+
+#include <QDir>
+#include <QFileInfo>
+#include <QDesktopWidget>
+#include <QTimer>
 
 struct MediumTarget
 {
@@ -109,10 +111,10 @@ public:
         pMainLayout->setSpacing(10);
 
         /* Setup settings layout */
-        m_pSettings = new VBoxVMSettingsNetworkPage(true);
+        m_pSettings = new UIMachineSettingsNetworkPage(true);
         m_pSettings->setOrderAfter(this);
         VBoxGlobal::setLayoutMargin(m_pSettings->layout(), 0);
-        m_pSettings->getFrom(m_session.GetMachine());
+        m_pSettings->loadDirectlyFrom(m_session.GetMachine());
         pMainLayout->addWidget(m_pSettings);
 
         /* Setup button's layout */
@@ -137,8 +139,8 @@ protected slots:
 
     virtual void accept()
     {
-        m_pSettings->putBackTo();
         CMachine machine = m_session.GetMachine();
+        m_pSettings->saveDirectlyTo(machine);
         machine.SaveSettings();
         if (!machine.isOk())
             vboxProblem().cannotSaveMachineSettings(machine);
@@ -157,7 +159,7 @@ protected:
 
 private:
 
-    VBoxSettingsPage *m_pSettings;
+    UIMachineSettingsNetworkPage *m_pSettings;
     CSession &m_session;
 };
 
@@ -183,10 +185,9 @@ public:
         pMainLayout->setSpacing(10);
 
         /* Setup settings layout */
-        m_pSettings = new VBoxVMSettingsSF(MachineType | ConsoleType, this);
+        m_pSettings = new UIMachineSettingsSF;
         VBoxGlobal::setLayoutMargin(m_pSettings->layout(), 0);
-        m_pSettings->getFromConsole(m_session.GetConsole());
-        m_pSettings->getFromMachine(m_session.GetMachine());
+        m_pSettings->loadDirectlyFrom(m_session.GetConsole());
         pMainLayout->addWidget(m_pSettings);
 
         /* Setup button's layout */
@@ -211,9 +212,9 @@ protected slots:
 
     virtual void accept()
     {
-        m_pSettings->putBackToConsole();
-        m_pSettings->putBackToMachine();
         CMachine machine = m_session.GetMachine();
+        CConsole console = m_session.GetConsole();
+        m_pSettings->saveDirectlyTo(console);
         machine.SaveSettings();
         if (!machine.isOk())
             vboxProblem().cannotSaveMachineSettings(machine);
@@ -232,7 +233,7 @@ protected:
 
 private:
 
-    VBoxVMSettingsSF *m_pSettings;
+    UIMachineSettingsSF *m_pSettings;
     CSession &m_session;
 };
 
@@ -252,6 +253,9 @@ UIMachineLogic* UIMachineLogic::create(QObject *pParent,
             break;
         case UIVisualStateType_Seamless:
             logic = new UIMachineLogicSeamless(pParent, pSession, pActionsPool);
+            break;
+        case UIVisualStateType_Scale:
+            logic = new UIMachineLogicScale(pParent, pSession, pActionsPool);
             break;
     }
     return logic;
@@ -338,6 +342,7 @@ UIMachineLogic::UIMachineLogic(QObject *pParent,
     , m_pSession(pSession)
     , m_pActionsPool(pActionsPool)
     , m_visualStateType(visualStateType)
+    , m_pMouseHandler(0)
     , m_pRunningActions(0)
     , m_pRunningOrPausedActions(0)
     , m_fIsWindowsCreated(false)
@@ -371,6 +376,16 @@ CSession& UIMachineLogic::session()
 void UIMachineLogic::addMachineWindow(UIMachineWindow *pMachineWindow)
 {
     m_machineWindowsList << pMachineWindow;
+}
+
+void UIMachineLogic::setKeyboardHandler(UIKeyboardHandler *pKeyboardHandler)
+{
+    m_pKeyboardHandler = pKeyboardHandler;
+}
+
+void UIMachineLogic::setMouseHandler(UIMouseHandler *pMouseHandler)
+{
+    m_pMouseHandler = pMouseHandler;
 }
 
 void UIMachineLogic::retranslateUi()
@@ -480,8 +495,8 @@ void UIMachineLogic::prepareActionConnections()
             this, SLOT(sltOpenNetworkAdaptersDialog()));
     connect(actionsPool()->action(UIActionIndex_Simple_SharedFoldersDialog), SIGNAL(triggered()),
             this, SLOT(sltOpenSharedFoldersDialog()));
-    connect(actionsPool()->action(UIActionIndex_Toggle_VRDP), SIGNAL(toggled(bool)),
-            this, SLOT(sltSwitchVrdp(bool)));
+    connect(actionsPool()->action(UIActionIndex_Toggle_VRDEServer), SIGNAL(toggled(bool)),
+            this, SLOT(sltSwitchVrde(bool)));
     connect(actionsPool()->action(UIActionIndex_Simple_InstallGuestTools), SIGNAL(triggered()),
             this, SLOT(sltInstallGuestAdditions()));
 
@@ -522,6 +537,7 @@ void UIMachineLogic::prepareActionGroups()
     /* Move actions into running actions group: */
     m_pRunningActions->addAction(actionsPool()->action(UIActionIndex_Toggle_Fullscreen));
     m_pRunningActions->addAction(actionsPool()->action(UIActionIndex_Toggle_Seamless));
+    m_pRunningActions->addAction(actionsPool()->action(UIActionIndex_Toggle_Scale));
     m_pRunningActions->addAction(actionsPool()->action(UIActionIndex_Toggle_GuestAutoresize));
     m_pRunningActions->addAction(actionsPool()->action(UIActionIndex_Simple_AdjustWindow));
     m_pRunningActions->addAction(actionsPool()->action(UIActionIndex_Simple_TypeCAD));
@@ -544,8 +560,17 @@ void UIMachineLogic::prepareActionGroups()
     m_pRunningOrPausedActions->addAction(actionsPool()->action(UIActionIndex_Simple_NetworkAdaptersDialog));
     m_pRunningOrPausedActions->addAction(actionsPool()->action(UIActionIndex_Menu_SharedFolders));
     m_pRunningOrPausedActions->addAction(actionsPool()->action(UIActionIndex_Simple_SharedFoldersDialog));
-    m_pRunningOrPausedActions->addAction(actionsPool()->action(UIActionIndex_Toggle_VRDP));
+    m_pRunningOrPausedActions->addAction(actionsPool()->action(UIActionIndex_Toggle_VRDEServer));
     m_pRunningOrPausedActions->addAction(actionsPool()->action(UIActionIndex_Simple_InstallGuestTools));
+}
+
+void UIMachineLogic::prepareHandlers()
+{
+    /* Create keyboard-handler: */
+    setKeyboardHandler(UIKeyboardHandler::create(this, visualStateType()));
+
+    /* Create mouse-handler: */
+    setMouseHandler(UIMouseHandler::create(this, visualStateType()));
 }
 
 #ifdef Q_WS_MAC
@@ -557,7 +582,7 @@ void UIMachineLogic::prepareDock()
      * this. */
     QList<QAction*> actions = actionsPool()->action(UIActionIndex_Menu_Machine)->menu()->actions();
     for (int i=0; i < actions.size(); ++i)
-        if (actions.at(i)->menuRole() == QAction::TextHeuristicRole)
+        if (actions.at(i)->menuRole() == QAction::NoRole)
             pDockMenu->addAction(actions.at(i));
     pDockMenu->addSeparator();
 
@@ -571,8 +596,8 @@ void UIMachineLogic::prepareDock()
 
     connect(pDockPreviewModeGroup, SIGNAL(triggered(QAction*)),
             this, SLOT(sltDockPreviewModeChanged(QAction*)));
-    connect(&vboxGlobal(), SIGNAL(dockIconUpdateChanged(const VBoxChangeDockIconUpdateEvent &)),
-            this, SLOT(sltChangeDockIconUpdate(const VBoxChangeDockIconUpdateEvent &)));
+    connect(gEDataEvents, SIGNAL(sigDockIconAppearanceChange(bool)),
+            this, SLOT(sltChangeDockIconUpdate(bool)));
 
     /* Monitor selection if there are more than one monitor */
     int cGuestScreens = uisession()->session().GetMachine().GetMonitorCount();
@@ -597,8 +622,7 @@ void UIMachineLogic::prepareDock()
     pDockMenu->addMenu(pDockSettingsMenu);
 
     /* Add it to the dock. */
-    extern void qt_mac_set_dock_menu(QMenu *);
-    qt_mac_set_dock_menu(pDockMenu);
+    ::darwinSetDockIconMenu(pDockMenu);
 
     /* Now the dock icon preview */
     QString osTypeId = session().GetConsole().GetGuest().GetOSTypeId();
@@ -632,13 +656,29 @@ void UIMachineLogic::prepareRequiredFeatures()
 #endif
 }
 
-void UIMachineLogic::cleanupMachineWindows()
+#ifdef VBOX_WITH_DEBUGGER_GUI
+void UIMachineLogic::prepareDebugger()
 {
-#ifdef Q_WS_MAC
-    /* We need to clean up the dock stuff before the machine windows. */
-    cleanupDock();
-#endif /* Q_WS_MAC */
+    CMachine machine = uisession()->session().GetMachine();
+    if (!machine.isNull() && vboxGlobal().isDebuggerAutoShowEnabled(machine))
+    {
+        /* console in upper left corner of the desktop. */
+//        QRect rct (0, 0, 0, 0);
+//        QDesktopWidget *desktop = QApplication::desktop();
+//        if (desktop)
+//            rct = desktop->availableGeometry(pos());
+//        move (QPoint (rct.x(), rct.y()));
+
+        if (vboxGlobal().isDebuggerAutoShowStatisticsEnabled(machine))
+            sltShowDebugStatistics();
+        if (vboxGlobal().isDebuggerAutoShowCommandLineEnabled(machine))
+            sltShowDebugCommandLine();
+
+        if (!vboxGlobal().isStartPausedEnabled())
+            sltPause(false);
+    }
 }
+#endif /* VBOX_WITH_DEBUGGER_GUI */
 
 #ifdef Q_WS_MAC
 void UIMachineLogic::cleanupDock()
@@ -650,6 +690,15 @@ void UIMachineLogic::cleanupDock()
     }
 }
 #endif /* Q_WS_MAC */
+
+void UIMachineLogic::cleanupHandlers()
+{
+    /* Cleanup mouse-handler: */
+    UIMouseHandler::destroy(mouseHandler());
+
+    /* Cleanup keyboard-handler: */
+    UIKeyboardHandler::destroy(keyboardHandler());
+}
 
 void UIMachineLogic::sltMachineStateChanged()
 {
@@ -763,8 +812,7 @@ void UIMachineLogic::sltMachineStateChanged()
 
 void UIMachineLogic::sltAdditionsStateChanged()
 {
-    /* Variable falgs: */
-    bool fIsAdditionsActive = uisession()->isGuestAdditionsActive();
+    /* Variable flags: */
     bool fIsSupportsGraphics = uisession()->isGuestSupportsGraphics();
     bool fIsSupportsSeamless = uisession()->isGuestSupportsSeamless();
 
@@ -774,29 +822,6 @@ void UIMachineLogic::sltAdditionsStateChanged()
 
     /* Check if we should enter some extended mode: */
     sltCheckRequestedModes();
-
-    /* Check the GA version only in case of additions are active: */
-    if (!fIsAdditionsActive)
-        return;
-    /* Check the Guest Additions version and warn the user about possible compatibility issues in case if the installed version is outdated. */
-    CGuest guest = session().GetConsole().GetGuest();
-    QString strVersion = guest.GetAdditionsVersion();
-    uint uVersion = strVersion.toUInt();
-    /** @todo r=bird: This isn't want we want! We want the VirtualBox version of the additions, all three numbers. See @bugref{4084}.*/
-    QString strRealVersion = QString("%1.%2").arg(RT_HIWORD(uVersion)).arg(RT_LOWORD(uVersion));
-    QString strExpectedVersion = QString("%1.%2").arg(VMMDEV_VERSION_MAJOR).arg(VMMDEV_VERSION_MINOR);
-    if (RT_HIWORD(uVersion) < VMMDEV_VERSION_MAJOR)
-    {
-        vboxProblem().warnAboutTooOldAdditions(0, strRealVersion, strExpectedVersion);
-    }
-    else if (RT_HIWORD(uVersion) == VMMDEV_VERSION_MAJOR && RT_LOWORD(uVersion) <  VMMDEV_VERSION_MINOR)
-    {
-        vboxProblem().warnAboutOldAdditions(0, strRealVersion, strExpectedVersion);
-    }
-    else if (uVersion > VMMDEV_VERSION)
-    {
-        vboxProblem().warnAboutNewAdditions(0, strRealVersion, strExpectedVersion);
-    }
 }
 
 void UIMachineLogic::sltMouseCapabilityChanged()
@@ -914,8 +939,7 @@ void UIMachineLogic::sltToggleMouseIntegration(bool fOff)
         return;
 
     /* Disable/Enable mouse-integration for all view(s): */
-    foreach(UIMachineWindow *pMachineWindow, machineWindows())
-        pMachineWindow->machineView()->setMouseIntegrationEnabled(!fOff);
+    m_pMouseHandler->setMouseIntegrationEnabled(!fOff);
 }
 
 void UIMachineLogic::sltTypeCAD()
@@ -968,7 +992,7 @@ void UIMachineLogic::sltTakeSnapshot()
 
     /* Search for the max available filter index. */
     QString strNameTemplate = QApplication::translate("UIMachineLogic", "Snapshot %1");
-    int iMaxSnapshotIndex = searchMaxSnapshotIndex(machine, machine.GetSnapshot(QString()), strNameTemplate);
+    int iMaxSnapshotIndex = searchMaxSnapshotIndex(machine, machine.FindSnapshot(QString()), strNameTemplate);
     dlg.mLeName->setText(strNameTemplate.arg(++ iMaxSnapshotIndex));
 
     if (dlg.exec() == QDialog::Accepted)
@@ -980,7 +1004,7 @@ void UIMachineLogic::sltTakeSnapshot()
         if (console.isOk())
         {
             /* Show the "Taking Snapshot" progress dialog */
-            vboxProblem().showModalProgressDialog(progress, machine.GetName(), 0, 0);
+            vboxProblem().showModalProgressDialog(progress, machine.GetName());
 
             if (progress.GetResultCode() != 0)
                 vboxProblem().cannotTakeSnapshot(progress);
@@ -1196,13 +1220,13 @@ void UIMachineLogic::sltPrepareStorageMenu()
                 case VBoxDefs::MediumType_DVD:
                     callVMMAction->setText(QApplication::translate("UIMachineLogic", "More CD/DVD Images..."));
                     unmountMediumAction->setText(QApplication::translate("UIMachineLogic", "Unmount CD/DVD Device"));
-                    unmountMediumAction->setIcon(VBoxGlobal::iconSet(":/cd_unmount_16px.png",
+                    unmountMediumAction->setIcon(UIIconPool::iconSet(":/cd_unmount_16px.png",
                                                                      ":/cd_unmount_dis_16px.png"));
                     break;
                 case VBoxDefs::MediumType_Floppy:
                     callVMMAction->setText(QApplication::translate("UIMachineLogic", "More Floppy Images..."));
                     unmountMediumAction->setText(QApplication::translate("UIMachineLogic", "Unmount Floppy Device"));
-                    unmountMediumAction->setIcon(VBoxGlobal::iconSet(":/fd_unmount_16px.png",
+                    unmountMediumAction->setIcon(UIIconPool::iconSet(":/fd_unmount_16px.png",
                                                                      ":/fd_unmount_dis_16px.png"));
                     break;
                 default:
@@ -1230,7 +1254,7 @@ void UIMachineLogic::sltPrepareStorageMenu()
             default:
                 break;
         }
-        pEmptyMenuAction->setIcon(VBoxGlobal::iconSet(":/delete_16px.png", ":/delete_dis_16px.png"));
+        pEmptyMenuAction->setIcon(UIIconPool::iconSet(":/delete_16px.png", ":/delete_dis_16px.png"));
         pMenu->addAction(pEmptyMenuAction);
     }
 }
@@ -1268,10 +1292,10 @@ void UIMachineLogic::sltMountStorageMedium()
                 usedImages << medium.GetId();
         }
         /* Open VMM Dialog: */
-        VBoxMediaManagerDlg dlg(defaultMachineWindow()->machineWindow());
-        dlg.setup(target.type, true /* select? */, true /* refresh? */, machine, currentId, true, usedImages);
-        if (dlg.exec() == QDialog::Accepted)
-            newId = dlg.selectedId();
+        QString strMediumId = vboxGlobal().openMediumWithFileOpenDialog(target.type, defaultMachineWindow()->machineWindow());
+        defaultMachineWindow()->machineView()->setFocus();
+        if (!strMediumId.isNull())
+            newId = strMediumId;
         else return;
     }
     /* Use medium which was sent: */
@@ -1280,9 +1304,12 @@ void UIMachineLogic::sltMountStorageMedium()
 
     bool fMount = !newId.isEmpty();
 
+    VBoxMedium vmedium = vboxGlobal().findMedium(newId);
+    CMedium medium = vmedium.medium();              // @todo r=dj can this be cached somewhere?
+
     /* Remount medium to the predefined port/device: */
     bool fWasMounted = false;
-    machine.MountMedium(target.name, target.port, target.device, newId, false /* force */);
+    machine.MountMedium(target.name, target.port, target.device, medium, false /* force */);
     if (machine.isOk())
         fWasMounted = true;
     else
@@ -1291,7 +1318,7 @@ void UIMachineLogic::sltMountStorageMedium()
         if (vboxProblem().cannotRemountMedium(0, machine, vboxGlobal().findMedium (fMount ? newId : currentId), fMount, true /* retry? */) == QIMessageBox::Ok)
         {
             /* Force remount medium to the predefined port/device: */
-            machine.MountMedium(target.name, target.port, target.device, newId, true /* force */);
+            machine.MountMedium(target.name, target.port, target.device, medium, true /* force */);
             if (machine.isOk())
                 fWasMounted = true;
             else
@@ -1332,7 +1359,7 @@ void UIMachineLogic::sltPrepareUSBMenu()
         QAction *pEmptyMenuAction = new QAction(pMenu);
         pEmptyMenuAction->setEnabled(false);
         pEmptyMenuAction->setText(QApplication::translate("UIMachineLogic", "No USB Devices Connected"));
-        pEmptyMenuAction->setIcon(VBoxGlobal::iconSet(":/delete_16px.png", ":/delete_dis_16px.png"));
+        pEmptyMenuAction->setIcon(UIIconPool::iconSet(":/delete_16px.png", ":/delete_dis_16px.png"));
         pEmptyMenuAction->setToolTip(QApplication::translate("UIMachineLogic", "No supported devices connected to the host PC"));
     }
     else
@@ -1348,7 +1375,7 @@ void UIMachineLogic::sltPrepareUSBMenu()
             connect(attachUSBAction, SIGNAL(triggered(bool)), this, SLOT(sltAttachUSBDevice()));
             pMenu->addAction(attachUSBAction);
 
-            /* Check if that USB device was alread attached to this session: */
+            /* Check if that USB device was already attached to this session: */
             CConsole console = session().GetConsole();
             CUSBDevice attachedDevice = console.FindUSBDeviceById(device.GetId());
             attachUSBAction->setChecked(!attachedDevice.isNull());
@@ -1408,14 +1435,16 @@ void UIMachineLogic::sltOpenSharedFoldersDialog()
 
     /* Show shared folders settings dialog: */
     UISharedFoldersDialog dlg(defaultMachineWindow()->machineWindow(), session());
+    if (!uisession()->isGuestAdditionsActive())
+        vboxProblem().remindAboutGuestAdditionsAreNotActive(defaultMachineWindow()->machineWindow());
     dlg.exec();
 }
 
-void UIMachineLogic::sltSwitchVrdp(bool fOn)
+void UIMachineLogic::sltSwitchVrde(bool fOn)
 {
-    /* Enable VRDP server if possible: */
-    CVRDPServer server = session().GetMachine().GetVRDPServer();
-    AssertMsg(!server.isNull(), ("VRDP server should not be null!\n"));
+    /* Enable VRDE server if possible: */
+    CVRDEServer server = session().GetMachine().GetVRDEServer();
+    AssertMsg(!server.isNull(), ("VRDE server should not be null!\n"));
     server.SetEnabled(fOn);
 }
 
@@ -1549,14 +1578,14 @@ void UIMachineLogic::sltDockPreviewMonitorChanged(QAction *pAction)
     }
 }
 
-void UIMachineLogic::sltChangeDockIconUpdate(const VBoxChangeDockIconUpdateEvent &event)
+void UIMachineLogic::sltChangeDockIconUpdate(bool fEnabled)
 {
     if (isMachineWindowsCreated())
     {
-        setDockIconPreviewEnabled(event.mChanged);
+        setDockIconPreviewEnabled(fEnabled);
         if (m_pDockPreviewSelectMonitorGroup)
         {
-            m_pDockPreviewSelectMonitorGroup->setEnabled(event.mChanged);
+            m_pDockPreviewSelectMonitorGroup->setEnabled(fEnabled);
             CMachine machine = session().GetMachine();
             m_DockIconPreviewMonitor = qMin(machine.GetExtraData(VBoxDefs::GUI_RealtimeDockIconUpdateMonitor).toInt(), (int)machine.GetMonitorCount() - 1);
         }
@@ -1649,34 +1678,6 @@ void UIMachineLogic::dbgAdjustRelativePos()
         QRect rct = defaultMachineWindow()->machineWindow()->frameGeometry();
         m_pDbgGuiVT->pfnAdjustRelativePos(m_pDbgGui, rct.x(), rct.y(), rct.width(), rct.height());
     }
-}
-#endif
-
-#if 0 // TODO: Where to move that?
-void UIMachineLogic::setViewInSeamlessMode (const QRect &aTargetRect)
-{
-#ifndef Q_WS_MAC
-    /* It isn't guaranteed that the guest os set the video mode that
-     * we requested. So after all the resizing stuff set the clipping
-     * mask and the spacing shifter to the corresponding values. */
-    QDesktopWidget *dtw = QApplication::desktop();
-    QRect sRect = dtw->screenGeometry (this);
-    QRect aRect (aTargetRect);
-    mMaskShift.scale (aTargetRect.left(), aTargetRect.top(), Qt::IgnoreAspectRatio);
-    /* Set the clipping mask */
-    mStrictedRegion = aRect;
-    /* Set the shifting spacer */
-    mShiftingSpacerLeft->changeSize (RT_ABS (sRect.left() - aRect.left()), 0,
-                                     QSizePolicy::Fixed, QSizePolicy::Preferred);
-    mShiftingSpacerTop->changeSize (0, RT_ABS (sRect.top() - aRect.top()),
-                                    QSizePolicy::Preferred, QSizePolicy::Fixed);
-    mShiftingSpacerRight->changeSize (RT_ABS (sRect.right() - aRect.right()), 0,
-                                      QSizePolicy::Fixed, QSizePolicy::Preferred);
-    mShiftingSpacerBottom->changeSize (0, RT_ABS (sRect.bottom() - aRect.bottom()),
-                                           QSizePolicy::Preferred, QSizePolicy::Fixed);
-#else // !Q_WS_MAC
-    NOREF (aTargetRect);
-#endif // !Q_WS_MAC
 }
 #endif
 

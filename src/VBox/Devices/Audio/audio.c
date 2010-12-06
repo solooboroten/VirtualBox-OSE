@@ -121,7 +121,11 @@ static struct {
     int plive;
 } conf = {
     {                           /* DAC fixed settings */
+#ifndef VBOX_WITH_AUDIO_FLEXIBLE_FORMAT
         1,                      /* enabled */
+#else
+        0,
+#endif
         1,                      /* nb_voices */
         1,                      /* greedy */
         {
@@ -132,7 +136,11 @@ static struct {
     },
 
     {                           /* ADC fixed settings */
+#ifndef VBOX_WITH_AUDIO_FLEXIBLE_FORMAT
         1,                      /* enabled */
+#else
+        0,
+#endif
         1,                      /* nb_voices */
         1,                      /* greedy */
         {
@@ -142,7 +150,7 @@ static struct {
         }
     },
 
-    { 100 },                    /* period */
+    { 200 },                    /* frequency (in Hz) */
     0,                          /* plive */
 };
 
@@ -1525,8 +1533,8 @@ static struct audio_option audio_options[] = {
      "Number of voices for ADC", NULL, 0},
 
     /* Misc */
-    {"TIMER_PERIOD", AUD_OPT_INT, &conf.period.hz,
-     "Timer period in HZ (0 - use lowest possible)", NULL, 0},
+    {"TIMER_FREQ", AUD_OPT_INT, &conf.period.hz,
+     "Timer frequency in Hz (0 - use lowest possible)", NULL, 0},
 
     {"PLIVE", AUD_OPT_BOOL, &conf.plive,
      "(undocumented)", NULL, 0},
@@ -1963,6 +1971,12 @@ static DECLCALLBACK(void) drvAudioDestruct(PPDMDRVINS pDrvIns)
 {
     LogFlow(("drvAUDIODestruct:\n"));
     PDMDRV_CHECK_VERSIONS_RETURN_VOID(pDrvIns);
+
+    if (audio_streamname)
+    {
+        MMR3HeapFree(audio_streamname);
+        audio_streamname = NULL;
+    }
 
     audio_atexit ();
 }

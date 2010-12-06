@@ -1,10 +1,10 @@
-# $Id: VBoxPkg.dsc 26453 2010-02-11 19:11:02Z vboxsync $
+# $Id: VBoxPkg.dsc 33540 2010-10-28 09:27:05Z vboxsync $
 ## @file
 # VBoxPkg.dsc - VirtualBox Flash Device.
 #
 
 #
-# Copyright (C) 2009-2010 Sun Microsystems, Inc.
+# Copyright (C) 2009-2010 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -13,19 +13,6 @@
 # Foundation, in version 2 as it comes in the "COPYING" file of the
 # VirtualBox OSE distribution. VirtualBox OSE is distributed in the
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
-#
-# The contents of this file may alternatively be used under the terms
-# of the Common Development and Distribution License Version 1.0
-# (CDDL) only, as it comes in the "COPYING.CDDL" file of the
-# VirtualBox OSE distribution, in which case the provisions of the
-# CDDL are applicable instead of those of the GPL.
-#
-# You may elect to license modified versions of this file under the
-# terms and conditions of either the GPL or the CDDL or both.
-#
-# Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa
-# Clara, CA 95054 USA or visit http://www.sun.com if you need
-# additional information or have any questions.
 #/
 
 
@@ -370,8 +357,12 @@
   MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
   MdeModulePkg/Bus/Scsi/ScsiBusDxe/ScsiBusDxe.inf
   MdeModulePkg/Bus/Scsi/ScsiDiskDxe/ScsiDiskDxe.inf
-  IntelFrameworkModulePkg/Bus/Pci/IdeBusDxe/IdeBusDxe.inf
-  PcAtChipsetPkg/Bus/Pci/IdeControllerDxe/IdeControllerDxe.inf
+  # VBOX
+  VBoxPkg/VBoxIdeBusDxe/VBoxIdeBusDxe.inf 
+  VBoxPkg/VBoxIdeControllerDxe/VBoxIdeControllerDxe.inf
+  # VBOX end
+  #IntelFrameworkModulePkg/Bus/Pci/IdeBusDxe/IdeBusDxe.inf
+  #PcAtChipsetPkg/Bus/Pci/IdeControllerDxe/IdeControllerDxe.inf
   MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
   MdeModulePkg/Universal/SetupBrowserDxe/SetupBrowserDxe.inf
 
@@ -410,14 +401,14 @@
  # add -DVBOX
  #
 [BuildOptions.common]
-  GCC:*_*_*_CC_FLAGS = -DVBOX -DARCH_BITS=32 -DHC_ARCH_BITS=32
+  GCC:*_*_*_CC_FLAGS = -DVBOX -DARCH_BITS=32 -DHC_ARCH_BITS=32 -DEFI_SPECIFICATION_VERSION=0x0002000A -DPI_SPECIFICATION_VERSION=0x00010000 -DTIANO_RELEASE_VERSION=0x00080006
   # 
   # mingw set 0x4000000 as a default image base that is the reason 
   # PCD module loaded in the middle of space grub supposed to load
   # boot images. 
-  # this base address choosen looking at 
+  # this base address chosen looking at 
   # Shell> memmap 
   # in the place where Image.c locates the rest of the modules.
-  GCC:*_*_*_DLINK_FLAGS = --image-base 0x1f000000
-  INTEL:*_*_*_CC_FLAGS = -DVBOX -DARCH_BITS=32 -DHC_ARCH_BITS=32
-  MSFT:*_*_*_CC_FLAGS = -DVBOX -DARCH_BITS=32 -DHC_ARCH_BITS=32
+  GCC:*_*_*_DLINK_FLAGS = --image-base 0x1f000000 
+  INTEL:*_*_*_CC_FLAGS = -DVBOX -DARCH_BITS=32 -DHC_ARCH_BITS=32 -DEFI_SPECIFICATION_VERSION=0x0002000A -DPI_SPECIFICATION_VERSION=0x00010000 -DTIANO_RELEASE_VERSION=0x00080006
+  MSFT:*_*_*_CC_FLAGS = -DVBOX -DARCH_BITS=32 -DHC_ARCH_BITS=32 -DEFI_SPECIFICATION_VERSION=0x0002000A -DPI_SPECIFICATION_VERSION=0x00010000 -DTIANO_RELEASE_VERSION=0x00080006

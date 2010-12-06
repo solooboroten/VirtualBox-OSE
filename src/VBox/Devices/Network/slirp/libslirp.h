@@ -1,4 +1,4 @@
-/* $Id: libslirp.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: libslirp.h 34209 2010-11-19 16:04:55Z vboxsync $ */
 /** @file
  * NAT - slirp interface.
  */
@@ -37,6 +37,7 @@ int inet_aton(const char *cp, struct in_addr *ia);
 #endif
 
 #include <VBox/types.h>
+#include <VBox/dbgf.h>
 
 typedef struct NATState *PNATState;
 struct mbuf;
@@ -71,9 +72,12 @@ void slirp_output(void * pvUser, struct mbuf *m, const uint8_t *pkt, int pkt_len
 void slirp_urg_output(void *pvUser, struct mbuf *, const uint8_t *pu8Buf, int cb);
 void slirp_post_sent(PNATState pData, void *pvArg);
 
-int slirp_redir(PNATState pData, int is_udp, struct in_addr host_addr,
+int slirp_add_redirect(PNATState pData, int is_udp, struct in_addr host_addr,
                 int host_port, struct in_addr guest_addr,
                 int guest_port, const uint8_t *);
+int slirp_remove_redirect(PNATState pData, int is_udp, struct in_addr host_addr,
+                int host_port, struct in_addr guest_addr,
+                int guest_port);
 int slirp_add_exec(PNATState pData, int do_pty, const char *args, int addr_low_byte,
                    int guest_port);
 
@@ -86,10 +90,9 @@ void slirp_set_sndbuf(PNATState pData, int kilobytes);
 void slirp_set_tcp_rcvspace(PNATState pData, int kilobytes);
 void slirp_set_tcp_sndspace(PNATState pData, int kilobytes);
 
-int slirp_set_binding_address(PNATState, char *addr);
-#ifdef VBOX_WITH_SLIRP_BSD_MBUF
+int  slirp_set_binding_address(PNATState, char *addr);
 void slirp_set_mtu(PNATState, int);
-#endif
+void slirp_info(PNATState pData, PCDBGFINFOHLP pHlp, const char *pszArgs);
 
 #if defined(RT_OS_WINDOWS)
 
@@ -128,10 +131,7 @@ void *slirp_get_queue(PNATState pData);
 #endif
 
 struct mbuf *slirp_ext_m_get(PNATState pData, size_t cbMin, void **ppvBuf, size_t *pcbBuf);
-void slirp_ext_m_free(PNATState pData, struct mbuf *);
-#ifndef VBOX_WITH_SLIRP_BSD_MBUF
-void slirp_push_recv_thread(void *pvUser);
-#endif
+void slirp_ext_m_free(PNATState pData, struct mbuf *, uint8_t *pu8Buf);
 
 /*
  * Returns the timeout.

@@ -1,10 +1,10 @@
-/* $Id: alloc-r0drv-linux.c 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: alloc-r0drv-linux.c 32708 2010-09-23 11:18:51Z vboxsync $ */
 /** @file
  * IPRT - Memory Allocation, Ring-0 Driver, Linux.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -30,9 +30,10 @@
 *******************************************************************************/
 #include "the-linux-kernel.h"
 #include "internal/iprt.h"
-
 #include <iprt/mem.h>
+
 #include <iprt/assert.h>
+#include <iprt/err.h>
 #include "r0drv/alloc-r0drv.h"
 
 #if defined(RT_ARCH_AMD64) || defined(DOXYGEN_RUNNING)
@@ -110,14 +111,18 @@ RT_EXPORT_SYMBOL(RTR0MemExecDonate);
 /**
  * OS specific allocation function.
  */
-PRTMEMHDR rtR0MemAlloc(size_t cb, uint32_t fFlags)
+int rtR0MemAllocEx(size_t cb, uint32_t fFlags, PRTMEMHDR *ppHdr)
 {
+    PRTMEMHDR pHdr;
+
     /*
      * Allocate.
      */
-    PRTMEMHDR pHdr;
     if (fFlags & RTMEMHDR_FLAG_EXEC)
     {
+        if (fFlags & RTMEMHDR_FLAG_ANY_CTX)
+            return VERR_NOT_SUPPORTED;
+
 #if defined(RT_ARCH_AMD64)
 # ifdef RTMEMALLOC_EXEC_HEAP
         if (g_HeapExec != NIL_RTHEAPSIMPLE)
@@ -142,26 +147,28 @@ PRTMEMHDR rtR0MemAlloc(size_t cb, uint32_t fFlags)
     }
     else
     {
-        if (cb <= PAGE_SIZE)
+        if (cb <= PAGE_SIZE || (fFlags & RTMEMHDR_FLAG_ANY_CTX))
         {
             fFlags |= RTMEMHDR_FLAG_KMALLOC;
-            pHdr = kmalloc(cb + sizeof(*pHdr), GFP_KERNEL);
+            pHdr = kmalloc(cb + sizeof(*pHdr),
+                           (fFlags & RTMEMHDR_FLAG_ANY_CTX_ALLOC) ? GFP_ATOMIC : GFP_KERNEL);
         }
         else
             pHdr = vmalloc(cb + sizeof(*pHdr));
     }
+    if (RT_UNLIKELY(!pHdr))
+        return VERR_NO_MEMORY;
 
     /*
      * Initialize.
      */
-    if (pHdr)
-    {
-        pHdr->u32Magic  = RTMEMHDR_MAGIC;
-        pHdr->fFlags    = fFlags;
-        pHdr->cb        = cb;
-        pHdr->cbReq     = cb;
-    }
-    return pHdr;
+    pHdr->u32Magic  = RTMEMHDR_MAGIC;
+    pHdr->fFlags    = fFlags;
+    pHdr->cb        = cb;
+    pHdr->cbReq     = cb;
+
+    *ppHdr = pHdr;
+    return VINF_SUCCESS;
 }
 
 

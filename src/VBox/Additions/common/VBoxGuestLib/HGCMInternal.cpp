@@ -1,4 +1,4 @@
-/* $Revision: 29680 $ */
+/* $Revision: 33540 $ */
 /** @file
  * VBoxGuestLib - Host-Guest Communication Manager internal functions, implemented by VBoxGuest
  */
@@ -304,16 +304,15 @@ static int vbglR0HGCMInternalPreprocessCall(VBoxGuestHGCMCallInfo const *pCallIn
                         Log3(("GstHGCMCall: parm=%u type=%#x: cb=%#010x pv=%p locked kernel -> %p\n",
                               iParm, pSrcParm->type, cb, pSrcParm->u.Pointer.u.linearAddr, hObj));
                     }
+                    else if (cb > VBGLR0_MAX_HGCM_USER_PARM)
+                    {
+                        Log(("GstHGCMCall: id=%#x fn=%u parm=%u pv=%p cb=%#x > %#x -> out of range\n",
+                             pCallInfo->u32ClientID, pCallInfo->u32Function, iParm, pSrcParm->u.Pointer.u.linearAddr,
+                             cb, VBGLR0_MAX_HGCM_USER_PARM));
+                        return VERR_OUT_OF_RANGE;
+                    }
                     else
                     {
-                        if (cb > VBGLR0_MAX_HGCM_USER_PARM)
-                        {
-                            Log(("GstHGCMCall: id=%#x fn=%u parm=%u pv=%p cb=%#x > %#x -> out of range\n",
-                                 pCallInfo->u32ClientID, pCallInfo->u32Function, iParm, pSrcParm->u.Pointer.u.linearAddr,
-                                 cb, VBGLR0_MAX_HGCM_USER_PARM));
-                            return VERR_OUT_OF_RANGE;
-                        }
-
 #ifndef USE_BOUNCE_BUFFERS
                         rc = RTR0MemObjLockUser(&hObj, (RTR3PTR)pSrcParm->u.Pointer.u.linearAddr, cb, fAccess, NIL_RTR0PROCESS);
                         if (RT_FAILURE(rc))
@@ -706,7 +705,11 @@ static int vbglR0HGCMInternalDoCall(VMMDevHGCMCall *pHGCMCall, PFNVBGLHGCMCALLBA
                 uint32_t cMilliesToWait = rc2 == VERR_NOT_FOUND || rc2 == VERR_SEM_DESTROYED ? 500 : 2000;
                 uint64_t cElapsed       = 0;
                 if (rc2 != VERR_NOT_FOUND)
-                    LogRel(("vbglR0HGCMInternalDoCall: Failed to cancel the HGCM call on %Rrc: rc2=%Rrc\n", rc, rc2));
+                {
+                    static unsigned s_cErrors = 0;
+                    if (s_cErrors++ < 32)
+                        LogRel(("vbglR0HGCMInternalDoCall: Failed to cancel the HGCM call on %Rrc: rc2=%Rrc\n", rc, rc2));
+                }
                 else
                     Log(("vbglR0HGCMInternalDoCall: Cancel race rc=%Rrc rc2=%Rrc\n", rc, rc2));
 
@@ -746,7 +749,7 @@ static int vbglR0HGCMInternalDoCall(VMMDevHGCMCall *pHGCMCall, PFNVBGLHGCMCALLBA
  * @returns rc, unless RTR0MemUserCopyTo fails.
  * @param   pCallInfo           Call info structure to update.
  * @param   pHGCMCall           HGCM call request.
- * @param   pParmInfo           Paramter locking/buffering info.
+ * @param   pParmInfo           Parameter locking/buffering info.
  * @param   fIsUser             Is it a user (true) or kernel request.
  * @param   rc                  The current result code. Passed along to
  *                              preserve informational status codes.
@@ -812,12 +815,13 @@ static int vbglR0HGCMInternalCopyBackResult(VBoxGuestHGCMCallInfo *pCallInfo, VM
                     size_t cbOut = RT_MIN(pSrcParm->u.Pointer.size, pDstParm->u.Pointer.size);
                     if (cbOut)
                     {
+                        int rc2;
                         Assert(pParmInfo->aLockBufs[iLockBuf].iParm == iParm);
-                        int rc2 = RTR0MemUserCopyTo((RTR3PTR)pDstParm->u.Pointer.u.linearAddr,
-                                                    pParmInfo->aLockBufs[iLockBuf].pvSmallBuf
-                                                    ? pParmInfo->aLockBufs[iLockBuf].pvSmallBuf
-                                                    : RTR0MemObjAddress(pParmInfo->aLockBufs[iLockBuf].hObj),
-                                                    cbOut);
+                        rc2 = RTR0MemUserCopyTo((RTR3PTR)pDstParm->u.Pointer.u.linearAddr,
+                                                pParmInfo->aLockBufs[iLockBuf].pvSmallBuf
+                                                ? pParmInfo->aLockBufs[iLockBuf].pvSmallBuf
+                                                : RTR0MemObjAddress(pParmInfo->aLockBufs[iLockBuf].hObj),
+                                                cbOut);
                         if (RT_FAILURE(rc2))
                             return rc2;
                         iLockBuf++;
@@ -903,7 +907,11 @@ DECLR0VBGL(int) VbglR0HGCMInternalCall(VBoxGuestHGCMCallInfo *pCallInfo, uint32_
             {
                 if (   rc != VERR_INTERRUPTED
                     && rc != VERR_TIMEOUT)
-                    LogRel(("VbglR0HGCMInternalCall: vbglR0HGCMInternalDoCall failed. rc=%Rrc\n", rc));
+                {
+                    static unsigned s_cErrors = 0;
+                    if (s_cErrors++ < 32)
+                        LogRel(("VbglR0HGCMInternalCall: vbglR0HGCMInternalDoCall failed. rc=%Rrc\n", rc));
+                }
             }
 
             if (!fLeakIt)
@@ -953,8 +961,8 @@ DECLR0VBGL(int) VbglR0HGCMInternalCall32(VBoxGuestHGCMCallInfo *pCallInfo, uint3
                  || cbCallInfo >= pCallInfo->cParms * sizeof(HGCMFunctionParameter32),
                  VERR_INVALID_PARAMETER);
 
-    /* This Assert does not work on Solaris 64/32 mixed mode, not sure why, skipping for now */
-#ifndef RT_OS_SOLARIS
+    /* This Assert does not work on Solaris/Windows 64/32 mixed mode, not sure why, skipping for now */
+#if !defined(RT_OS_SOLARIS) && !defined(RT_OS_WINDOWS)
     AssertReturn((fFlags & VBGLR0_HGCMCALL_F_MODE_MASK) == VBGLR0_HGCMCALL_F_KERNEL, VERR_WRONG_ORDER);
 #endif
 
@@ -1020,7 +1028,6 @@ DECLR0VBGL(int) VbglR0HGCMInternalCall32(VBoxGuestHGCMCallInfo *pCallInfo, uint3
                 switch (pParm64->type)
                 {
                     case VMMDevHGCMParmType_32bit:
-                        LogRel(("pParm32->u.value32=%d\n", pParm32->u.value32));
                         pParm32->u.value32 = pParm64->u.value32;
                         break;
 
@@ -1042,10 +1049,18 @@ DECLR0VBGL(int) VbglR0HGCMInternalCall32(VBoxGuestHGCMCallInfo *pCallInfo, uint3
             }
         }
         else
-            LogRel(("VbglR0HGCMInternalCall32: VbglR0HGCMInternalCall failed. rc=%Rrc\n", rc));
+        {
+            static unsigned s_cErrors = 0;
+            if (s_cErrors++ < 32)
+                LogRel(("VbglR0HGCMInternalCall32: VbglR0HGCMInternalCall failed. rc=%Rrc\n", rc));
+        }
     }
     else
-        LogRel(("VbglR0HGCMInternalCall32: failed. rc=%Rrc\n", rc));
+    {
+        static unsigned s_cErrors = 0;
+        if (s_cErrors++ < 32)
+            LogRel(("VbglR0HGCMInternalCall32: failed. rc=%Rrc\n", rc));
+    }
 
     RTMemTmpFree(pCallInfo64);
     return rc;

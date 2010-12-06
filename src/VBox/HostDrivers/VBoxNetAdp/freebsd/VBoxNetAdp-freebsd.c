@@ -1,4 +1,4 @@
-/* $Id: VBoxNetAdp-freebsd.c 29713 2010-05-20 21:12:53Z vboxsync $ */
+/* $Id: VBoxNetAdp-freebsd.c 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * VBoxNetAdp - Virtual Network Adapter Driver (Host), FreeBSD Specific Code.
  */
@@ -102,7 +102,7 @@ VBoxNetAdpFreeBSDModuleEvent(struct module *pMod, int enmEventType, void *pvArg)
 {
     int rc = 0;
 
-    Log(("VBoxNetFltFreeBSDModuleEvent\n"));
+    Log(("VBoxNetAdpFreeBSDModuleEvent\n"));
 
     switch (enmEventType)
     {
@@ -169,7 +169,7 @@ VBoxNetAdpFreeBSDCtrlioctl(struct cdev *dev, u_long iCmd, caddr_t data, int flag
             break;
 
         case VBOXNETADP_CTL_REMOVE:
-            if (!memchr(pReq->szName, '\0', RT_MIN(sizeof(pReq->szName), IOCPARM_LEN(iCmd))))
+            if (!RTStrEnd(pReq->szName, RT_MIN(sizeof(pReq->szName), IOCPARM_LEN(iCmd))))
                 return EINVAL;
 
             pAdp = vboxNetAdpFindByName(pReq->szName);
@@ -201,7 +201,7 @@ static void VBoxNetAdpFreeBSDNetinit(void *priv)
 
 /**
  * Transmit packets.
- * netflt has aldready done everything for us so we just hand the
+ * netflt has already done everything for us so we just hand the
  * packets to BPF and increment the packet stats.
  */
 static void VBoxNetAdpFreeBSDNetstart(struct ifnet *ifp)

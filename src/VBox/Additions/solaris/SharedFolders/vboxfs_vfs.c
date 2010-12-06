@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2009 Oracle Corporation
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -12,6 +12,15 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+ *
+ * The contents of this file may alternatively be used under the terms
+ * of the Common Development and Distribution License Version 1.0
+ * (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+ * VirtualBox OSE distribution, in which case the provisions of the
+ * CDDL are applicable instead of those of the GPL.
+ *
+ * You may elect to license modified versions of this file under the
+ * terms and conditions of either the GPL or the CDDL or both.
  */
 
 #include <VBox/log.h>
@@ -35,6 +44,7 @@
 #include "vboxfs_prov.h"
 #include "vboxfs_vnode.h"
 #include "vboxfs_vfs.h"
+#include "vboxfs.h"
 
 #ifdef u
 #undef u
@@ -63,7 +73,9 @@ static int sffs_statvfs(vfs_t *vfsp, statvfs64_t *sbp);
 static mntopt_t sffs_options[] = {
 	/* Option	Cancels Opt	Arg	Flags		Data */
 	{"uid",		NULL,		NULL,	MO_HASVALUE,	NULL},
-	{"gid",		NULL,		NULL,	MO_HASVALUE,	NULL}
+	{"gid",		NULL,		NULL,	MO_HASVALUE,	NULL},
+	{"stat_ttl",	NULL,		NULL,	MO_HASVALUE,	NULL},
+	{"fsync",	NULL,		NULL,	0,	        NULL}
 };
 
 static mntopts_t sffs_options_table = {
@@ -226,6 +238,8 @@ sffs_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 	dev_t dev;
 	uid_t uid = 0;
 	gid_t gid = 0;
+	int stat_ttl = DEF_STAT_TTL_MS;
+	int fsync = 0;
 	char *optval;
 	long val;
 	char *path;
@@ -288,6 +302,20 @@ sffs_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 		gid = val;
 
 	/*
+	 * ttl to use for stat caches
+	 */
+	if (vfs_optionisset(vfsp, "stat_ttl", &optval) &&
+	    ddi_strtol(optval, NULL, 10, &val) == 0 &&
+	    (int)val == val)
+		stat_ttl = val;
+
+	/*
+	 * whether to honor fsync
+	 */
+	if (vfs_optionisset(vfsp, "fsync", &optval))
+		fsync = 1;
+
+	/*
 	 * Any unknown options are an error
 	 */
 	if ((uap->flags & MS_DATA) && uap->datalen > 0) {
@@ -321,13 +349,13 @@ sffs_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 		return (error);
 	}
 
-        /*
-         * find an available minor device number for this mount
-         */
-        mutex_enter(&sffs_minor_lock);
-        do {
-                sffs_minor = (sffs_minor + 1) & L_MAXMIN32;
-                dev = makedevice(sffs_major, sffs_minor);
+	/*
+	 * find an available minor device number for this mount
+	 */
+	mutex_enter(&sffs_minor_lock);
+	do {
+		sffs_minor = (sffs_minor + 1) & L_MAXMIN32;
+		dev = makedevice(sffs_major, sffs_minor);
 	} while (vfs_devismounted(dev));
 	mutex_exit(&sffs_minor_lock);
 
@@ -338,6 +366,8 @@ sffs_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 	sffs->sf_vfsp = vfsp;
 	sffs->sf_uid = uid;
 	sffs->sf_gid = gid;
+	sffs->sf_stat_ttl = stat_ttl;
+	sffs->sf_fsync = fsync;
 	sffs->sf_share_name = share_name;
 	sffs->sf_mntpath = mount_point;
 	sffs->sf_handle = handle;
@@ -361,7 +391,7 @@ sffs_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 	path = kmem_alloc(2, KM_SLEEP);
 	strcpy(path, ".");
 	mutex_enter(&sffs_lock);
-	sfnode = sfnode_make(sffs, path, VDIR, NULL, NULL);
+	sfnode = sfnode_make(sffs, path, VDIR, NULL, NULL, NULL, 0);
 	sffs->sf_rootnode = sfnode_get_vnode(sfnode);
 	sffs->sf_rootnode->v_flag |= VROOT;
 	sffs->sf_rootnode->v_vfsp = vfsp;
@@ -378,7 +408,7 @@ sffs_unmount(vfs_t *vfsp, int flag, cred_t *cr)
 	int error;
 
 	/*
-	 * generic securty check
+	 * generic security check
 	 */
 	LogFlowFunc(("sffs_unmount() of sffs=0x%p\n", sffs));
 	if ((error = secpolicy_fs_unmount(cr, vfsp)) != 0)

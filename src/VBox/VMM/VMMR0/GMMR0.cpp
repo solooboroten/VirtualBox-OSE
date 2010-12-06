@@ -1,4 +1,4 @@
-/* $Id: GMMR0.cpp 29983 2010-06-02 12:16:30Z vboxsync $ */
+/* $Id: GMMR0.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
 /** @file
  * GMM - Global Memory Manager.
  */
@@ -30,7 +30,7 @@
  * The allocation chunks has fixed sized, the size defined at compile time
  * by the #GMM_CHUNK_SIZE \#define.
  *
- * Each chunk is given an unquie ID. Each page also has a unique ID. The
+ * Each chunk is given an unique ID. Each page also has a unique ID. The
  * relation ship between the two IDs is:
  * @code
  *  GMM_CHUNK_SHIFT = log2(GMM_CHUNK_SIZE / PAGE_SIZE);
@@ -93,7 +93,7 @@
  *
  * The per page cost in kernel space is 32-bit plus whatever RTR0MEMOBJ
  * entails. In addition there is the chunk cost of approximately
- * (sizeof(RT0MEMOBJ) + sizof(CHUNK)) / 2^CHUNK_SHIFT bytes per page.
+ * (sizeof(RT0MEMOBJ) + sizeof(CHUNK)) / 2^CHUNK_SHIFT bytes per page.
  *
  * On Windows the per page #RTR0MEMOBJ cost is 32-bit on 32-bit windows
  * and 64-bit on 64-bit windows (a PFN_NUMBER in the MDL). So, 64-bit per page.
@@ -111,7 +111,7 @@
  * @subsection sub_gmm_locking  Serializing
  *
  * One simple fast mutex will be employed in the initial implementation, not
- * two as metioned in @ref subsec_pgmPhys_Serializing.
+ * two as mentioned in @ref subsec_pgmPhys_Serializing.
  *
  * @see @ref subsec_pgmPhys_Serializing
  *
@@ -292,7 +292,7 @@ typedef GMMPAGE *PGMMPAGE;
  * @{ */
 /** A private page. */
 #define GMM_PAGE_STATE_PRIVATE          0
-/** A private page - alternative value used on the 32-bit implemenation.
+/** A private page - alternative value used on the 32-bit implementation.
  * This will never be used on 64-bit hosts. */
 #define GMM_PAGE_STATE_PRIVATE_32       1
 /** A shared page. */
@@ -488,7 +488,7 @@ typedef struct GMM
     GMMCHUNKFREESET     Shared;
 
     /** Shared module tree (global). */
-    /** todo seperate trees for distinctly different guest OSes. */
+    /** @todo separate trees for distinctly different guest OSes. */
     PAVLGCPTRNODECORE   pGlobalSharedModuleTree;
 
     /** The maximum number of pages we're allowed to allocate.
@@ -675,7 +675,7 @@ GMMR0DECL(int) GMMR0Init(void)
         else
             SUPR0Printf("GMMR0Init: RTR0MemObjAllocPhysNC(,64K,Any) -> %d!\n", rc);
 #else
-# if defined(RT_OS_WINDOWS) || defined(RT_OS_SOLARIS) || defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD)
+# if defined(RT_OS_WINDOWS) || (defined(RT_OS_SOLARIS) && ARCH_BITS == 64) || defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD)
         pGMM->fLegacyAllocationMode = false;
 #  if ARCH_BITS == 32
         /* Don't reuse possibly partial chunks because of the virtual address space limitation. */
@@ -866,6 +866,8 @@ GMMR0DECL(void) GMMR0CleanupVM(PGVM pGVM)
              * and left over mappings. (This'll only catch private pages, shared
              * pages will be 'left behind'.)
              */
+            /** @todo this might be kind of expensive with a lot of VMs and
+             *   memory hanging around... */
             uint64_t cPrivatePages = pGVM->gmm.s.cPrivatePages; /* save */
             RTAvlU32DoWithAll(&pGMM->pChunks, true /* fFromLeft */, gmmR0CleanupVMScanChunk, pGVM);
             if (pGVM->gmm.s.cPrivatePages)
@@ -894,6 +896,10 @@ GMMR0DECL(void) GMMR0CleanupVM(PGVM pGVM)
                 SUPR0Printf("GMMR0CleanupVM: hGVM=%#x left %#x shared pages behind!\n", pGVM->hSelf, pGVM->gmm.s.cSharedPages);
                 pGMM->cLeftBehindSharedPages += pGVM->gmm.s.cSharedPages;
             }
+
+            /* Clean up balloon statistics in case the VM process crashed. */
+            Assert(pGMM->cBalloonedPages >= pGVM->gmm.s.cBalloonedPages);
+            pGMM->cBalloonedPages -= pGVM->gmm.s.cBalloonedPages;
 
             /*
              * Update the over-commitment management statistics.
@@ -1108,7 +1114,7 @@ static DECLCALLBACK(int) gmmR0CleanupVMScanChunk(PAVLU32NODECORE pNode, void *pv
  * @param   idCpu           VCPU id
  * @param   cBasePages      The number of pages that may be allocated for the base RAM and ROMs.
  *                          This does not include MMIO2 and similar.
- * @param   cShadowPages    The number of pages that may be allocated for shadow pageing structures.
+ * @param   cShadowPages    The number of pages that may be allocated for shadow paging structures.
  * @param   cFixedPages     The number of pages that may be allocated for fixed objects like the
  *                          hyper heap, MMIO2 and similar.
  * @param   enmPolicy       The OC policy to use on this VM.
@@ -1147,7 +1153,7 @@ GMMR0DECL(int) GMMR0InitialReservation(PVM pVM, VMCPUID idCpu, uint64_t cBasePag
             &&  !pGVM->gmm.s.Reserved.cShadowPages)
         {
             /*
-             * Check if we can accomodate this.
+             * Check if we can accommodate this.
              */
             /* ... later ... */
             if (RT_SUCCESS(rc))
@@ -1209,7 +1215,7 @@ GMMR0DECL(int) GMMR0InitialReservationReq(PVM pVM, VMCPUID idCpu, PGMMINITIALRES
  * @param   idCpu           VCPU id
  * @param   cBasePages      The number of pages that may be allocated for the base RAM and ROMs.
  *                          This does not include MMIO2 and similar.
- * @param   cShadowPages    The number of pages that may be allocated for shadow pageing structures.
+ * @param   cShadowPages    The number of pages that may be allocated for shadow paging structures.
  * @param   cFixedPages     The number of pages that may be allocated for fixed objects like the
  *                          hyper heap, MMIO2 and similar.
  *
@@ -1243,7 +1249,7 @@ GMMR0DECL(int) GMMR0UpdateReservation(PVM pVM, VMCPUID idCpu, uint64_t cBasePage
             &&  pGVM->gmm.s.Reserved.cShadowPages)
         {
             /*
-             * Check if we can accomodate this.
+             * Check if we can accommodate this.
              */
             /* ... later ... */
             if (RT_SUCCESS(rc))
@@ -2059,7 +2065,6 @@ GMMR0DECL(int) GMMR0AllocateHandyPages(PVM pVM, VMCPUID idCpu, uint32_t cPagesTo
     AssertRC(rc);
     if (GMM_CHECK_SANITY_UPON_ENTERING(pGMM))
     {
-
         /* No allocations before the initial reservation has been made! */
         if (RT_LIKELY(    pGVM->gmm.s.Reserved.cBasePages
                       &&  pGVM->gmm.s.Reserved.cFixedPages
@@ -2353,7 +2358,7 @@ GMMR0DECL(int)  GMMR0AllocateLargePage(PVM pVM, VMCPUID idCpu, uint32_t cbPage, 
             return VERR_GMM_HIT_VM_ACCOUNT_LIMIT;
         }
 
-        /* Allocate a new continous chunk. */
+        /* Allocate a new continuous chunk. */
         rc = gmmR0AllocateOneChunk(pGMM, &pGMM->Private, pGVM->hSelf, GMMCHUNKTYPE_CONTINUOUS, &pChunk);
         if (RT_FAILURE(rc))
         {
@@ -2384,7 +2389,7 @@ GMMR0DECL(int)  GMMR0AllocateLargePage(PVM pVM, VMCPUID idCpu, uint32_t cbPage, 
         rc = VERR_INTERNAL_ERROR_5;
 
     RTSemFastMutexRelease(pGMM->Mtx);
-    LogFlow(("GMMR0AllocatePages: returns %Rrc\n", rc));
+    LogFlow(("GMMR0AllocateLargePage: returns %Rrc\n", rc));
     return rc;
 }
 
@@ -2922,7 +2927,7 @@ GMMR0DECL(int) GMMR0FreePagesReq(PVM pVM, VMCPUID idCpu, PGMMFREEPAGESREQ pReq)
  * @returns VBox status code:
  * @retval  VERR_GMM_ATTEMPT_TO_FREE_TOO_MUCH
  * @retval  VERR_GMM_ATTEMPT_TO_DEFLATE_TOO_MUCH
- * @retval  VERR_GMM_OVERCOMMITED_TRY_AGAIN_IN_A_BIT - reset condition
+ * @retval  VERR_GMM_OVERCOMMITTED_TRY_AGAIN_IN_A_BIT - reset condition
  *          indicating that we won't necessarily have sufficient RAM to boot
  *          the VM again and that it should pause until this changes (we'll try
  *          balloon some other VM).  (For standard deflate we have little choice
@@ -2953,7 +2958,7 @@ GMMR0DECL(int) GMMR0BalloonedPages(PVM pVM, VMCPUID idCpu, GMMBALLOONACTION enmA
         return rc;
 
     /*
-     * Take the sempahore and do some more validations.
+     * Take the semaphore and do some more validations.
      */
     rc = RTSemFastMutexRequest(pGMM->Mtx);
     AssertRC(rc);
@@ -2963,7 +2968,7 @@ GMMR0DECL(int) GMMR0BalloonedPages(PVM pVM, VMCPUID idCpu, GMMBALLOONACTION enmA
         {
             case GMMBALLOONACTION_INFLATE:
             {
-                if (pGVM->gmm.s.Allocated.cBasePages >= cBalloonedPages)
+                if (RT_LIKELY(pGVM->gmm.s.Allocated.cBasePages + pGVM->gmm.s.cBalloonedPages + cBalloonedPages <= pGVM->gmm.s.Reserved.cBasePages))
                 {
                     /*
                      * Record the ballooned memory.
@@ -3132,7 +3137,7 @@ GMMR0DECL(int)  GMMR0QueryMemoryStatsReq(PVM pVM, VMCPUID idCpu, PGMMMEMSTATSREQ
         return rc;
 
     /*
-     * Take the sempahore and do some more validations.
+     * Take the semaphore and do some more validations.
      */
     rc = RTSemFastMutexRequest(pGMM->Mtx);
     AssertRC(rc);
@@ -3308,13 +3313,12 @@ static int gmmR0IsChunkMapped(PGVM pGVM, PGMMCHUNK pChunk, PRTR3PTR ppvR3)
  *
  * @returns VBox status code.
  * @param   pVM             The VM.
- * @param   idCpu           VCPU id
  * @param   idChunkMap      The chunk to map. NIL_GMM_CHUNKID if nothing to map.
  * @param   idChunkUnmap    The chunk to unmap. NIL_GMM_CHUNKID if nothing to unmap.
  * @param   ppvR3           Where to store the address of the mapped chunk. NULL is ok if nothing to map.
  * @thread  EMT
  */
-GMMR0DECL(int) GMMR0MapUnmapChunk(PVM pVM, VMCPUID idCpu, uint32_t idChunkMap, uint32_t idChunkUnmap, PRTR3PTR ppvR3)
+GMMR0DECL(int) GMMR0MapUnmapChunk(PVM pVM, uint32_t idChunkMap, uint32_t idChunkUnmap, PRTR3PTR ppvR3)
 {
     LogFlow(("GMMR0MapUnmapChunk: pVM=%p idChunkMap=%#x idChunkUnmap=%#x ppvR3=%p\n",
              pVM, idChunkMap, idChunkUnmap, ppvR3));
@@ -3325,7 +3329,7 @@ GMMR0DECL(int) GMMR0MapUnmapChunk(PVM pVM, VMCPUID idCpu, uint32_t idChunkMap, u
     PGMM pGMM;
     GMM_GET_VALID_INSTANCE(pGMM, VERR_INTERNAL_ERROR);
     PGVM pGVM;
-    int rc = GVMMR0ByVMAndEMT(pVM, idCpu, &pGVM);
+    int rc = GVMMR0ByVM(pVM, &pGVM);
     if (RT_FAILURE(rc))
         return rc;
 
@@ -3400,10 +3404,9 @@ GMMR0DECL(int) GMMR0MapUnmapChunk(PVM pVM, VMCPUID idCpu, uint32_t idChunkMap, u
  *
  * @returns see GMMR0MapUnmapChunk.
  * @param   pVM             Pointer to the shared VM structure.
- * @param   idCpu           VCPU id
  * @param   pReq            The request packet.
  */
-GMMR0DECL(int)  GMMR0MapUnmapChunkReq(PVM pVM, VMCPUID idCpu, PGMMMAPUNMAPCHUNKREQ pReq)
+GMMR0DECL(int)  GMMR0MapUnmapChunkReq(PVM pVM, PGMMMAPUNMAPCHUNKREQ pReq)
 {
     /*
      * Validate input and pass it on.
@@ -3412,7 +3415,7 @@ GMMR0DECL(int)  GMMR0MapUnmapChunkReq(PVM pVM, VMCPUID idCpu, PGMMMAPUNMAPCHUNKR
     AssertPtrReturn(pReq, VERR_INVALID_POINTER);
     AssertMsgReturn(pReq->Hdr.cbReq == sizeof(*pReq), ("%#x != %#x\n", pReq->Hdr.cbReq, sizeof(*pReq)), VERR_INVALID_PARAMETER);
 
-    return GMMR0MapUnmapChunk(pVM, idCpu, pReq->idChunkMap, pReq->idChunkUnmap, &pReq->pvR3);
+    return GMMR0MapUnmapChunk(pVM, pReq->idChunkMap, pReq->idChunkUnmap, &pReq->pvR3);
 }
 
 
@@ -3457,13 +3460,15 @@ GMMR0DECL(int) GMMR0SeedChunk(PVM pVM, VMCPUID idCpu, RTR3PTR pvR3)
     {
         /* Grab the lock. */
         rc = RTSemFastMutexRequest(pGMM->Mtx);
-        AssertRCReturn(rc, rc);
-
-        /*
-         * Add a new chunk with our hGVM.
-         */
-        rc = gmmR0RegisterChunk(pGMM, &pGMM->Private, MemObj, pGVM->hSelf, GMMCHUNKTYPE_NON_CONTINUOUS);
-        RTSemFastMutexRelease(pGMM->Mtx);
+        AssertRC(rc);
+        if (RT_SUCCESS(rc))
+        {
+            /*
+             * Add a new chunk with our hGVM.
+             */
+            rc = gmmR0RegisterChunk(pGMM, &pGMM->Private, MemObj, pGVM->hSelf, GMMCHUNKTYPE_NON_CONTINUOUS);
+            RTSemFastMutexRelease(pGMM->Mtx);
+        }
 
         if (RT_FAILURE(rc))
             RTR0MemObjFree(MemObj, false /* fFreeMappings */);
@@ -3491,7 +3496,7 @@ DECLCALLBACK(int) gmmR0CheckForIdenticalModule(PAVLGCPTRNODECORE pNode, void *pv
 
     if (    pInfo
         &&  pInfo->enmGuestOS == pModule->enmGuestOS
-        /** todo replace with RTStrNCmp */
+        /** @todo replace with RTStrNCmp */
         &&  !strcmp(pModule->szName, pInfo->pszModuleName)
         &&  !strcmp(pModule->szVersion, pInfo->pszVersion))
     {
@@ -3533,7 +3538,7 @@ GMMR0DECL(int) GMMR0RegisterSharedModule(PVM pVM, VMCPUID idCpu, VBOXOSFAMILY en
     Log(("GMMR0RegisterSharedModule %s %s base %RGv size %x\n", pszModuleName, pszVersion, GCBaseAddr, cbModule));
 
     /*
-     * Take the sempahore and do some more validations.
+     * Take the semaphore and do some more validations.
      */
     rc = RTSemFastMutexRequest(pGMM->Mtx);
     AssertRC(rc);
@@ -3545,7 +3550,7 @@ GMMR0DECL(int) GMMR0RegisterSharedModule(PVM pVM, VMCPUID idCpu, VBOXOSFAMILY en
         PGMMSHAREDMODULEPERVM pRecVM = (PGMMSHAREDMODULEPERVM)RTAvlGCPtrGet(&pGVM->gmm.s.pSharedModuleTree, GCBaseAddr);
         if (!pRecVM)
         {
-            pRecVM = (PGMMSHAREDMODULEPERVM)RTMemAllocZ(sizeof(*pRecVM));
+            pRecVM = (PGMMSHAREDMODULEPERVM)RTMemAllocZ(RT_OFFSETOF(GMMSHAREDMODULEPERVM, aRegions[cRegions]));
             if (!pRecVM)
             {
                 AssertFailed();
@@ -3553,6 +3558,16 @@ GMMR0DECL(int) GMMR0RegisterSharedModule(PVM pVM, VMCPUID idCpu, VBOXOSFAMILY en
                 goto end;
             }
             pRecVM->Core.Key = GCBaseAddr;
+            pRecVM->cRegions = cRegions;
+
+            /* Save the region data as they can differ between VMs (address space scrambling or simply different loading order) */
+            for (unsigned i = 0; i < cRegions; i++)
+            {
+                pRecVM->aRegions[i].GCRegionAddr      = pRegions[i].GCRegionAddr;
+                pRecVM->aRegions[i].cbRegion          = RT_ALIGN_T(pRegions[i].cbRegion, PAGE_SIZE, uint32_t);
+                pRecVM->aRegions[i].u32Alignment      = 0;
+                pRecVM->aRegions[i].paHCPhysPageID    = NULL; /* unused */
+            }
 
             bool ret = RTAvlGCPtrInsert(&pGVM->gmm.s.pSharedModuleTree, &pRecVM->Core);
             Assert(ret);
@@ -3578,11 +3593,13 @@ GMMR0DECL(int) GMMR0RegisterSharedModule(PVM pVM, VMCPUID idCpu, VBOXOSFAMILY en
             Info.pszModuleName = pszModuleName;
             Info.enmGuestOS    = enmGuestOS;
 
+            Log(("Try to find identical module %s\n", pszModuleName));
             int ret = RTAvlGCPtrDoWithAll(&pGMM->pGlobalSharedModuleTree, true /* fFromLeft */, gmmR0CheckForIdenticalModule, &Info);
             if (ret == 1)
             {
                 Assert(Info.pNode);
                 pGlobalModule = (PGMMSHAREDMODULE)Info.pNode;
+                Log(("Found identical module at %RGv\n", pGlobalModule->Core.Key));
             }
         }
 
@@ -3602,7 +3619,7 @@ GMMR0DECL(int) GMMR0RegisterSharedModule(PVM pVM, VMCPUID idCpu, VBOXOSFAMILY en
             pGlobalModule->Core.Key = GCBaseAddr;
             pGlobalModule->cbModule = cbModule;
             /* Input limit already safe; no need to check again. */
-            /** todo replace with RTStrCopy */
+            /** @todo replace with RTStrCopy */
             strcpy(pGlobalModule->szName, pszModuleName);
             strcpy(pGlobalModule->szVersion, pszVersion);
 
@@ -3634,14 +3651,14 @@ GMMR0DECL(int) GMMR0RegisterSharedModule(PVM pVM, VMCPUID idCpu, VBOXOSFAMILY en
             Assert(pGlobalModule->cUsers > 0);
 
             /* Make sure the name and version are identical. */
-            /** todo replace with RTStrNCmp */
+            /** @todo replace with RTStrNCmp */
             if (    !strcmp(pGlobalModule->szName, pszModuleName)
                 &&  !strcmp(pGlobalModule->szVersion, pszVersion))
             {
                 /* Save reference. */
                 pRecVM->pGlobalModule = pGlobalModule;
                 if (    fNewModule
-                    ||  pRecVM->fCollision == true) /* colliding module unregistered and new one registerd since the last check */
+                    ||  pRecVM->fCollision == true) /* colliding module unregistered and new one registered since the last check */
                 {
                     pGlobalModule->cUsers++;
                     Log(("GMMR0RegisterSharedModule: using existing module %s cUser=%d!\n", pszModuleName, pGlobalModule->cUsers));
@@ -3721,56 +3738,65 @@ GMMR0DECL(int) GMMR0UnregisterSharedModule(PVM pVM, VMCPUID idCpu, char *pszModu
     Log(("GMMR0UnregisterSharedModule %s %s base=%RGv size %x\n", pszModuleName, pszVersion, GCBaseAddr, cbModule));
 
     /*
-     * Take the sempahore and do some more validations.
+     * Take the semaphore and do some more validations.
      */
     rc = RTSemFastMutexRequest(pGMM->Mtx);
     AssertRC(rc);
     if (GMM_CHECK_SANITY_UPON_ENTERING(pGMM))
     {
         PGMMSHAREDMODULEPERVM pRecVM = (PGMMSHAREDMODULEPERVM)RTAvlGCPtrGet(&pGVM->gmm.s.pSharedModuleTree, GCBaseAddr);
-        if (!pRecVM)
+        if (pRecVM)
         {
-            rc = VERR_PGM_SHARED_MODULE_NOT_FOUND;
-            goto end;
-        }
-        /* Remove reference to global shared module. */
-        if (!pRecVM->fCollision)
-        {
-            PGMMSHAREDMODULE pRec = pRecVM->pGlobalModule;
-            Assert(pRec);
-
-            if (pRec)   /* paranoia */
+            /* Remove reference to global shared module. */
+            if (!pRecVM->fCollision)
             {
-                Assert(pRec->cUsers);
-                pRec->cUsers--;
-                if (pRec->cUsers == 0)
-                {
-                    /* Free the ranges, but leave the pages intact as there might still be references; they will be cleared by the COW mechanism. */
-                    for (unsigned i = 0; i < pRec->cRegions; i++)
-                        if (pRec->aRegions[i].paHCPhysPageID)
-                            RTMemFree(pRec->aRegions[i].paHCPhysPageID);
+                PGMMSHAREDMODULE pRec = pRecVM->pGlobalModule;
+                Assert(pRec);
 
-                    /* Remove from the tree and free memory. */
-                    RTAvlGCPtrRemove(&pGMM->pGlobalSharedModuleTree, GCBaseAddr);
-                    RTMemFree(pRec);
+                if (pRec)   /* paranoia */
+                {
+                    Assert(pRec->cUsers);
+                    pRec->cUsers--;
+                    if (pRec->cUsers == 0)
+                    {
+                        /* Free the ranges, but leave the pages intact as there might still be references; they will be cleared by the COW mechanism. */
+                        for (unsigned i = 0; i < pRec->cRegions; i++)
+                            if (pRec->aRegions[i].paHCPhysPageID)
+                                RTMemFree(pRec->aRegions[i].paHCPhysPageID);
+
+                        Assert(pRec->Core.Key == GCBaseAddr || pRec->enmGuestOS == VBOXOSFAMILY_Windows64);
+                        Assert(pRec->cRegions == pRecVM->cRegions);
+#ifdef VBOX_STRICT
+                        for (unsigned i = 0; i < pRecVM->cRegions; i++)
+                        {
+                            Assert(pRecVM->aRegions[i].GCRegionAddr == pRec->aRegions[i].GCRegionAddr);
+                            Assert(pRecVM->aRegions[i].cbRegion == pRec->aRegions[i].cbRegion);
+                        }
+#endif
+
+                        /* Remove from the tree and free memory. */
+                        RTAvlGCPtrRemove(&pGMM->pGlobalSharedModuleTree, pRec->Core.Key);
+                        RTMemFree(pRec);
+                    }
                 }
+                else
+                    rc = VERR_PGM_SHARED_MODULE_REGISTRATION_INCONSISTENCY;
             }
             else
-                rc = VERR_PGM_SHARED_MODULE_REGISTRATION_INCONSISTENCY;
+                Assert(!pRecVM->pGlobalModule);
+
+            /* Remove from the tree and free memory. */
+            RTAvlGCPtrRemove(&pGVM->gmm.s.pSharedModuleTree, GCBaseAddr);
+            RTMemFree(pRecVM);
         }
         else
-            Assert(!pRecVM->pGlobalModule);
-
-        /* Remove from the tree and free memory. */
-        RTAvlGCPtrRemove(&pGVM->gmm.s.pSharedModuleTree, GCBaseAddr);
-        RTMemFree(pRecVM);
+            rc = VERR_PGM_SHARED_MODULE_NOT_FOUND;
 
         GMM_CHECK_SANITY_UPON_LEAVING(pGMM);
     }
     else
         rc = VERR_INTERNAL_ERROR_5;
 
-end:
     RTSemFastMutexRelease(pGMM->Mtx);
     return rc;
 #else
@@ -3804,32 +3830,36 @@ GMMR0DECL(int)  GMMR0UnregisterSharedModuleReq(PVM pVM, VMCPUID idCpu, PGMMUNREG
  * Checks specified shared module range for changes
  *
  * Performs the following tasks:
- * - if a shared page is new, then it changes the GMM page type to shared and returns it in the paPageDesc array
- * - if a shared page already exists, then it checks if the VM page is identical and if so frees the VM page and returns the shared page in the paPageDesc array
+ *  - If a shared page is new, then it changes the GMM page type to shared and
+ *    returns it in the pPageDesc descriptor.
+ *  - If a shared page already exists, then it checks if the VM page is
+ *    identical and if so frees the VM page and returns the shared page in
+ *    pPageDesc descriptor.
  *
- * Note: assumes the caller has acquired the GMM semaphore!!
+ * @remarks ASSUMES the caller has acquired the GMM semaphore!!
  *
  * @returns VBox status code.
  * @param   pGMM                Pointer to the GMM instance data.
  * @param   pGVM                Pointer to the GVM instance data.
  * @param   pModule             Module description
  * @param   idxRegion           Region index
- * @param   cPages              Number of entries in the paPageDesc array
- * @param   paPageDesc          Page descriptor array (in/out)
+ * @param   idxPage             Page index
+ * @param   paPageDesc          Page descriptor
  */
-GMMR0DECL(int) GMMR0SharedModuleCheckRange(PGVM pGVM, PGMMSHAREDMODULE pModule, unsigned idxRegion, unsigned cPages, PGMMSHAREDPAGEDESC paPageDesc)
+GMMR0DECL(int) GMMR0SharedModuleCheckPage(PGVM pGVM, PGMMSHAREDMODULE pModule, unsigned idxRegion, unsigned idxPage,
+                                          PGMMSHAREDPAGEDESC pPageDesc)
 {
     int rc = VINF_SUCCESS;
     PGMM pGMM;
     GMM_GET_VALID_INSTANCE(pGMM, VERR_INTERNAL_ERROR);
+    unsigned cPages = pModule->aRegions[idxRegion].cbRegion >> PAGE_SHIFT;
 
     AssertReturn(idxRegion < pModule->cRegions, VERR_INVALID_PARAMETER);
-    AssertReturn(cPages == (pModule->aRegions[idxRegion].cbRegion >> PAGE_SHIFT), VERR_INVALID_PARAMETER);
+    AssertReturn(idxPage < cPages, VERR_INVALID_PARAMETER);
 
-    Log(("GMMR0SharedModuleCheckRange %s base %RGv region %d cPages %d\n", pModule->szName, pModule->Core.Key, idxRegion, cPages));
+    LogFlow(("GMMR0SharedModuleCheckRange %s base %RGv region %d idxPage %d\n", pModule->szName, pModule->Core.Key, idxRegion, idxPage));
 
     PGMMSHAREDREGIONDESC pGlobalRegion = &pModule->aRegions[idxRegion];
-
     if (!pGlobalRegion->paHCPhysPageID)
     {
         /* First time; create a page descriptor array. */
@@ -3846,122 +3876,120 @@ GMMR0DECL(int) GMMR0SharedModuleCheckRange(PGVM pGVM, PGMMSHAREDMODULE pModule, 
             pGlobalRegion->paHCPhysPageID[i] = NIL_GMM_PAGEID;
     }
 
-    /* Check all pages in the region. */
-    for (unsigned i = 0; i < cPages; i++)
+    /* We've seen this shared page for the first time? */
+    if (pGlobalRegion->paHCPhysPageID[idxPage] == NIL_GMM_PAGEID)
     {
-        /* Valid page present? */
-        if (paPageDesc[i].uHCPhysPageId != NIL_GMM_PAGEID)
-        {
-            /* We've seen this shared page for the first time? */
-            if (pGlobalRegion->paHCPhysPageID[i] == NIL_GMM_PAGEID)
-            {
 new_shared_page:
-                Log(("New shared page guest %RGp host %RHp\n", paPageDesc[i].GCPhys, paPageDesc[i].HCPhys));
+        Log(("New shared page guest %RGp host %RHp\n", pPageDesc->GCPhys, pPageDesc->HCPhys));
 
-                /* Easy case: just change the internal page type. */
-                PGMMPAGE pPage = gmmR0GetPage(pGMM, paPageDesc[i].uHCPhysPageId);
-                if (!pPage)
-                {
-                    AssertFailed();
-                    rc = VERR_PGM_PHYS_INVALID_PAGE_ID;
-                    goto end;
-                }
+        /* Easy case: just change the internal page type. */
+        PGMMPAGE pPage = gmmR0GetPage(pGMM, pPageDesc->uHCPhysPageId);
+        if (!pPage)
+        {
+            Log(("GMMR0SharedModuleCheckPage: Invalid idPage=%#x #1 (GCPhys=%RGp HCPhys=%RHp idxRegion=%#x idxPage=%#x)\n",
+                 pPageDesc->uHCPhysPageId, pPageDesc->GCPhys, pPageDesc->HCPhys, idxRegion, idxPage));
+            AssertFailed();
+            rc = VERR_PGM_PHYS_INVALID_PAGE_ID;
+            goto end;
+        }
 
-                AssertMsg(paPageDesc[i].GCPhys == (pPage->Private.pfn << 12), ("desc %RGp gmm %RGp\n", paPageDesc[i].HCPhys, (pPage->Private.pfn << 12)));
+        AssertMsg(pPageDesc->GCPhys == (pPage->Private.pfn << 12), ("desc %RGp gmm %RGp\n", pPageDesc->HCPhys, (pPage->Private.pfn << 12)));
 
-                gmmR0ConvertToSharedPage(pGMM, pGVM, paPageDesc[i].HCPhys, paPageDesc[i].uHCPhysPageId, pPage);
+        gmmR0ConvertToSharedPage(pGMM, pGVM, pPageDesc->HCPhys, pPageDesc->uHCPhysPageId, pPage);
 
-                /* Keep track of these references. */
-                pGlobalRegion->paHCPhysPageID[i] = paPageDesc[i].uHCPhysPageId;
-            }
-            else
+        /* Keep track of these references. */
+        pGlobalRegion->paHCPhysPageID[idxPage] = pPageDesc->uHCPhysPageId;
+    }
+    else
+    {
+        uint8_t  *pbLocalPage, *pbSharedPage;
+        uint8_t  *pbChunk;
+        PGMMCHUNK pChunk;
+
+        Assert(pPageDesc->uHCPhysPageId != pGlobalRegion->paHCPhysPageID[idxPage]);
+
+        Log(("Replace existing page guest %RGp host %RHp id %x -> id %x\n", pPageDesc->GCPhys, pPageDesc->HCPhys, pPageDesc->uHCPhysPageId, pGlobalRegion->paHCPhysPageID[idxPage]));
+
+        /* Get the shared page source. */
+        PGMMPAGE pPage = gmmR0GetPage(pGMM, pGlobalRegion->paHCPhysPageID[idxPage]);
+        if (!pPage)
+        {
+            Log(("GMMR0SharedModuleCheckPage: Invalid idPage=%#x #2 (idxRegion=%#x idxPage=%#x)\n",
+                 pPageDesc->uHCPhysPageId, idxRegion, idxPage));
+            AssertFailed();
+            rc = VERR_PGM_PHYS_INVALID_PAGE_ID;
+            goto end;
+        }
+        if (pPage->Common.u2State != GMM_PAGE_STATE_SHARED)
+        {
+            /* Page was freed at some point; invalidate this entry. */
+            /** @todo this isn't really bullet proof. */
+            Log(("Old shared page was freed -> create a new one\n"));
+            pGlobalRegion->paHCPhysPageID[idxPage] = NIL_GMM_PAGEID;
+            goto new_shared_page; /* ugly goto */
+        }
+
+        Log(("Replace existing page guest host %RHp -> %RHp\n", pPageDesc->HCPhys, ((uint64_t)pPage->Shared.pfn) << PAGE_SHIFT));
+
+        /* Calculate the virtual address of the local page. */
+        pChunk = gmmR0GetChunk(pGMM, pPageDesc->uHCPhysPageId >> GMM_CHUNKID_SHIFT);
+        if (pChunk)
+        {
+            if (!gmmR0IsChunkMapped(pGVM, pChunk, (PRTR3PTR)&pbChunk))
             {
-                uint8_t  *pbLocalPage, *pbSharedPage;
-                uint8_t  *pbChunk;
-                PGMMCHUNK pChunk;
+                Log(("GMMR0SharedModuleCheckPage: Invalid idPage=%#x #3\n", pPageDesc->uHCPhysPageId));
+                AssertFailed();
+                rc = VERR_PGM_PHYS_INVALID_PAGE_ID;
+                goto end;
+            }
+            pbLocalPage = pbChunk + ((pPageDesc->uHCPhysPageId & GMM_PAGEID_IDX_MASK) << PAGE_SHIFT);
+        }
+        else
+        {
+            Log(("GMMR0SharedModuleCheckPage: Invalid idPage=%#x #4\n", pPageDesc->uHCPhysPageId));
+            AssertFailed();
+            rc = VERR_PGM_PHYS_INVALID_PAGE_ID;
+            goto end;
+        }
 
-                Assert(paPageDesc[i].uHCPhysPageId != pGlobalRegion->paHCPhysPageID[i]);
+        /* Calculate the virtual address of the shared page. */
+        pChunk = gmmR0GetChunk(pGMM, pGlobalRegion->paHCPhysPageID[idxPage] >> GMM_CHUNKID_SHIFT);
+        Assert(pChunk); /* can't fail as gmmR0GetPage succeeded. */
 
-                Log(("Replace existing page guest %RGp host %RHp id %x -> id %x\n", paPageDesc[i].GCPhys, paPageDesc[i].HCPhys, paPageDesc[i].uHCPhysPageId, pGlobalRegion->paHCPhysPageID[i]));
-
-                /* Get the shared page source. */
-                PGMMPAGE pPage = gmmR0GetPage(pGMM, pGlobalRegion->paHCPhysPageID[i]);
-                if (!pPage)
-                {
-                    AssertFailed();
-                    rc = VERR_PGM_PHYS_INVALID_PAGE_ID;
-                    goto end;
-                }
-                if (pPage->Common.u2State != GMM_PAGE_STATE_SHARED)
-                {
-                    /* Page was freed at some point; invalidate this entry. */
-                    /** todo this isn't really bullet proof. */
-                    Log(("Old shared page was freed -> create a new one\n"));
-                    pGlobalRegion->paHCPhysPageID[i] = NIL_GMM_PAGEID;
-                    goto new_shared_page; /* ugly goto */
-                }
-
-                Log(("Replace existing page guest host %RHp -> %RHp\n", paPageDesc[i].HCPhys, ((uint64_t)pPage->Shared.pfn) << PAGE_SHIFT));
-
-                /* Calculate the virtual address of the local page. */
-                pChunk = gmmR0GetChunk(pGMM, paPageDesc[i].uHCPhysPageId >> GMM_CHUNKID_SHIFT);
-                if (pChunk)
-                {
-                    if (!gmmR0IsChunkMapped(pGVM, pChunk, (PRTR3PTR)&pbChunk))
-                    {
-                        AssertFailed();
-                        rc = VERR_PGM_PHYS_INVALID_PAGE_ID;
-                        goto end;
-                    }
-                    pbLocalPage = pbChunk + ((paPageDesc[i].uHCPhysPageId & GMM_PAGEID_IDX_MASK) << PAGE_SHIFT);
-                }
-                else
-                {
-                    AssertFailed();
-                    rc = VERR_PGM_PHYS_INVALID_PAGE_ID;
-                    goto end;
-                }
-
-                /* Calculate the virtual address of the shared page. */
-                pChunk = gmmR0GetChunk(pGMM, pGlobalRegion->paHCPhysPageID[i] >> GMM_CHUNKID_SHIFT);
-                Assert(pChunk); /* can't fail as gmmR0GetPage succeeded. */
-
-                /* Get the virtual address of the physical page; map the chunk into the VM process if not already done. */
-                if (!gmmR0IsChunkMapped(pGVM, pChunk, (PRTR3PTR)&pbChunk))
-                {
-                    Log(("Map chunk into process!\n"));
-                    rc = gmmR0MapChunk(pGMM, pGVM, pChunk, (PRTR3PTR)&pbChunk);
-                    if (rc != VINF_SUCCESS)
-                    {
-                        AssertRC(rc);
-                        goto end;
-                    }
-                }
-                pbSharedPage = pbChunk + ((pGlobalRegion->paHCPhysPageID[i] & GMM_PAGEID_IDX_MASK) << PAGE_SHIFT);
-
-                /** todo write ASMMemComparePage. */
-                if (memcmp(pbSharedPage, pbLocalPage, PAGE_SIZE))
-                {
-                    Log(("Unexpected differences found between local and shared page; skip\n"));
-                    /* Signal to the caller that this one hasn't changed. */
-                    paPageDesc[i].uHCPhysPageId = NIL_GMM_PAGEID;
-                    continue;
-                }
-
-                /* Free the old local page. */
-                GMMFREEPAGEDESC PageDesc;
-
-                PageDesc.idPage = paPageDesc[i].uHCPhysPageId;
-                rc = gmmR0FreePages(pGMM, pGVM, 1, &PageDesc, GMMACCOUNT_BASE);
+        /* Get the virtual address of the physical page; map the chunk into the VM process if not already done. */
+        if (!gmmR0IsChunkMapped(pGVM, pChunk, (PRTR3PTR)&pbChunk))
+        {
+            Log(("Map chunk into process!\n"));
+            rc = gmmR0MapChunk(pGMM, pGVM, pChunk, (PRTR3PTR)&pbChunk);
+            if (rc != VINF_SUCCESS)
+            {
                 AssertRC(rc);
-
-                gmmR0UseSharedPage(pGMM, pGVM, pPage);
-
-                /* Pass along the new physical address & page id. */
-                paPageDesc[i].HCPhys        = ((uint64_t)pPage->Shared.pfn) << PAGE_SHIFT;
-                paPageDesc[i].uHCPhysPageId = pGlobalRegion->paHCPhysPageID[i];
+                goto end;
             }
         }
+        pbSharedPage = pbChunk + ((pGlobalRegion->paHCPhysPageID[idxPage] & GMM_PAGEID_IDX_MASK) << PAGE_SHIFT);
+
+        /** @todo write ASMMemComparePage. */
+        if (memcmp(pbSharedPage, pbLocalPage, PAGE_SIZE))
+        {
+            Log(("Unexpected differences found between local and shared page; skip\n"));
+            /* Signal to the caller that this one hasn't changed. */
+            pPageDesc->uHCPhysPageId = NIL_GMM_PAGEID;
+            goto end;
+        }
+
+        /* Free the old local page. */
+        GMMFREEPAGEDESC PageDesc;
+
+        PageDesc.idPage = pPageDesc->uHCPhysPageId;
+        rc = gmmR0FreePages(pGMM, pGVM, 1, &PageDesc, GMMACCOUNT_BASE);
+        AssertRCReturn(rc, rc);
+
+        gmmR0UseSharedPage(pGMM, pGVM, pPage);
+
+        /* Pass along the new physical address & page id. */
+        pPageDesc->HCPhys        = ((uint64_t)pPage->Shared.pfn) << PAGE_SHIFT;
+        pPageDesc->uHCPhysPageId = pGlobalRegion->paHCPhysPageID[idxPage];
     }
 end:
     return rc;
@@ -4027,7 +4055,7 @@ GMMR0DECL(int) GMMR0ResetSharedModules(PVM pVM, VMCPUID idCpu)
         return rc;
 
     /*
-     * Take the sempahore and do some more validations.
+     * Take the semaphore and do some more validations.
      */
     rc = RTSemFastMutexRequest(pGMM->Mtx);
     AssertRC(rc);
@@ -4052,8 +4080,9 @@ GMMR0DECL(int) GMMR0ResetSharedModules(PVM pVM, VMCPUID idCpu)
 #ifdef VBOX_WITH_PAGE_SHARING
 typedef struct
 {
-    PGVM    pGVM;
-    VMCPUID idCpu;
+    PGVM                    pGVM;
+    VMCPUID                 idCpu;
+    int                     rc;
 } GMMCHECKSHAREDMODULEINFO, *PGMMCHECKSHAREDMODULEINFO;
 
 /**
@@ -4069,7 +4098,9 @@ DECLCALLBACK(int) gmmR0CheckSharedModule(PAVLGCPTRNODECORE pNode, void *pvUser)
         &&  pGlobalModule)
     {
         Log(("gmmR0CheckSharedModule: check %s %s base=%RGv size=%x collision=%d\n", pGlobalModule->szName, pGlobalModule->szVersion, pGlobalModule->Core.Key, pGlobalModule->cbModule, pLocalModule->fCollision));
-        PGMR0SharedModuleCheck(pInfo->pGVM->pVM, pInfo->idCpu, pGlobalModule, pInfo->pGVM);
+        pInfo->rc = PGMR0SharedModuleCheck(pInfo->pGVM->pVM, pInfo->pGVM, pInfo->idCpu, pGlobalModule, pLocalModule->cRegions, pLocalModule->aRegions);
+        if (RT_FAILURE(pInfo->rc))
+            return 1;   /* stop enumeration. */
     }
     return 0;
 }
@@ -4091,7 +4122,7 @@ GMMR0DECL(int) GMMR0CheckSharedModulesStart(PVM pVM)
     GMM_GET_VALID_INSTANCE(pGMM, VERR_INTERNAL_ERROR);
 
     /*
-     * Take the sempahore and do some more validations.
+     * Take the semaphore and do some more validations.
      */
     int rc = RTSemFastMutexRequest(pGMM->Mtx);
     AssertRC(rc);
@@ -4144,7 +4175,7 @@ GMMR0DECL(int) GMMR0CheckSharedModules(PVM pVM, PVMCPU pVCpu)
 
 # ifndef DEBUG_sandervl
     /*
-     * Take the sempahore and do some more validations.
+     * Take the semaphore and do some more validations.
      */
     rc = RTSemFastMutexRequest(pGMM->Mtx);
     AssertRC(rc);
@@ -4154,13 +4185,16 @@ GMMR0DECL(int) GMMR0CheckSharedModules(PVM pVM, PVMCPU pVCpu)
         GMMCHECKSHAREDMODULEINFO Info;
 
         Log(("GMMR0CheckSharedModules\n"));
-        Info.pGVM = pGVM;
-        Info.idCpu = pVCpu->idCpu;
+        Info.pGVM     = pGVM;
+        Info.idCpu    = pVCpu->idCpu;
+        Info.rc       = VINF_SUCCESS;
 
         RTAvlGCPtrDoWithAll(&pGVM->gmm.s.pSharedModuleTree, true /* fFromLeft */, gmmR0CheckSharedModule, &Info);
 
+        rc = Info.rc;
+
         Log(("GMMR0CheckSharedModules done!\n"));
-        rc = VINF_SUCCESS;
+
         GMM_CHECK_SANITY_UPON_LEAVING(pGMM);
     }
     else
@@ -4174,3 +4208,135 @@ GMMR0DECL(int) GMMR0CheckSharedModules(PVM pVM, PVMCPU pVCpu)
     return VERR_NOT_IMPLEMENTED;
 #endif
 }
+
+#if defined(VBOX_STRICT) && HC_ARCH_BITS == 64
+typedef struct
+{
+    PGVM                    pGVM;
+    PGMM                    pGMM;
+    uint8_t                *pSourcePage;
+    bool                    fFoundDuplicate;
+} GMMFINDDUPPAGEINFO, *PGMMFINDDUPPAGEINFO;
+
+/**
+ * RTAvlU32DoWithAll callback.
+ *
+ * @returns 0
+ * @param   pNode   The node to search.
+ * @param   pvInfo  Pointer to the input parameters
+ */
+static DECLCALLBACK(int) gmmR0FindDupPageInChunk(PAVLU32NODECORE pNode, void *pvInfo)
+{
+    PGMMCHUNK           pChunk = (PGMMCHUNK)pNode;
+    PGMMFINDDUPPAGEINFO pInfo = (PGMMFINDDUPPAGEINFO)pvInfo;
+    PGVM                pGVM = pInfo->pGVM;
+    PGMM                pGMM = pInfo->pGMM;
+    uint8_t            *pbChunk;
+
+    /* Only take chunks not mapped into this VM process; not entirely correct. */
+    if (!gmmR0IsChunkMapped(pGVM, pChunk, (PRTR3PTR)&pbChunk))
+    {
+        int rc = gmmR0MapChunk(pGMM, pGVM, pChunk, (PRTR3PTR)&pbChunk);
+        if (rc != VINF_SUCCESS)
+            goto end;
+
+        /*
+         * Look for duplicate pages
+         */
+        unsigned iPage = (GMM_CHUNK_SIZE >> PAGE_SHIFT);
+        while (iPage-- > 0)
+        {
+            if (GMM_PAGE_IS_PRIVATE(&pChunk->aPages[iPage]))
+            {
+                uint8_t *pbDestPage = pbChunk + (iPage  << PAGE_SHIFT);
+
+                if (!memcmp(pInfo->pSourcePage, pbDestPage, PAGE_SIZE))
+                {
+                    pInfo->fFoundDuplicate = true;
+                    break;
+                }
+            }
+        }
+        gmmR0UnmapChunk(pGMM, pGVM, pChunk);
+    }
+end:
+    if (pInfo->fFoundDuplicate)
+        return 1;   /* stop search */
+    else
+        return 0;
+}
+
+/**
+ * Find a duplicate of the specified page in other active VMs
+ *
+ * @returns VBox status code.
+ * @param   pVM                 VM handle
+ * @param   pReq                Request packet
+ */
+GMMR0DECL(int) GMMR0FindDuplicatePageReq(PVM pVM, PGMMFINDDUPLICATEPAGEREQ pReq)
+{
+    /*
+     * Validate input and pass it on.
+     */
+    AssertPtrReturn(pVM, VERR_INVALID_POINTER);
+    AssertPtrReturn(pReq, VERR_INVALID_POINTER);
+    AssertMsgReturn(pReq->Hdr.cbReq == sizeof(*pReq), ("%#x != %#x\n", pReq->Hdr.cbReq, sizeof(*pReq)), VERR_INVALID_PARAMETER);
+
+    PGMM pGMM;
+    GMM_GET_VALID_INSTANCE(pGMM, VERR_INTERNAL_ERROR);
+
+    /*
+     * Take the semaphore and do some more validations.
+     */
+    int rc = RTSemFastMutexRequest(pGMM->Mtx);
+    AssertRC(rc);
+    if (GMM_CHECK_SANITY_UPON_ENTERING(pGMM))
+    {
+        PGVM pGVM;
+        rc = GVMMR0ByVM(pVM, &pGVM);
+        if (RT_FAILURE(rc))
+            goto end;
+
+        uint8_t  *pbChunk;
+        PGMMCHUNK pChunk = gmmR0GetChunk(pGMM, pReq->idPage >> GMM_CHUNKID_SHIFT);
+        if (!pChunk)
+        {
+            AssertFailed();
+            goto end;
+        }
+
+        if (!gmmR0IsChunkMapped(pGVM, pChunk, (PRTR3PTR)&pbChunk))
+        {
+            AssertFailed();
+            goto end;
+        }
+
+        uint8_t *pbSourcePage = pbChunk + ((pReq->idPage & GMM_PAGEID_IDX_MASK) << PAGE_SHIFT);
+
+        PGMMPAGE pPage = gmmR0GetPage(pGMM, pReq->idPage);
+        if (!pPage)
+        {
+            AssertFailed();
+            rc = VERR_PGM_PHYS_INVALID_PAGE_ID;
+            goto end;
+        }
+        GMMFINDDUPPAGEINFO Info;
+
+        Info.pGVM            = pGVM;
+        Info.pGMM            = pGMM;
+        Info.pSourcePage     = pbSourcePage;
+        Info.fFoundDuplicate = false;
+        RTAvlU32DoWithAll(&pGMM->pChunks, true /* fFromLeft */, gmmR0FindDupPageInChunk, &Info);
+
+        pReq->fDuplicate = Info.fFoundDuplicate;
+    }
+    else
+        rc = VERR_INTERNAL_ERROR_5;
+
+end:
+    RTSemFastMutexRelease(pGMM->Mtx);
+    return rc;
+}
+
+#endif /* VBOX_STRICT && HC_ARCH_BITS == 64 */
+

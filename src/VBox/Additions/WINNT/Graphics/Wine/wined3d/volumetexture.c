@@ -22,8 +22,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -409,7 +409,11 @@ HRESULT volumetexture_init(IWineD3DVolumeTextureImpl *texture, UINT width, UINT 
     texture->lpVtbl = &IWineD3DVolumeTexture_Vtbl;
 
     hr = basetexture_init((IWineD3DBaseTextureImpl *)texture, levels, WINED3DRTYPE_VOLUMETEXTURE,
-            device, 0, usage, format_desc, pool, parent, parent_ops);
+            device, 0, usage, format_desc, pool, parent, parent_ops
+#ifdef VBOX_WITH_WDDM
+        , NULL, NULL
+#endif
+            );
     if (FAILED(hr))
     {
         WARN("Failed to initialize basetexture, returning %#x.\n", hr);

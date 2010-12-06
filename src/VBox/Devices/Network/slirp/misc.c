@@ -1,4 +1,4 @@
-/* $Id: misc.c 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: misc.c 34040 2010-11-12 18:52:01Z vboxsync $ */
 /** @file
  * NAT - helpers.
  */
@@ -96,7 +96,6 @@ fd_nonblock(int fd)
 }
 
 
-#ifdef VBOX_WITH_SLIRP_BSD_MBUF
 #define ITEM_MAGIC 0xdead0001
 struct item
 {
@@ -143,6 +142,7 @@ static void *slirp_uma_alloc(uma_zone_t zone,
         if (!LIST_EMPTY(&zone->free_items))
         {
             it = LIST_FIRST(&zone->free_items);
+            Assert(it->magic == ITEM_MAGIC);
             rc = 0;
             if (zone->pfInit)
                 rc = zone->pfInit(zone->pData, (void *)&it[1], zone->size, M_DONTWAIT);
@@ -351,7 +351,7 @@ int uma_zone_exhausted_nolock(uma_zone_t zone)
 {
     int fExhausted;
     RTCritSectEnter(&zone->csZone);
-    fExhausted = (zone->cur_items == zone->max_items); 
+    fExhausted = (zone->cur_items == zone->max_items);
     RTCritSectLeave(&zone->csZone);
     return fExhausted;
 }
@@ -366,6 +366,7 @@ void zone_drain(uma_zone_t zone)
     while(!LIST_EMPTY(&zone->free_items))
     {
         it = LIST_FIRST(&zone->free_items);
+        Assert((it->magic == ITEM_MAGIC));
         RTCritSectEnter(&zone->csZone);
         LIST_REMOVE(it, list);
         zone->max_items--;
@@ -418,8 +419,12 @@ struct mbuf *slirp_ext_m_get(PNATState pData, size_t cbMin, void **ppvBuf, size_
     return m;
 }
 
-void slirp_ext_m_free(PNATState pData, struct mbuf *m)
+void slirp_ext_m_free(PNATState pData, struct mbuf *m, uint8_t *pu8Buf)
 {
+
+    if (   !pu8Buf
+        && pu8Buf != mtod(m, uint8_t *))
+        RTMemFree(pu8Buf); /* This buffer was allocated on heap */
     m_freem(pData, m);
 }
 
@@ -444,4 +449,13 @@ void m_fini(PNATState pData)
     zone_destroy(pData->zone_jumbo16);
     /*@todo do finalize here.*/
 }
-#endif /* VBOX_WITH_SLIRP_BSD_MBUF */
+
+void
+if_init(PNATState pData)
+{
+    /* 14 for ethernet */
+    if_maxlinkhdr = 14;
+    if_comp = IF_AUTOCOMP;
+    if_mtu = 1500;
+    if_mru = 1500;
+}

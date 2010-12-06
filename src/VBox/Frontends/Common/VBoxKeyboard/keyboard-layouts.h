@@ -1,7 +1,6 @@
+/* $Id: keyboard-layouts.h 33656 2010-11-01 14:18:11Z vboxsync $ */
 /** @file
- *
- * VBox frontends: Qt GUI ("VirtualBox"):
- * X11 keyboard driver translation tables (keyboard layouts)
+ * VBox/Frontends/Common - X11 keyboard driver translation tables (keyboard layouts).
  *
  */
 
@@ -28,8 +27,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -38,7 +37,7 @@
 
 #ifndef ___VBox_keyboard_tables_h
 # error This file must be included from within keyboard-tables.h
-#endif /* ___VBox_keyboard_tables_h */
+#endif /* !___VBox_keyboard_tables_h */
 
 /* This file contains a more or less complete dump of all keyboard
    layouts known to my version of X.org.  Duplicate layouts have

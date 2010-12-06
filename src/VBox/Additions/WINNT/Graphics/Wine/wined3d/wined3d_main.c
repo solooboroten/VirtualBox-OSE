@@ -23,8 +23,8 @@
  */
 
 /*
- * Sun LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
- * other than GPL or LGPL is available it will apply instead, Sun elects to use only
+ * Oracle LGPL Disclaimer: For the avoidance of doubt, except that if any license choice
+ * other than GPL or LGPL is available it will apply instead, Oracle elects to use only
  * the Lesser General Public License version 2.1 (LGPLv2) at this time for any software where
  * a choice of LGPL license versions is made available with the language indicating
  * that LGPLv2 or any later version may be used, or where a choice of which version
@@ -75,7 +75,7 @@ wined3d_settings_t wined3d_settings =
     VS_HW,          /* Hardware by default */
     PS_HW,          /* Hardware by default */
     TRUE,           /* Use of GLSL enabled by default */
-    ORM_BACKBUFFER, /* Use Backbuffer to do offscreen rendering */
+    ORM_FBO,        /* Use FBO to do offscreen rendering */
     RTL_READTEX,    /* Default render target locking method */
     PCI_VENDOR_NONE,/* PCI Vendor ID */
     PCI_DEVICE_NONE,/* PCI Device ID */

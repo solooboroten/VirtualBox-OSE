@@ -387,7 +387,7 @@ chooseFBConfig( Display *dpy, int screen, GLbitfield visAttribs )
             render_spu.ws.glXGetFBConfigAttrib(dpy, fbconfig[i],
                                                GLX_DOUBLEBUFFER, &db);
             if ((visAttribs & CR_DOUBLE_BIT) == 0 && db) {
-                /* omit fbconfig with uneeded DB */
+                /* omit fbconfig with unneeded DB */
                 continue;
             }
 
@@ -1681,4 +1681,5 @@ void renderspu_SystemReparentWindow(WindowInfo *window)
                                              RootWindow(window->visual->dpy, window->visual->visual->screen);
 
     XReparentWindow(window->visual->dpy, window->window, parent, window->x, window->y);
+    XSync(window->visual->dpy, False);
 }

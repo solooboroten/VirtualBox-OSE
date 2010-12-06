@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -30,6 +30,8 @@
 #include <iprt/types.h>
 #include <iprt/thread.h>
 #include <iprt/net.h>
+#include <iprt/sg.h>
+#include <iprt/socket.h>
 
 #ifdef IN_RING0
 # error "There are no RTFile APIs available Ring-0 Host Context!"
@@ -57,11 +59,6 @@ RT_C_DECLS_BEGIN
 typedef DECLCALLBACK(int) FNRTTCPSERVE(RTSOCKET Sock, void *pvUser);
 /** Pointer to a RTTCPSERVE(). */
 typedef FNRTTCPSERVE *PFNRTTCPSERVE;
-
-/** Pointer to a RTTCPSERVER handle. */
-typedef struct RTTCPSERVER *PRTTCPSERVER;
-/** Pointer to a RTTCPSERVER handle. */
-typedef PRTTCPSERVER *PPRTTCPSERVER;
 
 /**
  * Create single connection at a time TCP Server in a separate thread.
@@ -121,7 +118,7 @@ RTR3DECL(int) RTTcpServerDestroy(PRTTCPSERVER pServer);
 RTR3DECL(int) RTTcpServerListen(PRTTCPSERVER pServer, PFNRTTCPSERVE pfnServe, void *pvUser);
 
 /**
- * Listen and accept one incomming connection.
+ * Listen and accept one incoming connection.
  *
  * This is an alternative to RTTcpServerListen for the use the callbacks are not
  * possible.
@@ -182,6 +179,19 @@ RTR3DECL(int) RTTcpClientConnect(const char *pszAddress, uint32_t uPort, PRTSOCK
 RTR3DECL(int) RTTcpClientClose(RTSOCKET Sock);
 
 /**
+ * Close a socket returned by RTTcpClientConnect().
+ *
+ * @returns iprt status code.
+ * @param   hSocket             The socket handle.
+ * @param   fGracefulShutdown   If true, try do a graceful shutdown of the
+ *                              outgoing pipe and draining any lingering input.
+ *                              This is sometimes better for the server side.
+ *                              If false, just close the connection without
+ *                              further ado.
+ */
+RTR3DECL(int) RTTcpClientCloseEx(RTSOCKET Sock, bool fGracefulShutdown);
+
+/**
  * Receive data from a socket.
  *
  * @returns iprt status code.
@@ -215,13 +225,14 @@ RTR3DECL(int)  RTTcpWrite(RTSOCKET Sock, const void *pvBuffer, size_t cbBuffer);
 RTR3DECL(int)  RTTcpFlush(RTSOCKET Sock);
 
 /**
- * Enables or disable delaying sends to coalesce packets.
+ * Enables or disables delaying sends to coalesce packets.
  *
  * The TCP/IP stack usually uses the Nagle algorithm (RFC 896) to implement the
  * coalescing.
  *
  * @returns iprt status code.
  * @param   Sock        Socket descriptor.
+ * @param   fEnable     When set to true enables coalescing.
  */
 RTR3DECL(int)  RTTcpSetSendCoalescing(RTSOCKET Sock, bool fEnable);
 
@@ -236,6 +247,20 @@ RTR3DECL(int)  RTTcpSetSendCoalescing(RTSOCKET Sock, bool fEnable);
  */
 RTR3DECL(int)  RTTcpSelectOne(RTSOCKET Sock, RTMSINTERVAL cMillies);
 
+/**
+ * Socket I/O multiplexing
+ * Checks if the socket is ready for one of the given events.
+ *
+ * @returns iprt status code.
+ * @param   Sock        Socket descriptor.
+ * @param   fEvents     Event mask to wait for.
+ *                      Use the RTSOCKET_EVT_* defines.
+ * @param   pfEvents    Where to store the event mask on return.
+ * @param   cMillies    Number of milliseconds to wait for the socket.
+ *                      Use RT_INDEFINITE_WAIT to wait for ever.
+ */
+RTR3DECL(int)  RTTcpSelectOneEx(RTSOCKET Sock, uint32_t fEvents, uint32_t *pfEvents,
+                                RTMSINTERVAL cMillies);
 
 #if 0 /* skipping these for now - RTTcpServer* handles this. */
 /**
@@ -277,6 +302,139 @@ RTR3DECL(int) RTTcpGetLocalAddress(RTSOCKET Sock, PRTNETADDR pAddr);
  * @param   pAddr           Where to store the peer address on success.
  */
 RTR3DECL(int) RTTcpGetPeerAddress(RTSOCKET Sock, PRTNETADDR pAddr);
+
+/**
+ * Send data from a scatter/gather buffer to a socket.
+ *
+ * @returns iprt status code.
+ * @retval  VERR_INTERRUPTED if interrupted before anything was written.
+ *
+ * @param   Sock        Socket descriptor.
+ * @param   pSgBuf      Scatter/gather buffer to write data to socket.
+ */
+RTR3DECL(int)  RTTcpSgWrite(RTSOCKET Sock, PCRTSGBUF pSgBuf);
+
+
+/**
+ * Send data from multiple buffers to a socket.
+ *
+ * This is convenience wrapper around the RTSocketSgWrite and RTSgBufInit calls
+ * for lazy coders.  The "L" in the function name is short for "list" just like
+ * in the execl libc API.
+ *
+ * @returns IPRT status code.
+ * @retval  VERR_INTERRUPTED if interrupted before anything was written.
+ *
+ * @param   hSocket         The socket handle.
+ * @param   cSegs           The number of data segments in the following
+ *                          ellipsis.
+ * @param   ...             Pairs of buffer pointers (void const *) and buffer
+ *                          sizes (size_t).  Make 101% sure the pointer is
+ *                          really size_t.
+ */
+RTR3DECL(int) RTTcpSgWriteL(RTSOCKET hSocket, size_t cSegs, ...);
+
+/**
+ * Send data from multiple buffers to a socket.
+ *
+ * This is convenience wrapper around the RTSocketSgWrite and RTSgBufInit calls
+ * for lazy coders.  The "L" in the function name is short for "list" just like
+ * in the execl libc API.
+ *
+ * @returns IPRT status code.
+ * @retval  VERR_INTERRUPTED if interrupted before anything was written.
+ *
+ * @param   hSocket         The socket handle.
+ * @param   cSegs           The number of data segments in the following
+ *                          argument list.
+ * @param   va              Pairs of buffer pointers (void const *) and buffer
+ *                          sizes (size_t). Make 101% sure the pointer is
+ *                          really size_t.
+ */
+RTR3DECL(int) RTTcpSgWriteLV(RTSOCKET hSocket, size_t cSegs, va_list va);
+
+/**
+ * Receive data from a socket.
+ *
+ * This version doesn't block if there is no data on the socket.
+ *
+ * @returns IPRT status code.
+ *
+ * @param   Sock        Socket descriptor.
+ * @param   pvBuffer    Where to put the data we read.
+ * @param   cbBuffer    Read buffer size.
+ * @param   pcbRead     Number of bytes read.
+ */
+RTR3DECL(int)  RTTcpReadNB(RTSOCKET Sock, void *pvBuffer, size_t cbBuffer, size_t *pcbRead);
+
+/**
+ * Send data to a socket.
+ *
+ * This version doesn't block if there is not enough room for the message.
+ *
+ * @returns IPRT status code.
+ *
+ * @param   Sock        Socket descriptor.
+ * @param   pvBuffer    Buffer to write data to socket.
+ * @param   cbBuffer    How much to write.
+ * @param   pcbWritten  Number of bytes written.
+ */
+RTR3DECL(int)  RTTcpWriteNB(RTSOCKET Sock, const void *pvBuffer, size_t cbBuffer, size_t *pcbWritten);
+
+/**
+ * Send data from a scatter/gather buffer to a socket.
+ *
+ * This version doesn't block if there is not enough room for the message.
+ *
+ * @returns iprt status code.
+ * @retval  VERR_INTERRUPTED if interrupted before anything was written.
+ *
+ * @param   Sock        Socket descriptor.
+ * @param   pSgBuf      Scatter/gather buffer to write data to socket.
+ * @param   pcbWritten  Number of bytes written.
+ */
+RTR3DECL(int)  RTTcpSgWriteNB(RTSOCKET Sock, PCRTSGBUF pSgBuf, size_t *pcbWritten);
+
+
+/**
+ * Send data from multiple buffers to a socket.
+ *
+ * This version doesn't block if there is not enough room for the message.
+ * This is convenience wrapper around the RTSocketSgWrite and RTSgBufInit calls
+ * for lazy coders.  The "L" in the function name is short for "list" just like
+ * in the execl libc API.
+ *
+ * @returns IPRT status code.
+ *
+ * @param   hSocket         The socket handle.
+ * @param   cSegs           The number of data segments in the following
+ *                          ellipsis.
+ * @param   pcbWritten      Number of bytes written.
+ * @param   ...             Pairs of buffer pointers (void const *) and buffer
+ *                          sizes (size_t).  Make 101% sure the pointer is
+ *                          really size_t.
+ */
+RTR3DECL(int) RTTcpSgWriteLNB(RTSOCKET hSocket, size_t cSegs, size_t *pcbWritten, ...);
+
+/**
+ * Send data from multiple buffers to a socket.
+ *
+ * This version doesn't block if there is not enough room for the message.
+ * This is convenience wrapper around the RTSocketSgWrite and RTSgBufInit calls
+ * for lazy coders.  The "L" in the function name is short for "list" just like
+ * in the execl libc API.
+ *
+ * @returns IPRT status code.
+ *
+ * @param   hSocket         The socket handle.
+ * @param   cSegs           The number of data segments in the following
+ *                          argument list.
+ * @param   pcbWritten      Number of bytes written.
+ * @param   va              Pairs of buffer pointers (void const *) and buffer
+ *                          sizes (size_t). Make 101% sure the pointer is
+ *                          really size_t.
+ */
+RTR3DECL(int) RTTcpSgWriteLVNB(RTSOCKET hSocket, size_t cSegs, size_t *pcbWritten, va_list va);
 
 /** @} */
 RT_C_DECLS_END

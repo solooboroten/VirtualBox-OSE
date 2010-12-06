@@ -1,4 +1,4 @@
-/* $Id: vboxfs_vfs.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: vboxfs_vfs.h 31691 2010-08-16 12:59:23Z vboxsync $ */
 /** @file
  * VirtualBox File System for Solaris Guests, VFS header.
  */
@@ -13,6 +13,15 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+ *
+ * The contents of this file may alternatively be used under the terms
+ * of the Common Development and Distribution License Version 1.0
+ * (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+ * VirtualBox OSE distribution, in which case the provisions of the
+ * CDDL are applicable instead of those of the GPL.
+ *
+ * You may elect to license modified versions of this file under the
+ * terms and conditions of either the GPL or the CDDL or both.
  */
 
 #ifndef	___VBoxFS_vfs_Solaris_h
@@ -30,6 +39,8 @@ typedef struct sffs_data {
 	vnode_t		*sf_rootnode;	/* of vnode of the root directory */
 	uid_t		sf_uid;		/* owner of all shared folders */
 	gid_t		sf_gid;		/* group of all shared folders */
+	int  		sf_stat_ttl;	/* ttl for stat caches (in ms) */
+	int  		sf_fsync;	/* whether to honor fsync or not */
 	char		*sf_share_name;
 	char 		*sf_mntpath;	/* name of mount point */
 	sfp_mount_t	*sf_handle;
@@ -42,3 +53,4 @@ typedef struct sffs_data {
 #endif
 
 #endif	/* !___VBoxFS_vfs_Solaris_h */
+

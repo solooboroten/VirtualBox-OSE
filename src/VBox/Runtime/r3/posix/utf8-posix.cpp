@@ -1,4 +1,4 @@
-/* $Id: utf8-posix.cpp 28928 2010-04-30 11:24:30Z vboxsync $ */
+/* $Id: utf8-posix.cpp 31961 2010-08-25 14:02:32Z vboxsync $ */
 /** @file
  * IPRT - UTF-8 helpers, POSIX.
  */
@@ -44,9 +44,9 @@
 #include <langinfo.h>
 
 #include "internal/alignmentchecks.h"
+#include "internal/string.h"
 #ifdef RT_WITH_ICONV_CACHE
 # include "internal/thread.h"
-# include "internal/string.h"
 AssertCompile(sizeof(iconv_t) <= sizeof(void *));
 #endif
 
@@ -371,11 +371,18 @@ DECLINLINE(int) rtStrConvertWrapper(const char *pchInput, size_t cchInput, const
     if (hSelf != NIL_RTTHREAD)
     {
         PRTTHREADINT pThread = rtThreadGet(hSelf);
-        if (   pThread
-            && (pThread->fIntFlags & (RTTHREADINT_FLAGS_ALIEN | RTTHREADINT_FLAGS_MAIN)) != RTTHREADINT_FLAGS_ALIEN)
-            return rtstrConvertCached(pchInput, cchInput, pszInputCS,
-                                      (void **)ppszOutput, cbOutput, pszOutputCS,
-                                      cFactor, (iconv_t *)&pThread->ahIconvs[enmCacheIdx]);
+        if (pThread)
+        {
+            if ((pThread->fIntFlags & (RTTHREADINT_FLAGS_ALIEN | RTTHREADINT_FLAGS_MAIN)) != RTTHREADINT_FLAGS_ALIEN)
+            {
+                int rc = rtstrConvertCached(pchInput, cchInput, pszInputCS,
+                                            (void **)ppszOutput, cbOutput, pszOutputCS,
+                                            cFactor, (iconv_t *)&pThread->ahIconvs[enmCacheIdx]);
+                rtThreadRelease(pThread);
+                return rc;
+            }
+            rtThreadRelease(pThread);
+        }
     }
 #endif
     return rtStrConvertUncached(pchInput, cchInput, pszInputCS,
@@ -412,15 +419,7 @@ int rtStrConvert(const char *pchInput, size_t cchInput, const char *pszInputCS,
 }
 
 
-/**
- * Allocates tmp buffer, translates pszString from UTF8 to current codepage.
- *
- * @returns iprt status code.
- * @param   ppszString      Receives pointer of allocated native CP string.
- *                          The returned pointer must be freed using RTStrFree().
- * @param   pszString       UTF-8 string to convert.
- */
-RTR3DECL(int)  RTStrUtf8ToCurrentCP(char **ppszString, const char *pszString)
+RTR3DECL(int)  RTStrUtf8ToCurrentCPTag(char **ppszString, const char *pszString, const char *pszTag)
 {
     Assert(ppszString);
     Assert(pszString);
@@ -433,7 +432,7 @@ RTR3DECL(int)  RTStrUtf8ToCurrentCP(char **ppszString, const char *pszString)
     if (cch <= 0)
     {
         /* zero length string passed. */
-        *ppszString = (char *)RTMemTmpAllocZ(sizeof(char));
+        *ppszString = (char *)RTMemTmpAllocZTag(sizeof(char), pszTag);
         if (*ppszString)
             return VINF_SUCCESS;
         return VERR_NO_TMP_MEMORY;
@@ -442,15 +441,7 @@ RTR3DECL(int)  RTStrUtf8ToCurrentCP(char **ppszString, const char *pszString)
 }
 
 
-/**
- * Allocates tmp buffer, translates pszString from current codepage to UTF-8.
- *
- * @returns iprt status code.
- * @param   ppszString      Receives pointer of allocated UTF-8 string.
- *                          The returned pointer must be freed using RTStrFree().
- * @param   pszString       Native string to convert.
- */
-RTR3DECL(int)  RTStrCurrentCPToUtf8(char **ppszString, const char *pszString)
+RTR3DECL(int)  RTStrCurrentCPToUtf8Tag(char **ppszString, const char *pszString, const char *pszTag)
 {
     Assert(ppszString);
     Assert(pszString);
@@ -463,7 +454,7 @@ RTR3DECL(int)  RTStrCurrentCPToUtf8(char **ppszString, const char *pszString)
     if (cch <= 0)
     {
         /* zero length string passed. */
-        *ppszString = (char *)RTMemTmpAllocZ(sizeof(char));
+        *ppszString = (char *)RTMemTmpAllocZTag(sizeof(char), pszTag);
         if (*ppszString)
             return VINF_SUCCESS;
         return VERR_NO_TMP_MEMORY;

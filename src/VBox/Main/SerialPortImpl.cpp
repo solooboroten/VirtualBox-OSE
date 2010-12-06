@@ -553,7 +553,7 @@ HRESULT SerialPort::loadSettings(const settings::SerialPort &data)
 /**
  *  Saves the port settings to the given port node.
  *
- *  Note that the given Port node is comletely empty on input.
+ *  Note that the given Port node is completely empty on input.
  *
  *  @param aPortNode <Port> node.
  *
@@ -659,6 +659,32 @@ void SerialPort::applyDefaults (GuestOSType *aOsType)
     AssertComRCReturnVoid (autoCaller.rc());
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    /* Set some more defaults.
+     * Note that the default value for COM1 (slot 0) is set in the constructor
+     * of bd. So slot 0 is correct already. */
+    switch (m->bd->ulSlot)
+    {
+        case 1:
+        {
+            m->bd->ulIOBase = 0x2F8;
+            m->bd->ulIRQ = 3;
+            break;
+        }
+        case 2:
+        {
+            m->bd->ulIOBase = 0x3e8;
+            m->bd->ulIRQ = 4;
+            break;
+        }
+        case 3:
+        {
+            m->bd->ulIOBase = 0x2e8;
+            m->bd->ulIRQ = 3;
+            break;
+        }
+        default: break;
+    }
 
     uint32_t numSerialEnabled = aOsType->numSerialEnabled();
 

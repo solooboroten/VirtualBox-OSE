@@ -1,4 +1,4 @@
-/* $Id: vboxfs_mount.c 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: vboxfs_mount.c 33550 2010-10-28 10:53:57Z vboxsync $ */
 /** @file
  * VirtualBox File System Mount Helper, Solaris host.
  * Userspace mount wrapper that parses mount (or user-specified) options
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2008 Oracle Corporation
+ * Copyright (C) 2009-2010 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -15,6 +15,15 @@
  * Foundation, in version 2 as it comes in the "COPYING" file of the
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+ *
+ * The contents of this file may alternatively be used under the terms
+ * of the Common Development and Distribution License Version 1.0
+ * (CDDL) only, as it comes in the "COPYING.CDDL" file of the
+ * VirtualBox OSE distribution, in which case the provisions of the
+ * CDDL are applicable instead of those of the GPL.
+ *
+ * You may elect to license modified versions of this file under the
+ * terms and conditions of either the GPL or the CDDL or both.
  */
 
 /*******************************************************************************
@@ -42,19 +51,21 @@ static void Usage(char *pszName)
     fprintf(stderr, "Usage: %s [OPTIONS] NAME MOUNTPOINT\n"
            "Mount the VirtualBox shared folder NAME from the host system to MOUNTPOINT.\n"
            "\n"
-           "  -w                    mount the shared folder writably (the default)\n"
+           "  -w                    mount the shared folder writable (the default)\n"
            "  -r                    mount the shared folder read-only\n"
            "  -o OPTION[,OPTION...] use the mount options specified\n"
            "\n", pszName);
     fprintf(stderr, "Available mount options are:\n"
            "\n"
-           "     rw                 mount writably (the default)\n"
+           "     rw                 mount writable (the default)\n"
            "     ro                 mount read only\n"
            "     uid=UID            set the default file owner user id to UID\n"
            "     gid=GID            set the default file owner group id to GID\n"
+           "     stat_ttl=TTL       set the \"time to live\" (in ms) for the stat caches (default %d)\n"
+           "     fsync              honor fsync calls instead of ignoring them\n"
            "     ttl=TTL            set the \"time to live\" to TID for the dentry\n"
            "     iocharset CHARSET  use the character set CHARSET for i/o operations (default utf8)\n"
-           "     convertcp CHARSET  convert the shared folder name from the character set CHARSET to utf8\n\n");
+           "     convertcp CHARSET  convert the shared folder name from the character set CHARSET to utf8\n\n", DEF_STAT_TTL_MS);
     fprintf(stderr, "Less common used options:\n"
            "     noexec,exec,nodev,dev,nosuid,suid\n");
     exit(1);
