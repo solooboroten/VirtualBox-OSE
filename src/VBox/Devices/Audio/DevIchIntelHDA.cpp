@@ -1,4 +1,4 @@
-/* $Id: DevIchIntelHDA.cpp 34460 2010-11-29 12:47:39Z vboxsync $ */
+/* $Id: DevIchIntelHDA.cpp 34920 2010-12-09 18:18:29Z vboxsync $ */
 /** @file
  * DevIchIntelHD - VBox ICH Intel HD Audio Controller.
  */

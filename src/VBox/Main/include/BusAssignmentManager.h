@@ -1,4 +1,4 @@
-/* $Id: BusAssignmentManager.h 34331 2010-11-24 16:24:17Z vboxsync $ */
+/* $Id: BusAssignmentManager.h 34876 2010-12-09 11:16:00Z vboxsync $ */
 
 /** @file
  *

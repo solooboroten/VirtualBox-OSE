@@ -1,4 +1,4 @@
-/* $Id: VBoxManageDisk.cpp 34634 2010-12-02 17:21:40Z vboxsync $ */
+/* $Id: VBoxManageDisk.cpp 34888 2010-12-09 14:17:58Z vboxsync $ */
 /** @file
  * VBoxManage - The disk related commands.
  */

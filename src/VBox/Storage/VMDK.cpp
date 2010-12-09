@@ -1,4 +1,4 @@
-/* $Id: VMDK.cpp 34581 2010-12-01 16:43:39Z vboxsync $ */
+/* $Id: VMDK.cpp 34885 2010-12-09 13:56:03Z vboxsync $ */
 /** @file
  * VMDK disk image, core code.
  */

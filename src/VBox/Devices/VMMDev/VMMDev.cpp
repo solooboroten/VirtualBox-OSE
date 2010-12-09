@@ -1,4 +1,4 @@
-/* $Id: VMMDev.cpp 34534 2010-11-30 17:45:59Z vboxsync $ */
+/* $Id: VMMDev.cpp 34902 2010-12-09 16:16:51Z vboxsync $ */
 /** @file
  * VMMDev - Guest <-> VMM/Host communication device.
  */

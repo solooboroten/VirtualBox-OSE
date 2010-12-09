@@ -1,4 +1,4 @@
-/* $Id: ConsoleImpl.h 34587 2010-12-01 20:30:02Z vboxsync $ */
+/* $Id: ConsoleImpl.h 34906 2010-12-09 16:29:49Z vboxsync $ */
 /** @file
  * VBox Console COM Class definition
  */

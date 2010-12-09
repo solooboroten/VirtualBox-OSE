@@ -1,4 +1,4 @@
-/* $Id: UIFrameBufferQImage.cpp 34740 2010-12-06 11:56:28Z vboxsync $ */
+/* $Id: UIFrameBufferQImage.cpp 34850 2010-12-09 00:06:51Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
