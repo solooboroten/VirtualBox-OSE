@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 34144 2010-11-17 20:08:31Z vboxsync $
+# $Id: Makefile.kmk 35046 2010-12-13 21:19:57Z vboxsync $
 ## @file
 # Sub-Makefile for the Guest Additions loader.
 #

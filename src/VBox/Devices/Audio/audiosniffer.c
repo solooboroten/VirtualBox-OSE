@@ -1,4 +1,4 @@
-/* $Id: audiosniffer.c 34906 2010-12-09 16:29:49Z vboxsync $ */
+/* $Id: audiosniffer.c 35032 2010-12-13 16:35:15Z vboxsync $ */
 /** @file
  * VBox audio device: Audio sniffer device
  */

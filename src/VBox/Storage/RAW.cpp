@@ -1,4 +1,4 @@
-/* $Id: RAW.cpp 33786 2010-11-04 17:15:01Z vboxsync $ */
+/* $Id: RAW.cpp 35045 2010-12-13 21:14:06Z vboxsync $ */
 /** @file
  * RawHDDCore - Raw Disk image, Core Code.
  */

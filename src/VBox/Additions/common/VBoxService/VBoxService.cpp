@@ -1,4 +1,4 @@
-/* $Id: VBoxService.cpp 34869 2010-12-09 10:38:55Z vboxsync $ */
+/* $Id: VBoxService.cpp 35080 2010-12-14 13:46:19Z vboxsync $ */
 /** @file
  * VBoxService - Guest Additions Service Skeleton.
  */

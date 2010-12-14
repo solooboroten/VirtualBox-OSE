@@ -1,4 +1,4 @@
-/* $Id: DrvDiskIntegrity.cpp 34433 2010-11-27 11:09:38Z vboxsync $ */
+/* $Id: DrvDiskIntegrity.cpp 34932 2010-12-10 00:29:53Z vboxsync $ */
 /** @file
  * VBox storage devices: Disk integrity check.
  */

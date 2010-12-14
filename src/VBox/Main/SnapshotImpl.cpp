@@ -1,4 +1,4 @@
-/* $Id: SnapshotImpl.cpp 34587 2010-12-01 20:30:02Z vboxsync $ */
+/* $Id: SnapshotImpl.cpp 35011 2010-12-13 13:51:42Z vboxsync $ */
 
 /** @file
  *

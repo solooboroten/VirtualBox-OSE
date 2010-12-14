@@ -1,4 +1,4 @@
-/* $Id: VBoxManageGuestCtrl.cpp 34861 2010-12-09 10:02:15Z vboxsync $ */
+/* $Id: VBoxManageGuestCtrl.cpp 35057 2010-12-14 09:52:23Z vboxsync $ */
 /** @file
  * VBoxManage - Implementation of guestcontrol command.
  */
