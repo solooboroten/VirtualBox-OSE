@@ -1,4 +1,4 @@
-/* $Id: ExtPackManagerImpl.cpp 35100 2010-12-14 16:21:38Z vboxsync $ */
+/* $Id: ExtPackManagerImpl.cpp 35218 2010-12-17 12:45:16Z vboxsync $ */
 /** @file
  * VirtualBox Main - interface for Extension Packs, VBoxSVC & VBoxC.
  */
@@ -37,6 +37,7 @@
 
 #include <VBox/com/array.h>
 #include <VBox/com/ErrorInfo.h>
+#include <VBox/err.h>
 #include <VBox/log.h>
 #include <VBox/sup.h>
 #include <VBox/version.h>
@@ -148,6 +149,10 @@ struct ExtPackManager::Data
     VirtualBox         *pVirtualBox;
     /** The current context. */
     VBOXEXTPACKCTX      enmContext;
+#if !defined(RT_OS_WINDOWS) && !defined(RT_OS_DARWIN)
+    /** File handle for the VBoxVMM libary which we slurp because ExtPacks depend on it. */
+    RTLDRMOD            hVBoxVMM;
+#endif
 
     RTMEMEF_NEW_AND_DELETE_OPERATORS();
 };
@@ -721,8 +726,9 @@ void ExtPack::uninit()
  * @returns true if we left the lock, false if we didn't.
  * @param   a_pVirtualBox       The VirtualBox interface.
  * @param   a_pLock             The write lock held by the caller.
+ * @param   pErrInfo            Where to return error information.
  */
-bool    ExtPack::callInstalledHook(IVirtualBox *a_pVirtualBox, AutoWriteLock *a_pLock)
+bool    ExtPack::callInstalledHook(IVirtualBox *a_pVirtualBox, AutoWriteLock *a_pLock, PRTERRINFO pErrInfo)
 {
     if (   m != NULL
         && m->hMainMod != NIL_RTLDRMOD)
@@ -731,11 +737,12 @@ bool    ExtPack::callInstalledHook(IVirtualBox *a_pVirtualBox, AutoWriteLock *a_
         {
             ComPtr<ExtPack> ptrSelfRef = this;
             a_pLock->release();
-            m->pReg->pfnInstalled(m->pReg, a_pVirtualBox);
+            pErrInfo->rc = m->pReg->pfnInstalled(m->pReg, a_pVirtualBox, pErrInfo);
             a_pLock->acquire();
             return true;
         }
     }
+    pErrInfo->rc = VINF_SUCCESS;
     return false;
 }
 
@@ -1115,12 +1122,12 @@ void ExtPack::probeAndLoad(void)
         return;
     }
 
-    char szErr[2048];
-    RT_ZERO(szErr);
-    vrc = SUPR3HardenedVerifyDir(m->strExtPackPath.c_str(), true /*fRecursive*/, true /*fCheckFiles*/, szErr, sizeof(szErr));
+    RTERRINFOSTATIC ErrInfo;
+    RTErrInfoInitStatic(&ErrInfo);
+    vrc = SUPR3HardenedVerifyDir(m->strExtPackPath.c_str(), true /*fRecursive*/, true /*fCheckFiles*/, &ErrInfo.Core);
     if (RT_FAILURE(vrc))
     {
-        m->strWhyUnusable.printf(tr("%s (rc=%Rrc)"), szErr, vrc);
+        m->strWhyUnusable.printf(tr("%s (rc=%Rrc)"), ErrInfo.Core.pszMsg, vrc);
         return;
     }
 
@@ -1160,22 +1167,21 @@ void ExtPack::probeAndLoad(void)
         return;
     }
 
-    vrc = SUPR3HardenedVerifyPlugIn(m->strMainModPath.c_str(), szErr, sizeof(szErr));
+    vrc = SUPR3HardenedVerifyPlugIn(m->strMainModPath.c_str(), &ErrInfo.Core);
     if (RT_FAILURE(vrc))
     {
-        m->strWhyUnusable.printf(tr("%s"), szErr);
+        m->strWhyUnusable.printf(tr("%s"), ErrInfo.Core.pszMsg);
         return;
     }
 
     if (fIsNative)
     {
-        char szError[8192];
-        vrc = RTLdrLoadEx(m->strMainModPath.c_str(), &m->hMainMod, szError, sizeof(szError));
+        vrc = SUPR3HardenedLdrLoadPlugIn(m->strMainModPath.c_str(), &m->hMainMod, &ErrInfo.Core);
         if (RT_FAILURE(vrc))
         {
             m->hMainMod = NIL_RTLDRMOD;
             m->strWhyUnusable.printf(tr("Failed to locate load the main module ('%s'): %Rrc - %s"),
-                                           m->strMainModPath.c_str(), vrc, szError);
+                                     m->strMainModPath.c_str(), vrc, ErrInfo.Core.pszMsg);
             return;
         }
     }
@@ -1192,10 +1198,10 @@ void ExtPack::probeAndLoad(void)
     vrc = RTLdrGetSymbol(m->hMainMod, VBOX_EXTPACK_MAIN_MOD_ENTRY_POINT, (void **)&pfnRegistration);
     if (RT_SUCCESS(vrc))
     {
-        RT_ZERO(szErr);
-        vrc = pfnRegistration(&m->Hlp, &m->pReg, szErr, sizeof(szErr) - 16);
+        RTErrInfoClear(&ErrInfo.Core);
+        vrc = pfnRegistration(&m->Hlp, &m->pReg, &ErrInfo.Core);
         if (   RT_SUCCESS(vrc)
-            && szErr[0] == '\0'
+            && !RTErrInfoIsSet(&ErrInfo.Core)
             && VALID_PTR(m->pReg))
         {
             if (   VBOXEXTPACK_IS_MAJOR_VER_EQUAL(m->pReg->u32Version, VBOXEXTPACKREG_VERSION)
@@ -1228,11 +1234,8 @@ void ExtPack::probeAndLoad(void)
                                          RT_HIWORD(m->pReg->u32Version), RT_LOWORD(m->pReg->u32Version));
         }
         else
-        {
-            szErr[sizeof(szErr) - 1] = '\0';
-            m->strWhyUnusable.printf(tr("%s returned %Rrc, pReg=%p szErr='%s'"),
-                                     VBOX_EXTPACK_MAIN_MOD_ENTRY_POINT, vrc, m->pReg, szErr);
-        }
+            m->strWhyUnusable.printf(tr("%s returned %Rrc, pReg=%p ErrInfo='%s'"),
+                                     VBOX_EXTPACK_MAIN_MOD_ENTRY_POINT, vrc, m->pReg, ErrInfo.Core.pszMsg);
         m->pReg = NULL;
     }
     else
@@ -1741,7 +1744,7 @@ HRESULT ExtPackManager::initExtPackManager(VirtualBox *a_pVirtualBox, VBOXEXTPAC
      * Figure some stuff out before creating the instance data.
      */
     char szBaseDir[RTPATH_MAX];
-    int rc = RTPathAppPrivateArch(szBaseDir, sizeof(szBaseDir));
+    int rc = RTPathAppPrivateArchTop(szBaseDir, sizeof(szBaseDir));
     AssertLogRelRCReturn(rc, E_FAIL);
     rc = RTPathAppend(szBaseDir, sizeof(szBaseDir), VBOX_EXTPACK_INSTALL_DIR);
     AssertLogRelRCReturn(rc, E_FAIL);
@@ -1760,6 +1763,19 @@ HRESULT ExtPackManager::initExtPackManager(VirtualBox *a_pVirtualBox, VBOXEXTPAC
     m->strCertificatDirPath = szCertificatDir;
     m->pVirtualBox          = a_pVirtualBox;
     m->enmContext           = a_enmContext;
+
+    /*
+     * Slurp in VBoxVMM which is used by VBoxPuelMain.
+     */
+#if !defined(RT_OS_WINDOWS) && !defined(RT_OS_DARWIN)
+    if (a_enmContext == VBOXEXTPACKCTX_PER_USER_DAEMON)
+    {
+        int vrc = SUPR3HardenedLdrLoadAppPriv("VBoxVMM", &m->hVBoxVMM, RTLDRLOAD_FLAGS_GLOBAL, NULL);
+        if (RT_FAILURE(vrc))
+            m->hVBoxVMM = NIL_RTLDRMOD;
+        /* cleanup in ::uninit()? */
+    }
+#endif
 
     /*
      * Go looking for extensions.  The RTDirOpen may fail if nothing has been
@@ -2469,8 +2485,28 @@ HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace)
                 hrc = refreshExtPack(pStrName->c_str(), true /*a_fUnusableIsError*/, &pExtPack);
                 if (SUCCEEDED(hrc))
                 {
-                    LogRel(("ExtPackManager: Successfully installed extension pack '%s'.\n", pStrName->c_str()));
-                    pExtPack->callInstalledHook(m->pVirtualBox, &autoLock);
+                    RTERRINFOSTATIC ErrInfo;
+                    RTErrInfoInitStatic(&ErrInfo);
+                    pExtPack->callInstalledHook(m->pVirtualBox, &autoLock, &ErrInfo.Core);
+                    if (RT_SUCCESS(ErrInfo.Core.rc))
+                        LogRel(("ExtPackManager: Successfully installed extension pack '%s'.\n", pStrName->c_str()));
+                    else
+                    {
+                        LogRel(("ExtPackManager: Installated hook for '%s' failed: %Rrc - %s\n",
+                                pStrName->c_str(), ErrInfo.Core.rc, ErrInfo.Core.pszMsg));
+
+                        /*
+                         * Uninstall the extpack if the error indicates that.
+                         */
+                        if (ErrInfo.Core.rc == VERR_EXTPACK_UNSUPPORTED_HOST_UNINSTALL)
+                            runSetUidToRootHelper("uninstall",
+                                                  "--base-dir", m->strBaseDir.c_str(),
+                                                  "--name",     pStrName->c_str(),
+                                                  "--forced",
+                                                  (const char *)NULL);
+                        hrc = setError(E_FAIL, tr("The installation hook failed: %Rrc - %s"),
+                                       ErrInfo.Core.rc, ErrInfo.Core.pszMsg);
+                    }
                 }
             }
             else

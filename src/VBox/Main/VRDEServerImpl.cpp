@@ -92,8 +92,6 @@ HRESULT VRDEServer::init (Machine *aParent)
     mData->mEnabled              = FALSE;
     mData->mAllowMultiConnection = FALSE;
     mData->mReuseSingleConnection = FALSE;
-    mData->mVideoChannel         = FALSE;
-    mData->mVideoChannelQuality  = 75;
     mData->mVrdeExtPack.setNull();
 
     /* Confirm a successful initialization */
@@ -211,8 +209,6 @@ HRESULT VRDEServer::loadSettings(const settings::VRDESettings &data)
     mData->mAuthLibrary = data.strAuthLibrary;
     mData->mAllowMultiConnection = data.fAllowMultiConnection;
     mData->mReuseSingleConnection = data.fReuseSingleConnection;
-    mData->mVideoChannel = data.fVideoChannel;
-    mData->mVideoChannelQuality = data.ulVideoChannelQuality;
     mData->mVrdeExtPack = data.strVrdeExtPack;
     mData->mProperties = data.mapProperties;
 
@@ -239,8 +235,6 @@ HRESULT VRDEServer::saveSettings(settings::VRDESettings &data)
     data.ulAuthTimeout = mData->mAuthTimeout;
     data.fAllowMultiConnection = !!mData->mAllowMultiConnection;
     data.fReuseSingleConnection = !!mData->mReuseSingleConnection;
-    data.fVideoChannel = !!mData->mVideoChannel;
-    data.ulVideoChannelQuality = mData->mVideoChannelQuality;
     data.strVrdeExtPack = mData->mVrdeExtPack;
     data.mapProperties = mData->mProperties;
 
@@ -494,12 +488,12 @@ static int loadVRDELibrary(const char *pszLibraryName, RTLDRMOD *phmod, PFNVRDES
 
     RTLDRMOD hmod = NIL_RTLDRMOD;
 
-    char szErr[4096 + 512];
-    szErr[0] = '\0';
+    RTERRINFOSTATIC ErrInfo;
+    RTErrInfoInitStatic(&ErrInfo);
     if (RTPathHavePath(pszLibraryName))
-        rc = SUPR3HardenedLdrLoadPlugIn(pszLibraryName, &hmod, szErr, sizeof(szErr));
+        rc = SUPR3HardenedLdrLoadPlugIn(pszLibraryName, &hmod, &ErrInfo.Core);
     else
-        rc = SUPR3HardenedLdrLoadAppPriv(pszLibraryName, &hmod, szErr, sizeof(szErr));
+        rc = SUPR3HardenedLdrLoadAppPriv(pszLibraryName, &hmod, RTLDRLOAD_FLAGS_LOCAL, &ErrInfo.Core);
     if (RT_SUCCESS(rc))
     {
         rc = RTLdrGetSymbol(hmod, "VRDESupportedProperties", (void **)ppfn);
@@ -509,8 +503,8 @@ static int loadVRDELibrary(const char *pszLibraryName, RTLDRMOD *phmod, PFNVRDES
     }
     else
     {
-        if (szErr[0])
-            LogRel(("VRDE: Error loading the library '%s': %s (%Rrc)\n", pszLibraryName, szErr, rc));
+        if (RTErrInfoIsSet(&ErrInfo.Core))
+            LogRel(("VRDE: Error loading the library '%s': %s (%Rrc)\n", pszLibraryName, ErrInfo.Core.pszMsg, rc));
         else
             LogRel(("VRDE: Error loading the library '%s' rc = %Rrc.\n", pszLibraryName, rc));
 
@@ -869,98 +863,6 @@ STDMETHODIMP VRDEServer::COMSETTER(ReuseSingleConnection) (
         mlock.release();
 
         mParent->onVRDEServerChange(/* aRestart */ TRUE); // @todo needs a restart?
-    }
-
-    return S_OK;
-}
-
-STDMETHODIMP VRDEServer::COMGETTER(VideoChannel) (
-    BOOL *aVideoChannel)
-{
-    CheckComArgOutPointerValid(aVideoChannel);
-
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    *aVideoChannel = mData->mVideoChannel;
-
-    return S_OK;
-}
-
-STDMETHODIMP VRDEServer::COMSETTER(VideoChannel) (
-    BOOL aVideoChannel)
-{
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    /* the machine needs to be mutable */
-    AutoMutableStateDependency adep(mParent);
-    if (FAILED(adep.rc())) return adep.rc();
-
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    if (mData->mVideoChannel != aVideoChannel)
-    {
-        mData.backup();
-        mData->mVideoChannel = aVideoChannel;
-
-        /* leave the lock before informing callbacks */
-        alock.release();
-
-        AutoWriteLock mlock(mParent COMMA_LOCKVAL_SRC_POS);       // mParent is const, needs no locking
-        mParent->setModified(Machine::IsModified_VRDEServer);
-        mlock.release();
-
-        mParent->onVRDEServerChange(/* aRestart */ TRUE);
-    }
-
-    return S_OK;
-}
-
-STDMETHODIMP VRDEServer::COMGETTER(VideoChannelQuality) (
-    ULONG *aVideoChannelQuality)
-{
-    CheckComArgOutPointerValid(aVideoChannelQuality);
-
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    *aVideoChannelQuality = mData->mVideoChannelQuality;
-
-    return S_OK;
-}
-
-STDMETHODIMP VRDEServer::COMSETTER(VideoChannelQuality) (
-    ULONG aVideoChannelQuality)
-{
-    AutoCaller autoCaller(this);
-    if (FAILED(autoCaller.rc())) return autoCaller.rc();
-
-    /* the machine needs to be mutable */
-    AutoMutableStateDependency adep(mParent);
-    if (FAILED(adep.rc())) return adep.rc();
-
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-
-    aVideoChannelQuality = RT_CLAMP(aVideoChannelQuality, 10, 100);
-
-    if (mData->mVideoChannelQuality != aVideoChannelQuality)
-    {
-        mData.backup();
-        mData->mVideoChannelQuality = aVideoChannelQuality;
-
-        /* leave the lock before informing callbacks */
-        alock.release();
-
-        AutoWriteLock mlock(mParent COMMA_LOCKVAL_SRC_POS);       // mParent is const, needs no locking
-        mParent->setModified(Machine::IsModified_VRDEServer);
-        mlock.release();
-
-        mParent->onVRDEServerChange(/* aRestart */ FALSE);
     }
 
     return S_OK;

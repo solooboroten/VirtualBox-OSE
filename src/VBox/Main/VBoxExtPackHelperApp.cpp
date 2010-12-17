@@ -1,4 +1,4 @@
-/* $Id: VBoxExtPackHelperApp.cpp 35100 2010-12-14 16:21:38Z vboxsync $ */
+/* $Id: VBoxExtPackHelperApp.cpp 35227 2010-12-17 14:39:59Z vboxsync $ */
 /** @file
  * VirtualBox Main - Extension Pack Helper Application, usually set-uid-to-root.
  */
@@ -23,6 +23,7 @@
 
 #include <iprt/buildconfig.h>
 #include <iprt/dir.h>
+#include <iprt/env.h>
 #include <iprt/file.h>
 #include <iprt/fs.h>
 #include <iprt/getopt.h>
@@ -43,11 +44,6 @@
 #include <VBox/sup.h>
 #include <VBox/version.h>
 
-#if defined(RT_OS_DARWIN)
-# include <sys/types.h>
-# include <unistd.h>                    /* geteuid */
-#endif
-
 #ifdef RT_OS_WINDOWS
 # define _WIN32_WINNT 0x0501
 # include <Objbase.h>                   /* CoInitializeEx */
@@ -63,9 +59,13 @@
 # include <CoreFoundation/CoreFoundation.h>
 #endif
 
-#if defined(RT_OS_DARWIN) || defined(RT_OS_WINDOWS)
+#if !defined(RT_OS_OS2)
 # include <stdio.h>
 # include <errno.h>
+# if !defined(RT_OS_WINDOWS)
+#  include <sys/types.h>
+#  include <unistd.h>                   /* geteuid */
+# endif
 #endif
 
 
@@ -73,10 +73,22 @@
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
 /** Enable elevation on Windows and Darwin. */
-#if defined(RT_OS_WINDOWS) || defined(RT_OS_DARWIN) || defined(DOXYGEN_RUNNING)
+#if !defined(RT_OS_OS2) || defined(DOXYGEN_RUNNING)
 # define WITH_ELEVATION
 #endif
 
+
+/** @name Command and option names
+ * @{ */
+#define CMD_INSTALL         1000
+#define CMD_UNINSTALL       1001
+#define CMD_CLEANUP         1002
+#ifdef WITH_ELEVATION
+# define OPT_ELEVATED       1090
+# define OPT_STDOUT         1091
+# define OPT_STDERR         1092
+#endif
+/** @}  */
 
 
 #ifdef IN_RT_R3
@@ -163,7 +175,7 @@ static bool IsValidBaseDir(const char *pszBaseDir)
      * Just be darn strict for now.
      */
     char szCorrect[RTPATH_MAX];
-    int rc = RTPathAppPrivateArch(szCorrect, sizeof(szCorrect));
+    int rc = RTPathAppPrivateArchTop(szCorrect, sizeof(szCorrect));
     if (RT_FAILURE(rc))
         return false;
     rc = RTPathAppend(szCorrect, sizeof(szCorrect), VBOX_EXTPACK_INSTALL_DIR);
@@ -308,10 +320,11 @@ static RTEXITCODE ValidateUnpackedExtPack(const char *pszDir, const char *pszTar
 {
     RTMsgInfo("Validating unpacked extension pack...");
 
-    char szErr[4096+1024];
-    int rc = SUPR3HardenedVerifyDir(pszDir, true /*fRecursive*/, true /*fCheckFiles*/, szErr, sizeof(szErr));
+    RTERRINFOSTATIC ErrInfo;
+    RTErrInfoInitStatic(&ErrInfo);
+    int rc = SUPR3HardenedVerifyDir(pszDir, true /*fRecursive*/, true /*fCheckFiles*/, &ErrInfo.Core);
     if (RT_FAILURE(rc))
-        return RTMsgErrorExit(RTEXITCODE_FAILURE, "Hardening check failed with %Rrc: %s", rc, szErr);
+        return RTMsgErrorExit(RTEXITCODE_FAILURE, "Hardening check failed with %Rrc: %s", rc, ErrInfo.Core.pszMsg);
     return RTEXITCODE_SUCCESS;
 }
 
@@ -1046,6 +1059,55 @@ static RTEXITCODE DoCleanup(int argc, char **argv)
 
 #ifdef WITH_ELEVATION
 
+#if !defined(RT_OS_WINDOWS) && !defined(RT_OS_DARWIN)
+/**
+ * Looks in standard locations for a suitable exec tool.
+ *
+ * @returns true if found, false if not.
+ * @param   pszPath             Where to store the path to the tool on
+ *                              successs.
+ * @param   cbPath              The size of the buffer @a pszPath points to.
+ * @param   pszName             The name of the tool we're looking for.
+ */
+static bool FindExecTool(char *pszPath, size_t cbPath, const char *pszName)
+{
+    static const char * const s_apszPaths[] =
+    {
+        "/bin",
+        "/usr/bin",
+        "/usr/local/bin",
+        "/sbin",
+        "/usr/sbin",
+        "/usr/local/sbin",
+#ifdef RT_OS_SOLARIS
+        "/usr/sfw/bin",
+        "/usr/gnu/bin",
+        "/usr/xpg4/bin",
+        "/usr/xpg6/bin",
+        "/usr/openwin/bin",
+        "/usr/ucb"
+#endif
+    };
+
+    for (unsigned i = 0; i < RT_ELEMENTS(s_apszPaths); i++)
+    {
+        int rc = RTPathJoin(pszPath, cbPath, s_apszPaths[i], pszName);
+        if (RT_SUCCESS(rc))
+        {
+            RTFSOBJINFO ObjInfo;
+            rc = RTPathQueryInfoEx(pszPath, &ObjInfo, RTFSOBJATTRADD_UNIX, RTPATH_F_FOLLOW_LINK);
+            if (RT_SUCCESS(rc))
+            {
+                if (!(ObjInfo.Attr.fMode & RTFS_UNIX_IWOTH))
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+#endif
+
+
 /**
  * Copies the content of a file to a stream.
  *
@@ -1089,13 +1151,19 @@ static void CopyFileToStdXxx(RTFILE hSrc, PRTSTREAM pDst, bool fComplain)
  *
  * @returns Program exit code.
  * @param   pszExecPath         The executable path.
- * @param   cArgs               The number of arguments.
  * @param   papszArgs           The arguments.
+ * @param   cSuArgs             The number of argument entries reserved for the
+ *                              'su' like programs at the start of papszArgs.
+ * @param   cMyArgs             The number of arguments following @a cSuArgs.
+ * @param   iCmd                The command that is being executed. (For
+ *                              selecting messages.)
  */
-static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, int cArgs, const char * const *papszArgs)
+static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, const char **papszArgs, int cSuArgs, int cMyArgs,
+                                         int iCmd)
 {
     RTEXITCODE rcExit = RTEXITCODE_FAILURE;
 #ifdef RT_OS_WINDOWS
+    NOREF(iCmd);
 
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 
@@ -1109,7 +1177,7 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, int cArgs, con
     if (RT_SUCCESS(rc))
     {
         char *pszCmdLine;
-        rc = RTGetOptArgvToString(&pszCmdLine, &papszArgs[1], RTGETOPTARGV_CNV_QUOTE_MS_CRT);
+        rc = RTGetOptArgvToString(&pszCmdLine, &papszArgs[cSuArgs + 1], RTGETOPTARGV_CNV_QUOTE_MS_CRT);
         if (RT_SUCCESS(rc))
         {
             rc = RTStrToUtf16(pszCmdLine, (PRTUTF16 *)&Info.lpParameters);
@@ -1196,6 +1264,7 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, int cArgs, con
         AuthorizationItem   AuthItem        = { kAuthorizationRightExecute, 0, NULL, 0 };
         AuthorizationRights AuthRights      = { 1, &AuthItem };
 
+        NOREF(iCmd);
         static char         s_szPrompt[]    = "VirtualBox needs further rights to make changes to your installation.\n\n";
         AuthorizationItem   aAuthEnvItems[] =
         {
@@ -1215,7 +1284,7 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, int cArgs, con
              */
             FILE *pSocketStrm;
             orc = AuthorizationExecuteWithPrivileges(AuthRef, pszExecPath, kAuthorizationFlagDefaults,
-                                                     (char * const *)&papszArgs[3],
+                                                     (char * const *)&papszArgs[cSuArgs + 3],
                                                      &pSocketStrm);
             if (orc == errAuthorizationSuccess)
             {
@@ -1246,7 +1315,159 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, int cArgs, con
         RTMsgError("AuthorizationCreate failed: %d", orc);
 
 #else
-# error "PORT ME"
+
+    /*
+     * Several of the alternatives below will require a command line.
+     */
+    char *pszCmdLine;
+    int rc = RTGetOptArgvToString(&pszCmdLine, &papszArgs[cSuArgs], RTGETOPTARGV_CNV_QUOTE_BOURNE_SH);
+    if (RT_FAILURE(rc))
+        return RTMsgErrorExit(RTEXITCODE_FAILURE, "RTGetOptArgvToString failed: %Rrc");
+
+    /*
+     * Look for various standard stuff for executing a program as root.
+     *
+     * N.B. When adding new arguments, please make 100% sure RelaunchElevated
+     *      allocates enough array entries.
+     *
+     * TODO: Feel free to contribute code for using PolicyKit directly.
+     */
+    bool        fHaveDisplayVar = RTEnvExist("DISPLAY");
+    int         iSuArg          = cSuArgs;
+    PRTHANDLE   pStdNull        = NULL;
+    RTHANDLE    StdNull;
+    char        szExecTool[260];
+    char        szXterm[260];
+
+    /*
+     * kdesudo is available on KDE3/KDE4
+     */
+    if (fHaveDisplayVar && FindExecTool(szExecTool, sizeof(szExecTool), "kdesudo"))
+    {
+        rc = RTFileOpenBitBucket(&StdNull.u.hFile, RTFILE_O_WRITE);
+        if (RT_SUCCESS(rc))
+        {
+            StdNull.enmType = RTHANDLETYPE_FILE;
+            pStdNull = &StdNull;
+
+            iSuArg = cSuArgs - 4;
+            papszArgs[cSuArgs - 4] = szExecTool;
+            papszArgs[cSuArgs - 3] = "--comment";
+            papszArgs[cSuArgs - 2] = iCmd == CMD_INSTALL
+                                   ? "VirtualBox extension pack installer"
+                                   : iCmd == CMD_UNINSTALL
+                                   ? "VirtualBox extension pack uninstaller"
+                                   : "VirtualBox extension pack maintainer";
+            papszArgs[cSuArgs - 1] = "--";
+        }
+        else
+            RTMsgError("Failed to open /dev/null: %Rrc");
+    }
+    /*
+     * gksu is our favorite as it is very well integrated.
+     *
+     * gksu is chatty, so we need to send stderr and stdout to /dev/null or the
+     * error detection logic in Main will fail.  This is a bit unfortunate as
+     * error messages gets lost, but wtf.
+     */
+    else if (fHaveDisplayVar && FindExecTool(szExecTool, sizeof(szExecTool), "gksu"))
+    {
+        rc = RTFileOpenBitBucket(&StdNull.u.hFile, RTFILE_O_WRITE);
+        if (RT_SUCCESS(rc))
+        {
+            StdNull.enmType = RTHANDLETYPE_FILE;
+            pStdNull = &StdNull;
+
+#if 0 /* older gksu does not grok --description nor '--' and multiple args. */
+            iSuArg = cSuArgs - 4;
+            papszArgs[cSuArgs - 4] = szExecTool;
+            papszArgs[cSuArgs - 3] = "--description";
+            papszArgs[cSuArgs - 2] = iCmd == CMD_INSTALL
+                                   ? "VirtualBox extension pack installer"
+                                   : iCmd == CMD_UNINSTALL
+                                   ? "VirtualBox extension pack uninstaller"
+                                   : "VirtualBox extension pack maintainer";
+            papszArgs[cSuArgs - 1] = "--";
+#else
+            iSuArg = cSuArgs - 2;
+            papszArgs[cSuArgs - 2] = szExecTool;
+            papszArgs[cSuArgs - 1] = pszCmdLine;
+            papszArgs[cSuArgs] = NULL;
+#endif
+        }
+        else
+            RTMsgError("Failed to open /dev/null: %Rrc");
+    }
+    /*
+     * pkexec may work for ssh console sessions as well if the right agents
+     * are installed.  However it is very generic and does not allow for any
+     * custom messages.  Thus it comes after gksu.
+     */
+    else if (FindExecTool(szExecTool, sizeof(szExecTool), "pkexec"))
+    {
+        iSuArg = cSuArgs - 1;
+        papszArgs[cSuArgs - 1] = szExecTool;
+    }
+    /*
+     * The ultimate fallback is running 'su -' within an xterm.  We use the
+     * title of the xterm to tell what is going on.
+     */
+    else if (   fHaveDisplayVar
+             && FindExecTool(szExecTool, sizeof(szExecTool), "su")
+             && FindExecTool(szXterm, sizeof(szXterm), "xterm"))
+    {
+        iSuArg = cSuArgs - 9;
+        papszArgs[cSuArgs - 9] = szXterm;
+        papszArgs[cSuArgs - 8] = "-T";
+        papszArgs[cSuArgs - 7] = iCmd == CMD_INSTALL
+                               ? "VirtualBox extension pack installer - su"
+                               : iCmd == CMD_UNINSTALL
+                               ? "VirtualBox extension pack uninstaller - su"
+                               : "VirtualBox extension pack maintainer - su";
+        papszArgs[cSuArgs - 6] = "-e";
+        papszArgs[cSuArgs - 5] = szExecTool;
+        papszArgs[cSuArgs - 4] = "-";
+        papszArgs[cSuArgs - 3] = "root";
+        papszArgs[cSuArgs - 2] = "-c";
+        papszArgs[cSuArgs - 1] = pszCmdLine;
+        papszArgs[cSuArgs] = NULL;
+    }
+    else if (fHaveDisplayVar)
+        RTMsgError("Unable to locate 'pkexec', 'pksu' or 'su+xterm'. Try perform the operation using VBoxManage running as root");
+    else
+        RTMsgError("Unable to locate 'pkexec'. Try perform the operation using VBoxManage running as root");
+    if (iSuArg != cSuArgs)
+    {
+        AssertRelease(iSuArg >= 0);
+
+        /*
+         * Argument list constructed, execute it and wait for the exec
+         * program to complete.
+         */
+        RTPROCESS hProcess;
+        rc = RTProcCreateEx(papszArgs[iSuArg], &papszArgs[iSuArg], RTENV_DEFAULT, 0 /*fFlags*/,
+                            NULL /*phStdIn*/, pStdNull, pStdNull, NULL /*pszAsUser*/,  NULL /*pszPassword*/,
+                            &hProcess);
+        if (RT_SUCCESS(rc))
+        {
+            RTPROCSTATUS Status;
+            rc = RTProcWait(hProcess, RTPROCWAIT_FLAGS_BLOCK, &Status);
+            if (RT_SUCCESS(rc))
+            {
+                if (Status.enmReason == RTPROCEXITREASON_NORMAL)
+                    rcExit = (RTEXITCODE)Status.iStatus;
+                else
+                    rcExit = RTEXITCODE_FAILURE;
+            }
+            else
+                RTMsgError("Error while waiting for '%s': %Rrc", papszArgs[iSuArg], rc);
+        }
+        else
+            RTMsgError("Failed to execute '%s': %Rrc", papszArgs[iSuArg], rc);
+    }
+    RTStrFree(pszCmdLine);
+    RTFileClose(StdNull.u.hFile);
+
 #endif
     return rcExit;
 }
@@ -1258,8 +1479,9 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, int cArgs, con
  * @returns Program exit code.
  * @param   argc                The number of arguments.
  * @param   argv                The arguments.
+ * @param   iCmd                The command that is being executed.
  */
-static RTEXITCODE RelaunchElevated(int argc, char **argv)
+static RTEXITCODE RelaunchElevated(int argc, char **argv, int iCmd)
 {
     /*
      * We need the executable name later, so get it now when it's easy to quit.
@@ -1305,11 +1527,12 @@ static RTEXITCODE RelaunchElevated(int argc, char **argv)
                  * list.  Note that darwin skips the --stdout bit, so don't
                  * change the order here.
                  */
+                int const    cSuArgs   = 12;
                 int          cArgs     = argc + 5 + 1;
-                char const **papszArgs = (char const **)RTMemTmpAllocZ((cArgs + 1) * sizeof(const char *));
+                char const **papszArgs = (char const **)RTMemTmpAllocZ((cSuArgs + cArgs + 1) * sizeof(const char *));
                 if (papszArgs)
                 {
-                    int iDst = 0;
+                    int iDst = cSuArgs;
                     papszArgs[iDst++] = argv[0];
                     papszArgs[iDst++] = "--stdout";
                     papszArgs[iDst++] = szStdOut;
@@ -1322,7 +1545,7 @@ static RTEXITCODE RelaunchElevated(int argc, char **argv)
                     /*
                      * Do the platform specific process execution (waiting included).
                      */
-                    rcExit = RelaunchElevatedNative(szExecPath, cArgs, papszArgs);
+                    rcExit = RelaunchElevatedNative(szExecPath, papszArgs, cSuArgs, cArgs, iCmd);
 
                     /*
                      * Copy the standard files to our standard handles.
@@ -1479,10 +1702,11 @@ int main(int argc, char **argv)
     if (RT_FAILURE(rc))
         return RTMsgInitFailure(rc);
 
-    char szErr[2048];
-    rc = SUPR3HardenedVerifySelf(argv[0], true /*fInternal*/, szErr, sizeof(szErr));
+    RTERRINFOSTATIC ErrInfo;
+    RTErrInfoInitStatic(&ErrInfo);
+    rc = SUPR3HardenedVerifySelf(argv[0], true /*fInternal*/, &ErrInfo.Core);
     if (RT_FAILURE(rc))
-        return RTMsgErrorExit(RTEXITCODE_FAILURE, "%s", szErr);
+        return RTMsgErrorExit(RTEXITCODE_FAILURE, "%s", ErrInfo.Core.pszMsg);
 
     /*
      * Elevation check.
@@ -1500,18 +1724,12 @@ int main(int argc, char **argv)
      */
     static const RTGETOPTDEF s_aOptions[] =
     {
-#define CMD_INSTALL     1000
         { "install",    CMD_INSTALL,    RTGETOPT_REQ_NOTHING },
-#define CMD_UNINSTALL   1001
         { "uninstall",  CMD_UNINSTALL,  RTGETOPT_REQ_NOTHING },
-#define CMD_CLEANUP     1002
         { "cleanup",    CMD_CLEANUP,    RTGETOPT_REQ_NOTHING },
 #ifdef WITH_ELEVATION
-# define OPT_ELEVATED    1090
         { "--elevated", OPT_ELEVATED,   RTGETOPT_REQ_NOTHING },
-# define OPT_STDOUT      1091
         { "--stdout",   OPT_STDOUT,     RTGETOPT_REQ_STRING  },
-# define OPT_STDERR      1092
         { "--stderr",   OPT_STDERR,     RTGETOPT_REQ_STRING  },
 #endif
     };
@@ -1534,7 +1752,7 @@ int main(int argc, char **argv)
             {
 #ifdef WITH_ELEVATION
                 if (!fElevated)
-                    return RelaunchElevated(argc, argv);
+                    return RelaunchElevated(argc, argv, ch);
 #endif
                 int         cCmdargs     = argc - GetState.iNext;
                 char      **papszCmdArgs = argv + GetState.iNext;

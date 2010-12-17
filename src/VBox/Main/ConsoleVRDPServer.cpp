@@ -1,4 +1,4 @@
-/* $Id: ConsoleVRDPServer.cpp 34969 2010-12-10 19:08:32Z vboxsync $ */
+/* $Id: ConsoleVRDPServer.cpp 35191 2010-12-16 15:25:20Z vboxsync $ */
 /** @file
  * VBox Console VRDP Helper class
  */
@@ -649,9 +649,18 @@ DECLCALLBACK(int)  ConsoleVRDPServer::VRDPCallbackQueryProperty(void *pvCallback
 #ifdef VBOX_WITH_VRDP_VIDEO_CHANNEL
         case VRDE_QP_VIDEO_CHANNEL:
         {
-            BOOL fVideoEnabled = FALSE;
+            com::Bstr bstr;
+            HRESULT hrc = server->mConsole->getVRDEServer()->GetVRDEProperty(Bstr("VideoChannel/Enabled").raw(), bstr.asOutParam());
 
-            server->mConsole->getVRDEServer()->COMGETTER(VideoChannel)(&fVideoEnabled);
+            if (hrc != S_OK)
+            {
+                bstr = "";
+            }
+
+            com::Utf8Str value = bstr;
+
+            BOOL fVideoEnabled =    RTStrICmp(value.c_str(), "true") == 0
+                                 || RTStrICmp(value.c_str(), "1") == 0;
 
             if (cbBuffer >= sizeof(uint32_t))
             {
@@ -668,9 +677,17 @@ DECLCALLBACK(int)  ConsoleVRDPServer::VRDPCallbackQueryProperty(void *pvCallback
 
         case VRDE_QP_VIDEO_CHANNEL_QUALITY:
         {
-            ULONG ulQuality = 0;
+            com::Bstr bstr;
+            HRESULT hrc = server->mConsole->getVRDEServer()->GetVRDEProperty(Bstr("VideoChannel/Quality").raw(), bstr.asOutParam());
 
-            server->mConsole->getVRDEServer()->COMGETTER(VideoChannelQuality)(&ulQuality);
+            if (hrc != S_OK)
+            {
+                bstr = "";
+            }
+
+            com::Utf8Str value = bstr;
+
+            ULONG ulQuality = RTStrToUInt32(value.c_str()); /* This returns 0 on invalid string which is ok. */
 
             if (cbBuffer >= sizeof(uint32_t))
             {
@@ -2317,12 +2334,13 @@ void ConsoleVRDPServer::QueryInfo(uint32_t index, void *pvBuffer, uint32_t cbBuf
 
     if (mVRDPLibrary == NIL_RTLDRMOD)
     {
-        char szErr[4096 + 512];
-        szErr[0] = '\0';
+        RTERRINFOSTATIC ErrInfo;
+        RTErrInfoInitStatic(&ErrInfo);
+
         if (RTPathHavePath(pszLibraryName))
-            rc = SUPR3HardenedLdrLoadPlugIn(pszLibraryName, &mVRDPLibrary, szErr, sizeof(szErr));
+            rc = SUPR3HardenedLdrLoadPlugIn(pszLibraryName, &mVRDPLibrary, &ErrInfo.Core);
         else
-            rc = SUPR3HardenedLdrLoadAppPriv(pszLibraryName, &mVRDPLibrary, szErr, sizeof(szErr));
+            rc = SUPR3HardenedLdrLoadAppPriv(pszLibraryName, &mVRDPLibrary, RTLDRLOAD_FLAGS_LOCAL, &ErrInfo.Core);
         if (RT_SUCCESS(rc))
         {
             struct SymbolEntry
@@ -2353,8 +2371,8 @@ void ConsoleVRDPServer::QueryInfo(uint32_t index, void *pvBuffer, uint32_t cbBuf
         }
         else
         {
-            if (szErr[0])
-                LogRel(("VRDE: Error loading the library '%s': %s (%Rrc)\n", pszLibraryName, szErr, rc));
+            if (RTErrInfoIsSet(&ErrInfo.Core))
+                LogRel(("VRDE: Error loading the library '%s': %s (%Rrc)\n", pszLibraryName, ErrInfo.Core.pszMsg, rc));
             else
                 LogRel(("VRDE: Error loading the library '%s' rc = %Rrc.\n", pszLibraryName, rc));
 

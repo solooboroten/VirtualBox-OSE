@@ -401,6 +401,11 @@ DWORD CALLBACK DdGetDriverInfo(DD_GETDRIVERINFODATA *lpData)
     lpData->ddRVal = DDERR_CURRENTLYNOTAVAIL;
 
     /* Fill in supported stuff */
+    if (IsEqualIID(&lpData->guidInfo, &GUID_D3DCallbacks2))
+    {
+        DISPDBG((0, " -> GUID_D3DCallbacks2\n"));
+    }
+    else
     if (IsEqualIID(&lpData->guidInfo, &GUID_D3DCallbacks3))
     {
         DISPDBG((0, " -> GUID_D3DCallbacks3\n"));
@@ -564,16 +569,28 @@ DWORD CALLBACK DdGetDriverInfo(DD_GETDRIVERINFODATA *lpData)
     {
         DISPDBG((0, " -> GUID_VideoPortCaps\n"));
     }
+#if 0
     else
-    if (IsEqualIID(&lpData->guidInfo, &GUID_D3DCallbacks2))
+    if (IsEqualIID(&lpData->guidInfo, &GUID_OptSurfaceKmodeInfo))
     {
-        DISPDBG((0, " -> GUID_D3DCallbacks2\n"));
+        DISPDBG((0, " -> GUID_OptSurfaceKmodeInfo\n"));
     }
     else
-    if (IsEqualIID(&lpData->guidInfo, &GUID_D3DCallbacks3))
+    if (IsEqualIID(&lpData->guidInfo, &GUID_OptSurfaceUmodeInfo))
     {
-        DISPDBG((0, " -> GUID_D3DCallbacks3\n"));
+        DISPDBG((0, " -> GUID_OptSurfaceUmodeInfo\n"));
     }
+    else
+    if (IsEqualIID(&lpData->guidInfo, &GUID_UserModeDriverInfo))
+    {
+        DISPDBG((0, " -> GUID_UserModeDriverInfo\n"));
+    }
+    else
+    if (IsEqualIID(&lpData->guidInfo, &GUID_UserModeDriverPassword))
+    {
+        DISPDBG((0, " -> GUID_UserModeDriverPassword\n"));
+    }
+#endif   
 
     /* Always return this */
     return DDHAL_DRIVER_HANDLED;

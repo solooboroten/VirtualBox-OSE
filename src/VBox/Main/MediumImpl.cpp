@@ -1,4 +1,4 @@
-/* $Id: MediumImpl.cpp 35082 2010-12-14 13:55:49Z vboxsync $ */
+/* $Id: MediumImpl.cpp 35139 2010-12-15 15:13:43Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation
  */
@@ -1638,6 +1638,20 @@ STDMETHODIMP Medium::COMSETTER(Type)(MediumType_T aType)
         return S_OK;
     }
 
+    DeviceType_T devType = getDeviceType();
+    // DVD media can only be readonly.
+    if (devType == DeviceType_DVD && aType != MediumType_Readonly)
+        return setError(VBOX_E_INVALID_OBJECT_STATE,
+                        tr("Cannot change the type of DVD medium '%s'"),
+                        m->strLocationFull.c_str());
+    // Floppy media can only be writethrough or readonly.
+    if (   devType == DeviceType_Floppy
+        && aType != MediumType_Writethrough
+        && aType != MediumType_Readonly)
+        return setError(VBOX_E_INVALID_OBJECT_STATE,
+                        tr("Cannot change the type of floppy medium '%s'"),
+                        m->strLocationFull.c_str());
+
     /* cannot change the type of a differencing medium */
     if (m->pParent)
         return setError(VBOX_E_INVALID_OBJECT_STATE,
@@ -1696,17 +1710,24 @@ STDMETHODIMP Medium::COMSETTER(Type)(MediumType_T aType)
                                     tr("Cannot change type for medium '%s' to 'Shareable' since it is a dynamic medium storage unit"),
                                     m->strLocationFull.c_str());
             }
+            else if (aType == MediumType_Readonly && devType == DeviceType_HardDisk)
+            {
+                // Readonly hard disks are not allowed, this medium type is reserved for
+                // DVDs and floppy images at the moment. Later we might allow readonly hard
+                // disks, but that's extremely unusual and many guest OSes will have trouble.
+                return setError(VBOX_E_INVALID_OBJECT_STATE,
+                                tr("Cannot change type for medium '%s' to 'Readonly' since it is a hard disk"),
+                                m->strLocationFull.c_str());
+            }
             break;
         }
         default:
             AssertFailedReturn(E_FAIL);
     }
 
-    if (    aType == MediumType_MultiAttach
-         || aType == MediumType_Readonly
-       )
+    if (aType == MediumType_MultiAttach)
     {
-        // These two types are new with VirtualBox 4.0 and therefore require settings
+        // This type is new with VirtualBox 4.0 and therefore requires settings
         // version 1.11 in the settings backend. Unfortunately it is not enough to do
         // the usual routine in MachineConfigFile::bumpSettingsVersionIfNeeded() for
         // two reasons: The medium type is a property of the media registry tree, which
@@ -1718,17 +1739,18 @@ STDMETHODIMP Medium::COMSETTER(Type)(MediumType_T aType)
         const Guid &uuidGlobalRegistry = m->pVirtualBox->getGlobalRegistryId();
         if (isInRegistry(uuidGlobalRegistry))
             return setError(VBOX_E_INVALID_OBJECT_STATE,
-                            tr("Cannot change type for medium '%s': the media types 'MultiAttach' and 'Readonly' can only be used "
+                            tr("Cannot change type for medium '%s': the media type 'MultiAttach' can only be used "
                                "on media registered with a machine that was created with VirtualBox 4.0 or later"),
                             m->strLocationFull.c_str());
     }
 
     m->type = aType;
 
-    // save the global settings; for that we should hold only the VirtualBox lock
+    // save the settings
+    GuidList llRegistriesThatNeedSaving;
+    addToRegistryIDList(llRegistriesThatNeedSaving);
     mlock.release();
-    AutoWriteLock alock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
-    HRESULT rc = m->pVirtualBox->saveSettings();
+    HRESULT rc = m->pVirtualBox->saveRegistries(llRegistriesThatNeedSaving);
 
     return rc;
 }
@@ -1848,18 +1870,22 @@ STDMETHODIMP Medium::COMSETTER(AutoReset)(BOOL aAutoReset)
                         tr("Medium '%s' is not differencing"),
                         m->strLocationFull.c_str());
 
+    HRESULT rc = S_OK;
+
     if (m->autoReset != !!aAutoReset)
     {
         m->autoReset = !!aAutoReset;
 
-        // save the global settings; for that we should hold only the VirtualBox lock
+        // save the settings
+        GuidList llRegistriesThatNeedSaving;
+        addToRegistryIDList(llRegistriesThatNeedSaving);
         mlock.release();
-        AutoWriteLock alock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
-        return m->pVirtualBox->saveSettings();
+        rc = m->pVirtualBox->saveRegistries(llRegistriesThatNeedSaving);
     }
 
-    return S_OK;
+    return rc;
 }
+
 STDMETHODIMP Medium::COMGETTER(LastAccessError)(BSTR *aLastAccessError)
 {
     CheckComArgOutPointerValid(aLastAccessError);
@@ -2278,10 +2304,11 @@ STDMETHODIMP Medium::SetProperty(IN_BSTR aName, IN_BSTR aValue)
 
     it->second = aValue;
 
-    // save the global settings; for that we should hold only the VirtualBox lock
+    // save the settings
+    GuidList llRegistriesThatNeedSaving;
+    addToRegistryIDList(llRegistriesThatNeedSaving);
     mlock.release();
-    AutoWriteLock alock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
-    HRESULT rc = m->pVirtualBox->saveSettings();
+    HRESULT rc = m->pVirtualBox->saveRegistries(llRegistriesThatNeedSaving);
 
     return rc;
 }
@@ -2355,11 +2382,11 @@ STDMETHODIMP Medium::SetProperties(ComSafeArrayIn(IN_BSTR, aNames),
         it->second = Utf8Str(values[i]);
     }
 
+    // save the settings
+    GuidList llRegistriesThatNeedSaving;
+    addToRegistryIDList(llRegistriesThatNeedSaving);
     mlock.release();
-
-    // saveSettings needs vbox lock
-    AutoWriteLock alock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
-    HRESULT rc = m->pVirtualBox->saveSettings();
+    HRESULT rc = m->pVirtualBox->saveRegistries(llRegistriesThatNeedSaving);
 
     return rc;
 }
@@ -6582,9 +6609,9 @@ HRESULT Medium::taskMergeHandler(Medium::MergeTask &task)
     if (task.isAsync())
     {
         // in asynchronous mode, save settings now
-        // for that we should hold only the VirtualBox lock
-        AutoWriteLock vboxlock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
-        m->pVirtualBox->saveSettings();
+        GuidList llRegistriesThatNeedSaving;
+        addToRegistryIDList(llRegistriesThatNeedSaving);
+        rc = m->pVirtualBox->saveRegistries(llRegistriesThatNeedSaving);
     }
     else
         // synchronous mode: report save settings result to caller
@@ -6847,8 +6874,10 @@ HRESULT Medium::taskCloneHandler(Medium::CloneTask &task)
 
     // now, at the end of this task (always asynchronous), save the settings
     {
-        AutoWriteLock vboxlock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
-        m->pVirtualBox->saveSettings();
+        // save the settings
+        GuidList llRegistriesThatNeedSaving;
+        addToRegistryIDList(llRegistriesThatNeedSaving);
+        rc = m->pVirtualBox->saveRegistries(llRegistriesThatNeedSaving);
     }
 
     /* Everything is explicitly unlocked when the task exits,
@@ -7601,8 +7630,10 @@ HRESULT Medium::taskImportHandler(Medium::ImportTask &task)
 
     // now, at the end of this task (always asynchronous), save the settings
     {
-        AutoWriteLock vboxlock(m->pVirtualBox COMMA_LOCKVAL_SRC_POS);
-        m->pVirtualBox->saveSettings();
+        // save the settings
+        GuidList llRegistriesThatNeedSaving;
+        addToRegistryIDList(llRegistriesThatNeedSaving);
+        rc = m->pVirtualBox->saveRegistries(llRegistriesThatNeedSaving);
     }
 
     /* Everything is explicitly unlocked when the task exits,

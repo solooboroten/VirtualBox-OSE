@@ -1,4 +1,4 @@
-/* $Id: ldr.h 34959 2010-12-10 15:17:31Z vboxsync $ */
+/* $Id: ldr.h 35183 2010-12-16 13:59:44Z vboxsync $ */
 /** @file
  * IPRT - Loader Internals.
  */
@@ -364,10 +364,10 @@ DECLCALLBACK(int) rtldrNativeClose(PRTLDRMODINTERNAL pMod);
  * @returns iprt status code.
  * @param   pszFilename     The image filename.
  * @param   phHandle        Where to store the module handle on success.
- * @param   pszError        Where to store the error message. Optional.
- * @param   cbError         The size of the error message buffer.
+ * @param   fFlags          See RTLDRFLAGS_.
+ * @param   pErrInfo        Where to return extended error information. Optional.
  */
-int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle, char *pszError, size_t cbError);
+int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle, uint32_t fFlags, PRTERRINFO pErrInfo);
 
 int rtldrPEOpen(PRTLDRREADER pReader, uint32_t fFlags, RTLDRARCH enmArch, RTFOFF offNtHdrs, PRTLDRMOD phLdrMod);
 int rtldrELFOpen(PRTLDRREADER pReader, uint32_t fFlags, RTLDRARCH enmArch, PRTLDRMOD phLdrMod);

@@ -1,4 +1,4 @@
-/* $Id: vboxvideo.c 35048 2010-12-14 00:21:15Z vboxsync $ */
+/* $Id: vboxvideo.c 35207 2010-12-16 21:59:30Z vboxsync $ */
 /** @file
  *
  * Linux Additions X11 graphics driver
@@ -433,33 +433,16 @@ vbox_output_get_modes (xf86OutputPtr output)
     VBOXPtr pVBox = VBOXGetRec(pScrn);
 
     TRACE_ENTRY();
-    if (vbox_device_available(pVBox))
-    {
-        Bool rc = FALSE;
-        uint32_t x, y, bpp, iScreen;
-        iScreen = (uintptr_t)output->driver_private;
-        if (   pVBox->aPreferredSize[iScreen].cx
-            && pVBox->aPreferredSize[iScreen].cy)
-        {
-            x = pVBox->aPreferredSize[iScreen].cx;
-            y = pVBox->aPreferredSize[iScreen].cy;
-            rc = TRUE;
-        }
-        else
-            rc = vboxGetDisplayChangeRequest(pScrn, &x, &y, &bpp, &iScreen);
-        /* If we don't find a display request, see if we have a saved hint
-         * from a previous session. */
-        if (!rc || (0 == x) || (0 == y))
-            rc = vboxRetrieveVideoMode(pScrn, &x, &y, &bpp);
-        if (rc && (0 != x) && (0 != y))
-            vbox_output_add_mode(pVBox, &pModes, NULL, x, y, TRUE, FALSE);
-    }
+    uint32_t x, y, bpp, iScreen;
+    iScreen = (uintptr_t)output->driver_private;
+    vboxGetPreferredMode(pScrn, iScreen, &x, &y, &bpp);
+    vbox_output_add_mode(pVBox, &pModes, NULL, x, y, TRUE, FALSE);
+
     /* Also report any modes the user may have requested in the xorg.conf
      * configuration file. */
     for (i = 0; pScrn->display->modes[i] != NULL; i++)
     {
-        int x, y;
-        if (2 == sscanf(pScrn->display->modes[i], "%dx%d", &x, &y))
+        if (2 == sscanf(pScrn->display->modes[i], "%ux%u", &x, &y))
             vbox_output_add_mode(pVBox, &pModes, pScrn->display->modes[i], x, y,
                                  FALSE, TRUE);
     }
@@ -876,7 +859,7 @@ VBOXPreInit(ScrnInfoPtr pScrn, int flags)
     {
         uint32_t cx = 0, cy = 0, cBits = 0;
 
-        vboxGetPreferredMode(pScrn, &cx, &cy, &cBits);
+        vboxGetPreferredMode(pScrn, 0, &cx, &cy, &cBits);
         /* We only support 16 and 24 bits depth (i.e. 16 and 32bpp) */
         if (cBits != 16)
             cBits = 24;
@@ -1045,7 +1028,7 @@ VBOXScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
      */
     pVBox->vtSwitch = FALSE;
 
-    if (vbox_device_available(pVBox) && vbox_open (pScrn, pScreen, pVBox)) {
+    if (vbox_open (pScrn, pScreen, pVBox)) {
         vboxEnableVbva(pScrn);
         vboxEnableGraphicsCap(pVBox);
     }
@@ -1280,111 +1263,56 @@ VBOXSwitchMode(int scrnIndex, DisplayModePtr pMode, int flags)
     return rc;
 }
 
-/** Get the index of the screen we will use as the primary one.  This is in
- * fact the first screen located fully inside the virtual desktop, or zero
- * if none are.  Screens which are not fully inside will be set up to be
- * identical to the primary one, so from the host's point of view the first
- * screen can always be treated as the primary. */
-static uint32_t
-vboxGetPrimaryIndex(ScrnInfoPtr pScrn)
-{
-    VBOXPtr pVBox = VBOXGetRec(pScrn);
-    unsigned i;
-    for (i = 0; i < pVBox->cScreens; ++i)
-        if (      pVBox->aScreenLocation[i].x + pVBox->aScreenLocation[i].cx
-               <= pScrn->virtualX
-            &&    pVBox->aScreenLocation[i].y + pVBox->aScreenLocation[i].cy
-               <= pScrn->virtualY)
-            return i;
-    return 0;  /* This will probably look bad if it can happen. */
-}
-
-/**
- * This is a rather un-transparent workaround for the fact that HGSMI doesn't
- * let us disable screens.  If a guest screen is not enabled we set it to
- * match the display on the primary screen.
- */
-static uint32_t
-vboxGetRealLocationIndex(ScrnInfoPtr pScrn, unsigned i)
-{
-    VBOXPtr pVBox = VBOXGetRec(pScrn);
-    if (      pVBox->aScreenLocation[i].x + pVBox->aScreenLocation[i].cx
-           <= pScrn->virtualX
-        &&    pVBox->aScreenLocation[i].y + pVBox->aScreenLocation[i].cy
-           <= pScrn->virtualY)
-        return i;
-    return vboxGetPrimaryIndex(pScrn);
-    
-}
-
 /** Set a graphics mode.  Poke any required values into registers, do an HGSMI
  * mode set and tell the host we support advanced graphics functions.  This
- * procedure is complicated by three things.
- *  - The first is that X.Org can implicitly disable a screen by resizing the
- *    virtual framebuffer so that the screen is no longer inside it.  We have
- *    to spot and handle this.
- *  - The second is that HGSMI doesn't actually let us disable a monitor.  We
- *    should add this at some point, but for now I want to implement the
- *    protocol and not extend it, so I "disable" monitors by setting them to
- *    show the same thing as the first enabled monitor (see @a
- *    vboxGetPrimaryIndex).
- *  - The third is that the code has to work around HGSMI's special handling of
- *    the primary screen.  X.Org doesn't have the same concept, and can move
- *    the primary about the virtual desktop (not such an issue) and can also
- *    disable the first screen.
+ * procedure is complicated by the fact that X.Org can implicitly disable a
+ * screen by resizing the virtual framebuffer so that the screen is no longer
+ * inside it.  We have to spot and handle this.
  */
 static Bool
 VBOXSetMode(ScrnInfoPtr pScrn, unsigned cDisplay, unsigned cWidth,
             unsigned cHeight, int x, int y)
 {
     VBOXPtr pVBox = VBOXGetRec(pScrn);
-    Bool rc = TRUE;
-    Bool fPrimaryMoved = FALSE;
-    uint32_t cIndex;
-    uint32_t cwReal, chReal;
-    uint32_t offStart, offStartReal;
-    int32_t cxReal, cyReal, cxOld, cyOld;
+    Bool rc = TRUE, fActive = TRUE;
+    uint32_t offStart, cwReal = cWidth;
 
     TRACE_LOG("cDisplay=%u, cWidth=%u, cHeight=%u, x=%d, y=%d, displayWidth=%d\n",
               cDisplay, cWidth, cHeight, x, y, pScrn->displayWidth);
-    cxOld = pVBox->aScreenLocation[cDisplay].cx;
-    cyOld = pVBox->aScreenLocation[cDisplay].cy;
     pVBox->aScreenLocation[cDisplay].cx = cWidth;
     pVBox->aScreenLocation[cDisplay].cy = cHeight;
     pVBox->aScreenLocation[cDisplay].x = x;
     pVBox->aScreenLocation[cDisplay].y = y;
-    cIndex = vboxGetRealLocationIndex(pScrn, cDisplay);
-    cwReal = pVBox->aScreenLocation[cIndex].cx;
-    chReal = pVBox->aScreenLocation[cIndex].cy;
-    cxReal = pVBox->aScreenLocation[cIndex].x;
-    cyReal = pVBox->aScreenLocation[cIndex].y;
-    offStart = cyReal * pVBox->cbLine + cxReal * vboxBPP(pScrn) / 8;
-    /* Silently fail if the mode - specifically the virtual width - is too
-     * large for VRAM as we sometimes have to do this - see comments in
+    offStart = y * pVBox->cbLine + x * vboxBPP(pScrn) / 8;
+    /* Deactivate the screen if the mode - specifically the virtual width - is
+     * too large for VRAM as we sometimes have to do this - see comments in
      * VBOXPreInit. */
-    if (offStart + pVBox->cbLine * chReal > pVBox->cbFramebuffer)
-        return TRUE;
+    if (offStart + pVBox->cbLine * cHeight > pVBox->cbFramebuffer)
+        fActive = FALSE;
+    /* Deactivate the screen if it is outside of the virtual framebuffer and
+     * clamp it to lie inside if it is partly outside. */
+    if (x >= pScrn->displayWidth || x + (int) cWidth <= 0)
+        fActive = FALSE;
+    else
+        cwReal = RT_MIN((int) cWidth, pScrn->displayWidth - x);
     /* Don't fiddle with the hardware if we are switched
      * to a virtual terminal. */
-    if (!pVBox->vtSwitch)
+    if (!pVBox->vtSwitch && fActive)
     {
-        TRACE_LOG("setting mode.  cWidth=%u, cHeight=%u, cwReal=%u, chReal=%u, pScrn->virtualX=%d, pScrn->virtualY=%d, vboxBPP(pScrn)=%d, x=%d, y=%d, cDisplay=%u, cIndex=%u, cxReal=%d, cyReal=%d, pVBox->cbLine=%d\n",
-                  cWidth, cHeight, cwReal, chReal, pScrn->virtualX,
-                  pScrn->virtualY, vboxBPP(pScrn), x, y, cDisplay,
-                  cIndex, cxReal, cyReal, pVBox->cbLine);
         if (cDisplay == 0)
-            VBoxVideoSetModeRegisters(cwReal, chReal, pScrn->displayWidth,
-                                      vboxBPP(pScrn), cxReal, cyReal);
+            VBoxVideoSetModeRegisters(cwReal, cHeight, pScrn->displayWidth,
+                                      vboxBPP(pScrn), x, y);
         /* Tell the host we support graphics */
         if (vbox_device_available(pVBox))
             vboxEnableGraphicsCap(pVBox);
     }
-    if (    vbox_device_available(pVBox)
-        && (pVBox->fHaveHGSMI)
+    if (   (pVBox->fHaveHGSMI)
         && !pVBox->vtSwitch)
-        VBoxHGSMIProcessDisplayInfo(&pVBox->guestCtx, cDisplay, cxReal, cyReal,
-                                    offStart, pVBox->cbLine, cwReal, chReal,
-                                    vboxBPP(pScrn));
+        VBoxHGSMIProcessDisplayInfo(&pVBox->guestCtx, cDisplay, x, y,
+                                    offStart, pVBox->cbLine, cwReal, cHeight,
+                                    vboxBPP(pScrn),
+                                      VBVA_SCREEN_F_ACTIVE
+                                    | (fActive ? 0: VBVA_SCREEN_F_DISABLED));
     TRACE_LOG("returning %s\n", rc ? "TRUE" : "FALSE");
     return rc;
 }

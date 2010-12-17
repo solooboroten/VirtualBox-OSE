@@ -1,4 +1,4 @@
-/* $Id: ldrNative-win.cpp 34962 2010-12-10 15:42:36Z vboxsync $ */
+/* $Id: ldrNative-win.cpp 35183 2010-12-16 13:59:44Z vboxsync $ */
 /** @file
  * IPRT - Binary Image Loader, Win32 native.
  */
@@ -39,9 +39,10 @@
 #include "internal/ldr.h"
 
 
-int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle, char *pszError, size_t cbError)
+int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle, uint32_t fFlags, PRTERRINFO pErrInfo)
 {
     Assert(sizeof(*phHandle) >= sizeof(HMODULE));
+    AssertReturn(fFlags == 0, VERR_INVALID_PARAMETER);
 
     /*
      * Do we need to add an extension?
@@ -51,7 +52,7 @@ int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle, char *pszError
         size_t cch = strlen(pszFilename);
         char *psz = (char *)alloca(cch + sizeof(".DLL"));
         if (!psz)
-            return VERR_NO_MEMORY;
+            return RTErrInfoSet(pErrInfo, VERR_NO_MEMORY, "alloca failed");
         memcpy(psz, pszFilename, cch);
         memcpy(psz + cch, ".DLL", sizeof(".DLL"));
         pszFilename = psz;
@@ -72,9 +73,7 @@ int rtldrNativeLoad(const char *pszFilename, uintptr_t *phHandle, char *pszError
      */
     DWORD dwErr = GetLastError();
     int   rc    = RTErrConvertFromWin32(dwErr);
-    if (cbError)
-        RTStrPrintf(pszError, cbError, "GetLastError=%u", dwErr);
-    return rc;
+    return RTErrInfoSetF(pErrInfo, rc, "GetLastError=%u", dwErr);
 }
 
 

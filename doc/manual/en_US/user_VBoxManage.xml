@@ -310,7 +310,7 @@ UART 1:          disabled
 UART 2:          disabled
 Audio:           disabled (Driver: Unknown)
 Clipboard Mode:  Bidirectional
-VRDP:            disabled
+VRDE:            disabled
 USB:             disabled
 
 USB Device Filters:
@@ -832,7 +832,7 @@ Statistics update:  disabled
     </sect2>
 
     <sect2 id="vboxmanage-modifyvm-other">
-      <title>Serial port, audio, clipboard, VRDP and USB settings</title>
+      <title>Serial port, audio, clipboard, remote desktop and USB settings</title>
 
       <para>The following other hardware settings are available through
       <computeroutput>VBoxManage modifyvm</computeroutput>:<itemizedlist>
@@ -935,31 +935,31 @@ Statistics update:  disabled
       available through <computeroutput>VBoxManage
       modifyvm</computeroutput>:<itemizedlist>
           <listitem>
-            <para><computeroutput>--vrdp on|off</computeroutput>: With the
+            <para><computeroutput>--vrde on|off</computeroutput>: With the
             VirtualBox graphical user interface, this enables or disables the
-            built-in VRDP server. Note that if you are using
+            VirtualBox remote desktop extension (VRDE) server. Note that if you are using
             <computeroutput>VBoxHeadless</computeroutput> (see <xref
-            linkend="vboxheadless" />), VRDP output is always enabled.</para>
+            linkend="vboxheadless" />), VRDE is enabled by default.</para>
           </listitem>
 
           <listitem>
-            <para><computeroutput>--vrdpport
+            <para><computeroutput>--vrdeport
             default|&lt;ports&gt;</computeroutput>: A port or a range of ports
-            the VRDP server can bind to; "default" or "0" means port 3389, the
+            the VRDE server can bind to; "default" or "0" means port 3389, the
             standard port for RDP. You can specify a comma-separated list of
             ports or ranges of ports. Use a dash between two port numbers to
-            specify a range. The VRDP server will bind to <emphasis
+            specify a range. The VRDE server will bind to <emphasis
             role="bold">one</emphasis> of available ports from the specified
             list. Only one machine can use a given port at a time. For
-            example, the option <computeroutput> --vrdpport
+            example, the option <computeroutput> --vrdeport
             5000,5010-5012</computeroutput> will tell the server to bind to
             one of following ports: 5000, 5010, 5011 or 5012.</para>
           </listitem>
 
           <listitem>
-            <para><computeroutput>--vrdpaddress &lt;IP
+            <para><computeroutput>--vrdeaddress &lt;IP
             address&gt;</computeroutput>: The IP address of the host network
-            interface the VRDP server will bind to. If specified, the VRDP
+            interface the VRDE server will bind to. If specified, the
             server will accept connections only on the specified host network
             interface.</para>
           </listitem>
@@ -972,32 +972,33 @@ Statistics update:  disabled
           </listitem>
 
           <listitem>
-            <para><computeroutput>--vrdpmulticon on|off</computeroutput>: This
-            enables multiple VRDP connections to the same VRDP server; see
-            <xref lang="" linkend="vrdp-multiconnection" />.</para>
+            <para><computeroutput>--vrdemulticon on|off</computeroutput>: This
+            enables multiple connections to the same VRDE server, if the server
+            supports this feature; see
+            <xref lang="" linkend="vrde-multiconnection" />.</para>
           </listitem>
 
           <listitem>
-            <para><computeroutput>--vrdpreusecon on|off</computeroutput>: This
-            specifies the VRDP server behavior when multiple connections are
-            disabled. When this option is enabled, the VRDP server will allow
-            a new client to connect and drop the existing connection. When
+            <para><computeroutput>--vrdereusecon on|off</computeroutput>: This
+            specifies the VRDE server behavior when multiple connections are
+            disabled. When this option is enabled, the server will allow
+            a new client to connect and will drop the existing connection. When
             this option is disabled (this is the default setting), a new
             connection will not be accepted if there is already a client
             connected to the server.</para>
           </listitem>
 
           <listitem>
-            <para><computeroutput>--vrdpvideochannel on|off</computeroutput>:
-            This enables VRDP video acceleration; see <xref lang=""
-            linkend="vrdp-videochannel" />.</para>
+            <para><computeroutput>--vrdevideochannel on|off</computeroutput>:
+            This enables video redirection, if it is supported by the VRDE server;
+            see <xref lang="" linkend="vrde-videochannel" />.</para>
           </listitem>
 
           <listitem>
-            <para><computeroutput>--vrdpvideochannelquality
-            &lt;percent&gt;</computeroutput>: Sets the image quality for VRDP
-            video acceleration; see <xref lang=""
-            linkend="vrdp-videochannel" />.</para>
+            <para><computeroutput>--vrdevideochannelquality
+            &lt;percent&gt;</computeroutput>: Sets the image quality for
+            video redirection; see <xref lang=""
+            linkend="vrde-videochannel" />.</para>
           </listitem>
         </itemizedlist></para>
     </sect2>
@@ -1187,7 +1188,7 @@ Virtual system 0:
     <para>The optional <computeroutput>--type</computeroutput> specifier
     determines whether the machine will be started in a window (GUI mode,
     which is the default) or whether the output should go through
-    <computeroutput>VBoxHeadless</computeroutput>, with VRDP enabled or not;
+    <computeroutput>VBoxHeadless</computeroutput>, with VRDE enabled or not;
     see <xref linkend="vboxheadless" /> for more information. The list of
     types is subject to change, and it's not guaranteed that all types are
     accepted by any product variant.</para>
@@ -1204,19 +1205,10 @@ Virtual system 0:
       </glossentry>
 
       <glossentry>
-        <glossterm>vrdp</glossterm>
-
-        <glossdef>
-          <para>Starts a VM showing a GUI window, with its graphics card
-          output accessible by an RDP client.</para>
-        </glossdef>
-      </glossentry>
-
-      <glossentry>
         <glossterm>headless</glossterm>
 
         <glossdef>
-          <para>Starts a VM without a window for remote RDP display
+          <para>Starts a VM without a window for remote display
           only.</para>
         </glossdef>
       </glossentry>
@@ -1335,16 +1327,16 @@ Virtual system 0:
       </listitem>
 
       <listitem>
-        <para><computeroutput>vrdp on|off</computeroutput> lets you enable or
-        disable the built-in VRDP server.</para>
+        <para><computeroutput>vrde on|off</computeroutput> lets you enable or
+        disable the VRDE server, if it is installed.</para>
       </listitem>
 
       <listitem>
-        <para><computeroutput>vrdpport default|&lt;ports&gt;</computeroutput>
-        changes the port or a range of ports that the VRDP server can bind to;
+        <para><computeroutput>vrdeport default|&lt;ports&gt;</computeroutput>
+        changes the port or a range of ports that the VRDE server can bind to;
         "default" or "0" means port 3389, the standard port for RDP. For
         details, see the description for the
-        <computeroutput>--vrdpport</computeroutput> option in <xref
+        <computeroutput>--vrdeport</computeroutput> option in <xref
         linkend="vboxmanage-modifyvm-other" />.</para>
       </listitem>
 
@@ -1906,28 +1898,66 @@ Virtual system 0:
     <title>VBoxManage modifyhd</title>
 
     <para>With the <computeroutput>modifyhd</computeroutput> command, you can
-    change the type of an existing image between the normal, immutable and
-    write-through modes; see <xref linkend="hdimagewrites" /> for
-    details.<note>
-        <para>For compatibility with earlier versions of VirtualBox, the
-        "modifyvdi" command is also supported and mapped internally to the
-        "modifyhd" command.</para>
+    change the characteristics of a disk image after it has been
+    created:<screen>VBoxManage modifyhd         &lt;uuid&gt;|&lt;filename&gt;
+                            [--type normal|writethrough|immutable|shareable|
+                                    readonly|multiattach]
+                            [--autoreset on|off]
+                            [--compact]
+                            [--resize &lt;megabytes&gt;|--resizebyte &lt;bytes&gt;]</screen><note>
+        <para>Despite the "hd" in the subcommand name, the command works with
+        all disk images, not only hard disks. For compatibility with earlier
+        versions of VirtualBox, the "modifyvdi" command is also supported and
+        mapped internally to the "modifyhd" command.</para>
       </note></para>
 
-    <para>For immutable (differencing) hard disks only, the
-    <computeroutput>modifyhd autoreset on|off</computeroutput> command
-    determines whether the disk is automatically reset on every VM startup
-    (again, see <xref linkend="hdimagewrites" />). The default is "on".</para>
+    <para>The following options are available:<itemizedlist>
+        <listitem>
+          <para>With the <computeroutput>--type</computeroutput> argument, you
+          can change the type of an existing image between the normal,
+          immutable, write-through and other modes; see <xref
+          linkend="hdimagewrites" /> for details.</para>
+        </listitem>
 
-    <para>In addition, the <computeroutput>modifyhd --compact</computeroutput>
-    command can be used to compact disk images, i.e. remove blocks that only
-    contains zeroes. For this operation to be effective, it is required to
-    zero out free space in the guest system using a suitable software tool.
-    Microsoft provides the <computeroutput>sdelete</computeroutput> tool for
-    Windows guests. Execute <computeroutput>sdelete -c</computeroutput> in the
-    guest to zero the free disk space before compressing the virtual disk
-    image. Compaction works both for base images and for diff images created
-    as part of a snapshot.</para>
+        <listitem>
+          <para>For immutable (differencing) hard disks only, the
+          <computeroutput>--autoreset on|off</computeroutput> option
+          determines whether the disk is automatically reset on every VM
+          startup (again, see <xref linkend="hdimagewrites" />). The default
+          is "on".</para>
+        </listitem>
+
+        <listitem>
+          <para>With the <computeroutput>--compact</computeroutput> option,
+          can be used to compact disk images, i.e. remove blocks that only
+          contains zeroes. This will shrink a dynamically expanding image
+          again; it will reduce the <emphasis>physical</emphasis> size of the
+          image without affecting the logical size of the virtual disk.
+          Compaction works both for base images and for diff images created as
+          part of a snapshot.</para>
+
+          <para>For this operation to be effective, it is required that free
+          space in the guest system first be zeroed out using a suitable
+          software tool. For Windows guests, you can use the
+          <computeroutput>sdelete</computeroutput> tool provided by Microsoft.
+          Execute <computeroutput>sdelete -c</computeroutput> in the guest to
+          zero the free disk space before compressing the virtual disk image.
+          </para>
+        </listitem>
+
+        <listitem>
+          <para>The --resize option allows you to expand the capacity of an
+          existing image; this increases the <emphasis>logical</emphasis> size
+          of a virtual disk without affecting the physical size much.<footnote>
+              <para>Image resizing was added with VirtualBox 4.0.</para>
+            </footnote> This currently works only for the VDI and VHD formats,
+          and only for the dynamically expanding variants. For example, if you
+          originally created a 10G disk which is now full, you can use the
+          --resize command to add more space to the virtual disk without
+          having to create a new image and copy all data from within a virtual
+          machine.</para>
+        </listitem>
+      </itemizedlist></para>
   </sect1>
 
   <sect1 id="vboxmanage-clonevdi">
@@ -2850,6 +2880,46 @@ Value: 2006.01.01</screen>
       </itemizedlist></para>
   </sect1>
 
+  <sect1 id="vboxmanage-debugvm">
+    <title>VBoxManage debugvm</title>
+
+    <para>The "debugvm" commands are for experts who want to tinker with the
+    exact details of virtual machine execution. Like the VM debugger described
+    in <xref linkend="debugger" />, these commands are only useful if you are
+    very familiar with the details of the PC architecture and how to debug
+    software.</para>
+
+    <para>The subcommands of "debugvm" all operate on a running virtual
+    machine. The following are available:<itemizedlist>
+        <listitem>
+          <para>With <computeroutput>dumpguestcore --filename
+          &lt;name&gt;</computeroutput>, you can create a system dump of the
+          running VM, which will be written into the given file. This file
+          will have the standard ELF core format (with custom sections); see
+          <xref linkend="guestcoreformat" />.</para>
+        </listitem>
+
+        <listitem>
+          <para>The <computeroutput>injectnmi</computeroutput> command causes
+          a non-maskable interrupt (NMI) in the guest, which might be useful
+          for certain debugging scenarios. What happens exactly is dependent
+          on the guest operating system, but an NMI can crash the whole guest
+          operating system. Do not use unless you know what you're
+          doing.</para>
+        </listitem>
+
+        <listitem>
+          <para>The <computeroutput>statistics</computeroutput> command can be
+          used to display VMM statistics on the command line. The
+          <computeroutput>--reset</computeroutput> option will reset
+          statistics. The affected statistics can be filtered with the
+          <computeroutput>--pattern</computeroutput> option, which accepts
+          DOS/NT-style wildcards (<computeroutput>?</computeroutput> and
+          <computeroutput>*</computeroutput>).</para>
+        </listitem>
+      </itemizedlist></para>
+  </sect1>
+
   <sect1 id="vboxmanage-dhcpserver">
     <title>VBoxManage dhcpserver</title>
 
@@ -2936,7 +3006,7 @@ Value: 2006.01.01</screen>
     linkend="intro-installing" />.<itemizedlist>
         <listitem>
           <para>To add a new extension pack, use <computeroutput>VBoxManage
-          extpack install &lt;tarball&gt;</computeroutput>. </para>
+          extpack install &lt;tarball&gt;</computeroutput>.</para>
         </listitem>
 
         <listitem>

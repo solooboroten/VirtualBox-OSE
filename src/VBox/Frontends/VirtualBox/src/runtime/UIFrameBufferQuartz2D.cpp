@@ -1,4 +1,4 @@
-/* $Id: UIFrameBufferQuartz2D.cpp 34740 2010-12-06 11:56:28Z vboxsync $ */
+/* $Id: UIFrameBufferQuartz2D.cpp 35215 2010-12-17 10:12:26Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -381,7 +381,7 @@ void UIFrameBufferQuartz2D::resizeEvent(UIResizeEvent *aEvent)
     {
 //        printf ("VRAM\n");
         /* Create the image copy of the framebuffer */
-        CGDataProviderRef dp = CGDataProviderCreateWithData(NULL, aEvent->VRAM(), aEvent->bitsPerPixel() / 8 * m_width * m_height, NULL);
+        CGDataProviderRef dp = CGDataProviderCreateWithData(NULL, aEvent->VRAM(), aEvent->bytesPerLine() * m_height, NULL);
         m_image = CGImageCreate(m_width, m_height, 8, aEvent->bitsPerPixel(), aEvent->bytesPerLine(), cs,
                                 kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little, dp, 0, false,
                                 kCGRenderingIntentDefault);
@@ -438,6 +438,26 @@ void UIFrameBufferQuartz2D::clean()
         mRegionUnused = NULL;
     }
 }
+
+#ifdef VBOX_WITH_VIDEOHWACCEL
+void UIFrameBufferQuartz2D::setView(UIMachineView *pView)
+{
+    clean();
+    m_pMachineLogic = NULL;
+    m_pDataAddress = NULL;
+
+    if (pView)
+    {
+        m_pMachineLogic = pView->machineLogic();
+
+        UIResizeEvent event(FramebufferPixelFormat_Opaque,
+                        NULL, 0, 0, 640, 480);
+        UIFrameBufferQuartz2D::resizeEvent (&event);
+    }
+
+    UIFrameBuffer::setView(pView);
+}
+#endif
 
 #endif /* defined (VBOX_GUI_USE_QUARTZ2D) */
 

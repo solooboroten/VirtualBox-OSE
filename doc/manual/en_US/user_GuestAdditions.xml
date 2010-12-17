@@ -222,15 +222,11 @@
         <title>Installation</title>
 
         <para>In the "Devices" menu in the virtual machine's menu bar,
-        VirtualBox has a handy menu item named "Install Guest Additions",
-        which either allows to upgrade already installed Guest Additions (only
-        Windows Guest Additions 4.0 and later) automatically or mounts the
-        Guest Additions ISO file inside your virtual machine to perform a
-        manual update.</para>
-
-        <para>In case of a manual update, a Windows guest should then
-        automatically start the Guest Additions installer, which allows to
-        install the Guest Additions into your Windows guest.</para>
+        VirtualBox has a handy menu item named "Install guest additions",
+        which mounts the Guest Additions ISO file inside your virtual machine.
+        A Windows guest should then automatically start the Guest Additions
+        installer, which installs the Guest Additions into your Windows
+        guest.</para>
 
         <note>
           <para>For Direct 3D acceleration to work in a Windows Guest, you
@@ -1159,14 +1155,13 @@ $</screen>
             determines the prefix that is used. Change that guest property to
             a value other than "sf" to change that prefix; see <xref
             linkend="guestadd-guestprops" /> for details.<note>
-                <para>Read/write access to auto-mounted shared folders is only
+                <para>Access to auto-mounted shared folders is only
                 granted to the user group
                 <computeroutput>vboxsf</computeroutput>, which is created by
-                the VirtualBox Guest Additions installer. You must therefore
-                add user accounts to that group for a user to have read/write
-                access. Other users are granted read-only access, even if the
-                shared folder in question has been defined as
-                read/write.</para>
+                the VirtualBox Guest Additions installer. Hence guest users
+                have to be member of that group to have read/write
+                access or to have read-only access in case the folder is not
+                mapped writable.</para>
               </note></para>
 
             <para>To change the mount directory to something other than
@@ -1218,15 +1213,17 @@ $</screen>
             <para>It is only available for certain Windows, Linux and Solaris
             guests. In particular:<itemizedlist>
                 <listitem>
-                  <para>For Windows guests, support is restricted to 32-bit
-                  versions of XP and Vista. Both OpenGL and Direct3D 8/9 are
-                  supported (experimental).</para>
+                  <para>3D acceleration with Windows guests requires Windows
+                  2000, Windows XP, Vista or Windows 7. Both OpenGL and
+                  Direct3D 8/9 (not with Windows 2000) are supported
+                  (experimental).</para>
                 </listitem>
 
                 <listitem>
                   <para>OpenGL on Linux requires kernel 2.6.27 and higher as
-                  well as X.org server version 1.5 and higher. Ubuntu 8.10 and
-                  Fedora 10 have been tested and confirmed as working.</para>
+                  well as X.org server version 1.5 and higher. Ubuntu 10.10
+                  and Fedora 14 have been tested and confirmed as
+                  working.</para>
                 </listitem>
 
                 <listitem>
@@ -1347,7 +1344,7 @@ $</screen>
 
     <para><mediaobject>
         <imageobject>
-          <imagedata align="center" fileref="images/seamless.png" width="10cm" />
+          <imagedata align="center" fileref="images/seamless.png" width="14cm" />
         </imageobject>
       </mediaobject>To enable seamless mode, after starting the virtual
     machine, press the Host key (normally the right control key) together with
@@ -1506,11 +1503,8 @@ Name: /VirtualBox/GuestInfo/OS/Version, value: #59-Ubuntu SMP Thu Jan 28 01:23:0
     Also, copying files from host to the guest as well as remotely creating
     guest directories is available.</para>
 
-    <para>To use these feature, use the VirtualBox command line or the GUI.
-    See <xref linkend="mountingadditionsiso" /> for automatically updating the
-    Guest Additions or <xref linkend="vboxmanage-guestcontrol" /> for
-    executing guest programs, copying files from the host or creating guest
-    directories.</para>
+    <para>To use these features, use the VirtualBox command line, see <xref
+    linkend="vboxmanage-guestcontrol" />.</para>
   </sect1>
 
   <sect1>

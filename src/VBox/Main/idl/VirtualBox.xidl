@@ -12701,7 +12701,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IVRDEServer" extends="$unknown"
-    uuid="b5bd49dc-26ef-42b4-ae7a-0c4b734a7653"
+    uuid="be24e0db-e1d6-4d58-b85b-21053d1511b4"
     wsmap="managed"
     >
     <attribute name="enabled" type="boolean">
@@ -12728,18 +12728,6 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         Flag whether the existing connection must be dropped and a new connection
         must be established by the VRDE server, when a new client connects in single
         connection mode.
-      </desc>
-    </attribute>
-
-    <attribute name="videoChannel" type="boolean">
-      <desc>
-        Flag whether video redirectiron channel is enabled.
-      </desc>
-    </attribute>
-
-    <attribute name="videoChannelQuality" type="unsigned long">
-      <desc>
-        Image quality in percents.
       </desc>
     </attribute>
 
@@ -14776,7 +14764,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
   -->
   <enum
     name="VBoxEventType"
-    uuid="c9412a17-c1e1-46db-b4b7-18de9c967e85"
+    uuid="e71c487f-755e-46e9-a476-dd6a5d134597"
     >
 
     <desc>
@@ -15014,9 +15002,9 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         See <link to="IHostPciDevicePlugEvent">IHostPciDevicePlugEvent</link>.
       </desc>
     </const>
-    <const name="OnVBoxSVCUnavailable" value="68">
+    <const name="OnVBoxSVCAvailabilityChanged" value="68">
       <desc>
-        See <link to="IVBoxSVCUnavailableEvent">IVBoxSVCUnavailableEvent</link>.
+        See <link to="IVBoxSVCAvailabilityChangedEvent">IVBoxSVCAvailablityChangedEvent</link>.
       </desc>
     </const>
     <const name="OnBandwidthGroupChanged" value="69">
@@ -15024,9 +15012,14 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         See <link to="IBandwidthGroupChangedEvent">IBandwidthGroupChangedEvent</link>.
       </desc>
     </const>
+    <const name="OnGuestMonitorChanged" value="70">
+      <desc>
+        See <link to="IGuestMonitorChangedEvent">IGuestMonitorChangedEvent</link>.
+      </desc>
+    </const>
 
     <!-- Last event marker -->
-    <const name="Last" value="70">
+    <const name="Last" value="71">
       <desc>
         Must be last event, used for iterations and structures relying on numerical event values.
       </desc>
@@ -16310,14 +16303,20 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
   </interface>
 
   <interface
-    name="IVBoxSVCUnavailableEvent" extends="IEvent"
-    uuid="99f6b352-f5c1-4d15-9c32-939158da8983"
-    wsmap="managed" autogen="VBoxEvent" id="OnVBoxSVCUnavailable"
+    name="IVBoxSVCAvailabilityChangedEvent" extends="IEvent"
+    uuid="97c78fcd-d4fc-485f-8613-5af88bfcfcdc"
+    wsmap="managed" autogen="VBoxEvent" id="OnVBoxSVCAvailabilityChanged"
     >
     <desc>
       Notification when VBoxSVC becomes unavailable (due to a crash or similar
-      unexpected circumstances).
+      unexpected circumstances) or available again.
     </desc>
+
+    <attribute name="available" type="boolean" readonly="yes">
+      <desc>
+        Whether VBoxSVC is available now.
+      </desc>
+    </attribute>
   </interface>
 
   <interface
@@ -16333,6 +16332,85 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         The changed bandwidth group.
       </desc>
     </attribute>
+  </interface>
+
+  <enum
+    name="GuestMonitorChangedEventType"
+    uuid="ef172985-7e36-4297-95be-e46396968d66"
+    >
+
+    <desc>
+      How the guest monitor has been changed.
+    </desc>
+
+    <const name="Enabled" value="0">
+      <desc>
+        The guest monitor has been enabled by the guest.
+      </desc>
+    </const>
+
+    <const name="Disabled" value="1">
+      <desc>
+        The guest monitor has been disabled by the guest.
+      </desc>
+    </const>
+
+    <const name="NewOrigin" value="2">
+      <desc>
+        The guest monitor origin has changed in the guest.
+      </desc>
+    </const>
+  </enum>
+
+  <interface
+    name="IGuestMonitorChangedEvent" extends="IEvent"
+    uuid="0f7b8a22-c71f-4a36-8e5f-a77d01d76090"
+    wsmap="managed" autogen="VBoxEvent" id="OnGuestMonitorChanged"
+    >
+    <desc>
+      Notification when the guest enables one of its monitors.
+    </desc>
+
+    <attribute name="changeType" type="GuestMonitorChangedEventType" readonly="yes">
+      <desc>
+        What was changed for this guest monitor.
+      </desc>
+    </attribute>
+
+    <attribute name="screenId" type="unsigned long" readonly="yes">
+      <desc>
+        The monitor which was changed.
+      </desc>
+    </attribute>
+
+    <attribute name="originX" type="unsigned long" readonly="yes">
+      <desc>
+        Physical X origin relative to the primary screen.
+        Valid for Enabled and NewOrigin.
+      </desc>
+    </attribute>
+
+    <attribute name="originY" type="unsigned long" readonly="yes">
+      <desc>
+        Physical Y origin relative to the primary screen.
+        Valid for Enabled and NewOrigin.
+      </desc>
+    </attribute>
+
+    <attribute name="width" type="unsigned long" readonly="yes">
+      <desc>
+        Width of the screen.
+        Valid for Enabled.
+      </desc>
+    </attribute>
+
+    <attribute name="height" type="unsigned long" readonly="yes">
+      <desc>
+        Height of the screen.
+        Valid for Enabled.
+      </desc>
+    </attribute>
+
   </interface>
 
   <module name="VBoxSVC" context="LocalServer">

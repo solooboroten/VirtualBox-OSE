@@ -124,7 +124,6 @@ vbox_host_uses_hwcursor(ScrnInfoPtr pScrn)
     uint32_t fFeatures = 0;
     VBOXPtr pVBox = pScrn->driverPrivate;
 
-    TRACE_ENTRY();
     /* We may want to force the use of a software cursor.  Currently this is
      * needed if the guest uses a large virtual resolution, as in this case
      * the host and guest tend to disagree about the pointer location. */
@@ -159,7 +158,6 @@ vbox_host_uses_hwcursor(ScrnInfoPtr pScrn)
            )
             rc = FALSE;
     }
-    TRACE_LOG("rc=%s\n", BOOL_STR(rc));
     return rc;
 }
 
@@ -224,10 +222,13 @@ vboxHandleDirtyRect(ScrnInfoPtr pScrn, int iRects, BoxPtr aRects)
                       j, cmdHdr.x, cmdHdr.y, cmdHdr.w, cmdHdr.h);
 #endif
 
-            VBoxVBVABufferBeginUpdate(&pVBox->aVbvaCtx[j], &pVBox->guestCtx);
-            VBoxVBVAWrite(&pVBox->aVbvaCtx[j], &pVBox->guestCtx, &cmdHdr,
-                          sizeof(cmdHdr));
-            VBoxVBVABufferEndUpdate(&pVBox->aVbvaCtx[j]);
+            if (VBoxVBVABufferBeginUpdate(&pVBox->aVbvaCtx[j],
+                                          &pVBox->guestCtx))
+            {
+                VBoxVBVAWrite(&pVBox->aVbvaCtx[j], &pVBox->guestCtx, &cmdHdr,
+                              sizeof(cmdHdr));
+                VBoxVBVABufferEndUpdate(&pVBox->aVbvaCtx[j]);
+            }
         }
 }
 
@@ -273,6 +274,9 @@ vboxInitVbva(int scrnIndex, ScreenPtr pScreen, VBOXPtr pVBox)
                                 NULL);
     pvGuestHeapMemory =   ((uint8_t *)pVBox->base) + offVRAMBaseMapping
                         + offGuestHeapMemory;
+    TRACE_LOG("video RAM: %u KB, guest heap offset: 0x%x, cbGuestHeapMemory: %u\n",
+              pScrn->videoRam, offVRAMBaseMapping + offGuestHeapMemory,
+              cbGuestHeapMemory);
     rc = VBoxHGSMISetupGuestContext(&pVBox->guestCtx, pvGuestHeapMemory,
                                     cbGuestHeapMemory,
                                     offVRAMBaseMapping + offGuestHeapMemory);
@@ -289,18 +293,20 @@ vboxInitVbva(int scrnIndex, ScreenPtr pScreen, VBOXPtr pVBox)
     {
         pVBox->cbFramebuffer -= VBVA_MIN_BUFFER_SIZE;
         pVBox->aoffVBVABuffer[i] = pVBox->cbFramebuffer;
+        TRACE_LOG("VBVA buffer offset for screen %u: 0x%lx\n", i,
+                  (unsigned long) pVBox->cbFramebuffer);
         VBoxVBVASetupBufferContext(&pVBox->aVbvaCtx[i],
                                    pVBox->aoffVBVABuffer[i], 
                                    VBVA_MIN_BUFFER_SIZE);
     }
+    TRACE_LOG("Maximum framebuffer size: %lu (0x%lx)\n",
+              (unsigned long) pVBox->cbFramebuffer,
+              (unsigned long) pVBox->cbFramebuffer);
     rc = VBoxHGSMISendViewInfo(&pVBox->guestCtx, pVBox->cScreens,
                                vboxFillViewInfo, (void *)pVBox);
 
-    /* Set up the dirty rectangle handler.  Since this seems to be a
-       delicate operation, and removing it doubly so, this will
-       remain in place whether it is needed or not, and will simply
-       return if VBVA is not active.  I assume that it will be active
-       most of the time. */
+    /* Set up the dirty rectangle handler.  It will be added into a function
+     * chain and gets removed when the screen is cleaned up. */
     if (ShadowFBInit2(pScreen, NULL, vboxHandleDirtyRect) != TRUE)
     {
         xf86DrvMsg(scrnIndex, X_ERROR,
@@ -342,10 +348,8 @@ vbox_open(ScrnInfoPtr pScrn, ScreenPtr pScreen, VBOXPtr pVBox)
 {
     TRACE_ENTRY();
 
-    if (!pVBox->useDevice)
-        return FALSE;
     pVBox->fHaveHGSMI = vboxInitVbva(pScrn->scrnIndex, pScreen, pVBox);
-    return TRUE;
+    return pVBox->fHaveHGSMI;
 }
 
 Bool
@@ -609,7 +613,6 @@ vbox_use_hw_cursor_argb(ScreenPtr pScreen, CursorPtr pCurs)
      * our list of video modes. */
     vboxWriteHostModes(pScrn, pScrn->currentMode);
 #endif
-    TRACE_LOG("rc=%s\n", BOOL_STR(rc));
     return rc;
 }
 
@@ -631,7 +634,6 @@ vbox_load_cursor_argb(ScrnInfoPtr pScrn, CursorPtr pCurs)
                       | VBOX_MOUSE_POINTER_ALPHA;
     int rc;
 
-    TRACE_ENTRY();
     pVBox = pScrn->driverPrivate;
     bitsp = pCurs->bits;
     w     = bitsp->width;
@@ -693,7 +695,6 @@ vbox_load_cursor_argb(ScrnInfoPtr pScrn, CursorPtr pCurs)
 
     rc = VBoxHGSMIUpdatePointerShape(&pVBox->guestCtx, fFlags, bitsp->xhot,
                                      bitsp->yhot, w, h, p, sizeData);
-    TRACE_LOG(": leaving, returning %d\n", rc);
     free(p);
 }
 #endif
@@ -1061,18 +1062,28 @@ static unsigned vboxNextStandardMode(ScrnInfoPtr pScrn, unsigned cIndex,
  *
  * The return type is void as we guarantee we will return some mode.
  */
-void vboxGetPreferredMode(ScrnInfoPtr pScrn, uint32_t *pcx,
+void vboxGetPreferredMode(ScrnInfoPtr pScrn, uint32_t iScreen, uint32_t *pcx,
                           uint32_t *pcy, uint32_t *pcBits)
 {
     /* Query the host for the preferred resolution and colour depth */
-    uint32_t cx = 0, cy = 0, iDisplay = 0, cBits = 32;
+    uint32_t cx = 0, cy = 0, iScreenIn = 0, cBits = 32;
     VBOXPtr pVBox = pScrn->driverPrivate;
 
     TRACE_ENTRY();
+    bool found = false;
+    if (   pVBox->aPreferredSize[iScreen].cx
+        && pVBox->aPreferredSize[iScreen].cy)
+    {
+        cx = pVBox->aPreferredSize[iScreen].cx;
+        cy = pVBox->aPreferredSize[iScreen].cy;
+        found = true;
+    }
     if (pVBox->useDevice)
     {
-        bool found = vboxGetDisplayChangeRequest(pScrn, &cx, &cy, &cBits, &iDisplay);
-        if ((cx == 0) || (cy == 0))
+        if (!found)
+            found = vboxGetDisplayChangeRequest(pScrn, &cx, &cy, &cBits,
+                                                &iScreenIn);
+        if ((cx == 0) || (cy == 0) || iScreenIn != iScreen)
             found = false;
         if (!found)
             found = vboxRetrieveVideoMode(pScrn, &cx, &cy, &cBits);
@@ -1138,7 +1149,7 @@ void vboxWriteHostModes(ScrnInfoPtr pScrn, DisplayModePtr pCurrent)
     bool found = false;
 
     TRACE_ENTRY();
-    vboxGetPreferredMode(pScrn, &cx, &cy, &cBits);
+    vboxGetPreferredMode(pScrn, 0, &cx, &cy, &cBits);
 #ifdef DEBUG
     /* Count the number of modes for sanity */
     unsigned cModes = 1, cMode = 0;

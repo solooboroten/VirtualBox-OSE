@@ -1,4 +1,4 @@
-/* $Id: VBoxHeadless.cpp 34959 2010-12-10 15:17:31Z vboxsync $ */
+/* $Id: VBoxHeadless.cpp 35191 2010-12-16 15:25:20Z vboxsync $ */
 /** @file
  * VBoxHeadless - The VirtualBox Headless frontend for running VMs on servers.
  */
@@ -105,17 +105,21 @@ public:
     {
         switch (aType)
         {
-            case VBoxEventType_OnVBoxSVCUnavailable:
+            case VBoxEventType_OnVBoxSVCAvailabilityChanged:
             {
-                ComPtr<IVBoxSVCUnavailableEvent> pVSUEv = aEvent;
-                Assert(pVSUEv);
-
-                LogRel(("VBoxHeadless: VBoxSVC became unavailable, exiting.\n"));
-                RTPrintf("VBoxSVC became unavailable, exiting.\n");
-                /* Terminate the VM as cleanly as possible given that VBoxSVC
-                 * is no longer present. */
-                g_fTerminateFE = true;
-                gEventQ->interruptEventQueueProcessing();
+                ComPtr<IVBoxSVCAvailabilityChangedEvent> pVSACEv = aEvent;
+                Assert(pVSACEv);
+                BOOL fAvailable = FALSE;
+                pVSACEv->COMGETTER(Available)(&fAvailable);
+                if (!fAvailable)
+                {
+                    LogRel(("VBoxHeadless: VBoxSVC became unavailable, exiting.\n"));
+                    RTPrintf("VBoxSVC became unavailable, exiting.\n");
+                    /* Terminate the VM as cleanly as possible given that VBoxSVC
+                     * is no longer present. */
+                    g_fTerminateFE = true;
+                    gEventQ->interruptEventQueueProcessing();
+                }
                 break;
             }
             default:
@@ -830,12 +834,13 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
 
         if (fFFMPEG)
         {
-            HRESULT rcc = S_OK;
-            int     rrc = VINF_SUCCESS;
-            char    szErr[8192];
+            HRESULT         rcc = S_OK;
+            int             rrc = VINF_SUCCESS;
+            RTERRINFOSTATIC ErrInfo;
 
             Log2(("VBoxHeadless: loading VBoxFFmpegFB shared library\n"));
-            rrc = SUPR3HardenedLdrLoadAppPriv("VBoxFFmpegFB", &hLdrFFmpegFB, szErr, sizeof(szErr));
+            RTErrInfoInitStatic(&ErrInfo);
+            rrc = SUPR3HardenedLdrLoadAppPriv("VBoxFFmpegFB", &hLdrFFmpegFB, RTLDRLOAD_FLAGS_LOCAL, &ErrInfo.Core);
 
             if (RT_SUCCESS(rrc))
             {
@@ -856,13 +861,13 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
                     LogError("Failed to initialise video capturing - make sure that the file format\n"
                              "you wish to use is supported on your system\n", rcc);
             }
-            if (RT_SUCCESS(rrc) && (rcc == S_OK))
+            if (RT_SUCCESS(rrc) && rcc == S_OK)
             {
                 Log2(("VBoxHeadless: Registering framebuffer\n"));
                 pFramebuffer->AddRef();
                 display->SetFramebuffer(VBOX_VIDEO_PRIMARY_SCREEN, pFramebuffer);
             }
-            if (!RT_SUCCESS(rrc) || (rcc != S_OK))
+            if (!RT_SUCCESS(rrc) || rcc != S_OK)
                 rc = E_FAIL;
         }
         if (rc != S_OK)
@@ -997,7 +1002,7 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             CHECK_ERROR(pVirtualBoxClient, COMGETTER(EventSource)(pES.asOutParam()));
             vboxClientListener = new VirtualBoxClientEventListenerImpl();
             com::SafeArray <VBoxEventType_T> eventTypes;
-            eventTypes.push_back(VBoxEventType_OnVBoxSVCUnavailable);
+            eventTypes.push_back(VBoxEventType_OnVBoxSVCAvailabilityChanged);
             CHECK_ERROR(pES, RegisterListener(vboxClientListener, ComSafeArrayAsInParam(eventTypes), true));
         }
 

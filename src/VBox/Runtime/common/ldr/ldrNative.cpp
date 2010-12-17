@@ -1,4 +1,4 @@
-/* $Id: ldrNative.cpp 34959 2010-12-10 15:17:31Z vboxsync $ */
+/* $Id: ldrNative.cpp 35191 2010-12-16 15:25:20Z vboxsync $ */
 /** @file
  * IPRT - Binary Image Loader, Native interface.
  */
@@ -95,30 +95,22 @@ static const RTLDROPS s_rtldrNativeOps =
  */
 RTDECL(int) RTLdrLoad(const char *pszFilename, PRTLDRMOD phLdrMod)
 {
-    return RTLdrLoadEx(pszFilename, phLdrMod, NULL, 0);
+    return RTLdrLoadEx(pszFilename, phLdrMod, RTLDRLOAD_FLAGS_LOCAL, NULL);
 }
 RT_EXPORT_SYMBOL(RTLdrLoad);
 
 
-RTDECL(int) RTLdrLoadEx(const char *pszFilename, PRTLDRMOD phLdrMod, char *pszError, size_t cbError)
+RTDECL(int) RTLdrLoadEx(const char *pszFilename, PRTLDRMOD phLdrMod, uint32_t fFlags, PRTERRINFO pErrInfo)
 {
-    LogFlow(("RTLdrLoadEx: pszFilename=%p:{%s} phLdrMod=%p pszError=%p cbError=%zu\n", pszFilename, pszFilename, phLdrMod, pszError, cbError));
+    LogFlow(("RTLdrLoadEx: pszFilename=%p:{%s} phLdrMod=%p fFlags=%#x pErrInfo=%p\n", pszFilename, pszFilename, phLdrMod, fFlags, pErrInfo));
 
     /*
      * Validate and massage the input.
      */
-    if (!pszError)
-        AssertReturn(!cbError, VERR_INVALID_PARAMETER);
-    else
-    {
-        AssertPtrReturn(pszError, VERR_INVALID_POINTER);
-        if (cbError)
-            *pszError = '\0';
-        else
-            pszError = NULL;
-    }
+    RTErrInfoClear(pErrInfo);
     AssertPtrReturn(pszFilename, VERR_INVALID_POINTER);
     AssertPtrReturn(phLdrMod, VERR_INVALID_POINTER);
+    AssertReturn(!(fFlags & ~RTLDRLOAD_FLAGS_VALID_MASK), VERR_INVALID_PARAMETER);
 
     /*
      * Allocate and initialize module structure.
@@ -135,7 +127,7 @@ RTDECL(int) RTLdrLoadEx(const char *pszFilename, PRTLDRMOD phLdrMod, char *pszEr
         /*
          * Attempt to open the module.
          */
-        rc = rtldrNativeLoad(pszFilename, &pMod->hNative, pszError, cbError);
+        rc = rtldrNativeLoad(pszFilename, &pMod->hNative, fFlags, pErrInfo);
         if (RT_SUCCESS(rc))
         {
             *phLdrMod = &pMod->Core;
@@ -145,8 +137,8 @@ RTDECL(int) RTLdrLoadEx(const char *pszFilename, PRTLDRMOD phLdrMod, char *pszEr
 
         RTMemFree(pMod);
     }
-    else if (cbError)
-        RTStrPrintf(pszError, cbError, "Failed to allocate %zu bytes for the module handle", sizeof(*pMod));
+    else
+        RTErrInfoSetF(pErrInfo, rc, "Failed to allocate %zu bytes for the module handle", sizeof(*pMod));
     *phLdrMod = NIL_RTLDRMOD;
     LogFlow(("RTLdrLoad: returns %Rrc\n", rc));
     return rc;
