@@ -431,7 +431,7 @@ VBoxSelectorWnd(VBoxSelectorWnd **aSelf, QWidget* aParent,
     connect(mVmNewAction, SIGNAL(triggered()), this, SLOT(vmNew()));
     connect(mVmAddAction, SIGNAL(triggered()), this, SLOT(vmAdd()));
 
-    connect(mVmConfigAction, SIGNAL(triggered()), this, SLOT(vmSettings()));
+    connect(mVmConfigAction, SIGNAL(triggered()), this, SLOT(vmSettings()), Qt::QueuedConnection);
     connect(mVmDeleteAction, SIGNAL(triggered()), this, SLOT(vmDelete()));
     connect(mVmStartAction, SIGNAL(triggered()), this, SLOT(vmStart()));
     connect(mVmDiscardAction, SIGNAL(triggered()), this, SLOT(vmDiscard()));
@@ -724,6 +724,9 @@ void VBoxSelectorWnd::vmSettings(const QString &aCategory /* = QString::null */,
 
     CMachine m = session.GetMachine();
     AssertMsgReturn(!m.isNull(), ("Machine must not be null"), (void) 0);
+
+    /* Don't show the inaccessible warning if the user open the vm settings. */
+    mDoneInaccessibleWarningOnce = true;
 
     UISettingsDialog *dlg = new UIVMSettingsDlg(this, m, strCategory, strControl);
     dlg->getFrom();

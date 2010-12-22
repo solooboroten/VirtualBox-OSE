@@ -1,4 +1,4 @@
-/* $Id: MediumImpl.cpp 35139 2010-12-15 15:13:43Z vboxsync $ */
+/* $Id: MediumImpl.cpp 35261 2010-12-20 17:44:59Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation
  */
@@ -1470,7 +1470,7 @@ STDMETHODIMP Medium::COMGETTER(State)(MediumState_T *aState)
     return S_OK;
 }
 
-STDMETHODIMP Medium::COMGETTER(Variant)(MediumVariant_T *aVariant)
+STDMETHODIMP Medium::COMGETTER(Variant)(ULONG *aVariant)
 {
     CheckComArgOutPointerValid(aVariant);
 
@@ -2392,7 +2392,7 @@ STDMETHODIMP Medium::SetProperties(ComSafeArrayIn(IN_BSTR, aNames),
 }
 
 STDMETHODIMP Medium::CreateBaseStorage(LONG64 aLogicalSize,
-                                       MediumVariant_T aVariant,
+                                       ULONG aVariant,
                                        IProgress **aProgress)
 {
     CheckComArgOutPointerValid(aProgress);
@@ -2437,7 +2437,7 @@ STDMETHODIMP Medium::CreateBaseStorage(LONG64 aLogicalSize,
 
         /* setup task object to carry out the operation asynchronously */
         pTask = new Medium::CreateBaseTask(this, pProgress, aLogicalSize,
-                                           aVariant);
+                                           (MediumVariant_T)aVariant);
         rc = pTask->rc();
         AssertComRC(rc);
         if (FAILED(rc))
@@ -2482,7 +2482,7 @@ STDMETHODIMP Medium::DeleteStorage(IProgress **aProgress)
 }
 
 STDMETHODIMP Medium::CreateDiffStorage(IMedium *aTarget,
-                                       MediumVariant_T aVariant,
+                                       ULONG aVariant,
                                        IProgress **aProgress)
 {
     CheckComArgNotNull(aTarget);
@@ -2522,8 +2522,9 @@ STDMETHODIMP Medium::CreateDiffStorage(IMedium *aTarget,
 
     ComObjPtr <Progress> pProgress;
 
-    rc = createDiffStorage(diff, aVariant, pMediumLockList, &pProgress,
-                           false /* aWait */, NULL /* pfNeedsGlobalSaveSettings*/);
+    rc = createDiffStorage(diff, (MediumVariant_T)aVariant, pMediumLockList,
+                           &pProgress, false /* aWait */,
+                           NULL /* pfNeedsGlobalSaveSettings*/);
     if (FAILED(rc))
         delete pMediumLockList;
     else
@@ -2568,7 +2569,7 @@ STDMETHODIMP Medium::MergeTo(IMedium *aTarget, IProgress **aProgress)
 }
 
 STDMETHODIMP Medium::CloneTo(IMedium *aTarget,
-                             MediumVariant_T aVariant,
+                             ULONG aVariant,
                              IMedium *aParent,
                              IProgress **aProgress)
 {
@@ -2656,7 +2657,8 @@ STDMETHODIMP Medium::CloneTo(IMedium *aTarget,
         }
 
         /* setup task object to carry out the operation asynchronously */
-        pTask = new Medium::CloneTask(this, pProgress, pTarget, aVariant,
+        pTask = new Medium::CloneTask(this, pProgress, pTarget,
+                                      (MediumVariant_T)aVariant,
                                       pParent, pSourceMediumLockList,
                                       pTargetMediumLockList);
         rc = pTask->rc();

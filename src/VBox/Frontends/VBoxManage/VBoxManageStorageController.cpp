@@ -1,4 +1,4 @@
-/* $Id: VBoxManageStorageController.cpp 35137 2010-12-15 14:43:28Z vboxsync $ */
+/* $Id: VBoxManageStorageController.cpp 35241 2010-12-20 13:14:55Z vboxsync $ */
 /** @file
  * VBoxManage - The storage controller related commands.
  */
@@ -394,10 +394,9 @@ int handleStorageAttach(HandlerArg *a)
                         mediumAttachment->COMGETTER(Type)(&deviceType);
 
                         ComPtr<IMedium> pExistingMedium;
-                        rc = a->virtualBox->FindMedium(Bstr(pszMedium).raw(),
-                                                       deviceType,
-                                                       pExistingMedium.asOutParam());
-                        if (pExistingMedium)
+                        rc = findMedium(a, pszMedium, deviceType, true /* fSilent */,
+                                        pExistingMedium);
+                        if (SUCCEEDED(rc) && pExistingMedium)
                         {
                             if (    (deviceType == DeviceType_DVD)
                                  || (deviceType == DeviceType_HardDisk)
@@ -543,19 +542,9 @@ int handleStorageAttach(HandlerArg *a)
                 if (bstrMedium.isEmpty())
                     throw Utf8Str("Missing --medium argument");
 
-                rc = a->virtualBox->FindMedium(bstrMedium.raw(),
-                                               devTypeRequested,
-                                               pMedium2Mount.asOutParam());
+                rc = findOrOpenMedium(a, pszMedium, devTypeRequested,
+                                      pMedium2Mount, NULL);
                 if (FAILED(rc) || !pMedium2Mount)
-                {
-                    /* not registered, do that on the fly */
-                    CHECK_ERROR(a->virtualBox,
-                                OpenMedium(bstrMedium.raw(),
-                                           devTypeRequested,
-                                           AccessMode_ReadWrite,
-                                           pMedium2Mount.asOutParam()));
-                }
-                if (!pMedium2Mount)
                     throw Utf8StrFmt("Invalid UUID or filename \"%s\"", pszMedium);
             }
 

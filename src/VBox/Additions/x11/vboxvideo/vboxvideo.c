@@ -1,4 +1,4 @@
-/* $Id: vboxvideo.c 35207 2010-12-16 21:59:30Z vboxsync $ */
+/* $Id: vboxvideo.c 35269 2010-12-20 23:32:03Z vboxsync $ */
 /** @file
  *
  * Linux Additions X11 graphics driver
@@ -57,6 +57,7 @@
 #include "version-generated.h"
 #include "product-generated.h"
 #include <xf86.h>
+#include <misc.h>
 
 /* All drivers initialising the SW cursor need this */
 #include "mipointer.h"
@@ -481,6 +482,7 @@ vbox_output_set_property(xf86OutputPtr output, Atom property,
             || (unsigned) value->size > (sizeof(sz) - 1))
             return FALSE;
         strncpy(sz, value->data, value->size);
+        TRACE_LOG("screen=%u, property value=%s\n", cDisplay, sz);
         if (sscanf(sz, "%dx%d", &w, &h) != 2)
             return FALSE;
         pVBox->aPreferredSize[cDisplay].cx = w;
@@ -835,8 +837,8 @@ VBOXPreInit(ScrnInfoPtr pScrn, int flags)
 
     /* Using the PCI information caused problems with non-powers-of-two
        sized video RAM configurations */
-    pVBox->cbFramebuffer = inl(VBE_DISPI_IOPORT_DATA);
-    pScrn->videoRam = pVBox->cbFramebuffer / 1024;
+    pVBox->cbFBMax = inl(VBE_DISPI_IOPORT_DATA);
+    pScrn->videoRam = pVBox->cbFBMax / 1024;
 
     /* Check if the chip restricts horizontal resolution or not. */
     outw(VBE_DISPI_IOPORT_INDEX, VBE_DISPI_INDEX_ID);
@@ -1150,6 +1152,24 @@ VBOXScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
     return (TRUE);
 }
 
+/** Clear the virtual framebuffer in VRAM.  Optionally also clear up to the
+ * size of a new framebuffer.  Framebuffer sizes larger than available VRAM
+ * be treated as zero and passed over. */
+static void
+vboxClearVRAM(ScrnInfoPtr pScrn, int32_t cNewX, int32_t cNewY)
+{
+    VBOXPtr pVBox = VBOXGetRec(pScrn);
+    int64_t cbOldFB, cbNewFB;
+
+    cbOldFB = pVBox->cbLine * pScrn->virtualX;
+    cbNewFB = vboxLineLength(pScrn, cNewX) * cNewY;
+    if (cbOldFB > pVBox->cbFBMax)
+        cbOldFB = 0;
+    if (cbNewFB > pVBox->cbFBMax)
+        cbNewFB = 0;
+    memset(pVBox->base, 0, max(cbOldFB, cbNewFB));
+}
+
 static Bool
 VBOXEnterVT(int scrnIndex, int flags)
 {
@@ -1157,6 +1177,9 @@ VBOXEnterVT(int scrnIndex, int flags)
     VBOXPtr pVBox = VBOXGetRec(pScrn);
 
     TRACE_ENTRY();
+    vboxClearVRAM(pScrn, 0, 0);
+    if (pVBox->fHaveHGSMI)
+        vboxEnableVbva(pScrn);
     pVBox->vtSwitch = FALSE;
 #ifdef VBOX_DRI
     if (pVBox->useDRI)
@@ -1171,8 +1194,6 @@ VBOXEnterVT(int scrnIndex, int flags)
                      pScrn->frameY0))
         return FALSE;
 #endif
-    if (pVBox->fHaveHGSMI)
-        vboxEnableVbva(pScrn);
     return TRUE;
 }
 
@@ -1184,9 +1205,10 @@ VBOXLeaveVT(int scrnIndex, int flags)
 
     TRACE_ENTRY();
     pVBox->vtSwitch = TRUE;
-    VBOXSaveRestore(pScrn, MODE_RESTORE);
     if (pVBox->fHaveHGSMI)
         vboxDisableVbva(pScrn);
+    vboxClearVRAM(pScrn, 0, 0);
+    VBOXSaveRestore(pScrn, MODE_RESTORE);
     vboxDisableGraphicsCap(pVBox);
 #ifdef VBOX_DRI
     if (pVBox->useDRI)
@@ -1201,15 +1223,16 @@ VBOXCloseScreen(int scrnIndex, ScreenPtr pScreen)
     ScrnInfoPtr pScrn = xf86Screens[scrnIndex];
     VBOXPtr pVBox = VBOXGetRec(pScrn);
 
+    if (pVBox->fHaveHGSMI)
+        vboxDisableVbva(pScrn);
+    vboxDisableGraphicsCap(pVBox);
+    vboxClearVRAM(pScrn, 0, 0);
 #ifdef VBOX_DRI
     if (pVBox->useDRI)
         VBOXDRICloseScreen(pScreen, pVBox);
     pVBox->useDRI = false;
 #endif
 
-    if (pVBox->fHaveHGSMI)
-        vboxDisableVbva(pScrn);
-    vboxDisableGraphicsCap(pVBox);
     if (pScrn->vtSema) {
         VBOXSaveRestore(xf86Screens[scrnIndex], MODE_RESTORE);
         VBOXUnmapVidMem(pScrn);
@@ -1287,7 +1310,8 @@ VBOXSetMode(ScrnInfoPtr pScrn, unsigned cDisplay, unsigned cWidth,
     /* Deactivate the screen if the mode - specifically the virtual width - is
      * too large for VRAM as we sometimes have to do this - see comments in
      * VBOXPreInit. */
-    if (offStart + pVBox->cbLine * cHeight > pVBox->cbFramebuffer)
+    if (   offStart + pVBox->cbLine * cHeight > pVBox->cbFBMax
+        || pVBox->cbLine * pScrn->virtualY > pVBox->cbFBMax)
         fActive = FALSE;
     /* Deactivate the screen if it is outside of the virtual framebuffer and
      * clamp it to lie inside if it is partly outside. */
@@ -1333,16 +1357,17 @@ static Bool VBOXAdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height)
                    "Failed to get the screen pixmap.\n");
         return FALSE;
     }
-    if (cbLine > UINT32_MAX || cbLine * height >= pVBox->cbFramebuffer)
+    if (cbLine > UINT32_MAX || cbLine * height >= pVBox->cbFBMax)
     {
         xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
                    "Unable to set up a virtual screen size of %dx%d with %lu of %d Kb of video memory available.  Please increase the video memory size.\n",
-                   width, height, pVBox->cbFramebuffer / 1024, pScrn->videoRam);
+                   width, height, pVBox->cbFBMax / 1024, pScrn->videoRam);
         return FALSE;
     }
     pScreen->ModifyPixmapHeader(pPixmap, width, height,
                                 pScrn->depth, vboxBPP(pScrn), cbLine,
                                 pVBox->base);
+    vboxClearVRAM(pScrn, width, height);
     pScrn->virtualX = width;
     pScrn->virtualY = height;
     pScrn->displayWidth = vboxDisplayPitch(pScrn, cbLine);

@@ -194,7 +194,7 @@ vboxHandleDirtyRect(ScrnInfoPtr pScrn, int iRects, BoxPtr aRects)
     unsigned j;
 
     pVBox = pScrn->driverPrivate;
-    if (pVBox->fHaveHGSMI == FALSE)
+    if (pVBox->fHaveHGSMI == FALSE || pVBox->vtSwitch)
         return;
 
     for (i = 0; i < iRects; ++i)
@@ -243,7 +243,7 @@ vboxFillViewInfo(void *pvVBox, struct VBVAINFOVIEW *pViews, uint32_t cViews)
         pViews[i].u32ViewIndex = i;
         pViews[i].u32ViewOffset = 0;
         pViews[i].u32ViewSize = pVBox->cbView;
-        pViews[i].u32MaxScreenSize = pVBox->cbFramebuffer;
+        pViews[i].u32MaxScreenSize = pVBox->cbFBMax;
     }
     return VINF_SUCCESS;
 }
@@ -258,10 +258,6 @@ vboxInitVbva(int scrnIndex, ScreenPtr pScreen, VBOXPtr pVBox)
 {
     ScrnInfoPtr pScrn = xf86Screens[scrnIndex];
     int rc = VINF_SUCCESS;
-    unsigned i;
-    uint32_t offVRAMBaseMapping, offGuestHeapMemory, cbGuestHeapMemory,
-             cScreens;
-    void *pvGuestHeapMemory;
 
     pVBox->cScreens = 1;
     if (!VBoxHGSMIIsSupported())
@@ -269,6 +265,33 @@ vboxInitVbva(int scrnIndex, ScreenPtr pScreen, VBOXPtr pVBox)
         xf86DrvMsg(scrnIndex, X_ERROR, "The graphics device does not seem to support HGSMI.  Disableing video acceleration.\n");
         return FALSE;
     }
+
+    /* Set up the dirty rectangle handler.  It will be added into a function
+     * chain and gets removed when the screen is cleaned up. */
+    if (ShadowFBInit2(pScreen, NULL, vboxHandleDirtyRect) != TRUE)
+    {
+        xf86DrvMsg(scrnIndex, X_ERROR,
+                   "Unable to install dirty rectangle handler for VirtualBox graphics acceleration.\n");
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/**
+ * Initialise VirtualBox's accelerated video extensions.
+ *
+ * @returns TRUE on success, FALSE on failure
+ */
+static Bool
+vboxSetupVRAMVbva(ScrnInfoPtr pScrn, VBOXPtr pVBox)
+{
+    int rc = VINF_SUCCESS;
+    unsigned i;
+    uint32_t offVRAMBaseMapping, offGuestHeapMemory, cbGuestHeapMemory;
+    void *pvGuestHeapMemory;
+
+    if (!pVBox->fHaveHGSMI)
+        return FALSE;
     VBoxHGSMIGetBaseMappingInfo(pScrn->videoRam * 1024, &offVRAMBaseMapping,
                                 NULL, &offGuestHeapMemory, &cbGuestHeapMemory,
                                 NULL);
@@ -282,35 +305,31 @@ vboxInitVbva(int scrnIndex, ScreenPtr pScreen, VBOXPtr pVBox)
                                     offVRAMBaseMapping + offGuestHeapMemory);
     if (RT_FAILURE(rc))
     {
-        xf86DrvMsg(scrnIndex, X_ERROR, "Failed to set up the guest-to-host communication context, rc=%d\n", rc);
+        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to set up the guest-to-host communication context, rc=%d\n", rc);
         return FALSE;
     }
-    pVBox->cbView = pVBox->cbFramebuffer = offVRAMBaseMapping;
+    pVBox->cbView = pVBox->cbFBMax = offVRAMBaseMapping;
     pVBox->cScreens = VBoxHGSMIGetMonitorCount(&pVBox->guestCtx);
-    xf86DrvMsg(scrnIndex, X_INFO, "Requested monitor count: %u\n",
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Requested monitor count: %u\n",
                pVBox->cScreens);
     for (i = 0; i < pVBox->cScreens; ++i)
     {
-        pVBox->cbFramebuffer -= VBVA_MIN_BUFFER_SIZE;
-        pVBox->aoffVBVABuffer[i] = pVBox->cbFramebuffer;
+        pVBox->cbFBMax -= VBVA_MIN_BUFFER_SIZE;
+        pVBox->aoffVBVABuffer[i] = pVBox->cbFBMax;
         TRACE_LOG("VBVA buffer offset for screen %u: 0x%lx\n", i,
-                  (unsigned long) pVBox->cbFramebuffer);
+                  (unsigned long) pVBox->cbFBMax);
         VBoxVBVASetupBufferContext(&pVBox->aVbvaCtx[i],
                                    pVBox->aoffVBVABuffer[i], 
                                    VBVA_MIN_BUFFER_SIZE);
     }
     TRACE_LOG("Maximum framebuffer size: %lu (0x%lx)\n",
-              (unsigned long) pVBox->cbFramebuffer,
-              (unsigned long) pVBox->cbFramebuffer);
+              (unsigned long) pVBox->cbFBMax,
+              (unsigned long) pVBox->cbFBMax);
     rc = VBoxHGSMISendViewInfo(&pVBox->guestCtx, pVBox->cScreens,
                                vboxFillViewInfo, (void *)pVBox);
-
-    /* Set up the dirty rectangle handler.  It will be added into a function
-     * chain and gets removed when the screen is cleaned up. */
-    if (ShadowFBInit2(pScreen, NULL, vboxHandleDirtyRect) != TRUE)
+    if (RT_FAILURE(rc))
     {
-        xf86DrvMsg(scrnIndex, X_ERROR,
-                   "Unable to install dirty rectangle handler for VirtualBox graphics acceleration.\n");
+        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to send the view information to the host, rc=%d\n", rc);
         return FALSE;
     }
     return TRUE;
@@ -766,7 +785,7 @@ vboxEnableVbva(ScrnInfoPtr pScrn)
     VBOXPtr pVBox = pScrn->driverPrivate;
 
     TRACE_ENTRY();
-    if (!pVBox->fHaveHGSMI)
+    if (!vboxSetupVRAMVbva(pScrn, pVBox))
         return FALSE;
     for (i = 0; i < pVBox->cScreens; ++i)
     {
@@ -859,7 +878,7 @@ vboxGetDisplayChangeRequest(ScrnInfoPtr pScrn, uint32_t *pcx, uint32_t *pcy,
     TRACE_ENTRY();
     if (!pVBox->useDevice)
         return FALSE;
-    int rc = VbglR3GetDisplayChangeRequest(pcx, pcy, pcBits, piDisplay, true);
+    int rc = VbglR3GetDisplayChangeRequest(pcx, pcy, pcBits, piDisplay, false);
     if (RT_SUCCESS(rc))
         return TRUE;
     xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to obtain the last resolution requested by the guest, rc=%d.\n", rc);
@@ -1066,10 +1085,10 @@ void vboxGetPreferredMode(ScrnInfoPtr pScrn, uint32_t iScreen, uint32_t *pcx,
                           uint32_t *pcy, uint32_t *pcBits)
 {
     /* Query the host for the preferred resolution and colour depth */
-    uint32_t cx = 0, cy = 0, iScreenIn = 0, cBits = 32;
+    uint32_t cx = 0, cy = 0, iScreenIn = iScreen, cBits = 32;
     VBOXPtr pVBox = pScrn->driverPrivate;
 
-    TRACE_ENTRY();
+    TRACE_LOG("iScreen=%u\n", iScreen);
     bool found = false;
     if (   pVBox->aPreferredSize[iScreen].cx
         && pVBox->aPreferredSize[iScreen].cy)
@@ -1108,8 +1127,9 @@ void vboxGetPreferredMode(ScrnInfoPtr pScrn, uint32_t iScreen, uint32_t *pcx,
         *pcx = cx;
     if (pcy)
         *pcy = cy;
-    if (pcx)
+    if (pcBits)
         *pcBits = cBits;
+    TRACE_LOG("cx=%u, cy=%u, cBits=%u\n", cx, cy, cBits);
 }
 
 /* Move a screen mode found to the end of the list, so that RandR will give

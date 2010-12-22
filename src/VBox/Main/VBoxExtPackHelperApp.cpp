@@ -1,4 +1,4 @@
-/* $Id: VBoxExtPackHelperApp.cpp 35227 2010-12-17 14:39:59Z vboxsync $ */
+/* $Id: VBoxExtPackHelperApp.cpp 35279 2010-12-21 16:44:39Z vboxsync $ */
 /** @file
  * VirtualBox Main - Extension Pack Helper Application, usually set-uid-to-root.
  */
@@ -88,8 +88,16 @@
 # define OPT_STDOUT         1091
 # define OPT_STDERR         1092
 #endif
+#define OPT_DISP_INFO_HACK  1093
 /** @}  */
 
+
+/*******************************************************************************
+*   Global Variables                                                           *
+*******************************************************************************/
+#ifdef RT_OS_WINDOWS
+static HINSTANCE g_hInstance;
+#endif
 
 #ifdef IN_RT_R3
 /* Override RTAssertShouldPanic to prevent gdb process creation. */
@@ -1157,14 +1165,17 @@ static void CopyFileToStdXxx(RTFILE hSrc, PRTSTREAM pDst, bool fComplain)
  * @param   cMyArgs             The number of arguments following @a cSuArgs.
  * @param   iCmd                The command that is being executed. (For
  *                              selecting messages.)
+ * @param   pszDisplayInfoHack  Display information hack.  Platform specific++.
  */
 static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, const char **papszArgs, int cSuArgs, int cMyArgs,
-                                         int iCmd)
+                                         int iCmd, const char *pszDisplayInfoHack)
 {
     RTEXITCODE rcExit = RTEXITCODE_FAILURE;
 #ifdef RT_OS_WINDOWS
     NOREF(iCmd);
 
+    MSG Msg;
+    PeekMessage(&Msg, NULL, 0, 0, PM_NOREMOVE);
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 
     SHELLEXECUTEINFOW   Info;
@@ -1190,8 +1201,34 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, const char **p
                 Info.lpClass     = NULL;
                 Info.hkeyClass   = NULL;
                 Info.dwHotKey    = 0;
-                Info.hIcon       = INVALID_HANDLE_VALUE;
+                Info.hMonitor    = NULL;
                 Info.hProcess    = INVALID_HANDLE_VALUE;
+
+#if 0 /* This deadlocks with the GUI because the GUI thread is stuck in the API call :/ */
+                /* Apply display hacks. */
+                if (pszDisplayInfoHack)
+                {
+                    const char *pszArg = strstr(pszDisplayInfoHack, "hwnd=");
+                    if (pszArg)
+                    {
+                        uint64_t u64Hwnd;
+                        rc = RTStrToUInt64Ex(pszArg + sizeof("hwnd=") - 1, NULL, 0, &u64Hwnd);
+                        if (RT_SUCCESS(rc))
+                        {
+                            HWND hwnd = (HWND)(uintptr_t)u64Hwnd;
+                            Info.hwnd = hwnd;
+                            Info.hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
+                        }
+                    }
+                }
+                if (Info.hMonitor == NULL)
+                {
+                    POINT Pt = {0,0};
+                    Info.hMonitor = MonitorFromPoint(Pt, MONITOR_DEFAULTTOPRIMARY);
+                }
+                if (Info.hMonitor != NULL)
+                    Info.fMask |= SEE_MASK_HMONITOR;
+ #endif
 
                 if (ShellExecuteExW(&Info))
                 {
@@ -1334,8 +1371,6 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, const char **p
      */
     bool        fHaveDisplayVar = RTEnvExist("DISPLAY");
     int         iSuArg          = cSuArgs;
-    PRTHANDLE   pStdNull        = NULL;
-    RTHANDLE    StdNull;
     char        szExecTool[260];
     char        szXterm[260];
 
@@ -1344,59 +1379,44 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, const char **p
      */
     if (fHaveDisplayVar && FindExecTool(szExecTool, sizeof(szExecTool), "kdesudo"))
     {
-        rc = RTFileOpenBitBucket(&StdNull.u.hFile, RTFILE_O_WRITE);
-        if (RT_SUCCESS(rc))
-        {
-            StdNull.enmType = RTHANDLETYPE_FILE;
-            pStdNull = &StdNull;
-
-            iSuArg = cSuArgs - 4;
-            papszArgs[cSuArgs - 4] = szExecTool;
-            papszArgs[cSuArgs - 3] = "--comment";
-            papszArgs[cSuArgs - 2] = iCmd == CMD_INSTALL
-                                   ? "VirtualBox extension pack installer"
-                                   : iCmd == CMD_UNINSTALL
-                                   ? "VirtualBox extension pack uninstaller"
-                                   : "VirtualBox extension pack maintainer";
-            papszArgs[cSuArgs - 1] = "--";
-        }
-        else
-            RTMsgError("Failed to open /dev/null: %Rrc");
+        iSuArg = cSuArgs - 4;
+        papszArgs[cSuArgs - 4] = szExecTool;
+        papszArgs[cSuArgs - 3] = "--comment";
+        papszArgs[cSuArgs - 2] = iCmd == CMD_INSTALL
+                               ? "VirtualBox extension pack installer"
+                               : iCmd == CMD_UNINSTALL
+                               ? "VirtualBox extension pack uninstaller"
+                               : "VirtualBox extension pack maintainer";
+        papszArgs[cSuArgs - 1] = "--";
     }
     /*
      * gksu is our favorite as it is very well integrated.
-     *
-     * gksu is chatty, so we need to send stderr and stdout to /dev/null or the
-     * error detection logic in Main will fail.  This is a bit unfortunate as
-     * error messages gets lost, but wtf.
      */
     else if (fHaveDisplayVar && FindExecTool(szExecTool, sizeof(szExecTool), "gksu"))
     {
-        rc = RTFileOpenBitBucket(&StdNull.u.hFile, RTFILE_O_WRITE);
-        if (RT_SUCCESS(rc))
-        {
-            StdNull.enmType = RTHANDLETYPE_FILE;
-            pStdNull = &StdNull;
-
 #if 0 /* older gksu does not grok --description nor '--' and multiple args. */
-            iSuArg = cSuArgs - 4;
-            papszArgs[cSuArgs - 4] = szExecTool;
-            papszArgs[cSuArgs - 3] = "--description";
-            papszArgs[cSuArgs - 2] = iCmd == CMD_INSTALL
-                                   ? "VirtualBox extension pack installer"
-                                   : iCmd == CMD_UNINSTALL
-                                   ? "VirtualBox extension pack uninstaller"
-                                   : "VirtualBox extension pack maintainer";
-            papszArgs[cSuArgs - 1] = "--";
+        iSuArg = cSuArgs - 4;
+        papszArgs[cSuArgs - 4] = szExecTool;
+        papszArgs[cSuArgs - 3] = "--description";
+        papszArgs[cSuArgs - 2] = iCmd == CMD_INSTALL
+                               ? "VirtualBox extension pack installer"
+                               : iCmd == CMD_UNINSTALL
+                               ? "VirtualBox extension pack uninstaller"
+                               : "VirtualBox extension pack maintainer";
+        papszArgs[cSuArgs - 1] = "--";
+#elif defined(RT_OS_SOLARIS) /* Force it not to use pfexec as it won't wait then. */
+        iSuArg = cSuArgs - 4;
+        papszArgs[cSuArgs - 4] = szExecTool;
+        papszArgs[cSuArgs - 3] = "-au";
+        papszArgs[cSuArgs - 2] = "root";
+        papszArgs[cSuArgs - 1] = pszCmdLine;
+        papszArgs[cSuArgs] = NULL;
 #else
-            iSuArg = cSuArgs - 2;
-            papszArgs[cSuArgs - 2] = szExecTool;
-            papszArgs[cSuArgs - 1] = pszCmdLine;
-            papszArgs[cSuArgs] = NULL;
+        iSuArg = cSuArgs - 2;
+        papszArgs[cSuArgs - 2] = szExecTool;
+        papszArgs[cSuArgs - 1] = pszCmdLine;
+        papszArgs[cSuArgs] = NULL;
 #endif
-        }
-        else
-            RTMsgError("Failed to open /dev/null: %Rrc");
     }
     /*
      * pkexec may work for ssh console sessions as well if the right agents
@@ -1433,7 +1453,7 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, const char **p
         papszArgs[cSuArgs] = NULL;
     }
     else if (fHaveDisplayVar)
-        RTMsgError("Unable to locate 'pkexec', 'pksu' or 'su+xterm'. Try perform the operation using VBoxManage running as root");
+        RTMsgError("Unable to locate 'pkexec', 'gksu' or 'su+xterm'. Try perform the operation using VBoxManage running as root");
     else
         RTMsgError("Unable to locate 'pkexec'. Try perform the operation using VBoxManage running as root");
     if (iSuArg != cSuArgs)
@@ -1446,7 +1466,7 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, const char **p
          */
         RTPROCESS hProcess;
         rc = RTProcCreateEx(papszArgs[iSuArg], &papszArgs[iSuArg], RTENV_DEFAULT, 0 /*fFlags*/,
-                            NULL /*phStdIn*/, pStdNull, pStdNull, NULL /*pszAsUser*/,  NULL /*pszPassword*/,
+                            NULL /*phStdIn*/, NULL /*phStdOut*/, NULL /*phStdErr*/, NULL /*pszAsUser*/, NULL /*pszPassword*/,
                             &hProcess);
         if (RT_SUCCESS(rc))
         {
@@ -1466,7 +1486,6 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, const char **p
             RTMsgError("Failed to execute '%s': %Rrc", papszArgs[iSuArg], rc);
     }
     RTStrFree(pszCmdLine);
-    RTFileClose(StdNull.u.hFile);
 
 #endif
     return rcExit;
@@ -1480,8 +1499,9 @@ static RTEXITCODE RelaunchElevatedNative(const char *pszExecPath, const char **p
  * @param   argc                The number of arguments.
  * @param   argv                The arguments.
  * @param   iCmd                The command that is being executed.
+ * @param   pszDisplayInfoHack  Display information hack.  Platform specific++.
  */
-static RTEXITCODE RelaunchElevated(int argc, char **argv, int iCmd)
+static RTEXITCODE RelaunchElevated(int argc, char **argv, int iCmd, const char *pszDisplayInfoHack)
 {
     /*
      * We need the executable name later, so get it now when it's easy to quit.
@@ -1545,7 +1565,7 @@ static RTEXITCODE RelaunchElevated(int argc, char **argv, int iCmd)
                     /*
                      * Do the platform specific process execution (waiting included).
                      */
-                    rcExit = RelaunchElevatedNative(szExecPath, papszArgs, cSuArgs, cArgs, iCmd);
+                    rcExit = RelaunchElevatedNative(szExecPath, papszArgs, cSuArgs, cArgs, iCmd, pszDisplayInfoHack);
 
                     /*
                      * Copy the standard files to our standard handles.
@@ -1711,9 +1731,10 @@ int main(int argc, char **argv)
     /*
      * Elevation check.
      */
-    RTEXITCODE rcExit;
+    const char *pszDisplayInfoHack = NULL;
+    RTEXITCODE  rcExit;
 #ifdef WITH_ELEVATION
-    bool fElevated;
+    bool        fElevated;
     rcExit = ElevationCheck(&fElevated);
     if (rcExit != RTEXITCODE_SUCCESS)
         return rcExit;
@@ -1724,14 +1745,15 @@ int main(int argc, char **argv)
      */
     static const RTGETOPTDEF s_aOptions[] =
     {
-        { "install",    CMD_INSTALL,    RTGETOPT_REQ_NOTHING },
-        { "uninstall",  CMD_UNINSTALL,  RTGETOPT_REQ_NOTHING },
-        { "cleanup",    CMD_CLEANUP,    RTGETOPT_REQ_NOTHING },
+        { "install",                CMD_INSTALL,        RTGETOPT_REQ_NOTHING },
+        { "uninstall",              CMD_UNINSTALL,      RTGETOPT_REQ_NOTHING },
+        { "cleanup",                CMD_CLEANUP,        RTGETOPT_REQ_NOTHING },
 #ifdef WITH_ELEVATION
-        { "--elevated", OPT_ELEVATED,   RTGETOPT_REQ_NOTHING },
-        { "--stdout",   OPT_STDOUT,     RTGETOPT_REQ_STRING  },
-        { "--stderr",   OPT_STDERR,     RTGETOPT_REQ_STRING  },
+        { "--elevated",             OPT_ELEVATED,       RTGETOPT_REQ_NOTHING },
+        { "--stdout",               OPT_STDOUT,         RTGETOPT_REQ_STRING  },
+        { "--stderr",               OPT_STDERR,         RTGETOPT_REQ_STRING  },
 #endif
+        { "--display-info-hack",    OPT_DISP_INFO_HACK, RTGETOPT_REQ_STRING  },
     };
     RTGETOPTSTATE GetState;
     rc = RTGetOptInit(&GetState, argc, argv, s_aOptions, RT_ELEMENTS(s_aOptions), 1, 0 /*fFlags*/);
@@ -1752,7 +1774,7 @@ int main(int argc, char **argv)
             {
 #ifdef WITH_ELEVATION
                 if (!fElevated)
-                    return RelaunchElevated(argc, argv, ch);
+                    return RelaunchElevated(argc, argv, ch, pszDisplayInfoHack);
 #endif
                 int         cCmdargs     = argc - GetState.iNext;
                 char      **papszCmdArgs = argv + GetState.iNext;
@@ -1810,6 +1832,12 @@ int main(int argc, char **argv)
             }
 #endif
 
+            case OPT_DISP_INFO_HACK:
+                if (pszDisplayInfoHack)
+                    return RTMsgErrorExit(RTEXITCODE_SYNTAX, "--display-info-hack shall only occur once");
+                pszDisplayInfoHack = ValueUnion.psz;
+                break;
+
             case 'h':
             case 'V':
                 return DoStandardOption(ch);
@@ -1826,7 +1854,8 @@ int main(int argc, char **argv)
 #ifdef RT_OS_WINDOWS
 extern "C" int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
-    NOREF(hPrevInstance); NOREF(nShowCmd); NOREF(lpCmdLine); NOREF(hInstance);
+    g_hInstance = hInstance;
+    NOREF(hPrevInstance); NOREF(nShowCmd); NOREF(lpCmdLine);
     return main(__argc, __argv);
 }
 #endif

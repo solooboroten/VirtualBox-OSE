@@ -1,4 +1,4 @@
-/* $Id: ExtPackManagerImpl.cpp 35218 2010-12-17 12:45:16Z vboxsync $ */
+/* $Id: ExtPackManagerImpl.cpp 35273 2010-12-21 12:52:38Z vboxsync $ */
 /** @file
  * VirtualBox Main - interface for Extension Packs, VBoxSVC & VBoxC.
  */
@@ -584,14 +584,18 @@ STDMETHODIMP ExtPackFile::COMGETTER(FilePath)(BSTR *a_pbstrPath)
     return hrc;
 }
 
-STDMETHODIMP ExtPackFile::Install(BOOL a_fReplace)
+STDMETHODIMP ExtPackFile::Install(BOOL a_fReplace, IN_BSTR a_bstrDisplayInfo, IProgress **a_ppProgress)
 {
+    if (a_ppProgress)
+        *a_ppProgress = NULL;
+    Utf8Str strDisplayInfo(a_bstrDisplayInfo);
+
     AutoCaller autoCaller(this);
     HRESULT hrc = autoCaller.rc();
     if (SUCCEEDED(hrc))
     {
         if (m->fUsable)
-            hrc = m->ptrExtPackMgr->doInstall(this, RT_BOOL(a_fReplace));
+            hrc = m->ptrExtPackMgr->doInstall(this, RT_BOOL(a_fReplace), &strDisplayInfo, a_ppProgress);
         else
             hrc = setError(E_FAIL, "%s", m->strWhyUnusable.c_str());
     }
@@ -1923,10 +1927,14 @@ STDMETHODIMP ExtPackManager::OpenExtPackFile(IN_BSTR a_bstrTarball, IExtPackFile
     return hrc;
 }
 
-STDMETHODIMP ExtPackManager::Uninstall(IN_BSTR a_bstrName, BOOL a_fForcedRemoval)
+STDMETHODIMP ExtPackManager::Uninstall(IN_BSTR a_bstrName, BOOL a_fForcedRemoval, IN_BSTR a_bstrDisplayInfo,
+                                       IProgress **a_ppProgress)
 {
     CheckComArgNotNull(a_bstrName);
     Utf8Str strName(a_bstrName);
+    Utf8Str strDisplayInfo(a_bstrDisplayInfo);
+    if (a_ppProgress)
+        *a_ppProgress = NULL;
     Assert(m->enmContext == VBOXEXTPACKCTX_PER_USER_DAEMON);
 
     AutoCaller autoCaller(this);
@@ -1964,7 +1972,8 @@ STDMETHODIMP ExtPackManager::Uninstall(IN_BSTR a_bstrName, BOOL a_fForcedRemoval
                      * the don't-do-that variety.
                      */
                     const char *pszForcedOpt = a_fForcedRemoval ? "--forced" : NULL;
-                    hrc = runSetUidToRootHelper("uninstall",
+                    hrc = runSetUidToRootHelper(&strDisplayInfo,
+                                                "uninstall",
                                                 "--base-dir", m->strBaseDir.c_str(),
                                                 "--name",     strName.c_str(),
                                                 pszForcedOpt, /* Last as it may be NULL. */
@@ -2020,7 +2029,8 @@ STDMETHODIMP ExtPackManager::Cleanup(void)
          * VBoxSVC instance.
          */
         AutoWriteLock autoLock(this COMMA_LOCKVAL_SRC_POS);
-        hrc = runSetUidToRootHelper("cleanup",
+        hrc = runSetUidToRootHelper(NULL,
+                                    "cleanup",
                                     "--base-dir", m->strBaseDir.c_str(),
                                     (const char *)NULL);
     }
@@ -2054,17 +2064,36 @@ STDMETHODIMP ExtPackManager::IsExtPackUsable(IN_BSTR a_bstrExtPack, BOOL *aUsabl
     return S_OK;
 }
 
+/**
+ * Finds the success indicator string in the stderr output ofr hte helper app.
+ *
+ * @returns Pointer to the indicator.
+ * @param   psz                 The stderr output string. Can be NULL.
+ * @param   cch                 The size of the string.
+ */
+static char *findSuccessIndicator(char *psz, size_t cch)
+{
+    static const char s_szSuccessInd[] = "rcExit=RTEXITCODE_SUCCESS";
+    Assert(!cch || strlen(psz) == cch);
+    if (cch < sizeof(s_szSuccessInd) - 1)
+        return NULL;
+    char *pszInd = &psz[cch - sizeof(s_szSuccessInd) + 1];
+    if (strcmp(s_szSuccessInd, pszInd))
+        return NULL;
+    return pszInd;
+}
 
 /**
  * Runs the helper application that does the privileged operations.
  *
  * @returns S_OK or a failure status with error information set.
+ * @param   a_pstrDisplayInfo   Platform specific display info hacks.
  * @param   a_pszCommand        The command to execute.
  * @param   ...                 The argument strings that goes along with the
  *                              command. Maximum is about 16.  Terminated by a
  *                              NULL.
  */
-HRESULT ExtPackManager::runSetUidToRootHelper(const char *a_pszCommand, ...)
+HRESULT ExtPackManager::runSetUidToRootHelper(Utf8Str const *a_pstrDisplayInfo, const char *a_pszCommand, ...)
 {
     /*
      * Calculate the path to the helper application.
@@ -2081,22 +2110,36 @@ HRESULT ExtPackManager::runSetUidToRootHelper(const char *a_pszCommand, ...)
      */
     const char *apszArgs[20];
     unsigned    cArgs = 0;
+
+    LogRel(("ExtPack: Executing '%s'", szExecName));
     apszArgs[cArgs++] = &szExecName[0];
+
+    if (   a_pstrDisplayInfo
+        && a_pstrDisplayInfo->isNotEmpty())
+    {
+        LogRel((" '--display-info-hack' '%s'", a_pstrDisplayInfo->c_str()));
+        apszArgs[cArgs++] = "--display-info-hack";
+        apszArgs[cArgs++] = a_pstrDisplayInfo->c_str();
+    }
+
+    LogRel(("'%s'", a_pszCommand));
     apszArgs[cArgs++] = a_pszCommand;
 
     va_list va;
     va_start(va, a_pszCommand);
     const char *pszLastArg;
-    LogRel(("ExtPack: Executing '%s'", szExecName));
-    do
+    for (;;)
     {
-        LogRel((" '%s'", apszArgs[cArgs - 1]));
         AssertReturn(cArgs < RT_ELEMENTS(apszArgs) - 1, E_UNEXPECTED);
         pszLastArg = va_arg(va, const char *);
+        if (!pszLastArg)
+            break;
+        LogRel((" '%s'", pszLastArg));
         apszArgs[cArgs++] = pszLastArg;
-    } while (pszLastArg != NULL);
-    LogRel(("\n"));
+    };
     va_end(va);
+
+    LogRel(("\n"));
     apszArgs[cArgs] = NULL;
 
     /*
@@ -2208,22 +2251,21 @@ HRESULT ExtPackManager::runSetUidToRootHelper(const char *a_pszCommand, ...)
             offStdErrBuf = strlen(pszStdErrBuf);
         }
 
-        if (    offStdErrBuf > 0
-             && !strcmp(pszStdErrBuf, "rcExit=RTEXITCODE_SUCCESS"))
+        char *pszSuccessInd = findSuccessIndicator(pszStdErrBuf, offStdErrBuf);
+        if (pszSuccessInd)
         {
-            *pszStdErrBuf = '\0';
-            offStdErrBuf  = 0;
+            *pszSuccessInd = '\0';
+            offStdErrBuf  = pszSuccessInd - pszStdErrBuf;
         }
         else if (   ProcStatus.enmReason == RTPROCEXITREASON_NORMAL
                  && ProcStatus.iStatus   == 0)
-            ProcStatus.iStatus = 666;
+            ProcStatus.iStatus = offStdErrBuf ? 667 : 666;
 
         /*
          * Compose the status code and, on failure, error message.
          */
         if (   ProcStatus.enmReason == RTPROCEXITREASON_NORMAL
-            && ProcStatus.iStatus   == 0
-            && offStdErrBuf         == 0)
+            && ProcStatus.iStatus   == 0)
             hrc = S_OK;
         else if (ProcStatus.enmReason == RTPROCEXITREASON_NORMAL)
         {
@@ -2432,16 +2474,21 @@ HRESULT ExtPackManager::refreshExtPack(const char *a_pszName, bool a_fUnusableIs
  * Worker for IExtPackFile::Install.
  *
  * @returns COM status code.
- * @param   a_pExtPackFile  The extension pack file, caller checks that it's
- *                          usable.
- * @param   a_fReplace      Whether to replace any existing extpack or just
- *                          fail.
+ * @param   a_pExtPackFile      The extension pack file, caller checks that
+ *                              it's usable.
+ * @param   a_fReplace          Whether to replace any existing extpack or just
+ *                              fail.
+ * @param   a_pstrDisplayInfo   Host specific display information hacks.
+ * @param   a_ppProgress        Where to return a progress object some day. Can
+ *                              be NULL.
  */
-HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace)
+HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace, Utf8Str const *a_pstrDisplayInfo,
+                                  IProgress **a_ppProgress)
 {
     AssertReturn(m->enmContext == VBOXEXTPACKCTX_PER_USER_DAEMON, E_UNEXPECTED);
     iprt::MiniString const * const pStrName     = &a_pExtPackFile->m->Desc.strName;
     iprt::MiniString const * const pStrTarball  = &a_pExtPackFile->m->strExtPackFile;
+    NOREF(a_ppProgress); /** @todo implement progress object */
 
     AutoCaller autoCaller(this);
     HRESULT hrc = autoCaller.rc();
@@ -2473,7 +2520,8 @@ HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace)
              * even on failure, to be on the safe side).
              */
             /** @todo add a hash (SHA-256) of the tarball or maybe just the manifest. */
-            hrc = runSetUidToRootHelper("install",
+            hrc = runSetUidToRootHelper(a_pstrDisplayInfo,
+                                        "install",
                                         "--base-dir",   m->strBaseDir.c_str(),
                                         "--cert-dir",   m->strCertificatDirPath.c_str(),
                                         "--name",       pStrName->c_str(),
@@ -2499,7 +2547,8 @@ HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace)
                          * Uninstall the extpack if the error indicates that.
                          */
                         if (ErrInfo.Core.rc == VERR_EXTPACK_UNSUPPORTED_HOST_UNINSTALL)
-                            runSetUidToRootHelper("uninstall",
+                            runSetUidToRootHelper(a_pstrDisplayInfo,
+                                                  "uninstall",
                                                   "--base-dir", m->strBaseDir.c_str(),
                                                   "--name",     pStrName->c_str(),
                                                   "--forced",

@@ -8950,7 +8950,7 @@
 
   <interface
     name="IMedium" extends="$unknown"
-    uuid="bfcf5b8c-5155-4f24-9414-9457054b16db"
+    uuid="9edda847-1279-4b0a-9af7-9d66251ccc18"
     wsmap="managed"
     >
     <desc>
@@ -9333,9 +9333,10 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       </desc>
     </attribute>
 
-    <attribute name="variant" type="MediumVariant" readonly="yes">
+    <attribute name="variant" type="unsigned long" readonly="yes">
       <desc>
-        Returns the storage format variant information for this medium.
+        Returns the storage format variant information for this medium
+        as a combination of the flags described at <link to="MediumVariant" />.
         Before <link to="#refreshState"/> is called this method returns
         an undefined value.
       </desc>
@@ -10036,8 +10037,9 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <param name="logicalSize" type="long long" dir="in">
         <desc>Maximum logical size of the medium in bytes.</desc>
       </param>
-      <param name="variant" type="MediumVariant" dir="in">
-        <desc>Exact image variant which should be created.</desc>
+      <param name="variant" type="unsigned long" dir="in">
+        <desc>Exact image variant which should be created (as a combination of
+          <link to="MediumVariant" /> flags).</desc>
       </param>
       <param name="progress" type="IProgress" dir="return">
         <desc>Progress object to track the operation completion.</desc>
@@ -10118,8 +10120,9 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <param name="target" type="IMedium" dir="in">
         <desc>Target medium.</desc>
       </param>
-      <param name="variant" type="MediumVariant" dir="in">
-        <desc>Exact image variant which should be created.</desc>
+      <param name="variant" type="unsigned long" dir="in">
+        <desc>Exact image variant which should be created (as a combination of
+          <link to="MediumVariant" /> flags).</desc>
       </param>
       <param name="progress" type="IProgress" dir="return">
         <desc>Progress object to track the operation completion.</desc>
@@ -10245,8 +10248,9 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       <param name="target" type="IMedium" dir="in">
         <desc>Target medium.</desc>
       </param>
-      <param name="variant" type="MediumVariant" dir="in">
-        <desc>Exact image variant which should be created.</desc>
+      <param name="variant" type="unsigned long" dir="in">
+        <desc>Exact image variant which should be created (as a combination of
+          <link to="MediumVariant" /> flags).</desc>
       </param>
       <param name="parent" type="IMedium" dir="in">
         <desc>Parent of the cloned medium.</desc>
@@ -11888,9 +11892,305 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IMachineDebugger" extends="$unknown"
-    uuid="373a5f51-67c1-4a31-be43-1e29ebe8ef85"
+    uuid="1bfd2fa9-0d91-44d3-9515-368dcbb3eb4d"
     wsmap="suppress"
     >
+    <method name="dumpGuestCore">
+      <desc>
+        Takes a core dump of the guest.
+
+        See include/VBox/dbgfcorefmt.h for details on the file format.
+      </desc>
+      <param name="filename" type="wstring" dir="in">
+        <desc>
+          The name of the output file.  The file must not exist.
+        </desc>
+      </param>
+      <param name="compression" type="wstring" dir="in">
+        <desc>
+          Reserved for future compression method indicator.
+        </desc>
+      </param>
+    </method>
+
+    <method name="dumpHostProcessCore">
+      <desc>
+        Takes a core dump of the VM process on the host.
+
+        This feature is not implemented in the 4.0.0 release but it may show up
+        in a dot release.
+      </desc>
+      <param name="filename" type="wstring" dir="in">
+        <desc>
+          The name of the output file.  The file must not exist.
+        </desc>
+      </param>
+      <param name="compression" type="wstring" dir="in">
+        <desc>
+          Reserved for future compression method indicator.
+        </desc>
+      </param>
+    </method>
+
+    <method name="info">
+      <desc>
+        Interfaces with the info dumpers (DBGFInfo).
+
+        This feature is not implemented in the 4.0.0 release but it may show up
+        in a dot release.
+      </desc>
+      <param name="name" type="wstring" dir="in">
+        <desc>
+          The name of the info item.
+        </desc>
+      </param>
+      <param name="args" type="wstring" dir="in">
+        <desc>
+          Arguments to the info dumper.
+        </desc>
+      </param>
+      <param name="info" type="wstring" dir="return">
+        <desc>
+          The into string.
+        </desc>
+      </param>
+    </method>
+
+    <method name="injectNMI">
+      <desc>
+        Inject an NMI into a running VT-x/AMD-V VM.
+      </desc>
+    </method>
+
+    <method name="modifyLogGroups">
+      <desc>
+        Modifies the group settings of the debug logger.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="settings" type="wstring" dir="in">
+        <desc>The group settings string. See iprt/log.h for details.</desc>
+      </param>
+    </method>
+
+    <method name="modifyLogFlags">
+      <desc>
+        Modifies the debug logger flags.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="settings" type="wstring" dir="in">
+        <desc>The flags settings string. See iprt/log.h for details.</desc>
+      </param>
+    </method>
+
+    <method name="modifyLogDestinations">
+      <desc>
+        Modifies the debug logger destinations.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="settings" type="wstring" dir="in">
+        <desc>The destination settings string. See iprt/log.h for details.</desc>
+      </param>
+    </method>
+
+    <method name="readPhysicalMemory">
+      <desc>
+        Reads guest physical memory, no side effects (MMIO++).
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="address" type="long long" dir="in">
+        <desc>The guest physical address.</desc>
+      </param>
+      <param name="size" type="unsigned long" dir="in">
+        <desc>The number of bytes to read.</desc>
+      </param>
+      <param name="bytes" type="octet" safearray="yes" dir="return">
+        <desc>The bytes read.</desc>
+      </param>
+    </method>
+
+    <method name="writePhysicalMemory">
+      <desc>
+        Writes guest physical memory, access handles (MMIO++) are ignored.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="address" type="long long" dir="in">
+        <desc>The guest physical address.</desc>
+      </param>
+      <param name="size" type="unsigned long" dir="in">
+        <desc>The number of bytes to read.</desc>
+      </param>
+      <param name="bytes" type="octet" safearray="yes" dir="in">
+        <desc>The bytes to write.</desc>
+      </param>
+    </method>
+
+    <method name="readVirtualMemory">
+      <desc>
+        Reads guest virtual memory, no side effects (MMIO++).
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="cpuId" type="unsigned long" dir="in">
+        <desc>The identifier of the Virtual CPU.</desc>
+      </param>
+      <param name="address" type="long long" dir="in">
+        <desc>The guest virtual address.</desc>
+      </param>
+      <param name="size" type="unsigned long" dir="in">
+        <desc>The number of bytes to read.</desc>
+      </param>
+      <param name="bytes" type="octet" safearray="yes" dir="return">
+        <desc>The bytes read.</desc>
+      </param>
+    </method>
+
+    <method name="writeVirtualMemory">
+      <desc>
+        Writes guest virtual memory, access handles (MMIO++) are ignored.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="cpuId" type="unsigned long" dir="in">
+        <desc>The identifier of the Virtual CPU.</desc>
+      </param>
+      <param name="address" type="long long" dir="in">
+        <desc>The guest virtual address.</desc>
+      </param>
+      <param name="size" type="unsigned long" dir="in">
+        <desc>The number of bytes to read.</desc>
+      </param>
+      <param name="bytes" type="octet" safearray="yes" dir="in">
+        <desc>The bytes to write.</desc>
+      </param>
+    </method>
+
+    <method name="detectOS">
+      <desc>
+        Tries to (re-)detect the guest OS kernel.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="os" type="wstring" dir="return">
+        <desc>
+          The detected OS kernel on success.
+        </desc>
+      </param>
+    </method>
+
+    <method name="getRegister">
+      <desc>
+        Gets one register.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="cpuId" type="unsigned long" dir="in">
+        <desc>The identifier of the Virtual CPU.</desc>
+      </param>
+      <param name="name" type="wstring" dir="in">
+        <desc>The register name, case is ignored.</desc>
+      </param>
+      <param name="value" type="wstring" dir="return">
+        <desc>
+          The register value.  This is usually a hex value (always 0x prefixed)
+          but other format may be used for floating point registers (TBD).
+        </desc>
+      </param>
+    </method>
+
+    <method name="getRegisters">
+      <desc>
+        Gets all the registers for the given CPU.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="cpuId" type="unsigned long" dir="in">
+        <desc>The identifier of the Virtual CPU.</desc>
+      </param>
+      <param name="names" type="wstring" dir="out" safearray="yes">
+        <desc>Array containing the lowercase register names.</desc>
+      </param>
+      <param name="values" type="wstring" dir="out" safearray="yes">
+        <desc>
+          Array paralell to the names holding the register values as if the
+          register was returned by <link to="IMachineDebugger::getRegister"/>.
+        </desc>
+      </param>
+    </method>
+
+    <method name="setRegister">
+      <desc>
+        Gets one register.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="cpuId" type="unsigned long" dir="in">
+        <desc>The identifier of the Virtual CPU.</desc>
+      </param>
+      <param name="name" type="wstring" dir="in">
+        <desc>The register name, case is ignored.</desc>
+      </param>
+      <param name="value" type="wstring" dir="in">
+        <desc>
+          The new register value.  Hexadecimal, decimal and octal formattings
+          are supported in addition to any special formattings returned by
+          the getters.
+        </desc>
+      </param>
+    </method>
+
+    <method name="setRegisters">
+      <desc>
+        Sets zero or more registers atomically.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="cpuId" type="unsigned long" dir="in">
+        <desc>The identifier of the Virtual CPU.</desc>
+      </param>
+      <param name="names" type="wstring" dir="in" safearray="yes">
+        <desc>Array containing the register names, case ignored.</desc>
+      </param>
+      <param name="values" type="wstring" dir="in" safearray="yes">
+        <desc>
+          Array paralell to the names holding the register values. See
+          <link to="IMachineDebugger::setRegister"/> for formatting
+          guidelines.
+        </desc>
+      </param>
+    </method>
+
+    <method name="dumpGuestStack">
+      <desc>
+        Produce a simple stack dump using the current guest state.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+      <param name="cpuId" type="unsigned long" dir="in">
+        <desc>The identifier of the Virtual CPU.</desc>
+      </param>
+      <param name="stack" type="wstring" dir="return">
+        <desc>String containing the formatted stack dump.</desc>
+      </param>
+    </method>
+
     <method name="resetStats">
       <desc>
         Reset VM statistics.
@@ -11924,25 +12224,6 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       </param>
     </method>
 
-    <method name="injectNMI">
-      <desc>
-        Inject an NMI into a running VT-x/AMD-V VM.
-      </desc>
-    </method>
-
-    <method name="dumpGuestCore">
-      <desc>
-        Takes a core dump of the guest.
-
-        See include/VBox/dbgfcorefmt.h for details on the file format.
-      </desc>
-      <param name="filename" type="wstring" dir="in">
-        <desc>
-          The name of the output file.  The file must not exist.
-        </desc>
-      </param>
-    </method>
-
     <attribute name="singlestep" type="boolean">
       <desc>Switch for enabling singlestepping.</desc>
     </attribute>
@@ -11964,7 +12245,19 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
     </attribute>
 
     <attribute name="logEnabled" type="boolean">
-      <desc>Switch for enabling and disabling logging.</desc>
+      <desc>Switch for enabling and disabling the debug logger.</desc>
+    </attribute>
+
+    <attribute name="logFlags" type="wstring" readonly="yes">
+      <desc>The debug logger flags.</desc>
+    </attribute>
+
+    <attribute name="logGroups" type="wstring" readonly="yes">
+      <desc>The debug logger's group settings.</desc>
+    </attribute>
+
+    <attribute name="logDestinations" type="wstring" readonly="yes">
+      <desc>The debug logger's destination settings.</desc>
     </attribute>
 
     <attribute name="HWVirtExEnabled" type="boolean" readonly="yes">
@@ -11988,6 +12281,24 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
       </desc>
     </attribute>
 
+    <attribute name="OSName" type="wstring" readonly="yes">
+      <desc>
+        Query the guest OS kernel name as detected by the DBGF.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+    </attribute>
+
+    <attribute name="OSVersion" type="wstring" readonly="yes">
+      <desc>
+        Query the guest OS kernel version string as detected by the DBGF.
+
+        This feature is not implemented in the 4.0.0 release but may show up
+        in a dot release.
+      </desc>
+    </attribute>
+
     <attribute name="PAEEnabled" type="boolean" readonly="yes">
       <desc>
         Flag indicating whether the VM is currently making use of the Physical
@@ -12001,8 +12312,6 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         The accepted range is 2% to 20000%.
       </desc>
     </attribute>
-
-    <!-- @todo method for setting log flags, groups and destination! -->
 
     <attribute name="VM" type="long long" readonly="yes">
       <desc>
@@ -14469,7 +14778,7 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
 
   <interface
     name="IExtPackFile" extends="IExtPackBase"
-    uuid="64b65bda-eedf-442c-9fd2-d179a021031a"
+    uuid="b6b49f55-efcc-4f08-b486-56e8d8afb10b"
     wsmap="suppress"
     >
     <desc>
@@ -14494,12 +14803,23 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
           the same name as the one being installed.
         </desc>
       </param>
+      <param name="displayInfo" type="wstring" dir="in">
+        <desc>
+          Platform specific display information.  Reserved for future hacks.
+        </desc>
+      </param>
+      <param name="progess" type="IProgress" dir="return">
+        <desc>
+          Progress object for the operation if it was decided that it should
+          be executed asynchronously - i.e. never in 4.0.0, but maybe in 4.0.x.
+        </desc>
+      </param>
     </method>
   </interface>
 
   <interface
     name="IExtPackManager" extends="$unknown"
-    uuid="70d808a9-176f-4d45-adad-7c509b8309b3"
+    uuid="2451b1ba-ab1c-42fb-b453-c58433bea8c7"
     wsmap="suppress"
     >
     <desc>
@@ -14553,6 +14873,17 @@ Snapshot 1 (B.vdi)            Snapshot 1 (B.vdi)
         <desc>
           Forced removal of the extension pack.  This means that the uninstall
           hook will not be called.
+        </desc>
+      </param>
+      <param name="displayInfo" type="wstring" dir="in">
+        <desc>
+          Platform specific display information.  Reserved for future hacks.
+        </desc>
+      </param>
+      <param name="progess" type="IProgress" dir="return">
+        <desc>
+          Progress object for the operation if it was decided that it should
+          be executed asynchronously - i.e. never in 4.0.0, but maybe in 4.0.x.
         </desc>
       </param>
     </method>

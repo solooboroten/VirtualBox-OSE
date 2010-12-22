@@ -1,4 +1,4 @@
-/* $Id: MachineDebuggerImpl.cpp 34913 2010-12-09 17:20:41Z vboxsync $ */
+/* $Id: MachineDebuggerImpl.cpp 35250 2010-12-20 16:10:30Z vboxsync $ */
 
 /** @file
  *
@@ -453,6 +453,21 @@ STDMETHODIMP MachineDebugger::COMSETTER(LogEnabled) (BOOL aEnabled)
     return S_OK;
 }
 
+STDMETHODIMP MachineDebugger::COMGETTER(LogFlags)(BSTR *a_pbstrSettings)
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::COMGETTER(LogGroups)(BSTR *a_pbstrSettings)
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::COMGETTER(LogDestinations)(BSTR *a_pbstrSettings)
+{
+    ReturnComNotImplemented();
+}
+
 /**
  * Returns the current hardware virtualization flag.
  *
@@ -526,6 +541,16 @@ STDMETHODIMP MachineDebugger::COMGETTER(HWVirtExVPIDEnabled) (BOOL *aEnabled)
         *aEnabled = false;
 
     return S_OK;
+}
+
+STDMETHODIMP MachineDebugger::COMGETTER(OSName)(BSTR *a_pbstrName)
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::COMGETTER(OSVersion)(BSTR *a_pbstrVersion)
+{
+    ReturnComNotImplemented();
 }
 
 /**
@@ -650,6 +675,131 @@ STDMETHODIMP MachineDebugger::COMGETTER(VM) (LONG64 *aVm)
 // IMachineDebugger methods
 /////////////////////////////////////////////////////////////////////////////
 
+STDMETHODIMP MachineDebugger::DumpGuestCore(IN_BSTR a_bstrFilename, IN_BSTR a_bstrCompression)
+{
+    CheckComArgStrNotEmptyOrNull(a_bstrFilename);
+    Utf8Str strFilename(a_bstrFilename);
+    if (a_bstrCompression && *a_bstrCompression)
+        return setError(E_INVALIDARG, tr("The compression parameter must be empty"));
+
+    AutoCaller autoCaller(this);
+    HRESULT hrc = autoCaller.rc();
+    if (SUCCEEDED(hrc))
+    {
+        AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+        Console::SafeVMPtr ptrVM(mParent);
+        hrc = ptrVM.rc();
+        if (SUCCEEDED(hrc))
+        {
+            int vrc = DBGFR3CoreWrite(ptrVM, strFilename.c_str(), false /*fReplaceFile*/);
+            if (RT_SUCCESS(vrc))
+                hrc = S_OK;
+            else
+                hrc = setError(E_FAIL, tr("DBGFR3CoreWrite failed with %Rrc"), vrc);
+        }
+    }
+
+    return hrc;
+}
+
+STDMETHODIMP MachineDebugger::DumpHostProcessCore(IN_BSTR a_bstrFilename, IN_BSTR a_bstrCompression)
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::Info(IN_BSTR a_bstrName, IN_BSTR a_bstrArgs, BSTR *a_pbstrInfo)
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::InjectNMI()
+{
+    LogFlowThisFunc(("\n"));
+
+    AutoCaller autoCaller(this);
+    HRESULT hrc = autoCaller.rc();
+    if (SUCCEEDED(hrc))
+    {
+        AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+        Console::SafeVMPtr ptrVM(mParent);
+        hrc = ptrVM.rc();
+        if (SUCCEEDED(hrc))
+        {
+            int vrc = HWACCMR3InjectNMI(ptrVM);
+            if (RT_SUCCESS(vrc))
+                hrc = S_OK;
+            else
+                hrc = setError(E_FAIL, tr("HWACCMR3InjectNMI failed with %Rrc"), vrc);
+        }
+    }
+    return hrc;
+}
+
+STDMETHODIMP MachineDebugger::ModifyLogFlags(IN_BSTR a_bstrSettings)
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::ModifyLogGroups(IN_BSTR a_bstrSettings)
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::ModifyLogDestinations(IN_BSTR a_bstrSettings)
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::ReadPhysicalMemory(LONG64 a_Address, ULONG a_cbRead, ComSafeArrayOut(BYTE, a_abData))
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::WritePhysicalMemory(LONG64 a_Address, ULONG a_cbRead, ComSafeArrayIn(BYTE, a_abData))
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::ReadVirtualMemory(ULONG a_idCpu, LONG64 a_Address, ULONG a_cbRead, ComSafeArrayOut(BYTE, a_abData))
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::WriteVirtualMemory(ULONG a_idCpu, LONG64 a_Address, ULONG a_cbRead, ComSafeArrayIn(BYTE, a_abData))
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::DetectOS(BSTR *a_pbstrName)
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::GetRegister(ULONG a_idCpu, IN_BSTR a_bstrName, BSTR *a_pbstrValue)
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::GetRegisters(ULONG a_idCpu, ComSafeArrayOut(BSTR, a_bstrNames), ComSafeArrayOut(BSTR, a_bstrValues))
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::SetRegister(ULONG a_idCpu, IN_BSTR a_bstrName, IN_BSTR a_bstrValue)
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::SetRegisters(ULONG a_idCpu, ComSafeArrayIn(IN_BSTR, a_bstrNames), ComSafeArrayIn(IN_BSTR, a_bstrValues))
+{
+    ReturnComNotImplemented();
+}
+
+STDMETHODIMP MachineDebugger::DumpGuestStack(ULONG a_idCpu, BSTR *a_pbstrStack)
+{
+    ReturnComNotImplemented();
+}
+
 /**
  * Resets VM statistics.
  *
@@ -711,68 +861,9 @@ STDMETHODIMP MachineDebugger::GetStats (IN_BSTR aPattern, BOOL aWithDescriptions
      * Must use UTF-8 or ASCII here and completely avoid these two extra copy operations.
      * Until that's done, this method is kind of useless for debugger statistics GUI because
      * of the amount statistics in a debug build. */
-    Bstr (pszSnapshot).cloneTo(aStats);
+    Bstr(pszSnapshot).detachTo(aStats);
 
     return S_OK;
-}
-
-/**
- * Injects an NMI.
- *
- * @returns COM status code
- */
-STDMETHODIMP MachineDebugger::InjectNMI()
-{
-    LogFlowThisFunc(("\n"));
-
-    AutoCaller autoCaller(this);
-    HRESULT hrc = autoCaller.rc();
-    if (SUCCEEDED(hrc))
-    {
-        AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-        Console::SafeVMPtr ptrVM(mParent);
-        hrc = ptrVM.rc();
-        if (SUCCEEDED(hrc))
-        {
-            int vrc = HWACCMR3InjectNMI(ptrVM);
-            if (RT_SUCCESS(vrc))
-                hrc = S_OK;
-            else
-                hrc = setError(E_FAIL, tr("HWACCMR3InjectNMI failed with %Rrc"), vrc);
-        }
-    }
-    return hrc;
-}
-
-/**
- * Triggers a guest core dump.
- *
- * @returns COM status code
- * @param
- */
-STDMETHODIMP MachineDebugger::DumpGuestCore(IN_BSTR a_bstrFilename)
-{
-    CheckComArgStrNotEmptyOrNull(a_bstrFilename);
-    Utf8Str strFilename(a_bstrFilename);
-
-    AutoCaller autoCaller(this);
-    HRESULT hrc = autoCaller.rc();
-    if (SUCCEEDED(hrc))
-    {
-        AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-        Console::SafeVMPtr ptrVM(mParent);
-        hrc = ptrVM.rc();
-        if (SUCCEEDED(hrc))
-        {
-            int vrc = DBGFR3CoreWrite(ptrVM, strFilename.c_str(), false /*fReplaceFile*/);
-            if (RT_SUCCESS(vrc))
-                hrc = S_OK;
-            else
-                hrc = setError(E_FAIL, tr("DBGFR3CoreWrite failed with %Rrc"), vrc);
-        }
-    }
-
-    return hrc;
 }
 
 
