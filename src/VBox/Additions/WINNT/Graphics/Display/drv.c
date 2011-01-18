@@ -184,6 +184,24 @@ BOOL APIENTRY DrvBitBlt(
     return bRc;
 }
 
+ULONG DrvDitherColor(
+    DHPDEV dhpdev,
+    ULONG iMode,
+    ULONG rgb,
+    ULONG *pul)
+{
+    ULONG rc;
+
+    DISPDBG((1, "%s\n", __FUNCTION__));
+
+    /* There is no EngDitherColor on NT4, so take the easy path and tell the graphics
+     * engine to create a halftone approximation.
+     */
+    rc = DCR_HALFTONE;
+
+    return rc;
+}
+
 BOOL APIENTRY DrvTextOut(
     SURFOBJ  *pso,
     STROBJ   *pstro,

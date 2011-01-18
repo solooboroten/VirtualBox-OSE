@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 34080 2010-11-15 17:18:03Z vboxsync $
+# $Id: Makefile.kmk 35385 2010-12-30 16:35:31Z vboxsync $
 ## @file
 # Sub-Makefile for VBoxTray.
 #
@@ -24,8 +24,6 @@ ifdef VBOX_SIGN_ADDITIONS # (See the parent makefile.)
  VBoxTray_NOINST  = true
 endif
 VBoxTray_DEFS     = VBOX_WITH_HGCM LOG_TO_BACKDOOR
-#temporary define
-VBoxTray_DEFS    += MMSEAMLESS
 VBoxTray_INCS     = ../include
 VBoxTray_SOURCES  = \
 	VBoxTray.cpp \
@@ -67,12 +65,12 @@ VBoxTray.cpp_DEFS += VBOX_SVN_REV=$(VBOX_SVN_REV)
 VBoxTray.cpp_DEPS = $(VBOX_SVN_REV_KMK)
 
 # The icon location is configurable.
-VBoxTray.rc_INCS = $(PATH_VBoxTray)
-VBoxTray.rc_DEPS = $(PATH_VBoxTray)/VBoxTray-icon.rc
-VBoxTray.rc_CLEAN = $(PATH_VBoxTray)/VBoxTray-icon.rc
+VBoxTray.rc_INCS = $(VBoxTray_0_OUTDIR)
+VBoxTray.rc_DEPS = $(VBoxTray_0_OUTDIR)/VBoxTray-icon.rc
+VBoxTray.rc_CLEAN = $(VBoxTray_0_OUTDIR)/VBoxTray-icon.rc
 
 # Icon include file.
-$$(PATH_VBoxTray)/VBoxTray-icon.rc: $(VBOX_WINDOWS_ADDITIONS_ICON_FILE) $$(VBoxTray_PATH)/Makefile.kmk | $$(dir $$@)
+$$(VBoxTray_0_OUTDIR)/VBoxTray-icon.rc: $(VBOX_WINDOWS_ADDITIONS_ICON_FILE) $$(VBoxTray_DEFPATH)/Makefile.kmk | $$(dir $$@)
 	$(RM) -f $@
 	$(APPEND) $@ 'IDI_VIRTUALBOX ICON DISCARDABLE "$(subst /,\\,$(VBOX_WINDOWS_ADDITIONS_ICON_FILE))"'
 

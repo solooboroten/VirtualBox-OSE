@@ -31,16 +31,17 @@ Function ExtractFiles
   FILE "$%PATH_OUT%\bin\additions\VBoxOGLfeedbackspu.dll"
   FILE "$%PATH_OUT%\bin\additions\VBoxOGL.dll"
 
-  ; Do *not* install 64-bit d3d files - they don't work yet
+  SetOutPath "$0\VBoxVideo\OpenGL"
+  FILE "$%PATH_OUT%\bin\additions\d3d8.dll"
+  FILE "$%PATH_OUT%\bin\additions\d3d9.dll"
   !if $%BUILD_TARGET_ARCH% == "x86"
-    SetOutPath "$0\VBoxVideo\OpenGL"
-    FILE "$%PATH_OUT%\bin\additions\d3d8.dll"
-    FILE "$%PATH_OUT%\bin\additions\d3d9.dll"
+    ; libWine is used for 32bit d3d only
+    ; @todo: remove it for 32bit as well
     FILE "$%PATH_OUT%\bin\additions\libWine.dll"
-    FILE "$%PATH_OUT%\bin\additions\VBoxD3D8.dll"
-    FILE "$%PATH_OUT%\bin\additions\VBoxD3D9.dll"
-    FILE "$%PATH_OUT%\bin\additions\wined3d.dll"
   !endif
+  FILE "$%PATH_OUT%\bin\additions\VBoxD3D8.dll"
+  FILE "$%PATH_OUT%\bin\additions\VBoxD3D9.dll"
+  FILE "$%PATH_OUT%\bin\additions\wined3d.dll"
 
   !if $%BUILD_TARGET_ARCH% == "amd64"
     ; Only 64-bit installer: Also copy 32-bit DLLs on 64-bit target
@@ -60,6 +61,48 @@ Function ExtractFiles
     FILE "$%VBOX_PATH_ADDITIONS_WIN_X86%\wined3d.dll"
   !endif
 !endif
+
+!if $%VBOX_WITH_WDDM% == "1"
+  ; WDDM Video driver
+  SetOutPath "$0\VBoxVideoWddm"
+    
+  !ifdef VBOX_SIGN_ADDITIONS
+    FILE "$%PATH_OUT%\bin\additions\VBoxVideoWddm.cat"
+  !endif
+  FILE "$%PATH_OUT%\bin\additions\VBoxVideoWddm.sys"
+  FILE "$%PATH_OUT%\bin\additions\VBoxVideoWddm.inf"
+  FILE "$%PATH_OUT%\bin\additions\VBoxDispD3D.dll"
+
+  !if $%VBOX_WITH_CROGL% == "1"
+    FILE "$%PATH_OUT%\bin\additions\VBoxOGLarrayspu.dll"
+    FILE "$%PATH_OUT%\bin\additions\VBoxOGLcrutil.dll"
+    FILE "$%PATH_OUT%\bin\additions\VBoxOGLerrorspu.dll"
+    FILE "$%PATH_OUT%\bin\additions\VBoxOGLpackspu.dll"
+    FILE "$%PATH_OUT%\bin\additions\VBoxOGLpassthroughspu.dll"
+    FILE "$%PATH_OUT%\bin\additions\VBoxOGLfeedbackspu.dll"
+    FILE "$%PATH_OUT%\bin\additions\VBoxOGL.dll"
+
+    FILE "$%PATH_OUT%\bin\additions\VBoxD3D9wddm.dll"
+    FILE "$%PATH_OUT%\bin\additions\wined3dwddm.dll"
+  !endif ; $%VBOX_WITH_CROGL% == "1"
+      
+  !if $%BUILD_TARGET_ARCH% == "amd64"
+    FILE "$%PATH_OUT%\bin\additions\VBoxDispD3D-x86.dll"
+
+    !if $%VBOX_WITH_CROGL% == "1"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLarrayspu-x86.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLcrutil-x86.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLerrorspu-x86.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLpackspu-x86.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLpassthroughspu-x86.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGLfeedbackspu-x86.dll"
+      FILE "$%PATH_OUT%\bin\additions\VBoxOGL-x86.dll"
+
+      FILE "$%PATH_OUT%\bin\additions\VBoxD3D9wddm-x86.dll"
+      FILE "$%PATH_OUT%\bin\additions\wined3dwddm-x86.dll"
+    !endif ; $%VBOX_WITH_CROGL% == "1"
+  !endif ; $%BUILD_TARGET_ARCH% == "amd64"
+!endif ; $%VBOX_WITH_WDDM% == "1"
 
   ; Mouse driver
   SetOutPath "$0\VBoxMouse"
@@ -450,13 +493,11 @@ FunctionEnd
 Function ${un}CheckForWDDMCapability
 
 !if $%VBOX_WITH_WDDM% == "1"
-  !if $%BUILD_TARGET_ARCH% == "x86"
-    ; If we're on a 32-bit Windows Vista / 7 we can use the WDDM driver
-    ${If} $g_strWinVersion == "Vista"
-    ${OrIf} $g_strWinVersion == "7"
-      StrCpy $g_bCapWDDM "true"
-    ${EndIf}
-  !endif
+  ; If we're on a 32-bit Windows Vista / 7 we can use the WDDM driver
+  ${If} $g_strWinVersion == "Vista"
+  ${OrIf} $g_strWinVersion == "7"
+    StrCpy $g_bCapWDDM "true"
+  ${EndIf}
 !endif
 
 FunctionEnd
