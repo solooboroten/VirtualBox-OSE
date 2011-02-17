@@ -1,4 +1,4 @@
-/* $Id: VBoxSharedFolders.cpp 34613 2010-12-02 14:08:02Z vboxsync $ */
+/* $Id: VBoxSharedFolders.cpp $ */
 /** @file
  * VBoxSharedFolders - Handling for shared folders
  */

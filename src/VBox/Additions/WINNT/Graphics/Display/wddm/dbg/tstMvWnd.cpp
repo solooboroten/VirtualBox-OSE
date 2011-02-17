@@ -1,4 +1,4 @@
-/* $Id: tstMvWnd.cpp 32175 2010-09-01 13:01:45Z vboxsync $ */
+/* $Id: tstMvWnd.cpp $ */
 /*
  * Copyright (C) 2010 Oracle Corporation
  *

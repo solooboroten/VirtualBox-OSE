@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 35501 2011-01-12 11:02:14Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for VBoxDisp.dll.
 #

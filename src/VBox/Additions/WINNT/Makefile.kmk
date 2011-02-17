@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 34137 2010-11-17 11:42:41Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Sub-Makefile for the Windows NT++ Guest Additions.
 #

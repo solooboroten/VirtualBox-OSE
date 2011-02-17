@@ -1,4 +1,4 @@
-/* $Id: VBoxVideoWinDbg.cpp 35319 2010-12-24 15:42:36Z vboxsync $ */
+/* $Id: VBoxVideoWinDbg.cpp $ */
 /*
  * Copyright (C) 2010 Oracle Corporation
  *

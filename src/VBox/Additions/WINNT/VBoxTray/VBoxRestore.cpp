@@ -1,4 +1,4 @@
-/* $Id: VBoxRestore.cpp 33966 2010-11-11 10:32:07Z vboxsync $ */
+/* $Id: VBoxRestore.cpp $ */
 /** @file
  * VBoxRestore - Restore notification.
  */

@@ -1,4 +1,4 @@
-/* $Id: VBoxSeamless.cpp 35304 2010-12-22 15:43:32Z vboxsync $ */
+/* $Id: VBoxSeamless.cpp $ */
 /** @file
  * VBoxSeamless - Seamless windows
  */

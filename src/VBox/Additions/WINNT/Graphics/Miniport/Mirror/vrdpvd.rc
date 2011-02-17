@@ -1,4 +1,4 @@
-/* $Id: vrdpvd.rc 32394 2010-09-10 12:13:11Z vboxsync $ */
+/* $Id: vrdpvd.rc $ */
 /** @file
  * vrdpvd - Resource file containing version info and icon.
  */
