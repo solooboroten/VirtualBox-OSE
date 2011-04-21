@@ -2,7 +2,7 @@
 #
 # Oracle VM VirtualBox
 #
-# Copyright (C) 2006-2010 Oracle Corporation
+# Copyright (C) 2006-2011 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -84,6 +84,9 @@ case "$APP" in
     ;;
   VBoxVRDP|VBoxHeadless|vboxheadless)
     exec "/usr/lib/virtualbox/VBoxHeadless" "$@"
+    ;;
+  VBoxBalloonCtrl|vboxballoonctrl)
+    exec "/usr/lib/virtualbox/VBoxBalloonCtrl" "$@"
     ;;
   vboxwebsrv)
     exec "/usr/lib/virtualbox/vboxwebsrv" "$@"
