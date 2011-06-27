@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -16,6 +16,7 @@
  */
 
 #include <windows.h>
+#include <atlconv.h>
 #include <stdlib.h>
 #include <Strsafe.h>
 #include "exdll.h"
@@ -25,6 +26,9 @@
 
 HINSTANCE g_hInstance;
 HWND g_hwndParent;
+
+typedef DWORD (WINAPI *fnSfcFileException) (DWORD param1, PWCHAR param2, DWORD param3);
+fnSfcFileException g_pfnSfcFileException = NULL;
 
 #define VBOXINSTALLHELPER_EXPORT extern "C" void __declspec(dllexport)
 
@@ -72,6 +76,35 @@ static HRESULT VBoxPopULong(ULONG *pulValue)
 
             *g_stacktop = pStack->next;
             GlobalFree((HGLOBAL)pStack);
+        }
+    }
+    return hr;
+}
+
+void Char2WCharFree(PWCHAR pwString)
+{
+    if (pwString)
+        HeapFree(GetProcessHeap(), 0, pwString);
+}
+
+HRESULT Char2WCharAlloc(const char *pszString, PWCHAR *ppwString)
+{
+    HRESULT hr;
+    int iLen = strlen(pszString) + 2;
+	WCHAR *pwString = (WCHAR*)HeapAlloc(GetProcessHeap(), 0, iLen * sizeof(WCHAR));
+    if (!pwString)
+        hr = ERROR_NOT_ENOUGH_MEMORY;
+    else
+    {
+        if (MultiByteToWideChar(CP_ACP, 0, pszString, -1, pwString, iLen) == 0)
+        {
+            hr = HRESULT_FROM_WIN32(GetLastError());
+            HeapFree(GetProcessHeap(), 0, pwString);
+        }
+        else
+        {
+            hr = S_OK;
+            *ppwString = pwString;
         }
     }
     return hr;
@@ -178,5 +211,69 @@ BOOL WINAPI DllMain(HANDLE hInst, ULONG uReason, LPVOID lpReserved)
 {
     g_hInstance = (HINSTANCE)hInst;
     return TRUE;
+}
+
+/**
+ * Disables the Windows File Protection for a specified file
+ * using an undocumented SFC API call. Don't try this at home!
+ *
+ * @param   hwndParent          Window handle of parent.
+ * @param   string_size         Size of variable string.
+ * @param   variables           The actual variable string.
+ * @param   stacktop            Pointer to a pointer to the current stack.
+ */
+VBOXINSTALLHELPER_EXPORT DisableWFP(HWND hwndParent, int string_size,
+                                    TCHAR *variables, stack_t **stacktop)
+{
+    EXDLL_INIT();
+
+    TCHAR szFile[MAX_PATH + 1];
+    HRESULT hr = VBoxPopString(szFile, sizeof(szFile) / sizeof(TCHAR));
+    if (SUCCEEDED(hr))
+    {
+        HMODULE hSFC = LoadLibrary("sfc_os.dll");
+        if (NULL != hSFC)
+        {
+            g_pfnSfcFileException = (fnSfcFileException)GetProcAddress(hSFC, "SfcFileException");
+            if (g_pfnSfcFileException == NULL)
+            {
+                /* If we didn't get the proc address with the call above, try it harder with
+                 * the (zero based) index of the function list. */
+                g_pfnSfcFileException = (fnSfcFileException)GetProcAddress(hSFC, (LPCSTR)5);
+                if (g_pfnSfcFileException == NULL)
+                    hr = HRESULT_FROM_WIN32(ERROR_PROC_NOT_FOUND);
+            }
+        }
+        else
+            hr = HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+
+        if (SUCCEEDED(hr))
+        {
+            WCHAR *pwszFile;
+            hr = Char2WCharAlloc(szFile, &pwszFile);
+            if (SUCCEEDED(hr))
+            {
+                if (g_pfnSfcFileException(0, pwszFile, -1) != 0)
+                    hr = HRESULT_FROM_WIN32(GetLastError());
+                Char2WCharFree(pwszFile);
+            }
+        }
+
+        if (hSFC)
+            FreeLibrary(hSFC);
+    }
+
+    TCHAR szErr[MAX_PATH + 1];
+    if (FAILED(hr))
+    {
+        if (FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, hr, 0, szErr, MAX_PATH, NULL))
+            szErr[MAX_PATH] = '\0';
+        else
+            StringCchPrintf(szErr, sizeof(szErr),
+                            "FormatMessage failed! Error = %ld", GetLastError());
+    }
+    else
+        StringCchPrintf(szErr, sizeof(szErr), "0");
+    pushstring(szErr);
 }
 

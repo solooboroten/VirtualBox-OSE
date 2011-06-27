@@ -4,11 +4,13 @@
 !endif
 
 ; Defines for special functions
-!define WHQL_FAKE    ; Turns on the faking of non WHQL signed / approved drivers
-                     ; Needs the VBoxWHQLFake.exe in the additions output directory!
+!define WHQL_FAKE                   ; Enables faking of non WHQL signed / approved drivers
+                                    ; Needs the VBoxWHQLFake.exe in the additions output directory!
+!define WFP_FILE_EXCEPTION          ; Enables setting a temporary file exception for WFP proctected files
 
 !define VENDOR_ROOT_KEY             "SOFTWARE\$%VBOX_VENDOR_SHORT%"
 
+; Product defines
 !define PRODUCT_NAME                "$%VBOX_PRODUCT% Guest Additions"
 !define PRODUCT_DESC                "$%VBOX_PRODUCT% Guest Additions"
 !define PRODUCT_VERSION             "$%VBOX_VERSION_MAJOR%.$%VBOX_VERSION_MINOR%.$%VBOX_VERSION_BUILD%.0"
@@ -728,6 +730,7 @@ SectionEnd
 Function PrepareWRPFile
 
   Pop $0
+
   IfFileExists "$g_strSystemDir\takeown.exe" 0 +2
     nsExec::ExecToLog '"$g_strSystemDir\takeown.exe" /F "$0"'
   AccessControl::SetFileOwner "$0" "(S-1-5-32-545)"
@@ -736,6 +739,14 @@ Function PrepareWRPFile
   AccessControl::GrantOnFile "$0" "(S-1-5-32-545)" "FullAccess"
   Pop $1
   DetailPrint "Setting access rights for '$0': $1"
+
+!if $%VBOX_WITH_GUEST_INSTALL_HELPER% == "1"
+  !ifdef WFP_FILE_EXCEPTION
+    VBoxGuestInstallHelper::DisableWFP "$0"
+    Pop $1 ; Get return value (ignored for now)
+    DetailPrint "Setting WFP exception for '$0': $1"
+  !endif
+!endif
 
 FunctionEnd
 
@@ -869,7 +880,10 @@ error:
   Goto exit
 
 done:
+
+!ifndef WFP_FILE_EXCEPTION
   MessageBox MB_ICONINFORMATION|MB_OK $(VBOX_WFP_WARN_REPLACE) /SD IDOK
+!endif
   Goto exit
 
 exit:
@@ -959,10 +973,13 @@ Function .onSelChange
       ${EndIf}
     ${EndIf}
 
-    ; If we're not in safe mode, print a warning and don't install D3D support
-    ${If} $g_iSystemMode == '0'
-      MessageBox MB_ICONINFORMATION|MB_OK $(VBOX_COMPONENT_D3D_NO_SM) /SD IDOK
-      Goto d3d_disable
+    ; If force flag is set skip the safe mode check
+    ${If} $g_bForceInstall != "true"
+      ; If we're not in safe mode, print a warning and don't install D3D support
+      ${If} $g_iSystemMode == '0'
+        MessageBox MB_ICONINFORMATION|MB_OK $(VBOX_COMPONENT_D3D_NO_SM) /SD IDOK
+        Goto d3d_disable
+      ${EndIf}
     ${EndIf}
   ${Else} ; D3D unselected again
     StrCpy $g_bWithWDDM "false"
