@@ -1,4 +1,4 @@
-/* $Id: VMMDev.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: VMMDev.cpp 37466 2011-06-15 12:44:16Z vboxsync $ */
 /** @file
  * VMMDev - Guest <-> VMM/Host communication device.
  */
@@ -435,10 +435,19 @@ static DECLCALLBACK(int) vmmdevRequestHandler(PPDMDEVINS pDevIns, void *pvUser, 
     if (   !pThis->fu32AdditionsOk
         && requestHeader.requestType != VMMDevReq_ReportGuestInfo2
         && requestHeader.requestType != VMMDevReq_ReportGuestInfo
-        && requestHeader.requestType != VMMDevReq_WriteCoreDump)
+        && requestHeader.requestType != VMMDevReq_WriteCoreDump
+        && requestHeader.requestType != VMMDevReq_GetHostVersion) /* Always allow the guest to query the host capabilities. */
     {
-        Log(("VMMDev: guest has not yet reported to us. Refusing operation.\n"));
+        Log(("VMMDev: guest has not yet reported to us. Refusing operation of request #%d!\n",
+             requestHeader.requestType));
         requestHeader.rc = VERR_NOT_SUPPORTED;
+        static int cRelWarn;
+        if (cRelWarn < 10)
+        {
+            cRelWarn++;
+            LogRel(("VMMDev: the guest has not yet reported to us -- refusing operation of request #%d\n",
+                    requestHeader.requestType));
+        }
         rcRet = VINF_SUCCESS;
         goto l_end;
     }
@@ -446,7 +455,12 @@ static DECLCALLBACK(int) vmmdevRequestHandler(PPDMDEVINS pDevIns, void *pvUser, 
     /* Check upper limit */
     if (requestHeader.size > VMMDEV_MAX_VMMDEVREQ_SIZE)
     {
-        LogRel(("VMMDev: request packet too big (%x). Refusing operation.\n", requestHeader.size));
+        static int cRelWarn;
+        if (cRelWarn < 50)
+        {
+            cRelWarn++;
+            LogRel(("VMMDev: request packet too big (%x). Refusing operation.\n", requestHeader.size));
+        }
         requestHeader.rc = VERR_NOT_SUPPORTED;
         rcRet = VINF_SUCCESS;
         goto l_end;
@@ -1457,7 +1471,8 @@ static DECLCALLBACK(int) vmmdevRequestHandler(PPDMDEVINS pDevIns, void *pvUser, 
 
         case VMMDevReq_VideoSetVisibleRegion:
         {
-            if (pRequestHeader->size < sizeof(VMMDevVideoSetVisibleRegion))
+            if (  pRequestHeader->size + sizeof(RTRECT)
+                < sizeof(VMMDevVideoSetVisibleRegion))
             {
                 Log(("VMMDevReq_VideoSetVisibleRegion request size too small!!!\n"));
                 pRequestHeader->rc = VERR_INVALID_PARAMETER;
@@ -1471,15 +1486,11 @@ static DECLCALLBACK(int) vmmdevRequestHandler(PPDMDEVINS pDevIns, void *pvUser, 
             {
                 VMMDevVideoSetVisibleRegion *ptr = (VMMDevVideoSetVisibleRegion *)pRequestHeader;
 
-                if (!ptr->cRect)
+                if (   ptr->cRect > _1M /* restrict to sane range */
+                    || pRequestHeader->size != sizeof(VMMDevVideoSetVisibleRegion) + ptr->cRect * sizeof(RTRECT) - sizeof(RTRECT))
                 {
-                    Log(("VMMDevReq_VideoSetVisibleRegion no rectangles!!!\n"));
-                    pRequestHeader->rc = VERR_INVALID_PARAMETER;
-                }
-                else
-                if (pRequestHeader->size != sizeof(VMMDevVideoSetVisibleRegion) + (ptr->cRect-1)*sizeof(RTRECT))
-                {
-                    Log(("VMMDevReq_VideoSetVisibleRegion request size too small!!!\n"));
+                    Log(("VMMDevReq_VideoSetVisibleRegion: cRects=%#x doesn't match size=%#x or is out of bounds\n",
+                         ptr->cRect, pRequestHeader->size));
                     pRequestHeader->rc = VERR_INVALID_PARAMETER;
                 }
                 else
@@ -2176,15 +2187,13 @@ static DECLCALLBACK(int) vmmdevQueryStatusLed(PPDMILEDPORTS pInterface, unsigned
  * @param   pAbsX   Pointer of result value, can be NULL
  * @param   pAbsY   Pointer of result value, can be NULL
  */
-static DECLCALLBACK(int) vmmdevQueryAbsoluteMouse(PPDMIVMMDEVPORT pInterface, uint32_t *pAbsX, uint32_t *pAbsY)
+static DECLCALLBACK(int) vmmdevQueryAbsoluteMouse(PPDMIVMMDEVPORT pInterface, int32_t *pAbsX, int32_t *pAbsY)
 {
     VMMDevState *pThis = IVMMDEVPORT_2_VMMDEVSTATE(pInterface);
-    AssertCompile(sizeof(pThis->mouseXAbs) == sizeof(*pAbsX));
-    AssertCompile(sizeof(pThis->mouseYAbs) == sizeof(*pAbsY));
     if (pAbsX)
-        ASMAtomicReadSize(&pThis->mouseXAbs, pAbsX);
+        *pAbsX = ASMAtomicReadS32(&pThis->mouseXAbs); /* why the atomic read? */
     if (pAbsY)
-        ASMAtomicReadSize(&pThis->mouseYAbs, pAbsY);
+        *pAbsY = ASMAtomicReadS32(&pThis->mouseYAbs);
     return VINF_SUCCESS;
 }
 
@@ -2195,12 +2204,12 @@ static DECLCALLBACK(int) vmmdevQueryAbsoluteMouse(PPDMIVMMDEVPORT pInterface, ui
  * @param   absX   New absolute X position
  * @param   absY   New absolute Y position
  */
-static DECLCALLBACK(int) vmmdevSetAbsoluteMouse(PPDMIVMMDEVPORT pInterface, uint32_t absX, uint32_t absY)
+static DECLCALLBACK(int) vmmdevSetAbsoluteMouse(PPDMIVMMDEVPORT pInterface, int32_t absX, int32_t absY)
 {
     VMMDevState *pThis = IVMMDEVPORT_2_VMMDEVSTATE(pInterface);
     PDMCritSectEnter(&pThis->CritSect, VERR_SEM_BUSY);
 
-    if ((pThis->mouseXAbs == absX) && (pThis->mouseYAbs == absY))
+    if (pThis->mouseXAbs == absX && pThis->mouseYAbs == absY)
     {
         PDMCritSectLeave(&pThis->CritSect);
         return VINF_SUCCESS;
@@ -2542,8 +2551,8 @@ static DECLCALLBACK(int) vmmdevSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
 
     SSMR3PutU32(pSSM, pThis->hypervisorSize);
     SSMR3PutU32(pSSM, pThis->mouseCapabilities);
-    SSMR3PutU32(pSSM, pThis->mouseXAbs);
-    SSMR3PutU32(pSSM, pThis->mouseYAbs);
+    SSMR3PutS32(pSSM, pThis->mouseXAbs);
+    SSMR3PutS32(pSSM, pThis->mouseYAbs);
 
     SSMR3PutBool(pSSM, pThis->fNewGuestFilterMask);
     SSMR3PutU32(pSSM, pThis->u32NewGuestFilterMask);
@@ -2610,8 +2619,8 @@ static DECLCALLBACK(int) vmmdevLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uin
     /* state */
     SSMR3GetU32(pSSM, &pThis->hypervisorSize);
     SSMR3GetU32(pSSM, &pThis->mouseCapabilities);
-    SSMR3GetU32(pSSM, &pThis->mouseXAbs);
-    SSMR3GetU32(pSSM, &pThis->mouseYAbs);
+    SSMR3GetS32(pSSM, &pThis->mouseXAbs);
+    SSMR3GetS32(pSSM, &pThis->mouseYAbs);
 
     SSMR3GetBool(pSSM, &pThis->fNewGuestFilterMask);
     SSMR3GetU32(pSSM, &pThis->u32NewGuestFilterMask);
@@ -3001,7 +3010,7 @@ static DECLCALLBACK(int) vmmdevConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
     /*
      * Create the critical section for the device.
      */
-    rc = PDMDevHlpCritSectInit(pDevIns, &pThis->CritSect, RT_SRC_POS, "VMMDev");
+    rc = PDMDevHlpCritSectInit(pDevIns, &pThis->CritSect, RT_SRC_POS, "VMMDev#u", iInstance);
     AssertRCReturn(rc, rc);
     /* Later: pDevIns->pCritSectR3 = &pThis->CritSect; */
 

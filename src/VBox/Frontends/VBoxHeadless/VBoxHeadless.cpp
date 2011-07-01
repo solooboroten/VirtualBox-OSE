@@ -1,4 +1,4 @@
-/* $Id: VBoxHeadless.cpp 35446 2011-01-10 11:08:29Z vboxsync $ */
+/* $Id: VBoxHeadless.cpp 37473 2011-06-15 16:16:31Z vboxsync $ */
 /** @file
  * VBoxHeadless - The VirtualBox Headless frontend for running VMs on servers.
  */
@@ -101,6 +101,15 @@ public:
     {
     }
 
+    HRESULT init()
+    {
+        return S_OK;
+    }
+
+    void uninit()
+    {
+    }
+
     STDMETHOD(HandleEvent)(VBoxEventType_T aType, IEvent *aEvent)
     {
         switch (aType)
@@ -147,6 +156,15 @@ public:
     {
     }
 
+    HRESULT init()
+    {
+        return S_OK;
+    }
+
+    void uninit()
+    {
+    }
+
     STDMETHOD(HandleEvent)(VBoxEventType_T aType, IEvent *aEvent)
     {
         switch (aType)
@@ -189,39 +207,52 @@ public:
 
                     if (fProcessDisconnectOnGuestLogout)
                     {
+                        bool fDropConnection = false;
+
                         Bstr value;
                         gpcev->COMGETTER(Value)(value.asOutParam());
                         Utf8Str utf8Value = value;
-                        if (utf8Value == "true")
+
+                        if (!mfNoLoggedInUsers) /* Only if the property really changes. */
                         {
-                            if (!mfNoLoggedInUsers) /* Only if the property really changes. */
+                            if (   utf8Value == "true"
+                                /* Guest property got deleted due to reset,
+                                 * so it has no value anymore. */
+                                || utf8Value.isEmpty())
                             {
                                 mfNoLoggedInUsers = true;
+                                fDropConnection = true;
+                            }
+                        }
+                        else if (utf8Value == "false")
+                            mfNoLoggedInUsers = false;
+                        /* Guest property got deleted due to reset,
+                         * take the shortcut without touching the mfNoLoggedInUsers
+                         * state. */
+                        else if (utf8Value.isEmpty())
+                            fDropConnection = true;
 
-                                /* If there is a connection, drop it. */
-                                ComPtr<IVRDEServerInfo> info;
-                                hrc = gConsole->COMGETTER(VRDEServerInfo)(info.asOutParam());
-                                if (SUCCEEDED(hrc) && info)
+                        if (fDropConnection)
+                        {
+                            /* If there is a connection, drop it. */
+                            ComPtr<IVRDEServerInfo> info;
+                            hrc = gConsole->COMGETTER(VRDEServerInfo)(info.asOutParam());
+                            if (SUCCEEDED(hrc) && info)
+                            {
+                                ULONG cClients = 0;
+                                hrc = info->COMGETTER(NumberOfClients)(&cClients);
+                                if (SUCCEEDED(hrc) && cClients > 0)
                                 {
-                                    ULONG cClients = 0;
-                                    hrc = info->COMGETTER(NumberOfClients)(&cClients);
-                                    if (SUCCEEDED(hrc) && cClients > 0)
+                                    ComPtr <IVRDEServer> vrdeServer;
+                                    hrc = machine->COMGETTER(VRDEServer)(vrdeServer.asOutParam());
+                                    if (SUCCEEDED(hrc) && vrdeServer)
                                     {
-                                        ComPtr <IVRDEServer> vrdeServer;
-                                        hrc = machine->COMGETTER(VRDEServer)(vrdeServer.asOutParam());
-                                        if (SUCCEEDED(hrc) && vrdeServer)
-                                        {
-                                            LogRel(("VRDE: the guest user has logged out, disconnecting remote clients.\n"));
-                                            vrdeServer->COMSETTER(Enabled)(FALSE);
-                                            vrdeServer->COMSETTER(Enabled)(TRUE);
-                                        }
+                                        LogRel(("VRDE: the guest user has logged out, disconnecting remote clients.\n"));
+                                        vrdeServer->COMSETTER(Enabled)(FALSE);
+                                        vrdeServer->COMSETTER(Enabled)(TRUE);
                                     }
                                 }
                             }
-                        }
-                        else
-                        {
-                            mfNoLoggedInUsers = false;
                         }
                     }
                 }
@@ -251,6 +282,15 @@ public:
     }
 
     virtual ~ConsoleEventListener()
+    {
+    }
+
+    HRESULT init()
+    {
+        return S_OK;
+    }
+
+    void uninit()
     {
     }
 
@@ -504,6 +544,11 @@ static void parse_environ(unsigned long *pulFrameWidth, unsigned long *pulFrameH
 }
 #endif /* VBOX_FFMPEG defined */
 
+#ifdef RT_OS_WINDOWS
+// Required for ATL
+static CComModule _Module;
+#endif
+
 /**
  *  Entry point.
  */
@@ -531,11 +576,6 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     char pszMPEGFile[RTPATH_MAX];
     const char *pszFileNameParam = "VBox-%d.vob";
 #endif /* VBOX_FFMPEG */
-
-    /* Make sure that DISPLAY is unset, so that X11 bits do not get initialised
-     * on X11-using OSes. */
-    /** @todo this should really be taken care of in Main. */
-    RTEnvUnset("DISPLAY");
 
     LogFlow (("VBoxHeadless STARTED.\n"));
     RTPrintf (VBOX_PRODUCT " Headless Interface " VBOX_VERSION_STRING "\n"
@@ -762,9 +802,9 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     ComPtr<ISession> session;
     ComPtr<IMachine> machine;
     bool fSessionOpened = false;
-    IEventListener *vboxClientListener = NULL;
-    IEventListener *vboxListener = NULL;
-    ConsoleEventListenerImpl *consoleListener = NULL;
+    ComPtr<IEventListener> vboxClientListener;
+    ComPtr<IEventListener> vboxListener;
+    ComObjPtr<ConsoleEventListenerImpl> consoleListener;
 
     do
     {
@@ -1000,7 +1040,10 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         {
             ComPtr<IEventSource> pES;
             CHECK_ERROR(pVirtualBoxClient, COMGETTER(EventSource)(pES.asOutParam()));
-            vboxClientListener = new VirtualBoxClientEventListenerImpl();
+            ComObjPtr<VirtualBoxClientEventListenerImpl> listener;
+            listener.createObject();
+            listener->init(new VirtualBoxClientEventListener());
+            vboxClientListener = listener;
             com::SafeArray<VBoxEventType_T> eventTypes;
             eventTypes.push_back(VBoxEventType_OnVBoxSVCAvailabilityChanged);
             CHECK_ERROR(pES, RegisterListener(vboxClientListener, ComSafeArrayAsInParam(eventTypes), true));
@@ -1010,7 +1053,8 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         {
             ComPtr<IEventSource> es;
             CHECK_ERROR(console, COMGETTER(EventSource)(es.asOutParam()));
-            consoleListener = new ConsoleEventListenerImpl();
+            consoleListener.createObject();
+            consoleListener->init(new ConsoleEventListener());
             com::SafeArray<VBoxEventType_T> eventTypes;
             eventTypes.push_back(VBoxEventType_OnMouseCapabilityChanged);
             eventTypes.push_back(VBoxEventType_OnStateChanged);
@@ -1113,6 +1157,9 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             }
         }
 
+        /* Disable the host clipboard before powering up */
+        console->COMSETTER(UseHostClipboard)(false);
+
         Log(("VBoxHeadless: Powering up the machine...\n"));
 
         ComPtr <IProgress> progress;
@@ -1165,7 +1212,10 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         {
             ComPtr<IEventSource> es;
             CHECK_ERROR(virtualBox, COMGETTER(EventSource)(es.asOutParam()));
-            vboxListener = new VirtualBoxEventListenerImpl();
+            ComObjPtr<VirtualBoxEventListenerImpl> listener;
+            listener.createObject();
+            listener->init(new VirtualBoxEventListener());
+            vboxListener = listener;
             com::SafeArray<VBoxEventType_T> eventTypes;
             eventTypes.push_back(VBoxEventType_OnGuestPropertyChanged);
             CHECK_ERROR(es, RegisterListener(vboxListener, ComSafeArrayAsInParam(eventTypes), true));
@@ -1244,7 +1294,7 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         CHECK_ERROR(virtualBox, COMGETTER(EventSource)(es.asOutParam()));
         if (!es.isNull())
             CHECK_ERROR(es, UnregisterListener(vboxListener));
-        vboxListener->Release();
+        vboxListener.setNull();
     }
 
     /* Console callback unregistration. */
@@ -1254,7 +1304,7 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         CHECK_ERROR(gConsole, COMGETTER(EventSource)(es.asOutParam()));
         if (!es.isNull())
             CHECK_ERROR(es, UnregisterListener(consoleListener));
-        consoleListener->Release();
+        consoleListener.setNull();
     }
 
     /* VirtualBoxClient callback unregistration. */
@@ -1264,7 +1314,7 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         CHECK_ERROR(pVirtualBoxClient, COMGETTER(EventSource)(pES.asOutParam()));
         if (!pES.isNull())
             CHECK_ERROR(pES, UnregisterListener(vboxClientListener));
-        vboxClientListener->Release();
+        vboxClientListener.setNull();
     }
 
     /* No more access to the 'console' object, which will be uninitialized by the next session->Close call. */
@@ -1284,6 +1334,7 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     session.setNull();
     virtualBox.setNull();
     pVirtualBoxClient.setNull();
+    machine.setNull();
 
     com::Shutdown();
 

@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# Linux Additions kernel module init script ($Revision: 35265 $)
+# Linux Additions kernel module init script ($Revision: 37160 $)
 #
 
 #
@@ -168,6 +168,12 @@ userdev=/dev/vboxuser
 owner=vboxadd
 group=1
 
+test_for_gcc_and_make()
+{
+    which make > /dev/null 2>&1 || printf "\nThe make utility was not found. If the following module compilation fails then\nthis could be the reason and you should try installing it.\n"
+    which gcc > /dev/null 2>&1 || printf "\nThe gcc utility was not found. If the following module compilation fails then\nthis could be the reason and you should try installing it.\n"
+}
+
 test_sane_kernel_dir()
 {
     KERN_VER=`uname -r`
@@ -182,7 +188,9 @@ test_sane_kernel_dir()
     if [ "$system" = "redhat" ]; then
         printf "The missing package can be probably installed with\nyum install kernel-devel-$KERN_VER\n"
     elif [ "$system" = "suse" ]; then
-        printf "The missing package can be probably installed with\nzypper install kernel-$KERN_VER\n"
+        KERN_VER_SUSE=`echo "$KERN_VER" | sed 's/.*-\([^-]*\)/\1/g'`
+        KERN_VER_BASE=`echo "$KERN_VER" | sed 's/\(.*\)-[^-]*/\1/g'`
+        printf "The missing package can be probably installed with\nzypper install kernel-$KERN_VER_SUSE-devel-$KERN_VER_BASE\n"
     elif [ "$system" = "debian" ]; then
         printf "The missing package can be probably installed with\napt-get install linux-headers-$KERN_VER\n"
     fi
@@ -265,7 +273,9 @@ do_vboxguest_non_udev()
 start()
 {
     begin "Starting the VirtualBox Guest Additions ";
-    which udevd >/dev/null 2>&1 || no_udev=1
+    uname -r | grep -q '^2\.6' 2>/dev/null &&
+        ps -A -o comm | grep -q '/*udevd$' 2>/dev/null ||
+        no_udev=1
     running_vboxguest || {
         rm -f $dev || {
             fail "Cannot remove $dev"
@@ -360,24 +370,19 @@ setup_modules()
 
     # Short cut out if a dkms build succeeds
     if $DODKMS install >> $LOG 2>&1; then
+        succ_msg
         return 0
     fi
 
+    test_for_gcc_and_make
     test_sane_kernel_dir
 
-    if ! sh /usr/share/$PACKAGE/test/build_in_tmp \
-        --no-print-directory >> $LOG 2>&1; then
-        fail_msg
-        printf "Your system does not seem to be set up to build kernel modules.\nLook at $LOG to find out what went wrong.\nOnce you have corrected it, you can run\n\n  /etc/init.d/vboxadd setup\n\nto build them.\n\n"
-        return 1
-    else
-        if ! sh /usr/share/$PACKAGE/test_drm/build_in_tmp \
-            --no-print-directory >> $LOG 2>&1; then
-            printf "\nYour guest system does not seem to have sufficient OpenGL support to enable\naccelerated 3D effects (this requires Linux 2.6.27 or later in the guest\nsystem).  This Guest Additions feature will be disabled.\n\n"
-            BUILDVBOXVIDEO=""
-        fi
-    fi
     echo
+    if expr `uname -r` '<' '2.6.27' > /dev/null; then
+        echo "Not building the VirtualBox advanced graphics driver as this Linux version is"
+        echo "too old to use it."
+        BUILDVBOXVIDEO=
+    fi
     if [ -n "$BUILDVBOXGUEST" ]; then
         begin "Building the main Guest Additions module"
         if ! $BUILDVBOXGUEST \
@@ -454,9 +459,20 @@ extra_setup()
 
     # Put mount.vboxsf in the right place
     ln -sf "$lib_path/$PACKAGE/mount.vboxsf" /sbin
-    # At least Fedora 11 and Fedora 12 demand on the correct security context when
-    # executing this command from service scripts. Shouldn't hurt for other distributions.
+    # At least Fedora 11 and Fedora 12 require the correct security context when
+    # executing this command from service scripts. Shouldn't hurt for other
+    # distributions.
     chcon -u system_u -t mount_exec_t "$lib_path/$PACKAGE/mount.vboxsf" > /dev/null 2>&1
+    # And at least Fedora 15 needs this for the acceleration support check to
+    # work
+    redhat_release=`cat /etc/redhat-release 2> /dev/null`
+    case "$redhat_release" in Fedora\ release\ 15* )
+        for i in "$lib_path"/*.so
+        do
+            restorecon "$i" >/dev/null
+        done
+        ;;
+    esac
 
     succ_msg
 }
@@ -520,7 +536,7 @@ status)
     dmnstatus
     ;;
 *)
-    echo "Usage: $0 {start|stop|restart|status}"
+    echo "Usage: $0 {start|stop|restart|status|setup}"
     exit 1
 esac
 

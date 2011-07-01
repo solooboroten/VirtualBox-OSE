@@ -1,10 +1,9 @@
 /** @file
- *
  * VirtualBox graphics card port I/O definitions
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -23,13 +22,14 @@
  * You may elect to license modified versions of this file under the
  * terms and conditions of either the GPL or the CDDL or both.
  */
-#ifndef VBoxVideoVBE_h_included
-# define VBoxVideoVBE_h_included
 
-// GUEST <-> HOST Communication API
+#ifndef ___VBox_Hardware_VBoxVideoVBE_h
+#define ___VBox_Hardware_VBoxVideoVBE_h
 
-// FIXME: either dynamicly ask host for this or put somewhere high in physical memory
-//        like 0xE0000000
+/* GUEST <-> HOST Communication API */
+
+/** @todo FIXME: Either dynamicly ask host for this or put somewhere high in
+ *               physical memory like 0xE0000000. */
 
 #define VBE_DISPI_BANK_ADDRESS          0xA0000
 #define VBE_DISPI_BANK_SIZE_KB          64
@@ -40,6 +40,9 @@
 
 #define VBE_DISPI_IOPORT_INDEX          0x01CE
 #define VBE_DISPI_IOPORT_DATA           0x01CF
+
+#define VBE_DISPI_IOPORT_DAC_WRITE_INDEX  0x03C8
+#define VBE_DISPI_IOPORT_DAC_DATA         0x03C9
 
 #define VBE_DISPI_INDEX_ID              0x0
 #define VBE_DISPI_INDEX_XRES            0x1
@@ -70,6 +73,8 @@
 #define VBE_DISPI_ENABLED               0x01
 #define VBE_DISPI_GETCAPS               0x02
 #define VBE_DISPI_8BIT_DAC              0x20
+/** @note this definition is a BOCHS legacy, used only in the video BIOS
+ *        code and ignored by the emulated hardware. */
 #define VBE_DISPI_LFB_ENABLED           0x40
 #define VBE_DISPI_NOCLEARMEM            0x80
 
@@ -78,4 +83,5 @@
 #define VGA_PORT_HGSMI_HOST             0x3b0
 #define VGA_PORT_HGSMI_GUEST            0x3d0
 
-#endif  /* VBoxVideoVBE_h_included */
+#endif /* !___VBox_Hardware_VBoxVideoVBE_h */
+

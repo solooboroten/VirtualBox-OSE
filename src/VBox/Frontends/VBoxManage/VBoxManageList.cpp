@@ -1,10 +1,10 @@
-/* $Id: VBoxManageList.cpp 35085 2010-12-14 14:09:12Z vboxsync $ */
+/* $Id: VBoxManageList.cpp 37244 2011-05-30 08:28:07Z vboxsync $ */
 /** @file
  * VBoxManage - The 'list' command.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -389,9 +389,9 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
                     Bstr uuid;
                     dvdDrive->COMGETTER(Id)(uuid.asOutParam());
                     RTPrintf("UUID:         %s\n", Utf8Str(uuid).c_str());
-                    Bstr name;
-                    dvdDrive->COMGETTER(Name)(name.asOutParam());
-                    RTPrintf("Name:         %lS\n\n", name.raw());
+                    Bstr location;
+                    dvdDrive->COMGETTER(Location)(location.asOutParam());
+                    RTPrintf("Name:         %lS\n\n", location.raw());
                 }
             }
             break;
@@ -411,9 +411,9 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
                     Bstr uuid;
                     floppyDrive->COMGETTER(Id)(uuid.asOutParam());
                     RTPrintf("UUID:         %s\n", Utf8Str(uuid).c_str());
-                    Bstr name;
-                    floppyDrive->COMGETTER(Name)(name.asOutParam());
-                    RTPrintf("Name:         %lS\n\n", name.raw());
+                    Bstr location;
+                    floppyDrive->COMGETTER(Location)(location.asOutParam());
+                    RTPrintf("Name:         %lS\n\n", location.raw());
                 }
             }
             break;
@@ -832,6 +832,9 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
             ULONG ulValue;
             LONG64 i64Value;
 
+            rptrVirtualBox->COMGETTER(APIVersion)(str.asOutParam());
+            RTPrintf("API version:                     %ls\n", str.raw());
+
             systemProperties->COMGETTER(MinGuestRAM)(&ulValue);
             RTPrintf("Minimum guest RAM size:          %u Megabytes\n", ulValue);
             systemProperties->COMGETTER(MaxGuestRAM)(&ulValue);
@@ -846,14 +849,16 @@ static HRESULT produceList(enum enmListType enmCommand, bool fOptLong, const Com
             RTPrintf("Maximum guest CPU count:         %u\n", ulValue);
             systemProperties->COMGETTER(InfoVDSize)(&i64Value);
             RTPrintf("Virtual disk limit (info):       %lld Bytes\n", i64Value);
-            systemProperties->COMGETTER(NetworkAdapterCount)(&ulValue);
-            RTPrintf("Maximum Network Adapter count:   %u\n", ulValue);
             systemProperties->COMGETTER(SerialPortCount)(&ulValue);
             RTPrintf("Maximum Serial Port count:       %u\n", ulValue);
             systemProperties->COMGETTER(ParallelPortCount)(&ulValue);
             RTPrintf("Maximum Parallel Port count:     %u\n", ulValue);
             systemProperties->COMGETTER(MaxBootPosition)(&ulValue);
             RTPrintf("Maximum Boot Position:           %u\n", ulValue);
+            systemProperties->GetMaxNetworkAdapters(ChipsetType_PIIX3, &ulValue);
+            RTPrintf("Maximum PIIX3 Network Adapter count:   %u\n", ulValue);
+            systemProperties->GetMaxNetworkAdapters(ChipsetType_ICH9,  &ulValue);
+            RTPrintf("Maximum ICH9 Network Adapter count:   %u\n", ulValue);
             systemProperties->GetMaxInstancesOfStorageBus(ChipsetType_PIIX3, StorageBus_IDE, &ulValue);
             RTPrintf("Maximum PIIX3 IDE Controllers:   %u\n", ulValue);
             systemProperties->GetMaxInstancesOfStorageBus(ChipsetType_ICH9, StorageBus_IDE, &ulValue);

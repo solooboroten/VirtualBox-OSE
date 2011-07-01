@@ -86,7 +86,7 @@ int NetIfList(std::list <ComObjPtr<HostNetworkInterface> > &list);
 int NetIfEnableStaticIpConfig(VirtualBox *pVbox, HostNetworkInterface * pIf, ULONG aOldIp, ULONG aNewIp, ULONG aMask);
 int NetIfEnableStaticIpConfigV6(VirtualBox *pVbox, HostNetworkInterface * pIf, IN_BSTR aOldIPV6Address, IN_BSTR aIPV6Address, ULONG aIPV6MaskPrefixLength);
 int NetIfEnableDynamicIpConfig(VirtualBox *pVbox, HostNetworkInterface * pIf);
-int NetIfCreateHostOnlyNetworkInterface (VirtualBox *pVbox, IHostNetworkInterface **aHostNetworkInterface, IProgress **aProgress);
+int NetIfCreateHostOnlyNetworkInterface (VirtualBox *pVbox, IHostNetworkInterface **aHostNetworkInterface, IProgress **aProgress, const char *pcszName = NULL);
 int NetIfRemoveHostOnlyNetworkInterface (VirtualBox *pVbox, IN_GUID aId, IProgress **aProgress);
 int NetIfGetConfig(HostNetworkInterface * pIf, NETIFINFO *);
 int NetIfGetConfigByName(PNETIFINFO pInfo);
@@ -146,9 +146,11 @@ DECLINLINE(Bstr) composeHardwareAddress(PRTMAC aMacPtr)
 DECLINLINE(Bstr) getDefaultIPv4Address(Bstr bstrIfName)
 {
     /* Get the index from the name */
-    int iInstance;
-    if (sscanf(Utf8Str(bstrIfName).c_str(), "vboxnet%d", &iInstance) != 1)
-        return Bstr("0.0.0.0");
+    Utf8Str strTmp = bstrIfName;
+    const char *pszIfName = strTmp.c_str();
+    int iInstance = 0, iPos = strcspn(pszIfName, "0123456789");
+    if (pszIfName[iPos])
+        iInstance = RTStrToUInt32(pszIfName + iPos);
 
     in_addr tmp;
 #if defined(RT_OS_WINDOWS)

@@ -2861,6 +2861,106 @@ static HRESULT WINAPI IWineD3DImpl_GetAdapterDisplayMode(IWineD3D *iface, UINT A
     return WINED3D_OK;
 }
 
+static HRESULT WINAPI IWineD3DImpl_GetAdapterDisplayModeEx(IWineD3D *iface, 
+        UINT Adapter, WINED3DDISPLAYMODEEX *pMode, WINED3DDISPLAYROTATION *pRotation)
+{
+    TRACE("iface %p, adapter_idx %u, display_mode %p, display_rotation %p.\n", iface, Adapter, pMode, pRotation);
+
+    if (pMode==NULL && pRotation==NULL)
+    {
+        return WINED3D_OK;
+    }
+
+    if (pMode && pMode->Size != sizeof(WINED3DDISPLAYMODEEX))
+    {
+        WARN("Invalid mode->Size %u expected %u", pMode->Size, sizeof(WINED3DDISPLAYMODEEX));
+        return WINED3DERR_INVALIDCALL;
+    }
+
+    if (Adapter >= IWineD3D_GetAdapterCount(iface))
+    {
+        return WINED3DERR_INVALIDCALL;
+    }
+
+    if (Adapter == 0) { /* Display */
+        int bpp = 0;
+        DEVMODEW DevModeW;
+
+        ZeroMemory(&DevModeW, sizeof(DevModeW));
+        DevModeW.dmSize = sizeof(DevModeW);
+
+        EnumDisplaySettingsExW(NULL, ENUM_CURRENT_SETTINGS, &DevModeW, 0);
+
+        if (pMode)
+        {
+            pMode->Width        = DevModeW.dmPelsWidth;
+            pMode->Height       = DevModeW.dmPelsHeight;
+            bpp                 = DevModeW.dmBitsPerPel;
+            pMode->RefreshRate  = DEFAULT_REFRESH_RATE;
+            if (DevModeW.dmFields&DM_DISPLAYFREQUENCY)
+            {
+                pMode->RefreshRate = DevModeW.dmDisplayFrequency;
+            }
+
+            pMode->Format = pixelformat_for_depth(bpp);
+
+            pMode->ScanLineOrdering = WINED3DSCANLINEORDERING_PROGRESSIVE;
+            if (DevModeW.dmFields&DM_DISPLAYFLAGS)
+            {
+#if defined(RT_ARCH_AMD64) && !defined(VBOX_WITH_WDDM)
+# ifndef DM_INTERLACED
+#  define DM_INTERLACED 0x00000002
+# endif
+                if (DevModeW.dmDisplayFlags&DM_INTERLACED)
+#else
+                if (DevModeW.u2.dmDisplayFlags&DM_INTERLACED)
+#endif
+                {
+                    pMode->ScanLineOrdering = WINED3DSCANLINEORDERING_INTERLACED;
+                }
+            }
+        }
+
+        if (pRotation)
+        {
+            *pRotation = WINED3DDISPLAYROTATION_IDENTITY;
+            if (DevModeW.dmFields&DM_DISPLAYORIENTATION)
+            {
+#if defined(RT_ARCH_AMD64) && !defined(VBOX_WITH_WDDM)
+                switch (DevModeW.dmDisplayOrientation)
+#else
+                switch (DevModeW.u.s2.dmDisplayOrientation)
+#endif
+                {
+                    case DMDO_DEFAULT:
+                        *pRotation = WINED3DDISPLAYROTATION_IDENTITY;
+                        break;
+                    case DMDO_90:
+                        *pRotation = WINED3DDISPLAYROTATION_90;
+                        break;
+                    case DMDO_180:
+                        *pRotation = WINED3DDISPLAYROTATION_180;
+                        break;
+                    case DMDO_270:
+                        *pRotation = WINED3DDISPLAYROTATION_270;
+                        break;
+                    default:
+#if defined(RT_ARCH_AMD64) && !defined(VBOX_WITH_WDDM)
+                        WARN("Unexpected display orientation %#x", DevModeW.dmDisplayOrientation);
+#else
+                        WARN("Unexpected display orientation %#x", DevModeW.u.s2.dmDisplayOrientation);
+#endif
+                        break;
+                }
+            }
+        }
+    } else {
+        FIXME_(d3d_caps)("Adapter not primary display\n");
+    }
+
+    return WINED3D_OK;
+}
+
 /* NOTE: due to structure differences between dx8 and dx9 D3DADAPTER_IDENTIFIER,
    and fields being inserted in the middle, a new structure is used in place    */
 static HRESULT WINAPI IWineD3DImpl_GetAdapterIdentifier(IWineD3D *iface, UINT Adapter, DWORD Flags,
@@ -5418,6 +5518,7 @@ static const struct IWineD3DVtbl IWineD3D_Vtbl =
     IWineD3DImpl_GetAdapterModeCount,
     IWineD3DImpl_EnumAdapterModes,
     IWineD3DImpl_GetAdapterDisplayMode,
+    IWineD3DImpl_GetAdapterDisplayModeEx,
     IWineD3DImpl_GetAdapterIdentifier,
     IWineD3DImpl_CheckDeviceMultiSampleType,
     IWineD3DImpl_CheckDepthStencilMatch,

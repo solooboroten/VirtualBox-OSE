@@ -1,4 +1,4 @@
-# $Id: Makefile 35354 2010-12-27 18:05:02Z vboxsync $
+# $Id: Makefile 37233 2011-05-27 13:31:57Z vboxsync $
 ## @file
 # VirtualBox Guest Additions Module Makefile.
 #
@@ -77,6 +77,7 @@ SRCS += \
 .PATH:	${.CURDIR}/common/string
 SRCS += \
 	RTStrCopy.c \
+	RTStrCopyP.c \
 	strformat.c \
 	strformatrt.c \
 	strformattype.c \
@@ -122,6 +123,7 @@ SRCS += \
 	RTSemEventMultiWaitNoResume-2-ex-generic.c \
 	RTTimerCreate-generic.c \
 	timer-generic.c \
+	errvars-generic.c \
 	mppresent-generic.c
 
 .PATH:	${.CURDIR}/r0drv

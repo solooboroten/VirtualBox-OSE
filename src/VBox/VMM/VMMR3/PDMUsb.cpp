@@ -1,4 +1,4 @@
-/* $Id: PDMUsb.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: PDMUsb.cpp 37358 2011-06-07 17:10:54Z vboxsync $ */
 /** @file
  * PDM - Pluggable Device and Driver Manager, USB part.
  */
@@ -636,7 +636,11 @@ static int pdmR3UsbCreateDevice(PVM pVM, PPDMUSBHUB pHub, PPDMUSB pUsbDev, int i
                 pUsbIns->pReg->szName, pUsbIns->iInstance, pHub, rc));
     }
     else
+    {
         AssertMsgFailed(("Failed to construct '%s'/%d! %Rra\n", pUsbIns->pReg->szName, pUsbIns->iInstance, rc));
+        if (rc == VERR_VERSION_MISMATCH)
+            rc = VERR_PDM_DRIVER_VERSION_MISMATCH;
+    }
     if (fAtRuntime)
         pdmR3UsbDestroyDevice(pVM, pUsbIns);
     /* else: destructors are invoked later. */
@@ -941,7 +945,7 @@ static void pdmR3UsbDestroyDevice(PVM pVM, PPDMUSBINS pUsbIns)
         Log(("PDM: Destructing USB device '%s' instance %d...\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
         pUsbIns->pReg->pfnDestruct(pUsbIns);
     }
-    //TMR3TimerDestroyUsb(pVM, pUsbIns);
+    TMR3TimerDestroyUsb(pVM, pUsbIns);
     //SSMR3DeregisterUsb(pVM, pUsbIns, NULL, 0);
     pdmR3ThreadDestroyUsb(pVM, pUsbIns);
 
@@ -1324,9 +1328,7 @@ static DECLCALLBACK(int) pdmR3UsbHlp_TMTimerCreate(PPDMUSBINS pUsbIns, TMCLOCK e
              pszDesc = pszDesc2;
     }
 
-    /** @todo
-    int rc = TMR3TimerCreateUsb(pVM, pUsbIns, enmClock, pfnCallback, pvUser, fFlags, pszDesc, ppTimer); */
-    int rc = VERR_NOT_IMPLEMENTED; AssertFailed();
+    int rc = TMR3TimerCreateUsb(pVM, pUsbIns, enmClock, pfnCallback, pvUser, fFlags, pszDesc, ppTimer);
 
     LogFlow(("pdmR3UsbHlp_TMTimerCreate: caller='%s'/%d: returns %Rrc\n", pUsbIns->pReg->szName, pUsbIns->iInstance, rc));
     return rc;

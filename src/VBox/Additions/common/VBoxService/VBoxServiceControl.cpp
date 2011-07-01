@@ -1,10 +1,10 @@
-/* $Id: VBoxServiceControl.cpp 35060 2010-12-14 10:26:12Z vboxsync $ */
+/* $Id: VBoxServiceControl.cpp 37375 2011-06-08 10:51:26Z vboxsync $ */
 /** @file
  * VBoxServiceControl - Host-driven Guest Control.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -19,7 +19,6 @@
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
-#include <iprt/asm.h>
 #include <iprt/assert.h>
 #include <iprt/getopt.h>
 #include <iprt/mem.h>
@@ -29,6 +28,7 @@
 #include <VBox/HostServices/GuestControlSvc.h>
 #include "VBoxServiceInternal.h"
 #include "VBoxServiceUtils.h"
+#include "VBoxServiceControlExecThread.h"
 
 using namespace guestControl;
 
@@ -41,9 +41,10 @@ uint32_t g_ControlInterval = 0;
 static RTSEMEVENTMULTI      g_hControlEvent = NIL_RTSEMEVENTMULTI;
 /** The Guest Control service client ID. */
 static uint32_t             g_GuestControlSvcClientID = 0;
-/** List of spawned processes */
+/** List of spawned processes. */
 RTLISTNODE                  g_GuestControlExecThreads;
-
+/** Critical section protecting g_GuestControlExecThreads. */
+RTCRITSECT                  g_GuestControlExecThreadsCritSect;
 
 /** @copydoc VBOXSERVICE::pfnPreInit */
 static DECLCALLBACK(int) VBoxServiceControlPreInit(void)
@@ -85,6 +86,8 @@ static DECLCALLBACK(int) VBoxServiceControlInit(void)
 
         /* Init thread list. */
         RTListInit(&g_GuestControlExecThreads);
+        rc = RTCritSectInit(&g_GuestControlExecThreadsCritSect);
+        AssertRC(rc);
     }
     else
     {
@@ -126,7 +129,7 @@ DECLCALLBACK(int) VBoxServiceControlWorker(bool volatile *pfShutdown)
         uint32_t uMsg;
         uint32_t uNumParms;
         VBoxServiceVerbose(3, "Control: Waiting for host msg ...\n");
-        rc = VbglR3GuestCtrlGetHostMsg(g_GuestControlSvcClientID, &uMsg, &uNumParms);
+        rc = VbglR3GuestCtrlWaitForHostMsg(g_GuestControlSvcClientID, &uMsg, &uNumParms);
         if (RT_FAILURE(rc))
         {
             if (rc == VERR_TOO_MUCH_DATA)
@@ -158,6 +161,18 @@ DECLCALLBACK(int) VBoxServiceControlWorker(bool volatile *pfShutdown)
 
                 case HOST_EXEC_GET_OUTPUT:
                     rc = VBoxServiceControlExecHandleCmdGetOutput(g_GuestControlSvcClientID, uNumParms);
+                    break;
+
+                case HOST_DIR_CLOSE:
+                    rc = VBoxServiceGCtrlDirClose(g_GuestControlSvcClientID, uNumParms);
+                    break;
+
+                case HOST_DIR_OPEN:
+                    rc = VBoxServiceGCtrlDirOpen(g_GuestControlSvcClientID, uNumParms);
+                    break;
+
+                case HOST_DIR_READ:
+                    rc = VBoxServiceGCtrlDirRead(g_GuestControlSvcClientID, uNumParms);
                     break;
 
                 default:
@@ -215,49 +230,7 @@ static DECLCALLBACK(void) VBoxServiceControlTerm(void)
 {
     VBoxServiceVerbose(3, "Control: Terminating ...\n");
 
-    /* Signal all threads that we want to shutdown. */
-    PVBOXSERVICECTRLTHREAD pNode;
-    RTListForEach(&g_GuestControlExecThreads, pNode, VBOXSERVICECTRLTHREAD, Node)
-        ASMAtomicXchgBool(&pNode->fShutdown, true);
-
-    /* Wait for threads to shutdown. */
-    RTListForEach(&g_GuestControlExecThreads, pNode, VBOXSERVICECTRLTHREAD, Node)
-    {
-        if (pNode->Thread != NIL_RTTHREAD)
-        {
-            /* Wait a bit ... */
-            int rc2 = RTThreadWait(pNode->Thread, 30 * 1000 /* Wait 30 seconds max. */, NULL);
-            if (RT_FAILURE(rc2))
-                VBoxServiceError("Control: Thread failed to stop; rc2=%Rrc\n", rc2);
-        }
-
-        /* Destroy thread specific data. */
-        switch (pNode->enmType)
-        {
-            case kVBoxServiceCtrlThreadDataExec:
-                VBoxServiceControlExecDestroyThreadData((PVBOXSERVICECTRLTHREADDATAEXEC)pNode->pvData);
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    /* Finally destroy thread list. */
-    pNode = RTListGetFirst(&g_GuestControlExecThreads, VBOXSERVICECTRLTHREAD, Node);
-    while (pNode)
-    {
-        PVBOXSERVICECTRLTHREAD pNext = RTListNodeGetNext(&pNode->Node, VBOXSERVICECTRLTHREAD, Node);
-        bool fLast = RTListNodeIsLast(&g_GuestControlExecThreads, &pNode->Node);
-
-        RTListNodeRemove(&pNode->Node);
-        RTMemFree(pNode);
-
-        if (fLast)
-            break;
-
-        pNode = pNext;
-    }
+    VBoxServiceControlExecThreadsShutdown();
 
     VbglR3GuestCtrlDisconnect(g_GuestControlSvcClientID);
     g_GuestControlSvcClientID = 0;

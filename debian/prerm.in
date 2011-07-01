@@ -23,9 +23,6 @@ rm -f /etc/udev/rules.d/10-vboxdrv.rules
 rm -f /etc/vbox/license_agreed
 rm -f /etc/vbox/module_not_compiled
 
-# remove our USB device tree
-rm -rf /dev/vboxusb 2> /dev/null
-
 # defaults
 [ -r /etc/default/virtualbox ] && . /etc/default/virtualbox
 
@@ -37,6 +34,12 @@ if [ "$1" = "upgrade" -o "$1" = "remove" -o "$1" = "failed-upgrade" ]; then
   # check for active VMs
   VBOXSVC_PID=`pidof VBoxSVC 2>/dev/null`
   if [ -n "$VBOXSVC_PID" ]; then
+    # try graceful termination; terminate the balloon control servic first
+    if [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
+      invoke-rc.d vboxballoonctrl-service stop || true
+    else
+      /etc/init.d/vboxballoonctrl-service stop || true
+    fi
     # try graceful termination; terminate the webservice first
     if [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
       invoke-rc.d vboxweb-service stop || true

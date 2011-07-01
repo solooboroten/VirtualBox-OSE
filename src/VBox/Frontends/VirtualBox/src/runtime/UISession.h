@@ -30,6 +30,15 @@
 /* Global forwards */
 class QMenu;
 class QMenuBar;
+#ifdef VBOX_GUI_WITH_KEYS_RESET_HANDLER
+# ifdef Q_WS_MAC
+struct __siginfo;
+typedef struct __siginfo siginfo_t;
+# else /* Q_WS_MAC */
+struct siginfo;
+typedef struct siginfo siginfo_t;
+# endif /* !Q_WS_MAC */
+#endif /* VBOX_GUI_WITH_KEYS_RESET_HANDLER */
 
 /* Local forwards */
 class UIActionsPool;
@@ -158,6 +167,7 @@ signals:
     void sigAdditionsStateChange();
     void sigNetworkAdapterChange(const CNetworkAdapter &networkAdapter);
     void sigMediumChange(const CMediumAttachment &mediumAttachment);
+    void sigVRDEChange();
     void sigUSBControllerChange();
     void sigUSBDeviceStateChange(const CUSBDevice &device, bool bIsAttached, const CVirtualBoxErrorInfo &error);
     void sigSharedFolderChange();
@@ -165,6 +175,7 @@ signals:
 #ifdef RT_OS_DARWIN
     void sigShowWindows();
 #endif /* RT_OS_DARWIN */
+    void sigCPUExecutionCapChange();
 
     /* Session signals: */
     void sigMachineStarted();
@@ -184,6 +195,7 @@ private slots:
     void sltKeyboardLedsChangeEvent(bool fNumLock, bool fCapsLock, bool fScrollLock);
     void sltStateChange(KMachineState state);
     void sltAdditionsChange();
+    void sltVRDEChange();
 
 private:
 
@@ -203,6 +215,10 @@ private:
     void setPointerShape(const uchar *pShapeData, bool fHasAlpha, uint uXHot, uint uYHot, uint uWidth, uint uHeight);
     void reinitMenuPool();
     void preparePowerUp();
+
+#ifdef VBOX_GUI_WITH_KEYS_RESET_HANDLER
+    static void signalHandlerSIGUSR1(int sig, siginfo_t *pInfo, void *pSecret);
+#endif /* VBOX_GUI_WITH_KEYS_RESET_HANDLER */
 
     /* Private variables: */
     UIMachine *m_pMachine;

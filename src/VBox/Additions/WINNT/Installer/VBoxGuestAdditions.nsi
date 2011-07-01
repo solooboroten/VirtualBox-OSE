@@ -1,14 +1,38 @@
+; $Id: VBoxGuestAdditions.nsi 37326 2011-06-06 08:09:44Z vboxsync $
+;; @file
+; VBoxGuestAdditions.nsi - Main file for Windows Guest Additions installation.
+;
+
+;
+; Copyright (C) 2011 Oracle Corporation
+;
+; This file is part of VirtualBox Open Source Edition (OSE), as
+; available from http://www.virtualbox.org. This file is free software;
+; you can redistribute it and/or modify it under the terms of the GNU
+; General Public License (GPL) as published by the Free Software
+; Foundation, in version 2 as it comes in the "COPYING" file of the
+; VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+; hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+;
 
 !if $%BUILD_TYPE% == "debug"
   !define _DEBUG     ; Turn this on to get extra output
 !endif
 
+!ifdef _DEBUG
+  ; Scratch directory for plugin tests
+  !addincludedir .\PluginTest
+  !addplugindir .\PluginTest
+!endif
+
 ; Defines for special functions
-!define WHQL_FAKE    ; Turns on the faking of non WHQL signed / approved drivers
-                     ; Needs the VBoxWHQLFake.exe in the additions output directory!
+!define WHQL_FAKE                   ; Enables faking of non WHQL signed / approved drivers
+                                    ; Needs the VBoxWHQLFake.exe in the additions output directory!
+!define WFP_FILE_EXCEPTION          ; Enables setting a temporary file exception for WFP proctected files
 
 !define VENDOR_ROOT_KEY             "SOFTWARE\$%VBOX_VENDOR_SHORT%"
 
+; Product defines
 !define PRODUCT_NAME                "$%VBOX_PRODUCT% Guest Additions"
 !define PRODUCT_DESC                "$%VBOX_PRODUCT% Guest Additions"
 !define PRODUCT_VERSION             "$%VBOX_VERSION_MAJOR%.$%VBOX_VERSION_MINOR%.$%VBOX_VERSION_BUILD%.0"
@@ -187,7 +211,7 @@ Var g_strAddVerBuild                    ; Installed Guest Additions: Build numbe
 Var g_strAddVerRev                      ; Installed Guest Additions: SVN revision
 Var g_strWinVersion                     ; Current Windows version we're running on
 Var g_bLogEnable                        ; Do logging when installing? "true" or "false"
-Var g_bWithWDDM                         ; Install the WDDM driver instead of the normal one
+Var g_bWithWDDM                         ; Install the WDDM driver instead of the XPDM one
 Var g_bCapWDDM                          ; Capability: Is the guest able to handle/use our WDDM driver?
 
 ; Command line parameters - these can be set/modified
@@ -512,35 +536,23 @@ exit:
 
 FunctionEnd
 
-Function PrepareForUpdate
+Function CheckForInstalledComponents
 
-  StrCmp $g_strAddVerMaj "1" v1     ; Handle major version "v1.x"
-  StrCmp $g_strAddVerMaj "2" v2     ; Handle major version "v2.x"
-  StrCmp $g_strAddVerMaj "3" v3     ; Handle major version "v3.x"
-  Goto exit
+  Push $0
 
-v3:
+  DetailPrint "Checking for installed components ..."
 
-  Goto exit
+  Call SetAppMode64
 
-v2:
+  ; VBoxGINA already installed? So we need to update the installed version as well,
+  ; regardless whether the user used "/with_autologon" or not
+  ReadRegStr $0 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon" "GinaDLL"
+  ${If} $0 == "VBoxGINA.dll"
+    DetailPrint "Found already installed auto-logon support ..."
+    StrCpy $g_bWithAutoLogon "true"
+  ${EndIf}
 
-  Goto exit
-
-v1:
-
-  StrCmp $g_strAddVerMin "5" v1_5   ; Handle minor version "v1.5.x"
-  StrCmp $g_strAddVerMin "6" v1_6   ; Handle minor version "v1.6.x"
-
-v1_5:
-
-  Goto exit
-
-v1_6:
-
-  Goto exit
-
-exit:
+  Pop $0
 
 FunctionEnd
 
@@ -554,6 +566,7 @@ Function Common_CopyFiles
   FILE "/oname=${LICENSE_FILE_RTF}" "$%VBOX_BRAND_LICENSE_RTF%"
 !endif
 
+  FILE "$%VBOX_PATH_DIFX%\DIFxAPI.dll"
   FILE "$%PATH_OUT%\bin\additions\VBoxDrvInst.exe"
 
   FILE "$%PATH_OUT%\bin\additions\VBoxVideo.inf"
@@ -577,18 +590,11 @@ Section $(VBOX_COMPONENT_MAIN) SEC01
   SetOutPath "$INSTDIR"
   SetOverwrite on
 
-  ; Because this NSIS installer is always built in 32-bit mode, we have to
-  ; do some tricks for the Windows paths
-!if $%BUILD_TARGET_ARCH% == "amd64"
-  ; Because the next two lines will crash at the license page (??) we have to re-enable that here again
-  ${DisableX64FSRedirection}
-  SetRegView 64
-!endif
+  Call SetAppMode64
 
   StrCpy $g_strSystemDir "$SYSDIR"
 
   Call EnableLog
-  Call PrepareForUpdate
 
   DetailPrint "Version: $%VBOX_VERSION_STRING% (Rev $%VBOX_SVN_REV%)"
   ${If} $g_strAddVerMaj != ""
@@ -596,7 +602,11 @@ Section $(VBOX_COMPONENT_MAIN) SEC01
   ${Else}
     DetailPrint "No previous version of ${PRODUCT_NAME} detected."
   ${EndIf}
-  DetailPrint "Detected OS: Windows $g_strWinVersion"
+!if $%BUILD_TARGET_ARCH% == "amd64"
+  DetailPrint "Detected OS: Windows $g_strWinVersion (64-bit)"
+!else
+  DetailPrint "Detected OS: Windows $g_strWinVersion (32-bit)"
+!endif
   DetailPrint "System Directory: $g_strSystemDir"
 
 !ifdef _DEBUG
@@ -635,7 +645,7 @@ nt4: ; Windows NT4
   ; Copy some common files ...
   Call Common_CopyFiles
 
-  Call NT_Main
+  Call NT4_Main
   goto success
 !endif
 
@@ -664,7 +674,8 @@ notsupported:
 success:
 
   ; Write a registry key with version and installation path for later lookup
-  WriteRegStr HKLM "${PRODUCT_INSTALL_KEY}" "Version" "$%VBOX_VERSION_STRING%"
+  WriteRegStr HKLM "${PRODUCT_INSTALL_KEY}" "Version" "$%VBOX_VERSION_STRING_RAW%"
+  WriteRegStr HKLM "${PRODUCT_INSTALL_KEY}" "VersionExt" "$%VBOX_VERSION_STRING%"
   WriteRegStr HKLM "${PRODUCT_INSTALL_KEY}" "Revision" "$%VBOX_SVN_REV%"
   WriteRegStr HKLM "${PRODUCT_INSTALL_KEY}" "InstallDir" "$INSTDIR"
 
@@ -681,13 +692,7 @@ SectionEnd
 ; Auto-logon support (section is hidden at the moment -- only can be enabled via command line switch)
 Section /o -$(VBOX_COMPONENT_AUTOLOGON) SEC02
 
-  ; Because this NSIS installer is always built in 32-bit mode, we have to
-  ; do some tricks for the Windows paths
-!if $%BUILD_TARGET_ARCH% == "amd64"
-  ; Because the next two lines will crash at the license page (??) we have to re-enable that here again
-  ${DisableX64FSRedirection}
-  SetRegView 64
-!endif
+  Call SetAppMode64
 
   Call GetWindowsVersion
   Pop $R0 ; Windows Version
@@ -700,24 +705,28 @@ Section /o -$(VBOX_COMPONENT_AUTOLOGON) SEC02
   ${If} $0 != ""
     ${If} $0 != "VBoxGINA.dll"
       MessageBox MB_ICONQUESTION|MB_YESNO|MB_DEFBUTTON1 $(VBOX_COMPONENT_AUTOLOGON_WARN_3RDPARTY) /SD IDYES IDYES install
-      goto exit
+      goto skip
     ${EndIf}
   ${EndIf}
 
 install:
 
   ; Do we need VBoxCredProv or VBoxGINA?
-  ${If}   $R0 == 'Vista'
+  ${If}   $R0 == 'Vista' ; Use VBoxCredProv on newer Windows OSes (>= Vista)
   ${OrIf} $R0 == '7'
     !insertmacro ReplaceDLL "$%PATH_OUT%\bin\additions\VBoxCredProv.dll" "$g_strSystemDir\VBoxCredProv.dll" "$INSTDIR"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{275D3BCC-22BB-4948-A7F6-3A3054EBA92B}" "" "VBoxCredProv" ; adding to (default) key
     WriteRegStr HKCR "CLSID\{275D3BCC-22BB-4948-A7F6-3A3054EBA92B}" "" "VBoxCredProv"                       ; adding to (Default) key
     WriteRegStr HKCR "CLSID\{275D3BCC-22BB-4948-A7F6-3A3054EBA92B}\InprocServer32" "" "VBoxCredProv.dll"    ; adding to (Default) key
     WriteRegStr HKCR "CLSID\{275D3BCC-22BB-4948-A7F6-3A3054EBA92B}\InprocServer32" "ThreadingModel" "Apartment"
-  ${Else}
+  ${Else} ; Use VBoxGINA on older Windows OSes (< Vista)
     !insertmacro ReplaceDLL "$%PATH_OUT%\bin\additions\VBoxGINA.dll" "$g_strSystemDir\VBoxGINA.dll" "$INSTDIR"
     WriteRegStr HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon" "GinaDLL" "VBoxGINA.dll"
   ${EndIf}
+
+skip:
+
+  ; Nothing to do here right now
 
 exit:
 
@@ -727,6 +736,7 @@ SectionEnd
 Function PrepareWRPFile
 
   Pop $0
+
   IfFileExists "$g_strSystemDir\takeown.exe" 0 +2
     nsExec::ExecToLog '"$g_strSystemDir\takeown.exe" /F "$0"'
   AccessControl::SetFileOwner "$0" "(S-1-5-32-545)"
@@ -735,6 +745,14 @@ Function PrepareWRPFile
   AccessControl::GrantOnFile "$0" "(S-1-5-32-545)" "FullAccess"
   Pop $1
   DetailPrint "Setting access rights for '$0': $1"
+
+!if $%VBOX_WITH_GUEST_INSTALL_HELPER% == "1"
+  !ifdef WFP_FILE_EXCEPTION
+    VBoxGuestInstallHelper::DisableWFP "$0"
+    Pop $1 ; Get return value (ignored for now)
+    DetailPrint "Setting WFP exception for '$0': $1"
+  !endif
+!endif
 
 FunctionEnd
 
@@ -868,7 +886,10 @@ error:
   Goto exit
 
 done:
+
+!ifndef WFP_FILE_EXCEPTION
   MessageBox MB_ICONINFORMATION|MB_OK $(VBOX_WFP_WARN_REPLACE) /SD IDOK
+!endif
   Goto exit
 
 exit:
@@ -943,9 +964,22 @@ Function .onSelChange
     ; If we're able to use the WDDM driver just use it instead of the replaced
     ; D3D components below
     ${If} $g_bCapWDDM == "true"
+      ;
+      ; Temporary solution: Since WDDM is marked as experimental yet we notify the user
+      ; that WDDM (Aero) support is available but not recommended for production use. He now
+      ; can opt-in for installing WDDM or still go for the old (XPDM) way -- safe mode still required!
+      ;
+      MessageBox MB_ICONQUESTION|MB_YESNO $(VBOX_COMPONENT_D3D_OR_WDDM) /SD IDNO IDYES d3d_install
+      ; Display an uncoditional hint about needed VRAM sizes
+      ; Note: We also could use the PCI configuration space (WMI: Win32_SystemSlot Class) for querying
+      ;       the current VRAM size, but let's keep it simple for now
+      MessageBox MB_ICONINFORMATION|MB_OK $(VBOX_COMPONENT_D3D_HINT_VRAM) /SD IDOK
       StrCpy $g_bWithWDDM "true"
       Goto exit
     ${EndIf}
+
+d3d_install:
+
 !endif
 
     ${If} $g_bForceInstall != "true"
@@ -958,10 +992,13 @@ Function .onSelChange
       ${EndIf}
     ${EndIf}
 
-    ; If we're not in safe mode, print a warning and don't install D3D support
-    ${If} $g_iSystemMode == '0'
-      MessageBox MB_ICONINFORMATION|MB_OK $(VBOX_COMPONENT_D3D_NO_SM) /SD IDOK
-      Goto d3d_disable
+    ; If force flag is set skip the safe mode check
+    ${If} $g_bForceInstall != "true"
+      ; If we're not in safe mode, print a warning and don't install D3D support
+      ${If} $g_iSystemMode == '0'
+        MessageBox MB_ICONINFORMATION|MB_OK $(VBOX_COMPONENT_D3D_NO_SM) /SD IDOK
+        Goto d3d_disable
+      ${EndIf}
     ${EndIf}
   ${Else} ; D3D unselected again
     StrCpy $g_bWithWDDM "false"
@@ -1111,6 +1148,8 @@ Function .onInit
     Quit
   ${EndIf}
 
+  Call CheckForInstalledComponents
+
   ; Set section bits
   ${If} $g_bWithAutoLogon == "true" ; Auto-logon support
     SectionSetFlags ${SEC02} ${SF_SELECTED}
@@ -1128,13 +1167,7 @@ Function .onInit
   !endif
 !endif
 
-  ; Because this NSIS installer is always built in 32-bit mode, we have to
-  ; do some tricks for the Windows paths for checking for old additions
-  ; in block below
-!if $%BUILD_TARGET_ARCH% == "amd64"
-  ${DisableX64FSRedirection}
-  SetRegView 64
-!endif
+  Call SetAppMode64
 
   ; Check for old additions
   Call CheckForOldGuestAdditions
@@ -1143,10 +1176,7 @@ Function .onInit
   ; Due to some bug in NSIS the license page won't be displayed if we're in
   ; 64-bit registry view, so as a workaround switch back to 32-bit (Wow6432Node)
   ; mode for now
-!if $%BUILD_TARGET_ARCH% == "amd64"
-  ${EnableX64FSRedirection}
-  SetRegView 32
-!endif
+  Call SetAppMode32
 
 !endif ; UNINSTALLER_ONLY
 
@@ -1181,12 +1211,7 @@ Function un.onInit
 
 proceed:
 
-  ; Because this NSIS installer is always built in 32-bit mode, we have to
-  ; do some tricks for the Windows paths
-!if $%BUILD_TARGET_ARCH% == "amd64"
-  ${DisableX64FSRedirection}
-  SetRegView 64
-!endif
+  Call un.SetAppMode64
 
   ; Set system directory
   StrCpy $g_strSystemDir "$SYSDIR"
@@ -1206,13 +1231,7 @@ Section Uninstall
   Call un.EnableLog
 !endif
 
-  ; Because this NSIS installer is always built in 32-bit mode, we have to
-  ; do some tricks for the Windows paths
-!if $%BUILD_TARGET_ARCH% == "amd64"
-  ; Do *not* add this line in .onInit - it will crash at the license page (??) because of a weird NSIS bug
-  ${DisableX64FSRedirection}
-  SetRegView 64
-!endif
+  Call un.SetAppMode64
 
   ; Call the uninstall main function
   Call un.Uninstall

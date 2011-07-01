@@ -1,4 +1,4 @@
-/* $Id: NetIf-freebsd.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: NetIf-freebsd.cpp 36797 2011-04-21 15:46:31Z vboxsync $ */
 /** @file
  * Main - NetIfList, FreeBSD implementation.
  */
@@ -179,12 +179,16 @@ int NetIfList(std::list <ComObjPtr<HostNetworkInterface> > &list)
     size_t cbNeeded;
     char *pBuf, *pNext;
     int aiMib[6];
-    unsigned short u16DefaultIface;
+    unsigned short u16DefaultIface = 0; /* shut up gcc. */
+    bool fDefaultIfaceExistent = true;
 
     /* Get the index of the interface associated with default route. */
     rc = getDefaultIfaceIndex(&u16DefaultIface, PF_INET);
     if (RT_FAILURE(rc))
-        return rc;
+    {
+        fDefaultIfaceExistent = false;
+        rc = VINF_SUCCESS;
+    }
 
     aiMib[0] = CTL_NET;
     aiMib[1] = PF_ROUTE;
@@ -286,7 +290,8 @@ int NetIfList(std::list <ComObjPtr<HostNetworkInterface> > &list)
             IfObj.createObject();
             if (SUCCEEDED(IfObj->init(Bstr(pNew->szName), enmType, pNew)))
                 /* Make sure the default interface gets to the beginning. */
-                if (pIfMsg->ifm_index == u16DefaultIface)
+                if (   fDefaultIfaceExistent
+                    && pIfMsg->ifm_index == u16DefaultIface)
                     list.push_front(IfObj);
                 else
                     list.push_back(IfObj);

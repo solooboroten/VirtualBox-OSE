@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: files_vboxdrv 35346 2010-12-27 16:13:13Z vboxsync $
+# $Id: files_vboxdrv 37233 2011-05-27 13:31:57Z vboxsync $
 ## @file
 # Shared file between Makefile.kmk and export_modules
 #
@@ -42,6 +42,7 @@ FILES_VBOXDRV_NOBIN=" \
     ${PATH_ROOT}/include/iprt/handletable.h=>include/iprt/handletable.h \
     ${PATH_ROOT}/include/iprt/initterm.h=>include/iprt/initterm.h \
     ${PATH_ROOT}/include/iprt/log.h=>include/iprt/log.h \
+    ${PATH_ROOT}/include/iprt/mangling.h=>include/iprt/mangling.h \
     ${PATH_ROOT}/include/iprt/mem.h=>include/iprt/mem.h \
     ${PATH_ROOT}/include/iprt/memobj.h=>include/iprt/memobj.h \
     ${PATH_ROOT}/include/iprt/mp.h=>include/iprt/mp.h \
@@ -75,6 +76,7 @@ FILES_VBOXDRV_NOBIN=" \
     ${PATH_ROOT}/include/VBox/sup.h=>include/VBox/sup.h \
     ${PATH_ROOT}/include/VBox/types.h=>include/VBox/types.h \
     ${PATH_ROOT}/include/VBox/version.h=>include/VBox/version.h \
+    ${PATH_ROOT}/include/VBox/SUPDrvMangling.h=>include/VBox/SUPDrvMangling.h \
     ${PATH_ROOT}/include/VBox/vmm/hwacc_vmx.h=>include/VBox/vmm/hwacc_vmx.h \
     ${PATH_ROOT}/include/VBox/vmm/hwacc_svm.h=>include/VBox/vmm/hwacc_svm.h \
     ${PATH_ROOT}/include/VBox/x86.h=>include/VBox/x86.h \
@@ -107,6 +109,9 @@ FILES_VBOXDRV_NOBIN=" \
     ${PATH_ROOT}/src/VBox/Runtime/common/misc/handletablectx.cpp=>common/misc/handletablectx.c \
     ${PATH_ROOT}/src/VBox/Runtime/common/misc/once.cpp=>common/misc/once.c \
     ${PATH_ROOT}/src/VBox/Runtime/common/misc/thread.cpp=>common/misc/thread.c \
+    ${PATH_ROOT}/src/VBox/Runtime/common/string/RTStrCopyP.cpp=>common/string/RTStrCopyP.c \
+    ${PATH_ROOT}/src/VBox/Runtime/common/string/RTStrCopy.cpp=>common/string/RTStrCopy.c \
+    ${PATH_ROOT}/src/VBox/Runtime/common/string/RTStrNCmp.cpp=>common/string/RTStrNCmp.c \
     ${PATH_ROOT}/src/VBox/Runtime/common/string/strformat.cpp=>common/string/strformat.c \
     ${PATH_ROOT}/src/VBox/Runtime/common/string/strformatrt.cpp=>common/string/strformatrt.c \
     ${PATH_ROOT}/src/VBox/Runtime/common/string/strformattype.cpp=>common/string/strformattype.c \
@@ -148,15 +153,16 @@ FILES_VBOXDRV_NOBIN=" \
     ${PATH_ROOT}/src/VBox/Runtime/generic/RTLogWriteDebugger-generic.cpp=>generic/RTLogWriteDebugger-generic.c \
     ${PATH_ROOT}/src/VBox/Runtime/generic/RTRandAdvCreateSystemFaster-generic.cpp=>generic/RTRandAdvCreateSystemFaster-generic.c \
     ${PATH_ROOT}/src/VBox/Runtime/generic/RTRandAdvCreateSystemTruer-generic.cpp=>generic/RTRandAdvCreateSystemTruer-generic.c \
-    ${PATH_ROOT}/src/VBox/Runtime/generic/uuid-generic.cpp=>generic/uuid-generic.c \
     ${PATH_ROOT}/src/VBox/Runtime/generic/RTSemEventWait-2-ex-generic.cpp=>generic/RTSemEventWait-2-ex-generic.c \
     ${PATH_ROOT}/src/VBox/Runtime/generic/RTSemEventWaitNoResume-2-ex-generic.cpp=>generic/RTSemEventWaitNoResume-2-ex-generic.c \
     ${PATH_ROOT}/src/VBox/Runtime/generic/RTSemEventMultiWait-2-ex-generic.cpp=>generic/RTSemEventMultiWait-2-ex-generic.c \
     ${PATH_ROOT}/src/VBox/Runtime/generic/RTSemEventMultiWaitNoResume-2-ex-generic.cpp=>generic/RTSemEventMultiWaitNoResume-2-ex-generic.c \
     ${PATH_ROOT}/src/VBox/Runtime/generic/RTTimerCreate-generic.cpp=>generic/RTTimerCreate-generic.c \
     ${PATH_ROOT}/src/VBox/Runtime/generic/RTMpGetArraySize-generic.cpp=>generic/RTMpGetArraySize-generic.c \
-    ${PATH_ROOT}/src/VBox/Runtime/generic/timer-generic.cpp=>generic/timer-generic.c \
+    ${PATH_ROOT}/src/VBox/Runtime/generic/errvars-generic.cpp=>generic/errvars-generic.c \
     ${PATH_ROOT}/src/VBox/Runtime/generic/mppresent-generic.cpp=>generic/mppresent-generic.c \
+    ${PATH_ROOT}/src/VBox/Runtime/generic/timer-generic.cpp=>generic/timer-generic.c \
+    ${PATH_ROOT}/src/VBox/Runtime/generic/uuid-generic.cpp=>generic/uuid-generic.c \
     ${PATH_ROOT}/src/VBox/Runtime/r0drv/alloc-r0drv.cpp=>r0drv/alloc-r0drv.c \
     ${PATH_ROOT}/src/VBox/Runtime/r0drv/alloc-r0drv.h=>r0drv/alloc-r0drv.h \
     ${PATH_ROOT}/src/VBox/Runtime/r0drv/initterm-r0drv.cpp=>r0drv/initterm-r0drv.c \

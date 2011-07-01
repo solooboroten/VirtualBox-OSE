@@ -79,6 +79,8 @@ typedef enum VMMCALLRING3
     VMMCALLRING3_INVALID = 0,
     /** Acquire the PDM lock. */
     VMMCALLRING3_PDM_LOCK,
+    /** Acquire the critical section specified as argument.  */
+    VMMCALLRING3_PDM_CRIT_SECT_ENTER,
     /** Acquire the PGM lock. */
     VMMCALLRING3_PGM_LOCK,
     /** Grow the PGM shadow page pool. */
@@ -152,13 +154,64 @@ typedef struct VMM2USERMETHODS
      *
      * @returns VBox status code.
      * @param   pThis       Pointer to the callback method table.
-     * @param   pVM         The VM handle.
+     * @param   pUVM        The user mode VM handle.
      *
      * @remarks This member shall be set to NULL if the operation is not
      *          supported.
      */
-    DECLR3CALLBACKMEMBER(int, pfnSaveState,(PCVMM2USERMETHODS pThis, PVM pVM));
+    DECLR3CALLBACKMEMBER(int, pfnSaveState,(PCVMM2USERMETHODS pThis, PUVM pUVM));
     /** @todo Move pfnVMAtError and pfnCFGMConstructor here? */
+
+    /**
+     * EMT initialization notification callback.
+     *
+     * This is intended for doing per-thread initialization for EMTs (like COM
+     * init).
+     *
+     * @param   pThis       Pointer to the callback method table.
+     * @param   pUVM        The user mode VM handle.
+     * @param   pUVCpu      The user mode virtual CPU handle.
+     *
+     * @remarks This is optional and shall be set to NULL if not wanted.
+     */
+    DECLR3CALLBACKMEMBER(void, pfnNotifyEmtInit,(PCVMM2USERMETHODS pThis, PUVM pUVM, PUVMCPU pUVCpu));
+
+    /**
+     * EMT termination notification callback.
+     *
+     * This is intended for doing per-thread cleanups for EMTs (like COM).
+     *
+     * @param   pThis       Pointer to the callback method table.
+     * @param   pUVM        The user mode VM handle.
+     * @param   pUVCpu      The user mode virtual CPU handle.
+     *
+     * @remarks This is optional and shall be set to NULL if not wanted.
+     */
+    DECLR3CALLBACKMEMBER(void, pfnNotifyEmtTerm,(PCVMM2USERMETHODS pThis, PUVM pUVM, PUVMCPU pUVCpu));
+
+    /**
+     * PDM thread initialization notification callback.
+     *
+     * This is intended for doing per-thread initialization (like COM init).
+     *
+     * @param   pThis       Pointer to the callback method table.
+     * @param   pUVM        The user mode VM handle.
+     *
+     * @remarks This is optional and shall be set to NULL if not wanted.
+     */
+    DECLR3CALLBACKMEMBER(void, pfnNotifyPdmtInit,(PCVMM2USERMETHODS pThis, PUVM pUVM));
+
+    /**
+     * EMT termination notification callback.
+     *
+     * This is intended for doing per-thread cleanups for EMTs (like COM).
+     *
+     * @param   pThis       Pointer to the callback method table.
+     * @param   pUVM        The user mode VM handle.
+     *
+     * @remarks This is optional and shall be set to NULL if not wanted.
+     */
+    DECLR3CALLBACKMEMBER(void, pfnNotifyPdmtTerm,(PCVMM2USERMETHODS pThis, PUVM pUVM));
 
     /** Magic value (VMM2USERMETHODS_MAGIC) marking the end of the structure. */
     uint32_t    u32EndMagic;
@@ -167,7 +220,7 @@ typedef struct VMM2USERMETHODS
 /** Magic value of the VMM2USERMETHODS (Franz Kafka). */
 #define VMM2USERMETHODS_MAGIC         UINT32_C(0x18830703)
 /** The VMM2USERMETHODS structure version. */
-#define VMM2USERMETHODS_VERSION       UINT32_C(0x00010000)
+#define VMM2USERMETHODS_VERSION       UINT32_C(0x00020000)
 
 
 VMMDECL(RTRCPTR)     VMMGetStackRC(PVMCPU pVCpu);
@@ -313,6 +366,8 @@ typedef enum VMMR0OPERATION
     VMMR0_DO_PGM_ALLOCATE_HANDY_PAGES,
     /** Call PGMR0AllocateLargePage(). */
     VMMR0_DO_PGM_ALLOCATE_LARGE_HANDY_PAGE,
+    /** Call PGMR0PhysSetupIommu(). */
+    VMMR0_DO_PGM_PHYS_SETUP_IOMMU,
 
     /** Call GMMR0InitialReservation(). */
     VMMR0_DO_GMM_INITIAL_RESERVATION,
@@ -375,6 +430,10 @@ typedef enum VMMR0OPERATION
     VMMR0_DO_INTNET_IF_WAIT,
     /** Call IntNetR0IfAbortWait(). */
     VMMR0_DO_INTNET_IF_ABORT_WAIT,
+
+    /** Forward call to the PCI driver */
+    VMMR0_DO_PCIRAW_REQ,
+
     /** The end of the R0 service operations. */
     VMMR0_DO_SRV_END,
 
@@ -455,4 +514,3 @@ VMMRZDECL(bool)     VMMRZCallRing3IsEnabled(PVMCPU pVCpu);
 RT_C_DECLS_END
 
 #endif
-

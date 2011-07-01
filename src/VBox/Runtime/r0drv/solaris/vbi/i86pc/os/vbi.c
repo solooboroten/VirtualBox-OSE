@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2010-2011 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -57,6 +57,8 @@
 #include <sys/machparam.h>
 #include <sys/utsname.h>
 
+#include <iprt/assert.h>
+
 #include "vbi.h"
 
 #define VBIPROC() ((proc_t *)vbi_proc())
@@ -68,6 +70,15 @@ extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
 extern void contig_free(void *, size_t);
 #pragma weak contig_free
 static void (*p_contig_free)(void *, size_t) = contig_free;
+
+/*
+ * We have to use dl_lookup to find kflt_init() and thereby use kernel pages from
+ * the freelists if we no longer get user pages from freelist and cachelists.
+ */
+/* Introduced in v9 */
+static int use_kflt = 0;
+static page_t *vbi_page_get_fromlist(uint_t freelist, caddr_t virtAddr);
+
 
 /*
  * Workarounds for running on old versions of solaris with different cross call
@@ -244,6 +255,21 @@ vbi_init(void)
 	}
 
 	/*
+	 * Use kernel page freelist flags to get pages from kernel page freelists
+	 * while allocating physical pages, once the userpages are exhausted.
+	 * snv_161+, see @bugref{5632}.
+	 */
+	if (kobj_getsymvalue("kflt_init", 1) != NULL)
+	{
+		int *p_kflt_disable = (int*)kobj_getsymvalue("kflt_disable", 1);	/* amd64 only, on 32-bit kflt's are disabled. */
+		if (p_kflt_disable && *p_kflt_disable == 0)
+		{
+			use_kflt = 1;
+		}
+	}
+
+
+	/*
 	 * Check if this is S10 or Nevada
 	 */
 	if (!strncmp(utsname.release, "5.11", sizeof("5.11") - 1)) {
@@ -342,7 +368,7 @@ vbi_internal_alloc(uint64_t *phys, size_t size, uint64_t alignment, int contig)
 	ptr = contig_alloc(size, &attr, PAGESIZE, 1);
 
 	if (ptr == NULL) {
-		cmn_err(CE_NOTE, "vbi_internal_alloc() failure for %lu bytes", size);
+		cmn_err(CE_NOTE, "vbi_internal_alloc() failure for %lu bytes contig=%d", size, contig);
 		return (NULL);
 	}
 
@@ -537,7 +563,7 @@ vbi_set_priority(void *thread, int priority)
 }
 
 void *
-vbi_thread_create(void *func, void *arg, size_t len, int priority)
+vbi_thread_create(void (*func)(void *), void *arg, size_t len, int priority)
 {
 	kthread_t *t;
 
@@ -988,9 +1014,7 @@ vbi_user_map(caddr_t *va, uint_t prot, uint64_t *palist, size_t len)
 	as_rangelock(as);
 	map_addr(va, len, 0, 0, MAP_SHARED);
 	if (*va != NULL)
-	{
 		error = as_map(as, *va, len, segvbi_create, &args);
-	}
 	else
 		error = ENOMEM;
 	if (error)
@@ -1005,7 +1029,7 @@ vbi_user_map(caddr_t *va, uint_t prot, uint64_t *palist, size_t len)
  */
 
 struct vbi_cpu_watch {
-	void (*vbi_cpu_func)();
+	void (*vbi_cpu_func)(void *, int, int);
 	void *vbi_cpu_arg;
 };
 
@@ -1026,7 +1050,7 @@ vbi_watcher(cpu_setup_t state, int icpu, void *arg)
 }
 
 vbi_cpu_watch_t *
-vbi_watch_cpus(void (*func)(), void *arg, int current_too)
+vbi_watch_cpus(void (*func)(void *, int, int), void *arg, int current_too)
 {
 	int c;
 	vbi_cpu_watch_t *w;
@@ -1186,7 +1210,7 @@ vbi_gtimer_begin(
 	t->g_func = func;
 	t->g_cyclic = CYCLIC_NONE;
 
-	omni.cyo_online = (void (*)())vbi_gtimer_online;
+	omni.cyo_online = (void (*)(void *, cpu_t *, cyc_handler_t *, cyc_time_t *))vbi_gtimer_online;
 	omni.cyo_offline = NULL;
 	omni.cyo_arg = t;
 
@@ -1304,19 +1328,15 @@ vbi_pages_alloc(uint64_t *phys, size_t size)
 				 * get pages from kseg, the 'virtAddr' here is only for colouring but unfortunately
 				 * we don't have the 'virtAddr' to which this memory may be mapped.
 				 */
-				seg_t kernseg;
-				kernseg.s_as = &kas;
 				caddr_t virtAddr = NULL;
 				for (int64_t i = 0; i < npages; i++, virtAddr += PAGESIZE)
 				{
-					/* get a page from the freelist */
-					page_t *ppage = page_get_freelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
-										PAGESIZE, 0 /* flags */, NULL /* local group */);
+					/* get a page from the freelists */
+					page_t *ppage = vbi_page_get_fromlist(1 /* freelist */, virtAddr);
 					if (!ppage)
 					{
-						/* try from the cachelist */
-						ppage = page_get_cachelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
-										0 /* flags */, NULL /* local group */);
+						/* try from the cachelists */
+						ppage = vbi_page_get_fromlist(2 /* cachelist */, virtAddr);
 						if (!ppage)
 						{
 							/* damn */
@@ -1412,10 +1432,183 @@ vbi_page_to_pa(page_t **pp_pages, pgcnt_t i)
 	return (uint64_t)pfn << PAGESHIFT;
 }
 
+
+
+static page_t *vbi_page_get_fromlist(uint_t freelist, caddr_t virtAddr)
+{
+	seg_t kernseg;
+	kernseg.s_as = &kas;
+	page_t *ppage = NULL;
+	if (freelist == 1)
+	{
+		ppage = page_get_freelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
+							PAGESIZE, 0 /* flags */, NULL /* local group */);
+		if (!ppage)
+		{
+			if (use_kflt)
+			{
+				ppage = page_get_freelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
+							PAGESIZE, 0x0200 /* PG_KFLT */, NULL /* local group */);
+			}
+		}
+	}
+	else
+	{
+		/* cachelist */
+		ppage = page_get_cachelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
+							0 /* flags */, NULL /* local group */);
+		if (!ppage)
+		{
+			if (use_kflt)
+			{
+				ppage = page_get_cachelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
+							0x0200 /* PG_KFLT */, NULL /* local group */);
+			}
+		}
+	}
+	return ppage;
+}
+
+
+/*
+ * Large page code.
+ */
+
+page_t *
+vbi_large_page_alloc(uint64_t *pphys, size_t pgsize)
+{
+	pgcnt_t const npages = pgsize >> PAGESHIFT;
+	page_t *pproot, *pp, *pplist;
+	pgcnt_t ipage;
+	caddr_t vaddr;
+	seg_t kernseg;
+	int rc;
+
+	/*
+	 * Reserve available memory for a large page and create it.
+	 */
+	rc = page_resv(npages, KM_NOSLEEP);
+	if (!rc) {
+		return NULL;
+	}
+	rc = page_create_wait(npages, 0 /* flags */);
+	if (!rc) {
+		page_unresv(npages);
+		return NULL;
+	}
+
+	/*
+	 * Get a page off the free list.  We set vaddr to 0 since we don't know
+	 * where the memory is going to be mapped.
+	 */
+	vaddr = NULL;
+	kernseg.s_as = &kas;
+	pproot = page_get_freelist(&vbipagevp, 0 /* offset */, &kernseg,
+		vaddr, pgsize, 0x0000 /* flags */, NULL /*lgrp*/);
+	if (!pproot && use_kflt) {
+		pproot = page_get_freelist(&vbipagevp, 0 /* offset */, &kernseg,
+			vaddr, pgsize, 0x0200 /* PG_KFLT */, NULL /*lgrp*/);
+		if (!pproot) {
+			page_create_putback(npages);
+			page_unresv(npages);
+			return NULL;
+		}
+	}
+	AssertMsg(!(page_pptonum(pproot) & (npages - 1)), ("%p:%lx npages=%lx\n", pproot, page_pptonum(pproot), npages));
+
+	/*
+	 * Mark all the sub-pages as non-free and not-hashed-in.
+	 * It is paramount that we destroy the list (before freeing it).
+	 */
+	pplist = pproot;
+	for (ipage = 0; ipage < npages; ipage++) {
+		pp = pplist;
+		AssertPtr(pp);
+		AssertMsg(page_pptonum(pp) == ipage + page_pptonum(pproot),
+			("%p:%lx %lx+%lx\n", pp, page_pptonum(pp), ipage, page_pptonum(pproot)));
+		page_sub(&pplist, pp);
+		AssertMsg(PP_ISFREE(pp), ("%p\n", pp));
+		AssertMsg(pp->p_szc == pproot->p_szc, ("%p - %d expected %d \n", pp, pp->p_szc, pproot->p_szc));
+
+		PP_CLRFREE(pp);
+		PP_CLRAGED(pp);
+	}
+
+	*pphys = (uint64_t)page_pptonum(pproot) << PAGESHIFT;
+	AssertMsg(!(*pphys & (pgsize - 1)), ("%llx %zx\n", *pphys, pgsize));
+	return pproot;
+}
+
+void
+vbi_large_page_free(page_t *pproot, size_t pgsize)
+{
+	pgcnt_t const npages = pgsize >> PAGESHIFT;
+	pgcnt_t ipage;
+
+	Assert(page_get_pagecnt(pproot->p_szc) == npages);
+	AssertMsg(!(page_pptonum(pproot) & (npages - 1)), ("%p:%lx npages=%lx\n", pproot, page_pptonum(pproot), npages));
+
+	/*
+	 * We need to exclusively lock the sub-pages before freeing
+	 * the large one.
+	 */
+	for (ipage = 0; ipage < npages; ipage++) {
+		page_t *pp = page_nextn(pproot, ipage);
+		AssertMsg(page_pptonum(pp) == ipage + page_pptonum(pproot),
+			("%p:%lx %lx+%lx\n", pp, page_pptonum(pp), ipage, page_pptonum(pproot)));
+		AssertMsg(!PP_ISFREE(pp), ("%p\n", pp));
+
+		int rc = page_tryupgrade(pp);
+		if (!rc) {
+			page_unlock(pp);
+			while (!page_lock(pp, SE_EXCL, NULL /* mutex */, P_RECLAIM)) {
+				/*nothing*/;
+			}
+		}
+	}
+
+	/*
+	 * Free the large page and unreserve the memory.
+	 */
+	page_free_pages(pproot);
+	page_unresv(npages);
+}
+
+int
+vbi_large_page_premap(page_t *pproot, size_t pgsize)
+{
+	pgcnt_t const npages = pgsize >> PAGESHIFT;
+	pgcnt_t ipage;
+
+	Assert(page_get_pagecnt(pproot->p_szc) == npages);
+	AssertMsg(!(page_pptonum(pproot) & (npages - 1)), ("%p:%lx npages=%lx\n", pproot, page_pptonum(pproot), npages));
+
+	/*
+	 * We need to downgrade the sub-pages from exclusive to shared locking
+	 * because otherwise we cannot <you go figure>.
+	 */
+	for (ipage = 0; ipage < npages; ipage++) {
+	    page_t *pp = page_nextn(pproot, ipage);
+	    AssertMsg(page_pptonum(pp) == ipage + page_pptonum(pproot),
+		    ("%p:%lx %lx+%lx\n", pp, page_pptonum(pp), ipage, page_pptonum(pproot)));
+	    AssertMsg(!PP_ISFREE(pp), ("%p\n", pp));
+
+	    if (page_tryupgrade(pp) == 1)
+		    page_downgrade(pp);
+	    AssertMsg(!PP_ISFREE(pp), ("%p\n", pp));
+	}
+
+	return 0;
+}
+
+
 /*
  * As more functions are added, they should start with a comment indicating
  * the revision and above this point in the file and the revision level should
  * be increased. Also change vbi_modlmisc at the top of the file.
+ *
+ * NOTE! We'll start care about this if anything in here ever makes it into
+ *       the solaris kernel proper.
  */
-uint_t vbi_revision_level = 8;
+uint_t vbi_revision_level = 9;
 

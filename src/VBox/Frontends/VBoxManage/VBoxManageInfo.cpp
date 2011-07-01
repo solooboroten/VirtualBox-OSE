@@ -1,10 +1,10 @@
-/* $Id: VBoxManageInfo.cpp 35517 2011-01-13 10:47:12Z vboxsync $ */
+/* $Id: VBoxManageInfo.cpp 37695 2011-06-29 18:53:37Z vboxsync $ */
 /** @file
  * VBoxManage - The 'showvminfo' command and helper routines.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -28,6 +28,10 @@
 #include <VBox/com/errorprint.h>
 
 #include <VBox/com/VirtualBox.h>
+
+#ifdef VBOX_WITH_PCI_PASSTHROUGH
+#include <VBox/pci.h>
+#endif
 
 #include <VBox/log.h>
 #include <iprt/stream.h>
@@ -108,6 +112,83 @@ static void makeTimeStr(char *s, int cb, int64_t millies)
     RTStrPrintf(s, cb, "%04d/%02d/%02d %02d:%02d:%02d UTC",
                         t.i32Year, t.u8Month, t.u8MonthDay,
                         t.u8Hour, t.u8Minute, t.u8Second);
+}
+
+const char *machineStateToName(MachineState_T machineState, bool fShort)
+{
+    switch (machineState)
+    {
+        case MachineState_PoweredOff:
+            return fShort ? "poweroff"             : "powered off";
+        case MachineState_Saved:
+            return "saved";
+        case MachineState_Aborted:
+            return "aborted";
+        case MachineState_Teleported:
+            return "teleported";
+        case MachineState_Running:
+            return "running";
+        case MachineState_Paused:
+            return "paused";
+        case MachineState_Stuck:
+            return fShort ? "gurumeditation"       : "guru meditation";
+        case MachineState_LiveSnapshotting:
+            return fShort ? "livesnapshotting"     : "live snapshotting";
+        case MachineState_Teleporting:
+            return "teleporting";
+        case MachineState_Starting:
+            return "starting";
+        case MachineState_Stopping:
+            return "stopping";
+        case MachineState_Saving:
+            return "saving";
+        case MachineState_Restoring:
+            return "restoring";
+        case MachineState_TeleportingPausedVM:
+            return fShort ? "teleportingpausedvm"  : "teleporting paused vm";
+        case MachineState_TeleportingIn:
+            return fShort ? "teleportingin"        : "teleporting (incoming)";
+        case MachineState_RestoringSnapshot:
+            return fShort ? "restoringsnapshot"    : "restoring snapshot";
+        case MachineState_DeletingSnapshot:
+            return fShort ? "deletingsnapshot"     : "deleting snapshot";
+        case MachineState_DeletingSnapshotOnline:
+            return fShort ? "deletingsnapshotlive" : "deleting snapshot live";
+        case MachineState_DeletingSnapshotPaused:
+            return fShort ? "deletingsnapshotlivepaused" : "deleting snapshot live paused";
+        case MachineState_SettingUp:
+            return fShort ? "settingup"           : "setting up";
+        default:
+            break;
+    }
+    return "unknown";
+}
+
+const char *facilityStateToName(AdditionsFacilityStatus_T faStatus, bool fShort)
+{
+    switch (faStatus)
+    {
+        case AdditionsFacilityStatus_Inactive:
+            return fShort ? "inactive" : "not active";
+        case AdditionsFacilityStatus_Paused:
+            return "paused";
+        case AdditionsFacilityStatus_PreInit:
+            return fShort ? "preinit" : "pre-initializing";
+        case AdditionsFacilityStatus_Init:
+            return fShort ? "init"    : "initializing";
+        case AdditionsFacilityStatus_Active:
+            return fShort ? "active"  : "active/running";
+        case AdditionsFacilityStatus_Terminating:
+            return "terminating";
+        case AdditionsFacilityStatus_Terminated:
+            return "terminated";
+        case AdditionsFacilityStatus_Failed:
+            return "failed";
+        case AdditionsFacilityStatus_Unknown:
+        default:
+            break;
+    }
+    return "unknown";
 }
 
 /* Disable global optimizations for MSC 8.0/64 to make it compile in reasonable
@@ -255,6 +336,13 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
         RTPrintf("vram=%u\n", vramSize);
     else
         RTPrintf("VRAM size:       %uMB\n", vramSize);
+
+    ULONG cpuCap;
+    rc = machine->COMGETTER(CPUExecutionCap)(&cpuCap);
+    if (details == VMINFO_MACHINEREADABLE)
+        RTPrintf("cpuexecutioncap=%u\n", cpuCap);
+    else
+        RTPrintf("CPU exec cap:    %u%%\n", cpuCap);
 
     BOOL fHpetEnabled;
     machine->COMGETTER(HpetEnabled)(&fHpetEnabled);
@@ -517,74 +605,9 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
         RTPrintf("VT-x VPID:       %s\n", HWVirtExVPIDEnabled ? "on" : "off");
 
     MachineState_T machineState;
-    const char *pszState = NULL;
     rc = machine->COMGETTER(State)(&machineState);
-    switch (machineState)
-    {
-        case MachineState_PoweredOff:
-            pszState = details == VMINFO_MACHINEREADABLE ? "poweroff"            : "powered off";
-            break;
-        case MachineState_Saved:
-            pszState = "saved";
-            break;
-        case MachineState_Aborted:
-            pszState = "aborted";
-            break;
-        case MachineState_Teleported:
-            pszState = "teleported";
-            break;
-        case MachineState_Running:
-            pszState = "running";
-            break;
-        case MachineState_Paused:
-            pszState = "paused";
-            break;
-        case MachineState_Stuck:
-            pszState = details == VMINFO_MACHINEREADABLE ? "gurumeditation"      : "guru meditation";
-            break;
-        case MachineState_LiveSnapshotting:
-            pszState = details == VMINFO_MACHINEREADABLE ? "livesnapshotting"    : "live snapshotting";
-            break;
-        case MachineState_Teleporting:
-            pszState = "teleporting";
-            break;
-        case MachineState_Starting:
-            pszState = "starting";
-            break;
-        case MachineState_Stopping:
-            pszState = "stopping";
-            break;
-        case MachineState_Saving:
-            pszState = "saving";
-            break;
-        case MachineState_Restoring:
-            pszState = "restoring";
-            break;
-        case MachineState_TeleportingPausedVM:
-            pszState = details == VMINFO_MACHINEREADABLE ? "teleportingpausedvm" : "teleporting paused vm";
-            break;
-        case MachineState_TeleportingIn:
-            pszState = details == VMINFO_MACHINEREADABLE ? "teleportingin"       : "teleporting (incoming)";
-            break;
-        case MachineState_RestoringSnapshot:
-            pszState = details == VMINFO_MACHINEREADABLE ? "restoringsnapshot"   : "restoring snapshot";
-            break;
-        case MachineState_DeletingSnapshot:
-            pszState = details == VMINFO_MACHINEREADABLE ? "deletingsnapshot"    : "deleting snapshot";
-            break;
-        case MachineState_DeletingSnapshotOnline:
-            pszState = details == VMINFO_MACHINEREADABLE ? "deletingsnapshotlive" : "deleting snapshot live";
-            break;
-        case MachineState_DeletingSnapshotPaused:
-            pszState = details == VMINFO_MACHINEREADABLE ? "deletingsnapshotlivepaused" : "deleting snapshot live paused";
-            break;
-        case MachineState_SettingUp:
-            pszState = details == VMINFO_MACHINEREADABLE ? "settingup"           : "setting up";
-            break;
-        default:
-            pszState = "unknown";
-            break;
-    }
+    const char *pszState = machineStateToName(machineState, details == VMINFO_MACHINEREADABLE /*=fShort*/);
+
     LONG64 stateSince;
     machine->COMGETTER(LastStateChange)(&stateSince);
     RTTIMESPEC timeSpec;
@@ -749,17 +772,24 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
         {
             for (ULONG k = 0; k < cDevices; ++ k)
             {
+                ComPtr<IMediumAttachment> mediumAttach;
+                machine->GetMediumAttachment(storageCtlName.raw(),
+                                             i, k,
+                                             mediumAttach.asOutParam());
+                BOOL fIsEjected = FALSE;
+                DeviceType_T devType = DeviceType_Null;
+                if (mediumAttach)
+                {
+                    mediumAttach->COMGETTER(IsEjected)(&fIsEjected);
+                    mediumAttach->COMGETTER(Type)(&devType);
+                }
                 rc = machine->GetMedium(storageCtlName.raw(), i, k,
                                         medium.asOutParam());
                 if (SUCCEEDED(rc) && medium)
                 {
-                    BOOL fPassthrough;
-                    ComPtr<IMediumAttachment> mediumAttach;
+                    BOOL fPassthrough = FALSE;
 
-                    rc = machine->GetMediumAttachment(storageCtlName.raw(),
-                                                      i, k,
-                                                      mediumAttach.asOutParam());
-                    if (SUCCEEDED(rc) && mediumAttach)
+                    if (mediumAttach)
                         mediumAttach->COMGETTER(Passthrough)(&fPassthrough);
 
                     medium->COMGETTER(Location)(filePath.asOutParam());
@@ -774,6 +804,9 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                         if (fPassthrough)
                             RTPrintf("\"%lS-dvdpassthrough\"=\"%s\"\n", storageCtlName.raw(),
                                      fPassthrough ? "on" : "off");
+                        if (devType == DeviceType_DVD)
+                            RTPrintf("\"%lS-IsEjected\"=\"%s\"\n", storageCtlName.raw(),
+                                     fIsEjected ? "on" : "off");
                     }
                     else
                     {
@@ -782,15 +815,27 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                                  Utf8Str(uuid).c_str());
                         if (fPassthrough)
                             RTPrintf(" (passthrough enabled)");
+                        if (fIsEjected)
+                            RTPrintf(" (ejected)");
                         RTPrintf("\n");
                     }
                 }
                 else if (SUCCEEDED(rc))
                 {
                     if (details == VMINFO_MACHINEREADABLE)
+                    {
                         RTPrintf("\"%lS-%d-%d\"=\"emptydrive\"\n", storageCtlName.raw(), i, k);
+                        if (devType == DeviceType_DVD)
+                            RTPrintf("\"%lS-IsEjected\"=\"%s\"\n", storageCtlName.raw(),
+                                     fIsEjected ? "on" : "off");
+                    }
                     else
-                        RTPrintf("%lS (%d, %d): Empty\n", storageCtlName.raw(), i, k);
+                    {
+                        RTPrintf("%lS (%d, %d): Empty", storageCtlName.raw(), i, k);
+                        if (fIsEjected)
+                            RTPrintf(" (ejected)");
+                        RTPrintf("\n");
+                    }
                 }
                 else
                 {
@@ -802,10 +847,8 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
     }
 
     /* get the maximum amount of NICS */
-    ComPtr<ISystemProperties> sysProps;
-    virtualBox->COMGETTER(SystemProperties)(sysProps.asOutParam());
-    ULONG maxNICs = 0;
-    sysProps->COMGETTER(NetworkAdapterCount)(&maxNICs);
+    ULONG maxNICs = getMaxNics(virtualBox, machine);
+
     for (ULONG currentNIC = 0; currentNIC < maxNICs; currentNIC++)
     {
         ComPtr<INetworkAdapter> nic;
@@ -838,6 +881,7 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                         else
                             strAttachment = "none";
                         break;
+
                     case NetworkAttachmentType_NAT:
                     {
                         Bstr strNetwork;
@@ -930,15 +974,16 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                         else
                         {
                             strAttachment = "NAT";
-                            strNatSettings = Utf8StrFmt("NIC %d Settings:  MTU: %d, Socket( send: %d, receive: %d), TCP Window( send:%d, receive: %d)\n",
+                            strNatSettings = Utf8StrFmt("NIC %d Settings:  MTU: %d, Socket (send: %d, receive: %d), TCP Window (send:%d, receive: %d)\n",
                                 currentNIC + 1, mtu, sockSnd ? sockSnd : 64, sockRcv ? sockRcv : 64 , tcpSnd ? tcpSnd : 64, tcpRcv ? tcpRcv : 64);
                         }
                         break;
                     }
+
                     case NetworkAttachmentType_Bridged:
                     {
                         Bstr strBridgeAdp;
-                        nic->COMGETTER(HostInterface)(strBridgeAdp.asOutParam());
+                        nic->COMGETTER(BridgedInterface)(strBridgeAdp.asOutParam());
                         if (details == VMINFO_MACHINEREADABLE)
                         {
                             RTPrintf("bridgeadapter%d=\"%lS\"\n", currentNIC + 1, strBridgeAdp.raw());
@@ -948,6 +993,7 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                             strAttachment = Utf8StrFmt("Bridged Interface '%lS'", strBridgeAdp.raw());
                         break;
                     }
+
                     case NetworkAttachmentType_Internal:
                     {
                         Bstr strNetwork;
@@ -961,11 +1007,11 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                             strAttachment = Utf8StrFmt("Internal Network '%s'", Utf8Str(strNetwork).c_str());
                         break;
                     }
-#if defined(VBOX_WITH_NETFLT)
+
                     case NetworkAttachmentType_HostOnly:
                     {
                         Bstr strHostonlyAdp;
-                        nic->COMGETTER(HostInterface)(strHostonlyAdp.asOutParam());
+                        nic->COMGETTER(HostOnlyInterface)(strHostonlyAdp.asOutParam());
                         if (details == VMINFO_MACHINEREADABLE)
                         {
                             RTPrintf("hostonlyadapter%d=\"%lS\"\n", currentNIC + 1, strHostonlyAdp.raw());
@@ -975,22 +1021,36 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                             strAttachment = Utf8StrFmt("Host-only Interface '%lS'", strHostonlyAdp.raw());
                         break;
                     }
-#endif
-#ifdef VBOX_WITH_VDE
-                    case NetworkAttachmentType_VDE:
+                    case NetworkAttachmentType_Generic:
                     {
-                        Bstr strVDEAdp;
-                        nic->COMGETTER(VDENetwork)(strVDEAdp.asOutParam());
+                        Bstr strGenericDriver;
+                        nic->COMGETTER(GenericDriver)(strGenericDriver.asOutParam());
                         if (details == VMINFO_MACHINEREADABLE)
                         {
-                            RTPrintf("vdenet%d=\"%lS\"\n", currentNIC + 1, strVDEAdp.raw());
-                            strAttachment = "VDE";
+                            RTPrintf("generic%d=\"%lS\"\n", currentNIC + 1, strGenericDriver.raw());
+                            strAttachment = "Generic";
                         }
                         else
-                            strAttachment = Utf8StrFmt("VDE Network '%lS'", strVDEAdp.raw());
+                        {
+                            strAttachment = Utf8StrFmt("Generic '%lS'", strGenericDriver.raw());
+
+                            // show the generic properties
+                            com::SafeArray<BSTR> aProperties;
+                            com::SafeArray<BSTR> aValues;
+                            rc = nic->GetProperties(NULL,
+                                                    ComSafeArrayAsOutParam(aProperties),
+                                                    ComSafeArrayAsOutParam(aValues));
+                            if (SUCCEEDED(rc))
+                            {
+                                strAttachment += " { ";
+                                for (unsigned i = 0; i < aProperties.size(); ++i)
+                                    strAttachment += Utf8StrFmt(!i ? "%lS='%lS'" : ", %lS='%lS'",
+                                                                aProperties[i], aValues[i]);
+                                strAttachment += " }";
+                            }
+                        }
                         break;
                     }
-#endif
                     default:
                         strAttachment = "unknown";
                         break;
@@ -1000,6 +1060,18 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                 BOOL fConnected;
                 nic->COMGETTER(CableConnected)(&fConnected);
 
+                /* promisc policy */
+                NetworkAdapterPromiscModePolicy_T enmPromiscModePolicy;
+                CHECK_ERROR2_RET(nic, COMGETTER(PromiscModePolicy)(&enmPromiscModePolicy), hrcCheck);
+                const char *pszPromiscuousGuestPolicy;
+                switch (enmPromiscModePolicy)
+                {
+                    case NetworkAdapterPromiscModePolicy_Deny:          pszPromiscuousGuestPolicy = "deny"; break;
+                    case NetworkAdapterPromiscModePolicy_AllowNetwork:  pszPromiscuousGuestPolicy = "allow-vms"; break;
+                    case NetworkAdapterPromiscModePolicy_AllowAll:      pszPromiscuousGuestPolicy = "allow-all"; break;
+                    default: AssertFailedReturn(VERR_INTERNAL_ERROR_4);
+                }
+
                 /* trace stuff */
                 BOOL fTraceEnabled;
                 nic->COMGETTER(TraceEnabled)(&fTraceEnabled);
@@ -1007,35 +1079,22 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                 nic->COMGETTER(TraceFile)(traceFile.asOutParam());
 
                 /* NIC type */
-                Utf8Str strNICType;
                 NetworkAdapterType_T NICType;
                 nic->COMGETTER(AdapterType)(&NICType);
-                switch (NICType) {
-                case NetworkAdapterType_Am79C970A:
-                    strNICType = "Am79C970A";
-                    break;
-                case NetworkAdapterType_Am79C973:
-                    strNICType = "Am79C973";
-                    break;
+                const char *pszNICType;
+                switch (NICType)
+                {
+                    case NetworkAdapterType_Am79C970A:  pszNICType = "Am79C970A";   break;
+                    case NetworkAdapterType_Am79C973:   pszNICType = "Am79C973";    break;
 #ifdef VBOX_WITH_E1000
-                case NetworkAdapterType_I82540EM:
-                    strNICType = "82540EM";
-                    break;
-                case NetworkAdapterType_I82543GC:
-                    strNICType = "82543GC";
-                    break;
-                case NetworkAdapterType_I82545EM:
-                    strNICType = "82545EM";
-                    break;
+                    case NetworkAdapterType_I82540EM:   pszNICType = "82540EM";     break;
+                    case NetworkAdapterType_I82543GC:   pszNICType = "82543GC";     break;
+                    case NetworkAdapterType_I82545EM:   pszNICType = "82545EM";     break;
 #endif
 #ifdef VBOX_WITH_VIRTIO
-                case NetworkAdapterType_Virtio:
-                    strNICType = "virtio";
-                    break;
-#endif /* VBOX_WITH_VIRTIO */
-                default:
-                    strNICType = "unknown";
-                    break;
+                    case NetworkAdapterType_Virtio:     pszNICType = "virtio";      break;
+#endif
+                    default: AssertFailed();            pszNICType = "unknown";     break;
                 }
 
                 /* reported line speed */
@@ -1053,14 +1112,15 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                     RTPrintf("nic%d=\"%s\"\n", currentNIC + 1, strAttachment.c_str());
                 }
                 else
-                    RTPrintf("NIC %d:           MAC: %lS, Attachment: %s, Cable connected: %s, Trace: %s (file: %lS), Type: %s, Reported speed: %d Mbps, Boot priority: %d\n",
+                    RTPrintf("NIC %u:           MAC: %lS, Attachment: %s, Cable connected: %s, Trace: %s (file: %lS), Type: %s, Reported speed: %d Mbps, Boot priority: %d, Promisc Policy: %s\n",
                              currentNIC + 1, strMACAddress.raw(), strAttachment.c_str(),
                              fConnected ? "on" : "off",
                              fTraceEnabled ? "on" : "off",
                              traceFile.isEmpty() ? Bstr("none").raw() : traceFile.raw(),
-                             strNICType.c_str(),
+                             pszNICType,
                              ulLineSpeed / 1000,
-                             (int)ulBootPriority);
+                             (int)ulBootPriority,
+                             pszPromiscuousGuestPolicy);
                 if (strNatSettings.length())
                     RTPrintf(strNatSettings.c_str());
                 if (strNatForwardings.length())
@@ -1136,6 +1196,9 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
         RTPrintf("Keyboard Device: %s\n", pszHid);
 
     /* get the maximum amount of UARTs */
+    ComPtr<ISystemProperties> sysProps;
+    virtualBox->COMGETTER(SystemProperties)(sysProps.asOutParam());
+
     ULONG maxUARTs = 0;
     sysProps->COMGETTER(SerialPortCount)(&maxUARTs);
     for (ULONG currentUART = 0; currentUART < maxUARTs; currentUART++)
@@ -1785,6 +1848,46 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
         }
     } /* USB */
 
+#ifdef VBOX_WITH_PCI_PASSTHROUGH
+    /* Host PCI passthrough devices */
+    {
+         SafeIfaceArray <IPciDeviceAttachment> assignments;
+         rc = machine->COMGETTER(PciDeviceAssignments)(ComSafeArrayAsOutParam(assignments));
+         if (SUCCEEDED(rc))
+         {
+             if (assignments.size() > 0 && (details != VMINFO_MACHINEREADABLE))
+             {
+                 RTPrintf("\nAttached physical PCI devices:\n\n");
+             }
+
+             for (size_t index = 0; index < assignments.size(); ++index)
+             {
+                 ComPtr<IPciDeviceAttachment> Assignment = assignments[index];
+                 char szHostPciAddress[32], szGuestPciAddress[32];
+                 LONG iHostPciAddress = -1, iGuestPciAddress = -1;
+                 Bstr DevName;
+
+                 Assignment->COMGETTER(Name)(DevName.asOutParam());
+                 Assignment->COMGETTER(HostAddress)(&iHostPciAddress);
+                 Assignment->COMGETTER(GuestAddress)(&iGuestPciAddress);
+                 PciBusAddress().fromLong(iHostPciAddress).format(szHostPciAddress, sizeof(szHostPciAddress));
+                 PciBusAddress().fromLong(iGuestPciAddress).format(szGuestPciAddress, sizeof(szGuestPciAddress));
+
+                 if (details == VMINFO_MACHINEREADABLE)
+                     RTPrintf("AttachedHostPci=%s,%s\n", szHostPciAddress, szGuestPciAddress);
+                 else
+                     RTPrintf("   Host device %lS at %s attached as %s\n", DevName.raw(), szHostPciAddress, szGuestPciAddress);
+             }
+
+             if (assignments.size() > 0 && (details != VMINFO_MACHINEREADABLE))
+             {
+                 RTPrintf("\n");
+             }
+         }
+    }
+    /* Host PCI passthrough devices */
+#endif
+
     /*
      * Shared folders
      */
@@ -2018,6 +2121,16 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
     if (details != VMINFO_MACHINEREADABLE)
         RTPrintf("Guest:\n\n");
 
+    ULONG guestVal;
+    rc = machine->COMGETTER(MemoryBalloonSize)(&guestVal);
+    if (SUCCEEDED(rc))
+    {
+        if (details == VMINFO_MACHINEREADABLE)
+            RTPrintf("GuestMemoryBalloon=%d\n", guestVal);
+        else
+            RTPrintf("Configured memory balloon size:      %d MB\n", guestVal);
+    }
+
     if (console)
     {
         ComPtr<IGuest> guest;
@@ -2045,30 +2158,56 @@ HRESULT showVMInfo(ComPtr<IVirtualBox> virtualBox,
                     RTPrintf("Additions run level:                 %u\n", guestRunLevel);
             }
 
-            if (details == VMINFO_FULL)
+            rc = guest->COMGETTER(AdditionsVersion)(guestString.asOutParam());
+            if (   SUCCEEDED(rc)
+                && !guestString.isEmpty())
             {
-                rc = guest->COMGETTER(AdditionsVersion)(guestString.asOutParam());
-                if (   SUCCEEDED(rc)
-                    && !guestString.isEmpty())
-                {
-                    if (details == VMINFO_MACHINEREADABLE)
-                        RTPrintf("GuestAdditionsVersion=\"%lS\"\n", guestString.raw());
-                    else
-                        RTPrintf("Additions version:                   %lS\n\n", guestString.raw());
-                }
+                if (details == VMINFO_MACHINEREADABLE)
+                    RTPrintf("GuestAdditionsVersion=\"%lS\"\n", guestString.raw());
+                else
+                    RTPrintf("Additions version:                   %lS\n\n", guestString.raw());
             }
+
+            if (details != VMINFO_MACHINEREADABLE)
+                RTPrintf("\nGuest Facilities:\n\n");
+
+            /* Print information about known Guest Additions facilities: */
+            SafeIfaceArray <IAdditionsFacility> collFac;
+            CHECK_ERROR_RET(guest, COMGETTER(Facilities)(ComSafeArrayAsOutParam(collFac)), rc);
+            LONG64 lLastUpdatedMS;
+            char szLastUpdated[32];
+            AdditionsFacilityStatus_T curStatus;
+            for (size_t index = 0; index < collFac.size(); ++index)
+            {
+                ComPtr<IAdditionsFacility> fac = collFac[index];
+                if (fac)
+                {
+                    CHECK_ERROR_RET(fac, COMGETTER(Name)(guestString.asOutParam()), rc);
+                    if (!guestString.isEmpty())
+                    {
+                        CHECK_ERROR_RET(fac, COMGETTER(Status)(&curStatus), rc);
+                        CHECK_ERROR_RET(fac, COMGETTER(LastUpdated)(&lLastUpdatedMS), rc);
+                        if (details == VMINFO_MACHINEREADABLE)
+                            RTPrintf("GuestAdditionsFacility_%lS=%u,%lld\n",
+                                     guestString.raw(), curStatus, lLastUpdatedMS);
+                        else
+                        {
+                            makeTimeStr(szLastUpdated, sizeof(szLastUpdated), lLastUpdatedMS);
+                            RTPrintf("Facility \"%lS\": %s (last update: %s)\n",
+                                     guestString.raw(), facilityStateToName(curStatus, false /* No short naming */), szLastUpdated);
+                        }
+                    }
+                    else
+                        AssertMsgFailed(("Facility with undefined name retrieved!\n"));
+                }
+                else
+                    AssertMsgFailed(("Invalid facility returned!\n"));
+            }
+            if (!collFac.size() && details != VMINFO_MACHINEREADABLE)
+                RTPrintf("No active facilities.\n");
         }
     }
 
-    ULONG guestVal;
-    rc = machine->COMGETTER(MemoryBalloonSize)(&guestVal);
-    if (SUCCEEDED(rc))
-    {
-        if (details == VMINFO_MACHINEREADABLE)
-            RTPrintf("GuestMemoryBalloon=%d\n", guestVal);
-        else
-            RTPrintf("Configured memory balloon size:      %d MB\n", guestVal);
-    }
     if (details != VMINFO_MACHINEREADABLE)
         RTPrintf("\n");
 

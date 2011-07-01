@@ -1,11 +1,11 @@
-/* $Id: VirtualBoxImpl.cpp 35608 2011-01-18 14:19:31Z vboxsync $ */
+/* $Id: VirtualBoxImpl.cpp 37525 2011-06-17 10:09:21Z vboxsync $ */
 
 /** @file
  * Implementation of IVirtualBox in VBoxSVC.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -102,6 +102,9 @@ ULONG VirtualBox::sRevision;
 
 // static
 Bstr VirtualBox::sPackageType;
+
+// static
+Bstr VirtualBox::sAPIVersion;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -343,7 +346,11 @@ HRESULT VirtualBox::FinalConstruct()
 {
     LogFlowThisFunc(("\n"));
 
-    return init();
+    HRESULT rc = init();
+
+    BaseFinalConstruct();
+
+    return rc;
 }
 
 void VirtualBox::FinalRelease()
@@ -351,6 +358,8 @@ void VirtualBox::FinalRelease()
     LogFlowThisFunc(("\n"));
 
     uninit();
+
+    BaseFinalRelease();
 }
 
 // public initializer/uninitializer for internal purposes only
@@ -383,7 +392,9 @@ HRESULT VirtualBox::init()
     sRevision = RTBldCfgRevision();
     if (sPackageType.isEmpty())
         sPackageType = VBOX_PACKAGE_STRING;
-    LogFlowThisFunc(("Version: %ls, Package: %ls\n", sVersion.raw(), sPackageType.raw()));
+    if (sAPIVersion.isEmpty())
+        sAPIVersion = VBOX_API_VERSION_STRING;
+    LogFlowThisFunc(("Version: %ls, Package: %ls, API Version: %ls\n", sVersion.raw(), sPackageType.raw(), sAPIVersion.raw()));
 
     /* Get the VirtualBox home directory. */
     {
@@ -881,6 +892,17 @@ STDMETHODIMP VirtualBox::COMGETTER(PackageType)(BSTR *aPackageType)
     return S_OK;
 }
 
+STDMETHODIMP VirtualBox::COMGETTER(APIVersion)(BSTR *aAPIVersion)
+{
+    CheckComArgNotNull(aAPIVersion);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    sAPIVersion.cloneTo(aAPIVersion);
+    return S_OK;
+}
+
 STDMETHODIMP VirtualBox::COMGETTER(HomeFolder)(BSTR *aHomeFolder)
 {
     CheckComArgNotNull(aHomeFolder);
@@ -1114,11 +1136,10 @@ VirtualBox::CheckFirmwarePresent(FirmwareType_T aFirmwareType,
     AutoCaller autoCaller(this);
     if (FAILED(autoCaller.rc())) return autoCaller.rc();
 
-    const char *url;
-
     NOREF(aVersion);
 
-    static const struct {
+    static const struct
+    {
         FirmwareType_T type;
         const char*    fileName;
         const char*    url;
@@ -1153,22 +1174,23 @@ VirtualBox::CheckFirmwarePresent(FirmwareType_T aFirmwareType,
         }
 
         Utf8Str shortName, fullName;
-        int rc;
 
         shortName = Utf8StrFmt("Firmware%c%s",
                                RTPATH_DELIMITER,
                                firmwareDesc[i].fileName);
-        rc = calculateFullPath(shortName, fullName); AssertRCReturn(rc, rc);
+        int rc = calculateFullPath(shortName, fullName);
+        AssertRCReturn(rc, rc);
         if (RTFileExists(fullName.c_str()))
         {
             *aResult = TRUE;
-             if (aFile)
+            if (aFile)
                 Utf8Str(fullName).cloneTo(aFile);
             break;
         }
 
         char pszVBoxPath[RTPATH_MAX];
-        rc = RTPathExecDir(pszVBoxPath, RTPATH_MAX); AssertRCReturn(rc, rc);
+        rc = RTPathExecDir(pszVBoxPath, RTPATH_MAX);
+        AssertRCReturn(rc, rc);
         fullName = Utf8StrFmt("%s%c%s",
                               pszVBoxPath,
                               RTPATH_DELIMITER,
@@ -1181,8 +1203,6 @@ VirtualBox::CheckFirmwarePresent(FirmwareType_T aFirmwareType,
             break;
         }
 
-
-        url = firmwareDesc[i].url;
         /** @todo: account for version in the URL */
         if (aUrl != NULL)
         {
@@ -1461,6 +1481,7 @@ STDMETHODIMP VirtualBox::CreateHardDisk(IN_BSTR aFormat,
 STDMETHODIMP VirtualBox::OpenMedium(IN_BSTR aLocation,
                                     DeviceType_T deviceType,
                                     AccessMode_T accessMode,
+                                    BOOL fForceNewUuid,
                                     IMedium **aMedium)
 {
     CheckComArgStrNotEmptyOrNull(aLocation);
@@ -1508,6 +1529,7 @@ STDMETHODIMP VirtualBox::OpenMedium(IN_BSTR aLocation,
         rc = pMedium->init(this,
                            aLocation,
                            (accessMode == AccessMode_ReadWrite) ? Medium::OpenReadWrite : Medium::OpenReadOnly,
+                           fForceNewUuid,
                            deviceType);
 
         if (SUCCEEDED(rc))
@@ -2735,7 +2757,7 @@ HRESULT VirtualBox::findDVDOrFloppyImage(DeviceType_T mediumType,
         int vrc = calculateFullPath(aLocation, location);
         if (RT_FAILURE(vrc))
             return setError(VBOX_E_FILE_ERROR,
-                            tr("Invalid image file location '%ls' (%Rrc)"),
+                            tr("Invalid image file location '%s' (%Rrc)"),
                             aLocation.c_str(),
                             vrc);
     }
@@ -2803,7 +2825,7 @@ HRESULT VirtualBox::findDVDOrFloppyImage(DeviceType_T mediumType,
                      m->strSettingsFilePath.c_str());
         else
             setError(rc,
-                     tr("Could not find an image file with location '%ls' in the media registry ('%s')"),
+                     tr("Could not find an image file with location '%s' in the media registry ('%s')"),
                      aLocation.c_str(),
                      m->strSettingsFilePath.c_str());
     }
@@ -3185,52 +3207,42 @@ void VirtualBox::saveMediaRegistry(settings::MediaRegistry &mediaRegistry,
         m->llPendingMachineRenames.clear();
     }
 
+    struct {
+        MediaOList &llSource;
+        settings::MediaList &llTarget;
+    } s[] =
+    {
+        // hard disks
+        { m->allHardDisks, mediaRegistry.llHardDisks },
+        // CD/DVD images
+        { m->allDVDImages, mediaRegistry.llDvdImages },
+        // floppy images
+        { m->allFloppyImages, mediaRegistry.llFloppyImages }
+    };
+
     HRESULT rc;
-    // hard disks
-    mediaRegistry.llHardDisks.clear();
-    for (MediaList::const_iterator it = m->allHardDisks.begin();
-         it != m->allHardDisks.end();
-         ++it)
-    {
-        Medium *pMedium = *it;
-        if (pMedium->isInRegistry(uuidRegistry))
-        {
-            settings::Medium med;
-            rc = pMedium->saveSettings(med, strMachineFolder);     // this recurses into its children
-            if (FAILED(rc)) throw rc;
-            mediaRegistry.llHardDisks.push_back(med);
-        }
-    }
 
-    // CD/DVD images
-    mediaRegistry.llDvdImages.clear();
-    for (MediaList::const_iterator it = m->allDVDImages.begin();
-         it != m->allDVDImages.end();
-         ++it)
+    for (size_t i = 0; i < RT_ELEMENTS(s); ++i)
     {
-        Medium *pMedium = *it;
-        if (pMedium->isInRegistry(uuidRegistry))
+        MediaOList &llSource = s[i].llSource;
+        settings::MediaList &llTarget = s[i].llTarget;
+        llTarget.clear();
+        for (MediaList::const_iterator it = llSource.begin();
+             it != llSource.end();
+             ++it)
         {
-            settings::Medium med;
-            rc = pMedium->saveSettings(med, strMachineFolder);
-            if (FAILED(rc)) throw rc;
-            mediaRegistry.llDvdImages.push_back(med);
-        }
-    }
+            Medium *pMedium = *it;
+            AutoCaller autoCaller(pMedium);
+            if (FAILED(autoCaller.rc())) throw autoCaller.rc();
+            AutoReadLock mlock(pMedium COMMA_LOCKVAL_SRC_POS);
 
-    // floppy images
-    mediaRegistry.llFloppyImages.clear();
-    for (MediaList::const_iterator it = m->allFloppyImages.begin();
-         it != m->allFloppyImages.end();
-         ++it)
-    {
-        Medium *pMedium = *it;
-        if (pMedium->isInRegistry(uuidRegistry))
-        {
-            settings::Medium med;
-            rc = pMedium->saveSettings(med, strMachineFolder);
-            if (FAILED(rc)) throw rc;
-            mediaRegistry.llFloppyImages.push_back(med);
+            if (pMedium->isInRegistry(uuidRegistry))
+            {
+                settings::Medium med;
+                rc = pMedium->saveSettings(med, strMachineFolder);     // this recurses into child hard disks
+                if (FAILED(rc)) throw rc;
+                llTarget.push_back(med);
+            }
         }
     }
 }
@@ -3657,12 +3669,16 @@ HRESULT VirtualBox::unregisterMachineMedia(const Guid &uuidMachine)
     MediaList llMedia2Close;
 
     {
-        AutoWriteLock mlock(getMediaTreeLockHandle() COMMA_LOCKVAL_SRC_POS);
+        AutoWriteLock tlock(getMediaTreeLockHandle() COMMA_LOCKVAL_SRC_POS);
+
         for (MediaOList::iterator it = m->allHardDisks.getList().begin();
              it != m->allHardDisks.getList().end();
              ++it)
         {
             ComObjPtr<Medium> pMedium = *it;
+            AutoCaller medCaller(pMedium);
+            if (FAILED(medCaller.rc())) return medCaller.rc();
+            AutoReadLock medlock(pMedium COMMA_LOCKVAL_SRC_POS);
 
             if (pMedium->isInRegistry(uuidMachine))
                 // recursively with children first
@@ -3695,15 +3711,55 @@ HRESULT VirtualBox::unregisterMachineMedia(const Guid &uuidMachine)
 HRESULT VirtualBox::unregisterMachine(Machine *pMachine,
                                       const Guid &id)
 {
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
-
     // remove from the collection of registered machines
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
     m->allMachines.removeChild(pMachine);
-
     // save the global registry
     HRESULT rc = saveSettings();
-
     alock.release();
+
+    /*
+     * Now go over all known media and checks if they were registered in the
+     * media registry of the given machine. Each such medium is then moved to
+     * a different media registry to make sure it doesn't get lost since its
+     * media registry is about to go away.
+     *
+     * This fixes the following use case: Image A.vdi of machine A is also used
+     * by machine B, but registered in the media registry of machine A. If machine
+     * A is deleted, A.vdi must be moved to the registry of B, or else B will
+     * become inaccessible.
+     */
+    GuidList llRegistriesThatNeedSaving;
+    {
+        AutoReadLock tlock(getMediaTreeLockHandle() COMMA_LOCKVAL_SRC_POS);
+        // iterate over the list of *base* images
+        for (MediaOList::iterator it = m->allHardDisks.getList().begin();
+             it != m->allHardDisks.getList().end();
+             ++it)
+        {
+            ComObjPtr<Medium> &pMedium = *it;
+            AutoCaller medCaller(pMedium);
+            if (FAILED(medCaller.rc())) return medCaller.rc();
+            AutoWriteLock mlock(pMedium COMMA_LOCKVAL_SRC_POS);
+
+            if (pMedium->removeRegistry(id, true /* fRecurse */))
+            {
+                // machine ID was found in base medium's registry list:
+                // move this base image and all its children to another registry then
+                // 1) first, find a better registry to add things to
+                const Guid *puuidBetter = pMedium->getAnyMachineBackref();
+                if (puuidBetter)
+                {
+                    // 2) better registry found: then use that
+                    pMedium->addRegistry(*puuidBetter, true /* fRecurse */);
+                    // 3) and make sure the registry is saved below
+                    addGuidToListUniquely(llRegistriesThatNeedSaving, *puuidBetter);
+                }
+            }
+        }
+    }
+
+    saveRegistries(llRegistriesThatNeedSaving);
 
     /* fire an event */
     onMachineRegistered(id, FALSE);
@@ -3720,7 +3776,7 @@ HRESULT VirtualBox::unregisterMachine(Machine *pMachine,
  * @param uuid
  */
 void VirtualBox::addGuidToListUniquely(GuidList &llRegistriesThatNeedSaving,
-                                       Guid uuid)
+                                       const Guid &uuid)
 {
     for (GuidList::const_iterator it = llRegistriesThatNeedSaving.begin();
          it != llRegistriesThatNeedSaving.end();
@@ -3849,7 +3905,7 @@ HRESULT VirtualBox::handleUnexpectedExceptions(RT_SRC_POS_DECL)
         /* re-throw the current exception */
         throw;
     }
-    catch (const iprt::Error &err)      // includes all XML exceptions
+    catch (const RTCError &err)      // includes all XML exceptions
     {
         return setErrorStatic(E_FAIL,
                               Utf8StrFmt(tr("%s.\n%s[%d] (%s)"),
@@ -3914,12 +3970,11 @@ DECLCALLBACK(int) VirtualBox::ClientWatcher(RTTHREAD /* thread */, void *pvUser)
     size_t cnt = 0;
     size_t cntSpawned = 0;
 
+    VirtualBoxBase::initializeComForThread();
+
 #if defined(RT_OS_WINDOWS)
 
-    HRESULT hrc = CoInitializeEx(NULL,
-                                 COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE |
-                                 COINIT_SPEED_OVER_MEMORY);
-    AssertComRC(hrc);
+    HRESULT hrc;
 
     /// @todo (dmik) processes reaping!
 
@@ -4372,6 +4427,7 @@ DECLCALLBACK(int) VirtualBox::ClientWatcher(RTTHREAD /* thread */, void *pvUser)
 # error "Port me!"
 #endif
 
+    VirtualBoxBase::uninitializeComForThread();
     LogFlowFuncLeave();
     return 0;
 }
@@ -4386,6 +4442,8 @@ DECLCALLBACK(int) VirtualBox::AsyncEventHandler(RTTHREAD thread, void *pvUser)
 
     AssertReturn(pvUser, VERR_INVALID_POINTER);
 
+    com::Initialize();
+
     // create an event queue for the current thread
     EventQueue *eventQ = new EventQueue();
     AssertReturn(eventQ, VERR_NO_MEMORY);
@@ -4399,6 +4457,9 @@ DECLCALLBACK(int) VirtualBox::AsyncEventHandler(RTTHREAD thread, void *pvUser)
         /* nothing */ ;
 
     delete eventQ;
+
+    com::Shutdown();
+
 
     LogFlowFuncLeave();
 
@@ -4487,7 +4548,7 @@ STDMETHODIMP VirtualBox::FindDHCPServerByNetworkName(IN_BSTR aName, IDHCPServer 
          ++it)
     {
         rc = (*it)->COMGETTER(NetworkName)(bstr.asOutParam());
-        if (FAILED(rc)) throw rc;
+        if (FAILED(rc)) return rc;
 
         if (bstr == aName)
         {

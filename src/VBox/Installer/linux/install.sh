@@ -4,7 +4,7 @@
 # VirtualBox linux installation script
 
 #
-# Copyright (C) 2007-2010 Oracle Corporation
+# Copyright (C) 2007-2011 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -17,8 +17,9 @@
 
 PATH=$PATH:/bin:/sbin:/usr/sbin
 
-# Source functions needed by the installer
+# Include routines and utilities needed by the installer
 . ./routines.sh
+#include installer-utils.sh
 
 LOG="/var/log/vbox-install.log"
 VERSION="_VERSION_"
@@ -103,6 +104,7 @@ check_previous() {
     check_binary "/usr/bin/VBoxSDL" "$install_dir" &&
     check_binary "/usr/bin/VBoxVRDP" "$install_dir" &&
     check_binary "/usr/bin/VBoxHeadless" "$install_dir" &&
+    check_binary "/usr/bin/VBoxBalloonCtrl" "$install_dir" &&
     check_binary "/usr/bin/vboxwebsrv" "$install_dir"
 }
 
@@ -118,6 +120,9 @@ check_root
 
 # Set up logging before anything else
 create_log $LOG
+
+# Now stop the ballon control service otherwise it will keep VBoxSVC running
+stop_init_script vboxballoonctrl-service
 
 # Now stop the web service otherwise it will keep VBoxSVC running
 stop_init_script vboxweb-service
@@ -277,6 +282,7 @@ if [ "$ACTION" = "install" ]; then
                 $DKMS remove -m vboxnetadp -v $INSTALL_VER --all > /dev/null 2>&1
             fi
             # OSE doesn't always have the initscript
+            rmmod vboxpci > /dev/null 2>&1
             rmmod vboxnetadp > /dev/null 2>&1
             rmmod vboxnetflt > /dev/null 2>&1
             rmmod vboxdrv > /dev/null 2>&1
@@ -368,9 +374,12 @@ if [ "$ACTION" = "install" ]; then
 
     # Install runlevel scripts
     install_init_script vboxdrv.sh vboxdrv
+    install_init_script vboxballoonctrl-service.sh vboxballoonctrl-service
     install_init_script vboxweb-service.sh vboxweb-service
     delrunlevel vboxdrv > /dev/null 2>&1
     addrunlevel vboxdrv 20 80 # This may produce useful output
+    delrunlevel vboxballoonctrl-service > /dev/null 2>&1
+    addrunlevel vboxballoonctrl-service 25 75 # This may produce useful output
     delrunlevel vboxweb-service > /dev/null 2>&1
     addrunlevel vboxweb-service 25 75 # This may produce useful output
 
@@ -383,8 +392,11 @@ if [ "$ACTION" = "install" ]; then
     ln -sf $INSTALLATION_DIR/VBox.sh /usr/bin/VBoxSDL
     ln -sf $INSTALLATION_DIR/VBox.sh /usr/bin/VBoxVRDP
     ln -sf $INSTALLATION_DIR/VBox.sh /usr/bin/VBoxHeadless
+    ln -sf $INSTALLATION_DIR/VBox.sh /usr/bin/VBoxBalloonCtrl
     ln -sf $INSTALLATION_DIR/VBox.sh /usr/bin/vboxwebsrv
     ln -sf $INSTALLATION_DIR/VBox.png /usr/share/pixmaps/VBox.png
+    # Unity and Nautilus seem to look here for their icons
+    ln -sf $INSTALLATION_DIR/icons/128x128/virtualbox.png /usr/share/pixmaps/virtualbox.png
     ln -sf $INSTALLATION_DIR/virtualbox.desktop /usr/share/applications/virtualbox.desktop
     ln -sf $INSTALLATION_DIR/virtualbox.xml /usr/share/mime/packages/virtualbox.xml
     ln -sf $INSTALLATION_DIR/rdesktop-vrdp /usr/bin/rdesktop-vrdp
@@ -403,9 +415,14 @@ if [ "$ACTION" = "install" ]; then
         cd $i
         if [ -d /usr/share/icons/hicolor/$i ]; then
             for j in *; do
-                if [ -d /usr/share/icons/hicolor/$i/mimetypes ]; then
-                    ln -s $INSTALLATION_DIR/icons/$i/$j /usr/share/icons/hicolor/$i/mimetypes/$j
-                    echo /usr/share/icons/hicolor/$i/mimetypes/$j >> $CONFIG_DIR/$CONFIG_FILES
+                if [ "$j" = "virtualbox.png" ]; then
+                    dst=apps
+                else
+                    dst=mimetypes
+                fi
+                if [ -d /usr/share/icons/hicolor/$i/$dst ]; then
+                    ln -s $INSTALLATION_DIR/icons/$i/$j /usr/share/icons/hicolor/$i/$dst/$j
+                    echo /usr/share/icons/hicolor/$i/$dst/$j >> $CONFIG_DIR/$CONFIG_FILES
                 fi
             done
         fi
@@ -425,41 +442,8 @@ if [ "$ACTION" = "install" ]; then
     fi
 
     # Create udev description file
-    if [ -d /etc/udev/rules.d ]; then
-        udev_call=""
-        udev_app=`which udevadm 2> /dev/null`
-        if [ $? -eq 0 ]; then
-            udev_call="${udev_app} version 2> /dev/null"
-        else
-            udev_app=`which udevinfo 2> /dev/null`
-            if [ $? -eq 0 ]; then
-                udev_call="${udev_app} -V 2> /dev/null"
-            fi
-        fi
-        udev_fix="="
-        if [ "${udev_call}" != "" ]; then
-            udev_out=`${udev_call}`
-            udev_ver=`expr "$udev_out" : '[^0-9]*\([0-9]*\)'`
-            if [ "$udev_ver" = "" -o "$udev_ver" -lt 55 ]; then
-               udev_fix=""
-            fi
-        fi
-        # Write udev rules
-        echo "KERNEL=${udev_fix}\"vboxdrv\", NAME=\"vboxdrv\", OWNER=\"root\", GROUP=\"$VBOXDRV_GRP\", MODE=\"$VBOXDRV_MODE\"" \
-          > /etc/udev/rules.d/10-vboxdrv.rules
-        echo "SUBSYSTEM=${udev_fix}\"usb_device\", ACTION=${udev_fix}\"add\", RUN=\"$INSTALLATION_DIR/VBoxCreateUSBNode.sh \$major \$minor \$attr{bDeviceClass}\"" \
-          >> /etc/udev/rules.d/10-vboxdrv.rules
-        echo "SUBSYSTEM=${udev_fix}\"usb\", ACTION=${udev_fix}\"add\", ENV{DEVTYPE}==\"usb_device\", RUN=\"$INSTALLATION_DIR/VBoxCreateUSBNode.sh \$major \$minor \$attr{bDeviceClass}\"" \
-          >> /etc/udev/rules.d/10-vboxdrv.rules
-        echo "SUBSYSTEM=${udev_fix}\"usb_device\", ACTION=${udev_fix}\"remove\", RUN=\"$INSTALLATION_DIR/VBoxCreateUSBNode.sh --remove \$major \$minor\"" \
-          >> /etc/udev/rules.d/10-vboxdrv.rules
-        echo "SUBSYSTEM=${udev_fix}\"usb\", ACTION=${udev_fix}\"remove\", ENV{DEVTYPE}==\"usb_device\", RUN=\"$INSTALLATION_DIR/VBoxCreateUSBNode.sh --remove \$major \$minor\"" \
-          >> /etc/udev/rules.d/10-vboxdrv.rules
-    fi
-    # Remove old udev description file
-    if [ -f /etc/udev/rules.d/60-vboxdrv.rules ]; then
-        rm -f /etc/udev/rules.d/60-vboxdrv.rules 2> /dev/null
-    fi
+    install_udev "$VBOXDRV_GRP" "$VBOXDRV_MODE" "$INSTALLATION_DIR" \
+        > /etc/udev/rules.d/10-vboxdrv.rules
 
     # Build our device tree
     for i in /sys/bus/usb/devices/*; do
@@ -494,6 +478,7 @@ if [ "$ACTION" = "install" ]; then
             MODULE_FAILED="true"
             RC_SCRIPT=1
         fi
+        start_init_script vboxballoonctrl-service
         start_init_script vboxweb-service
         log ""
         log "End of the output from the Linux kernel build system."

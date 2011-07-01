@@ -1,4 +1,4 @@
-/* $Id: tstDeviceStructSize.cpp 32471 2010-09-14 10:26:07Z vboxsync $ */
+/* $Id: tstDeviceStructSize.cpp 37477 2011-06-15 17:18:33Z vboxsync $ */
 /** @file
  * tstDeviceStructSize - testcase for check structure sizes/alignment
  *                       and to verify that HC and RC uses the same
@@ -29,6 +29,8 @@
 #undef LOG_GROUP
 #include "../Bus/DevPCI.cpp"
 #undef LOG_GROUP
+#include "../Bus/DevPciIch9.cpp"
+#undef LOG_GROUP
 #include "../Graphics/DevVGA.cpp"
 #undef LOG_GROUP
 #include "../Input/DevPS2.cpp"
@@ -52,6 +54,8 @@
 #include "../PC/DevRTC.cpp"
 #undef LOG_GROUP
 #include "../PC/DevAPIC.cpp"
+#undef LOG_GROUP
+#include "../PC/DevIoApic.cpp"
 #undef LOG_GROUP
 #include "../PC/DevHPET.cpp"
 #undef LOG_GROUP
@@ -84,6 +88,11 @@
 #ifdef VBOX_WITH_LSILOGIC
 # undef LOG_GROUP
 # include "../Storage/DevLsiLogicSCSI.cpp"
+#endif
+
+#ifdef VBOX_WITH_PCI_PASSTHROUGH
+# undef LOG_GROUP
+# include "../Bus/DevPciRaw.cpp"
 #endif
 
 #include <stdio.h>
@@ -316,6 +325,9 @@ int main()
     CHECK_MEMBER_ALIGNMENT(VPCISTATE, led, 4);
     CHECK_MEMBER_ALIGNMENT(VPCISTATE, Queues, 8);
 #endif
+#ifdef VBOX_WITH_PCI_PASSTHROUGH
+    //CHECK_MEMBER_ALIGNMENT(PCIRAWSENDREQ, u.aGetRegionInfo.u64RegionSize, 8);
+#endif
 
 #ifdef VBOX_WITH_RAW_MODE
     /*
@@ -334,4 +346,3 @@ int main()
         printf("tstDeviceStructSize: SUCCESS\n");
     return rc;
 }
-

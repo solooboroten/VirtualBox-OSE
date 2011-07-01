@@ -125,6 +125,7 @@ struct glsl_shader_prog_link {
     struct vs_compile_args      vs_args;
     struct ps_compile_args      ps_args;
     UINT                        constant_version;
+    const struct wined3d_context *context;
 #ifdef VBOX_WITH_WDDM
     UINT                        inp2Fixup_info;
 #else
@@ -144,10 +145,11 @@ struct glsl_shader_prog_link {
 #endif
 
 typedef struct {
-    IWineD3DVertexShader        *vshader;
-    IWineD3DPixelShader         *pshader;
-    struct ps_compile_args      ps_args;
-    struct vs_compile_args      vs_args;
+    IWineD3DVertexShader         *vshader;
+    IWineD3DPixelShader          *pshader;
+    struct ps_compile_args       ps_args;
+    struct vs_compile_args       vs_args;
+    const struct wined3d_context *context;
 } glsl_program_key_t;
 
 struct shader_glsl_ctx_priv {
@@ -161,6 +163,7 @@ struct glsl_ps_compiled_shader
     struct ps_compile_args          args;
     struct ps_np2fixup_info         np2fixup;
     GLhandleARB                     prgId;
+    const struct wined3d_context    *context;
 };
 
 struct glsl_pshader_private
@@ -173,6 +176,7 @@ struct glsl_vs_compiled_shader
 {
     struct vs_compile_args          args;
     GLhandleARB                     prgId;
+    const struct wined3d_context    *context;
 };
 
 struct glsl_vshader_private
@@ -772,11 +776,7 @@ static void shader_glsl_load_constants(const struct wined3d_context *context,
         char usePixelShader, char useVertexShader)
 {
     const struct wined3d_gl_info *gl_info = context->gl_info;
-#ifdef VBOX_WITH_WDDM
-    IWineD3DDeviceImpl *device = context->device;
-#else
-    IWineD3DDeviceImpl *device = context->swapchain->device;
-#endif
+    IWineD3DDeviceImpl *device = context_get_device(context);
     IWineD3DStateBlockImpl* stateBlock = device->stateBlock;
     struct shader_glsl_priv *priv = device->shader_priv;
 
@@ -2986,12 +2986,14 @@ static void shader_glsl_tex(const struct wined3d_shader_instruction *ins)
 
     if (shader_version < WINED3D_SHADER_VERSION(1,4))
     {
-        DWORD flags = deviceImpl->stateBlock->textureState[sampler_idx][WINED3DTSS_TEXTURETRANSFORMFLAGS];
+        const struct shader_glsl_ctx_priv *priv = ins->ctx->backend_data;
+        DWORD flags = (priv->cur_ps_args->tex_transform >> (sampler_idx * WINED3D_PSARGS_TEXTRANSFORM_SHIFT))
+                      & WINED3D_PSARGS_TEXTRANSFORM_MASK;
 
         /* Projected cube textures don't make a lot of sense, the resulting coordinates stay the same. */
-        if (flags & WINED3DTTFF_PROJECTED && sampler_type != WINED3DSTT_CUBE) {
+        if (flags & WINED3D_PSARGS_PROJECTED && sampler_type != WINED3DSTT_CUBE) {
             sample_flags |= WINED3D_GLSL_SAMPLE_PROJECTED;
-            switch (flags & ~WINED3DTTFF_PROJECTED) {
+            switch (flags & ~WINED3D_PSARGS_PROJECTED) {
                 case WINED3DTTFF_COUNT1: FIXME("WINED3DTTFF_PROJECTED with WINED3DTTFF_COUNT1?\n"); break;
                 case WINED3DTTFF_COUNT2: mask = WINED3DSP_WRITEMASK_1; break;
                 case WINED3DTTFF_COUNT3: mask = WINED3DSP_WRITEMASK_2; break;
@@ -3438,6 +3440,7 @@ static void shader_glsl_texbem(const struct wined3d_shader_instruction *ins)
     IWineD3DBaseShaderImpl *shader = (IWineD3DBaseShaderImpl *)ins->ctx->shader;
     IWineD3DDeviceImpl *deviceImpl = (IWineD3DDeviceImpl *)shader->baseShader.device;
     const struct wined3d_gl_info *gl_info = ins->ctx->gl_info;
+    const struct shader_glsl_ctx_priv *priv = ins->ctx->backend_data;
     glsl_sample_function_t sample_function;
     glsl_src_param_t coord_param;
     WINED3DSAMPLER_TEXTURE_TYPE sampler_type;
@@ -3447,7 +3450,8 @@ static void shader_glsl_texbem(const struct wined3d_shader_instruction *ins)
     char coord_mask[6];
 
     sampler_idx = ins->dst[0].reg.idx;
-    flags = deviceImpl->stateBlock->textureState[sampler_idx][WINED3DTSS_TEXTURETRANSFORMFLAGS];
+    flags = (priv->cur_ps_args->tex_transform >> (sampler_idx * WINED3D_PSARGS_TEXTRANSFORM_SHIFT))
+            & WINED3D_PSARGS_TEXTRANSFORM_MASK;
 
     sampler_type = ins->ctx->reg_maps->sampler_type[sampler_idx];
     /* Dependent read, not valid with conditional NP2 */
@@ -3459,10 +3463,10 @@ static void shader_glsl_texbem(const struct wined3d_shader_instruction *ins)
     /* with projective textures, texbem only divides the static texture coord, not the displacement,
          * so we can't let the GL handle this.
          */
-    if (flags & WINED3DTTFF_PROJECTED) {
+    if (flags & WINED3D_PSARGS_PROJECTED) {
         DWORD div_mask=0;
         char coord_div_mask[3];
-        switch (flags & ~WINED3DTTFF_PROJECTED) {
+        switch (flags & ~WINED3D_PSARGS_PROJECTED) {
             case WINED3DTTFF_COUNT1: FIXME("WINED3DTTFF_PROJECTED with WINED3DTTFF_COUNT1?\n"); break;
             case WINED3DTTFF_COUNT2: div_mask = WINED3DSP_WRITEMASK_1; break;
             case WINED3DTTFF_COUNT3: div_mask = WINED3DSP_WRITEMASK_2; break;
@@ -3666,6 +3670,7 @@ static void add_glsl_program_entry(struct shader_glsl_priv *priv, struct glsl_sh
     key.pshader = entry->pshader;
     key.vs_args = entry->vs_args;
     key.ps_args = entry->ps_args;
+    key.context = entry->context;
 
     if (wine_rb_put(&priv->program_lookup, &key, &entry->program_lookup_entry) == -1)
     {
@@ -3675,7 +3680,7 @@ static void add_glsl_program_entry(struct shader_glsl_priv *priv, struct glsl_sh
 
 static struct glsl_shader_prog_link *get_glsl_program_entry(struct shader_glsl_priv *priv,
         IWineD3DVertexShader *vshader, IWineD3DPixelShader *pshader, struct vs_compile_args *vs_args,
-        struct ps_compile_args *ps_args) {
+        struct ps_compile_args *ps_args, const struct wined3d_context *context) {
     struct wine_rb_entry *entry;
     glsl_program_key_t key;
 
@@ -3683,6 +3688,7 @@ static struct glsl_shader_prog_link *get_glsl_program_entry(struct shader_glsl_p
     key.pshader = pshader;
     key.vs_args = *vs_args;
     key.ps_args = *ps_args;
+    key.context = context;
 
     entry = wine_rb_get(&priv->program_lookup, &key);
     return entry ? WINE_RB_ENTRY_VALUE(entry, struct glsl_shader_prog_link, program_lookup_entry) : NULL;
@@ -3698,9 +3704,20 @@ static void delete_glsl_program_entry(struct shader_glsl_priv *priv, const struc
     key.pshader = entry->pshader;
     key.vs_args = entry->vs_args;
     key.ps_args = entry->ps_args;
+    key.context = entry->context;
     wine_rb_remove(&priv->program_lookup, &key);
 
-    GL_EXTCALL(glDeleteObjectARB(entry->programId));
+    if (context_get_current() == entry->context)
+    {
+        TRACE("deleting program %u\n", entry->programId);
+        GL_EXTCALL(glDeleteObjectARB(entry->programId));
+        checkGLcall("glDeleteObjectARB");
+    }
+    else
+    {
+        WARN("Attempting to delete program %u created in ctx %p from ctx %p\n", entry->programId, entry->context, context_get_current());
+    }
+    
     if (entry->vshader) list_remove(&entry->vshader_entry);
     if (entry->pshader) list_remove(&entry->pshader_entry);
     HeapFree(GetProcessHeap(), 0, entry->vuniformF_locations);
@@ -4249,7 +4266,8 @@ static GLhandleARB find_glsl_pshader(const struct wined3d_context *context,
      * (cache coherency etc)
      */
     for(i = 0; i < shader_data->num_gl_shaders; i++) {
-        if(memcmp(&shader_data->gl_shaders[i].args, args, sizeof(*args)) == 0) {
+        if(shader_data->gl_shaders[i].context==context
+           && memcmp(&shader_data->gl_shaders[i].args, args, sizeof(*args)) == 0) {
             if(args->np2_fixup) {
 #ifdef VBOX_WITH_WDDM
                 *inp2fixup_info = i;
@@ -4281,6 +4299,7 @@ static GLhandleARB find_glsl_pshader(const struct wined3d_context *context,
         shader_data->shader_array_size = new_size;
     }
 
+    shader_data->gl_shaders[shader_data->num_gl_shaders].context = context;
     shader_data->gl_shaders[shader_data->num_gl_shaders].args = *args;
 
     memset(&shader_data->gl_shaders[shader_data->num_gl_shaders].np2fixup, 0, sizeof(struct ps_np2fixup_info));
@@ -4335,7 +4354,8 @@ static GLhandleARB find_glsl_vshader(const struct wined3d_context *context,
      * (cache coherency etc)
      */
     for(i = 0; i < shader_data->num_gl_shaders; i++) {
-        if(vs_args_equal(&shader_data->gl_shaders[i].args, args, use_map)) {
+        if(shader_data->gl_shaders[i].context==context
+           && vs_args_equal(&shader_data->gl_shaders[i].args, args, use_map)) {
             return shader_data->gl_shaders[i].prgId;
         }
     }
@@ -4361,6 +4381,7 @@ static GLhandleARB find_glsl_vshader(const struct wined3d_context *context,
         shader_data->shader_array_size = new_size;
     }
 
+    shader_data->gl_shaders[shader_data->num_gl_shaders].context = context;
     shader_data->gl_shaders[shader_data->num_gl_shaders].args = *args;
 
     shader_buffer_clear(buffer);
@@ -4398,7 +4419,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context,
     if (vshader) find_vs_compile_args((IWineD3DVertexShaderImpl *)vshader, device->stateBlock, &vs_compile_args);
     if (pshader) find_ps_compile_args((IWineD3DPixelShaderImpl *)pshader, device->stateBlock, &ps_compile_args);
 
-    entry = get_glsl_program_entry(priv, vshader, pshader, &vs_compile_args, &ps_compile_args);
+    entry = get_glsl_program_entry(priv, vshader, pshader, &vs_compile_args, &ps_compile_args, context);
     if (entry) {
         priv->glsl_program = entry;
         return;
@@ -4410,6 +4431,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context,
 
     /* Create the entry */
     entry = HeapAlloc(GetProcessHeap(), 0, sizeof(struct glsl_shader_prog_link));
+    entry->context = context;
     entry->programId = programId;
     entry->vshader = vshader;
     entry->pshader = pshader;
@@ -4656,11 +4678,7 @@ static GLhandleARB create_glsl_blt_shader(const struct wined3d_gl_info *gl_info,
 static void shader_glsl_select(const struct wined3d_context *context, BOOL usePS, BOOL useVS)
 {
     const struct wined3d_gl_info *gl_info = context->gl_info;
-#ifdef VBOX_WITH_WDDM
-    IWineD3DDeviceImpl *device = context->device;
-#else
-    IWineD3DDeviceImpl *device = context->swapchain->device;
-#endif
+    IWineD3DDeviceImpl *device = context_get_device(context);
     struct shader_glsl_priv *priv = device->shader_priv;
     GLhandleARB program_id = 0;
     GLenum old_vertex_color_clamp, current_vertex_color_clamp;
@@ -4809,9 +4827,17 @@ static void shader_glsl_destroy(IWineD3DBaseShader *iface) {
 
         ENTER_GL();
         for(i = 0; i < shader_data->num_gl_shaders; i++) {
-            TRACE("deleting pshader %u\n", shader_data->gl_shaders[i].prgId);
-            GL_EXTCALL(glDeleteObjectARB(shader_data->gl_shaders[i].prgId));
-            checkGLcall("glDeleteObjectARB");
+            if (shader_data->gl_shaders[i].context==context_get_current())
+            {
+                TRACE("deleting pshader %u\n", shader_data->gl_shaders[i].prgId);
+                GL_EXTCALL(glDeleteObjectARB(shader_data->gl_shaders[i].prgId));
+                checkGLcall("glDeleteObjectARB");
+            }
+            else
+            {
+                WARN("Attempting to delete pshader %u created in ctx %p from ctx %p\n", 
+                     shader_data->gl_shaders[i].prgId, shader_data->gl_shaders[i].context, context_get_current());
+            }
         }
         LEAVE_GL();
         HeapFree(GetProcessHeap(), 0, shader_data->gl_shaders);
@@ -4823,9 +4849,17 @@ static void shader_glsl_destroy(IWineD3DBaseShader *iface) {
 
         ENTER_GL();
         for(i = 0; i < shader_data->num_gl_shaders; i++) {
-            TRACE("deleting vshader %u\n", shader_data->gl_shaders[i].prgId);
-            GL_EXTCALL(glDeleteObjectARB(shader_data->gl_shaders[i].prgId));
-            checkGLcall("glDeleteObjectARB");
+            if (shader_data->gl_shaders[i].context==context_get_current())
+            {
+                TRACE("deleting vshader %u\n", shader_data->gl_shaders[i].prgId);
+                GL_EXTCALL(glDeleteObjectARB(shader_data->gl_shaders[i].prgId));
+                checkGLcall("glDeleteObjectARB");
+            }
+            else
+            {
+                WARN("Attempting to delete vshader %u created in ctx %p from ctx %p\n", 
+                     shader_data->gl_shaders[i].prgId, shader_data->gl_shaders[i].context, context_get_current());
+            }
         }
         LEAVE_GL();
         HeapFree(GetProcessHeap(), 0, shader_data->gl_shaders);
@@ -4843,6 +4877,9 @@ static int glsl_program_key_compare(const void *key, const struct wine_rb_entry 
     const struct glsl_shader_prog_link *prog = WINE_RB_ENTRY_VALUE(entry,
             const struct glsl_shader_prog_link, program_lookup_entry);
     int cmp;
+
+    if (k->context > prog->context) return 1;
+    else if (k->context < prog->context) return -1;
 
     if (k->vshader > prog->vshader) return 1;
     else if (k->vshader < prog->vshader) return -1;

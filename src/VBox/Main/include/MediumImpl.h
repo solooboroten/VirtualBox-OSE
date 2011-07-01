@@ -1,4 +1,4 @@
-/* $Id: MediumImpl.h 35252 2010-12-20 16:46:31Z vboxsync $ */
+/* $Id: MediumImpl.h 37525 2011-06-17 10:09:21Z vboxsync $ */
 
 /** @file
  *
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2008-2010 Oracle Corporation
+ * Copyright (C) 2008-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -50,9 +50,7 @@ public:
     DECLARE_PROTECT_FINAL_CONSTRUCT()
 
     BEGIN_COM_MAP(Medium)
-        COM_INTERFACE_ENTRY(ISupportErrorInfo)
-        COM_INTERFACE_ENTRY(IMedium)
-        COM_INTERFACE_ENTRY(IDispatch)
+        VBOX_DEFAULT_INTERFACE_ENTRIES(IMedium)
     END_COM_MAP()
 
     DECLARE_EMPTY_CTOR_DTOR(Medium)
@@ -79,6 +77,7 @@ public:
     HRESULT init(VirtualBox *aVirtualBox,
                  const Utf8Str &aLocation,
                  HDDOpenMode enOpenMode,
+                 bool fForceNewUuid,
                  DeviceType_T aDeviceType);
 
     // initializer used when loading settings
@@ -176,9 +175,13 @@ public:
     MediumType_T getType() const;
     Utf8Str getName();
 
-    bool addRegistry(const Guid& id);
+    bool addRegistry(const Guid& id, bool fRecurse);
+private:
+    void addRegistryImpl(const Guid& id, bool fRecurse);
+public:
+    bool removeRegistry(const Guid& id, bool fRecurse);
     bool isInRegistry(const Guid& id);
-    const Guid& getFirstRegistryMachineId() const;
+    bool getFirstRegistryMachineId(Guid &uuid) const;
     HRESULT addToRegistryIDList(GuidList &llRegistryIDs);
 
     HRESULT addBackReference(const Guid &aMachineId,
@@ -187,6 +190,7 @@ public:
                                 const Guid &aSnapshotId = Guid::Empty);
 
     const Guid* getFirstMachineBackrefId() const;
+    const Guid* getAnyMachineBackref() const;
     const Guid* getFirstMachineBackrefSnapshotId() const;
 
 #ifdef DEBUG

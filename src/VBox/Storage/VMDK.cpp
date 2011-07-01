@@ -1,10 +1,10 @@
-/* $Id: VMDK.cpp 34885 2010-12-09 13:56:03Z vboxsync $ */
+/* $Id: VMDK.cpp 37483 2011-06-16 07:49:36Z vboxsync $ */
 /** @file
  * VMDK disk image, core code.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -19,6 +19,8 @@
 *   Header Files                                                               *
 *******************************************************************************/
 #define LOG_GROUP LOG_GROUP_VD_VMDK
+#define RT_STRICT
+#define LOG_ENABLED
 #include <VBox/vd-plugin.h>
 #include <VBox/err.h>
 
@@ -2451,9 +2453,7 @@ static int vmdkParseDescriptor(PVMDKIMAGE pImage, char *pDescData,
             RTUuidClear(&pImage->ParentModificationUuid);
         else
         {
-            rc = RTUuidCreate(&pImage->ParentModificationUuid);
-            if (RT_FAILURE(rc))
-                return rc;
+            RTUuidClear(&pImage->ParentModificationUuid);
             rc = vmdkDescDDBSetUuid(pImage, &pImage->Descriptor,
                                     VMDK_DDB_PARENT_MODIFICATION_UUID,
                                     &pImage->ParentModificationUuid);
@@ -2703,7 +2703,8 @@ static int vmdkReadBinaryMetaExtent(PVMDKIMAGE pImage, PVMDKEXTENT pExtent,
     AssertRC(rc);
     if (RT_FAILURE(rc))
     {
-        rc = vmdkError(pImage, rc, RT_SRC_POS, N_("VMDK: error reading extent header in '%s'"), pExtent->pszFullname);
+        vmdkError(pImage, rc, RT_SRC_POS, N_("VMDK: error reading extent header in '%s'"), pExtent->pszFullname);
+        rc = VERR_VD_VMDK_INVALID_HEADER;
         goto out;
     }
     rc = vmdkValidateHeader(pImage, pExtent, &Header);
@@ -2741,7 +2742,8 @@ static int vmdkReadBinaryMetaExtent(PVMDKIMAGE pImage, PVMDKEXTENT pExtent,
         AssertRC(rc);
         if (RT_FAILURE(rc))
         {
-            rc = vmdkError(pImage, rc, RT_SRC_POS, N_("VMDK: error reading extent footer in '%s'"), pExtent->pszFullname);
+            vmdkError(pImage, rc, RT_SRC_POS, N_("VMDK: error reading extent footer in '%s'"), pExtent->pszFullname);
+            rc = VERR_VD_VMDK_INVALID_HEADER;
             goto out;
         }
         rc = vmdkValidateHeader(pImage, pExtent, &Header);
@@ -3024,7 +3026,11 @@ static int vmdkReadMetaESXSparseExtent(PVMDKEXTENT pExtent)
     int rc = vmdkFileReadSync(pImage, pExtent->pFile, 0, &Header, sizeof(Header), NULL);
     AssertRC(rc);
     if (RT_FAILURE(rc))
+    {
+        vmdkError(pImage, rc, RT_SRC_POS, N_("VMDK: error reading ESX sparse extent header in '%s'"), pExtent->pszFullname);
+        rc = VERR_VD_VMDK_INVALID_HEADER;
         goto out;
+    }
     if (    RT_LE2H_U32(Header.magicNumber) != VMDK_ESX_SPARSE_MAGICNUMBER
         ||  RT_LE2H_U32(Header.version) != 1
         ||  RT_LE2H_U32(Header.flags) != 3)
@@ -3239,7 +3245,8 @@ static int vmdkOpenImage(PVMDKIMAGE pImage, unsigned uOpenFlags)
     rc = vmdkFileReadSync(pImage, pFile, 0, &u32Magic, sizeof(u32Magic), NULL);
     if (RT_FAILURE(rc))
     {
-        rc = vmdkError(pImage, rc, RT_SRC_POS, N_("VMDK: error reading the magic number in '%s'"), pImage->pszFilename);
+        vmdkError(pImage, rc, RT_SRC_POS, N_("VMDK: error reading the magic number in '%s'"), pImage->pszFilename);
+        rc = VERR_VD_VMDK_INVALID_HEADER;
         goto out;
     }
 
@@ -3305,6 +3312,13 @@ static int vmdkOpenImage(PVMDKIMAGE pImage, unsigned uOpenFlags)
                                  VMDK_SECTOR2BYTE(pExtent->cDescriptorSectors));
         if (RT_FAILURE(rc))
             goto out;
+
+        if (   pImage->uImageFlags & VD_VMDK_IMAGE_FLAGS_STREAM_OPTIMIZED
+            && uOpenFlags & VD_OPEN_FLAGS_ASYNC_IO)
+        {
+            rc = VERR_NOT_SUPPORTED;
+            goto out;
+        }
 
         rc = vmdkReadMetaExtent(pImage, pExtent);
         if (RT_FAILURE(rc))
@@ -4501,16 +4515,13 @@ static int vmdkFreeImage(PVMDKIMAGE pImage, bool fDelete)
             {
                 PVMDKEXTENT pExtent = &pImage->pExtents[0];
                 uint32_t uLastGDEntry = pExtent->uLastGrainAccess / pExtent->cGTEntries;
-                if (uLastGDEntry != pExtent->cGDEntries - 1)
+                rc = vmdkStreamFlushGT(pImage, pExtent, uLastGDEntry);
+                AssertRC(rc);
+                vmdkStreamClearGT(pImage, pExtent);
+                for (uint32_t i = uLastGDEntry + 1; i < pExtent->cGDEntries; i++)
                 {
-                    rc = vmdkStreamFlushGT(pImage, pExtent, uLastGDEntry);
+                    rc = vmdkStreamFlushGT(pImage, pExtent, i);
                     AssertRC(rc);
-                    vmdkStreamClearGT(pImage, pExtent);
-                    for (uint32_t i = uLastGDEntry + 1; i < pExtent->cGDEntries; i++)
-                    {
-                        rc = vmdkStreamFlushGT(pImage, pExtent, i);
-                        AssertRC(rc);
-                    }
                 }
 
                 uint64_t uFileOffset = pExtent->uAppendPosition;
@@ -4673,76 +4684,6 @@ static int vmdkFlushImage(PVMDKIMAGE pImage)
                     && !(pImage->uOpenFlags & VD_OPEN_FLAGS_READONLY)
                     && !(pExtent->pszBasename[0] == RTPATH_SLASH))
                     rc = vmdkFileFlush(pImage, pExtent->pFile);
-                break;
-            case VMDKETYPE_ZERO:
-                /* No need to do anything for this extent. */
-                break;
-            default:
-                AssertMsgFailed(("unknown extent type %d\n", pExtent->enmType));
-                break;
-        }
-    }
-
-out:
-    return rc;
-}
-
-/**
- * Internal. Flush image data (and metadata) to disk - async version.
- */
-static int vmdkFlushImageAsync(PVMDKIMAGE pImage, PVDIOCTX pIoCtx)
-{
-    PVMDKEXTENT pExtent;
-    int rc = VINF_SUCCESS;
-
-    /* Update descriptor if changed. */
-    if (pImage->Descriptor.fDirty)
-    {
-        rc = vmdkWriteDescriptorAsync(pImage, pIoCtx);
-        if (   RT_FAILURE(rc)
-            && rc != VERR_VD_ASYNC_IO_IN_PROGRESS)
-            goto out;
-    }
-
-    for (unsigned i = 0; i < pImage->cExtents; i++)
-    {
-        pExtent = &pImage->pExtents[i];
-        if (pExtent->pFile != NULL && pExtent->fMetaDirty)
-        {
-            switch (pExtent->enmType)
-            {
-                case VMDKETYPE_HOSTED_SPARSE:
-                    AssertMsgFailed(("Async I/O not supported for sparse images\n"));
-                    break;
-#ifdef VBOX_WITH_VMDK_ESX
-                case VMDKETYPE_ESX_SPARSE:
-                    /** @todo update the header. */
-                    break;
-#endif /* VBOX_WITH_VMDK_ESX */
-                case VMDKETYPE_VMFS:
-                case VMDKETYPE_FLAT:
-                    /* Nothing to do. */
-                    break;
-                case VMDKETYPE_ZERO:
-                default:
-                    AssertMsgFailed(("extent with type %d marked as dirty\n",
-                                     pExtent->enmType));
-                    break;
-            }
-        }
-        switch (pExtent->enmType)
-        {
-            case VMDKETYPE_HOSTED_SPARSE:
-#ifdef VBOX_WITH_VMDK_ESX
-            case VMDKETYPE_ESX_SPARSE:
-#endif /* VBOX_WITH_VMDK_ESX */
-            case VMDKETYPE_VMFS:
-            case VMDKETYPE_FLAT:
-                /** @todo implement proper path absolute check. */
-                if (   pExtent->pFile != NULL
-                    && !(pImage->uOpenFlags & VD_OPEN_FLAGS_READONLY)
-                    && !(pExtent->pszBasename[0] == RTPATH_SLASH))
-                    rc = vmdkFileFlushAsync(pImage, pExtent->pFile, pIoCtx);
                 break;
             case VMDKETYPE_ZERO:
                 /* No need to do anything for this extent. */
@@ -5821,7 +5762,7 @@ static int vmdkCreate(const char *pszFilename, uint64_t cbSize,
                       PVDINTERFACE pVDIfsDisk, PVDINTERFACE pVDIfsImage,
                       PVDINTERFACE pVDIfsOperation, void **ppBackendData)
 {
-    LogFlowFunc(("pszFilename=\"%s\" cbSize=%llu uImageFlags=%#x pszComment=\"%s\" pPCHSGeometry=%#p pLCHSGeometry=%#p Uuid=%RTuuid uOpenFlags=%#x uPercentStart=%u uPercentSpan=%u pVDIfsDisk=%#p pVDIfsImage=%#p pVDIfsOperation=%#p ppBackendData=%#p", pszFilename, cbSize, uImageFlags, pszComment, pPCHSGeometry, pLCHSGeometry, pUuid, uOpenFlags, uPercentStart, uPercentSpan, pVDIfsDisk, pVDIfsImage, pVDIfsOperation, ppBackendData));
+    LogFlowFunc(("pszFilename=\"%s\" cbSize=%llu uImageFlags=%#x pszComment=\"%s\" pPCHSGeometry=%#p pLCHSGeometry=%#p Uuid=%RTuuid uOpenFlags=%#x uPercentStart=%u uPercentSpan=%u pVDIfsDisk=%#p pVDIfsImage=%#p pVDIfsOperation=%#p ppBackendData=%#p\n", pszFilename, cbSize, uImageFlags, pszComment, pPCHSGeometry, pLCHSGeometry, pUuid, uOpenFlags, uPercentStart, uPercentSpan, pVDIfsDisk, pVDIfsImage, pVDIfsOperation, ppBackendData));
     int rc;
     PVMDKIMAGE pImage;
 
@@ -5835,6 +5776,13 @@ static int vmdkCreate(const char *pszFilename, uint64_t cbSize,
         pCbProgress = VDGetInterfaceProgress(pIfProgress);
         pfnProgress = pCbProgress->pfnProgress;
         pvUser = pIfProgress->pvUser;
+    }
+
+    /* Check the image flags. */
+    if ((uImageFlags & ~VD_VMDK_IMAGE_FLAGS_MASK) != 0)
+    {
+        rc = VERR_VD_INVALID_TYPE;
+        goto out;
     }
 
     /* Check open flags. All valid flags are supported. */
@@ -6690,7 +6638,7 @@ static unsigned vmdkGetOpenFlags(void *pBackendData)
 /** @copydoc VBOXHDDBACKEND::pfnSetOpenFlags */
 static int vmdkSetOpenFlags(void *pBackendData, unsigned uOpenFlags)
 {
-    LogFlowFunc(("pBackendData=%#p\n uOpenFlags=%#x", pBackendData, uOpenFlags));
+    LogFlowFunc(("pBackendData=%#p uOpenFlags=%#x\n", pBackendData, uOpenFlags));
     PVMDKIMAGE pImage = (PVMDKIMAGE)pBackendData;
     int rc;
 
@@ -7037,15 +6985,6 @@ static void vmdkDump(void *pBackendData)
     }
 }
 
-/** @copydoc VBOXHDDBACKEND::pfnIsAsyncIOSupported */
-static bool vmdkIsAsyncIOSupported(void *pBackendData)
-{
-    PVMDKIMAGE pImage = (PVMDKIMAGE)pBackendData;
-
-    /* We do not support async I/O for stream optimized VMDK images. */
-    return (pImage->uImageFlags & VD_VMDK_IMAGE_FLAGS_STREAM_OPTIMIZED) == 0;
-}
-
 /** @copydoc VBOXHDDBACKEND::pfnAsyncRead */
 static int vmdkAsyncRead(void *pBackendData, uint64_t uOffset, size_t cbRead,
                          PVDIOCTX pIoCtx, size_t *pcbActuallyRead)
@@ -7262,6 +7201,20 @@ static int vmdkAsyncFlush(void *pBackendData, PVDIOCTX pIoCtx)
     PVMDKEXTENT pExtent;
     int rc = VINF_SUCCESS;
 
+    /* Update descriptor if changed. */
+    /** @todo: The descriptor is never updated because
+     * it remains unchanged during normal operation (only vmdkRename updates it).
+     * So this part is actually not tested so far and requires testing as soon
+     * as the descriptor might change during async I/O.
+     */
+    if (pImage->Descriptor.fDirty)
+    {
+        rc = vmdkWriteDescriptorAsync(pImage, pIoCtx);
+        if (   RT_FAILURE(rc)
+            && rc != VERR_VD_ASYNC_IO_IN_PROGRESS)
+            goto out;
+    }
+
     for (unsigned i = 0; i < pImage->cExtents; i++)
     {
         pExtent = &pImage->pExtents[i];
@@ -7418,8 +7371,6 @@ VBOXHDDBACKEND g_VmdkBackend =
     NULL,
     /* pfnSetParentFilename */
     NULL,
-    /* pfnIsAsyncIOSupported */
-    vmdkIsAsyncIOSupported,
     /* pfnAsyncRead */
     vmdkAsyncRead,
     /* pfnAsyncWrite */

@@ -1,4 +1,4 @@
-/* $Id: thread-posix.cpp 34628 2010-12-02 17:00:04Z vboxsync $ */
+/* $Id: thread-posix.cpp 37154 2011-05-19 12:54:32Z vboxsync $ */
 /** @file
  * IPRT - Threads, POSIX.
  */
@@ -38,6 +38,14 @@
 #endif
 #if defined(RT_OS_SOLARIS)
 # include <sched.h>
+# include <sys/resource.h>
+#endif
+#if defined(RT_OS_DARWIN)
+# include <mach/thread_act.h>
+# include <mach/thread_info.h>
+# include <mach/host_info.h>
+# include <mach/mach_init.h>
+# include <mach/mach_host.h>
 #endif
 
 #include <iprt/thread.h>
@@ -81,7 +89,7 @@ static void rtThreadKeyDestruct(void *pvValue);
 static void rtThreadPosixPokeSignal(int iSignal);
 
 
-int rtThreadNativeInit(void)
+DECLHIDDEN(int) rtThreadNativeInit(void)
 {
     /*
      * Allocate the TLS (key in posix terms) where we store the pointer to
@@ -180,7 +188,7 @@ static void rtThreadPosixPokeSignal(int iSignal)
  *
  * @param   pThread     Pointer to the thread structure.
  */
-int rtThreadNativeAdopt(PRTTHREADINT pThread)
+DECLHIDDEN(int) rtThreadNativeAdopt(PRTTHREADINT pThread)
 {
     /*
      * Block SIGALRM - required for timer-posix.cpp.
@@ -203,7 +211,7 @@ int rtThreadNativeAdopt(PRTTHREADINT pThread)
 }
 
 
-void rtThreadNativeDestroy(PRTTHREADINT pThread)
+DECLHIDDEN(void) rtThreadNativeDestroy(PRTTHREADINT pThread)
 {
     if (pThread == (PRTTHREADINT)pthread_getspecific(g_SelfKey))
         pthread_setspecific(g_SelfKey, NULL);
@@ -250,12 +258,12 @@ static void *rtThreadNativeMain(void *pvArgs)
     rc = rtThreadMain(pThread, (uintptr_t)Self, &pThread->szName[0]);
 
     pthread_setspecific(g_SelfKey, NULL);
-    pthread_exit((void *)rc);
-    return (void *)rc;
+    pthread_exit((void *)(intptr_t)rc);
+    return (void *)(intptr_t)rc;
 }
 
 
-int rtThreadNativeCreate(PRTTHREADINT pThread, PRTNATIVETHREAD pNativeThread)
+DECLHIDDEN(int) rtThreadNativeCreate(PRTTHREADINT pThread, PRTNATIVETHREAD pNativeThread)
 {
     /*
      * Set the default stack size.
@@ -375,20 +383,6 @@ RTDECL(bool) RTThreadYield(void)
 }
 
 
-RTR3DECL(uint64_t) RTThreadGetAffinity(void)
-{
-    return 1;
-}
-
-
-RTR3DECL(int) RTThreadSetAffinity(uint64_t u64Mask)
-{
-    if (u64Mask != 1)
-        return VERR_INVALID_PARAMETER;
-    return VINF_SUCCESS;
-}
-
-
 #ifdef RTTHREAD_POSIX_WITH_POKE
 RTDECL(int) RTThreadPoke(RTTHREAD hThread)
 {
@@ -410,9 +404,21 @@ RTDECL(int) RTThreadPoke(RTTHREAD hThread)
 }
 #endif
 
+/** @todo move this into platform specific files. */
 RTR3DECL(int) RTThreadGetExecutionTimeMilli(uint64_t *pKernelTime, uint64_t *pUserTime)
 {
-#ifndef RT_OS_DARWIN
+#if defined(RT_OS_SOLARIS)
+    struct rusage ts;
+    int rc = getrusage(RUSAGE_LWP, &ts);
+    if (rc)
+        return RTErrConvertFromErrno(rc);
+
+    *pKernelTime = ts.ru_stime.tv_sec * 1000 + ts.ru_stime.tv_usec / 1000;
+    *pUserTime   = ts.ru_utime.tv_sec * 1000 + ts.ru_utime.tv_usec / 1000;
+    return VINF_SUCCESS;
+
+#elif defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD)
+    /* on Linux, getrusage(RUSAGE_THREAD, ...) is available since 2.6.26 */
     struct timespec ts;
     int rc = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
     if (rc)
@@ -421,7 +427,19 @@ RTR3DECL(int) RTThreadGetExecutionTimeMilli(uint64_t *pKernelTime, uint64_t *pUs
     *pKernelTime = 0;
     *pUserTime = (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
     return VINF_SUCCESS;
+
+#elif defined(RT_OS_DARWIN)
+    thread_basic_info       ThreadInfo;
+    mach_msg_type_number_t  Count = THREAD_BASIC_INFO_COUNT;
+    kern_return_t krc = thread_info(mach_thread_self(), THREAD_BASIC_INFO, (thread_info_t)&ThreadInfo, &Count);
+    AssertReturn(krc == KERN_SUCCESS, RTErrConvertFromDarwinKern(krc));
+
+    *pKernelTime = ThreadInfo.system_time.seconds * 1000 + ThreadInfo.system_time.microseconds / 1000;
+    *pUserTime   = ThreadInfo.user_time.seconds   * 1000 + ThreadInfo.user_time.microseconds   / 1000;
+
+    return VINF_SUCCESS;
 #else
     return VERR_NOT_IMPLEMENTED;
 #endif
 }
+

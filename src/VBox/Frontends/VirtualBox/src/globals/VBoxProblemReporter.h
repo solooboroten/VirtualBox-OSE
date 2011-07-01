@@ -137,6 +137,19 @@ public:
                                 aAutoConfirmId, aOkText, aCancelText);
     }
 
+    int messageWithOption(QWidget *pParent,
+                          Type type,
+                          const QString &strMessage,
+                          const QString &strOptionText,
+                          bool fDefaultOptionValue = true,
+                          const QString &strDetails = QString::null,
+                          int iButton1 = 0,
+                          int iButton2 = 0,
+                          int iButton3 = 0,
+                          const QString &strButtonName1 = QString::null,
+                          const QString &strButtonName2 = QString::null,
+                          const QString &strButtonName3 = QString::null) const;
+
     bool showModalProgressDialog(CProgress &progress, const QString &strTitle,
                                  const QString &strImage = "", QWidget *pParent = 0,
                                  bool fSheetOnDarwin = false, int cMinDuration = 2000);
@@ -179,14 +192,16 @@ public:
                               QWidget *parent = 0);
 
     void cannotOpenMachine(QWidget *pParent, const QString &strMachinePath, const CVirtualBox &vbox);
+    void cannotRegisterMachine(const CVirtualBox &vbox, const CMachine &machine, QWidget *pParent);
     void cannotReregisterMachine(QWidget *pParent, const QString &strMachinePath, const QString &strMachineName);
-
     void cannotApplyMachineSettings (const CMachine &machine, const COMResult &res);
     void cannotSaveMachineSettings (const CMachine &machine,
                                     QWidget *parent = 0);
     void cannotLoadMachineSettings (const CMachine &machine,
                                     bool strict = true,
                                     QWidget *parent = 0);
+
+    bool confirmedSettingsReloading(QWidget *pParent);
 
     void cannotStartMachine (const CConsole &console);
     void cannotStartMachine (const CProgress &progress);
@@ -195,11 +210,14 @@ public:
     void cannotACPIShutdownMachine (const CConsole &console);
     void cannotSaveMachineState (const CConsole &console);
     void cannotSaveMachineState (const CProgress &progress);
+    void cannotCreateClone(const CMachine &machine, QWidget *pParent = 0);
+    void cannotCreateClone(const CMachine &machine, const CProgress &progress, QWidget *pParent = 0);
     void cannotTakeSnapshot (const CConsole &console);
     void cannotTakeSnapshot (const CProgress &progress);
     void cannotStopMachine (const CConsole &console);
     void cannotStopMachine (const CProgress &progress);
     void cannotDeleteMachine (const CMachine &machine);
+    void cannotDeleteMachine(const CMachine &machine, const CProgress &progress);
     void cannotDiscardSavedState (const CConsole &console);
 
     void cannotSendACPIToMachine();
@@ -207,7 +225,7 @@ public:
     bool warnAboutVirtNotEnabled64BitsGuest(bool fHWVirtExSupported);
     bool warnAboutVirtNotEnabledGuestRequired(bool fHWVirtExSupported);
 
-    bool askAboutSnapshotRestoring (const QString &aSnapshotName);
+    int askAboutSnapshotRestoring (const QString &aSnapshotName, bool fAlsoCreateNewSnapshot);
     bool askAboutSnapshotDeleting (const QString &aSnapshotName);
     bool askAboutSnapshotDeletingFreeSpace (const QString &aSnapshotName,
                                             const QString &aTargetImageName,
@@ -231,6 +249,8 @@ public:
 
     int confirmMachineDeletion(const CMachine &machine);
     bool confirmDiscardSavedState (const CMachine &machine);
+
+    void cannotChangeMediumType(QWidget *pParent, const CMedium &medium, KMediumType oldMediumType, KMediumType newMediumType);
 
     bool confirmReleaseMedium (QWidget *aParent, const VBoxMedium &aMedium,
                                const QString &aUsage);
@@ -381,6 +401,8 @@ public:
         return formatErrorInfo (aRC.errorInfo(), aRC.rc());
     }
 
+    void showGenericError(COMBaseWithEI *object, QWidget *pParent = 0);
+
     /* Stuff supporting interthreading: */
     void cannotCreateHostInterface(const CHost &host, QWidget *pParent = 0);
     void cannotCreateHostInterface(const CProgress &progress, QWidget *pParent = 0);
@@ -397,6 +419,7 @@ public:
     void cannotRemoveSharedFolder(const CConsole &console, const QString &strName,
                                   const QString &strPath, QWidget *pParent = 0);
     void remindAboutWrongColorDepth(ulong uRealBPP, ulong uWantedBPP);
+    void remindAboutUnsupportedUSB2(const QString &strExtPackName, QWidget *pParent = 0);
 
 signals:
 
@@ -419,6 +442,7 @@ signals:
     void sigCannotRemoveSharedFolder(const CConsole &console, const QString &strName,
                                      const QString &strPath, QWidget *pParent);
     void sigRemindAboutWrongColorDepth(ulong uRealBPP, ulong uWantedBPP);
+    void sigRemindAboutUnsupportedUSB2(const QString &strExtPackName, QWidget *pParent);
 
 public slots:
 
@@ -446,6 +470,7 @@ private slots:
     void sltCannotRemoveSharedFolder(const CConsole &console, const QString &strName,
                                      const QString &strPath, QWidget *pParent);
     void sltRemindAboutWrongColorDepth(ulong uRealBPP, ulong uWantedBPP);
+    void sltRemindAboutUnsupportedUSB2(const QString &strExtPackName, QWidget *pParent);
 
 private:
 

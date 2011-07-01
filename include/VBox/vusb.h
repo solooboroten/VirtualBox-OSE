@@ -121,6 +121,30 @@ typedef VUSBDESCDEVICE *PVUSBDESCDEVICE;
 /** Pointer to a const USB device descriptor. */
 typedef const VUSBDESCDEVICE *PCVUSBDESCDEVICE;
 
+/**
+ * USB device qualifier (from spec)
+ */
+struct VUSBDEVICEQUALIFIER
+{
+    uint8_t bLength;
+    uint8_t bDescriptorType;
+    uint8_t bcdUsb;
+    uint8_t bDeviceClass;
+    uint8_t bDeviceSubClass;
+    uint8_t bDeviceProtocol;
+    uint8_t bMaxPacketSize0;
+    uint8_t idVendor;
+    uint8_t idProduct;
+    uint8_t bcdDevice;
+    uint8_t iManufacturer;
+    uint8_t iProduct;
+    uint8_t iSerialNumber;
+    uint8_t bNumConfigurations;
+};
+
+typedef struct VUSBDEVICEQUALIFIER VUSBDEVICEQUALIFIER;
+typedef VUSBDEVICEQUALIFIER *PVUSBDEVICEQUALIFIER;
+
 
 /**
  * USB configuration descriptor (from spec).
@@ -196,6 +220,8 @@ typedef struct VUSBDESCCONFIGEX
     /** Pointer to an array of the interfaces referenced in the configuration.
      * Core.bNumInterfaces in size. */
     const struct VUSBINTERFACE *paIfs;
+    /** Pointer to the original descriptor data read from the device. */
+    const void *pvOriginal;
 } VUSBDESCCONFIGEX;
 /** Pointer to a parsed USB configuration descriptor. */
 typedef VUSBDESCCONFIGEX *PVUSBDESCCONFIGEX;

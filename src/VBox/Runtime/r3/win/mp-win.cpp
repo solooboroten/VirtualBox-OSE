@@ -1,4 +1,4 @@
-/* $Id: mp-win.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: mp-win.cpp 36262 2011-03-11 14:50:45Z vboxsync $ */
 /** @file
  * IPRT - Multiprocessor, Windows.
  */
@@ -33,6 +33,9 @@
 #include <iprt/mp.h>
 #include <iprt/cpuset.h>
 #include <iprt/assert.h>
+
+
+AssertCompile(MAXIMUM_PROCESSORS <= RTCPUSET_MAX_CPUS);
 
 
 /** @todo RTmpCpuId(). */
@@ -92,6 +95,7 @@ RTDECL(PRTCPUSET) RTMpGetOnlineSet(PRTCPUSET pSet)
 {
     SYSTEM_INFO SysInfo;
     GetSystemInfo(&SysInfo);
+/** @todo port to W2K8 / W7 w/ > 64 CPUs & grouping. */
     return RTCpuSetFromU64(pSet, SysInfo.dwActiveProcessorMask);
 }
 

@@ -1,4 +1,4 @@
-/* $Id: slirp.c 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: slirp.c 36943 2011-05-03 16:09:51Z vboxsync $ */
 /** @file
  * NAT - slirp glue.
  */
@@ -991,10 +991,6 @@ void slirp_select_fill(PNATState pData, int *pnfds, struct pollfd *polls)
                 UDP_DETACH(pData, so, so_next);
                 CONTINUE_NO_UNLOCK(udp);
             }
-            else
-            {
-                do_slowtimo = 1; /* Let socket expire */
-            }
         }
 
         /*
@@ -1438,6 +1434,17 @@ static void arp_input(PNATState pData, struct mbuf *m)
                 {
                     case CTL_DNS:
                     case CTL_ALIAS:
+                    case CTL_TFTP:
+                        if (!slirpMbufTagService(pData, mr, (uint8_t)(htip & ~pData->netmask)))
+                        {
+                            static bool fTagErrorReported;
+                            if (!fTagErrorReported)
+                            {
+                                LogRel(("NAT: couldn't add the tag(PACKET_SERVICE:%d) to mbuf:%p\n",
+                                            (uint8_t)(htip & ~pData->netmask), m));
+                                fTagErrorReported = true;
+                            }
+                        }
                         rah->ar_sha[5] = (uint8_t)(htip & ~pData->netmask);
                         break;
                     default:;
@@ -1459,7 +1466,14 @@ static void arp_input(PNATState pData, struct mbuf *m)
                 /* We've received an announce about address assignment,
                  * let's do an ARP cache update
                  */
-                slirp_arp_cache_update_or_add(pData, *(uint32_t *)ah->ar_tip, &eh->h_dest[0]);
+                static bool fGratuitousArpReported;
+                if (!fGratuitousArpReported)
+                {
+                    LogRel(("NAT: Gratuitous ARP [IP:%R[IP4], ether:%RTmac]\n",
+                            ah->ar_sip, ah->ar_sha));
+                    fGratuitousArpReported = true;
+                }
+                slirp_arp_cache_update_or_add(pData, *(uint32_t *)ah->ar_sip, &ah->ar_sha[0]);
             }
             break;
 
@@ -1555,6 +1569,8 @@ void if_encap(PNATState pData, uint16_t eth_proto, struct mbuf *m, int flags)
 
     if (memcmp(eh->h_source, special_ethaddr, ETH_ALEN) != 0)
     {
+        struct m_tag *t = m_tag_first(m);
+        uint8_t u8ServiceId = CTL_ALIAS;
         memcpy(eh->h_dest, eh->h_source, ETH_ALEN);
         memcpy(eh->h_source, special_ethaddr, ETH_ALEN);
         Assert(memcmp(eh->h_dest, special_ethaddr, ETH_ALEN) != 0);
@@ -1564,6 +1580,13 @@ void if_encap(PNATState pData, uint16_t eth_proto, struct mbuf *m, int flags)
             m_freem(pData, m);
             goto done;
         }
+        if (   t
+            && (t = m_tag_find(m, PACKET_SERVICE, NULL)))
+        {
+            Assert(t);
+            u8ServiceId = *(uint8_t *)&t[1];
+        }
+        eh->h_source[5] = u8ServiceId;
     }
     /*
      * we're processing the chain, that isn't not expected.
@@ -1739,9 +1762,7 @@ int slirp_add_redirect(PNATState pData, int is_udp, struct in_addr host_addr, in
             && rule->host_port == host_port
             && rule->bind_ip.s_addr == host_addr.s_addr
             && rule->guest_port == guest_port
-#ifndef VBOX_WITH_NAT_SERVICE
             && rule->guest_addr.s_addr == guest_addr.s_addr
-#endif
             )
                 return 0; /* rule has been already registered */
     }
@@ -1753,9 +1774,7 @@ int slirp_add_redirect(PNATState pData, int is_udp, struct in_addr host_addr, in
     rule->proto = (is_udp ? IPPROTO_UDP : IPPROTO_TCP);
     rule->host_port = host_port;
     rule->guest_port = guest_port;
-#ifndef VBOX_WITH_NAT_SERVICE
     rule->guest_addr.s_addr = guest_addr.s_addr;
-#endif
     rule->bind_ip.s_addr = host_addr.s_addr;
     memcpy(rule->mac_address, ethaddr, ETH_ALEN);
     /* @todo add mac address */
@@ -1777,9 +1796,7 @@ int slirp_remove_redirect(PNATState pData, int is_udp, struct in_addr host_addr,
             && rule->host_port == host_port
             && rule->guest_port == guest_port
             && rule->bind_ip.s_addr == host_addr.s_addr
-#ifndef VBOX_WITH_NAT_SERVICE
             && rule->guest_addr.s_addr == guest_addr.s_addr
-#endif
             && rule->activated)
         {
             LogRel(("NAT: remove redirect %s host port %d => guest port %d @ %R[IP4]\n",
@@ -1957,7 +1974,8 @@ int slirp_arp_lookup_ether_by_ip(PNATState pData, uint32_t ip, uint8_t *ether)
 
     LIST_FOREACH(ac, &pData->arp_cache, list)
     {
-        if (ac->ip == ip)
+        if (   ac->ip == ip
+            && memcmp(ac->ether, broadcast_ethaddr, ETH_ALEN) != 0)
         {
             memcpy(ether, ac->ether, ETH_ALEN);
             return VINF_SUCCESS;
@@ -2011,6 +2029,8 @@ void slirp_arp_who_has(PNATState pData, uint32_t dst)
     ahdr->ar_pln = 4;
     ahdr->ar_op = RT_H2N_U16_C(ARPOP_REQUEST);
     memcpy(ahdr->ar_sha, special_ethaddr, ETH_ALEN);
+    /* we assume that this request come from gw, but not from DNS or TFTP */
+    ahdr->ar_sha[5] = CTL_ALIAS;
     *(uint32_t *)ahdr->ar_sip = RT_H2N_U32(RT_N2H_U32(pData->special_addr.s_addr) | CTL_ALIAS);
     memset(ahdr->ar_tha, 0xff, ETH_ALEN); /*broadcast*/
     *(uint32_t *)ahdr->ar_tip = dst;
@@ -2021,24 +2041,19 @@ void slirp_arp_who_has(PNATState pData, uint32_t dst)
     if_encap(pData, ETH_P_ARP, m, ETH_ENCAP_URG);
 }
 
-int slirp_arp_cache_update_or_add(PNATState pData, uint32_t dst, const uint8_t *mac)
-{
-    if (slirp_arp_cache_update(pData, dst, mac))
-        slirp_arp_cache_add(pData, dst, mac);
-
-    return 0;
-}
-
 /* updates the arp cache
+ * @note: this is helper function, slirp_arp_cache_update_or_add should be used.
  * @returns 0 - if has found and updated
  *          1 - if hasn't found.
  */
-int slirp_arp_cache_update(PNATState pData, uint32_t dst, const uint8_t *mac)
+static inline int slirp_arp_cache_update(PNATState pData, uint32_t dst, const uint8_t *mac)
 {
     struct arp_cache_entry *ac;
+    Assert((   memcmp(mac, broadcast_ethaddr, ETH_ALEN)
+            && memcmp(mac, zerro_ethaddr, ETH_ALEN)));
     LIST_FOREACH(ac, &pData->arp_cache, list)
     {
-        if (memcmp(ac->ether, mac, ETH_ALEN) == 0)
+        if (!memcmp(ac->ether, mac, ETH_ALEN))
         {
             ac->ip = dst;
             return 0;
@@ -2046,10 +2061,16 @@ int slirp_arp_cache_update(PNATState pData, uint32_t dst, const uint8_t *mac)
     }
     return 1;
 }
+/**
+ * add entry to the arp cache
+ * @note: this is helper function, slirp_arp_cache_update_or_add should be used.
+ */
 
-void slirp_arp_cache_add(PNATState pData, uint32_t ip, const uint8_t *ether)
+static inline void slirp_arp_cache_add(PNATState pData, uint32_t ip, const uint8_t *ether)
 {
     struct arp_cache_entry *ac = NULL;
+    Assert((   memcmp(ether, broadcast_ethaddr, ETH_ALEN)
+            && memcmp(ether, zerro_ethaddr, ETH_ALEN)));
     ac = RTMemAllocZ(sizeof(struct arp_cache_entry));
     if (ac == NULL)
     {
@@ -2060,6 +2081,31 @@ void slirp_arp_cache_add(PNATState pData, uint32_t ip, const uint8_t *ether)
     memcpy(ac->ether, ether, ETH_ALEN);
     LIST_INSERT_HEAD(&pData->arp_cache, ac, list);
 }
+
+/* updates or adds entry to the arp cache
+ * @returns 0 - if has found and updated
+ *          1 - if hasn't found.
+ */
+int slirp_arp_cache_update_or_add(PNATState pData, uint32_t dst, const uint8_t *mac)
+{
+    if (   !memcmp(mac, broadcast_ethaddr, ETH_ALEN)
+        || !memcmp(mac, zerro_ethaddr, ETH_ALEN))
+    {
+        static bool fBroadcastEtherAddReported;
+        if (!fBroadcastEtherAddReported)
+        {
+            LogRel(("NAT: Attempt to add pair [%RTmac:%R[IP4]] in ARP cache was ignored\n",
+                    mac, &dst));
+            fBroadcastEtherAddReported = true;
+        }
+        return 1;
+    }
+    if (slirp_arp_cache_update(pData, dst, mac))
+        slirp_arp_cache_add(pData, dst, mac);
+
+    return 0;
+}
+
 
 void slirp_set_mtu(PNATState pData, int mtu)
 {
@@ -2098,7 +2144,7 @@ void slirp_info(PNATState pData, PCDBGFINFOHLP pHlp, const char *pszArgs)
     pHlp->pfnPrintf(pHlp, "NAT ARP cache:\n");
     LIST_FOREACH(ac, &pData->arp_cache, list)
     {
-        pHlp->pfnPrintf(pHlp, " %R[IP4] %R[ether]\n", &ac->ip, &ac->ether);
+        pHlp->pfnPrintf(pHlp, " %R[IP4] %RTmac\n", &ac->ip, &ac->ether);
     }
 
     pHlp->pfnPrintf(pHlp, "NAT rules:\n");

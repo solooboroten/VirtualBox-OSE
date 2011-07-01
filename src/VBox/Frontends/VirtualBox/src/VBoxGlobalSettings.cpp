@@ -1,4 +1,4 @@
-/* $Id: VBoxGlobalSettings.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: VBoxGlobalSettings.cpp 37544 2011-06-17 13:54:47Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -26,7 +26,7 @@
 #include <QVariant>
 
 #include "VBoxGlobalSettings.h"
-#include "QIHotKeyEdit.h"
+#include "UIHotKeyEditor.h"
 #include "COMDefs.h"
 #endif /* !VBOX_WITH_PRECOMPILED_HEADERS */
 
@@ -39,28 +39,21 @@
 VBoxGlobalSettingsData::VBoxGlobalSettingsData()
 {
     /* default settings */
-#if defined (Q_WS_WIN32)
-    hostkey = 0xA3; // VK_RCONTROL
-//    hostkey = 165; // VK_RMENU
-#elif defined (Q_WS_PM)
-    hostkey = VK_CTRL;
+#if defined (Q_WS_WIN)
+    hostCombo = "163"; // VK_RCONTROL
 #elif defined (Q_WS_X11)
-    hostkey = 0xffe4; // XK_Control_R
-//    hostkey = 65514; // XK_Alt_R
+    hostCombo = "65508"; // XK_Control_R
 #elif defined (Q_WS_MAC)
-//    hostkey = 0x36; // QZ_RMETA
-    hostkey = 0x37; // QZ_LMETA
-//    hostkey = 0x3e; // QZ_RCTRL
-//    hostkey = 0x3d; // QZ_RALT
+    hostCombo = "55"; // QZ_LMETA
 #else
 # warning "port me!"
-    hostkey = 0;
 #endif
     autoCapture = true;
     guiFeatures = QString::null;
     languageId  = QString::null;
     maxGuestRes = "auto";
     remapScancodes = QString::null;
+    proxySettings = QString::null;
     trayIconEnabled = false;
     presentationModeEnabled = false;
     hostScreenSaverDisabled = false;
@@ -68,12 +61,13 @@ VBoxGlobalSettingsData::VBoxGlobalSettingsData()
 
 VBoxGlobalSettingsData::VBoxGlobalSettingsData (const VBoxGlobalSettingsData &that)
 {
-    hostkey = that.hostkey;
+    hostCombo = that.hostCombo;
     autoCapture = that.autoCapture;
     guiFeatures = that.guiFeatures;
     languageId  = that.languageId;
     maxGuestRes = that.maxGuestRes;
     remapScancodes = that.remapScancodes;
+    proxySettings = that.proxySettings;
     trayIconEnabled = that.trayIconEnabled;
     presentationModeEnabled = that.presentationModeEnabled;
     hostScreenSaverDisabled = that.hostScreenSaverDisabled;
@@ -86,12 +80,13 @@ VBoxGlobalSettingsData::~VBoxGlobalSettingsData()
 bool VBoxGlobalSettingsData::operator== (const VBoxGlobalSettingsData &that) const
 {
     return this == &that ||
-        (hostkey == that.hostkey &&
+        (hostCombo == that.hostCombo &&
          autoCapture == that.autoCapture &&
          guiFeatures == that.guiFeatures &&
          languageId  == that.languageId &&
          maxGuestRes == that.maxGuestRes &&
          remapScancodes == that.remapScancodes &&
+         proxySettings == that.proxySettings &&
          trayIconEnabled == that.trayIconEnabled &&
          presentationModeEnabled == that.presentationModeEnabled &&
          hostScreenSaverDisabled == that.hostScreenSaverDisabled
@@ -116,29 +111,28 @@ static struct
 }
 gPropertyMap[] =
 {
-    { "GUI/Input/HostKey",                         "hostKey",                 "0|\\d*[1-9]\\d*", true },
+    { "GUI/Input/HostKeyCombination",              "hostCombo",               "0|\\d*[1-9]\\d*(,\\d*[1-9]\\d*)?(,\\d*[1-9]\\d*)?", true },
     { "GUI/Input/AutoCapture",                     "autoCapture",             "true|false", true },
     { "GUI/Customizations",                        "guiFeatures",             "\\S+", true },
     { "GUI/LanguageID",                            "languageId",              gVBoxLangIDRegExp, true },
     { "GUI/MaxGuestResolution",                    "maxGuestRes",             "\\d*[1-9]\\d*,\\d*[1-9]\\d*|any|auto", true },
     { "GUI/RemapScancodes",                        "remapScancodes",          "(\\d+=\\d+,)*\\d+=\\d+", true },
+    { "GUI/ProxySettings",                         "proxySettings",           "[\\s\\S]*", true },
     { "GUI/TrayIcon/Enabled",                      "trayIconEnabled",         "true|false", true },
 #ifdef Q_WS_MAC
     { VBoxDefs::GUI_PresentationModeEnabled,       "presentationModeEnabled", "true|false", true },
 #endif /* Q_WS_MAC */
-    { "GUI/HostScreenSaverDisabled",               "hostScreenSaverDisabled",     "true|false", true }
+    { "GUI/HostScreenSaverDisabled",               "hostScreenSaverDisabled", "true|false", true }
 };
 
-void VBoxGlobalSettings::setHostKey (int key)
+void VBoxGlobalSettings::setHostCombo (const QString &hostCombo)
 {
-    if (!QIHotKeyEdit::isValidKey (key))
+    if (!UIHotKeyCombination::isValidKeyCombo (hostCombo))
     {
-        last_err = tr ("'%1 (0x%2)' is an invalid host key code.")
-                       .arg (key).arg (key, 0, 16);
+        last_err = tr ("'%1' is an invalid host-combination code-sequence.").arg (hostCombo);
         return;
     }
-
-    mData()->hostkey = key;
+    mData()->hostCombo = hostCombo;
     resetError();
 }
 
@@ -163,16 +157,21 @@ bool VBoxGlobalSettings::isFeatureActive (const char *aFeature) const
  */
 void VBoxGlobalSettings::load (CVirtualBox &vbox)
 {
-    for (size_t i = 0; i < SIZEOF_ARRAY (gPropertyMap); i++)
+    for (size_t i = 0; i < SIZEOF_ARRAY(gPropertyMap); i++)
     {
-        QString value = vbox.GetExtraData (gPropertyMap [i].publicName);
+        QString value = vbox.GetExtraData(gPropertyMap[i].publicName);
         if (!vbox.isOk())
             return;
-        // empty value means the key is absent. it is ok, the default will apply
+        /* Check for the host key upgrade path. */
+        if (   value.isEmpty()
+            && QString(gPropertyMap[i].publicName) == "GUI/Input/HostKeyCombination")
+            value = vbox.GetExtraData("GUI/Input/HostKey");
+        /* Empty value means the key is absent. It is OK, the default will
+         * apply. */
         if (value.isEmpty())
             continue;
-        // try to set the property validating it against rx
-        setPropertyPrivate (i, value);
+        /* Try to set the property validating it against rx. */
+        setPropertyPrivate(i, value);
         if (!(*this))
             break;
     }

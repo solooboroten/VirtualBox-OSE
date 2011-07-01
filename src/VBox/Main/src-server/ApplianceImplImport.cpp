@@ -1,11 +1,11 @@
-/* $Id: ApplianceImplImport.cpp 35368 2010-12-30 13:38:23Z vboxsync $ */
+/* $Id: ApplianceImplImport.cpp 37200 2011-05-24 15:34:06Z vboxsync $ */
 /** @file
  *
  * IAppliance and IVirtualSystem COM class implementations.
  */
 
 /*
- * Copyright (C) 2008-2010 Oracle Corporation
+ * Copyright (C) 2008-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -404,7 +404,7 @@ STDMETHODIMP Appliance::Interpret()
                          && (strNetwork.compare("Bridged", Utf8Str::CaseInsensitive))
                          && (strNetwork.compare("Internal", Utf8Str::CaseInsensitive))
                          && (strNetwork.compare("HostOnly", Utf8Str::CaseInsensitive))
-                         && (strNetwork.compare("VDE", Utf8Str::CaseInsensitive))
+                         && (strNetwork.compare("Generic", Utf8Str::CaseInsensitive))
                        )
                         strNetwork = "Bridged";     // VMware assumes this is the default apparently
 
@@ -931,7 +931,7 @@ HRESULT Appliance::readFSImpl(TaskOVF *pTask, PVDINTERFACEIO pCallbacks, PSHA1ST
         /* Read & parse the XML structure of the OVF file */
         m->pReader = new ovf::OVFReader(pvTmpBuf, cbSize, pTask->locInfo.strPath);
     }
-    catch (iprt::Error &x)      // includes all XML exceptions
+    catch (RTCError &x)      // includes all XML exceptions
     {
         rc = setError(VBOX_E_FILE_ERROR,
                       x.what());
@@ -2044,7 +2044,7 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
             if (pvsys->strExtraConfigCurrent.endsWith("type=Bridged", Utf8Str::CaseInsensitive))
             {
                 /* Attach to the right interface */
-                rc = pNetworkAdapter->AttachToBridgedInterface();
+                rc = pNetworkAdapter->COMSETTER(AttachmentType)(NetworkAttachmentType_Bridged);
                 if (FAILED(rc)) throw rc;
                 ComPtr<IHost> host;
                 rc = mVirtualBox->COMGETTER(Host)(host.asOutParam());
@@ -2067,7 +2067,7 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
                         rc = nwInterfaces[j]->COMGETTER(Name)(name.asOutParam());
                         if (FAILED(rc)) throw rc;
                         /* Set the interface name to attach to */
-                        pNetworkAdapter->COMSETTER(HostInterface)(name.raw());
+                        pNetworkAdapter->COMSETTER(BridgedInterface)(name.raw());
                         if (FAILED(rc)) throw rc;
                         break;
                     }
@@ -2077,7 +2077,7 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
             else if (pvsys->strExtraConfigCurrent.endsWith("type=HostOnly", Utf8Str::CaseInsensitive))
             {
                 /* Attach to the right interface */
-                rc = pNetworkAdapter->AttachToHostOnlyInterface();
+                rc = pNetworkAdapter->COMSETTER(AttachmentType)(NetworkAttachmentType_HostOnly);
                 if (FAILED(rc)) throw rc;
                 ComPtr<IHost> host;
                 rc = mVirtualBox->COMGETTER(Host)(host.asOutParam());
@@ -2100,7 +2100,7 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
                         rc = nwInterfaces[j]->COMGETTER(Name)(name.asOutParam());
                         if (FAILED(rc)) throw rc;
                         /* Set the interface name to attach to */
-                        pNetworkAdapter->COMSETTER(HostInterface)(name.raw());
+                        pNetworkAdapter->COMSETTER(HostOnlyInterface)(name.raw());
                         if (FAILED(rc)) throw rc;
                         break;
                     }
@@ -2110,14 +2110,14 @@ void Appliance::importMachineGeneric(const ovf::VirtualSystem &vsysThis,
             else if (pvsys->strExtraConfigCurrent.endsWith("type=Internal", Utf8Str::CaseInsensitive))
             {
                 /* Attach to the right interface */
-                rc = pNetworkAdapter->AttachToInternalNetwork();
+                rc = pNetworkAdapter->COMSETTER(AttachmentType)(NetworkAttachmentType_Internal);
                 if (FAILED(rc)) throw rc;
             }
-            /* Next test for VDE interfaces */
-            else if (pvsys->strExtraConfigCurrent.endsWith("type=VDE", Utf8Str::CaseInsensitive))
+            /* Next test for Generic interfaces */
+            else if (pvsys->strExtraConfigCurrent.endsWith("type=Generic", Utf8Str::CaseInsensitive))
             {
                 /* Attach to the right interface */
-                rc = pNetworkAdapter->AttachToVDE();
+                rc = pNetworkAdapter->COMSETTER(AttachmentType)(NetworkAttachmentType_Generic);
                 if (FAILED(rc)) throw rc;
             }
         }
@@ -2567,34 +2567,71 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
     /* DVD controller */
     bool fDVD = vsdescThis->findByType(VirtualSystemDescriptionType_CDROM).size() > 0;
     /* Iterate over all storage controller check the attachments and remove
-     * them when necessary. */
+     * them when necessary. Also detect broken configs with more than one
+     * attachment. Old VirtualBox versions (prior to 3.2.10) had all disk
+     * attachments pointing to the last hard disk image, which causes import
+     * failures. A long fixed bug, however the OVF files are long lived. */
     settings::StorageControllersList &llControllers = config.storageMachine.llStorageControllers;
+    Guid hdUuid;
+    uint32_t cHardDisks = 0;
+    bool fInconsistent = false;
+    bool fRepairDuplicate = false;
     settings::StorageControllersList::iterator it3;
     for (it3 = llControllers.begin();
          it3 != llControllers.end();
          ++it3)
     {
         settings::AttachedDevicesList &llAttachments = it3->llAttachedDevices;
-        settings::AttachedDevicesList::iterator it4;
-        for (it4 = llAttachments.begin();
-             it4 != llAttachments.end();
-             ++it4)
+        settings::AttachedDevicesList::iterator it4 = llAttachments.begin();
+        while (it4 != llAttachments.end())
         {
             if (  (   !fDVD
                    && it4->deviceType == DeviceType_DVD)
                 ||
                   (   !fFloppy
                    && it4->deviceType == DeviceType_Floppy))
-                llAttachments.erase(it4++);
+            {
+                it4 = llAttachments.erase(it4);
+                continue;
+            }
+            else if (it4->deviceType == DeviceType_HardDisk)
+            {
+                const Guid &thisUuid = it4->uuid;
+                cHardDisks++;
+                if (cHardDisks == 1)
+                {
+                    if (hdUuid.isEmpty())
+                        hdUuid = thisUuid;
+                    else
+                        fInconsistent = true;
+                }
+                else
+                {
+                    if (thisUuid.isEmpty())
+                        fInconsistent = true;
+                    else if (thisUuid == hdUuid)
+                        fRepairDuplicate = true;
+                }
+            }
+            ++it4;
         }
     }
-
+    /* paranoia... */
+    if (fInconsistent || cHardDisks == 1)
+        fRepairDuplicate = false;
 
     /*
      *
      * step 2: scan the machine config for media attachments
      *
      */
+
+    /* Get all hard disk descriptions. */
+    std::list<VirtualSystemDescriptionEntry*> avsdeHDs = vsdescThis->findByType(VirtualSystemDescriptionType_HardDiskImage);
+    std::list<VirtualSystemDescriptionEntry*>::iterator avsdeHDsIt = avsdeHDs.begin();
+    /* paranoia - if there is no 1:1 match do not try to repair. */
+    if (cHardDisks != avsdeHDs.size())
+        fRepairDuplicate = false;
 
     // for each storage controller...
     for (settings::StorageControllersList::iterator sit = config.storageMachine.llStorageControllers.begin();
@@ -2616,9 +2653,6 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
                 break;
         }
 
-        /* Get all hard disk descriptions. */
-        std::list<VirtualSystemDescriptionEntry*> avsdeHDs = vsdescThis->findByType(VirtualSystemDescriptionType_HardDiskImage);
-
         // for each medium attachment to this controller...
         for (settings::AttachedDevicesList::iterator dit = sc.llAttachedDevices.begin();
              dit != sc.llAttachedDevices.end();
@@ -2630,9 +2664,23 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
                 // empty DVD and floppy media
                 continue;
 
+            // When repairing a broken VirtualBox xml config section (written
+            // by VirtualBox versions earlier than 3.2.10) assume the disks
+            // show up in the same order as in the OVF description.
+            if (fRepairDuplicate)
+            {
+                VirtualSystemDescriptionEntry *vsdeHD = *avsdeHDsIt;
+                ovf::DiskImagesMap::const_iterator itDiskImage = stack.mapDisks.find(vsdeHD->strRef);
+                if (itDiskImage != stack.mapDisks.end())
+                {
+                    const ovf::DiskImage &di = itDiskImage->second;
+                    d.uuid = Guid(di.uuidVbox);
+                }
+                ++avsdeHDsIt;
+            }
+
             // convert the Guid to string
             Utf8Str strUuid = d.uuid.toString();
-
 
             // there must be an image in the OVF disk structs with the same UUID
             bool fFound = false;

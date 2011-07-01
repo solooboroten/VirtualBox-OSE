@@ -3,7 +3,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -771,7 +771,8 @@ static int vdiOpenImage(PVDIIMAGEDESC pImage, unsigned uOpenFlags)
     rc = vdiFileReadSync(pImage, 0, &pImage->PreHeader, sizeof(pImage->PreHeader), NULL);
     if (RT_FAILURE(rc))
     {
-        rc = vdiError(pImage, rc, RT_SRC_POS, N_("VDI: error reading pre-header in '%s'"), pImage->pszFilename);
+        vdiError(pImage, rc, RT_SRC_POS, N_("VDI: error reading pre-header in '%s'"), pImage->pszFilename);
+        rc = VERR_VD_VDI_INVALID_HEADER;
         goto out;
     }
     rc = vdiValidatePreHeader(&pImage->PreHeader);
@@ -1106,6 +1107,13 @@ static int vdiCreate(const char *pszFilename, uint64_t cbSize,
         pvUser = pIfProgress->pvUser;
     }
 
+    /* Check the image flags. */
+    if ((uImageFlags & ~VD_VDI_IMAGE_FLAGS_MASK) != 0)
+    {
+        rc = VERR_VD_INVALID_TYPE;
+        goto out;
+    }
+
     /* Check open flags. All valid flags are supported. */
     if (uOpenFlags & ~VD_OPEN_FLAGS_MASK)
     {
@@ -1346,7 +1354,8 @@ static int vdiWrite(void *pBackendData, uint64_t uOffset, const void *pvBuf,
                 }
             }
 
-            if (cbToWrite == getImageBlockSize(&pImage->Header))
+            if (   cbToWrite == getImageBlockSize(&pImage->Header)
+                && !(fWrite & VD_WRITE_NO_ALLOC))
             {
                 /* Full block write to previously unallocated block.
                  * Allocate block and write data. */
@@ -2018,11 +2027,6 @@ static void vdiDump(void *pBackendData)
         vdiMessage(pImage, "!! WARNING: %u bad blocks found !!\n",
                 cBadBlocks);
     }
-}
-
-static bool vdiIsAsyncIOSupported(void *pBackendData)
-{
-    return true;
 }
 
 static int vdiAsyncRead(void *pBackendData, uint64_t uOffset, size_t cbToRead,
@@ -2732,8 +2736,6 @@ VBOXHDDBACKEND g_VDIBackend =
     NULL,
     /* pfnSetParentFilename */
     NULL,
-    /* pfnIsAsyncIOSupported */
-    vdiIsAsyncIOSupported,
     /* pfnAsyncRead */
     vdiAsyncRead,
     /* pfnAsyncWrite */

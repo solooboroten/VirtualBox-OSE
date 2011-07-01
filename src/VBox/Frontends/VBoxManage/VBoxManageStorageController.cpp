@@ -1,10 +1,10 @@
-/* $Id: VBoxManageStorageController.cpp 35389 2011-01-03 13:21:55Z vboxsync $ */
+/* $Id: VBoxManageStorageController.cpp 37709 2011-06-30 13:51:51Z vboxsync $ */
 /** @file
  * VBoxManage - The storage controller related commands.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -51,9 +51,12 @@ static const RTGETOPTDEF g_aStorageAttachOptions[] =
     { "--medium",           'm', RTGETOPT_REQ_STRING },
     { "--mtype",            'M', RTGETOPT_REQ_STRING },
     { "--passthrough",      'h', RTGETOPT_REQ_STRING },
+    { "--tempeject",        'e', RTGETOPT_REQ_STRING },
     { "--bandwidthgroup",   'b', RTGETOPT_REQ_STRING },
     { "--forceunmount",     'f', RTGETOPT_REQ_NOTHING },
     { "--comment",          'C', RTGETOPT_REQ_STRING },
+    { "--setuuid",          'q', RTGETOPT_REQ_STRING },
+    { "--setparentuuid",    'Q', RTGETOPT_REQ_STRING },
     // iSCSI options
     { "--server",           'S', RTGETOPT_REQ_STRING },
     { "--target",           'T', RTGETOPT_REQ_STRING },
@@ -73,13 +76,18 @@ int handleStorageAttach(HandlerArg *a)
     ULONG device = ~0U;
     bool fForceUnmount = false;
     bool fSetMediumType = false;
+    bool fSetNewUuid = false;
+    bool fSetNewParentUuid = false;
     MediumType_T mediumType = MediumType_Normal;
     Bstr bstrComment;
     const char *pszCtl  = NULL;
     DeviceType_T devTypeRequested = DeviceType_Null;
     const char *pszMedium = NULL;
     const char *pszPassThrough = NULL;
+    const char *pszTempEject = NULL;
     const char *pszBandwidthGroup = NULL;
+    Bstr bstrNewUuid;
+    Bstr bstrNewParentUuid;
     // iSCSI options
     Bstr bstrServer;
     Bstr bstrTarget;
@@ -160,6 +168,15 @@ int handleStorageAttach(HandlerArg *a)
                 break;
             }
 
+            case 'e':   // tempeject <on|off>
+            {
+                if (ValueUnion.psz)
+                    pszTempEject = ValueUnion.psz;
+                else
+                    rc = E_FAIL;
+                break;
+            }
+
             case 'b':   // bandwidthgroup <name>
             {
                 if (ValueUnion.psz)
@@ -180,7 +197,27 @@ int handleStorageAttach(HandlerArg *a)
                     bstrComment = ValueUnion.psz;
                 else
                     rc = E_FAIL;
-            break;
+                break;
+
+            case 'q':
+                if (ValueUnion.psz)
+                {
+                    bstrNewUuid = ValueUnion.psz;
+                    fSetNewUuid = true;
+                }
+                else
+                    rc = E_FAIL;
+                break;
+
+            case 'Q':
+                if (ValueUnion.psz)
+                {
+                    bstrNewParentUuid = ValueUnion.psz;
+                    fSetNewParentUuid = true;
+                }
+                else
+                    rc = E_FAIL;
+                break;
 
             case 'S':   // --server
                 bstrServer = ValueUnion.psz;
@@ -256,13 +293,10 @@ int handleStorageAttach(HandlerArg *a)
     try
     {
         bool fRunTime = (st == SessionType_Shared);
+
         if (fRunTime)
         {
-            if (devTypeRequested == DeviceType_HardDisk)
-                throw Utf8Str("Hard disk drives cannot be changed while the VM is running\n");
-            else if (!RTStrICmp(pszMedium, "none"))
-                throw Utf8Str("Drives cannot be removed while the VM is running\n");
-            else if (pszPassThrough)
+            if (pszPassThrough)
                 throw Utf8Str("Drive passthrough state cannot be changed while the VM is running\n");
             else if (pszBandwidthGroup)
                 throw Utf8Str("Bandwidth group cannot be changed while the VM is running\n");
@@ -543,9 +577,18 @@ int handleStorageAttach(HandlerArg *a)
                     throw Utf8Str("Missing --medium argument");
 
                 rc = findOrOpenMedium(a, pszMedium, devTypeRequested,
-                                      pMedium2Mount, NULL);
+                                      pMedium2Mount, fSetNewUuid, NULL);
                 if (FAILED(rc) || !pMedium2Mount)
                     throw Utf8StrFmt("Invalid UUID or filename \"%s\"", pszMedium);
+            }
+
+            // set medium/parent medium UUID, if so desired
+            if (fSetNewUuid || fSetNewParentUuid)
+            {
+                CHECK_ERROR(pMedium2Mount, SetIDs(fSetNewUuid, bstrNewUuid.raw(),
+                                                  fSetNewParentUuid, bstrNewParentUuid.raw()));
+                if (FAILED(rc))
+                    throw  Utf8Str("Failed to set the medium/parent medium UUID");
             }
 
             // set medium type, if so desired
@@ -611,9 +654,6 @@ int handleStorageAttach(HandlerArg *a)
 
                 case DeviceType_HardDisk:
                 {
-                    if (fRunTime)
-                        throw Utf8Str("Hard disk attachments cannot be changed while the VM is running");
-
                     // if there is anything attached at the given location, remove it
                     machine->DetachDevice(Bstr(pszCtl).raw(), port, device);
                     CHECK_ERROR(machine, AttachDevice(Bstr(pszCtl).raw(),
@@ -647,6 +687,32 @@ int handleStorageAttach(HandlerArg *a)
                 }
                 else
                     throw Utf8StrFmt("Invalid --passthrough argument '%s'", pszPassThrough);
+            }
+            else
+                throw Utf8StrFmt("Couldn't find the controller attachment for the controller '%s'\n", pszCtl);
+        }
+
+        if (   pszTempEject
+            && (SUCCEEDED(rc)))
+        {
+            ComPtr<IMediumAttachment> mattach;
+            CHECK_ERROR(machine, GetMediumAttachment(Bstr(pszCtl).raw(), port,
+                                                     device, mattach.asOutParam()));
+
+            if (SUCCEEDED(rc))
+            {
+                if (!RTStrICmp(pszTempEject, "on"))
+                {
+                    CHECK_ERROR(machine, TemporaryEjectDevice(Bstr(pszCtl).raw(),
+                                                              port, device, TRUE));
+                }
+                else if (!RTStrICmp(pszTempEject, "off"))
+                {
+                    CHECK_ERROR(machine, TemporaryEjectDevice(Bstr(pszCtl).raw(),
+                                                              port, device, FALSE));
+                }
+                else
+                    throw Utf8StrFmt("Invalid --tempeject argument '%s'", pszTempEject);
             }
             else
                 throw Utf8StrFmt("Couldn't find the controller attachment for the controller '%s'\n", pszCtl);
@@ -1035,7 +1101,7 @@ int handleStorageController(HandlerArg *a)
                 }
                 else
                 {
-                    errorArgument("Invalid --bootable argument '%s'", pszHostIOCache);
+                    errorArgument("Invalid --bootable argument '%s'", pszBootable);
                     rc = E_FAIL;
                 }
             }

@@ -1,4 +1,4 @@
-/* $Id: UINewVMWzd.cpp 35587 2011-01-17 14:21:04Z vboxsync $ */
+/* $Id: UINewVMWzd.cpp 37331 2011-06-06 16:30:51Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -22,7 +22,7 @@
 
 /* Local includes */
 #include "UIIconPool.h"
-#include "UINewHDWzd.h"
+#include "UINewHDWizard.h"
 #include "UINewVMWzd.h"
 #include "QIFileDialog.h"
 #include "VBoxProblemReporter.h"
@@ -49,7 +49,7 @@ static const osTypePattern gs_OSTypePattern[] =
     { QRegExp("(Wi.*NT)|(NT4)", Qt::CaseInsensitive), "WindowsNT4" },
     { QRegExp("((Wi.*XP)|(\\bXP\\b)).*64", Qt::CaseInsensitive), "WindowsXP_64" },
     { QRegExp("(Wi.*XP)|(\\bXP\\b)", Qt::CaseInsensitive), "WindowsXP" },
-    { QRegExp("((Wi.*2003)|(W2K3).*64", Qt::CaseInsensitive), "Windows2003_64" },
+    { QRegExp("((Wi.*2003)|(W2K3)).*64", Qt::CaseInsensitive), "Windows2003_64" },
     { QRegExp("(Wi.*2003)|(W2K3)", Qt::CaseInsensitive), "Windows2003" },
     { QRegExp("((Wi.*V)|(Vista)).*64", Qt::CaseInsensitive), "WindowsVista_64" },
     { QRegExp("(Wi.*V)|(Vista)", Qt::CaseInsensitive), "WindowsVista" },
@@ -87,8 +87,8 @@ static const osTypePattern gs_OSTypePattern[] =
     { QRegExp("Arc", Qt::CaseInsensitive), "ArchLinux" },
     { QRegExp("De.*64", Qt::CaseInsensitive), "Debian_64" },
     { QRegExp("De", Qt::CaseInsensitive), "Debian" },
-    { QRegExp("((SU)|(Nov)).*64", Qt::CaseInsensitive), "OpenSUSE_64" },
-    { QRegExp("(SU)|(Nov)", Qt::CaseInsensitive), "OpenSUSE" },
+    { QRegExp("((SU)|(Nov)|(SLE)).*64", Qt::CaseInsensitive), "OpenSUSE_64" },
+    { QRegExp("(SU)|(Nov)|(SLE)", Qt::CaseInsensitive), "OpenSUSE" },
     { QRegExp("Fe.*64", Qt::CaseInsensitive), "Fedora_64" },
     { QRegExp("Fe", Qt::CaseInsensitive), "Fedora" },
     { QRegExp("((Gen)|(Sab)).*64", Qt::CaseInsensitive), "Gentoo_64" },
@@ -560,10 +560,7 @@ void UINewVMWzdPage4::getWithFileOpenDialog()
 
 bool UINewVMWzdPage4::getWithNewHardDiskWizard()
 {
-    UINewHDWzd dlg(this);
-    dlg.setRecommendedName(field("name").toString());
-    dlg.setRecommendedSize(field("type").value<CGuestOSType>().GetRecommendedHDD());
-    dlg.setDefaultPath(field("machineFolder").toString());
+    UINewHDWizard dlg(this, field("name").toString(), field("machineFolder").toString(), field("type").value<CGuestOSType>().GetRecommendedHDD());
 
     if (dlg.exec() == QDialog::Accepted)
     {
@@ -739,7 +736,7 @@ bool UINewVMWzdPage5::constructMachine()
 
     /* VRAM size - select maximum between recommended and minimum for fullscreen */
     m_Machine.SetVRAMSize (qMax (type.GetRecommendedVRAM(),
-                                (ULONG) (VBoxGlobal::requiredVideoMemory(&m_Machine) / _1M)));
+                                (ULONG) (VBoxGlobal::requiredVideoMemory(typeId) / _1M)));
 
     /* Selecting recommended chipset type */
     m_Machine.SetChipsetType(type.GetRecommendedChipset());

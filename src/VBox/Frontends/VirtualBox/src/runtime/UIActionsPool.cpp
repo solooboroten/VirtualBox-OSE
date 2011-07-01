@@ -1,4 +1,4 @@
-/* $Id: UIActionsPool.cpp 34158 2010-11-18 09:56:36Z vboxsync $ */
+/* $Id: UIActionsPool.cpp 36357 2011-03-23 09:36:05Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -20,6 +20,7 @@
 /* Local includes */
 #include "UIActionsPool.h"
 #include "UIIconPool.h"
+#include "UIMachineShortcuts.h"
 #include "VBoxGlobal.h"
 
 /* Global includes */
@@ -221,107 +222,15 @@ protected:
     }
 };
 
-class ToggleFullscreenModeAction : public UIToggleAction
+class ShowSettingsDialogAction : public UISimpleAction
 {
     Q_OBJECT;
 
 public:
 
-    ToggleFullscreenModeAction(QObject *pParent)
-        : UIToggleAction(pParent,
-                         ":/fullscreen_on_16px.png", ":/fullscreen_16px.png",
-                         ":/fullscreen_on_disabled_16px.png", ":/fullscreen_disabled_16px.png")
-    {
-        retranslateUi();
-    }
-
-protected:
-
-    void retranslateUi()
-    {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "Switch to &Fullscreen"), "F"));
-        setStatusTip(QApplication::translate("UIActionsPool", "Switch between normal and fullscreen mode"));
-    }
-};
-
-class ToggleSeamlessModeAction : public UIToggleAction
-{
-    Q_OBJECT;
-
-public:
-
-    ToggleSeamlessModeAction(QObject *pParent)
-        : UIToggleAction(pParent,
-                         ":/seamless_on_16px.png", ":/seamless_16px.png",
-                         ":/seamless_on_disabled_16px.png", ":/seamless_disabled_16px.png")
-    {
-        retranslateUi();
-    }
-
-protected:
-
-    void retranslateUi()
-    {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "Switch to Seam&less Mode"), "L"));
-        setStatusTip(QApplication::translate("UIActionsPool", "Switch between normal and seamless desktop integration mode"));
-    }
-};
-
-class ToggleScaleModeAction : public UIToggleAction
-{
-    Q_OBJECT;
-
-public:
-
-    ToggleScaleModeAction(QObject *pParent)
-        : UIToggleAction(pParent,
-                         ":/scale_on_16px.png", ":/scale_16px.png",
-                         ":/scale_on_disabled_16px.png", ":/scale_disabled_16px.png")
-    {
-        retranslateUi();
-    }
-
-protected:
-
-    void retranslateUi()
-    {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "Switch to &Scale Mode"), "C"));
-        setStatusTip(QApplication::translate("UIActionsPool", "Switch between normal and scale mode"));
-    }
-};
-
-class ToggleGuestAutoresizeAction : public UIToggleAction
-{
-    Q_OBJECT;
-
-public:
-
-    ToggleGuestAutoresizeAction(QObject *pParent)
-        : UIToggleAction(pParent,
-                         ":/auto_resize_on_on_16px.png", ":/auto_resize_on_16px.png",
-                         ":/auto_resize_on_on_disabled_16px.png", ":/auto_resize_on_disabled_16px.png")
-    {
-        retranslateUi();
-    }
-
-protected:
-
-    void retranslateUi()
-    {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "Auto-resize &Guest Display"), "G"));
-        setStatusTip(QApplication::translate("UIActionsPool", "Automatically resize the guest display when the window is resized (requires Guest Additions)"));
-    }
-};
-
-class PerformWindowAdjustAction : public UISimpleAction
-{
-    Q_OBJECT;
-
-public:
-
-    PerformWindowAdjustAction(QObject *pParent)
+    ShowSettingsDialogAction(QObject *pParent)
         : UISimpleAction(pParent,
-                         ":/adjust_win_size_16px.png", ":/adjust_win_size_disabled_16px.png")
+                         ":/settings_16px.png", ":/settings_dis_16px.png")
     {
         retranslateUi();
     }
@@ -330,8 +239,52 @@ protected:
 
     void retranslateUi()
     {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "&Adjust Window Size"), "A"));
-        setStatusTip(QApplication::translate("UIActionsPool", "Adjust window size and position to best fit the guest display"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Settings..."), gMS->shortcut(UIMachineShortcuts::SettingsDialogShortcut)));
+        setStatusTip(QApplication::translate("UIActionsPool", "Manage the virtual machine settings"));
+    }
+};
+
+class PerformTakeSnapshotAction : public UISimpleAction
+{
+    Q_OBJECT;
+
+public:
+
+    PerformTakeSnapshotAction(QObject *pParent)
+        : UISimpleAction(pParent,
+                         ":/take_snapshot_16px.png", ":/take_snapshot_dis_16px.png")
+    {
+        retranslateUi();
+    }
+
+protected:
+
+    void retranslateUi()
+    {
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "Take &Snapshot..."), gMS->shortcut(UIMachineShortcuts::TakeSnapshotShortcut)));
+        setStatusTip(QApplication::translate("UIActionsPool", "Take a snapshot of the virtual machine"));
+    }
+};
+
+class ShowInformationDialogAction : public UISimpleAction
+{
+    Q_OBJECT;
+
+public:
+
+    ShowInformationDialogAction(QObject *pParent)
+        : UISimpleAction(pParent,
+                         ":/session_info_16px.png", ":/session_info_disabled_16px.png")
+    {
+        retranslateUi();
+    }
+
+protected:
+
+    void retranslateUi()
+    {
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "Session I&nformation..."), gMS->shortcut(UIMachineShortcuts::InformationDialogShortcut)));
+        setStatusTip(QApplication::translate("UIActionsPool", "Show Session Information Dialog"));
     }
 };
 
@@ -372,7 +325,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "Disable &Mouse Integration"), "I"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "Disable &Mouse Integration"), gMS->shortcut(UIMachineShortcuts::MouseIntegrationShortcut)));
         setStatusTip(QApplication::translate("UIActionsPool", "Temporarily disable host mouse pointer integration"));
     }
 };
@@ -394,7 +347,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "&Insert Ctrl-Alt-Del"), "Del"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Insert Ctrl-Alt-Del"), gMS->shortcut(UIMachineShortcuts::TypeCADShortcut)));
         setStatusTip(QApplication::translate("UIActionsPool", "Send the Ctrl-Alt-Del sequence to the virtual machine"));
     }
 };
@@ -417,55 +370,11 @@ protected:
 
     void retranslateUi()
     {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "&Insert Ctrl-Alt-Backspace"), "Backspace"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Insert Ctrl-Alt-Backspace"), gMS->shortcut(UIMachineShortcuts::TypeCABSShortcut)));
         setStatusTip(QApplication::translate("UIActionsPool", "Send the Ctrl-Alt-Backspace sequence to the virtual machine"));
     }
 };
 #endif
-
-class PerformTakeSnapshotAction : public UISimpleAction
-{
-    Q_OBJECT;
-
-public:
-
-    PerformTakeSnapshotAction(QObject *pParent)
-        : UISimpleAction(pParent,
-                         ":/take_snapshot_16px.png", ":/take_snapshot_dis_16px.png")
-    {
-        retranslateUi();
-    }
-
-protected:
-
-    void retranslateUi()
-    {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "Take &Snapshot..."), "S"));
-        setStatusTip(QApplication::translate("UIActionsPool", "Take a snapshot of the virtual machine"));
-    }
-};
-
-class ShowInformationDialogAction : public UISimpleAction
-{
-    Q_OBJECT;
-
-public:
-
-    ShowInformationDialogAction(QObject *pParent)
-        : UISimpleAction(pParent,
-                         ":/session_info_16px.png", ":/session_info_disabled_16px.png")
-    {
-        retranslateUi();
-    }
-
-protected:
-
-    void retranslateUi()
-    {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "Session I&nformation"), "N"));
-        setStatusTip(QApplication::translate("UIActionsPool", "Show Session Information Dialog"));
-    }
-};
 
 class TogglePauseAction : public UIToggleAction
 {
@@ -484,7 +393,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "&Pause"), "P"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Pause"), gMS->shortcut(UIMachineShortcuts::PauseShortcut)));
         setStatusTip(QApplication::translate("UIActionsPool", "Suspend the execution of the virtual machine"));
     }
 };
@@ -506,7 +415,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "&Reset"), "R"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Reset"), gMS->shortcut(UIMachineShortcuts::ResetShortcut)));
         setStatusTip(QApplication::translate("UIActionsPool", "Reset the virtual machine"));
     }
 };
@@ -528,13 +437,7 @@ protected:
 
     void retranslateUi()
     {
-#ifdef Q_WS_MAC
-        /* Host+H is Hide on the mac */
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "ACPI Sh&utdown"), "U"));
-#else /* Q_WS_MAC */
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "ACPI S&hutdown"), "H"));
-#endif /* !Q_WS_MAC */
-
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "ACPI Sh&utdown"), gMS->shortcut(UIMachineShortcuts::ShutdownShortcut)));
         setStatusTip(QApplication::translate("UIActionsPool", "Send the ACPI Power Button press event to the virtual machine"));
     }
 };
@@ -557,7 +460,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "&Close..."), "Q"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Close..."), gMS->shortcut(UIMachineShortcuts::CloseShortcut)));
         setStatusTip(QApplication::translate("UIActionsPool", "Close the virtual machine"));
     }
 };
@@ -579,6 +482,120 @@ protected:
     void retranslateUi()
     {
         menu()->setTitle(QApplication::translate("UIActionsPool", "&View"));
+    }
+};
+
+class ToggleFullscreenModeAction : public UIToggleAction
+{
+    Q_OBJECT;
+
+public:
+
+    ToggleFullscreenModeAction(QObject *pParent)
+        : UIToggleAction(pParent,
+                         ":/fullscreen_on_16px.png", ":/fullscreen_16px.png",
+                         ":/fullscreen_on_disabled_16px.png", ":/fullscreen_disabled_16px.png")
+    {
+        retranslateUi();
+    }
+
+protected:
+
+    void retranslateUi()
+    {
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "Switch to &Fullscreen"), gMS->shortcut(UIMachineShortcuts::FullscreenModeShortcut)));
+        setStatusTip(QApplication::translate("UIActionsPool", "Switch between normal and fullscreen mode"));
+    }
+};
+
+class ToggleSeamlessModeAction : public UIToggleAction
+{
+    Q_OBJECT;
+
+public:
+
+    ToggleSeamlessModeAction(QObject *pParent)
+        : UIToggleAction(pParent,
+                         ":/seamless_on_16px.png", ":/seamless_16px.png",
+                         ":/seamless_on_disabled_16px.png", ":/seamless_disabled_16px.png")
+    {
+        retranslateUi();
+    }
+
+protected:
+
+    void retranslateUi()
+    {
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "Switch to Seam&less Mode"), gMS->shortcut(UIMachineShortcuts::SeamlessModeShortcut)));
+        setStatusTip(QApplication::translate("UIActionsPool", "Switch between normal and seamless desktop integration mode"));
+    }
+};
+
+class ToggleScaleModeAction : public UIToggleAction
+{
+    Q_OBJECT;
+
+public:
+
+    ToggleScaleModeAction(QObject *pParent)
+        : UIToggleAction(pParent,
+                         ":/scale_on_16px.png", ":/scale_16px.png",
+                         ":/scale_on_disabled_16px.png", ":/scale_disabled_16px.png")
+    {
+        retranslateUi();
+    }
+
+protected:
+
+    void retranslateUi()
+    {
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "Switch to &Scale Mode"), gMS->shortcut(UIMachineShortcuts::ScaleModeShortcut)));
+        setStatusTip(QApplication::translate("UIActionsPool", "Switch between normal and scale mode"));
+    }
+};
+
+class ToggleGuestAutoresizeAction : public UIToggleAction
+{
+    Q_OBJECT;
+
+public:
+
+    ToggleGuestAutoresizeAction(QObject *pParent)
+        : UIToggleAction(pParent,
+                         ":/auto_resize_on_on_16px.png", ":/auto_resize_on_16px.png",
+                         ":/auto_resize_on_on_disabled_16px.png", ":/auto_resize_on_disabled_16px.png")
+    {
+        retranslateUi();
+    }
+
+protected:
+
+    void retranslateUi()
+    {
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "Auto-resize &Guest Display"), gMS->shortcut(UIMachineShortcuts::GuestAutoresizeShortcut)));
+        setStatusTip(QApplication::translate("UIActionsPool", "Automatically resize the guest display when the window is resized (requires Guest Additions)"));
+    }
+};
+
+class PerformWindowAdjustAction : public UISimpleAction
+{
+    Q_OBJECT;
+
+public:
+
+    PerformWindowAdjustAction(QObject *pParent)
+        : UISimpleAction(pParent,
+                         ":/adjust_win_size_16px.png", ":/adjust_win_size_disabled_16px.png")
+    {
+        retranslateUi();
+    }
+
+protected:
+
+    void retranslateUi()
+    {
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Adjust Window Size"), gMS->shortcut(UIMachineShortcuts::WindowAdjustShortcut)));
+        setStatusTip(QApplication::translate("UIActionsPool", "Adjust window size and position to best fit the guest display"));
     }
 };
 
@@ -702,7 +719,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("UIActionsPool", "&Network Adapters..."));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Network Adapters..."), gMS->shortcut(UIMachineShortcuts::NetworkAdaptersDialogShortcut)));
         setStatusTip(QApplication::translate("UIActionsPool", "Change the settings of network adapters"));
     }
 };
@@ -743,7 +760,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("UIActionsPool", "&Shared Folders..."));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Shared Folders..."), gMS->shortcut(UIMachineShortcuts::SharedFoldersDialogShortcut)));
         setStatusTip(QApplication::translate("UIActionsPool", "Create or modify shared folders"));
     }
 };
@@ -766,7 +783,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("UIActionsPool", "Enable R&emote Display"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "Enable R&emote Display"), gMS->shortcut(UIMachineShortcuts::VRDPServerShortcut)));
         setStatusTip(QApplication::translate("UIActionsPool", "Enable remote desktop (RDP) connections to this machine"));
     }
 };
@@ -788,7 +805,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(VBoxGlobal::insertKeyToActionText(QApplication::translate("UIActionsPool", "&Install Guest Additions..."), "D"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Install Guest Additions..."), gMS->shortcut(UIMachineShortcuts::InstallGuestAdditionsShortcut)));
         setStatusTip(QApplication::translate("UIActionsPool", "Mount the Guest Additions installation image"));
     }
 };
@@ -830,7 +847,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("UIActionsPool", "&Statistics...", "debug action"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Statistics...", "debug action"), gMS->shortcut(UIMachineShortcuts::StatisticWindowShortcut)));
     }
 };
 
@@ -850,7 +867,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("UIActionsPool", "&Command Line...", "debug action"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "&Command Line...", "debug action"), gMS->shortcut(UIMachineShortcuts::CommandLineWindowShortcut)));
     }
 };
 
@@ -870,7 +887,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("UIActionsPool", "Enable &Logging...", "debug action"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIActionsPool", "Enable &Logging...", "debug action"), gMS->shortcut(UIMachineShortcuts::LoggingShortcut)));
     }
 };
 #endif
@@ -912,7 +929,7 @@ protected:
 
     void retranslateUi()
     {
-        setShortcut(QKeySequence::HelpContents);
+        setShortcut(gMS->shortcut(UIMachineShortcuts::HelpShortcut));
         setText(QApplication::translate("VBoxProblemReporter", "&Contents..."));
         setStatusTip(QApplication::translate("VBoxProblemReporter", "Show the online help contents"));
     }
@@ -935,7 +952,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("VBoxProblemReporter", "&VirtualBox Web Site..."));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("VBoxProblemReporter", "&VirtualBox Web Site..."), gMS->shortcut(UIMachineShortcuts::WebShortcut)));
         setStatusTip(QApplication::translate("VBoxProblemReporter", "Open the browser and go to the VirtualBox product web site"));
     }
 };
@@ -957,7 +974,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("VBoxProblemReporter", "&Reset All Warnings"));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("VBoxProblemReporter", "&Reset All Warnings"), gMS->shortcut(UIMachineShortcuts::ResetWarningsShortcut)));
         setStatusTip(QApplication::translate("VBoxProblemReporter", "Go back to showing all suppressed warnings and messages"));
     }
 };
@@ -982,7 +999,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("VBoxProblemReporter", "R&egister VirtualBox..."));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("VBoxProblemReporter", "R&egister VirtualBox..."), gMS->shortcut(UIMachineShortcuts::RegisterShortcut)));
         setStatusTip(QApplication::translate("VBoxProblemReporter", "Open VirtualBox registration form"));
     }
 };
@@ -1006,7 +1023,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("VBoxProblemReporter", "C&heck for Updates..."));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("VBoxProblemReporter", "C&heck for Updates..."), gMS->shortcut(UIMachineShortcuts::UpdateShortcut)));
         setStatusTip(QApplication::translate("VBoxProblemReporter", "Check for a new VirtualBox version"));
     }
 };
@@ -1029,7 +1046,7 @@ protected:
 
     void retranslateUi()
     {
-        setText(QApplication::translate("VBoxProblemReporter", "&About VirtualBox..."));
+        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("VBoxProblemReporter", "&About VirtualBox..."), gMS->shortcut(UIMachineShortcuts::AboutShortcut)));
         setStatusTip(QApplication::translate("VBoxProblemReporter", "Show a dialog with product information"));
     }
 };
@@ -1118,22 +1135,25 @@ UIActionsPool::UIActionsPool(QObject *pParent)
     , m_actionsPool(UIActionIndex_End, 0)
 {
     /* "Machine" menu actions: */
-    m_actionsPool[UIActionIndex_Toggle_Fullscreen] = new ToggleFullscreenModeAction(this);
-    m_actionsPool[UIActionIndex_Toggle_Seamless] = new ToggleSeamlessModeAction(this);
-    m_actionsPool[UIActionIndex_Toggle_Scale] = new ToggleScaleModeAction(this);
-    m_actionsPool[UIActionIndex_Toggle_GuestAutoresize] = new ToggleGuestAutoresizeAction(this);
-    m_actionsPool[UIActionIndex_Simple_AdjustWindow] = new PerformWindowAdjustAction(this);
+    m_actionsPool[UIActionIndex_Simple_SettingsDialog] = new ShowSettingsDialogAction(this);
+    m_actionsPool[UIActionIndex_Simple_TakeSnapshot] = new PerformTakeSnapshotAction(this);
+    m_actionsPool[UIActionIndex_Simple_InformationDialog] = new ShowInformationDialogAction(this);
     m_actionsPool[UIActionIndex_Toggle_MouseIntegration] = new ToggleMouseIntegrationAction(this);
     m_actionsPool[UIActionIndex_Simple_TypeCAD] = new PerformTypeCADAction(this);
 #ifdef Q_WS_X11
     m_actionsPool[UIActionIndex_Simple_TypeCABS] = new PerformTypeCABSAction(this);
 #endif
-    m_actionsPool[UIActionIndex_Simple_TakeSnapshot] = new PerformTakeSnapshotAction(this);
-    m_actionsPool[UIActionIndex_Simple_InformationDialog] = new ShowInformationDialogAction(this);
     m_actionsPool[UIActionIndex_Toggle_Pause] = new TogglePauseAction(this);
     m_actionsPool[UIActionIndex_Simple_Reset] = new PerformResetAction(this);
     m_actionsPool[UIActionIndex_Simple_Shutdown] = new PerformShutdownAction(this);
     m_actionsPool[UIActionIndex_Simple_Close] = new PerformCloseAction(this);
+
+    /* "View" menu actions: */
+    m_actionsPool[UIActionIndex_Toggle_Fullscreen] = new ToggleFullscreenModeAction(this);
+    m_actionsPool[UIActionIndex_Toggle_Seamless] = new ToggleSeamlessModeAction(this);
+    m_actionsPool[UIActionIndex_Toggle_Scale] = new ToggleScaleModeAction(this);
+    m_actionsPool[UIActionIndex_Toggle_GuestAutoresize] = new ToggleGuestAutoresizeAction(this);
+    m_actionsPool[UIActionIndex_Simple_AdjustWindow] = new PerformWindowAdjustAction(this);
 
     /* "Devices" menu actions: */
     m_actionsPool[UIActionIndex_Simple_NetworkAdaptersDialog] = new ShowNetworkAdaptersDialogAction(this);
@@ -1230,12 +1250,13 @@ void UIActionsPool::createMenus()
     if (m_actionsPool[UIActionIndex_Menu_Machine])
         delete m_actionsPool[UIActionIndex_Menu_Machine];
     m_actionsPool[UIActionIndex_Menu_Machine] = new MenuMachineAction(this);
-    if (m_actionsPool[UIActionIndex_Menu_View])
-        delete m_actionsPool[UIActionIndex_Menu_View];
-    m_actionsPool[UIActionIndex_Menu_View] = new MenuViewAction(this);
     if (m_actionsPool[UIActionIndex_Menu_MouseIntegration])
         delete m_actionsPool[UIActionIndex_Menu_MouseIntegration];
     m_actionsPool[UIActionIndex_Menu_MouseIntegration] = new MenuMouseIntegrationAction(this);
+
+    if (m_actionsPool[UIActionIndex_Menu_View])
+        delete m_actionsPool[UIActionIndex_Menu_View];
+    m_actionsPool[UIActionIndex_Menu_View] = new MenuViewAction(this);
 
     if (m_actionsPool[UIActionIndex_Menu_Devices])
         delete m_actionsPool[UIActionIndex_Menu_Devices];
@@ -1252,7 +1273,6 @@ void UIActionsPool::createMenus()
     if (m_actionsPool[UIActionIndex_Menu_NetworkAdapters])
         delete m_actionsPool[UIActionIndex_Menu_NetworkAdapters];
     m_actionsPool[UIActionIndex_Menu_NetworkAdapters] = new MenuNetworkAdaptersAction(this);
-
     if (m_actionsPool[UIActionIndex_Menu_SharedFolders])
         delete m_actionsPool[UIActionIndex_Menu_SharedFolders];
     m_actionsPool[UIActionIndex_Menu_SharedFolders] = new MenuSharedFoldersAction(this);

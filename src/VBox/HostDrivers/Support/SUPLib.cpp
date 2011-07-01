@@ -1,4 +1,4 @@
-/* $Id: SUPLib.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: SUPLib.cpp 37596 2011-06-22 19:30:06Z vboxsync $ */
 /** @file
  * VirtualBox Support Library - Common code.
  */
@@ -96,7 +96,7 @@ static bool                     g_fPreInited = false;
  * via the pre-init mechanism from the hardened executable stub.  */
 SUPLIBDATA                      g_supLibData =
 {
-    NIL_RTFILE
+    SUP_HDEVICE_NIL
 #if   defined(RT_OS_DARWIN)
     , NULL
 #elif defined(RT_OS_LINUX)
@@ -184,10 +184,10 @@ DECLEXPORT(int) supR3PreInit(PSUPPREINITDATA pPreInitData, uint32_t fFlags)
         ||  pPreInitData->u32EndMagic != SUPPREINITDATA_MAGIC)
         return VERR_INVALID_MAGIC;
     if (    !(fFlags & SUPSECMAIN_FLAGS_DONT_OPEN_DEV)
-        &&  pPreInitData->Data.hDevice == NIL_RTFILE)
+        &&  pPreInitData->Data.hDevice == SUP_HDEVICE_NIL)
         return VERR_INVALID_HANDLE;
     if (    (fFlags & SUPSECMAIN_FLAGS_DONT_OPEN_DEV)
-        &&  pPreInitData->Data.hDevice != NIL_RTFILE)
+        &&  pPreInitData->Data.hDevice != SUP_HDEVICE_NIL)
         return VERR_INVALID_PARAMETER;
 
     /*
@@ -266,9 +266,9 @@ SUPR3DECL(int) SUPR3Init(PSUPDRVSESSION *ppSession)
         CookieReq.Hdr.rc = VERR_INTERNAL_ERROR;
         strcpy(CookieReq.u.In.szMagic, SUPCOOKIE_MAGIC);
         CookieReq.u.In.u32ReqVersion = SUPDRV_IOC_VERSION;
-        const uint32_t uMinVersion = /*(SUPDRV_IOC_VERSION & 0xffff0000) == 0x00160000
-                                   ?  0x00160000
-                                   :*/ SUPDRV_IOC_VERSION & 0xffff0000;
+        const uint32_t uMinVersion = (SUPDRV_IOC_VERSION & 0xffff0000) == 0x00170000
+                                   ? 0x00170002
+                                   : SUPDRV_IOC_VERSION & 0xffff0000;
         CookieReq.u.In.u32MinVersion = uMinVersion;
         rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_COOKIE, &CookieReq, SUP_IOCTL_COOKIE_SIZE);
         if (    RT_SUCCESS(rc)
@@ -655,8 +655,32 @@ SUPR3DECL(int) SUPR3CallVMMR0Ex(PVMR0 pVMR0, VMCPUID idCpu, unsigned uOperation,
             rc = pReq->Hdr.rc;
         memcpy(pReqHdr, &pReq->abReqPkt[0], cbReq);
     }
-    else /** @todo may have to remove the size limits one this request... */
-        AssertMsgFailedReturn(("cbReq=%#x\n", pReqHdr->cbReq), VERR_INTERNAL_ERROR);
+    else if (pReqHdr->cbReq <= _512K)
+    {
+        AssertPtrReturn(pReqHdr, VERR_INVALID_POINTER);
+        AssertReturn(pReqHdr->u32Magic == SUPVMMR0REQHDR_MAGIC, VERR_INVALID_MAGIC);
+        const size_t cbReq = pReqHdr->cbReq;
+
+        PSUPCALLVMMR0 pReq = (PSUPCALLVMMR0)RTMemTmpAlloc(SUP_IOCTL_CALL_VMMR0_BIG_SIZE(cbReq));
+        pReq->Hdr.u32Cookie         = g_u32Cookie;
+        pReq->Hdr.u32SessionCookie  = g_u32SessionCookie;
+        pReq->Hdr.cbIn              = SUP_IOCTL_CALL_VMMR0_BIG_SIZE_IN(cbReq);
+        pReq->Hdr.cbOut             = SUP_IOCTL_CALL_VMMR0_BIG_SIZE_OUT(cbReq);
+        pReq->Hdr.fFlags            = SUPREQHDR_FLAGS_DEFAULT;
+        pReq->Hdr.rc                = VERR_INTERNAL_ERROR;
+        pReq->u.In.pVMR0            = pVMR0;
+        pReq->u.In.idCpu            = idCpu;
+        pReq->u.In.uOperation       = uOperation;
+        pReq->u.In.u64Arg           = u64Arg;
+        memcpy(&pReq->abReqPkt[0], pReqHdr, cbReq);
+        rc = suplibOsIOCtl(&g_supLibData, SUP_IOCTL_CALL_VMMR0_BIG, pReq, SUP_IOCTL_CALL_VMMR0_BIG_SIZE(cbReq));
+        if (RT_SUCCESS(rc))
+            rc = pReq->Hdr.rc;
+        memcpy(pReqHdr, &pReq->abReqPkt[0], cbReq);
+        RTMemTmpFree(pReq);
+    }
+    else
+        AssertMsgFailedReturn(("cbReq=%#x\n", pReqHdr->cbReq), VERR_OUT_OF_RANGE);
     return rc;
 }
 
@@ -1662,6 +1686,29 @@ static DECLCALLBACK(int) supLoadModuleResolveImport(RTLDRMOD hLdrMod, const char
         *pValue = (uintptr_t)g_pSUPGlobalInfoPageR0;
         return VINF_SUCCESS;
     }
+
+    /*
+     * Symbols that are undefined by convention.
+     */
+#ifdef RT_OS_SOLARIS
+    static const char * const s_apszConvSyms[] =
+    {
+        "", "mod_getctl",
+        "", "mod_install",
+        "", "mod_remove",
+        "", "mod_info",
+        "", "mod_miscops",
+    };
+    for (unsigned i = 0; i < RT_ELEMENTS(s_apszConvSyms); i += 2)
+    {
+        if (   !RTStrCmp(s_apszConvSyms[i],     pszModule)
+            && !RTStrCmp(s_apszConvSyms[i + 1], pszSymbol))
+        {
+            *pValue = ~(uintptr_t)0;
+            return VINF_SUCCESS;
+        }
+    }
+#endif
 
     /*
      * Despair.

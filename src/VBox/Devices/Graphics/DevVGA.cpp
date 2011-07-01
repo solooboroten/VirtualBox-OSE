@@ -1,4 +1,4 @@
-/* $Id: DevVGA.cpp 35409 2011-01-05 16:01:54Z vboxsync $ */
+/* $Id: DevVGA.cpp 37647 2011-06-27 12:17:04Z vboxsync $ */
 /** @file
  * DevVGA - VBox VGA/VESA device.
  */
@@ -293,39 +293,6 @@ static const uint8_t g_abLogoF12BootText[] =
 
 
 #ifndef VBOX_DEVICE_STRUCT_TESTCASE
-/*******************************************************************************
-*   Internal Functions                                                         *
-*******************************************************************************/
-RT_C_DECLS_BEGIN
-
-PDMBOTHCBDECL(int) vgaIOPortWrite(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t u32, unsigned cb);
-PDMBOTHCBDECL(int) vgaIOPortRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t *pu32, unsigned cb);
-PDMBOTHCBDECL(int) vgaIOPortWriteVBEIndex(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t u32, unsigned cb);
-PDMBOTHCBDECL(int) vgaIOPortWriteVBEData(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t u32, unsigned cb);
-PDMBOTHCBDECL(int) vgaIOPortReadVBEIndex(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t *pu32, unsigned cb);
-PDMBOTHCBDECL(int) vgaIOPortReadVBEData(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t *pu32, unsigned cb);
-PDMBOTHCBDECL(int) vgaMMIOFill(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhysAddr, uint32_t u32Item, unsigned cbItem, unsigned cItems);
-PDMBOTHCBDECL(int) vgaMMIORead(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhysAddr, void *pv, unsigned cb);
-PDMBOTHCBDECL(int) vgaMMIOWrite(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhysAddr, void *pv, unsigned cb);
-PDMBOTHCBDECL(int) vgaIOPortReadBIOS(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t *pu32, unsigned cb);
-PDMBOTHCBDECL(int) vgaIOPortWriteBIOS(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t u32, unsigned cb);
-#ifdef IN_RC
-PDMBOTHCBDECL(int) vgaGCLFBAccessHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPHYS GCPhysFault, void *pvUser);
-#endif
-#ifdef IN_RING0
-PDMBOTHCBDECL(int) vgaR0LFBAccessHandler(PVM pVM, RTGCUINT uErrorCode, PCPUMCTXCORE pRegFrame, RTGCPTR pvFault, RTGCPHYS GCPhysFault, void *pvUser);
-#endif
-#ifdef IN_RING3
-# ifdef VBE_NEW_DYN_LIST
-PDMBOTHCBDECL(int) vbeIOPortReadVBEExtra(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t *pu32, unsigned cb);
-PDMBOTHCBDECL(int) vbeIOPortWriteVBEExtra(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t u32, unsigned cb);
-# endif
-PDMBOTHCBDECL(int) vbeIOPortReadCMDLogo(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t *pu32, unsigned cb);
-PDMBOTHCBDECL(int) vbeIOPortWriteCMDLogo(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port, uint32_t u32, unsigned cb);
-#endif /* IN_RING3 */
-
-
-RT_C_DECLS_END
 
 
 /**
@@ -746,6 +713,7 @@ static void vga_ioport_write(void *opaque, uint32_t addr, uint32_t val)
         s->msr = val & ~0x10;
         if (s->fRealRetrace)
             vga_update_retrace_state(s);
+        s->st00 = (s->st00 & ~0x10) | (0x90 >> ((val >> 2) & 0x3));
         break;
     case 0x3c4:
         s->sr_index = val & 7;
@@ -3266,7 +3234,7 @@ PDMBOTHCBDECL(int) vgaMMIORead(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhys
  * @param   pv          Pointer to data.
  * @param   cb          Bytes to write.
  */
-PDMBOTHCBDECL(int) vgaMMIOWrite(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhysAddr, void *pv, unsigned cb)
+PDMBOTHCBDECL(int) vgaMMIOWrite(PPDMDEVINS pDevIns, void *pvUser, RTGCPHYS GCPhysAddr, void const *pv, unsigned cb)
 {
     PVGASTATE pThis = PDMINS_2_DATA(pDevIns, PVGASTATE);
     uint8_t  *pu8 = (uint8_t *)pv;
@@ -4604,7 +4572,10 @@ static DECLCALLBACK(int) vgaPortTakeScreenshot(PPDMIDISPLAYPORT pInterface, uint
      */
     size_t cbRequired = pThis->last_scr_width * 4 * pThis->last_scr_height;
 
-    if (cbRequired)
+    /* The size can't be zero or greater than the size of the VRAM.
+     * Inconsistent VGA device state can cause the incorrect size values.
+     */
+    if (cbRequired && cbRequired <= pThis->vram_size)
     {
         uint8_t *pu8Data = (uint8_t *)RTMemAlloc(cbRequired);
 
@@ -5674,7 +5645,9 @@ static DECLCALLBACK(int)   vgaR3Construct(PPDMDEVINS pDevIns, int iInstance, PCF
                                           "CustomVideoMode13\0"
                                           "CustomVideoMode14\0"
                                           "CustomVideoMode15\0"
-                                          "CustomVideoMode16\0"))
+                                          "CustomVideoMode16\0"
+                                          "MaxBiosXRes\0"
+                                          "MaxBiosYRes\0"))
         return PDMDEV_SET_ERROR(pDevIns, VERR_PDM_DEVINS_UNKNOWN_CFG_VALUES,
                                 N_("Invalid configuration for vga device"));
 
@@ -6022,7 +5995,7 @@ static DECLCALLBACK(int)   vgaR3Construct(PPDMDEVINS pDevIns, int iInstance, PCF
         return rc;
 
     /* Initialize the PDM lock. */
-    rc = PDMDevHlpCritSectInit(pDevIns, &pThis->lock, RT_SRC_POS, "VGA");
+    rc = PDMDevHlpCritSectInit(pDevIns, &pThis->lock, RT_SRC_POS, "VGA#u", iInstance);
     if (RT_FAILURE(rc))
     {
         Log(("%s: Failed to create critical section.\n", __FUNCTION__));
@@ -6033,7 +6006,7 @@ static DECLCALLBACK(int)   vgaR3Construct(PPDMDEVINS pDevIns, int iInstance, PCF
      * Create the refresh timer.
      */
     rc = PDMDevHlpTMTimerCreate(pDevIns, TMCLOCK_REAL, vgaTimerRefresh,
-                                pThis, TMTIMER_FLAGS_DEFAULT_CRIT_SECT, /** @todo This needs to be fixed! We cannot take the I/O lock at this point! */
+                                pThis, TMTIMER_FLAGS_NO_CRIT_SECT,
                                 "VGA Refresh Timer", &pThis->RefreshTimer);
     if (RT_FAILURE(rc))
         return rc;
@@ -6052,6 +6025,14 @@ static DECLCALLBACK(int)   vgaR3Construct(PPDMDEVINS pDevIns, int iInstance, PCF
     AssertLogRelRCReturn(rc, rc);
 
 #ifdef VBE_NEW_DYN_LIST
+
+    uint16_t maxBiosXRes;
+    rc = CFGMR3QueryU16Def(pCfg, "MaxBiosXRes", &maxBiosXRes, UINT16_MAX);
+    AssertLogRelRCReturn(rc, rc);
+    uint16_t maxBiosYRes;
+    rc = CFGMR3QueryU16Def(pCfg, "MaxBiosYRes", &maxBiosYRes, UINT16_MAX);
+    AssertLogRelRCReturn(rc, rc);
+
     /*
      * Compute buffer size for the VBE BIOS Extra Data.
      */
@@ -6099,6 +6080,9 @@ static DECLCALLBACK(int)   vgaR3Construct(PPDMDEVINS pDevIns, int iInstance, PCF
                 * pixelWidth;
         if (reqSize >= pThis->vram_size)
             continue;
+        if (   mode_info_list[i].info.XResolution > maxBiosXRes
+            || mode_info_list[i].info.YResolution > maxBiosYRes)
+            continue;
         *pCurMode = mode_info_list[i];
         vgaAdjustModeInfo(pThis, pCurMode);
         pCurMode++;
@@ -6129,6 +6113,9 @@ static DECLCALLBACK(int)   vgaR3Construct(PPDMDEVINS pDevIns, int iInstance, PCF
                 pixelWidth = (pDefMode->info.BitsPerPixel + 7) / 8;
             reqSize = pDefMode->info.XResolution * pDefMode->info.YResolution *  pixelWidth;
             if (reqSize >= pThis->vram_size)
+                continue;
+            if (   pDefMode->info.XResolution > maxBiosXRes
+                || pDefMode->info.YResolution - cyReduction > maxBiosYRes)
                 continue;
             *pCurMode = *pDefMode;
             pCurMode->mode += 0x30;

@@ -1,4 +1,4 @@
-/* $Id: UISession.cpp 35564 2011-01-14 13:52:02Z vboxsync $ */
+/* $Id: UISession.cpp 37712 2011-06-30 14:11:14Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -45,6 +45,11 @@
 #  include <X11/Xcursor/Xcursor.h>
 # endif
 #endif
+
+#ifdef VBOX_GUI_WITH_KEYS_RESET_HANDLER
+# include "UIKeyboardHandler.h"
+# include <signal.h>
+#endif /* VBOX_GUI_WITH_KEYS_RESET_HANDLER */
 
 UISession::UISession(UIMachine *pMachine, CSession &sessionReference)
     : QObject(pMachine)
@@ -104,6 +109,9 @@ UISession::UISession(UIMachine *pMachine, CSession &sessionReference)
     connect(gConsoleEvents, SIGNAL(sigAdditionsChange()),
             this, SLOT(sltAdditionsChange()));
 
+    connect(gConsoleEvents, SIGNAL(sigVRDEChange()),
+            this, SLOT(sltVRDEChange()));
+
     connect(gConsoleEvents, SIGNAL(sigNetworkAdapterChange(CNetworkAdapter)),
             this, SIGNAL(sigNetworkAdapterChange(CNetworkAdapter)));
 
@@ -128,11 +136,22 @@ UISession::UISession(UIMachine *pMachine, CSession &sessionReference)
             Qt::QueuedConnection);
 #endif /* Q_WS_MAC */
 
+    connect(gConsoleEvents, SIGNAL(sigCPUExecutionCapChange()),
+            this, SIGNAL(sigCPUExecutionCapChange()));
+
     /* Prepare main menu: */
     prepareMenuPool();
 
     /* Load uisession settings: */
     loadSessionSettings();
+
+#ifdef VBOX_GUI_WITH_KEYS_RESET_HANDLER
+    struct sigaction sa;
+    sa.sa_sigaction = &signalHandlerSIGUSR1;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART | SA_SIGINFO;
+    sigaction(SIGUSR1, &sa, NULL);
+#endif /* VBOX_GUI_WITH_KEYS_RESET_HANDLER */
 }
 
 UISession::~UISession()
@@ -409,7 +428,7 @@ void UISession::sltInstallGuestAdditionsFrom(const QString &strSource)
         CMedium image = vbox.FindMedium(strSource, KDeviceType_DVD);
         if (image.isNull())
         {
-            image = vbox.OpenMedium(strSource, KDeviceType_DVD, KAccessMode_ReadWrite);
+            image = vbox.OpenMedium(strSource, KDeviceType_DVD, KAccessMode_ReadWrite, false /* fForceNewUuid */);
             if (vbox.isOk())
                 strUuid = image.GetId();
         }
@@ -589,6 +608,22 @@ void UISession::sltStateChange(KMachineState state)
     }
 }
 
+void UISession::sltVRDEChange()
+{
+    /* Get machine: */
+    const CMachine &machine = session().GetMachine();
+    /* Get VRDE server: */
+    const CVRDEServer &server = machine.GetVRDEServer();
+    bool fIsVRDEServerAvailable = !server.isNull();
+    /* Show/Hide VRDE action depending on VRDE server availability status: */
+    uimachine()->actionsPool()->action(UIActionIndex_Toggle_VRDEServer)->setVisible(fIsVRDEServerAvailable);
+    /* Check/Uncheck VRDE action depending on VRDE server activity status: */
+    if (fIsVRDEServerAvailable)
+        uimachine()->actionsPool()->action(UIActionIndex_Toggle_VRDEServer)->setChecked(server.GetEnabled());
+    /* Notify listeners about VRDE change: */
+    emit sigVRDEChange();
+}
+
 void UISession::sltAdditionsChange()
 {
     /* Get our guest: */
@@ -596,9 +631,11 @@ void UISession::sltAdditionsChange()
 
     /* Variable flags: */
     ULONG ulGuestAdditionsRunLevel = guest.GetAdditionsRunLevel();
-    bool fIsGuestSupportsGraphics = guest.GetSupportsGraphics();
-    bool fIsGuestSupportsSeamless = guest.GetSupportsSeamless();
-
+    LONG64 lLastUpdatedIgnored;
+    bool fIsGuestSupportsGraphics = guest.GetFacilityStatus(KAdditionsFacilityType_Graphics, lLastUpdatedIgnored)
+                                    == KAdditionsFacilityStatus_Active;
+    bool fIsGuestSupportsSeamless = guest.GetFacilityStatus(KAdditionsFacilityType_Seamless, lLastUpdatedIgnored)
+                                    == KAdditionsFacilityStatus_Active;
     /* Check if something had changed: */
     if (m_ulGuestAdditionsRunLevel != ulGuestAdditionsRunLevel ||
         m_fIsGuestSupportsGraphics != fIsGuestSupportsGraphics ||
@@ -951,22 +988,10 @@ void UISession::reinitMenuPool()
         pFloppyDevicesMenu->setVisible(iDevicesCountFD);
     }
 
-    /* VRDE stuff: */
-    {
-        /* Get VRDE server: */
-        CVRDEServer server = machine.GetVRDEServer();
-        bool fIsVRDEServerAvailable = !server.isNull();
-        /* Show/Hide VRDE action depending on VRDE server availability status: */
-        uimachine()->actionsPool()->action(UIActionIndex_Toggle_VRDEServer)->setVisible(fIsVRDEServerAvailable);
-        /* Check/Uncheck VRDE action depending on VRDE server activity status: */
-        if (fIsVRDEServerAvailable)
-            uimachine()->actionsPool()->action(UIActionIndex_Toggle_VRDEServer)->setChecked(server.GetEnabled());
-    }
-
     /* Network stuff: */
     {
         bool fAtLeastOneAdapterActive = false;
-        ULONG uSlots = vboxGlobal().virtualBox().GetSystemProperties().GetNetworkAdapterCount();
+        ULONG uSlots = vboxGlobal().virtualBox().GetSystemProperties().GetMaxNetworkAdapters(KChipsetType_PIIX3);
         for (ULONG uSlot = 0; uSlot < uSlots; ++uSlot)
         {
             const CNetworkAdapter &adapter = machine.GetNetworkAdapter(uSlot);
@@ -1035,3 +1060,21 @@ int UISession::setFrameBuffer(ulong screenId, UIFrameBuffer* pFrameBuffer)
     return VERR_INVALID_PARAMETER;
 }
 #endif
+
+#ifdef VBOX_GUI_WITH_KEYS_RESET_HANDLER
+/**
+ * Custom signal handler. When switching VTs, we might not get release events
+ * for Ctrl-Alt and in case a savestate is performed on the new VT, the VM will
+ * be saved with modifier keys stuck. This is annoying enough for introducing
+ * this hack.
+ */
+/* static */
+void UISession::signalHandlerSIGUSR1(int sig, siginfo_t * /* pInfo */, void * /*pSecret */)
+{
+    /* only SIGUSR1 is interesting */
+    if (sig == SIGUSR1)
+        if (UIMachine *pMachine = vboxGlobal().virtualMachine())
+            pMachine->uisession()->machineLogic()->keyboardHandler()->releaseAllPressedKeys();
+}
+#endif /* VBOX_GUI_WITH_KEYS_RESET_HANDLER */
+

@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFlt-linux.c 35554 2011-01-14 08:46:18Z vboxsync $ */
+/* $Id: VBoxNetFlt-linux.c 36950 2011-05-04 07:07:23Z vboxsync $ */
 /** @file
  * VBoxNetFlt - Network Filter Driver (Host), Linux Specific Code.
  */
@@ -50,8 +50,9 @@
 #define VBOXNETFLT_OS_SPECFIC 1
 #include "../VBoxNetFltInternal.h"
 
+#define VBOXNETFLT_WITH_FILTER_HOST2GUEST_SKBS_EXPERIMENT
 #ifdef CONFIG_NET_SCHED
-# define VBOXNETFLT_WITH_QDISC /* Comment this out to disable qdisc support */
+/*# define VBOXNETFLT_WITH_QDISC  Comment this out to disable qdisc support */
 # ifdef VBOXNETFLT_WITH_QDISC
 # include <net/pkt_sched.h>
 # endif /* VBOXNETFLT_WITH_QDISC */
@@ -93,7 +94,8 @@
 # endif
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 13)
+#ifdef VBOXNETFLT_WITH_QDISC
+# if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 13)
 static inline int qdisc_drop(struct sk_buff *skb, struct Qdisc *sch)
 {
     kfree_skb(skb);
@@ -101,7 +103,8 @@ static inline int qdisc_drop(struct sk_buff *skb, struct Qdisc *sch)
 
     return NET_XMIT_DROP;
 }
-#endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 13) */
+# endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 13) */
+#endif /* VBOXNETFLT_WITH_QDISC */
 
 #ifndef NET_IP_ALIGN
 # define NET_IP_ALIGN 2
@@ -1001,7 +1004,7 @@ static void vboxNetFltLinuxUnhookDev(PVBOXNETFLTINS pThis, struct net_device *pD
 # if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 29)
             ASMAtomicWritePtr((void * volatile *)&pDev->hard_start_xmit, pOverride->pfnStartXmit);
 # endif /* LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 29) */
-            ASMAtomicWritePtr((void * volatile *)&pDev->OVR_OPS, pOverride->pOrgOps);
+            ASMAtomicWritePtr((void const * volatile *)&pDev->OVR_OPS, pOverride->pOrgOps);
             ASMAtomicWriteU32(&pOverride->u32Magic, 0);
         }
         else
@@ -1335,7 +1338,9 @@ static int vboxNetFltLinuxPacketHandler(struct sk_buff *pBuf,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 18)
     Log3(("vboxNetFltLinuxPacketHandler: skb len=%u data_len=%u truesize=%u next=%p nr_frags=%u gso_size=%u gso_seqs=%u gso_type=%x frag_list=%p pkt_type=%x\n",
           pBuf->len, pBuf->data_len, pBuf->truesize, pBuf->next, skb_shinfo(pBuf)->nr_frags, skb_shinfo(pBuf)->gso_size, skb_shinfo(pBuf)->gso_segs, skb_shinfo(pBuf)->gso_type, skb_shinfo(pBuf)->frag_list, pBuf->pkt_type));
+# if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
     Log4(("vboxNetFltLinuxPacketHandler: packet dump follows:\n%.*Rhxd\n", pBuf->len-pBuf->data_len, skb_mac_header(pBuf)));
+# endif
 #else
     Log3(("vboxNetFltLinuxPacketHandler: skb len=%u data_len=%u truesize=%u next=%p nr_frags=%u tso_size=%u tso_seqs=%u frag_list=%p pkt_type=%x\n",
           pBuf->len, pBuf->data_len, pBuf->truesize, pBuf->next, skb_shinfo(pBuf)->nr_frags, skb_shinfo(pBuf)->tso_size, skb_shinfo(pBuf)->tso_segs, skb_shinfo(pBuf)->frag_list, pBuf->pkt_type));
@@ -1348,7 +1353,7 @@ static int vboxNetFltLinuxPacketHandler(struct sk_buff *pBuf,
 
     pThis = VBOX_FLT_PT_TO_INST(pPacketType);
     pDev = ASMAtomicUoReadPtrT(&pThis->u.s.pDev, struct net_device *);
-    if (pThis->u.s.pDev != pSkbDev)
+    if (pDev != pSkbDev)
     {
         Log(("vboxNetFltLinuxPacketHandler: Devices do not match, pThis may be wrong! pThis=%p\n", pThis));
         return 0;
@@ -1378,7 +1383,9 @@ static int vboxNetFltLinuxPacketHandler(struct sk_buff *pBuf,
 # if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 18)
         Log3(("vboxNetFltLinuxPacketHandler: skb copy len=%u data_len=%u truesize=%u next=%p nr_frags=%u gso_size=%u gso_seqs=%u gso_type=%x frag_list=%p pkt_type=%x\n",
               pBuf->len, pBuf->data_len, pBuf->truesize, pBuf->next, skb_shinfo(pBuf)->nr_frags, skb_shinfo(pBuf)->gso_size, skb_shinfo(pBuf)->gso_segs, skb_shinfo(pBuf)->gso_type, skb_shinfo(pBuf)->frag_list, pBuf->pkt_type));
+#  if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
         Log4(("vboxNetFltLinuxPacketHandler: packet dump follows:\n%.*Rhxd\n", pBuf->len-pBuf->data_len, skb_mac_header(pBuf)));
+#  endif
 # else
         Log3(("vboxNetFltLinuxPacketHandler: skb copy len=%u data_len=%u truesize=%u next=%p nr_frags=%u tso_size=%u tso_seqs=%u frag_list=%p pkt_type=%x\n",
               pBuf->len, pBuf->data_len, pBuf->truesize, pBuf->next, skb_shinfo(pBuf)->nr_frags, skb_shinfo(pBuf)->tso_size, skb_shinfo(pBuf)->tso_segs, skb_shinfo(pBuf)->frag_list, pBuf->pkt_type));
@@ -2502,7 +2509,7 @@ int  vboxNetFltOsPreInitInstance(PVBOXNETFLTINS pThis)
     /*
      * Init the linux specific members.
      */
-    pThis->u.s.pDev = NULL;
+    ASMAtomicUoWriteNullPtr(&pThis->u.s.pDev);
     pThis->u.s.fRegistered = false;
     pThis->u.s.fPromiscuousSet = false;
     memset(&pThis->u.s.PacketType, 0, sizeof(pThis->u.s.PacketType));

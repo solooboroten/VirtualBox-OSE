@@ -1,10 +1,10 @@
-/* $Id: VirtualBoxImpl.h 35608 2011-01-18 14:19:31Z vboxsync $ */
+/* $Id: VirtualBoxImpl.h 37525 2011-06-17 10:09:21Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -56,7 +56,6 @@ namespace settings
     class MainConfigFile;
     struct MediaRegistry;
 }
-
 class ATL_NO_VTABLE VirtualBox :
     public VirtualBoxBase,
     VBOX_SCRIPTABLE_IMPL(IVirtualBox)
@@ -82,9 +81,7 @@ public:
     DECLARE_PROTECT_FINAL_CONSTRUCT()
 
     BEGIN_COM_MAP(VirtualBox)
-        COM_INTERFACE_ENTRY2(IDispatch, IVirtualBox)
-        COM_INTERFACE_ENTRY(ISupportErrorInfo)
-        COM_INTERFACE_ENTRY(IVirtualBox)
+        VBOX_DEFAULT_INTERFACE_ENTRIES(IVirtualBox)
     END_COM_MAP()
 
     // to postpone generation of the default ctor/dtor
@@ -106,6 +103,7 @@ public:
     STDMETHOD(COMGETTER(Version))               (BSTR *aVersion);
     STDMETHOD(COMGETTER(Revision))              (ULONG *aRevision);
     STDMETHOD(COMGETTER(PackageType))           (BSTR *aPackageType);
+    STDMETHOD(COMGETTER(APIVersion))            (BSTR *aAPIVersion);
     STDMETHOD(COMGETTER(HomeFolder))            (BSTR *aHomeFolder);
     STDMETHOD(COMGETTER(SettingsFilePath))      (BSTR *aSettingsFilePath);
     STDMETHOD(COMGETTER(Host))                  (IHost **aHost);
@@ -141,6 +139,7 @@ public:
     STDMETHOD(OpenMedium)(IN_BSTR aLocation,
                           DeviceType_T deviceType,
                           AccessMode_T accessMode,
+                          BOOL fForceNewUuid,
                           IMedium **aMedium);
     STDMETHOD(FindMedium)(IN_BSTR aLocation,
                           DeviceType_T deviceType,
@@ -277,7 +276,7 @@ public:
                            const Utf8Str &strMachineFolder);
     HRESULT saveSettings();
 
-    void addGuidToListUniquely(GuidList &llRegistriesThatNeedSaving, Guid uuid);
+    void addGuidToListUniquely(GuidList &llRegistriesThatNeedSaving, const Guid &uuid);
     HRESULT saveRegistries(const GuidList &llRegistriesThatNeedSaving);
 
     static HRESULT ensureFilePathExists(const Utf8Str &strFileName);
@@ -315,6 +314,7 @@ private:
     static Bstr sVersion;
     static ULONG sRevision;
     static Bstr sPackageType;
+    static Bstr sAPIVersion;
 
     static DECLCALLBACK(int) ClientWatcher (RTTHREAD thread, void *pvUser);
     static DECLCALLBACK(int) AsyncEventHandler (RTTHREAD thread, void *pvUser);

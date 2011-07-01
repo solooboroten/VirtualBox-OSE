@@ -1,4 +1,4 @@
-/* $Id: ExtPackManagerImpl.cpp 35523 2011-01-13 13:12:03Z vboxsync $ */
+/* $Id: ExtPackManagerImpl.cpp 37354 2011-06-07 15:05:32Z vboxsync $ */
 /** @file
  * VirtualBox Main - interface for Extension Packs, VBoxSVC & VBoxC.
  */
@@ -211,7 +211,7 @@ DEFINE_EMPTY_CTOR_DTOR(ExtPackFile)
 HRESULT ExtPackFile::FinalConstruct()
 {
     m = NULL;
-    return S_OK;
+    return BaseFinalConstruct();
 }
 
 /**
@@ -241,7 +241,7 @@ HRESULT ExtPackFile::initWithFile(const char *a_pszFile, ExtPackManager *a_pExtP
     m->ptrExtPackMgr                = a_pExtPackMgr;
     m->pVirtualBox                  = a_pVirtualBox;
 
-    iprt::MiniString *pstrTarName = VBoxExtPackExtractNameFromTarballPath(a_pszFile);
+    RTCString *pstrTarName = VBoxExtPackExtractNameFromTarballPath(a_pszFile);
     if (pstrTarName)
     {
         m->Desc.strName = *pstrTarName;
@@ -283,8 +283,8 @@ HRESULT ExtPackFile::initWithFile(const char *a_pszFile, ExtPackManager *a_pExtP
     /*
      * Parse the XML.
      */
-    iprt::MiniString strSavedName(m->Desc.strName);
-    iprt::MiniString *pStrLoadErr = VBoxExtPackLoadDescFromVfsFile(hXmlFile, &m->Desc, &m->ObjInfoDesc);
+    RTCString strSavedName(m->Desc.strName);
+    RTCString *pStrLoadErr = VBoxExtPackLoadDescFromVfsFile(hXmlFile, &m->Desc, &m->ObjInfoDesc);
     RTVfsFileRelease(hXmlFile);
     if (pStrLoadErr != NULL)
     {
@@ -330,6 +330,7 @@ HRESULT ExtPackFile::initFailed(const char *a_pszWhyFmt, ...)
 void ExtPackFile::FinalRelease()
 {
     uninit();
+    BaseFinalRelease();
 }
 
 /**
@@ -643,7 +644,7 @@ STDMETHODIMP ExtPackFile::Install(BOOL a_fReplace, IN_BSTR a_bstrDisplayInfo, IP
             {
                 pJob = new EXTPACKINSTALLJOB;
                 pJob->ptrExtPackFile    = this;
-                pJob->fReplace          = a_fReplace;
+                pJob->fReplace          = a_fReplace != FALSE;
                 pJob->strDisplayInfo    = a_bstrDisplayInfo;
                 pJob->ptrExtPackMgr     = m->ptrExtPackMgr;
                 hrc = pJob->ptrProgress.createObject();
@@ -1223,8 +1224,8 @@ void ExtPack::probeAndLoad(void)
     /*
      * Read the description file.
      */
-    iprt::MiniString strSavedName(m->Desc.strName);
-    iprt::MiniString *pStrLoadErr = VBoxExtPackLoadDesc(m->strExtPackPath.c_str(), &m->Desc, &m->ObjInfoDesc);
+    RTCString strSavedName(m->Desc.strName);
+    RTCString *pStrLoadErr = VBoxExtPackLoadDesc(m->strExtPackPath.c_str(), &m->Desc, &m->ObjInfoDesc);
     if (pStrLoadErr != NULL)
     {
         m->strWhyUnusable.printf(tr("Failed to load '%s/%s': %s"),
@@ -1901,7 +1902,7 @@ HRESULT ExtPackManager::initExtPackManager(VirtualBox *a_pVirtualBox, VBOXEXTPAC
                 AssertLogRelRC(vrc);
                 if (RT_SUCCESS(vrc))
                 {
-                    iprt::MiniString *pstrName = VBoxExtPackUnmangleName(Entry.szName, RTSTR_MAX);
+                    RTCString *pstrName = VBoxExtPackUnmangleName(Entry.szName, RTSTR_MAX);
                     AssertLogRel(pstrName);
                     if (pstrName)
                     {
@@ -2407,8 +2408,8 @@ void ExtPackManager::removeExtPack(const char *a_pszName)
  * This may remove the extension pack from the list, so any non-smart pointers
  * to the extension pack object may become invalid.
  *
- * @returns S_OK and *ppExtPack on success, COM status code and error message
- *          on failure.
+ * @returns S_OK and *a_ppExtPack on success, COM status code and error
+ *          message on failure.  Note that *a_ppExtPack can be NULL.
  *
  * @param   a_pszName           The extension to update..
  * @param   a_fUnusableIsError  If @c true, report an unusable extension pack
@@ -2479,7 +2480,7 @@ HRESULT ExtPackManager::refreshExtPack(const char *a_pszName, bool a_fUnusableIs
                          * Update the name and directory variables.
                          */
                         vrc = RTPathJoin(szDir, sizeof(szDir), m->strBaseDir.c_str(), Entry.szName); /* not really necessary */
-                        AssertLogRelRCReturnStmt(vrc, E_UNEXPECTED, RTDirClose(pDir));
+                        AssertLogRelRCReturnStmt(vrc, RTDirClose(pDir), E_UNEXPECTED);
                         a_pszName = Entry.szName;
                         fExists   = true;
                         break;
@@ -2561,8 +2562,8 @@ HRESULT ExtPackManager::refreshExtPack(const char *a_pszName, bool a_fUnusableIs
 HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace, Utf8Str const *a_pstrDisplayInfo)
 {
     AssertReturn(m->enmContext == VBOXEXTPACKCTX_PER_USER_DAEMON, E_UNEXPECTED);
-    iprt::MiniString const * const pStrName     = &a_pExtPackFile->m->Desc.strName;
-    iprt::MiniString const * const pStrTarball  = &a_pExtPackFile->m->strExtPackFile;
+    RTCString const * const pStrName     = &a_pExtPackFile->m->Desc.strName;
+    RTCString const * const pStrTarball  = &a_pExtPackFile->m->strExtPackFile;
 
     AutoCaller autoCaller(this);
     HRESULT hrc = autoCaller.rc();
@@ -2605,7 +2606,7 @@ HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace, 
             if (SUCCEEDED(hrc))
             {
                 hrc = refreshExtPack(pStrName->c_str(), true /*a_fUnusableIsError*/, &pExtPack);
-                if (SUCCEEDED(hrc))
+                if (SUCCEEDED(hrc) && pExtPack)
                 {
                     RTERRINFOSTATIC ErrInfo;
                     RTErrInfoInitStatic(&ErrInfo);
@@ -2631,6 +2632,9 @@ HRESULT ExtPackManager::doInstall(ExtPackFile *a_pExtPackFile, bool a_fReplace, 
                                        ErrInfo.Core.rc, ErrInfo.Core.pszMsg);
                     }
                 }
+                else if (SUCCEEDED(hrc))
+                    hrc = setError(E_FAIL, tr("Installing extension pack '%s' failed under mysterious circumstances"),
+                                   pStrName->c_str());
             }
             else
             {

@@ -1,4 +1,4 @@
-/* $Id: UIMachineWindowScale.cpp 35424 2011-01-07 13:05:41Z vboxsync $ */
+/* $Id: UIMachineWindowScale.cpp 36083 2011-02-25 12:33:58Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -77,6 +77,8 @@ UIMachineWindowScale::UIMachineWindowScale(UIMachineLogic *pMachineLogic, ulong 
     updateAppearanceOf(UIVisualElement_AllStuff);
 
 #ifdef Q_WS_MAC
+    /* Install the resize delegate for keeping the aspect ratio. */
+    ::darwinInstallResizeDelegate(this);
     /* Beta label? */
     if (vboxGlobal().isBeta())
     {
@@ -85,13 +87,17 @@ UIMachineWindowScale::UIMachineWindowScale(UIMachineLogic *pMachineLogic, ulong 
     }
 #endif /* Q_WS_MAC */
 
-
     /* Show window: */
     showSimple();
 }
 
 UIMachineWindowScale::~UIMachineWindowScale()
 {
+#ifdef Q_WS_MAC
+    /* Uninstall the resize delegate for keeping the aspect ratio. */
+    ::darwinUninstallResizeDelegate(this);
+#endif /* Q_WS_MAC */
+
     /* Save normal window settings: */
     saveWindowSettings();
 
@@ -223,12 +229,10 @@ void UIMachineWindowScale::closeEvent(QCloseEvent *pEvent)
 
 void UIMachineWindowScale::prepareMenu()
 {
-    UIMainMenuType fMenus = UIMainMenuType(UIMainMenuType_All ^ UIMainMenuType_View);
 #ifdef Q_WS_MAC
-    setMenuBar(uisession()->newMenuBar(fMenus));
+    setMenuBar(uisession()->newMenuBar());
 #endif /* Q_WS_MAC */
-    /* No view menu in normal mode: */
-    m_pMainMenu = uisession()->newMenu(fMenus);
+    m_pMainMenu = uisession()->newMenu();
 }
 
 void UIMachineWindowScale::prepareMachineViewContainer()

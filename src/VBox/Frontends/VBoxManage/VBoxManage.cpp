@@ -1,4 +1,4 @@
-/* $Id: VBoxManage.cpp 34971 2010-12-11 23:12:01Z vboxsync $ */
+/* $Id: VBoxManage.cpp 37172 2011-05-20 17:15:55Z vboxsync $ */
 /** @file
  * VBoxManage - VirtualBox's command-line interface.
  */
@@ -151,7 +151,7 @@ HRESULT showProgress(ComPtr<IProgress> progress)
                 LONG lSecsRem = 0;
                 progress->COMGETTER(TimeRemaining)(&lSecsRem);
 
-                RTStrmPrintf(g_pStdErr, "(%ld/%ld) %ls %ld%% => %ld%% (%d s remaining)\n", ulOperation + 1, cOperations, bstrOperationDescription.raw(), ulCurrentOperationPercent, ulCurrentPercent, lSecsRem);
+                RTStrmPrintf(g_pStdErr, "(%u/%u) %ls %02u%% => %02u%% (%d s remaining)\n", ulOperation + 1, cOperations, bstrOperationDescription.raw(), ulCurrentOperationPercent, ulCurrentPercent, lSecsRem);
                 ulLastPercent = ulCurrentPercent;
                 ulLastOperationPercent = ulCurrentOperationPercent;
             }
@@ -166,7 +166,7 @@ HRESULT showProgress(ComPtr<IProgress> progress)
                 {
                     if (curVal < 100)
                     {
-                        RTStrmPrintf(g_pStdErr, "%ld%%...", curVal);
+                        RTStrmPrintf(g_pStdErr, "%u%%...", curVal);
                         RTStrmFlush(g_pStdErr);
                     }
                 }
@@ -231,6 +231,12 @@ HRESULT showProgress(ComPtr<IProgress> progress)
 
 #endif /* !VBOX_ONLY_DOCS */
 
+#ifdef RT_OS_WINDOWS
+// Required for ATL
+static CComModule _Module;
+#endif
+
+
 int main(int argc, char *argv[])
 {
     /*
@@ -293,6 +299,13 @@ int main(int argc, char *argv[])
         {
             /* suppress the logo */
             fShowLogo = false;
+            iCmd++;
+        }
+        else if (   !strcmp(argv[i], "--detailed-progress")
+                 || !strcmp(argv[i], "-d"))
+        {
+            /* detailed progress report */
+            g_fDetailedProgress = true;
             iCmd++;
         }
         else
@@ -392,6 +405,7 @@ int main(int argc, char *argv[])
             { "showvminfo",       USAGE_SHOWVMINFO,        handleShowVMInfo },
             { "registervm",       USAGE_REGISTERVM,        handleRegisterVM },
             { "unregistervm",     USAGE_UNREGISTERVM,      handleUnregisterVM },
+            { "clonevm",          USAGE_CLONEVM,           handleCloneVM },
             { "createhd",         USAGE_CREATEHD,          handleCreateHardDisk },
             { "createvdi",        USAGE_CREATEHD,          handleCreateHardDisk }, /* backward compatibility */
             { "modifyhd",         USAGE_MODIFYHD,          handleModifyHardDisk },
@@ -456,7 +470,19 @@ int main(int argc, char *argv[])
             }
         }
         if (!s_commandHandlers[commandIndex].command)
-            rcExit = errorSyntax(USAGE_ALL, "Invalid command '%s'", Utf8Str(argv[iCmd]).c_str());
+        {
+            /* Help topics. */
+            if (fShowHelp && !strcmp(argv[iCmd], "commands"))
+            {
+                RTPrintf("commands:\n");
+                for (unsigned i = 0; i < RT_ELEMENTS(s_commandHandlers) - 1; i++)
+                    if (   i ==  0  /* skip backwards compatibility entries */
+                        || s_commandHandlers[i].help != s_commandHandlers[i - 1].help)
+                        RTPrintf("    %s\n", s_commandHandlers[i].command);
+            }
+            else
+                rcExit = errorSyntax(USAGE_ALL, "Invalid command '%s'", Utf8Str(argv[iCmd]).c_str());
+        }
 
         /* Although all handlers should always close the session if they open it,
          * we do it here just in case if some of the handlers contains a bug --

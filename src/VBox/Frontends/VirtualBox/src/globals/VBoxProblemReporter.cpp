@@ -1,4 +1,4 @@
-/* $Id: VBoxProblemReporter.cpp 35587 2011-01-17 14:21:04Z vboxsync $ */
+/* $Id: VBoxProblemReporter.cpp 37570 2011-06-21 10:31:26Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -38,7 +38,7 @@
 #include "UIDownloaderUserManual.h"
 #include "UIMachine.h"
 #include "VBoxAboutDlg.h"
-#include "QIHotKeyEdit.h"
+#include "UIHotKeyEditor.h"
 #ifdef Q_WS_MAC
 # include "VBoxUtils-darwin.h"
 #endif
@@ -252,6 +252,107 @@ int VBoxProblemReporter::message (QWidget *aParent, Type aType, const QString &a
  *  A shortcut to #messageYesNo() that doesn't require to specify the details
  *  text (QString::null is assumed).
  */
+
+int VBoxProblemReporter::messageWithOption(QWidget *pParent,
+                                           Type type,
+                                           const QString &strMessage,
+                                           const QString &strOptionText,
+                                           bool fDefaultOptionValue /* = true */,
+                                           const QString &strDetails /* = QString::null */,
+                                           int iButton1 /* = 0 */,
+                                           int iButton2 /* = 0 */,
+                                           int iButton3 /* = 0 */,
+                                           const QString &strButtonName1 /* = QString::null */,
+                                           const QString &strButtonName2 /* = QString::null */,
+                                           const QString &strButtonName3 /* = QString::null */) const
+{
+    /* If no buttons are set, using single 'OK' button: */
+    if (iButton1 == 0 && iButton2 == 0 && iButton3 == 0)
+        iButton1 = QIMessageBox::Ok | QIMessageBox::Default;
+
+    /* Assign corresponding title and icon: */
+    QString strTitle;
+    QIMessageBox::Icon icon;
+    switch (type)
+    {
+        default:
+        case Info:
+            strTitle = tr("VirtualBox - Information", "msg box title");
+            icon = QIMessageBox::Information;
+            break;
+        case Question:
+            strTitle = tr("VirtualBox - Question", "msg box title");
+            icon = QIMessageBox::Question;
+            break;
+        case Warning:
+            strTitle = tr("VirtualBox - Warning", "msg box title");
+            icon = QIMessageBox::Warning;
+            break;
+        case Error:
+            strTitle = tr("VirtualBox - Error", "msg box title");
+            icon = QIMessageBox::Critical;
+            break;
+        case Critical:
+            strTitle = tr("VirtualBox - Critical Error", "msg box title");
+            icon = QIMessageBox::Critical;
+            break;
+        case GuruMeditation:
+            strTitle = "VirtualBox - Guru Meditation"; /* don't translate this */
+            icon = QIMessageBox::GuruMeditation;
+            break;
+    }
+
+    /* Create message-box: */
+    if (QPointer<QIMessageBox> pBox = new QIMessageBox(strTitle, strMessage, icon,
+                                                       iButton1, iButton2, iButton3, pParent))
+    {
+        /* Append the list of all warnings with current: */
+        m_warnings << pBox;
+
+        /* Setup message-box connections: */
+        connect(this, SIGNAL(sigToCloseAllWarnings()), pBox, SLOT(deleteLater()));
+
+        /* Assign other text values: */
+        if (!strOptionText.isNull())
+        {
+            pBox->setFlagText(strOptionText);
+            pBox->setFlagChecked(fDefaultOptionValue);
+        }
+        if (!strButtonName1.isNull())
+            pBox->setButtonText(0, strButtonName1);
+        if (!strButtonName2.isNull())
+            pBox->setButtonText(1, strButtonName2);
+        if (!strButtonName3.isNull())
+            pBox->setButtonText(2, strButtonName3);
+        if (!strDetails.isEmpty())
+            pBox->setDetailsText(strDetails);
+
+        /* Show the message box: */
+        int iResultCode = pBox->exec();
+
+        /* Its possible what message-box will be deleted during some event-processing procedure,
+         * in that case pBox will be null right after pBox->exec() returns from it's event-pool,
+         * so we have to check this too: */
+        if (pBox)
+        {
+            /* Cleanup the list of all warnings from current: */
+            if (m_warnings.contains(pBox))
+                m_warnings.removeAll(pBox);
+
+            /* Check if option was chosen: */
+            if (pBox->isFlagChecked())
+                iResultCode |= QIMessageBox::OptionChosen;
+
+            /* Destroy message-box: */
+            if (pBox)
+                delete pBox;
+
+            /* Return final result: */
+            return iResultCode;
+        }
+    }
+    return 0;
+}
 
 /**
  *  Shows a modal progress dialog using a CProgress object passed as an
@@ -524,22 +625,6 @@ void VBoxProblemReporter::cannotAccessUSB (const COMBaseWithEI &aObj)
     if (res.rc() == E_NOTIMPL)
         return;
 
-#ifdef RT_OS_LINUX
-    /* xxx There is no macro to turn an error into a warning, but we need
-     *     to do that here. */
-    if (res.rc() == (VBOX_E_HOST_ERROR & ~0x80000000))
-    {
-        message (mainWindowShown(), VBoxProblemReporter::Warning,
-                 tr ("Could not access USB on the host system, because "
-                     "neither the USB file system (usbfs) nor the DBus "
-                     "and hal services are currently available. If you "
-                     "wish to use host USB devices inside guest systems, "
-                     "you must correct this and restart VirtualBox."),
-                 formatErrorInfo (res),
-                 "cannotAccessUSB" /* aAutoConfirmId */);
-        return;
-    }
-#endif
     message (mainWindowShown(), res.isWarning() ? Warning : Error,
              tr ("Failed to access the USB subsystem."),
              formatErrorInfo (res),
@@ -576,6 +661,17 @@ void VBoxProblemReporter::cannotOpenMachine(QWidget *pParent, const QString &str
             Error,
             tr("Failed to open virtual machine located in %1.")
                .arg(strMachinePath),
+            formatErrorInfo(vbox));
+}
+
+void VBoxProblemReporter::cannotRegisterMachine(const CVirtualBox &vbox,
+                                                const CMachine &machine,
+                                                QWidget *pParent)
+{
+    message(pParent ? pParent : mainWindowShown(),
+            Error,
+            tr("Failed to register the virtual machine <b>%1</b>.")
+            .arg(machine.GetName()),
             formatErrorInfo(vbox));
 }
 
@@ -632,6 +728,17 @@ void VBoxProblemReporter::cannotLoadMachineSettings (const CMachine &machine,
                  "<b>%1</b> from <b><nobr>%2</nobr></b>.")
                 .arg (machine.GetName(), machine.GetSettingsFilePath()),
              formatErrorInfo (res));
+}
+
+bool VBoxProblemReporter::confirmedSettingsReloading(QWidget *pParent)
+{
+    int rc = message(pParent, Question,
+                     tr("<p>The machine settings were changed while you were editing them. "
+                        "You currently have unsaved setting changes.</p>"
+                        "<p>Would you like to reload the changed settings or to keep your own changes?</p>"), 0,
+                     QIMessageBox::Yes, QIMessageBox::No | QIMessageBox::Default | QIMessageBox::Escape, 0,
+                     tr("Reload settings"), tr("Keep changes"), 0);
+    return rc == QIMessageBox::Yes;
 }
 
 void VBoxProblemReporter::cannotStartMachine (const CConsole &console)
@@ -720,6 +827,33 @@ void VBoxProblemReporter::cannotSaveMachineState (const CProgress &progress)
     );
 }
 
+void VBoxProblemReporter::cannotCreateClone(const CMachine &machine,
+                                            QWidget *pParent /* = 0 */)
+{
+    message(
+        pParent ? pParent : mainWindowShown(),
+        Error,
+        tr ("Failed to clone the virtual machine <b>%1</b>.")
+            .arg(machine.GetName()),
+        formatErrorInfo(machine)
+    );
+}
+
+void VBoxProblemReporter::cannotCreateClone(const CMachine &machine,
+                                            const CProgress &progress,
+                                            QWidget *pParent /* = 0 */)
+{
+    AssertWrapperOk(progress);
+
+    message(
+        pParent ? pParent : mainWindowShown(),
+        Error,
+        tr ("Failed to clone the virtual machine <b>%1</b>.")
+            .arg(machine.GetName()),
+        formatErrorInfo(progress.GetErrorInfo())
+    );
+}
+
 void VBoxProblemReporter::cannotTakeSnapshot (const CConsole &console)
 {
     /* preserve the current error info before calling the object again */
@@ -778,6 +912,14 @@ void VBoxProblemReporter::cannotDeleteMachine(const CMachine &machine)
             Error,
             tr("Failed to remove the virtual machine <b>%1</b>.").arg(machine.GetName()),
             !machine.isOk() ? formatErrorInfo(machine) : formatErrorInfo(res));
+}
+
+void VBoxProblemReporter::cannotDeleteMachine(const CMachine &machine, const CProgress &progress)
+{
+    message(mainWindowShown(),
+            Error,
+            tr("Failed to remove the virtual machine <b>%1</b>.").arg(machine.GetName()),
+            formatErrorInfo(progress.GetErrorInfo()));
 }
 
 void VBoxProblemReporter::cannotDiscardSavedState (const CConsole &console)
@@ -839,15 +981,24 @@ bool VBoxProblemReporter::warnAboutVirtNotEnabledGuestRequired(bool fHWVirtExSup
             tr ("Close VM"), tr ("Continue"));
 }
 
-bool VBoxProblemReporter::askAboutSnapshotRestoring (const QString &aSnapshotName)
+int VBoxProblemReporter::askAboutSnapshotRestoring(const QString &strSnapshotName, bool fAlsoCreateNewSnapshot)
 {
-    return messageOkCancel (mainWindowShown(), Question,
-        tr ("<p>Are you sure you want to restore snapshot <b>%1</b>? "
-            "This will cause you to lose your current machine state, which cannot be recovered.</p>")
-            .arg (aSnapshotName),
-        /* Do NOT allow this message to be disabled! */
-        NULL /* aAutoConfirmId */,
-        tr ("Restore"), tr ("Cancel"));
+    return fAlsoCreateNewSnapshot ?
+           messageWithOption(mainWindowShown(), Question,
+                             tr("<p>You are about to restore snapshot <b>%1</b>.</p>"
+                                "<p>You can create a snapshot of the current state of the virtual machine first by checking the box below; "
+                                "if you do not do this the current state will be permanently lost. Do you wish to proceed?</p>")
+                                .arg(strSnapshotName),
+                             tr("Create a snapshot of the current machine state"),
+                             true /* choose option by default */,
+                             QString::null /* details */,
+                             QIMessageBox::Ok, QIMessageBox::Cancel, 0 /* 3rd button */,
+                             tr("Restore"), tr("Cancel"), QString::null /* 3rd button text */) :
+           message(mainWindowShown(), Question,
+                   tr("<p>Are you sure you want to restore snapshot <b>%1</b>?</p>").arg(strSnapshotName),
+                   0 /* auto-confirmation token */,
+                   QIMessageBox::Ok, QIMessageBox::Cancel, 0 /* 3rd button */,
+                   tr("Restore"), tr("Cancel"), QString::null /* 3rd button text */);
 }
 
 bool VBoxProblemReporter::askAboutSnapshotDeleting (const QString &aSnapshotName)
@@ -1084,6 +1235,14 @@ bool VBoxProblemReporter::confirmDiscardSavedState (const CMachine &machine)
             .arg (machine.GetName()),
         0 /* aAutoConfirmId */,
         tr ("Discard", "saved state"));
+}
+
+void VBoxProblemReporter::cannotChangeMediumType(QWidget *pParent, const CMedium &medium, KMediumType oldMediumType, KMediumType newMediumType)
+{
+    message(pParent ? pParent : mainWindowShown(), Error,
+            tr("<p>Error changing medium type from <b>%1</b> to <b>%2</b>.</p>")
+                .arg(vboxGlobal().toString(oldMediumType)).arg(vboxGlobal().toString(newMediumType)),
+            formatErrorInfo(medium));
 }
 
 bool VBoxProblemReporter::confirmReleaseMedium (QWidget *aParent,
@@ -1676,7 +1835,7 @@ bool VBoxProblemReporter::confirmInputCapture (bool *aAutoConfirmed /* = NULL */
             "</p>") +
         tr ("<p>The host key is currently defined as <b>%1</b>.</p>",
             "additional message box paragraph")
-            .arg (QIHotKeyEdit::keyName (vboxGlobal().settings().hostKey())),
+            .arg (UIHotKeyCombination::toReadableString (vboxGlobal().settings().hostCombo())),
         "confirmInputCapture",
         QIMessageBox::Ok | QIMessageBox::Default,
         QIMessageBox::Cancel | QIMessageBox::Escape,
@@ -1709,7 +1868,7 @@ void VBoxProblemReporter::remindAboutAutoCapture()
             "</p>") +
         tr ("<p>The host key is currently defined as <b>%1</b>.</p>",
             "additional message box paragraph")
-            .arg (QIHotKeyEdit::keyName (vboxGlobal().settings().hostKey())),
+            .arg (UIHotKeyCombination::toReadableString (vboxGlobal().settings().hostCombo())),
         "remindAboutAutoCapture");
 }
 
@@ -1877,7 +2036,7 @@ bool VBoxProblemReporter::confirmGoingFullscreen (const QString &aHotKey)
             "<p>Note that the main menu bar is hidden in fullscreen mode. "
             "You can access it by pressing <b>Host+Home</b>.</p>")
             .arg (aHotKey)
-            .arg (QIHotKeyEdit::keyName (vboxGlobal().settings().hostKey())),
+            .arg (UIHotKeyCombination::toReadableString (vboxGlobal().settings().hostCombo())),
         "confirmGoingFullscreen",
         tr ("Switch", "fullscreen"));
 }
@@ -1897,7 +2056,7 @@ bool VBoxProblemReporter::confirmGoingSeamless (const QString &aHotKey)
             "<p>Note that the main menu bar is hidden in seamless mode. "
             "You can access it by pressing <b>Host+Home</b>.</p>")
             .arg (aHotKey)
-            .arg (QIHotKeyEdit::keyName (vboxGlobal().settings().hostKey())),
+            .arg (UIHotKeyCombination::toReadableString (vboxGlobal().settings().hostCombo())),
         "confirmGoingSeamless",
         tr ("Switch", "seamless"));
 }
@@ -1917,7 +2076,7 @@ bool VBoxProblemReporter::confirmGoingScale (const QString &aHotKey)
             "<p>Note that the main menu bar is hidden in scale mode. "
             "You can access it by pressing <b>Host+Home</b>.</p>")
             .arg (aHotKey)
-            .arg (QIHotKeyEdit::keyName (vboxGlobal().settings().hostKey())),
+            .arg (UIHotKeyCombination::toReadableString (vboxGlobal().settings().hostCombo())),
         "confirmGoingScale",
         tr ("Switch", "scale"));
 }
@@ -1973,10 +2132,11 @@ bool VBoxProblemReporter::confirmVMReset (QWidget *aParent)
 
 void VBoxProblemReporter::warnAboutCannotCreateMachineFolder(QWidget *pParent, const QString &strFolderName)
 {
+    QFileInfo fi(strFolderName);
     message(pParent ? pParent : mainWindowShown(), Critical,
-            tr("<p>Cannot create the machine folder:</p>"
-               "<p><b>%1</b></p>"
-               "<p>Please check you have the permissions required to do so.</p>").arg(strFolderName));
+            tr("<p>Cannot create the machine folder <b>%1</b> in the parent folder <nobr><b>%2</b>.</nobr></p>"
+               "<p>Please check that the parent really exists and that you have permissions to create the machine folder.</p>")
+               .arg(fi.fileName()).arg(fi.absolutePath()));
 }
 
 /**
@@ -2547,6 +2707,26 @@ void VBoxProblemReporter::remindAboutWrongColorDepth(ulong uRealBPP, ulong uWant
     emit sigRemindAboutWrongColorDepth(uRealBPP, uWantedBPP);
 }
 
+void VBoxProblemReporter::showGenericError(COMBaseWithEI *object, QWidget *pParent /* = 0 */)
+{
+    if (   !object
+        || object->lastRC() == S_OK)
+        return;
+
+    message(pParent ? pParent : mainWindowShown(),
+            Error,
+            tr("Sorry, some generic error happens."),
+            formatErrorInfo(*object));
+}
+
+// Public slots
+/////////////////////////////////////////////////////////////////////////////
+
+void VBoxProblemReporter::remindAboutUnsupportedUSB2(const QString &strExtPackName, QWidget *pParent)
+{
+    emit sigRemindAboutUnsupportedUSB2(strExtPackName, pParent);
+}
+
 void VBoxProblemReporter::showHelpWebDialog()
 {
     vboxGlobal().openURL ("http://www.virtualbox.org");
@@ -2779,6 +2959,23 @@ void VBoxProblemReporter::sltRemindAboutWrongColorDepth(ulong uRealBPP, ulong uW
             kName);
 }
 
+void VBoxProblemReporter::sltRemindAboutUnsupportedUSB2(const QString &strExtPackName, QWidget *pParent)
+{
+    if (isAlreadyShown("sltRemindAboutUnsupportedUSB2"))
+        return;
+    setShownStatus("sltRemindAboutUnsupportedUSB2");
+
+    message(pParent ? pParent : mainMachineWindowShown(), Warning,
+            tr("<p>USB 2.0 is currently enabled for this virtual machine. "
+               "However this requires the <b><nobr>%1</nobr></b> to be installed.</p>"
+               "<p>Please install the Extension Pack from the VirtualBox download site. "
+               "After this you will be able to re-enable USB 2.0. "
+               "It will be disabled in the meantime unless you cancel the current settings changes.</p>")
+               .arg(strExtPackName));
+
+    clearShownStatus("sltRemindAboutUnsupportedUSB2");
+}
+
 VBoxProblemReporter::VBoxProblemReporter()
 {
     /* Register required objects as meta-types: */
@@ -2820,6 +3017,16 @@ VBoxProblemReporter::VBoxProblemReporter()
             Qt::BlockingQueuedConnection);
     connect(this, SIGNAL(sigRemindAboutWrongColorDepth(ulong, ulong)),
             this, SLOT(sltRemindAboutWrongColorDepth(ulong, ulong)), Qt::QueuedConnection);
+    connect(this, SIGNAL(sigRemindAboutUnsupportedUSB2(const QString&, QWidget*)),
+            this, SLOT(sltRemindAboutUnsupportedUSB2(const QString&, QWidget*)), Qt::QueuedConnection);
+
+    /* Translations for Main.
+     * Please make sure they corresponds to the strings coming from Main one-by-one symbol! */
+    tr("Could not load the Host USB Proxy Service (VERR_FILE_NOT_FOUND). The service might not be installed on the host computer");
+    tr("VirtualBox is not currently allowed to access USB devices.  You can change this by adding your user to the 'vboxusers' group.  Please see the user manual for a more detailed explanation");
+    tr("VirtualBox is not currently allowed to access USB devices.  You can change this by allowing your user to access the 'usbfs' folder and files.  Please see the user manual for a more detailed explanation");
+    tr("The USB Proxy Service has not yet been ported to this host");
+    tr("Could not load the Host USB Proxy service");
 }
 
 /* Returns a reference to the global VirtualBox problem reporter instance: */
@@ -2837,8 +3044,17 @@ QString VBoxProblemReporter::doFormatErrorInfo (const COMErrorInfo &aInfo,
      * be used separately in QIMessageBox */
     QString formatted;
 
-    if (!aInfo.text().isEmpty())
-        formatted += QString ("<p>%1.</p>").arg (vboxGlobal().emphasize (aInfo.text()));
+    /* Check if details text is NOT empty: */
+    QString strDetailsInfo = aInfo.text();
+    if (!strDetailsInfo.isEmpty())
+    {
+        /* Check if details text written in English (latin1) and translated: */
+        if (strDetailsInfo == QString::fromLatin1(strDetailsInfo.toLatin1()) &&
+            strDetailsInfo != tr(strDetailsInfo.toLatin1().constData()))
+            formatted += QString("<p>%1.</p>").arg(vboxGlobal().emphasize(tr(strDetailsInfo.toLatin1().constData())));
+        else
+            formatted += QString("<p>%1.</p>").arg(vboxGlobal().emphasize(strDetailsInfo));
+    }
 
     formatted += "<!--EOM--><table bgcolor=#EEEEEE border=0 cellspacing=0 "
                  "cellpadding=0 width=100%>";

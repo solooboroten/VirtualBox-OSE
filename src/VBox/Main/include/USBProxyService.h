@@ -1,4 +1,4 @@
-/* $Id: USBProxyService.h 34341 2010-11-24 20:14:36Z vboxsync $ */
+/* $Id: USBProxyService.h 37618 2011-06-23 17:16:39Z vboxsync $ */
 /** @file
  * VirtualBox USB Proxy Service (base) class.
  */
@@ -226,11 +226,11 @@ private:
 
 private:
     /** File handle to the '/proc/bus/usb/devices' file. */
-    RTFILE mFile;
+    RTFILE mhFile;
     /** Pipe used to interrupt wait(), the read end. */
-    RTFILE mWakeupPipeR;
+    RTPIPE mhWakeupPipeR;
     /** Pipe used to interrupt wait(), the write end. */
-    RTFILE mWakeupPipeW;
+    RTPIPE mhWakeupPipeW;
     /** The root of usbfs. */
     Utf8Str mDevicesRoot;
     /** Whether we're using <mUsbfsRoot>/devices or /sys/whatever. */

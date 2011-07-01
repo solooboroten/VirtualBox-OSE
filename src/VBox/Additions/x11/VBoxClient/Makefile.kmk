@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 35380 2010-12-30 16:06:17Z vboxsync $
+# $Id: Makefile.kmk 37025 2011-05-10 11:31:36Z vboxsync $
 ## @file
 # Sub-Makefile for the VirtualBox Guest Addition X11 Client.
 #
@@ -23,7 +23,7 @@ include	$(KBUILD_PATH)/subheader.kmk
 #
 PROGRAMS += VBoxClient
 
-VBoxClient_TEMPLATE = VBOXGUESTR3CPPEXE
+VBoxClient_TEMPLATE = VBOXGUESTR3EXE
 VBoxClient_DEFS += VBOX_X11_CLIPBOARD VBOX_WITH_HGCM
 ifdef VBOX_WITH_DBUS
  VBoxClient_DEFS += VBOX_WITH_DBUS
@@ -69,20 +69,6 @@ endif
 ifdef VBOX_WITH_GUEST_PROPS
  VBoxClient_DEFS += VBOX_WITH_GUEST_PROPS
 endif
-#
-# Link against libstdc++.a. (http://www.trilithium.com/johan/2005/06/static-libstdc/).
-# (It would've been preferred to avoid features depending on libstdc++, of course...)
-#
-# Actually, this is darn annoying and will *NOT* be tolerated for any new code!
-#
-VBoxClient_LIBPATH  += $(VBoxClient_0_OUTDIR)
-VBoxClient_ORDERDEPS = $(VBoxClient_0_OUTDIR)/libstdc++.a
-VBoxClient_CLEAN     = $(VBoxClient_0_OUTDIR)/libstdc++.a
-$$(VBoxClient_0_OUTDIR)/libstdc++.a:
-	$(call MSG_L1,Forcing static libstdc++)
-	$(QUIET)$(MKDIR) -p $(@D)
-	$(QUIET)$(LN_EXT) -sf `$(TOOL_$(VBOX_GCC_TOOL)_CXX) $(TEMPLATE_VBOXGUESTR3CPPEXE_CXXFLAGS.$(KBUILD_TARGET_ARCH)) -print-file-name=libstdc++.a` $@ \
-	     || $(CP_EXT) -f  `$(TOOL_$(VBOX_GCC_TOOL)_CXX) $(TEMPLATE_VBOXGUESTR3CPPEXE_CXXFLAGS.$(KBUILD_TARGET_ARCH)) -print-file-name=libstdc++.a` $@
 
 ifdef VBOX_X11_SEAMLESS_GUEST
  if defined(VBOX_WITH_TESTCASES) && !defined(VBOX_ONLY_ADDITIONS) && !defined(VBOX_ONLY_SDK)
@@ -106,6 +92,14 @@ $$(tstSeamlessX11-auto_0_OUTDIR)/tstSeamlessX11-auto.run: \
         $$(INSTARGET_tstSeamlessX11-auto)
 	export VBOX_LOG_DEST=nofile; $(INSTARGET_tstSeamlessX11-auto) quiet
 	$(QUIET)$(APPEND) -t "$@" "done"
+
+   PROGRAMS += tstVector
+   tstVector_TEMPLATE = VBOXR3TSTEXE
+   tstVector_SOURCES = \
+           testcase/tstVector.cpp
+   tstVector_INCS = .
+   tstVector_LIBS = \
+           $(LIB_RUNTIME)
 
    #
    # Additional testcase designed to be run manually, which initiates and starts the Linux

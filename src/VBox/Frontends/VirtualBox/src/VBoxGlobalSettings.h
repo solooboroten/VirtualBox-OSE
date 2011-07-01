@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -37,12 +37,13 @@ public:
 
 private:
 
-    int hostkey;
+    QString hostCombo;
     bool autoCapture;
     QString guiFeatures;
     QString languageId;
     QString maxGuestRes;
     QString remapScancodes;
+    QString proxySettings;
     bool trayIconEnabled;
     bool presentationModeEnabled;
     bool hostScreenSaverDisabled;
@@ -55,12 +56,13 @@ private:
 class VBoxGlobalSettings : public QObject, public CIShared <VBoxGlobalSettingsData>
 {
     Q_OBJECT
-    Q_PROPERTY (int hostKey READ hostKey WRITE setHostKey)
+    Q_PROPERTY (QString hostCombo READ hostCombo WRITE setHostCombo)
     Q_PROPERTY (bool autoCapture READ autoCapture WRITE setAutoCapture)
     Q_PROPERTY (QString guiFeatures READ guiFeatures WRITE setGuiFeatures)
     Q_PROPERTY (QString languageId READ languageId WRITE setLanguageId)
     Q_PROPERTY (QString maxGuestRes READ maxGuestRes WRITE setMaxGuestRes)
     Q_PROPERTY (QString remapScancodes READ remapScancodes WRITE setRemapScancodes)
+    Q_PROPERTY (QString proxySettings READ proxySettings WRITE setProxySettings)
     Q_PROPERTY (bool trayIconEnabled READ trayIconEnabled WRITE setTrayIconEnabled)
     Q_PROPERTY (bool presentationModeEnabled READ presentationModeEnabled WRITE setPresentationModeEnabled)
     Q_PROPERTY (bool hostScreenSaverDisabled READ hostScreenSaverDisabled WRITE setHostScreenSaverDisabled)
@@ -78,8 +80,8 @@ public:
 
     // Properties
 
-    int hostKey() const { return data()->hostkey; }
-    void setHostKey (int key);
+    QString hostCombo() const { return data()->hostCombo; }
+    void setHostCombo (const QString &hostCombo);
 
     bool autoCapture() const { return data()->autoCapture; }
     void setAutoCapture (bool aAutoCapture)
@@ -113,6 +115,11 @@ public:
         mData()->remapScancodes = aRemapScancodes;
     }
 
+    QString proxySettings() const { return data()->proxySettings; }
+    void setProxySettings (const QString &aProxySettings)
+    {
+        mData()->proxySettings = aProxySettings;
+    }
 
     bool trayIconEnabled() const { return data()->trayIconEnabled; }
     void setTrayIconEnabled (bool enabled)

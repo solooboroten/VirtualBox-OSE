@@ -1,4 +1,4 @@
-/* $Id: VBoxNetFltInternal.h 33141 2010-10-14 16:35:21Z vboxsync $ */
+/* $Id: VBoxNetFltInternal.h 36956 2011-05-04 12:54:03Z vboxsync $ */
 /** @file
  * VBoxNetFlt - Network Filter Driver (Host), Internal Header.
  */
@@ -179,16 +179,18 @@ typedef struct VBOXNETFLTINS
 #  ifdef VBOX_WITH_NETFLT_CROSSBOW
             /** Whether the underlying interface is a VNIC or not. */
             bool fIsVNIC;
+            /** Whether the underlying interface is a VNIC template or not. */
+            bool fIsVNICTemplate;
             /** Handle to list of created VNICs. */
             list_t hVNICs;
             /** Instance number while creating VNICs. */
             uint64_t uInstance;
-            /** Pointer to the VNIC instance data. */
-            void *pvVNIC;
             /** The MAC address of the host interface. */
             RTMAC MacAddr;
-            /** Whether required capabilities have been reported. */
-            bool fReportedInfo;
+            /** Handle of this interface (lower MAC). */
+            mac_handle_t hInterface;
+            /** Handle to link state notifier. */
+            mac_notify_handle_t hNotify;
 #  else
             /** Pointer to the bound IPv4 stream. */
             struct vboxnetflt_stream_t * volatile pIp4Stream;
@@ -240,7 +242,7 @@ typedef struct VBOXNETFLTINS
             /** @name Windows instance data.
              * @{ */
             /** Filter driver device context. */
-            ADAPT IfAdaptor;
+            VBOXNETFLTWIN WinIf;
 
             volatile uint32_t cModeNetFltRefs;
             volatile uint32_t cModePassThruRefs;
@@ -250,8 +252,8 @@ typedef struct VBOXNETFLTINS
 #endif
             /** The MAC address of the interface. Caching MAC for performance reasons. */
             RTMAC MacAddr;
-            /** mutex used to synchronize ADAPT init/deinit */
-            RTSEMMUTEX hAdaptMutex;
+            /** mutex used to synchronize WinIf init/deinit */
+            RTSEMMUTEX hWinIfMutex;
             /** @}  */
 # else
 #  error "PORTME"

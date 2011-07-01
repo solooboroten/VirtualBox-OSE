@@ -323,6 +323,17 @@ public:
     } while (0)
 
 /**
+ * Checks that the pointer argument is a valid pointer or NULL and returns
+ * E_INVALIDARG + extended error info on failure.
+ * @param arg   Input pointer-type argument (strings, interface pointers...)
+ */
+#define CheckComArgMaybeNull(arg) \
+    do { \
+        if (RT_UNLIKELY(!RT_VALID_PTR(arg) && (arg) != NULL)) \
+            return setError(E_INVALIDARG, tr("Argument %s is an invalid pointer"), #arg); \
+    } while (0)
+
+/**
  * Checks that safe array argument is not NULL and returns E_INVALIDARG +
  * extended error info on failure.
  * @param arg   Input safe array argument (strings, interface pointers...)
@@ -637,6 +648,29 @@ class ATL_NO_VTABLE VirtualBoxBase
     , public ISupportErrorInfo
 #endif
 {
+protected:
+#ifdef RT_OS_WINDOWS
+     CComPtr <IUnknown>   m_pUnkMarshaler;
+#endif
+
+     HRESULT   BaseFinalConstruct()
+     {
+#ifdef RT_OS_WINDOWS
+        return CoCreateFreeThreadedMarshaler(this, //GetControllingUnknown(),
+                                             &m_pUnkMarshaler.p);
+#else
+        return S_OK;
+#endif
+     }
+
+     void   BaseFinalRelease()
+     {
+#ifdef RT_OS_WINDOWS
+         m_pUnkMarshaler.Release();
+#endif
+     }
+
+
 public:
     enum State { NotReady, Ready, InInit, InUninit, InitFailed, Limited };
 
@@ -714,10 +748,31 @@ public:
                                     const Utf8Str &aText,
                                     bool aWarning,
                                     bool aLogIt);
+    static void clearError(void);
 
     HRESULT setError(HRESULT aResultCode, const char *pcsz, ...);
     HRESULT setWarning(HRESULT aResultCode, const char *pcsz, ...);
     HRESULT setErrorNoLog(HRESULT aResultCode, const char *pcsz, ...);
+
+
+    /** Initialize COM for a new thread. */
+    static HRESULT initializeComForThread(void)
+    {
+#ifndef VBOX_WITH_XPCOM
+        HRESULT hrc = CoInitializeEx(NULL, COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE | COINIT_SPEED_OVER_MEMORY);
+        AssertComRCReturn(hrc, hrc);
+#endif
+        return S_OK;
+    }
+
+    /** Uninitializes COM for a dying thread. */
+    static void uninitializeComForThread(void)
+    {
+#ifndef VBOX_WITH_XPCOM
+        CoUninitialize();
+#endif
+    }
+
 
 private:
 

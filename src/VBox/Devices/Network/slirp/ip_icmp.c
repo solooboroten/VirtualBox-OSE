@@ -1,4 +1,4 @@
-/* $Id: ip_icmp.c 34103 2010-11-16 11:18:55Z vboxsync $ */
+/* $Id: ip_icmp.c 35925 2011-02-10 11:12:40Z vboxsync $ */
 /** @file
  * NAT - IP/ICMP handling.
  */
@@ -536,7 +536,7 @@ done:
  * ICMP fragmentation is illegal.  All machines must accept 576 bytes in one
  * packet.  The maximum payload is 576-20(ip hdr)-8(icmp hdr)=548
  *
- * @note This function will NOT free msrc!
+ * @note This function will free msrc!
  */
 
 #define ICMP_MAXDATALEN (IP_MSS-28)
@@ -590,25 +590,15 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
 
     new_m_size = sizeof(struct ip) + ICMP_MINLEN + msrc->m_len + ICMP_MAXDATALEN;
     if (new_m_size < MSIZE)
-    {
         size = MCLBYTES;
-    }
     else if (new_m_size < MCLBYTES)
-    {
         size = MCLBYTES;
-    }
     else if(new_m_size < MJUM9BYTES)
-    {
         size = MJUM9BYTES;
-    }
     else if (new_m_size < MJUM16BYTES)
-    {
         size = MJUM16BYTES;
-    }
     else
-    {
         AssertMsgFailed(("Unsupported size"));
-    }
     m = m_getjcl(pData, M_NOWAIT, MT_HEADER, M_PKTHDR, size);
     if (!m)
         goto end_error;
@@ -681,12 +671,21 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
 
     icmpstat.icps_reflect++;
 
+    /* clear source datagramm in positive branch */
+    m_freem(pData, msrc);
     return;
 
 end_error_free_m:
     m_freem(pData, m);
 
 end_error:
+
+    /*
+     * clear source datagramm in case if some of requirement haven't been met.
+     */
+    if (!msrc)
+        m_freem(pData, msrc);
+
     {
         static bool fIcmpErrorReported;
         if (!fIcmpErrorReported)

@@ -1,4 +1,4 @@
-/* $Id: timesupref.h 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: timesupref.h 36262 2011-03-11 14:50:45Z vboxsync $ */
 /** @file
  * IPRT - Time using SUPLib, the C Code Template.
  */
@@ -62,8 +62,8 @@ RTDECL(uint64_t) rtTimeNanoTSInternalRef(PRTTIMENANOTSDATA pData)
 #endif
 
 #ifdef ASYNC_GIP
-        uint8_t u8ApicId = ASMGetApicId();
-        PSUPGIPCPU pGipCpu = &pGip->aCPUs[u8ApicId];
+        uint8_t    u8ApicId = ASMGetApicId();
+        PSUPGIPCPU pGipCpu = &pGip->aCPUs[pGip->aiCpuFromApicId[u8ApicId]];
 #else
         PSUPGIPCPU pGipCpu = &pGip->aCPUs[0];
 #endif

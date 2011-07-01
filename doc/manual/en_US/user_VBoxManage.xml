@@ -658,7 +658,8 @@ Statistics update:  disabled
       should be changed.<itemizedlist>
           <listitem>
             <para><computeroutput>--nic&lt;1-N&gt;
-            none|null|nat|bridged|intnet|hostonly|vde</computeroutput>: With
+            none|null|nat|bridged|intnet|hostonly|generic
+            </computeroutput>: With
             this, you can set, for each of the VM's virtual network cards,
             what type of networking should be available. They can be not
             present (<computeroutput>none</computeroutput>), not connected to
@@ -667,9 +668,9 @@ Statistics update:  disabled
             bridged networking (<computeroutput>bridged</computeroutput>) or
             communicate with other virtual machines using internal networking
             (<computeroutput>intnet</computeroutput>), host-only networking
-            (<computeroutput>hostonly</computeroutput>) or on Linux and
-            FreeBSD hosts a Virtual Distributed Ethernet switch
-            (<computeroutput>vde</computeroutput>). These options correspond
+            (<computeroutput>hostonly</computeroutput>), or access rarely used
+            sub-modes (<computeroutput>generic</computeroutput>).
+            These options correspond
             to the modes which are described in detail in <xref
             linkend="networkingmodes" />.</para>
           </listitem>
@@ -744,14 +745,24 @@ Statistics update:  disabled
           </listitem>
 
           <listitem>
-            <para><computeroutput>--vdenet&lt;1-N&gt;
-            network</computeroutput>: If Virtual Distributed Ethernet is
-            available on the host and has been enabled for a virtual network
-            card (see the <computeroutput>--nic</computeroutput> option above;
-            otherwise this setting has no effect). Use this option to specify
-            the name of a VDE network for the interface to connect to (see
-            <xref linkend="networkingmodes" /> and the VDE
-            documentation).</para>
+            <para><computeroutput>--nicgenericdrv&lt;1-N&gt;
+            &lt;backend driver&gt;</computeroutput>: If generic networking has been 
+            enabled for a virtual network card (see the
+            <computeroutput>--nic</computeroutput> option above; otherwise
+            this setting has no effect), this mode allows you to access
+            rarely used networking sub-modes, such as VDE network or UDP Tunnel.
+            </para>
+          </listitem>
+          
+          <listitem>
+            <para><computeroutput>--nicproperty&lt;1-N&gt; 
+            &lt;paramname&gt;="paramvalue"</computeroutput>:
+            This option, in combination with "nicgenericdrv" allows you to
+            pass parameters to rarely-used network backends.</para><para>
+            Those parameters are backend engine-specific, and are different
+            between UDP Tunnel and the VDE backend drivers. For example, 
+            please see <xref linkend="network_udp_tunnel" />.
+            </para>
           </listitem>
         </itemizedlist></para>
 
@@ -1319,7 +1330,7 @@ Virtual system 0:
 
       <listitem>
         <para><computeroutput>nic&lt;1-N&gt;
-        null|nat|bridged|intnet|hostonly</computeroutput>: With this, you can
+        null|nat|bridged|intnet|hostonly|generic</computeroutput>: With this, you can
         set, for each of the VM's virtual network cards, what type of
         networking should be available. They can be not connected to the host
         (<computeroutput>null</computeroutput>), use network address
@@ -1327,7 +1338,9 @@ Virtual system 0:
         (<computeroutput>bridged</computeroutput>) or communicate with other
         virtual machines using internal networking
         (<computeroutput>intnet</computeroutput>) or host-only networking
-        (<computeroutput>hostonly</computeroutput>). These options correspond
+        (<computeroutput>hostonly</computeroutput>) or access to rarely used
+        sub-modes 
+        (<computeroutput>generic</computeroutput>). These options correspond
         to the modes which are described in detail in <xref
         linkend="networkingmodes" />.</para>
       </listitem>
@@ -1362,6 +1375,11 @@ Virtual system 0:
         the guest system change to a particular video mode. This requires that
         the Guest Additions be installed, and will not work for all guest
         systems.</para>
+      </listitem>
+
+      <listitem>
+        <para><computeroutput>screenshotpng</computeroutput> takes a screenshot
+        of the guest display and saves it in PNG format.</para>
       </listitem>
 
       <listitem>
@@ -1488,7 +1506,10 @@ Virtual system 0:
                                       &lt;uuid&gt;|&lt;filename&gt;|host:&lt;drive&gt;|iscsi]
                             [--mtype normal|writethrough|immutable|shareable]
                             [--comment &lt;text&gt;]
+                            [--setuuid &lt;uuid&gt;]
+                            [--setparentuuid &lt;uuid&gt;]
                             [--passthrough on|off]
+                            [--tempeject on|off]
                             [--bandwidthgroup name|none]
                             [--forceunmount]
                             [--server &lt;name&gt;|&lt;ip&gt;]
@@ -1628,12 +1649,38 @@ Virtual system 0:
         </glossentry>
 
         <glossentry>
+          <glossterm>setuuid, setparentuuid</glossterm>
+
+          <glossdef>
+            <para>Modifies the UUID or parent UUID of a medium before
+            attaching it to a VM. This is an expert option. Inappropriate use
+            can make the medium unusable or lead to broken VM configurations
+            if any other VM is referring to the same media already. The most
+            frequently used variant is <code>--setuuid ""</code>, which assigns
+            a new (random) UUID to an image. This is useful to resolve the
+            duplicate UUID errors if one duplicated an image using file copy
+            utilities.</para>
+          </glossdef>
+        </glossentry>
+
+        <glossentry>
           <glossterm>passthrough</glossterm>
 
           <glossdef>
             <para>For a virtual DVD drive only, you can enable DVD writing
             support (currently experimental; see <xref
             linkend="storage-cds" />).</para>
+          </glossdef>
+        </glossentry>
+
+        <glossentry>
+          <glossterm>tempeject</glossterm>
+
+          <glossdef>
+            <para>For a virtual DVD drive only, you can configure the behavior
+            for guest-triggered medium eject. If this is set to "on", the eject
+            has only temporary effects. If the VM is powered off and restarted
+            the originally configured medium will be still in the drive.</para>
           </glossdef>
         </glossentry>
 
@@ -1736,11 +1783,12 @@ Virtual system 0:
     <screen>VBoxManage storagectl       &lt;uuid|vmname&gt;
                             --name &lt;name&gt;
                             [--add &lt;ide/sata/scsi/floppy&gt;]
-                            [--controller &lt;LsiLogic/BusLogic/IntelAhci/PIIX3/
-                                           PIIX4/ICH6/I8207&gt;]
+                            [--controller &lt;LsiLogic|LSILogicSAS|BusLogic|
+                                          IntelAhci|PIIX3|PIIX4|ICH6|I82078&gt;]
                             [--sataideemulation&lt;1-4&gt; &lt;1-30&gt;]
                             [--sataportcount &lt;1-30&gt;]
                             [--hostiocache on|off]
+                            [--bootable on|off]
                             [--remove]</screen>
 
     <para>where the parameters mean: <glosslist>
@@ -1806,6 +1854,14 @@ Virtual system 0:
             <para>Configures the use of the host I/O cache for all disk images
             attached to this storage controller. For details, please see <xref
             linkend="iocaching" />.</para>
+          </glossdef>
+        </glossentry>
+
+        <glossentry>
+          <glossterm>bootable</glossterm>
+
+          <glossdef>
+            <para>Selects whether this controller is bootable.</para>
           </glossdef>
         </glossentry>
 
@@ -1884,6 +1940,12 @@ Virtual system 0:
         "showvdiinfo" command is also supported and mapped internally to the
         "showhdinfo" command.</para>
       </note></para>
+    <para>The disk image must be specified either by its UUID (if the medium
+      is registered) or by its filename. Registered images can be listed by
+      <computeroutput>VBoxManage list hdds</computeroutput> (see <xref linkend="vboxmanage-list" />
+      for more information). A filename must be specified as valid path, either
+      as an absolute path or as a relative path starting from the current
+      directory.</para>
   </sect1>
 
   <sect1 id="vboxmanage-createvdi">
@@ -1958,6 +2020,12 @@ Virtual system 0:
         mapped internally to the "modifyhd" command.</para>
       </note></para>
 
+      <para>The disk image to modify must be specified either by its UUID
+        (if the medium is registered) or by its filename. Registered images
+        can be listed by <computeroutput>VBoxManage list hdds</computeroutput>
+        (see <xref linkend="vboxmanage-list" /> for more information).
+        A filename must be specified as valid path, either as an absolute path
+        or as a relative path starting from the current directory.</para>
     <para>The following options are available:<itemizedlist>
         <listitem>
           <para>With the <computeroutput>--type</computeroutput> argument, you
@@ -1989,7 +2057,8 @@ Virtual system 0:
           <computeroutput>sdelete</computeroutput> tool provided by Microsoft.
           Execute <computeroutput>sdelete -c</computeroutput> in the guest to
           zero the free disk space before compressing the virtual disk
-          image.</para>
+          image. For Linux, use the <code>zerofree</code> utility which
+          supports ext2/ext3 filesystems.</para>
 
           <para>Please note that compacting is currently only available for
           VDI images. A similar effect can be achieved by zeroing out free
@@ -1999,14 +2068,16 @@ Virtual system 0:
         </listitem>
 
         <listitem>
-          <para>The --resize option allows you to expand the capacity of an
-          existing image; this increases the <emphasis>logical</emphasis> size
-          of a virtual disk without affecting the physical size much.<footnote>
+          <para>The <computeroutput>--resize</computeroutput> option allows you
+          to change the capacity of an existing image; this adjusts the
+          <emphasis>logical</emphasis> size of a virtual disk without affecting
+          the physical size much.<footnote>
               <para>Image resizing was added with VirtualBox 4.0.</para>
-            </footnote> This currently works only for the VDI and VHD formats,
-          and only for the dynamically expanding variants. For example, if you
-          originally created a 10G disk which is now full, you can use the
-          --resize command to add more space to the virtual disk without
+            </footnote> This currently works only for expanding the capacity of
+          VDI and VHD formats, and only for the dynamically expanding variants.
+          For example, if you originally created a 10G disk which is now full,
+          you can use the <computeroutput>--resize 15360</computeroutput>
+          command to add 5 GByte more space to the virtual disk without
           having to create a new image and copy all data from within a virtual
           machine.</para>
         </listitem>
@@ -2027,7 +2098,13 @@ Virtual system 0:
                            [--variant Standard,Fixed,Split2G,Stream,ESX]
                            [--existing]</screen>
 
-    <para>where the parameters mean:<glosslist>
+    <para>The disk image to clone as well as the target image must be described
+       either by its UUIDs (if the mediums are registered) or by its filename.
+       Registered images can be listed by <computeroutput>VBoxManage list hdds</computeroutput>
+       (see <xref linkend="vboxmanage-list" /> for more information).
+       A filename must be specified as valid path, either as an absolute path or
+       as a relative path starting from the current directory.</para>
+    <para>The following options are available:<glosslist>
         <glossentry>
           <glossterm>format</glossterm>
 
@@ -2308,7 +2385,7 @@ Value: 2006.01.01</screen>
           <para><computeroutput>get &lt;vm&gt;</computeroutput>: This
           retrieves the value of a single property only. If the property
           cannot be found (e.g. because the guest is not running), this will
-          print "No value set!".</para>
+          print <screen>No value set!</screen></para>
         </listitem>
 
         <listitem>
@@ -2322,6 +2399,11 @@ Value: 2006.01.01</screen>
               <listitem>
                 <para><computeroutput>TRANSIENT</computeroutput>: the value
                 will not be stored with the VM data when the VM exits;</para>
+              </listitem>
+
+              <listitem>
+                <para><computeroutput>TRANSRESET</computeroutput>: the value
+                will be deleted as soon as the VM restarts and/or exits;</para>
               </listitem>
 
               <listitem>
@@ -2373,7 +2455,7 @@ Value: 2006.01.01</screen>
           runnable on the guest. This command only works while a VM is up and
           running and has the following syntax:</para>
 
-          <screen>VBoxManage guestcontrol exec[ute] &lt;vmname&gt;|&lt;uuid&gt;
+          <screen>VBoxManage guestcontrol &lt;vmname&gt;|&lt;uuid&gt; exec[ute]
             &lt;path to program&gt;
             --username &lt;name&gt; --password &lt;password&gt;
             [--arguments "&lt;arguments&gt;"]
@@ -2533,7 +2615,7 @@ Value: 2006.01.01</screen>
           files from the host to the guest (only with installed Guest
           Additions 4.0 and later).</para>
 
-          <screen>VBoxManage copyto|cp &lt;vmname&gt;|&lt;uuid&gt;
+          <screen>VBoxManage guestcontrol &lt;vmname&gt;|&lt;uuid&gt; copyto|cp
             &lt;source on host&gt; &lt;destination on guest&gt;
             --username &lt;name&gt; --password &lt;password&gt;
             [--dryrun] [--follow] [--recursive] [--verbose]</screen>
@@ -2638,7 +2720,7 @@ Value: 2006.01.01</screen>
           copying files from the host to the guest (only with installed Guest
           Additions 4.0 and later).</para>
 
-          <screen>VBoxManage createdir[ectory]|mkdir|md &lt;vmname&gt;|&lt;uuid&gt;
+          <screen>VBoxManage guestcontrol &lt;vmname&gt;|&lt;uuid&gt; createdir[ectory]|mkdir|md 
             &lt;directory to create on guest&gt;
             [--username "&lt;name&gt;"] [--password "&lt;password&gt;"]
             [--parents] [--mode &lt;mode&gt;] [--verbose]</screen>

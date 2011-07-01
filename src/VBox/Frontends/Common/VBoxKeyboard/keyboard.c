@@ -1,4 +1,4 @@
-/* $Id: keyboard.c 33656 2010-11-01 14:18:11Z vboxsync $ */
+/* $Id: keyboard.c 36335 2011-03-21 21:58:58Z vboxsync $ */
 /** @file
  * VBox/Frontends/Common - X11 keyboard handler library.
  */
@@ -118,6 +118,8 @@ unsigned X11DRV_KeyEvent(Display *display, KeyCode code)
             scan = 0x39;
         else if (keysym == 0xFE03)          /* ISO level3 shift, aka AltGr */
             scan = 0x138;
+        else if (keysym == 0xFE11)          /* ISO level5 shift, R-Ctrl on */
+            scan = 0x11d;                   /* Canadian multilingual layout */
     }
     if (keyc2scan[code])
         scan = keyc2scan[code];
@@ -607,6 +609,10 @@ X11DRV_InitKeyboardByXkb(Display *pDisplay)
  *                           succeeded, and to 0 otherwise
  * @param   remapScancode    array of tuples that remap the keycode (first
  *                           part) to a scancode (second part)
+ * @note  Xkb takes precedence over byType takes precedence over byLayout,
+ *        for anyone who wants to log information about which method is in
+ *        use.  byLayout is the fallback, as it is likely to be partly usable
+ *        even if it doesn't initialise correctly.
  */
 unsigned X11DRV_InitKeyboard(Display *display, unsigned *byLayoutOK,
                              unsigned *byTypeOK, unsigned *byXkbOK,

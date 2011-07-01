@@ -1,4 +1,4 @@
-/* $Revision: 35494 $ */
+/* $Revision: 37249 $ */
 /** @file
  * VirtualBox Support Driver - Internal header.
  */
@@ -75,10 +75,14 @@
     RT_C_DECLS_END
 
 #elif defined(RT_OS_LINUX)
-#   ifndef AUTOCONF_INCLUDED
-#    include <linux/autoconf.h>
-#   endif
 #   include <linux/version.h>
+#   if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+#    include <generated/autoconf.h>
+#   else
+#    ifndef AUTOCONF_INCLUDED
+#     include <linux/autoconf.h>
+#    endif
+#   endif
 #   if defined(CONFIG_MODVERSIONS) && !defined(MODVERSIONS)
 #       define MODVERSIONS
 #       if LINUX_VERSION_CODE < KERNEL_VERSION(2, 5, 71)
@@ -293,6 +297,12 @@ typedef struct SUPDRVLDRIMAGE
     void                           *pvNtSectionObj;
     /** Lock object. */
     RTR0MEMOBJ                      hMemLock;
+#endif
+#if defined(RT_OS_SOLARIS) && defined(VBOX_WITH_NATIVE_SOLARIS_LOADING)
+    /** The Solaris module ID. */
+    int                             idSolMod;
+    /** Pointer to the module control structure. */
+    struct modctl                  *pSolModCtl;
 #endif
     /** Whether it's loaded by the native loader or not. */
     bool                            fNative;
@@ -566,11 +576,13 @@ int  VBOXCALL   supdrvOSLdrValidatePointer(PSUPDRVDEVEXT pDevExt, PSUPDRVLDRIMAG
  *
  * @returns IPRT status code.
  * @param   pDevExt             The device globals.
- * @param   pImage              The image data (up to date except for some
- *                              entry point pointers).
+ * @param   pImage              The image data (up to date). Adjust entrypoints
+ *                              and exports if necessary.
  * @param   pbImageBits         The image bits as loaded by ring-3.
+ * @param   pReq                Pointer to the request packet so that the VMMR0
+ *                              entry points can be adjusted.
  */
-int  VBOXCALL   supdrvOSLdrLoad(PSUPDRVDEVEXT pDevExt, PSUPDRVLDRIMAGE pImage, const uint8_t *pbImageBits);
+int  VBOXCALL   supdrvOSLdrLoad(PSUPDRVDEVEXT pDevExt, PSUPDRVLDRIMAGE pImage, const uint8_t *pbImageBits, PSUPLDRLOAD pReq);
 
 
 /**

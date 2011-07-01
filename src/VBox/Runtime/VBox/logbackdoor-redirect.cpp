@@ -1,4 +1,4 @@
-/* $Id: logbackdoor-redirect.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: logbackdoor-redirect.cpp 36408 2011-03-24 16:25:47Z vboxsync $ */
 /** @file
  * VirtualBox Runtime - RTLog stubs for the stripped down IPRT used by
  *                      RuntimeGuestR3Shared (X11), output is redirected
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2007 Oracle Corporation
+ * Copyright (C) 2007-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;

@@ -42,6 +42,7 @@
 
 /** @name USB HID specific descriptor types
  * @{ */
+#define DT_IF_HID_DESCRIPTOR        0x21
 #define DT_IF_HID_REPORT            0x22
 /** @} */
 
@@ -408,8 +409,9 @@ static const VUSBDESCCONFIGEX g_UsbHidMConfigDesc =
         /* .bmAttributes = */       RT_BIT(7),
         /* .MaxPower = */           50 /* 100mA */
     },
-    NULL,
-    &g_aUsbHidMInterfaces[0]
+    NULL,                           /* pvMore */
+    &g_aUsbHidMInterfaces[0],
+    NULL                            /* pvOriginal */
 };
 
 static const VUSBDESCCONFIGEX g_UsbHidTConfigDesc =
@@ -424,8 +426,9 @@ static const VUSBDESCCONFIGEX g_UsbHidTConfigDesc =
         /* .bmAttributes = */       RT_BIT(7),
         /* .MaxPower = */           50 /* 100mA */
     },
-    NULL,
-    &g_aUsbHidTInterfaces[0]
+    NULL,                           /* pvMore */
+    &g_aUsbHidTInterfaces[0],
+    NULL                            /* pvOriginal */
 };
 
 static const VUSBDESCDEVICE g_UsbHidMDeviceDesc =
@@ -641,11 +644,11 @@ static int usbHidCompleteOk(PUSBHID pThis, PVUSBURB pUrb, size_t cbData)
 
 /**
  * Reset worker for usbHidUsbReset, usbHidUsbSetConfiguration and
- * usbHidUrbHandleDefaultPipe.
+ * usbHidHandleDefaultPipe.
  *
  * @returns VBox status code.
  * @param   pThis               The HID instance.
- * @param   pUrb                Set when usbHidUrbHandleDefaultPipe is the
+ * @param   pUrb                Set when usbHidHandleDefaultPipe is the
  *                              caller.
  * @param   fSetConfig          Set when usbHidUsbSetConfiguration is the
  *                              caller.
@@ -959,11 +962,32 @@ static int usbHidHandleDefaultPipe(PUSBHID pThis, PUSBHIDEP pEp, PVUSBURB pUrb)
                     {
                         switch (pSetup->wValue >> 8)
                         {
-                            case DT_IF_HID_REPORT:
-                                uint32_t        cbCopy;
-                                uint32_t        cbDesc;
-                                const uint8_t   *pDesc;
+                            uint32_t        cbCopy;
+                            uint32_t        cbDesc;
+                            const uint8_t   *pDesc;
 
+                            case DT_IF_HID_DESCRIPTOR:
+                            {
+                                if (pThis->isAbsolute)
+                                {
+                                    cbDesc = sizeof(g_UsbHidTIfHidDesc);
+                                    pDesc = (const uint8_t *)&g_UsbHidTIfHidDesc;
+                                }
+                                else
+                                {
+                                    cbDesc = sizeof(g_UsbHidMIfHidDesc);
+                                    pDesc = (const uint8_t *)&g_UsbHidMIfHidDesc;
+                                }
+                                /* Returned data is written after the setup message. */
+                                cbCopy = pUrb->cbData - sizeof(*pSetup);
+                                cbCopy = RT_MIN(cbCopy, cbDesc);
+                                Log(("usbHidMouse: GET_DESCRIPTOR DT_IF_HID_DESCRIPTOR wValue=%#x wIndex=%#x cbCopy=%#x\n", pSetup->wValue, pSetup->wIndex, cbCopy));
+                                memcpy(&pUrb->abData[sizeof(*pSetup)], pDesc, cbCopy);
+                                return usbHidCompleteOk(pThis, pUrb, cbCopy + sizeof(*pSetup));
+                            }
+
+                            case DT_IF_HID_REPORT:
+                            {
                                 if (pThis->isAbsolute)
                                 {
                                     cbDesc = sizeof(g_UsbHidTReportDesc);
@@ -980,6 +1004,8 @@ static int usbHidHandleDefaultPipe(PUSBHID pThis, PUSBHIDEP pEp, PVUSBURB pUrb)
                                 Log(("usbHid: GET_DESCRIPTOR DT_IF_HID_REPORT wValue=%#x wIndex=%#x cbCopy=%#x\n", pSetup->wValue, pSetup->wIndex, cbCopy));
                                 memcpy(&pUrb->abData[sizeof(*pSetup)], pDesc, cbCopy);
                                 return usbHidCompleteOk(pThis, pUrb, cbCopy + sizeof(*pSetup));
+                            }
+
                             default:
                                 Log(("usbHid: GET_DESCRIPTOR, huh? wValue=%#x wIndex=%#x\n", pSetup->wValue, pSetup->wIndex));
                                 break;
@@ -1083,7 +1109,7 @@ static int usbHidHandleDefaultPipe(PUSBHID pThis, PUSBHIDEP pEp, PVUSBURB pUrb)
 
 
 /**
- * @copydoc PDMUSBREG::pfnQueue
+ * @copydoc PDMUSBREG::pfnUrbQueue
  */
 static DECLCALLBACK(int) usbHidQueue(PPDMUSBINS pUsbIns, PVUSBURB pUrb)
 {
@@ -1328,7 +1354,7 @@ const PDMUSBREG g_UsbHidMou =
     NULL,
     /* pfnUsbReset */
     usbHidUsbReset,
-    /* pfnUsbGetCachedDescriptors */
+    /* pfnUsbGetDescriptorCache */
     usbHidUsbGetDescriptorCache,
     /* pfnUsbSetConfiguration */
     usbHidUsbSetConfiguration,
@@ -1338,7 +1364,7 @@ const PDMUSBREG g_UsbHidMou =
     usbHidUsbClearHaltedEndpoint,
     /* pfnUrbNew */
     NULL/*usbHidUrbNew*/,
-    /* pfnQueue */
+    /* pfnUrbQueue */
     usbHidQueue,
     /* pfnUrbCancel */
     usbHidUrbCancel,

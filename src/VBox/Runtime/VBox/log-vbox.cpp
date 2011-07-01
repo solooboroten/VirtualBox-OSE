@@ -1,10 +1,10 @@
-/* $Id: log-vbox.cpp 34848 2010-12-08 20:35:20Z vboxsync $ */
+/* $Id: log-vbox.cpp 37217 2011-05-26 08:54:27Z vboxsync $ */
 /** @file
  * VirtualBox Runtime - Logging configuration.
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -411,9 +411,7 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
 
 # else  /* IN_GUEST */
     /* The user destination is backdoor logging. */
-    rc = RTLogCreate(&pLogger, 0, NULL, "VBOX_LOG",
-                     RT_ELEMENTS(g_apszGroups), &g_apszGroups[0],
-                     RTLOGDEST_USER, "VBox.log");
+    rc = RTLogCreate(&pLogger, 0, NULL, "VBOX_LOG", RT_ELEMENTS(g_apszGroups), &g_apszGroups[0], RTLOGDEST_USER, "VBox.log");
 # endif /* IN_GUEST */
 
 #else /* IN_RING0 */
@@ -460,6 +458,11 @@ RTDECL(PRTLOGGER) RTLogDefaultInit(void)
         pLogger->fDestFlags |= RTLOGDEST_DEBUGGER | RTLOGDEST_STDOUT;
 # endif
 # if defined(DEBUG_misha) /* Guest ring-0 as well */
+        RTLogFlags(pLogger, "enabled unbuffered");
+        pLogger->fDestFlags |= RTLOGDEST_DEBUGGER;
+# endif
+# if defined(DEBUG_leo) /* Guest ring-0 as well */
+        RTLogGroupSettings(pLogger, "+drv_mouse.e.l.f+drv_miniport.e.l.f+drv_display.e.l.f");
         RTLogFlags(pLogger, "enabled unbuffered");
         pLogger->fDestFlags |= RTLOGDEST_DEBUGGER;
 # endif

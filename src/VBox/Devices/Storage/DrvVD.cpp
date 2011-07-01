@@ -1,4 +1,4 @@
-/* $Id: DrvVD.cpp 35353 2010-12-27 17:25:52Z vboxsync $ */
+/* $Id: DrvVD.cpp 37641 2011-06-26 17:16:35Z vboxsync $ */
 /** @file
  * DrvVD - Generic VBox disk media driver.
  */
@@ -190,6 +190,8 @@ typedef struct VBOXDISK
     uint8_t            *pbData;
     /** Bandwidth group the disk is assigned to. */
     char               *pszBwGroup;
+    /** Flag whether async I/O using the host cache is enabled. */
+    bool                fAsyncIoWithHostCache;
 
     /** I/O interface for a cache image. */
     VDINTERFACE         VDIIOCache;
@@ -318,7 +320,7 @@ static DECLCALLBACK(void) drvvdAsyncTaskCompleted(PPDMDRVINS pDrvIns, void *pvTe
     PVBOXDISK pThis = PDMINS_2_DATA(pDrvIns, PVBOXDISK);
     PDRVVDSTORAGEBACKEND pStorageBackend = (PDRVVDSTORAGEBACKEND)pvTemplateUser;
 
-    LogFlowFunc(("pDrvIns=%#p pvTemplateUser=%#p pvUser=%#p rcReq\n",
+    LogFlowFunc(("pDrvIns=%#p pvTemplateUser=%#p pvUser=%#p rcReq=%d\n",
                  pDrvIns, pvTemplateUser, pvUser, rcReq));
 
     if (pStorageBackend->fSyncIoPending)
@@ -371,6 +373,8 @@ static DECLCALLBACK(int) drvvdAsyncIOOpen(void *pvUser, const char *pszLocation,
 
                     fFlags |= PDMACEP_FILE_FLAGS_DONT_LOCK;
                 }
+                if (pThis->fAsyncIoWithHostCache)
+                    fFlags |= PDMACEP_FILE_FLAGS_HOST_CACHE_ENABLED;
 
                 rc = PDMR3AsyncCompletionEpCreateForFile(&pStorageBackend->pEndpoint,
                                                          pszLocation, fFlags,
@@ -744,7 +748,7 @@ static DECLCALLBACK(int) drvvdINIPSelectOne(VDSOCKET Sock, RTMSINTERVAL cMillies
     PINIPSOCKET pSocketInt = (PINIPSOCKET)Sock;
     fd_set fdsetR;
     FD_ZERO(&fdsetR);
-    FD_SET((uintptr_t)Sock, &fdsetR);
+    FD_SET((uintptr_t)pSocketInt->hSock, &fdsetR);
     fd_set fdsetE = fdsetR;
 
     int rc;
@@ -2377,6 +2381,16 @@ static DECLCALLBACK(int) drvvdConstruct(PPDMDRVINS pDrvIns,
             pThis->VDITcpNetCallbacks.pfnSelectOneEx = drvvdINIPSelectOneEx;
             pThis->VDITcpNetCallbacks.pfnPoke = drvvdINIPPoke;
 #endif /* VBOX_WITH_INIP */
+        }
+
+        /*
+         * The image has a bandwidth group but the host cache is enabled.
+         * Use the async I/O framework but tell it to enable the host cache.
+         */
+        if (!fUseNewIo && pThis->pszBwGroup)
+        {
+            pThis->fAsyncIoWithHostCache = true;
+            fUseNewIo = true;
         }
 
         /** @todo quick hack to work around problems in the async I/O

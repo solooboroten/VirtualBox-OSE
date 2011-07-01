@@ -1,4 +1,4 @@
-/* $Id: VBoxMediaManagerDlg.cpp 34983 2010-12-13 10:14:08Z vboxsync $ */
+/* $Id: VBoxMediaManagerDlg.cpp 37655 2011-06-28 09:50:04Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -36,7 +36,7 @@
 /* Local includes */
 #include "VBoxGlobal.h"
 #include "VBoxMediaManagerDlg.h"
-#include "UINewHDWzd.h"
+#include "UINewHDWizard.h"
 #include "VBoxProblemReporter.h"
 #include "UIToolBar.h"
 #include "QIFileDialog.h"
@@ -107,6 +107,8 @@ public:
 
     QString hardDiskFormat() const { return mMedium.hardDiskFormat (!mManager->showDiffs()); }
     QString hardDiskType() const { return mMedium.hardDiskType (!mManager->showDiffs()); }
+
+    QString details() const { return mMedium.storageDetails(); }
 
     QString usage() const { return mMedium.usage (!mManager->showDiffs()); }
 
@@ -202,6 +204,8 @@ VBoxMediaManagerDlg::VBoxMediaManagerDlg (QWidget *aParent /* = 0 */, Qt::Window
     , mType (VBoxDefs::MediumType_Invalid)
     , mShowDiffs (true)
     , mSetupMode (false)
+    , m_previousMediumType(KMediumType_Normal)
+    , m_fParentMediumType(true)
 {
     /* Apply UI decorations */
     Ui::VBoxMediaManagerDlg::setupUi (this);
@@ -281,17 +285,23 @@ VBoxMediaManagerDlg::VBoxMediaManagerDlg (QWidget *aParent /* = 0 */, Qt::Window
     connect (mTwFD->header(), SIGNAL (sectionResized (int, int, int)),
              this, SLOT (makeRequestForAdjustTable()));
 
+    /* Setup information pane: */
+    qRegisterMetaType<KMediumType>();
+    connect(m_pTypeCombo, SIGNAL(currentIndexChanged(int)), this, SLOT(sltCurrentMediumTypeChanged()));
+
     /* Context menu composing */
     mActionsContextMenu = new QMenu (this);
 
     mNewAction     = new QAction (this);
     mAddAction     = new QAction (this);
+    mCopyAction    = new QAction (this);
     mRemoveAction  = new QAction (this);
     mReleaseAction = new QAction (this);
     mRefreshAction = new QAction (this);
 
     connect (mNewAction, SIGNAL (triggered()), this, SLOT (doNewMedium()));
     connect (mAddAction, SIGNAL (triggered()), this, SLOT (doAddMedium()));
+    connect (mCopyAction, SIGNAL (triggered()), this, SLOT (doCopyMedium()));
     connect (mRemoveAction, SIGNAL (triggered()), this, SLOT (doRemoveMedium()));
     connect (mReleaseAction, SIGNAL (triggered()), this, SLOT (doReleaseMedium()));
     connect (mRefreshAction, SIGNAL (triggered()), this, SLOT (refreshAll()));
@@ -304,6 +314,10 @@ VBoxMediaManagerDlg::VBoxMediaManagerDlg (QWidget *aParent /* = 0 */, Qt::Window
         QSize (22, 22), QSize (16, 16),
         ":/hd_add_22px.png", ":/hd_add_16px.png",
         ":/hd_add_disabled_22px.png", ":/hd_add_disabled_16px.png"));
+    mCopyAction->setIcon(UIIconPool::iconSetFull (
+        QSize (22, 22), QSize (16, 16),
+        ":/hd_new_22px.png", ":/hd_new_16px.png",
+        ":/hd_new_disabled_22px.png", ":/hd_new_disabled_16px.png"));
     mRemoveAction->setIcon(UIIconPool::iconSetFull (
         QSize (22, 22), QSize (16, 16),
         ":/hd_remove_22px.png", ":/hd_remove_16px.png",
@@ -317,6 +331,7 @@ VBoxMediaManagerDlg::VBoxMediaManagerDlg (QWidget *aParent /* = 0 */, Qt::Window
         ":/refresh_22px.png", ":/refresh_16px.png",
         ":/refresh_disabled_22px.png", ":/refresh_disabled_16px.png"));
 
+    mActionsContextMenu->addAction (mCopyAction);
     mActionsContextMenu->addAction (mRemoveAction);
     mActionsContextMenu->addAction (mReleaseAction);
 
@@ -345,6 +360,7 @@ VBoxMediaManagerDlg::VBoxMediaManagerDlg (QWidget *aParent /* = 0 */, Qt::Window
 
 //    mToolBar->addAction (mNewAction);
 //    mToolBar->addAction (mAddAction);
+    mToolBar->addAction (mCopyAction);
 //    mToolBar->addSeparator();
     mToolBar->addAction (mRemoveAction);
     mToolBar->addAction (mReleaseAction);
@@ -355,6 +371,7 @@ VBoxMediaManagerDlg::VBoxMediaManagerDlg (QWidget *aParent /* = 0 */, Qt::Window
     mActionsMenu = menuBar()->addMenu (QString::null);
 //    mActionsMenu->addAction (mNewAction);
 //    mActionsMenu->addAction (mAddAction);
+    mActionsMenu->addAction (mCopyAction);
 //    mActionsMenu->addSeparator();
     mActionsMenu->addAction (mRemoveAction);
     mActionsMenu->addAction (mReleaseAction);
@@ -588,18 +605,21 @@ void VBoxMediaManagerDlg::retranslateUi()
 
     mNewAction->setText (tr ("&New..."));
     mAddAction->setText (tr ("&Add..."));
+    mCopyAction->setText (tr ("&Copy..."));
     mRemoveAction->setText (tr ("R&emove"));
     mReleaseAction->setText (tr ("Re&lease"));
     mRefreshAction->setText (tr ("Re&fresh"));
 
     mNewAction->setShortcut (QKeySequence (QKeySequence::New));
     mAddAction->setShortcut (QKeySequence ("Ins"));
+    mCopyAction->setShortcut (QKeySequence ("Ctrl+C"));
     mRemoveAction->setShortcut (QKeySequence (QKeySequence::Delete));
     mReleaseAction->setShortcut (QKeySequence ("Ctrl+L"));
     mRefreshAction->setShortcut (QKeySequence (QKeySequence::Refresh));
 
     mNewAction->setStatusTip (tr ("Create a new virtual hard disk"));
     mAddAction->setStatusTip (tr ("Add an existing medium"));
+    mCopyAction->setStatusTip (tr ("Copy an existing medium"));
     mRemoveAction->setStatusTip (tr ("Remove the selected medium"));
     mReleaseAction->setStatusTip (tr ("Release the selected medium by detaching it from the machines"));
     mRefreshAction->setStatusTip (tr ("Refresh the media list"));
@@ -608,22 +628,14 @@ void VBoxMediaManagerDlg::retranslateUi()
         QString (" (%1)").arg (mNewAction->shortcut().toString()));
     mAddAction->setToolTip (mAddAction->text().remove ('&') +
         QString (" (%1)").arg (mAddAction->shortcut().toString()));
+    mCopyAction->setToolTip (mCopyAction->text().remove ('&') +
+        QString (" (%1)").arg (mCopyAction->shortcut().toString()));
     mRemoveAction->setToolTip (mRemoveAction->text().remove ('&') +
         QString (" (%1)").arg (mRemoveAction->shortcut().toString()));
     mReleaseAction->setToolTip (mReleaseAction->text().remove ('&') +
         QString (" (%1)").arg (mReleaseAction->shortcut().toString()));
     mRefreshAction->setToolTip (mRefreshAction->text().remove ('&') +
         QString (" (%1)").arg (mRefreshAction->shortcut().toString()));
-
-    mLbHD1->setText (QString ("<nobr>%1:</nobr>").arg (tr ("Location")));
-    mLbHD2->setText (QString ("<nobr>%1:</nobr>").arg (tr ("Type (Format)")));
-    mLbHD3->setText (QString ("<nobr>%1:</nobr>").arg (tr ("Attached to", "VMM: Virtual Disk")));
-
-    mLbCD1->setText (QString ("<nobr>%1:</nobr>").arg (tr ("Location")));
-    mLbCD2->setText (QString ("<nobr>%1:</nobr>").arg (tr ("Attached to", "VMM: CD/DVD Image")));
-
-    mLbFD1->setText (QString ("<nobr>%1:</nobr>").arg (tr ("Location")));
-    mLbFD2->setText (QString ("<nobr>%1:</nobr>").arg (tr ("Attached to", "VMM: Floppy Image")));
 
     mProgressBar->setText (tr ("Checking accessibility"));
 #ifdef Q_WS_MAC
@@ -645,6 +657,46 @@ void VBoxMediaManagerDlg::retranslateUi()
 
     if (mTwHD->model()->rowCount() || mTwCD->model()->rowCount() || mTwFD->model()->rowCount())
         refreshAll();
+
+    /* Translate medium type combo: */
+    repopulateMediumTypeCombo();
+}
+
+void VBoxMediaManagerDlg::repopulateMediumTypeCombo()
+{
+    /* Block signals: */
+    m_pTypeCombo->blockSignals(true);
+
+    /* Remember current index: */
+    int iCurrentIndex = m_pTypeCombo->currentIndex();
+
+    /* Repopulate medium types: */
+    m_pTypeCombo->clear();
+
+    /* Check parent mode: */
+    if (m_fParentMediumType)
+    {
+        /* Populate possible types for parent disks: */
+        m_pTypeCombo->insertItem(0, vboxGlobal().toString(KMediumType_Normal), QVariant::fromValue(KMediumType_Normal));
+        m_pTypeCombo->insertItem(1, vboxGlobal().toString(KMediumType_Immutable), QVariant::fromValue(KMediumType_Immutable));
+        m_pTypeCombo->insertItem(2, vboxGlobal().toString(KMediumType_Writethrough), QVariant::fromValue(KMediumType_Writethrough));
+        m_pTypeCombo->insertItem(3, vboxGlobal().toString(KMediumType_Shareable), QVariant::fromValue(KMediumType_Shareable));
+        m_pTypeCombo->insertItem(4, vboxGlobal().toString(KMediumType_MultiAttach), QVariant::fromValue(KMediumType_MultiAttach));
+    }
+    else
+    {
+        /* Just one 'differencing' type for children disks: */
+        m_pTypeCombo->insertItem(0, vboxGlobal().differencingMediumTypeName());
+    }
+
+    /* Choose current index again if still possible: */
+    if (iCurrentIndex >= 0 && iCurrentIndex < m_pTypeCombo->count())
+        m_pTypeCombo->setCurrentIndex(iCurrentIndex);
+    else
+        m_pTypeCombo->setCurrentIndex(0);
+
+    /* Unblock signals: */
+    m_pTypeCombo->blockSignals(false);
 }
 
 void VBoxMediaManagerDlg::closeEvent (QCloseEvent *aEvent)
@@ -951,7 +1003,7 @@ void VBoxMediaManagerDlg::doNewMedium()
 {
     AssertReturnVoid (currentTreeWidgetType() == VBoxDefs::MediumType_HardDisk);
 
-    UINewHDWzd dlg (this);
+    UINewHDWizard dlg (this);
 
     if (dlg.exec() == QDialog::Accepted)
     {
@@ -1034,6 +1086,21 @@ void VBoxMediaManagerDlg::doAddMedium()
         if (!loc.isEmpty())
             addMediumToList (loc, type);
     }
+}
+
+void VBoxMediaManagerDlg::doCopyMedium()
+{
+    /* Get current tree: */
+    QTreeWidget *pTree = currentTreeWidget();
+    /* Get current item of current tree: */
+    MediaItem *pItem = toMediaItem(pTree->currentItem());
+
+    UINewHDWizard wizard(this /* parent dialog */,
+                         UINewHDWizard::tr("%1_copy", "copied virtual disk name").arg(QFileInfo(pItem->text(0)).baseName()) /* default name */,
+                         QFileInfo(pItem->location()).absolutePath() /* default path */,
+                         0 /* default size, not important for copying */,
+                         pItem->medium().medium() /* base medium for copying */);
+    wizard.exec();
 }
 
 void VBoxMediaManagerDlg::doRemoveMedium()
@@ -1390,11 +1457,13 @@ void VBoxMediaManagerDlg::processCurrentChanged (QTreeWidgetItem *aItem,
     /* New and Add are now enabled even when enumerating since it should be safe */
     bool newEnabled     = currentTreeWidgetType() == VBoxDefs::MediumType_HardDisk;
     bool addEnabled     = true;
+    bool copyEnabled    = notInEnum && item && checkMediumFor (item, Action_Copy);
     bool removeEnabled  = notInEnum && item && checkMediumFor (item, Action_Remove);
     bool releaseEnabled = item && checkMediumFor (item, Action_Release);
 
     mNewAction->setEnabled (newEnabled);
     mAddAction->setEnabled (addEnabled);
+    mCopyAction->setEnabled (copyEnabled);
     mRemoveAction->setEnabled (removeEnabled);
     mReleaseAction->setEnabled (releaseEnabled);
 
@@ -1406,16 +1475,34 @@ void VBoxMediaManagerDlg::processCurrentChanged (QTreeWidgetItem *aItem,
 
     if (item)
     {
+        QString details = item->details();
         QString usage = item->usage().isNull() ?
                         formatPaneText (tr ("<i>Not&nbsp;Attached</i>"), false) :
                         formatPaneText (item->usage());
 
         if (item->treeWidget() == mTwHD)
         {
-            mIpHD1->setText (formatPaneText (item->location(), true, "end"));
-            mIpHD2->setText (formatPaneText (QString ("%1 (%2)").arg (item->hardDiskType())
-                                                                .arg (item->hardDiskFormat()), false));
-            mIpHD3->setText (usage);
+            /* Update parent mode: */
+            m_fParentMediumType = !item->medium().parent();
+            /* Repopulate combo: */
+            repopulateMediumTypeCombo();
+
+            /* Block signals: */
+            m_pTypeCombo->blockSignals(true);
+            /* Choose the correct one medium type: */
+            int iIndexOfType = m_pTypeCombo->findText(item->hardDiskType());
+            AssertMsg(iIndexOfType != -1, ("Incorrect medium type: %s\n", item->hardDiskType().toLatin1().constData()));
+            m_pTypeCombo->setCurrentIndex(iIndexOfType);
+            /* Remember new medium type: */
+            m_previousMediumType = m_pTypeCombo->itemData(m_pTypeCombo->currentIndex()).value<KMediumType>();
+            /* Unblock signals: */
+            m_pTypeCombo->blockSignals(false);
+
+            /* Other panes: */
+            m_pLocationPane->setText(formatPaneText(item->location(), true, "end"));
+            m_pFormatPane->setText(item->hardDiskFormat());
+            m_pDetailsPane->setText(details);
+            m_pUsagePane->setText(usage);
         }
         else if (item->treeWidget() == mTwCD)
         {
@@ -1510,6 +1597,37 @@ void VBoxMediaManagerDlg::performTablesAdjustment()
     }
 }
 
+void VBoxMediaManagerDlg::sltCurrentMediumTypeChanged()
+{
+    /* Get new medium type: */
+    KMediumType newMediumType = m_pTypeCombo->itemData(m_pTypeCombo->currentIndex()).value<KMediumType>();
+
+    /* Check that new type exists and differs from the old one: */
+    if (newMediumType == m_previousMediumType)
+        return;
+
+    MediaItem *pMediumItem = toMediaItem(currentTreeWidget()->currentItem());
+    CMedium medium = pMediumItem->medium().medium();
+    medium.SetType(newMediumType);
+    if (!medium.isOk())
+    {
+        /* Revert medium type: */
+        m_pTypeCombo->blockSignals(true);
+        int iPreviousIndex = m_pTypeCombo->findText(vboxGlobal().toString(m_previousMediumType));
+        m_pTypeCombo->setCurrentIndex(iPreviousIndex);
+        m_pTypeCombo->blockSignals(false);
+        /* Show warning: */
+        vboxProblem().cannotChangeMediumType(this, medium, m_previousMediumType, newMediumType);
+    }
+    else
+    {
+        /* Remember new medium type: */
+        m_previousMediumType = m_pTypeCombo->itemData(m_pTypeCombo->currentIndex()).value<KMediumType>();
+        /* Refresh related VMM item: */
+        pMediumItem->refreshAll();
+    }
+}
+
 void VBoxMediaManagerDlg::addMediumToList(const QString &aLocation, VBoxDefs::MediumType aType)
 {
     AssertReturnVoid (!aLocation.isEmpty());
@@ -1532,7 +1650,7 @@ void VBoxMediaManagerDlg::addMediumToList(const QString &aLocation, VBoxDefs::Me
             AssertMsgFailedReturnVoid (("Invalid aType %d\n", aType));
     }
 
-    CMedium med = mVBox.OpenMedium(aLocation, devType, KAccessMode_ReadWrite);
+    CMedium med = mVBox.OpenMedium(aLocation, devType, KAccessMode_ReadWrite, false /* fForceNewUuid */);
     if (mVBox.isOk())
         medium = VBoxMedium(CMedium(med), aType, KMediumState_Created);
 
@@ -1712,6 +1830,11 @@ bool VBoxMediaManagerDlg::checkMediumFor (MediaItem *aItem, Action aAction)
             }
             return true;
         }
+        case Action_Copy:
+        {
+            /* False for children: */
+            return !aItem->medium().parent();
+        }
         case Action_Remove:
         {
             /* Removable if not attached to anything */
@@ -1783,7 +1906,7 @@ void VBoxMediaManagerDlg::addDndUrls (const QList <QUrl> &aUrls)
 
 void VBoxMediaManagerDlg::clearInfoPanes()
 {
-    mIpHD1->clear(); mIpHD2->clear(); mIpHD3->clear();
+    m_pTypeCombo->setCurrentIndex(-1); m_pLocationPane->clear(); m_pFormatPane->clear(); m_pDetailsPane->clear(); m_pUsagePane->clear();
     mIpCD1->clear(); mIpCD2->clear();
     mIpFD1->clear(); mIpFD2->clear();
 }

@@ -101,9 +101,9 @@ typedef struct
     /** Where to store the instance. */
     int            Instance;
     /* Where to store the client path. */
-    char           achClientPath[MAXPATHLEN];
+    char           szClientPath[MAXPATHLEN];
     /** Device identifier (VendorId:ProductId:Release:StaticPath) */
-    char           achDeviceIdent[MAXPATHLEN+48];
+    char           szDeviceIdent[MAXPATHLEN+48];
 } VBOXUSBREQ_CLIENT_INFO, *PVBOXUSBREQ_CLIENT_INFO;
 typedef VBOXUSBREQ_CLIENT_INFO VBOXUSB_CLIENT_INFO;
 typedef PVBOXUSBREQ_CLIENT_INFO PVBOXUSB_CLIENT_INFO;
@@ -201,7 +201,6 @@ typedef struct
 
 /** USB driver name*/
 #define VBOXUSB_DRIVER_NAME     "vboxusb"
-#define VBOXUSB_HELPER_NAME     "VBoxUSBHelper"
 
 /* No automatic buffering, size limited to 255 bytes => use VBOXUSBREQ for everything. */
 #define VBOXUSB_IOCTL_CODE(Function, Size)  _IOWRN('V', (Function) | VBOXUSB_IOCTL_FLAG, sizeof(VBOXUSBREQ))

@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -18,7 +18,6 @@
 #include "MediumAttachmentImpl.h"
 #include "MachineImpl.h"
 #include "MediumImpl.h"
-#include "BandwidthGroupImpl.h"
 #include "Global.h"
 
 #include "AutoStateDep.h"
@@ -40,33 +39,39 @@ struct BackupableMediumAttachmentData
           lDevice(0),
           type(DeviceType_Null),
           fPassthrough(false),
+          fTempEject(false),
           fImplicit(false)
     { }
 
     ComObjPtr<Medium>   pMedium;
-    ComObjPtr<BandwidthGroup> pBwGroup;
     /* Since MediumAttachment is not a first class citizen when it
      * comes to managing settings, having a reference to the storage
      * controller will not work - when settings are changed it will point
      * to the old, uninitialized instance. Changing this requires
      * substantial changes to MediumImpl.cpp. */
     const Bstr          bstrControllerName;
+    /* Same counts for the assigned bandwidth group */
+    Utf8Str             strBandwidthGroup;
     const LONG          lPort;
     const LONG          lDevice;
     const DeviceType_T  type;
     bool                fPassthrough;
+    bool                fTempEject;
     bool                fImplicit;
 };
 
 struct MediumAttachment::Data
 {
     Data()
-        : pMachine(NULL)
+        : pMachine(NULL),
+          fIsEjected(false)
     { }
 
     /** Reference to Machine object, for checking mutable state. */
     Machine * const pMachine;
     /* later: const ComObjPtr<MediumAttachment> mPeer; */
+
+    bool                fIsEjected;
 
     Backupable<BackupableMediumAttachmentData> bd;
 };
@@ -77,13 +82,14 @@ struct MediumAttachment::Data
 HRESULT MediumAttachment::FinalConstruct()
 {
     LogFlowThisFunc(("\n"));
-    return S_OK;
+    return BaseFinalConstruct();
 }
 
 void MediumAttachment::FinalRelease()
 {
     LogFlowThisFuncEnter();
     uninit();
+    BaseFinalRelease();
     LogFlowThisFuncLeave();
 }
 
@@ -107,11 +113,13 @@ HRESULT MediumAttachment::init(Machine *aParent,
                                LONG aPort,
                                LONG aDevice,
                                DeviceType_T aType,
+                               bool aImplicit,
                                bool aPassthrough,
-                               BandwidthGroup *aBandwidthGroup)
+                               bool aTempEject,
+                               const Utf8Str &strBandwidthGroup)
 {
     LogFlowThisFuncEnter();
-    LogFlowThisFunc(("aParent=%p aMedium=%p aControllerName=%ls aPort=%d aDevice=%d aType=%d aPassthrough=%d\n", aParent, aMedium, aControllerName.raw(), aPort, aDevice, aType, aPassthrough));
+    LogFlowThisFunc(("aParent=%p aMedium=%p aControllerName=%ls aPort=%d aDevice=%d aType=%d aImplicit=%d aPassthrough=%d aTempEject=%d\n", aParent, aMedium, aControllerName.raw(), aPort, aDevice, aType, aImplicit, aPassthrough, aTempEject));
 
     if (aType == DeviceType_HardDisk)
         AssertReturn(aMedium, E_INVALIDARG);
@@ -126,18 +134,15 @@ HRESULT MediumAttachment::init(Machine *aParent,
 
     m->bd.allocate();
     m->bd->pMedium = aMedium;
-    if (aBandwidthGroup)
-        aBandwidthGroup->reference();
-    m->bd->pBwGroup = aBandwidthGroup;
+    unconst(m->bd->strBandwidthGroup) = strBandwidthGroup;
     unconst(m->bd->bstrControllerName) = aControllerName;
     unconst(m->bd->lPort)   = aPort;
     unconst(m->bd->lDevice) = aDevice;
     unconst(m->bd->type)    = aType;
 
     m->bd->fPassthrough = aPassthrough;
-    /* Newly created attachments never have an implicitly created medium
-     * associated with them. Implicit diff image creation happens later. */
-    m->bd->fImplicit = false;
+    m->bd->fTempEject = aTempEject;
+    m->bd->fImplicit = aImplicit;
 
     /* Confirm a successful initialization when it's the case */
     autoInitSpan.setSucceeded();
@@ -279,8 +284,43 @@ STDMETHODIMP MediumAttachment::COMGETTER(Passthrough)(BOOL *aPassthrough)
     return S_OK;
 }
 
+STDMETHODIMP MediumAttachment::COMGETTER(TemporaryEject)(BOOL *aTemporaryEject)
+{
+    LogFlowThisFuncEnter();
+
+    CheckComArgOutPointerValid(aTemporaryEject);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock lock(this COMMA_LOCKVAL_SRC_POS);
+
+    *aTemporaryEject = m->bd->fTempEject;
+
+    LogFlowThisFuncLeave();
+    return S_OK;
+}
+
+STDMETHODIMP MediumAttachment::COMGETTER(IsEjected)(BOOL *aEjected)
+{
+    LogFlowThisFuncEnter();
+
+    CheckComArgOutPointerValid(aEjected);
+
+    AutoCaller autoCaller(this);
+    if (FAILED(autoCaller.rc())) return autoCaller.rc();
+
+    AutoReadLock lock(this COMMA_LOCKVAL_SRC_POS);
+
+    *aEjected = m->fIsEjected;
+
+    LogFlowThisFuncLeave();
+    return S_OK;
+}
+
 STDMETHODIMP MediumAttachment::COMGETTER(BandwidthGroup) (IBandwidthGroup **aBwGroup)
 {
+    LogFlowThisFuncEnter();
     CheckComArgOutPointerValid(aBwGroup);
 
     AutoCaller autoCaller(this);
@@ -288,9 +328,20 @@ STDMETHODIMP MediumAttachment::COMGETTER(BandwidthGroup) (IBandwidthGroup **aBwG
 
     AutoReadLock alock(this COMMA_LOCKVAL_SRC_POS);
 
-    m->bd->pBwGroup.queryInterfaceTo(aBwGroup);
+    HRESULT hrc = S_OK;
+    if (m->bd->strBandwidthGroup.isNotEmpty())
+    {
+        ComObjPtr<BandwidthGroup> pBwGroup;
+        hrc = m->pMachine->getBandwidthGroup(m->bd->strBandwidthGroup, pBwGroup, true /* fSetError */);
 
-    return S_OK;
+        Assert(SUCCEEDED(hrc)); /* This is not allowed to fail because the existence of the group was checked when it was attached. */
+
+        if (SUCCEEDED(hrc))
+            pBwGroup.queryInterfaceTo(aBwGroup);
+    }
+
+    LogFlowThisFuncLeave();
+    return hrc;
 }
 
 /**
@@ -316,7 +367,7 @@ void MediumAttachment::rollback()
  */
 void MediumAttachment::commit()
 {
-    LogFlowThisFuncEnter();
+    LogFlowThisFunc(("ENTER - %s\n", getLogName()));
 
     /* sanity */
     AutoCaller autoCaller(this);
@@ -327,7 +378,7 @@ void MediumAttachment::commit()
     if (m->bd.isBackedUp())
         m->bd.commit();
 
-    LogFlowThisFuncLeave();
+    LogFlowThisFunc(("LEAVE - %s\n", getLogName()));
 }
 
 bool MediumAttachment::isImplicit() const
@@ -371,9 +422,15 @@ bool MediumAttachment::getPassthrough() const
     return m->bd->fPassthrough;
 }
 
-const ComObjPtr<BandwidthGroup>& MediumAttachment::getBandwidthGroup() const
+bool MediumAttachment::getTempEject() const
 {
-    return m->bd->pBwGroup;
+    AutoReadLock lock(this COMMA_LOCKVAL_SRC_POS);
+    return m->bd->fTempEject;
+}
+
+const Utf8Str& MediumAttachment::getBandwidthGroup() const
+{
+    return m->bd->strBandwidthGroup;
 }
 
 bool MediumAttachment::matches(CBSTR aControllerName, LONG aPort, LONG aDevice)
@@ -394,6 +451,7 @@ void MediumAttachment::updateMedium(const ComObjPtr<Medium> &aMedium)
     m->bd.backup();
     m->bd->pMedium = aMedium;
     m->bd->fImplicit = false;
+    m->fIsEjected = false;
 }
 
 /** Must be called from under this object's write lock. */
@@ -405,18 +463,46 @@ void MediumAttachment::updatePassthrough(bool aPassthrough)
     m->bd->fPassthrough = aPassthrough;
 }
 
-void MediumAttachment::updateBandwidthGroup(const ComObjPtr<BandwidthGroup> &aBandwidthGroup)
+/** Must be called from under this object's write lock. */
+void MediumAttachment::updateTempEject(bool aTempEject)
 {
     Assert(isWriteLockOnCurrentThread());
 
     m->bd.backup();
-    if (!aBandwidthGroup.isNull())
-        aBandwidthGroup->reference();
+    m->bd->fTempEject = aTempEject;
+}
 
-    if (!m->bd->pBwGroup.isNull())
-    {
-        m->bd->pBwGroup->release();
-    }
-    m->bd->pBwGroup = aBandwidthGroup;
+/** Must be called from under this object's write lock. */
+void MediumAttachment::updateEjected()
+{
+    Assert(isWriteLockOnCurrentThread());
+
+    m->fIsEjected = true;
+}
+
+void MediumAttachment::updateBandwidthGroup(const Utf8Str &aBandwidthGroup)
+{
+    LogFlowThisFuncEnter();
+    Assert(isWriteLockOnCurrentThread());
+
+    m->bd.backup();
+    m->bd->strBandwidthGroup = aBandwidthGroup;
+
+    LogFlowThisFuncLeave();
+}
+
+void MediumAttachment::updateParentMachine(Machine * const pMachine)
+{
+    LogFlowThisFunc(("ENTER - %s\n", getLogName()));
+
+    /* sanity */
+    AutoCaller autoCaller(this);
+    AssertComRCReturnVoid (autoCaller.rc());
+
+    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+
+    unconst(m->pMachine) = pMachine;
+
+    LogFlowThisFunc(("LEAVE - %s\n", getLogName()));
 }
 

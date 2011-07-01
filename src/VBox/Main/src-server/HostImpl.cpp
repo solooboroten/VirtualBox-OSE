@@ -1,10 +1,10 @@
-/* $Id: HostImpl.cpp 35429 2011-01-07 14:42:24Z vboxsync $ */
+/* $Id: HostImpl.cpp 37307 2011-06-02 12:48:21Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -42,12 +42,16 @@
 # include <HostHardwareLinux.h>
 #endif
 
+#if defined(RT_OS_LINUX) || defined(RT_OS_DARWIN) || defined(RT_OS_FREEBSD)
+# include <set>
+#endif
+
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
 # include "PerformanceImpl.h"
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
 #if defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT)
-# include <VBox/WinNetConfig.h>
+# include <VBox/VBoxNetCfg-win.h>
 #endif /* #if defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT) */
 
 #ifdef RT_OS_LINUX
@@ -220,12 +224,13 @@ struct Host::Data
 
 HRESULT Host::FinalConstruct()
 {
-    return S_OK;
+    return BaseFinalConstruct();
 }
 
 void Host::FinalRelease()
 {
     uninit();
+    BaseFinalRelease();
 }
 
 /**
@@ -235,6 +240,7 @@ void Host::FinalRelease()
  */
 HRESULT Host::init(VirtualBox *aParent)
 {
+    HRESULT hrc;
     LogFlowThisFunc(("aParent=%p\n", aParent));
 
     /* Enclose the state transition NotReady->InInit->Ready */
@@ -264,7 +270,7 @@ HRESULT Host::init(VirtualBox *aParent)
 # else
     m->pUSBProxyService = new USBProxyService(this);
 # endif
-    HRESULT hrc = m->pUSBProxyService->init();
+    hrc = m->pUSBProxyService->init();
     AssertComRCReturn(hrc, hrc);
 #endif /* VBOX_WITH_USB */
 
@@ -360,6 +366,42 @@ HRESULT Host::init(VirtualBox *aParent)
 #ifdef VBOX_WITH_CROGL
     m->f3DAccelerationSupported = is3DAccelerationSupported();
 #endif /* VBOX_WITH_CROGL */
+
+#if defined (RT_OS_LINUX) || defined(RT_OS_DARWIN) || defined(RT_OS_FREEBSD)
+    /* Extract the list of configured host-only interfaces */
+    std::set<Utf8Str> aConfiguredNames;
+    SafeArray<BSTR> aGlobalExtraDataKeys;
+    hrc = aParent->GetExtraDataKeys(ComSafeArrayAsOutParam(aGlobalExtraDataKeys));
+    AssertMsg(SUCCEEDED(hrc), ("VirtualBox::GetExtraDataKeys failed with %Rhrc\n", hrc));
+    for (size_t i = 0; i < aGlobalExtraDataKeys.size(); ++i)
+    {
+        Utf8Str strKey = aGlobalExtraDataKeys[i];
+
+        if (!strKey.startsWith("HostOnly/vboxnet"))
+            continue;
+
+        size_t pos = strKey.find("/", sizeof("HostOnly/vboxnet"));
+        if (pos != Utf8Str::npos)
+            aConfiguredNames.insert(strKey.substr(sizeof("HostOnly"),
+                                                  pos - sizeof("HostOnly")));
+    }
+
+    for (std::set<Utf8Str>::const_iterator it = aConfiguredNames.begin();
+         it != aConfiguredNames.end();
+         ++it)
+    {
+        ComPtr<IHostNetworkInterface> hif;
+        ComPtr<IProgress> progress;
+
+        int r = NetIfCreateHostOnlyNetworkInterface(m->pParent,
+                                                    hif.asOutParam(),
+                                                    progress.asOutParam(),
+                                                    it->c_str());
+        if (RT_FAILURE(r))
+            return E_FAIL;
+    }
+
+#endif /* defined (RT_OS_LINUX) || defined(RT_OS_DARWIN) || defined(RT_OS_FREEBSD) */
 
     /* Confirm a successful initialization */
     autoInitSpan.setSucceeded();
@@ -712,7 +754,7 @@ STDMETHODIMP Host::COMGETTER(USBDevices)(ComSafeArrayOut(IHostUSBDevice*, aUSBDe
 
     AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
 
-    MultiResult rc = checkUSBProxyService();
+    HRESULT rc = checkUSBProxyService();
     if (FAILED(rc)) return rc;
 
     return m->pUSBProxyService->getDeviceCollection(ComSafeArrayOutArg(aUSBDevices));
@@ -739,7 +781,7 @@ STDMETHODIMP Host::COMGETTER(USBDeviceFilters)(ComSafeArrayOut(IHostUSBDeviceFil
 
     AutoMultiWriteLock2 alock(this->lockHandle(), &m->usbListsLock COMMA_LOCKVAL_SRC_POS);
 
-    MultiResult rc = checkUSBProxyService();
+    HRESULT rc = checkUSBProxyService();
     if (FAILED(rc)) return rc;
 
     SafeIfaceArray<IHostUSBDeviceFilter> collection(m->llUSBDeviceFilters);
@@ -1080,6 +1122,9 @@ STDMETHODIMP Host::RemoveHostOnlyNetworkInterface(IN_BSTR aId,
      * of the host object. If that ever changes then check for lock order
      * violations with the called functions. */
 
+    Bstr name;
+    HRESULT rc;
+
     /* first check whether an interface with the given name already exists */
     {
         ComPtr<IHostNetworkInterface> iface;
@@ -1088,11 +1133,21 @@ STDMETHODIMP Host::RemoveHostOnlyNetworkInterface(IN_BSTR aId,
             return setError(VBOX_E_OBJECT_NOT_FOUND,
                             tr("Host network interface with UUID {%RTuuid} does not exist"),
                             Guid (aId).raw());
+        rc = iface->COMGETTER(Name)(name.asOutParam());
+        ComAssertComRCRet(rc, rc);
     }
 
     int r = NetIfRemoveHostOnlyNetworkInterface(m->pParent, Guid(aId).ref(), aProgress);
     if (RT_SUCCESS(r))
+    {
+        /* Drop configuration parameters for removed interface */
+        rc = m->pParent->SetExtraData(BstrFmt("HostOnly/%ls/IPAddress", name.raw()).raw(), NULL);
+        rc = m->pParent->SetExtraData(BstrFmt("HostOnly/%ls/IPNetMask", name.raw()).raw(), NULL);
+        rc = m->pParent->SetExtraData(BstrFmt("HostOnly/%ls/IPV6Address", name.raw()).raw(), NULL);
+        rc = m->pParent->SetExtraData(BstrFmt("HostOnly/%ls/IPV6NetMask", name.raw()).raw(), NULL);
+
         return S_OK;
+    }
 
     return r == VERR_NOT_IMPLEMENTED ? E_NOTIMPL : E_FAIL;
 #else
@@ -1141,6 +1196,7 @@ STDMETHODIMP Host::InsertUSBDeviceFilter(ULONG aPosition,
 
     AutoMultiWriteLock2 alock(this->lockHandle(), &m->usbListsLock COMMA_LOCKVAL_SRC_POS);
 
+    clearError();
     MultiResult rc = checkUSBProxyService();
     if (FAILED(rc)) return rc;
 
@@ -1202,6 +1258,7 @@ STDMETHODIMP Host::RemoveUSBDeviceFilter(ULONG aPosition)
 
     AutoMultiWriteLock2 alock(this->lockHandle(), &m->usbListsLock COMMA_LOCKVAL_SRC_POS);
 
+    clearError();
     MultiResult rc = checkUSBProxyService();
     if (FAILED(rc)) return rc;
 
@@ -1252,26 +1309,12 @@ STDMETHODIMP Host::FindHostDVDDrive(IN_BSTR aName, IMedium **aDrive)
     CheckComArgStrNotEmptyOrNull(aName);
     CheckComArgOutPointerValid(aDrive);
 
-    *aDrive = NULL;
-
-    SafeIfaceArray<IMedium> drivevec;
-    HRESULT rc = COMGETTER(DVDDrives)(ComSafeArrayAsOutParam(drivevec));
-    if (FAILED(rc)) return rc;
-
-    for (size_t i = 0; i < drivevec.size(); ++i)
-    {
-        ComPtr<IMedium> drive = drivevec[i];
-        Bstr name, location;
-        rc = drive->COMGETTER(Name)(name.asOutParam());
-        if (FAILED(rc)) return rc;
-        rc = drive->COMGETTER(Location)(location.asOutParam());
-        if (FAILED(rc)) return rc;
-        if (name == aName || location == aName)
-            return drive.queryInterfaceTo(aDrive);
-    }
-
-    return setError(VBOX_E_OBJECT_NOT_FOUND,
-                    Medium::tr("The host DVD drive named '%ls' could not be found"), aName);
+    ComObjPtr<Medium>medium;
+    HRESULT rc = findHostDriveByNameOrId(DeviceType_DVD, Utf8Str(aName), medium);
+    if (SUCCEEDED(rc))
+        return medium.queryInterfaceTo(aDrive);
+    else
+        return setError(rc, Medium::tr("The host DVD drive named '%ls' could not be found"), aName);
 }
 
 STDMETHODIMP Host::FindHostFloppyDrive(IN_BSTR aName, IMedium **aDrive)
@@ -1281,22 +1324,12 @@ STDMETHODIMP Host::FindHostFloppyDrive(IN_BSTR aName, IMedium **aDrive)
 
     *aDrive = NULL;
 
-    SafeIfaceArray<IMedium> drivevec;
-    HRESULT rc = COMGETTER(FloppyDrives)(ComSafeArrayAsOutParam(drivevec));
-    if (FAILED(rc)) return rc;
-
-    for (size_t i = 0; i < drivevec.size(); ++i)
-    {
-        ComPtr<IMedium> drive = drivevec[i];
-        Bstr name;
-        rc = drive->COMGETTER(Name)(name.asOutParam());
-        if (FAILED(rc)) return rc;
-        if (name == aName)
-            return drive.queryInterfaceTo(aDrive);
-    }
-
-    return setError(VBOX_E_OBJECT_NOT_FOUND,
-                    Medium::tr("The host floppy drive named '%ls' could not be found"), aName);
+    ComObjPtr<Medium>medium;
+    HRESULT rc = findHostDriveByNameOrId(DeviceType_Floppy, Utf8Str(aName), medium);
+    if (SUCCEEDED(rc))
+        return medium.queryInterfaceTo(aDrive);
+    else
+        return setError(rc, Medium::tr("The host floppy drive named '%ls' could not be found"), aName);
 }
 
 STDMETHODIMP Host::FindHostNetworkInterfaceByName(IN_BSTR name, IHostNetworkInterface **networkInterface)
@@ -1480,6 +1513,16 @@ STDMETHODIMP Host::FindUSBDeviceById(IN_BSTR aId,
 #endif  /* !VBOX_WITH_USB */
 }
 
+STDMETHODIMP Host::GenerateMACAddress(BSTR *aAddress)
+{
+    CheckComArgOutPointerValid(aAddress);
+    // no locking required
+    Utf8Str mac;
+    generateMACAddress(mac);
+    Bstr(mac).cloneTo(aAddress);
+    return S_OK;
+}
+
 // public methods only for internal purposes
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1618,7 +1661,7 @@ HRESULT Host::getDrives(DeviceType_T mediumType,
             // remove drives from the cached list which are no longer present
             for (MediaList::iterator itCached = pllCached->begin();
                  itCached != pllCached->end();
-                 ++itCached)
+                 /*nothing */)
             {
                 Medium *pCached = *itCached;
                 const Utf8Str strLocationCached = pCached->getLocationFull();
@@ -1637,6 +1680,8 @@ HRESULT Host::getDrives(DeviceType_T mediumType,
                 }
                 if (!fFound)
                     itCached = pllCached->erase(itCached);
+                else
+                    ++itCached;
             }
 
             // add drives to the cached list that are not on there yet
@@ -1699,6 +1744,8 @@ HRESULT Host::findHostDriveById(DeviceType_T mediumType,
              ++it)
         {
             Medium *pThis = *it;
+            AutoCaller mediumCaller(pThis);
+            AutoReadLock mediumLock(pThis COMMA_LOCKVAL_SRC_POS);
             if (pThis->getId() == uuid)
             {
                 pMedium = pThis;
@@ -1737,6 +1784,8 @@ HRESULT Host::findHostDriveByName(DeviceType_T mediumType,
              ++it)
         {
             Medium *pThis = *it;
+            AutoCaller mediumCaller(pThis);
+            AutoReadLock mediumLock(pThis COMMA_LOCKVAL_SRC_POS);
             if (pThis->getLocationFull() == strLocationFull)
             {
                 pMedium = pThis;
@@ -1746,6 +1795,30 @@ HRESULT Host::findHostDriveByName(DeviceType_T mediumType,
     }
 
     return VBOX_E_OBJECT_NOT_FOUND;
+}
+
+/**
+ * Goes through the list of host drives that would be returned by getDrives()
+ * and looks for a host drive with the given name, location or ID. If found,
+ * it sets pMedium to that drive; otherwise returns VBOX_E_OBJECT_NOT_FOUND.
+ *
+ * @param mediumType  Must be DeviceType_DVD or DeviceType_Floppy.
+ * @param strNameOrId Name or full location or UUID of host drive to look for.
+ * @param pMedium     Medium object, if found…
+ * @return VBOX_E_OBJECT_NOT_FOUND if not found, or S_OK if found, or errors from getDrives().
+ */
+HRESULT Host::findHostDriveByNameOrId(DeviceType_T mediumType,
+                                      const Utf8Str &strNameOrId,
+                                      ComObjPtr<Medium> &pMedium)
+{
+    AutoWriteLock wlock(m->drivesLock COMMA_LOCKVAL_SRC_POS);
+
+    Guid uuid(strNameOrId);
+    if (!uuid.isEmpty())
+        return findHostDriveById(mediumType, uuid, true /* fRefresh */, pMedium);
+
+    // string is not a syntactically valid UUID: try a name then
+    return findHostDriveByName(mediumType, strNameOrId, true /* fRefresh */, pMedium);
 }
 
 /**
@@ -2665,26 +2738,25 @@ HRESULT Host::checkUSBProxyService()
         /* disable the USB controller completely to avoid assertions if the
          * USB proxy service could not start. */
 
-        if (m->pUSBProxyService->getLastError() == VERR_FILE_NOT_FOUND)
-            return setWarning(E_FAIL,
-                              tr("Could not load the Host USB Proxy Service (%Rrc). The service might not be installed on the host computer"),
-                              m->pUSBProxyService->getLastError());
-        if (m->pUSBProxyService->getLastError() == VINF_SUCCESS)
-#ifdef RT_OS_LINUX
-            return setWarning (VBOX_E_HOST_ERROR,
-# ifdef VBOX_WITH_DBUS
-                tr ("The USB Proxy Service could not be started, because neither the USB file system (usbfs) nor the hardware information service (hal) is available")
-# else
-                tr ("The USB Proxy Service could not be started, because the USB file system (usbfs) is not available")
-# endif
-                );
-#else  /* !RT_OS_LINUX */
-            return setWarning (E_FAIL,
-                tr ("The USB Proxy Service has not yet been ported to this host"));
-#endif /* !RT_OS_LINUX */
-        return setWarning (E_FAIL,
-            tr ("Could not load the Host USB Proxy service (%Rrc)"),
-            m->pUSBProxyService->getLastError());
+        switch (m->pUSBProxyService->getLastError())
+        {
+            case VERR_FILE_NOT_FOUND:  /** @todo what does this mean? */
+                return setWarning(E_FAIL,
+                                  tr("Could not load the Host USB Proxy Service (VERR_FILE_NOT_FOUND). The service might not be installed on the host computer"));
+            case VERR_VUSB_USB_DEVICE_PERMISSION:
+                return setWarning(E_FAIL,
+                                  tr("VirtualBox is not currently allowed to access USB devices.  You can change this by adding your user to the 'vboxusers' group.  Please see the user manual for a more detailed explanation"));
+            case VERR_VUSB_USBFS_PERMISSION:
+                return setWarning(E_FAIL,
+                                  tr("VirtualBox is not currently allowed to access USB devices.  You can change this by allowing your user to access the 'usbfs' folder and files.  Please see the user manual for a more detailed explanation"));
+            case VINF_SUCCESS:
+                return setWarning(E_FAIL,
+                                  tr("The USB Proxy Service has not yet been ported to this host"));
+            default:
+                return setWarning (E_FAIL, "%s: %Rrc",
+                                   tr ("Could not load the Host USB Proxy service"),
+                                   m->pUSBProxyService->getLastError());
+        }
     }
 
     return S_OK;
@@ -2730,9 +2802,17 @@ void Host::registerMetrics(PerformanceCollector *aCollector)
     aCollector->registerBaseMetric (cpuLoad);
     pm::BaseMetric *cpuMhz = new pm::HostCpuMhz(hal, objptr, cpuMhzSM);
     aCollector->registerBaseMetric (cpuMhz);
-    pm::BaseMetric *ramUsage = new pm::HostRamUsage(hal, objptr, ramUsageTotal, ramUsageUsed,
-                                           ramUsageFree, ramVMMUsed, ramVMMFree, ramVMMBallooned, ramVMMShared);
+    pm::BaseMetric *ramUsage = new pm::HostRamUsage(hal, objptr,
+                                                    ramUsageTotal,
+                                                    ramUsageUsed,
+                                                    ramUsageFree);
     aCollector->registerBaseMetric (ramUsage);
+    pm::BaseMetric *ramVmm = new pm::HostRamVmm(aCollector->getGuestManager(), objptr,
+                                                ramVMMUsed,
+                                                ramVMMFree,
+                                                ramVMMBallooned,
+                                                ramVMMShared);
+    aCollector->registerBaseMetric (ramVmm);
 
     aCollector->registerMetric(new pm::Metric(cpuLoad, cpuLoadUser, 0));
     aCollector->registerMetric(new pm::Metric(cpuLoad, cpuLoadUser,
@@ -2790,36 +2870,36 @@ void Host::registerMetrics(PerformanceCollector *aCollector)
     aCollector->registerMetric(new pm::Metric(ramUsage, ramUsageFree,
                                               new pm::AggregateMax()));
 
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMUsed, 0));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMUsed,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMUsed, 0));
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMUsed,
                                               new pm::AggregateAvg()));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMUsed,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMUsed,
                                               new pm::AggregateMin()));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMUsed,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMUsed,
                                               new pm::AggregateMax()));
 
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMFree, 0));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMFree,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMFree, 0));
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMFree,
                                               new pm::AggregateAvg()));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMFree,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMFree,
                                               new pm::AggregateMin()));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMFree,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMFree,
                                               new pm::AggregateMax()));
 
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMBallooned, 0));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMBallooned,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMBallooned, 0));
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMBallooned,
                                               new pm::AggregateAvg()));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMBallooned,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMBallooned,
                                               new pm::AggregateMin()));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMBallooned,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMBallooned,
                                               new pm::AggregateMax()));
 
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMShared, 0));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMShared,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMShared, 0));
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMShared,
                                               new pm::AggregateAvg()));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMShared,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMShared,
                                               new pm::AggregateMin()));
-    aCollector->registerMetric(new pm::Metric(ramUsage, ramVMMShared,
+    aCollector->registerMetric(new pm::Metric(ramVmm, ramVMMShared,
                                               new pm::AggregateMax()));
 }
 
@@ -2827,6 +2907,21 @@ void Host::unregisterMetrics (PerformanceCollector *aCollector)
 {
     aCollector->unregisterMetricsFor(this);
     aCollector->unregisterBaseMetricsFor(this);
+}
+
+
+/* static */
+void Host::generateMACAddress(Utf8Str &mac)
+{
+    /*
+     * Our strategy is as follows: the first three bytes are our fixed
+     * vendor ID (080027). The remaining 3 bytes will be taken from the
+     * start of a GUID. This is a fairly safe algorithm.
+     */
+    Guid guid;
+    guid.create();
+    mac = Utf8StrFmt("080027%02X%02X%02X",
+                     guid.raw()->au8[0], guid.raw()->au8[1], guid.raw()->au8[2]);
 }
 
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */

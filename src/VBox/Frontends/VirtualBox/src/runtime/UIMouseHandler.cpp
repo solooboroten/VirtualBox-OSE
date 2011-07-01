@@ -1,4 +1,4 @@
-/* $Id: UIMouseHandler.cpp 35509 2011-01-12 16:58:16Z vboxsync $ */
+/* $Id: UIMouseHandler.cpp 36374 2011-03-23 16:37:03Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -31,6 +31,10 @@
 #include "UIMachineWindow.h"
 #include "UIMachineView.h"
 #include "UIFrameBuffer.h"
+
+#ifdef Q_WS_WIN
+# include "VBoxUtils-win.h"
+#endif /* Q_WS_WIN */
 
 #ifdef Q_WS_X11
 # include <X11/XKBlib.h>
@@ -173,11 +177,8 @@ void UIMouseHandler::captureMouse(ulong uScreenId)
         /* Update mouse clipping: */
         updateMouseCursorClipping();
 #elif defined (Q_WS_MAC)
-        /* Move the mouse to the center of the visible area: */
-        m_lastMousePos = visibleRectangle.center();
-        QCursor::setPos(m_lastMousePos);
         /* Grab all mouse events: */
-        m_viewports[m_iMouseCaptureViewIndex]->grabMouse();
+        ::darwinMouseGrab(m_viewports[m_iMouseCaptureViewIndex]);
 #else /* Q_WS_MAC */
         /* Remember current mouse position: */
         m_lastMousePos = QCursor::pos();
@@ -211,10 +212,13 @@ void UIMouseHandler::releaseMouse()
 #ifdef Q_WS_WIN
         /* Update mouse clipping: */
         updateMouseCursorClipping();
-#else /* Q_WS_WIN */
+#elif defined(Q_WS_MAC)
+        /* Releasing grabbed mouse from that view: */
+        ::darwinMouseRelease(m_viewports[m_iMouseCaptureViewIndex]);
+#else /* Q_WS_MAC */
         /* Releasing grabbed mouse from that view: */
         m_viewports[m_iMouseCaptureViewIndex]->releaseMouse();
-#endif /* !Q_WS_WIN */
+#endif /* !Q_WS_MAC */
         /* Reset mouse-capture index: */
         m_iMouseCaptureViewIndex = -1;
 
@@ -244,17 +248,6 @@ int UIMouseHandler::mouseState() const
            (uisession()->isMouseSupportsAbsolute() ? UIMouseStateType_MouseAbsolute : 0) |
            (uisession()->isMouseIntegrated() ? 0 : UIMouseStateType_MouseAbsoluteDisabled);
 }
-
-#ifdef Q_WS_MAC
-void UIMouseHandler::setMouseCoalescingEnabled(bool fOn)
-{
-    /* Enable mouse event compression if we leave the VM view.
-     * This is necessary for having smooth resizing of the VM/other windows.
-     * Disable mouse event compression if we enter the VM view.
-     * So all mouse events are registered in the VM. */
-    ::darwinSetMouseCoalescingEnabled(fOn);
-}
-#endif /* Q_WS_MAC */
 
 #ifdef Q_WS_X11
 bool UIMouseHandler::x11EventFilter(XEvent *pEvent, ulong /* uScreenId */)
@@ -368,9 +361,10 @@ void UIMouseHandler::sltMousePointerShapeChanged()
     /* First of all, we should check if the host pointer should be visible.
      * We should hide host pointer in case of:
      * 1. mouse is 'captured' or
-     * 2. mouse is 'not captured', 'integrated', 'absolute', host pointer is hidden by the guest. */
+     * 2. machine is NOT 'paused' and mouse is NOT 'captured' and 'integrated' and 'absolute' but host pointer is 'hidden' by the guest. */
     if (uisession()->isMouseCaptured() ||
-        (uisession()->isMouseIntegrated() &&
+        (!uisession()->isPaused() &&
+         uisession()->isMouseIntegrated() &&
          uisession()->isMouseSupportsAbsolute() &&
          uisession()->isHidingHostPointer()))
     {
@@ -382,7 +376,7 @@ void UIMouseHandler::sltMousePointerShapeChanged()
     else
 
     /* Otherwise we should show host pointer with guest shape assigned to it if:
-     * machine is NOT 'paused', mouse is 'integrated', 'absolute', valid pointer shape is present. */
+     * machine is NOT 'paused', mouse is 'integrated' and 'absolute' and valid pointer shape is present. */
     if (!uisession()->isPaused() &&
         uisession()->isMouseIntegrated() &&
         uisession()->isMouseSupportsAbsolute() &&
@@ -397,8 +391,8 @@ void UIMouseHandler::sltMousePointerShapeChanged()
 
     /* There could be other states covering such situations as:
      * 1. machine is 'paused' or
-     * 2. mouse is 'not captured', 'integrated', 'not absolute' or
-     * 3. mouse is 'not captured', 'not integrated', 'absolute'.
+     * 2. mouse is NOT 'captured' and 'integrated' but NOT 'absolute' or
+     * 3. mouse is NOT 'captured' and 'absolute' but NOT 'integrated'.
      * We have nothing to do with that except just unset the cursor. */
     {
         QList<ulong> screenIds = m_viewports.keys();
@@ -512,6 +506,20 @@ bool UIMouseHandler::eventFilter(QObject *pWatched, QEvent *pEvent)
             /* Handle viewport events: */
             switch (pEvent->type())
             {
+#ifdef Q_WS_MAC
+                case UIGrabMouseEvent::GrabMouseEvent:
+                {
+                    UIGrabMouseEvent *pDeltaEvent = static_cast<UIGrabMouseEvent*>(pEvent);
+                    QPoint p = QPoint(pDeltaEvent->xDelta() + m_lastMousePos.x(),
+                                      pDeltaEvent->yDelta() + m_lastMousePos.y());
+                    if (mouseEvent(pDeltaEvent->mouseEventType(), uScreenId,
+                                   m_viewports[uScreenId]->mapFromGlobal(p), p,
+                                   pDeltaEvent->buttons(),
+                                   pDeltaEvent->wheelDelta(), pDeltaEvent->orientation()))
+                        return true;
+                    break;
+                }
+#endif /* Q_WS_MAC */
                 case QEvent::MouseMove:
                 case QEvent::MouseButtonRelease:
                 {
@@ -537,6 +545,14 @@ bool UIMouseHandler::eventFilter(QObject *pWatched, QEvent *pEvent)
                         return true;
                     }
 
+#ifdef Q_WS_X11
+                    /* Make sure that we are focused after a click.  Rather
+                     * ugly, but works around a problem with GNOME
+                     * screensaver, which sometimes removes our input focus
+                     * and gives us no way to get it back. */
+                    if (pEvent->type() == QEvent::MouseButtonRelease)
+                        pWatchedWidget->window()->activateWindow();
+#endif /* Q_WS_X11 */
                     /* Check if we should activate window under cursor: */
                     if (!uisession()->isMouseCaptured() &&
                         QApplication::activeWindow() &&
@@ -598,7 +614,7 @@ bool UIMouseHandler::eventFilter(QObject *pWatched, QEvent *pEvent)
                 {
                     /* Enable mouse event compression if we leave the VM view.
                      * This is necessary for having smooth resizing of the VM/other windows: */
-                    setMouseCoalescingEnabled(true);
+                    ::darwinSetMouseCoalescingEnabled(true);
                     break;
                 }
                 case QEvent::Enter:
@@ -608,7 +624,7 @@ bool UIMouseHandler::eventFilter(QObject *pWatched, QEvent *pEvent)
                      * Only do this if the keyboard/mouse is grabbed
                      * (this is when we have a valid event handler): */
                     if (machineLogic()->keyboardHandler()->isKeyboardGrabbed())
-                        setMouseCoalescingEnabled(false);
+                        darwinSetMouseCoalescingEnabled(false);
                     break;
                 }
 #endif /* Q_WS_MAC */
@@ -680,56 +696,19 @@ bool UIMouseHandler::mouseEvent(int iEventType, ulong uScreenId,
         /* Send pending WM_PAINT events: */
         ::UpdateWindow(m_viewports[uScreenId]->winId());
 #endif
-
         CMouse mouse = session().GetConsole().GetMouse();
         mouse.PutMouseEvent(globalPos.x() - m_lastMousePos.x(),
                             globalPos.y() - m_lastMousePos.y(),
                             iWheelVertical, iWheelHorizontal, iMouseButtonsState);
 
-#ifdef Q_WS_MAC
-        /* Keep the mouse from leaving the widget.
-         * This is a bit tricky to get right because if it escapes we won't necessarily
-         * get mouse events any longer and can warp it back. So, we keep safety zone
-         * of up to 300 pixels around the borders of the widget to prevent this from
-         * happening. Also, the mouse is warped back to the center of the widget.
-         * (Note, relativePos seems to be unreliable, it caused endless recursion here at one points...)
-         * (Note, synergy and other remote clients might not like this cursor warping.) */
-        QRect rect = m_viewports[uScreenId]->visibleRegion().boundingRect();
-        QPoint pw = m_viewports[uScreenId]->mapToGlobal(m_viewports[uScreenId]->pos());
-        rect.translate(pw.x(), pw.y());
-
-        QRect dpRect = QApplication::desktop()->screenGeometry(m_viewports[uScreenId]);
-        if (rect.intersects(dpRect))
-            rect = rect.intersect(dpRect);
-
-        int iWsafe = rect.width() / 6;
-        rect.setWidth(rect.width() - iWsafe * 2);
-        rect.setLeft(rect.left() + iWsafe);
-
-        int iHsafe = rect.height() / 6;
-        rect.setWidth(rect.height() - iHsafe * 2);
-        rect.setTop(rect.top() + iHsafe);
-
-        if (rect.contains(globalPos, true))
-            m_lastMousePos = globalPos;
-        else
-        {
-            m_lastMousePos = rect.center();
-            QCursor::setPos(m_lastMousePos);
-        }
-#else /* Q_WS_MAC */
-
+#ifdef Q_WS_WIN
         /* Bringing mouse to the opposite side to simulate the endless moving: */
 
-# ifdef Q_WS_WIN
-        /* Acquiring visible viewport rectangle in local coordinates: */
-        QRect viewportRectangle = m_viewports[uScreenId]->visibleRegion().boundingRect();
+        /* Get visible-viewport-rectangle in global coordinates: */
+        QRect viewportRectangle = m_mouseCursorClippingRect;
+        /* Get top-left point of full-viewport-rectangle in global coordinates: */
         QPoint viewportRectangleGlobalPos = m_views[uScreenId]->mapToGlobal(m_viewports[uScreenId]->pos());
-        /* Shift viewport rectangle to global position to bound by available geometry: */
-        viewportRectangle.translate(viewportRectangleGlobalPos);
-        /* Acquiring viewport rectangle cropped by available geometry: */
-        viewportRectangle = viewportRectangle.intersected(QApplication::desktop()->availableGeometry());
-        /* Shift remaining viewport rectangle to local position as relative position is in local coordinates: */
+        /* Shift visible-viewport-rectangle to local position because relative position is in local coordinates: */
         viewportRectangle.translate(-viewportRectangleGlobalPos);
 
         /* Get boundaries: */
@@ -754,10 +733,8 @@ bool UIMouseHandler::mouseEvent(int iEventType, ulong uScreenId,
             QCursor::setPos(m_lastMousePos);
         }
         else
-        {
             m_lastMousePos = globalPos;
-        }
-# else /* Q_WS_WIN */
+#else /* Q_WS_WIN */
         int iWe = QApplication::desktop()->width() - 1;
         int iHe = QApplication::desktop()->height() - 1;
         QPoint p = globalPos;
@@ -773,14 +750,14 @@ bool UIMouseHandler::mouseEvent(int iEventType, ulong uScreenId,
         if (p != globalPos)
         {
             m_lastMousePos =  p;
+            /* No need for cursor updating on the Mac, there is no one. */
+# ifndef Q_WS_MAC
             QCursor::setPos(m_lastMousePos);
+# endif /* Q_WS_MAC */
         }
         else
-        {
             m_lastMousePos = globalPos;
-        }
-# endif /* !Q_WS_WIN */
-#endif /* !Q_WS_MAC */
+#endif /* !Q_WS_WIN */
         return true; /* stop further event handling */
     }
     else /* !uisession()->isMouseCaptured() */
@@ -905,13 +882,35 @@ void UIMouseHandler::updateMouseCursorClipping()
 
     if (uisession()->isMouseCaptured())
     {
-        /* Acquiring visible viewport rectangle: */
+        /* Get full-viewport-rectangle in local coordinates: */
         QRect viewportRectangle = m_viewports[m_iMouseCaptureViewIndex]->visibleRegion().boundingRect();
+        /* Get top-left point of full-viewport-rectangle in global coordinates: */
         QPoint viewportRectangleGlobalPos = m_views[m_iMouseCaptureViewIndex]->mapToGlobal(m_viewports[m_iMouseCaptureViewIndex]->pos());
+        /* Get full-viewport-rectangle in global coordinates: */
         viewportRectangle.translate(viewportRectangleGlobalPos);
+        /* Trim full-viewport-rectangle by available geometry: */
         viewportRectangle = viewportRectangle.intersected(QApplication::desktop()->availableGeometry());
+        /* Trim partial-viewport-rectangle by top-most windows: */
+        QRegion viewportRegion(viewportRectangle);
+        QRegion topMostRegion(NativeWindowSubsystem::areaCoveredByTopMostWindows());
+        viewportRegion -= topMostRegion;
+        /* Check if partial-viewport-region consists of 1 rectangle: */
+        if (viewportRegion.rectCount() > 1)
+        {
+            /* Choose the largest rectangle: */
+            QVector<QRect> rects = viewportRegion.rects();
+            QRect largestRect;
+            for (int i = 0; i < rects.size(); ++i)
+                largestRect = largestRect.width() * largestRect.height() < rects[i].width() * rects[i].height() ? rects[i] : largestRect;
+            /* Assign the partial-viewport-region to the largest rect: */
+            viewportRegion = largestRect;
+        }
+        /* Assign the partial-viewport-rectangle to the partial-viewport-region: */
+        viewportRectangle = viewportRegion.boundingRect();
+        /* Assign the visible-viewport-rectangle to the partial-viewport-rectangle: */
+        m_mouseCursorClippingRect = viewportRectangle;
         /* Prepare clipping area: */
-        RECT rect = { viewportRectangle.left() + 1, viewportRectangle.top() + 1, viewportRectangle.right(), viewportRectangle.bottom() };
+        RECT rect = { m_mouseCursorClippingRect.left() + 1, m_mouseCursorClippingRect.top() + 1, m_mouseCursorClippingRect.right(), m_mouseCursorClippingRect.bottom() };
         ::ClipCursor(&rect);
     }
     else

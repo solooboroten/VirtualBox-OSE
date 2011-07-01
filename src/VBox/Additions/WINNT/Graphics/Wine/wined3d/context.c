@@ -330,11 +330,7 @@ static void context_check_fbo_status(struct wined3d_context *context)
 static struct fbo_entry *context_create_fbo_entry(struct wined3d_context *context)
 {
     const struct wined3d_gl_info *gl_info = context->gl_info;
-#ifdef VBOX_WITH_WDDM
-    IWineD3DDeviceImpl *device = context->device;
-#else
-    IWineD3DDeviceImpl *device = context->swapchain->device;
-#endif
+    IWineD3DDeviceImpl *device = context_get_device(context);
     struct fbo_entry *entry;
 
     entry = HeapAlloc(GetProcessHeap(), 0, sizeof(*entry));
@@ -351,11 +347,7 @@ static struct fbo_entry *context_create_fbo_entry(struct wined3d_context *contex
 static void context_reuse_fbo_entry(struct wined3d_context *context, struct fbo_entry *entry)
 {
     const struct wined3d_gl_info *gl_info = context->gl_info;
-#ifdef VBOX_WITH_WDDM
-    IWineD3DDeviceImpl *device = context->device;
-#else
-    IWineD3DDeviceImpl *device = context->swapchain->device;
-#endif
+    IWineD3DDeviceImpl *device = context_get_device(context);
 
     context_bind_fbo(context, GL_FRAMEBUFFER, &entry->id);
     context_clean_fbo_attachments(gl_info);
@@ -384,11 +376,7 @@ static void context_destroy_fbo_entry(struct wined3d_context *context, struct fb
 static struct fbo_entry *context_find_fbo_entry(struct wined3d_context *context)
 {
     const struct wined3d_gl_info *gl_info = context->gl_info;
-#ifdef VBOX_WITH_WDDM
-    IWineD3DDeviceImpl *device = context->device;
-#else
-    IWineD3DDeviceImpl *device = context->swapchain->device;
-#endif
+    IWineD3DDeviceImpl *device = context_get_device(context);
     struct fbo_entry *entry;
 
     LIST_FOR_EACH_ENTRY(entry, &context->fbo_list, struct fbo_entry, entry)
@@ -424,11 +412,7 @@ static struct fbo_entry *context_find_fbo_entry(struct wined3d_context *context)
 static void context_apply_fbo_entry(struct wined3d_context *context, struct fbo_entry *entry)
 {
     const struct wined3d_gl_info *gl_info = context->gl_info;
-#ifdef VBOX_WITH_WDDM
-    IWineD3DDeviceImpl *device = context->device;
-#else
-    IWineD3DDeviceImpl *device = context->swapchain->device;
-#endif
+    IWineD3DDeviceImpl *device = context_get_device(context);
     unsigned int i;
 
     context_bind_fbo(context, GL_FRAMEBUFFER, &entry->id);
@@ -749,7 +733,7 @@ static BOOL context_set_pixel_format(const struct wined3d_gl_info *gl_info, HDC 
     return TRUE;
 }
 
-static void context_update_window(struct wined3d_context *context
+void context_update_window(struct wined3d_context *context
 #ifdef VBOX_WITH_WDDM
         , IWineD3DSwapChainImpl *swapchain
 #endif
@@ -776,6 +760,18 @@ static void context_update_window(struct wined3d_context *context
     else context->valid = 1;
 
 #ifdef VBOX_WITH_WDDM
+# ifdef DEBUG
+    {
+        HWND wnd = WindowFromDC(swapchain->hDC);
+        if (wnd != swapchain->win_handle)
+        {
+            ERR("Lost swapchain dc %p for window %p.\n", swapchain->hDC, swapchain->win_handle);
+            swapchain->hDC = GetDC(swapchain->win_handle);
+            Assert(swapchain->hDC && (WindowFromDC(swapchain->hDC)==swapchain->win_handle));
+        }
+    }
+# endif
+
     context->win_handle = swapchain->win_handle;
     context->currentSwapchain = swapchain;
     context->hdc = swapchain->hDC;
@@ -1261,7 +1257,14 @@ static int WineD3D_ChoosePixelFormat(IWineD3DDeviceImpl *This, HDC hdc,
     return iPixelFormat;
 }
 
-
+struct IWineD3DDeviceImpl *context_get_device(const struct wined3d_context *context)
+{
+#ifdef VBOX_WITH_WDDM
+    return context->device;
+#else
+    return context->swapchain->device;
+#endif
+}
 
 
 /*****************************************************************************
@@ -2003,13 +2006,9 @@ static struct wined3d_context *FindContext(IWineD3DDeviceImpl *This, IWineD3DSur
     if (!target)
     {
         if (current_context
-                && current_context->current_rt
-#ifdef VBOX_WITH_WDDM
-                && current_context->device == This
-#else
-                && current_context->swapchain->device == This
-#endif
-                )
+            && current_context->current_rt
+            && context_get_device(current_context) == This
+           )
         {
             target = current_context->current_rt;
         }
@@ -2060,13 +2059,7 @@ static struct wined3d_context *FindContext(IWineD3DDeviceImpl *This, IWineD3DSur
         TRACE("Rendering offscreen\n");
 
         /* Stay with the currently active context. */
-        if (current_context
-#ifdef VBOX_WITH_WDDM
-                && current_context->device == This
-#else
-                && current_context->swapchain->device == This
-#endif
-                )
+        if (current_context && context_get_device(current_context) == This)
         {
             context = current_context;
         }

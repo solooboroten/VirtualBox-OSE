@@ -1,4 +1,4 @@
-/* $Revision: 34972 $ */
+/* $Revision: 37591 $ */
 /** @file
  * VirtualBox Support Driver - IOCtl definitions.
  */
@@ -192,7 +192,7 @@ typedef SUPREQHDR *PSUPREQHDR;
  * @todo Pending work on next major version change:
  *          - None.
  */
-#define SUPDRV_IOC_VERSION                              0x00160000
+#define SUPDRV_IOC_VERSION                              0x00190000
 
 /** SUP_IOCTL_COOKIE. */
 typedef struct SUPCOOKIE
@@ -345,7 +345,11 @@ typedef struct SUPLDRSYM
 {
     /** Offset into of the string table. */
     uint32_t        offName;
-    /** Offset of the symbol relative to the image load address. */
+    /** Offset of the symbol relative to the image load address.
+     * @remarks When used inside the SUPDrv to calculate real addresses, it
+     *          must be cast to int32_t for the sake of native loader support
+     *          on Solaris.  (The loader puts the and data in different
+     *          memory areans, and the text one is generally higher.) */
     uint32_t        offSymbol;
 } SUPLDRSYM;
 /** Pointer to a symbol table entry. */
@@ -483,8 +487,6 @@ typedef struct SUPLDRGETSYMBOL
 
 /** @name SUP_IOCTL_CALL_VMMR0
  * Call the R0 VMM Entry point.
- *
- * @todo Might have to convert this to a big request...
  * @{
  */
 #define SUP_IOCTL_CALL_VMMR0(cbReq)                     SUP_CTL_CODE_SIZE(7, SUP_IOCTL_CALL_VMMR0_SIZE(cbReq))
@@ -512,6 +514,17 @@ typedef struct SUPCALLVMMR0
     /** The VMMR0Entry request packet. */
     uint8_t                 abReqPkt[1];
 } SUPCALLVMMR0, *PSUPCALLVMMR0;
+/** @} */
+
+
+/** @name SUP_IOCTL_CALL_VMMR0_BIG
+ * Version of SUP_IOCTL_CALL_VMMR0 for dealing with large requests.
+ * @{
+ */
+#define SUP_IOCTL_CALL_VMMR0_BIG                        SUP_CTL_CODE_BIG(27)
+#define SUP_IOCTL_CALL_VMMR0_BIG_SIZE(cbReq)            RT_UOFFSETOF(SUPCALLVMMR0, abReqPkt[cbReq])
+#define SUP_IOCTL_CALL_VMMR0_BIG_SIZE_IN(cbReq)         SUP_IOCTL_CALL_VMMR0_SIZE(cbReq)
+#define SUP_IOCTL_CALL_VMMR0_BIG_SIZE_OUT(cbReq)        SUP_IOCTL_CALL_VMMR0_SIZE(cbReq)
 /** @} */
 
 

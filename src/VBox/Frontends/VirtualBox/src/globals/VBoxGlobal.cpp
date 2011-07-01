@@ -1,4 +1,4 @@
-/* $Id: VBoxGlobal.cpp 35564 2011-01-14 13:52:02Z vboxsync $ */
+/* $Id: VBoxGlobal.cpp 37712 2011-06-30 14:11:14Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -6,7 +6,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -24,7 +24,6 @@
 #include "VBoxDefs.h"
 #include "VBoxSelectorWnd.h"
 #include "VBoxProblemReporter.h"
-#include "QIHotKeyEdit.h"
 #include "QIMessageBox.h"
 #include "QIDialogButtonBox.h"
 #include "UIIconPool.h"
@@ -72,6 +71,7 @@
 #include <math.h>
 
 #ifdef Q_WS_X11
+# include "UIHotKeyEditor.h"
 # ifndef VBOX_OSE
 #  include "VBoxLicenseViewer.h"
 # endif /* VBOX_OSE */
@@ -1238,6 +1238,24 @@ StorageSlot VBoxGlobal::toStorageSlot (const QString &aSlot) const
     return result;
 }
 
+QString VBoxGlobal::toString(KMediumVariant mediumVariant) const
+{
+    switch (mediumVariant)
+    {
+        case KMediumVariant_Standard:
+            return tr("Dynamically expanding storage");
+        case (KMediumVariant)(KMediumVariant_Standard | KMediumVariant_Fixed):
+            return tr("Fixed size storage");
+        case (KMediumVariant)(KMediumVariant_Standard | KMediumVariant_VmdkSplit2G):
+            return tr("Dynamically expanding storage split into files of less than 2GB");
+        case (KMediumVariant)(KMediumVariant_Standard | KMediumVariant_Fixed | KMediumVariant_VmdkSplit2G):
+            return tr("Fixed size storage split into files of less than 2GB");
+        default:
+            break;
+    }
+    return QString();
+}
+
 /**
  * Returns the list of all device types (VirtualBox::DeviceType COM enum).
  */
@@ -1631,6 +1649,9 @@ QString VBoxGlobal::detailsReport (const CMachine &aMachine, bool aWithLinks)
                      + QString (sSectionItemTpl2).arg (tr ("Processor(s)", "details report"),
                                                        tr ("<nobr>%1</nobr>", "details report"))
                        .arg (aMachine.GetCPUCount())
+                     + QString (sSectionItemTpl2).arg (tr ("CPU Execution Cap", "details report"),
+                                                       tr ("<nobr>%1%</nobr>", "details report"))
+                       .arg (aMachine.GetCPUExecutionCap())
                      + QString (sSectionItemTpl2).arg (tr ("Boot Order", "details report"), bootOrder)
 #ifdef VBOX_WITH_FULL_DETAILS_REPORT
                      + QString (sSectionItemTpl2).arg (tr ("ACPI", "details report"), acpi)
@@ -1813,7 +1834,7 @@ QString VBoxGlobal::detailsReport (const CMachine &aMachine, bool aWithLinks)
     {
         QString item;
 
-        ulong count = mVBox.GetSystemProperties().GetNetworkAdapterCount();
+        ulong count = mVBox.GetSystemProperties().GetMaxNetworkAdapters(KChipsetType_PIIX3);
         int rows = 2; /* including section header and footer */
         for (ulong slot = 0; slot < count; slot ++)
         {
@@ -1828,18 +1849,16 @@ QString VBoxGlobal::detailsReport (const CMachine &aMachine, bool aWithLinks)
                  * this name instead */
                 if (type == KNetworkAttachmentType_Bridged)
                     attType = attType.arg (tr ("Bridged adapter, %1",
-                        "details report (network)").arg (adapter.GetHostInterface()));
+                        "details report (network)").arg (adapter.GetBridgedInterface()));
                 else if (type == KNetworkAttachmentType_Internal)
                     attType = attType.arg (tr ("Internal network, '%1'",
                         "details report (network)").arg (adapter.GetInternalNetwork()));
                 else if (type == KNetworkAttachmentType_HostOnly)
                     attType = attType.arg (tr ("Host-only adapter, '%1'",
-                        "details report (network)").arg (adapter.GetHostInterface()));
-#ifdef VBOX_WITH_VDE
-                else if (type == KNetworkAttachmentType_VDE)
-                    attType = attType.arg (tr ("VDE network, '%1'",
-                        "details report (network)").arg (adapter.GetVDENetwork()));
-#endif
+                        "details report (network)").arg (adapter.GetHostOnlyInterface()));
+                else if (type == KNetworkAttachmentType_Generic)
+                    attType = attType.arg (tr ("Generic, '%1'",
+                        "details report (network)").arg (adapter.GetGenericDriver()));
                 else
                     attType = attType.arg (vboxGlobal().toString (type));
 
@@ -2389,7 +2408,7 @@ void VBoxGlobal::startEnumeratingMedia()
         virtual void run()
         {
             LogFlow (("MediaEnumThread started.\n"));
-            COMBase::InitializeCOM();
+            COMBase::InitializeCOM(false);
 
             CVirtualBox mVBox = vboxGlobal().virtualBox();
             QObject *self = &vboxGlobal();
@@ -2633,14 +2652,13 @@ QString VBoxGlobal::openMediumWithFileOpenDialog(VBoxDefs::MediumType mediumType
                                                  bool fUseLastFolder /* = false */)
 {
     /* Initialize variables: */
-    QString strHomeFolder = fUseLastFolder && !m_strLastFolder.isEmpty() ? m_strLastFolder :
-                            strDefaultFolder.isEmpty() ? vboxGlobal().virtualBox().GetHomeFolder() : strDefaultFolder;
     QList < QPair <QString, QString> > filters;
     QStringList backends;
     QStringList prefixes;
     QString strFilter;
     QString strTitle;
     QString allType;
+    QString strLastFolder;
     switch (mediumType)
     {
         case VBoxDefs::MediumType_HardDisk:
@@ -2648,6 +2666,11 @@ QString VBoxGlobal::openMediumWithFileOpenDialog(VBoxDefs::MediumType mediumType
             filters = vboxGlobal().HDDBackends();
             strTitle = tr ("Choose a virtual hard disk file");
             allType = tr ("hard disk");
+            strLastFolder = virtualBox().GetExtraData(VBoxDefs::GUI_RecentFolderHD);
+            if (strLastFolder.isEmpty())
+                strLastFolder = virtualBox().GetExtraData(VBoxDefs::GUI_RecentFolderCD);
+            if (strLastFolder.isEmpty())
+                strLastFolder = virtualBox().GetExtraData(VBoxDefs::GUI_RecentFolderFD);
             break;
         }
         case VBoxDefs::MediumType_DVD:
@@ -2655,6 +2678,11 @@ QString VBoxGlobal::openMediumWithFileOpenDialog(VBoxDefs::MediumType mediumType
             filters = vboxGlobal().DVDBackends();
             strTitle = tr ("Choose a virtual CD/DVD disk file");
             allType = tr ("CD/DVD-ROM disk");
+            strLastFolder = virtualBox().GetExtraData(VBoxDefs::GUI_RecentFolderCD);
+            if (strLastFolder.isEmpty())
+                strLastFolder = virtualBox().GetExtraData(VBoxDefs::GUI_RecentFolderHD);
+            if (strLastFolder.isEmpty())
+                strLastFolder = virtualBox().GetExtraData(VBoxDefs::GUI_RecentFolderFD);
             break;
         }
         case VBoxDefs::MediumType_Floppy:
@@ -2662,11 +2690,18 @@ QString VBoxGlobal::openMediumWithFileOpenDialog(VBoxDefs::MediumType mediumType
             filters = vboxGlobal().FloppyBackends();
             strTitle = tr ("Choose a virtual floppy disk file");
             allType = tr ("floppy disk");
+            strLastFolder = virtualBox().GetExtraData(VBoxDefs::GUI_RecentFolderFD);
+            if (strLastFolder.isEmpty())
+                strLastFolder = virtualBox().GetExtraData(VBoxDefs::GUI_RecentFolderCD);
+            if (strLastFolder.isEmpty())
+                strLastFolder = virtualBox().GetExtraData(VBoxDefs::GUI_RecentFolderHD);
             break;
         }
         default:
             break;
     }
+    QString strHomeFolder = fUseLastFolder && !strLastFolder.isEmpty() ? strLastFolder :
+                            strDefaultFolder.isEmpty() ? vboxGlobal().virtualBox().GetHomeFolder() : strDefaultFolder;
 
     /* Prepare filters and backends: */
     for (int i = 0; i < filters.count(); ++i)
@@ -2702,22 +2737,26 @@ QString VBoxGlobal::openMedium(VBoxDefs::MediumType mediumType, QString strMediu
     CVirtualBox vbox = vboxGlobal().virtualBox();
 
     /* Remember the path of the last chosen medium: */
-    m_strLastFolder = QFileInfo(strMediumLocation).absolutePath();
+    QString strRecentFolderKey = mediumType == VBoxDefs::MediumType_HardDisk ? VBoxDefs::GUI_RecentFolderHD :
+                                 mediumType == VBoxDefs::MediumType_DVD ? VBoxDefs::GUI_RecentFolderCD :
+                                 mediumType == VBoxDefs::MediumType_Floppy ? VBoxDefs::GUI_RecentFolderFD :
+                                 QString();
+    vbox.SetExtraData(strRecentFolderKey, QFileInfo(strMediumLocation).absolutePath());
 
     /* Update recently used list: */
-    QString strRecentAddress = mediumType == VBoxDefs::MediumType_HardDisk ? VBoxDefs::GUI_RecentListHD :
+    QString strRecentListKey = mediumType == VBoxDefs::MediumType_HardDisk ? VBoxDefs::GUI_RecentListHD :
                                mediumType == VBoxDefs::MediumType_DVD ? VBoxDefs::GUI_RecentListCD :
                                mediumType == VBoxDefs::MediumType_Floppy ? VBoxDefs::GUI_RecentListFD :
                                QString();
-    QStringList recentMediumList = virtualBox().GetExtraData(strRecentAddress).split(';');
+    QStringList recentMediumList = vbox.GetExtraData(strRecentListKey).split(';');
     if (recentMediumList.contains(strMediumLocation))
         recentMediumList.removeAll(strMediumLocation);
     recentMediumList.prepend(strMediumLocation);
     while(recentMediumList.size() > 5) recentMediumList.removeLast();
-    virtualBox().SetExtraData(strRecentAddress, recentMediumList.join(";"));
+    vbox.SetExtraData(strRecentListKey, recentMediumList.join(";"));
 
     /* Open corresponding medium: */
-    CMedium comMedium = vbox.OpenMedium(strMediumLocation, mediumTypeToGlobal(mediumType), KAccessMode_ReadWrite);
+    CMedium comMedium = vbox.OpenMedium(strMediumLocation, mediumTypeToGlobal(mediumType), KAccessMode_ReadWrite, false);
 
     if (vbox.isOk())
     {
@@ -2948,10 +2987,15 @@ void VBoxGlobal::retranslateUi()
         tr ("Internal Network", "NetworkAttachmentType");
     mNetworkAttachmentTypes [KNetworkAttachmentType_HostOnly] =
         tr ("Host-only Adapter", "NetworkAttachmentType");
-#ifdef VBOX_WITH_VDE
-    mNetworkAttachmentTypes [KNetworkAttachmentType_VDE] =
-        tr ("VDE Adapter", "NetworkAttachmentType");
-#endif
+    mNetworkAttachmentTypes [KNetworkAttachmentType_Generic] =
+        tr ("Generic Driver", "NetworkAttachmentType");
+
+    mNetworkAdapterPromiscModePolicyTypes [KNetworkAdapterPromiscModePolicy_Deny] =
+        tr ("Deny", "NetworkAdapterPromiscModePolicyType");
+    mNetworkAdapterPromiscModePolicyTypes [KNetworkAdapterPromiscModePolicy_AllowNetwork] =
+        tr ("Allow VMs", "NetworkAdapterPromiscModePolicyType");
+    mNetworkAdapterPromiscModePolicyTypes [KNetworkAdapterPromiscModePolicy_AllowAll] =
+        tr ("Allow All", "NetworkAdapterPromiscModePolicyType");
 
     mNATProtocolTypes [KNATProtocol_UDP] =
         tr ("UDP", "NATProtocolType");
@@ -3015,12 +3059,11 @@ void VBoxGlobal::retranslateUi()
          it != mMediaList.end(); ++ it)
         it->refresh();
 
-#if defined (Q_WS_PM) || defined (Q_WS_X11)
-    /* As PM and X11 do not (to my knowledge) have functionality for providing
-     * human readable key names, we keep a table of them, which must be
-     * updated when the language is changed. */
-    QIHotKeyEdit::retranslateUi();
-#endif
+#ifdef Q_WS_X11
+    /* As X11 do not have functionality for providing human readable key names,
+     * we keep a table of them, which must be updated when the language is changed. */
+    UIHotKey::retranslateKeyNames();
+#endif /* Q_WS_X11 */
 }
 
 // public static stuff
@@ -3778,27 +3821,12 @@ QString VBoxGlobal::formatSize (quint64 aSize, uint aDecimal /* = 2 */,
     return QString ("%1 %2").arg (number).arg (Suffixes [suffix]);
 }
 
-/* static */
-bool VBoxGlobal::shouldWarnAboutToLowVRAM(const CMachine *pMachine /* = 0 */)
-{
-    static QStringList osList = QStringList()
-        << "Other" << "DOS" << "Netware" << "L4" << "QNX" << "JRockitVE";
-
-    bool fResult = true;
-    if (   pMachine
-        && !pMachine->isNull()
-        && osList.contains(pMachine->GetOSTypeId()))
-        fResult = false;
-
-    return fResult;
-}
-
 /**
  *  Returns the required video memory in bytes for the current desktop
  *  resolution at maximum possible screen depth in bpp.
  */
 /* static */
-quint64 VBoxGlobal::requiredVideoMemory (CMachine *aMachine /* = 0 */, int cMonitors /* = 1 */)
+quint64 VBoxGlobal::requiredVideoMemory(const QString &strGuestOSTypeId, int cMonitors /* = 1 */)
 {
     QSize desktopRes = QApplication::desktop()->screenGeometry().size();
     QDesktopWidget *pDW = QApplication::desktop();
@@ -3836,23 +3864,19 @@ quint64 VBoxGlobal::requiredVideoMemory (CMachine *aMachine /* = 0 */, int cMoni
     quint64 needMBytes = needBits % (8 * _1M) ? needBits / (8 * _1M) + 1 :
                          needBits / (8 * _1M) /* convert to megabytes */;
 
-    if (aMachine && !aMachine->isNull())
+    if (strGuestOSTypeId.startsWith("Windows"))
     {
-       QString typeId = aMachine->GetOSTypeId();
-       if (typeId.startsWith("Windows"))
-       {
-           /* Windows guests need offscreen VRAM too for graphics acceleration features. */
+       /* Windows guests need offscreen VRAM too for graphics acceleration features: */
 #ifdef VBOX_WITH_CRHGSMI
-           if (typeId == "WindowsVista" || typeId == "Windows7")
-           {
-               /* wddm mode, there are two surfaces for each screen: shadow & primary */
-               needMBytes *= 3;
-           }
-           else
-#endif
-           {
-               needMBytes *= 2;
-           }
+       if (strGuestOSTypeId == "WindowsVista" || strGuestOSTypeId == "Windows7")
+       {
+           /* wddm mode, there are two surfaces for each screen: shadow & primary */
+           needMBytes *= 3;
+       }
+       else
+#endif /* VBOX_WITH_CRHGSMI */
+       {
+           needMBytes *= 2;
        }
     }
 
@@ -4205,14 +4229,18 @@ QString VBoxGlobal::removeAccelMark (const QString &aText)
 }
 
 /* static */
-QString VBoxGlobal::insertKeyToActionText (const QString &aText, const QString &aKey)
+QString VBoxGlobal::insertKeyToActionText(const QString &strText, const QString &strKey)
 {
 #ifdef Q_WS_MAC
-    QString key ("%1 (Host+%2)");
+    QString pattern("%1 (Host+%2)");
 #else
-    QString key ("%1 \tHost+%2");
+    QString pattern("%1 \tHost+%2");
 #endif
-    return key.arg (aText).arg (QKeySequence (aKey).toString (QKeySequence::NativeText));
+    if (   strKey.isEmpty()
+        || strKey.compare("None", Qt::CaseInsensitive) == 0)
+        return strText;
+    else
+        return pattern.arg(strText).arg(QKeySequence(strKey).toString(QKeySequence::NativeText));
 }
 
 /* static */
@@ -4403,14 +4431,14 @@ quint64 VBoxGlobal::required2DOffscreenVideoMemory()
 
 #ifdef VBOX_WITH_CRHGSMI
 /* static */
-quint64 VBoxGlobal::required3DWddmOffscreenVideoMemory(CMachine *aMachine /* = 0 */, int cMonitors /* = 1 */)
+quint64 VBoxGlobal::required3DWddmOffscreenVideoMemory(const QString &strGuestOSTypeId, int cMonitors /* = 1 */)
 {
     cMonitors = RT_MAX(cMonitors, 1);
-    quint64 cbSize = VBoxGlobal::requiredVideoMemory(aMachine, 1); /* why not cMonitors? */
+    quint64 cbSize = VBoxGlobal::requiredVideoMemory(strGuestOSTypeId, 1); /* why not cMonitors? */
     cbSize += 64 * _1M;
     return cbSize;
 }
-#endif
+#endif /* VBOX_WITH_CRHGSMI */
 
 #ifdef Q_WS_MAC
 bool VBoxGlobal::isSheetWindowsAllowed(QWidget *pParent) const
@@ -4761,16 +4789,12 @@ void VBoxGlobal::init()
     mVerString += " [DEBUG]";
 #endif
 
-#ifdef Q_WS_WIN
-    /* COM for the main thread is initialized in main() */
-#else
-    HRESULT rc = COMBase::InitializeCOM();
+    HRESULT rc = COMBase::InitializeCOM(true);
     if (FAILED (rc))
     {
         vboxProblem().cannotInitCOM (rc);
         return;
     }
-#endif
 
     mVBox.createInstance (CLSID_VirtualBox);
     if (!mVBox.isOk())
@@ -4912,8 +4936,8 @@ void VBoxGlobal::init()
         {"NetBSD_64",       ":/os_netbsd_64.png"},
         {"Solaris",         ":/os_solaris.png"},
         {"Solaris_64",      ":/os_solaris_64.png"},
-        {"OpenSolaris",     ":/os_opensolaris.png"},
-        {"OpenSolaris_64",  ":/os_opensolaris_64.png"},
+        {"OpenSolaris",     ":/os_oraclesolaris.png"},
+        {"OpenSolaris_64",  ":/os_oraclesolaris_64.png"},
         {"QNX",             ":/os_qnx.png"},
         {"MacOS",           ":/os_macosx.png"},
         {"MacOS_64",        ":/os_macosx_64.png"},
@@ -5248,11 +5272,7 @@ void VBoxGlobal::cleanup()
      * before uninitializing the COM subsystem. */
     QApplication::removePostedEvents (this);
 
-#ifdef Q_WS_WIN
-    /* COM for the main thread is shutdown in main() */
-#else
     COMBase::CleanupCOM();
-#endif
 
     mValid = false;
 }

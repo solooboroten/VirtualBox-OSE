@@ -1,11 +1,10 @@
-/* $Id: listeners.h 33976 2010-11-11 11:22:35Z vboxsync $ */
+/* $Id: listeners.h 36536 2011-04-04 15:43:40Z vboxsync $ */
 /** @file
- *
  * Listeners helpers.
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2010-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -27,90 +26,146 @@
 
 #ifndef ___VBox_com_listeners_h
 #define ___VBox_com_listeners_h
+
 #include <VBox/com/com.h>
-#include <VBox/com/defs.h>
-#include <iprt/asm.h>
+#include <VBox/com/VirtualBox.h>
 
 #ifdef VBOX_WITH_XPCOM
-#define NS_IMPL_QUERY_HEAD_INLINE()                                   \
-NS_IMETHODIMP QueryInterface(REFNSIID aIID, void** aInstancePtr)      \
-{                                                                     \
-  NS_ASSERTION(aInstancePtr,                                          \
-               "QueryInterface requires a non-NULL destination!");    \
-  nsISupports* foundInterface;
-#define NS_INTERFACE_MAP_BEGIN_INLINE()      NS_IMPL_QUERY_HEAD_INLINE()
-#define NS_IMPL_QUERY_INTERFACE1_INLINE(_i1)                                 \
-  NS_INTERFACE_MAP_BEGIN_INLINE()                                            \
-    NS_INTERFACE_MAP_ENTRY(_i1)                                              \
-    NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, _i1)                       \
-  NS_INTERFACE_MAP_END
+# define NS_IMPL_QUERY_HEAD_INLINE() \
+NS_IMETHODIMP QueryInterface(REFNSIID aIID, void **aInstancePtr) \
+{ \
+    NS_ASSERTION(aInstancePtr, "QueryInterface requires a non-NULL destination!"); \
+    nsISupports *foundInterface;
+
+# define NS_INTERFACE_MAP_BEGIN_INLINE()      NS_IMPL_QUERY_HEAD_INLINE()
+
+# define NS_IMPL_QUERY_INTERFACE1_INLINE(a_i1) \
+    NS_INTERFACE_MAP_BEGIN_INLINE() \
+        NS_INTERFACE_MAP_ENTRY(a_i1) \
+        NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, a_i1) \
+    NS_INTERFACE_MAP_END
 #endif
 
-template <class T, class TParam = void* >
-class ListenerImpl : VBOX_SCRIPTABLE_IMPL(IEventListener)
+template <class T, class TParam = void *>
+class ListenerImpl :
+     public CComObjectRootEx<CComMultiThreadModel>,
+     VBOX_SCRIPTABLE_IMPL(IEventListener)
 {
-    T                 mListener;
-    volatile uint32_t mRefCnt;
+    T*                mListener;
 
-    virtual ~ListenerImpl()
-    {}
+#ifdef RT_OS_WINDOWS
+    /* FTM stuff */
+    CComPtr <IUnknown>   m_pUnkMarshaler;
+#else
+    nsAutoRefCnt mRefCnt;
+    NS_DECL_OWNINGTHREAD
+#endif
 
 public:
-    ListenerImpl(TParam param)
-    : mListener(param), mRefCnt(1)
+    ListenerImpl()
     {
     }
 
-    ListenerImpl()
-    : mRefCnt(1)
+    virtual ~ListenerImpl()
     {
+    }
+
+    HRESULT init(T* aListener, TParam param)
+    {
+       mListener = aListener;
+       return mListener->init(param);
+    }
+
+    HRESULT init(T* aListener)
+    {
+       mListener = aListener;
+       return mListener->init();
+    }
+
+    void uninit()
+    {
+       if (mListener)
+       {
+          mListener->uninit();
+          delete mListener;
+          mListener = 0;
+       }
+    }
+
+    HRESULT   FinalConstruct()
+    {
+#ifdef RT_OS_WINDOWS
+       return CoCreateFreeThreadedMarshaler(this, &m_pUnkMarshaler.p);
+#else
+       return S_OK;
+#endif
+    }
+
+    void   FinalRelease()
+    {
+      uninit();
+#ifdef RT_OS_WINDOWS
+      m_pUnkMarshaler.Release();
+#endif
     }
 
     T* getWrapped()
     {
-        return &mListener;
+        return mListener;
     }
 
-    /* On Windows QI implemented by VBOX_SCRIPTABLE_DISPATCH_IMPL */
-#ifndef RT_OS_WINDOWS
+    DECLARE_NOT_AGGREGATABLE(ListenerImpl)
+
+    DECLARE_PROTECT_FINAL_CONSTRUCT()
+
+#ifdef RT_OS_WINDOWS
+    BEGIN_COM_MAP(ListenerImpl)
+        COM_INTERFACE_ENTRY(IEventListener)
+        COM_INTERFACE_ENTRY2(IDispatch, IEventListener)
+        COM_INTERFACE_ENTRY_AGGREGATE(IID_IMarshal, m_pUnkMarshaler.p)
+    END_COM_MAP()
+#else
+    NS_IMETHOD_(nsrefcnt) AddRef(void)
+    {
+        NS_PRECONDITION(PRInt32(mRefCnt) >= 0, "illegal refcnt");
+        nsrefcnt count;
+        count = PR_AtomicIncrement((PRInt32*)&mRefCnt);
+        NS_LOG_ADDREF(this, count, "ListenerImpl", sizeof(*this));
+        return count;
+    }
+
+    NS_IMETHOD_(nsrefcnt) Release(void)
+    {
+        nsrefcnt count;
+        NS_PRECONDITION(0 != mRefCnt, "dup release");
+        count = PR_AtomicDecrement((PRInt32 *)&mRefCnt);
+        NS_LOG_RELEASE(this, count, "ListenerImpl");
+        if (0 == count) {
+            mRefCnt = 1; /* stabilize */
+            /* enable this to find non-threadsafe destructors: */
+            /* NS_ASSERT_OWNINGTHREAD(_class); */
+            NS_DELETEXPCOM(this);
+            return 0;
+        }
+        return count;
+    }
+
     NS_IMPL_QUERY_INTERFACE1_INLINE(IEventListener)
 #endif
 
-#ifdef RT_OS_WINDOWS
-    STDMETHOD_(ULONG, AddRef)()
-#else
-    NS_IMETHOD_(nsrefcnt) AddRef(void)
-#endif
-    {
-        return ASMAtomicIncU32(&mRefCnt);
-    }
-
-#ifdef RT_OS_WINDOWS
-    STDMETHOD_(ULONG, Release)()
-#else
-    NS_IMETHOD_(nsrefcnt) Release(void)
-#endif
-    {
-        uint32_t cnt = ::ASMAtomicDecU32(&mRefCnt);
-        if (cnt == 0)
-            delete this;
-        return cnt;
-    }
-
-    VBOX_SCRIPTABLE_DISPATCH_IMPL(IEventListener)
 
     STDMETHOD(HandleEvent)(IEvent * aEvent)
     {
         VBoxEventType_T aType = VBoxEventType_Invalid;
         aEvent->COMGETTER(Type)(&aType);
-        return mListener.HandleEvent(aType, aEvent);
+        return mListener->HandleEvent(aType, aEvent);
     }
 };
 
 #ifdef VBOX_WITH_XPCOM
-#define VBOX_LISTENER_DECLARE(klazz) NS_DECL_CLASSINFO(klazz)
+# define VBOX_LISTENER_DECLARE(klazz) NS_DECL_CLASSINFO(klazz)
 #else
-#define VBOX_LISTENER_DECLARE(klazz)
+# define VBOX_LISTENER_DECLARE(klazz)
 #endif
 
 #endif

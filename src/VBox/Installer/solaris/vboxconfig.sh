@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: vboxconfig.sh 35097 2010-12-14 15:54:47Z vboxsync $
+# $Id: vboxconfig.sh 37423 2011-06-12 18:37:56Z vboxsync $
 
 #
 # VirtualBox Configuration Script, Solaris host.
@@ -17,6 +17,9 @@
 
 # Never use exit 2 or exit 20 etc., the return codes are used in
 # SRv4 postinstall procedures which carry special meaning. Just use exit 1 for failure.
+
+LANG=C
+export LANG
 
 # S10 or OpenSoalris
 HOST_OS_MAJORVERSION=`uname -r`
@@ -52,7 +55,10 @@ DESC_VBOXNET="NetAdapter"
 MOD_VBOXNET_INST=32
 
 MOD_VBOXFLT=vboxflt
-DESC_VBOXFLT="NetFilter"
+DESC_VBOXFLT="NetFilter (STREAMS)"
+
+MOD_VBOXBOW=vboxbow
+DESC_VBOXBOW="NetFilter (Crossbow)"
 
 # No Separate VBI since (3.1)
 #MOD_VBI=vbi
@@ -490,10 +496,19 @@ install_drivers()
         load_module "drv/$MOD_VBOXNET" "$DESC_VBOXNET" "$FATALOP"
     fi
 
-    # Load VBoxNetFlt
-    if test -f "$DIR_CONF/vboxflt.conf"; then
-        add_driver "$MOD_VBOXFLT" "$DESC_VBOXFLT" "$FATALOP"
-        load_module "drv/$MOD_VBOXFLT" "$DESC_VBOXFLT" "$FATALOP"
+    # If "/etc/vboxinst_vboxflt" exists or if host is Solaris 10 or S11 versions < snv_159 then load vboxflt driver.
+    if test -f /etc/vboxinst_vboxflt || test "$HOST_OS_MAJORVERSION" = "5.10" || test "$HOST_OS_MINORVERSION" -lt 159 || test ! -f "$DIR_CONF/vboxbow.conf"; then
+        # Load VBoxNetFlt
+        if test -f "$DIR_CONF/vboxflt.conf"; then
+            add_driver "$MOD_VBOXFLT" "$DESC_VBOXFLT" "$FATALOP"
+            load_module "drv/$MOD_VBOXFLT" "$DESC_VBOXFLT" "$FATALOP"
+        fi
+    else
+        # Load VBoxNetBow
+        if test -f "$DIR_CONF/vboxbow.conf"; then
+            add_driver "$MOD_VBOXBOW" "$DESC_VBOXBOW" "$FATALOP"
+            load_module "drv/$MOD_VBOXBOW" "$DESC_VBOXBOW" "$FATALOP"
+        fi
     fi
 
     # Load VBoxUSBMon, VBoxUSB
@@ -567,6 +582,9 @@ remove_drivers()
 
     unload_module "$MOD_VBOXFLT" "$DESC_VBOXFLT" "$fatal"
     rem_driver "$MOD_VBOXFLT" "$DESC_VBOXFLT" "$fatal"
+
+    unload_module "$MOD_VBOXBOW" "$DESC_VBOXBOW" "$fatal"
+    rem_driver "$MOD_VBOXBOW" "$DESC_VBOXBOW" "$fatal"
 
     unload_module "$MOD_VBOXNET" "$DESC_VBOXNET" "$fatal"
     rem_driver "$MOD_VBOXNET" "$DESC_VBOXNET" "$fatal"
@@ -661,6 +679,28 @@ stop_process()
 }
 
 
+# stop_service(servicename, shortFMRI-suitable for grep, full FMRI)
+# failure: non fatal
+stop_service()
+{
+    if test -z "$1" || test -z "$2" || test -z "$3"; then
+        errorprint "missing argument to stop_service()"
+        exit 1
+    fi
+    servicefound=`$BIN_SVCS -a | grep "$2" 2>/dev/null`
+    if test ! -z "$servicefound"; then
+        $BIN_SVCADM disable -s $3
+        # Don't delete the manifest, this is handled by the manifest class action
+        # $BIN_SVCCFG delete $3
+        if test "$?" -eq 0; then
+            subprint "Unloaded: $1"
+        else
+            subprint "Unloading: $1  ...ERROR(S)."
+        fi
+    fi
+}
+
+
 # cleanup_install([fatal])
 # failure: depends on [fatal]
 cleanup_install()
@@ -672,31 +712,10 @@ cleanup_install()
         return 0
     fi
 
-    # stop webservice
-    servicefound=`$BIN_SVCS -a | grep "virtualbox/webservice" 2>/dev/null`
-    if test ! -z "$servicefound"; then
-        $BIN_SVCADM disable -s svc:/application/virtualbox/webservice:default
-        # Don't delete the manifest, this is handled by the manifest class action
-        # $BIN_SVCCFG delete svc:/application/virtualbox/webservice:default
-        if test "$?" -eq 0; then
-            subprint "Unloaded: Web service"
-        else
-            subprint "Unloading: Web service  ...ERROR(S)."
-        fi
-    fi
-
-    # stop zoneaccess service
-    servicefound=`$BIN_SVCS -a | grep "virtualbox/zoneaccess" 2>/dev/null`
-    if test ! -z "$servicefound"; then
-        $BIN_SVCADM disable -s svc:/application/virtualbox/zoneaccess
-        # Don't delete the manifest, this is handled by the manifest class action
-        # $BIN_SVCCFG delete svc:/application/virtualbox/zoneaccess
-        if test "$?" -eq 0; then
-            subprint "Unloaded: Zone access service"
-        else
-            subprint "Unloading: Zone access service  ...ERROR(S)."
-        fi
-    fi
+    # stop the services
+    stop_service "Web service" "virtualbox/webservice" "svc:/application/virtualbox/webservice:default"
+    stop_service "Balloon control service" "virtualbox/balloonctrl" "svc:/application/virtualbox/balloonctrl:default"
+    stop_service "Zone access service" "virtualbox/zoneaccess" "svc:/application/virtualbox/zoneaccess:default"
 
     # unplumb all vboxnet instances for non-remote installs
     inst=0
@@ -737,6 +756,7 @@ cleanup_install()
 # !! failure is always fatal
 postinstall()
 {
+    infoprint "Detected Solaris $HOST_OS_MAJORVERSION Version $HOST_OS_MINORVERSION"
     infoprint "Loading VirtualBox kernel modules..."
     install_drivers
 
@@ -792,18 +812,16 @@ postinstall()
             infoprint "Configuring services..."
             if test "$REMOTEINST" -eq 1; then
                 subprint "Skipped for targetted installs."
-            fi
-        fi
-
-        # Enable Zone access service for non-remote installs, other services (Webservice) are delivered disabled by the manifest class action
-        if test "$REMOTEINST" -eq 0; then
-            servicefound=`$BIN_SVCS -a | grep "virtualbox/zoneaccess" | grep "disabled" 2>/dev/null`
-            if test ! -z "$servicefound"; then
-                /usr/sbin/svcadm enable -s svc:/application/virtualbox/zoneaccess
-                if test "$?" -eq 0; then
-                    subprint "Loaded: Zone access service"
-                else
-                    subprint "Loading Zone access service  ...FAILED."
+            else
+                # Enable Zone access service for non-remote installs, other services (Webservice) are delivered disabled by the manifest class action
+                servicefound=`$BIN_SVCS -a | grep "virtualbox/zoneaccess" | grep "disabled" 2>/dev/null`
+                if test ! -z "$servicefound"; then
+                    /usr/sbin/svcadm enable -s svc:/application/virtualbox/zoneaccess
+                    if test "$?" -eq 0; then
+                        subprint "Loaded: Zone access service"
+                    else
+                        subprint "Loading Zone access service  ...FAILED."
+                    fi
                 fi
             fi
         fi
@@ -812,7 +830,7 @@ postinstall()
         # and icons. There is still some delay until the GUI picks it up,
         # but that cannot be helped.
         if test -d $PKG_INSTALL_ROOT/usr/share/icons; then
-            infoprint "Installing MIME types and icons"
+            infoprint "Installing MIME types and icons..."
             if test "$REMOTEINST" -eq 0; then
                 /usr/bin/update-mime-database /usr/share/mime >/dev/null 2>&1
                 /usr/bin/update-desktop-database -q 2>/dev/null
@@ -953,6 +971,7 @@ case "$drvop" in
     ;;
 --setupdrivers)
     remove_drivers "$fatal"
+    infoprint "Installing VirtualBox drivers:"
     install_drivers
     ;;
 *)

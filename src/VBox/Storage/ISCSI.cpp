@@ -1,10 +1,10 @@
-/* $Id: ISCSI.cpp 33567 2010-10-28 15:37:21Z vboxsync $ */
+/* $Id: ISCSI.cpp 37688 2011-06-29 15:26:05Z vboxsync $ */
 /** @file
  * iSCSI initiator driver, VD backend.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -40,6 +40,9 @@
 /*******************************************************************************
 *   Defined Constants And Macros                                               *
 *******************************************************************************/
+
+/** The maximum number of release log entries per image. */
+#define MAX_LOG_REL_ERRORS  1024
 
 /** Default port number to use for iSCSI. */
 #define ISCSI_DEFAULT_PORT 3260
@@ -581,7 +584,7 @@ typedef struct ISCSIIMAGE
 
     /** Pointer to the target hostname. */
     char                *pszHostname;
-    /** Pointer to the target hostname. */
+    /** Port to use on the target host. */
     uint32_t            uPort;
     /** Socket handle of the TCP connection. */
     VDSOCKET            Socket;
@@ -626,6 +629,9 @@ typedef struct ISCSIIMAGE
     unsigned            cCmdsWaiting;
     /** Table of commands waiting for a response from the target. */
     PISCSICMD           aCmdsWaiting[ISCSI_CMD_WAITING_ENTRIES];
+
+    /** Release log counter. */
+    unsigned            cLogRelErrors;
 } ISCSIIMAGE;
 
 
@@ -697,6 +703,20 @@ static void chap_md5_generate_challenge(uint8_t *pbChallenge, size_t *pcbChallen
 static void chap_md5_compute_response(uint8_t *pbResponse, uint8_t id, const uint8_t *pbChallenge, size_t cbChallenge,
                                       const uint8_t *pbSecret, size_t cbSecret);
 
+/**
+ * Internal: release log wrapper limiting the number of entries.
+ */
+DECLINLINE(void) iscsiLogRel(PISCSIIMAGE pImage, const char *pcszFormat, ...)
+{
+    if (pImage->cLogRelErrors++ < MAX_LOG_REL_ERRORS)
+    {
+        va_list va;
+
+        va_start(va, pcszFormat);
+        LogRel(("%N\n", pcszFormat, &va));
+        va_end(va);
+    }
+}
 
 /**
  * Internal: signal an error to the frontend.
@@ -890,7 +910,25 @@ static int iscsiTransportConnect(PISCSIIMAGE pImage)
         if (!pImage->pszInitiatorName)
             return VERR_NO_MEMORY;
     }
+    LogRel(("iSCSI: connect from initiator %s with source port %u\n", pImage->pszInitiatorName, pImage->ISID & 65535));
     return VINF_SUCCESS;
+}
+
+
+static int iscsiTransportClose(PISCSIIMAGE pImage)
+{
+    int rc;
+
+    LogFlowFunc(("(%s:%d)\n", pImage->pszHostname, pImage->uPort));
+    if (iscsiIsClientConnected(pImage))
+    {
+        LogRel(("iSCSI: disconnect from initiator %s with source port %u\n", pImage->pszInitiatorName, pImage->ISID & 65535));
+        rc = pImage->pInterfaceNetCallbacks->pfnClientClose(pImage->Socket);
+    }
+    else
+        rc = VINF_SUCCESS;
+    LogFlowFunc(("returns %Rrc\n", rc));
+    return rc;
 }
 
 
@@ -937,7 +975,7 @@ static int iscsiTransportRead(PISCSIIMAGE pImage, PISCSIRES paResponse, unsigned
             if (cbActuallyRead == 0)
             {
                 /* The other end has closed the connection. */
-                pImage->pInterfaceNetCallbacks->pfnClientClose(pImage->Socket);
+                iscsiTransportClose(pImage);
                 pImage->state = ISCSISTATE_FREE;
                 rc = VERR_NET_CONNECTION_RESET;
                 break;
@@ -1095,10 +1133,7 @@ static int iscsiTransportOpen(PISCSIIMAGE pImage)
     uint16_t uPort;
 
     /* Clean up previous connection data. */
-    if (iscsiIsClientConnected(pImage))
-    {
-        pImage->pInterfaceNetCallbacks->pfnClientClose(pImage->Socket);
-    }
+    iscsiTransportClose(pImage);
     if (pImage->pszHostname)
     {
         RTMemFree(pImage->pszHostname);
@@ -1186,22 +1221,6 @@ static int iscsiTransportOpen(PISCSIIMAGE pImage)
         pImage->uPort = 0;
     }
 
-    LogFlowFunc(("returns %Rrc\n", rc));
-    return rc;
-}
-
-
-static int iscsiTransportClose(PISCSIIMAGE pImage)
-{
-    int rc;
-
-    LogFlowFunc(("(%s:%d)\n", pImage->pszHostname, pImage->uPort));
-    if (iscsiIsClientConnected(pImage))
-    {
-        rc = pImage->pInterfaceNetCallbacks->pfnClientClose(pImage->Socket);
-    }
-    else
-        rc = VINF_SUCCESS;
     LogFlowFunc(("returns %Rrc\n", rc));
     return rc;
 }
@@ -1957,6 +1976,7 @@ out_release:
          * about 30-40 seconds, or the guest will lose its patience. */
         iscsiTransportClose(pImage);
         pImage->state = ISCSISTATE_FREE;
+        rc = VERR_BROKEN_PIPE;
     }
     RTSemMutexRelease(pImage->Mutex);
 
@@ -2218,7 +2238,7 @@ static void iscsiPDUTxAdd(PISCSIIMAGE pImage, PISCSIPDUTX pIScsiPDUTx, bool fFro
 {
     if (!fFront)
     {
-        /* Link the PDU at the tail of the list. */
+        /* Insert PDU at the tail of the list. */
         if (!pImage->pIScsiPDUTxHead)
             pImage->pIScsiPDUTxHead = pIScsiPDUTx;
         else
@@ -2227,7 +2247,7 @@ static void iscsiPDUTxAdd(PISCSIIMAGE pImage, PISCSIPDUTX pIScsiPDUTx, bool fFro
     }
     else
     {
-        /* Link PDU to at the front of the list. */
+        /* Insert PDU at the beginning of the list. */
         pIScsiPDUTx->pNext = pImage->pIScsiPDUTxHead;
         pImage->pIScsiPDUTxHead = pIScsiPDUTx;
         if (!pImage->pIScsiPDUTxTail)
@@ -2483,8 +2503,13 @@ static int iscsiRecvPDUProcess(PISCSIIMAGE pImage, PISCSIRES paRes, uint32_t cnR
                     pIScsiPDUTx->cbSgLeft = sizeof(pIScsiPDUTx->aBHS);
                     RTSgBufInit(&pIScsiPDUTx->SgBuf, pIScsiPDUTx->aISCSIReq, cnISCSIReq);
 
-                    /* Link the PDU to the list. */
-                    iscsiPDUTxAdd(pImage, pIScsiPDUTx, false /* fFront */);
+                    /*
+                     * Link the PDU to the list.
+                     * Insert at the front of the list to send the response as soon as possible
+                     * to avoid frequent reconnects for a slow connection when there are many PDUs
+                     * waiting.
+                     */
+                    iscsiPDUTxAdd(pImage, pIScsiPDUTx, true /* fFront */);
 
                     /* Start transfer of a PDU if there is no one active at the moment. */
                     if (!pImage->pIScsiPDUTxCur)
@@ -3219,6 +3244,9 @@ static void iscsiReattach(PISCSIIMAGE pImage)
         RTMemFree(pIScsiPDUTx);
     }
 
+    /* Clear the tail pointer (safety precaution). */
+    pImage->pIScsiPDUTxTail = NULL;
+
     /* Clear the current PDU too. */
     if (pImage->pIScsiPDUTxCur)
     {
@@ -3379,7 +3407,7 @@ static DECLCALLBACK(int) iscsiIoThreadWorker(RTTHREAD ThreadSelf, void *pvUser)
                 if (rc == VERR_BROKEN_PIPE)
                     iscsiReattach(pImage);
                 else if (RT_FAILURE(rc))
-                    LogRel(("iSCSI: Handling incoming request failed %Rrc\n", rc));
+                    iscsiLogRel(pImage, "iSCSI: Handling incoming request failed %Rrc\n", rc);
             }
 
             if (fEvents & VD_INTERFACETCPNET_EVT_WRITE)
@@ -3387,7 +3415,14 @@ static DECLCALLBACK(int) iscsiIoThreadWorker(RTTHREAD ThreadSelf, void *pvUser)
                 LogFlow(("The socket is writable\n"));
                 rc = iscsiSendPDUAsync(pImage);
                 if (RT_FAILURE(rc))
-                    LogRel(("iSCSI: Sending PDU failed %Rrc\n", rc));
+                {
+                    /*
+                     * Something unexpected happened, log the error and try to reset everything
+                     * by reattaching to the target.
+                     */
+                    iscsiLogRel(pImage, "iSCSI: Sending PDU failed %Rrc\n", rc);
+                    iscsiReattach(pImage);
+                }
             }
 
             if (fEvents & VD_INTERFACETCPNET_EVT_ERROR)
@@ -3397,9 +3432,7 @@ static DECLCALLBACK(int) iscsiIoThreadWorker(RTTHREAD ThreadSelf, void *pvUser)
             }
         }
         else
-        {
-            LogRel(("iSCSI: Waiting for I/O failed rc=%Rrc\n", rc));
-        }
+            iscsiLogRel(pImage, "iSCSI: Waiting for I/O failed rc=%Rrc\n", rc);
     }
 
     return VINF_SUCCESS;
@@ -4423,6 +4456,7 @@ static int iscsiOpen(const char *pszFilename, unsigned uOpenFlags,
     pImage->pszHostname = NULL;
     pImage->pVDIfsDisk = pVDIfsDisk;
     pImage->pVDIfsImage = pVDIfsImage;
+    pImage->cLogRelErrors = 0;
 
     rc = iscsiOpenImage(pImage, uOpenFlags);
     if (RT_SUCCESS(rc))
@@ -5141,13 +5175,6 @@ static void iscsiDump(void *pBackendData)
     }
 }
 
-/** @copydoc VBOXHDDBACKEND::pfnIsAsyncIOSupported */
-static bool iscsiIsAsyncIOSupported(void *pBackendData)
-{
-    PISCSIIMAGE pImage = (PISCSIIMAGE)pBackendData;
-    return pImage->fCmdQueuingSupported;
-}
-
 /** @copydoc VBOXHDDBACKEND::pfnAsyncRead */
 static int iscsiAsyncRead(void *pBackendData, uint64_t uOffset, size_t cbToRead,
                           PVDIOCTX pIoCtx, size_t *pcbActuallyRead)
@@ -5594,8 +5621,6 @@ VBOXHDDBACKEND g_ISCSIBackend =
     NULL,
     /* pfnSetParentFilename */
     NULL,
-    /* pfnIsAsyncIOSupported */
-    iscsiIsAsyncIOSupported,
     /* pfnAsyncRead */
     iscsiAsyncRead,
     /* pfnAsyncWrite */

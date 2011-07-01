@@ -1,4 +1,4 @@
-/* $Id: socket.c 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: socket.c 37423 2011-06-12 18:37:56Z vboxsync $ */
 /** @file
  * NAT - socket handling.
  */
@@ -814,7 +814,6 @@ sorecvfrom(PNATState pData, struct socket *so)
 
             Log2((" rx error, tx icmp ICMP_UNREACH:%i\n", code));
             icmp_error(pData, so->so_m, ICMP_UNREACH, code, 0, strerror(errno));
-            m_freem(pData, so->so_m);
             so->so_m = NULL;
         }
         else
@@ -869,7 +868,7 @@ sosendto(PNATState pData, struct socket *so, struct mbuf *m)
 #if 0
     struct sockaddr_in host_addr;
 #endif
-    caddr_t buf;
+    caddr_t buf = 0;
     int mlen;
 
     LogFlow(("sosendto: so = %lx, m = %lx\n", (long)so, (long)m));
@@ -920,16 +919,24 @@ sosendto(PNATState pData, struct socket *so, struct mbuf *m)
           RT_N2H_U16(paddr->sin_port), inet_ntoa(paddr->sin_addr)));
 
     /* Don't care what port we get */
+    /*
+     * > nmap -sV -T4 -O -A -v -PU3483 255.255.255.255
+     * generates bodyless messages, annoying memmory management system.
+     */
     mlen = m_length(m, NULL);
-    buf = RTMemAlloc(mlen);
-    if (buf == NULL)
+    if (mlen > 0)
     {
-        return -1;
+        buf = RTMemAlloc(mlen);
+        if (buf == NULL)
+        {
+            return -1;
+        }
+        m_copydata(m, 0, mlen, buf);
     }
-    m_copydata(m, 0, mlen, buf);
     ret = sendto(so->s, buf, mlen, 0,
                  (struct sockaddr *)&addr, sizeof (struct sockaddr));
-    RTMemFree(buf);
+    if (buf)
+        RTMemFree(buf);
     if (ret < 0)
     {
         Log2(("UDP: sendto fails (%s)\n", strerror(errno)));
@@ -1359,7 +1366,6 @@ sorecvfrom_icmp_win(PNATState pData, struct socket *so)
             case IP_DEST_PORT_UNREACHABLE:
                 code = (code != ~0 ? code : ICMP_UNREACH_PORT);
                 icmp_error(pData, so->so_m, ICMP_UNREACH, code, 0, "Error occurred!!!");
-                m_freem(pData, so->so_m);
                 so->so_m = NULL;
                 break;
             case IP_SUCCESS: /* echo replied */
@@ -1478,7 +1484,6 @@ static void sorecvfrom_icmp_unix(PNATState pData, struct socket *so)
 
         LogRel((" udp icmp rx errno = %d (%s)\n", errno, strerror(errno)));
         icmp_error(pData, so->so_m, ICMP_UNREACH, code, 0, strerror(errno));
-        m_freem(pData, so->so_m);
         so->so_m = NULL;
         Log(("sorecvfrom_icmp_unix: 1 - step can't read IP datagramm\n"));
         return;

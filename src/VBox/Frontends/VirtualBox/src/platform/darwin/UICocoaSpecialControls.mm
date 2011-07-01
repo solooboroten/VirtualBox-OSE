@@ -1,4 +1,4 @@
-/* $Id: UICocoaSpecialControls.mm 30693 2010-07-07 09:21:11Z vboxsync $ */
+/* $Id: UICocoaSpecialControls.mm 37115 2011-05-16 22:44:58Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -37,14 +37,16 @@
 #include <QKeyEvent>
 #include <QMacCocoaViewContainer>
 
-/* 
- * Private interfaces 
+/*
+ * Private interfaces
  */
 @interface UIButtonTargetPrivate: NSObject
 {
     UICocoaButton *mRealTarget;
 }
--(id)initWithObject:(UICocoaButton*)object;
+/* The next method used to be called initWithObject, but Xcode 4.1 preview 5 
+   cannot cope with that for some reason.  Hope this doesn't break anything... */
+-(id)initWithObjectAndLionTrouble:(UICocoaButton*)object; 
 -(IBAction)clicked:(id)sender;
 @end
 
@@ -70,7 +72,7 @@
 -(id)initWithObject2:(UICocoaSearchField*)object;
 @end
 
-#if MAC_OS_X_VERSION_MIN_ALLOWED >= MAC_OS_X_VERSION_10_6
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_6
 @interface UISearchFieldDelegatePrivate: NSObject<NSTextFieldDelegate>
 #else
 @interface UISearchFieldDelegatePrivate: NSObject
@@ -78,11 +80,11 @@
 {}
 @end
 
-/* 
+/*
  * Implementation of the private interfaces
  */
 @implementation UIButtonTargetPrivate
--(id)initWithObject:(UICocoaButton*)object
+-(id)initWithObjectAndLionTrouble:(UICocoaButton*)object
 {
     self = [super init];
 
@@ -121,7 +123,7 @@
     return self;
 }
 
-- (void)dealloc 
+- (void)dealloc
 {
     [mBGColor release];
     [super dealloc];
@@ -221,7 +223,7 @@
 @end
 
 
-/* 
+/*
  * Helper functions
  */
 NSRect darwinCenterRectVerticalTo(NSRect aRect, const NSRect& aToRect)
@@ -230,8 +232,8 @@ NSRect darwinCenterRectVerticalTo(NSRect aRect, const NSRect& aToRect)
     return aRect;
 }
 
-/* 
- * Public classes 
+/*
+ * Public classes
  */
 UICocoaWrapper::UICocoaWrapper(QWidget *pParent /* = 0 */)
     : QWidget(pParent)
@@ -292,7 +294,7 @@ UICocoaButton::UICocoaButton(CocoaButtonType aType, QWidget *pParent /* = 0 */)
         }
     }
 
-    UIButtonTargetPrivate *bt = [[UIButtonTargetPrivate alloc] initWithObject:this];
+    UIButtonTargetPrivate *bt = [[UIButtonTargetPrivate alloc] initWithObjectAndLionTrouble:this];
     [m_pNativeRef setTarget:bt];
     [m_pNativeRef setAction:@selector(clicked:)];
 

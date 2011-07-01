@@ -1,4 +1,4 @@
-/* $Id: PerformanceSolaris.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: PerformanceSolaris.cpp 36090 2011-02-25 15:53:28Z vboxsync $ */
 
 /** @file
  *
@@ -84,7 +84,8 @@ CollectorSolaris::CollectorSolaris()
 
 CollectorSolaris::~CollectorSolaris()
 {
-    kstat_close(mKC);
+    if (mKC)
+        kstat_close(mKC);
 }
 
 int CollectorSolaris::getRawHostCpuLoad(uint64_t *user, uint64_t *kernel, uint64_t *idle)
@@ -190,7 +191,22 @@ int CollectorSolaris::getHostMemoryUsage(ULONG *total, ULONG *used, ULONG *avail
         if (mZFSCache)
         {
             if ((kn = (kstat_named_t *)kstat_data_lookup(mZFSCache, "size")))
-                *available += (kn->value.ul / 1024);
+            {
+                ulong_t ulSize = kn->value.ul;
+
+                if ((kn = (kstat_named_t *)kstat_data_lookup(mZFSCache, "c_min")))
+                {
+                    /*
+                     * Account for ZFS minimum arc cache size limit.
+                     * "c_min" is the target minimum size of the ZFS cache, and not the hard limit. It's possible
+                     * for "size" to shrink below "c_min" (e.g: during boot & high memory consumption).
+                     */
+                    ulong_t ulMin = kn->value.ul;
+                    *available += ulSize > ulMin ? (ulSize - ulMin) / 1024 : 0;
+                }
+                else
+                    Log(("kstat_data_lookup(c_min) ->%d\n", errno));
+            }
             else
                 Log(("kstat_data_lookup(size) -> %d\n", errno));
         }
@@ -208,6 +224,7 @@ int CollectorSolaris::getHostMemoryUsage(ULONG *total, ULONG *used, ULONG *avail
 
     return rc;
 }
+
 int CollectorSolaris::getProcessMemoryUsage(RTPROCESS process, ULONG *used)
 {
     int rc = VINF_SUCCESS;
@@ -243,4 +260,3 @@ int CollectorSolaris::getProcessMemoryUsage(RTPROCESS process, ULONG *used)
 }
 
 }
-

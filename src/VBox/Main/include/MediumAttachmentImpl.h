@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -33,9 +33,7 @@ public:
     DECLARE_PROTECT_FINAL_CONSTRUCT()
 
     BEGIN_COM_MAP(MediumAttachment)
-        COM_INTERFACE_ENTRY(ISupportErrorInfo)
-        COM_INTERFACE_ENTRY(IMediumAttachment)
-        COM_INTERFACE_ENTRY(IDispatch)
+        VBOX_DEFAULT_INTERFACE_ENTRIES(IMediumAttachment)
     END_COM_MAP()
 
     MediumAttachment() { };
@@ -48,8 +46,10 @@ public:
                  LONG aPort,
                  LONG aDevice,
                  DeviceType_T aType,
+                 bool fImplicit,
                  bool fPassthrough,
-                 BandwidthGroup *aBandwidthGroup);
+                 bool fTempEject,
+                 const Utf8Str &strBandwidthGroup);
     void uninit();
 
     HRESULT FinalConstruct();
@@ -62,6 +62,8 @@ public:
     STDMETHOD(COMGETTER(Device))(LONG *aDevice);
     STDMETHOD(COMGETTER(Type))(DeviceType_T *aType);
     STDMETHOD(COMGETTER(Passthrough))(BOOL *aPassthrough);
+    STDMETHOD(COMGETTER(TemporaryEject))(BOOL *aTemporaryEject);
+    STDMETHOD(COMGETTER(IsEjected))(BOOL *aIsEjected);
     STDMETHOD(COMGETTER(BandwidthGroup))(IBandwidthGroup **aBwGroup);
 
     // public internal methods
@@ -79,7 +81,8 @@ public:
     LONG getDevice() const;
     DeviceType_T getType() const;
     bool getPassthrough() const;
-    const ComObjPtr<BandwidthGroup>& getBandwidthGroup() const;
+    bool getTempEject() const;
+    const Utf8Str& getBandwidthGroup() const;
 
     bool matches(CBSTR aControllerName, LONG aPort, LONG aDevice);
 
@@ -90,7 +93,15 @@ public:
     void updatePassthrough(bool aPassthrough);
 
     /** Must be called from under this object's write lock. */
-    void updateBandwidthGroup(const ComObjPtr<BandwidthGroup> &aBandwidthGroup);
+    void updateTempEject(bool aTempEject);
+
+    /** Must be called from under this object's write lock. */
+    void updateEjected();
+
+    /** Must be called from under this object's write lock. */
+    void updateBandwidthGroup(const Utf8Str &aBandwidthGroup);
+
+    void updateParentMachine(Machine * const pMachine);
 
     /** Get a unique and somewhat descriptive name for logging. */
     const char* getLogName(void) const { return mLogName.c_str(); }

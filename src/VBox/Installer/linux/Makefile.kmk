@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 35463 2011-01-10 16:29:56Z vboxsync $
+# $Id: Makefile.kmk 37549 2011-06-20 08:44:19Z vboxsync $
 ## @file
 # Makefile for the Linux installer.
 #
 
 #
-# Copyright (C) 2006-2010 Oracle Corporation
+# Copyright (C) 2006-2011 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -17,6 +17,11 @@
 
 SUB_DEPTH = ../../../..
 include $(KBUILD_PATH)/subheader.kmk
+
+# Include sub-makefile.
+ifdef VBOX_WITH_TESTCASES
+ include $(PATH_SUB_CURRENT)/testcase/Makefile.kmk
+endif
 
 ifneq ($(KBUILD_HOST),linux)
  $(error "The Linux installer can only be built on Linux!")
@@ -47,12 +52,14 @@ OTHER_CLEAN   += \
 		uninstall.sh \
 		deffiles \
 		routines.sh \
+		vboxballoonctrl-service.sh \
 		vboxdrv.sh \
 		vboxweb-service.sh \
 		VirtualBox.tar.bz2 \
 		LICENSE) \
 	$(wildcard $(VBOX_LNX_INST_OUT_DIR)/VirtualBox-*) \
 	$(addprefix $(VBOX_LNX_INST_OUT_DIR)/,\
+		vboxballoonctrl-service.sh \
 		vboxdrv.sh \
 		vboxweb-service.sh \
 		install.sh)
@@ -94,7 +101,7 @@ endif
 INSTALLS += linux-icons
 linux-icons_INST = bin/icons
 linux-icons_MODE = a+r,u+w
-linux-icons_SOURCES = $(VBOX_MIME_ICONS)
+linux-icons_SOURCES = $(VBOX_MIME_ICONS) $(VBOX_DESKTOP_ICONS)
 
 
 #
@@ -117,6 +124,7 @@ VBOX_LNX_STRIP_BIN = \
 	$(if $(VBOX_WITH_GUEST_PROPS),VBoxGuestPropSvc.so,) \
 	$(if $(VBOX_WITH_GUEST_CONTROL),VBoxGuestControlSvc.so,) \
 	$(if $(VBOX_WITH_MAIN), \
+		VBoxBalloonCtrl \
 		VBoxManage \
 		VBoxNetDHCP $(if $(VBOX_WITH_HARDENING),VBoxNetDHCP.so,) \
 		VBoxNetAdpCtl \
@@ -274,9 +282,14 @@ endif
 
 VBOX_MIME_ICONS = \
 	$(addprefix $(PATH_ROOT)/src/VBox/Resources/other/,\
-	    $(foreach f,ova ovf vbox vbox-extpack, \
+	    $(foreach f,ova ovf vbox vbox-extpack vdi vmdk vhd hdd, \
 	        $(foreach s,16 20 24 32 48 64 72 96 128 256,\
 		    virtualbox-$(f)-$(s)px.png=>$(s)x$(s)/virtualbox-$(f).png)))
+
+VBOX_DESKTOP_ICONS = \
+	$(addprefix $(PATH_ROOT)/src/VBox/Resources/$(if $(VBOX_OSE),OSE,NonOSE)/,\
+	    $(foreach s,16 20 32 40 48 64 128,\
+		virtualbox-$(s)px.png=>$(s)x$(s)/virtualbox.png))
 
 #
 # All the bin files that goes into the archives.
@@ -297,20 +310,19 @@ $(PATH_BIN)/$(VBOX_LNX_PACKAGE_NAME): \
 		$(VBOX_PATH_LNX_INST_SRC)/routines.sh \
 		$(VBOX_PATH_LNX_INST_SRC)/deffiles \
 		$(if $(VBOX_OSE),,$(VBOX_BRAND_LICENSE_TXT)) \
+		$(VBOX_LNX_INST_OUT_DIR)/vboxballoonctrl-service.sh \
 		$(VBOX_LNX_INST_OUT_DIR)/vboxdrv.sh \
 		$(VBOX_LNX_INST_OUT_DIR)/vboxweb-service.sh \
 		$(VBOX_LNX_INST_OUT_DIR)/install.sh \
+		$(VBOX_PATH_LNX_INST_SRC)/installer-utils.sh \
 		$(VBOX_PATH_LNX_INST_SRC)/vboxdrv-pardus.py \
-		$(VBOX_PATH_LNX_INST_SRC)/uninstall.sh \
-		$(wildcard $(PATH_BIN)/src/*) \
-		$(wildcard $(PATH_BIN)/src/*/*) \
-		$(wildcard $(PATH_BIN)/src/*/*/*) \
-		$(wildcard $(PATH_BIN)/src/*/*/*/*)
+		$(VBOX_PATH_LNX_INST_SRC)/uninstall.sh
 	$(call MSG_TOOL,makeself,,$@)
 	$(QUIET)$(RM) -f $(wildcard $(PATH_BIN)/VirtualBox-*.run)
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_PATH_LNX_INST_SRC)/routines.sh          $(VBOX_LNX_INST_STAGE_DIR)/
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_PATH_LNX_INST_SRC)/deffiles             $(VBOX_LNX_INST_STAGE_DIR)/
 	$(QUIET)$(if $(VBOX_OSE),,$(INSTALL) -m 0644 $(VBOX_BRAND_LICENSE_TXT)    $(VBOX_LNX_INST_STAGE_DIR)/LICENSE)
+	$(QUIET)$(INSTALL) -m 0755 $(VBOX_LNX_INST_OUT_DIR)/vboxballoonctrl-service.sh $(VBOX_LNX_INST_STAGE_DIR)/
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_LNX_INST_OUT_DIR)/vboxdrv.sh            $(VBOX_LNX_INST_STAGE_DIR)/
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_LNX_INST_OUT_DIR)/vboxweb-service.sh    $(VBOX_LNX_INST_STAGE_DIR)/
 	$(QUIET)$(INSTALL) -m 0755 $(VBOX_PATH_LNX_INST_SRC)/vboxdrv-pardus.py    $(VBOX_LNX_INST_STAGE_DIR)/
@@ -321,6 +333,14 @@ $(PATH_BIN)/$(VBOX_LNX_PACKAGE_NAME): \
 		"VirtualBox for Linux installation" ./install.sh "\$$0 1> /dev/null"
 
 # files that needs editing before they can be included in the generic installer.
+$(VBOX_LNX_INST_OUT_DIR)/vboxballoonctrl-service.sh: $(VBOX_PATH_LNX_INST_SRC)/vboxballoonctrl-service.sh.in | $$(dir $$@)
+	$(QUIET)$(SED_EXT) \
+		-e "s|%NOLSB%|yes|g" \
+		-e "s|%DEBIAN%||g" \
+		-e "s|%PACKAGE%|virtualbox|g" \
+		--output $@ \
+		$<
+
 $(VBOX_LNX_INST_OUT_DIR)/vboxdrv.sh: $(VBOX_PATH_LNX_INST_SRC)/vboxdrv.sh.in | $$(dir $$@)
 	$(QUIET)$(SED_EXT) \
 		-e "s|%NOLSB%|yes|g" \
@@ -338,7 +358,7 @@ $(VBOX_LNX_INST_OUT_DIR)/vboxweb-service.sh: $(VBOX_PATH_LNX_INST_SRC)/vboxweb-s
 		--output $@ \
 		$<
 
-$(VBOX_LNX_INST_OUT_DIR)/install.sh: $(VBOX_PATH_LNX_INST_SRC)/install.sh $(VBOX_VERSION_STAMP) $(VBOX_SVN_REV_KMK).ts | $$(dir $$@)
+$(VBOX_LNX_INST_OUT_DIR)/install.sh: $(VBOX_PATH_LNX_INST_SRC)/install.sh $(VBOX_PATH_LNX_INST_SRC)/installer-utils.sh $(VBOX_VERSION_STAMP) $(VBOX_SVN_REV_KMK).ts | $$(dir $$@)
 	$(QUIET)$(SED) \
 		-e "s;_VERSION_;$(VBOX_VERSION_STRING);g" \
 		-e "s;_SVNREV_;$(VBOX_SVN_REV);g" \
@@ -346,16 +366,33 @@ $(VBOX_LNX_INST_OUT_DIR)/install.sh: $(VBOX_PATH_LNX_INST_SRC)/install.sh $(VBOX
 		-e "s;_ARCH_;$(KBUILD_TARGET_ARCH);g" \
 		-e "s;_HARDENED_;$(VBOX_WITH_HARDENING);g" \
 		-e "s;_PYTHON_;$(VBOX_WITH_PYTHON);g" \
+		-e '/#include installer-utils.sh/ {' \
+		-e "r $(PATH_ROOT)/src/VBox/Installer/linux/installer-utils.sh" \
+		-e 'd' \
+		-e '}' \
 		--output $@ \
 		$<
+
+#
+# The files that the tar archives depend on.  The wildcards are ugly, but they
+# do save us from having to update the makefile whenever something new is added
+# to the module source directories.
+#
+local arch_deps = \
+		$(addprefix $(VBOX_LNX_INST_OUT_DIR)/archive/, $(VBOX_LNX_ARCH_FILES)) \
+		$(VBOX_LNX_INST_DEP_ON_MAKEFILE) \
+		$(VBOX_VERSION_STAMP) \
+		$(wildcard $(PATH_BIN)/src/*) \
+		$(wildcard $(PATH_BIN)/src/*/*) \
+		$(wildcard $(PATH_BIN)/src/*/*/*) \
+		$(wildcard $(PATH_BIN)/src/*/*/*/*)
+
 
 #
 # .tar.bz2 for converting into .run
 #
 $(VBOX_LNX_INST_STAGE_DIR)/VirtualBox.tar.bz2: \
-		$(addprefix $(VBOX_LNX_INST_OUT_DIR)/archive/, $(VBOX_LNX_ARCH_FILES)) \
-		$(VBOX_LNX_INST_DEP_ON_MAKEFILE) \
-		$(VBOX_VERSION_STAMP)
+		$(arch_deps)
 	$(call MSG_L1,Packing $@)
 	$(QUIET)$(RM) -f -- $@ $(patsubst %.bz2,%,$@)
 	$(QUIET)$(MKDIR) -p $(@D)
@@ -371,9 +408,7 @@ endif
 # .tar.bz2 for distribution with the files under VirtualBox-<ver>/.
 #
 $(PATH_BIN)/VirtualBox.tar.bz2: \
-		$(addprefix $(VBOX_LNX_INST_OUT_DIR)/archive/, $(VBOX_LNX_ARCH_FILES)) \
-		$(VBOX_LNX_INST_DEP_ON_MAKEFILE) \
-		$(VBOX_VERSION_STAMP)
+		$(arch_deps)
 	$(call MSG_L1,Packing $@)
 	$(QUIET)$(RM) -f -- $(VBOX_LNX_INST_OUT_DIR)/VirtualBox-$(VBOX_VERSION_STRING) $@ $(patsubst %.bz2,%,$@)
 	$(QUIET)$(LN_SYMLINK) $(VBOX_LNX_INST_OUT_DIR)/archive/ $(VBOX_LNX_INST_OUT_DIR)/VirtualBox-$(VBOX_VERSION_STRING)

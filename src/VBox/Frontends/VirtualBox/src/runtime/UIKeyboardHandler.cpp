@@ -1,4 +1,4 @@
-/* $Id: UIKeyboardHandler.cpp 35351 2010-12-27 17:04:17Z vboxsync $ */
+/* $Id: UIKeyboardHandler.cpp 37716 2011-06-30 16:34:13Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -33,6 +33,7 @@
 #include "UIMachineLogic.h"
 #include "UIMachineWindow.h"
 #include "UIMachineView.h"
+#include "UIHotKeyEditor.h"
 
 #ifdef Q_WS_X11
 # include <QX11Info>
@@ -63,7 +64,7 @@ enum { KeyExtended = 0x01, KeyPressed = 0x02, KeyPause = 0x04, KeyPrint = 0x08 }
 enum { IsKeyPressed = 0x01, IsExtKeyPressed = 0x02, IsKbdCaptured = 0x80 };
 
 #ifdef Q_WS_WIN
-UIKeyboardHandler* UIKeyboardHandler::m_pKeyboardHandler = 0;
+UIKeyboardHandler* UIKeyboardHandler::m_spKeyboardHandler = 0;
 #endif /* Q_WS_WIN */
 
 /* Factory function to create keyboard-handler: */
@@ -93,7 +94,7 @@ UIKeyboardHandler* UIKeyboardHandler::create(UIMachineLogic *pMachineLogic,
 #ifdef Q_WS_WIN
     /* Its required to have static pointer to created handler
      * because windows keyboard-hook works only with static members: */
-    m_pKeyboardHandler = pKeyboardHandler;
+    m_spKeyboardHandler = pKeyboardHandler;
 #endif /* Q_WS_WIN */
     /* Return prepared keyboard-handler: */
     return pKeyboardHandler;
@@ -104,7 +105,7 @@ void UIKeyboardHandler::destroy(UIKeyboardHandler *pKeyboardHandler)
 {
     /* Delete keyboard-handler: */
 #ifdef Q_WS_WIN
-    m_pKeyboardHandler = 0;
+    m_spKeyboardHandler = 0;
 #endif /* Q_WS_WIN */
     delete pKeyboardHandler;
 }
@@ -269,11 +270,67 @@ void UIKeyboardHandler::releaseKeyboard()
     }
 }
 
+void UIKeyboardHandler::releaseAllPressedKeys(bool aReleaseHostKey /* = true */)
+{
+    CKeyboard keyboard = session().GetConsole().GetKeyboard();
+    bool fSentRESEND = false;
+
+    /* Send a dummy scan code (RESEND) to prevent the guest OS from recognizing
+     * a single key click (for ex., Alt) and performing an unwanted action
+     * (for ex., activating the menu) when we release all pressed keys below.
+     * Note, that it's just a guess that sending RESEND will give the desired
+     * effect :), but at least it works with NT and W2k guests. */
+    for (uint i = 0; i < SIZEOF_ARRAY (m_pressedKeys); i++)
+    {
+        if (m_pressedKeys[i] & IsKeyPressed)
+        {
+            if (!fSentRESEND)
+            {
+                keyboard.PutScancode (0xFE);
+                fSentRESEND = true;
+            }
+            keyboard.PutScancode(i | 0x80);
+        }
+        else if (m_pressedKeys[i] & IsExtKeyPressed)
+        {
+            if (!fSentRESEND)
+            {
+                keyboard.PutScancode(0xFE);
+                fSentRESEND = true;
+            }
+            QVector <LONG> codes(2);
+            codes[0] = 0xE0;
+            codes[1] = i | 0x80;
+            keyboard.PutScancodes(codes);
+        }
+        m_pressedKeys[i] = 0;
+    }
+
+    if (aReleaseHostKey)
+    {
+        m_bIsHostComboPressed = false;
+        m_pressedHostComboKeys.clear();
+    }
+
+#ifdef Q_WS_MAC
+    unsigned int hostComboModifierMask = 0;
+    QList<int> hostCombo = UIHotKeyCombination::toKeyCodeList(m_globalSettings.hostCombo());
+    for (int i = 0; i < hostCombo.size(); ++i)
+        hostComboModifierMask |= ::DarwinKeyCodeToDarwinModifierMask(hostCombo.at(i));
+    /* Clear most of the modifiers: */
+    m_darwinKeyModifiers &=
+        alphaLock | kEventKeyModifierNumLockMask |
+        (aReleaseHostKey ? 0 : hostComboModifierMask);
+#endif
+
+    emit keyboardStateChanged(keyboardState());
+}
+
 /* Current keyboard state: */
 int UIKeyboardHandler::keyboardState() const
 {
     return (m_fIsKeyboardCaptured ? UIViewStateType_KeyboardCaptured : 0) |
-           (m_bIsHostkeyPressed ? UIViewStateType_HostKeyPressed : 0);
+           (m_bIsHostComboPressed ? UIViewStateType_HostKeyPressed : 0);
 }
 
 #if defined(Q_WS_WIN)
@@ -318,8 +375,7 @@ bool UIKeyboardHandler::winEventFilter(MSG *pMsg, ulong uScreenId)
             /* Check for special Korean keys. Based on the keyboard layout selected
              * on the host, the scancode in lParam might be 0x71/0x72 or 0xF1/0xF2.
              * In either case, we must deliver 0xF1/0xF2 scancode to the guest when
-             * the key is pressed and nothing when it's released.
-             */
+             * the key is pressed and nothing when it's released. */
             if (scan == 0x71 || scan == 0x72)
             {
                 scan |= 0x80;
@@ -343,7 +399,7 @@ bool UIKeyboardHandler::winEventFilter(MSG *pMsg, ulong uScreenId)
                 case VK_CONTROL:
                 case VK_MENU:
                 {
-                    /* Overcome stupid Win32 modifier key generalization: */
+                    /* Overcome Win32 modifier key generalization: */
                     int keyscan = scan;
                     if (flags & KeyExtended)
                         keyscan |= 0xE000;
@@ -428,7 +484,7 @@ bool UIKeyboardHandler::x11EventFilter(XEvent *pEvent, ulong uScreenId)
         case XFocusOut:
         case XFocusIn:
         {
-            if (uisession()->isRunning())
+            if (isSessionRunning())
             {
                 if (VBoxGlobal::qtRTVersion() < ((4 << 16) | (5 << 8) | 0))
                 {
@@ -437,8 +493,8 @@ bool UIKeyboardHandler::x11EventFilter(XEvent *pEvent, ulong uScreenId)
                         /* Capture keyboard by chosen view number: */
                         captureKeyboard(uScreenId);
                         /* Reset the single-time disable capture flag: */
-                        if (uisession()->isAutoCaptureDisabled())
-                            uisession()->setAutoCaptureDisabled(false);
+                        if (isAutoCaptureDisabled())
+                            setAutoCaptureDisabled(false);
                     }
                     else
                     {
@@ -551,19 +607,19 @@ void UIKeyboardHandler::sltMachineStateChanged()
             QList<ulong> theListOfViewIds = m_views.keys();
             for (int i = 0; i < theListOfViewIds.size(); ++i)
             {
-                if (m_views[theListOfViewIds[i]]->hasFocus())
+                if (viewHasFocus(theListOfViewIds[i]))
                 {
                     /* Capture keyboard: */
 #ifdef Q_WS_WIN
-                    if (!uisession()->isAutoCaptureDisabled() && m_globalSettings.autoCapture() &&
+                    if (!isAutoCaptureDisabled() && autoCaptureSetGlobally() &&
                         GetAncestor(m_views[theListOfViewIds[i]]->winId(), GA_ROOT) == GetForegroundWindow())
 #else /* Q_WS_WIN */
-                    if (!uisession()->isAutoCaptureDisabled() && m_globalSettings.autoCapture())
+                    if (!isAutoCaptureDisabled() && autoCaptureSetGlobally())
 #endif /* !Q_WS_WIN */
                         captureKeyboard(theListOfViewIds[i]);
                     /* Reset the single-time disable capture flag: */
-                    if (uisession()->isAutoCaptureDisabled())
-                        uisession()->setAutoCaptureDisabled(false);
+                    if (isAutoCaptureDisabled())
+                        setAutoCaptureDisabled(false);
                     break;
                 }
             }
@@ -581,11 +637,12 @@ UIKeyboardHandler::UIKeyboardHandler(UIMachineLogic *pMachineLogic)
     , m_iKeyboardCaptureViewIndex(-1)
     , m_globalSettings(vboxGlobal().settings())
     , m_fIsKeyboardCaptured(false)
-    , m_bIsHostkeyPressed(false)
-    , m_bIsHostkeyAlone (false)
-    , m_bIsHostkeyInCapture(false)
+    , m_bIsHostComboPressed(false)
+    , m_bIsHostComboAlone(false)
+    , m_bIsHostComboProcessed(false)
     , m_fPassCAD(false)
 #if defined(Q_WS_WIN)
+    , m_bIsHostkeyInCapture(false)
     , m_iKeyboardHookViewIndex(-1)
 #elif defined(Q_WS_MAC)
     , m_darwinKeyModifiers(0)
@@ -769,24 +826,24 @@ bool UIKeyboardHandler::eventFilter(QObject *pWatchedObject, QEvent *pEvent)
         switch (pEvent->type())
         {
             case QEvent::FocusIn:
-                if (uisession()->isRunning())
+                if (isSessionRunning())
                 {
                     /* Capture keyboard: */
 #ifdef Q_WS_WIN
-                    if (!uisession()->isAutoCaptureDisabled() && m_globalSettings.autoCapture() &&
+                    if (!isAutoCaptureDisabled() && autoCaptureSetGlobally() &&
                         GetAncestor(pWatchedView->winId(), GA_ROOT) == GetForegroundWindow())
 #else /* Q_WS_WIN */
-                    if (!uisession()->isAutoCaptureDisabled() && m_globalSettings.autoCapture())
+                    if (!isAutoCaptureDisabled() && autoCaptureSetGlobally())
 #endif /* !Q_WS_WIN */
                         captureKeyboard(uScreenId);
                     /* Reset the single-time disable capture flag: */
-                    if (uisession()->isAutoCaptureDisabled())
-                        uisession()->setAutoCaptureDisabled(false);
+                    if (isAutoCaptureDisabled())
+                        setAutoCaptureDisabled(false);
                 }
                 break;
             case QEvent::FocusOut:
                 /* Release keyboard: */
-                if (uisession()->isRunning())
+                if (isSessionRunning())
                     releaseKeyboard();
                 /* And all pressed keys: */
                 releaseAllPressedKeys(true);
@@ -796,7 +853,7 @@ bool UIKeyboardHandler::eventFilter(QObject *pWatchedObject, QEvent *pEvent)
             {
                 QKeyEvent *pKeyEvent = static_cast<QKeyEvent*>(pEvent);
 
-                if (m_bIsHostkeyPressed && pEvent->type() == QEvent::KeyPress)
+                if (m_bIsHostComboPressed && pEvent->type() == QEvent::KeyPress)
                 {
                     /* Passing F1-F12 keys to the guest: */
                     if (pKeyEvent->key() >= Qt::Key_F1 && pKeyEvent->key() <= Qt::Key_F12)
@@ -823,7 +880,7 @@ bool UIKeyboardHandler::eventFilter(QObject *pWatchedObject, QEvent *pEvent)
                     /* Process hot keys not processed in keyEvent() (as in case of non-alphanumeric keys): */
                     machineLogic()->actionsPool()->processHotKey(QKeySequence(pKeyEvent->key()));
                 }
-                else if (!m_bIsHostkeyPressed && pEvent->type() == QEvent::KeyRelease)
+                else if (!m_bIsHostComboPressed && pEvent->type() == QEvent::KeyRelease)
                 {
                     /* Show a possible warning on key release which seems to be more expected by the end user: */
                     if (uisession()->isPaused())
@@ -849,7 +906,7 @@ bool UIKeyboardHandler::eventFilter(QObject *pWatchedObject, QEvent *pEvent)
 
 LRESULT CALLBACK UIKeyboardHandler::lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
-    if (nCode == HC_ACTION && m_pKeyboardHandler && m_pKeyboardHandler->winLowKeyboardEvent(wParam, *(KBDLLHOOKSTRUCT*)lParam))
+    if (nCode == HC_ACTION && m_spKeyboardHandler && m_spKeyboardHandler->winLowKeyboardEvent(wParam, *(KBDLLHOOKSTRUCT*)lParam))
         return 1;
 
     return CallNextHookEx(NULL, nCode, wParam, lParam);
@@ -859,6 +916,9 @@ bool UIKeyboardHandler::winLowKeyboardEvent(UINT msg, const KBDLLHOOKSTRUCT &eve
 {
     /* Check what related machine-view was NOT unregistered yet: */
     if (!m_views.contains(m_iKeyboardHookViewIndex))
+        return false;
+
+    if (!m_fIsKeyboardCaptured)
         return false;
 
     /* Sometimes it happens that Win inserts additional events on some key
@@ -879,16 +939,13 @@ bool UIKeyboardHandler::winLowKeyboardEvent(UINT msg, const KBDLLHOOKSTRUCT &eve
             return true;
     }
 
-    if (!m_fIsKeyboardCaptured)
-        return false;
-
     /* It's possible that a key has been pressed while the keyboard was not
      * captured, but is being released under the capture. Detect this situation
      * and return false to let Windows process the message normally and update
      * its key state table (to avoid the stuck key effect). */
     uint8_t what_pressed = (event.flags & 0x01) && (event.vkCode != VK_RSHIFT) ? IsExtKeyPressed : IsKeyPressed;
     if ((event.flags & 0x80) /* released */ &&
-        ((event.vkCode == m_globalSettings.hostKey() && !m_bIsHostkeyInCapture) ||
+        ((UIHotKeyCombination::toKeyCodeList(m_globalSettings.hostCombo()).contains(event.vkCode) && !m_bIsHostkeyInCapture) ||
          (m_pressedKeys[event.scanCode] & (IsKbdCaptured | what_pressed)) == what_pressed))
         return false;
 
@@ -917,7 +974,7 @@ void UIKeyboardHandler::darwinGrabKeyboardEvents(bool fGrab)
     {
         /* Disable mouse and keyboard event compression/delaying to make sure we *really* get all of the events. */
         ::CGSetLocalEventsSuppressionInterval(0.0);
-        machineLogic()->mouseHandler()->setMouseCoalescingEnabled(false);
+        ::darwinSetMouseCoalescingEnabled(false);
 
         /* Register the event callback/hook and grab the keyboard. */
         UICocoaApplication::instance()->registerForNativeEvents(RT_BIT_32(10) | RT_BIT_32(11) | RT_BIT_32(12) /* NSKeyDown  | NSKeyUp | | NSFlagsChanged */,
@@ -1052,290 +1109,388 @@ bool UIKeyboardHandler::darwinKeyboardEvent(const void *pvCocoaEvent, EventRef i
 
 #endif
 
-bool UIKeyboardHandler::keyEvent(int iKey, uint8_t uScan, int fFlags, ulong uScreenId, wchar_t *pUniKey /* = NULL */)
+/**
+ * If the user has just completed a control-alt-del combination then handle
+ * that.
+ * @returns true if handling should stop here, false otherwise
+ */
+bool UIKeyboardHandler::keyEventCADHandled(uint8_t uScan)
 {
-    const bool isHostKey = iKey == m_globalSettings.hostKey();
-
-    LONG buf[16];
-    LONG *codes = buf;
-    uint count = 0;
-    uint8_t whatPressed = 0;
-
-    if (!isHostKey && !m_bIsHostkeyPressed)
+    /* Check if it's C-A-D and GUI/PassCAD is not true: */
+    if (!m_fPassCAD &&
+        uScan == 0x53 /* Del */ &&
+        ((m_pressedKeys[0x38] & IsKeyPressed) /* Alt */ ||
+         (m_pressedKeys[0x38] & IsExtKeyPressed)) &&
+        ((m_pressedKeys[0x1d] & IsKeyPressed) /* Ctrl */ ||
+         (m_pressedKeys[0x1d] & IsExtKeyPressed)))
     {
+        /* Use the C-A-D combination as a last resort to get the keyboard and mouse back
+         * to the host when the user forgets the Host Key. Note that it's always possible
+         * to send C-A-D to the guest using the Host+Del combination: */
+        if (isSessionRunning() && m_fIsKeyboardCaptured)
+        {
+            releaseKeyboard();
+            if (!uisession()->isMouseSupportsAbsolute() || !uisession()->isMouseIntegrated())
+                machineLogic()->mouseHandler()->releaseMouse();
+        }
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Handle a non-special (C-A-D, pause, print) key press or release
+ * @returns true if handling should stop here, false otherwise
+ */
+bool UIKeyboardHandler::keyEventHandleNormal(int iKey, uint8_t uScan, int fFlags, LONG *pCodes, uint *puCodesCount)
+{
+    /* Get host-combo key list: */
+    QSet<int> allHostComboKeys = UIHotKeyCombination::toKeyCodeList(m_globalSettings.hostCombo()).toSet();
+    /* Get the type of key - simple or extended: */
+    uint8_t uWhatPressed = fFlags & KeyExtended ? IsExtKeyPressed : IsKeyPressed;
+
+    /* If some key was pressed or some previously pressed key was released =>
+     * we are updating the list of pressed keys and preparing scancodes: */
+    if ((fFlags & KeyPressed) || (m_pressedKeys[uScan] & uWhatPressed))
+    {
+        /* Check if the guest has the same view on the modifier keys
+         * (NumLock, CapsLock, ScrollLock) as the X server.
+         * If not, send KeyPress events to synchronize the state: */
+        if (fFlags & KeyPressed)
+            fixModifierState(pCodes, puCodesCount);
+
+        /* Prepend 'extended' scancode if needed: */
+        if (fFlags & KeyExtended)
+            pCodes[(*puCodesCount)++] = 0xE0;
+
+        /* Process key-press: */
+        if (fFlags & KeyPressed)
+        {
+            /* Append scancode: */
+            pCodes[(*puCodesCount)++] = uScan;
+            m_pressedKeys[uScan] |= uWhatPressed;
+        }
+        /* Process key-release if that key was pressed before: */
+        else if (m_pressedKeys[uScan] & uWhatPressed)
+        {
+            /* Append scancode: */
+            pCodes[(*puCodesCount)++] = uScan | 0x80;
+            m_pressedKeys[uScan] &= ~uWhatPressed;
+        }
+
+        /* Update keyboard-captured flag: */
+        if (m_fIsKeyboardCaptured)
+            m_pressedKeys[uScan] |= IsKbdCaptured;
+        else
+            m_pressedKeys[uScan] &= ~IsKbdCaptured;
+    }
+    /* Ignore key-release if that key was NOT pressed before,
+     * but only if thats not one of the host-combination keys: */
+    else if (!allHostComboKeys.contains(iKey))
+        return true;
+    return false;
+}
+
+/**
+ * Check whether the key pressed results in a host key combination being
+ * handled.
+ * @returns true if a combination was handled, false otherwise
+ * @param pfResult  where to store the result of the handling
+ */
+bool UIKeyboardHandler::keyEventHostComboHandled(int iKey, wchar_t *pUniKey, bool isHostComboStateChanged, bool *pfResult)
+{
+    if (isHostComboStateChanged)
+    {
+        if (!m_bIsHostComboPressed)
+        {
+            m_bIsHostComboPressed = true;
+            m_bIsHostComboAlone = true;
+            m_bIsHostComboProcessed = false;
+            if (isSessionRunning())
+                saveKeyStates();
+        }
+    }
+    else
+    {
+        if (m_bIsHostComboPressed)
+        {
+            if (m_bIsHostComboAlone)
+            {
+                m_bIsHostComboAlone = false;
+                m_bIsHostComboProcessed = true;
+                /* Process Host+<key> shortcuts.
+                 * Currently, <key> is limited to alphanumeric chars.
+                 * Other Host+<key> combinations are handled in Qt event(): */
+                *pfResult = processHotKey(iKey, pUniKey);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Handle a key event that releases the host key combination
+ */
+void UIKeyboardHandler::keyEventHandleHostComboRelease(ulong uScreenId)
+{
+    if (m_bIsHostComboPressed)
+    {
+        m_bIsHostComboPressed = false;
+        /* Capturing/releasing keyboard/mouse if necessary: */
+        if (m_bIsHostComboAlone && !m_bIsHostComboProcessed)
+        {
+            if (isSessionRunning())
+            {
+                bool ok = true;
+                if (!m_fIsKeyboardCaptured)
+                {
+                    /* Temporarily disable auto-capture that will take place after
+                     * this dialog is dismissed because the capture state is to be
+                     * defined by the dialog result itself: */
+                    setAutoCaptureDisabled(true);
+                    bool fIsAutoConfirmed = false;
+                    ok = vboxProblem().confirmInputCapture(&fIsAutoConfirmed);
+                    if (fIsAutoConfirmed)
+                        setAutoCaptureDisabled(false);
+                    /* Otherwise, the disable flag will be reset in the next
+                     * machine-view's focus-in event (since may happen asynchronously
+                     * on some platforms, after we return from this code): */
+                }
+                if (ok)
+                {
+                    if (m_fIsKeyboardCaptured)
+                        releaseKeyboard();
+                    else
+                        captureKeyboard(uScreenId);
+                    if (!uisession()->isMouseSupportsAbsolute() || !uisession()->isMouseIntegrated())
+                    {
+#ifdef Q_WS_X11
+                        /* Make sure that pending FocusOut events from the
+                         * previous message box are handled, otherwise the
+                         * mouse is immediately ungrabbed: */
+                        qApp->processEvents();
+#endif /* Q_WS_X11 */
+                        if (m_fIsKeyboardCaptured)
+                            machineLogic()->mouseHandler()->captureMouse(uScreenId);
+                        else
+                            machineLogic()->mouseHandler()->releaseMouse();
+                    }
+                }
+            }
+        }
+        if (isSessionRunning())
+            sendChangedKeyStates();
+    }
+}
+
+void UIKeyboardHandler::keyEventReleaseHostComboKeys(CKeyboard keyboard)
+{
+    /* We have to make guest to release pressed keys from the host-combination: */
+    QList<uint8_t> hostComboScans = m_pressedHostComboKeys.values();
+    for (int i = 0 ; i < hostComboScans.size(); ++i)
+    {
+        uint8_t uScan = hostComboScans[i];
+        if (m_pressedKeys[uScan] & IsKeyPressed)
+        {
+            keyboard.PutScancode(uScan | 0x80);
+        }
+        else if (m_pressedKeys[uScan] & IsExtKeyPressed)
+        {
+            QVector<LONG> scancodes(2);
+            scancodes[0] = 0xE0;
+            scancodes[1] = uScan | 0x80;
+            keyboard.PutScancodes(scancodes);
+        }
+        m_pressedKeys[uScan] = 0;
+    }
+}
+
+bool UIKeyboardHandler::keyEvent(int iKey, uint8_t uScan, int fFlags, ulong uScreenId, wchar_t *pUniKey /* = 0 */)
+{
+    /* Get host-combo key list: */
+    QSet<int> allHostComboKeys = UIHotKeyCombination::toKeyCodeList(m_globalSettings.hostCombo()).toSet();
+
+    /* Update the map of pressed host-combo keys: */
+    if (allHostComboKeys.contains(iKey))
+    {
+        if (fFlags & KeyPressed)
+        {
+            if (!m_pressedHostComboKeys.contains(iKey))
+                m_pressedHostComboKeys.insert(iKey, uScan);
+            else if (m_bIsHostComboPressed)
+                return true;
+        }
+        else
+        {
+            if (m_pressedHostComboKeys.contains(iKey))
+                m_pressedHostComboKeys.remove(iKey);
+        }
+    }
+    /* Check if we are currently holding FULL host-combo: */
+    bool fIsFullHostComboPresent = !allHostComboKeys.isEmpty() && allHostComboKeys == m_pressedHostComboKeys.keys().toSet();
+    /* Check if currently pressed/released key had changed host-combo state: */
+    const bool isHostComboStateChanged = (!m_bIsHostComboPressed &&  fIsFullHostComboPresent) ||
+                                         ( m_bIsHostComboPressed && !fIsFullHostComboPresent);
+
+#ifdef Q_WS_WIN
+    if (m_bIsHostComboPressed || isHostComboStateChanged)
+    {
+        /* Currently this is used in winLowKeyboardEvent() only: */
+        m_bIsHostkeyInCapture = m_fIsKeyboardCaptured;
+    }
+#endif /* Q_WS_WIN */
+
+    if (keyEventCADHandled(uScan))
+        return true;
+
+    /* Preparing the press/release scan-codes array for sending to the guest:
+     * 1. if host-combo is NOT pressed, taking into account currently pressed key too,
+     * 2. if currently released key releases host-combo too.
+     * Using that rule, we are NOT sending to the guest:
+     * 1. the last key-press of host-combo,
+     * 2. all keys pressed while the host-combo being held. */
+    LONG aCodesBuffer[16];
+    LONG *pCodes = aCodesBuffer;
+    uint uCodesCount = 0;
+    if ((!m_bIsHostComboPressed && !isHostComboStateChanged) ||
+        ( m_bIsHostComboPressed &&  isHostComboStateChanged))
+    {
+        /* Special flags handling (KeyPrint): */
         if (fFlags & KeyPrint)
         {
-            static LONG PrintMake[] = { 0xE0, 0x2A, 0xE0, 0x37 };
-            static LONG PrintBreak[] = { 0xE0, 0xB7, 0xE0, 0xAA };
             if (fFlags & KeyPressed)
             {
-                codes = PrintMake;
-                count = SIZEOF_ARRAY(PrintMake);
+                static LONG PrintMake[] = { 0xE0, 0x2A, 0xE0, 0x37 };
+                pCodes = PrintMake;
+                uCodesCount = SIZEOF_ARRAY(PrintMake);
             }
             else
             {
-                codes = PrintBreak;
-                count = SIZEOF_ARRAY(PrintBreak);
+                static LONG PrintBreak[] = { 0xE0, 0xB7, 0xE0, 0xAA };
+                pCodes = PrintBreak;
+                uCodesCount = SIZEOF_ARRAY(PrintBreak);
             }
         }
+        /* Special flags handling (KeyPause): */
         else if (fFlags & KeyPause)
         {
             if (fFlags & KeyPressed)
             {
                 static LONG Pause[] = { 0xE1, 0x1D, 0x45, 0xE1, 0x9D, 0xC5 };
-                codes = Pause;
-                count = SIZEOF_ARRAY(Pause);
+                pCodes = Pause;
+                uCodesCount = SIZEOF_ARRAY(Pause);
             }
             else
             {
-                /* Pause shall not produce a break code */
+                /* Pause shall not produce a break code: */
                 return true;
             }
         }
+        /* Common flags handling: */
         else
-        {
-            if (fFlags & KeyPressed)
-            {
-                /* Check if the guest has the same view on the modifier keys (NumLock,
-                 * CapsLock, ScrollLock) as the X server. If not, send KeyPress events
-                 * to synchronize the state. */
-                fixModifierState(codes, &count);
-            }
-
-            /* Check if it's C-A-D and GUI/PassCAD is not true */
-            if (!m_fPassCAD &&
-                uScan == 0x53 /* Del */ &&
-                ((m_pressedKeys[0x38] & IsKeyPressed) /* Alt */ ||
-                 (m_pressedKeys[0x38] & IsExtKeyPressed)) &&
-                ((m_pressedKeys[0x1d] & IsKeyPressed) /* Ctrl */ ||
-                 (m_pressedKeys[0x1d] & IsExtKeyPressed)))
-            {
-                /* Use the C-A-D combination as a last resort to get the
-                 * keyboard and mouse back to the host when the user forgets
-                 * the Host Key. Note that it's always possible to send C-A-D
-                 * to the guest using the Host+Del combination. BTW, it would
-                 * be preferable to completely ignore C-A-D in guests, but
-                 * that's not possible because we cannot predict what other
-                 * keys will be pressed next when one of C, A, D is held. */
-                if (uisession()->isRunning() && m_fIsKeyboardCaptured)
-                {
-                    releaseKeyboard();
-                    if (!uisession()->isMouseSupportsAbsolute() || !uisession()->isMouseIntegrated())
-                        machineLogic()->mouseHandler()->releaseMouse();
-                }
+            if (keyEventHandleNormal(iKey, uScan, fFlags, pCodes, &uCodesCount))
                 return true;
-            }
-
-            /* Process the scancode and update the table of pressed keys: */
-            whatPressed = IsKeyPressed;
-
-            if (fFlags & KeyExtended)
-            {
-                codes[count++] = 0xE0;
-                whatPressed = IsExtKeyPressed;
-            }
-
-            if (fFlags & KeyPressed)
-            {
-                codes[count++] = uScan;
-                m_pressedKeys[uScan] |= whatPressed;
-            }
-            else
-            {
-                /* If we haven't got this key's press message, we ignore its release: */
-                if (!(m_pressedKeys[uScan] & whatPressed))
-                    return true;
-                codes[count++] = uScan | 0x80;
-                m_pressedKeys[uScan] &= ~whatPressed;
-            }
-
-            if (m_fIsKeyboardCaptured)
-                m_pressedKeys[uScan] |= IsKbdCaptured;
-            else
-                m_pressedKeys[uScan] &= ~IsKbdCaptured;
-        }
-    }
-    else
-    {
-        /* Currently this is used in winLowKeyboardEvent() only: */
-        m_bIsHostkeyInCapture = m_fIsKeyboardCaptured;
     }
 
-    bool emitSignal = false;
-    int hotkey = 0;
-
-    /* Process the host key: */
+    /* Process the host-combo funtionality: */
     if (fFlags & KeyPressed)
     {
-        if (isHostKey)
-        {
-            if (!m_bIsHostkeyPressed)
-            {
-                m_bIsHostkeyPressed = m_bIsHostkeyAlone = true;
-                if (uisession()->isRunning())
-                    saveKeyStates();
-                emitSignal = true;
-            }
-        }
-        else
-        {
-            if (m_bIsHostkeyPressed)
-            {
-                if (m_bIsHostkeyAlone)
-                {
-                    hotkey = iKey;
-                    m_bIsHostkeyAlone = false;
-                }
-            }
-        }
+        bool fResult;
+        if (keyEventHostComboHandled(iKey, pUniKey, isHostComboStateChanged, &fResult))
+            return fResult;
     }
     else
     {
-        if (isHostKey)
-        {
-            if (m_bIsHostkeyPressed)
-            {
-                m_bIsHostkeyPressed = false;
-
-                if (m_bIsHostkeyAlone)
-                {
-                    if (uisession()->isPaused())
-                    {
-                        vboxProblem().remindAboutPausedVMInput();
-                    }
-                    else if (uisession()->isRunning())
-                    {
-                        bool ok = true;
-                        if (!m_fIsKeyboardCaptured)
-                        {
-                            /* Temporarily disable auto capture that will take
-                             * place after this dialog is dismissed because
-                             * the capture state is to be defined by the
-                             * dialog result itself */
-                            uisession()->setAutoCaptureDisabled(true);
-                            bool autoConfirmed = false;
-                            ok = vboxProblem().confirmInputCapture(&autoConfirmed);
-                            if (autoConfirmed)
-                                uisession()->setAutoCaptureDisabled(false);
-                            /* Otherwise, the disable flag will be reset in
-                             * the next console view's focus in event (since
-                             * may happen asynchronously on some platforms,
-                             * after we return from this code) */
-                        }
-
-                        if (ok)
-                        {
-                            if (m_fIsKeyboardCaptured)
-                                releaseKeyboard();
-                            else
-                                captureKeyboard(uScreenId);
-                            if (!uisession()->isMouseSupportsAbsolute() || !uisession()->isMouseIntegrated())
-                            {
-#ifdef Q_WS_X11
-                                /* Make sure that pending FocusOut events from the
-                                 * previous message box are handled, otherwise the
-                                 * mouse is immediately ungrabbed. */
-                                qApp->processEvents();
-#endif
-                                if (m_fIsKeyboardCaptured)
-                                    machineLogic()->mouseHandler()->captureMouse(uScreenId);
-                                else
-                                    machineLogic()->mouseHandler()->releaseMouse();
-                            }
-                        }
-                    }
-                }
-
-                if (uisession()->isRunning())
-                    sendChangedKeyStates();
-
-                emitSignal = true;
-            }
-        }
+        if (isHostComboStateChanged)
+            keyEventHandleHostComboRelease(uScreenId);
         else
         {
-            if (m_bIsHostkeyPressed)
-                m_bIsHostkeyAlone = false;
+            if (m_bIsHostComboPressed)
+                m_bIsHostComboAlone = true;
         }
     }
 
     /* Notify all listeners: */
     emit keyboardStateChanged(keyboardState());
 
-    /* Process Host+<key> shortcuts. currently, <key> is limited to
-     * alphanumeric chars. Other Host+<key> combinations are handled in
-     * event(). */
-    if (hotkey)
+    /* If the VM is NOT paused: */
+    if (!uisession()->isPaused())
     {
-        bool processed = false;
-#if defined (Q_WS_WIN)
-        NOREF(pUniKey);
-        int n = GetKeyboardLayoutList(0, NULL);
-        Assert(n);
-        HKL *list = new HKL[n];
-        GetKeyboardLayoutList(n, list);
-        for (int i = 0; i < n && !processed; i++)
-        {
-            wchar_t ch;
-            static BYTE keys[256] = {0};
-            if (!ToUnicodeEx(hotkey, 0, keys, &ch, 1, 0, list[i]) == 1)
-                ch = 0;
-            if (ch)
-                processed = machineLogic()->actionsPool()->processHotKey(QKeySequence((Qt::UNICODE_ACCEL + QChar(ch).toUpper().unicode())));
-        }
-        delete[] list;
-#elif defined (Q_WS_X11)
-        NOREF(pUniKey);
-        Display *display = QX11Info::display();
-        int keysyms_per_keycode = getKeysymsPerKeycode();
-        KeyCode kc = XKeysymToKeycode (display, iKey);
-        for (int i = 0; i < keysyms_per_keycode && !processed; i += 2)
-        {
-            KeySym ks = XKeycodeToKeysym(display, kc, i);
-            char ch = 0;
-            if (!XkbTranslateKeySym(display, &ks, 0, &ch, 1, NULL) == 1)
-                ch = 0;
-            if (ch)
-            {
-                QChar c = QString::fromLocal8Bit(&ch, 1)[0];
-                processed = machineLogic()->actionsPool()->processHotKey(QKeySequence((Qt::UNICODE_ACCEL + QChar(c).toUpper().unicode())));
-            }
-        }
-#elif defined (Q_WS_MAC)
-        if (pUniKey && pUniKey[0] && !pUniKey[1])
-            processed = machineLogic()->actionsPool()->processHotKey(QKeySequence(Qt::UNICODE_ACCEL + QChar(pUniKey[0]).toUpper().unicode()));
+        /* Get the VM keyboard: */
+        CKeyboard keyboard = session().GetConsole().GetKeyboard();
+        Assert(!keyboard.isNull());
 
-        /* Don't consider the hot key as pressed since the guest never saw
-         * it. (probably a generic thing) */
-        m_pressedKeys[uScan] &= ~whatPressed;
-#endif
-        /* Grab the key from Qt if processed, or pass it to Qt otherwise
-         * in order to process non-alphanumeric keys in event(), after they are
-         * converted to Qt virtual keys. */
-        return processed;
+        /* If there are scan-codes to send: */
+        if (uCodesCount)
+        {
+            /* Send prepared scan-codes to the guest: */
+            std::vector<LONG> scancodes(pCodes, &pCodes[uCodesCount]);
+            keyboard.PutScancodes(QVector<LONG>::fromStdVector(scancodes));
+        }
+
+        /* If full host-key sequence was just finalized: */
+        if (isHostComboStateChanged && m_bIsHostComboPressed)
+        {
+            keyEventReleaseHostComboKeys(keyboard);
+        }
     }
 
-    /* No more to do, if the host key is in action or the VM is paused: */
-    if (m_bIsHostkeyPressed || isHostKey || uisession()->isPaused())
-    {
-        /* Grab the key from Qt and from VM if it's a host key,
-         * otherwise just pass it to Qt */
-        return isHostKey;
-    }
+    /* Prevent the key from going to Qt: */
+    return true;
+}
 
-    CKeyboard keyboard = session().GetConsole().GetKeyboard();
-    Assert(!keyboard.isNull());
+bool UIKeyboardHandler::processHotKey(int iHotKey, wchar_t *pHotKey)
+{
+    /* Prepare processing result: */
+    bool fWasProcessed = false;
 
 #ifdef Q_WS_WIN
-    /* Send pending WM_PAINT events: */
-    ::UpdateWindow(m_views[uScreenId]->viewport()->winId());
+    Q_UNUSED(pHotKey);
+    int iKeyboardLayout = GetKeyboardLayoutList(0, NULL);
+    Assert(iKeyboardLayout);
+    HKL *pList = new HKL[iKeyboardLayout];
+    GetKeyboardLayoutList(iKeyboardLayout, pList);
+    for (int i = 0; i < iKeyboardLayout && !fWasProcessed; ++i)
+    {
+        wchar_t symbol;
+        static BYTE keys[256] = {0};
+        if (!ToUnicodeEx(iHotKey, 0, keys, &symbol, 1, 0, pList[i]) == 1)
+            symbol = 0;
+        if (symbol)
+            fWasProcessed = machineLogic()->actionsPool()->processHotKey(QKeySequence((Qt::UNICODE_ACCEL + QChar(symbol).toUpper().unicode())));
+    }
+    delete[] pList;
 #endif /* Q_WS_WIN */
 
-    std::vector <LONG> scancodes(codes, &codes[count]);
-    keyboard.PutScancodes(QVector<LONG>::fromStdVector(scancodes));
+#ifdef Q_WS_X11
+    Q_UNUSED(pHotKey);
+    Display *pDisplay = QX11Info::display();
+    int iKeysymsPerKeycode = getKeysymsPerKeycode();
+    KeyCode keyCode = XKeysymToKeycode(pDisplay, iHotKey);
+    for (int i = 0; i < iKeysymsPerKeycode && !fWasProcessed; i += 2)
+    {
+        KeySym ks = XKeycodeToKeysym(pDisplay, keyCode, i);
+        char symbol = 0;
+        if (!XkbTranslateKeySym(pDisplay, &ks, 0, &symbol, 1, NULL) == 1)
+            symbol = 0;
+        if (symbol)
+        {
+            QChar qtSymbol = QString::fromLocal8Bit(&symbol, 1)[0];
+            fWasProcessed = machineLogic()->actionsPool()->processHotKey(QKeySequence((Qt::UNICODE_ACCEL + qtSymbol.toUpper().unicode())));
+        }
+    }
+#endif /* Q_WS_X11 */
 
-    /* Grab the key from Qt: */
-    return true;
+#ifdef Q_WS_MAC
+    Q_UNUSED(iHotKey);
+    if (pHotKey && pHotKey[0] && !pHotKey[1])
+        fWasProcessed = machineLogic()->actionsPool()->processHotKey(QKeySequence(Qt::UNICODE_ACCEL + QChar(pHotKey[0]).toUpper().unicode()));
+#endif /* Q_WS_MAC */
+
+    /* Grab the key from the Qt if it was processed, or pass it to the Qt otherwise
+     * in order to process non-alphanumeric keys in event(), after they are converted to Qt virtual keys: */
+    return fWasProcessed;
 }
 
 void UIKeyboardHandler::fixModifierState(LONG *piCodes, uint *puCount)
@@ -1431,55 +1586,6 @@ void UIKeyboardHandler::saveKeyStates()
     ::memcpy(m_pressedKeysCopy, m_pressedKeys, sizeof(m_pressedKeys));
 }
 
-void UIKeyboardHandler::releaseAllPressedKeys(bool aReleaseHostKey /* = true */)
-{
-    CKeyboard keyboard = session().GetConsole().GetKeyboard();
-    bool fSentRESEND = false;
-
-    /* Send a dummy scan code (RESEND) to prevent the guest OS from recognizing
-     * a single key click (for ex., Alt) and performing an unwanted action
-     * (for ex., activating the menu) when we release all pressed keys below.
-     * Note, that it's just a guess that sending RESEND will give the desired
-     * effect :), but at least it works with NT and W2k guests. */
-    for (uint i = 0; i < SIZEOF_ARRAY (m_pressedKeys); i++)
-    {
-        if (m_pressedKeys[i] & IsKeyPressed)
-        {
-            if (!fSentRESEND)
-            {
-                keyboard.PutScancode (0xFE);
-                fSentRESEND = true;
-            }
-            keyboard.PutScancode(i | 0x80);
-        }
-        else if (m_pressedKeys[i] & IsExtKeyPressed)
-        {
-            if (!fSentRESEND)
-            {
-                keyboard.PutScancode(0xFE);
-                fSentRESEND = true;
-            }
-            QVector <LONG> codes(2);
-            codes[0] = 0xE0;
-            codes[1] = i | 0x80;
-            keyboard.PutScancodes(codes);
-        }
-        m_pressedKeys[i] = 0;
-    }
-
-    if (aReleaseHostKey)
-        m_bIsHostkeyPressed = false;
-
-#ifdef Q_WS_MAC
-    /* Clear most of the modifiers: */
-    m_darwinKeyModifiers &=
-        alphaLock | kEventKeyModifierNumLockMask |
-        (aReleaseHostKey ? 0 : ::DarwinKeyCodeToDarwinModifierMask(m_globalSettings.hostKey()));
-#endif
-
-    emit keyboardStateChanged(keyboardState());
-}
-
 void UIKeyboardHandler::sendChangedKeyStates()
 {
     QVector <LONG> codes(2);
@@ -1504,6 +1610,31 @@ void UIKeyboardHandler::sendChangedKeyStates()
             keyboard.PutScancodes(codes);
         }
     }
+}
+
+bool UIKeyboardHandler::isAutoCaptureDisabled()
+{
+    return uisession()->isAutoCaptureDisabled();
+}
+
+void UIKeyboardHandler::setAutoCaptureDisabled(bool fIsAutoCaptureDisabled)
+{
+    uisession()->setAutoCaptureDisabled(fIsAutoCaptureDisabled);
+}
+
+bool UIKeyboardHandler::autoCaptureSetGlobally()
+{
+    return m_globalSettings.autoCapture();
+}
+
+bool UIKeyboardHandler::viewHasFocus(ulong uScreenId)
+{
+    return m_views[uScreenId]->hasFocus();
+}
+
+bool UIKeyboardHandler::isSessionRunning()
+{
+    return uisession()->isRunning();
 }
 
 UIMachineWindow* UIKeyboardHandler::isItListenedWindow(QObject *pWatchedObject) const
@@ -1539,4 +1670,3 @@ UIMachineView* UIKeyboardHandler::isItListenedView(QObject *pWatchedObject) cons
     }
     return pResultView;
 }
-

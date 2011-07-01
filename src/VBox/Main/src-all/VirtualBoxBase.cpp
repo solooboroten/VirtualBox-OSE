@@ -1,4 +1,4 @@
-/* $Id: VirtualBoxBase.cpp 35368 2010-12-30 13:38:23Z vboxsync $ */
+/* $Id: VirtualBoxBase.cpp 36451 2011-03-28 19:40:52Z vboxsync $ */
 
 /** @file
  *
@@ -509,6 +509,29 @@ HRESULT VirtualBoxBase::setErrorNoLog(HRESULT aResultCode, const char *pcsz, ...
     return rc;
 }
 
+/**
+ * Clear the current error information.
+ */
+/*static*/
+void VirtualBoxBase::clearError(void)
+{
+#if !defined(VBOX_WITH_XPCOM)
+    ::SetErrorInfo (0, NULL);
+#else
+    HRESULT rc = S_OK;
+    nsCOMPtr <nsIExceptionService> es;
+    es = do_GetService(NS_EXCEPTIONSERVICE_CONTRACTID, &rc);
+    if (NS_SUCCEEDED(rc))
+    {
+        nsCOMPtr <nsIExceptionManager> em;
+        rc = es->GetCurrentExceptionManager (getter_AddRefs (em));
+        if (SUCCEEDED(rc))
+            em->SetCurrentException(NULL);
+    }
+#endif
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // AutoInitSpan methods
@@ -793,6 +816,9 @@ void MultiResult::decCounter()
 /*static*/
 bool MultiResult::isMultiEnabled()
 {
+    if (sCounter == NIL_RTTLS)
+       return false;
+
     return ((uintptr_t)RTTlsGet(MultiResult::sCounter)) > 0;
 }
 

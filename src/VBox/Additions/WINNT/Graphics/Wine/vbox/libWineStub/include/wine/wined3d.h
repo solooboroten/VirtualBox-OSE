@@ -2111,6 +2111,25 @@ typedef struct _WINED3DDISPLAYMODE {
     UINT RefreshRate;
     WINED3DFORMAT Format;
 } WINED3DDISPLAYMODE;
+typedef enum _WINED3DSCANLINEORDERING {
+  WINED3DSCANLINEORDERING_UNKNOWN    = 0, 
+  WINED3DSCANLINEORDERING_PROGRESSIVE   = 1,
+  WINED3DSCANLINEORDERING_INTERLACED    = 2 
+} WINED3DSCANLINEORDERING;
+typedef struct _WINED3DDISPLAYMODEEX {
+    UINT Size;
+    UINT Width;
+    UINT Height;
+    UINT RefreshRate;
+    WINED3DFORMAT Format;
+    WINED3DSCANLINEORDERING ScanLineOrdering;
+} WINED3DDISPLAYMODEEX;
+typedef enum _WINED3DDISPLAYROTATION {
+  WINED3DDISPLAYROTATION_IDENTITY   = 1,
+  WINED3DDISPLAYROTATION_90         = 2,
+  WINED3DDISPLAYROTATION_180        = 3,
+  WINED3DDISPLAYROTATION_270        = 4 
+} WINED3DDISPLAYROTATION;
 typedef struct _WINED3DCOLORVALUE {
     float r;
     float g;
@@ -2940,6 +2959,11 @@ interface IWineD3D : public IWineD3DBase
         UINT adapter_idx,
         WINED3DDISPLAYMODE *mode) = 0;
 
+    virtual HRESULT STDMETHODCALLTYPE GetAdapterDisplayModeEx(
+        UINT adapter_idx,
+        WINED3DDISPLAYMODEEX *mode,
+        WINED3DDISPLAYROTATION *rotation) = 0;
+
     virtual HRESULT STDMETHODCALLTYPE GetAdapterIdentifier(
         UINT adapter_idx,
         DWORD flags,
@@ -3047,6 +3071,12 @@ typedef struct IWineD3DVtbl {
         UINT adapter_idx,
         WINED3DDISPLAYMODE *mode);
 
+    HRESULT (STDMETHODCALLTYPE *GetAdapterDisplayModeEx)(
+        IWineD3D* This,
+        UINT adapter_idx,
+        WINED3DDISPLAYMODEEX *mode,
+        WINED3DDISPLAYROTATION *rotation);
+
     HRESULT (STDMETHODCALLTYPE *GetAdapterIdentifier)(
         IWineD3D* This,
         UINT adapter_idx,
@@ -3131,6 +3161,7 @@ interface IWineD3D {
 #define IWineD3D_GetAdapterModeCount(This,adapter_idx,format) (This)->lpVtbl->GetAdapterModeCount(This,adapter_idx,format)
 #define IWineD3D_EnumAdapterModes(This,adapter_idx,format,mode_idx,mode) (This)->lpVtbl->EnumAdapterModes(This,adapter_idx,format,mode_idx,mode)
 #define IWineD3D_GetAdapterDisplayMode(This,adapter_idx,mode) (This)->lpVtbl->GetAdapterDisplayMode(This,adapter_idx,mode)
+#define IWineD3D_GetAdapterDisplayModeEx(This,adapter_idx,mode,rotation) (This)->lpVtbl->GetAdapterDisplayModeEx(This,adapter_idx,mode,rotation)
 #define IWineD3D_GetAdapterIdentifier(This,adapter_idx,flags,identifier) (This)->lpVtbl->GetAdapterIdentifier(This,adapter_idx,flags,identifier)
 #define IWineD3D_CheckDeviceMultiSampleType(This,adapter_idx,device_type,surface_format,windowed,multisample_type,quality_levels) (This)->lpVtbl->CheckDeviceMultiSampleType(This,adapter_idx,device_type,surface_format,windowed,multisample_type,quality_levels)
 #define IWineD3D_CheckDepthStencilMatch(This,adapter_idx,device_type,adapter_format,render_target_format,depth_stencil_format) (This)->lpVtbl->CheckDepthStencilMatch(This,adapter_idx,device_type,adapter_format,render_target_format,depth_stencil_format)
@@ -3191,6 +3222,16 @@ HRESULT STDMETHODCALLTYPE IWineD3D_GetAdapterDisplayMode_Proxy(
     UINT adapter_idx,
     WINED3DDISPLAYMODE *mode);
 void __RPC_STUB IWineD3D_GetAdapterDisplayMode_Stub(
+    IRpcStubBuffer* This,
+    IRpcChannelBuffer* pRpcChannelBuffer,
+    PRPC_MESSAGE pRpcMessage,
+    DWORD* pdwStubPhase);
+HRESULT STDMETHODCALLTYPE IWineD3D_GetAdapterDisplayModeEx_Proxy(
+    IWineD3D* This,
+    UINT adapter_idx,
+    WINED3DDISPLAYMODEEX *mode,
+    WINED3DDISPLAYROTATION *rotation);
+void __RPC_STUB IWineD3D_GetAdapterDisplayModeEx_Stub(
     IRpcStubBuffer* This,
     IRpcChannelBuffer* pRpcChannelBuffer,
     PRPC_MESSAGE pRpcMessage,
@@ -7409,7 +7450,7 @@ typedef struct IWineD3DDeviceVtbl {
         const struct wined3d_parent_ops *parent_ops
 #ifdef VBOX_WITH_WDDM
         , HANDLE *shared_handle
-        , void *pvClientMem
+        , void **pavClientMem
 #endif
         );
 
@@ -7450,7 +7491,7 @@ typedef struct IWineD3DDeviceVtbl {
         const struct wined3d_parent_ops *parent_ops
 #ifdef VBOX_WITH_WDDM
         , HANDLE *shared_handle
-        , void *pvClientMem
+        , void **pavClientMem
 #endif
         );
 
@@ -8116,14 +8157,14 @@ interface IWineD3DDevice {
 #endif
 #define IWineD3DDevice_CreateRendertargetView(This,resource,parent,rendertarget_view) (This)->lpVtbl->CreateRendertargetView(This,resource,parent,rendertarget_view)
 #ifdef VBOX_WITH_WDDM
-#define IWineD3DDevice_CreateTexture(This,width,height,levels,usage,format,pool,texture,parent,parent_ops,shared_handle,pvClientMem) (This)->lpVtbl->CreateTexture(This,width,height,levels,usage,format,pool,texture,parent,parent_ops,shared_handle,pvClientMem)
+#define IWineD3DDevice_CreateTexture(This,width,height,levels,usage,format,pool,texture,parent,parent_ops,shared_handle,pavClientMem) (This)->lpVtbl->CreateTexture(This,width,height,levels,usage,format,pool,texture,parent,parent_ops,shared_handle,pavClientMem)
 #else
 #define IWineD3DDevice_CreateTexture(This,width,height,levels,usage,format,pool,texture,parent,parent_ops) (This)->lpVtbl->CreateTexture(This,width,height,levels,usage,format,pool,texture,parent,parent_ops)
 #endif
 #define IWineD3DDevice_CreateVolumeTexture(This,width,height,depth,levels,usage,format,pool,texture,parent,parent_ops) (This)->lpVtbl->CreateVolumeTexture(This,width,height,depth,levels,usage,format,pool,texture,parent,parent_ops)
 #define IWineD3DDevice_CreateVolume(This,width,height,depth,usage,format,pool,volume,parent,parent_ops) (This)->lpVtbl->CreateVolume(This,width,height,depth,usage,format,pool,volume,parent,parent_ops)
 #ifdef VBOX_WITH_WDDM
-#define IWineD3DDevice_CreateCubeTexture(This,edge_length,levels,usage,format,pool,texture,parent,parent_ops,shared_handle,pvClientMem) (This)->lpVtbl->CreateCubeTexture(This,edge_length,levels,usage,format,pool,texture,parent,parent_ops,shared_handle,pvClientMem)
+#define IWineD3DDevice_CreateCubeTexture(This,edge_length,levels,usage,format,pool,texture,parent,parent_ops,shared_handle,pavClientMem) (This)->lpVtbl->CreateCubeTexture(This,edge_length,levels,usage,format,pool,texture,parent,parent_ops,shared_handle,pavClientMem)
 #else
 #define IWineD3DDevice_CreateCubeTexture(This,edge_length,levels,usage,format,pool,texture,parent,parent_ops) (This)->lpVtbl->CreateCubeTexture(This,edge_length,levels,usage,format,pool,texture,parent,parent_ops)
 #endif

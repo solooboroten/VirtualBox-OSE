@@ -1,4 +1,4 @@
-/* $Id: DevSerial.cpp 35353 2010-12-27 17:25:52Z vboxsync $ */
+/* $Id: DevSerial.cpp 37466 2011-06-15 12:44:16Z vboxsync $ */
 /** @file
  * DevSerial - 16550A UART emulation.
  * (taken from hw/serial.c 2010/05/15 with modifications)
@@ -137,7 +137,8 @@
 
 #define XMIT_FIFO           0
 #define RECV_FIFO           1
-#define MAX_XMIT_RETRY      8
+#define MIN_XMIT_RETRY      16
+#define MAX_XMIT_RETRY_TIME 1           /* max time (in seconds) for retrying the character xmit before dropping it */
 
 /*******************************************************************************
 *   Structures and Typedefs                                                    *
@@ -211,13 +212,16 @@ struct SerialState
     int                             last_break_enable;
     /** Counter for retrying xmit */
     int                             tsr_retry;
+    int                             tsr_retry_bound; /**< number of retries before dropping a character */
+    int                             tsr_retry_bound_max; /**< maximum possible tsr_retry_bound value that can be set while dynamic bound adjustment */
+    int                             tsr_retry_bound_min; /**< minimum possible tsr_retry_bound value that can be set while dynamic bound adjustment */
     bool                            msr_changed;
     bool                            fGCEnabled;
     bool                            fR0Enabled;
     bool                            fYieldOnLSRRead;
     bool volatile                   fRecvWaiting;
     bool                            f16550AEnabled;
-    bool                            Alignment3[2];
+    bool                            Alignment3[6];
     /** Time it takes to transmit a character */
     uint64_t                        char_transmit_time;
 
@@ -272,6 +276,8 @@ static int fifo_put(SerialState *s, int fifo, uint8_t chr)
 
     if (f->count < UART_FIFO_LENGTH)
         f->count++;
+    else if (fifo == XMIT_FIFO) /* need to at least adjust tail to maintain pipe state consistency */
+        ++f->tail;
     else if (fifo == RECV_FIFO)
         s->lsr |= UART_LSR_OE;
 
@@ -338,6 +344,28 @@ static void serial_update_irq(SerialState *s)
     }
 }
 
+static void serial_tsr_retry_update_parameters(SerialState *s, uint64_t tf)
+{
+    s->tsr_retry_bound_max = RT_MAX((tf * MAX_XMIT_RETRY_TIME) / s->char_transmit_time, MIN_XMIT_RETRY);
+    s->tsr_retry_bound_min = RT_MAX(s->tsr_retry_bound_max / (1000 * MAX_XMIT_RETRY_TIME), MIN_XMIT_RETRY);
+    /* for simplicity just reset to max retry count */
+    s->tsr_retry_bound = s->tsr_retry_bound_max;
+}
+
+static void serial_tsr_retry_bound_reached(SerialState *s)
+{
+    /* this is most likely means we have some backend connection issues */
+    /* decrement the retry bound */
+    s->tsr_retry_bound = RT_MAX(s->tsr_retry_bound / (10 * MAX_XMIT_RETRY_TIME), s->tsr_retry_bound_min);
+}
+
+static void serial_tsr_retry_succeeded(SerialState *s)
+{
+    /* success means we have a backend connection working OK,
+     * set retry bound to its maximum value */
+    s->tsr_retry_bound = s->tsr_retry_bound_max;
+}
+
 static void serial_update_parameters(SerialState *s)
 {
     int speed, parity, data_bits, stop_bits, frame_size;
@@ -363,17 +391,19 @@ static void serial_update_parameters(SerialState *s)
     data_bits = (s->lcr & 0x03) + 5;
     frame_size += data_bits + stop_bits;
     speed = 115200 / s->divider;
-    s->char_transmit_time = (TMTimerGetFreq(CTX_SUFF(s->transmit_timer)) / speed) * frame_size;
+    uint64_t tf = TMTimerGetFreq(CTX_SUFF(s->transmit_timer));
+    s->char_transmit_time = (tf / speed) * frame_size;
+    serial_tsr_retry_update_parameters(s, tf);
+
     Log(("speed=%d parity=%c data=%d stop=%d\n", speed, parity, data_bits, stop_bits));
 
     if (RT_LIKELY(s->pDrvChar))
         s->pDrvChar->pfnSetParameters(s->pDrvChar, speed, parity, data_bits, stop_bits);
 }
 
-static void serial_xmit(void *opaque)
+static void serial_xmit(void *opaque, bool bRetryXmit)
 {
     SerialState *s = (SerialState*)opaque;
-    uint64_t new_xmit_ts = TMTimerGet(CTX_SUFF(s->transmit_timer));
 
     if (s->tsr_retry <= 0) {
         if (s->fcr & UART_FCR_FE) {
@@ -391,17 +421,23 @@ static void serial_xmit(void *opaque)
         serial_receive(s, &s->tsr, 1);
     } else if (   RT_LIKELY(s->pDrvChar)
                && RT_FAILURE(s->pDrvChar->pfnWrite(s->pDrvChar, &s->tsr, 1))) {
-        if ((s->tsr_retry >= 0) && (s->tsr_retry <= MAX_XMIT_RETRY)) {
-            s->tsr_retry++;
-            TMTimerSet(CTX_SUFF(s->transmit_timer), new_xmit_ts + s->char_transmit_time);
+        if ((s->tsr_retry >= 0) && ((!bRetryXmit) || (s->tsr_retry <= s->tsr_retry_bound))) {
+            if (!s->tsr_retry)
+                s->tsr_retry = 1; /* make sure the retry state is always set */
+            else if (bRetryXmit) /* do not increase the retry count if the retry is actually caused by next char write */
+                s->tsr_retry++;
+
+            TMTimerSet(CTX_SUFF(s->transmit_timer), TMTimerGet(CTX_SUFF(s->transmit_timer)) + s->char_transmit_time * 4);
             return;
         } else {
             /* drop this character. */
             s->tsr_retry = 0;
+            serial_tsr_retry_bound_reached(s);
         }
     }
     else {
         s->tsr_retry = 0;
+        serial_tsr_retry_succeeded(s);
     }
 
     if (!(s->lsr & UART_LSR_THRE))
@@ -444,7 +480,7 @@ static int serial_ioport_write(SerialState *s, uint32_t addr, uint32_t val)
                 s->lsr &= ~UART_LSR_THRE;
                 serial_update_irq(s);
             }
-            serial_xmit(s);
+            serial_xmit(s, false);
         }
         break;
     case 1:
@@ -790,11 +826,12 @@ static DECLCALLBACK(int) serialNotifyBreak(PPDMICHARPORT pInterface)
  */
 static DECLCALLBACK(void) serialFifoTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer, void *pvUser)
 {
-    SerialState *s = (SerialState*)pvUser;
-    if (s->recv_fifo.count)
+    SerialState *pThis = (SerialState *)pvUser;
+    Assert(PDMCritSectIsOwner(&pThis->CritSect));
+    if (pThis->recv_fifo.count)
     {
-        s->timeout_ipending = 1;
-        serial_update_irq(s);
+        pThis->timeout_ipending = 1;
+        serial_update_irq(pThis);
     }
 }
 
@@ -808,8 +845,9 @@ static DECLCALLBACK(void) serialFifoTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer, v
  */
 static DECLCALLBACK(void) serialTransmitTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer, void *pvUser)
 {
-    SerialState *s = (SerialState*)pvUser;
-    serial_xmit(s);
+    SerialState *pThis = (SerialState *)pvUser;
+    Assert(PDMCritSectIsOwner(&pThis->CritSect));
+    serial_xmit(pThis, true);
 }
 
 /**
@@ -832,7 +870,9 @@ static DECLCALLBACK(void) serialReset(PPDMDEVINS pDevIns)
     s->mcr = UART_MCR_OUT2;
     s->scr = 0;
     s->tsr_retry = 0;
-    s->char_transmit_time = (TMTimerGetFreq(CTX_SUFF(s->transmit_timer)) / 9600) * 10;
+    uint64_t tf = TMTimerGetFreq(CTX_SUFF(s->transmit_timer));
+    s->char_transmit_time = (tf / 9600) * 10;
+    serial_tsr_retry_update_parameters(s, tf);
 
     fifo_clear(s, RECV_FIFO);
     fifo_clear(s, XMIT_FIFO);
@@ -863,20 +903,19 @@ PDMBOTHCBDECL(int) serialIOPortWrite(PPDMDEVINS pDevIns, void *pvUser,
                                      RTIOPORT Port, uint32_t u32, unsigned cb)
 {
     SerialState *pThis = PDMINS_2_DATA(pDevIns, SerialState *);
-    int          rc = VINF_SUCCESS;
+    int          rc;
+    Assert(PDMCritSectIsOwner(&pThis->CritSect));
 
     if (cb == 1)
     {
-        rc = PDMCritSectEnter(&pThis->CritSect, VINF_IOM_HC_IOPORT_WRITE);
-        if (rc == VINF_SUCCESS)
-        {
-            Log2(("%s: port %#06x val %#04x\n", __FUNCTION__, Port, u32));
-            rc = serial_ioport_write(pThis, Port, u32);
-            PDMCritSectLeave(&pThis->CritSect);
-        }
+        Log2(("%s: port %#06x val %#04x\n", __FUNCTION__, Port, u32));
+        rc = serial_ioport_write(pThis, Port, u32);
     }
     else
+    {
         AssertMsgFailed(("Port=%#x cb=%d u32=%#x\n", Port, cb, u32));
+        rc = VINF_SUCCESS;
+    }
 
     return rc;
 }
@@ -896,17 +935,13 @@ PDMBOTHCBDECL(int) serialIOPortRead(PPDMDEVINS pDevIns, void *pvUser,
                                     RTIOPORT Port, uint32_t *pu32, unsigned cb)
 {
     SerialState *pThis = PDMINS_2_DATA(pDevIns, SerialState *);
-    int          rc = VINF_SUCCESS;
+    int          rc;
+    Assert(PDMCritSectIsOwner(&pThis->CritSect));
 
     if (cb == 1)
     {
-        rc = PDMCritSectEnter(&pThis->CritSect, VINF_IOM_HC_IOPORT_READ);
-        if (rc == VINF_SUCCESS)
-        {
-            *pu32 = serial_ioport_read(pThis, Port, &rc);
-            Log2(("%s: port %#06x val %#04x\n", __FUNCTION__, Port, *pu32));
-            PDMCritSectLeave(&pThis->CritSect);
-        }
+        *pu32 = serial_ioport_read(pThis, Port, &rc);
+        Log2(("%s: port %#06x val %#04x\n", __FUNCTION__, Port, *pu32));
     }
     else
         rc = VERR_IOM_IOPORT_UNUSED;
@@ -1229,25 +1264,35 @@ static DECLCALLBACK(int) serialConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
     LogRel(("Serial#%d: emulating %s\n", pDevIns->iInstance, pThis->f16550AEnabled ? "16550A" : "16450"));
 
     /*
-     * Initialize critical section and the semaphore.
-     * This must of course be done before attaching drivers or anything else which can call us back..
+     * Initialize critical section and the semaphore.  Change the default
+     * critical section to ours so that TM and IOM will enter it before
+     * calling us.
+     *
+     * Note! This must of be done BEFORE creating timers, registering I/O ports
+     *       and other things which might pick up the default CS or end up
+     *       calling back into the device.
      */
-    rc = PDMDevHlpCritSectInit(pDevIns, &pThis->CritSect, RT_SRC_POS, "Serial#%d", iInstance);
-    if (RT_FAILURE(rc))
-        return rc;
+    rc = PDMDevHlpCritSectInit(pDevIns, &pThis->CritSect, RT_SRC_POS, "Serial#%u", iInstance);
+    AssertRCReturn(rc, rc);
+
+    rc = PDMDevHlpSetDeviceCritSect(pDevIns, &pThis->CritSect);
+    AssertRCReturn(rc, rc);
 
     rc = RTSemEventCreate(&pThis->ReceiveSem);
-    AssertRC(rc);
+    AssertRCReturn(rc, rc);
 
+    /*
+     * Create the timers.
+     */
     rc = PDMDevHlpTMTimerCreate(pDevIns, TMCLOCK_VIRTUAL, serialFifoTimer, pThis,
-                                TMTIMER_FLAGS_NO_CRIT_SECT, "Serial Fifo Timer",
+                                TMTIMER_FLAGS_DEFAULT_CRIT_SECT, "Serial Fifo Timer",
                                 &pThis->fifo_timeout_timer);
-    AssertRC(rc);
+    AssertRCReturn(rc, rc);
 
     rc = PDMDevHlpTMTimerCreate(pDevIns, TMCLOCK_VIRTUAL, serialTransmitTimer, pThis,
-                                TMTIMER_FLAGS_NO_CRIT_SECT, "Serial Transmit Timer",
+                                TMTIMER_FLAGS_DEFAULT_CRIT_SECT, "Serial Transmit Timer",
                                 &pThis->transmit_timerR3);
-    AssertRC(rc);
+    AssertRCReturn(rc, rc);
     pThis->transmit_timerR0 = TMTimerR0Ptr(pThis->transmit_timerR3);
     pThis->transmit_timerRC = TMTimerRCPtr(pThis->transmit_timerR3);
 

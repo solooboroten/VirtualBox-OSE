@@ -1,4 +1,4 @@
-/* $Id: VBoxNetAdpCtl.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: VBoxNetAdpCtl.cpp 35819 2011-02-01 20:21:53Z vboxsync $ */
 /** @file
  * Apps - VBoxAdpCtl, Configuration tool for vboxnetX adapters.
  */
@@ -40,7 +40,7 @@
 #define VBOXNETADP_CTL_DEV_NAME    "/dev/vboxnetctl"
 #define VBOXNETADP_NAME            "vboxnet"
 #define VBOXNETADP_MAX_NAME_LEN    32
-#define VBOXNETADP_CTL_ADD    _IOR('v', 1, VBOXNETADPREQ)
+#define VBOXNETADP_CTL_ADD   _IOWR('v', 1, VBOXNETADPREQ)
 #define VBOXNETADP_CTL_REMOVE _IOW('v', 2, VBOXNETADPREQ)
 typedef struct VBoxNetAdpReq
 {
@@ -65,7 +65,7 @@ typedef VBOXNETADPREQ *PVBOXNETADPREQ;
 static void showUsage(void)
 {
     fprintf(stderr, "Usage: VBoxNetAdpCtl <adapter> <address> ([netmask <address>] | remove)\n");
-    fprintf(stderr, "     | VBoxNetAdpCtl add\n");
+    fprintf(stderr, "     | VBoxNetAdpCtl [<adapter>] add\n");
     fprintf(stderr, "     | VBoxNetAdpCtl <adapter> remove\n");
 }
 
@@ -178,18 +178,22 @@ static bool removeAddresses(char *pszAdapterName)
     return true;
 }
 
-int doIOCtl(unsigned long uCmd, void *pData)
+static int doIOCtl(unsigned long uCmd, VBOXNETADPREQ *pReq)
 {
     int fd = open(VBOXNETADP_CTL_DEV_NAME, O_RDWR);
     if (fd == -1)
     {
-        perror("VBoxNetAdpCtl: failed to open " VBOXNETADP_CTL_DEV_NAME);
+        fprintf(stderr, "VBoxNetAdpCtl: Error while %s '%s': ",
+               uCmd == VBOXNETADP_CTL_REMOVE ? "removing" : "adding", pReq->szName);
+        perror("failed to open " VBOXNETADP_CTL_DEV_NAME);
         return ADPCTLERR_NO_CTL_DEV;
     }
 
-    int rc = ioctl(fd, uCmd, pData);
+    int rc = ioctl(fd, uCmd, pReq);
     if (rc == -1)
     {
+        fprintf(stderr, "VBoxNetAdpCtl: Error while %s '%s': ",
+               uCmd == VBOXNETADP_CTL_REMOVE ? "removing" : "adding", pReq->szName);
         perror("VBoxNetAdpCtl: ioctl failed for " VBOXNETADP_CTL_DEV_NAME);
         rc = ADPCTLERR_IOCTL_FAILED;
     }
@@ -199,7 +203,7 @@ int doIOCtl(unsigned long uCmd, void *pData)
     return rc;
 }
 
-int checkAdapterName(const char *pcszNameIn, char *pszNameOut)
+static int checkAdapterName(const char *pcszNameIn, char *pszNameOut)
 {
     int iAdapterIndex = -1;
 
@@ -207,13 +211,13 @@ int checkAdapterName(const char *pcszNameIn, char *pszNameOut)
         || sscanf(pcszNameIn, "vboxnet%d", &iAdapterIndex) != 1
         || iAdapterIndex < 0 || iAdapterIndex > 99 )
     {
-        fprintf(stderr, "Setting configuration for %s is not supported.\n", pcszNameIn);
+        fprintf(stderr, "VBoxNetAdpCtl: Setting configuration for '%s' is not supported.\n", pcszNameIn);
         return ADPCTLERR_BAD_NAME;
     }
     sprintf(pszNameOut, "vboxnet%d", iAdapterIndex);
     if (strcmp(pszNameOut, pcszNameIn))
     {
-        fprintf(stderr, "Invalid adapter name %s.\n", pcszNameIn);
+        fprintf(stderr, "VBoxNetAdpCtl: Invalid adapter name '%s'.\n", pcszNameIn);
         return ADPCTLERR_BAD_NAME;
     }
 
@@ -221,7 +225,6 @@ int checkAdapterName(const char *pcszNameIn, char *pszNameOut)
 }
 
 int main(int argc, char *argv[])
-
 {
     char szAdapterName[VBOXNETADP_MAX_NAME_LEN];
     char *pszAdapterName = NULL;
@@ -267,21 +270,33 @@ int main(int argc, char *argv[])
 
         case 3:
         {
-            /* Remove an existing interface */
             pszAdapterName = argv[1];
+            memset(&Req, '\0', sizeof(Req));
+            rc = checkAdapterName(pszAdapterName, szAdapterName);
+            if (rc)
+                return rc;
+            snprintf(Req.szName, sizeof(Req.szName), "%s", szAdapterName);
             pszAddress = argv[2];
             if (strcmp("remove", pszAddress) == 0)
             {
-                rc = checkAdapterName(pszAdapterName, szAdapterName);
-                if (rc)
-                    return rc;
+                /* Remove an existing interface */
 #ifdef RT_OS_SOLARIS
                 return 1;
 #else
-                memset(&Req, '\0', sizeof(Req));
-                snprintf(Req.szName, sizeof(Req.szName), "%s", szAdapterName);
                 return doIOCtl(VBOXNETADP_CTL_REMOVE, &Req);
 #endif
+            }
+            else if (strcmp("add", pszAddress) == 0)
+            {
+                /* Create an interface with given name */
+#ifdef RT_OS_SOLARIS
+                return 1;
+#else
+                rc = doIOCtl(VBOXNETADP_CTL_ADD, &Req);
+                if (rc == 0)
+                    puts(Req.szName);
+#endif
+                return rc;
             }
             break;
         }

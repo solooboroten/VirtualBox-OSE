@@ -1,10 +1,10 @@
-/* $Id: xml.cpp 35128 2010-12-15 12:38:41Z vboxsync $ */
+/* $Id: xml.cpp 37493 2011-06-16 13:18:11Z vboxsync $ */
 /** @file
  * IPRT - XML Manipulation API.
  */
 
 /*
- * Copyright (C) 2007-2010 Oracle Corporation
+ * Copyright (C) 2007-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -90,7 +90,7 @@ public:
 
         /** Used to provide some thread safety missing in libxml2 (see e.g.
          *  XmlTreeBackend::read()) */
-        RTLockMtx lock;
+        RTCLockMtx lock;
     }
     sxml;  /* XXX naming this xml will break with gcc-3.3 */
 }
@@ -108,7 +108,7 @@ namespace xml
 ////////////////////////////////////////////////////////////////////////////////
 
 LogicError::LogicError(RT_SRC_POS_DECL)
-    : Error(NULL)
+    : RTCError(NULL)
 {
     char *msg = NULL;
     RTStrAPrintf(&msg, "In '%s', '%s' at #%d",
@@ -174,7 +174,7 @@ struct File::Data
         : handle(NIL_RTFILE), opened(false)
     { }
 
-    iprt::MiniString strFileName;
+    RTCString strFileName;
     RTFILE handle;
     bool opened : 1;
     bool flushOnClose : 1;
@@ -386,7 +386,7 @@ int MemoryBuf::read (char *aBuf, int aLen)
 struct GlobalLock::Data
 {
     PFNEXTERNALENTITYLOADER pOldLoader;
-    RTLock lock;
+    RTCLock lock;
 
     Data()
         : pOldLoader(NULL),
@@ -824,7 +824,7 @@ bool ElementNode::getAttributeValue(const char *pcszMatch, const char *&ppcsz) c
  * @param str out: attribute value; overwritten only if attribute was found
  * @return TRUE if attribute was found and str was thus updated.
  */
-bool ElementNode::getAttributeValue(const char *pcszMatch, iprt::MiniString &str) const
+bool ElementNode::getAttributeValue(const char *pcszMatch, RTCString &str) const
 {
     const Node* pAttr;
     if ((pAttr = findAttribute(pcszMatch)))
@@ -843,7 +843,7 @@ bool ElementNode::getAttributeValue(const char *pcszMatch, iprt::MiniString &str
  * @param str
  * @return
  */
-bool ElementNode::getAttributeValuePath(const char *pcszMatch, iprt::MiniString &str) const
+bool ElementNode::getAttributeValuePath(const char *pcszMatch, RTCString &str) const
 {
     if (getAttributeValue(pcszMatch, str))
     {
@@ -1077,9 +1077,9 @@ AttributeNode* ElementNode::setAttribute(const char *pcszName, const char *pcszV
  * @param strValue
  * @return
  */
-AttributeNode* ElementNode::setAttributePath(const char *pcszName, const iprt::MiniString &strValue)
+AttributeNode* ElementNode::setAttributePath(const char *pcszName, const RTCString &strValue)
 {
-    iprt::MiniString strTemp(strValue);
+    RTCString strTemp(strValue);
     strTemp.findReplace('\\', '/');
     return setAttribute(pcszName, strTemp.c_str());
 }
@@ -1097,7 +1097,7 @@ AttributeNode* ElementNode::setAttributePath(const char *pcszName, const iprt::M
  */
 AttributeNode* ElementNode::setAttribute(const char *pcszName, int32_t i)
 {
-    char szValue[10];
+    char szValue[12];  // negative sign + 10 digits + \0
     RTStrPrintf(szValue, sizeof(szValue), "%RI32", i);
     AttributeNode *p = setAttribute(pcszName, szValue);
     return p;
@@ -1116,7 +1116,7 @@ AttributeNode* ElementNode::setAttribute(const char *pcszName, int32_t i)
  */
 AttributeNode* ElementNode::setAttribute(const char *pcszName, uint32_t u)
 {
-    char szValue[10];
+    char szValue[11];  // 10 digits + \0
     RTStrPrintf(szValue, sizeof(szValue), "%RU32", u);
     AttributeNode *p = setAttribute(pcszName, szValue);
     return p;
@@ -1135,7 +1135,7 @@ AttributeNode* ElementNode::setAttribute(const char *pcszName, uint32_t u)
  */
 AttributeNode* ElementNode::setAttribute(const char *pcszName, int64_t i)
 {
-    char szValue[20];
+    char szValue[21];  // negative sign + 19 digits + \0
     RTStrPrintf(szValue, sizeof(szValue), "%RI64", i);
     AttributeNode *p = setAttribute(pcszName, szValue);
     return p;
@@ -1154,7 +1154,7 @@ AttributeNode* ElementNode::setAttribute(const char *pcszName, int64_t i)
  */
 AttributeNode* ElementNode::setAttribute(const char *pcszName, uint64_t u)
 {
-    char szValue[20];
+    char szValue[21];  // 20 digits + \0
     RTStrPrintf(szValue, sizeof(szValue), "%RU64", u);
     AttributeNode *p = setAttribute(pcszName, szValue);
     return p;
@@ -1173,7 +1173,7 @@ AttributeNode* ElementNode::setAttribute(const char *pcszName, uint64_t u)
  */
 AttributeNode* ElementNode::setAttributeHex(const char *pcszName, uint32_t u)
 {
-    char szValue[10];
+    char szValue[11];  // "0x" + 8 digits + \0
     RTStrPrintf(szValue, sizeof(szValue), "0x%RX32", u);
     AttributeNode *p = setAttribute(pcszName, szValue);
     return p;
@@ -1307,11 +1307,13 @@ struct Document::Data
 {
     xmlDocPtr   plibDocument;
     ElementNode *pRootElement;
+    ElementNode *pComment;
 
     Data()
     {
         plibDocument = NULL;
         pRootElement = NULL;
+        pComment = NULL;
     }
 
     ~Data()
@@ -1330,6 +1332,11 @@ struct Document::Data
         {
             delete pRootElement;
             pRootElement = NULL;
+        }
+        if (pComment)
+        {
+            delete pComment;
+            pComment = NULL;
         }
     }
 
@@ -1402,7 +1409,8 @@ ElementNode* Document::getRootElement()
  * Creates a new element node and sets it as the root element. This will
  * only work if the document is empty; otherwise EDocumentNotEmpty is thrown.
  */
-ElementNode* Document::createRootElement(const char *pcszRootElementName)
+ElementNode* Document::createRootElement(const char *pcszRootElementName,
+                                         const char *pcszComment /* = NULL */)
 {
     if (m->pRootElement || m->plibDocument)
         throw EDocumentNotEmpty(RT_SRC_POS);
@@ -1414,9 +1422,20 @@ ElementNode* Document::createRootElement(const char *pcszRootElementName)
                                     (const xmlChar*)pcszRootElementName)))
         throw std::bad_alloc();
     xmlDocSetRootElement(m->plibDocument, plibRootNode);
-
     // now wrap this in C++
     m->pRootElement = new ElementNode(NULL, NULL, plibRootNode);
+
+    // add document global comment if specified
+    if (pcszComment != NULL)
+    {
+        xmlNode *pComment;
+        if (!(pComment = xmlNewDocComment(m->plibDocument,
+                                          (const xmlChar *)pcszComment)))
+            throw std::bad_alloc();
+        xmlAddPrevSibling(plibRootNode, pComment);
+        // now wrap this in C++
+        m->pComment = new ElementNode(NULL, NULL, pComment);
+    }
 
     return m->pRootElement;
 }
@@ -1467,7 +1486,7 @@ XmlMemParser::~XmlMemParser()
  * @param doc out: document to be reset and filled with data according to file contents.
  */
 void XmlMemParser::read(const void* pvBuf, size_t cbSize,
-                        const iprt::MiniString &strFilename,
+                        const RTCString &strFilename,
                         Document &doc)
 {
     GlobalLock lock;
@@ -1525,7 +1544,7 @@ void XmlMemWriter::write(const Document &doc, void **ppvBuf, size_t *pcbSize)
 
 struct XmlFileParser::Data
 {
-    iprt::MiniString strXmlFilename;
+    RTCString strXmlFilename;
 
     Data()
     {
@@ -1551,14 +1570,14 @@ XmlFileParser::~XmlFileParser()
 struct IOContext
 {
     File file;
-    iprt::MiniString error;
+    RTCString error;
 
     IOContext(const char *pcszFilename, File::Mode mode, bool fFlush = false)
         : file(mode, pcszFilename, fFlush)
     {
     }
 
-    void setError(const iprt::Error &x)
+    void setError(const RTCError &x)
     {
         error = x.what();
     }
@@ -1594,7 +1613,7 @@ struct WriteContext : IOContext
  * @param strFilename in: name fo file to parse.
  * @param doc out: document to be reset and filled with data according to file contents.
  */
-void XmlFileParser::read(const iprt::MiniString &strFilename,
+void XmlFileParser::read(const RTCString &strFilename,
                          Document &doc)
 {
     GlobalLock lock;
@@ -1630,7 +1649,7 @@ int XmlFileParser::ReadCallback(void *aCtxt, char *aBuf, int aLen)
         return pContext->file.read(aBuf, aLen);
     }
     catch (const xml::EIPRTFailure &err) { pContext->setError(err); }
-    catch (const iprt::Error &err) { pContext->setError(err); }
+    catch (const RTCError &err) { pContext->setError(err); }
     catch (const std::exception &err) { pContext->setError(err); }
     catch (...) { pContext->setError(xml::LogicError(RT_SRC_POS)); }
 
@@ -1755,7 +1774,7 @@ int XmlFileWriter::WriteCallback(void *aCtxt, const char *aBuf, int aLen)
         return pContext->file.write(aBuf, aLen);
     }
     catch (const xml::EIPRTFailure &err) { pContext->setError(err); }
-    catch (const iprt::Error &err) { pContext->setError(err); }
+    catch (const RTCError &err) { pContext->setError(err); }
     catch (const std::exception &err) { pContext->setError(err); }
     catch (...) { pContext->setError(xml::LogicError(RT_SRC_POS)); }
 

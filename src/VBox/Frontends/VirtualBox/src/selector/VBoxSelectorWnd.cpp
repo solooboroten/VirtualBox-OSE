@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -25,6 +25,7 @@
 #include "UIExportApplianceWzd.h"
 #include "UIIconPool.h"
 #include "UIImportApplianceWzd.h"
+#include "UICloneVMWizard.h"
 #include "UINewVMWzd.h"
 #include "UIVMDesktop.h"
 #include "UIVMListView.h"
@@ -37,6 +38,7 @@
 #include "UIToolBar.h"
 #include "VBoxVMLogViewer.h"
 #include "QIFileDialog.h"
+#include "UISelectorShortcuts.h"
 #include "UIDesktopServices.h"
 #include "UIGlobalSettingsExtension.h" /* extension pack installation */
 
@@ -139,6 +141,9 @@ VBoxSelectorWnd(VBoxSelectorWnd **aSelf, QWidget* aParent,
         QSize(32, 32), QSize(16, 16),
         ":/vm_settings_32px.png", ":/settings_16px.png",
         ":/vm_settings_disabled_32px.png", ":/settings_dis_16px.png"));
+    mVmCloneAction = new QAction(this);
+    mVmCloneAction->setIcon(UIIconPool::iconSet(
+        ":/vm_clone_16px.png", ":/vm_clone_disabled_16px.png"));
     mVmDeleteAction = new QAction(this);
     mVmDeleteAction->setIcon(UIIconPool::iconSetFull(
         QSize(32, 32), QSize(16, 16),
@@ -286,6 +291,7 @@ VBoxSelectorWnd(VBoxSelectorWnd **aSelf, QWidget* aParent,
     mVMMenu->addAction(mVmNewAction);
     mVMMenu->addAction(mVmAddAction);
     mVMMenu->addAction(mVmConfigAction);
+    mVMMenu->addAction(mVmCloneAction);
     mVMMenu->addAction(mVmDeleteAction);
     mVMMenu->addSeparator();
     mVMMenu->addAction(mVmStartAction);
@@ -304,6 +310,7 @@ VBoxSelectorWnd(VBoxSelectorWnd **aSelf, QWidget* aParent,
 
     mVMCtxtMenu = new QMenu(this);
     mVMCtxtMenu->addAction(mVmConfigAction);
+    mVMCtxtMenu->addAction(mVmCloneAction);
     mVMCtxtMenu->addAction(mVmDeleteAction);
     mVMCtxtMenu->addSeparator();
     mVMCtxtMenu->addAction(mVmStartAction);
@@ -433,6 +440,7 @@ VBoxSelectorWnd(VBoxSelectorWnd **aSelf, QWidget* aParent,
     connect(mVmAddAction, SIGNAL(triggered()), this, SLOT(vmAdd()));
 
     connect(mVmConfigAction, SIGNAL(triggered()), this, SLOT(vmSettings()));
+    connect(mVmCloneAction, SIGNAL(triggered()), this, SLOT(vmClone()));
     connect(mVmDeleteAction, SIGNAL(triggered()), this, SLOT(vmDelete()));
     connect(mVmStartAction, SIGNAL(triggered()), this, SLOT(vmStart()));
     connect(mVmDiscardAction, SIGNAL(triggered()), this, SLOT(vmDiscard()));
@@ -590,16 +598,9 @@ void VBoxSelectorWnd::fileExportAppliance()
 
 void VBoxSelectorWnd::fileSettings()
 {
-    VBoxGlobalSettings settings = vboxGlobal().settings();
-    CSystemProperties props = vboxGlobal().virtualBox().GetSystemProperties();
-
-    UISettingsDialog *dlg = new UIGLSettingsDlg(this);
-    dlg->getFrom();
-
-    if (dlg->exec() == QDialog::Accepted)
-        dlg->putBackTo();
-
-    delete dlg;
+    /* Create and execute global settings dialog: */
+    UISettingsDialogGlobal dlg(this);
+    dlg.execute();
 }
 
 void VBoxSelectorWnd::fileExit()
@@ -695,22 +696,24 @@ void VBoxSelectorWnd::vmAdd(const QString &strFile /* = "" */)
 /**
  *  Opens the VM settings dialog.
  */
-void VBoxSelectorWnd::vmSettings(const QString &aCategory /* = QString::null */,
-                                 const QString &aControl /* = QString::null */,
-                                 const QString &aUuid /* = QString::null */)
+void VBoxSelectorWnd::vmSettings(const QString &strCategoryRef /* = QString::null */,
+                                 const QString &strControlRef /* = QString::null */,
+                                 const QString &strMachineId /* = QString::null */)
 {
-    if (!aCategory.isEmpty() && aCategory [0] != '#')
+    /* Process href from VM details / description: */
+    if (!strCategoryRef.isEmpty() && strCategoryRef[0] != '#')
     {
-        /* Assume it's a href from the Details HTML */
-        vboxGlobal().openURL(aCategory);
+        vboxGlobal().openURL(strCategoryRef);
         return;
     }
-    QString strCategory = aCategory;
-    QString strControl = aControl;
-    /* Maybe the control is coded into the URL by %% */
-    if (aControl == QString::null)
+
+    /* Get category and control: */
+    QString strCategory = strCategoryRef;
+    QString strControl = strControlRef;
+    /* Check if control is coded into the URL by %%: */
+    if (strControl.isEmpty())
     {
-        QStringList parts = aCategory.split("%%");
+        QStringList parts = strCategory.split("%%");
         if (parts.size() == 2)
         {
             strCategory = parts.at(0);
@@ -718,44 +721,28 @@ void VBoxSelectorWnd::vmSettings(const QString &aCategory /* = QString::null */,
         }
     }
 
-    UIVMItem *item = aUuid.isNull() ? mVMListView->selectedItem() :
-                       mVMModel->itemById(aUuid);
+    /* Don't show the inaccessible warning if the user tries to open VM settings: */
+    mDoneInaccessibleWarningOnce = true;
+
+    /* Get corresponding VM item: */
+    UIVMItem *pItem = strMachineId.isNull() ? mVMListView->selectedItem() : mVMModel->itemById(strMachineId);
+    AssertMsgReturnVoid(pItem, ("Item must be always selected here!\n"));
+
+    /* Create and execute corresponding VM settings dialog: */
+    UISettingsDialogMachine dlg(this, pItem->id(), strCategory, strControl);
+    dlg.execute();
+}
+
+void VBoxSelectorWnd::vmClone(const QString &aUuid /* = QString::null */)
+{
+    UIVMItem *item = aUuid.isNull() ? mVMListView->selectedItem() : mVMModel->itemById(aUuid);
 
     AssertMsgReturnVoid(item, ("Item must be always selected here"));
 
-    // open a direct session to modify VM settings
-    QString id = item->id();
-    CSession session = vboxGlobal().openSession(id);
-    if (session.isNull())
-        return;
+    CMachine machine = item->machine();
 
-    CMachine m = session.GetMachine();
-    AssertMsgReturn(!m.isNull(), ("Machine must not be null"), (void) 0);
-
-    /* Don't show the inaccessible warning if the user open the vm settings. */
-    mDoneInaccessibleWarningOnce = true;
-
-    UISettingsDialog *dlg = new UIVMSettingsDlg(this, m, strCategory, strControl);
-    dlg->getFrom();
-
-    if (dlg->exec() == QDialog::Accepted)
-    {
-        QString oldName = m.GetName();
-        dlg->putBackTo();
-
-        m.SaveSettings();
-        if (!m.isOk())
-            vboxProblem().cannotSaveMachineSettings(m);
-
-        /* To check use the result in future
-         * vboxProblem().cannotApplyMachineSettings(m, res); */
-    }
-
-    delete dlg;
-
-    mVMListView->setFocus();
-
-    session.UnlockMachine();
+    UICloneVMWizard wzd(this, machine, false);
+    wzd.exec();
 }
 
 void VBoxSelectorWnd::vmDelete(const QString &aUuid /* = QString::null */)
@@ -780,7 +767,7 @@ void VBoxSelectorWnd::vmDelete(const QString &aUuid /* = QString::null */)
                 {
                     vboxProblem().showModalProgressDialog(progress, item->name(), ":/progress_delete_90px.png", 0, true);
                     if (progress.GetResultCode() != 0)
-                        vboxProblem().cannotDeleteMachine(machine);
+                        vboxProblem().cannotDeleteMachine(machine, progress);
                 }
             }
             if (!machine.isOk())
@@ -1180,11 +1167,7 @@ bool VBoxSelectorWnd::eventFilter(QObject *pObject, QEvent *pEvent)
  */
 void VBoxSelectorWnd::retranslateUi()
 {
-#ifdef VBOX_OSE
-    QString title(tr("VirtualBox OSE"));
-#else
     QString title(VBOX_PRODUCT);
-#endif
     title += " " + tr("Manager", "Note: main window title which is pretended by the product name.");
 
 #ifdef VBOX_BLEEDING_EDGE
@@ -1201,83 +1184,71 @@ void VBoxSelectorWnd::retranslateUi()
     vmListViewCurrentChanged();
 
     mFileMediaMgrAction->setText(tr("&Virtual Media Manager..."));
-    mFileMediaMgrAction->setShortcut(QKeySequence("Ctrl+D"));
+    mFileMediaMgrAction->setShortcut(gSS->keySequence(UISelectorShortcuts::VirtualMediaManagerShortcut));
     mFileMediaMgrAction->setStatusTip(tr("Display the Virtual Media Manager dialog"));
 
     mFileApplianceImportAction->setText(tr("&Import Appliance..."));
-    mFileApplianceImportAction->setShortcut(QKeySequence("Ctrl+I"));
+    mFileApplianceImportAction->setShortcut(gSS->keySequence(UISelectorShortcuts::ImportApplianceShortcut));
     mFileApplianceImportAction->setStatusTip(tr("Import an appliance into VirtualBox"));
 
     mFileApplianceExportAction->setText(tr("&Export Appliance..."));
-    mFileApplianceExportAction->setShortcut(QKeySequence("Ctrl+E"));
+    mFileApplianceExportAction->setShortcut(gSS->keySequence(UISelectorShortcuts::ExportApplianceShortcut));
     mFileApplianceExportAction->setStatusTip(tr("Export one or more VirtualBox virtual machines as an appliance"));
 
-#ifdef Q_WS_MAC
-    /*
-     * Macification: Getting the right menu as application preference menu item.
-     *
-     * QMenuBar::isCommand() in qmenubar_mac.cpp doesn't recognize "Setting"(s)
-     * unless it's in the first position. So, we use the Mac term here to make
-     * sure we get picked instead of the VM settings.
-     *
-     * Now, since both QMenuBar and we translate these strings, it's going to
-     * be really interesting to see how this plays on non-english systems...
-     */
     mFileSettingsAction->setText(tr("&Preferences...", "global settings"));
-#else
-    /*
-     * ...and on other platforms we use "Preferences" as well. The #ifdef is
-     * left because of the possible localization problems on Mac we first need
-     * to figure out.
-     */
-    mFileSettingsAction->setText(tr("&Preferences...", "global settings"));
-#endif
-    mFileSettingsAction->setShortcut(QKeySequence("Ctrl+G"));
+    mFileSettingsAction->setShortcut(gSS->keySequence(UISelectorShortcuts::PreferencesShortcut));
     mFileSettingsAction->setStatusTip(tr("Display the global settings dialog"));
 
     mFileExitAction->setText(tr("E&xit"));
-    mFileExitAction->setShortcut(QKeySequence("Ctrl+Q"));
+    mFileExitAction->setShortcut(gSS->keySequence(UISelectorShortcuts::ExitShortcut));
     mFileExitAction->setStatusTip(tr("Close application"));
 
     mVmNewAction->setText(tr("&New..."));
-    mVmNewAction->setShortcut(QKeySequence("Ctrl+N"));
+    mVmNewAction->setShortcut(gSS->keySequence(UISelectorShortcuts::NewVMShortcut));
     mVmNewAction->setStatusTip(tr("Create a new virtual machine"));
     mVmNewAction->setToolTip(mVmNewAction->text().remove('&').remove('.') +
-        QString("(%1)").arg(mVmNewAction->shortcut().toString()));
+        (mVmNewAction->shortcut().toString().isEmpty() ? "" : QString(" (%1)").arg(mVmNewAction->shortcut().toString())));
 
     mVmAddAction->setText(tr("&Add..."));
-    mVmAddAction->setShortcut(QKeySequence("Ctrl+A"));
+    mVmAddAction->setShortcut(gSS->keySequence(UISelectorShortcuts::AddVMShortcut));
     mVmAddAction->setStatusTip(tr("Add an existing virtual machine"));
-    mVmAddAction->setToolTip(mVmAddAction->text().remove('&').remove('.') +
-        QString("(%1)").arg(mVmAddAction->shortcut().toString()));
 
     mVmConfigAction->setText(tr("&Settings..."));
-    mVmConfigAction->setShortcut(QKeySequence("Ctrl+S"));
+    mVmConfigAction->setShortcut(gSS->keySequence(UISelectorShortcuts::SettingsVMShortcut));
     mVmConfigAction->setStatusTip(tr("Configure the selected virtual machine"));
     mVmConfigAction->setToolTip(mVmConfigAction->text().remove('&').remove('.') +
-        QString("(%1)").arg(mVmConfigAction->shortcut().toString()));
+        (mVmConfigAction->shortcut().toString().isEmpty() ? "" : QString(" (%1)").arg(mVmConfigAction->shortcut().toString())));
+
+    mVmCloneAction->setText(tr("&Clone..."));
+    mVmCloneAction->setShortcut(gSS->keySequence(UISelectorShortcuts::CloneVMShortcut));
+    mVmCloneAction->setStatusTip(tr("Clone the selected virtual machine"));
 
     mVmDeleteAction->setText(tr("&Remove"));
-    mVmDeleteAction->setShortcut(QKeySequence("Ctrl+R"));
+    mVmDeleteAction->setShortcut(gSS->keySequence(UISelectorShortcuts::RemoveVMShortcut));
     mVmDeleteAction->setStatusTip(tr("Remove the selected virtual machine"));
 
     /* Note: mVmStartAction text is set up in vmListViewCurrentChanged() */
 
-    mVmDiscardAction->setText(tr("D&iscard"));
+    mVmDiscardAction->setIconText(tr("Discard"));
+    mVmDiscardAction->setText(tr("D&iscard Saved State"));
+    mVmDiscardAction->setShortcut(gSS->keySequence(UISelectorShortcuts::DiscardVMShortcut));
     mVmDiscardAction->setStatusTip(
         tr("Discard the saved state of the selected virtual machine"));
+    mVmDiscardAction->setToolTip(mVmDiscardAction->text().remove('&').remove('.') +
+        (mVmDiscardAction->shortcut().toString().isEmpty() ? "" : QString(" (%1)").arg(mVmDiscardAction->shortcut().toString())));
 
     mVmPauseAction->setText(tr("&Pause"));
     mVmPauseAction->setStatusTip(
         tr("Suspend the execution of the virtual machine"));
 
     mVmRefreshAction->setText(tr("Re&fresh"));
+    mVmRefreshAction->setShortcut(gSS->keySequence(UISelectorShortcuts::RefreshVMShortcut));
     mVmRefreshAction->setStatusTip(
         tr("Refresh the accessibility state of the selected virtual machine"));
 
     mVmShowLogsAction->setText(tr("Show &Log..."));
     mVmShowLogsAction->setIconText(tr("Log", "icon text"));
-    mVmShowLogsAction->setShortcut(QKeySequence("Ctrl+L"));
+    mVmShowLogsAction->setShortcut(gSS->keySequence(UISelectorShortcuts::ShowVMLogShortcut));
     mVmShowLogsAction->setStatusTip(
         tr("Show the log files of the selected virtual machine"));
 
@@ -1297,6 +1268,8 @@ void VBoxSelectorWnd::retranslateUi()
     mVmCreateShortcut->setText(tr("Create Shortcut on Desktop"));
     mVmCreateShortcut->setStatusTip(tr("Creates an Shortcut file to the VirtualBox Machine Definition file on your Desktop."));
 #endif
+    mVmOpenInFileManagerAction->setShortcut(gSS->keySequence(UISelectorShortcuts::ShowVMInFileManagerShortcut));
+    mVmCreateShortcut->setShortcut(gSS->keySequence(UISelectorShortcuts::CreateVMAliasShortcut));
 
     mHelpActions.retranslateUi();
 
@@ -1345,7 +1318,7 @@ void VBoxSelectorWnd::vmListViewCurrentChanged(bool aRefreshDetails,
 
         KMachineState state = item->machineState();
         bool running = item->sessionState() != KSessionState_Unlocked;
-        bool modifyEnabled = !running && state != KMachineState_Saved;
+        bool modifyEnabled = state != KMachineState_Stuck && state != KMachineState_Saved /* for now! */;
 
         if (   aRefreshDetails
             || aRefreshDescription)
@@ -1357,6 +1330,7 @@ void VBoxSelectorWnd::vmListViewCurrentChanged(bool aRefreshDetails,
 
         /* enable/disable modify actions */
         mVmConfigAction->setEnabled(modifyEnabled);
+        mVmCloneAction->setEnabled(!running);
         mVmDeleteAction->setEnabled(!running);
         mVmDiscardAction->setEnabled(state == KMachineState_Saved && !running);
         mVmPauseAction->setEnabled(   state == KMachineState_Running
@@ -1374,6 +1348,9 @@ void VBoxSelectorWnd::vmListViewCurrentChanged(bool aRefreshDetails,
            )
         {
             mVmStartAction->setText(tr("S&tart"));
+            mVmStartAction->setShortcut(gSS->keySequence(UISelectorShortcuts::StartVMShortcut));
+            mVmStartAction->setToolTip(mVmStartAction->text().remove('&').remove('.') +
+                  (mVmStartAction->shortcut().toString().isEmpty() ? "" : QString(" (%1)").arg(mVmStartAction->shortcut().toString())));
 #ifdef QT_MAC_USE_COCOA
             /* There is a bug in Qt Cocoa which result in showing a "more arrow" when
                the necessary size of the toolbar is increased. Also for some languages
@@ -1389,6 +1366,9 @@ void VBoxSelectorWnd::vmListViewCurrentChanged(bool aRefreshDetails,
         else
         {
             mVmStartAction->setText(tr("S&how"));
+            mVmStartAction->setShortcut(gSS->keySequence(UISelectorShortcuts::StartVMShortcut));
+            mVmStartAction->setToolTip(mVmStartAction->text().remove('&').remove('.') +
+                  (mVmStartAction->shortcut().toString().isEmpty() ? "" : QString(" (%1)").arg(mVmStartAction->shortcut().toString())));
 #ifdef QT_MAC_USE_COCOA
             /* There is a bug in Qt Cocoa which result in showing a "more arrow" when
                the necessary size of the toolbar is increased. Also for some languages
@@ -1407,8 +1387,7 @@ void VBoxSelectorWnd::vmListViewCurrentChanged(bool aRefreshDetails,
             || state == KMachineState_TeleportingPausedVM /*?*/
            )
         {
-            mVmPauseAction->setText(tr("R&esume"));
-            mVmPauseAction->setShortcut(QKeySequence("Ctrl+P"));
+            mVmPauseAction->setShortcut(gSS->keySequence(UISelectorShortcuts::PauseVMShortcut));
             mVmPauseAction->setStatusTip(
                 tr("Resume the execution of the virtual machine"));
             mVmPauseAction->blockSignals(true);
@@ -1417,8 +1396,7 @@ void VBoxSelectorWnd::vmListViewCurrentChanged(bool aRefreshDetails,
         }
         else
         {
-            mVmPauseAction->setText(tr("&Pause"));
-            mVmPauseAction->setShortcut(QKeySequence("Ctrl+P"));
+            mVmPauseAction->setShortcut(gSS->keySequence(UISelectorShortcuts::PauseVMShortcut));
             mVmPauseAction->setStatusTip(
                 tr("Suspend the execution of the virtual machine"));
             mVmPauseAction->blockSignals(true);
@@ -1483,6 +1461,7 @@ void VBoxSelectorWnd::vmListViewCurrentChanged(bool aRefreshDetails,
 
         /* disable modify actions */
         mVmConfigAction->setEnabled(false);
+        mVmCloneAction->setEnabled(false);
         mVmDeleteAction->setEnabled(item != NULL);
         mVmDiscardAction->setEnabled(false);
         mVmPauseAction->setEnabled(false);

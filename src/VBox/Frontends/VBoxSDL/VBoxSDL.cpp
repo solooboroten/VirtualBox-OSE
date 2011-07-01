@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -244,6 +244,15 @@ public:
     {
     }
 
+    HRESULT init()
+    {
+        return S_OK;
+    }
+
+    void uninit()
+    {
+    }
+
     STDMETHOD(HandleEvent)(VBoxEventType_T aType, IEvent * aEvent)
     {
         switch (aType)
@@ -286,6 +295,15 @@ public:
     }
 
     virtual ~VBoxSDLEventListener()
+    {
+    }
+
+    HRESULT init()
+    {
+        return S_OK;
+    }
+
+    void uninit()
     {
     }
 
@@ -346,6 +364,15 @@ public:
     }
 
     virtual ~VBoxSDLConsoleEventListener()
+    {
+    }
+
+    HRESULT init()
+    {
+        return S_OK;
+    }
+
+    void uninit()
     {
     }
 
@@ -688,6 +715,12 @@ void signal_handler_SIGINT(int sig)
 }
 #endif /* VBOXSDL_WITH_X11 */
 
+
+#ifdef RT_OS_WINDOWS
+// Required for ATL
+static CComModule _Module;
+#endif
+
 /** entry point */
 extern "C"
 DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
@@ -771,9 +804,9 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     DeviceType_T bootDevice = DeviceType_Null;
     uint32_t memorySize = 0;
     uint32_t vramSize = 0;
-    IEventListener *pVBoxClientListener = NULL;
-    IEventListener *pVBoxListener = NULL;
-    VBoxSDLConsoleEventListenerImpl *pConsoleListener = NULL;
+    ComPtr<IEventListener> pVBoxClientListener;
+    ComPtr<IEventListener> pVBoxListener;
+    ComObjPtr<VBoxSDLConsoleEventListenerImpl> pConsoleListener;
 
     bool fFullscreen = false;
     bool fResizable = true;
@@ -1332,10 +1365,22 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     }
 
     /*
-     * Do we have a name but no UUID?
+     * Do we have a UUID?
      */
-    if (vmName && uuidVM.isEmpty())
+    if (!uuidVM.isEmpty())
     {
+        rc = pVirtualBox->FindMachine(uuidVM.toUtf16().raw(), pMachine.asOutParam());
+        if (FAILED(rc) || !pMachine)
+        {
+            RTPrintf("Error: machine with the given ID not found!\n");
+            goto leave;
+        }
+    }
+    else if (vmName)
+    {
+        /*
+         * Do we have a name but no UUID?
+         */
         rc = pVirtualBox->FindMachine(Bstr(vmName).raw(), pMachine.asOutParam());
         if ((rc == S_OK) && pMachine)
         {
@@ -1413,7 +1458,8 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             /* we've not found the image */
             RTPrintf("Adding hard disk '%s'...\n", hdaFile);
             pVirtualBox->OpenMedium(bstrHdaFile.raw(), DeviceType_HardDisk,
-                                    AccessMode_ReadWrite, pMedium.asOutParam());
+                                    AccessMode_ReadWrite, FALSE /* fForceNewUuid */,
+                                    pMedium.asOutParam());
         }
         /* do we have the right image now? */
         if (pMedium)
@@ -1498,6 +1544,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
                                       OpenMedium(bstrFdaFile.raw(),
                                                  DeviceType_Floppy,
                                                  AccessMode_ReadWrite,
+                                                 FALSE /* fForceNewUuid */,
                                                  pMedium.asOutParam()));
                 }
             }
@@ -1578,6 +1625,7 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
                                       OpenMedium(bstrCdromFile.raw(),
                                                  DeviceType_DVD,
                                                  AccessMode_ReadWrite,
+                                                 FALSE /* fForceNewUuid */,
                                                  pMedium.asOutParam()));
                 }
             }
@@ -1821,7 +1869,10 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         // register listener for VirtualBoxClient events
         ComPtr<IEventSource> pES;
         CHECK_ERROR(pVirtualBoxClient, COMGETTER(EventSource)(pES.asOutParam()));
-        pVBoxClientListener = new VBoxSDLClientEventListenerImpl();
+        ComObjPtr<VBoxSDLClientEventListenerImpl> listener;
+        listener.createObject();
+        listener->init(new VBoxSDLClientEventListener());
+        pVBoxClientListener = listener;
         com::SafeArray<VBoxEventType_T> eventTypes;
         eventTypes.push_back(VBoxEventType_OnVBoxSVCAvailabilityChanged);
         CHECK_ERROR(pES, RegisterListener(pVBoxClientListener, ComSafeArrayAsInParam(eventTypes), true));
@@ -1831,7 +1882,10 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         // register listener for VirtualBox (server) events
         ComPtr<IEventSource> pES;
         CHECK_ERROR(pVirtualBox, COMGETTER(EventSource)(pES.asOutParam()));
-        pVBoxListener = new VBoxSDLEventListenerImpl();
+        ComObjPtr<VBoxSDLEventListenerImpl> listener;
+        listener.createObject();
+        listener->init(new VBoxSDLEventListener());
+        pVBoxListener = listener;
         com::SafeArray<VBoxEventType_T> eventTypes;
         eventTypes.push_back(VBoxEventType_OnExtraDataChanged);
         CHECK_ERROR(pES, RegisterListener(pVBoxListener, ComSafeArrayAsInParam(eventTypes), true));
@@ -1841,7 +1895,8 @@ DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         // register listener for Console events
         ComPtr<IEventSource> pES;
         CHECK_ERROR(gpConsole, COMGETTER(EventSource)(pES.asOutParam()));
-        pConsoleListener = new VBoxSDLConsoleEventListenerImpl();
+        pConsoleListener.createObject();
+        pConsoleListener->init(new VBoxSDLConsoleEventListener());
         com::SafeArray<VBoxEventType_T> eventTypes;
         eventTypes.push_back(VBoxEventType_OnMousePointerShapeChanged);
         eventTypes.push_back(VBoxEventType_OnMouseCapabilityChanged);
@@ -2713,8 +2768,7 @@ leave:
         CHECK_ERROR(gpConsole, COMGETTER(EventSource)(pES.asOutParam()));
         if (!pES.isNull())
             CHECK_ERROR(pES, UnregisterListener(pConsoleListener));
-        pConsoleListener->Release();
-        pConsoleListener = NULL;
+        pConsoleListener.setNull();
     }
 
     /*
@@ -2813,8 +2867,7 @@ leave:
         CHECK_ERROR(pVirtualBox, COMGETTER(EventSource)(pES.asOutParam()));
         if (!pES.isNull())
             CHECK_ERROR(pES, UnregisterListener(pVBoxListener));
-        pVBoxListener->Release();
-        pVBoxListener = NULL;
+        pVBoxListener.setNull();
     }
 
     /* VirtualBoxClient listener unregistration. */
@@ -2824,8 +2877,7 @@ leave:
         CHECK_ERROR(pVirtualBoxClient, COMGETTER(EventSource)(pES.asOutParam()));
         if (!pES.isNull())
             CHECK_ERROR(pES, UnregisterListener(pVBoxClientListener));
-        pVBoxClientListener->Release();
-        pVBoxClientListener = NULL;
+        pVBoxClientListener.setNull();
     }
 
     LogFlow(("Releasing machine, session...\n"));

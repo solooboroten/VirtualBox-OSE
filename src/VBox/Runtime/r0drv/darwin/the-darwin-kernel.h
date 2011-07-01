@@ -1,10 +1,10 @@
-/* $Id: the-darwin-kernel.h 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: the-darwin-kernel.h 37575 2011-06-21 12:40:01Z vboxsync $ */
 /** @file
  * IPRT - Include all necessary headers for the Darwing kernel.
  */
 
 /*
- * Copyright (C) 2006-2007 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -67,6 +67,8 @@
 #include <sys/ioccom.h>
 #include <sys/malloc.h>
 #include <sys/proc.h>
+#include <sys/vnode.h>
+#include <sys/fcntl.h>
 #include <IOKit/IOTypes.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/IOMemoryDescriptor.h>
@@ -110,6 +112,30 @@ extern kern_return_t thread_terminate(thread_t);
 extern void mp_rendezvous(void (*)(void *), void (*)(void *), void (*)(void *), void *);
 extern void mp_rendezvous_no_intrs(void (*)(void *), void *);
 
+/* osfmk/i386/cpu_data.h */
+struct my_cpu_data_x86
+{
+    struct my_cpu_data_x86 *cpu_this;
+    thread_t                cpu_active_thread;
+    void                   *cpu_int_state;
+    vm_offset_t             cpu_active_stack;
+    vm_offset_t             cpu_kernel_stack;
+    vm_offset_t             cpu_int_stack_top;
+    int                     cpu_preemption_level;
+    int                     cpu_simple_lock_count;
+    int                     cpu_interrupt_level;
+    int                     cpu_number;
+    int                     cpu_phys_number;
+    cpu_id_t                cpu_id;
+    int                     cpu_signals;
+    int                     cpu_mcount_off;
+    /*ast_t*/uint32_t       cpu_pending_ast;
+    int                     cpu_type;
+    int                     cpu_subtype;
+    int                     cpu_threadtype;
+    int                     cpu_running;
+};
+
 /* osfmk/i386/cpu_number.h */
 extern int cpu_number(void);
 
@@ -125,11 +151,19 @@ RT_C_DECLS_END
 /*
  * Internals of the Darwin Ring-0 IPRT.
  */
-
 RT_C_DECLS_BEGIN
-extern lck_grp_t *g_pDarwinLockGroup;
+
+/* initterm-r0drv-darwin.cpp. */
+typedef uint32_t *  (*PFNR0DARWINASTPENDING)(void);
+typedef void        (*PFNR0DARWINCPUINTERRUPT)(int);
+extern lck_grp_t                  *g_pDarwinLockGroup;
+extern PFNR0DARWINASTPENDING       g_pfnR0DarwinAstPending;
+extern PFNR0DARWINCPUINTERRUPT     g_pfnR0DarwinCpuInterrupt;
+
+/* threadpreempt-r0drv-darwin.cpp */
 int  rtThreadPreemptDarwinInit(void);
 void rtThreadPreemptDarwinTerm(void);
+
 RT_C_DECLS_END
 
 

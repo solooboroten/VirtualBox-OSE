@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -124,6 +124,8 @@ struct VBoxDefs
     static const char* GUI_PreviewUpdate;
     static const char* GUI_DetailsPageBoxes;
     static const char* GUI_SelectorVMPositions;
+    static const char* GUI_Input_MachineShortcuts;
+    static const char* GUI_Input_SelectorShortcuts;
 #ifdef Q_WS_X11
     static const char* GUI_LicenseKey;
 #endif
@@ -152,6 +154,9 @@ struct VBoxDefs
     static const char* GUI_Export_Bucket;
     static const char* GUI_PreventBetaWarning;
 
+    static const char* GUI_RecentFolderHD;
+    static const char* GUI_RecentFolderCD;
+    static const char* GUI_RecentFolderFD;
     static const char* GUI_RecentListHD;
     static const char* GUI_RecentListCD;
     static const char* GUI_RecentListFD;

@@ -150,6 +150,8 @@ typedef const X86RFLAGS *PCX86RFLAGS;
  */
 /** Bit 0 - CF - Carry flag - Status flag. */
 #define X86_EFL_CF          RT_BIT(0)
+/** Bit 1 - Reserved, reads as 1. */
+#define X86_EFL_1           RT_BIT(1)
 /** Bit 2 - PF - Parity flag - Status flag. */
 #define X86_EFL_PF          RT_BIT(2)
 /** Bit 4 - AF - Auxiliary carry flag - Status flag. */
@@ -256,8 +258,8 @@ typedef struct X86CPUIDFEATECX
     unsigned    u1AVX : 1;
     /** Bit 29 - 30 - Reserved */
     unsigned    u2Reserved3 : 2;
-    /** Reserved, always 0. */
-    unsigned    u1Reserved4 : 1;
+    /** Bit 31 - Hypervisor present (we're a guest). */
+    unsigned    u1HVP : 1;
 } X86CPUIDFEATECX;
 /** Pointer to CPUID Feature Information - ECX. */
 typedef X86CPUIDFEATECX *PX86CPUIDFEATECX;
@@ -412,6 +414,8 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define X86_CPUID_FEATURE_ECX_OSXSAVE   RT_BIT(27)
 /** ECX Bit 28 - AVX. */
 #define X86_CPUID_FEATURE_ECX_AVX       RT_BIT(28)
+/** ECX Bit 31 - Hypervisor Present (software only). */
+#define X86_CPUID_FEATURE_ECX_HVP       RT_BIT(31)
 
 
 /** Bit 0 - FPU - x87 FPU on Chip. */
@@ -875,7 +879,7 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 /** Trace/Profile Resource Control (R/W) */
 #define MSR_IA32_DEBUGCTL                   0x1D9
 
-/* Page Attribute Table. */
+/** Page Attribute Table. */
 #define MSR_IA32_CR_PAT                     0x277
 
 /** Performance counter MSRs. (Intel only) */
@@ -887,7 +891,27 @@ typedef const X86CPUIDFEATEDX *PCX86CPUIDFEATEDX;
 #define MSR_IA32_THERM_STATUS               0x19c
 
 /** Enable misc. processor features (R/W). */
-#define MSR_IA32_MISC_ENABLE                0x1A0
+#define MSR_IA32_MISC_ENABLE                   0x1A0
+/** Enable fast-strings feature (for REP MOVS and REP STORS). */
+#define MSR_IA32_MISC_ENABLE_FAST_STRINGS      RT_BIT(0)
+/** Automatic Thermal Control Circuit Enable (R/W). */
+#define MSR_IA32_MISC_ENABLE_TCC               RT_BIT(3)
+/** Performance Monitoring Available (R). */
+#define MSR_IA32_MISC_ENABLE_PERF_MON          RT_BIT(7)
+/** Branch Trace Storage Unavailable (R/O). */
+#define MSR_IA32_MISC_ENABLE_BTS_UNAVAIL       RT_BIT(11)
+/** Precise Event Based Sampling (PEBS) Unavailable (R/O). */
+#define MSR_IA32_MISC_ENABLE_PEBS_UNAVAIL      RT_BIT(12)
+/** Enhanced Intel SpeedStep Technology Enable (R/W). */
+#define MSR_IA32_MISC_ENABLE_SST_ENABLE        RT_BIT(16)
+/** If MONITOR/MWAIT is supported (R/W). */
+#define MSR_IA32_MISC_ENABLE_MONITOR           RT_BIT(18)
+/** Limit CPUID Maxval to 3 leafs (R/W). */
+#define MSR_IA32_MISC_ENABLE_LIMIT_CPUID       RT_BIT(22)
+/** When set to 1, xTPR messages are disabled (R/W). */
+#define MSR_IA32_MISC_ENABLE_XTPR_MSG_DISABLE  RT_BIT(23)
+/** When set to 1, the Execute Disable Bit feature (XD Bit) is disabled (R/W). */
+#define MSR_IA32_MISC_ENABLE_XD_DISABLE        RT_BIT(34)
 
 /** MTRR Default Range. */
 #define MSR_IA32_MTRR_DEF_TYPE              0x2FF
@@ -1899,35 +1923,36 @@ typedef X86FPUMMX *PX86FPUMMX;
 typedef const X86FPUMMX *PCX86FPUMMX;
 
 /**
- * FPU state (aka FSAVE/FRSTOR Memory Region).
+ * 32-bit FPU state (aka FSAVE/FRSTOR Memory Region).
+ * @todo verify this...
  */
 #pragma pack(1)
 typedef struct X86FPUSTATE
 {
-    /** Control word. */
+    /** 0x00 - Control word. */
     uint16_t    FCW;
-    /** Alignment word */
+    /** 0x02 - Alignment word */
     uint16_t    Dummy1;
-    /** Status word. */
+    /** 0x04 - Status word. */
     uint16_t    FSW;
-    /** Alignment word */
+    /** 0x06 - Alignment word */
     uint16_t    Dummy2;
-    /** Tag word */
+    /** 0x08 - Tag word */
     uint16_t    FTW;
-    /** Alignment word */
+    /** 0x0a - Alignment word */
     uint16_t    Dummy3;
 
-    /** Instruction pointer. */
+    /** 0x0c - Instruction pointer. */
     uint32_t    FPUIP;
-    /** Code selector. */
+    /** 0x10 - Code selector. */
     uint16_t    CS;
-    /** Opcode. */
+    /** 0x12 - Opcode. */
     uint16_t    FOP;
-    /** FOO. */
+    /** 0x14 - FOO. */
     uint32_t    FPUOO;
-    /** FOS. */
+    /** 0x18 - FOS. */
     uint32_t    FPUOS;
-    /* - offset 32 - */
+    /** 0x1c */
     union
     {
         /** MMX view. */
@@ -1960,28 +1985,30 @@ typedef const X86FPUSTATE  *PCX86FPUSTATE;
 #pragma pack(1)
 typedef struct X86FXSTATE
 {
-    /** Control word. */
+    /** 0x00 - Control word. */
     uint16_t    FCW;
-    /** Status word. */
+    /** 0x02 - Status word. */
     uint16_t    FSW;
-    /** Tag word. (The upper byte is always zero.) */
+    /** 0x04 - Tag word. (The upper byte is always zero.) */
     uint16_t    FTW;
-    /** Opcode. */
+    /** 0x06 - Opcode. */
     uint16_t    FOP;
-    /** Instruction pointer. */
+    /** 0x08 - Instruction pointer. */
     uint32_t    FPUIP;
-    /** Code selector. */
+    /** 0x0c - Code selector. */
     uint16_t    CS;
-    uint16_t    Rsvrd1;
-    /* - offset 16 - */
-    /** Data pointer. */
+    uint16_t    Rsrvd1;
+    /** 0x10 - Data pointer. */
     uint32_t    FPUDP;
-    /** Data segment */
+    /** 0x14 - Data segment */
     uint16_t    DS;
+    /** 0x16 */
     uint16_t    Rsrvd2;
+    /** 0x18 */
     uint32_t    MXCSR;
+    /** 0x1c */
     uint32_t    MXCSR_MASK;
-    /* - offset 32 - */
+    /** 0x20 */
     union
     {
         /** MMX view. */
@@ -2025,6 +2052,44 @@ typedef struct X86FXSTATE
 typedef X86FXSTATE *PX86FXSTATE;
 /** Pointer to a const FPU Extended state. */
 typedef const X86FXSTATE *PCX86FXSTATE;
+
+/** @name FPU status word flags.
+ * @{ */
+/** Exception Flag: Invalid operation.  */
+#define X86_FSW_IE          RT_BIT(0)
+/** Exception Flag: Denormalized operand.  */
+#define X86_FSW_DE          RT_BIT(1)
+/** Exception Flag: Zero divide.  */
+#define X86_FSW_ZE          RT_BIT(2)
+/** Exception Flag: Overflow.  */
+#define X86_FSW_OE          RT_BIT(3)
+/** Exception Flag: Underflow.  */
+#define X86_FSW_UE          RT_BIT(4)
+/** Exception Flag: Precision.  */
+#define X86_FSW_PE          RT_BIT(5)
+/** Stack fault. */
+#define X86_FSW_SF          RT_BIT(6)
+/** Error summary status. */
+#define X86_FSW_ES          RT_BIT(7)
+/** Condition code 0. */
+#define X86_FSW_C0          RT_BIT(8)
+/** Condition code 1. */
+#define X86_FSW_C1          RT_BIT(9)
+/** Condition code 2. */
+#define X86_FSW_C2          RT_BIT(10)
+/** Top of the stack mask. */
+#define X86_FSW_TOP_MASK    UINT16_C(0x3800)
+/** TOP shift value. */
+#define X86_FSW_TOP_SHIFT   11
+/** Mask for getting TOP value after shifting it right. */
+#define X86_FSW_TOP_SMASK   UINT16_C(0x0007)
+/** Get the TOP value. */
+#define X86_FSW_TOP_GET(a_uFsw) (((a_uFsw) >> X86_FSW_TOP_SHIFT) & X86_FSW_TOP_SMASK)
+/** Condition code 3. */
+#define X86_FSW_C3          RT_BIT(14)
+/** FPU busy. */
+#define X86_FSW_B           RT_BIT(15)
+/** @} */
 
 
 /** @name Selector Descriptor
@@ -2167,6 +2232,10 @@ typedef union X86DESC
     uint16_t        au16[4];
     /** 32 bit unsigned integer view. */
     uint32_t        au32[2];
+    /** 64 bit unsigned integer view. */
+    uint64_t        au64[1];
+    /** Unsigned integer view. */
+    uint64_t        u;
 } X86DESC;
 AssertCompileSize(X86DESC, 8);
 #pragma pack()
@@ -2189,6 +2258,13 @@ typedef const X86DESC *PCX86DESC;
 #define X86DESC_LIMIT(desc) /*ASM-NOINC*/ \
         (  ((uint32_t)((desc).Gen.u4LimitHigh) << 16) \
          | (           (desc).Gen.u16LimitLow       ) )
+
+/** @def X86DESC_GET_HID_ATTR
+ * Get the descriptor attributes for the hidden register.
+ */
+#define X86DESC_GET_HID_ATTR(desc) /*ASM-NOINC*/ \
+        ( (desc.u >> (16+16+8)) & UINT32_C(0xf0ff) ) /** @todo do we have a define for 0xf0ff? */
+
 
 /**
  * 64 bits generic descriptor table entry
@@ -2447,6 +2523,9 @@ typedef PCX86DESC   PCX86DESCHC;
 
 /** @name System Selector Types.
  * @{ */
+/** The TSS busy bit mask. */
+#define X86_SEL_TYPE_SYS_TSS_BUSY_MASK      2
+
 /** Undefined system selector type. */
 #define X86_SEL_TYPE_SYS_UNDEFINED          0
 /** 286 TSS selector. */
@@ -2722,16 +2801,16 @@ AssertCompileSize(X86TSS64, 136);
 /**
  * The mask used to mask off the table indicator and CPL of an selector.
  */
-#define X86_SEL_MASK        0xfff8
+#define X86_SEL_MASK        0xfff8U
 
 /**
  * The bit indicating that a selector is in the LDT and not in the GDT.
  */
-#define X86_SEL_LDT         0x0004
+#define X86_SEL_LDT         0x0004U
 /**
  * The bit mask for getting the RPL of a selector.
  */
-#define X86_SEL_RPL         0x0003
+#define X86_SEL_RPL         0x0003U
 
 /** @} */
 
@@ -2843,6 +2922,66 @@ typedef struct X86XDTR64
     uint64_t    uAddr;
 } X86XDTR64, *PX86XDTR64;
 #pragma pack()
+
+
+/** @name ModR/M
+ * @{ */
+#define X86_MODRM_RM_MASK       UINT8_C(0x07)
+#define X86_MODRM_REG_MASK      UINT8_C(0x38)
+#define X86_MODRM_REG_SMASK     UINT8_C(0x07)
+#define X86_MODRM_REG_SHIFT     3
+#define X86_MODRM_MOD_MASK      UINT8_C(0xc0)
+#define X86_MODRM_MOD_SMASK     UINT8_C(0x03)
+#define X86_MODRM_MOD_SHIFT     6
+AssertCompile((X86_MODRM_RM_MASK | X86_MODRM_REG_MASK | X86_MODRM_MOD_MASK) == 0xff);
+AssertCompile((X86_MODRM_REG_MASK >> X86_MODRM_REG_SHIFT) == X86_MODRM_REG_SMASK);
+AssertCompile((X86_MODRM_MOD_MASK >> X86_MODRM_MOD_SHIFT) == X86_MODRM_MOD_SMASK);
+/** @} */
+
+/** @name SIB
+ * @{ */
+#define X86_SIB_BASE_MASK     UINT8_C(0x07)
+#define X86_SIB_INDEX_MASK    UINT8_C(0x38)
+#define X86_SIB_INDEX_SMASK   UINT8_C(0x07)
+#define X86_SIB_INDEX_SHIFT   3
+#define X86_SIB_SCALE_MASK    UINT8_C(0xc0)
+#define X86_SIB_SCALE_SMASK   UINT8_C(0x03)
+#define X86_SIB_SCALE_SHIFT   6
+AssertCompile((X86_SIB_BASE_MASK | X86_SIB_INDEX_MASK | X86_SIB_SCALE_MASK) == 0xff);
+AssertCompile((X86_SIB_INDEX_MASK >> X86_SIB_INDEX_SHIFT) == X86_SIB_INDEX_SMASK);
+AssertCompile((X86_SIB_SCALE_MASK >> X86_SIB_SCALE_SHIFT) == X86_SIB_SCALE_SMASK);
+/** @} */
+
+/** @name General register indexes
+ * @{ */
+#define X86_GREG_xAX            0
+#define X86_GREG_xCX            1
+#define X86_GREG_xDX            2
+#define X86_GREG_xBX            3
+#define X86_GREG_xSP            4
+#define X86_GREG_xBP            5
+#define X86_GREG_xSI            6
+#define X86_GREG_xDI            7
+#define X86_GREG_x8             8
+#define X86_GREG_x9             9
+#define X86_GREG_x10            10
+#define X86_GREG_x11            11
+#define X86_GREG_x12            12
+#define X86_GREG_x13            13
+#define X86_GREG_x14            14
+#define X86_GREG_x15            15
+/** @} */
+
+/** @name X86_SREG_XXX - Segment register indexes.
+ * @{ */
+#define X86_SREG_ES             0
+#define X86_SREG_CS             1
+#define X86_SREG_SS             2
+#define X86_SREG_DS             3
+#define X86_SREG_FS             4
+#define X86_SREG_GS             5
+/** @} */
+
 
 /** @} */
 

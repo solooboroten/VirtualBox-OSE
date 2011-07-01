@@ -1,10 +1,10 @@
-# $Id: Makefile.kmk 35572 2011-01-14 14:51:16Z vboxsync $
+# $Id: Makefile.kmk 37477 2011-06-15 17:18:33Z vboxsync $
 ## @file
 # Top-level sub-makefile for the devices, drivers and services.
 #
 
 #
-# Copyright (C) 2006-2010 Oracle Corporation
+# Copyright (C) 2006-2011 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -84,6 +84,8 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  ifdef VBOX_WITH_USB
   VBoxDDU_LIBS           += \
  	$(PATH_LIB)/USBLib$(VBOX_SUFF_LIB)
+  VBoxDDU_LIBS.win       += \
+ 	$(PATH_LIB)/VBoxDrvCfg$(VBOX_SUFF_LIB)
  endif
  ifeq ($(KBUILD_TARGET),l4)
   VBoxDDU_LIBS           += \
@@ -157,8 +159,14 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  ifdef VBOX_WITH_DRV_DISK_INTEGRITY
   VBoxDD_DEFS           += VBOX_WITH_DRV_DISK_INTEGRITY
  endif
+ ifdef VBOX_WITH_UDPTUNNEL
+  VBoxDD_DEFS           += VBOX_WITH_UDPTUNNEL
+ endif
  ifdef VBOX_WITH_VDE
   VBoxDD_DEFS           += VBOX_WITH_VDE
+ endif
+ ifdef VBOX_WITH_PCI_PASSTHROUGH
+  VBoxDD_DEFS           += VBOX_WITH_PCI_PASSTHROUGH
  endif
 
  VBoxDD_LIBS             = \
@@ -230,6 +238,7 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  VBoxDD2_SOURCES         = \
  	build/VBoxDD2.cpp  \
  	PC/DevAPIC.cpp \
+ 	PC/DevIoApic.cpp \
  	PC/DevSMC.cpp  \
  	PC/DevLPC.cpp
  VBoxDD2_LIBS            = \
@@ -260,7 +269,9 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  DevicesR3_DEFS         += \
  	VBOX_HGCM_HOST_CODE \
  	VBOX_WITH_HGCM \
- 	$(if $(VBOX_BIOS_DMI_FALLBACK),VBOX_BIOS_DMI_FALLBACK,)
+ 	$(if $(VBOX_BIOS_DMI_FALLBACK),VBOX_BIOS_DMI_FALLBACK,) \
+	$(if $(VBOX_WITH_PCI_PASSTHROUGH),VBOX_WITH_PCI_PASSTHROUGH,)
+
  DevicesR3_DEFS.linux   += _GNU_SOURCE
  DevicesR3_DEFS.l4      += _GNU_SOURCE
 
@@ -275,7 +286,7 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  	Bus/DevPciIch9.cpp \
  	Bus/MsiCommon.cpp \
  	Bus/MsixCommon.cpp \
-	Bus/DevPciRaw.cpp \
+	$(if $(VBOX_WITH_PCI_PASSTHROUGH),Bus/DevPciRaw.cpp,) \
  	Graphics/DevVGA.cpp \
  	Storage/DevATA.cpp \
  	PC/DevPit-i8254.cpp \
@@ -516,8 +527,9 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  # For finding PCIInternal.h from VBox/pci.h.
  Bus/DevPCI.cpp_INCS      = Bus
  Bus/DevPciIch9.cpp_INCS  = Bus
- Bus/MsiCommon.cpp_INCS  = Bus
+ Bus/MsiCommon.cpp_INCS   = Bus
  Bus/MsixCommon.cpp_INCS  = Bus
+ Bus/DevPciRaw.cpp_INCS   = Bus
 
  # For finding and generating vbetables.h (see Graphics/BIOS/Makefile.kmk).
  Graphics/DevVGA.cpp_INCS = $(VgaBiosBin_0_OUTDIR)
@@ -539,7 +551,6 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  	Bus/DevPciIch9.cpp \
  	Bus/MsiCommon.cpp \
  	Bus/MsixCommon.cpp \
- 	Bus/DevPciRaw.cpp \
   	Graphics/DevVGA.cpp \
   	Input/DevPS2.cpp \
   	PC/DevACPI.cpp \
@@ -638,11 +649,12 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  VBoxDDR0_DEFS           = IN_RT_R0 VBOX_WITH_HGCM # - WTF is IN_RT_R0 doing here?
  VBoxDDR0_INCS           = build
  VBoxDDR0_SOURCES        = \
+ 	build/VBoxDDR0.cpp \
  	Bus/DevPCI.cpp \
  	Bus/DevPciIch9.cpp \
  	Bus/MsiCommon.cpp \
  	Bus/MsixCommon.cpp \
-	Bus/DevPciRaw.cpp \
+	$(if $(VBOX_WITH_PCI_PASSTHROUGH),Bus/DevPciRaw.cpp,) \
  	Graphics/DevVGA.cpp \
  	Input/DevPS2.cpp \
  	PC/DevACPI.cpp \
@@ -744,12 +756,13 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
   VBoxDD2GC_DEFS           =
   VBoxDD2GC_INCS           = build
   VBoxDD2GC_SOURCES        = \
- 	PC/DevAPIC.cpp      \
- 	PC/DevSMC.cpp
+  	PC/DevAPIC.cpp \
+  	PC/DevIoApic.cpp \
+  	PC/DevSMC.cpp
   if1of ($(VBOX_LDR_FMT32), pe lx)
-  VBoxDD2GC_LIBS           = \
-  	$(PATH_LIB)/VMMRCBuiltin$(VBOX_SUFF_LIB) \
-  	$(PATH_LIB)/VMMRCImp$(VBOX_SUFF_LIB)
+   VBoxDD2GC_LIBS          = \
+   	$(PATH_LIB)/VMMRCBuiltin$(VBOX_SUFF_LIB) \
+   	$(PATH_LIB)/VMMRCImp$(VBOX_SUFF_LIB)
   endif
  endif
 
@@ -760,13 +773,15 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  VBoxDD2R0_DEFS           = IN_RT_R0
  VBoxDD2R0_INCS           = build
  VBoxDD2R0_SOURCES        = \
-         PC/DevAPIC.cpp     \
-         PC/DevSMC.cpp
+ 	build/VBoxDD2R0.cpp \
+ 	PC/DevAPIC.cpp \
+ 	PC/DevIoApic.cpp \
+ 	PC/DevSMC.cpp
 
  if1of ($(VBOX_LDR_FMT), pe lx)
- VBoxDD2R0_LIBS           = \
- 	$(PATH_LIB)/VMMR0Imp$(VBOX_SUFF_LIB) \
- 	$(PATH_LIB)/SUPR0$(VBOX_SUFF_LIB)
+  VBoxDD2R0_LIBS          = \
+  	$(PATH_LIB)/VMMR0Imp$(VBOX_SUFF_LIB) \
+  	$(PATH_LIB)/SUPR0$(VBOX_SUFF_LIB)
  endif
 
 
@@ -911,12 +926,16 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  	Storage/DrvDiskIntegrity.cpp
  endif
 
+ ifdef VBOX_WITH_UDPTUNNEL
+ Drivers_SOURCES += \
+	Network/DrvUDPTunnel.cpp
+ Drivers_DEFS += VBOX_WITH_UDPTUNNEL
+ endif
  ifdef VBOX_WITH_VDE
-  Drivers_SOURCES += \
+ Drivers_SOURCES += \
  	Network/DrvVDE.cpp \
  	Network/VDEPlug.cpp
-  Drivers_DEFS    += \
-     VBOX_WITH_VDE
+ Drivers_DEFS += VBOX_WITH_VDE
  endif
 
  # -- OS specific --
@@ -1118,10 +1137,11 @@ if !defined(VBOX_ONLY_EXTPACKS)         # Goes on almost to the end of the file.
  # Ring-0 Services (library, linked into VMMR0.r0)
  #
  ServicesR0_TEMPLATE  = VBoxR0
- ServicesR0_DEFS      = IN_INTNET_R0 IN_RT_R0
+ ServicesR0_DEFS      = IN_INTNET_R0 IN_RT_R0 $(if $(VBOX_WITH_PCI_PASSTHROUGH),IN_PCIRAW_R0,)
  ServicesR0_SOURCES   = \
- 	Network/SrvIntNetR0.cpp
-
+ 	Network/SrvIntNetR0.cpp \
+        $(if $(VBOX_WITH_PCI_PASSTHROUGH),Bus/SrvPciRawR0.cpp,)
+ Network/SrvIntNetR0.cpp_CXXFLAGS := $(if-expr $(KBUILD_TARGET) == "win",,$(VBOX_GCC_Wno-array_bounds))
 
  #
  # Internal Networking - Ring-3 Testcase for the Ring-0 code (a bit hackish).

@@ -145,6 +145,7 @@ void PACKSPU_APIENTRY packspu_Flush( void )
              */
             thread->netServer.conn->u32InjectClientID=0;
         }
+
         crUnlockMutex(&_PackMutex);
 
         packspuFlush((void *) thread);

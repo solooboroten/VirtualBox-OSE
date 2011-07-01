@@ -1,4 +1,4 @@
-/* $Id: USBGetDevices.h 34341 2010-11-24 20:14:36Z vboxsync $ */
+/* $Id: USBGetDevices.h 37624 2011-06-24 08:57:35Z vboxsync $ */
 /** @file
  * VirtualBox Linux host USB device enumeration.
  */
@@ -74,30 +74,23 @@ static inline void deviceListFree(PUSBDEVICE *ppHead)
 
 RT_C_DECLS_BEGIN
 
-/** List of well-known USB device tree locations */
-typedef struct USBDEVTREELOCATION
-{
-    /** The root of the device tree for this location. */
-    char szDevicesRoot[256];
-    /** Whether this location requires device enumeration using sysfs. */
-    bool fUseSysfs;
-} USBDEVTREELOCATION, *PUSBDEVTREELOCATION;
-typedef const USBDEVTREELOCATION *PCUSBDEVTREELOCATION;
+extern bool USBProxyLinuxCheckDeviceRoot(const char *pcszRoot,
+                                         bool fIsDeviceNodes);
 
-/**
- * Get the USB device tree root
- * @param  fPreferSysfs  whether we wish to use sysfs over usbfs for
- *                       enumeration if we have the choice
- * @note   returns a pointer into a static array so it will stay valid
- */
-extern PCUSBDEVTREELOCATION USBProxyLinuxGetDeviceRoot(bool fPreferSysfs);
+#ifdef UNIT_TEST
+void TestUSBSetupInit(const char *pcszUsbfsRoot, bool fUsbfsAccessible,
+                      const char *pcszDevicesRoot, bool fDevicesAccessible,
+                      int rcMethodInitResult);
+void TestUSBSetEnv(const char *pcszEnvUsb, const char *pcszEnvUsbRoot);
+#endif
 
-/**
- * Get the list of USB devices supported by the system.  Should be freed using
- * @a deviceFree or something equivalent.
- * @param pcszDevicesRoot  the path to the root of the device tree
- * @param fUseSysfs       whether to use sysfs (or usbfs) for enumeration
- */
+extern int USBProxyLinuxChooseMethod(bool *pfUsingUsbfsDevices,
+                                     const char **ppcszDevicesRoot);
+#ifdef UNIT_TEST
+extern void TestUSBSetAvailableUsbfsDevices(const char **pacszDeviceAddresses);
+extern void TestUSBSetAccessibleFiles(const char **pacszAccessibleFiles);
+#endif
+
 extern PUSBDEVICE USBProxyLinuxGetDevices(const char *pcszDevicesRoot,
                                           bool fUseSysfs);
 

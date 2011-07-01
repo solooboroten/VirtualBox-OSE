@@ -1,4 +1,4 @@
-/* $Id: UIMachineWindowNormal.cpp 35424 2011-01-07 13:05:41Z vboxsync $ */
+/* $Id: UIMachineWindowNormal.cpp 37712 2011-06-30 14:11:14Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):
@@ -44,7 +44,7 @@
 
 #include "QIStatusBar.h"
 #include "QIStateIndicator.h"
-#include "QIHotKeyEdit.h"
+#include "UIHotKeyEditor.h"
 
 UIMachineWindowNormal::UIMachineWindowNormal(UIMachineLogic *pMachineLogic, ulong uScreenId)
     : QIWithRetranslateUI2<QMainWindow>(0, Qt::Window)
@@ -157,6 +157,11 @@ void UIMachineWindowNormal::sltSharedFolderChange()
     updateAppearanceOf(UIVisualElement_SharedFolderStuff);
 }
 
+void UIMachineWindowNormal::sltCPUExecutionCapChange()
+{
+    updateAppearanceOf(UIVisualElement_VirtualizationStuff);
+}
+
 void UIMachineWindowNormal::sltTryClose()
 {
     UIMachineWindow::sltTryClose();
@@ -261,7 +266,7 @@ void UIMachineWindowNormal::sltShowIndicatorsContextMenu(QIStateIndicator *pIndi
 
 void UIMachineWindowNormal::sltProcessGlobalSettingChange(const char * /* aPublicName */, const char * /* aName */)
 {
-    m_pNameHostkey->setText(QIHotKeyEdit::keyName(vboxGlobal().settings().hostKey()));
+    m_pNameHostkey->setText(UIHotKeyCombination::toReadableString(vboxGlobal().settings().hostCombo()));
 }
 
 void UIMachineWindowNormal::retranslateUi()
@@ -274,7 +279,7 @@ void UIMachineWindowNormal::retranslateUi()
            "This key, when pressed alone, toggles the keyboard and mouse "
            "capture state. It can also be used in combination with other keys "
            "to quickly perform actions from the main menu."));
-    m_pNameHostkey->setText(QIHotKeyEdit::keyName(vboxGlobal().settings().hostKey()));
+    m_pNameHostkey->setText(UIHotKeyCombination::toReadableString(vboxGlobal().settings().hostCombo()));
 }
 
 void UIMachineWindowNormal::updateAppearanceOf(int iElement)
@@ -371,12 +376,16 @@ void UIMachineWindowNormal::prepareConsoleConnections()
     /* Shared folder change updater: */
     connect(machineLogic()->uisession(), SIGNAL(sigSharedFolderChange()),
             this, SLOT(sltSharedFolderChange()));
+
+    /* CPU execution cap change updater: */
+    connect(machineLogic()->uisession(), SIGNAL(sigCPUExecutionCapChange()),
+            this, SLOT(sltCPUExecutionCapChange()));
+
 }
 
 void UIMachineWindowNormal::prepareMenu()
 {
-    /* No view menu in normal mode */
-    setMenuBar(uisession()->newMenuBar(UIMainMenuType(UIMainMenuType_All ^ UIMainMenuType_View)));
+    setMenuBar(uisession()->newMenuBar());
 }
 
 void UIMachineWindowNormal::prepareStatusBar()
@@ -442,7 +451,7 @@ void UIMachineWindowNormal::prepareStatusBar()
     pHostkeyLedContainerLayout->setSpacing(3);
     pIndicatorBoxHLayout->addWidget(m_pCntHostkey);
     pHostkeyLedContainerLayout->addWidget(indicatorsPool()->indicator(UIIndicatorIndex_Hostkey));
-    m_pNameHostkey = new QLabel(QIHotKeyEdit::keyName(vboxGlobal().settings().hostKey()));
+    m_pNameHostkey = new QLabel(UIHotKeyCombination::toReadableString(vboxGlobal().settings().hostCombo()));
     pHostkeyLedContainerLayout->addWidget(m_pNameHostkey);
 
     /* Add to statusbar: */
@@ -515,6 +524,15 @@ void UIMachineWindowNormal::prepareMachineView()
         indicatorsPool()->indicator(UIIndicatorIndex_Hostkey)->setState(machineLogic()->keyboardHandler()->keyboardState());
         indicatorsPool()->indicator(UIIndicatorIndex_Mouse)->setState(machineLogic()->mouseHandler()->mouseState());
     }
+
+#ifdef VBOX_GUI_WITH_CUSTOMIZATIONS1
+    /* The background has to go black: */
+    QPalette palette(centralWidget()->palette());
+    palette.setColor(centralWidget()->backgroundRole(), Qt::black);
+    centralWidget()->setPalette(palette);
+    centralWidget()->setAutoFillBackground(true);
+    setAutoFillBackground(true);
+#endif /* VBOX_GUI_WITH_CUSTOMIZATIONS1 */
 }
 
 void UIMachineWindowNormal::loadWindowSettings()

@@ -1,9 +1,10 @@
+/* $Id: VBoxTray.cpp 37423 2011-06-12 18:37:56Z vboxsync $ */
 /** @file
  * VBoxTray - Guest Additions Tray Application
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -40,26 +41,28 @@
 
 
 /*******************************************************************************
+*   Internal Functions                                                         *
+*******************************************************************************/
+static int vboxTrayCreateTrayIcon(void);
+static LRESULT CALLBACK vboxToolWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+/* Global message handler prototypes. */
+static int vboxTrayGlMsgTaskbarCreated(WPARAM lParam, LPARAM wParam);
+/*static int vboxTrayGlMsgShowBalloonMsg(WPARAM lParam, LPARAM wParam);*/
+
+
+/*******************************************************************************
 *   Global Variables                                                           *
 *******************************************************************************/
-HANDLE                gVBoxDriver;
-HANDLE                gStopSem;
+HANDLE                ghVBoxDriver;
+HANDLE                ghStopSem;
 HANDLE                ghSeamlessNotifyEvent = 0;
 SERVICE_STATUS        gVBoxServiceStatus;
 SERVICE_STATUS_HANDLE gVBoxServiceStatusHandle;
-HINSTANCE             gInstance;
-HWND                  gToolWindow;
+HINSTANCE             ghInstance;
+HWND                  ghwndToolWindow;
 NOTIFYICONDATA        gNotifyIconData;
 DWORD                 gMajorVersion;
-
-/* Global message handler prototypes. */
-int vboxTrayGlMsgTaskbarCreated(WPARAM lParam, LPARAM wParam);
-int vboxTrayGlMsgShowBalloonMsg(WPARAM lParam, LPARAM wParam);
-
-/* Prototypes */
-int vboxTrayCreateTrayIcon(void);
-VOID DisplayChangeThread(void *dummy);
-LRESULT CALLBACK VBoxToolWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 
 /* The service table. */
@@ -140,7 +143,7 @@ static int vboxTrayGlMsgTaskbarCreated(WPARAM wParam, LPARAM lParam)
 
 static int vboxTrayCreateTrayIcon(void)
 {
-    HICON hIcon = LoadIcon(gInstance, MAKEINTRESOURCE(IDI_VIRTUALBOX));
+    HICON hIcon = LoadIcon(ghInstance, MAKEINTRESOURCE(IDI_VIRTUALBOX));
     if (hIcon == NULL)
     {
         DWORD dwErr = GetLastError();
@@ -151,7 +154,7 @@ static int vboxTrayCreateTrayIcon(void)
     /* Prepare the system tray icon. */
     RT_ZERO(gNotifyIconData);
     gNotifyIconData.cbSize           = NOTIFYICONDATA_V1_SIZE; // sizeof(NOTIFYICONDATA);
-    gNotifyIconData.hWnd             = gToolWindow;
+    gNotifyIconData.hWnd             = ghwndToolWindow;
     gNotifyIconData.uID              = ID_TRAYICON;
     gNotifyIconData.uFlags           = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     gNotifyIconData.uCallbackMessage = WM_VBOXTRAY_TRAY_ICON;
@@ -288,7 +291,7 @@ static void vboxTrayStopServices(VBOXSERVICEENV *pEnv, VBOXSERVICEINFO *pTable)
     CloseHandle(pEnv->hStopEvent);
 }
 
-int vboxTrayRegisterGlobalMessages(PVBOXGLOBALMESSAGE pTable)
+static int vboxTrayRegisterGlobalMessages(PVBOXGLOBALMESSAGE pTable)
 {
     int rc = VINF_SUCCESS;
     if (pTable == NULL) /* No table to register? Skip. */
@@ -311,12 +314,12 @@ int vboxTrayRegisterGlobalMessages(PVBOXGLOBALMESSAGE pTable)
     return rc;
 }
 
-bool vboxTrayHandleGlobalMessages(PVBOXGLOBALMESSAGE pTable, UINT uMsg,
-                                  WPARAM wParam, LPARAM lParam)
+static bool vboxTrayHandleGlobalMessages(PVBOXGLOBALMESSAGE pTable, UINT uMsg,
+                                         WPARAM wParam, LPARAM lParam)
 {
     if (pTable == NULL)
         return false;
-    while (pTable->pszName)
+    while (pTable && pTable->pszName)
     {
         if (pTable->uMsgID == uMsg)
         {
@@ -331,68 +334,100 @@ bool vboxTrayHandleGlobalMessages(PVBOXGLOBALMESSAGE pTable, UINT uMsg,
     return false;
 }
 
-void WINAPI VBoxServiceStart(void)
+static int vboxTrayOpenBaseDriver(void)
 {
-    Log(("VBoxTray: Entering service main function\n"));
-
-    VBOXSERVICEENV svcEnv;
-    DWORD dwErr = NO_ERROR;
-
     /* Open VBox guest driver. */
-    gVBoxDriver = CreateFile(VBOXGUEST_DEVICE_NAME,
+    DWORD dwErr = ERROR_SUCCESS;
+    ghVBoxDriver = CreateFile(VBOXGUEST_DEVICE_NAME,
                              GENERIC_READ | GENERIC_WRITE,
                              FILE_SHARE_READ | FILE_SHARE_WRITE,
                              NULL,
                              OPEN_EXISTING,
                              FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
                              NULL);
-    if (gVBoxDriver == INVALID_HANDLE_VALUE)
+    if (ghVBoxDriver == INVALID_HANDLE_VALUE)
     {
         dwErr = GetLastError();
         LogRel(("VBoxTray: Could not open VirtualBox Guest Additions driver! Please install / start it first! Error = %08X\n", dwErr));
     }
+    return RTErrConvertFromWin32(dwErr);
+}
 
-    if (dwErr == NO_ERROR)
+static void vboxTrayCloseBaseDriver(void)
+{
+    if (ghVBoxDriver)
     {
-        /* Create a custom window class. */
-        WNDCLASS windowClass = {0};
-        windowClass.style         = CS_NOCLOSE;
-        windowClass.lpfnWndProc   = (WNDPROC)VBoxToolWndProc;
-        windowClass.hInstance     = gInstance;
-        windowClass.hCursor       = LoadCursor(NULL, IDC_ARROW);
-        windowClass.lpszClassName = "VBoxTrayToolWndClass";
-        if (!RegisterClass(&windowClass))
-        {
-            dwErr = GetLastError();
-            Log(("VBoxTray: Registering invisible tool window failed, error = %08X\n", dwErr));
-        }
+        CloseHandle(ghVBoxDriver);
+        ghVBoxDriver = NULL;
     }
+}
 
-    if (dwErr == NO_ERROR)
+static void vboxTrayDestroyToolWindow(void)
+{
+    if (ghwndToolWindow)
     {
-        /* Create our (invisible) tool window. */
-        /* Note: The window name ("VBoxTrayToolWnd") and class ("VBoxTrayToolWndClass") is
+        Log(("VBoxTray: Destroying tool window ...\n"));
+
+        /* Destroy the tool window. */
+        DestroyWindow(ghwndToolWindow);
+        ghwndToolWindow = NULL;
+
+        UnregisterClass("VBoxTrayToolWndClass", ghInstance);
+    }
+}
+
+static int vboxTrayCreateToolWindow(void)
+{
+    DWORD dwErr = ERROR_SUCCESS;
+
+    /* Create a custom window class. */
+    WNDCLASS windowClass = {0};
+    windowClass.style         = CS_NOCLOSE;
+    windowClass.lpfnWndProc   = (WNDPROC)vboxToolWndProc;
+    windowClass.hInstance     = ghInstance;
+    windowClass.hCursor       = LoadCursor(NULL, IDC_ARROW);
+    windowClass.lpszClassName = "VBoxTrayToolWndClass";
+    if (!RegisterClass(&windowClass))
+    {
+        dwErr = GetLastError();
+        Log(("VBoxTray: Registering invisible tool window failed, error = %08X\n", dwErr));
+    }
+    else
+    {
+        /*
+         * Create our (invisible) tool window.
+         * Note: The window name ("VBoxTrayToolWnd") and class ("VBoxTrayToolWndClass") is
          * needed for posting globally registered messages to VBoxTray and must not be
-         * changed! Otherwise things get broken! */
-        gToolWindow = CreateWindowEx(WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_TOPMOST,
-                                     "VBoxTrayToolWndClass", "VBoxTrayToolWnd",
-                                     WS_POPUPWINDOW,
-                                     -200, -200, 100, 100, NULL, NULL, gInstance, NULL);
-        if (!gToolWindow)
+         * changed! Otherwise things get broken!
+         *
+         */
+        ghwndToolWindow = CreateWindowEx(WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_TOPMOST,
+                                         "VBoxTrayToolWndClass", "VBoxTrayToolWnd",
+                                         WS_POPUPWINDOW,
+                                         -200, -200, 100, 100, NULL, NULL, ghInstance, NULL);
+        if (!ghwndToolWindow)
         {
             dwErr = GetLastError();
             Log(("VBoxTray: Creating invisible tool window failed, error = %08X\n", dwErr));
         }
         else
         {
+            /* Reload the cursor(s). */
             hlpReloadCursor();
+
+            Log(("VBoxTray: Invisible tool window handle = %p\n", ghwndToolWindow));
         }
     }
 
-    Log(("VBoxTray: Window Handle = %p, Status = %p\n", gToolWindow, dwErr));
+    if (dwErr != ERROR_SUCCESS)
+         vboxTrayDestroyToolWindow();
+    return RTErrConvertFromWin32(dwErr);
+}
 
+static int vboxTraySetupSeamless(void)
+{
     OSVERSIONINFO info;
-    gMajorVersion = 5; /* default XP */
+    gMajorVersion = 5; /* Default to Windows XP. */
     info.dwOSVersionInfoSize = sizeof(info);
     if (GetVersionEx(&info))
     {
@@ -400,37 +435,36 @@ void WINAPI VBoxServiceStart(void)
         gMajorVersion = info.dwMajorVersion;
     }
 
-    if (dwErr == NO_ERROR)
+    /* We need to setup a security descriptor to allow other processes modify access to the seamless notification event semaphore. */
+    SECURITY_ATTRIBUTES     SecAttr;
+    DWORD                   dwErr = ERROR_SUCCESS;
+    char                    secDesc[SECURITY_DESCRIPTOR_MIN_LENGTH];
+    BOOL                    fRC;
+
+    SecAttr.nLength              = sizeof(SecAttr);
+    SecAttr.bInheritHandle       = FALSE;
+    SecAttr.lpSecurityDescriptor = &secDesc;
+    InitializeSecurityDescriptor(SecAttr.lpSecurityDescriptor, SECURITY_DESCRIPTOR_REVISION);
+    fRC = SetSecurityDescriptorDacl(SecAttr.lpSecurityDescriptor, TRUE, 0, FALSE);
+    if (!fRC)
     {
-        gStopSem = CreateEvent(NULL, TRUE, FALSE, NULL);
-        if (gStopSem == NULL)
-        {
-            Log(("VBoxTray: CreateEvent for stopping VBoxTray failed, error = %08X\n", GetLastError()));
-            return;
-        }
-
-        /* We need to setup a security descriptor to allow other processes modify access to the seamless notification event semaphore */
-        SECURITY_ATTRIBUTES     SecAttr;
-        char                    secDesc[SECURITY_DESCRIPTOR_MIN_LENGTH];
-        BOOL                    ret;
-
-        SecAttr.nLength              = sizeof(SecAttr);
-        SecAttr.bInheritHandle       = FALSE;
-        SecAttr.lpSecurityDescriptor = &secDesc;
-        InitializeSecurityDescriptor(SecAttr.lpSecurityDescriptor, SECURITY_DESCRIPTOR_REVISION);
-        ret = SetSecurityDescriptorDacl(SecAttr.lpSecurityDescriptor, TRUE, 0, FALSE);
-        if (!ret)
-            Log(("VBoxTray: SetSecurityDescriptorDacl failed with error = %08X\n", GetLastError()));
-
-        /* For Vista and up we need to change the integrity of the security descriptor too */
+        dwErr = GetLastError();
+        Log(("VBoxTray: SetSecurityDescriptorDacl failed with last error = %08X\n", dwErr));
+    }
+    else
+    {
+        /* For Vista and up we need to change the integrity of the security descriptor, too. */
         if (gMajorVersion >= 6)
         {
-            HMODULE hModule;
-
             BOOL (WINAPI * pfnConvertStringSecurityDescriptorToSecurityDescriptorA)(LPCSTR StringSecurityDescriptor, DWORD StringSDRevision, PSECURITY_DESCRIPTOR  *SecurityDescriptor, PULONG  SecurityDescriptorSize);
 
-            hModule = LoadLibrary("ADVAPI32.DLL");
-            if (hModule)
+            HMODULE hModule = LoadLibrary("ADVAPI32.DLL");
+            if (!hModule)
+            {
+                dwErr = GetLastError();
+                Log(("VBoxTray: Loading module ADVAPI32.DLL failed with last error = %08X\n", dwErr));
+            }
+            else
             {
                 PSECURITY_DESCRIPTOR    pSD;
                 PACL                    pSacl          = NULL;
@@ -442,159 +476,190 @@ void WINAPI VBoxServiceStart(void)
                 Log(("VBoxTray: pfnConvertStringSecurityDescriptorToSecurityDescriptorA = %x\n", pfnConvertStringSecurityDescriptorToSecurityDescriptorA));
                 if (pfnConvertStringSecurityDescriptorToSecurityDescriptorA)
                 {
-                    ret = pfnConvertStringSecurityDescriptorToSecurityDescriptorA("S:(ML;;NW;;;LW)", /* this means "low integrity" */
+                    fRC = pfnConvertStringSecurityDescriptorToSecurityDescriptorA("S:(ML;;NW;;;LW)", /* this means "low integrity" */
                                                                                   SDDL_REVISION_1, &pSD, NULL);
-                    if (!ret)
-                        Log(("VBoxTray: ConvertStringSecurityDescriptorToSecurityDescriptorA failed with error = %08X\n", GetLastError()));
-
-                    ret = GetSecurityDescriptorSacl(pSD, &fSaclPresent, &pSacl, &fSaclDefaulted);
-                    if (!ret)
-                        Log(("VBoxTray: GetSecurityDescriptorSacl failed with error = %08X\n", GetLastError()));
-
-                    ret = SetSecurityDescriptorSacl(SecAttr.lpSecurityDescriptor, TRUE, pSacl, FALSE);
-                    if (!ret)
-                        Log(("VBoxTray: SetSecurityDescriptorSacl failed with error = %08X\n", GetLastError()));
+                    if (!fRC)
+                    {
+                        dwErr = GetLastError();
+                        Log(("VBoxTray: ConvertStringSecurityDescriptorToSecurityDescriptorA failed with last error = %08X\n", dwErr));
+                    }
+                    else
+                    {
+                        fRC = GetSecurityDescriptorSacl(pSD, &fSaclPresent, &pSacl, &fSaclDefaulted);
+                        if (!fRC)
+                        {
+                            dwErr = GetLastError();
+                            Log(("VBoxTray: GetSecurityDescriptorSacl failed with last error = %08X\n", dwErr));
+                        }
+                        else
+                        {
+                            fRC = SetSecurityDescriptorSacl(SecAttr.lpSecurityDescriptor, TRUE, pSacl, FALSE);
+                            if (!fRC)
+                            {
+                                dwErr = GetLastError();
+                                Log(("VBoxTray: SetSecurityDescriptorSacl failed with last error = %08X\n", dwErr));
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        if (gMajorVersion >= 5)        /* Only for W2K and up ... */
+        if (   dwErr == ERROR_SUCCESS
+            && gMajorVersion >= 5) /* Only for W2K and up ... */
         {
             ghSeamlessNotifyEvent = CreateEvent(&SecAttr, FALSE, FALSE, VBOXHOOK_GLOBAL_EVENT_NAME);
             if (ghSeamlessNotifyEvent == NULL)
             {
-                Log(("VBoxTray: CreateEvent for Seamless failed, error = %08X\n", GetLastError()));
-                return;
+                dwErr = GetLastError();
+                Log(("VBoxTray: CreateEvent for Seamless failed, last error = %08X\n", dwErr));
             }
         }
     }
+    return RTErrConvertFromWin32(dwErr);
+}
 
-    /*
-     * Start services listed in the vboxServiceTable.
-     */
-    svcEnv.hInstance  = gInstance;
-    svcEnv.hDriver    = gVBoxDriver;
-
-    /* initializes disp-if to default (XPDM) mode */
-    dwErr = VBoxDispIfInit(&svcEnv.dispIf);
-#ifdef VBOX_WITH_WDDM
-    /*
-     * For now the display mode will be adjusted to WDDM mode if needed
-     * on display service initialization when it detects the display driver type.
-     */
-#endif
-
-    if (dwErr == NO_ERROR)
+static void vboxTrayShutdownSeamless(void)
+{
+    if (ghSeamlessNotifyEvent)
     {
-        int rc = vboxTrayStartServices(&svcEnv, vboxServiceTable);
-        if (RT_FAILURE (rc))
-        {
-            dwErr = ERROR_GEN_FAILURE;
-        }
+        CloseHandle(ghSeamlessNotifyEvent);
+        ghSeamlessNotifyEvent = NULL;
     }
+}
 
-    /* terminate service if something went wrong */
-    if (dwErr != NO_ERROR)
+static int vboxTrayServiceMain(void)
+{
+    int rc = VINF_SUCCESS;
+    Log(("VBoxTray: Entering vboxTrayServiceMain\n"));
+
+    ghStopSem = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (ghStopSem == NULL)
     {
-        vboxTrayStopServices(&svcEnv, vboxServiceTable);
-        return;
+        rc = RTErrConvertFromWin32(GetLastError());
+        Log(("VBoxTray: CreateEvent for stopping VBoxTray failed, rc=%Rrc\n", rc));
     }
-
-    int rc = vboxTrayCreateTrayIcon();
-    if (   RT_SUCCESS(rc)
-        && gMajorVersion >= 5) /* Only for W2K and up ... */
+    else
     {
-        /* We're ready to create the tooltip balloon. */
-        /* Check in 10 seconds (@todo make seconds configurable) ... */
-        SetTimer(gToolWindow,
-                 TIMERID_VBOXTRAY_CHECK_HOSTVERSION,
-                 10 * 1000, /* 10 seconds */
-                 NULL       /* No timerproc */);
-    }
+        /*
+         * Start services listed in the vboxServiceTable.
+         */
+        VBOXSERVICEENV svcEnv;
+        svcEnv.hInstance = ghInstance;
+        svcEnv.hDriver   = ghVBoxDriver;
 
-    /* Do the Shared Folders auto-mounting stuff. */
-    VBoxSharedFoldersAutoMount();
+        /* Initializes disp-if to default (XPDM) mode. */
+        VBoxDispIfInit(&svcEnv.dispIf); /* Cannot fail atm. */
+    #ifdef VBOX_WITH_WDDM
+        /*
+         * For now the display mode will be adjusted to WDDM mode if needed
+         * on display service initialization when it detects the display driver type.
+         */
+    #endif
 
-    /* Boost thread priority to make sure we wake up early for seamless window notifications (not sure if it actually makes any difference though) */
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
-
-    /*
-     * Main execution loop
-     * Wait for the stop semaphore to be posted or a window event to arrive
-     */
-
-    DWORD dwEventCount = 2;
-    HANDLE hWaitEvent[2] = {gStopSem, ghSeamlessNotifyEvent};
-
-    if (0 == ghSeamlessNotifyEvent)         /* If seamless mode is not active / supported, reduce event array count */
-        dwEventCount = 1;
-
-    Log(("VBoxTray: Number of events to wait in main loop: %ld\n", dwEventCount));
-    while (true)
-    {
-        DWORD waitResult = MsgWaitForMultipleObjectsEx(dwEventCount, hWaitEvent, 500, QS_ALLINPUT, 0);
-        waitResult = waitResult - WAIT_OBJECT_0;
-
-        /* Only enable for message debugging, lots of traffic! */
-        //Log(("VBoxTray: Wait result  = %ld\n", waitResult));
-
-        if (waitResult == 0)
+        /* Finally start all the built-in services! */
+        rc = vboxTrayStartServices(&svcEnv, vboxServiceTable);
+        if (RT_FAILURE(rc))
         {
-            Log(("VBoxTray: Event 'Exit' triggered\n"));
-            /* exit */
-            break;
-        }
-        else if (   (waitResult == 1)
-                 && (ghSeamlessNotifyEvent!=0)) /* Only jump in, if seamless is active! */
-        {
-            Log(("VBoxTray: Event 'Seamless' triggered\n"));
-
-            /* seamless window notification */
-            VBoxSeamlessCheckWindows();
+            /* Terminate service if something went wrong. */
+            vboxTrayStopServices(&svcEnv, vboxServiceTable);
         }
         else
         {
-            /* timeout or a window message, handle it */
-            MSG msg;
-            while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+            rc = vboxTrayCreateTrayIcon();
+            if (   RT_SUCCESS(rc)
+                && gMajorVersion >= 5) /* Only for W2K and up ... */
             {
-                Log(("VBoxTray: msg %p\n", msg.message));
-                if (msg.message == WM_QUIT)
-                {
-                    Log(("VBoxTray: WM_QUIT!\n"));
-                    SetEvent(gStopSem);
-                    continue;
-                }
-                TranslateMessage(&msg);
-                DispatchMessage(&msg);
+                /* We're ready to create the tooltip balloon.
+                   Check in 10 seconds (@todo make seconds configurable) ... */
+                SetTimer(ghwndToolWindow,
+                         TIMERID_VBOXTRAY_CHECK_HOSTVERSION,
+                         10 * 1000, /* 10 seconds */
+                         NULL       /* No timerproc */);
             }
-        }
-    }
 
-    Log(("VBoxTray: Returned from main loop, exiting ...\n"));
+            if (RT_SUCCESS(rc))
+            {
+                /* Do the Shared Folders auto-mounting stuff. */
+                rc = VBoxSharedFoldersAutoMount();
+                if (RT_SUCCESS(rc))
+                {
+                    /* Report the host that we're up and running! */
+                    hlpReportStatus(VBoxGuestFacilityStatus_Active);
+                }
+            }
+
+            if (RT_SUCCESS(rc))
+            {
+                /* Boost thread priority to make sure we wake up early for seamless window notifications
+                 * (not sure if it actually makes any difference though). */
+                SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+
+                /*
+                 * Main execution loop
+                 * Wait for the stop semaphore to be posted or a window event to arrive
+                 */
+
+                DWORD dwEventCount = 2;
+                HANDLE hWaitEvent[2] = { ghStopSem, ghSeamlessNotifyEvent };
+
+                if (0 == ghSeamlessNotifyEvent) /* If seamless mode is not active / supported, reduce event array count. */
+                    dwEventCount = 1;
+
+                Log(("VBoxTray: Number of events to wait in main loop: %ld\n", dwEventCount));
+                while (true)
+                {
+                    DWORD waitResult = MsgWaitForMultipleObjectsEx(dwEventCount, hWaitEvent, 500, QS_ALLINPUT, 0);
+                    waitResult = waitResult - WAIT_OBJECT_0;
+
+                    /* Only enable for message debugging, lots of traffic! */
+                    //Log(("VBoxTray: Wait result  = %ld\n", waitResult));
+
+                    if (waitResult == 0)
+                    {
+                        Log(("VBoxTray: Event 'Exit' triggered\n"));
+                        /* exit */
+                        break;
+                    }
+                    else if (   waitResult == 1
+                             && ghSeamlessNotifyEvent != 0) /* Only jump in, if seamless is active! */
+                    {
+                        Log(("VBoxTray: Event 'Seamless' triggered\n"));
+
+                        /* seamless window notification */
+                        VBoxSeamlessCheckWindows();
+                    }
+                    else
+                    {
+                        /* timeout or a window message, handle it */
+                        MSG msg;
+                        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+                        {
+                            Log(("VBoxTray: msg %p\n", msg.message));
+                            if (msg.message == WM_QUIT)
+                            {
+                                Log(("VBoxTray: WM_QUIT!\n"));
+                                SetEvent(ghStopSem);
+                                continue;
+                            }
+                            TranslateMessage(&msg);
+                            DispatchMessage(&msg);
+                        }
+                    }
+                }
+                Log(("VBoxTray: Returned from main loop, exiting ...\n"));
+            }
+            Log(("VBoxTray: Waiting for services to stop ...\n"));
+            vboxTrayStopServices(&svcEnv, vboxServiceTable);
+        } /* Services started */
+        CloseHandle(ghStopSem);
+    } /* Stop event created */
 
     vboxTrayRemoveTrayIcon();
 
-    Log(("VBoxTray: Waiting for display change thread ...\n"));
-
-    vboxTrayStopServices(&svcEnv, vboxServiceTable);
-
-    Log(("VBoxTray: Destroying tool window ...\n"));
-
-    /* Destroy the tool window. */
-    DestroyWindow(gToolWindow);
-
-    UnregisterClass("VBoxTrayToolWndClass", gInstance);
-
-    CloseHandle(gVBoxDriver);
-    CloseHandle(gStopSem);
-    CloseHandle(ghSeamlessNotifyEvent);
-
-    Log(("VBoxTray: Leaving service main function\n"));
-
-    return;
+    Log(("VBoxTray: Leaving vboxTrayServiceMain with rc=%Rrc\n", rc));
+    return rc;
 }
-
 
 /**
  * Main function
@@ -612,20 +677,47 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
         return 0;
     }
 
+    LogRel(("VBoxTray: %s r%s\n", RTBldCfgVersion(), RTBldCfgRevisionStr()));
+
     int rc = RTR3Init();
+    if (RT_SUCCESS(rc))
+    {
+        rc = VbglR3Init();
+        if (RT_SUCCESS(rc))
+            rc = vboxTrayOpenBaseDriver();
+    }
+
+    if (RT_SUCCESS(rc))
+    {
+        /* Save instance handle. */
+        ghInstance = hInstance;
+
+        hlpReportStatus(VBoxGuestFacilityStatus_Init);
+        rc = vboxTrayCreateToolWindow();
+        if (RT_SUCCESS(rc))
+        {
+            rc = vboxTraySetupSeamless();
+            if (RT_SUCCESS(rc))
+            {
+                Log(("VBoxTray: Init successful\n"));
+                rc = vboxTrayServiceMain();
+                if (RT_SUCCESS(rc))
+                    hlpReportStatus(VBoxGuestFacilityStatus_Terminating);
+                vboxTrayShutdownSeamless();
+            }
+            vboxTrayDestroyToolWindow();
+        }
+        if (RT_SUCCESS(rc))
+            hlpReportStatus(VBoxGuestFacilityStatus_Terminated);
+    }
+
     if (RT_FAILURE(rc))
-        return rc;
-
-    rc = VbglR3Init();
-    if (RT_FAILURE(rc))
-        return rc;
-
-    LogRel(("VBoxTray: %s r%s started\n", RTBldCfgVersion(), RTBldCfgRevisionStr()));
-
-    gInstance = hInstance;
-    VBoxServiceStart();
-
+    {
+        LogRel(("VBoxTray: Error while starting, rc=%Rrc\n", rc));
+        hlpReportStatus(VBoxGuestFacilityStatus_Failed);
+    }
     LogRel(("VBoxTray: Ended\n"));
+    vboxTrayCloseBaseDriver();
 
     /* Release instance mutex. */
     if (hMutexAppRunning != NULL)
@@ -635,13 +727,13 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     }
 
     VbglR3Term();
-    return 0;
+    return RT_SUCCESS(rc) ? 0 : 1;
 }
 
 /**
  * Window procedure for our tool window
  */
-LRESULT CALLBACK VBoxToolWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+static LRESULT CALLBACK vboxToolWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     switch (uMsg)
     {
@@ -660,7 +752,7 @@ LRESULT CALLBACK VBoxToolWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
 
         case WM_DESTROY:
             Log(("VBoxTray: Tool window destroyed\n"));
-            KillTimer(gToolWindow, TIMERID_VBOXTRAY_CHECK_HOSTVERSION);
+            KillTimer(ghwndToolWindow, TIMERID_VBOXTRAY_CHECK_HOSTVERSION);
             return 0;
 
         case WM_TIMER:
@@ -670,7 +762,7 @@ LRESULT CALLBACK VBoxToolWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
                     if (RT_SUCCESS(VBoxCheckHostVersion()))
                     {
                         /* After successful run we don't need to check again. */
-                        KillTimer(gToolWindow, TIMERID_VBOXTRAY_CHECK_HOSTVERSION);
+                        KillTimer(ghwndToolWindow, TIMERID_VBOXTRAY_CHECK_HOSTVERSION);
                     }
                     return 0;
 
@@ -725,3 +817,4 @@ LRESULT CALLBACK VBoxToolWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
      * to DefWindowProc. */
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
+

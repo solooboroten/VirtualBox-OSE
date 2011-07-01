@@ -1,4 +1,4 @@
-/* $Id: PATM.cpp 35348 2010-12-27 16:35:23Z vboxsync $ */
+/* $Id: PATM.cpp 36969 2011-05-05 08:59:43Z vboxsync $ */
 /** @file
  * PATM - Dynamic Guest OS Patching Manager
  *
@@ -54,6 +54,20 @@
 //#define PATM_REMOVE_PATCH_ON_TOO_MANY_TRAPS
 //#define PATM_DISABLE_ALL
 
+/**
+ * Refresh trampoline patch state.
+ */
+typedef struct PATMREFRESHPATCH
+{
+    /** Pointer to the VM structure. */
+    PVM        pVM;
+    /** The trampoline patch record. */
+    PPATCHINFO pPatchTrampoline;
+    /** The new patch we want to jump to. */
+    PPATCHINFO pPatchRec;
+} PATMREFRESHPATCH, *PPATMREFRESHPATCH;
+
+
 /*******************************************************************************
 *   Internal Functions                                                         *
 *******************************************************************************/
@@ -79,15 +93,15 @@ static DECLCALLBACK(int) RelocatePatches(PAVLOU32NODECORE pNode, void *pParam);
 
 #ifdef VBOX_WITH_DEBUGGER
 static DECLCALLBACK(int) DisableAllPatches(PAVLOU32NODECORE pNode, void *pVM);
-static DECLCALLBACK(int) patmr3CmdOn(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs, PDBGCVAR pResult);
-static DECLCALLBACK(int) patmr3CmdOff(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs, PDBGCVAR pResult);
+static DECLCALLBACK(int) patmr3CmdOn(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs);
+static DECLCALLBACK(int) patmr3CmdOff(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs);
 
 /** Command descriptors. */
 static const DBGCCMD    g_aCmds[] =
 {
-    /* pszCmd,      cArgsMin, cArgsMax, paArgDesc,          cArgDescs,                  pResultDesc,        fFlags,     pfnHandler          pszSyntax,          ....pszDescription */
-    { "patmon",     0,        0,        NULL,               0,                          NULL,               0,          patmr3CmdOn,        "",                     "Enable patching." },
-    { "patmoff",    0,        0,        NULL,               0,                          NULL,               0,          patmr3CmdOff,       "",                     "Disable patching." },
+    /* pszCmd,      cArgsMin, cArgsMax, paArgDesc, cArgDescs, fFlags, pfnHandler    pszSyntax, ....pszDescription */
+    { "patmon",     0,        0,        NULL,      0,         0,      patmr3CmdOn,  "",        "Enable patching."  },
+    { "patmoff",    0,        0,        NULL,      0,         0,      patmr3CmdOff, "",        "Disable patching." },
 };
 #endif
 
@@ -1114,7 +1128,7 @@ static void patmAddIllegalInstrRecord(PVM pVM, PPATCHINFO pPatch, RTRCPTR pInstr
 
     pRec = (PAVLPVNODECORE)MMR3HeapAllocZ(pVM, MM_TAG_PATM_PATCH, sizeof(*pRec));
     Assert(pRec);
-    pRec->Key = (AVLPVKEY)pInstrGC;
+    pRec->Key = (AVLPVKEY)(uintptr_t)pInstrGC;
 
     bool ret = RTAvlPVInsert(&pPatch->pTempInfo->IllegalInstrTree, pRec);
     Assert(ret); NOREF(ret);
@@ -1125,7 +1139,7 @@ static bool patmIsIllegalInstr(PPATCHINFO pPatch, RTRCPTR pInstrGC)
 {
     PAVLPVNODECORE pRec;
 
-    pRec = RTAvlPVGet(&pPatch->pTempInfo->IllegalInstrTree, (AVLPVKEY)pInstrGC);
+    pRec = RTAvlPVGet(&pPatch->pTempInfo->IllegalInstrTree, (AVLPVKEY)(uintptr_t)pInstrGC);
     if (pRec)
         return true;
     else
@@ -1150,6 +1164,9 @@ void patmr3AddP2GLookupRecord(PVM pVM, PPATCHINFO pPatch, uint8_t *pPatchInstrHC
     PRECPATCHTOGUEST pPatchToGuestRec;
     PRECGUESTTOPATCH pGuestToPatchRec;
     uint32_t PatchOffset = pPatchInstrHC - pVM->patm.s.pPatchMemHC;  /* Offset in memory reserved for PATM. */
+
+    LogFlowFunc(("pVM=%#p pPatch=%#p pPatchInstrHC=%#p pInstrGC=%#x enmType=%d fDirty=%RTbool\n",
+                 pVM, pPatch, pPatchInstrHC, pInstrGC, enmType, fDirty));
 
     if (enmType == PATM_LOOKUP_PATCH2GUEST)
     {
@@ -1289,14 +1306,16 @@ static int patmAnalyseBlockCallback(PVM pVM, DISCPUSTATE *pCpu, RCPTRTYPE(uint8_
     PPATCHINFO pPatch = (PPATCHINFO)pCacheRec->pPatch;
     bool       fIllegalInstr = false;
 
-    //Preliminary heuristics:
-    //- no call instructions without a fixed displacement between cli and sti/popf
-    //- no jumps in the instructions following cli (4+ bytes; enough for the replacement jump (5 bytes))
-    //- no nested pushf/cli
-    //- sti/popf should be the (eventual) target of all branches
-    //- no near or far returns; no int xx, no into
-    //
-    // Note: Later on we can impose less stricter guidelines if the need arises
+    /*
+     *  Preliminary heuristics:
+     *- no call instructions without a fixed displacement between cli and sti/popf
+     *- no jumps in the instructions following cli (4+ bytes; enough for the replacement jump (5 bytes))
+     *- no nested pushf/cli
+     *- sti/popf should be the (eventual) target of all branches
+     *- no near or far returns; no int xx, no into
+     *
+     * Note: Later on we can impose less stricter guidelines if the need arises
+     */
 
     /* Bail out if the patch gets too big. */
     if (pPatch->cbPatchBlockSize >= MAX_PATCH_SIZE)
@@ -1326,7 +1345,8 @@ static int patmAnalyseBlockCallback(PVM pVM, DISCPUSTATE *pCpu, RCPTRTYPE(uint8_
         /* An unconditional (short) jump right after a cli is a potential problem; we will overwrite whichever function comes afterwards */
         if (pPatch->opcode == OP_CLI && pCpu->pCurInstr->opcode == OP_JMP)
         {
-            if (pCurInstrGC > pPatch->pPrivInstrGC && pCurInstrGC + pCpu->opsize < pPatch->pPrivInstrGC + SIZEOF_NEARJUMP32) /* hardcoded patch jump size; cbPatchJump is still zero */
+            if (   pCurInstrGC > pPatch->pPrivInstrGC
+                && pCurInstrGC + pCpu->opsize < pPatch->pPrivInstrGC + SIZEOF_NEARJUMP32) /* hardcoded patch jump size; cbPatchJump is still zero */
             {
                 Log(("Dangerous unconditional jump ends in our generated patch jump!! (%x vs %x)\n", pCurInstrGC, pPatch->pPrivInstrGC));
                 /* We turn this one into a int 3 callable patch. */
@@ -1344,17 +1364,18 @@ static int patmAnalyseBlockCallback(PVM pVM, DISCPUSTATE *pCpu, RCPTRTYPE(uint8_
             }
         }
 
-        // no far returns
+        /* no far returns */
         if (pCpu->pCurInstr->opcode == OP_RETF)
         {
             pPatch->pTempInfo->nrRetInstr++;
             fIllegalInstr = true;
             patmAddIllegalInstrRecord(pVM, pPatch, pCurInstrGC);
         }
-        else
-        // no int xx or into either
-        if (pCpu->pCurInstr->opcode == OP_INT3 || pCpu->pCurInstr->opcode == OP_INT || pCpu->pCurInstr->opcode == OP_INTO)
+        else if (   pCpu->pCurInstr->opcode == OP_INT3
+                 || pCpu->pCurInstr->opcode == OP_INT
+                 || pCpu->pCurInstr->opcode == OP_INTO)
         {
+            /* No int xx or into either. */
             fIllegalInstr = true;
             patmAddIllegalInstrRecord(pVM, pPatch, pCurInstrGC);
         }
@@ -1374,7 +1395,7 @@ static int patmAnalyseBlockCallback(PVM pVM, DISCPUSTATE *pCpu, RCPTRTYPE(uint8_
 
     case OP_SYSENTER:
     case OP_ILLUD2:
-        //This appears to be some kind of kernel panic in Linux 2.4; no point to analyse more
+        /* This appears to be some kind of kernel panic in Linux 2.4; no point to analyse more. */
         Log(("Illegal opcode (0xf 0xb) -> return here\n"));
         return VINF_SUCCESS;
 
@@ -1398,9 +1419,9 @@ static int patmAnalyseBlockCallback(PVM pVM, DISCPUSTATE *pCpu, RCPTRTYPE(uint8_
                 Log(("WARNING: End of block reached, but we need to duplicate some extra instruction to avoid a conflict with the patch jump\n"));
                 pPatch->flags |= PATMFL_CHECK_SIZE;
             }
-            break;  //sti doesn't mark the end of a pushf block; only popf does
+            break;  /* sti doesn't mark the end of a pushf block; only popf does. */
         }
-        //else no break
+        /* else: fall through. */
     case OP_RETN: /* exit point for function replacement */
         return VINF_SUCCESS;
 
@@ -1421,10 +1442,10 @@ static int patmAnalyseBlockCallback(PVM pVM, DISCPUSTATE *pCpu, RCPTRTYPE(uint8_
         break;
     }
 
-    // If single instruction patch, we've copied enough instructions *and* the current instruction is not a relative jump
+    /* If single instruction patch, we've copied enough instructions *and* the current instruction is not a relative jump. */
     if ((pPatch->flags & PATMFL_CHECK_SIZE) && pPatch->cbPatchBlockSize > SIZEOF_NEARJUMP32 && !(pCpu->pCurInstr->optype & OPTYPE_RELATIVE_CONTROLFLOW))
     {
-        // The end marker for this kind of patch is any instruction at a location outside our patch jump
+        /* The end marker for this kind of patch is any instruction at a location outside our patch jump. */
         Log(("End of block at %RRv size %d\n", pCurInstrGC, pCpu->opsize));
         return VINF_SUCCESS;
     }
@@ -1991,7 +2012,7 @@ static void patmPatchAddDisasmJump(PVM pVM, PPATCHINFO pPatch, RTRCPTR pInstrGC)
 
     pRec = (PAVLPVNODECORE)MMR3HeapAllocZ(pVM, MM_TAG_PATM_PATCH, sizeof(*pRec));
     Assert(pRec);
-    pRec->Key = (AVLPVKEY)pInstrGC;
+    pRec->Key = (AVLPVKEY)(uintptr_t)pInstrGC;
 
     int ret = RTAvlPVInsert(&pPatch->pTempInfo->DisasmJumpTree, pRec);
     Assert(ret);
@@ -2009,7 +2030,7 @@ static bool patmIsKnownDisasmJump(PPATCHINFO pPatch, RTRCPTR pInstrGC)
 {
     PAVLPVNODECORE pRec;
 
-    pRec = RTAvlPVGet(&pPatch->pTempInfo->DisasmJumpTree, (AVLPVKEY)pInstrGC);
+    pRec = RTAvlPVGet(&pPatch->pTempInfo->DisasmJumpTree, (AVLPVKEY)(uintptr_t)pInstrGC);
     if (pRec)
         return true;
     return false;
@@ -2649,6 +2670,7 @@ VMMR3DECL(int) PATMR3PatchBlock(PVM pVM, RTRCPTR pInstrGC, R3PTRTYPE(uint8_t *) 
     DISCPUSTATE cpu;
     uint32_t orgOffsetPatchMem = ~0;
     RTRCPTR pInstrStart;
+    bool fInserted;
 #ifdef LOG_ENABLED
     uint32_t opsize;
     char szOutput[256];
@@ -2769,9 +2791,9 @@ VMMR3DECL(int) PATMR3PatchBlock(PVM pVM, RTRCPTR pInstrGC, R3PTRTYPE(uint8_t *) 
      */
     LogFlow(("Insert %RRv patch offset %RRv\n", pPatchRec->patch.pPrivInstrGC, pPatch->pPatchBlockOffset));
     pPatchRec->CoreOffset.Key = pPatch->pPatchBlockOffset;
-    rc = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPatchAddr, &pPatchRec->CoreOffset);
-    AssertMsg(rc, ("RTAvlULInsert failed for %x\n", pPatchRec->CoreOffset.Key));
-    if (!rc)
+    fInserted = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPatchAddr, &pPatchRec->CoreOffset);
+    AssertMsg(fInserted, ("RTAvlULInsert failed for %x\n", pPatchRec->CoreOffset.Key));
+    if (!fInserted)
     {
         rc = VERR_PATCHING_REFUSED;
         goto failure;
@@ -2916,6 +2938,7 @@ static int patmIdtHandler(PVM pVM, RTRCPTR pInstrGC, uint32_t uOpSize, PPATMPATC
             && (pJmpInstrGC = PATMResolveBranch(&cpuJmp, pCurInstrGC))
            )
         {
+            bool fInserted;
             PPATMPATCHREC pJmpPatch = (PPATMPATCHREC)RTAvloU32Get(&pVM->patm.s.PatchLookupTreeHC->PatchTree, pJmpInstrGC);
             if (pJmpPatch == 0)
             {
@@ -2984,8 +3007,8 @@ static int patmIdtHandler(PVM pVM, RTRCPTR pInstrGC, uint32_t uOpSize, PPATMPATC
              */
             LogFlow(("Insert %RRv patch offset %RRv\n", pPatchRec->patch.pPrivInstrGC, pPatch->pPatchBlockOffset));
             pPatchRec->CoreOffset.Key = pPatch->pPatchBlockOffset;
-            rc = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPatchAddr, &pPatchRec->CoreOffset);
-            AssertMsg(rc, ("RTAvlULInsert failed for %x\n", pPatchRec->CoreOffset.Key));
+            fInserted = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPatchAddr, &pPatchRec->CoreOffset);
+            AssertMsg(fInserted, ("RTAvlULInsert failed for %x\n", pPatchRec->CoreOffset.Key));
 
             pPatch->uState = PATCH_ENABLED;
 
@@ -3015,6 +3038,7 @@ static int patmInstallTrapTrampoline(PVM pVM, RTRCPTR pInstrGC, PPATMPATCHREC pP
     PPATCHINFO pPatch = &pPatchRec->patch;
     int rc = VERR_PATCHING_REFUSED;
     uint32_t orgOffsetPatchMem = ~0;
+    bool fInserted;
 #ifdef LOG_ENABLED
     bool disret;
     DISCPUSTATE cpu;
@@ -3068,8 +3092,8 @@ static int patmInstallTrapTrampoline(PVM pVM, RTRCPTR pInstrGC, PPATMPATCHREC pP
      */
     LogFlow(("Insert %RRv patch offset %RRv\n", pPatchRec->patch.pPrivInstrGC, pPatch->pPatchBlockOffset));
     pPatchRec->CoreOffset.Key = pPatch->pPatchBlockOffset;
-    rc = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPatchAddr, &pPatchRec->CoreOffset);
-    AssertMsg(rc, ("RTAvlULInsert failed for %x\n", pPatchRec->CoreOffset.Key));
+    fInserted = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPatchAddr, &pPatchRec->CoreOffset);
+    AssertMsg(fInserted, ("RTAvlULInsert failed for %x\n", pPatchRec->CoreOffset.Key));
 
     pPatch->uState = PATCH_ENABLED;
     return VINF_SUCCESS;
@@ -3126,6 +3150,7 @@ static int patmDuplicateFunction(PVM pVM, RTRCPTR pInstrGC, PPATMPATCHREC pPatch
     int rc = VERR_PATCHING_REFUSED;
     DISCPUSTATE cpu;
     uint32_t orgOffsetPatchMem = ~0;
+    bool fInserted;
 
     Log(("patmDuplicateFunction %RRv\n", pInstrGC));
     /* Save original offset (in case of failures later on). */
@@ -3185,9 +3210,9 @@ static int patmDuplicateFunction(PVM pVM, RTRCPTR pInstrGC, PPATMPATCHREC pPatch
      */
     LogFlow(("Insert %RRv patch offset %RRv\n", pPatchRec->patch.pPrivInstrGC, pPatch->pPatchBlockOffset));
     pPatchRec->CoreOffset.Key = pPatch->pPatchBlockOffset;
-    rc = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPatchAddr, &pPatchRec->CoreOffset);
-    AssertMsg(rc, ("RTAvloU32Insert failed for %x\n", pPatchRec->CoreOffset.Key));
-    if (!rc)
+    fInserted = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPatchAddr, &pPatchRec->CoreOffset);
+    AssertMsg(fInserted, ("RTAvloU32Insert failed for %x\n", pPatchRec->CoreOffset.Key));
+    if (!fInserted)
     {
         rc = VERR_PATCHING_REFUSED;
         goto failure;
@@ -3257,6 +3282,9 @@ static int patmCreateTrampoline(PVM pVM, RTRCPTR pInstrGC, PPATMPATCHREC pPatchR
     RTRCPTR     pPage, pPatchTargetGC = 0;
     uint32_t    orgOffsetPatchMem = ~0;
     int         rc = VERR_PATCHING_REFUSED;
+    PPATCHINFO  pPatchToJmp = NULL; /**< Patch the trampoline jumps to. */
+    PTRAMPREC   pTrampRec = NULL; /**< Trampoline record used to find the patch. */
+    bool        fInserted = false;
 
     Log(("patmCreateTrampoline %RRv\n", pInstrGC));
     /* Save original offset (in case of failures later on). */
@@ -3275,29 +3303,47 @@ static int patmCreateTrampoline(PVM pVM, RTRCPTR pInstrGC, PPATMPATCHREC pPatchR
         {
             if (pPatchPage->aPatch[i])
             {
-                PPATCHINFO pPatch2 = pPatchPage->aPatch[i];
+                pPatchToJmp = pPatchPage->aPatch[i];
 
-                if (    (pPatch2->flags & PATMFL_DUPLICATE_FUNCTION)
-                    &&  pPatch2->uState == PATCH_ENABLED)
+                if (    (pPatchToJmp->flags & PATMFL_DUPLICATE_FUNCTION)
+                    &&  pPatchToJmp->uState == PATCH_ENABLED)
                 {
-                    pPatchTargetGC = patmGuestGCPtrToPatchGCPtr(pVM, pPatch2, pInstrGC);
+                    pPatchTargetGC = patmGuestGCPtrToPatchGCPtr(pVM, pPatchToJmp, pInstrGC);
                     if (pPatchTargetGC)
                     {
                         uint32_t         offsetPatch      = pPatchTargetGC - pVM->patm.s.pPatchMemGC;
-                        PRECPATCHTOGUEST pPatchToGuestRec = (PRECPATCHTOGUEST)RTAvlU32GetBestFit(&pPatch2->Patch2GuestAddrTree, offsetPatch, false);
+                        PRECPATCHTOGUEST pPatchToGuestRec = (PRECPATCHTOGUEST)RTAvlU32GetBestFit(&pPatchToJmp->Patch2GuestAddrTree, offsetPatch, false);
                         Assert(pPatchToGuestRec);
 
                         pPatchToGuestRec->fJumpTarget = true;
-                        Assert(pPatchTargetGC != pPatch2->pPrivInstrGC);
-                        Log(("patmCreateTrampoline: generating jump to code inside patch at %RRv\n", pPatch2->pPrivInstrGC));
-                        pPatch2->flags |= PATMFL_EXTERNAL_JUMP_INSIDE;
+                        Assert(pPatchTargetGC != pPatchToJmp->pPrivInstrGC);
+                        Log(("patmCreateTrampoline: generating jump to code inside patch at %RRv (patch target %RRv)\n", pPatchToJmp->pPrivInstrGC, pPatchTargetGC));
                         break;
                     }
                 }
             }
         }
     }
-    AssertReturn(pPatchPage && pPatchTargetGC, VERR_PATCHING_REFUSED);
+    AssertReturn(pPatchPage && pPatchTargetGC && pPatchToJmp, VERR_PATCHING_REFUSED);
+
+    /*
+     * Only record the trampoline patch if this is the first patch to the target
+     * or we recorded other patches already.
+     * The goal is to refuse refreshing function duplicates if the guest
+     * modifies code after a saved state was loaded because it is not possible
+     * to save the relation between trampoline and target without changing the
+     * saved satte version.
+     */
+    if (   !(pPatchToJmp->flags & PATMFL_EXTERNAL_JUMP_INSIDE)
+        || pPatchToJmp->pTrampolinePatchesHead)
+    {
+        pPatchToJmp->flags |= PATMFL_EXTERNAL_JUMP_INSIDE;
+        pTrampRec = (PTRAMPREC)MMR3HeapAllocZ(pVM, MM_TAG_PATM_PATCH, sizeof(*pTrampRec));
+        if (!pTrampRec)
+            return VERR_NO_MEMORY; /* or better return VERR_PATCHING_REFUSED to let the VM continue? */
+
+        pTrampRec->pPatchTrampoline = pPatchRec;
+    }
 
     pPatch->nrPatch2GuestRecs = 0;
     pPatch->pPatchBlockOffset = pVM->patm.s.offPatchMem;
@@ -3323,9 +3369,9 @@ static int patmCreateTrampoline(PVM pVM, RTRCPTR pInstrGC, PPATMPATCHREC pPatchR
      */
     LogFlow(("Insert %RRv patch offset %RRv\n", pPatchRec->patch.pPrivInstrGC, pPatch->pPatchBlockOffset));
     pPatchRec->CoreOffset.Key = pPatch->pPatchBlockOffset;
-    rc = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPatchAddr, &pPatchRec->CoreOffset);
-    AssertMsg(rc, ("RTAvloU32Insert failed for %x\n", pPatchRec->CoreOffset.Key));
-    if (!rc)
+    fInserted = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPatchAddr, &pPatchRec->CoreOffset);
+    AssertMsg(fInserted, ("RTAvloU32Insert failed for %x\n", pPatchRec->CoreOffset.Key));
+    if (!fInserted)
     {
         rc = VERR_PATCHING_REFUSED;
         goto failure;
@@ -3346,6 +3392,12 @@ static int patmCreateTrampoline(PVM pVM, RTRCPTR pInstrGC, PPATMPATCHREC pPatchR
     pPatch->uState = PATCH_ENABLED;
     /* We allow this patch to be called as a function. */
     pPatch->flags |= PATMFL_CALLABLE_AS_FUNCTION;
+
+    if (pTrampRec)
+    {
+        pTrampRec->pNext = pPatchToJmp->pTrampolinePatchesHead;
+        pPatchToJmp->pTrampolinePatchesHead = pTrampRec;
+    }
     STAM_COUNTER_INC(&pVM->patm.s.StatInstalledTrampoline);
     return VINF_SUCCESS;
 
@@ -3369,6 +3421,9 @@ failure:
     // Give back the patch memory we no longer need
     Assert(orgOffsetPatchMem != (uint32_t)~0);
     pVM->patm.s.offPatchMem = orgOffsetPatchMem;
+
+    if (pTrampRec)
+        MMR3HeapFree(pTrampRec);
 
     return rc;
 }
@@ -4139,6 +4194,7 @@ VMMR3DECL(int) PATMR3InstallPatch(PVM pVM, RTRCPTR pInstrGC, uint64_t flags)
     }
 
     /* Initialize cache record for guest address translations. */
+    bool fInserted;
     PATMP2GLOOKUPREC cacheRec;
     RT_ZERO(cacheRec);
 
@@ -4155,12 +4211,13 @@ VMMR3DECL(int) PATMR3InstallPatch(PVM pVM, RTRCPTR pInstrGC, uint64_t flags)
     pPatchRec->Core.Key = pInstrGC;
     pPatchRec->patch.uState = PATCH_REFUSED;   /* default value */
     /* Insert patch record into the lookup tree. */
-    rc = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTree, &pPatchRec->Core);
-    Assert(rc);
+    fInserted = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTree, &pPatchRec->Core);
+    Assert(fInserted);
 
     pPatchRec->patch.pPrivInstrGC = pInstrGC;
     pPatchRec->patch.flags   = flags;
     pPatchRec->patch.uOpMode = (flags & PATMFL_CODE32) ? CPUMODE_32BIT : CPUMODE_16BIT;
+    pPatchRec->patch.pTrampolinePatchesHead = NULL;
 
     pPatchRec->patch.pInstrGCLowest  = pInstrGC;
     pPatchRec->patch.pInstrGCHighest = pInstrGC;
@@ -4495,6 +4552,8 @@ int patmAddPatchToPage(PVM pVM, RTRCUINTPTR pPage, PPATCHINFO pPatch)
     }
     else
     {
+        bool fInserted;
+
         rc = MMHyperAlloc(pVM, sizeof(PATMPATCHPAGE), 0, MM_TAG_PATM_PATCH, (void **)&pPatchPage);
         if (RT_FAILURE(rc))
         {
@@ -4514,8 +4573,8 @@ int patmAddPatchToPage(PVM pVM, RTRCUINTPTR pPage, PPATCHINFO pPatch)
         }
         pPatchPage->aPatch[0] = pPatch;
 
-        rc = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPage, &pPatchPage->Core);
-        Assert(rc);
+        fInserted = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTreeByPage, &pPatchPage->Core);
+        Assert(fInserted);
         pVM->patm.s.cPageRecords++;
 
         STAM_COUNTER_INC(&pVM->patm.s.StatPatchPageInserted);
@@ -5424,6 +5483,46 @@ int PATMRemovePatch(PVM pVM, PPATMPATCHREC pPatchRec, bool fForceRemove)
 }
 
 /**
+ * RTAvlU32DoWithAll() worker.
+ * Checks whether the current trampoline instruction is the jump to the target patch
+ * and updates the displacement to jump to the new target.
+ *
+ * @returns VBox status code.
+ * @retval  VERR_ALREADY_EXISTS if the jump was found.
+ * @param   pNode    The current patch to guest record to check.
+ * @param   pvUser   The refresh state.
+ */
+static int patmR3PatchRefreshFindTrampolinePatch(PAVLU32NODECORE pNode, void *pvUser)
+{
+    PRECPATCHTOGUEST  pPatch2GuestRec = (PRECPATCHTOGUEST)pNode;
+    PPATMREFRESHPATCH pRefreshPatchState = (PPATMREFRESHPATCH)pvUser;
+    PVM               pVM = pRefreshPatchState->pVM;
+
+    uint8_t *pPatchInstr = (uint8_t *)(pVM->patm.s.pPatchMemHC + pPatch2GuestRec->Core.Key);
+
+    /*
+     * Check if the patch instruction starts with a jump.
+     * ASSUMES that there is no other patch to guest record that starts
+     * with a jump.
+     */
+    if (*pPatchInstr == 0xE9)
+    {
+        /* Jump found, update the displacement. */
+        RTRCPTR pPatchTargetGC = patmGuestGCPtrToPatchGCPtr(pVM, pRefreshPatchState->pPatchRec,
+                                                            pRefreshPatchState->pPatchTrampoline->pPrivInstrGC);
+        int32_t displ =  pPatchTargetGC - (pVM->patm.s.pPatchMemGC + pPatch2GuestRec->Core.Key + SIZEOF_NEARJUMP32);
+
+        LogFlow(("Updating trampoline patch new patch target %RRv, new displacment %d (old was %d)\n",
+                 pPatchTargetGC, displ, *(uint32_t *)&pPatchInstr[1]));
+
+        *(uint32_t *)&pPatchInstr[1] = displ;
+        return VERR_ALREADY_EXISTS; /** @todo better return code */
+    }
+
+    return VINF_SUCCESS;
+}
+
+/**
  * Attempt to refresh the patch by recompiling its entire code block
  *
  * @returns VBox status code.
@@ -5435,6 +5534,7 @@ int patmR3RefreshPatch(PVM pVM, PPATMPATCHREC pPatchRec)
     PPATCHINFO  pPatch;
     int         rc;
     RTRCPTR     pInstrGC = pPatchRec->patch.pPrivInstrGC;
+    PTRAMPREC   pTrampolinePatchesHead = NULL;
 
     Log(("patmR3RefreshPatch: attempt to refresh patch at %RRv\n", pInstrGC));
 
@@ -5442,8 +5542,22 @@ int patmR3RefreshPatch(PVM pVM, PPATMPATCHREC pPatchRec)
     AssertReturn(pPatch->flags & (PATMFL_DUPLICATE_FUNCTION|PATMFL_IDTHANDLER|PATMFL_TRAPHANDLER), VERR_PATCHING_REFUSED);
     if (pPatch->flags & PATMFL_EXTERNAL_JUMP_INSIDE)
     {
-        Log(("patmR3RefreshPatch: refused because external jumps to this patch exist\n"));
-        return VERR_PATCHING_REFUSED;
+        if (!pPatch->pTrampolinePatchesHead)
+        {
+            /*
+             * It is sometimes possible that there are trampoline patches to this patch
+             * but they are not recorded (after a saved state load for example).
+             * Refuse to refresh those patches.
+             * Can hurt performance in theory if the patched code is modified by the guest
+             * and is executed often. However most of the time states are saved after the guest
+             * code was modified and is not updated anymore afterwards so this shouldn't be a
+             * big problem.
+             */
+            Log(("patmR3RefreshPatch: refused because external jumps to this patch exist but the jumps are not recorded\n"));
+            return VERR_PATCHING_REFUSED;
+        }
+        Log(("patmR3RefreshPatch: external jumps to this patch exist, updating\n"));
+        pTrampolinePatchesHead = pPatch->pTrampolinePatchesHead;
     }
 
     /** Note: quite ugly to enable/disable/remove/insert old and new patches, but there's no easy way around it. */
@@ -5510,13 +5624,46 @@ int patmR3RefreshPatch(PVM pVM, PPATMPATCHREC pPatchRec)
         AssertRC(rc2);
 
         /* Put the new patch back into the tree, because removing the old one kicked this one out. (hack alert) */
-        RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTree, &pNewPatchRec->Core);
+        bool fInserted = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTree, &pNewPatchRec->Core);
+        Assert(fInserted);
 
         LogRel(("PATM: patmR3RefreshPatch: succeeded to refresh patch at %RRv \n", pInstrGC));
         STAM_COUNTER_INC(&pVM->patm.s.StatPatchRefreshSuccess);
 
         /* Used by another patch, so don't remove it! */
         pNewPatchRec->patch.flags |= PATMFL_CODE_REFERENCED;
+
+        if (pTrampolinePatchesHead)
+        {
+            /* Update all trampoline patches to jump to the new patch. */
+            PTRAMPREC pTrampRec = NULL;
+            PATMREFRESHPATCH RefreshPatch;
+
+            RefreshPatch.pVM = pVM;
+            RefreshPatch.pPatchRec = &pNewPatchRec->patch;
+
+            pTrampRec = pTrampolinePatchesHead;
+
+            while (pTrampRec)
+            {
+                PPATCHINFO pPatchTrampoline = &pTrampRec->pPatchTrampoline->patch;
+
+                RefreshPatch.pPatchTrampoline = pPatchTrampoline;
+                /*
+                 * We have to find the right patch2guest record because there might be others
+                 * for statistics.
+                 */
+                rc = RTAvlU32DoWithAll(&pPatchTrampoline->Patch2GuestAddrTree, true,
+                                       patmR3PatchRefreshFindTrampolinePatch, &RefreshPatch);
+                Assert(rc == VERR_ALREADY_EXISTS);
+                rc = VINF_SUCCESS;
+                pTrampRec = pTrampRec->pNext;
+            }
+            pNewPatchRec->patch.pTrampolinePatchesHead = pTrampolinePatchesHead;
+            pNewPatchRec->patch.flags                 |= PATMFL_EXTERNAL_JUMP_INSIDE;
+            /* Clear the list of trampoline patches for the old patch (safety precaution). */
+            pPatchRec->patch.pTrampolinePatchesHead = NULL;
+        }
     }
 
 failure:
@@ -5529,7 +5676,8 @@ failure:
         AssertRC(rc);
 
         /* Put the old patch back into the tree (or else it won't be saved) (hack alert) */
-        RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTree, &pPatchRec->Core);
+        bool fInserted = RTAvloU32Insert(&pVM->patm.s.PatchLookupTreeHC->PatchTree, &pPatchRec->Core);
+        Assert(fInserted);
 
         /* Enable again in case the dirty instruction is near the end and there are safe code paths. */
         int rc2 = PATMR3EnablePatch(pVM, pInstrGC);
@@ -6527,7 +6675,7 @@ RTRCPTR patmPatchQueryStatAddress(PVM pVM, PPATCHINFO pPatch)
  * @param   paArgs      Pointer to (readonly) array of arguments.
  * @param   cArgs       Number of arguments in the array.
  */
-static DECLCALLBACK(int) patmr3CmdOff(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs, PDBGCVAR pResult)
+static DECLCALLBACK(int) patmr3CmdOff(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs)
 {
     /*
      * Validate input.
@@ -6550,7 +6698,7 @@ static DECLCALLBACK(int) patmr3CmdOff(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM p
  * @param   paArgs      Pointer to (readonly) array of arguments.
  * @param   cArgs       Number of arguments in the array.
  */
-static DECLCALLBACK(int) patmr3CmdOn(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs, PDBGCVAR pResult)
+static DECLCALLBACK(int) patmr3CmdOn(PCDBGCCMD pCmd, PDBGCCMDHLP pCmdHlp, PVM pVM, PCDBGCVAR paArgs, unsigned cArgs)
 {
     /*
      * Validate input.

@@ -1,3 +1,19 @@
+; $Id: $
+;; @file
+; VBoxGuestAdditionsCommon.nsh - Common / shared utility functions.
+;
+
+;
+; Copyright (C) 2006-2011 Oracle Corporation
+;
+; This file is part of VirtualBox Open Source Edition (OSE), as
+; available from http://www.virtualbox.org. This file is free software;
+; you can redistribute it and/or modify it under the terms of the GNU
+; General Public License (GPL) as published by the Free Software
+; Foundation, in version 2 as it comes in the "COPYING" file of the
+; VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+; hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+;
 
 !ifndef UNINSTALLER_ONLY
 Function ExtractFiles
@@ -8,8 +24,10 @@ Function ExtractFiles
   Push $0
   StrCpy "$0" "$INSTDIR\$%BUILD_TARGET_ARCH%"
 
-!ifdef VBOX_WITH_LICENSE_INSTALL_RTF
-  FILE "/oname=$0\${LICENSE_FILE_RTF}" "$%VBOX_BRAND_LICENSE_RTF%"
+  ; Root files
+  SetOutPath "$0"
+!if $%VBOX_WITH_LICENSE_INSTALL_RTF% == "1"
+  FILE "/oname=${LICENSE_FILE_RTF}" "$%VBOX_BRAND_LICENSE_RTF%"
 !endif
 
   ; Video driver
@@ -65,7 +83,7 @@ Function ExtractFiles
 !if $%VBOX_WITH_WDDM% == "1"
   ; WDDM Video driver
   SetOutPath "$0\VBoxVideoWddm"
-    
+
   !ifdef VBOX_SIGN_ADDITIONS
     FILE "$%PATH_OUT%\bin\additions\VBoxVideoWddm.cat"
   !endif
@@ -85,7 +103,7 @@ Function ExtractFiles
     FILE "$%PATH_OUT%\bin\additions\VBoxD3D9wddm.dll"
     FILE "$%PATH_OUT%\bin\additions\wined3dwddm.dll"
   !endif ; $%VBOX_WITH_CROGL% == "1"
-      
+
   !if $%BUILD_TARGET_ARCH% == "amd64"
     FILE "$%PATH_OUT%\bin\additions\VBoxDispD3D-x86.dll"
 
@@ -124,7 +142,6 @@ Function ExtractFiles
 !ifdef VBOX_SIGN_ADDITIONS
   FILE "$%PATH_OUT%\bin\additions\VBoxGuest.cat"
 !endif
-  FILE "$%PATH_OUT%\bin\additions\VBCoInst.dll"
   FILE "$%PATH_OUT%\bin\additions\VBoxTray.exe"
   FILE "$%PATH_OUT%\bin\additions\VBoxHook.dll"
   FILE "$%PATH_OUT%\bin\additions\VBoxControl.exe"
@@ -154,6 +171,7 @@ Function ExtractFiles
   ; Misc tools
   SetOutPath "$0\Tools"
   FILE "$%PATH_OUT%\bin\additions\VBoxDrvInst.exe"
+  FILE "$%VBOX_PATH_DIFX%\DIFxAPI.dll"
 
 !if $%BUILD_TARGET_ARCH% == "x86"
   SetOutPath "$0\Tools\NT4"
@@ -523,4 +541,30 @@ FunctionEnd
 !macroend
 !insertmacro CheckForCapabilities ""
 !insertmacro CheckForCapabilities "un."
+
+; Switches (back) the path + registry view to
+; 32-bit mode (SysWOW64) on 64-bit guests
+!macro SetAppMode32 un
+Function ${un}SetAppMode32
+  !if $%BUILD_TARGET_ARCH% == "amd64"
+    ${EnableX64FSRedirection}
+    SetRegView 32
+  !endif
+FunctionEnd
+!macroend
+!insertmacro SetAppMode32 ""
+!insertmacro SetAppMode32 "un."
+
+; Because this NSIS installer is always built in 32-bit mode, we have to
+; do some tricks for the Windows paths + registry on 64-bit guests
+!macro SetAppMode64 un
+Function ${un}SetAppMode64
+  !if $%BUILD_TARGET_ARCH% == "amd64"
+    ${DisableX64FSRedirection}
+    SetRegView 64
+  !endif
+FunctionEnd
+!macroend
+!insertmacro SetAppMode64 ""
+!insertmacro SetAppMode64 "un."
 

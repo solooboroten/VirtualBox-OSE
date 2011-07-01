@@ -1,10 +1,10 @@
-/* $Id: server.cpp 35368 2010-12-30 13:38:23Z vboxsync $ */
+/* $Id: server.cpp 37666 2011-06-28 12:33:34Z vboxsync $ */
 /** @file
  * XPCOM server process (VBoxSVC) start point.
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -42,6 +42,7 @@
 #include <iprt/critsect.h>
 #include <iprt/getopt.h>
 #include <iprt/message.h>
+#include <iprt/string.h>
 #include <iprt/stream.h>
 #include <iprt/path.h>
 #include <iprt/timer.h>
@@ -60,42 +61,42 @@
 /////////////////////////////////////////////////////////////////////////////
 
 #include <nsIGenericFactory.h>
-
 #include <VirtualBox_XPCOM.h>
-#include <VirtualBoxImpl.h>
-#include <MachineImpl.h>
-#include <VFSExplorerImpl.h>
-#include <ApplianceImpl.h>
-#include <SnapshotImpl.h>
-#include <MediumImpl.h>
-#include <MediumFormatImpl.h>
-#include <ProgressCombinedImpl.h>
-#include <ProgressProxyImpl.h>
-#include <VRDEServerImpl.h>
-#include <SharedFolderImpl.h>
-#include <HostImpl.h>
-#include <HostNetworkInterfaceImpl.h>
-#include <GuestOSTypeImpl.h>
-#include <NetworkAdapterImpl.h>
-#include <NATEngineImpl.h>
-#include <SerialPortImpl.h>
-#include <ParallelPortImpl.h>
-#include <USBControllerImpl.h>
+
+#include "ApplianceImpl.h"
+#include "AudioAdapterImpl.h"
+#include "BandwidthControlImpl.h"
+#include "BandwidthGroupImpl.h"
 #include "DHCPServerRunner.h"
 #include "DHCPServerImpl.h"
+#include "GuestOSTypeImpl.h"
+#include "HostImpl.h"
+#include "HostNetworkInterfaceImpl.h"
+#include "MachineImpl.h"
+#include "MediumFormatImpl.h"
+#include "MediumImpl.h"
+#include "NATEngineImpl.h"
+#include "NetworkAdapterImpl.h"
+#include "ParallelPortImpl.h"
+#include "ProgressCombinedImpl.h"
+#include "ProgressProxyImpl.h"
+#include "SerialPortImpl.h"
+#include "SharedFolderImpl.h"
+#include "SnapshotImpl.h"
+#include "StorageControllerImpl.h"
+#include "SystemPropertiesImpl.h"
+#include "USBControllerImpl.h"
+#include "VFSExplorerImpl.h"
+#include "VirtualBoxImpl.h"
+#include "VRDEServerImpl.h"
 #ifdef VBOX_WITH_USB
+# include "HostUSBDeviceImpl.h"
 # include "USBDeviceFilterImpl.h"
-# include <HostUSBDeviceImpl.h>
-# include <USBDeviceImpl.h>
+# include "USBDeviceImpl.h"
 #endif
-#include <StorageControllerImpl.h>
-#include <AudioAdapterImpl.h>
-#include <SystemPropertiesImpl.h>
 #ifdef VBOX_WITH_EXTPACK
-# include <ExtPackManagerImpl.h>
+# include "ExtPackManagerImpl.h"
 #endif
-#include <BandwidthGroupImpl.h>
-#include <BandwidthControlImpl.h>
 
 /* implement nsISupports parts of our objects with support for nsIClassInfo */
 
@@ -614,95 +615,22 @@ NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR_WITH_RC(VirtualBox, VirtualBoxClassFact
 
 ////////////////////////////////////////////////////////////////////////////////
 
-typedef NSFactoryDestructorProcPtr NSFactoryConsructorProcPtr;
+typedef NSFactoryDestructorProcPtr NSFactoryConstructorProcPtr;
 
 /**
  *  Enhanced module component information structure.
  *
  *  nsModuleComponentInfo lacks the factory construction callback, here we add
- *  it. This callback is called by NS_NewGenericFactoryEx() after a
- *  nsGenericFactory instance is successfully created.
+ *  it. This callback is called straight after a nsGenericFactory instance is
+ *  successfully created in RegisterSelfComponents.
  */
-struct nsModuleComponentInfoEx : nsModuleComponentInfo
+struct nsModuleComponentInfoPlusFactoryConstructor
 {
-    nsModuleComponentInfoEx() {}
-    nsModuleComponentInfoEx(int) {}
-
-    nsModuleComponentInfoEx(
-        const char*                                 aDescription,
-        const nsCID&                                aCID,
-        const char*                                 aContractID,
-        NSConstructorProcPtr                        aConstructor,
-        NSRegisterSelfProcPtr                       aRegisterSelfProc,
-        NSUnregisterSelfProcPtr                     aUnregisterSelfProc,
-        NSFactoryDestructorProcPtr                  aFactoryDestructor,
-        NSGetInterfacesProcPtr                      aGetInterfacesProc,
-        NSGetLanguageHelperProcPtr                  aGetLanguageHelperProc,
-        nsIClassInfo **                             aClassInfoGlobal,
-        PRUint32                                    aFlags,
-        NSFactoryConsructorProcPtr                  aFactoryConstructor)
-    {
-        mDescription = aDescription;
-        mCID = aCID;
-        mContractID = aContractID;
-        mConstructor = aConstructor;
-        mRegisterSelfProc = aRegisterSelfProc;
-        mUnregisterSelfProc = aUnregisterSelfProc;
-        mFactoryDestructor = aFactoryDestructor;
-        mGetInterfacesProc = aGetInterfacesProc;
-        mGetLanguageHelperProc = aGetLanguageHelperProc;
-        mClassInfoGlobal = aClassInfoGlobal;
-        mFlags = aFlags;
-        mFactoryConstructor = aFactoryConstructor;
-    }
-
+    /** standard module component information */
+    const nsModuleComponentInfo *mpModuleComponentInfo;
     /** (optional) Factory Construction Callback */
-    NSFactoryConsructorProcPtr mFactoryConstructor;
+    NSFactoryConstructorProcPtr mFactoryConstructor;
 };
-
-////////////////////////////////////////////////////////////////////////////////
-
-static const nsModuleComponentInfoEx components[] =
-{
-    nsModuleComponentInfoEx(
-        "VirtualBox component",
-        CLSID_VirtualBox,
-        NS_VIRTUALBOX_CONTRACTID,
-        VirtualBoxConstructor, // constructor function
-        NULL, // registration function
-        NULL, // deregistration function
-        VirtualBoxClassFactory::FactoryDestructor, // factory destructor function
-        NS_CI_INTERFACE_GETTER_NAME(VirtualBox),
-        NULL, // language helper
-        &NS_CLASSINFO_NAME(VirtualBox),
-        0, // flags
-        VirtualBoxClassFactory::FactoryConstructor // factory constructor function
-    )
-};
-
-/////////////////////////////////////////////////////////////////////////////
-
-/**
- *  Extends NS_NewGenericFactory() by immediately calling
- *  nsModuleComponentInfoEx::mFactoryConstructor before returning to the
- *  caller.
- */
-nsresult
-NS_NewGenericFactoryEx(nsIGenericFactory **result,
-                       const nsModuleComponentInfoEx *info)
-{
-    AssertReturn(result, NS_ERROR_INVALID_POINTER);
-
-    nsresult rv = NS_NewGenericFactory(result, info);
-    if (NS_SUCCEEDED(rv) && info && info->mFactoryConstructor)
-    {
-        rv = info->mFactoryConstructor();
-        if (NS_FAILED(rv))
-            NS_RELEASE(*result);
-    }
-
-    return rv;
-}
 
 /////////////////////////////////////////////////////////////////////////////
 
@@ -712,26 +640,32 @@ NS_NewGenericFactoryEx(nsIGenericFactory **result,
  */
 static nsresult
 RegisterSelfComponents(nsIComponentRegistrar *registrar,
-                       const nsModuleComponentInfoEx *aComponents,
+                       const nsModuleComponentInfoPlusFactoryConstructor *aComponents,
                        PRUint32 count)
 {
     nsresult rc = NS_OK;
-    const nsModuleComponentInfoEx *info = aComponents;
+    const nsModuleComponentInfoPlusFactoryConstructor *info = aComponents;
     for (PRUint32 i = 0; i < count && NS_SUCCEEDED(rc); i++, info++)
     {
         /* skip components w/o a constructor */
-        if (!info->mConstructor)
+        if (!info->mpModuleComponentInfo->mConstructor)
             continue;
         /* create a new generic factory for a component and register it */
         nsIGenericFactory *factory;
-        rc = NS_NewGenericFactoryEx(&factory, info);
+        rc = NS_NewGenericFactory(&factory, info->mpModuleComponentInfo);
+        if (NS_SUCCEEDED(rc) && info->mFactoryConstructor)
+        {
+            rc = info->mFactoryConstructor();
+            if (NS_FAILED(rc))
+                NS_RELEASE(factory);
+        }
         if (NS_SUCCEEDED(rc))
         {
-            rc = registrar->RegisterFactory(info->mCID,
-                                            info->mDescription,
-                                            info->mContractID,
+            rc = registrar->RegisterFactory(info->mpModuleComponentInfo->mCID,
+                                            info->mpModuleComponentInfo->mDescription,
+                                            info->mpModuleComponentInfo->mContractID,
                                             factory);
-            factory->Release();
+            NS_RELEASE(factory);
         }
     }
     return rc;
@@ -779,15 +713,25 @@ static void signal_handler(int sig)
     }
 }
 
-static nsresult vboxsvcSpawnDaemonByReExec(const char *pszPath)
+static nsresult vboxsvcSpawnDaemonByReExec(const char *pszPath, bool fAutoShutdown, const char *pszPidFile)
 {
     PRFileDesc *readable = nsnull, *writable = nsnull;
     PRProcessAttr *attr = nsnull;
     nsresult rv = NS_ERROR_FAILURE;
     PRFileDesc *devNull;
+    unsigned args_index = 0;
     // The ugly casts are necessary because the PR_CreateProcessDetached has
     // a const array of writable strings as a parameter. It won't write. */
-    char * const args[] = { (char *)pszPath, (char *)"--auto-shutdown", 0 };
+    char * args[1 + 1 + 2 + 1];
+    args[args_index++] = (char *)pszPath;
+    if (fAutoShutdown)
+        args[args_index++] = (char *)"--auto-shutdown";
+    if (pszPidFile)
+    {
+        args[args_index++] = (char *)"--pidfile";
+        args[args_index++] = (char *)pszPidFile;
+    }
+    args[args_index++] = 0;
 
     // Use a pipe to determine when the daemon process is in the position
     // to actually process requests. The daemon will write "READY" to the pipe.
@@ -810,7 +754,7 @@ static nsresult vboxsvcSpawnDaemonByReExec(const char *pszPath)
     PR_ProcessAttrSetStdioRedirect(attr, PR_StandardOutput, devNull);
     PR_ProcessAttrSetStdioRedirect(attr, PR_StandardError, devNull);
 
-    if (PR_CreateProcessDetached(pszPath, args, nsnull, attr) != PR_SUCCESS)
+    if (PR_CreateProcessDetached(pszPath, (char * const *)args, nsnull, attr) != PR_SUCCESS)
         goto end;
 
     // Close /dev/null
@@ -848,12 +792,20 @@ int main(int argc, char **argv)
 
     static const RTGETOPTDEF s_aOptions[] =
     {
-        { "--automate",       'a', RTGETOPT_REQ_NOTHING },
-        { "--auto-shutdown",  'A', RTGETOPT_REQ_NOTHING },
-        { "--daemonize",      'd', RTGETOPT_REQ_NOTHING },
-        { "--pidfile",        'p', RTGETOPT_REQ_STRING  },
+        { "--automate",         'a', RTGETOPT_REQ_NOTHING },
+        { "--auto-shutdown",    'A', RTGETOPT_REQ_NOTHING },
+        { "--daemonize",        'd', RTGETOPT_REQ_NOTHING },
+        { "--pidfile",          'p', RTGETOPT_REQ_STRING  },
+        { "--logfile",          'F', RTGETOPT_REQ_STRING },
+        { "--logrotate",        'R', RTGETOPT_REQ_UINT32 },
+        { "--logsize",          'S', RTGETOPT_REQ_UINT64 },
+        { "--loginterval",      'I', RTGETOPT_REQ_UINT32 }
     };
 
+    const char      *pszLogFile = NULL;
+    uint32_t        cHistory = 10;                  // enable log rotation, 10 files
+    uint32_t        uHistoryFileTime = RT_SEC_1DAY; // max 1 day per file
+    uint64_t        uHistoryFileSize = 100 * _1M;   // max 100MB per file
     bool            fDaemonize = false;
     PRFileDesc      *daemon_pipe_wr = nsnull;
 
@@ -876,7 +828,7 @@ int main(int argc, char **argv)
                 break;
             }
 
-            /* Used together with '-P', see below. Internal use only. */
+            /* --auto-shutdown mode means we're already daemonized. */
             case 'A':
             {
                 gAutoShutdown = true;
@@ -894,6 +846,22 @@ int main(int argc, char **argv)
                 g_pszPidFile = ValueUnion.psz;
                 break;
             }
+
+            case 'F':
+                pszLogFile = ValueUnion.psz;
+                break;
+
+            case 'R':
+                cHistory = ValueUnion.u32;
+                break;
+
+            case 'S':
+                uHistoryFileSize = ValueUnion.u64;
+                break;
+
+            case 'I':
+                uHistoryFileTime = ValueUnion.u32;
+                break;
 
             case 'h':
             {
@@ -914,14 +882,46 @@ int main(int argc, char **argv)
 
     if (fDaemonize)
     {
-        vboxsvcSpawnDaemonByReExec(argv[0]);
+        vboxsvcSpawnDaemonByReExec(argv[0], gAutoShutdown, g_pszPidFile);
         exit(126);
     }
 
-    nsresult    rc;
+    nsresult rc;
+
+    if (!pszLogFile)
+    {
+        char szLogFile[RTPATH_MAX];
+        vrc = com::GetVBoxUserHomeDirectory(szLogFile, sizeof(szLogFile));
+        if (RT_SUCCESS(vrc))
+            vrc = RTPathAppend(szLogFile, sizeof(szLogFile), "VBoxSVC.log");
+        if (RT_SUCCESS(vrc))
+            pszLogFile = RTStrDup(szLogFile);
+    }
+    VBoxSVCLogRelCreate(pszLogFile, cHistory, uHistoryFileTime, uHistoryFileSize);
 
     daemon_pipe_wr = PR_GetInheritedFD(VBOXSVC_STARTUP_PIPE_NAME);
     RTEnvUnset("NSPR_INHERIT_FDS");
+
+    const nsModuleComponentInfo VirtualBoxInfo = {
+        "VirtualBox component",
+        NS_VIRTUALBOX_CID,
+        NS_VIRTUALBOX_CONTRACTID,
+        VirtualBoxConstructor, // constructor function
+        NULL, // registration function
+        NULL, // deregistration function
+        VirtualBoxClassFactory::FactoryDestructor, // factory destructor function
+        NS_CI_INTERFACE_GETTER_NAME(VirtualBox),
+        NULL, // language helper
+        &NS_CLASSINFO_NAME(VirtualBox),
+        0 // flags
+    };
+
+    const nsModuleComponentInfoPlusFactoryConstructor components[] = {
+        {
+            &VirtualBoxInfo,
+            VirtualBoxClassFactory::FactoryConstructor // factory constructor function
+        }
+    };
 
     do
     {
@@ -942,7 +942,7 @@ int main(int argc, char **argv)
 
         registrar->AutoRegister(nsnull);
         rc = RegisterSelfComponents(registrar, components,
-                                    NS_ARRAY_LENGTH (components));
+                                    NS_ARRAY_LENGTH(components));
         if (NS_FAILED(rc))
         {
             RTMsgError("Failed to register server components! (rc=%Rhrc)", rc);

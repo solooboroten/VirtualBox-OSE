@@ -1,4 +1,4 @@
-/* $Id: HostUSBDeviceImpl.cpp 35368 2010-12-30 13:38:23Z vboxsync $ */
+/* $Id: HostUSBDeviceImpl.cpp 35812 2011-02-01 13:46:37Z vboxsync $ */
 /** @file
  * VirtualBox IHostUSBDevice COM interface implementation.
  */
@@ -39,12 +39,13 @@ HRESULT HostUSBDevice::FinalConstruct()
     mUSBProxyService = NULL;
     mUsb = NULL;
 
-    return S_OK;
+    return BaseFinalConstruct();
 }
 
 void HostUSBDevice::FinalRelease()
 {
     uninit();
+    BaseFinalRelease();
 }
 
 // public initializer/uninitializer for internal purposes only
@@ -391,7 +392,7 @@ HRESULT HostUSBDevice::requestCaptureForVM(SessionMachine *aMachine, bool aSetEr
             /* Machine::name() requires a read lock */
             AutoReadLock machLock(mMachine COMMA_LOCKVAL_SRC_POS);
             return setError(E_INVALIDARG,
-                            tr("USB device '%s' with UUID {%RTuuid} is already captured by the virtual machine '%ls'"),
+                            tr("USB device '%s' with UUID {%RTuuid} is already captured by the virtual machine '%s'"),
                             mName, mId.raw(), mMachine->getName().c_str());
         }
         if (mUniState >= kHostUSBDeviceState_FirstTransitional)

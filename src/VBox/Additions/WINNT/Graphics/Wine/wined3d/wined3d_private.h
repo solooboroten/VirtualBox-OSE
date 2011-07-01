@@ -708,6 +708,12 @@ enum fogmode {
     FOG_EXP2
 };
 
+struct wined3d_context;
+
+#define WINED3D_PSARGS_PROJECTED          (1<<3)
+#define WINED3D_PSARGS_TEXTRANSFORM_SHIFT 4
+#define WINED3D_PSARGS_TEXTRANSFORM_MASK  0xF
+
 /* Stateblock dependent parameters which have to be hardcoded
  * into the shader code
  */
@@ -716,8 +722,9 @@ struct ps_compile_args {
     enum vertexprocessing_mode  vp_mode;
     enum fogmode                fog;
     /* Projected textures(ps 1.0-1.3) */
+    WORD                        tex_transform;
     /* Texture types(2D, Cube, 3D) in ps 1.x */
-    BOOL                        srgb_correction;
+    WORD                        srgb_correction;
     WORD                        np2_fixup;
     /* Bitmap for NP2 texcoord fixups (16 samplers max currently).
        D3D9 has a limit of 16 samplers and the fixup is superfluous
@@ -735,8 +742,6 @@ struct vs_compile_args {
     BYTE                        clip_enabled;
     WORD                        swizzle_map;   /* MAX_ATTRIBS, 16 */
 };
-
-struct wined3d_context;
 
 typedef struct {
     void (*shader_handle_instruction)(const struct wined3d_shader_instruction *);
@@ -814,6 +819,12 @@ do {                                                                \
     GLint err;                                                      \
     if(!__WINE_IS_DEBUG_ON(_FIXME, __wine_dbch___default)) break;   \
     err = glGetError();                                             \
+    if (!pwglGetCurrentContext())                                   \
+    {                                                               \
+        ERR(">>>>>>>>>>>>>>>>> NULL ctx issuing %s @ %s / %d\n",    \
+            A, __FILE__, __LINE__);                                 \
+        break;                                                      \
+    }                                                               \
     if (err == GL_NO_ERROR) {                                       \
        TRACE("%s call ok %s / %d\n", A, __FILE__, __LINE__);        \
                                                                     \
@@ -1253,6 +1264,7 @@ void context_attach_surface_fbo(const struct wined3d_context *context,
         GLenum fbo_target, DWORD idx, IWineD3DSurfaceImpl *surface) DECLSPEC_HIDDEN;
 struct wined3d_context *context_create(IWineD3DSwapChainImpl *swapchain, IWineD3DSurfaceImpl *target,
         const struct wined3d_format_desc *ds_format_desc) DECLSPEC_HIDDEN;
+struct IWineD3DDeviceImpl *context_get_device(const struct wined3d_context *context); DECLSPEC_HIDDEN;
 #ifdef VBOX_WITH_WDDM
 struct wined3d_context *context_find_create(IWineD3DDeviceImpl *device, IWineD3DSwapChainImpl *swapchain, IWineD3DSurfaceImpl *target,
         const struct wined3d_format_desc *ds_format_desc) DECLSPEC_HIDDEN;
@@ -1951,7 +1963,7 @@ HRESULT basetexture_init(IWineD3DBaseTextureImpl *texture, UINT levels, WINED3DR
         WINED3DPOOL pool, IUnknown *parent, const struct wined3d_parent_ops *parent_ops
 #ifdef VBOX_WITH_WDDM
         , HANDLE *shared_handle
-        , void *pvClientMem
+        , void **pavClientMem
 #endif
         ) DECLSPEC_HIDDEN;
 HRESULT basetexture_set_autogen_filter_type(IWineD3DBaseTexture *iface,
@@ -1982,7 +1994,7 @@ HRESULT texture_init(IWineD3DTextureImpl *texture, UINT width, UINT height, UINT
         IUnknown *parent, const struct wined3d_parent_ops *parent_ops
 #ifdef VBOX_WITH_WDDM
         , HANDLE *shared_handle
-        , void *pvClientMem
+        , void **pavClientMem
 #endif
         ) DECLSPEC_HIDDEN;
 
@@ -2005,7 +2017,7 @@ HRESULT cubetexture_init(IWineD3DCubeTextureImpl *texture, UINT edge_length, UIN
         IUnknown *parent, const struct wined3d_parent_ops *parent_ops
 #ifdef VBOX_WITH_WDDM
         , HANDLE *shared_handle
-        , void *pvClientMem
+        , void **pavClientMem
 #endif
         ) DECLSPEC_HIDDEN;
 

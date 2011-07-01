@@ -23,6 +23,7 @@
 #include <QObject>
 #include <QPoint>
 #include <QMap>
+#include <QRect>
 
 /* Local includes */
 #include "UIMachineDefs.h"
@@ -64,14 +65,6 @@ public:
 
     /* Current mouse state: */
     int mouseState() const;
-
-#ifdef Q_WS_MAC
-    /* Enable mouse event compression if we leave the VM view.
-     * This is necessary for having smooth resizing of the VM/other windows.
-     * Disable mouse event compression if we enter the VM view.
-     * So all mouse events are registered in the VM. */
-    void setMouseCoalescingEnabled(bool fOn);
-#endif /* Q_WS_MAC */
 
 #ifdef Q_WS_X11
     bool x11EventFilter(XEvent *pEvent, ulong uScreenId);
@@ -117,6 +110,7 @@ protected:
     /* This method is actually required only because under win-host
      * we do not really grab the mouse in case of capturing it: */
     void updateMouseCursorClipping();
+    QRect m_mouseCursorClippingRect;
 #endif /* Q_WS_WIN */
 
     /* Machine logic parent: */

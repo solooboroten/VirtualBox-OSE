@@ -1,4 +1,4 @@
-/* $Id: VBoxInternalManage.cpp 35238 2010-12-20 11:18:40Z vboxsync $ */
+/* $Id: VBoxInternalManage.cpp 37596 2011-06-22 19:30:06Z vboxsync $ */
 /** @file
  * VBoxManage - The 'internalcommands' command.
  *
@@ -136,7 +136,7 @@ void printUsageInternal(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
         "\n"
         "Commands:\n"
         "\n"
-        "%s%s%s%s%s%s%s%s%s%s%s%s%s%s"
+        "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s"
         "WARNING: This is a development tool and shall only be used to analyse\n"
         "         problems. It is completely unsupported and will change in\n"
         "         incompatible ways without warning.\n",
@@ -185,8 +185,9 @@ void printUsageInternal(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
           "       (the partitioning information in the MBR file is ignored).\n"
           "       The diskname is on Linux e.g. /dev/sda, and on Windows e.g.\n"
           "       \\\\.\\PhysicalDrive0).\n"
-          "       On Linux host the parameter -relative causes a VMDK file to be created\n"
-          "       which refers to individual partitions instead to the entire disk.\n"
+          "       On Linux or FreeBSD host the parameter -relative causes a VMDK file to\n"
+          "       be created which refers to individual partitions instead to the entire\n"
+          "       disk.\n"
           "       The necessary partition numbers can be queried with\n"
           "         VBoxManage internalcommands listpartitions\n"
           "\n"
@@ -241,8 +242,13 @@ void printUsageInternal(USAGECATEGORY u64Cmd, PRTSTREAM pStrm)
         ? "  passwordhash <passsword>\n"
           "       Generates a password hash.\n"
           "\n"
-        :
-          ""
+        : "",
+        (u64Cmd & USAGE_GUESTSTATS)
+        ? "  gueststats <vmname>|<uuid> [--interval <seconds>]\n"
+          "       Obtains and prints internal guest statistics.\n"
+          "       Sets the update interval if specified.\n"
+          "\n"
+        : ""
         );
 }
 
@@ -857,8 +863,8 @@ static int CmdListPartitions(int argc, char **argv, ComPtr<IVirtualBox> aVirtual
     if (rawdisk.isEmpty())
         return errorSyntax(USAGE_LISTPARTITIONS, "Mandatory parameter -rawdisk missing");
 
-    RTFILE RawFile;
-    int vrc = RTFileOpen(&RawFile, rawdisk.c_str(), RTFILE_O_READ | RTFILE_O_OPEN | RTFILE_O_DENY_WRITE);
+    RTFILE hRawFile;
+    int vrc = RTFileOpen(&hRawFile, rawdisk.c_str(), RTFILE_O_READ | RTFILE_O_OPEN | RTFILE_O_DENY_WRITE);
     if (RT_FAILURE(vrc))
     {
         RTMsgError("Cannot open the raw disk: %Rrc", vrc);
@@ -866,7 +872,7 @@ static int CmdListPartitions(int argc, char **argv, ComPtr<IVirtualBox> aVirtual
     }
 
     HOSTPARTITIONS partitions;
-    vrc = partRead(RawFile, &partitions);
+    vrc = partRead(hRawFile, &partitions);
     /* Don't bail out on errors, print the table and return the result code. */
 
     RTPrintf("Number  Type   StartCHS       EndCHS      Size (MiB)  Start (Sect)\n");
@@ -962,12 +968,12 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
             i++;
             pszPartitions = argv[i];
         }
-#ifdef RT_OS_LINUX
+#if defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD)
         else if (strcmp(argv[i], "-relative") == 0)
         {
             fRelative = true;
         }
-#endif /* RT_OS_LINUX */
+#endif /* RT_OS_LINUX || RT_OS_FREEBSD */
         else
             return errorSyntax(USAGE_CREATERAWVMDK, "Invalid parameter '%s'", argv[i]);
     }
@@ -982,8 +988,8 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
 #ifdef RT_OS_DARWIN
     fRelative = true;
 #endif /* RT_OS_DARWIN */
-    RTFILE RawFile;
-    int vrc = RTFileOpen(&RawFile, rawdisk.c_str(), RTFILE_O_READ | RTFILE_O_OPEN | RTFILE_O_DENY_WRITE);
+    RTFILE hRawFile;
+    int vrc = RTFileOpen(&hRawFile, rawdisk.c_str(), RTFILE_O_READ | RTFILE_O_OPEN | RTFILE_O_DENY_WRITE);
     if (RT_FAILURE(vrc))
     {
         RTMsgError("Cannot open the raw disk '%s': %Rrc", rawdisk.c_str(), vrc);
@@ -1001,7 +1007,7 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
      */
     DISK_GEOMETRY DriveGeo;
     DWORD cbDriveGeo;
-    if (DeviceIoControl((HANDLE)RawFile,
+    if (DeviceIoControl((HANDLE)RTFileToNative(hRawFile),
                         IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0,
                         &DriveGeo, sizeof(DriveGeo), &cbDriveGeo, NULL))
     {
@@ -1022,7 +1028,7 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
 
         GET_LENGTH_INFORMATION DiskLenInfo;
         DWORD junk;
-        if (DeviceIoControl((HANDLE)RawFile,
+        if (DeviceIoControl((HANDLE)RTFileToNative(hRawFile),
                             IOCTL_DISK_GET_LENGTH_INFO, NULL, 0,
                             &DiskLenInfo, sizeof(DiskLenInfo), &junk, (LPOVERLAPPED)NULL))
         {
@@ -1038,7 +1044,7 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
     }
 #elif defined(RT_OS_LINUX)
     struct stat DevStat;
-    if (!fstat(RawFile, &DevStat) && S_ISBLK(DevStat.st_mode))
+    if (!fstat(RTFileToNative(hRawFile), &DevStat) && S_ISBLK(DevStat.st_mode))
     {
 #ifdef BLKGETSIZE64
         /* BLKGETSIZE64 is broken up to 2.4.17 and in many 2.5.x. In 2.6.0
@@ -1049,14 +1055,14 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
                  || (strncmp(utsname.release, "2.", 2) == 0 && atoi(&utsname.release[2]) >= 6)))
         {
             uint64_t cbBlk;
-            if (!ioctl(RawFile, BLKGETSIZE64, &cbBlk))
+            if (!ioctl(RTFileToNative(hRawFile), BLKGETSIZE64, &cbBlk))
                 cbSize = cbBlk;
         }
 #endif /* BLKGETSIZE64 */
         if (!cbSize)
         {
             long cBlocks;
-            if (!ioctl(RawFile, BLKGETSIZE, &cBlocks))
+            if (!ioctl(RTFileToNative(hRawFile), BLKGETSIZE, &cBlocks))
                 cbSize = (uint64_t)cBlocks << 9;
             else
             {
@@ -1074,13 +1080,13 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
     }
 #elif defined(RT_OS_DARWIN)
     struct stat DevStat;
-    if (!fstat(RawFile, &DevStat) && S_ISBLK(DevStat.st_mode))
+    if (!fstat(RTFileToNative(hRawFile), &DevStat) && S_ISBLK(DevStat.st_mode))
     {
         uint64_t cBlocks;
         uint32_t cbBlock;
-        if (!ioctl(RawFile, DKIOCGETBLOCKCOUNT, &cBlocks))
+        if (!ioctl(RTFileToNative(hRawFile), DKIOCGETBLOCKCOUNT, &cBlocks))
         {
-            if (!ioctl(RawFile, DKIOCGETBLOCKSIZE, &cbBlock))
+            if (!ioctl(RTFileToNative(hRawFile), DKIOCGETBLOCKSIZE, &cbBlock))
                 cbSize = cBlocks * cbBlock;
             else
             {
@@ -1104,11 +1110,11 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
     }
 #elif defined(RT_OS_SOLARIS)
     struct stat DevStat;
-    if (!fstat(RawFile, &DevStat) && (   S_ISBLK(DevStat.st_mode)
+    if (!fstat(RTFileToNative(hRawFile), &DevStat) && (   S_ISBLK(DevStat.st_mode)
                                       || S_ISCHR(DevStat.st_mode)))
     {
         struct dk_minfo mediainfo;
-        if (!ioctl(RawFile, DKIOCGMEDIAINFO, &mediainfo))
+        if (!ioctl(RTFileToNative(hRawFile), DKIOCGMEDIAINFO, &mediainfo))
             cbSize = mediainfo.dki_capacity * mediainfo.dki_lbsize;
         else
         {
@@ -1125,10 +1131,10 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
     }
 #elif defined(RT_OS_FREEBSD)
     struct stat DevStat;
-    if (!fstat(RawFile, &DevStat) && S_ISCHR(DevStat.st_mode))
+    if (!fstat(RTFileToNative(hRawFile), &DevStat) && S_ISCHR(DevStat.st_mode))
     {
         off_t cbMedia = 0;
-        if (!ioctl(RawFile, DIOCGMEDIASIZE, &cbMedia))
+        if (!ioctl(RTFileToNative(hRawFile), DIOCGMEDIASIZE, &cbMedia))
         {
             cbSize = cbMedia;
         }
@@ -1148,7 +1154,7 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
 #else /* all unrecognized OSes */
     /* Hopefully this works on all other hosts. If it doesn't, it'll just fail
      * creating the VMDK, so no real harm done. */
-    vrc = RTFileGetSize(RawFile, &cbSize);
+    vrc = RTFileGetSize(hRawFile, &cbSize);
     if (RT_FAILURE(vrc))
     {
         RTMsgError("Cannot get the size of the raw disk '%s': %Rrc", rawdisk.c_str(), vrc);
@@ -1206,7 +1212,7 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
         }
 
         HOSTPARTITIONS partitions;
-        vrc = partRead(RawFile, &partitions);
+        vrc = partRead(hRawFile, &partitions);
         if (RT_FAILURE(vrc))
         {
             RTMsgError("Cannot read the partition information from '%s'", rawdisk.c_str());
@@ -1261,7 +1267,7 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
                     vrc = VERR_NO_MEMORY;
                     goto out;
                 }
-                vrc = RTFileReadAt(RawFile, partitions.aPartitions[i].uPartDataStart * 512,
+                vrc = RTFileReadAt(hRawFile, partitions.aPartitions[i].uPartDataStart * 512,
                                    pPartData, (size_t)pPartDesc->cbData, NULL);
                 if (RT_FAILURE(vrc))
                 {
@@ -1315,10 +1321,16 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
             {
                 if (fRelative)
                 {
-#ifdef RT_OS_LINUX
+#if defined(RT_OS_LINUX) || defined(RT_OS_FREEBSD)
                     /* Refer to the correct partition and use offset 0. */
                     char *psz;
-                    RTStrAPrintf(&psz, "%s%u", rawdisk.c_str(),
+                    RTStrAPrintf(&psz,
+#if defined(RT_OS_LINUX)
+                                 "%s%u",
+#elif defined(RT_OS_FREEBSD)
+                                 "%ss%u",
+#endif
+                                 rawdisk.c_str(),
                                  partitions.aPartitions[i].uIndex);
                     if (!psz)
                     {
@@ -1402,7 +1414,7 @@ static int CmdCreateRawVMDK(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
         }
     }
 
-    RTFileClose(RawFile);
+    RTFileClose(hRawFile);
 
 #ifdef DEBUG_klaus
     RTPrintf("#            start         length    startoffset  partdataptr  device\n");
@@ -1625,7 +1637,7 @@ static int CmdConvertToRaw(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBo
     RTFILE outFile;
     vrc = VINF_SUCCESS;
     if (fWriteToStdOut)
-        outFile = 1;
+        vrc = RTFileFromNative(&outFile, 1);
     else
         vrc = RTFileOpen(&outFile, dst.c_str(), RTFILE_O_WRITE | RTFILE_O_CREATE | RTFILE_O_DENY_ALL);
     if (RT_FAILURE(vrc))
@@ -1915,11 +1927,11 @@ int CmdDebugLog(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox, ComPtr<I
     bool                fEnablePresent = false;
     bool                fEnable        = false;
     bool                fFlagsPresent  = false;
-    iprt::MiniString    strFlags;
+    RTCString    strFlags;
     bool                fGroupsPresent = false;
-    iprt::MiniString    strGroups;
+    RTCString    strGroups;
     bool                fDestsPresent  = false;
-    iprt::MiniString    strDests;
+    RTCString    strDests;
 
     static const RTGETOPTDEF s_aOptions[] =
     {
@@ -2017,6 +2029,88 @@ int CmdGeneratePasswordHash(int argc, char **argv, ComPtr<IVirtualBox> aVirtualB
 }
 
 /**
+ * Print internal guest statistics or
+ * set internal guest statistics update interval if specified
+ */
+int CmdGuestStats(int argc, char **argv, ComPtr<IVirtualBox> aVirtualBox, ComPtr<ISession> aSession)
+{
+    /* one parameter, guest name */
+    if (argc < 1)
+        return errorSyntax(USAGE_GUESTSTATS, "Missing VM name/UUID");
+
+    /*
+     * Parse the command.
+     */
+    ULONG aUpdateInterval = 0;
+
+    static const RTGETOPTDEF s_aOptions[] =
+    {
+        { "--interval", 'i', RTGETOPT_REQ_UINT32  }
+    };
+
+    int ch;
+    RTGETOPTUNION ValueUnion;
+    RTGETOPTSTATE GetState;
+    RTGetOptInit(&GetState, argc, argv, s_aOptions, RT_ELEMENTS(s_aOptions), 1, 0);
+    while ((ch = RTGetOpt(&GetState, &ValueUnion)))
+    {
+        switch (ch)
+        {
+            case 'i':
+                aUpdateInterval = ValueUnion.u32;
+                break;
+
+            default:
+                return errorGetOpt(USAGE_GUESTSTATS , ch, &ValueUnion);
+        }
+    }
+
+    if (argc > 1 && aUpdateInterval == 0)
+        return errorSyntax(USAGE_GUESTSTATS, "Invalid update interval specified");
+
+    RTPrintf("argc=%d interval=%u\n", argc, aUpdateInterval);
+
+    ComPtr<IMachine> ptrMachine;
+    HRESULT rc;
+    CHECK_ERROR_RET(aVirtualBox, FindMachine(Bstr(argv[0]).raw(),
+                                             ptrMachine.asOutParam()), 1);
+
+    CHECK_ERROR_RET(ptrMachine, LockMachine(aSession, LockType_Shared), 1);
+
+    /*
+     * Get the guest interface.
+     */
+    ComPtr<IConsole> ptrConsole;
+    CHECK_ERROR_RET(aSession, COMGETTER(Console)(ptrConsole.asOutParam()), 1);
+
+    ComPtr<IGuest> ptrGuest;
+    CHECK_ERROR_RET(ptrConsole, COMGETTER(Guest)(ptrGuest.asOutParam()), 1);
+
+    if (aUpdateInterval)
+        CHECK_ERROR_RET(ptrGuest, COMSETTER(StatisticsUpdateInterval)(aUpdateInterval), 1);
+    else
+    {
+        ULONG mCpuUser, mCpuKernel, mCpuIdle;
+        ULONG mMemTotal, mMemFree, mMemBalloon, mMemShared, mMemCache, mPageTotal;
+        ULONG ulMemAllocTotal, ulMemFreeTotal, ulMemBalloonTotal, ulMemSharedTotal;
+
+        CHECK_ERROR_RET(ptrGuest, InternalGetStatistics(&mCpuUser, &mCpuKernel, &mCpuIdle,
+                                        &mMemTotal, &mMemFree, &mMemBalloon, &mMemShared, &mMemCache,
+                                                        &mPageTotal, &ulMemAllocTotal, &ulMemFreeTotal, &ulMemBalloonTotal, &ulMemSharedTotal), 1);
+        RTPrintf("mCpuUser=%u mCpuKernel=%u mCpuIdle=%u\n"
+                 "mMemTotal=%u mMemFree=%u mMemBalloon=%u mMemShared=%u mMemCache=%u\n"
+                 "mPageTotal=%u ulMemAllocTotal=%u ulMemFreeTotal=%u ulMemBalloonTotal=%u ulMemSharedTotal=%u\n",
+                 mCpuUser, mCpuKernel, mCpuIdle,
+                 mMemTotal, mMemFree, mMemBalloon, mMemShared, mMemCache,
+                 mPageTotal, ulMemAllocTotal, ulMemFreeTotal, ulMemBalloonTotal, ulMemSharedTotal);
+
+    }
+
+    return 0;
+}
+
+
+/**
  * Wrapper for handling internal commands
  */
 int handleInternalCommands(HandlerArg *a)
@@ -2057,6 +2151,8 @@ int handleInternalCommands(HandlerArg *a)
         return CmdDebugLog(a->argc - 1, &a->argv[1], a->virtualBox, a->session);
     if (!strcmp(pszCmd, "passwordhash"))
         return CmdGeneratePasswordHash(a->argc - 1, &a->argv[1], a->virtualBox, a->session);
+    if (!strcmp(pszCmd, "gueststats"))
+        return CmdGuestStats(a->argc - 1, &a->argv[1], a->virtualBox, a->session);
 
     /* default: */
     return errorSyntax(USAGE_ALL, "Invalid command '%s'", a->argv[0]);

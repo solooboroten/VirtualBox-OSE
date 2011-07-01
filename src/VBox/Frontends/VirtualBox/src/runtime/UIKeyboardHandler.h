@@ -64,14 +64,15 @@ public:
     /* Commands to capture/release keyboard: */
     void captureKeyboard(ulong uScreenId);
     void releaseKeyboard();
+    void releaseAllPressedKeys(bool aReleaseHostKey = true);
 
     /* Current keyboard state: */
     int keyboardState() const;
 
     /* Some getters required by side-code: */
-    bool isHostKeyPressed() const { return m_bIsHostkeyPressed; }
+    bool isHostKeyPressed() const { return m_bIsHostComboPressed; }
 #ifdef Q_WS_MAC
-    bool isHostKeyAlone() const { return m_bIsHostkeyAlone; }
+    bool isHostKeyAlone() const { return m_bIsHostComboAlone; }
     bool isKeyboardGrabbed() const { return m_fKeyboardGrabbed; }
 #endif /* Q_WS_MAC */
 
@@ -122,14 +123,24 @@ protected:
     static bool darwinEventHandlerProc(const void *pvCocoaEvent, const void *pvCarbonEvent, void *pvUser);
 #endif
 
+    bool keyEventCADHandled(uint8_t uScan);
+    bool keyEventHandleNormal(int iKey, uint8_t uScan, int fFlags, LONG *pCodes, uint *puCodesCount);
+    bool keyEventHostComboHandled(int iKey, wchar_t *pUniKey, bool isHostComboStateChanged, bool *pfResult);
+    void keyEventHandleHostComboRelease(ulong uScreenId);
+    void keyEventReleaseHostComboKeys(CKeyboard keyboard);
     /* Separate function to handle most of existing keyboard-events: */
     bool keyEvent(int iKey, uint8_t uScan, int fFlags, ulong uScreenId, wchar_t *pUniKey = 0);
+    bool processHotKey(int iHotKey, wchar_t *pUniKey);
 
     /* Private helpers: */
     void fixModifierState(LONG *piCodes, uint *puCount);
     void saveKeyStates();
-    void releaseAllPressedKeys(bool aReleaseHostKey = true);
     void sendChangedKeyStates();
+    bool isAutoCaptureDisabled();
+    void setAutoCaptureDisabled(bool fIsAutoCaptureDisabled);
+    bool autoCaptureSetGlobally();
+    bool viewHasFocus(ulong uScreenId);
+    bool isSessionRunning();
 
     UIMachineWindow* isItListenedWindow(QObject *pWatchedObject) const;
     UIMachineView* isItListenedView(QObject *pWatchedObject) const;
@@ -149,15 +160,19 @@ protected:
     uint8_t m_pressedKeys[128];
     uint8_t m_pressedKeysCopy[128];
 
+    QMap<int, uint8_t> m_pressedHostComboKeys;
+
     bool m_fIsKeyboardCaptured : 1;
-    bool m_bIsHostkeyPressed : 1;
-    bool m_bIsHostkeyAlone : 1;
-    bool m_bIsHostkeyInCapture : 1;
+    bool m_bIsHostComboPressed : 1;
+    bool m_bIsHostComboAlone : 1;
+    bool m_bIsHostComboProcessed : 1;
     bool m_fPassCAD : 1;
 
 #if defined(Q_WS_WIN)
+    /* Currently this is used in winLowKeyboardEvent() only: */
+    bool m_bIsHostkeyInCapture;
     /* Keyboard hook required to capture keyboard event under windows. */
-    static UIKeyboardHandler *m_pKeyboardHandler;
+    static UIKeyboardHandler *m_spKeyboardHandler;
     HHOOK m_keyboardHook;
     int m_iKeyboardHookViewIndex;
 #elif defined(Q_WS_MAC)

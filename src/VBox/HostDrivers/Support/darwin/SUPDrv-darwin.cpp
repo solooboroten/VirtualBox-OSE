@@ -1,4 +1,4 @@
-/* $Id: SUPDrv-darwin.cpp 33540 2010-10-28 09:27:05Z vboxsync $ */
+/* $Id: SUPDrv-darwin.cpp 37249 2011-05-30 10:03:45Z vboxsync $ */
 /** @file
  * VirtualBox Support Driver - Darwin Specific Code.
  */
@@ -360,8 +360,13 @@ static int VBoxDrvDarwinOpen(dev_t Dev, int fFlags, int fDevType, struct proc *p
     kauth_cred_t    pCred = kauth_cred_proc_ref(pProcess);
     if (pCred)
     {
-        RTUID           Uid =  pCred->cr_ruid;
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= 1070
+        RTUID           Uid = kauth_cred_getruid(pCred);
+        RTGID           Gid = kauth_cred_getrgid(pCred);
+#else
+        RTUID           Uid = pCred->cr_ruid;
         RTGID           Gid = pCred->cr_rgid;
+#endif
         RTPROCESS       Process = RTProcSelf();
         unsigned        iHash = SESSION_HASH(Process);
         RTSPINLOCKTMP   Tmp = RTSPINLOCKTMP_INITIALIZER;
@@ -770,9 +775,9 @@ int  VBOXCALL   supdrvOSLdrValidatePointer(PSUPDRVDEVEXT pDevExt, PSUPDRVLDRIMAG
 }
 
 
-int  VBOXCALL   supdrvOSLdrLoad(PSUPDRVDEVEXT pDevExt, PSUPDRVLDRIMAGE pImage, const uint8_t *pbImageBits)
+int  VBOXCALL   supdrvOSLdrLoad(PSUPDRVDEVEXT pDevExt, PSUPDRVLDRIMAGE pImage, const uint8_t *pbImageBits, PSUPLDRLOAD pReq)
 {
-    NOREF(pDevExt); NOREF(pImage); NOREF(pbImageBits);
+    NOREF(pDevExt); NOREF(pImage); NOREF(pbImageBits); NOREF(pReq);
     return VERR_NOT_SUPPORTED;
 }
 

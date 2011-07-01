@@ -1,4 +1,4 @@
-/* $Id: VBoxServiceVMInfo.cpp 33554 2010-10-28 11:59:44Z vboxsync $ */
+/* $Id: VBoxServiceVMInfo.cpp 37256 2011-05-30 12:39:03Z vboxsync $ */
 /** @file
  * VBoxService - Virtual Machine Information for the Host.
  */
@@ -146,11 +146,11 @@ static DECLCALLBACK(int) VBoxServiceVMInfoInit(void)
          * Declare some guest properties with flags and reset values.
          */
         VBoxServicePropCacheUpdateEntry(&g_VMInfoPropCache, "/VirtualBox/GuestInfo/OS/LoggedInUsersList",
-                                        VBOXSERVICEPROPCACHEFLAG_TEMPORARY, NULL /* Delete on exit */);
+                                        VBOXSERVICEPROPCACHEFLAG_TEMPORARY | VBOXSERVICEPROPCACHEFLAG_TRANSIENT, NULL /* Delete on exit */);
         VBoxServicePropCacheUpdateEntry(&g_VMInfoPropCache, "/VirtualBox/GuestInfo/OS/LoggedInUsers",
-                                        VBOXSERVICEPROPCACHEFLAG_TEMPORARY, "0");
+                                        VBOXSERVICEPROPCACHEFLAG_TEMPORARY | VBOXSERVICEPROPCACHEFLAG_TRANSIENT, "0");
         VBoxServicePropCacheUpdateEntry(&g_VMInfoPropCache, "/VirtualBox/GuestInfo/OS/NoLoggedInUsers",
-                                        VBOXSERVICEPROPCACHEFLAG_TEMPORARY, "true");
+                                        VBOXSERVICEPROPCACHEFLAG_TEMPORARY | VBOXSERVICEPROPCACHEFLAG_TRANSIENT, "true");
         VBoxServicePropCacheUpdateEntry(&g_VMInfoPropCache, "/VirtualBox/GuestInfo/Net/Count",
                                         VBOXSERVICEPROPCACHEFLAG_TEMPORARY | VBOXSERVICEPROPCACHEFLAG_ALWAYS_UPDATE, NULL /* Delete on exit */);
     }
@@ -189,15 +189,19 @@ static void vboxserviceVMInfoWriteFixedProperties(void)
      * Retrieve version information about Guest Additions and installed files (components).
      */
     char *pszAddVer;
+    char *pszAddVerExt;
     char *pszAddRev;
-    rc = VbglR3GetAdditionsVersion(&pszAddVer, &pszAddRev);
+    rc = VbglR3GetAdditionsVersion(&pszAddVer, &pszAddVerExt, &pszAddRev);
     VBoxServiceWritePropF(g_uVMInfoGuestPropSvcClientID, "/VirtualBox/GuestAdd/Version",
                           "%s", RT_FAILURE(rc) ? "" : pszAddVer);
+    VBoxServiceWritePropF(g_uVMInfoGuestPropSvcClientID, "/VirtualBox/GuestAdd/VersionExt",
+                          "%s", RT_FAILURE(rc) ? "" : pszAddVerExt);
     VBoxServiceWritePropF(g_uVMInfoGuestPropSvcClientID, "/VirtualBox/GuestAdd/Revision",
                           "%s", RT_FAILURE(rc) ? "" : pszAddRev);
     if (RT_SUCCESS(rc))
     {
         RTStrFree(pszAddVer);
+        RTStrFree(pszAddVerExt);
         RTStrFree(pszAddRev);
     }
 

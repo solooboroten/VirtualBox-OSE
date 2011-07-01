@@ -1,85 +1,37 @@
+; $Id: $
+;; @file
+; VBoxGuestAdditionsUninstall.nsh - Guest Additions uninstallation.
+;
 
-; @todo Replace this crappy stuff with a "VBoxDrvInst /delnetprovider"
-!macro RemoveFromProvider un
-Function ${un}RemoveFromProvider
-  Exch $0
-  Push $1
-  Push $2
-  Push $3
-  Push $4
-  Push $5
-  Push $6
-
-  ReadRegStr $1 HKLM "$R0" "ProviderOrder"
-  StrCpy $5 $1 1 -1 # copy last char
-  StrCmp $5 "," +2 # if last char != ,
-  StrCpy $1 "$1," # append ,
-  Push $1
-  Push "$0,"
-  Call ${un}StrStr ; Find `$0,` in $1
-  Pop $2 ; pos of our dir
-  StrCmp $2 "" unRemoveFromPath_done
-  ; else, it is in path
-  # $0 - path to add
-  # $1 - path var
-  StrLen $3 "$0,"
-  StrLen $4 $2
-  StrCpy $5 $1 -$4 # $5 is now the part before the path to remove
-  StrCpy $6 $2 "" $3 # $6 is now the part after the path to remove
-  StrCpy $3 $5$6
-
-  StrCpy $5 $3 1 -1 # copy last char
-  StrCmp $5 "," 0 +2 # if last char == ,
-  StrCpy $3 $3 -1 # remove last char
-
-  WriteRegStr HKLM "$R0" "ProviderOrder" $3
-
-unRemoveFromPath_done:
-  Pop $6
-  Pop $5
-  Pop $4
-  Pop $3
-  Pop $2
-  Pop $1
-  Pop $0
-FunctionEnd
-!macroend
-!insertmacro RemoveFromProvider ""
-!insertmacro RemoveFromProvider "un."
-
-!macro RemoveProvider un
-Function ${un}RemoveProvider
-  Push $R0
-  StrCpy $R0 "VBoxSF"
-  Push $R0
-  StrCpy $R0 "SYSTEM\CurrentControlSet\Control\NetworkProvider\HWOrder"
-  Call ${un}RemoveFromProvider
-  StrCpy $R0 "VBoxSF"
-  Push $R0
-  StrCpy $R0 "SYSTEM\CurrentControlSet\Control\NetworkProvider\Order"
-  Call ${un}RemoveFromProvider
-  Pop $R0
-FunctionEnd
-!macroend
-!insertmacro RemoveProvider ""
-!insertmacro RemoveProvider "un."
+;
+; Copyright (C) 2006-2011 Oracle Corporation
+;
+; This file is part of VirtualBox Open Source Edition (OSE), as
+; available from http://www.virtualbox.org. This file is free software;
+; you can redistribute it and/or modify it under the terms of the GNU
+; General Public License (GPL) as published by the Free Software
+; Foundation, in version 2 as it comes in the "COPYING" file of the
+; VirtualBox OSE distribution. VirtualBox OSE is distributed in the
+; hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
+;
 
 !macro UninstallCommon un
 Function ${un}UninstallCommon
 
-  Delete /REBOOTOK "$INSTDIR\install.log"
+  Delete /REBOOTOK "$INSTDIR\install*.log"
   Delete /REBOOTOK "$INSTDIR\uninst.exe"
   Delete /REBOOTOK "$INSTDIR\${PRODUCT_NAME}.url"
 
   ; Remove common files
   Delete /REBOOTOK "$INSTDIR\VBoxDrvInst.exe"
+  Delete /REBOOTOK "$INSTDIR\DIFxAPI.dll"
 
   Delete /REBOOTOK "$INSTDIR\VBoxVideo.inf"
 !ifdef VBOX_SIGN_ADDITIONS
   Delete /REBOOTOK "$INSTDIR\VBoxVideo.cat"
 !endif
 
-!ifdef VBOX_WITH_LICENSE_INSTALL_RTF
+!if $%VBOX_WITH_LICENSE_INSTALL_RTF% == "1"
   Delete /REBOOTOK "$INSTDIR\${LICENSE_FILE_RTF}"
 !endif
 
@@ -142,7 +94,7 @@ Function ${un}Uninstall
 !if $%BUILD_TARGET_ARCH% == "x86"       ; 32-bit
 nt4:
 
-  Call ${un}NT_Uninstall
+  Call ${un}NT4_Uninstall
   goto common
 !endif
 
@@ -199,7 +151,7 @@ Function ${un}UninstallInstDir
 !if $%BUILD_TARGET_ARCH% == "x86"       ; 32-bit
 nt4:
 
-  Call ${un}NT_UninstallInstDir
+  Call ${un}NT4_UninstallInstDir
   goto common
 !endif
 

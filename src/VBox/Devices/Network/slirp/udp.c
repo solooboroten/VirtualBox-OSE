@@ -1,4 +1,4 @@
-/* $Id: udp.c 34103 2010-11-16 11:18:55Z vboxsync $ */
+/* $Id: udp.c 36901 2011-04-29 18:03:48Z vboxsync $ */
 /** @file
  * NAT - UDP protocol.
  */
@@ -188,6 +188,7 @@ udp_input(PNATState pData, register struct mbuf *m, int iphlen)
         dst.sin_addr.s_addr = ip->ip_src.s_addr;
         dst.sin_port = uh->uh_sport;
 
+        slirpMbufTagService(pData, m, CTL_DNS);
         /* udp_output2() expects a pointer to the body of UDP packet. */
         m->m_data += sizeof(struct udpiphdr);
         m->m_len -= sizeof(struct udpiphdr);
@@ -297,8 +298,8 @@ udp_input(PNATState pData, register struct mbuf *m, int iphlen)
         Log2(("NAT: UDP tx errno = %d (%s) on sent to %R[IP4]\n",
               errno, strerror(errno), &ip->ip_dst));
         icmp_error(pData, m, ICMP_UNREACH, ICMP_UNREACH_NET, 0, strerror(errno));
-        /* in case we receive ICMP on this socket we'll aware that ICMP has been already sent to host*/
         so->so_m = NULL;
+        return;
     }
 
     if (so->so_m)

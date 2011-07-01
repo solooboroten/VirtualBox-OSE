@@ -1,4 +1,4 @@
-/* $Id: MachineImpl.h 35460 2011-01-10 14:24:13Z vboxsync $ */
+/* $Id: MachineImpl.h 37709 2011-06-30 13:51:51Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation
  */
@@ -32,6 +32,7 @@
 #include "BIOSSettingsImpl.h"
 #include "StorageControllerImpl.h"          // required for MachineImpl.h to compile on Windows
 #include "BandwidthControlImpl.h"
+#include "BandwidthGroupImpl.h"
 #include "VBox/settings.h"
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
 #include "Performance.h"
@@ -125,13 +126,13 @@ public:
             /** list of controls of all opened remote sessions */
             RemoteControlList mRemoteControls;
 
-            /** openRemoteSession() and OnSessionEnd() progress indicator */
+            /** launchVMProcess() and OnSessionEnd() progress indicator */
             ComObjPtr<ProgressProxy> mProgress;
 
             /**
-             * PID of the session object that must be passed to openSession() to
-             * finalize the openRemoteSession() request (i.e., PID of the
-             * process created by openRemoteSession())
+             * PID of the session object that must be passed to openSession()
+             * to finalize the launchVMProcess() request (i.e., PID of the
+             * process created by launchVMProcess())
              */
             RTPROCESS mPid;
 
@@ -198,7 +199,7 @@ public:
      */
     struct SSData
     {
-        Utf8Str mStateFilePath;
+        Utf8Str strStateFilePath;
     };
 
     /**
@@ -290,10 +291,13 @@ public:
 
         BOOL                 mIoCacheEnabled;
         ULONG                mIoCacheSize;
+
+        typedef std::list< ComObjPtr<PciDeviceAttachment> > PciDeviceAssignmentList;
+        PciDeviceAssignmentList mPciDeviceAssignments;
     };
 
     /**
-     *  Hard disk and other media data.
+   *  Hard disk and other media data.
      *
      *  The usage policy is the same as for HWData, but a separate structure
      *  is necessary because hard disk data requires different procedures when
@@ -317,9 +321,7 @@ public:
     DECLARE_PROTECT_FINAL_CONSTRUCT()
 
     BEGIN_COM_MAP(Machine)
-        COM_INTERFACE_ENTRY(ISupportErrorInfo)
-        COM_INTERFACE_ENTRY(IMachine)
-        COM_INTERFACE_ENTRY(IDispatch)
+        VBOX_DEFAULT_INTERFACE_ENTRIES(IMachine)
     END_COM_MAP()
 
     DECLARE_EMPTY_CTOR_DTOR(Machine)
@@ -386,6 +388,10 @@ public:
     STDMETHOD(COMSETTER(CPUHotPlugEnabled))(BOOL enabled);
     STDMETHOD(COMGETTER(CPUExecutionCap))(ULONG *aExecutionCap);
     STDMETHOD(COMSETTER(CPUExecutionCap))(ULONG aExecutionCap);
+    STDMETHOD(COMGETTER(EmulatedUSBCardReaderEnabled))(BOOL *enabled);
+    STDMETHOD(COMSETTER(EmulatedUSBCardReaderEnabled))(BOOL enabled);
+    STDMETHOD(COMGETTER(EmulatedUSBWebcameraEnabled))(BOOL *enabled);
+    STDMETHOD(COMSETTER(EmulatedUSBWebcameraEnabled))(BOOL enabled);
     STDMETHOD(COMGETTER(HpetEnabled))(BOOL *enabled);
     STDMETHOD(COMSETTER(HpetEnabled))(BOOL enabled);
     STDMETHOD(COMGETTER(MemoryBalloonSize))(ULONG *memoryBalloonSize);
@@ -457,6 +463,8 @@ public:
     STDMETHOD(COMSETTER(IoCacheEnabled)) (BOOL  aEnabled);
     STDMETHOD(COMGETTER(IoCacheSize)) (ULONG *aIoCacheSize);
     STDMETHOD(COMSETTER(IoCacheSize)) (ULONG  aIoCacheSize);
+    STDMETHOD(COMGETTER(PciDeviceAssignments))(ComSafeArrayOut(IPciDeviceAttachment *, aAssignments));
+    STDMETHOD(COMGETTER(BandwidthControl))(IBandwidthControl **aBandwidthControl);
 
     // IMachine methods
     STDMETHOD(LockMachine)(ISession *aSession, LockType_T lockType);
@@ -468,6 +476,7 @@ public:
                             LONG aDevice, DeviceType_T aType, IMedium *aMedium);
     STDMETHOD(DetachDevice)(IN_BSTR aControllerName, LONG aControllerPort, LONG aDevice);
     STDMETHOD(PassthroughDevice)(IN_BSTR aControllerName, LONG aControllerPort, LONG aDevice, BOOL aPassthrough);
+    STDMETHOD(TemporaryEjectDevice)(IN_BSTR aControllerName, LONG aControllerPort, LONG aDevice, BOOL aTempEject);
     STDMETHOD(SetBandwidthGroupForDevice)(IN_BSTR aControllerName, LONG aControllerPort,
                                           LONG aDevice, IBandwidthGroup *aBandwidthGroup);
     STDMETHOD(MountMedium)(IN_BSTR aControllerName, LONG aControllerPort,
@@ -522,10 +531,9 @@ public:
     STDMETHOD(GetCPUStatus(ULONG aCpu, BOOL *aCpuAttached));
     STDMETHOD(QueryLogFilename(ULONG aIdx, BSTR *aName));
     STDMETHOD(ReadLog(ULONG aIdx, LONG64 aOffset, LONG64 aSize, ComSafeArrayOut(BYTE, aData)));
-    STDMETHOD(AttachHostPciDevice(LONG hostAddress, LONG desiredGuestAddress, IEventContext *eventContext, BOOL tryToUnbind));
+    STDMETHOD(AttachHostPciDevice(LONG hostAddress, LONG desiredGuestAddress, BOOL tryToUnbind));
     STDMETHOD(DetachHostPciDevice(LONG hostAddress));
-    STDMETHOD(COMGETTER(PciDeviceAssignments))(ComSafeArrayOut(IPciDeviceAttachment *, aAssignments));
-    STDMETHOD(COMGETTER(BandwidthControl))(IBandwidthControl **aBandwidthControl);
+    STDMETHOD(CloneTo(IMachine *pTarget, CloneMode_T mode, ComSafeArrayIn(CloneOptions_T, options), IProgress **pProgress));
     // public methods only for internal purposes
 
     virtual bool isSnapshotMachine() const
@@ -618,6 +626,7 @@ public:
     };
 
     void setModified(uint32_t fl);
+    void setModifiedLock(uint32_t fl);
 
     // callback handlers
     virtual HRESULT onNetworkAdapterChange(INetworkAdapter * /* networkAdapter */, BOOL /* changeAdapter */) { return S_OK; }
@@ -633,6 +642,7 @@ public:
     virtual HRESULT onMediumChange(IMediumAttachment * /* mediumAttachment */, BOOL /* force */) { return S_OK; }
     virtual HRESULT onSharedFolderChange() { return S_OK; }
     virtual HRESULT onBandwidthGroupChange(IBandwidthGroup * /* aBandwidthGroup */) { return S_OK; }
+    virtual HRESULT onStorageDeviceChange(IMediumAttachment * /* mediumAttachment */, BOOL /* remove */) { return S_OK; }
 
     HRESULT saveRegistryEntry(settings::MachineRegistryEntry &data);
 
@@ -642,9 +652,12 @@ public:
     void getLogFolder(Utf8Str &aLogFolder);
     Utf8Str queryLogFilename(ULONG idx);
 
-    HRESULT openRemoteSession(IInternalSessionControl *aControl,
-                              IN_BSTR aType, IN_BSTR aEnvironment,
-                              ProgressProxy *aProgress);
+    void composeSavedStateFilename(Utf8Str &strStateFilePath);
+
+    HRESULT launchVMProcess(IInternalSessionControl *aControl,
+                            const Utf8Str &strType,
+                            const Utf8Str &strEnvironment,
+                            ProgressProxy *aProgress);
 
     HRESULT getDirectControl(ComPtr<IInternalSessionControl> *directControl)
     {
@@ -714,6 +727,15 @@ public:
                                BOOL *aRegistered = NULL);
     void releaseStateDependency();
 
+    HRESULT getBandwidthGroup(const Utf8Str &strBandwidthGroup,
+                              ComObjPtr<BandwidthGroup> &pBandwidthGroup,
+                              bool fSetError = false)
+    {
+        return mBandwidthControl->getBandwidthGroupByName(strBandwidthGroup,
+                                                          pBandwidthGroup,
+                                                          fSetError);
+    }
+
 protected:
 
     HRESULT checkStateDependency(StateDependency aDepType);
@@ -724,7 +746,7 @@ protected:
 
     virtual HRESULT setMachineState(MachineState_T aMachineState);
 
-    HRESULT findSharedFolder(CBSTR aName,
+    HRESULT findSharedFolder(const Utf8Str &aName,
                              ComObjPtr<SharedFolder> &aSharedFolder,
                              bool aSetError = false);
 
@@ -780,6 +802,10 @@ protected:
                                settings::StorageController &data);
     HRESULT saveStateSettings(int aFlags);
 
+    void addMediumToRegistry(ComObjPtr<Medium> &pMedium,
+                             GuidList &llRegistriesThatNeedSaving,
+                             Guid *puuid);
+
     HRESULT createImplicitDiffs(IProgress *aProgress,
                                 ULONG aWeight,
                                 bool aOnline,
@@ -812,6 +838,7 @@ protected:
     void rollback(bool aNotify);
     void commit();
     void copyFrom(Machine *aThat);
+    bool isControllerHotplugCapable(StorageControllerType_T enmCtrlType);
 
     struct DeleteTask;
     static DECLCALLBACK(int) deleteThread(RTTHREAD Thread, void *pvUser);
@@ -841,7 +868,7 @@ protected:
 #ifdef VBOX_WITH_RESOURCE_USAGE_API
     void registerMetrics(PerformanceCollector *aCollector, Machine *aMachine, RTPROCESS pid);
 
-    pm::CollectorGuestHAL  *mGuestHAL;
+    pm::CollectorGuest     *mCollectorGuest;
 #endif /* VBOX_WITH_RESOURCE_USAGE_API */
 
     Machine* const          mPeer;
@@ -870,13 +897,12 @@ protected:
     typedef std::list< ComObjPtr<StorageController> > StorageControllerList;
     Backupable<StorageControllerList> mStorageControllers;
 
-    typedef std::list< ComObjPtr<PciDeviceAttachment> > PciDeviceAssignmentList;
-    PciDeviceAssignmentList mPciDeviceAssignments;
-
     friend class SessionMachine;
     friend class SnapshotMachine;
     friend class Appliance;
     friend class VirtualBox;
+
+    friend class MachineCloneVM;
 };
 
 // SessionMachine class
@@ -902,9 +928,7 @@ public:
     DECLARE_PROTECT_FINAL_CONSTRUCT()
 
     BEGIN_COM_MAP(SessionMachine)
-        COM_INTERFACE_ENTRY2(IDispatch, IMachine)
-        COM_INTERFACE_ENTRY(ISupportErrorInfo)
-        COM_INTERFACE_ENTRY(IMachine)
+        VBOX_DEFAULT_INTERFACE_ENTRIES(IMachine)
         COM_INTERFACE_ENTRY(IInternalMachineControl)
     END_COM_MAP()
 
@@ -945,6 +969,7 @@ public:
                                    BSTR *aStateFilePath);
     STDMETHOD(EndTakingSnapshot)(BOOL aSuccess);
     STDMETHOD(DeleteSnapshot)(IConsole *aInitiator, IN_BSTR aId,
+                              BOOL fDeleteAllChildren,
                               MachineState_T *aMachineState, IProgress **aProgress);
     STDMETHOD(FinishOnlineMergeMedium)(IMediumAttachment *aMediumAttachment,
                                        IMedium *aSource, IMedium *aTarget,
@@ -961,6 +986,8 @@ public:
                                   LONG64 aTimestamp, IN_BSTR aFlags);
     STDMETHOD(LockMedia)()   { return lockMedia(); }
     STDMETHOD(UnlockMedia)() { unlockMedia(); return S_OK; }
+    STDMETHOD(EjectMedium)(IMediumAttachment *aAttachment,
+                           IMediumAttachment **aNewAttachment);
 
     // public methods only for internal purposes
 
@@ -989,6 +1016,7 @@ public:
                               IVirtualBoxErrorInfo *aError);
     HRESULT onSharedFolderChange();
     HRESULT onBandwidthGroupChange(IBandwidthGroup *aBandwidthGroup);
+    HRESULT onStorageDeviceChange(IMediumAttachment *aMediumAttachment, BOOL aRemove);
 
     bool hasMatchingUSBFilter(const ComObjPtr<HostUSBDevice> &aDevice, ULONG *aMaskedIfs);
 
@@ -996,7 +1024,9 @@ private:
 
     struct ConsoleTaskData
     {
-        ConsoleTaskData() : mLastState(MachineState_Null) {}
+        ConsoleTaskData()
+            : mLastState(MachineState_Null)
+        { }
 
         MachineState_T mLastState;
         ComObjPtr<Progress> mProgress;
@@ -1005,7 +1035,7 @@ private:
         ComObjPtr<Snapshot> mSnapshot;
 
         // used when saving state (either as part of a snapshot or separate)
-        Utf8Str mStateFilePath;
+        Utf8Str strStateFilePath;
     };
 
     struct Uninit
@@ -1023,6 +1053,7 @@ private:
     void uninit(Uninit::Reason aReason);
 
     HRESULT endSavingState(HRESULT aRC, const Utf8Str &aErrMsg);
+    void releaseSavedStateFile(const Utf8Str &strSavedStateFile, Snapshot *pSnapshotToIgnore);
 
     void deleteSnapshotHandler(DeleteSnapshotTask &aTask);
     void restoreSnapshotHandler(RestoreSnapshotTask &aTask);
@@ -1113,9 +1144,7 @@ public:
     DECLARE_PROTECT_FINAL_CONSTRUCT()
 
     BEGIN_COM_MAP(SnapshotMachine)
-        COM_INTERFACE_ENTRY2(IDispatch, IMachine)
-        COM_INTERFACE_ENTRY(ISupportErrorInfo)
-        COM_INTERFACE_ENTRY(IMachine)
+        VBOX_DEFAULT_INTERFACE_ENTRIES(IMachine)
     END_COM_MAP()
 
     DECLARE_EMPTY_CTOR_DTOR(SnapshotMachine)

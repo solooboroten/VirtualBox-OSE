@@ -1,4 +1,4 @@
-/* $Id: semevent-r0drv-solaris.c 33676 2010-11-02 09:48:24Z vboxsync $ */
+/* $Id: semevent-r0drv-solaris.c 36392 2011-03-24 11:20:37Z vboxsync $ */
 /** @file
  * IPRT - Single Release Event Semaphores, Ring-0 Driver, Solaris.
  */
@@ -28,6 +28,7 @@
 /*******************************************************************************
 *   Header Files                                                               *
 *******************************************************************************/
+#define RTSEMEVENT_WITHOUT_REMAPPING
 #include "the-solaris-kernel.h"
 #include "internal/iprt.h"
 #include <iprt/semaphore.h>
@@ -63,8 +64,8 @@ typedef struct RTSEMEVENTSOLENTRY
     RTLISTNODE          Node;
     /** The thread. */
     kthread_t          *pThread;
-    /** Flag set when waking up the thread by signal or destroy. */
-    bool volatile       fWokenUp;
+    /** Set to @c true when waking up the thread by signal or destroy. */
+    uint32_t volatile  fWokenUp;
 } RTSEMEVENTSOLENTRY;
 /** Pointer to waiter entry. */
 typedef RTSEMEVENTSOLENTRY *PRTSEMEVENTSOLENTRY;
@@ -130,6 +131,7 @@ DECLINLINE(void) rtR0SemEventSolRetain(PRTSEMEVENTINTERNAL pThis)
 {
     uint32_t cRefs = ASMAtomicIncU32(&pThis->cRefs);
     Assert(cRefs && cRefs < 100000);
+    NOREF(cRefs);
 }
 
 
@@ -297,7 +299,7 @@ static int rtR0SemEventSolWait(PRTSEMEVENTINTERNAL pThis, uint32_t fFlags, uint6
                     else
                     {
                         /* Do the wait and then recheck the conditions. */
-                        rtR0SemSolWaitDoIt(&Wait, &pThis->Cnd, &pThis->Mtx);
+                        rtR0SemSolWaitDoIt(&Wait, &pThis->Cnd, &pThis->Mtx, &Waiter.fWokenUp, false);
                         continue;
                     }
                 }
@@ -315,7 +317,6 @@ static int rtR0SemEventSolWait(PRTSEMEVENTINTERNAL pThis, uint32_t fFlags, uint6
 }
 
 
-#undef RTSemEventWaitEx
 RTDECL(int)  RTSemEventWaitEx(RTSEMEVENT hEventSem, uint32_t fFlags, uint64_t uTimeout)
 {
 #ifndef RTSEMEVENT_STRICT

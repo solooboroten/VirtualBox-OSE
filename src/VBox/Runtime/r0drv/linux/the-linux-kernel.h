@@ -1,4 +1,4 @@
-/* $Id: the-linux-kernel.h 33441 2010-10-25 20:20:02Z vboxsync $ */
+/* $Id: the-linux-kernel.h 36233 2011-03-09 17:05:12Z vboxsync $ */
 /** @file
  * IPRT - Include all necessary headers for the Linux kernel.
  */
@@ -34,10 +34,14 @@
 #include <iprt/types.h>
 #define bool linux_bool
 
-#ifndef AUTOCONF_INCLUDED
-# include <linux/autoconf.h>
-#endif
 #include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
+# include <generated/autoconf.h>
+#else
+# ifndef AUTOCONF_INCLUDED
+#  include <linux/autoconf.h>
+# endif
+#endif
 
 /* We only support 2.4 and 2.6 series kernels */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 4, 0)
@@ -113,6 +117,10 @@
 #include <asm/io.h>
 #include <asm/uaccess.h>
 #include <asm/div64.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
+# include <linux/kthread.h>
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0)
 # ifndef page_to_pfn
@@ -359,6 +367,4 @@ DECLINLINE(unsigned long) msecs_to_jiffies(unsigned int cMillies)
 # define IPRT_LINUX_HAS_HRTIMER
 #endif
 
-
 #endif
-
