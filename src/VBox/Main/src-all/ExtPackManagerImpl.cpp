@@ -1,4 +1,4 @@
-/* $Id: ExtPackManagerImpl.cpp 37354 2011-06-07 15:05:32Z vboxsync $ */
+/* $Id: ExtPackManagerImpl.cpp 37843 2011-07-08 12:34:18Z vboxsync $ */
 /** @file
  * VirtualBox Main - interface for Extension Packs, VBoxSVC & VBoxC.
  */

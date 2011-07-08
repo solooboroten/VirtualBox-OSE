@@ -1,4 +1,4 @@
-/* $Id: VBoxInstallHelper.cpp 37289 2011-06-01 11:59:23Z vboxsync $ */
+/* $Id: VBoxInstallHelper.cpp 37765 2011-07-04 13:54:00Z vboxsync $ */
 /** @file
  * VBoxInstallHelper - Various helper routines for Windows host installer.
  */

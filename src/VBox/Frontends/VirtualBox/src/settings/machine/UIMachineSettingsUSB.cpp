@@ -1,4 +1,4 @@
-/* $Id: UIMachineSettingsUSB.cpp 37126 2011-05-17 13:56:50Z vboxsync $ */
+/* $Id: UIMachineSettingsUSB.cpp 37764 2011-07-04 13:48:03Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):

@@ -1,4 +1,4 @@
-/* $Id: vboxsharedrc.h 34987 2010-12-13 10:41:08Z vboxsync $ */
+/* $Id: vboxsharedrc.h 37840 2011-07-08 11:53:53Z vboxsync $ */
 /** @file
  *
  * VBox extension to Wine D3D

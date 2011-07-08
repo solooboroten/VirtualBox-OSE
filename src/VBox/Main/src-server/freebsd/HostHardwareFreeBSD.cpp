@@ -1,4 +1,4 @@
-/* $Id: HostHardwareFreeBSD.cpp 33812 2010-11-05 19:32:59Z vboxsync $ */
+/* $Id: HostHardwareFreeBSD.cpp 37774 2011-07-04 21:19:27Z vboxsync $ */
 /** @file
  * Classes for handling hardware detection under FreeBSD.
  */

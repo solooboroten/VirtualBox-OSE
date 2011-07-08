@@ -1,4 +1,4 @@
-/* $Id: DBGPlugInWinNt.cpp 35346 2010-12-27 16:13:13Z vboxsync $ */
+/* $Id: DBGPlugInWinNt.cpp 37809 2011-07-07 08:15:02Z vboxsync $ */
 /** @file
  * DBGPlugInWindows - Debugger and Guest OS Digger Plugin For Windows NT.
  */

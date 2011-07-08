@@ -1,4 +1,4 @@
-/* $Id: thread-posix.cpp 37154 2011-05-19 12:54:32Z vboxsync $ */
+/* $Id: thread-posix.cpp 37733 2011-07-01 15:41:37Z vboxsync $ */
 /** @file
  * IPRT - Threads, POSIX.
  */

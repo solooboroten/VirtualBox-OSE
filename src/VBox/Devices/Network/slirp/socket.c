@@ -1,4 +1,4 @@
-/* $Id: socket.c 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: socket.c 37756 2011-07-04 10:36:19Z vboxsync $ */
 /** @file
  * NAT - socket handling.
  */

@@ -1,5 +1,5 @@
 @echo off
-rem $Id$
+rem $Id: gen-slickedit-workspace.cmd 37821 2011-07-07 14:18:26Z vboxsync $
 rem rem @file
 rem Windows NT batch script for launching gen-slickedit-workspace.sh
 rem

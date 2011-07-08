@@ -1,4 +1,4 @@
-/* $Id: UsbMsd.cpp 35353 2010-12-27 17:25:52Z vboxsync $ */
+/* $Id: UsbMsd.cpp 37795 2011-07-06 10:28:24Z vboxsync $ */
 /** @file
  * UsbMSD - USB Mass Storage Device Emulation.
  */
