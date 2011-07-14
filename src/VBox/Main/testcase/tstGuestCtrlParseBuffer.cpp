@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: tstGuestCtrlParseBuffer.cpp 37903 2011-07-12 13:56:18Z vboxsync $ */
 
 /** @file
  *

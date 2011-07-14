@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: UIMediumTypeChangeDialog.cpp 37895 2011-07-12 12:48:15Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

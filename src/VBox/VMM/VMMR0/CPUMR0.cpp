@@ -1,4 +1,4 @@
-/* $Id: CPUMR0.cpp 36236 2011-03-09 17:27:22Z vboxsync $ */
+/* $Id: CPUMR0.cpp 37955 2011-07-14 12:23:02Z vboxsync $ */
 /** @file
  * CPUM - Host Context Ring 0.
  */

@@ -1,4 +1,4 @@
-/* $Id: UISelectorShortcuts.cpp 37468 2011-06-15 13:39:42Z vboxsync $ */
+/* $Id: UISelectorShortcuts.cpp 37878 2011-07-11 16:15:02Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt GUI ("VirtualBox"):

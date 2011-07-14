@@ -1,4 +1,4 @@
-/* $Id: MediumImpl.cpp 37831 2011-07-08 10:10:41Z vboxsync $ */
+/* $Id: MediumImpl.cpp 37941 2011-07-14 08:56:35Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation
  */

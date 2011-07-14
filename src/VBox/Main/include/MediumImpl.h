@@ -1,4 +1,4 @@
-/* $Id: MediumImpl.h 37831 2011-07-08 10:10:41Z vboxsync $ */
+/* $Id: MediumImpl.h 37900 2011-07-12 13:31:46Z vboxsync $ */
 
 /** @file
  *

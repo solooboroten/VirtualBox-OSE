@@ -1,4 +1,4 @@
-/* $Id: message.cpp 28800 2010-04-27 08:22:32Z vboxsync $ */
+/* $Id: message.cpp 37951 2011-07-14 10:13:59Z vboxsync $ */
 /** @file
  * IPRT - Error reporting to standard error.
  */

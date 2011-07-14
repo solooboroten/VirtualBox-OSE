@@ -1,4 +1,4 @@
-/* $Id: HostImpl.cpp 37307 2011-06-02 12:48:21Z vboxsync $ */
+/* $Id: HostImpl.cpp 37955 2011-07-14 12:23:02Z vboxsync $ */
 /** @file
  * VirtualBox COM class implementation: Host
  */

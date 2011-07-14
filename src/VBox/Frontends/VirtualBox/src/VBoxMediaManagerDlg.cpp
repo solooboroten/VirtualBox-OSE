@@ -1,4 +1,4 @@
-/* $Id: VBoxMediaManagerDlg.cpp 37655 2011-06-28 09:50:04Z vboxsync $ */
+/* $Id: VBoxMediaManagerDlg.cpp 37904 2011-07-12 15:16:23Z vboxsync $ */
 /** @file
  *
  * VBox frontends: Qt4 GUI ("VirtualBox"):

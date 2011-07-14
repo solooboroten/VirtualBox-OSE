@@ -1,4 +1,4 @@
-/* $Id: CPUMInternal.h 35490 2011-01-11 15:17:10Z vboxsync $ */
+/* $Id: CPUMInternal.h 37955 2011-07-14 12:23:02Z vboxsync $ */
 /** @file
  * CPUM - Internal header file.
  */
