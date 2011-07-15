@@ -418,6 +418,8 @@
 
                         </File>
 
+                        <File Id="vboximg" Name="vbox-img.exe" DiskId="1" Vital="yes"
+                              Source="$(env.PATH_OUT)\bin\vbox-img.exe"/>
                         <File Id="vboxnetdhcp" Name="VBoxDHCP.exe" LongName="VBoxNetDHCP.exe" DiskId="1" Vital="yes"
                               Source="$(env.PATH_OUT)\bin\VBoxNetDHCP.exe"/>
 <?if $(env.VBOX_WITH_EXTPACK) = "yes" ?>

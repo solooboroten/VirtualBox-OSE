@@ -57,7 +57,7 @@ static const RTGETOPTDEF g_aStorageAttachOptions[] =
     // iSCSI options
     { "--server",           'S', RTGETOPT_REQ_STRING },
     { "--target",           'T', RTGETOPT_REQ_STRING },
-    { "--port",             'P', RTGETOPT_REQ_STRING },
+    { "--tport",            'P', RTGETOPT_REQ_STRING },
     { "--lun",              'L', RTGETOPT_REQ_STRING },
     { "--encodedlun",       'E', RTGETOPT_REQ_STRING },
     { "--username",         'U', RTGETOPT_REQ_STRING },
@@ -190,7 +190,7 @@ int handleStorageAttach(HandlerArg *a)
                 bstrTarget = ValueUnion.psz;
                 break;
 
-            case 'P':   // --port
+            case 'P':   // --tport
                 bstrPort = ValueUnion.psz;
                 break;
 
@@ -237,10 +237,6 @@ int handleStorageAttach(HandlerArg *a)
 
     if (!pszCtl)
         return errorSyntax(USAGE_STORAGEATTACH, "Storage controller name not specified");
-    if (port == ~0U)
-        return errorSyntax(USAGE_STORAGEATTACH, "Port not specified");
-    if (device == ~0U)
-        return errorSyntax(USAGE_STORAGEATTACH, "Device not specified");
 
     /* get the virtualbox system properties */
     CHECK_ERROR_RET(a->virtualBox, COMGETTER(SystemProperties)(systemProperties.asOutParam()), 1);
@@ -273,6 +269,28 @@ int handleStorageAttach(HandlerArg *a)
                                                  storageCtl.asOutParam());
         if (FAILED(rc))
             throw Utf8StrFmt("Could not find a controller named '%s'\n", pszCtl);
+
+        StorageBus_T storageBus = StorageBus_Null;
+        CHECK_ERROR_RET(storageCtl, COMGETTER(Bus)(&storageBus), 1);
+        ULONG maxPorts = 0;
+        CHECK_ERROR_RET(systemProperties, GetMaxPortCountForStorageBus(storageBus, &maxPorts), 1);
+        ULONG maxDevices = 0;
+        CHECK_ERROR_RET(systemProperties, GetMaxDevicesPerPortForStorageBus(storageBus, &maxDevices), 1);
+
+        if (port == ~0U)
+        {
+            if (maxPorts == 1)
+                port = 0;
+            else
+                return errorSyntax(USAGE_STORAGEATTACH, "Port not specified");
+        }
+        if (device == ~0U)
+        {
+            if (maxDevices == 1)
+                device = 0;
+            else
+                return errorSyntax(USAGE_STORAGEATTACH, "Device not specified");
+        }
 
         /* for sata controller check if the port count is big enough
          * to accommodate the current port which is being assigned
@@ -332,13 +350,11 @@ int handleStorageAttach(HandlerArg *a)
             }
             else
             {
-                StorageBus_T storageBus = StorageBus_Null;
                 DeviceType_T deviceType = DeviceType_Null;
                 com::SafeArray <DeviceType_T> saDeviceTypes;
                 ULONG driveCheck = 0;
 
                 /* check if the device type is supported by the controller */
-                CHECK_ERROR(storageCtl, COMGETTER(Bus)(&storageBus));
                 CHECK_ERROR(systemProperties, GetDeviceTypesForStorageBus(storageBus, ComSafeArrayAsOutParam(saDeviceTypes)));
                 for (size_t i = 0; i < saDeviceTypes.size(); ++ i)
                 {
@@ -413,10 +429,8 @@ int handleStorageAttach(HandlerArg *a)
 
             /* check if the device type is supported by the controller */
             {
-                StorageBus_T storageBus = StorageBus_Null;
                 com::SafeArray <DeviceType_T> saDeviceTypes;
 
-                CHECK_ERROR(storageCtl, COMGETTER(Bus)(&storageBus));
                 CHECK_ERROR(systemProperties, GetDeviceTypesForStorageBus(storageBus, ComSafeArrayAsOutParam(saDeviceTypes)));
                 if (SUCCEEDED(rc))
                 {

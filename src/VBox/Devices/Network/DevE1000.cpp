@@ -2852,6 +2852,14 @@ static DECLCALLBACK(void) e1kLinkUpTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer, vo
 {
     E1KSTATE *pState = (E1KSTATE *)pvUser;
 
+    /*
+     * This can happen if we set the link status to down when the Link up timer was
+     * already armed (shortly after e1kLoadDone() or when the cable was disconnected
+     * and connect+disconnect the cable very quick.
+     */
+    if (!pState->fCableConnected)
+        return;
+
     if (RT_LIKELY(e1kMutexAcquire(pState, VERR_SEM_BUSY, RT_SRC_POS) == VINF_SUCCESS))
     {
         STATUS |= STATUS_LU;
@@ -4269,7 +4277,8 @@ static int e1kRegRead(E1KSTATE *pState, uint32_t uOffset, void *pv, uint32_t cb)
             //pState->fDelayInts = false;
             //pState->iStatIntLost += pState->iStatIntLostOne;
             //pState->iStatIntLostOne = 0;
-            rc = s_e1kRegMap[index].pfnRead(pState, uOffset & 0xFFFFFFFC, index, &u32) & mask;
+            rc = s_e1kRegMap[index].pfnRead(pState, uOffset & 0xFFFFFFFC, index, &u32);
+            u32 &= mask;
             //e1kCsLeave(pState);
             e1kMutexRelease(pState);
             E1kLog2(("%s At %08X read  %s          from %s (%s)\n",
