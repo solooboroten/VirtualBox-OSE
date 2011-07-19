@@ -1,4 +1,4 @@
-/* $Id: resource.h 31667 2010-08-13 15:57:03Z vboxsync $ */
+/* $Id: resource.h 37987 2011-07-18 08:11:16Z vboxsync $ */
 /** @file
  * VBoxStub - resource header file.
  */

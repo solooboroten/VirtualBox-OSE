@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 36060 2011-02-23 11:20:04Z vboxsync $
+# $Id: Makefile.kmk 37981 2011-07-15 14:19:10Z vboxsync $
 ## @file
 # Makefile for the Cross Platform Guest Additions Driver.
 #

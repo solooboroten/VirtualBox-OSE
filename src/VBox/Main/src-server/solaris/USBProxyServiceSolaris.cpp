@@ -1,4 +1,4 @@
-/* $Id: USBProxyServiceSolaris.cpp 37599 2011-06-22 21:06:38Z vboxsync $ */
+/* $Id: USBProxyServiceSolaris.cpp 38016 2011-07-18 13:06:11Z vboxsync $ */
 /** @file
  * VirtualBox USB Proxy Service, Solaris Specialization.
  */

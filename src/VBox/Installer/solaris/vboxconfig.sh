@@ -1,5 +1,5 @@
 #!/bin/sh
-# $Id: vboxconfig.sh 37792 2011-07-06 09:14:42Z vboxsync $
+# $Id: vboxconfig.sh 38016 2011-07-18 13:06:11Z vboxsync $
 
 #
 # VirtualBox Configuration Script, Solaris host.
