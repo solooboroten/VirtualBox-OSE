@@ -553,13 +553,6 @@ static void surface_force_reload(IWineD3DSurface *iface)
 {
     IWineD3DSurfaceImpl *This = (IWineD3DSurfaceImpl *)iface;
 
-#if defined(DEBUG_misha) && defined (VBOX_WITH_WDDM)
-    if (VBOXSHRC_IS_SHARED_UNLOCKED(This))
-    {
-        Assert(0);
-    }
-#endif
-
     This->Flags &= ~(SFLAG_ALLOCATED | SFLAG_SRGBALLOCATED);
 }
 
@@ -895,7 +888,7 @@ static void surface_upload_data(IWineD3DSurfaceImpl *This, const struct wined3d_
 }
 
 #ifdef VBOX_WITH_WDDM
-static void surface_upload_data_rect(IWineD3DSurfaceImpl *This, const struct wined3d_gl_info *gl_info,
+static void surface_upload_data_rect(IWineD3DSurfaceImpl *This, IWineD3DSurfaceImpl *Src, const struct wined3d_gl_info *gl_info,
         const struct wined3d_format_desc *format_desc, BOOL srgb, const GLvoid *data, RECT *pRect)
 {
     GLsizei width = pRect->right - pRect->left;
@@ -925,13 +918,13 @@ static void surface_upload_data_rect(IWineD3DSurfaceImpl *This, const struct win
 
     ENTER_GL();
 
-    if (This->Flags & SFLAG_PBO)
+    if (Src->Flags & SFLAG_PBO)
     {
-        GL_EXTCALL(glBindBufferARB(GL_PIXEL_UNPACK_BUFFER_ARB, This->pbo));
+        GL_EXTCALL(glBindBufferARB(GL_PIXEL_UNPACK_BUFFER_ARB, Src->pbo));
         checkGLcall("glBindBufferARB");
 
-        TRACE("(%p) pbo: %#x, data: %p.\n", This, This->pbo, data);
-        data = NULL;
+        TRACE("(%p) pbo: %#x, data: %p.\n", Src, Src->pbo, data);
+        /* the data should contain a zero-based offset */
     }
 
     if (format_desc->Flags & WINED3DFMT_FLAG_COMPRESSED)
@@ -951,7 +944,7 @@ static void surface_upload_data_rect(IWineD3DSurfaceImpl *This, const struct win
         checkGLcall("glTexSubImage2D");
     }
 
-    if (This->Flags & SFLAG_PBO)
+    if (Src->Flags & SFLAG_PBO)
     {
         GL_EXTCALL(glBindBufferARB(GL_PIXEL_UNPACK_BUFFER_ARB, 0));
         checkGLcall("glBindBufferARB");
@@ -1803,10 +1796,17 @@ static void surface_prepare_system_memory(IWineD3DSurfaceImpl *This)
         ENTER_GL();
 
         GL_EXTCALL(glGenBuffersARB(1, &This->pbo));
+#ifndef VBOX_WITH_WDDM
         error = glGetError();
         if(This->pbo == 0 || error != GL_NO_ERROR) {
             ERR("Failed to bind the PBO with error %s (%#x)\n", debug_glerror(error), error);
         }
+#else
+        if(This->pbo == 0) {
+            error = glGetError();
+            ERR("Failed to bind the PBO with error %s (%#x)\n", debug_glerror(error), error);
+        }
+#endif
 
         TRACE("Attaching pbo=%#x to (%p)\n", This->pbo, This);
 
@@ -3891,8 +3891,14 @@ static HRESULT IWineD3DSurfaceImpl_BltOverride(IWineD3DSurfaceImpl *This, const 
             RECT windowsize;
             POINT offset = {0,0};
             UINT h;
+#ifdef VBOX_WITH_WDDM
+            HWND hWnd = context->currentSwapchain->win_handle;
+            ClientToScreen(hWnd, &offset);
+            GetClientRect(hWnd, &windowsize);
+#else
             ClientToScreen(context->win_handle, &offset);
             GetClientRect(context->win_handle, &windowsize);
+#endif
             h = windowsize.bottom - windowsize.top;
             dst_rect.left -= offset.x; dst_rect.right -=offset.x;
             dst_rect.top -= offset.y; dst_rect.bottom -=offset.y;
@@ -4108,12 +4114,23 @@ static HRESULT IWineD3DSurfaceImpl_BltSys2Vram(IWineD3DSurfaceImpl *This, const 
         return WINED3DERR_INVALIDCALL;
     }
 
+    if ((Src->Flags & SFLAG_PBO) && src_rect.right - src_rect.left != Src->currentDesc.Width)
+    {
+        WARN("Chromium does not support nondefault unpack row length for PBO\n");
+        return WINED3DERR_INVALIDCALL;
+    }
+
     d3dfmt_get_conv(Src, TRUE /* We need color keying */, TRUE /* We will use textures */,
             &desc, &convert);
 
     if  (desc.convert || convert != NO_CONVERSION)
     {
         WARN("TODO: test if conversion works, rejecting gl blt\n");
+        return WINED3DERR_INVALIDCALL;
+    }
+
+    if((convert != NO_CONVERSION) && (Src->Flags & SFLAG_PBO)) {
+        WARN("conversion not supported here with PBO for src %p\n", Src);
         return WINED3DERR_INVALIDCALL;
     }
 
@@ -4130,13 +4147,6 @@ static HRESULT IWineD3DSurfaceImpl_BltSys2Vram(IWineD3DSurfaceImpl *This, const 
 //    /* The width is in 'length' not in bytes */
     srcWidth = Src->currentDesc.Width;
     srcPitch = IWineD3DSurface_GetPitch(SrcSurface);
-
-    /* Don't use PBOs for converted surfaces. During PBO conversion we look at SFLAG_CONVERTED
-     * but it isn't set (yet) in all cases it is getting called. */
-    if((convert != NO_CONVERSION) && (This->Flags & SFLAG_PBO)) {
-        TRACE("Removing the pbo attached to surface %p\n", This);
-        surface_remove_pbo(This, gl_info);
-    }
 
     if(desc.convert) {
         /* This code is entered for texture formats which need a fixup. */
@@ -4185,8 +4195,8 @@ static HRESULT IWineD3DSurfaceImpl_BltSys2Vram(IWineD3DSurfaceImpl *This, const 
     glPixelStorei(GL_UNPACK_SKIP_PIXELS, src_rect.left);
     LEAVE_GL();
 
-    if (mem || (This->Flags & SFLAG_PBO))
-        surface_upload_data_rect(This, gl_info, &desc, srgb, updateMem, &dst_rect);
+    Assert(!!mem == !(Src->Flags & SFLAG_PBO));
+    surface_upload_data_rect(This, Src, gl_info, &desc, srgb, updateMem, &dst_rect);
 
     /* Restore the default pitch */
     ENTER_GL();
@@ -4197,7 +4207,7 @@ static HRESULT IWineD3DSurfaceImpl_BltSys2Vram(IWineD3DSurfaceImpl *This, const 
     if (context) context_release(context);
 
     /* Don't delete PBO memory */
-    if((mem != Src->resource.allocatedMemory) && !(This->Flags & SFLAG_PBO))
+    if((mem != Src->resource.allocatedMemory) && !(Src->Flags & SFLAG_PBO))
         HeapFree(GetProcessHeap(), 0, mem);
     ////
 
