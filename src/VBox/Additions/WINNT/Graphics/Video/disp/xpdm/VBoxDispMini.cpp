@@ -1,4 +1,4 @@
-/* $Id: VBoxDispMini.cpp 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: VBoxDispMini.cpp $ */
 
 /** @file
  * VBox XPDM Display driver, helper functions which interacts with our miniport driver

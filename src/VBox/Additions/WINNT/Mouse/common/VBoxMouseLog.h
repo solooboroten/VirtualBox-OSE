@@ -1,4 +1,4 @@
-/* $Id: VBoxMouseLog.h 37221 2011-05-26 10:33:21Z vboxsync $ */
+/* $Id: VBoxMouseLog.h $ */
 
 /** @file
  * VBox Mouse drivers, logging helper

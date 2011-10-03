@@ -1,6 +1,6 @@
 /*************************************************************************
  *
- * $Id: trio.h 6076 2007-12-14 19:23:03Z vboxsync $
+ * $Id: trio.h $
  *
  * Copyright (C) 1998 Bjorn Reese and Daniel Stenberg.
  *

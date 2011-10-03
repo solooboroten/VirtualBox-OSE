@@ -1,4 +1,4 @@
-/* $Id: VBoxWindowsAdditions.cpp 31661 2010-08-13 15:49:24Z vboxsync $ */
+/* $Id: VBoxWindowsAdditions.cpp $ */
 /** @file
  * VBoxWindowsAdditions - The Windows Guest Additions Loader
  */

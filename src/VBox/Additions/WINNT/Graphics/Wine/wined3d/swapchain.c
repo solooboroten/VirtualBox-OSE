@@ -44,6 +44,31 @@ WINE_DECLARE_DEBUG_CHANNEL(fps);
 
 #define GLINFO_LOCATION This->device->adapter->gl_info
 
+#ifdef VBOX_WITH_WDDM
+
+IWineD3DSwapChainImpl * swapchain_find(IWineD3DDeviceImpl *pDevice, HWND hWnd)
+{
+    int i;
+    for (i = 0; i < pDevice->NumberOfSwapChains; ++i)
+    {
+        IWineD3DSwapChainImpl *pSwapchain = (IWineD3DSwapChainImpl*)pDevice->swapchains[i];
+        if (pSwapchain->win_handle == hWnd)
+        {
+            return pSwapchain;
+        }
+    }
+
+    return NULL;
+}
+
+VOID swapchain_invalidate(IWineD3DSwapChainImpl *pSwapchain)
+{
+    pSwapchain->win_handle = NULL;
+    pSwapchain->hDC = NULL;
+}
+
+#endif
+
 /*IWineD3DSwapChain parts follow: */
 static void WINAPI IWineD3DSwapChainImpl_Destroy(IWineD3DSwapChain *iface)
 {
@@ -88,6 +113,14 @@ static void WINAPI IWineD3DSwapChainImpl_Destroy(IWineD3DSwapChain *iface)
         context_destroy(This->device, This->context[i]);
     }
 #else
+
+    if (This->presentRt)
+    {
+        IWineD3DSurfaceImpl *old = (IWineD3DSurfaceImpl*)This->presentRt;
+        old->presentSwapchain = NULL;
+        IWineD3DSurface_Release(This->presentRt);
+        This->presentRt = NULL;
+    }
     IWineD3DDevice_RemoveSwapChain((IWineD3DDevice*)This->device, (IWineD3DSwapChain*)This);
     if (!This->device->NumberOfSwapChains)
 #endif
@@ -106,13 +139,13 @@ static void WINAPI IWineD3DSwapChainImpl_Destroy(IWineD3DSwapChain *iface)
         }
     }
 #ifdef VBOX_WITH_WDDM
-    if(This->device_window) {
-        /* see VBoxExtGet/ReleaseDC for comments */
-        VBoxExtWndDestroy(This->device_window, This->hDC);
+    if(This->win_handle) {
+        VBoxExtWndDestroy(This->win_handle, This->hDC);
+        swapchain_invalidate(This);
     }
     else
     {
-        ERR("null device window");
+        WARN("null win info");
     }
 #else
     HeapFree(GetProcessHeap(), 0, This->context);
@@ -243,6 +276,15 @@ static HRESULT WINAPI IWineD3DSwapChainImpl_Present(IWineD3DSwapChain *iface, CO
     unsigned int sync;
     int retval;
 
+#ifdef VBOX_WITH_WDDM
+    /* quickly sort out invalid swapchains */
+    if (!This->hDC)
+    {
+        WARN("Invalid swapchain");
+        return WINED3D_OK;
+    }
+#endif
+
     IWineD3DSwapChain_SetDestWindowOverride(iface, hDestWindowOverride);
 
     context = context_acquire(This->device, This->backBuffer[0], CTXUSAGE_RESOURCELOAD);
@@ -290,6 +332,9 @@ static HRESULT WINAPI IWineD3DSwapChainImpl_Present(IWineD3DSwapChain *iface, CO
          * which is exactly what we want :-)
          */
         if (This->presentParms.Windowed) {
+#ifdef VBOX_WITH_WDDM
+            /* @todo: can we actualy be here? */
+#endif
             MapWindowPoints(NULL, This->win_handle, (LPPOINT)&destRect, 2);
         }
         IWineD3DSurface_Blt(This->backBuffer[0], &destRect, (IWineD3DSurface *)&cursor,
@@ -329,7 +374,9 @@ static HRESULT WINAPI IWineD3DSwapChainImpl_Present(IWineD3DSwapChain *iface, CO
     }
 
     if (pDestRect) dst_rect = *pDestRect;
-    else GetClientRect(This->win_handle, &dst_rect);
+#ifndef VBOX_WITH_WDDM
+    else
+        GetClientRect(This->win_handle, &dst_rect);
 
     if (!render_to_fbo && (dst_rect.left || dst_rect.top
             || dst_rect.right != This->presentParms.BackBufferWidth
@@ -337,6 +384,15 @@ static HRESULT WINAPI IWineD3DSwapChainImpl_Present(IWineD3DSwapChain *iface, CO
     {
         render_to_fbo = TRUE;
     }
+#else
+    else
+    {
+        dst_rect.left = 0;
+        dst_rect.top = 0;
+        dst_rect.right = This->presentParms.BackBufferWidth;
+        dst_rect.bottom = This->presentParms.BackBufferHeight;
+    }
+#endif
 
     /* Rendering to a window of different size, presenting partial rectangles,
      * or rendering to a different window needs help from FBO_blit or a textured
@@ -567,6 +623,7 @@ static HRESULT WINAPI IWineD3DSwapChainImpl_Present(IWineD3DSwapChain *iface, CO
 
 static HRESULT WINAPI IWineD3DSwapChainImpl_SetDestWindowOverride(IWineD3DSwapChain *iface, HWND window)
 {
+#ifndef VBOX_WITH_WDDM
     IWineD3DSwapChainImpl *swapchain = (IWineD3DSwapChainImpl *)iface;
 
     if (!window) window = swapchain->device_window;
@@ -574,9 +631,70 @@ static HRESULT WINAPI IWineD3DSwapChainImpl_SetDestWindowOverride(IWineD3DSwapCh
 
     TRACE("Setting swapchain %p window from %p to %p\n", swapchain, swapchain->win_handle, window);
     swapchain->win_handle = window;
-
+#endif
     return WINED3D_OK;
 }
+
+#ifdef VBOX_WITH_WDDM
+static HRESULT IWineD3DBaseSwapChainImpl_PresentRtPerform(IWineD3DSwapChainImpl* This)
+{
+    IWineD3DSurface *pBb = This->backBuffer[0];
+    HRESULT hr = IWineD3DSurface_Blt(pBb, NULL, This->presentRt, NULL, 0, NULL, 0);
+    if (FAILED(hr))
+    {
+        ERR("IWineD3DSurface_Blt failed with hr(%d)", hr);
+        return hr;
+    }
+
+    hr = IWineD3DSwapChainImpl_Present((IWineD3DSwapChain*)This, NULL, NULL, NULL, NULL, 0);
+    if (FAILED(hr))
+    {
+        ERR("IWineD3DSurface_Blt failed with hr(%d)", hr);
+        return hr;
+    }
+
+    return S_OK;
+}
+
+HRESULT WINAPI IWineD3DBaseSwapChainImpl_Flush(IWineD3DSwapChain* This)
+{
+    /* @todo: if we're in PresentRt mode, check whether the current present rt is updated
+     * and do present to frontbuffer if needed */
+    return S_OK;
+}
+
+HRESULT WINAPI IWineD3DBaseSwapChainImpl_PresentRt(IWineD3DSwapChain* iface, IWineD3DSurface* surf)
+{
+    IWineD3DSwapChainImpl *This = (IWineD3DSwapChainImpl*)iface;
+    IWineD3DSurfaceImpl *surface = (IWineD3DSurfaceImpl *)surf;
+    if (This->presentRt != surf)
+    {
+        if (surf)
+        {
+            IWineD3DSurface_AddRef(surf);
+            if (surface->presentSwapchain)
+            {
+                ERR("not expected");
+                Assert(surface->presentSwapchain != iface);
+                IWineD3DBaseSwapChainImpl_PresentRt(surface->presentSwapchain, NULL);
+            }
+            surface->presentSwapchain = iface;
+        }
+        if (This->presentRt)
+        {
+            IWineD3DSurfaceImpl *old = (IWineD3DSurfaceImpl*)This->presentRt;
+            Assert(old->presentSwapchain == iface);
+            old->presentSwapchain = NULL;
+            IWineD3DSurface_Release(This->presentRt);
+        }
+        This->presentRt = surf;
+    }
+
+    if (surf)
+        return IWineD3DBaseSwapChainImpl_PresentRtPerform(This);
+    return S_OK;
+}
+#endif
 
 static const IWineD3DSwapChainVtbl IWineD3DSwapChain_Vtbl =
 {
@@ -597,6 +715,10 @@ static const IWineD3DSwapChainVtbl IWineD3DSwapChain_Vtbl =
     IWineD3DBaseSwapChainImpl_GetPresentParameters,
     IWineD3DBaseSwapChainImpl_SetGammaRamp,
     IWineD3DBaseSwapChainImpl_GetGammaRamp,
+#ifdef VBOX_WITH_WDDM
+    IWineD3DBaseSwapChainImpl_Flush,
+    IWineD3DBaseSwapChainImpl_PresentRt,
+#endif
 };
 
 static LONG fullscreen_style(LONG style)
@@ -618,6 +740,9 @@ static LONG fullscreen_exstyle(LONG exstyle)
 
 void swapchain_setup_fullscreen_window(IWineD3DSwapChainImpl *swapchain, UINT w, UINT h)
 {
+#ifdef VBOX_WITH_WDDM
+    ERR("not supported");
+#else
     IWineD3DDeviceImpl *device = swapchain->device;
     HWND window = swapchain->device_window;
     BOOL filter_messages;
@@ -648,10 +773,14 @@ void swapchain_setup_fullscreen_window(IWineD3DSwapChainImpl *swapchain, UINT w,
     SetWindowPos(window, HWND_TOP, 0, 0, w, h, SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOACTIVATE);
 
     device->filter_messages = filter_messages;
+#endif
 }
 
 void swapchain_restore_fullscreen_window(IWineD3DSwapChainImpl *swapchain)
 {
+#ifdef VBOX_WITH_WDDM
+    ERR("not supported");
+#else
     IWineD3DDeviceImpl *device = swapchain->device;
     HWND window = swapchain->device_window;
     BOOL filter_messages;
@@ -684,6 +813,7 @@ void swapchain_restore_fullscreen_window(IWineD3DSwapChainImpl *swapchain)
     /* Delete the old values. */
     device->style = 0;
     device->exStyle = 0;
+#endif
 }
 
 
@@ -697,6 +827,7 @@ HRESULT swapchain_init(IWineD3DSwapChainImpl *swapchain, WINED3DSURFTYPE surface
     RECT client_rect;
     HWND window = NULL;
 #ifdef VBOX_WITH_WDDM
+    IWineD3DSwapChainImpl *overridenSwapchain = NULL;
     HDC hDC = NULL;
 #endif
     HRESULT hr;
@@ -704,7 +835,7 @@ HRESULT swapchain_init(IWineD3DSwapChainImpl *swapchain, WINED3DSURFTYPE surface
 
     if (present_parameters->BackBufferCount > WINED3DPRESENT_BACK_BUFFER_MAX)
     {
-        FIXME("The application requested %u back buffers, this is not supported.\n",
+        ERR("The application requested %u back buffers, this is not supported.\n",
                 present_parameters->BackBufferCount);
         return WINED3DERR_INVALIDCALL;
     }
@@ -733,14 +864,24 @@ HRESULT swapchain_init(IWineD3DSwapChainImpl *swapchain, WINED3DSURFTYPE surface
 #ifdef VBOX_WITH_WDDM
     if (present_parameters->hDeviceWindow)
     {
-        ERR("non-null device window");
-        return E_FAIL;
+        overridenSwapchain = swapchain_find(device, present_parameters->hDeviceWindow);
+        if (!overridenSwapchain)
+        {
+            ERR("invalid window handle supplied");
+            return E_FAIL;
+        }
+
+        window = overridenSwapchain->win_handle;
+        hDC = overridenSwapchain->hDC;
     }
-    hr = VBoxExtWndCreate(present_parameters->BackBufferWidth, present_parameters->BackBufferHeight, &window, &hDC);
-    if (FAILED(hr))
+    else
     {
-        ERR("VBoxExtWndCreate failed, hr 0x%x", hr);
-        return hr;
+        hr = VBoxExtWndCreate(present_parameters->BackBufferWidth, present_parameters->BackBufferHeight, &window, &hDC);
+        if (FAILED(hr))
+        {
+            ERR("VBoxExtWndCreate failed, hr 0x%x", hr);
+            return hr;
+        }
     }
     Assert(window);
     Assert(hDC);
@@ -753,10 +894,12 @@ HRESULT swapchain_init(IWineD3DSwapChainImpl *swapchain, WINED3DSURFTYPE surface
     swapchain->parent = parent;
     swapchain->ref = 1;
     swapchain->win_handle = window;
+#ifndef VBOX_WITH_WDDM
     swapchain->device_window = window;
-#ifdef VBOX_WITH_WDDM
+#else
     Assert(window);
     swapchain->hDC = hDC;
+    swapchain->presentRt = NULL;
 #endif
 
     if (!present_parameters->Windowed && window)
@@ -771,7 +914,14 @@ HRESULT swapchain_init(IWineD3DSwapChainImpl *swapchain, WINED3DSURFTYPE surface
     swapchain->orig_fmt = mode.Format;
     format_desc = getFormatDescEntry(mode.Format, &adapter->gl_info);
 
+#ifndef VBOX_WITH_WDDM
     GetClientRect(window, &client_rect);
+#else
+    client_rect.left = 0;
+    client_rect.top = 0;
+    client_rect.right = present_parameters->BackBufferWidth;
+    client_rect.bottom = present_parameters->BackBufferHeight;
+#endif
     if (present_parameters->Windowed
             && (!present_parameters->BackBufferWidth || !present_parameters->BackBufferHeight
             || present_parameters->BackBufferFormat == WINED3DFMT_UNKNOWN))
@@ -965,6 +1115,13 @@ HRESULT swapchain_init(IWineD3DSwapChainImpl *swapchain, WINED3DSURFTYPE surface
 
     IWineD3DSwapChain_GetGammaRamp((IWineD3DSwapChain *)swapchain, &swapchain->orig_gamma);
 
+#ifdef VBOX_WITH_WDDM
+    if (overridenSwapchain)
+    {
+        swapchain_invalidate(overridenSwapchain);
+    }
+#endif
+
     return WINED3D_OK;
 
 err:
@@ -1017,10 +1174,12 @@ err:
     if (swapchain->frontBuffer) IWineD3DSurface_Release(swapchain->frontBuffer);
 
 #ifdef VBOX_WITH_WDDM
-    if (swapchain->device_window)
+    if (!overridenSwapchain && swapchain->win_handle)
     {
-        VBoxExtWndDestroy(swapchain->device_window, swapchain->hDC);
+        VBoxExtWndDestroy(swapchain->win_handle, swapchain->hDC);
     }
+
+    swapchain_invalidate(swapchain);
 #endif
 
     return hr;
@@ -1029,7 +1188,9 @@ err:
 struct wined3d_context *swapchain_create_context_for_thread(IWineD3DSwapChain *iface)
 {
     IWineD3DSwapChainImpl *This = (IWineD3DSwapChainImpl *) iface;
+#ifndef VBOX_WITH_WDDM
     struct wined3d_context **newArray;
+#endif
     struct wined3d_context *ctx;
 
     TRACE("Creating a new context for swapchain %p, thread %d\n", This, GetCurrentThreadId());

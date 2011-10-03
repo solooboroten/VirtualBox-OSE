@@ -1,4 +1,4 @@
-/* $Id: VBoxTrayMsg.h 34382 2010-11-25 15:49:37Z vboxsync $ */
+/* $Id: VBoxTrayMsg.h $ */
 /** @file
  * VBoxTrayMsg - Globally registered messages (RPC) to/from VBoxTray.
  */

@@ -2192,6 +2192,10 @@ struct IWineD3DSurfaceImpl
     IWineD3DSurfaceImpl       *overlay_dest;
     struct list               overlays;
     struct list               overlay_entry;
+
+#ifdef VBOX_WITH_WDDM
+    struct IWineD3DSwapChain  *presentSwapchain;
+#endif
 };
 
 extern const IWineD3DSurfaceVtbl IWineD3DSurface_Vtbl DECLSPEC_HIDDEN;
@@ -2685,12 +2689,13 @@ struct IWineD3DSwapChainImpl
 #ifndef VBOX_WITH_WDDM
     struct wined3d_context **context;
     unsigned int            num_contexts;
-#endif
-
     HWND                    win_handle;
     HWND device_window;
-#ifdef VBOX_WITH_WDDM
     HDC hDC;
+#else
+    HWND                    win_handle;
+    HDC                     hDC;
+    IWineD3DSurface         *presentRt;
 #endif
 };
 

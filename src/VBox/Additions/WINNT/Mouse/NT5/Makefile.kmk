@@ -1,4 +1,4 @@
-# $Id: Makefile.kmk 37801 2011-07-06 12:16:41Z vboxsync $
+# $Id: Makefile.kmk $
 ## @file
 # Makefile for the Windows NT5+ Guest Additions Mouse Filter Driver
 #

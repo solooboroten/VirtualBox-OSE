@@ -1,4 +1,4 @@
-; $Id: VBoxGuestAdditions.nsi 37815 2011-07-07 11:27:46Z vboxsync $
+; $Id: VBoxGuestAdditions.nsi $
 ;; @file
 ; VBoxGuestAdditions.nsi - Main file for Windows Guest Additions installation.
 ;
@@ -622,6 +622,7 @@ Section $(VBOX_COMPONENT_MAIN) SEC01
   StrCmp $g_strWinVersion "2003" w2k    ; Windows 2003 Server
   StrCmp $g_strWinVersion "Vista" vista ; Windows Vista
   StrCmp $g_strWinVersion "7" vista     ; Windows 7
+  StrCmp $g_strWinVersion "8" vista     ; Windows 8
 
   ${If} $g_bForceInstall == "true"
     Goto vista ; Assume newer OS than we know of ...

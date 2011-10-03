@@ -1,4 +1,4 @@
-/* $Id: VBoxDispVrdpTxt.cpp 36867 2011-04-28 07:27:03Z vboxsync $ */
+/* $Id: VBoxDispVrdpTxt.cpp $ */
 
 /** @file
  * VBox XPDM Display driver

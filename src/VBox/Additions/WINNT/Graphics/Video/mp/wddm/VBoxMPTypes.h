@@ -1,4 +1,4 @@
-/* $Id: VBoxMPTypes.h 37889 2011-07-12 11:18:46Z vboxsync $ */
+/* $Id: VBoxMPTypes.h $ */
 
 /** @file
  * VBox WDDM Miniport driver

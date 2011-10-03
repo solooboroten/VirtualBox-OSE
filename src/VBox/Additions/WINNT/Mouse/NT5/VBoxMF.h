@@ -1,4 +1,4 @@
-/* $Id: VBoxMF.h 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: VBoxMF.h $ */
 
 /** @file
  * VBox Mouse filter header
@@ -71,6 +71,7 @@ VOID VBoxDrvUnload(IN PDRIVER_OBJECT Driver);
 NTSTATUS VBoxIrpPassthrough(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS VBoxIrpInternalIOCTL(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 NTSTATUS VBoxIrpPnP(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
+NTSTATUS VBoxIrpPower(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp);
 
 /* Internal functions */
 VOID VBoxDeviceAdded(PVBOXMOUSE_DEVEXT pDevExt);

@@ -1,4 +1,4 @@
-/* $Id: VBoxMPUtils.h 38112 2011-07-22 13:26:19Z vboxsync $ */
+/* $Id: VBoxMPUtils.h $ */
 
 /** @file
  * VBox Miniport common utils header
@@ -88,7 +88,8 @@ typedef enum
     WIN2K     = 2,
     WINXP     = 3,
     WINVISTA  = 4,
-    WIN7      = 5
+    WIN7      = 5,
+    WIN8      = 6
 } vboxWinVersion_t;
 
 RT_C_DECLS_BEGIN

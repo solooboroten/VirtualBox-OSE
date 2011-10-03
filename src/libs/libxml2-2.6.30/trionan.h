@@ -1,6 +1,6 @@
 /*************************************************************************
  *
- * $Id: trionan.h 6076 2007-12-14 19:23:03Z vboxsync $
+ * $Id: trionan.h $
  *
  * Copyright (C) 2001 Bjorn Reese <breese@users.sourceforge.net>
  *

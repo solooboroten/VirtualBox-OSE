@@ -1,4 +1,4 @@
-/* $Id: vboxext.h 38363 2011-08-08 19:01:30Z vboxsync $ */
+/* $Id: vboxext.h $ */
 /** @file
  *
  * VBox extension to Wine D3D

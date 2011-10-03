@@ -1,4 +1,4 @@
-/* $Id: Dialog.cpp 36258 2011-03-11 09:53:23Z vboxsync $ */
+/* $Id: Dialog.cpp $ */
 /** @file
  * VBoxGINA - Windows Logon DLL for VirtualBox, Dialog Code.
  */

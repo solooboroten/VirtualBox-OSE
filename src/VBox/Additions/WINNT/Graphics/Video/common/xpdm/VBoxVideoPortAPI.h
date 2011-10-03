@@ -1,4 +1,4 @@
-/* $Id: VBoxVideoPortAPI.h 37423 2011-06-12 18:37:56Z vboxsync $ */
+/* $Id: VBoxVideoPortAPI.h $ */
 
 /** @file
  * VBox video port functions header
