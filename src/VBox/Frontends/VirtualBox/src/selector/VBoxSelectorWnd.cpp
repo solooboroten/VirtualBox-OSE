@@ -31,7 +31,7 @@
 #include "UIVirtualBoxEventHandler.h"
 #include "VBoxGlobal.h"
 #include "VBoxMediaManagerDlg.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 #include "VBoxSelectorWnd.h"
 #include "UISettingsDialogSpecific.h"
 #include "UIToolBar.h"
@@ -193,7 +193,7 @@ VBoxSelectorWnd(VBoxSelectorWnd **aSelf, QWidget* aParent,
 #endif /* Q_WS_MAC */
 
     /* VM list view */
-    mVMModel = new UIVMItemModel();
+    mVMModel = new UIVMItemModel(this);
     mVMListView = new UIVMListView(mVMModel);
     mVMListView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     connect(mVMListView, SIGNAL(sigUrlsDropped(QList<QUrl>)),
@@ -482,7 +482,7 @@ VBoxSelectorWnd(VBoxSelectorWnd **aSelf, QWidget* aParent,
 #endif
 
     /* Listen to potential downloaders signals: */
-    connect(&vboxProblem(), SIGNAL(sigDownloaderUserManualCreated()), this, SLOT(sltDownloaderUserManualEmbed()));
+    connect(&msgCenter(), SIGNAL(sigDownloaderUserManualCreated()), this, SLOT(sltDownloaderUserManualEmbed()));
 
     /* bring the VM list to the focus */
     mVMListView->setFocus();
@@ -686,10 +686,10 @@ void VBoxSelectorWnd::vmAdd(const QString &strFile /* = "" */)
                 mVMListView->setCurrentIndex(index);
             }
             else
-                vboxProblem().cannotReregisterMachine(this, strTmpFile, oldMachine.GetName());
+                msgCenter().cannotReregisterMachine(this, strTmpFile, oldMachine.GetName());
         }
         else
-            vboxProblem().cannotOpenMachine(this, strTmpFile, vbox);
+            msgCenter().cannotOpenMachine(this, strTmpFile, vbox);
     }
 }
 
@@ -746,10 +746,10 @@ void VBoxSelectorWnd::vmSettings(const QString &aCategory /* = QString::null */,
 
         m.SaveSettings();
         if (!m.isOk())
-            vboxProblem().cannotSaveMachineSettings(m);
+            msgCenter().cannotSaveMachineSettings(m);
 
         /* To check use the result in future
-         * vboxProblem().cannotApplyMachineSettings(m, res); */
+         * msgCenter().cannotApplyMachineSettings(m, res); */
     }
 
     delete dlg;
@@ -766,12 +766,12 @@ void VBoxSelectorWnd::vmDelete(const QString &aUuid /* = QString::null */)
     AssertMsgReturnVoid(item, ("Item must be always selected here"));
 
     CMachine machine = item->machine();
-    int rc = vboxProblem().confirmMachineDeletion(machine);
+    int rc = msgCenter().confirmMachineDeletion(machine);
     if (rc != QIMessageBox::Cancel)
     {
 #if defined(RT_OS_WINDOWS) && defined(RT_ARCH_AMD64)
         /* XXX currently disabled due to a bug in ComSafeArrayIn on 64-bit Windows hosts! */
-        vboxProblem().showWin64Warning();
+        msgCenter().showWin64Warning();
 #else
         if (rc == QIMessageBox::Yes)
         {
@@ -783,13 +783,13 @@ void VBoxSelectorWnd::vmDelete(const QString &aUuid /* = QString::null */)
                 CProgress progress = machine.Delete(mediums);
                 if (machine.isOk())
                 {
-                    vboxProblem().showModalProgressDialog(progress, item->name(), ":/progress_delete_90px.png", 0, true);
+                    msgCenter().showModalProgressDialog(progress, item->name(), ":/progress_delete_90px.png", 0, true);
                     if (progress.GetResultCode() != 0)
-                        vboxProblem().cannotDeleteMachine(machine, progress);
+                        msgCenter().cannotDeleteMachine(machine, progress);
                 }
             }
             if (!machine.isOk())
-                vboxProblem().cannotDeleteMachine(machine);
+                msgCenter().cannotDeleteMachine(machine);
         }
         else
 #endif
@@ -797,7 +797,7 @@ void VBoxSelectorWnd::vmDelete(const QString &aUuid /* = QString::null */)
             /* Just unregister machine: */
             machine.Unregister(KCleanupMode_DetachAllReturnNone);
             if (!machine.isOk())
-                vboxProblem().cannotDeleteMachine(machine);
+                msgCenter().cannotDeleteMachine(machine);
         }
     }
 }
@@ -833,7 +833,7 @@ void VBoxSelectorWnd::vmDiscard(const QString &aUuid /* = QString::null */)
 
     AssertMsgReturnVoid(item, ("Item must be always selected here"));
 
-    if (!vboxProblem().confirmDiscardSavedState(item->machine()))
+    if (!msgCenter().confirmDiscardSavedState(item->machine()))
         return;
 
     /* open a session to modify VM settings */
@@ -843,7 +843,7 @@ void VBoxSelectorWnd::vmDiscard(const QString &aUuid /* = QString::null */)
     session.createInstance(CLSID_Session);
     if (session.isNull())
     {
-        vboxProblem().cannotOpenSession(session);
+        msgCenter().cannotOpenSession(session);
         return;
     }
 
@@ -852,14 +852,14 @@ void VBoxSelectorWnd::vmDiscard(const QString &aUuid /* = QString::null */)
         foundMachine.LockMachine(session, KLockType_Write);
     if (!vbox.isOk())
     {
-        vboxProblem().cannotOpenSession(vbox, item->machine());
+        msgCenter().cannotOpenSession(vbox, item->machine());
         return;
     }
 
     CConsole console = session.GetConsole();
     console.DiscardSavedState(true /* fDeleteFile */);
     if (!console.isOk())
-        vboxProblem().cannotDiscardSavedState(console);
+        msgCenter().cannotDiscardSavedState(console);
 
     session.UnlockMachine();
 }
@@ -888,9 +888,9 @@ void VBoxSelectorWnd::vmPause(bool aPause, const QString &aUuid /* = QString::nu
     if (!ok)
     {
         if (aPause)
-            vboxProblem().cannotPauseMachine(console);
+            msgCenter().cannotPauseMachine(console);
         else
-            vboxProblem().cannotResumeMachine(console);
+            msgCenter().cannotResumeMachine(console);
     }
 
     session.UnlockMachine();
@@ -1443,7 +1443,7 @@ void VBoxSelectorWnd::vmListViewCurrentChanged(bool aRefreshDetails,
         {
             /* the VM is inaccessible */
             m_pVMDesktop->updateDetailsErrorText(
-                VBoxProblemReporter::formatErrorInfo(item->accessError()));
+                UIMessageCenter::formatErrorInfo(item->accessError()));
             mVmRefreshAction->setEnabled(true);
         }
         else
@@ -1532,7 +1532,7 @@ void VBoxSelectorWnd::mediumEnumFinished(const VBoxMediaList &list)
             if ((*it).state() == KMediumState_Inaccessible)
                 break;
 
-        if (it != list.end() && vboxProblem().remindAboutInaccessibleMedia())
+        if (it != list.end() && msgCenter().remindAboutInaccessibleMedia())
         {
             /* Show the VDM dialog but don't refresh once more after a
              * just-finished refresh */

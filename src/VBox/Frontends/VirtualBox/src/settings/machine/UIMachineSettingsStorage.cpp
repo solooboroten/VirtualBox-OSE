@@ -23,7 +23,7 @@
 #include "UINewHDWzd.h"
 #include "VBoxGlobal.h"
 #include "QIFileDialog.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 #include "UIMachineSettingsStorage.h"
 
 /* Global Includes */
@@ -1928,7 +1928,7 @@ void UIMachineSettingsStorage::saveFromCacheTo(QVariant &data)
                 /* Mark the page as failed: */
                 setFailed(true);
                 /* Show error message: */
-                vboxProblem().cannotAttachDevice(m_machine, VBoxDefs::MediumType_HardDisk, vboxMedium.location(),
+                msgCenter().cannotAttachDevice(m_machine, VBoxDefs::MediumType_HardDisk, vboxMedium.location(),
                                                  StorageSlot(controllerData.m_controllerBus,
                                                              attachmentData.m_iAttachmentPort,
                                                              attachmentData.m_iAttachmentDevice), this);
@@ -2205,7 +2205,7 @@ void UIMachineSettingsStorage::delAttachment()
     if (   device == KDeviceType_DVD
         && deviceCount (KDeviceType_DVD) == 1)
     {
-        if (vboxProblem().confirmRemovingOfLastDVDDevice() != QIMessageBox::Ok)
+        if (msgCenter().confirmRemovingOfLastDVDDevice() != QIMessageBox::Ok)
             return;
     }
 
@@ -2819,7 +2819,7 @@ void UIMachineSettingsStorage::addAttachmentWrapper(KDeviceType deviceType)
     {
         case KDeviceType_HardDisk:
         {
-            int iAnswer = vboxProblem().askAboutHardDiskAttachmentCreation(this, strControllerName);
+            int iAnswer = msgCenter().askAboutHardDiskAttachmentCreation(this, strControllerName);
             if (iAnswer == QIMessageBox::Yes)
                 strMediumId = getWithNewHDWizard();
             else if (iAnswer == QIMessageBox::No)
@@ -2828,7 +2828,7 @@ void UIMachineSettingsStorage::addAttachmentWrapper(KDeviceType deviceType)
         }
         case KDeviceType_DVD:
         {
-            int iAnswer = vboxProblem().askAboutOpticalAttachmentCreation(this, strControllerName);
+            int iAnswer = msgCenter().askAboutOpticalAttachmentCreation(this, strControllerName);
             if (iAnswer == QIMessageBox::Yes)
                 strMediumId = vboxGlobal().openMediumWithFileOpenDialog(VBoxDefs::MediumType_DVD, this, strMachineFolder);
             else if (iAnswer == QIMessageBox::No)
@@ -2837,7 +2837,7 @@ void UIMachineSettingsStorage::addAttachmentWrapper(KDeviceType deviceType)
         }
         case KDeviceType_Floppy:
         {
-            int iAnswer = vboxProblem().askAboutFloppyAttachmentCreation(this, strControllerName);
+            int iAnswer = msgCenter().askAboutFloppyAttachmentCreation(this, strControllerName);
             if (iAnswer == QIMessageBox::Yes)
                 strMediumId = vboxGlobal().openMediumWithFileOpenDialog(VBoxDefs::MediumType_Floppy, this, strMachineFolder);
             else if (iAnswer == QIMessageBox::No)

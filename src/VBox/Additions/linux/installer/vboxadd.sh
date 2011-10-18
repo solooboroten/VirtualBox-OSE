@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# Linux Additions kernel module init script ($Revision: 71770 $)
+# Linux Additions kernel module init script ($Revision: 73712 $)
 #
 
 #
@@ -194,14 +194,18 @@ test_sane_kernel_dir()
     fi
 }
 
-fail()
+show_error()
 {
     if [ "$system" = "gentoo" ]; then
         eerror $1
-        exit 1
     fi
     fail_msg
     echo "($1)"
+}
+
+fail()
+{
+    show_error "$1"
     exit 1
 }
 
@@ -391,7 +395,8 @@ setup_modules()
         if ! $BUILDVBOXGUEST \
             --save-module-symvers /tmp/vboxguest-Module.symvers \
             --no-print-directory install >> $LOG 2>&1; then
-            fail "Look at $LOG to find out what went wrong"
+            show_error "Look at $LOG to find out what went wrong"
+            return 1
         fi
         succ_msg
     fi
@@ -400,7 +405,8 @@ setup_modules()
         if ! $BUILDVBOXSF \
             --use-module-symvers /tmp/vboxguest-Module.symvers \
             --no-print-directory install >> $LOG 2>&1; then
-            fail "Look at $LOG to find out what went wrong"
+            show_error  "Look at $LOG to find out what went wrong"
+            return 1
         fi
         succ_msg
     fi
@@ -409,7 +415,8 @@ setup_modules()
         if ! $BUILDVBOXVIDEO \
             --use-module-symvers /tmp/vboxguest-Module.symvers \
             --no-print-directory install >> $LOG 2>&1; then
-            fail "Look at $LOG to find out what went wrong"
+            show_error "Look at $LOG to find out what went wrong"
+            return 1
         fi
         succ_msg
     fi

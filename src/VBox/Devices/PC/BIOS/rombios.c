@@ -11245,10 +11245,15 @@ rom_scan_increment:
 #define LVT0    0xFEE00350
 #define LVT1    0xFEE00360
 
-;; Program LVT0/LVT1 entries in the local APIC. Some Linux kernels (e.g., RHEL4
-;; SMP 32-bit) expect the entries to be unmasked in virtual wire mode.
+;; Run initialization steps which must be performed in protected mode.
+;; - Program LVT0/LVT1 entries in the local APIC. Some Linux kernels (e.g., RHEL4
+;;   SMP 32-bit) expect the entries to be unmasked in virtual wire mode.
+;; - Clear the CD and NW bits in CR0; these are not relevant (except possibly
+;;    under AMD-V with nested paging) but the guest should see the right state.
 
-setup_lapic:
+pmode_setup:
+  push eax
+  push esi
   pushf
   cli               ;; Interrupts would kill us!
   call pmode_enter
@@ -11262,8 +11267,13 @@ setup_lapic:
   and  eax, #0xfffe00ff
   or   ah,  #0x04
   mov  [esi], eax
+  mov  eax, cr0     ;; Clear CR0.CD and CR0.NW
+  and  eax, #0x9fffffff
+  mov  cr0, eax
   call pmode_exit
   popf
+  pop  esi
+  pop  eax
   ret
 
 ;; Enter and exit minimal protected-mode environment. May only be called from
@@ -11393,7 +11403,7 @@ normal_post:
   ; case 0: normal startup
 
   cli
-  mov  ax, #0xfffe
+  mov  ax, #0x7C00
   mov  sp, ax
   xor  ax, ax
   mov  ds, ax
@@ -11444,6 +11454,8 @@ memory_cleared:
 #endif
 
   call _log_bios_start
+
+  call pmode_setup
 
   ;; set all interrupts to default handler
   xor  bx, bx         ;; offset index
@@ -11639,7 +11651,6 @@ post_default_ints:
   call pcibios_init_iomem_bases
   call pcibios_init_irqs
 #endif
-  call setup_lapic
   call rom_scan
 
 #if BX_USE_ATADRV

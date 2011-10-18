@@ -303,6 +303,12 @@ static int vscsiLunSbcReqProcess(PVSCSILUNINT pVScsiLun, PVSCSIREQINT pVScsiReq)
             rcReq = vscsiReqSenseErrorSet(pVScsiReq, SCSI_SENSE_ILLEGAL_REQUEST, SCSI_ASC_LOGICAL_BLOCK_OOR);
             vscsiDeviceReqComplete(pVScsiLun->pVScsiDevice, pVScsiReq, rcReq, false, VINF_SUCCESS);
         }
+        else if (!cSectorTransfer)
+        {
+            /* A 0 transfer length is not an error. */
+            rcReq = vscsiReqSenseOkSet(pVScsiReq);
+            vscsiDeviceReqComplete(pVScsiLun->pVScsiDevice, pVScsiReq, rcReq, false, VINF_SUCCESS);
+        }
         else
         {
             /* Enqueue new I/O request */

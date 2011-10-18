@@ -58,6 +58,14 @@
 
 #include "product-generated.h"
 
+enum
+{
+    /** The minumum value our device can return */
+    RANGE_MIN = 0,
+    /** The maximum value our device can return */
+    RANGE_MAX = 0xFFFF
+};
+
 static void
 VBoxReadInput(InputInfoPtr pInfo)
 {
@@ -131,22 +139,22 @@ VBoxInit(DeviceIntPtr device)
 # if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
                                axis_labels[0],
 # endif
-                               0 /* min X */, 65536 /* max X */,
+                               RANGE_MIN /* min X */, RANGE_MAX /* max X */,
                                10000, 0, 10000
 # if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 12
                                , Absolute
-# endif                               
+# endif
                                );
 
     xf86InitValuatorAxisStruct(device, 1,
 # if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 7
                                axis_labels[1],
 # endif
-                               0 /* min Y */, 65536 /* max Y */,
+                               RANGE_MIN /* min Y */, RANGE_MAX /* max Y */,
                                10000, 0, 10000
 # if GET_ABI_MAJOR(ABI_XINPUT_VERSION) >= 12
                                , Absolute
-# endif                               
+# endif
                                );
 #endif
     xf86InitValuatorDefaults(device, 0);
@@ -210,6 +218,9 @@ VBoxProc(DeviceIntPtr device, int what)
         VbglR3Term();
         xf86Msg(X_INFO, "%s: Close\n", pInfo->name);
         break;
+
+    default:
+        return BadValue;
     }
 
     return Success;

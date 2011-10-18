@@ -22,7 +22,7 @@
 
 /* Local includes */
 #include "VBoxGlobal.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 #include "UIActionsPool.h"
 #include "UIKeyboardHandlerNormal.h"
 #include "UIKeyboardHandlerFullscreen.h"
@@ -887,7 +887,7 @@ bool UIKeyboardHandler::eventFilter(QObject *pWatchedObject, QEvent *pEvent)
                     {
                         /* If the reminder is disabled we pass the event to Qt to enable normal
                          * keyboard functionality (for example, menu access with Alt+Letter): */
-                        if (!vboxProblem().remindAboutPausedVMInput())
+                        if (!msgCenter().remindAboutPausedVMInput())
                             break;
                     }
                 }
@@ -918,9 +918,6 @@ bool UIKeyboardHandler::winLowKeyboardEvent(UINT msg, const KBDLLHOOKSTRUCT &eve
     if (!m_views.contains(m_iKeyboardHookViewIndex))
         return false;
 
-    if (!m_fIsKeyboardCaptured)
-        return false;
-
     /* Sometimes it happens that Win inserts additional events on some key
      * press/release. For example, it prepends ALT_GR in German layout with
      * the VK_LCONTROL vkey with curious 0x21D scan code (seems to be necessary
@@ -938,6 +935,14 @@ bool UIKeyboardHandler::winLowKeyboardEvent(UINT msg, const KBDLLHOOKSTRUCT &eve
         else
             return true;
     }
+
+    /** @todo this needs to be after the preceding check so that
+     *        we ignore those spurious key events even when the
+     *        keyboard is not captured.  However, that is probably a
+     *        hint that that filtering should be done somewhere else,
+     *        and not in the keyboard capture handler. */
+    if (!m_fIsKeyboardCaptured)
+        return false;
 
     /* It's possible that a key has been pressed while the keyboard was not
      * captured, but is being released under the capture. Detect this situation
@@ -1305,7 +1310,7 @@ bool UIKeyboardHandler::keyEvent(int iKey, uint8_t uScan, int fFlags, ulong uScr
                              * defined by the dialog result itself: */
                             uisession()->setAutoCaptureDisabled(true);
                             bool fIsAutoConfirmed = false;
-                            ok = vboxProblem().confirmInputCapture(&fIsAutoConfirmed);
+                            ok = msgCenter().confirmInputCapture(&fIsAutoConfirmed);
                             if (fIsAutoConfirmed)
                                 uisession()->setAutoCaptureDisabled(false);
                             /* Otherwise, the disable flag will be reset in the next

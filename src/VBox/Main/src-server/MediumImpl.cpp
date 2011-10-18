@@ -2493,7 +2493,9 @@ STDMETHODIMP Medium::CreateDiffStorage(IMedium *aTarget,
 
     ComObjPtr<Medium> diff = static_cast<Medium*>(aTarget);
 
-    AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+    // locking: we need the tree lock first because we access parent pointers
+    AutoReadLock treeLock(m->pVirtualBox->getMediaTreeLockHandle() COMMA_LOCKVAL_SRC_POS);
+    AutoMultiWriteLock2 alock(this, diff COMMA_LOCKVAL_SRC_POS);
 
     if (m->type == MediumType_Writethrough)
         return setError(VBOX_E_INVALID_OBJECT_STATE,
@@ -2519,6 +2521,25 @@ STDMETHODIMP Medium::CreateDiffStorage(IMedium *aTarget,
         delete pMediumLockList;
         return rc;
     }
+
+    rc = pMediumLockList->Lock();
+    if (FAILED(rc))
+    {
+        delete pMediumLockList;
+
+        return setError(rc, tr("Could not lock medium when creating diff '%s'"),
+                        diff->getLocationFull().c_str());
+    }
+
+    Guid parentMachineRegistry;
+    if (getFirstRegistryMachineId(parentMachineRegistry))
+    {
+        /* since this medium has been just created it isn't associated yet */
+        diff->m->llRegistryIDs.push_back(parentMachineRegistry);
+    }
+
+    treeLock.release();
+    alock.release();
 
     ComObjPtr <Progress> pProgress;
 
@@ -2871,7 +2892,12 @@ STDMETHODIMP Medium::Reset(IProgress **aProgress)
             throw rc;
         }
 
+        /* Temporary leave this lock, cause IMedium::LockWrite, will wait for
+         * an running IMedium::queryInfo. If there is one running it might be
+         * it tries to acquire a MediaTreeLock as well -> dead-lock. */
+        multilock.leave();
         rc = pMediumLockList->Lock();
+        multilock.enter();
         if (FAILED(rc))
         {
             delete pMediumLockList;
@@ -4173,6 +4199,11 @@ HRESULT Medium::deleteStorage(ComObjPtr<Progress> *aProgress,
 
         /* Undo deleting state if necessary. */
         AutoWriteLock alock(this COMMA_LOCKVAL_SRC_POS);
+        /* Make sure that any error signalled by unmarkForDeletion() is not
+         * ending up in the error list (if the caller uses MultiResult). It
+         * usually is spurious, as in most cases the medium hasn't been marked
+         * for deletion when the error was thrown above. */
+        ErrorInfoKeeper eik;
         unmarkForDeletion();
     }
 
@@ -7009,6 +7040,7 @@ HRESULT Medium::taskCloneHandler(Medium::CloneTask &task)
     }
 
     // now, at the end of this task (always asynchronous), save the settings
+    if (SUCCEEDED(mrc))
     {
         // save the settings
         GuidList llRegistriesThatNeedSaving;

@@ -1,6 +1,151 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.0.14 (2011-10-13)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VMM: fixed 64bit guests on AMD Fusion CPUs (bug #8824)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMM: fixed handling of the <emphasis>sysenter/sysexit</emphasis>
+          machine instructions in 64-bit guests on Intel hosts</para>
+      </listitem>
+
+      <listitem> 
+        <para>GUI: fixed the inclusion of additional information (license, 
+          vendor, ...) on OVF export</para> 
+      </listitem> 
+
+      <listitem>
+        <para>GUI: when taking a snapshot from the VM selector, don't do
+          a live snapshot</para>
+      </listitem>
+
+      <listitem>
+        <para>GUI: fixed spurious LCtrl key events on some Windows hosts
+          (4.0.6 regression; bug #5908)</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxManage: fixed <emphasis>extpack install --replace</emphasis></para>
+      </listitem>
+
+      <listitem>
+        <para>VRDP: fixed a rare screen corruption</para>
+      </listitem>
+
+      <listitem>
+        <para>E1000: fixed rare Windows 7 guest hangs, either at boot time 
+          or when reconfiguring the network card in unusual setups (bug #6223)</para>
+      </listitem>
+
+      <listitem>
+        <para>Mouse support: fixed an off-by-one pointer position error
+           affecting Windows guests (bugs #7566, #9321)</para>
+      </listitem>
+
+      <listitem>
+        <para>NAT: changed TCP connection establishment according to Winsock API
+          requirements (Windows hosts only; bug #8919)</para>
+      </listitem>
+
+      <listitem>
+        <para>VHD: fixed reads crossing block boundaries (bug #8532)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMDK: fixed progress indicator when creating split VMDK
+          images</para>
+      </listitem>
+
+      <listitem>
+        <para>Floppy: fixed medium size detection for physical mediums
+          (Windows hosts only)</para>
+      </listitem>
+      <listitem>
+        <para>VBoxSVC: made the path comparison OS independent when images are
+          registered (bug #9303)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main: return the correct RDP default port fixing settings
+          warnings in the GUI if the remote display was enabled at runtime (bug #9368)</para>
+      </listitem>
+
+      <listitem>
+        <para>Main: fix VM initialization if a shared folder does not exist (bug #7941)</para>
+      </listitem>
+  
+      <listitem>
+        <para>Main: fixed taking screen shots (e.g. the preview window) for
+          headless VMs if the Guest Additions are active</para>
+      </listitem>
+
+      <listitem>
+        <para>Main: fixed possible deadlock between hard disk enumeration and
+          the reseting of immutable disks (bug #9549)</para>
+      </listitem>
+
+      <listitem>
+        <para>OVA: fixed import of renamed OVA files (bug #9033)</para>
+      </listitem>
+
+      <listitem>
+        <para>Virtio-net: fixed the problem with UDP packets exceeding MTU
+          (bug #9370)</para>
+      </listitem>
+
+      <listitem>
+        <para>Solaris hosts: fixed starting EFI guests due to missing EFI ROM files
+          (bug #9535)</para>
+      </listitem>
+
+      <listitem>
+        <para>Mac OS X hosts: fix installation issues when installed as root
+          (bug #1578)</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: fixed file truncation on a shared folder with
+          some applications (bugs #9276, #9315)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: suppress an incorrect error message and allow
+           a shared folder to be mounted in multiple places (bug #9627)
+          </para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: add support for X.Org Server 1.11 (bug #9519)
+          </para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: fixed <emphasis>llseek</emphasis> for Linux kernels
+          2.6.37 and above</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: start VBoxService correcly on openSUSE 12.1
+           (bug #6229)</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux Additions: properly finish the installation even if the
+          compilation of the DRM module fails (which is not fatal)</para>
+      </listitem>
+
+    </itemizedlist>
+  </sect1>
+
+  <sect1>
     <title>Version 4.0.12 (2011-07-15)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
@@ -25,7 +170,7 @@
 
       <listitem>
         <para>Storage: fixed possible data corruption under certain circumstances
-          whith VHD and Parallels images (bug #9150)</para>
+          with VHD and Parallels images (bug #9150)</para>
       </listitem>
 
       <listitem>
@@ -55,6 +200,7 @@
       <listitem>
         <para>Solaris Additions: fixed automounting of shared folders (bug #8014)</para>
       </listitem>
+
     </itemizedlist>
   </sect1>
 

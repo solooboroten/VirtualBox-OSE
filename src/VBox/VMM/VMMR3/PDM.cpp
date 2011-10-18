@@ -278,6 +278,14 @@
 #define PDM_SAVED_STATE_VERSION             4
 #define PDM_SAVED_STATE_VERSION_PRE_NMI_FF  3
 
+/** The number of nanoseconds a suspend callback needs to take before
+ * PDMR3Suspend warns about it taking too long. */
+#define PDMSUSPEND_WARN_AT_NS               UINT64_C(1200000000)
+
+/** The number of nanoseconds a suspend callback needs to take before
+ * PDMR3PowerOff warns about it taking too long. */
+#define PDMPOWEROFF_WARN_AT_NS              UINT64_C( 900000000)
+
 
 /*******************************************************************************
 *   Structures and Typedefs                                                    *
@@ -1470,6 +1478,8 @@ DECLINLINE(bool) pdmR3SuspendDrv(PPDMDRVINS pDrvIns, PPDMNOTIFYASYNCSTATS pAsync
         pDrvIns->Internal.s.fVMSuspended = true;
         if (pDrvIns->pReg->pfnSuspend)
         {
+            uint64_t cNsElapsed = RTTimeNanoTS();
+
             if (!pDrvIns->Internal.s.pfnAsyncNotify)
             {
                 LogFlow(("PDMR3Suspend: Notifying - driver '%s'/%d on LUN#%d of device '%s'/%d\n",
@@ -1485,6 +1495,12 @@ DECLINLINE(bool) pdmR3SuspendDrv(PPDMDRVINS pDrvIns, PPDMNOTIFYASYNCSTATS pAsync
                 LogFlow(("PDMR3Suspend: Async notification completed - driver '%s'/%d on LUN#%d of device '%s'/%d\n",
                          pDrvIns->pReg->szName, pDrvIns->iInstance, iLun, pszDevName, iDevInstance));
             }
+
+            cNsElapsed = RTTimeNanoTS() - cNsElapsed;
+            if (cNsElapsed >= PDMSUSPEND_WARN_AT_NS)
+                LogRel(("PDMR3Suspend: Driver '%s'/%d on LUN#%d of device '%s'/%d took %'llu ns to suspend\n",
+                        pDrvIns->pReg->szName, pDrvIns->iInstance, iLun, pszDevName, iDevInstance, cNsElapsed));
+
             if (pDrvIns->Internal.s.pfnAsyncNotify)
             {
                 pDrvIns->Internal.s.fVMSuspended = false;
@@ -1511,16 +1527,18 @@ DECLINLINE(void) pdmR3SuspendUsb(PPDMUSBINS pUsbIns, PPDMNOTIFYASYNCSTATS pAsync
         pUsbIns->Internal.s.fVMSuspended = true;
         if (pUsbIns->pReg->pfnVMSuspend)
         {
+            uint64_t cNsElapsed = RTTimeNanoTS();
+
             if (!pUsbIns->Internal.s.pfnAsyncNotify)
             {
-                LogFlow(("PDMR3Suspend: Notifying - device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
+                LogFlow(("PDMR3Suspend: Notifying - USB device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
                 pUsbIns->pReg->pfnVMSuspend(pUsbIns);
                 if (pUsbIns->Internal.s.pfnAsyncNotify)
-                    LogFlow(("PDMR3Suspend: Async notification started - device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
+                    LogFlow(("PDMR3Suspend: Async notification started - USB device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
             }
             else if (pUsbIns->Internal.s.pfnAsyncNotify(pUsbIns))
             {
-                LogFlow(("PDMR3Suspend: Async notification completed - device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
+                LogFlow(("PDMR3Suspend: Async notification completed - USB device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
                 pUsbIns->Internal.s.pfnAsyncNotify = NULL;
             }
             if (pUsbIns->Internal.s.pfnAsyncNotify)
@@ -1528,6 +1546,11 @@ DECLINLINE(void) pdmR3SuspendUsb(PPDMUSBINS pUsbIns, PPDMNOTIFYASYNCSTATS pAsync
                 pUsbIns->Internal.s.fVMSuspended = false;
                 pdmR3NotifyAsyncAdd(pAsync, pUsbIns->Internal.s.pUsbDev->pReg->szName, pUsbIns->iInstance);
             }
+
+            cNsElapsed = RTTimeNanoTS() - cNsElapsed;
+            if (cNsElapsed >= PDMSUSPEND_WARN_AT_NS)
+                LogRel(("PDMR3Suspend: USB device '%s'/%d took %'llu ns to suspend\n",
+                        pUsbIns->pReg->szName, pUsbIns->iInstance, cNsElapsed));
         }
     }
 }
@@ -1547,6 +1570,8 @@ DECLINLINE(void) pdmR3SuspendDev(PPDMDEVINS pDevIns, PPDMNOTIFYASYNCSTATS pAsync
         pDevIns->Internal.s.fIntFlags |= PDMDEVINSINT_FLAGS_SUSPENDED;
         if (pDevIns->pReg->pfnSuspend)
         {
+            uint64_t cNsElapsed = RTTimeNanoTS();
+
             if (!pDevIns->Internal.s.pfnAsyncNotify)
             {
                 LogFlow(("PDMR3Suspend: Notifying - device '%s'/%d\n", pDevIns->pReg->szName, pDevIns->iInstance));
@@ -1564,6 +1589,11 @@ DECLINLINE(void) pdmR3SuspendDev(PPDMDEVINS pDevIns, PPDMNOTIFYASYNCSTATS pAsync
                 pDevIns->Internal.s.fIntFlags &= ~PDMDEVINSINT_FLAGS_SUSPENDED;
                 pdmR3NotifyAsyncAdd(pAsync, pDevIns->Internal.s.pDevR3->pReg->szName, pDevIns->iInstance);
             }
+
+            cNsElapsed = RTTimeNanoTS() - cNsElapsed;
+            if (cNsElapsed >= PDMSUSPEND_WARN_AT_NS)
+                LogRel(("PDMR3Suspend: device '%s'/%d took %'llu ns to suspend\n",
+                        pDevIns->pReg->szName, pDevIns->iInstance, cNsElapsed));
         }
     }
 }
@@ -1580,6 +1610,7 @@ VMMR3DECL(void) PDMR3Suspend(PVM pVM)
 {
     LogFlow(("PDMR3Suspend:\n"));
     VM_ASSERT_EMT0(pVM);
+    uint64_t cNsElapsed = RTTimeNanoTS();
 
     /*
      * The outer loop repeats until there are no more async requests.
@@ -1647,7 +1678,8 @@ VMMR3DECL(void) PDMR3Suspend(PVM pVM)
      */
     pdmR3ThreadSuspendAll(pVM);
 
-    LogFlow(("PDMR3Suspend: returns void\n"));
+    cNsElapsed = RTTimeNanoTS() - cNsElapsed;
+    LogRel(("PDMR3Suspend: %'llu ns run time\n", cNsElapsed));
 }
 
 
@@ -1803,6 +1835,8 @@ DECLINLINE(bool) pdmR3PowerOffDrv(PPDMDRVINS pDrvIns, PPDMNOTIFYASYNCSTATS pAsyn
         pDrvIns->Internal.s.fVMSuspended = true;
         if (pDrvIns->pReg->pfnPowerOff)
         {
+            uint64_t cNsElapsed = RTTimeNanoTS();
+
             if (!pDrvIns->Internal.s.pfnAsyncNotify)
             {
                 LogFlow(("PDMR3PowerOff: Notifying - driver '%s'/%d on LUN#%d of device '%s'/%d\n",
@@ -1818,6 +1852,12 @@ DECLINLINE(bool) pdmR3PowerOffDrv(PPDMDRVINS pDrvIns, PPDMNOTIFYASYNCSTATS pAsyn
                 LogFlow(("PDMR3PowerOff: Async notification completed - driver '%s'/%d on LUN#%d of device '%s'/%d\n",
                          pDrvIns->pReg->szName, pDrvIns->iInstance, iLun, pszDevName, iDevInstance));
             }
+
+            cNsElapsed = RTTimeNanoTS() - cNsElapsed;
+            if (cNsElapsed >= PDMPOWEROFF_WARN_AT_NS)
+                LogRel(("PDMR3PowerOff: Driver '%s'/%d on LUN#%d of device '%s'/%d took %'llu ns to power off\n",
+                        pDrvIns->pReg->szName, pDrvIns->iInstance, iLun, pszDevName, iDevInstance, cNsElapsed));
+
             if (pDrvIns->Internal.s.pfnAsyncNotify)
             {
                 pDrvIns->Internal.s.fVMSuspended = false;
@@ -1845,16 +1885,18 @@ DECLINLINE(void) pdmR3PowerOffUsb(PPDMUSBINS pUsbIns, PPDMNOTIFYASYNCSTATS pAsyn
         pUsbIns->Internal.s.fVMSuspended = true;
         if (pUsbIns->pReg->pfnVMPowerOff)
         {
+            uint64_t cNsElapsed = RTTimeNanoTS();
+
             if (!pUsbIns->Internal.s.pfnAsyncNotify)
             {
-                LogFlow(("PDMR3PowerOff: Notifying - device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
+                LogFlow(("PDMR3PowerOff: Notifying - USB device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
                 pUsbIns->pReg->pfnVMPowerOff(pUsbIns);
                 if (pUsbIns->Internal.s.pfnAsyncNotify)
-                    LogFlow(("PDMR3PowerOff: Async notification started - device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
+                    LogFlow(("PDMR3PowerOff: Async notification started - USB device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
             }
             else if (pUsbIns->Internal.s.pfnAsyncNotify(pUsbIns))
             {
-                LogFlow(("PDMR3PowerOff: Async notification completed - device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
+                LogFlow(("PDMR3PowerOff: Async notification completed - USB device '%s'/%d\n", pUsbIns->pReg->szName, pUsbIns->iInstance));
                 pUsbIns->Internal.s.pfnAsyncNotify = NULL;
             }
             if (pUsbIns->Internal.s.pfnAsyncNotify)
@@ -1862,6 +1904,12 @@ DECLINLINE(void) pdmR3PowerOffUsb(PPDMUSBINS pUsbIns, PPDMNOTIFYASYNCSTATS pAsyn
                 pUsbIns->Internal.s.fVMSuspended = false;
                 pdmR3NotifyAsyncAdd(pAsync, pUsbIns->Internal.s.pUsbDev->pReg->szName, pUsbIns->iInstance);
             }
+
+            cNsElapsed = RTTimeNanoTS() - cNsElapsed;
+            if (cNsElapsed >= PDMPOWEROFF_WARN_AT_NS)
+                LogRel(("PDMR3PowerOff: USB device '%s'/%d took %'llu ns to power off\n",
+                        pUsbIns->pReg->szName, pUsbIns->iInstance, cNsElapsed));
+
         }
     }
 }
@@ -1881,6 +1929,8 @@ DECLINLINE(void) pdmR3PowerOffDev(PPDMDEVINS pDevIns, PPDMNOTIFYASYNCSTATS pAsyn
         pDevIns->Internal.s.fIntFlags |= PDMDEVINSINT_FLAGS_SUSPENDED;
         if (pDevIns->pReg->pfnPowerOff)
         {
+            uint64_t cNsElapsed = RTTimeNanoTS();
+
             if (!pDevIns->Internal.s.pfnAsyncNotify)
             {
                 LogFlow(("PDMR3PowerOff: Notifying - device '%s'/%d\n", pDevIns->pReg->szName, pDevIns->iInstance));
@@ -1898,6 +1948,11 @@ DECLINLINE(void) pdmR3PowerOffDev(PPDMDEVINS pDevIns, PPDMNOTIFYASYNCSTATS pAsyn
                 pDevIns->Internal.s.fIntFlags &= ~PDMDEVINSINT_FLAGS_SUSPENDED;
                 pdmR3NotifyAsyncAdd(pAsync, pDevIns->Internal.s.pDevR3->pReg->szName, pDevIns->iInstance);
             }
+
+            cNsElapsed = RTTimeNanoTS() - cNsElapsed;
+            if (cNsElapsed >= PDMPOWEROFF_WARN_AT_NS)
+                LogFlow(("PDMR3PowerOff: Device '%s'/%d took %'llu ns to power off\n",
+                         pDevIns->pReg->szName, pDevIns->iInstance, cNsElapsed));
         }
     }
 }
@@ -1912,6 +1967,7 @@ DECLINLINE(void) pdmR3PowerOffDev(PPDMDEVINS pDevIns, PPDMNOTIFYASYNCSTATS pAsyn
 VMMR3DECL(void) PDMR3PowerOff(PVM pVM)
 {
     LogFlow(("PDMR3PowerOff:\n"));
+    uint64_t cNsElapsed = RTTimeNanoTS();
 
     /*
      * The outer loop repeats until there are no more async requests.
@@ -1974,7 +2030,8 @@ VMMR3DECL(void) PDMR3PowerOff(PVM pVM)
      */
     pdmR3ThreadSuspendAll(pVM);
 
-    LogFlow(("PDMR3PowerOff: returns void\n"));
+    cNsElapsed = RTTimeNanoTS() - cNsElapsed;
+    LogRel(("PDMR3PowerOff: %'llu ns run time\n", cNsElapsed));
 }
 
 

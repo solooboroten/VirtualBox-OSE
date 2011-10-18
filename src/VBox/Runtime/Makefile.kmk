@@ -50,8 +50,7 @@ else ifdef VBOX_ONLY_DOCS
  #
  # Build docs only - need just regular R3 runtime.
  #
- LIBRARIES += RuntimeR3
- DLLS += VBoxRT
+ LIBRARIES += RuntimeR3 RuntimeBldProg
 
 else ifdef VBOX_ONLY_EXTPACKS_USE_IMPLIBS
  #

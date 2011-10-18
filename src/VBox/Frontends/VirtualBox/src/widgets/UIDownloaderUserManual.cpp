@@ -26,7 +26,7 @@
 #include "UIDownloaderUserManual.h"
 #include "QIFileDialog.h"
 #include "QIHttp.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 
 UIDownloaderUserManual *UIDownloaderUserManual::m_pInstance = 0;
 
@@ -133,7 +133,7 @@ void UIDownloaderUserManual::downloadFinished(bool fError)
                 file.write(receivedData);
                 file.close();
                 /* Warn user about User Manual document loaded and saved: */
-                vboxProblem().warnAboutUserManualDownloaded(m_source.toString(), QDir::toNativeSeparators(m_strTarget));
+                msgCenter().warnAboutUserManualDownloaded(m_source.toString(), QDir::toNativeSeparators(m_strTarget));
                 /* Warn listener about User Manual was downloaded: */
                 emit sigDownloadFinished(m_strTarget);
                 /* Close the downloader: */
@@ -143,7 +143,7 @@ void UIDownloaderUserManual::downloadFinished(bool fError)
             else
             {
                 /* Warn user about User Manual document loaded but was not saved: */
-                vboxProblem().warnAboutUserManualCantBeSaved(m_source.toString(), QDir::toNativeSeparators(m_strTarget));
+                msgCenter().warnAboutUserManualCantBeSaved(m_source.toString(), QDir::toNativeSeparators(m_strTarget));
             }
 
             /* Ask the user about User Manual file save location: */
@@ -174,11 +174,11 @@ UIDownloaderUserManual::UIDownloaderUserManual()
 
 bool UIDownloaderUserManual::confirmDownload()
 {
-    return vboxProblem().confirmUserManualDownload(m_source.toString(), m_pHttp->lastResponse().contentLength());
+    return msgCenter().confirmUserManualDownload(m_source.toString(), m_pHttp->lastResponse().contentLength());
 }
 
 void UIDownloaderUserManual::warnAboutError(const QString &strError)
 {
-    return vboxProblem().warnAboutUserManualCantBeDownloaded(m_source.toString(), strError);
+    return msgCenter().warnAboutUserManualCantBeDownloaded(m_source.toString(), strError);
 }
 

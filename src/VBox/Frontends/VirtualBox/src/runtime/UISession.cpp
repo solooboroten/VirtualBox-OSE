@@ -29,7 +29,7 @@
 #include "UIMachineLogic.h"
 #include "UIMachineWindow.h"
 #include "UIMachineMenuBar.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 #include "UIFirstRunWzd.h"
 #include "UIConsoleEventHandler.h"
 #ifdef VBOX_WITH_VIDEOHWACCEL
@@ -204,7 +204,7 @@ void UISession::powerUp()
     if (!console.isOk())
     {
         if (vboxGlobal().showStartVMErrors())
-            vboxProblem().cannotStartMachine(console);
+            msgCenter().cannotStartMachine(console);
         QTimer::singleShot(0, this, SLOT(sltCloseVirtualSession()));
         return;
     }
@@ -215,15 +215,15 @@ void UISession::powerUp()
 
     /* Show "Starting/Restoring" progress dialog: */
     if (isSaved())
-        vboxProblem().showModalProgressDialog(progress, machine.GetName(), ":/progress_state_restore_90px.png", mainMachineWindow(), true, 0);
+        msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_state_restore_90px.png", mainMachineWindow(), true, 0);
     else
-        vboxProblem().showModalProgressDialog(progress, machine.GetName(), ":/progress_start_90px.png", mainMachineWindow(), true);
+        msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_start_90px.png", mainMachineWindow(), true);
 
     /* Check for a progress failure: */
     if (progress.GetResultCode() != 0)
     {
         if (vboxGlobal().showStartVMErrors())
-            vboxProblem().cannotStartMachine(progress);
+            msgCenter().cannotStartMachine(progress);
         QTimer::singleShot(0, this, SLOT(sltCloseVirtualSession()));
         return;
     }
@@ -255,9 +255,9 @@ void UISession::powerUp()
         setPause(true);
 
         if (fIs64BitsGuest)
-            fShouldWeClose = vboxProblem().warnAboutVirtNotEnabled64BitsGuest(fVTxAMDVSupported);
+            fShouldWeClose = msgCenter().warnAboutVirtNotEnabled64BitsGuest(fVTxAMDVSupported);
         else
-            fShouldWeClose = vboxProblem().warnAboutVirtNotEnabledGuestRequired(fVTxAMDVSupported);
+            fShouldWeClose = msgCenter().warnAboutVirtNotEnabledGuestRequired(fVTxAMDVSupported);
 
         if (fShouldWeClose)
         {
@@ -270,15 +270,15 @@ void UISession::powerUp()
                 if (uimachine()->machineLogic())
                     uimachine()->machineLogic()->setPreventAutoClose(true);
                 /* Show the power down progress dialog */
-                vboxProblem().showModalProgressDialog(progress, machine.GetName(), ":/progress_poweroff_90px.png", mainMachineWindow(), true);
+                msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_poweroff_90px.png", mainMachineWindow(), true);
                 if (progress.GetResultCode() != 0)
-                    vboxProblem().cannotStopMachine(progress);
+                    msgCenter().cannotStopMachine(progress);
                 /* Allow further auto-closing: */
                 if (uimachine()->machineLogic())
                     uimachine()->machineLogic()->setPreventAutoClose(false);
             }
             else
-                vboxProblem().cannotStopMachine(console);
+                msgCenter().cannotStopMachine(console);
             /* Now signal the destruction of the rest. */
             QTimer::singleShot(0, this, SLOT(sltCloseVirtualSession()));
             return;
@@ -359,9 +359,9 @@ bool UISession::setPause(bool fOn)
     if (!ok)
     {
         if (fOn)
-            vboxProblem().cannotPauseMachine(console);
+            msgCenter().cannotPauseMachine(console);
         else
-            vboxProblem().cannotResumeMachine(console);
+            msgCenter().cannotResumeMachine(console);
     }
 
     return ok;
@@ -390,7 +390,7 @@ void UISession::sltInstallGuestAdditionsFrom(const QString &strSource)
     bool fResult = guest.isOk();
     if (fResult)
     {
-        vboxProblem().showModalProgressDialog(progressInstall, tr("Install"), ":/progress_install_guest_additions_90px.png",
+        msgCenter().showModalProgressDialog(progressInstall, tr("Install"), ":/progress_install_guest_additions_90px.png",
                                               mainMachineWindow(), true, 500 /* 500ms delay. */);
         if (progressInstall.GetCanceled())
             return;
@@ -404,7 +404,7 @@ void UISession::sltInstallGuestAdditionsFrom(const QString &strSource)
             if (   !SUCCEEDED_WARNING(rc)
                 && rc != VBOX_E_NOT_SUPPORTED)
             {
-                vboxProblem().cannotUpdateGuestAdditions(progressInstall, mainMachineWindow());
+                msgCenter().cannotUpdateGuestAdditions(progressInstall, mainMachineWindow());
 
                 /* Log the error message in the release log. */
                 QString strErr = progressInstall.GetErrorInfo().GetText();
@@ -431,7 +431,7 @@ void UISession::sltInstallGuestAdditionsFrom(const QString &strSource)
 
         if (!vbox.isOk())
         {
-            vboxProblem().cannotOpenMedium(0, vbox, VBoxDefs::MediumType_DVD, strSource);
+            msgCenter().cannotOpenMedium(0, vbox, VBoxDefs::MediumType_DVD, strSource);
             return;
         }
 
@@ -475,17 +475,17 @@ void UISession::sltInstallGuestAdditionsFrom(const QString &strSource)
             if (!machine.isOk())
             {
                 /* Ask for force mounting: */
-                if (vboxProblem().cannotRemountMedium(0, machine, vboxMedium, true /* mount? */, true /* retry? */) == QIMessageBox::Ok)
+                if (msgCenter().cannotRemountMedium(0, machine, vboxMedium, true /* mount? */, true /* retry? */) == QIMessageBox::Ok)
                 {
                     /* Force mount medium to the predefined port/device: */
                     machine.MountMedium(strCntName, iCntPort, iCntDevice, vboxMedium.medium(), true /* force */);
                     if (!machine.isOk())
-                        vboxProblem().cannotRemountMedium(0, machine, vboxMedium, true /* mount? */, false /* retry? */);
+                        msgCenter().cannotRemountMedium(0, machine, vboxMedium, true /* mount? */, false /* retry? */);
                 }
             }
         }
         else
-            vboxProblem().cannotMountGuestAdditions(machine.GetName());
+            msgCenter().cannotMountGuestAdditions(machine.GetName());
     }
 }
 
@@ -504,9 +504,9 @@ void UISession::sltCloseVirtualSession()
     }
 
     /* Recursively close all the opened warnings... */
-    if (vboxProblem().isAnyWarningShown())
+    if (msgCenter().isAnyWarningShown())
     {
-        vboxProblem().closeAllWarnings();
+        msgCenter().closeAllWarnings();
         QTimer::singleShot(0, this, SLOT(sltCloseVirtualSession()));
         return;
     }
@@ -1012,7 +1012,7 @@ void UISession::preparePowerUp()
 
     /* Notify user about mouse&keyboard auto-capturing: */
     if (vboxGlobal().settings().autoCapture())
-        vboxProblem().remindAboutAutoCapture();
+        msgCenter().remindAboutAutoCapture();
 
     /* Shows first run wizard if necessary: */
     const CMachine &machine = session().GetMachine();

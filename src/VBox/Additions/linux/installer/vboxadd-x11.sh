@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# Linux Additions X11 setup init script ($Revision: 71770 $)
+# Linux Additions X11 setup init script ($Revision: 74381 $)
 #
 
 #
@@ -323,6 +323,13 @@ setup()
             echo "Warning: unsupported pre-release version of X.Org Server installed.  Not"
             echo "installing the X.Org drivers."
             dox11config=""
+            ;;
+        1.11.* )
+            xserver_version="X.Org Server 1.11"
+            vboxvideo_src=vboxvideo_drv_111.so
+            vboxmouse_src=vboxmouse_drv_111.so
+            # Does Fedora still ship without vboxvideo detection?
+            # test "$system" = "redhat" || setupxorgconf=""
             ;;
         1.10.* )
             begin "Installing X.Org Server 1.10 modules"

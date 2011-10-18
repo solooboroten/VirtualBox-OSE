@@ -24,7 +24,7 @@
 /* Local includes */
 #include "QIHttp.h"
 #include "VBoxGlobal.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 #include "VBoxUpdateDlg.h"
 #include "UIIconPool.h"
 #endif /* !VBOX_WITH_PRECOMPILED_HEADERS */
@@ -399,7 +399,7 @@ void VBoxUpdateDlg::searchResponse (bool aError)
         if (isHidden())
         {
             /* For background update */
-            vboxProblem().showUpdateSuccess (vboxGlobal().mainWindow(),
+            msgCenter().showUpdateSuccess (vboxGlobal().mainWindow(),
                                              response [0], response [1]);
             QTimer::singleShot (0, this, SLOT (accept()));
         }
@@ -419,7 +419,7 @@ void VBoxUpdateDlg::searchResponse (bool aError)
         {
             /* For background update */
             if (mForceRun)
-                vboxProblem().showUpdateNotFound (vboxGlobal().mainWindow());
+                msgCenter().showUpdateNotFound (vboxGlobal().mainWindow());
             QTimer::singleShot (0, this, SLOT (accept()));
         }
         else
@@ -449,7 +449,7 @@ void VBoxUpdateDlg::abortRequest (const QString &aReason)
     {
         /* For background update */
         if (mForceRun)
-            vboxProblem().showUpdateFailure (vboxGlobal().mainWindow(), aReason);
+            msgCenter().showUpdateFailure (vboxGlobal().mainWindow(), aReason);
         QTimer::singleShot (0, this, SLOT (accept()));
     }
     else

@@ -25,7 +25,7 @@
 #include "UINewHDWzd.h"
 #include "UINewVMWzd.h"
 #include "QIFileDialog.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 #include "UIMachineSettingsStorage.h"
 
 /* Globals */
@@ -85,10 +85,10 @@ static const osTypePattern gs_OSTypePattern[] =
     /* Regular names of Linux distributions */
     { QRegExp("Arc.*64", Qt::CaseInsensitive), "ArchLinux_64" },
     { QRegExp("Arc", Qt::CaseInsensitive), "ArchLinux" },
-    { QRegExp("De.*64", Qt::CaseInsensitive), "Debian_64" },
-    { QRegExp("De", Qt::CaseInsensitive), "Debian" },
-    { QRegExp("((SU)|(Nov)).*64", Qt::CaseInsensitive), "OpenSUSE_64" },
-    { QRegExp("(SU)|(Nov)", Qt::CaseInsensitive), "OpenSUSE" },
+    { QRegExp("Deb.*64", Qt::CaseInsensitive), "Debian_64" },
+    { QRegExp("Deb", Qt::CaseInsensitive), "Debian" },
+    { QRegExp("((SU)|(Nov)|(SLE)).*64", Qt::CaseInsensitive), "OpenSUSE_64" },
+    { QRegExp("(SU)|(Nov)|(SLE)", Qt::CaseInsensitive), "OpenSUSE" },
     { QRegExp("Fe.*64", Qt::CaseInsensitive), "Fedora_64" },
     { QRegExp("Fe", Qt::CaseInsensitive), "Fedora" },
     { QRegExp("((Gen)|(Sab)).*64", Qt::CaseInsensitive), "Gentoo_64" },
@@ -268,7 +268,7 @@ bool UINewVMWzdPage2::createMachineFolder()
     bool fMachineFolderDeleted = cleanupMachineFolder();
     if (!fMachineFolderDeleted)
     {
-        vboxProblem().warnAboutCannotCreateMachineFolder(this, m_strMachineFolder);
+        msgCenter().warnAboutCannotCreateMachineFolder(this, m_strMachineFolder);
         return false;
     }
 
@@ -286,7 +286,7 @@ bool UINewVMWzdPage2::createMachineFolder()
     bool fMachineFolderCreated = QDir().mkpath(strMachineFolder);
     if (!fMachineFolderCreated)
     {
-        vboxProblem().warnAboutCannotCreateMachineFolder(this, strMachineFolder);
+        msgCenter().warnAboutCannotCreateMachineFolder(this, strMachineFolder);
         return false;
     }
 
@@ -485,7 +485,7 @@ bool UINewVMWzdPage4::validatePage()
         ensureNewHardDiskDeleted();
 
     /* Ask user about disk-less machine */
-    if (!m_pBootHDCnt->isChecked() && !vboxProblem().confirmHardDisklessMachine(this))
+    if (!m_pBootHDCnt->isChecked() && !msgCenter().confirmHardDisklessMachine(this))
         return false;
 
     /* Show the New Hard Disk wizard */
@@ -507,7 +507,7 @@ void UINewVMWzdPage4::ensureNewHardDiskDeleted()
     CProgress progress = m_HardDisk.DeleteStorage();
     if (m_HardDisk.isOk())
     {
-        vboxProblem().showModalProgressDialog(progress, windowTitle(), ":/progress_media_delete_90px.png", this, true);
+        msgCenter().showModalProgressDialog(progress, windowTitle(), ":/progress_media_delete_90px.png", this, true);
         if (progress.isOk() && progress.GetResultCode() == S_OK)
             success = true;
     }
@@ -515,7 +515,7 @@ void UINewVMWzdPage4::ensureNewHardDiskDeleted()
     if (success)
         vboxGlobal().removeMedium(VBoxDefs::MediumType_HardDisk, id);
     else
-        vboxProblem().cannotDeleteHardDiskStorage(this, m_HardDisk, progress);
+        msgCenter().cannotDeleteHardDiskStorage(this, m_HardDisk, progress);
 
     m_HardDisk.detach();
 }
@@ -724,7 +724,7 @@ bool UINewVMWzdPage5::constructMachine()
                                        false);              // forceOverwrite
         if (!vbox.isOk())
         {
-            vboxProblem().cannotCreateMachine(vbox, this);
+            msgCenter().cannotCreateMachine(vbox, this);
             return false;
         }
 
@@ -836,7 +836,7 @@ bool UINewVMWzdPage5::constructMachine()
     vbox.RegisterMachine(m_Machine);
     if (!vbox.isOk())
     {
-        vboxProblem().cannotCreateMachine(vbox, m_Machine, this);
+        msgCenter().cannotCreateMachine(vbox, m_Machine, this);
         return false;
     }
 
@@ -857,14 +857,14 @@ bool UINewVMWzdPage5::constructMachine()
                 CMedium medium = vmedium.medium();              // @todo r=dj can this be cached somewhere?
                 m.AttachDevice(ctrHdName, 0, 0, KDeviceType_HardDisk, medium);
                 if (!m.isOk())
-                    vboxProblem().cannotAttachDevice(m, VBoxDefs::MediumType_HardDisk, field("hardDiskLocation").toString(),
-                                                     StorageSlot(ctrHdBus, 0, 0), this);
+                    msgCenter().cannotAttachDevice(m, VBoxDefs::MediumType_HardDisk, field("hardDiskLocation").toString(),
+                                                   StorageSlot(ctrHdBus, 0, 0), this);
             }
 
             /* Attach empty CD/DVD ROM Device */
             m.AttachDevice(ctrDvdName, 1, 0, KDeviceType_DVD, CMedium());
             if (!m.isOk())
-                vboxProblem().cannotAttachDevice(m, VBoxDefs::MediumType_DVD, QString(), StorageSlot(ctrDvdBus, 1, 0), this);
+                msgCenter().cannotAttachDevice(m, VBoxDefs::MediumType_DVD, QString(), StorageSlot(ctrDvdBus, 1, 0), this);
 
             if (m.isOk())
             {
@@ -872,7 +872,7 @@ bool UINewVMWzdPage5::constructMachine()
                 if (m.isOk())
                     success = true;
                 else
-                    vboxProblem().cannotSaveMachineSettings(m, this);
+                    msgCenter().cannotSaveMachineSettings(m, this);
             }
 
             session.UnlockMachine();

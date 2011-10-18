@@ -21,7 +21,7 @@
 #include "UIDownloader.h"
 #include "QIHttp.h"
 #include "VBoxGlobal.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 #include "UISpecialControls.h"
 
 /* Global includes */

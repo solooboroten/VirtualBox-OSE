@@ -849,13 +849,13 @@ int handleExtPack(HandlerArg *a)
         {
             switch (ch)
             {
-                case 'f':
+                case 'r':
                     fReplace = true;
                     break;
 
                 case VINF_GETOPT_NOT_OPTION:
                     if (pszName)
-                        return errorSyntax(USAGE_EXTPACK, "Too many extension pack names given to \"extpack uninstall\"");
+                        return errorSyntax(USAGE_EXTPACK, "Too many extension pack names given to \"extpack install\"");
                     pszName = ValueUnion.psz;
                     break;
 
@@ -867,9 +867,9 @@ int handleExtPack(HandlerArg *a)
             return errorSyntax(USAGE_EXTPACK, "No extension pack name was given to \"extpack install\"");
 
         char szPath[RTPATH_MAX];
-        int vrc = RTPathAbs(a->argv[1], szPath, sizeof(szPath));
+        int vrc = RTPathAbs(pszName, szPath, sizeof(szPath));
         if (RT_FAILURE(vrc))
-            return RTMsgErrorExit(RTEXITCODE_FAILURE, "RTPathAbs(%s,,) failed with rc=%Rrc", a->argv[1], vrc);
+            return RTMsgErrorExit(RTEXITCODE_FAILURE, "RTPathAbs(%s,,) failed with rc=%Rrc", pszName, vrc);
 
         Bstr bstrTarball(szPath);
         Bstr bstrName;

@@ -972,6 +972,11 @@ void Display::handleDisplayUpdate (unsigned uScreenId, int x, int y, int w, int 
     }
 }
 
+/**
+ * Returns the upper left and lower right corners of the virtual framebuffer.
+ * The lower right is "exclusive" (i.e. first pixel beyond the framebuffer),
+ * and the origin is (0, 0), not (1, 1) like the GUI returns.
+ */
 void Display::getFramebufferDimensions(int32_t *px1, int32_t *py1,
                                        int32_t *px2, int32_t *py2)
 {
@@ -2188,7 +2193,8 @@ int Display::displayTakeScreenshotEMT(Display *pDisplay, ULONG aScreenId, uint8_
 {
     int rc;
     pDisplay->vbvaLock();
-    if (aScreenId == VBOX_VIDEO_PRIMARY_SCREEN)
+    if (   aScreenId == VBOX_VIDEO_PRIMARY_SCREEN
+        && pDisplay->maFramebuffers[aScreenId].fVBVAEnabled == false) /* A non-VBVA mode. */
     {
         rc = pDisplay->mpDrv->pUpPort->pfnTakeScreenshot(pDisplay->mpDrv->pUpPort, ppu8Data, pcbData, pu32Width, pu32Height);
     }

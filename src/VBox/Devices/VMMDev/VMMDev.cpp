@@ -2190,7 +2190,7 @@ static DECLCALLBACK(int) vmmdevQueryStatusLed(PPDMILEDPORTS pInterface, unsigned
  * @param   pAbsX   Pointer of result value, can be NULL
  * @param   pAbsY   Pointer of result value, can be NULL
  */
-static DECLCALLBACK(int) vmmdevQueryAbsoluteMouse(PPDMIVMMDEVPORT pInterface, uint32_t *pAbsX, uint32_t *pAbsY)
+static DECLCALLBACK(int) vmmdevQueryAbsoluteMouse(PPDMIVMMDEVPORT pInterface, int32_t *pAbsX, int32_t *pAbsY)
 {
     VMMDevState *pThis = IVMMDEVPORT_2_VMMDEVSTATE(pInterface);
     AssertCompile(sizeof(pThis->mouseXAbs) == sizeof(*pAbsX));
@@ -2209,7 +2209,7 @@ static DECLCALLBACK(int) vmmdevQueryAbsoluteMouse(PPDMIVMMDEVPORT pInterface, ui
  * @param   absX   New absolute X position
  * @param   absY   New absolute Y position
  */
-static DECLCALLBACK(int) vmmdevSetAbsoluteMouse(PPDMIVMMDEVPORT pInterface, uint32_t absX, uint32_t absY)
+static DECLCALLBACK(int) vmmdevSetAbsoluteMouse(PPDMIVMMDEVPORT pInterface, int32_t absX, int32_t absY)
 {
     VMMDevState *pThis = IVMMDEVPORT_2_VMMDEVSTATE(pInterface);
     PDMCritSectEnter(&pThis->CritSect, VERR_SEM_BUSY);
@@ -2556,8 +2556,8 @@ static DECLCALLBACK(int) vmmdevSaveExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSM)
 
     SSMR3PutU32(pSSM, pThis->hypervisorSize);
     SSMR3PutU32(pSSM, pThis->mouseCapabilities);
-    SSMR3PutU32(pSSM, pThis->mouseXAbs);
-    SSMR3PutU32(pSSM, pThis->mouseYAbs);
+    SSMR3PutS32(pSSM, pThis->mouseXAbs);
+    SSMR3PutS32(pSSM, pThis->mouseYAbs);
 
     SSMR3PutBool(pSSM, pThis->fNewGuestFilterMask);
     SSMR3PutU32(pSSM, pThis->u32NewGuestFilterMask);
@@ -2624,8 +2624,8 @@ static DECLCALLBACK(int) vmmdevLoadExec(PPDMDEVINS pDevIns, PSSMHANDLE pSSM, uin
     /* state */
     SSMR3GetU32(pSSM, &pThis->hypervisorSize);
     SSMR3GetU32(pSSM, &pThis->mouseCapabilities);
-    SSMR3GetU32(pSSM, &pThis->mouseXAbs);
-    SSMR3GetU32(pSSM, &pThis->mouseYAbs);
+    SSMR3GetS32(pSSM, &pThis->mouseXAbs);
+    SSMR3GetS32(pSSM, &pThis->mouseYAbs);
 
     SSMR3GetBool(pSSM, &pThis->fNewGuestFilterMask);
     SSMR3GetU32(pSSM, &pThis->u32NewGuestFilterMask);
@@ -2991,7 +2991,7 @@ static DECLCALLBACK(int) vmmdevConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
                                 N_("Configuration error: Failed querying \"GuestCoreDumpEnabled\" as a boolean"));
 
     char *pszGuestCoreDumpDir = NULL;
-    rc = CFGMR3QueryStringAlloc(pCfg, "GuestCoreDumpDir", &pszGuestCoreDumpDir);
+    rc = CFGMR3QueryStringAllocDef(pCfg, "GuestCoreDumpDir", &pszGuestCoreDumpDir, "");
     if (RT_FAILURE(rc))
         return PDMDEV_SET_ERROR(pDevIns, rc,
                                 N_("Configuration error: Failed querying \"GuestCoreDumpDir\" as a string"));

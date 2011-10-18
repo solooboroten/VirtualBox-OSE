@@ -40,6 +40,19 @@ enum
 };
 /** @} */
 
+/** @name Absolute mouse reporting range
+ * @{ */
+enum
+{
+    /** Lower end */
+    MOUSE_RANGE_LOWER = 0,
+    /** Higher end */
+    MOUSE_RANGE_UPPER = 0xFFFF,
+    /** Full range */
+    MOUSE_RANGE = MOUSE_RANGE_UPPER - MOUSE_RANGE_LOWER
+};
+/** @} */
+
 /**
  * Mouse driver instance data.
  */
@@ -309,9 +322,13 @@ HRESULT Mouse::reportRelEventToMouseDev(int32_t dx, int32_t dy, int32_t dz,
  *
  * @returns   COM status code
  */
-HRESULT Mouse::reportAbsEventToMouseDev(uint32_t mouseXAbs, uint32_t mouseYAbs,
+HRESULT Mouse::reportAbsEventToMouseDev(int32_t mouseXAbs, int32_t mouseYAbs,
                                         int32_t dz, int32_t dw, uint32_t fButtons)
 {
+    if (mouseXAbs < MOUSE_RANGE_LOWER || mouseXAbs > MOUSE_RANGE_UPPER)
+        return S_OK;
+    if (mouseYAbs < MOUSE_RANGE_LOWER || mouseYAbs > MOUSE_RANGE_UPPER)
+        return S_OK;
     if (   mouseXAbs != mcLastAbsX || mouseYAbs != mcLastAbsY
         || dz || dw || fButtons != mfLastButtons)
     {
@@ -347,7 +364,7 @@ HRESULT Mouse::reportAbsEventToMouseDev(uint32_t mouseXAbs, uint32_t mouseYAbs,
  *
  * @returns   COM status code
  */
-HRESULT Mouse::reportAbsEventToVMMDev(uint32_t mouseXAbs, uint32_t mouseYAbs)
+HRESULT Mouse::reportAbsEventToVMMDev(int32_t mouseXAbs, int32_t mouseYAbs)
 {
     VMMDev *pVMMDev = mParent->getVMMDev();
     ComAssertRet(pVMMDev, E_FAIL);
@@ -373,7 +390,7 @@ HRESULT Mouse::reportAbsEventToVMMDev(uint32_t mouseXAbs, uint32_t mouseYAbs)
  *
  * @returns   COM status code
  */
-HRESULT Mouse::reportAbsEvent(uint32_t mouseXAbs, uint32_t mouseYAbs,
+HRESULT Mouse::reportAbsEvent(int32_t mouseXAbs, int32_t mouseYAbs,
                               int32_t dz, int32_t dw, uint32_t fButtons,
                               bool fUsesVMMDevEvent)
 {
@@ -441,8 +458,16 @@ STDMETHODIMP Mouse::PutMouseEvent(LONG dx, LONG dy, LONG dz, LONG dw, LONG butto
 
 /**
  * Convert an (X, Y) value pair in screen co-ordinates (starting from 1) to a
- * value from 0 to 0xffff.  Sets the optional validity value to false if the
- * pair is not on an active screen and to true otherwise.
+ * value from MOUSE_RANGE_LOWER to MOUSE_RANGE_UPPER.  Sets the optional
+ * validity value to false if the pair is not on an active screen and to true
+ * otherwise.
+ * @note      since guests with recent versions of X.Org use a different method
+ *            to everyone else to map the valuator value to a screen pixel (they
+ *            multiply by the screen dimension, do a floating point divide by
+ *            the valuator maximum and round the result, while everyone else
+ *            does truncating integer operations) we adjust the value we send
+ *            so that it maps to the right pixel both when the result is rounded
+ *            and when it is truncated.
  *
  * @returns   COM status value
  */
@@ -454,6 +479,10 @@ HRESULT Mouse::convertDisplayRes(LONG x, LONG y, int32_t *pcX, int32_t *pcY,
     AssertPtrNullReturn(pfValid, E_POINTER);
     Display *pDisplay = mParent->getDisplay();
     ComAssertRet(pDisplay, E_FAIL);
+    /** The amount to add to the result (multiplied by the screen width/height)
+     * to compensate for differences in guest methods for mapping back to
+     * pixels */
+    enum { ADJUST_RANGE = - 3 * MOUSE_RANGE / 4 };
 
     if (pfValid)
         *pfValid = true;
@@ -466,17 +495,18 @@ HRESULT Mouse::convertDisplayRes(LONG x, LONG y, int32_t *pcX, int32_t *pcY,
         if (FAILED(rc))
             return rc;
 
-        *pcX = displayWidth ? ((x - 1) * 0xFFFF) / displayWidth: 0;
-        *pcY = displayHeight ? ((y - 1) * 0xFFFF) / displayHeight: 0;
+        *pcX = displayWidth ? (x * MOUSE_RANGE + ADJUST_RANGE) / (LONG) displayWidth: 0;
+        *pcY = displayHeight ? (y * MOUSE_RANGE + ADJUST_RANGE) / (LONG) displayHeight: 0;
     }
     else
     {
         int32_t x1, y1, x2, y2;
         /* Takes the display lock */
         pDisplay->getFramebufferDimensions(&x1, &y1, &x2, &y2);
-        *pcX = x1 != x2 ? (x - 1 - x1) * 0xFFFF / (x2 - x1) : 0;
-        *pcY = y1 != y2 ? (y - 1 - y1) * 0xFFFF / (y2 - y1) : 0;
-        if (*pcX < 0 || *pcX > 0xFFFF || *pcY < 0 || *pcY > 0xFFFF)
+        *pcX = x1 < x2 ? ((x - x1) * MOUSE_RANGE + ADJUST_RANGE) / (x2 - x1) : 0;
+        *pcY = y1 < y2 ? ((y - y1) * MOUSE_RANGE + ADJUST_RANGE) / (y2 - y1) : 0;
+        if (   *pcX < MOUSE_RANGE_LOWER || *pcX > MOUSE_RANGE_UPPER
+            || *pcY < MOUSE_RANGE_LOWER || *pcY > MOUSE_RANGE_UPPER)
             if (pfValid)
                 *pfValid = false;
     }
@@ -517,13 +547,6 @@ STDMETHODIMP Mouse::PutMouseEventAbsolute(LONG x, LONG y, LONG dz, LONG dw,
      *        this object and not really bad as far as I can see. */
     HRESULT rc = convertDisplayRes(x, y, &mouseXAbs, &mouseYAbs, &fValid);
     if (FAILED(rc)) return rc;
-
-    /** @todo multi-monitor Windows guests expect this to be unbounded.
-     * Understand the issues involved and fix for the rest. */
-    /* if (mouseXAbs > 0xffff)
-        mouseXAbs = mcLastAbsX;
-    if (mouseYAbs > 0xffff)
-        mouseYAbs = mcLastAbsY; */
 
     fButtons = mouseButtonsToPDM(buttonState);
     /* If we are doing old-style (IRQ-less) absolute reporting to the VMM

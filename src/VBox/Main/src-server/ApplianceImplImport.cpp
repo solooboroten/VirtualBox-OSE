@@ -834,7 +834,8 @@ HRESULT Appliance::readFSOVF(TaskOVF *pTask)
             rc = E_FAIL;
             break;
         }
-        rc = readFSImpl(pTask, pSha1Callbacks, &storage);
+
+        rc = readFSImpl(pTask, pTask->locInfo.strPath, pSha1Callbacks, &storage);
     }while(0);
 
     /* Cleanup */
@@ -864,8 +865,15 @@ HRESULT Appliance::readFSOVA(TaskOVF *pTask)
 
     PVDINTERFACEIO pSha1Callbacks = 0;
     PVDINTERFACEIO pTarCallbacks = 0;
+    char *pszFilename = 0;
     do
     {
+        vrc = RTTarCurrentFile(tar, &pszFilename);
+        if (RT_FAILURE(vrc))
+        {
+            rc = VBOX_E_FILE_ERROR;
+            break;
+        }
         pSha1Callbacks = Sha1CreateInterface();
         if (!pSha1Callbacks)
         {
@@ -889,12 +897,14 @@ HRESULT Appliance::readFSOVA(TaskOVF *pTask)
             rc = E_FAIL;
             break;
         }
-        rc = readFSImpl(pTask, pSha1Callbacks, &storage);
+        rc = readFSImpl(pTask, pszFilename, pSha1Callbacks, &storage);
     }while(0);
 
     RTTarClose(tar);
 
     /* Cleanup */
+    if (pszFilename)
+        RTMemFree(pszFilename);
     if (pSha1Callbacks)
         RTMemFree(pSha1Callbacks);
     if (pTarCallbacks)
@@ -906,7 +916,7 @@ HRESULT Appliance::readFSOVA(TaskOVF *pTask)
     return rc;
 }
 
-HRESULT Appliance::readFSImpl(TaskOVF *pTask, PVDINTERFACEIO pCallbacks, PSHA1STORAGE pStorage)
+HRESULT Appliance::readFSImpl(TaskOVF *pTask, const Utf8Str &strFilename, PVDINTERFACEIO pCallbacks, PSHA1STORAGE pStorage)
 {
     LogFlowFuncEnter();
 
@@ -917,15 +927,14 @@ HRESULT Appliance::readFSImpl(TaskOVF *pTask, PVDINTERFACEIO pCallbacks, PSHA1ST
     void *pvTmpBuf = 0;
     try
     {
-        Utf8Str strOvfFile = Utf8Str(pTask->locInfo.strPath).stripExt().append(".ovf");
         /* Read the OVF into a memory buffer */
         size_t cbSize = 0;
-        int vrc = Sha1ReadBuf(strOvfFile.c_str(), &pvTmpBuf, &cbSize, pCallbacks, pStorage);
+        int vrc = Sha1ReadBuf(strFilename.c_str(), &pvTmpBuf, &cbSize, pCallbacks, pStorage);
         if (   RT_FAILURE(vrc)
             || !pvTmpBuf)
             throw setError(VBOX_E_FILE_ERROR,
                            tr("Could not read OVF file '%s' (%Rrc)"),
-                           RTPathFilename(strOvfFile.c_str()), vrc);
+                           RTPathFilename(strFilename.c_str()), vrc);
         /* Copy the SHA1 sum of the OVF file for later validation */
         m->strOVFSHA1Digest = pStorage->strDigest;
         /* Read & parse the XML structure of the OVF file */
@@ -1293,6 +1302,7 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
 
     PVDINTERFACEIO pSha1Callbacks = 0;
     PVDINTERFACEIO pTarCallbacks = 0;
+    char *pszFilename = 0;
     void *pvMfBuf = 0;
     writeLock.release();
     try
@@ -1315,6 +1325,12 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
             throw setError(E_FAIL,
                            tr("Internal error (%Rrc)"), vrc);
 
+        /* Read the file name of the first file (need to be the ovf file). This
+         * is how all internal files are named. */
+        vrc = RTTarCurrentFile(tar, &pszFilename);
+        if (RT_FAILURE(vrc))
+            throw setError(E_FAIL,
+                           tr("Internal error (%Rrc)"), vrc);
         /* Skip the OVF file, cause this was read in IAppliance::Read already. */
         vrc = RTTarSeekNextFile(tar);
         if (   RT_FAILURE(vrc)
@@ -1330,7 +1346,7 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
         pStorage->fCreateDigest = true;
 
         size_t cbMfSize = 0;
-        Utf8Str strMfFile = Utf8Str(pTask->locInfo.strPath).stripExt().append(".mf");
+        Utf8Str strMfFile = Utf8Str(pszFilename).stripExt().append(".mf");
         /* Create the import stack for the rollback on errors. */
         ImportStack stack(pTask->locInfo, m->pReader->m_mapDisks, pTask->pProgress);
         /*
@@ -1359,7 +1375,7 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
         if (pvMfBuf)
         {
             /* Add the ovf file to the digest list. */
-            stack.llSrcDisksDigest.push_front(STRPAIR(Utf8Str(pTask->locInfo.strPath).stripExt().append(".ovf"), m->strOVFSHA1Digest));
+            stack.llSrcDisksDigest.push_front(STRPAIR(Utf8Str(pszFilename).stripExt().append(".ovf"), m->strOVFSHA1Digest));
             rc = verifyManifestFile(strMfFile, stack, pvMfBuf, cbMfSize);
             if (FAILED(rc)) throw rc;
         }
@@ -1373,6 +1389,8 @@ HRESULT Appliance::importFSOVA(TaskOVF *pTask, AutoWriteLockBase& writeLock)
     RTTarClose(tar);
 
     /* Cleanup */
+    if (pszFilename)
+        RTMemFree(pszFilename);
     if (pvMfBuf)
         RTMemFree(pvMfBuf);
     if (pSha1Callbacks)

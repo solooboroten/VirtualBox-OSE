@@ -20,7 +20,7 @@
 /* Local includes */
 #include "UIIconPool.h"
 #include "VBoxGlobal.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 #include "VBoxUtils.h"
 #include "UIMachineSettingsSF.h"
 #include "UIMachineSettingsSFDetails.h"
@@ -372,7 +372,7 @@ void UIMachineSettingsSF::saveFromCacheToMachine(CMachine &machine)
             /* Mark the page as failed: */
             setFailed(true);
             /* Show error message: */
-            vboxProblem().cannotRemoveSharedFolder(machine, strFolderName, strFolderPath);
+            msgCenter().cannotRemoveSharedFolder(machine, strFolderName, strFolderPath);
         }
     }
 
@@ -388,7 +388,7 @@ void UIMachineSettingsSF::saveFromCacheToMachine(CMachine &machine)
                 /* Mark the page as failed: */
                 setFailed(true);
                 /* Show error message: */
-                vboxProblem().cannotCreateSharedFolder(machine, data.m_strName, data.m_strHostPath);
+                msgCenter().cannotCreateSharedFolder(machine, data.m_strName, data.m_strHostPath);
             }
         }
     }
@@ -413,7 +413,7 @@ void UIMachineSettingsSF::saveFromCacheToConsole(CConsole &console)
             /* Mark the page as failed: */
             setFailed(true);
             /* Show error message: */
-            vboxProblem().cannotRemoveSharedFolder(console, strFolderName, strFolderPath);
+            msgCenter().cannotRemoveSharedFolder(console, strFolderName, strFolderPath);
         }
     }
 
@@ -429,7 +429,7 @@ void UIMachineSettingsSF::saveFromCacheToConsole(CConsole &console)
                 /* Mark the page as failed: */
                 setFailed(true);
                 /* Show error message: */
-                vboxProblem().cannotCreateSharedFolder(console, data.m_strName, data.m_strHostPath);
+                msgCenter().cannotCreateSharedFolder(console, data.m_strName, data.m_strHostPath);
             }
         }
     }

@@ -4556,7 +4556,7 @@ You may wish to translate this more like &quot;Time remaining: %1&quot;</comment
     </message>
 </context>
 <context>
-    <name>VBoxApplianceEditorWgt</name>
+    <name>UIApplianceEditorWidget</name>
     <message>
         <source>Virtual System %1</source>
         <translation>ប្រ​ព័ន្ធ​​និម្មិត​ %1</translation>
@@ -7038,7 +7038,7 @@ medium</comment>
     </message>
 </context>
 <context>
-    <name>VBoxImportApplianceWgt</name>
+    <name>UIApplianceImportEditorWidget</name>
     <message>
         <source>Reading Appliance ...</source>
         <translation>កំពុង​អាន​ឧបករណ៍​...</translation>
@@ -7064,7 +7064,7 @@ medium</comment>
     </message>
 </context>
 <context>
-    <name>VBoxLineTextEdit</name>
+    <name>UILineTextEdit</name>
     <message>
         <source>&amp;Edit</source>
         <translation>កែសម្រួល​</translation>
@@ -7353,7 +7353,7 @@ VMM: Floppy Image</comment>
     </message>
 </context>
 <context>
-    <name>VBoxProblemReporter</name>
+    <name>UIMessageCenter</name>
     <message>
         <source>VirtualBox - Information</source>
         <comment>msg box title</comment>
@@ -9079,7 +9079,7 @@ medium</comment>
     </message>
 </context>
 <context>
-    <name>VBoxTextEditor</name>
+    <name>UITextEditor</name>
     <message>
         <source>Edit text</source>
         <translation>កែសម្រួល​អត្ថបទ​</translation>

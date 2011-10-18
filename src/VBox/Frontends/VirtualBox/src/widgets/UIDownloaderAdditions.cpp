@@ -21,7 +21,7 @@
 #include "UIDownloaderAdditions.h"
 #include "QIFileDialog.h"
 #include "QIHttp.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 
 /* Global includes */
 #include <QAction>
@@ -108,7 +108,7 @@ void UIDownloaderAdditions::downloadFinished(bool fError)
             {
                 file.write(receivedData);
                 file.close();
-                if (vboxProblem().confirmMountAdditions(m_source.toString(),
+                if (msgCenter().confirmMountAdditions(m_source.toString(),
                                                         QDir::toNativeSeparators(m_strTarget)))
                     emit downloadFinished(m_strTarget);
                 QTimer::singleShot(0, this, SLOT(suicide()));
@@ -116,7 +116,7 @@ void UIDownloaderAdditions::downloadFinished(bool fError)
             }
             else
             {
-                vboxProblem().message(m_pParent, VBoxProblemReporter::Error,
+                msgCenter().message(m_pParent, UIMessageCenter::Error,
                                       tr("<p>Failed to save the downloaded file as "
                                          "<nobr><b>%1</b>.</nobr></p>")
                                       .arg(QDir::toNativeSeparators(m_strTarget)));
@@ -148,12 +148,12 @@ UIDownloaderAdditions::UIDownloaderAdditions()
 
 bool UIDownloaderAdditions::confirmDownload()
 {
-    return vboxProblem().confirmDownloadAdditions(m_source.toString(),
+    return msgCenter().confirmDownloadAdditions(m_source.toString(),
                                                   m_pHttp->lastResponse().contentLength());
 }
 
 void UIDownloaderAdditions::warnAboutError(const QString &strError)
 {
-    return vboxProblem().cannotDownloadGuestAdditions(m_source.toString(), strError);
+    return msgCenter().cannotDownloadGuestAdditions(m_source.toString(), strError);
 }
 

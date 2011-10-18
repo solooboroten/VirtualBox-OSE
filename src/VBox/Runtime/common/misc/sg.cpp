@@ -35,9 +35,19 @@
 
 static void *sgBufGet(PRTSGBUF pSgBuf, size_t *pcbData)
 {
-    size_t cbData = RT_MIN(*pcbData, pSgBuf->cbSegLeft);
-    void *pvBuf = pSgBuf->pvSegCur;
+    size_t cbData;
+    void *pvBuf;
 
+    /* Check that the S/G buffer has memory left. */
+    if (RT_UNLIKELY(   pSgBuf->idxSeg == pSgBuf->cSegs
+                    && !pSgBuf->cbSegLeft))
+    {
+        *pcbData = 0;
+        return NULL;
+    }
+
+    cbData = RT_MIN(*pcbData, pSgBuf->cbSegLeft);
+    pvBuf  = pSgBuf->pvSegCur;
     pSgBuf->cbSegLeft -= cbData;
 
     /* Advance to the next segment if required. */
@@ -45,12 +55,7 @@ static void *sgBufGet(PRTSGBUF pSgBuf, size_t *pcbData)
     {
         pSgBuf->idxSeg++;
 
-        if (RT_UNLIKELY(pSgBuf->idxSeg == pSgBuf->cSegs))
-        {
-            pSgBuf->cbSegLeft = 0;
-            pSgBuf->pvSegCur  = NULL;
-        }
-        else
+        if (pSgBuf->idxSeg < pSgBuf->cSegs)
         {
             pSgBuf->pvSegCur  = pSgBuf->paSegs[pSgBuf->idxSeg].pvSeg;
             pSgBuf->cbSegLeft = pSgBuf->paSegs[pSgBuf->idxSeg].cbSeg;

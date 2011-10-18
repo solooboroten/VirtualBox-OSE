@@ -266,7 +266,7 @@ VirtualBox_QT_MOCHDRS = \
 	src/VBoxVMLogViewer.h \
 	src/VBoxLicenseViewer.h \
 	src/globals/VBoxGlobal.h \
-	src/globals/VBoxProblemReporter.h \
+	src/globals/UIMessageCenter.h \
 	src/globals/VBoxUtils.h \
 	src/globals/UIMainEventListener.h \
 	src/globals/UIExtraDataEventHandler.h \
@@ -332,11 +332,11 @@ VirtualBox_QT_MOCHDRS = \
 	src/widgets/UIProgressDialog.h \
 	src/widgets/UISpacerWidgets.h \
 	src/widgets/UISpecialControls.h \
-	src/widgets/VBoxApplianceEditorWgt.h \
-	src/widgets/VBoxExportApplianceWgt.h \
+	src/widgets/UIApplianceEditorWidget.h \
+	src/widgets/UIApplianceExportEditorWidget.h \
+	src/widgets/UIApplianceImportEditorWidget.h \
 	src/widgets/VBoxFilePathSelectorWidget.h \
-	src/widgets/VBoxImportApplianceWgt.h \
-	src/widgets/VBoxLineTextEdit.h \
+	src/widgets/UILineTextEdit.h \
 	src/widgets/VBoxMediaComboBox.h \
 	src/widgets/VBoxMiniToolBar.h \
 	src/widgets/VBoxOSTypeSelectorButton.h \
@@ -431,7 +431,7 @@ VirtualBox_SOURCES = \
 	src/globals/COMDefs.cpp \
 	src/globals/VBoxDefs.cpp \
 	src/globals/VBoxGlobal.cpp \
-	src/globals/VBoxProblemReporter.cpp \
+	src/globals/UIMessageCenter.cpp \
 	src/globals/UIIconPool.cpp \
 	src/globals/UIMainEventListener.cpp \
 	src/globals/UIExtraDataEventHandler.cpp \
@@ -497,12 +497,12 @@ VirtualBox_SOURCES = \
 	src/widgets/UIProgressDialog.cpp \
 	src/widgets/UISpecialControls.cpp \
 	src/widgets/UIToolBar.cpp \
-	src/widgets/VBoxApplianceEditorWgt.cpp \
-	src/widgets/VBoxExportApplianceWgt.cpp \
+	src/widgets/UIApplianceEditorWidget.cpp \
+	src/widgets/UIApplianceExportEditorWidget.cpp \
+	src/widgets/UIApplianceImportEditorWidget.cpp \
 	src/widgets/VBoxFilePathSelectorWidget.cpp \
 	src/widgets/VBoxGuestRAMSlider.cpp \
-	src/widgets/VBoxImportApplianceWgt.cpp \
-	src/widgets/VBoxLineTextEdit.cpp \
+	src/widgets/UILineTextEdit.cpp \
 	src/widgets/VBoxMediaComboBox.cpp \
 	src/widgets/VBoxMiniToolBar.cpp \
 	src/widgets/VBoxOSTypeSelectorButton.cpp \

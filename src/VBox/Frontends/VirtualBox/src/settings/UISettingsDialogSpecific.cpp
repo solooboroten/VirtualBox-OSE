@@ -27,7 +27,7 @@
 /* Local includes */
 #include "UISettingsDialogSpecific.h"
 #include "VBoxGlobal.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 #include "QIWidgetValidator.h"
 #include "VBoxSettingsSelector.h"
 
@@ -425,7 +425,7 @@ void UIGLSettingsDlg::putBackTo()
     VBoxGlobalSettings newSettings = pGlobalSettingsSaver->data().value<UISettingsDataGlobal>().m_settings;
     /* If properties are not OK => show the error: */
     if (!newProperties.isOk())
-        vboxProblem().cannotSetSystemProperties(newProperties);
+        msgCenter().cannotSetSystemProperties(newProperties);
     /* Else save the new settings if they were changed: */
     else if (!(newSettings == settings))
         vboxGlobal().setSettings(newSettings);
@@ -433,12 +433,6 @@ void UIGLSettingsDlg::putBackTo()
 
 void UIGLSettingsDlg::retranslateUi()
 {
-    /* Base-class UI translation: */
-    UISettingsDialog::retranslateUi();
-
-    /* Set dialog's name: */
-    setWindowTitle(title());
-
     /* General page: */
     m_pSelector->setItemText(GLSettingsPage_General, tr("General"));
 
@@ -460,8 +454,14 @@ void UIGLSettingsDlg::retranslateUi()
     /* Extension page: */
     m_pSelector->setItemText(GLSettingsPage_Extension, tr("Extensions"));
 
-    /* Translate the selector: */
+    /* Polish the selector: */
     m_pSelector->polish();
+
+    /* Base-class UI translation: */
+    UISettingsDialog::retranslateUi();
+
+    /* Set dialog's name: */
+    setWindowTitle(title());
 }
 
 QString UIGLSettingsDlg::title() const
@@ -483,7 +483,7 @@ bool UIGLSettingsDlg::isAvailable(int id)
             CHost host = vboxGlobal().virtualBox().GetHost();
             /* Show the host error message if any: */
             if (!host.isReallyOk())
-                vboxProblem().cannotAccessUSB(host);
+                msgCenter().cannotAccessUSB(host);
             /* Check if USB is implemented: */
             CHostUSBDeviceFilterVector filters = host.GetUSBDeviceFilters();
             Q_UNUSED(filters);
@@ -761,7 +761,7 @@ void UIVMSettingsDlg::putBackTo()
     else
     {
         /* Show final error message: */
-        vboxProblem().cannotSaveMachineSettings(m_machine);
+        msgCenter().cannotSaveMachineSettings(m_machine);
     }
 }
 
@@ -777,12 +777,6 @@ void UIVMSettingsDlg::retranslateUi()
         qApp->sendEvent(pPage, &event);
     if (QWidget *pPage = m_pSelector->idToPage(VMSettingsPage_Parallel))
         qApp->sendEvent(pPage, &event);
-
-    /* Base-class UI translation: */
-    UISettingsDialog::retranslateUi();
-
-    /* Set dialog's name: */
-    setWindowTitle(title());
 
     /* General page: */
     m_pSelector->setItemText(VMSettingsPage_General, tr("General"));
@@ -817,8 +811,14 @@ void UIVMSettingsDlg::retranslateUi()
     /* SFolders page: */
     m_pSelector->setItemText(VMSettingsPage_SF, tr("Shared Folders"));
 
-    /* Translate the selector: */
+    /* Polish the selector: */
     m_pSelector->polish();
+
+    /* Base-class UI translation: */
+    UISettingsDialog::retranslateUi();
+
+    /* Set dialog's name: */
+    setWindowTitle(title());
 }
 
 QString UIVMSettingsDlg::title() const
@@ -1004,7 +1004,7 @@ bool UIVMSettingsDlg::isAvailable(int id)
             CUSBController controller = m_machine.GetUSBController();
             /* Show the machine error message if any: */
             if (!m_machine.isReallyOk() && !controller.isNull() && controller.GetEnabled())
-                vboxProblem().cannotAccessUSB(m_machine);
+                msgCenter().cannotAccessUSB(m_machine);
             /* Check if USB is implemented: */
             if (controller.isNull() || !controller.GetProxyAvailable())
                 return false;

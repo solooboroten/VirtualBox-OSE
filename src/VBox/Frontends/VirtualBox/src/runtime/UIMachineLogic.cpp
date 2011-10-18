@@ -34,7 +34,7 @@
 #include "UIMachineWindow.h"
 #include "UISession.h"
 #include "VBoxGlobal.h"
-#include "VBoxProblemReporter.h"
+#include "UIMessageCenter.h"
 #include "VBoxTakeSnapshotDlg.h"
 #include "VBoxVMInformationDlg.h"
 #include "UIMachineSettingsNetwork.h"
@@ -46,7 +46,6 @@
 
 /* Global includes */
 #include <iprt/path.h>
-#include <VBox/VMMDev.h>
 
 #ifdef VBOX_WITH_DEBUGGER_GUI
 # include <iprt/ldr.h>
@@ -133,7 +132,7 @@ public:
         /* Setup button's layout */
         QIDialogButtonBox *pButtonBox = new QIDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Help);
 
-        connect(pButtonBox, SIGNAL(helpRequested()), &vboxProblem(), SLOT(showHelpHelpDialog()));
+        connect(pButtonBox, SIGNAL(helpRequested()), &msgCenter(), SLOT(showHelpHelpDialog()));
         connect(pButtonBox, SIGNAL(accepted()), this, SLOT(accept()));
         connect(pButtonBox, SIGNAL(rejected()), this, SLOT(reject()));
         pMainLayout->addWidget(pButtonBox);
@@ -156,7 +155,7 @@ protected slots:
         m_pSettings->saveDirectlyTo(machine);
         machine.SaveSettings();
         if (!machine.isOk())
-            vboxProblem().cannotSaveMachineSettings(machine);
+            msgCenter().cannotSaveMachineSettings(machine);
         QDialog::accept();
     }
 
@@ -206,7 +205,7 @@ public:
         /* Setup button's layout */
         QIDialogButtonBox *pButtonBox = new QIDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Help);
 
-        connect(pButtonBox, SIGNAL(helpRequested()), &vboxProblem(), SLOT(showHelpHelpDialog()));
+        connect(pButtonBox, SIGNAL(helpRequested()), &msgCenter(), SLOT(showHelpHelpDialog()));
         connect(pButtonBox, SIGNAL(accepted()), this, SLOT(accept()));
         connect(pButtonBox, SIGNAL(rejected()), this, SLOT(reject()));
         pMainLayout->addWidget(pButtonBox);
@@ -230,7 +229,7 @@ protected slots:
         m_pSettings->saveDirectlyTo(console);
         machine.SaveSettings();
         if (!machine.isOk())
-            vboxProblem().cannotSaveMachineSettings(machine);
+            msgCenter().cannotSaveMachineSettings(machine);
         QDialog::accept();
     }
 
@@ -754,11 +753,11 @@ void UIMachineLogic::sltMachineStateChanged()
             }
 
             /* Warn the user about GURU: */
-            if (vboxProblem().remindAboutGuruMeditation(console, QDir::toNativeSeparators(strLogFolder)))
+            if (msgCenter().remindAboutGuruMeditation(console, QDir::toNativeSeparators(strLogFolder)))
             {
                 console.PowerDown();
                 if (!console.isOk())
-                    vboxProblem().cannotStopMachine(console);
+                    msgCenter().cannotStopMachine(console);
             }
             break;
         }
@@ -859,15 +858,15 @@ void UIMachineLogic::sltUSBDeviceStateChange(const CUSBDevice &device, bool fIsA
     if (!fSuccess)
     {
         if (fIsAttached)
-            vboxProblem().cannotAttachUSBDevice(session().GetConsole(), vboxGlobal().details(device), error);
+            msgCenter().cannotAttachUSBDevice(session().GetConsole(), vboxGlobal().details(device), error);
         else
-            vboxProblem().cannotDetachUSBDevice(session().GetConsole(), vboxGlobal().details(device), error);
+            msgCenter().cannotDetachUSBDevice(session().GetConsole(), vboxGlobal().details(device), error);
     }
 }
 
 void UIMachineLogic::sltRuntimeError(bool fIsFatal, const QString &strErrorId, const QString &strMessage)
 {
-    vboxProblem().showRuntimeError(session().GetConsole(), fIsFatal, strErrorId, strMessage);
+    msgCenter().showRuntimeError(session().GetConsole(), fIsFatal, strErrorId, strMessage);
 }
 
 #ifdef Q_WS_MAC
@@ -1018,13 +1017,13 @@ void UIMachineLogic::sltTakeSnapshot()
         if (console.isOk())
         {
             /* Show the "Taking Snapshot" progress dialog */
-            vboxProblem().showModalProgressDialog(progress, machine.GetName(), ":/progress_snapshot_create_90px.png", 0, true);
+            msgCenter().showModalProgressDialog(progress, machine.GetName(), ":/progress_snapshot_create_90px.png", 0, true);
 
             if (progress.GetResultCode() != 0)
-                vboxProblem().cannotTakeSnapshot(progress);
+                msgCenter().cannotTakeSnapshot(progress);
         }
         else
-            vboxProblem().cannotTakeSnapshot(console);
+            msgCenter().cannotTakeSnapshot(console);
     }
 
     /* Restore the running state if needed. */
@@ -1049,7 +1048,7 @@ void UIMachineLogic::sltShowInformationDialog()
 void UIMachineLogic::sltReset()
 {
     /* Confirm/Reset current console: */
-    if (vboxProblem().confirmVMReset(0))
+    if (msgCenter().confirmVMReset(0))
         session().GetConsole().Reset();
 
     /* TODO_NEW_CORE: On reset the additional screens didn't get a display
@@ -1071,12 +1070,12 @@ void UIMachineLogic::sltACPIShutdown()
 
     /* Warn the user about ACPI is not available if so: */
     if (!console.GetGuestEnteredACPIMode())
-        return vboxProblem().cannotSendACPIToMachine();
+        return msgCenter().cannotSendACPIToMachine();
 
     /* Send ACPI shutdown signal, warn if failed: */
     console.PowerButton();
     if (!console.isOk())
-        vboxProblem().cannotACPIShutdownMachine(console);
+        msgCenter().cannotACPIShutdownMachine(console);
 }
 
 void UIMachineLogic::sltClose()
@@ -1352,14 +1351,14 @@ void UIMachineLogic::sltMountStorageMedium()
     else
     {
         /* Ask for force remounting: */
-        if (vboxProblem().cannotRemountMedium(0, machine, vboxGlobal().findMedium (fMount ? newId : currentId), fMount, true /* retry? */) == QIMessageBox::Ok)
+        if (msgCenter().cannotRemountMedium(0, machine, vboxGlobal().findMedium (fMount ? newId : currentId), fMount, true /* retry? */) == QIMessageBox::Ok)
         {
             /* Force remount medium to the predefined port/device: */
             machine.MountMedium(target.name, target.port, target.device, medium, true /* force */);
             if (machine.isOk())
                 fWasMounted = true;
             else
-                vboxProblem().cannotRemountMedium(0, machine, vboxGlobal().findMedium (fMount ? newId : currentId), fMount, false /* retry? */);
+                msgCenter().cannotRemountMedium(0, machine, vboxGlobal().findMedium (fMount ? newId : currentId), fMount, false /* retry? */);
         }
     }
 
@@ -1368,7 +1367,7 @@ void UIMachineLogic::sltMountStorageMedium()
     {
         machine.SaveSettings();
         if (!machine.isOk())
-            vboxProblem().cannotSaveMachineSettings(machine);
+            msgCenter().cannotSaveMachineSettings(machine);
     }
 }
 
@@ -1411,14 +1410,14 @@ void UIMachineLogic::sltMountRecentStorageMedium()
         else
         {
             /* Ask for force remounting: */
-            if (vboxProblem().cannotRemountMedium(0, machine, vboxGlobal().findMedium(fMount ? strNewId : strCurrentId), fMount, true /* retry? */) == QIMessageBox::Ok)
+            if (msgCenter().cannotRemountMedium(0, machine, vboxGlobal().findMedium(fMount ? strNewId : strCurrentId), fMount, true /* retry? */) == QIMessageBox::Ok)
             {
                 /* Force remount medium to the predefined port/device: */
                 machine.MountMedium(target.name, target.port, target.device, comMedium, true /* force? */);
                 if (machine.isOk())
                     fWasMounted = true;
                 else
-                    vboxProblem().cannotRemountMedium(0, machine, vboxGlobal().findMedium(fMount ? strNewId : strCurrentId), fMount, false /* retry? */);
+                    msgCenter().cannotRemountMedium(0, machine, vboxGlobal().findMedium(fMount ? strNewId : strCurrentId), fMount, false /* retry? */);
             }
         }
 
@@ -1427,89 +1426,114 @@ void UIMachineLogic::sltMountRecentStorageMedium()
         {
             machine.SaveSettings();
             if (!machine.isOk())
-                vboxProblem().cannotSaveMachineSettings(machine);
+                msgCenter().cannotSaveMachineSettings(machine);
         }
     }
 }
 
 void UIMachineLogic::sltPrepareUSBMenu()
 {
-    /* Get the sender() menu: */
+    /* Get and check the sender menu object: */
     QMenu *pMenu = qobject_cast<QMenu*>(sender());
-#ifdef RT_STRICT
     QMenu *pUSBDevicesMenu = actionsPool()->action(UIActionIndex_Menu_USBDevices)->menu();
-#endif
     AssertMsg(pMenu == pUSBDevicesMenu, ("This slot should only be called on hovering USB menu!\n"));
+    Q_UNUSED(pUSBDevicesMenu);
+
+    /* Clear menu initially: */
     pMenu->clear();
 
-    /* Get HOST: */
+    /* Get current host: */
     CHost host = vboxGlobal().virtualBox().GetHost();
 
-    /* Get USB devices list: */
+    /* Get host USB device list: */
     CHostUSBDeviceVector devices = host.GetUSBDevices();
 
-    /* Fill USB devices menu: */
+    /* Fill USB device menu: */
     bool fIsUSBListEmpty = devices.size() == 0;
+    /* If device list is empty: */
     if (fIsUSBListEmpty)
     {
-        /* Fill USB devices menu: */
+        /* Add only one - "empty" action: */
         QAction *pEmptyMenuAction = new QAction(pMenu);
         pEmptyMenuAction->setEnabled(false);
-        pEmptyMenuAction->setText(QApplication::translate("UIMachineLogic", "No USB Devices Connected"));
+        pEmptyMenuAction->setText(tr("No USB Devices Connected"));
+        pEmptyMenuAction->setToolTip(tr("No supported devices connected to the host PC"));
         pEmptyMenuAction->setIcon(UIIconPool::iconSet(":/delete_16px.png", ":/delete_dis_16px.png"));
-        pEmptyMenuAction->setToolTip(QApplication::translate("UIMachineLogic", "No supported devices connected to the host PC"));
+        pMenu->addAction(pEmptyMenuAction);
     }
+    /* If device list is NOT empty: */
     else
     {
-        foreach (const CHostUSBDevice hostDevice, devices)
+        /* Populate menu with host USB devices: */
+        for (int i = 0; i < devices.size(); ++i)
         {
-            /* Get common USB device: */
+            /* Get current host USB device: */
+            const CHostUSBDevice& hostDevice = devices[i];
+            /* Get USB device from current host USB device: */
             CUSBDevice device(hostDevice);
 
             /* Create USB device action: */
-            QAction *attachUSBAction = new QAction(vboxGlobal().details(device), pMenu);
-            attachUSBAction->setCheckable(true);
-            connect(attachUSBAction, SIGNAL(triggered(bool)), this, SLOT(sltAttachUSBDevice()));
-            pMenu->addAction(attachUSBAction);
+            QAction *pAttachUSBAction = new QAction(vboxGlobal().details(device), pMenu);
+            pAttachUSBAction->setCheckable(true);
+            connect(pAttachUSBAction, SIGNAL(triggered(bool)), this, SLOT(sltAttachUSBDevice()));
+            pMenu->addAction(pAttachUSBAction);
 
             /* Check if that USB device was already attached to this session: */
             CConsole console = session().GetConsole();
             CUSBDevice attachedDevice = console.FindUSBDeviceById(device.GetId());
-            attachUSBAction->setChecked(!attachedDevice.isNull());
-            attachUSBAction->setEnabled(hostDevice.GetState() != KUSBDeviceState_Unavailable);
+            pAttachUSBAction->setChecked(!attachedDevice.isNull());
+            pAttachUSBAction->setEnabled(hostDevice.GetState() != KUSBDeviceState_Unavailable);
 
             /* Set USB attach data: */
-            attachUSBAction->setData(QVariant::fromValue(USBTarget(!attachUSBAction->isChecked(), device.GetId())));
-            attachUSBAction->setToolTip(vboxGlobal().toolTip(device));
+            pAttachUSBAction->setData(QVariant::fromValue(USBTarget(!pAttachUSBAction->isChecked(), device.GetId())));
+            pAttachUSBAction->setToolTip(vboxGlobal().toolTip(device));
         }
     }
 }
 
 void UIMachineLogic::sltAttachUSBDevice()
 {
-    /* Get sender action: */
-    QAction *action = qobject_cast<QAction*>(sender());
-    AssertMsg(action, ("This slot should only be called on selecting USB menu item!\n"));
+    /* Get and check sender action object: */
+    QAction *pAction = qobject_cast<QAction*>(sender());
+    AssertMsg(pAction, ("This slot should only be called on selecting USB menu item!\n"));
+
+    /* Get operation target: */
+    USBTarget target = pAction->data().value<USBTarget>();
 
     /* Get current console: */
     CConsole console = session().GetConsole();
 
-    /* Get USB target: */
-    USBTarget target = action->data().value<USBTarget>();
-    CUSBDevice device = console.FindUSBDeviceById(target.id);
-
     /* Attach USB device: */
     if (target.attach)
     {
+        /* Try to attach corresponding device: */
         console.AttachUSBDevice(target.id);
+        /* Check if console is OK: */
         if (!console.isOk())
-            vboxProblem().cannotAttachUSBDevice(console, vboxGlobal().details(device));
+        {
+            /* Get current host: */
+            CHost host = vboxGlobal().virtualBox().GetHost();
+            /* Search the host for the corresponding USB device: */
+            CHostUSBDevice hostDevice = host.FindUSBDeviceById(target.id);
+            /* Get USB device from host USB device: */
+            CUSBDevice device(hostDevice);
+            /* Show a message about procedure failure: */
+            msgCenter().cannotAttachUSBDevice(console, vboxGlobal().details(device));
+        }
     }
+    /* Detach USB device: */
     else
     {
+        /* Search the console for the corresponding USB device: */
+        CUSBDevice device = console.FindUSBDeviceById(target.id);
+        /* Try to detach corresponding device: */
         console.DetachUSBDevice(target.id);
+        /* Check if console is OK: */
         if (!console.isOk())
-            vboxProblem().cannotDetachUSBDevice(console, vboxGlobal().details(device));
+        {
+            /* Show a message about procedure failure: */
+            msgCenter().cannotDetachUSBDevice(console, vboxGlobal().details(device));
+        }
     }
 }
 
@@ -1533,7 +1557,7 @@ void UIMachineLogic::sltOpenSharedFoldersDialog()
     /* Show shared folders settings dialog: */
     UISharedFoldersDialog dlg(defaultMachineWindow()->machineWindow(), session());
     if (!uisession()->isGuestAdditionsActive())
-        vboxProblem().remindAboutGuestAdditionsAreNotActive(defaultMachineWindow()->machineWindow());
+        msgCenter().remindAboutGuestAdditionsAreNotActive(defaultMachineWindow()->machineWindow());
     dlg.exec();
 }
 
@@ -1566,7 +1590,7 @@ void UIMachineLogic::sltInstallGuestAdditions()
 
     /* Check for the already registered image */
     CVirtualBox vbox = vboxGlobal().virtualBox();
-    QString name = QString("VBoxGuestAdditions_%1.iso").arg(vbox.GetVersion().remove("_OSE"));
+    const QString &name = QString("VBoxGuestAdditions_%1.iso").arg(vboxGlobal().vboxVersionStringNormalized());
 
     CMediumVector vec = vbox.GetDVDImages();
     for (CMediumVector::ConstIterator it = vec.begin(); it != vec.end(); ++ it)
@@ -1579,11 +1603,11 @@ void UIMachineLogic::sltInstallGuestAdditions()
     }
 
     /* Download the required image */
-    int result = vboxProblem().cannotFindGuestAdditions(QDir::toNativeSeparators(strSrc1), QDir::toNativeSeparators(strSrc2));
+    int result = msgCenter().cannotFindGuestAdditions(QDir::toNativeSeparators(strSrc1), QDir::toNativeSeparators(strSrc2));
     if (result == QIMessageBox::Yes)
     {
-        QString source = QString("http://download.virtualbox.org/virtualbox/%1/").arg(vbox.GetVersion().remove("_OSE")) + name;
-        QString target = QDir(vboxGlobal().virtualBox().GetHomeFolder()).absoluteFilePath(name);
+        const QString &source = QString("http://download.virtualbox.org/virtualbox/%1/").arg(vboxGlobal().vboxVersionStringNormalized()) + name;
+        const QString &target = QDir(vboxGlobal().virtualBox().GetHomeFolder()).absoluteFilePath(name);
 
         UIDownloaderAdditions *pDl = UIDownloaderAdditions::create();
         /* Configure the additions downloader. */
