@@ -30,8 +30,7 @@
 #ifndef __WINE_WINE_DEBUG_H
 #define __WINE_WINE_DEBUG_H
 
-#include <stdarg.h>
-#include <windef.h>
+#include <windows.h>
 #ifndef GUID_DEFINED
 #include <guiddef.h>
 #endif
@@ -46,7 +45,9 @@
 # else
 #  define AssertBreakpoint() do { } while (0)
 #  define Assert(_expr) do { } while (0)
-#  define RT_BREAKPOINT()
+#  ifdef DEBUG_misha
+#   include <iprt/cdefs.h>
+#  endif
 # endif
 #endif
 
@@ -319,6 +320,25 @@ static inline const char *debugstr_w( const WCHAR *s ) { return wine_dbgstr_wn( 
 
 #ifdef __cplusplus
 }
+#endif
+
+
+#ifdef DEBUG_misha
+# define VBOXWINEDBG_SHADERS
+#endif
+
+#ifdef VBOXWINEDBG_SHADERS
+#include <stdio.h>
+#include <stdarg.h>
+
+void vboxWDbgPrintF(char * szString, ...);
+
+# define WDLOG(_m) do {\
+        vboxWDbgPrintF _m ; \
+    } while (0)
+#else
+
+# define WDLOG(_m) do { } while (0)
 #endif
 
 #endif  /* __WINE_WINE_DEBUG_H */

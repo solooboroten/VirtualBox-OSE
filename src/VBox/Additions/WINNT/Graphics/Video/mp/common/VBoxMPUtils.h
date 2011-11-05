@@ -1,5 +1,4 @@
 /* $Id: VBoxMPUtils.h $ */
-
 /** @file
  * VBox Miniport common utils header
  */

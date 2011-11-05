@@ -32,7 +32,11 @@
 #define VBOXWDDMDISP_MAX_SWAPCHAIN_SIZE 16
 /* maximum number of direct render targets to be used before
  * switching to offscreen rendering */
+#ifdef DEBUG_misha
+#define VBOXWDDMDISP_MAX_DIRECT_RTS      0
+#else
 #define VBOXWDDMDISP_MAX_DIRECT_RTS      3
+#endif
 
 #define VBOXWDDMDISP_IS_TEXTURE(_f) ((_f).Texture || (_f).Value == 0)
 
@@ -160,16 +164,6 @@ typedef struct VBOXWDDMDISP_SWAPCHAIN
     VBOXWDDMDISP_RENDERTGT aRTs[VBOXWDDMDISP_MAX_SWAPCHAIN_SIZE];
 } VBOXWDDMDISP_SWAPCHAIN, *PVBOXWDDMDISP_SWAPCHAIN;
 
-
-//typedef struct VBOXWDDMDISP_SCREEN
-//{
-//    RTLISTNODE SwapchainList;
-//    IDirect3DDevice9 *pDevice9If;
-////    struct VBOXWDDMDISP_RESOURCE *pDstSharedRc;
-//    uint32_t iRenderTargetFrontBuf;
-//    HWND hWnd;
-//} VBOXWDDMDISP_SCREEN, *PVBOXWDDMDISP_SCREEN;
-
 typedef struct VBOXWDDMDISP_DEVICE
 {
     HANDLE hDevice;
@@ -200,6 +194,7 @@ typedef struct VBOXWDDMDISP_DEVICE
 
     /* no lock is needed for this since we're guaranteed the per-device calls are not reentrant */
     RTLISTNODE DirtyAllocList;
+
     UINT cRTs;
     struct VBOXWDDMDISP_ALLOCATION * apRTs[1];
 } VBOXWDDMDISP_DEVICE, *PVBOXWDDMDISP_DEVICE;
@@ -239,7 +234,6 @@ typedef struct VBOXWDDMDISP_ALLOCATION
     UINT D3DWidth;
     /* object type is defined by enmD3DIfType enum */
     IUnknown *pD3DIf;
-    IUnknown *pSecondaryOpenedD3DIf;
     VBOXDISP_D3DIFTYPE enmD3DIfType;
     /* list entry used to add allocation to the dirty alloc list */
     RTLISTNODE DirtyAllocListEntry;
@@ -256,7 +250,7 @@ typedef struct VBOXWDDMDISP_RESOURCE
     HANDLE hResource;
     D3DKMT_HANDLE hKMResource;
     PVBOXWDDMDISP_DEVICE pDevice;
-    uint32_t fFlags;
+    VBOXWDDMDISP_RESOURCE_FLAGS fFlags;
     VBOXWDDM_RC_DESC RcDesc;
     UINT cAllocations;
     VBOXWDDMDISP_ALLOCATION aAllocations[1];
@@ -381,6 +375,12 @@ DECLINLINE(HRESULT) vboxWddmSurfGet(PVBOXWDDMDISP_RESOURCE pRc, UINT iAlloc, IDi
     }
     return hr;
 }
+
+HRESULT vboxWddmLockRect(PVBOXWDDMDISP_RESOURCE pRc, UINT iAlloc,
+        D3DLOCKED_RECT * pLockedRect,
+        CONST RECT *pRect,
+        DWORD fLockFlags);
+HRESULT vboxWddmUnlockRect(PVBOXWDDMDISP_RESOURCE pRc, UINT iAlloc);
 
 #define VBOXDISPMODE_IS_3D(_p) (!!((_p)->pD3D9If))
 #ifdef VBOXDISP_EARLYCREATEDEVICE

@@ -240,7 +240,9 @@ static void print_glsl_info_log(const struct wined3d_gl_info *gl_info, GLhandleA
         "Fragment shader(s) linked, no vertex shader(s) defined.",          /* fglrx, no \n   */
     };
 
+#ifndef VBOXWINEDBG_SHADERS
     if (!TRACE_ON(d3d_shader) && !FIXME_ON(d3d_shader)) return;
+#endif
 
     GL_EXTCALL(glGetObjectParameterivARB(obj,
                GL_OBJECT_INFO_LOG_LENGTH_ARB,
@@ -269,16 +271,52 @@ static void print_glsl_info_log(const struct wined3d_gl_info *gl_info, GLhandleA
         ptr = infoLog;
         if (is_spam)
         {
-            TRACE("Spam received from GLSL shader #%u:\n", obj);
-            while ((line = get_info_log_line(&ptr))) TRACE("    %s\n", line);
+            WDLOG(("Spam received from GLSL shader #%u:\n", obj));
+            while ((line = get_info_log_line(&ptr))) WDLOG(("    %s\n", line));
         }
         else
         {
-            FIXME("Error received from GLSL shader #%u:\n", obj);
-            while ((line = get_info_log_line(&ptr))) FIXME("    %s\n", line);
+            WDLOG(("Error received from GLSL shader #%u:\n", obj));
+            while ((line = get_info_log_line(&ptr))) WDLOG(("    %s\n", line));
         }
         HeapFree(GetProcessHeap(), 0, infoLog);
     }
+}
+
+static void shader_glsl_dump_shader_source(const struct wined3d_gl_info *gl_info, GLhandleARB shader)
+{
+    char *ptr;
+    GLint tmp, source_size;
+    char *source = NULL;
+
+    GL_EXTCALL(glGetObjectParameterivARB(shader, GL_OBJECT_SHADER_SOURCE_LENGTH_ARB, &tmp));
+
+    source = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, tmp);
+    if (!source)
+    {
+        ERR("Failed to allocate %d bytes for shader source.\n", tmp);
+        return;
+    }
+
+    source_size = tmp;
+
+    WDLOG(("Object %u:\n", shader));
+    GL_EXTCALL(glGetObjectParameterivARB(shader, GL_OBJECT_SUBTYPE_ARB, &tmp));
+    WDLOG(("    GL_OBJECT_SUBTYPE_ARB: %s.\n", debug_gl_shader_type(tmp)));
+    GL_EXTCALL(glGetObjectParameterivARB(shader, GL_OBJECT_COMPILE_STATUS_ARB, &tmp));
+    WDLOG(("    GL_OBJECT_COMPILE_STATUS_ARB: %d.\n", tmp));
+    WDLOG(("\n"));
+
+    ptr = source;
+    GL_EXTCALL(glGetShaderSourceARB(shader, source_size, NULL, source));
+#if 0
+    while ((line = get_info_log_line(&ptr))) WDLOG(("    %s\n", line));
+#else
+    WDLOG(("*****shader source***\n"));
+    WDLOG(("    %s\n", source));
+    WDLOG(("\n*****END shader source***\n\n"));
+#endif
+    WDLOG(("\n"));
 }
 
 /* GL locking is done by the caller. */
@@ -287,6 +325,8 @@ static void shader_glsl_dump_program_source(const struct wined3d_gl_info *gl_inf
     GLint i, object_count, source_size;
     GLhandleARB *objects;
     char *source = NULL;
+
+    WDLOG(("\n***************************dumping program %d******************************\n", program));
 
     GL_EXTCALL(glGetObjectParameterivARB(program, GL_OBJECT_ATTACHED_OBJECTS_ARB, &object_count));
     objects = HeapAlloc(GetProcessHeap(), 0, object_count * sizeof(*objects));
@@ -299,58 +339,60 @@ static void shader_glsl_dump_program_source(const struct wined3d_gl_info *gl_inf
     GL_EXTCALL(glGetAttachedObjectsARB(program, object_count, NULL, objects));
     for (i = 0; i < object_count; ++i)
     {
-        char *ptr, *line;
-        GLint tmp;
-
-        GL_EXTCALL(glGetObjectParameterivARB(objects[i], GL_OBJECT_SHADER_SOURCE_LENGTH_ARB, &tmp));
-
-        if (!source || source_size < tmp)
-        {
-            HeapFree(GetProcessHeap(), 0, source);
-
-            source = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, tmp);
-            if (!source)
-            {
-                ERR("Failed to allocate %d bytes for shader source.\n", tmp);
-                HeapFree(GetProcessHeap(), 0, objects);
-                return;
-            }
-            source_size = tmp;
-        }
-
-        FIXME("Object %u:\n", objects[i]);
-        GL_EXTCALL(glGetObjectParameterivARB(objects[i], GL_OBJECT_SUBTYPE_ARB, &tmp));
-        FIXME("    GL_OBJECT_SUBTYPE_ARB: %s.\n", debug_gl_shader_type(tmp));
-        GL_EXTCALL(glGetObjectParameterivARB(objects[i], GL_OBJECT_COMPILE_STATUS_ARB, &tmp));
-        FIXME("    GL_OBJECT_COMPILE_STATUS_ARB: %d.\n", tmp);
-        FIXME("\n");
-
-        ptr = source;
-        GL_EXTCALL(glGetShaderSourceARB(objects[i], source_size, NULL, source));
-        while ((line = get_info_log_line(&ptr))) FIXME("    %s\n", line);
-        FIXME("\n");
+        shader_glsl_dump_shader_source(gl_info, objects[i]);
     }
 
     HeapFree(GetProcessHeap(), 0, source);
     HeapFree(GetProcessHeap(), 0, objects);
+
+    WDLOG(("\n***************************END dumping program %d******************************\n\n", program));
 }
 
 /* GL locking is done by the caller. */
-static void shader_glsl_validate_link(const struct wined3d_gl_info *gl_info, GLhandleARB program)
+static void shader_glsl_validate_compile_link(const struct wined3d_gl_info *gl_info, GLhandleARB program, GLboolean fIsProgram)
 {
-    GLint tmp;
+    GLint tmp = -1;
 
+#ifndef VBOXWINEDBG_SHADERS
     if (!TRACE_ON(d3d_shader) && !FIXME_ON(d3d_shader)) return;
+#endif
 
     GL_EXTCALL(glGetObjectParameterivARB(program, GL_OBJECT_TYPE_ARB, &tmp));
     if (tmp == GL_PROGRAM_OBJECT_ARB)
     {
+        if (!fIsProgram)
+        {
+            ERR("this is a program, but shader expected");
+        }
         GL_EXTCALL(glGetObjectParameterivARB(program, GL_OBJECT_LINK_STATUS_ARB, &tmp));
         if (!tmp)
         {
-            FIXME("Program %u link status invalid.\n", program);
+            ERR("Program %u link status invalid.\n", program);
+#ifndef VBOXWINEDBG_SHADERS
             shader_glsl_dump_program_source(gl_info, program);
+#endif
         }
+#ifdef VBOXWINEDBG_SHADERS
+        shader_glsl_dump_program_source(gl_info, program);
+#endif
+    }
+    else if (tmp == GL_SHADER_OBJECT_ARB)
+    {
+        if (fIsProgram)
+        {
+            ERR("this is a shader, but program expected");
+        }
+
+        GL_EXTCALL(glGetObjectParameterivARB(program, GL_OBJECT_COMPILE_STATUS_ARB, &tmp));
+        if (!tmp)
+        {
+            ERR("Shader %u compile status invalid.\n", program);
+            shader_glsl_dump_shader_source(gl_info, program);
+        }
+    }
+    else
+    {
+        ERR("unexpected oject type(%d)!", tmp);
     }
 
     print_glsl_info_log(gl_info, program);
@@ -1002,7 +1044,12 @@ static void shader_generate_glsl_declarations(const struct wined3d_context *cont
                  *
                  * Writing gl_ClipVertex requires one uniform for each clipplane as well.
                  */
+#ifdef DEBUG_misha
+                /* tmp work-around to make Internet Explorer in win8 work with GPU supporting only with 256 shader uniform vars */
+                max_constantsF = gl_info->limits.glsl_vs_float_constants - 1;
+#else
                 max_constantsF = gl_info->limits.glsl_vs_float_constants - 3;
+#endif
                 if(ctx_priv->cur_vs_args->clip_enabled)
                 {
                     max_constantsF -= gl_info->limits.clipplanes;
@@ -3072,7 +3119,8 @@ static void shader_glsl_texldd(const struct wined3d_shader_instruction *ins)
     if (!gl_info->supported[ARB_SHADER_TEXTURE_LOD] && !gl_info->supported[EXT_GPU_SHADER4])
     {
         FIXME("texldd used, but not supported by hardware. Falling back to regular tex\n");
-        return shader_glsl_tex(ins);
+        shader_glsl_tex(ins);
+        return;
     }
 
     sampler_idx = ins->src[1].reg.idx;
@@ -4030,7 +4078,7 @@ static GLhandleARB generate_param_reorder_function(struct wined3d_shader_buffer 
     checkGLcall("glShaderSourceARB(ret, 1, &buffer->buffer, NULL)");
     GL_EXTCALL(glCompileShaderARB(ret));
     checkGLcall("glCompileShaderARB(ret)");
-
+    shader_glsl_validate_compile_link(gl_info, ret, FALSE);
     return ret;
 }
 
@@ -4152,7 +4200,7 @@ static GLuint shader_glsl_generate_pshader(const struct wined3d_context *context
     TRACE("Compiling shader object %u\n", shader_obj);
     GL_EXTCALL(glShaderSourceARB(shader_obj, 1, (const char**)&buffer->buffer, NULL));
     GL_EXTCALL(glCompileShaderARB(shader_obj));
-    print_glsl_info_log(gl_info, shader_obj);
+    shader_glsl_validate_compile_link(gl_info, shader_obj, FALSE);
 
     /* Store the shader object */
     return shader_obj;
@@ -4228,7 +4276,7 @@ static GLuint shader_glsl_generate_vshader(const struct wined3d_context *context
     TRACE("Compiling shader object %u\n", shader_obj);
     GL_EXTCALL(glShaderSourceARB(shader_obj, 1, (const char**)&buffer->buffer, NULL));
     GL_EXTCALL(glCompileShaderARB(shader_obj));
-    print_glsl_info_log(gl_info, shader_obj);
+    shader_glsl_validate_compile_link(gl_info, shader_obj, FALSE);
 
     return shader_obj;
 }
@@ -4508,7 +4556,7 @@ static void set_glsl_shader_program(const struct wined3d_context *context,
     /* Link the program */
     TRACE("Linking GLSL shader program %u\n", programId);
     GL_EXTCALL(glLinkProgramARB(programId));
-    shader_glsl_validate_link(gl_info, programId);
+    shader_glsl_validate_compile_link(gl_info, programId, TRUE);
 
     entry->vuniformF_locations = HeapAlloc(GetProcessHeap(), 0,
             sizeof(GLhandleARB) * gl_info->limits.glsl_vs_float_constants);
@@ -4654,17 +4702,19 @@ static GLhandleARB create_glsl_blt_shader(const struct wined3d_gl_info *gl_info,
     vshader_id = GL_EXTCALL(glCreateShaderObjectARB(GL_VERTEX_SHADER_ARB));
     GL_EXTCALL(glShaderSourceARB(vshader_id, 1, blt_vshader, NULL));
     GL_EXTCALL(glCompileShaderARB(vshader_id));
+    shader_glsl_validate_compile_link(gl_info, vshader_id, FALSE);
 
     pshader_id = GL_EXTCALL(glCreateShaderObjectARB(GL_FRAGMENT_SHADER_ARB));
     GL_EXTCALL(glShaderSourceARB(pshader_id, 1, &blt_pshaders[tex_type], NULL));
     GL_EXTCALL(glCompileShaderARB(pshader_id));
 
+    shader_glsl_validate_compile_link(gl_info, vshader_id, FALSE);
+
     program_id = GL_EXTCALL(glCreateProgramObjectARB());
     GL_EXTCALL(glAttachObjectARB(program_id, vshader_id));
     GL_EXTCALL(glAttachObjectARB(program_id, pshader_id));
     GL_EXTCALL(glLinkProgramARB(program_id));
-
-    shader_glsl_validate_link(gl_info, program_id);
+    shader_glsl_validate_compile_link(gl_info, program_id, TRUE);
 
     /* Once linked we can mark the shaders for deletion. They will be deleted once the program
      * is destroyed
@@ -5208,3 +5258,16 @@ const shader_backend_t glsl_shader_backend = {
     shader_glsl_get_caps,
     shader_glsl_color_fixup_supported,
 };
+
+#ifdef VBOXWINEDBG_SHADERS
+void vboxWDbgPrintF(char * szString, ...)
+{
+    char szBuffer[4096*2] = {0};
+    va_list pArgList;
+    va_start(pArgList, szString);
+    _vsnprintf(szBuffer, sizeof(szBuffer) / sizeof(szBuffer[0]), szString, pArgList);
+    va_end(pArgList);
+
+    OutputDebugStringA(szBuffer);
+}
+#endif
