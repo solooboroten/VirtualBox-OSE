@@ -2093,49 +2093,60 @@ NTSTATUS APIENTRY DxgkDdiCreateAllocation(
     {
         Assert(pCreateAllocation->PrivateDriverDataSize == sizeof (VBOXWDDM_RCINFO));
         Assert(pCreateAllocation->pPrivateDriverData);
-        if (pCreateAllocation->PrivateDriverDataSize >= sizeof (VBOXWDDM_RCINFO))
+        if (pCreateAllocation->PrivateDriverDataSize < sizeof (VBOXWDDM_RCINFO))
         {
-            PVBOXWDDM_RCINFO pRcInfo = (PVBOXWDDM_RCINFO)pCreateAllocation->pPrivateDriverData;
+            WARN(("invalid private data size (%d)", pCreateAllocation->PrivateDriverDataSize));
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        PVBOXWDDM_RCINFO pRcInfo = (PVBOXWDDM_RCINFO)pCreateAllocation->pPrivateDriverData;
 //            Assert(pRcInfo->RcDesc.VidPnSourceId < VBoxCommonFromDeviceExt(pDevExt)->cDisplays);
-            Assert(pRcInfo->cAllocInfos == pCreateAllocation->NumAllocations);
-            pResource = (PVBOXWDDM_RESOURCE)vboxWddmMemAllocZero(RT_OFFSETOF(VBOXWDDM_RESOURCE, aAllocations[pRcInfo->cAllocInfos]));
-            Assert(pResource);
-            if (pResource)
-            {
-                pResource->cRefs = 1;
-                pResource->cAllocations = pRcInfo->cAllocInfos;
-                pResource->fFlags = pRcInfo->fFlags;
-                pResource->RcDesc = pRcInfo->RcDesc;
-            }
-            else
-                Status = STATUS_NO_MEMORY;
-        }
-        else
-            Status = STATUS_INVALID_PARAMETER;
-    }
-
-    if (Status == STATUS_SUCCESS)
-    {
-        for (UINT i = 0; i < pCreateAllocation->NumAllocations; ++i)
+        if (pRcInfo->cAllocInfos != pCreateAllocation->NumAllocations)
         {
-            Status = vboxWddmAllocationCreate(pDevExt, pResource, i, &pCreateAllocation->pAllocationInfo[i]);
-            Assert(Status == STATUS_SUCCESS);
-            if (Status != STATUS_SUCCESS)
-            {
-                LOGREL(("ERROR: vboxWddmAllocationCreate error (0x%x)", Status));
-                /* note: i-th allocation is expected to be cleared in a fail handling code above */
-                for (UINT j = 0; j < i; ++j)
-                {
-                    vboxWddmAllocationCleanup(pDevExt, (PVBOXWDDM_ALLOCATION)pCreateAllocation->pAllocationInfo[j].hAllocation);
-                    vboxWddmAllocationRelease((PVBOXWDDM_ALLOCATION)pCreateAllocation->pAllocationInfo[j].hAllocation);
-                }
-            }
+            WARN(("invalid number of allocations passed in, (%d), expected (%d)", pRcInfo->cAllocInfos, pCreateAllocation->NumAllocations));
+            return STATUS_INVALID_PARAMETER;
         }
 
-        pCreateAllocation->hResource = pResource;
-        if (pResource && Status != STATUS_SUCCESS)
-            vboxWddmResourceRelease(pResource);
+        /* a check to ensure we do not get the allocation size which is too big to overflow the 32bit value */
+        if (VBOXWDDM_TRAILARRAY_MAXELEMENTSU32(VBOXWDDM_RESOURCE, aAllocations) < pRcInfo->cAllocInfos)
+        {
+            WARN(("number of allocations passed too big (%d), max is (%d)", pRcInfo->cAllocInfos, VBOXWDDM_TRAILARRAY_MAXELEMENTSU32(VBOXWDDM_RESOURCE, aAllocations)));
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        pResource = (PVBOXWDDM_RESOURCE)vboxWddmMemAllocZero(RT_OFFSETOF(VBOXWDDM_RESOURCE, aAllocations[pRcInfo->cAllocInfos]));
+        if (!pResource)
+        {
+            WARN(("vboxWddmMemAllocZero failed for (%d) allocations", pRcInfo->cAllocInfos));
+            return STATUS_NO_MEMORY;
+        }
+
+        pResource->cRefs = 1;
+        pResource->cAllocations = pRcInfo->cAllocInfos;
+        pResource->fFlags = pRcInfo->fFlags;
+        pResource->RcDesc = pRcInfo->RcDesc;
     }
+
+
+    for (UINT i = 0; i < pCreateAllocation->NumAllocations; ++i)
+    {
+        Status = vboxWddmAllocationCreate(pDevExt, pResource, i, &pCreateAllocation->pAllocationInfo[i]);
+        if (Status != STATUS_SUCCESS)
+        {
+            WARN(("vboxWddmAllocationCreate(%d) failed, Status(0x%x)", i, Status));
+            /* note: i-th allocation is expected to be cleared in a fail handling code above */
+            for (UINT j = 0; j < i; ++j)
+            {
+                vboxWddmAllocationCleanup(pDevExt, (PVBOXWDDM_ALLOCATION)pCreateAllocation->pAllocationInfo[j].hAllocation);
+                vboxWddmAllocationRelease((PVBOXWDDM_ALLOCATION)pCreateAllocation->pAllocationInfo[j].hAllocation);
+            }
+        }
+    }
+
+    pCreateAllocation->hResource = pResource;
+    if (pResource && Status != STATUS_SUCCESS)
+        vboxWddmResourceRelease(pResource);
+
     LOGF(("LEAVE, status(0x%x), context(0x%x)", Status, hAdapter));
 
     return Status;
@@ -2246,8 +2257,8 @@ DxgkDdiGetStandardAllocationDriverData(
                 pAllocInfo->SurfDesc.height = pGetStandardAllocationDriverData->pCreateSharedPrimarySurfaceData->Height;
                 pAllocInfo->SurfDesc.format = pGetStandardAllocationDriverData->pCreateSharedPrimarySurfaceData->Format;
                 pAllocInfo->SurfDesc.bpp = vboxWddmCalcBitsPerPixel(pAllocInfo->SurfDesc.format);
-                pAllocInfo->SurfDesc.pitch = vboxWddmCalcPitch(pGetStandardAllocationDriverData->pCreateSharedPrimarySurfaceData->Width, pAllocInfo->SurfDesc.bpp);
-                pAllocInfo->SurfDesc.cbSize = pAllocInfo->SurfDesc.pitch * pAllocInfo->SurfDesc.height;
+                pAllocInfo->SurfDesc.pitch = vboxWddmCalcPitch(pGetStandardAllocationDriverData->pCreateSharedPrimarySurfaceData->Width, pAllocInfo->SurfDesc.format);
+                pAllocInfo->SurfDesc.cbSize = vboxWddmCalcSize(pAllocInfo->SurfDesc.pitch, pAllocInfo->SurfDesc.height, pAllocInfo->SurfDesc.format);
                 pAllocInfo->SurfDesc.depth = 0;
                 pAllocInfo->SurfDesc.slicePitch = 0;
                 pAllocInfo->SurfDesc.RefreshRate = pGetStandardAllocationDriverData->pCreateSharedPrimarySurfaceData->RefreshRate;
@@ -2265,7 +2276,7 @@ DxgkDdiGetStandardAllocationDriverData(
             Assert(bpp);
             if (bpp != 0)
             {
-                UINT Pitch = vboxWddmCalcPitch(pGetStandardAllocationDriverData->pCreateShadowSurfaceData->Width, bpp);
+                UINT Pitch = vboxWddmCalcPitch(pGetStandardAllocationDriverData->pCreateShadowSurfaceData->Width, pGetStandardAllocationDriverData->pCreateShadowSurfaceData->Format);
                 pGetStandardAllocationDriverData->pCreateShadowSurfaceData->Pitch = Pitch;
 
                 /* @todo: need [d/q]word align?? */
@@ -2278,8 +2289,8 @@ DxgkDdiGetStandardAllocationDriverData(
                     pAllocInfo->SurfDesc.height = pGetStandardAllocationDriverData->pCreateShadowSurfaceData->Height;
                     pAllocInfo->SurfDesc.format = pGetStandardAllocationDriverData->pCreateShadowSurfaceData->Format;
                     pAllocInfo->SurfDesc.bpp = vboxWddmCalcBitsPerPixel(pAllocInfo->SurfDesc.format);
-                    pAllocInfo->SurfDesc.pitch = vboxWddmCalcPitch(pGetStandardAllocationDriverData->pCreateShadowSurfaceData->Width, pAllocInfo->SurfDesc.bpp);
-                    pAllocInfo->SurfDesc.cbSize = pAllocInfo->SurfDesc.pitch * pAllocInfo->SurfDesc.height;
+                    pAllocInfo->SurfDesc.pitch = vboxWddmCalcPitch(pGetStandardAllocationDriverData->pCreateShadowSurfaceData->Width, pAllocInfo->SurfDesc.format);
+                    pAllocInfo->SurfDesc.cbSize = vboxWddmCalcSize(pAllocInfo->SurfDesc.pitch, pAllocInfo->SurfDesc.height, pAllocInfo->SurfDesc.format);
                     pAllocInfo->SurfDesc.depth = 0;
                     pAllocInfo->SurfDesc.slicePitch = 0;
                     pAllocInfo->SurfDesc.RefreshRate.Numerator = 0;
@@ -2310,8 +2321,8 @@ DxgkDdiGetStandardAllocationDriverData(
                 pAllocInfo->SurfDesc.height = pGetStandardAllocationDriverData->pCreateStagingSurfaceData->Height;
                 pAllocInfo->SurfDesc.format = D3DDDIFMT_X8R8G8B8; /* staging has always always D3DDDIFMT_X8R8G8B8 */
                 pAllocInfo->SurfDesc.bpp = vboxWddmCalcBitsPerPixel(pAllocInfo->SurfDesc.format);
-                pAllocInfo->SurfDesc.pitch = vboxWddmCalcPitch(pGetStandardAllocationDriverData->pCreateStagingSurfaceData->Width, pAllocInfo->SurfDesc.bpp);
-                pAllocInfo->SurfDesc.cbSize = pAllocInfo->SurfDesc.pitch * pAllocInfo->SurfDesc.height;
+                pAllocInfo->SurfDesc.pitch = vboxWddmCalcPitch(pGetStandardAllocationDriverData->pCreateStagingSurfaceData->Width, pAllocInfo->SurfDesc.format);
+                pAllocInfo->SurfDesc.cbSize = vboxWddmCalcSize(pAllocInfo->SurfDesc.pitch, pAllocInfo->SurfDesc.height, pAllocInfo->SurfDesc.format);
                 pAllocInfo->SurfDesc.depth = 0;
                 pAllocInfo->SurfDesc.slicePitch = 0;
                 pAllocInfo->SurfDesc.RefreshRate.Numerator = 0;
@@ -2390,10 +2401,9 @@ DxgkDdiPatch(
      * Value == 4 is RedirectedPresent
      * we do not expect any other flags to be set here */
 //    Assert(pPatch->Flags.Value == 2 || pPatch->Flags.Value == 4);
-    Assert(pPatch->DmaBufferPrivateDataSize >= sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR));
-    Assert(pPatch->DmaBufferPrivateDataSubmissionEndOffset - pPatch->DmaBufferPrivateDataSubmissionStartOffset >= sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR));
     if (pPatch->DmaBufferPrivateDataSubmissionEndOffset - pPatch->DmaBufferPrivateDataSubmissionStartOffset >= sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR))
     {
+        Assert(pPatch->DmaBufferPrivateDataSize >= sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR));
         VBOXWDDM_DMA_PRIVATEDATA_BASEHDR *pPrivateDataBase = (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR*)((uint8_t*)pPatch->pDmaBufferPrivateData + pPatch->DmaBufferPrivateDataSubmissionStartOffset);
         switch (pPrivateDataBase->enmCmd)
         {
@@ -2511,9 +2521,15 @@ DxgkDdiPatch(
             }
         }
     }
+    else if (pPatch->DmaBufferPrivateDataSubmissionEndOffset == pPatch->DmaBufferPrivateDataSubmissionStartOffset)
+    {
+        /* this is a NOP, just return success */
+        WARN(("null data size, treating as NOP"));
+        return STATUS_SUCCESS;
+    }
     else
     {
-        LOGREL(("DmaBufferPrivateDataSubmissionEndOffset (%d) - DmaBufferPrivateDataSubmissionStartOffset (%d) < sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR) (%d)",
+        WARN(("DmaBufferPrivateDataSubmissionEndOffset (%d) - DmaBufferPrivateDataSubmissionStartOffset (%d) < sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR) (%d)",
                 pPatch->DmaBufferPrivateDataSubmissionEndOffset,
                 pPatch->DmaBufferPrivateDataSubmissionStartOffset,
                 sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR)));
@@ -2647,6 +2663,8 @@ DxgkDdiSubmitCommand(
 
     PVBOXMP_DEVEXT pDevExt = (PVBOXMP_DEVEXT)hAdapter;
     PVBOXWDDM_CONTEXT pContext = (PVBOXWDDM_CONTEXT)pSubmitCommand->hContext;
+    PVBOXWDDM_DMA_PRIVATEDATA_BASEHDR pPrivateDataBase = NULL;
+    VBOXVDMACMD_TYPE enmCmd = VBOXVDMACMD_TYPE_UNDEFINED;
     Assert(pContext);
     Assert(pContext->pDevice);
     Assert(pContext->pDevice->pAdapter == pDevExt);
@@ -2654,19 +2672,27 @@ DxgkDdiSubmitCommand(
 
     /* the DMA command buffer is located in system RAM, the host will need to pick it from there */
     //BufInfo.fFlags = 0; /* see VBOXVDMACBUF_FLAG_xx */
-    Assert(pSubmitCommand->DmaBufferPrivateDataSubmissionEndOffset - pSubmitCommand->DmaBufferPrivateDataSubmissionStartOffset >= sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR));
-    if (pSubmitCommand->DmaBufferPrivateDataSubmissionEndOffset - pSubmitCommand->DmaBufferPrivateDataSubmissionStartOffset < sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR))
+    if (pSubmitCommand->DmaBufferPrivateDataSubmissionEndOffset - pSubmitCommand->DmaBufferPrivateDataSubmissionStartOffset >= sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR))
     {
-        LOGREL(("DmaBufferPrivateDataSubmissionEndOffset (%d) - DmaBufferPrivateDataSubmissionStartOffset (%d) < sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR) (%d)",
+        pPrivateDataBase = (PVBOXWDDM_DMA_PRIVATEDATA_BASEHDR)((uint8_t*)pSubmitCommand->pDmaBufferPrivateData + pSubmitCommand->DmaBufferPrivateDataSubmissionStartOffset);
+        Assert(pPrivateDataBase);
+        enmCmd = pPrivateDataBase->enmCmd;
+    }
+    else if (pSubmitCommand->DmaBufferPrivateDataSubmissionEndOffset == pSubmitCommand->DmaBufferPrivateDataSubmissionStartOffset)
+    {
+        WARN(("null data size, treating as NOP"));
+        enmCmd = VBOXVDMACMD_TYPE_DMA_NOP;
+    }
+    else
+    {
+        WARN(("DmaBufferPrivateDataSubmissionEndOffset (%d) - DmaBufferPrivateDataSubmissionStartOffset (%d) < sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR) (%d)",
                 pSubmitCommand->DmaBufferPrivateDataSubmissionEndOffset,
                 pSubmitCommand->DmaBufferPrivateDataSubmissionStartOffset,
                 sizeof (VBOXWDDM_DMA_PRIVATEDATA_BASEHDR)));
         return STATUS_INVALID_PARAMETER;
     }
 
-    PVBOXWDDM_DMA_PRIVATEDATA_BASEHDR pPrivateDataBase = (PVBOXWDDM_DMA_PRIVATEDATA_BASEHDR)((uint8_t*)pSubmitCommand->pDmaBufferPrivateData + pSubmitCommand->DmaBufferPrivateDataSubmissionStartOffset);
-    Assert(pPrivateDataBase);
-    switch (pPrivateDataBase->enmCmd)
+    switch (enmCmd)
     {
 #ifdef VBOXWDDM_RENDER_FROM_SHADOW
         case VBOXVDMACMD_TYPE_DMA_PRESENT_SHADOW2PRIMARY:
@@ -2925,7 +2951,7 @@ DxgkDdiSubmitCommand(
         }
         default:
         {
-            AssertBreakpoint();
+            WARN(("unexpected command %d", enmCmd));
 #if 0 //def VBOX_WITH_VDMA
             VBOXWDDM_DMA_PRIVATEDATA_PRESENTHDR *pPrivateData = (VBOXWDDM_DMA_PRIVATEDATA_PRESENTHDR*)pPrivateDataBase;
             PVBOXVDMACBUF_DR pDr = vboxVdmaCBufDrCreate (&pDevExt->u.primary.Vdma, 0);
@@ -3715,32 +3741,37 @@ DxgkDdiEscape(
             case VBOXESC_SCREENLAYOUT:
             {
                 /* set screen layout (unused currently) */
-                Assert(pEscape->PrivateDriverDataSize >= sizeof (VBOXDISPIFESCAPE_SCREENLAYOUT));
-                if (pEscape->PrivateDriverDataSize >= sizeof (VBOXDISPIFESCAPE_SCREENLAYOUT))
+                if (pEscape->PrivateDriverDataSize < sizeof (VBOXDISPIFESCAPE_SCREENLAYOUT))
                 {
-                    PVBOXDISPIFESCAPE_SCREENLAYOUT pLo = (PVBOXDISPIFESCAPE_SCREENLAYOUT)pEscapeHdr;
-                    Assert(pLo->ScreenLayout.cScreens <= (UINT)VBoxCommonFromDeviceExt(pDevExt)->cDisplays);
-                    for (UINT i = 0; i < pLo->ScreenLayout.cScreens; ++i)
-                    {
-                        PVBOXSCREENLAYOUT_ELEMENT pEl = &pLo->ScreenLayout.aScreens[i];
-                        Assert(pEl->VidPnSourceId < (UINT)VBoxCommonFromDeviceExt(pDevExt)->cDisplays);
-                        if (pEl->VidPnSourceId < (UINT)VBoxCommonFromDeviceExt(pDevExt)->cDisplays)
-                        {
-                            PVBOXWDDM_SOURCE pSource = &pDevExt->aSources[pEl->VidPnSourceId];
-                            NTSTATUS tmpStatus = vboxWddmGhDisplayUpdateScreenPos(pDevExt, pSource, &pEl->pos);
-                            Assert(tmpStatus == STATUS_SUCCESS);
-                        }
-                    }
-                    Status = STATUS_SUCCESS;
+                    WARN(("VBOXESC_SCREENLAYOUT: incorrect buffer size (%d) < sizeof (VBOXDISPIFESCAPE_SCREENLAYOUT) (%d)",
+                            pEscape->PrivateDriverDataSize, sizeof (VBOXDISPIFESCAPE_SCREENLAYOUT)));
+                    Status = STATUS_INVALID_PARAMETER;
                     break;
                 }
-                else
+
+                PVBOXDISPIFESCAPE_SCREENLAYOUT pLo = (PVBOXDISPIFESCAPE_SCREENLAYOUT)pEscapeHdr;
+                if (pLo->ScreenLayout.cScreens > (UINT)VBoxCommonFromDeviceExt(pDevExt)->cDisplays)
                 {
-                    LOGREL(("VBOXESC_SCREENLAYOUT: incorrect buffer size (%d) < sizeof (VBOXDISPIFESCAPE_SCREENLAYOUT) (%d)",
-                            pEscape->PrivateDriverDataSize, sizeof (VBOXDISPIFESCAPE_SCREENLAYOUT)));
-                    AssertBreakpoint();
+                    WARN(("VBOXESC_SCREENLAYOUT: number of screens too big (%d), should be <= (%d)",
+                            pLo->ScreenLayout.cScreens, VBoxCommonFromDeviceExt(pDevExt)->cDisplays));
                     Status = STATUS_INVALID_PARAMETER;
+                    break;
                 }
+
+                for (UINT i = 0; i < pLo->ScreenLayout.cScreens; ++i)
+                {
+                    PVBOXSCREENLAYOUT_ELEMENT pEl = &pLo->ScreenLayout.aScreens[i];
+                    Assert(pEl->VidPnSourceId < (UINT)VBoxCommonFromDeviceExt(pDevExt)->cDisplays);
+                    if (pEl->VidPnSourceId < (UINT)VBoxCommonFromDeviceExt(pDevExt)->cDisplays)
+                    {
+                        PVBOXWDDM_SOURCE pSource = &pDevExt->aSources[pEl->VidPnSourceId];
+                        NTSTATUS tmpStatus = vboxWddmGhDisplayUpdateScreenPos(pDevExt, pSource, &pEl->pos);
+                        Assert(tmpStatus == STATUS_SUCCESS);
+                    }
+                }
+
+                Status = STATUS_SUCCESS;
+                break;
             }
             case VBOXESC_SWAPCHAININFO:
             {
@@ -5740,7 +5771,7 @@ DriverEntry(
 */
 
 #ifdef DEBUG_misha
-    RTLogGroupSettings(0, "+default.e.l.f.l2.l3");
+    RTLogGroupSettings(0, "+default.e.l.l2.l3");
 #endif
 
     LOGREL(("Built %s %s", __DATE__, __TIME__));

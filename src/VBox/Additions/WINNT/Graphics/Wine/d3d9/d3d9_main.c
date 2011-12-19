@@ -29,6 +29,7 @@
  * that LGPLv2 or any later version may be used, or where a choice of which version
  * of the LGPL is applied is otherwise unspecified.
  */
+#define VBOX_WINE_DEBUG_DEFINES
 
 #include "config.h"
 #include "initguid.h"
@@ -63,9 +64,14 @@ IDirect3D9* WINAPI DECLSPEC_HOTPATCH Direct3DCreate9(UINT SDKVersion) {
 }
 
 HRESULT WINAPI DECLSPEC_HOTPATCH Direct3DCreate9Ex(UINT SDKVersion, IDirect3D9Ex **direct3d9ex) {
+#ifndef VBOX_WITH_WDDM
+    /* real D3D lib does not allow 9Ex creation if no WDDM driver is installed,
+     * the Direct3DCreate9Ex should return D3DERR_NOTAVAILABLE in that case.
+     * do it that way for our XPWM case */
+    return D3DERR_NOTAVAILABLE;
+#else
     IDirect3D9 *ret;
     IDirect3D9Impl* object;
-
     TRACE("Calling Direct3DCreate9\n");
     ret = Direct3DCreate9(SDKVersion);
     if(!ret) {
@@ -77,6 +83,7 @@ HRESULT WINAPI DECLSPEC_HOTPATCH Direct3DCreate9Ex(UINT SDKVersion, IDirect3D9Ex
     object->extended = TRUE; /* Enables QI for extended interfaces */
     *direct3d9ex = (IDirect3D9Ex *) object;
     return D3D_OK;
+#endif
 }
 
 /*******************************************************************

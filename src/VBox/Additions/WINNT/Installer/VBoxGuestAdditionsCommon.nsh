@@ -15,6 +15,28 @@
 ; hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 ;
 
+Function Common_CopyFiles
+
+  SetOutPath "$INSTDIR"
+  SetOverwrite on
+
+!ifdef VBOX_WITH_LICENSE_INSTALL_RTF
+  ; Copy license file (if any) into the installation directory
+  FILE "/oname=${LICENSE_FILE_RTF}" "$%VBOX_BRAND_LICENSE_RTF%"
+!endif
+
+  FILE "$%VBOX_PATH_DIFX%\DIFxAPI.dll"
+  FILE "$%PATH_OUT%\bin\additions\VBoxDrvInst.exe"
+
+  FILE "$%PATH_OUT%\bin\additions\VBoxVideo.inf"
+!ifdef VBOX_SIGN_ADDITIONS
+  FILE "$%PATH_OUT%\bin\additions\VBoxVideo.cat"
+!endif
+
+  FILE "iexplore.ico"
+
+FunctionEnd
+
 !ifndef UNINSTALLER_ONLY
 Function ExtractFiles
 
@@ -569,3 +591,304 @@ FunctionEnd
 !insertmacro SetAppMode64 ""
 !insertmacro SetAppMode64 "un."
 
+;
+; Retrieves the vendor ("CompanyName" of FILEINFO structure)
+; of a given file.
+; @return  Stack: Company name, or "" on error/if not found.
+; @param   Stack: File name to retrieve vendor for.
+;
+!macro GetFileVendor un
+Function ${un}GetFileVendor
+
+  ; Preserve values
+  Exch $0 ; Stack: $0 <filename> (Get file name into $0)
+  Push $1
+
+  IfFileExists "$0" found
+  Goto not_found
+
+found:
+
+  VBoxGuestInstallHelper::FileGetVendor "$0"
+  ; Stack: <vendor> $1 $0
+  Pop  $0 ; Get vendor
+  Pop  $1 ; Restore $1
+  Exch $0 ; Restore $0, push vendor on top of stack
+  Goto end
+
+not_found:
+
+  Pop $1
+  Pop $0
+  Push "File not found"
+  Goto end
+
+end:
+
+FunctionEnd
+!macroend
+!insertmacro GetFileVendor ""
+!insertmacro GetFileVendor "un."
+
+;
+; Retrieves the architecture of a given file.
+; @return  Stack: Architecture ("x86", "amd64") or error message.
+; @param   Stack: File name to retrieve architecture for.
+;
+!macro GetFileArchitecture un
+Function ${un}GetFileArchitecture
+
+  ; Preserve values
+  Exch $0 ; Stack: $0 <filename> (Get file name into $0)
+  Push $1
+
+  IfFileExists "$0" found
+  Goto not_found
+
+found:
+
+  VBoxGuestInstallHelper::FileGetArchitecture "$0"
+  ; Stack: <architecture> $1 $0
+  Pop  $0 ; Get architecture string
+  Pop  $1 ; Restore $1
+  Exch $0 ; Restore $0, push vendor on top of stack
+  Goto end
+
+not_found:
+
+  Pop $1
+  Pop $0
+  Push "File not found"
+  Goto end
+
+end:
+
+FunctionEnd
+!macroend
+!insertmacro GetFileArchitecture ""
+!insertmacro GetFileArchitecture "un."
+
+;
+; Verifies a given file by checking its file vendor and target
+; architecture.
+; @return  Stack: "0" if valid, "1" if not, "2" on error / not found.
+; @param   Stack: Architecture ("x86" or "amd64").
+; @param   Stack: Vendor.
+; @param   Stack: File name to verify.
+;
+!macro VerifyFile un
+Function ${un}VerifyFile
+
+  ; Preserve values
+  Exch $0 ; File;         S: old$0 vendor arch
+  Exch    ;               S: vendor old$0 arch
+  Exch $1 ; Vendor;       S: old$1 old$0 arch
+  Exch    ;               S: old$0 old$1 arch
+  Exch 2  ;               S: arch old$1 old$0
+  Exch $2 ; Architecture; S: old$2 old$1 old$0
+  Push $3 ;               S: old$3 old$2 old$1 old$0
+
+  IfFileExists "$0" check_vendor
+  Goto not_found
+
+check_vendor:
+
+  Push $0
+  Call ${un}GetFileVendor
+  Pop $3
+
+  ${If} $3 == $1
+    Goto check_arch
+  ${EndIf}
+  StrCpy $3 "1" ; Invalid
+  Goto end
+
+check_arch:
+
+  Push $0
+  Call ${un}GetFileArchitecture
+  Pop $3
+
+  ${If} $3 == $2
+    StrCpy $3 "0" ; Valid
+  ${Else}
+    StrCpy $3 "1" ; Invalid
+  ${EndIf}
+  Goto end
+
+not_found:
+
+  StrCpy $3 "2" ; Not found
+  Goto end
+
+end:
+
+  ; S: old$3 old$2 old$1 old$0
+  Exch $3 ; S: $3 old$2 old$1 old$0
+  Exch    ; S: old$2 $3 old$1
+  Pop $2  ; S: $3 old$1 old$0
+  Exch    ; S: old$1 $3 old$0
+  Pop $1  ; S: $3 old$0
+  Exch    ; S: old$0 $3
+  Pop $0  ; S: $3
+
+FunctionEnd
+!macroend
+!insertmacro VerifyFile ""
+!insertmacro VerifyFile "un."
+
+;
+; Macro for accessing VerifyFile in a more convenient way by using
+; a parameter list.
+; @return  Stack: "0" if valid, "1" if not, "2" on error / not found.
+; @param   Un/Installer prefix; either "" or "un".
+; @param   Name of file to verify.
+; @param   Vendor to check for.
+; @param   Architecture ("x86" or "amd64") to check for.
+;
+!macro VerifyFileEx un File Vendor Architecture
+  Push "${Architecture}"
+  Push "${Vendor}"
+  Push "${File}"
+  Call ${un}VerifyFile
+!macroend
+!define VerifyFileEx "!insertmacro VerifyFileEx"
+
+;
+; Validates backed up and replaced Direct3D files; either the d3d*.dll have
+; to be from Microsoft or the (already) backed up msd3d*.dll files. If both
+; don't match we have a corrupted / invalid installation.
+; @return  Stack: "0" if files are valid; otherwise "1".
+;
+!macro ValidateFilesDirect3D un
+Function ${un}ValidateD3DFiles
+
+  Push $0
+
+  ; We need to switch to 64-bit app mode to handle the "real" 64-bit files in
+  ; ""system32" on a 64-bit guest
+  Call ${un}SetAppMode64
+
+  ; Note: Not finding a file (like *d3d8.dll) on Windows Vista/7 is fine;
+  ;       it simply is not present there.
+
+  ${VerifyFileEx} "${un}" "$SYSDIR\d3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+  ${VerifyFileEx} "${un}" "$SYSDIR\d3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+
+  ${VerifyFileEx} "${un}" "$SYSDIR\dllcache\d3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+  ${VerifyFileEx} "${un}" "$SYSDIR\dllcache\d3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+
+!if $%BUILD_TARGET_ARCH% == "amd64"
+
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\d3d8.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\d3d9.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\dllcache\d3d8.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\dllcache\d3d9.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto verify_msd3d
+  ${EndIf}
+
+!endif
+
+  Goto valid
+
+verify_msd3d:
+
+  ${VerifyFileEx} "${un}" "$SYSDIR\msd3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+  ${VerifyFileEx} "${un}" "$SYSDIR\msd3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+
+  ${VerifyFileEx} "${un}" "$SYSDIR\dllcache\msd3d8.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+  ${VerifyFileEx} "${un}" "$SYSDIR\dllcache\msd3d9.dll" "Microsoft Corporation" "$%BUILD_TARGET_ARCH%"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+
+!if $%BUILD_TARGET_ARCH% == "amd64"
+
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\msd3d8.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\msd3d9.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\dllcache\msd3d8.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+  ${VerifyFileEx} "${un}" "$g_strSysWow64\dllcache\msd3d9.dll" "Microsoft Corporation" "x86"
+  Pop $0
+  ${If} $0 == "1"
+    Goto invalid
+  ${EndIf}
+
+!endif
+
+  Goto valid
+
+valid:
+
+  StrCpy $0 "0" ; Installation valid
+  Goto end
+
+invalid:
+
+  StrCpy $0 "1" ; Installation invalid / corrupted
+  Goto end
+
+end:
+
+  Exch $0
+
+FunctionEnd
+!macroend
+!insertmacro ValidateFilesDirect3D ""
+!insertmacro ValidateFilesDirect3D "un."

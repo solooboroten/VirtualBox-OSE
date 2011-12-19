@@ -232,6 +232,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_QueryInterface(LPDIRECT3DDEVICE9EX if
             WARN("IDirect3D9 instance wasn't created with CreateDirect3D9Ex, returning E_NOINTERFACE\n");
             IDirect3D9_Release(d3d);
             *ppobj = NULL;
+            ERR_D3D();
             return E_NOINTERFACE;
         }
     }
@@ -245,6 +246,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_QueryInterface(LPDIRECT3DDEVICE9EX if
 
     WARN("(%p)->(%s,%p),not found\n", This, debugstr_guid(riid), ppobj);
     *ppobj = NULL;
+    ERR_D3D();
     return E_NOINTERFACE;
 }
 
@@ -301,6 +303,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_TestCooperativeLevel(IDirect3DDevice9
     if (This->notreset)
     {
         TRACE("D3D9 device is marked not reset.\n");
+        ERR_D3D();
         return D3DERR_DEVICENOTRESET;
     }
 
@@ -317,6 +320,7 @@ static UINT     WINAPI  IDirect3DDevice9Impl_GetAvailableTextureMem(LPDIRECT3DDE
     hr = IWineD3DDevice_GetAvailableTextureMem(This->WineD3DDevice);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr > 0x400000);
     return hr;
 }
 
@@ -330,6 +334,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_EvictManagedResources(LPDIRECT3DDEV
     hr = IWineD3DDevice_EvictManagedResources(This->WineD3DDevice);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -341,6 +346,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_GetDirect3D(LPDIRECT3DDEVICE9EX iface
     TRACE("iface %p, d3d9 %p.\n", iface, ppD3D9);
 
     if (NULL == ppD3D9) {
+        ERR_D3D();
         return D3DERR_INVALIDCALL;
     }
 
@@ -357,6 +363,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_GetDirect3D(LPDIRECT3DDEVICE9EX iface
     TRACE("(%p) returning %p\n", This, *ppD3D9);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -368,10 +375,12 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetDeviceCaps(LPDIRECT3DDEVICE9EX i
     TRACE("iface %p, caps %p.\n", iface, pCaps);
 
     if(NULL == pCaps){
+        ERR_D3D();
         return D3DERR_INVALIDCALL;
     }
     pWineCaps = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(WINED3DCAPS));
     if(pWineCaps == NULL){
+        ERR_D3D();
         return D3DERR_INVALIDCALL; /* well this is what MSDN says to return */
     }
 
@@ -390,6 +399,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetDeviceCaps(LPDIRECT3DDEVICE9EX i
     filter_caps(pCaps);
 
     TRACE("Returning %p %p\n", This, pCaps);
+    ASSERT_D3D(hrc == S_OK);
     return hrc;
 }
 
@@ -405,6 +415,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetDisplayMode(LPDIRECT3DDEVICE9EX 
 
     if (SUCCEEDED(hr)) pMode->Format = d3dformat_from_wined3dformat(pMode->Format);
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -418,6 +429,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetCreationParameters(LPDIRECT3DDEV
     hr = IWineD3DDevice_GetCreationParameters(This->WineD3DDevice, (WINED3DDEVICE_CREATION_PARAMETERS *) pParameters);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -431,6 +443,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetCursorProperties(LPDIRECT3DDEVIC
 
     if(!pCursorBitmap) {
         WARN("No cursor bitmap, returning WINED3DERR_INVALIDCALL\n");
+        ERR_D3D();
         return WINED3DERR_INVALIDCALL;
     }
 
@@ -438,6 +451,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetCursorProperties(LPDIRECT3DDEVIC
     hr = IWineD3DDevice_SetCursorProperties(This->WineD3DDevice, XHotSpot, YHotSpot, pSurface->wineD3DSurface);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -463,13 +477,9 @@ static BOOL     WINAPI  IDirect3DDevice9Impl_ShowCursor(LPDIRECT3DDEVICE9EX ifac
 
     return ret;
 }
-#ifdef VBOX_WITH_WDDM
+
 static HRESULT IDirect3DDevice9Impl_DoCreateAdditionalSwapChain(IDirect3DDevice9Ex *iface,
         D3DPRESENT_PARAMETERS *present_parameters, IDirect3DSwapChain9 **swapchain)
-#else
-static HRESULT WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_CreateAdditionalSwapChain(IDirect3DDevice9Ex *iface,
-        D3DPRESENT_PARAMETERS *present_parameters, IDirect3DSwapChain9 **swapchain)
-#endif
 {
     IDirect3DDevice9Impl *This = (IDirect3DDevice9Impl *)iface;
     IDirect3DSwapChain9Impl *object;
@@ -499,7 +509,6 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_CreateAdditionalSwa
     return D3D_OK;
 }
 
-#ifdef VBOX_WITH_WDDM
 static HRESULT WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_CreateAdditionalSwapChain(IDirect3DDevice9Ex *iface,
         D3DPRESENT_PARAMETERS *present_parameters, IDirect3DSwapChain9 **swapchain)
 {
@@ -526,7 +535,6 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_CreateAdditionalSwa
     *swapchain = (IDirect3DSwapChain9 *)newSwapchain;
     return D3D_OK;
 }
-#endif
 
 static HRESULT WINAPI reset_enum_callback(IWineD3DResource *resource, void *data) {
     BOOL *resources_ok = data;
@@ -618,6 +626,7 @@ static HRESULT  WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_Reset(LPDIRECT3DDE
         This->notreset = TRUE;
         wined3d_mutex_unlock();
 
+        ERR_D3D();
         return WINED3DERR_INVALIDCALL;
     }
 
@@ -661,6 +670,7 @@ static HRESULT  WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_Reset(LPDIRECT3DDE
 
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -676,6 +686,7 @@ static HRESULT  WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_Present(LPDIRECT3D
     hr = IWineD3DDevice_Present(This->WineD3DDevice, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
  }
 
@@ -695,6 +706,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetBackBuffer(LPDIRECT3DDEVICE9EX i
     }
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(rc == S_OK);
     return rc;
 }
 static HRESULT  WINAPI  IDirect3DDevice9Impl_GetRasterStatus(LPDIRECT3DDEVICE9EX iface, UINT iSwapChain, D3DRASTER_STATUS* pRasterStatus) {
@@ -707,6 +719,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetRasterStatus(LPDIRECT3DDEVICE9EX
     hr = IWineD3DDevice_GetRasterStatus(This->WineD3DDevice, iSwapChain, (WINED3DRASTER_STATUS *) pRasterStatus);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -720,6 +733,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_SetDialogBoxMode(LPDIRECT3DDEVICE9EX 
     hr = IWineD3DDevice_SetDialogBoxMode(This->WineD3DDevice, bEnableDialogs);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -865,6 +879,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateTexture(IDirect3DDevice9Ex *ifa
     if (!object)
     {
         ERR("Failed to allocate texture memory.\n");
+        ERR_D3D();
         return D3DERR_OUTOFVIDEOMEMORY;
     }
 
@@ -873,6 +888,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateTexture(IDirect3DDevice9Ex *ifa
     {
         WARN("Failed to initialize texture, hr %#x.\n", hr);
         HeapFree(GetProcessHeap(), 0, object);
+        ERR_D3D();
         return hr;
     }
 
@@ -900,12 +916,14 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateVolumeTexture(IDirect3DDevice9E
     if (!object)
     {
         ERR("Failed to allocate volume texture memory.\n");
+        ERR_D3D();
         return D3DERR_OUTOFVIDEOMEMORY;
     }
 
     hr = volumetexture_init(object, This, width, height, depth, levels, usage, format, pool);
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to initialize volume texture, hr %#x.\n", hr);
         HeapFree(GetProcessHeap(), 0, object);
         return hr;
@@ -936,12 +954,14 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateCubeTexture(IDirect3DDevice9Ex 
     if (!object)
     {
         ERR("Failed to allocate cube texture memory.\n");
+        ERR_D3D();
         return D3DERR_OUTOFVIDEOMEMORY;
     }
 
     hr = cubetexture_init(object, This, edge_length, levels, usage, format, pool);
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to initialize cube texture, hr %#x.\n", hr);
         HeapFree(GetProcessHeap(), 0, object);
         return hr;
@@ -967,6 +987,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateVertexBuffer(IDirect3DDevice9Ex
     object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
     if (!object)
     {
+        ERR_D3D();
         ERR("Failed to allocate buffer memory.\n");
         return D3DERR_OUTOFVIDEOMEMORY;
     }
@@ -974,6 +995,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateVertexBuffer(IDirect3DDevice9Ex
     hr = vertexbuffer_init(object, This, size, usage, fvf, pool);
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to initialize vertex buffer, hr %#x.\n", hr);
         HeapFree(GetProcessHeap(), 0, object);
         return hr;
@@ -998,6 +1020,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateIndexBuffer(IDirect3DDevice9Ex 
     object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
     if (!object)
     {
+        ERR_D3D();
         ERR("Failed to allocate buffer memory.\n");
         return D3DERR_OUTOFVIDEOMEMORY;
     }
@@ -1005,6 +1028,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateIndexBuffer(IDirect3DDevice9Ex 
     hr = indexbuffer_init(object, This, size, usage, format, pool);
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to initialize index buffer, hr %#x.\n", hr);
         HeapFree(GetProcessHeap(), 0, object);
         return hr;
@@ -1037,6 +1061,7 @@ static HRESULT IDirect3DDevice9Impl_CreateSurface(LPDIRECT3DDEVICE9EX iface, UIN
     object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(IDirect3DSurface9Impl));
     if (!object)
     {
+        ERR_D3D();
         FIXME("Failed to allocate surface memory.\n");
         return D3DERR_OUTOFVIDEOMEMORY;
     }
@@ -1050,6 +1075,7 @@ static HRESULT IDirect3DDevice9Impl_CreateSurface(LPDIRECT3DDEVICE9EX iface, UIN
             );
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to initialize surface, hr %#x.\n", hr);
         HeapFree(GetProcessHeap(), 0, object);
         return hr;
@@ -1080,6 +1106,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateRenderTarget(IDirect3DDevice9Ex
 #endif
             );
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1102,6 +1129,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_CreateDepthStencilSurface(LPDIRECT3
 #endif
             );
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1117,6 +1145,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_UpdateSurface(LPDIRECT3DDEVICE9EX i
     hr = IWineD3DDevice_UpdateSurface(This->WineD3DDevice, ((IDirect3DSurface9Impl *)pSourceSurface)->wineD3DSurface, pSourceRect, ((IDirect3DSurface9Impl *)pDestinationSurface)->wineD3DSurface, pDestPoint);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1130,6 +1159,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_UpdateTexture(LPDIRECT3DDEVICE9EX i
     hr = IWineD3DDevice_UpdateTexture(This->WineD3DDevice,  ((IDirect3DBaseTexture9Impl *)pSourceTexture)->wineD3DBaseTexture, ((IDirect3DBaseTexture9Impl *)pDestinationTexture)->wineD3DBaseTexture);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1146,6 +1176,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_GetRenderTargetData(IDirect3DDevice9E
     hr = IWineD3DSurface_BltFast(destSurface->wineD3DSurface, 0, 0, renderTarget->wineD3DSurface, NULL, WINEDDBLTFAST_NOCOLORKEY);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1160,6 +1191,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetFrontBufferData(LPDIRECT3DDEVICE
     hr = IWineD3DDevice_GetFrontBufferData(This->WineD3DDevice, iSwapChain, destSurface->wineD3DSurface);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1177,6 +1209,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_StretchRect(IDirect3DDevice9Ex *iface
     hr = IWineD3DSurface_Blt(dst->wineD3DSurface, pDestRect, src->wineD3DSurface, pSourceRect, 0, NULL, Filter);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1204,6 +1237,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_ColorFill(LPDIRECT3DDEVICE9EX iface
     if(!(usage & WINED3DUSAGE_RENDERTARGET) && (pool != WINED3DPOOL_DEFAULT || restype != WINED3DRTYPE_SURFACE)) {
         wined3d_mutex_unlock();
         WARN("Surface is not a render target, or not a stand-alone D3DPOOL_DEFAULT surface\n");
+        ERR_D3D();
         return D3DERR_INVALIDCALL;
     }
 
@@ -1213,6 +1247,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_ColorFill(LPDIRECT3DDEVICE9EX iface
 
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1223,6 +1258,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_CreateOffscreenPlainSurface(LPDIREC
             iface, Width, Height, Format, Pool, ppSurface, pSharedHandle);
 
     if(Pool == D3DPOOL_MANAGED ){
+        ERR_D3D();
         FIXME("Attempting to create a managed offscreen plain surface\n");
         return D3DERR_INVALIDCALL;
     }
@@ -1242,6 +1278,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_CreateOffscreenPlainSurface(LPDIREC
 #endif
             );
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1255,6 +1292,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetRenderTarget(LPDIRECT3DDEVICE9EX
 
     if (RenderTargetIndex >= D3D9_MAX_SIMULTANEOUS_RENDERTARGETS)
     {
+        ERR_D3D();
         WARN("Invalid index %u specified.\n", RenderTargetIndex);
         return D3DERR_INVALIDCALL;
     }
@@ -1263,6 +1301,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetRenderTarget(LPDIRECT3DDEVICE9EX
     hr = IWineD3DDevice_SetRenderTarget(This->WineD3DDevice, RenderTargetIndex, pSurface ? pSurface->wineD3DSurface : NULL, TRUE);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1274,11 +1313,13 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetRenderTarget(LPDIRECT3DDEVICE9EX
     TRACE("iface %p, idx %u, surface %p.\n", iface, RenderTargetIndex, ppRenderTarget);
 
     if (ppRenderTarget == NULL) {
+        ERR_D3D();
         return D3DERR_INVALIDCALL;
     }
 
     if (RenderTargetIndex >= D3D9_MAX_SIMULTANEOUS_RENDERTARGETS)
     {
+        ERR_D3D();
         WARN("Invalid index %u specified.\n", RenderTargetIndex);
         return D3DERR_INVALIDCALL;
     }
@@ -1303,6 +1344,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetRenderTarget(LPDIRECT3DDEVICE9EX
 
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1328,6 +1370,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetDepthStencilSurface(LPDIRECT3DDE
     }
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1339,6 +1382,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetDepthStencilSurface(LPDIRECT3DDE
     TRACE("iface %p, depth_stencil %p.\n", iface, ppZStencilSurface);
 
     if(ppZStencilSurface == NULL){
+        ERR_D3D();
         return D3DERR_INVALIDCALL;
     }
 
@@ -1354,6 +1398,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetDepthStencilSurface(LPDIRECT3DDE
     }
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1367,6 +1412,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_BeginScene(LPDIRECT3DDEVICE9EX ifac
     hr = IWineD3DDevice_BeginScene(This->WineD3DDevice);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1380,6 +1426,7 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_EndScene(LPDIRECT3D
     hr = IWineD3DDevice_EndScene(This->WineD3DDevice);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1395,6 +1442,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_Clear(LPDIRECT3DDEVICE9EX iface, DW
     hr = IWineD3DDevice_Clear(This->WineD3DDevice, Count, (CONST WINED3DRECT*) pRects, Flags, Color, Z, Stencil);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1423,6 +1471,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetTransform(LPDIRECT3DDEVICE9EX if
     hr = IWineD3DDevice_GetTransform(This->WineD3DDevice, State, (WINED3DMATRIX*) pMatrix);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1437,6 +1486,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_MultiplyTransform(LPDIRECT3DDEVICE9
     hr = IWineD3DDevice_MultiplyTransform(This->WineD3DDevice, State, (CONST WINED3DMATRIX*) pMatrix);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1450,6 +1500,8 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetViewport(LPDIRECT3DDEVICE9EX ifa
     wined3d_mutex_lock();
     hr = IWineD3DDevice_SetViewport(This->WineD3DDevice, (const WINED3DVIEWPORT *)pViewport);
     wined3d_mutex_unlock();
+
+    ASSERT_D3D(hr == S_OK);
 
     return hr;
 }
@@ -1465,6 +1517,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetViewport(LPDIRECT3DDEVICE9EX ifa
     hr = IWineD3DDevice_GetViewport(This->WineD3DDevice, (WINED3DVIEWPORT *)pViewport);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1479,6 +1532,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetMaterial(LPDIRECT3DDEVICE9EX ifa
     hr = IWineD3DDevice_SetMaterial(This->WineD3DDevice, (const WINED3DMATERIAL *)pMaterial);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1493,6 +1547,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetMaterial(LPDIRECT3DDEVICE9EX ifa
     hr = IWineD3DDevice_GetMaterial(This->WineD3DDevice, (WINED3DMATERIAL *)pMaterial);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1507,6 +1562,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetLight(LPDIRECT3DDEVICE9EX iface,
     hr = IWineD3DDevice_SetLight(This->WineD3DDevice, Index, (const WINED3DLIGHT *)pLight);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1521,6 +1577,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetLight(LPDIRECT3DDEVICE9EX iface,
     hr = IWineD3DDevice_GetLight(This->WineD3DDevice, Index, (WINED3DLIGHT *)pLight);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1534,6 +1591,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_LightEnable(LPDIRECT3DDEVICE9EX ifa
     hr = IWineD3DDevice_SetLightEnable(This->WineD3DDevice, Index, Enable);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1547,6 +1605,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetLightEnable(LPDIRECT3DDEVICE9EX 
     hr = IWineD3DDevice_GetLightEnable(This->WineD3DDevice, Index, pEnable);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1560,6 +1619,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetClipPlane(LPDIRECT3DDEVICE9EX if
     hr = IWineD3DDevice_SetClipPlane(This->WineD3DDevice, Index, pPlane);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1573,6 +1633,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetClipPlane(LPDIRECT3DDEVICE9EX if
     hr = IWineD3DDevice_GetClipPlane(This->WineD3DDevice, Index, pPlane);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1586,6 +1647,7 @@ static HRESULT  WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_SetRenderState(LPD
     hr = IWineD3DDevice_SetRenderState(This->WineD3DDevice, State, Value);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1599,6 +1661,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetRenderState(LPDIRECT3DDEVICE9EX 
     hr = IWineD3DDevice_GetRenderState(This->WineD3DDevice, State, pValue);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1613,6 +1676,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateStateBlock(IDirect3DDevice9Ex *
 
     if (type != D3DSBT_ALL && type != D3DSBT_PIXELSTATE && type != D3DSBT_VERTEXSTATE)
     {
+        ERR_D3D();
         WARN("Unexpected stateblock type, returning D3DERR_INVALIDCALL.\n");
         return D3DERR_INVALIDCALL;
     }
@@ -1620,6 +1684,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateStateBlock(IDirect3DDevice9Ex *
     object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
     if (!object)
     {
+        ERR_D3D();
         ERR("Failed to allocate stateblock memory.\n");
         return E_OUTOFMEMORY;
     }
@@ -1627,6 +1692,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateStateBlock(IDirect3DDevice9Ex *
     hr = stateblock_init(object, This, type, NULL);
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to initialize stateblock, hr %#x.\n", hr);
         HeapFree(GetProcessHeap(), 0, object);
         return hr;
@@ -1649,6 +1715,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_BeginStateBlock(IDirect3DDevice9Ex *i
     hr = IWineD3DDevice_BeginStateBlock(This->WineD3DDevice);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1666,6 +1733,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_EndStateBlock(IDirect3DDevice9Ex *ifa
     wined3d_mutex_unlock();
     if (FAILED(hr))
     {
+        ERR_D3D();
        WARN("IWineD3DDevice_EndStateBlock() failed, hr %#x.\n", hr);
        return hr;
     }
@@ -1673,6 +1741,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_EndStateBlock(IDirect3DDevice9Ex *ifa
     object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
     if (!object)
     {
+        ERR_D3D();
         ERR("Failed to allocate stateblock memory.\n");
         IWineD3DStateBlock_Release(wined3d_stateblock);
         return E_OUTOFMEMORY;
@@ -1681,6 +1750,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_EndStateBlock(IDirect3DDevice9Ex *ifa
     hr = stateblock_init(object, This, 0, wined3d_stateblock);
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to initialize stateblock, hr %#x.\n", hr);
         IWineD3DStateBlock_Release(wined3d_stateblock);
         HeapFree(GetProcessHeap(), 0, object);
@@ -1703,6 +1773,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetClipStatus(LPDIRECT3DDEVICE9EX i
     hr = IWineD3DDevice_SetClipStatus(This->WineD3DDevice, (const WINED3DCLIPSTATUS *)pClipStatus);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1716,6 +1787,8 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetClipStatus(LPDIRECT3DDEVICE9EX i
     hr = IWineD3DDevice_GetClipStatus(This->WineD3DDevice, (WINED3DCLIPSTATUS *)pClipStatus);
     wined3d_mutex_unlock();
 
+
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1727,6 +1800,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetTexture(LPDIRECT3DDEVICE9EX ifac
     TRACE("iface %p, stage %u, texture %p.\n", iface, Stage, ppTexture);
 
     if(ppTexture == NULL){
+        ERR_D3D();
         return D3DERR_INVALIDCALL;
     }
 
@@ -1743,6 +1817,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetTexture(LPDIRECT3DDEVICE9EX ifac
     }
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(rc == S_OK);
     return rc;
 }
 
@@ -1757,6 +1832,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetTexture(LPDIRECT3DDEVICE9EX ifac
                                    pTexture==NULL ? NULL:((IDirect3DBaseTexture9Impl *)pTexture)->wineD3DBaseTexture);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1807,6 +1883,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetTextureStageState(LPDIRECT3DDEVI
     hr = IWineD3DDevice_GetTextureStageState(This->WineD3DDevice, Stage, tss_lookup[Type], pValue);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1820,6 +1897,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetTextureStageState(LPDIRECT3DDEVI
     hr = IWineD3DDevice_SetTextureStageState(This->WineD3DDevice, Stage, tss_lookup[Type], Value);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1835,6 +1913,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_GetSamplerState(IDirect3DDevice9Ex *i
     hr = IWineD3DDevice_GetSamplerState(This->WineD3DDevice, Sampler, Type, pValue);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1848,6 +1927,7 @@ static HRESULT WINAPI DECLSPEC_HOTPATCH IDirect3DDevice9Impl_SetSamplerState(LPD
     hr = IWineD3DDevice_SetSamplerState(This->WineD3DDevice, Sampler, Type, Value);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1861,6 +1941,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_ValidateDevice(LPDIRECT3DDEVICE9EX 
     hr = IWineD3DDevice_ValidateDevice(This->WineD3DDevice, pNumPasses);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1876,6 +1957,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_SetPaletteEntries(IDirect3DDevice9Ex 
     hr = IWineD3DDevice_SetPaletteEntries(This->WineD3DDevice, PaletteNumber, pEntries);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1889,6 +1971,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetPaletteEntries(LPDIRECT3DDEVICE9
     hr = IWineD3DDevice_GetPaletteEntries(This->WineD3DDevice, PaletteNumber, pEntries);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1902,6 +1985,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetCurrentTexturePalette(LPDIRECT3D
     hr = IWineD3DDevice_SetCurrentTexturePalette(This->WineD3DDevice, PaletteNumber);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1915,6 +1999,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetCurrentTexturePalette(LPDIRECT3D
     hr = IWineD3DDevice_GetCurrentTexturePalette(This->WineD3DDevice, PaletteNumber);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1928,6 +2013,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetScissorRect(LPDIRECT3DDEVICE9EX 
     hr = IWineD3DDevice_SetScissorRect(This->WineD3DDevice, pRect);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1941,6 +2027,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetScissorRect(LPDIRECT3DDEVICE9EX 
     hr = IWineD3DDevice_GetScissorRect(This->WineD3DDevice, pRect);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1954,6 +2041,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetSoftwareVertexProcessing(LPDIREC
     hr = IWineD3DDevice_SetSoftwareVertexProcessing(This->WineD3DDevice, bSoftware);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -1980,6 +2068,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetNPatchMode(LPDIRECT3DDEVICE9EX i
     hr = IWineD3DDevice_SetNPatchMode(This->WineD3DDevice, nSegments);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2011,6 +2100,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_DrawPrimitive(IDirect3DDevice9Ex *ifa
             vertex_count_from_primitive_count(PrimitiveType, PrimitiveCount));
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2031,6 +2121,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_DrawIndexedPrimitive(LPDIRECT3DDEVI
             vertex_count_from_primitive_count(PrimitiveType, primCount));
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2050,6 +2141,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_DrawPrimitiveUP(IDirect3DDevice9Ex *i
             pVertexStreamZeroData, VertexStreamZeroStride);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2071,6 +2163,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_DrawIndexedPrimitiveUP(LPDIRECT3DDE
             wined3dformat_from_d3dformat(IndexDataFormat), pVertexStreamZeroData, VertexStreamZeroStride);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2087,6 +2180,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_ProcessVertices(LPDIRECT3DDEVICE9EX
     hr = IWineD3DDevice_ProcessVertices(This->WineD3DDevice,SrcStartIndex, DestIndex, VertexCount, dest->wineD3DVertexBuffer, Decl ? Decl->wineD3DVertexDeclaration : NULL, Flags, dest->fvf);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2101,6 +2195,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateVertexDeclaration(IDirect3DDevi
 
     if (!declaration)
     {
+        ERR_D3D();
         WARN("Caller passed a NULL declaration, returning D3DERR_INVALIDCALL.\n");
         return D3DERR_INVALIDCALL;
     }
@@ -2108,6 +2203,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateVertexDeclaration(IDirect3DDevi
     object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
     if (!object)
     {
+        ERR_D3D();
         ERR("Failed to allocate vertex declaration memory.\n");
         return E_OUTOFMEMORY;
     }
@@ -2115,6 +2211,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateVertexDeclaration(IDirect3DDevi
     hr = vertexdeclaration_init(object, This, elements);
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to initialize vertex declaration, hr %#x.\n", hr);
         HeapFree(GetProcessHeap(), 0, object);
         return hr;
@@ -2202,6 +2299,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_SetFVF(LPDIRECT3DDEVICE9EX iface, DWO
 
     if (!decl)
     {
+        ERR_D3D();
          /* Any situation when this should happen, except out of memory? */
          ERR("Failed to create a converted vertex declaration\n");
          return D3DERR_DRIVERINTERNALERROR;
@@ -2210,6 +2308,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_SetFVF(LPDIRECT3DDEVICE9EX iface, DWO
     hr = IDirect3DDevice9Impl_SetVertexDeclaration(iface, decl);
     if (FAILED(hr)) ERR("Failed to set vertex declaration\n");
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2223,6 +2322,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_GetFVF(IDirect3DDevice9Ex *iface, DWO
     hr = IDirect3DDevice9_GetVertexDeclaration(iface, &decl);
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to get vertex declaration, %#x\n", hr);
         *pFVF = 0;
         return hr;
@@ -2240,6 +2340,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_GetFVF(IDirect3DDevice9Ex *iface, DWO
 
     TRACE("Returning FVF %#x\n", *pFVF);
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2255,6 +2356,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateVertexShader(IDirect3DDevice9Ex
     object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
     if (!object)
     {
+        ERR_D3D();
         ERR("Failed to allocate vertex shader memory.\n");
         return E_OUTOFMEMORY;
     }
@@ -2262,6 +2364,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateVertexShader(IDirect3DDevice9Ex
     hr = vertexshader_init(object, This, byte_code);
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to initialize vertex shader, hr %#x.\n", hr);
         HeapFree(GetProcessHeap(), 0, object);
         return hr;
@@ -2286,6 +2389,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_SetStreamSource(LPDIRECT3DDEVICE9EX i
             OffsetInBytes, Stride);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2298,6 +2402,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_GetStreamSource(LPDIRECT3DDEVICE9EX i
             iface, StreamNumber, pStream, OffsetInBytes, pStride);
 
     if(pStream == NULL){
+        ERR_D3D();
         return D3DERR_INVALIDCALL;
     }
 
@@ -2314,6 +2419,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_GetStreamSource(LPDIRECT3DDEVICE9EX i
     }
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(rc == S_OK);
     return rc;
 }
 
@@ -2329,6 +2435,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_SetStreamSourceFreq(IDirect3DDevice9E
     hr = IWineD3DDevice_SetStreamSourceFreq(This->WineD3DDevice, StreamNumber, Divider);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2342,6 +2449,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetStreamSourceFreq(LPDIRECT3DDEVIC
     hr = IWineD3DDevice_GetStreamSourceFreq(This->WineD3DDevice, StreamNumber, Divider);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2358,6 +2466,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_SetIndices(LPDIRECT3DDEVICE9EX ifac
             ib ? ib->format : WINED3DFMT_UNKNOWN);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2369,6 +2478,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetIndices(LPDIRECT3DDEVICE9EX ifac
     TRACE("iface %p, buffer %p.\n", iface, ppIndexData);
 
     if(ppIndexData == NULL){
+        ERR_D3D();
         return D3DERR_INVALIDCALL;
     }
 
@@ -2383,6 +2493,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_GetIndices(LPDIRECT3DDEVICE9EX ifac
     }
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(rc == S_OK);
     return rc;
 }
 
@@ -2398,6 +2509,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreatePixelShader(IDirect3DDevice9Ex 
     object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
     if (!object)
     {
+        ERR_D3D();
         FIXME("Failed to allocate pixel shader memory.\n");
         return E_OUTOFMEMORY;
     }
@@ -2405,6 +2517,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreatePixelShader(IDirect3DDevice9Ex 
     hr = pixelshader_init(object, This, byte_code);
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to initialize pixel shader, hr %#x.\n", hr);
         HeapFree(GetProcessHeap(), 0, object);
         return hr;
@@ -2427,6 +2540,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_DrawRectPatch(LPDIRECT3DDEVICE9EX i
     hr = IWineD3DDevice_DrawRectPatch(This->WineD3DDevice, Handle, pNumSegs, (CONST WINED3DRECTPATCH_INFO *)pRectPatchInfo);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2441,6 +2555,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_DrawTriPatch(LPDIRECT3DDEVICE9EX if
     hr = IWineD3DDevice_DrawTriPatch(This->WineD3DDevice, Handle, pNumSegs, (CONST WINED3DTRIPATCH_INFO *)pTriPatchInfo);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2454,6 +2569,7 @@ static HRESULT  WINAPI  IDirect3DDevice9Impl_DeletePatch(LPDIRECT3DDEVICE9EX ifa
     hr = IWineD3DDevice_DeletePatch(This->WineD3DDevice, Handle);
     wined3d_mutex_unlock();
 
+    ASSERT_D3D(hr == S_OK);
     return hr;
 }
 
@@ -2469,6 +2585,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateQuery(IDirect3DDevice9Ex *iface
     object = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*object));
     if (!object)
     {
+        ERR_D3D();
         ERR("Failed to allocate query memory.\n");
         return E_OUTOFMEMORY;
     }
@@ -2476,6 +2593,7 @@ static HRESULT WINAPI IDirect3DDevice9Impl_CreateQuery(IDirect3DDevice9Ex *iface
     hr = query_init(object, This, type);
     if (FAILED(hr))
     {
+        ERR_D3D();
         WARN("Failed to initialize query, hr %#x.\n", hr);
         HeapFree(GetProcessHeap(), 0, object);
         return hr;
@@ -2494,6 +2612,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_SetConvolutionMonoKernel(IDirect3DD
     FIXME("iface %p, width %u, height %u, rows %p, columns %p stub!\n",
             iface, width, height, rows, columns);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2506,6 +2625,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_ComposeRects(IDirect3DDevice9Ex *if
             iface, src_surface, dst_surface, src_descs, rect_count,
             dst_descs, operation, offset_x, offset_y);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2516,6 +2636,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_PresentEx(IDirect3DDevice9Ex *iface
     FIXME("iface %p, src_rect %p, dst_rect %p, dst_window_override %p, dirty_region %p, flags %#x stub!\n",
             iface, src_rect, dst_rect, dst_window_override, dirty_region, flags);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2523,6 +2644,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_GetGPUThreadPriority(IDirect3DDevic
 {
     FIXME("iface %p, priority %p stub!\n", iface, priority);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2530,6 +2652,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_SetGPUThreadPriority(IDirect3DDevic
 {
     FIXME("iface %p, priority %d stub!\n", iface, priority);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2537,6 +2660,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_WaitForVBlank(IDirect3DDevice9Ex *i
 {
     FIXME("iface %p, swapchain_idx %u stub!\n", iface, swapchain_idx);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2546,6 +2670,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_CheckResourceResidency(IDirect3DDev
     FIXME("iface %p, resources %p, resource_count %u stub!\n",
             iface, resources, resource_count);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2553,6 +2678,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_SetMaximumFrameLatency(IDirect3DDev
 {
     FIXME("iface %p, max_latency %u stub!\n", iface, max_latency);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2562,6 +2688,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_GetMaximumFrameLatency(IDirect3DDev
 
     *max_latency = 2;
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2569,6 +2696,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_CheckDeviceState(IDirect3DDevice9Ex
 {
     FIXME("iface %p, dst_window %p stub!\n", iface, dst_window);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2581,6 +2709,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_CreateRenderTargetEx(IDirect3DDevic
             iface, width, height, format, multisample_type, multisample_quality,
             lockable, surface, shared_handle, usage);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2591,6 +2720,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_CreateOffscreenPlainSurfaceEx(IDire
     FIXME("iface %p, width %u, height %u, format %#x, pool %#x, surface %p, shared_handle %p, usage %#x stub!\n",
             iface, width, height, format, pool, surface, shared_handle, usage);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2603,6 +2733,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_CreateDepthStencilSurfaceEx(IDirect
             iface, width, height, format, multisample_type, multisample_quality,
             discard, surface, shared_handle, usage);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2611,6 +2742,7 @@ static HRESULT WINAPI IDirect3DDevice9ExImpl_ResetEx(IDirect3DDevice9Ex *iface,
 {
     FIXME("iface %p, present_parameters %p, mode %p stub!\n", iface, present_parameters, mode);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2619,6 +2751,7 @@ static HRESULT  WINAPI  IDirect3DDevice9ExImpl_GetDisplayModeEx(IDirect3DDevice9
 {
     FIXME("iface %p, swapchain_idx %u, mode %p, rotation %p stub!\n", iface, swapchain_idx, mode, rotation);
 
+    ERR_D3D();
     return WINED3DERR_INVALIDCALL;
 }
 
@@ -2971,13 +3104,8 @@ static HRESULT STDMETHODCALLTYPE device_parent_CreateSwapChain(IWineD3DDevicePar
     local_parameters.FullScreen_RefreshRateInHz = present_parameters->FullScreen_RefreshRateInHz;
     local_parameters.PresentationInterval = present_parameters->PresentationInterval;
 
-#ifdef VBOX_WITH_WDDM
     hr = IDirect3DDevice9Impl_DoCreateAdditionalSwapChain((IDirect3DDevice9Ex *)This,
             &local_parameters, (IDirect3DSwapChain9 **)&d3d_swapchain);
-#else
-    hr = IDirect3DDevice9Impl_CreateAdditionalSwapChain((IDirect3DDevice9Ex *)This,
-            &local_parameters, (IDirect3DSwapChain9 **)&d3d_swapchain);
-#endif
     if (FAILED(hr))
     {
         ERR("(%p) CreateAdditionalSwapChain failed, returning %#x\n", iface, hr);

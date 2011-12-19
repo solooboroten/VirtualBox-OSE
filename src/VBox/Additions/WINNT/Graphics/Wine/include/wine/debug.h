@@ -30,8 +30,18 @@
 #ifndef __WINE_WINE_DEBUG_H
 #define __WINE_WINE_DEBUG_H
 
-#if defined(VBOX_WITH_WDDM) || defined(VBOX_WINE_WITHOUT_LIBWINE)
-# error "unexpected include!!"
+#if defined(VBOX_WITH_WDDM) || defined(VBOX_WINE_WITH_IPRT)
+# error "Unexpected include! VBOX_WITH_WDDM or VBOX_WINE_WITH_IPRT are defined!"
+#endif
+
+#ifdef VBOX_WINE_WITH_IPRT
+# include <iprt/assert.h>
+#else
+# define AssertBreakpoint() do { } while (0)
+# define Assert(_expr) do { } while (0)
+# ifdef DEBUG_misha
+#  include <iprt/cdefs.h>
+# endif
 #endif
 
 #include <stdarg.h>
@@ -40,15 +50,7 @@
 #include <guiddef.h>
 #endif
 
-#ifdef VBOX_WITH_WDDM
-# ifdef VBOX_WINE_WITH_IPRT
-#  include <iprt/assert.h>
-# else
-#  define AssertBreakpoint() do { } while (0)
-#  define Assert(_expr) do { } while (0)
-#  define RT_BREAKPOINT()
-# endif
-#endif
+#include <iprt/assert.h>
 
 #ifdef __WINE_WINE_TEST_H
 #error This file should not be used in Wine tests
@@ -59,6 +61,38 @@ extern "C" {
 #endif
 
 struct _GUID;
+
+#ifdef DEBUG
+# define VBOX_WINE_DEBUG
+#endif
+
+#ifdef VBOX_WINE_DEBUG
+# ifndef VBOX_WINE_DEBUG_DEFINES
+extern DWORD g_VBoxVDbgBreakOnD3DErr;
+# else
+#  ifdef DEBUG_misha
+#   define _ERR_BREAK_DEFAULT 1
+#  else
+#   define _ERR_BREAK_DEFAULT 0
+#  endif
+DWORD g_VBoxVDbgBreakOnD3DErr = _ERR_BREAK_DEFAULT;
+# endif
+
+# define _ERR_BREAK() Assert(0)
+# define _ERR_ASSERT(_e) Assert((_e))
+# define _ERR_CHECK_BREAK(_t) do { \
+        if (g_VBoxVDbgBreakOn##_t) { _ERR_BREAK(); } \
+    } while (0)
+# define _ERR_CHECK_ASSERT(_t, _e) do { \
+        if (g_VBoxVDbgBreakOn##_t) { _ERR_ASSERT(_e); } \
+    } while (0)
+
+# define ERR_D3D() _ERR_CHECK_BREAK(D3DErr)
+# define ASSERT_D3D(_e) _ERR_CHECK_ASSERT(D3DErr, _e)
+#else
+# define ERR_D3D() do {} while (0)
+# define ASSERT_D3D(_e) do {} while (0)
+#endif /* #ifdef VBOX_WINE_DEBUG */
 
 /*
  * Internal definitions (do not use these directly)
@@ -88,14 +122,14 @@ struct __wine_debug_channel
 
 #ifndef WINE_NO_DEBUG_MSGS
 # define __WINE_GET_DEBUGGING_WARN(dbch)  ((dbch)->flags & (1 << __WINE_DBCL_WARN))
-# if 0 && defined(VBOX_WITH_WDDM) && defined(DEBUG_misha)
+# if 0 && defined(DEBUG_misha)
 #  define __WINE_GET_DEBUGGING_FIXME(dbch) (RT_BREAKPOINT(), ((dbch)->flags & (1 << __WINE_DBCL_FIXME)))
 # else
 #  define __WINE_GET_DEBUGGING_FIXME(dbch) ((dbch)->flags & (1 << __WINE_DBCL_FIXME))
 # endif
 #else
 # define __WINE_GET_DEBUGGING_WARN(dbch)  0
-# if 0 && defined(VBOX_WITH_WDDM) && defined(DEBUG_misha)
+# if 0 && defined(DEBUG_misha)
 #  define __WINE_GET_DEBUGGING_FIXME(dbch) (RT_BREAKPOINT(), 0)
 # else
 #  define __WINE_GET_DEBUGGING_FIXME(dbch) 0
@@ -103,7 +137,7 @@ struct __wine_debug_channel
 #endif
 
 /* define error macro regardless of what is configured */
-#if defined(VBOX_WITH_WDDM) && defined(DEBUG_misha)
+#if defined(DEBUG_misha)
 #define __WINE_GET_DEBUGGING_ERR(dbch)  (RT_BREAKPOINT(), ((dbch)->flags & (1 << __WINE_DBCL_ERR)))
 #else
 #define __WINE_GET_DEBUGGING_ERR(dbch)  ((dbch)->flags & (1 << __WINE_DBCL_ERR))
