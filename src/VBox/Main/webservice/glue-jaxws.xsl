@@ -7,7 +7,7 @@
         a Java wrapper that allows client code to use the
         webservice in an object-oriented way.
 
-     Copyright (C) 2008-2010 Oracle Corporation
+     Copyright (C) 2008-2011 Oracle Corporation
 
      This file is part of VirtualBox Open Source Edition (OSE), as
      available from http://www.virtualbox.org. This file is free software;
@@ -714,49 +714,53 @@ public class IWebsessionManager {
     {
         this.port = pool.getPort();
 
-         try {
-          ((BindingProvider)port).getRequestContext().
-                 put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY, url);
-         }  catch (Throwable t) {
-             if (this.port != null)
+        try {
+            ((BindingProvider)port).getRequestContext().
+                put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY, url);
+        } catch (Throwable t) {
+            if (this.port != null && pool != null) {
                 pool.releasePort(this.port);
-             // we have to throw smth derived from RuntimeException
-             throw new WebServiceException(t);
-          }
+                this.port = null;
+            }
+            // we have to throw smth derived from RuntimeException
+            throw new WebServiceException(t);
+        }
     }
 
     public void connect(String url, Map<String, Object> requestContext, Map<String, Object> responseContext)
     {
-         this.port = pool.getPort();
+        this.port = pool.getPort();
 
-         try {
-           ((BindingProvider)port).getRequestContext();
-           if (requestContext != null)
-               ((BindingProvider)port).getRequestContext().putAll(requestContext);
+        try {
+            ((BindingProvider)port).getRequestContext();
+            if (requestContext != null)
+                ((BindingProvider)port).getRequestContext().putAll(requestContext);
 
-           if (responseContext != null)
-               ((BindingProvider)port).getResponseContext().putAll(responseContext);
+            if (responseContext != null)
+                ((BindingProvider)port).getResponseContext().putAll(responseContext);
 
-           ((BindingProvider)port).getRequestContext().
+            ((BindingProvider)port).getRequestContext().
                 put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY, url);
-          } catch (Throwable t) {
-             if (this.port != null)
-                pool.releasePort(port);
-             // we have to throw smth derived from RuntimeException
-             throw new WebServiceException(t);
-          }
+        } catch (Throwable t) {
+            if (this.port != null && pool != null) {
+                pool.releasePort(this.port);
+                this.port = null;
+            }
+            // we have to throw smth derived from RuntimeException
+            throw new WebServiceException(t);
+        }
     }
 
 
     public void disconnect(IVirtualBox refIVirtualBox)
     {
         try {
-           logoff(refIVirtualBox);
+            logoff(refIVirtualBox);
         } finally {
-           if (this.port != null) {
-             pool.releasePort(this.port);
-             this.port = null;
-           }
+            if (this.port != null && pool != null) {
+                pool.releasePort(this.port);
+                this.port = null;
+            }
         }
     }
 
@@ -775,10 +779,12 @@ public class IWebsessionManager {
         try {
             String retVal = port.iWebsessionManagerLogon(username, password);
             return new IVirtualBox(retVal, port);
-        } catch (InvalidObjectFaultMsg e) {
-            throw new WebServiceException(e);
-        } catch (RuntimeFaultMsg e) {
-            throw new WebServiceException(e);
+        } catch (Throwable t) {
+            if (this.port != null && pool != null) {
+                pool.releasePort(this.port);
+                this.port = null;
+            }
+            throw new WebServiceException(t);
         }
     }
 
@@ -807,6 +813,11 @@ public class IWebsessionManager {
             throw new WebServiceException(e);
         } catch (RuntimeFaultMsg e) {
             throw new WebServiceException(e);
+        } finally {
+            if (this.port != null && pool != null) {
+                pool.releasePort(this.port);
+                this.port = null;
+            }
         }
     }
 }

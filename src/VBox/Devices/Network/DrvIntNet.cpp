@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -41,6 +41,9 @@
 #include <iprt/time.h>
 #include <iprt/thread.h>
 #include <iprt/uuid.h>
+#if defined(RT_OS_DARWIN) && defined(IN_RING3)
+# include <iprt/system.h>
+#endif
 
 #include "../Builtins.h"
 
@@ -152,14 +155,14 @@ typedef struct DRVINTNET
 
     /** Number of GSO packets sent. */
     STAMCOUNTER                     StatSentGso;
-    /** Number of GSO packets recevied. */
+    /** Number of GSO packets received. */
     STAMCOUNTER                     StatReceivedGso;
     /** Number of packets send from ring-0. */
     STAMCOUNTER                     StatSentR0;
-    /** The number of times we've had to wake up the xmit thread to contine the
+    /** The number of times we've had to wake up the xmit thread to continue the
      *  ring-0 job. */
     STAMCOUNTER                     StatXmitWakeupR0;
-    /** The number of times we've had to wake up the xmit thread to contine the
+    /** The number of times we've had to wake up the xmit thread to continue the
      *  ring-3 job. */
     STAMCOUNTER                     StatXmitWakeupR3;
     /** The times the xmit thread has been told to process the ring. */
@@ -181,6 +184,19 @@ AssertCompileMemberAlignment(DRVINTNET, XmitLock, 8);
 AssertCompileMemberAlignment(DRVINTNET, StatSentGso, 8);
 /** Pointer to instance data of the internal networking driver. */
 typedef DRVINTNET *PDRVINTNET;
+
+/**
+ * Config value to flag translation structure.
+ */
+typedef struct DRVINTNETFLAG
+{
+    /** The value. */
+    const char *pszChoice;
+    /** The corresponding flag. */
+    uint32_t    fFlag;
+} DRVINTNETFLAG;
+/** Pointer to a const flag value translation. */
+typedef DRVINTNETFLAG const *PCDRVINTNETFLAG;
 
 
 #ifdef IN_RING3
@@ -319,7 +335,7 @@ PDMBOTHCBDECL(int) drvIntNetUp_BeginXmit(PPDMINETWORKUP pInterface, bool fOnWork
         /** @todo Does this actually make sense if the other dude is an EMT and so
          *        forth?  I seriously think this is ring-0 only...
          * We might end up waking up the xmit thread unnecessarily here, even when in
-         * ring-0... This needs some more thought and opitmizations when the ring-0 bits
+         * ring-0... This needs some more thought and optimizations when the ring-0 bits
          * are working. */
 #ifdef IN_RING3
         if (    !fOnWorkerThread
@@ -368,7 +384,7 @@ PDMBOTHCBDECL(int) drvIntNetUp_AllocBuf(PPDMINETWORKUP pInterface, size_t cbMin,
      * Allocate room in the ring buffer.
      *
      * In ring-3 we may have to process the xmit ring before there is
-     * sufficient buffer space since we might've stacked up a few frames to the
+     * sufficient buffer space since we might have stacked up a few frames to the
      * trunk while in ring-0.  (There is not point of doing this in ring-0.)
      */
     PINTNETHDR pHdr = NULL;             /* gcc silliness */
@@ -563,7 +579,7 @@ static DECLCALLBACK(void) drvR3IntNetUp_NotifyLinkChanged(PPDMINETWORKUP pInterf
 /* -=-=-=-=- Transmit Thread -=-=-=-=- */
 
 /**
- * Async I/O thread for defered packet transmission.
+ * Async I/O thread for deferred packet transmission.
  *
  * @returns VBox status code. Returning failure will naturally terminate the thread.
  * @param   pDrvIns     The internal networking driver instance.
@@ -1121,7 +1137,7 @@ static DECLCALLBACK(void) drvR3IntNetDestruct(PPDMDRVINS pDrvIns)
         AbortWaitReq.hIf          = pThis->hIf;
         AbortWaitReq.fNoMoreWaits = true;
         int rc = PDMDrvHlpSUPCallVMMR0Ex(pDrvIns, VMMR0_DO_INTNET_IF_ABORT_WAIT, &AbortWaitReq, sizeof(AbortWaitReq));
-        AssertRC(rc);
+        AssertMsg(RT_SUCCESS(rc) || rc == VERR_SEM_DESTROYED, ("%Rrc\n", rc));
     }
 
     /*
@@ -1156,6 +1172,10 @@ static DECLCALLBACK(void) drvR3IntNetDestruct(PPDMDRVINS pDrvIns)
         PDMDrvHlpSTAMDeregister(pDrvIns, &pThis->pBufR3->cStatYieldsNok);
         PDMDrvHlpSTAMDeregister(pDrvIns, &pThis->pBufR3->cStatLost);
         PDMDrvHlpSTAMDeregister(pDrvIns, &pThis->pBufR3->cStatBadFrames);
+        PDMDrvHlpSTAMDeregister(pDrvIns, &pThis->pBufR3->StatSend1);
+        PDMDrvHlpSTAMDeregister(pDrvIns, &pThis->pBufR3->StatSend2);
+        PDMDrvHlpSTAMDeregister(pDrvIns, &pThis->pBufR3->StatRecv1);
+        PDMDrvHlpSTAMDeregister(pDrvIns, &pThis->pBufR3->StatRecv2);
         PDMDrvHlpSTAMDeregister(pDrvIns, &pThis->StatReceivedGso);
         PDMDrvHlpSTAMDeregister(pDrvIns, &pThis->StatSentGso);
 #ifdef VBOX_WITH_STATISTICS
@@ -1197,6 +1217,73 @@ static DECLCALLBACK(void) drvR3IntNetDestruct(PPDMDRVINS pDrvIns)
 
     if (PDMCritSectIsInitialized(&pThis->XmitLock))
         PDMR3CritSectDelete(&pThis->XmitLock);
+}
+
+
+/**
+ * Queries a policy config value and translates it into open network flag.
+ *
+ * @returns VBox status code (error set on failure).
+ * @param   pDrvIns             The driver instance.
+ * @param   pszName             The value name.
+ * @param   paFlags             The open network flag descriptors.
+ * @param   cFlags              The number of descriptors.
+ * @param   fFlags              The fixed flag.
+ * @param   pfFlags             The flags variable to update.
+ */
+static int drvIntNetR3CfgGetPolicy(PPDMDRVINS pDrvIns, const char *pszName, PCDRVINTNETFLAG paFlags, size_t cFlags,
+                                   uint32_t fFixedFlag, uint32_t *pfFlags)
+{
+    char szValue[64];
+    int rc = CFGMR3QueryString(pDrvIns->pCfg, pszName, szValue, sizeof(szValue));
+    if (RT_FAILURE(rc))
+    {
+        if (rc == VERR_CFGM_VALUE_NOT_FOUND)
+            return VINF_SUCCESS;
+        return PDMDrvHlpVMSetError(pDrvIns, rc, RT_SRC_POS,
+                                   N_("Configuration error: Failed to query value of \"%s\""), pszName);
+    }
+
+    /*
+     * Check for +fixed first, so it can be stripped off.
+     */
+    char *pszSep = strpbrk(szValue, "+,;");
+    if (pszSep)
+    {
+        *pszSep++ = '\0';
+        const char *pszFixed = RTStrStripL(pszSep);
+        if (strcmp(pszFixed, "fixed"))
+        {
+            *pszSep = '+';
+            return PDMDrvHlpVMSetError(pDrvIns, VERR_INVALID_PARAMETER, RT_SRC_POS,
+                                       N_("Configuration error: The value of \"%s\" is unknown: \"%s\""), pszName, szValue);
+        }
+        *pfFlags |= fFixedFlag;
+        RTStrStripR(szValue);
+    }
+
+    /*
+     * Match against the flag values.
+     */
+    size_t i = cFlags;
+    while (i-- > 0)
+        if (!strcmp(paFlags[i].pszChoice, szValue))
+        {
+            *pfFlags |= paFlags[i].fFlag;
+            return VINF_SUCCESS;
+        }
+
+    if (!strcmp(szValue, "none"))
+        return VINF_SUCCESS;
+
+    if (!strcmp(szValue, "fixed"))
+    {
+        *pfFlags |= fFixedFlag;
+        return VINF_SUCCESS;
+    }
+
+    return PDMDrvHlpVMSetError(pDrvIns, VERR_INVALID_PARAMETER, RT_SRC_POS,
+                               N_("Configuration error: The value of \"%s\" is unknown: \"%s\""), pszName, szValue);
 }
 
 
@@ -1243,24 +1330,27 @@ static DECLCALLBACK(int) drvR3IntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg
     /*
      * Validate the config.
      */
-    if (!CFGMR3AreValuesValid(pCfg,
-                              "Network\0"
-                              "Trunk\0"
-                              "TrunkType\0"
-                              "ReceiveBufferSize\0"
-                              "SendBufferSize\0"
-                              "RestrictAccess\0"
-                              "SharedMacOnWire\0"
-                              "IgnoreAllPromisc\0"
-                              "QuietlyIgnoreAllPromisc\0"
-                              "IgnoreClientPromisc\0"
-                              "QuietlyIgnoreClientPromisc\0"
-                              "IgnoreTrunkWirePromisc\0"
-                              "QuietlyIgnoreTrunkWirePromisc\0"
-                              "IgnoreTrunkHostPromisc\0"
-                              "QuietlyIgnoreTrunkHostPromisc\0"
-                              "IsService\0"))
-        return VERR_PDM_DRVINS_UNKNOWN_CFG_VALUES;
+    PDMDRV_VALIDATE_CONFIG_RETURN(pDrvIns,
+                                  "Network"
+                                  "|Trunk"
+                                  "|TrunkType"
+                                  "|ReceiveBufferSize"
+                                  "|SendBufferSize"
+                                  "|SharedMacOnWire"
+                                  "|RestrictAccess"
+                                  "|RequireExactPolicyMatch"
+                                  "|RequireAsRestrictivePolicy"
+                                  "|AccessPolicy"
+                                  "|PromiscPolicyClients"
+                                  "|PromiscPolicyHost"
+                                  "|PromiscPolicyWire"
+                                  "|IfPolicyPromisc"
+                                  "|TrunkPolicyHost"
+                                  "|TrunkPolicyWire"
+                                  "|IsService"
+                                  "|IgnoreConnectFailure"
+                                  "|Workaround1",
+                                  "");
 
     /*
      * Check that no-one is attached to us.
@@ -1284,7 +1374,7 @@ static DECLCALLBACK(int) drvR3IntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg
      * Read the configuration.
      */
     INTNETOPENREQ OpenReq;
-    memset(&OpenReq, 0, sizeof(OpenReq));
+    RT_ZERO(OpenReq);
     OpenReq.Hdr.cbReq = sizeof(OpenReq);
     OpenReq.Hdr.u32Magic = SUPVMMR0REQHDR_MAGIC;
     OpenReq.pSession = NIL_RTR0PTR;
@@ -1320,110 +1410,11 @@ static DECLCALLBACK(int) drvR3IntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg
         return PDMDRV_SET_ERROR(pDrvIns, rc,
                                 N_("Configuration error: Failed to get the \"Trunk\" value"));
 
-    /** @cfgm{RestrictAccess, boolean, true}
-     * Whether to restrict the access to the network or if it should be public. Everyone on
-     * the computer can connect to a public network. Don't change this.
-     */
-    bool fRestrictAccess;
-    rc = CFGMR3QueryBool(pCfg, "RestrictAccess", &fRestrictAccess);
-    if (rc == VERR_CFGM_VALUE_NOT_FOUND)
-        fRestrictAccess = true;
-    else if (RT_FAILURE(rc))
-        return PDMDRV_SET_ERROR(pDrvIns, rc,
-                                N_("Configuration error: Failed to get the \"RestrictAccess\" value"));
-    OpenReq.fFlags = fRestrictAccess ? 0 : INTNET_OPEN_FLAGS_PUBLIC;
-
-    /** @cfgm{IgnoreAllPromisc, boolean, false}
-     * When set all request for operating any interface or trunk in promiscuous
-     * mode will be ignored. */
-    rc = CFGMR3QueryBoolDef(pCfg, "IgnoreAllPromisc", &f, false);
-    if (RT_FAILURE(rc))
-        return PDMDRV_SET_ERROR(pDrvIns, rc,
-                                N_("Configuration error: Failed to get the \"IgnoreAllPromisc\" value"));
-    if (f)
-        OpenReq.fFlags |= INTNET_OPEN_FLAGS_IGNORE_PROMISC;
-
-    /** @cfgm{QuietlyIgnoreAllPromisc, boolean, false}
-     * When set all request for operating any interface or trunk in promiscuous
-     * mode will be ignored.  This differs from IgnoreAllPromisc in that clients
-     * won't get VERR_INTNET_INCOMPATIBLE_FLAGS. */
-    rc = CFGMR3QueryBoolDef(pCfg, "QuietlyIgnoreAllPromisc", &f, false);
-    if (RT_FAILURE(rc))
-        return PDMDRV_SET_ERROR(pDrvIns, rc,
-                                N_("Configuration error: Failed to get the \"QuietlyIgnoreAllPromisc\" value"));
-    if (f)
-        OpenReq.fFlags |= INTNET_OPEN_FLAGS_QUIETLY_IGNORE_PROMISC;
-
-    /** @cfgm{IgnoreClientPromisc, boolean, false}
-     * When set all request for operating any non-trunk interface in promiscuous
-     * mode will be ignored. */
-    rc = CFGMR3QueryBoolDef(pCfg, "IgnoreClientPromisc", &f, false);
-    if (RT_FAILURE(rc))
-        return PDMDRV_SET_ERROR(pDrvIns, rc,
-                                N_("Configuration error: Failed to get the \"IgnoreClientPromisc\" value"));
-    if (f)
-        OpenReq.fFlags |= INTNET_OPEN_FLAGS_IGNORE_PROMISC; /** @todo add special flag for this. */
-
-    /** @cfgm{QuietlyIgnoreClientPromisc, boolean, false}
-     * When set all request for operating any non-trunk interface promiscuous mode
-     * will be ignored.  This differs from IgnoreClientPromisc in that clients won't
-     * get VERR_INTNET_INCOMPATIBLE_FLAGS. */
-    rc = CFGMR3QueryBoolDef(pCfg, "QuietlyIgnoreClientPromisc", &f, false);
-    if (RT_FAILURE(rc))
-        return PDMDRV_SET_ERROR(pDrvIns, rc,
-                                N_("Configuration error: Failed to get the \"QuietlyIgnoreClientPromisc\" value"));
-    if (f)
-        OpenReq.fFlags |= INTNET_OPEN_FLAGS_QUIETLY_IGNORE_PROMISC;  /** @todo add special flag for this. */
-
-    /** @cfgm{IgnoreTrunkWirePromisc, boolean, false}
-     * When set all request for operating the trunk-wire connection in promiscuous
-     * mode will be ignored. */
-    rc = CFGMR3QueryBoolDef(pCfg, "IgnoreTrunkWirePromisc", &f, false);
-    if (RT_FAILURE(rc))
-        return PDMDRV_SET_ERROR(pDrvIns, rc,
-                                N_("Configuration error: Failed to get the \"IgnoreTrunkWirePromisc\" value"));
-    if (f)
-        OpenReq.fFlags |= INTNET_OPEN_FLAGS_IGNORE_PROMISC_TRUNK_WIRE;
-
-    /** @cfgm{QuietlyIgnoreTrunkWirePromisc, boolean, false}
-     * When set all request for operating any trunk-wire connection promiscuous mode
-     * will be ignored.  This differs from IgnoreTrunkWirePromisc in that clients
-     * won't get VERR_INTNET_INCOMPATIBLE_FLAGS. */
-    rc = CFGMR3QueryBoolDef(pCfg, "QuietlyIgnoreTrunkWirePromisc", &f, false);
-    if (RT_FAILURE(rc))
-        return PDMDRV_SET_ERROR(pDrvIns, rc,
-                                N_("Configuration error: Failed to get the \"QuietlyIgnoreTrunkWirePromisc\" value"));
-    if (f)
-        OpenReq.fFlags |= INTNET_OPEN_FLAGS_QUIETLY_IGNORE_PROMISC_TRUNK_WIRE;
-
-    /** @cfgm{IgnoreTrunkHostPromisc, boolean, false}
-     * When set all request for operating the trunk-host connection in promiscuous
-     * mode will be ignored. */
-    rc = CFGMR3QueryBoolDef(pCfg, "IgnoreTrunkHostPromisc", &f, false);
-    if (RT_FAILURE(rc))
-        return PDMDRV_SET_ERROR(pDrvIns, rc,
-                                N_("Configuration error: Failed to get the \"IgnoreTrunkHostPromisc\" value"));
-    if (f)
-        OpenReq.fFlags |= INTNET_OPEN_FLAGS_IGNORE_PROMISC_TRUNK_HOST;
-
-    /** @cfgm{QuietlyIgnoreTrunkHostPromisc, boolean, false}
-     * When set all request for operating any trunk-host connection promiscuous mode
-     * will be ignored.  This differs from IgnoreTrunkHostPromisc in that clients
-     * won't get VERR_INTNET_INCOMPATIBLE_FLAGS. */
-    rc = CFGMR3QueryBoolDef(pCfg, "QuietlyIgnoreTrunkHostPromisc", &f, false);
-    if (RT_FAILURE(rc))
-        return PDMDRV_SET_ERROR(pDrvIns, rc,
-                                N_("Configuration error: Failed to get the \"QuietlyIgnoreTrunkHostPromisc\" value"));
-    if (f)
-        OpenReq.fFlags |= INTNET_OPEN_FLAGS_QUIETLY_IGNORE_PROMISC_TRUNK_HOST;
-
-    /** @todo flags for not sending to the host and for setting the trunk-wire
-     *        connection in promiscuous mode. */
-
+    OpenReq.fFlags = 0;
 
     /** @cfgm{SharedMacOnWire, boolean, false}
      * Whether to shared the MAC address of the host interface when using the wire. When
-     * attaching to a wireless NIC this option is usally a requirement.
+     * attaching to a wireless NIC this option is usually a requirement.
      */
     bool fSharedMacOnWire;
     rc = CFGMR3QueryBoolDef(pCfg, "SharedMacOnWire", &fSharedMacOnWire, false);
@@ -1432,6 +1423,123 @@ static DECLCALLBACK(int) drvR3IntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg
                                 N_("Configuration error: Failed to get the \"SharedMacOnWire\" value"));
     if (fSharedMacOnWire)
         OpenReq.fFlags |= INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE;
+
+    /** @cfgm{RestrictAccess, boolean, true}
+     * Whether to restrict the access to the network or if it should be public.
+     * Everyone on the computer can connect to a public network.
+     * @deprecated Use AccessPolicy instead.
+     */
+    rc = CFGMR3QueryBool(pCfg, "RestrictAccess", &f);
+    if (RT_SUCCESS(rc))
+    {
+        if (f)
+            OpenReq.fFlags |= INTNET_OPEN_FLAGS_ACCESS_RESTRICTED;
+        else
+            OpenReq.fFlags |= INTNET_OPEN_FLAGS_ACCESS_PUBLIC;
+        OpenReq.fFlags |= INTNET_OPEN_FLAGS_ACCESS_FIXED;
+    }
+    else if (rc != VERR_CFGM_VALUE_NOT_FOUND)
+        return PDMDRV_SET_ERROR(pDrvIns, rc,
+                                N_("Configuration error: Failed to get the \"RestrictAccess\" value"));
+
+
+    /** @cfgm{AccessPolicy, string, "none"}
+     * The access policy of the network:
+     *      public, public+fixed, restricted, restricted+fixed, none or fixed.
+     *
+     * A "public" network is accessible to everyone on the same host, while a
+     * "restricted" one is only accessible to VMs & services started by the
+     * same user.  The "none" policy, which is the default, means no policy
+     * change or choice is made and that the current (existing network) or
+     * default (new) policy should be used. */
+    static const DRVINTNETFLAG s_aAccessPolicyFlags[] =
+    {
+        { "public",         INTNET_OPEN_FLAGS_ACCESS_PUBLIC             },
+        { "restricted",     INTNET_OPEN_FLAGS_ACCESS_RESTRICTED         }
+    };
+    rc = drvIntNetR3CfgGetPolicy(pDrvIns, "AccessPolicy", &s_aAccessPolicyFlags[0], RT_ELEMENTS(s_aAccessPolicyFlags),
+                                 INTNET_OPEN_FLAGS_ACCESS_FIXED, &OpenReq.fFlags);
+    AssertRCReturn(rc, rc);
+
+    /** @cfgm{PromiscPolicyClients, string, "none"}
+     * The network wide promiscuous mode policy for client (non-trunk)
+     * interfaces: allow, allow+fixed, deny, deny+fixed, none or fixed. */
+    static const DRVINTNETFLAG s_aPromiscPolicyClient[] =
+    {
+        { "allow",         INTNET_OPEN_FLAGS_PROMISC_ALLOW_CLIENTS      },
+        { "deny",          INTNET_OPEN_FLAGS_PROMISC_DENY_CLIENTS       }
+    };
+    rc = drvIntNetR3CfgGetPolicy(pDrvIns, "PromiscPolicyClients", &s_aPromiscPolicyClient[0], RT_ELEMENTS(s_aPromiscPolicyClient),
+                                 INTNET_OPEN_FLAGS_PROMISC_FIXED, &OpenReq.fFlags);
+    AssertRCReturn(rc, rc);
+    /** @cfgm{PromiscPolicyHost, string, "none"}
+     * The promiscuous mode policy for the trunk-host
+     * connection: allow, allow+fixed, deny, deny+fixed, none or fixed. */
+    static const DRVINTNETFLAG s_aPromiscPolicyHost[] =
+    {
+        { "allow",         INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_HOST   },
+        { "deny",          INTNET_OPEN_FLAGS_PROMISC_DENY_TRUNK_HOST    }
+    };
+    rc = drvIntNetR3CfgGetPolicy(pDrvIns, "PromiscPolicyHost", &s_aPromiscPolicyHost[0], RT_ELEMENTS(s_aPromiscPolicyHost),
+                                 INTNET_OPEN_FLAGS_PROMISC_FIXED, &OpenReq.fFlags);
+    AssertRCReturn(rc, rc);
+    /** @cfgm{PromiscPolicyWire, string, "none"}
+     * The promiscuous mode policy for the trunk-host
+     * connection: allow, allow+fixed, deny, deny+fixed, none or fixed. */
+    static const DRVINTNETFLAG s_aPromiscPolicyWire[] =
+    {
+        { "allow",         INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_WIRE   },
+        { "deny",          INTNET_OPEN_FLAGS_PROMISC_DENY_TRUNK_WIRE    }
+    };
+    rc = drvIntNetR3CfgGetPolicy(pDrvIns, "PromiscPolicyWire", &s_aPromiscPolicyWire[0], RT_ELEMENTS(s_aPromiscPolicyWire),
+                                 INTNET_OPEN_FLAGS_PROMISC_FIXED, &OpenReq.fFlags);
+    AssertRCReturn(rc, rc);
+
+
+    /** @cfgm{IfPolicyPromisc, string, "none"}
+     * The promiscuous mode policy for this
+     * interface: deny, deny+fixed, allow-all, allow-all+fixed, allow-network,
+     *      allow-network+fixed, none or fixed. */
+    static const DRVINTNETFLAG s_aIfPolicyPromisc[] =
+    {
+        { "allow-all",     INTNET_OPEN_FLAGS_IF_PROMISC_ALLOW | INTNET_OPEN_FLAGS_IF_PROMISC_SEE_TRUNK },
+        { "allow-network", INTNET_OPEN_FLAGS_IF_PROMISC_ALLOW | INTNET_OPEN_FLAGS_IF_PROMISC_NO_TRUNK  },
+        { "deny",          INTNET_OPEN_FLAGS_IF_PROMISC_DENY }
+    };
+    rc = drvIntNetR3CfgGetPolicy(pDrvIns, "IfPolicyPromisc", &s_aIfPolicyPromisc[0], RT_ELEMENTS(s_aIfPolicyPromisc),
+                                 INTNET_OPEN_FLAGS_IF_FIXED, &OpenReq.fFlags);
+    AssertRCReturn(rc, rc);
+
+
+    /** @cfgm{TrunkPolicyHost, string, "none"}
+     * The trunk-host policy: promisc, promisc+fixed, enabled, enabled+fixed,
+     *      disabled, disabled+fixed, none or fixed
+     *
+     * This can be used to prevent packages to be routed to the host. */
+    static const DRVINTNETFLAG s_aTrunkPolicyHost[] =
+    {
+        { "promisc",        INTNET_OPEN_FLAGS_TRUNK_HOST_ENABLED | INTNET_OPEN_FLAGS_TRUNK_HOST_PROMISC_MODE },
+        { "enabled",        INTNET_OPEN_FLAGS_TRUNK_HOST_ENABLED },
+        { "disabled",       INTNET_OPEN_FLAGS_TRUNK_HOST_DISABLED }
+    };
+    rc = drvIntNetR3CfgGetPolicy(pDrvIns, "TrunkPolicyHost", &s_aTrunkPolicyHost[0], RT_ELEMENTS(s_aTrunkPolicyHost),
+                                 INTNET_OPEN_FLAGS_TRUNK_FIXED, &OpenReq.fFlags);
+    AssertRCReturn(rc, rc);
+    /** @cfgm{TrunkPolicyWire, string, "none"}
+     * The trunk-host policy: promisc, promisc+fixed, enabled, enabled+fixed,
+     *      disabled, disabled+fixed, none or fixed.
+     *
+     * This can be used to prevent packages to be routed to the wire. */
+    static const DRVINTNETFLAG s_aTrunkPolicyWire[] =
+    {
+        { "promisc",        INTNET_OPEN_FLAGS_TRUNK_WIRE_ENABLED | INTNET_OPEN_FLAGS_TRUNK_WIRE_PROMISC_MODE },
+        { "enabled",        INTNET_OPEN_FLAGS_TRUNK_WIRE_ENABLED },
+        { "disabled",       INTNET_OPEN_FLAGS_TRUNK_WIRE_DISABLED }
+    };
+    rc = drvIntNetR3CfgGetPolicy(pDrvIns, "TrunkPolicyWire", &s_aTrunkPolicyWire[0], RT_ELEMENTS(s_aTrunkPolicyWire),
+                                 INTNET_OPEN_FLAGS_TRUNK_FIXED, &OpenReq.fFlags);
+    AssertRCReturn(rc, rc);
+
 
     /** @cfgm{ReceiveBufferSize, uint32_t, 318 KB}
      * The size of the receive buffer.
@@ -1474,9 +1582,43 @@ static DECLCALLBACK(int) drvR3IntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg
         return PDMDRV_SET_ERROR(pDrvIns, rc,
                                 N_("Configuration error: Failed to get the \"IsService\" value"));
 
-    LogRel(("IntNet#%u: szNetwork={%s} enmTrunkType=%d szTrunk={%s} fFlags=%#x cbRecv=%u cbSend=%u\n",
+
+    /** @cfgm{IgnoreConnectFailure, boolean, false}
+     * When set only raise a runtime error if we cannot connect to the internal
+     * network. */
+    bool fIgnoreConnectFailure;
+    rc = CFGMR3QueryBoolDef(pCfg, "IgnoreConnectFailure", &fIgnoreConnectFailure, false);
+    if (RT_FAILURE(rc))
+        return PDMDRV_SET_ERROR(pDrvIns, rc,
+                                N_("Configuration error: Failed to get the \"IgnoreConnectFailure\" value"));
+
+    /** @cfgm{Workaround1, boolean, depends}
+     * Enables host specific workarounds, the default is depends on the whether
+     * we think the host requires it or not.
+     */
+    bool fWorkaround1 = false;
+#ifdef RT_OS_DARWIN
+    if (OpenReq.fFlags & INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE)
+    {
+        char szKrnlVer[256];
+        RTSystemQueryOSInfo(RTSYSOSINFO_RELEASE, szKrnlVer, sizeof(szKrnlVer));
+        if (strcmp(szKrnlVer, "10.7.0") >= 0)
+        {
+            LogRel(("IntNet#%u: Enables the workaround (ip_tos=0) for the little endian ip header checksum problem\n"));
+            fWorkaround1 = true;
+        }
+    }
+#endif
+    rc = CFGMR3QueryBoolDef(pCfg, "Workaround1", &fWorkaround1, fWorkaround1);
+    if (RT_FAILURE(rc))
+        return PDMDRV_SET_ERROR(pDrvIns, rc,
+                                N_("Configuration error: Failed to get the \"Workaround1\" value"));
+    if (fWorkaround1)
+        OpenReq.fFlags |= INTNET_OPEN_FLAGS_WORKAROUND_1;
+
+    LogRel(("IntNet#%u: szNetwork={%s} enmTrunkType=%d szTrunk={%s} fFlags=%#x cbRecv=%u cbSend=%u fIgnoreConnectFailure=%RTbool\n",
             pDrvIns->iInstance, OpenReq.szNetwork, OpenReq.enmTrunkType, OpenReq.szTrunk, OpenReq.fFlags,
-            OpenReq.cbRecv, OpenReq.cbSend));
+            OpenReq.cbRecv, OpenReq.cbSend, fIgnoreConnectFailure));
 
 #ifdef RT_OS_DARWIN
     /* Temporary hack: attach to a network with the name 'if=en0' and you're hitting the wire. */
@@ -1523,6 +1665,7 @@ static DECLCALLBACK(int) drvR3IntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg
     if (RT_FAILURE(rc))
         return PDMDrvHlpVMSetError(pDrvIns, rc, RT_SRC_POS,
                                    N_("Failed to open/create the internal network '%s'"), pThis->szNetwork);
+
     AssertRelease(OpenReq.hIf != INTNET_HANDLE_INVALID);
     pThis->hIf = OpenReq.hIf;
     Log(("IntNet%d: hIf=%RX32 '%s'\n", pDrvIns->iInstance, pThis->hIf, pThis->szNetwork));
@@ -1562,6 +1705,11 @@ static DECLCALLBACK(int) drvR3IntNetConstruct(PPDMDRVINS pDrvIns, PCFGMNODE pCfg
     PDMDrvHlpSTAMRegCounter(pDrvIns, &pThis->pBufR3->cStatYieldsNok,     "YieldOk",              STAMUNIT_COUNT, "Number of times yielding helped fix an overflow.");
     PDMDrvHlpSTAMRegCounter(pDrvIns, &pThis->pBufR3->cStatYieldsOk,      "YieldNok",             STAMUNIT_COUNT, "Number of times yielding didn't help fix an overflow.");
     PDMDrvHlpSTAMRegCounter(pDrvIns, &pThis->pBufR3->cStatBadFrames,     "BadFrames",            STAMUNIT_COUNT, "Number of bad frames seed by the consumers.");
+    PDMDrvHlpSTAMRegProfile(pDrvIns, &pThis->pBufR3->StatSend1,          "Send1",                STAMUNIT_COUNT, "Profiling IntNetR0IfSend.");
+    PDMDrvHlpSTAMRegProfile(pDrvIns, &pThis->pBufR3->StatSend2,          "Send2",                STAMUNIT_COUNT, "Profiling sending to the trunk.");
+    PDMDrvHlpSTAMRegProfile(pDrvIns, &pThis->pBufR3->StatRecv1,          "Recv1",                STAMUNIT_COUNT, "Reserved for future receive profiling.");
+    PDMDrvHlpSTAMRegProfile(pDrvIns, &pThis->pBufR3->StatRecv2,          "Recv2",                STAMUNIT_COUNT, "Reserved for future receive profiling.");
+    PDMDrvHlpSTAMRegProfile(pDrvIns, &pThis->pBufR3->StatReserved,       "Reserved",             STAMUNIT_COUNT, "Reserved for future use.");
 #ifdef VBOX_WITH_STATISTICS
     PDMDrvHlpSTAMRegProfileAdv(pDrvIns, &pThis->StatReceive,             "Receive",     STAMUNIT_TICKS_PER_CALL, "Profiling packet receive runs.");
     PDMDrvHlpSTAMRegProfile(pDrvIns, &pThis->StatTransmit,               "Transmit",    STAMUNIT_TICKS_PER_CALL, "Profiling packet transmit runs.");

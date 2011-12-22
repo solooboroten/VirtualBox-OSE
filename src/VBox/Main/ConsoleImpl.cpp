@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -1028,7 +1028,9 @@ void Console::VRDPClientDisconnect(uint32_t u32ClientId,
     }
 
     mDisplay->VideoAccelVRDP(false);
-#endif /* VBOX_WITH_VRDP */
+#else /* !VBOX_WITH_VRDP */
+    uint32_t u32Clients = 0;
+#endif /* !VBOX_WITH_VRDP */
 
     if (fu32Intercepted & VRDP_CLIENT_INTERCEPT_USB)
     {
@@ -1074,10 +1076,8 @@ void Console::VRDPClientDisconnect(uint32_t u32ClientId,
     updateGuestPropertiesVRDPDisconnect(u32ClientId);
 #endif /* VBOX_WITH_GUEST_PROPS */
 
-#ifdef VBOX_WITH_VRDP
     if (u32Clients == 0)
         mcGuestCredentialsProvided = false;
-#endif
 
     LogFlowFuncLeave();
     return;
@@ -3315,7 +3315,7 @@ HRESULT Console::doMediumChange(IMediumAttachment *aMediumAttachment, bool fForc
         return S_OK;
     }
 
-    if (!pMedium)
+    if (pMedium)
         return setError(E_FAIL,
                         tr("Could not mount the media/drive '%ls' (%Rrc)"),
                         mediumLocation.raw(), vrc);
@@ -5068,8 +5068,9 @@ HRESULT Console::consoleInitReleaseLog(const ComPtr<IMachine> aMachine)
 #endif
     char szError[RTPATH_MAX + 128] = "";
     int vrc = RTLogCreateEx(&loggerRelease, fFlags, "all",
-                            "VBOX_RELEASE_LOG", RT_ELEMENTS(s_apszGroups), s_apszGroups,
-                            RTLOGDEST_FILE, szError, sizeof(szError), logFile.raw());
+                            "VBOX_RELEASE_LOG", RT_ELEMENTS(s_apszGroups), s_apszGroups, RTLOGDEST_FILE,
+                            NULL /* pfnBeginEnd */, 0 /* cHistory */, 0 /* cbHistoryFileMax */, 0 /* uHistoryTimeMax */,
+                            szError, sizeof(szError), logFile.c_str());
     if (RT_SUCCESS(vrc))
     {
         /* some introductory information */
@@ -7164,6 +7165,14 @@ void Console::processRemoteUSBDevices(uint32_t u32ClientId, VRDPUSBDEVICEDESC *p
      */
     while (cbDevList >= 2 && e->oNext)
     {
+        /* Sanitize incoming strings in case they aren't valid UTF-8. */
+        if (e->oManufacturer)
+            RTStrPurgeEncoding((char *)e + e->oManufacturer);
+        if (e->oProduct)
+            RTStrPurgeEncoding((char *)e + e->oProduct);
+        if (e->oSerialNumber)
+            RTStrPurgeEncoding((char *)e + e->oSerialNumber);
+
         LogFlowThisFunc(("vendor %04X, product %04X, name = %s\n",
                           e->idVendor, e->idProduct,
                           e->oProduct? (char *)e + e->oProduct: ""));

@@ -1521,19 +1521,36 @@ static DECLCALLBACK(int) vbvaChannelHandler (void *pvHandler, uint16_t u16Channe
             }
 
             VBVAINFOSCREEN *pScreen = (VBVAINFOSCREEN *)pvBuffer;
+            VBVAINFOVIEW *pView = &pCtx->aViews[pScreen->u32ViewIndex].view;
+            /* Calculate the offset of the  end of the screen so we can make
+             * sure it is inside the view.  I assume that screen rollover is not
+             * implemented. */
+            int64_t offEnd =   (int64_t)pScreen->u32Height * pScreen->u32LineSize
+                             + pScreen->u32Width + pScreen->u32StartOffset;
             LogFlowFunc(("VBVA_INFO_SCREEN: [%d] @%d,%d %dx%d, line 0x%x, BPP %d, flags 0x%x\n",
                          pScreen->u32ViewIndex, pScreen->i32OriginX, pScreen->i32OriginY,
                          pScreen->u32Width, pScreen->u32Height,
                          pScreen->u32LineSize,  pScreen->u16BitsPerPixel, pScreen->u16Flags));
 
-            if (pScreen->u32ViewIndex < RT_ELEMENTS (pCtx->aViews))
+            if (   pScreen->u32ViewIndex < RT_ELEMENTS (pCtx->aViews)
+                && pScreen->u16BitsPerPixel <= 32
+                && pScreen->u32Width <= UINT16_MAX
+                && pScreen->u32Height <= UINT16_MAX
+                && pScreen->u32LineSize <= UINT16_MAX * 4
+                && offEnd < pView->u32MaxScreenSize)
             {
                 vbvaResize (pVGAState, &pCtx->aViews[pScreen->u32ViewIndex], pScreen);
             }
             else
             {
-                Log(("View index too large %d!!!\n",
-                     pScreen->u32ViewIndex));
+                Log(("VBVA_INFO_SCREEN [%lu]: bad data: %lux%lu, line 0x%lx, BPP %u, start offset %lu, max screen size %lu\n",
+                         (unsigned long)pScreen->u32ViewIndex,
+                         (unsigned long)pScreen->u32Width,
+                         (unsigned long)pScreen->u32Height,
+                         (unsigned long)pScreen->u32LineSize,
+                         (unsigned long)pScreen->u16BitsPerPixel,
+                         (unsigned long)pScreen->u32StartOffset,
+                         (unsigned long)pView->u32MaxScreenSize));
                 rc = VERR_INVALID_PARAMETER;
             }
         } break;

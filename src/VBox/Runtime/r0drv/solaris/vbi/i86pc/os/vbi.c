@@ -56,6 +56,9 @@
 #include <sys/modctl.h>
 #include <sys/machparam.h>
 #include <sys/utsname.h>
+#include <sys/ctf_api.h>
+
+#include <iprt/assert.h>
 
 #include "vbi.h"
 
@@ -68,6 +71,14 @@ extern void *contig_alloc(size_t, ddi_dma_attr_t *, uintptr_t, int);
 extern void contig_free(void *, size_t);
 #pragma weak contig_free
 static void (*p_contig_free)(void *, size_t) = contig_free;
+
+/*
+ * We have to use dl_lookup to find kflt_init() and thereby use kernel pages from
+ * the freelists if we no longer get user pages from freelist and cachelists.
+ */
+/* Introduced in v9 */
+static int use_kflt = 0;
+static page_t *vbi_page_get_fromlist(uint_t freelist, caddr_t virtAddr, size_t pgsize);
 
 /*
  * Workarounds for running on old versions of solaris with different cross call
@@ -132,40 +143,6 @@ static int vbi_verbose = 0;
 /* Introduced in v8 */
 static int vbi_is_initialized = 0;
 
-/* Introduced in v6 */
-static int vbi_is_nevada = 0;
-
-#ifdef _LP64
-/* 64-bit Solaris 10 offsets */
-/* CPU */
-static int off_s10_cpu_runrun   = 232;
-static int off_s10_cpu_kprunrun = 233;
-/* kthread_t */
-static int off_s10_t_preempt    = 42;
-
-/* 64-bit Solaris 11 (Nevada/OpenSolaris) offsets */
-/* CPU */
-static int off_s11_cpu_runrun   = 216;
-static int off_s11_cpu_kprunrun = 217;
-/* kthread_t */
-static int off_s11_t_preempt    = 42;
-#else
-/* 32-bit Solaris 10 offsets */
-/* CPU */
-static int off_s10_cpu_runrun   = 124;
-static int off_s10_cpu_kprunrun = 125;
-/* kthread_t */
-static int off_s10_t_preempt    = 26;
-
-/* 32-bit Solaris 11 (Nevada/OpenSolaris) offsets */
-/* CPU */
-static int off_s11_cpu_runrun   = 112;
-static int off_s11_cpu_kprunrun = 113;
-/* kthread_t */
-static int off_s11_t_preempt    = 26;
-#endif
-
-
 /* Which offsets will be used */
 static int off_cpu_runrun       = -1;
 static int off_cpu_kprunrun     = -1;
@@ -204,6 +181,35 @@ _init(void)
 }
 #endif
 
+static int
+vbi_get_ctf_member_offset(ctf_file_t *ctfp, const char *structname, const char *membername, int *offset)
+{
+	AssertReturn(ctfp, CTF_ERR);
+	AssertReturn(structname, CTF_ERR);
+	AssertReturn(membername, CTF_ERR);
+	AssertReturn(offset, CTF_ERR);
+
+	ctf_id_t typeident = ctf_lookup_by_name(ctfp, structname);
+	if (typeident != CTF_ERR)
+	{
+		ctf_membinfo_t memberinfo;
+		bzero(&memberinfo, sizeof(memberinfo));
+		if (ctf_member_info(ctfp, typeident, membername, &memberinfo) != CTF_ERR)
+		{
+			*offset = (memberinfo.ctm_offset >> 3);
+			cmn_err(CE_CONT, "!%s::%s at %d\n", structname, membername, *offset);
+			return (0);
+		}
+		else
+			cmn_err(CE_NOTE, "ctf_member_info failed for struct %s member %s\n", structname, membername);
+	}
+	else
+		cmn_err(CE_NOTE, "ctf_lookup_by_name failed for struct %s\n", structname);
+
+	return (CTF_ERR);
+}
+
+
 int
 vbi_init(void)
 {
@@ -214,7 +220,7 @@ vbi_init(void)
 	if (kobj_getsymvalue("xc_init_cpu", 1) != NULL) {
 		/*
 		 * Our bit vector storage needs to be large enough for the
-		 * actual number of CPUs running in the sytem.
+		 * actual number of CPUs running in the system.
 		 */
 		if (ncpus > VBI_NCPU) {
 			cmn_err(CE_NOTE, "cpu count mismatch.\n");
@@ -238,48 +244,52 @@ vbi_init(void)
 		p_contig_free = (void (*)(void *, size_t))
 			kobj_getsymvalue("contig_free", 1);
 		if (p_contig_free == NULL) {
-			cmn_err(CE_NOTE, " contig_free() not found in kernel\n");
+			cmn_err(CE_NOTE, "contig_free() not found in kernel\n");
 			return (EINVAL);
 		}
 	}
 
 	/*
-	 * Check if this is S10 or Nevada
+	 * Use kernel page freelist flags to get pages from kernel page freelists
+	 * while allocating physical pages, once the userpages are exhausted.
+	 * snv_161+, see @bugref{5632}.
 	 */
-	if (!strncmp(utsname.release, "5.11", sizeof("5.11") - 1)) {
-		/* Nevada detected... */
-		vbi_is_nevada = 1;
-
-		off_cpu_runrun = off_s11_cpu_runrun;
-		off_cpu_kprunrun = off_s11_cpu_kprunrun;
-		off_t_preempt = off_s11_t_preempt;
-	} else {
-		/* Solaris 10 detected... */
-		vbi_is_nevada = 0;
-
-		off_cpu_runrun = off_s10_cpu_runrun;
-		off_cpu_kprunrun = off_s10_cpu_kprunrun;
-		off_t_preempt = off_s10_t_preempt;
+	if (kobj_getsymvalue("kflt_init", 1) != NULL)
+	{
+		int *p_kflt_disable = (int*)kobj_getsymvalue("kflt_disable", 1);	/* amd64 only, on 32-bit kflt's are disabled. */
+		if (p_kflt_disable && *p_kflt_disable == 0)
+		{
+			use_kflt = 1;
+		}
 	}
 
 	/*
-	 * Sanity checking...
+	 * CTF probing for fluid, private members.
 	 */
-	/* CPU */
-	char crr = VBI_CPU_RUNRUN;
-	char krr = VBI_CPU_KPRUNRUN;
-	if (   (crr < 0 || crr > 1)
-		|| (krr < 0 || krr > 1)) {
-		cmn_err(CE_NOTE, ":CPU structure sanity check failed! OS version mismatch.\n");
-		return EINVAL;
+	int err = 0;
+	modctl_t *genunix_modctl = mod_hold_by_name("genunix");
+	if (genunix_modctl)
+	{
+		ctf_file_t *ctfp = ctf_modopen(genunix_modctl->mod_mp, &err);
+		if (ctfp)
+		{
+			do {
+				err = vbi_get_ctf_member_offset(ctfp, "kthread_t", "t_preempt", &off_t_preempt); AssertBreak(!err);
+				err = vbi_get_ctf_member_offset(ctfp, "cpu_t", "cpu_runrun", &off_cpu_runrun); AssertBreak(!err);
+				err = vbi_get_ctf_member_offset(ctfp, "cpu_t", "cpu_kprunrun", &off_cpu_kprunrun); AssertBreak(!err);
+			} while (0);
+		}
+
+		mod_release_mod(genunix_modctl);
+	}
+	else
+	{
+		cmn_err(CE_NOTE, "failed to open module genunix.\n");
+		err = EINVAL;
 	}
 
-	/* Thread */
-	char t_preempt = VBI_T_PREEMPT;
-	if (t_preempt < 0 || t_preempt > 32) {
-		cmn_err(CE_NOTE, ":Thread structure sanity check failed! OS version mismatch.\n");
-		return EINVAL;
-	}
+	if (err)
+		return (EINVAL);
 
 	vbi_is_initialized = 1;
 
@@ -815,7 +825,6 @@ static int
 segvbi_fault(struct hat *hat, struct seg *seg, caddr_t addr, size_t len,
 	enum fault_type type, enum seg_rw rw)
 {
-    cmn_err(CE_NOTE, "segvbi_fault returning 0\n");
 	return (0);
 }
 
@@ -1310,14 +1319,12 @@ vbi_pages_alloc(uint64_t *phys, size_t size)
 				caddr_t virtAddr = NULL;
 				for (int64_t i = 0; i < npages; i++, virtAddr += PAGESIZE)
 				{
-					/* get a page from the freelist */
-					page_t *ppage = page_get_freelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
-										PAGESIZE, 0 /* flags */, NULL /* local group */);
+					/* get a page from the freelists */
+					page_t *ppage = vbi_page_get_fromlist(1 /* freelist */, virtAddr, PAGESIZE);
 					if (!ppage)
 					{
-						/* try from the cachelist */
-						ppage = page_get_cachelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
-										0 /* flags */, NULL /* local group */);
+						/* try from the cachelists */
+						ppage = vbi_page_get_fromlist(2 /* cachelist */, virtAddr, PAGESIZE);
 						if (!ppage)
 						{
 							/* damn */
@@ -1411,6 +1418,38 @@ vbi_page_to_pa(page_t **pp_pages, pgcnt_t i)
 	if (pfn == PFN_INVALID)
 		panic("vbi_page_to_pa: page_pptonum() failed\n");
 	return (uint64_t)pfn << PAGESHIFT;
+}
+
+
+static page_t *
+vbi_page_get_fromlist(uint_t freelist, caddr_t virtAddr, size_t pgsize)
+{
+	/* pgsize only applies when using the freelist */
+	seg_t kernseg;
+	kernseg.s_as = &kas;
+	page_t *ppage = NULL;
+	if (freelist == 1)
+	{
+		ppage = page_get_freelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
+							pgsize, 0 /* flags */, NULL /* local group */);
+		if (!ppage && use_kflt)
+		{
+			ppage = page_get_freelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
+						pgsize, 0x0200 /* PG_KFLT */, NULL /* local group */);
+		}
+	}
+	else
+	{
+		/* cachelist */
+		ppage = page_get_cachelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
+							0 /* flags */, NULL /* local group */);
+		if (!ppage && use_kflt)
+		{
+			ppage = page_get_cachelist(&vbipagevp, 0 /* offset */, &kernseg, virtAddr,
+						0x0200 /* PG_KFLT */, NULL /* local group */);
+		}
+	}
+	return ppage;
 }
 
 /*

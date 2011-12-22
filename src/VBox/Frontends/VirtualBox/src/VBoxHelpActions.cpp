@@ -67,8 +67,6 @@ void VBoxHelpActions::setup (QObject *aParent)
 
     QObject::connect (&vboxGlobal(), SIGNAL (canShowRegDlg (bool)),
                       registerAction, SLOT (setEnabled (bool)));
-    QObject::connect (&vboxGlobal(), SIGNAL (canShowUpdDlg (bool)),
-                      updateAction, SLOT (setEnabled (bool)));
 }
 
 void VBoxHelpActions::addTo (QMenu *aMenu)
@@ -89,8 +87,6 @@ void VBoxHelpActions::addTo (QMenu *aMenu)
 #endif
 
     aMenu->addAction (updateAction);
-    updateAction->setEnabled (vboxGlobal().virtualBox().
-        GetExtraData (VBoxDefs::GUI_UpdateDlgWinID).isEmpty());
 
 #ifndef Q_WS_MAC
     aMenu->addSeparator();

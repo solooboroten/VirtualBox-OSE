@@ -5109,6 +5109,11 @@ static DECLCALLBACK(int) vgaPortTakeScreenshot(PPDMIDISPLAYPORT pInterface, uint
                 *pcx = Connector.cx;
                 *pcy = Connector.cy;
             }
+            else
+            {
+                /* If we do not return a success, then the data buffer must be freed. */
+                RTMemFree(pu8Data);
+            }
         }
     }
 

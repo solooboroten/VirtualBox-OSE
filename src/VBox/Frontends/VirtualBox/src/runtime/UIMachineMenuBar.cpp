@@ -215,11 +215,6 @@ void UIMachineMenuBar::prepareMenuHelp(QMenu *pMenu, UIActionsPool *pActionsPool
     pMenu->addAction(pActionsPool->action(UIActionIndex_Simple_Register));
 #endif
 
-#ifdef Q_WS_MAC
-    if (m_fIsFirstTime)
-#endif /* Q_WS_MAC */
-        pMenu->addAction(pActionsPool->action(UIActionIndex_Simple_Update));
-
 #ifndef Q_WS_MAC
     pMenu->addSeparator();
 #else /* Q_WS_MAC */
@@ -241,8 +236,6 @@ void UIMachineMenuBar::prepareMenuHelp(QMenu *pMenu, UIActionsPool *pActionsPool
         VBoxGlobal::connect(pActionsPool->action(UIActionIndex_Simple_Register), SIGNAL(triggered()),
                             &vboxGlobal(), SLOT(showRegistrationDialog()));
 #endif /* VBOX_WITH_REGISTRATION */
-        VBoxGlobal::connect(pActionsPool->action(UIActionIndex_Simple_Update), SIGNAL(triggered()),
-                            &vboxGlobal(), SLOT(showUpdateDialog()));
         VBoxGlobal::connect(pActionsPool->action(UIActionIndex_Simple_About), SIGNAL(triggered()),
                             &vboxProblem(), SLOT(showHelpAboutDialog()));
 
@@ -250,8 +243,6 @@ void UIMachineMenuBar::prepareMenuHelp(QMenu *pMenu, UIActionsPool *pActionsPool
         VBoxGlobal::connect(&vboxGlobal(), SIGNAL (canShowRegDlg (bool)),
                             pActionsPool->action(UIActionIndex_Simple_Register), SLOT(setEnabled(bool)));
 #endif /* VBOX_WITH_REGISTRATION */
-        VBoxGlobal::connect(&vboxGlobal(), SIGNAL (canShowUpdDlg (bool)),
-                            pActionsPool->action(UIActionIndex_Simple_Update), SLOT(setEnabled(bool)));
 
         m_fIsFirstTime = false;
     }

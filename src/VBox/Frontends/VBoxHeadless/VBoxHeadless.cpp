@@ -1075,7 +1075,6 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
             ConsoleCallback *callback = new ConsoleCallback();
             callback->AddRef();
             CHECK_ERROR(console, RegisterCallback(callback));
-            callback->Release();
             if (FAILED(rc))
                 break;
         }
@@ -1187,7 +1186,6 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
         vboxCallback = new VirtualBoxCallback();
         vboxCallback->AddRef();
         CHECK_ERROR(virtualBox, RegisterCallback(vboxCallback));
-        vboxCallback->Release();
         if (FAILED(rc))
             break;
 
@@ -1220,7 +1218,6 @@ extern "C" DECLEXPORT(int) TrustedMain(int argc, char **argv, char **envp)
     /* VirtualBox callback unregistration. */
     if (vboxCallback)
     {
-        vboxCallback->AddRef();
         CHECK_ERROR(virtualBox, UnregisterCallback(vboxCallback));
         vboxCallback->Release();
     }

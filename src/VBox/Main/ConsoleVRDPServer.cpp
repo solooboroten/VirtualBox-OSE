@@ -859,6 +859,7 @@ DECLCALLBACK(int)  ConsoleVRDPServer::VRDPCallbackQueryProperty(void *pvCallback
                 || RTStrICmp(pFeature->achInfo, "Client/DisableAudio") == 0
                 || RTStrICmp(pFeature->achInfo, "Client/DisableUSB") == 0
                 || RTStrICmp(pFeature->achInfo, "Client/DisableClipboard") == 0
+                || RTStrICmp(pFeature->achInfo, "DownscaleProtection") == 0
                )
             {
                 HRESULT hrc = server->mConsole->machine ()->GetExtraData(com::Bstr(extraData), bstrValue.asOutParam());

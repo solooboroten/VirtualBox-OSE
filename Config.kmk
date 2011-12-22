@@ -148,7 +148,7 @@ VBOX_VERSION_MINOR = 2
 # This is the current build number. It should be increased every time we publish a
 # new build. The define is available in every source file. Only even build numbers
 # will be published, odd numbers are set during development.
-VBOX_VERSION_BUILD = 12
+VBOX_VERSION_BUILD = 14
 # Full version string (may include more than just x.y.z, but no spaces or other problematic chars).
 VBOX_VERSION_STRING = $(VBOX_VERSION_MAJOR).$(VBOX_VERSION_MINOR).$(VBOX_VERSION_BUILD)
 # Force the additions.sh script to get an exact additions build when we're doing the release.
@@ -502,6 +502,8 @@ if1of ($(KBUILD_TARGET), darwin freebsd linux solaris win)
 endif
 # Enable the VNC server in VBoxHeadless (GPL only).
 #VBOX_WITH_VNC = 1
+# Enable S3 support (requires libcurl)
+VBOX_WITH_S3 = 1
 ## @}
 
 
@@ -1995,7 +1997,7 @@ ifdef VBOX_SIGNING_MODE
    VBOX_CERTIFICATE_SUBJECT_NAME ?= MyTestCertificate
    VBOX_CERTIFICATE_SUBJECT_NAME_ARGS ?= /n "$(VBOX_CERTIFICATE_SUBJECT_NAME)"
   else if1of ($(VBOX_SIGNING_MODE), release development)
-   VBOX_CERTIFICATE_SUBJECT_NAME ?= Sun Microsystems, Inc.
+   VBOX_CERTIFICATE_SUBJECT_NAME ?= Oracle Corporation
    VBOX_CERTIFICATE_SUBJECT_NAME_ARGS ?= /n "$(VBOX_CERTIFICATE_SUBJECT_NAME)"
    VBOX_CROSS_CERTIFICATE_FILE ?= $(VBOX_PATH_SELFSIGN)/MSCV-VSClass3.cer
    VBOX_CROSS_CERTIFICATE_FILE_ARGS ?= /ac "$(VBOX_CROSS_CERTIFICATE_FILE)"
@@ -2144,11 +2146,13 @@ if1of ($(KBUILD_TARGET), linux solaris)
  VBOX_OPENSSL_ALL=1
 endif
 
+ifdef VBOX_WITH_S3
 VBOX_WITH_LIBCURL = 1
 SDK_VBOX_LIBCURL       = .
 SDK_VBOX_LIBCURL_INCS ?= $(PATH_ROOT)/src/libs/curl-7.19.4/include
 SDK_VBOX_LIBCURL_LIBS ?= $(PATH_LIB)/VBox-libcurl$(VBOX_SUFF_LIB)
 SDK_VBOX_LIBCURL_DEFS ?= BUILDING_LIBCURL
+endif
 
 SDK_VBOX_FFMPEG       = .
 if1of ($(KBUILD_TARGET), darwin linux os2 win)
@@ -2186,7 +2190,7 @@ endif
 #
 if1of ($(KBUILD_TARGET), linux)
  ifeq ($(origin VBOX_LINUX_SRC),undefined)
-  ifneq ($(wildcard /lib/modules/$(shell uname -r)/build/include/linux/autoconf.h),)
+  ifneq ($(wildcard /lib/modules/$(shell uname -r)/build/include/linux/autoconf.h  /lib/modules/$(shell uname -r)/build/include/generated/autoconf.h),)
    export VBOX_LINUX_SRC := /lib/modules/$(shell uname -r)/build
   else
    export VBOX_LINUX_SRC := /usr/src/linux
@@ -2401,7 +2405,7 @@ TEMPLATE_VBoxR0_CXXFLAGS            = -Zi -Zl -GR- -EHs- -GF -W3 -wd4244 -GS- -w
 TEMPLATE_VBoxR0_CXXFLAGS            = -Zi -Zl -GR- -EHs- -GF -W3 -wd4244 $(VBOX_VCC_OPT) $(VBOX_VCC_FP)	$(VBOX_VCC_WERR)
  endif
 TEMPLATE_VBoxR0_CFLAGS              = $(TEMPLATE_VBoxR0_CXXFLAGS)
-TEMPLATE_VBoxR0_LDFLAGS             = -Driver -Subsystem:NATIVE -Incremental:NO -Align:64 -MapInfo:Exports -NoD $(VBOX_VCC_LD_WERR) -Debug
+TEMPLATE_VBoxR0_LDFLAGS             = -Driver -Subsystem:NATIVE -Incremental:NO -Align:4096 -MapInfo:Exports -NoD $(VBOX_VCC_LD_WERR) -Debug
 TEMPLATE_VBoxR0_LIBS                = \
 	$(PATH_LIB)/RuntimeR0Stub$(VBOX_SUFF_LIB)
 TEMPLATE_VBoxR0_LIBS.x86            = \
@@ -2487,7 +2491,7 @@ ifeq ($(KBUILD_TARGET),win)
   TEMPLATE_VBOXR0DRV_CXXFLAGS          = -Zi -Zl -GR- -EHs- -GF -Gz -W3 $(VBOX_VCC_OPT) $(VBOX_VCC_FP)
  endif
  TEMPLATE_VBOXR0DRV_CFLAGS             = $(TEMPLATE_VBOXR0DRV_CXXFLAGS)
- TEMPLATE_VBOXR0DRV_LDFLAGS            = -Driver -Subsystem:NATIVE -Incremental:NO -Align:64 -MapInfo:Exports -NoD -Debug
+ TEMPLATE_VBOXR0DRV_LDFLAGS            = -Driver -Subsystem:NATIVE -Incremental:NO -Align:4096 -MapInfo:Exports -NoD -Debug
  TEMPLATE_VBOXR0DRV_POST_CMDS          = $(VBOX_SIGN_DRIVER_CMDS)
 endif
 
@@ -4226,7 +4230,7 @@ endif
 SVN                    ?= svn$(HOSTSUFF_EXE)
 VBOX_SVN_REV_KMK        = $(PATH_OUT)/revision.kmk
 ifndef VBOX_SVN_REV
- VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 68302 $  )
+ VBOX_SVN_REV_FALLBACK := $(patsubst %:,,  $Rev: 75509 $  )
  VBOX_SVN_DEP          := $(wildcard $(PATH_ROOT)/.svn/entries)
  ifeq ($(which $(SVN)),)
   VBOX_SVN_DEP         :=

@@ -1048,6 +1048,47 @@ RTDECL(int) RTStrCopy(char *pszDst, size_t cbDst, const char *pszSrc);
 RTDECL(int) RTStrCopyEx(char *pszDst, size_t cbDst, const char *pszSrc, size_t cchSrcMax);
 
 /**
+ * String copy with overflow handling and buffer advancing.
+ *
+ * @retval  VINF_SUCCESS on success.
+ * @retval  VERR_BUFFER_OVERFLOW if the destination buffer is too small.  The
+ *          buffer will contain as much of the string as it can hold, fully
+ *          terminated.
+ *
+ * @param   ppszDst             Pointer to the destination buffer pointer.
+ *                              This will be advanced to the end of the copied
+ *                              bytes (points at the terminator).  This is also
+ *                              updated on overflow.
+ * @param   pcbDst              Pointer to the destination buffer size
+ *                              variable.  This will be updated in accord with
+ *                              the buffer pointer.
+ * @param   pszSrc              The source string.  NULL is not OK.
+ */
+RTDECL(int) RTStrCopyP(char **ppszDst, size_t *pcbDst, const char *pszSrc);
+
+/**
+ * String copy with overflow handling.
+ *
+ * @retval  VINF_SUCCESS on success.
+ * @retval  VERR_BUFFER_OVERFLOW if the destination buffer is too small.  The
+ *          buffer will contain as much of the string as it can hold, fully
+ *          terminated.
+ *
+ * @param   ppszDst             Pointer to the destination buffer pointer.
+ *                              This will be advanced to the end of the copied
+ *                              bytes (points at the terminator).  This is also
+ *                              updated on overflow.
+ * @param   pcbDst              Pointer to the destination buffer size
+ *                              variable.  This will be updated in accord with
+ *                              the buffer pointer.
+ * @param   pszSrc              The source string.  NULL is not OK.
+ * @param   cchSrcMax           The maximum number of chars (not code points) to
+ *                              copy from the source string, not counting the
+ *                              terminator as usual.
+ */
+RTDECL(int) RTStrCopyPEx(char **ppszDst, size_t *pcbDst, const char *pszSrc, size_t cchSrcMax);
+
+/**
  * Performs a case sensitive string compare between two UTF-8 strings.
  *
  * Encoding errors are ignored by the current implementation. So, the only
@@ -1061,6 +1102,47 @@ RTDECL(int) RTStrCopyEx(char *pszDst, size_t cbDst, const char *pszSrc, size_t c
  * @param   psz2        Second UTF-8 string. Null is allowed.
  */
 RTDECL(int) RTStrCmp(const char *psz1, const char *psz2);
+
+/*
+ * String concatenation with overflow handling.
+ *
+ * @retval  VINF_SUCCESS on success.
+ * @retval  VERR_BUFFER_OVERFLOW if the destination buffer is too small.  The
+ *          buffer will contain as much of the string as it can hold, fully
+ *          terminated.
+ *
+ * @param   ppszDst             Pointer to the destination buffer pointer.
+ *                              This will be advanced to the end of the copied
+ *                              bytes (points at the terminator).  This is also
+ *                              updated on overflow.
+ * @param   pcbDst              Pointer to the destination buffer size
+ *                              variable.  This will be updated in accord with
+ *                              the buffer pointer.
+ * @param   pszSrc              The source string.  NULL is not OK.
+ */
+RTDECL(int) RTStrCatP(char **ppszDst, size_t *pcbDst, const char *pszSrc);
+
+/**
+ * String concatenation with overflow handling and buffer advancing.
+ *
+ * @retval  VINF_SUCCESS on success.
+ * @retval  VERR_BUFFER_OVERFLOW if the destination buffer is too small.  The
+ *          buffer will contain as much of the string as it can hold, fully
+ *          terminated.
+ *
+ * @param   ppszDst             Pointer to the destination buffer pointer.
+ *                              This will be advanced to the end of the copied
+ *                              bytes (points at the terminator).  This is also
+ *                              updated on overflow.
+ * @param   pcbDst              Pointer to the destination buffer size
+ *                              variable.  This will be updated in accord with
+ *                              the buffer pointer.
+ * @param   pszSrc              The source string.  NULL is not OK.
+ * @param   cchSrcMax           The maximum number of chars (not code points) to
+ *                              copy from the source string, not counting the
+ *                              terminator as usual.
+ */
+RTDECL(int) RTStrCatPEx(char **ppszDst, size_t *pcbDst, const char *pszSrc, size_t cchSrcMax);
 
 /**
  * Performs a case sensitive string compare between two UTF-8 strings, given
@@ -1207,7 +1289,7 @@ RTDECL(int) RTStrNLenEx(const char *pszString, size_t cchMax, size_t *pcch);
 RT_C_DECLS_END
 
 /** The maximum size argument of a memchr call. */
-#define RTSTR_MEMCHR_MAX            (~(size_t)0x10000)
+#define RTSTR_MEMCHR_MAX            ((~(size_t)0 >> 1) - 15)
 
 /**
  * Find the zero terminator in a string with a limited length.
@@ -1221,8 +1303,9 @@ RT_C_DECLS_END
 #if defined(__cplusplus) && !defined(DOXYGEN_RUNNING)
 DECLINLINE(char const *) RTStrEnd(char const *pszString, size_t cchMax)
 {
-    /* Avoid potential issues with memchr seen in glibc. */
-    if (cchMax > RTSTR_MEMCHR_MAX)
+    /* Avoid potential issues with memchr seen in glibc.
+     * See sysdeps/x86_64/memchr.S in glibc versions older than 2.11 */
+    while (cchMax > RTSTR_MEMCHR_MAX)
     {
         char const *pszRet = (char const *)memchr(pszString, '\0', RTSTR_MEMCHR_MAX);
         if (RT_LIKELY(pszRet))
@@ -1238,8 +1321,9 @@ DECLINLINE(char *) RTStrEnd(char *pszString, size_t cchMax)
 DECLINLINE(char *) RTStrEnd(const char *pszString, size_t cchMax)
 #endif
 {
-    /* Avoid potential issues with memchr seen in glibc. */
-    if (cchMax > RTSTR_MEMCHR_MAX)
+    /* Avoid potential issues with memchr seen in glibc.
+     * See sysdeps/x86_64/memchr.S in glibc versions older than 2.11 */
+    while (cchMax > RTSTR_MEMCHR_MAX)
     {
         char *pszRet = (char *)memchr(pszString, '\0', RTSTR_MEMCHR_MAX);
         if (RT_LIKELY(pszRet))

@@ -80,6 +80,34 @@ static VBOXSERVICEVEPROPCACHE   g_VMInfoPropCache;
 static uint64_t                 g_idSession;
 
 
+#ifdef RT_OS_WINDOWS
+static BOOL WINAPI VBoxServiceVMInfoConsoleControlHandler(DWORD dwCtrlType)
+{
+    int rc = VINF_SUCCESS;
+    bool fEventHandled = FALSE;
+    switch (dwCtrlType)
+    {
+        case CTRL_LOGOFF_EVENT:
+            VBoxServiceVerbose(2, "VMInfo: Received logged-off event\n");
+            /* Trigger a re-enumeration of all logged-in users by unblocking
+             * the multi event semaphore of the VMInfo thread. */
+            if (g_hVMInfoEvent)
+                rc = RTSemEventMultiSignal(g_hVMInfoEvent);
+            fEventHandled = TRUE;
+            break;
+        default:
+            break;
+        /** @todo Add other events here. */
+    }
+
+    if (RT_FAILURE(rc))
+        VBoxServiceError("VMInfo: Event %ld handled with error rc=%Rrc\n",
+                         dwCtrlType, rc);
+    return fEventHandled;
+}
+#endif /* RT_OS_WINDOWS */
+
+
 /** @copydoc VBOXSERVICE::pfnPreInit */
 static DECLCALLBACK(int) VBoxServiceVMInfoPreInit(void)
 {
@@ -151,6 +179,17 @@ static DECLCALLBACK(int) VBoxServiceVMInfoInit(void)
                                         VBOXSERVICEPROPCACHEFLAG_TEMPORARY, "true");
         VBoxServicePropCacheUpdateEntry(&g_VMInfoPropCache, "/VirtualBox/GuestInfo/Net/Count",
                                         VBOXSERVICEPROPCACHEFLAG_TEMPORARY | VBOXSERVICEPROPCACHEFLAG_ALWAYS_UPDATE, NULL /* Delete on exit */);
+
+#ifdef RT_OS_WINDOWS
+# ifndef RT_OS_NT4
+    /* Install console control handler. */
+    if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE)VBoxServiceVMInfoConsoleControlHandler, TRUE /* Add handler */))
+    {
+        VBoxServiceError("VMInfo: Unable to add console control handler, error=%ld\n", GetLastError());
+        /* Just skip this error, not critical. */
+    }
+# endif /* !RT_OS_NT4 */
+#endif /* RT_OS_WINDOWS */
     }
     return rc;
 }
@@ -255,8 +294,8 @@ static int vboxserviceVMInfoWriteUsers(void)
     while (   (ut_user = getutxent())
            && RT_SUCCESS(rc))
     {
-        VBoxServiceVerbose(4, "VMInfo: Found logged in user \"%s\"\n", ut_user->ut_user);
-
+        VBoxServiceVerbose(4, "VMInfo/Users: Found logged in user \"%s\"\n",
+                           ut_user->ut_user);
         if (cUsersInList > cListSize)
         {
             cListSize += 32;
@@ -312,10 +351,26 @@ static int vboxserviceVMInfoWriteUsers(void)
     endutxent(); /* Close utmpx file. */
 #endif
     Assert(RT_FAILURE(rc) || cUsersInList == 0 || (pszUserList && *pszUserList));
-    if (RT_FAILURE(rc))
-        cUsersInList = 0;
 
-    VBoxServiceVerbose(4, "VMInfo: cUsersInList: %u, pszUserList: %s, rc=%Rrc\n",
+    /* If the user enumeration above failed, reset the user count to 0 except
+     * we didn't have enough memory anymore. In that case we want to preserve
+     * the previous user count in order to not confuse third party tools which
+     * rely on that count. */
+    if (RT_FAILURE(rc))
+    {
+        if (rc == VERR_NO_MEMORY)
+        {
+            static int s_iVMInfoBitchedOOM = 0;
+            if (s_iVMInfoBitchedOOM++ < 3)
+                VBoxServiceVerbose(0, "VMInfo/Users: Warning: Not enough memory available to enumerate users! Keeping old value (%u)\n",
+                                   g_cVMInfoLoggedInUsers);
+            cUsersInList = g_cVMInfoLoggedInUsers;
+        }
+        else
+            cUsersInList = 0;
+    }
+
+    VBoxServiceVerbose(4, "VMInfo/Users: cUsersInList: %u, pszUserList: %s, rc=%Rrc\n",
                        cUsersInList, pszUserList ? pszUserList : "<NULL>", rc);
 
     if (pszUserList && cUsersInList > 0)
@@ -365,6 +420,15 @@ static int vboxserviceVMInfoWriteNetwork(void)
             dwRet = GetAdaptersInfo(pAdpInfo, &cbAdpInfo);
         }
     }
+    else if (dwRet == ERROR_NO_DATA)
+    {
+        VBoxServiceVerbose(3, "VMInfo/Network: No network adapters available\n");
+
+        /* If no network adapters available / present in the
+         * system we pretend success to not bail out too early. */
+        dwRet = ERROR_SUCCESS;
+    }
+
     if (dwRet != ERROR_SUCCESS)
     {
         if (pAdpInfo)
@@ -650,7 +714,7 @@ static int vboxserviceVMInfoWriteNetwork(void)
         RTStrPrintf(szPropPath, sizeof(szPropPath), "/VirtualBox/GuestInfo/Net/%u/Status", cIfacesReport);
         VBoxServicePropCacheUpdate(&g_VMInfoPropCache, szPropPath, fIfUp ? "Up" : "Down");
         cIfacesReport++;
-    }
+    } /* For all interfaces */
 
     close(sd);
     if (RT_FAILURE(rc))
@@ -744,7 +808,7 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
         VbglR3GetSessionId(&idNewSession);
         if (idNewSession != g_idSession)
         {
-            VBoxServiceVerbose(3, "VMInfo: Session ID changed, flushing all properties.\n");
+            VBoxServiceVerbose(3, "VMInfo: The VM session ID changed, flushing all properties\n");
             vboxserviceVMInfoWriteFixedProperties();
             VBoxServicePropCacheFlush(&g_VMInfoPropCache);
             g_idSession = idNewSession;
@@ -767,6 +831,13 @@ DECLCALLBACK(int) VBoxServiceVMInfoWorker(bool volatile *pfShutdown)
             rc = rc2;
             break;
         }
+        else if (RT_LIKELY(RT_SUCCESS(rc2)))
+        {
+            /* Reset event semaphore if it got triggered. */
+            rc2 = RTSemEventMultiReset(g_hVMInfoEvent);
+            if (RT_FAILURE(rc2))
+                rc2 = VBoxServiceError("VMInfo: RTSemEventMultiReset failed; rc2=%Rrc\n", rc2);
+        }
     }
 
 #ifdef RT_OS_WINDOWS
@@ -788,6 +859,17 @@ static DECLCALLBACK(void) VBoxServiceVMInfoStop(void)
 static DECLCALLBACK(void) VBoxServiceVMInfoTerm(void)
 {
     int rc;
+
+#ifdef RT_OS_WINDOWS
+# ifndef RT_OS_NT4
+    /* Install console control handler. */
+    if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE)NULL, FALSE /* Remove handler */))
+    {
+        VBoxServiceError("VMInfo: Unable to remove console control handler, error=%ld\n", GetLastError());
+        /* Just skip this error, not critical. */
+    }
+# endif /* !RT_OS_NT4 */
+#endif
 
     if (g_hVMInfoEvent != NIL_RTSEMEVENTMULTI)
     {

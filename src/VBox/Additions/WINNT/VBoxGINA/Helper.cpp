@@ -1,8 +1,9 @@
 /** @file
- *
- * VBoxGINA -- Windows Logon DLL for VirtualBox Helper Functions
- *
- * Copyright (C) 2006-2007 Oracle Corporation
+ * VBoxGINA - Windows Logon DLL for VirtualBox, Helper Functions.
+ */
+
+/*
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -21,6 +22,9 @@
 #include <VBox/VBoxGuest.h>
 #include <VBox/VMMDev.h>
 #include <iprt/string.h>
+
+/* remote session handling */
+DWORD g_dwHandleRemoteSessions = 0;
 
 /* the credentials */
 wchar_t g_Username[VMMDEV_CREDENTIALS_STRLEN];
@@ -46,6 +50,73 @@ HANDLE getVBoxDriver(void)
     return sVBoxDriver;
 }
 
+/**
+ * Detects whether our process is running in a remote session or not.
+ *
+ * @return  bool        true if running in a remote session, false if not.
+ */
+bool isRemoteSession(void)
+{
+    return (0 != GetSystemMetrics(SM_REMOTESESSION)) ? true : false;
+}
+
+/**
+ * Loads the global configuration from registry.
+ *
+ * @return  DWORD       Windows error code.
+ */
+DWORD loadConfiguration(void)
+{
+    HKEY hKey;
+    /** @todo Add some registry wrapper function(s) as soon as we got more values to retrieve. */
+    DWORD dwRet = RegOpenKeyEx(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Oracle\\VirtualBox Guest Additions\\AutoLogon",
+                               0L, KEY_QUERY_VALUE, &hKey);
+    if (dwRet == ERROR_SUCCESS)
+    {
+        DWORD dwValue;
+        DWORD dwType = REG_DWORD;
+        DWORD dwSize = sizeof(DWORD);
+
+        dwRet = RegQueryValueEx(hKey, L"HandleRemoteSessions", NULL, &dwType, (LPBYTE)&dwValue, &dwSize);
+        if (   dwRet  == ERROR_SUCCESS
+            && dwType == REG_DWORD
+            && dwSize == sizeof(DWORD))
+        {
+            g_dwHandleRemoteSessions = dwValue;
+        }
+        RegCloseKey(hKey);
+    }
+    /* Do not report back an error here yet. */
+    return ERROR_SUCCESS;
+}
+
+/**
+ * Determines whether we should handle the current session or not.
+ *
+ * @return  bool        true if we should handle this session, false if not.
+ */
+bool handleCurrentSession(void)
+{
+    /* Load global configuration from registry. */
+    DWORD dwRet = loadConfiguration();
+    if (ERROR_SUCCESS != dwRet)
+        LogRel(("VBoxGINA::handleCurrentSession: Error loading global configuration, error=%ld\n", dwRet));
+
+    bool fHandle = false;
+    if (isRemoteSession())
+    {
+        if (g_dwHandleRemoteSessions) /* Force remote session handling. */
+            fHandle = true;
+    }
+    else /* No remote session. */
+        fHandle = true;
+
+    if (!fHandle)
+        LogRel(("VBoxGINA::handleCurrentSession: Handling of remote desktop sessions is disabled.\n"));
+
+    return fHandle;
+}
+
 void credentialsReset(void)
 {
     RT_ZERO(g_Username);
@@ -55,6 +126,9 @@ void credentialsReset(void)
 
 bool credentialsAvailable(void)
 {
+    if (!handleCurrentSession())
+        return false;
+
     HANDLE vboxDriver = getVBoxDriver();
     if (vboxDriver ==  INVALID_HANDLE_VALUE)
         return false;
@@ -77,6 +151,9 @@ bool credentialsAvailable(void)
 
 bool credentialsRetrieve(void)
 {
+    if (!handleCurrentSession())
+        return false;
+
     Log(("VBoxGINA::credentialsRetrieve\n"));
 
     HANDLE vboxDriver = getVBoxDriver();
@@ -158,6 +235,9 @@ static DECLCALLBACK(int) credentialsPoller(RTTHREAD ThreadSelf, void *pvUser)
 
 bool credentialsPollerCreate(void)
 {
+    if (!handleCurrentSession())
+        return false;
+
     Log(("VBoxGINA::credentialsPollerCreate\n"));
 
     /* don't create more than one of them */

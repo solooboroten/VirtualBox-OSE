@@ -156,6 +156,7 @@ ULONG APIENTRY DrvEscape(SURFOBJ *pso, ULONG iEsc, ULONG cjIn, PVOID pvIn, ULONG
     case VBOXESC_SETVISIBLEREGION:
     {
         LPRGNDATA lpRgnData = (LPRGNDATA)pvIn;
+        DWORD cRects;
 
         DISPDBG((0, "VBOXESC_SETVISIBLEREGION\n"));
 
@@ -163,14 +164,15 @@ ULONG APIENTRY DrvEscape(SURFOBJ *pso, ULONG iEsc, ULONG cjIn, PVOID pvIn, ULONG
             &&  pvIn
             &&  lpRgnData->rdh.dwSize == sizeof(RGNDATAHEADER)
             &&  lpRgnData->rdh.iType  == RDH_RECTANGLES
-            &&  cjIn == lpRgnData->rdh.nCount * sizeof(RECT) + sizeof(RGNDATAHEADER))
+            &&  (cRects = lpRgnData->rdh.nCount) < _1M
+            &&  cjIn == cRects * (uint64_t)sizeof(RECT) + sizeof(RGNDATAHEADER))
         {
             DWORD   ulReturn, i;
             PRTRECT pRTRect;
             RECT   *pRect = (RECT *)&lpRgnData->Buffer;
 
-            pRTRect = (PRTRECT) EngAllocMem(0, lpRgnData->rdh.nCount*sizeof(RTRECT), ALLOC_TAG);
-            for (i=0;i<lpRgnData->rdh.nCount;i++)
+            pRTRect = (PRTRECT) EngAllocMem(0, cRects*sizeof(RTRECT), ALLOC_TAG);
+            for (i = 0; i < cRects; i++)
             {
                 DISPDBG((0, "New visible rectangle (%d,%d) (%d,%d)\n", pRect[i].left, pRect[i].bottom, pRect[i].right, pRect[i].top));
                 pRTRect[i].xLeft   = pRect[i].left;
@@ -182,17 +184,19 @@ ULONG APIENTRY DrvEscape(SURFOBJ *pso, ULONG iEsc, ULONG cjIn, PVOID pvIn, ULONG
             if (EngDeviceIoControl(ppdev->hDriver,
                                    IOCTL_VIDEO_VBOX_SETVISIBLEREGION,
                                    pRTRect,
-                                   lpRgnData->rdh.nCount*sizeof(RTRECT),
+                                   cRects*sizeof(RTRECT),
                                    NULL,
                                    0,
                                    &ulReturn))
             {
-                DISPDBG((0, "DISP DrvAssertMode failed IOCTL_VIDEO_VBOX_SETVISIBLEREGION\n"));
+                DISPDBG((0, "DISP IOCTL_VIDEO_VBOX_SETVISIBLEREGION failed\n"));
+                EngFreeMem(pRTRect);
                 return 0;
             }
             else
             {
                 DISPDBG((0, "DISP IOCTL_VIDEO_VBOX_SETVISIBLEREGION successful\n"));
+                EngFreeMem(pRTRect);
                 return 1;
             }
 

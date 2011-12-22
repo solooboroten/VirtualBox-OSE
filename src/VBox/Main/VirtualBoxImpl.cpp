@@ -4504,7 +4504,13 @@ DECLCALLBACK(int) VirtualBox::AsyncEventHandler(RTTHREAD thread, void *pvUser)
     // signal that we're ready
     RTThreadUserSignal(thread);
 
-    while (RT_SUCCESS(eventQ->processEventQueue(RT_INDEFINITE_WAIT)))
+    /*
+     * In case of spurious wakeups causing VERR_TIMEOUTs and/or other return codes
+     * we must not stop processing events and delete the "eventQ" object. This must
+     * be done ONLY when we stop this loop via interruptEventQueueProcessing().
+     * See #5724.
+     */
+    while (eventQ->processEventQueue(RT_INDEFINITE_WAIT) != VERR_INTERRUPTED)
         /* nothing */ ;
 
     delete eventQ;
@@ -4683,7 +4689,7 @@ STDMETHODIMP VirtualBox::FindDHCPServerByNetworkName(IN_BSTR aName, IDHCPServer 
          ++it)
     {
         rc = (*it)->COMGETTER(NetworkName)(bstr.asOutParam());
-        if (FAILED(rc)) throw rc;
+        if (FAILED(rc)) return rc;
 
         if (bstr == aName)
         {

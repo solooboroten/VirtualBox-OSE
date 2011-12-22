@@ -38,6 +38,7 @@ if1of ($(KBUILD_TARGET), freebsd $(if $(defined VBOX_WITH_ADDITION_DRIVERS),linu
  VBoxGuest_INCS          = .
  VBoxGuest_INCS.freebsd  = $(PATH_VBoxGuest) $(PATH_INS)/gen-sys-hdrs
  VBoxGuest_INCS.linux    = ../../../Runtime/r0drv/linux
+ VBoxGuest_LDFLAGS.solaris += -N misc/ctf
  ifneq ($(KBUILD_TARGET),os2)
   ifn1of ($(KBUILD_TARGET), linux freebsd solaris)
    VBoxGuest_SOURCES     = VBoxGuest-$(KBUILD_TARGET).cpp

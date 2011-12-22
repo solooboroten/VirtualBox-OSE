@@ -665,7 +665,7 @@ void printUsage(USAGECATEGORY u64Cmd)
                  "                            [--dhcp |\n"
                  "                            --ip<ipv4> [--netmask<ipv4> (def: 255.255.255.0)] |\n"
                  "                            --ipv6<ipv6> [--netmasklengthv6<length> (def: 64)]]\n"
-# if defined(RT_OS_WINDOWS)
+# if !defined(RT_OS_SOLARIS)
                  "                            create |\n"
                  "                            remove <name>\n"
 # endif

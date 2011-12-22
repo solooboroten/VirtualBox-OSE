@@ -677,7 +677,10 @@ void icmp_error(PNATState pData, struct mbuf *msrc, u_char type, u_char code, in
     ip->ip_dst = ip->ip_src;    /* ip adresses */
     ip->ip_src = alias_addr;
 
-    (void ) ip_output0(pData, (struct socket *)NULL, m, 1);
+    /* returns pointer back. */
+    m->m_data -= hlen;
+    m->m_len  += hlen;
+    (void) ip_output0(pData, (struct socket *)NULL, m, 1);
 
     icmpstat.icps_reflect++;
 

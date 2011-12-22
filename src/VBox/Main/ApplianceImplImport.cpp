@@ -699,6 +699,7 @@ HRESULT Appliance::readFS(const LocationInfo &locInfo)
     return rc;
 }
 
+#ifdef VBOX_WITH_S3
 /**
  * Worker code for reading OVF from the cloud. This is called from Appliance::taskThreadImportOrExport()
  * in S3 mode and therefore runs on the OVF read worker thread. This then starts a second worker
@@ -824,6 +825,7 @@ HRESULT Appliance::readS3(TaskOVF *pTask)
 
     return rc;
 }
+#endif /* VBOX_WITH_S3 */
 
 /**
  * Helper that converts VirtualSystem attachment values into VirtualBox attachment values.
@@ -2159,6 +2161,7 @@ void Appliance::importVBoxMachine(ComObjPtr<VirtualSystemDescription> &vsdescThi
     stack.llMachinesRegistered.push_back(bstrNewMachineId);
 }
 
+#ifdef VBOX_WITH_S3
 /**
  * Worker code for importing OVF from the cloud. This is called from Appliance::taskThreadImportOrExport()
  * in S3 mode and therefore runs on the OVF import worker thread. This then starts a second worker
@@ -2342,4 +2345,4 @@ HRESULT Appliance::importS3(TaskOVF *pTask)
 
     return rc;
 }
-
+#endif /* VBOX_WITH_S3 */

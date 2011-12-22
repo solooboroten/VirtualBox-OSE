@@ -57,6 +57,7 @@
                          libcap1 or libcap2 */
 
 #  undef _POSIX_SOURCE
+#  include <linux/types.h> /* sys/capabilities from uek-headers require this */
 #  include <sys/capability.h>
 #  include <sys/prctl.h>
 #  ifndef CAP_TO_MASK
@@ -648,37 +649,47 @@ static void supR3HardenedMainGrabCapabilites(void)
 
 # elif defined(RT_OS_SOLARIS)
     /*
-     * Add net_icmpaccess privilege to permitted, effective and inheritable
-     * privileges before dropping root privileges. Skip this hacky code for
-     * real root, as it removes lots of privileges due to the harcoded set.
+     * Add net_icmpaccess privilege to effective privileges and limit
+     * permitted privileges before completely dropping root privileges.
+     * This requires dropping root privileges temporarily to get the normal
+     * user's privileges.
      */
-    if (getuid() != 0)
+    seteuid(g_uid);
+    priv_set_t *pPrivEffective = priv_allocset();
+    priv_set_t *pPrivNew = priv_allocset();
+    if (pPrivEffective && pPrivNew)
     {
-        priv_set_t *pPrivSet = priv_str_to_set("basic", ",", NULL);
-        if (pPrivSet)
+        int rc = getppriv(PRIV_EFFECTIVE, pPrivEffective);
+        seteuid(0);
+        if (!rc)
         {
-            priv_addset(pPrivSet, PRIV_NET_ICMPACCESS);
-            int rc = setppriv(PRIV_SET, PRIV_INHERITABLE, pPrivSet);
+            priv_copyset(pPrivEffective, pPrivNew);
+            rc = priv_addset(pPrivNew, PRIV_NET_ICMPACCESS);
             if (!rc)
             {
-                rc = setppriv(PRIV_SET, PRIV_PERMITTED, pPrivSet);
-                if (!rc)
-                {
-                    rc = setppriv(PRIV_SET, PRIV_EFFECTIVE, pPrivSet);
-                    if (rc)
-                        supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set effectives privilege set.\n");
-                }
-                else
+                /* Order is important, as one can't set a privilege which is
+                 * not in the permitted privilege set. */
+                rc = setppriv(PRIV_SET, PRIV_EFFECTIVE, pPrivNew);
+                if (rc)
+                    supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set effective privilege set.\n");
+                rc = setppriv(PRIV_SET, PRIV_PERMITTED, pPrivNew);
+                if (rc)
                     supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set permitted privilege set.\n");
             }
             else
-                supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to set inheritable privilege set.\n");
-
-            priv_freeset(pPrivSet);
+                supR3HardenedError(rc, false, "SUPR3HardenedMain: failed to add NET_ICMPACCESS privilege.\n");
         }
-        else
-            supR3HardenedError(-1, false, "SUPR3HardenedMain: failed to get basic privilege set.\n");
     }
+    else
+    {
+        /* for memory allocation failures just continue */
+        seteuid(0);
+    }
+
+    if (pPrivEffective)
+        priv_freeset(pPrivEffective);
+    if (pPrivNew)
+        priv_freeset(pPrivNew);
 # endif
 }
 

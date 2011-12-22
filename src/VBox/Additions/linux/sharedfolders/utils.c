@@ -18,6 +18,7 @@
  */
 
 #include "vfsmod.h"
+#include <iprt/asm.h>
 #include <linux/nfs_fs.h>
 #include <linux/vfs.h>
 
@@ -114,7 +115,11 @@ sf_init_inode(struct sf_glob_info *sf_g, struct inode *inode,
                 inode->i_fop   = &sf_dir_fops;
                 /* XXX: this probably should be set to the number of entries
                    in the directory plus two (. ..) */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)
+                set_nlink(inode, 1);
+#else
                 inode->i_nlink = 1;
+#endif
         }
         else {
                 inode->i_mode  = sf_g->fmode != ~0 ? (sf_g->fmode & 0777): mode;
@@ -122,7 +127,11 @@ sf_init_inode(struct sf_glob_info *sf_g, struct inode *inode,
                 inode->i_mode |= S_IFREG;
                 inode->i_op    = &sf_reg_iops;
                 inode->i_fop   = &sf_reg_fops;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)
+                set_nlink(inode, 1);
+#else
                 inode->i_nlink = 1;
+#endif
         }
 
         inode->i_uid = sf_g->uid;
@@ -803,9 +812,13 @@ struct dentry_operations sf_dentry_ops = {
         .d_revalidate = sf_dentry_revalidate
 };
 
-int sf_init_backing_dev(struct sf_glob_info *sf_g, const char *name)
+int sf_init_backing_dev(struct sf_glob_info *sf_g)
 {
     int rc = 0;
+    /* Each new shared folder map gets a new uint32_t identifier,
+     * allocated in sequence.  We ASSUME the sequence will not wrap. */
+    static uint32_t s_u32Sequence = 0;
+    uint64_t u32CurrentSequence = ASMAtomicIncU32(&s_u32Sequence);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 0)
     sf_g->bdi.ra_pages = 0; /* No readahead */
@@ -820,7 +833,8 @@ int sf_init_backing_dev(struct sf_glob_info *sf_g, const char *name)
     rc = bdi_init(&sf_g->bdi);
 #  if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 26)
     if (!rc)
-        rc = bdi_register(&sf_g->bdi, NULL, "vboxsf-%s", name);
+        rc = bdi_register(&sf_g->bdi, NULL, "vboxsf-%llu",
+                          (unsigned long long)u32CurrentSequence);
 #  endif /* >= 2.6.26 */
 # endif /* >= 2.6.24 */
 #endif /* >= 2.6.0 */

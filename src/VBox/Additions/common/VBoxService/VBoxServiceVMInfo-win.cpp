@@ -42,6 +42,8 @@ typedef struct
     WCHAR wszUser[_MAX_PATH];
     WCHAR wszAuthenticationPackage[_MAX_PATH];
     WCHAR wszLogonDomain[_MAX_PATH];
+    /** Number of assigned user processes. */
+    ULONG ulNumProcs;
 } VBOXSERVICEVMINFOUSER, *PVBOXSERVICEVMINFOUSER;
 /** Structure for the file information lookup. */
 typedef struct
@@ -60,7 +62,7 @@ typedef struct
 /*******************************************************************************
 *   Prototypes
 *******************************************************************************/
-bool VBoxServiceVMInfoWinSessionHasProcesses(PLUID pSession, VBOXSERVICEVMINFOPROC const *paProcs, DWORD cProcs);
+uint32_t VBoxServiceVMInfoWinSessionHasProcesses(PLUID pSession, VBOXSERVICEVMINFOPROC const *paProcs, DWORD cProcs);
 bool VBoxServiceVMInfoWinIsLoggedIn(PVBOXSERVICEVMINFOUSER a_pUserInfo, PLUID a_pSession);
 int  VBoxServiceVMInfoWinProcessesEnumerate(PVBOXSERVICEVMINFOPROC *ppProc, DWORD *pdwCount);
 void VBoxServiceVMInfoWinProcessesFree(PVBOXSERVICEVMINFOPROC paProcs);
@@ -243,33 +245,33 @@ void VBoxServiceVMInfoWinProcessesFree(PVBOXSERVICEVMINFOPROC paProcs)
 /**
  * Determins whether the specified session has processes on the system.
  *
- * @returns true if it has, false if it doesn't.
+ * @returns Number of processes found for a specified session.
  * @param   pSession        The session.
  * @param   paProcs         The process snapshot.
  * @param   cProcs          The number of processes in the snaphot.
  */
-bool VBoxServiceVMInfoWinSessionHasProcesses(PLUID pSession, VBOXSERVICEVMINFOPROC const *paProcs, DWORD cProcs)
+uint32_t VBoxServiceVMInfoWinSessionHasProcesses(PLUID pSession, VBOXSERVICEVMINFOPROC const *paProcs, DWORD cProcs)
 {
-    AssertPtr(pSession);
-
-    if (!cProcs) /* To be on the safe side. */
-        return false;
-    AssertPtr(paProcs);
+    if (!pSession)
+    {
+        VBoxServiceVerbose(1, "VMInfo/Users: Session became invalid while enumerating!\n");
+        return 0;
+    }
 
     PSECURITY_LOGON_SESSION_DATA pSessionData = NULL;
     NTSTATUS rcNt = LsaGetLogonSessionData(pSession, &pSessionData);
     if (rcNt != STATUS_SUCCESS)
     {
-        VBoxServiceError("Could not get logon session data! rcNt=%#x", rcNt);
-        return false;
+        VBoxServiceError("VMInfo/Users: Could not get logon session data! rcNt=%#x", rcNt);
+        return 0;
     }
-    AssertPtrReturn(pSessionData, false);
 
     /*
      * Even if a user seems to be logged in, it could be a stale/orphaned logon
      * session. So check if we have some processes bound to it by comparing the
      * session <-> process LUIDs.
      */
+    uint32_t cNumProcs = 0;
     for (DWORD i = 0; i < cProcs; i++)
     {
         /*VBoxServiceVerbose(3, "%ld:%ld <-> %ld:%ld\n",
@@ -278,14 +280,21 @@ bool VBoxServiceVMInfoWinSessionHasProcesses(PLUID pSession, VBOXSERVICEVMINFOPR
         if (   paProcs[i].luid.HighPart == pSessionData->LogonId.HighPart
             && paProcs[i].luid.LowPart  == pSessionData->LogonId.LowPart)
         {
-            VBoxServiceVerbose(3, "Users: Session %ld:%ld has active processes\n",
-                               pSessionData->LogonId.HighPart, pSessionData->LogonId.LowPart);
-            LsaFreeReturnBuffer(pSessionData);
-            return true;
+            cNumProcs++;
+            if (g_cVerbosity < 4) /* We want a bit more info on high verbosity. */
+                break;
         }
     }
+
+    if (g_cVerbosity >= 4)
+        VBoxServiceVerbose(3, "VMInfo/Users: Session %u has %u processes\n",
+                           pSessionData->Session, cNumProcs);
+    else
+        VBoxServiceVerbose(3, "VMInfo/Users: Session %u has at least one process\n",
+                           pSessionData->Session);
+
     LsaFreeReturnBuffer(pSessionData);
-    return false;
+    return cNumProcs;
 }
 
 
@@ -318,24 +327,37 @@ static void VBoxServiceVMInfoWinSafeCopy(PWCHAR pwszDst, size_t cbDst, LSA_UNICO
  * Detects whether a user is logged on.
  *
  * @returns true if logged in, false if not (or error).
- * @param   a_pUserInfo     Where to return the user information.
- * @param   a_pSession      The session to check.
+ * @param   pUserInfo           Where to return the user information.
+ * @param   pSession            The session to check.
  */
-bool VBoxServiceVMInfoWinIsLoggedIn(PVBOXSERVICEVMINFOUSER a_pUserInfo, PLUID a_pSession)
+bool VBoxServiceVMInfoWinIsLoggedIn(PVBOXSERVICEVMINFOUSER pUserInfo, PLUID pSession)
 {
-    AssertPtr(a_pUserInfo);
-    if (!a_pSession)
+    AssertPtr(pUserInfo);
+    if (!pSession)
         return false;
 
     PSECURITY_LOGON_SESSION_DATA pSessionData = NULL;
-    NTSTATUS rcNt = LsaGetLogonSessionData(a_pSession, &pSessionData);
+    NTSTATUS rcNt = LsaGetLogonSessionData(pSession, &pSessionData);
     if (rcNt != STATUS_SUCCESS)
     {
         ULONG ulError = LsaNtStatusToWinError(rcNt);
-        /* Skip session data which is not valid anymore because it may have been
-         * already terminated. */
-        if (ulError != ERROR_NO_SUCH_LOGON_SESSION)
-            VBoxServiceError("VMInfo/Users: LsaGetLogonSessionData failed, LSA error %u\n", ulError);
+        switch (ulError)
+        {
+            case ERROR_NOT_ENOUGH_MEMORY:
+                /* If we don't have enough memory it's hard to judge whether the specified user
+                 * is logged in or not, so just assume he/she's not. */
+                VBoxServiceVerbose(3, "VMInfo/Users: Not enough memory to retrieve logon session data!\n");
+                break;
+
+            case ERROR_NO_SUCH_LOGON_SESSION:
+                /* Skip session data which is not valid anymore because it may have been
+                 * already terminated. */
+                break;
+
+            default:
+                VBoxServiceError("VMInfo/Users: LsaGetLogonSessionData failed with error %ul\n", ulError);
+                break;
+        }
         if (pSessionData)
             LsaFreeReturnBuffer(pSessionData);
         return false;
@@ -358,20 +380,21 @@ bool VBoxServiceVMInfoWinIsLoggedIn(PVBOXSERVICEVMINFOUSER a_pUserInfo, PLUID a_
             || (SECURITY_LOGON_TYPE)pSessionData->LogonType == CachedInteractive
             || (SECURITY_LOGON_TYPE)pSessionData->LogonType == CachedRemoteInteractive))
     {
-        VBoxServiceVerbose(3, "VMInfo/Users: Session data: Name=%ls, Len=%d, SID=%s, LogonID=%ld,%ld\n",
+        VBoxServiceVerbose(3, "VMInfo/Users: Session data: Name=%ls, Len=%d, SID=%s, LogonID=%ld,%ld, LogonType=%ld\n",
                            pSessionData->UserName.Buffer,
                            pSessionData->UserName.Length,
                            pSessionData->Sid != NULL ? "1" : "0",
-                           pSessionData->LogonId.HighPart, pSessionData->LogonId.LowPart);
+                           pSessionData->LogonId.HighPart, pSessionData->LogonId.LowPart,
+                           pSessionData->LogonType);
 
         /*
          * Copy out relevant data.
          */
-        VBoxServiceVMInfoWinSafeCopy(a_pUserInfo->wszUser, sizeof(a_pUserInfo->wszUser),
+        VBoxServiceVMInfoWinSafeCopy(pUserInfo->wszUser, sizeof(pUserInfo->wszUser),
                                      &pSessionData->UserName, "User name");
-        VBoxServiceVMInfoWinSafeCopy(a_pUserInfo->wszAuthenticationPackage, sizeof(a_pUserInfo->wszAuthenticationPackage),
+        VBoxServiceVMInfoWinSafeCopy(pUserInfo->wszAuthenticationPackage, sizeof(pUserInfo->wszAuthenticationPackage),
                                      &pSessionData->AuthenticationPackage, "Authentication pkg name");
-        VBoxServiceVMInfoWinSafeCopy(a_pUserInfo->wszLogonDomain, sizeof(a_pUserInfo->wszLogonDomain),
+        VBoxServiceVMInfoWinSafeCopy(pUserInfo->wszLogonDomain, sizeof(pUserInfo->wszLogonDomain),
                                      &pSessionData->LogonDomain, "Logon domain name");
 
         TCHAR           szOwnerName[_MAX_PATH]  = { 0 };
@@ -395,17 +418,17 @@ bool VBoxServiceVMInfoWinIsLoggedIn(PVBOXSERVICEVMINFOUSER a_pUserInfo, PLUID a_
              * here that we just skip.
              */
             if (dwErr != ERROR_NONE_MAPPED)
-                VBoxServiceError("VMInfo/Users: Failed looking up account info for user '%ls': %ld!\n",
-                                 a_pUserInfo->wszUser, dwErr);
+                VBoxServiceError("VMInfo/Users: Failed looking up account info for user=%ls, error=$ld!\n",
+                                 pUserInfo->wszUser, dwErr);
         }
         else
         {
             if (enmOwnerType == SidTypeUser) /* Only recognize users; we don't care about the rest! */
             {
                 VBoxServiceVerbose(3, "VMInfo/Users: Account User=%ls, Session=%ld, LUID=%ld,%ld, AuthPkg=%ls, Domain=%ls\n",
-                                   a_pUserInfo->wszUser, pSessionData->Session, pSessionData->LogonId.HighPart,
-                                   pSessionData->LogonId.LowPart, a_pUserInfo->wszAuthenticationPackage,
-                                   a_pUserInfo->wszLogonDomain);
+                                   pUserInfo->wszUser, pSessionData->Session, pSessionData->LogonId.HighPart,
+                                   pSessionData->LogonId.LowPart, pUserInfo->wszAuthenticationPackage,
+                                   pUserInfo->wszLogonDomain);
 
                 /* Detect RDP sessions as well. */
                 LPTSTR  pBuffer = NULL;
@@ -419,16 +442,16 @@ bool VBoxServiceVMInfoWinIsLoggedIn(PVBOXSERVICEVMINFOUSER a_pUserInfo, PLUID a_
                 {
                     if(cbRet)
                         iState = *pBuffer;
-                    VBoxServiceVerbose(3, "VMInfo/Users:  Account User=%ls, WTSConnectState=%d\n",
-                                       a_pUserInfo->wszUser, iState);
+                    VBoxServiceVerbose(3, "VMInfo/Users: Account User=%ls, WTSConnectState=%d\n",
+                                       pUserInfo->wszUser, iState);
                     if (    iState == WTSActive           /* User logged on to WinStation. */
                          || iState == WTSShadow           /* Shadowing another WinStation. */
                          || iState == WTSDisconnected)    /* WinStation logged on without client. */
                     {
                         /** @todo On Vista and W2K, always "old" user name are still
                          *        there. Filter out the old one! */
-                        VBoxServiceVerbose(3, "VMInfo/Users: Account User=%ls is logged in via TCS/RDP. State=%d\n",
-                                           a_pUserInfo->wszUser, iState);
+                        VBoxServiceVerbose(3, "VMInfo/Users: Account User=%ls using TCS/RDP, state=%d\n",
+                                           pUserInfo->wszUser, iState);
                         fFoundUser = true;
                     }
                     if (pBuffer)
@@ -436,18 +459,32 @@ bool VBoxServiceVMInfoWinIsLoggedIn(PVBOXSERVICEVMINFOUSER a_pUserInfo, PLUID a_
                 }
                 else
                 {
-                    VBoxServiceVerbose(3, "VMInfo/Users:  Account User=%ls, WTSConnectState returnd %ld\n",
-                                       a_pUserInfo->wszUser, GetLastError());
+                    DWORD dwLastErr = GetLastError();
+                    switch (dwLastErr)
+                    {
+                        /*
+                         * Terminal services don't run (for example in W2K,
+                         * nothing to worry about ...).  ... or is on the Vista
+                         * fast user switching page!
+                         */
+                        case ERROR_CTX_WINSTATION_NOT_FOUND:
+                            VBoxServiceVerbose(3, "VMInfo/Users: Account User=%ls, no WinSta found\n",
+                                               pUserInfo->wszUser);
+                            break;
 
-                    /*
-                     * Terminal services don't run (for example in W2K,
-                     * nothing to worry about ...).  ... or is on the Vista
-                     * fast user switching page!
-                     */
+                        default:
+                            VBoxServiceVerbose(3, "VMInfo/Users: Account User=%ls, error=%ld\n",
+                                               pUserInfo->wszUser, dwLastErr);
+                            break;
+                    }
+
                     fFoundUser = true;
                 }
             }
         }
+
+        VBoxServiceVerbose(3, "VMInfo/Users: Account User=%ls %s logged in\n",
+                           pUserInfo->wszUser, fFoundUser ? "is" : "is not");
     }
 
     LsaFreeReturnBuffer(pSessionData);
@@ -467,59 +504,138 @@ bool VBoxServiceVMInfoWinIsLoggedIn(PVBOXSERVICEVMINFOUSER a_pUserInfo, PLUID a_
 int VBoxServiceVMInfoWinWriteUsers(char **ppszUserList, uint32_t *pcUsersInList)
 {
     PLUID       paSessions = NULL;
-    ULONG       cSession = 0;
+    ULONG       cSessions = 0;
 
     /* This function can report stale or orphaned interactive logon sessions
        of already logged off users (especially in Windows 2000). */
-    NTSTATUS rcNt = LsaEnumerateLogonSessions(&cSession, &paSessions);
+    NTSTATUS rcNt = LsaEnumerateLogonSessions(&cSessions, &paSessions);
     if (rcNt != STATUS_SUCCESS)
     {
-        ULONG rcWin = LsaNtStatusToWinError(rcNt);
-
-        /* If we're about to shutdown when we were in the middle of enumerating the logon
-           sessions, skip the error to not confuse the user with an unnecessary log message. */
-        if (rcWin == ERROR_SHUTDOWN_IN_PROGRESS)
+        ULONG ulError = LsaNtStatusToWinError(rcNt);
+        switch (ulError)
         {
-            VBoxServiceVerbose(3, "VMInfo/Users: Shutdown in progress ...\n");
-            rcWin = ERROR_SUCCESS;
+            case ERROR_NOT_ENOUGH_MEMORY:
+                VBoxServiceError("VMInfo/Users: Not enough memory to enumerate logon sessions!\n");
+                break;
+
+            case ERROR_SHUTDOWN_IN_PROGRESS:
+                /* If we're about to shutdown when we were in the middle of enumerating the logon
+                 * sessions, skip the error to not confuse the user with an unnecessary log message. */
+                VBoxServiceVerbose(3, "VMInfo/Users: Shutdown in progress ...\n");
+                ulError = ERROR_SUCCESS;
+                break;
+
+            default:
+                VBoxServiceError("VMInfo/Users: LsaEnumerate failed with error %ul\n", ulError);
+                break;
         }
-        else
-            VBoxServiceError("VMInfo/Users: LsaEnumerate failed with %lu\n", rcWin);
-        return RTErrConvertFromWin32(rcWin);
+
+        return RTErrConvertFromWin32(ulError);
     }
-    VBoxServiceVerbose(3, "VMInfo/Users: Found %ld users\n", cSession);
+    VBoxServiceVerbose(3, "VMInfo/Users: Found %ld sessions\n", cSessions);
 
     PVBOXSERVICEVMINFOPROC  paProcs;
     DWORD                   cProcs;
     int rc = VBoxServiceVMInfoWinProcessesEnumerate(&paProcs, &cProcs);
-    if (RT_SUCCESS(rc))
+    if (RT_FAILURE(rc))
     {
-        *pcUsersInList = 0;
-        for (ULONG i = 0; i < cSession; i++)
+        if (rc == VERR_NO_MEMORY)
+            VBoxServiceError("VMInfo/Users: Not enough memory to enumerate processes for a session!\n");
+        else
+            VBoxServiceError("VMInfo/Users: Failed to enumerate processes for a session, rc=%Rrc\n", rc);
+    }
+    else
+    {
+        PVBOXSERVICEVMINFOUSER pUserInfo;
+        pUserInfo = (PVBOXSERVICEVMINFOUSER)RTMemAllocZ(cSessions * sizeof(VBOXSERVICEVMINFOUSER) + 1);
+        if (!pUserInfo)
+            VBoxServiceError("VMInfo/Users: Not enough memory to store enumerated users!\n");
+        else
         {
-            VBOXSERVICEVMINFOUSER UserInfo;
-            if (   VBoxServiceVMInfoWinIsLoggedIn(&UserInfo, &paSessions[i])
-                && VBoxServiceVMInfoWinSessionHasProcesses(&paSessions[i], paProcs, cProcs))
+            ULONG cUniqueUsers = 0;
+            for (ULONG i = 0; i < cSessions; i++)
             {
-                if (*pcUsersInList > 0)
+                VBOXSERVICEVMINFOUSER UserInfo;
+                if (VBoxServiceVMInfoWinIsLoggedIn(&UserInfo, &paSessions[i]))
                 {
-                    rc = RTStrAAppend(ppszUserList, ",");
-                    AssertRCReturn(rc, rc);
-                }
+                    VBoxServiceVerbose(4, "VMInfo/Users: Handling user=%ls, domain=%ls, package=%ls\n",
+                                       pUserInfo[i].wszUser, pUserInfo[i].wszLogonDomain, pUserInfo[i].wszAuthenticationPackage);
 
-                *pcUsersInList += 1;
+                    /* Retrieve assigned processes of current session. */
+                    uint32_t cSessionProcs = VBoxServiceVMInfoWinSessionHasProcesses(&paSessions[i], paProcs, cProcs);
+                    /* Don't return here when current session does not have assigned processes
+                     * anymore -- in that case we have to search through the unique users list below
+                     * and see if got a stale user/session entry. */
 
-                char *pszTemp;
-                int rc2 = RTUtf16ToUtf8(UserInfo.wszUser, &pszTemp);
-                if (RT_SUCCESS(rc2))
-                {
-                    rc = RTStrAAppend(ppszUserList, pszTemp);
-                    RTMemFree(pszTemp);
-                    AssertRCReturn(rc, rc);
+                    bool fFoundUser = false;
+                    for (ULONG i = 0; i < cUniqueUsers; i++)
+                    {
+                        if (   !wcscmp(UserInfo.wszUser, pUserInfo[i].wszUser)
+                            && !wcscmp(UserInfo.wszLogonDomain, pUserInfo[i].wszLogonDomain)
+                            && !wcscmp(UserInfo.wszAuthenticationPackage, pUserInfo[i].wszAuthenticationPackage))
+                        {
+                            /* If the process-per-user count was higher than 0 before but another session was
+                             * was detected which also belongs to this user but has no assigned processes anymore,
+                             * we detected a stale session. */
+                            if (   pUserInfo[i].ulNumProcs > 0
+                                && !cSessionProcs)
+                            {
+                                VBoxServiceVerbose(3, "VMInfo/Users: Stale session for user=%ls detected! Old processes: %u, new: %u\n",
+                                                   pUserInfo[i].wszUser, pUserInfo[i].ulNumProcs, cSessionProcs);
+                            }
+
+                            VBoxServiceVerbose(4, "VMInfo/Users: Updating user=%ls to %u processes\n",
+                                               UserInfo.wszUser, cSessionProcs);
+
+                            pUserInfo[i].ulNumProcs = cSessionProcs;
+                            fFoundUser = true;
+                            break;
+                        }
+                    }
+
+                    if (!fFoundUser)
+                    {
+                        VBoxServiceVerbose(4, "VMInfo/Users: Adding new user=%ls with %u processes\n",
+                                           UserInfo.wszUser, cSessionProcs);
+
+                        memcpy(&pUserInfo[cUniqueUsers], &UserInfo, sizeof(VBOXSERVICEVMINFOUSER));
+                        pUserInfo[cUniqueUsers++].ulNumProcs = cSessionProcs;
+                        Assert(cUniqueUsers <= cSessions);
+                    }
                 }
-                else
-                    RTStrAAppend(ppszUserList, "<string-convertion-error>");
             }
+
+            VBoxServiceVerbose(3, "VMInfo/Users: Found %u unique logged-in user(s)\n",
+                               cUniqueUsers);
+
+            *pcUsersInList = 0;
+            for (ULONG i = 0; i < cUniqueUsers; i++)
+            {
+                if (pUserInfo[i].ulNumProcs)
+                {
+                    if (*pcUsersInList > 0)
+                    {
+                        rc = RTStrAAppend(ppszUserList, ",");
+                        AssertRCBreakStmt(rc, RTStrFree(*ppszUserList));
+                    }
+
+                    *pcUsersInList += 1;
+
+                    char *pszTemp;
+                    int rc2 = RTUtf16ToUtf8(pUserInfo[i].wszUser, &pszTemp);
+                    if (RT_SUCCESS(rc2))
+                    {
+                        rc = RTStrAAppend(ppszUserList, pszTemp);
+                        RTMemFree(pszTemp);
+                    }
+                    else
+                        rc = RTStrAAppend(ppszUserList, "<string-conversion-error>");
+                    AssertRCBreakStmt(rc, RTStrFree(*ppszUserList));
+                    AssertRCReturn(rc, rc);
+                }
+            }
+
+            RTMemFree(pUserInfo);
         }
         VBoxServiceVMInfoWinProcessesFree(paProcs);
     }

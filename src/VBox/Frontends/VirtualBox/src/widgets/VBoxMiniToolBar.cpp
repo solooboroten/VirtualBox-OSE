@@ -353,7 +353,7 @@ void VBoxMiniToolBar::paintEvent(QPaintEvent *pEvent)
     /* Paint background */
     QPainter painter;
     painter.begin(this);
-    painter.fillRect(pEvent->rect(), palette().brush(QPalette::Window));
+    painter.fillRect(pEvent->rect(), QApplication::palette().color(QPalette::Active, QPalette::Window));
     painter.end();
     /* Base-class paint event processing: */
     VBoxToolBar::paintEvent(pEvent);

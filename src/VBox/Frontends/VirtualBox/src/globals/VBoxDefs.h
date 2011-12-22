@@ -100,7 +100,6 @@ struct VBoxDefs
         , SessionStateChangeEventType
         , SnapshotEventType
         , CanShowRegDlgEventType
-        , CanShowUpdDlgEventType
         , NetworkAdapterChangeEventType
         , USBCtlStateChangeEventType
         , USBDeviceStateChangeEventType

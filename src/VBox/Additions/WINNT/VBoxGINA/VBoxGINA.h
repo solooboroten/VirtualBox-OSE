@@ -1,8 +1,9 @@
 /** @file
- *
- * VBoxGINA -- Windows Logon DLL for VirtualBox
- *
- * Copyright (C) 2006-2007 Oracle Corporation
+ * VBoxGINA - Windows Logon DLL for VirtualBox.
+ */
+
+/*
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -17,7 +18,9 @@
 #define __H_VBOXGINA
 
 #include <iprt/initterm.h>
-#include <iprt/log.h>
+
+#define LOG_GROUP LOG_GROUP_AUTOLOGON
+#include <VBox/log.h>
 
 #include <VBox/Log.h>
 

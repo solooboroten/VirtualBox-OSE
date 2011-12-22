@@ -153,9 +153,6 @@ void VBoxGLSettingsDlg::putBackTo()
 
 void VBoxGLSettingsDlg::retranslateUi()
 {
-    /* Set dialog's name */
-    setWindowTitle (dialogTitle());
-
     /* General page */
     mSelector->setItemText (GeneralId, tr ("General"));
 
@@ -171,7 +168,7 @@ void VBoxGLSettingsDlg::retranslateUi()
 #ifdef ENABLE_GLOBAL_USB
     /* USB page */
     mSelector->setItemText (USBId, tr ("USB"));
-#endif
+#endif /* ENABLE_GLOBAL_USB */
 
     /* Network page */
     mSelector->setItemText (NetworkId, tr ("Network"));
@@ -179,7 +176,11 @@ void VBoxGLSettingsDlg::retranslateUi()
     /* Translate the selector */
     mSelector->polish();
 
+    /* Base-class UI translation: */ 
     VBoxSettingsDialog::retranslateUi();
+
+    /* Set dialog's name: */
+    setWindowTitle(dialogTitle());
 }
 
 QString VBoxGLSettingsDlg::dialogTitle() const
@@ -430,14 +431,16 @@ void VBoxVMSettingsDlg::putBackTo()
 
 void VBoxVMSettingsDlg::retranslateUi()
 {
-    /* Set dialog's name */
-    setWindowTitle (dialogTitle());
-
-    /* We have to make sure that the Serial & Network subpages are retranslated
+    /* We have to make sure that the Network, Serial & Parallel pages are retranslated
      * before they are revalidated. Cause: They do string comparing within
-     * vboxGlobal which is retranslated at that point already. */
-    QEvent event (QEvent::LanguageChange);
-    QWidget *page = NULL;
+     * vboxGlobal which is retranslated at that point already: */
+    QEvent event(QEvent::LanguageChange);
+    if (QWidget *pPage = mSelector->idToPage(NetworkId))
+        qApp->sendEvent(pPage, &event);
+    if (QWidget *pPage = mSelector->idToPage(SerialId))
+        qApp->sendEvent(pPage, &event);
+    if (QWidget *pPage = mSelector->idToPage(ParallelId))
+        qApp->sendEvent(pPage, &event);
 
     /* General page */
     mSelector->setItemText (GeneralId, tr ("General"));
@@ -465,21 +468,15 @@ void VBoxVMSettingsDlg::retranslateUi()
 
     /* Network page */
     mSelector->setItemText (NetworkId, tr ("Network"));
-    if ((page = mSelector->idToPage (NetworkId)))
-        qApp->sendEvent (page, &event);
 
     /* Ports page */
     mSelector->setItemText (PortsId, tr ("Ports"));
 
     /* Serial page */
     mSelector->setItemText (SerialId, tr ("Serial Ports"));
-    if ((page = mSelector->idToPage (SerialId)))
-        qApp->sendEvent (page, &event);
 
     /* Parallel page */
     mSelector->setItemText (ParallelId, tr ("Parallel Ports"));
-    if ((page = mSelector->idToPage (ParallelId)))
-        qApp->sendEvent (page, &event);
 
     /* USB page */
     mSelector->setItemText (USBId, tr ("USB"));
@@ -490,13 +487,11 @@ void VBoxVMSettingsDlg::retranslateUi()
     /* Translate the selector */
     mSelector->polish();
 
+    /* Base-class UI translation: */
     VBoxSettingsDialog::retranslateUi();
 
-    /* Revalidate all pages to retranslate the warning messages also. */
-    QList <QIWidgetValidator*> l = this->findChildren <QIWidgetValidator*> ();
-    foreach (QIWidgetValidator *wval, l)
-        if (!wval->isValid())
-            revalidate (wval);
+    /* Set dialog's name: */
+    setWindowTitle(dialogTitle());
 }
 
 QString VBoxVMSettingsDlg::dialogTitle() const

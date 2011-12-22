@@ -1853,6 +1853,8 @@ DECLINLINE(void) e1kAdvanceRDH(E1KSTATE *pState)
         E1K_INC_ISTAT_CNT(pState->uStatIntRXDMT0);
         e1kRaiseInterrupt(pState, VERR_SEM_BUSY, ICR_RXDMT0);
     }
+    E1kLog2(("%s e1kAdvanceRDH: at exit RDH=%x RDT=%x len=%x\n",
+             INSTANCE(pState), RDH, RDT, uRQueueLen));
     //e1kCsLeave(pState);
 }
 
@@ -2507,9 +2509,9 @@ static int e1kRegWriteIMS(E1KSTATE* pState, uint32_t offset, uint32_t index, uin
     {
         E1kLog2(("%s e1kRegWriteIMS: IRQ pending (%08x), arming late int timer...\n",
                  INSTANCE(pState), ICR));
-        //TMTimerSet(pState->CTX_SUFF(pIntTimer), TMTimerFromNano(pState->CTX_SUFF(pIntTimer), ITR * 256) +
-        //        TMTimerGet(pState->CTX_SUFF(pIntTimer)));
-        e1kRaiseInterrupt(pState, VERR_SEM_BUSY);
+        /* Raising an interrupt immediately causes win7 to hang upon NIC reconfiguration (#5023) */
+        TMTimerSet(pState->CTX_SUFF(pIntTimer), TMTimerFromNano(pState->CTX_SUFF(pIntTimer), ITR * 256) +
+                   TMTimerGet(pState->CTX_SUFF(pIntTimer)));
     }
 
     return VINF_SUCCESS;
@@ -2842,6 +2844,14 @@ static DECLCALLBACK(void) e1kLateIntTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer, v
 static DECLCALLBACK(void) e1kLinkUpTimer(PPDMDEVINS pDevIns, PTMTIMER pTimer, void *pvUser)
 {
     E1KSTATE *pState = (E1KSTATE *)pvUser;
+
+    /*
+     * This can happen if we set the link status to down when the Link up timer was
+     * already armed (shortly after e1kLoadDone() or when the cable was disconnected
+     * and connect+disconnect the cable very quick.
+     */
+    if (!pState->fCableConnected)
+        return;
 
     if (RT_LIKELY(e1kMutexAcquire(pState, VERR_SEM_BUSY, RT_SRC_POS) == VINF_SUCCESS))
     {
@@ -3520,7 +3530,19 @@ static void e1kDescReport(E1KSTATE* pState, E1KTXDESC* pDesc, RTGCPHYS addr)
      * processed.
      */
     /* Let's pretend we process descriptors. Write back with DD set. */
-    if (pDesc->legacy.cmd.fRS || (GET_BITS(TXDCTL, WTHRESH) > 0))
+    /*
+     * Prior to r71586 we tried to accomodate the case when write-back bursts
+     * are enabled without actually implementing bursting by writing back all
+     * descriptors, even the ones that do not have RS set. This caused kernel
+     * panics with Linux SMP kernels, as the e1000 driver tried to free up skb
+     * associated with written back descriptor if it happened to be a context
+     * descriptor since context descriptors do not have skb associated to them.
+     * Starting from r71586 we write back only the descriptors with RS set,
+     * which is a little bit different from what the real hardware does in
+     * case there is a chain of data descritors where some of them have RS set
+     * and others do not. It is very uncommon scenario imho.
+     */
+    if (pDesc->legacy.cmd.fRS)
     {
         pDesc->legacy.dw3.fDD = 1; /* Descriptor Done */
         e1kWriteBackDesc(pState, pDesc, addr);
@@ -4642,7 +4664,17 @@ static int e1kCanReceive(E1KSTATE *pState)
     if (RT_UNLIKELY(e1kCsRxEnter(pState, VERR_SEM_BUSY) != VINF_SUCCESS))
         return VERR_NET_NO_BUFFER_SPACE;
 
-    if (RDH < RDT)
+    if (RT_UNLIKELY(RDLEN == sizeof(E1KRXDESC)))
+    {
+        E1KRXDESC desc;
+        PDMDevHlpPhysRead(pState->CTX_SUFF(pDevIns), e1kDescAddr(RDBAH, RDBAL, RDH),
+                          &desc, sizeof(desc));
+        if (desc.status.fDD)
+            cb = 0;
+        else
+            cb = pState->u16RxBSize;
+    }
+    else if (RDH < RDT)
         cb = (RDT - RDH) * pState->u16RxBSize;
     else if (RDH > RDT)
         cb = (RDLEN/sizeof(E1KRXDESC) - RDH + RDT) * pState->u16RxBSize;
@@ -4651,6 +4683,8 @@ static int e1kCanReceive(E1KSTATE *pState)
         cb = 0;
         E1kLogRel(("E1000: OUT of RX descriptors!\n"));
     }
+    E1kLog2(("%s e1kCanReceive: at exit RDH=%d RDT=%d RDLEN=%d u16RxBSize=%d cb=%lu\n",
+             INSTANCE(pState), RDH, RDT, RDLEN, pState->u16RxBSize, cb));
 
     e1kCsRxLeave(pState);
     e1kMutexRelease(pState);

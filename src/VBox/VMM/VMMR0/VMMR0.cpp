@@ -116,10 +116,12 @@ VMMR0DECL(int) ModuleInit(void)
                                 LogFlow(("ModuleInit: returns success.\n"));
                                 return VINF_SUCCESS;
                             }
-                        }
 
-                        /* bail out */
-                        LogFlow(("ModuleTerm: returns %Rrc\n", rc));
+                            /*
+                             * Bail out.
+                             */
+                            IntNetR0Term();
+                        }
 #ifdef VBOX_WITH_2X_4GB_ADDR_SPACE
                         PGMR0DynMapTerm();
 #endif

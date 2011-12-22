@@ -1079,6 +1079,11 @@ bool UIMachineView::eventFilter(QObject *pWatched, QEvent *pEvent)
                     }
                 }
 
+#ifdef Q_WS_X11
+                if (pEvent->type() == QEvent::MouseButtonRelease)
+                    machineWindowWrapper()
+                        ->machineWindow()->activateWindow();
+#endif /* Q_WS_X11 */
                 /* Check if we should activate window under cursor: */
                 if (QApplication::activeWindow() &&
                     QApplication::activeWindow()->inherits("UIMachineWindow") &&

@@ -1643,6 +1643,7 @@ HRESULT Appliance::writeFS(const LocationInfo &locInfo, const OVFFormat enFormat
     return rc;
 }
 
+#ifdef VBOX_WITH_S3
 /**
  * Worker code for writing out OVF to the cloud. This is called from Appliance::taskThreadWriteOVF()
  * in S3 mode and therefore runs on the OVF write worker thread. This then starts a second worker
@@ -1810,4 +1811,4 @@ HRESULT Appliance::writeS3(TaskOVF *pTask)
 
     return rc;
 }
-
+#endif /* VBOX_WITH_S3 */

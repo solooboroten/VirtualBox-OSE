@@ -1645,9 +1645,11 @@ static bool atapiGetConfigurationSS(AHCIATADevState *s)
     memset(pbBuf, '\0', 32);
     ataH2BE_U32(pbBuf, 16);
     /** @todo implement switching between CD-ROM and DVD-ROM profile (the only
-     * way to differentiate them right now is based on the image size). Also
-     * implement signalling "no current profile" if no medium is loaded. */
-    ataH2BE_U16(pbBuf + 6, 0x08); /* current profile: read-only CD */
+     * way to differentiate them right now is based on the image size). */
+    if (s->cTotalSectors)
+        ataH2BE_U16(pbBuf + 6, 0x08); /* current profile: read-only CD */
+    else
+        ataH2BE_U16(pbBuf + 6, 0x00); /* current profile: none -> no media */
 
     ataH2BE_U16(pbBuf + 8, 0); /* feature 0: list of profiles supported */
     pbBuf[10] = (0 << 2) | (1 << 1) | (1 || 0); /* version 0, persistent, current */
@@ -2285,7 +2287,7 @@ static void atapiParseCmdVirtualATAPI(AHCIATADevState *s)
                         PDMCritSectLeave(&pCtl->lock);
                         rc = VMR3ReqCallWait(PDMDevHlpGetVM(pDevIns), VMCPUID_ANY,
                                              (PFNRT)s->pDrvMount->pfnUnmount, 2, s->pDrvMount, false);
-                        AssertReleaseRC(rc);
+                        Assert(RT_SUCCESS(rc) || (rc == VERR_PDM_MEDIA_LOCKED) || (rc = VERR_PDM_MEDIA_NOT_MOUNTED));
                         {
                             STAM_PROFILE_START(&pCtl->StatLockWait, a);
                             PDMCritSectEnter(&pCtl->lock, VINF_SUCCESS);
@@ -5416,11 +5418,12 @@ int ataControllerLoadExec(PAHCIATACONTROLLER pCtl, PSSMHANDLE pSSM)
     return VINF_SUCCESS;
 }
 
-DECLCALLBACK(int) ataControllerInit(PPDMDEVINS pDevIns, PAHCIATACONTROLLER pCtl,
-                                    unsigned iLUNMaster, PPDMIBASE pDrvBaseMaster,
-                                    unsigned iLUNSlave, PPDMIBASE pDrvBaseSlave,
-                                    uint32_t *pcbSSMState, const char *szName, PPDMLED pLed,
-                                    PSTAMCOUNTER pStatBytesRead, PSTAMCOUNTER pStatBytesWritten)
+int ataControllerInit(PPDMDEVINS pDevIns, PAHCIATACONTROLLER pCtl,
+                      unsigned iLUNMaster, PPDMIBASE pDrvBaseMaster, PPDMLED pLedMaster,
+                      PSTAMCOUNTER pStatBytesReadMaster, PSTAMCOUNTER pStatBytesWrittenMaster,
+                      unsigned iLUNSlave, PPDMIBASE pDrvBaseSlave, PPDMLED pLedSlave,
+                      PSTAMCOUNTER pStatBytesReadSlave, PSTAMCOUNTER pStatBytesWrittenSlave,
+                      uint32_t *pcbSSMState, const char *szName)
 {
     int      rc;
 
@@ -5443,9 +5446,9 @@ DECLCALLBACK(int) ataControllerInit(PPDMDEVINS pDevIns, PAHCIATACONTROLLER pCtl,
         pCtl->aIfs[j].pControllerR3     = pCtl;
         pCtl->aIfs[j].pControllerR0     = MMHyperR3ToR0(PDMDevHlpGetVM(pDevIns), pCtl);
         pCtl->aIfs[j].pControllerRC     = MMHyperR3ToRC(PDMDevHlpGetVM(pDevIns), pCtl);
-        pCtl->aIfs[j].pLed              = pLed;
-        pCtl->aIfs[j].pStatBytesRead    = pStatBytesRead;
-        pCtl->aIfs[j].pStatBytesWritten = pStatBytesWritten;
+        pCtl->aIfs[j].pLed              = j == 0 ? pLedMaster : pLedSlave;
+        pCtl->aIfs[j].pStatBytesRead    = j == 0 ? pStatBytesReadMaster : pStatBytesReadSlave;
+        pCtl->aIfs[j].pStatBytesWritten = j == 0 ? pStatBytesWrittenMaster : pStatBytesWrittenSlave;
     }
 
     /* Initialize per-controller critical section */

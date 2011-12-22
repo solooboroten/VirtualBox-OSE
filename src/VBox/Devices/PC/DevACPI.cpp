@@ -192,7 +192,8 @@ typedef struct ACPIState
     uint16_t            pm1a_ctl;
     /** Number of logical CPUs in guest */
     uint16_t            cCpus;
-    int64_t             pm_timer_initial;
+    uint64_t            u64PmTimerInitial;
+    uint64_t            u64PmTimerLastSeen;
     PTMTIMERR3          tsR3;
     PTMTIMERR0          tsR0;
     PTMTIMERRC          tsRC;
@@ -1718,10 +1719,17 @@ PDMBOTHCBDECL(int) acpiPMTmrRead(PPDMDEVINS pDevIns, void *pvUser, RTIOPORT Port
     if (cb == 4)
     {
         ACPIState *s = PDMINS_2_DATA(pDevIns, ACPIState *);
-        int64_t now = TMTimerGet(s->CTX_SUFF(ts));
-        int64_t elapsed = now - s->pm_timer_initial;
+        uint64_t u64Now = TMTimerGet(s->CTX_SUFF(ts));
+        uint64_t u64Seen;
+        do
+        {
+            u64Seen = ASMAtomicReadU64(&s->u64PmTimerLastSeen);
+            if (u64Now < u64Seen)
+                u64Now = u64Seen + 1;
+        } while (!ASMAtomicCmpXchgU64(&s->u64PmTimerLastSeen, u64Now, u64Seen));
 
-        *pu32 = ASMMultU64ByU32DivByU32(elapsed, PM_TMR_FREQ, TMTimerGetFreq(s->CTX_SUFF(ts)));
+        uint64_t u64Elapsed = u64Now - s->u64PmTimerInitial;
+        *pu32 = ASMMultU64ByU32DivByU32(u64Elapsed, PM_TMR_FREQ, TMTimerGetFreq(s->CTX_SUFF(ts)));
         Log(("acpi: acpiPMTmrRead -> %#x\n", *pu32));
         return VINF_SUCCESS;
     }
@@ -1920,7 +1928,7 @@ static const SSMFIELD g_AcpiSavedStateFields4[] =
     SSMFIELD_ENTRY(ACPIState, pm1a_en),
     SSMFIELD_ENTRY(ACPIState, pm1a_sts),
     SSMFIELD_ENTRY(ACPIState, pm1a_ctl),
-    SSMFIELD_ENTRY(ACPIState, pm_timer_initial),
+    SSMFIELD_ENTRY(ACPIState, u64PmTimerInitial),
     SSMFIELD_ENTRY(ACPIState, gpe0_en),
     SSMFIELD_ENTRY(ACPIState, gpe0_sts),
     SSMFIELD_ENTRY(ACPIState, uBatteryIndex),
@@ -1940,7 +1948,7 @@ static const SSMFIELD g_AcpiSavedStateFields5[] =
     SSMFIELD_ENTRY(ACPIState, pm1a_en),
     SSMFIELD_ENTRY(ACPIState, pm1a_sts),
     SSMFIELD_ENTRY(ACPIState, pm1a_ctl),
-    SSMFIELD_ENTRY(ACPIState, pm_timer_initial),
+    SSMFIELD_ENTRY(ACPIState, u64PmTimerInitial),
     SSMFIELD_ENTRY(ACPIState, gpe0_en),
     SSMFIELD_ENTRY(ACPIState, gpe0_sts),
     SSMFIELD_ENTRY(ACPIState, uBatteryIndex),
@@ -2304,7 +2312,7 @@ static DECLCALLBACK(void) acpiReset(PPDMDEVINS pDevIns)
     s->pm1a_en           = 0;
     s->pm1a_sts          = 0;
     s->pm1a_ctl          = 0;
-    s->pm_timer_initial  = TMTimerGet(s->CTX_SUFF(ts));
+    s->u64PmTimerInitial = TMTimerGet(s->CTX_SUFF(ts));
     acpiPMTimerReset(s);
     s->uBatteryIndex     = 0;
     s->uSystemInfoIndex  = 0;
@@ -2532,7 +2540,7 @@ static DECLCALLBACK(int) acpiConstruct(PPDMDEVINS pDevIns, int iInstance, PCFGMN
 
     s->tsR0 = TMTimerR0Ptr(s->tsR3);
     s->tsRC = TMTimerRCPtr(s->tsR3);
-    s->pm_timer_initial = TMTimerGet(s->tsR3);
+    s->u64PmTimerInitial = TMTimerGet(s->tsR3);
     acpiPMTimerReset(s);
 
     PCIDevSetVendorId(dev, 0x8086); /* Intel */

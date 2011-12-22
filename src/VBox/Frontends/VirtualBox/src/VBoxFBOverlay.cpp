@@ -5130,7 +5130,8 @@ int VBoxVHWACommandElementProcessor::loadExec (struct SSMHANDLE * pSSM, uint32_t
 
                             if (RT_SUCCESS(rc))
                             {
-                                postCmd(VBOXVHWA_PIPECMD_PAINT, &QRect(x,y,w,h), 0);
+                                QRect r = QRect(x, y, w, h);
+                                postCmd(VBOXVHWA_PIPECMD_PAINT, &r, 0);
                             }
                             break;
                         }

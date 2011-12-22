@@ -433,7 +433,14 @@ DECLINLINE(struct net_device *) vboxNetFltLinuxRetainNetDev(PVBOXNETFLTINS pThis
         if (pDev)
         {
             dev_hold(pDev);
-            Log(("vboxNetFltLinuxRetainNetDev: Device %p(%s) retained. ref=%d\n", pDev, pDev->name, atomic_read(&pDev->refcnt)));
+            Log(("vboxNetFltLinuxRetainNetDev: Device %p(%s) retained. ref=%d\n",
+                 pDev, pDev->name,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)
+                 netdev_refcnt_read(pDev)
+#else
+                 atomic_read(&pDev->refcnt)
+#endif
+                 ));
         }
     }
     RTSpinlockRelease(pThis->hSpinlock, &Tmp);
@@ -462,7 +469,14 @@ DECLINLINE(void) vboxNetFltLinuxReleaseNetDev(PVBOXNETFLTINS pThis, struct net_d
     if (pDev)
     {
         dev_put(pDev);
-        Log(("vboxNetFltLinuxReleaseNetDev: Device %p(%s) released. ref=%d\n", pDev, pDev->name, atomic_read(&pDev->refcnt)));
+        Log(("vboxNetFltLinuxReleaseNetDev: Device %p(%s) released. ref=%d\n",
+             pDev, pDev->name,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)
+             netdev_refcnt_read(pDev)
+#else
+             atomic_read(&pDev->refcnt)
+#endif
+             ));
     }
     Log(("vboxNetFltLinuxReleaseNetDev - done\n"));
 #endif
@@ -1407,7 +1421,13 @@ static int vboxNetFltLinuxAttachToInterface(PVBOXNETFLTINS pThis, struct net_dev
     ASMAtomicUoWritePtr((void * volatile *)&pThis->u.s.pDev, pDev);
     RTSpinlockReleaseNoInts(pThis->hSpinlock, &Tmp);
 
-    Log(("vboxNetFltLinuxAttachToInterface: Device %p(%s) retained. ref=%d\n", pDev, pDev->name, atomic_read(&pDev->refcnt)));
+    Log(("vboxNetFltLinuxAttachToInterface: Device %p(%s) retained. ref=%d\n", pDev, pDev->name,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)
+        netdev_refcnt_read(&pDev)
+#else
+        atomic_read(&pDev->refcnt)
+#endif
+        ));
     Log(("vboxNetFltLinuxAttachToInterface: Got pDev=%p pThis=%p pThis->u.s.pDev=%p\n", pDev, pThis, ASMAtomicUoReadPtr((void * volatile *)&pThis->u.s.pDev)));
 
     /* Get the mac address while we still have a valid net_device reference. */
@@ -1471,7 +1491,14 @@ static int vboxNetFltLinuxAttachToInterface(PVBOXNETFLTINS pThis, struct net_dev
         ASMAtomicUoWritePtr((void * volatile *)&pThis->u.s.pDev, NULL);
         RTSpinlockReleaseNoInts(pThis->hSpinlock, &Tmp);
         dev_put(pDev);
-        Log(("vboxNetFltLinuxAttachToInterface: Device %p(%s) released. ref=%d\n", pDev, pDev->name, atomic_read(&pDev->refcnt)));
+        Log(("vboxNetFltLinuxAttachToInterface: Device %p(%s) released. ref=%d\n",
+             pDev, pDev->name,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)
+             netdev_refcnt_read(pDev)
+#else
+             atomic_read(&pDev->refcnt)
+#endif
+             ));
     }
 
     LogRel(("VBoxNetFlt: attached to '%s' / %.*Rhxs\n", pThis->szName, sizeof(pThis->u.s.MacAddr), &pThis->u.s.MacAddr));
@@ -1500,7 +1527,14 @@ static int vboxNetFltLinuxUnregisterDevice(PVBOXNETFLTINS pThis, struct net_devi
     skb_queue_purge(&pThis->u.s.XmitQueue);
 #endif
     Log(("vboxNetFltLinuxUnregisterDevice: this=%p: Packet handler removed, xmit queue purged.\n", pThis));
-    Log(("vboxNetFltLinuxUnregisterDevice: Device %p(%s) released. ref=%d\n", pDev, pDev->name, atomic_read(&pDev->refcnt)));
+    Log(("vboxNetFltLinuxUnregisterDevice: Device %p(%s) released. ref=%d\n",
+         pDev, pDev->name,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)
+         netdev_refcnt_read(pDev)
+#else
+         atomic_read(&pDev->refcnt)
+#endif
+         ));
     dev_put(pDev);
 
     return NOTIFY_OK;
@@ -1801,7 +1835,14 @@ void vboxNetFltOsDeleteInstance(PVBOXNETFLTINS pThis)
         skb_queue_purge(&pThis->u.s.XmitQueue);
 #endif
         Log(("vboxNetFltOsDeleteInstance: this=%p: Packet handler removed, xmit queue purged.\n", pThis));
-        Log(("vboxNetFltOsDeleteInstance: Device %p(%s) released. ref=%d\n", pDev, pDev->name, atomic_read(&pDev->refcnt)));
+        Log(("vboxNetFltOsDeleteInstance: Device %p(%s) released. ref=%d\n",
+             pDev, pDev->name,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37)
+             netdev_refcnt_read(pDev)
+#else
+             atomic_read(&pDev->refcnt)
+#endif
+             ));
         dev_put(pDev);
     }
     Log(("vboxNetFltOsDeleteInstance: this=%p: Notifier removed.\n", pThis));

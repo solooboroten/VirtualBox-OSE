@@ -227,6 +227,8 @@
 /* A SCSI device starts always at BX_MAX_ATA_DEVICES. */
 #    define VBOX_IS_SCSI_DEVICE(device_id) (device_id >= BX_MAX_ATA_DEVICES)
 #    define VBOX_GET_SCSI_DEVICE(device_id) (device_id - BX_MAX_ATA_DEVICES)
+#else
+#    define BX_MAX_STORAGE_DEVICES  BX_MAX_ATA_DEVICES
 #endif
 
 #ifndef VBOX
@@ -724,14 +726,10 @@ typedef struct {
     ata_device_t  devices[BX_MAX_ATA_DEVICES];
     //
     // map between (bios hd id - 0x80) and ata channels and scsi disks.
-#ifdef VBOX_WITH_SCSI
-    Bit8u  hdcount, hdidmap[BX_MAX_ATA_DEVICES+BX_MAX_SCSI_DEVICES];
-#else
-    Bit8u  hdcount, hdidmap[BX_MAX_ATA_DEVICES];
-#endif
+    Bit8u  hdcount, hdidmap[BX_MAX_STORAGE_DEVICES];
 
     // map between (bios cd id - 0xE0) and ata channels
-    Bit8u  cdcount, cdidmap[BX_MAX_ATA_DEVICES];
+    Bit8u  cdcount, cdidmap[BX_MAX_STORAGE_DEVICES];
 
     // Buffer for DPTE table
     dpte_t dpte;
@@ -2267,6 +2265,8 @@ debugger_off()
 #define ATA_CMD_READ_SECTORS                 0x20
 #ifdef VBOX
 #define ATA_CMD_READ_SECTORS_EXT             0x24
+#define ATA_CMD_READ_MULTIPLE_EXT            0x29
+#define ATA_CMD_WRITE_MULTIPLE_EXT           0x39
 #endif /* VBOX */
 #define ATA_CMD_READ_VERIFY_SECTORS          0x40
 #define ATA_CMD_RECALIBRATE                  0x10
@@ -2344,7 +2344,7 @@ void ata_init( )
     write_byte(ebda_seg,&EbdaData->ata.devices[device].removable,0);
     write_byte(ebda_seg,&EbdaData->ata.devices[device].lock,0);
     write_byte(ebda_seg,&EbdaData->ata.devices[device].mode,ATA_MODE_NONE);
-    write_word(ebda_seg,&EbdaData->ata.devices[device].blksize,0);
+    write_word(ebda_seg,&EbdaData->ata.devices[device].blksize,0x200);
     write_byte(ebda_seg,&EbdaData->ata.devices[device].translation,ATA_TRANSLATION_NONE);
     write_word(ebda_seg,&EbdaData->ata.devices[device].lchs.heads,0);
     write_word(ebda_seg,&EbdaData->ata.devices[device].lchs.cylinders,0);
@@ -2357,7 +2357,7 @@ void ata_init( )
     }
 
   // hdidmap  and cdidmap init.
-  for (device=0; device<BX_MAX_ATA_DEVICES; device++) {
+  for (device=0; device<BX_MAX_STORAGE_DEVICES; device++) {
     write_byte(ebda_seg,&EbdaData->ata.hdidmap[device],BX_MAX_STORAGE_DEVICES);
     write_byte(ebda_seg,&EbdaData->ata.cdidmap[device],BX_MAX_STORAGE_DEVICES);
     }
@@ -2860,7 +2860,7 @@ Bit16u device, command, count, cylinder, head, sector, segment, offset;
 Bit32u lba;
 {
   Bit16u ebda_seg=read_word(0x0040,0x000E);
-  Bit16u iobase1, iobase2, blksize;
+  Bit16u iobase1, iobase2, blksize, mult_blk_cnt;
   Bit8u  channel, slave;
   Bit8u  status, current, mode;
 
@@ -2870,14 +2870,20 @@ Bit32u lba;
   iobase1 = read_word(ebda_seg, &EbdaData->ata.channels[channel].iobase1);
   iobase2 = read_word(ebda_seg, &EbdaData->ata.channels[channel].iobase2);
   mode    = read_byte(ebda_seg, &EbdaData->ata.devices[device].mode);
-  blksize = 0x200; // was = read_word(ebda_seg, &EbdaData->ata.devices[device].blksize);
-  if (mode == ATA_MODE_PIO32) blksize>>=2;
-  else blksize>>=1;
+  blksize = read_word(ebda_seg, &EbdaData->ata.devices[device].blksize);
+  if (blksize == 0) {   /* If transfer size is exactly 64K */
+      if (mode == ATA_MODE_PIO32) blksize=0x4000;
+      else blksize=0x8000;
+  } else {
+    if (mode == ATA_MODE_PIO32) blksize>>=2;
+    else blksize>>=1;
+  }
 
 #ifdef VBOX
   status = inb(iobase1 + ATA_CB_STAT);
   if (status & ATA_CB_STAT_BSY)
   {
+    BX_DEBUG_ATA("ata_cmd_data_in : disk busy\n");
     // Enable interrupts
     outb(iobase2+ATA_CB_DC, ATA_CB_DC_HD15);
     return 1;
@@ -2887,7 +2893,7 @@ Bit32u lba;
   // sector will be 0 only on lba access. Convert to lba-chs
   if (sector == 0) {
 #ifdef VBOX
-    if (count >= 256 || lba + count >= 268435456)
+    if (lba + count >= 268435456)
     {
       sector = (lba & 0xff000000L) >> 24;
       cylinder = 0; /* The parameter lba is just a 32 bit value. */
@@ -2925,6 +2931,13 @@ Bit32u lba;
   outb(iobase1 + ATA_CB_CH, cylinder >> 8);
   outb(iobase1 + ATA_CB_DH, (slave ? ATA_CB_DH_DEV1 : ATA_CB_DH_DEV0) | (Bit8u) head );
   outb(iobase1 + ATA_CB_CMD, command);
+
+  if (command == ATA_CMD_READ_MULTIPLE || command == ATA_CMD_READ_MULTIPLE_EXT) {
+    mult_blk_cnt = count;
+    count = 1;
+  } else {
+    mult_blk_cnt = 1;
+  }
 
   while (1) {
     status = inb(iobase1 + ATA_CB_STAT);
@@ -2994,7 +3007,7 @@ ata_in_done:
         pop  bp
 ASM_END
 
-    current++;
+    current += mult_blk_cnt;
     write_word(ebda_seg, &EbdaData->ata.trsfsectors,current);
     count--;
 #ifdef VBOX
@@ -3079,7 +3092,7 @@ Bit32u lba;
   // sector will be 0 only on lba access. Convert to lba-chs
   if (sector == 0) {
 #ifdef VBOX
-    if (count >= 256 || lba + count >= 268435456)
+    if (lba + count >= 268435456)
     {
       sector = (lba & 0xff000000L) >> 24;
       cylinder = 0; /* The parameter lba is just a 32 bit value. */
@@ -5428,36 +5441,20 @@ int13_harddisk(EHBX, EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLA
 
   write_byte(0x0040, 0x008e, 0);  // clear completion flag
 
-#ifdef VBOX_WITH_SCSI
   // basic check : device has to be defined
   if ( (GET_ELDL() < 0x80) || (GET_ELDL() >= 0x80 + BX_MAX_STORAGE_DEVICES) ) {
-    BX_INFO("int13_harddisk: function %02x, ELDL out of range %02x\n", GET_AH(), GET_ELDL());
+    BX_DEBUG("int13_harddisk: function %02x, ELDL out of range %02x\n", GET_AH(), GET_ELDL());
     goto int13_fail;
     }
-#else
-  // basic check : device has to be defined
-  if ( (GET_ELDL() < 0x80) || (GET_ELDL() >= 0x80 + BX_MAX_ATA_DEVICES) ) {
-    BX_INFO("int13_harddisk: function %02x, ELDL out of range %02x\n", GET_AH(), GET_ELDL());
-    goto int13_fail;
-    }
-#endif
 
   // Get the ata channel
   device=read_byte(ebda_seg,&EbdaData->ata.hdidmap[GET_ELDL()-0x80]);
 
-#ifdef VBOX_WITH_SCSI
   // basic check : device has to be valid
   if (device >= BX_MAX_STORAGE_DEVICES) {
-    BX_INFO("int13_harddisk: function %02x, unmapped device for ELDL=%02x\n", GET_AH(), GET_ELDL());
+    BX_DEBUG("int13_harddisk: function %02x, unmapped device for ELDL=%02x\n", GET_AH(), GET_ELDL());
     goto int13_fail;
     }
-#else
-  // basic check : device has to be valid
-  if (device >= BX_MAX_ATA_DEVICES) {
-    BX_INFO("int13_harddisk: function %02x, unmapped device for ELDL=%02x\n", GET_AH(), GET_ELDL());
-    goto int13_fail;
-    }
-#endif
 
   switch (GET_AH()) {
 
@@ -5518,7 +5515,7 @@ int13_harddisk(EHBX, EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLA
 
       // sanity check on cyl heads, sec
       if( (cylinder >= nlc) || (head >= nlh) || (sector > nlspt )) {
-        BX_INFO("int13_harddisk: function %02x, parameters out of range %04x/%04x/%04x!\n", GET_AH(), cylinder, head, sector);
+        BX_INFO("int13_harddisk: function %02x, disk %02x, parameters out of range %04x/%04x/%04x!\n", GET_AH(), GET_DL(), cylinder, head, sector);
         goto int13_fail;
         }
 
@@ -5561,7 +5558,11 @@ int13_harddisk(EHBX, EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLA
           status=scsi_read_sectors(VBOX_GET_SCSI_DEVICE(device), count, lba, segment, offset);
         else
 #endif
-          status=ata_cmd_data_in(device, ATA_CMD_READ_SECTORS, count, cylinder, head, sector, lba, segment, offset);
+        {
+          write_word(ebda_seg,&EbdaData->ata.devices[device].blksize,count * 0x200);  
+          status=ata_cmd_data_in(device, ATA_CMD_READ_MULTIPLE, count, cylinder, head, sector, lba, segment, offset);
+          write_word(ebda_seg,&EbdaData->ata.devices[device].blksize,0x200);  
+        }
       }
       else
       {
@@ -5736,10 +5737,13 @@ int13_harddisk(EHBX, EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLA
         else
 #endif
         {
-          if (count >= 256 || lba + count >= 268435456)
+          if (lba + count >= 268435456)
             status=ata_cmd_data_in(device, ATA_CMD_READ_SECTORS_EXT, count, 0, 0, 0, lba, segment, offset);
-          else
-            status=ata_cmd_data_in(device, ATA_CMD_READ_SECTORS, count, 0, 0, 0, lba, segment, offset);
+          else {
+            write_word(ebda_seg,&EbdaData->ata.devices[device].blksize,count * 0x200);  
+            status=ata_cmd_data_in(device, ATA_CMD_READ_MULTIPLE, count, 0, 0, 0, lba, segment, offset);
+            write_word(ebda_seg,&EbdaData->ata.devices[device].blksize,0x200);  
+          }
         }
       }
 #else /* !VBOX */
@@ -5754,7 +5758,7 @@ int13_harddisk(EHBX, EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLA
         else
 #endif
         {
-          if (count >= 256 || lba + count >= 268435456)
+          if (lba + count >= 268435456)
             status=ata_cmd_data_out(device, ATA_CMD_WRITE_SECTORS_EXT, count, 0, 0, 0, lba, segment, offset);
           else
             status=ata_cmd_data_out(device, ATA_CMD_WRITE_SECTORS, count, 0, 0, 0, lba, segment, offset);
@@ -5991,7 +5995,7 @@ int13_cdrom(EHBX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
 
   /* basic check : device should be 0xE0+ */
   if( (GET_ELDL() < 0xE0) || (GET_ELDL() >= 0xE0+BX_MAX_ATA_DEVICES) ) {
-    BX_INFO("int13_cdrom: function %02x, ELDL out of range %02x\n", GET_AH(), GET_ELDL());
+    BX_DEBUG("int13_cdrom: function %02x, ELDL out of range %02x\n", GET_AH(), GET_ELDL());
     goto int13_fail;
     }
 
@@ -6000,7 +6004,7 @@ int13_cdrom(EHBX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
 
   /* basic check : device has to be valid  */
   if (device >= BX_MAX_ATA_DEVICES) {
-    BX_INFO("int13_cdrom: function %02x, unmapped device for ELDL=%02x\n", GET_AH(), GET_ELDL());
+    BX_DEBUG("int13_cdrom: function %02x, unmapped device for ELDL=%02x\n", GET_AH(), GET_ELDL());
     goto int13_fail;
     }
 
@@ -11140,10 +11144,15 @@ rom_scan_increment:
 #define LVT0    0xFEE00350
 #define LVT1    0xFEE00360
 
-;; Program LVT0/LVT1 entries in the local APIC. Some Linux kernels (e.g., RHEL4
-;; SMP 32-bit) expect the entries to be unmasked in virtual wire mode.
+;; Run initialization steps which must be performed in protected mode.
+;; - Program LVT0/LVT1 entries in the local APIC. Some Linux kernels (e.g., RHEL4
+;;   SMP 32-bit) expect the entries to be unmasked in virtual wire mode.
+;; - Clear the CD and NW bits in CR0; these are not relevant (except possibly
+;;    under AMD-V with nested paging) but the guest should see the right state.
 
-setup_lapic:
+pmode_setup:
+  push eax
+  push esi
   pushf
   cli               ;; Interrupts would kill us!
   call pmode_enter
@@ -11157,8 +11166,13 @@ setup_lapic:
   and  eax, #0xfffe00ff
   or   ah,  #0x04
   mov  [esi], eax
+  mov  eax, cr0     ;; Clear CR0.CD and CR0.NW
+  and  eax, #0x9fffffff
+  mov  cr0, eax
   call pmode_exit
   popf
+  pop  esi
+  pop  eax
   ret
 
 ;; Enter and exit minimal protected-mode environment. May only be called from
@@ -11288,7 +11302,7 @@ normal_post:
   ; case 0: normal startup
 
   cli
-  mov  ax, #0xfffe
+  mov  ax, #0x7C00
   mov  sp, ax
   xor  ax, ax
   mov  ds, ax
@@ -11339,6 +11353,8 @@ memory_cleared:
 #endif
 
   call _log_bios_start
+
+  call pmode_setup
 
   ;; set all interrupts to default handler
   xor  bx, bx         ;; offset index
@@ -11534,7 +11550,6 @@ post_default_ints:
   call pcibios_init_iomem_bases
   call pcibios_init_irqs
 #endif
-  call setup_lapic
   call rom_scan
 
 #if BX_USE_ATADRV

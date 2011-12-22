@@ -229,7 +229,7 @@ VMMR0DECL(int) HWACCMR0Init(void)
 
                     /* We need to check if VT-x has been properly initialized on all CPUs. Some BIOSes do a lousy job. */
                     memset(aRc, 0, sizeof(aRc));
-                    HWACCMR0Globals.lLastError = RTMpOnAll(HWACCMR0InitCPU, (void *)u32VendorEBX, aRc);
+                    HWACCMR0Globals.lLastError = RTMpOnAll(HWACCMR0InitCPU, (void *)(uintptr_t)u32VendorEBX, aRc);
 
                     /* Check the return code of all invocations. */
                     if (RT_SUCCESS(HWACCMR0Globals.lLastError))
@@ -377,7 +377,7 @@ VMMR0DECL(int) HWACCMR0Init(void)
 
                 /* We need to check if AMD-V has been properly initialized on all CPUs. Some BIOSes might do a poor job. */
                 memset(aRc, 0, sizeof(aRc));
-                rc = RTMpOnAll(HWACCMR0InitCPU, (void *)u32VendorEBX, aRc);
+                rc = RTMpOnAll(HWACCMR0InitCPU, (void *)(uintptr_t)u32VendorEBX, aRc);
                 AssertRC(rc);
 
                 /* Check the return code of all invocations. */
@@ -912,7 +912,7 @@ static DECLCALLBACK(void) hwaccmR0PowerCallback(RTPOWEREVENT enmEvent, void *pvU
         else
         {
             /* Reinit the CPUs from scratch as the suspend state might have messed with the MSRs. (lousy BIOSes as usual) */
-            rc = RTMpOnAll(HWACCMR0InitCPU, (void *)((HWACCMR0Globals.vmx.fSupported) ? X86_CPUID_VENDOR_INTEL_EBX : X86_CPUID_VENDOR_AMD_EBX), aRc);
+            rc = RTMpOnAll(HWACCMR0InitCPU, (void *)(uintptr_t)((HWACCMR0Globals.vmx.fSupported) ? X86_CPUID_VENDOR_INTEL_EBX : X86_CPUID_VENDOR_AMD_EBX), aRc);
             Assert(RT_SUCCESS(rc) || rc == VERR_NOT_SUPPORTED);
 
             if (RT_SUCCESS(rc))

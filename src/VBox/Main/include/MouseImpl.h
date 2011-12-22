@@ -122,7 +122,7 @@ private:
     HRESULT setVMMDevMouseCaps(uint32_t fCaps);
     HRESULT reportRelEventToMouseDev(int32_t dx, int32_t dy, int32_t dz,
                                  int32_t dw, uint32_t fButtons);
-    HRESULT reportAbsEventToMouseDev(uint32_t mouseXAbs, uint32_t mouseYAbs,
+    HRESULT reportAbsEventToMouseDev(int32_t mouseXAbs, int32_t mouseYAbs,
                                  int32_t dz, int32_t dw, uint32_t fButtons);
     HRESULT reportAbsEventToVMMDev(uint32_t mouseXAbs, uint32_t mouseYAbs);
     HRESULT reportAbsEvent(uint32_t mouseXAbs, uint32_t mouseYAbs,

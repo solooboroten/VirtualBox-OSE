@@ -1,8 +1,9 @@
 /** @file
- *
- * VBoxGINA -- Windows Logon DLL for VirtualBox Helper Functions
- *
- * Copyright (C) 2006-2007 Oracle Corporation
+ * VBoxGINA - Windows Logon DLL for VirtualBox, Helper Functions.
+ */
+
+/*
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -23,6 +24,9 @@
 extern wchar_t g_Username[];
 extern wchar_t g_Password[];
 extern wchar_t g_Domain[];
+
+DWORD loadConfiguration();
+bool handleCurrentSession(void);
 
 void credentialsReset(void);
 bool credentialsAvailable(void);

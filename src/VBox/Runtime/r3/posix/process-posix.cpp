@@ -44,6 +44,9 @@
 # include <shadow.h>
 #endif
 #if defined(RT_OS_LINUX) || defined(RT_OS_OS2)
+/* While Solaris has posix_spawn() of course we don't want to use it as
+ * we need to have the child in a different process contract, no matter
+ * whether it is started detached or not. */
 # define HAVE_POSIX_SPAWN 1
 #endif
 #ifdef HAVE_POSIX_SPAWN
@@ -51,6 +54,12 @@
 #endif
 #ifdef RT_OS_DARWIN
 # include <mach-o/dyld.h>
+#endif
+#ifdef RT_OS_SOLARIS
+# include <limits.h>
+# include <sys/ctfs.h>
+# include <sys/contract/process.h>
+# include <libcontract.h>
 #endif
 
 #include <iprt/process.h>
@@ -97,9 +106,10 @@ static int rtCheckCredentials(const char *pszUser, const char *pszPasswd, gid_t 
     /* be reentrant */
     struct crypt_data *data = (struct crypt_data*)RTMemTmpAllocZ(sizeof(*data));
     char *pszEncPasswd = crypt_r(pszPasswd, pw->pw_passwd, data);
-    if (strcmp(pszEncPasswd, pw->pw_passwd))
-        return VERR_PERMISSION_DENIED;
+    bool fCorrect = !strcmp(pszEncPasswd, pw->pw_passwd);
     RTMemTmpFree(data);
+    if (!fCorrect)
+        return VERR_PERMISSION_DENIED;
 
     *gid = pw->pw_gid;
     *uid = pw->pw_uid;
@@ -135,6 +145,107 @@ static int rtCheckCredentials(const char *pszUser, const char *pszPasswd, gid_t 
 }
 
 
+#ifdef RT_OS_SOLARIS
+/** @todo the error reporting of the Solaris process contract code could be
+ * a lot better, but essentially it is not meant to run into errors after
+ * the debugging phase. */
+static int rtSolarisContractPreFork(void)
+{
+    int templateFd = open64(CTFS_ROOT "/process/template", O_RDWR);
+    if (templateFd < 0)
+        return -1;
+
+    /* Set template parameters and event sets. */
+    if (ct_pr_tmpl_set_param(templateFd, CT_PR_PGRPONLY))
+    {
+        close(templateFd);
+        return -1;
+    }
+    if (ct_pr_tmpl_set_fatal(templateFd, CT_PR_EV_HWERR))
+    {
+        close(templateFd);
+        return -1;
+    }
+    if (ct_tmpl_set_critical(templateFd, 0))
+    {
+        close(templateFd);
+        return -1;
+    }
+    if (ct_tmpl_set_informative(templateFd, CT_PR_EV_HWERR))
+    {
+        close(templateFd);
+        return -1;
+    }
+
+    /* Make this the active template for the process. */
+    if (ct_tmpl_activate(templateFd))
+    {
+        close(templateFd);
+        return -1;
+    }
+
+    return templateFd;
+}
+
+static void rtSolarisContractPostForkChild(int templateFd)
+{
+    if (templateFd == -1)
+        return;
+
+    /* Clear the active template. */
+    ct_tmpl_clear(templateFd);
+    close(templateFd);
+}
+
+static void rtSolarisContractPostForkParent(int templateFd, pid_t pid)
+{
+    if (templateFd == -1)
+        return;
+
+    /* Clear the active template. */
+    int cleared = ct_tmpl_clear(templateFd);
+    close(templateFd);
+
+    /* If the clearing failed or the fork failed there's nothing more to do. */
+    if (cleared || pid <= 0)
+        return;
+
+    /* Look up the contract which was created by this thread. */
+    int statFd = open64(CTFS_ROOT "/process/latest", O_RDONLY);
+    if (statFd == -1)
+        return;
+    ct_stathdl_t statHdl;
+    if (ct_status_read(statFd, CTD_COMMON, &statHdl))
+    {
+        close(statFd);
+        return;
+    }
+    ctid_t ctId = ct_status_get_id(statHdl);
+    ct_status_free(statHdl);
+    close(statFd);
+    if (ctId < 0)
+        return;
+
+    /* Abandon this contract we just created. */
+    char ctlPath[PATH_MAX];
+    size_t len = snprintf(ctlPath, sizeof(ctlPath),
+                          CTFS_ROOT "/process/%d/ctl", ctId);
+    if (len >= sizeof(ctlPath))
+        return;
+    int ctlFd = open64(ctlPath, O_WRONLY);
+    if (statFd == -1)
+        return;
+    if (ct_ctl_abandon(ctlFd) < 0)
+    {
+        close(ctlFd);
+        return;
+    }
+    close(ctlFd);
+}
+
+#endif /* RT_OS_SOLARIS */
+
+
 RTR3DECL(int)   RTProcCreate(const char *pszExec, const char * const *papszArgs, RTENV Env, unsigned fFlags, PRTPROCESS pProcess)
 {
     return RTProcCreateEx(pszExec, papszArgs, Env, fFlags,
@@ -155,7 +266,7 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
      */
     AssertPtrReturn(pszExec, VERR_INVALID_POINTER);
     AssertReturn(*pszExec, VERR_INVALID_PARAMETER);
-    AssertReturn(!(fFlags & ~(RTPROC_FLAGS_DAEMONIZE_DEPRECATED | RTPROC_FLAGS_DETACHED | RTPROC_FLAGS_SERVICE)), VERR_INVALID_PARAMETER);
+    AssertReturn(!(fFlags & ~(RTPROC_FLAGS_DETACHED | RTPROC_FLAGS_SERVICE)), VERR_INVALID_PARAMETER);
     AssertReturn(!(fFlags & RTPROC_FLAGS_DETACHED) || !phProcess, VERR_INVALID_PARAMETER);
     AssertReturn(hEnv != NIL_RTENV, VERR_INVALID_PARAMETER);
     const char * const *papszEnv = RTEnvGetExecEnvP(hEnv);
@@ -235,22 +346,80 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
         return rc;
     }
 
+    pid_t pid = -1;
+
     /*
-     * Spawn the child.
+     * Take care of detaching the process.
      *
      * HACK ALERT! Put the process into a new process group with pgid = pid
      * to make sure it differs from that of the parent process to ensure that
-     * the IPRT waipit call doesn't race anyone (read XPCOM) doing group wide
-     * waits.
+     * the IPRT waitpid call doesn't race anyone (read XPCOM) doing group wide
+     * waits. setsid() includes the setpgid() functionality.
+     * 2010-10-11 XPCOM no longer waits for anything, but it cannot hurt.
      */
-    pid_t pid = -1;
+#ifndef RT_OS_OS2
+    if (fFlags & RTPROC_FLAGS_DETACHED)
+    {
+# ifdef RT_OS_SOLARIS
+        int templateFd = rtSolarisContractPreFork();
+        if (templateFd == -1)
+            return VERR_OPEN_FAILED;
+# endif /* RT_OS_SOLARIS */
+        pid = fork();
+        if (!pid)
+        {
+# ifdef RT_OS_SOLARIS
+            rtSolarisContractPostForkChild(templateFd);
+# endif /* RT_OS_SOLARIS */
+            setsid(); /* see comment above */
+
+            pid = -1;
+            /* Child falls through to the actual spawn code below. */
+        }
+        else
+        {
+#ifdef RT_OS_SOLARIS
+            rtSolarisContractPostForkParent(templateFd, pid);
+#endif /* RT_OS_SOLARIS */
+            if (pid > 0)
+            {
+                /* Must wait for the temporary process to avoid a zombie. */
+                int status = 0;
+                pid_t pidChild = 0;
+
+                /* Restart if we get interrupted. */
+                do
+                {
+                    pidChild = waitpid(pid, &status, 0);
+                } while (   pidChild == -1
+                         && errno == EINTR);
+
+                /* Assume that something wasn't found. No detailed info. */
+                if (status)
+                    return VERR_PROCESS_NOT_FOUND;
+                if (phProcess)
+                    *phProcess = 0;
+                return VINF_SUCCESS;
+            }
+            return RTErrConvertFromErrno(errno);
+        }
+    }
+#endif
+
+    /*
+     * Spawn the child.
+     *
+     * Any spawn code MUST not execute any atexit functions if it is for a
+     * detached process. It would lead to running the atexit functions which
+     * make only sense for the parent. libORBit e.g. gets confused by multiple
+     * execution. Remember, there was only a fork() so far, and until exec()
+     * is successfully run there is nothing which would prevent doing anything
+     * silly with the (duplicated) file descriptors.
+     */
 #ifdef HAVE_POSIX_SPAWN
     /** @todo OS/2: implement DETACHED (BACKGROUND stuff), see VbglR3Daemonize.  */
-    /** @todo Try do the detach thing with posix spawn.  */
-    if (   !(fFlags & (RTPROC_FLAGS_DAEMONIZE_DEPRECATED | RTPROC_FLAGS_DETACHED))
-        && uid == ~(uid_t)0
-        && gid == ~(gid_t)0
-        )
+    if (   uid == ~(uid_t)0
+        && gid == ~(gid_t)0)
     {
         /* Spawn attributes. */
         posix_spawnattr_t Attr;
@@ -317,19 +486,36 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
             /* return on success.*/
             if (!rc)
             {
+                /* For a detached process this happens in the temp process, so
+                 * it's not worth doing anything as this process must exit. */
+                if (fFlags & RTPROC_FLAGS_DETACHED)
+                _Exit(0);
                 if (phProcess)
                     *phProcess = pid;
                 return VINF_SUCCESS;
             }
         }
+        /* For a detached process this happens in the temp process, so
+         * it's not worth doing anything as this process must exit. */
+        if (fFlags & RTPROC_FLAGS_DETACHED)
+            _Exit(124);
     }
     else
 #endif
     {
+#ifdef RT_OS_SOLARIS
+        int templateFd = rtSolarisContractPreFork();
+        if (templateFd == -1)
+            return VERR_OPEN_FAILED;
+#endif /* RT_OS_SOLARIS */
         pid = fork();
         if (!pid)
         {
-            setpgid(0, 0); /* see comment above */
+#ifdef RT_OS_SOLARIS
+            rtSolarisContractPostForkChild(templateFd);
+#endif /* RT_OS_SOLARIS */
+            if (!(fFlags & RTPROC_FLAGS_DETACHED))
+                setpgid(0, 0); /* see comment above */
 
             /*
              * Change group and user if requested.
@@ -338,13 +524,23 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
             if (gid != ~(gid_t)0)
             {
                 if (setgid(gid))
-                    exit(126);
+                {
+                    if (fFlags & RTPROC_FLAGS_DETACHED)
+                        _Exit(126);
+                    else
+                        exit(126);
+                }
             }
 
             if (uid != ~(uid_t)0)
             {
                 if (setuid(uid))
-                    exit(126);
+                {
+                    if (fFlags & RTPROC_FLAGS_DETACHED)
+                        _Exit(126);
+                    else
+                        exit(126);
+                }
             }
 #endif
 
@@ -360,7 +556,12 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
                 {
                     int rc2 = dup2(fd, i);
                     if (rc2 != i)
-                        exit(125);
+                    {
+                        if (fFlags & RTPROC_FLAGS_DETACHED)
+                            _Exit(125);
+                        else
+                            exit(125);
+                    }
                     for (int j = i + 1; j < 3; j++)
                         if (aStdFds[j] == fd)
                         {
@@ -370,23 +571,6 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
                     if (fd >= 0)
                         close(fd);
                 }
-            }
-
-            /*
-             * Daemonize the process if requested.
-             */
-            if (fFlags & (RTPROC_FLAGS_DAEMONIZE_DEPRECATED | RTPROC_FLAGS_DETACHED))
-            {
-                rc = RTProcDaemonizeUsingFork(true /*fNoChDir*/,
-                                              !(fFlags & RTPROC_FLAGS_DAEMONIZE_DEPRECATED) /*fNoClose*/,
-                                              NULL /* pszPidFile */);
-                if (RT_FAILURE(rc))
-                {
-                    /* parent */
-                    AssertReleaseMsgFailed(("RTProcDaemonize returns %Rrc errno=%d\n", rc, errno));
-                    exit(127);
-                }
-                /* daemonized child */
             }
 
             /*
@@ -401,17 +585,30 @@ RTR3DECL(int)   RTProcCreateEx(const char *pszExec, const char * const *papszArg
             else
                 RTAssertMsg2Weak("execve returns %d errno=%d\n", rc, errno);
             RTAssertReleasePanic();
-            exit(127);
+            if (fFlags & RTPROC_FLAGS_DETACHED)
+                _Exit(127);
+            else
+                exit(127);
         }
+#ifdef RT_OS_SOLARIS
+        rtSolarisContractPostForkParent(templateFd, pid);
+#endif /* RT_OS_SOLARIS */
         if (pid > 0)
         {
+            /* For a detached process this happens in the temp process, so
+             * it's not worth doing anything as this process must exit. */
+            if (fFlags & RTPROC_FLAGS_DETACHED)
+                _Exit(0);
             if (phProcess)
                 *phProcess = pid;
             return VINF_SUCCESS;
         }
-        rc = errno;
+        /* For a detached process this happens in the temp process, so
+         * it's not worth doing anything as this process must exit. */
+        if (fFlags & RTPROC_FLAGS_DETACHED)
+            _Exit(124);
+        return RTErrConvertFromErrno(errno);
     }
-
 
     return VERR_NOT_IMPLEMENTED;
 }
@@ -442,7 +639,7 @@ RTR3DECL(int)   RTProcWaitNoResume(RTPROCESS Process, unsigned fFlags, PRTPROCST
     }
 
     /*
-     * Performe the wait.
+     * Perform the wait.
      */
     int iStatus = 0;
     int rc = waitpid(Process, &iStatus, fFlags & RTPROCWAIT_FLAGS_NOBLOCK ? WNOHANG : 0);

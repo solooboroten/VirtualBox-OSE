@@ -1235,16 +1235,31 @@ STDMETHODIMP Host::FindHostDVDDrive(IN_BSTR aName, IMedium **aDrive)
     HRESULT rc = COMGETTER(DVDDrives)(ComSafeArrayAsOutParam(drivevec));
     if (FAILED(rc)) return rc;
 
-    for (size_t i = 0; i < drivevec.size(); ++i)
+    if (!Guid(aName).isEmpty())
     {
-        ComPtr<IMedium> drive = drivevec[i];
-        Bstr name, location;
-        rc = drive->COMGETTER(Name)(name.asOutParam());
-        if (FAILED(rc)) return rc;
-        rc = drive->COMGETTER(Location)(location.asOutParam());
-        if (FAILED(rc)) return rc;
-        if (name == aName || location == aName)
-            return drive.queryInterfaceTo(aDrive);
+        for (size_t i = 0; i < drivevec.size(); ++i)
+        {
+            ComPtr<IMedium> drive = drivevec[i];
+            Bstr id;
+            rc = drive->COMGETTER(Id)(id.asOutParam());
+            if (FAILED(rc)) return rc;
+            if (id == aName)
+                return drive.queryInterfaceTo(aDrive);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < drivevec.size(); ++i)
+        {
+            ComPtr<IMedium> drive = drivevec[i];
+            Bstr name, location;
+            rc = drive->COMGETTER(Name)(name.asOutParam());
+            if (FAILED(rc)) return rc;
+            rc = drive->COMGETTER(Location)(location.asOutParam());
+            if (FAILED(rc)) return rc;
+            if (name == aName || location == aName)
+                return drive.queryInterfaceTo(aDrive);
+        }
     }
 
     return setError(VBOX_E_OBJECT_NOT_FOUND,
@@ -1262,14 +1277,31 @@ STDMETHODIMP Host::FindHostFloppyDrive(IN_BSTR aName, IMedium **aDrive)
     HRESULT rc = COMGETTER(FloppyDrives)(ComSafeArrayAsOutParam(drivevec));
     if (FAILED(rc)) return rc;
 
-    for (size_t i = 0; i < drivevec.size(); ++i)
+    if (!Guid(aName).isEmpty())
     {
-        ComPtr<IMedium> drive = drivevec[i];
-        Bstr name;
-        rc = drive->COMGETTER(Name)(name.asOutParam());
-        if (FAILED(rc)) return rc;
-        if (name == aName)
-            return drive.queryInterfaceTo(aDrive);
+        for (size_t i = 0; i < drivevec.size(); ++i)
+        {
+            ComPtr<IMedium> drive = drivevec[i];
+            Bstr id;
+            rc = drive->COMGETTER(Id)(id.asOutParam());
+            if (FAILED(rc)) return rc;
+            if (id == aName)
+                return drive.queryInterfaceTo(aDrive);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < drivevec.size(); ++i)
+        {
+            ComPtr<IMedium> drive = drivevec[i];
+            Bstr name, location;
+            rc = drive->COMGETTER(Name)(name.asOutParam());
+            if (FAILED(rc)) return rc;
+            rc = drive->COMGETTER(Location)(location.asOutParam());
+            if (FAILED(rc)) return rc;
+            if (name == aName || location == aName)
+                return drive.queryInterfaceTo(aDrive);
+        }
     }
 
     return setError(VBOX_E_OBJECT_NOT_FOUND,

@@ -1402,10 +1402,11 @@ static DECLCALLBACK(int) vmmdevRequestHandler(PPDMDEVINS pDevIns, void *pvUser, 
                     Log(("VMMDevReq_VideoSetVisibleRegion no rectangles!!!\n"));
                     pRequestHeader->rc = VERR_INVALID_PARAMETER;
                 }
-                else
-                if (pRequestHeader->size != sizeof(VMMDevVideoSetVisibleRegion) + (ptr->cRect-1)*sizeof(RTRECT))
+                else if (   ptr->cRect > _1M /* restrict to sane range */
+                         || pRequestHeader->size != sizeof(VMMDevVideoSetVisibleRegion) + ptr->cRect * sizeof(RTRECT) - sizeof(RTRECT))
                 {
-                    Log(("VMMDevReq_VideoSetVisibleRegion request size too small!!!\n"));
+                    Log(("VMMDevReq_VideoSetVisibleRegion: cRects=%#x doesn't match size=%#x or is out of bounds\n",
+                         ptr->cRect, pRequestHeader->size));
                     pRequestHeader->rc = VERR_INVALID_PARAMETER;
                 }
                 else
@@ -2724,7 +2725,7 @@ static DECLCALLBACK(void) vmmdevReset(PPDMDEVINS pDevIns)
     if (fCapsChanged)
         pThis->pDrv->pfnUpdateGuestCapabilities(pThis->pDrv, pThis->guestCaps);
 
-    /* Generate a unique session id for this VM; it will be changed for each start, reset or restore. 
+    /* Generate a unique session id for this VM; it will be changed for each start, reset or restore.
      * This can be used for restore detection inside the guest.
      */
     pThis->idSession = ASMReadTSC();
@@ -2949,7 +2950,7 @@ static DECLCALLBACK(int) vmmdevConstruct(PPDMDEVINS pDevIns, int iInstance, PCFG
 
     PDMDevHlpSTAMRegisterF(pDevIns, &pThis->StatMemBalloonChunks, STAMTYPE_U32, STAMVISIBILITY_ALWAYS, STAMUNIT_COUNT, "Memory balloon size", "/Devices/VMMDev/BalloonChunks");
 
-    /* Generate a unique session id for this VM; it will be changed for each start, reset or restore. 
+    /* Generate a unique session id for this VM; it will be changed for each start, reset or restore.
      * This can be used for restore detection inside the guest.
      */
     pThis->idSession = ASMReadTSC();

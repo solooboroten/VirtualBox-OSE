@@ -391,9 +391,9 @@ int handleList(HandlerArg *a)
                     Bstr uuid;
                     dvdDrive->COMGETTER(Id)(uuid.asOutParam());
                     RTPrintf("UUID:         %s\n", Utf8Str(uuid).raw());
-                    Bstr name;
-                    dvdDrive->COMGETTER(Name)(name.asOutParam());
-                    RTPrintf("Name:         %lS\n\n", name.raw());
+                    Bstr location;
+                    dvdDrive->COMGETTER(Location)(location.asOutParam());
+                    RTPrintf("Name:         %lS\n\n", location.raw());
                 }
             }
         }
@@ -413,9 +413,9 @@ int handleList(HandlerArg *a)
                     Bstr uuid;
                     floppyDrive->COMGETTER(Id)(uuid.asOutParam());
                     RTPrintf("UUID:         %s\n", Utf8Str(uuid).raw());
-                    Bstr name;
-                    floppyDrive->COMGETTER(Name)(name.asOutParam());
-                    RTPrintf("Name:         %lS\n\n", name.raw());
+                    Bstr location;
+                    floppyDrive->COMGETTER(Location)(location.asOutParam());
+                    RTPrintf("Name:         %lS\n\n", location.raw());
                 }
             }
         }

@@ -101,7 +101,8 @@ HRESULT SupportErrorInfoBase::setErrorInternal(HRESULT aResultCode,
                                                IVirtualBoxErrorInfo *aInfo /*= NULL*/)
 {
     /* whether multi-error mode is turned on */
-    bool preserve = ((uintptr_t)RTTlsGet(MultiResult::sCounter)) > 0;
+    bool preserve =    MultiResult::sCounter != NIL_RTTLS
+                    && (uintptr_t)RTTlsGet(MultiResult::sCounter) > 0;
 
     LogRel(("ERROR [COM]: aRC=%#08x aIID={%RTuuid} aComponent={%s} aText={%s} aWarning=%RTbool, aInfo=%p, preserve=%RTbool\n",
             aResultCode,

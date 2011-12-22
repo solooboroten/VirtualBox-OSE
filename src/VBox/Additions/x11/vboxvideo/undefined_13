@@ -25,7 +25,6 @@ ErrorF
 DRIScreenInit
 xf86InitCursor
 xf86SetGamma
-Xalloc
 xf86SlowBcopy
 xf86GetEntityInfo
 read
@@ -78,10 +77,8 @@ xf86SetDesiredModes
 resVgaShared
 xf86DPMSInit
 fputs
-Xcalloc
 ftruncate64
 DRILock
-Xfree
 xf86CrtcSetSizeRange
 fchmod
 memcpy

@@ -99,7 +99,6 @@ enum UIActionIndex
 #ifdef VBOX_WITH_REGISTRATION
     UIActionIndex_Simple_Register,
 #endif /* VBOX_WITH_REGISTRATION */
-    UIActionIndex_Simple_Update,
     UIActionIndex_Simple_About,
 
 #ifdef Q_WS_MAC

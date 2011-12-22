@@ -6,7 +6,7 @@
 #
 
 #
-# Copyright (C) 2006-2010 Oracle Corporation
+# Copyright (C) 2006-2011 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -282,6 +282,10 @@ endif
  vboxwebsrv_CLEAN = \
 	$(VBOXWEB_OUT_DIR)/methodmaps.cpp \
 	$(VBOXWEB_OUT_DIR)/soapServer.cpp
+
+ vboxweb.cpp_DEFS = \
+	VBOX_BUILD_TARGET=\"$(KBUILD_TARGET).$(KBUILD_TARGET_ARCH)\" \
+	$(if $(VBOX_BLEEDING_EDGE),VBOX_BLEEDING_EDGE=\"$(VBOX_BLEEDING_EDGE)\",)
 
  vboxwebsrv_ORDERDEPS = $(VBOXWEB_OUT_DIR)/gsoap_copy_all_ts
  endif # !VBOX_ONLY_SDK

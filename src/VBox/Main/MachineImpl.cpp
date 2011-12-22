@@ -4216,6 +4216,12 @@ HRESULT Machine::setGuestPropertyToService(IN_BSTR aName, IN_BSTR aValue,
 HRESULT Machine::setGuestPropertyToVM(IN_BSTR aName, IN_BSTR aValue,
                                       IN_BSTR aFlags)
 {
+    CheckComArgStrNotEmptyOrNull(aName);
+    if ((aValue != NULL) && !VALID_PTR(aValue))
+        return E_INVALIDARG;
+    if ((aFlags != NULL) && !VALID_PTR(aFlags))
+        return E_INVALIDARG;
+
     HRESULT rc;
 
     try {
@@ -4231,7 +4237,7 @@ HRESULT Machine::setGuestPropertyToVM(IN_BSTR aName, IN_BSTR aValue,
                      (aName,
                       /** @todo Fix when adding DeleteGuestProperty(),
                                    see defect. */
-                      *aValue ? aValue : NULL, aFlags, true /* isSetter */,
+                      aValue, aFlags, true /* isSetter */,
                       &dummy, &dummy64, &dummy);
     }
     catch (std::bad_alloc &)

@@ -2128,6 +2128,8 @@ static int vdIOReadUserAsync(void *pvUser, PVDIOSTORAGE pIoStorage,
             rc = VINF_SUCCESS;
         else if (RT_FAILURE(rc2))
         {
+            ASMAtomicDecU32(&pIoCtx->cDataTransfersPending);
+            vdIoTaskFree(pDisk, pIoTask);
             rc = rc2;
             break;
         }
@@ -2193,6 +2195,8 @@ static int vdIOWriteUserAsync(void *pvUser, PVDIOSTORAGE pIoStorage,
             rc = VINF_SUCCESS;
         else if (RT_FAILURE(rc2))
         {
+            ASMAtomicDecU32(&pIoCtx->cDataTransfersPending);
+            vdIoTaskFree(pDisk, pIoTask);
             rc = rc2;
             break;
         }
@@ -2240,7 +2244,11 @@ static int vdIOReadMetaAsync(void *pvUser, PVDIOSTORAGE pIoStorage,
     else if (rc2 == VERR_VD_ASYNC_IO_IN_PROGRESS)
         rc = VERR_VD_NOT_ENOUGH_METADATA;
     else if (RT_FAILURE(rc2))
+    {
+        ASMAtomicDecU32(&pIoCtx->cMetaTransfersPending);
+        vdIoTaskFree(pDisk, pIoTask);
         rc = rc2;
+    }
 
     return rc;
 }
@@ -2281,7 +2289,11 @@ static int vdIOWriteMetaAsync(void *pvUser, PVDIOSTORAGE pIoStorage,
     else if (rc2 == VERR_VD_ASYNC_IO_IN_PROGRESS)
         rc = VINF_SUCCESS;
     else if (RT_FAILURE(rc2))
+    {
+        ASMAtomicDecU32(&pIoCtx->cMetaTransfersPending);
+        vdIoTaskFree(pDisk, pIoTask);
         rc = rc2;
+    }
 
     return rc;
 }
@@ -2314,7 +2326,11 @@ static int vdIOFlushAsync(void *pvUser, PVDIOSTORAGE pIoStorage,
     else if (rc2 == VERR_VD_ASYNC_IO_IN_PROGRESS)
         rc = VINF_SUCCESS;
     else if (RT_FAILURE(rc2))
+    {
+        ASMAtomicDecU32(&pIoCtx->cMetaTransfersPending);
+        vdIoTaskFree(pDisk, pIoTask);
         rc = rc2;
+    }
 
     return rc;
 }

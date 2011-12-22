@@ -985,29 +985,6 @@ protected:
 };
 #endif /* VBOX_WITH_REGISTRATION */
 
-class PerformUpdateAction : public UISimpleAction
-{
-    Q_OBJECT;
-
-public:
-
-    PerformUpdateAction(QObject *pParent)
-        : UISimpleAction(pParent,
-                         ":/refresh_16px.png", ":/refresh_disabled_16px.png")
-    {
-        setMenuRole(QAction::ApplicationSpecificRole);
-        retranslateUi();
-    }
-
-protected:
-
-    void retranslateUi()
-    {
-        setText(QApplication::translate("VBoxProblemReporter", "C&heck for Updates..."));
-        setStatusTip(QApplication::translate("VBoxProblemReporter", "Check for a new VirtualBox version"));
-    }
-};
-
 class ShowAboutAction : public UISimpleAction
 {
     Q_OBJECT;
@@ -1151,7 +1128,6 @@ UIActionsPool::UIActionsPool(QObject *pParent)
 #ifdef VBOX_WITH_REGISTRATION
     m_actionsPool[UIActionIndex_Simple_Register] = new PerformRegisterAction(this);
 #endif /* VBOX_WITH_REGISTRATION */
-    m_actionsPool[UIActionIndex_Simple_Update] = new PerformUpdateAction(this);
     m_actionsPool[UIActionIndex_Simple_About] = new ShowAboutAction(this);
 
 #ifdef Q_WS_MAC

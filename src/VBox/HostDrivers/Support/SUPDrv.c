@@ -1,10 +1,10 @@
-/* $Revision: 68093 $ */
+/* $Revision: 71913 $ */
 /** @file
  * VBoxDrv - The VirtualBox Support Driver - Common code.
  */
 
 /*
- * Copyright (C) 2006-2009 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -390,8 +390,7 @@ int VBOXCALL supdrvInitDevExt(PSUPDRVDEVEXT pDevExt, size_t cbSession)
     static const char * const s_apszGroups[] = VBOX_LOGGROUP_NAMES;
     PRTLOGGER pRelLogger;
     rc = RTLogCreate(&pRelLogger, 0 /* fFlags */, "all",
-                     "VBOX_RELEASE_LOG", RT_ELEMENTS(s_apszGroups), s_apszGroups,
-                     RTLOGDEST_STDOUT | RTLOGDEST_DEBUGGER, NULL);
+                     "VBOX_RELEASE_LOG", RT_ELEMENTS(s_apszGroups), s_apszGroups, RTLOGDEST_STDOUT | RTLOGDEST_DEBUGGER, NULL);
     if (RT_SUCCESS(rc))
         RTLogRelSetDefaultInstance(pRelLogger);
     /** @todo Add native hook for getting logger config parameters and setting

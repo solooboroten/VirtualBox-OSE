@@ -802,10 +802,6 @@ VBOXPreInit(ScrnInfoPtr pScrn, int flags)
     /* Framebuffer-related setup */
     pScrn->bitmapBitOrder = BITMAP_BIT_ORDER;
 
-    /* VGA hardware initialisation */
-    if (!vgaHWGetHWRec(pScrn))
-        return FALSE;
-
 #ifdef VBOX_DRI
     /* Load the dri module. */
     if (!xf86LoadSubModule(pScrn, "dri"))
@@ -856,6 +852,10 @@ VBOXScreenInit(int scrnIndex, ScreenPtr pScreen, int argc, char **argv)
     VBOXPtr pVBox = VBOXGetRec(pScrn);
     VisualPtr visual;
     unsigned flags;
+
+    /* VGA hardware initialisation */
+    if (!vgaHWGetHWRec(pScrn))
+        return FALSE;
 
     if (pVBox->mapPhys == 0) {
 #ifdef PCIACCESS

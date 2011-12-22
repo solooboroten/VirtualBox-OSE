@@ -123,17 +123,6 @@ public:
     const bool mCanShow;
 };
 
-class VBoxCanShowUpdDlgEvent : public QEvent
-{
-public:
-    VBoxCanShowUpdDlgEvent (bool aCanShow)
-        : QEvent ((QEvent::Type) VBoxDefs::CanShowUpdDlgEventType)
-        , mCanShow (aCanShow)
-        {}
-
-    const bool mCanShow;
-};
-
 class VBoxChangeGUILanguageEvent : public QEvent
 {
 public:
@@ -881,7 +870,6 @@ signals:
     void presentationModeChanged (const VBoxChangePresentationModeEvent &e);
 
     void canShowRegDlg (bool aCanShow);
-    void canShowUpdDlg (bool aCanShow);
 
 public slots:
 

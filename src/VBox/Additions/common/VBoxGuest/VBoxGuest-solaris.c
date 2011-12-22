@@ -28,6 +28,8 @@
 #include <sys/ddi_intr.h>
 #include <sys/sunddi.h>
 #include <sys/open.h>
+#include <sys/sunldi.h>
+#include <sys/file.h>
 #undef u /* /usr/include/sys/user.h:249:1 is where this is defined to (curproc->p_user). very cool. */
 
 #include "VBoxGuestInternal.h"
@@ -172,6 +174,12 @@ static size_t               g_cIntrAllocated;
 static pollhead_t           g_PollHead;
 /** The IRQ Mutex */
 static kmutex_t             g_IrqMtx;
+/** Layered device handle for kernel keep-attached opens */
+static ldi_handle_t         g_LdiHandle = NULL;
+/** Ref counting for IDCOpen calls */
+static uint64_t             g_cLdiOpens = 0;
+/** The Mutex protecting the LDI handle in IDC opens */
+static kmutex_t             g_LdiMtx;
 
 /**
  * Kernel entry points
@@ -180,33 +188,45 @@ int _init(void)
 {
     LogFlow((DEVICE_NAME ":_init\n"));
 
-    PRTLOGGER pRelLogger;
-    static const char * const s_apszGroups[] = VBOX_LOGGROUP_NAMES;
-    int rc = RTLogCreate(&pRelLogger, 0 /* fFlags */, "all",
-                     "VBOX_RELEASE_LOG", RT_ELEMENTS(s_apszGroups), s_apszGroups,
-                     RTLOGDEST_STDOUT | RTLOGDEST_DEBUGGER, NULL);
+    int rc = RTR0Init(0);
     if (RT_SUCCESS(rc))
-        RTLogRelSetDefaultInstance(pRelLogger);
-    else
-        cmn_err(CE_NOTE, "failed to initialize driver logging rc=%d!\n", rc);
-
-    /*
-     * Prevent module autounloading.
-     */
-    modctl_t *pModCtl = mod_getctl(&g_VBoxGuestSolarisModLinkage);
-    if (pModCtl)
-        pModCtl->mod_loadflags |= MOD_NOAUTOUNLOAD;
-    else
-        LogRel((DEVICE_NAME ":failed to disable autounloading!\n"));
-
-
-    rc = ddi_soft_state_init(&g_pVBoxGuestSolarisState, sizeof(vboxguest_state_t), 1);
-    if (!rc)
     {
-        rc = mod_install(&g_VBoxGuestSolarisModLinkage);
-        if (rc)
-            ddi_soft_state_fini(&g_pVBoxGuestSolarisState);
+        PRTLOGGER pRelLogger;
+        static const char * const s_apszGroups[] = VBOX_LOGGROUP_NAMES;
+        int rc = RTLogCreate(&pRelLogger, 0 /* fFlags */, "all",
+                             "VBOX_RELEASE_LOG", RT_ELEMENTS(s_apszGroups), s_apszGroups,
+                             RTLOGDEST_STDOUT | RTLOGDEST_DEBUGGER, NULL);
+        if (RT_SUCCESS(rc))
+            RTLogRelSetDefaultInstance(pRelLogger);
+        else
+            cmn_err(CE_NOTE, "failed to initialize driver logging rc=%d!\n", rc);
+
+        mutex_init(&g_LdiMtx, NULL, MUTEX_DRIVER, NULL);
+
+        /*
+         * Prevent module autounloading.
+         */
+        modctl_t *pModCtl = mod_getctl(&g_VBoxGuestSolarisModLinkage);
+        if (pModCtl)
+            pModCtl->mod_loadflags |= MOD_NOAUTOUNLOAD;
+        else
+            LogRel((DEVICE_NAME ":failed to disable autounloading!\n"));
+
+
+        rc = ddi_soft_state_init(&g_pVBoxGuestSolarisState, sizeof(vboxguest_state_t), 1);
+        if (!rc)
+        {
+            rc = mod_install(&g_VBoxGuestSolarisModLinkage);
+            if (rc)
+                ddi_soft_state_fini(&g_pVBoxGuestSolarisState);
+        }
     }
+    else
+    {
+        cmn_err(CE_NOTE, "_init: RTR0Init failed. rc=%d\n", rc);
+        return EINVAL;
+    }
+
     return rc;
 }
 
@@ -221,6 +241,9 @@ int _fini(void)
     RTLogDestroy(RTLogRelSetDefaultInstance(NULL));
     RTLogDestroy(RTLogSetDefaultInstance(NULL));
 
+    mutex_destroy(&g_LdiMtx);
+
+    RTR0Term();
     return rc;
 }
 

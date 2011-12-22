@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2010 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -71,8 +71,10 @@ typedef struct INTNETMACTABENTRY
 {
     /** The MAC address of this entry. */
     RTMAC                   MacAddr;
-    /** Is it promiscuous.  */
-    bool                    fPromiscuous;
+    /** Is it is effectively promiscuous mode. */
+    bool                    fPromiscuousEff;
+    /** Is it promiscuous and should it see unrelated trunk traffic. */
+    bool                    fPromiscuousSeeTrunk;
     /** Is it active.
      * We ignore the entry if this is clear and may end up sending packets addressed
      * to this interface onto the trunk.  The reasoning for this is that this could
@@ -99,15 +101,27 @@ typedef struct INTNETMACTAB
     /** Table entries. */
     PINTNETMACTABENTRY      paEntries;
 
+    /** The number of interface entries currently in promicuous mode. */
+    uint32_t                cPromiscuousEntries;
+    /** The number of interface entries currently in promicuous mode that
+     * shall not see unrelated trunk traffic. */
+    uint32_t                cPromiscuousNoTrunkEntries;
+
     /** The host MAC address (reported). */
     RTMAC                   HostMac;
-    /** The host promisucous setting (reported). */
-    bool                    fHostPromiscuous;
+    /** The effective host promiscuous setting (reported). */
+    bool                    fHostPromiscuousEff;
+    /** The real host promiscuous setting (reported). */
+    bool                    fHostPromiscuousReal;
     /** Whether the host is active. */
     bool                    fHostActive;
 
     /** Whether the wire is promiscuous (config). */
-    bool                    fWirePromiscuous;
+    bool                    fWirePromiscuousEff;
+    /** Whether the wire is promiscuous (config).
+     * (Shadows INTNET_OPEN_FLAGS_TRUNK_WIRE_PROMISC_MODE in
+     * INTNETNETWORK::fFlags.) */
+    bool                    fWirePromiscuousReal;
     /** Whether the wire is active. */
     bool                    fWireActive;
 
@@ -214,15 +228,16 @@ typedef struct INTNETIF
     RTMAC                   MacAddr;
     /** Set if the INTNET::MacAddr member has been explicitly set. */
     bool                    fMacSet;
-    /** Set if the interface is in promiscuous mode.
-     * This is shadowed by INTNETMACTABENTRY::fPromiscuous. */
-    bool                    fPromiscuous;
+    /** Tracks the desired promiscuous setting of the interface. */
+    bool                    fPromiscuousReal;
     /** Whether the interface is active or not.
      * This is shadowed by INTNETMACTABENTRY::fActive. */
     bool                    fActive;
     /** Whether someone is currently in the destructor or has indicated that
      *  the end is nigh by means of IntNetR0IfAbortWait. */
     bool volatile           fDestroying;
+    /** The flags specified when opening this interface. */
+    uint32_t                fOpenFlags;
     /** Number of yields done to try make the interface read pending data.
      * We will stop yielding when this reaches a threshold assuming that the VM is
      * paused or that it simply isn't worth all the delay. It is cleared when a
@@ -267,6 +282,8 @@ typedef struct INTNETIF
     PINTNETDSTTAB volatile  pDstTab;
     /** Pointer to the trunk's per interface data.  Can be NULL. */
     void                   *pvIfData;
+    /** Header buffer for when we're carving GSO frames. */
+    uint8_t                 abGsoHdrs[256];
 } INTNETIF;
 /** Pointer to an internal network interface. */
 typedef INTNETIF *PINTNETIF;
@@ -303,8 +320,6 @@ typedef struct INTNETTRUNKIF
      * This is as bit map where each bit represents the GSO type with the same
      * number. */
     uint32_t                fHostGsoCapabilites;
-    /** Header buffer for when we're carving GSO frames. */
-    uint8_t                 abGsoHdrs[256];
     /** The destination table spinlock, interrupt safe.
      * Protects apTaskDstTabs and apIntDstTabs. */
     RTSPINLOCK              hDstTabSpinlock;
@@ -312,7 +327,7 @@ typedef struct INTNETTRUNKIF
     uint32_t                cIntDstTabs;
     /** The task time destination tables.
      * @remarks intnetR0NetworkEnsureTabSpace and others ASSUMES this immediately
-     *          preceeds apIntDstTabs so that these two tables can be used as one
+     *          precedes apIntDstTabs so that these two tables can be used as one
      *          contiguous one. */
     PINTNETDSTTAB           apTaskDstTabs[2];
     /** The interrupt / disabled-preemption time destination tables.
@@ -352,10 +367,13 @@ typedef struct INTNETNETWORK
     void                   *pvObj;
     /** Pointer to the temporary buffer that is used when snooping fragmented packets.
      * This is allocated after this structure if we're sharing the MAC address with
-     * the host. The buffer is INTNETNETWORK_TMP_SIZE big and aligned on a 64-byte boundrary. */
+     * the host. The buffer is INTNETNETWORK_TMP_SIZE big and aligned on a 64-byte boundary. */
     uint8_t                *pbTmp;
     /** Network creation flags (INTNET_OPEN_FLAGS_*). */
     uint32_t                fFlags;
+    /** Any restrictive policies required as a minimum by some interface.
+     * (INTNET_OPEN_FLAGS_REQUIRE_AS_RESTRICTIVE_POLICIES) */
+    uint32_t                fMinFlags;
     /** The number of active interfaces (excluding the trunk). */
     uint32_t                cActiveIFs;
     /** The length of the network name. */
@@ -369,6 +387,8 @@ typedef struct INTNETNETWORK
 } INTNETNETWORK;
 /** Pointer to an internal network. */
 typedef INTNETNETWORK *PINTNETNETWORK;
+/** Pointer to a const internal network. */
+typedef const INTNETNETWORK *PCINTNETNETWORK;
 
 /** The size of the buffer INTNETNETWORK::pbTmp points at. */
 #define INTNETNETWORK_TMP_SIZE  2048
@@ -401,6 +421,32 @@ typedef struct INTNET *PINTNET;
 *******************************************************************************/
 /** Pointer to the internal network instance data. */
 static PINTNET volatile g_pIntNet = NULL;
+
+static const struct INTNETOPENNETWORKFLAGS
+{
+    uint32_t fRestrictive;  /**< The restrictive flag (deny/disabled). */
+    uint32_t fRelaxed;      /**< The relaxed flag (allow/enabled). */
+    uint32_t fFixed;        /**< The config-fixed flag. */
+    uint32_t fPair;         /**< The pair of restrictive and relaxed flags. */
+}
+/** Open network policy flags relating to the network. */
+g_afIntNetOpenNetworkNetFlags[] =
+{
+    { INTNET_OPEN_FLAGS_ACCESS_RESTRICTED,       INTNET_OPEN_FLAGS_ACCESS_PUBLIC,            INTNET_OPEN_FLAGS_ACCESS_FIXED,  INTNET_OPEN_FLAGS_ACCESS_RESTRICTED       | INTNET_OPEN_FLAGS_ACCESS_PUBLIC            },
+    { INTNET_OPEN_FLAGS_PROMISC_DENY_CLIENTS,    INTNET_OPEN_FLAGS_PROMISC_ALLOW_CLIENTS,    INTNET_OPEN_FLAGS_PROMISC_FIXED, INTNET_OPEN_FLAGS_PROMISC_DENY_CLIENTS    | INTNET_OPEN_FLAGS_PROMISC_ALLOW_CLIENTS    },
+    { INTNET_OPEN_FLAGS_PROMISC_DENY_TRUNK_HOST, INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_HOST, INTNET_OPEN_FLAGS_PROMISC_FIXED, INTNET_OPEN_FLAGS_PROMISC_DENY_TRUNK_HOST | INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_HOST },
+    { INTNET_OPEN_FLAGS_PROMISC_DENY_TRUNK_WIRE, INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_WIRE, INTNET_OPEN_FLAGS_PROMISC_FIXED, INTNET_OPEN_FLAGS_PROMISC_DENY_TRUNK_WIRE | INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_WIRE },
+    { INTNET_OPEN_FLAGS_TRUNK_HOST_DISABLED,     INTNET_OPEN_FLAGS_TRUNK_HOST_ENABLED,       INTNET_OPEN_FLAGS_TRUNK_FIXED,   INTNET_OPEN_FLAGS_TRUNK_HOST_DISABLED     | INTNET_OPEN_FLAGS_TRUNK_HOST_ENABLED       },
+    { INTNET_OPEN_FLAGS_TRUNK_HOST_CHASTE_MODE,  INTNET_OPEN_FLAGS_TRUNK_HOST_PROMISC_MODE,  INTNET_OPEN_FLAGS_TRUNK_FIXED,   INTNET_OPEN_FLAGS_TRUNK_HOST_CHASTE_MODE  | INTNET_OPEN_FLAGS_TRUNK_HOST_PROMISC_MODE  },
+    { INTNET_OPEN_FLAGS_TRUNK_WIRE_DISABLED,     INTNET_OPEN_FLAGS_TRUNK_WIRE_ENABLED,       INTNET_OPEN_FLAGS_TRUNK_FIXED,   INTNET_OPEN_FLAGS_TRUNK_WIRE_DISABLED     | INTNET_OPEN_FLAGS_TRUNK_WIRE_ENABLED       },
+    { INTNET_OPEN_FLAGS_TRUNK_WIRE_CHASTE_MODE,  INTNET_OPEN_FLAGS_TRUNK_WIRE_PROMISC_MODE,  INTNET_OPEN_FLAGS_TRUNK_FIXED,   INTNET_OPEN_FLAGS_TRUNK_WIRE_CHASTE_MODE  | INTNET_OPEN_FLAGS_TRUNK_WIRE_PROMISC_MODE  },
+},
+/** Open network policy flags relating to the new interface. */
+g_afIntNetOpenNetworkIfFlags[] =
+{
+    { INTNET_OPEN_FLAGS_IF_PROMISC_DENY,        INTNET_OPEN_FLAGS_IF_PROMISC_ALLOW,          INTNET_OPEN_FLAGS_IF_FIXED,      INTNET_OPEN_FLAGS_IF_PROMISC_DENY         | INTNET_OPEN_FLAGS_IF_PROMISC_ALLOW         },
+    { INTNET_OPEN_FLAGS_IF_PROMISC_NO_TRUNK,    INTNET_OPEN_FLAGS_IF_PROMISC_SEE_TRUNK,      INTNET_OPEN_FLAGS_IF_FIXED,      INTNET_OPEN_FLAGS_IF_PROMISC_NO_TRUNK     | INTNET_OPEN_FLAGS_IF_PROMISC_SEE_TRUNK     },
+};
 
 
 /*******************************************************************************
@@ -1418,14 +1464,46 @@ static INTNETSWDECISION intnetR0NetworkSwitchLevel3(PINTNETNETWORK pNetwork, PCR
         {
             PINTNETIF pIf    = pTab->paEntries[iIfMac].pIf;         AssertPtr(pIf); Assert(pIf->pNetwork == pNetwork);
             bool      fExact = intnetR0IfAddrCacheLookup(&pIf->aAddrCache[enmL3AddrType], pL3Addr, cbL3Addr) >= 0;
-            if (fExact || pTab->paEntries[iIfMac].fPromiscuous)
+            if (fExact || pTab->paEntries[iIfMac].fPromiscuousSeeTrunk)
             {
                 cExactHits += fExact;
 
                 uint32_t iIfDst = pDstTab->cIfs++;
                 pDstTab->aIfs[iIfDst].pIf            = pIf;
                 pDstTab->aIfs[iIfDst].fReplaceDstMac = fExact;
+                /*
+                 * We need to compare an updated destination address against host's address.
+                 * If we compare the address extracted from the packet it will match host's MAC
+                 * and will be passed up the stack which will cause duplicates if IP forwarding
+                 * is enabled on the host (see #5905).
+                 */
+                if (fExact)
+                    pDstMacAddr = &pIf->MacAddr;
                 intnetR0BusyIncIf(pIf);
+            }
+        }
+    }
+
+    /* Network only promicuous mode ifs should see related trunk traffic. */
+    if (   cExactHits
+        && fSrc
+        && pNetwork->MacTab.cPromiscuousNoTrunkEntries)
+    {
+        iIfMac = pTab->cEntries;
+        while (iIfMac-- > 0)
+        {
+            if (   pTab->paEntries[iIfMac].fActive
+                && pTab->paEntries[iIfMac].fPromiscuousEff
+                && !pTab->paEntries[iIfMac].fPromiscuousSeeTrunk)
+            {
+                PINTNETIF pIf = pTab->paEntries[iIfMac].pIf;        AssertPtr(pIf); Assert(pIf->pNetwork == pNetwork);
+                if (intnetR0IfAddrCacheLookup(&pIf->aAddrCache[enmL3AddrType], pL3Addr, cbL3Addr) < 0)
+                {
+                    uint32_t iIfDst = pDstTab->cIfs++;
+                    pDstTab->aIfs[iIfDst].pIf            = pIf;
+                    pDstTab->aIfs[iIfDst].fReplaceDstMac = false;
+                    intnetR0BusyIncIf(pIf);
+                }
             }
         }
     }
@@ -1436,7 +1514,7 @@ static INTNETSWDECISION intnetR0NetworkSwitchLevel3(PINTNETNETWORK pNetwork, PCR
         bool fExact = intnetR0AreMacAddrsEqual(&pTab->HostMac, pDstMacAddr);
         if (   fExact
             || intnetR0IsMacAddrDummy(&pTab->HostMac)
-            || pTab->fHostPromiscuous)
+            || pTab->fHostPromiscuousEff)
         {
             cExactHits += fExact;
             pDstTab->fTrunkDst |= INTNETTRUNKDIR_HOST;
@@ -1444,7 +1522,7 @@ static INTNETSWDECISION intnetR0NetworkSwitchLevel3(PINTNETNETWORK pNetwork, PCR
     }
 
     /* Hit the wire if there are no exact matches or if it's in promiscuous mode. */
-    if (pTab->fWireActive && (!cExactHits || pTab->fWirePromiscuous))
+    if (pTab->fWireActive && (!cExactHits || pTab->fWirePromiscuousEff))
         pDstTab->fTrunkDst |= INTNETTRUNKDIR_WIRE;
     pDstTab->fTrunkDst &= ~fSrc;
     if (pDstTab->fTrunkDst)
@@ -1459,6 +1537,69 @@ static INTNETSWDECISION intnetR0NetworkSwitchLevel3(PINTNETNETWORK pNetwork, PCR
          ? (!pDstTab->fTrunkDst ? INTNETSWDECISION_INTNET : INTNETSWDECISION_BROADCAST)
          : (!pDstTab->fTrunkDst ? INTNETSWDECISION_DROP   : INTNETSWDECISION_TRUNK);
 }
+
+
+#if 0 /* unused in 3.2 */
+/**
+ * Pre-switch a unicast MAC address.
+ *
+ * @returns INTNETSWDECISION_DROP, INTNETSWDECISION_TRUNK,
+ *          INTNETSWDECISION_INTNET or INTNETSWDECISION_BROADCAST (misnomer).
+ * @param   pNetwork            The network to switch on.
+ * @param   fSrc                The frame source.
+ * @param   pSrcAddr            The source address of the frame.
+ * @param   pDstAddr            The destination address of the frame.
+ */
+static INTNETSWDECISION intnetR0NetworkPreSwitchUnicast(PINTNETNETWORK pNetwork, uint32_t fSrc, PCRTMAC pSrcAddr,
+                                                        PCRTMAC pDstAddr)
+{
+    Assert(!intnetR0IsMacAddrMulticast(pDstAddr));
+    Assert(fSrc);
+
+    /*
+     * Grab the spinlock first and do the switching.
+     */
+    INTNETSWDECISION    enmSwDecision   = INTNETSWDECISION_BROADCAST;
+    PINTNETMACTAB       pTab            = &pNetwork->MacTab;
+    RTSPINLOCKTMP       Tmp             = RTSPINLOCKTMP_INITIALIZER;
+    RTSpinlockAcquireNoInts(pNetwork->hAddrSpinlock, &Tmp);
+
+    /* Iterate the internal network interfaces and look for matching source and
+       destination addresses. */
+    uint32_t cExactHits = 0;
+    uint32_t iIfMac     = pTab->cEntries;
+    while (iIfMac-- > 0)
+    {
+        if (pTab->paEntries[iIfMac].fActive)
+        {
+            /* Unknown interface address? */
+            if (intnetR0IsMacAddrDummy(&pTab->paEntries[iIfMac].MacAddr))
+                break;
+
+            /* Promiscuous mode? */
+            if (pTab->paEntries[iIfMac].fPromiscuousSeeTrunk)
+                break;
+
+            /* Paranoia - this shouldn't happen, right? */
+            if (    pSrcAddr
+                &&  intnetR0AreMacAddrsEqual(&pTab->paEntries[iIfMac].MacAddr, pSrcAddr))
+                break;
+
+            /* Exact match? */
+            if (intnetR0AreMacAddrsEqual(&pTab->paEntries[iIfMac].MacAddr, pDstAddr))
+            {
+                enmSwDecision = pTab->fHostPromiscuousEff && fSrc == INTNETTRUNKDIR_WIRE
+                              ? INTNETSWDECISION_BROADCAST
+                              : INTNETSWDECISION_INTNET;
+                break;
+            }
+        }
+    }
+
+    RTSpinlockReleaseNoInts(pNetwork->hAddrSpinlock, &Tmp);
+    return enmSwDecision;
+}
+#endif
 
 
 /**
@@ -1500,7 +1641,9 @@ static INTNETSWDECISION intnetR0NetworkSwitchUnicast(PINTNETNETWORK pNetwork, ui
             bool fExact = intnetR0AreMacAddrsEqual(&pTab->paEntries[iIfMac].MacAddr, pDstAddr);
             if (   fExact
                 || intnetR0IsMacAddrDummy(&pTab->paEntries[iIfMac].MacAddr)
-                || pTab->paEntries[iIfMac].fPromiscuous)
+                || (   pTab->paEntries[iIfMac].fPromiscuousSeeTrunk
+                    || (!fSrc && pTab->paEntries[iIfMac].fPromiscuousEff) )
+               )
             {
                 cExactHits += fExact;
 
@@ -1516,6 +1659,29 @@ static INTNETSWDECISION intnetR0NetworkSwitchUnicast(PINTNETNETWORK pNetwork, ui
         }
     }
 
+    /* Network only promicuous mode ifs should see related trunk traffic. */
+    if (   cExactHits
+        && fSrc
+        && pNetwork->MacTab.cPromiscuousNoTrunkEntries)
+    {
+        iIfMac = pTab->cEntries;
+        while (iIfMac-- > 0)
+        {
+            if (   pTab->paEntries[iIfMac].fPromiscuousEff
+                && !pTab->paEntries[iIfMac].fPromiscuousSeeTrunk
+                && pTab->paEntries[iIfMac].fActive
+                && !intnetR0AreMacAddrsEqual(&pTab->paEntries[iIfMac].MacAddr, pDstAddr)
+                && !intnetR0IsMacAddrDummy(&pTab->paEntries[iIfMac].MacAddr) )
+            {
+                PINTNETIF pIf    = pTab->paEntries[iIfMac].pIf;     AssertPtr(pIf); Assert(pIf->pNetwork == pNetwork);
+                uint32_t  iIfDst = pDstTab->cIfs++;
+                pDstTab->aIfs[iIfDst].pIf            = pIf;
+                pDstTab->aIfs[iIfDst].fReplaceDstMac = false;
+                intnetR0BusyIncIf(pIf);
+            }
+        }
+    }
+
     /* Does it match the host, or is the host promiscuous? */
     if (   fSrc != INTNETTRUNKDIR_HOST
         && pTab->fHostActive)
@@ -1523,7 +1689,7 @@ static INTNETSWDECISION intnetR0NetworkSwitchUnicast(PINTNETNETWORK pNetwork, ui
         bool fExact = intnetR0AreMacAddrsEqual(&pTab->HostMac, pDstAddr);
         if (   fExact
             || intnetR0IsMacAddrDummy(&pTab->HostMac)
-            || pTab->fHostPromiscuous)
+            || pTab->fHostPromiscuousEff)
         {
             cExactHits += fExact;
             pDstTab->fTrunkDst |= INTNETTRUNKDIR_HOST;
@@ -1533,7 +1699,7 @@ static INTNETSWDECISION intnetR0NetworkSwitchUnicast(PINTNETNETWORK pNetwork, ui
     /* Hit the wire if there are no exact matches or if it's in promiscuous mode. */
     if (   fSrc != INTNETTRUNKDIR_WIRE
         && pTab->fWireActive
-        && (!cExactHits || pTab->fWirePromiscuous)
+        && (!cExactHits || pTab->fWirePromiscuousEff)
        )
         pDstTab->fTrunkDst |= INTNETTRUNKDIR_WIRE;
 
@@ -1645,7 +1811,9 @@ static INTNETSWDECISION intnetR0NetworkSwitchTrunkAndPromisc(PINTNETNETWORK pNet
     while (iIfMac-- > 0)
     {
         if (   pTab->paEntries[iIfMac].fActive
-            && pTab->paEntries[iIfMac].fPromiscuous)
+            && (   pTab->paEntries[iIfMac].fPromiscuousSeeTrunk
+                || (!fSrc && pTab->paEntries[iIfMac].fPromiscuousEff) )
+           )
         {
             PINTNETIF pIf    = pTab->paEntries[iIfMac].pIf;         AssertPtr(pIf); Assert(pIf->pNetwork == pNetwork);
             uint32_t  iIfDst = pDstTab->cIfs++;
@@ -2111,7 +2279,7 @@ static void intnetR0TrunkIfSnoopArp(PINTNETNETWORK pNetwork, PCINTNETSG pSG)
 
 #ifdef INTNET_WITH_DHCP_SNOOPING
 /**
- * Snoop up addresses from ARP and DHCP traffic from frames comming
+ * Snoop up addresses from ARP and DHCP traffic from frames coming
  * over the trunk connection.
  *
  * The caller is responsible for do some basic filtering before calling
@@ -2213,7 +2381,7 @@ static void intnetR0TrunkIfSnoopAddr(PINTNETNETWORK pNetwork, PCINTNETSG pSG, ui
  *
  * This will fish out the source IP address and add it to the cache.
  * Then it will look for DHCPRELEASE requests (?) and anything else
- * that we migh find useful later.
+ * that we might find useful later.
  *
  * @param   pIf             The interface that's sending the frame.
  * @param   pIpHdr          Pointer to the IPv4 header in the frame.
@@ -2283,7 +2451,7 @@ static void intnetR0IfSnoopIPv4SourceAddr(PINTNETIF pIf, PCRTNETIPV4 pIpHdr, uin
  *
  * @param   pIf             The interface that's sending the frame.
  * @param   pHdr            The ARP header.
- * @param   cbPacket        The size of the packet (migth be larger than the ARP
+ * @param   cbPacket        The size of the packet (might be larger than the ARP
  *                          request 'cause of min ethernet frame size).
  * @param   pfSgFlags       Pointer to the SG flags. This is used to tag the packet so we
  *                          don't have to repeat the frame parsing in intnetR0TrunkIfSend.
@@ -2484,7 +2652,7 @@ static void intnetR0IfSend(PINTNETIF pIf, PINTNETIF pIfSender, PINTNETSG pSG, PC
 static int intnetR0TrunkIfSendGsoFallback(PINTNETTRUNKIF pThis, PINTNETIF pIfSender, PINTNETSG pSG, uint32_t fDst)
 {
     /*
-     * Since we're only using this for GSO frame comming from the internal
+     * Since we're only using this for GSO frame coming from the internal
      * network interfaces and never the trunk, we can assume there is only
      * one segment.  This simplifies the code quite a bit.
      */
@@ -2506,11 +2674,11 @@ static int intnetR0TrunkIfSendGsoFallback(PINTNETTRUNKIF pThis, PINTNETIF pIfSen
     {
         uint32_t cbSegPayload;
         uint32_t offSegPayload = PDMNetGsoCarveSegment(&pSG->GsoCtx, (uint8_t *)pSG->aSegs[0].pv, pSG->cbTotal, iSeg, cSegs,
-                                                       pThis->abGsoHdrs, &cbSegPayload);
+                                                       pIfSender->abGsoHdrs, &cbSegPayload);
 
         IntNetSgInitTempSegs(&u.SG, pSG->GsoCtx.cbHdrs + cbSegPayload, 2, 2);
         u.SG.aSegs[0].Phys = NIL_RTHCPHYS;
-        u.SG.aSegs[0].pv   = pThis->abGsoHdrs;
+        u.SG.aSegs[0].pv   = pIfSender->abGsoHdrs;
         u.SG.aSegs[0].cb   = pSG->GsoCtx.cbHdrs;
         u.SG.aSegs[1].Phys = NIL_RTHCPHYS;
         u.SG.aSegs[1].pv   = (uint8_t *)pSG->aSegs[0].pv + offSegPayload;
@@ -2565,6 +2733,7 @@ static void intnetR0TrunkIfSend(PINTNETTRUNKIF pThis, PINTNETNETWORK pNetwork, P
      */
     AssertPtr(pThis);
     AssertPtr(pNetwork);
+    AssertPtr(pIfSender);
     AssertPtr(pSG);
     Assert(fDst);
     AssertReturnVoid(pThis->pIfPort);
@@ -2608,7 +2777,7 @@ static void intnetR0TrunkIfSend(PINTNETTRUNKIF pThis, PINTNETNETWORK pNetwork, P
         {
             /*
              * APR IPv4: replace hardware (MAC) addresses because these end up
-             *           in ARP caches. So, if we don't the other machiens will
+             *           in ARP caches. So, if we don't the other machines will
              *           send the packets to the MAC address of the guest
              *           instead of the one of the host, which won't work on
              *           wireless of course...
@@ -2636,12 +2805,14 @@ static void intnetR0TrunkIfSend(PINTNETTRUNKIF pThis, PINTNETNETWORK pNetwork, P
      * Note! The trunk implementation will re-check that the trunk is active                                                               .
      *       before sending, so we don't have to duplicate that effort here.
      */
+    STAM_REL_PROFILE_START(&pIfSender->pIntBuf->StatSend2, a);
     int rc;
     if (   pSG->GsoCtx.u8Type == PDMNETWORKGSOTYPE_INVALID
         || intnetR0TrunkIfCanHandleGsoFrame(pThis, pSG, fDst) )
         rc = pThis->pIfPort->pfnXmit(pThis->pIfPort, pIfSender->pvIfData, pSG, fDst);
     else
         rc = intnetR0TrunkIfSendGsoFallback(pThis, pIfSender, pSG, fDst);
+    STAM_REL_PROFILE_STOP(&pIfSender->pIntBuf->StatSend2, a);
 
     /** @todo failure statistics? */
     Log2(("intnetR0TrunkIfSend: %Rrc fDst=%d\n", rc, fDst)); NOREF(rc);
@@ -2787,23 +2958,29 @@ static void intnetR0NetworkEditDhcpFromIntNet(PINTNETNETWORK pNetwork, PINTNETSG
         return;
     }
     PCRTNETBOOTP pDhcp = (PCRTNETBOOTP)(pUdpHdr + 1);
-    uint8_t MsgType;
-    if (!RTNetIPv4IsDHCPValid(pUdpHdr, pDhcp, cbUdpPkt - sizeof(*pUdpHdr), &MsgType))
+    uint8_t bMsgType;
+    if (!RTNetIPv4IsDHCPValid(pUdpHdr, pDhcp, cbUdpPkt - sizeof(*pUdpHdr), &bMsgType))
     {
         Log6(("intnetR0NetworkEditDhcpFromIntNet: Bad DHCP packet\n"));
         return;
     }
 
-    switch (MsgType)
+    switch (bMsgType)
     {
         case RTNET_DHCP_MT_DISCOVER:
         case RTNET_DHCP_MT_REQUEST:
-            Log6(("intnetR0NetworkEditDhcpFromIntNet: Setting broadcast flag in DHCP %#x, previously %x\n", MsgType, pDhcp->bp_flags));
+            /*
+             * Must set the broadcast flag or we won't catch the respons.
+             */
             if (!(pDhcp->bp_flags & RT_H2BE_U16_C(RTNET_DHCP_FLAG_BROADCAST)))
             {
+                Log6(("intnetR0NetworkEditDhcpFromIntNet: Setting broadcast flag in DHCP %#x, previously %x\n",
+                      bMsgType, pDhcp->bp_flags));
+
                 /* Patch flags */
                 uint16_t uFlags = pDhcp->bp_flags | RT_H2BE_U16_C(RTNET_DHCP_FLAG_BROADCAST);
                 intnetR0SgWritePart(pSG, (uintptr_t)&pDhcp->bp_flags - (uintptr_t)pIpHdr + sizeof(RTNETETHERHDR), sizeof(uFlags), &uFlags);
+
                 /* Patch UDP checksum */
                 uint32_t uChecksum = (uint32_t)~pUdpHdr->uh_sum + RT_H2BE_U16_C(RTNET_DHCP_FLAG_BROADCAST);
                 while (uChecksum >> 16)
@@ -2811,6 +2988,31 @@ static void intnetR0NetworkEditDhcpFromIntNet(PINTNETNETWORK pNetwork, PINTNETSG
                 uChecksum = ~uChecksum;
                 intnetR0SgWritePart(pSG, (uintptr_t)&pUdpHdr->uh_sum - (uintptr_t)pIpHdr + sizeof(RTNETETHERHDR), sizeof(pUdpHdr->uh_sum), &uChecksum);
             }
+
+#ifdef RT_OS_DARWIN
+            /*
+             * Work around little endian checksum issue in mac os x 10.7.0 GM.
+             */
+            if (   pIpHdr->ip_tos
+                && (pNetwork->fFlags & INTNET_OPEN_FLAGS_WORKAROUND_1))
+            {
+                /* Patch it. */
+                uint8_t uTos  = pIpHdr->ip_tos;
+                uint8_t uZero = 0;
+                intnetR0SgWritePart(pSG, sizeof(RTNETETHERHDR) + 1, sizeof(uZero), &uZero);
+
+                /* Patch the IP header checksum. */
+                uint32_t uChecksum = (uint32_t)~pIpHdr->ip_sum - (uTos << 8);
+                while (uChecksum >> 16)
+                    uChecksum = (uChecksum >> 16) + (uChecksum & 0xFFFF);
+                uChecksum = ~uChecksum;
+
+                Log(("intnetR0NetworkEditDhcpFromIntNet: cleared ip_tos (was %#04x); ip_sum=%#06x -> %#06x\n",
+                     uTos, RT_BE2H_U16(pIpHdr->ip_sum), RT_BE2H_U16(uChecksum) ));
+                intnetR0SgWritePart(pSG, sizeof(RTNETETHERHDR) + RT_OFFSETOF(RTNETIPV4, ip_sum),
+                                    sizeof(pIpHdr->ip_sum), &uChecksum);
+            }
+#endif
             break;
     }
 }
@@ -2940,7 +3142,7 @@ static INTNETSWDECISION intnetR0NetworkSharedMacFixAndSwitchBroadcast(PINTNETNET
         intnetR0NetworkEditDhcpFromIntNet(pNetwork, pSG, pEthHdr);
 
     /*
-     * Snoop address info from packet orginating from the trunk connection.
+     * Snoop address info from packet originating from the trunk connection.
      */
     if (fSrc)
     {
@@ -3099,7 +3301,7 @@ static void intnetR0NetworkReleaseDstTab(PINTNETNETWORK pNetwork, PINTNETDSTTAB 
  * @param   pNetwork            The network.
  * @param   pDstTab             The destination table.
  * @param   pSG                 The frame to send.
- * @param   pIfSender           The sender interface.  NULL if it origined via
+ * @param   pIfSender           The sender interface.  NULL if it originated via
  *                              the trunk.
  */
 static void intnetR0NetworkDeliver(PINTNETNETWORK pNetwork, PINTNETDSTTAB pDstTab, PINTNETSG pSG, PINTNETIF pIfSender)
@@ -3281,6 +3483,7 @@ INTNETR0DECL(int) IntNetR0IfSend(INTNETIFHANDLE hIf, PSUPDRVSESSION pSession)
     PINTNETIF pIf = (PINTNETIF)RTHandleTableLookupWithCtx(pIntNet->hHtIfs, hIf, pSession);
     if (!pIf)
         return VERR_INVALID_HANDLE;
+    STAM_REL_PROFILE_START(&pIf->pIntBuf->StatSend1, a);
 
     /*
      * Make sure we've got a network.
@@ -3302,7 +3505,7 @@ INTNETR0DECL(int) IntNetR0IfSend(INTNETIFHANDLE hIf, PSUPDRVSESSION pSession)
             INTNETSWDECISION    enmSwDecision = INTNETSWDECISION_BROADCAST;
             INTNETSG            Sg; /** @todo this will have to be changed if we're going to use async sending
                                      * with buffer sharing for some OS or service. Darwin copies everything so
-                                     * I won't bother allocating and managing SGs rigth now. Sorry. */
+                                     * I won't bother allocating and managing SGs right now. Sorry. */
             PINTNETHDR          pHdr;
             while ((pHdr = IntNetRingGetNextFrameToRead(&pIf->pIntBuf->Send)) != NULL)
             {
@@ -3368,6 +3571,7 @@ INTNETR0DECL(int) IntNetR0IfSend(INTNETIFHANDLE hIf, PSUPDRVSESSION pSession)
      * Release the interface.
      */
     intnetR0BusyDecIf(pIf);
+    STAM_REL_PROFILE_STOP(&pIf->pIntBuf->StatSend1, a);
     intnetR0IfRelease(pIf, pSession);
     return rc;
 }
@@ -3540,16 +3744,41 @@ INTNETR0DECL(int) IntNetR0IfSetPromiscuousMode(INTNETIFHANDLE hIf, PSUPDRVSESSIO
         RTSPINLOCKTMP Tmp = RTSPINLOCKTMP_INITIALIZER;
         RTSpinlockAcquireNoInts(pNetwork->hAddrSpinlock, &Tmp);
 
-        if (pIf->fPromiscuous != fPromiscuous)
+        if (pIf->fPromiscuousReal != fPromiscuous)
         {
-            Log(("IntNetR0IfSetPromiscuousMode: hIf=%RX32: Changed from %d -> %d\n",
-                 hIf, !fPromiscuous, !!fPromiscuous));
-            ASMAtomicUoWriteBool(&pIf->fPromiscuous, fPromiscuous);
+            const bool fPromiscuousEff = fPromiscuous
+                                      && (pIf->fOpenFlags  & INTNET_OPEN_FLAGS_IF_PROMISC_ALLOW)
+                                      && (pNetwork->fFlags & INTNET_OPEN_FLAGS_PROMISC_ALLOW_CLIENTS);
+            Log(("IntNetR0IfSetPromiscuousMode: hIf=%RX32: Changed from %d -> %d (%d)\n",
+                 hIf, !fPromiscuous, !!fPromiscuous, fPromiscuousEff));
+
+            pIf->fPromiscuousReal = fPromiscuous;
 
             PINTNETMACTABENTRY pEntry = intnetR0NetworkFindMacAddrEntry(pNetwork, pIf); Assert(pEntry);
             if (RT_LIKELY(pEntry))
-                pEntry->fPromiscuous = fPromiscuous;
-            pIf->fPromiscuous        = fPromiscuous;
+            {
+                if (pEntry->fPromiscuousEff)
+                {
+                    pNetwork->MacTab.cPromiscuousEntries--;
+                    if (!pEntry->fPromiscuousSeeTrunk)
+                        pNetwork->MacTab.cPromiscuousNoTrunkEntries--;
+                    Assert(pNetwork->MacTab.cPromiscuousEntries        < pNetwork->MacTab.cEntries);
+                    Assert(pNetwork->MacTab.cPromiscuousNoTrunkEntries < pNetwork->MacTab.cEntries);
+                }
+
+                pEntry->fPromiscuousEff      = fPromiscuousEff;
+                pEntry->fPromiscuousSeeTrunk = fPromiscuousEff
+                                            && (pIf->fOpenFlags & INTNET_OPEN_FLAGS_IF_PROMISC_SEE_TRUNK);
+
+                if (pEntry->fPromiscuousEff)
+                {
+                    pNetwork->MacTab.cPromiscuousEntries++;
+                    if (!pEntry->fPromiscuousSeeTrunk)
+                        pNetwork->MacTab.cPromiscuousNoTrunkEntries++;
+                }
+                Assert(pNetwork->MacTab.cPromiscuousEntries        <= pNetwork->MacTab.cEntries);
+                Assert(pNetwork->MacTab.cPromiscuousNoTrunkEntries <= pNetwork->MacTab.cEntries);
+            }
         }
 
         RTSpinlockReleaseNoInts(pNetwork->hAddrSpinlock, &Tmp);
@@ -3687,14 +3916,14 @@ INTNETR0DECL(int) IntNetR0IfSetMacAddressReq(PSUPDRVSESSION pSession, PINTNETIFS
  */
 static int intnetR0NetworkSetIfActive(PINTNETNETWORK pNetwork, PINTNETIF pIf, bool fActive)
 {
-    /* quick santiy check */
+    /* quick sanity check */
     AssertPtr(pNetwork);
     AssertPtr(pIf);
 
     /*
      * The address spinlock of the network protects the variables, while the
      * big lock protects the calling of pfnSetState.  Grab both lock at once
-     * to save us the extra hazzle.
+     * to save us the extra hassle.
      */
     PINTNETTRUNKIF  pTrunk  = NULL;
     RTSPINLOCKTMP   Tmp     = RTSPINLOCKTMP_INITIALIZER;
@@ -3719,8 +3948,8 @@ static int intnetR0NetworkSetIfActive(PINTNETNETWORK pNetwork, PINTNETIF pIf, bo
                     pTrunk = pNetwork->MacTab.pTrunk;
                     if (pTrunk)
                     {
-                        pNetwork->MacTab.fHostActive = true;
-                        pNetwork->MacTab.fWireActive = true;
+                        pNetwork->MacTab.fHostActive = !!(pNetwork->fFlags & INTNET_OPEN_FLAGS_TRUNK_HOST_ENABLED);
+                        pNetwork->MacTab.fWireActive = !!(pNetwork->fFlags & INTNET_OPEN_FLAGS_TRUNK_WIRE_ENABLED);
                     }
                 }
             }
@@ -4109,6 +4338,15 @@ static DECLCALLBACK(void) intnetR0IfDestruct(void *pvObj, void *pvUser1, void *p
         while (iIf-- > 0)
             if (pNetwork->MacTab.paEntries[iIf].pIf == pIf)
             {
+                if (pNetwork->MacTab.paEntries[iIf].fPromiscuousEff)
+                {
+                    pNetwork->MacTab.cPromiscuousEntries--;
+                    if (!pNetwork->MacTab.paEntries[iIf].fPromiscuousSeeTrunk)
+                        pNetwork->MacTab.cPromiscuousNoTrunkEntries--;
+                }
+                Assert(pNetwork->MacTab.cPromiscuousEntries        < pNetwork->MacTab.cEntries);
+                Assert(pNetwork->MacTab.cPromiscuousNoTrunkEntries < pNetwork->MacTab.cEntries);
+
                 if (iIf + 1 < pNetwork->MacTab.cEntries)
                     memmove(&pNetwork->MacTab.paEntries[iIf],
                             &pNetwork->MacTab.paEntries[iIf + 1],
@@ -4116,6 +4354,21 @@ static DECLCALLBACK(void) intnetR0IfDestruct(void *pvObj, void *pvUser1, void *p
                 pNetwork->MacTab.cEntries--;
                 break;
             }
+
+        /* recalc the min flags. */
+        if (pIf->fOpenFlags & INTNET_OPEN_FLAGS_REQUIRE_AS_RESTRICTIVE_POLICIES)
+        {
+            uint32_t fMinFlags = 0;
+            iIf = pNetwork->MacTab.cEntries;
+            while (iIf-- > 0)
+            {
+                PINTNETIF pIf2 = pNetwork->MacTab.paEntries[iIf].pIf;
+                if (   pIf2 /* paranoia */
+                    && (pIf2->fOpenFlags & INTNET_OPEN_FLAGS_REQUIRE_AS_RESTRICTIVE_POLICIES))
+                    fMinFlags |= pIf2->fOpenFlags & INTNET_OPEN_FLAGS_STRICT_MASK;
+            }
+            pNetwork->fMinFlags = fMinFlags;
+        }
 
         PINTNETTRUNKIF pTrunk = pNetwork->MacTab.pTrunk;
 
@@ -4219,19 +4472,31 @@ static DECLCALLBACK(void) intnetR0IfDestruct(void *pvObj, void *pvUser1, void *p
  * @param   pSession    The session handle.
  * @param   cbSend      The size of the send buffer.
  * @param   cbRecv      The size of the receive buffer.
+ * @param   fFlags      The open network flags.
  * @param   phIf        Where to store the interface handle.
  */
-static int intnetR0NetworkCreateIf(PINTNETNETWORK pNetwork, PSUPDRVSESSION pSession, unsigned cbSend, unsigned cbRecv,
+static int intnetR0NetworkCreateIf(PINTNETNETWORK pNetwork, PSUPDRVSESSION pSession,
+                                   unsigned cbSend, unsigned cbRecv, uint32_t fFlags,
                                    PINTNETIFHANDLE phIf)
 {
-    LogFlow(("intnetR0NetworkCreateIf: pNetwork=%p pSession=%p cbSend=%u cbRecv=%u phIf=%p\n",
-             pNetwork, pSession, cbSend, cbRecv, phIf));
+    LogFlow(("intnetR0NetworkCreateIf: pNetwork=%p pSession=%p cbSend=%u cbRecv=%u fFlags=%#x phIf=%p\n",
+             pNetwork, pSession, cbSend, cbRecv, fFlags, phIf));
 
     /*
      * Assert input.
      */
     AssertPtr(pNetwork);
     AssertPtr(phIf);
+
+    /*
+     * Adjust the flags with defaults for the interface policies.
+     * Note: Main restricts promiscuous mode per interface.
+     */
+    uint32_t const  fDefFlags = INTNET_OPEN_FLAGS_IF_PROMISC_ALLOW
+                              | INTNET_OPEN_FLAGS_IF_PROMISC_SEE_TRUNK;
+    for (uint32_t i = 0; i < RT_ELEMENTS(g_afIntNetOpenNetworkIfFlags); i++)
+        if (!(fFlags & g_afIntNetOpenNetworkIfFlags[i].fPair))
+            fFlags |= g_afIntNetOpenNetworkIfFlags[i].fPair & fDefFlags;
 
     /*
      * Make sure that all destination tables as well as the  have space of
@@ -4241,7 +4506,7 @@ static int intnetR0NetworkCreateIf(PINTNETNETWORK pNetwork, PSUPDRVSESSION pSess
         return rc;
 
     /*
-     * Allocate the interface and initalize it.
+     * Allocate the interface and initialize it.
      */
     PINTNETIF pIf = (PINTNETIF)RTMemAllocZ(sizeof(*pIf));
     if (!pIf)
@@ -4249,9 +4514,10 @@ static int intnetR0NetworkCreateIf(PINTNETNETWORK pNetwork, PSUPDRVSESSION pSess
 
     memset(&pIf->MacAddr, 0xff, sizeof(pIf->MacAddr)); /* broadcast */
     //pIf->fMacSet          = false;
-    //pIf->fPromiscuous     = false;
+    //pIf->fPromiscuousReal = false;
     //pIf->fActive          = false;
     //pIf->fDestroying      = false;
+    pIf->fOpenFlags         = fFlags;
     //pIf->cYields          = 0;
     //pIf->pIntBuf          = 0;
     //pIf->pIntBufR3        = NIL_RTR3PTR;
@@ -4316,16 +4582,17 @@ static int intnetR0NetworkCreateIf(PINTNETNETWORK pNetwork, PSUPDRVSESSION pSess
                     uint32_t iIf = pNetwork->MacTab.cEntries;
                     Assert(iIf + 1 <= pNetwork->MacTab.cEntriesAllocated);
 
-                    pNetwork->MacTab.paEntries[iIf].MacAddr         = pIf->MacAddr;
-                    pNetwork->MacTab.paEntries[iIf].fActive         = false;
-                    pNetwork->MacTab.paEntries[iIf].fPromiscuous    = false;
-                    pNetwork->MacTab.paEntries[iIf].pIf             = pIf;
+                    pNetwork->MacTab.paEntries[iIf].MacAddr              = pIf->MacAddr;
+                    pNetwork->MacTab.paEntries[iIf].fActive              = false;
+                    pNetwork->MacTab.paEntries[iIf].fPromiscuousEff      = false;
+                    pNetwork->MacTab.paEntries[iIf].fPromiscuousSeeTrunk = false;
+                    pNetwork->MacTab.paEntries[iIf].pIf                  = pIf;
 
                     pNetwork->MacTab.cEntries = iIf + 1;
                     pIf->pNetwork = pNetwork;
 
                     /*
-                     * Grab a busy reference (paranoia) to the trunk before releaseing
+                     * Grab a busy reference (paranoia) to the trunk before releasing
                      * the spinlock and then notify it about the new interface.
                      */
                     PINTNETTRUNKIF pTrunk = pNetwork->MacTab.pTrunk;
@@ -4430,7 +4697,10 @@ static DECLCALLBACK(void) intnetR0TrunkIfPortReportPromiscuousMode(PINTNETTRUNKS
         RTSPINLOCKTMP Tmp = RTSPINLOCKTMP_INITIALIZER;
         RTSpinlockAcquireNoInts(pNetwork->hAddrSpinlock, &Tmp);
 
-        pNetwork->MacTab.fHostPromiscuous = fPromiscuous;
+        pNetwork->MacTab.fHostPromiscuousReal = fPromiscuous
+                                             || (pNetwork->fFlags & INTNET_OPEN_FLAGS_TRUNK_HOST_PROMISC_MODE);
+        pNetwork->MacTab.fHostPromiscuousEff  = pNetwork->MacTab.fHostPromiscuousReal
+                                             && (pNetwork->fFlags & INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_HOST);
 
         RTSpinlockReleaseNoInts(pNetwork->hAddrSpinlock, &Tmp);
     }
@@ -4472,18 +4742,43 @@ static DECLCALLBACK(INTNETSWDECISION) intnetR0TrunkIfPortPreRecv(PINTNETTRUNKSWP
                                                                  void const *pvSrc, size_t cbSrc, uint32_t fSrc)
 {
     PINTNETTRUNKIF pThis = INTNET_SWITCHPORT_2_TRUNKIF(pSwitchPort);
-    PINTNETNETWORK pNetwork = pThis->pNetwork;
 
     /* assert some sanity */
-    AssertPtrReturn(pNetwork, INTNETSWDECISION_TRUNK);
-    AssertReturn(pNetwork->hEvtBusyIf != NIL_RTSEMEVENT, INTNETSWDECISION_TRUNK);
     AssertPtr(pvSrc);
-    AssertPtr(cbSrc >= 6);
+    AssertReturn(cbSrc >= 6, INTNETSWDECISION_BROADCAST);
     Assert(fSrc);
 
-    /** @todo implement the switch table. */
+#if 0
+    /*
+     * Mark the trunk as busy, make sure we've got a network and that there are
+     * some active interfaces around.
+     */
+    INTNETSWDECISION enmSwDecision = INTNETSWDECISION_TRUNK;
+    intnetR0BusyIncTrunk(pThis);
+    PINTNETNETWORK pNetwork = pThis->pNetwork;
+    if (RT_LIKELY(   pNetwork
+                  && pNetwork->cActiveIFs > 0 ))
+    {
+        /*
+         * Lazy bird! No pre-switching of multicast and shared-MAC-on-wire.
+         */
+        PCRTNETETHERHDR pEthHdr = (PCRTNETETHERHDR)pvSrc;
+        if (intnetR0IsMacAddrMulticast(&pEthHdr->DstMac))
+            enmSwDecision = INTNETSWDECISION_BROADCAST;
+        else if (pNetwork->fFlags & INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE)
+            enmSwDecision = INTNETSWDECISION_BROADCAST;
+        else
+            enmSwDecision = intnetR0NetworkPreSwitchUnicast(pNetwork,
+                                                            fSrc,
+                                                            cbSrc >= 12 ? &pEthHdr->SrcMac : NULL,
+                                                            &pEthHdr->DstMac);
+    }
 
+    intnetR0BusyDecTrunk(pThis);
+    return enmSwDecision;
+#else
     return INTNETSWDECISION_BROADCAST;
+#endif
 }
 
 
@@ -4707,7 +5002,7 @@ static void intnetR0TrunkIfDestroy(PINTNETTRUNKIF pThis, PINTNETNETWORK pNetwork
         int rc = pIfPort->pfnWaitForIdle(pIfPort, 10*1000);
         if (RT_FAILURE(rc))
         {
-            LogRel(("intnet: '%s' did't become idle in %RU64 ns (%Rrc).\n",
+            LogRel(("intnet: '%s' didn't become idle in %RU64 ns (%Rrc).\n",
                     pNetwork->szName, RTTimeSystemNanoTS() - StartTS, rc));
             Assert(rc == VERR_TIMEOUT);
             while (     RT_FAILURE(rc)
@@ -4715,14 +5010,14 @@ static void intnetR0TrunkIfDestroy(PINTNETTRUNKIF pThis, PINTNETNETWORK pNetwork
                 rc = pIfPort->pfnWaitForIdle(pIfPort, 10*1000);
             if (rc == VERR_TIMEOUT)
             {
-                LogRel(("intnet: '%s' did't become idle in %RU64 ns (%Rrc).\n",
+                LogRel(("intnet: '%s' didn't become idle in %RU64 ns (%Rrc).\n",
                         pNetwork->szName, RTTimeSystemNanoTS() - StartTS, rc));
                 while (     rc == VERR_TIMEOUT
                        &&   RTTimeSystemNanoTS() - StartTS < UINT64_C(360000000000)) /* 360 sec */
                     rc = pIfPort->pfnWaitForIdle(pIfPort, 30*1000);
                 if (RT_FAILURE(rc))
                 {
-                    LogRel(("intnet: '%s' did't become idle in %RU64 ns (%Rrc), giving up.\n",
+                    LogRel(("intnet: '%s' didn't become idle in %RU64 ns (%Rrc), giving up.\n",
                             pNetwork->szName, RTTimeSystemNanoTS() - StartTS, rc));
                     AssertRC(rc);
                 }
@@ -4862,12 +5157,16 @@ static int intnetR0NetworkCreateTrunkIf(PINTNETNETWORK pNetwork, PSUPDRVSESSION 
              *
              * Note! We don't need to lock the MacTab here - creation time.
              */
-            pNetwork->MacTab.pTrunk           = pTrunk;
-            pNetwork->MacTab.HostMac          = pTrunk->MacAddr;
-            pNetwork->MacTab.fHostPromiscuous = false;
-            pNetwork->MacTab.fHostActive      = false;
-            pNetwork->MacTab.fWirePromiscuous = false; /** @todo !!(fFlags & INTNET_OPEN_FLAGS_PROMISC_TRUNK_WIRE); */
-            pNetwork->MacTab.fWireActive      = false;
+            pNetwork->MacTab.pTrunk               = pTrunk;
+            pNetwork->MacTab.HostMac              = pTrunk->MacAddr;
+            pNetwork->MacTab.fHostPromiscuousReal = false;
+            pNetwork->MacTab.fHostPromiscuousEff  = (pNetwork->fFlags & INTNET_OPEN_FLAGS_TRUNK_HOST_PROMISC_MODE)
+                                                 && (pNetwork->fFlags & INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_HOST);
+            pNetwork->MacTab.fHostActive          = false;
+            pNetwork->MacTab.fWirePromiscuousReal = !!(pNetwork->fFlags & INTNET_OPEN_FLAGS_TRUNK_WIRE_PROMISC_MODE);
+            pNetwork->MacTab.fWirePromiscuousEff  = pNetwork->MacTab.fWirePromiscuousReal
+                                                 && (pNetwork->fFlags & INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_WIRE);
+            pNetwork->MacTab.fWireActive          = false;
 
 #ifdef IN_RING0 /* (testcase is ring-3) */
             /*
@@ -5042,6 +5341,166 @@ static DECLCALLBACK(void) intnetR0NetworkDestruct(void *pvObj, void *pvUser1, vo
 
 
 /**
+ * Checks if the open network flags are compatible.
+ *
+ * @returns VBox status code.
+ * @param   pNetwork            The network.
+ * @param   fFlags              The open network flags.
+ */
+static int intnetR0CheckOpenNetworkFlags(PINTNETNETWORK pNetwork, uint32_t fFlags)
+{
+    uint32_t const fNetFlags = pNetwork->fFlags;
+
+    if (  (fFlags    & INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE)
+        ^ (fNetFlags & INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE))
+        return VERR_INTNET_INCOMPATIBLE_FLAGS;
+
+    if (fFlags & INTNET_OPEN_FLAGS_REQUIRE_EXACT)
+    {
+        for (uint32_t i = 0; i < RT_ELEMENTS(g_afIntNetOpenNetworkNetFlags); i++)
+            if (   (fFlags & g_afIntNetOpenNetworkNetFlags[i].fPair)
+                &&     (fFlags    & g_afIntNetOpenNetworkNetFlags[i].fPair)
+                   !=  (fNetFlags & g_afIntNetOpenNetworkNetFlags[i].fPair) )
+            return VERR_INTNET_INCOMPATIBLE_FLAGS;
+    }
+
+    if (fFlags & INTNET_OPEN_FLAGS_REQUIRE_AS_RESTRICTIVE_POLICIES)
+    {
+        for (uint32_t i = 0; i < RT_ELEMENTS(g_afIntNetOpenNetworkNetFlags); i++)
+            if (    (fFlags    & g_afIntNetOpenNetworkNetFlags[i].fRestrictive)
+                && !(fNetFlags & g_afIntNetOpenNetworkNetFlags[i].fRestrictive)
+                &&  (fNetFlags & g_afIntNetOpenNetworkNetFlags[i].fFixed) )
+                 return VERR_INTNET_INCOMPATIBLE_FLAGS;
+    }
+
+    return VINF_SUCCESS;
+}
+
+
+/**
+ * Adapts flag changes on network opening.
+ *
+ * @returns VBox status code.
+ * @param   pNetwork            The network.
+ * @param   fFlags              The open network flags.
+ */
+static int intnetR0AdaptOpenNetworkFlags(PINTNETNETWORK pNetwork, uint32_t fFlags)
+{
+    /*
+     * Upgrade the minimum policy flags.
+     */
+    uint32_t fNetMinFlags = pNetwork->fMinFlags;
+    Assert(!(fNetMinFlags & INTNET_OPEN_FLAGS_RELAXED_MASK));
+    if (fFlags & INTNET_OPEN_FLAGS_REQUIRE_AS_RESTRICTIVE_POLICIES)
+    {
+        fNetMinFlags |= fFlags & INTNET_OPEN_FLAGS_STRICT_MASK;
+        if (fNetMinFlags != pNetwork->fMinFlags)
+        {
+            LogRel(("INTNET: %s - min flags changed %#x -> %#x\n", pNetwork->szName, pNetwork->fMinFlags, fNetMinFlags));
+            pNetwork->fMinFlags = fNetMinFlags;
+        }
+    }
+
+    /*
+     * Calculate the new network flags.
+     * (Depends on fNetMinFlags being recalculated first.)
+     */
+    uint32_t fNetFlags = pNetwork->fFlags;
+
+    for (uint32_t i = 0; i < RT_ELEMENTS(g_afIntNetOpenNetworkNetFlags); i++)
+    {
+        Assert(fNetFlags & g_afIntNetOpenNetworkNetFlags[i].fPair);
+        Assert(!(fNetMinFlags & g_afIntNetOpenNetworkNetFlags[i].fRelaxed));
+
+        if (!(fFlags & g_afIntNetOpenNetworkNetFlags[i].fPair))
+            continue;
+        if (fNetFlags & g_afIntNetOpenNetworkNetFlags[i].fFixed)
+            continue;
+
+        if (   (fNetMinFlags & g_afIntNetOpenNetworkNetFlags[i].fRestrictive)
+            || (fFlags       & g_afIntNetOpenNetworkNetFlags[i].fRestrictive) )
+        {
+            fNetFlags &= ~g_afIntNetOpenNetworkNetFlags[i].fPair;
+            fNetFlags |= g_afIntNetOpenNetworkNetFlags[i].fRestrictive;
+        }
+        else if (!(fFlags & INTNET_OPEN_FLAGS_REQUIRE_AS_RESTRICTIVE_POLICIES))
+        {
+            fNetFlags &= ~g_afIntNetOpenNetworkNetFlags[i].fPair;
+            fNetFlags |= g_afIntNetOpenNetworkNetFlags[i].fRelaxed;
+        }
+    }
+
+    for (uint32_t i = 0; i < RT_ELEMENTS(g_afIntNetOpenNetworkNetFlags); i++)
+    {
+        Assert(fNetFlags & g_afIntNetOpenNetworkNetFlags[i].fPair);
+        fNetFlags |= fFlags & g_afIntNetOpenNetworkNetFlags[i].fFixed;
+    }
+
+    /*
+     * Apply the flags if they changed.
+     */
+    uint32_t const fOldNetFlags = pNetwork->fFlags;
+    if (fOldNetFlags != fNetFlags)
+    {
+        LogRel(("INTNET: %s - flags changed %#x -> %#x\n", pNetwork->szName, fOldNetFlags, fNetFlags));
+
+        RTSPINLOCKTMP Tmp = RTSPINLOCKTMP_INITIALIZER;
+        RTSpinlockAcquireNoInts(pNetwork->hAddrSpinlock, &Tmp);
+
+        pNetwork->fFlags = fNetFlags;
+
+        /* Recalculate some derived switcher variables. */
+        bool fActiveTrunk = pNetwork->MacTab.pTrunk
+                         && pNetwork->cActiveIFs > 0;
+        pNetwork->MacTab.fHostActive         = fActiveTrunk
+                                            && (fNetFlags & INTNET_OPEN_FLAGS_TRUNK_HOST_ENABLED);
+        pNetwork->MacTab.fHostPromiscuousEff = (   pNetwork->MacTab.fHostPromiscuousReal
+                                                || (fNetFlags & INTNET_OPEN_FLAGS_TRUNK_HOST_PROMISC_MODE))
+                                            && (fNetFlags & INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_HOST);
+
+        pNetwork->MacTab.fWireActive         = fActiveTrunk
+                                            && (fNetFlags & INTNET_OPEN_FLAGS_TRUNK_HOST_ENABLED);
+        pNetwork->MacTab.fWirePromiscuousReal= !!(fNetFlags & INTNET_OPEN_FLAGS_TRUNK_WIRE_PROMISC_MODE);
+        pNetwork->MacTab.fWirePromiscuousEff = pNetwork->MacTab.fWirePromiscuousReal
+                                            && (fNetFlags & INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_WIRE);
+
+        if ((fOldNetFlags ^ fNetFlags) & INTNET_OPEN_FLAGS_PROMISC_ALLOW_CLIENTS)
+        {
+            pNetwork->MacTab.cPromiscuousEntries        = 0;
+            pNetwork->MacTab.cPromiscuousNoTrunkEntries = 0;
+
+            uint32_t iIf = pNetwork->MacTab.cEntries;
+            while (iIf-- > 0)
+            {
+                PINTNETMACTABENTRY  pEntry = &pNetwork->MacTab.paEntries[iIf];
+                PINTNETIF           pIf2   = pEntry->pIf;
+                if (   pIf2 /* paranoia */
+                    && pIf2->fPromiscuousReal)
+                {
+                    bool fPromiscuousEff = (fNetFlags & INTNET_OPEN_FLAGS_PROMISC_ALLOW_CLIENTS)
+                                        && (pIf2->fOpenFlags & INTNET_OPEN_FLAGS_IF_PROMISC_ALLOW);
+                    pEntry->fPromiscuousEff      = fPromiscuousEff;
+                    pEntry->fPromiscuousSeeTrunk = fPromiscuousEff
+                                                && (pIf2->fOpenFlags & INTNET_OPEN_FLAGS_IF_PROMISC_SEE_TRUNK);
+
+                    if (pEntry->fPromiscuousEff)
+                    {
+                        pNetwork->MacTab.cPromiscuousEntries++;
+                        if (!pEntry->fPromiscuousSeeTrunk)
+                            pNetwork->MacTab.cPromiscuousNoTrunkEntries++;
+                    }
+                }
+            }
+        }
+
+        RTSpinlockReleaseNoInts(pNetwork->hAddrSpinlock, &Tmp);
+    }
+
+    return VINF_SUCCESS;
+}
+
+
+/**
  * Opens an existing network.
  *
  * The call must own the INTNET::hMtxCreateOpenDestroy.
@@ -5051,7 +5510,7 @@ static DECLCALLBACK(void) intnetR0NetworkDestruct(void *pvObj, void *pvUser1, vo
  * @param   pSession        The current session.
  * @param   pszNetwork      The network name. This has a valid length.
  * @param   enmTrunkType    The trunk type.
- * @param   pszTrunk        The trunk name. Its meaning is specfic to the type.
+ * @param   pszTrunk        The trunk name. Its meaning is specific to the type.
  * @param   fFlags          Flags, see INTNET_OPEN_FLAGS_*.
  * @param   ppNetwork       Where to store the pointer to the network on success.
  */
@@ -5067,7 +5526,7 @@ static int intnetR0OpenNetwork(PINTNET pIntNet, PSUPDRVSESSION pSession, const c
     AssertPtr(pszNetwork);
     Assert(enmTrunkType > kIntNetTrunkType_Invalid && enmTrunkType < kIntNetTrunkType_End);
     AssertPtr(pszTrunk);
-    Assert(!(fFlags & ~(INTNET_OPEN_FLAGS_MASK)));
+    Assert(!(fFlags & ~INTNET_OPEN_FLAGS_MASK));
     AssertPtr(ppNetwork);
     *ppNetwork = NULL;
 
@@ -5093,7 +5552,8 @@ static int intnetR0OpenNetwork(PINTNET pIntNet, PSUPDRVSESSION pSession, const c
                 ||  (   pCur->enmTrunkType == enmTrunkType
                      && !strcmp(pCur->szTrunk, pszTrunk)))
             {
-                if (!((pCur->fFlags ^ fFlags) & INTNET_OPEN_FLAGS_COMPATIBILITY_XOR_MASK))
+                rc = intnetR0CheckOpenNetworkFlags(pCur, fFlags);
+                if (RT_SUCCESS(rc))
                 {
 
                     /*
@@ -5103,27 +5563,21 @@ static int intnetR0OpenNetwork(PINTNET pIntNet, PSUPDRVSESSION pSession, const c
                     rc = SUPR0ObjAddRef(pCur->pvObj, pSession);
                     if (RT_SUCCESS(rc))
                     {
-                        if (!(pCur->fFlags & INTNET_OPEN_FLAGS_PUBLIC))
+                        if (pCur->fFlags & INTNET_OPEN_FLAGS_ACCESS_RESTRICTED)
                             rc = SUPR0ObjVerifyAccess(pCur->pvObj, pSession, pCur->szName);
                         if (RT_SUCCESS(rc))
-                        {
-                            pCur->fFlags |= fFlags & INTNET_OPEN_FLAGS_SECURITY_OR_MASK;
-
                             *ppNetwork = pCur;
-                        }
                         else
                             SUPR0ObjRelease(pCur->pvObj, pSession);
                     }
                     else if (rc == VERR_WRONG_ORDER)
                         rc = VERR_NOT_FOUND; /* destruction race, pretend the other isn't there. */
                 }
-                else
-                    rc = VERR_INTNET_INCOMPATIBLE_FLAGS;
             }
             else
             {
                 rc = VERR_INTNET_INCOMPATIBLE_TRUNK;
-                LogRel(("intnetR0OpenNetwork failed. rc=%d pCur->szTrunk=%s pszTrunk=%s pCur->enmTrunkType=%d enmTrunkType=%d\n",
+                LogRel(("intnetR0OpenNetwork failed. rc=%Rrc pCur->szTrunk=%s pszTrunk=%s pCur->enmTrunkType=%d enmTrunkType=%d\n",
                         rc, pCur->szTrunk, pszTrunk, pCur->enmTrunkType, enmTrunkType));
             }
 
@@ -5151,7 +5605,7 @@ static int intnetR0OpenNetwork(PINTNET pIntNet, PSUPDRVSESSION pSession, const c
  * @param   pszNetwork      The name of the network. This must be at least one character long and no longer
  *                          than the INTNETNETWORK::szName.
  * @param   enmTrunkType    The trunk type.
- * @param   pszTrunk        The trunk name. Its meaning is specfic to the type.
+ * @param   pszTrunk        The trunk name. Its meaning is specific to the type.
  * @param   fFlags          Flags, see INTNET_OPEN_FLAGS_*.
  * @param   ppNetwork       Where to store the network. In the case of failure
  *                          whatever is returned here should be dereferenced
@@ -5171,7 +5625,32 @@ static int intnetR0CreateNetwork(PINTNET pIntNet, PSUPDRVSESSION pSession, const
     AssertPtr(pszTrunk);
     Assert(!(fFlags & ~INTNET_OPEN_FLAGS_MASK));
     AssertPtr(ppNetwork);
+
     *ppNetwork = NULL;
+
+    /*
+     * Adjust the flags with defaults for the network policies.
+     * Note: Main restricts promiscuous mode on the per interface level.
+     */
+    fFlags &= ~(  INTNET_OPEN_FLAGS_IF_FIXED
+                | INTNET_OPEN_FLAGS_IF_PROMISC_ALLOW
+                | INTNET_OPEN_FLAGS_IF_PROMISC_DENY
+                | INTNET_OPEN_FLAGS_IF_PROMISC_SEE_TRUNK
+                | INTNET_OPEN_FLAGS_IF_PROMISC_NO_TRUNK
+                | INTNET_OPEN_FLAGS_REQUIRE_AS_RESTRICTIVE_POLICIES
+                | INTNET_OPEN_FLAGS_REQUIRE_EXACT);
+    uint32_t const  fDefFlags = INTNET_OPEN_FLAGS_ACCESS_RESTRICTED
+                              | INTNET_OPEN_FLAGS_PROMISC_ALLOW_CLIENTS
+                              | INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_HOST
+                              | INTNET_OPEN_FLAGS_PROMISC_ALLOW_TRUNK_WIRE
+                              | INTNET_OPEN_FLAGS_TRUNK_HOST_ENABLED
+                              | INTNET_OPEN_FLAGS_TRUNK_HOST_CHASTE_MODE
+                              | INTNET_OPEN_FLAGS_TRUNK_WIRE_ENABLED
+                              | INTNET_OPEN_FLAGS_TRUNK_WIRE_CHASTE_MODE
+                              ;
+    for (uint32_t i = 0; i < RT_ELEMENTS(g_afIntNetOpenNetworkNetFlags); i++)
+        if (!(fFlags & g_afIntNetOpenNetworkNetFlags[i].fPair))
+            fFlags |= g_afIntNetOpenNetworkNetFlags[i].fPair & fDefFlags;
 
     /*
      * Allocate and initialize.
@@ -5182,31 +5661,36 @@ static int intnetR0CreateNetwork(PINTNET pIntNet, PSUPDRVSESSION pSession, const
     PINTNETNETWORK pNetwork = (PINTNETNETWORK)RTMemAllocZ(cb);
     if (!pNetwork)
         return VERR_NO_MEMORY;
-    //pNetwork->pNext                   = NULL;
-    //pNetwork->pIfs                    = NULL;
-    pNetwork->hAddrSpinlock             = NIL_RTSPINLOCK;
-    pNetwork->MacTab.cEntries           = 0;
-    pNetwork->MacTab.cEntriesAllocated  = INTNET_GROW_DSTTAB_SIZE;
-    pNetwork->MacTab.paEntries          = NULL;
-    pNetwork->MacTab.fHostPromiscuous   = false;
-    pNetwork->MacTab.fHostActive        = false;
-    pNetwork->MacTab.fWirePromiscuous   = false;
-    pNetwork->MacTab.fWireActive        = false;
-    pNetwork->MacTab.pTrunk             = NULL;
-    pNetwork->hEvtBusyIf                = NIL_RTSEMEVENT;
-    pNetwork->pIntNet                   = pIntNet;
-    //pNetwork->pvObj                   = NULL;
+    //pNetwork->pNext                       = NULL;
+    //pNetwork->pIfs                        = NULL;
+    pNetwork->hAddrSpinlock                 = NIL_RTSPINLOCK;
+    pNetwork->MacTab.cEntries               = 0;
+    pNetwork->MacTab.cEntriesAllocated      = INTNET_GROW_DSTTAB_SIZE;
+    //pNetwork->MacTab.cPromiscuousEntries  = 0;
+    //pNetwork->MacTab.cPromiscuousNoTrunkEntries = 0;
+    pNetwork->MacTab.paEntries              = NULL;
+    pNetwork->MacTab.fHostPromiscuousReal   = false;
+    pNetwork->MacTab.fHostPromiscuousEff    = false;
+    pNetwork->MacTab.fHostActive            = false;
+    pNetwork->MacTab.fWirePromiscuousReal   = false;
+    pNetwork->MacTab.fWirePromiscuousEff    = false;
+    pNetwork->MacTab.fWireActive            = false;
+    pNetwork->MacTab.pTrunk                 = NULL;
+    pNetwork->hEvtBusyIf                    = NIL_RTSEMEVENT;
+    pNetwork->pIntNet                       = pIntNet;
+    //pNetwork->pvObj                       = NULL;
     if (fFlags & INTNET_OPEN_FLAGS_SHARED_MAC_ON_WIRE)
-        pNetwork->pbTmp                 = RT_ALIGN_PT(pNetwork + 1, 64, uint8_t *);
+        pNetwork->pbTmp                     = RT_ALIGN_PT(pNetwork + 1, 64, uint8_t *);
     //else
-    //    pNetwork->pbTmp               = NULL;
-    pNetwork->fFlags                    = fFlags;
-    //pNetwork->cActiveIFs              = 0;
-    size_t cchName                      = strlen(pszNetwork);
-    pNetwork->cchName                   = (uint8_t)cchName;
+    //    pNetwork->pbTmp                   = NULL;
+    pNetwork->fFlags                        = fFlags;
+    //pNetwork->fMinFlags                   = 0;
+    //pNetwork->cActiveIFs                  = 0;
+    size_t cchName                          = strlen(pszNetwork);
+    pNetwork->cchName                       = (uint8_t)cchName;
     Assert(cchName && cchName < sizeof(pNetwork->szName));  /* caller's responsibility. */
     memcpy(pNetwork->szName, pszNetwork, cchName);          /* '\0' at courtesy of alloc. */
-    pNetwork->enmTrunkType              = enmTrunkType;
+    pNetwork->enmTrunkType                  = enmTrunkType;
     Assert(strlen(pszTrunk) < sizeof(pNetwork->szTrunk));   /* caller's responsibility. */
     strcpy(pNetwork->szTrunk, pszTrunk);
 
@@ -5283,7 +5767,7 @@ static int intnetR0CreateNetwork(PINTNET pIntNet, PSUPDRVSESSION pSession, const
  * @param   pSession        The session handle.
  * @param   pszNetwork      The network name.
  * @param   enmTrunkType    The trunk type.
- * @param   pszTrunk        The trunk name. Its meaning is specfic to the type.
+ * @param   pszTrunk        The trunk name. Its meaning is specific to the type.
  * @param   fFlags          Flags, see INTNET_OPEN_FLAGS_*.
  * @param   fRestrictAccess Whether new participants should be subjected to access check or not.
  * @param   cbSend          The send buffer size.
@@ -5340,6 +5824,12 @@ INTNETR0DECL(int) IntNetR0Open(PSUPDRVSESSION pSession, const char *pszNetwork,
     }
 
     AssertMsgReturn(!(fFlags & ~INTNET_OPEN_FLAGS_MASK), ("%#x\n", fFlags), VERR_INVALID_PARAMETER);
+    for (uint32_t i = 0; i < RT_ELEMENTS(g_afIntNetOpenNetworkNetFlags); i++)
+        AssertMsgReturn((fFlags & g_afIntNetOpenNetworkNetFlags[i].fPair) != g_afIntNetOpenNetworkNetFlags[i].fPair,
+                        ("%#x (%#x)\n", fFlags, g_afIntNetOpenNetworkNetFlags[i].fPair), VERR_INVALID_PARAMETER);
+    for (uint32_t i = 0; i < RT_ELEMENTS(g_afIntNetOpenNetworkIfFlags); i++)
+        AssertMsgReturn((fFlags & g_afIntNetOpenNetworkIfFlags[i].fPair) != g_afIntNetOpenNetworkIfFlags[i].fPair,
+                        ("%#x (%#x)\n", fFlags, g_afIntNetOpenNetworkIfFlags[i].fPair), VERR_INVALID_PARAMETER);
     AssertPtrReturn(phIf, VERR_INVALID_PARAMETER);
 
     /*
@@ -5357,9 +5847,12 @@ INTNETR0DECL(int) IntNetR0Open(PSUPDRVSESSION pSession, const char *pszNetwork,
     rc = intnetR0OpenNetwork(pIntNet, pSession, pszNetwork, enmTrunkType, pszTrunk, fFlags, &pNetwork);
     if (RT_SUCCESS(rc))
     {
-        rc = intnetR0NetworkCreateIf(pNetwork, pSession, cbSend, cbRecv, phIf);
+        rc = intnetR0NetworkCreateIf(pNetwork, pSession, cbSend, cbRecv, fFlags, phIf);
         if (RT_SUCCESS(rc))
+        {
+            intnetR0AdaptOpenNetworkFlags(pNetwork, fFlags);
             rc = VINF_ALREADY_INITIALIZED;
+        }
         else
             SUPR0ObjRelease(pNetwork->pvObj, pSession);
     }
@@ -5368,7 +5861,7 @@ INTNETR0DECL(int) IntNetR0Open(PSUPDRVSESSION pSession, const char *pszNetwork,
         rc = intnetR0CreateNetwork(pIntNet, pSession, pszNetwork, enmTrunkType, pszTrunk, fFlags, &pNetwork);
         if (RT_SUCCESS(rc))
         {
-            rc = intnetR0NetworkCreateIf(pNetwork, pSession, cbSend, cbRecv, phIf);
+            rc = intnetR0NetworkCreateIf(pNetwork, pSession, cbSend, cbRecv, fFlags, phIf);
             if (RT_FAILURE(rc))
                 SUPR0ObjRelease(pNetwork->pvObj, pSession);
         }
@@ -5472,7 +5965,7 @@ INTNETR0DECL(void) IntNetR0Term(void)
 
 
 /**
- * Initalizes the internal network ring-0 service.
+ * Initializes the internal network ring-0 service.
  *
  * @returns VBox status code.
  */

@@ -323,6 +323,14 @@ void HostRamUsage::init(ULONG period, ULONG length)
 void HostRamUsage::preCollect(CollectorHints& hints, uint64_t /* iTick */)
 {
     hints.collectHostRamUsage();
+    /* 
+     * This is an ugly ugly hack to force VMM metrics to 0s if no VM is 
+     * running. The reason it should work is that the VMM stats are 
+     * stored in CollectorHAL in preCollect methods of guest base metrics 
+     * which are always added after HostRamVmm. So each pass of collector 
+     * first clears the metrics then gets new values. 
+     */
+     mHAL->setMemHypervisorStats(0 /* ulMemAllocTotal */, 0 /* ulMemFreeTotal */, 0 /* ulMemBalloonTotal */, 0 /* ulMemSharedTotal */);
 }
 
 void HostRamUsage::collect()

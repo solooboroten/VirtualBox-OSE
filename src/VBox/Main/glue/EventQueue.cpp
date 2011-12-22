@@ -26,6 +26,10 @@
 # define USE_XPCOM_QUEUE
 #endif
 
+#ifdef RT_OS_SOLARIS
+# include <syslog.h>
+#endif
+
 #include <iprt/err.h>
 #include <iprt/time.h>
 #include <iprt/thread.h>
@@ -336,6 +340,15 @@ static int waitForEventsOnXPCOM(nsIEventQueue *pQueue, RTMSINTERVAL cMsTimeout)
         rc = VINF_INTERRUPTED;
     else
     {
+#ifdef RT_OS_SOLARIS
+        static uint32_t s_ErrorCount = 0;
+        if (s_ErrorCount < 500)
+        {
+            syslog(LOG_ERR, "VBoxSVC: waitForEventsOnXPCOM rc=%d errno=%d\n", rc, errno);
+            ++s_ErrorCount;
+        }
+#endif
+
         AssertMsgFailed(("rc=%d errno=%d\n", rc, errno));
         rc = VERR_INTERNAL_ERROR_4;
     }
@@ -506,7 +519,8 @@ int EventQueue::processEventQueue(RTMSINTERVAL cMsTimeout)
     }
 
     if (  (   RT_SUCCESS(rc)
-           || rc == VERR_INTERRUPTED)
+           || rc == VERR_INTERRUPTED
+           || rc == VERR_TIMEOUT)
         && mInterrupted)
     {
         mInterrupted = false;

@@ -322,7 +322,7 @@ vboxnetflt_INCS.linux   := \
 	$(PATH_ROOT)/src/VBox/Runtime/r0drv/linux
 vboxnetflt_INCS         := \
 	$(PATH_SUB_CURRENT)
-vboxnetflt_LDFLAGS.solaris += -N drv/vboxdrv
+vboxnetflt_LDFLAGS.solaris += -N drv/vboxdrv -N misc/ctf
   ifdef VBOXNETFLT_SOLARIS_USE_NETINFO
 vboxnetflt_DEFS.solaris += VBOXNETFLT_SOLARIS_USE_NETINFO
 vboxnetflt_LDFLAGS.solaris += -N misc/neti

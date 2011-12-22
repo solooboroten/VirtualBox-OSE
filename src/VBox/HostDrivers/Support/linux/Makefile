@@ -1,4 +1,4 @@
-# $Revision: 65557 $
+# $Revision: 71913 $
 ## @file
 # Makefile for the VirtualBox Linux Host Driver.
 #
@@ -117,6 +117,7 @@ OBJS   = \
 	common/misc/assert.o \
 	common/misc/handletable.o \
 	common/misc/handletablectx.o \
+	common/string/RTStrCopyP.o \
 	common/string/strformat.o \
 	common/string/strformatrt.o \
 	common/string/strformattype.o \
@@ -163,16 +164,7 @@ ifeq ($(KERNELRELEASE),)
                       Linux kernel. If this is not correct, specify \
 		      KERN_DIR=<directory> and run Make again.)
   endif
-  # check if versions match -- works only for later 2.6 kernels
-  VBOX_KERN_VER := $(shell $(MAKE) -sC $(KERN_DIR) --no-print-directory kernelrelease 2> /dev/null || true)
-  ifneq ($(VBOX_KERN_VER),)
-   ifneq ($(VBOX_KERN_VER),$(shell uname -r))
-    $(error Error: /usr/src/linux (version $(VBOX_KERN_VER)) does not match \
-                   the current kernel (version $(shell uname -r)))
-   endif
-  endif
  else
-  # build for a dedicated kernel, no version check
   ifneq ($(shell if test -d $(KERN_DIR); then echo yes; fi),yes)
    $(error Error: KERN_DIR does not point to a directory)
   endif

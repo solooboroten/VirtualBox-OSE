@@ -79,6 +79,7 @@ PGM_GST_DECL(int, GetPage)(PVMCPU pVCpu, RTGCPTR GCPtr, uint64_t *pfFlags, PRTGC
 #elif PGM_GST_TYPE == PGM_TYPE_AMD64
     PX86PML4E   pPml4e;
     X86PDPE     Pdpe;
+    Pdpe.u = 0; /* initialization to shut up gcc-4.5 */
     X86PDEPAE   Pde = pgmGstGetLongModePDEEx(&pVCpu->pgm.s, GCPtr, &pPml4e, &Pdpe);
 
     Assert(pPml4e);

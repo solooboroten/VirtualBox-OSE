@@ -218,7 +218,11 @@ DECLCALLBACK(int) VFSExplorer::TaskVFSExplorer::taskThread(RTTHREAD /* aThread *
             if (pVFSExplorer->m->storageType == VFSType_File)
                 rc = pVFSExplorer->updateFS(task.get());
             else if (pVFSExplorer->m->storageType == VFSType_S3)
+#ifdef VBOX_WITH_S3
                 rc = pVFSExplorer->updateS3(task.get());
+#else
+                rc = VERR_NOT_IMPLEMENTED;
+#endif
             break;
         }
         case TaskVFSExplorer::Delete:
@@ -226,7 +230,11 @@ DECLCALLBACK(int) VFSExplorer::TaskVFSExplorer::taskThread(RTTHREAD /* aThread *
             if (pVFSExplorer->m->storageType == VFSType_File)
                 rc = pVFSExplorer->deleteFS(task.get());
             else if (pVFSExplorer->m->storageType == VFSType_S3)
+#ifdef VBOX_WITH_S3
                 rc = pVFSExplorer->deleteS3(task.get());
+#else
+                rc = VERR_NOT_IMPLEMENTED;
+#endif
             break;
         }
     }
@@ -388,6 +396,7 @@ HRESULT VFSExplorer::deleteFS(TaskVFSExplorer *aTask)
     return VINF_SUCCESS;
 }
 
+#ifdef VBOX_WITH_S3
 HRESULT VFSExplorer::updateS3(TaskVFSExplorer *aTask)
 {
     LogFlowFuncEnter();
@@ -516,6 +525,7 @@ HRESULT VFSExplorer::deleteS3(TaskVFSExplorer *aTask)
 
     return VINF_SUCCESS;
 }
+#endif /* VBOX_WITH_S3 */
 
 STDMETHODIMP VFSExplorer::Update(IProgress **aProgress)
 {

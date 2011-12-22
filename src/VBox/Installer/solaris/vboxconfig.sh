@@ -18,10 +18,10 @@
 # Never use exit 2 or exit 20 etc., the return codes are used in
 # SRv4 postinstall procedures which carry special meaning. Just use exit 1 for failure.
 
-# S10 or OpenSoalris
+# S10 or S11
 HOST_OS_MAJORVERSION=`uname -r`
-# Which OpenSolaris version (snv_xxx or oi_xxx)?
-HOST_OS_MINORVERSION=`uname -v | egrep 'snv|oi' | sed -e "s/snv_//" -e "s/oi_//" -e "s/[^0-9]//"`
+# Which Solaris version (snv_xxx or oi_xxx or 11.x)?
+HOST_OS_MINORVERSION=`uname -v | egrep 'snv|oi|11.' | sed -e "s/snv_//" -e "s/oi_//" -e "s/[^0-9.]//"`
 
 DIR_VBOXBASE="$PKG_INSTALL_ROOT/opt/VirtualBox"
 DIR_CONF="$PKG_INSTALL_ROOT/platform/i86pc/kernel/drv"
@@ -218,25 +218,31 @@ check_root()
 # cannot fail
 get_sysinfo()
 {
-    if test "$REMOTEINST" -eq 1 || test -z "$HOST_OS_MINORVERSION" || test -z "$HOST_OS_MAJORVERSION"; then
-        if test -f "$PKG_INSTALL_ROOT/etc/release"; then
-            HOST_OS_MAJORVERSION=`cat $PKG_INSTALL_ROOT/etc/release | grep "Solaris 10"`
-            if test -n "$HOST_OS_MAJORVERSION"; then
-                HOST_OS_MAJORVERSION="5.10"
-            else
-                HOST_OS_MAJORVERSION=`cat $PKG_INSTALL_ROOT/etc/release | egrep "snv_|oi_"`
+    if test "$HOST_OS_MAJORVERSION" = "5.11" && test "$HOST_OS_MINORVERSION" = "11.0"; then
+        HOST_OS_MINORVERSION="175"
+    else
+        # try find version for remote installs or if previous version parsing failed (empty strings), will minor will be empty
+        # for S10 hosts
+        if test "$REMOTEINST" -eq 1 || test -z "$HOST_OS_MINORVERSION" || test -z "$HOST_OS_MAJORVERSION"; then
+            if test -f "$PKG_INSTALL_ROOT/etc/release"; then
+                HOST_OS_MAJORVERSION=`cat "$PKG_INSTALL_ROOT/etc/release" | grep "Solaris 10"`
                 if test -n "$HOST_OS_MAJORVERSION"; then
-                    HOST_OS_MAJORVERSION="5.11"
+                    HOST_OS_MAJORVERSION="5.10"
+                else
+                    HOST_OS_MAJORVERSION=`cat "$PKG_INSTALL_ROOT/etc/release" | egrep "snv_|oi_"`
+                    if test -n "$HOST_OS_MAJORVERSION"; then
+                        HOST_OS_MAJORVERSION="5.11"
+                    fi
                 fi
-            fi
-            if test "$HOST_OS_MAJORVERSION" != "5.10"; then
-                HOST_OS_MINORVERSION=`cat $PKG_INSTALL_ROOT/etc/release | tr ' ' '\n' | egrep 'snv_|oi_' | sed -e "s/snv_//" -e "s/oi_//" -e "s/[^0-9]//"`
+                if test "$HOST_OS_MAJORVERSION" != "5.10"; then
+                    HOST_OS_MINORVERSION=`cat "$PKG_INSTALL_ROOT/etc/release" | tr ' ' '\n' | egrep 'snv_|oi_' | sed -e "s/snv_//" -e "s/oi_//" -e "s/[^0-9]//"`
+                else
+                    HOST_OS_MINORVERSION=""
+                fi
             else
+                HOST_OS_MAJORVERSION=""
                 HOST_OS_MINORVERSION=""
             fi
-        else
-            HOST_OS_MAJORVERSION=""
-            HOST_OS_MINORVERSION=""
         fi
     fi
 }
@@ -761,7 +767,19 @@ postinstall()
 
             # plumb and configure vboxnet0 for non-remote installs
             if test "$REMOTEINST" -eq 0; then
-                $BIN_IFCONFIG vboxnet0 plumb up
+                # S11 175a renames vboxnet0 as 'netX', undo this and rename it back
+                if test "$HOST_OS_MAJORVERSION" = "5.11" && test "$HOST_OS_MINORVERSION" -gt 174; then
+                    vanityname=`dladm show-phys -po link,device | grep vboxnet0 | cut -f1 -d':'`
+                    if test $? -eq 0 && test ! -z "$vanityname" && test "$vanityname" != "vboxnet0"; then
+                        dladm rename-link "$vanityname" vboxnet0
+                        if test $? -ne 0; then
+                            errorprint "Failed to rename vanity interface ($vanityname) to vboxnet0"
+                        fi
+                    fi
+                fi
+
+                $BIN_IFCONFIG vboxnet0 plumb
+                $BIN_IFCONFIG vboxnet0 up
                 if test "$?" -eq 0; then
                     $BIN_IFCONFIG vboxnet0 192.168.56.1 netmask 255.255.255.0 up
 

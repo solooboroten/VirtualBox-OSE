@@ -89,7 +89,7 @@ size_t MiniString::find(const char *pcszFind, size_t pos /*= 0*/)
     return npos;
 }
 
-MiniString MiniString::substr(size_t pos /*= 0*/, size_t n /*= npos*/)
+MiniString MiniString::substrCP(size_t pos /*= 0*/, size_t n /*= npos*/)
     const
 {
     MiniString ret;
@@ -121,13 +121,16 @@ MiniString MiniString::substr(size_t pos /*= 0*/, size_t n /*= npos*/)
                         return ret;     // return empty string on bad encoding
 
                 size_t cbCopy = psz - pFirst;
-                ret.reserve(cbCopy + 1); // may throw bad_alloc
+                if (cbCopy)
+                {
+                    ret.reserve(cbCopy + 1); // may throw bad_alloc
 #ifndef RT_EXCEPTIONS_ENABLED
-                AssertRelease(capacity() >= cbCopy + 1);
+                    AssertRelease(capacity() >= cbCopy + 1);
 #endif
-                memcpy(ret.m_psz, pFirst, cbCopy);
-                ret.m_cbLength = cbCopy;
-                ret.m_psz[cbCopy] = '\0';
+                    memcpy(ret.m_psz, pFirst, cbCopy);
+                    ret.m_cbLength = cbCopy;
+                    ret.m_psz[cbCopy] = '\0';
+                }
             }
         }
     }

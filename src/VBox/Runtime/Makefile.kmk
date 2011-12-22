@@ -4,7 +4,7 @@
 #
 
 #
-# Copyright (C) 2006-2010 Oracle Corporation
+# Copyright (C) 2006-2011 Oracle Corporation
 #
 # This file is part of VirtualBox Open Source Edition (OSE), as
 # available from http://www.virtualbox.org. This file is free software;
@@ -307,10 +307,14 @@ RuntimeR3_SOURCES       = \
 	common/sort/RTSortIsSorted.cpp \
 	common/sort/RTSortApvIsSorted.cpp \
 	common/sort/shellsort.cpp \
+	common/string/RTStrCatP.cpp \
+	common/string/RTStrCatPEx.cpp \
 	common/string/RTStrCmp.cpp \
 	common/string/RTStrConvertHexBytes.cpp \
 	common/string/RTStrCopy.cpp \
 	common/string/RTStrCopyEx.cpp \
+	common/string/RTStrCopyP.cpp \
+	common/string/RTStrCopyPEx.cpp \
 	common/string/RTStrNCmp.cpp \
 	common/string/RTStrNLen.cpp \
 	common/string/RTStrNLenEx.cpp \
@@ -913,9 +917,13 @@ RuntimeGuestR3Mini_SOURCES = \
 	common/path/RTPathStripExt.cpp \
 	common/path/RTPathStripFilename.cpp \
 	common/path/RTPathStripTrailingSlash.cpp \
+	common/string/RTStrCatP.cpp \
+	common/string/RTStrCatPEx.cpp \
 	common/string/RTStrCmp.cpp \
 	common/string/RTStrCopy.cpp \
 	common/string/RTStrCopyEx.cpp \
+	common/string/RTStrCopyP.cpp \
+	common/string/RTStrCopyPEx.cpp \
 	common/string/RTStrNCmp.cpp \
         common/string/RTStrNLen.cpp \
         common/string/RTStrNLenEx.cpp \
@@ -1068,7 +1076,8 @@ VBoxRT_LIBS.freebsd            = \
 	iconv \
 	rt
 VBoxRT_LIBS.solaris            = \
-	kstat
+	kstat \
+        contract
 ifn1of ($(KBUILD_TARGET_ARCH), sparc32 sparc64)
  # SMBIOS not available on Solaris SPARC.
  VBoxRT_LIBS.solaris += smbios
@@ -1234,6 +1243,14 @@ RuntimeR0_SOURCES       = \
 	common/misc/term.cpp \
 	common/string/strncmp.cpp \
 	common/string/strpbrk.cpp \
+	common/string/RTStrCatP.cpp \
+	common/string/RTStrCatPEx.cpp \
+	common/string/RTStrCopy.cpp \
+	common/string/RTStrCopyEx.cpp \
+	common/string/RTStrCopyP.cpp \
+	common/string/RTStrCopyPEx.cpp \
+	common/string/RTStrNLen.cpp \
+	common/string/RTStrNLenEx.cpp \
 	common/table/avlgcptr.cpp \
 	common/table/avlhcphys.cpp \
 	common/table/avllu32.cpp \
@@ -1382,9 +1399,13 @@ RuntimeR0Drv_SOURCES    = \
 	common/rand/rand.cpp \
 	common/rand/randadv.cpp \
 	common/rand/randparkmiller.cpp \
+	common/string/RTStrCatP.cpp \
+	common/string/RTStrCatPEx.cpp \
 	common/string/RTStrCmp.cpp \
 	common/string/RTStrCopy.cpp \
 	common/string/RTStrCopyEx.cpp \
+	common/string/RTStrCopyP.cpp \
+	common/string/RTStrCopyPEx.cpp \
 	common/string/RTStrNCmp.cpp \
 	common/string/RTStrNLen.cpp \
 	common/string/RTStrNLenEx.cpp \
@@ -1502,6 +1523,7 @@ RuntimeR0Drv_SOURCES.darwin = \
 	r0drv/darwin/alloc-r0drv-darwin.cpp \
 	r0drv/darwin/assert-r0drv-darwin.cpp \
 	r0drv/darwin/initterm-r0drv-darwin.cpp \
+	r0drv/darwin/mach_kernel-r0drv-darwin.cpp \
 	r0drv/darwin/memobj-r0drv-darwin.cpp \
 	r0drv/darwin/mp-r0drv-darwin.cpp \
 	r0drv/darwin/memuserkernel-r0drv-darwin.cpp \

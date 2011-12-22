@@ -268,6 +268,11 @@ int suplibOsQueryVTxSupported(void)
         if (   RT_SUCCESS(rc)
                 && *pszNext == '.')
         {
+            /*
+             * new version number scheme starting with Linux 3.0
+             */
+            if (uA >= 3)
+                return VINF_SUCCESS;
             rc = RTStrToUInt32Ex(pszNext+1, &pszNext, 10, &uB);
             if (   RT_SUCCESS(rc)
                     && *pszNext == '.')

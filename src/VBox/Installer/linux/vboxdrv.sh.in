@@ -14,7 +14,7 @@
 # hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
 #
 
-# chkconfig: 35 30 70
+# chkconfig: 35 20 80
 # description: VirtualBox Linux kernel module
 #
 ### BEGIN INIT INFO
@@ -28,7 +28,6 @@
 
 PATH=/sbin:/bin:/usr/sbin:/usr/bin:$PATH
 DEVICE=/dev/vboxdrv
-GROUPNAME=vboxusers
 LOG="/var/log/vbox-install.log"
 NOLSB=%NOLSB%
 DEBIAN=%DEBIAN%
@@ -191,11 +190,11 @@ start()
         fi
     fi
     # ensure permissions
-    if ! chown :$GROUPNAME $DEVICE 2>/dev/null; then
+    if ! chown :root $DEVICE 2>/dev/null; then
         rmmod vboxnetadp 2>/dev/null
         rmmod vboxnetflt 2>/dev/null
         rmmod vboxdrv 2>/dev/null
-        failure "Cannot change owner $GROUPNAME for device $DEVICE"
+        failure "Cannot change owner root for device $DEVICE"
     fi
     if ! $MODPROBE vboxnetflt > /dev/null 2>&1; then
         failure "modprobe vboxnetflt failed. Please use 'dmesg' to find out why"

@@ -2438,9 +2438,7 @@ static int vmdkParseDescriptor(PVMDKIMAGE pImage, char *pDescData,
             RTUuidClear(&pImage->ParentModificationUuid);
         else
         {
-            rc = RTUuidCreate(&pImage->ParentModificationUuid);
-            if (RT_FAILURE(rc))
-                return rc;
+            RTUuidClear(&pImage->ParentModificationUuid);
             rc = vmdkDescDDBSetUuid(pImage, &pImage->Descriptor,
                                     VMDK_DDB_PARENT_MODIFICATION_UUID,
                                     &pImage->ParentModificationUuid);
@@ -3837,7 +3835,7 @@ static int vmdkCreateRegularImage(PVMDKIMAGE pImage, uint64_t cbSize,
                 if (pfnProgress)
                 {
                     rc = pfnProgress(pvUser,
-                                     uPercentStart + uOff * uPercentSpan / cbExtent);
+                                     uPercentStart + (cbOffset + uOff) * uPercentSpan / cbSize);
                     if (RT_FAILURE(rc))
                     {
                         RTMemFree(pvBuf);
@@ -3903,10 +3901,11 @@ static int vmdkCreateRegularImage(PVMDKIMAGE pImage, uint64_t cbSize,
                 return vmdkError(pImage, rc, RT_SRC_POS, N_("VMDK: could not create new grain directory in '%s'"), pExtent->pszFullname);
         }
 
-        if (RT_SUCCESS(rc) && pfnProgress)
-            pfnProgress(pvUser, uPercentStart + i * uPercentSpan / cExtents);
-
         cbRemaining -= cbExtent;
+
+        if (RT_SUCCESS(rc) && pfnProgress)
+            pfnProgress(pvUser, uPercentStart + cbOffset * uPercentSpan / cbSize);
+
         cbOffset += cbExtent;
     }
 

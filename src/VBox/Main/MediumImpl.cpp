@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2008-2010 Oracle Corporation
+ * Copyright (C) 2008-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -1418,8 +1418,13 @@ STDMETHODIMP Medium::COMSETTER(Type)(MediumType_T aType)
                         tr("Cannot change the type of medium '%s' because it is a differencing medium"),
                         m->strLocationFull.raw());
 
-    /* cannot change the type of a medium being in use by more than one VM */
-    if (m->backRefs.size() > 1)
+    /* Cannot change the type of a medium being in use by more than one VM.
+     * If the change is to Immutable then it must not be attached to any VM,
+     * otherwise assumptions elsewhere are violated and the VM becomes
+     * inaccessible. Attaching an immutable medium triggers the diff creation,
+     * and this is vital for the correct operation. */
+    if (   m->backRefs.size() > 1
+        || (aType == MediumType_Immutable && m->backRefs.size() > 0))
         return setError(E_FAIL,
                         tr("Cannot change the type of medium '%s' because it is attached to %d virtual machines"),
                         m->strLocationFull.raw(), m->backRefs.size());
@@ -2539,7 +2544,12 @@ STDMETHODIMP Medium::Reset(IProgress **aProgress)
             throw rc;
         }
 
+        /* Temporary leave this lock, cause IMedium::LockWrite, will wait for
+         * an running IMedium::queryInfo. If there is one running it might be
+         * it tries to acquire a MediaTreeLock as well -> dead-lock. */
+        multilock.leave();
         rc = pMediumLockList->Lock();
+        multilock.enter();
         if (FAILED(rc))
         {
             delete pMediumLockList;
@@ -5412,9 +5422,12 @@ HRESULT Medium::taskCreateBaseHandler(Medium::CreateBaseTask &task)
         try
         {
             /* ensure the directory exists */
-            rc = VirtualBox::ensureFilePathExists(location);
-            if (FAILED(rc))
-                throw rc;
+            if (capabilities & VD_CAP_FILE)
+            {
+                rc = VirtualBox::ensureFilePathExists(location);
+                if (FAILED(rc))
+                    throw rc;
+            }
 
             PDMMEDIAGEOMETRY geo = { 0, 0, 0 }; /* auto-detect */
 
@@ -5533,7 +5546,7 @@ HRESULT Medium::taskCreateDiffHandler(Medium::CreateDiffTask &task)
 
         Utf8Str targetFormat(pTarget->m->strFormat);
         Utf8Str targetLocation(pTarget->m->strLocationFull);
-        uint64_t capabilities = m->formatObj->capabilities();
+        uint64_t capabilities = pTarget->m->formatObj->capabilities();
         ComAssertThrow(capabilities & VD_CAP_CREATE_DYNAMIC, E_FAIL);
 
         Assert(pTarget->m->state == MediumState_Creating);
@@ -5584,9 +5597,12 @@ HRESULT Medium::taskCreateDiffHandler(Medium::CreateDiffTask &task)
             }
 
             /* ensure the target directory exists */
-            rc = VirtualBox::ensureFilePathExists(targetLocation);
-            if (FAILED(rc))
-                throw rc;
+            if (capabilities & VD_CAP_FILE)
+            {
+                rc = VirtualBox::ensureFilePathExists(targetLocation);
+                if (FAILED(rc))
+                    throw rc;
+            }
 
             vrc = VDCreateDiff(hdd,
                                targetFormat.c_str(),
@@ -6070,6 +6086,7 @@ HRESULT Medium::taskCloneHandler(Medium::CloneTask &task)
 
             Utf8Str targetFormat(pTarget->m->strFormat);
             Utf8Str targetLocation(pTarget->m->strLocationFull);
+            uint64_t capabilities = pTarget->m->formatObj->capabilities();
 
             Assert(    pTarget->m->state == MediumState_Creating
                     || pTarget->m->state == MediumState_LockedWrite);
@@ -6080,9 +6097,12 @@ HRESULT Medium::taskCloneHandler(Medium::CloneTask &task)
             thisLock.release();
 
             /* ensure the target directory exists */
-            rc = VirtualBox::ensureFilePathExists(targetLocation);
-            if (FAILED(rc))
-                throw rc;
+            if (capabilities & VD_CAP_FILE)
+            {
+                rc = VirtualBox::ensureFilePathExists(targetLocation);
+                if (FAILED(rc))
+                    throw rc;
+            }
 
             PVBOXHDD targetHdd;
             vrc = VDCreate(m->vdDiskIfaces, &targetHdd);

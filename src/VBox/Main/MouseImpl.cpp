@@ -37,6 +37,19 @@ enum
 };
 /** @} */
 
+/** @name Absolute mouse reporting range
+ * @{ */
+enum
+{
+    /** Lower end */
+    MOUSE_RANGE_LOWER = 0,
+    /** Higher end */
+    MOUSE_RANGE_UPPER = 0xFFFF,
+    /** Full range */
+    MOUSE_RANGE = MOUSE_RANGE_UPPER - MOUSE_RANGE_LOWER
+};
+/** @} */
+
 /**
  * Mouse driver instance data.
  */
@@ -302,9 +315,13 @@ HRESULT Mouse::reportRelEventToMouseDev(int32_t dx, int32_t dy, int32_t dz,
  *
  * @returns   COM status code
  */
-HRESULT Mouse::reportAbsEventToMouseDev(uint32_t mouseXAbs, uint32_t mouseYAbs,
+HRESULT Mouse::reportAbsEventToMouseDev(int32_t mouseXAbs, int32_t mouseYAbs,
                                         int32_t dz, int32_t dw, uint32_t fButtons)
 {
+    if (mouseXAbs < MOUSE_RANGE_LOWER || mouseXAbs > MOUSE_RANGE_UPPER)
+        return S_OK;
+    if (mouseYAbs < MOUSE_RANGE_LOWER || mouseYAbs > MOUSE_RANGE_UPPER)
+        return S_OK;
     if (   mouseXAbs != mLastAbsX || mouseYAbs != mLastAbsY
         || dz || dw || fButtons != mLastButtons)
     {
@@ -430,7 +447,16 @@ STDMETHODIMP Mouse::PutMouseEvent(LONG dx, LONG dy, LONG dz, LONG dw, LONG butto
 
 /**
  * Convert an (X, Y) value pair in screen co-ordinates (starting from 1) to a
- * value from 0 to 0xffff.
+ * value from MOUSE_RANGE_LOWER to MOUSE_RANGE_UPPER.  Sets the optional
+ * validity value to false if the pair is not on an active screen and to true
+ * otherwise.
+ * @note      since guests with recent versions of X.Org use a different method
+ *            to everyone else to map the valuator value to a screen pixel (they
+ *            multiply by the screen dimension, do a floating point divide by
+ *            the valuator maximum and round the result, while everyone else
+ *            does truncating integer operations) we adjust the value we send
+ *            so that it maps to the right pixel both when the result is rounded
+ *            and when it is truncated.
  *
  * @returns   COM status value
  */
@@ -440,6 +466,10 @@ HRESULT Mouse::convertDisplayRes(LONG x, LONG y, uint32_t *pcX, uint32_t *pcY)
     AssertPtrReturn(pcY, E_POINTER);
     Display *pDisplay = mParent->getDisplay();
     ComAssertRet(pDisplay, E_FAIL);
+    /** The amount to add to the result (multiplied by the screen width/height)
+     * to compensate for differences in guest methods for mapping back to
+     * pixels */
+    enum { ADJUST_RANGE = - 3 * MOUSE_RANGE / 4 };
 
     ULONG displayWidth, displayHeight;
     /* Takes the display lock */
@@ -448,8 +478,8 @@ HRESULT Mouse::convertDisplayRes(LONG x, LONG y, uint32_t *pcX, uint32_t *pcY)
     if (FAILED(rc))
         return rc;
 
-    *pcX = displayWidth ? ((x - 1) * 0xFFFF) / displayWidth: 0;
-    *pcY = displayHeight ? ((y - 1) * 0xFFFF) / displayHeight: 0;
+    *pcX = displayWidth ? (x * MOUSE_RANGE + ADJUST_RANGE) / (LONG) displayWidth: 0;
+    *pcY = displayHeight ? (y * MOUSE_RANGE + ADJUST_RANGE) / (LONG) displayHeight: 0;
     return S_OK;
 }
 

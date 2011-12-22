@@ -2960,6 +2960,12 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
     hrc = aNetworkAdapter->COMGETTER(TraceEnabled)(&fSniffer);
     H();
 
+    hrc = pMachine->GetExtraData(Bstr("VBoxInternal2/AllowPromiscousGuests"), bstr.asOutParam());
+    if (SUCCEEDED(hrc) && bstr.isEmpty())
+        hrc = virtualBox->GetExtraData(Bstr("VBoxInternal2/AllowPromiscousGuests"), bstr.asOutParam());
+    H();
+    const char * const pszPromiscuousGuestPolicy = !bstr.isEmpty() ? "allow-all" : "deny";
+
     if (fAttachDetach && fSniffer)
     {
         const char *pszNetDriver = "IntNet";
@@ -3476,8 +3482,8 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
             rc = CFGMR3InsertString(pLunL0, "Driver", "IntNet");                        RC_CHECK();
             rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                             RC_CHECK();
             rc = CFGMR3InsertString(pCfg, "Trunk", pszTrunk);                           RC_CHECK();
-            rc = CFGMR3InsertInteger(pCfg, "TrunkType", kIntNetTrunkType_NetFlt);
-            RC_CHECK();
+            rc = CFGMR3InsertInteger(pCfg, "TrunkType", kIntNetTrunkType_NetFlt);       RC_CHECK();
+            rc = CFGMR3InsertString(pCfg, "IfPolicyPromisc", pszPromiscuousGuestPolicy); RC_CHECK();
             char szNetwork[INTNET_MAX_NETWORK_NAME];
             RTStrPrintf(szNetwork, sizeof(szNetwork), "HostInterfaceNetworking-%s", pszHifName);
             rc = CFGMR3InsertString(pCfg, "Network", szNetwork);                        RC_CHECK();
@@ -3659,6 +3665,7 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
                 rc = CFGMR3InsertNode(pLunL0, "Config", &pCfg);                         RC_CHECK();
                 rc = CFGMR3InsertStringW(pCfg, "Network", bstr);                        RC_CHECK();
                 rc = CFGMR3InsertInteger(pCfg, "TrunkType", kIntNetTrunkType_WhateverNone); RC_CHECK();
+                rc = CFGMR3InsertString(pCfg, "IfPolicyPromisc", pszPromiscuousGuestPolicy); RC_CHECK();
                 networkName = bstr;
                 trunkType = Bstr(TRUNKTYPE_WHATEVER);
             }
@@ -3829,6 +3836,8 @@ int Console::configNetwork(const char *pszDevice, unsigned uInstance,
             trunkName   = Bstr(pszHifName);
             trunkType   = TRUNKTYPE_NETFLT;
 #endif
+            rc = CFGMR3InsertString(pCfg, "IfPolicyPromisc", pszPromiscuousGuestPolicy); RC_CHECK();
+
 #if !defined(RT_OS_WINDOWS) && defined(VBOX_WITH_NETFLT)
 
             Bstr tmpAddr, tmpMask;

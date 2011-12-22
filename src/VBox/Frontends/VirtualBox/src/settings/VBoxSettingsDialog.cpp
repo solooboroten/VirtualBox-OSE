@@ -193,6 +193,11 @@ void VBoxSettingsDialog::retranslateUi()
     else if (!mSilent)
         mIconLabel->setWarningText (mWarnHint);
 
+#ifndef VBOX_GUI_WITH_TOOLBAR_SETTINGS
+    /* Retranslate current page headline: */
+    mLbTitle->setText(mSelector->itemText(mSelector->currentId()));
+#endif /* VBOX_GUI_WITH_TOOLBAR_SETTINGS */
+
     QList <QIWidgetValidator*> vlist = findChildren <QIWidgetValidator*> ();
 
     /* Rename all validators to make them feat new language. */

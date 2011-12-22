@@ -449,7 +449,7 @@ int main()
     GEN_CHECK_OFF(ACPIState, pm1a_en);
     GEN_CHECK_OFF(ACPIState, pm1a_sts);
     GEN_CHECK_OFF(ACPIState, pm1a_ctl);
-    GEN_CHECK_OFF(ACPIState, pm_timer_initial);
+    GEN_CHECK_OFF(ACPIState, u64PmTimerInitial);
     GEN_CHECK_OFF(ACPIState, tsR3);
     GEN_CHECK_OFF(ACPIState, tsR0);
     GEN_CHECK_OFF(ACPIState, tsRC);
@@ -1266,6 +1266,7 @@ int main()
     GEN_CHECK_OFF(AHCI, fR0Enabled);
     GEN_CHECK_OFF(AHCI, fSignalIdle);
     GEN_CHECK_OFF(AHCI, cPortsImpl);
+    GEN_CHECK_OFF(AHCI, cCmdSlotsAvail);
     GEN_CHECK_OFF(AHCI, f8ByteMMIO4BytesWrittenSuccessfully);
     GEN_CHECK_OFF(AHCI, cHighIOThreshold);
     GEN_CHECK_OFF(AHCI, cMillisToSleep);

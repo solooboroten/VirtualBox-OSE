@@ -689,7 +689,8 @@ HRESULT VirtualBoxSupportErrorInfoImplBase::setErrorInternal(HRESULT aResultCode
                                                              bool aLogIt)
 {
     /* whether multi-error mode is turned on */
-    bool preserve = ((uintptr_t)RTTlsGet(MultiResult::sCounter)) > 0;
+    bool preserve =    MultiResult::sCounter != NIL_RTTLS
+                    && ((uintptr_t)RTTlsGet(MultiResult::sCounter)) > 0;
 
     Bstr bstrComponent((CBSTR)aComponent);
 
