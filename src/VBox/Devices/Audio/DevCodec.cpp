@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2006-2008 Oracle Corporation
+ * Copyright (C) 2006-2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -14,6 +14,11 @@
  * VirtualBox OSE distribution. VirtualBox OSE is distributed in the
  * hope that it will be useful, but WITHOUT ANY WARRANTY of any kind.
  */
+
+
+/*******************************************************************************
+*   Header Files                                                               *
+*******************************************************************************/
 #define LOG_GROUP LOG_GROUP_DEV_AUDIO
 #include <VBox/vmm/pdmdev.h>
 #include <iprt/assert.h>
@@ -29,21 +34,34 @@ extern "C" {
 }
 #include "DevCodec.h"
 
+
+/*******************************************************************************
+*   Structures and Typedefs                                                    *
+*******************************************************************************/
 #define CODECNODE_F0_PARAM_LENGTH 0x14
 #define CODECNODE_F02_PARAM_LENGTH 16
+
 typedef struct CODECCOMMONNODE
 {
     uint8_t id; /* 7 - bit format */
-    const char    *name;
+    /** The node name. */
+    char const *name;
     /* RPM 5.3.6 */
     uint32_t au32F00_param[CODECNODE_F0_PARAM_LENGTH];
     uint32_t au32F02_param[CODECNODE_F02_PARAM_LENGTH];
 } CODECCOMMONNODE, *PCODECCOMMONNODE;
+AssertCompile(CODECNODE_F0_PARAM_LENGTH == 20);  /* saved state */
+AssertCompile(CODECNODE_F02_PARAM_LENGTH == 16); /* saved state */
+
+#define AssertNodeSize(a_Node, a_cParams) \
+    AssertCompile((a_cParams) <= (60 + 6)); /* the max size - saved state */ \
+    AssertCompile(sizeof(a_Node) - sizeof(CODECCOMMONNODE) == (((a_cParams) * sizeof(uint32_t) + sizeof(void *) - 1) & ~(sizeof(void *) - 1)))
 
 typedef struct ROOTCODECNODE
 {
     CODECCOMMONNODE node;
-}ROOTCODECNODE, *PROOTCODECNODE;
+} ROOTCODECNODE, *PROOTCODECNODE;
+AssertNodeSize(ROOTCODECNODE, 0);
 
 #define AMPLIFIER_SIZE 60
 typedef uint32_t AMPLIFIER[AMPLIFIER_SIZE];
@@ -65,6 +83,7 @@ typedef struct DACNODE
     AMPLIFIER B_params;
 
 } DACNODE, *PDACNODE;
+AssertNodeSize(DACNODE, 6 + 60);
 
 typedef struct ADCNODE
 {
@@ -78,6 +97,7 @@ typedef struct ADCNODE
     uint32_t    u32F01_param;
     AMPLIFIER   B_params;
 } ADCNODE, *PADCNODE;
+AssertNodeSize(DACNODE, 6 + 60);
 
 typedef struct SPDIFOUTNODE
 {
@@ -90,6 +110,7 @@ typedef struct SPDIFOUTNODE
     uint32_t    u32A_param;
     AMPLIFIER   B_params;
 } SPDIFOUTNODE, *PSPDIFOUTNODE;
+AssertNodeSize(SPDIFOUTNODE, 5 + 60);
 
 typedef struct SPDIFINNODE
 {
@@ -102,6 +123,7 @@ typedef struct SPDIFINNODE
     uint32_t    u32A_param;
     AMPLIFIER   B_params;
 } SPDIFINNODE, *PSPDIFINNODE;
+AssertNodeSize(SPDIFINNODE, 5 + 60);
 
 typedef struct AFGCODECNODE
 {
@@ -111,6 +133,7 @@ typedef struct AFGCODECNODE
     uint32_t  u32F20_param;
     uint32_t  u32F17_param;
 } AFGCODECNODE, *PAFGCODECNODE;
+AssertNodeSize(AFGCODECNODE, 4);
 
 typedef struct PORTNODE
 {
@@ -122,6 +145,7 @@ typedef struct PORTNODE
     uint32_t u32F1c_param;
     AMPLIFIER   B_params;
 } PORTNODE, *PPORTNODE;
+AssertNodeSize(PORTNODE, 5 + 60);
 
 typedef struct DIGOUTNODE
 {
@@ -132,6 +156,7 @@ typedef struct DIGOUTNODE
     uint32_t u32F09_param;
     uint32_t u32F1c_param;
 } DIGOUTNODE, *PDIGOUTNODE;
+AssertNodeSize(DIGOUTNODE, 5);
 
 typedef struct DIGINNODE
 {
@@ -144,6 +169,7 @@ typedef struct DIGINNODE
     uint32_t u32F1c_param;
     uint32_t u32F1e_param;
 } DIGINNODE, *PDIGINNODE;
+AssertNodeSize(DIGINNODE, 7);
 
 typedef struct ADCMUXNODE
 {
@@ -153,6 +179,7 @@ typedef struct ADCMUXNODE
     uint32_t    u32A_param;
     AMPLIFIER   B_params;
 } ADCMUXNODE, *PADCMUXNODE;
+AssertNodeSize(ADCMUXNODE, 2 + 60);
 
 typedef struct PCBEEPNODE
 {
@@ -162,8 +189,9 @@ typedef struct PCBEEPNODE
 
     uint32_t    u32A_param;
     AMPLIFIER   B_params;
-    uint32_t u32F1c_param;
+    uint32_t    u32F1c_param;
 } PCBEEPNODE, *PPCBEEPNODE;
+AssertNodeSize(PCBEEPNODE, 3 + 60 + 1);
 
 typedef struct CDNODE
 {
@@ -171,6 +199,7 @@ typedef struct CDNODE
     uint32_t u32F07_param;
     uint32_t u32F1c_param;
 } CDNODE, *PCDNODE;
+AssertNodeSize(CDNODE, 2);
 
 typedef struct VOLUMEKNOBNODE
 {
@@ -178,6 +207,7 @@ typedef struct VOLUMEKNOBNODE
     uint32_t    u32F08_param;
     uint32_t    u32F0f_param;
 } VOLUMEKNOBNODE, *PVOLUMEKNOBNODE;
+AssertNodeSize(VOLUMEKNOBNODE, 2);
 
 typedef struct ADCVOLNODE
 {
@@ -187,6 +217,7 @@ typedef struct ADCVOLNODE
     uint32_t    u32A_params;
     AMPLIFIER   B_params;
 } ADCVOLNODE, *PADCVOLNODE;
+AssertNodeSize(ADCVOLNODE, 3 + 60);
 
 typedef struct RESNODE
 {
@@ -196,6 +227,17 @@ typedef struct RESNODE
     uint32_t    u32F07_param;
     uint32_t    u32F1c_param;
 } RESNODE, *PRESNODE;
+AssertNodeSize(RESNODE, 4);
+
+/**
+ * Used for the saved state.
+ */
+typedef struct CODECSAVEDSTATENODE
+{
+    CODECCOMMONNODE Core;
+    uint32_t        au32Params[60 + 6];
+} CODECSAVEDSTATENODE;
+AssertNodeSize(CODECSAVEDSTATENODE, 60 + 6);
 
 typedef union CODECNODE
 {
@@ -215,24 +257,60 @@ typedef union CODECNODE
     VOLUMEKNOBNODE  volumeKnob;
     ADCVOLNODE      adcvol;
     RESNODE         reserved;
+    CODECSAVEDSTATENODE SavedState;
 } CODECNODE, *PCODECNODE;
+AssertNodeSize(CODECNODE, 60 + 6);
 
-/* STAC9220 */
-const static uint8_t au8Stac9220Ports[] = { 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 0};
-const static uint8_t au8Stac9220Dacs[] = { 0x2, 0x3, 0x4, 0x5, 0};
-const static uint8_t au8Stac9220Adcs[] = { 0x6, 0x7, 0};
-const static uint8_t au8Stac9220SpdifOuts[] = { 0x8, 0 };
-const static uint8_t au8Stac9220SpdifIns[] = { 0x9, 0 };
-const static uint8_t au8Stac9220DigOutPins[] = { 0x10, 0 };
-const static uint8_t au8Stac9220DigInPins[] = { 0x11, 0 };
-const static uint8_t au8Stac9220AdcVols[] = { 0x17, 0x18, 0};
-const static uint8_t au8Stac9220AdcMuxs[] = { 0x12, 0x13, 0};
-const static uint8_t au8Stac9220Pcbeeps[] = { 0x14, 0 };
-const static uint8_t au8Stac9220Cds[] = { 0x15, 0 };
-const static uint8_t au8Stac9220VolKnobs[] = { 0x16, 0 };
-const static uint8_t au8Stac9220Reserveds[] = { 0x9, 0x19, 0x1a, 0x1b, 0 };
 
+/*******************************************************************************
+*   Global Variables                                                           *
+*******************************************************************************/
+/* STAC9220 - Referenced thru STAC9220WIDGET in the constructor below. */
+static uint8_t const g_abStac9220Ports[] = { 0xA, 0xB, 0xC, 0xD, 0xE, 0xF, 0};
+static uint8_t const g_abStac9220Dacs[] = { 0x2, 0x3, 0x4, 0x5, 0};
+static uint8_t const g_abStac9220Adcs[] = { 0x6, 0x7, 0};
+static uint8_t const g_abStac9220SpdifOuts[] = { 0x8, 0 };
+static uint8_t const g_abStac9220SpdifIns[] = { 0x9, 0 };
+static uint8_t const g_abStac9220DigOutPins[] = { 0x10, 0 };
+static uint8_t const g_abStac9220DigInPins[] = { 0x11, 0 };
+static uint8_t const g_abStac9220AdcVols[] = { 0x17, 0x18, 0};
+static uint8_t const g_abStac9220AdcMuxs[] = { 0x12, 0x13, 0};
+static uint8_t const g_abStac9220Pcbeeps[] = { 0x14, 0 };
+static uint8_t const g_abStac9220Cds[] = { 0x15, 0 };
+static uint8_t const g_abStac9220VolKnobs[] = { 0x16, 0 };
+static uint8_t const g_abStac9220Reserveds[] = { 0x9, 0x19, 0x1a, 0x1b, 0 };
+
+
+/** SSM description of a CODECNODE. */
+static SSMFIELD const g_aCodecNodeFields[] =
+{
+    SSMFIELD_ENTRY(     CODECSAVEDSTATENODE, Core.id),
+    SSMFIELD_ENTRY_PAD_HC_AUTO(3, 3),
+    SSMFIELD_ENTRY(     CODECSAVEDSTATENODE, Core.au32F00_param),
+    SSMFIELD_ENTRY(     CODECSAVEDSTATENODE, Core.au32F02_param),
+    SSMFIELD_ENTRY(     CODECSAVEDSTATENODE, au32Params),
+    SSMFIELD_ENTRY_TERM()
+};
+
+/** Backward compatibility with v1 of the CODECNODE. */
+static SSMFIELD const g_aCodecNodeFieldsV1[] =
+{
+    SSMFIELD_ENTRY(     CODECSAVEDSTATENODE, Core.id),
+    SSMFIELD_ENTRY_PAD_HC_AUTO(3, 7),
+    SSMFIELD_ENTRY_OLD_HCPTR(Core.name),
+    SSMFIELD_ENTRY(     CODECSAVEDSTATENODE, Core.au32F00_param),
+    SSMFIELD_ENTRY(     CODECSAVEDSTATENODE, Core.au32F02_param),
+    SSMFIELD_ENTRY(     CODECSAVEDSTATENODE, au32Params),
+    SSMFIELD_ENTRY_TERM()
+};
+
+
+/*******************************************************************************
+*   Internal Functions                                                         *
+*******************************************************************************/
 static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECNODE pNode);
+
+
 
 static int stac9220Construct(CODECState *pState)
 {
@@ -244,7 +322,7 @@ static int stac9220Construct(CODECState *pState)
     pState->u8AssemblyId = 0x80;
     pState->pNodes = (PCODECNODE)RTMemAllocZ(sizeof(CODECNODE) * pState->cTotalNodes);
     pState->fInReset = false;
-#define STAC9220WIDGET(type) pState->au8##type##s = au8Stac9220##type##s
+#define STAC9220WIDGET(type) pState->au8##type##s = g_abStac9220##type##s
     STAC9220WIDGET(Port);
     STAC9220WIDGET(Dac);
     STAC9220WIDGET(Adc);
@@ -273,12 +351,10 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
     {
         /* Root Node*/
         case 0:
-            pNode->root.node.name = "Root";
             pNode->node.au32F00_param[2] = CODEC_MAKE_F00_02(0x1, 0x0, 0x34, 0x1); /* rev id */
             break;
         case 1:
-            pNode->afg.node.name = "AFG";
-            pNode->node.au32F00_param[8] = CODEC_MAKE_F00_08(CODEC_F00_08_BEEP_GEN, 0xd, 0xd);
+            pNode->node.au32F00_param[8] = CODEC_MAKE_F00_08(1, 0xd, 0xd);
             pNode->node.au32F00_param[0xC] =   CODEC_MAKE_F00_0C(0x17)
                                              | CODEC_F00_0C_CAP_BALANCED_IO
                                              | CODEC_F00_0C_CAP_INPUT
@@ -295,17 +371,9 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
             pNode->afg.u32F17_param = 0;
             break;
         case 2:
-            pNode->dac.node.name = "DAC0";
-            goto dac_init;
         case 3:
-            pNode->dac.node.name = "DAC1";
-            goto dac_init;
         case 4:
-            pNode->dac.node.name = "DAC2";
-            goto dac_init;
         case 5:
-            pNode->dac.node.name = "DAC3";
-        dac_init:
             memset(pNode->dac.B_params, 0, AMPLIFIER_SIZE);
             pNode->dac.u32A_param = CODEC_MAKE_A(0, 1, CODEC_A_MULT_1X, CODEC_A_DIV_1X, CODEC_A_16_BIT, 1);//RT_BIT(14)|(0x1 << 4)|0x1; /* 441000Hz/16bit/2ch */
 
@@ -321,11 +389,9 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
             pNode->dac.u32F05_param = CODEC_MAKE_F05(0, 0, 0, CODEC_F05_D3, CODEC_F05_D3);//0x3 << 4 | 0x3; /* PS-Act: D3, Set: D3  */
         break;
         case 6:
-            pNode->adc.node.name = "ADC0";
             pNode->node.au32F02_param[0] = 0x17;
             goto adc_init;
         case 7:
-            pNode->adc.node.name = "ADC1";
             pNode->node.au32F02_param[0] = 0x18;
         adc_init:
             pNode->adc.u32A_param = CODEC_MAKE_A(0, 1, CODEC_A_MULT_1X, CODEC_A_DIV_1X, CODEC_A_16_BIT, 1);//RT_BIT(14)|(0x1 << 3)|0x1; /* 441000Hz/16bit/2ch */
@@ -340,7 +406,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
                                                | CODEC_F00_09_CAP_LSB;//RT_BIT(20)| (0xd << 16) |  RT_BIT(10) | RT_BIT(8) | RT_BIT(6)| RT_BIT(0);
             break;
         case 8:
-            pNode->spdifout.node.name = "SPDIFOut";
             pNode->spdifout.u32A_param = CODEC_MAKE_A(0, 1, CODEC_A_MULT_1X, CODEC_A_DIV_1X, CODEC_A_16_BIT, 1);//(1<<14)|(0x1<<4) | 0x1;
             pNode->spdifout.node.au32F00_param[9] =   CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_AUDIO_OUTPUT, 0x4, 0)
                                                     | CODEC_F00_09_CAP_DIGITAL
@@ -352,7 +417,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
             pNode->spdifout.u32F0d_param = 0;
         break;
         case 9:
-            pNode->node.name = "Reserved_0";
             pNode->spdifin.u32A_param = CODEC_MAKE_A(0, 1, CODEC_A_MULT_1X, CODEC_A_DIV_1X, CODEC_A_16_BIT, 1);//(0x1<<4) | 0x1;
             pNode->spdifin.node.au32F00_param[9] =   CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_AUDIO_INPUT, 0x4, 0)
                                                    | CODEC_F00_09_CAP_DIGITAL
@@ -367,7 +431,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
             pNode->spdifin.u32F0d_param = 0;
         break;
         case 0xA:
-            pNode->node.name = "PortA";
             pNode->node.au32F00_param[0xC] =   CODEC_MAKE_F00_0C(0x17)
                                              | CODEC_F00_0C_CAP_INPUT
                                              | CODEC_F00_0C_CAP_OUTPUT
@@ -389,7 +452,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
                                                           0x2, 0);//RT_MAKE_U32_FROM_U8(0x20, 0x40, 0x21, 0x02);
             goto port_init;
         case 0xB:
-            pNode->node.name = "PortB";
             pNode->node.au32F00_param[0xC] =   CODEC_MAKE_F00_0C(0x17)
                                              | CODEC_F00_0C_CAP_INPUT
                                              | CODEC_F00_0C_CAP_OUTPUT
@@ -408,7 +470,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
                                                           0x1, 0x1);//RT_MAKE_U32_FROM_U8(0x11, 0x60, 0x11, 0x01);
             goto port_init;
         case 0xC:
-            pNode->node.name = "PortC";
             pNode->node.au32F02_param[0] = 0x3;
             pNode->node.au32F00_param[0xC] =   CODEC_MAKE_F00_0C(0x17)
                                              | CODEC_F00_0C_CAP_INPUT
@@ -426,7 +487,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
                                                           0x0, 0x1, 0x0);//RT_MAKE_U32_FROM_U8(0x10, 0x40, 0x11, 0x01);
             goto port_init;
         case 0xD:
-            pNode->node.name = "PortD";
             pNode->node.au32F00_param[0xC] =   CODEC_MAKE_F00_0C(0x17)
                                              | CODEC_F00_0C_CAP_INPUT
                                              | CODEC_F00_0C_CAP_OUTPUT
@@ -452,7 +512,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
             pNode->node.au32F00_param[0xE] = CODEC_MAKE_F00_0E(0, 1);//0x1;
         break;
         case 0xE:
-            pNode->node.name = "PortE";
             pNode->node.au32F00_param[9] =   CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_PIN_COMPLEX, 0x0, 0)
                                            | CODEC_F00_09_CAP_UNSOL
                                            | CODEC_F00_09_CAP_LSB;//(4 << 20)|RT_BIT(7)|RT_BIT(0);
@@ -471,7 +530,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
                                                           0x0, 0x4, 0x0);//0x01013040;  /* Line Out */
             break;
         case 0xF:
-            pNode->node.name = "PortF";
             pNode->node.au32F00_param[9] =   CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_PIN_COMPLEX, 0x0, 0x0)
                                            | CODEC_F00_09_CAP_CONNECTION_LIST
                                            | CODEC_F00_09_CAP_UNSOL
@@ -497,7 +555,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
             pNode->port.u32F09_param = CODEC_MAKE_F09_ANALOG(0, CODEC_F09_ANALOG_NA);//0x7fffffff;
         break;
         case 0x10:
-            pNode->node.name = "DigOut_0";
             pNode->node.au32F00_param[9] = CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_PIN_COMPLEX, 0x0, 0x0)
                                            | CODEC_F00_09_CAP_DIGITAL
                                            | CODEC_F00_09_CAP_CONNECTION_LIST
@@ -514,7 +571,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
                                                             0x0, 0x3, 0x0);//RT_MAKE_U32_FROM_U8(0x30, 0x10, 0x45, 0x01);
         break;
         case 0x11:
-            pNode->node.name = "DigIn_0";
             pNode->node.au32F00_param[9] = (4 << 20)|(3<<16)|RT_BIT(10)|RT_BIT(9)|RT_BIT(7)|RT_BIT(0);
             pNode->node.au32F00_param[0xC] =   CODEC_F00_0C_CAP_EAPD
                                              | CODEC_F00_0C_CAP_INPUT
@@ -533,11 +589,9 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
                                                            0x0, 0x6, 0x0);//(0x1 << 24) | (0xc5 << 16) | (0x10 << 8) | 0x60;
         break;
         case 0x12:
-            pNode->node.name = "ADCMux_0";
             pNode->adcmux.u32F01_param = 0;
             goto adcmux_init;
         case 0x13:
-            pNode->node.name = "ADCMux_1";
             pNode->adcmux.u32F01_param = 1;
             adcmux_init:
             pNode->node.au32F00_param[9] =   CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_AUDIO_SELECTOR, 0x0, 0)
@@ -553,7 +607,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
             pNode->node.au32F02_param[4] = RT_MAKE_U32_FROM_U8(0xc, 0xd, 0xa, 0x0);
         break;
         case 0x14:
-            pNode->node.name = "PCBEEP";
             pNode->node.au32F00_param[9] =   CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_BEEP_GEN, 0, 0)
                                            | CODEC_F00_09_CAP_AMP_FMT_OVERRIDE
                                            | CODEC_F00_09_CAP_OUT_AMP_PRESENT;//(7 << 20) | RT_BIT(3) | RT_BIT(2);
@@ -562,7 +615,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
             memset(pNode->pcbeep.B_params, 0, AMPLIFIER_SIZE);
         break;
         case 0x15:
-            pNode->node.name = "CD";
             pNode->node.au32F00_param[0x9] =   CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_PIN_COMPLEX, 0, 0)
                                              | CODEC_F00_09_CAP_LSB;//(4 << 20)|RT_BIT(0);
             pNode->node.au32F00_param[0xc] = CODEC_F00_0C_CAP_INPUT;//RT_BIT(5);
@@ -575,7 +627,6 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
                                                             0x0, 0x7, 0x0);//RT_MAKE_U32_FROM_U8(0x70, 0x0, 0x33, 0x90);
         break;
         case 0x16:
-            pNode->node.name = "VolumeKnob";
             pNode->node.au32F00_param[0x9] = CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_VOLUME_KNOB, 0x0, 0x0);//(0x6 << 20);
             pNode->node.au32F00_param[0x13] = RT_BIT(7)| 0x7F;
             pNode->node.au32F00_param[0xe] = CODEC_MAKE_F00_0E(0, 0x4);
@@ -584,11 +635,9 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
             pNode->volumeKnob.u32F0f_param = 0x7f;
         break;
         case 0x17:
-            pNode->node.name = "ADC0Vol";
             pNode->node.au32F02_param[0] = 0x12;
             goto adcvol_init;
         case 0x18:
-            pNode->node.name = "ADC1Vol";
             pNode->node.au32F02_param[0] = 0x13;
         adcvol_init:
             memset(pNode->adcvol.B_params, 0, AMPLIFIER_SIZE);
@@ -604,19 +653,16 @@ static int stac9220ResetNode(struct CODECState *pState, uint8_t nodenum, PCODECN
             pNode->adcvol.u32F0c_param = 0;
             break;
         case 0x19:
-            pNode->node.name = "Reserved_1";
             pNode->node.au32F00_param[0x9] =   CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_VENDOR_DEFINED, 0x3, 0)
                                              | CODEC_F00_09_CAP_DIGITAL
                                              | CODEC_F00_09_CAP_LSB;//(0xF << 20)|(0x3 << 16)|RT_BIT(9)|RT_BIT(0);
             break;
         case 0x1A:
-            pNode->node.name = "Reserved_2";
             pNode->node.au32F00_param[0x9] =   CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_AUDIO_OUTPUT, 0x3, 0)
                                              | CODEC_F00_09_CAP_DIGITAL
                                              | CODEC_F00_09_CAP_LSB;//(0x3 << 16)|RT_BIT(9)|RT_BIT(0);
             break;
         case 0x1B:
-            pNode->node.name = "Reserved_3";
             pNode->node.au32F00_param[0x9] =   CODEC_MAKE_F00_09(CODEC_F00_09_TYPE_PIN_COMPLEX, 0, 0)
                                              | CODEC_F00_09_CAP_DIGITAL
                                              | CODEC_F00_09_CAP_CONNECTION_LIST
@@ -1332,8 +1378,7 @@ static int codecSetPinCtrl(struct CODECState *pState, uint32_t cmd, uint64_t *pR
     else if (codecIsPcbeepNode(pState, CODEC_NID(cmd)))
         pu32Reg = &pState->pNodes[CODEC_NID(cmd)].pcbeep.u32F07_param;
     else if (   codecIsReservedNode(pState, CODEC_NID(cmd))
-             && CODEC_NID(cmd) == 0x1b
-             && pState->enmCodec == STAC9220_CODEC)
+             && CODEC_NID(cmd) == 0x1b)
         pu32Reg = &pState->pNodes[CODEC_NID(cmd)].reserved.u32F07_param;
     Assert((pu32Reg));
     if (pu32Reg)
@@ -2164,33 +2209,21 @@ int codecOpenVoice(CODECState *pState, ENMSOUNDSOURCE enmSoundSource, audsetting
     return rc;
 }
 
-int codecConstruct(PPDMDEVINS pDevIns, CODECState *pState, ENMCODEC enmCodec)
+int codecConstruct(PPDMDEVINS pDevIns, CODECState *pState, PCFGMNODE pCfgHandle)
 {
     audsettings_t as;
     int rc;
     pState->pVerbs = (CODECVERB *)&CODECVERBS;
     pState->cVerbs = sizeof(CODECVERBS)/sizeof(CODECVERB);
     pState->pfnLookup = codecLookup;
-    pState->enmCodec = enmCodec;
-    switch (enmCodec)
-    {
-        case STAC9220_CODEC:
-            rc = stac9220Construct(pState);
-            AssertRC(rc);
-            break;
-        case ALC885_CODEC:
-            rc = alc885Construct(pState);
-            AssertRC(rc);
-            break;
-        default:
-            AssertMsgFailed(("Unsupported Codec"));
-    }
+    rc = stac9220Construct(pState);
+    AssertRC(rc);
     /* common root node initializers */
     pState->pNodes[0].node.au32F00_param[0] = CODEC_MAKE_F00_00(pState->u16VendorId, pState->u16DeviceId);
     pState->pNodes[0].node.au32F00_param[4] = CODEC_MAKE_F00_04(0x1, 0x1);
     /* common AFG node initializers */
     pState->pNodes[1].node.au32F00_param[4] = CODEC_MAKE_F00_04(0x2, pState->cTotalNodes - 2);
-    pState->pNodes[1].node.au32F00_param[5] = CODEC_MAKE_F00_05(CODEC_F00_05_UNSOL, CODEC_F00_05_AFG);
+    pState->pNodes[1].node.au32F00_param[5] = CODEC_MAKE_F00_05(1, CODEC_F00_05_AFG);
     pState->pNodes[1].afg.u32F20_param = CODEC_MAKE_F20(pState->u16VendorId, pState->u8BSKU, pState->u8AssemblyId);
 
     //** @todo r=michaln: Was this meant to be 'HDA' or something like that? (AC'97 was on ICH0)
@@ -2257,25 +2290,84 @@ int codecConstruct(PPDMDEVINS pDevIns, CODECState *pState, ENMCODEC enmCodec)
 
     return VINF_SUCCESS;
 }
+
 int codecDestruct(CODECState *pCodecState)
 {
     RTMemFree(pCodecState->pNodes);
     return VINF_SUCCESS;
 }
 
-int codecSaveState(CODECState *pCodecState, PSSMHANDLE pSSMHandle)
+int codecSaveState(CODECState *pCodecState, PSSMHANDLE pSSM)
 {
-    SSMR3PutMem (pSSMHandle, pCodecState->pNodes, sizeof(CODECNODE) * pCodecState->cTotalNodes);
+    AssertLogRelMsgReturn(pCodecState->cTotalNodes == 0x1c, ("cTotalNodes=%#x, should be 0x1c", pCodecState->cTotalNodes),
+                          VERR_INTERNAL_ERROR);
+    SSMR3PutU32(pSSM, pCodecState->cTotalNodes);
+    for (unsigned idxNode = 0; idxNode < pCodecState->cTotalNodes; ++idxNode)
+        SSMR3PutStructEx(pSSM, &pCodecState->pNodes[idxNode].SavedState, sizeof(pCodecState->pNodes[idxNode].SavedState),
+                         0 /*fFlags*/, g_aCodecNodeFields, NULL /*pvUser*/);
     return VINF_SUCCESS;
 }
 
-int codecLoadState(CODECState *pCodecState, PSSMHANDLE pSSMHandle)
+
+int codecLoadState(CODECState *pCodecState, PSSMHANDLE pSSM, uint32_t uVersion)
 {
-    SSMR3GetMem (pSSMHandle, pCodecState->pNodes, sizeof(CODECNODE) * pCodecState->cTotalNodes);
+    PCSSMFIELD pFields;
+    uint32_t   fFlags;
+    switch (uVersion)
+    {
+        case HDA_SSM_VERSION_1:
+            AssertReturn(pCodecState->cTotalNodes == 0x1c, VERR_INTERNAL_ERROR);
+            pFields = g_aCodecNodeFieldsV1;
+            fFlags  = SSMSTRUCT_FLAGS_MEM_BAND_AID_RELAXED;
+            break;
+
+        case HDA_SSM_VERSION_2:
+        case HDA_SSM_VERSION_3:
+            AssertReturn(pCodecState->cTotalNodes == 0x1c, VERR_INTERNAL_ERROR);
+            pFields = g_aCodecNodeFields;
+            fFlags  = SSMSTRUCT_FLAGS_MEM_BAND_AID_RELAXED;
+            break;
+
+        case HDA_SSM_VERSION:
+        {
+            uint32_t cNodes;
+            int rc2 = SSMR3GetU32(pSSM, &cNodes);
+            AssertRCReturn(rc2, rc2);
+            if (cNodes != 0x1c)
+                return VERR_SSM_DATA_UNIT_FORMAT_CHANGED;
+            AssertReturn(pCodecState->cTotalNodes == 0x1c, VERR_INTERNAL_ERROR);
+
+            pFields = g_aCodecNodeFields;
+            fFlags  = 0;
+            break;
+        }
+
+        default:
+            return VERR_SSM_UNSUPPORTED_DATA_UNIT_VERSION;
+    }
+
+    for (unsigned idxNode = 0; idxNode < pCodecState->cTotalNodes; ++idxNode)
+    {
+        uint8_t idOld = pCodecState->pNodes[idxNode].SavedState.Core.id;
+        int rc = SSMR3GetStructEx(pSSM, &pCodecState->pNodes[idxNode].SavedState,
+                                  sizeof(pCodecState->pNodes[idxNode].SavedState),
+                                  fFlags, pFields, NULL);
+        if (RT_FAILURE(rc))
+            return rc;
+        AssertLogRelMsgReturn(idOld == pCodecState->pNodes[idxNode].SavedState.Core.id,
+                              ("loaded %#x, expected \n", pCodecState->pNodes[idxNode].SavedState.Core.id, idOld),
+                              VERR_SSM_DATA_UNIT_FORMAT_CHANGED);
+    }
+
+    /*
+     * Update stuff after changing the state.
+     */
     if (codecIsDacNode(pCodecState, pCodecState->u8DacLineOut))
         codecToAudVolume(&pCodecState->pNodes[pCodecState->u8DacLineOut].dac.B_params, AUD_MIXER_VOLUME);
     else if (codecIsSpdifOutNode(pCodecState, pCodecState->u8DacLineOut))
         codecToAudVolume(&pCodecState->pNodes[pCodecState->u8DacLineOut].spdifout.B_params, AUD_MIXER_VOLUME);
     codecToAudVolume(&pCodecState->pNodes[pCodecState->u8AdcVolsLineIn].adcvol.B_params, AUD_MIXER_LINE_IN);
+
     return VINF_SUCCESS;
 }
+

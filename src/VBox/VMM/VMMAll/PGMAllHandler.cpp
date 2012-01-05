@@ -731,7 +731,7 @@ VMMDECL(int) PGMHandlerPhysicalSplit(PVM pVM, RTGCPHYS GCPhys, RTGCPHYS GCPhysSp
                 return VINF_SUCCESS;
             }
             AssertMsgFailed(("whu?\n"));
-            rc = VERR_INTERNAL_ERROR;
+            rc = VERR_PGM_PHYS_HANDLER_IPE;
         }
         else
         {
@@ -796,7 +796,7 @@ VMMDECL(int) PGMHandlerPhysicalJoin(PVM pVM, RTGCPHYS GCPhys1, RTGCPHYS GCPhys2)
                     }
 
                     Assert(pCur3 == pCur2);
-                    rc = VERR_INTERNAL_ERROR;
+                    rc = VERR_PGM_PHYS_HANDLER_IPE;
                 }
                 else
                 {
@@ -919,7 +919,7 @@ VMMDECL(int) PGMHandlerPhysicalReset(PVM pVM, RTGCPHYS GCPhys)
              */
             default:
                 AssertMsgFailed(("Invalid type %d! Corruption!\n",  pCur->enmType));
-                rc = VERR_INTERNAL_ERROR;
+                rc = VERR_PGM_PHYS_HANDLER_IPE;
                 break;
         }
     }

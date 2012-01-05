@@ -1382,7 +1382,7 @@ VMMDECL(VBOXSTRICTRC) IOMMMIORead(PVM pVM, RTGCPHYS GCPhys, uint32_t *pu32Value,
     if (!pRange)
     {
         iomUnlock(pVM);
-        return VERR_INTERNAL_ERROR;
+        return VERR_IOM_MMIO_RANGE_NOT_FOUND;
     }
     /** @todo implement per-device locks for MMIO access. */
     Assert(!pRange->CTX_SUFF(pDevIns) || !pRange->CTX_SUFF(pDevIns)->CTX_SUFF(pCritSect));
@@ -1508,7 +1508,7 @@ VMMDECL(VBOXSTRICTRC) IOMMMIOWrite(PVM pVM, RTGCPHYS GCPhys, uint32_t u32Value, 
     if (!pRange)
     {
         iomUnlock(pVM);
-        return VERR_INTERNAL_ERROR;
+        return VERR_IOM_MMIO_RANGE_NOT_FOUND;
     }
     /** @todo implement per-device locks for MMIO access. */
     Assert(!pRange->CTX_SUFF(pDevIns) || !pRange->CTX_SUFF(pDevIns)->CTX_SUFF(pCritSect));

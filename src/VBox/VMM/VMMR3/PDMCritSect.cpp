@@ -404,7 +404,7 @@ VMMR3DECL(int) PDMR3CritSectDelete(PPDMCRITSECT pCritSect)
      */
     PVM             pVM   = pCritSect->s.pVMR3;
     PUVM            pUVM  = pVM->pUVM;
-    AssertReleaseReturn(pVM, VERR_INTERNAL_ERROR);
+    AssertReleaseReturn(pVM, VERR_PDM_CRITSECT_IPE);
     PPDMCRITSECTINT pPrev = NULL;
     RTCritSectEnter(&pUVM->pdm.s.ListCritSect);
     PPDMCRITSECTINT pCur  = pUVM->pdm.s.pCritSects;
@@ -423,7 +423,7 @@ VMMR3DECL(int) PDMR3CritSectDelete(PPDMCRITSECT pCritSect)
     }
     RTCritSectLeave(&pUVM->pdm.s.ListCritSect);
     AssertReleaseMsgFailed(("pCritSect=%p wasn't found!\n", pCritSect));
-    return VERR_INTERNAL_ERROR;
+    return VERR_PDM_CRITSECT_NOT_FOUND;
 }
 
 
@@ -492,10 +492,10 @@ VMMR3DECL(bool) PDMR3CritSectYield(PPDMCRITSECT pCritSect)
     }
 
 #ifdef PDMCRITSECT_STRICT
-    int rc = PDMCritSectEnterDebug(pCritSect, VERR_INTERNAL_ERROR,
+    int rc = PDMCritSectEnterDebug(pCritSect, VERR_IGNORED,
                                    SrcPos.uId, SrcPos.pszFile, SrcPos.uLine, SrcPos.pszFunction);
 #else
-    int rc = PDMCritSectEnter(pCritSect, VERR_INTERNAL_ERROR);
+    int rc = PDMCritSectEnter(pCritSect, VERR_IGNORED);
 #endif
     AssertLogRelRC(rc);
     return true;

@@ -1,6 +1,74 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
   <sect1>
+    <title>Version 4.0.16 (2011-12-21)</title>
+
+    <para>This is a maintenance release. The following items were fixed and/or
+      added:</para>
+
+    <itemizedlist>
+
+      <listitem>
+        <para>VRDP: fixed screen corruption</para>
+      </listitem>
+
+      <listitem>
+        <para>VRDP: fixed screen freeze</para>
+      </listitem>
+
+      <listitem>
+        <para>ATA: fixed a possible crash during ATAPI passthrough with
+          certain guests</para>
+      </listitem>
+
+      <listitem>
+        <para>NAT: the interface stopped working after a lot of failed
+          ICMP requests (bug #9371)</para>
+      </listitem>
+
+      <listitem>
+        <para>Metrics: fixed potential problem with invalid access in guest
+          metrics collection upon VM destruction</para>
+      </listitem>
+
+      <listitem>
+        <para>Main: fixed incorrect framebuffer information after leaving
+          the fullscreen mode with X11 guests, this lead to a scrambled
+          preview window in the GUI for example</para>
+      </listitem>
+
+      <listitem>
+        <para>VBoxSVC: fixed crash under rare circumstances (e.g. client crash)</para>
+      </listitem>
+
+      <listitem>
+        <para>VMDK/VHD: fixed a possible corruption with host cache disabled
+          when using snapshots under rare circumstances (bug #9749)</para>
+      </listitem>
+
+      <listitem> 
+        <para>OVF/OVA: fixed broken disk images on import under rare
+          circumstances</para> 
+      </listitem> 
+
+      <listitem>
+        <para>Mac OS X hosts: fixed the problem with duplicate packets when
+          bridged to wireless interface (bug #9648)</para>
+      </listitem>
+
+      <listitem>
+        <para>Windows Additions: implemented faster detection of logged-in guest
+          users and stale sessions</para>
+      </listitem>
+
+      <listitem>
+        <para>Linux guests: fixes for Linux 3.2</para>
+      </listitem>
+
+    </itemizedlist>
+  </sect1>
+
+  <sect1>
     <title>Version 4.0.14 (2011-10-13)</title>
 
     <para>This is a maintenance release. The following items were fixed and/or
@@ -17,10 +85,10 @@
           machine instructions in 64-bit guests on Intel hosts</para>
       </listitem>
 
-      <listitem> 
-        <para>GUI: fixed the inclusion of additional information (license, 
-          vendor, ...) on OVF export</para> 
-      </listitem> 
+      <listitem>
+        <para>GUI: fixed the inclusion of additional information (license,
+          vendor, ...) on OVF export</para>
+      </listitem>
 
       <listitem>
         <para>GUI: when taking a snapshot from the VM selector, don't do
@@ -41,7 +109,7 @@
       </listitem>
 
       <listitem>
-        <para>E1000: fixed rare Windows 7 guest hangs, either at boot time 
+        <para>E1000: fixed rare Windows 7 guest hangs, either at boot time
           or when reconfiguring the network card in unusual setups (bug #6223)</para>
       </listitem>
 
@@ -81,7 +149,7 @@
       <listitem>
         <para>Main: fix VM initialization if a shared folder does not exist (bug #7941)</para>
       </listitem>
-  
+
       <listitem>
         <para>Main: fixed taking screen shots (e.g. the preview window) for
           headless VMs if the Guest Additions are active</para>
@@ -89,7 +157,7 @@
 
       <listitem>
         <para>Main: fixed possible deadlock between hard disk enumeration and
-          the reseting of immutable disks (bug #9549)</para>
+          the resetting of immutable disks (bug #9549)</para>
       </listitem>
 
       <listitem>
@@ -133,7 +201,7 @@
       </listitem>
 
       <listitem>
-        <para>Linux Additions: start VBoxService correcly on openSUSE 12.1
+        <para>Linux Additions: start VBoxService correctly on openSUSE 12.1
            (bug #6229)</para>
       </listitem>
 
@@ -356,7 +424,7 @@
         <para>NAT: built-in services use the correct Ethernet addresses in
           Ethernet header and in ARP requests</para>
       </listitem>
-      
+
       <listitem>
         <para>Host-only networking: fixed adapter reference counting</para>
       </listitem>
@@ -414,7 +482,7 @@
       </listitem>
 
       <listitem>
-        <para>Linux Additions: check whether gcc and make are installed before  
+        <para>Linux Additions: check whether gcc and make are installed before
           building kernel modules (bug #8795)</para>
       </listitem>
 

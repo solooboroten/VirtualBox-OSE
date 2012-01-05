@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# Linux Additions kernel module init script ($Revision: 73712 $)
+# Linux Additions kernel module init script ($Revision: 75124 $)
 #
 
 #
@@ -186,7 +186,11 @@ test_sane_kernel_dir()
     fi
     printf "\nThe headers for the current running kernel were not found. If the following\nmodule compilation fails then this could be the reason.\n"
     if [ "$system" = "redhat" ]; then
-        printf "The missing package can be probably installed with\nyum install kernel-devel-$KERN_VER\n"
+        if echo "$KERN_VER" | grep -q "uek"; then
+            printf "The missing package can be probably installed with\nyum install kernel-uek-devel-$KERN_VER\n"
+        else
+            printf "The missing package can be probably installed with\nyum install kernel-devel-$KERN_VER\n"
+        fi
     elif [ "$system" = "suse" ]; then
         printf "The missing package can be probably installed with\nzypper install kernel-$KERN_VER\n"
     elif [ "$system" = "debian" ]; then

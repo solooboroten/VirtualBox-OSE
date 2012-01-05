@@ -263,10 +263,6 @@ void UIMachineMenuBar::prepareMenuHelp(QMenu *pMenu, UIActionsPool *pActionsPool
     pMenu->addAction(pActionsPool->action(UIActionIndex_Simple_Register));
 #endif
 
-#if defined(Q_WS_MAC) && (QT_VERSION < 0x040700)
-    if (m_fIsFirstTime)
-# endif
-        pMenu->addAction(pActionsPool->action(UIActionIndex_Simple_Update));
 #ifndef Q_WS_MAC
     pMenu->addSeparator();
 #endif /* !Q_WS_MAC */
@@ -274,7 +270,6 @@ void UIMachineMenuBar::prepareMenuHelp(QMenu *pMenu, UIActionsPool *pActionsPool
     if (m_fIsFirstTime)
 # endif
         pMenu->addAction(pActionsPool->action(UIActionIndex_Simple_About));
-
 
 #if defined(Q_WS_MAC) && (QT_VERSION < 0x040700)
     /* Because this connections are done to VBoxGlobal, they are needed once only.
@@ -284,8 +279,6 @@ void UIMachineMenuBar::prepareMenuHelp(QMenu *pMenu, UIActionsPool *pActionsPool
 #endif
         VBoxGlobal::connect(pActionsPool->action(UIActionIndex_Simple_About), SIGNAL(triggered()),
                             &msgCenter(), SLOT(sltShowHelpAboutDialog()));
-        VBoxGlobal::connect(pActionsPool->action(UIActionIndex_Simple_Update), SIGNAL(triggered()),
-                            &vboxGlobal(), SLOT(showUpdateDialog()));
 #if defined(Q_WS_MAC) && (QT_VERSION < 0x040700)
     }
 #endif

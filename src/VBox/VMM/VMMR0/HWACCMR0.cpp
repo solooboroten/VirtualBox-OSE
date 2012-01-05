@@ -795,11 +795,7 @@ static int hwaccmR0EnableCpu(PVM pVM, RTCPUID idCpu)
     pCpu->cTLBFlushes  = 0;
 
     /* Should never happen */
-    if (!pCpu->pMemObj)
-    {
-        AssertFailed();
-        return VERR_INTERNAL_ERROR;
-    }
+    AssertLogRelMsgReturn(pCpu->pMemObj != NIL_RTR0MEMOBJ, ("hmR0EnableCpu failed idCpu=%u.\n", idCpu), VERR_HM_IPE_1);
 
     pvPageCpu    = RTR0MemObjAddress(pCpu->pMemObj);
     pPageCpuPhys = RTR0MemObjGetPagePhysAddr(pCpu->pMemObj, 0);
@@ -1237,14 +1233,10 @@ VMMR0DECL(int) HWACCMR0Leave(PVM pVM, PVMCPU pVCpu)
     }
 
     /* keep track of the CPU owning the VMCS for debugging scheduling weirdness and ring-3 calls. */
-#ifdef RT_STRICT
-    if (RT_UNLIKELY(    pVCpu->hwaccm.s.idEnteredCpu != idCpu
-                    &&  RT_FAILURE(rc)))
-    {
-        AssertMsgFailed(("Owner is %d, I'm %d", (int)pVCpu->hwaccm.s.idEnteredCpu, (int)idCpu));
-        rc = VERR_INTERNAL_ERROR;
-    }
-#endif
+    AssertMsgStmt(   pVCpu->hwaccm.s.idEnteredCpu == idCpu
+                  || RT_FAILURE_NP(rc),
+                  ("Owner is %u, I'm %u", pVCpu->hwaccm.s.idEnteredCpu, idCpu),
+                  rc = VERR_HM_WRONG_CPU_1);
     pVCpu->hwaccm.s.idEnteredCpu = NIL_RTCPUID;
 
     /* Disable VT-x or AMD-V if local init was done before. */
@@ -1467,15 +1459,14 @@ VMMR0DECL(int) HWACCMR0EnterSwitcher(PVM pVM, bool *pfVTxDisabled)
         break;                  /* unsafe switchers */
 
     default:
-        AssertFailed();
-        return VERR_INTERNAL_ERROR;
+        AssertFailedReturn(VERR_HM_WRONG_SWITCHER);
     }
 
     PHWACCM_CPUINFO pCpu = HWACCMR0GetCurrentCpu();
     void           *pvPageCpu;
     RTHCPHYS        pPageCpuPhys;
 
-    AssertReturn(pCpu && pCpu->pMemObj, VERR_INTERNAL_ERROR);
+    AssertReturn(pCpu && pCpu->pMemObj != NIL_RTR0MEMOBJ, VERR_HM_IPE_2);
     pvPageCpu    = RTR0MemObjAddress(pCpu->pMemObj);
     pPageCpuPhys = RTR0MemObjGetPagePhysAddr(pCpu->pMemObj, 0);
 
@@ -1502,10 +1493,10 @@ VMMR0DECL(int) HWACCMR0LeaveSwitcher(PVM pVM, bool fVTxDisabled)
            && HWACCMR0Globals.fGlobalInit);
 
     PHWACCM_CPUINFO pCpu = HWACCMR0GetCurrentCpu();
-    void           *pvPageCpu;
     RTHCPHYS        pPageCpuPhys;
+    void           *pvPageCpu;
 
-    AssertReturn(pCpu && pCpu->pMemObj, VERR_INTERNAL_ERROR);
+    AssertReturn(pCpu && pCpu->pMemObj != NIL_RTR0MEMOBJ, VERR_HM_IPE_2);
     pvPageCpu    = RTR0MemObjAddress(pCpu->pMemObj);
     pPageCpuPhys = RTR0MemObjGetPagePhysAddr(pCpu->pMemObj, 0);
 

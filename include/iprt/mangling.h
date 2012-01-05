@@ -273,6 +273,8 @@
 #define RTCircBufFree                           RT_MANGLER(RTCircBufFree)
 #define RTCircBufReleaseReadBlock               RT_MANGLER(RTCircBufReleaseReadBlock)
 #define RTCircBufReleaseWriteBlock              RT_MANGLER(RTCircBufReleaseWriteBlock)
+#define RTCircBufIsReading                      RT_MANGLER(RTCircBufIsReading)
+#define RTCircBufIsWriting                      RT_MANGLER(RTCircBufIsWriting)
 #define RTCircBufReset                          RT_MANGLER(RTCircBufReset)
 #define RTCircBufSize                           RT_MANGLER(RTCircBufSize)
 #define RTCircBufUsed                           RT_MANGLER(RTCircBufUsed)
@@ -1554,6 +1556,7 @@
 /*
  * Stable variables (alphabetical order):
  */
+#define g_apfnRTZlibDeps                        RT_MANGLER(g_apfnRTZlibDeps) /* os2 win solaris */
 #define g_aRTUniFlagsRanges                     RT_MANGLER(g_aRTUniFlagsRanges)
 #define g_aRTUniLowerRanges                     RT_MANGLER(g_aRTUniLowerRanges)
 #define g_aRTUniUpperRanges                     RT_MANGLER(g_aRTUniUpperRanges)

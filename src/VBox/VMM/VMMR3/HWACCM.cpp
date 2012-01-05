@@ -2539,8 +2539,7 @@ VMMR3DECL(VBOXSTRICTRC) HWACCMR3RestartPendingIOInstr(PVM pVM, PVMCPU pVCpu, PCP
         break;
 
     default:
-        AssertFailed();
-        return VERR_INTERNAL_ERROR;
+        AssertLogRelFailedReturn(VERR_HM_UNKNOWN_IO_INSTRUCTION);
     }
 
     return rcStrict;

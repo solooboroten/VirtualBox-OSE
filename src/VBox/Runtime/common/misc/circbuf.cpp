@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (C) 2010 Oracle Corporation
+ * Copyright (C) 2011 Oracle Corporation
  *
  * This file is part of VirtualBox Open Source Edition (OSE), as
  * available from http://www.virtualbox.org. This file is free software;
@@ -25,18 +25,38 @@
  */
 
 
-/******************************************************************************
- *   Header Files                                                             *
- ******************************************************************************/
+/*******************************************************************************
+*   Header Files                                                               *
+*******************************************************************************/
 #include <iprt/circbuf.h>
 #include <iprt/mem.h>
 #include <iprt/assert.h>
 #include <iprt/asm.h>
 #include <iprt/err.h>
 
-/******************************************************************************
- *   Public Functions                                                         *
- ******************************************************************************/
+
+/*******************************************************************************
+*   Structures and Typedefs                                                    *
+*******************************************************************************/
+/** @todo r=bird: this is missing docs and magic. */
+typedef struct RTCIRCBUF
+{
+    /** The current read position in the buffer. */
+    size_t          offRead;
+    /** Is a read block acquired currently? */
+    bool            fReading;
+    /** Is a write block acquired currently? */
+    bool            fWriting;
+    /** The current write position in the buffer. */
+    size_t          offWrite;
+    /** How much space of the buffer is currently in use. */
+    volatile size_t cbUsed;
+    /** How big is the buffer. */
+    size_t          cbBuf;
+    /** The buffer itself. */
+    void           *pvBuf;
+} RTCIRCBUF, *PRTCIRCBUF;
+
 
 RTDECL(int) RTCircBufCreate(PRTCIRCBUF *ppBuf, size_t cbSize)
 {
@@ -49,67 +69,58 @@ RTDECL(int) RTCircBufCreate(PRTCIRCBUF *ppBuf, size_t cbSize)
     if (!pTmpBuf)
         return VERR_NO_MEMORY;
 
-    int rc = VINF_SUCCESS;
-    do
+    pTmpBuf->pvBuf = RTMemAlloc(cbSize);
+    if (pTmpBuf->pvBuf)
     {
-        pTmpBuf->pvBuf = RTMemAlloc(cbSize);
-        if (!pTmpBuf)
-        {
-            rc = VERR_NO_MEMORY;
-            break;
-        }
-
-        pTmpBuf->cbBufSize = cbSize;
+        pTmpBuf->cbBuf = cbSize;
         *ppBuf = pTmpBuf;
-    }while (0);
+        return VINF_SUCCESS;
+    }
 
-    if (RT_FAILURE(rc))
-        RTMemFree(pTmpBuf);
-
-    return rc;
+    RTMemFree(pTmpBuf);
+    return VERR_NO_MEMORY;
 }
+
 
 RTDECL(void) RTCircBufDestroy(PRTCIRCBUF pBuf)
 {
     /* Validate input. */
-    AssertPtrNull(pBuf);
-
-    if (pBuf)
-    {
-        if (pBuf->pvBuf)
-            RTMemFree(pBuf->pvBuf);
-        RTMemFree(pBuf);
-    }
+    if (!pBuf)
+        return;
+    AssertPtr(pBuf);
+    RTMemFree(pBuf->pvBuf);
+    RTMemFree(pBuf);
 }
+
 
 RTDECL(void) RTCircBufReset(PRTCIRCBUF pBuf)
 {
     /* Validate input. */
     AssertPtr(pBuf);
 
-    pBuf->uReadPos = 0;
-    pBuf->uWritePos = 0;
-    pBuf->cbBufUsed = 0;
+    pBuf->offRead  = 0;
+    pBuf->offWrite = 0;
+    pBuf->cbUsed   = 0;
+    pBuf->fReading = false;
+    pBuf->fWriting = false;
 }
+
 
 RTDECL(size_t) RTCircBufFree(PRTCIRCBUF pBuf)
 {
     /* Validate input. */
     AssertPtrReturn(pBuf, 0);
 
-    size_t cbSize = 0;
-    ASMAtomicReadSize(&pBuf->cbBufUsed, &cbSize);
-    return pBuf->cbBufSize - cbSize;
+    return pBuf->cbBuf - ASMAtomicReadZ(&pBuf->cbUsed);
 }
+
 
 RTDECL(size_t) RTCircBufUsed(PRTCIRCBUF pBuf)
 {
     /* Validate input. */
     AssertPtrReturn(pBuf, 0);
 
-    size_t cbSize = 0;
-    ASMAtomicReadSize(&pBuf->cbBufUsed, &cbSize);
-    return cbSize;
+    return ASMAtomicReadZ(&pBuf->cbUsed);
 }
 
 RTDECL(size_t) RTCircBufSize(PRTCIRCBUF pBuf)
@@ -117,7 +128,23 @@ RTDECL(size_t) RTCircBufSize(PRTCIRCBUF pBuf)
     /* Validate input. */
     AssertPtrReturn(pBuf, 0);
 
-    return pBuf->cbBufSize;
+    return pBuf->cbBuf;
+}
+
+RTDECL(bool) RTCircBufIsReading(PRTCIRCBUF pBuf)
+{
+    /* Validate input. */
+    AssertPtrReturn(pBuf, 0);
+
+    return ASMAtomicReadBool(&pBuf->fReading);
+}
+
+RTDECL(bool) RTCircBufIsWriting(PRTCIRCBUF pBuf)
+{
+    /* Validate input. */
+    AssertPtrReturn(pBuf, 0);
+
+    return ASMAtomicReadBool(&pBuf->fWriting);
 }
 
 RTDECL(void) RTCircBufAcquireReadBlock(PRTCIRCBUF pBuf, size_t cbReqSize, void **ppvStart, size_t *pcbSize)
@@ -128,28 +155,28 @@ RTDECL(void) RTCircBufAcquireReadBlock(PRTCIRCBUF pBuf, size_t cbReqSize, void *
     AssertPtr(ppvStart);
     AssertPtr(pcbSize);
 
-    size_t uUsed = 0;
-    size_t uSize = 0;
-
     *ppvStart = 0;
     *pcbSize = 0;
 
     /* How much is in use? */
-    ASMAtomicReadSize(&pBuf->cbBufUsed, &uUsed);
-    if (uUsed > 0)
+    size_t cbUsed = ASMAtomicReadZ(&pBuf->cbUsed);
+    if (cbUsed > 0)
     {
         /* Get the size out of the requested size, the read block till the end
          * of the buffer & the currently used size. */
-        uSize = RT_MIN(cbReqSize, RT_MIN(pBuf->cbBufSize - pBuf->uReadPos, uUsed));
-        if (uSize > 0)
+        size_t cbSize = RT_MIN(cbReqSize, RT_MIN(pBuf->cbBuf - pBuf->offRead, cbUsed));
+        if (cbSize > 0)
         {
             /* Return the pointer address which point to the current read
              * position. */
-            *ppvStart = (char*)pBuf->pvBuf + pBuf->uReadPos;
-            *pcbSize = uSize;
+            *ppvStart = (char *)pBuf->pvBuf + pBuf->offRead;
+            *pcbSize = cbSize;
+
+            ASMAtomicWriteBool(&pBuf->fReading, true);
         }
     }
 }
+
 
 RTDECL(void) RTCircBufReleaseReadBlock(PRTCIRCBUF pBuf, size_t cbSize)
 {
@@ -157,11 +184,12 @@ RTDECL(void) RTCircBufReleaseReadBlock(PRTCIRCBUF pBuf, size_t cbSize)
     AssertPtr(pBuf);
 
     /* Split at the end of the buffer. */
-    pBuf->uReadPos = (pBuf->uReadPos + cbSize) % pBuf->cbBufSize;
+    pBuf->offRead = (pBuf->offRead + cbSize) % pBuf->cbBuf;
 
-    size_t cbOld = 0;
-    ASMAtomicSubSize(&pBuf->cbBufUsed, cbSize, &cbOld);
+    ASMAtomicSubZ(&pBuf->cbUsed, cbSize);
+    ASMAtomicWriteBool(&pBuf->fReading, false);
 }
+
 
 RTDECL(void) RTCircBufAcquireWriteBlock(PRTCIRCBUF pBuf, size_t cbReqSize, void **ppvStart, size_t *pcbSize)
 {
@@ -171,30 +199,28 @@ RTDECL(void) RTCircBufAcquireWriteBlock(PRTCIRCBUF pBuf, size_t cbReqSize, void 
     AssertPtr(ppvStart);
     AssertPtr(pcbSize);
 
-    size_t uFree;
-    size_t uSize;
-
     *ppvStart = 0;
     *pcbSize = 0;
 
     /* How much is free? */
-    size_t cbSize = 0;
-    ASMAtomicReadSize(&pBuf->cbBufUsed, &cbSize);
-    uFree = pBuf->cbBufSize - cbSize;
-    if (uFree > 0)
+    size_t cbFree = pBuf->cbBuf - ASMAtomicReadZ(&pBuf->cbUsed);
+    if (cbFree > 0)
     {
-        /* Get the size out of the requested size, the write block till the end
+        /* Get the size out of the requested size, then write block till the end
          * of the buffer & the currently free size. */
-        uSize = RT_MIN(cbReqSize, RT_MIN(pBuf->cbBufSize - pBuf->uWritePos, uFree));
-        if (uSize > 0)
+        size_t cbSize = RT_MIN(cbReqSize, RT_MIN(pBuf->cbBuf - pBuf->offWrite, cbFree));
+        if (cbSize > 0)
         {
             /* Return the pointer address which point to the current write
              * position. */
-            *ppvStart = (char*)pBuf->pvBuf + pBuf->uWritePos;
-            *pcbSize = uSize;
+            *ppvStart = (char*)pBuf->pvBuf + pBuf->offWrite;
+            *pcbSize = cbSize;
+
+            ASMAtomicWriteBool(&pBuf->fWriting, true);
         }
     }
 }
+
 
 RTDECL(void) RTCircBufReleaseWriteBlock(PRTCIRCBUF pBuf, size_t cbSize)
 {
@@ -202,9 +228,9 @@ RTDECL(void) RTCircBufReleaseWriteBlock(PRTCIRCBUF pBuf, size_t cbSize)
     AssertPtr(pBuf);
 
     /* Split at the end of the buffer. */
-    pBuf->uWritePos = (pBuf->uWritePos + cbSize) % pBuf->cbBufSize;
+    pBuf->offWrite = (pBuf->offWrite + cbSize) % pBuf->cbBuf;
 
-    size_t cbOld = 0;
-    ASMAtomicAddSize(&pBuf->cbBufUsed, cbSize, &cbOld);
+    ASMAtomicAddZ(&pBuf->cbUsed, cbSize);
+    ASMAtomicWriteBool(&pBuf->fWriting, false);
 }
 

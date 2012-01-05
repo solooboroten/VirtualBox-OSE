@@ -501,7 +501,7 @@ VMMR3_INT_DECL(int) VMMR3InitR0(PVM pVM)
     {
         LogRel(("R0 init failed, rc=%Rra\n", rc));
         if (RT_SUCCESS(rc))
-            rc = VERR_INTERNAL_ERROR;
+            rc = VERR_IPE_UNEXPECTED_INFO_STATUS;
     }
     return rc;
 }
@@ -577,7 +577,7 @@ VMMR3_INT_DECL(int) VMMR3InitRC(PVM pVM)
         {
             VMMR3FatalDump(pVM, pVCpu, rc);
             if (rc >= VINF_EM_FIRST && rc <= VINF_EM_LAST)
-                rc = VERR_INTERNAL_ERROR;
+                rc = VERR_IPE_UNEXPECTED_INFO_STATUS;
         }
         AssertRC(rc);
     }
@@ -711,7 +711,7 @@ VMMR3_INT_DECL(int) VMMR3Term(PVM pVM)
     {
         LogRel(("VMMR3Term: R0 term failed, rc=%Rra. (warning)\n", rc));
         if (RT_SUCCESS(rc))
-            rc = VERR_INTERNAL_ERROR;
+            rc = VERR_IPE_UNEXPECTED_INFO_STATUS;
     }
 
     RTCritSectDelete(&pVM->vmm.s.CritSectSync);
@@ -1964,7 +1964,7 @@ VMMR3DECL(int) VMMR3CallR0(PVM pVM, uint32_t uOperation, uint64_t u64Arg, PSUPVM
 
     AssertLogRelMsgReturn(rc == VINF_SUCCESS || RT_FAILURE(rc),
                           ("uOperation=%u rc=%Rrc\n", uOperation, rc),
-                          VERR_INTERNAL_ERROR);
+                          VERR_IPE_UNEXPECTED_INFO_STATUS);
     return rc;
 }
 
@@ -2176,7 +2176,7 @@ static int vmmR3ServiceCallRing3Request(PVM pVM, PVMCPU pVCpu)
 
         default:
             AssertMsgFailed(("enmCallRing3Operation=%d\n", pVCpu->vmm.s.enmCallRing3Operation));
-            return VERR_INTERNAL_ERROR;
+            return VERR_VMM_UNKNOWN_RING3_CALL;
     }
 
     pVCpu->vmm.s.enmCallRing3Operation = VMMCALLRING3_INVALID;

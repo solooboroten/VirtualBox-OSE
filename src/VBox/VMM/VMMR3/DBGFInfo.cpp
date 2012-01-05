@@ -767,9 +767,7 @@ VMMR3DECL(int) DBGFR3Info(PVM pVM, const char *pszName, const char *pszArgs, PCD
                 break;
 
             default:
-                AssertMsgFailed(("Invalid info type enmType=%d\n", Info.enmType));
-                rc = VERR_INTERNAL_ERROR;
-                break;
+                AssertMsgFailedReturn(("Invalid info type enmType=%d\n", Info.enmType), VERR_IPE_NOT_REACHED_DEFAULT_CASE);
         }
     }
     else
@@ -892,9 +890,7 @@ VMMR3DECL(int) DBGFR3InfoMulti(PVM pVM, const char *pszIncludePat, const char *p
                     break;
 
                 default:
-                    AssertMsgFailed(("Invalid info type enmType=%d\n", pInfo->enmType));
-                    rc = VERR_INTERNAL_ERROR;
-                    break;
+                    AssertMsgFailedReturn(("Invalid info type enmType=%d\n", pInfo->enmType), VERR_IPE_NOT_REACHED_DEFAULT_CASE);
             }
         }
     }

@@ -1078,7 +1078,7 @@ static DECLCALLBACK(int) pdmR3DevHlp_PCIRegister(PPDMDEVINS pDevIns, PPCIDEVICE 
          * devices...
          */
         AssertMsgFailed(("Only one PCI device per device is currently implemented!\n"));
-        return VERR_INTERNAL_ERROR;
+        return VERR_PDM_ONE_PCI_FUNCTION_PER_DEVICE;
     }
 
     /*
@@ -1121,27 +1121,21 @@ static DECLCALLBACK(int) pdmR3DevHlp_PCIRegister(PPDMDEVINS pDevIns, PPCIDEVICE 
         rc = CFGMR3QueryU8(pDevIns->Internal.s.pCfgHandle, "PCIDeviceNo", &u8Device);
         if (RT_SUCCESS(rc))
         {
-            if (u8Device > 31)
-            {
-                AssertMsgFailed(("Configuration error: PCIDeviceNo=%d, max is 31. (%s/%d)\n",
-                                 u8Device, pDevIns->pReg->szName, pDevIns->iInstance));
-                return VERR_INTERNAL_ERROR;
-            }
+            AssertMsgReturn(u8Device <= 31,
+                            ("Configuration error: PCIDeviceNo=%d, max is 31. (%s/%d)\n",
+                             u8Device, pDevIns->pReg->szName, pDevIns->iInstance),
+                            VERR_PDM_BAD_PCI_CONFIG);
 
             uint8_t     u8Function;
             rc = CFGMR3QueryU8(pDevIns->Internal.s.pCfgHandle, "PCIFunctionNo", &u8Function);
-            if (RT_FAILURE(rc))
-            {
-                AssertMsgFailed(("Configuration error: PCIDeviceNo, but PCIFunctionNo query failed with rc=%Rrc (%s/%d)\n",
-                                 rc, pDevIns->pReg->szName, pDevIns->iInstance));
-                return rc;
-            }
-            if (u8Function > 7)
-            {
-                AssertMsgFailed(("Configuration error: PCIFunctionNo=%d, max is 7. (%s/%d)\n",
-                                 u8Function, pDevIns->pReg->szName, pDevIns->iInstance));
-                return VERR_INTERNAL_ERROR;
-            }
+            AssertMsgRCReturn(rc, ("Configuration error: PCIDeviceNo, but PCIFunctionNo query failed with rc=%Rrc (%s/%d)\n",
+                                   rc, pDevIns->pReg->szName, pDevIns->iInstance),
+                              rc);
+            AssertMsgReturn(u8Function <= 7,
+                            ("Configuration error: PCIFunctionNo=%d, max is 7. (%s/%d)\n",
+                             u8Function, pDevIns->pReg->szName, pDevIns->iInstance),
+                            VERR_PDM_BAD_PCI_CONFIG);
+
             iDev = (u8Device << 3) | u8Function;
         }
         else if (rc != VERR_CFGM_VALUE_NOT_FOUND)

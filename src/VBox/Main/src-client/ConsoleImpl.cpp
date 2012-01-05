@@ -6402,9 +6402,15 @@ HRESULT Console::createSharedFolder(const Utf8Str &strName, const SharedFolderDa
     AssertReturn(mpVM, E_FAIL);
     AssertReturn(m_pVMMDev && m_pVMMDev->isShFlActive(), E_FAIL);
 
-    VBOXHGCMSVCPARM parms[SHFL_CPARMS_ADD_MAPPING2];
+    VBOXHGCMSVCPARM parms[SHFL_CPARMS_ADD_MAPPING];
     SHFLSTRING *pFolderName, *pMapName;
     size_t cbString;
+
+    Bstr value;
+    HRESULT hrc = mMachine->GetExtraData(BstrFmt("VBoxInternal2/SharedFoldersEnableSymlinksCreate/%s",
+                                                 strName.c_str()).raw(),
+                                         value.asOutParam());
+    bool fSymlinksCreate = hrc == S_OK && value == "1";
 
     Log(("Adding shared folder '%s' -> '%s'\n", strName.c_str(), aData.m_strHostPath.c_str()));
 
@@ -6465,20 +6471,13 @@ HRESULT Console::createSharedFolder(const Utf8Str &strName, const SharedFolderDa
     parms[1].u.pointer.size = sizeof(SHFLSTRING) + (uint16_t)cbString;
 
     parms[2].type = VBOX_HGCM_SVC_PARM_32BIT;
-    parms[2].u.uint32 = aData.m_fWritable;
-
-    /*
-     * Auto-mount flag; is indicated by using the SHFL_CPARMS_ADD_MAPPING2
-     * define below.  This shows the host service that we have supplied
-     * an additional parameter (auto-mount) and keeps the actual command
-     * backwards compatible.
-     */
-    parms[3].type = VBOX_HGCM_SVC_PARM_32BIT;
-    parms[3].u.uint32 = aData.m_fAutoMount;
+    parms[2].u.uint32 = (aData.m_fWritable ? SHFL_ADD_MAPPING_F_WRITABLE : 0)
+                      | (aData.m_fAutoMount ? SHFL_ADD_MAPPING_F_AUTOMOUNT : 0)
+                      | (fSymlinksCreate ? SHFL_ADD_MAPPING_F_CREATE_SYMLINKS : 0);
 
     vrc = m_pVMMDev->hgcmHostCall("VBoxSharedFolders",
                                   SHFL_FN_ADD_MAPPING,
-                                  SHFL_CPARMS_ADD_MAPPING2, &parms[0]);
+                                  SHFL_CPARMS_ADD_MAPPING, &parms[0]);
     RTMemFree(pFolderName);
     RTMemFree(pMapName);
 
@@ -7532,10 +7531,10 @@ void Console::detachAllUSBDevices(bool aDone)
 /**
  * @note Locks this object for writing.
  */
-void Console::processRemoteUSBDevices(uint32_t u32ClientId, VRDEUSBDEVICEDESC *pDevList, uint32_t cbDevList)
+void Console::processRemoteUSBDevices(uint32_t u32ClientId, VRDEUSBDEVICEDESC *pDevList, uint32_t cbDevList, bool fDescExt)
 {
     LogFlowThisFuncEnter();
-    LogFlowThisFunc(("u32ClientId = %d, pDevList=%p, cbDevList = %d\n", u32ClientId, pDevList, cbDevList));
+    LogFlowThisFunc(("u32ClientId = %d, pDevList=%p, cbDevList = %d, fDescExt = %d\n", u32ClientId, pDevList, cbDevList, fDescExt));
 
     AutoCaller autoCaller(this);
     if (!autoCaller.isOk())
@@ -7606,7 +7605,7 @@ void Console::processRemoteUSBDevices(uint32_t u32ClientId, VRDEUSBDEVICEDESC *p
             /* Create the device object and add the new device to list. */
             ComObjPtr<RemoteUSBDevice> pUSBDevice;
             pUSBDevice.createObject();
-            pUSBDevice->init(u32ClientId, e);
+            pUSBDevice->init(u32ClientId, e, fDescExt);
 
             mRemoteUSBDevices.push_back(pUSBDevice);
 

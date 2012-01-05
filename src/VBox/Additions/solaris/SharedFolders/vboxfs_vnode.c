@@ -206,7 +206,6 @@ sfnode_get_vnode(sfnode_t *node)
         LogFlowFunc(("  %s gets vnode 0x%p\n", node->sf_path, vp));
 		vp->v_type = node->sf_type;
 		vp->v_vfsp = node->sf_sffs->sf_vfsp;
-		VFS_HOLD(vp->v_vfsp);
 		vn_setops(vp, sffs_ops);
 		vp->v_flag = VNOMAP | VNOSWAP;
 		vn_exists(vp);
@@ -242,6 +241,7 @@ sfnode_make(
     LogFlowFunc(("sffs_make(%s)\n", path));
 	node = kmem_alloc(sizeof (*node), KM_SLEEP);
 	node->sf_sffs = sffs;
+	VFS_HOLD(node->sf_sffs->sf_vfsp);
 	node->sf_path = path;
 	node->sf_ino = sffs->sf_ino++;
 	node->sf_type = type;

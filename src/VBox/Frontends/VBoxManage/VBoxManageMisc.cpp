@@ -277,7 +277,7 @@ int handleCreateVM(HandlerArg *a)
 
 int handleStartVM(HandlerArg *a)
 {
-    HRESULT rc;
+    HRESULT rc = S_OK;
     const char *VMName = NULL;
     Bstr sessionType = "gui";
 

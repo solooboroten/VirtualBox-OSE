@@ -582,7 +582,7 @@ PGM_BTH_DECL(int, Trap0eHandler)(PVMCPU pVCpu, RTGCUINT uErr, PCPUMCTXCORE pRegF
 #   else
     rc = pgmShwSyncPaePDPtr(pVCpu, pvFault, X86_PDPE_P, &pPDDst);       /* RW, US and A are reserved in PAE mode. */
 #   endif
-    AssertMsgReturn(rc == VINF_SUCCESS, ("rc=%Rrc\n", rc), RT_FAILURE_NP(rc) ? rc : VERR_INTERNAL_ERROR_4);
+    AssertMsgReturn(rc == VINF_SUCCESS, ("rc=%Rrc\n", rc), RT_FAILURE_NP(rc) ? rc : VERR_IPE_UNEXPECTED_INFO_STATUS);
 
 #  elif PGM_SHW_TYPE == PGM_TYPE_AMD64
     const unsigned  iPDDst = ((pvFault >> SHW_PD_SHIFT) & SHW_PD_MASK);
@@ -593,13 +593,13 @@ PGM_BTH_DECL(int, Trap0eHandler)(PVMCPU pVCpu, RTGCUINT uErr, PCPUMCTXCORE pRegF
 #   else
     rc = pgmShwSyncLongModePDPtr(pVCpu, pvFault, GstWalk.Pml4e.u, GstWalk.Pdpe.u, &pPDDst);
 #   endif
-    AssertMsgReturn(rc == VINF_SUCCESS, ("rc=%Rrc\n", rc), RT_FAILURE_NP(rc) ? rc : VERR_INTERNAL_ERROR_4);
+    AssertMsgReturn(rc == VINF_SUCCESS, ("rc=%Rrc\n", rc), RT_FAILURE_NP(rc) ? rc : VERR_IPE_UNEXPECTED_INFO_STATUS);
 
 #  elif PGM_SHW_TYPE == PGM_TYPE_EPT
     const unsigned  iPDDst = ((pvFault >> SHW_PD_SHIFT) & SHW_PD_MASK);
     PEPTPD          pPDDst;
     rc = pgmShwGetEPTPDPtr(pVCpu, pvFault, NULL, &pPDDst);
-    AssertMsgReturn(rc == VINF_SUCCESS, ("rc=%Rrc\n", rc), RT_FAILURE_NP(rc) ? rc : VERR_INTERNAL_ERROR_4);
+    AssertMsgReturn(rc == VINF_SUCCESS, ("rc=%Rrc\n", rc), RT_FAILURE_NP(rc) ? rc : VERR_IPE_UNEXPECTED_INFO_STATUS);
 #  endif
     Assert(pPDDst);
 
@@ -1084,7 +1084,7 @@ PGM_BTH_DECL(int, Trap0eHandler)(PVMCPU pVCpu, RTGCUINT uErr, PCPUMCTXCORE pRegF
 
 # else  /* Nested paging, EPT except PGM_GST_TYPE = PROT   */
     AssertReleaseMsgFailed(("Shw=%d Gst=%d is not implemented!\n", PGM_GST_TYPE, PGM_SHW_TYPE));
-    return VERR_INTERNAL_ERROR;
+    return VERR_PGM_NOT_USED_IN_MODE;
 # endif
 }
 #endif /* !IN_RING3 */
@@ -2263,7 +2263,7 @@ static int PGM_BTH_NAME(SyncPage)(PVMCPU pVCpu, GSTPDE PdeSrc, RTGCPTR GCPtrPage
 
 #else
     AssertReleaseMsgFailed(("Shw=%d Gst=%d is not implemented!\n", PGM_GST_TYPE, PGM_SHW_TYPE));
-    return VERR_INTERNAL_ERROR;
+    return VERR_PGM_NOT_USED_IN_MODE;
 #endif
 }
 
@@ -2726,7 +2726,7 @@ static int PGM_BTH_NAME(SyncPT)(PVMCPU pVCpu, unsigned iPDSrc, PGSTPD pPDSrc, RT
             return VINF_PGM_SYNC_CR3;
         }
         else
-            AssertMsgFailedReturn(("rc=%Rrc\n", rc), VERR_INTERNAL_ERROR);
+            AssertMsgFailedReturn(("rc=%Rrc\n", rc), RT_FAILURE_NP(rc) ? rc : VERR_IPE_UNEXPECTED_INFO_STATUS);
         /** @todo Why do we bother preserving X86_PDE_AVL_MASK here?
          * Both PGM_PDFLAGS_MAPPING and PGM_PDFLAGS_TRACK_DIRTY should be
          * irrelevant at this point. */
@@ -3153,7 +3153,7 @@ static int PGM_BTH_NAME(SyncPT)(PVMCPU pVCpu, unsigned iPDSrc, PGSTPD pPDSrc, RT
     else
     {
        STAM_PROFILE_STOP(&pVCpu->pgm.s.CTX_SUFF(pStats)->CTX_MID_Z(Stat,SyncPT), a);
-       AssertMsgFailedReturn(("rc=%Rrc\n", rc), VERR_INTERNAL_ERROR);
+       AssertMsgFailedReturn(("rc=%Rrc\n", rc), RT_FAILURE_NP(rc) ? rc : VERR_IPE_UNEXPECTED_INFO_STATUS);
     }
 
     if (rc == VINF_SUCCESS)
@@ -3201,7 +3201,7 @@ static int PGM_BTH_NAME(SyncPT)(PVMCPU pVCpu, unsigned iPDSrc, PGSTPD pPDSrc, RT
 
 #else
     AssertReleaseMsgFailed(("Shw=%d Gst=%d is not implemented!\n", PGM_SHW_TYPE, PGM_GST_TYPE));
-    return VERR_INTERNAL_ERROR;
+    return VERR_PGM_NOT_USED_IN_MODE;
 #endif
 }
 
@@ -3534,7 +3534,7 @@ PGM_BTH_DECL(int, VerifyAccessSyncPage)(PVMCPU pVCpu, RTGCPTR GCPtrPage, unsigne
 #else  /* PGM_SHW_TYPE == PGM_TYPE_EPT || PGM_SHW_TYPE == PGM_TYPE_NESTED */
 
     AssertReleaseMsgFailed(("Shw=%d Gst=%d is not implemented!\n", PGM_GST_TYPE, PGM_SHW_TYPE));
-    return VERR_INTERNAL_ERROR;
+    return VERR_PGM_NOT_USED_IN_MODE;
 #endif /* PGM_SHW_TYPE == PGM_TYPE_EPT || PGM_SHW_TYPE == PGM_TYPE_NESTED */
 }
 
@@ -4416,7 +4416,7 @@ PGM_BTH_DECL(int, MapCR3)(PVMCPU pVCpu, RTGCPHYS GCPhysCR3)
     RTHCPHYS    HCPhysGuestCR3;
     pgmLock(pVM);
     PPGMPAGE    pPageCR3 = pgmPhysGetPage(&pVM->pgm.s, GCPhysCR3);
-    AssertReturn(pPageCR3, VERR_INTERNAL_ERROR_2);
+    AssertReturn(pPageCR3, VERR_PGM_INVALID_CR3_ADDR);
     HCPhysGuestCR3 = PGM_PAGE_GET_HCPHYS(pPageCR3);
     /** @todo this needs some reworking wrt. locking?  */
 # if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
@@ -4464,7 +4464,7 @@ PGM_BTH_DECL(int, MapCR3)(PVMCPU pVCpu, RTGCPHYS GCPhysCR3)
                     RTGCPHYS    GCPhys = pGuestPDPT->a[i].u & X86_PDPE_PG_MASK;
                     pgmLock(pVM);
                     PPGMPAGE    pPage  = pgmPhysGetPage(&pVM->pgm.s, GCPhys);
-                    AssertReturn(pPage, VERR_INTERNAL_ERROR_2);
+                    AssertReturn(pPage, VERR_PGM_INVALID_PDPE_ADDR);
                     HCPhys = PGM_PAGE_GET_HCPHYS(pPage);
 #  if defined(IN_RC) || defined(VBOX_WITH_2X_4GB_ADDR_SPACE_IN_R0)
                     HCPtr = NIL_RTHCPTR;

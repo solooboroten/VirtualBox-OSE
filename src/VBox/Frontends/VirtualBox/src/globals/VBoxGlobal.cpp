@@ -4619,15 +4619,6 @@ void VBoxGlobal::showUpdateDialog (bool aForce)
     }
     else
     {
-        /* Store the ID of the main window to ensure that only one
-         * update dialog is shown at a time. Due to manipulations with
-         * OnExtraDataCanChange() and OnExtraDataChange() signals, this extra
-         * data item acts like an inter-process mutex, so the first process
-         * that attempts to set it will win, the rest will get a failure from
-         * the SetExtraData() call. */
-        mVBox.SetExtraData (VBoxDefs::GUI_UpdateDlgWinID,
-                            QString ("%1").arg ((qulonglong) mMainWindow->winId()));
-
         if (mVBox.isOk())
         {
             /* We've got the "mutex", create a new update dialog */

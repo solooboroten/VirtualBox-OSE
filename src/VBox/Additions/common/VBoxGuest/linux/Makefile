@@ -1,4 +1,4 @@
-# $Revision: 70883 $
+# $Revision: 75140 $
 ## @file
 # VirtualBox Guest Additions Module Makefile.
 #
@@ -283,7 +283,7 @@ all: $(MODULE)
 obj-m += $(MODULE).o
 
 $(MODULE):
-	$(MAKE) KBUILD_VERBOSE=$(KBUILD_VERBOSE) -C $(KERN_DIR) SUBDIRS=$(CURDIR) SRCROOT=$(CURDIR) modules
+	$(MAKE) KBUILD_VERBOSE=$(KBUILD_VERBOSE) -C $(KERN_DIR) SUBDIRS=$(CURDIR) SRCROOT=$(CURDIR) CONFIG_MODULE_SIG= modules
 
 endif
 

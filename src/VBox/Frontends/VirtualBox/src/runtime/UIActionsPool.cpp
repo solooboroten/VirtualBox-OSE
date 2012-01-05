@@ -983,29 +983,6 @@ protected:
 };
 #endif /* VBOX_WITH_REGISTRATION */
 
-class PerformUpdateAction : public UISimpleAction
-{
-    Q_OBJECT;
-
-public:
-
-    PerformUpdateAction(QObject *pParent)
-        : UISimpleAction(pParent,
-                         ":/refresh_16px.png", ":/refresh_disabled_16px.png")
-    {
-        setMenuRole(QAction::ApplicationSpecificRole);
-        retranslateUi();
-    }
-
-protected:
-
-    void retranslateUi()
-    {
-        setText(vboxGlobal().insertKeyToActionText(QApplication::translate("UIMessageCenter", "C&heck for Updates..."), gMS->shortcut(UIMachineShortcuts::UpdateShortcut)));
-        setStatusTip(QApplication::translate("UIMessageCenter", "Check for a new VirtualBox version"));
-    }
-};
-
 class ShowAboutAction : public UISimpleAction
 {
     Q_OBJECT;
@@ -1150,7 +1127,6 @@ UIActionsPool::UIActionsPool(QObject *pParent)
 #ifdef VBOX_WITH_REGISTRATION
     m_actionsPool[UIActionIndex_Simple_Register] = new PerformRegisterAction(this);
 #endif /* VBOX_WITH_REGISTRATION */
-    m_actionsPool[UIActionIndex_Simple_Update] = new PerformUpdateAction(this);
     m_actionsPool[UIActionIndex_Simple_About] = new ShowAboutAction(this);
 
 #ifdef Q_WS_MAC
@@ -1200,22 +1176,12 @@ void UIActionsPool::createMenus()
         delete m_actionsPool[UIActionIndex_Simple_Register]
     m_actionsPool[UIActionIndex_Simple_Register] = new PerformRegisterAction(this);
 #endif /* VBOX_WITH_REGISTRATION */
-#if defined(Q_WS_MAC) && (QT_VERSION >= 0x040700)
-    /* For whatever reason, Qt doesn't fully remove items with a
-     * ApplicationSpecificRole from the application menu. Although the QAction
-     * itself is deleted, a dummy entry is leaved back in the menu. Hiding
-     * before deletion helps. */
-    m_actionsPool[UIActionIndex_Simple_Update]->setVisible(false);
-#endif /* Q_WS_MAC */
     /* Delete the help items as well. This makes sure they are removed also
      * from the Application menu. */
 #if !(defined(Q_WS_MAC) && (QT_VERSION < 0x040700))
     if (m_actionsPool[UIActionIndex_Simple_About])
         delete m_actionsPool[UIActionIndex_Simple_About];
     m_actionsPool[UIActionIndex_Simple_About] = new ShowAboutAction(this);
-    if (m_actionsPool[UIActionIndex_Simple_Update])
-        delete m_actionsPool[UIActionIndex_Simple_Update];
-    m_actionsPool[UIActionIndex_Simple_Update] = new PerformUpdateAction(this);
 #endif
     if (m_actionsPool[UIActionIndex_Simple_Close])
         delete m_actionsPool[UIActionIndex_Simple_Close];

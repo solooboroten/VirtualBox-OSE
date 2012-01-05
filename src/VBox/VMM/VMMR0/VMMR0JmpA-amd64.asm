@@ -20,7 +20,7 @@
 ;*******************************************************************************
 %include "VBox/asmdefs.mac"
 %include "VMMInternal.mac"
-%include "iprt/err.mac"
+%include "VBox/err.mac"
 %include "VBox/param.mac"
 
 
@@ -175,11 +175,11 @@ GLOBALNAME vmmR0CallRing3SetJmpEx
     jmp     xCX
 
 .entry_error:
-    mov     eax, VERR_INTERNAL_ERROR_2
+    mov     eax, VERR_VMM_SET_JMP_ERROR
     jmp     .proper_return
 
 .stack_overflow:
-    mov     eax, VERR_INTERNAL_ERROR_5
+    mov     eax, VERR_VMM_SET_JMP_STACK_OVERFLOW
     jmp     .proper_return
 
     ;
@@ -197,7 +197,7 @@ GLOBALNAME vmmR0CallRing3SetJmpEx
     mov     r13, [xDX + VMMR0JMPBUF.r13]
     mov     r14, [xDX + VMMR0JMPBUF.r14]
     mov     r15, [xDX + VMMR0JMPBUF.r15]
-    mov     eax, VERR_INTERNAL_ERROR_3    ; todo better return code!
+    mov     eax, VERR_VMM_SET_JMP_ABORTED_RESUME
     leave
     ret
 
@@ -415,7 +415,7 @@ BEGINPROC vmmR0CallRing3LongJmp
     mov     [rcx], edx
 .magic_ok:
 %endif
-    mov     eax, VERR_INTERNAL_ERROR_4
+    mov     eax, VERR_VMM_LONG_JMP_ERROR
 %ifdef RT_OS_WINDOWS
     add     rsp, 0a0h                   ; skip XMM registers since they are unmodified.
 %endif
