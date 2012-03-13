@@ -1,10 +1,10 @@
-; $Id:  $
-;; @file
+; $Id$
+; @file
 ; VBoxGuestAdditionsCommon.nsh - Common / shared utility functions.
 ;
 
 ;
-; Copyright (C) 2006-2011 Oracle Corporation
+; Copyright (C) 2006-2012 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -184,6 +184,10 @@ Function ExtractFiles
   SetOutPath "$0\VBoxSF"
   FILE "$%PATH_OUT%\bin\additions\VBoxSF.sys"
   FILE "$%PATH_OUT%\bin\additions\VBoxMRXNP.dll"
+  !if $%BUILD_TARGET_ARCH% == "amd64"
+    ; Only 64-bit installer: Also copy 32-bit DLLs on 64-bit target
+    FILE "$%PATH_OUT%\bin\additions\VBoxMRXNP-x86.dll"
+  !endif
 
   ; Auto-Logon
   SetOutPath "$0\AutoLogon"
@@ -533,11 +537,16 @@ FunctionEnd
 Function ${un}CheckForWDDMCapability
 
 !if $%VBOX_WITH_WDDM% == "1"
-  ; If we're on a 32-bit Windows Vista / 7 we can use the WDDM driver
+  ; If we're on a 32-bit Windows Vista / 7 / 8 we can use the WDDM driver
   ${If} $g_strWinVersion == "Vista"
   ${OrIf} $g_strWinVersion == "7"
   ${OrIf} $g_strWinVersion == "8"
     StrCpy $g_bCapWDDM "true"
+  ${EndIf}
+  ; If we're on Windows 8 we *have* to use the WDDM driver, so select it
+  ; by default
+  ${If} $g_strWinVersion == "8"
+    StrCpy $g_bWithWDDM "true"
   ${EndIf}
 !endif
 

@@ -22,109 +22,44 @@
 #include <iprt/cdefs.h>
 #include <VBox/VBoxVideo.h>
 
-typedef DECLCALLBACK(void) FNVBOXSHGSMICMDCOMPLETION(struct _HGSMIHEAP * pHeap, void *pvCmd, void *pvContext);
+#include "common/VBoxMPUtils.h"
+
+typedef struct VBOXSHGSMI
+{
+    KSPIN_LOCK HeapLock;
+    HGSMIHEAP Heap;
+} VBOXSHGSMI, *PVBOXSHGSMI;
+
+typedef DECLCALLBACK(void) FNVBOXSHGSMICMDCOMPLETION(PVBOXSHGSMI pHeap, void *pvCmd, void *pvContext);
 typedef FNVBOXSHGSMICMDCOMPLETION *PFNVBOXSHGSMICMDCOMPLETION;
 
-typedef DECLCALLBACK(void) FNVBOXSHGSMICMDCOMPLETION_IRQ(struct _HGSMIHEAP * pHeap, void *pvCmd, void *pvContext,
+typedef DECLCALLBACK(void) FNVBOXSHGSMICMDCOMPLETION_IRQ(PVBOXSHGSMI pHeap, void *pvCmd, void *pvContext,
                                         PFNVBOXSHGSMICMDCOMPLETION *ppfnCompletion, void **ppvCompletion);
 typedef FNVBOXSHGSMICMDCOMPLETION_IRQ *PFNVBOXSHGSMICMDCOMPLETION_IRQ;
 
-typedef struct VBOXSHGSMILIST_ENTRY
-{
-    struct VBOXSHGSMILIST_ENTRY *pNext;
-} VBOXSHGSMILIST_ENTRY, *PVBOXSHGSMILIST_ENTRY;
 
-typedef struct VBOXSHGSMILIST
-{
-    PVBOXSHGSMILIST_ENTRY pFirst;
-    PVBOXSHGSMILIST_ENTRY pLast;
-} VBOXSHGSMILIST, *PVBOXSHGSMILIST;
+const VBOXSHGSMIHEADER* VBoxSHGSMICommandPrepAsynchEvent(PVBOXSHGSMI pHeap, PVOID pvBuff, RTSEMEVENT hEventSem);
+const VBOXSHGSMIHEADER* VBoxSHGSMICommandPrepSynch(PVBOXSHGSMI pHeap, PVOID pCmd);
+const VBOXSHGSMIHEADER* VBoxSHGSMICommandPrepAsynch(PVBOXSHGSMI pHeap, PVOID pvBuff, PFNVBOXSHGSMICMDCOMPLETION pfnCompletion, PVOID pvCompletion, uint32_t fFlags);
+const VBOXSHGSMIHEADER* VBoxSHGSMICommandPrepAsynchIrq(PVBOXSHGSMI pHeap, PVOID pvBuff, PFNVBOXSHGSMICMDCOMPLETION_IRQ pfnCompletion, PVOID pvCompletion, uint32_t fFlags);
 
-DECLINLINE(bool) vboxSHGSMIListIsEmpty(PVBOXSHGSMILIST pList)
+void VBoxSHGSMICommandDoneAsynch(PVBOXSHGSMI pHeap, const VBOXSHGSMIHEADER* pHeader);
+int VBoxSHGSMICommandDoneSynch(PVBOXSHGSMI pHeap, const VBOXSHGSMIHEADER* pHeader);
+void VBoxSHGSMICommandCancelAsynch(PVBOXSHGSMI pHeap, const VBOXSHGSMIHEADER* pHeader);
+void VBoxSHGSMICommandCancelSynch(PVBOXSHGSMI pHeap, const VBOXSHGSMIHEADER* pHeader);
+
+DECLINLINE(HGSMIOFFSET) VBoxSHGSMICommandOffset(PVBOXSHGSMI pHeap, const VBOXSHGSMIHEADER* pHeader)
 {
-    return !pList->pFirst;
+    return HGSMIHeapBufferOffset(&pHeap->Heap, (void*)pHeader);
 }
 
-DECLINLINE(void) vboxSHGSMIListInit(PVBOXSHGSMILIST pList)
-{
-    pList->pFirst = pList->pLast = NULL;
-}
-
-DECLINLINE(void) vboxSHGSMIListPut(PVBOXSHGSMILIST pList, PVBOXSHGSMILIST_ENTRY pFirst, PVBOXSHGSMILIST_ENTRY pLast)
-{
-    Assert(pFirst);
-    Assert(pLast);
-    pLast->pNext = NULL;
-    if (pList->pLast)
-    {
-        Assert(pList->pFirst);
-        pList->pLast->pNext = pFirst;
-        pList->pLast = pLast;
-    }
-    else
-    {
-        Assert(!pList->pFirst);
-        pList->pFirst = pFirst;
-        pList->pLast = pLast;
-    }
-}
-
-DECLINLINE(void) vboxSHGSMIListCat(PVBOXSHGSMILIST pList1, PVBOXSHGSMILIST pList2)
-{
-    vboxSHGSMIListPut(pList1, pList2->pFirst, pList2->pLast);
-    pList2->pFirst = pList2->pLast = NULL;
-}
-
-DECLINLINE(void) vboxSHGSMIListDetach(PVBOXSHGSMILIST pList, PVBOXSHGSMILIST_ENTRY *ppFirst, PVBOXSHGSMILIST_ENTRY *ppLast)
-{
-    *ppFirst = pList->pFirst;
-    if (ppLast)
-        *ppLast = pList->pLast;
-    pList->pFirst = NULL;
-    pList->pLast = NULL;
-}
-
-DECLINLINE(void) vboxSHGSMIListDetach2List(PVBOXSHGSMILIST pList, PVBOXSHGSMILIST pDstList)
-{
-    vboxSHGSMIListDetach(pList, &pDstList->pFirst, &pDstList->pLast);
-}
-
-DECLINLINE(void) vboxSHGSMIListDetachEntries(PVBOXSHGSMILIST pList, PVBOXSHGSMILIST_ENTRY pBeforeDetach, PVBOXSHGSMILIST_ENTRY pLast2Detach)
-{
-    if (pBeforeDetach)
-    {
-        pBeforeDetach->pNext = pLast2Detach->pNext;
-        if (!pBeforeDetach->pNext)
-            pList->pLast = pBeforeDetach;
-    }
-    else
-    {
-        pList->pFirst = pLast2Detach->pNext;
-        if (!pList->pFirst)
-            pList->pLast = NULL;
-    }
-    pLast2Detach->pNext = NULL;
-}
-
-
-const VBOXSHGSMIHEADER* VBoxSHGSMICommandPrepAsynchEvent(struct _HGSMIHEAP * pHeap, PVOID pvBuff, RTSEMEVENT hEventSem);
-const VBOXSHGSMIHEADER* VBoxSHGSMICommandPrepSynch(struct _HGSMIHEAP * pHeap, PVOID pCmd);
-const VBOXSHGSMIHEADER* VBoxSHGSMICommandPrepAsynch(struct _HGSMIHEAP * pHeap, PVOID pvBuff, PFNVBOXSHGSMICMDCOMPLETION pfnCompletion, PVOID pvCompletion, uint32_t fFlags);
-const VBOXSHGSMIHEADER* VBoxSHGSMICommandPrepAsynchIrq(struct _HGSMIHEAP * pHeap, PVOID pvBuff, PFNVBOXSHGSMICMDCOMPLETION_IRQ pfnCompletion, PVOID pvCompletion, uint32_t fFlags);
-
-void VBoxSHGSMICommandDoneAsynch(struct _HGSMIHEAP * pHeap, const VBOXSHGSMIHEADER* pHeader);
-int VBoxSHGSMICommandDoneSynch(struct _HGSMIHEAP * pHeap, const VBOXSHGSMIHEADER* pHeader);
-void VBoxSHGSMICommandCancelAsynch(struct _HGSMIHEAP * pHeap, const VBOXSHGSMIHEADER* pHeader);
-void VBoxSHGSMICommandCancelSynch(struct _HGSMIHEAP * pHeap, const VBOXSHGSMIHEADER* pHeader);
-
-DECLINLINE(HGSMIOFFSET) VBoxSHGSMICommandOffset(struct _HGSMIHEAP * pHeap, const VBOXSHGSMIHEADER* pHeader)
-{
-    return HGSMIHeapBufferOffset(pHeap, (void*)pHeader);
-}
-
-void* VBoxSHGSMICommandAlloc(struct _HGSMIHEAP * pHeap, HGSMISIZE cbData, uint8_t u8Channel, uint16_t u16ChannelInfo);
-void VBoxSHGSMICommandFree(struct _HGSMIHEAP * pHeap, void *pvBuffer);
-int VBoxSHGSMICommandProcessCompletion(struct _HGSMIHEAP * pHeap, VBOXSHGSMIHEADER* pCmd, bool bIrq, PVBOXSHGSMILIST pPostProcessList);
-int VBoxSHGSMICommandPostprocessCompletion(struct _HGSMIHEAP * pHeap, PVBOXSHGSMILIST pPostProcessList);
+int VBoxSHGSMIInit(PVBOXSHGSMI pHeap, void *pvBase, HGSMISIZE cbArea, HGSMIOFFSET offBase, bool fOffsetBased);
+void VBoxSHGSMITerm(PVBOXSHGSMI pHeap);
+void* VBoxSHGSMIHeapAlloc(PVBOXSHGSMI pHeap, HGSMISIZE cbData, uint8_t u8Channel, uint16_t u16ChannelInfo);
+void VBoxSHGSMIHeapFree(PVBOXSHGSMI pHeap, void *pvBuffer);
+void* VBoxSHGSMICommandAlloc(PVBOXSHGSMI pHeap, HGSMISIZE cbData, uint8_t u8Channel, uint16_t u16ChannelInfo);
+void VBoxSHGSMICommandFree(PVBOXSHGSMI pHeap, void *pvBuffer);
+int VBoxSHGSMICommandProcessCompletion(PVBOXSHGSMI pHeap, VBOXSHGSMIHEADER* pCmd, bool bIrq, struct VBOXVTLIST * pPostProcessList);
+int VBoxSHGSMICommandPostprocessCompletion(PVBOXSHGSMI pHeap, struct VBOXVTLIST * pPostProcessList);
 
 #endif /* #ifndef ___VBoxMPShgsmi_h___ */

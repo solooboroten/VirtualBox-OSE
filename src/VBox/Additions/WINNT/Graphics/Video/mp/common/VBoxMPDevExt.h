@@ -98,10 +98,10 @@ typedef struct _VBOXMP_DEVEXT
 
    VBOXWDDM_GLOBAL_POINTER_INFO PointerInfo;
 
-   VBOXSHGSMILIST CtlList;
-   VBOXSHGSMILIST DmaCmdList;
+   VBOXVTLIST CtlList;
+   VBOXVTLIST DmaCmdList;
 #ifdef VBOX_WITH_VIDEOHWACCEL
-   VBOXSHGSMILIST VhwaCmdList;
+   VBOXVTLIST VhwaCmdList;
 #endif
    BOOL bNotifyDxDpc;
 
@@ -177,11 +177,11 @@ DECLINLINE(ULONG) vboxWddmVramCpuVisibleSize(PVBOXMP_DEVEXT pDevExt)
     return (ULONG)(pDevExt->aSources[0].Vbva.offVBVA & ~0xfffULL);
 #else
     /* all memory layout info should be initialized */
-    Assert(pDevExt->u.primary.Vdma.CmdHeap.area.offBase);
+    Assert(pDevExt->u.primary.Vdma.CmdHeap.Heap.area.offBase);
     /* page aligned */
-    Assert(!(pDevExt->u.primary.Vdma.CmdHeap.area.offBase & 0xfff));
+    Assert(!(pDevExt->u.primary.Vdma.CmdHeap.Heap.area.offBase & 0xfff));
 
-    return pDevExt->u.primary.Vdma.CmdHeap.area.offBase & ~0xfffUL;
+    return pDevExt->u.primary.Vdma.CmdHeap.Heap.area.offBase & ~0xfffUL;
 #endif
 }
 

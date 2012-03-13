@@ -1,10 +1,10 @@
 ; $Id: VBoxGuestAdditions.nsi $
-;; @file
+; @file
 ; VBoxGuestAdditions.nsi - Main file for Windows Guest Additions installation.
 ;
 
 ;
-; Copyright (C) 2011 Oracle Corporation
+; Copyright (C) 2012 Oracle Corporation
 ;
 ; This file is part of VirtualBox Open Source Edition (OSE), as
 ; available from http://www.virtualbox.org. This file is free software;
@@ -549,8 +549,16 @@ Function CheckForInstalledComponents
   ; regardless whether the user used "/with_autologon" or not
   ReadRegStr $0 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\WinLogon" "GinaDLL"
   ${If} $0 == "VBoxGINA.dll"
-    DetailPrint "Found already installed auto-logon support ..."
     StrCpy $g_bWithAutoLogon "true"
+  ${EndIf}
+  
+  ReadRegStr $0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{275D3BCC-22BB-4948-A7F6-3A3054EBA92B}" ""
+  ${If} $0 == "VBoxCredProv.dll"
+    StrCpy $g_bWithAutoLogon "true"  
+  ${EndIf}
+  
+  ${If} $g_bWithAutoLogon == "true"
+    DetailPrint "Found already installed auto-logon support ..."
   ${EndIf}
 
   Pop $0
@@ -757,7 +765,6 @@ Function PrepareWRPFile
 FunctionEnd
 
 ; Direct3D support
-!if $%VBOX_WITH_CROGL% == "1"
 Section /o $(VBOX_COMPONENT_D3D) SEC03
 
 !if $%VBOX_WITH_WDDM% == "1"
@@ -918,7 +925,6 @@ done:
 exit:
 
 SectionEnd
-!endif ; VBOX_WITH_CROGL
 
 !ifdef USE_MUI
   ;Assign language strings to sections
@@ -995,7 +1001,7 @@ Function .onSelChange
       ; can opt-in for installing WDDM or still go for the old (XPDM) way -- safe mode still required!
       ;
       MessageBox MB_ICONQUESTION|MB_YESNO $(VBOX_COMPONENT_D3D_OR_WDDM) /SD IDNO IDYES d3d_install
-      ; Display an uncoditional hint about needed VRAM sizes
+      ; Display an unconditional hint about needed VRAM sizes
       ; Note: We also could use the PCI configuration space (WMI: Win32_SystemSlot Class) for querying
       ;       the current VRAM size, but let's keep it simple for now
       MessageBox MB_ICONINFORMATION|MB_OK $(VBOX_COMPONENT_D3D_HINT_VRAM) /SD IDOK
@@ -1027,8 +1033,9 @@ d3d_install:
     ${EndIf}
 
   ${Else} ; D3D unselected again
-
-    StrCpy $g_bWithWDDM "false"
+    ${If} $g_strWinVersion != "8" ; On Windows 8 WDDM is mandatory
+      StrCpy $g_bWithWDDM "false"
+    ${EndIf}
   ${EndIf}
   Goto exit
 
@@ -1071,6 +1078,8 @@ FunctionEnd
 
 ; This function is called at the very beginning of installer execution
 Function .onInit
+
+  Push $0
 
   ; Init values
   StrCpy $g_iSystemMode "0"
@@ -1191,6 +1200,12 @@ Function .onInit
     SectionSetFlags ${SEC03} ${SF_SELECTED}
   ${EndIf}
 !endif
+  ; On Windows 8 we always select the 3D section and
+  ; disable it so that it cannot be deselected again
+  ${If} $g_strWinVersion == "8"
+    IntOp $0 ${SF_SELECTED} | ${SF_RO}
+    SectionSetFlags ${SEC03} $0
+  ${EndIf}
 
 !ifdef USE_MUI
   ; Display language selection dialog (will be hidden in silent mode!)
@@ -1211,6 +1226,8 @@ Function .onInit
   Call SetAppMode32
 
 !endif ; UNINSTALLER_ONLY
+
+  Pop $0
 
 FunctionEnd
 
