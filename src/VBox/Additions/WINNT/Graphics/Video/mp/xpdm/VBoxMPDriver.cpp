@@ -49,7 +49,9 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
     PVBOXMP_DEVEXT pExt = (PVBOXMP_DEVEXT) HwDeviceExtension;
     VP_STATUS rc;
     USHORT DispiId;
-    ULONG AdapterMemorySize = VBE_DISPI_TOTAL_VIDEO_MEMORY_BYTES;
+    ULONG cbVRAM = VBE_DISPI_TOTAL_VIDEO_MEMORY_BYTES;
+    PHYSICAL_ADDRESS phVRAM = {0};
+    ULONG ulApertureSize = 0;
 
     PAGED_CODE();
     LOGF_ENTER();
@@ -72,7 +74,7 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
      * Query the adapter's memory size. It's a bit of a hack, we just read
      * an ULONG from the data port without setting an index before.
      */
-    AdapterMemorySize = VideoPortReadPortUlong((PULONG)VBE_DISPI_IOPORT_DATA);
+    cbVRAM = VideoPortReadPortUlong((PULONG)VBE_DISPI_IOPORT_DATA);
 
     /* Write hw information to registry, so that it's visible in windows property dialog */
     rc = VideoPortSetRegistryParameters(pExt, L"HardwareInformation.ChipType",
@@ -82,7 +84,7 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
                                         VBoxDACType, sizeof(VBoxDACType));
     VBOXMP_WARN_VPS(rc);
     rc = VideoPortSetRegistryParameters(pExt, L"HardwareInformation.MemorySize",
-                                        &AdapterMemorySize, sizeof(ULONG));
+                                        &cbVRAM, sizeof(ULONG));
     VBOXMP_WARN_VPS(rc);
     rc = VideoPortSetRegistryParameters(pExt, L"HardwareInformation.AdapterString",
                                         VBoxAdapterString, sizeof(VBoxAdapterString));
@@ -91,7 +93,9 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
                                         VBoxBiosString, sizeof(VBoxBiosString));
     VBOXMP_WARN_VPS(rc);
 
-    /* Call VideoPortGetAccessRanges to ensure interrupt info in ConfigInfo gets set up */
+    /* Call VideoPortGetAccessRanges to ensure interrupt info in ConfigInfo gets set up
+     * and to get LFB aperture data.
+     */
     {
         VIDEO_ACCESS_RANGE tmpRanges[4];
         ULONG slot = 0;
@@ -113,6 +117,13 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
             rc = VideoPortGetAccessRanges(pExt, 0, NULL, RT_ELEMENTS(tmpRanges), tmpRanges, NULL, NULL, &slot);
         }
         VBOXMP_WARN_VPS(rc);
+        if (rc != NO_ERROR) {
+            return rc;
+        }
+
+        /* The first range is the framebuffer. We require that information. */
+        phVRAM = tmpRanges[0].RangeStart;
+        ulApertureSize = tmpRanges[0].RangeLength;
     }
 
     /* Initialize VBoxGuest library, which is used for requests which go through VMMDev. */
@@ -133,7 +144,7 @@ VBoxDrvFindAdapter(IN PVOID HwDeviceExtension, IN PVOID HwContext, IN PWSTR Argu
      * The host will however support both old and new interface to keep compatibility
      * with old guest additions.
      */
-    VBoxSetupDisplaysHGSMI(&pExt->u.primary.commonInfo, AdapterMemorySize, 0);
+    VBoxSetupDisplaysHGSMI(&pExt->u.primary.commonInfo, phVRAM, ulApertureSize, cbVRAM, 0);
 
     if (pExt->u.primary.commonInfo.bHGSMI)
     {

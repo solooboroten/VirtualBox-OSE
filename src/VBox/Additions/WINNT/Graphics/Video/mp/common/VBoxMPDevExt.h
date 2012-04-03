@@ -39,6 +39,10 @@ typedef struct VBOXMP_COMMON
 
     uint32_t cbVRAM;                    /* The VRAM size. */
 
+    PHYSICAL_ADDRESS phVRAM;            /* Physical VRAM base. */
+
+    ULONG ulApertureSize;               /* Size of the LFB aperture (>= VRAM size). */
+
     uint32_t cbMiniportHeap;            /* The size of reserved VRAM for miniport driver heap.
                                          * It is at offset:
                                          *   cbAdapterMemorySize - VBOX_VIDEO_ADAPTER_INFORMATION_SIZE - cbMiniportHeap
@@ -95,6 +99,9 @@ typedef struct _VBOXMP_DEVEXT
    KSPIN_LOCK SynchLock;
    volatile uint32_t cContexts3D;
    volatile uint32_t cUnlockedVBVADisabled;
+
+   HVBOXCRCTL hCrCtl;
+   uint32_t cCrCtlRefs;
 
    VBOXWDDM_GLOBAL_POINTER_INFO PointerInfo;
 
